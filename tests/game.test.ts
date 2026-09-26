@@ -1,9 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { Engine, createGame, DIFFICULTIES, nameSimilarity, type Difficulty, type GameState, type Item } from '../src/lib/game.ts';
+import { Engine, createGame, DIFFICULTIES, nameSimilarity, publicView, type Difficulty, type GameState, type Item, type Question } from '../src/lib/game.ts';
 
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
+
+const right = (q: Question) => q.options.indexOf(q.itemId);
+const wrongIdx = (q: Question) => q.options.findIndex((o) => o !== q.itemId);
 
 function seeded(seed: number) {
   return () => {
@@ -37,7 +40,7 @@ test('offers three categories and locks out picks for two turns', () => {
     assert.equal(new Set(q.options).size, 4);
     assert.ok(q.options.includes(q.itemId));
     assert.equal(engine.byId.get(q.itemId)!.category, cat);
-    s = engine.apply(s, { type: 'answer', optionId: q.options.find((o) => o !== q.itemId)! }, 'p0');
+    s = engine.apply(s, { type: 'answer', index: wrongIdx(q) }, 'p0');
     assert.equal(s.reveal!.correct, false);
     s = engine.apply(s, { type: 'next' }, 'p0');
   }
@@ -51,7 +54,7 @@ test('only the active player may act and scores are counted', () => {
   const other = s.players.find((p) => p.id !== active)!.id;
   assert.throws(() => engine.apply(s, { type: 'pick', category: s.offered[0] }, other));
   s = engine.apply(s, { type: 'pick', category: s.offered[0] }, active);
-  s = engine.apply(s, { type: 'answer', optionId: s.question!.itemId }, active);
+  s = engine.apply(s, { type: 'answer', index: right(s.question!) }, active);
   assert.equal(s.players.find((p) => p.id === active)!.score, 1);
   assert.throws(() => engine.apply(s, { type: 'start' }, other));
 });
@@ -65,8 +68,8 @@ test('game ends at the end of the round once the target is reached by a single l
     const me = s.players[s.turn].id;
     s = engine.apply(s, { type: 'pick', category: s.offered[0] }, me);
     const q = s.question!;
-    const pick = me === winner ? q.itemId : q.options.find((o) => o !== q.itemId)!;
-    s = engine.apply(s, { type: 'answer', optionId: pick }, me);
+    const pick = me === winner ? right(q) : wrongIdx(q);
+    s = engine.apply(s, { type: 'answer', index: pick }, me);
     s = engine.apply(s, { type: 'next' }, me);
   }
   assert.equal(s.phase, 'over');
@@ -81,7 +84,7 @@ test('disconnected players are skipped', () => {
   s = engine.apply(s, { type: 'connection', playerId: second, connected: false }, null);
   const first = s.players[0].id;
   s = engine.apply(s, { type: 'pick', category: s.offered[0] }, first);
-  s = engine.apply(s, { type: 'answer', optionId: null }, first);
+  s = engine.apply(s, { type: 'answer', index: null }, first);
   assert.equal(s.reveal!.timedOut, true);
   s = engine.apply(s, { type: 'next' }, first);
   assert.equal(s.turn, 2);
@@ -106,7 +109,7 @@ test('difficulties scale options, decoy kind and question types', () => {
         for (const id of q.options) assert.equal(engine.byId.get(id)!.group, answer.group, 'decoys share the group');
       }
       assert.equal(!!q.veil, !!rules.veil && q.mode === 'name');
-      s = engine.apply(s, { type: 'answer', optionId: q.itemId }, 'p0');
+      s = engine.apply(s, { type: 'answer', index: right(q) }, 'p0');
       s = engine.apply(s, { type: 'next' }, 'p0');
       if (s.phase === 'over') s = engine.apply(engine.apply(s, { type: 'restart' }, 'p0'), { type: 'start' }, 'p0');
     }
@@ -135,39 +138,74 @@ test('race mode: first correct answer scores, wrong answers cost a point and loc
   assert.equal(s.phase, 'question');
   let q = s.question!;
   assert.ok(q.deadline, 'race always has a timer');
-  const wrong = q.options.find((o) => o !== q.itemId)!;
+  const wrong = wrongIdx(q);
 
-  s = engine.apply(s, { type: 'answer', optionId: wrong, askedAt: q.askedAt }, 'p1');
+  s = engine.apply(s, { type: 'answer', index: wrong, askedAt: q.askedAt }, 'p1');
   assert.equal(s.players.find((p) => p.id === 'p1')!.score, -1);
   assert.equal(s.phase, 'question');
-  assert.throws(() => engine.apply(s, { type: 'answer', optionId: q.itemId }, 'p1'), /already answered/);
+  assert.throws(() => engine.apply(s, { type: 'answer', index: right(q) }, 'p1'), /already answered/);
 
-  s = engine.apply(s, { type: 'answer', optionId: q.itemId, askedAt: q.askedAt }, 'p2');
+  s = engine.apply(s, { type: 'answer', index: right(q), askedAt: q.askedAt }, 'p2');
   assert.equal(s.phase, 'reveal');
   assert.equal(s.reveal!.winnerId, 'p2');
   assert.equal(s.players.find((p) => p.id === 'p2')!.score, 1);
   // A slower correct answer arriving after the reveal is ignored.
-  assert.throws(() => engine.apply(s, { type: 'answer', optionId: q.itemId, askedAt: q.askedAt }, 'p0'), (e: any) => e.silent);
+  assert.throws(() => engine.apply(s, { type: 'answer', index: right(q), askedAt: q.askedAt }, 'p0'), (e: any) => e.silent);
 
   s = engine.apply(s, { type: 'next' }, 'p0');
   q = s.question!;
   // Everyone wrong: question ends with no winner.
-  for (const id of ['p0', 'p1', 'p2']) s = engine.apply(s, { type: 'answer', optionId: q.options.find((o) => o !== q.itemId)! }, id);
+  for (const id of ['p0', 'p1', 'p2']) s = engine.apply(s, { type: 'answer', index: wrongIdx(q) }, id);
   assert.equal(s.phase, 'reveal');
   assert.equal(s.reveal!.winnerId, null);
 
   // A stale answer for an old question is ignored.
   s = engine.apply(s, { type: 'next' }, 'p0');
-  assert.throws(() => engine.apply(s, { type: 'answer', optionId: s.question!.itemId, askedAt: q.askedAt }, 'p0'), (e: any) => e.silent);
+  assert.throws(() => engine.apply(s, { type: 'answer', index: right(s.question!), askedAt: q.askedAt }, 'p0'), (e: any) => e.silent);
 
   // Reaching the target ends the game right after the reveal.
   assert.equal(s.players.find((p) => p.id === 'p2')!.score, 0, 'everyone lost a point');
-  s = engine.apply(s, { type: 'answer', optionId: s.question!.itemId }, 'p2');
+  s = engine.apply(s, { type: 'answer', index: right(s.question!) }, 'p2');
   s = engine.apply(s, { type: 'next' }, 'p0');
   assert.equal(s.phase, 'question');
-  s = engine.apply(s, { type: 'answer', optionId: s.question!.itemId }, 'p2');
+  s = engine.apply(s, { type: 'answer', index: right(s.question!) }, 'p2');
   assert.equal(s.players.find((p) => p.id === 'p2')!.score, 2);
   s = engine.apply(s, { type: 'next' }, 'p0');
   assert.equal(s.phase, 'over');
   assert.deepEqual(s.winners, ['p2']);
+});
+
+test('guests never see the answer before the reveal', () => {
+  let { engine, s } = setup(['A', 'B']);
+  s = engine.apply(s, { type: 'start' }, 'p0');
+  s = engine.apply(s, { type: 'pick', category: s.offered[0] }, s.players[s.turn].id);
+  const q = s.question!;
+  const view = publicView(s);
+  const text = JSON.stringify(view);
+  assert.equal(view.question!.itemId, '');
+  assert.deepEqual(view.question!.options, []);
+  assert.deepEqual(view.used, []);
+  assert.ok(!text.includes(q.itemId), 'answer id not anywhere in the guest copy');
+  for (const id of q.options) assert.ok(!text.includes(id), 'no option item ids either');
+  assert.equal(view.question!.labels.length, q.options.length);
+  // After the reveal everything may be shown.
+  s = engine.apply(s, { type: 'answer', index: right(q) }, s.players[s.turn].id);
+  assert.equal(publicView(s).question!.itemId, q.itemId);
+});
+
+test('guests cannot act for others, join locked rooms, or impersonate', () => {
+  let { engine, s } = setup(['Alva', 'Zana']);
+  assert.throws(() => engine.apply(s, { type: 'join', playerId: 'p0', name: 'X' }, 'p1'), /Not allowed/);
+  assert.throws(() => engine.apply(s, { type: 'join', playerId: 'p9', name: 'Host' }, 'p9'), /reserved/);
+  assert.throws(() => engine.apply(s, { type: 'join', playerId: 'p9', name: 'Zаna' }, 'p9'), /looks too much like/); // Cyrillic а
+  assert.throws(() => engine.apply(s, { type: 'join', playerId: 'p9', name: 'A1va' }, 'p9'), /looks too much like/);
+  assert.throws(() => engine.apply(s, { type: 'join', playerId: 'p9', name: '\u200b\u202e ' }, 'p9'), /at least one letter/);
+  s = engine.apply(s, { type: 'join', playerId: 'p9', name: 'Dori\u202eevil\u200b' }, 'p9');
+  assert.equal(s.players.find((p) => p.id === 'p9')!.name, 'Dorievil');
+  s = engine.apply(s, { type: 'settings', settings: { locked: true } }, 'p0');
+  assert.throws(() => engine.apply(s, { type: 'join', playerId: 'p8', name: 'Late' }, 'p8'), /locked/);
+  // Rejoining an existing seat is still fine, and keeps the original name.
+  s = engine.apply(s, { type: 'join', playerId: 'p1', name: 'Renamed' }, 'p1');
+  assert.equal(s.players.find((p) => p.id === 'p1')!.name, 'Zana');
+  assert.throws(() => engine.apply(s, { type: 'settings', settings: { locked: false } }, 'p1'), /host/);
 });

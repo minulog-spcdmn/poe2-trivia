@@ -1,11 +1,13 @@
 <script lang="ts">
   import { fade, fly } from 'svelte/transition';
-  import { engine, session, savedName, saveName } from '../lib/session.svelte';
+  import { engine, session, savedName, saveName, CODE_LENGTH } from '../lib/session.svelte';
   import { itemImage } from '../lib/ui';
   import { sfx } from '../lib/sound';
+  import OpenRooms from './OpenRooms.svelte';
+  import { CREATOR } from '../lib/site';
 
   const params = new URLSearchParams(location.search);
-  const invite = (params.get('room') ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 5);
+  const invite = (params.get('room') ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, CODE_LENGTH);
 
   let name = $state(savedName());
   let code = $state(invite);
@@ -37,13 +39,18 @@
     e?.preventDefault();
     const n = needName();
     if (!n) return;
-    if (code.length < 5) {
+    if (code.length < CODE_LENGTH) {
       document.getElementById('code')?.focus();
       return;
     }
     sfx('click');
     if (invite) history.replaceState(null, '', location.pathname);
     session.join(code, n);
+  }
+
+  function joinListed(roomCode: string) {
+    code = roomCode;
+    join();
   }
 
   function local() {
@@ -72,7 +79,7 @@
       <span class="line"></span>Exile Trivia<span class="line"></span>
     </h1>
     <p class="tagline" in:fade={{ duration: 800, delay: 500 }}>
-      Name the unique. {total} legendary items. One of four names is true.
+      Name the unique. {total} uniques and lineage gems. Can you tell them apart?
     </p>
   </div>
 
@@ -103,14 +110,14 @@
             id="code"
             class="field code"
             bind:value={code}
-            oninput={() => (code = code.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 5))}
+            oninput={() => (code = code.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, CODE_LENGTH))}
             placeholder="CODE"
-            maxlength="5"
+            maxlength={CODE_LENGTH}
             autocomplete="off"
             spellcheck="false"
             aria-label="Room code"
           />
-          <button class="btn" class:primary={!!invite} type="submit" disabled={connecting || code.length < 5}>
+          <button class="btn" class:primary={!!invite} type="submit" disabled={connecting || code.length < CODE_LENGTH}>
             Join
           </button>
         </form>
@@ -135,7 +142,12 @@
     {/if}
   </div>
 
+  <div class="listing" in:fly={{ y: 30, duration: 700, delay: 550 }}>
+    <OpenRooms onJoin={joinListed} disabled={connecting} />
+  </div>
+
   <footer class="muted">
+    <p class="credit">Made by <span class="maker">{CREATOR}</span></p>
     Item data &amp; art from <a href="https://poe2db.tw/us/Unique_item" target="_blank" rel="noreferrer">poe2db.tw</a>.
     Path of Exile is a trademark of Grinding Gear Games. Fan project.
   </footer>
@@ -335,6 +347,26 @@
     border-color: var(--bad);
   }
 
+  .listing {
+    width: min(620px, 100%);
+    display: flex;
+    justify-content: center;
+    margin-top: -0.8rem;
+  }
+  .credit {
+    margin: 0 0 0.5rem;
+    font-family: var(--font-display);
+    font-size: 0.8rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .maker {
+    color: var(--gold-hi);
+    letter-spacing: 0.08em;
+    text-transform: none;
+    font-weight: 700;
+  }
   footer {
     font-size: 0.85rem;
     text-align: center;

@@ -52,7 +52,7 @@
         {:else if session.mode === 'local'}
           <span>Hot-seat</span>
         {:else if session.code}
-          <span>Room <b>{session.code}</b></span>
+          <span>Room <b>{session.hideCode ? '••••••' : session.code}</b></span>
         {/if}
       </div>
       <div class="tools">

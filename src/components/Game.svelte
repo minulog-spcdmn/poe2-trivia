@@ -1,7 +1,7 @@
 <script lang="ts">
   import { fade } from 'svelte/transition';
   import { session } from '../lib/session.svelte';
-  import { playerColor, preload, itemImage } from '../lib/ui';
+  import { playerColor } from '../lib/ui';
   import Scoreboard from './Scoreboard.svelte';
   import ChooseCategory from './ChooseCategory.svelte';
   import QuestionView from './QuestionView.svelte';
@@ -11,10 +11,6 @@
   const mine = $derived(session.myTurn);
   const local = $derived(session.mode === 'local');
 
-  // Start fetching the art the moment a question exists.
-  $effect(() => {
-    if (s.question) preload(itemImage(s.question.itemId));
-  });
 
   const race = $derived(s.settings.mode === 'race');
   const bannerTitle = $derived(

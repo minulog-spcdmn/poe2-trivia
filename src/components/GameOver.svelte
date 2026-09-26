@@ -1,14 +1,15 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { fly, scale } from 'svelte/transition';
-  import { session, myId } from '../lib/session.svelte';
+  import { session } from '../lib/session.svelte';
   import { playerColor } from '../lib/ui';
   import Avatar from './Avatar.svelte';
+  import { CREATOR, SITE_URL } from '../lib/site';
 
   const s = $derived(session.state!);
   const standings = $derived([...s.players].sort((a, b) => b.score - a.score));
   const winner = $derived(s.players.find((p) => s.winners.includes(p.id)) ?? standings[0]);
-  const iWon = $derived(session.mode !== 'local' && winner?.id === myId);
+  const iWon = $derived(session.mode !== 'local' && winner?.id === session.myPlayerId);
 
   let canvas: HTMLCanvasElement;
 
@@ -120,6 +121,10 @@
     {/if}
     <button class="btn ghost" onclick={() => session.leave()}>Leave</button>
   </div>
+
+  <p class="credit" in:fly={{ y: 10, duration: 600, delay: 1600 }}>
+    <a href={SITE_URL} target="_blank" rel="noreferrer">poe2.quest</a> · made by <span>{CREATOR}</span>
+  </p>
 </div>
 
 <style>
@@ -221,6 +226,18 @@
     flex-wrap: wrap;
     justify-content: center;
     margin-top: 1.8rem;
+  }
+  .credit {
+    margin: 2.2rem 0 0;
+    font-size: 0.9rem;
+    color: var(--muted);
+  }
+  .credit a {
+    color: var(--gold);
+    text-decoration: none;
+  }
+  .credit span {
+    color: var(--gold-hi);
   }
   .actions p {
     margin: 0;
