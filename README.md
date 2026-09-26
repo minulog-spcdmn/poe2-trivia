@@ -114,6 +114,13 @@ list.
 Not defended against: a determined player recognising item art with
 their own tools, and a cheating host.
 
+## Legal pages
+
+`impressum.html` (legal notice, § 5 DDG) and `datenschutz.html` (privacy
+policy, GDPR) are plain static pages, built as extra Vite entry points and
+linked from every screen. Update them whenever the site starts using a new
+third-party service.
+
 ## Development
 
 ```sh

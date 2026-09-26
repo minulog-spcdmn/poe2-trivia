@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex" />
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <link rel="stylesheet" href="/src/legal/legal.css" />
+    <title>Datenschutz — Exile Trivia</title>
+  </head>
+  <body>
+    <main class="legal">
+      <a class="back" href="./">← Zurück zum Spiel / Back to the game</a>
+      <h1>Datenschutz&shy;erklärung</h1>
+      <p class="switch muted">Stand: September 2026 · <a href="#english">English summary below</a></p>
+
+      <h2>1. Verantwortlicher</h2>
+      <address>
+        Minu Wagner<br />
+        Hagenstr. 4<br />
+        10365 Berlin<br />
+        Deutschland<br />
+        E-Mail: <a href="mailto:jonas.minu.wagner@gmail.com">jonas.minu.wagner@gmail.com</a>
+      </address>
+
+      <h2>2. Überblick</h2>
+      <p>
+        Exile Trivia ist ein Browserspiel ohne eigenen Server, ohne Benutzerkonten, ohne Cookies und ohne Tracking oder
+        Analyse-Dienste. Schriftarten und Bilder werden von dieser Website selbst ausgeliefert, nicht von Drittanbietern.
+        Spielstände werden nicht zentral gespeichert: Das Spiel läuft im Browser der Person, die einen Raum eröffnet
+        („Host“), und die Geräte der Mitspielenden verbinden sich direkt miteinander.
+      </p>
+      <p>Personenbezogene Daten fallen dennoch in folgenden Fällen an:</p>
+
+      <h2>3. Hosting (GitHub Pages)</h2>
+      <p>
+        Diese Website wird über GitHub Pages bereitgestellt (GitHub, Inc., 88 Colin P. Kelly Jr. Street, San Francisco,
+        CA 94107, USA). Beim Aufruf der Seite verarbeitet GitHub technisch notwendige Daten, insbesondere Ihre
+        IP-Adresse, Datum und Uhrzeit des Abrufs, die abgerufene Datei sowie Browser- und Betriebssysteminformationen
+        (Server-Logfiles), um die Website auszuliefern und ihre Sicherheit zu gewährleisten.
+      </p>
+      <p>
+        Rechtsgrundlage ist Art. 6 Abs. 1 lit. f DSGVO (berechtigtes Interesse an einer sicheren und funktionsfähigen
+        Bereitstellung der Website). Dabei können Daten in die USA übermittelt werden. Die Übermittlung stützt sich auf
+        den Angemessenheitsbeschluss der EU-Kommission zum EU-US Data Privacy Framework, soweit GitHub danach zertifiziert
+        ist, sowie auf von GitHub verwendete Standardvertragsklauseln. Näheres, auch zur Speicherdauer, in der
+        <a href="https://docs.github.com/de/site-policy/privacy-policies/github-general-privacy-statement" rel="noreferrer"
+          >Datenschutzerklärung von GitHub</a
+        >.
+      </p>
+
+      <h2>4. Online-Spiel: Verbindungsaufbau (PeerJS, STUN/TURN)</h2>
+      <p>Nur wenn Sie einen Online-Raum eröffnen, ihm beitreten oder die Liste offener Räume ansehen:</p>
+      <ul>
+        <li>
+          <strong>Vermittlungsserver:</strong> Damit sich Geräte finden, wird der öffentliche Vermittlungsserver des
+          Open-Source-Projekts PeerJS (0.peerjs.com) genutzt. Dabei werden Ihre IP-Adresse, eine zufällige
+          Verbindungskennung sowie Verbindungsdaten zum Aufbau der Verbindung verarbeitet. Die Spielinhalte selbst laufen
+          nicht über diesen Server.
+        </li>
+        <li>
+          <strong>STUN-Server von Google:</strong> Um eine direkte Verbindung zu ermöglichen, fragt Ihr Browser beim
+          STUN-Server stun.l.google.com (Google LLC, USA) Ihre öffentliche IP-Adresse ab. Dabei wird Ihre IP-Adresse an
+          Google übermittelt.
+        </li>
+        <li>
+          <strong>Relay-Server (TURN):</strong> Ist keine direkte Verbindung möglich, kann die Verbindung über
+          Relay-Server von PeerJS (eu-0.turn.peerjs.com bzw. us-0.turn.peerjs.com) geleitet werden. Dabei laufen die
+          Spieldaten und Ihre IP-Adresse über diese Server.
+        </li>
+        <li>
+          <strong>Direkte Verbindung zu Mitspielenden (WebRTC):</strong> Die Geräte im selben Raum verbinden sich direkt
+          miteinander. <strong>Dadurch können alle Personen im Raum, insbesondere der Host, Ihre IP-Adresse sehen.</strong>
+          Darauf weist das Spiel auch in der Lobby und in der Raumliste hin.
+        </li>
+      </ul>
+      <p>
+        Rechtsgrundlage ist Art. 6 Abs. 1 lit. b DSGVO (Bereitstellung des von Ihnen gewählten Online-Spiels) bzw.
+        lit. f DSGVO (berechtigtes Interesse an einem funktionierenden Mehrspielermodus). Bei den genannten Diensten
+        kann eine Verarbeitung außerhalb der EU, insbesondere in den USA, stattfinden. Wer das vermeiden möchte, kann den
+        Modus „Hot-Seat“ auf einem Gerät nutzen: Dabei findet kein Verbindungsaufbau statt.
+      </p>
+
+      <h2>5. Daten im Spiel</h2>
+      <p>
+        Im Online-Spiel werden Ihr gewählter Spielname, Ihre Antworten und Punkte an den Host übertragen und von dort an
+        die Mitspielenden im Raum. Der Host erhält außerdem eine zufällige Gerätekennung (siehe Abschnitt 6), mit der Sie
+        nach einem Verbindungsabbruch wieder Ihren Platz einnehmen können; sie wird den übrigen Mitspielenden nicht
+        gezeigt. Diese Daten liegen nur in den Browsern der Beteiligten und werden nicht auf einem Server gespeichert.
+      </p>
+      <p>
+        Wenn ein Host seinen Raum „öffentlich“ stellt, sind in der Liste offener Räume der Name des Hosts, die Spielerzahl
+        und die Spieleinstellungen für alle sichtbar, die die Startseite aufrufen.
+      </p>
+
+      <h2>6. Speicherung im Browser (Local Storage)</h2>
+      <p>
+        Das Spiel speichert ausschließlich auf Ihrem Gerät: Ihren zuletzt verwendeten Spielnamen, eine zufällig erzeugte
+        Gerätekennung (zum Wiedereintritt in ein laufendes Spiel), die Einstellungen „Ton aus“ und „Raumcode verbergen“
+        sowie im Session Storage den laufenden Spielstand, damit ein Neuladen der Seite das Spiel nicht beendet. Diese
+        Angaben sind für die von Ihnen gewünschten Funktionen unbedingt erforderlich (§ 25 Abs. 2 Nr. 2 TDDDG); es werden
+        keine Cookies gesetzt. Sie können die Daten jederzeit über die Einstellungen Ihres Browsers löschen.
+      </p>
+
+      <h2>7. Spenden über PayPal</h2>
+      <p>
+        Die Seite enthält einen einfachen Link zu PayPal (paypal.me). Beim bloßen Aufruf dieser Website werden keine Daten
+        an PayPal übertragen. Erst wenn Sie den Link anklicken, verlassen Sie diese Website; für die Verarbeitung bei
+        PayPal (PayPal (Europe) S.à r.l. et Cie, S.C.A., 22–24 Boulevard Royal, L-2449 Luxemburg) gilt deren
+        Datenschutzerklärung. Bei einer Spende erhalte ich die Angaben, die PayPal an Empfänger übermittelt (z. B. Name,
+        E-Mail-Adresse, Betrag). Diese verwende ich nur zur Abwicklung und zur Erfüllung gesetzlicher, insbesondere
+        steuerlicher Aufbewahrungspflichten (Art. 6 Abs. 1 lit. c DSGVO).
+      </p>
+
+      <h2>8. Kontakt per E-Mail</h2>
+      <p>
+        Wenn Sie mir eine E-Mail schreiben, verarbeite ich Ihre Angaben zur Bearbeitung Ihrer Anfrage (Art. 6 Abs. 1
+        lit. b bzw. f DSGVO) und lösche sie, sobald sie dafür nicht mehr erforderlich sind und keine gesetzlichen
+        Aufbewahrungspflichten bestehen.
+      </p>
+
+      <h2>9. Ihre Rechte</h2>
+      <p>Sie haben das Recht auf:</p>
+      <ul>
+        <li>Auskunft über Ihre verarbeiteten Daten (Art. 15 DSGVO),</li>
+        <li>Berichtigung (Art. 16 DSGVO),</li>
+        <li>Löschung (Art. 17 DSGVO),</li>
+        <li>Einschränkung der Verarbeitung (Art. 18 DSGVO),</li>
+        <li>Datenübertragbarkeit (Art. 20 DSGVO),</li>
+        <li>
+          Widerspruch gegen Verarbeitungen auf Grundlage von Art. 6 Abs. 1 lit. f DSGVO aus Gründen, die sich aus Ihrer
+          besonderen Situation ergeben (Art. 21 DSGVO).
+        </li>
+      </ul>
+      <p>
+        Zudem können Sie sich bei einer Datenschutz-Aufsichtsbehörde beschweren (Art. 77 DSGVO). Zuständig für mich ist
+        die Berliner Beauftragte für Datenschutz und Informationsfreiheit, Alt-Moabit 59–61, 10555 Berlin.
+      </p>
+      <p class="muted">Siehe auch das <a href="./impressum.html">Impressum</a>.</p>
+
+      <section class="lang" id="english" lang="en">
+        <h1>Privacy policy (summary)</h1>
+        <p class="muted">
+          This is a summary for convenience; the German version above is authoritative.
+        </p>
+        <p>
+          <strong>Controller:</strong> Minu Wagner, Hagenstr. 4, 10365 Berlin, Germany ·
+          <a href="mailto:jonas.minu.wagner@gmail.com">jonas.minu.wagner@gmail.com</a>
+        </p>
+        <ul>
+          <li>No accounts, no cookies, no tracking or analytics. Fonts and images are served by this site itself.</li>
+          <li>
+            <strong>Hosting:</strong> GitHub Pages (GitHub, Inc., USA) processes server logs, including your IP address,
+            to deliver the site.
+          </li>
+          <li>
+            <strong>Online play only:</strong> the PeerJS matchmaking server (0.peerjs.com), Google's STUN server
+            (stun.l.google.com) and, if needed, PeerJS relay servers (TURN) process your IP address to connect players.
+            Players connect directly, so <strong>everyone in a room, especially the host, can see your IP address</strong>.
+            Hot-seat mode on one device avoids all of this.
+          </li>
+          <li>
+            <strong>In the game:</strong> your chosen name, answers and scores go to the host and the other players in your
+            room. A random device token lets you rejoin after a disconnect, and only the host sees it. Public rooms show the
+            host's name and settings in the room list.
+          </li>
+          <li>
+            <strong>Your browser</strong> stores your name, the device token, and your sound and hide-code settings, plus
+            the running game in session storage. These are strictly necessary for the features you use, and you can clear
+            them at any time.
+          </li>
+          <li>
+            <strong>PayPal:</strong> a plain link; nothing is sent to PayPal unless you click it. If you donate, I receive
+            the details PayPal passes on and keep them only as required, for example for tax records.
+          </li>
+          <li>
+            <strong>Your rights:</strong> access, rectification, erasure, restriction, portability, objection, and a
+            complaint to a supervisory authority (for me: Berliner Beauftragte für Datenschutz und Informationsfreiheit).
+          </li>
+        </ul>
+        <p class="muted">See also the <a href="./impressum.html#english">legal notice</a>.</p>
+      </section>
+    </main>
+  </body>
+</html>
