@@ -38,7 +38,7 @@ export const DIFFICULTIES: Record<Difficulty, DifficultyRules> = {
     groupFirst: true,
     similarNames: 0.5,
     artChance: 0.4,
-    veil: { size: 5, share: 0.7 },
+    veil: { size: 5, share: 0.55 },
     grayscale: false,
   },
   eternal: {
@@ -46,10 +46,19 @@ export const DIFFICULTIES: Record<Difficulty, DifficultyRules> = {
     groupFirst: false,
     similarNames: 1,
     artChance: 0.5,
-    veil: { size: 7, share: 0.9 },
+    veil: { size: 7, share: 0.7 },
     grayscale: true,
   },
 };
+
+/**
+ * Groups that come up less often (relative weight when picking the answer),
+ * and only appear as decoys when nothing else fits. Players found precursor
+ * tablets a chore.
+ */
+export const RARE_GROUPS: Record<string, number> = { Tablets: 0.25 };
+
+const weightOf = (it: Item) => RARE_GROUPS[it.group] ?? 1;
 
 export function rulesFor(difficulty: string | undefined): DifficultyRules {
   return DIFFICULTIES[difficulty as Difficulty] ?? DIFFICULTIES.cruel;
@@ -571,15 +580,26 @@ export class Engine {
     return pick;
   }
 
+  private weightedPick(list: Item[]): Item {
+    const total = list.reduce((sum, it) => sum + weightOf(it), 0);
+    let r = this.rng() * total;
+    for (const it of list) {
+      r -= weightOf(it);
+      if (r < 0) return it;
+    }
+    return list[list.length - 1];
+  }
+
   makeQuestion(s: GameState, category: string): Question {
     const rules = rulesFor(s.settings.difficulty);
     const inCat = this.byCategory.get(category) ?? [];
     const unused = this.unusedIn(s, category);
-    const answer = sample(unused.length ? unused : inCat, 1, this.rng)[0];
+    const answer = this.weightedPick(unused.length ? unused : inCat);
 
     const need = rules.options - 1;
     const sameGroup = inCat.filter((it) => it.id !== answer.id && it.group === answer.group);
-    const otherGroup = inCat.filter((it) => it.id !== answer.id && it.group !== answer.group);
+    // Rare groups (tablets) only fill in as decoys when nothing else is left.
+    const otherGroup = inCat.filter((it) => it.id !== answer.id && it.group !== answer.group && weightOf(it) === 1);
     const pool = rules.groupFirst && sameGroup.length >= need ? sameGroup : [...sameGroup, ...otherGroup];
 
     // Some decoys are chosen for looking like the answer's name.

@@ -18,7 +18,7 @@ is hosted as a static site on GitHub Pages. No server needed.
    once a full round is finished, so everyone gets the same number of turns.
    If players are tied, play continues.
 
-Items aren't repeated within a game until a category runs out.
+Items aren't repeated within a game until a category runs out. Precursor tablets come up about a quarter as often as other items, and only appear as wrong answers when nothing else fits.
 
 **Race mode** (online only): no turns. Everyone sees the same question at the
 same time, in a random category (never one of the last two).
