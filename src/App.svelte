@@ -42,7 +42,7 @@
       </button>
       <div class="meta">
         {#if gs && screen === 'game'}
-          <span>Round {gs.round}</span>
+          <span>{gs.settings.mode === 'race' ? 'Question' : 'Round'} {gs.round}</span>
           <span class="dot">•</span>
           <span>First to <b>{gs.settings.targetScore}</b></span>
           {#if gs.tiebreak}

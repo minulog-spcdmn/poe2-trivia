@@ -18,6 +18,16 @@ is hosted as a static site on GitHub Pages. No server needed.
 
 Items aren't repeated within a game until a category runs out.
 
+**Race mode** (online only): no turns. Everyone sees the same question at the
+same time, in a random category (never one of the last two).
+- The first correct answer scores +1 and ends the question.
+- A wrong answer costs −1 and locks that player out until the next question.
+  Everyone sees live who guessed what.
+- The first player to reach the target score wins.
+- Race questions always have a timer (30 s if the host picked "off").
+- The host's own answers reach the game instantly, while guests' answers
+  travel over the network, so the host has a small speed edge.
+
 **Difficulty** (the host chooses):
 
 | | Options | Wrong answers | Extras |
@@ -41,7 +51,7 @@ Items aren't repeated within a game until a category runs out.
     WebRTC. In that case, use hot-seat.
 - **Hot-seat:** everyone plays on one device and passes it around.
 
-The host picks the difficulty, the target score and an optional time limit
+The host picks the mode (take turns or race), the difficulty, the target score and an optional time limit
 per question (off / 10–45 s).
 
 ## Development

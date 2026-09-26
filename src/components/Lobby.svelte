@@ -2,7 +2,7 @@
   import { flip } from 'svelte/animate';
   import { fly, scale } from 'svelte/transition';
   import { session, myId } from '../lib/session.svelte';
-  import { MAX_PLAYERS, MAX_NAME, DIFFICULTIES, type Difficulty } from '../lib/game';
+  import { MAX_PLAYERS, MAX_NAME, DIFFICULTIES, type Difficulty, type GameMode } from '../lib/game';
   import { sfx } from '../lib/sound';
   import Avatar from './Avatar.svelte';
 
@@ -61,6 +61,10 @@
     sfx('click');
     session.dispatch({ type: 'settings', settings: { targetScore: v } });
   }
+  function setMode(mode: GameMode) {
+    sfx('click');
+    session.dispatch({ type: 'settings', settings: mode === 'race' && s.settings.timer === 0 ? { mode, timer: 20 } : { mode } });
+  }
   function setTimer(v: number) {
     sfx('click');
     session.dispatch({ type: 'settings', settings: { timer: v } });
@@ -74,6 +78,7 @@
   }
 
   const canStart = $derived(s.players.length >= 1);
+  const race = $derived(s.settings.mode === 'race');
   const difficulty = $derived(s.settings.difficulty in DIFFICULTIES ? s.settings.difficulty : 'cruel');
 </script>
 
@@ -139,6 +144,28 @@
       <header><h2>Rules</h2></header>
 
       <div class="setting">
+        <span class="label">Mode</span>
+        <div class="modes">
+          <button class="mode-card" class:on={!race} disabled={!isHost} onclick={() => setMode('turns')}>
+            <b>Take turns</b>
+            <span>Pick a category, answer alone. Wrong answers score nothing.</span>
+          </button>
+          <button
+            class="mode-card"
+            class:on={race}
+            disabled={!isHost || local}
+            onclick={() => setMode('race')}
+            title={local ? 'Race needs every player on their own device' : undefined}
+          >
+            <b>Race</b>
+            <span>
+              {#if local}Online only: everyone needs their own device.{:else}Everyone answers at once. Fastest correct answer +1, wrong answer −1.{/if}
+            </span>
+          </button>
+        </div>
+      </div>
+
+      <div class="setting">
         <span class="label">Points to win</span>
         <div class="seg">
           {#each TARGETS as t (t)}
@@ -168,7 +195,7 @@
         <span class="label">Time per question</span>
         <div class="seg">
           {#each TIMERS as t (t)}
-            <button class:on={s.settings.timer === t} disabled={!isHost} onclick={() => setTimer(t)}>
+            <button class:on={s.settings.timer === t} disabled={!isHost || (race && t === 0)} onclick={() => setTimer(t)}>
               {t === 0 ? 'Off' : `${t}s`}
             </button>
           {/each}
@@ -176,10 +203,17 @@
       </div>
 
       <ul class="rules muted">
-        <li>On your turn, choose one of three item categories.</li>
-        <li>A category you pick is locked for your next two turns.</li>
-        <li>Name the unique or lineage gem from its art — one answer is true.</li>
-        <li>Correct answers score a point. First to {s.settings.targetScore} wins, once the round is finished.</li>
+        {#if race}
+          <li>Everyone sees the same question at the same time.</li>
+          <li>The first correct answer scores a point and ends the question.</li>
+          <li>A wrong answer costs a point and locks you out until the next question.</li>
+          <li>First to {s.settings.targetScore} wins.</li>
+        {:else}
+          <li>On your turn, choose one of three item categories.</li>
+          <li>A category you pick is locked for your next two turns.</li>
+          <li>Name the unique or lineage gem from its art — one answer is true.</li>
+          <li>Correct answers score a point. First to {s.settings.targetScore} wins, once the round is finished.</li>
+        {/if}
       </ul>
 
       <div class="start">
@@ -349,6 +383,51 @@
 
   .setting {
     margin-bottom: 1.2rem;
+  }
+  .modes {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
+  }
+  .mode-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    padding: 0.7rem 0.85rem;
+    text-align: left;
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .mode-card b {
+    font-family: var(--font-display);
+    font-size: 0.9rem;
+    letter-spacing: 0.06em;
+    color: var(--gold-hi);
+  }
+  .mode-card span {
+    font-size: 0.9rem;
+    line-height: 1.3;
+    color: var(--muted);
+  }
+  .mode-card:hover:not(:disabled) {
+    border-color: var(--gold-lo);
+  }
+  .mode-card.on {
+    background: linear-gradient(180deg, rgba(122, 79, 29, 0.55), rgba(69, 42, 14, 0.55));
+    border-color: var(--gold);
+    box-shadow: 0 0 14px rgba(201, 164, 92, 0.2);
+  }
+  .mode-card.on span {
+    color: #e3d3b4;
+  }
+  .mode-card:disabled {
+    cursor: default;
+  }
+  .mode-card:disabled:not(.on) {
+    opacity: 0.5;
   }
   .blurb {
     margin: 0.5rem 0 0;

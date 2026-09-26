@@ -127,3 +127,47 @@ test('lineage gems are a category', () => {
   assert.ok(engine.categories.includes('Lineage Gems'));
   assert.ok(engine.byCategory.get('Lineage Gems')!.length >= 20);
 });
+
+test('race mode: first correct answer scores, wrong answers cost a point and lock out', () => {
+  let { engine, s } = setup(['A', 'B', 'C'], 2);
+  s = engine.apply(s, { type: 'settings', settings: { mode: 'race' } }, 'p0');
+  s = engine.apply(s, { type: 'start' }, 'p0');
+  assert.equal(s.phase, 'question');
+  let q = s.question!;
+  assert.ok(q.deadline, 'race always has a timer');
+  const wrong = q.options.find((o) => o !== q.itemId)!;
+
+  s = engine.apply(s, { type: 'answer', optionId: wrong, askedAt: q.askedAt }, 'p1');
+  assert.equal(s.players.find((p) => p.id === 'p1')!.score, -1);
+  assert.equal(s.phase, 'question');
+  assert.throws(() => engine.apply(s, { type: 'answer', optionId: q.itemId }, 'p1'), /already answered/);
+
+  s = engine.apply(s, { type: 'answer', optionId: q.itemId, askedAt: q.askedAt }, 'p2');
+  assert.equal(s.phase, 'reveal');
+  assert.equal(s.reveal!.winnerId, 'p2');
+  assert.equal(s.players.find((p) => p.id === 'p2')!.score, 1);
+  // A slower correct answer arriving after the reveal is ignored.
+  assert.throws(() => engine.apply(s, { type: 'answer', optionId: q.itemId, askedAt: q.askedAt }, 'p0'), (e: any) => e.silent);
+
+  s = engine.apply(s, { type: 'next' }, 'p0');
+  q = s.question!;
+  // Everyone wrong: question ends with no winner.
+  for (const id of ['p0', 'p1', 'p2']) s = engine.apply(s, { type: 'answer', optionId: q.options.find((o) => o !== q.itemId)! }, id);
+  assert.equal(s.phase, 'reveal');
+  assert.equal(s.reveal!.winnerId, null);
+
+  // A stale answer for an old question is ignored.
+  s = engine.apply(s, { type: 'next' }, 'p0');
+  assert.throws(() => engine.apply(s, { type: 'answer', optionId: s.question!.itemId, askedAt: q.askedAt }, 'p0'), (e: any) => e.silent);
+
+  // Reaching the target ends the game right after the reveal.
+  assert.equal(s.players.find((p) => p.id === 'p2')!.score, 0, 'everyone lost a point');
+  s = engine.apply(s, { type: 'answer', optionId: s.question!.itemId }, 'p2');
+  s = engine.apply(s, { type: 'next' }, 'p0');
+  assert.equal(s.phase, 'question');
+  s = engine.apply(s, { type: 'answer', optionId: s.question!.itemId }, 'p2');
+  assert.equal(s.players.find((p) => p.id === 'p2')!.score, 2);
+  s = engine.apply(s, { type: 'next' }, 'p0');
+  assert.equal(s.phase, 'over');
+  assert.deepEqual(s.winners, ['p2']);
+});
