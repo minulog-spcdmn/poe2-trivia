@@ -75,12 +75,23 @@ export interface Player {
   hue: number;
 }
 
+/**
+ * turns: players take turns choosing a category and answering.
+ * race: everyone answers the same question; first correct answer scores,
+ * wrong answers cost a point and lock that player out of the question.
+ */
+export type GameMode = 'turns' | 'race';
+
 export interface Settings {
   targetScore: number;
-  /** Seconds per question, 0 = no timer. */
+  /** Seconds per question, 0 = no timer (race mode always uses a timer). */
   timer: number;
   difficulty: Difficulty;
+  mode: GameMode;
 }
+
+/** Race questions need an end, so "no timer" falls back to this. */
+export const RACE_DEFAULT_TIMER = 30;
 
 export interface Question {
   category: string;
@@ -93,6 +104,8 @@ export interface Question {
   askedAt: number;
   /** Host-clock timestamp when time runs out, null without timer. */
   deadline: number | null;
+  /** Race mode: wrong answers so far, in order. Those players are locked out. */
+  misses: { playerId: string; optionId: string }[];
 }
 
 export interface Reveal {
@@ -100,6 +113,8 @@ export interface Reveal {
   chosenId: string | null;
   correct: boolean;
   timedOut: boolean;
+  /** Race mode: who answered correctly first. */
+  winnerId: string | null;
 }
 
 export interface GameState {
@@ -117,6 +132,8 @@ export interface GameState {
   used: string[];
   winners: string[];
   tiebreak: boolean;
+  /** Race mode: categories of the last questions, to avoid repeats. */
+  recentCategories: string[];
   /** Bumped on every change so clients can ignore stale messages. */
   version: number;
 }
@@ -129,7 +146,7 @@ export type Action =
   | { type: 'settings'; settings: Partial<Settings> }
   | { type: 'start' }
   | { type: 'pick'; category: string }
-  | { type: 'answer'; optionId: string | null }
+  | { type: 'answer'; optionId: string | null; askedAt?: number }
   | { type: 'next' }
   | { type: 'skip' }
   | { type: 'restart' };
@@ -139,9 +156,16 @@ export const OFFER_COUNT = 3;
 export const MAX_PLAYERS = 12;
 export const MAX_NAME = 20;
 
-export const DEFAULT_SETTINGS: Settings = { targetScore: 10, timer: 20, difficulty: 'cruel' };
+export const DEFAULT_SETTINGS: Settings = { targetScore: 10, timer: 20, difficulty: 'cruel', mode: 'turns' };
 
-export class ActionError extends Error {}
+export class ActionError extends Error {
+  /** Expected races (e.g. an answer arriving after the question closed): don't bother the user. */
+  readonly silent: boolean;
+  constructor(message: string, silent = false) {
+    super(message);
+    this.silent = silent;
+  }
+}
 
 type Rng = () => number;
 
@@ -160,6 +184,7 @@ export function createGame(hostId: string | null, settings: Settings = DEFAULT_S
     used: [],
     winners: [],
     tiebreak: false,
+    recentCategories: [],
     version: 0,
   };
 }
@@ -210,6 +235,7 @@ export class Engine {
   apply(prev: GameState, action: Action, from: string | null): GameState {
     const s: GameState = structuredClone(prev);
     const isHost = from === null || from === s.hostId;
+    const race = s.settings.mode === 'race';
     const active = s.players[s.turn];
     const isActive = from === null || (active && from === active.id);
 
@@ -248,7 +274,10 @@ export class Engine {
         s.players.splice(idx, 1);
         if (s.phase === 'lobby' || s.phase === 'over') break;
         if (s.players.length === 0) return { ...createGame(s.hostId, s.settings), version: s.version + 1 };
-        if (idx < s.turn) s.turn--;
+        if (race) {
+          s.turn = 0;
+          this.checkRaceDone(s);
+        } else if (idx < s.turn) s.turn--;
         else if (idx === s.turn) {
           s.turn = s.turn % s.players.length;
           this.beginTurn(s, false);
@@ -259,12 +288,14 @@ export class Engine {
         if (from !== null) throw new ActionError('Not allowed.');
         const p = s.players.find((p) => p.id === action.playerId);
         if (p) p.connected = action.connected;
+        if (race) this.checkRaceDone(s);
         break;
       }
       case 'settings': {
         if (!isHost) throw new ActionError('Only the host can change settings.');
         if (s.phase !== 'lobby' && s.phase !== 'over') throw new ActionError('Settings are locked during a game.');
-        const { targetScore, timer, difficulty } = action.settings;
+        const { targetScore, timer, difficulty, mode } = action.settings;
+        if (mode === 'turns' || mode === 'race') s.settings.mode = mode;
         if (difficulty && difficulty in DIFFICULTIES) s.settings.difficulty = difficulty;
         if (targetScore !== undefined) s.settings.targetScore = Math.max(1, Math.min(50, Math.round(targetScore)));
         if (timer !== undefined) s.settings.timer = Math.max(0, Math.min(120, Math.round(timer)));
@@ -284,8 +315,10 @@ export class Engine {
         s.turnCount = 0;
         s.winners = [];
         s.tiebreak = false;
+        s.recentCategories = [];
         s.turn = 0;
-        this.beginTurn(s, true);
+        if (race) this.beginRaceQuestion(s, true);
+        else this.beginTurn(s, true);
         break;
       }
       case 'pick': {
@@ -299,6 +332,10 @@ export class Engine {
         break;
       }
       case 'answer': {
+        if (race) {
+          this.raceAnswer(s, action, from);
+          break;
+        }
         if (s.phase !== 'question' || !s.question) throw new ActionError('There is no open question.');
         if (!isActive) throw new ActionError("It's not your turn.");
         const q = s.question;
@@ -307,20 +344,32 @@ export class Engine {
           chosenId === null || (q.deadline !== null && from !== null && this.now() > q.deadline + 1500);
         const correct = !timedOut && chosenId === q.itemId;
         if (correct) active.score += 1;
-        s.reveal = { correctId: q.itemId, chosenId: timedOut ? null : chosenId, correct, timedOut };
+        s.reveal = {
+          correctId: q.itemId,
+          chosenId: timedOut ? null : chosenId,
+          correct,
+          timedOut,
+          winnerId: correct ? active.id : null,
+        };
         s.phase = 'reveal';
         break;
       }
       case 'next': {
         if (s.phase !== 'reveal') throw new ActionError('Nothing to continue.');
-        if (!isActive && !isHost) throw new ActionError("It's not your turn.");
-        this.advance(s);
+        if (race) {
+          if (!isHost) throw new ActionError('The host moves the race on.');
+          this.advanceRace(s);
+        } else {
+          if (!isActive && !isHost) throw new ActionError("It's not your turn.");
+          this.advance(s);
+        }
         break;
       }
       case 'skip': {
         if (!isHost) throw new ActionError('Only the host can skip a turn.');
         if (s.phase !== 'choosing' && s.phase !== 'question') throw new ActionError('Nothing to skip.');
-        this.advance(s);
+        if (race) this.advanceRace(s);
+        else this.advance(s);
         break;
       }
       case 'restart': {
@@ -335,6 +384,77 @@ export class Engine {
     s.version = prev.version + 1;
     return s;
   }
+
+  // ---- race mode --------------------------------------------------------
+
+  private raceAnswer(s: GameState, action: Extract<Action, { type: 'answer' }>, from: string | null) {
+    const q = s.question;
+    // Late clicks from the previous question are expected; drop them quietly.
+    if (s.phase !== 'question' || !q) throw new ActionError('Too late!', true);
+    if (action.askedAt !== undefined && action.askedAt !== q.askedAt) throw new ActionError('Too late!', true);
+
+    if (from === null) {
+      // Host timer: time is up, nobody got it.
+      s.reveal = { correctId: q.itemId, chosenId: null, correct: false, timedOut: true, winnerId: null };
+      s.phase = 'reveal';
+      return;
+    }
+    const player = s.players.find((p) => p.id === from);
+    if (!player) throw new ActionError('You are not in this game.');
+    if (q.misses.some((m) => m.playerId === from)) throw new ActionError('You already answered.', true);
+    if (!action.optionId || !q.options.includes(action.optionId)) throw new ActionError('Too late!', true);
+    if (q.deadline !== null && this.now() > q.deadline + 1500) throw new ActionError('Too late!', true);
+
+    if (action.optionId === q.itemId) {
+      player.score += 1;
+      s.reveal = { correctId: q.itemId, chosenId: q.itemId, correct: true, timedOut: false, winnerId: player.id };
+      s.phase = 'reveal';
+      return;
+    }
+    player.score -= 1;
+    q.misses.push({ playerId: player.id, optionId: action.optionId });
+    this.checkRaceDone(s);
+  }
+
+  /** Ends the question once every connected player has answered wrong. */
+  private checkRaceDone(s: GameState) {
+    const q = s.question;
+    if (s.phase !== 'question' || !q) return;
+    const missed = new Set(q.misses.map((m) => m.playerId));
+    const waiting = s.players.filter((p) => p.connected && !missed.has(p.id));
+    if (waiting.length === 0) {
+      s.reveal = { correctId: q.itemId, chosenId: null, correct: false, timedOut: false, winnerId: null };
+      s.phase = 'reveal';
+    }
+  }
+
+  private advanceRace(s: GameState) {
+    const best = Math.max(...s.players.map((p) => p.score));
+    if (best >= s.settings.targetScore) {
+      s.phase = 'over';
+      s.winners = s.players.filter((p) => p.score === best).map((p) => p.id);
+      s.question = null;
+      s.reveal = null;
+      return;
+    }
+    this.beginRaceQuestion(s, false);
+  }
+
+  private beginRaceQuestion(s: GameState, first: boolean) {
+    if (!first) s.turnCount++;
+    s.round = s.turnCount + 1;
+    const allowed = this.categories.filter((c) => !s.recentCategories.includes(c));
+    const fresh = allowed.filter((c) => this.unusedIn(s, c).length > 0);
+    const category = sample(fresh.length ? fresh : allowed, 1, this.rng)[0];
+    s.recentCategories = [...s.recentCategories, category].slice(-LOCKOUT_TURNS);
+    s.offered = [];
+    s.reveal = null;
+    s.question = this.makeQuestion(s, category);
+    s.used.push(s.question.itemId);
+    s.phase = 'question';
+  }
+
+  // ---- turns mode -------------------------------------------------------
 
   private beginTurn(s: GameState, first: boolean) {
     if (!first) s.turnCount++;
@@ -415,17 +535,19 @@ export class Engine {
 
     const options = shuffle([answer, ...decoys], this.rng).map((it) => it.id);
     const mode: QuestionMode = this.rng() < rules.artChance ? 'art' : 'name';
-    const askedAt = this.now();
-    const deadline = s.settings.timer > 0 ? askedAt + s.settings.timer * 1000 : null;
+    // Strictly increasing: it doubles as the question's id for late answers.
+    const askedAt = Math.max(this.now(), (s.question?.askedAt ?? 0) + 1);
+    const timer = s.settings.mode === 'race' ? s.settings.timer || RACE_DEFAULT_TIMER : s.settings.timer;
+    const deadline = timer > 0 ? askedAt + timer * 1000 : null;
     const veil: Veil | null =
       rules.veil && mode === 'name'
         ? {
             size: rules.veil.size,
-            seconds: (s.settings.timer > 0 ? s.settings.timer : 20) * rules.veil.share,
+            seconds: (timer > 0 ? timer : 20) * rules.veil.share,
             seed: Math.floor(this.rng() * 2 ** 31),
           }
         : null;
-    return { category, mode, itemId: answer.id, options, veil, askedAt, deadline };
+    return { category, mode, itemId: answer.id, options, veil, askedAt, deadline, misses: [] };
   }
 }
 

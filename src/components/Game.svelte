@@ -16,7 +16,10 @@
     if (s.question) preload(itemImage(s.question.itemId));
   });
 
-  const bannerTitle = $derived(mine && !local ? 'Your turn' : `${active.name}'s turn`);
+  const race = $derived(s.settings.mode === 'race');
+  const bannerTitle = $derived(
+    race ? `Question ${s.turnCount + 1}` : mine && !local ? 'Your turn' : `${active.name}'s turn`,
+  );
 </script>
 
 <div class="game">
@@ -24,7 +27,7 @@
 
   {#key s.turnCount}
     <div class="stage" in:fade={{ duration: 300, delay: 200 }} out:fade={{ duration: 180 }}>
-      <div class="banner" style:--c={playerColor(active.hue)}>
+      <div class="banner" style:--c={race ? 'var(--unique-hi)' : playerColor(active.hue)}>
         <span class="rule"></span>
         <h2>{bannerTitle}</h2>
         <span class="rule"></span>
@@ -36,7 +39,7 @@
         <QuestionView />
       {/if}
 
-      {#if session.isHost && !local && !active.connected && s.phase !== 'reveal'}
+      {#if session.isHost && !local && !race && !active.connected && s.phase !== 'reveal'}
         <div class="skip" transition:fade>
           <span class="muted">{active.name} is disconnected.</span>
           <button class="btn small" onclick={() => session.dispatch({ type: 'skip' })}>Skip their turn</button>

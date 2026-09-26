@@ -95,11 +95,19 @@ class Session {
     return this.mode === 'local' || this.mode === 'host';
   }
 
-  /** True when this device may act for the active player. */
+  get race() {
+    return this.state?.settings.mode === 'race';
+  }
+
+  /** True when this device may act for the active player (or answer, in a race). */
   get myTurn() {
     const s = this.state;
     if (!s) return false;
     if (this.mode === 'local') return true;
+    if (s.settings.mode === 'race') {
+      const inGame = s.players.some((p) => p.id === myId);
+      return inGame && !s.question?.misses.some((m) => m.playerId === myId);
+    }
     return s.players[s.turn]?.id === myId;
   }
 
@@ -206,6 +214,7 @@ class Session {
           this.setState(engine.apply(this.state, msg.action, from));
         }
       } catch (err) {
+        if (err instanceof ActionError && err.silent) return;
         const message = err instanceof ActionError ? err.message : 'Something went wrong.';
         conn.send({ t: 'error', message } satisfies HostMsg);
         if (msg.t === 'hello') setTimeout(() => conn.close(), 500);
@@ -322,6 +331,7 @@ class Session {
       const from = this.mode === 'local' ? null : myId;
       this.setState(engine.apply(this.state, action, from));
     } catch (err) {
+      if (err instanceof ActionError && err.silent) return;
       this.flash(err instanceof ActionError ? err.message : 'Something went wrong.');
     }
   }
@@ -357,6 +367,18 @@ class Session {
   /** Side effects that every device plays: sounds. */
   private onNewState(prev: GameState | null, next: GameState) {
     if (!prev) return;
+    if (next.settings.mode === 'race' && next.phase !== 'over') {
+      const missedNow = (st: GameState) => st.question?.misses.some((m) => m.playerId === myId) ?? false;
+      if (prev.phase !== 'reveal' && next.phase === 'reveal' && next.reveal) {
+        const w = next.reveal.winnerId;
+        sfx(w === myId ? 'correct' : w ? 'turn' : 'wrong');
+      } else if (next.phase === 'question' && prev.phase !== 'question') {
+        sfx('reveal');
+      } else if (next.phase === 'question' && missedNow(next) && !missedNow(prev)) {
+        sfx('wrong');
+      }
+      return;
+    }
     if (prev.phase !== 'reveal' && next.phase === 'reveal' && next.reveal) {
       sfx(next.reveal.correct ? 'correct' : 'wrong');
     } else if (prev.phase !== next.phase && next.phase === 'choosing') {

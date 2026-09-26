@@ -6,23 +6,29 @@
 
   const s = $derived(session.state!);
   const target = $derived(s.settings.targetScore);
+  const race = $derived(s.settings.mode === 'race');
+  const missed = $derived(new Set(s.question?.misses.map((m) => m.playerId) ?? []));
 </script>
 
 <ol class="board">
   {#each s.players as p, i (p.id)}
-    {@const active = i === s.turn && s.phase !== 'over'}
-    <li class:active class:offline={!p.connected} animate:flip={{ duration: 400 }} style:--c={playerColor(p.hue)}>
+    {@const active = race ? s.phase === 'reveal' && s.reveal?.winnerId === p.id : i === s.turn && s.phase !== 'over'}
+    {@const out = race && s.phase !== 'over' && missed.has(p.id)}
+    <li class:active class:out class:offline={!p.connected} animate:flip={{ duration: 400 }} style:--c={playerColor(p.hue)}>
       <Avatar name={p.name} hue={p.hue} size={32} dim={!p.connected} />
       <div class="info">
         <span class="name">
           {p.name}{#if session.mode !== 'local' && p.id === myId}<em>&nbsp;(you)</em>{/if}
         </span>
-        <span class="bar"><span style:width="{Math.min(100, (p.score / target) * 100)}%"></span></span>
+        <span class="bar"><span style:width="{Math.max(0, Math.min(100, (p.score / target) * 100))}%"></span></span>
       </div>
       {#key p.score}
-        <span class="score" class:bump={p.score > 0}>{p.score}</span>
+        <span class="score" class:negative={p.score < 0} class:bump={race ? active : p.score > 0} class:down={out}
+          >{p.score}</span
+        >
       {/key}
       {#if !p.connected}<span class="off" title="Disconnected">⚡</span>{/if}
+      {#if out}<span class="x" title="Answered wrong">✕</span>{/if}
     </li>
   {/each}
 </ol>
@@ -68,6 +74,43 @@
     translate: -50% 0;
     border: 5px solid transparent;
     border-top-color: var(--c);
+  }
+  li.out {
+    border-color: rgba(224, 85, 63, 0.6);
+    opacity: 0.75;
+  }
+  .x {
+    position: absolute;
+    top: -7px;
+    right: -4px;
+    width: 18px;
+    height: 18px;
+    display: grid;
+    place-items: center;
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: #fff;
+    background: var(--bad);
+    border-radius: 50%;
+    animation: pop 0.35s var(--ease-back);
+  }
+  @keyframes pop {
+    from {
+      transform: scale(0);
+    }
+  }
+  .negative {
+    color: #ff9c86;
+  }
+  .down {
+    animation: down 0.7s var(--ease-back);
+  }
+  @keyframes down {
+    0% {
+      transform: scale(2.1);
+      color: var(--bad);
+      text-shadow: 0 0 16px var(--bad);
+    }
   }
   li.offline {
     opacity: 0.5;

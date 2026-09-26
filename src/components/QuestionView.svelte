@@ -1,10 +1,11 @@
 <script lang="ts">
   import { fly, fade, scale } from 'svelte/transition';
-  import { session, engine, AUTO_NEXT_SECONDS } from '../lib/session.svelte';
+  import { session, engine, myId, AUTO_NEXT_SECONDS } from '../lib/session.svelte';
   import { itemImage, itemName } from '../lib/ui';
   import { sfx } from '../lib/sound';
   import { rulesFor } from '../lib/game';
   import TimerRing from './TimerRing.svelte';
+  import Avatar from './Avatar.svelte';
 
   const s = $derived(session.state!);
   const q = $derived(s.question!);
@@ -12,7 +13,20 @@
   const active = $derived(s.players[s.turn]);
   const mine = $derived(session.myTurn);
   const item = $derived(engine.byId.get(q.itemId)!);
-  const canNext = $derived(!!reveal && (mine || session.isHost));
+  const race = $derived(s.settings.mode === 'race');
+  const canNext = $derived(!!reveal && (race ? session.isHost : mine || session.isHost));
+  const myMiss = $derived(race ? q.misses.find((m) => m.playerId === myId) : undefined);
+  const winner = $derived(reveal?.winnerId ? s.players.find((p) => p.id === reveal.winnerId) : undefined);
+  const iWon = $derived(race ? reveal?.winnerId === myId : !!reveal?.correct);
+  const timerTotal = $derived(q.deadline ? Math.round((q.deadline - q.askedAt) / 1000) : 0);
+
+  /** Race mode: who guessed which option wrong (and, once revealed, who won). */
+  function markers(id: string) {
+    if (!race) return [];
+    const ids = q.misses.filter((m) => m.optionId === id).map((m) => m.playerId);
+    if (reveal?.winnerId && id === reveal.correctId) ids.unshift(reveal.winnerId);
+    return ids.map((pid) => s.players.find((p) => p.id === pid)).filter((p) => !!p);
+  }
 
   let chosen = $state<string | null>(null);
   let loaded = $state(false);
@@ -53,7 +67,7 @@
     if (!mine || reveal || chosen) return;
     chosen = id;
     sfx('click');
-    session.dispatch({ type: 'answer', optionId: id });
+    session.dispatch({ type: 'answer', optionId: id, askedAt: q.askedAt });
     setTimeout(() => {
       if (!session.state?.reveal) chosen = null;
     }, 2500);
@@ -75,6 +89,7 @@
   }
 
   function optionState(id: string) {
+    if (myMiss?.optionId === id) return 'wrong';
     if (!reveal) return chosen === id ? 'pending' : '';
     if (id === reveal.correctId) return 'right';
     if (id === reveal.chosenId) return 'wrong';
@@ -86,9 +101,20 @@
 
 {#snippet stamp()}
   {#if reveal}
-    <div class="stamp" class:good={reveal.correct} in:scale={{ start: 2.2, duration: 450, opacity: 0 }}>
-      {#if reveal.correct}Correct{:else if reveal.timedOut}Time's up{:else}Wrong{/if}
+    <div class="stamp" class:good={iWon} in:scale={{ start: 2.2, duration: 450, opacity: 0 }}>
+      {#if iWon}Correct{:else if race && winner}Too slow{:else if reveal.timedOut}Time's up{:else if race}No one{:else}Wrong{/if}
     </div>
+  {/if}
+{/snippet}
+
+{#snippet who(id: string)}
+  {@const ps = markers(id)}
+  {#if ps.length}
+    <span class="who-picked">
+      {#each ps as p (p.id)}
+        <span in:scale={{ start: 0.3, duration: 300 }} title={p.name}><Avatar name={p.name} hue={p.hue} size={22} /></span>
+      {/each}
+    </span>
   {/if}
 {/snippet}
 
@@ -96,7 +122,18 @@
   {#if reveal}
     <div class="result" in:fly={{ y: 16, duration: 400, delay: 250 }}>
       <p>
-        {#if reveal.correct}
+        {#if race}
+          {#if winner}
+            <b class="good">+1</b> {winner.id === myId ? 'You were' : `${winner.name} was`} fastest!
+          {:else if reveal.timedOut}
+            Time's up — nobody got it.
+          {:else}
+            Nobody got it.
+          {/if}
+          {#if q.misses.length}
+            <span class="minus">−1 {q.misses.map((m) => s.players.find((p) => p.id === m.playerId)?.name).join(', ')}</span>
+          {/if}
+        {:else if reveal.correct}
           <b class="good">+1</b> for {active.name}!
         {:else if reveal.timedOut}
           {active.name} ran out of time.
@@ -106,7 +143,7 @@
       </p>
       {#if canNext}
         <button class="btn primary" onclick={next}>
-          Next turn
+          {race ? 'Next question' : 'Next turn'}
           {#if session.mode === 'host'}
             <span class="auto" style:animation-duration="{AUTO_NEXT_SECONDS}s"></span>
           {/if}
@@ -115,6 +152,10 @@
         <div class="autobar"><span style:animation-duration="{AUTO_NEXT_SECONDS}s"></span></div>
       {/if}
     </div>
+  {:else if race && myMiss}
+    <p class="spectate out">Wrong — −1. You're out until the next question.</p>
+  {:else if race}
+    <p class="spectate muted">First correct answer wins. Wrong costs a point! Press 1–{q.options.length}.</p>
   {:else if !mine}
     <p class="spectate muted">{active.name} is deciding…</p>
   {:else}
@@ -126,17 +167,17 @@
   <div class="topline">
     <span class="chip">{q.category}</span>
     <span class="who">
-      {#if mine && session.mode !== 'local'}Your question{:else}{active.name}'s question{/if}
+      {#if race}Everyone answers{:else if mine && session.mode !== 'local'}Your question{:else}{active.name}'s question{/if}
       {#if q.mode === 'art'}<span class="mode">· find the art</span>{/if}
     </span>
     {#if q.deadline}
-      <TimerRing deadline={q.deadline} total={s.settings.timer} stopped={!!reveal} />
+      <TimerRing deadline={q.deadline} total={timerTotal} stopped={!!reveal} />
     {/if}
   </div>
 
   {#if q.mode === 'art'}
     <!-- Name given, pick the matching art. -->
-    <div class="tooltip wide" class:good={reveal?.correct} class:bad={reveal && !reveal.correct}>
+    <div class="tooltip wide" class:good={reveal && iWon} class:bad={reveal && !iWon}>
       <div class="head">
         <div class="head-text">
           <span class="iname">{item.name}</span>
@@ -165,6 +206,7 @@
             {/if}
             {#if st === 'right'}<span class="mark" in:scale={{ duration: 300 }}>✓</span>{/if}
             {#if st === 'wrong'}<span class="mark" in:scale={{ duration: 300 }}>✕</span>{/if}
+            {@render who(id)}
           </button>
         {/each}
         {@render stamp()}
@@ -173,7 +215,7 @@
     <div class="art-footer">{@render footer()}</div>
   {:else}
     <div class="stage">
-      <div class="tooltip" class:good={reveal?.correct} class:bad={reveal && !reveal.correct}>
+      <div class="tooltip" class:good={reveal && iWon} class:bad={reveal && !iWon}>
         <div class="head">
           {#if reveal}
             <div class="head-text" in:fly={{ y: 10, duration: 450 }}>
@@ -220,6 +262,7 @@
           >
             <span class="key">{i + 1}</span>
             <span class="text">{itemName(id)}</span>
+            {@render who(id)}
             {#if st === 'right'}<span class="mark" in:scale={{ duration: 300 }}>✓</span>{/if}
             {#if st === 'wrong'}<span class="mark" in:scale={{ duration: 300 }}>✕</span>{/if}
           </button>
@@ -699,6 +742,26 @@
     width: 120px;
     height: 2px;
     background: rgba(255, 255, 255, 0.08);
+  }
+  .who-picked {
+    display: inline-flex;
+    gap: 2px;
+    margin-left: auto;
+  }
+  .tile .who-picked {
+    position: absolute;
+    bottom: 8px;
+    right: 8px;
+  }
+  .minus {
+    margin-left: 0.6em;
+    font-family: var(--font-display);
+    font-size: 0.9rem;
+    color: #ff9c86;
+  }
+  .spectate.out {
+    color: #ff9c86;
+    font-style: italic;
   }
   .spectate {
     margin: 0.6rem 0 0;
