@@ -6,8 +6,7 @@
   import { sfx } from '../lib/sound';
   import TimerRing from './TimerRing.svelte';
   import Avatar from './Avatar.svelte';
-
-  const GEMS = 'Lineage Gems';
+  import ArtImage from './ArtImage.svelte';
 
   const s = $derived(session.state!);
   const q = $derived(s.question!);
@@ -17,7 +16,6 @@
   const me = $derived(session.myPlayerId);
   // Guests only learn the answer (and the items behind the options) at the reveal.
   const item = $derived(q.itemId ? engine.byId.get(q.itemId) : undefined);
-  const gem = $derived(q.category === GEMS);
   const race = $derived(s.settings.mode === 'race');
   const canNext = $derived(!!reveal && (race ? session.isHost : mine || session.isHost));
   const myMiss = $derived(race && me ? q.misses.find((m) => m.playerId === me) : undefined);
@@ -41,7 +39,8 @@
       return { i, x: xs[cx], y: ys[cy], w: xs[cx + 1] - xs[cx], h: ys[cy + 1] - ys[cy] };
     });
   });
-  const aspect = $derived(media?.grid ? media.grid.w / media.grid.h : media?.art ? media.art.w / media.art.h : 1);
+  // Size of the art shown during the question: keeps the reveal from jumping.
+  const hint = $derived(media?.grid ?? media?.art ?? null);
 
   /** Race mode: who guessed which option wrong (and, once revealed, who won). */
   function markers(index: number) {
@@ -93,9 +92,9 @@
 
 <svelte:window onkeydown={onKey} />
 
-{#snippet stamp()}
+{#snippet stamp(inHead = false)}
   {#if reveal}
-    <div class="stamp" class:good={iWon} in:scale={{ start: 2.2, duration: 450, opacity: 0 }}>
+    <div class="stamp" class:in-head={inHead} class:good={iWon} in:scale={{ start: 2.2, duration: 450, opacity: 0 }}>
       {#if iWon}Correct{:else if race && winner}Too slow{:else if reveal.timedOut}Time's up{:else if race}No one{:else}Wrong{/if}
     </div>
   {/if}
@@ -181,6 +180,7 @@
             <span class="ibase">Which one is it?</span>
           {/if}
         </div>
+        {@render stamp(true)}
       </div>
       <div class="tiles" class:many={count > 4} class:six={count === 6}>
         {#each q.labels as _, i (i)}
@@ -195,9 +195,7 @@
           >
             <span class="key">{i + 1}</span>
             {#if src}
-              {#key src}
-                <img {src} alt="Option {i + 1}" class:gem draggable="false" in:fade={{ duration: 250 }} />
-              {/key}
+              <span class="pic"><ArtImage {src} alt="Option {i + 1}" scale={1.6} /></span>
             {:else}
               <span class="loading" aria-label="Loading"></span>
             {/if}
@@ -209,7 +207,7 @@
             {@render who(i)}
           </button>
         {/each}
-        {@render stamp()}
+        
       </div>
     </div>
     <div class="art-footer">{@render footer()}</div>
@@ -230,11 +228,12 @@
           {/if}
         </div>
         <div class="art">
-          <div class="frame" class:gem>
+          <div class="frame">
             {#if reveal && item}
-              <img class="shown" src={itemImage(item.id)} alt={item.name} draggable="false" in:fade={{ duration: 400 }} />
+              <ArtImage src={itemImage(item.id)} alt={item.name} w={hint?.w} h={hint?.h} float />
             {:else if media?.grid}
-              <div class="fit" style:--aspect={aspect}>
+              <span class="art-slot">
+              <span class="art-fit veil" style:--w={media.grid.w} style:--h={media.grid.h} style:--s={1.8}>
                 {#each cells as c (c.i)}
                   {@const t = media.tiles[c.i]}
                   <span
@@ -247,9 +246,10 @@
                     {#if t}<img src={t.url} alt="" draggable="false" />{/if}
                   </span>
                 {/each}
-              </div>
+              </span>
+              </span>
             {:else if media?.art}
-              <img class="shown" src={media.art.url} alt="The item to identify" draggable="false" in:fade={{ duration: 500 }} />
+              <ArtImage src={media.art.url} alt="The item to identify" w={media.art.w} h={media.art.h} float />
             {:else}
               <span class="loading big" aria-label="Loading"></span>
             {/if}
@@ -312,9 +312,13 @@
   .who {
     flex: 1;
     min-width: 0;
-    white-space: nowrap;
+    line-height: 1.25;
+    /* Up to two lines on narrow screens, then an ellipsis. */
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
     overflow: hidden;
-    text-overflow: ellipsis;
     font-style: italic;
     color: var(--muted);
   }
@@ -358,7 +362,6 @@
       linear-gradient(90deg, transparent, rgba(175, 96, 37, 0.35) 20%, rgba(175, 96, 37, 0.35) 80%, transparent),
       linear-gradient(180deg, #3b2412, #1c1008);
     border-bottom: 1px solid #6b4520;
-    overflow: hidden;
   }
   .head::before,
   .head::after {
@@ -419,28 +422,18 @@
     position: absolute;
     inset: 0;
     margin: auto;
-    width: 72%;
-    height: 80%;
+    width: 84%;
+    height: 86%;
     display: grid;
     place-items: center;
-    container-type: size;
   }
-  .frame.gem {
-    width: 42%;
-    height: 50%;
+  .frame > :global(.art-slot) {
+    position: absolute;
+    inset: 0;
   }
-  .art img.shown {
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
-    filter: drop-shadow(0 12px 25px rgba(0, 0, 0, 0.8));
-    animation: hover 5s ease-in-out 1s infinite;
-  }
-  /* Veiled art: stone tiles that turn into pieces of the picture as the host sends them. */
-  .fit {
+  .veil {
+    /* Tiles are absolutely positioned inside the box. */
     position: relative;
-    width: min(100cqw, calc(100cqh * var(--aspect)));
-    aspect-ratio: var(--aspect);
   }
   .cell {
     position: absolute;
@@ -484,11 +477,6 @@
       rotate: 360deg;
     }
   }
-  @keyframes hover {
-    50% {
-      translate: 0 -6px;
-    }
-  }
   .stamp {
     position: absolute;
     z-index: 2;
@@ -506,6 +494,13 @@
     border-radius: 3px;
     rotate: -8deg;
     background: rgba(0, 0, 0, 0.55);
+  }
+  .stamp.in-head {
+    bottom: auto;
+    top: 50%;
+    right: 44px;
+    translate: 0 -50%;
+    font-size: 0.95rem;
   }
   .stamp.good {
     color: var(--good);
@@ -649,19 +644,12 @@
   .tiles.many .tile {
     height: 200px;
   }
-  .tile img {
+  .pic {
+    display: block;
     flex: 1;
+    width: 92%;
     min-height: 0;
-    width: 90%;
-    object-fit: contain;
-    filter: drop-shadow(0 10px 20px rgba(0, 0, 0, 0.8));
     transition: transform 0.35s var(--ease-out);
-  }
-  .tile img.gem {
-    flex: none;
-    width: 78px;
-    height: 78px;
-    margin: auto;
   }
   .tile .key {
     position: absolute;
@@ -680,8 +668,8 @@
     border-color: var(--gold);
     box-shadow: inset 0 0 30px rgba(201, 164, 92, 0.18);
   }
-  .tile.mine:not(:disabled):hover img {
-    transform: scale(1.07);
+  .tile.mine:not(:disabled):hover .pic {
+    transform: scale(1.06);
   }
   .tile.pending {
     border-color: var(--gold);
@@ -816,7 +804,24 @@
       height: 230px;
     }
     .topline {
+      flex-wrap: wrap;
+      row-gap: 0.1rem;
+      min-height: 0;
       margin-bottom: 0.6rem;
+    }
+    .who {
+      order: 3;
+      flex-basis: 100%;
+      font-size: 0.95rem;
+    }
+    .chip {
+      margin-right: auto;
+    }
+    .stamp.in-head {
+      top: -10px;
+      right: 6px;
+      translate: none;
+      font-size: 0.72rem;
     }
     .option {
       padding: 0.75rem 0.9rem;

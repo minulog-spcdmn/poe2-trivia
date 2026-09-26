@@ -685,4 +685,27 @@
       grid-template-columns: 1fr;
     }
   }
+  @media (max-width: 520px) {
+    .code {
+      gap: 0.35rem;
+      align-items: center;
+    }
+    .glyph {
+      width: 38px;
+      height: 50px;
+      font-size: 1.6rem;
+    }
+    .eye {
+      position: static;
+      translate: none;
+      margin-left: 0.2rem;
+    }
+    .seg > button {
+      min-width: 40px;
+      padding: 0.45rem 0.45rem;
+    }
+    .seg {
+      gap: 0.3rem;
+    }
+  }
 </style>
