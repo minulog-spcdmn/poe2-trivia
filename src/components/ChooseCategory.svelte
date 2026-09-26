@@ -1,7 +1,7 @@
 <script lang="ts">
   import { cubicOut } from 'svelte/easing';
   import { session } from '../lib/session.svelte';
-  import { categoryIcon, categorySize } from '../lib/ui';
+  import { categoryIcon } from '../lib/ui';
   import { LOCKOUT_TURNS } from '../lib/game';
   import { sfx } from '../lib/sound';
 
@@ -58,7 +58,6 @@
           <span class="corner bl"></span><span class="corner br"></span>
           <span class="icon"><span class="glyph" style:--src="url('{categoryIcon(cat)}')"></span></span>
           <span class="title">{cat}</span>
-          <span class="count">{categorySize(cat)} uniques</span>
         </span>
       </button>
     {/each}
@@ -175,11 +174,6 @@
     color: var(--gold-hi);
     text-align: center;
     line-height: 1.2;
-  }
-  .count {
-    font-size: 0.85rem;
-    font-style: italic;
-    color: var(--muted);
   }
 
   .card.mine {

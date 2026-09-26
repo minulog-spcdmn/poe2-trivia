@@ -2,12 +2,17 @@
   import { flip } from 'svelte/animate';
   import { fly, scale } from 'svelte/transition';
   import { session, myId } from '../lib/session.svelte';
-  import { MAX_PLAYERS, MAX_NAME } from '../lib/game';
+  import { MAX_PLAYERS, MAX_NAME, type Difficulty } from '../lib/game';
   import { sfx } from '../lib/sound';
   import Avatar from './Avatar.svelte';
 
   const TIMERS = [0, 10, 15, 20, 30, 45];
   const TARGETS = [5, 10, 15, 20];
+  const DIFFS: { id: Difficulty; name: string; blurb: string }[] = [
+    { id: 'normal', name: 'Normal', blurb: 'Name the item from its art. Four names from the same category.' },
+    { id: 'cruel', name: 'Cruel', blurb: 'Decoys of the same kind (all rings, all bows…). Some questions ask you to find the art for a name.' },
+    { id: 'merciless', name: 'Merciless', blurb: 'Six options. Art starts as a close-up and slowly pulls back.' },
+  ];
 
   const s = $derived(session.state!);
   const isHost = $derived(session.isHost);
@@ -48,11 +53,16 @@
     sfx('click');
     session.dispatch({ type: 'settings', settings: { timer: v } });
   }
+  function setDifficulty(v: Difficulty) {
+    sfx('click');
+    session.dispatch({ type: 'settings', settings: { difficulty: v } });
+  }
   function start() {
     session.dispatch({ type: 'start' });
   }
 
   const canStart = $derived(s.players.length >= 1);
+  const difficulty = $derived(s.settings.difficulty ?? 'normal');
 </script>
 
 <div class="lobby">
@@ -131,6 +141,18 @@
       </div>
 
       <div class="setting">
+        <span class="label">Difficulty</span>
+        <div class="seg">
+          {#each DIFFS as d (d.id)}
+            <button class:on={difficulty === d.id} disabled={!isHost} onclick={() => setDifficulty(d.id)}>{d.name}</button>
+          {/each}
+        </div>
+        {#key difficulty}
+          <p class="blurb muted" in:fly={{ y: -4, duration: 250 }}>{DIFFS.find((d) => d.id === difficulty)?.blurb}</p>
+        {/key}
+      </div>
+
+      <div class="setting">
         <span class="label">Time per question</span>
         <div class="seg">
           {#each TIMERS as t (t)}
@@ -144,7 +166,7 @@
       <ul class="rules muted">
         <li>On your turn, choose one of three item categories.</li>
         <li>A category you pick is locked for your next two turns.</li>
-        <li>Name the unique from its art — four names, one is true.</li>
+        <li>Name the unique or lineage gem from its art — one answer is true.</li>
         <li>Correct answers score a point. First to {s.settings.targetScore} wins, once the round is finished.</li>
       </ul>
 
@@ -315,6 +337,12 @@
 
   .setting {
     margin-bottom: 1.2rem;
+  }
+  .blurb {
+    margin: 0.5rem 0 0;
+    font-size: 0.95rem;
+    font-style: italic;
+    min-height: 2.8em;
   }
   .seg {
     display: flex;

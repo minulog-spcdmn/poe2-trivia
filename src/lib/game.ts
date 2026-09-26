@@ -5,8 +5,33 @@ export interface Item {
   id: string;
   name: string;
   base: string;
+  /** Fine-grained class (Rings, Bows, Strength gems…) used for tough decoys. */
+  group: string;
+  /** Broad category offered to players. */
   category: string;
+  kind: 'unique' | 'gem';
 }
+
+export type Difficulty = 'normal' | 'cruel' | 'merciless';
+
+/** Name the item from its art, or pick the right art for a name. */
+export type QuestionMode = 'name' | 'art';
+
+export interface DifficultyRules {
+  options: number;
+  /** Share of decoys drawn from the answer's own group (rest: same category). */
+  sameGroup: number;
+  /** Chance of an "art" question instead of a "name" question. */
+  artChance: number;
+  /** Name questions start zoomed in on a detail and pull back over time. */
+  zoom: boolean;
+}
+
+export const DIFFICULTIES: Record<Difficulty, DifficultyRules> = {
+  normal: { options: 4, sameGroup: 0.4, artChance: 0, zoom: false },
+  cruel: { options: 4, sameGroup: 1, artChance: 0.4, zoom: false },
+  merciless: { options: 6, sameGroup: 1, artChance: 0.4, zoom: true },
+};
 
 export type Phase = 'lobby' | 'choosing' | 'question' | 'reveal' | 'over';
 
@@ -25,12 +50,18 @@ export interface Settings {
   targetScore: number;
   /** Seconds per question, 0 = no timer. */
   timer: number;
+  difficulty: Difficulty;
 }
 
 export interface Question {
   category: string;
+  mode: QuestionMode;
   itemId: string;
   options: string[];
+  /** Zoomed-in detail (percent focus point) for merciless name questions. */
+  zoom: { x: number; y: number } | null;
+  /** Host-clock timestamp when the question was asked. */
+  askedAt: number;
   /** Host-clock timestamp when time runs out, null without timer. */
   deadline: number | null;
 }
@@ -76,11 +107,10 @@ export type Action =
 
 export const LOCKOUT_TURNS = 2;
 export const OFFER_COUNT = 3;
-export const OPTION_COUNT = 4;
 export const MAX_PLAYERS = 12;
 export const MAX_NAME = 20;
 
-export const DEFAULT_SETTINGS: Settings = { targetScore: 10, timer: 20 };
+export const DEFAULT_SETTINGS: Settings = { targetScore: 10, timer: 20, difficulty: 'normal' };
 
 export class ActionError extends Error {}
 
@@ -205,7 +235,8 @@ export class Engine {
       case 'settings': {
         if (!isHost) throw new ActionError('Only the host can change settings.');
         if (s.phase !== 'lobby' && s.phase !== 'over') throw new ActionError('Settings are locked during a game.');
-        const { targetScore, timer } = action.settings;
+        const { targetScore, timer, difficulty } = action.settings;
+        if (difficulty && difficulty in DIFFICULTIES) s.settings.difficulty = difficulty;
         if (targetScore !== undefined) s.settings.targetScore = Math.max(1, Math.min(50, Math.round(targetScore)));
         if (timer !== undefined) s.settings.timer = Math.max(0, Math.min(120, Math.round(timer)));
         break;
@@ -329,21 +360,34 @@ export class Engine {
   }
 
   makeQuestion(s: GameState, category: string): Question {
+    const rules = DIFFICULTIES[s.settings.difficulty] ?? DIFFICULTIES.normal;
     const inCat = this.byCategory.get(category) ?? [];
     const unused = this.unusedIn(s, category);
     const answer = sample(unused.length ? unused : inCat, 1, this.rng)[0];
 
-    // Mix decoys: one or two from the same category, the rest from elsewhere.
-    const sameCount = Math.min(inCat.length - 1, 1 + Math.floor(this.rng() * 2));
-    const same = sample(inCat.filter((it) => it.id !== answer.id), sameCount, this.rng);
-    const taken = new Set([answer.id, ...same.map((it) => it.id)]);
-    const others = sample(
-      this.items.filter((it) => !taken.has(it.id) && it.category !== category),
-      OPTION_COUNT - 1 - same.length,
-      this.rng,
-    );
-    const options = shuffle([answer, ...same, ...others], this.rng).map((it) => it.id);
-    const deadline = s.settings.timer > 0 ? this.now() + s.settings.timer * 1000 : null;
-    return { category, itemId: answer.id, options, deadline };
+    // Decoys come from the same category; on harder settings from the very
+    // same group (all rings, all bows, all Strength gems…) where possible.
+    const need = rules.options - 1;
+    const sameGroup = inCat.filter((it) => it.id !== answer.id && it.group === answer.group);
+    const otherGroup = inCat.filter((it) => it.id !== answer.id && it.group !== answer.group);
+    const groupCount = Math.min(sameGroup.length, Math.round(need * rules.sameGroup));
+    const decoys = sample(sameGroup, groupCount, this.rng);
+    decoys.push(...sample(otherGroup, need - decoys.length, this.rng));
+    // Top up from the rest of the category, then (tiny categories only) anywhere.
+    for (const pool of [inCat, this.items]) {
+      if (decoys.length >= need) break;
+      const taken = new Set([answer.id, ...decoys.map((it) => it.id)]);
+      decoys.push(...sample(pool.filter((it) => !taken.has(it.id)), need - decoys.length, this.rng));
+    }
+
+    const options = shuffle([answer, ...decoys], this.rng).map((it) => it.id);
+    const mode: QuestionMode = this.rng() < rules.artChance ? 'art' : 'name';
+    const zoom =
+      rules.zoom && mode === 'name' && answer.kind === 'unique'
+        ? { x: 30 + Math.round(this.rng() * 40), y: 30 + Math.round(this.rng() * 40) }
+        : null;
+    const askedAt = this.now();
+    const deadline = s.settings.timer > 0 ? askedAt + s.settings.timer * 1000 : null;
+    return { category, mode, itemId: answer.id, options, zoom, askedAt, deadline };
   }
 }

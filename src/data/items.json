@@ -1,0 +1,4010 @@
+[
+ {
+  "id": "4f588a87bc12",
+  "name": "Ab Aeterno",
+  "base": "Grand Cuisses",
+  "group": "Boots",
+  "category": "Gloves & Boots",
+  "kind": "unique"
+ },
+ {
+  "id": "e32858890c3c",
+  "name": "Adonia's Ego",
+  "base": "Siphoning Wand",
+  "group": "Wands",
+  "category": "One-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "8d76fb43906f",
+  "name": "Aerisvane's Wings",
+  "base": "Burnished Gauntlets",
+  "group": "Gloves",
+  "category": "Gloves & Boots",
+  "kind": "unique"
+ },
+ {
+  "id": "b178533b1fdd",
+  "name": "Against the Darkness",
+  "base": "Time-Lost Diamond",
+  "group": "Jewels",
+  "category": "Flasks, Jewels & Relics",
+  "kind": "unique"
+ },
+ {
+  "id": "f1c40ceb7386",
+  "name": "Ahn's Citadel",
+  "base": "Intelligence Lineage Support",
+  "group": "Intelligence",
+  "category": "Lineage Gems",
+  "kind": "gem"
+ },
+ {
+  "id": "933c6b6b1088",
+  "name": "Ailith's Chimes",
+  "base": "Dexterity Lineage Support",
+  "group": "Dexterity",
+  "category": "Lineage Gems",
+  "kind": "gem"
+ },
+ {
+  "id": "e8da2b2374f9",
+  "name": "Alkem Eira",
+  "base": "Blazon Crest Shield",
+  "group": "Shields",
+  "category": "Off-Hands",
+  "kind": "unique"
+ },
+ {
+  "id": "bf98653c6cd8",
+  "name": "Alpha's Howl",
+  "base": "Armoured Cap",
+  "group": "Helmets",
+  "category": "Helmets",
+  "kind": "unique"
+ },
+ {
+  "id": "d0bc0e889831",
+  "name": "Amanamu's Tithe",
+  "base": "Strength Lineage Support",
+  "group": "Strength",
+  "category": "Lineage Gems",
+  "kind": "gem"
+ },
+ {
+  "id": "81a97c4bc419",
+  "name": "Amor Mandragora",
+  "base": "Changeling Talisman",
+  "group": "Talismans",
+  "category": "Off-Hands",
+  "kind": "unique"
+ },
+ {
+  "id": "907a51822f9e",
+  "name": "Andvarius",
+  "base": "Gold Ring",
+  "group": "Rings",
+  "category": "Rings",
+  "kind": "unique"
+ },
+ {
+  "id": "51369a1133cc",
+  "name": "Apep's Supremacy",
+  "base": "Voodoo Focus",
+  "group": "Foci",
+  "category": "Off-Hands",
+  "kind": "unique"
+ },
+ {
+  "id": "5638cbc262ed",
+  "name": "Apron of Emiran",
+  "base": "Hermit Garb",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ },
+ {
+  "id": "6e1a27543d9a",
+  "name": "Arakaali's Gift",
+  "base": "Antidote Charm",
+  "group": "Charms",
+  "category": "Flasks, Jewels & Relics",
+  "kind": "unique"
+ },
+ {
+  "id": "a04a9c3e53a1",
+  "name": "Arakaali's Lust",
+  "base": "Dexterity Lineage Support",
+  "group": "Dexterity",
+  "category": "Lineage Gems",
+  "kind": "gem"
+ },
+ {
+  "id": "8ee67aa6f0aa",
+  "name": "Arbiter's Ignition",
+  "base": "Intelligence Lineage Support",
+  "group": "Intelligence",
+  "category": "Lineage Gems",
+  "kind": "gem"
+ },
+ {
+  "id": "5022dba37aa6",
+  "name": "Arjun's Medal",
+  "base": "Dexterity Lineage Support",
+  "group": "Dexterity",
+  "category": "Lineage Gems",
+  "kind": "gem"
+ },
+ {
+  "id": "05401929b588",
+  "name": "Arvil's Wheel",
+  "base": "Hardwood Targe",
+  "group": "Shields",
+  "category": "Off-Hands",
+  "kind": "unique"
+ },
+ {
+  "id": "37a862103bc4",
+  "name": "Ashrend",
+  "base": "Pathfinder Coat",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ },
+ {
+  "id": "8aa091add210",
+  "name": "Asphyxia's Wrath",
+  "base": "Broadhead Quiver",
+  "group": "Quivers",
+  "category": "Off-Hands",
+  "kind": "unique"
+ },
+ {
+  "id": "5b8956df0e8f",
+  "name": "Assailum",
+  "base": "Closed Helm",
+  "group": "Helmets",
+  "category": "Helmets",
+  "kind": "unique"
+ },
+ {
+  "id": "94f4ace81a4f",
+  "name": "Astramentis",
+  "base": "Stellar Amulet",
+  "group": "Amulets",
+  "category": "Amulets & Belts",
+  "kind": "unique"
+ },
+ {
+  "id": "ed0ba809004d",
+  "name": "Atalui's Bloodletting",
+  "base": "Strength Lineage Support",
+  "group": "Strength",
+  "category": "Lineage Gems",
+  "kind": "gem"
+ },
+ {
+  "id": "5db60a586a75",
+  "name": "Atsak's Sight",
+  "base": "Veiled Mask",
+  "group": "Helmets",
+  "category": "Helmets",
+  "kind": "unique"
+ },
+ {
+  "id": "2179f5c4828b",
+  "name": "Atziri's Acuity",
+  "base": "Moulded Mitts",
+  "group": "Gloves",
+  "category": "Gloves & Boots",
+  "kind": "unique"
+ },
+ {
+  "id": "28ea2b89f3a9",
+  "name": "Atziri's Allure",
+  "base": "Intelligence Lineage Support",
+  "group": "Intelligence",
+  "category": "Lineage Gems",
+  "kind": "gem"
+ },
+ {
+  "id": "4665420e0204",
+  "name": "Atziri's Communion",
+  "base": "Intelligence Lineage Support",
+  "group": "Intelligence",
+  "category": "Lineage Gems",
+  "kind": "gem"
+ },
+ {
+  "id": "54368c513171",
+  "name": "Atziri's Contempt",
+  "base": "Pronged Spear",
+  "group": "Spears",
+  "category": "One-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "fdd229e0ddbd",
+  "name": "Atziri's Disdain",
+  "base": "Gold Circlet",
+  "group": "Helmets",
+  "category": "Helmets",
+  "kind": "unique"
+ },
+ {
+  "id": "dadef4ac72f1",
+  "name": "Atziri's Impatience",
+  "base": "Dexterity Lineage Support",
+  "group": "Dexterity",
+  "category": "Lineage Gems",
+  "kind": "gem"
+ },
+ {
+  "id": "99ab3902c996",
+  "name": "Atziri's Rule",
+  "base": "Reflecting Staff",
+  "group": "Staves",
+  "category": "Two-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "40a7ccbe7d71",
+  "name": "Atziri's Splendour",
+  "base": "Sacrificial Regalia",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ },
+ {
+  "id": "db39f26ae5fc",
+  "name": "Atziri's Step",
+  "base": "Cinched Boots",
+  "group": "Boots",
+  "category": "Gloves & Boots",
+  "kind": "unique"
+ },
+ {
+  "id": "11906f5bd18c",
+  "name": "Aurseize",
+  "base": "Layered Gauntlets",
+  "group": "Gloves",
+  "category": "Gloves & Boots",
+  "kind": "unique"
+ },
+ {
+  "id": "1e86c8e99c45",
+  "name": "Beacon of Azis",
+  "base": "Solar Amulet",
+  "group": "Amulets",
+  "category": "Amulets & Belts",
+  "kind": "unique"
+ },
+ {
+  "id": "570b7264aa34",
+  "name": "Beetlebite",
+  "base": "Velour Shoes",
+  "group": "Boots",
+  "category": "Gloves & Boots",
+  "kind": "unique"
+ },
+ {
+  "id": "058e625075ab",
+  "name": "Beira's Anguish",
+  "base": "Dousing Charm",
+  "group": "Charms",
+  "category": "Flasks, Jewels & Relics",
+  "kind": "unique"
+ },
+ {
+  "id": "4325723e8fa9",
+  "name": "Belly of the Beast",
+  "base": "Explorer Armour",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ },
+ {
+  "id": "4c76d3ecbb84",
+  "name": "Berek's Grip",
+  "base": "Two-Stone Ring",
+  "group": "Rings",
+  "category": "Rings",
+  "kind": "unique"
+ },
+ {
+  "id": "b764a39830f2",
+  "name": "Berek's Pass",
+  "base": "Two-Stone Ring",
+  "group": "Rings",
+  "category": "Rings",
+  "kind": "unique"
+ },
+ {
+  "id": "a0f8c77901f5",
+  "name": "Berek's Respite",
+  "base": "Two-Stone Ring",
+  "group": "Rings",
+  "category": "Rings",
+  "kind": "unique"
+ },
+ {
+  "id": "3fa73d7e117c",
+  "name": "Beyond Reach",
+  "base": "Visceral Quiver",
+  "group": "Quivers",
+  "category": "Off-Hands",
+  "kind": "unique"
+ },
+ {
+  "id": "8db1abe2d6eb",
+  "name": "Bhatair's Vengeance",
+  "base": "Intelligence Lineage Support",
+  "group": "Intelligence",
+  "category": "Lineage Gems",
+  "kind": "gem"
+ },
+ {
+  "id": "da94db47197e",
+  "name": "Bijouborne",
+  "base": "Double Belt",
+  "group": "Belts",
+  "category": "Amulets & Belts",
+  "kind": "unique"
+ },
+ {
+  "id": "7d2a1a662c61",
+  "name": "Birth of Fury",
+  "base": "Stone Greaves",
+  "group": "Boots",
+  "category": "Gloves & Boots",
+  "kind": "unique"
+ },
+ {
+  "id": "84585ffac27d",
+  "name": "Birthright Buckle",
+  "base": "Wide Belt",
+  "group": "Belts",
+  "category": "Amulets & Belts",
+  "kind": "unique"
+ },
+ {
+  "id": "8d10b79afbbf",
+  "name": "Bitterbloom",
+  "base": "Feathered Robe",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ },
+ {
+  "id": "6fb29f2a4c5f",
+  "name": "Black Sun Crest",
+  "base": "Wrapped Greathelm",
+  "group": "Helmets",
+  "category": "Helmets",
+  "kind": "unique"
+ },
+ {
+  "id": "a1c3673f1195",
+  "name": "Blackbraid",
+  "base": "Fur Plate",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ },
+ {
+  "id": "a2942c9f5312",
+  "name": "Blackflame",
+  "base": "Amethyst Ring",
+  "group": "Rings",
+  "category": "Rings",
+  "kind": "unique"
+ },
+ {
+  "id": "de24fc3fa77b",
+  "name": "Blackgleam",
+  "base": "Fire Quiver",
+  "group": "Quivers",
+  "category": "Off-Hands",
+  "kind": "unique"
+ },
+ {
+  "id": "6dec1e5b1ac0",
+  "name": "Blackheart",
+  "base": "Iron Ring",
+  "group": "Rings",
+  "category": "Rings",
+  "kind": "unique"
+ },
+ {
+  "id": "aca43930d0ad",
+  "name": "Blistering Bond",
+  "base": "Ruby Ring",
+  "group": "Rings",
+  "category": "Rings",
+  "kind": "unique"
+ },
+ {
+  "id": "2468a4dc74c1",
+  "name": "Blood of the Warrior",
+  "base": "Gargantuan Life Flask",
+  "group": "Flasks",
+  "category": "Flasks, Jewels & Relics",
+  "kind": "unique"
+ },
+ {
+  "id": "3e5fb1e1813d",
+  "name": "Blood Price",
+  "base": "Fierce Greathelm",
+  "group": "Helmets",
+  "category": "Helmets",
+  "kind": "unique"
+ },
+ {
+  "id": "ece0234cbb7d",
+  "name": "Bloodbarrier",
+  "base": "Iron Buckler",
+  "group": "Shields",
+  "category": "Off-Hands",
+  "kind": "unique"
+ },
+ {
+  "id": "a80b19d04c62",
+  "name": "Blueflame Bracers",
+  "base": "Goldcast Cuffs",
+  "group": "Gloves",
+  "category": "Gloves & Boots",
+  "kind": "unique"
+ },
+ {
+  "id": "9a1cd8bf4dfa",
+  "name": "Bones of Ullr",
+  "base": "Lattice Sandals",
+  "group": "Boots",
+  "category": "Gloves & Boots",
+  "kind": "unique"
+ },
+ {
+  "id": "97d5ad23b293",
+  "name": "Brain Rattler",
+  "base": "Studded Greatclub",
+  "group": "Two-Handed Maces",
+  "category": "Two-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "7bc38f84c211",
+  "name": "Bramblejack",
+  "base": "Rusted Cuirass",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ },
+ {
+  "id": "221d5a00b72c",
+  "name": "Breath of the Mountains",
+  "base": "Sapphire Charm",
+  "group": "Charms",
+  "category": "Flasks, Jewels & Relics",
+  "kind": "unique"
+ },
+ {
+  "id": "e832b12ae391",
+  "name": "Briarpatch",
+  "base": "Laced Boots",
+  "group": "Boots",
+  "category": "Gloves & Boots",
+  "kind": "unique"
+ },
+ {
+  "id": "2a885aef2f9d",
+  "name": "Briskwrap",
+  "base": "Rhoahide Coat",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ },
+ {
+  "id": "b7f9b1ccf64f",
+  "name": "Bristleboar",
+  "base": "Leather Vest",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ },
+ {
+  "id": "a77792436d1e",
+  "name": "Bronzebeard",
+  "base": "Horned Crown",
+  "group": "Helmets",
+  "category": "Helmets",
+  "kind": "unique"
+ },
+ {
+  "id": "2e7958a5d0be",
+  "name": "Brutus' Brain",
+  "base": "Strength Lineage Support",
+  "group": "Strength",
+  "category": "Lineage Gems",
+  "kind": "gem"
+ },
+ {
+  "id": "ab1185e0c96f",
+  "name": "Brutus' Lead Sprinkler",
+  "base": "Morning Star",
+  "group": "One-Handed Maces",
+  "category": "One-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "9c5790f038e0",
+  "name": "Brynhand's Mark",
+  "base": "Wooden Club",
+  "group": "One-Handed Maces",
+  "category": "One-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "aee960db07b9",
+  "name": "Bursting Decay",
+  "base": "Unset Ring",
+  "group": "Rings",
+  "category": "Rings",
+  "kind": "unique"
+ },
+ {
+  "id": "79ad5be5765d",
+  "name": "Bushwhack",
+  "base": "Lizardscale Boots",
+  "group": "Boots",
+  "category": "Gloves & Boots",
+  "kind": "unique"
+ },
+ {
+  "id": "375b71fc1196",
+  "name": "Byrnabas",
+  "base": "Wide Belt",
+  "group": "Belts",
+  "category": "Amulets & Belts",
+  "kind": "unique"
+ },
+ {
+  "id": "b03016d0e7bb",
+  "name": "Cadiro's Gambit",
+  "base": "Primed Quiver",
+  "group": "Quivers",
+  "category": "Off-Hands",
+  "kind": "unique"
+ },
+ {
+  "id": "5dc79d215b2b",
+  "name": "Calgyra's Arc",
+  "base": "Ornate Buckler",
+  "group": "Shields",
+  "category": "Off-Hands",
+  "kind": "unique"
+ },
+ {
+  "id": "1f86b3d29596",
+  "name": "Call of the Brotherhood",
+  "base": "Topaz Ring",
+  "group": "Rings",
+  "category": "Rings",
+  "kind": "unique"
+ },
+ {
+  "id": "ac29a4e89297",
+  "name": "Candlemaker",
+  "base": "Sombre Gloves",
+  "group": "Gloves",
+  "category": "Gloves & Boots",
+  "kind": "unique"
+ },
+ {
+  "id": "deaf8d505379",
+  "name": "Carnage Heart",
+  "base": "Amber Amulet",
+  "group": "Amulets",
+  "category": "Amulets & Belts",
+  "kind": "unique"
+ },
+ {
+  "id": "5a8792b84aa2",
+  "name": "Carrion Call",
+  "base": "Engraved Focus",
+  "group": "Foci",
+  "category": "Off-Hands",
+  "kind": "unique"
+ },
+ {
+  "id": "9999291b4aa7",
+  "name": "Cat O' Nine Tails",
+  "base": "Utility Belt",
+  "group": "Belts",
+  "category": "Amulets & Belts",
+  "kind": "unique"
+ },
+ {
+  "id": "7a47614adc5f",
+  "name": "Chainsting",
+  "base": "Hunting Spear",
+  "group": "Spears",
+  "category": "One-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "25e4fae1e844",
+  "name": "Chernobog's Pillar",
+  "base": "Blacksteel Tower Shield",
+  "group": "Shields",
+  "category": "Off-Hands",
+  "kind": "unique"
+ },
+ {
+  "id": "f37cc68f4a67",
+  "name": "Chober Chaber",
+  "base": "Leaden Greathammer",
+  "group": "Two-Handed Maces",
+  "category": "Two-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "ba35c92031c0",
+  "name": "Choir of the Storm",
+  "base": "Jade Amulet",
+  "group": "Amulets",
+  "category": "Amulets & Belts",
+  "kind": "unique"
+ },
+ {
+  "id": "233a6cbb703e",
+  "name": "Cirel's Cultivation",
+  "base": "Strength Lineage Support",
+  "group": "Strength",
+  "category": "Lineage Gems",
+  "kind": "gem"
+ },
+ {
+  "id": "f5ac6cae05d9",
+  "name": "Clear Skies",
+  "base": "Delirium Tablet",
+  "group": "Tablets",
+  "category": "Flasks, Jewels & Relics",
+  "kind": "unique"
+ },
+ {
+  "id": "89059fe1dace",
+  "name": "Cloak of Defiance",
+  "base": "Havoc Raiment",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ },
+ {
+  "id": "a69cda6db488",
+  "name": "Cloak of Flame",
+  "base": "Silk Robe",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ },
+ {
+  "id": "f82af83e3130",
+  "name": "Coat of Red",
+  "base": "Chain Mail",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ },
+ {
+  "id": "27ca2492e998",
+  "name": "Collapsing Horizon",
+  "base": "Wyrm Quarterstaff",
+  "group": "Quarterstaves",
+  "category": "Two-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "c2efa4231764",
+  "name": "Constricting Command",
+  "base": "Viper Cap",
+  "group": "Helmets",
+  "category": "Helmets",
+  "kind": "unique"
+ },
+ {
+  "id": "0f4bf9d0e5aa",
+  "name": "Controlled Metamorphosis",
+  "base": "Diamond",
+  "group": "Jewels",
+  "category": "Flasks, Jewels & Relics",
+  "kind": "unique"
+ },
+ {
+  "id": "78cde4b7c5d9",
+  "name": "Cornathaum",
+  "base": "Heavy Crown",
+  "group": "Helmets",
+  "category": "Helmets",
+  "kind": "unique"
+ },
+ {
+  "id": "7c1b0e5f67ee",
+  "name": "Corona of the Red Sun",
+  "base": "Warrior Greathelm",
+  "group": "Helmets",
+  "category": "Helmets",
+  "kind": "unique"
+ },
+ {
+  "id": "06f73aa87c8a",
+  "name": "Corpsewade",
+  "base": "Iron Greaves",
+  "group": "Boots",
+  "category": "Gloves & Boots",
+  "kind": "unique"
+ },
+ {
+  "id": "0a363ca6253f",
+  "name": "Cospri's Will",
+  "base": "Assassin Garb",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ },
+ {
+  "id": "dac8c9b59855",
+  "name": "Couture of Crimson",
+  "base": "Gilded Vestments",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ },
+ {
+  "id": "192de59bbc78",
+  "name": "Coward's Legacy",
+  "base": "Mail Belt",
+  "group": "Belts",
+  "category": "Amulets & Belts",
+  "kind": "unique"
+ },
+ {
+  "id": "b43bbfffad4f",
+  "name": "Cracklecreep",
+  "base": "Ruby Ring",
+  "group": "Rings",
+  "category": "Rings",
+  "kind": "unique"
+ },
+ {
+  "id": "c06bd6784083",
+  "name": "Crest of Ardura",
+  "base": "Jingling Crest Shield",
+  "group": "Shields",
+  "category": "Off-Hands",
+  "kind": "unique"
+ },
+ {
+  "id": "43de45b68e25",
+  "name": "Crown of Eyes",
+  "base": "Vermeil Circlet",
+  "group": "Helmets",
+  "category": "Helmets",
+  "kind": "unique"
+ },
+ {
+  "id": "d5d799b8e1bb",
+  "name": "Crown of the Pale King",
+  "base": "Cultist Crown",
+  "group": "Helmets",
+  "category": "Helmets",
+  "kind": "unique"
+ },
+ {
+  "id": "8120bb4155d2",
+  "name": "Crown of the Victor",
+  "base": "Iron Crown",
+  "group": "Helmets",
+  "category": "Helmets",
+  "kind": "unique"
+ },
+ {
+  "id": "d5d4b5c8a431",
+  "name": "Crown of Thorns",
+  "base": "Twig Circlet",
+  "group": "Helmets",
+  "category": "Helmets",
+  "kind": "unique"
+ },
+ {
+  "id": "8a90f6b7b36b",
+  "name": "Cruel Hegemony",
+  "base": "Overseer Tablet",
+  "group": "Tablets",
+  "category": "Flasks, Jewels & Relics",
+  "kind": "unique"
+ },
+ {
+  "id": "c01d3f996f19",
+  "name": "Cursecarver",
+  "base": "Acrid Wand",
+  "group": "Wands",
+  "category": "One-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "4c4fa1f7c6c1",
+  "name": "Daevata's Wind",
+  "base": "War Spear",
+  "group": "Spears",
+  "category": "One-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "24c1ee9e72f5",
+  "name": "Daresso's Passion",
+  "base": "Strength Lineage Support",
+  "group": "Strength",
+  "category": "Lineage Gems",
+  "kind": "gem"
+ },
+ {
+  "id": "3d2222cb4868",
+  "name": "Darkness Enthroned",
+  "base": "Fine Belt",
+  "group": "Belts",
+  "category": "Amulets & Belts",
+  "kind": "unique"
+ },
+ {
+  "id": "5bfd334027a8",
+  "name": "Darkray Vectors",
+  "base": "Braced Sabatons",
+  "group": "Boots",
+  "category": "Gloves & Boots",
+  "kind": "unique"
+ },
+ {
+  "id": "7665fff1950c",
+  "name": "Death Articulated",
+  "base": "Ornate Gauntlets",
+  "group": "Gloves",
+  "category": "Gloves & Boots",
+  "kind": "unique"
+ },
+ {
+  "id": "8e8049a0c7ca",
+  "name": "Death Rush",
+  "base": "Emerald Ring",
+  "group": "Rings",
+  "category": "Rings",
+  "kind": "unique"
+ },
+ {
+  "id": "37f09680f1fb",
+  "name": "Death's Harp",
+  "base": "Dualstring Bow",
+  "group": "Bows",
+  "category": "Two-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "c064f17d9f49",
+  "name": "Deathblow",
+  "base": "Doubled Gauntlets",
+  "group": "Gloves",
+  "category": "Gloves & Boots",
+  "kind": "unique"
+ },
+ {
+  "id": "9f0ff1c9866f",
+  "name": "Deathrattle",
+  "base": "Twig Focus",
+  "group": "Foci",
+  "category": "Off-Hands",
+  "kind": "unique"
+ },
+ {
+  "id": "2c92fa20e56a",
+  "name": "Decree of Acuity",
+  "base": "Ancient Visor",
+  "group": "Helmets",
+  "category": "Helmets",
+  "kind": "unique"
+ },
+ {
+  "id": "206ebd45c31e",
+  "name": "Decree of Flight",
+  "base": "Ancient Leggings",
+  "group": "Boots",
+  "category": "Gloves & Boots",
+  "kind": "unique"
+ },
+ {
+  "id": "304ce3e1c8b2",
+  "name": "Decree of Loyalty",
+  "base": "Ancient Mail",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ },
+ {
+  "id": "47aaa33d8b54",
+  "name": "Defiance of Destiny",
+  "base": "Jade Amulet",
+  "group": "Amulets",
+  "category": "Amulets & Belts",
+  "kind": "unique"
+ },
+ {
+  "id": "4420771a9bf2",
+  "name": "Deidbell",
+  "base": "Elite Greathelm",
+  "group": "Helmets",
+  "category": "Helmets",
+  "kind": "unique"
+ },
+ {
+  "id": "ffcf734cc952",
+  "name": "Demon Stitcher",
+  "base": "Intricate Gloves",
+  "group": "Gloves",
+  "category": "Gloves & Boots",
+  "kind": "unique"
+ },
+ {
+  "id": "ba3d06e849c1",
+  "name": "Dialla's Desire",
+  "base": "Intelligence Lineage Support",
+  "group": "Intelligence",
+  "category": "Lineage Gems",
+  "kind": "gem"
+ },
+ {
+  "id": "76ac663e4183",
+  "name": "Dionadair",
+  "base": "Splintered Tower Shield",
+  "group": "Shields",
+  "category": "Off-Hands",
+  "kind": "unique"
+ },
+ {
+  "id": "baef780531b7",
+  "name": "Doedre's Damning",
+  "base": "Lazuli Ring",
+  "group": "Rings",
+  "category": "Rings",
+  "kind": "unique"
+ },
+ {
+  "id": "eb0d0c80afb1",
+  "name": "Doedre's Tenure",
+  "base": "Stitched Gloves",
+  "group": "Gloves",
+  "category": "Gloves & Boots",
+  "kind": "unique"
+ },
+ {
+  "id": "7c019a1927f8",
+  "name": "Doedre's Undoing",
+  "base": "Intelligence Lineage Support",
+  "group": "Intelligence",
+  "category": "Lineage Gems",
+  "kind": "gem"
+ },
+ {
+  "id": "a15a5fff5645",
+  "name": "Dominus' Grasp",
+  "base": "Dexterity Lineage Support",
+  "group": "Dexterity",
+  "category": "Lineage Gems",
+  "kind": "gem"
+ },
+ {
+  "id": "93f61c79642d",
+  "name": "Doomfletch",
+  "base": "Composite Bow",
+  "group": "Bows",
+  "category": "Two-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "9a0039fbf7c0",
+  "name": "Doomgate",
+  "base": "Braced Tower Shield",
+  "group": "Shields",
+  "category": "Off-Hands",
+  "kind": "unique"
+ },
+ {
+  "id": "e8abfcf400cd",
+  "name": "Doryani's Prototype",
+  "base": "Scale Mail",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ },
+ {
+  "id": "8c2c019674cc",
+  "name": "Double Vision",
+  "base": "Dyad Crossbow",
+  "group": "Crossbows",
+  "category": "Two-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "c26284f7833c",
+  "name": "Dreadfist",
+  "base": "Bolstered Mitts",
+  "group": "Gloves",
+  "category": "Gloves & Boots",
+  "kind": "unique"
+ },
+ {
+  "id": "e868e2358abf",
+  "name": "Dream Fragments",
+  "base": "Sapphire Ring",
+  "group": "Rings",
+  "category": "Rings",
+  "kind": "unique"
+ },
+ {
+  "id": "643f2ad64b17",
+  "name": "Drillneck",
+  "base": "Penetrating Quiver",
+  "group": "Quivers",
+  "category": "Off-Hands",
+  "kind": "unique"
+ },
+ {
+  "id": "4aee53c4b5ac",
+  "name": "Duality",
+  "base": "Warding Quarterstaff",
+  "group": "Quarterstaves",
+  "category": "Two-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "1dd1ed3b3159",
+  "name": "Dunkelhalt",
+  "base": "Leather Buckler",
+  "group": "Shields",
+  "category": "Off-Hands",
+  "kind": "unique"
+ },
+ {
+  "id": "32e33eb3cc6f",
+  "name": "Dusk Vigil",
+  "base": "Ashen Staff",
+  "group": "Staves",
+  "category": "Two-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "c9251d8fde69",
+  "name": "Dustbloom",
+  "base": "Studded Vest",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ },
+ {
+  "id": "4181a324d73d",
+  "name": "Earthbound",
+  "base": "Voltaic Staff",
+  "group": "Staves",
+  "category": "Two-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "440f13f87d4f",
+  "name": "Edyrn's Tusks",
+  "base": "Iron Cuirass",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ },
+ {
+  "id": "f0e9cbc5f0b8",
+  "name": "Effigy of Cruelty",
+  "base": "Antler Focus",
+  "group": "Foci",
+  "category": "Off-Hands",
+  "kind": "unique"
+ },
+ {
+  "id": "588a923fea82",
+  "name": "Einhar's Beastrite",
+  "base": "Strength Lineage Support",
+  "group": "Strength",
+  "category": "Lineage Gems",
+  "kind": "gem"
+ },
+ {
+  "id": "d34d3d913522",
+  "name": "Elevore",
+  "base": "Hunter Hood",
+  "group": "Helmets",
+  "category": "Helmets",
+  "kind": "unique"
+ },
+ {
+  "id": "9c04db4ae6d6",
+  "name": "Empire's Grasp",
+  "base": "Titan Mitts",
+  "group": "Gloves",
+  "category": "Gloves & Boots",
+  "kind": "unique"
+ },
+ {
+  "id": "dce9092df754",
+  "name": "Enezun's Charge",
+  "base": "Volatile Wand",
+  "group": "Wands",
+  "category": "One-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "d8ab30b90618",
+  "name": "Enfolding Dawn",
+  "base": "Pilgrim Vestments",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ },
+ {
+  "id": "248a0195cc18",
+  "name": "Eonyr's Thunder",
+  "base": "Dexterity Lineage Support",
+  "group": "Dexterity",
+  "category": "Lineage Gems",
+  "kind": "gem"
+ },
+ {
+  "id": "a56dcc0d7f02",
+  "name": "Erian's Cobble",
+  "base": "Guarded Helm",
+  "group": "Helmets",
+  "category": "Helmets",
+  "kind": "unique"
+ },
+ {
+  "id": "9d10294069b0",
+  "name": "Esh's Radiance",
+  "base": "Intelligence Lineage Support",
+  "group": "Intelligence",
+  "category": "Lineage Gems",
+  "kind": "gem"
+ },
+ {
+  "id": "100b627b87ef",
+  "name": "Eshtera's Path",
+  "base": "Ring",
+  "group": "Rings",
+  "category": "Rings",
+  "kind": "unique"
+ },
+ {
+  "id": "b86f57f2ecd4",
+  "name": "Essentia Sanguis",
+  "base": "Furtive Wraps",
+  "group": "Gloves",
+  "category": "Gloves & Boots",
+  "kind": "unique"
+ },
+ {
+  "id": "4878a5b21e61",
+  "name": "Eventide Petals",
+  "base": "Veridical Chain",
+  "group": "Amulets",
+  "category": "Amulets & Belts",
+  "kind": "unique"
+ },
+ {
+  "id": "730279b88c45",
+  "name": "Evergrasping Ring",
+  "base": "Pearl Ring",
+  "group": "Rings",
+  "category": "Rings",
+  "kind": "unique"
+ },
+ {
+  "id": "b87de1744def",
+  "name": "Eye of Chayula",
+  "base": "Gold Amulet",
+  "group": "Amulets",
+  "category": "Amulets & Belts",
+  "kind": "unique"
+ },
+ {
+  "id": "f0ce799af122",
+  "name": "Eyes of the Runefather",
+  "base": "Venerable Defender",
+  "group": "Shields",
+  "category": "Off-Hands",
+  "kind": "unique"
+ },
+ {
+  "id": "89a40def56e7",
+  "name": "Ezomyte Peak",
+  "base": "Soldier Greathelm",
+  "group": "Helmets",
+  "category": "Helmets",
+  "kind": "unique"
+ },
+ {
+  "id": "25d396682631",
+  "name": "Facebreaker",
+  "base": "Stocky Mitts",
+  "group": "Gloves",
+  "category": "Gloves & Boots",
+  "kind": "unique"
+ },
+ {
+  "id": "d3f7b34e0989",
+  "name": "Fairgraves' Curse",
+  "base": "Artillery Bow",
+  "group": "Bows",
+  "category": "Two-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "45fe2df79546",
+  "name": "Feathered Fortress",
+  "base": "Crescent Targe",
+  "group": "Shields",
+  "category": "Off-Hands",
+  "kind": "unique"
+ },
+ {
+  "id": "eaad6e22351f",
+  "name": "Fireflower",
+  "base": "Solar Amulet",
+  "group": "Amulets",
+  "category": "Amulets & Belts",
+  "kind": "unique"
+ },
+ {
+  "id": "ad216bf81ae5",
+  "name": "Fixation of Yix",
+  "base": "Stellar Amulet",
+  "group": "Amulets",
+  "category": "Amulets & Belts",
+  "kind": "unique"
+ },
+ {
+  "id": "e0bd86251bff",
+  "name": "Flesh Crucible",
+  "base": "Diamond",
+  "group": "Jewels",
+  "category": "Flasks, Jewels & Relics",
+  "kind": "unique"
+ },
+ {
+  "id": "93bc96912f76",
+  "name": "Font of Power",
+  "base": "Omen Sceptre",
+  "group": "Sceptres",
+  "category": "One-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "ab7a06ef2287",
+  "name": "For Utopia",
+  "base": "Stone Charm",
+  "group": "Charms",
+  "category": "Flasks, Jewels & Relics",
+  "kind": "unique"
+ },
+ {
+  "id": "930740f46b47",
+  "name": "Forgotten Warden",
+  "base": "Primal Markings",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ },
+ {
+  "id": "b46dca8c26f5",
+  "name": "Forsaken Bangle",
+  "base": "Amethyst Charm",
+  "group": "Charms",
+  "category": "Flasks, Jewels & Relics",
+  "kind": "unique"
+ },
+ {
+  "id": "cbd914670fe0",
+  "name": "Foxshade",
+  "base": "Quilted Vest",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ },
+ {
+  "id": "3ca87824a005",
+  "name": "Freedom of Faith",
+  "base": "Ritual Tablet",
+  "group": "Tablets",
+  "category": "Flasks, Jewels & Relics",
+  "kind": "unique"
+ },
+ {
+  "id": "3f4aad71cedd",
+  "name": "From Nothing",
+  "base": "Diamond",
+  "group": "Jewels",
+  "category": "Flasks, Jewels & Relics",
+  "kind": "unique"
+ },
+ {
+  "id": "b3a817084ead",
+  "name": "Frostbreath",
+  "base": "Slim Mace",
+  "group": "One-Handed Maces",
+  "category": "One-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "5705c92af128",
+  "name": "Fury of the King",
+  "base": "Ashbark Talisman",
+  "group": "Talismans",
+  "category": "Off-Hands",
+  "kind": "unique"
+ },
+ {
+  "id": "d2bac5811822",
+  "name": "Gamblesprint",
+  "base": "Embossed Boots",
+  "group": "Boots",
+  "category": "Gloves & Boots",
+  "kind": "unique"
+ },
+ {
+  "id": "8a2ddff21fd7",
+  "name": "Garukhan's Resolve",
+  "base": "Dexterity Lineage Support",
+  "group": "Dexterity",
+  "category": "Lineage Gems",
+  "kind": "gem"
+ },
+ {
+  "id": "601aeb8512bb",
+  "name": "Geofri's Sanctuary",
+  "base": "Revered Vestments",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ },
+ {
+  "id": "ffe9672e2cd3",
+  "name": "Ghostmarch",
+  "base": "Threaded Shoes",
+  "group": "Boots",
+  "category": "Gloves & Boots",
+  "kind": "unique"
+ },
+ {
+  "id": "5e393dfb73a4",
+  "name": "Ghostwrithe",
+  "base": "Tattered Robe",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ },
+ {
+  "id": "6227b38ae7e1",
+  "name": "Gifts from Above",
+  "base": "Prismatic Ring",
+  "group": "Rings",
+  "category": "Rings",
+  "kind": "unique"
+ },
+ {
+  "id": "d134384fa530",
+  "name": "Glimpse of Chaos",
+  "base": "Tribal Mask",
+  "group": "Helmets",
+  "category": "Helmets",
+  "kind": "unique"
+ },
+ {
+  "id": "f089860d3a4b",
+  "name": "Gloamgown",
+  "base": "Elementalist Robe",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ },
+ {
+  "id": "96452c902857",
+  "name": "Gloomform",
+  "base": "Waxed Jacket",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ },
+ {
+  "id": "8ba839e3f28b",
+  "name": "Glowswarm",
+  "base": "Lazuli Ring",
+  "group": "Rings",
+  "category": "Rings",
+  "kind": "unique"
+ },
+ {
+  "id": "2a55be471802",
+  "name": "Goldrim",
+  "base": "Felt Cap",
+  "group": "Helmets",
+  "category": "Helmets",
+  "kind": "unique"
+ },
+ {
+  "id": "7df07c17d979",
+  "name": "Goregirdle",
+  "base": "Plate Belt",
+  "group": "Belts",
+  "category": "Amulets & Belts",
+  "kind": "unique"
+ },
+ {
+  "id": "b33f8dfd7d5a",
+  "name": "Grand Spectrum",
+  "base": "Ruby",
+  "group": "Jewels",
+  "category": "Flasks, Jewels & Relics",
+  "kind": "unique"
+ },
+ {
+  "id": "749e1e15a9b6",
+  "name": "Gravebind",
+  "base": "Rope Cuffs",
+  "group": "Gloves",
+  "category": "Gloves & Boots",
+  "kind": "unique"
+ },
+ {
+  "id": "f25e20a3ba4f",
+  "name": "Greed's Embrace",
+  "base": "Vaal Cuirass",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ },
+ {
+  "id": "b74034572338",
+  "name": "Greymake",
+  "base": "Brimmed Helm",
+  "group": "Helmets",
+  "category": "Helmets",
+  "kind": "unique"
+ },
+ {
+  "id": "c3d2b023fc33",
+  "name": "Grip of Kulemak",
+  "base": "Abyssal Signet",
+  "group": "Rings",
+  "category": "Rings",
+  "kind": "unique"
+ },
+ {
+  "id": "f032b8547e53",
+  "name": "Grip of Winter",
+  "base": "Firm Bracers",
+  "group": "Gloves",
+  "category": "Gloves & Boots",
+  "kind": "unique"
+ },
+ {
+  "id": "11e7c3373a38",
+  "name": "Guatelitzi's Ablation",
+  "base": "Intelligence Lineage Support",
+  "group": "Intelligence",
+  "category": "Lineage Gems",
+  "kind": "gem"
+ },
+ {
+  "id": "e859d7657b55",
+  "name": "Guiding Palm of the Eye",
+  "base": "Shrine Sceptre",
+  "group": "Sceptres",
+  "category": "One-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "c00c39a6bc8a",
+  "name": "Guiding Palm of the Heart",
+  "base": "Shrine Sceptre",
+  "group": "Sceptres",
+  "category": "One-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "18e62d3d50a5",
+  "name": "Guiding Palm of the Mind",
+  "base": "Shrine Sceptre",
+  "group": "Sceptres",
+  "category": "One-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "57fd6259ef23",
+  "name": "Hand of Wisdom and Action",
+  "base": "Spiral Wraps",
+  "group": "Gloves",
+  "category": "Gloves & Boots",
+  "kind": "unique"
+ },
+ {
+  "id": "c8cf54619ff0",
+  "name": "Hateforge",
+  "base": "Moulded Mitts",
+  "group": "Gloves",
+  "category": "Gloves & Boots",
+  "kind": "unique"
+ },
+ {
+  "id": "bc2c33891216",
+  "name": "Hayoxi's Fulmination",
+  "base": "Intelligence Lineage Support",
+  "group": "Intelligence",
+  "category": "Lineage Gems",
+  "kind": "gem"
+ },
+ {
+  "id": "0935a2ea4b46",
+  "name": "Headhunter",
+  "base": "Heavy Belt",
+  "group": "Belts",
+  "category": "Amulets & Belts",
+  "kind": "unique"
+ },
+ {
+  "id": "e4b01d50ead7",
+  "name": "Heart of the Well",
+  "base": "Diamond",
+  "group": "Jewels",
+  "category": "Flasks, Jewels & Relics",
+  "kind": "unique"
+ },
+ {
+  "id": "c7101ac7e2d0",
+  "name": "Heartbound Loop",
+  "base": "Pearl Ring",
+  "group": "Rings",
+  "category": "Rings",
+  "kind": "unique"
+ },
+ {
+  "id": "25333e2b87c9",
+  "name": "Heatshiver",
+  "base": "Velvet Cap",
+  "group": "Helmets",
+  "category": "Helmets",
+  "kind": "unique"
+ },
+ {
+  "id": "8f292598f1d7",
+  "name": "Helbrym's Hide",
+  "base": "Strength Lineage Support",
+  "group": "Strength",
+  "category": "Lineage Gems",
+  "kind": "gem"
+ },
+ {
+  "id": "11fdf376093e",
+  "name": "Heroic Tragedy",
+  "base": "Timeless Jewel",
+  "group": "Jewels",
+  "category": "Flasks, Jewels & Relics",
+  "kind": "unique"
+ },
+ {
+  "id": "300dbe04b4eb",
+  "name": "Hinekora's Sight",
+  "base": "Stellar Amulet",
+  "group": "Amulets",
+  "category": "Amulets & Belts",
+  "kind": "unique"
+ },
+ {
+  "id": "33b52b8003ae",
+  "name": "Hoghunt",
+  "base": "Felled Greatclub",
+  "group": "Two-Handed Maces",
+  "category": "Two-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "fc5d4dab13a2",
+  "name": "Horns of Bynden",
+  "base": "Rusted Greathelm",
+  "group": "Helmets",
+  "category": "Helmets",
+  "kind": "unique"
+ },
+ {
+  "id": "7cf8dc7e8497",
+  "name": "Horror's Flight",
+  "base": "Engraved Bracers",
+  "group": "Gloves",
+  "category": "Gloves & Boots",
+  "kind": "unique"
+ },
+ {
+  "id": "f479766b095c",
+  "name": "Hrimnor's Hymn",
+  "base": "Oak Greathammer",
+  "group": "Two-Handed Maces",
+  "category": "Two-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "957149bb83b3",
+  "name": "Hyrri's Ire",
+  "base": "Armoured Vest",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ },
+ {
+  "id": "54b81c4346cf",
+  "name": "Hysseg's Claw",
+  "base": "Familial Talisman",
+  "group": "Talismans",
+  "category": "Off-Hands",
+  "kind": "unique"
+ },
+ {
+  "id": "6152ba7949fd",
+  "name": "Icefang Orbit",
+  "base": "Iron Ring",
+  "group": "Rings",
+  "category": "Rings",
+  "kind": "unique"
+ },
+ {
+  "id": "9b37fc127e9a",
+  "name": "Icetomb",
+  "base": "Mail Vestments",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ },
+ {
+  "id": "19817beebd08",
+  "name": "Idle Hands",
+  "base": "Sectioned Bracers",
+  "group": "Gloves",
+  "category": "Gloves & Boots",
+  "kind": "unique"
+ },
+ {
+  "id": "046a3c82b0c1",
+  "name": "Idol of Uldurn",
+  "base": "Crimson Amulet",
+  "group": "Amulets",
+  "category": "Amulets & Belts",
+  "kind": "unique"
+ },
+ {
+  "id": "fba4392de436",
+  "name": "Igniferis",
+  "base": "Crimson Amulet",
+  "group": "Amulets",
+  "category": "Amulets & Belts",
+  "kind": "unique"
+ },
+ {
+  "id": "e0df07d12dee",
+  "name": "Immaculate Adherence",
+  "base": "Solar Amulet",
+  "group": "Amulets",
+  "category": "Amulets & Belts",
+  "kind": "unique"
+ },
+ {
+  "id": "49a78cbbc318",
+  "name": "Indigon",
+  "base": "Magus Tiara",
+  "group": "Helmets",
+  "category": "Helmets",
+  "kind": "unique"
+ },
+ {
+  "id": "6c868f3fcde4",
+  "name": "Ingenuity",
+  "base": "Utility Belt",
+  "group": "Belts",
+  "category": "Amulets & Belts",
+  "kind": "unique"
+ },
+ {
+  "id": "c3051b59f287",
+  "name": "Innsmouth",
+  "base": "Shabby Hood",
+  "group": "Helmets",
+  "category": "Helmets",
+  "kind": "unique"
+ },
+ {
+  "id": "b85b81fe5dfa",
+  "name": "Ironbound",
+  "base": "Warden Bow",
+  "group": "Bows",
+  "category": "Two-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "a5d4a1597f2e",
+  "name": "Irongrasp",
+  "base": "Vagabond Armour",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ },
+ {
+  "id": "b607e9c24422",
+  "name": "Ironride",
+  "base": "Visored Helm",
+  "group": "Helmets",
+  "category": "Helmets",
+  "kind": "unique"
+ },
+ {
+  "id": "a922853d7006",
+  "name": "Ixchel's Torment",
+  "base": "Intelligence Lineage Support",
+  "group": "Intelligence",
+  "category": "Lineage Gems",
+  "kind": "gem"
+ },
+ {
+  "id": "4f0e3f22346f",
+  "name": "Jarngreipr",
+  "base": "Ringmail Gauntlets",
+  "group": "Gloves",
+  "category": "Gloves & Boots",
+  "kind": "unique"
+ },
+ {
+  "id": "6b0178d1cca7",
+  "name": "Kalandra's Touch",
+  "base": "Ring",
+  "group": "Rings",
+  "category": "Rings",
+  "kind": "unique"
+ },
+ {
+  "id": "edf0562576f4",
+  "name": "Kalisa's Crescendo",
+  "base": "Intelligence Lineage Support",
+  "group": "Intelligence",
+  "category": "Lineage Gems",
+  "kind": "gem"
+ },
+ {
+  "id": "0d1277950474",
+  "name": "Kaltenhalt",
+  "base": "Ridged Buckler",
+  "group": "Shields",
+  "category": "Off-Hands",
+  "kind": "unique"
+ },
+ {
+  "id": "14132808f4f4",
+  "name": "Kaom's Heart",
+  "base": "Conqueror Plate",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ },
+ {
+  "id": "bfb7506ea7ff",
+  "name": "Kaom's Madness",
+  "base": "Strength Lineage Support",
+  "group": "Strength",
+  "category": "Lineage Gems",
+  "kind": "gem"
+ },
+ {
+  "id": "2c10304a148e",
+  "name": "Keelhaul",
+  "base": "Linen Belt",
+  "group": "Belts",
+  "category": "Amulets & Belts",
+  "kind": "unique"
+ },
+ {
+  "id": "9b72afedce81",
+  "name": "Keeper of the Arc",
+  "base": "Spiritbone Crown",
+  "group": "Helmets",
+  "category": "Helmets",
+  "kind": "unique"
+ },
+ {
+  "id": "99168ed376f3",
+  "name": "Khatal's Rejuvenation",
+  "base": "Intelligence Lineage Support",
+  "group": "Intelligence",
+  "category": "Lineage Gems",
+  "kind": "gem"
+ },
+ {
+  "id": "a4a9418eab55",
+  "name": "Killjoy",
+  "base": "Linen Wraps",
+  "group": "Gloves",
+  "category": "Gloves & Boots",
+  "kind": "unique"
+ },
+ {
+  "id": "6edd5cefac6b",
+  "name": "Kingsguard",
+  "base": "Full Plate",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ },
+ {
+  "id": "ae75143d1a0b",
+  "name": "Kitoko's Current",
+  "base": "Jewelled Gloves",
+  "group": "Gloves",
+  "category": "Gloves & Boots",
+  "kind": "unique"
+ },
+ {
+  "id": "5d8ac6f643aa",
+  "name": "Kulemak's Dominion",
+  "base": "Intelligence Lineage Support",
+  "group": "Intelligence",
+  "category": "Lineage Gems",
+  "kind": "gem"
+ },
+ {
+  "id": "abd425914d08",
+  "name": "Kurgal's Leash",
+  "base": "Intelligence Lineage Support",
+  "group": "Intelligence",
+  "category": "Lineage Gems",
+  "kind": "gem"
+ },
+ {
+  "id": "ff7655a64061",
+  "name": "Lavianga's Spirits",
+  "base": "Gargantuan Mana Flask",
+  "group": "Flasks",
+  "category": "Flasks, Jewels & Relics",
+  "kind": "unique"
+ },
+ {
+  "id": "74c612a15393",
+  "name": "Leer Cast",
+  "base": "Hooded Mask",
+  "group": "Helmets",
+  "category": "Helmets",
+  "kind": "unique"
+ },
+ {
+  "id": "eefd601bd9ab",
+  "name": "Legionstride",
+  "base": "Rough Greaves",
+  "group": "Boots",
+  "category": "Gloves & Boots",
+  "kind": "unique"
+ },
+ {
+  "id": "70ff97e3453d",
+  "name": "Leopold's Applause",
+  "base": "Embroidered Gloves",
+  "group": "Gloves",
+  "category": "Gloves & Boots",
+  "kind": "unique"
+ },
+ {
+  "id": "679f7c9a9204",
+  "name": "Levinstone",
+  "base": "Topaz Ring",
+  "group": "Rings",
+  "category": "Rings",
+  "kind": "unique"
+ },
+ {
+  "id": "e93f752db9f4",
+  "name": "Lifesprig",
+  "base": "Attuned Wand",
+  "group": "Wands",
+  "category": "One-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "5833c899c5fa",
+  "name": "Lightning Coil",
+  "base": "Ancestral Mail",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ },
+ {
+  "id": "ef04dbeba21a",
+  "name": "Ligurium Talisman",
+  "base": "Lapis Amulet",
+  "group": "Amulets",
+  "category": "Amulets & Belts",
+  "kind": "unique"
+ },
+ {
+  "id": "5d0224565378",
+  "name": "Liminal Coil",
+  "base": "Twisted Wand",
+  "group": "Wands",
+  "category": "One-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "6c9c82f16702",
+  "name": "Lioneye's Glare",
+  "base": "Heavy Bow",
+  "group": "Bows",
+  "category": "Two-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "f8b9bcba7641",
+  "name": "Lochtonial Caress",
+  "base": "Tempered Mitts",
+  "group": "Gloves",
+  "category": "Gloves & Boots",
+  "kind": "unique"
+ },
+ {
+  "id": "030a3b82a11c",
+  "name": "Loreweave",
+  "base": "Ornate Ringmail",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ },
+ {
+  "id": "81aa73afbc3f",
+  "name": "Luminous Pace",
+  "base": "Straw Sandals",
+  "group": "Boots",
+  "category": "Gloves & Boots",
+  "kind": "unique"
+ },
+ {
+  "id": "b6ef5d18c80e",
+  "name": "Lycosidae",
+  "base": "Rampart Tower Shield",
+  "group": "Shields",
+  "category": "Off-Hands",
+  "kind": "unique"
+ },
+ {
+  "id": "addddbd50fac",
+  "name": "Mageblood",
+  "base": "Utility Belt",
+  "group": "Belts",
+  "category": "Amulets & Belts",
+  "kind": "unique"
+ },
+ {
+  "id": "ef965ca275aa",
+  "name": "Mahuxotl's Machination",
+  "base": "Omen Crest Shield",
+  "group": "Shields",
+  "category": "Off-Hands",
+  "kind": "unique"
+ },
+ {
+  "id": "4fbe9975131f",
+  "name": "Maligaro's Virtuosity",
+  "base": "Fine Bracers",
+  "group": "Gloves",
+  "category": "Gloves & Boots",
+  "kind": "unique"
+ },
+ {
+  "id": "5ca3c2e16d2f",
+  "name": "Marohi Erqi",
+  "base": "Totemic Greatclub",
+  "group": "Two-Handed Maces",
+  "category": "Two-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "c25f52ce56db",
+  "name": "Mask of the Sanguimancer",
+  "base": "Face Mask",
+  "group": "Helmets",
+  "category": "Helmets",
+  "kind": "unique"
+ },
+ {
+  "id": "40331c6c7020",
+  "name": "Mask of the Stitched Demon",
+  "base": "Feathered Tiara",
+  "group": "Helmets",
+  "category": "Helmets",
+  "kind": "unique"
+ },
+ {
+  "id": "eaa50b80e7d9",
+  "name": "Mastered Domain",
+  "base": "Irradiated Tablet",
+  "group": "Tablets",
+  "category": "Flasks, Jewels & Relics",
+  "kind": "unique"
+ },
+ {
+  "id": "c6194772a7ae",
+  "name": "Matsya",
+  "base": "Crescent Quarterstaff",
+  "group": "Quarterstaves",
+  "category": "Two-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "857038c53cc5",
+  "name": "Megalomaniac",
+  "base": "Diamond",
+  "group": "Jewels",
+  "category": "Flasks, Jewels & Relics",
+  "kind": "unique"
+ },
+ {
+  "id": "59d7b9060308",
+  "name": "Meginord's Girdle",
+  "base": "Rawhide Belt",
+  "group": "Belts",
+  "category": "Amulets & Belts",
+  "kind": "unique"
+ },
+ {
+  "id": "9f3142546cea",
+  "name": "Melting Maelstrom",
+  "base": "Ultimate Mana Flask",
+  "group": "Flasks",
+  "category": "Flasks, Jewels & Relics",
+  "kind": "unique"
+ },
+ {
+  "id": "f086b105b3f7",
+  "name": "Midnight Braid",
+  "base": "Rawhide Belt",
+  "group": "Belts",
+  "category": "Amulets & Belts",
+  "kind": "unique"
+ },
+ {
+  "id": "651bc6ae08fa",
+  "name": "Mind of the Council",
+  "base": "Death Mask",
+  "group": "Helmets",
+  "category": "Helmets",
+  "kind": "unique"
+ },
+ {
+  "id": "91c4a9584d33",
+  "name": "Ming's Heart",
+  "base": "Amethyst Ring",
+  "group": "Rings",
+  "category": "Rings",
+  "kind": "unique"
+ },
+ {
+  "id": "f81a427cbab9",
+  "name": "Mist Whisper",
+  "base": "Makeshift Crossbow",
+  "group": "Crossbows",
+  "category": "Two-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "69ac4fd0fc5d",
+  "name": "Mjölner",
+  "base": "Torment Club",
+  "group": "One-Handed Maces",
+  "category": "One-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "0b6a4d19944d",
+  "name": "Morgana's Tempest",
+  "base": "Intelligence Lineage Support",
+  "group": "Intelligence",
+  "category": "Lineage Gems",
+  "kind": "gem"
+ },
+ {
+  "id": "d46c72643d2c",
+  "name": "Morior Invictus",
+  "base": "Grand Regalia",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ },
+ {
+  "id": "d62923244136",
+  "name": "Murkshaft",
+  "base": "Toxic Quiver",
+  "group": "Quivers",
+  "category": "Off-Hands",
+  "kind": "unique"
+ },
+ {
+  "id": "003c0a1b99d8",
+  "name": "Myris Uxor",
+  "base": "Covert Hood",
+  "group": "Helmets",
+  "category": "Helmets",
+  "kind": "unique"
+ },
+ {
+  "id": "3065fdb501ed",
+  "name": "Nascent Hope",
+  "base": "Thawing Charm",
+  "group": "Charms",
+  "category": "Flasks, Jewels & Relics",
+  "kind": "unique"
+ },
+ {
+  "id": "7f0484f708ad",
+  "name": "Nazir's Judgement",
+  "base": "Steelpoint Quarterstaff",
+  "group": "Quarterstaves",
+  "category": "Two-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "aafd2b87ee75",
+  "name": "Nebuloch",
+  "base": "Execratus Hammer",
+  "group": "One-Handed Maces",
+  "category": "One-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "5f35012b324b",
+  "name": "Necromantle",
+  "base": "Bone Raiment",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ },
+ {
+  "id": "89d43b072cb7",
+  "name": "Ngamahu's Chosen",
+  "base": "Ruby Charm",
+  "group": "Charms",
+  "category": "Flasks, Jewels & Relics",
+  "kind": "unique"
+ },
+ {
+  "id": "25ab466cb6de",
+  "name": "Nightfall",
+  "base": "Glacial Fortress",
+  "group": "Shields",
+  "category": "Off-Hands",
+  "kind": "unique"
+ },
+ {
+  "id": "5472d9b10ebb",
+  "name": "Nightscale",
+  "base": "Pauascale Gloves",
+  "group": "Gloves",
+  "category": "Gloves & Boots",
+  "kind": "unique"
+ },
+ {
+  "id": "75a2b75af089",
+  "name": "Nocturne",
+  "base": "Wooden Buckler",
+  "group": "Shields",
+  "category": "Off-Hands",
+  "kind": "unique"
+ },
+ {
+  "id": "df0a9f62c75a",
+  "name": "Northpaw",
+  "base": "Suede Bracers",
+  "group": "Gloves",
+  "category": "Gloves & Boots",
+  "kind": "unique"
+ },
+ {
+  "id": "e684cf3ec640",
+  "name": "Oaksworn",
+  "base": "Sigil Crest Shield",
+  "group": "Shields",
+  "category": "Off-Hands",
+  "kind": "unique"
+ },
+ {
+  "id": "0774ad207a95",
+  "name": "Obern's Bastion",
+  "base": "Stacked Sabatons",
+  "group": "Boots",
+  "category": "Gloves & Boots",
+  "kind": "unique"
+ },
+ {
+  "id": "02f6df1b8eba",
+  "name": "Oisín's Oath",
+  "base": "Intelligence Lineage Support",
+  "group": "Intelligence",
+  "category": "Lineage Gems",
+  "kind": "gem"
+ },
+ {
+  "id": "8ff9c95204fb",
+  "name": "Olroth's Resolve",
+  "base": "Ultimate Life Flask",
+  "group": "Flasks",
+  "category": "Flasks, Jewels & Relics",
+  "kind": "unique"
+ },
+ {
+  "id": "3212f9d1046a",
+  "name": "Olrovasara",
+  "base": "Torment Club",
+  "group": "One-Handed Maces",
+  "category": "One-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "ff325cb88fd1",
+  "name": "Opportunity",
+  "base": "Ultimate Life Flask",
+  "group": "Flasks",
+  "category": "Flasks, Jewels & Relics",
+  "kind": "unique"
+ },
+ {
+  "id": "d2da58e8c1d3",
+  "name": "Original Sin",
+  "base": "Amethyst Ring",
+  "group": "Rings",
+  "category": "Rings",
+  "kind": "unique"
+ },
+ {
+  "id": "a2539c6dfcfe",
+  "name": "Painter's Servant",
+  "base": "Torn Gloves",
+  "group": "Gloves",
+  "category": "Gloves & Boots",
+  "kind": "unique"
+ },
+ {
+  "id": "a57b54a0214f",
+  "name": "Palm of the Dreamer",
+  "base": "Shrine Sceptre",
+  "group": "Sceptres",
+  "category": "One-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "a93f4027dacf",
+  "name": "Paquate's Pact",
+  "base": "Strength Lineage Support",
+  "group": "Strength",
+  "category": "Lineage Gems",
+  "kind": "gem"
+ },
+ {
+  "id": "a8ffd53b8dbf",
+  "name": "Pariah's Embrace",
+  "base": "Cloaked Mail",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ },
+ {
+  "id": "f5657f8f17fa",
+  "name": "Perandus Seal",
+  "base": "Gold Ring",
+  "group": "Rings",
+  "category": "Rings",
+  "kind": "unique"
+ },
+ {
+  "id": "4ea0adf31a4f",
+  "name": "Perfidy",
+  "base": "Knight Armour",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ },
+ {
+  "id": "8672dd3c51d9",
+  "name": "Periphery",
+  "base": "Heartwood Shortbow",
+  "group": "Bows",
+  "category": "Two-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "3444f0e641aa",
+  "name": "Pillar of the Caged God",
+  "base": "Long Quarterstaff",
+  "group": "Quarterstaves",
+  "category": "Two-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "bca5e9c95f6f",
+  "name": "Plaguefinger",
+  "base": "Gauze Wraps",
+  "group": "Gloves",
+  "category": "Gloves & Boots",
+  "kind": "unique"
+ },
+ {
+  "id": "9be25d726ebb",
+  "name": "Polcirkeln",
+  "base": "Sapphire Ring",
+  "group": "Rings",
+  "category": "Rings",
+  "kind": "unique"
+ },
+ {
+  "id": "c0ad9d434415",
+  "name": "Powertread",
+  "base": "Hunting Shoes",
+  "group": "Boots",
+  "category": "Gloves & Boots",
+  "kind": "unique"
+ },
+ {
+  "id": "0fc7088f0100",
+  "name": "Pragmatism",
+  "base": "Explorer Armour",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ },
+ {
+  "id": "ea8bbec43a99",
+  "name": "Prayers for Rain",
+  "base": "Keth Raiment",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ },
+ {
+  "id": "9253d4eec3ab",
+  "name": "Prism Guardian",
+  "base": "Intricate Crest Shield",
+  "group": "Shields",
+  "category": "Off-Hands",
+  "kind": "unique"
+ },
+ {
+  "id": "3597d8e0552b",
+  "name": "Prism of Belief",
+  "base": "Diamond",
+  "group": "Jewels",
+  "category": "Flasks, Jewels & Relics",
+  "kind": "unique"
+ },
+ {
+  "id": "b144b6de86aa",
+  "name": "Prized Pain",
+  "base": "Iron Ring",
+  "group": "Rings",
+  "category": "Rings",
+  "kind": "unique"
+ },
+ {
+  "id": "9871e65d6e5e",
+  "name": "Quatl's Molt",
+  "base": "Serpentscale Coat",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ },
+ {
+  "id": "2856566502ba",
+  "name": "Quecholli",
+  "base": "Crumbling Maul",
+  "group": "Two-Handed Maces",
+  "category": "Two-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "873d9acc4fb8",
+  "name": "Queen of the Forest",
+  "base": "Smuggler Coat",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ },
+ {
+  "id": "cbd4c5e22f26",
+  "name": "Quill Rain",
+  "base": "Shortbow",
+  "group": "Bows",
+  "category": "Two-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "7ef4d570e23b",
+  "name": "Radiant Grief",
+  "base": "Lace Hood",
+  "group": "Helmets",
+  "category": "Helmets",
+  "kind": "unique"
+ },
+ {
+  "id": "f2b3d43315a7",
+  "name": "Rakiata's Flow",
+  "base": "Dexterity Lineage Support",
+  "group": "Dexterity",
+  "category": "Lineage Gems",
+  "kind": "gem"
+ },
+ {
+  "id": "c496d16cb6c6",
+  "name": "Rampart Raptor",
+  "base": "Tense Crossbow",
+  "group": "Crossbows",
+  "category": "Two-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "0814a9e92ed1",
+  "name": "Ratha's Assault",
+  "base": "Dexterity Lineage Support",
+  "group": "Dexterity",
+  "category": "Lineage Gems",
+  "kind": "gem"
+ },
+ {
+  "id": "ac4e2cc6dc02",
+  "name": "Rathpith Globe",
+  "base": "Sacred Focus",
+  "group": "Foci",
+  "category": "Off-Hands",
+  "kind": "unique"
+ },
+ {
+  "id": "d8a95ced68ef",
+  "name": "Rearguard",
+  "base": "Blunt Quiver",
+  "group": "Quivers",
+  "category": "Off-Hands",
+  "kind": "unique"
+ },
+ {
+  "id": "fdfee2778444",
+  "name": "Redblade Banner",
+  "base": "Heraldric Tower Shield",
+  "group": "Shields",
+  "category": "Off-Hands",
+  "kind": "unique"
+ },
+ {
+  "id": "843604af0c6d",
+  "name": "Redemption",
+  "base": "Trarthan Cannon",
+  "group": "Crossbows",
+  "category": "Two-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "699f67636e80",
+  "name": "Redflare Conduit",
+  "base": "Anchorite Garb",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ },
+ {
+  "id": "15909f147e15",
+  "name": "Revered Resin",
+  "base": "Amber Amulet",
+  "group": "Amulets",
+  "category": "Amulets & Belts",
+  "kind": "unique"
+ },
+ {
+  "id": "855c78e5d48d",
+  "name": "Reverie",
+  "base": "Shaman Mantle",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ },
+ {
+  "id": "478f44b3c174",
+  "name": "Rigwald's Ferocity",
+  "base": "Dexterity Lineage Support",
+  "group": "Dexterity",
+  "category": "Lineage Gems",
+  "kind": "gem"
+ },
+ {
+  "id": "d9349487da29",
+  "name": "Rise of the Phoenix",
+  "base": "Omen Crest Shield",
+  "group": "Shields",
+  "category": "Off-Hands",
+  "kind": "unique"
+ },
+ {
+  "id": "71da674cacb5",
+  "name": "Rite of Passage",
+  "base": "Golden Charm",
+  "group": "Charms",
+  "category": "Flasks, Jewels & Relics",
+  "kind": "unique"
+ },
+ {
+  "id": "3576afb713bb",
+  "name": "Romira's Requital",
+  "base": "Intelligence Lineage Support",
+  "group": "Intelligence",
+  "category": "Lineage Gems",
+  "kind": "gem"
+ },
+ {
+  "id": "dc1054a43d37",
+  "name": "Rondel de Ezo",
+  "base": "Plated Buckler",
+  "group": "Shields",
+  "category": "Off-Hands",
+  "kind": "unique"
+ },
+ {
+  "id": "4a6a87219073",
+  "name": "Rondel of Fragility",
+  "base": "Lunar Amulet",
+  "group": "Amulets",
+  "category": "Amulets & Belts",
+  "kind": "unique"
+ },
+ {
+  "id": "65212e0a77e0",
+  "name": "Runeseeker's Call",
+  "base": "Runic Fork",
+  "group": "Wands",
+  "category": "One-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "23f3dbb2fcaf",
+  "name": "Ryslatha's Coil",
+  "base": "Ornate Belt",
+  "group": "Belts",
+  "category": "Amulets & Belts",
+  "kind": "unique"
+ },
+ {
+  "id": "0f239bcb12ab",
+  "name": "Sacred Flame",
+  "base": "Shrine Sceptre",
+  "group": "Sceptres",
+  "category": "One-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "842670079f9f",
+  "name": "Sacrosanctum",
+  "base": "Corvus Mantle",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ },
+ {
+  "id": "38c99026f32e",
+  "name": "Sadist's Mercy",
+  "base": "Flanged Mace",
+  "group": "One-Handed Maces",
+  "category": "One-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "9f6070b769d5",
+  "name": "Saffell's Frame",
+  "base": "Emblem Crest Shield",
+  "group": "Shields",
+  "category": "Off-Hands",
+  "kind": "unique"
+ },
+ {
+  "id": "14630ee29cfe",
+  "name": "Safrin's Resolve",
+  "base": "Ring",
+  "group": "Rings",
+  "category": "Rings",
+  "kind": "unique"
+ },
+ {
+  "id": "d18177d0c027",
+  "name": "Saitha's Spear",
+  "base": "Barbed Spear",
+  "group": "Spears",
+  "category": "One-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "4c5427f4b33d",
+  "name": "Sands of Silk",
+  "base": "Shrouded Vest",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ },
+ {
+  "id": "de0a9b94eb21",
+  "name": "Sandstorm Visage",
+  "base": "Chain Tiara",
+  "group": "Helmets",
+  "category": "Helmets",
+  "kind": "unique"
+ },
+ {
+  "id": "9123fd2e246a",
+  "name": "Sanguine Diviner",
+  "base": "Bone Wand",
+  "group": "Wands",
+  "category": "One-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "f0c992bd1e00",
+  "name": "Sanguis Heroum",
+  "base": "Staunching Charm",
+  "group": "Charms",
+  "category": "Flasks, Jewels & Relics",
+  "kind": "unique"
+ },
+ {
+  "id": "d56ba5e80778",
+  "name": "Scold's Bridle",
+  "base": "Jade Tiara",
+  "group": "Helmets",
+  "category": "Helmets",
+  "kind": "unique"
+ },
+ {
+  "id": "b7859add995b",
+  "name": "Sculpted Suffering",
+  "base": "Warpick",
+  "group": "One-Handed Maces",
+  "category": "One-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "d335262c4637",
+  "name": "Season of the Hunt",
+  "base": "Overseer Tablet",
+  "group": "Tablets",
+  "category": "Flasks, Jewels & Relics",
+  "kind": "unique"
+ },
+ {
+  "id": "2e640f23115f",
+  "name": "Seed of Cataclysm",
+  "base": "Lazuli Ring",
+  "group": "Rings",
+  "category": "Rings",
+  "kind": "unique"
+ },
+ {
+  "id": "8d2f21ccdf22",
+  "name": "Seeing Stars",
+  "base": "Marching Mace",
+  "group": "One-Handed Maces",
+  "category": "One-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "5cafb8b410b1",
+  "name": "Serle's Grit",
+  "base": "Kalguuran Forgehammer",
+  "group": "One-Handed Maces",
+  "category": "One-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "306430ec854d",
+  "name": "Serpent's Egg",
+  "base": "Gold Amulet",
+  "group": "Amulets",
+  "category": "Amulets & Belts",
+  "kind": "unique"
+ },
+ {
+  "id": "fdbe6b58fd44",
+  "name": "Serpent's Lesson",
+  "base": "Tonal Focus",
+  "group": "Foci",
+  "category": "Off-Hands",
+  "kind": "unique"
+ },
+ {
+  "id": "8001d764b90f",
+  "name": "Shackles of the Wretched",
+  "base": "Aged Cuffs",
+  "group": "Gloves",
+  "category": "Gloves & Boots",
+  "kind": "unique"
+ },
+ {
+  "id": "636292e0cfe2",
+  "name": "Shankgonne",
+  "base": "Covered Sabatons",
+  "group": "Boots",
+  "category": "Gloves & Boots",
+  "kind": "unique"
+ },
+ {
+  "id": "9d72aa0e9955",
+  "name": "Shavronne's Satchel",
+  "base": "Fine Belt",
+  "group": "Belts",
+  "category": "Amulets & Belts",
+  "kind": "unique"
+ },
+ {
+  "id": "a8156ad9def5",
+  "name": "Shyaba",
+  "base": "Temple Maul",
+  "group": "Two-Handed Maces",
+  "category": "Two-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "ab27902173a8",
+  "name": "Sierran Inheritance",
+  "base": "Marabout Garb",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ },
+ {
+  "id": "abea6bdac912",
+  "name": "Silks of Veneration",
+  "base": "Enlightened Robe",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ },
+ {
+  "id": "59e7bfae75f1",
+  "name": "Silverthorne",
+  "base": "Spiked Buckler",
+  "group": "Shields",
+  "category": "Off-Hands",
+  "kind": "unique"
+ },
+ {
+  "id": "7698b966c0c2",
+  "name": "Sine Aequo",
+  "base": "Grand Manchettes",
+  "group": "Gloves",
+  "category": "Gloves & Boots",
+  "kind": "unique"
+ },
+ {
+  "id": "5e0a10bc067d",
+  "name": "Sione's Temper",
+  "base": "Intelligence Lineage Support",
+  "group": "Intelligence",
+  "category": "Lineage Gems",
+  "kind": "gem"
+ },
+ {
+  "id": "631f9b5ebcee",
+  "name": "Sire of Shards",
+  "base": "Chiming Staff",
+  "group": "Staves",
+  "category": "Two-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "8189db7084f7",
+  "name": "Skin of the Loyal",
+  "base": "Garment",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ },
+ {
+  "id": "f4633b05a59c",
+  "name": "Skysliver",
+  "base": "Winged Spear",
+  "group": "Spears",
+  "category": "One-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "dac33be0e803",
+  "name": "Slivertongue",
+  "base": "Zealot Bow",
+  "group": "Bows",
+  "category": "Two-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "d39921d38d4d",
+  "name": "Snakebite",
+  "base": "Spined Bracers",
+  "group": "Gloves",
+  "category": "Gloves & Boots",
+  "kind": "unique"
+ },
+ {
+  "id": "f5d133fcf480",
+  "name": "Snakepit",
+  "base": "Pearl Ring",
+  "group": "Rings",
+  "category": "Rings",
+  "kind": "unique"
+ },
+ {
+  "id": "73b444437b6e",
+  "name": "Solus Ipse",
+  "base": "Grand Visage",
+  "group": "Helmets",
+  "category": "Helmets",
+  "kind": "unique"
+ },
+ {
+  "id": "ffd22a92fa4c",
+  "name": "Soul Mantle",
+  "base": "Sacrificial Mantle",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ },
+ {
+  "id": "5a69bd848508",
+  "name": "Soul Tether",
+  "base": "Long Belt",
+  "group": "Belts",
+  "category": "Amulets & Belts",
+  "kind": "unique"
+ },
+ {
+  "id": "7b8ff39baa1e",
+  "name": "Spire of Ire",
+  "base": "Helix Spear",
+  "group": "Spears",
+  "category": "One-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "c7aa444d97be",
+  "name": "Spiteful Floret",
+  "base": "Nettle Talisman",
+  "group": "Talismans",
+  "category": "Off-Hands",
+  "kind": "unique"
+ },
+ {
+  "id": "adf1a3dc2592",
+  "name": "Splinter of Lorrata",
+  "base": "Hardwood Spear",
+  "group": "Spears",
+  "category": "One-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "dc300be7c478",
+  "name": "Splinterheart",
+  "base": "Recurve Bow",
+  "group": "Bows",
+  "category": "Two-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "086aee8ff3fc",
+  "name": "Split Personality",
+  "base": "Ruby",
+  "group": "Jewels",
+  "category": "Flasks, Jewels & Relics",
+  "kind": "unique"
+ },
+ {
+  "id": "4d10228336b3",
+  "name": "Starkonja's Head",
+  "base": "Leatherbound Hood",
+  "group": "Helmets",
+  "category": "Helmets",
+  "kind": "unique"
+ },
+ {
+  "id": "7c84eaf6be23",
+  "name": "Stone of Lazhwar",
+  "base": "Lapis Amulet",
+  "group": "Amulets",
+  "category": "Amulets & Belts",
+  "kind": "unique"
+ },
+ {
+  "id": "d6e85d560ead",
+  "name": "Strugglescream",
+  "base": "Stellar Amulet",
+  "group": "Amulets",
+  "category": "Amulets & Belts",
+  "kind": "unique"
+ },
+ {
+  "id": "c2f82341f783",
+  "name": "Sunsplinter",
+  "base": "Array Buckler",
+  "group": "Shields",
+  "category": "Off-Hands",
+  "kind": "unique"
+ },
+ {
+  "id": "260655501963",
+  "name": "Surefooted Sigil",
+  "base": "Jade Amulet",
+  "group": "Amulets",
+  "category": "Amulets & Belts",
+  "kind": "unique"
+ },
+ {
+  "id": "802588dcd545",
+  "name": "Surge of the Tide",
+  "base": "Lumbering Talisman",
+  "group": "Talismans",
+  "category": "Off-Hands",
+  "kind": "unique"
+ },
+ {
+  "id": "f111011b80c2",
+  "name": "Svalinn",
+  "base": "Crucible Tower Shield",
+  "group": "Shields",
+  "category": "Off-Hands",
+  "kind": "unique"
+ },
+ {
+  "id": "8d3c44201220",
+  "name": "Sylvan's Effigy",
+  "base": "Stoic Sceptre",
+  "group": "Sceptres",
+  "category": "One-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "809fe60ba29a",
+  "name": "Tabula Rasa",
+  "base": "Garment",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ },
+ {
+  "id": "e0a4f334867c",
+  "name": "Tacati's Ire",
+  "base": "Dexterity Lineage Support",
+  "group": "Dexterity",
+  "category": "Lineage Gems",
+  "kind": "gem"
+ },
+ {
+  "id": "45f921c94d35",
+  "name": "Tangletongue",
+  "base": "Forked Spear",
+  "group": "Spears",
+  "category": "One-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "1149f60ad0f6",
+  "name": "Taryn's Shiver",
+  "base": "Gelid Staff",
+  "group": "Staves",
+  "category": "Two-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "5a3f582074d1",
+  "name": "Tasalio's Rhythm",
+  "base": "Dexterity Lineage Support",
+  "group": "Dexterity",
+  "category": "Lineage Gems",
+  "kind": "gem"
+ },
+ {
+  "id": "e3edc33ba727",
+  "name": "Tawhoa's Tending",
+  "base": "Strength Lineage Support",
+  "group": "Strength",
+  "category": "Lineage Gems",
+  "kind": "gem"
+ },
+ {
+  "id": "a0409cac27d8",
+  "name": "Tecrod's Revenge",
+  "base": "Intelligence Lineage Support",
+  "group": "Intelligence",
+  "category": "Lineage Gems",
+  "kind": "gem"
+ },
+ {
+  "id": "e15115c55ea0",
+  "name": "Temporalis",
+  "base": "Silk Robe",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ },
+ {
+  "id": "64f5dbaa6227",
+  "name": "Tetzlapokal's Desire",
+  "base": "Votive Raiment",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ },
+ {
+  "id": "0e8d8b4b2cf4",
+  "name": "The Adorned",
+  "base": "Diamond",
+  "group": "Jewels",
+  "category": "Flasks, Jewels & Relics",
+  "kind": "unique"
+ },
+ {
+  "id": "46235f97469b",
+  "name": "The Anvil",
+  "base": "Bloodstone Amulet",
+  "group": "Amulets",
+  "category": "Amulets & Belts",
+  "kind": "unique"
+ },
+ {
+  "id": "32407fc0f1e9",
+  "name": "The Auspex",
+  "base": "Exquisite Vest",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ },
+ {
+  "id": "f50211168a38",
+  "name": "The Barrow Dweller",
+  "base": "Rogue Armour",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ },
+ {
+  "id": "f2c903a8b0ab",
+  "name": "The Black Cat",
+  "base": "Grounding Charm",
+  "group": "Charms",
+  "category": "Flasks, Jewels & Relics",
+  "kind": "unique"
+ },
+ {
+  "id": "52a66e877c69",
+  "name": "The Black Doubt",
+  "base": "Hexer's Robe",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ },
+ {
+  "id": "ea3e79255366",
+  "name": "The Black Insignia",
+  "base": "Corsair Cap",
+  "group": "Helmets",
+  "category": "Helmets",
+  "kind": "unique"
+ },
+ {
+  "id": "5f5c55dded72",
+  "name": "The Blood Thorn",
+  "base": "Wrapped Quarterstaff",
+  "group": "Quarterstaves",
+  "category": "Two-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "0faf721c5312",
+  "name": "The Brass Dome",
+  "base": "Champion Cuirass",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ },
+ {
+  "id": "67828f21e3d7",
+  "name": "The Bringer of Rain",
+  "base": "Decorated Helm",
+  "group": "Helmets",
+  "category": "Helmets",
+  "kind": "unique"
+ },
+ {
+  "id": "5507d72b1f2a",
+  "name": "The Burden of Leadership",
+  "base": "Tapestry Relic",
+  "group": "Relics",
+  "category": "Flasks, Jewels & Relics",
+  "kind": "unique"
+ },
+ {
+  "id": "da780b6e5ac3",
+  "name": "The Burden of Shadows",
+  "base": "Chiming Staff",
+  "group": "Staves",
+  "category": "Two-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "97585e6ba7e7",
+  "name": "The Burrower",
+  "base": "Topaz Ring",
+  "group": "Rings",
+  "category": "Rings",
+  "kind": "unique"
+ },
+ {
+  "id": "c4ad5bdeecfd",
+  "name": "The Changing Seasons",
+  "base": "Seal Relic",
+  "group": "Relics",
+  "category": "Flasks, Jewels & Relics",
+  "kind": "unique"
+ },
+ {
+  "id": "92cffb836949",
+  "name": "The Coming Calamity",
+  "base": "Heroic Armour",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ },
+ {
+  "id": "e1af4c978a3a",
+  "name": "The Covenant",
+  "base": "Altar Robe",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ },
+ {
+  "id": "32820f0815d9",
+  "name": "The Dancing Mirage",
+  "base": "Wayfarer Jacket",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ },
+ {
+  "id": "770197327938",
+  "name": "The Dark Defiler",
+  "base": "Rattling Sceptre",
+  "group": "Sceptres",
+  "category": "One-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "4802b356cea3",
+  "name": "The Desperate Alliance",
+  "base": "Vase Relic",
+  "group": "Relics",
+  "category": "Flasks, Jewels & Relics",
+  "kind": "unique"
+ },
+ {
+  "id": "411b0418ea93",
+  "name": "The Devouring Diadem",
+  "base": "Wicker Tiara",
+  "group": "Helmets",
+  "category": "Helmets",
+  "kind": "unique"
+ },
+ {
+  "id": "63607ee0cb9d",
+  "name": "The Empty Roar",
+  "base": "Cultist Greathammer",
+  "group": "Two-Handed Maces",
+  "category": "Two-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "98c3ca21081e",
+  "name": "The Eternal Spark",
+  "base": "Crystal Focus",
+  "group": "Foci",
+  "category": "Off-Hands",
+  "kind": "unique"
+ },
+ {
+  "id": "67857ffa6642",
+  "name": "The Everlasting Gaze",
+  "base": "Azure Amulet",
+  "group": "Amulets",
+  "category": "Amulets & Belts",
+  "kind": "unique"
+ },
+ {
+  "id": "e940322d076d",
+  "name": "The Fall of the Axe",
+  "base": "Silver Charm",
+  "group": "Charms",
+  "category": "Flasks, Jewels & Relics",
+  "kind": "unique"
+ },
+ {
+  "id": "a402d377174b",
+  "name": "The Flesh Poppet",
+  "base": "Vicious Talisman",
+  "group": "Talismans",
+  "category": "Off-Hands",
+  "kind": "unique"
+ },
+ {
+  "id": "63aa5b377c94",
+  "name": "The Gnashing Sash",
+  "base": "Wide Belt",
+  "group": "Belts",
+  "category": "Amulets & Belts",
+  "kind": "unique"
+ },
+ {
+  "id": "5e9043707d79",
+  "name": "The Grand Project",
+  "base": "Irradiated Tablet",
+  "group": "Tablets",
+  "category": "Flasks, Jewels & Relics",
+  "kind": "unique"
+ },
+ {
+  "id": "99f27bc0cf29",
+  "name": "The Hammer of Faith",
+  "base": "Giant Maul",
+  "group": "Two-Handed Maces",
+  "category": "Two-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "098496da3535",
+  "name": "The Hollow Mask",
+  "base": "Hewn Mask",
+  "group": "Helmets",
+  "category": "Helmets",
+  "kind": "unique"
+ },
+ {
+  "id": "942482021a15",
+  "name": "The Infinite Pursuit",
+  "base": "Bronze Greaves",
+  "group": "Boots",
+  "category": "Gloves & Boots",
+  "kind": "unique"
+ },
+ {
+  "id": "351090bd1153",
+  "name": "The Knight-errant",
+  "base": "Mail Sabatons",
+  "group": "Boots",
+  "category": "Gloves & Boots",
+  "kind": "unique"
+ },
+ {
+  "id": "b5127d972846",
+  "name": "The Last Flame",
+  "base": "Incense Relic",
+  "group": "Relics",
+  "category": "Flasks, Jewels & Relics",
+  "kind": "unique"
+ },
+ {
+  "id": "4489ec13459e",
+  "name": "The Last Lament",
+  "base": "Desolate Crossbow",
+  "group": "Crossbows",
+  "category": "Two-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "b12e5fd72846",
+  "name": "The Lethal Draw",
+  "base": "Sacral Quiver",
+  "group": "Quivers",
+  "category": "Off-Hands",
+  "kind": "unique"
+ },
+ {
+  "id": "c05c4ff1928e",
+  "name": "The Master's Reach",
+  "base": "Tethering Bands",
+  "group": "Gloves",
+  "category": "Gloves & Boots",
+  "kind": "unique"
+ },
+ {
+  "id": "cbc4df5b1b81",
+  "name": "The Mutable Star",
+  "base": "Cleric Vestments",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ },
+ {
+  "id": "6b6bfde48745",
+  "name": "The Ordained",
+  "base": "Grand Spear",
+  "group": "Spears",
+  "category": "One-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "7b230585bb08",
+  "name": "The Pandemonius",
+  "base": "Lapis Amulet",
+  "group": "Amulets",
+  "category": "Amulets & Belts",
+  "kind": "unique"
+ },
+ {
+  "id": "646551bf4b47",
+  "name": "The Peacemaker's Draught",
+  "base": "Amphora Relic",
+  "group": "Relics",
+  "category": "Flasks, Jewels & Relics",
+  "kind": "unique"
+ },
+ {
+  "id": "63206d43a72c",
+  "name": "The Prisoner's Manacles",
+  "base": "Kalguuran Cuffs",
+  "group": "Gloves",
+  "category": "Gloves & Boots",
+  "kind": "unique"
+ },
+ {
+  "id": "6ff700774124",
+  "name": "The Rat Cage",
+  "base": "Scout's Vest",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ },
+ {
+  "id": "e7bd6b66a1e8",
+  "name": "The Raven's Flock",
+  "base": "Perching Staff",
+  "group": "Staves",
+  "category": "Two-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "fea193b48533",
+  "name": "The Searing Touch",
+  "base": "Pyrophyte Staff",
+  "group": "Staves",
+  "category": "Two-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "fe55398fa47e",
+  "name": "The Sentry",
+  "base": "Gothic Quarterstaff",
+  "group": "Quarterstaves",
+  "category": "Two-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "cf264a2d47ea",
+  "name": "The Smiling Knight",
+  "base": "Cowled Helm",
+  "group": "Helmets",
+  "category": "Helmets",
+  "kind": "unique"
+ },
+ {
+  "id": "810aeb99acb6",
+  "name": "The Sunken Vessel",
+  "base": "Knight Armour",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ },
+ {
+  "id": "704c21de6d19",
+  "name": "The Surrender",
+  "base": "Vaal Tower Shield",
+  "group": "Shields",
+  "category": "Off-Hands",
+  "kind": "unique"
+ },
+ {
+  "id": "251bfd5e8450",
+  "name": "The Taming",
+  "base": "Prismatic Ring",
+  "group": "Rings",
+  "category": "Rings",
+  "kind": "unique"
+ },
+ {
+  "id": "c398ab78a132",
+  "name": "The Three Dragons",
+  "base": "Solid Mask",
+  "group": "Helmets",
+  "category": "Helmets",
+  "kind": "unique"
+ },
+ {
+  "id": "5accaee7dc01",
+  "name": "The Unborn Lich",
+  "base": "Ravenous Staff",
+  "group": "Staves",
+  "category": "Two-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "b9102f89828c",
+  "name": "The Unleashed",
+  "base": "Revered Vestments",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ },
+ {
+  "id": "ffdada501a48",
+  "name": "The Vertex",
+  "base": "Tribal Mask",
+  "group": "Helmets",
+  "category": "Helmets",
+  "kind": "unique"
+ },
+ {
+  "id": "12a00ed4e7d6",
+  "name": "The Vile Knight",
+  "base": "Shielded Helm",
+  "group": "Helmets",
+  "category": "Helmets",
+  "kind": "unique"
+ },
+ {
+  "id": "c041c8c77f56",
+  "name": "The Whispering Ice",
+  "base": "Permafrost Staff",
+  "group": "Staves",
+  "category": "Two-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "c2b7b73ae5ba",
+  "name": "The Wicked Quill",
+  "base": "Withered Wand",
+  "group": "Wands",
+  "category": "One-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "4c23709beae2",
+  "name": "Thief's Torment",
+  "base": "Emerald Ring",
+  "group": "Rings",
+  "category": "Rings",
+  "kind": "unique"
+ },
+ {
+  "id": "1106ec0cbd8b",
+  "name": "Threaded Light",
+  "base": "Woven Focus",
+  "group": "Foci",
+  "category": "Off-Hands",
+  "kind": "unique"
+ },
+ {
+  "id": "f4a17f5b5a18",
+  "name": "Thrillsteel",
+  "base": "Spired Greathelm",
+  "group": "Helmets",
+  "category": "Helmets",
+  "kind": "unique"
+ },
+ {
+  "id": "a5fa9dc65092",
+  "name": "Thunderfist",
+  "base": "Utility Wraps",
+  "group": "Gloves",
+  "category": "Gloves & Boots",
+  "kind": "unique"
+ },
+ {
+  "id": "bc41b1839b79",
+  "name": "Tidebreaker",
+  "base": "Pointed Maul",
+  "group": "Two-Handed Maces",
+  "category": "Two-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "3d91878ff713",
+  "name": "Titanrot Cataphract",
+  "base": "Maraketh Cuirass",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ },
+ {
+  "id": "213fdc149527",
+  "name": "Trampletoe",
+  "base": "Trimmed Greaves",
+  "group": "Boots",
+  "category": "Gloves & Boots",
+  "kind": "unique"
+ },
+ {
+  "id": "5a558d9cfe11",
+  "name": "Treefingers",
+  "base": "Riveted Mitts",
+  "group": "Gloves",
+  "category": "Gloves & Boots",
+  "kind": "unique"
+ },
+ {
+  "id": "e3ef5d5df92d",
+  "name": "Trenchtimbre",
+  "base": "Spiked Club",
+  "group": "One-Handed Maces",
+  "category": "One-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "552d884d0975",
+  "name": "Trephina",
+  "base": "Forge Maul",
+  "group": "Two-Handed Maces",
+  "category": "Two-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "96d952661e8c",
+  "name": "Tul's Stillness",
+  "base": "Dexterity Lineage Support",
+  "group": "Dexterity",
+  "category": "Lineage Gems",
+  "kind": "gem"
+ },
+ {
+  "id": "a4960179a3e4",
+  "name": "Twisted Empyrean",
+  "base": "Aberrant Sledge",
+  "group": "Two-Handed Maces",
+  "category": "Two-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "10466dd1834c",
+  "name": "Tyranny's Grip",
+  "base": "Ironhead Spear",
+  "group": "Spears",
+  "category": "One-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "849092b103d4",
+  "name": "Uhtred's Augury",
+  "base": "Strength Lineage Support",
+  "group": "Strength",
+  "category": "Lineage Gems",
+  "kind": "gem"
+ },
+ {
+  "id": "54d2ab70fb1b",
+  "name": "Uhtred's Chalice",
+  "base": "Transcendent Mana Flask",
+  "group": "Flasks",
+  "category": "Flasks, Jewels & Relics",
+  "kind": "unique"
+ },
+ {
+  "id": "bdc0165489f2",
+  "name": "Uhtred's Exodus",
+  "base": "Strength Lineage Support",
+  "group": "Strength",
+  "category": "Lineage Gems",
+  "kind": "gem"
+ },
+ {
+  "id": "16d975df528d",
+  "name": "Uhtred's Omen",
+  "base": "Strength Lineage Support",
+  "group": "Strength",
+  "category": "Lineage Gems",
+  "kind": "gem"
+ },
+ {
+  "id": "b320ffb64dd7",
+  "name": "Umbilicus Immortalis",
+  "base": "Linen Belt",
+  "group": "Belts",
+  "category": "Amulets & Belts",
+  "kind": "unique"
+ },
+ {
+  "id": "1166808d29a6",
+  "name": "Undying Hate",
+  "base": "Timeless Jewel",
+  "group": "Jewels",
+  "category": "Flasks, Jewels & Relics",
+  "kind": "unique"
+ },
+ {
+  "id": "76bf4fce4671",
+  "name": "Unforeseen Consequences",
+  "base": "Abyss Tablet",
+  "group": "Tablets",
+  "category": "Flasks, Jewels & Relics",
+  "kind": "unique"
+ },
+ {
+  "id": "7c407e23d701",
+  "name": "Ungil's Harmony",
+  "base": "Azure Amulet",
+  "group": "Amulets",
+  "category": "Amulets & Belts",
+  "kind": "unique"
+ },
+ {
+  "id": "b1349a4a8913",
+  "name": "Uruk's Smelting",
+  "base": "Strength Lineage Support",
+  "group": "Strength",
+  "category": "Lineage Gems",
+  "kind": "gem"
+ },
+ {
+  "id": "b5a3eba2ad84",
+  "name": "Uul-Netol's Embrace",
+  "base": "Strength Lineage Support",
+  "group": "Strength",
+  "category": "Lineage Gems",
+  "kind": "gem"
+ },
+ {
+  "id": "3e276a4c72e2",
+  "name": "Valako's Roar",
+  "base": "Topaz Charm",
+  "group": "Charms",
+  "category": "Flasks, Jewels & Relics",
+  "kind": "unique"
+ },
+ {
+  "id": "833ddb90e556",
+  "name": "Valako's Vice",
+  "base": "Plate Gauntlets",
+  "group": "Gloves",
+  "category": "Gloves & Boots",
+  "kind": "unique"
+ },
+ {
+  "id": "c6b52e642a61",
+  "name": "Varashta's Blessing",
+  "base": "Intelligence Lineage Support",
+  "group": "Intelligence",
+  "category": "Lineage Gems",
+  "kind": "gem"
+ },
+ {
+  "id": "5c825de5d2d7",
+  "name": "Veil of the Night",
+  "base": "Martyr Crown",
+  "group": "Helmets",
+  "category": "Helmets",
+  "kind": "unique"
+ },
+ {
+  "id": "edee0bcdda6b",
+  "name": "Veilpiercer",
+  "base": "Amethyst Ring",
+  "group": "Rings",
+  "category": "Rings",
+  "kind": "unique"
+ },
+ {
+  "id": "5149f9cb9cd6",
+  "name": "Venopuncture",
+  "base": "Iron Ring",
+  "group": "Rings",
+  "category": "Rings",
+  "kind": "unique"
+ },
+ {
+  "id": "2ea20e7e9dbd",
+  "name": "Ventor's Gamble",
+  "base": "Gold Ring",
+  "group": "Rings",
+  "category": "Rings",
+  "kind": "unique"
+ },
+ {
+  "id": "03507e6558a8",
+  "name": "Vestige of Darkness",
+  "base": "Tenebrous Crown",
+  "group": "Helmets",
+  "category": "Helmets",
+  "kind": "unique"
+ },
+ {
+  "id": "c4abbab68e79",
+  "name": "Vigilant View",
+  "base": "Emerald Ring",
+  "group": "Rings",
+  "category": "Rings",
+  "kind": "unique"
+ },
+ {
+  "id": "bbbde05c9b57",
+  "name": "Vilenta's Propulsion",
+  "base": "Intelligence Lineage Support",
+  "group": "Intelligence",
+  "category": "Lineage Gems",
+  "kind": "gem"
+ },
+ {
+  "id": "5e5ab6df07ba",
+  "name": "Vis Mortis",
+  "base": "Plated Raiment",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ },
+ {
+  "id": "84d7ed319ad6",
+  "name": "Visage of Ayah",
+  "base": "Beaded Circlet",
+  "group": "Helmets",
+  "category": "Helmets",
+  "kind": "unique"
+ },
+ {
+  "id": "57d0fd4a18dc",
+  "name": "Visions of Paradise",
+  "base": "Irradiated Tablet",
+  "group": "Tablets",
+  "category": "Flasks, Jewels & Relics",
+  "kind": "unique"
+ },
+ {
+  "id": "4027316029fe",
+  "name": "Voices",
+  "base": "Sapphire",
+  "group": "Jewels",
+  "category": "Flasks, Jewels & Relics",
+  "kind": "unique"
+ },
+ {
+  "id": "371049f570fe",
+  "name": "Voll's Protector",
+  "base": "Plated Vestments",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ },
+ {
+  "id": "6f29c6b9613a",
+  "name": "Voltaxic Rift",
+  "base": "Fanatic Bow",
+  "group": "Bows",
+  "category": "Two-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "44cad3410a25",
+  "name": "Vruun's Inevitability",
+  "base": "Strength Lineage Support",
+  "group": "Strength",
+  "category": "Lineage Gems",
+  "kind": "gem"
+ },
+ {
+  "id": "025ee84be9db",
+  "name": "Waistgate",
+  "base": "Heavy Belt",
+  "group": "Belts",
+  "category": "Amulets & Belts",
+  "kind": "unique"
+ },
+ {
+  "id": "b119957990a2",
+  "name": "Wake of Destruction",
+  "base": "Secured Leggings",
+  "group": "Boots",
+  "category": "Gloves & Boots",
+  "kind": "unique"
+ },
+ {
+  "id": "5502bf76c451",
+  "name": "Wandering Reliquary",
+  "base": "Steel Plate",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ },
+ {
+  "id": "613675983bb9",
+  "name": "Wanderlust",
+  "base": "Wrapped Sandals",
+  "group": "Boots",
+  "category": "Gloves & Boots",
+  "kind": "unique"
+ },
+ {
+  "id": "8a4b1883d3bd",
+  "name": "Waveshaper",
+  "base": "Tideseer Mantle",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ },
+ {
+  "id": "faa420ca2a08",
+  "name": "Whisper of the Brotherhood",
+  "base": "Sapphire Ring",
+  "group": "Rings",
+  "category": "Rings",
+  "kind": "unique"
+ },
+ {
+  "id": "80433d6ff8ce",
+  "name": "Widow's Reign",
+  "base": "Knight Armour",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ },
+ {
+  "id": "18c92790a863",
+  "name": "Widowhail",
+  "base": "Crude Bow",
+  "group": "Bows",
+  "category": "Two-Handed Weapons",
+  "kind": "unique"
+ },
+ {
+  "id": "cb8be99a90da",
+  "name": "Window to Paradise",
+  "base": "Barricade Tower Shield",
+  "group": "Shields",
+  "category": "Off-Hands",
+  "kind": "unique"
+ },
+ {
+  "id": "cb62f72a003b",
+  "name": "Windscream",
+  "base": "Feathered Sandals",
+  "group": "Boots",
+  "category": "Gloves & Boots",
+  "kind": "unique"
+ },
+ {
+  "id": "facbbc21da9f",
+  "name": "Wings of Caelyn",
+  "base": "Rusted Greathelm",
+  "group": "Helmets",
+  "category": "Helmets",
+  "kind": "unique"
+ },
+ {
+  "id": "c5b65cad08bd",
+  "name": "Wondertrap",
+  "base": "Silk Slippers",
+  "group": "Boots",
+  "category": "Gloves & Boots",
+  "kind": "unique"
+ },
+ {
+  "id": "30392992cba7",
+  "name": "Wraeclast Besieged",
+  "base": "Breach Tablet",
+  "group": "Tablets",
+  "category": "Flasks, Jewels & Relics",
+  "kind": "unique"
+ },
+ {
+  "id": "9fd386e70d74",
+  "name": "Wulfsbane",
+  "base": "Painted Tower Shield",
+  "group": "Shields",
+  "category": "Off-Hands",
+  "kind": "unique"
+ },
+ {
+  "id": "3507c4fa46e6",
+  "name": "Xibaqua's Rending",
+  "base": "Intelligence Lineage Support",
+  "group": "Intelligence",
+  "category": "Lineage Gems",
+  "kind": "gem"
+ },
+ {
+  "id": "80eaa84edec3",
+  "name": "Xoph's Blood",
+  "base": "Amber Amulet",
+  "group": "Amulets",
+  "category": "Amulets & Belts",
+  "kind": "unique"
+ },
+ {
+  "id": "ba7f5f07c60b",
+  "name": "Xoph's Pyre",
+  "base": "Strength Lineage Support",
+  "group": "Strength",
+  "category": "Lineage Gems",
+  "kind": "gem"
+ },
+ {
+  "id": "6c03bc8771c3",
+  "name": "Yoke of Suffering",
+  "base": "Bloodstone Amulet",
+  "group": "Amulets",
+  "category": "Amulets & Belts",
+  "kind": "unique"
+ },
+ {
+  "id": "9703d256d0c2",
+  "name": "Yriel's Fostering",
+  "base": "Strider Vest",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ },
+ {
+  "id": "f856aa250411",
+  "name": "Zaida's Longevity",
+  "base": "Ring",
+  "group": "Rings",
+  "category": "Rings",
+  "kind": "unique"
+ },
+ {
+  "id": "2ba10cc4c1f8",
+  "name": "Zarokh's Refrain",
+  "base": "Intelligence Lineage Support",
+  "group": "Intelligence",
+  "category": "Lineage Gems",
+  "kind": "gem"
+ },
+ {
+  "id": "a5b67c307c6d",
+  "name": "Zarokh's Revolt",
+  "base": "Intelligence Lineage Support",
+  "group": "Intelligence",
+  "category": "Lineage Gems",
+  "kind": "gem"
+ },
+ {
+  "id": "a0e8c0e8fbce",
+  "name": "Zerphi's Genesis",
+  "base": "Heavy Belt",
+  "group": "Belts",
+  "category": "Amulets & Belts",
+  "kind": "unique"
+ },
+ {
+  "id": "3eb40528bf24",
+  "name": "Zerphi's Infamy",
+  "base": "Strength Lineage Support",
+  "group": "Strength",
+  "category": "Lineage Gems",
+  "kind": "gem"
+ },
+ {
+  "id": "44f9b4296f78",
+  "name": "Zerphi's Serape",
+  "base": "Scalper's Jacket",
+  "group": "Body Armours",
+  "category": "Body Armours",
+  "kind": "unique"
+ }
+]

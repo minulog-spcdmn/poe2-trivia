@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// Scrapes the unique item list from poe2db.tw and downloads every item's art
-// into public/items/. Writes the item index to src/data/uniques.json.
+// Scrapes unique items and lineage support gems from poe2db.tw and downloads
+// their art into public/items/. Writes the item index to src/data/items.json.
 //
 // Usage: npm run fetch-data
 // Behind a proxy on Node 22+: NODE_USE_ENV_PROXY=1 npm run fetch-data
@@ -13,37 +13,47 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SOURCE = 'https://poe2db.tw/us/Unique_item';
 const IMG_DIR = path.join(ROOT, 'public', 'items');
-const DATA_FILE = path.join(ROOT, 'src', 'data', 'uniques.json');
+const DATA_FILE = path.join(ROOT, 'src', 'data', 'items.json');
 
-// Map the art folder (below Art/2DItems/) to a quiz category.
-// Order matters: first matching prefix wins.
+// Map the art folder (below Art/2DItems/) to a fine-grained group and a broad
+// quiz category. Categories are deliberately broad and similar in size so no
+// pick is an obvious "easy" one. Order matters: first matching prefix wins.
 const CATEGORY_RULES = [
-  ['Weapons/OneHandWeapons/OneHandMaces', 'One-Handed Maces'],
-  ['Weapons/OneHandWeapons/OneHandSpears', 'Spears'],
-  ['Weapons/OneHandWeapons/Scepters', 'Sceptres'],
-  ['Weapons/OneHandWeapons/Wands', 'Wands'],
-  ['Weapons/TwoHandWeapons/TwoHandMaces', 'Two-Handed Maces'],
-  ['Weapons/TwoHandWeapons/WarStaves', 'Quarterstaves'],
-  ['Weapons/TwoHandWeapons/Staves', 'Staves'],
-  ['Weapons/TwoHandWeapons/Bows', 'Bows & Crossbows'],
-  ['Weapons/TwoHandWeapons/Crossbows', 'Bows & Crossbows'],
-  ['Offhand/Talismans', 'Talismans'],
-  ['Offhand/Shields', 'Shields'],
-  ['Offhand/Foci', 'Foci'],
-  ['Quivers', 'Quivers'],
-  ['Armours/BodyArmours', 'Body Armours'],
-  ['Armours/Helmets', 'Helmets'],
-  ['Armours/Gloves', 'Gloves'],
-  ['Armours/Boots', 'Boots'],
-  ['Amulets', 'Amulets'],
-  ['Rings', 'Rings'],
-  ['Belts', 'Belts'],
-  ['Flasks', 'Flasks & Charms'],
-  ['Charms', 'Flasks & Charms'],
-  ['Jewels', 'Jewels'],
-  ['Relics', 'Relics & Tablets'],
-  ['Currency/PrecursorTablets', 'Relics & Tablets'],
+  ['Weapons/OneHandWeapons/OneHandMaces', 'One-Handed Maces', 'One-Handed Weapons'],
+  ['Weapons/OneHandWeapons/OneHandSpears', 'Spears', 'One-Handed Weapons'],
+  ['Weapons/OneHandWeapons/Scepters', 'Sceptres', 'One-Handed Weapons'],
+  ['Weapons/OneHandWeapons/Wands', 'Wands', 'One-Handed Weapons'],
+  ['Weapons/TwoHandWeapons/TwoHandMaces', 'Two-Handed Maces', 'Two-Handed Weapons'],
+  ['Weapons/TwoHandWeapons/WarStaves', 'Quarterstaves', 'Two-Handed Weapons'],
+  ['Weapons/TwoHandWeapons/Staves', 'Staves', 'Two-Handed Weapons'],
+  ['Weapons/TwoHandWeapons/Bows', 'Bows', 'Two-Handed Weapons'],
+  ['Weapons/TwoHandWeapons/Crossbows', 'Crossbows', 'Two-Handed Weapons'],
+  ['Offhand/Talismans', 'Talismans', 'Off-Hands'],
+  ['Offhand/Shields', 'Shields', 'Off-Hands'],
+  ['Offhand/Foci', 'Foci', 'Off-Hands'],
+  ['Quivers', 'Quivers', 'Off-Hands'],
+  ['Armours/BodyArmours', 'Body Armours', 'Body Armours'],
+  ['Armours/Helmets', 'Helmets', 'Helmets'],
+  ['Armours/Gloves', 'Gloves', 'Gloves & Boots'],
+  ['Armours/Boots', 'Boots', 'Gloves & Boots'],
+  ['Rings', 'Rings', 'Rings'],
+  ['Amulets', 'Amulets', 'Amulets & Belts'],
+  ['Belts', 'Belts', 'Amulets & Belts'],
+  ['Flasks', 'Flasks', 'Flasks, Jewels & Relics'],
+  ['Charms', 'Charms', 'Flasks, Jewels & Relics'],
+  ['Jewels', 'Jewels', 'Flasks, Jewels & Relics'],
+  ['Relics', 'Relics', 'Flasks, Jewels & Relics'],
+  ['Currency/PrecursorTablets', 'Tablets', 'Flasks, Jewels & Relics'],
 ];
+
+const GEM_SOURCE = 'https://poe2db.tw/us/Lineage_Supports';
+const GEM_CATEGORY = 'Lineage Gems';
+const GEM_COLOURS = { gem_red: 'Strength', gem_green: 'Dexterity', gem_blue: 'Intelligence' };
+const GEM_ENTRY = new RegExp(
+  '<a class="(gem_\\w+)"[^>]*href="/us/[^"]+"><img loading="lazy" src="(https://cdn\\.poe2db\\.tw/image/Art/2DItems/Gems/[^"]+)"[^>]*/></a></div>' +
+    '<div class="flex-grow-1 ms-2"><div><a class="gem_\\w+"[^>]*>([^<]+)</a>',
+  'g',
+);
 
 const ENTRY = new RegExp(
   '<img loading="lazy" src="(https://cdn\\.poe2db\\.tw/image/Art/2DItems/[^"]+)"[^>]*/></a></div>' +
@@ -61,8 +71,12 @@ const decode = (s) =>
 
 const categorize = (img) => {
   const rel = img.split('/Art/2DItems/')[1];
-  return CATEGORY_RULES.find(([prefix]) => rel.startsWith(prefix))?.[1];
+  const rule = CATEGORY_RULES.find(([prefix]) => rel.startsWith(prefix));
+  return rule ? { group: rule[1], category: rule[2] } : null;
 };
+
+// Hash the file name so the image URL does not give the answer away.
+const makeId = (name) => createHash('sha1').update(name).digest('hex').slice(0, 12);
 
 async function fetchRetry(url, tries = 6) {
   for (let i = 0; ; i++) {
@@ -95,16 +109,35 @@ async function main() {
     const name = decode(rawName);
     if (seen.has(name)) continue;
     seen.add(name);
-    const category = categorize(img);
-    if (!category) {
+    const cat = categorize(img);
+    if (!cat) {
       skipped.push(`${name} (${img})`);
       continue;
     }
-    // Hash the file name so the image URL does not give the answer away.
-    const id = createHash('sha1').update(name).digest('hex').slice(0, 12);
-    items.push({ id, name, base: decode(rawBase), category, slug, src: img });
+    items.push({ id: makeId(name), name, base: decode(rawBase), ...cat, kind: 'unique', slug, src: img });
   }
   if (items.length < 100) throw new Error(`Only ${items.length} items parsed; page layout changed?`);
+
+  console.log(`Fetching ${GEM_SOURCE}`);
+  const gemHtml = await (await fetchRetry(GEM_SOURCE)).text();
+  let gems = 0;
+  for (const [, colour, img, rawName] of gemHtml.matchAll(GEM_ENTRY)) {
+    const name = decode(rawName);
+    if (seen.has(name)) continue;
+    seen.add(name);
+    const attr = GEM_COLOURS[colour] ?? 'Lineage';
+    items.push({
+      id: makeId(name),
+      name,
+      base: `${attr} Lineage Support`,
+      group: attr,
+      category: GEM_CATEGORY,
+      kind: 'gem',
+      src: img,
+    });
+    gems++;
+  }
+  if (gems < 20) throw new Error(`Only ${gems} lineage gems parsed; page layout changed?`);
   if (skipped.length) console.warn(`Skipped (no category):\n  ${skipped.join('\n  ')}`);
 
   // Drop items whose art is shared with another item: they cannot be told apart.
@@ -132,7 +165,7 @@ async function main() {
 
   quiz.sort((a, b) => a.name.localeCompare(b.name));
   await mkdir(path.dirname(DATA_FILE), { recursive: true });
-  const out = quiz.map(({ id, name, base, category }) => ({ id, name, base, category }));
+  const out = quiz.map(({ id, name, base, group, category, kind }) => ({ id, name, base, group, category, kind }));
   await writeFile(DATA_FILE, JSON.stringify(out, null, 1) + '\n');
 
   const perCat = {};
