@@ -1,29 +1,17 @@
 // Session: owns the game state and wires it to either the local device
 // (hot-seat), a hosted PeerJS room, or a connection to someone else's room.
 
-import Peer, { type DataConnection, type PeerOptions } from 'peerjs';
+import Peer, { type DataConnection } from 'peerjs';
 import itemData from '../data/items.json';
-import { Engine, createGame, ActionError, type Action, type GameState, type Item } from './game';
+import { Engine, createGame, ActionError, MAX_PLAYERS, type Action, type GameState, type Item } from './game';
+import { PEER_OPTIONS, PEER_PREFIX } from './peer';
+import { Beacon, type RoomInfo } from './rooms';
 import { sfx } from './sound';
 
 export const engine = new Engine(itemData as Item[]);
 
-// Bump when the protocol or item data changes so old tabs can't join new rooms.
-const PEER_PREFIX = 'poe2-trivia-v2-';
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const AUTO_NEXT_MS = 5000;
-
-// Signalling server. Defaults to the free PeerJS cloud; set VITE_PEER_HOST (and
-// optionally VITE_PEER_PORT / VITE_PEER_PATH / VITE_PEER_SECURE) to self-host.
-const env = import.meta.env;
-const PEER_OPTIONS: PeerOptions = env.VITE_PEER_HOST
-  ? {
-      host: env.VITE_PEER_HOST,
-      port: Number(env.VITE_PEER_PORT ?? 443),
-      path: env.VITE_PEER_PATH ?? '/',
-      secure: (env.VITE_PEER_SECURE ?? 'true') === 'true',
-    }
-  : {};
 
 type HostMsg = { t: 'state'; state: GameState; now: number } | { t: 'error'; message: string } | { t: 'kicked' };
 type ClientMsg = { t: 'hello'; playerId: string; name: string } | { t: 'action'; action: Action };
@@ -86,6 +74,7 @@ class Session {
   private toastTimer: ReturnType<typeof setTimeout> | null = null;
   private retry: ReturnType<typeof setTimeout> | null = null;
   private retries = 0;
+  private beacon: Beacon | null = null;
 
   get me() {
     return this.state?.players.find((p) => p.id === myId) ?? null;
@@ -360,8 +349,36 @@ class Session {
     const msg: HostMsg = { t: 'state', state: next, now: Date.now() };
     for (const [conn, id] of this.conns) if (id && conn.open) conn.send(msg);
     this.scheduleTimers(next);
+    this.syncBeacon(next);
     if (this.mode === 'local') writeSaved({ mode: 'local', state: next });
     else if (this.mode === 'host') writeSaved({ mode: 'host', code: this.code, state: next });
+  }
+
+  /** Lists the room publicly while the host has it set to public. */
+  private syncBeacon(s: GameState) {
+    const want = this.mode === 'host' && !!s.settings.public;
+    if (want && !this.beacon) {
+      this.beacon = new Beacon(() => this.roomInfo());
+      this.beacon.start();
+    } else if (!want && this.beacon) {
+      this.beacon.stop();
+      this.beacon = null;
+    }
+  }
+
+  private roomInfo(): RoomInfo | null {
+    const s = this.state;
+    if (!s || this.mode !== 'host') return null;
+    return {
+      code: this.code,
+      host: s.players.find((p) => p.id === s.hostId)?.name ?? '?',
+      players: s.players.filter((p) => p.connected).length,
+      maxPlayers: MAX_PLAYERS,
+      mode: s.settings.mode ?? 'turns',
+      difficulty: s.settings.difficulty,
+      target: s.settings.targetScore,
+      phase: s.phase,
+    };
   }
 
   /** Side effects that every device plays: sounds. */
@@ -426,6 +443,8 @@ class Session {
   }
 
   private reset() {
+    this.beacon?.stop();
+    this.beacon = null;
     if (this.timer) clearTimeout(this.timer);
     if (this.autoNext) clearTimeout(this.autoNext);
     for (const c of this.conns.keys()) c.close();

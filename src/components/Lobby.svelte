@@ -65,6 +65,10 @@
     sfx('click');
     session.dispatch({ type: 'settings', settings: mode === 'race' && s.settings.timer === 0 ? { mode, timer: 20 } : { mode } });
   }
+  function setPublic(v: boolean) {
+    sfx('click');
+    session.dispatch({ type: 'settings', settings: { public: v } });
+  }
   function setTimer(v: number) {
     sfx('click');
     session.dispatch({ type: 'settings', settings: { timer: v } });
@@ -91,9 +95,28 @@
           <span class="glyph" style:animation-delay="{i * 80}ms">{ch}</span>
         {/each}
       </div>
-      <button class="btn small" onclick={copy}>
-        {copied ? 'Link copied!' : 'Copy invite link'}
-      </button>
+      <div class="room-actions">
+        <button class="btn small" onclick={copy}>
+          {copied ? 'Link copied!' : 'Copy invite link'}
+        </button>
+        {#if isHost}
+          <div class="visibility" role="group" aria-label="Room visibility">
+            <button class:on={!s.settings.public} onclick={() => setPublic(false)} title="Only people with the code can join">
+              Private
+            </button>
+            <button class:on={!!s.settings.public} onclick={() => setPublic(true)} title="Listed under Open rooms on the start page">
+              Public
+            </button>
+          </div>
+        {:else}
+          <span class="vis-tag">{s.settings.public ? 'Public room' : 'Private room'}</span>
+        {/if}
+      </div>
+      {#if isHost}
+        <p class="vis-hint muted">
+          {s.settings.public ? 'Anyone can find this room under “Open rooms”.' : 'Only people with the code or link can join.'}
+        </p>
+      {/if}
     </section>
   {/if}
 
@@ -234,6 +257,48 @@
     padding: 1.5rem 1rem 3rem;
   }
 
+  .room-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .visibility {
+    display: inline-flex;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .visibility button {
+    padding: 0.45em 0.9em;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 0.72rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    background: rgba(0, 0, 0, 0.35);
+    border: 0;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .visibility button.on {
+    color: #fff1cf;
+    background: linear-gradient(180deg, #7a4f1d, #452a0e);
+  }
+  .vis-tag {
+    font-family: var(--font-display);
+    font-size: 0.7rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .vis-hint {
+    margin: 0;
+    font-size: 0.9rem;
+    font-style: italic;
+  }
   .room {
     display: flex;
     flex-direction: column;

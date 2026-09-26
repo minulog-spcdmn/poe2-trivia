@@ -88,6 +88,8 @@ export interface Settings {
   timer: number;
   difficulty: Difficulty;
   mode: GameMode;
+  /** Online rooms only: listed in the "open rooms" browser. */
+  public: boolean;
 }
 
 /** Race questions need an end, so "no timer" falls back to this. */
@@ -156,7 +158,7 @@ export const OFFER_COUNT = 3;
 export const MAX_PLAYERS = 12;
 export const MAX_NAME = 20;
 
-export const DEFAULT_SETTINGS: Settings = { targetScore: 10, timer: 20, difficulty: 'cruel', mode: 'turns' };
+export const DEFAULT_SETTINGS: Settings = { targetScore: 10, timer: 20, difficulty: 'cruel', mode: 'turns', public: false };
 
 export class ActionError extends Error {
   /** Expected races (e.g. an answer arriving after the question closed): don't bother the user. */
@@ -293,6 +295,9 @@ export class Engine {
       }
       case 'settings': {
         if (!isHost) throw new ActionError('Only the host can change settings.');
+        // Listing the room can be switched any time; the rules only between games.
+        if (typeof action.settings.public === 'boolean') s.settings.public = action.settings.public;
+        if (Object.keys(action.settings).every((k) => k === 'public')) break;
         if (s.phase !== 'lobby' && s.phase !== 'over') throw new ActionError('Settings are locked during a game.');
         const { targetScore, timer, difficulty, mode } = action.settings;
         if (mode === 'turns' || mode === 'race') s.settings.mode = mode;

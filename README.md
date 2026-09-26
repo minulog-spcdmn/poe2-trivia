@@ -49,6 +49,15 @@ same time, in a random category (never one of the last two).
     reconnect.
   - Very strict networks (some corporate or mobile networks) can block
     WebRTC. In that case, use hot-seat.
+- **Open rooms:** a host can set their room to **Public**, which lists it
+  under "Open rooms" on the start page (rooms are private by default).
+  Without a server there's no central list, so a public room claims the
+  lowest free numbered listing ID on the matchmaking service
+  (`…-pub-1`, `…-pub-2`, …), and the start page checks those numbers in
+  batches of 10, stopping after a batch with no rooms. Batches past number
+  30 are spaced out to avoid throttling, and rooms above number 10
+  periodically move down into freed-up numbers so gaps can't hide them.
+  See `src/lib/rooms.ts`.
 - **Hot-seat:** everyone plays on one device and passes it around.
 
 The host picks the mode (take turns or race), the difficulty, the target score and an optional time limit

@@ -3,6 +3,7 @@
   import { engine, session, savedName, saveName } from '../lib/session.svelte';
   import { itemImage } from '../lib/ui';
   import { sfx } from '../lib/sound';
+  import OpenRooms from './OpenRooms.svelte';
 
   const params = new URLSearchParams(location.search);
   const invite = (params.get('room') ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 5);
@@ -46,6 +47,11 @@
     session.join(code, n);
   }
 
+  function joinListed(roomCode: string) {
+    code = roomCode;
+    join();
+  }
+
   function local() {
     sfx('click');
     session.startLocal();
@@ -72,7 +78,7 @@
       <span class="line"></span>Exile Trivia<span class="line"></span>
     </h1>
     <p class="tagline" in:fade={{ duration: 800, delay: 500 }}>
-      Name the unique. {total} legendary items. One of four names is true.
+      Name the unique. {total} uniques and lineage gems. Can you tell them apart?
     </p>
   </div>
 
@@ -133,6 +139,10 @@
         <button class="btn ghost small" onclick={() => session.leave()}>Cancel</button>
       </div>
     {/if}
+  </div>
+
+  <div class="listing" in:fly={{ y: 30, duration: 700, delay: 550 }}>
+    <OpenRooms onJoin={joinListed} disabled={connecting} />
   </div>
 
   <footer class="muted">
@@ -335,6 +345,12 @@
     border-color: var(--bad);
   }
 
+  .listing {
+    width: min(620px, 100%);
+    display: flex;
+    justify-content: center;
+    margin-top: -0.8rem;
+  }
   footer {
     font-size: 0.85rem;
     text-align: center;
