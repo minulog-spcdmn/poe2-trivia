@@ -3,6 +3,7 @@
   import { session, engine, AUTO_NEXT_SECONDS } from '../lib/session.svelte';
   import { itemImage, itemName } from '../lib/ui';
   import { sfx } from '../lib/sound';
+  import { rulesFor } from '../lib/game';
   import TimerRing from './TimerRing.svelte';
 
   const s = $derived(session.state!);
@@ -16,9 +17,37 @@
   let chosen = $state<string | null>(null);
   let loaded = $state(false);
 
-  // Merciless: the art starts as a close-up and pulls back over most of the timer.
-  const zoomSeconds = $derived(s.settings.timer > 0 ? s.settings.timer * 0.85 : 15);
-  const zoomDelay = -Math.max(0, (session.hostNow() - (session.state?.question?.askedAt ?? 0)) / 1000);
+  const rules = $derived(rulesFor(s.settings.difficulty));
+
+  // Merciless and up: the art hides under tiles that lift one by one, in an
+  // order every player shares. Late joiners skip ahead by the elapsed time.
+  const elapsed = Math.max(0, (session.hostNow() - (session.state?.question?.askedAt ?? 0)) / 1000);
+  const veilDelays = $derived.by(() => {
+    const v = q.veil;
+    if (!v) return [];
+    const count = v.size * v.size;
+    const order = seededShuffle(count, v.seed);
+    const step = v.seconds / count;
+    const delays: number[] = [];
+    order.forEach((cell, rank) => (delays[cell] = 0.4 + rank * step - elapsed));
+    return delays;
+  });
+
+  function seededShuffle(n: number, seed: number) {
+    let t = seed >>> 0;
+    const rand = () => {
+      t = (t + 0x6d2b79f5) >>> 0;
+      let r = Math.imul(t ^ (t >>> 15), 1 | t);
+      r ^= r + Math.imul(r ^ (r >>> 7), 61 | r);
+      return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+    };
+    const a = Array.from({ length: n }, (_, i) => i);
+    for (let i = n - 1; i > 0; i--) {
+      const j = Math.floor(rand() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  }
 
   function answer(id: string) {
     if (!mine || reveal || chosen) return;
@@ -118,7 +147,7 @@
           {/if}
         </div>
       </div>
-      <div class="tiles" class:six={q.options.length > 4}>
+      <div class="tiles" class:many={q.options.length > 4} class:six={q.options.length === 6} class:gray={rules.grayscale && !reveal}>
         {#each q.options as id, i (id)}
           {@const st = optionState(id)}
           {@const opt = engine.byId.get(id)!}
@@ -159,26 +188,27 @@
           {/if}
         </div>
         <div class="art">
-          {#key q.itemId}
+          <div class="frame" class:gem={item.kind === 'gem'}>
             <img
               src={itemImage(q.itemId)}
               alt="The item to identify"
               class:loaded
-              class:gem={item.kind === 'gem'}
-              class:zoom={q.zoom && !reveal}
-              style:--zx="{q.zoom?.x ?? 50}%"
-              style:--zy="{q.zoom?.y ?? 50}%"
-              style:--zdur="{zoomSeconds}s"
-              style:--zdelay="{zoomDelay}s"
               onload={() => (loaded = true)}
               draggable="false"
             />
-          {/key}
+            {#if q.veil}
+              <div class="veil" class:lifted={!!reveal} style:--n={q.veil.size} aria-hidden="true">
+                {#each veilDelays as delay, i (i)}
+                  <span style:animation-delay="{delay}s"></span>
+                {/each}
+              </div>
+            {/if}
+          </div>
           {@render stamp()}
         </div>
       </div>
 
-      <div class="options">
+      <div class="options" class:compact={q.options.length > 6}>
         {#each q.options as id, i (id)}
           {@const st = optionState(id)}
           <button
@@ -334,13 +364,20 @@
       #07080c;
     overflow: hidden;
   }
-  .art img {
-    /* Scale small items (rings, flasks) up so every question reads well. */
+  .frame {
     position: absolute;
     inset: 0;
     margin: auto;
     width: 72%;
     height: 80%;
+  }
+  .frame.gem {
+    width: 42%;
+    height: 50%;
+  }
+  .art img {
+    width: 100%;
+    height: 100%;
     object-fit: contain;
     opacity: 0;
     transform: scale(0.85);
@@ -350,20 +387,35 @@
       transform 0.8s var(--ease-out),
       filter 0.9s;
   }
-  .art img.gem {
-    width: 42%;
-    height: 50%;
+  /* Tiles of fog over the art that lift one by one. */
+  .veil {
+    position: absolute;
+    inset: -4%;
+    display: grid;
+    grid-template-columns: repeat(var(--n), 1fr);
+    grid-template-rows: repeat(var(--n), 1fr);
+    transition: opacity 0.7s;
   }
-  .art img.zoom.loaded {
-    transform-origin: var(--zx) var(--zy);
-    animation: unzoom var(--zdur) cubic-bezier(0.5, 0, 0.9, 1) var(--zdelay) both;
+  .veil span {
+    background:
+      radial-gradient(circle at 30% 25%, rgba(201, 164, 92, 0.1), transparent 60%),
+      linear-gradient(160deg, #1a1611, #0a0907);
+    box-shadow:
+      inset 0 0 0 1px rgba(125, 99, 51, 0.35),
+      inset 0 0 12px rgba(0, 0, 0, 0.8);
+    animation: lift 0.7s var(--ease-out) both;
   }
-  @keyframes unzoom {
-    from {
-      transform: scale(2.6);
+  .veil.lifted {
+    opacity: 0;
+  }
+  @keyframes lift {
+    0% {
+      opacity: 1;
+      transform: none;
     }
-    to {
-      transform: scale(1);
+    100% {
+      opacity: 0;
+      transform: scale(0.6) rotate(8deg);
     }
   }
   .art img.loaded {
@@ -457,6 +509,13 @@
     font-size: 1.3rem;
     font-weight: 700;
   }
+  .compact .option {
+    padding-top: 0.7rem;
+    padding-bottom: 0.7rem;
+  }
+  .compact {
+    gap: 0.55rem;
+  }
   .option.pending {
     border-color: var(--gold);
     animation: glow 1s ease-in-out infinite;
@@ -527,8 +586,11 @@
       opacity 0.4s,
       box-shadow 0.3s;
   }
-  .tiles.six .tile {
+  .tiles.many .tile {
     height: 200px;
+  }
+  .tiles.gray .tile img {
+    filter: grayscale(1) contrast(1.1) drop-shadow(0 10px 20px rgba(0, 0, 0, 0.8));
   }
   .tile img {
     flex: 1;
@@ -687,8 +749,8 @@
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
     .tile,
-    .tiles.six .tile {
-      height: 170px;
+    .tiles.many .tile {
+      height: 150px;
     }
   }
 </style>

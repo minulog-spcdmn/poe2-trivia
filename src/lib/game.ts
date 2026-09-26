@@ -12,26 +12,55 @@ export interface Item {
   kind: 'unique' | 'gem';
 }
 
-export type Difficulty = 'normal' | 'cruel' | 'merciless';
+export type Difficulty = 'cruel' | 'merciless' | 'eternal';
 
 /** Name the item from its art, or pick the right art for a name. */
 export type QuestionMode = 'name' | 'art';
 
 export interface DifficultyRules {
   options: number;
-  /** Share of decoys drawn from the answer's own group (rest: same category). */
-  sameGroup: number;
+  /** Draw decoys from the answer's own group (all rings, all bows…) first. */
+  groupFirst: boolean;
+  /** Share of decoys picked for having a name that looks like the answer. */
+  similarNames: number;
   /** Chance of an "art" question instead of a "name" question. */
   artChance: number;
-  /** Name questions start zoomed in on a detail and pull back over time. */
-  zoom: boolean;
+  /** Art is hidden under tiles that lift one by one; fraction of the timer it takes. */
+  veil: { size: number; share: number } | null;
+  /** "Art" question pictures are shown without colour. */
+  grayscale: boolean;
 }
 
 export const DIFFICULTIES: Record<Difficulty, DifficultyRules> = {
-  normal: { options: 4, sameGroup: 0.4, artChance: 0, zoom: false },
-  cruel: { options: 4, sameGroup: 1, artChance: 0.4, zoom: false },
-  merciless: { options: 6, sameGroup: 1, artChance: 0.4, zoom: true },
+  cruel: { options: 4, groupFirst: true, similarNames: 0, artChance: 0.4, veil: null, grayscale: false },
+  merciless: {
+    options: 6,
+    groupFirst: true,
+    similarNames: 0.5,
+    artChance: 0.4,
+    veil: { size: 5, share: 0.7 },
+    grayscale: false,
+  },
+  eternal: {
+    options: 8,
+    groupFirst: false,
+    similarNames: 1,
+    artChance: 0.5,
+    veil: { size: 7, share: 0.9 },
+    grayscale: true,
+  },
 };
+
+export function rulesFor(difficulty: string | undefined): DifficultyRules {
+  return DIFFICULTIES[difficulty as Difficulty] ?? DIFFICULTIES.cruel;
+}
+
+export interface Veil {
+  size: number;
+  /** Seconds until the last tile has lifted. */
+  seconds: number;
+  seed: number;
+}
 
 export type Phase = 'lobby' | 'choosing' | 'question' | 'reveal' | 'over';
 
@@ -58,8 +87,8 @@ export interface Question {
   mode: QuestionMode;
   itemId: string;
   options: string[];
-  /** Zoomed-in detail (percent focus point) for merciless name questions. */
-  zoom: { x: number; y: number } | null;
+  /** Tiles hiding the art on name questions (merciless and up). */
+  veil: Veil | null;
   /** Host-clock timestamp when the question was asked. */
   askedAt: number;
   /** Host-clock timestamp when time runs out, null without timer. */
@@ -110,7 +139,7 @@ export const OFFER_COUNT = 3;
 export const MAX_PLAYERS = 12;
 export const MAX_NAME = 20;
 
-export const DEFAULT_SETTINGS: Settings = { targetScore: 10, timer: 20, difficulty: 'normal' };
+export const DEFAULT_SETTINGS: Settings = { targetScore: 10, timer: 20, difficulty: 'cruel' };
 
 export class ActionError extends Error {}
 
@@ -360,34 +389,86 @@ export class Engine {
   }
 
   makeQuestion(s: GameState, category: string): Question {
-    const rules = DIFFICULTIES[s.settings.difficulty] ?? DIFFICULTIES.normal;
+    const rules = rulesFor(s.settings.difficulty);
     const inCat = this.byCategory.get(category) ?? [];
     const unused = this.unusedIn(s, category);
     const answer = sample(unused.length ? unused : inCat, 1, this.rng)[0];
 
-    // Decoys come from the same category; on harder settings from the very
-    // same group (all rings, all bows, all Strength gems…) where possible.
     const need = rules.options - 1;
     const sameGroup = inCat.filter((it) => it.id !== answer.id && it.group === answer.group);
     const otherGroup = inCat.filter((it) => it.id !== answer.id && it.group !== answer.group);
-    const groupCount = Math.min(sameGroup.length, Math.round(need * rules.sameGroup));
-    const decoys = sample(sameGroup, groupCount, this.rng);
-    decoys.push(...sample(otherGroup, need - decoys.length, this.rng));
-    // Top up from the rest of the category, then (tiny categories only) anywhere.
-    for (const pool of [inCat, this.items]) {
+    const pool = rules.groupFirst && sameGroup.length >= need ? sameGroup : [...sameGroup, ...otherGroup];
+
+    // Some decoys are chosen for looking like the answer's name.
+    const simCount = Math.min(pool.length, Math.round(need * rules.similarNames));
+    const ranked = pool
+      .map((it) => ({ it, score: nameSimilarity(answer.name, it.name) + (it.group === answer.group ? 0.15 : 0) }))
+      .sort((a, b) => b.score - a.score)
+      .map((r) => r.it);
+    const decoys = sample(ranked.slice(0, Math.max(simCount + 2, Math.ceil(simCount * 1.5))), simCount, this.rng);
+    // Rest at random, preferring the same group, then the category, then anything.
+    for (const source of [pool, inCat, this.items]) {
       if (decoys.length >= need) break;
       const taken = new Set([answer.id, ...decoys.map((it) => it.id)]);
-      decoys.push(...sample(pool.filter((it) => !taken.has(it.id)), need - decoys.length, this.rng));
+      decoys.push(...sample(source.filter((it) => !taken.has(it.id)), need - decoys.length, this.rng));
     }
 
     const options = shuffle([answer, ...decoys], this.rng).map((it) => it.id);
     const mode: QuestionMode = this.rng() < rules.artChance ? 'art' : 'name';
-    const zoom =
-      rules.zoom && mode === 'name' && answer.kind === 'unique'
-        ? { x: 30 + Math.round(this.rng() * 40), y: 30 + Math.round(this.rng() * 40) }
-        : null;
     const askedAt = this.now();
     const deadline = s.settings.timer > 0 ? askedAt + s.settings.timer * 1000 : null;
-    return { category, mode, itemId: answer.id, options, zoom, askedAt, deadline };
+    const veil: Veil | null =
+      rules.veil && mode === 'name'
+        ? {
+            size: rules.veil.size,
+            seconds: (s.settings.timer > 0 ? s.settings.timer : 20) * rules.veil.share,
+            seed: Math.floor(this.rng() * 2 ** 31),
+          }
+        : null;
+    return { category, mode, itemId: answer.id, options, veil, askedAt, deadline };
   }
+}
+
+function bigrams(name: string): string[] {
+  const clean = name.toLowerCase().replace(/[^a-z]/g, '');
+  const out: string[] = [];
+  for (let i = 0; i < clean.length - 1; i++) out.push(clean.slice(i, i + 2));
+  return out;
+}
+
+/**
+ * How alike two names look: letter-pair overlap (Dice coefficient) plus
+ * bonuses for the same "shape" (possessive, "The …", word count), the same
+ * opening letters and shared words.
+ */
+export function nameSimilarity(a: string, b: string): number {
+  const ba = bigrams(a);
+  const bb = bigrams(b);
+  const counts = new Map<string, number>();
+  for (const g of ba) counts.set(g, (counts.get(g) ?? 0) + 1);
+  let shared = 0;
+  for (const g of bb) {
+    const n = counts.get(g) ?? 0;
+    if (n > 0) {
+      shared++;
+      counts.set(g, n - 1);
+    }
+  }
+  let score = ba.length + bb.length ? (2 * shared) / (ba.length + bb.length) : 0;
+
+  const la = a.toLowerCase();
+  const lb = b.toLowerCase();
+  if (la[0] === lb[0]) score += 0.3;
+  if (la.slice(0, 2) === lb.slice(0, 2)) score += 0.2;
+  const possessive = (n: string) => /'s?\b/.test(n);
+  if (possessive(la) === possessive(lb)) score += 0.2;
+  if (la.startsWith('the ') === lb.startsWith('the ')) score += 0.15;
+  const wordsA = la.split(/\s+/);
+  const wordsB = lb.split(/\s+/);
+  if (wordsA.length === wordsB.length) score += 0.2;
+  const significant = (w: string[]) => new Set(w.map((x) => x.replace(/[^a-z]/g, '')).filter((x) => x.length > 3));
+  const sa = significant(wordsA);
+  for (const w of significant(wordsB)) if (sa.has(w)) score += 0.5;
+  if (Math.abs(a.length - b.length) <= 2) score += 0.15;
+  return score;
 }

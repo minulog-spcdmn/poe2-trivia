@@ -2,16 +2,28 @@
   import { flip } from 'svelte/animate';
   import { fly, scale } from 'svelte/transition';
   import { session, myId } from '../lib/session.svelte';
-  import { MAX_PLAYERS, MAX_NAME, type Difficulty } from '../lib/game';
+  import { MAX_PLAYERS, MAX_NAME, DIFFICULTIES, type Difficulty } from '../lib/game';
   import { sfx } from '../lib/sound';
   import Avatar from './Avatar.svelte';
 
   const TIMERS = [0, 10, 15, 20, 30, 45];
   const TARGETS = [5, 10, 15, 20];
   const DIFFS: { id: Difficulty; name: string; blurb: string }[] = [
-    { id: 'normal', name: 'Normal', blurb: 'Name the item from its art. Four names from the same category.' },
-    { id: 'cruel', name: 'Cruel', blurb: 'Decoys of the same kind (all rings, all bows…). Some questions ask you to find the art for a name.' },
-    { id: 'merciless', name: 'Merciless', blurb: 'Six options. Art starts as a close-up and slowly pulls back.' },
+    {
+      id: 'cruel',
+      name: 'Cruel',
+      blurb: 'Four options, all of the same kind (all rings, all bows…). Some questions ask you to find the art for a name.',
+    },
+    {
+      id: 'merciless',
+      name: 'Merciless',
+      blurb: 'Six options, half of them with names that look alike. The art is hidden under tiles that lift one by one.',
+    },
+    {
+      id: 'eternal',
+      name: 'Eternal',
+      blurb: 'Eight look-alike names. Tiles lift slowly, and "find the art" pictures lose their colour. Good luck, exile.',
+    },
   ];
 
   const s = $derived(session.state!);
@@ -62,7 +74,7 @@
   }
 
   const canStart = $derived(s.players.length >= 1);
-  const difficulty = $derived(s.settings.difficulty ?? 'normal');
+  const difficulty = $derived(s.settings.difficulty in DIFFICULTIES ? s.settings.difficulty : 'cruel');
 </script>
 
 <div class="lobby">
