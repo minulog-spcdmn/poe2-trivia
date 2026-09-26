@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { Engine, createGame, DIFFICULTIES, nameSimilarity, publicView, type Difficulty, type GameState, type Item, type Question } from '../src/lib/game.ts';
+import { Engine, createGame, DIFFICULTIES, RARE_GROUPS, nameSimilarity, publicView, type Difficulty, type GameState, type Item, type Question } from '../src/lib/game.ts';
 
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
 
@@ -208,4 +208,27 @@ test('guests cannot act for others, join locked rooms, or impersonate', () => {
   s = engine.apply(s, { type: 'join', playerId: 'p1', name: 'Renamed' }, 'p1');
   assert.equal(s.players.find((p) => p.id === 'p1')!.name, 'Zana');
   assert.throws(() => engine.apply(s, { type: 'settings', settings: { locked: false } }, 'p1'), /host/);
+});
+
+test('tablets are rarer answers and only fill in as decoys', () => {
+  const engine = new Engine(items, { rng: seeded(7) });
+  const cat = 'Flasks, Jewels & Relics';
+  const inCat = engine.byCategory.get(cat)!;
+  const tablets = inCat.filter((it) => it.group === 'Tablets').length;
+  const evenShare = tablets / inCat.length;
+  let asAnswer = 0;
+  let asDecoy = 0;
+  const N = 4000;
+  for (let i = 0; i < N; i++) {
+    const s = createGame(null, { targetScore: 5, timer: 0, difficulty: 'cruel', mode: 'turns', public: false, locked: false });
+    const q = engine.makeQuestion(s, cat);
+    const answer = engine.byId.get(q.itemId)!;
+    if (answer.group === 'Tablets') asAnswer++;
+    else asDecoy += q.options.filter((id) => engine.byId.get(id)!.group === 'Tablets').length;
+  }
+  const share = asAnswer / N;
+  const expected = (tablets * RARE_GROUPS.Tablets) / (inCat.length - tablets + tablets * RARE_GROUPS.Tablets);
+  assert.ok(Math.abs(share - expected) < 0.02, `tablet share ${share.toFixed(3)} vs expected ${expected.toFixed(3)}`);
+  assert.ok(share < evenShare / 2);
+  assert.equal(asDecoy, 0, 'no tablet decoys for non-tablet answers on Cruel');
 });
