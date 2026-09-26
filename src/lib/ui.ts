@@ -1,4 +1,5 @@
 import { engine } from './session.svelte';
+import { itemImage } from './ui-paths';
 
 const HUES = [32, 200, 350, 130, 270, 55, 175, 10, 300, 90, 225, 150];
 
@@ -7,9 +8,7 @@ export function playerColor(slot: number) {
   return `hsl(${h} 55% 55%)`;
 }
 
-export function itemImage(id: string) {
-  return `${import.meta.env.BASE_URL}items/${id}.webp`;
-}
+export { itemImage };
 
 export function itemName(id: string) {
   return engine.byId.get(id)?.name ?? '???';

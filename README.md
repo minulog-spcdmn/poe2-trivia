@@ -63,6 +63,55 @@ same time, in a random category (never one of the last two).
 The host picks the mode (take turns or race), the difficulty, the target score and an optional time limit
 per question (off / 10–45 s).
 
+## Fair play & safety
+
+There's no server, so **the host's browser runs the game and has the
+answers**. The host could always cheat in their own room: play public games
+with that in mind. Guests, on the other hand, are treated as untrusted:
+
+- **No answers on the guest's device.** Guests receive a redacted copy of
+  the game state. Before the reveal it has no answer, no item ids behind the
+  options, and no list of used items. Options are referred to by position
+  only.
+- **No image files to look up.** Guests never load an item's image file
+  during a question. The host sends a lightly altered copy of the art
+  (re-scaled, shifted, noised, re-encoded) straight over the connection. On
+  veiled difficulties it sends only the tiles uncovered so far, so the rest
+  of the picture isn't on the guest's machine at all.
+- **Seats can't be taken over.** Each browser has a secret token that only
+  its host ever sees; the IDs other players see are random public IDs.
+  Rejoining needs the token and keeps your original name.
+- **Everything guests send is checked.** Every message is validated against
+  the few actions a guest may take: pick a category, answer, continue. Guests
+  are rate-limited to about 10 messages per second. Anything malformed, a
+  flood, or a connection that doesn't introduce itself within a few seconds
+  gets disconnected. The number of connections a room accepts is capped.
+- **Bots.** Answers that arrive faster than a human could react (less than
+  about 200 ms after the art reached that player) are ignored.
+- **Race fairness.** The host's own answers are delayed by a typical guest's
+  one-way network latency, measured with pings.
+- **Host tools.** The host can:
+  - lock the room so no one new can join
+  - kick anyone, in the lobby or mid-game; the kicked player's token and
+    connection are then blocked for the rest of the session
+  - hide the room code on screen for streaming
+- **Names.** Invisible and direction-flipping characters and "zalgo" text
+  are removed. Names that pose as the host or look like another player's
+  (e.g. using Cyrillic letters or `0` for `o`) are rejected.
+- **Public room list.** Entries come from strangers, so each one is
+  validated. The list and the scan are capped, and a room answers only a
+  limited number of listing probes at a time.
+- **Content Security Policy.** The page may only run its own scripts and
+  connect to itself and the matchmaking server.
+- **Room codes** are 6 characters (about a billion combinations).
+
+**Privacy:** players connect directly (WebRTC), so everyone in a room can
+see each other's IP address. The game says so in the lobby and in the room
+list.
+
+Not defended against: a determined player recognising item art with
+their own tools, and a cheating host.
+
 ## Development
 
 ```sh

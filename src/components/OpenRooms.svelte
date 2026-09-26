@@ -84,7 +84,7 @@
           {#if open}
             <button class="btn small" {disabled} onclick={() => onJoin(r.code)}>Join</button>
           {:else}
-            <span class="status">{r.phase === 'lobby' ? 'Full' : 'In game'}</span>
+            <span class="status">{r.phase === 'locked' ? 'Locked' : r.phase === 'lobby' ? 'Full' : 'In game'}</span>
           {/if}
         </li>
       {/each}
@@ -96,6 +96,7 @@
   {:else}
     <p class="empty muted">No public rooms right now. Create one and set it to public!</p>
   {/if}
+  <p class="note muted">Joining connects you directly to the host and other players, who can see your IP address.</p>
 </section>
 
 <style>
@@ -196,6 +197,11 @@
     padding: 0.45em 0.9em;
     border: 1px dashed var(--line);
     border-radius: 3px;
+  }
+  .note {
+    margin: 0.8rem 0 0;
+    font-size: 0.82rem;
+    opacity: 0.75;
   }
   .empty {
     margin: 0.2rem 0;

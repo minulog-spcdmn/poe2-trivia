@@ -1,6 +1,6 @@
 <script lang="ts">
   import { flip } from 'svelte/animate';
-  import { session, myId } from '../lib/session.svelte';
+  import { session } from '../lib/session.svelte';
   import { playerColor } from '../lib/ui';
   import Avatar from './Avatar.svelte';
 
@@ -8,6 +8,21 @@
   const target = $derived(s.settings.targetScore);
   const race = $derived(s.settings.mode === 'race');
   const missed = $derived(new Set(s.question?.misses.map((m) => m.playerId) ?? []));
+  const canKick = $derived(session.mode === 'host');
+
+  // Kicking takes two clicks so a stray tap doesn't remove anyone.
+  let confirming = $state<string | null>(null);
+  let confirmTimer: ReturnType<typeof setTimeout> | null = null;
+  function kick(id: string) {
+    if (confirming !== id) {
+      confirming = id;
+      if (confirmTimer) clearTimeout(confirmTimer);
+      confirmTimer = setTimeout(() => (confirming = null), 3000);
+      return;
+    }
+    confirming = null;
+    session.kick(id);
+  }
 </script>
 
 <ol class="board">
@@ -18,7 +33,7 @@
       <Avatar name={p.name} hue={p.hue} size={32} dim={!p.connected} />
       <div class="info">
         <span class="name">
-          {p.name}{#if session.mode !== 'local' && p.id === myId}<em>&nbsp;(you)</em>{/if}
+          {p.name}{#if session.mode !== 'local' && p.id === session.myPlayerId}<em>&nbsp;(you)</em>{/if}
         </span>
         <span class="bar"><span style:width="{Math.max(0, Math.min(100, (p.score / target) * 100))}%"></span></span>
       </div>
@@ -28,6 +43,17 @@
         >
       {/key}
       {#if !p.connected}<span class="off" title="Disconnected">⚡</span>{/if}
+      {#if canKick && p.id !== s.hostId}
+        <button
+          class="kick"
+          class:confirm={confirming === p.id}
+          onclick={() => kick(p.id)}
+          title="Remove {p.name} from the game"
+          aria-label="Remove {p.name}"
+        >
+          {confirming === p.id ? 'Kick?' : '×'}
+        </button>
+      {/if}
       {#if out}<span class="x" title="Answered wrong">✕</span>{/if}
     </li>
   {/each}
@@ -74,6 +100,39 @@
     translate: -50% 0;
     border: 5px solid transparent;
     border-top-color: var(--c);
+  }
+  .kick {
+    position: absolute;
+    top: -8px;
+    left: -6px;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 0.35em;
+    border-radius: 10px;
+    border: 1px solid rgba(224, 85, 63, 0.5);
+    background: #1c0f0b;
+    color: #ff9c86;
+    font-family: var(--font-display);
+    font-size: 0.7rem;
+    font-weight: 700;
+    line-height: 1;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+  li:hover .kick,
+  .kick:focus-visible,
+  .kick.confirm {
+    opacity: 1;
+  }
+  .kick.confirm {
+    background: var(--bad);
+    color: #fff;
+  }
+  @media (hover: none) {
+    .kick {
+      opacity: 0.8;
+    }
   }
   li.out {
     border-color: rgba(224, 85, 63, 0.6);

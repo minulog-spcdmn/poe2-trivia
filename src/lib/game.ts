@@ -62,6 +62,8 @@ export interface Veil {
   seed: number;
 }
 
+import { cleanName, nameProblem } from './names.ts';
+
 export type Phase = 'lobby' | 'choosing' | 'question' | 'reveal' | 'over';
 
 export interface Player {
@@ -90,6 +92,8 @@ export interface Settings {
   mode: GameMode;
   /** Online rooms only: listed in the "open rooms" browser. */
   public: boolean;
+  /** No new players may join (people already in the game can still rejoin). */
+  locked: boolean;
 }
 
 /** Race questions need an end, so "no timer" falls back to this. */
@@ -98,8 +102,14 @@ export const RACE_DEFAULT_TIMER = 30;
 export interface Question {
   category: string;
   mode: QuestionMode;
+  /** The answer. Empty in the copy guests receive until the reveal. */
   itemId: string;
+  /** Option item ids in display order. Empty for guests until the reveal. */
   options: string[];
+  /** Name questions: option names in display order. Art questions: nulls. */
+  labels: (string | null)[];
+  /** Art questions: the name to find the picture for. */
+  prompt: string | null;
   /** Tiles hiding the art on name questions (merciless and up). */
   veil: Veil | null;
   /** Host-clock timestamp when the question was asked. */
@@ -107,12 +117,14 @@ export interface Question {
   /** Host-clock timestamp when time runs out, null without timer. */
   deadline: number | null;
   /** Race mode: wrong answers so far, in order. Those players are locked out. */
-  misses: { playerId: string; optionId: string }[];
+  misses: { playerId: string; index: number }[];
 }
 
 export interface Reveal {
   correctId: string;
   chosenId: string | null;
+  correctIndex: number;
+  chosenIndex: number | null;
   correct: boolean;
   timedOut: boolean;
   /** Race mode: who answered correctly first. */
@@ -148,7 +160,7 @@ export type Action =
   | { type: 'settings'; settings: Partial<Settings> }
   | { type: 'start' }
   | { type: 'pick'; category: string }
-  | { type: 'answer'; optionId: string | null; askedAt?: number }
+  | { type: 'answer'; index: number | null; askedAt?: number }
   | { type: 'next' }
   | { type: 'skip' }
   | { type: 'restart' };
@@ -156,9 +168,9 @@ export type Action =
 export const LOCKOUT_TURNS = 2;
 export const OFFER_COUNT = 3;
 export const MAX_PLAYERS = 12;
-export const MAX_NAME = 20;
+export { MAX_NAME } from './names.ts';
 
-export const DEFAULT_SETTINGS: Settings = { targetScore: 10, timer: 20, difficulty: 'cruel', mode: 'turns', public: false };
+export const DEFAULT_SETTINGS: Settings = { targetScore: 10, timer: 20, difficulty: 'cruel', mode: 'turns', public: false, locked: false };
 
 export class ActionError extends Error {
   /** Expected races (e.g. an answer arriving after the question closed): don't bother the user. */
@@ -191,8 +203,19 @@ export function createGame(hostId: string | null, settings: Settings = DEFAULT_S
   };
 }
 
-export function cleanName(name: string): string {
-  return name.replace(/\s+/g, ' ').trim().slice(0, MAX_NAME);
+export { cleanName };
+
+/**
+ * The copy of the state guests receive: nothing that identifies the answer
+ * before the reveal (the item ids behind the options, the list of used items).
+ */
+export function publicView(s: GameState): GameState {
+  const hide = s.phase === 'question' && s.question;
+  return {
+    ...s,
+    used: [],
+    question: hide ? { ...s.question!, itemId: '', options: [] } : s.question,
+  };
 }
 
 function shuffle<T>(arr: T[], rng: Rng): T[] {
@@ -243,18 +266,22 @@ export class Engine {
 
     switch (action.type) {
       case 'join': {
-        const name = cleanName(action.name);
-        if (!name) throw new ActionError('Please enter a name.');
+        if (from !== null && from !== action.playerId) throw new ActionError('Not allowed.');
         const existing = s.players.find((p) => p.id === action.playerId);
         if (existing) {
+          // Rejoining keeps the original name, so a seat can't be renamed on the way back.
           existing.connected = true;
-          existing.name = name;
           break;
         }
+        const name = cleanName(action.name);
         if (s.phase !== 'lobby') throw new ActionError('That game has already started.');
+        if (s.settings.locked) throw new ActionError('The host has locked this room.');
         if (s.players.length >= MAX_PLAYERS) throw new ActionError('The lobby is full.');
-        if (s.players.some((p) => p.name.toLowerCase() === name.toLowerCase()))
-          throw new ActionError(`Someone called "${name}" is already here.`);
+        const problem = nameProblem(
+          name,
+          s.players.map((p) => p.name),
+        );
+        if (problem) throw new ActionError(problem);
         const used = new Set(s.players.map((p) => p.hue));
         let hue = 0;
         while (used.has(hue)) hue++;
@@ -265,7 +292,12 @@ export class Engine {
         if (!isHost && from !== action.playerId) throw new ActionError('Not allowed.');
         const p = s.players.find((p) => p.id === action.playerId);
         const name = cleanName(action.name);
-        if (p && name) p.name = name;
+        const problem = nameProblem(
+          name,
+          s.players.filter((o) => o.id !== action.playerId).map((o) => o.name),
+        );
+        if (problem) throw new ActionError(problem);
+        if (p) p.name = name;
         break;
       }
       case 'remove': {
@@ -295,9 +327,10 @@ export class Engine {
       }
       case 'settings': {
         if (!isHost) throw new ActionError('Only the host can change settings.');
-        // Listing the room can be switched any time; the rules only between games.
+        // Listing and locking the room can be switched any time; the rules only between games.
         if (typeof action.settings.public === 'boolean') s.settings.public = action.settings.public;
-        if (Object.keys(action.settings).every((k) => k === 'public')) break;
+        if (typeof action.settings.locked === 'boolean') s.settings.locked = action.settings.locked;
+        if (Object.keys(action.settings).every((k) => k === 'public' || k === 'locked')) break;
         if (s.phase !== 'lobby' && s.phase !== 'over') throw new ActionError('Settings are locked during a game.');
         const { targetScore, timer, difficulty, mode } = action.settings;
         if (mode === 'turns' || mode === 'race') s.settings.mode = mode;
@@ -344,7 +377,9 @@ export class Engine {
         if (s.phase !== 'question' || !s.question) throw new ActionError('There is no open question.');
         if (!isActive) throw new ActionError("It's not your turn.");
         const q = s.question;
-        const chosenId = action.optionId && q.options.includes(action.optionId) ? action.optionId : null;
+        if (action.askedAt !== undefined && action.askedAt !== q.askedAt) throw new ActionError('Too late!', true);
+        const index = validIndex(action.index, q.options.length);
+        const chosenId = index === null ? null : q.options[index];
         const timedOut =
           chosenId === null || (q.deadline !== null && from !== null && this.now() > q.deadline + 1500);
         const correct = !timedOut && chosenId === q.itemId;
@@ -352,6 +387,8 @@ export class Engine {
         s.reveal = {
           correctId: q.itemId,
           chosenId: timedOut ? null : chosenId,
+          correctIndex: q.options.indexOf(q.itemId),
+          chosenIndex: timedOut ? null : index,
           correct,
           timedOut,
           winnerId: correct ? active.id : null,
@@ -400,25 +437,46 @@ export class Engine {
 
     if (from === null) {
       // Host timer: time is up, nobody got it.
-      s.reveal = { correctId: q.itemId, chosenId: null, correct: false, timedOut: true, winnerId: null };
+      s.reveal = this.noWinner(q, true);
       s.phase = 'reveal';
       return;
     }
     const player = s.players.find((p) => p.id === from);
     if (!player) throw new ActionError('You are not in this game.');
     if (q.misses.some((m) => m.playerId === from)) throw new ActionError('You already answered.', true);
-    if (!action.optionId || !q.options.includes(action.optionId)) throw new ActionError('Too late!', true);
+    const index = validIndex(action.index, q.options.length);
+    if (index === null) throw new ActionError('Too late!', true);
     if (q.deadline !== null && this.now() > q.deadline + 1500) throw new ActionError('Too late!', true);
 
-    if (action.optionId === q.itemId) {
+    if (q.options[index] === q.itemId) {
       player.score += 1;
-      s.reveal = { correctId: q.itemId, chosenId: q.itemId, correct: true, timedOut: false, winnerId: player.id };
+      s.reveal = {
+        correctId: q.itemId,
+        chosenId: q.itemId,
+        correctIndex: index,
+        chosenIndex: index,
+        correct: true,
+        timedOut: false,
+        winnerId: player.id,
+      };
       s.phase = 'reveal';
       return;
     }
     player.score -= 1;
-    q.misses.push({ playerId: player.id, optionId: action.optionId });
+    q.misses.push({ playerId: player.id, index });
     this.checkRaceDone(s);
+  }
+
+  private noWinner(q: Question, timedOut: boolean): Reveal {
+    return {
+      correctId: q.itemId,
+      chosenId: null,
+      correctIndex: q.options.indexOf(q.itemId),
+      chosenIndex: null,
+      correct: false,
+      timedOut,
+      winnerId: null,
+    };
   }
 
   /** Ends the question once every connected player has answered wrong. */
@@ -428,7 +486,7 @@ export class Engine {
     const missed = new Set(q.misses.map((m) => m.playerId));
     const waiting = s.players.filter((p) => p.connected && !missed.has(p.id));
     if (waiting.length === 0) {
-      s.reveal = { correctId: q.itemId, chosenId: null, correct: false, timedOut: false, winnerId: null };
+      s.reveal = this.noWinner(q, false);
       s.phase = 'reveal';
     }
   }
@@ -552,7 +610,9 @@ export class Engine {
             seed: Math.floor(this.rng() * 2 ** 31),
           }
         : null;
-    return { category, mode, itemId: answer.id, options, veil, askedAt, deadline, misses: [] };
+    const labels = options.map((id) => (mode === 'name' ? this.byId.get(id)!.name : null));
+    const prompt = mode === 'art' ? answer.name : null;
+    return { category, mode, itemId: answer.id, options, labels, prompt, veil, askedAt, deadline, misses: [] };
   }
 }
 
@@ -598,4 +658,8 @@ export function nameSimilarity(a: string, b: string): number {
   for (const w of significant(wordsB)) if (sa.has(w)) score += 0.5;
   if (Math.abs(a.length - b.length) <= 2) score += 0.15;
   return score;
+}
+
+function validIndex(index: unknown, count: number): number | null {
+  return typeof index === 'number' && Number.isInteger(index) && index >= 0 && index < count ? index : null;
 }

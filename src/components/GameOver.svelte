@@ -1,14 +1,14 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { fly, scale } from 'svelte/transition';
-  import { session, myId } from '../lib/session.svelte';
+  import { session } from '../lib/session.svelte';
   import { playerColor } from '../lib/ui';
   import Avatar from './Avatar.svelte';
 
   const s = $derived(session.state!);
   const standings = $derived([...s.players].sort((a, b) => b.score - a.score));
   const winner = $derived(s.players.find((p) => s.winners.includes(p.id)) ?? standings[0]);
-  const iWon = $derived(session.mode !== 'local' && winner?.id === myId);
+  const iWon = $derived(session.mode !== 'local' && winner?.id === session.myPlayerId);
 
   let canvas: HTMLCanvasElement;
 

@@ -8,7 +8,8 @@
 
 import Peer, { type DataConnection } from 'peerjs';
 import { PEER_OPTIONS, PEER_PREFIX } from './peer';
-import type { Difficulty, GameMode, Phase } from './game';
+import { DIFFICULTIES, type Difficulty, type GameMode, type Phase } from './game';
+import { cleanName } from './names';
 
 export interface RoomInfo {
   code: string;
@@ -18,7 +19,33 @@ export interface RoomInfo {
   mode: GameMode;
   difficulty: Difficulty;
   target: number;
-  phase: Phase;
+  phase: Phase | 'locked';
+}
+
+const PHASES = ['lobby', 'locked', 'choosing', 'question', 'reveal', 'over'];
+const CODE = /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/;
+
+/** Listings come from strangers: accept only well-formed ones. */
+export function parseRoomInfo(raw: unknown): RoomInfo | null {
+  if (typeof raw !== 'object' || raw === null) return null;
+  const r = raw as Record<string, unknown>;
+  const int = (v: unknown, min: number, max: number) => typeof v === 'number' && Number.isInteger(v) && v >= min && v <= max;
+  const host = cleanName(r.host);
+  if (typeof r.code !== 'string' || !CODE.test(r.code) || !host) return null;
+  if (!int(r.players, 0, 64) || !int(r.maxPlayers, 1, 64) || !int(r.target, 1, 50)) return null;
+  if (r.mode !== 'turns' && r.mode !== 'race') return null;
+  if (!(typeof r.difficulty === 'string' && r.difficulty in DIFFICULTIES)) return null;
+  if (typeof r.phase !== 'string' || !PHASES.includes(r.phase)) return null;
+  return {
+    code: r.code,
+    host,
+    players: r.players as number,
+    maxPlayers: r.maxPlayers as number,
+    mode: r.mode,
+    difficulty: r.difficulty as Difficulty,
+    target: r.target as number,
+    phase: r.phase as RoomInfo['phase'],
+  };
 }
 
 const BATCH = 10;
@@ -28,7 +55,13 @@ const SLOW_BATCH_DELAY_MS = 800;
 // The signalling server reports a free slot only after its message expiry
 // (~5s), so give real rooms comfortably longer than that to answer.
 const PROBE_TIMEOUT_MS = 9000;
-const MAX_SLOTS = 1000;
+/** Hard stop, even if someone fills every slot with junk. */
+const MAX_SLOTS = 300;
+/** Most rooms we'll list. */
+export const MAX_LISTED = 60;
+/** Beacon: probes answered at once / per 10 seconds before refusing more. */
+const BEACON_MAX_OPEN = 8;
+const BEACON_MAX_PER_10S = 60;
 const COMPACT_EVERY_MS = 30000;
 
 export const slotId = (n: number) => `${PEER_PREFIX}pub-${n}`;
@@ -68,8 +101,10 @@ class Prober {
       this.waiting.set(id, done);
       conn = this.peer.connect(id, { reliable: true, metadata: { probe: true } });
       conn.on('data', (raw) => {
-        const msg = raw as { t?: string; room?: RoomInfo };
-        if (msg?.t === 'info' && msg.room) done(msg.room);
+        const msg = raw as { t?: string; room?: unknown };
+        if (msg?.t !== 'info') return;
+        const room = parseRoomInfo(msg.room);
+        done(room ?? null);
       });
       conn.on('error', () => done(null));
     });
@@ -99,8 +134,9 @@ export async function scanRooms(onRoom: (room: RoomInfo) => void, cancelled: () 
   const peer = await openPeer();
   const prober = new Prober(peer);
   try {
+    let listed = 0;
     for (let start = 1; start <= MAX_SLOTS; start += BATCH) {
-      if (cancelled()) return;
+      if (cancelled() || listed >= MAX_LISTED) return;
       if (start > FAST_SLOTS) await sleep(SLOW_BATCH_DELAY_MS);
       const ids = Array.from({ length: BATCH }, (_, i) => slotId(start + i));
       let found = 0;
@@ -109,7 +145,7 @@ export async function scanRooms(onRoom: (room: RoomInfo) => void, cancelled: () 
           const r = await prober.probe(id);
           if (r && r !== 'free') {
             found++;
-            if (!cancelled()) onRoom(r);
+            if (!cancelled() && listed++ < MAX_LISTED) onRoom(r);
           }
         }),
       );
@@ -192,7 +228,30 @@ export class Beacon {
     this.prober = new Prober(peer);
     this.slot = slot;
     old?.destroy();
+    let open = 0;
+    let recent: number[] = [];
     peer.on('connection', (conn) => {
+      const now = Date.now();
+      recent = recent.filter((t) => now - t < 10000);
+      if (open >= BEACON_MAX_OPEN || recent.length >= BEACON_MAX_PER_10S) {
+        conn.on('open', () => conn.close());
+        return;
+      }
+      open++;
+      recent.push(now);
+      let counted = true;
+      const release = () => {
+        if (counted) open--;
+        counted = false;
+      };
+      conn.on('close', release);
+      conn.on('error', release);
+      // Never keep a probe around for long, even if it never opens.
+      setTimeout(() => {
+        conn.close();
+        release();
+      }, 4000);
+      // Probes only need to listen; anything they send is ignored.
       conn.on('open', () => {
         const room = this.info();
         if (room) conn.send({ t: 'info', room });

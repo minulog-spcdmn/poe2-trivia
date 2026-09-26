@@ -1,12 +1,12 @@
 <script lang="ts">
   import { fade, fly } from 'svelte/transition';
-  import { engine, session, savedName, saveName } from '../lib/session.svelte';
+  import { engine, session, savedName, saveName, CODE_LENGTH } from '../lib/session.svelte';
   import { itemImage } from '../lib/ui';
   import { sfx } from '../lib/sound';
   import OpenRooms from './OpenRooms.svelte';
 
   const params = new URLSearchParams(location.search);
-  const invite = (params.get('room') ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 5);
+  const invite = (params.get('room') ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, CODE_LENGTH);
 
   let name = $state(savedName());
   let code = $state(invite);
@@ -38,7 +38,7 @@
     e?.preventDefault();
     const n = needName();
     if (!n) return;
-    if (code.length < 5) {
+    if (code.length < CODE_LENGTH) {
       document.getElementById('code')?.focus();
       return;
     }
@@ -109,14 +109,14 @@
             id="code"
             class="field code"
             bind:value={code}
-            oninput={() => (code = code.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 5))}
+            oninput={() => (code = code.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, CODE_LENGTH))}
             placeholder="CODE"
-            maxlength="5"
+            maxlength={CODE_LENGTH}
             autocomplete="off"
             spellcheck="false"
             aria-label="Room code"
           />
-          <button class="btn" class:primary={!!invite} type="submit" disabled={connecting || code.length < 5}>
+          <button class="btn" class:primary={!!invite} type="submit" disabled={connecting || code.length < CODE_LENGTH}>
             Join
           </button>
         </form>

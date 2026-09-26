@@ -1,73 +1,67 @@
 <script lang="ts">
   import { fly, fade, scale } from 'svelte/transition';
-  import { session, engine, myId, AUTO_NEXT_SECONDS } from '../lib/session.svelte';
-  import { itemImage, itemName } from '../lib/ui';
+  import { session, engine, AUTO_NEXT_SECONDS } from '../lib/session.svelte';
+  import { shown } from '../lib/media.svelte';
+  import { itemImage } from '../lib/ui';
   import { sfx } from '../lib/sound';
-  import { rulesFor } from '../lib/game';
   import TimerRing from './TimerRing.svelte';
   import Avatar from './Avatar.svelte';
+
+  const GEMS = 'Lineage Gems';
 
   const s = $derived(session.state!);
   const q = $derived(s.question!);
   const reveal = $derived(s.phase === 'reveal' ? s.reveal : null);
   const active = $derived(s.players[s.turn]);
   const mine = $derived(session.myTurn);
-  const item = $derived(engine.byId.get(q.itemId)!);
+  const me = $derived(session.myPlayerId);
+  // Guests only learn the answer (and the items behind the options) at the reveal.
+  const item = $derived(q.itemId ? engine.byId.get(q.itemId) : undefined);
+  const gem = $derived(q.category === GEMS);
   const race = $derived(s.settings.mode === 'race');
   const canNext = $derived(!!reveal && (race ? session.isHost : mine || session.isHost));
-  const myMiss = $derived(race ? q.misses.find((m) => m.playerId === myId) : undefined);
+  const myMiss = $derived(race && me ? q.misses.find((m) => m.playerId === me) : undefined);
   const winner = $derived(reveal?.winnerId ? s.players.find((p) => p.id === reveal.winnerId) : undefined);
-  const iWon = $derived(race ? reveal?.winnerId === myId : !!reveal?.correct);
+  const iWon = $derived(race ? !!me && reveal?.winnerId === me : !!reveal?.correct);
   const timerTotal = $derived(q.deadline ? Math.round((q.deadline - q.askedAt) / 1000) : 0);
+  const count = $derived(q.labels.length);
+  // Pictures the host has sent for this question.
+  const media = $derived(shown.qid === q.askedAt ? shown : null);
+
+  /** Veiled art: the grid cells, uncovered or not. */
+  const cells = $derived.by(() => {
+    const g = media?.grid;
+    if (!g) return [];
+    const edges = (len: number) => Array.from({ length: g.n + 1 }, (_, k) => Math.round((k * len) / g.n));
+    const xs = edges(g.w);
+    const ys = edges(g.h);
+    return Array.from({ length: g.n * g.n }, (_, i) => {
+      const cx = i % g.n;
+      const cy = Math.floor(i / g.n);
+      return { i, x: xs[cx], y: ys[cy], w: xs[cx + 1] - xs[cx], h: ys[cy + 1] - ys[cy] };
+    });
+  });
+  const aspect = $derived(media?.grid ? media.grid.w / media.grid.h : media?.art ? media.art.w / media.art.h : 1);
 
   /** Race mode: who guessed which option wrong (and, once revealed, who won). */
-  function markers(id: string) {
+  function markers(index: number) {
     if (!race) return [];
-    const ids = q.misses.filter((m) => m.optionId === id).map((m) => m.playerId);
-    if (reveal?.winnerId && id === reveal.correctId) ids.unshift(reveal.winnerId);
+    const ids = q.misses.filter((m) => m.index === index).map((m) => m.playerId);
+    if (reveal?.winnerId && index === reveal.correctIndex) ids.unshift(reveal.winnerId);
     return ids.map((pid) => s.players.find((p) => p.id === pid)).filter((p) => !!p);
   }
 
-  let chosen = $state<string | null>(null);
-  let loaded = $state(false);
-
-  const rules = $derived(rulesFor(s.settings.difficulty));
-
-  // Merciless and up: the art hides under tiles that lift one by one, in an
-  // order every player shares. Late joiners skip ahead by the elapsed time.
-  const elapsed = Math.max(0, (session.hostNow() - (session.state?.question?.askedAt ?? 0)) / 1000);
-  const veilDelays = $derived.by(() => {
-    const v = q.veil;
-    if (!v) return [];
-    const count = v.size * v.size;
-    const order = seededShuffle(count, v.seed);
-    const step = v.seconds / count;
-    const delays: number[] = [];
-    order.forEach((cell, rank) => (delays[cell] = 0.4 + rank * step - elapsed));
-    return delays;
-  });
-
-  function seededShuffle(n: number, seed: number) {
-    let t = seed >>> 0;
-    const rand = () => {
-      t = (t + 0x6d2b79f5) >>> 0;
-      let r = Math.imul(t ^ (t >>> 15), 1 | t);
-      r ^= r + Math.imul(r ^ (r >>> 7), 61 | r);
-      return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
-    };
-    const a = Array.from({ length: n }, (_, i) => i);
-    for (let i = n - 1; i > 0; i--) {
-      const j = Math.floor(rand() * (i + 1));
-      [a[i], a[j]] = [a[j], a[i]];
-    }
-    return a;
+  function optionName(index: number) {
+    return q.labels[index] ?? (q.options[index] ? engine.byId.get(q.options[index])?.name : undefined) ?? '';
   }
 
-  function answer(id: string) {
-    if (!mine || reveal || chosen) return;
-    chosen = id;
+  let chosen = $state<number | null>(null);
+
+  function answer(index: number) {
+    if (!mine || reveal || chosen !== null) return;
+    chosen = index;
     sfx('click');
-    session.dispatch({ type: 'answer', optionId: id, askedAt: q.askedAt });
+    session.dispatch({ type: 'answer', index, askedAt: q.askedAt });
     setTimeout(() => {
       if (!session.state?.reveal) chosen = null;
     }, 2500);
@@ -81,18 +75,18 @@
   function onKey(e: KeyboardEvent) {
     if (e.target instanceof HTMLInputElement) return;
     const n = Number(e.key);
-    if (!reveal && n >= 1 && n <= q.options.length) answer(q.options[n - 1]);
+    if (!reveal && n >= 1 && n <= count) answer(n - 1);
     else if (reveal && canNext && (e.key === 'Enter' || e.key === ' ')) {
       e.preventDefault();
       next();
     }
   }
 
-  function optionState(id: string) {
-    if (myMiss?.optionId === id) return 'wrong';
-    if (!reveal) return chosen === id ? 'pending' : '';
-    if (id === reveal.correctId) return 'right';
-    if (id === reveal.chosenId) return 'wrong';
+  function optionState(index: number) {
+    if (myMiss?.index === index) return 'wrong';
+    if (!reveal) return chosen === index ? 'pending' : '';
+    if (index === reveal.correctIndex) return 'right';
+    if (index === reveal.chosenIndex) return 'wrong';
     return 'dim';
   }
 </script>
@@ -107,8 +101,8 @@
   {/if}
 {/snippet}
 
-{#snippet who(id: string)}
-  {@const ps = markers(id)}
+{#snippet who(index: number)}
+  {@const ps = markers(index)}
   {#if ps.length}
     <span class="who-picked">
       {#each ps as p (p.id)}
@@ -124,7 +118,7 @@
       <p>
         {#if race}
           {#if winner}
-            <b class="good">+1</b> {winner.id === myId ? 'You were' : `${winner.name} was`} fastest!
+            <b class="good">+1</b> {winner.id === me ? 'You were' : `${winner.name} was`} fastest!
           {:else if reveal.timedOut}
             Time's up — nobody got it.
           {:else}
@@ -155,11 +149,11 @@
   {:else if race && myMiss}
     <p class="spectate out">Wrong — −1. You're out until the next question.</p>
   {:else if race}
-    <p class="spectate muted">First correct answer wins. Wrong costs a point! Press 1–{q.options.length}.</p>
+    <p class="spectate muted">First correct answer wins. Wrong costs a point! Press 1–{count}.</p>
   {:else if !mine}
     <p class="spectate muted">{active.name} is deciding…</p>
   {:else}
-    <p class="spectate muted">Tip: press 1–{q.options.length} to answer.</p>
+    <p class="spectate muted">Tip: press 1–{count} to answer.</p>
   {/if}
 {/snippet}
 
@@ -180,33 +174,39 @@
     <div class="tooltip wide" class:good={reveal && iWon} class:bad={reveal && !iWon}>
       <div class="head">
         <div class="head-text">
-          <span class="iname">{item.name}</span>
-          {#if reveal}
+          <span class="iname">{q.prompt}</span>
+          {#if reveal && item}
             <span class="ibase" in:fade>{item.base}</span>
           {:else}
             <span class="ibase">Which one is it?</span>
           {/if}
         </div>
       </div>
-      <div class="tiles" class:many={q.options.length > 4} class:six={q.options.length === 6} class:gray={rules.grayscale && !reveal}>
-        {#each q.options as id, i (id)}
-          {@const st = optionState(id)}
-          {@const opt = engine.byId.get(id)!}
+      <div class="tiles" class:many={count > 4} class:six={count === 6}>
+        {#each q.labels as _, i (i)}
+          {@const st = optionState(i)}
+          {@const src = reveal && q.options[i] ? itemImage(q.options[i]) : media?.options[i]}
           <button
             class="tile {st}"
             class:mine
-            disabled={!mine || !!reveal || !!chosen}
-            onclick={() => answer(id)}
+            disabled={!mine || !!reveal || chosen !== null}
+            onclick={() => answer(i)}
             in:scale={{ start: 0.85, duration: 450, delay: 250 + i * 80 }}
           >
             <span class="key">{i + 1}</span>
-            <img src={itemImage(id)} alt="Option {i + 1}" class:gem={opt.kind === 'gem'} draggable="false" />
+            {#if src}
+              {#key src}
+                <img {src} alt="Option {i + 1}" class:gem draggable="false" in:fade={{ duration: 250 }} />
+              {/key}
+            {:else}
+              <span class="loading" aria-label="Loading"></span>
+            {/if}
             {#if reveal}
-              <span class="caption" in:fly={{ y: 6, duration: 300, delay: 150 }}>{opt.name}</span>
+              <span class="caption" in:fly={{ y: 6, duration: 300, delay: 150 }}>{optionName(i)}</span>
             {/if}
             {#if st === 'right'}<span class="mark" in:scale={{ duration: 300 }}>✓</span>{/if}
             {#if st === 'wrong'}<span class="mark" in:scale={{ duration: 300 }}>✕</span>{/if}
-            {@render who(id)}
+            {@render who(i)}
           </button>
         {/each}
         {@render stamp()}
@@ -217,7 +217,7 @@
     <div class="stage">
       <div class="tooltip" class:good={reveal && iWon} class:bad={reveal && !iWon}>
         <div class="head">
-          {#if reveal}
+          {#if reveal && item}
             <div class="head-text" in:fly={{ y: 10, duration: 450 }}>
               <span class="iname">{item.name}</span>
               <span class="ibase">{item.base}</span>
@@ -230,39 +230,47 @@
           {/if}
         </div>
         <div class="art">
-          <div class="frame" class:gem={item.kind === 'gem'}>
-            <img
-              src={itemImage(q.itemId)}
-              alt="The item to identify"
-              class:loaded
-              onload={() => (loaded = true)}
-              draggable="false"
-            />
-            {#if q.veil}
-              <div class="veil" class:lifted={!!reveal} style:--n={q.veil.size} aria-hidden="true">
-                {#each veilDelays as delay, i (i)}
-                  <span style:animation-delay="{delay}s"></span>
+          <div class="frame" class:gem>
+            {#if reveal && item}
+              <img class="shown" src={itemImage(item.id)} alt={item.name} draggable="false" in:fade={{ duration: 400 }} />
+            {:else if media?.grid}
+              <div class="fit" style:--aspect={aspect}>
+                {#each cells as c (c.i)}
+                  {@const t = media.tiles[c.i]}
+                  <span
+                    class="cell"
+                    style:left="{(c.x / media.grid.w) * 100}%"
+                    style:top="{(c.y / media.grid.h) * 100}%"
+                    style:width="{(c.w / media.grid.w) * 100}%"
+                    style:height="{(c.h / media.grid.h) * 100}%"
+                  >
+                    {#if t}<img src={t.url} alt="" draggable="false" />{/if}
+                  </span>
                 {/each}
               </div>
+            {:else if media?.art}
+              <img class="shown" src={media.art.url} alt="The item to identify" draggable="false" in:fade={{ duration: 500 }} />
+            {:else}
+              <span class="loading big" aria-label="Loading"></span>
             {/if}
           </div>
           {@render stamp()}
         </div>
       </div>
 
-      <div class="options" class:compact={q.options.length > 6}>
-        {#each q.options as id, i (id)}
-          {@const st = optionState(id)}
+      <div class="options" class:compact={count > 6}>
+        {#each q.labels as label, i (i)}
+          {@const st = optionState(i)}
           <button
             class="option {st}"
             class:mine
-            disabled={!mine || !!reveal || !!chosen}
-            onclick={() => answer(id)}
+            disabled={!mine || !!reveal || chosen !== null}
+            onclick={() => answer(i)}
             in:fly={{ x: 40, duration: 450, delay: 300 + i * 90 }}
           >
             <span class="key">{i + 1}</span>
-            <span class="text">{itemName(id)}</span>
-            {@render who(id)}
+            <span class="text">{label ?? optionName(i)}</span>
+            {@render who(i)}
             {#if st === 'right'}<span class="mark" in:scale={{ duration: 300 }}>✓</span>{/if}
             {#if st === 'wrong'}<span class="mark" in:scale={{ duration: 300 }}>✕</span>{/if}
           </button>
@@ -413,59 +421,68 @@
     margin: auto;
     width: 72%;
     height: 80%;
+    display: grid;
+    place-items: center;
+    container-type: size;
   }
   .frame.gem {
     width: 42%;
     height: 50%;
   }
-  .art img {
+  .art img.shown {
     width: 100%;
     height: 100%;
     object-fit: contain;
-    opacity: 0;
-    transform: scale(0.85);
-    filter: blur(8px) brightness(2);
-    transition:
-      opacity 0.6s,
-      transform 0.8s var(--ease-out),
-      filter 0.9s;
+    filter: drop-shadow(0 12px 25px rgba(0, 0, 0, 0.8));
+    animation: hover 5s ease-in-out 1s infinite;
   }
-  /* Tiles of fog over the art that lift one by one. */
-  .veil {
+  /* Veiled art: stone tiles that turn into pieces of the picture as the host sends them. */
+  .fit {
+    position: relative;
+    width: min(100cqw, calc(100cqh * var(--aspect)));
+    aspect-ratio: var(--aspect);
+  }
+  .cell {
     position: absolute;
-    inset: -4%;
-    display: grid;
-    grid-template-columns: repeat(var(--n), 1fr);
-    grid-template-rows: repeat(var(--n), 1fr);
-    transition: opacity 0.7s;
-  }
-  .veil span {
+    overflow: hidden;
     background:
       radial-gradient(circle at 30% 25%, rgba(201, 164, 92, 0.1), transparent 60%),
       linear-gradient(160deg, #1a1611, #0a0907);
     box-shadow:
       inset 0 0 0 1px rgba(125, 99, 51, 0.35),
       inset 0 0 12px rgba(0, 0, 0, 0.8);
-    animation: lift 0.7s var(--ease-out) both;
   }
-  .veil.lifted {
-    opacity: 0;
+  .cell img {
+    display: block;
+    /* A hair larger than the cell so neighbouring pieces meet without seams. */
+    width: calc(100% + 1px);
+    height: calc(100% + 1px);
+    animation: uncover 0.6s var(--ease-out) both;
   }
-  @keyframes lift {
-    0% {
-      opacity: 1;
-      transform: none;
-    }
-    100% {
+  @keyframes uncover {
+    from {
       opacity: 0;
-      transform: scale(0.6) rotate(8deg);
+      transform: scale(1.4);
+      filter: brightness(2.5);
     }
   }
-  .art img.loaded {
-    opacity: 1;
-    transform: scale(1);
-    filter: drop-shadow(0 12px 25px rgba(0, 0, 0, 0.8));
-    animation: hover 5s ease-in-out 1s infinite;
+  .loading {
+    width: 28px;
+    height: 28px;
+    margin: auto;
+    border-radius: 50%;
+    border: 2px solid rgba(201, 164, 92, 0.15);
+    border-top-color: var(--gold);
+    animation: spin 0.9s linear infinite;
+  }
+  .loading.big {
+    width: 44px;
+    height: 44px;
+  }
+  @keyframes spin {
+    to {
+      rotate: 360deg;
+    }
   }
   @keyframes hover {
     50% {
@@ -631,9 +648,6 @@
   }
   .tiles.many .tile {
     height: 200px;
-  }
-  .tiles.gray .tile img {
-    filter: grayscale(1) contrast(1.1) drop-shadow(0 10px 20px rgba(0, 0, 0, 0.8));
   }
   .tile img {
     flex: 1;

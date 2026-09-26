@@ -1,7 +1,7 @@
 <script lang="ts">
   import { flip } from 'svelte/animate';
   import { fly, scale } from 'svelte/transition';
-  import { session, myId } from '../lib/session.svelte';
+  import { session } from '../lib/session.svelte';
   import { MAX_PLAYERS, MAX_NAME, DIFFICULTIES, type Difficulty, type GameMode } from '../lib/game';
   import { sfx } from '../lib/sound';
   import Avatar from './Avatar.svelte';
@@ -65,6 +65,10 @@
     sfx('click');
     session.dispatch({ type: 'settings', settings: mode === 'race' && s.settings.timer === 0 ? { mode, timer: 20 } : { mode } });
   }
+  function setLocked(v: boolean) {
+    sfx('click');
+    session.dispatch({ type: 'settings', settings: { locked: v } });
+  }
   function setPublic(v: boolean) {
     sfx('click');
     session.dispatch({ type: 'settings', settings: { public: v } });
@@ -90,10 +94,22 @@
   {#if !local}
     <section class="room" in:fly={{ y: -20, duration: 500 }}>
       <span class="label">Room code</span>
-      <div class="code" aria-label="Room code {session.code}">
+      <div class="code" class:hidden={session.hideCode} aria-label={session.hideCode ? 'Room code hidden' : `Room code ${session.code}`}>
         {#each session.code.split('') as ch, i (i)}
-          <span class="glyph" style:animation-delay="{i * 80}ms">{ch}</span>
+          <span class="glyph" style:animation-delay="{i * 80}ms">{session.hideCode ? '•' : ch}</span>
         {/each}
+        <button
+          class="eye"
+          onclick={() => session.setHideCode(!session.hideCode)}
+          title={session.hideCode ? 'Show the room code' : 'Hide the room code (for streaming)'}
+          aria-label={session.hideCode ? 'Show room code' : 'Hide room code'}
+        >
+          {#if session.hideCode}
+            <svg viewBox="0 0 24 24"><path d="M3 3l18 18M10.6 5.1A10 10 0 0 1 12 5c6 0 10 7 10 7a17 17 0 0 1-3.2 3.9M6.1 6.1C3.5 8 2 12 2 12s4 7 10 7a9.7 9.7 0 0 0 5.9-2.1M9.9 9.9a3 3 0 0 0 4.2 4.2" /></svg>
+          {:else}
+            <svg viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z" /><circle cx="12" cy="12" r="3" /></svg>
+          {/if}
+        </button>
       </div>
       <div class="room-actions">
         <button class="btn small" onclick={copy}>
@@ -108,15 +124,38 @@
               Public
             </button>
           </div>
+          <button
+            class="lock"
+            class:on={!!s.settings.locked}
+            onclick={() => setLocked(!s.settings.locked)}
+            title={s.settings.locked ? 'Let new players join again' : 'Stop new players from joining'}
+          >
+            {#if s.settings.locked}
+              <svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></svg>
+              Locked
+            {:else}
+              <svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 7.5-2" /></svg>
+              Lock
+            {/if}
+          </button>
         {:else}
-          <span class="vis-tag">{s.settings.public ? 'Public room' : 'Private room'}</span>
+          <span class="vis-tag">{s.settings.public ? 'Public room' : 'Private room'}{s.settings.locked ? ' · locked' : ''}</span>
         {/if}
       </div>
       {#if isHost}
         <p class="vis-hint muted">
-          {s.settings.public ? 'Anyone can find this room under “Open rooms”.' : 'Only people with the code or link can join.'}
+          {#if s.settings.locked}
+            Room locked: nobody new can join. Players already in the game can still reconnect.
+          {:else if s.settings.public}
+            Anyone can find this room under “Open rooms”.
+          {:else}
+            Only people with the code or link can join.
+          {/if}
         </p>
       {/if}
+      <p class="ip-note muted">
+        Players connect directly to each other, so everyone in a room can see each other's IP address. Only play with people you're comfortable sharing that with.
+      </p>
     </section>
   {/if}
 
@@ -132,7 +171,7 @@
             <Avatar name={p.name} hue={p.hue} />
             <span class="name">{p.name}</span>
             {#if p.id === s.hostId}<span class="tag">Host</span>{/if}
-            {#if !local && p.id === myId}<span class="tag you">You</span>{/if}
+            {#if !local && p.id === session.myPlayerId}<span class="tag you">You</span>{/if}
             {#if isHost && p.id !== s.hostId}
               <button
                 class="remove"
@@ -263,6 +302,73 @@
     gap: 0.7rem;
     flex-wrap: wrap;
     justify-content: center;
+  }
+  .code {
+    position: relative;
+  }
+  .code.hidden .glyph {
+    color: var(--gold-lo);
+  }
+  .eye,
+  .lock {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35em;
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px solid var(--line);
+    color: var(--muted);
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .eye {
+    position: absolute;
+    right: -46px;
+    top: 50%;
+    translate: 0 -50%;
+    width: 34px;
+    height: 34px;
+    justify-content: center;
+    border-radius: 50%;
+  }
+  .lock {
+    padding: 0.4em 0.8em;
+    border-radius: 3px;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 0.72rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+  .lock.on {
+    color: #ffcf9e;
+    border-color: #8c5a2c;
+    background: rgba(140, 90, 44, 0.25);
+  }
+  .eye:hover,
+  .lock:hover {
+    color: var(--gold-hi);
+    border-color: var(--gold-lo);
+  }
+  .eye svg,
+  .lock svg {
+    width: 16px;
+    height: 16px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .lock svg {
+    width: 13px;
+    height: 13px;
+  }
+  .ip-note {
+    max-width: 520px;
+    margin: 0.2rem 0 0;
+    font-size: 0.82rem;
+    text-align: center;
+    opacity: 0.8;
   }
   .visibility {
     display: inline-flex;
