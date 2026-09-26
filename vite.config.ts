@@ -36,4 +36,14 @@ export default defineConfig(({ mode }) => ({
   // Relative base so the build works on any GitHub Pages sub-path.
   base: './',
   plugins: [svelte(), csp(loadEnv(mode, process.cwd(), 'VITE_'))],
+  build: {
+    rollupOptions: {
+      // Legal pages are plain static pages so they work without JavaScript.
+      input: {
+        main: 'index.html',
+        impressum: 'impressum.html',
+        datenschutz: 'datenschutz.html',
+      },
+    },
+  },
 }));

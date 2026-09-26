@@ -3,6 +3,7 @@
   import { fade, fly } from 'svelte/transition';
   import { session } from './lib/session.svelte';
   import { isMuted, setMuted, sfx } from './lib/sound';
+  import { IMPRINT_URL, PRIVACY_URL } from './lib/site';
   import Background from './components/Background.svelte';
   import Home from './components/Home.svelte';
   import Lobby from './components/Lobby.svelte';
@@ -87,6 +88,14 @@
       </div>
     {/key}
   </main>
+
+  {#if screen !== 'home'}
+    <nav class="legal">
+      <a href={IMPRINT_URL} target="_blank" rel="noopener">Impressum</a>
+      <span aria-hidden="true">·</span>
+      <a href={PRIVACY_URL} target="_blank" rel="noopener">Datenschutz</a>
+    </nav>
+  {/if}
 </div>
 
 {#if session.mode === 'client' && session.status === 'lost'}
@@ -238,6 +247,22 @@
     min-width: 0;
   }
 
+  .legal {
+    display: flex;
+    justify-content: center;
+    gap: 0.6rem;
+    padding: 0.6rem 1rem 1rem;
+    font-size: 0.8rem;
+    color: var(--muted);
+    opacity: 0.7;
+  }
+  .legal a {
+    color: var(--muted);
+    text-decoration: none;
+  }
+  .legal a:hover {
+    color: var(--gold-hi);
+  }
   .banner {
     position: fixed;
     top: 12px;

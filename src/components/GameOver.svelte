@@ -4,7 +4,7 @@
   import { session } from '../lib/session.svelte';
   import { playerColor } from '../lib/ui';
   import Avatar from './Avatar.svelte';
-  import { CREATOR, SITE_URL } from '../lib/site';
+  import { CREATOR, DONATE_URL, SITE_URL } from '../lib/site';
 
   const s = $derived(session.state!);
   const standings = $derived([...s.players].sort((a, b) => b.score - a.score));
@@ -123,7 +123,9 @@
   </div>
 
   <p class="credit" in:fly={{ y: 10, duration: 600, delay: 1600 }}>
-    <a href={SITE_URL} target="_blank" rel="noreferrer">poe2.quest</a> · made by <span>{CREATOR}</span>
+    <a href={SITE_URL} target="_blank" rel="noreferrer">poe2.quest</a> · made by
+    <a class="maker" href={DONATE_URL} target="_blank" rel="noopener noreferrer" title="Support {CREATOR}">{CREATOR}</a>
+    · <a class="tip" href={DONATE_URL} target="_blank" rel="noopener noreferrer">♥ support the project</a>
   </p>
 </div>
 
@@ -236,8 +238,15 @@
     color: var(--gold);
     text-decoration: none;
   }
-  .credit span {
+  .credit .maker {
     color: var(--gold-hi);
+    border-bottom: 1px dotted var(--gold-lo);
+  }
+  .credit .tip {
+    color: #e0907c;
+  }
+  .credit a:hover {
+    color: #fff1cf;
   }
   .actions p {
     margin: 0;

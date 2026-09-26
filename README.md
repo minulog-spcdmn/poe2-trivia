@@ -1,6 +1,6 @@
 # Exile Trivia — PoE2 unique item quiz
 
-**Play at [poe2.quest](https://poe2.quest/)** · made by zoe_arcana
+**Play at [poe2.quest](https://poe2.quest/)** · made by zoe_arcana · [support the project](https://paypal.me/minuW)
 
 A multiplayer Path of Exile 2 trivia game that runs entirely in the browser and
 is hosted as a static site on GitHub Pages. No server needed.
@@ -113,6 +113,13 @@ list.
 
 Not defended against: a determined player recognising item art with
 their own tools, and a cheating host.
+
+## Legal pages
+
+`impressum.html` (legal notice, § 5 DDG) and `datenschutz.html` (privacy
+policy, GDPR) are plain static pages, built as extra Vite entry points and
+linked from every screen. Update them whenever the site starts using a new
+third-party service.
 
 ## Development
 
