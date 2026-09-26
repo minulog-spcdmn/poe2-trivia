@@ -232,3 +232,71 @@ test('tablets are rarer answers and only fill in as decoys', () => {
   assert.ok(share < evenShare / 2);
   assert.equal(asDecoy, 0, 'no tablet decoys for non-tablet answers on Cruel');
 });
+
+/** Plays one turn for whoever is active: pick the first offer, answer right or wrong. */
+function playTurn(engine: Engine, s: GameState, correct: (id: string) => boolean): GameState {
+  const me = s.players[s.turn].id;
+  s = engine.apply(s, { type: 'pick', category: s.offered[0] }, me);
+  const q = s.question!;
+  s = engine.apply(s, { type: 'answer', index: correct(me) ? right(q) : wrongIdx(q) }, me);
+  return engine.apply(s, { type: 'next' }, me);
+}
+
+test('a tie over the target starts a deathmatch between the tied players only', () => {
+  let { engine, s } = setup(['A', 'B', 'C'], 1);
+  s = engine.apply(s, { type: 'start' }, 'p0');
+  const [x, y, z] = s.players.map((p) => p.id);
+  // Round 1: x and y score, z misses -> x and y tied at the target.
+  for (let i = 0; i < 3; i++) s = playTurn(engine, s, (id) => id !== z);
+  assert.equal(s.phase, 'choosing');
+  assert.deepEqual(s.deathmatch!.alive, [x, y]);
+  assert.equal(s.offered.length, 1, 'deathmatch offers a single random category');
+  assert.equal(s.players[s.turn].id, x);
+  // One tier harder: cruel -> merciless (6 options).
+  s = engine.apply(s, { type: 'pick', category: s.offered[0] }, x);
+  assert.equal(s.question!.options.length, DIFFICULTIES.merciless.options);
+  s = engine.apply(s, { type: 'answer', index: right(s.question!) }, x);
+  s = engine.apply(s, { type: 'next' }, x);
+  // z never gets a deathmatch turn.
+  assert.equal(s.players[s.turn].id, y);
+  // Both right -> another round, nobody out.
+  s = playTurn(engine, s, () => true);
+  assert.equal(s.deathmatch!.round, 2);
+  assert.deepEqual(s.deathmatch!.alive, [x, y]);
+  // Round 2: x wrong, y right -> y wins.
+  s = playTurn(engine, s, (id) => id === y);
+  s = playTurn(engine, s, (id) => id === y);
+  assert.equal(s.phase, 'over');
+  assert.deepEqual(s.winners, [y]);
+  assert.deepEqual(s.deathmatch!.eliminated, [x]);
+});
+
+test('deathmatch: everyone wrong keeps everyone in; three-way ties shrink', () => {
+  let { engine, s } = setup(['A', 'B', 'C'], 1);
+  s = engine.apply(s, { type: 'start' }, 'p0');
+  const ids = s.players.map((p) => p.id);
+  for (let i = 0; i < 3; i++) s = playTurn(engine, s, () => true);
+  assert.deepEqual(s.deathmatch!.alive, ids);
+  for (let i = 0; i < 3; i++) s = playTurn(engine, s, () => false);
+  assert.equal(s.deathmatch!.round, 2);
+  assert.deepEqual(s.deathmatch!.alive, ids, 'all wrong: nobody out');
+  // Round 2: first two right, last wrong -> last out.
+  for (let i = 0; i < 3; i++) s = playTurn(engine, s, (id) => id !== ids[2]);
+  assert.deepEqual(s.deathmatch!.alive, [ids[0], ids[1]]);
+  assert.deepEqual(s.deathmatch!.eliminated, [ids[2]]);
+  // Round 3: second right -> wins.
+  for (let i = 0; i < 2; i++) s = playTurn(engine, s, (id) => id === ids[1]);
+  assert.equal(s.phase, 'over');
+  assert.deepEqual(s.winners, [ids[1]]);
+});
+
+test('deathmatch: a disconnected duelist forfeits', () => {
+  let { engine, s } = setup(['A', 'B'], 1);
+  s = engine.apply(s, { type: 'start' }, 'p0');
+  for (let i = 0; i < 2; i++) s = playTurn(engine, s, () => true);
+  const [x, y] = s.deathmatch!.alive;
+  s = engine.apply(s, { type: 'connection', playerId: y, connected: false }, null);
+  s = playTurn(engine, s, () => false);
+  assert.equal(s.phase, 'over');
+  assert.deepEqual(s.winners, [x]);
+});

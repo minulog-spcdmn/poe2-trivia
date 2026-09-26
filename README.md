@@ -16,7 +16,11 @@ is hosted as a static site on GitHub Pages. No server needed.
    difficulties, pick the right art for a name). A correct answer scores a point.
 3. The first player to reach the host's target score wins. The game only ends
    once a full round is finished, so everyone gets the same number of turns.
-   If players are tied, play continues.
+   If players are tied at the top, it goes to a **deathmatch**:
+   only the tied players play sudden-death rounds with a random category and
+   questions one difficulty harder. When some duelists answer right and
+   others wrong, the wrong ones are out; if all of them get it right, or all
+   get it wrong, another round is played. The last duelist standing wins.
 
 Items aren't repeated within a game until a category runs out. Precursor tablets come up about a quarter as often as other items, and only appear as wrong answers when nothing else fits.
 

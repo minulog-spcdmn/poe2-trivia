@@ -99,6 +99,7 @@
     </h1>
     <p class="sub muted" in:fly={{ y: 10, duration: 700, delay: 700 }}>
       {winner.score} points after {s.round} {s.settings.mode === 'race' ? (s.round === 1 ? 'question' : 'questions') : s.round === 1 ? 'round' : 'rounds'}
+      {#if s.deathmatch}· won the deathmatch in round {s.deathmatch.round}{/if}
     </p>
   {/if}
 

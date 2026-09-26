@@ -60,6 +60,16 @@ export const RARE_GROUPS: Record<string, number> = { Tablets: 0.25 };
 
 const weightOf = (it: Item) => RARE_GROUPS[it.group] ?? 1;
 
+function rulesForKey(d: string | undefined): Difficulty {
+  return d && d in DIFFICULTIES ? (d as Difficulty) : 'cruel';
+}
+
+/** The rules for the current question (deathmatch questions are one tier harder). */
+export function activeRules(s: GameState): DifficultyRules {
+  const base = rulesForKey(s.settings.difficulty);
+  return DIFFICULTIES[s.deathmatch ? HARDER[base] : base];
+}
+
 export function rulesFor(difficulty: string | undefined): DifficultyRules {
   return DIFFICULTIES[difficulty as Difficulty] ?? DIFFICULTIES.cruel;
 }
@@ -72,6 +82,23 @@ export interface Veil {
 }
 
 import { cleanName, nameProblem } from './names.ts';
+
+export interface Deathmatch {
+  /** Players still in, in turn order. */
+  alive: string[];
+  /** Everyone who entered the deathmatch. */
+  entrants: string[];
+  round: number;
+  /** This round's answers so far: player id → answered correctly. */
+  results: Record<string, boolean>;
+  /** Knocked out at the end of the previous round. */
+  eliminated: string[];
+  /** turnCount when it started (lets clients play the intro once). */
+  startedAt: number;
+}
+
+/** Deathmatch questions are one tier harder. */
+const HARDER: Record<Difficulty, Difficulty> = { cruel: 'merciless', merciless: 'eternal', eternal: 'eternal' };
 
 export type Phase = 'lobby' | 'choosing' | 'question' | 'reveal' | 'over';
 
@@ -154,7 +181,8 @@ export interface GameState {
   reveal: Reveal | null;
   used: string[];
   winners: string[];
-  tiebreak: boolean;
+  /** Sudden-death playoff between players tied at or above the target. */
+  deathmatch: Deathmatch | null;
   /** Race mode: categories of the last questions, to avoid repeats. */
   recentCategories: string[];
   /** Bumped on every change so clients can ignore stale messages. */
@@ -206,7 +234,7 @@ export function createGame(hostId: string | null, settings: Settings = DEFAULT_S
     reveal: null,
     used: [],
     winners: [],
-    tiebreak: false,
+    deathmatch: null,
     recentCategories: [],
     version: 0,
   };
@@ -320,6 +348,15 @@ export class Engine {
         if (race) {
           s.turn = 0;
           this.checkRaceDone(s);
+        } else if (s.deathmatch) {
+          const dm = s.deathmatch;
+          dm.alive = dm.alive.filter((id) => id !== action.playerId);
+          if (idx < s.turn) s.turn--;
+          if (dm.alive.length <= 1) this.finish(s, dm.alive);
+          else if (idx === s.turn || !dm.alive.includes(s.players[s.turn]?.id)) {
+            s.turn = (s.turn - 1 + s.players.length) % s.players.length;
+            this.nextDuelist(s);
+          }
         } else if (idx < s.turn) s.turn--;
         else if (idx === s.turn) {
           s.turn = s.turn % s.players.length;
@@ -361,7 +398,7 @@ export class Engine {
         s.round = 1;
         s.turnCount = 0;
         s.winners = [];
-        s.tiebreak = false;
+        s.deathmatch = null;
         s.recentCategories = [];
         s.turn = 0;
         if (race) this.beginRaceQuestion(s, true);
@@ -372,7 +409,7 @@ export class Engine {
         if (s.phase !== 'choosing') throw new ActionError('Not the time to pick a category.');
         if (!isActive) throw new ActionError("It's not your turn.");
         if (!s.offered.includes(action.category)) throw new ActionError('That category is not on offer.');
-        active.recent = [...active.recent, action.category].slice(-LOCKOUT_TURNS);
+        if (!s.deathmatch) active.recent = [...active.recent, action.category].slice(-LOCKOUT_TURNS);
         s.question = this.makeQuestion(s, action.category);
         s.used.push(s.question.itemId);
         s.phase = 'question';
@@ -393,6 +430,7 @@ export class Engine {
           chosenId === null || (q.deadline !== null && from !== null && this.now() > q.deadline + 1500);
         const correct = !timedOut && chosenId === q.itemId;
         if (correct) active.score += 1;
+        if (s.deathmatch) s.deathmatch.results[active.id] = correct;
         s.reveal = {
           correctId: q.itemId,
           chosenId: timedOut ? null : chosenId,
@@ -420,7 +458,10 @@ export class Engine {
         if (!isHost) throw new ActionError('Only the host can skip a turn.');
         if (s.phase !== 'choosing' && s.phase !== 'question') throw new ActionError('Nothing to skip.');
         if (race) this.advanceRace(s);
-        else this.advance(s);
+        else {
+          if (s.deathmatch && s.players[s.turn]) s.deathmatch.results[s.players[s.turn].id] = false;
+          this.advance(s);
+        }
         break;
       }
       case 'restart': {
@@ -533,11 +574,78 @@ export class Engine {
     s.phase = 'choosing';
     s.question = null;
     s.reveal = null;
-    s.offered = this.offerCategories(s, s.players[s.turn]);
+    // In a deathmatch nobody picks their favourite: one random category.
+    s.offered = s.deathmatch ? [this.randomCategory(s)] : this.offerCategories(s, s.players[s.turn]);
   }
+
+  private finish(s: GameState, winners: string[]) {
+    s.phase = 'over';
+    s.winners = winners;
+    s.question = null;
+    s.reveal = null;
+    s.offered = [];
+  }
+
+  private randomCategory(s: GameState): string {
+    const fresh = this.categories.filter((c) => this.unusedIn(s, c).length > 0);
+    return sample(fresh.length ? fresh : this.categories, 1, this.rng)[0];
+  }
+
+  // ---- deathmatch -------------------------------------------------------
+
+  private startDeathmatch(s: GameState, tied: string[]) {
+    s.deathmatch = { alive: tied, entrants: [...tied], round: 1, results: {}, eliminated: [], startedAt: s.turnCount + 1 };
+    this.nextDuelist(s);
+  }
+
+  /** Next duelist who hasn't answered this round; resolves the round when everyone has. */
+  private advanceDeathmatch(s: GameState) {
+    this.nextDuelist(s);
+  }
+
+  private nextDuelist(s: GameState) {
+    const dm = s.deathmatch!;
+    const connected = (id: string) => s.players.find((p) => p.id === id)?.connected ?? false;
+    const waiting = dm.alive.filter((id) => !(id in dm.results) && connected(id));
+    if (waiting.length) {
+      // Keep seating order: the first waiting duelist after the current seat.
+      const n = s.players.length;
+      for (let i = 1; i <= n; i++) {
+        const idx = (s.turn + i) % n;
+        if (waiting.includes(s.players[idx].id)) {
+          s.turn = idx;
+          break;
+        }
+      }
+      if (!waiting.includes(s.players[s.turn]?.id)) s.turn = s.players.findIndex((p) => p.id === waiting[0]);
+      this.beginTurn(s, false);
+      return;
+    }
+    // Round over. Missing answers (disconnected, skipped) count as wrong.
+    const right = dm.alive.filter((id) => dm.results[id] === true);
+    const stillHere = (ids: string[]) => ids.filter(connected);
+    let alive = right.length > 0 && right.length < dm.alive.length ? right : dm.alive;
+    dm.eliminated = dm.alive.filter((id) => !alive.includes(id));
+    if (stillHere(alive).length === 1) alive = stillHere(alive);
+    dm.alive = alive;
+    if (alive.length <= 1 || stillHere(alive).length === 0) {
+      this.finish(s, alive.length ? alive : right);
+      return;
+    }
+    dm.round++;
+    dm.results = {};
+    const first = s.players.findIndex((p) => alive.includes(p.id) && p.connected);
+    s.turn = first === 0 ? s.players.length - 1 : first - 1;
+    this.nextDuelist(s);
+  }
+
 
   /** Moves to the next connected player, ending the game at a round boundary. */
   private advance(s: GameState) {
+    if (s.deathmatch) {
+      this.advanceDeathmatch(s);
+      return;
+    }
     const n = s.players.length;
     let next = s.turn;
     let wrapped = false;
@@ -551,14 +659,14 @@ export class Engine {
       if (best >= s.settings.targetScore) {
         const leaders = s.players.filter((p) => p.score === best);
         if (leaders.length === 1) {
-          s.phase = 'over';
-          s.winners = leaders.map((p) => p.id);
-          s.question = null;
-          s.reveal = null;
-          s.offered = [];
+          this.finish(s, leaders.map((p) => p.id));
           return;
         }
-        s.tiebreak = true;
+        this.startDeathmatch(
+          s,
+          leaders.map((p) => p.id),
+        );
+        return;
       }
       s.round++;
     }
@@ -591,7 +699,7 @@ export class Engine {
   }
 
   makeQuestion(s: GameState, category: string): Question {
-    const rules = rulesFor(s.settings.difficulty);
+    const rules = activeRules(s);
     const inCat = this.byCategory.get(category) ?? [];
     const unused = this.unusedIn(s, category);
     const answer = this.weightedPick(unused.length ? unused : inCat);

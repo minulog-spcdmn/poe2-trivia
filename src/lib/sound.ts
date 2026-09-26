@@ -1,6 +1,16 @@
 // Tiny synthesized sound effects (no audio files to ship).
 
-export type Sfx = 'correct' | 'wrong' | 'turn' | 'yourTurn' | 'reveal' | 'victory' | 'join' | 'click' | 'tick';
+export type Sfx =
+  | 'correct'
+  | 'wrong'
+  | 'turn'
+  | 'yourTurn'
+  | 'reveal'
+  | 'victory'
+  | 'join'
+  | 'click'
+  | 'tick'
+  | 'deathmatch';
 
 let ctx: AudioContext | null = null;
 let muted = (() => {
@@ -86,6 +96,12 @@ export function sfx(name: Sfx) {
       break;
     case 'click':
       tone(ac, 900, 0, 0.05, { type: 'square', gain: 0.02 });
+      break;
+    case 'deathmatch':
+      // Three war-drum hits and a low swell.
+      [0, 0.28, 0.56].forEach((t, i) => tone(ac, 70 - i * 6, t, 0.35, { type: 'sine', gain: 0.35, slide: 0.5 }));
+      tone(ac, 110, 0.8, 1.4, { type: 'sawtooth', gain: 0.05, slide: 0.8 });
+      tone(ac, 164.8, 0.8, 1.4, { type: 'triangle', gain: 0.05, slide: 0.8 });
       break;
     case 'tick':
       tone(ac, 1200, 0, 0.04, { type: 'square', gain: 0.025 });

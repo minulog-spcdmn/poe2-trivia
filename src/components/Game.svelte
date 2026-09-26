@@ -1,10 +1,12 @@
 <script lang="ts">
-  import { fade } from 'svelte/transition';
+  import { fade, fly, scale } from 'svelte/transition';
   import { session } from '../lib/session.svelte';
   import { playerColor } from '../lib/ui';
   import Scoreboard from './Scoreboard.svelte';
   import ChooseCategory from './ChooseCategory.svelte';
   import QuestionView from './QuestionView.svelte';
+  import Avatar from './Avatar.svelte';
+  import { sfx } from '../lib/sound';
 
   const s = $derived(session.state!);
   const active = $derived(s.players[s.turn]);
@@ -13,6 +15,22 @@
 
 
   const race = $derived(s.settings.mode === 'race');
+  const dm = $derived(s.deathmatch);
+  const nameOf = (id: string) => s.players.find((p) => p.id === id);
+
+  // Play the deathmatch intro once per deathmatch, on every device.
+  let introFor = $state<number | null>(null);
+  let introTimer: ReturnType<typeof setTimeout> | null = null;
+  $effect(() => {
+    const start = dm?.startedAt;
+    if (start === undefined || start === introFor) return;
+    introFor = start;
+    showIntro = true;
+    sfx('deathmatch');
+    if (introTimer) clearTimeout(introTimer);
+    introTimer = setTimeout(() => (showIntro = false), 2600);
+  });
+  let showIntro = $state(false);
   const bannerTitle = $derived(
     race ? `Question ${s.turnCount + 1}` : mine && !local ? 'Your turn' : `${active.name}'s turn`,
   );
@@ -23,7 +41,29 @@
 
   {#key s.turnCount}
     <div class="stage" in:fade={{ duration: 300, delay: 200 }} out:fade={{ duration: 180 }}>
-      <div class="banner" style:--c={race ? 'var(--unique-hi)' : playerColor(active.hue)}>
+      {#if dm}
+        <div class="dm-strip" in:fly={{ y: -10, duration: 400 }}>
+          <span class="dm-title">⚔ Deathmatch · round {dm.round}</span>
+          <span class="dm-duelists">
+            {#each dm.alive as id (id)}
+              {@const p = nameOf(id)}
+              {#if p}
+                <span class="duelist" class:done={id in dm.results} title={p.name}>
+                  <Avatar name={p.name} hue={p.hue} size={24} />
+                  {#if id in dm.results}<i class:ok={dm.results[id]}>{dm.results[id] ? '✓' : '✕'}</i>{/if}
+                </span>
+              {/if}
+            {/each}
+          </span>
+          <span class="dm-rule">
+            {#if dm.eliminated.length}
+              <b>{dm.eliminated.map((id) => nameOf(id)?.name).join(', ')} {dm.eliminated.length === 1 ? 'is' : 'are'} out.</b>
+            {/if}
+            Answer right to survive. Anyone who misses while another duelist scores is out.
+          </span>
+        </div>
+      {/if}
+      <div class="banner" class:dm={!!dm} style:--c={dm ? '#e0553f' : race ? 'var(--unique-hi)' : playerColor(active.hue)}>
         <span class="rule"></span>
         <h2>{bannerTitle}</h2>
         <span class="rule"></span>
@@ -44,6 +84,28 @@
     </div>
   {/key}
 </div>
+
+{#if showIntro && dm}
+  <div class="dm-intro" transition:fade={{ duration: 400 }} aria-live="polite">
+    <div class="dm-intro-inner" in:scale={{ start: 1.6, duration: 600, opacity: 0 }}>
+      <p class="dm-kicker">It's a tie</p>
+      <h1>Deathmatch</h1>
+      <div class="dm-faces">
+        {#each dm.entrants as id, i (id)}
+          {@const p = nameOf(id)}
+          {#if p}
+            {#if i > 0}<span class="vs">vs</span>{/if}
+            <span class="face" in:fly={{ y: 20, duration: 500, delay: 300 + i * 150 }}>
+              <Avatar name={p.name} hue={p.hue} size={56} />
+              <b>{p.name}</b>
+            </span>
+          {/if}
+        {/each}
+      </div>
+      <p class="dm-sub">Sudden death. Random categories, harder questions.</p>
+    </div>
+  </div>
+{/if}
 
 <style>
   .game {
@@ -96,6 +158,130 @@
     from {
       transform: scaleX(0);
     }
+  }
+  .dm-strip {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem 1rem;
+    margin: 0 auto 0.4rem;
+    padding: 0.5rem 1rem;
+    max-width: 760px;
+    border: 1px solid rgba(224, 85, 63, 0.45);
+    border-radius: 4px;
+    background: linear-gradient(90deg, rgba(60, 12, 8, 0.2), rgba(90, 18, 10, 0.55), rgba(60, 12, 8, 0.2));
+    box-shadow: 0 0 30px rgba(224, 85, 63, 0.12);
+  }
+  .dm-title {
+    font-family: var(--font-display);
+    font-weight: 900;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    font-size: 0.85rem;
+    color: #ff9c86;
+  }
+  .dm-duelists {
+    display: inline-flex;
+    gap: 0.35rem;
+  }
+  .duelist {
+    position: relative;
+  }
+  .duelist.done :global(.avatar) {
+    opacity: 0.6;
+  }
+  .duelist i {
+    position: absolute;
+    right: -4px;
+    bottom: -4px;
+    width: 14px;
+    height: 14px;
+    display: grid;
+    place-items: center;
+    font-style: normal;
+    font-size: 0.6rem;
+    font-weight: 700;
+    color: #fff;
+    background: var(--bad);
+    border-radius: 50%;
+  }
+  .duelist i.ok {
+    background: #3f8f43;
+  }
+  .dm-rule {
+    flex-basis: 100%;
+    text-align: center;
+    font-size: 0.9rem;
+    font-style: italic;
+    color: #d9b3a8;
+  }
+  .dm-rule b {
+    font-style: normal;
+    color: #ff9c86;
+    margin-right: 0.3em;
+  }
+  .banner.dm h2 {
+    color: #ffd7c9;
+  }
+
+  .dm-intro {
+    position: fixed;
+    inset: 0;
+    z-index: 70;
+    display: grid;
+    place-items: center;
+    padding: 1rem;
+    background: radial-gradient(ellipse at center, rgba(90, 14, 8, 0.85), rgba(0, 0, 0, 0.92) 70%);
+    pointer-events: none;
+  }
+  .dm-intro-inner {
+    text-align: center;
+  }
+  .dm-kicker {
+    margin: 0;
+    font-family: var(--font-display);
+    letter-spacing: 0.5em;
+    text-transform: uppercase;
+    color: #ff9c86;
+  }
+  .dm-intro h1 {
+    font-size: clamp(2.8rem, 12vw, 6rem);
+    font-weight: 900;
+    letter-spacing: 0.08em;
+    background: linear-gradient(180deg, #ffe0d4 10%, #ff6a45 55%, #7a1408 95%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    filter: drop-shadow(0 0 30px rgba(224, 85, 63, 0.55));
+  }
+  .dm-faces {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 0.8rem 1.2rem;
+    margin: 1.2rem 0 0.6rem;
+  }
+  .face {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .face b {
+    font-family: var(--font-display);
+    color: #ffe0d4;
+  }
+  .vs {
+    font-family: var(--font-display);
+    font-style: italic;
+    color: #ff7a5c;
+  }
+  .dm-sub {
+    margin: 0;
+    font-style: italic;
+    color: #e6b8aa;
   }
   .skip {
     display: flex;

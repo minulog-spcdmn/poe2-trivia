@@ -15,7 +15,7 @@ import {
   ActionError,
   MAX_PLAYERS,
   publicView,
-  rulesFor,
+  activeRules,
   type Action,
   type GameState,
   type Item,
@@ -410,7 +410,7 @@ class Session {
     shown.clear();
     let media: PreparedMedia;
     try {
-      media = await prepareMedia(q, rulesFor(s.settings.difficulty).grayscale);
+      media = await prepareMedia(q, activeRules(s).grayscale);
     } catch (err) {
       console.warn('media', err);
       return;
