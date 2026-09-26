@@ -22,9 +22,9 @@ Items aren't repeated within a game until a category runs out.
 
 | | Options | Wrong answers | Extras |
 |---|---|---|---|
-| Normal | 4 | Same category | — |
-| Cruel | 4 | Same kind (all rings, all bows, all Strength gems…) | 40% of questions are "find the art": you get a name and pick one of the pictures |
-| Merciless | 6 | Same kind | "Find the art" questions, and the art starts as a zoomed-in close-up that slowly pulls back |
+| Cruel (default) | 4 | Same kind (all rings, all bows, all Strength gems…) | 40% of questions are "find the art": you get a name and pick one of the pictures |
+| Merciless | 6 | Same kind, half chosen because their names look like the answer | The art is hidden under tiles that lift one by one |
+| Eternal | 8 | Chosen from the whole category for look-alike names | Tiles lift more slowly; "find the art" pictures are shown in grayscale |
 
 ## Multiplayer
 

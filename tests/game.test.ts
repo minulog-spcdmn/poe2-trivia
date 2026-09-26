@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { Engine, createGame, DIFFICULTIES, type Difficulty, type GameState, type Item } from '../src/lib/game.ts';
+import { Engine, createGame, DIFFICULTIES, nameSimilarity, type Difficulty, type GameState, type Item } from '../src/lib/game.ts';
 
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
 
@@ -12,7 +12,7 @@ function seeded(seed: number) {
   };
 }
 
-function setup(names: string[], target = 3, difficulty: Difficulty = 'normal') {
+function setup(names: string[], target = 3, difficulty: Difficulty = 'cruel') {
   const engine = new Engine(items, { rng: seeded(42) });
   let s: GameState = createGame('p0', { targetScore: target, timer: 0, difficulty });
   names.forEach((name, i) => (s = engine.apply(s, { type: 'join', playerId: `p${i}`, name }, `p${i}`)));
@@ -87,8 +87,8 @@ test('disconnected players are skipped', () => {
   assert.equal(s.turn, 2);
 });
 
-test('harder difficulties use more options and same-group decoys', () => {
-  for (const difficulty of ['normal', 'cruel', 'merciless'] as Difficulty[]) {
+test('difficulties scale options, decoy kind and question types', () => {
+  for (const difficulty of ['cruel', 'merciless', 'eternal'] as Difficulty[]) {
     const rules = DIFFICULTIES[difficulty];
     let { engine, s } = setup(['A'], 3, difficulty);
     s = engine.apply(s, { type: 'start' }, 'p0');
@@ -101,17 +101,25 @@ test('harder difficulties use more options and same-group decoys', () => {
       assert.equal(new Set(q.options).size, rules.options);
       const answer = engine.byId.get(q.itemId)!;
       for (const id of q.options) assert.equal(engine.byId.get(id)!.category, answer.category, 'decoys share the category');
-      if (rules.sameGroup === 1) {
-        const groupSize = engine.items.filter((it) => it.group === answer.group).length;
-        const sameGroup = q.options.filter((id) => engine.byId.get(id)!.group === answer.group).length;
-        assert.equal(sameGroup, Math.min(groupSize, rules.options));
+      const groupSize = engine.items.filter((it) => it.group === answer.group).length;
+      if (rules.groupFirst && groupSize >= rules.options) {
+        for (const id of q.options) assert.equal(engine.byId.get(id)!.group, answer.group, 'decoys share the group');
       }
+      assert.equal(!!q.veil, !!rules.veil && q.mode === 'name');
       s = engine.apply(s, { type: 'answer', optionId: q.itemId }, 'p0');
       s = engine.apply(s, { type: 'next' }, 'p0');
       if (s.phase === 'over') s = engine.apply(engine.apply(s, { type: 'restart' }, 'p0'), { type: 'start' }, 'p0');
     }
-    assert.equal(modes.has('art'), rules.artChance > 0);
+    assert.ok(modes.has('art') && modes.has('name'));
   }
+});
+
+test('similar-looking names rank above unrelated ones', () => {
+  assert.ok(nameSimilarity("Berek's Grip", "Berek's Pass") > nameSimilarity("Berek's Grip", 'Quill Rain'));
+  assert.ok(
+    nameSimilarity('Whisper of the Brotherhood', 'Call of the Brotherhood') >
+      nameSimilarity('Whisper of the Brotherhood', 'Blackheart'),
+  );
 });
 
 test('lineage gems are a category', () => {
