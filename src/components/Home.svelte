@@ -4,7 +4,7 @@
   import { itemImage } from '../lib/ui';
   import { sfx } from '../lib/sound';
   import OpenRooms from './OpenRooms.svelte';
-  import { CREATOR } from '../lib/site';
+  import { CREATOR, DONATE_URL } from '../lib/site';
 
   const params = new URLSearchParams(location.search);
   const invite = (params.get('room') ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, CODE_LENGTH);
@@ -147,9 +147,18 @@
   </div>
 
   <footer class="muted">
-    <p class="credit">Made by <span class="maker">{CREATOR}</span></p>
+    <p class="credit">
+      Made by <a class="maker" href={DONATE_URL} target="_blank" rel="noopener noreferrer" title="Support {CREATOR}">{CREATOR}</a>
+    </p>
+    <a class="support" href={DONATE_URL} target="_blank" rel="noopener noreferrer">
+      <svg viewBox="0 0 24 24" aria-hidden="true"
+        ><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z" /></svg
+      >
+      Support the project
+    </a>
+    <p class="support-note">Optional tips help pay for the domain and development. Everything stays free.</p>
     Item data &amp; art from <a href="https://poe2db.tw/us/Unique_item" target="_blank" rel="noreferrer">poe2db.tw</a>.
-    Path of Exile is a trademark of Grinding Gear Games. Fan project.
+    Path of Exile is a trademark of Grinding Gear Games. Unofficial fan project, not affiliated with or endorsed by Grinding Gear Games.
   </footer>
 </div>
 
@@ -366,6 +375,47 @@
     letter-spacing: 0.08em;
     text-transform: none;
     font-weight: 700;
+    text-decoration: none;
+    border-bottom: 1px dotted var(--gold-lo);
+    transition: color 0.2s, border-color 0.2s;
+  }
+  .maker:hover {
+    color: #fff1cf;
+    border-bottom-color: var(--gold);
+  }
+  .support {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45em;
+    padding: 0.45em 1em;
+    margin-bottom: 0.4rem;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    font-family: var(--font-display);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    text-decoration: none;
+    color: var(--muted);
+    background: rgba(0, 0, 0, 0.3);
+    transition: all 0.2s;
+  }
+  .support:hover {
+    color: #ffd7c2;
+    border-color: #8c3a2c;
+    background: rgba(140, 58, 44, 0.2);
+  }
+  .support svg {
+    width: 13px;
+    height: 13px;
+    fill: #c0463c;
+  }
+  .support-note {
+    margin: 0 0 0.9rem;
+    font-size: 0.8rem;
+    font-style: italic;
+    opacity: 0.8;
   }
   footer {
     font-size: 0.85rem;
