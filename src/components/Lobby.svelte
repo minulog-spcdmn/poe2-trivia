@@ -4,6 +4,7 @@
   import { session } from '../lib/session.svelte';
   import { MAX_PLAYERS, MAX_NAME, DIFFICULTIES, type Difficulty, type GameMode } from '../lib/game';
   import { sfx } from '../lib/sound';
+  import { inviteUrl } from '../lib/site';
   import Avatar from './Avatar.svelte';
 
   const TIMERS = [0, 10, 15, 20, 30, 45];
@@ -33,7 +34,7 @@
   let newName = $state('');
   let copied = $state(false);
 
-  const inviteLink = $derived(`${location.origin}${location.pathname}?room=${session.code}`);
+  const inviteLink = $derived(inviteUrl(session.code));
 
   function addLocal(e: Event) {
     e.preventDefault();

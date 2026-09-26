@@ -4,6 +4,7 @@
   import { itemImage } from '../lib/ui';
   import { sfx } from '../lib/sound';
   import OpenRooms from './OpenRooms.svelte';
+  import { CREATOR } from '../lib/site';
 
   const params = new URLSearchParams(location.search);
   const invite = (params.get('room') ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, CODE_LENGTH);
@@ -146,6 +147,7 @@
   </div>
 
   <footer class="muted">
+    <p class="credit">Made by <span class="maker">{CREATOR}</span></p>
     Item data &amp; art from <a href="https://poe2db.tw/us/Unique_item" target="_blank" rel="noreferrer">poe2db.tw</a>.
     Path of Exile is a trademark of Grinding Gear Games. Fan project.
   </footer>
@@ -350,6 +352,20 @@
     display: flex;
     justify-content: center;
     margin-top: -0.8rem;
+  }
+  .credit {
+    margin: 0 0 0.5rem;
+    font-family: var(--font-display);
+    font-size: 0.8rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .maker {
+    color: var(--gold-hi);
+    letter-spacing: 0.08em;
+    text-transform: none;
+    font-weight: 700;
   }
   footer {
     font-size: 0.85rem;

@@ -1,5 +1,7 @@
 # Exile Trivia — PoE2 unique item quiz
 
+**Play at [poe2.quest](https://poe2.quest/)** · made by zoe_arcana
+
 A multiplayer Path of Exile 2 trivia game that runs entirely in the browser and
 is hosted as a static site on GitHub Pages. No server needed.
 
@@ -150,6 +152,8 @@ instead of the public cloud, build with `VITE_PEER_HOST`, `VITE_PEER_PORT`,
 ## Deploying to GitHub Pages
 
 `.github/workflows/deploy.yml` builds and deploys on every push to `main`.
+The site is served on the custom domain **poe2.quest** (`public/CNAME`), and
+invite links always point there (`src/lib/site.ts`).
 Turn it on once under **Settings → Pages → Build and deployment → Source:
 GitHub Actions**.
 
