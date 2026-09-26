@@ -5,16 +5,26 @@ is hosted as a static site on GitHub Pages. No server needed.
 
 **How to play**
 
-1. On your turn, pick one of three random item categories (Rings, Helmets,
-   Quarterstaves, …). A category you pick can't be offered to you again for
-   your next two turns.
-2. You see the unique's art and four names. Pick the right one for a point.
+1. On your turn, pick one of three random categories. There are 10 broad,
+   similarly sized categories: One-Handed Weapons, Two-Handed Weapons,
+   Off-Hands, Body Armours, Helmets, Gloves & Boots, Rings, Amulets & Belts,
+   Flasks/Jewels/Relics, and Lineage Gems. A category you pick can't be
+   offered to you again for your next two turns.
+2. Name the unique item or lineage gem from its art (or, on harder
+   difficulties, pick the right art for a name). A correct answer scores a point.
 3. The first player to reach the host's target score wins. The game only ends
    once a full round is finished, so everyone gets the same number of turns.
    If players are tied, play continues.
 
-Items aren't repeated within a game until a category runs out. The wrong
-answers are a mix of items from the same category and from other categories.
+Items aren't repeated within a game until a category runs out.
+
+**Difficulty** (the host chooses):
+
+| | Options | Wrong answers | Extras |
+|---|---|---|---|
+| Normal | 4 | Same category | — |
+| Cruel | 4 | Same kind (all rings, all bows, all Strength gems…) | 40% of questions are "find the art": you get a name and pick one of the pictures |
+| Merciless | 6 | Same kind | "Find the art" questions, and the art starts as a zoomed-in close-up that slowly pulls back |
 
 ## Multiplayer
 
@@ -31,8 +41,8 @@ answers are a mix of items from the same category and from other categories.
     WebRTC. In that case, use hot-seat.
 - **Hot-seat:** everyone plays on one device and passes it around.
 
-The host picks the target score and an optional time limit per question
-(off / 10–45 s).
+The host picks the difficulty, the target score and an optional time limit
+per question (off / 10–45 s).
 
 ## Development
 
@@ -49,16 +59,18 @@ WebAudio, so there are no audio files to ship.
 
 ### Refreshing item data
 
-Item names and art are scraped from [poe2db.tw](https://poe2db.tw/us/Unique_item)
-and committed to the repo (`src/data/uniques.json` and `public/items/`), so
-the game doesn't depend on poe2db being up.
+Item names and art are scraped from poe2db.tw
+([uniques](https://poe2db.tw/us/Unique_item),
+[lineage supports](https://poe2db.tw/us/Lineage_Supports)) and committed to
+the repo (`src/data/items.json` and `public/items/`), so the game doesn't
+depend on poe2db being up.
 
 ```sh
 npm run fetch-data
 ```
 
-Categories come from each item's art folder; see `CATEGORY_RULES` in
-`scripts/fetch-uniques.mjs`. Image files are named with a hash, so the URL
+Each item's group and category come from its art folder; see
+`CATEGORY_RULES` in `scripts/fetch-data.mjs`. Image files are named with a hash, so the URL
 doesn't reveal the answer.
 
 ### Self-hosted signalling (optional)

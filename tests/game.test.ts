@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { Engine, createGame, type GameState, type Item } from '../src/lib/game.ts';
+import { Engine, createGame, DIFFICULTIES, type Difficulty, type GameState, type Item } from '../src/lib/game.ts';
 
-const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/uniques.json', import.meta.url), 'utf8'));
+const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
 
 function seeded(seed: number) {
   return () => {
@@ -12,9 +12,9 @@ function seeded(seed: number) {
   };
 }
 
-function setup(names: string[], target = 3) {
+function setup(names: string[], target = 3, difficulty: Difficulty = 'normal') {
   const engine = new Engine(items, { rng: seeded(42) });
-  let s: GameState = createGame('p0', { targetScore: target, timer: 0 });
+  let s: GameState = createGame('p0', { targetScore: target, timer: 0, difficulty });
   names.forEach((name, i) => (s = engine.apply(s, { type: 'join', playerId: `p${i}`, name }, `p${i}`)));
   return { engine, s };
 }
@@ -85,4 +85,37 @@ test('disconnected players are skipped', () => {
   assert.equal(s.reveal!.timedOut, true);
   s = engine.apply(s, { type: 'next' }, first);
   assert.equal(s.turn, 2);
+});
+
+test('harder difficulties use more options and same-group decoys', () => {
+  for (const difficulty of ['normal', 'cruel', 'merciless'] as Difficulty[]) {
+    const rules = DIFFICULTIES[difficulty];
+    let { engine, s } = setup(['A'], 3, difficulty);
+    s = engine.apply(s, { type: 'start' }, 'p0');
+    const modes = new Set<string>();
+    for (let turn = 0; turn < 40; turn++) {
+      s = engine.apply(s, { type: 'pick', category: s.offered[0] }, 'p0');
+      const q = s.question!;
+      modes.add(q.mode);
+      assert.equal(q.options.length, rules.options);
+      assert.equal(new Set(q.options).size, rules.options);
+      const answer = engine.byId.get(q.itemId)!;
+      for (const id of q.options) assert.equal(engine.byId.get(id)!.category, answer.category, 'decoys share the category');
+      if (rules.sameGroup === 1) {
+        const groupSize = engine.items.filter((it) => it.group === answer.group).length;
+        const sameGroup = q.options.filter((id) => engine.byId.get(id)!.group === answer.group).length;
+        assert.equal(sameGroup, Math.min(groupSize, rules.options));
+      }
+      s = engine.apply(s, { type: 'answer', optionId: q.itemId }, 'p0');
+      s = engine.apply(s, { type: 'next' }, 'p0');
+      if (s.phase === 'over') s = engine.apply(engine.apply(s, { type: 'restart' }, 'p0'), { type: 'start' }, 'p0');
+    }
+    assert.equal(modes.has('art'), rules.artChance > 0);
+  }
+});
+
+test('lineage gems are a category', () => {
+  const engine = new Engine(items);
+  assert.ok(engine.categories.includes('Lineage Gems'));
+  assert.ok(engine.byCategory.get('Lineage Gems')!.length >= 20);
 });

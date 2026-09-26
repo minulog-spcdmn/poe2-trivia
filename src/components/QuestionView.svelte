@@ -16,6 +16,10 @@
   let chosen = $state<string | null>(null);
   let loaded = $state(false);
 
+  // Merciless: the art starts as a close-up and pulls back over most of the timer.
+  const zoomSeconds = $derived(s.settings.timer > 0 ? s.settings.timer * 0.85 : 15);
+  const zoomDelay = -Math.max(0, (session.hostNow() - (session.state?.question?.askedAt ?? 0)) / 1000);
+
   function answer(id: string) {
     if (!mine || reveal || chosen) return;
     chosen = id;
@@ -51,96 +55,149 @@
 
 <svelte:window onkeydown={onKey} />
 
+{#snippet stamp()}
+  {#if reveal}
+    <div class="stamp" class:good={reveal.correct} in:scale={{ start: 2.2, duration: 450, opacity: 0 }}>
+      {#if reveal.correct}Correct{:else if reveal.timedOut}Time's up{:else}Wrong{/if}
+    </div>
+  {/if}
+{/snippet}
+
+{#snippet footer()}
+  {#if reveal}
+    <div class="result" in:fly={{ y: 16, duration: 400, delay: 250 }}>
+      <p>
+        {#if reveal.correct}
+          <b class="good">+1</b> for {active.name}!
+        {:else if reveal.timedOut}
+          {active.name} ran out of time.
+        {:else}
+          No point for {active.name}.
+        {/if}
+      </p>
+      {#if canNext}
+        <button class="btn primary" onclick={next}>
+          Next turn
+          {#if session.mode === 'host'}
+            <span class="auto" style:animation-duration="{AUTO_NEXT_SECONDS}s"></span>
+          {/if}
+        </button>
+      {:else}
+        <div class="autobar"><span style:animation-duration="{AUTO_NEXT_SECONDS}s"></span></div>
+      {/if}
+    </div>
+  {:else if !mine}
+    <p class="spectate muted">{active.name} is deciding…</p>
+  {:else}
+    <p class="spectate muted">Tip: press 1–{q.options.length} to answer.</p>
+  {/if}
+{/snippet}
+
 <div class="question">
   <div class="topline">
     <span class="chip">{q.category}</span>
     <span class="who">
       {#if mine && session.mode !== 'local'}Your question{:else}{active.name}'s question{/if}
+      {#if q.mode === 'art'}<span class="mode">· find the art</span>{/if}
     </span>
     {#if q.deadline}
       <TimerRing deadline={q.deadline} total={s.settings.timer} stopped={!!reveal} />
     {/if}
   </div>
 
-  <div class="stage">
-    <div class="tooltip" class:revealed={!!reveal} class:good={reveal?.correct} class:bad={reveal && !reveal.correct}>
+  {#if q.mode === 'art'}
+    <!-- Name given, pick the matching art. -->
+    <div class="tooltip wide" class:good={reveal?.correct} class:bad={reveal && !reveal.correct}>
       <div class="head">
-        {#if reveal}
-          <div class="head-text" in:fly={{ y: 10, duration: 450 }}>
-            <span class="iname">{item.name}</span>
-            <span class="ibase">{item.base}</span>
-          </div>
-        {:else}
-          <div class="head-text" out:fade={{ duration: 150 }}>
-            <span class="iname unknown">Unidentified</span>
-            <span class="ibase">{q.category}</span>
-          </div>
-        {/if}
-      </div>
-      <div class="art">
-        {#key q.itemId}
-          <img
-            src={itemImage(q.itemId)}
-            alt="The unique item to identify"
-            class:loaded
-            onload={() => (loaded = true)}
-            draggable="false"
-          />
-        {/key}
-        {#if reveal}
-          <div class="stamp" class:good={reveal.correct} in:scale={{ start: 2.2, duration: 450, opacity: 0 }}>
-            {#if reveal.correct}Correct{:else if reveal.timedOut}Time's up{:else}Wrong{/if}
-          </div>
-        {/if}
-      </div>
-    </div>
-
-    <div class="options">
-      {#each q.options as id, i (id)}
-        {@const st = optionState(id)}
-        <button
-          class="option {st}"
-          class:mine
-          disabled={!mine || !!reveal || !!chosen}
-          onclick={() => answer(id)}
-          in:fly={{ x: 40, duration: 450, delay: 300 + i * 90 }}
-        >
-          <span class="key">{i + 1}</span>
-          <span class="text">{itemName(id)}</span>
-          {#if st === 'right'}<span class="mark" in:scale={{ duration: 300 }}>✓</span>{/if}
-          {#if st === 'wrong'}<span class="mark" in:scale={{ duration: 300 }}>✕</span>{/if}
-        </button>
-      {/each}
-
-      {#if reveal}
-        <div class="result" in:fly={{ y: 16, duration: 400, delay: 250 }}>
-          <p>
-            {#if reveal.correct}
-              <b class="good">+1</b> for {active.name}!
-            {:else if reveal.timedOut}
-              {active.name} ran out of time.
-            {:else}
-              No point for {active.name}.
-            {/if}
-          </p>
-          {#if canNext}
-            <button class="btn primary" onclick={next}>
-              Next turn
-              {#if session.mode === 'host'}
-                <span class="auto" style:animation-duration="{AUTO_NEXT_SECONDS}s"></span>
-              {/if}
-            </button>
+        <div class="head-text">
+          <span class="iname">{item.name}</span>
+          {#if reveal}
+            <span class="ibase" in:fade>{item.base}</span>
           {:else}
-            <div class="autobar"><span style:animation-duration="{AUTO_NEXT_SECONDS}s"></span></div>
+            <span class="ibase">Which one is it?</span>
           {/if}
         </div>
-      {:else if !mine}
-        <p class="spectate muted">{active.name} is deciding…</p>
-      {:else}
-        <p class="spectate muted">Tip: press 1–4 to answer.</p>
-      {/if}
+      </div>
+      <div class="tiles" class:six={q.options.length > 4}>
+        {#each q.options as id, i (id)}
+          {@const st = optionState(id)}
+          {@const opt = engine.byId.get(id)!}
+          <button
+            class="tile {st}"
+            class:mine
+            disabled={!mine || !!reveal || !!chosen}
+            onclick={() => answer(id)}
+            in:scale={{ start: 0.85, duration: 450, delay: 250 + i * 80 }}
+          >
+            <span class="key">{i + 1}</span>
+            <img src={itemImage(id)} alt="Option {i + 1}" class:gem={opt.kind === 'gem'} draggable="false" />
+            {#if reveal}
+              <span class="caption" in:fly={{ y: 6, duration: 300, delay: 150 }}>{opt.name}</span>
+            {/if}
+            {#if st === 'right'}<span class="mark" in:scale={{ duration: 300 }}>✓</span>{/if}
+            {#if st === 'wrong'}<span class="mark" in:scale={{ duration: 300 }}>✕</span>{/if}
+          </button>
+        {/each}
+        {@render stamp()}
+      </div>
     </div>
-  </div>
+    <div class="art-footer">{@render footer()}</div>
+  {:else}
+    <div class="stage">
+      <div class="tooltip" class:good={reveal?.correct} class:bad={reveal && !reveal.correct}>
+        <div class="head">
+          {#if reveal}
+            <div class="head-text" in:fly={{ y: 10, duration: 450 }}>
+              <span class="iname">{item.name}</span>
+              <span class="ibase">{item.base}</span>
+            </div>
+          {:else}
+            <div class="head-text" out:fade={{ duration: 150 }}>
+              <span class="iname unknown">Unidentified</span>
+              <span class="ibase">{q.category}</span>
+            </div>
+          {/if}
+        </div>
+        <div class="art">
+          {#key q.itemId}
+            <img
+              src={itemImage(q.itemId)}
+              alt="The item to identify"
+              class:loaded
+              class:gem={item.kind === 'gem'}
+              class:zoom={q.zoom && !reveal}
+              style:--zx="{q.zoom?.x ?? 50}%"
+              style:--zy="{q.zoom?.y ?? 50}%"
+              style:--zdur="{zoomSeconds}s"
+              style:--zdelay="{zoomDelay}s"
+              onload={() => (loaded = true)}
+              draggable="false"
+            />
+          {/key}
+          {@render stamp()}
+        </div>
+      </div>
+
+      <div class="options">
+        {#each q.options as id, i (id)}
+          {@const st = optionState(id)}
+          <button
+            class="option {st}"
+            class:mine
+            disabled={!mine || !!reveal || !!chosen}
+            onclick={() => answer(id)}
+            in:fly={{ x: 40, duration: 450, delay: 300 + i * 90 }}
+          >
+            <span class="key">{i + 1}</span>
+            <span class="text">{itemName(id)}</span>
+            {#if st === 'right'}<span class="mark" in:scale={{ duration: 300 }}>✓</span>{/if}
+            {#if st === 'wrong'}<span class="mark" in:scale={{ duration: 300 }}>✕</span>{/if}
+          </button>
+        {/each}
+        {@render footer()}
+      </div>
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -166,6 +223,10 @@
     border: 1px solid var(--gold-lo);
     background: rgba(0, 0, 0, 0.4);
     border-radius: 2px;
+  }
+  .mode {
+    margin-left: 0.3em;
+    color: var(--unique-hi);
   }
   .who {
     flex: 1;
@@ -289,6 +350,22 @@
       transform 0.8s var(--ease-out),
       filter 0.9s;
   }
+  .art img.gem {
+    width: 42%;
+    height: 50%;
+  }
+  .art img.zoom.loaded {
+    transform-origin: var(--zx) var(--zy);
+    animation: unzoom var(--zdur) cubic-bezier(0.5, 0, 0.9, 1) var(--zdelay) both;
+  }
+  @keyframes unzoom {
+    from {
+      transform: scale(2.6);
+    }
+    to {
+      transform: scale(1);
+    }
+  }
   .art img.loaded {
     opacity: 1;
     transform: scale(1);
@@ -302,6 +379,8 @@
   }
   .stamp {
     position: absolute;
+    z-index: 2;
+    pointer-events: none;
     bottom: 18px;
     right: 18px;
     padding: 0.2em 0.7em;
@@ -412,6 +491,116 @@
     color: inherit;
   }
 
+  /* "find the art" questions */
+  .tooltip.wide {
+    width: 100%;
+  }
+  .tiles {
+    position: relative;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 1px;
+    background: #2a1d10;
+  }
+  .tiles.six {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .tile {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    height: 250px;
+    padding: 1.2rem 0.8rem 0.8rem;
+    border: 1px solid transparent;
+    background:
+      radial-gradient(ellipse at center, rgba(175, 96, 37, 0.1), transparent 70%),
+      repeating-linear-gradient(0deg, rgba(90, 100, 140, 0.07) 0 1px, transparent 1px 47px),
+      repeating-linear-gradient(90deg, rgba(90, 100, 140, 0.07) 0 1px, transparent 1px 47px),
+      #07080c;
+    cursor: default;
+    transition:
+      background 0.3s,
+      border-color 0.3s,
+      opacity 0.4s,
+      box-shadow 0.3s;
+  }
+  .tiles.six .tile {
+    height: 200px;
+  }
+  .tile img {
+    flex: 1;
+    min-height: 0;
+    width: 90%;
+    object-fit: contain;
+    filter: drop-shadow(0 10px 20px rgba(0, 0, 0, 0.8));
+    transition: transform 0.35s var(--ease-out);
+  }
+  .tile img.gem {
+    flex: none;
+    width: 78px;
+    height: 78px;
+    margin: auto;
+  }
+  .tile .key {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+  }
+  .tile .mark {
+    position: absolute;
+    top: 8px;
+    right: 12px;
+  }
+  .tile.mine:not(:disabled) {
+    cursor: pointer;
+  }
+  .tile.mine:not(:disabled):hover {
+    border-color: var(--gold);
+    box-shadow: inset 0 0 30px rgba(201, 164, 92, 0.18);
+  }
+  .tile.mine:not(:disabled):hover img {
+    transform: scale(1.07);
+  }
+  .tile.pending {
+    border-color: var(--gold);
+  }
+  .tile.right {
+    border-color: var(--good);
+    background: radial-gradient(ellipse at center, rgba(111, 207, 115, 0.22), rgba(10, 25, 10, 0.95) 75%);
+    box-shadow: inset 0 0 0 1px var(--good);
+  }
+  .tile.right .mark {
+    color: var(--good);
+  }
+  .tile.wrong {
+    border-color: var(--bad);
+    background: radial-gradient(ellipse at center, rgba(224, 85, 63, 0.2), rgba(30, 8, 5, 0.95) 75%);
+    animation: shake 0.5s;
+  }
+  .tile.wrong .mark {
+    color: var(--bad);
+  }
+  .tile.dim {
+    opacity: 0.4;
+  }
+  .caption {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 0.85rem;
+    text-align: center;
+    color: #e9c8a2;
+    line-height: 1.2;
+  }
+  .tile.right .caption {
+    color: #c9f5c3;
+  }
+  .art-footer {
+    margin-top: 1rem;
+  }
+
   .result {
     display: flex;
     align-items: center;
@@ -492,6 +681,14 @@
     }
     .option {
       padding: 0.75rem 0.9rem;
+    }
+    .tiles,
+    .tiles.six {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .tile,
+    .tiles.six .tile {
+      height: 170px;
     }
   }
 </style>

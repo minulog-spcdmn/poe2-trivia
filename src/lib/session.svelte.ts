@@ -2,13 +2,14 @@
 // (hot-seat), a hosted PeerJS room, or a connection to someone else's room.
 
 import Peer, { type DataConnection, type PeerOptions } from 'peerjs';
-import items from '../data/uniques.json';
-import { Engine, createGame, ActionError, type Action, type GameState } from './game';
+import itemData from '../data/items.json';
+import { Engine, createGame, ActionError, type Action, type GameState, type Item } from './game';
 import { sfx } from './sound';
 
-export const engine = new Engine(items);
+export const engine = new Engine(itemData as Item[]);
 
-const PEER_PREFIX = 'poe2-trivia-v1-';
+// Bump when the protocol or item data changes so old tabs can't join new rooms.
+const PEER_PREFIX = 'poe2-trivia-v2-';
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const AUTO_NEXT_MS = 5000;
 
@@ -425,7 +426,7 @@ type Saved =
   | { mode: 'local'; state: GameState }
   | { mode: 'host'; code: string; state: GameState }
   | { mode: 'client'; code: string; name: string };
-const SAVE_KEY = 'poe2trivia.session';
+const SAVE_KEY = 'poe2trivia.session.v2';
 
 function readSaved(): Saved | null {
   try {
