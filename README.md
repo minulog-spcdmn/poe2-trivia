@@ -38,7 +38,7 @@ same time, in a random category (never one of the last two).
 
 ## Multiplayer
 
-- **Online (peer-to-peer):** the host creates a room and shares the 5-letter
+- **Online (peer-to-peer):** the host creates a room and shares the 6-character
   code or invite link. Browsers connect directly over WebRTC
   ([PeerJS](https://peerjs.com/)). The host's browser runs the game and
   everyone else sees the same state live. Only the free PeerJS cloud is used,
