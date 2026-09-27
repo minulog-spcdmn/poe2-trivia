@@ -29,7 +29,9 @@
   {#each s.players as p, i (p.id)}
     {@const active = race ? s.phase === 'reveal' && s.reveal?.winnerId === p.id : i === s.turn && s.phase !== 'over'}
     {@const out = race && s.phase !== 'over' && missed.has(p.id)}
-    <li class:active class:out class:offline={!p.connected} animate:flip={{ duration: 400 }} style:--c={playerColor(p.hue)}>
+    {@const benched = !!s.deathmatch && s.phase !== 'over' && !s.deathmatch.alive.includes(p.id)}
+    {@const duelist = !!s.deathmatch && s.phase !== 'over' && s.deathmatch.alive.includes(p.id)}
+    <li class:active class:out class:benched class:duelist class:offline={!p.connected} animate:flip={{ duration: 400 }} style:--c={playerColor(p.hue)}>
       <Avatar name={p.name} hue={p.hue} size={32} dim={!p.connected} />
       <div class="info">
         <span class="name">
@@ -133,6 +135,13 @@
     .kick {
       opacity: 0.8;
     }
+  }
+  li.benched {
+    opacity: 0.4;
+    filter: grayscale(0.7);
+  }
+  li.duelist {
+    border-color: rgba(224, 85, 63, 0.55);
   }
   li.out {
     border-color: rgba(224, 85, 63, 0.6);

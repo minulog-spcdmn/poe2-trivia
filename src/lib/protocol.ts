@@ -18,6 +18,7 @@ export type HostMsg =
   | { t: 'state'; state: GameState; now: number }
   | { t: 'error'; message: string }
   | { t: 'kicked' }
+  | { t: 'closed' }
   | { t: 'ping'; n: number }
   | MediaMsg;
 
@@ -92,6 +93,7 @@ export function parseHostMsg(raw: unknown): HostMsg | null {
     case 'error':
       return isStr(raw.message, 300) ? (raw as HostMsg) : null;
     case 'kicked':
+    case 'closed':
       return raw as HostMsg;
     case 'ping':
       return isInt(raw.n, 0, Number.MAX_SAFE_INTEGER) ? (raw as HostMsg) : null;

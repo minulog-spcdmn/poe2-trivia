@@ -35,17 +35,20 @@
 
 <div class="choose">
   <p class="prompt">
-    {#if mine}
+    {#if s.deathmatch}
+      {#if mine}Sudden death: your category is drawn at random.{:else}<span class="muted">Sudden death for</span> {active.name}<span class="muted">…</span>{/if}
+    {:else if mine}
       Choose your category{#if active.recent.length}<span class="muted"> — locked: {active.recent.join(', ')}</span>{/if}
     {:else}
       <span class="muted">Waiting for</span> {active.name} <span class="muted">to choose a category…</span>
     {/if}
   </p>
 
-  <div class="cards">
+  <div class="cards" class:single={s.offered.length === 1}>
     {#each s.offered as cat, i (cat)}
       <button
         class="card"
+        class:dm={!!s.deathmatch}
         class:mine
         class:chosen={picked === cat}
         class:faded={picked && picked !== cat}
@@ -63,7 +66,9 @@
     {/each}
   </div>
 
-  {#if mine}
+  {#if s.deathmatch}
+    <p class="note muted">{mine ? 'Tap the card when you are ready.' : 'Questions are one difficulty harder.'}</p>
+  {:else if mine}
     <p class="note muted">A category you choose stays locked for your next {LOCKOUT_TURNS} turns.</p>
   {/if}
 </div>
@@ -176,6 +181,33 @@
     line-height: 1.2;
   }
 
+  @media (min-width: 701px) {
+    .cards.single {
+      grid-template-columns: minmax(0, 220px);
+    }
+  }
+  .card.dm .frame {
+    border-color: #8c3a2c;
+    background:
+      radial-gradient(ellipse at 50% 35%, rgba(224, 85, 63, 0.3), transparent 60%),
+      linear-gradient(170deg, #2a1410, #120a08 70%);
+  }
+  .card.dm .corner {
+    border-color: #e0553f;
+  }
+  .card.dm .glyph {
+    background: linear-gradient(180deg, #ffd7c9 0%, #e0553f 50%, #6d1a10 100%);
+  }
+  .card.dm.mine .frame {
+    animation: menace 2.4s ease-in-out infinite;
+  }
+  @keyframes menace {
+    50% {
+      box-shadow:
+        inset 0 0 0 4px rgba(0, 0, 0, 0.5),
+        0 0 45px rgba(224, 85, 63, 0.45);
+    }
+  }
   .card.mine {
     cursor: pointer;
   }

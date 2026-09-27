@@ -43,12 +43,14 @@
       </button>
       <div class="meta">
         {#if gs && screen === 'game'}
-          <span>{gs.settings.mode === 'race' ? 'Question' : 'Round'} {gs.round}</span>
-          <span class="dot">•</span>
-          <span>First to <b>{gs.settings.targetScore}</b></span>
-          {#if gs.tiebreak}
+          {#if gs.deathmatch}
+            <span class="deathmatch">⚔ Deathmatch</span>
             <span class="dot">•</span>
-            <span class="tiebreak">Tie-breaker</span>
+            <span>Round {gs.deathmatch.round}</span>
+          {:else}
+            <span>{gs.settings.mode === 'race' ? 'Question' : 'Round'} {gs.round}</span>
+            <span class="dot">•</span>
+            <span>First to <b>{gs.settings.targetScore}</b></span>
           {/if}
         {:else if session.mode === 'local'}
           <span>Hot-seat</span>
@@ -100,9 +102,14 @@
 
 {#if session.mode === 'client' && session.status === 'lost'}
   <div class="banner" transition:fly={{ y: -40, duration: 300 }}>
-    <span class="spinner"></span>
-    Connection to the host lost — reconnecting…
-    <button class="btn small" onclick={() => session.reconnect()}>Retry now</button>
+    {#if session.gaveUp}
+      Can't reach the host. The room may have closed.
+    {:else}
+      <span class="spinner"></span>
+      Connection to the host lost — reconnecting…
+    {/if}
+    <button class="btn small" onclick={() => session.reconnect()}>Retry</button>
+    <button class="btn small ghost" onclick={() => session.leave()}>Leave</button>
   </div>
 {/if}
 
@@ -200,8 +207,10 @@
   .dot {
     color: var(--gold-lo);
   }
-  .tiebreak {
-    color: var(--unique-hi);
+  .deathmatch {
+    color: #ff7a5c;
+    font-weight: 700;
+    text-shadow: 0 0 12px rgba(224, 85, 63, 0.6);
     animation: pulse 1.6s ease-in-out infinite;
   }
 
@@ -254,7 +263,6 @@
     padding: 0.6rem 1rem 1rem;
     font-size: 0.8rem;
     color: var(--muted);
-    opacity: 0.7;
   }
   .legal a {
     color: var(--muted);

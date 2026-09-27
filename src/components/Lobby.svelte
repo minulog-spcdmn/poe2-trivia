@@ -276,6 +276,7 @@
           <li>A category you pick is locked for your next two turns.</li>
           <li>Name the unique or lineage gem from its art — one answer is true.</li>
           <li>Correct answers score a point. First to {s.settings.targetScore} wins, once the round is finished.</li>
+          <li>Tied at the top? The tied players settle it in a sudden-death deathmatch.</li>
         {/if}
       </ul>
 
