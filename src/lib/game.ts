@@ -401,7 +401,8 @@ export class Engine {
         s.winners = [];
         s.deathmatch = null;
         s.recentCategories = [];
-        s.turn = 0;
+        // The first turn goes to someone who is actually here.
+        s.turn = Math.max(0, s.players.findIndex((p) => p.connected));
         if (race) this.beginRaceQuestion(s, true);
         else this.beginTurn(s, true);
         break;
@@ -468,7 +469,8 @@ export class Engine {
       case 'restart': {
         if (!isHost) throw new ActionError('Only the host can restart.');
         const fresh = createGame(s.hostId, s.settings);
-        fresh.players = s.players.map((p) => ({ ...p, score: 0, recent: [] }));
+        // Players who left during the game don't come back as ghosts in the lobby.
+        fresh.players = s.players.filter((p) => p.connected).map((p) => ({ ...p, score: 0, recent: [] }));
         fresh.version = s.version;
         Object.assign(s, fresh);
         break;

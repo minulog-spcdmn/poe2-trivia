@@ -496,8 +496,11 @@ class Session {
 
   private connectToHost() {
     if (!this.peer) return;
+    // Drop the previous attempt so a slow one can't come back alongside the new one.
+    const stale = this.hostConn;
     const conn = this.peer.connect(PEER_PREFIX + this.code, { reliable: true });
     this.hostConn = conn;
+    stale?.close();
     conn.on('open', () => {
       conn.send({ t: 'hello', secret: mySecret, name: this.joinName, v: PROTOCOL_VERSION });
     });
@@ -513,6 +516,7 @@ class Session {
       }
     }, 2000);
     conn.on('data', (raw) => {
+      if (this.hostConn !== conn) return;
       lastHeard = Date.now();
       const msg = parseHostMsg(raw);
       if (!msg) return;
