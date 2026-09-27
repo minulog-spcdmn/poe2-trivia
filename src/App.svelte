@@ -102,9 +102,14 @@
 
 {#if session.mode === 'client' && session.status === 'lost'}
   <div class="banner" transition:fly={{ y: -40, duration: 300 }}>
-    <span class="spinner"></span>
-    Connection to the host lost — reconnecting…
-    <button class="btn small" onclick={() => session.reconnect()}>Retry now</button>
+    {#if session.gaveUp}
+      Can't reach the host. The room may have closed.
+    {:else}
+      <span class="spinner"></span>
+      Connection to the host lost — reconnecting…
+    {/if}
+    <button class="btn small" onclick={() => session.reconnect()}>Retry</button>
+    <button class="btn small ghost" onclick={() => session.leave()}>Leave</button>
   </div>
 {/if}
 
@@ -258,7 +263,6 @@
     padding: 0.6rem 1rem 1rem;
     font-size: 0.8rem;
     color: var(--muted);
-    opacity: 0.7;
   }
   .legal a {
     color: var(--muted);

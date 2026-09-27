@@ -169,6 +169,8 @@
 
 <style>
   .home {
+    /* The floating showcase items reach past the screen edges; never scroll sideways for them. */
+    overflow-x: clip;
     min-height: 100dvh;
     display: flex;
     flex-direction: column;
@@ -421,7 +423,6 @@
     margin: 0 0 0.9rem;
     font-size: 0.8rem;
     font-style: italic;
-    opacity: 0.8;
   }
   footer {
     font-size: 0.85rem;

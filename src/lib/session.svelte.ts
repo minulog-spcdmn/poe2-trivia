@@ -38,6 +38,8 @@ const MAX_CONNECTIONS = MAX_PLAYERS + 4;
 /** A connection must introduce itself within this time. */
 const HELLO_TIMEOUT_MS = 6000;
 const PING_EVERY_MS = 3000;
+/** Guests: no message from the host for this long means it's gone. */
+const HOST_SILENCE_MS = 15000;
 /** No pong for this long: the connection is dead. */
 const DEAD_AFTER_MS = 15000;
 /** Faster than this (after the art reached them) is not a human answer. */
@@ -125,6 +127,8 @@ class Session {
   myPlayerId = $state<string | null>(null);
   /** Streamer mode: don't show the room code on screen. */
   hideCode = $state(readLocal('poe2trivia.hideCode') === '1');
+  /** Reconnecting to the host has been given up. */
+  gaveUp = $state(false);
 
   private peer: Peer | null = null;
   private hostConn: DataConnection | null = null;
@@ -143,6 +147,7 @@ class Session {
   private toastTimer: ReturnType<typeof setTimeout> | null = null;
   private retry: ReturnType<typeof setTimeout> | null = null;
   private retries = 0;
+  private hostWatch: ReturnType<typeof setInterval> | null = null;
   private beacon: Beacon | null = null;
 
   get isHost() {
@@ -496,7 +501,19 @@ class Session {
     conn.on('open', () => {
       conn.send({ t: 'hello', secret: mySecret, name: this.joinName, v: PROTOCOL_VERSION });
     });
+    // A host that vanishes (crashed tab, lost Wi-Fi) often never fires 'close'.
+    // It pings every few seconds, so silence means the connection is dead.
+    let lastHeard = Date.now();
+    if (this.hostWatch) clearInterval(this.hostWatch);
+    this.hostWatch = setInterval(() => {
+      if (this.hostConn !== conn) return;
+      if (this.status === 'ready' && Date.now() - lastHeard > HOST_SILENCE_MS) {
+        this.hostLost(conn);
+        conn.close();
+      }
+    }, 2000);
     conn.on('data', (raw) => {
+      lastHeard = Date.now();
       const msg = parseHostMsg(raw);
       if (!msg) return;
       switch (msg.t) {
@@ -518,6 +535,9 @@ class Session {
         case 'kicked':
           this.fail('You were removed from the game.');
           break;
+        case 'closed':
+          this.fail('The host closed the room.');
+          break;
         case 'ping':
           conn.send({ t: 'pong', n: msg.n });
           break;
@@ -525,20 +545,25 @@ class Session {
           shown.receive(msg);
       }
     });
-    conn.on('close', () => {
-      if (this.hostConn === conn && this.mode === 'client' && this.status === 'ready') {
-        this.status = 'lost';
-        this.retries = 0;
-        this.scheduleRetry();
-      }
-    });
+    conn.on('close', () => this.hostLost(conn));
+  }
+
+  private hostLost(conn: DataConnection) {
+    if (this.hostConn === conn && this.mode === 'client' && this.status === 'ready') {
+      this.status = 'lost';
+      this.retries = 0;
+      this.scheduleRetry();
+    }
   }
 
   private scheduleRetry() {
     if (this.retry) clearTimeout(this.retry);
     this.retry = setTimeout(() => {
       if (this.mode !== 'client' || this.status === 'ready') return;
-      if (this.retries++ >= 20) return;
+      if (this.retries++ >= 20) {
+        this.gaveUp = true;
+        return;
+      }
       if (this.peer && !this.peer.destroyed) this.connectToHost();
       this.scheduleRetry();
     }, 3000);
@@ -547,6 +572,7 @@ class Session {
   reconnect() {
     if (this.mode !== 'client') return;
     this.retries = 0;
+    this.gaveUp = false;
     if (this.peer && !this.peer.destroyed) this.connectToHost();
     this.scheduleRetry();
   }
@@ -592,6 +618,21 @@ class Session {
   }
 
   leave() {
+    if (this.mode === 'host') {
+      // Tell everyone right away instead of leaving them to reconnect to nothing.
+      for (const [conn, g] of this.guests) if (g.playerId) this.send(conn, { t: 'closed' });
+      const conns = [...this.guests.keys()];
+      const peer = this.peer;
+      this.guests = new Map();
+      this.peer = null;
+      this.reset();
+      // Give the goodbye a moment to go out before the connections drop.
+      setTimeout(() => {
+        for (const c of conns) c.close();
+        peer?.destroy();
+      }, 400);
+      return;
+    }
     this.reset();
   }
 
@@ -726,9 +767,12 @@ class Session {
     this.error = '';
     this.code = '';
     this.myPlayerId = null;
+    this.gaveUp = false;
     this.priv = { myPlayerId: '', secrets: [], bannedSecrets: [], bannedPeers: [] };
     this.secretToPlayer = new Map();
     if (this.retry) clearTimeout(this.retry);
+    if (this.hostWatch) clearInterval(this.hostWatch);
+    this.hostWatch = null;
     writeSaved(null);
   }
 }
