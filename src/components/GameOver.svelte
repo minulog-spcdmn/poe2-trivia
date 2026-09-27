@@ -98,7 +98,7 @@
       {iWon ? 'You are victorious!' : `${winner.name} wins!`}
     </h1>
     <p class="sub muted" in:fly={{ y: 10, duration: 700, delay: 700 }}>
-      {winner.score} points after {s.round} {s.settings.mode === 'race' ? (s.round === 1 ? 'question' : 'questions') : s.round === 1 ? 'round' : 'rounds'}
+      {winner.score} {winner.score === 1 ? 'point' : 'points'} after {s.round} {s.settings.mode === 'race' ? (s.round === 1 ? 'question' : 'questions') : s.round === 1 ? 'round' : 'rounds'}
       {#if s.deathmatch}· won the deathmatch in round {s.deathmatch.round}{/if}
     </p>
   {/if}
@@ -148,15 +148,18 @@
     text-align: center;
   }
   .kicker {
-    margin: 0 0 1.2rem;
+    /* Clear the dashed ring, which reaches 26px beyond the avatar. */
+    margin: 0 0 calc(26px + 1.4rem);
     font-family: var(--font-display);
     letter-spacing: 0.6em;
+    /* Letter spacing also trails the last letter; balance it so the word is centred. */
+    padding-left: 0.6em;
     text-transform: uppercase;
     color: var(--unique-hi);
   }
   .crown {
     position: relative;
-    margin-bottom: 1.2rem;
+    margin-bottom: calc(26px + 1rem);
     filter: drop-shadow(0 0 30px rgba(241, 217, 155, 0.45));
   }
   .crown::before {

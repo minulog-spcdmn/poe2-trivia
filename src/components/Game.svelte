@@ -242,6 +242,7 @@
     margin: 0;
     font-family: var(--font-display);
     letter-spacing: 0.5em;
+    padding-left: 0.5em;
     text-transform: uppercase;
     color: #ff9c86;
   }

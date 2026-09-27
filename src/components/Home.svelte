@@ -223,6 +223,7 @@
     font-family: var(--font-display);
     font-size: 0.8rem;
     letter-spacing: 0.5em;
+    padding-left: 0.5em;
     text-transform: uppercase;
     color: var(--unique-hi);
   }
