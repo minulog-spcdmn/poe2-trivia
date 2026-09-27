@@ -46,6 +46,8 @@ const DEAD_AFTER_MS = 15000;
 const MIN_HUMAN_MS = 200;
 /** Cap on the delay added to the host's own race answers. */
 const MAX_HOST_HANDICAP_MS = 300;
+/** A disconnected player's turn is skipped after this long, unless they come back. */
+const AUTO_SKIP_MS = 20000;
 
 export type Mode = 'local' | 'host' | 'client';
 export type Status = 'idle' | 'connecting' | 'ready' | 'lost';
@@ -129,6 +131,8 @@ class Session {
   hideCode = $state(readLocal('poe2trivia.hideCode') === '1');
   /** Reconnecting to the host has been given up. */
   gaveUp = $state(false);
+  /** Host: when the disconnected active player's turn will be skipped (0 = not pending). */
+  skipAt = $state(0);
 
   private peer: Peer | null = null;
   private hostConn: DataConnection | null = null;
@@ -149,6 +153,8 @@ class Session {
   private retries = 0;
   private hostWatch: ReturnType<typeof setInterval> | null = null;
   private beacon: Beacon | null = null;
+  private skipTimer: ReturnType<typeof setTimeout> | null = null;
+  private skipKey = '';
 
   get isHost() {
     return this.mode === 'local' || this.mode === 'host';
@@ -496,8 +502,11 @@ class Session {
 
   private connectToHost() {
     if (!this.peer) return;
+    // Drop the previous attempt so a slow one can't come back alongside the new one.
+    const stale = this.hostConn;
     const conn = this.peer.connect(PEER_PREFIX + this.code, { reliable: true });
     this.hostConn = conn;
+    stale?.close();
     conn.on('open', () => {
       conn.send({ t: 'hello', secret: mySecret, name: this.joinName, v: PROTOCOL_VERSION });
     });
@@ -513,6 +522,7 @@ class Session {
       }
     }, 2000);
     conn.on('data', (raw) => {
+      if (this.hostConn !== conn) return;
       lastHeard = Date.now();
       const msg = parseHostMsg(raw);
       if (!msg) return;
@@ -727,12 +737,43 @@ class Session {
         Math.max(0, s.question.deadline - Date.now() + 250),
       );
     }
+    this.scheduleAutoSkip(s);
     if (s.phase === 'reveal' && this.mode === 'host') {
       const version = s.version;
       this.autoNext = setTimeout(() => {
         if (this.state?.version === version) this.setState(engine.apply(this.state, { type: 'next' }, null));
       }, AUTO_NEXT_MS);
     }
+  }
+
+  /** Turns mode: don't let the game wait forever on a player who dropped out on their turn. */
+  private scheduleAutoSkip(s: GameState) {
+    const active = s.players[s.turn];
+    const stalled =
+      this.mode === 'host' &&
+      s.settings.mode !== 'race' &&
+      (s.phase === 'choosing' || s.phase === 'question') &&
+      !!active &&
+      !active.connected;
+    const key = stalled ? `${s.turnCount}:${active.id}` : '';
+    if (key === this.skipKey) return;
+    if (this.skipTimer) clearTimeout(this.skipTimer);
+    this.skipTimer = null;
+    this.skipKey = key;
+    this.skipAt = 0;
+    if (!key) return;
+    this.skipAt = Date.now() + AUTO_SKIP_MS;
+    this.skipTimer = setTimeout(() => {
+      const cur = this.state;
+      if (!cur || this.skipKey !== key) return;
+      const name = cur.players[cur.turn]?.name;
+      try {
+        this.setState(engine.apply(cur, { type: 'skip' }, null));
+        if (name) this.flash(`${name}'s turn was skipped`);
+      } catch {
+        /* the turn moved on anyway */
+      }
+    }, AUTO_SKIP_MS);
   }
 
   private networkHint(type: string) {
@@ -755,6 +796,10 @@ class Session {
     if (this.autoNext) clearTimeout(this.autoNext);
     if (this.pingTimer) clearInterval(this.pingTimer);
     this.pingTimer = null;
+    if (this.skipTimer) clearTimeout(this.skipTimer);
+    this.skipTimer = null;
+    this.skipKey = '';
+    this.skipAt = 0;
     for (const c of this.guests.keys()) c.close();
     this.guests.clear();
     this.hostConn?.close();

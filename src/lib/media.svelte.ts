@@ -30,15 +30,24 @@ export interface PreparedMedia {
 
 const imageCache = new Map<string, Promise<HTMLImageElement>>();
 
+function fetchImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error(`Could not load ${src}`));
+    img.src = src;
+  });
+}
+
+/** Loads an image, trying again after a hiccup (a dropped request would leave everyone without art). */
 function loadImage(src: string): Promise<HTMLImageElement> {
   let p = imageCache.get(src);
   if (!p) {
-    p = new Promise((resolve, reject) => {
-      const img = new Image();
-      img.onload = () => resolve(img);
-      img.onerror = () => reject(new Error(`Could not load ${src}`));
-      img.src = src;
-    });
+    const attempt = (left: number): Promise<HTMLImageElement> =>
+      fetchImage(src).catch((err) =>
+        left > 0 ? new Promise((r) => setTimeout(r, 600)).then(() => attempt(left - 1)) : Promise.reject(err),
+      );
+    p = attempt(2);
     imageCache.set(src, p);
     p.catch(() => imageCache.delete(src));
   }

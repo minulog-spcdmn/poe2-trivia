@@ -90,6 +90,22 @@ test('disconnected players are skipped', () => {
   assert.equal(s.turn, 2);
 });
 
+test('play again drops players who left, and the first turn goes to someone present', () => {
+  let { engine, s } = setup(['A', 'B', 'C']);
+  s = engine.apply(s, { type: 'start' }, 'p0');
+  s = engine.apply(s, { type: 'connection', playerId: 'p1', connected: false }, null);
+  s = engine.apply(s, { type: 'restart' }, 'p0');
+  assert.deepEqual(s.players.map((p) => p.id).sort(), ['p0', 'p2']);
+  // A player who drops out in the lobby before the start never gets the first turn.
+  for (let seed = 1; seed <= 20; seed++) {
+    const e = new Engine(items, { rng: seeded(seed) });
+    let t = setup(['A', 'B', 'C']).s;
+    t = e.apply(t, { type: 'connection', playerId: 'p2', connected: false }, null);
+    t = e.apply(t, { type: 'start' }, 'p0');
+    assert.equal(t.players[t.turn].connected, true);
+  }
+});
+
 test('difficulties scale options, decoy kind and question types', () => {
   for (const difficulty of ['cruel', 'merciless', 'eternal'] as Difficulty[]) {
     const rules = DIFFICULTIES[difficulty];
