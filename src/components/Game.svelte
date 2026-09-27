@@ -16,6 +16,16 @@
 
   const race = $derived(s.settings.mode === 'race');
 
+  // Countdown to the automatic skip of a disconnected player's turn.
+  let now = $state(Date.now());
+  $effect(() => {
+    if (!session.skipAt) return;
+    now = Date.now();
+    const id = setInterval(() => (now = Date.now()), 500);
+    return () => clearInterval(id);
+  });
+  const skipIn = $derived(session.skipAt ? Math.max(0, Math.ceil((session.skipAt - now) / 1000)) : 0);
+
   // New turn or question: bring the scoreboard and banner back into view
   // (on phones the previous reveal is often scrolled down).
   let lastTurn = -1;
@@ -86,7 +96,7 @@
 
       {#if session.isHost && !local && !race && !active.connected && s.phase !== 'reveal'}
         <div class="skip" transition:fade>
-          <span class="muted">{active.name} is disconnected.</span>
+          <span class="muted">{active.name} is disconnected{skipIn ? ` — skipping in ${skipIn}s` : ''}.</span>
           <button class="btn small" onclick={() => session.dispatch({ type: 'skip' })}>Skip their turn</button>
         </div>
       {/if}
