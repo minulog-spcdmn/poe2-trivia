@@ -148,6 +148,9 @@ test('race mode: first correct answer scores, wrong answers cost a point and loc
   s = engine.apply(s, { type: 'answer', index: right(q), askedAt: q.askedAt }, 'p2');
   assert.equal(s.phase, 'reveal');
   assert.equal(s.reveal!.winnerId, 'p2');
+  // Guests learn the answer and the missed pick, nothing else.
+  const shown = publicView(s).question!.options;
+  q.options.forEach((id, i) => assert.equal(shown[i], i === right(q) || i === wrong ? id : ''));
   assert.equal(s.players.find((p) => p.id === 'p2')!.score, 1);
   // A slower correct answer arriving after the reveal is ignored.
   assert.throws(() => engine.apply(s, { type: 'answer', index: right(q), askedAt: q.askedAt }, 'p0'), (e: any) => e.silent);
@@ -188,9 +191,15 @@ test('guests never see the answer before the reveal', () => {
   assert.ok(!text.includes(q.itemId), 'answer id not anywhere in the guest copy');
   for (const id of q.options) assert.ok(!text.includes(id), 'no option item ids either');
   assert.equal(view.question!.labels.length, q.options.length);
-  // After the reveal everything may be shown.
-  s = engine.apply(s, { type: 'answer', index: right(q) }, s.players[s.turn].id);
-  assert.equal(publicView(s).question!.itemId, q.itemId);
+  // After the reveal: the answer is shown, untouched decoys stay anonymous.
+  const wrong = wrongIdx(q);
+  s = engine.apply(s, { type: 'answer', index: wrong }, s.players[s.turn].id);
+  const revealed = publicView(s).question!;
+  assert.equal(revealed.itemId, q.itemId);
+  q.options.forEach((id, i) => {
+    const shouldShow = i === right(q) || i === wrong;
+    assert.equal(revealed.options[i], shouldShow ? id : '', `option ${i}`);
+  });
 });
 
 test('guests cannot act for others, join locked rooms, or impersonate', () => {

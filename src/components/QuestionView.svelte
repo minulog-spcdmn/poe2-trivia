@@ -50,6 +50,18 @@
     return ids.map((pid) => s.players.find((p) => p.id === pid)).filter((p) => !!p);
   }
 
+  /**
+   * Which pictures get their name at the reveal: the answer, the wrong pick of
+   * the player whose turn it was, and (in a race) your own wrong guess.
+   * Untouched decoys stay anonymous so they don't spoil later questions.
+   */
+  function named(index: number) {
+    if (!reveal) return false;
+    if (index === reveal.correctIndex) return true;
+    if (race) return myMiss?.index === index;
+    return index === reveal.chosenIndex;
+  }
+
   function optionName(index: number) {
     return q.labels[index] ?? (q.options[index] ? engine.byId.get(q.options[index])?.name : undefined) ?? '';
   }
@@ -199,7 +211,7 @@
             {:else}
               <span class="loading" aria-label="Loading"></span>
             {/if}
-            {#if reveal}
+            {#if reveal && named(i)}
               <span class="caption" in:fly={{ y: 6, duration: 300, delay: 150 }}>{optionName(i)}</span>
             {/if}
             {#if st === 'right'}<span class="mark" in:scale={{ duration: 300 }}>✓</span>{/if}

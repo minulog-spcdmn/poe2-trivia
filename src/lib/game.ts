@@ -247,12 +247,13 @@ export { cleanName };
  * before the reveal (the item ids behind the options, the list of used items).
  */
 export function publicView(s: GameState): GameState {
-  const hide = s.phase === 'question' && s.question;
-  return {
-    ...s,
-    used: [],
-    question: hide ? { ...s.question!, itemId: '', options: [] } : s.question,
-  };
+  const q = s.question;
+  if (!q) return { ...s, used: [] };
+  if (s.phase === 'question') return { ...s, used: [], question: { ...q, itemId: '', options: [] } };
+  // Revealed: only the answer and the options someone actually picked are
+  // identified; the untouched decoys stay anonymous for later questions.
+  const known = new Set<number | null>([s.reveal?.correctIndex ?? -1, s.reveal?.chosenIndex ?? null, ...q.misses.map((m) => m.index)]);
+  return { ...s, used: [], question: { ...q, options: q.options.map((id, i) => (known.has(i) ? id : '')) } };
 }
 
 function shuffle<T>(arr: T[], rng: Rng): T[] {
