@@ -20,6 +20,13 @@
     !session.mode || !gs ? 'home' : gs.phase === 'lobby' ? 'lobby' : gs.phase === 'over' ? 'over' : 'game',
   );
 
+  // Each screen starts at the top (a guest who scrolled down to the join
+  // form shouldn't land halfway down the lobby).
+  $effect(() => {
+    void screen;
+    window.scrollTo({ top: 0 });
+  });
+
   function toggleMute() {
     muted = !muted;
     setMuted(muted);

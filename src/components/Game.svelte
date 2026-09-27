@@ -15,6 +15,15 @@
 
 
   const race = $derived(s.settings.mode === 'race');
+
+  // New turn or question: bring the scoreboard and banner back into view
+  // (on phones the previous reveal is often scrolled down).
+  let lastTurn = -1;
+  $effect(() => {
+    const t = s.turnCount;
+    if (lastTurn !== -1 && t !== lastTurn) window.scrollTo({ top: 0, behavior: 'smooth' });
+    lastTurn = t;
+  });
   const dm = $derived(s.deathmatch);
   const nameOf = (id: string) => s.players.find((p) => p.id === id);
 
