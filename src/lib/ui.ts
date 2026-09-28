@@ -25,7 +25,8 @@ const ICON_GROUP: Record<string, string> = {
   'Flasks, Jewels & Relics': 'Flasks',
 };
 // Gem art comes as square tiles on cloth, so lineage gems use a cut-out of
-// Guatelitzi's Ablation (public/icons/, background removed with rembg).
+// Oisín's Oath (public/icons/, background removed with rembg and padded so
+// it sits a little smaller than the item art).
 const GEM_ICON = new URL(`${import.meta.env.BASE_URL}icons/lineage-gems.webp`, document.baseURI).href;
 const icons = new Map<string, string>();
 for (const cat of engine.categories) {
