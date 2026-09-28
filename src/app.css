@@ -98,7 +98,7 @@ input {
   position: absolute;
   width: 14px;
   height: 14px;
-  border: 1px solid var(--gold-lo);
+  border: 2px solid var(--gold-lo);
   pointer-events: none;
 }
 .panel::before {
