@@ -538,6 +538,8 @@
     flex: none;
     width: 28px;
     height: 28px;
+    /* Cinzel's line box sits its digits a pixel high; nudge them to the optical centre. */
+    padding-top: 2px;
     display: grid;
     place-items: center;
     font-family: var(--font-display);
