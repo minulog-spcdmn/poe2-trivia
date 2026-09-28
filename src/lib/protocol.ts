@@ -19,6 +19,8 @@ export type HostMsg =
   | { t: 'error'; message: string }
   | { t: 'kicked' }
   | { t: 'closed' }
+  /** The same player connected again (another tab): this connection is dropped. */
+  | { t: 'replaced' }
   | { t: 'ping'; n: number }
   | MediaMsg;
 
@@ -94,6 +96,7 @@ export function parseHostMsg(raw: unknown): HostMsg | null {
       return isStr(raw.message, 300) ? (raw as HostMsg) : null;
     case 'kicked':
     case 'closed':
+    case 'replaced':
       return raw as HostMsg;
     case 'ping':
       return isInt(raw.n, 0, Number.MAX_SAFE_INTEGER) ? (raw as HostMsg) : null;

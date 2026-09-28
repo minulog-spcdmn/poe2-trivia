@@ -135,6 +135,8 @@ class Session {
   gaveUp = $state(false);
   /** Host: when the disconnected active player's turn will be skipped (0 = not pending). */
   skipAt = $state(0);
+  /** Host: the question (askedAt) whose art could not be loaded, so guests got no pictures. */
+  private artFailedFor = $state(0);
 
   private peer: Peer | null = null;
   private hostConn: DataConnection | null = null;
@@ -176,6 +178,12 @@ class Session {
       return s.players.some((p) => p.id === me) && !s.question?.misses.some((m) => m.playerId === me);
     }
     return !!me && s.players[s.turn]?.id === me;
+  }
+
+  /** Host: the open question has no art to show (it failed to load), so it should be asked again. */
+  get artMissing() {
+    const s = this.state;
+    return this.isHost && s?.phase === 'question' && !!s.question && this.artFailedFor === s.question.askedAt;
   }
 
   hostNow() {
@@ -354,16 +362,18 @@ class Session {
     }
     const known = this.secretToPlayer.get(secret);
     const playerId = known ?? randomToken(12);
-    const next = engine.apply(this.state!, { type: 'join', playerId, name }, playerId);
+    const next = engine.apply(this.state!, { type: 'join', playerId, name, returning: !!known }, playerId);
     if (!known) {
       this.secretToPlayer.set(secret, playerId);
       this.priv.secrets.push([secret, playerId]);
     }
-    // Only one live connection per player (e.g. after a refresh).
+    // Only one live connection per player (e.g. after a refresh). Say why, so
+    // a second tab that is still open doesn't reconnect and take the seat back.
     for (const [c, g] of this.guests)
       if (g.playerId === playerId && c !== conn) {
         g.playerId = null;
-        c.close();
+        this.send(c, { t: 'replaced' });
+        setTimeout(() => c.close(), 300);
       }
     guest.playerId = playerId;
     this.send(conn, { t: 'welcome', playerId });
@@ -376,6 +386,8 @@ class Session {
   private tooFast(guest: Guest) {
     const q = this.state?.question;
     if (!q) return false;
+    // No art went out at all: don't hold answers back waiting for it.
+    if (this.artFailedFor === q.askedAt) return false;
     if (!guest.mediaAt || guest.mediaAt.qid !== q.askedAt) return true;
     return Date.now() - guest.mediaAt.at < guest.rtt + MIN_HUMAN_MS;
   }
@@ -426,6 +438,10 @@ class Session {
       media = await prepareMedia(q, activeRules(s).grayscale);
     } catch (err) {
       console.warn('media', err);
+      if (this.state?.question?.askedAt === q.askedAt && this.state.phase === 'question') {
+        this.artFailedFor = q.askedAt;
+        this.flash("Couldn't load the art for this question.");
+      }
       return;
     }
     if (this.state?.question?.askedAt !== q.askedAt || this.state.phase !== 'question') return;
@@ -549,6 +565,9 @@ class Session {
           break;
         case 'closed':
           this.fail('The host closed the room.');
+          break;
+        case 'replaced':
+          this.fail('You joined this game from another tab or window, so it continues there.');
           break;
         case 'ping':
           conn.send({ t: 'pong', n: msg.n });
@@ -803,6 +822,7 @@ class Session {
     this.skipTimer = null;
     this.skipKey = '';
     this.skipAt = 0;
+    this.artFailedFor = 0;
     for (const c of this.guests.keys()) c.close();
     this.guests.clear();
     this.hostConn?.close();

@@ -295,6 +295,11 @@ test('guests cannot act for others, join locked rooms, or impersonate', () => {
   // Rejoining an existing seat is still fine, and keeps the original name.
   s = engine.apply(s, { type: 'join', playerId: 'p1', name: 'Renamed' }, 'p1');
   assert.equal(s.players.find((p) => p.id === 'p1')!.name, 'Zana');
+  // Someone the lobby dropped (a refresh) is let back in when the host knows them.
+  s = engine.apply(s, { type: 'remove', playerId: 'p1' }, null);
+  assert.throws(() => engine.apply(s, { type: 'join', playerId: 'p1', name: 'Zana' }, 'p1'), /locked/);
+  s = engine.apply(s, { type: 'join', playerId: 'p1', name: 'Zana', returning: true }, 'p1');
+  assert.ok(s.players.some((p) => p.id === 'p1'));
   assert.throws(() => engine.apply(s, { type: 'settings', settings: { locked: false } }, 'p1'), /host/);
 });
 
@@ -447,6 +452,27 @@ test('a tablet answer gets tablet decoys, so a tablet among the options gives no
   }
 });
 
+test('a tablet answer still gets only tablet decoys once earlier tablets have been used', () => {
+  const engine = new Engine(items, { rng: seeded(11) });
+  const cat = 'Flasks, Jewels & Relics';
+  for (const difficulty of ['merciless', 'eternal'] as Difficulty[]) {
+    let tabletQuestions = 0;
+    for (let game = 0; game < 300; game++) {
+      const s = createGame(null, { targetScore: 5, timer: 0, difficulty, mode: 'turns', public: false, locked: false });
+      // A long game in one category, so its tablets run low before it starts over.
+      for (let turn = 0; turn < 30; turn++) {
+        const q = engine.makeQuestion(s, cat);
+        s.used.push(q.itemId);
+        if (engine.byId.get(q.itemId)!.group !== 'Tablets') continue;
+        tabletQuestions++;
+        const tablets = q.options.filter((id) => engine.byId.get(id)!.group === 'Tablets').length;
+        assert.equal(tablets, q.options.length, `${difficulty}: only ${tablets} tablets among ${q.options.length}`);
+      }
+    }
+    assert.ok(tabletQuestions > 50, `${difficulty}: tablets still come up (${tabletQuestions})`);
+  }
+});
+
 test('question ids keep increasing even if the clock goes back', () => {
   let clock = 1_000_000;
   const engine = new Engine(items, { rng: seeded(9), now: () => clock });
@@ -507,4 +533,23 @@ test('a duelist who drops out and is left behind counts as eliminated', () => {
   s = playTurn(engine, s, () => false);
   assert.deepEqual(s.winners, [x]);
   assert.deepEqual(s.deathmatch!.eliminated, [y]);
+});
+
+test('the host can swap a question for another in the same category, without using up the turn', () => {
+  let { engine, s } = setup(['A', 'B']);
+  s = engine.apply(s, { type: 'start' }, 'p0');
+  const me = s.players[s.turn].id;
+  s = engine.apply(s, { type: 'pick', category: s.offered[0] }, me);
+  const before = s.question!;
+  assert.throws(() => engine.apply(s, { type: 'reask' }, 'p1'), /host/);
+  s = engine.apply(s, { type: 'reask' }, 'p0');
+  const after = s.question!;
+  assert.equal(s.phase, 'question');
+  assert.equal(s.players[s.turn].id, me);
+  assert.equal(after.category, before.category);
+  assert.notEqual(after.itemId, before.itemId);
+  assert.ok(after.askedAt > before.askedAt);
+  assert.ok(s.used.includes(before.itemId) && s.used.includes(after.itemId));
+  // Late answers to the old question are dropped.
+  assert.throws(() => engine.apply(s, { type: 'answer', index: 0, askedAt: before.askedAt }, me), /Too late/);
 });

@@ -102,6 +102,11 @@
             <span class="muted">{active.name} is disconnected{skipIn ? ` — skipping in ${skipIn}s` : ''}.</span>
             <button class="btn small" onclick={() => session.dispatch({ type: 'skip' })}>Skip their turn</button>
           </div>
+        {:else if session.artMissing}
+          <div class="skip" transition:fade>
+            <span class="muted">The art for this question couldn't be loaded.</span>
+            <button class="btn small" onclick={() => session.dispatch({ type: 'reask' })}>Ask another question</button>
+          </div>
         {/if}
       </div>
     {/key}

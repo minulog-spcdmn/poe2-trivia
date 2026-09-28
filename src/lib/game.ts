@@ -209,7 +209,8 @@ export interface GameState {
 }
 
 export type Action =
-  | { type: 'join'; playerId: string; name: string }
+  /** `returning`: set by the host for someone who was already in this room (may pass the lock). */
+  | { type: 'join'; playerId: string; name: string; returning?: boolean }
   | { type: 'rename'; playerId: string; name: string }
   | { type: 'remove'; playerId: string }
   | { type: 'connection'; playerId: string; connected: boolean }
@@ -219,6 +220,8 @@ export type Action =
   | { type: 'answer'; index: number | null; askedAt?: number }
   | { type: 'next' }
   | { type: 'skip' }
+  /** Host: swap the open question for a new one in the same category (its art failed to load). */
+  | { type: 'reask' }
   | { type: 'restart' };
 
 export const OFFER_COUNT = 3;
@@ -332,7 +335,8 @@ export class Engine {
         }
         const name = cleanName(action.name);
         if (s.phase !== 'lobby') throw new ActionError('That game has already started.');
-        if (s.settings.locked) throw new ActionError('The host has locked this room.');
+        // A lobby drops people who disconnect, so someone refreshing has to be let back in.
+        if (s.settings.locked && !action.returning) throw new ActionError('The host has locked this room.');
         if (s.players.length >= MAX_PLAYERS) throw new ActionError('The lobby is full.');
         const problem = nameProblem(
           name,
@@ -484,6 +488,13 @@ export class Engine {
           if (s.deathmatch && s.players[s.turn]) s.deathmatch.results[s.players[s.turn].id] = false;
           this.advance(s);
         }
+        break;
+      }
+      case 'reask': {
+        if (!isHost) throw new ActionError('Only the host can change the question.');
+        if (s.phase !== 'question' || !s.question) throw new ActionError('There is no open question.', true);
+        s.question = this.makeQuestion(s, s.question.category);
+        s.used.push(s.question.itemId);
         break;
       }
       case 'restart': {
@@ -789,7 +800,13 @@ export class Engine {
       s.used = s.used.filter((id) => !inThis.has(id) || id === latest);
     }
     const unused = this.unusedIn(s, category);
-    const answer = this.weightedPick(unused.length ? unused : inCat);
+    // A rare answer (a tablet) needs a full set of unseen decoys from its own
+    // group, or it would stand out; once its group runs that low it sits out
+    // until the category starts over.
+    const left = new Map<string, number>();
+    for (const it of unused) left.set(it.group, (left.get(it.group) ?? 0) + 1);
+    const answerable = unused.filter((it) => weightOf(it) === 1 || left.get(it.group)! > need);
+    const answer = this.weightedPick(answerable.length ? answerable : unused.length ? unused : inCat);
 
     const sameGroup = unused.filter((it) => it.id !== answer.id && it.group === answer.group);
     // Rare groups (tablets) only fill in as decoys when nothing else is left…
