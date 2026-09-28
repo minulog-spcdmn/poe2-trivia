@@ -47,6 +47,35 @@
     }
   }
 
+  // The refresh icon eases up to speed while scanning and coasts to a stop
+  // wherever it happens to be, instead of snapping back to its start angle.
+  const SPIN_SPEED = 0.4; // degrees per ms
+  const SPIN_UP_MS = 350;
+  const SPIN_DOWN_MS = 700;
+  /** Quick scans still get a visible turn before slowing down. */
+  const SPIN_MIN_MS = 600;
+  let angle = $state(0);
+  let speed = 0;
+  let spinFrame = 0;
+  let spinUntil = 0;
+
+  function spin(now: number, last: number) {
+    const dt = Math.min(now - last, 50);
+    const active = scanning || now < spinUntil;
+    speed = active
+      ? Math.min(SPIN_SPEED, speed + (SPIN_SPEED / SPIN_UP_MS) * dt)
+      : Math.max(0, speed - (SPIN_SPEED / SPIN_DOWN_MS) * dt);
+    angle = (angle + speed * dt) % 360;
+    spinFrame = speed > 0 || active ? requestAnimationFrame((t) => spin(t, now)) : 0;
+  }
+
+  $effect(() => {
+    if (!scanning) return;
+    const now = performance.now();
+    spinUntil = now + SPIN_MIN_MS;
+    if (!spinFrame) spinFrame = requestAnimationFrame((t) => spin(t, now));
+  });
+
   function sortRooms(list: RoomInfo[]) {
     const joinable = (r: RoomInfo) => (r.phase === 'lobby' && r.players < r.maxPlayers ? 0 : 1);
     return list.sort((a, b) => joinable(a) - joinable(b) || b.players - a.players || a.host.localeCompare(b.host));
@@ -57,6 +86,7 @@
     return () => {
       destroyed = true;
       if (timer) clearTimeout(timer);
+      cancelAnimationFrame(spinFrame);
     };
   });
 </script>
@@ -64,8 +94,8 @@
 <section class="rooms panel">
   <header>
     <h2>Open rooms</h2>
-    <button class="refresh" class:spin={scanning} onclick={scan} disabled={scanning} aria-label="Refresh room list" title="Refresh">
-      <svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 5v6h-6" /></svg>
+    <button class="refresh" onclick={scan} disabled={scanning} aria-label="Refresh room list" title="Refresh">
+      <svg viewBox="0 0 24 24" style:rotate="{angle}deg"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 5v6h-6" /></svg>
     </button>
   </header>
 
@@ -89,7 +119,7 @@
         </li>
       {/each}
     </ul>
-  {:else if !scanned}
+  {:else if scanning || !scanned}
     <p class="empty muted"><span class="dots"><i></i><i></i><i></i></span> Searching for rooms…</p>
   {:else if failed}
     <p class="empty muted">Couldn't reach the matchmaking server. Try refreshing.</p>
@@ -140,9 +170,6 @@
     stroke-width: 2;
     stroke-linecap: round;
     stroke-linejoin: round;
-  }
-  .refresh.spin svg {
-    animation: spin 1s linear infinite;
   }
   ul {
     list-style: none;
@@ -230,11 +257,6 @@
   @keyframes blink {
     50% {
       opacity: 0.2;
-    }
-  }
-  @keyframes spin {
-    to {
-      rotate: 360deg;
     }
   }
 </style>
