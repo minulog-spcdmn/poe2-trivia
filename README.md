@@ -22,7 +22,7 @@ is hosted as a static site on GitHub Pages. No server needed.
    others wrong, the wrong ones are out; if all of them get it right, or all
    get it wrong, another round is played. The last duelist standing wins.
 
-Items aren't repeated within a game until a category runs out. Precursor tablets come up about a quarter as often as other items, and only appear as wrong answers when nothing else fits.
+Items aren't repeated within a game until a category runs out, and earlier answers never come back as wrong answers (so they can't be ruled out from memory). Precursor tablets come up about a quarter as often as other items; a tablet question only offers tablets, and tablets don't appear in other questions.
 
 **Race mode** (online only): no turns. Everyone sees the same question at the
 same time, in a random category (never one of the last two).
@@ -39,8 +39,12 @@ same time, in a random category (never one of the last two).
 | | Options | Wrong answers | Extras |
 |---|---|---|---|
 | Cruel (default) | 4 | Same kind (all rings, all bows, all Strength gems…) | 40% of questions are "find the art": you get a name and pick one of the pictures |
-| Merciless | 6 | Same kind, half chosen because their names look like the answer | The art is hidden under tiles that lift one by one |
-| Eternal | 8 | Chosen from the whole category for look-alike names | Tiles lift more slowly; "find the art" pictures are shown in grayscale |
+| Merciless | 6 | Same kind, half of them look-alike names | The art is hidden under tiles that lift one by one |
+| Eternal | 8 | Look-alike names from the whole category | Tiles lift more slowly; "find the art" pictures are shown in grayscale |
+
+Look-alike names form a cluster, and the answer's place in it is random: the
+name that looks most (or least) like the others is no more likely to be right
+than any other.
 
 ## Multiplayer
 
