@@ -87,6 +87,8 @@
   }
 
   const canStart = $derived(s.players.length >= 1);
+  /** Spectators left over when the last game filled every seat. */
+  const waiting = $derived(s.spectators ?? []);
   const race = $derived(s.settings.mode === 'race');
   const difficulty = $derived(s.settings.difficulty in DIFFICULTIES ? s.settings.difficulty : 'cruel');
 </script>
@@ -129,7 +131,7 @@
             class="lock"
             class:on={!!s.settings.locked}
             onclick={() => setLocked(!s.settings.locked)}
-            title={s.settings.locked ? 'Let new players join again' : 'Stop new players from joining'}
+            title={s.settings.locked ? 'Let new players join again' : 'Stop new players from joining or watching'}
           >
             {#if s.settings.locked}
               <svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></svg>
@@ -146,7 +148,7 @@
       {#if isHost}
         <p class="vis-hint muted">
           {#if s.settings.locked}
-            Room locked: nobody new can join. Players already in the game can still reconnect.
+            Room locked: nobody new can join or watch. Players already in the game can still reconnect.
           {:else if s.settings.public}
             Anyone can find this room under “Open rooms”.
           {:else}
@@ -185,6 +187,11 @@
           </li>
         {/each}
       </ul>
+      {#if waiting.length}
+        <p class="hint muted">
+          Waiting for a free seat: {waiting.map((o) => o.name + (o.id === session.myPlayerId ? ' (you)' : '')).join(', ')}
+        </p>
+      {/if}
 
       {#if local}
         <form class="add" onsubmit={addLocal}>

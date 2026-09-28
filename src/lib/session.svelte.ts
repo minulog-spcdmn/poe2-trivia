@@ -15,6 +15,7 @@ import {
   DEFAULT_SETTINGS,
   ActionError,
   MAX_PLAYERS,
+  MAX_SPECTATORS,
   publicView,
   activeRules,
   ANSWER_GRACE_MS,
@@ -35,8 +36,8 @@ export const CODE_LENGTH = 6;
 export const CODE_PATTERN = /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/;
 const AUTO_NEXT_MS = 5000;
 
-/** Connections beyond the players (people joining, reconnecting). */
-const MAX_CONNECTIONS = MAX_PLAYERS + 4;
+/** Players and spectators, plus a few spare for people joining or reconnecting. */
+const MAX_CONNECTIONS = MAX_PLAYERS + MAX_SPECTATORS + 4;
 /** A connection must introduce itself within this time. */
 const HELLO_TIMEOUT_MS = 6000;
 const PING_EVERY_MS = 3000;
@@ -149,6 +150,8 @@ class Session {
   private released: MediaMsg[] = [];
   private timer: ReturnType<typeof setTimeout> | null = null;
   private autoNext: ReturnType<typeof setTimeout> | null = null;
+  /** The reveal autoNext belongs to (its question's askedAt), so unrelated changes don't restart it. */
+  private autoNextFor = 0;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
   private pingSeq = 0;
   private joinName = '';
@@ -162,6 +165,12 @@ class Session {
 
   get isHost() {
     return this.mode === 'local' || this.mode === 'host';
+  }
+
+  /** Online guest who joined a running game and watches until the next one. */
+  get spectating() {
+    const s = this.state;
+    return this.mode === 'client' && !!s && !!this.myPlayerId && !s.players.some((p) => p.id === this.myPlayerId);
   }
 
   get race() {
@@ -250,7 +259,8 @@ class Session {
       const me = this.priv.myPlayerId;
       if (resumeState) {
         // Everyone else has to reconnect; mark them offline until they do.
-        let s = resumeState;
+        // Spectators rejoin as spectators when they reconnect.
+        let s: GameState = { ...resumeState, spectators: [] };
         for (const p of s.players)
           if (p.id !== me) s = engine.apply(s, { type: 'connection', playerId: p.id, connected: false }, null);
         this.setState(s);
@@ -342,6 +352,10 @@ class Session {
       const id = guest.playerId;
       if (!id || !this.state) return;
       if ([...this.guests.values()].some((g) => g.playerId === id)) return;
+      if (this.state.spectators?.some((o) => o.id === id)) {
+        this.setState(engine.apply(this.state, { type: 'remove', playerId: id }, null));
+        return;
+      }
       const p = this.state.players.find((p) => p.id === id);
       if (!p) return;
       if (this.state.phase === 'lobby') {
@@ -379,7 +393,9 @@ class Session {
     this.send(conn, { t: 'welcome', playerId });
     this.setState(next);
     for (const m of this.released) this.sendMedia(conn, guest, m);
-    this.flash(`${next.players.find((p) => p.id === playerId)?.name} joined`);
+    const player = next.players.find((p) => p.id === playerId);
+    if (player) this.flash(`${player.name} joined`);
+    else this.flash(`${next.spectators?.find((o) => o.id === playerId)?.name} is watching`);
   }
 
   /** Answers that arrive before a human could have seen the question. */
@@ -412,7 +428,12 @@ class Session {
 
   /** In a race the host's clicks skip the network; delay them by a typical guest's one-way trip. */
   private hostHandicap() {
-    const rtts = [...this.guests.values()].filter((g) => g.playerId).map((g) => g.rtt).sort((a, b) => a - b);
+    // Only the people racing count, not spectators.
+    const racing = new Set(this.state?.players.map((p) => p.id));
+    const rtts = [...this.guests.values()]
+      .filter((g) => g.playerId && racing.has(g.playerId))
+      .map((g) => g.rtt)
+      .sort((a, b) => a - b);
     if (!rtts.length) return 0;
     return Math.min(MAX_HOST_HANDICAP_MS, rtts[Math.floor(rtts.length / 2)] / 2);
   }
@@ -473,11 +494,11 @@ class Session {
     this.send(conn, m);
   }
 
-  private stopMedia() {
+  private stopMedia(keepReleased = false) {
     for (const t of this.mediaTimers) clearTimeout(t);
     this.mediaTimers = [];
     this.media = null;
-    this.released = [];
+    if (!keepReleased) this.released = [];
   }
 
   // ---- joining ----------------------------------------------------------
@@ -643,7 +664,8 @@ class Session {
         setTimeout(() => c.close(), 300);
       }
     }
-    const name = this.state?.players.find((p) => p.id === playerId)?.name;
+    const s = this.state;
+    const name = [...(s?.players ?? []), ...(s?.spectators ?? [])].find((o) => o.id === playerId)?.name;
     this.dispatch({ type: 'remove', playerId });
     if (name) this.flash(`${name} was removed`);
   }
@@ -675,6 +697,9 @@ class Session {
     this.state = next;
     if (next.phase === 'question' && next.question && next.question.askedAt !== prev?.question?.askedAt) {
       void this.startMedia(next);
+    } else if (next.phase === 'reveal') {
+      // Keep what was sent, so someone arriving during the reveal still gets the pictures.
+      this.stopMedia(true);
     } else if (next.phase !== 'question') {
       this.stopMedia();
     }
@@ -708,10 +733,12 @@ class Session {
       host: s.players.find((p) => p.id === s.hostId)?.name ?? '?',
       players: s.players.filter((p) => p.connected).length,
       maxPlayers: MAX_PLAYERS,
+      spectators: s.spectators?.length ?? 0,
+      maxSpectators: MAX_SPECTATORS,
       mode: s.settings.mode ?? 'turns',
       difficulty: s.settings.difficulty,
       target: s.settings.targetScore,
-      phase: s.settings.locked && s.phase === 'lobby' ? 'locked' : s.phase,
+      phase: s.settings.locked ? 'locked' : s.phase,
     };
   }
 
@@ -746,8 +773,7 @@ class Session {
 
   private scheduleTimers(s: GameState) {
     if (this.timer) clearTimeout(this.timer);
-    if (this.autoNext) clearTimeout(this.autoNext);
-    this.timer = this.autoNext = null;
+    this.timer = null;
     if (s.phase === 'question' && s.question?.deadline) {
       const version = s.version;
       this.timer = setTimeout(
@@ -760,12 +786,29 @@ class Session {
       );
     }
     this.scheduleAutoSkip(s);
-    if (s.phase === 'reveal' && this.mode === 'host') {
-      const version = s.version;
-      this.autoNext = setTimeout(() => {
-        if (this.state?.version === version) this.setState(engine.apply(this.state, { type: 'next' }, null));
-      }, AUTO_NEXT_MS);
-    }
+    this.scheduleAutoNext(s);
+  }
+
+  /**
+   * Online: the reveal moves on by itself after a few seconds. Counted from the
+   * reveal itself, so people joining or leaving meanwhile can't hold it up.
+   */
+  private scheduleAutoNext(s: GameState) {
+    const key = s.phase === 'reveal' && this.mode === 'host' && s.question ? s.question.askedAt : 0;
+    if (key === this.autoNextFor) return;
+    if (this.autoNext) clearTimeout(this.autoNext);
+    this.autoNext = null;
+    this.autoNextFor = key;
+    if (!key) return;
+    this.autoNext = setTimeout(() => {
+      const cur = this.state;
+      if (!cur || cur.phase !== 'reveal' || cur.question?.askedAt !== key) return;
+      try {
+        this.setState(engine.apply(cur, { type: 'next' }, null));
+      } catch {
+        /* already moved on */
+      }
+    }, AUTO_NEXT_MS);
   }
 
   /** Turns mode: don't let the game wait forever on a player who dropped out on their turn. */
@@ -816,6 +859,8 @@ class Session {
     shown.clear();
     if (this.timer) clearTimeout(this.timer);
     if (this.autoNext) clearTimeout(this.autoNext);
+    this.autoNext = null;
+    this.autoNextFor = 0;
     if (this.pingTimer) clearInterval(this.pingTimer);
     this.pingTimer = null;
     if (this.skipTimer) clearTimeout(this.skipTimer);

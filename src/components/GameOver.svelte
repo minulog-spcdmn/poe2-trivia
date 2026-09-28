@@ -9,6 +9,17 @@
   const s = $derived(session.state!);
   const standings = $derived([...s.players].sort((a, b) => b.score - a.score));
   const winner = $derived(s.players.find((p) => s.winners.includes(p.id)) ?? standings[0]);
+  const spectators = $derived(s.spectators ?? []);
+
+  // One click only: a second one while this screen fades out would restart the new game.
+  let leaving = $state(false);
+  function again(play: boolean) {
+    if (leaving) return;
+    leaving = true;
+    session.dispatch({ type: 'restart', play });
+    // Still here (the restart was refused)? Let the host try again.
+    setTimeout(() => (leaving = false), 1500);
+  }
   const iWon = $derived(session.mode !== 'local' && winner?.id === session.myPlayerId);
 
   let canvas: HTMLCanvasElement;
@@ -116,12 +127,17 @@
 
   <div class="actions" in:fly={{ y: 20, duration: 600, delay: 1300 }}>
     {#if session.isHost}
-      <button class="btn primary big" onclick={() => session.dispatch({ type: 'restart' })}>Play again</button>
+      <button class="btn primary big" disabled={leaving} onclick={() => again(true)}>Play again</button>
+      <button class="btn ghost" disabled={leaving} onclick={() => again(false)}>Change settings</button>
     {:else}
       <p class="muted">Waiting for the host to start a new game…</p>
     {/if}
-    <button class="btn ghost" onclick={() => session.leave()}>Leave</button>
   </div>
+  {#if spectators.length}
+    <p class="joining muted" in:fly={{ y: 10, duration: 600, delay: 1400 }}>
+      {spectators.map((o) => o.name).join(', ')} {spectators.length === 1 ? 'joins' : 'join'} the next game.
+    </p>
+  {/if}
 
   <p class="credit" in:fly={{ y: 10, duration: 600, delay: 1600 }}>
     <a href={SITE_URL} target="_blank" rel="noreferrer">poe2.quest</a> · made by
@@ -251,6 +267,10 @@
   }
   .credit a:hover {
     color: #fff1cf;
+  }
+  .joining {
+    margin: 1rem 0 0;
+    font-style: italic;
   }
   .actions p {
     margin: 0;
