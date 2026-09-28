@@ -51,6 +51,11 @@
     return index === reveal.chosenIndex;
   }
 
+  /** Revealed: was this picture (option index, or 0 for a name question's art) shown mirrored? */
+  function mirrored(index: number) {
+    return !!reveal && !!q.mirrored?.[index];
+  }
+
   function optionName(index: number) {
     return q.labels[index] ?? (q.options[index] ? engine.byId.get(q.options[index])?.name : undefined) ?? '';
   }
@@ -101,6 +106,10 @@
       {#if iWon}Correct{:else if race && winner}Too slow{:else if reveal.timedOut}Time's up{:else if race}No one{:else}Wrong{/if}
     </div>
   {/if}
+{/snippet}
+
+{#snippet mirrorLine()}
+  <span class="mirrored" in:fade={{ duration: 300, delay: 450 }}>Mirrored</span>
 {/snippet}
 
 {#snippet who(index: number)}
@@ -195,12 +204,16 @@
           >
             <span class="key">{i + 1}</span>
             {#if src}
-              <span class="pic"><ArtImage {src} alt="Option {i + 1}" scale={1.6} /></span>
+              <!-- Named pictures switch to the original art, so a mirrored one turns round. -->
+              <span class="pic"><ArtImage {src} alt="Option {i + 1}" scale={1.6} unflip={mirrored(i) && !!q.options[i]} /></span>
             {:else}
               <span class="loading" aria-label="Loading"></span>
             {/if}
             {#if reveal && named(i)}
-              <span class="caption" in:fly={{ y: 6, duration: 300, delay: 150 }}>{optionName(i)}</span>
+              <span class="caption" in:fly={{ y: 6, duration: 300, delay: 150 }}>
+                {optionName(i)}
+                {#if mirrored(i)}{@render mirrorLine()}{/if}
+              </span>
             {/if}
             {#if st === 'right'}<span class="mark" in:scale={{ duration: 300 }}>✓</span>{/if}
             {#if st === 'wrong'}<span class="mark" in:scale={{ duration: 300 }}>✕</span>{/if}
@@ -217,6 +230,7 @@
             <div class="head-text" in:fly={{ y: 10, duration: 450 }}>
               <span class="iname">{item.name}</span>
               <span class="ibase">{item.base}</span>
+              {#if mirrored(0)}{@render mirrorLine()}{/if}
             </div>
           {:else}
             <div class="head-text" out:fade={{ duration: 150 }}>
@@ -228,7 +242,7 @@
         <div class="art">
           <div class="frame">
             {#if reveal && item}
-              <ArtImage src={itemImage(item.id)} alt={item.name} w={hint?.w} h={hint?.h} float />
+              <ArtImage src={itemImage(item.id)} alt={item.name} w={hint?.w} h={hint?.h} float unflip={mirrored(0)} />
             {:else if media?.grid}
               <span class="art-slot">
               <span class="art-fit veil" style:--w={media.grid.w} style:--h={media.grid.h} style:--s={1.8}>
@@ -399,6 +413,20 @@
     font-size: 0.85rem;
     color: #d8a26a;
     opacity: 0.85;
+  }
+  /* An extra tooltip line, cool against the warm name and base. */
+  .mirrored {
+    display: block;
+    font-family: var(--font-body);
+    font-weight: 400;
+    font-variant: small-caps;
+    font-size: 0.95rem;
+    letter-spacing: 0.06em;
+    line-height: 1.1;
+    color: #a9c3dc;
+  }
+  .caption .mirrored {
+    font-size: 0.9rem;
   }
 
   .art {

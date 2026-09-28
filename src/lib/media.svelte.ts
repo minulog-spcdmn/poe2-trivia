@@ -87,8 +87,8 @@ function loadImage(src: string): Promise<HTMLImageElement> {
 
 const rand = (min: number, max: number) => min + Math.random() * (max - min);
 
-/** Draws the item onto a canvas with small random changes. */
-async function alteredCanvas(itemId: string, grayscale: boolean): Promise<HTMLCanvasElement> {
+/** Draws the item onto a canvas with small random changes (and flipped left to right if `mirror`). */
+async function alteredCanvas(itemId: string, grayscale: boolean, mirror = false): Promise<HTMLCanvasElement> {
   const img = await loadImage(itemImage(itemId));
   const scale = rand(0.9, 1.0);
   const w = Math.round(img.naturalWidth * scale);
@@ -101,6 +101,7 @@ async function alteredCanvas(itemId: string, grayscale: boolean): Promise<HTMLCa
   ctx.imageSmoothingQuality = 'high';
   ctx.translate(canvas.width / 2 + rand(-1.5, 1.5), canvas.height / 2 + rand(-1.5, 1.5));
   ctx.rotate(rand(-0.6, 0.6) * (Math.PI / 180));
+  if (mirror) ctx.scale(-1, 1);
   ctx.filter = `brightness(${rand(0.97, 1.03)}) saturate(${rand(0.96, 1.04)})`;
   ctx.drawImage(img, -w / 2, -h / 2, w, h);
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -160,10 +161,12 @@ export function seededOrder(n: number, seed: number): number[] {
 export async function prepareMedia(q: Question, grayscale: boolean): Promise<PreparedMedia> {
   const out: PreparedMedia = { qid: q.askedAt, art: null, grid: null, tiles: [], options: [] };
   if (q.mode === 'art') {
-    out.options = await Promise.all(q.options.map(async (id) => encode(await alteredCanvas(id, grayscale))));
+    out.options = await Promise.all(
+      q.options.map(async (id, i) => encode(await alteredCanvas(id, grayscale, !!q.mirrored?.[i]))),
+    );
     return out;
   }
-  const canvas = await alteredCanvas(q.itemId, false);
+  const canvas = await alteredCanvas(q.itemId, false, !!q.mirrored?.[0]);
   const { width: W, height: H } = canvas;
   if (!q.veil) {
     out.art = { w: W, h: H, data: await encode(canvas) };

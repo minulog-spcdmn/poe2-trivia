@@ -23,7 +23,7 @@
     {
       id: 'eternal',
       name: 'Eternal',
-      blurb: 'Eight look-alike names. Tiles lift slowly, and "find the art" pictures lose their colour. Good luck, exile.',
+      blurb: 'Eight look-alike names. Tiles lift slowly, "find the art" pictures lose their colour, and some pictures are mirrored. Good luck, exile.',
     },
   ];
 

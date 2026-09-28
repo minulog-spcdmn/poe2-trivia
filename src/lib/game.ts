@@ -29,12 +29,14 @@ export interface DifficultyRules {
   veil: { size: number; share: number } | null;
   /** "Art" question pictures are shown without colour. */
   grayscale: boolean;
+  /** Chance of each picture being shown flipped left to right. */
+  mirror: number;
   /** How many turns a chosen category stays locked. */
   lockout: number;
 }
 
 export const DIFFICULTIES: Record<Difficulty, DifficultyRules> = {
-  cruel: { options: 4, groupFirst: true, similarNames: 0, artChance: 0.4, veil: null, grayscale: false, lockout: 2 },
+  cruel: { options: 4, groupFirst: true, similarNames: 0, artChance: 0.4, veil: null, grayscale: false, mirror: 0, lockout: 2 },
   merciless: {
     options: 6,
     groupFirst: true,
@@ -42,6 +44,7 @@ export const DIFFICULTIES: Record<Difficulty, DifficultyRules> = {
     artChance: 0.4,
     veil: { size: 5, share: 0.55 },
     grayscale: false,
+    mirror: 0,
     lockout: 3,
   },
   eternal: {
@@ -51,6 +54,7 @@ export const DIFFICULTIES: Record<Difficulty, DifficultyRules> = {
     artChance: 0.5,
     veil: { size: 7, share: 0.7 },
     grayscale: true,
+    mirror: 0.3,
     lockout: 4,
   },
 };
@@ -155,6 +159,12 @@ export interface Question {
   prompt: string | null;
   /** Tiles hiding the art on name questions (merciless and up). */
   veil: Veil | null;
+  /**
+   * Pictures shown flipped left to right (eternal): one flag per option on art
+   * questions, one for the art on name questions. Empty for guests until the
+   * reveal (missing in games saved before it existed).
+   */
+  mirrored?: boolean[];
   /** Host-clock timestamp when the question was asked. */
   askedAt: number;
   /** Host-clock timestamp when time runs out, null without timer. */
@@ -258,7 +268,7 @@ export { cleanName };
 export function publicView(s: GameState): GameState {
   const q = s.question;
   if (!q) return { ...s, used: [] };
-  if (s.phase === 'question') return { ...s, used: [], question: { ...q, itemId: '', options: [] } };
+  if (s.phase === 'question') return { ...s, used: [], question: { ...q, itemId: '', options: [], mirrored: [] } };
   // Revealed: only the answer and the options someone actually picked are
   // identified; the untouched decoys stay anonymous for later questions.
   const known = new Set<number | null>([s.reveal?.correctIndex ?? -1, s.reveal?.chosenIndex ?? null, ...q.misses.map((m) => m.index)]);
@@ -814,7 +824,9 @@ export class Engine {
         : null;
     const labels = options.map((id) => (mode === 'name' ? this.byId.get(id)!.name : null));
     const prompt = mode === 'art' ? answer.name : null;
-    return { category, mode, itemId: answer.id, options, labels, prompt, veil, askedAt, deadline, misses: [] };
+    // Each picture flips on its own roll, so a flipped option says nothing about the answer.
+    const mirrored = Array.from({ length: mode === 'art' ? options.length : 1 }, () => rules.mirror > 0 && this.rng() < rules.mirror);
+    return { category, mode, itemId: answer.id, options, labels, prompt, veil, mirrored, askedAt, deadline, misses: [] };
   }
 }
 
