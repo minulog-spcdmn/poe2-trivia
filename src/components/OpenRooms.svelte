@@ -113,8 +113,10 @@
           <span class="count" title="Players">{r.players}/{r.maxPlayers}</span>
           {#if open}
             <button class="btn small" {disabled} onclick={() => onJoin(r.code)}>Join</button>
+          {:else if r.phase !== 'locked' && r.phase !== 'lobby'}
+            <button class="btn small ghost" {disabled} onclick={() => onJoin(r.code)} title="Watch this game and play in the next one">Watch</button>
           {:else}
-            <span class="status">{r.phase === 'locked' ? 'Locked' : r.phase === 'lobby' ? 'Full' : 'In game'}</span>
+            <span class="status">{r.phase === 'locked' ? 'Locked' : 'Full'}</span>
           {/if}
         </li>
       {/each}

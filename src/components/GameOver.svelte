@@ -9,6 +9,7 @@
   const s = $derived(session.state!);
   const standings = $derived([...s.players].sort((a, b) => b.score - a.score));
   const winner = $derived(s.players.find((p) => s.winners.includes(p.id)) ?? standings[0]);
+  const spectators = $derived(s.spectators ?? []);
   const iWon = $derived(session.mode !== 'local' && winner?.id === session.myPlayerId);
 
   let canvas: HTMLCanvasElement;
@@ -116,12 +117,17 @@
 
   <div class="actions" in:fly={{ y: 20, duration: 600, delay: 1300 }}>
     {#if session.isHost}
-      <button class="btn primary big" onclick={() => session.dispatch({ type: 'restart' })}>Play again</button>
+      <button class="btn primary big" onclick={() => session.dispatch({ type: 'restart', play: true })}>Play again</button>
+      <button class="btn ghost" onclick={() => session.dispatch({ type: 'restart' })}>Change settings</button>
     {:else}
       <p class="muted">Waiting for the host to start a new game…</p>
     {/if}
-    <button class="btn ghost" onclick={() => session.leave()}>Leave</button>
   </div>
+  {#if spectators.length}
+    <p class="joining muted" in:fly={{ y: 10, duration: 600, delay: 1400 }}>
+      {spectators.map((o) => o.name).join(', ')} {spectators.length === 1 ? 'joins' : 'join'} the next game.
+    </p>
+  {/if}
 
   <p class="credit" in:fly={{ y: 10, duration: 600, delay: 1600 }}>
     <a href={SITE_URL} target="_blank" rel="noreferrer">poe2.quest</a> · made by
@@ -251,6 +257,10 @@
   }
   .credit a:hover {
     color: #fff1cf;
+  }
+  .joining {
+    margin: 1rem 0 0;
+    font-style: italic;
   }
   .actions p {
     margin: 0;

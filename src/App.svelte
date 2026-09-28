@@ -50,6 +50,10 @@
       </button>
       <div class="meta">
         {#if gs && screen === 'game'}
+          {#if session.spectating}
+            <span class="spectating" title="You joined mid-game. You'll play in the next game.">Spectating</span>
+            <span class="dot">•</span>
+          {/if}
           {#if gs.deathmatch}
             <span class="deathmatch">⚔ Deathmatch</span>
             <span class="dot">•</span>
@@ -213,6 +217,9 @@
   }
   .dot {
     color: var(--gold-lo);
+  }
+  .spectating {
+    color: var(--gold-hi);
   }
   .deathmatch {
     color: #ff7a5c;

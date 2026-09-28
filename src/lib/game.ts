@@ -184,10 +184,18 @@ export interface Reveal {
   winnerId: string | null;
 }
 
+/** Someone who joined a running game: they watch until the next game starts. */
+export interface Spectator {
+  id: string;
+  name: string;
+}
+
 export interface GameState {
   phase: Phase;
   hostId: string | null;
   players: Player[];
+  /** Watching this game; they get a seat when the host starts the next one (missing in older saves). */
+  spectators?: Spectator[];
   settings: Settings;
   /** Index into players of whose turn it is. */
   turn: number;
@@ -219,10 +227,12 @@ export type Action =
   | { type: 'answer'; index: number | null; askedAt?: number }
   | { type: 'next' }
   | { type: 'skip' }
-  | { type: 'restart' };
+  /** Back to the lobby, seating the spectators; with `play`, the next game starts right away. */
+  | { type: 'restart'; play?: boolean };
 
 export const OFFER_COUNT = 3;
 export const MAX_PLAYERS = 12;
+export const MAX_SPECTATORS = 8;
 export { MAX_NAME } from './names.ts';
 
 export const DEFAULT_SETTINGS: Settings = { targetScore: 10, timer: 20, difficulty: 'cruel', mode: 'turns', public: false, locked: false };
@@ -243,6 +253,7 @@ export function createGame(hostId: string | null, settings: Settings = DEFAULT_S
     phase: 'lobby',
     hostId,
     players: [],
+    spectators: [],
     settings: { ...settings },
     turn: 0,
     round: 1,
@@ -260,6 +271,14 @@ export function createGame(hostId: string | null, settings: Settings = DEFAULT_S
 }
 
 export { cleanName };
+
+/** Adds a player with the first free avatar colour. */
+function seat(s: GameState, id: string, name: string) {
+  const used = new Set(s.players.map((p) => p.hue));
+  let hue = 0;
+  while (used.has(hue)) hue++;
+  s.players.push({ id, name, score: 0, recent: [], connected: true, hue });
+}
 
 /**
  * The copy of the state guests receive: nothing that identifies the answer
@@ -316,6 +335,7 @@ export class Engine {
    */
   apply(prev: GameState, action: Action, from: string | null): GameState {
     const s: GameState = structuredClone(prev);
+    s.spectators ??= [];
     const isHost = from === null || from === s.hostId;
     const race = s.settings.mode === 'race';
     const active = s.players[s.turn];
@@ -331,18 +351,18 @@ export class Engine {
           break;
         }
         const name = cleanName(action.name);
-        if (s.phase !== 'lobby') throw new ActionError('That game has already started.');
         if (s.settings.locked) throw new ActionError('The host has locked this room.');
-        if (s.players.length >= MAX_PLAYERS) throw new ActionError('The lobby is full.');
-        const problem = nameProblem(
-          name,
-          s.players.map((p) => p.name),
-        );
+        const problem = nameProblem(name, [...s.players, ...s.spectators].filter((o) => o.id !== action.playerId).map((o) => o.name));
         if (problem) throw new ActionError(problem);
-        const used = new Set(s.players.map((p) => p.hue));
-        let hue = 0;
-        while (used.has(hue)) hue++;
-        s.players.push({ id: action.playerId, name, score: 0, recent: [], connected: true, hue });
+        if (s.phase !== 'lobby') {
+          // Too late for this game: watch it and take a seat in the next one.
+          if (s.spectators.some((o) => o.id === action.playerId)) break;
+          if (s.spectators.length >= MAX_SPECTATORS) throw new ActionError('That game has already started and has no room for more spectators.');
+          s.spectators.push({ id: action.playerId, name });
+          break;
+        }
+        if (s.players.length >= MAX_PLAYERS) throw new ActionError('The lobby is full.');
+        seat(s, action.playerId, name);
         break;
       }
       case 'rename': {
@@ -351,7 +371,7 @@ export class Engine {
         const name = cleanName(action.name);
         const problem = nameProblem(
           name,
-          s.players.filter((o) => o.id !== action.playerId).map((o) => o.name),
+          [...s.players, ...s.spectators].filter((o) => o.id !== action.playerId).map((o) => o.name),
         );
         if (problem) throw new ActionError(problem);
         if (p) p.name = name;
@@ -360,6 +380,7 @@ export class Engine {
       case 'remove': {
         if (!isHost && from !== action.playerId) throw new ActionError('Only the host can remove players.');
         if (action.playerId === s.hostId) throw new ActionError('The host cannot leave their own game.');
+        s.spectators = s.spectators.filter((o) => o.id !== action.playerId);
         const idx = s.players.findIndex((p) => p.id === action.playerId);
         if (idx < 0) break;
         s.players.splice(idx, 1);
@@ -491,9 +512,16 @@ export class Engine {
         const fresh = createGame(s.hostId, s.settings);
         // Players who left during the game don't come back as ghosts in the lobby.
         fresh.players = s.players.filter((p) => p.connected).map((p) => ({ ...p, score: 0, recent: [] }));
+        // Spectators take the free seats, in the order they arrived; the rest keep watching.
+        fresh.spectators = [];
+        for (const o of s.spectators) {
+          if (fresh.players.length < MAX_PLAYERS) seat(fresh, o.id, o.name);
+          else fresh.spectators.push(o);
+        }
         fresh.version = s.version;
         fresh.lastAskedAt = s.lastAskedAt;
         Object.assign(s, fresh);
+        if (action.play) return this.apply(s, { type: 'start' }, from);
         break;
       }
     }

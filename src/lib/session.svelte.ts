@@ -14,6 +14,7 @@ import {
   createGame,
   ActionError,
   MAX_PLAYERS,
+  MAX_SPECTATORS,
   publicView,
   activeRules,
   ANSWER_GRACE_MS,
@@ -34,8 +35,8 @@ export const CODE_LENGTH = 6;
 export const CODE_PATTERN = /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/;
 const AUTO_NEXT_MS = 5000;
 
-/** Connections beyond the players (people joining, reconnecting). */
-const MAX_CONNECTIONS = MAX_PLAYERS + 4;
+/** Players and spectators, plus a few spare for people joining or reconnecting. */
+const MAX_CONNECTIONS = MAX_PLAYERS + MAX_SPECTATORS + 4;
 /** A connection must introduce itself within this time. */
 const HELLO_TIMEOUT_MS = 6000;
 const PING_EVERY_MS = 3000;
@@ -161,6 +162,12 @@ class Session {
     return this.mode === 'local' || this.mode === 'host';
   }
 
+  /** Online guest who joined a running game and watches until the next one. */
+  get spectating() {
+    const s = this.state;
+    return this.mode === 'client' && !!s && !!this.myPlayerId && !s.players.some((p) => p.id === this.myPlayerId);
+  }
+
   get race() {
     return this.state?.settings.mode === 'race';
   }
@@ -241,7 +248,8 @@ class Session {
       const me = this.priv.myPlayerId;
       if (resumeState) {
         // Everyone else has to reconnect; mark them offline until they do.
-        let s = resumeState;
+        // Spectators rejoin as spectators when they reconnect.
+        let s: GameState = { ...resumeState, spectators: [] };
         for (const p of s.players)
           if (p.id !== me) s = engine.apply(s, { type: 'connection', playerId: p.id, connected: false }, null);
         this.setState(s);
@@ -333,6 +341,10 @@ class Session {
       const id = guest.playerId;
       if (!id || !this.state) return;
       if ([...this.guests.values()].some((g) => g.playerId === id)) return;
+      if (this.state.spectators?.some((o) => o.id === id)) {
+        this.setState(engine.apply(this.state, { type: 'remove', playerId: id }, null));
+        return;
+      }
       const p = this.state.players.find((p) => p.id === id);
       if (!p) return;
       if (this.state.phase === 'lobby') {
@@ -368,7 +380,9 @@ class Session {
     this.send(conn, { t: 'welcome', playerId });
     this.setState(next);
     for (const m of this.released) this.sendMedia(conn, guest, m);
-    this.flash(`${next.players.find((p) => p.id === playerId)?.name} joined`);
+    const player = next.players.find((p) => p.id === playerId);
+    if (player) this.flash(`${player.name} joined`);
+    else this.flash(`${next.spectators?.find((o) => o.id === playerId)?.name} is watching`);
   }
 
   /** Answers that arrive before a human could have seen the question. */
@@ -691,7 +705,7 @@ class Session {
       mode: s.settings.mode ?? 'turns',
       difficulty: s.settings.difficulty,
       target: s.settings.targetScore,
-      phase: s.settings.locked && s.phase === 'lobby' ? 'locked' : s.phase,
+      phase: s.settings.locked ? 'locked' : s.phase,
     };
   }
 

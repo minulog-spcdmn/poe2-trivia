@@ -57,6 +57,11 @@ than any other.
     the turn of a player who is disconnected.
   - If the host refreshes, the room reopens with the same code and players
     reconnect.
+  - Anyone who joins a game that has already started watches as a
+    **spectator** (up to 8) and gets a seat when the host starts the next
+    game. Public rooms that are in a game show a **Watch** button.
+  - After a game, the host can **Play again** (same settings, starts right
+    away, spectators included) or **Change settings** (back to the lobby).
   - Very strict networks (some corporate or mobile networks) can block
     WebRTC. In that case, use hot-seat.
 - **Open rooms:** a host can set their room to **Public**, which lists it
@@ -101,7 +106,7 @@ with that in mind. Guests, on the other hand, are treated as untrusted:
 - **Race fairness.** The host's own answers are delayed by a typical guest's
   one-way network latency, measured with pings.
 - **Host tools.** The host can:
-  - lock the room so no one new can join
+  - lock the room so no one new can join or watch
   - kick anyone, in the lobby or mid-game; the kicked player's token and
     connection are then blocked for the rest of the session
   - hide the room code on screen for streaming

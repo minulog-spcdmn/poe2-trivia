@@ -122,6 +122,55 @@ test('play again drops players who left, and the first turn goes to someone pres
   }
 });
 
+test('joining a running game makes you a spectator who is seated at the restart', () => {
+  let { engine, s } = setup(['A', 'B']);
+  s = engine.apply(s, { type: 'start' }, 'p0');
+  s = engine.apply(s, { type: 'join', playerId: 'late', name: 'Late' }, 'late');
+  assert.equal(s.players.length, 2);
+  assert.deepEqual(s.spectators, [{ id: 'late', name: 'Late' }]);
+  assert.equal(s.phase, 'choosing', 'the game carries on');
+  // Spectators can't play.
+  assert.throws(() => engine.apply(s, { type: 'pick', category: s.offered[0] }, 'late'));
+  // Their name is taken for this room, and joining again doesn't add them twice.
+  assert.throws(() => engine.apply(s, { type: 'join', playerId: 'other', name: 'late' }, 'other'));
+  s = engine.apply(s, { type: 'join', playerId: 'late', name: 'Late' }, 'late');
+  assert.equal(s.spectators!.length, 1);
+
+  const back = engine.apply(s, { type: 'restart' }, 'p0');
+  assert.equal(back.phase, 'lobby');
+  assert.deepEqual(back.spectators, []);
+  const late = back.players.find((p) => p.id === 'late')!;
+  assert.equal(late.score, 0);
+  assert.equal(new Set(back.players.map((p) => p.hue)).size, 3, 'everyone has their own colour');
+
+  const again = engine.apply(s, { type: 'restart', play: true }, 'p0');
+  assert.equal(again.phase, 'choosing', 'play again starts right away');
+  assert.equal(again.players.length, 3);
+  assert.equal(again.version, s.version + 1);
+  assert.throws(() => engine.apply(s, { type: 'restart', play: true }, 'p1'), 'only the host restarts');
+});
+
+test('spectators leave cleanly, respect the lock and the seat limit', () => {
+  let { engine, s } = setup(['A']);
+  s = engine.apply(s, { type: 'start' }, 'p0');
+  s = engine.apply(s, { type: 'join', playerId: 'x', name: 'X' }, 'x');
+  s = engine.apply(s, { type: 'remove', playerId: 'x' }, null);
+  assert.deepEqual(s.spectators, []);
+  assert.equal(s.phase, 'choosing');
+
+  const locked = engine.apply(s, { type: 'settings', settings: { locked: true } }, 'p0');
+  assert.throws(() => engine.apply(locked, { type: 'join', playerId: 'y', name: 'Y' }, 'y'));
+
+  // A full table: spectators beyond the free seats keep watching.
+  const names = ['Alba', 'Brom', 'Cyra', 'Dusk', 'Ember', 'Fenwick', 'Galt', 'Hollis', 'Iona', 'Jorik', 'Kestrel', 'Lumen'];
+  let full = setup(names);
+  s = full.engine.apply(full.s, { type: 'start' }, 'p0');
+  s = full.engine.apply(s, { type: 'join', playerId: 'w', name: 'W' }, 'w');
+  s = full.engine.apply(s, { type: 'restart' }, 'p0');
+  assert.equal(s.players.length, 12);
+  assert.deepEqual(s.spectators, [{ id: 'w', name: 'W' }]);
+});
+
 test('difficulties scale options, decoy kind and question types', () => {
   for (const difficulty of ['cruel', 'merciless', 'eternal'] as Difficulty[]) {
     const rules = DIFFICULTIES[difficulty];
