@@ -39,6 +39,11 @@ body {
   background: var(--bg);
 }
 
+/* Reserve the scrollbar's space so screens that need one don't shift sideways. */
+html {
+  scrollbar-gutter: stable;
+}
+
 body {
   font-family: var(--font-body);
   font-size: 18px;
