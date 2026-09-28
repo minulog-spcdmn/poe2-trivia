@@ -9,6 +9,7 @@
   const race = $derived(s.settings.mode === 'race');
   const missed = $derived(new Set(s.question?.misses.map((m) => m.playerId) ?? []));
   const canKick = $derived(session.mode === 'host');
+  const spectators = $derived(s.spectators ?? []);
 
   // Kicking takes two clicks so a stray tap doesn't remove anyone.
   let confirming = $state<string | null>(null);
@@ -60,6 +61,24 @@
     </li>
   {/each}
 </ol>
+{#if spectators.length}
+  <p class="watching">
+    <span class="eye" aria-hidden="true">👁</span>
+    Watching:
+    {#each spectators as o (o.id)}
+      <span class="spectator"
+        >{o.name}{#if o.id === session.myPlayerId}<em>&nbsp;(you)</em>{/if}{#if canKick}<button
+            class="kick-inline"
+            class:confirm={confirming === o.id}
+            onclick={() => kick(o.id)}
+            title="Remove {o.name}"
+            aria-label="Remove {o.name}">{confirming === o.id ? 'Kick?' : '×'}</button
+          >{/if}</span
+      >
+    {/each}
+    <span class="hint">· joining next game</span>
+  </p>
+{/if}
 
 <style>
   .board {
@@ -237,6 +256,37 @@
     top: -6px;
     left: 26px;
     font-size: 0.8rem;
+  }
+
+  .watching {
+    margin: -0.2rem 0 0;
+    text-align: center;
+    font-size: 0.88rem;
+    color: var(--muted);
+  }
+  .watching em,
+  .watching .hint {
+    font-size: 0.9em;
+    font-style: italic;
+  }
+  .spectator {
+    color: var(--text);
+    margin-left: 0.5em;
+  }
+  .kick-inline {
+    margin-left: 0.25em;
+    padding: 0 0.35em;
+    border: 1px solid rgba(224, 85, 63, 0.5);
+    border-radius: 8px;
+    background: #1c0f0b;
+    color: #ff9c86;
+    font-size: 0.7rem;
+    line-height: 1.3;
+    cursor: pointer;
+  }
+  .kick-inline.confirm {
+    background: var(--bad);
+    color: #fff;
   }
 
   @media (max-width: 640px) {

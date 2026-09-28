@@ -16,6 +16,8 @@ export interface RoomInfo {
   host: string;
   players: number;
   maxPlayers: number;
+  spectators: number;
+  maxSpectators: number;
   mode: GameMode;
   difficulty: Difficulty;
   target: number;
@@ -33,6 +35,7 @@ export function parseRoomInfo(raw: unknown): RoomInfo | null {
   const host = cleanName(r.host);
   if (typeof r.code !== 'string' || !CODE.test(r.code) || !host) return null;
   if (!int(r.players, 0, 64) || !int(r.maxPlayers, 1, 64) || !int(r.target, 1, 50)) return null;
+  if (!int(r.spectators, 0, 64) || !int(r.maxSpectators, 0, 64)) return null;
   if (r.mode !== 'turns' && r.mode !== 'race') return null;
   if (!(typeof r.difficulty === 'string' && r.difficulty in DIFFICULTIES)) return null;
   if (typeof r.phase !== 'string' || !PHASES.includes(r.phase)) return null;
@@ -41,6 +44,8 @@ export function parseRoomInfo(raw: unknown): RoomInfo | null {
     host,
     players: r.players as number,
     maxPlayers: r.maxPlayers as number,
+    spectators: r.spectators as number,
+    maxSpectators: r.maxSpectators as number,
     mode: r.mode,
     difficulty: r.difficulty as Difficulty,
     target: r.target as number,
