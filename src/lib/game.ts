@@ -133,7 +133,7 @@ export interface Settings {
 }
 
 /** Answers sent just before time ran out still count if they arrive this late (network delay). */
-export const ANSWER_GRACE_MS = 1000;
+export const ANSWER_GRACE_MS = 500;
 
 /** Race questions need an end, so "no timer" falls back to this. */
 export const RACE_DEFAULT_TIMER = 30;
