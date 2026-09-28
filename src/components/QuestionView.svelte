@@ -108,8 +108,8 @@
   {/if}
 {/snippet}
 
-{#snippet mirrorTag(inTile = false)}
-  <span class="mirror-tag" class:in-tile={inTile} in:fade={{ duration: 300, delay: 450 }}>Mirrored</span>
+{#snippet mirrorLine(inTile = false)}
+  <span class="mirrored" class:in-tile={inTile} in:fade={{ duration: 300, delay: 450 }}>Mirrored</span>
 {/snippet}
 
 {#snippet who(index: number)}
@@ -209,10 +209,10 @@
             {:else}
               <span class="loading" aria-label="Loading"></span>
             {/if}
-            {#if mirrored(i)}{@render mirrorTag(true)}{/if}
             {#if reveal && named(i)}
               <span class="caption" in:fly={{ y: 6, duration: 300, delay: 150 }}>{optionName(i)}</span>
             {/if}
+            {#if mirrored(i)}{@render mirrorLine(true)}{/if}
             {#if st === 'right'}<span class="mark" in:scale={{ duration: 300 }}>✓</span>{/if}
             {#if st === 'wrong'}<span class="mark" in:scale={{ duration: 300 }}>✕</span>{/if}
             {@render who(i)}
@@ -228,6 +228,7 @@
             <div class="head-text" in:fly={{ y: 10, duration: 450 }}>
               <span class="iname">{item.name}</span>
               <span class="ibase">{item.base}</span>
+              {#if mirrored(0)}{@render mirrorLine()}{/if}
             </div>
           {:else}
             <div class="head-text" out:fade={{ duration: 150 }}>
@@ -263,7 +264,6 @@
               <span class="loading big" aria-label="Loading"></span>
             {/if}
           </div>
-          {#if mirrored(0)}{@render mirrorTag()}{/if}
           {@render stamp()}
         </div>
       </div>
@@ -412,6 +412,17 @@
     color: #d8a26a;
     opacity: 0.85;
   }
+  /* An extra tooltip line, cool against the warm name and base. */
+  .mirrored {
+    font-style: italic;
+    font-size: 0.9rem;
+    letter-spacing: 0.04em;
+    color: #a9c3dc;
+  }
+  .mirrored.in-tile {
+    font-size: 0.8rem;
+    line-height: 1;
+  }
 
   .art {
     position: relative;
@@ -502,30 +513,6 @@
     border-radius: 3px;
     rotate: -8deg;
     background: rgba(0, 0, 0, 0.55);
-  }
-  /* In the style of the in-game "Mirrored" line. */
-  .mirror-tag {
-    position: absolute;
-    z-index: 2;
-    pointer-events: none;
-    top: 14px;
-    left: 16px;
-    padding: 0.15em 0.6em;
-    font-family: var(--font-display);
-    font-weight: 700;
-    font-size: 0.8rem;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    color: #b9d4ec;
-    border: 1px solid rgba(185, 212, 236, 0.45);
-    border-radius: 3px;
-    background: rgba(0, 0, 0, 0.55);
-  }
-  .mirror-tag.in-tile {
-    top: 10px;
-    left: 50%;
-    translate: -50% 0;
-    font-size: 0.65rem;
   }
   .stamp.in-head {
     bottom: auto;
