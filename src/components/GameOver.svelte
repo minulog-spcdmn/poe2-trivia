@@ -10,6 +10,16 @@
   const standings = $derived([...s.players].sort((a, b) => b.score - a.score));
   const winner = $derived(s.players.find((p) => s.winners.includes(p.id)) ?? standings[0]);
   const spectators = $derived(s.spectators ?? []);
+
+  // One click only: a second one while this screen fades out would restart the new game.
+  let leaving = $state(false);
+  function again(play: boolean) {
+    if (leaving) return;
+    leaving = true;
+    session.dispatch({ type: 'restart', play });
+    // Still here (the restart was refused)? Let the host try again.
+    setTimeout(() => (leaving = false), 1500);
+  }
   const iWon = $derived(session.mode !== 'local' && winner?.id === session.myPlayerId);
 
   let canvas: HTMLCanvasElement;
@@ -117,8 +127,8 @@
 
   <div class="actions" in:fly={{ y: 20, duration: 600, delay: 1300 }}>
     {#if session.isHost}
-      <button class="btn primary big" onclick={() => session.dispatch({ type: 'restart', play: true })}>Play again</button>
-      <button class="btn ghost" onclick={() => session.dispatch({ type: 'restart' })}>Change settings</button>
+      <button class="btn primary big" disabled={leaving} onclick={() => again(true)}>Play again</button>
+      <button class="btn ghost" disabled={leaving} onclick={() => again(false)}>Change settings</button>
     {:else}
       <p class="muted">Waiting for the host to start a new game…</p>
     {/if}

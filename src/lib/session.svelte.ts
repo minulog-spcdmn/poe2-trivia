@@ -147,6 +147,8 @@ class Session {
   private released: MediaMsg[] = [];
   private timer: ReturnType<typeof setTimeout> | null = null;
   private autoNext: ReturnType<typeof setTimeout> | null = null;
+  /** The reveal autoNext belongs to (its question's askedAt), so unrelated changes don't restart it. */
+  private autoNextFor = 0;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
   private pingSeq = 0;
   private joinName = '';
@@ -475,11 +477,11 @@ class Session {
     this.send(conn, m);
   }
 
-  private stopMedia() {
+  private stopMedia(keepReleased = false) {
     for (const t of this.mediaTimers) clearTimeout(t);
     this.mediaTimers = [];
     this.media = null;
-    this.released = [];
+    if (!keepReleased) this.released = [];
   }
 
   // ---- joining ----------------------------------------------------------
@@ -642,7 +644,8 @@ class Session {
         setTimeout(() => c.close(), 300);
       }
     }
-    const name = this.state?.players.find((p) => p.id === playerId)?.name;
+    const s = this.state;
+    const name = [...(s?.players ?? []), ...(s?.spectators ?? [])].find((o) => o.id === playerId)?.name;
     this.dispatch({ type: 'remove', playerId });
     if (name) this.flash(`${name} was removed`);
   }
@@ -674,6 +677,9 @@ class Session {
     this.state = next;
     if (next.phase === 'question' && next.question && next.question.askedAt !== prev?.question?.askedAt) {
       void this.startMedia(next);
+    } else if (next.phase === 'reveal') {
+      // Keep what was sent, so someone arriving during the reveal still gets the pictures.
+      this.stopMedia(true);
     } else if (next.phase !== 'question') {
       this.stopMedia();
     }
@@ -747,8 +753,7 @@ class Session {
 
   private scheduleTimers(s: GameState) {
     if (this.timer) clearTimeout(this.timer);
-    if (this.autoNext) clearTimeout(this.autoNext);
-    this.timer = this.autoNext = null;
+    this.timer = null;
     if (s.phase === 'question' && s.question?.deadline) {
       const version = s.version;
       this.timer = setTimeout(
@@ -761,12 +766,29 @@ class Session {
       );
     }
     this.scheduleAutoSkip(s);
-    if (s.phase === 'reveal' && this.mode === 'host') {
-      const version = s.version;
-      this.autoNext = setTimeout(() => {
-        if (this.state?.version === version) this.setState(engine.apply(this.state, { type: 'next' }, null));
-      }, AUTO_NEXT_MS);
-    }
+    this.scheduleAutoNext(s);
+  }
+
+  /**
+   * Online: the reveal moves on by itself after a few seconds. Counted from the
+   * reveal itself, so people joining or leaving meanwhile can't hold it up.
+   */
+  private scheduleAutoNext(s: GameState) {
+    const key = s.phase === 'reveal' && this.mode === 'host' && s.question ? s.question.askedAt : 0;
+    if (key === this.autoNextFor) return;
+    if (this.autoNext) clearTimeout(this.autoNext);
+    this.autoNext = null;
+    this.autoNextFor = key;
+    if (!key) return;
+    this.autoNext = setTimeout(() => {
+      const cur = this.state;
+      if (!cur || cur.phase !== 'reveal' || cur.question?.askedAt !== key) return;
+      try {
+        this.setState(engine.apply(cur, { type: 'next' }, null));
+      } catch {
+        /* already moved on */
+      }
+    }, AUTO_NEXT_MS);
   }
 
   /** Turns mode: don't let the game wait forever on a player who dropped out on their turn. */
@@ -817,6 +839,8 @@ class Session {
     shown.clear();
     if (this.timer) clearTimeout(this.timer);
     if (this.autoNext) clearTimeout(this.autoNext);
+    this.autoNext = null;
+    this.autoNextFor = 0;
     if (this.pingTimer) clearInterval(this.pingTimer);
     this.pingTimer = null;
     if (this.skipTimer) clearTimeout(this.skipTimer);
