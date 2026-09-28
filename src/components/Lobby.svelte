@@ -2,7 +2,7 @@
   import { flip } from 'svelte/animate';
   import { fly, scale } from 'svelte/transition';
   import { session } from '../lib/session.svelte';
-  import { MAX_PLAYERS, MAX_NAME, DIFFICULTIES, type Difficulty, type GameMode } from '../lib/game';
+  import { MAX_PLAYERS, MAX_NAME, DIFFICULTIES, rulesFor, type Difficulty, type GameMode } from '../lib/game';
   import { sfx } from '../lib/sound';
   import { inviteUrl } from '../lib/site';
   import Avatar from './Avatar.svelte';
@@ -273,7 +273,7 @@
           <li>First to {s.settings.targetScore} wins.</li>
         {:else}
           <li>On your turn, choose one of three item categories.</li>
-          <li>A category you pick is locked for your next two turns.</li>
+          <li>A category you pick is locked for your next {rulesFor(s.settings.difficulty).lockout} turns.</li>
           <li>Name the unique or lineage gem from its art — one answer is true.</li>
           <li>Correct answers score a point. First to {s.settings.targetScore} wins, once the round is finished.</li>
           <li>Tied at the top? The tied players settle it in a sudden-death deathmatch.</li>

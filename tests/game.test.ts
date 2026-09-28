@@ -47,13 +47,14 @@ test('offers three categories and locks out picks for two turns', () => {
   assert.equal(new Set(s.used).size, s.used.length, 'no repeated items');
 });
 
-test('eternal locks out picks for three turns', () => {
-  let { engine, s } = setup(['A'], 99, 'eternal');
+for (const difficulty of ['merciless', 'eternal'] as Difficulty[]) test(`${difficulty} locks out picks for longer`, () => {
+  const lockout = DIFFICULTIES[difficulty].lockout;
+  let { engine, s } = setup(['A'], 99, difficulty);
   s = engine.apply(s, { type: 'start' }, 'p0');
   const history: string[] = [];
   for (let turn = 0; turn < 30; turn++) {
     assert.equal(s.offered.length, 3);
-    for (const recent of history.slice(-3)) assert.ok(!s.offered.includes(recent), `offered ${recent} too soon`);
+    for (const recent of history.slice(-lockout)) assert.ok(!s.offered.includes(recent), `offered ${recent} too soon`);
     const cat = s.offered[0];
     history.push(cat);
     s = engine.apply(s, { type: 'pick', category: cat }, 'p0');
