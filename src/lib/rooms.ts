@@ -8,7 +8,7 @@
 
 import Peer, { type DataConnection } from 'peerjs';
 import { PEER_OPTIONS, PEER_PREFIX } from './peer';
-import { DIFFICULTIES, type Difficulty, type GameMode, type Phase } from './game';
+import { isDifficulty, type Difficulty, type GameMode, type Phase } from './game';
 import { cleanName } from './names';
 
 export interface RoomInfo {
@@ -37,7 +37,7 @@ export function parseRoomInfo(raw: unknown): RoomInfo | null {
   if (!int(r.players, 0, 64) || !int(r.maxPlayers, 1, 64) || !int(r.target, 1, 50)) return null;
   if (!int(r.spectators, 0, 64) || !int(r.maxSpectators, 0, 64)) return null;
   if (r.mode !== 'turns' && r.mode !== 'race') return null;
-  if (!(typeof r.difficulty === 'string' && r.difficulty in DIFFICULTIES)) return null;
+  if (!isDifficulty(r.difficulty)) return null;
   if (typeof r.phase !== 'string' || !PHASES.includes(r.phase)) return null;
   return {
     code: r.code,
@@ -199,9 +199,11 @@ export class Beacon {
       if (start > FAST_SLOTS) await sleep(SLOW_BATCH_DELAY_MS);
       const slots = Array.from({ length: PARALLEL }, (_, i) => start + i);
       const results = await Promise.all(slots.map((slot) => this.tryClaim(slot)));
-      const won = results.findIndex((r) => r && r !== 'taken');
-      // Keep the lowest slot we got and let go of the others.
+      // Keep the lowest slot we got and let go of the others (all of them if
+      // the room was set to private, or closed, while claiming).
+      const won = this.stopped ? -1 : results.findIndex((r) => r && r !== 'taken');
       results.forEach((r, i) => i !== won && r && r !== 'taken' && r.destroy());
+      if (this.stopped) return;
       if (won >= 0) {
         this.adopt(results[won] as Peer, slots[won]);
         return;

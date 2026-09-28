@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { Engine, createGame, DIFFICULTIES, RARE_GROUPS, nameSimilarity, publicView, type Difficulty, type GameState, type Item, type Question } from '../src/lib/game.ts';
+import { Engine, ActionError, createGame, DIFFICULTIES, isDifficulty, rulesFor, RARE_GROUPS, nameSimilarity, publicView, type Difficulty, type GameState, type Item, type Question } from '../src/lib/game.ts';
 
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
 
@@ -387,6 +387,11 @@ test('guests cannot act for others, join locked rooms, or impersonate', () => {
   // Rejoining an existing seat is still fine, and keeps the original name.
   s = engine.apply(s, { type: 'join', playerId: 'p1', name: 'Renamed' }, 'p1');
   assert.equal(s.players.find((p) => p.id === 'p1')!.name, 'Zana');
+  // Someone the lobby dropped (a refresh) is let back in when the host knows them.
+  s = engine.apply(s, { type: 'remove', playerId: 'p1' }, null);
+  assert.throws(() => engine.apply(s, { type: 'join', playerId: 'p1', name: 'Zana' }, 'p1'), /locked/);
+  s = engine.apply(s, { type: 'join', playerId: 'p1', name: 'Zana', returning: true }, 'p1');
+  assert.ok(s.players.some((p) => p.id === 'p1'));
   assert.throws(() => engine.apply(s, { type: 'settings', settings: { locked: false } }, 'p1'), /host/);
 });
 
@@ -539,6 +544,27 @@ test('a tablet answer gets tablet decoys, so a tablet among the options gives no
   }
 });
 
+test('a tablet answer still gets only tablet decoys once earlier tablets have been used', () => {
+  const engine = new Engine(items, { rng: seeded(11) });
+  const cat = 'Flasks, Jewels & Relics';
+  for (const difficulty of ['merciless', 'eternal'] as Difficulty[]) {
+    let tabletQuestions = 0;
+    for (let game = 0; game < 300; game++) {
+      const s = createGame(null, { targetScore: 5, timer: 0, difficulty, mode: 'turns', public: false, locked: false });
+      // A long game in one category, so its tablets run low before it starts over.
+      for (let turn = 0; turn < 30; turn++) {
+        const q = engine.makeQuestion(s, cat);
+        s.used.push(q.itemId);
+        if (engine.byId.get(q.itemId)!.group !== 'Tablets') continue;
+        tabletQuestions++;
+        const tablets = q.options.filter((id) => engine.byId.get(id)!.group === 'Tablets').length;
+        assert.equal(tablets, q.options.length, `${difficulty}: only ${tablets} tablets among ${q.options.length}`);
+      }
+    }
+    assert.ok(tabletQuestions > 50, `${difficulty}: tablets still come up (${tabletQuestions})`);
+  }
+});
+
 test('question ids keep increasing even if the clock goes back', () => {
   let clock = 1_000_000;
   const engine = new Engine(items, { rng: seeded(9), now: () => clock });
@@ -599,4 +625,88 @@ test('a duelist who drops out and is left behind counts as eliminated', () => {
   s = playTurn(engine, s, () => false);
   assert.deepEqual(s.winners, [x]);
   assert.deepEqual(s.deathmatch!.eliminated, [y]);
+});
+
+test('the host can swap a question for another in the same category, without using up the turn', () => {
+  let { engine, s } = setup(['A', 'B']);
+  s = engine.apply(s, { type: 'start' }, 'p0');
+  const me = s.players[s.turn].id;
+  s = engine.apply(s, { type: 'pick', category: s.offered[0] }, me);
+  const before = s.question!;
+  assert.throws(() => engine.apply(s, { type: 'reask' }, 'p1'), /host/);
+  s = engine.apply(s, { type: 'reask' }, 'p0');
+  const after = s.question!;
+  assert.equal(s.phase, 'question');
+  assert.equal(s.players[s.turn].id, me);
+  assert.equal(after.category, before.category);
+  assert.notEqual(after.itemId, before.itemId);
+  assert.ok(after.askedAt > before.askedAt);
+  assert.ok(s.used.includes(before.itemId) && s.used.includes(after.itemId));
+  // Late answers to the old question are dropped.
+  assert.throws(() => engine.apply(s, { type: 'answer', index: 0, askedAt: before.askedAt }, me), /Too late/);
+});
+
+test('only real difficulties are accepted, not names inherited from Object', () => {
+  let { engine, s } = setup(['A']);
+  for (const bogus of ['toString', 'constructor', '__proto__']) {
+    s = engine.apply(s, { type: 'settings', settings: { difficulty: bogus as Difficulty } }, 'p0');
+    assert.equal(s.settings.difficulty, 'cruel');
+    assert.equal(rulesFor(bogus), DIFFICULTIES.merciless, 'unknown falls back to the default');
+    assert.equal(isDifficulty(bogus), false);
+  }
+  assert.equal(isDifficulty('eternal'), true);
+});
+
+test('a second Next for the same reveal is dropped quietly', () => {
+  let { engine, s } = setup(['A', 'B']);
+  s = engine.apply(s, { type: 'start' }, 'p0');
+  const me = s.players[s.turn].id;
+  s = engine.apply(s, { type: 'pick', category: s.offered[0] }, me);
+  s = engine.apply(s, { type: 'answer', index: 0 }, me);
+  s = engine.apply(s, { type: 'next' }, null);
+  assert.throws(
+    () => engine.apply(s, { type: 'next' }, me),
+    (err: unknown) => err instanceof ActionError && err.silent,
+  );
+});
+
+test('race: asking another question refunds blind guesses and leaves out all the old pictures', () => {
+  let { engine, s } = setup(['A', 'B', 'C'], 5);
+  s = engine.apply(s, { type: 'settings', settings: { mode: 'race' } }, 'p0');
+  s = engine.apply(s, { type: 'start' }, 'p0');
+  const q = s.question!;
+  s = engine.apply(s, { type: 'answer', index: wrongIdx(q), askedAt: q.askedAt }, 'p1');
+  assert.equal(s.players.find((p) => p.id === 'p1')!.score, -1);
+  s = engine.apply(s, { type: 'reask' }, 'p0');
+  assert.equal(s.players.find((p) => p.id === 'p1')!.score, 0, 'the voided miss is refunded');
+  const next = s.question!;
+  assert.deepEqual(next.misses, []);
+  for (const id of next.options) assert.ok(!q.options.includes(id), 'no picture from the voided question comes back');
+  // The refunded player can answer the new question.
+  s = engine.apply(s, { type: 'answer', index: right(next), askedAt: next.askedAt }, 'p1');
+  assert.equal(s.reveal!.winnerId, 'p1');
+});
+
+test('seats kept for players who never came back are let go when the game starts', () => {
+  let { engine, s } = setup(['A', 'B', 'C']);
+  // The host refreshed: everyone else is offline until they reconnect.
+  for (const id of ['p1', 'p2']) s = engine.apply(s, { type: 'connection', playerId: id, connected: false }, null);
+  s = engine.apply(s, { type: 'join', playerId: 'p1', name: 'B' }, 'p1'); // p1 came back
+  s = engine.apply(s, { type: 'start' }, 'p0');
+  assert.deepEqual(s.players.map((p) => p.id).sort(), ['p0', 'p1']);
+});
+
+test('a returning guest waits for a seat in a full lobby, and gets one freed at the start', () => {
+  const names = ['Alva', 'Zana', 'Doryani', 'Tujen', 'Rog', 'Gwennen', 'Dannig', 'Oyra', 'Kirac', 'Niko', 'Jun', 'Einhar'];
+  let { engine, s } = setup(names);
+  assert.equal(s.players.length, 12);
+  // The host refreshed: p11 hasn't come back, and a former spectator reconnects.
+  s = engine.apply(s, { type: 'connection', playerId: 'p11', connected: false }, null);
+  assert.throws(() => engine.apply(s, { type: 'join', playerId: 'new', name: 'Stranger' }, 'new'), /lobby is full/);
+  s = engine.apply(s, { type: 'join', playerId: 'w1', name: 'Watcher', returning: true }, 'w1');
+  assert.deepEqual(s.spectators!.map((o) => o.id), ['w1']);
+  s = engine.apply(s, { type: 'start' }, 'p0');
+  assert.ok(s.players.some((p) => p.id === 'w1'), 'the waiting guest takes the empty seat');
+  assert.ok(!s.players.some((p) => p.id === 'p11'));
+  assert.deepEqual(s.spectators, []);
 });

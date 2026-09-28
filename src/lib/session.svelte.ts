@@ -51,6 +51,8 @@ const MIN_HUMAN_MS = 200;
 const MAX_HOST_HANDICAP_MS = 300;
 /** A disconnected player's turn is skipped after this long, unless they come back. */
 const AUTO_SKIP_MS = 20000;
+/** Art not ready by then counts as failed, so the host can ask another question. */
+const MEDIA_TIMEOUT_MS = 15000;
 
 export type Mode = 'local' | 'host' | 'client';
 export type Status = 'idle' | 'connecting' | 'ready' | 'lost';
@@ -98,6 +100,8 @@ export const saveName = (name: string) => writeLocal('poe2trivia.name', name);
  * is only ever sent to the host, never shown to other players.
  */
 const mySecret = stored('poe2trivia.secret', () => randomToken(32));
+/** This page load (tabs share the secret; the host tells them apart by this). */
+const myTab = randomToken(16);
 
 /** Host-side bookkeeping for one guest connection. */
 interface Guest {
@@ -109,6 +113,8 @@ interface Guest {
   pings: Map<number, number>;
   /** When this guest was sent the current question's first picture. */
   mediaAt: { qid: number; at: number } | null;
+  /** Which page load the connection comes from (older clients don't say). */
+  tab: string | null;
 }
 
 /** Host-only data that must survive a page refresh but never reach guests. */
@@ -136,6 +142,8 @@ class Session {
   gaveUp = $state(false);
   /** Host: when the disconnected active player's turn will be skipped (0 = not pending). */
   skipAt = $state(0);
+  /** Host: the question (askedAt) whose art could not be loaded, so guests got no pictures. */
+  private artFailedFor = $state(0);
 
   private peer: Peer | null = null;
   private hostConn: DataConnection | null = null;
@@ -155,6 +163,8 @@ class Session {
   private joinName = '';
   private toastTimer: ReturnType<typeof setTimeout> | null = null;
   private retry: ReturnType<typeof setTimeout> | null = null;
+  /** Pending step of opening or joining a room (a retry, a give-up); cancelled on leave. */
+  private connectTimer: ReturnType<typeof setTimeout> | null = null;
   private retries = 0;
   private hostWatch: ReturnType<typeof setInterval> | null = null;
   private beacon: Beacon | null = null;
@@ -185,6 +195,12 @@ class Session {
       return s.players.some((p) => p.id === me) && !s.question?.misses.some((m) => m.playerId === me);
     }
     return !!me && s.players[s.turn]?.id === me;
+  }
+
+  /** Host: the open question has no art to show (it failed to load), so it should be asked again. */
+  get artMissing() {
+    const s = this.state;
+    return this.isHost && s?.phase === 'question' && !!s.question && this.artFailedFor === s.question.askedAt;
   }
 
   hostNow() {
@@ -246,12 +262,14 @@ class Session {
     const peer = new Peer(PEER_PREFIX + code, PEER_OPTIONS);
     this.peer = peer;
     peer.on('open', () => {
+      if (this.peer !== peer) return;
       this.code = code;
       this.status = 'ready';
       const me = this.priv.myPlayerId;
       if (resumeState) {
-        // Everyone else has to reconnect; mark them offline until they do.
-        // Spectators rejoin as spectators when they reconnect.
+        // Everyone else has to reconnect; mark them offline until they do (a
+        // lobby keeps their seats, and lets go of the ones still empty when
+        // the game starts). Spectators rejoin as spectators when they reconnect.
         let s: GameState = { ...resumeState, spectators: [] };
         for (const p of s.players)
           if (p.id !== me) s = engine.apply(s, { type: 'connection', playerId: p.id, connected: false }, null);
@@ -274,16 +292,26 @@ class Session {
       if (!peer.destroyed) setTimeout(() => !peer.destroyed && peer.reconnect(), 1500);
     });
     peer.on('error', (err) => {
+      if (this.peer !== peer) return;
+      // Once the room is open, losing the id on a signalling reconnect must not
+      // tear it down: the players' links keep working without the server.
+      if (err.type === 'unavailable-id' && this.status !== 'connecting') {
+        console.warn('peer error', err);
+        return;
+      }
       if (err.type === 'unavailable-id' && attempt < 8) {
         peer.destroy();
         // When resuming, the old id can linger on the server for a few seconds.
-        if (resumeState) setTimeout(() => this.openRoom(code, attempt + 1, resumeState), 2500);
+        if (resumeState) this.connectTimer = setTimeout(() => this.openRoom(code, attempt + 1, resumeState), 2500);
         else this.openRoom(randomCode(), attempt + 1);
         return;
       }
       if (err.type === 'peer-unavailable') return;
       console.warn('peer error', err);
-      if (this.status === 'connecting') this.fail(this.networkHint(err.type));
+      if (this.status !== 'connecting') return;
+      if (err.type === 'unavailable-id' && resumeState)
+        this.fail(`Couldn't reopen room ${code}: it still seems to be open, maybe in another tab or window.`);
+      else this.fail(this.networkHint(err.type));
     });
   }
 
@@ -299,6 +327,7 @@ class Session {
       lastPong: Date.now(),
       pings: new Map(),
       mediaAt: null,
+      tab: null,
     };
     this.guests.set(conn, guest);
     const helloTimer = setTimeout(() => !guest.playerId && conn.close(), HELLO_TIMEOUT_MS);
@@ -317,6 +346,7 @@ class Session {
       try {
         if (msg.t === 'hello') {
           if (guest.playerId) return;
+          guest.tab = msg.tab ?? null;
           this.handleHello(conn, guest, msg.secret, msg.name, msg.v);
           clearTimeout(helloTimer);
         } else if (msg.t === 'pong') {
@@ -368,16 +398,21 @@ class Session {
     }
     const known = this.secretToPlayer.get(secret);
     const playerId = known ?? randomToken(12);
-    const next = engine.apply(this.state!, { type: 'join', playerId, name }, playerId);
+    const next = engine.apply(this.state!, { type: 'join', playerId, name, returning: !!known }, playerId);
     if (!known) {
       this.secretToPlayer.set(secret, playerId);
       this.priv.secrets.push([secret, playerId]);
     }
-    // Only one live connection per player (e.g. after a refresh).
+    // Only one live connection per player (e.g. after a refresh). When it's
+    // another tab, say why, so it doesn't reconnect and take the seat back; the
+    // same tab's own reconnect attempts (in whatever order) are just closed.
     for (const [c, g] of this.guests)
       if (g.playerId === playerId && c !== conn) {
         g.playerId = null;
-        c.close();
+        if (g.tab && guest.tab && g.tab !== guest.tab) {
+          this.send(c, { t: 'replaced' });
+          setTimeout(() => c.close(), 300);
+        } else c.close();
       }
     guest.playerId = playerId;
     this.send(conn, { t: 'welcome', playerId });
@@ -392,6 +427,8 @@ class Session {
   private tooFast(guest: Guest) {
     const q = this.state?.question;
     if (!q) return false;
+    // No art went out at all: don't hold answers back waiting for it.
+    if (this.artFailedFor === q.askedAt) return false;
     if (!guest.mediaAt || guest.mediaAt.qid !== q.askedAt) return true;
     return Date.now() - guest.mediaAt.at < guest.rtt + MIN_HUMAN_MS;
   }
@@ -444,9 +481,17 @@ class Session {
     shown.clear();
     let media: PreparedMedia;
     try {
-      media = await prepareMedia(q, activeRules(s).grayscale);
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const timeout = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('Preparing the art timed out')), MEDIA_TIMEOUT_MS);
+      });
+      media = await Promise.race([prepareMedia(q, activeRules(s).grayscale), timeout]).finally(() => clearTimeout(timer));
     } catch (err) {
       console.warn('media', err);
+      if (this.state?.question?.askedAt === q.askedAt && this.state.phase === 'question') {
+        this.artFailedFor = q.askedAt;
+        this.flash("Couldn't load the art for this question.");
+      }
       return;
     }
     if (this.state?.question?.askedAt !== q.askedAt || this.state.phase !== 'question') return;
@@ -500,23 +545,19 @@ class Session {
     writeSaved({ mode: 'client', code: this.code, name });
     const peer = new Peer(PEER_OPTIONS);
     this.peer = peer;
-    const timeout = setTimeout(() => {
-      if (this.status === 'connecting') this.fail(`Couldn't reach room ${this.code}. Check the code, or try again.`);
+    this.connectTimer = setTimeout(() => {
+      if (this.peer === peer && this.status === 'connecting')
+        this.fail(`Couldn't reach room ${this.code}. Check the code, or try again.`);
     }, 15000);
-    peer.on('open', () => this.connectToHost());
+    peer.on('open', () => this.peer === peer && this.connectToHost());
     peer.on('error', (err) => {
+      if (this.peer !== peer) return;
       if (err.type === 'peer-unavailable') {
-        if (this.status === 'connecting') {
-          clearTimeout(timeout);
-          this.fail(`Room ${this.code} doesn't exist (or the host left).`);
-        }
+        if (this.status === 'connecting') this.fail(`Room ${this.code} doesn't exist (or the host left).`);
         return;
       }
       console.warn('peer error', err);
-      if (this.status === 'connecting') {
-        clearTimeout(timeout);
-        this.fail(this.networkHint(err.type));
-      }
+      if (this.status === 'connecting') this.fail(this.networkHint(err.type));
     });
     peer.on('disconnected', () => {
       if (!peer.destroyed) setTimeout(() => !peer.destroyed && peer.reconnect(), 1500);
@@ -531,7 +572,7 @@ class Session {
     this.hostConn = conn;
     stale?.close();
     conn.on('open', () => {
-      conn.send({ t: 'hello', secret: mySecret, name: this.joinName, v: PROTOCOL_VERSION });
+      conn.send({ t: 'hello', secret: mySecret, name: this.joinName, v: PROTOCOL_VERSION, tab: myTab });
     });
     // A host that vanishes (crashed tab, lost Wi-Fi) often never fires 'close'.
     // It pings every few seconds, so silence means the connection is dead.
@@ -570,6 +611,9 @@ class Session {
           break;
         case 'closed':
           this.fail('The host closed the room.');
+          break;
+        case 'replaced':
+          this.fail('You joined this game from another tab or window, so it continues there.');
           break;
         case 'ping':
           conn.send({ t: 'pong', n: msg.n });
@@ -848,6 +892,7 @@ class Session {
     this.skipTimer = null;
     this.skipKey = '';
     this.skipAt = 0;
+    this.artFailedFor = 0;
     for (const c of this.guests.keys()) c.close();
     this.guests.clear();
     this.hostConn?.close();
@@ -864,6 +909,8 @@ class Session {
     this.priv = { myPlayerId: '', secrets: [], bannedSecrets: [], bannedPeers: [] };
     this.secretToPlayer = new Map();
     if (this.retry) clearTimeout(this.retry);
+    if (this.connectTimer) clearTimeout(this.connectTimer);
+    this.connectTimer = null;
     if (this.hostWatch) clearInterval(this.hostWatch);
     this.hostWatch = null;
     writeSaved(null);

@@ -6,6 +6,8 @@ const secret = 'abcdefghijklmnopqrstuvwxyz012345';
 
 test('accepts well-formed guest messages', () => {
   assert.deepEqual(parseClientMsg({ t: 'hello', secret, name: 'Dori', v: 3 }), { t: 'hello', secret, name: 'Dori', v: 3 });
+  const tab = 'Ab3_x-9Zq1';
+  assert.deepEqual(parseClientMsg({ t: 'hello', secret, name: 'Dori', v: 3, tab }), { t: 'hello', secret, name: 'Dori', v: 3, tab });
   assert.deepEqual(parseClientMsg({ t: 'action', action: { type: 'answer', index: 2, askedAt: 123 } }), {
     t: 'action',
     action: { type: 'answer', index: 2, askedAt: 123 },
@@ -23,6 +25,8 @@ test('rejects anything a real client would never send', () => {
     'hello',
     [],
     { t: 'hello', secret: 'short', name: 'x', v: 3 },
+    { t: 'hello', secret, name: 'x', v: 3, tab: 'no spaces!' },
+    { t: 'hello', secret, name: 'x', v: 3, tab: 42 },
     { t: 'hello', secret, name: 'x'.repeat(5000), v: 3 },
     { t: 'action', action: { type: 'settings', settings: { targetScore: 1 } } }, // host only
     { t: 'action', action: { type: 'start' } },

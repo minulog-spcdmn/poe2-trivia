@@ -68,18 +68,24 @@ export const RARE_GROUPS: Record<string, number> = { Tablets: 0.25 };
 
 const weightOf = (it: Item) => RARE_GROUPS[it.group] ?? 1;
 
-function rulesForKey(d: string | undefined): Difficulty {
-  return d && d in DIFFICULTIES ? (d as Difficulty) : 'cruel';
+/** A known difficulty (its own key, so names like "toString" don't count). */
+export function isDifficulty(d: unknown): d is Difficulty {
+  return typeof d === 'string' && Object.hasOwn(DIFFICULTIES, d);
+}
+
+/** The difficulty to play, falling back to the default for a missing or unknown one. */
+export function difficultyOf(d: unknown): Difficulty {
+  return isDifficulty(d) ? d : DEFAULT_SETTINGS.difficulty;
 }
 
 /** The rules for the current question (deathmatch questions are one tier harder). */
 export function activeRules(s: GameState): DifficultyRules {
-  const base = rulesForKey(s.settings.difficulty);
+  const base = difficultyOf(s.settings.difficulty);
   return DIFFICULTIES[s.deathmatch ? HARDER[base] : base];
 }
 
 export function rulesFor(difficulty: string | undefined): DifficultyRules {
-  return DIFFICULTIES[difficulty as Difficulty] ?? DIFFICULTIES.cruel;
+  return DIFFICULTIES[difficultyOf(difficulty)];
 }
 
 export interface Veil {
@@ -217,7 +223,8 @@ export interface GameState {
 }
 
 export type Action =
-  | { type: 'join'; playerId: string; name: string }
+  /** `returning`: set by the host for someone who was already in this room (may pass the lock). */
+  | { type: 'join'; playerId: string; name: string; returning?: boolean }
   | { type: 'rename'; playerId: string; name: string }
   | { type: 'remove'; playerId: string }
   | { type: 'connection'; playerId: string; connected: boolean }
@@ -227,6 +234,8 @@ export type Action =
   | { type: 'answer'; index: number | null; askedAt?: number }
   | { type: 'next' }
   | { type: 'skip' }
+  /** Host: swap the open question for a new one in the same category (its art failed to load). */
+  | { type: 'reask' }
   /** Back to the lobby, seating the spectators; with `play`, the next game starts right away. */
   | { type: 'restart'; play?: boolean };
 
@@ -363,7 +372,9 @@ export class Engine {
         // Already watching (e.g. a second connection after a refresh): nothing changes.
         if (s.spectators.some((o) => o.id === action.playerId)) break;
         const name = cleanName(action.name);
-        if (s.settings.locked) throw new ActionError('The host has locked this room.');
+        // Someone the host already knows may come back through the lock (a lobby
+        // drops people who disconnect, so a refresh would otherwise shut them out).
+        if (s.settings.locked && !action.returning) throw new ActionError('The host has locked this room.');
         const problem = nameProblem(name, [...s.players, ...s.spectators].map((o) => o.name));
         if (problem) throw new ActionError(problem);
         if (s.phase !== 'lobby') {
@@ -372,7 +383,15 @@ export class Engine {
           s.spectators.push({ id: action.playerId, name });
           break;
         }
-        if (s.players.length >= MAX_PLAYERS) throw new ActionError('The lobby is full.');
+        if (s.players.length >= MAX_PLAYERS) {
+          // Someone who was already here (a spectator, after the host's refresh)
+          // waits for a free seat instead of being turned away.
+          if (action.returning && s.spectators.length < MAX_SPECTATORS) {
+            s.spectators.push({ id: action.playerId, name });
+            break;
+          }
+          throw new ActionError('The lobby is full.');
+        }
         seat(s, action.playerId, name);
         break;
       }
@@ -436,7 +455,7 @@ export class Engine {
         if (s.phase !== 'lobby' && s.phase !== 'over') throw new ActionError('Settings are locked during a game.');
         const { targetScore, timer, difficulty, mode } = action.settings;
         if (mode === 'turns' || mode === 'race') s.settings.mode = mode;
-        if (difficulty && difficulty in DIFFICULTIES) s.settings.difficulty = difficulty;
+        if (isDifficulty(difficulty)) s.settings.difficulty = difficulty;
         if (targetScore !== undefined) s.settings.targetScore = Math.max(1, Math.min(50, Math.round(targetScore)));
         if (timer !== undefined) s.settings.timer = Math.max(0, Math.min(120, Math.round(timer)));
         break;
@@ -444,6 +463,9 @@ export class Engine {
       case 'start': {
         if (!isHost) throw new ActionError('Only the host can start the game.');
         if (s.phase !== 'lobby') throw new ActionError('The game is already running.');
+        // Seats held for people who haven't come back since the host's refresh
+        // go to whoever is waiting.
+        s.players = s.players.filter((p) => p.connected);
         fillSeats(s);
         if (s.players.length === 0) throw new ActionError('Add at least one player.');
         s.players = shuffle(s.players, this.rng);
@@ -504,7 +526,8 @@ export class Engine {
         break;
       }
       case 'next': {
-        if (s.phase !== 'reveal') throw new ActionError('Nothing to continue.');
+        // Two people pressing Next (or Next and the automatic move on) at once is expected.
+        if (s.phase !== 'reveal') throw new ActionError('Nothing to continue.', true);
         if (race) {
           if (!isHost) throw new ActionError('The host moves the race on.');
           this.advanceRace(s);
@@ -522,6 +545,21 @@ export class Engine {
           if (s.deathmatch && s.players[s.turn]) s.deathmatch.results[s.players[s.turn].id] = false;
           this.advance(s);
         }
+        break;
+      }
+      case 'reask': {
+        if (!isHost) throw new ActionError('Only the host can change the question.');
+        if (s.phase !== 'question' || !s.question) throw new ActionError('There is no open question.', true);
+        const voided = s.question;
+        // Race: blind guesses on a question that is thrown out don't cost anything.
+        for (const m of voided.misses) {
+          const p = s.players.find((p) => p.id === m.playerId);
+          if (p) p.score += 1;
+        }
+        // None of its pictures come back in the new one (one of them didn't load).
+        for (const id of voided.options) if (!s.used.includes(id)) s.used.push(id);
+        s.question = this.makeQuestion(s, voided.category);
+        s.used.push(s.question.itemId);
         break;
       }
       case 'restart': {
@@ -830,7 +868,13 @@ export class Engine {
       s.used = s.used.filter((id) => !inThis.has(id) || id === latest);
     }
     const unused = this.unusedIn(s, category);
-    const answer = this.weightedPick(unused.length ? unused : inCat);
+    // A rare answer (a tablet) needs a full set of unseen decoys from its own
+    // group, or it would stand out; once its group runs that low it sits out
+    // until the category starts over.
+    const left = new Map<string, number>();
+    for (const it of unused) left.set(it.group, (left.get(it.group) ?? 0) + 1);
+    const answerable = unused.filter((it) => weightOf(it) === 1 || left.get(it.group)! > need);
+    const answer = this.weightedPick(answerable.length ? answerable : unused.length ? unused : inCat);
 
     const sameGroup = unused.filter((it) => it.id !== answer.id && it.group === answer.group);
     // Rare groups (tablets) only fill in as decoys when nothing else is left…
