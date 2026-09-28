@@ -42,7 +42,7 @@ export const DIFFICULTIES: Record<Difficulty, DifficultyRules> = {
     artChance: 0.4,
     veil: { size: 5, share: 0.55 },
     grayscale: false,
-    lockout: 2,
+    lockout: 3,
   },
   eternal: {
     options: 8,
@@ -51,7 +51,7 @@ export const DIFFICULTIES: Record<Difficulty, DifficultyRules> = {
     artChance: 0.5,
     veil: { size: 7, share: 0.7 },
     grayscale: true,
-    lockout: 3,
+    lockout: 4,
   },
 };
 
