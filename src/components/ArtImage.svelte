@@ -2,7 +2,8 @@
   import { fade } from 'svelte/transition';
 
   // One item picture, centred in whatever space its parent gives it, with the
-  // item's proportions and at most `scale` times its own pixel size.
+  // item's proportions and at most `scale` times its own pixel size. `unflip`
+  // starts it mirrored (as it was shown during the question) and turns it round.
   let {
     src,
     alt = '',
@@ -10,7 +11,8 @@
     h = 0,
     scale = 1.8,
     float = false,
-  }: { src: string; alt?: string; w?: number; h?: number; scale?: number; float?: boolean } = $props();
+    unflip = false,
+  }: { src: string; alt?: string; w?: number; h?: number; scale?: number; float?: boolean; unflip?: boolean } = $props();
 
   let nw = $state(0);
   let nh = $state(0);
@@ -27,6 +29,7 @@
         {src}
         {alt}
         draggable="false"
+        class:unflip
         in:fade={{ duration: 300 }}
         onload={(e) => {
           const img = e.currentTarget as HTMLImageElement;
@@ -48,6 +51,14 @@
   }
   .art-fit img {
     filter: drop-shadow(0 12px 25px rgba(0, 0, 0, 0.8));
+  }
+  .unflip {
+    animation: unflip 0.7s var(--ease-out) 0.45s backwards;
+  }
+  @keyframes unflip {
+    from {
+      transform: scaleX(-1);
+    }
   }
   .float {
     animation: float 5s ease-in-out 1s infinite;

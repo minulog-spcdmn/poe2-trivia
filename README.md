@@ -40,7 +40,7 @@ same time, in a random category (never one of the last two).
 |---|---|---|---|
 | Cruel (default) | 4 | Same kind (all rings, all bows, all Strength gems…) | 40% of questions are "find the art": you get a name and pick one of the pictures |
 | Merciless | 6 | Same kind, half of them look-alike names | The art is hidden under tiles that lift one by one |
-| Eternal | 8 | Look-alike names from the whole category | Tiles lift more slowly; "find the art" pictures are shown in grayscale |
+| Eternal | 8 | Look-alike names from the whole category | Tiles lift more slowly; "find the art" pictures are shown in grayscale; each picture has a 30% chance of being mirrored left to right (marked *Mirrored* at the reveal) |
 
 Look-alike names form a cluster, and the answer's place in it is random: the
 name that looks most (or least) like the others is no more likely to be right

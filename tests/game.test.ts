@@ -234,6 +234,53 @@ test('guests never see the answer before the reveal', () => {
   });
 });
 
+test('eternal mirrors some pictures, each on its own roll', () => {
+  const engine = new Engine(items, { rng: seeded(9) });
+  for (const difficulty of ['cruel', 'merciless'] as Difficulty[]) {
+    const s = createGame(null, { targetScore: 5, timer: 0, difficulty, mode: 'turns', public: false, locked: false });
+    for (let i = 0; i < 200; i++) {
+      const q = engine.makeQuestion(s, engine.categories[i % engine.categories.length]);
+      assert.ok(!q.mirrored!.some(Boolean), `${difficulty} never mirrors`);
+    }
+  }
+  const s = createGame(null, { targetScore: 5, timer: 0, difficulty: 'eternal', mode: 'turns', public: false, locked: false });
+  let pictures = 0;
+  let flipped = 0;
+  let answers = 0;
+  let answersFlipped = 0;
+  for (let i = 0; i < 4000; i++) {
+    const q = engine.makeQuestion(s, engine.categories[i % engine.categories.length]);
+    const flags = q.mirrored!;
+    assert.equal(flags.length, q.mode === 'art' ? q.options.length : 1, 'one flag per picture');
+    pictures += flags.length;
+    flipped += flags.filter(Boolean).length;
+    if (q.mode === 'art') {
+      answers++;
+      if (flags[right(q)]) answersFlipped++;
+    }
+  }
+  const rate = flipped / pictures;
+  assert.ok(Math.abs(rate - DIFFICULTIES.eternal.mirror) < 0.03, `mirrored ${rate.toFixed(3)} of pictures`);
+  // A mirrored option is no more (or less) likely to be the answer.
+  assert.ok(Math.abs(answersFlipped / answers - rate) < 0.04, `answer mirrored ${(answersFlipped / answers).toFixed(3)}`);
+});
+
+test('guests only learn which pictures were mirrored at the reveal', () => {
+  let { engine, s } = setup(['A'], 3, 'eternal');
+  s = engine.apply(s, { type: 'start' }, 'p0');
+  // Keep asking until a question has a mirrored picture.
+  while (true) {
+    s = engine.apply(s, { type: 'pick', category: s.offered[0] }, 'p0');
+    if (s.question!.mirrored!.some(Boolean)) break;
+    s = engine.apply(s, { type: 'answer', index: wrongIdx(s.question!) }, 'p0');
+    s = engine.apply(s, { type: 'next' }, 'p0');
+  }
+  const q = s.question!;
+  assert.deepEqual(publicView(s).question!.mirrored, []);
+  s = engine.apply(s, { type: 'answer', index: wrongIdx(q) }, 'p0');
+  assert.deepEqual(publicView(s).question!.mirrored, q.mirrored);
+});
+
 test('guests cannot act for others, join locked rooms, or impersonate', () => {
   let { engine, s } = setup(['Alva', 'Zana']);
   assert.throws(() => engine.apply(s, { type: 'join', playerId: 'p0', name: 'X' }, 'p1'), /Not allowed/);

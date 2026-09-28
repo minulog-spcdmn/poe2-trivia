@@ -51,6 +51,11 @@
     return index === reveal.chosenIndex;
   }
 
+  /** Revealed: was this picture (option index, or 0 for a name question's art) shown mirrored? */
+  function mirrored(index: number) {
+    return !!reveal && !!q.mirrored?.[index];
+  }
+
   function optionName(index: number) {
     return q.labels[index] ?? (q.options[index] ? engine.byId.get(q.options[index])?.name : undefined) ?? '';
   }
@@ -101,6 +106,10 @@
       {#if iWon}Correct{:else if race && winner}Too slow{:else if reveal.timedOut}Time's up{:else if race}No one{:else}Wrong{/if}
     </div>
   {/if}
+{/snippet}
+
+{#snippet mirrorTag(inTile = false)}
+  <span class="mirror-tag" class:in-tile={inTile} in:fade={{ duration: 300, delay: 450 }}>Mirrored</span>
 {/snippet}
 
 {#snippet who(index: number)}
@@ -195,10 +204,12 @@
           >
             <span class="key">{i + 1}</span>
             {#if src}
-              <span class="pic"><ArtImage {src} alt="Option {i + 1}" scale={1.6} /></span>
+              <!-- Named pictures switch to the original art, so a mirrored one turns round. -->
+              <span class="pic"><ArtImage {src} alt="Option {i + 1}" scale={1.6} unflip={mirrored(i) && !!q.options[i]} /></span>
             {:else}
               <span class="loading" aria-label="Loading"></span>
             {/if}
+            {#if mirrored(i)}{@render mirrorTag(true)}{/if}
             {#if reveal && named(i)}
               <span class="caption" in:fly={{ y: 6, duration: 300, delay: 150 }}>{optionName(i)}</span>
             {/if}
@@ -228,7 +239,7 @@
         <div class="art">
           <div class="frame">
             {#if reveal && item}
-              <ArtImage src={itemImage(item.id)} alt={item.name} w={hint?.w} h={hint?.h} float />
+              <ArtImage src={itemImage(item.id)} alt={item.name} w={hint?.w} h={hint?.h} float unflip={mirrored(0)} />
             {:else if media?.grid}
               <span class="art-slot">
               <span class="art-fit veil" style:--w={media.grid.w} style:--h={media.grid.h} style:--s={1.8}>
@@ -252,6 +263,7 @@
               <span class="loading big" aria-label="Loading"></span>
             {/if}
           </div>
+          {#if mirrored(0)}{@render mirrorTag()}{/if}
           {@render stamp()}
         </div>
       </div>
@@ -490,6 +502,30 @@
     border-radius: 3px;
     rotate: -8deg;
     background: rgba(0, 0, 0, 0.55);
+  }
+  /* In the style of the in-game "Mirrored" line. */
+  .mirror-tag {
+    position: absolute;
+    z-index: 2;
+    pointer-events: none;
+    top: 14px;
+    left: 16px;
+    padding: 0.15em 0.6em;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 0.8rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: #b9d4ec;
+    border: 1px solid rgba(185, 212, 236, 0.45);
+    border-radius: 3px;
+    background: rgba(0, 0, 0, 0.55);
+  }
+  .mirror-tag.in-tile {
+    top: 10px;
+    left: 50%;
+    translate: -50% 0;
+    font-size: 0.65rem;
   }
   .stamp.in-head {
     bottom: auto;
