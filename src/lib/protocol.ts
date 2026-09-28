@@ -24,7 +24,7 @@ export type HostMsg =
 
 export type MediaMsg =
   | { t: 'art'; qid: number; w: number; h: number; data: ArrayBuffer }
-  | { t: 'grid'; qid: number; w: number; h: number; n: number }
+  | { t: 'grid'; qid: number; w: number; h: number; cols: number; rows: number }
   | { t: 'tile'; qid: number; i: number; x: number; y: number; w: number; h: number; data: ArrayBuffer }
   | { t: 'option'; qid: number; index: number; data: ArrayBuffer };
 
@@ -100,7 +100,10 @@ export function parseHostMsg(raw: unknown): HostMsg | null {
     case 'art':
       return qid && bin(raw.data) && isInt(raw.w, 1, 4096) && isInt(raw.h, 1, 4096) ? (raw as HostMsg) : null;
     case 'grid':
-      return qid && isInt(raw.w, 1, 4096) && isInt(raw.h, 1, 4096) && isInt(raw.n, 1, 16) ? (raw as HostMsg) : null;
+      return qid && isInt(raw.w, 1, 4096) && isInt(raw.h, 1, 4096) && isInt(raw.cols, 1, 64) &&
+        isInt(raw.rows, 1, 64)
+        ? (raw as HostMsg)
+        : null;
     case 'tile':
       return qid && bin(raw.data) && isInt(raw.i, 0, 255) && isInt(raw.x, 0, 4096) && isInt(raw.y, 0, 4096) &&
         isInt(raw.w, 1, 4096) && isInt(raw.h, 1, 4096)

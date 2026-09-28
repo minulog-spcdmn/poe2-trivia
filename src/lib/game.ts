@@ -29,10 +29,12 @@ export interface DifficultyRules {
   veil: { size: number; share: number } | null;
   /** "Art" question pictures are shown without colour. */
   grayscale: boolean;
+  /** How many turns a chosen category stays locked. */
+  lockout: number;
 }
 
 export const DIFFICULTIES: Record<Difficulty, DifficultyRules> = {
-  cruel: { options: 4, groupFirst: true, similarNames: 0, artChance: 0.4, veil: null, grayscale: false },
+  cruel: { options: 4, groupFirst: true, similarNames: 0, artChance: 0.4, veil: null, grayscale: false, lockout: 2 },
   merciless: {
     options: 6,
     groupFirst: true,
@@ -40,6 +42,7 @@ export const DIFFICULTIES: Record<Difficulty, DifficultyRules> = {
     artChance: 0.4,
     veil: { size: 5, share: 0.55 },
     grayscale: false,
+    lockout: 2,
   },
   eternal: {
     options: 8,
@@ -48,6 +51,7 @@ export const DIFFICULTIES: Record<Difficulty, DifficultyRules> = {
     artChance: 0.5,
     veil: { size: 7, share: 0.7 },
     grayscale: true,
+    lockout: 3,
   },
 };
 
@@ -207,7 +211,6 @@ export type Action =
   | { type: 'skip' }
   | { type: 'restart' };
 
-export const LOCKOUT_TURNS = 2;
 export const OFFER_COUNT = 3;
 export const MAX_PLAYERS = 12;
 export { MAX_NAME } from './names.ts';
@@ -416,7 +419,9 @@ export class Engine {
         if (s.phase !== 'choosing') throw new ActionError('Not the time to pick a category.');
         if (!isActive) throw new ActionError("It's not your turn.");
         if (!s.offered.includes(action.category)) throw new ActionError('That category is not on offer.');
-        if (!s.deathmatch) active.recent = [...active.recent, action.category].slice(-LOCKOUT_TURNS);
+        if (!s.deathmatch) {
+          active.recent = [...active.recent, action.category].slice(-rulesFor(s.settings.difficulty).lockout);
+        }
         s.question = this.makeQuestion(s, action.category);
         s.used.push(s.question.itemId);
         s.phase = 'question';
@@ -568,7 +573,7 @@ export class Engine {
     const allowed = this.categories.filter((c) => !s.recentCategories.includes(c));
     const fresh = allowed.filter((c) => this.unusedIn(s, c).length > 0);
     const category = sample(fresh.length ? fresh : allowed, 1, this.rng)[0];
-    s.recentCategories = [...s.recentCategories, category].slice(-LOCKOUT_TURNS);
+    s.recentCategories = [...s.recentCategories, category].slice(-rulesFor(s.settings.difficulty).lockout);
     s.offered = [];
     s.reveal = null;
     s.question = this.makeQuestion(s, category);

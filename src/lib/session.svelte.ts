@@ -435,7 +435,7 @@ class Session {
     if (media.grid) {
       this.release({ t: 'grid', qid, ...media.grid });
       media.tiles.forEach((tile, rank) => {
-        const due = q.askedAt + tileDelay(q, rank) - Date.now();
+        const due = q.askedAt + tileDelay(q, rank, media.tiles.length) - Date.now();
         const go = () => {
           if (this.media?.qid === qid) this.release({ t: 'tile', qid, ...tile });
         };

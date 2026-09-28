@@ -2,7 +2,7 @@
   import { cubicOut } from 'svelte/easing';
   import { session } from '../lib/session.svelte';
   import { categoryIcon } from '../lib/ui';
-  import { LOCKOUT_TURNS } from '../lib/game';
+  import { rulesFor } from '../lib/game';
   import { sfx } from '../lib/sound';
 
   const s = $derived(session.state!);
@@ -69,7 +69,7 @@
   {#if s.deathmatch}
     <p class="note muted">{mine ? 'Tap the card when you are ready.' : 'Questions are one difficulty harder.'}</p>
   {:else if mine}
-    <p class="note muted">A category you choose stays locked for your next {LOCKOUT_TURNS} turns.</p>
+    <p class="note muted">A category you choose stays locked for your next {rulesFor(s.settings.difficulty).lockout} turns.</p>
   {/if}
 </div>
 

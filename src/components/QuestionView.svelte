@@ -1,7 +1,7 @@
 <script lang="ts">
   import { fly, fade, scale } from 'svelte/transition';
   import { session, engine, AUTO_NEXT_SECONDS } from '../lib/session.svelte';
-  import { shown } from '../lib/media.svelte';
+  import { shown, gridCells } from '../lib/media.svelte';
   import { itemImage } from '../lib/ui';
   import { sfx } from '../lib/sound';
   import TimerRing from './TimerRing.svelte';
@@ -27,18 +27,7 @@
   const media = $derived(shown.qid === q.askedAt ? shown : null);
 
   /** Veiled art: the grid cells, uncovered or not. */
-  const cells = $derived.by(() => {
-    const g = media?.grid;
-    if (!g) return [];
-    const edges = (len: number) => Array.from({ length: g.n + 1 }, (_, k) => Math.round((k * len) / g.n));
-    const xs = edges(g.w);
-    const ys = edges(g.h);
-    return Array.from({ length: g.n * g.n }, (_, i) => {
-      const cx = i % g.n;
-      const cy = Math.floor(i / g.n);
-      return { i, x: xs[cx], y: ys[cy], w: xs[cx + 1] - xs[cx], h: ys[cy + 1] - ys[cy] };
-    });
-  });
+  const cells = $derived(media?.grid ? gridCells(media.grid) : []);
   // Size of the art shown during the question: keeps the reveal from jumping.
   const hint = $derived(media?.grid ?? media?.art ?? null);
 
