@@ -108,8 +108,8 @@
   {/if}
 {/snippet}
 
-{#snippet mirrorLine(inTile = false)}
-  <span class="mirrored" class:in-tile={inTile} in:fade={{ duration: 300, delay: 450 }}>Mirrored</span>
+{#snippet mirrorLine()}
+  <span class="mirrored" in:fade={{ duration: 300, delay: 450 }}>Mirrored</span>
 {/snippet}
 
 {#snippet who(index: number)}
@@ -210,9 +210,11 @@
               <span class="loading" aria-label="Loading"></span>
             {/if}
             {#if reveal && named(i)}
-              <span class="caption" in:fly={{ y: 6, duration: 300, delay: 150 }}>{optionName(i)}</span>
+              <span class="caption" in:fly={{ y: 6, duration: 300, delay: 150 }}>
+                {optionName(i)}
+                {#if mirrored(i)}{@render mirrorLine()}{/if}
+              </span>
             {/if}
-            {#if mirrored(i)}{@render mirrorLine(true)}{/if}
             {#if st === 'right'}<span class="mark" in:scale={{ duration: 300 }}>✓</span>{/if}
             {#if st === 'wrong'}<span class="mark" in:scale={{ duration: 300 }}>✕</span>{/if}
             {@render who(i)}
@@ -414,14 +416,17 @@
   }
   /* An extra tooltip line, cool against the warm name and base. */
   .mirrored {
-    font-style: italic;
-    font-size: 0.9rem;
-    letter-spacing: 0.04em;
+    display: block;
+    font-family: var(--font-body);
+    font-weight: 400;
+    font-variant: small-caps;
+    font-size: 0.95rem;
+    letter-spacing: 0.06em;
+    line-height: 1.1;
     color: #a9c3dc;
   }
-  .mirrored.in-tile {
-    font-size: 0.8rem;
-    line-height: 1;
+  .caption .mirrored {
+    font-size: 0.9rem;
   }
 
   .art {
