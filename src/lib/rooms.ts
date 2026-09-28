@@ -199,14 +199,11 @@ export class Beacon {
       if (start > FAST_SLOTS) await sleep(SLOW_BATCH_DELAY_MS);
       const slots = Array.from({ length: PARALLEL }, (_, i) => start + i);
       const results = await Promise.all(slots.map((slot) => this.tryClaim(slot)));
-      if (this.stopped) {
-        // Stopped (room set to private, or closed) while claiming: keep nothing.
-        for (const r of results) if (r && r !== 'taken') r.destroy();
-        return;
-      }
-      const won = results.findIndex((r) => r && r !== 'taken');
-      // Keep the lowest slot we got and let go of the others.
+      // Keep the lowest slot we got and let go of the others (all of them if
+      // the room was set to private, or closed, while claiming).
+      const won = this.stopped ? -1 : results.findIndex((r) => r && r !== 'taken');
       results.forEach((r, i) => i !== won && r && r !== 'taken' && r.destroy());
+      if (this.stopped) return;
       if (won >= 0) {
         this.adopt(results[won] as Peer, slots[won]);
         return;

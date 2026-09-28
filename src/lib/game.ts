@@ -73,18 +73,19 @@ export function isDifficulty(d: unknown): d is Difficulty {
   return typeof d === 'string' && Object.hasOwn(DIFFICULTIES, d);
 }
 
-function rulesForKey(d: string | undefined): Difficulty {
-  return isDifficulty(d) ? d : 'cruel';
+/** The difficulty to play, falling back to the default for a missing or unknown one. */
+export function difficultyOf(d: unknown): Difficulty {
+  return isDifficulty(d) ? d : DEFAULT_SETTINGS.difficulty;
 }
 
 /** The rules for the current question (deathmatch questions are one tier harder). */
 export function activeRules(s: GameState): DifficultyRules {
-  const base = rulesForKey(s.settings.difficulty);
+  const base = difficultyOf(s.settings.difficulty);
   return DIFFICULTIES[s.deathmatch ? HARDER[base] : base];
 }
 
 export function rulesFor(difficulty: string | undefined): DifficultyRules {
-  return DIFFICULTIES[rulesForKey(difficulty)];
+  return DIFFICULTIES[difficultyOf(difficulty)];
 }
 
 export interface Veil {
@@ -454,6 +455,9 @@ export class Engine {
       case 'start': {
         if (!isHost) throw new ActionError('Only the host can start the game.');
         if (s.phase !== 'lobby') throw new ActionError('The game is already running.');
+        // Seats held for people who haven't come back since the host's refresh
+        // go to whoever is waiting.
+        s.players = s.players.filter((p) => p.connected);
         fillSeats(s);
         if (s.players.length === 0) throw new ActionError('Add at least one player.');
         s.players = shuffle(s.players, this.rng);
@@ -538,7 +542,15 @@ export class Engine {
       case 'reask': {
         if (!isHost) throw new ActionError('Only the host can change the question.');
         if (s.phase !== 'question' || !s.question) throw new ActionError('There is no open question.', true);
-        s.question = this.makeQuestion(s, s.question.category);
+        const voided = s.question;
+        // Race: blind guesses on a question that is thrown out don't cost anything.
+        for (const m of voided.misses) {
+          const p = s.players.find((p) => p.id === m.playerId);
+          if (p) p.score += 1;
+        }
+        // None of its pictures come back in the new one (one of them didn't load).
+        for (const id of voided.options) if (!s.used.includes(id)) s.used.push(id);
+        s.question = this.makeQuestion(s, voided.category);
         s.used.push(s.question.itemId);
         break;
       }

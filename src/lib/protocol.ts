@@ -8,7 +8,8 @@ export const PROTOCOL_VERSION = 4;
 
 /** Guest → host. */
 export type ClientMsg =
-  | { t: 'hello'; secret: string; name: string; v: number }
+  /** `tab`: random per page load, so the host can tell another tab from this one reconnecting. */
+  | { t: 'hello'; secret: string; name: string; v: number; tab?: string }
   | { t: 'action'; action: Action }
   | { t: 'pong'; n: number };
 
@@ -38,6 +39,7 @@ const isInt = (v: unknown, min: number, max: number): v is number =>
   typeof v === 'number' && Number.isInteger(v) && v >= min && v <= max;
 const isStr = (v: unknown, max: number): v is string => typeof v === 'string' && v.length <= max;
 const SECRET = /^[A-Za-z0-9_-]{20,64}$/;
+const TAB = /^[A-Za-z0-9_-]{8,64}$/;
 
 /** Validates a message from a guest. Returns a clean copy, or null if it's bogus. */
 export function parseClientMsg(raw: unknown): ClientMsg | null {
@@ -51,7 +53,10 @@ export function parseClientMsg(raw: unknown): ClientMsg | null {
     case 'hello':
       if (!isStr(raw.secret, 64) || !SECRET.test(raw.secret) || !isStr(raw.name, 200) || !isInt(raw.v, 0, 1e6))
         return null;
-      return { t: 'hello', secret: raw.secret, name: raw.name, v: raw.v };
+      if (raw.tab !== undefined && !(isStr(raw.tab, 64) && TAB.test(raw.tab))) return null;
+      return raw.tab === undefined
+        ? { t: 'hello', secret: raw.secret, name: raw.name, v: raw.v }
+        : { t: 'hello', secret: raw.secret, name: raw.name, v: raw.v, tab: raw.tab };
     case 'pong':
       return isInt(raw.n, 0, Number.MAX_SAFE_INTEGER) ? { t: 'pong', n: raw.n } : null;
     case 'action': {

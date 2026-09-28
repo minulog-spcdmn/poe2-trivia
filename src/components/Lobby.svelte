@@ -2,7 +2,7 @@
   import { flip } from 'svelte/animate';
   import { fly, scale } from 'svelte/transition';
   import { session } from '../lib/session.svelte';
-  import { MAX_PLAYERS, MAX_NAME, isDifficulty, rulesFor, type Difficulty, type GameMode } from '../lib/game';
+  import { MAX_PLAYERS, MAX_NAME, difficultyOf, rulesFor, type Difficulty, type GameMode } from '../lib/game';
   import { sfx } from '../lib/sound';
   import { inviteUrl } from '../lib/site';
   import Avatar from './Avatar.svelte';
@@ -92,7 +92,7 @@
   /** Spectators left over when the last game filled every seat. */
   const waiting = $derived(s.spectators ?? []);
   const race = $derived(s.settings.mode === 'race');
-  const difficulty = $derived(isDifficulty(s.settings.difficulty) ? s.settings.difficulty : 'cruel');
+  const difficulty = $derived(difficultyOf(s.settings.difficulty));
 </script>
 
 <div class="lobby">
@@ -176,6 +176,7 @@
             <Avatar name={p.name} hue={p.hue} />
             <span class="name">{p.name}</span>
             {#if p.id === s.hostId}<span class="tag">Host</span>{/if}
+            {#if !p.connected}<span class="tag" title="Reconnecting. Their seat is let go if they're not back when the game starts.">Offline</span>{/if}
             {#if !local && p.id === session.myPlayerId}<span class="tag you">You</span>{/if}
             {#if isHost && p.id !== s.hostId}
               <button

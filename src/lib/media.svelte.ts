@@ -61,11 +61,25 @@ export interface PreparedMedia {
 
 const imageCache = new Map<string, Promise<HTMLImageElement>>();
 
+/** A request that neither loads nor fails by then has stalled. */
+const IMAGE_TIMEOUT_MS = 8000;
+
 function fetchImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error(`Could not load ${src}`));
+    const timer = setTimeout(() => {
+      img.onload = img.onerror = null;
+      img.src = '';
+      reject(new Error(`Timed out loading ${src}`));
+    }, IMAGE_TIMEOUT_MS);
+    img.onload = () => {
+      clearTimeout(timer);
+      resolve(img);
+    };
+    img.onerror = () => {
+      clearTimeout(timer);
+      reject(new Error(`Could not load ${src}`));
+    };
     img.src = src;
   });
 }

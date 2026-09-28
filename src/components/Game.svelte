@@ -94,7 +94,10 @@
         {#if s.phase === 'choosing'}
           <ChooseCategory />
         {:else}
-          <QuestionView />
+          <!-- A new question on the same turn (the host asked another) starts fresh. -->
+          {#key s.question?.askedAt}
+            <QuestionView />
+          {/key}
         {/if}
 
         {#if session.isHost && !local && !race && !active.connected && s.phase !== 'reveal'}
@@ -102,7 +105,8 @@
             <span class="muted">{active.name} is disconnected{skipIn ? ` — skipping in ${skipIn}s` : ''}.</span>
             <button class="btn small" onclick={() => session.dispatch({ type: 'skip' })}>Skip their turn</button>
           </div>
-        {:else if session.artMissing}
+        {/if}
+        {#if session.artMissing}
           <div class="skip" transition:fade>
             <span class="muted">The art for this question couldn't be loaded.</span>
             <button class="btn small" onclick={() => session.dispatch({ type: 'reask' })}>Ask another question</button>

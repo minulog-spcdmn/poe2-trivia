@@ -51,6 +51,8 @@ const MIN_HUMAN_MS = 200;
 const MAX_HOST_HANDICAP_MS = 300;
 /** A disconnected player's turn is skipped after this long, unless they come back. */
 const AUTO_SKIP_MS = 20000;
+/** Art not ready by then counts as failed, so the host can ask another question. */
+const MEDIA_TIMEOUT_MS = 15000;
 
 export type Mode = 'local' | 'host' | 'client';
 export type Status = 'idle' | 'connecting' | 'ready' | 'lost';
@@ -98,6 +100,8 @@ export const saveName = (name: string) => writeLocal('poe2trivia.name', name);
  * is only ever sent to the host, never shown to other players.
  */
 const mySecret = stored('poe2trivia.secret', () => randomToken(32));
+/** This page load (tabs share the secret; the host tells them apart by this). */
+const myTab = randomToken(16);
 
 /** Host-side bookkeeping for one guest connection. */
 interface Guest {
@@ -109,6 +113,8 @@ interface Guest {
   pings: Map<number, number>;
   /** When this guest was sent the current question's first picture. */
   mediaAt: { qid: number; at: number } | null;
+  /** Which page load the connection comes from (older clients don't say). */
+  tab: string | null;
 }
 
 /** Host-only data that must survive a page refresh but never reach guests. */
@@ -261,19 +267,12 @@ class Session {
       this.status = 'ready';
       const me = this.priv.myPlayerId;
       if (resumeState) {
-        // Everyone else has to reconnect; mark them offline until they do. A
-        // lobby drops them instead (as it does anyone who disconnects), so
-        // people who don't come back aren't left behind as ghosts; the ones
-        // who do are let back in, even through the lock.
-        // Spectators rejoin as spectators when they reconnect.
+        // Everyone else has to reconnect; mark them offline until they do (a
+        // lobby keeps their seats, and lets go of the ones still empty when
+        // the game starts). Spectators rejoin as spectators when they reconnect.
         let s: GameState = { ...resumeState, spectators: [] };
         for (const p of s.players)
-          if (p.id !== me)
-            s = engine.apply(
-              s,
-              s.phase === 'lobby' ? { type: 'remove', playerId: p.id } : { type: 'connection', playerId: p.id, connected: false },
-              null,
-            );
+          if (p.id !== me) s = engine.apply(s, { type: 'connection', playerId: p.id, connected: false }, null);
         this.setState(s);
       } else {
         let s = createGame(me, { ...DEFAULT_SETTINGS, mode: 'race' });
@@ -294,6 +293,12 @@ class Session {
     });
     peer.on('error', (err) => {
       if (this.peer !== peer) return;
+      // Once the room is open, losing the id on a signalling reconnect must not
+      // tear it down: the players' links keep working without the server.
+      if (err.type === 'unavailable-id' && this.status !== 'connecting') {
+        console.warn('peer error', err);
+        return;
+      }
       if (err.type === 'unavailable-id' && attempt < 8) {
         peer.destroy();
         // When resuming, the old id can linger on the server for a few seconds.
@@ -322,6 +327,7 @@ class Session {
       lastPong: Date.now(),
       pings: new Map(),
       mediaAt: null,
+      tab: null,
     };
     this.guests.set(conn, guest);
     const helloTimer = setTimeout(() => !guest.playerId && conn.close(), HELLO_TIMEOUT_MS);
@@ -340,6 +346,7 @@ class Session {
       try {
         if (msg.t === 'hello') {
           if (guest.playerId) return;
+          guest.tab = msg.tab ?? null;
           this.handleHello(conn, guest, msg.secret, msg.name, msg.v);
           clearTimeout(helloTimer);
         } else if (msg.t === 'pong') {
@@ -396,13 +403,16 @@ class Session {
       this.secretToPlayer.set(secret, playerId);
       this.priv.secrets.push([secret, playerId]);
     }
-    // Only one live connection per player (e.g. after a refresh). Say why, so
-    // a second tab that is still open doesn't reconnect and take the seat back.
+    // Only one live connection per player (e.g. after a refresh). When it's
+    // another tab, say why, so it doesn't reconnect and take the seat back; the
+    // same tab's own reconnect attempts (in whatever order) are just closed.
     for (const [c, g] of this.guests)
       if (g.playerId === playerId && c !== conn) {
         g.playerId = null;
-        this.send(c, { t: 'replaced' });
-        setTimeout(() => c.close(), 300);
+        if (g.tab && guest.tab && g.tab !== guest.tab) {
+          this.send(c, { t: 'replaced' });
+          setTimeout(() => c.close(), 300);
+        } else c.close();
       }
     guest.playerId = playerId;
     this.send(conn, { t: 'welcome', playerId });
@@ -471,7 +481,11 @@ class Session {
     shown.clear();
     let media: PreparedMedia;
     try {
-      media = await prepareMedia(q, activeRules(s).grayscale);
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const timeout = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('Preparing the art timed out')), MEDIA_TIMEOUT_MS);
+      });
+      media = await Promise.race([prepareMedia(q, activeRules(s).grayscale), timeout]).finally(() => clearTimeout(timer));
     } catch (err) {
       console.warn('media', err);
       if (this.state?.question?.askedAt === q.askedAt && this.state.phase === 'question') {
@@ -558,7 +572,7 @@ class Session {
     this.hostConn = conn;
     stale?.close();
     conn.on('open', () => {
-      conn.send({ t: 'hello', secret: mySecret, name: this.joinName, v: PROTOCOL_VERSION });
+      conn.send({ t: 'hello', secret: mySecret, name: this.joinName, v: PROTOCOL_VERSION, tab: myTab });
     });
     // A host that vanishes (crashed tab, lost Wi-Fi) often never fires 'close'.
     // It pings every few seconds, so silence means the connection is dead.
