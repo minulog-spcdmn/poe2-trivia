@@ -25,8 +25,9 @@ const ICON_GROUP: Record<string, string> = {
   'Flasks, Jewels & Relics': 'Flasks',
 };
 // Gem art comes as square tiles on cloth, so lineage gems use a cut-out of
-// Oisín's Oath (public/icons/, background removed with rembg and padded so
-// it sits a little smaller than the item art).
+// Oisín's Oath (public/icons/, background removed with rembg, given the same
+// soft drop shadow as the poe2db item art, and padded so it sits a little
+// smaller).
 const GEM_ICON = new URL(`${import.meta.env.BASE_URL}icons/lineage-gems.webp`, document.baseURI).href;
 const icons = new Map<string, string>();
 for (const cat of engine.categories) {
