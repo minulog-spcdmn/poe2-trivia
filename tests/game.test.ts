@@ -695,3 +695,18 @@ test('seats kept for players who never came back are let go when the game starts
   s = engine.apply(s, { type: 'start' }, 'p0');
   assert.deepEqual(s.players.map((p) => p.id).sort(), ['p0', 'p1']);
 });
+
+test('a returning guest waits for a seat in a full lobby, and gets one freed at the start', () => {
+  const names = ['Alva', 'Zana', 'Doryani', 'Tujen', 'Rog', 'Gwennen', 'Dannig', 'Oyra', 'Kirac', 'Niko', 'Jun', 'Einhar'];
+  let { engine, s } = setup(names);
+  assert.equal(s.players.length, 12);
+  // The host refreshed: p11 hasn't come back, and a former spectator reconnects.
+  s = engine.apply(s, { type: 'connection', playerId: 'p11', connected: false }, null);
+  assert.throws(() => engine.apply(s, { type: 'join', playerId: 'new', name: 'Stranger' }, 'new'), /lobby is full/);
+  s = engine.apply(s, { type: 'join', playerId: 'w1', name: 'Watcher', returning: true }, 'w1');
+  assert.deepEqual(s.spectators!.map((o) => o.id), ['w1']);
+  s = engine.apply(s, { type: 'start' }, 'p0');
+  assert.ok(s.players.some((p) => p.id === 'w1'), 'the waiting guest takes the empty seat');
+  assert.ok(!s.players.some((p) => p.id === 'p11'));
+  assert.deepEqual(s.spectators, []);
+});

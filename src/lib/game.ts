@@ -383,7 +383,15 @@ export class Engine {
           s.spectators.push({ id: action.playerId, name });
           break;
         }
-        if (s.players.length >= MAX_PLAYERS) throw new ActionError('The lobby is full.');
+        if (s.players.length >= MAX_PLAYERS) {
+          // Someone who was already here (a spectator, after the host's refresh)
+          // waits for a free seat instead of being turned away.
+          if (action.returning && s.spectators.length < MAX_SPECTATORS) {
+            s.spectators.push({ id: action.playerId, name });
+            break;
+          }
+          throw new ActionError('The lobby is full.');
+        }
         seat(s, action.playerId, name);
         break;
       }
