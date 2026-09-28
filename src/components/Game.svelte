@@ -58,50 +58,54 @@
 <div class="game">
   <Scoreboard />
 
-  {#key s.turnCount}
-    <div class="stage" in:fade={{ duration: 300, delay: 200 }} out:fade={{ duration: 180 }}>
-      {#if dm}
-        <div class="dm-strip" in:fly={{ y: -10, duration: 400 }}>
-          <span class="dm-title">⚔ Deathmatch · round {dm.round}</span>
-          <span class="dm-duelists">
-            {#each dm.alive as id (id)}
-              {@const p = nameOf(id)}
-              {#if p}
-                <span class="duelist" class:done={id in dm.results} title={p.name}>
-                  <Avatar name={p.name} hue={p.hue} size={24} />
-                  {#if id in dm.results}<i class:ok={dm.results[id]}>{dm.results[id] ? '✓' : '✕'}</i>{/if}
-                </span>
+  <!-- The outgoing and incoming turn share one grid cell while they cross-fade,
+       instead of stacking (which briefly doubled the page height). -->
+  <div class="turns">
+    {#key s.turnCount}
+      <div class="stage" in:fade={{ duration: 300, delay: 200 }} out:fade={{ duration: 180 }}>
+        {#if dm}
+          <div class="dm-strip" in:fly={{ y: -10, duration: 400 }}>
+            <span class="dm-title">⚔ Deathmatch · round {dm.round}</span>
+            <span class="dm-duelists">
+              {#each dm.alive as id (id)}
+                {@const p = nameOf(id)}
+                {#if p}
+                  <span class="duelist" class:done={id in dm.results} title={p.name}>
+                    <Avatar name={p.name} hue={p.hue} size={24} />
+                    {#if id in dm.results}<i class:ok={dm.results[id]}>{dm.results[id] ? '✓' : '✕'}</i>{/if}
+                  </span>
+                {/if}
+              {/each}
+            </span>
+            <span class="dm-rule">
+              {#if dm.eliminated.length}
+                <b>{dm.eliminated.map((id) => nameOf(id)?.name).join(', ')} {dm.eliminated.length === 1 ? 'is' : 'are'} out.</b>
               {/if}
-            {/each}
-          </span>
-          <span class="dm-rule">
-            {#if dm.eliminated.length}
-              <b>{dm.eliminated.map((id) => nameOf(id)?.name).join(', ')} {dm.eliminated.length === 1 ? 'is' : 'are'} out.</b>
-            {/if}
-            Answer right to survive. Anyone who misses while another duelist scores is out.
-          </span>
+              Answer right to survive. Anyone who misses while another duelist scores is out.
+            </span>
+          </div>
+        {/if}
+        <div class="banner" class:dm={!!dm} style:--c={dm ? '#e0553f' : race ? 'var(--unique-hi)' : playerColor(active.hue)}>
+          <span class="rule"></span>
+          <h2>{bannerTitle}</h2>
+          <span class="rule"></span>
         </div>
-      {/if}
-      <div class="banner" class:dm={!!dm} style:--c={dm ? '#e0553f' : race ? 'var(--unique-hi)' : playerColor(active.hue)}>
-        <span class="rule"></span>
-        <h2>{bannerTitle}</h2>
-        <span class="rule"></span>
+
+        {#if s.phase === 'choosing'}
+          <ChooseCategory />
+        {:else}
+          <QuestionView />
+        {/if}
+
+        {#if session.isHost && !local && !race && !active.connected && s.phase !== 'reveal'}
+          <div class="skip" transition:fade>
+            <span class="muted">{active.name} is disconnected{skipIn ? ` — skipping in ${skipIn}s` : ''}.</span>
+            <button class="btn small" onclick={() => session.dispatch({ type: 'skip' })}>Skip their turn</button>
+          </div>
+        {/if}
       </div>
-
-      {#if s.phase === 'choosing'}
-        <ChooseCategory />
-      {:else}
-        <QuestionView />
-      {/if}
-
-      {#if session.isHost && !local && !race && !active.connected && s.phase !== 'reveal'}
-        <div class="skip" transition:fade>
-          <span class="muted">{active.name} is disconnected{skipIn ? ` — skipping in ${skipIn}s` : ''}.</span>
-          <button class="btn small" onclick={() => session.dispatch({ type: 'skip' })}>Skip their turn</button>
-        </div>
-      {/if}
-    </div>
-  {/key}
+    {/key}
+  </div>
 </div>
 
 {#if showIntro && dm}
@@ -133,7 +137,12 @@
     gap: 1rem;
     padding: 1rem 1rem 2.5rem;
   }
+  .turns {
+    display: grid;
+  }
   .stage {
+    grid-area: 1 / 1;
+    min-width: 0;
     display: flex;
     flex-direction: column;
     align-items: stretch;
@@ -143,7 +152,7 @@
     align-items: center;
     justify-content: center;
     gap: 1.2rem;
-    margin: 0.6rem 0 1.4rem;
+    margin: 0.6rem 0 1.1rem;
   }
   .banner h2 {
     font-size: clamp(1.5rem, 4.5vw, 2.4rem);

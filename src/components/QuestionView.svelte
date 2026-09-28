@@ -171,10 +171,7 @@
 <div class="question">
   <div class="topline">
     <span class="chip">{q.category}</span>
-    <span class="who">
-      {#if race}Everyone answers{:else if mine && session.mode !== 'local'}Your question{:else}{active.name}'s question{/if}
-      {#if q.mode === 'art'}<span class="mode">· find the art</span>{/if}
-    </span>
+    <span class="task">{q.mode === 'art' ? 'Pick the art that matches the name' : 'Name this item'}</span>
     {#if q.deadline}
       <TimerRing deadline={q.deadline} total={timerTotal} stopped={!!reveal} />
     {/if}
@@ -219,10 +216,8 @@
             {@render who(i)}
           </button>
         {/each}
-        
       </div>
     </div>
-    <div class="art-footer">{@render footer()}</div>
   {:else}
     <div class="stage">
       <div class="tooltip" class:good={reveal && iWon} class:bad={reveal && !iWon}>
@@ -287,10 +282,11 @@
             {#if st === 'wrong'}<span class="mark" in:scale={{ duration: 300 }}>✕</span>{/if}
           </button>
         {/each}
-        {@render footer()}
       </div>
     </div>
   {/if}
+
+  <div class="footer">{@render footer()}</div>
 </div>
 
 <style>
@@ -317,33 +313,28 @@
     background: rgba(0, 0, 0, 0.4);
     border-radius: 2px;
   }
-  .mode {
-    margin-left: 0.3em;
-    color: var(--unique-hi);
-  }
-  .who {
+  .task {
     flex: 1;
     min-width: 0;
     line-height: 1.25;
-    /* Up to two lines on narrow screens, then an ellipsis. */
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
     font-style: italic;
     color: var(--muted);
   }
 
+  /* Art and answers share one row: same top, same bottom, whatever the
+     number of options. The art grows with a long list; a short list spreads
+     its answers over the art's height. */
   .stage {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     gap: 2rem;
-    align-items: center;
+    align-items: stretch;
   }
 
   /* PoE-style item tooltip */
   .tooltip {
+    display: flex;
+    flex-direction: column;
     border: 1px solid #5a3a1c;
     background: rgba(5, 4, 3, 0.92);
     box-shadow:
@@ -367,6 +358,7 @@
   }
   .head {
     position: relative;
+    flex: none;
     display: grid;
     height: 64px;
     place-items: center;
@@ -420,9 +412,10 @@
 
   .art {
     position: relative;
+    flex: 1;
     display: grid;
     place-items: center;
-    height: 360px;
+    min-height: 300px;
     background:
       radial-gradient(ellipse at center, rgba(175, 96, 37, 0.12), transparent 65%),
       repeating-linear-gradient(0deg, rgba(90, 100, 140, 0.08) 0 1px, transparent 1px 47px),
@@ -519,8 +512,8 @@
   }
 
   .options {
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    grid-auto-rows: 1fr;
     gap: 0.75rem;
   }
   .option {
@@ -581,7 +574,7 @@
     padding-bottom: 0.7rem;
   }
   .compact {
-    gap: 0.55rem;
+    gap: 0.6rem;
   }
   .option.pending {
     border-color: var(--gold);
@@ -591,7 +584,6 @@
     border-color: var(--good);
     background: linear-gradient(90deg, rgba(47, 90, 45, 0.85), rgba(20, 35, 18, 0.9));
     box-shadow: 0 0 30px rgba(111, 207, 115, 0.3);
-    transform: scale(1.03);
   }
   .option.right .text,
   .option.right .mark {
@@ -716,8 +708,12 @@
   .tile.right .caption {
     color: #c9f5c3;
   }
-  .art-footer {
-    margin-top: 1rem;
+  /* Same height with a tip, a result or nothing, so the page doesn't jump at the reveal. */
+  .footer {
+    display: grid;
+    align-items: center;
+    min-height: 52px;
+    margin-top: 1.25rem;
   }
 
   .result {
@@ -725,8 +721,6 @@
     align-items: center;
     justify-content: space-between;
     gap: 1rem;
-    margin-top: 0.6rem;
-    min-height: 48px;
   }
   .result p {
     margin: 0;
@@ -778,7 +772,7 @@
     font-style: italic;
   }
   .spectate {
-    margin: 0.6rem 0 0;
+    margin: 0;
     font-style: italic;
     text-align: center;
   }
@@ -813,18 +807,26 @@
       gap: 1rem;
     }
     .art {
+      flex: none;
       height: 230px;
+      min-height: 0;
+    }
+    .options {
+      grid-auto-rows: auto;
     }
     .topline {
       flex-wrap: wrap;
-      row-gap: 0.1rem;
+      row-gap: 0.4rem;
       min-height: 0;
-      margin-bottom: 0.6rem;
+      margin-bottom: 0.8rem;
     }
-    .who {
+    .task {
       order: 3;
       flex-basis: 100%;
       font-size: 0.95rem;
+    }
+    .footer {
+      margin-top: 1rem;
     }
     .chip {
       margin-right: auto;
