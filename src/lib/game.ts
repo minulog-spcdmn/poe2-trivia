@@ -225,7 +225,7 @@ export const OFFER_COUNT = 3;
 export const MAX_PLAYERS = 12;
 export { MAX_NAME } from './names.ts';
 
-export const DEFAULT_SETTINGS: Settings = { targetScore: 10, timer: 20, difficulty: 'cruel', mode: 'turns', public: false, locked: false };
+export const DEFAULT_SETTINGS: Settings = { targetScore: 10, timer: 20, difficulty: 'merciless', mode: 'turns', public: false, locked: false };
 
 export class ActionError extends Error {
   /** Expected races (e.g. an answer arriving after the question closed): don't bother the user. */

@@ -12,6 +12,7 @@ import itemData from '../data/items.json';
 import {
   Engine,
   createGame,
+  DEFAULT_SETTINGS,
   ActionError,
   MAX_PLAYERS,
   publicView,
@@ -246,7 +247,7 @@ class Session {
           if (p.id !== me) s = engine.apply(s, { type: 'connection', playerId: p.id, connected: false }, null);
         this.setState(s);
       } else {
-        let s = createGame(me);
+        let s = createGame(me, { ...DEFAULT_SETTINGS, mode: 'race' });
         try {
           s = engine.apply(s, { type: 'join', playerId: me, name: this.joinName }, me);
         } catch (err) {
