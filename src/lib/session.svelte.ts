@@ -413,7 +413,12 @@ class Session {
 
   /** In a race the host's clicks skip the network; delay them by a typical guest's one-way trip. */
   private hostHandicap() {
-    const rtts = [...this.guests.values()].filter((g) => g.playerId).map((g) => g.rtt).sort((a, b) => a - b);
+    // Only the people racing count, not spectators.
+    const racing = new Set(this.state?.players.map((p) => p.id));
+    const rtts = [...this.guests.values()]
+      .filter((g) => g.playerId && racing.has(g.playerId))
+      .map((g) => g.rtt)
+      .sort((a, b) => a - b);
     if (!rtts.length) return 0;
     return Math.min(MAX_HOST_HANDICAP_MS, rtts[Math.floor(rtts.length / 2)] / 2);
   }
@@ -702,6 +707,8 @@ class Session {
       host: s.players.find((p) => p.id === s.hostId)?.name ?? '?',
       players: s.players.filter((p) => p.connected).length,
       maxPlayers: MAX_PLAYERS,
+      spectators: s.spectators?.length ?? 0,
+      maxSpectators: MAX_SPECTATORS,
       mode: s.settings.mode ?? 'turns',
       difficulty: s.settings.difficulty,
       target: s.settings.targetScore,

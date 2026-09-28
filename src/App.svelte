@@ -50,6 +50,10 @@
       </button>
       <div class="meta">
         {#if gs && screen === 'game'}
+          {#if session.code && !session.hideCode}
+            <span>Room <b>{session.code}</b></span>
+            <span class="dot">•</span>
+          {/if}
           {#if session.spectating}
             <span class="spectating" title="You joined mid-game. You'll play in the next game.">Spectating</span>
             <span class="dot">•</span>
@@ -363,8 +367,9 @@
     }
     .meta {
       justify-content: center;
+      flex-wrap: wrap;
       font-size: 0.66rem;
-      gap: 0.35rem;
+      gap: 0.1rem 0.35rem;
     }
   }
 

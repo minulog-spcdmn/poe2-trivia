@@ -65,7 +65,7 @@
   <p class="watching">
     <span class="eye" aria-hidden="true">👁</span>
     Watching:
-    {#each spectators as o, i (o.id)}
+    {#each spectators as o (o.id)}
       <span class="spectator"
         >{o.name}{#if o.id === session.myPlayerId}<em>&nbsp;(you)</em>{/if}{#if canKick}<button
             class="kick-inline"
@@ -73,7 +73,7 @@
             onclick={() => kick(o.id)}
             title="Remove {o.name}"
             aria-label="Remove {o.name}">{confirming === o.id ? 'Kick?' : '×'}</button
-          >{/if}{i < spectators.length - 1 ? ',' : ''}</span
+          >{/if}</span
       >
     {/each}
     <span class="hint">· joining next game</span>
@@ -271,7 +271,7 @@
   }
   .spectator {
     color: var(--text);
-    margin-left: 0.3em;
+    margin-left: 0.5em;
   }
   .kick-inline {
     margin-left: 0.25em;

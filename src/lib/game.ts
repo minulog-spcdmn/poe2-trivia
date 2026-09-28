@@ -272,6 +272,16 @@ export function createGame(hostId: string | null, settings: Settings = DEFAULT_S
 
 export { cleanName };
 
+/** Spectators take the free seats, in the order they arrived; the rest keep watching. */
+function fillSeats(s: GameState) {
+  const waiting = s.spectators ?? [];
+  while (waiting.length && s.players.length < MAX_PLAYERS) {
+    const o = waiting.shift()!;
+    seat(s, o.id, o.name);
+  }
+  s.spectators = waiting;
+}
+
 /** Adds a player with the first free avatar colour. */
 function seat(s: GameState, id: string, name: string) {
   const used = new Set(s.players.map((p) => p.hue));
@@ -350,13 +360,14 @@ export class Engine {
           existing.connected = true;
           break;
         }
+        // Already watching (e.g. a second connection after a refresh): nothing changes.
+        if (s.spectators.some((o) => o.id === action.playerId)) break;
         const name = cleanName(action.name);
         if (s.settings.locked) throw new ActionError('The host has locked this room.');
-        const problem = nameProblem(name, [...s.players, ...s.spectators].filter((o) => o.id !== action.playerId).map((o) => o.name));
+        const problem = nameProblem(name, [...s.players, ...s.spectators].map((o) => o.name));
         if (problem) throw new ActionError(problem);
         if (s.phase !== 'lobby') {
           // Too late for this game: watch it and take a seat in the next one.
-          if (s.spectators.some((o) => o.id === action.playerId)) break;
           if (s.spectators.length >= MAX_SPECTATORS) throw new ActionError('That game has already started and has no room for more spectators.');
           s.spectators.push({ id: action.playerId, name });
           break;
@@ -384,8 +395,13 @@ export class Engine {
         const idx = s.players.findIndex((p) => p.id === action.playerId);
         if (idx < 0) break;
         s.players.splice(idx, 1);
+        if (s.phase === 'lobby') fillSeats(s);
         if (s.phase === 'lobby' || s.phase === 'over') break;
-        if (s.players.length === 0) return { ...createGame(s.hostId, s.settings), lastAskedAt: s.lastAskedAt, version: s.version + 1 };
+        if (s.players.length === 0) {
+          const fresh = { ...createGame(s.hostId, s.settings), spectators: s.spectators, lastAskedAt: s.lastAskedAt, version: s.version + 1 };
+          fillSeats(fresh);
+          return fresh;
+        }
         if (race) {
           s.turn = 0;
           this.checkRaceDone(s);
@@ -428,6 +444,7 @@ export class Engine {
       case 'start': {
         if (!isHost) throw new ActionError('Only the host can start the game.');
         if (s.phase !== 'lobby') throw new ActionError('The game is already running.');
+        fillSeats(s);
         if (s.players.length === 0) throw new ActionError('Add at least one player.');
         s.players = shuffle(s.players, this.rng);
         for (const p of s.players) {
@@ -512,12 +529,8 @@ export class Engine {
         const fresh = createGame(s.hostId, s.settings);
         // Players who left during the game don't come back as ghosts in the lobby.
         fresh.players = s.players.filter((p) => p.connected).map((p) => ({ ...p, score: 0, recent: [] }));
-        // Spectators take the free seats, in the order they arrived; the rest keep watching.
-        fresh.spectators = [];
-        for (const o of s.spectators) {
-          if (fresh.players.length < MAX_PLAYERS) seat(fresh, o.id, o.name);
-          else fresh.spectators.push(o);
-        }
+        fresh.spectators = s.spectators;
+        fillSeats(fresh);
         fresh.version = s.version;
         fresh.lastAskedAt = s.lastAskedAt;
         Object.assign(s, fresh);

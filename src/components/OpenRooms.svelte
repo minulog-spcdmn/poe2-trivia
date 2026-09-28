@@ -107,16 +107,16 @@
           <div class="info">
             <span class="host">{r.host}'s room</span>
             <span class="meta">
-              {r.mode === 'race' ? 'Race' : 'Turns'} · {DIFF_NAMES[r.difficulty] ?? r.difficulty} · first to {r.target}
+              {r.mode === 'race' ? 'Race' : 'Turns'} · {DIFF_NAMES[r.difficulty] ?? r.difficulty} · first to {r.target}{r.spectators ? ` · ${r.spectators} watching` : ''}
             </span>
           </div>
           <span class="count" title="Players">{r.players}/{r.maxPlayers}</span>
           {#if open}
             <button class="btn small" {disabled} onclick={() => onJoin(r.code)}>Join</button>
-          {:else if r.phase !== 'locked' && r.phase !== 'lobby'}
+          {:else if r.phase !== 'locked' && r.phase !== 'lobby' && r.spectators < r.maxSpectators}
             <button class="btn small ghost" {disabled} onclick={() => onJoin(r.code)} title="Watch this game and play in the next one">Watch</button>
           {:else}
-            <span class="status">{r.phase === 'locked' ? 'Locked' : 'Full'}</span>
+            <span class="status">{r.phase === 'locked' ? 'Locked' : r.phase === 'lobby' ? 'Full' : 'In game'}</span>
           {/if}
         </li>
       {/each}

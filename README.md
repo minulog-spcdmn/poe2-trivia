@@ -59,7 +59,10 @@ than any other.
     reconnect.
   - Anyone who joins a game that has already started watches as a
     **spectator** (up to 8) and gets a seat when the host starts the next
-    game. Public rooms that are in a game show a **Watch** button.
+    game. This works with the code for any room that isn't locked; public
+    rooms that are in a game also show a **Watch** button under Open rooms.
+  - The room code stays in the header during the game, unless the host
+    hid it for streaming.
   - After a game, the host can **Play again** (same settings, starts right
     away, spectators included) or **Change settings** (back to the lobby).
   - Very strict networks (some corporate or mobile networks) can block

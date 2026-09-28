@@ -171,6 +171,49 @@ test('spectators leave cleanly, respect the lock and the seat limit', () => {
   assert.deepEqual(s.spectators, [{ id: 'w', name: 'W' }]);
 });
 
+test('spectators waiting in a full lobby get the first free seat', () => {
+  const names = ['Alba', 'Brom', 'Cyra', 'Dusk', 'Ember', 'Fenwick', 'Galt', 'Hollis', 'Iona', 'Jorik', 'Kestrel', 'Lumen'];
+  let { engine, s } = setup(names);
+  s = engine.apply(s, { type: 'start' }, 'p0');
+  s = engine.apply(s, { type: 'join', playerId: 'w1', name: 'Wren' }, 'w1');
+  s = engine.apply(s, { type: 'join', playerId: 'w2', name: 'Yara' }, 'w2');
+  s = engine.apply(s, { type: 'restart' }, 'p0');
+  assert.deepEqual(s.spectators!.map((o) => o.id), ['w1', 'w2']);
+  // A player leaves the lobby: the longest-waiting spectator takes the seat.
+  s = engine.apply(s, { type: 'remove', playerId: 'p5' }, 'p0');
+  assert.ok(s.players.some((p) => p.id === 'w1'));
+  assert.deepEqual(s.spectators!.map((o) => o.id), ['w2']);
+  // No one new can sit down in a full lobby, even under a spectator's name.
+  assert.throws(() => engine.apply(s, { type: 'join', playerId: 'n', name: 'Nox' }, 'n'), /full/);
+  assert.throws(() => engine.apply(s, { type: 'join', playerId: 'n', name: 'Yara' }, 'n'));
+  s = engine.apply(s, { type: 'start' }, 'p0');
+  assert.equal(s.players.length, 12);
+  assert.deepEqual(s.spectators!.map((o) => o.id), ['w2'], 'still waiting, the table is full');
+});
+
+test('a spectator reconnecting to a locked room keeps their spot', () => {
+  let { engine, s } = setup(['A', 'B']);
+  s = engine.apply(s, { type: 'start' }, 'p0');
+  s = engine.apply(s, { type: 'join', playerId: 'w', name: 'Wren' }, 'w');
+  s = engine.apply(s, { type: 'settings', settings: { locked: true } }, 'p0');
+  s = engine.apply(s, { type: 'join', playerId: 'w', name: 'Wren' }, 'w');
+  assert.deepEqual(s.spectators, [{ id: 'w', name: 'Wren' }]);
+  // Locking doesn't cost them their seat in the next game either.
+  s = engine.apply(s, { type: 'restart' }, 'p0');
+  assert.ok(s.players.some((p) => p.id === 'w'));
+});
+
+test('guests see who is watching; the answer stays hidden', () => {
+  let { engine, s } = setup(['A']);
+  s = engine.apply(s, { type: 'start' }, 'p0');
+  s = engine.apply(s, { type: 'join', playerId: 'w', name: 'Wren' }, 'w');
+  s = engine.apply(s, { type: 'pick', category: s.offered[0] }, 'p0');
+  const v = publicView(s);
+  assert.deepEqual(v.spectators, [{ id: 'w', name: 'Wren' }]);
+  assert.equal(v.question!.itemId, '');
+  assert.deepEqual(v.question!.options, []);
+});
+
 test('difficulties scale options, decoy kind and question types', () => {
   for (const difficulty of ['cruel', 'merciless', 'eternal'] as Difficulty[]) {
     const rules = DIFFICULTIES[difficulty];

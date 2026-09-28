@@ -103,7 +103,7 @@
 {#snippet stamp(inHead = false)}
   {#if reveal}
     <div class="stamp" class:in-head={inHead} class:good={iWon} in:scale={{ start: 2.2, duration: 450, opacity: 0 }}>
-      {#if iWon}Correct{:else if race && winner}Too slow{:else if reveal.timedOut}Time's up{:else if race}No one{:else}Wrong{/if}
+      {#if iWon}Correct{:else if race && winner}{session.spectating ? 'Solved' : 'Too slow'}{:else if reveal.timedOut}Time's up{:else if race}No one{:else}Wrong{/if}
     </div>
   {/if}
 {/snippet}
@@ -157,6 +157,8 @@
         <div class="autobar"><span style:animation-duration="{AUTO_NEXT_SECONDS}s"></span></div>
       {/if}
     </div>
+  {:else if session.spectating}
+    <p class="spectate muted">You're watching. You'll play in the next game.</p>
   {:else if race && myMiss}
     <p class="spectate out">Wrong — −1. You're out until the next question.</p>
   {:else if race}
