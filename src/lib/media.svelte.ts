@@ -17,12 +17,43 @@ export interface Tile {
   data: ArrayBuffer;
 }
 
+/** The art's size and how many columns and rows of tiles it is cut into. */
+export interface Grid {
+  w: number;
+  h: number;
+  cols: number;
+  rows: number;
+}
+
+/**
+ * Cuts a w × h picture into about n × n tiles that are roughly square: tall
+ * art gets fewer columns and more rows, wide art the other way round.
+ */
+export function gridShape(n: number, w: number, h: number): { cols: number; rows: number } {
+  const aspect = w / h;
+  const short = Math.max(1, Math.round(n * Math.sqrt(Math.min(aspect, 1 / aspect))));
+  const long = Math.max(1, Math.round((n * n) / short));
+  return aspect < 1 ? { cols: short, rows: long } : { cols: long, rows: short };
+}
+
+/** Tile rectangles of a grid, in reading order. */
+export function gridCells(g: Grid): { i: number; x: number; y: number; w: number; h: number }[] {
+  const edges = (len: number, parts: number) => Array.from({ length: parts + 1 }, (_, k) => Math.round((k * len) / parts));
+  const xs = edges(g.w, g.cols);
+  const ys = edges(g.h, g.rows);
+  return Array.from({ length: g.cols * g.rows }, (_, i) => {
+    const cx = i % g.cols;
+    const cy = Math.floor(i / g.cols);
+    return { i, x: xs[cx], y: ys[cy], w: xs[cx + 1] - xs[cx], h: ys[cy + 1] - ys[cy] };
+  });
+}
+
 /** Everything a question can show, prepared once by the host. */
 export interface PreparedMedia {
   qid: number;
   art: { w: number; h: number; data: ArrayBuffer } | null;
   /** Veiled questions: the art cut into tiles, in the order they uncover. */
-  grid: { w: number; h: number; n: number } | null;
+  grid: Grid | null;
   tiles: Tile[];
   /** Art questions: one picture per option. */
   options: ArrayBuffer[];
@@ -93,12 +124,17 @@ async function alteredCanvas(itemId: string, grayscale: boolean): Promise<HTMLCa
   return canvas;
 }
 
-function encode(canvas: HTMLCanvasElement): Promise<ArrayBuffer> {
+/**
+ * Whole pictures go out as lossy WebP. Tiles are lossless PNG: they are small
+ * and cut from small art, so lossy encoding blurs them into blocks with seams
+ * between neighbours.
+ */
+function encode(canvas: HTMLCanvasElement, lossless = false): Promise<ArrayBuffer> {
   return new Promise((resolve, reject) =>
     canvas.toBlob(
       (blob) => (blob ? blob.arrayBuffer().then(resolve, reject) : reject(new Error('encode failed'))),
-      'image/webp',
-      rand(0.82, 0.9),
+      lossless ? 'image/png' : 'image/webp',
+      lossless ? undefined : rand(0.82, 0.9),
     ),
   );
 }
@@ -133,34 +169,26 @@ export async function prepareMedia(q: Question, grayscale: boolean): Promise<Pre
     out.art = { w: W, h: H, data: await encode(canvas) };
     return out;
   }
-  const n = q.veil.size;
-  out.grid = { w: W, h: H, n };
-  const edges = (len: number) => Array.from({ length: n + 1 }, (_, k) => Math.round((k * len) / n));
-  const xs = edges(W);
-  const ys = edges(H);
-  const order = seededOrder(n * n, q.veil.seed);
+  const grid: Grid = { w: W, h: H, ...gridShape(q.veil.size, W, H) };
+  out.grid = grid;
+  const cells = gridCells(grid);
+  const order = seededOrder(cells.length, q.veil.seed);
   out.tiles = await Promise.all(
     order.map(async (i) => {
-      const cx = i % n;
-      const cy = Math.floor(i / n);
-      const x = xs[cx];
-      const y = ys[cy];
-      const w = xs[cx + 1] - x;
-      const h = ys[cy + 1] - y;
+      const { x, y, w, h } = cells[i];
       const tile = document.createElement('canvas');
       tile.width = w;
       tile.height = h;
       tile.getContext('2d')!.drawImage(canvas, x, y, w, h, 0, 0, w, h);
-      return { i, x, y, w, h, data: await encode(tile) };
+      return { i, x, y, w, h, data: await encode(tile, true) };
     }),
   );
   return out;
 }
 
-/** When (ms after the question was asked) tile number `rank` uncovers. */
-export function tileDelay(q: Question, rank: number): number {
-  const v = q.veil!;
-  return 400 + (rank * v.seconds * 1000) / (v.size * v.size);
+/** When (ms after the question was asked) tile number `rank` of `count` uncovers. */
+export function tileDelay(q: Question, rank: number, count: number): number {
+  return 400 + (rank * q.veil!.seconds * 1000) / count;
 }
 
 // ---- what this device shows -------------------------------------------
@@ -177,13 +205,14 @@ export interface ShownTile {
 class Shown {
   qid = $state(0);
   art = $state<{ url: string; w: number; h: number } | null>(null);
-  grid = $state<{ w: number; h: number; n: number } | null>(null);
+  grid = $state<Grid | null>(null);
   tiles = $state<Record<number, ShownTile>>({});
   options = $state<Record<number, string>>({});
   private urls: string[] = [];
 
   private url(data: ArrayBuffer) {
-    const u = URL.createObjectURL(new Blob([data], { type: 'image/webp' }));
+    // No type: tiles are PNG, everything else WebP, and images are sniffed anyway.
+    const u = URL.createObjectURL(new Blob([data]));
     this.urls.push(u);
     return u;
   }
@@ -208,7 +237,7 @@ class Shown {
         this.art = { url: this.url(m.data), w: m.w, h: m.h };
         break;
       case 'grid':
-        this.grid = { w: m.w, h: m.h, n: m.n };
+        this.grid = { w: m.w, h: m.h, cols: m.cols, rows: m.rows };
         break;
       case 'tile':
         this.tiles = { ...this.tiles, [m.i]: { i: m.i, x: m.x, y: m.y, w: m.w, h: m.h, url: this.url(m.data) } };
