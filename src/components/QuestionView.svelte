@@ -70,6 +70,8 @@
 
   function answer(index: number) {
     if (!mine || reveal || chosen !== null) return;
+    // Time's up: the host only waits a moment longer for answers already on their way.
+    if (q.deadline && session.hostNow() > q.deadline) return;
     chosen = index;
     sfx('click');
     session.dispatch({ type: 'answer', index, askedAt: q.askedAt });

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { fade, fly } from 'svelte/transition';
   import { engine, session, savedName, saveName, CODE_LENGTH } from '../lib/session.svelte';
+  import { shuffle } from '../lib/game';
   import { itemImage } from '../lib/ui';
   import { sfx } from '../lib/sound';
   import OpenRooms from './OpenRooms.svelte';
@@ -14,7 +15,7 @@
   let nameError = $state(false);
 
   const total = engine.items.length;
-  const showcase = [...engine.items].sort(() => Math.random() - 0.5).slice(0, 7);
+  const showcase = shuffle(engine.items, Math.random).slice(0, 7);
 
   function needName() {
     const n = name.trim();

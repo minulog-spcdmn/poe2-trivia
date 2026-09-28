@@ -325,3 +325,123 @@ test('deathmatch: a disconnected duelist forfeits', () => {
   assert.equal(s.phase, 'over');
   assert.deepEqual(s.winners, [x]);
 });
+
+test('the answer is not the name that fits the other options best', () => {
+  // Pick the option whose name is most (or least) like the others: neither may beat a blind guess by much.
+  const engine = new Engine(items, { rng: seeded(11) });
+  for (const difficulty of ['merciless', 'eternal'] as Difficulty[]) {
+    const N = 3000;
+    let most = 0;
+    let least = 0;
+    let k = 0;
+    for (let i = 0; i < N; i++) {
+      const s = createGame(null, { targetScore: 5, timer: 0, difficulty, mode: 'turns', public: false, locked: false });
+      const q = engine.makeQuestion(s, engine.categories[i % engine.categories.length]);
+      const names = q.options.map((id) => engine.byId.get(id)!.name);
+      k = names.length;
+      const fit = names.map((a, x) => names.reduce((sum, b, y) => (x === y ? sum : sum + nameSimilarity(a, b)), 0));
+      if (fit.indexOf(Math.max(...fit)) === right(q)) most++;
+      if (fit.indexOf(Math.min(...fit)) === right(q)) least++;
+    }
+    const limit = 1 / k + 0.045;
+    assert.ok(most / N < limit, `${difficulty}: most-alike name is the answer ${(most / N).toFixed(3)}`);
+    assert.ok(least / N < limit, `${difficulty}: least-alike name is the answer ${(least / N).toFixed(3)}`);
+  }
+});
+
+test('earlier answers never come back as decoys, until the category starts over', () => {
+  const engine = new Engine(items, { rng: seeded(5) });
+  let s: GameState = createGame(null, { targetScore: 99, timer: 0, difficulty: 'eternal', mode: 'turns', public: false, locked: false });
+  s = engine.apply(s, { type: 'join', playerId: 'p0', name: 'A' }, 'p0');
+  s = engine.apply(s, { type: 'start' }, null);
+  const cat = 'Rings';
+  const size = engine.byCategory.get(cat)!.length;
+  const answers: string[] = [];
+  for (let t = 0; t < size * 2; t++) {
+    const q = engine.makeQuestion(s, cat);
+    const seen = new Set(s.used);
+    // Everything shown is unseen, apart from the answer after a restart of the category.
+    for (const id of q.options) if (id !== q.itemId) assert.ok(!seen.has(id), 'an earlier answer came back as a decoy');
+    assert.ok(!seen.has(q.itemId), 'an earlier answer came back as the answer');
+    assert.notEqual(q.itemId, answers.at(-1), 'same answer twice in a row');
+    answers.push(q.itemId);
+    s.used.push(q.itemId);
+    s.question = q;
+  }
+  assert.ok(new Set(answers).size > size - DIFFICULTIES.eternal.options, 'goes through most of the category first');
+});
+
+test('a tablet answer gets tablet decoys, so a tablet among the options gives nothing away', () => {
+  const engine = new Engine(items, { rng: seeded(3) });
+  const cat = 'Flasks, Jewels & Relics';
+  for (const difficulty of ['cruel', 'merciless', 'eternal'] as Difficulty[]) {
+    for (let i = 0; i < 1500; i++) {
+      const s = createGame(null, { targetScore: 5, timer: 0, difficulty, mode: 'turns', public: false, locked: false });
+      const q = engine.makeQuestion(s, cat);
+      const tablets = q.options.filter((id) => engine.byId.get(id)!.group === 'Tablets').length;
+      assert.ok(tablets === 0 || tablets === q.options.length, `${difficulty}: ${tablets} tablets among ${q.options.length}`);
+    }
+  }
+});
+
+test('question ids keep increasing even if the clock goes back', () => {
+  let clock = 1_000_000;
+  const engine = new Engine(items, { rng: seeded(9), now: () => clock });
+  let s: GameState = createGame(null, { targetScore: 99, timer: 0, difficulty: 'cruel', mode: 'turns', public: false, locked: false });
+  s = engine.apply(s, { type: 'join', playerId: 'p0', name: 'A' }, 'p0');
+  s = engine.apply(s, { type: 'start' }, null);
+  let last = 0;
+  for (let t = 0; t < 5; t++) {
+    s = engine.apply(s, { type: 'pick', category: s.offered[0] }, null);
+    assert.ok(s.question!.askedAt > last);
+    last = s.question!.askedAt;
+    s = engine.apply(s, { type: 'answer', index: 0 }, null);
+    s = engine.apply(s, { type: 'next' }, null);
+    clock -= 60_000;
+  }
+});
+
+test('removing the last seat on their turn still ends the round (and the game)', () => {
+  const engine = new Engine(items, { rng: seeded(42) });
+  let s: GameState = createGame(null, { targetScore: 1, timer: 0, difficulty: 'cruel', mode: 'turns', public: false, locked: false });
+  ['A', 'B', 'C'].forEach((name, i) => (s = engine.apply(s, { type: 'join', playerId: `p${i}`, name }, `p${i}`)));
+  s = engine.apply(s, { type: 'start' }, null);
+  const [x, , z] = s.players.map((p) => p.id);
+  s = playTurn(engine, s, (id) => id === x);
+  s = playTurn(engine, s, (id) => id === x);
+  assert.equal(s.players[s.turn].id, z);
+  s = engine.apply(s, { type: 'remove', playerId: z }, null);
+  assert.equal(s.phase, 'over');
+  assert.deepEqual(s.winners, [x]);
+});
+
+test('removing a player seated before the active duelist keeps their question', () => {
+  const engine = new Engine(items, { rng: seeded(42) });
+  let s: GameState = createGame(null, { targetScore: 1, timer: 0, difficulty: 'cruel', mode: 'turns', public: false, locked: false });
+  ['A', 'B', 'C', 'D'].forEach((name, i) => (s = engine.apply(s, { type: 'join', playerId: `p${i}`, name }, `p${i}`)));
+  s = engine.apply(s, { type: 'start' }, null);
+  for (let i = 0; i < 4; i++) s = playTurn(engine, s, () => true);
+  assert.equal(s.deathmatch!.alive.length, 4);
+  s = playTurn(engine, s, () => true);
+  assert.ok(s.turn > 0);
+  const active = s.players[s.turn].id;
+  const before = s.players[s.turn - 1].id;
+  s = engine.apply(s, { type: 'pick', category: s.offered[0] }, active);
+  const asked = s.question!.askedAt;
+  s = engine.apply(s, { type: 'remove', playerId: before }, null);
+  assert.equal(s.players[s.turn].id, active);
+  assert.equal(s.phase, 'question');
+  assert.equal(s.question!.askedAt, asked);
+  assert.deepEqual(s.deathmatch!.alive, s.players.map((p) => p.id));
+});
+
+test('a duelist who drops out and is left behind counts as eliminated', () => {
+  let { engine, s } = setup(['A', 'B'], 1);
+  s = engine.apply(s, { type: 'start' }, 'p0');
+  for (let i = 0; i < 2; i++) s = playTurn(engine, s, () => true);
+  const [x, y] = s.deathmatch!.alive;
+  s = engine.apply(s, { type: 'connection', playerId: y, connected: false }, null);
+  s = playTurn(engine, s, () => false);
+  assert.deepEqual(s.winners, [x]);
+  assert.deepEqual(s.deathmatch!.eliminated, [y]);
+});

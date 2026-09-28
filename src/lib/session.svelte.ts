@@ -16,6 +16,7 @@ import {
   MAX_PLAYERS,
   publicView,
   activeRules,
+  ANSWER_GRACE_MS,
   type Action,
   type GameState,
   type Item,
@@ -734,7 +735,8 @@ class Session {
           if (this.state?.version !== version) return;
           this.setState(engine.apply(this.state, { type: 'answer', index: null }, null));
         },
-        Math.max(0, s.question.deadline - Date.now() + 250),
+        // Answers sent in time may still be on their way.
+        Math.max(0, s.question.deadline - Date.now() + ANSWER_GRACE_MS),
       );
     }
     this.scheduleAutoSkip(s);
