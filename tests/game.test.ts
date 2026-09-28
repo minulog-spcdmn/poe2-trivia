@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { Engine, createGame, DIFFICULTIES, RARE_GROUPS, nameSimilarity, publicView, type Difficulty, type GameState, type Item, type Question } from '../src/lib/game.ts';
+import { Engine, ActionError, createGame, DIFFICULTIES, isDifficulty, rulesFor, RARE_GROUPS, nameSimilarity, publicView, type Difficulty, type GameState, type Item, type Question } from '../src/lib/game.ts';
 
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
 
@@ -644,4 +644,28 @@ test('the host can swap a question for another in the same category, without usi
   assert.ok(s.used.includes(before.itemId) && s.used.includes(after.itemId));
   // Late answers to the old question are dropped.
   assert.throws(() => engine.apply(s, { type: 'answer', index: 0, askedAt: before.askedAt }, me), /Too late/);
+});
+
+test('only real difficulties are accepted, not names inherited from Object', () => {
+  let { engine, s } = setup(['A']);
+  for (const bogus of ['toString', 'constructor', '__proto__']) {
+    s = engine.apply(s, { type: 'settings', settings: { difficulty: bogus as Difficulty } }, 'p0');
+    assert.equal(s.settings.difficulty, 'cruel');
+    assert.equal(rulesFor(bogus), DIFFICULTIES.cruel);
+    assert.equal(isDifficulty(bogus), false);
+  }
+  assert.equal(isDifficulty('eternal'), true);
+});
+
+test('a second Next for the same reveal is dropped quietly', () => {
+  let { engine, s } = setup(['A', 'B']);
+  s = engine.apply(s, { type: 'start' }, 'p0');
+  const me = s.players[s.turn].id;
+  s = engine.apply(s, { type: 'pick', category: s.offered[0] }, me);
+  s = engine.apply(s, { type: 'answer', index: 0 }, me);
+  s = engine.apply(s, { type: 'next' }, null);
+  assert.throws(
+    () => engine.apply(s, { type: 'next' }, me),
+    (err: unknown) => err instanceof ActionError && err.silent,
+  );
 });

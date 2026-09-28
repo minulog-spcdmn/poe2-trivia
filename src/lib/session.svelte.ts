@@ -157,6 +157,8 @@ class Session {
   private joinName = '';
   private toastTimer: ReturnType<typeof setTimeout> | null = null;
   private retry: ReturnType<typeof setTimeout> | null = null;
+  /** Pending step of opening or joining a room (a retry, a give-up); cancelled on leave. */
+  private connectTimer: ReturnType<typeof setTimeout> | null = null;
   private retries = 0;
   private hostWatch: ReturnType<typeof setInterval> | null = null;
   private beacon: Beacon | null = null;
@@ -254,15 +256,24 @@ class Session {
     const peer = new Peer(PEER_PREFIX + code, PEER_OPTIONS);
     this.peer = peer;
     peer.on('open', () => {
+      if (this.peer !== peer) return;
       this.code = code;
       this.status = 'ready';
       const me = this.priv.myPlayerId;
       if (resumeState) {
-        // Everyone else has to reconnect; mark them offline until they do.
+        // Everyone else has to reconnect; mark them offline until they do. A
+        // lobby drops them instead (as it does anyone who disconnects), so
+        // people who don't come back aren't left behind as ghosts; the ones
+        // who do are let back in, even through the lock.
         // Spectators rejoin as spectators when they reconnect.
         let s: GameState = { ...resumeState, spectators: [] };
         for (const p of s.players)
-          if (p.id !== me) s = engine.apply(s, { type: 'connection', playerId: p.id, connected: false }, null);
+          if (p.id !== me)
+            s = engine.apply(
+              s,
+              s.phase === 'lobby' ? { type: 'remove', playerId: p.id } : { type: 'connection', playerId: p.id, connected: false },
+              null,
+            );
         this.setState(s);
       } else {
         let s = createGame(me, { ...DEFAULT_SETTINGS, mode: 'race' });
@@ -282,16 +293,20 @@ class Session {
       if (!peer.destroyed) setTimeout(() => !peer.destroyed && peer.reconnect(), 1500);
     });
     peer.on('error', (err) => {
+      if (this.peer !== peer) return;
       if (err.type === 'unavailable-id' && attempt < 8) {
         peer.destroy();
         // When resuming, the old id can linger on the server for a few seconds.
-        if (resumeState) setTimeout(() => this.openRoom(code, attempt + 1, resumeState), 2500);
+        if (resumeState) this.connectTimer = setTimeout(() => this.openRoom(code, attempt + 1, resumeState), 2500);
         else this.openRoom(randomCode(), attempt + 1);
         return;
       }
       if (err.type === 'peer-unavailable') return;
       console.warn('peer error', err);
-      if (this.status === 'connecting') this.fail(this.networkHint(err.type));
+      if (this.status !== 'connecting') return;
+      if (err.type === 'unavailable-id' && resumeState)
+        this.fail(`Couldn't reopen room ${code}: it still seems to be open, maybe in another tab or window.`);
+      else this.fail(this.networkHint(err.type));
     });
   }
 
@@ -516,23 +531,19 @@ class Session {
     writeSaved({ mode: 'client', code: this.code, name });
     const peer = new Peer(PEER_OPTIONS);
     this.peer = peer;
-    const timeout = setTimeout(() => {
-      if (this.status === 'connecting') this.fail(`Couldn't reach room ${this.code}. Check the code, or try again.`);
+    this.connectTimer = setTimeout(() => {
+      if (this.peer === peer && this.status === 'connecting')
+        this.fail(`Couldn't reach room ${this.code}. Check the code, or try again.`);
     }, 15000);
-    peer.on('open', () => this.connectToHost());
+    peer.on('open', () => this.peer === peer && this.connectToHost());
     peer.on('error', (err) => {
+      if (this.peer !== peer) return;
       if (err.type === 'peer-unavailable') {
-        if (this.status === 'connecting') {
-          clearTimeout(timeout);
-          this.fail(`Room ${this.code} doesn't exist (or the host left).`);
-        }
+        if (this.status === 'connecting') this.fail(`Room ${this.code} doesn't exist (or the host left).`);
         return;
       }
       console.warn('peer error', err);
-      if (this.status === 'connecting') {
-        clearTimeout(timeout);
-        this.fail(this.networkHint(err.type));
-      }
+      if (this.status === 'connecting') this.fail(this.networkHint(err.type));
     });
     peer.on('disconnected', () => {
       if (!peer.destroyed) setTimeout(() => !peer.destroyed && peer.reconnect(), 1500);
@@ -884,6 +895,8 @@ class Session {
     this.priv = { myPlayerId: '', secrets: [], bannedSecrets: [], bannedPeers: [] };
     this.secretToPlayer = new Map();
     if (this.retry) clearTimeout(this.retry);
+    if (this.connectTimer) clearTimeout(this.connectTimer);
+    this.connectTimer = null;
     if (this.hostWatch) clearInterval(this.hostWatch);
     this.hostWatch = null;
     writeSaved(null);

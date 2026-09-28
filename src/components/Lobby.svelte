@@ -2,7 +2,7 @@
   import { flip } from 'svelte/animate';
   import { fly, scale } from 'svelte/transition';
   import { session } from '../lib/session.svelte';
-  import { MAX_PLAYERS, MAX_NAME, DIFFICULTIES, rulesFor, type Difficulty, type GameMode } from '../lib/game';
+  import { MAX_PLAYERS, MAX_NAME, isDifficulty, rulesFor, type Difficulty, type GameMode } from '../lib/game';
   import { sfx } from '../lib/sound';
   import { inviteUrl } from '../lib/site';
   import Avatar from './Avatar.svelte';
@@ -40,8 +40,10 @@
     e.preventDefault();
     const name = newName.trim();
     if (!name) return;
-    session.dispatch({ type: 'join', playerId: crypto.randomUUID(), name });
-    newName = '';
+    const playerId = crypto.randomUUID();
+    session.dispatch({ type: 'join', playerId, name });
+    // Keep the name to fix it up if it was turned down (hot-seat applies it right away).
+    if (session.state?.players.some((p) => p.id === playerId)) newName = '';
   }
 
   async function copy() {
@@ -90,7 +92,7 @@
   /** Spectators left over when the last game filled every seat. */
   const waiting = $derived(s.spectators ?? []);
   const race = $derived(s.settings.mode === 'race');
-  const difficulty = $derived(s.settings.difficulty in DIFFICULTIES ? s.settings.difficulty : 'cruel');
+  const difficulty = $derived(isDifficulty(s.settings.difficulty) ? s.settings.difficulty : 'cruel');
 </script>
 
 <div class="lobby">

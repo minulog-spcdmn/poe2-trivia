@@ -54,6 +54,13 @@
     join();
   }
 
+  /** Enter in the name field: join if a room code has been entered (or is still missing letters), otherwise open a room. */
+  function enterName(e: KeyboardEvent) {
+    if (e.key !== 'Enter' || e.isComposing || connecting) return;
+    if (code) join();
+    else host();
+  }
+
   function local() {
     sfx('click');
     session.startLocal();
@@ -94,7 +101,7 @@
       maxlength="20"
       placeholder="e.g. Doryani"
       autocomplete="nickname"
-      onkeydown={(e) => e.key === 'Enter' && (invite ? join() : host())}
+      onkeydown={enterName}
     />
 
     <div class="modes">

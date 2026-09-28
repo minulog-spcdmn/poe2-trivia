@@ -81,6 +81,8 @@
 
   function onKey(e: KeyboardEvent) {
     if (e.target instanceof HTMLInputElement) return;
+    // Browser shortcuts (Ctrl/Cmd+1 switches tabs), held keys, and an open dialog aren't answers.
+    if (e.ctrlKey || e.metaKey || e.altKey || e.repeat || document.querySelector('[aria-modal="true"]')) return;
     const n = Number(e.key);
     if (!reveal && n >= 1 && n <= count) answer(n - 1);
     else if (reveal && canNext && (e.key === 'Enter' || e.key === ' ')) {

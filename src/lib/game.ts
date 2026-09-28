@@ -68,8 +68,13 @@ export const RARE_GROUPS: Record<string, number> = { Tablets: 0.25 };
 
 const weightOf = (it: Item) => RARE_GROUPS[it.group] ?? 1;
 
+/** A known difficulty (its own key, so names like "toString" don't count). */
+export function isDifficulty(d: unknown): d is Difficulty {
+  return typeof d === 'string' && Object.hasOwn(DIFFICULTIES, d);
+}
+
 function rulesForKey(d: string | undefined): Difficulty {
-  return d && d in DIFFICULTIES ? (d as Difficulty) : 'cruel';
+  return isDifficulty(d) ? d : 'cruel';
 }
 
 /** The rules for the current question (deathmatch questions are one tier harder). */
@@ -79,7 +84,7 @@ export function activeRules(s: GameState): DifficultyRules {
 }
 
 export function rulesFor(difficulty: string | undefined): DifficultyRules {
-  return DIFFICULTIES[difficulty as Difficulty] ?? DIFFICULTIES.cruel;
+  return DIFFICULTIES[rulesForKey(difficulty)];
 }
 
 export interface Veil {
@@ -441,7 +446,7 @@ export class Engine {
         if (s.phase !== 'lobby' && s.phase !== 'over') throw new ActionError('Settings are locked during a game.');
         const { targetScore, timer, difficulty, mode } = action.settings;
         if (mode === 'turns' || mode === 'race') s.settings.mode = mode;
-        if (difficulty && difficulty in DIFFICULTIES) s.settings.difficulty = difficulty;
+        if (isDifficulty(difficulty)) s.settings.difficulty = difficulty;
         if (targetScore !== undefined) s.settings.targetScore = Math.max(1, Math.min(50, Math.round(targetScore)));
         if (timer !== undefined) s.settings.timer = Math.max(0, Math.min(120, Math.round(timer)));
         break;
@@ -509,7 +514,8 @@ export class Engine {
         break;
       }
       case 'next': {
-        if (s.phase !== 'reveal') throw new ActionError('Nothing to continue.');
+        // Two people pressing Next (or Next and the automatic move on) at once is expected.
+        if (s.phase !== 'reveal') throw new ActionError('Nothing to continue.', true);
         if (race) {
           if (!isHost) throw new ActionError('The host moves the race on.');
           this.advanceRace(s);
