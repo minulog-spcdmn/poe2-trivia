@@ -24,13 +24,10 @@ const ICON_GROUP: Record<string, string> = {
   'Amulets & Belts': 'Amulets',
   'Flasks, Jewels & Relics': 'Flasks',
 };
-// Gem icons are square tiles, so lineage gems get a drawn gem instead.
-const GEM_ICON =
-  'data:image/svg+xml,' +
-  encodeURIComponent(
-    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">' +
-      '<path d="M30 12h16l-8 24H10zM49 13h2l9 23H40zM54 12h16l20 24H62zM10 40h28l10 46zM41 40h18l-9 44zM62 40h28L52 86z"/></svg>',
-  );
+// Gem art comes as square tiles on cloth, so lineage gems use a cut-out of
+// Oisín's Oath (public/icons/, background removed with rembg and padded so
+// it sits a little smaller than the item art).
+const GEM_ICON = new URL(`${import.meta.env.BASE_URL}icons/lineage-gems.webp`, document.baseURI).href;
 const icons = new Map<string, string>();
 for (const cat of engine.categories) {
   const list = engine.byCategory.get(cat)!;
