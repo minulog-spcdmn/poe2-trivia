@@ -169,8 +169,8 @@
     border-color: var(--gold-lo);
   }
   .refresh svg {
-    width: 16px;
-    height: 16px;
+    width: 20px;
+    height: 20px;
     fill: none;
     stroke: currentColor;
     stroke-width: 2;
