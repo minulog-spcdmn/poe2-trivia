@@ -118,6 +118,11 @@ test('a skip meant for an earlier moment of the turn is ignored', () => {
   const skipped = engine.apply(s, { type: 'skip', turnCount: s.turnCount, phase: s.phase }, 'p0');
   assert.equal(skipped.phase, 'choosing');
   assert.notEqual(skipped.players[skipped.turn].id, active);
+  // They answer just as the host presses skip: quietly ignored, no error for the host.
+  const asked = { type: 'skip' as const, turnCount: s.turnCount, phase: s.phase };
+  s = engine.apply(s, { type: 'answer', index: 0, askedAt: s.question!.askedAt }, active);
+  assert.equal(s.phase, 'reveal');
+  assert.throws(() => engine.apply(s, asked, 'p0'), (e) => e instanceof ActionError && e.silent);
 });
 
 test('play again drops players who left, and the first turn goes to someone present', () => {

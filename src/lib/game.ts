@@ -540,9 +540,10 @@ export class Engine {
       }
       case 'skip': {
         if (!isHost) throw new ActionError('Only the host can skip a turn.');
-        if (s.phase !== 'choosing' && s.phase !== 'question') throw new ActionError('Nothing to skip.');
+        // First: a skip meant for a moment that has passed (they picked or answered) is quietly dropped.
         if ((action.turnCount !== undefined && action.turnCount !== s.turnCount) || (action.phase !== undefined && action.phase !== s.phase))
           throw new ActionError('They just moved on.', true);
+        if (s.phase !== 'choosing' && s.phase !== 'question') throw new ActionError('Nothing to skip.');
         if (race) this.advanceRace(s);
         else {
           if (s.deathmatch && s.players[s.turn]) s.deathmatch.results[s.players[s.turn].id] = false;

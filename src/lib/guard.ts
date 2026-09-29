@@ -11,12 +11,14 @@ import { RateLimit } from './protocol.ts';
  */
 export const MAX_FRAME_BYTES = 2048;
 
+/** What to do with a raw frame: pass it on, drop the connection (a flood), or block the peer (no real client sends it). */
+export type FrameVerdict = 'ok' | 'flood' | 'bad';
+
 /**
  * Budget for the raw frames a guest sends, checked before PeerJS decodes
- * them (the session hooks it in ahead of PeerJS). PeerJS reassembles chunked
- * messages on its own and never hands the pieces to us, so without this a
- * guest could make the host decode and buffer data without ever tripping
- * the message rate limit.
+ * them (see `hookFrames`). PeerJS reassembles chunked messages on its own and
+ * never hands the pieces to us, so without this a guest could make the host
+ * decode and buffer data without ever tripping the message rate limit.
  */
 export class FrameGuard {
   private frames: RateLimit;
@@ -28,12 +30,37 @@ export class FrameGuard {
     this.bytes = new RateLimit(1024, 16 * 1024, now);
   }
 
-  /** False when the connection should be dropped. */
-  accept(data: unknown): boolean {
+  check(data: unknown): FrameVerdict {
     const size =
       data instanceof ArrayBuffer || ArrayBuffer.isView(data) ? data.byteLength : typeof data === 'string' ? data.length : Infinity;
-    return size <= MAX_FRAME_BYTES && this.frames.take() && this.bytes.take(size);
+    if (size > MAX_FRAME_BYTES) return 'bad';
+    return this.frames.take() && this.bytes.take(size) ? 'ok' : 'flood';
   }
+}
+
+/** The (undocumented) methods of a PeerJS binary connection that `hookFrames` wraps. */
+interface Decoder {
+  _handleDataMessage?: (e: { data: unknown }) => void;
+  _handleChunk?: (data: unknown) => void;
+}
+
+/**
+ * Puts `check` in front of a PeerJS binary connection's decoding: its data
+ * channel listener calls `_handleDataMessage` for every frame, before
+ * unpacking it. Chunks of a split message go to `onChunk` instead of being
+ * buffered: real guests never send messages big enough to be split, so
+ * unfinished ones could only pile up. Returns false when this PeerJS doesn't
+ * have those methods (the caller must then fall back, and say so).
+ */
+export function hookFrames(conn: object, check: (data: unknown) => boolean, onChunk: () => void): boolean {
+  const c = conn as Decoder;
+  const decode = c._handleDataMessage;
+  if (typeof decode !== 'function' || typeof c._handleChunk !== 'function') return false;
+  c._handleDataMessage = (e) => {
+    if (check(e.data)) decode.call(conn, e);
+  };
+  c._handleChunk = () => onChunk();
+  return true;
 }
 
 /** Most tokens the join gate keeps a budget for; the oldest go first. */

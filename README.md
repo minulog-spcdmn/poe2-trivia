@@ -108,15 +108,18 @@ with that in mind. Guests, on the other hand, are treated as untrusted:
   are rate-limited to about 10 messages per second, and the raw data they
   send is capped in size and volume before it is decoded (so it can't be
   used to fill the host's memory). A connection that doesn't introduce itself
-  within a few seconds is disconnected. One that sends anything malformed or
-  floods the room is disconnected and refused for the rest of the session.
+  within a few seconds, or goes over those limits, is disconnected. One that
+  sends anything a real client never sends (a malformed message, or one big
+  enough to need splitting) is disconnected and refused for the rest of the
+  session.
 - **Connection and join limits.** The number of connections a room accepts is
   capped. A connection that doesn't introduce itself is dropped after a few
-  seconds, and one peer can't hold more than two of them at once. New people
-  can join a full lobby's worth at once, then one every few seconds (attempts
-  that are turned down, e.g. for a taken name, don't count). No one can
-  leave and rejoin in a loop, since every join is announced to the whole
-  room.
+  seconds, one peer can't hold more than two of them at once, and in a full
+  room the oldest of them makes way for a new one. New people can join a
+  full lobby's worth at once, then one every few seconds (attempts that are
+  turned down, e.g. for a taken name, don't count); anyone held back tries
+  again by themselves a few seconds later. No one can leave and rejoin in a
+  loop, since every join is announced to the whole room.
 - **Bots.** Answers that arrive faster than a human could react (less than
   about 200 ms after the art reached that player) are ignored.
 - **Race fairness.** The host's own answers are delayed by a typical guest's
