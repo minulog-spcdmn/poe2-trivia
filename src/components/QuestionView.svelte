@@ -117,11 +117,16 @@
 
 {#snippet who(index: number)}
   {@const ps = markers(index)}
+  <!-- A long stack would run over the answer: past five, four and a count. -->
+  {@const faces = ps.length > 5 ? ps.slice(0, 4) : ps}
   {#if ps.length}
     <span class="who-picked">
-      {#each ps as p (p.id)}
+      {#each faces as p (p.id)}
         <span in:scale={{ start: 0.3, duration: 300 }} title={p.name}><Avatar name={p.name} hue={p.hue} size={22} /></span>
       {/each}
+      {#if ps.length > faces.length}
+        <span class="more" title={ps.slice(faces.length).map((p) => p.name).join(', ')}>+{ps.length - faces.length}</span>
+      {/if}
     </span>
   {/if}
 {/snippet}
@@ -787,22 +792,35 @@
     height: 2px;
     background: rgba(255, 255, 255, 0.08);
   }
+  /* Race avatars: an overlapping stack, out of the flow so they never squeeze
+     or rewrap the answer as guesses come in and at the reveal. */
   .who-picked {
     display: inline-flex;
-    gap: 2px;
-    margin-left: auto;
   }
-  /* Race avatars sit on the row's top edge as overlapping badges: they come
-     and go mid-question and at the reveal, and must not squeeze the answer. */
+  .who-picked > span + span {
+    margin-left: -6px;
+  }
+  .more {
+    display: grid;
+    place-items: center;
+    min-width: 22px;
+    height: 22px;
+    padding: 1px 4px 0;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 0.68rem;
+    color: var(--gold-hi);
+    background: #1a130c;
+    border: 1px solid var(--gold-lo);
+    border-radius: 11px;
+    box-shadow: 0 0 0 2px #0c0a08;
+  }
+  /* Inside the row, just left of the ✓/✕. */
   .option .who-picked {
     position: absolute;
-    top: 0;
-    right: 0.7rem;
+    top: 50%;
+    right: 2.6rem;
     translate: 0 -50%;
-    gap: 0;
-  }
-  .option .who-picked > span + span {
-    margin-left: -6px;
   }
   .tile .who-picked {
     position: absolute;
@@ -891,8 +909,29 @@
     .option .mark {
       right: 0.7rem;
     }
+    /* Phones have no room beside the answer: the stack sits on the row's top
+       edge, smaller, with enough space between rows to keep it clear of the
+       answer above. */
+    .options,
+    .options.compact {
+      gap: 1.1rem;
+    }
     .option .who-picked {
+      top: 0;
       right: 0.5rem;
+    }
+    .who-picked :global(.avatar) {
+      width: 18px;
+      height: 18px;
+    }
+    .more {
+      min-width: 18px;
+      height: 18px;
+      padding: 1px 3px 0;
+      font-size: 0.6rem;
+    }
+    .who-picked > span + span {
+      margin-left: -5px;
     }
     .tiles,
     .tiles.six {
