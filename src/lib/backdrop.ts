@@ -393,6 +393,9 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   const paths = BLOBS.map(blobPath);
 
   const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
+  // On phones and tablets the backdrop-drawn shadows look worse than CSS's,
+  // so there every element keeps its CSS shadow and the backdrop draws none.
+  const cssShadows = matchMedia('(pointer: coarse)');
   const start = performance.now();
   let raf = 0;
   let last = -Infinity;
@@ -427,8 +430,15 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
 
   // Measures the shadowed elements; true if anything changed since last time.
   function measure() {
-    measureShadows(elA, elB, shGeo, shCol, canvas.clientWidth, canvas.clientHeight);
-    const atlases = measureDrops(mk.a, mk.b, mk.c, mk.d, mk.e, mk.off, mk.col, canvas.clientWidth, canvas.clientHeight);
+    let atlases: ReturnType<typeof measureDrops> = null;
+    if (cssShadows.matches) {
+      for (const arr of shadowArrays) arr.fill(0);
+      releaseAll();
+      releaseAllDrops();
+    } else {
+      measureShadows(elA, elB, shGeo, shCol, canvas.clientWidth, canvas.clientHeight);
+      atlases = measureDrops(mk.a, mk.b, mk.c, mk.d, mk.e, mk.off, mk.col, canvas.clientWidth, canvas.clientHeight);
+    }
     let changed = false;
     if (atlases) {
       gl!.activeTexture(gl!.TEXTURE0);
