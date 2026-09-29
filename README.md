@@ -1,4 +1,4 @@
-# Exile Trivia — PoE2 unique item quiz
+# PoE2.Quest • Unique Item Trivia
 
 **Play at [poe2.quest](https://poe2.quest/)** · made by zoe_arcana · [support the project](https://paypal.me/minuW)
 

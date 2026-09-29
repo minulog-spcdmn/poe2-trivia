@@ -81,9 +81,9 @@
         />
       {/each}
     </div>
-    <p class="kicker" in:fly={{ y: -10, duration: 600, delay: 100 }}>Path of Exile 2</p>
+    <p class="kicker" in:fly={{ y: -10, duration: 600, delay: 100 }}>Unique Item Trivia</p>
     <h1 use:backdropDropShadow in:fly={{ y: 20, duration: 800, delay: 200 }}>
-      <span class="line"></span>Exile Trivia<span class="line"></span>
+      <span class="line"></span>Poe2.Quest<span class="line"></span>
     </h1>
     <p class="tagline" in:fade={{ duration: 800, delay: 500 }}>
       Name the unique. {total} uniques and lineage gems. Can you tell them apart?
@@ -244,7 +244,8 @@
     align-items: center;
     gap: 1.2rem;
     justify-content: center;
-    font-size: clamp(2.6rem, 8vw, 5rem);
+    font-family: var(--font-title);
+    font-size: clamp(2.9rem, 9vw, 5.6rem);
     font-weight: 900;
     line-height: 1;
     letter-spacing: 0.06em;
@@ -294,7 +295,7 @@
     background: rgba(0, 0, 0, 0.25);
   }
   .mode h2 {
-    font-size: 0.95rem;
+    font-size: 1.06rem;
     color: var(--gold-hi);
     text-transform: uppercase;
     letter-spacing: 0.14em;
@@ -310,7 +311,7 @@
     margin-top: auto;
   }
   .code {
-    font-family: var(--font-display);
+    font-family: var(--font-cinzel);
     font-weight: 700;
     letter-spacing: 0.35em;
     text-align: center;

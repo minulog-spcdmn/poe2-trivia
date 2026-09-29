@@ -57,6 +57,10 @@
     return !!reveal && !!q.mirrored?.[index];
   }
 
+  /** Race reveal: who lost a point, the first few by name so the line stays short. */
+  const losers = $derived(q.misses.map((m) => s.players.find((p) => p.id === m.playerId)?.name ?? '?'));
+  const losersShort = $derived(losers.length > 3 ? `${losers.slice(0, 2).join(', ')} and ${losers.length - 2} more` : losers.join(', '));
+
   function optionName(index: number) {
     return q.labels[index] ?? (q.options[index] ? engine.byId.get(q.options[index])?.name : undefined) ?? '';
   }
@@ -117,11 +121,16 @@
 
 {#snippet who(index: number)}
   {@const ps = markers(index)}
+  <!-- A long stack would run over the answer: past five, four and a count. -->
+  {@const faces = ps.length > 5 ? ps.slice(0, 4) : ps}
   {#if ps.length}
     <span class="who-picked">
-      {#each ps as p (p.id)}
+      {#each faces as p (p.id)}
         <span in:scale={{ start: 0.3, duration: 300 }} title={p.name}><Avatar name={p.name} hue={p.hue} size={22} /></span>
       {/each}
+      {#if ps.length > faces.length}
+        <span class="more" title={ps.slice(faces.length).map((p) => p.name).join(', ')}>+{ps.length - faces.length}</span>
+      {/if}
     </span>
   {/if}
 {/snippet}
@@ -134,12 +143,12 @@
           {#if winner}
             <b class="good">+1</b> {winner.id === me ? 'You were' : `${winner.name} was`} fastest!
           {:else if reveal.timedOut}
-            Time's up — nobody got it.
+            Time's up; nobody got it.
           {:else}
             Nobody got it.
           {/if}
           {#if q.misses.length}
-            <span class="minus">−1 {q.misses.map((m) => s.players.find((p) => p.id === m.playerId)?.name).join(', ')}</span>
+            <span class="minus" title={losers.join(', ')}>−1 {losersShort}</span>
           {/if}
         {:else if reveal.correct}
           <b class="good">+1</b> for {active.name}!
@@ -163,7 +172,7 @@
   {:else if session.spectating}
     <p class="spectate muted">You're watching. You'll play in the next game.</p>
   {:else if race && myMiss}
-    <p class="spectate out">Wrong — −1. You're out until the next question.</p>
+    <p class="spectate out">Wrong: −1. You're out until the next question.</p>
   {:else if race}
     <p class="spectate muted">First correct answer wins. Wrong costs a point! Press 1–{count}.</p>
   {:else if !mine}
@@ -761,6 +770,8 @@
     gap: 1rem;
   }
   .result p {
+    flex: 1;
+    min-width: 0;
     margin: 0;
     font-size: 1.15rem;
   }
@@ -769,7 +780,10 @@
     color: var(--good);
     font-size: 1.4rem;
   }
+  /* However long the result, the button keeps its size. */
   .result .btn {
+    flex: none;
+    white-space: nowrap;
     overflow: hidden;
   }
   .auto,
@@ -789,27 +803,47 @@
     height: 2px;
     background: rgba(255, 255, 255, 0.08);
   }
+  /* Race avatars: an overlapping stack, out of the flow so they never squeeze
+     or rewrap the answer as guesses come in and at the reveal. */
   .who-picked {
     display: inline-flex;
-    gap: 2px;
-    margin-left: auto;
   }
-  /* Race avatars sit on the row's top edge as overlapping badges: they come
-     and go mid-question and at the reveal, and must not squeeze the answer. */
-  .option .who-picked {
-    position: absolute;
-    top: 0;
-    right: 0.7rem;
-    translate: 0 -50%;
-    gap: 0;
-  }
-  .option .who-picked > span + span {
+  .who-picked > span + span {
     margin-left: -6px;
   }
+  .more {
+    display: grid;
+    place-items: center;
+    min-width: 22px;
+    height: 22px;
+    padding: 1px 4px 0;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 0.68rem;
+    color: var(--gold-hi);
+    background: #1a130c;
+    border: 1px solid var(--gold-lo);
+    border-radius: 11px;
+    box-shadow: 0 0 0 2px #0c0a08;
+  }
+  /* Inside the row, just left of the ✓/✕. */
+  .option .who-picked {
+    position: absolute;
+    top: 50%;
+    right: 2.6rem;
+    translate: 0 -50%;
+  }
+  /* On a tile the stack hangs down from under the ✓/✕, clear of the name below the art. */
   .tile .who-picked {
     position: absolute;
-    bottom: 8px;
-    right: 8px;
+    top: 40px;
+    right: 9px;
+    flex-direction: column;
+    align-items: center;
+  }
+  .tile .who-picked > span + span {
+    margin-left: 0;
+    margin-top: -6px;
   }
   .minus {
     margin-left: 0.6em;
@@ -893,8 +927,36 @@
     .option .mark {
       right: 0.7rem;
     }
+    /* Phones have no room beside the answer: the stack sits on the row's top
+       edge, smaller, with enough space between rows to keep it clear of the
+       answer above. */
+    .options,
+    .options.compact {
+      gap: 1.1rem;
+    }
     .option .who-picked {
+      top: 0;
       right: 0.5rem;
+    }
+    .who-picked :global(.avatar) {
+      width: 18px;
+      height: 18px;
+    }
+    .more {
+      min-width: 18px;
+      height: 18px;
+      padding: 1px 3px 0;
+      font-size: 0.6rem;
+    }
+    .who-picked > span + span {
+      margin-left: -5px;
+    }
+    .tile .who-picked {
+      right: 11px;
+    }
+    .tile .who-picked > span + span {
+      margin-left: 0;
+      margin-top: -5px;
     }
     .tiles,
     .tiles.six {
