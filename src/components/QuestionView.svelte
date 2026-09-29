@@ -572,7 +572,7 @@
     flex: none;
     width: 28px;
     height: 28px;
-    /* The display font's line box sits its digits a pixel high; nudge them to the optical centre. */
+    /* Cinzel's line box sits its digits a pixel high; nudge them to the optical centre. */
     padding-top: 2px;
     display: grid;
     place-items: center;

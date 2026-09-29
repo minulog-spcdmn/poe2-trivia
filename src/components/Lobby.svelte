@@ -50,7 +50,7 @@
   async function copy() {
     try {
       if (navigator.share && matchMedia('(pointer: coarse)').matches) {
-        await navigator.share({ title: 'Exile Trivia', text: `Join my PoE2 trivia room ${session.code}`, url: inviteLink });
+        await navigator.share({ title: 'POE2.QUEST', text: `Join my PoE2 trivia room ${session.code}`, url: inviteLink });
       } else {
         await navigator.clipboard.writeText(inviteLink);
         copied = true;

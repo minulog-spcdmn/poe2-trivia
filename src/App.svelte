@@ -46,7 +46,7 @@
     <header in:fade={{ duration: 300 }}>
       <button class="brand" onclick={() => (confirmLeave = true)} title="Leave game">
         <span class="brand-mark">◆</span>
-        <span>Exile Trivia</span>
+        <span>POE2.QUEST</span>
       </button>
       <div class="meta">
         {#if gs && screen === 'game'}
