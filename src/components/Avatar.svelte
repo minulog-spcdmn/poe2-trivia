@@ -5,7 +5,7 @@
   const initial = $derived(name.trim().charAt(0).toUpperCase() || '?');
   // A's thin apex and wide base make it look low when its cap height is
   // centered, so lift it slightly.
-  const dy = $derived(initial === 'A' ? '0.32em' : '0.35em');
+  const dy = $derived(initial === 'A' ? '0.31em' : '0.35em');
 </script>
 
 <span class="avatar" class:dim style:--c={playerColor(hue)} style:--s="{size}px"
