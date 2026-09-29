@@ -83,7 +83,7 @@
     </div>
     <p class="kicker" in:fly={{ y: -10, duration: 600, delay: 100 }}>Unique Item Trivia</p>
     <h1 use:backdropDropShadow in:fly={{ y: 20, duration: 800, delay: 200 }}>
-      <span class="line"></span>Poe2.Quest<span class="line"></span>
+      <span class="line"></span>PoE2.Quest<span class="line"></span>
     </h1>
     <p class="tagline" in:fade={{ duration: 800, delay: 500 }}>
       Name the unique. {total} uniques and lineage gems. Can you tell them apart?

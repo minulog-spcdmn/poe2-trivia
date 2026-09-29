@@ -46,7 +46,7 @@
     <header in:fade={{ duration: 300 }}>
       <button class="brand" onclick={() => (confirmLeave = true)} title="Leave game">
         <svg class="brand-mark" viewBox="20 0 400 391" aria-hidden="true"><path d="M224 390Q255 331 301.0 283.5Q347 236 377 218L407 200L220 -1Q164 31 116.5 82.5Q69 134 50 169L31 204Z" fill="currentColor" /></svg>
-        <span>Poe2.Quest</span>
+        <span>PoE2.Quest</span>
       </button>
       <div class="meta">
         {#if gs && screen === 'game'}
