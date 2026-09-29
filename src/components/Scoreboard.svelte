@@ -3,6 +3,7 @@
   import { session } from '../lib/session.svelte';
   import { playerColor } from '../lib/ui';
   import Avatar from './Avatar.svelte';
+  import { backdropShadow } from '../lib/backdropShadow';
 
   const s = $derived(session.state!);
   const target = $derived(s.settings.targetScore);
@@ -32,7 +33,7 @@
     {@const out = race && s.phase !== 'over' && missed.has(p.id)}
     {@const benched = !!s.deathmatch && s.phase !== 'over' && !s.deathmatch.alive.includes(p.id)}
     {@const duelist = !!s.deathmatch && s.phase !== 'over' && s.deathmatch.alive.includes(p.id)}
-    <li class:active class:out class:benched class:duelist class:offline={!p.connected} animate:flip={{ duration: 400 }} style:--c={playerColor(p.hue)}>
+    <li use:backdropShadow class:active class:out class:benched class:duelist class:offline={!p.connected} animate:flip={{ duration: 400 }} style:--c={playerColor(p.hue)}>
       <Avatar name={p.name} hue={p.hue} size={32} dim={!p.connected} />
       <div class="info">
         <span class="name">
@@ -84,7 +85,7 @@
   .board {
     list-style: none;
     margin: 0;
-    padding: 0.2rem 0.2rem 0.6rem;
+    padding: 1rem 0.2rem 0.6rem;
     display: flex;
     gap: 0.6rem;
     justify-content: center;
@@ -100,17 +101,21 @@
     background: rgba(12, 10, 8, 0.75);
     border: 1px solid var(--line);
     border-radius: 999px;
+    --bs1: 0px 22px;
+    box-shadow:
+      0 0 0 1px var(--bs-ring),
+      var(--bs-soft-paint, 0 var(--bs1, 0 0) var(--bs1-color, transparent), 0 var(--bs2, 0 0) var(--bs2-color, transparent));
     transition:
       border-color 0.35s,
-      box-shadow 0.35s,
+      --bs-ring 0.35s,
+      --bs1-color 0.35s,
       transform 0.35s var(--ease-out),
       opacity 0.35s;
   }
   li.active {
     border-color: var(--c);
-    box-shadow:
-      0 0 0 1px color-mix(in srgb, var(--c), transparent 60%),
-      0 0 22px color-mix(in srgb, var(--c), transparent 70%);
+    --bs-ring: color-mix(in srgb, var(--c), transparent 60%);
+    --bs1-color: color-mix(in srgb, var(--c), transparent 70%);
     transform: translateY(-2px) scale(1.04);
   }
   li.active::after {

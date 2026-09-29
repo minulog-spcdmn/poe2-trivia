@@ -8,6 +8,7 @@
 // WebGL is unavailable.
 
 import { MAX_ELEMENTS, SHADOWS_PER_ELEMENT, measureShadows, releaseAll } from './backdropShadow';
+import { DROPS_PER_MASK, MAX_MASKS, measureDrops, releaseAllDrops } from './backdropDropShadow';
 
 const VERT = `
 attribute vec2 aPos;
@@ -41,6 +42,19 @@ uniform vec4 uElA[${MAX_ELEMENTS}];
 uniform vec4 uElB[${MAX_ELEMENTS}];
 uniform vec4 uShGeo[${MAX_ELEMENTS * SHADOWS_PER_ELEMENT}];
 uniform vec4 uShCol[${MAX_ELEMENTS * SHADOWS_PER_ELEMENT}];
+
+// Drop shadows of UI elements (see backdropDropShadow.ts for the layout).
+uniform vec4 uMkA[${MAX_MASKS}];
+uniform vec4 uMkB[${MAX_MASKS}];
+uniform vec4 uMkC[${MAX_MASKS}];
+uniform vec4 uMkD[${MAX_MASKS}];
+uniform vec4 uMkE[${MAX_MASKS}];
+uniform vec4 uMkOff[${MAX_MASKS}];
+uniform vec4 uMkCol[${MAX_MASKS * DROPS_PER_MASK}];
+uniform sampler2D uSharp; // content alpha
+uniform sampler2D uBlur;  // blurred alpha, 16-bit in R+G and B+A
+uniform vec2 uSharpSize;
+uniform vec2 uBlurSize;
 
 vec3 rgb(float r, float g, float b) { return vec3(r, g, b) / 255.0; }
 
@@ -146,16 +160,42 @@ void main() {
   d = length((p - vec2(0.5 * W, 0.5 * H)) / (vec2(0.5 * W, 0.5 * H) * 1.4142136 * uVignette.x));
   col *= 1.0 - min(0.9, uVignette.y * 0.72 * pow(d, 2.4));
 
+  // UI drop shadows. The element paints over its own shadow, so where it is
+  // opaque the shadow is hidden anyway; drawing it only where the content is
+  // transparent keeps a see-through element (like the faint showcase items)
+  // from darkening what shows through it.
+  for (int i = 0; i < ${MAX_MASKS}; i++) {
+    vec4 mc = uMkC[i];
+    if (mc.z <= 0.0) continue;
+    vec4 ma = uMkA[i];
+    vec4 mb = uMkB[i];
+    vec2 r = p - ma.xy;
+    vec2 lp = vec2(mb.x * r.x + mb.z * r.y, mb.y * r.x + mb.w * r.y) + ma.zw * 0.5;
+    vec2 m = lp - mc.xy; // position inside the mask region
+    if (m.x < 0.0 || m.y < 0.0 || m.x > mc.z || m.y > mc.w) continue;
+    vec4 md = uMkD[i];
+    float q = uMkE[i].x;
+    float content = texture2D(uSharp, (md.xy + m) / uSharpSize).a;
+    vec4 off = uMkOff[i];
+    vec4 t1 = texture2D(uBlur, (md.zw + (m - off.xy) * q) / uBlurSize);
+    vec4 t2 = texture2D(uBlur, (md.zw + (m - off.zw) * q) / uBlurSize);
+    vec4 c1 = uMkCol[i * ${DROPS_PER_MASK}];
+    vec4 c2 = uMkCol[i * ${DROPS_PER_MASK} + 1];
+    // CSS paints the last shadow in the list first.
+    col = mix(col, c2.rgb, c2.a * (t2.b + t2.a / 255.0) * (1.0 - content));
+    col = mix(col, c1.rgb, c1.a * (t1.r + t1.g / 255.0) * (1.0 - content));
+  }
+
   // UI shadows, painted over the backdrop like the CSS they replace, and only
-  // outside each element's border box (widened by the crisp rings CSS keeps).
+  // outside each element's border box, as CSS does.
   float pxLocal = uSize.x / uRes.x; // CSS px per device px
   for (int i = 0; i < ${MAX_ELEMENTS}; i++) {
     vec4 ea = uElA[i];
     vec4 eb = uElB[i];
     if (eb.w < 0.5) continue;
     vec2 lp = (p - ea.xy) * ea.z; // element px from its border-box corner
-    vec2 halfBox = eb.xy * 0.5 + ea.w;
-    float rr = min(eb.z + ea.w, min(halfBox.x, halfBox.y));
+    vec2 halfBox = eb.xy * 0.5;
+    float rr = min(eb.z, min(halfBox.x, halfBox.y));
     vec2 qd = abs(lp - eb.xy * 0.5) - halfBox + rr;
     float sdf = length(max(qd, 0.0)) + min(max(qd.x, qd.y), 0.0) - rr;
     float outside = clamp(sdf / (pxLocal * ea.z) + 0.5, 0.0, 1.0);
@@ -264,9 +304,9 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   if (!gl) return null;
   const hp = gl.getShaderPrecisionFormat(gl.FRAGMENT_SHADER, gl.HIGH_FLOAT);
   if (!hp || hp.precision === 0) return null;
-  // The shader's uniform arrays need about 80 vectors; every real device has
-  // far more, but WebGL only guarantees 16.
-  if (gl.getParameter(gl.MAX_FRAGMENT_UNIFORM_VECTORS) < 128) return null;
+  // The shader's uniform arrays need about 150 vectors; real devices have
+  // 221 or more, but WebGL only guarantees 16.
+  if (gl.getParameter(gl.MAX_FRAGMENT_UNIFORM_VECTORS) < 200) return null;
 
   const compile = (type: number, src: string) => {
     const s = gl.createShader(type)!;
@@ -309,7 +349,41 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   const elB = new Float32Array(MAX_ELEMENTS * 4);
   const shGeo = new Float32Array(MAX_ELEMENTS * SHADOWS_PER_ELEMENT * 4);
   const shCol = new Float32Array(MAX_ELEMENTS * SHADOWS_PER_ELEMENT * 4);
-  const prev = new Float32Array(elA.length + elB.length + shGeo.length + shCol.length);
+  const mk = {
+    a: new Float32Array(MAX_MASKS * 4),
+    b: new Float32Array(MAX_MASKS * 4),
+    c: new Float32Array(MAX_MASKS * 4),
+    d: new Float32Array(MAX_MASKS * 4),
+    e: new Float32Array(MAX_MASKS * 4),
+    off: new Float32Array(MAX_MASKS * 4),
+    col: new Float32Array(MAX_MASKS * DROPS_PER_MASK * 4),
+  };
+  const mkLoc = Object.fromEntries(
+    ['A', 'B', 'C', 'D', 'E', 'Off', 'Col'].map((k) => [k.toLowerCase(), gl.getUniformLocation(prog, 'uMk' + k)]),
+  );
+  const shadowArrays = [elA, elB, shGeo, shCol, ...Object.values(mk)];
+  const prev = new Float32Array(shadowArrays.reduce((n, arr) => n + arr.length, 0));
+
+  // Drop-shadow atlases: unit 0 holds content alpha, unit 1 the blurred alpha.
+  const texture = (unit: number, filter: number) => {
+    const t = gl.createTexture();
+    gl.activeTexture(gl.TEXTURE0 + unit);
+    gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
+    return t;
+  };
+  const sharpTex = texture(0, gl.LINEAR);
+  const blurTex = texture(1, gl.LINEAR);
+  gl.uniform1i(gl.getUniformLocation(prog, 'uSharp'), 0);
+  gl.uniform1i(gl.getUniformLocation(prog, 'uBlur'), 1);
+  const uSharpSize = gl.getUniformLocation(prog, 'uSharpSize');
+  const uBlurSize = gl.getUniformLocation(prog, 'uBlurSize');
+  gl.uniform2f(uSharpSize, 1, 1);
+  gl.uniform2f(uBlurSize, 1, 1);
 
   gl.uniform3fv(gl.getUniformLocation(prog, 'uBlobB'), BLOBS.flatMap((b) => b.reach));
   gl.uniform3fv(
@@ -347,15 +421,28 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     gl!.uniform4fv(uElB, elB);
     gl!.uniform4fv(uShGeo, shGeo);
     gl!.uniform4fv(uShCol, shCol);
+    for (const [k, arr] of Object.entries(mk)) gl!.uniform4fv(mkLoc[k], arr);
     gl!.drawArrays(gl!.TRIANGLES, 0, 3);
   }
 
   // Measures the shadowed elements; true if anything changed since last time.
   function measure() {
     measureShadows(elA, elB, shGeo, shCol, canvas.clientWidth, canvas.clientHeight);
+    const atlases = measureDrops(mk.a, mk.b, mk.c, mk.d, mk.e, mk.off, mk.col, canvas.clientWidth, canvas.clientHeight);
     let changed = false;
+    if (atlases) {
+      gl!.activeTexture(gl!.TEXTURE0);
+      gl!.bindTexture(gl!.TEXTURE_2D, sharpTex);
+      gl!.texImage2D(gl!.TEXTURE_2D, 0, gl!.RGBA, gl!.RGBA, gl!.UNSIGNED_BYTE, atlases.sharp);
+      gl!.uniform2f(uSharpSize, atlases.sharp.width, atlases.sharp.height);
+      gl!.activeTexture(gl!.TEXTURE1);
+      gl!.bindTexture(gl!.TEXTURE_2D, blurTex);
+      gl!.texImage2D(gl!.TEXTURE_2D, 0, gl!.RGBA, atlases.blurW, atlases.blurH, 0, gl!.RGBA, gl!.UNSIGNED_BYTE, atlases.blur);
+      gl!.uniform2f(uBlurSize, atlases.blurW, atlases.blurH);
+      changed = true;
+    }
     let k = 0;
-    for (const arr of [elA, elB, shGeo, shCol]) {
+    for (const arr of shadowArrays) {
       for (let i = 0; i < arr.length; i++, k++) {
         if (prev[k] !== arr[i]) {
           prev[k] = arr[i];
@@ -411,6 +498,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     canvas.removeEventListener('webglcontextlost', lost);
     reduceMotion.removeEventListener('change', onMotionChange);
     releaseAll();
+    releaseAllDrops();
   }
 
   // A lost context stays lost: we don't call preventDefault(), so the browser

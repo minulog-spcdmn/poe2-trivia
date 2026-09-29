@@ -7,6 +7,7 @@
   import TimerRing from './TimerRing.svelte';
   import Avatar from './Avatar.svelte';
   import ArtImage from './ArtImage.svelte';
+  import { backdropShadow } from '../lib/backdropShadow';
 
   const s = $derived(session.state!);
   const q = $derived(s.question!);
@@ -183,7 +184,7 @@
 
   {#if q.mode === 'art'}
     <!-- Name given, pick the matching art. -->
-    <div class="tooltip wide" class:good={reveal && iWon} class:bad={reveal && !iWon}>
+    <div class="tooltip wide" use:backdropShadow class:good={reveal && iWon} class:bad={reveal && !iWon}>
       <div class="head">
         <div class="head-text">
           <span class="iname">{q.prompt}</span>
@@ -228,7 +229,7 @@
     </div>
   {:else}
     <div class="stage">
-      <div class="tooltip" class:good={reveal && iWon} class:bad={reveal && !iWon}>
+      <div class="tooltip" use:backdropShadow class:good={reveal && iWon} class:bad={reveal && !iWon}>
         <div class="head">
           {#if reveal && item}
             <div class="head-text" in:fly={{ y: 10, duration: 450 }}>
@@ -346,24 +347,25 @@
     flex-direction: column;
     border: 1px solid #5a3a1c;
     background: rgba(5, 4, 3, 0.92);
+    /* --bs1 carries the right/wrong glow, --bs2 the drop shadow. */
+    --bs1-color: transparent;
+    --bs1: 0px 50px;
+    --bs2: 20px 60px;
+    --bs2-color: rgba(0, 0, 0, 0.7);
     box-shadow:
-      0 20px 60px rgba(0, 0, 0, 0.7),
-      0 0 0 1px #000;
+      0 0 0 1px #000,
+      var(--bs-soft-paint, 0 var(--bs1, 0 0) var(--bs1-color, transparent), 0 var(--bs2, 0 0) var(--bs2-color, transparent));
     transition:
-      box-shadow 0.6s,
+      --bs1-color 0.6s,
       border-color 0.6s;
   }
   .tooltip.good {
     border-color: #4f8c4f;
-    box-shadow:
-      0 0 50px rgba(111, 207, 115, 0.25),
-      0 20px 60px rgba(0, 0, 0, 0.7);
+    --bs1-color: rgba(111, 207, 115, 0.25);
   }
   .tooltip.bad {
     border-color: #8c3a2c;
-    box-shadow:
-      0 0 50px rgba(224, 85, 63, 0.18),
-      0 20px 60px rgba(0, 0, 0, 0.7);
+    --bs1-color: rgba(224, 85, 63, 0.18);
   }
   .head {
     position: relative;

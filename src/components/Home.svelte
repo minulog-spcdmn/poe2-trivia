@@ -7,6 +7,7 @@
   import OpenRooms from './OpenRooms.svelte';
   import { CREATOR, DONATE_URL, IMPRINT_URL, PRIVACY_URL } from '../lib/site';
   import { backdropShadow } from '../lib/backdropShadow';
+  import { backdropDropShadow } from '../lib/backdropDropShadow';
 
   const params = new URLSearchParams(location.search);
   const invite = (params.get('room') ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, CODE_LENGTH);
@@ -75,6 +76,7 @@
     <div class="showcase" aria-hidden="true">
       {#each showcase as it, i (it.id)}
         <img
+          use:backdropDropShadow
           src={itemImage(it.id)}
           alt=""
           style:--i={i}
@@ -84,7 +86,7 @@
       {/each}
     </div>
     <p class="kicker" in:fly={{ y: -10, duration: 600, delay: 100 }}>Path of Exile 2</p>
-    <h1 in:fly={{ y: 20, duration: 800, delay: 200 }}>
+    <h1 use:backdropDropShadow in:fly={{ y: 20, duration: 800, delay: 200 }}>
       <span class="line"></span>Exile Trivia<span class="line"></span>
     </h1>
     <p class="tagline" in:fade={{ duration: 800, delay: 500 }}>
@@ -210,7 +212,9 @@
     left: -55px;
     top: -75px;
     opacity: 0;
-    filter: blur(1px) saturate(0.7) drop-shadow(0 0 20px rgba(0, 0, 0, 0.9));
+    /* Drawn by the WebGL backdrop when it can (see lib/backdropDropShadow.ts). */
+    --drop-shadow: drop-shadow(0 0 20px rgba(0, 0, 0, 0.9));
+    filter: blur(0.1px) saturate(0.7) var(--drop-shadow-paint, var(--drop-shadow));
     transform: translate(var(--x), 0) rotate(var(--r));
     animation:
       appear 1.4s var(--ease-out) forwards,
@@ -252,7 +256,9 @@
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;
-    filter: drop-shadow(0 4px 18px rgba(0, 0, 0, 0.9)) drop-shadow(0 0 30px rgba(201, 164, 92, 0.25));
+    /* Drawn by the WebGL backdrop when it can (see lib/backdropDropShadow.ts). */
+    --drop-shadow: drop-shadow(0 4px 18px rgba(0, 0, 0, 0.9)) drop-shadow(0 0 30px rgba(201, 164, 92, 0.25));
+    filter: var(--drop-shadow-paint, var(--drop-shadow));
   }
   .line {
     display: block;
