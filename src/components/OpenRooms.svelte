@@ -154,7 +154,7 @@
     margin-bottom: 0.7rem;
   }
   h2 {
-    font-size: 0.9rem;
+    font-size: 1rem;
     text-transform: uppercase;
     letter-spacing: 0.16em;
     color: var(--gold-hi);

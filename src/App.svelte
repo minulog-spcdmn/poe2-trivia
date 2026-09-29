@@ -46,7 +46,7 @@
     <header in:fade={{ duration: 300 }}>
       <button class="brand" onclick={() => (confirmLeave = true)} title="Leave game">
         <span class="brand-mark">◆</span>
-        <span>POE2.QUEST</span>
+        <span>Poe2.Quest</span>
       </button>
       <div class="meta">
         {#if gs && screen === 'game'}
@@ -195,7 +195,6 @@
     font-family: var(--font-display);
     font-weight: 900;
     letter-spacing: 0.14em;
-    text-transform: uppercase;
     font-size: 0.9rem;
     color: var(--gold);
     padding: 0.25rem 0;

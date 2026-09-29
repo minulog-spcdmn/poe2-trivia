@@ -50,7 +50,7 @@
   async function copy() {
     try {
       if (navigator.share && matchMedia('(pointer: coarse)').matches) {
-        await navigator.share({ title: 'POE2.QUEST', text: `Join my PoE2 trivia room ${session.code}`, url: inviteLink });
+        await navigator.share({ title: 'Poe2.Quest', text: `Join my PoE2 trivia room ${session.code}`, url: inviteLink });
       } else {
         await navigator.clipboard.writeText(inviteLink);
         copied = true;
@@ -472,7 +472,7 @@
     border-bottom: 1px solid var(--line);
   }
   .panel h2 {
-    font-size: 1rem;
+    font-size: 1.12rem;
     text-transform: uppercase;
     letter-spacing: 0.18em;
     color: var(--gold-hi);

@@ -172,7 +172,7 @@
     margin: 0.6rem 0 1.1rem;
   }
   .banner h2 {
-    font-size: clamp(1.5rem, 4.5vw, 2.4rem);
+    font-size: clamp(1.7rem, 5vw, 2.7rem);
     font-weight: 900;
     color: var(--gold-hi);
     text-shadow:
@@ -292,7 +292,7 @@
     color: #ff9c86;
   }
   .dm-intro h1 {
-    font-size: clamp(2.8rem, 12vw, 6rem);
+    font-size: clamp(3.1rem, 13.5vw, 6.7rem);
     font-weight: 900;
     letter-spacing: 0.08em;
     background: linear-gradient(180deg, #ffe0d4 10%, #ff6a45 55%, #7a1408 95%);

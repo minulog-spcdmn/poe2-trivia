@@ -87,7 +87,7 @@
     </div>
     <p class="kicker" in:fly={{ y: -10, duration: 600, delay: 100 }}>Unique Item Trivia</p>
     <h1 use:backdropDropShadow in:fly={{ y: 20, duration: 800, delay: 200 }}>
-      <span class="line"></span>POE2.QUEST<span class="line"></span>
+      <span class="line"></span>Poe2.Quest<span class="line"></span>
     </h1>
     <p class="tagline" in:fade={{ duration: 800, delay: 500 }}>
       Name the unique. {total} uniques and lineage gems. Can you tell them apart?
@@ -249,7 +249,7 @@
     gap: 1.2rem;
     justify-content: center;
     font-family: var(--font-title);
-    font-size: clamp(2.6rem, 8vw, 5rem);
+    font-size: clamp(2.9rem, 9vw, 5.6rem);
     font-weight: 900;
     line-height: 1;
     letter-spacing: 0.06em;
@@ -299,7 +299,7 @@
     background: rgba(0, 0, 0, 0.25);
   }
   .mode h2 {
-    font-size: 0.95rem;
+    font-size: 1.06rem;
     color: var(--gold-hi);
     text-transform: uppercase;
     letter-spacing: 0.14em;

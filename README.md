@@ -1,4 +1,4 @@
-# POE2.QUEST • PoE2 unique item quiz
+# Poe2.Quest • PoE2 unique item quiz
 
 **Play at [poe2.quest](https://poe2.quest/)** · made by zoe_arcana · [support the project](https://paypal.me/minuW)
 
