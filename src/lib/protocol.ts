@@ -127,23 +127,27 @@ export function parseHostMsg(raw: unknown): HostMsg | null {
 /** Per-connection message budget: short bursts are fine, floods are not. */
 export class RateLimit {
   private tokens: number;
-  private last = Date.now();
+  private last: number;
   private perSecond: number;
   private burst: number;
+  private now: () => number;
   strikes = 0;
 
-  constructor(perSecond = 10, burst = 20) {
+  constructor(perSecond = 10, burst = 20, now: () => number = Date.now) {
     this.perSecond = perSecond;
     this.burst = burst;
     this.tokens = burst;
+    this.now = now;
+    this.last = now();
   }
 
-  take(): boolean {
-    const now = Date.now();
+  /** Spends `cost` tokens (e.g. bytes), or counts a strike when there aren't enough. */
+  take(cost = 1): boolean {
+    const now = this.now();
     this.tokens = Math.min(this.burst, this.tokens + ((now - this.last) / 1000) * this.perSecond);
     this.last = now;
-    if (this.tokens >= 1) {
-      this.tokens -= 1;
+    if (this.tokens >= cost) {
+      this.tokens -= cost;
       return true;
     }
     this.strikes++;

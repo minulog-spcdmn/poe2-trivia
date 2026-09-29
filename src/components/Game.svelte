@@ -16,10 +16,11 @@
 
   const race = $derived(s.settings.mode === 'race');
 
-  // Countdown to the automatic skip of a disconnected player's turn.
+  // Countdown to the automatic skip of a disconnected player's turn, and to
+  // when an idle player's turn may be skipped.
   let now = $state(Date.now());
   $effect(() => {
-    if (!session.skipAt) return;
+    if (!session.skipAt && !session.idleAt) return;
     now = Date.now();
     const id = setInterval(() => (now = Date.now()), 500);
     return () => clearInterval(id);
@@ -103,6 +104,11 @@
         {#if session.isHost && !local && !race && !active.connected && s.phase !== 'reveal'}
           <div class="skip" transition:fade>
             <span class="muted">{active.name} is disconnected{skipIn ? ` — skipping in ${skipIn}s` : ''}.</span>
+            <button class="btn small" onclick={() => session.dispatch({ type: 'skip' })}>Skip their turn</button>
+          </div>
+        {:else if session.idleAt && now >= session.idleAt && s.phase !== 'reveal'}
+          <div class="skip" transition:fade>
+            <span class="muted">{active.name} hasn't {s.phase === 'choosing' ? 'picked a category' : 'answered'} in a while.</span>
             <button class="btn small" onclick={() => session.dispatch({ type: 'skip' })}>Skip their turn</button>
           </div>
         {/if}

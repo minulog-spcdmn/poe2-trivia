@@ -1,0 +1,89 @@
+// Host-side limits on what guests can make the host do, and the per-room
+// secret guests identify themselves with. Kept free of PeerJS and Svelte so
+// it can be tested on its own.
+
+import { RateLimit } from './protocol.ts';
+
+/**
+ * Largest data-channel frame a guest may send. A real client's biggest
+ * message (hello with a long name) is well under 1 KB; PeerJS splits anything
+ * over ~16 KB into chunks, which a real guest never needs.
+ */
+export const MAX_FRAME_BYTES = 2048;
+
+/**
+ * Budget for the raw frames a guest sends, checked before PeerJS decodes
+ * them. PeerJS reassembles chunked messages on its own and never hands the
+ * pieces to us, so without this a guest could make the host buffer data
+ * without ever tripping the message rate limit.
+ */
+export class FrameGuard {
+  private frames: RateLimit;
+  private bytes: RateLimit;
+
+  constructor(now: () => number = Date.now) {
+    // Looser than the message limit (10/s), so only abuse ever hits it.
+    this.frames = new RateLimit(20, 40, now);
+    this.bytes = new RateLimit(1024, 16 * 1024, now);
+  }
+
+  /** False when the connection should be dropped. */
+  accept(data: unknown): boolean {
+    const size =
+      data instanceof ArrayBuffer || ArrayBuffer.isView(data) ? data.byteLength : typeof data === 'string' ? data.length : Infinity;
+    return size <= MAX_FRAME_BYTES && this.frames.take() && this.bytes.take(size);
+  }
+}
+
+/**
+ * How often people may join. Newcomers share one budget for the room (enough
+ * for a full lobby at once, then one every few seconds) so a script can't
+ * flood the room with fresh identities faster than the host can kick them;
+ * everyone also has their own budget, so no one can leave and rejoin in a
+ * loop (every join is announced to the whole room).
+ */
+export class JoinGate {
+  private newcomers: RateLimit;
+  private each = new Map<string, RateLimit>();
+  private now: () => number;
+
+  constructor(now: () => number = Date.now) {
+    this.now = now;
+    this.newcomers = new RateLimit(1 / 4, 12, now);
+  }
+
+  /** Null if `secret` may join now, otherwise why not. */
+  admit(secret: string, known: boolean): string | null {
+    if (this.each.size > 500) this.each.clear();
+    let own = this.each.get(secret);
+    if (!own) this.each.set(secret, (own = new RateLimit(1 / 10, 6, this.now)));
+    if (!own.take()) return 'You reconnected too often. Wait a few seconds, then try again.';
+    if (!known && !this.newcomers.take()) return 'Lots of people are joining right now. Try again in a few seconds.';
+    return null;
+  }
+}
+
+/** Keeps the newest `max` entries. */
+export function capped<T>(list: T[], max: number): T[] {
+  return list.length > max ? list.slice(list.length - max) : list;
+}
+
+const base64url = (bytes: Uint8Array) =>
+  btoa(String.fromCharCode(...bytes))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+
+/**
+ * The token a browser shows the host of room `code`: an HMAC of its own
+ * secret and the room code. Each host only learns a token for its own room,
+ * so no host can take over someone's seat in another room. Throws where
+ * WebCrypto is missing (plain http).
+ */
+export async function roomSecret(secret: string, code: string): Promise<string> {
+  const subtle = globalThis.crypto?.subtle;
+  if (!subtle) throw new Error('WebCrypto is not available');
+  const enc = new TextEncoder();
+  const key = await subtle.importKey('raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  return base64url(new Uint8Array(await subtle.sign('HMAC', key, enc.encode(`room:${code}`))));
+}

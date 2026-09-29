@@ -4,8 +4,8 @@
 // Trust model: the host runs the game and is trusted by definition (it has the
 // answers). Guests are not: they only receive a redacted copy of the state,
 // get question art as altered image bytes, identify themselves with a secret
-// token that never leaves their device, and everything they send is checked
-// and rate limited.
+// token that only this room's host ever sees (a different one per room), and
+// everything they send is checked and rate limited, down to the raw frames.
 
 import Peer, { type DataConnection } from 'peerjs';
 import itemData from '../data/items.json';
@@ -26,6 +26,8 @@ import {
 import { PEER_OPTIONS, PEER_PREFIX } from './peer';
 import { Beacon, type RoomInfo } from './rooms';
 import { parseClientMsg, parseHostMsg, PROTOCOL_VERSION, RateLimit, type HostMsg, type MediaMsg } from './protocol';
+import { capped, FrameGuard, JoinGate, roomSecret } from './guard';
+import { cleanName, nameSkeleton } from './names';
 import { prepareMedia, shown, tileDelay, type PreparedMedia } from './media.svelte';
 import { sfx } from './sound';
 
@@ -38,6 +40,11 @@ const AUTO_NEXT_MS = 5000;
 
 /** Players and spectators, plus a few spare for people joining or reconnecting. */
 const MAX_CONNECTIONS = MAX_PLAYERS + MAX_SPECTATORS + 4;
+/** Connections that haven't introduced themselves yet; past this the oldest is dropped. */
+const MAX_PENDING = 6;
+/** Most remembered player tokens, and blocked tokens/peers/names (they're saved with the room). */
+const MAX_KNOWN = 400;
+const MAX_BLOCKED = 200;
 /** A connection must introduce itself within this time. */
 const HELLO_TIMEOUT_MS = 6000;
 const PING_EVERY_MS = 3000;
@@ -51,6 +58,8 @@ const MIN_HUMAN_MS = 200;
 const MAX_HOST_HANDICAP_MS = 300;
 /** A disconnected player's turn is skipped after this long, unless they come back. */
 const AUTO_SKIP_MS = 20000;
+/** Host may skip a connected player's turn once they've been idle this long (turns mode). */
+const IDLE_SKIP_MS = 30000;
 /** Art not ready by then counts as failed, so the host can ask another question. */
 const MEDIA_TIMEOUT_MS = 15000;
 
@@ -115,6 +124,8 @@ interface Guest {
   mediaAt: { qid: number; at: number } | null;
   /** Which page load the connection comes from (older clients don't say). */
   tab: string | null;
+  /** When the connection came in. */
+  since: number;
 }
 
 /** Host-only data that must survive a page refresh but never reach guests. */
@@ -123,6 +134,8 @@ interface HostPrivate {
   secrets: [string, string][];
   bannedSecrets: string[];
   bannedPeers: string[];
+  /** Name skeletons of kicked players, refused to newcomers (missing in older saves). */
+  bannedNames?: string[];
 }
 
 class Session {
@@ -142,14 +155,19 @@ class Session {
   gaveUp = $state(false);
   /** Host: when the disconnected active player's turn will be skipped (0 = not pending). */
   skipAt = $state(0);
+  /** Host: when the connected active player counts as idle, so their turn may be skipped (0 = not waiting on them). */
+  idleAt = $state(0);
   /** Host: the question (askedAt) whose art could not be loaded, so guests got no pictures. */
   private artFailedFor = $state(0);
 
   private peer: Peer | null = null;
   private hostConn: DataConnection | null = null;
   private guests = new Map<DataConnection, Guest>();
-  private priv: HostPrivate = { myPlayerId: '', secrets: [], bannedSecrets: [], bannedPeers: [] };
+  private priv: HostPrivate = { myPlayerId: '', secrets: [], bannedSecrets: [], bannedPeers: [], bannedNames: [] };
   private secretToPlayer = new Map<string, string>();
+  private joins = new JoinGate();
+  /** Client: the token for the room being joined. */
+  private helloSecret: Promise<string> | null = null;
   private media: PreparedMedia | null = null;
   private mediaTimers: ReturnType<typeof setTimeout>[] = [];
   /** Media messages already released for the current question (for late joiners). */
@@ -159,7 +177,6 @@ class Session {
   /** The reveal autoNext belongs to (its question's askedAt), so unrelated changes don't restart it. */
   private autoNextFor = 0;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
-  private pingSeq = 0;
   private joinName = '';
   private toastTimer: ReturnType<typeof setTimeout> | null = null;
   private retry: ReturnType<typeof setTimeout> | null = null;
@@ -170,6 +187,7 @@ class Session {
   private beacon: Beacon | null = null;
   private skipTimer: ReturnType<typeof setTimeout> | null = null;
   private skipKey = '';
+  private idleKey = '';
 
   get isHost() {
     return this.mode === 'local' || this.mode === 'host';
@@ -248,12 +266,18 @@ class Session {
     this.mode = 'host';
     this.status = 'connecting';
     this.joinName = name;
-    this.loadPrivate({ myPlayerId: randomToken(12), secrets: [], bannedSecrets: [], bannedPeers: [] });
+    this.loadPrivate({ myPlayerId: randomToken(12), secrets: [], bannedSecrets: [], bannedPeers: [], bannedNames: [] });
     this.openRoom(randomCode(), 0);
   }
 
   private loadPrivate(p: HostPrivate) {
-    this.priv = { ...p, secrets: [...p.secrets], bannedSecrets: [...p.bannedSecrets], bannedPeers: [...p.bannedPeers] };
+    this.priv = {
+      ...p,
+      secrets: [...p.secrets],
+      bannedSecrets: [...p.bannedSecrets],
+      bannedPeers: [...p.bannedPeers],
+      bannedNames: [...(p.bannedNames ?? [])],
+    };
     this.secretToPlayer = new Map(p.secrets);
     this.myPlayerId = p.myPlayerId;
   }
@@ -316,8 +340,18 @@ class Session {
   }
 
   private acceptConnection(conn: DataConnection) {
-    if (this.guests.size >= MAX_CONNECTIONS || this.priv.bannedPeers.includes(conn.peer)) {
-      conn.on('open', () => conn.close());
+    // Real clients use PeerJS's default (binary) serialization.
+    if (this.priv.bannedPeers.includes(conn.peer) || conn.serialization !== 'binary') {
+      this.refuse(conn);
+      return;
+    }
+    // Connections that never introduce themselves can't crowd out real players:
+    // they're capped, and the oldest one makes room when the room is full.
+    const pending = [...this.guests].filter(([, g]) => !g.playerId).sort((a, b) => a[1].since - b[1].since);
+    if (pending.length >= MAX_PENDING || (this.guests.size >= MAX_CONNECTIONS && pending.length))
+      this.drop(pending[0][0]);
+    if (this.guests.size >= MAX_CONNECTIONS) {
+      this.refuse(conn);
       return;
     }
     const guest: Guest = {
@@ -328,27 +362,36 @@ class Session {
       pings: new Map(),
       mediaAt: null,
       tab: null,
+      since: Date.now(),
     };
     this.guests.set(conn, guest);
-    const helloTimer = setTimeout(() => !guest.playerId && conn.close(), HELLO_TIMEOUT_MS);
+    const helloTimer = setTimeout(() => !guest.playerId && this.drop(conn), HELLO_TIMEOUT_MS);
 
+    conn.on('open', () => {
+      // Checked before PeerJS decodes (and reassembles) anything, which the
+      // message checks below never see.
+      const frames = new FrameGuard();
+      conn.dataChannel?.addEventListener('message', (e) => {
+        if (!frames.accept(e.data)) this.block(conn);
+      });
+    });
     conn.on('data', (raw) => {
-      if (!this.state) return;
+      if (!this.state || !this.guests.has(conn)) return;
       if (!guest.limit.take()) {
-        if (guest.limit.strikes > 30) conn.close();
+        if (guest.limit.strikes > 30) this.block(conn);
         return;
       }
       const msg = parseClientMsg(raw);
       if (!msg) {
-        conn.close();
+        this.block(conn);
         return;
       }
       try {
         if (msg.t === 'hello') {
           if (guest.playerId) return;
           guest.tab = msg.tab ?? null;
-          this.handleHello(conn, guest, msg.secret, msg.name, msg.v);
           clearTimeout(helloTimer);
+          this.handleHello(conn, guest, msg.secret, msg.name, msg.v);
         } else if (msg.t === 'pong') {
           const sent = guest.pings.get(msg.n);
           if (sent !== undefined) {
@@ -364,8 +407,8 @@ class Session {
       } catch (err) {
         if (err instanceof ActionError && err.silent) return;
         const message = err instanceof ActionError ? err.message : 'Something went wrong.';
-        this.send(conn, { t: 'error', message });
-        if (msg.t === 'hello') setTimeout(() => conn.close(), 500);
+        if (msg.t === 'hello') this.dismiss(conn, { t: 'error', message });
+        else this.send(conn, { t: 'error', message });
       }
     });
     conn.on('close', () => {
@@ -389,30 +432,60 @@ class Session {
     });
   }
 
+  private refuse(conn: DataConnection) {
+    conn.on('open', () => conn.close());
+    // One that never opens still has to go.
+    setTimeout(() => conn.close(), HELLO_TIMEOUT_MS);
+  }
+
+  /**
+   * Closes a guest's connection. A connection that never opened doesn't
+   * report closing, so it's forgotten here too (or it would hold a slot forever).
+   */
+  private drop(conn: DataConnection) {
+    conn.close();
+    this.guests.delete(conn);
+  }
+
+  /**
+   * Sends a last message and lets the connection go. It stops counting as a
+   * guest right away, so it can't introduce itself again in the meantime.
+   */
+  private dismiss(conn: DataConnection, msg: HostMsg) {
+    const g = this.guests.get(conn);
+    if (g) g.playerId = null;
+    this.guests.delete(conn);
+    this.send(conn, msg);
+    setTimeout(() => conn.close(), 400);
+  }
+
+  /** A connection no real client would make: drop it and refuse its peer for the rest of the session. */
+  private block(conn: DataConnection) {
+    if (!this.priv.bannedPeers.includes(conn.peer)) this.priv.bannedPeers = capped([...this.priv.bannedPeers, conn.peer], MAX_BLOCKED);
+    this.drop(conn);
+  }
+
   private handleHello(conn: DataConnection, guest: Guest, secret: string, name: string, v: number) {
     if (v !== PROTOCOL_VERSION) throw new ActionError('Your game version is out of date. Please reload the page.');
-    if (this.priv.bannedSecrets.includes(secret)) {
-      this.send(conn, { t: 'kicked' });
-      setTimeout(() => conn.close(), 300);
+    const known = this.secretToPlayer.get(secret);
+    // A kicked player stays out, under their old token or (as a newcomer) their old name.
+    if (this.priv.bannedSecrets.includes(secret) || (!known && this.priv.bannedNames?.includes(nameSkeleton(cleanName(name))))) {
+      this.dismiss(conn, { t: 'kicked' });
       return;
     }
-    const known = this.secretToPlayer.get(secret);
+    const busy = this.joins.admit(secret, !!known);
+    if (busy) throw new ActionError(busy);
     const playerId = known ?? randomToken(12);
     const next = engine.apply(this.state!, { type: 'join', playerId, name, returning: !!known }, playerId);
-    if (!known) {
-      this.secretToPlayer.set(secret, playerId);
-      this.priv.secrets.push([secret, playerId]);
-    }
+    if (!known) this.rememberSecret(secret, playerId, next);
     // Only one live connection per player (e.g. after a refresh). When it's
     // another tab, say why, so it doesn't reconnect and take the seat back; the
     // same tab's own reconnect attempts (in whatever order) are just closed.
     for (const [c, g] of this.guests)
       if (g.playerId === playerId && c !== conn) {
         g.playerId = null;
-        if (g.tab && guest.tab && g.tab !== guest.tab) {
-          this.send(c, { t: 'replaced' });
-          setTimeout(() => c.close(), 300);
-        } else c.close();
+        if (g.tab && guest.tab && g.tab !== guest.tab) this.dismiss(c, { t: 'replaced' });
+        else this.drop(c);
       }
     guest.playerId = playerId;
     this.send(conn, { t: 'welcome', playerId });
@@ -421,6 +494,18 @@ class Session {
     const player = next.players.find((p) => p.id === playerId);
     if (player) this.flash(`${player.name} joined`);
     else this.flash(`${next.spectators?.find((o) => o.id === playerId)?.name} is watching`);
+  }
+
+  /** Remembers a newcomer's token, forgetting the oldest ones of people who are gone once there are too many. */
+  private rememberSecret(secret: string, playerId: string, s: GameState) {
+    this.secretToPlayer.set(secret, playerId);
+    this.priv.secrets.push([secret, playerId]);
+    if (this.priv.secrets.length <= MAX_KNOWN) return;
+    const here = new Set([...s.players, ...(s.spectators ?? [])].map((o) => o.id));
+    const drop = this.priv.secrets.findIndex(([, id]) => !here.has(id));
+    if (drop < 0) return;
+    this.secretToPlayer.delete(this.priv.secrets[drop][0]);
+    this.priv.secrets.splice(drop, 1);
   }
 
   /** Answers that arrive before a human could have seen the question. */
@@ -443,7 +528,8 @@ class Session {
           conn.close();
           continue;
         }
-        const n = ++this.pingSeq;
+        // Unpredictable, so a guest can't answer a ping before it arrives (and look closer than it is).
+        const n = crypto.getRandomValues(new Uint32Array(1))[0];
         g.pings.set(n, now);
         if (g.pings.size > 10) g.pings.delete(g.pings.keys().next().value!);
         this.send(conn, { t: 'ping', n });
@@ -543,6 +629,8 @@ class Session {
       return;
     }
     writeSaved({ mode: 'client', code: this.code, name });
+    const room = this.code;
+    this.helloSecret = roomSecret(mySecret, room).catch(() => stored(`poe2trivia.secret.${room}`, () => randomToken(32)));
     const peer = new Peer(PEER_OPTIONS);
     this.peer = peer;
     this.connectTimer = setTimeout(() => {
@@ -571,8 +659,10 @@ class Session {
     const conn = this.peer.connect(PEER_PREFIX + this.code, { reliable: true });
     this.hostConn = conn;
     stale?.close();
-    conn.on('open', () => {
-      conn.send({ t: 'hello', secret: mySecret, name: this.joinName, v: PROTOCOL_VERSION, tab: myTab });
+    conn.on('open', async () => {
+      const secret = await this.helloSecret;
+      if (secret && this.hostConn === conn && conn.open)
+        conn.send({ t: 'hello', secret, name: this.joinName, v: PROTOCOL_VERSION, tab: myTab });
     });
     // A host that vanishes (crashed tab, lost Wi-Fi) often never fires 'close'.
     // It pings every few seconds, so silence means the connection is dead.
@@ -680,17 +770,17 @@ class Session {
   /** Removes a player for the rest of this session (lobby or mid-game). */
   kick(playerId: string) {
     if (this.mode !== 'host' || playerId === this.priv.myPlayerId) return;
-    for (const [secret, id] of this.secretToPlayer) if (id === playerId) this.priv.bannedSecrets.push(secret);
-    for (const [c, g] of this.guests) {
-      if (g.playerId === playerId) {
-        this.priv.bannedPeers.push(c.peer);
-        this.send(c, { t: 'kicked' });
-        g.playerId = null;
-        setTimeout(() => c.close(), 300);
-      }
-    }
     const s = this.state;
     const name = [...(s?.players ?? []), ...(s?.spectators ?? [])].find((o) => o.id === playerId)?.name;
+    const p = this.priv;
+    for (const [secret, id] of this.secretToPlayer) if (id === playerId) p.bannedSecrets = capped([...p.bannedSecrets, secret], MAX_BLOCKED);
+    if (name) p.bannedNames = capped([...(p.bannedNames ?? []), nameSkeleton(name)], MAX_BLOCKED);
+    for (const [c, g] of this.guests) {
+      if (g.playerId === playerId) {
+        p.bannedPeers = capped([...p.bannedPeers, c.peer], MAX_BLOCKED);
+        this.dismiss(c, { t: 'kicked' });
+      }
+    }
     this.dispatch({ type: 'remove', playerId });
     if (name) this.flash(`${name} was removed`);
   }
@@ -811,6 +901,7 @@ class Session {
       );
     }
     this.scheduleAutoSkip(s);
+    this.scheduleIdle(s);
     this.scheduleAutoNext(s);
   }
 
@@ -866,6 +957,25 @@ class Session {
     }, AUTO_SKIP_MS);
   }
 
+  /**
+   * Turns mode: a player who is connected but doesn't pick a category (or
+   * answer, without a timer) would hold everyone up; after a while the host
+   * may skip them.
+   */
+  private scheduleIdle(s: GameState) {
+    const active = s.players[s.turn];
+    const waiting =
+      this.mode === 'host' &&
+      s.settings.mode !== 'race' &&
+      !!active?.connected &&
+      active.id !== this.priv.myPlayerId &&
+      (s.phase === 'choosing' || (s.phase === 'question' && !s.question?.deadline));
+    const key = waiting ? `${s.turnCount}:${s.phase}:${s.question?.askedAt ?? 0}` : '';
+    if (key === this.idleKey) return;
+    this.idleKey = key;
+    this.idleAt = key ? Date.now() + IDLE_SKIP_MS : 0;
+  }
+
   private networkHint(type: string) {
     return `Couldn't connect to the matchmaking server (${type}). Check your connection, or play hot-seat on one device.`;
   }
@@ -892,6 +1002,8 @@ class Session {
     this.skipTimer = null;
     this.skipKey = '';
     this.skipAt = 0;
+    this.idleKey = '';
+    this.idleAt = 0;
     this.artFailedFor = 0;
     for (const c of this.guests.keys()) c.close();
     this.guests.clear();
@@ -906,8 +1018,10 @@ class Session {
     this.code = '';
     this.myPlayerId = null;
     this.gaveUp = false;
-    this.priv = { myPlayerId: '', secrets: [], bannedSecrets: [], bannedPeers: [] };
+    this.priv = { myPlayerId: '', secrets: [], bannedSecrets: [], bannedPeers: [], bannedNames: [] };
     this.secretToPlayer = new Map();
+    this.joins = new JoinGate();
+    this.helloSecret = null;
     if (this.retry) clearTimeout(this.retry);
     if (this.connectTimer) clearTimeout(this.connectTimer);
     this.connectTimer = null;
