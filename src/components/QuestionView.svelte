@@ -792,6 +792,18 @@
     gap: 2px;
     margin-left: auto;
   }
+  /* Race avatars sit on the row's top edge as overlapping badges: they come
+     and go mid-question and at the reveal, and must not squeeze the answer. */
+  .option .who-picked {
+    position: absolute;
+    top: 0;
+    right: 0.7rem;
+    translate: 0 -50%;
+    gap: 0;
+  }
+  .option .who-picked > span + span {
+    margin-left: -6px;
+  }
   .tile .who-picked {
     position: absolute;
     bottom: 8px;
@@ -878,6 +890,9 @@
     }
     .option .mark {
       right: 0.7rem;
+    }
+    .option .who-picked {
+      right: 0.5rem;
     }
     .tiles,
     .tiles.six {
