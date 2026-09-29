@@ -100,23 +100,45 @@ with that in mind. Guests, on the other hand, are treated as untrusted:
   of the picture isn't on the guest's machine at all.
 - **Seats can't be taken over.** Each browser has a secret token that only
   its host ever sees; the IDs other players see are random public IDs.
-  Rejoining needs the token and keeps your original name.
+  Rejoining needs the token and keeps your original name. The token is
+  different for every room (derived from the browser's secret and the room
+  code), so a host never learns a token that works in someone else's room.
 - **Everything guests send is checked.** Every message is validated against
   the few actions a guest may take: pick a category, answer, continue. Guests
-  are rate-limited to about 10 messages per second. Anything malformed, a
-  flood, or a connection that doesn't introduce itself within a few seconds
-  gets disconnected. The number of connections a room accepts is capped.
+  are rate-limited to about 10 messages per second, and the raw data they
+  send is capped in size and volume, and checked for lengths that can't be
+  real, before it is decoded (so it can't be used to fill the host's memory
+  or freeze its tab). A connection that doesn't introduce itself
+  within a few seconds, or goes over those limits, is disconnected. One that
+  sends anything a real client never sends (a malformed message, or one big
+  enough to need splitting) is disconnected and refused for the rest of the
+  session.
+- **Connection and join limits.** The number of connections a room accepts is
+  capped. Connections that haven't introduced themselves yet have a few
+  slots of their own, so they never crowd out players and spectators. Each
+  is dropped after a few seconds, one peer can't hold more than two, and
+  when the slots are full the oldest one makes way (but only after it has
+  had a few seconds to say hello). New people can join a full lobby's worth
+  at once, then one every few seconds (an occasional attempt that's turned
+  down, e.g. for a taken name, doesn't count; a stream of them does);
+  anyone held back tries again by themselves a few seconds later. No one can leave and rejoin in a
+  loop, since every join is announced to the whole room.
 - **Bots.** Answers that arrive faster than a human could react (less than
   about 200 ms after the art reached that player) are ignored.
 - **Race fairness.** The host's own answers are delayed by a typical guest's
-  one-way network latency, measured with pings.
+  one-way network latency, measured with pings. Pings carry random numbers,
+  so a guest can't answer them early to look closer than it is.
 - **Host tools.** The host can:
   - lock the room so no one new can join or watch (people already in the
     room can still get back in, e.g. after a refresh)
   - ask another question in the same category if a question's art couldn't
     be loaded
   - kick anyone, in the lobby or mid-game; the kicked player's token and
-    connection are then blocked for the rest of the session
+    connection are then blocked for the rest of the session. Kicking someone
+    who is still in the room also bars their name (and look-alikes of it)
+    for anyone new; removing an offline player doesn't
+  - skip the turn of a player who is still connected but hasn't picked a
+    category (or, without a timer, answered) for 30 seconds
   - hide the room code on screen for streaming
 - **Names.** Invisible and direction-flipping characters and "zalgo" text
   are removed. Names that pose as the host or look like another player's

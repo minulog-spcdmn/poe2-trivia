@@ -24,6 +24,9 @@
     const id = setInterval(() => (now = Date.now()), 500);
     return () => clearInterval(id);
   });
+  // Only while the button still applies: it may be fading out because the
+  // player just acted (or came back), and then it must not skip anything.
+  const skipTurn = (applies: unknown) => applies && session.dispatch({ type: 'skip' });
   const skipIn = $derived(session.skipAt ? Math.max(0, Math.ceil((session.skipAt - now) / 1000)) : 0);
 
   // New turn or question: bring the scoreboard and banner back into view
@@ -103,7 +106,12 @@
         {#if session.isHost && !local && !race && !active.connected && s.phase !== 'reveal'}
           <div class="skip" transition:fade>
             <span class="muted">{active.name} is disconnected{skipIn ? ` — skipping in ${skipIn}s` : ''}.</span>
-            <button class="btn small" onclick={() => session.dispatch({ type: 'skip' })}>Skip their turn</button>
+            <button class="btn small" onclick={() => skipTurn(session.skipAt)}>Skip their turn</button>
+          </div>
+        {:else if session.idle}
+          <div class="skip" transition:fade>
+            <span class="muted">{active.name} hasn't {s.phase === 'choosing' ? 'picked a category' : 'answered'} in a while.</span>
+            <button class="btn small" onclick={() => skipTurn(session.idle)}>Skip their turn</button>
           </div>
         {/if}
         {#if session.artMissing}
