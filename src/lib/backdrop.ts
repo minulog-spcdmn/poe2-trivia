@@ -1,4 +1,4 @@
-// WebGL renderer for the page backdrop (base gradients, breathing glow, grain
+// WebGL renderer for the page backdrop (breathing gradients, glow, grain
 // and vignette). Every layer is composited in floating point and dithered
 // once, at the final 8-bit conversion, so the dark gradients can't band.
 // CSS draws each gradient layer at 8 bits and composites the rounded results,
@@ -17,8 +17,12 @@ precision highp float;
 
 uniform vec2 uRes;   // drawing buffer size, device pixels
 uniform vec2 uSize;  // canvas size, CSS pixels
-uniform float uGlowScale;
-uniform float uGlowOpacity;
+// Breathing, driven from JS: each is (scale, strength) unless noted.
+uniform vec2 uTop;
+uniform vec2 uBottom;
+uniform vec2 uGlow;
+uniform vec2 uVignette; // (inner edge, strength)
+uniform float uBaseStop;
 
 vec3 rgb(float r, float g, float b) { return vec3(r, g, b) / 255.0; }
 
@@ -35,26 +39,27 @@ void main() {
   float W = uSize.x;
   float H = uSize.y;
 
-  // linear-gradient(180deg, #0d0b09, #080706 60%, #0d0907)
+  // linear-gradient(180deg, #0d0b09, #080706 60%, #0d0907), with the dark
+  // middle stop drifting (uBaseStop, 0.6 at rest).
   float t = p.y / H;
-  vec3 col = t < 0.6
-    ? mix(rgb(13.0, 11.0, 9.0), rgb(8.0, 7.0, 6.0), t / 0.6)
-    : mix(rgb(8.0, 7.0, 6.0), rgb(13.0, 9.0, 7.0), (t - 0.6) / 0.4);
+  vec3 col = t < uBaseStop
+    ? mix(rgb(13.0, 11.0, 9.0), rgb(8.0, 7.0, 6.0), t / uBaseStop)
+    : mix(rgb(8.0, 7.0, 6.0), rgb(13.0, 9.0, 7.0), (t - uBaseStop) / (1.0 - uBaseStop));
 
   // radial-gradient(ellipse 60% 50% at 50% -10%, rgba(120, 95, 60, 0.18), transparent 70%)
-  float d = length((p - vec2(0.5 * W, -0.1 * H)) / vec2(0.6 * W, 0.5 * H));
-  col = mix(col, rgb(120.0, 95.0, 60.0), 0.18 * clamp(1.0 - d / 0.7, 0.0, 1.0));
+  float d = length((p - vec2(0.5 * W, -0.1 * H)) / (vec2(0.6 * W, 0.5 * H) * uTop.x));
+  col = mix(col, rgb(120.0, 95.0, 60.0), uTop.y * 0.18 * clamp(1.0 - d / 0.7, 0.0, 1.0));
 
   // radial-gradient(ellipse 80% 60% at 50% 110%, rgba(140, 60, 20, 0.28), transparent 70%)
-  d = length((p - vec2(0.5 * W, 1.1 * H)) / vec2(0.8 * W, 0.6 * H));
-  col = mix(col, rgb(140.0, 60.0, 20.0), 0.28 * clamp(1.0 - d / 0.7, 0.0, 1.0));
+  d = length((p - vec2(0.5 * W, 1.1 * H)) / (vec2(0.8 * W, 0.6 * H) * uBottom.x));
+  col = mix(col, rgb(140.0, 60.0, 20.0), uBottom.y * 0.28 * clamp(1.0 - d / 0.7, 0.0, 1.0));
 
   // .glow: box inset -20%, radial-gradient(circle at 50% 45%,
   // rgba(201, 164, 92, 0.07), transparent 45%), scaled about the box centre.
-  vec2 q = vec2(0.5 * W, 0.5 * H) + (p - vec2(0.5 * W, 0.5 * H)) / uGlowScale;
+  vec2 q = vec2(0.5 * W, 0.5 * H) + (p - vec2(0.5 * W, 0.5 * H)) / uGlow.x;
   float R = length(vec2(0.7 * W, 0.77 * H)); // farthest corner of the box
   d = length(q - vec2(0.5 * W, 0.43 * H)) / R;
-  col = mix(col, rgb(201.0, 164.0, 92.0), uGlowOpacity * 0.07 * clamp(1.0 - d / 0.45, 0.0, 1.0));
+  col = mix(col, rgb(201.0, 164.0, 92.0), uGlow.y * 0.07 * clamp(1.0 - d / 0.45, 0.0, 1.0));
 
   // Grain, matched to the original SVG noise layer (fractalNoise at 6%
   // opacity), measured as out = dst * (1 - A) + K with A = 0.03, K = 5.6/255
@@ -66,7 +71,7 @@ void main() {
   // radial-gradient(ellipse at center, transparent 45%, rgba(0, 0, 0, 0.75) 100%)
   // "ellipse" defaults to farthest-corner: the closest-side ellipse scaled by sqrt(2).
   d = length((p - vec2(0.5 * W, 0.5 * H)) / (vec2(0.5 * W, 0.5 * H) * 1.4142136));
-  col *= 1.0 - 0.75 * clamp((d - 0.45) / 0.55, 0.0, 1.0);
+  col *= 1.0 - uVignette.y * 0.75 * clamp((d - uVignette.x) / (1.0 - uVignette.x), 0.0, 1.0);
 
   // TPDF dither of +-1 LSB per channel, per device pixel, ahead of the
   // round-to-nearest 8-bit conversion.
@@ -93,9 +98,13 @@ function easeInOut(x: number): number {
   return bez((lo + hi) / 2, 0, 1);
 }
 
-/** Progress (0 to 1) of the 9s `breathe` keyframes, which peak at 50%. */
-function breathe(ms: number): number {
-  const u = (ms / 9000) % 1;
+/**
+ * Progress (0 to 1) of a breathing cycle: ease-in-out up to the peak at the
+ * halfway point and back, like the CSS `breathe` keyframes. `phase` offsets
+ * the start (0 to 1) so the layers don't all begin at rest together.
+ */
+function breathe(ms: number, periodMs: number, phase = 0): number {
+  const u = (ms / periodMs + phase) % 1;
   return u < 0.5 ? easeInOut(u * 2) : 1 - easeInOut((u - 0.5) * 2);
 }
 
@@ -143,8 +152,11 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
 
   const uRes = gl.getUniformLocation(prog, 'uRes');
   const uSize = gl.getUniformLocation(prog, 'uSize');
-  const uGlowScale = gl.getUniformLocation(prog, 'uGlowScale');
-  const uGlowOpacity = gl.getUniformLocation(prog, 'uGlowOpacity');
+  const uTop = gl.getUniformLocation(prog, 'uTop');
+  const uBottom = gl.getUniformLocation(prog, 'uBottom');
+  const uGlow = gl.getUniformLocation(prog, 'uGlow');
+  const uVignette = gl.getUniformLocation(prog, 'uVignette');
+  const uBaseStop = gl.getUniformLocation(prog, 'uBaseStop');
 
   const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
   const start = performance.now();
@@ -152,19 +164,31 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   let last = -Infinity;
 
   function draw(now: number) {
-    // Reduced motion freezes the glow at rest, as the CSS animation does.
-    const k = reduceMotion.matches ? 0 : breathe(now - start);
+    // Every gradient breathes on its own cycle; the periods share no common
+    // factor, so the combined motion takes hours to repeat. Reduced motion
+    // freezes them all at rest, as the CSS animation does.
+    const ms = now - start;
+    const still = reduceMotion.matches;
+    const glow = still ? 0 : breathe(ms, 9000);
+    const bottom = still ? 0 : breathe(ms, 13000, 0.3);
+    const top = still ? 0 : breathe(ms, 17000, 0.6);
+    const vignette = still ? 0 : breathe(ms, 23000, 0.15);
+    const base = still ? 0 : breathe(ms, 29000, 0.8);
     gl!.viewport(0, 0, canvas.width, canvas.height);
     gl!.uniform2f(uRes, canvas.width, canvas.height);
     gl!.uniform2f(uSize, canvas.clientWidth, canvas.clientHeight);
-    gl!.uniform1f(uGlowScale, 1 + 0.08 * k);
-    gl!.uniform1f(uGlowOpacity, 1 - 0.4 * k);
+    gl!.uniform2f(uGlow, 1 + 0.08 * glow, 1 - 0.4 * glow);
+    gl!.uniform2f(uBottom, 1 + 0.1 * bottom, 1 + 0.3 * bottom);
+    gl!.uniform2f(uTop, 1 + 0.08 * top, 1 + 0.35 * top);
+    gl!.uniform2f(uVignette, 0.45 - 0.05 * vignette, 1 + 0.07 * vignette);
+    gl!.uniform1f(uBaseStop, 0.6 - 0.08 * base);
     gl!.drawArrays(gl!.TRIANGLES, 0, 3);
   }
 
   function frame(now: number) {
     raf = requestAnimationFrame(frame);
-    // The glow breathes over 9s; 30fps is plenty and halves the GPU work.
+    // The quickest cycle is a slow 9s breath; 30fps is plenty and halves
+    // the GPU work.
     if (now - last < 33) return;
     last = now;
     draw(now);
