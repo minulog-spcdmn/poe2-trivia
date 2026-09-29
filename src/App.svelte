@@ -192,7 +192,7 @@
     background: none;
     border: 0;
     cursor: pointer;
-    font-family: var(--font-display);
+    font-family: var(--font-title);
     font-weight: 900;
     letter-spacing: 0.14em;
     font-size: 0.9rem;
