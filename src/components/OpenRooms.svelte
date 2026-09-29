@@ -8,6 +8,13 @@
   let { onJoin, disabled = false }: { onJoin: (code: string) => void; disabled?: boolean } = $props();
 
   const REFRESH_MS = 20000;
+  /**
+   * A scan can legitimately finish in well under a second: the signalling
+   * server answers "free" early for slots that other visitors probed moments
+   * before. Keep the searching state up at least this long so it reads as a
+   * search rather than a flicker.
+   */
+  const MIN_SCAN_MS = 1500;
   const DIFF_NAMES: Record<string, string> = { cruel: 'Cruel', merciless: 'Merciless', eternal: 'Eternal' };
 
   let rooms = $state<RoomInfo[]>([]);
@@ -25,6 +32,7 @@
     scanning = true;
     failed = false;
     const found = new Map<string, RoomInfo>();
+    const started = performance.now();
     try {
       await scanRooms(
         (room) => {
@@ -40,6 +48,8 @@
     } catch {
       failed = true;
     } finally {
+      const left = MIN_SCAN_MS - (performance.now() - started);
+      if (left > 0 && !destroyed) await new Promise((r) => setTimeout(r, left));
       if (id === run) {
         scanning = false;
         scanned = true;
@@ -53,16 +63,13 @@
   const SPIN_SPEED = 0.4; // degrees per ms
   const SPIN_UP_MS = 350;
   const SPIN_DOWN_MS = 700;
-  /** Quick scans still get a visible turn before slowing down. */
-  const SPIN_MIN_MS = 600;
   let angle = $state(0);
   let speed = 0;
   let spinFrame = 0;
-  let spinUntil = 0;
 
   function spin(now: number, last: number) {
     const dt = Math.min(now - last, 50);
-    const active = scanning || now < spinUntil;
+    const active = scanning;
     speed = active
       ? Math.min(SPIN_SPEED, speed + (SPIN_SPEED / SPIN_UP_MS) * dt)
       : Math.max(0, speed - (SPIN_SPEED / SPIN_DOWN_MS) * dt);
@@ -73,7 +80,6 @@
   $effect(() => {
     if (!scanning) return;
     const now = performance.now();
-    spinUntil = now + SPIN_MIN_MS;
     if (!spinFrame) spinFrame = requestAnimationFrame((t) => spin(t, now));
   });
 
