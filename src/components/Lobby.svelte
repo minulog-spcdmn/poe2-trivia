@@ -3,7 +3,6 @@
   import { fly, scale } from 'svelte/transition';
   import { session } from '../lib/session.svelte';
   import { MAX_PLAYERS, MAX_NAME, difficultyOf, rulesFor, type Difficulty, type GameMode } from '../lib/game';
-  import { sfx } from '../lib/sound';
   import { inviteUrl } from '../lib/site';
   import Avatar from './Avatar.svelte';
   import { backdropShadow } from '../lib/backdropShadow';
@@ -62,27 +61,21 @@
   }
 
   function setTarget(v: number) {
-    sfx('click');
     session.dispatch({ type: 'settings', settings: { targetScore: v } });
   }
   function setMode(mode: GameMode) {
-    sfx('click');
     session.dispatch({ type: 'settings', settings: mode === 'race' && s.settings.timer === 0 ? { mode, timer: 20 } : { mode } });
   }
   function setLocked(v: boolean) {
-    sfx('click');
     session.dispatch({ type: 'settings', settings: { locked: v } });
   }
   function setPublic(v: boolean) {
-    sfx('click');
     session.dispatch({ type: 'settings', settings: { public: v } });
   }
   function setTimer(v: number) {
-    sfx('click');
     session.dispatch({ type: 'settings', settings: { timer: v } });
   }
   function setDifficulty(v: Difficulty) {
-    sfx('click');
     session.dispatch({ type: 'settings', settings: { difficulty: v } });
   }
   function start() {

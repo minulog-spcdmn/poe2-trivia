@@ -3,7 +3,6 @@
   import { engine, session, savedName, saveName, CODE_LENGTH } from '../lib/session.svelte';
   import { shuffle } from '../lib/game';
   import { itemImage } from '../lib/ui';
-  import { sfx } from '../lib/sound';
   import OpenRooms from './OpenRooms.svelte';
   import { CREATOR, DONATE_URL, IMPRINT_URL, PRIVACY_URL } from '../lib/site';
   import { backdropShadow } from '../lib/backdropShadow';
@@ -34,7 +33,6 @@
   function host() {
     const n = needName();
     if (!n) return;
-    sfx('click');
     session.host(n);
   }
 
@@ -46,7 +44,6 @@
       document.getElementById('code')?.focus();
       return;
     }
-    sfx('click');
     if (invite) history.replaceState(null, '', location.pathname);
     session.join(code, n);
   }
@@ -64,7 +61,6 @@
   }
 
   function local() {
-    sfx('click');
     session.startLocal();
   }
 

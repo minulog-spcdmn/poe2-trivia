@@ -1,18 +1,27 @@
-// Tiny synthesized sound effects (no audio files to ship).
+// Sound effects: layered CC0 recordings (see public/sfx/CREDITS.txt), each
+// layer filtered on its own, all sharing one stone-hall reverb, over a quiet
+// ambience loop. What plays for each moment lives in soundDesign.ts; this
+// file is the mixer, and matches the audition page the design was tuned on.
+
+import { AMBIENCE, MIX, MOMENTS, type Layer } from './soundDesign';
 
 export type Sfx =
+  | 'hover'
+  | 'click'
+  | 'yourTurn'
+  | 'turn'
+  | 'pick'
+  | 'reveal'
+  | 'select'
   | 'correct'
   | 'wrong'
-  | 'turn'
-  | 'yourTurn'
-  | 'reveal'
-  | 'victory'
-  | 'join'
-  | 'click'
   | 'tick'
-  | 'deathmatch';
+  | 'join'
+  | 'start'
+  | 'deathmatch'
+  | 'victory'
+  | 'defeat';
 
-let ctx: AudioContext | null = null;
 let muted = (() => {
   try {
     return localStorage.getItem('poe2trivia.muted') === '1';
@@ -32,79 +41,216 @@ export function setMuted(value: boolean) {
   } catch {
     /* ignore */
   }
+  updateAmbience();
 }
 
-function audio(): AudioContext | null {
-  if (typeof AudioContext === 'undefined') return null;
-  ctx ??= new AudioContext();
-  if (ctx.state === 'suspended') void ctx.resume();
-  return ctx;
+type Bus = { ac: AudioContext; master: AudioNode; wet: AudioNode };
+let bus: Bus | null = null;
+const buffers = new Map<string, Promise<AudioBuffer>>();
+/** Decoded and ready to play right now. */
+const ready = new Map<string, AudioBuffer>();
+
+const db = (d: number) => Math.pow(10, d / 20);
+
+/** Browsers refuse audio before the first click or key press; sounds queued until then would all fire at once. */
+function allowed() {
+  const ua = (navigator as Navigator & { userActivation?: { hasBeenActive: boolean } }).userActivation;
+  return ua ? ua.hasBeenActive : true;
 }
 
-function tone(
-  ac: AudioContext,
-  freq: number,
-  start: number,
-  dur: number,
-  { type = 'sine' as OscillatorType, gain = 0.15, slide = 0 } = {},
-) {
-  const t = ac.currentTime + start;
-  const osc = ac.createOscillator();
+function audio(): Bus | null {
+  if (typeof AudioContext === 'undefined' || !allowed()) return null;
+  if (!bus) {
+    const ac = new AudioContext();
+    const comp = ac.createDynamicsCompressor();
+    comp.threshold.value = -18;
+    comp.knee.value = 12;
+    comp.ratio.value = 3;
+    // "Warmth": take a little off the top of the whole mix.
+    const shelf = ac.createBiquadFilter();
+    shelf.type = 'highshelf';
+    shelf.frequency.value = 5000;
+    shelf.gain.value = -MIX.warmth;
+    const master = ac.createGain();
+    master.gain.value = 0.9 * db(MIX.volume);
+    master.connect(shelf).connect(comp).connect(ac.destination);
+
+    const reverb = ac.createConvolver();
+    reverb.buffer = hall(ac, 2.8);
+    const wet = ac.createGain();
+    wet.gain.value = 0.5;
+    wet.connect(reverb).connect(master);
+
+    bus = { ac, master, wet };
+    const files = new Set(Object.values(MOMENTS).flatMap((m) => m.layers.map((l) => l.file)));
+    for (const file of files) void load(file).catch(() => {});
+  }
+  if (bus.ac.state === 'suspended') void bus.ac.resume();
+  return bus;
+}
+
+function load(file: string) {
+  let p = buffers.get(file);
+  if (!p) {
+    const ac = bus!.ac;
+    p = fetch(new URL(`${import.meta.env.BASE_URL}sfx/${file}.mp3`, document.baseURI))
+      .then((r) => r.arrayBuffer())
+      .then((data) => ac.decodeAudioData(data))
+      .then((buf) => {
+        ready.set(file, buf);
+        return buf;
+      });
+    buffers.set(file, p);
+  }
+  return p;
+}
+
+/** A dark stone-hall impulse response: stereo noise that decays and loses its highs as it goes. */
+function hall(ac: AudioContext, seconds: number) {
+  const len = Math.floor(ac.sampleRate * seconds);
+  const buf = ac.createBuffer(2, len, ac.sampleRate);
+  for (let ch = 0; ch < 2; ch++) {
+    const d = buf.getChannelData(ch);
+    let lp = 0;
+    for (let i = 0; i < len; i++) {
+      const p = i / len;
+      // One-pole lowpass whose cutoff falls over the tail.
+      lp += (0.45 - 0.4 * p) * (Math.random() * 2 - 1 - lp);
+      const onset = Math.min(1, i / (ac.sampleRate * 0.015));
+      d[i] = lp * onset * Math.pow(1 - p, 3);
+    }
+  }
+  return buf;
+}
+
+function filter(ac: AudioContext, type: BiquadFilterType, frequency: number, q = 0.707, gain = 0) {
+  const f = ac.createBiquadFilter();
+  f.type = type;
+  f.frequency.value = frequency;
+  f.Q.value = q;
+  f.gain.value = gain;
+  return f;
+}
+
+/** One layer: high-pass, low-pass and the "soften" dip around 3.2 kHz, then level and reverb send. */
+function playLayer(b: Bus, buf: AudioBuffer, l: Layer, soften: number, pitch: number, gainDb: number) {
+  const { ac } = b;
+  const src = ac.createBufferSource();
+  src.buffer = buf;
+  src.playbackRate.value = l.rate * pitch;
   const g = ac.createGain();
-  osc.type = type;
-  osc.frequency.setValueAtTime(freq, t);
-  if (slide) osc.frequency.exponentialRampToValueAtTime(freq * slide, t + dur);
-  g.gain.setValueAtTime(0.0001, t);
-  g.gain.exponentialRampToValueAtTime(gain, t + 0.015);
-  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-  osc.connect(g).connect(ac.destination);
-  osc.start(t);
-  osc.stop(t + dur + 0.05);
+  g.gain.value = db(l.gain + gainDb);
+  src
+    .connect(filter(ac, 'highpass', l.hp))
+    .connect(filter(ac, 'lowpass', l.lp))
+    .connect(filter(ac, 'peaking', 3200, 1, -soften))
+    .connect(g)
+    .connect(b.master);
+  const send = ac.createGain();
+  send.gain.value = l.send;
+  g.connect(send).connect(b.wet);
+  src.start(ac.currentTime + l.delay / 1000);
 }
+
+let lastHover = -1;
 
 export function sfx(name: Sfx) {
   if (muted) return;
-  const ac = audio();
-  if (!ac) return;
-  switch (name) {
-    case 'correct':
-      [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => tone(ac, f, i * 0.07, 0.5, { type: 'triangle', gain: 0.12 }));
-      break;
-    case 'wrong':
-      tone(ac, 196, 0, 0.45, { type: 'sawtooth', gain: 0.06, slide: 0.6 });
-      tone(ac, 98, 0, 0.5, { type: 'sine', gain: 0.18, slide: 0.7 });
-      break;
-    case 'turn':
-      tone(ac, 392, 0, 0.25, { type: 'triangle', gain: 0.06 });
-      break;
-    case 'yourTurn':
-      tone(ac, 392, 0, 0.2, { type: 'triangle', gain: 0.1 });
-      tone(ac, 587.33, 0.12, 0.35, { type: 'triangle', gain: 0.1 });
-      break;
-    case 'reveal':
-      tone(ac, 220, 0, 0.6, { type: 'sine', gain: 0.12, slide: 2 });
-      tone(ac, 330, 0.05, 0.6, { type: 'triangle', gain: 0.05, slide: 2 });
-      break;
-    case 'victory':
-      [392, 523.25, 659.25, 783.99, 659.25, 783.99, 1046.5].forEach((f, i) =>
-        tone(ac, f, i * 0.12, i === 6 ? 1.2 : 0.3, { type: 'triangle', gain: 0.1 }),
-      );
-      break;
-    case 'join':
-      tone(ac, 659.25, 0, 0.15, { type: 'sine', gain: 0.08 });
-      tone(ac, 880, 0.08, 0.2, { type: 'sine', gain: 0.08 });
-      break;
-    case 'click':
-      tone(ac, 900, 0, 0.05, { type: 'square', gain: 0.02 });
-      break;
-    case 'deathmatch':
-      // Three war-drum hits and a low swell.
-      [0, 0.28, 0.56].forEach((t, i) => tone(ac, 70 - i * 6, t, 0.35, { type: 'sine', gain: 0.35, slide: 0.5 }));
-      tone(ac, 110, 0.8, 1.4, { type: 'sawtooth', gain: 0.05, slide: 0.8 });
-      tone(ac, 164.8, 0.8, 1.4, { type: 'triangle', gain: 0.05, slide: 0.8 });
-      break;
-    case 'tick':
-      tone(ac, 1200, 0, 0.04, { type: 'square', gain: 0.025 });
-      break;
+  if (name === 'hover') {
+    // Sweeping across a row of buttons shouldn't turn into a rattle.
+    const now = performance.now();
+    if (now - lastHover < 70) return;
+    lastHover = now;
   }
+  const b = audio();
+  if (!b) return;
+  const m = MOMENTS[name];
+  // One random nudge for the whole moment, so its layers stay together.
+  const pitch = 1 + (Math.random() * 2 - 1) * m.varyPitch;
+  const gainDb = (Math.random() * 2 - 1) * m.varyGain;
+  for (const l of m.layers) {
+    // Only layers that have loaded: a late layer would land out of step.
+    const buf = ready.get(l.file);
+    if (buf) playLayer(b, buf, l, m.soften, pitch, gainDb);
+  }
+}
+
+// ---------- ambience ----------
+
+let ambience: { src: AudioBufferSourceNode; gain: GainNode } | null = null;
+let ambienceStarting = false;
+
+/** Play the ambience loop while sound is on and the tab is visible; fade it out otherwise. */
+function updateAmbience() {
+  const want = !muted && document.visibilityState === 'visible';
+  if (!want) {
+    if (!ambience || !bus) return;
+    const { src, gain } = ambience;
+    ambience = null;
+    gain.gain.setTargetAtTime(0, bus.ac.currentTime, 0.2);
+    setTimeout(() => src.stop(), 1500);
+    return;
+  }
+  if (ambience || ambienceStarting) return;
+  const b = audio();
+  if (!b) return;
+  ambienceStarting = true;
+  load(AMBIENCE.file)
+    .then((buf) => {
+      ambienceStarting = false;
+      if (ambience || muted || document.visibilityState !== 'visible') return;
+      const { ac } = b;
+      const src = ac.createBufferSource();
+      src.buffer = buf;
+      src.loop = true;
+      const gain = ac.createGain();
+      gain.gain.value = 0;
+      gain.gain.setTargetAtTime(db(AMBIENCE.gain), ac.currentTime, 0.8);
+      src.connect(filter(ac, 'lowpass', AMBIENCE.lp)).connect(gain).connect(b.master);
+      src.start();
+      ambience = { src, gain };
+    })
+    .catch(() => {
+      ambienceStarting = false;
+    });
+}
+
+const HOVERABLE = 'button:not(:disabled), a[href], select:not(:disabled), input[type="checkbox"]:not(:disabled)';
+
+/**
+ * UI sounds for every control: a faint brush when the mouse moves onto one,
+ * and a click when it's pressed. Controls that play their own sound (or none)
+ * opt out of the click with `data-sfx="none"`. Also starts the ambience with
+ * the first interaction.
+ */
+export function installUiSounds() {
+  let hovered: Element | null = null;
+  addEventListener(
+    'pointerover',
+    (e) => {
+      // Touch "hovers" right before the tap, which already clicks.
+      if (e.pointerType !== 'mouse') return;
+      const el = (e.target as Element | null)?.closest?.(HOVERABLE) ?? null;
+      if (el && el !== hovered) sfx('hover');
+      hovered = el;
+    },
+    { passive: true },
+  );
+  addEventListener(
+    'click',
+    (e) => {
+      const el = (e.target as Element | null)?.closest?.('button, a[href]');
+      if (!el || (el as HTMLButtonElement).disabled || el.closest('[data-sfx="none"]')) return;
+      sfx('click');
+    },
+    { capture: true },
+  );
+  // Load the sounds and start the ambience with the first interaction.
+  const warm = () => {
+    if (!muted) audio();
+    updateAmbience();
+  };
+  addEventListener('pointerdown', warm, { once: true, capture: true });
+  addEventListener('keydown', warm, { once: true, capture: true });
+  document.addEventListener('visibilitychange', updateAmbience);
 }

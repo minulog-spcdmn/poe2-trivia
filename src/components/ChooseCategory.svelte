@@ -27,7 +27,7 @@
   function pick(category: string) {
     if (!mine || picked) return;
     picked = category;
-    sfx('click');
+    sfx('pick');
     session.dispatch({ type: 'pick', category });
     // Allow a retry if the host rejected the pick.
     setTimeout(() => (picked = null), 2500);
@@ -49,6 +49,7 @@
     {#each s.offered as cat, i (cat)}
       <button
         class="card"
+        data-sfx="none"
         class:dm={!!s.deathmatch}
         class:mine
         class:chosen={picked === cat}

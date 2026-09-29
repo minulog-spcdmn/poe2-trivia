@@ -74,7 +74,7 @@
         {/if}
       </div>
       <div class="tools">
-        <button class="icon-btn" onclick={toggleMute} title={muted ? 'Unmute' : 'Mute'} aria-label="Toggle sound">
+        <button class="icon-btn" data-sfx="none" onclick={toggleMute} title={muted ? 'Unmute' : 'Mute'} aria-label="Toggle sound">
           {#if muted}
             <svg viewBox="0 0 24 24"><path d="M4 9h4l5-4v14l-5-4H4z" /><path d="M16 9l5 6M21 9l-5 6" /></svg>
           {:else}
