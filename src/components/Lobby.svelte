@@ -208,7 +208,7 @@
           />
           <button class="btn" type="submit" disabled={!newName.trim()}>Add</button>
         </form>
-        <p class="hint muted">Pass the device around — each player answers on their own turn.</p>
+        <p class="hint muted">Pass the device around • each player answers on their own turn.</p>
       {:else if s.players.length < 2}
         <p class="hint muted waiting"><span class="pulse"></span>Waiting for exiles to join…</p>
       {/if}
@@ -285,7 +285,7 @@
         {:else}
           <li>On your turn, choose one of three item categories.</li>
           <li>A category you pick is locked for your next {rulesFor(s.settings.difficulty).lockout} turns.</li>
-          <li>Name the unique or lineage gem from its art — one answer is true.</li>
+          <li>Name the unique or lineage gem from its art • one answer is true.</li>
           <li>Correct answers score a point. First to {s.settings.targetScore} wins, once the round is finished.</li>
           <li>Tied at the top? The tied players settle it in a sudden-death deathmatch.</li>
         {/if}

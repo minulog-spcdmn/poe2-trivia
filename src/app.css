@@ -1,9 +1,18 @@
-@import '@fontsource/cinzel/latin-500.css';
-@import '@fontsource/cinzel/latin-700.css';
-@import '@fontsource/cinzel/latin-900.css';
 @import '@fontsource/eb-garamond/latin-400.css';
 @import '@fontsource/eb-garamond/latin-500.css';
 @import '@fontsource/eb-garamond/latin-400-italic.css';
+
+/* Maragsâ Display by Jad Maza (free license, gum.co/Maragsa). The
+   license allows web use only as WOFF/WOFF2 through @font-face. It has a single
+   weight, so the face claims the whole weight range: bold text uses the real
+   glyphs instead of a smeared, browser-faked bold. */
+@font-face {
+  font-family: 'Maragsa';
+  src: url('./assets/fonts/maragsa-display.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
 
 :root {
   --bg: #0a0908;
@@ -21,7 +30,7 @@
   --good: #6fcf73;
   --bad: #e0553f;
   --radius: 6px;
-  --font-display: 'Cinzel', 'Trajan Pro', Georgia, serif;
+  --font-display: 'Maragsa', 'EB Garamond', Georgia, serif;
   --font-body: 'EB Garamond', Garamond, Georgia, serif;
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-back: cubic-bezier(0.34, 1.56, 0.64, 1);

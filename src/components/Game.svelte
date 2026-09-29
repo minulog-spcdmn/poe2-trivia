@@ -105,7 +105,7 @@
 
         {#if session.isHost && !local && !race && !active.connected && s.phase !== 'reveal'}
           <div class="skip" transition:fade>
-            <span class="muted">{active.name} is disconnected{skipIn ? ` — skipping in ${skipIn}s` : ''}.</span>
+            <span class="muted">{active.name} is disconnected{skipIn ? ` • skipping in ${skipIn}s` : ''}.</span>
             <button class="btn small" onclick={() => skipTurn(session.skipAt)}>Skip their turn</button>
           </div>
         {:else if session.idle}

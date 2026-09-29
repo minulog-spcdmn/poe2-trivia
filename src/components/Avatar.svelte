@@ -28,8 +28,8 @@
       0 4px 10px rgba(0, 0, 0, 0.5);
     transition: filter 0.3s;
   }
-  /* The letter is drawn in SVG with its baseline offset by half of Cinzel's cap
-     height (0.7em), so the glyph is optically centered at every size instead
+  /* The letter is drawn in SVG with its baseline offset by half of the display
+     font's cap height (0.7em), so the glyph is optically centered at every size instead
      of depending on the font's asymmetric ascent/descent and line-box rounding. */
   svg {
     display: block;
