@@ -19,7 +19,7 @@
   font-display: swap;
   unicode-range: U+0000-002A, U+002C-002F, U+003A-2211, U+2213-10FFFF;
 }
-/* The same font with all its glyphs, for the start page title (the 2 in POE2). */
+/* The same font with all its glyphs, for the start page title (the 2 in PoE2). */
 @font-face {
   font-family: 'Maragsa Title';
   src: url('./assets/fonts/maragsa-display.woff2') format('woff2');
