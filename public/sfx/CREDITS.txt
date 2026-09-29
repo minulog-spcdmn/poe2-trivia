@@ -1,23 +1,38 @@
 Sound effects
 
-All recordings are by Kenney (https://kenney.nl), released under
-Creative Commons Zero (CC0 1.0): http://creativecommons.org/publicdomain/zero/1.0/
+All recordings are from Freesound (https://freesound.org) and released under
+Creative Commons Zero (CC0 1.0): https://creativecommons.org/publicdomain/zero/1.0/
 
-They were trimmed, mixed down to mono, normalized and converted to MP3.
+They were trimmed to a single hit, mixed down to mono, loudness-matched and
+converted to MP3. Volume, pitch and echo are set in src/lib/sound.ts.
 
-  hover-1.mp3      RPG Audio        cloth2.ogg
-  hover-2.mp3      RPG Audio        cloth3.ogg
-  click-1.mp3      RPG Audio        handleSmallLeather.ogg
-  click-2.mp3      RPG Audio        handleSmallLeather2.ogg
-  select.mp3       RPG Audio        dropLeather.ogg
-  card.mp3         RPG Audio        bookFlip3.ogg
-  page.mp3         RPG Audio        bookFlip2.ogg
-  blade.mp3        RPG Audio        drawKnife3.ogg
-  coins.mp3        RPG Audio        handleCoins.ogg
-  coins-small.mp3  RPG Audio        handleCoins2.ogg
-  door-open.mp3    RPG Audio        doorOpen_1.ogg
-  door-close.mp3   RPG Audio        doorClose_3.ogg
-  bell.mp3         Impact Sounds    impactBell_heavy_001.ogg
-  thud.mp3         Impact Sounds    impactPunch_heavy_000.ogg
-  heartbeat.mp3    Impact Sounds    impactSoft_heavy_002.ogg
-  clash.mp3        Impact Sounds    impactMetal_heavy_001.ogg
+  click.mp3        Perc_Chair_lo
+                   by LudwigMueller, https://freesound.org/s/548503/
+  correct.mp3      Treasure Collected Coin Tinkle Game Sound Effect
+                   by el_boss, https://freesound.org/s/817813/
+  deathmatch.mp3   Sword_Clash (9)
+                   by JohnBuhr, https://freesound.org/s/326867/
+  defeat.mp3       Old Church Bell (no noise)
+                   by igroglaz, https://freesound.org/s/633208/
+  hover.mp3        Jacket/Cloth Rustle 4
+                   by brandondelehoy, https://freesound.org/s/494788/
+  join.mp3         Wooden_Door_Creaking_04
+                   by BlondPanda, https://freesound.org/s/778449/
+  pick.mp3         Playing Card Deal Variation 1
+                   by el_boss, https://freesound.org/s/571577/
+  reveal.mp3       Magic Whoosh
+                   by DustyWind, https://freesound.org/s/715784/
+  select.mp3       Wooden Thud (Mono)
+                   by Breviceps, https://freesound.org/s/449955/
+  start.mp3        Door Gate Slam In The Night With Courtyard Echo 96kHz
+                   by qubodup, https://freesound.org/s/159552/
+  tick.mp3         Heartbeat
+                   by Jeffreys2, https://freesound.org/s/333483/
+  turn.mp3         Page Turn 2
+                   by mateusboga, https://freesound.org/s/614080/
+  victory.mp3      coin pile
+                   by Eneasz, https://freesound.org/s/118862/
+  wrong.mp3        DullThud
+                   by TriqyStudio, https://freesound.org/s/653370/
+  your-turn.mp3    Unsheathing sword, slow, dramatic
+                   by mht23SD, https://freesound.org/s/707339/

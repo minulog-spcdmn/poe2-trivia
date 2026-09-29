@@ -175,8 +175,9 @@ npm run build      # production build in dist/
 ```
 
 Stack: Svelte 5, TypeScript, Vite, PeerJS. Sound effects are short CC0
-recordings by [Kenney](https://kenney.nl) (about 125 KB in `public/sfx`, see
-`CREDITS.txt` there), mixed in WebAudio with a generated reverb.
+recordings from [Freesound](https://freesound.org) (about 220 KB in
+`public/sfx`, see `CREDITS.txt` there), mixed in WebAudio with a generated
+reverb.
 
 ### Refreshing item data
 
