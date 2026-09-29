@@ -22,7 +22,6 @@ import {
   type Action,
   type GameState,
   type Item,
-  type Phase,
 } from './game';
 import { PEER_OPTIONS, PEER_PREFIX } from './peer';
 import { Beacon, type RoomInfo } from './rooms';
@@ -39,10 +38,13 @@ export const CODE_LENGTH = 6;
 export const CODE_PATTERN = /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/;
 const AUTO_NEXT_MS = 5000;
 
-/** Players and spectators, plus a few spare for people joining or reconnecting. */
-const MAX_CONNECTIONS = MAX_PLAYERS + MAX_SPECTATORS + 4;
-/** Connections one peer may have open before introducing itself; past this its oldest is dropped. */
+/** Connections that haven't introduced themselves yet, room-wide and per peer. */
+const MAX_PENDING = 8;
 const MAX_PENDING_PER_PEER = 2;
+/** A connection this new can't be pushed out by another one: its time to finish connecting and say hello. */
+const PENDING_GRACE_MS = 4000;
+/** Players and spectators, plus room for people joining or reconnecting (who can't crowd out the rest). */
+const MAX_CONNECTIONS = MAX_PLAYERS + MAX_SPECTATORS + MAX_PENDING;
 /** Most remembered player tokens, and kicked tokens/peers/names or blocked peers, each (they're saved with the room). */
 const MAX_KNOWN = 400;
 const MAX_BLOCKED = 200;
@@ -147,9 +149,6 @@ interface HostPrivate {
   blockedPeers: string[];
 }
 
-/** The moment of a turn a skip is meant for. */
-export type SkipTarget = { turnCount: number; phase: Phase };
-
 const noPrivate = (myPlayerId = ''): HostPrivate => ({
   myPlayerId,
   secrets: [],
@@ -177,13 +176,11 @@ class Session {
   /** Host: when the disconnected active player's turn will be skipped (0 = not pending). */
   skipAt = $state(0);
   /**
-   * Host: the turn the "Skip their turn" button is for, while it applies:
-   * the active player is disconnected (skipFor) or has been idle a while
-   * (idleFor). Cleared as soon as that turn moves on, so a click on a button
-   * that is just fading out does nothing.
+   * Host: the connected active player has been idle long enough that their
+   * turn may be skipped. Cleared as soon as the turn moves on (like skipAt),
+   * so a click on a Skip button that is just fading out does nothing.
    */
-  skipFor = $state.raw<SkipTarget | null>(null);
-  idleFor = $state.raw<SkipTarget | null>(null);
+  idle = $state(false);
   /** Host: the question (askedAt) whose art could not be loaded, so guests got no pictures. */
   private artFailedFor = $state(0);
 
@@ -305,8 +302,9 @@ class Session {
       secrets: [...p.secrets],
       bannedSecrets: [...p.bannedSecrets],
       bannedPeers: [...p.bannedPeers],
-      bannedNames: [...p.bannedNames],
-      blockedPeers: [...p.blockedPeers],
+      // Saved by a build that didn't have these yet: start them empty.
+      bannedNames: [...(p.bannedNames ?? [])],
+      blockedPeers: [...(p.blockedPeers ?? [])],
     };
     this.secretToPlayer = new Map(p.secrets);
     this.myPlayerId = p.myPlayerId;
@@ -376,13 +374,22 @@ class Session {
       this.refuse(conn);
       return;
     }
-    // Connections that haven't introduced themselves can't crowd out real
-    // players: one peer keeps at most two (a real client closes its older
-    // attempts anyway), and in a full room the oldest one makes way.
+    // Connections that haven't introduced themselves have their own few
+    // slots, so they never crowd out players and spectators. One peer keeps
+    // at most two (a real client closes its older attempts anyway). When the
+    // slots are full, the oldest makes way, but only once it has had a few
+    // seconds to finish connecting: new peer ids cost nothing, so a stream of
+    // them must not be able to push every real joiner out before their hello.
     const pending = [...this.guests].filter(([, g]) => !g.playerId).sort((a, b) => a[1].since - b[1].since);
     const mine = pending.filter(([c]) => c.peer === conn.peer);
     if (mine.length >= MAX_PENDING_PER_PEER) this.drop(mine[0][0]);
-    else if (this.guests.size >= MAX_CONNECTIONS && pending.length) this.drop(pending[0][0]);
+    else if (pending.length >= MAX_PENDING) {
+      if (Date.now() - pending[0][1].since < PENDING_GRACE_MS) {
+        this.refuse(conn);
+        return;
+      }
+      this.drop(pending[0][0]);
+    }
     if (this.guests.size >= MAX_CONNECTIONS) {
       this.refuse(conn);
       return;
@@ -520,8 +527,7 @@ class Session {
       this.dismiss(conn, { t: 'kicked' });
       return;
     }
-    if (!known && this.priv.bannedNames.includes(nameSkeleton(cleanName(name))))
-      throw new ActionError('Someone with a name like that was removed from this room. Pick another name.');
+    // Everything past this point is paid for out of the join budgets, turned-down attempts included.
     const busy = this.joins.admit(secret, !!known);
     if (busy) {
       // Not a refusal: the client tries again a little later.
@@ -531,6 +537,8 @@ class Session {
     const playerId = known ?? randomToken(12);
     let next: GameState;
     try {
+      if (!known && this.priv.bannedNames.includes(nameSkeleton(cleanName(name))))
+        throw new ActionError('Someone with a name like that was removed from this room. Pick another name.');
       next = engine.apply(this.state!, { type: 'join', playerId, name, returning: !!known }, playerId);
     } catch (err) {
       this.joins.rejected(secret, !!known);
@@ -1041,7 +1049,6 @@ class Session {
       !!active &&
       !active.connected;
     const key = stalled ? `${s.turnCount}:${active.id}` : '';
-    this.skipFor = stalled ? { turnCount: s.turnCount, phase: s.phase } : null;
     if (key === this.skipKey) return;
     if (this.skipTimer) clearTimeout(this.skipTimer);
     this.skipTimer = null;
@@ -1078,10 +1085,9 @@ class Session {
     const key = waiting ? `${s.turnCount}:${s.phase}:${s.question?.askedAt ?? 0}` : '';
     if (key === this.idleKey) return;
     this.idleKey = key;
-    this.idleFor = null;
+    this.idle = false;
     if (this.idleTimer) clearTimeout(this.idleTimer);
-    const target = { turnCount: s.turnCount, phase: s.phase };
-    this.idleTimer = key ? setTimeout(() => this.idleKey === key && (this.idleFor = target), IDLE_SKIP_MS) : null;
+    this.idleTimer = key ? setTimeout(() => this.idleKey === key && (this.idle = true), IDLE_SKIP_MS) : null;
   }
 
   private networkHint(type: string) {
@@ -1111,8 +1117,7 @@ class Session {
     this.skipKey = '';
     this.skipAt = 0;
     this.idleKey = '';
-    this.idleFor = null;
-    this.skipFor = null;
+    this.idle = false;
     if (this.idleTimer) clearTimeout(this.idleTimer);
     this.idleTimer = null;
     this.artFailedFor = 0;
@@ -1148,13 +1153,22 @@ type Saved =
   | { mode: 'local'; state: GameState }
   | { mode: 'host'; code: string; state: GameState; priv: HostPrivate }
   | { mode: 'client'; code: string; name: string };
-// v4: guests' tokens became per-room, so a room saved before can't be resumed.
 const SAVE_KEY = 'poe2trivia.session.v4';
+/**
+ * Before guests' tokens became per-room. A hosted room saved then can't be
+ * resumed (its guests' tokens no longer match), and a guest's saved room
+ * can't be reached by this version; a hot-seat game carries on.
+ */
+const OLD_SAVE_KEY = 'poe2trivia.session.v3';
 
 function readSaved(): Saved | null {
   try {
     const raw = sessionStorage.getItem(SAVE_KEY);
-    return raw ? (JSON.parse(raw) as Saved) : null;
+    if (raw) return JSON.parse(raw) as Saved;
+    const old = sessionStorage.getItem(OLD_SAVE_KEY);
+    sessionStorage.removeItem(OLD_SAVE_KEY);
+    const saved = old ? (JSON.parse(old) as Saved) : null;
+    return saved?.mode === 'local' ? saved : null;
   } catch {
     return null;
   }

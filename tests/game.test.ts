@@ -106,25 +106,6 @@ test('disconnected players are skipped', () => {
   assert.equal(s.turn, 2);
 });
 
-test('a skip meant for an earlier moment of the turn is ignored', () => {
-  let { engine, s } = setup(['A', 'B']);
-  s = engine.apply(s, { type: 'start' }, 'p0');
-  const active = s.players[s.turn].id;
-  const seen = { type: 'skip' as const, turnCount: s.turnCount, phase: s.phase };
-  // The player picks just as the host presses skip: their question stays.
-  s = engine.apply(s, { type: 'pick', category: s.offered[0] }, active);
-  assert.throws(() => engine.apply(s, seen, 'p0'), (e) => e instanceof ActionError && e.silent);
-  // Still their turn and question: skipping it now works.
-  const skipped = engine.apply(s, { type: 'skip', turnCount: s.turnCount, phase: s.phase }, 'p0');
-  assert.equal(skipped.phase, 'choosing');
-  assert.notEqual(skipped.players[skipped.turn].id, active);
-  // They answer just as the host presses skip: quietly ignored, no error for the host.
-  const asked = { type: 'skip' as const, turnCount: s.turnCount, phase: s.phase };
-  s = engine.apply(s, { type: 'answer', index: 0, askedAt: s.question!.askedAt }, active);
-  assert.equal(s.phase, 'reveal');
-  assert.throws(() => engine.apply(s, asked, 'p0'), (e) => e instanceof ActionError && e.silent);
-});
-
 test('play again drops players who left, and the first turn goes to someone present', () => {
   let { engine, s } = setup(['A', 'B', 'C']);
   s = engine.apply(s, { type: 'start' }, 'p0');

@@ -106,19 +106,22 @@ with that in mind. Guests, on the other hand, are treated as untrusted:
 - **Everything guests send is checked.** Every message is validated against
   the few actions a guest may take: pick a category, answer, continue. Guests
   are rate-limited to about 10 messages per second, and the raw data they
-  send is capped in size and volume before it is decoded (so it can't be
-  used to fill the host's memory). A connection that doesn't introduce itself
+  send is capped in size and volume, and checked for lengths that can't be
+  real, before it is decoded (so it can't be used to fill the host's memory
+  or freeze its tab). A connection that doesn't introduce itself
   within a few seconds, or goes over those limits, is disconnected. One that
   sends anything a real client never sends (a malformed message, or one big
   enough to need splitting) is disconnected and refused for the rest of the
   session.
 - **Connection and join limits.** The number of connections a room accepts is
-  capped. A connection that doesn't introduce itself is dropped after a few
-  seconds, one peer can't hold more than two of them at once, and in a full
-  room the oldest of them makes way for a new one. New people can join a
-  full lobby's worth at once, then one every few seconds (attempts that are
-  turned down, e.g. for a taken name, don't count); anyone held back tries
-  again by themselves a few seconds later. No one can leave and rejoin in a
+  capped. Connections that haven't introduced themselves yet have a few
+  slots of their own, so they never crowd out players and spectators. Each
+  is dropped after a few seconds, one peer can't hold more than two, and
+  when the slots are full the oldest one makes way (but only after it has
+  had a few seconds to say hello). New people can join a full lobby's worth
+  at once, then one every few seconds (an occasional attempt that's turned
+  down, e.g. for a taken name, doesn't count; a stream of them does);
+  anyone held back tries again by themselves a few seconds later. No one can leave and rejoin in a
   loop, since every join is announced to the whole room.
 - **Bots.** Answers that arrive faster than a human could react (less than
   about 200 ms after the art reached that player) are ignored.
