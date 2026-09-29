@@ -201,8 +201,8 @@
   }
   .brand-mark {
     color: var(--unique-hi);
-    width: 0.95rem;
-    height: 0.85rem;
+    width: 0.8rem;
+    height: 0.72rem;
     filter: drop-shadow(0 0 6px rgba(224, 138, 68, 0.7));
   }
 
