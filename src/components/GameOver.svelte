@@ -188,7 +188,7 @@
     animation: spin 30s linear infinite;
   }
   h1 {
-    font-size: clamp(2rem, 6vw, 3.4rem);
+    font-size: clamp(2.25rem, 6.7vw, 3.8rem);
     font-weight: 900;
     background: linear-gradient(180deg, #fff1c9 10%, #d7b068 55%, #8b6526);
     -webkit-background-clip: text;

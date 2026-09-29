@@ -46,7 +46,7 @@
     <header in:fade={{ duration: 300 }}>
       <button class="brand" onclick={() => (confirmLeave = true)} title="Leave game">
         <span class="brand-mark">◆</span>
-        <span>Exile Trivia</span>
+        <span>Poe2.Quest</span>
       </button>
       <div class="meta">
         {#if gs && screen === 'game'}
@@ -121,7 +121,7 @@
       Can't reach the host. The room may have closed.
     {:else}
       <span class="spinner"></span>
-      Connection to the host lost — reconnecting…
+      Connection to the host lost; reconnecting…
     {/if}
     <button class="btn small" onclick={() => session.reconnect()}>Retry</button>
     <button class="btn small ghost" onclick={() => session.leave()}>Leave</button>
@@ -192,10 +192,9 @@
     background: none;
     border: 0;
     cursor: pointer;
-    font-family: var(--font-display);
+    font-family: var(--font-title);
     font-weight: 900;
     letter-spacing: 0.14em;
-    text-transform: uppercase;
     font-size: 0.9rem;
     color: var(--gold);
     padding: 0.25rem 0;
@@ -210,7 +209,7 @@
     display: flex;
     gap: 0.55rem;
     align-items: center;
-    font-family: var(--font-display);
+    font-family: var(--font-cinzel);
     font-size: 0.78rem;
     letter-spacing: 0.14em;
     text-transform: uppercase;

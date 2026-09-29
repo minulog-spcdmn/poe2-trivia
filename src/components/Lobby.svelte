@@ -50,7 +50,7 @@
   async function copy() {
     try {
       if (navigator.share && matchMedia('(pointer: coarse)').matches) {
-        await navigator.share({ title: 'Exile Trivia', text: `Join my PoE2 trivia room ${session.code}`, url: inviteLink });
+        await navigator.share({ title: 'Poe2.Quest', text: `Join my PoE2 trivia room ${session.code}`, url: inviteLink });
       } else {
         await navigator.clipboard.writeText(inviteLink);
         copied = true;
@@ -208,7 +208,7 @@
           />
           <button class="btn" type="submit" disabled={!newName.trim()}>Add</button>
         </form>
-        <p class="hint muted">Pass the device around — each player answers on their own turn.</p>
+        <p class="hint muted">Pass the device around; each player answers on their own turn.</p>
       {:else if s.players.length < 2}
         <p class="hint muted waiting"><span class="pulse"></span>Waiting for exiles to join…</p>
       {/if}
@@ -285,7 +285,7 @@
         {:else}
           <li>On your turn, choose one of three item categories.</li>
           <li>A category you pick is locked for your next {rulesFor(s.settings.difficulty).lockout} turns.</li>
-          <li>Name the unique or lineage gem from its art — one answer is true.</li>
+          <li>Name the unique or lineage gem from its art; one answer is true.</li>
           <li>Correct answers score a point. First to {s.settings.targetScore} wins, once the round is finished.</li>
           <li>Tied at the top? The tied players settle it in a sudden-death deathmatch.</li>
         {/if}
@@ -434,7 +434,7 @@
     height: clamp(58px, 14vw, 78px);
     display: grid;
     place-items: center;
-    font-family: var(--font-display);
+    font-family: var(--font-cinzel);
     font-weight: 900;
     font-size: clamp(1.8rem, 6vw, 2.6rem);
     color: var(--gold-hi);
@@ -472,7 +472,7 @@
     border-bottom: 1px solid var(--line);
   }
   .panel h2 {
-    font-size: 1rem;
+    font-size: 1.12rem;
     text-transform: uppercase;
     letter-spacing: 0.18em;
     color: var(--gold-hi);

@@ -37,7 +37,7 @@
     height: 100%;
   }
   text {
-    font-family: var(--font-display);
+    font-family: var(--font-cinzel);
     font-weight: 900;
     font-size: 45px;
     fill: #140f0a;
