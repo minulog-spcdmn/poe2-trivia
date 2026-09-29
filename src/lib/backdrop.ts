@@ -102,7 +102,8 @@ function breathe(ms: number): number {
 /**
  * Starts rendering the backdrop into `canvas`. Returns a cleanup function, or
  * null when WebGL (with highp fragment floats) is unavailable. `onLost` fires
- * if the context is lost later, so the caller can fall back to CSS.
+ * if the context is lost later, after the renderer has shut itself down, so
+ * the caller can fall back to CSS.
  */
 export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): (() => void) | null {
   const gl = canvas.getContext('webgl', {
@@ -198,11 +199,20 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     ro.observe(canvas);
   }
 
-  const lost = (e: Event) => {
-    e.preventDefault();
+  function stop() {
     cancelAnimationFrame(raf);
+    ro.disconnect();
+    canvas.removeEventListener('webglcontextlost', lost);
+    reduceMotion.removeEventListener('change', schedule);
+  }
+
+  // A lost context stays lost: we don't call preventDefault(), so the browser
+  // won't restore it, and the caller switches to the CSS backdrop for good.
+  // Tear everything down so nothing keeps drawing into the dead context.
+  function lost() {
+    stop();
     onLost();
-  };
+  }
   canvas.addEventListener('webglcontextlost', lost);
   reduceMotion.addEventListener('change', schedule);
 
@@ -212,10 +222,5 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   draw(performance.now());
   schedule();
 
-  return () => {
-    cancelAnimationFrame(raf);
-    ro.disconnect();
-    canvas.removeEventListener('webglcontextlost', lost);
-    reduceMotion.removeEventListener('change', schedule);
-  };
+  return stop;
 }
