@@ -1,30 +1,42 @@
-// WebGL renderer for the page backdrop (breathing gradients, glow, grain
-// and vignette). Every layer is composited in floating point and dithered
-// once, at the final 8-bit conversion, so the dark gradients can't band.
-// CSS draws each gradient layer at 8 bits and composites the rounded results,
-// and no overlay added afterwards can undo that rounding.
+// WebGL renderer for the page backdrop: breathing gradients, drifting blobs,
+// grain and vignette. Every layer is composited in floating point and
+// dithered once, at the final 8-bit conversion, so the dark gradients can't
+// band. Falloffs are Gaussian or smoothstep curves with no hard end, so no
+// layer shows an edge.
 //
-// The math mirrors the CSS backdrop in Background.svelte, which remains the
-// fallback when WebGL is unavailable, so keep the two in sync.
+// Background.svelte keeps a static CSS approximation as the fallback when
+// WebGL is unavailable.
 
 const VERT = `
 attribute vec2 aPos;
 void main() { gl_Position = vec4(aPos, 0.0, 1.0); }
 `;
 
+export const BLOB_COUNT = 5;
+
 const FRAG = `
 precision highp float;
 
 uniform vec2 uRes;   // drawing buffer size, device pixels
 uniform vec2 uSize;  // canvas size, CSS pixels
+
 // Breathing, driven from JS: each is (scale, strength) unless noted.
 uniform vec2 uTop;
 uniform vec2 uBottom;
 uniform vec2 uGlow;
-uniform vec2 uVignette; // (inner edge, strength)
+uniform vec2 uVignette; // (reach, strength)
 uniform float uBaseStop;
 
+// Blobs. A: centre (fractions of the viewport), rotation, opacity.
+// B: reach ahead of / behind the centre along the rotated axis, and across
+// it, in units of sqrt(W * H). Unequal reaches make each blob lopsided.
+uniform vec4 uBlobA[${BLOB_COUNT}];
+uniform vec3 uBlobB[${BLOB_COUNT}];
+uniform vec3 uBlobColor[${BLOB_COUNT}];
+
 vec3 rgb(float r, float g, float b) { return vec3(r, g, b) / 255.0; }
+
+float gauss(float d) { return exp(-d * d); }
 
 // Hash without sine (Dave Hoskins); uniform in [0, 1).
 float hash(vec2 p) {
@@ -38,48 +50,60 @@ void main() {
   vec2 p = dev / uRes * uSize; // CSS px, top-left origin
   float W = uSize.x;
   float H = uSize.y;
+  float S = sqrt(W * H);
 
-  // linear-gradient(180deg, #0d0b09, #080706 60%, #0d0907), with the dark
-  // middle stop drifting (uBaseStop, 0.6 at rest).
+  // Vertical base: #0d0b09 at the top, #080706 at uBaseStop, #0d0907 at the
+  // bottom, eased so there's no crease at the middle stop.
   float t = p.y / H;
   vec3 col = t < uBaseStop
-    ? mix(rgb(13.0, 11.0, 9.0), rgb(8.0, 7.0, 6.0), t / uBaseStop)
-    : mix(rgb(8.0, 7.0, 6.0), rgb(13.0, 9.0, 7.0), (t - uBaseStop) / (1.0 - uBaseStop));
+    ? mix(rgb(13.0, 11.0, 9.0), rgb(8.0, 7.0, 6.0), smoothstep(0.0, uBaseStop, t))
+    : mix(rgb(8.0, 7.0, 6.0), rgb(13.0, 9.0, 7.0), smoothstep(uBaseStop, 1.0, t));
 
-  // radial-gradient(ellipse 60% 50% at 50% -10%, rgba(120, 95, 60, 0.18), transparent 70%)
+  // Warm haze from above the top edge.
   float d = length((p - vec2(0.5 * W, -0.1 * H)) / (vec2(0.6 * W, 0.5 * H) * uTop.x));
-  col = mix(col, rgb(120.0, 95.0, 60.0), uTop.y * 0.18 * clamp(1.0 - d / 0.7, 0.0, 1.0));
+  col = mix(col, rgb(120.0, 95.0, 60.0), uTop.y * 0.18 * gauss(d / 0.5));
 
-  // radial-gradient(ellipse 80% 60% at 50% 110%, rgba(140, 60, 20, 0.28), transparent 70%)
+  // Ember glow from below the bottom edge.
   d = length((p - vec2(0.5 * W, 1.1 * H)) / (vec2(0.8 * W, 0.6 * H) * uBottom.x));
-  col = mix(col, rgb(140.0, 60.0, 20.0), uBottom.y * 0.28 * clamp(1.0 - d / 0.7, 0.0, 1.0));
+  col = mix(col, rgb(140.0, 60.0, 20.0), uBottom.y * 0.28 * gauss(d / 0.5));
 
-  // .glow: box inset -20%, radial-gradient(circle at 50% 45%,
-  // rgba(201, 164, 92, 0.07), transparent 45%), scaled about the box centre.
+  // Central gold glow, scaled about the screen centre.
   vec2 q = vec2(0.5 * W, 0.5 * H) + (p - vec2(0.5 * W, 0.5 * H)) / uGlow.x;
-  float R = length(vec2(0.7 * W, 0.77 * H)); // farthest corner of the box
+  float R = length(vec2(0.7 * W, 0.77 * H));
   d = length(q - vec2(0.5 * W, 0.43 * H)) / R;
-  col = mix(col, rgb(201.0, 164.0, 92.0), uGlow.y * 0.07 * clamp(1.0 - d / 0.45, 0.0, 1.0));
+  col = mix(col, rgb(201.0, 164.0, 92.0), uGlow.y * 0.07 * gauss(d / 0.3));
 
-  // Grain, matched to the original SVG noise layer (fractalNoise at 6%
-  // opacity), measured as out = dst * (1 - A) + K with A = 0.03, K = 5.6/255
-  // on average and a spread of about 1.5 levels, one sample per CSS pixel.
+  // Drifting blobs break up the symmetry of the layers above.
+  for (int i = 0; i < ${BLOB_COUNT}; i++) {
+    vec4 a = uBlobA[i];
+    vec3 b = uBlobB[i];
+    vec2 r = p - a.xy * vec2(W, H);
+    float u = dot(r, vec2(cos(a.z), sin(a.z)));
+    float v = dot(r, vec2(-sin(a.z), cos(a.z)));
+    float reach = (u > 0.0 ? b.x : b.y) * S;
+    float w = gauss(length(vec2(u / reach, v / (b.z * S))));
+    col = mix(col, uBlobColor[i], a.w * w);
+  }
+
+  // Lift the dark tones within their own hue. (A flat grey lift, as the old
+  // SVG grain gave, washes these near-black colours out.)
+  col *= 1.2;
+
+  // Grain: a faint luminance texture, one sample per CSS pixel. It scales
+  // each colour rather than adding grey, so it doesn't desaturate.
   vec2 cell = floor(p);
   float g = (hash(cell) + hash(cell + 17.0) + hash(cell + 43.0) + hash(cell + 71.0) - 2.0) * 1.7320508;
-  col = col * (1.0 - (0.03 + 0.00563 * g)) + (0.02196 + 0.00616 * g);
+  col *= 1.0 + 0.04 * g;
 
-  // radial-gradient(ellipse at center, transparent 45%, rgba(0, 0, 0, 0.75) 100%)
-  // "ellipse" defaults to farthest-corner: the closest-side ellipse scaled by sqrt(2).
-  d = length((p - vec2(0.5 * W, 0.5 * H)) / (vec2(0.5 * W, 0.5 * H) * 1.4142136));
-  col *= 1.0 - uVignette.y * 0.75 * clamp((d - uVignette.x) / (1.0 - uVignette.x), 0.0, 1.0);
+  // Vignette: darkens smoothly from the centre, reaching about 72% at the
+  // corners (farthest-corner ellipse, as in CSS).
+  d = length((p - vec2(0.5 * W, 0.5 * H)) / (vec2(0.5 * W, 0.5 * H) * 1.4142136 * uVignette.x));
+  col *= 1.0 - min(0.9, uVignette.y * 0.72 * pow(d, 2.4));
 
-  // TPDF dither of +-1 LSB per channel, per device pixel, ahead of the
-  // round-to-nearest 8-bit conversion.
-  vec3 n = vec3(
-    hash(dev + 0.5) + hash(dev + 101.5),
-    hash(dev + 211.5) + hash(dev + 307.5),
-    hash(dev + 401.5) + hash(dev + 503.5)
-  ) - 1.0;
+  // TPDF dither of +-1 LSB, per device pixel, ahead of the round-to-nearest
+  // 8-bit conversion. The same sample goes to all three channels, so the
+  // noise carries no colour of its own.
+  float n = hash(dev + 0.5) + hash(dev + 101.5) - 1.0;
   gl_FragColor = vec4(col + n / 255.0, 1.0);
 }
 `;
@@ -106,6 +130,46 @@ function easeInOut(x: number): number {
 function breathe(ms: number, periodMs: number, phase = 0): number {
   const u = (ms / periodMs + phase) % 1;
   return u < 0.5 ? easeInOut(u * 2) : 1 - easeInOut((u - 0.5) * 2);
+}
+
+type Blob = {
+  color: [number, number, number];
+  opacity: number;
+  home: [number, number]; // resting centre, fractions of the viewport
+  wander: [number, number]; // how far it drifts from home, same units
+  reach: [number, number, number]; // ahead, behind, across (see shader)
+};
+
+// Warm blobs plus one shadow that drifts through the middle.
+const BLOBS: Blob[] = [
+  { color: [150, 70, 25], opacity: 0.1, home: [0.22, 0.75], wander: [0.12, 0.08], reach: [0.3, 0.16, 0.14] },
+  { color: [120, 40, 18], opacity: 0.09, home: [0.8, 0.82], wander: [0.1, 0.07], reach: [0.22, 0.34, 0.13] },
+  { color: [140, 110, 60], opacity: 0.06, home: [0.68, 0.28], wander: [0.14, 0.1], reach: [0.28, 0.18, 0.12] },
+  { color: [110, 80, 45], opacity: 0.05, home: [0.3, 0.35], wander: [0.12, 0.1], reach: [0.2, 0.3, 0.1] },
+  { color: [2, 1, 1], opacity: 0.35, home: [0.55, 0.6], wander: [0.18, 0.1], reach: [0.25, 0.18, 0.12] },
+];
+
+const TAU = Math.PI * 2;
+const rand = (lo: number, hi: number) => lo + Math.random() * (hi - lo);
+const wave = (lo: number, hi: number) => ({ w: TAU / rand(lo, hi), p: rand(0, TAU) });
+
+/**
+ * A blob's path: each coordinate is two sine waves with random periods and
+ * phases, so every page load drifts differently and nothing visibly repeats.
+ */
+function blobPath(b: Blob) {
+  const x1 = wave(40, 70), x2 = wave(17, 31);
+  const y1 = wave(45, 80), y2 = wave(19, 37);
+  const spin = rand(-1, 1) * (TAU / rand(90, 160));
+  const turn = wave(20, 40);
+  const pulse = wave(11, 23);
+  const rot0 = rand(0, TAU);
+  return (s: number) => [
+    b.home[0] + b.wander[0] * (0.7 * Math.sin(s * x1.w + x1.p) + 0.3 * Math.sin(s * x2.w + x2.p)),
+    b.home[1] + b.wander[1] * (0.7 * Math.sin(s * y1.w + y1.p) + 0.3 * Math.sin(s * y2.w + y2.p)),
+    rot0 + s * spin + 0.4 * Math.sin(s * turn.w + turn.p),
+    b.opacity * (0.75 + 0.25 * Math.sin(s * pulse.w + pulse.p)),
+  ];
 }
 
 /**
@@ -157,6 +221,14 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   const uGlow = gl.getUniformLocation(prog, 'uGlow');
   const uVignette = gl.getUniformLocation(prog, 'uVignette');
   const uBaseStop = gl.getUniformLocation(prog, 'uBaseStop');
+  const uBlobA = gl.getUniformLocation(prog, 'uBlobA');
+
+  gl.uniform3fv(gl.getUniformLocation(prog, 'uBlobB'), BLOBS.flatMap((b) => b.reach));
+  gl.uniform3fv(
+    gl.getUniformLocation(prog, 'uBlobColor'),
+    BLOBS.flatMap((b) => b.color.map((c) => c / 255)),
+  );
+  const paths = BLOBS.map(blobPath);
 
   const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
   const start = performance.now();
@@ -166,7 +238,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   function draw(now: number) {
     // Every gradient breathes on its own cycle; the periods share no common
     // factor, so the combined motion takes hours to repeat. Reduced motion
-    // freezes them all at rest, as the CSS animation does.
+    // freezes them all (and the blobs) at rest.
     const ms = now - start;
     const still = reduceMotion.matches;
     const glow = still ? 0 : breathe(ms, 9000);
@@ -180,8 +252,9 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     gl!.uniform2f(uGlow, 1 + 0.08 * glow, 1 - 0.4 * glow);
     gl!.uniform2f(uBottom, 1 + 0.1 * bottom, 1 + 0.3 * bottom);
     gl!.uniform2f(uTop, 1 + 0.08 * top, 1 + 0.35 * top);
-    gl!.uniform2f(uVignette, 0.45 - 0.05 * vignette, 1 + 0.07 * vignette);
+    gl!.uniform2f(uVignette, 1 - 0.06 * vignette, 1 + 0.07 * vignette);
     gl!.uniform1f(uBaseStop, 0.6 - 0.08 * base);
+    gl!.uniform4fv(uBlobA, paths.flatMap((path) => path(still ? 0 : ms / 1000)));
     gl!.drawArrays(gl!.TRIANGLES, 0, 3);
   }
 
