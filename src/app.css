@@ -9,7 +9,7 @@
    allows web use only as WOFF/WOFF2 through @font-face. It has a single weight,
    so the face claims the whole weight range: bold text uses the real glyphs
    instead of a smeared, browser-faked bold. Its digits are old-style and sit
-   low, so the unicode-range leaves 0-9 out and every digit falls through to
+   low, so the unicode-range leaves out 0-9, + and − and they fall through to
    Cinzel, the next font in --font-display. */
 @font-face {
   font-family: 'Maragsa';
@@ -17,7 +17,15 @@
   font-weight: 100 900;
   font-style: normal;
   font-display: swap;
-  unicode-range: U+0000-002F, U+003A-10FFFF;
+  unicode-range: U+0000-002A, U+002C-002F, U+003A-2211, U+2213-10FFFF;
+}
+/* The same font with all its glyphs, for the start page title (the 2 in POE2). */
+@font-face {
+  font-family: 'Maragsa Title';
+  src: url('./assets/fonts/maragsa-display.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
 }
 
 :root {
@@ -37,6 +45,9 @@
   --bad: #e0553f;
   --radius: 6px;
   --font-display: 'Maragsa', 'Cinzel', 'Trajan Pro', Georgia, serif;
+  --font-title: 'Maragsa Title', var(--font-display);
+  /* Room codes, the in-game header and avatars. */
+  --font-cinzel: 'Cinzel', 'Trajan Pro', Georgia, serif;
   --font-body: 'EB Garamond', Garamond, Georgia, serif;
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-back: cubic-bezier(0.34, 1.56, 0.64, 1);

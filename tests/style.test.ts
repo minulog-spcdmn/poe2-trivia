@@ -20,7 +20,7 @@ function* files(dir: string): Generator<string> {
 // this file doesn't match itself.
 const emDash = new RegExp([String.fromCharCode(0x2014), '&' + 'mdash;', '&#' + '8212;', '\\\\u' + '2014'].join('|'), 'i');
 
-test('no em dashes anywhere in the project (use • instead)', () => {
+test('no em dashes anywhere in the project (use • or ; instead)', () => {
   const bad: string[] = [];
   for (const f of files(root)) {
     readFileSync(f, 'utf8')

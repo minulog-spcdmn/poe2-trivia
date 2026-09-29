@@ -248,6 +248,7 @@
     align-items: center;
     gap: 1.2rem;
     justify-content: center;
+    font-family: var(--font-title);
     font-size: clamp(2.6rem, 8vw, 5rem);
     font-weight: 900;
     line-height: 1;
@@ -314,7 +315,7 @@
     margin-top: auto;
   }
   .code {
-    font-family: var(--font-display);
+    font-family: var(--font-cinzel);
     font-weight: 700;
     letter-spacing: 0.35em;
     text-align: center;

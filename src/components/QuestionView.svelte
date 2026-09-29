@@ -134,7 +134,7 @@
           {#if winner}
             <b class="good">+1</b> {winner.id === me ? 'You were' : `${winner.name} was`} fastest!
           {:else if reveal.timedOut}
-            Time's up • nobody got it.
+            Time's up; nobody got it.
           {:else}
             Nobody got it.
           {/if}
@@ -163,7 +163,7 @@
   {:else if session.spectating}
     <p class="spectate muted">You're watching. You'll play in the next game.</p>
   {:else if race && myMiss}
-    <p class="spectate out">Wrong • −1. You're out until the next question.</p>
+    <p class="spectate out">Wrong; −1. You're out until the next question.</p>
   {:else if race}
     <p class="spectate muted">First correct answer wins. Wrong costs a point! Press 1–{count}.</p>
   {:else if !mine}

@@ -121,7 +121,7 @@
       Can't reach the host. The room may have closed.
     {:else}
       <span class="spinner"></span>
-      Connection to the host lost • reconnecting…
+      Connection to the host lost; reconnecting…
     {/if}
     <button class="btn small" onclick={() => session.reconnect()}>Retry</button>
     <button class="btn small ghost" onclick={() => session.leave()}>Leave</button>
@@ -210,7 +210,7 @@
     display: flex;
     gap: 0.55rem;
     align-items: center;
-    font-family: var(--font-display);
+    font-family: var(--font-cinzel);
     font-size: 0.78rem;
     letter-spacing: 0.14em;
     text-transform: uppercase;
