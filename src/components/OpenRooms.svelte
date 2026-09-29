@@ -98,7 +98,7 @@
       <!-- The arc is centred on the viewBox so the icon turns in place. -->
       <svg viewBox="0 0 24 24" style:rotate="{angle}deg">
         <path d="M18.58 14.39A7 7 0 1 1 14.39 5.42" />
-        <path class="head" d="M17.7 6.6 15.4 2.6 13.4 8.2Z" />
+        <path class="head" d="M18.6 7 15.8 1.7 13 9.2Z" />
       </svg>
     </button>
   </header>
