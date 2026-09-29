@@ -304,7 +304,7 @@
     letter-spacing: 0.14em;
   }
   .mode p {
-    margin: 0;
+    margin: -0.3rem 0 0.5rem;
     font-size: 0.98rem;
     flex: 1;
   }
