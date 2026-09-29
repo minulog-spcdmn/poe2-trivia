@@ -4,6 +4,7 @@
   import { categoryIcon } from '../lib/ui';
   import { rulesFor } from '../lib/game';
   import { sfx } from '../lib/sound';
+  import { backdropShadow } from '../lib/backdropShadow';
 
   const s = $derived(session.state!);
   const active = $derived(s.players[s.turn]);
@@ -56,7 +57,7 @@
         onclick={() => pick(cat)}
         in:deal={{ i }}
       >
-        <span class="frame">
+        <span class="frame" use:backdropShadow>
           <span class="corner tl"></span><span class="corner tr"></span>
           <span class="corner bl"></span><span class="corner br"></span>
           <span class="icon"><span class="glyph" style:--src="url('{categoryIcon(cat)}')"></span></span>
@@ -111,13 +112,22 @@
     background:
       radial-gradient(ellipse at 50% 35%, rgba(175, 96, 37, 0.25), transparent 60%),
       linear-gradient(170deg, #2a2016, #120e0a 70%);
+    --bs1: 16px 40px;
+    --bs1-color: rgba(0, 0, 0, 0.6);
+    --bs-shade: rgba(0, 0, 0, 0.5);
+    --bs-ring: rgba(125, 99, 51, 0.35);
     box-shadow:
-      inset 0 0 0 4px rgba(0, 0, 0, 0.5),
-      inset 0 0 0 5px rgba(125, 99, 51, 0.35),
-      0 16px 40px rgba(0, 0, 0, 0.6);
+      inset 0 0 0 4px var(--bs-shade),
+      inset 0 0 0 5px var(--bs-ring),
+      var(--bs-soft-paint, 0 var(--bs1, 0 0) var(--bs1-color, transparent), 0 var(--bs2, 0 0) var(--bs2-color, transparent));
     transition:
       transform 0.35s var(--ease-out),
-      box-shadow 0.35s,
+      --bs-shade 0.35s,
+      --bs-ring 0.35s,
+      --bs1 0.35s,
+      --bs1-color 0.35s,
+      --bs2 0.35s,
+      --bs2-color 0.35s,
       border-color 0.35s,
       opacity 0.4s,
       filter 0.4s;
@@ -203,9 +213,9 @@
   }
   @keyframes menace {
     50% {
-      box-shadow:
-        inset 0 0 0 4px rgba(0, 0, 0, 0.5),
-        0 0 45px rgba(224, 85, 63, 0.45);
+      --bs-ring: transparent;
+      --bs1: 0px 45px;
+      --bs1-color: rgba(224, 85, 63, 0.45);
     }
   }
   .card.mine {
@@ -215,11 +225,11 @@
   .card.mine:focus-visible .frame {
     transform: translateY(-10px) scale(1.03);
     border-color: var(--gold);
-    box-shadow:
-      inset 0 0 0 4px rgba(0, 0, 0, 0.5),
-      inset 0 0 0 5px rgba(201, 164, 92, 0.6),
-      0 0 40px rgba(224, 138, 68, 0.3),
-      0 24px 50px rgba(0, 0, 0, 0.7);
+    --bs-ring: rgba(201, 164, 92, 0.6);
+    --bs1: 0px 40px;
+    --bs1-color: rgba(224, 138, 68, 0.3);
+    --bs2: 24px 50px;
+    --bs2-color: rgba(0, 0, 0, 0.7);
   }
   .card.mine:hover .glyph {
     transform: scale(1.08) rotate(-3deg);
@@ -234,7 +244,12 @@
   .card.chosen .frame {
     transform: translateY(-14px) scale(1.08);
     border-color: var(--gold-hi);
-    box-shadow: 0 0 60px rgba(255, 170, 90, 0.5);
+    --bs-shade: transparent;
+    --bs-ring: transparent;
+    --bs1: 0px 60px;
+    --bs1-color: rgba(255, 170, 90, 0.5);
+    --bs2: 0px 0px;
+    --bs2-color: transparent;
   }
   .card.faded .frame {
     opacity: 0.2;

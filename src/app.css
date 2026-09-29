@@ -86,10 +86,12 @@ input {
   background: linear-gradient(180deg, rgba(34, 28, 21, 0.9), rgba(16, 13, 10, 0.92));
   border: 1px solid var(--line);
   border-radius: var(--radius);
+  --bs1: 18px 50px;
+  --bs1-color: rgba(0, 0, 0, 0.55);
   box-shadow:
     0 0 0 1px rgba(0, 0, 0, 0.6),
     inset 0 1px 0 rgba(255, 220, 150, 0.06),
-    0 18px 50px rgba(0, 0, 0, 0.55);
+    var(--bs-soft-paint, 0 var(--bs1, 0 0) var(--bs1-color, transparent), 0 var(--bs2, 0 0) var(--bs2-color, transparent));
 }
 
 .panel::before,
@@ -279,4 +281,62 @@ h3,
 .btn,
 .balance {
   text-wrap: balance;
+}
+
+/* Soft outer shadows the WebGL backdrop can draw (see lib/backdropShadow.ts).
+   An element declares up to two as `0 var(--bsN) var(--bsN-color)` (y offset
+   and blur, then colour) and paints them through
+   `var(--bs-soft-paint, …)`; while the backdrop draws them it sets
+   data-bs-on, which swaps them for a no-op. Registering the properties lets
+   transitions and animations interpolate them like box-shadow itself. */
+@property --bs1 {
+  syntax: '<length>+';
+  inherits: false;
+  initial-value: 0px 0px;
+}
+@property --bs2 {
+  syntax: '<length>+';
+  inherits: false;
+  initial-value: 0px 0px;
+}
+@property --bs1-color {
+  syntax: '<color>';
+  inherits: false;
+  initial-value: transparent;
+}
+@property --bs2-color {
+  syntax: '<color>';
+  inherits: false;
+  initial-value: transparent;
+}
+/* Colours for crisp rings next to those shadows, registered so they can
+   transition without transitioning box-shadow as a whole (which would fade
+   the CSS copy of a soft shadow out slowly when the backdrop takes it over). */
+@property --bs-ring {
+  syntax: '<color>';
+  inherits: false;
+  initial-value: transparent;
+}
+@property --bs-shade {
+  syntax: '<color>';
+  inherits: false;
+  initial-value: transparent;
+}
+@property --bs-soft-paint {
+  syntax: '*';
+  inherits: false;
+}
+[data-bs-on] {
+  --bs-soft-paint: 0 0 transparent;
+}
+
+/* While the WebGL backdrop draws an element's drop shadows (see
+   lib/backdropDropShadow.ts), swap the drop-shadow part of its filter for a
+   no-op. Registered as non-inheriting so it can't reach tagged descendants. */
+@property --drop-shadow-paint {
+  syntax: '*';
+  inherits: false;
+}
+[data-bs-drop] {
+  --drop-shadow-paint: opacity(1);
 }

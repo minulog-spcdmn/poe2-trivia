@@ -3,6 +3,7 @@
   import { flip } from 'svelte/animate';
   import { fly, fade } from 'svelte/transition';
   import { scanRooms, type RoomInfo } from '../lib/rooms';
+  import { backdropShadow } from '../lib/backdropShadow';
 
   let { onJoin, disabled = false }: { onJoin: (code: string) => void; disabled?: boolean } = $props();
 
@@ -91,7 +92,7 @@
   });
 </script>
 
-<section class="rooms panel">
+<section class="rooms panel" use:backdropShadow>
   <header>
     <h2>Open rooms</h2>
     <button class="refresh" onclick={scan} disabled={scanning} aria-label="Refresh room list" title="Refresh">

@@ -1,4 +1,7 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
+  import { startBackdrop } from '../lib/backdrop';
+
   // Ambient backdrop: warm glow, vignette and slowly rising embers.
   const embers = Array.from({ length: 22 }, (_, i) => ({
     left: (i * 37) % 100,
@@ -7,23 +10,47 @@
     size: 2 + (i % 3),
     drift: ((i % 5) - 2) * 18,
   }));
+
+  // The backdrop is painted by a dithered WebGL canvas (see lib/backdrop.ts);
+  // the CSS layers below are the fallback when WebGL is unavailable.
+  let canvas: HTMLCanvasElement;
+  let webgl = $state(false);
+  let failed = $state(false);
+
+  onMount(() => {
+    const fail = () => {
+      webgl = false;
+      failed = true;
+    };
+    const stop = startBackdrop(canvas, fail);
+    if (stop) webgl = true;
+    else fail();
+    return () => stop?.();
+  });
 </script>
 
-<div class="bg" aria-hidden="true">
-  <div class="glow"></div>
-  <div class="grain"></div>
-  {#each embers as e, i (i)}
-    <span
-      class="ember"
-      style:left="{e.left}%"
-      style:width="{e.size}px"
-      style:height="{e.size}px"
-      style:animation-delay="{e.delay}s"
-      style:animation-duration="{e.duration}s"
-      style:--drift="{e.drift}px"
-    ></span>
-  {/each}
-  <div class="vignette"></div>
+<div class="bg" class:css={!webgl} aria-hidden="true">
+  <canvas bind:this={canvas} class:hidden={failed}></canvas>
+  {#if !webgl}
+    <div class="glow"></div>
+    <div class="grain"></div>
+  {/if}
+  <div class="embers" class:masked={webgl}>
+    {#each embers as e, i (i)}
+      <span
+        class="ember"
+        style:left="{e.left}%"
+        style:width="{e.size}px"
+        style:height="{e.size}px"
+        style:animation-delay="{e.delay}s"
+        style:animation-duration="{e.duration}s"
+        style:--drift="{e.drift}px"
+      ></span>
+    {/each}
+  </div>
+  {#if !webgl}
+    <div class="vignette"></div>
+  {/if}
 </div>
 
 <style>
@@ -32,6 +59,8 @@
     inset: 0;
     z-index: 0;
     overflow: hidden;
+  }
+  .bg.css {
     background:
       radial-gradient(ellipse 80% 60% at 50% 110%, rgba(140, 60, 20, 0.28), transparent 70%),
       radial-gradient(ellipse 60% 50% at 50% -10%, rgba(120, 95, 60, 0.18), transparent 70%),
@@ -43,11 +72,30 @@
     background: radial-gradient(circle at 50% 45%, rgba(201, 164, 92, 0.07), transparent 45%);
     animation: breathe 9s ease-in-out infinite;
   }
+  canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  }
+  canvas.hidden {
+    display: none;
+  }
   .grain {
     position: absolute;
     inset: 0;
     opacity: 0.06;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+  .embers {
+    position: absolute;
+    inset: 0;
+  }
+  /* The canvas paints the vignette beneath the embers, so darken them toward
+     the edges the same way: a mask fading to 25% matches the vignette's
+     75% black over a near-black backdrop. */
+  .embers.masked {
+    mask-image: radial-gradient(ellipse at center, #000 45%, rgba(0, 0, 0, 0.25) 100%);
   }
   .vignette {
     position: absolute;
