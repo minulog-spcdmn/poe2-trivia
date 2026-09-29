@@ -174,8 +174,9 @@ npm run check      # svelte/type checks
 npm run build      # production build in dist/
 ```
 
-Stack: Svelte 5, TypeScript, Vite, PeerJS. Sounds are synthesized with
-WebAudio, so there are no audio files to ship.
+Stack: Svelte 5, TypeScript, Vite, PeerJS. Sound effects are short CC0
+recordings by [Kenney](https://kenney.nl) (about 125 KB in `public/sfx`, see
+`CREDITS.txt` there), mixed in WebAudio with a generated reverb.
 
 ### Refreshing item data
 

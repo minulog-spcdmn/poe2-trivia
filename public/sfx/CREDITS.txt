@@ -1,0 +1,23 @@
+Sound effects
+
+All recordings are by Kenney (https://kenney.nl), released under
+Creative Commons Zero (CC0 1.0): http://creativecommons.org/publicdomain/zero/1.0/
+
+They were trimmed, mixed down to mono, normalized and converted to MP3.
+
+  hover-1.mp3      RPG Audio        cloth2.ogg
+  hover-2.mp3      RPG Audio        cloth3.ogg
+  click-1.mp3      RPG Audio        handleSmallLeather.ogg
+  click-2.mp3      RPG Audio        handleSmallLeather2.ogg
+  select.mp3       RPG Audio        dropLeather.ogg
+  card.mp3         RPG Audio        bookFlip3.ogg
+  page.mp3         RPG Audio        bookFlip2.ogg
+  blade.mp3        RPG Audio        drawKnife3.ogg
+  coins.mp3        RPG Audio        handleCoins.ogg
+  coins-small.mp3  RPG Audio        handleCoins2.ogg
+  door-open.mp3    RPG Audio        doorOpen_1.ogg
+  door-close.mp3   RPG Audio        doorClose_3.ogg
+  bell.mp3         Impact Sounds    impactBell_heavy_001.ogg
+  thud.mp3         Impact Sounds    impactPunch_heavy_000.ogg
+  heartbeat.mp3    Impact Sounds    impactSoft_heavy_002.ogg
+  clash.mp3        Impact Sounds    impactMetal_heavy_001.ogg

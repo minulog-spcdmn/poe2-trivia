@@ -27,7 +27,7 @@
   function pick(category: string) {
     if (!mine || picked) return;
     picked = category;
-    sfx('select');
+    sfx('pick');
     session.dispatch({ type: 'pick', category });
     // Allow a retry if the host rejected the pick.
     setTimeout(() => (picked = null), 2500);
