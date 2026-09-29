@@ -547,7 +547,7 @@
     align-items: center;
     gap: 0.9rem;
     width: 100%;
-    padding: 0.95rem 1.1rem;
+    padding: 0.95rem 2.6rem 0.95rem 1.1rem;
     text-align: left;
     background: linear-gradient(90deg, rgba(40, 31, 22, 0.95), rgba(20, 16, 12, 0.95));
     border: 1px solid var(--line);
@@ -595,6 +595,15 @@
   .mark {
     font-size: 1.3rem;
     font-weight: 700;
+  }
+  /* The ✓/✕ sits in room kept free on the right, so it can't widen, heighten
+     or rewrap the answer when it appears at the reveal. */
+  .option .mark {
+    position: absolute;
+    top: 50%;
+    right: 0.9rem;
+    translate: 0 -50%;
+    line-height: 1;
   }
   .compact .option {
     padding-top: 0.7rem;
@@ -865,7 +874,10 @@
       font-size: 0.72rem;
     }
     .option {
-      padding: 0.75rem 0.9rem;
+      padding: 0.75rem 2.3rem 0.75rem 0.9rem;
+    }
+    .option .mark {
+      right: 0.7rem;
     }
     .tiles,
     .tiles.six {
