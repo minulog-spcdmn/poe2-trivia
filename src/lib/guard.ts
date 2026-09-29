@@ -13,9 +13,10 @@ export const MAX_FRAME_BYTES = 2048;
 
 /**
  * Budget for the raw frames a guest sends, checked before PeerJS decodes
- * them. PeerJS reassembles chunked messages on its own and never hands the
- * pieces to us, so without this a guest could make the host buffer data
- * without ever tripping the message rate limit.
+ * them (the session hooks it in ahead of PeerJS). PeerJS reassembles chunked
+ * messages on its own and never hands the pieces to us, so without this a
+ * guest could make the host decode and buffer data without ever tripping
+ * the message rate limit.
  */
 export class FrameGuard {
   private frames: RateLimit;
@@ -34,6 +35,9 @@ export class FrameGuard {
     return size <= MAX_FRAME_BYTES && this.frames.take() && this.bytes.take(size);
   }
 }
+
+/** Most tokens the join gate keeps a budget for; the oldest go first. */
+const GATE_ENTRIES = 500;
 
 /**
  * How often people may join. Newcomers share one budget for the room (enough
@@ -54,12 +58,27 @@ export class JoinGate {
 
   /** Null if `secret` may join now, otherwise why not. */
   admit(secret: string, known: boolean): string | null {
-    if (this.each.size > 500) this.each.clear();
-    let own = this.each.get(secret);
-    if (!own) this.each.set(secret, (own = new RateLimit(1 / 10, 6, this.now)));
-    if (!own.take()) return 'You reconnected too often. Wait a few seconds, then try again.';
+    // A newcomer gets an entry only once past the shared budget, so junk
+    // tokens can't crowd out (or reset) everyone else's.
     if (!known && !this.newcomers.take()) return 'Lots of people are joining right now. Try again in a few seconds.';
-    return null;
+    let own = this.each.get(secret);
+    if (!own) {
+      if (this.each.size >= GATE_ENTRIES) this.each.delete(this.each.keys().next().value!);
+      this.each.set(secret, (own = new RateLimit(1 / 10, 6, this.now)));
+    }
+    if (own.take()) return null;
+    if (!known) this.newcomers.refund();
+    return 'You reconnected too often. Wait a few seconds, then try again.';
+  }
+
+  /**
+   * The join was turned down after all (bad name, full, locked): a newcomer
+   * gets the shared allowance back, so rejected attempts can't use it up.
+   */
+  rejected(secret: string, known: boolean) {
+    if (known) return;
+    this.newcomers.refund();
+    this.each.delete(secret);
   }
 }
 

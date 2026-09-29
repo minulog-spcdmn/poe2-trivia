@@ -111,11 +111,12 @@ with that in mind. Guests, on the other hand, are treated as untrusted:
   within a few seconds is disconnected. One that sends anything malformed or
   floods the room is disconnected and refused for the rest of the session.
 - **Connection and join limits.** The number of connections a room accepts is
-  capped. Connections that haven't introduced themselves yet can take only a
-  few of those slots, and the oldest one is dropped when the room is full, so
-  they can't lock out real players. New people can join a full lobby's worth
-  at once, then one every few seconds. No one can leave and rejoin in a
-  loop, since every join is announced to the whole room.
+  capped. A connection that doesn't introduce itself is dropped after a few
+  seconds, and one peer can't hold more than two of them at once. New people
+  can join a full lobby's worth at once, then one every few seconds (attempts
+  that are turned down, e.g. for a taken name, don't count). No one can
+  leave and rejoin in a loop, since every join is announced to the whole
+  room.
 - **Bots.** Answers that arrive faster than a human could react (less than
   about 200 ms after the art reached that player) are ignored.
 - **Race fairness.** The host's own answers are delayed by a typical guest's
@@ -127,8 +128,9 @@ with that in mind. Guests, on the other hand, are treated as untrusted:
   - ask another question in the same category if a question's art couldn't
     be loaded
   - kick anyone, in the lobby or mid-game; the kicked player's token and
-    connection are then blocked for the rest of the session, and so is their
-    name (and look-alikes of it) for anyone new
+    connection are then blocked for the rest of the session. Kicking someone
+    who is still in the room also bars their name (and look-alikes of it)
+    for anyone new; removing an offline player doesn't
   - skip the turn of a player who is still connected but hasn't picked a
     category (or, without a timer, answered) for 30 seconds
   - hide the room code on screen for streaming

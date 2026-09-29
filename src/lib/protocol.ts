@@ -4,7 +4,7 @@
 
 import type { Action, GameState } from './game';
 
-export const PROTOCOL_VERSION = 4;
+export const PROTOCOL_VERSION = 5;
 
 /** Guest → host. */
 export type ClientMsg =
@@ -152,5 +152,10 @@ export class RateLimit {
     }
     this.strikes++;
     return false;
+  }
+
+  /** Gives back tokens taken for something that didn't happen after all. */
+  refund(cost = 1) {
+    this.tokens = Math.min(this.burst, this.tokens + cost);
   }
 }

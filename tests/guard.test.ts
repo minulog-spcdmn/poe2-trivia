@@ -69,6 +69,28 @@ test('join gate stops one player rejoining in a loop', () => {
   assert.equal(gate.admit('same', true), null);
 });
 
+test('rejected joins give the newcomer allowance back', () => {
+  const c = clock();
+  const gate = new JoinGate(c.now);
+  // A script whose hellos are all turned down (bad name, locked room…).
+  for (let i = 0; i < 100; i++) {
+    assert.equal(gate.admit(`junk-${i}`, false), null);
+    gate.rejected(`junk-${i}`, false);
+  }
+  for (let i = 0; i < 12; i++) assert.equal(gate.admit(`real-${i}`, false), null, `real ${i}`);
+});
+
+test('junk tokens cannot reset a player\'s rejoin budget', () => {
+  const gate = new JoinGate(clock().now);
+  for (let i = 0; i < 6; i++) assert.equal(gate.admit('looper', true), null);
+  assert.notEqual(gate.admit('looper', true), null);
+  // A burst of hellos with fresh tokens: only the shared allowance gets in.
+  let admitted = 0;
+  for (let i = 0; i < 600; i++) if (gate.admit(`junk-${i}`, false) === null) admitted++;
+  assert.equal(admitted, 12);
+  assert.notEqual(gate.admit('looper', true), null, 'looper got a fresh budget');
+});
+
 test('room secrets differ per room, stay stable, and pass the hello check', async () => {
   const secret = 'abcdefghijklmnopqrstuvwxyz012345';
   const a = await roomSecret(secret, 'ABCDEF');

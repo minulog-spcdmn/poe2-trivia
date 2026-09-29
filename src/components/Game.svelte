@@ -16,15 +16,16 @@
 
   const race = $derived(s.settings.mode === 'race');
 
-  // Countdown to the automatic skip of a disconnected player's turn, and to
-  // when an idle player's turn may be skipped.
+  // Countdown to the automatic skip of a disconnected player's turn.
   let now = $state(Date.now());
   $effect(() => {
-    if (!session.skipAt && !session.idleAt) return;
+    if (!session.skipAt) return;
     now = Date.now();
     const id = setInterval(() => (now = Date.now()), 500);
     return () => clearInterval(id);
   });
+  // Only the turn as shown: if the player acted meanwhile, the skip is ignored.
+  const skipTurn = () => session.dispatch({ type: 'skip', turnCount: s.turnCount, phase: s.phase });
   const skipIn = $derived(session.skipAt ? Math.max(0, Math.ceil((session.skipAt - now) / 1000)) : 0);
 
   // New turn or question: bring the scoreboard and banner back into view
@@ -104,12 +105,12 @@
         {#if session.isHost && !local && !race && !active.connected && s.phase !== 'reveal'}
           <div class="skip" transition:fade>
             <span class="muted">{active.name} is disconnected{skipIn ? ` — skipping in ${skipIn}s` : ''}.</span>
-            <button class="btn small" onclick={() => session.dispatch({ type: 'skip' })}>Skip their turn</button>
+            <button class="btn small" onclick={skipTurn}>Skip their turn</button>
           </div>
-        {:else if session.idleAt && now >= session.idleAt && s.phase !== 'reveal'}
+        {:else if session.idle}
           <div class="skip" transition:fade>
             <span class="muted">{active.name} hasn't {s.phase === 'choosing' ? 'picked a category' : 'answered'} in a while.</span>
-            <button class="btn small" onclick={() => session.dispatch({ type: 'skip' })}>Skip their turn</button>
+            <button class="btn small" onclick={skipTurn}>Skip their turn</button>
           </div>
         {/if}
         {#if session.artMissing}

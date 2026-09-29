@@ -233,7 +233,8 @@ export type Action =
   | { type: 'pick'; category: string }
   | { type: 'answer'; index: number | null; askedAt?: number }
   | { type: 'next' }
-  | { type: 'skip' }
+  /** With `turnCount` and `phase`: only if the game is still there (the player may have just acted). */
+  | { type: 'skip'; turnCount?: number; phase?: Phase }
   /** Host: swap the open question for a new one in the same category (its art failed to load). */
   | { type: 'reask' }
   /** Back to the lobby, seating the spectators; with `play`, the next game starts right away. */
@@ -540,6 +541,8 @@ export class Engine {
       case 'skip': {
         if (!isHost) throw new ActionError('Only the host can skip a turn.');
         if (s.phase !== 'choosing' && s.phase !== 'question') throw new ActionError('Nothing to skip.');
+        if ((action.turnCount !== undefined && action.turnCount !== s.turnCount) || (action.phase !== undefined && action.phase !== s.phase))
+          throw new ActionError('They just moved on.', true);
         if (race) this.advanceRace(s);
         else {
           if (s.deathmatch && s.players[s.turn]) s.deathmatch.results[s.players[s.turn].id] = false;
