@@ -95,7 +95,11 @@
   <header>
     <h2>Open rooms</h2>
     <button class="refresh" onclick={scan} disabled={scanning} aria-label="Refresh room list" title="Refresh">
-      <svg viewBox="0 0 24 24" style:rotate="{angle}deg"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 5v6h-6" /></svg>
+      <!-- The arc is centred on the viewBox so the icon turns in place. -->
+      <svg viewBox="0 0 24 24" style:rotate="{angle}deg">
+        <path d="M18.58 14.39A7 7 0 1 1 14.39 5.42" />
+        <path class="head" d="M18.15 6.8 15.6 2.15 13.2 8.7Z" />
+      </svg>
     </button>
   </header>
 
@@ -165,13 +169,18 @@
     border-color: var(--gold-lo);
   }
   .refresh svg {
-    width: 16px;
-    height: 16px;
+    width: 20px;
+    height: 20px;
     fill: none;
     stroke: currentColor;
     stroke-width: 2;
     stroke-linecap: round;
     stroke-linejoin: round;
+    will-change: rotate;
+  }
+  .refresh svg .head {
+    fill: currentColor;
+    stroke-width: 1.5;
   }
   ul {
     list-style: none;
