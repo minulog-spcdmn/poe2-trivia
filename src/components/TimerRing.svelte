@@ -50,6 +50,8 @@
     position: absolute;
     inset: 0;
     rotate: -90deg;
+    /* Let the ring's drop-shadow glow extend past the 64px viewBox. */
+    overflow: visible;
   }
   circle {
     fill: none;
