@@ -57,6 +57,10 @@
     return !!reveal && !!q.mirrored?.[index];
   }
 
+  /** Race reveal: who lost a point, the first few by name so the line stays short. */
+  const losers = $derived(q.misses.map((m) => s.players.find((p) => p.id === m.playerId)?.name ?? '?'));
+  const losersShort = $derived(losers.length > 3 ? `${losers.slice(0, 2).join(', ')} and ${losers.length - 2} more` : losers.join(', '));
+
   function optionName(index: number) {
     return q.labels[index] ?? (q.options[index] ? engine.byId.get(q.options[index])?.name : undefined) ?? '';
   }
@@ -144,7 +148,7 @@
             Nobody got it.
           {/if}
           {#if q.misses.length}
-            <span class="minus">−1 {q.misses.map((m) => s.players.find((p) => p.id === m.playerId)?.name).join(', ')}</span>
+            <span class="minus" title={losers.join(', ')}>−1 {losersShort}</span>
           {/if}
         {:else if reveal.correct}
           <b class="good">+1</b> for {active.name}!
@@ -156,7 +160,7 @@
       </p>
       {#if canNext}
         <button class="btn primary" onclick={next}>
-          {race ? 'Next question' : 'Next turn'}
+          {race ? 'Next' : 'Next turn'}
           {#if session.mode === 'host'}
             <span class="auto" style:animation-duration="{AUTO_NEXT_SECONDS}s"></span>
           {/if}
@@ -764,6 +768,8 @@
     gap: 1rem;
   }
   .result p {
+    flex: 1;
+    min-width: 0;
     margin: 0;
     font-size: 1.15rem;
   }
@@ -772,7 +778,10 @@
     color: var(--good);
     font-size: 1.4rem;
   }
+  /* However long the result, the button keeps its size. */
   .result .btn {
+    flex: none;
+    white-space: nowrap;
     overflow: hidden;
   }
   .auto,
@@ -822,10 +831,17 @@
     right: 2.6rem;
     translate: 0 -50%;
   }
+  /* On a tile the stack hangs down from under the ✓/✕, clear of the name below the art. */
   .tile .who-picked {
     position: absolute;
-    bottom: 8px;
-    right: 8px;
+    top: 40px;
+    right: 9px;
+    flex-direction: column;
+    align-items: center;
+  }
+  .tile .who-picked > span + span {
+    margin-left: 0;
+    margin-top: -6px;
   }
   .minus {
     margin-left: 0.6em;
@@ -932,6 +948,13 @@
     }
     .who-picked > span + span {
       margin-left: -5px;
+    }
+    .tile .who-picked {
+      right: 11px;
+    }
+    .tile .who-picked > span + span {
+      margin-left: 0;
+      margin-top: -5px;
     }
     .tiles,
     .tiles.six {
