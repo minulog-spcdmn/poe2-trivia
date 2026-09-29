@@ -3,11 +3,14 @@
 
   let { name, hue, size = 36, dim = false }: { name: string; hue: number; size?: number; dim?: boolean } = $props();
   const initial = $derived(name.trim().charAt(0).toUpperCase() || '?');
+  // A's thin apex and wide base make it look low when its cap height is
+  // centered, so lift it slightly.
+  const dy = $derived(initial === 'A' ? '0.32em' : '0.35em');
 </script>
 
 <span class="avatar" class:dim style:--c={playerColor(hue)} style:--s="{size}px"
   ><svg viewBox="0 0 100 100"
-    ><text x="50" y="50" dy="0.35em" text-anchor="middle">{initial}</text></svg
+    ><text x="50" y="50" {dy} text-anchor="middle">{initial}</text></svg
   ></span
 >
 
