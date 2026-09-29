@@ -12,7 +12,6 @@ import itemData from '../data/items.json';
 import {
   Engine,
   createGame,
-  DEFAULT_SETTINGS,
   ActionError,
   MAX_PLAYERS,
   MAX_SPECTATORS,
@@ -30,6 +29,7 @@ import { capped, FrameGuard, hookFrames, JoinGate, roomSecret } from './guard';
 import { cleanName, nameSkeleton } from './names';
 import { prepareMedia, shown, tileDelay, type PreparedMedia } from './media.svelte';
 import { sfx } from './sound';
+import { prefsFrom, roomPrefs, roomSettings, savePrefs } from './prefs';
 
 export const engine = new Engine(itemData as Item[]);
 
@@ -172,7 +172,7 @@ class Session {
   /** This device's player in an online game. */
   myPlayerId = $state<string | null>(null);
   /** Streamer mode: don't show the room code on screen. */
-  hideCode = $state(readLocal('poe2trivia.hideCode') === '1');
+  hideCode = $state(roomPrefs().hideCode);
   /** Reconnecting to the host has been given up. */
   gaveUp = $state(false);
   /** Host: when the disconnected active player's turn will be skipped (0 = not pending). */
@@ -261,7 +261,7 @@ class Session {
 
   setHideCode(hide: boolean) {
     this.hideCode = hide;
-    writeLocal('poe2trivia.hideCode', hide ? '1' : '0');
+    savePrefs({ hideCode: hide });
   }
 
   // ---- hot-seat ---------------------------------------------------------
@@ -329,7 +329,7 @@ class Session {
           if (p.id !== me) s = engine.apply(s, { type: 'connection', playerId: p.id, connected: false }, null);
         this.setState(s);
       } else {
-        let s = createGame(me, { ...DEFAULT_SETTINGS, mode: 'race' });
+        let s = createGame(me, roomSettings());
         try {
           s = engine.apply(s, { type: 'join', playerId: me, name: this.joinName }, me);
         } catch (err) {
@@ -928,6 +928,8 @@ class Session {
       this.stopMedia();
     }
     if (this.mode === 'host') {
+      // The next room this browser opens starts with these settings.
+      savePrefs(prefsFrom(next.settings));
       const msg: HostMsg = { t: 'state', state: publicView(next), now: Date.now() };
       for (const [conn, g] of this.guests) if (g.playerId) this.send(conn, msg);
     }
