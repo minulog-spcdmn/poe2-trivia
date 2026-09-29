@@ -68,7 +68,7 @@
     // Time's up: the host only waits a moment longer for answers already on their way.
     if (q.deadline && session.hostNow() > q.deadline) return;
     chosen = index;
-    sfx('click');
+    sfx('select');
     session.dispatch({ type: 'answer', index, askedAt: q.askedAt });
     setTimeout(() => {
       if (!session.state?.reveal) chosen = null;
@@ -150,7 +150,7 @@
         {/if}
       </p>
       {#if canNext}
-        <button class="btn primary" onclick={next}>
+        <button class="btn primary" data-sfx="none" onclick={next}>
           {race ? 'Next question' : 'Next turn'}
           {#if session.mode === 'host'}
             <span class="auto" style:animation-duration="{AUTO_NEXT_SECONDS}s"></span>
@@ -202,6 +202,7 @@
           {@const src = reveal && q.options[i] ? itemImage(q.options[i]) : media?.options[i]}
           <button
             class="tile {st}"
+            data-sfx="none"
             class:mine
             disabled={!mine || !!reveal || chosen !== null}
             onclick={() => answer(i)}
@@ -280,6 +281,7 @@
           {@const st = optionState(i)}
           <button
             class="option {st}"
+            data-sfx="none"
             class:mine
             disabled={!mine || !!reveal || chosen !== null}
             onclick={() => answer(i)}

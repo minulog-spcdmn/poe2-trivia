@@ -986,6 +986,16 @@ class Session {
   private onNewState(prev: GameState | null, next: GameState) {
     if (!prev) return;
     const me = this.myPlayerId;
+    if ((prev.phase === 'lobby' || prev.phase === 'over') && (next.phase === 'choosing' || next.phase === 'question')) {
+      sfx('start');
+      return;
+    }
+    if (next.phase === 'over' && prev.phase !== 'over') {
+      // Hot-seat and spectators celebrate whoever won; a player who lost hears a toll instead.
+      const lost = this.mode !== 'local' && !!me && next.players.some((p) => p.id === me) && !next.winners.includes(me);
+      sfx(lost ? 'defeat' : 'victory');
+      return;
+    }
     if (next.settings.mode === 'race' && next.phase !== 'over') {
       const missedNow = (st: GameState) => st.question?.misses.some((m) => m.playerId === me) ?? false;
       if (prev.phase !== 'reveal' && next.phase === 'reveal' && next.reveal) {
@@ -1004,8 +1014,6 @@ class Session {
       sfx(next.players[next.turn]?.id === me || this.mode === 'local' ? 'yourTurn' : 'turn');
     } else if (prev.phase === 'choosing' && next.phase === 'question') {
       sfx('reveal');
-    } else if (next.phase === 'over' && prev.phase !== 'over') {
-      sfx('victory');
     } else if (prev.phase === 'lobby' && next.phase === 'lobby' && next.players.length > prev.players.length) {
       sfx('join');
     }
