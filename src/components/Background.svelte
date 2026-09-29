@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
+
   // Ambient backdrop: warm glow, vignette and slowly rising embers.
   const embers = Array.from({ length: 22 }, (_, i) => ({
     left: (i * 37) % 100,
@@ -7,6 +9,46 @@
     size: 2 + (i % 3),
     drift: ((i % 5) - 2) * 18,
   }));
+
+  // Dither grain, rendered at device resolution so each physical pixel gets its
+  // own noise value. A CSS-pixel texture gets smoothed on high-DPI screens, which
+  // averages the noise away and lets gradient banding show through again.
+  let grain = $state('');
+  let grainSize = $state(0);
+
+  function makeGrain() {
+    const dpr = window.devicePixelRatio || 1;
+    const px = 256;
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = px;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const img = ctx.createImageData(px, px);
+    for (let i = 0; i < img.data.length; i += 4) {
+      const v = Math.random() * 256;
+      img.data[i] = img.data[i + 1] = img.data[i + 2] = v;
+      img.data[i + 3] = 255;
+    }
+    ctx.putImageData(img, 0, 0);
+    grain = `url(${canvas.toDataURL()})`;
+    grainSize = px / dpr;
+  }
+
+  onMount(() => {
+    makeGrain();
+    // Regenerate when the pixel ratio changes (zoom, moving between monitors).
+    let mq: MediaQueryList;
+    const watch = () => {
+      mq = matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+      mq.addEventListener('change', onChange, { once: true });
+    };
+    const onChange = () => {
+      makeGrain();
+      watch();
+    };
+    watch();
+    return () => mq.removeEventListener('change', onChange);
+  });
 </script>
 
 <div class="bg" aria-hidden="true">
@@ -23,9 +65,15 @@
     ></span>
   {/each}
   <div class="vignette"></div>
-  <!-- Grain goes last so it dithers every gradient beneath it (prevents banding). -->
-  <div class="grain"></div>
 </div>
+<!-- Grain sits above the whole UI (not just the backdrop) so it dithers every
+     gradient and shadow on the page, which is what prevents banding. -->
+<div
+  class="grain"
+  aria-hidden="true"
+  style:background-image={grain}
+  style:background-size="{grainSize}px"
+></div>
 
 <style>
   .bg {
@@ -45,11 +93,12 @@
     animation: breathe 9s ease-in-out infinite;
   }
   .grain {
-    position: absolute;
+    position: fixed;
     inset: 0;
+    z-index: 1000;
     opacity: 0.04;
     pointer-events: none;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 0 0 0 0 1'/%3E%3CfeComponentTransfer%3E%3CfeFuncR type='linear' slope='3' intercept='-1'/%3E%3CfeFuncG type='linear' slope='3' intercept='-1'/%3E%3CfeFuncB type='linear' slope='3' intercept='-1'/%3E%3C/feComponentTransfer%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    image-rendering: pixelated;
   }
   .vignette {
     position: absolute;
