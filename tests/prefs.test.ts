@@ -1,6 +1,18 @@
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { DEFAULT_PREFS, PREFS_KEY, PREFS_VERSION, loadPrefs, parsePrefs, roomSettings, serializePrefs, type RoomPrefs } from '../src/lib/prefs.ts';
+import {
+  DEFAULT_PREFS,
+  PREFS_KEY,
+  PREFS_VERSION,
+  loadPrefs,
+  parsePrefs,
+  prefsFrom,
+  roomSettings,
+  savePrefs,
+  serializePrefs,
+  type RoomPrefs,
+} from '../src/lib/prefs.ts';
+import type { Difficulty, Settings } from '../src/lib/game.ts';
 
 const store = new Map<string, string>();
 (globalThis as { localStorage?: unknown }).localStorage = {
@@ -54,6 +66,39 @@ test('keeps a room code hidden under the old setting', () => {
   store.set('poe2trivia.hideCode', '1');
   assert.equal(loadPrefs().hideCode, true);
   assert.equal(store.has('poe2trivia.hideCode'), false);
+  assert.equal(parsePrefs(store.get(PREFS_KEY) ?? null)?.hideCode, true);
+});
+
+test("keeps the old hidden-code setting when the new entry can't be written", () => {
+  store.set('poe2trivia.hideCode', '1');
+  const ls = globalThis.localStorage as { setItem: (k: string, v: string) => void };
+  const setItem = ls.setItem;
+  ls.setItem = () => {
+    throw new Error('QuotaExceededError');
+  };
+  try {
+    assert.equal(loadPrefs().hideCode, true);
+  } finally {
+    ls.setItem = setItem;
+  }
+  assert.equal(store.get('poe2trivia.hideCode'), '1');
+  assert.equal(store.has(PREFS_KEY), false);
+});
+
+test('settings from a room saved by an older build are made valid before saving', () => {
+  const old = { targetScore: 7.6, timer: 999 } as unknown as Settings;
+  const p = prefsFrom(old);
+  assert.deepEqual(p, { targetScore: 8, timer: 120, difficulty: 'merciless', mode: 'turns', public: false });
+  store.set(PREFS_KEY, serializePrefs(custom));
+  savePrefs(p);
+  assert.deepEqual(parsePrefs(store.get(PREFS_KEY) ?? null), { ...custom, ...p });
+});
+
+test('never stores an entry that would be thrown away on the next load', () => {
+  savePrefs({ targetScore: 3, hideCode: true });
+  const before = store.get(PREFS_KEY);
+  savePrefs({ difficulty: undefined as unknown as Difficulty });
+  assert.equal(store.get(PREFS_KEY), before);
   assert.equal(parsePrefs(store.get(PREFS_KEY) ?? null)?.hideCode, true);
 });
 

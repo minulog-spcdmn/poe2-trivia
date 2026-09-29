@@ -1,7 +1,7 @@
 // The host's room settings, remembered in this browser so the next room they
 // open starts the way they left the last one.
 
-import { DEFAULT_SETTINGS, isDifficulty, type Difficulty, type GameMode, type Settings } from './game.ts';
+import { DEFAULT_SETTINGS, difficultyOf, isDifficulty, type Difficulty, type GameMode, type Settings } from './game.ts';
 
 export interface RoomPrefs {
   targetScore: number;
@@ -59,11 +59,13 @@ export function parsePrefs(raw: string | null): RoomPrefs | null {
 
 export const serializePrefs = (p: RoomPrefs) => JSON.stringify({ v: PREFS_VERSION, ...p });
 
-function write(p: RoomPrefs) {
+/** Whether the entry could be stored. */
+function write(p: RoomPrefs): boolean {
   try {
     localStorage.setItem(PREFS_KEY, serializePrefs(p));
+    return true;
   } catch {
-    /* ignore */
+    return false;
   }
 }
 
@@ -84,11 +86,13 @@ export function loadPrefs(): RoomPrefs {
   const saved = parsePrefs(raw);
   if (saved) return saved;
   const fresh = { ...DEFAULT_PREFS, hideCode: legacyHide };
-  write(fresh);
-  try {
-    localStorage.removeItem(LEGACY_HIDE_KEY);
-  } catch {
-    /* ignore */
+  // The old key goes only once the new entry holds its value.
+  if (write(fresh)) {
+    try {
+      localStorage.removeItem(LEGACY_HIDE_KEY);
+    } catch {
+      /* ignore */
+    }
   }
   return fresh;
 }
@@ -101,6 +105,8 @@ export function roomPrefs(): RoomPrefs {
 
 export function savePrefs(change: Partial<RoomPrefs>) {
   const next = { ...roomPrefs(), ...change };
+  // Never store what loadPrefs would throw away (and with it, a hidden room code).
+  if (!parsePrefs(serializePrefs(next))) return;
   const prev = current!;
   if ((Object.keys(next) as (keyof RoomPrefs)[]).every((k) => next[k] === prev[k])) return;
   current = next;
@@ -120,11 +126,18 @@ export function roomSettings(p: RoomPrefs = roomPrefs()): Settings {
   };
 }
 
-/** The part of a room's settings worth remembering (whether it's locked is not). */
+const clampInt = (v: unknown, min: number, max: number, fallback: number) =>
+  typeof v === 'number' && Number.isFinite(v) ? Math.max(min, Math.min(max, Math.round(v))) : fallback;
+
+/**
+ * The part of a room's settings worth remembering (whether it's locked is
+ * not), made valid first: a room saved by an older build may lack some.
+ */
 export const prefsFrom = (s: Settings): Partial<RoomPrefs> => ({
-  targetScore: s.targetScore,
-  timer: s.timer,
-  difficulty: s.difficulty,
-  mode: s.mode,
+  targetScore: clampInt(s.targetScore, 1, 50, DEFAULT_PREFS.targetScore),
+  timer: clampInt(s.timer, 0, 120, DEFAULT_PREFS.timer),
+  difficulty: difficultyOf(s.difficulty),
+  // Rooms from before race mode existed played in turns.
+  mode: s.mode === 'race' ? 'race' : 'turns',
   public: !!s.public,
 });
