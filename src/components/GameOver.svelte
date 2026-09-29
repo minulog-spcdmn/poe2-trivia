@@ -5,6 +5,7 @@
   import { playerColor } from '../lib/ui';
   import Avatar from './Avatar.svelte';
   import { CREATOR, DONATE_URL, SITE_URL } from '../lib/site';
+  import { backdropShadow } from '../lib/backdropShadow';
 
   const s = $derived(session.state!);
   const standings = $derived([...s.players].sort((a, b) => b.score - a.score));
@@ -114,7 +115,7 @@
     </p>
   {/if}
 
-  <ol class="standings panel" in:fly={{ y: 30, duration: 700, delay: 900 }}>
+  <ol class="standings panel" use:backdropShadow in:fly={{ y: 30, duration: 700, delay: 900 }}>
     {#each standings as p, i (p.id)}
       <li class:first={rank[i] === 1} in:fly={{ x: -20, duration: 400, delay: 1100 + i * 100 }}>
         <span class="rank">{rank[i]}</span>

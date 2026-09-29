@@ -6,6 +6,7 @@
   import { sfx } from '../lib/sound';
   import { inviteUrl } from '../lib/site';
   import Avatar from './Avatar.svelte';
+  import { backdropShadow } from '../lib/backdropShadow';
 
   const TIMERS = [0, 10, 15, 20, 30, 45];
   const TARGETS = [5, 10, 15, 20];
@@ -165,7 +166,7 @@
   {/if}
 
   <div class="cols">
-    <section class="panel players" in:fly={{ x: -30, duration: 500, delay: 100 }}>
+    <section class="panel players" use:backdropShadow in:fly={{ x: -30, duration: 500, delay: 100 }}>
       <header>
         <h2>Party</h2>
         <span class="count">{s.players.length} / {MAX_PLAYERS}</span>
@@ -213,7 +214,7 @@
       {/if}
     </section>
 
-    <section class="panel settings" in:fly={{ x: 30, duration: 500, delay: 200 }}>
+    <section class="panel settings" use:backdropShadow in:fly={{ x: 30, duration: 500, delay: 200 }}>
       <header><h2>Rules</h2></header>
 
       <div class="setting">

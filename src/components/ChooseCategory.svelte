@@ -4,6 +4,7 @@
   import { categoryIcon } from '../lib/ui';
   import { rulesFor } from '../lib/game';
   import { sfx } from '../lib/sound';
+  import { backdropShadow } from '../lib/backdropShadow';
 
   const s = $derived(session.state!);
   const active = $derived(s.players[s.turn]);
@@ -56,7 +57,7 @@
         onclick={() => pick(cat)}
         in:deal={{ i }}
       >
-        <span class="frame">
+        <span class="frame" use:backdropShadow>
           <span class="corner tl"></span><span class="corner tr"></span>
           <span class="corner bl"></span><span class="corner br"></span>
           <span class="icon"><span class="glyph" style:--src="url('{categoryIcon(cat)}')"></span></span>

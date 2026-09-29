@@ -1,11 +1,13 @@
 // WebGL renderer for the page backdrop: breathing gradients, drifting blobs,
-// grain and vignette. Every layer is composited in floating point and
+// grain, vignette and the soft outer shadows of UI elements on top of it. Every layer is composited in floating point and
 // dithered once, at the final 8-bit conversion, so the dark gradients can't
 // band. Falloffs are Gaussian or smoothstep curves with no hard end, so no
 // layer shows an edge.
 //
 // Background.svelte keeps a static CSS approximation as the fallback when
 // WebGL is unavailable.
+
+import { MAX_ELEMENTS, SHADOWS_PER_ELEMENT, measureShadows, releaseAll } from './backdropShadow';
 
 const VERT = `
 attribute vec2 aPos;
@@ -34,9 +36,53 @@ uniform vec4 uBlobA[${BLOB_COUNT}];
 uniform vec3 uBlobB[${BLOB_COUNT}];
 uniform vec3 uBlobColor[${BLOB_COUNT}];
 
+// Outer box-shadows of UI elements (see backdropShadow.ts for the layout).
+uniform vec4 uElA[${MAX_ELEMENTS}];
+uniform vec4 uElB[${MAX_ELEMENTS}];
+uniform vec4 uShGeo[${MAX_ELEMENTS * SHADOWS_PER_ELEMENT}];
+uniform vec4 uShCol[${MAX_ELEMENTS * SHADOWS_PER_ELEMENT}];
+
 vec3 rgb(float r, float g, float b) { return vec3(r, g, b) / 255.0; }
 
 float gauss(float d) { return exp(-d * d); }
+
+// Blurred rounded-rectangle shadow (Evan Wallace, "Fast Rounded Rectangle
+// Shadows"): exact Gaussian integral across x via erf, numerically integrated
+// along y. Returns coverage in [0, 1].
+vec2 erf2(vec2 x) {
+  vec2 s = sign(x);
+  vec2 a = abs(x);
+  x = 1.0 + (0.278393 + (0.230389 + 0.078108 * (a * a)) * a) * a;
+  x *= x;
+  return s - s / (x * x);
+}
+
+float shadowX(float x, float y, float sigma, float corner, vec2 halfSize) {
+  float delta = min(halfSize.y - corner - abs(y), 0.0);
+  float curved = halfSize.x - corner + sqrt(max(0.0, corner * corner - delta * delta));
+  vec2 integral = 0.5 + 0.5 * erf2((x + vec2(-curved, curved)) * (0.70710678 / sigma));
+  return integral.y - integral.x;
+}
+
+float roundedBoxShadow(vec2 lower, vec2 upper, vec2 point, float sigma, float corner) {
+  vec2 center = (lower + upper) * 0.5;
+  vec2 halfSize = (upper - lower) * 0.5;
+  corner = min(corner, min(halfSize.x, halfSize.y));
+  point -= center;
+  float low = point.y - halfSize.y;
+  float high = point.y + halfSize.y;
+  float y0 = clamp(-3.0 * sigma, low, high);
+  float y1 = clamp(3.0 * sigma, low, high);
+  float dy = (y1 - y0) / 8.0;
+  float y = y0 + dy * 0.5;
+  float value = 0.0;
+  for (int i = 0; i < 8; i++) {
+    value += shadowX(point.x, point.y - y, sigma, corner, halfSize)
+      * exp(-y * y / (2.0 * sigma * sigma)) * dy;
+    y += dy;
+  }
+  return value * (0.39894228 / sigma);
+}
 
 // Hash without sine (Dave Hoskins); uniform in [0, 1).
 float hash(vec2 p) {
@@ -99,6 +145,34 @@ void main() {
   // corners (farthest-corner ellipse, as in CSS).
   d = length((p - vec2(0.5 * W, 0.5 * H)) / (vec2(0.5 * W, 0.5 * H) * 1.4142136 * uVignette.x));
   col *= 1.0 - min(0.9, uVignette.y * 0.72 * pow(d, 2.4));
+
+  // UI shadows, painted over the backdrop like the CSS they replace, and only
+  // outside each element's border box (widened by the crisp rings CSS keeps).
+  float pxLocal = uSize.x / uRes.x; // CSS px per device px
+  for (int i = 0; i < ${MAX_ELEMENTS}; i++) {
+    vec4 ea = uElA[i];
+    vec4 eb = uElB[i];
+    if (eb.w < 0.5) continue;
+    vec2 lp = (p - ea.xy) * ea.z; // element px from its border-box corner
+    vec2 halfBox = eb.xy * 0.5 + ea.w;
+    float rr = min(eb.z + ea.w, min(halfBox.x, halfBox.y));
+    vec2 qd = abs(lp - eb.xy * 0.5) - halfBox + rr;
+    float sdf = length(max(qd, 0.0)) + min(max(qd.x, qd.y), 0.0) - rr;
+    float outside = clamp(sdf / (pxLocal * ea.z) + 0.5, 0.0, 1.0);
+    if (outside <= 0.0) continue;
+    for (int j = 0; j < ${SHADOWS_PER_ELEMENT}; j++) {
+      vec4 g = uShGeo[i * ${SHADOWS_PER_ELEMENT} + j];
+      vec4 c = uShCol[i * ${SHADOWS_PER_ELEMENT} + j];
+      if (c.a <= 0.0) continue;
+      vec2 lower = g.xy - g.w;
+      vec2 upper = eb.xy + g.xy + g.w;
+      // Skip pixels beyond the Gaussian's reach.
+      vec2 far = max(lower - lp, lp - upper);
+      if (max(far.x, far.y) > 4.0 * g.z) continue;
+      float a = roundedBoxShadow(lower, upper, lp, g.z, max(eb.z + g.w, 0.0));
+      col = mix(col, c.rgb, c.a * a * outside);
+    }
+  }
 
   // TPDF dither of +-1 LSB, per device pixel, ahead of the round-to-nearest
   // 8-bit conversion. The same sample goes to all three channels, so the
@@ -190,12 +264,17 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   if (!gl) return null;
   const hp = gl.getShaderPrecisionFormat(gl.FRAGMENT_SHADER, gl.HIGH_FLOAT);
   if (!hp || hp.precision === 0) return null;
+  // The shader's uniform arrays need about 80 vectors; every real device has
+  // far more, but WebGL only guarantees 16.
+  if (gl.getParameter(gl.MAX_FRAGMENT_UNIFORM_VECTORS) < 128) return null;
 
   const compile = (type: number, src: string) => {
     const s = gl.createShader(type)!;
     gl.shaderSource(s, src);
     gl.compileShader(s);
-    return gl.getShaderParameter(s, gl.COMPILE_STATUS) ? s : null;
+    if (gl.getShaderParameter(s, gl.COMPILE_STATUS)) return s;
+    console.warn('Backdrop shader failed to compile; using the CSS backdrop.', gl.getShaderInfoLog(s));
+    return null;
   };
   const vs = compile(gl.VERTEX_SHADER, VERT);
   const fs = compile(gl.FRAGMENT_SHADER, FRAG);
@@ -222,6 +301,15 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   const uVignette = gl.getUniformLocation(prog, 'uVignette');
   const uBaseStop = gl.getUniformLocation(prog, 'uBaseStop');
   const uBlobA = gl.getUniformLocation(prog, 'uBlobA');
+  const uElA = gl.getUniformLocation(prog, 'uElA');
+  const uElB = gl.getUniformLocation(prog, 'uElB');
+  const uShGeo = gl.getUniformLocation(prog, 'uShGeo');
+  const uShCol = gl.getUniformLocation(prog, 'uShCol');
+  const elA = new Float32Array(MAX_ELEMENTS * 4);
+  const elB = new Float32Array(MAX_ELEMENTS * 4);
+  const shGeo = new Float32Array(MAX_ELEMENTS * SHADOWS_PER_ELEMENT * 4);
+  const shCol = new Float32Array(MAX_ELEMENTS * SHADOWS_PER_ELEMENT * 4);
+  const prev = new Float32Array(elA.length + elB.length + shGeo.length + shCol.length);
 
   gl.uniform3fv(gl.getUniformLocation(prog, 'uBlobB'), BLOBS.flatMap((b) => b.reach));
   gl.uniform3fv(
@@ -255,23 +343,44 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     gl!.uniform2f(uVignette, 1 - 0.06 * vignette, 1 + 0.07 * vignette);
     gl!.uniform1f(uBaseStop, 0.6 - 0.08 * base);
     gl!.uniform4fv(uBlobA, paths.flatMap((path) => path(still ? 0 : ms / 1000)));
+    gl!.uniform4fv(uElA, elA);
+    gl!.uniform4fv(uElB, elB);
+    gl!.uniform4fv(uShGeo, shGeo);
+    gl!.uniform4fv(uShCol, shCol);
     gl!.drawArrays(gl!.TRIANGLES, 0, 3);
   }
 
+  // Measures the shadowed elements; true if anything changed since last time.
+  function measure() {
+    measureShadows(elA, elB, shGeo, shCol, canvas.clientWidth, canvas.clientHeight);
+    let changed = false;
+    let k = 0;
+    for (const arr of [elA, elB, shGeo, shCol]) {
+      for (let i = 0; i < arr.length; i++, k++) {
+        if (prev[k] !== arr[i]) {
+          prev[k] = arr[i];
+          changed = true;
+        }
+      }
+    }
+    return changed;
+  }
+
+  // Shadows must track their elements every frame (hover, transitions,
+  // scrolling), so a change draws at once. Otherwise the backdrop's own
+  // motion only needs 30fps (its quickest cycle is a slow 9s breath), and
+  // with reduced motion nothing is drawn until something changes.
+  let dirty = false;
   function frame(now: number) {
     raf = requestAnimationFrame(frame);
-    // The quickest cycle is a slow 9s breath; 30fps is plenty and halves
-    // the GPU work.
-    if (now - last < 33) return;
+    const changed = measure() || dirty;
+    if (!changed && (reduceMotion.matches || now - last < 33)) return;
     last = now;
+    dirty = false;
     draw(now);
   }
 
-  function schedule() {
-    cancelAnimationFrame(raf);
-    if (reduceMotion.matches) draw(performance.now());
-    else raf = requestAnimationFrame(frame);
-  }
+  const onMotionChange = () => (dirty = true);
 
   // Size the drawing buffer to the exact device pixels the canvas covers.
   // Any mismatch makes the browser resample the canvas, which smears the dither.
@@ -300,7 +409,8 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     cancelAnimationFrame(raf);
     ro.disconnect();
     canvas.removeEventListener('webglcontextlost', lost);
-    reduceMotion.removeEventListener('change', schedule);
+    reduceMotion.removeEventListener('change', onMotionChange);
+    releaseAll();
   }
 
   // A lost context stays lost: we don't call preventDefault(), so the browser
@@ -311,13 +421,14 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     onLost();
   }
   canvas.addEventListener('webglcontextlost', lost);
-  reduceMotion.addEventListener('change', schedule);
+  reduceMotion.addEventListener('change', onMotionChange);
 
   // Paint the first frame now so the swap from the CSS backdrop is seamless.
   canvas.width = Math.max(1, Math.round(canvas.clientWidth * devicePixelRatio));
   canvas.height = Math.max(1, Math.round(canvas.clientHeight * devicePixelRatio));
+  measure();
   draw(performance.now());
-  schedule();
+  raf = requestAnimationFrame(frame);
 
   return stop;
 }

@@ -280,3 +280,10 @@ h3,
 .balance {
   text-wrap: balance;
 }
+
+/* While the WebGL backdrop draws an element's blurred outer shadows (see
+   lib/backdropShadow.ts), clip the element to its border box so CSS doesn't
+   paint them too. --bs-keep widens the clip for crisp rings CSS still draws. */
+[data-bs-on] {
+  clip-path: inset(calc(-1 * var(--bs-keep, 0px)) round calc(var(--bs-radius, 0px) + var(--bs-keep, 0px)));
+}

@@ -6,6 +6,7 @@
   import { sfx } from '../lib/sound';
   import OpenRooms from './OpenRooms.svelte';
   import { CREATOR, DONATE_URL, IMPRINT_URL, PRIVACY_URL } from '../lib/site';
+  import { backdropShadow } from '../lib/backdropShadow';
 
   const params = new URLSearchParams(location.search);
   const invite = (params.get('room') ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, CODE_LENGTH);
@@ -91,7 +92,7 @@
     </p>
   </div>
 
-  <div class="card panel" in:fly={{ y: 30, duration: 700, delay: 400 }}>
+  <div class="card panel" use:backdropShadow in:fly={{ y: 30, duration: 700, delay: 400 }}>
     <label class="label" for="name">Your name, Exile</label>
     <input
       id="name"
