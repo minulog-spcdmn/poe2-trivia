@@ -249,7 +249,11 @@
     font-weight: 900;
     line-height: 1;
     letter-spacing: 0.06em;
-    background: linear-gradient(180deg, #fff1c9 10%, #d7b068 50%, #8b6526 95%);
+    /* The text is painted by its background, which ends at the padding box,
+       so give the Q's tail room below the line box without moving anything. */
+    padding-bottom: 0.3em;
+    margin-bottom: -0.3em;
+    background: linear-gradient(180deg, #fff1c9 0.1em, #d7b068 0.5em, #8b6526 0.95em);
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;
