@@ -1147,6 +1147,8 @@ class Session {
     this.code = '';
     this.myPlayerId = null;
     this.gaveUp = false;
+    // Another tab may have turned streamer mode on since this page loaded.
+    this.hideCode = roomPrefs().hideCode;
     if (this.saveTimer) clearTimeout(this.saveTimer);
     this.saveTimer = null;
     this.priv = noPrivate();
