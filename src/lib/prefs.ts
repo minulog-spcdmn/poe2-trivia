@@ -97,19 +97,16 @@ export function loadPrefs(): RoomPrefs {
   return fresh;
 }
 
-let current: RoomPrefs | null = null;
+/** Always read fresh: another tab may have changed them since this page loaded. */
+export const roomPrefs = loadPrefs;
 
-export function roomPrefs(): RoomPrefs {
-  return (current ??= loadPrefs());
-}
-
+/** Stores the changed fields, keeping whatever is saved for the rest (maybe by another tab). */
 export function savePrefs(change: Partial<RoomPrefs>) {
-  const next = { ...roomPrefs(), ...change };
+  const prev = loadPrefs();
+  const next = { ...prev, ...change };
   // Never store what loadPrefs would throw away (and with it, a hidden room code).
   if (!parsePrefs(serializePrefs(next))) return;
-  const prev = current!;
   if ((Object.keys(next) as (keyof RoomPrefs)[]).every((k) => next[k] === prev[k])) return;
-  current = next;
   write(next);
 }
 

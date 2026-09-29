@@ -102,6 +102,15 @@ test('never stores an entry that would be thrown away on the next load', () => {
   assert.equal(parsePrefs(store.get(PREFS_KEY) ?? null)?.hideCode, true);
 });
 
+test("saving keeps what another tab saved for the other fields", () => {
+  store.set(PREFS_KEY, serializePrefs({ ...custom, hideCode: false }));
+  savePrefs({ targetScore: 20 });
+  // Another tab turns streamer mode on.
+  store.set(PREFS_KEY, serializePrefs({ ...custom, targetScore: 20, hideCode: true }));
+  savePrefs({ targetScore: 25 });
+  assert.deepEqual(parsePrefs(store.get(PREFS_KEY) ?? null), { ...custom, targetScore: 25, hideCode: true });
+});
+
 test('a new room starts unlocked with the saved settings', () => {
   const s = roomSettings(custom);
   assert.deepEqual(s, { targetScore: 15, timer: 45, difficulty: 'eternal', mode: 'turns', public: true, locked: false });
