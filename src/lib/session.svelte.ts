@@ -48,6 +48,8 @@ const MAX_CONNECTIONS = MAX_PLAYERS + MAX_SPECTATORS + MAX_PENDING;
 /** Most remembered player tokens, and kicked tokens/peers/names or blocked peers, each (they're saved with the room). */
 const MAX_KNOWN = 400;
 const MAX_BLOCKED = 200;
+/** What a client is told when the room can't take its connection right now. */
+const ROOM_BUSY = 'The room is busy right now. Trying again…';
 /** Client: after the host says "not now" (too many joins), try again this much later. */
 const BUSY_RETRY_MS = 5000;
 /** A connection must introduce itself within this time. */
@@ -385,13 +387,13 @@ class Session {
     if (mine.length >= MAX_PENDING_PER_PEER) this.drop(mine[0][0]);
     else if (pending.length >= MAX_PENDING) {
       if (Date.now() - pending[0][1].since < PENDING_GRACE_MS) {
-        this.refuse(conn);
+        this.refuse(conn, ROOM_BUSY);
         return;
       }
       this.drop(pending[0][0]);
     }
     if (this.guests.size >= MAX_CONNECTIONS) {
-      this.refuse(conn);
+      this.refuse(conn, ROOM_BUSY);
       return;
     }
     const guest: Guest = {
@@ -482,8 +484,17 @@ class Session {
     conn.on('open', () => conn.dataChannel?.addEventListener('message', (e) => check(e.data)));
   }
 
-  private refuse(conn: DataConnection) {
-    conn.on('open', () => conn.close());
+  /**
+   * Turns a connection away. With `busy` (the room is only full for the
+   * moment), the client is told so and tries again by itself; otherwise
+   * (a blocked peer) it just gets closed.
+   */
+  private refuse(conn: DataConnection, busy?: string) {
+    conn.on('open', () => {
+      if (!busy) return conn.close();
+      this.send(conn, { t: 'busy', message: busy });
+      setTimeout(() => conn.close(), 400);
+    });
     // One that never opens still has to go.
     setTimeout(() => conn.close(), HELLO_TIMEOUT_MS);
   }
