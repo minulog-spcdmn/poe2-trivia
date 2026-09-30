@@ -25,8 +25,11 @@
 // `data-bs-fill` turns transparent while the backdrop draws it. Unlike a soft
 // shadow, a fill has a crisp edge, so it goes back to CSS whenever it could
 // lag behind the element: while the page scrolls, while a transform animation
-// moves the element or an ancestor, or when an ancestor paints a background
-// of its own (which would cover the backdrop).
+// or the camera shake (lib/fx/core.ts) moves the element or an ancestor, or
+// when an ancestor paints a background of its own (which would cover the
+// backdrop).
+
+import { shaking } from './fx/core';
 
 export type Fill = 'linear' | 'stage';
 export type BackdropOptions = { fill?: Fill } | undefined;
@@ -163,6 +166,9 @@ export function measureShadows(
   for (const arr of [elA, elB, elC, elD, elE, geo, col]) arr.fill(0);
 
   const scrolling = performance.now() - lastScroll < 220;
+  // The shake moves the whole view with an inline translate, which the effects
+  // loop updates after this frame's backdrop is drawn.
+  const shook = shaking();
   let moving: Set<Element> | null = null;
   const isMoving = (node: HTMLElement) => {
     moving ??= movingElements();
@@ -202,7 +208,7 @@ export function measureShadows(
     ok &&= opacity > 0;
 
     let fill: { kind: number; angle: number; a: number[]; b: number[] } | null = null;
-    if (ok && fillKind && !scrolling && !isMoving(node)) {
+    if (ok && fillKind && !scrolling && !shook && !isMoving(node)) {
       const a = parseColor(cs.getPropertyValue('--bs-fill-a').trim());
       const b = parseColor(cs.getPropertyValue('--bs-fill-b').trim());
       const angle = parseFloat(cs.getPropertyValue('--bs-fill-angle')) || 180;

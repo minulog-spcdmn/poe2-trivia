@@ -140,16 +140,16 @@ export function setHomeScene(title: Element | null) {
 
 /**
  * Steps the start page's light: writes (rays, glow, 0, 0) to `a` and the
- * title's centre and half size (CSS px) to `b`. Returns whether it's lit.
+ * title's centre and half size (CSS px) to `b`. Returns whether any of it
+ * changed (fading in or out, or the title moved), so the backdrop redraws.
  */
 export function stepHomeScene(dt: number, a: Float32Array, b: Float32Array): boolean {
   const k = 1 - Math.exp(-dt * 1.4);
   scene.rays += (scene.target - scene.rays) * k;
   scene.glow += (scene.target - scene.glow) * k;
-  if (scene.target === 0 && scene.rays < 0.002) {
-    scene.rays = scene.glow = 0;
-    scene.title = null;
-  }
+  // Land exactly on the target, so a finished fade stops asking for frames.
+  if (Math.abs(scene.target - scene.rays) < 0.002) scene.rays = scene.glow = scene.target;
+  if (scene.target === 0 && scene.rays === 0) scene.title = null;
   if (scene.title?.isConnected) {
     const r = scene.title.getBoundingClientRect();
     scene.x = r.left + r.width / 2;
@@ -157,11 +157,8 @@ export function stepHomeScene(dt: number, a: Float32Array, b: Float32Array): boo
     scene.w = r.width / 2;
     scene.h = r.height / 2;
   }
-  a[0] = scene.rays;
-  a[1] = scene.glow;
-  b[0] = scene.x;
-  b[1] = scene.y;
-  b[2] = scene.w;
-  b[3] = scene.h;
-  return scene.rays > 0;
+  const next = [scene.rays, scene.glow, scene.x, scene.y, scene.w, scene.h].map(Math.fround);
+  const changed = next[0] !== a[0] || next[1] !== a[1] || next.slice(2).some((v, i) => v !== b[i]);
+  [a[0], a[1], b[0], b[1], b[2], b[3]] = next;
+  return changed;
 }

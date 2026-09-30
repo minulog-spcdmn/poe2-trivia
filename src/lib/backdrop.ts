@@ -12,6 +12,7 @@
 import { SHADOWS_PER_ELEMENT, measureShadows, releaseAll } from './backdropShadow';
 import { DROPS_PER_MASK, MAX_MASKS, measureDrops, releaseAllDrops } from './backdropDropShadow';
 import { MAX_LIGHTS, packLights, stepHomeScene, stepMood } from './lights';
+import { fxActive } from './fx/core';
 import { COLUMNS, SLOTS, embers } from './backdropEmbers';
 
 const VERT = `#version 300 es
@@ -644,10 +645,10 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     const nowS = now / 1000;
     const lights = packLights(lightA, lightC, nowS);
     const moodOn = stepMood(dt, mood);
-    stepHomeScene(dt, home, title);
+    const homeMoving = stepHomeScene(dt, home, title);
     // Lights and mood step once per animation frame; draw() uses the latest values.
-    const lit = lights || moodOn;
-    if (!reduceMotion.matches) embers.step(dt, canvas.clientWidth, canvas.clientHeight);
+    const lit = lights || moodOn || homeMoving;
+    if (!reduceMotion.matches) embers.step(dt, canvas.clientWidth, canvas.clientHeight, !fxActive());
     const changed = measure() || dirty || lit;
     if (!changed && (reduceMotion.matches || now - last < 33)) return;
     last = now;

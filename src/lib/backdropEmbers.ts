@@ -2,7 +2,8 @@
 // backdrop shader (lib/backdrop.ts) beneath the UI. Three depths: far embers
 // are small and slow, near ones larger, brighter and quicker, which gives the
 // dark some parallax. A deathmatch or a victory can stoke them (more speed
-// and glow) through `stoke`.
+// and glow) through `stoke`, and a big moment flare them up for a few
+// seconds through `flare`.
 
 export const EMBERS = 36;
 /** The shader looks embers up by screen column: COLUMNS strips, SLOTS embers each at most. */
@@ -48,6 +49,8 @@ export class Embers {
   private t = r() * 100;
   private heat = 0;
   private heatTarget = 0;
+  private flareLevel = 0;
+  private flareLeft = 0;
   private pos = new Float32Array(EMBERS * 4);
   /** (x, y, size, brightness) per slot, COLUMNS rows of SLOTS; brightness 0 ends a row. */
   readonly data = new Float32Array(COLUMNS * SLOTS * 4);
@@ -60,19 +63,34 @@ export class Embers {
     this.colorTarget = [...c];
   }
 
-  /** 0 is calm, 1 a roaring fire. */
+  /** Sets how hot they burn for as long as it lasts: 0 is calm, 1 a roaring fire. */
   stoke(level: number) {
     this.heatTarget = level;
+  }
+
+  /**
+   * Flares them up to `level` for `seconds`, over whatever they're stoked to.
+   * It dies down by itself, so it never leaves them hot.
+   */
+  flare(level: number, seconds: number) {
+    this.flareLevel = this.flareLeft > 0 ? Math.max(this.flareLevel, level) : level;
+    this.flareLeft = Math.max(this.flareLeft, seconds);
   }
 
   get level() {
     return this.heat;
   }
 
-  /** Advances by `dt` seconds and writes (x, y, size, brightness) per ember. */
-  step(dt: number, w: number, h: number) {
-    this.heat += (this.heatTarget - this.heat) * (1 - Math.exp(-dt * 1.5));
-    for (let i = 0; i < 3; i++) this.color[i] += (this.colorTarget[i] - this.color[i]) * (1 - Math.exp(-dt * 1.2));
+  /**
+   * Advances by `dt` seconds and writes (x, y, size, brightness) per ember.
+   * With `calm` (effects off) they settle back to their usual self.
+   */
+  step(dt: number, w: number, h: number, calm = false) {
+    this.flareLeft = Math.max(0, this.flareLeft - dt);
+    const target = calm ? 0 : Math.max(this.heatTarget, this.flareLeft > 0 ? this.flareLevel : 0);
+    const color = calm ? CALM : this.colorTarget;
+    this.heat += (target - this.heat) * (1 - Math.exp(-dt * 1.5));
+    for (let i = 0; i < 3; i++) this.color[i] += (color[i] - this.color[i]) * (1 - Math.exp(-dt * 1.2));
     this.t += dt * (1 + 1.6 * this.heat);
     const t = this.t;
     this.list.forEach((e, i) => {

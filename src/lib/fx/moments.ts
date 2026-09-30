@@ -69,8 +69,7 @@ export function gameStart() {
   flash(c, { radius: Math.max(innerWidth, innerHeight) * 0.35, intensity: 0.07, life: 0.6 });
   ring(c, { radius: Math.hypot(innerWidth, innerHeight) * 0.55, thickness: 40, life: 1.1, color: C.gold, breakup: 0.85, fill: 0.1, intensity: 0.55 });
   sparks(c, { count: 70, speed: [300, 1100], life: [0.5, 1.2], gravity: 300 });
-  backdropEmbers.stoke(0.7);
-  after(1.6, () => backdropEmbers.stoke(0));
+  backdropEmbers.flare(0.7, 1.6);
   shakeView(0.35, 6);
 }
 
@@ -225,8 +224,7 @@ export function reveal(t: RevealTargets) {
     light(t.art, { color: [1, 0.8, 0.45], radius: 420, intensity: 0.3 + 0.08 * hype, hold: 0.3, decay: 1.5 });
     if (streak >= 3) {
       edgeGlow({ color: C.gold, intensity: 0.07, width: 70, life: 1.4 });
-      backdropEmbers.stoke(0.8);
-      after(2, () => backdropEmbers.stoke(0));
+      backdropEmbers.flare(0.8, 2);
     }
   }
 
@@ -403,11 +401,32 @@ export function deathmatchIntro(title: Element) {
   deathmatchMood(true);
 }
 
+/**
+ * Which moment owns the scene's mood (tint and embers). The screens that set
+ * one overlap while they cross-fade, so each only clears a mood it owns: the
+ * game screen going away after the victory screen came in must not wipe the
+ * victory's gold, and the victory keeps it over a deathmatch still ending.
+ */
+let moodOwner: 'deathmatch' | 'victory' | null = null;
+
+function calmScene() {
+  moodOwner = null;
+  setMood([0, 0, 0], 0);
+  backdropEmbers.tint(CALM);
+  backdropEmbers.stoke(0);
+}
+
 /** The deathmatch colours the whole scene while it lasts. */
 export function deathmatchMood(on: boolean) {
-  setMood([1, 0.12, 0.05], on ? 0.55 : 0);
-  backdropEmbers.tint(on ? [1, 0.14, 0.06] : CALM);
-  backdropEmbers.stoke(on ? 0.45 : 0);
+  if (moodOwner === 'victory') return;
+  if (!on) {
+    if (moodOwner === 'deathmatch') calmScene();
+    return;
+  }
+  moodOwner = 'deathmatch';
+  setMood([1, 0.12, 0.05], 0.55);
+  backdropEmbers.tint([1, 0.14, 0.06]);
+  backdropEmbers.stoke(0.45);
 }
 
 // ---------- the end ----------
@@ -449,6 +468,9 @@ export function victory(avatar: Element, title: Element, color: string, lost: bo
   if (!fxActive()) return { stop() {} };
   const pc = hdr(color, 2.4);
   const handles: Handle[] = [];
+  // Parts still to come are dropped once the screen is left.
+  let stopped = false;
+  const later = (s: number, fn: () => void) => after(s, () => stopped || fn());
   const main = lost ? k3(C.gold, 0.6) : C.gold;
   const D = Math.hypot(innerWidth, innerHeight);
   flash(avatar, { radius: Math.max(innerWidth, innerHeight) * 0.3, intensity: lost ? 0.04 : 0.08, life: 0.9, delay: 0.1 });
@@ -456,19 +478,20 @@ export function victory(avatar: Element, title: Element, color: string, lost: bo
   // The rays settle after a while, so a victory screen left open isn't
   // keeping the effects running. (The rune circle behind the avatar is SVG.)
   handles.push(rays(avatar, { radius: Math.min(650, innerWidth * 0.5), intensity: lost ? 0.08 : 0.15, color: main, count: 16, delay: 0.3, fadeIn: 1.2, life: 14 }));
-  after(0.9, () => {
+  later(0.9, () => {
     flare(title, { size: 36, streak: innerWidth * 0.4, life: 1, color: C.goldPale, intensity: 0.7 });
     glints(title, { count: 5, size: [5, 10], delay: [0, 1] });
   });
   if (standings) {
     // The winner's row, as it flies in.
-    after(1.25, () => {
+    later(1.25, () => {
       const first = standings.querySelector('li');
       if (!first) return;
       outline(first, { color: C.gold, width: 8, life: 1.4, intensity: 0.45, bleed: 0.12 });
       glints(first, { count: 3, area: 'edge', size: [4, 8], delay: [0, 0.5] });
     });
   }
+  moodOwner = 'victory';
   setMood(lost ? [0.6, 0.5, 0.4] : [1, 0.7, 0.3], lost ? 0.18 : 0.35);
   backdropEmbers.tint(lost ? CALM : [1, 0.62, 0.2]);
   backdropEmbers.stoke(lost ? 0 : 0.8);
@@ -508,7 +531,7 @@ export function victory(avatar: Element, title: Element, color: string, lost: bo
     sparks(a, { count: 50, speed: [200, 700], angle: -Math.PI / 2, spread: 2.2, colors: [C.gold, C.goldPale, C.whiteHot], gravity: 600, life: [0.5, 1.2] });
     light(avatar, { color: [1, 0.78, 0.4], radius: 420, intensity: 0.45, hold: 0.6, decay: 1.8 });
     [0.55, 1.15, 1.8].forEach((t, i) => {
-      after(t, () => {
+      later(t, () => {
         const p = { x: innerWidth * (0.2 + 0.3 * i + rand(-0.05, 0.05)), y: innerHeight * rand(0.14, 0.32) };
         sparks(p, { count: 70, speed: [100, 460], colors: [C.gold, C.goldPale, i === 1 ? pc : C.ember], gravity: 260, drag: 1.4, life: [0.8, 1.6], stretch: 0.05, cool: k3(C.emberDeep, 0.4) });
         flare(p, { size: 18, streak: 200, life: 0.45, color: C.goldPale, intensity: 0.6 });
@@ -517,7 +540,7 @@ export function victory(avatar: Element, title: Element, color: string, lost: bo
       });
     });
     // Afterwards, gold glitter drifting down for a while.
-    after(2.2, () => {
+    later(2.2, () => {
       handles.push(
         emitter(16, () => {
           particle({
@@ -560,10 +583,9 @@ export function victory(avatar: Element, title: Element, color: string, lost: bo
   }
   return {
     stop() {
+      stopped = true;
       for (const h of handles) h.stop(0.6);
-      setMood([0, 0, 0], 0);
-      backdropEmbers.tint(CALM);
-      backdropEmbers.stoke(0);
+      if (moodOwner === 'victory') calmScene();
     },
   };
 }

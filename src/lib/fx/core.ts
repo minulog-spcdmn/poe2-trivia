@@ -120,6 +120,10 @@ const listeners = new Set<(on: boolean) => void>();
 let quality = 0;
 let slowFor = 0;
 let frameAvg = 16;
+/** Frames (ms) slower than this count as load. Rises on displays capped below 60fps. */
+let slowMs = 22;
+/** After a drop in quality: whether it made frames quicker (see frame()). */
+let probe: { from: number; before: number; time: number; frames: number } | null = null;
 
 /** Are effects being drawn right now? */
 export function fxActive() {
@@ -257,6 +261,11 @@ export function shakeView(amount: number, px = 7) {
   wake();
 }
 
+/** Whether the view is shaking (moved by an inline translate, not an animation). */
+export function shaking() {
+  return shake.trauma > 0;
+}
+
 function applyShake(x: number, y: number) {
   for (const t of shake.targets) {
     t.el.style.translate = x || y ? `${(x * t.k).toFixed(2)}px ${(y * t.k).toFixed(2)}px` : '';
@@ -331,16 +340,34 @@ function frame(nowMs: number) {
   last = nowMs;
 
   // Adapt quality: if frames keep taking far longer than a display refresh
-  // while effects run, drop resolution.
+  // while effects run, drop resolution. If a drop doesn't make frames any
+  // quicker, they weren't slow because of the effects: the display or the
+  // browser runs at a lower rate (30fps in a power-saving mode, say). Then
+  // the drop is undone and frames that slow count as normal from then on.
   // (Gaps over 300ms are a background tab or a stall, not the effects.)
   if (rawDt > 0 && rawDt < 0.3) {
-    frameAvg += (Math.min(rawDt, 0.1) * 1000 - frameAvg) * 0.12;
-    if (frameAvg > 22 && quality < 2) {
+    const ms = Math.min(rawDt, 0.1) * 1000;
+    frameAvg += (ms - frameAvg) * 0.12;
+    if (probe) {
+      probe.time += rawDt;
+      probe.frames++;
+      if (probe.time > 1) {
+        const avg = (probe.time * 1000) / probe.frames;
+        if (avg > probe.before * 0.85) {
+          quality = probe.from;
+          slowMs = Math.max(slowMs, avg * 1.3);
+          resize();
+        }
+        probe = null;
+        slowFor = 0;
+        frameAvg = avg;
+      }
+    } else if (frameAvg > slowMs && quality < 2) {
       slowFor += rawDt;
       if (slowFor > 0.6) {
+        probe = { from: quality, before: frameAvg, time: 0, frames: 0 };
         quality++;
         slowFor = 0;
-        frameAvg = 16;
         resize();
       }
     } else slowFor = Math.max(0, slowFor - rawDt * 0.5);
@@ -492,6 +519,7 @@ export function startFx(c: HTMLCanvasElement): () => void {
   if (!renderer) return () => {};
   pool = new ParticlePool(coarse?.matches ? 2000 : 5000);
   quality = coarse?.matches ? 1 : 0;
+  probe = null;
   ro = new ResizeObserver(([entry]) => {
     const box = entry.devicePixelContentBoxSize?.[0];
     const estW = entry.contentRect.width * devicePixelRatio;

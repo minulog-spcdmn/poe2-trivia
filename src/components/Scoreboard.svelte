@@ -21,7 +21,9 @@
   let shown = $state<Record<string, number>>({});
   let barShown = $state<Record<string, number>>({});
   let filling = $state<Record<string, boolean>>({});
-  const pending = new Map<string, ReturnType<typeof setTimeout>[]>();
+  // The award under way per player: its timers and the score it lands on.
+  // Other updates from the host during it leave it running.
+  const pending = new Map<string, { to: number; timers: ReturnType<typeof setTimeout>[] }>();
   const latest = (id: string, fallback: number) => session.state?.players.find((x) => x.id === id)?.score ?? fallback;
   $effect(() => {
     for (const p of s.players) {
@@ -31,9 +33,12 @@
         if (was === undefined) shown[p.id] = barShown[p.id] = score;
         continue;
       }
-      pending.get(p.id)?.forEach(clearTimeout);
+      const award = pending.get(p.id);
+      if (award?.to === score) continue;
+      award?.timers.forEach(clearTimeout);
+      pending.delete(p.id);
       if (score > was && fxActive() && s.phase === 'reveal') {
-        pending.set(p.id, [
+        const timers = [
           setTimeout(() => {
             filling[p.id] = true;
             barShown[p.id] = latest(p.id, score);
@@ -43,7 +48,8 @@
             filling[p.id] = false;
             shown[p.id] = barShown[p.id] = latest(p.id, score);
           }, SCORE_LANDS * 1000),
-        ]);
+        ];
+        pending.set(p.id, { to: score, timers });
       } else {
         if (score < was) {
           const li = document.querySelector(`.board li[data-player="${CSS.escape(p.id)}"]`);
@@ -54,7 +60,7 @@
       }
     }
   });
-  $effect(() => () => pending.forEach((ts) => ts.forEach(clearTimeout)));
+  $effect(() => () => pending.forEach((a) => a.timers.forEach(clearTimeout)));
   const scoreOf = (id: string, fallback: number) => shown[id] ?? fallback;
   const barOf = (id: string, fallback: number) => barShown[id] ?? fallback;
 
