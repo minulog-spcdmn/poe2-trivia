@@ -4,6 +4,9 @@
   import { playerColor } from '../lib/ui';
   import Avatar from './Avatar.svelte';
   import { backdropShadow } from '../lib/backdropShadow';
+  import { untrack } from 'svelte';
+  import { fxActive } from '../lib/fx/core';
+  import { SCORE_LANDS, lostPoint } from '../lib/fx/moments';
 
   const s = $derived(session.state!);
   const target = $derived(s.settings.targetScore);
@@ -11,6 +14,39 @@
   const missed = $derived(new Set(s.question?.misses.map((m) => m.playerId) ?? []));
   const canKick = $derived(session.mode === 'host');
   const spectators = $derived(s.spectators ?? []);
+
+  // Scores as shown. A point won at a reveal flies to the board as a comet
+  // (see lib/fx/moments.ts), so the number ticks up when it lands.
+  let shown = $state<Record<string, number>>({});
+  const pending = new Map<string, ReturnType<typeof setTimeout>>();
+  $effect(() => {
+    for (const p of s.players) {
+      const score = p.score;
+      const was = untrack(() => shown[p.id]);
+      if (was === undefined || score === was) {
+        if (was === undefined) shown[p.id] = score;
+        continue;
+      }
+      clearTimeout(pending.get(p.id));
+      if (score > was && fxActive() && s.phase === 'reveal') {
+        pending.set(
+          p.id,
+          setTimeout(() => {
+            pending.delete(p.id);
+            shown[p.id] = session.state?.players.find((x) => x.id === p.id)?.score ?? score;
+          }, SCORE_LANDS * 1000),
+        );
+      } else {
+        if (score < was) {
+          const li = document.querySelector(`.board li[data-player="${CSS.escape(p.id)}"]`);
+          if (li) lostPoint(li);
+        }
+        shown[p.id] = score;
+      }
+    }
+  });
+  $effect(() => () => pending.forEach(clearTimeout));
+  const scoreOf = (id: string, fallback: number) => shown[id] ?? fallback;
 
   // Kicking takes two clicks so a stray tap doesn't remove anyone.
   let confirming = $state<string | null>(null);
@@ -33,17 +69,18 @@
     {@const out = race && s.phase !== 'over' && missed.has(p.id)}
     {@const benched = !!s.deathmatch && s.phase !== 'over' && !s.deathmatch.alive.includes(p.id)}
     {@const duelist = !!s.deathmatch && s.phase !== 'over' && s.deathmatch.alive.includes(p.id)}
-    <li use:backdropShadow class:active class:out class:benched class:duelist class:offline={!p.connected} animate:flip={{ duration: 400 }} style:--c={playerColor(p.hue)}>
+    {@const score = scoreOf(p.id, p.score)}
+    <li use:backdropShadow data-player={p.id} class:active class:out class:benched class:duelist class:offline={!p.connected} animate:flip={{ duration: 400 }} style:--c={playerColor(p.hue)}>
       <Avatar name={p.name} hue={p.hue} size={32} dim={!p.connected} />
       <div class="info">
         <span class="name">
           {p.name}{#if session.mode !== 'local' && p.id === session.myPlayerId}<em>&nbsp;(you)</em>{/if}
         </span>
-        <span class="bar"><span style:width="{Math.max(0, Math.min(100, (p.score / target) * 100))}%"></span></span>
+        <span class="bar"><span style:width="{Math.max(0, Math.min(100, (score / target) * 100))}%"></span></span>
       </div>
-      {#key p.score}
-        <span class="score" class:negative={p.score < 0} class:bump={race ? active : p.score > 0} class:down={out}
-          >{p.score}</span
+      {#key score}
+        <span class="score" class:negative={score < 0} class:bump={race ? active : score > 0} class:down={out}
+          >{score}</span
         >
       {/key}
       {#if !p.connected}<span class="off" title="Disconnected">⚡</span>{/if}
@@ -112,7 +149,11 @@
       transform 0.35s var(--ease-out),
       opacity 0.35s;
   }
+  li.active .name {
+    color: #fff4e0;
+  }
   li.active {
+    background: rgba(20, 16, 11, 0.85);
     border-color: var(--c);
     --bs-ring: color-mix(in srgb, var(--c), transparent 60%);
     --bs1-color: color-mix(in srgb, var(--c), transparent 70%);
@@ -232,11 +273,36 @@
     border-radius: 2px;
     overflow: hidden;
   }
+  .bar {
+    overflow: visible;
+  }
   .bar span {
+    position: relative;
     display: block;
     height: 100%;
+    border-radius: inherit;
     background: linear-gradient(90deg, color-mix(in srgb, var(--c), black 30%), var(--c));
+    box-shadow: 0 0 6px color-mix(in srgb, var(--c), transparent 40%);
     transition: width 0.8s var(--ease-out);
+  }
+  /* A hot spark at the bar's leading edge. */
+  .bar span::after {
+    content: '';
+    position: absolute;
+    right: -2px;
+    top: 50%;
+    width: 5px;
+    height: 5px;
+    translate: 0 -50%;
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--c), white 60%);
+    box-shadow:
+      0 0 6px 1px var(--c),
+      0 0 12px 2px color-mix(in srgb, var(--c), transparent 50%);
+    opacity: 0.9;
+  }
+  .bar span[style*='width: 0%']::after {
+    opacity: 0;
   }
   .score {
     font-family: var(--font-display);
@@ -251,7 +317,13 @@
   }
   @keyframes bump {
     0% {
-      transform: scale(2.1);
+      transform: scale(2.4);
+      color: #fff6d8;
+      text-shadow:
+        0 0 10px var(--gold-hi),
+        0 0 24px var(--unique-hi);
+    }
+    35% {
       color: var(--good);
       text-shadow: 0 0 16px var(--good);
     }

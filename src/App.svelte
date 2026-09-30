@@ -3,8 +3,11 @@
   import { fade, fly } from 'svelte/transition';
   import { session } from './lib/session.svelte';
   import { isMuted, setMuted, sfx } from './lib/sound';
+  import { fxAvailable, fxUserOn, onFxChange, setFxOn, shakeTarget } from './lib/fx/core';
+  import { twinkle } from './lib/fx/moments';
   import { IMPRINT_URL, PRIVACY_URL } from './lib/site';
   import Background from './components/Background.svelte';
+  import FxLayer from './components/FxLayer.svelte';
   import Home from './components/Home.svelte';
   import Lobby from './components/Lobby.svelte';
   import Game from './components/Game.svelte';
@@ -12,8 +15,34 @@
 
   let muted = $state(isMuted());
   let confirmLeave = $state(false);
+  let fxOn = $state(fxUserOn());
+  let fxCan = $state(fxAvailable());
+  let shell: HTMLElement;
+  let toastEl = $state<HTMLElement | null>(null);
 
-  onMount(() => session.resume());
+  onMount(() => {
+    session.resume();
+    // Camera shake moves the UI, and the backdrop a little less, for depth.
+    const bg = document.querySelector<HTMLElement>('.bg');
+    const undo = [shakeTarget(shell, 1), ...(bg ? [shakeTarget(bg, 0.35)] : [])];
+    const off = onFxChange((on) => {
+      fxOn = on;
+      fxCan = fxAvailable();
+    });
+    fxCan = fxAvailable();
+    return () => {
+      for (const u of undo) u();
+      off();
+    };
+  });
+
+  $effect(() => {
+    if (toastEl) twinkle(toastEl);
+  });
+
+  function toggleFx() {
+    setFxOn(!fxOn);
+  }
 
   const gs = $derived(session.state);
   const screen = $derived(
@@ -41,7 +70,7 @@
 
 <Background />
 
-<div class="shell">
+<div class="shell" bind:this={shell}>
   {#if screen !== 'home'}
     <header in:fade={{ duration: 300 }}>
       <button class="brand" onclick={() => (confirmLeave = true)} title="Leave game">
@@ -83,6 +112,22 @@
             >
           {/if}
         </button>
+        {#if fxCan}
+          <button
+            class="icon-btn"
+            class:off={!fxOn}
+            onclick={toggleFx}
+            title={fxOn ? 'Turn visual effects off' : 'Turn visual effects on'}
+            aria-label="Toggle visual effects"
+            aria-pressed={fxOn}
+          >
+            <svg viewBox="0 0 24 24"
+              ><path d="M12 3c.6 3.9 2.1 5.4 6 6-3.9.6-5.4 2.1-6 6-.6-3.9-2.1-5.4-6-6 3.9-.6 5.4-2.1 6-6z" /><path
+                d="M18.5 15.5c.3 1.6.9 2.2 2.5 2.5-1.6.3-2.2.9-2.5 2.5-.3-1.6-.9-2.2-2.5-2.5 1.6-.3 2.2-.9 2.5-2.5z"
+              />{#if !fxOn}<path d="M4 20 20 4" />{/if}</svg
+            >
+          </button>
+        {/if}
         <button class="icon-btn" onclick={() => (confirmLeave = true)} title="Leave" aria-label="Leave game">
           <svg viewBox="0 0 24 24"><path d="M14 4h5v16h-5M10 8l-4 4 4 4M6 12h10" /></svg>
         </button>
@@ -130,9 +175,11 @@
 
 {#if session.toast}
   {#key session.toast}
-    <div class="toast" in:fly={{ y: 30, duration: 300 }} out:fade={{ duration: 200 }}>{session.toast}</div>
+    <div class="toast" bind:this={toastEl} in:fly={{ y: 30, duration: 300 }} out:fade={{ duration: 200 }}>{session.toast}</div>
   {/key}
 {/if}
+
+<FxLayer />
 
 {#if confirmLeave}
   <div class="modal-backdrop" transition:fade={{ duration: 150 }} onclick={() => (confirmLeave = false)}
@@ -179,9 +226,21 @@
     display: grid;
     grid-template-columns: 1fr auto 1fr;
     align-items: center;
+    position: relative;
     padding: 0.8rem 1.25rem;
-    border-bottom: 1px solid rgba(125, 99, 51, 0.25);
+    border-bottom: 1px solid rgba(125, 99, 51, 0.22);
     background: linear-gradient(180deg, rgba(0, 0, 0, 0.6), rgba(0, 0, 0, 0));
+  }
+  /* A gold hairline, brightest in the middle, over the header's lower edge. */
+  header::after {
+    content: '';
+    position: absolute;
+    left: 10%;
+    right: 10%;
+    bottom: -1px;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(224, 138, 68, 0.55), rgba(241, 217, 155, 0.7), rgba(224, 138, 68, 0.55), transparent);
+    pointer-events: none;
   }
 
   .brand {
@@ -198,12 +257,26 @@
     font-size: 0.9rem;
     color: var(--gold);
     padding: 0.25rem 0;
+    text-shadow: 0 0 14px rgba(201, 164, 92, 0.25);
+    transition:
+      color 0.25s,
+      text-shadow 0.25s;
+  }
+  .brand:hover {
+    color: var(--gold-hi);
+    text-shadow: 0 0 16px rgba(241, 217, 155, 0.55);
   }
   .brand-mark {
     color: var(--unique-hi);
     width: 0.8rem;
     height: 0.72rem;
     filter: drop-shadow(0 0 6px rgba(224, 138, 68, 0.7));
+    animation: kindle 3.2s ease-in-out infinite;
+  }
+  @keyframes kindle {
+    50% {
+      filter: drop-shadow(0 0 10px rgba(255, 150, 70, 0.95)) brightness(1.2);
+    }
   }
 
   .meta {
@@ -247,13 +320,26 @@
     border-radius: 50%;
     cursor: pointer;
     color: var(--muted);
+    box-shadow: inset 0 1px 0 rgba(255, 220, 150, 0.06);
     transition:
       color 0.2s,
-      border-color 0.2s;
+      border-color 0.2s,
+      box-shadow 0.25s,
+      transform 0.2s var(--ease-out);
   }
   .icon-btn:hover {
     color: var(--gold-hi);
     border-color: var(--gold-lo);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 220, 150, 0.1),
+      0 0 16px rgba(201, 164, 92, 0.3);
+    transform: translateY(-1px);
+  }
+  .icon-btn:active {
+    transform: scale(0.94);
+  }
+  .icon-btn.off {
+    opacity: 0.6;
   }
   .icon-btn svg {
     width: 18px;
@@ -320,13 +406,18 @@
     left: 50%;
     translate: -50% 0;
     z-index: 60;
-    padding: 0.6rem 1.2rem;
-    background: rgba(18, 14, 10, 0.95);
+    padding: 0.65rem 1.4rem;
+    background: linear-gradient(180deg, rgba(34, 26, 16, 0.97), rgba(14, 11, 8, 0.97));
     border: 1px solid var(--gold-lo);
     border-radius: 3px;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 230, 170, 0.12),
+      0 0 0 1px rgba(0, 0, 0, 0.6),
+      0 0 24px rgba(201, 164, 92, 0.18),
+      0 10px 30px rgba(0, 0, 0, 0.6);
     font-size: 1rem;
     color: var(--gold-hi);
+    text-shadow: 0 0 12px rgba(241, 217, 155, 0.35);
     white-space: nowrap;
   }
 

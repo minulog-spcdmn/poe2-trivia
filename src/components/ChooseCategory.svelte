@@ -5,6 +5,8 @@
   import { rulesFor } from '../lib/game';
   import { sfx } from '../lib/sound';
   import { backdropShadow } from '../lib/backdropShadow';
+  import { cardHover, cardLanded, cardPicked } from '../lib/fx/moments';
+  import type { Handle } from '../lib/fx/core';
 
   const s = $derived(session.state!);
   const active = $derived(s.players[s.turn]);
@@ -24,9 +26,51 @@
     };
   }
 
+  /** Svelte action: the card's landing, when its deal animation touches down. */
+  function dealt(node: HTMLElement, i: number) {
+    const t = setTimeout(() => cardLanded(node), 250 + i * 120 + 420);
+    return { destroy: () => clearTimeout(t) };
+  }
+
+  let cardEls = $state<HTMLElement[]>([]);
+  let burning: Handle | null = null;
+
+  function enter(e: PointerEvent, i: number) {
+    if (!mine || picked || e.pointerType !== 'mouse') return;
+    burning?.stop();
+    const frame = cardEls[i]?.querySelector('.frame');
+    if (frame) burning = cardHover(frame, !!s.deathmatch);
+  }
+  function leave(e: PointerEvent) {
+    burning?.stop();
+    burning = null;
+    const frame = (e.currentTarget as HTMLElement).querySelector<HTMLElement>('.frame');
+    frame?.style.removeProperty('--rx');
+    frame?.style.removeProperty('--ry');
+  }
+  /** Tilts the card toward the pointer, and moves the glare with it. */
+  function tilt(e: PointerEvent) {
+    if (!mine || picked || e.pointerType !== 'mouse') return;
+    const frame = (e.currentTarget as HTMLElement).querySelector<HTMLElement>('.frame');
+    if (!frame) return;
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const x = (e.clientX - r.left) / r.width;
+    const y = (e.clientY - r.top) / r.height;
+    frame.style.setProperty('--rx', `${((0.5 - y) * 14).toFixed(2)}deg`);
+    frame.style.setProperty('--ry', `${((x - 0.5) * 16).toFixed(2)}deg`);
+    frame.style.setProperty('--gx', `${(x * 100).toFixed(1)}%`);
+    frame.style.setProperty('--gy', `${(y * 100).toFixed(1)}%`);
+  }
+  $effect(() => () => burning?.stop());
+
   function pick(category: string) {
     if (!mine || picked) return;
     picked = category;
+    burning?.stop();
+    burning = null;
+    const i = s.offered.indexOf(category);
+    const card = cardEls[i]?.querySelector('.frame');
+    if (card) cardPicked(card, cardEls.filter((_, j) => j !== i).map((c) => c.querySelector('.frame') ?? c), !!s.deathmatch);
     sfx('pick');
     session.dispatch({ type: 'pick', category });
     // Allow a retry if the host rejected the pick.
@@ -56,9 +100,15 @@
         class:faded={picked && picked !== cat}
         disabled={!mine}
         onclick={() => pick(cat)}
+        onpointerenter={(e) => enter(e, i)}
+        onpointerleave={leave}
+        onpointermove={tilt}
+        bind:this={cardEls[i]}
+        use:dealt={i}
         in:deal={{ i }}
       >
         <span class="frame" use:backdropShadow>
+          <span class="glare"></span>
           <span class="corner tl"></span><span class="corner tr"></span>
           <span class="corner bl"></span><span class="corner br"></span>
           <span class="icon"><span class="glyph" style:--src="url('{categoryIcon(cat)}')"></span></span>
@@ -139,6 +189,9 @@
     height: 18px;
     border: 2px solid var(--gold);
     opacity: 0.7;
+    transition:
+      opacity 0.3s,
+      border-color 0.3s;
   }
   .tl {
     top: 8px;
@@ -190,6 +243,9 @@
     color: var(--gold-hi);
     text-align: center;
     line-height: 1.2;
+    transition:
+      color 0.3s,
+      text-shadow 0.3s;
   }
 
   @media (min-width: 701px) {
@@ -224,7 +280,7 @@
   }
   .card.mine:hover .frame,
   .card.mine:focus-visible .frame {
-    transform: translateY(-10px) scale(1.03);
+    transform: perspective(900px) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg)) translateY(-10px) scale(1.04);
     border-color: var(--gold);
     --bs-ring: rgba(201, 164, 92, 0.6);
     --bs1: 0px 40px;
@@ -233,8 +289,31 @@
     --bs2-color: rgba(0, 0, 0, 0.7);
   }
   .card.mine:hover .glyph {
-    transform: scale(1.08) rotate(-3deg);
+    transform: scale(1.1) rotate(-3deg) translateZ(30px);
     opacity: 1;
+    filter: brightness(1.15);
+  }
+  /* A soft highlight that follows the pointer across the card. */
+  .glare {
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: radial-gradient(circle at var(--gx, 50%) var(--gy, 30%), rgba(255, 226, 170, 0.2), transparent 55%);
+    mix-blend-mode: screen;
+    opacity: 0;
+    transition: opacity 0.35s;
+    pointer-events: none;
+  }
+  .card.mine:hover .glare {
+    opacity: 1;
+  }
+  .card.mine:hover .title {
+    color: #fff1cf;
+    text-shadow: 0 0 14px rgba(241, 217, 155, 0.6);
+  }
+  .card.mine:hover .corner {
+    opacity: 1;
+    border-color: var(--gold-hi);
   }
   .card:focus-visible {
     outline: none;
@@ -254,7 +333,8 @@
   }
   .card.faded .frame {
     opacity: 0.2;
-    transform: scale(0.94);
+    transform: scale(0.92) translateY(8px);
+    filter: grayscale(0.8) brightness(0.6) blur(1px);
   }
 
   .note {

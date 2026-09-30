@@ -1,4 +1,5 @@
-// Soft outer box-shadows drawn by the WebGL backdrop instead of CSS.
+// Soft outer box-shadows, and large gradient fills, drawn by the WebGL
+// backdrop instead of CSS.
 //
 // Big, soft CSS shadows band (the browser rasterizes them at 8 bits, with no
 // dither) and stop short at the blur radius. For elements that sit directly on
@@ -14,13 +15,31 @@
 // and inset shadows stay in CSS, and nothing is clipped. Whenever it can't
 // draw an element faithfully (rotated or 3D-transformed, over budget, no
 // WebGL) it leaves the attribute off and CSS paints as usual.
+//
+// Fills work the same way for backgrounds, which band just like shadows when
+// they're large and dark: `use:backdropShadow={{ fill: 'linear' }}` makes the
+// backdrop paint the element's background from --bs-fill-a, --bs-fill-b and
+// --bs-fill-angle (a two-stop linear gradient), and 'stage' paints the item
+// art stage (a glow in --bs-fill-a over a faint grid on --bs-fill-b). CSS
+// paints the same gradient through `var(--bs-fill-paint, …)`, which
+// `data-bs-fill` turns transparent while the backdrop draws it. Unlike a soft
+// shadow, a fill has a crisp edge, so it goes back to CSS whenever it could
+// lag behind the element: while the page scrolls, while a transform animation
+// moves the element or an ancestor, or when an ancestor paints a background
+// of its own (which would cover the backdrop).
 
-const shadowed = new Set<HTMLElement>();
+export type Fill = 'linear' | 'stage';
+export type BackdropOptions = { fill?: Fill } | undefined;
 
-/** Svelte action: let the backdrop draw this element's blurred outer shadows. */
-export function backdropShadow(node: HTMLElement) {
-  shadowed.add(node);
+const shadowed = new Map<HTMLElement, BackdropOptions>();
+
+/** Svelte action: let the backdrop draw this element's blurred outer shadows (and fill). */
+export function backdropShadow(node: HTMLElement, opts?: BackdropOptions) {
+  shadowed.set(node, opts);
   return {
+    update(next: BackdropOptions) {
+      shadowed.set(node, next);
+    },
     destroy() {
       shadowed.delete(node);
       release(node);
@@ -28,8 +47,8 @@ export function backdropShadow(node: HTMLElement) {
   };
 }
 
-export const MAX_ELEMENTS = 8;
 export const SHADOWS_PER_ELEMENT = 2;
+const FILL_KIND: Record<Fill, number> = { linear: 1, stage: 2 };
 
 type Shadow = { color: number[]; oy: number; blur: number };
 
@@ -52,11 +71,12 @@ function readShadow(cs: CSSStyleDeclaration, n: number): Shadow | null {
 
 function release(node: HTMLElement) {
   node.removeAttribute('data-bs-on');
+  node.removeAttribute('data-bs-fill');
 }
 
 /** Releases every element back to CSS, e.g. when the renderer stops. */
 export function releaseAll() {
-  for (const node of shadowed) release(node);
+  for (const node of shadowed.keys()) release(node);
 }
 
 function effectiveOpacity(node: HTMLElement): number {
@@ -68,58 +88,144 @@ function effectiveOpacity(node: HTMLElement): number {
   return o;
 }
 
+// ---------- when fills must go back to CSS ----------
+
+let lastScroll = -Infinity;
+if (typeof window !== 'undefined') {
+  const mark = () => (lastScroll = performance.now());
+  addEventListener('scroll', mark, { passive: true, capture: true });
+  addEventListener('wheel', mark, { passive: true });
+  addEventListener('touchmove', mark, { passive: true });
+}
+
+const MOVING = /transform|translate|scale|rotate/;
+
+/** Elements with a running animation or transition that moves them. */
+function movingElements(): Set<Element> {
+  const out = new Set<Element>();
+  for (const anim of document.getAnimations()) {
+    if (anim.playState !== 'running') continue;
+    const effect = anim.effect as KeyframeEffect | null;
+    const target = effect?.target;
+    if (!target) continue;
+    if (anim instanceof CSSTransition) {
+      if (MOVING.test(anim.transitionProperty)) out.add(target);
+      continue;
+    }
+    try {
+      if (effect.getKeyframes().some((k) => Object.keys(k).some((p) => MOVING.test(p)))) out.add(target);
+    } catch {
+      out.add(target);
+    }
+  }
+  return out;
+}
+
+function paintsBackground(cs: CSSStyleDeclaration) {
+  if (cs.backgroundImage !== 'none') return true;
+  const c = parseColor(cs.backgroundColor);
+  return !!c && c[3] > 0;
+}
+
 /**
- * Measures the tagged elements and fills the uniform arrays:
+ * Measures the tagged elements and fills the uniform arrays, `max` elements
+ * at most:
  * - elA: (left, top, 1 / scale, 0) in CSS px of the viewport
  * - elB: (width, height, corner radius, in use) in the element's own px
+ * - elC: (fill kind, angle in radians, opacity, 0); kind 0 = no fill
+ * - elD, elE: fill colours (r, g, b, a)
  * - geo: (offset x, offset y, sigma, spread) per shadow, element px
  * - col: (r, g, b, alpha) per shadow, alpha 0 for unused slots
- * Shadows go in paint order (--bs2 under --bs1, as listed in CSS).
+ * Elements go in document order, so later ones paint over earlier ones as in
+ * CSS. Shadows go in paint order (--bs2 under --bs1, as listed in CSS).
  */
 export function measureShadows(
+  max: number,
   elA: Float32Array,
   elB: Float32Array,
+  elC: Float32Array,
+  elD: Float32Array,
+  elE: Float32Array,
   geo: Float32Array,
   col: Float32Array,
   viewW: number,
   viewH: number,
 ) {
-  elA.fill(0);
-  elB.fill(0);
-  geo.fill(0);
-  col.fill(0);
+  for (const arr of [elA, elB, elC, elD, elE, geo, col]) arr.fill(0);
+
+  const scrolling = performance.now() - lastScroll < 220;
+  let moving: Set<Element> | null = null;
+  const isMoving = (node: HTMLElement) => {
+    moving ??= movingElements();
+    if (!moving.size) return false;
+    for (let el: Element | null = node; el; el = el.parentElement) if (moving.has(el)) return true;
+    return false;
+  };
+
+  // Fills first when there are more elements than room, then document order.
+  const nodes = [...shadowed.keys()].filter((n) => n.isConnected);
+  nodes.sort((a, b) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
+  const withFill = nodes.filter((n) => shadowed.get(n)?.fill);
+  const chosen = new Set([...withFill, ...nodes.filter((n) => !shadowed.get(n)?.fill)].slice(0, max));
+  for (const n of shadowed.keys()) if (!chosen.has(n)) release(n);
+
+  const filled = new Set<Element>();
   let n = 0;
-  for (const node of shadowed) {
-    let ok = node.isConnected && n < MAX_ELEMENTS;
-    const cs = ok ? getComputedStyle(node) : null;
-    const soft = cs ? [readShadow(cs, 2), readShadow(cs, 1)].filter((x): x is Shadow => !!x) : [];
-    ok &&= soft.length > 0;
+  for (const node of nodes) {
+    if (!chosen.has(node)) continue;
+    const cs = getComputedStyle(node);
+    const soft = [readShadow(cs, 2), readShadow(cs, 1)].filter((x): x is Shadow => !!x);
+    const fillKind = shadowed.get(node)?.fill;
 
     const w = node.offsetWidth;
     const h = node.offsetHeight;
-    const rect = ok ? node.getBoundingClientRect() : null;
-    const scale = rect && w ? rect.width / w : 0;
+    const rect = node.getBoundingClientRect();
+    const scale = w ? rect.width / w : 0;
     // Only translation and uniform scale map onto an axis-aligned box; any
     // rotation or 3D turn changes the box's aspect, so leave those to CSS.
-    ok &&= !!rect && w > 0 && h > 0 && scale > 0 && Math.abs(rect.height / h - scale) <= 0.01 * scale;
+    let ok = w > 0 && h > 0 && scale > 0 && Math.abs(rect.height / h - scale) <= 0.01 * scale;
 
-    // Skip elements whose shadows can't reach the viewport.
+    // Skip elements whose shadows (or fill) can't reach the viewport.
     const reach = soft.reduce((m, s) => Math.max(m, Math.abs(s.oy) + 2 * s.blur), 0) * scale;
-    ok &&= !!rect && rect.right + reach > 0 && rect.left - reach < viewW && rect.bottom + reach > 0 && rect.top - reach < viewH;
+    ok &&= rect.right + reach > 0 && rect.left - reach < viewW && rect.bottom + reach > 0 && rect.top - reach < viewH;
 
     const opacity = ok ? effectiveOpacity(node) : 0;
     ok &&= opacity > 0;
 
-    if (!ok) {
+    let fill: { kind: number; angle: number; a: number[]; b: number[] } | null = null;
+    if (ok && fillKind && !scrolling && !isMoving(node)) {
+      const a = parseColor(cs.getPropertyValue('--bs-fill-a').trim());
+      const b = parseColor(cs.getPropertyValue('--bs-fill-b').trim());
+      const angle = parseFloat(cs.getPropertyValue('--bs-fill-angle')) || 180;
+      // Every ancestor must let the backdrop show through (or be drawn by it).
+      let clear = !!a && !!b;
+      for (let el = node.parentElement; clear && el && el !== document.body; el = el.parentElement) {
+        if (!filled.has(el) && paintsBackground(getComputedStyle(el))) clear = false;
+      }
+      if (clear) fill = { kind: FILL_KIND[fillKind], angle: (angle * Math.PI) / 180, a: a!, b: b! };
+    }
+
+    if (!ok || (!soft.length && !fill)) {
       release(node);
       continue;
     }
-    if (!node.hasAttribute('data-bs-on')) node.setAttribute('data-bs-on', '');
+    if (soft.length) {
+      if (!node.hasAttribute('data-bs-on')) node.setAttribute('data-bs-on', '');
+    } else node.removeAttribute('data-bs-on');
+    if (fill) {
+      if (!node.hasAttribute('data-bs-fill')) node.setAttribute('data-bs-fill', '');
+      filled.add(node);
+    } else node.removeAttribute('data-bs-fill');
 
-    const r = cs!.borderTopLeftRadius;
+    const r = cs.borderTopLeftRadius;
     const radius = r.endsWith('%') ? (parseFloat(r) / 100) * Math.min(w, h) : parseFloat(r) || 0;
-    elA.set([rect!.left, rect!.top, 1 / scale, 0], n * 4);
+    elA.set([rect.left, rect.top, 1 / scale, 0], n * 4);
     elB.set([w, h, radius, 1], n * 4);
+    if (fill) {
+      elC.set([fill.kind, fill.angle, opacity, 0], n * 4);
+      elD.set(fill.a, n * 4);
+      elE.set(fill.b, n * 4);
+    }
     soft.forEach((s, j) => {
       const k = (n * SHADOWS_PER_ELEMENT + j) * 4;
       // CSS blur radius is twice the Gaussian's standard deviation.

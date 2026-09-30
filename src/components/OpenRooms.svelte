@@ -98,7 +98,7 @@
   });
 </script>
 
-<section class="rooms panel" use:backdropShadow>
+<section class="rooms panel" use:backdropShadow={{ fill: 'linear' }}>
   <header>
     <h2>Open rooms</h2>
     <button class="refresh" onclick={scan} disabled={scanning} aria-label="Refresh room list" title="Refresh">
@@ -172,6 +172,7 @@
     transition: color 0.2s, border-color 0.2s;
   }
   .refresh:hover:not(:disabled) {
+    box-shadow: 0 0 14px rgba(201, 164, 92, 0.3);
     color: var(--gold-hi);
     border-color: var(--gold-lo);
   }
@@ -207,6 +208,15 @@
     background: rgba(0, 0, 0, 0.3);
     border: 1px solid rgba(59, 48, 36, 0.7);
     border-radius: 4px;
+    transition:
+      border-color 0.25s,
+      background 0.25s,
+      box-shadow 0.25s;
+  }
+  li:hover {
+    border-color: var(--gold-lo);
+    background: rgba(30, 22, 13, 0.45);
+    box-shadow: 0 0 16px rgba(201, 164, 92, 0.12);
   }
   .info {
     flex: 1;

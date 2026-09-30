@@ -2,7 +2,8 @@
   import { onMount } from 'svelte';
   import { startBackdrop } from '../lib/backdrop';
 
-  // Ambient backdrop: warm glow, vignette and slowly rising embers.
+  // Ambient backdrop: warm glow, vignette and slowly rising embers. The WebGL
+  // backdrop draws its own embers; these CSS ones are for the fallback.
   const embers = Array.from({ length: 22 }, (_, i) => ({
     left: (i * 37) % 100,
     delay: -((i * 1.7) % 14),
@@ -34,8 +35,7 @@
   {#if !webgl}
     <div class="glow"></div>
     <div class="grain"></div>
-  {/if}
-  <div class="embers" class:masked={webgl}>
+    <div class="embers">
     {#each embers as e, i (i)}
       <span
         class="ember"
@@ -47,8 +47,7 @@
         style:--drift="{e.drift}px"
       ></span>
     {/each}
-  </div>
-  {#if !webgl}
+    </div>
     <div class="vignette"></div>
   {/if}
 </div>
@@ -90,12 +89,6 @@
   .embers {
     position: absolute;
     inset: 0;
-  }
-  /* The canvas paints the vignette beneath the embers, so darken them toward
-     the edges the same way: a mask fading to 25% matches the vignette's
-     75% black over a near-black backdrop. */
-  .embers.masked {
-    mask-image: radial-gradient(ellipse at center, #000 45%, rgba(0, 0, 0, 0.25) 100%);
   }
   .vignette {
     position: absolute;

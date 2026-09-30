@@ -68,6 +68,16 @@ body {
 /* Reserve the scrollbar's space so screens that need one don't shift sideways. */
 html {
   scrollbar-gutter: stable;
+  scrollbar-color: #4a3a22 #0a0908;
+}
+
+:focus-visible {
+  outline: 1px solid var(--gold-hi);
+  outline-offset: 2px;
+}
+.btn:focus-visible {
+  outline: 1px solid var(--gold-hi);
+  outline-offset: 3px;
 }
 
 body {
@@ -109,7 +119,11 @@ input {
 
 .panel {
   position: relative;
-  background: linear-gradient(180deg, rgba(34, 28, 21, 0.9), rgba(16, 13, 10, 0.92));
+  /* Drawn by the WebGL backdrop when it can (see lib/backdropShadow.ts). */
+  --bs-fill-a: rgba(34, 28, 21, 0.9);
+  --bs-fill-b: rgba(16, 13, 10, 0.92);
+  --bs-fill-angle: 180deg;
+  background: var(--bs-fill-paint, linear-gradient(var(--bs-fill-angle), var(--bs-fill-a), var(--bs-fill-b)));
   border: 1px solid var(--line);
   border-radius: var(--radius);
   --bs1: 18px 50px;
@@ -124,27 +138,32 @@ input {
 .panel::after {
   content: '';
   position: absolute;
-  width: 14px;
-  height: 14px;
-  border: 2px solid var(--gold-lo);
   pointer-events: none;
 }
+/* Filigree on all four corners, one ornament each. */
 .panel::before {
-  top: -1px;
-  left: -1px;
-  border-right: 0;
-  border-bottom: 0;
+  inset: -2px;
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23f6e3ad'/%3E%3Cstop offset='.5' stop-color='%23c9a45c'/%3E%3Cstop offset='1' stop-color='%236d5329' stop-opacity='0'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cg transform=''%3E%3Cpath d='M1.5 29V8L8 1.5h21' fill='none' stroke='url(%23g)' stroke-width='1.6'/%3E%3Cpath d='M5.5 24V10.5l5-5H24' fill='none' stroke='%238a6a35' stroke-opacity='.6' stroke-width='.9'/%3E%3Cpath d='M4.8 1.6 8 4.8 4.8 8 1.6 4.8Z' fill='%23f6e3ad'/%3E%3Ccircle cx='12.5' cy='12.5' r='1.1' fill='%23c9a45c' fill-opacity='.8'/%3E%3C/g%3E%3C/svg%3E") top left / 30px 30px no-repeat,
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23f6e3ad'/%3E%3Cstop offset='.5' stop-color='%23c9a45c'/%3E%3Cstop offset='1' stop-color='%236d5329' stop-opacity='0'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cg transform='translate(30 0) scale(-1 1)'%3E%3Cpath d='M1.5 29V8L8 1.5h21' fill='none' stroke='url(%23g)' stroke-width='1.6'/%3E%3Cpath d='M5.5 24V10.5l5-5H24' fill='none' stroke='%238a6a35' stroke-opacity='.6' stroke-width='.9'/%3E%3Cpath d='M4.8 1.6 8 4.8 4.8 8 1.6 4.8Z' fill='%23f6e3ad'/%3E%3Ccircle cx='12.5' cy='12.5' r='1.1' fill='%23c9a45c' fill-opacity='.8'/%3E%3C/g%3E%3C/svg%3E") top right / 30px 30px no-repeat,
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23f6e3ad'/%3E%3Cstop offset='.5' stop-color='%23c9a45c'/%3E%3Cstop offset='1' stop-color='%236d5329' stop-opacity='0'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cg transform='translate(0 30) scale(1 -1)'%3E%3Cpath d='M1.5 29V8L8 1.5h21' fill='none' stroke='url(%23g)' stroke-width='1.6'/%3E%3Cpath d='M5.5 24V10.5l5-5H24' fill='none' stroke='%238a6a35' stroke-opacity='.6' stroke-width='.9'/%3E%3Cpath d='M4.8 1.6 8 4.8 4.8 8 1.6 4.8Z' fill='%23f6e3ad'/%3E%3Ccircle cx='12.5' cy='12.5' r='1.1' fill='%23c9a45c' fill-opacity='.8'/%3E%3C/g%3E%3C/svg%3E") bottom left / 30px 30px no-repeat,
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23f6e3ad'/%3E%3Cstop offset='.5' stop-color='%23c9a45c'/%3E%3Cstop offset='1' stop-color='%236d5329' stop-opacity='0'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cg transform='translate(30 30) scale(-1 -1)'%3E%3Cpath d='M1.5 29V8L8 1.5h21' fill='none' stroke='url(%23g)' stroke-width='1.6'/%3E%3Cpath d='M5.5 24V10.5l5-5H24' fill='none' stroke='%238a6a35' stroke-opacity='.6' stroke-width='.9'/%3E%3Cpath d='M4.8 1.6 8 4.8 4.8 8 1.6 4.8Z' fill='%23f6e3ad'/%3E%3Ccircle cx='12.5' cy='12.5' r='1.1' fill='%23c9a45c' fill-opacity='.8'/%3E%3C/g%3E%3C/svg%3E") bottom right / 30px 30px no-repeat;
+  filter: drop-shadow(0 0 3px rgba(224, 138, 68, 0.35));
 }
+/* A thin highlight along the top edge, as if lit from above. */
 .panel::after {
-  bottom: -1px;
-  right: -1px;
-  border-left: 0;
-  border-top: 0;
+  top: -1px;
+  left: 34px;
+  right: 34px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(241, 217, 155, 0.5), transparent);
 }
 
 .btn {
   --c: var(--gold);
   position: relative;
+  isolation: isolate;
+  overflow: hidden;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -156,49 +175,132 @@ input {
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--gold-hi);
-  background: linear-gradient(180deg, #3a2c1a, #1d160e);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+  background: linear-gradient(180deg, #3f301c 0%, #251b10 52%, #1a120a 100%);
   border: 1px solid var(--gold-lo);
   border-radius: 3px;
   cursor: pointer;
   box-shadow:
-    inset 0 1px 0 rgba(255, 230, 170, 0.15),
+    inset 0 1px 0 rgba(255, 230, 170, 0.18),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.35),
+    inset 0 -10px 16px -8px rgba(0, 0, 0, 0.55),
     0 2px 10px rgba(0, 0, 0, 0.5);
   transition:
-    transform 0.15s var(--ease-out),
-    box-shadow 0.2s,
-    border-color 0.2s,
-    filter 0.2s;
+    transform 0.18s var(--ease-out),
+    box-shadow 0.25s,
+    border-color 0.25s,
+    color 0.25s,
+    text-shadow 0.25s,
+    filter 0.25s;
   white-space: nowrap;
+}
+/* A band of light that sweeps across on hover. */
+.btn::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  top: 0;
+  bottom: 0;
+  left: -60%;
+  width: 45%;
+  background: linear-gradient(
+    100deg,
+    transparent,
+    rgba(255, 236, 196, 0.16) 40%,
+    rgba(255, 250, 235, 0.34) 50%,
+    rgba(255, 236, 196, 0.16) 60%,
+    transparent
+  );
+  transform: skewX(-18deg);
+  pointer-events: none;
+}
+/* Embers smouldering along the bottom edge. */
+.btn::after {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  left: 8%;
+  right: 8%;
+  bottom: -55%;
+  height: 100%;
+  background: radial-gradient(ellipse at 50% 100%, rgba(255, 140, 50, 0.4), transparent 70%);
+  opacity: 0;
+  transition: opacity 0.3s;
+  pointer-events: none;
 }
 .btn:hover:not(:disabled) {
   border-color: var(--gold);
+  color: #fff1cf;
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.7),
+    0 0 12px rgba(241, 217, 155, 0.55);
   box-shadow:
-    inset 0 1px 0 rgba(255, 230, 170, 0.2),
-    0 0 18px rgba(201, 164, 92, 0.25),
+    inset 0 1px 0 rgba(255, 230, 170, 0.25),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.35),
+    inset 0 -10px 16px -8px rgba(0, 0, 0, 0.45),
+    0 0 0 1px rgba(201, 164, 92, 0.12),
+    0 0 20px rgba(201, 164, 92, 0.3),
     0 2px 10px rgba(0, 0, 0, 0.5);
   transform: translateY(-1px);
 }
+.btn:hover:not(:disabled)::before {
+  animation: sheen 0.85s var(--ease-out);
+}
+.btn:hover:not(:disabled)::after {
+  opacity: 1;
+}
 .btn:active:not(:disabled) {
-  transform: translateY(1px);
+  transform: translateY(1px) scale(0.98);
+  filter: brightness(1.3);
+  transition-duration: 0.05s;
 }
 .btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+  filter: saturate(0.5);
 }
 .btn.primary {
-  background: linear-gradient(180deg, #8a5a22, #4d2f10);
-  border-color: var(--gold);
-  color: #fff4d6;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+  background: linear-gradient(180deg, #b0742c 0%, #86521b 38%, #5a340f 72%, #43260a 100%);
+  border-color: #d8b56e;
+  color: #fff6de;
+  text-shadow:
+    0 1px 2px rgba(40, 18, 0, 0.85),
+    0 0 10px rgba(255, 200, 120, 0.25);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 240, 200, 0.45),
+    inset 0 0 0 1px rgba(60, 30, 0, 0.4),
+    inset 0 -12px 18px -8px rgba(40, 15, 0, 0.55),
+    0 0 14px rgba(224, 138, 68, 0.22),
+    0 3px 12px rgba(0, 0, 0, 0.55);
+}
+.btn.primary::after {
+  opacity: 0.6;
+  animation: smoulder 2.8s ease-in-out infinite;
+}
+.btn.primary:hover:not(:disabled) {
+  border-color: #f1d99b;
+  color: #fffaf0;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 244, 214, 0.55),
+    inset 0 0 0 1px rgba(60, 30, 0, 0.4),
+    inset 0 -12px 18px -8px rgba(40, 15, 0, 0.45),
+    0 0 0 1px rgba(241, 217, 155, 0.2),
+    0 0 30px rgba(255, 160, 70, 0.45),
+    0 3px 12px rgba(0, 0, 0, 0.55);
+  filter: brightness(1.08);
 }
 .btn.ghost {
-  background: transparent;
+  background: rgba(0, 0, 0, 0.2);
   border-color: var(--line);
   color: var(--muted);
   box-shadow: none;
+  text-shadow: none;
 }
 .btn.ghost:hover:not(:disabled) {
   color: var(--gold-hi);
+  border-color: var(--gold-lo);
+  background: rgba(40, 30, 18, 0.35);
+  box-shadow: 0 0 16px rgba(201, 164, 92, 0.15);
 }
 .btn.small {
   padding: 0.45em 0.9em;
@@ -208,6 +310,19 @@ input {
   padding: 1em 2em;
   font-size: 1rem;
 }
+@keyframes sheen {
+  from {
+    translate: 0 0;
+  }
+  to {
+    translate: 420% 0;
+  }
+}
+@keyframes smoulder {
+  50% {
+    opacity: 1;
+  }
+}
 
 .field {
   width: 100%;
@@ -216,15 +331,28 @@ input {
   border: 1px solid var(--line);
   border-radius: 3px;
   color: var(--text);
+  caret-color: var(--gold-hi);
   font-size: 1.05rem;
   outline: none;
+  box-shadow:
+    inset 0 2px 6px rgba(0, 0, 0, 0.55),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.25),
+    0 1px 0 rgba(255, 220, 150, 0.04);
   transition:
-    border-color 0.2s,
-    box-shadow 0.2s;
+    border-color 0.25s,
+    box-shadow 0.25s,
+    background 0.25s;
+}
+.field:hover:not(:disabled):not(:focus) {
+  border-color: #5a4630;
 }
 .field:focus {
-  border-color: var(--gold-lo);
-  box-shadow: 0 0 0 3px rgba(201, 164, 92, 0.12);
+  border-color: var(--gold);
+  background: rgba(10, 8, 5, 0.6);
+  box-shadow:
+    inset 0 2px 6px rgba(0, 0, 0, 0.55),
+    0 0 0 3px rgba(201, 164, 92, 0.12),
+    0 0 18px rgba(224, 138, 68, 0.22);
 }
 .field::placeholder {
   color: #6b6152;
@@ -365,4 +493,32 @@ h3,
 }
 [data-bs-drop] {
   --drop-shadow-paint: opacity(1);
+}
+
+/* Large gradient backgrounds the WebGL backdrop can draw without banding (see
+   lib/backdropShadow.ts). An element declares its gradient in --bs-fill-a,
+   --bs-fill-b and --bs-fill-angle and paints it through
+   `var(--bs-fill-paint, …)`; while the backdrop draws it, data-bs-fill turns
+   the CSS copy transparent. Registered so state changes transition in both. */
+@property --bs-fill-a {
+  syntax: '<color>';
+  inherits: false;
+  initial-value: transparent;
+}
+@property --bs-fill-b {
+  syntax: '<color>';
+  inherits: false;
+  initial-value: transparent;
+}
+@property --bs-fill-angle {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 180deg;
+}
+@property --bs-fill-paint {
+  syntax: '*';
+  inherits: false;
+}
+[data-bs-fill] {
+  --bs-fill-paint: transparent;
 }

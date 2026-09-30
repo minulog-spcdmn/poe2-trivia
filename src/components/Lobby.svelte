@@ -6,6 +6,8 @@
   import { inviteUrl } from '../lib/site';
   import Avatar from './Avatar.svelte';
   import { backdropShadow } from '../lib/backdropShadow';
+  import { glyphLanded, playerArrived, twinkle } from '../lib/fx/moments';
+  import { onMount } from 'svelte';
 
   const TIMERS = [0, 10, 15, 20, 30, 45];
   const TARGETS = [5, 10, 15, 20];
@@ -46,7 +48,30 @@
     if (session.state?.players.some((p) => p.id === playerId)) newName = '';
   }
 
+  // Players already here when the lobby opens just appear; newcomers get an entrance.
+  let settled = false;
+  onMount(() => {
+    const t = setTimeout(() => (settled = true), 600);
+    return () => clearTimeout(t);
+  });
+
+  /** Svelte action: sparks when a code letter lands (its drop animation is staggered by index). */
+  function landing(node: HTMLElement, i: number) {
+    const t = setTimeout(() => glyphLanded(node), 330 + i * 80);
+    return { destroy: () => clearTimeout(t) };
+  }
+
+  /** Svelte action: a new player's row arrives with a flash. */
+  function arriving(node: HTMLElement) {
+    if (!settled) return;
+    const t = setTimeout(() => playerArrived(node), 120);
+    return { destroy: () => clearTimeout(t) };
+  }
+
+  let copyBtn = $state<HTMLButtonElement>();
+
   async function copy() {
+    if (copyBtn) twinkle(copyBtn);
     try {
       if (navigator.share && matchMedia('(pointer: coarse)').matches) {
         await navigator.share({ title: 'PoE2.Quest', text: `Join my PoE2 trivia room ${session.code}`, url: inviteLink });
@@ -95,7 +120,7 @@
       <span class="label">Room code</span>
       <div class="code" class:hidden={session.hideCode} aria-label={session.hideCode ? 'Room code hidden' : `Room code ${session.code}`}>
         {#each session.code.split('') as ch, i (i)}
-          <span class="glyph" style:animation-delay="{i * 80}ms">{session.hideCode ? '•' : ch}</span>
+          <span class="glyph" use:landing={i} style:animation-delay="{i * 80}ms" style:--i={i}>{session.hideCode ? '•' : ch}</span>
         {/each}
         <button
           class="eye"
@@ -111,7 +136,7 @@
         </button>
       </div>
       <div class="room-actions">
-        <button class="btn small" onclick={copy}>
+        <button class="btn small" bind:this={copyBtn} onclick={copy}>
           {copied ? 'Link copied!' : 'Copy invite link'}
         </button>
         {#if isHost}
@@ -159,14 +184,14 @@
   {/if}
 
   <div class="cols">
-    <section class="panel players" use:backdropShadow in:fly={{ x: -30, duration: 500, delay: 100 }}>
+    <section class="panel players" use:backdropShadow={{ fill: 'linear' }} in:fly={{ x: -30, duration: 500, delay: 100 }}>
       <header>
         <h2>Party</h2>
         <span class="count">{s.players.length} / {MAX_PLAYERS}</span>
       </header>
       <ul>
         {#each s.players as p (p.id)}
-          <li animate:flip={{ duration: 300 }} in:fly={{ x: -20, duration: 350 }} out:scale={{ duration: 200, start: 0.9 }}>
+          <li use:arriving animate:flip={{ duration: 300 }} in:fly={{ x: -20, duration: 350 }} out:scale={{ duration: 200, start: 0.9 }}>
             <Avatar name={p.name} hue={p.hue} />
             <span class="name">{p.name}</span>
             {#if p.id === s.hostId}<span class="tag">Host</span>{/if}
@@ -207,7 +232,7 @@
       {/if}
     </section>
 
-    <section class="panel settings" use:backdropShadow in:fly={{ x: 30, duration: 500, delay: 200 }}>
+    <section class="panel settings" use:backdropShadow={{ fill: 'linear' }} in:fly={{ x: 30, duration: 500, delay: 200 }}>
       <header><h2>Rules</h2></header>
 
       <div class="setting">
@@ -439,6 +464,29 @@
       0 6px 18px rgba(0, 0, 0, 0.6);
     text-shadow: 0 0 16px rgba(241, 217, 155, 0.45);
     animation: drop 0.6s var(--ease-back) both;
+    position: relative;
+    overflow: hidden;
+  }
+  /* Light glances off the letters one after another. */
+  .glyph::after {
+    content: '';
+    position: absolute;
+    inset: -20% auto -20% -80%;
+    width: 60%;
+    background: linear-gradient(100deg, transparent, rgba(255, 240, 200, 0.22), transparent);
+    transform: skewX(-16deg);
+    animation: glance 6s ease-in-out infinite;
+    animation-delay: calc(1.2s + var(--i, 0) * 0.12s);
+    pointer-events: none;
+  }
+  @keyframes glance {
+    0% {
+      translate: 0 0;
+    }
+    18%,
+    100% {
+      translate: 420% 0;
+    }
   }
   @keyframes drop {
     from {
@@ -485,6 +533,9 @@
     gap: 0.5rem;
   }
   .players li {
+    transition:
+      border-color 0.25s,
+      background 0.25s;
     display: flex;
     align-items: center;
     gap: 0.8rem;
@@ -595,7 +646,13 @@
   .mode-card.on {
     background: linear-gradient(180deg, rgba(122, 79, 29, 0.55), rgba(69, 42, 14, 0.55));
     border-color: var(--gold);
-    box-shadow: 0 0 14px rgba(201, 164, 92, 0.2);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 230, 170, 0.2),
+      inset 0 0 18px rgba(255, 150, 60, 0.12),
+      0 0 18px rgba(201, 164, 92, 0.25);
+  }
+  .mode-card.on b {
+    text-shadow: 0 0 12px rgba(241, 217, 155, 0.45);
   }
   .mode-card.on span {
     color: #e3d3b4;
@@ -639,9 +696,17 @@
   }
   .seg > button.on {
     color: #fff1cf;
-    background: linear-gradient(180deg, #7a4f1d, #452a0e);
+    background: linear-gradient(180deg, #8a5a22, #452a0e);
     border-color: var(--gold);
-    box-shadow: 0 0 12px rgba(201, 164, 92, 0.25);
+    text-shadow: 0 0 10px rgba(255, 220, 160, 0.5);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 230, 170, 0.3),
+      0 0 14px rgba(201, 164, 92, 0.3);
+  }
+  .seg > button:active:not(:disabled),
+  .stepper button:active:not(:disabled),
+  .mode-card:active:not(:disabled) {
+    transform: scale(0.96);
   }
   .seg button:disabled {
     cursor: default;

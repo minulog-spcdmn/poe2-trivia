@@ -8,6 +8,11 @@
   import Avatar from './Avatar.svelte';
   import ArtImage from './ArtImage.svelte';
   import { backdropShadow } from '../lib/backdropShadow';
+  import ArcaneCircle from './ArcaneCircle.svelte';
+  import { untrack } from 'svelte';
+  import { answerCharging, artRevealed, raceMiss, reveal as revealFx, tileLifted } from '../lib/fx/moments';
+  import { recordReveal } from '../lib/fx/streaks';
+  import type { Handle } from '../lib/fx/core';
 
   const s = $derived(session.state!);
   const q = $derived(s.question!);
@@ -67,11 +72,84 @@
 
   let chosen = $state<number | null>(null);
 
+  // ---- effects ----
+
+  /** Answer buttons (or picture tiles), by option index. */
+  let optionEls = $state<HTMLElement[]>([]);
+  /** The art stage (name questions) or the picture grid (art questions). */
+  let artEl = $state<HTMLElement | null>(null);
+  let stampEl = $state<HTMLElement | null>(null);
+  let charge: Handle | null = null;
+  /** The scorer's streak of correct answers, for the result line. */
+  let streak = $state(0);
+
+  // The art arrives: light it up (once per question).
+  let artShown = false;
+  $effect(() => {
+    const ready = q.mode === 'art' ? Object.keys(media?.options ?? {}).length > 0 : !!(media?.art || media?.grid);
+    if (!ready || artShown || !artEl) return;
+    artShown = true;
+    artRevealed(artEl);
+  });
+
+  /** Svelte action: a veiled tile lifts with a puff of light. */
+  function lifted(node: HTMLElement) {
+    if (node.parentElement) tileLifted(node.parentElement);
+  }
+
+  // The charge-up ends when the answer is revealed or bounced.
+  $effect(() => {
+    if (reveal || chosen === null) {
+      charge?.stop();
+      charge = null;
+    }
+  });
+  $effect(() => () => charge?.stop());
+
+  // Race: a puff of red wherever someone guesses wrong.
+  let missesSeen = untrack(() => q.misses.length);
+  $effect(() => {
+    const misses = q.misses;
+    if (misses.length <= missesSeen) return;
+    for (const m of misses.slice(missesSeen)) {
+      const el = optionEls[m.index];
+      if (el) raceMiss(el, m.playerId === me);
+    }
+    missesSeen = misses.length;
+  });
+
+  // The reveal: choreographed once, after the DOM shows it.
+  let revealed = false;
+  $effect(() => {
+    const r = reveal;
+    if (!r || revealed) return;
+    revealed = true;
+    untrack(() => {
+      const scorer = race ? (r.winnerId ?? null) : r.correct ? active.id : null;
+      const missed = race ? q.misses.map((m) => m.playerId) : r.correct ? [] : [active.id];
+      streak = recordReveal(q.askedAt, scorer, missed);
+      const pill = scorer ? document.querySelector(`.board li[data-player="${CSS.escape(scorer)}"]`) : null;
+      revealFx({
+        answer: optionEls[r.correctIndex],
+        chosen: !race && !r.correct && r.chosenIndex != null ? optionEls[r.chosenIndex] : null,
+        art: artEl,
+        stamp: stampEl,
+        pill,
+        streak,
+        good: iWon,
+        otherScored: race && !!winner && !iWon,
+        timedOut: r.timedOut,
+      });
+    });
+  });
+
   function answer(index: number) {
     if (!mine || reveal || chosen !== null) return;
     // Time's up: the host only waits a moment longer for answers already on their way.
     if (q.deadline && session.hostNow() > q.deadline) return;
     chosen = index;
+    charge?.stop();
+    if (optionEls[index]) charge = answerCharging(optionEls[index]);
     sfx('select');
     session.dispatch({ type: 'answer', index, askedAt: q.askedAt });
     setTimeout(() => {
@@ -109,7 +187,7 @@
 
 {#snippet stamp(inHead = false)}
   {#if reveal}
-    <div class="stamp" class:in-head={inHead} class:good={iWon} in:scale={{ start: 2.2, duration: 450, opacity: 0 }}>
+    <div class="stamp" bind:this={stampEl} class:in-head={inHead} class:good={iWon} in:scale={{ start: 2.2, duration: 450, opacity: 0 }}>
       {#if iWon}Correct{:else if race && winner}{session.spectating ? 'Solved' : 'Too slow'}{:else if reveal.timedOut}Time's up{:else if race}No one{:else}Wrong{/if}
     </div>
   {/if}
@@ -142,6 +220,7 @@
         {#if race}
           {#if winner}
             <b class="good">+1</b> {winner.id === me ? 'You were' : `${winner.name} was`} fastest!
+            {#if streak >= 2}<span class="streak" in:scale={{ start: 0.5, duration: 400, delay: 1100 }}>{streak} in a row</span>{/if}
           {:else if reveal.timedOut}
             Time's up; nobody got it.
           {:else}
@@ -152,6 +231,7 @@
           {/if}
         {:else if reveal.correct}
           <b class="good">+1</b> for {active.name}!
+          {#if streak >= 2}<span class="streak" in:scale={{ start: 0.5, duration: 400, delay: 1100 }}>{streak} in a row</span>{/if}
         {:else if reveal.timedOut}
           {active.name} ran out of time.
         {:else}
@@ -193,7 +273,7 @@
 
   {#if q.mode === 'art'}
     <!-- Name given, pick the matching art. -->
-    <div class="tooltip wide" use:backdropShadow class:good={reveal && iWon} class:bad={reveal && !iWon}>
+    <div class="tooltip wide" use:backdropShadow={{ fill: 'linear' }} class:good={reveal && iWon} class:bad={reveal && !iWon}>
       <div class="head">
         <div class="head-text">
           <span class="iname">{q.prompt}</span>
@@ -205,13 +285,14 @@
         </div>
         {@render stamp(true)}
       </div>
-      <div class="tiles" class:many={count > 4} class:six={count === 6}>
+      <div class="tiles" bind:this={artEl} class:many={count > 4} class:six={count === 6}>
         {#each q.labels as _, i (i)}
           {@const st = optionState(i)}
           {@const src = reveal && q.options[i] ? itemImage(q.options[i]) : media?.options[i]}
           <button
             class="tile {st}"
             data-sfx="none"
+            bind:this={optionEls[i]}
             class:mine
             disabled={!mine || !!reveal || chosen !== null}
             onclick={() => answer(i)}
@@ -239,7 +320,7 @@
     </div>
   {:else}
     <div class="stage">
-      <div class="tooltip" use:backdropShadow class:good={reveal && iWon} class:bad={reveal && !iWon}>
+      <div class="tooltip" use:backdropShadow={{ fill: 'linear' }} class:good={reveal && iWon} class:bad={reveal && !iWon}>
         <div class="head">
           {#if reveal && item}
             <div class="head-text" in:fly={{ y: 10, duration: 450 }}>
@@ -254,7 +335,8 @@
             </div>
           {/if}
         </div>
-        <div class="art">
+        <div class="art" bind:this={artEl} use:backdropShadow={{ fill: 'stage' }}>
+          <ArcaneCircle state={reveal ? (iWon ? 'good' : 'bad') : 'idle'} />
           <div class="frame">
             {#if reveal && item}
               <ArtImage src={itemImage(item.id)} alt={item.name} w={hint?.w} h={hint?.h} float unflip={mirrored(0)} />
@@ -270,7 +352,7 @@
                     style:width="{(c.w / media.grid.w) * 100}%"
                     style:height="{(c.h / media.grid.h) * 100}%"
                   >
-                    {#if t}<img src={t.url} alt="" draggable="false" />{/if}
+                    {#if t}<img src={t.url} alt="" draggable="false" use:lifted />{/if}
                   </span>
                 {/each}
               </span>
@@ -291,11 +373,14 @@
           <button
             class="option {st}"
             data-sfx="none"
+            bind:this={optionEls[i]}
+            use:backdropShadow={{ fill: 'linear' }}
             class:mine
             disabled={!mine || !!reveal || chosen !== null}
             onclick={() => answer(i)}
             in:fly={{ x: 40, duration: 450, delay: 300 + i * 90 }}
           >
+            <span class="sheen"></span>
             <span class="key">{i + 1}</span>
             <span class="text">{label ?? optionName(i)}</span>
             {@render who(i)}
@@ -357,7 +442,10 @@
     display: flex;
     flex-direction: column;
     border: 1px solid #5a3a1c;
-    background: rgba(5, 4, 3, 0.92);
+    /* Drawn by the WebGL backdrop when it can (so the art stage inside can be too). */
+    --bs-fill-a: rgba(5, 4, 3, 0.92);
+    --bs-fill-b: rgba(5, 4, 3, 0.92);
+    background: var(--bs-fill-paint, linear-gradient(var(--bs-fill-a), var(--bs-fill-b)));
     /* --bs1 carries the right/wrong glow, --bs2 the drop shadow. */
     --bs1-color: transparent;
     --bs1: 0px 50px;
@@ -452,12 +540,27 @@
     display: grid;
     place-items: center;
     min-height: 300px;
-    background:
-      radial-gradient(ellipse at center, rgba(175, 96, 37, 0.12), transparent 65%),
+    container-type: size;
+    /* The glow and the ground under the grid. Drawn by the WebGL backdrop
+       when it can (see lib/backdropShadow.ts, 'stage'); it turns green or red
+       at the reveal. */
+    --bs-fill-a: rgba(175, 96, 37, 0.16);
+    --bs-fill-b: #07080c;
+    background: var(
+      --bs-fill-paint,
+      radial-gradient(ellipse at center, var(--bs-fill-a), transparent 65%),
       repeating-linear-gradient(0deg, rgba(90, 100, 140, 0.08) 0 1px, transparent 1px 47px),
       repeating-linear-gradient(90deg, rgba(90, 100, 140, 0.08) 0 1px, transparent 1px 47px),
-      #07080c;
+      var(--bs-fill-b)
+    );
+    transition: --bs-fill-a 0.9s;
     overflow: hidden;
+  }
+  .tooltip.good .art {
+    --bs-fill-a: rgba(111, 207, 115, 0.2);
+  }
+  .tooltip.bad .art {
+    --bs-fill-a: rgba(224, 85, 63, 0.13);
   }
   .frame {
     position: absolute;
@@ -534,7 +637,13 @@
     border: 2px solid currentColor;
     border-radius: 3px;
     rotate: -8deg;
-    background: rgba(0, 0, 0, 0.55);
+    background: rgba(8, 3, 2, 0.72);
+    /* A second, inner rule like a seal's rim, and the stamp's own glow. */
+    box-shadow:
+      inset 0 0 0 2px rgba(0, 0, 0, 0.6),
+      inset 0 0 0 3px color-mix(in srgb, currentColor, transparent 60%),
+      0 0 18px color-mix(in srgb, currentColor, transparent 60%);
+    text-shadow: 0 0 12px color-mix(in srgb, currentColor, transparent 40%);
   }
   .stamp.in-head {
     bottom: auto;
@@ -560,16 +669,57 @@
     width: 100%;
     padding: 0.95rem 2.6rem 0.95rem 1.1rem;
     text-align: left;
-    background: linear-gradient(90deg, rgba(40, 31, 22, 0.95), rgba(20, 16, 12, 0.95));
+    /* Drawn by the WebGL backdrop when it can (see lib/backdropShadow.ts). */
+    --bs-fill-a: rgba(40, 31, 22, 0.95);
+    --bs-fill-b: rgba(20, 16, 12, 0.95);
+    --bs-fill-angle: 90deg;
+    background: var(--bs-fill-paint, linear-gradient(var(--bs-fill-angle), var(--bs-fill-a), var(--bs-fill-b)));
     border: 1px solid var(--line);
     border-radius: 4px;
     cursor: default;
+    isolation: isolate;
+    box-shadow: inset 0 1px 0 rgba(255, 220, 150, 0.05);
     transition:
       transform 0.25s var(--ease-out),
       border-color 0.25s,
       box-shadow 0.25s,
       opacity 0.4s,
-      background 0.4s;
+      --bs-fill-a 0.4s,
+      --bs-fill-b 0.4s;
+  }
+  /* A band of light that sweeps across on hover (clipped by its own box,
+     so the race avatars on the row's edge aren't), and a lit edge on the left. */
+  .sheen {
+    position: absolute;
+    z-index: -1;
+    inset: 0;
+    overflow: hidden;
+    border-radius: inherit;
+    pointer-events: none;
+  }
+  .sheen::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: -40%;
+    width: 30%;
+    background: linear-gradient(100deg, transparent, rgba(255, 236, 196, 0.1), transparent);
+    transform: skewX(-18deg);
+    pointer-events: none;
+  }
+  .option::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 12%;
+    bottom: 12%;
+    width: 2px;
+    background: linear-gradient(180deg, transparent, var(--gold-hi), transparent);
+    box-shadow: 0 0 10px rgba(255, 180, 90, 0.8);
+    opacity: 0;
+    transition: opacity 0.25s;
+    pointer-events: none;
   }
   .option.mine:not(:disabled) {
     cursor: pointer;
@@ -577,7 +727,35 @@
   .option.mine:not(:disabled):hover {
     transform: translateX(6px);
     border-color: var(--gold);
-    box-shadow: 0 0 20px rgba(201, 164, 92, 0.18);
+    --bs-fill-a: rgba(58, 43, 26, 0.95);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 220, 150, 0.1),
+      0 0 22px rgba(201, 164, 92, 0.22);
+  }
+  .option.mine:not(:disabled):hover .sheen::before {
+    animation: sweep 0.7s var(--ease-out);
+  }
+  .option.mine:not(:disabled):hover::after {
+    opacity: 1;
+  }
+  .option.mine:not(:disabled):hover .key {
+    color: #fff1cf;
+    border-color: var(--gold);
+    box-shadow: 0 0 12px rgba(241, 217, 155, 0.45);
+  }
+  .option.mine:not(:disabled):hover .text {
+    color: #fff1dc;
+  }
+  .option.mine:not(:disabled):active {
+    transform: translateX(6px) scale(0.985);
+  }
+  @keyframes sweep {
+    from {
+      translate: 0 0;
+    }
+    to {
+      translate: 560% 0;
+    }
   }
   .key {
     flex: none;
@@ -594,6 +772,10 @@
     border: 1px solid var(--gold-lo);
     border-radius: 50%;
     background: rgba(0, 0, 0, 0.4);
+    transition:
+      color 0.25s,
+      border-color 0.25s,
+      box-shadow 0.25s;
   }
   .text {
     flex: 1;
@@ -629,8 +811,14 @@
   }
   .option.right {
     border-color: var(--good);
-    background: linear-gradient(90deg, rgba(47, 90, 45, 0.85), rgba(20, 35, 18, 0.9));
-    box-shadow: 0 0 30px rgba(111, 207, 115, 0.3);
+    --bs-fill-a: rgba(47, 90, 45, 0.85);
+    --bs-fill-b: rgba(20, 35, 18, 0.9);
+    box-shadow:
+      inset 0 1px 0 rgba(200, 255, 190, 0.15),
+      0 0 30px rgba(111, 207, 115, 0.3);
+  }
+  .option.right .text {
+    text-shadow: 0 0 14px rgba(160, 255, 150, 0.45);
   }
   .option.right .text,
   .option.right .mark {
@@ -642,7 +830,9 @@
   }
   .option.wrong {
     border-color: var(--bad);
-    background: linear-gradient(90deg, rgba(100, 32, 22, 0.85), rgba(40, 14, 10, 0.9));
+    --bs-fill-a: rgba(100, 32, 22, 0.85);
+    --bs-fill-b: rgba(40, 14, 10, 0.9);
+    box-shadow: 0 0 24px rgba(224, 85, 63, 0.25);
     animation: shake 0.5s;
   }
   .option.wrong .text,
@@ -651,6 +841,7 @@
   }
   .option.dim {
     opacity: 0.35;
+    filter: saturate(0.5);
   }
   .option:disabled {
     color: inherit;
@@ -779,6 +970,31 @@
     font-family: var(--font-display);
     color: var(--good);
     font-size: 1.4rem;
+    text-shadow: 0 0 14px rgba(111, 207, 115, 0.6);
+  }
+  /* A streak of correct answers. */
+  .streak {
+    display: inline-block;
+    margin-left: 0.6em;
+    padding: 0.1em 0.7em 0.05em;
+    font-family: var(--font-display);
+    font-size: 0.8rem;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    vertical-align: 0.15em;
+    color: #ffe2b0;
+    background: linear-gradient(180deg, rgba(160, 70, 20, 0.6), rgba(80, 25, 5, 0.6));
+    border: 1px solid rgba(255, 150, 70, 0.6);
+    border-radius: 999px;
+    box-shadow: 0 0 16px rgba(255, 120, 40, 0.35);
+    text-shadow: 0 0 10px rgba(255, 170, 90, 0.7);
+    animation: smoulder-badge 1.6s ease-in-out infinite;
+  }
+  @keyframes smoulder-badge {
+    50% {
+      box-shadow: 0 0 24px rgba(255, 140, 50, 0.55);
+    }
   }
   /* However long the result, the button keeps its size. */
   .result .btn {
