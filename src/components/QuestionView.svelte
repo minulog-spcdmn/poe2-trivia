@@ -494,7 +494,6 @@
     z-index: 1;
     border-radius: 2px;
     background:
-      radial-gradient(ellipse at 30% 20%, rgba(201, 164, 92, 0.12), transparent 65%),
       linear-gradient(155deg, #221c14, #0d0b08 70%);
     box-shadow:
       inset 0 0 0 1px rgba(125, 99, 51, 0.4),
