@@ -179,12 +179,12 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding: 2rem 1rem 3rem;
+    padding: 3rem 1rem 3rem;
     text-align: center;
   }
   .kicker {
     /* Clear the rune circle, which reaches 51px beyond the avatar. */
-    margin: 0 0 calc(51px + 2.4rem);
+    margin: 0 0 calc(51px + 1.4rem);
     font-family: var(--font-display);
     letter-spacing: 0.6em;
     /* Letter spacing also trails the last letter; balance it so the word is centred. */

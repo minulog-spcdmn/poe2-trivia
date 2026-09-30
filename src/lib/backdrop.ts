@@ -183,18 +183,18 @@ void main() {
     col += (mix(uEmberColor.rgb, vec3(1.0, 0.86, 0.6), 0.55) * core * 0.9 + uEmberColor.rgb * halo * 0.3) * e.w * uEmberColor.a;
   }
 
-  // The start page: god rays falling from high above, swaying slowly, and a
-  // royal glow behind the title.
+  // The start page: god rays falling from high above the centre, each beam
+  // slowly waxing and waning in place, and a royal glow behind the title.
   if (uHome.x > 0.0) {
     float ht = uHome.z;
-    vec2 src = vec2(0.5 * W + 0.06 * W * sin(ht * 0.05), -0.32 * H);
+    vec2 src = vec2(0.5 * W, -0.32 * H);
     vec2 dr = p - src;
     float ang = atan(dr.x, dr.y); // 0 is straight down
     float r = length(dr);
     float beams = 0.0;
     for (int i = 0; i < 7; i++) {
       float fi = float(i);
-      float a0 = (fi - 3.0) * 0.17 + 0.03 * sin(fi * 1.7) + 0.04 * sin(ht * (0.09 + 0.025 * fi) + fi * 2.1);
+      float a0 = (fi - 3.0) * 0.17 + 0.012 * sin(ht * (0.07 + 0.02 * fi) + fi * 2.1);
       float bw = 0.055 + 0.025 * sin(fi * 3.1 + 1.0) + 0.012 * sin(ht * 0.21 + fi);
       float bk = 0.55 + 0.45 * sin(ht * (0.13 + 0.04 * fi) + fi * 1.3);
       float x = (ang - a0) / bw;
