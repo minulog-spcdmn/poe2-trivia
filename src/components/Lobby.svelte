@@ -196,6 +196,8 @@
             class="field"
             bind:value={newName}
             maxlength={MAX_NAME}
+            autocomplete="off"
+            spellcheck="false"
             placeholder={s.players.length ? 'Add another exile' : 'Add the first exile'}
             disabled={s.players.length >= MAX_PLAYERS}
           />
