@@ -11,7 +11,7 @@
 
 import { SHADOWS_PER_ELEMENT, measureShadows, releaseAll } from './backdropShadow';
 import { DROPS_PER_MASK, MAX_MASKS, measureDrops, releaseAllDrops } from './backdropDropShadow';
-import { MAX_LIGHTS, packLights, stepMood } from './lights';
+import { MAX_LIGHTS, packLights, stepHomeScene, stepMood } from './lights';
 import { COLUMNS, SLOTS, embers } from './backdropEmbers';
 
 const VERT = `#version 300 es
@@ -55,6 +55,10 @@ uniform int uElCount;
 uniform vec4 uLightA[${MAX_LIGHTS}];
 uniform vec4 uLightC[${MAX_LIGHTS}];
 uniform vec4 uMood;
+// The start page: (rays, title glow, time in s, 0), and the title's centre
+// and half size (CSS px). See setHomeScene in lights.ts.
+uniform vec4 uHome;
+uniform vec4 uTitle;
 
 // Embers by screen column: row c holds the embers that reach column c,
 // (x, y, size, brightness) each, ending at brightness 0; see backdropEmbers.ts.
@@ -177,6 +181,37 @@ void main() {
     float core = exp(-r2 / (s2 * 0.3));
     float halo = exp(-r2 / (s2 * 5.0));
     col += (mix(uEmberColor.rgb, vec3(1.0, 0.86, 0.6), 0.55) * core * 0.9 + uEmberColor.rgb * halo * 0.3) * e.w * uEmberColor.a;
+  }
+
+  // The start page: god rays falling from high above, swaying slowly, and a
+  // royal glow behind the title.
+  if (uHome.x > 0.0) {
+    float ht = uHome.z;
+    vec2 src = vec2(0.5 * W + 0.06 * W * sin(ht * 0.05), -0.32 * H);
+    vec2 dr = p - src;
+    float ang = atan(dr.x, dr.y); // 0 is straight down
+    float r = length(dr);
+    float beams = 0.0;
+    for (int i = 0; i < 7; i++) {
+      float fi = float(i);
+      float a0 = (fi - 3.0) * 0.17 + 0.03 * sin(fi * 1.7) + 0.04 * sin(ht * (0.09 + 0.025 * fi) + fi * 2.1);
+      float bw = 0.055 + 0.025 * sin(fi * 3.1 + 1.0) + 0.012 * sin(ht * 0.21 + fi);
+      float bk = 0.55 + 0.45 * sin(ht * (0.13 + 0.04 * fi) + fi * 1.3);
+      float x = (ang - a0) / bw;
+      beams += bk * exp(-x * x);
+    }
+    // Motes of dust drifting down the shafts.
+    float shimmer = 0.82 + 0.18 * sin(r * 0.014 - ht * 0.5 + ang * 9.0);
+    float cone = exp(-ang * ang / 0.5);
+    float fall = exp(-max(r - 0.3 * H, 0.0) / (0.5 * H));
+    col += vec3(1.0, 0.86, 0.62) * beams * shimmer * cone * fall * 0.05 * uHome.x;
+  }
+  if (uHome.y > 0.0 && uTitle.z > 0.0) {
+    float breath = 0.86 + 0.14 * sin(uHome.z * 0.55);
+    vec2 q = (p - uTitle.xy) / (uTitle.zw * vec2(0.95, 2.4));
+    col += vec3(1.0, 0.74, 0.36) * exp(-dot(q, q)) * 0.1 * breath * uHome.y;
+    vec2 q2 = (p - uTitle.xy) / (uTitle.zw * vec2(1.9, 5.5));
+    col += vec3(0.5, 0.14, 0.2) * exp(-dot(q2, q2)) * 0.05 * uHome.y;
   }
 
   // Lift the dark tones within their own hue. (A flat grey lift, as the old
@@ -434,6 +469,8 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   const uLightA = U('uLightA');
   const uLightC = U('uLightC');
   const uMood = U('uMood');
+  const uHome = U('uHome');
+  const uTitle = U('uTitle');
   const uEmberColor = U('uEmberColor');
   const uElCount = U('uElCount');
 
@@ -472,6 +509,8 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   const lightA = new Float32Array(MAX_LIGHTS * 4);
   const lightC = new Float32Array(MAX_LIGHTS * 4);
   const mood = new Float32Array(4);
+  const home = new Float32Array(4);
+  const title = new Float32Array(4);
 
   // Drop-shadow atlases: unit 0 holds content alpha, unit 1 the blurred alpha.
   const texture = (unit: number, filter: number) => {
@@ -547,6 +586,9 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     gl!.uniform4fv(uLightA, lightA);
     gl!.uniform4fv(uLightC, lightC);
     gl!.uniform4fv(uMood, mood);
+    home[2] = still ? 0 : ms / 1000;
+    gl!.uniform4fv(uHome, home);
+    gl!.uniform4fv(uTitle, title);
     gl!.uniform4f(uEmberColor, embers.color[0], embers.color[1], embers.color[2], still ? 0.6 : 1);
     gl!.activeTexture(gl!.TEXTURE2);
     gl!.bindTexture(gl!.TEXTURE_2D, emberTex);
@@ -603,6 +645,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     const nowS = now / 1000;
     const lights = packLights(lightA, lightC, nowS);
     const moodOn = stepMood(dt, mood);
+    stepHomeScene(dt, home, title);
     // Lights and mood step once per animation frame; draw() uses the latest values.
     const lit = lights || moodOn;
     if (!reduceMotion.matches) embers.step(dt, canvas.clientWidth, canvas.clientHeight);

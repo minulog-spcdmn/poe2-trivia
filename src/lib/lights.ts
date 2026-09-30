@@ -123,3 +123,45 @@ export function stepMood(dt: number, out: Float32Array): boolean {
   out[3] = total;
   return mood.strength > 0.002 || mood.targetStrength > 0 || mood.pulse > 0;
 }
+
+// ---------- the start page ----------
+
+/**
+ * The start page's light: slow god rays falling from above and a royal glow
+ * behind the title. Both ease in and out as the page comes and goes.
+ */
+const scene = { title: null as Element | null, rays: 0, glow: 0, target: 0, x: 0, y: 0, w: 0, h: 0 };
+
+/** Lights the start page around `title`, or turns its light off (null). */
+export function setHomeScene(title: Element | null) {
+  if (title) scene.title = title;
+  scene.target = title ? 1 : 0;
+}
+
+/**
+ * Steps the start page's light: writes (rays, glow, 0, 0) to `a` and the
+ * title's centre and half size (CSS px) to `b`. Returns whether it's lit.
+ */
+export function stepHomeScene(dt: number, a: Float32Array, b: Float32Array): boolean {
+  const k = 1 - Math.exp(-dt * 1.4);
+  scene.rays += (scene.target - scene.rays) * k;
+  scene.glow += (scene.target - scene.glow) * k;
+  if (scene.target === 0 && scene.rays < 0.002) {
+    scene.rays = scene.glow = 0;
+    scene.title = null;
+  }
+  if (scene.title?.isConnected) {
+    const r = scene.title.getBoundingClientRect();
+    scene.x = r.left + r.width / 2;
+    scene.y = r.top + r.height / 2;
+    scene.w = r.width / 2;
+    scene.h = r.height / 2;
+  }
+  a[0] = scene.rays;
+  a[1] = scene.glow;
+  b[0] = scene.x;
+  b[1] = scene.y;
+  b[2] = scene.w;
+  b[3] = scene.h;
+  return scene.rays > 0;
+}

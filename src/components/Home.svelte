@@ -9,6 +9,7 @@
   import { backdropDropShadow } from '../lib/backdropDropShadow';
   import { connecting as portalFx, refuse, titleGlints } from '../lib/fx/moments';
   import type { Handle } from '../lib/fx/core';
+  import { setHomeScene } from '../lib/lights';
 
   const params = new URLSearchParams(location.search);
   const invite = (params.get('room') ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, CODE_LENGTH);
@@ -70,15 +71,20 @@
 
   const connecting = $derived(session.status === 'connecting');
 
-  /** Svelte action: glints off the title now and then. */
+  /**
+   * Svelte action: the title's light. The backdrop throws god rays from above
+   * and a royal glow behind it (lib/lights.ts), and it glints now and then.
+   */
   function glinting(node: HTMLElement) {
     let h: Handle | null = null;
+    setHomeScene(node);
     // Wait for the title's entrance to finish.
     const t = setTimeout(() => (h = titleGlints(node)), 1200);
     return {
       destroy() {
         clearTimeout(t);
         h?.stop();
+        setHomeScene(null);
       },
     };
   }
@@ -291,7 +297,7 @@
     color: transparent;
     animation: gleam 7s ease-in-out 1.6s infinite;
     /* Drawn by the WebGL backdrop when it can (see lib/backdropDropShadow.ts). */
-    --drop-shadow: drop-shadow(0 4px 18px rgba(0, 0, 0, 0.9)) drop-shadow(0 0 30px rgba(201, 164, 92, 0.25));
+    --drop-shadow: drop-shadow(0 4px 18px rgba(0, 0, 0, 0.9)) drop-shadow(0 0 34px rgba(224, 170, 90, 0.36));
     filter: var(--drop-shadow-paint, var(--drop-shadow));
   }
   @keyframes gleam {

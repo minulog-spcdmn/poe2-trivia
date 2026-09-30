@@ -121,7 +121,7 @@
   <p class="kicker" in:fly={{ y: -10, duration: 600 }}>Victory</p>
   {#if winner}
     <div class="crown" bind:this={crown} in:scale={{ start: 0.4, duration: 900, delay: 200 }}>
-      <ArcaneCircle size="236px" color="color-mix(in srgb, {playerColor(winner.hue)}, #f1d99b 45%)" strength={iLost ? 0.35 : 0.6} />
+      <ArcaneCircle size="212px" color="color-mix(in srgb, {playerColor(winner.hue)}, #f1d99b 45%)" strength={iLost ? 0.35 : 0.6} />
       <Avatar name={winner.name} hue={winner.hue} size={110} />
     </div>
     <h1 bind:this={title} in:fly={{ y: 20, duration: 700, delay: 500 }}>
@@ -183,8 +183,8 @@
     text-align: center;
   }
   .kicker {
-    /* Clear the dashed ring, which reaches 26px beyond the avatar. */
-    margin: 0 0 calc(26px + 1.4rem);
+    /* Clear the rune circle, which reaches 51px beyond the avatar. */
+    margin: 0 0 calc(51px + 2.4rem);
     font-family: var(--font-display);
     letter-spacing: 0.6em;
     /* Letter spacing also trails the last letter; balance it so the word is centred. */
@@ -195,7 +195,7 @@
   .crown {
     position: relative;
     isolation: isolate;
-    margin-bottom: calc(26px + 1rem);
+    margin-bottom: calc(51px + 1rem);
   }
   /* On the avatar only: a filter over the turning rune circle would repaint it every frame. */
   .crown :global(.avatar) {
@@ -205,7 +205,7 @@
   .crown :global(.arcane) {
     z-index: -1;
     margin: auto;
-    inset: -63px;
+    inset: -51px;
   }
   h1 {
     font-size: clamp(2.25rem, 6.7vw, 3.8rem);

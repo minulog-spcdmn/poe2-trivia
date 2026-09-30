@@ -185,8 +185,9 @@ Everything is drawn in WebGL2 with float precision and dithered once at the
 8-bit output, so no glow or gradient bands.
 
 - **Backdrop** (`src/lib/backdrop.ts`, behind the UI): breathing gradients,
-  drifting smoke, rising embers, light from game events (`src/lib/lights.ts`)
-  and a mood tint (crimson during a deathmatch, gold on victory). It also draws the soft shadows of UI elements
+  drifting smoke, rising embers, light from game events (`src/lib/lights.ts`),
+  a mood tint (crimson during a deathmatch, gold on victory), and on the
+  start page slowly swaying god rays and a royal glow behind the title. It also draws the soft shadows of UI elements
   and the large gradient fills of panels, answers and the art stage, which
   CSS would band (`src/lib/backdropShadow.ts`). Fills go back to CSS while the
   page scrolls or an element moves, so they never lag behind their borders.
