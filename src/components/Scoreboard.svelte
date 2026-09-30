@@ -122,7 +122,7 @@
     content: '';
     position: absolute;
     left: 50%;
-    bottom: -9px;
+    bottom: -10px;
     translate: -50% 0;
     border: 5px solid transparent;
     border-top-color: var(--c);
@@ -221,6 +221,9 @@
     overflow: hidden;
     text-overflow: ellipsis;
     max-width: 9.5rem;
+    /* Room for descenders (g, y) that overflow: hidden would clip at line-height 1.1 */
+    padding-bottom: 0.2em;
+    margin-bottom: -0.2em;
   }
   .name em {
     color: var(--muted);
