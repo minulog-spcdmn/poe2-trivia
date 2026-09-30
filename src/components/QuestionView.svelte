@@ -705,11 +705,12 @@
     height: 250px;
     padding: 1.2rem 0.8rem 0.8rem;
     border: 1px solid transparent;
+    /* Same backdrop as the item art panel. */
     background:
-      radial-gradient(ellipse at center, rgba(175, 96, 37, 0.1), transparent 70%),
-      repeating-linear-gradient(0deg, rgba(90, 100, 140, 0.07) 0 1px, transparent 1px 47px),
-      repeating-linear-gradient(90deg, rgba(90, 100, 140, 0.07) 0 1px, transparent 1px 47px),
-      #07080c;
+      radial-gradient(ellipse 60% 50% at 50% 45%, rgba(175, 96, 37, 0.14), transparent 70%),
+      radial-gradient(ellipse 90% 40% at 50% 0%, rgba(90, 110, 160, 0.09), transparent 70%),
+      radial-gradient(ellipse at center, transparent 45%, rgba(0, 0, 0, 0.5) 100%),
+      linear-gradient(180deg, #0c0d12, #060709);
     cursor: default;
     transition:
       background 0.3s,
