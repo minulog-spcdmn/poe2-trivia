@@ -16,6 +16,8 @@ export const Shape = {
   Glint: 4,
   /** Out-of-focus disc (bokeh). */
   Mote: 5,
+  /** A gold coin flipping end over end, glinting when it faces you. */
+  Coin: 6,
 } as const;
 export type Shape = (typeof Shape)[keyof typeof Shape];
 
@@ -219,7 +221,8 @@ export class ParticlePool {
       out[q + 2] = vx;
       out[q + 3] = vy;
       out[q + 4] = size;
-      out[q + 5] = d[o + F.stretch];
+      // Coins pass their flip (the cosine of their turn) where streaks pass their length.
+      out[q + 5] = d[o + F.shape] === Shape.Coin ? Math.cos(age * (4 + (seed % 7)) + seed) : d[o + F.stretch];
       out[q + 6] = rot;
       out[q + 7] = d[o + F.shape];
       out[q + 8] = (d[o + F.r0] + (d[o + F.r1] - d[o + F.r0]) * ct) * env;

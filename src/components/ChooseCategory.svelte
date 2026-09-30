@@ -275,7 +275,7 @@
     position: absolute;
     inset: 0;
     border-radius: inherit;
-    background: radial-gradient(circle at var(--gx, 50%) var(--gy, 30%), rgba(255, 226, 170, 0.2), transparent 55%);
+    background: radial-gradient(circle at var(--gx, 50%) var(--gy, 30%), rgba(255, 226, 170, 0.07), transparent 45%);
     mix-blend-mode: screen;
     opacity: 0;
     transition: opacity 0.35s;

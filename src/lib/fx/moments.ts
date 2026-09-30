@@ -412,62 +412,137 @@ export function deathmatchMood(on: boolean) {
 
 // ---------- the end ----------
 
-/** Victory screen. Returns a handle that stops the ongoing parts. */
-export function victory(avatar: Element, title: Element, color: string, lost: boolean): Handle {
+/** A handful of golds, so a shower of coins doesn't look stamped out. */
+const COIN_GOLDS: Vec3[] = [
+  [1.55, 1.08, 0.42],
+  [1.75, 1.25, 0.55],
+  [1.3, 0.85, 0.3],
+  [1.6, 1.2, 0.7],
+];
+
+function coin(x: number, y: number, vx: number, vy: number, o: { life?: [number, number]; size?: [number, number]; gravity?: number } = {}) {
+  particle({
+    x,
+    y,
+    vx,
+    vy,
+    life: rand(...(o.life ?? [2.2, 3.2])),
+    size: rand(...(o.size ?? [6, 9.5])),
+    color: COIN_GOLDS[Math.floor(Math.random() * COIN_GOLDS.length)],
+    shape: Shape.Coin,
+    gravity: o.gravity ?? 1500,
+    drag: 0.15,
+    rot: rand(-0.6, 0.6),
+    spin: rand(-1.5, 1.5),
+    fadeIn: 0.02,
+  });
+}
+
+/**
+ * Victory screen: a fountain of gold coins bursts from behind the winner and
+ * coins pour from above, in time with the clinking of the victory sound
+ * (about 2.6 s), under slowly turning rays and a rune circle in the winner's
+ * colour. A player who lost gets falling ash instead. Returns a handle that
+ * stops the ongoing parts.
+ */
+export function victory(avatar: Element, title: Element, color: string, lost: boolean, standings?: Element | null): Handle {
   if (!fxActive()) return { stop() {} };
   const pc = hdr(color, 2.4);
   const handles: Handle[] = [];
-  const main = lost ? k3(C.gold, 0.7) : C.gold;
-  flash(avatar, { radius: Math.max(innerWidth, innerHeight) * 0.3, intensity: lost ? 0.05 : 0.1, life: 0.9, delay: 0.2 });
-  ring(avatar, { radius: Math.hypot(innerWidth, innerHeight) * 0.5, thickness: 20, life: 1.2, color: main, breakup: 0.7, delay: 0.2, fill: 0.15 });
-  handles.push(rays(avatar, { radius: Math.min(700, innerWidth * 0.55), intensity: lost ? 0.18 : 0.34, color: main, count: 16, delay: 0.3, fadeIn: 1.2 }));
-  handles.push(sigil(avatar, { radius: 96, color: pc, intensity: 0.55, spin: 0.25, draw: 1.1, delay: 0.5 }));
+  const main = lost ? k3(C.gold, 0.6) : C.gold;
+  const D = Math.hypot(innerWidth, innerHeight);
+  flash(avatar, { radius: Math.max(innerWidth, innerHeight) * 0.3, intensity: lost ? 0.04 : 0.08, life: 0.9, delay: 0.1 });
+  ring(avatar, { radius: D * 0.5, thickness: 34, life: 1.2, color: main, breakup: 0.85, delay: 0.1, fill: 0.08, intensity: 0.45 });
+  // The rays and rune circle settle after a while, so a victory screen left
+  // open isn't keeping the effects running.
+  handles.push(rays(avatar, { radius: Math.min(700, innerWidth * 0.55), intensity: lost ? 0.14 : 0.28, color: main, count: 16, delay: 0.3, fadeIn: 1.2, life: 14 }));
+  handles.push(sigil(avatar, { radius: 96, color: pc, intensity: 0.5, spin: 0.25, draw: 1.1, delay: 0.5, life: 14 }));
   after(0.9, () => {
-    flare(title, { size: 40, streak: innerWidth * 0.45, life: 1, color: C.goldPale });
-    glints(title, { count: 6, size: [5, 11], delay: [0, 1] });
+    flare(title, { size: 36, streak: innerWidth * 0.4, life: 1, color: C.goldPale, intensity: 0.7 });
+    glints(title, { count: 5, size: [5, 10], delay: [0, 1] });
   });
-  setMood(lost ? [0.6, 0.5, 0.4] : [1, 0.7, 0.3], lost ? 0.2 : 0.4);
+  if (standings) {
+    // The winner's row, as it flies in.
+    after(1.25, () => {
+      const first = standings.querySelector('li');
+      if (!first) return;
+      outline(first, { color: C.gold, width: 8, life: 1.4, intensity: 0.45, bleed: 0.12 });
+      glints(first, { count: 3, area: 'edge', size: [4, 8], delay: [0, 0.5] });
+    });
+  }
+  setMood(lost ? [0.6, 0.5, 0.4] : [1, 0.7, 0.3], lost ? 0.18 : 0.35);
   backdropEmbers.tint(lost ? CALM : [1, 0.62, 0.2]);
-  backdropEmbers.stoke(lost ? 0 : 0.9);
+  backdropEmbers.stoke(lost ? 0 : 0.8);
 
   if (!lost) {
-    // Fireworks: bursts of gold high over the screen.
-    let n = 0;
-    const burst = () => {
-      if (n++ > 9) return;
-      const p = { x: innerWidth * rand(0.12, 0.88), y: innerHeight * rand(0.1, 0.42) };
-      const hue = [C.gold, C.whiteHot, C.ember, pc][n % 4];
-      sparks(p, { count: 90, speed: [120, 560], colors: [hue, C.goldPale, C.whiteHot], gravity: 240, drag: 1.3, life: [0.9, 1.8], stretch: 0.06, cool: k3(C.emberDeep, 0.4) });
-      flare(p, { size: 22, streak: 240, life: 0.5, color: hue });
-      ring(p, { radius: 120, thickness: 5, life: 0.6, color: hue, breakup: 0.7, intensity: 0.7 });
-      light(p, { color: unit(hue), radius: 320, intensity: 0.45, decay: 1 });
-      after(rand(0.35, 0.8), burst);
-    };
-    after(0.4, burst);
-    // Gold glitter drifting down.
+    const a = boxOf(avatar);
+    // Fewer coins on phones and slower devices.
+    const scale = budget(100) / 100;
+    // The fountain: strongest at first, thinning out as the clinking fades.
+    let fountain = 0;
     handles.push(
-      emitter(26, () => {
-        particle({
-          x: rand(0, innerWidth),
-          y: -10,
-          vx: rand(-20, 20),
-          vy: rand(60, 140),
-          life: rand(3, 6),
-          size: rand(1.5, 3.2),
-          color: Math.random() < 0.3 ? C.whiteHot : C.gold,
-          shape: Math.random() < 0.25 ? Shape.Glint : Shape.Ember,
-          flicker: 0.6,
-          turbulence: 60,
-          spin: rand(-1, 1),
-          fadeIn: 0.1,
-        });
-      }, 7),
+      task((dt, age) => {
+        if (age > 2.6) return false;
+        fountain += 70 * Math.pow(1 - age / 2.6, 0.7) * scale * dt;
+        for (; fountain >= 1; fountain--) {
+          const ang = -Math.PI / 2 + rand(-0.95, 0.95);
+          const v = rand(520, 980);
+          coin(a.x + rand(-20, 20), a.y + rand(-10, 20), Math.cos(ang) * v * 0.75, Math.sin(ang) * v);
+        }
+        return true;
+      }),
     );
-    shakeView(0.4, 6);
+    // The pour from above, across the whole width.
+    let pour = 0;
+    handles.push(
+      task((dt, age) => {
+        if (age > 2.8) return false;
+        if (age < 0.25) return true;
+        pour += 34 * Math.min(1, (2.8 - age) / 0.8) * scale * dt;
+        for (; pour >= 1; pour--) {
+          coin(rand(0, innerWidth), rand(-40, -10), rand(-60, 60), rand(120, 380), { gravity: 900, life: [2.4, 3.4], size: [5, 8.5] });
+        }
+        return true;
+      }),
+    );
+    // A spray of gold dust where the fountain starts, and a few bursts of it overhead.
+    sparks(a, { count: 50, speed: [200, 700], angle: -Math.PI / 2, spread: 2.2, colors: [C.gold, C.goldPale, C.whiteHot], gravity: 600, life: [0.5, 1.2] });
+    light(avatar, { color: [1, 0.78, 0.4], radius: 420, intensity: 0.45, hold: 0.6, decay: 1.8 });
+    [0.55, 1.15, 1.8].forEach((t, i) => {
+      after(t, () => {
+        const p = { x: innerWidth * (0.2 + 0.3 * i + rand(-0.05, 0.05)), y: innerHeight * rand(0.14, 0.32) };
+        sparks(p, { count: 70, speed: [100, 460], colors: [C.gold, C.goldPale, i === 1 ? pc : C.ember], gravity: 260, drag: 1.4, life: [0.8, 1.6], stretch: 0.05, cool: k3(C.emberDeep, 0.4) });
+        flare(p, { size: 18, streak: 200, life: 0.45, color: C.goldPale, intensity: 0.6 });
+        glints(p, { count: 3, size: [4, 8], delay: [0.1, 0.5] });
+        light(p, { color: [1, 0.8, 0.45], radius: 280, intensity: 0.3, decay: 0.9 });
+      });
+    });
+    // Afterwards, gold glitter drifting down for a while.
+    after(2.2, () => {
+      handles.push(
+        emitter(16, () => {
+          particle({
+            x: rand(0, innerWidth),
+            y: -10,
+            vx: rand(-20, 20),
+            vy: rand(60, 140),
+            life: rand(3, 6),
+            size: rand(1.5, 3),
+            color: Math.random() < 0.3 ? C.goldPale : C.gold,
+            shape: Math.random() < 0.25 ? Shape.Glint : Shape.Ember,
+            flicker: 0.6,
+            turbulence: 60,
+            spin: rand(-1, 1),
+            fadeIn: 0.1,
+          });
+        }, 8),
+      );
+    });
+    shakeView(0.3, 5);
   } else {
     // Ash settles instead.
     handles.push(
-      emitter(14, () => {
+      emitter(12, () => {
         particle({
           x: rand(0, innerWidth),
           y: -10,
@@ -481,7 +556,7 @@ export function victory(avatar: Element, title: Element, color: string, lost: bo
           turbulence: 50,
           fadeIn: 0.15,
         });
-      }),
+      }, 12),
     );
   }
   return {

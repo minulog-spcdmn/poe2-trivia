@@ -72,9 +72,12 @@ void main() {
     ext = vec2(2.2 * w);
   } else if (shape < 4.5) {     // glint
     ext = vec2(4.5 * w);
-  } else {                      // mote
+  } else if (shape < 5.5) {     // mote
     ext = vec2(1.25 * w);
     energy *= energy;
+  } else {                      // coin: the stretch slot carries its flip
+    halfLen = iB.y;
+    ext = vec2(2.0 * w);
   }
   vec2 nrm = vec2(-dir.y, dir.x);
   vL = aCorner * ext;
@@ -118,9 +121,27 @@ void main() {
     float beamX = exp(-a.x * 0.9) * exp(-a.y * a.y * 90.0);
     float beamY = exp(-a.y * 0.9) * exp(-a.x * a.x * 90.0);
     v = core * 1.5 + beamX + beamY;
-  } else {
+  } else if (shape < 5.5) {
     float r = length(vL) / w;
     v = (1.0 - smoothstep(0.86, 1.0, r)) * (0.55 + 0.45 * smoothstep(0.3, 1.0, r));
+  } else {
+    // A coin turning end over end: a disc squashed across by its flip, with
+    // a raised rim and an inner ring, darker edge-on, and a star glint as it
+    // turns to face you.
+    float flip = vP.z;
+    float fw = max(abs(flip), 0.06);
+    vec2 c = vec2(vL.x / fw, vL.y) / w;
+    float r = length(c);
+    float aa = fwidth(r) * 1.2;
+    float disc = 1.0 - smoothstep(1.0 - aa, 1.0, r);
+    float rim = smoothstep(0.7, 0.8, r) * (1.0 - smoothstep(0.86, 0.95, r));
+    float ring = exp(-pow((r - 0.46) / 0.06, 2.0));
+    float shade = (0.3 + 0.7 * abs(flip)) * (flip > 0.0 ? 1.0 : 0.8);
+    v = disc * shade * (0.5 + 0.7 * rim + 0.45 * ring);
+    float facing = pow(abs(flip), 24.0);
+    vec2 a = abs(vL) / w;
+    float star = exp(-a.y * a.y * 120.0) * exp(-a.x * 1.1) + exp(-a.x * a.x * 120.0) * exp(-a.y * 1.1);
+    v += facing * star * 1.3;
   }
   o = vec4(vCol * v, 0.0);
 }`;

@@ -423,7 +423,8 @@
   .modal-backdrop {
     position: fixed;
     inset: 0;
-    z-index: 80;
+    /* Above the effects layer (z-index 95), which it dims and blurs like the rest of the page. */
+    z-index: 100;
     display: grid;
     place-items: center;
     padding: 1rem;

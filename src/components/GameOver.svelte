@@ -28,6 +28,7 @@
   let canvas: HTMLCanvasElement;
   let crown = $state<HTMLElement>();
   let title = $state<HTMLElement>();
+  let standingsEl = $state<HTMLElement>();
   // A player who lost (online) sees a quieter screen.
   const iLost = $derived(
     session.mode !== 'local' && !!session.myPlayerId && s.players.some((p) => p.id === session.myPlayerId) && !s.winners.includes(session.myPlayerId),
@@ -36,7 +37,7 @@
   // The celebration: rays, fireworks and glitter (lib/fx/moments.ts).
   onMount(() => {
     if (!crown || !title || !winner) return;
-    const h = victory(crown, title, playerColor(winner.hue), iLost);
+    const h = victory(crown, title, playerColor(winner.hue), iLost, standingsEl);
     return () => h.stop();
   });
 
@@ -130,7 +131,7 @@
     </p>
   {/if}
 
-  <ol class="standings panel" use:backdropShadow={{ fill: 'linear' }} in:fly={{ y: 30, duration: 700, delay: 900 }}>
+  <ol class="standings panel" bind:this={standingsEl} use:backdropShadow={{ fill: 'linear' }} in:fly={{ y: 30, duration: 700, delay: 900 }}>
     {#each standings as p, i (p.id)}
       <li class:first={rank[i] === 1} in:fly={{ x: -20, duration: 400, delay: 1100 + i * 100 }}>
         <span class="rank">{rank[i]}</span>
