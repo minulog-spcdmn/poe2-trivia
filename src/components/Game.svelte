@@ -7,6 +7,10 @@
   import QuestionView from './QuestionView.svelte';
   import Avatar from './Avatar.svelte';
   import { sfx } from '../lib/sound';
+  import { onMount } from 'svelte';
+  import { deathmatchIntro, deathmatchMood, gameStart, turnBanner } from '../lib/fx/moments';
+  import { resetStreaks } from '../lib/fx/streaks';
+  import { portal } from '../lib/portal';
 
   const s = $derived(session.state!);
   const active = $derived(s.players[s.turn]);
@@ -53,6 +57,30 @@
     introTimer = setTimeout(() => (showIntro = false), 2600);
   });
   let showIntro = $state(false);
+  // A new game (or joining one): a wave of light, and streaks start over.
+  onMount(() => {
+    resetStreaks();
+    gameStart();
+    return () => deathmatchMood(false);
+  });
+
+  // The whole scene turns crimson for as long as a deathmatch lasts.
+  $effect(() => deathmatchMood(!!dm));
+
+  const bannerColor = $derived(dm ? '#e0553f' : race ? 'rgb(224, 138, 68)' : playerColor(active.hue));
+  const bannerBig = $derived(race || mine);
+
+  /** Svelte action: the turn banner's entrance. Runs once per turn (the stage is keyed). */
+  function bannerFx(node: HTMLElement, o: { color: string; big: boolean }) {
+    turnBanner(node, o.color, o.big);
+  }
+
+  /** Svelte action: the deathmatch intro's title bursts in. */
+  function introFx(node: HTMLElement) {
+    const t = setTimeout(() => deathmatchIntro(node), 120);
+    return { destroy: () => clearTimeout(t) };
+  }
+
   const bannerTitle = $derived(
     race ? `Question ${s.turnCount + 1}` : mine && !local ? 'Your turn' : `${active.name}'s turn`,
   );
@@ -90,7 +118,7 @@
         {/if}
         <div class="banner" class:dm={!!dm} style:--c={dm ? '#e0553f' : race ? 'var(--unique-hi)' : playerColor(active.hue)}>
           <span class="rule"></span>
-          <h2>{bannerTitle}</h2>
+          <h2 use:bannerFx={{ color: bannerColor, big: bannerBig }}>{bannerTitle}</h2>
           <span class="rule"></span>
         </div>
 
@@ -126,10 +154,10 @@
 </div>
 
 {#if showIntro && dm}
-  <div class="dm-intro" transition:fade={{ duration: 400 }} aria-live="polite">
+  <div class="dm-intro" use:portal transition:fade={{ duration: 400 }} aria-live="polite">
     <div class="dm-intro-inner" in:scale={{ start: 1.6, duration: 600, opacity: 0 }}>
       <p class="dm-kicker">It's a tie</p>
-      <h1>Deathmatch</h1>
+      <h1 use:introFx>Deathmatch</h1>
       <div class="dm-faces">
         {#each dm.entrants as id, i (id)}
           {@const p = nameOf(id)}
@@ -277,7 +305,9 @@
     display: grid;
     place-items: center;
     padding: 1rem;
-    background: radial-gradient(ellipse at center, rgba(90, 14, 8, 0.85), rgba(0, 0, 0, 0.92) 70%);
+    /* Flat, so it can't band; the crimson glow in the middle is light from
+       the effects layer (lib/fx/moments.ts), or this flat red without it. */
+    background: rgba(14, 3, 2, 0.88);
     pointer-events: none;
   }
   .dm-intro-inner {

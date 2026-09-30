@@ -7,6 +7,9 @@
   import { CREATOR, DONATE_URL, IMPRINT_URL, PRIVACY_URL } from '../lib/site';
   import { backdropShadow } from '../lib/backdropShadow';
   import { backdropDropShadow } from '../lib/backdropDropShadow';
+  import { connecting as portalFx, refuse, titleGlints } from '../lib/fx/moments';
+  import type { Handle } from '../lib/fx/core';
+  import { setHomeScene } from '../lib/lights';
 
   const params = new URLSearchParams(location.search);
   const invite = (params.get('room') ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, CODE_LENGTH);
@@ -22,6 +25,8 @@
     const n = name.trim();
     if (!n) {
       nameError = true;
+      const field = document.getElementById('name');
+      if (field) refuse(field);
       setTimeout(() => (nameError = false), 600);
       document.getElementById('name')?.focus();
       return null;
@@ -65,6 +70,30 @@
   }
 
   const connecting = $derived(session.status === 'connecting');
+
+  /**
+   * Svelte action: the title's light. The backdrop throws god rays from above
+   * and a royal glow behind it (lib/lights.ts), and it glints now and then.
+   */
+  function glinting(node: HTMLElement) {
+    let h: Handle | null = null;
+    setHomeScene(node);
+    // Wait for the title's entrance to finish.
+    const t = setTimeout(() => (h = titleGlints(node)), 1200);
+    return {
+      destroy() {
+        clearTimeout(t);
+        h?.stop();
+        setHomeScene(null);
+      },
+    };
+  }
+
+  /** Svelte action: a portal swirls on the rune while connecting. */
+  function portalOn(node: HTMLElement) {
+    const h = portalFx(node);
+    return { destroy: () => h.stop(0.3) };
+  }
 </script>
 
 <div class="home">
@@ -82,7 +111,7 @@
       {/each}
     </div>
     <p class="kicker" in:fly={{ y: -10, duration: 600, delay: 100 }}>Unique Item Trivia</p>
-    <h1 use:backdropDropShadow in:fly={{ y: 20, duration: 800, delay: 200 }}>
+    <h1 use:backdropDropShadow use:glinting in:fly={{ y: 20, duration: 800, delay: 200 }}>
       <span class="line"></span>PoE2.Quest<span class="line"></span>
     </h1>
     <p class="tagline" in:fade={{ duration: 800, delay: 500 }}>
@@ -90,7 +119,7 @@
     </p>
   </div>
 
-  <div class="card panel" use:backdropShadow in:fly={{ y: 30, duration: 700, delay: 400 }}>
+  <div class="card panel" use:backdropShadow={{ fill: 'linear' }} in:fly={{ y: 30, duration: 700, delay: 400 }}>
     <label class="label" for="name">Your name, Exile</label>
     <input
       id="name"
@@ -143,7 +172,7 @@
 
     {#if connecting}
       <div class="connecting" transition:fade={{ duration: 200 }}>
-        <span class="rune"></span>
+        <span class="rune" use:portalOn></span>
         <span>{session.mode === 'host' ? 'Opening a portal…' : `Travelling to room ${session.code}…`}</span>
         <button class="btn ghost small" onclick={() => session.leave()}>Cancel</button>
       </div>
@@ -254,13 +283,36 @@
        so give the Q's tail room below the line box without moving anything. */
     padding-bottom: 0.3em;
     margin-bottom: -0.3em;
-    background: linear-gradient(180deg, #fff1c9 0.1em, #d7b068 0.5em, #8b6526 0.95em);
+    /* A band of light sweeps across the gold every few seconds. */
+    background:
+      linear-gradient(100deg, transparent 42%, rgba(255, 250, 232, 0.75) 50%, transparent 58%) no-repeat,
+      linear-gradient(180deg, #fff1c9 0.1em, #d7b068 0.5em, #8b6526 0.95em);
+    background-size:
+      250% 100%,
+      100% 100%;
+    background-position:
+      160% 0,
+      0 0;
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;
+    animation: gleam 7s ease-in-out 1.6s infinite;
     /* Drawn by the WebGL backdrop when it can (see lib/backdropDropShadow.ts). */
-    --drop-shadow: drop-shadow(0 4px 18px rgba(0, 0, 0, 0.9)) drop-shadow(0 0 30px rgba(201, 164, 92, 0.25));
+    --drop-shadow: drop-shadow(0 4px 18px rgba(0, 0, 0, 0.9)) drop-shadow(0 0 34px rgba(224, 170, 90, 0.36));
     filter: var(--drop-shadow-paint, var(--drop-shadow));
+  }
+  @keyframes gleam {
+    0% {
+      background-position:
+        160% 0,
+        0 0;
+    }
+    22%,
+    100% {
+      background-position:
+        -60% 0,
+        0 0;
+    }
   }
   .line {
     display: block;
@@ -298,10 +350,22 @@
     border: 1px solid var(--line);
     border-radius: 4px;
     background: rgba(0, 0, 0, 0.25);
+    box-shadow: inset 0 1px 0 rgba(255, 220, 150, 0.04);
+    transition:
+      border-color 0.3s,
+      box-shadow 0.3s;
+  }
+  .mode:hover,
+  .mode:focus-within {
+    border-color: rgba(125, 99, 51, 0.8);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 220, 150, 0.06),
+      inset 0 0 24px rgba(201, 164, 92, 0.06);
   }
   .mode h2 {
     font-size: 1.06rem;
     color: var(--gold-hi);
+    text-shadow: 0 0 14px rgba(241, 217, 155, 0.2);
     text-transform: uppercase;
     letter-spacing: 0.14em;
   }

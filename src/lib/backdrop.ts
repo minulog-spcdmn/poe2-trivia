@@ -1,24 +1,30 @@
-// WebGL renderer for the page backdrop: breathing gradients, drifting blobs,
-// grain, vignette and the soft outer shadows of UI elements on top of it. Every layer is composited in floating point and
-// dithered once, at the final 8-bit conversion, so the dark gradients can't
-// band. Falloffs are Gaussian or smoothstep curves with no hard end, so no
-// layer shows an edge.
+// WebGL2 renderer for the page backdrop: breathing gradients, drifting blobs,
+// rising embers, grain, vignette, light from game events and the mouse, a mood
+// tint, and the soft outer shadows and large gradient fills of UI elements on
+// top of it. Every layer is composited in floating point and dithered once,
+// at the final 8-bit conversion, so the dark gradients can't band. Falloffs
+// are Gaussian or smoothstep curves with no hard end, so no layer shows an
+// edge.
 //
 // Background.svelte keeps a static CSS approximation as the fallback when
 // WebGL is unavailable.
 
-import { MAX_ELEMENTS, SHADOWS_PER_ELEMENT, measureShadows, releaseAll } from './backdropShadow';
+import { SHADOWS_PER_ELEMENT, measureShadows, releaseAll } from './backdropShadow';
 import { DROPS_PER_MASK, MAX_MASKS, measureDrops, releaseAllDrops } from './backdropDropShadow';
+import { MAX_LIGHTS, packLights, stepHomeScene, stepMood } from './lights';
+import { fxActive } from './fx/core';
+import { COLUMNS, SLOTS, embers } from './backdropEmbers';
 
-const VERT = `
-attribute vec2 aPos;
+const VERT = `#version 300 es
+in vec2 aPos;
 void main() { gl_Position = vec4(aPos, 0.0, 1.0); }
 `;
 
 export const BLOB_COUNT = 5;
 
-const FRAG = `
+const frag = (MAX_ELEMENTS: number) => `#version 300 es
 precision highp float;
+out vec4 fragColor;
 
 uniform vec2 uRes;   // drawing buffer size, device pixels
 uniform vec2 uSize;  // canvas size, CSS pixels
@@ -37,9 +43,28 @@ uniform vec4 uBlobA[${BLOB_COUNT}];
 uniform vec3 uBlobB[${BLOB_COUNT}];
 uniform vec3 uBlobColor[${BLOB_COUNT}];
 
-// Outer box-shadows of UI elements (see backdropShadow.ts for the layout).
+// Outer box-shadows and fills of UI elements (see backdropShadow.ts for the layout).
 uniform vec4 uElA[${MAX_ELEMENTS}];
 uniform vec4 uElB[${MAX_ELEMENTS}];
+uniform vec4 uElC[${MAX_ELEMENTS}];
+uniform vec4 uElD[${MAX_ELEMENTS}];
+uniform vec4 uElE[${MAX_ELEMENTS}];
+uniform int uElCount;
+
+// Event lights (x, y, radius, strength) and colours; the mood tint (r, g,
+// b, strength). See lights.ts.
+uniform vec4 uLightA[${MAX_LIGHTS}];
+uniform vec4 uLightC[${MAX_LIGHTS}];
+uniform vec4 uMood;
+// The start page: (rays, title glow, time in s, 0), and the title's centre
+// and half size (CSS px). See setHomeScene in lights.ts.
+uniform vec4 uHome;
+uniform vec4 uTitle;
+
+// Embers by screen column: row c holds the embers that reach column c,
+// (x, y, size, brightness) each, ending at brightness 0; see backdropEmbers.ts.
+uniform sampler2D uEmbers;
+uniform vec4 uEmberColor; // halo colour, overall gain
 uniform vec4 uShGeo[${MAX_ELEMENTS * SHADOWS_PER_ELEMENT}];
 uniform vec4 uShCol[${MAX_ELEMENTS * SHADOWS_PER_ELEMENT}];
 
@@ -145,6 +170,51 @@ void main() {
     col = mix(col, uBlobColor[i], a.w * w);
   }
 
+  // Embers rising through the dark: a hot core and a wide, dim halo.
+  int column = clamp(int(p.x / W * ${COLUMNS}.0), 0, ${COLUMNS - 1});
+  for (int i = 0; i < ${SLOTS}; i++) {
+    vec4 e = texelFetch(uEmbers, ivec2(i, column), 0);
+    if (e.w <= 0.0) break;
+    vec2 dp = p - e.xy;
+    float r2 = dot(dp, dp);
+    float s2 = e.z * e.z;
+    if (r2 > s2 * 40.0) continue;
+    float core = exp(-r2 / (s2 * 0.3));
+    float halo = exp(-r2 / (s2 * 5.0));
+    col += (mix(uEmberColor.rgb, vec3(1.0, 0.86, 0.6), 0.55) * core * 0.9 + uEmberColor.rgb * halo * 0.3) * e.w * uEmberColor.a;
+  }
+
+  // The start page: god rays falling from high above the centre, each beam
+  // slowly waxing and waning in place, and a royal glow behind the title.
+  if (uHome.x > 0.0) {
+    float ht = uHome.z;
+    vec2 src = vec2(0.5 * W, -0.32 * H);
+    vec2 dr = p - src;
+    float ang = atan(dr.x, dr.y); // 0 is straight down
+    float r = length(dr);
+    float beams = 0.0;
+    for (int i = 0; i < 7; i++) {
+      float fi = float(i);
+      float a0 = (fi - 3.0) * 0.17 + 0.012 * sin(ht * (0.07 + 0.02 * fi) + fi * 2.1);
+      float bw = 0.055 + 0.025 * sin(fi * 3.1 + 1.0) + 0.012 * sin(ht * 0.21 + fi);
+      float bk = 0.55 + 0.45 * sin(ht * (0.13 + 0.04 * fi) + fi * 1.3);
+      float x = (ang - a0) / bw;
+      beams += bk * exp(-x * x);
+    }
+    // Motes of dust drifting down the shafts.
+    float shimmer = 0.82 + 0.18 * sin(r * 0.014 - ht * 0.5 + ang * 9.0);
+    float cone = exp(-ang * ang / 0.5);
+    float fall = exp(-max(r - 0.3 * H, 0.0) / (0.5 * H));
+    col += vec3(1.0, 0.86, 0.62) * beams * shimmer * cone * fall * 0.05 * uHome.x;
+  }
+  if (uHome.y > 0.0 && uTitle.z > 0.0) {
+    float breath = 0.86 + 0.14 * sin(uHome.z * 0.55);
+    vec2 q = (p - uTitle.xy) / (uTitle.zw * vec2(0.95, 2.4));
+    col += vec3(1.0, 0.74, 0.36) * exp(-dot(q, q)) * 0.1 * breath * uHome.y;
+    vec2 q2 = (p - uTitle.xy) / (uTitle.zw * vec2(1.9, 5.5));
+    col += vec3(0.5, 0.14, 0.2) * exp(-dot(q2, q2)) * 0.05 * uHome.y;
+  }
+
   // Lift the dark tones within their own hue. (A flat grey lift, as the old
   // SVG grain gave, washes these near-black colours out.)
   col *= 1.2;
@@ -158,7 +228,24 @@ void main() {
   // Vignette: darkens smoothly from the centre, reaching about 72% at the
   // corners (farthest-corner ellipse, as in CSS).
   d = length((p - vec2(0.5 * W, 0.5 * H)) / (vec2(0.5 * W, 0.5 * H) * 1.4142136 * uVignette.x));
+  float vig = d;
   col *= 1.0 - min(0.9, uVignette.y * 0.72 * pow(d, 2.4));
+
+  // Mood: the whole scene takes on a colour, welling up from below and the edges.
+  if (uMood.a > 0.0) {
+    float below = gauss(length((p - vec2(0.5 * W, 1.12 * H)) / vec2(0.95 * W, 0.8 * H)));
+    float m = uMood.a * (0.06 + 0.42 * below + 0.14 * pow(vig, 2.0));
+    col = col * (1.0 - 0.25 * uMood.a) + uMood.rgb * m * 0.3;
+  }
+
+  // Event lights light the stone: an added glow plus a lift of
+  // what's already there, so the grain shows through.
+  for (int i = 0; i < ${MAX_LIGHTS}; i++) {
+    vec4 la = uLightA[i];
+    if (la.w <= 0.0) continue;
+    float g = la.w * gauss(length(p - la.xy) / la.z);
+    col = col * (1.0 + 1.5 * g) + uLightC[i].rgb * g * 0.22;
+  }
 
   // UI drop shadows. The element paints over its own shadow, so where it is
   // opaque the shadow is hidden anyway; drawing it only where the content is
@@ -175,10 +262,10 @@ void main() {
     if (m.x < 0.0 || m.y < 0.0 || m.x > mc.z || m.y > mc.w) continue;
     vec4 md = uMkD[i];
     float q = uMkE[i].x;
-    float content = texture2D(uSharp, (md.xy + m) / uSharpSize).a;
+    float content = texture(uSharp, (md.xy + m) / uSharpSize).a;
     vec4 off = uMkOff[i];
-    vec4 t1 = texture2D(uBlur, (md.zw + (m - off.xy) * q) / uBlurSize);
-    vec4 t2 = texture2D(uBlur, (md.zw + (m - off.zw) * q) / uBlurSize);
+    vec4 t1 = texture(uBlur, (md.zw + (m - off.xy) * q) / uBlurSize);
+    vec4 t2 = texture(uBlur, (md.zw + (m - off.zw) * q) / uBlurSize);
     vec4 c1 = uMkCol[i * ${DROPS_PER_MASK}];
     vec4 c2 = uMkCol[i * ${DROPS_PER_MASK} + 1];
     // CSS paints the last shadow in the list first.
@@ -186,10 +273,11 @@ void main() {
     col = mix(col, c1.rgb, c1.a * (t1.r + t1.g / 255.0) * (1.0 - content));
   }
 
-  // UI shadows, painted over the backdrop like the CSS they replace, and only
-  // outside each element's border box, as CSS does.
+  // UI elements in document order: each one's fill inside its border box,
+  // then its shadows outside it, as CSS paints them.
   float pxLocal = uSize.x / uRes.x; // CSS px per device px
   for (int i = 0; i < ${MAX_ELEMENTS}; i++) {
+    if (i >= uElCount) break;
     vec4 ea = uElA[i];
     vec4 eb = uElB[i];
     if (eb.w < 0.5) continue;
@@ -198,7 +286,40 @@ void main() {
     float rr = min(eb.z, min(halfBox.x, halfBox.y));
     vec2 qd = abs(lp - eb.xy * 0.5) - halfBox + rr;
     float sdf = length(max(qd, 0.0)) + min(max(qd.x, qd.y), 0.0) - rr;
-    float outside = clamp(sdf / (pxLocal * ea.z) + 0.5, 0.0, 1.0);
+    float px = pxLocal * ea.z; // one device pixel in element px
+    float outside = clamp(sdf / px + 0.5, 0.0, 1.0);
+
+    vec4 fc = uElC[i];
+    if (fc.x > 0.5 && outside < 1.0) {
+      vec4 ca = uElD[i];
+      vec4 cb = uElE[i];
+      vec4 fill;
+      if (fc.x < 1.5) {
+        // CSS linear-gradient(angle, a, b), interpolated premultiplied.
+        vec2 gdir = vec2(sin(fc.y), -cos(fc.y));
+        float glen = abs(eb.x * gdir.x) + abs(eb.y * gdir.y);
+        float gt = clamp(dot(lp - halfBox, gdir) / glen + 0.5, 0.0, 1.0);
+        vec4 m = mix(vec4(ca.rgb * ca.a, ca.a), vec4(cb.rgb * cb.a, cb.a), gt);
+        fill = vec4(m.a > 0.0 ? m.rgb / m.a : vec3(0.0), m.a);
+      } else {
+        // The art stage (QuestionView's .art), layer by layer as its CSS
+        // paints it: a dark vertical ground; a vignette (farthest-corner
+        // ellipse, clear to 45%, then to 55% black); a cool rim light from
+        // the top edge (ellipse 80% x 45% at 50% 0%); and the warm glow in ca
+        // (ellipse 55% x 50% at 50% 52%). Each fades out at 70% of its
+        // ellipse, linearly as CSS does.
+        vec3 s = mix(rgb(12.0, 13.0, 18.0), rgb(6.0, 7.0, 9.0), clamp(lp.y / eb.y, 0.0, 1.0));
+        float tv = length((lp - halfBox) / (halfBox * 1.4142136));
+        s = mix(s, vec3(0.0), 0.55 * clamp((tv - 0.45) / 0.55, 0.0, 1.0));
+        float tr = length((lp - vec2(0.5 * eb.x, 0.0)) / (eb.xy * vec2(0.8, 0.45)));
+        s = mix(s, rgb(90.0, 110.0, 160.0), 0.1 * max(0.0, 1.0 - tr / 0.7));
+        float tg = length((lp - eb.xy * vec2(0.5, 0.52)) / (eb.xy * vec2(0.55, 0.5)));
+        s = mix(s, ca.rgb, ca.a * max(0.0, 1.0 - tg / 0.7));
+        fill = vec4(s, 1.0);
+      }
+      col = mix(col, fill.rgb, fill.a * fc.z * (1.0 - outside));
+    }
+
     if (outside <= 0.0) continue;
     for (int j = 0; j < ${SHADOWS_PER_ELEMENT}; j++) {
       vec4 g = uShGeo[i * ${SHADOWS_PER_ELEMENT} + j];
@@ -218,7 +339,7 @@ void main() {
   // 8-bit conversion. The same sample goes to all three channels, so the
   // noise carries no colour of its own.
   float n = hash(dev + 0.5) + hash(dev + 101.5) - 1.0;
-  gl_FragColor = vec4(col + n / 255.0, 1.0);
+  fragColor = vec4(col + n / 255.0, 1.0);
 }
 `;
 
@@ -288,12 +409,12 @@ function blobPath(b: Blob) {
 
 /**
  * Starts rendering the backdrop into `canvas`. Returns a cleanup function, or
- * null when WebGL (with highp fragment floats) is unavailable. `onLost` fires
+ * null when WebGL2 (with highp fragment floats) is unavailable. `onLost` fires
  * if the context is lost later, after the renderer has shut itself down, so
  * the caller can fall back to CSS.
  */
 export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): (() => void) | null {
-  const gl = canvas.getContext('webgl', {
+  const gl = canvas.getContext('webgl2', {
     alpha: false,
     antialias: false,
     depth: false,
@@ -304,9 +425,9 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   if (!gl) return null;
   const hp = gl.getShaderPrecisionFormat(gl.FRAGMENT_SHADER, gl.HIGH_FLOAT);
   if (!hp || hp.precision === 0) return null;
-  // The shader's uniform arrays need about 150 vectors; real devices have
-  // 221 or more, but WebGL only guarantees 16.
-  if (gl.getParameter(gl.MAX_FRAGMENT_UNIFORM_VECTORS) < 200) return null;
+  // WebGL2 guarantees 224 fragment uniform vectors, enough for 10 elements;
+  // most desktop GPUs offer 1024 or more, and get 16.
+  const maxElements = gl.getParameter(gl.MAX_FRAGMENT_UNIFORM_VECTORS) >= 400 ? 16 : 10;
 
   const compile = (type: number, src: string) => {
     const s = gl.createShader(type)!;
@@ -317,13 +438,16 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     return null;
   };
   const vs = compile(gl.VERTEX_SHADER, VERT);
-  const fs = compile(gl.FRAGMENT_SHADER, FRAG);
+  const fs = compile(gl.FRAGMENT_SHADER, frag(maxElements));
   if (!vs || !fs) return null;
   const prog = gl.createProgram()!;
   gl.attachShader(prog, vs);
   gl.attachShader(prog, fs);
   gl.linkProgram(prog);
-  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) return null;
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+    console.warn('Backdrop program failed to link; using the CSS backdrop.', gl.getProgramInfoLog(prog));
+    return null;
+  }
   gl.useProgram(prog);
 
   // One triangle covering the viewport.
@@ -333,22 +457,41 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   gl.enableVertexAttribArray(aPos);
   gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
 
-  const uRes = gl.getUniformLocation(prog, 'uRes');
-  const uSize = gl.getUniformLocation(prog, 'uSize');
-  const uTop = gl.getUniformLocation(prog, 'uTop');
-  const uBottom = gl.getUniformLocation(prog, 'uBottom');
-  const uGlow = gl.getUniformLocation(prog, 'uGlow');
-  const uVignette = gl.getUniformLocation(prog, 'uVignette');
-  const uBaseStop = gl.getUniformLocation(prog, 'uBaseStop');
-  const uBlobA = gl.getUniformLocation(prog, 'uBlobA');
-  const uElA = gl.getUniformLocation(prog, 'uElA');
-  const uElB = gl.getUniformLocation(prog, 'uElB');
-  const uShGeo = gl.getUniformLocation(prog, 'uShGeo');
-  const uShCol = gl.getUniformLocation(prog, 'uShCol');
-  const elA = new Float32Array(MAX_ELEMENTS * 4);
-  const elB = new Float32Array(MAX_ELEMENTS * 4);
-  const shGeo = new Float32Array(MAX_ELEMENTS * SHADOWS_PER_ELEMENT * 4);
-  const shCol = new Float32Array(MAX_ELEMENTS * SHADOWS_PER_ELEMENT * 4);
+  const U = (name: string) => gl.getUniformLocation(prog, name);
+  const uRes = U('uRes');
+  const uSize = U('uSize');
+  const uTop = U('uTop');
+  const uBottom = U('uBottom');
+  const uGlow = U('uGlow');
+  const uVignette = U('uVignette');
+  const uBaseStop = U('uBaseStop');
+  const uBlobA = U('uBlobA');
+  const uLightA = U('uLightA');
+  const uLightC = U('uLightC');
+  const uMood = U('uMood');
+  const uHome = U('uHome');
+  const uTitle = U('uTitle');
+  const uEmberColor = U('uEmberColor');
+  const uElCount = U('uElCount');
+
+  const el = {
+    a: new Float32Array(maxElements * 4),
+    b: new Float32Array(maxElements * 4),
+    c: new Float32Array(maxElements * 4),
+    d: new Float32Array(maxElements * 4),
+    e: new Float32Array(maxElements * 4),
+    geo: new Float32Array(maxElements * SHADOWS_PER_ELEMENT * 4),
+    col: new Float32Array(maxElements * SHADOWS_PER_ELEMENT * 4),
+  };
+  const elLoc = {
+    a: U('uElA'),
+    b: U('uElB'),
+    c: U('uElC'),
+    d: U('uElD'),
+    e: U('uElE'),
+    geo: U('uShGeo'),
+    col: U('uShCol'),
+  };
   const mk = {
     a: new Float32Array(MAX_MASKS * 4),
     b: new Float32Array(MAX_MASKS * 4),
@@ -359,10 +502,15 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     col: new Float32Array(MAX_MASKS * DROPS_PER_MASK * 4),
   };
   const mkLoc = Object.fromEntries(
-    ['A', 'B', 'C', 'D', 'E', 'Off', 'Col'].map((k) => [k.toLowerCase(), gl.getUniformLocation(prog, 'uMk' + k)]),
+    ['A', 'B', 'C', 'D', 'E', 'Off', 'Col'].map((k) => [k.toLowerCase(), U('uMk' + k)]),
   );
-  const shadowArrays = [elA, elB, shGeo, shCol, ...Object.values(mk)];
+  const shadowArrays = [...Object.values(el), ...Object.values(mk)];
   const prev = new Float32Array(shadowArrays.reduce((n, arr) => n + arr.length, 0));
+  const lightA = new Float32Array(MAX_LIGHTS * 4);
+  const lightC = new Float32Array(MAX_LIGHTS * 4);
+  const mood = new Float32Array(4);
+  const home = new Float32Array(4);
+  const title = new Float32Array(4);
 
   // Drop-shadow atlases: unit 0 holds content alpha, unit 1 the blurred alpha.
   const texture = (unit: number, filter: number) => {
@@ -378,16 +526,25 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   };
   const sharpTex = texture(0, gl.LINEAR);
   const blurTex = texture(1, gl.LINEAR);
-  gl.uniform1i(gl.getUniformLocation(prog, 'uSharp'), 0);
-  gl.uniform1i(gl.getUniformLocation(prog, 'uBlur'), 1);
-  const uSharpSize = gl.getUniformLocation(prog, 'uSharpSize');
-  const uBlurSize = gl.getUniformLocation(prog, 'uBlurSize');
+  gl.uniform1i(U('uSharp'), 0);
+  gl.uniform1i(U('uBlur'), 1);
+  const uSharpSize = U('uSharpSize');
+  const uBlurSize = U('uBlurSize');
   gl.uniform2f(uSharpSize, 1, 1);
   gl.uniform2f(uBlurSize, 1, 1);
 
-  gl.uniform3fv(gl.getUniformLocation(prog, 'uBlobB'), BLOBS.flatMap((b) => b.reach));
+  // Ember positions by screen column, one float texel each (unit 2).
+  const emberTex = gl.createTexture();
+  gl.activeTexture(gl.TEXTURE2);
+  gl.bindTexture(gl.TEXTURE_2D, emberTex);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, SLOTS, COLUMNS, 0, gl.RGBA, gl.FLOAT, null);
+  gl.uniform1i(U('uEmbers'), 2);
+
+  gl.uniform3fv(U('uBlobB'), BLOBS.flatMap((b) => b.reach));
   gl.uniform3fv(
-    gl.getUniformLocation(prog, 'uBlobColor'),
+    U('uBlobColor'),
     BLOBS.flatMap((b) => b.color.map((c) => c / 255)),
   );
   const paths = BLOBS.map(blobPath);
@@ -399,11 +556,12 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   const start = performance.now();
   let raf = 0;
   let last = -Infinity;
+  let lastStep = performance.now();
 
   function draw(now: number) {
     // Every gradient breathes on its own cycle; the periods share no common
     // factor, so the combined motion takes hours to repeat. Reduced motion
-    // freezes them all (and the blobs) at rest.
+    // freezes them all (and the blobs and embers) at rest.
     const ms = now - start;
     const still = reduceMotion.matches;
     const glow = still ? 0 : breathe(ms, 9000);
@@ -420,11 +578,21 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     gl!.uniform2f(uVignette, 1 - 0.06 * vignette, 1 + 0.07 * vignette);
     gl!.uniform1f(uBaseStop, 0.6 - 0.08 * base);
     gl!.uniform4fv(uBlobA, paths.flatMap((path) => path(still ? 0 : ms / 1000)));
-    gl!.uniform4fv(uElA, elA);
-    gl!.uniform4fv(uElB, elB);
-    gl!.uniform4fv(uShGeo, shGeo);
-    gl!.uniform4fv(uShCol, shCol);
+    for (const [k, arr] of Object.entries(el)) gl!.uniform4fv(elLoc[k as keyof typeof el], arr);
+    let count = 0;
+    for (let i = 0; i < maxElements; i++) if (el.b[i * 4 + 3] > 0) count = i + 1;
+    gl!.uniform1i(uElCount, count);
     for (const [k, arr] of Object.entries(mk)) gl!.uniform4fv(mkLoc[k], arr);
+    gl!.uniform4fv(uLightA, lightA);
+    gl!.uniform4fv(uLightC, lightC);
+    gl!.uniform4fv(uMood, mood);
+    home[2] = still ? 0 : ms / 1000;
+    gl!.uniform4fv(uHome, home);
+    gl!.uniform4fv(uTitle, title);
+    gl!.uniform4f(uEmberColor, embers.color[0], embers.color[1], embers.color[2], still ? 0.6 : 1);
+    gl!.activeTexture(gl!.TEXTURE2);
+    gl!.bindTexture(gl!.TEXTURE_2D, emberTex);
+    gl!.texSubImage2D(gl!.TEXTURE_2D, 0, 0, 0, SLOTS, COLUMNS, gl!.RGBA, gl!.FLOAT, embers.data);
     gl!.drawArrays(gl!.TRIANGLES, 0, 3);
   }
 
@@ -436,7 +604,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
       releaseAll();
       releaseAllDrops();
     } else {
-      measureShadows(elA, elB, shGeo, shCol, canvas.clientWidth, canvas.clientHeight);
+      measureShadows(maxElements, el.a, el.b, el.c, el.d, el.e, el.geo, el.col, canvas.clientWidth, canvas.clientHeight);
       atlases = measureDrops(mk.a, mk.b, mk.c, mk.d, mk.e, mk.off, mk.col, canvas.clientWidth, canvas.clientHeight);
     }
     let changed = false;
@@ -463,14 +631,25 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     return changed;
   }
 
-  // Shadows must track their elements every frame (hover, transitions,
-  // scrolling), so a change draws at once. Otherwise the backdrop's own
-  // motion only needs 30fps (its quickest cycle is a slow 9s breath), and
-  // with reduced motion nothing is drawn until something changes.
+  // Shadows and fills must track their elements every frame (hover,
+  // transitions, scrolling), and lights and the mood tint animate
+  // quickly, so any of those draws at once. Otherwise the backdrop's own
+  // motion only needs 30fps (its quickest cycle is a slow 9s breath and the
+  // embers drift a few pixels a frame), and with reduced motion nothing is
+  // drawn until something changes.
   let dirty = false;
   function frame(now: number) {
     raf = requestAnimationFrame(frame);
-    const changed = measure() || dirty;
+    const dt = Math.min(0.1, (now - lastStep) / 1000);
+    lastStep = now;
+    const nowS = now / 1000;
+    const lights = packLights(lightA, lightC, nowS);
+    const moodOn = stepMood(dt, mood);
+    const homeMoving = stepHomeScene(dt, home, title);
+    // Lights and mood step once per animation frame; draw() uses the latest values.
+    const lit = lights || moodOn || homeMoving;
+    if (!reduceMotion.matches) embers.step(dt, canvas.clientWidth, canvas.clientHeight, !fxActive());
+    const changed = measure() || dirty || lit;
     if (!changed && (reduceMotion.matches || now - last < 33)) return;
     last = now;
     dirty = false;
@@ -484,13 +663,20 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   // The device-pixel box is exact where supported (it includes pixel snapping
   // at fractional ratios), but it's ignored when it disagrees with the ratio by
   // more than snapping could explain, as it does under DPR emulation.
+  //
+  // Phones and tablets are the exception: there the backdrop draws no crisp
+  // fills or shadows (see cssShadows), just soft light, and their screens run
+  // at 2-3 device pixels per CSS px, so it renders at 1.5 and is scaled up:
+  // a fraction of the work, and the dither still hides every band.
+  const scale = () => (cssShadows.matches && devicePixelRatio > 1.5 ? 1.5 / devicePixelRatio : 1);
   const ro = new ResizeObserver(([entry]) => {
     const box = entry.devicePixelContentBoxSize?.[0];
+    const k = scale();
     const estW = entry.contentRect.width * devicePixelRatio;
     const estH = entry.contentRect.height * devicePixelRatio;
-    const exact = box && Math.abs(box.inlineSize - estW) <= 2 && Math.abs(box.blockSize - estH) <= 2;
-    const w = exact ? box.inlineSize : Math.round(estW);
-    const h = exact ? box.blockSize : Math.round(estH);
+    const exact = k === 1 && box && Math.abs(box.inlineSize - estW) <= 2 && Math.abs(box.blockSize - estH) <= 2;
+    const w = exact ? box.inlineSize : Math.round(estW * k);
+    const h = exact ? box.blockSize : Math.round(estH * k);
     if (w === canvas.width && h === canvas.height) return;
     canvas.width = w;
     canvas.height = h;
@@ -522,8 +708,9 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   reduceMotion.addEventListener('change', onMotionChange);
 
   // Paint the first frame now so the swap from the CSS backdrop is seamless.
-  canvas.width = Math.max(1, Math.round(canvas.clientWidth * devicePixelRatio));
-  canvas.height = Math.max(1, Math.round(canvas.clientHeight * devicePixelRatio));
+  canvas.width = Math.max(1, Math.round(canvas.clientWidth * devicePixelRatio * scale()));
+  canvas.height = Math.max(1, Math.round(canvas.clientHeight * devicePixelRatio * scale()));
+  embers.step(0, canvas.clientWidth, canvas.clientHeight);
   measure();
   draw(performance.now());
   raf = requestAnimationFrame(frame);

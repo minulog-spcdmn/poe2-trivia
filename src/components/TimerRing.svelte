@@ -1,6 +1,7 @@
 <script lang="ts">
   import { session } from '../lib/session.svelte';
   import { sfx } from '../lib/sound';
+  import { timerTick } from '../lib/fx/moments';
 
   let { deadline, total, stopped = false }: { deadline: number; total: number; stopped?: boolean } = $props();
 
@@ -16,6 +17,7 @@
       if (secs <= 5 && secs > 0 && secs !== lastTick) {
         lastTick = secs;
         sfx('tick');
+        if (el) timerTick(el, secs);
       }
       if (remaining > 0) raf = requestAnimationFrame(loop);
     };
@@ -28,9 +30,11 @@
   const frac = $derived(Math.min(1, remaining / (total * 1000)));
   const secs = $derived(Number.isFinite(remaining) ? Math.ceil(remaining / 1000) : total);
   const urgent = $derived(remaining <= 5000);
+
+  let el = $state<HTMLElement>();
 </script>
 
-<div class="timer" class:urgent class:stopped role="timer" aria-label="{secs} seconds left">
+<div class="timer" bind:this={el} class:urgent class:stopped role="timer" aria-label="{secs} seconds left">
   <svg viewBox="0 0 64 64">
     <circle class="track" cx="32" cy="32" r={R} />
     <circle class="fill" cx="32" cy="32" r={R} stroke-dasharray={C} stroke-dashoffset={C * (1 - frac)} />

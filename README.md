@@ -179,6 +179,32 @@ recordings from [Freesound](https://freesound.org) plus a quiet ambience loop
 (about 640 KB in `public/sfx`, see `CREDITS.txt` there), filtered and mixed in
 WebAudio with a generated reverb. `src/lib/soundDesign.ts` sets the layers.
 
+### Visual effects
+
+Everything is drawn in WebGL2 with float precision and dithered once at the
+8-bit output, so no glow or gradient bands.
+
+- **Backdrop** (`src/lib/backdrop.ts`, behind the UI): breathing gradients,
+  drifting smoke, rising embers, light from game events (`src/lib/lights.ts`),
+  a mood tint (crimson during a deathmatch, gold on victory), and on the
+  start page slowly swaying god rays and a royal glow behind the title. It also draws the soft shadows of UI elements
+  and the large gradient fills of panels, answers and the art stage, which
+  CSS would band (`src/lib/backdropShadow.ts`). Fills go back to CSS while the
+  page scrolls or an element moves, so they never lag behind their borders.
+- **Effects layer** (`src/lib/fx/`, over the UI, added as light with
+  `plus-lighter`): an HDR particle system (sparks, embers, shards, glints),
+  procedural shapes (shockwaves, flares, god rays, fire outlines, a portal,
+  rune sigils) and bloom. `effects.ts` has the building blocks, `moments.ts`
+  the game's big beats (a pick, a reveal with its point flowing into the
+  scorer's progress bar, a deathmatch, a victory), and `ui.ts` the feedback
+  every control gets. Soft shapes render at about one texel per CSS pixel and
+  the whole layer at most 1.5 per CSS pixel; the canvas hides itself while
+  nothing is alive.
+- Effects can be switched off with the ✦ button in the header, and are off
+  under *prefers-reduced-motion*. Quality drops by itself (resolution) on
+  devices that can't keep up. Without WebGL2 the site falls back
+  to its CSS look.
+
 ### Refreshing item data
 
 Item names and art are scraped from poe2db.tw

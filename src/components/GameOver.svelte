@@ -4,8 +4,11 @@
   import { session } from '../lib/session.svelte';
   import { playerColor } from '../lib/ui';
   import Avatar from './Avatar.svelte';
+  import ArcaneCircle from './ArcaneCircle.svelte';
   import { CREATOR, DONATE_URL, SITE_URL } from '../lib/site';
   import { backdropShadow } from '../lib/backdropShadow';
+  import { fxActive, fxUserOn } from '../lib/fx/core';
+  import { victory } from '../lib/fx/moments';
 
   const s = $derived(session.state!);
   const standings = $derived([...s.players].sort((a, b) => b.score - a.score));
@@ -24,10 +27,24 @@
   const iWon = $derived(session.mode !== 'local' && winner?.id === session.myPlayerId);
 
   let canvas: HTMLCanvasElement;
+  let crown = $state<HTMLElement>();
+  let title = $state<HTMLElement>();
+  let standingsEl = $state<HTMLElement>();
+  // A player who lost (online) sees a quieter screen.
+  const iLost = $derived(
+    session.mode !== 'local' && !!session.myPlayerId && s.players.some((p) => p.id === session.myPlayerId) && !s.winners.includes(session.myPlayerId),
+  );
 
-  // Gold sparks bursting upward.
+  // The celebration: rays, fireworks and glitter (lib/fx/moments.ts).
   onMount(() => {
-    if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    if (!crown || !title || !winner) return;
+    const h = victory(crown, title, playerColor(winner.hue), iLost, standingsEl);
+    return () => h.stop();
+  });
+
+  // Without the effects layer (no WebGL2), simpler gold sparks on a 2D canvas.
+  onMount(() => {
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches || fxActive() || !fxUserOn()) return;
     const ctx = canvas.getContext('2d')!;
     const dpr = Math.min(2, devicePixelRatio);
     const resize = () => {
@@ -103,10 +120,11 @@
 <div class="over">
   <p class="kicker" in:fly={{ y: -10, duration: 600 }}>Victory</p>
   {#if winner}
-    <div class="crown" in:scale={{ start: 0.4, duration: 900, delay: 200 }}>
+    <div class="crown" bind:this={crown} in:scale={{ start: 0.4, duration: 900, delay: 200 }}>
+      <ArcaneCircle size="212px" color="color-mix(in srgb, {playerColor(winner.hue)}, #f1d99b 45%)" strength={iLost ? 0.35 : 0.6} />
       <Avatar name={winner.name} hue={winner.hue} size={110} />
     </div>
-    <h1 in:fly={{ y: 20, duration: 700, delay: 500 }}>
+    <h1 bind:this={title} in:fly={{ y: 20, duration: 700, delay: 500 }}>
       {iWon ? 'You are victorious!' : `${winner.name} wins!`}
     </h1>
     <p class="sub muted" in:fly={{ y: 10, duration: 700, delay: 700 }}>
@@ -115,7 +133,7 @@
     </p>
   {/if}
 
-  <ol class="standings panel" use:backdropShadow in:fly={{ y: 30, duration: 700, delay: 900 }}>
+  <ol class="standings panel" bind:this={standingsEl} use:backdropShadow={{ fill: 'linear' }} in:fly={{ y: 30, duration: 700, delay: 900 }}>
     {#each standings as p, i (p.id)}
       <li class:first={rank[i] === 1} in:fly={{ x: -20, duration: 400, delay: 1100 + i * 100 }}>
         <span class="rank">{rank[i]}</span>
@@ -161,12 +179,12 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding: 2rem 1rem 3rem;
+    padding: 3rem 1rem 3rem;
     text-align: center;
   }
   .kicker {
-    /* Clear the dashed ring, which reaches 26px beyond the avatar. */
-    margin: 0 0 calc(26px + 1.4rem);
+    /* Clear the rune circle, which reaches 51px beyond the avatar. */
+    margin: 0 0 calc(51px + 1.4rem);
     font-family: var(--font-display);
     letter-spacing: 0.6em;
     /* Letter spacing also trails the last letter; balance it so the word is centred. */
@@ -176,25 +194,50 @@
   }
   .crown {
     position: relative;
-    margin-bottom: calc(26px + 1rem);
+    isolation: isolate;
+    margin-bottom: calc(51px + 1rem);
+  }
+  /* On the avatar only: a filter over the turning rune circle would repaint it every frame. */
+  .crown :global(.avatar) {
     filter: drop-shadow(0 0 30px rgba(241, 217, 155, 0.45));
   }
-  .crown::before {
-    content: '';
-    position: absolute;
-    inset: -26px;
-    border-radius: 50%;
-    border: 1px dashed rgba(201, 164, 92, 0.5);
-    animation: spin 30s linear infinite;
+  /* The rune circle sits behind the avatar. */
+  .crown :global(.arcane) {
+    z-index: -1;
+    margin: auto;
+    inset: -51px;
   }
   h1 {
     font-size: clamp(2.25rem, 6.7vw, 3.8rem);
     font-weight: 900;
-    background: linear-gradient(180deg, #fff1c9 10%, #d7b068 55%, #8b6526);
+    /* A band of light sweeps across the gold every few seconds. */
+    background:
+      linear-gradient(100deg, transparent 42%, rgba(255, 250, 232, 0.8) 50%, transparent 58%) no-repeat,
+      linear-gradient(180deg, #fff1c9 10%, #d7b068 55%, #8b6526);
+    background-size:
+      250% 100%,
+      100% 100%;
+    background-position:
+      160% 0,
+      0 0;
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;
     filter: drop-shadow(0 4px 16px rgba(0, 0, 0, 0.9));
+    animation: gleam 5s ease-in-out 1.4s infinite;
+  }
+  @keyframes gleam {
+    0% {
+      background-position:
+        160% 0,
+        0 0;
+    }
+    25%,
+    100% {
+      background-position:
+        -60% 0,
+        0 0;
+    }
   }
   .sub {
     margin: 0.4rem 0 1.8rem;
@@ -276,10 +319,5 @@
   .actions p {
     margin: 0;
     font-style: italic;
-  }
-  @keyframes spin {
-    to {
-      rotate: 360deg;
-    }
   }
 </style>
