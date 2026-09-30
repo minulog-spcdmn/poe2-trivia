@@ -1,7 +1,6 @@
 <script lang="ts">
   import { session } from '../lib/session.svelte';
   import { sfx } from '../lib/sound';
-  import { emitter, embers, C as palette } from '../lib/fx/effects';
   import { timerTick } from '../lib/fx/moments';
 
   let { deadline, total, stopped = false }: { deadline: number; total: number; stopped?: boolean } = $props();
@@ -33,23 +32,6 @@
   const urgent = $derived(remaining <= 5000);
 
   let el = $state<HTMLElement>();
-  // An ember rides the head of the ring, shedding sparks as time drains.
-  $effect(() => {
-    if (stopped || !el) return;
-    const node = el;
-    const h = emitter(9, () => {
-      const r = node.getBoundingClientRect();
-      const f = Math.min(1, remaining / (total * 1000));
-      if (!(f > 0 && f < 1)) return;
-      // The ring starts at 12 o'clock and drains anticlockwise.
-      const a = -Math.PI / 2 + f * Math.PI * 2;
-      const rad = (R / 64) * r.width;
-      const p = { x: r.left + r.width / 2 + Math.cos(a) * rad, y: r.top + r.height / 2 + Math.sin(a) * rad };
-      const hot = remaining <= 5000;
-      embers(p, { count: 1, area: 'centre', colors: hot ? [palette.crimson, palette.ember] : [palette.gold, palette.ember], rise: [10, 60], life: [0.4, 0.9], size: [0.9, 1.8], scatter: 20 });
-    });
-    return () => h.stop();
-  });
 </script>
 
 <div class="timer" bind:this={el} class:urgent class:stopped role="timer" aria-label="{secs} seconds left">

@@ -22,16 +22,15 @@
 
   onMount(() => {
     session.resume();
-    // Camera shake moves the UI, and the backdrop a little less, for depth.
-    const bg = document.querySelector<HTMLElement>('.bg');
-    const undo = [shakeTarget(shell, 1), ...(bg ? [shakeTarget(bg, 0.35)] : [])];
+    // Camera shake moves the UI (#app clips it, so it can't add scrolling).
+    const undo = shakeTarget(shell, 1);
     const off = onFxChange((on) => {
       fxOn = on;
       fxCan = fxAvailable();
     });
     fxCan = fxAvailable();
     return () => {
-      for (const u of undo) u();
+      undo();
       off();
     };
   });

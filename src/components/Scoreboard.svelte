@@ -6,7 +6,7 @@
   import { backdropShadow } from '../lib/backdropShadow';
   import { untrack } from 'svelte';
   import { fxActive } from '../lib/fx/core';
-  import { SCORE_LANDS, lostPoint } from '../lib/fx/moments';
+  import { FILL_SPAN, FILL_START, SCORE_LANDS, lostPoint } from '../lib/fx/moments';
 
   const s = $derived(session.state!);
   const target = $derived(s.settings.targetScore);
@@ -15,38 +15,48 @@
   const canKick = $derived(session.mode === 'host');
   const spectators = $derived(s.spectators ?? []);
 
-  // Scores as shown. A point won at a reveal flies to the board as a comet
-  // (see lib/fx/moments.ts), so the number ticks up when it lands.
+  // Scores as shown. A point won at a reveal flows into the scorer's bar as a
+  // stream of sparks (see fillBar in lib/fx/moments.ts): the bar fills while
+  // they land, and the number ticks up when the last one has.
   let shown = $state<Record<string, number>>({});
-  const pending = new Map<string, ReturnType<typeof setTimeout>>();
+  let barShown = $state<Record<string, number>>({});
+  let filling = $state<Record<string, boolean>>({});
+  const pending = new Map<string, ReturnType<typeof setTimeout>[]>();
+  const latest = (id: string, fallback: number) => session.state?.players.find((x) => x.id === id)?.score ?? fallback;
   $effect(() => {
     for (const p of s.players) {
       const score = p.score;
       const was = untrack(() => shown[p.id]);
       if (was === undefined || score === was) {
-        if (was === undefined) shown[p.id] = score;
+        if (was === undefined) shown[p.id] = barShown[p.id] = score;
         continue;
       }
-      clearTimeout(pending.get(p.id));
+      pending.get(p.id)?.forEach(clearTimeout);
       if (score > was && fxActive() && s.phase === 'reveal') {
-        pending.set(
-          p.id,
+        pending.set(p.id, [
+          setTimeout(() => {
+            filling[p.id] = true;
+            barShown[p.id] = latest(p.id, score);
+          }, FILL_START * 1000),
           setTimeout(() => {
             pending.delete(p.id);
-            shown[p.id] = session.state?.players.find((x) => x.id === p.id)?.score ?? score;
+            filling[p.id] = false;
+            shown[p.id] = barShown[p.id] = latest(p.id, score);
           }, SCORE_LANDS * 1000),
-        );
+        ]);
       } else {
         if (score < was) {
           const li = document.querySelector(`.board li[data-player="${CSS.escape(p.id)}"]`);
           if (li) lostPoint(li);
         }
-        shown[p.id] = score;
+        filling[p.id] = false;
+        shown[p.id] = barShown[p.id] = score;
       }
     }
   });
-  $effect(() => () => pending.forEach(clearTimeout));
+  $effect(() => () => pending.forEach((ts) => ts.forEach(clearTimeout)));
   const scoreOf = (id: string, fallback: number) => shown[id] ?? fallback;
+  const barOf = (id: string, fallback: number) => barShown[id] ?? fallback;
 
   // Kicking takes two clicks so a stray tap doesn't remove anyone.
   let confirming = $state<string | null>(null);
@@ -76,7 +86,9 @@
         <span class="name">
           {p.name}{#if session.mode !== 'local' && p.id === session.myPlayerId}<em>&nbsp;(you)</em>{/if}
         </span>
-        <span class="bar"><span style:width="{Math.max(0, Math.min(100, (score / target) * 100))}%"></span></span>
+        <span class="bar" class:filling={filling[p.id]} style:--fill-span="{FILL_SPAN}s"
+          ><span style:width="{Math.max(0, Math.min(100, (barOf(p.id, p.score) / target) * 100))}%"></span></span
+        >
       </div>
       {#key score}
         <span class="score" class:negative={score < 0} class:bump={race ? active : score > 0} class:down={out}
@@ -285,6 +297,15 @@
     box-shadow: 0 0 6px color-mix(in srgb, var(--c), transparent 40%);
     transition: width 0.8s var(--ease-out);
   }
+  /* Filling in step with the stream of sparks landing on it. */
+  .bar.filling span {
+    transition: width var(--fill-span) linear;
+  }
+  .bar.filling span::after {
+    width: 7px;
+    height: 7px;
+    background: #fff4d8;
+  }
   /* A hot spark at the bar's leading edge. */
   .bar span::after {
     content: '';
@@ -324,8 +345,8 @@
         0 0 24px var(--unique-hi);
     }
     35% {
-      color: var(--good);
-      text-shadow: 0 0 16px var(--good);
+      color: #d9e6b8;
+      text-shadow: 0 0 12px rgba(190, 210, 140, 0.6);
     }
   }
   .off {

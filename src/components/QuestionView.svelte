@@ -129,6 +129,11 @@
       const missed = race ? q.misses.map((m) => m.playerId) : r.correct ? [] : [active.id];
       streak = recordReveal(q.askedAt, scorer, missed);
       const pill = scorer ? document.querySelector(`.board li[data-player="${CSS.escape(scorer)}"]`) : null;
+      // The scorer's bar, before and after this point (the state already counts it).
+      const now = scorer ? s.players.find((p) => p.id === scorer)?.score : undefined;
+      const target = s.settings.targetScore;
+      const frac = (v: number) => Math.min(1, Math.max(0, v / target));
+      const fill = now === undefined ? undefined : { from: frac(now - 1), to: frac(now) };
       revealFx({
         answer: optionEls[r.correctIndex],
         chosen: !race && !r.correct && r.chosenIndex != null ? optionEls[r.chosenIndex] : null,
@@ -139,6 +144,7 @@
         good: iWon,
         otherScored: race && !!winner && !iWon,
         timedOut: r.timedOut,
+        fill,
       });
     });
   });
@@ -459,12 +465,12 @@
       border-color 0.6s;
   }
   .tooltip.good {
-    border-color: #4f8c4f;
-    --bs1-color: rgba(111, 207, 115, 0.25);
+    border-color: #4f7a45;
+    --bs1-color: rgba(150, 190, 110, 0.12);
   }
   .tooltip.bad {
-    border-color: #8c3a2c;
-    --bs1-color: rgba(224, 85, 63, 0.18);
+    border-color: #7a3a2c;
+    --bs1-color: rgba(200, 90, 60, 0.09);
   }
   .head {
     position: relative;
@@ -557,10 +563,10 @@
     overflow: hidden;
   }
   .tooltip.good .art {
-    --bs-fill-a: rgba(111, 207, 115, 0.2);
+    --bs-fill-a: rgba(150, 185, 105, 0.13);
   }
   .tooltip.bad .art {
-    --bs-fill-a: rgba(224, 85, 63, 0.13);
+    --bs-fill-a: rgba(200, 90, 60, 0.08);
   }
   .frame {
     position: absolute;
@@ -633,7 +639,7 @@
     font-size: 1.1rem;
     letter-spacing: 0.15em;
     text-transform: uppercase;
-    color: #ff8f78;
+    color: #e0907a;
     border: 2px solid currentColor;
     border-radius: 3px;
     rotate: -8deg;
@@ -641,9 +647,8 @@
     /* A second, inner rule like a seal's rim, and the stamp's own glow. */
     box-shadow:
       inset 0 0 0 2px rgba(0, 0, 0, 0.6),
-      inset 0 0 0 3px color-mix(in srgb, currentColor, transparent 60%),
-      0 0 18px color-mix(in srgb, currentColor, transparent 60%);
-    text-shadow: 0 0 12px color-mix(in srgb, currentColor, transparent 40%);
+      inset 0 0 0 3px color-mix(in srgb, currentColor, transparent 65%),
+      0 0 10px color-mix(in srgb, currentColor, transparent 80%);
   }
   .stamp.in-head {
     bottom: auto;
@@ -653,7 +658,7 @@
     font-size: 0.95rem;
   }
   .stamp.good {
-    color: var(--good);
+    color: #a9cf8f;
   }
 
   .options {
@@ -810,34 +815,31 @@
     animation: glow 1s ease-in-out infinite;
   }
   .option.right {
-    border-color: var(--good);
-    --bs-fill-a: rgba(47, 90, 45, 0.85);
-    --bs-fill-b: rgba(20, 35, 18, 0.9);
+    border-color: #5d8a50;
+    --bs-fill-a: rgba(44, 64, 36, 0.9);
+    --bs-fill-b: rgba(22, 28, 17, 0.92);
     box-shadow:
-      inset 0 1px 0 rgba(200, 255, 190, 0.15),
-      0 0 30px rgba(111, 207, 115, 0.3);
-  }
-  .option.right .text {
-    text-shadow: 0 0 14px rgba(160, 255, 150, 0.45);
+      inset 0 1px 0 rgba(220, 240, 190, 0.1),
+      0 0 16px rgba(150, 190, 110, 0.12);
   }
   .option.right .text,
   .option.right .mark {
-    color: #c9f5c3;
+    color: #d6e8c0;
   }
   .option.right .key {
-    border-color: var(--good);
-    color: var(--good);
+    border-color: #7ea56c;
+    color: #a9cf8f;
   }
   .option.wrong {
-    border-color: var(--bad);
-    --bs-fill-a: rgba(100, 32, 22, 0.85);
-    --bs-fill-b: rgba(40, 14, 10, 0.9);
-    box-shadow: 0 0 24px rgba(224, 85, 63, 0.25);
+    border-color: #8e4434;
+    --bs-fill-a: rgba(78, 32, 22, 0.9);
+    --bs-fill-b: rgba(34, 15, 11, 0.92);
+    box-shadow: 0 0 14px rgba(200, 90, 60, 0.1);
     animation: shake 0.5s;
   }
   .option.wrong .text,
   .option.wrong .mark {
-    color: #ffb3a4;
+    color: #eab3a3;
   }
   .option.dim {
     opacity: 0.35;
@@ -917,20 +919,20 @@
     border-color: var(--gold);
   }
   .tile.right {
-    border-color: var(--good);
-    background: radial-gradient(ellipse at center, rgba(111, 207, 115, 0.22), rgba(10, 25, 10, 0.95) 75%);
-    box-shadow: inset 0 0 0 1px var(--good);
+    border-color: #5d8a50;
+    background: radial-gradient(ellipse at center, rgba(150, 185, 105, 0.14), rgba(14, 20, 11, 0.95) 75%);
+    box-shadow: inset 0 0 0 1px #5d8a50;
   }
   .tile.right .mark {
-    color: var(--good);
+    color: #a9cf8f;
   }
   .tile.wrong {
-    border-color: var(--bad);
-    background: radial-gradient(ellipse at center, rgba(224, 85, 63, 0.2), rgba(30, 8, 5, 0.95) 75%);
+    border-color: #8e4434;
+    background: radial-gradient(ellipse at center, rgba(200, 90, 60, 0.12), rgba(24, 10, 7, 0.95) 75%);
     animation: shake 0.5s;
   }
   .tile.wrong .mark {
-    color: var(--bad);
+    color: #d98a6e;
   }
   .tile.dim {
     opacity: 0.4;
@@ -944,7 +946,7 @@
     line-height: 1.2;
   }
   .tile.right .caption {
-    color: #c9f5c3;
+    color: #d6e8c0;
   }
   /* Same height with a tip, a result or nothing, so the page doesn't jump at the reveal. */
   .footer {
@@ -968,9 +970,9 @@
   }
   .result .good {
     font-family: var(--font-display);
-    color: var(--good);
+    color: #a9cf8f;
     font-size: 1.4rem;
-    text-shadow: 0 0 14px rgba(111, 207, 115, 0.6);
+    text-shadow: 0 0 10px rgba(150, 190, 110, 0.35);
   }
   /* A streak of correct answers. */
   .streak {

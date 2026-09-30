@@ -2,6 +2,10 @@
   // A rune circle that draws itself behind the item art and turns slowly:
   // two rings of ticks and rune marks turning opposite ways around a
   // hexagram. `state` colours it at the reveal.
+  //
+  // Each ring is its own <svg> turned as a whole, so the browser can spin it
+  // on the compositor without repainting; the glow is a soft, wide copy of
+  // the strokes underneath rather than a filter (which would repaint).
   let { state = 'idle' }: { state?: 'idle' | 'good' | 'bad' } = $props();
 
   // Rune marks: a few short strokes each, from a fixed seed so every circle
@@ -25,30 +29,42 @@
 
   // Hexagram points.
   const tri = (r: number, off: number) =>
-    [0, 1, 2].map((k) => {
-      const t = ((k * 120 + off - 90) * Math.PI) / 180;
-      return `${(r * Math.cos(t)).toFixed(2)},${(r * Math.sin(t)).toFixed(2)}`;
-    }).join(' ');
+    [0, 1, 2]
+      .map((k) => {
+        const t = ((k * 120 + off - 90) * Math.PI) / 180;
+        return `${(r * Math.cos(t)).toFixed(2)},${(r * Math.sin(t)).toFixed(2)}`;
+      })
+      .join(' ');
 </script>
 
-<svg class="arcane {state}" viewBox="-100 -100 200 200" aria-hidden="true">
-  <g class="outer">
-    <circle r="96" class="draw" pathLength="100" />
-    <circle r="88" class="draw thin" pathLength="100" />
-    {#each TICKS as t (t.a)}
-      <line y1={t.long ? -96 : -95} y2={t.long ? -89 : -92} transform="rotate({t.a})" class="tick" />
-    {/each}
-  </g>
-  <g class="inner">
-    {#each RUNES as r (r.a)}
-      <path d={r.d} transform="rotate({r.a}) translate(0 -79)" class="rune" />
-    {/each}
-    <circle r="71" class="draw thin" pathLength="100" />
-    <polygon points={tri(70, 0)} class="draw thin" pathLength="100" />
-    <polygon points={tri(70, 180)} class="draw thin" pathLength="100" />
-    <circle r="35" class="draw thin" pathLength="100" />
-  </g>
-</svg>
+{#snippet outer()}
+  <circle r="96" class="draw" pathLength="100" />
+  <circle r="88" class="draw thin" pathLength="100" />
+  {#each TICKS as t (t.a)}
+    <line y1={t.long ? -96 : -95} y2={t.long ? -89 : -92} transform="rotate({t.a})" class="tick" />
+  {/each}
+{/snippet}
+
+{#snippet inner()}
+  {#each RUNES as r (r.a)}
+    <path d={r.d} transform="rotate({r.a}) translate(0 -79)" class="rune" />
+  {/each}
+  <circle r="71" class="draw thin" pathLength="100" />
+  <polygon points={tri(70, 0)} class="draw thin" pathLength="100" />
+  <polygon points={tri(70, 180)} class="draw thin" pathLength="100" />
+  <circle r="35" class="draw thin" pathLength="100" />
+{/snippet}
+
+<div class="arcane {state}" aria-hidden="true">
+  <svg class="ring outer" viewBox="-100 -100 200 200">
+    <g class="glow">{@render outer()}</g>
+    <g>{@render outer()}</g>
+  </svg>
+  <svg class="ring inner" viewBox="-100 -100 200 200">
+    <g class="glow">{@render inner()}</g>
+    <g>{@render inner()}</g>
+  </svg>
+</div>
 
 <style>
   .arcane {
@@ -59,24 +75,33 @@
     width: min(92cqw, 92cqh, 420px);
     height: min(92cqw, 92cqh, 420px);
     pointer-events: none;
-    overflow: visible;
-    opacity: 0.2;
+    opacity: 0.22;
     color: #d9a45a;
-    filter: drop-shadow(0 0 3px rgba(224, 138, 68, 0.6));
     transition:
       opacity 0.8s,
-      color 0.8s,
-      filter 0.8s;
+      color 0.8s;
   }
   .arcane.good {
-    opacity: 0.38;
-    color: #b7f0a0;
-    filter: drop-shadow(0 0 5px rgba(111, 207, 115, 0.8));
+    opacity: 0.3;
+    color: #d8dfa0;
   }
   .arcane.bad {
     opacity: 0.16;
-    color: #ff7a5c;
-    filter: drop-shadow(0 0 3px rgba(224, 85, 63, 0.6));
+    color: #d98a6e;
+  }
+  .ring {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    will-change: transform;
+  }
+  .outer {
+    animation: turn 90s linear infinite;
+  }
+  .inner {
+    animation: turn 60s linear infinite reverse;
   }
   circle,
   polygon,
@@ -96,18 +121,19 @@
   .rune {
     stroke-width: 0.8;
   }
+  /* The glow: the same strokes, wide and faint, underneath. */
+  .glow {
+    opacity: 0.22;
+  }
+  .glow :global(*) {
+    stroke-width: 3.2;
+  }
   .draw {
     stroke-dasharray: 100;
     animation: draw 1.6s var(--ease-out) both;
   }
   .inner .draw {
     animation-delay: 0.3s;
-  }
-  .outer {
-    animation: turn 90s linear infinite;
-  }
-  .inner {
-    animation: turn 60s linear infinite reverse;
   }
   @keyframes draw {
     from {

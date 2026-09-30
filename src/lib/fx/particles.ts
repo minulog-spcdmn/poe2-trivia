@@ -49,6 +49,12 @@ export type ParticleSpec = {
   turbulence?: number;
   /** Seconds before the particle appears. */
   delay?: number;
+  /**
+   * Fly to a target instead of drifting: the particle follows a quadratic
+   * curve from (x, y) through control point (cx, cy) to (tx, ty), arriving
+   * exactly as its life ends (velocity, gravity and drag are ignored).
+   */
+  seek?: { cx: number; cy: number; tx: number; ty: number };
 };
 
 // Per-particle fields, in this order.
@@ -77,8 +83,15 @@ const F = {
   fadeIn: 21,
   turb: 22,
   seed: 23,
+  seek: 24, // 1 when seeking, then start x/y, control x/y, target x/y
+  sx: 25,
+  sy: 26,
+  cx: 27,
+  cy: 28,
+  tx: 29,
+  ty: 30,
 } as const;
-const STRIDE = 24;
+const STRIDE = 31;
 
 /** Floats per particle in the instance buffer: (x, y, vx, vy) (size, stretch, rot, shape) (r, g, b, seed). */
 export const INSTANCE_FLOATS = 12;
@@ -131,6 +144,16 @@ export class ParticlePool {
     d[o + F.fadeIn] = p.fadeIn ?? 0.04;
     d[o + F.turb] = p.turbulence ?? 0;
     d[o + F.seed] = Math.random() * 1000;
+    const k = p.seek;
+    d[o + F.seek] = k ? 1 : 0;
+    if (k) {
+      d[o + F.sx] = p.x;
+      d[o + F.sy] = p.y;
+      d[o + F.cx] = k.cx;
+      d[o + F.cy] = k.cy;
+      d[o + F.tx] = k.tx;
+      d[o + F.ty] = k.ty;
+    }
   }
 
   /** Moves everything forward by `dt` seconds and packs the live particles. Returns how many to draw. */
@@ -153,6 +176,10 @@ export class ParticlePool {
       if (age < 0) continue; // still delayed
 
       const seed = d[o + F.seed];
+      if (d[o + F.seek]) {
+        this.seekStep(o, age, life, n++);
+        continue;
+      }
       let vx = d[o + F.vx];
       let vy = d[o + F.vy];
       const turb = d[o + F.turb];
@@ -202,6 +229,39 @@ export class ParticlePool {
       n++;
     }
     return n;
+  }
+
+  /** A seeking particle: its place on the curve, as streak and colour, into instance `n`. */
+  private seekStep(o: number, age: number, life: number, n: number) {
+    const d = this.d;
+    const t = age / life;
+    // Ease out of the start and glide into the target.
+    const e = t * t * (3 - 2 * t);
+    const de = (6 * t - 6 * t * t) / life;
+    const u = 1 - e;
+    const x = u * u * d[o + F.sx] + 2 * u * e * d[o + F.cx] + e * e * d[o + F.tx];
+    const y = u * u * d[o + F.sy] + 2 * u * e * d[o + F.cy] + e * e * d[o + F.ty];
+    const vx = (2 * u * (d[o + F.cx] - d[o + F.sx]) + 2 * e * (d[o + F.tx] - d[o + F.cx])) * de;
+    const vy = (2 * u * (d[o + F.cy] - d[o + F.sy]) + 2 * e * (d[o + F.ty] - d[o + F.cy])) * de;
+    d[o + F.x] = x;
+    d[o + F.y] = y;
+    const fadeIn = d[o + F.fadeIn];
+    const env = fadeIn > 0 ? Math.min(1, t / fadeIn) : 1;
+    const size = d[o + F.s0] + (d[o + F.s1] - d[o + F.s0]) * t;
+    const q = n * INSTANCE_FLOATS;
+    const out = this.instances;
+    out[q] = x;
+    out[q + 1] = y;
+    out[q + 2] = vx;
+    out[q + 3] = vy;
+    out[q + 4] = size;
+    out[q + 5] = d[o + F.stretch];
+    out[q + 6] = 0;
+    out[q + 7] = d[o + F.shape];
+    out[q + 8] = (d[o + F.r0] + (d[o + F.r1] - d[o + F.r0]) * t) * env;
+    out[q + 9] = (d[o + F.g0] + (d[o + F.g1] - d[o + F.g0]) * t) * env;
+    out[q + 10] = (d[o + F.b0] + (d[o + F.b1] - d[o + F.b0]) * t) * env;
+    out[q + 11] = d[o + F.seed];
   }
 
   clear() {

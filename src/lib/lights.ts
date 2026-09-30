@@ -1,7 +1,7 @@
 // Light that the WebGL backdrop (lib/backdrop.ts) throws behind the UI:
 // short event lights (a gold bloom behind a correct answer, a red pulse on a
-// wrong one), a faint torch that follows the mouse, and a mood tint over the
-// whole scene (crimson for a deathmatch, gold for a victory). Effects code
+// wrong one) and a mood tint over the whole scene (crimson for a deathmatch,
+// gold for a victory). Effects code
 // sets them; the backdrop reads them every frame.
 
 import { fxActive, type Anchor, boxOf, type Vec3 } from './fx/core';
@@ -106,47 +106,4 @@ export function stepMood(dt: number, out: Float32Array): boolean {
   for (let i = 0; i < 3; i++) out[i] = total > 0 ? (mood.color[i] * mood.strength + mood.pulseColor[i] * p) / total : 0;
   out[3] = total;
   return mood.strength > 0.002 || mood.targetStrength > 0 || mood.pulse > 0;
-}
-
-// ---------- torch ----------
-
-const torch = { x: -9999, y: -9999, tx: -9999, ty: -9999, k: 0, target: 0, lastMove: 0 };
-let torchInstalled = false;
-
-/** Makes the backdrop glow faintly around the mouse. */
-export function installTorch() {
-  if (torchInstalled || typeof window === 'undefined') return;
-  torchInstalled = true;
-  addEventListener(
-    'pointermove',
-    (e) => {
-      if (e.pointerType !== 'mouse') return;
-      torch.tx = e.clientX;
-      torch.ty = e.clientY;
-      if (torch.x < -9000) {
-        torch.x = torch.tx;
-        torch.y = torch.ty;
-      }
-      torch.lastMove = performance.now();
-      torch.target = 1;
-    },
-    { passive: true },
-  );
-  document.documentElement.addEventListener('pointerleave', () => (torch.target = 0));
-}
-
-/** Steps the torch; writes (x, y, strength) and returns whether it needs redrawing. */
-export function stepTorch(dt: number, out: Float32Array): boolean {
-  const on = fxActive() ? torch.target : 0;
-  const follow = 1 - Math.exp(-dt * 9);
-  const px = torch.x;
-  const py = torch.y;
-  torch.x += (torch.tx - torch.x) * follow;
-  torch.y += (torch.ty - torch.y) * follow;
-  const pk = torch.k;
-  torch.k += (on - torch.k) * (1 - Math.exp(-dt * 3));
-  out[0] = torch.x;
-  out[1] = torch.y;
-  out[2] = torch.k;
-  return Math.abs(torch.x - px) > 0.05 || Math.abs(torch.y - py) > 0.05 || Math.abs(torch.k - pk) > 0.001;
 }

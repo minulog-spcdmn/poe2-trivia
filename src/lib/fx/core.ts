@@ -44,10 +44,12 @@ export type ShapeFrame = {
   hh: number;
   /** Brightness multiplier on the colour. */
   k: number;
-  /** Per-type parameters (see ShapeType in renderer.ts). */
-  q: [number, number, number, number, number, number, number, number];
+  /** Per-type parameters, up to 12 (see ShapeType in renderer.ts). */
+  q: number[];
   /** Optional colour override. */
   color?: Vec3;
+  /** Optional shape type override (a shape can change form as it goes). */
+  type?: ShapeType;
 };
 
 export type ShapeSpec = {
@@ -193,7 +195,7 @@ export function shape(spec: ShapeSpec): Handle {
     fadeTotal: 0,
     stopped: false,
     opacity: 1,
-    f: { hw: 0, hh: 0, k: 1, q: [0, 0, 0, 0, 0, 0, 0, 0] },
+    f: { hw: 0, hh: 0, k: 1, q: new Array(12).fill(0) },
   };
   shapes.push(s);
   wake();
@@ -301,7 +303,7 @@ function writeShape(i: number, s: LiveShape, t: number) {
   shapeData[o + 1] = s.box.y;
   shapeData[o + 2] = f.hw;
   shapeData[o + 3] = f.hh;
-  shapeData[o + 4] = s.type;
+  shapeData[o + 4] = f.type ?? s.type;
   shapeData[o + 5] = t;
   shapeData[o + 6] = s.age;
   shapeData[o + 7] = s.seed;
@@ -309,7 +311,7 @@ function writeShape(i: number, s: LiveShape, t: number) {
   shapeData[o + 9] = c[1] * k;
   shapeData[o + 10] = c[2] * k;
   shapeData[o + 11] = 0;
-  for (let j = 0; j < 8; j++) shapeData[o + 12 + j] = f.q[j];
+  for (let j = 0; j < 12; j++) shapeData[o + 12 + j] = f.q[j] ?? 0;
 }
 
 function frame(nowMs: number) {
@@ -324,11 +326,12 @@ function frame(nowMs: number) {
 
   // Adapt quality: if frames keep taking far longer than a display refresh
   // while effects run, drop resolution, then bloom.
-  if (rawDt > 0 && rawDt < 0.1) {
-    frameAvg += (rawDt * 1000 - frameAvg) * 0.08;
-    if (frameAvg > 24 && quality < 2) {
+  // (Gaps over 300ms are a background tab or a stall, not the effects.)
+  if (rawDt > 0 && rawDt < 0.3) {
+    frameAvg += (Math.min(rawDt, 0.1) * 1000 - frameAvg) * 0.12;
+    if (frameAvg > 22 && quality < 2) {
       slowFor += rawDt;
-      if (slowFor > 1.2) {
+      if (slowFor > 0.6) {
         quality++;
         slowFor = 0;
         frameAvg = 16;
@@ -440,13 +443,16 @@ function resize() {
   if (!canvas || !renderer) return;
   viewW = Math.max(1, canvas.clientWidth);
   viewH = Math.max(1, canvas.clientHeight);
-  const cap = quality === 0 ? 2 : quality === 1 ? 1.25 : 1;
+  // Glows don't need every device pixel: 1.5 per CSS px at most (sparks stay
+  // crisp), less as quality drops. Shapes, which are all soft, get about one
+  // texel per CSS px.
+  const cap = quality === 0 ? 1.5 : quality === 1 ? 1 : 0.75;
   const k = Math.min(devicePixelRatio || 1, cap) / (devicePixelRatio || 1);
   const w = deviceBox && k === 1 ? deviceBox.w : Math.round(viewW * (devicePixelRatio || 1) * k);
   const h = deviceBox && k === 1 ? deviceBox.h : Math.round(viewH * (devicePixelRatio || 1) * k);
-  renderer.resize(w, h);
-  renderer.bloom = quality < 2;
   dpr = w / viewW;
+  renderer.resize(w, h, Math.min(1, 1 / dpr));
+  renderer.bloom = quality < 2;
   wake();
 }
 

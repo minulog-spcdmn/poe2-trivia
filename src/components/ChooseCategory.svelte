@@ -21,7 +21,7 @@
       duration: 650,
       css: (t: number) => {
         const e = cubicOut(t);
-        return `opacity:${Math.min(1, t * 2)};transform:translateY(${(1 - e) * 120}px) rotate(${(1 - e) * rot}deg) rotateY(${(1 - e) * 90}deg)`;
+        return `opacity:${Math.min(1, t * 2)};transform:perspective(1200px) translateY(${(1 - e) * 120}px) rotate(${(1 - e) * rot}deg) rotateY(${(1 - e) * 90}deg)`;
       },
     };
   }
@@ -38,8 +38,9 @@
   function enter(e: PointerEvent, i: number) {
     if (!mine || picked || e.pointerType !== 'mouse') return;
     burning?.stop();
-    const frame = cardEls[i]?.querySelector('.frame');
-    if (frame) burning = cardHover(frame, !!s.deathmatch);
+    const card = cardEls[i];
+    const frame = card?.querySelector('.frame');
+    if (frame) burning = cardHover(frame, card, !!s.deathmatch);
   }
   function leave(e: PointerEvent) {
     burning?.stop();
@@ -69,8 +70,8 @@
     burning?.stop();
     burning = null;
     const i = s.offered.indexOf(category);
-    const card = cardEls[i]?.querySelector('.frame');
-    if (card) cardPicked(card, cardEls.filter((_, j) => j !== i).map((c) => c.querySelector('.frame') ?? c), !!s.deathmatch);
+    const frame = cardEls[i]?.querySelector('.frame');
+    if (frame) cardPicked(frame, cardEls[i], cardEls.filter((_, j) => j !== i).map((c) => c.querySelector('.frame') ?? c), !!s.deathmatch);
     sfx('pick');
     session.dispatch({ type: 'pick', category });
     // Allow a retry if the host rejected the pick.
@@ -109,8 +110,7 @@
       >
         <span class="frame" use:backdropShadow>
           <span class="glare"></span>
-          <span class="corner tl"></span><span class="corner tr"></span>
-          <span class="corner bl"></span><span class="corner br"></span>
+          <span class="filigree"></span>
           <span class="icon"><span class="glyph" style:--src="url('{categoryIcon(cat)}')"></span></span>
           <span class="title">{cat}</span>
         </span>
@@ -141,7 +141,6 @@
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 220px));
     gap: 1.4rem;
-    perspective: 1200px;
   }
   .card {
     padding: 0;
@@ -183,39 +182,17 @@
       opacity 0.4s,
       filter 0.4s;
   }
-  .corner {
+  /* The same gold filigree as the panels, on all four corners. */
+  .filigree {
     position: absolute;
-    width: 18px;
-    height: 18px;
-    border: 2px solid var(--gold);
-    opacity: 0.7;
+    inset: 5px;
+    background: var(--filigree);
+    opacity: 0.8;
+    filter: drop-shadow(0 0 3px rgba(224, 138, 68, 0.35));
+    pointer-events: none;
     transition:
       opacity 0.3s,
-      border-color 0.3s;
-  }
-  .tl {
-    top: 8px;
-    left: 8px;
-    border-right: 0;
-    border-bottom: 0;
-  }
-  .tr {
-    top: 8px;
-    right: 8px;
-    border-left: 0;
-    border-bottom: 0;
-  }
-  .bl {
-    bottom: 8px;
-    left: 8px;
-    border-right: 0;
-    border-top: 0;
-  }
-  .br {
-    bottom: 8px;
-    right: 8px;
-    border-left: 0;
-    border-top: 0;
+      filter 0.3s;
   }
   .icon {
     flex: 1;
@@ -259,8 +236,8 @@
       radial-gradient(ellipse at 50% 35%, rgba(224, 85, 63, 0.3), transparent 60%),
       linear-gradient(170deg, #2a1410, #120a08 70%);
   }
-  .card.dm .corner {
-    border-color: #e0553f;
+  .card.dm .filigree {
+    filter: hue-rotate(-32deg) saturate(1.6) drop-shadow(0 0 3px rgba(224, 85, 63, 0.4));
   }
   .card.dm .glyph {
     background: linear-gradient(180deg, #ffd7c9 0%, #e0553f 50%, #6d1a10 100%);
@@ -289,7 +266,7 @@
     --bs2-color: rgba(0, 0, 0, 0.7);
   }
   .card.mine:hover .glyph {
-    transform: scale(1.1) rotate(-3deg) translateZ(30px);
+    transform: scale(1.1) rotate(-3deg);
     opacity: 1;
     filter: brightness(1.15);
   }
@@ -311,9 +288,12 @@
     color: #fff1cf;
     text-shadow: 0 0 14px rgba(241, 217, 155, 0.6);
   }
-  .card.mine:hover .corner {
+  .card.mine:hover .filigree {
     opacity: 1;
-    border-color: var(--gold-hi);
+    filter: brightness(1.25) drop-shadow(0 0 5px rgba(255, 170, 90, 0.6));
+  }
+  .card.dm.mine:hover .filigree {
+    filter: hue-rotate(-32deg) saturate(1.6) brightness(1.2) drop-shadow(0 0 5px rgba(224, 85, 63, 0.6));
   }
   .card:focus-visible {
     outline: none;
@@ -368,8 +348,9 @@
       flex: 1;
       text-align: left;
     }
-    .corner {
-      display: none;
+    .filigree {
+      inset: 3px;
+      background-size: 20px 20px;
     }
     .card.mine:hover .frame {
       transform: translateX(6px);

@@ -18,6 +18,11 @@ export const C = {
   blood: [1.2, 0.08, 0.05],
   good: [1.1, 2.7, 1.0],
   goodPale: [1.6, 2.6, 1.3],
+  /** A right answer: a muted green that leans gold. */
+  right: [1.25, 1.75, 0.85],
+  rightPale: [1.75, 1.95, 1.3],
+  /** A wrong answer: a muted ember red, softer than the deathmatch's crimson. */
+  wrong: [1.9, 0.5, 0.28],
   portal: [0.55, 1.35, 3.2],
   portalPale: [1.6, 2.2, 3.2],
   ash: [0.5, 0.42, 0.36],
@@ -27,7 +32,6 @@ export const C = {
 export const rand = (lo: number, hi: number) => lo + Math.random() * (hi - lo);
 const pick = <T>(xs: readonly T[]) => xs[Math.floor(Math.random() * xs.length)];
 const scale = (c: Vec3, k: number): Vec3 => [c[0] * k, c[1] * k, c[2] * k];
-const lerp3 = (a: Vec3, b: Vec3, t: number): Vec3 => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
 const easeOut = (t: number) => 1 - Math.pow(1 - t, 3);
 
 /** A random point inside a box (or on its edge when `edge`). */
@@ -329,17 +333,60 @@ export function rays(at: Anchor, o: { radius?: number; count?: number; sharp?: n
 }
 
 /**
+ * The corners of `el` as drawn on screen, inset by `inset` px, when it's
+ * turned in 3D: its own computed transform (mid-transition values included)
+ * applied to the untransformed box of `base`, which it fills. Relative to the
+ * centre of `el`'s bounding box `b`.
+ */
+function projectedCorners(el: HTMLElement, base: Element, inset: number, b: Box): number[] | null {
+  const cs = getComputedStyle(el);
+  if (cs.transform === 'none') return null;
+  const m = new DOMMatrix(cs.transform);
+  const box = base.getBoundingClientRect();
+  const w = el.offsetWidth;
+  const h = el.offsetHeight;
+  const [ox = w / 2, oy = h / 2] = cs.transformOrigin.split(' ').map(parseFloat);
+  const out: number[] = [];
+  for (const [x, y] of [
+    [inset, inset],
+    [w - inset, inset],
+    [w - inset, h - inset],
+    [inset, h - inset],
+  ]) {
+    const p = new DOMPoint(x - ox, y - oy, 0, 1).matrixTransform(m);
+    if (p.w <= 0) return null;
+    out.push(p.x / p.w + ox + box.left - b.x, p.y / p.w + oy + box.top - b.y);
+  }
+  return out;
+}
+
+/**
  * Light around an element's outline. `flame` 0-1 makes it lick upward like
- * fire; `bleed` lets it shine over the element itself.
+ * fire; `bleed` lets it shine over the element itself. With `base` (an
+ * untransformed element whose box `el` fills), the glow follows `el` exactly
+ * while it's turned in 3D, like a tilted card.
  */
 export function outline(
   el: Element,
-  o: { color?: Vec3; width?: number; radius?: number; flame?: number; bleed?: number; intensity?: number; life?: number; pad?: number; pulse?: number; fadeIn?: number } = {},
+  o: {
+    color?: Vec3;
+    width?: number;
+    radius?: number;
+    flame?: number;
+    bleed?: number;
+    intensity?: number;
+    life?: number;
+    pad?: number;
+    pulse?: number;
+    fadeIn?: number;
+    base?: Element;
+  } = {},
 ): Handle {
   const width = o.width ?? 14;
   const life = o.life ?? Infinity;
   const cs = getComputedStyle(el);
   const radius = o.radius ?? (parseFloat(cs.borderTopLeftRadius) || 0);
+  const pad = o.pad ?? 0;
   return shape({
     type: ShapeType.RectGlow,
     at: el,
@@ -350,15 +397,27 @@ export function outline(
       const fin = Math.min(1, age / (o.fadeIn ?? 0.15));
       const fade = Number.isFinite(life) ? Math.pow(1 - t, 1.6) : 1;
       const pulse = o.pulse ? 1 - o.pulse * 0.5 * (1 + Math.sin(age * 5)) : 1;
-      f.hw = b.w / 2 + width * 5 + (o.pad ?? 0);
-      f.hh = b.h / 2 + width * 5 + (o.pad ?? 0);
+      f.hw = b.w / 2 + width * 4 + pad;
+      f.hh = b.h / 2 + width * 4 + pad;
       f.k = (o.intensity ?? 1) * fin * fade * pulse;
-      f.q[0] = b.w / 2 + (o.pad ?? 0);
-      f.q[1] = b.h / 2 + (o.pad ?? 0);
-      f.q[2] = Math.min(radius, b.w / 2, b.h / 2);
-      f.q[3] = width;
-      f.q[4] = o.flame ?? 0;
-      f.q[5] = o.bleed ?? 0;
+      const r = Math.min(radius, b.w / 2, b.h / 2);
+      const quad = o.base && el instanceof HTMLElement && el.isConnected ? projectedCorners(el, o.base, r, b) : null;
+      if (quad) {
+        f.type = ShapeType.QuadGlow;
+        for (let i = 0; i < 8; i++) f.q[i] = quad[i];
+        f.q[8] = r;
+        f.q[9] = width;
+        f.q[10] = o.flame ?? 0;
+        f.q[11] = o.bleed ?? 0;
+      } else {
+        f.type = ShapeType.RectGlow;
+        f.q[0] = b.w / 2 + pad;
+        f.q[1] = b.h / 2 + pad;
+        f.q[2] = r;
+        f.q[3] = width;
+        f.q[4] = o.flame ?? 0;
+        f.q[5] = o.bleed ?? 0;
+      }
     },
   });
 }
@@ -481,71 +540,6 @@ export function flash(at: Anchor, o: { radius?: number; color?: Vec3; life?: num
 }
 
 // ---------- motion ----------
-
-/**
- * A comet that arcs from `from` to `to` trailing sparks, then calls `onArrive`.
- * Where effects are off, `onArrive` still runs (at once).
- */
-export function comet(from: Anchor, to: Anchor, o: { color?: Vec3; trail?: Vec3; duration?: number; arc?: number; size?: number; delay?: number; onArrive?: () => void } = {}) {
-  if (!fxActive()) {
-    o.onArrive?.();
-    return;
-  }
-  const a = boxOf(from);
-  const dur = o.duration ?? 0.75;
-  const color = o.color ?? C.goldPale;
-  const trail = o.trail ?? C.gold;
-  const size = o.size ?? 7;
-  // Bow the path sideways (perpendicular to the straight line), a little random.
-  const side = (Math.random() < 0.5 ? -1 : 1) * (o.arc ?? 0.35);
-  let prev: Point = { x: a.x, y: a.y };
-  let spawnAcc = 0;
-  const start = o.delay ?? 0;
-  task((dt, age) => {
-    if (age < start) return true;
-    const b = boxOf(to);
-    const u = Math.min(1, (age - start) / dur);
-    // Ease in and out, with a late acceleration into the target.
-    const e = u < 0.5 ? 2 * u * u : 1 - Math.pow(-2 * u + 2, 2.4) / 2;
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
-    const len = Math.hypot(dx, dy) || 1;
-    const bow = Math.sin(Math.PI * e) * len * side;
-    const x = a.x + dx * e + (-dy / len) * bow;
-    const y = a.y + dy * e + (dx / len) * bow;
-    const vx = (x - prev.x) / Math.max(dt, 1e-3);
-    const vy = (y - prev.y) / Math.max(dt, 1e-3);
-    // Head: a bright glow drawn fresh each frame.
-    particle({ x, y, life: 0.05, size: size * 1.6, color: scale(color, 0.5), shape: Shape.Glow, fadeIn: 0 });
-    particle({ x, y, vx, vy, life: 0.05, size: size * 0.45, color, shape: Shape.Spark, stretch: 0.02, fadeIn: 0 });
-    // Trail.
-    spawnAcc += dt * 140;
-    while (spawnAcc >= 1) {
-      spawnAcc--;
-      const k = Math.random();
-      particle({
-        x: prev.x + (x - prev.x) * k + (Math.random() - 0.5) * 4,
-        y: prev.y + (y - prev.y) * k + (Math.random() - 0.5) * 4,
-        vx: vx * 0.08 + (Math.random() - 0.5) * 60,
-        vy: vy * 0.08 + (Math.random() - 0.5) * 60,
-        life: rand(0.25, 0.6),
-        size: rand(0.8, 1.8),
-        sizeEnd: 0.3,
-        color: lerp3(trail, color, Math.random() * 0.5),
-        colorEnd: scale(C.emberDeep, 0.5),
-        shape: Math.random() < 0.7 ? Shape.Ember : Shape.Glow,
-        drag: 2,
-        gravity: 60,
-      });
-    }
-    prev = { x, y };
-    if (u >= 1) {
-      o.onArrive?.();
-      return false;
-    }
-    return true;
-  });
-}
 
 /** Keeps spawning with `spawn` at `rate` per second until stopped (or `life` runs out). */
 export function emitter(rate: number, spawn: () => void, life = Infinity): Handle {

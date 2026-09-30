@@ -11,7 +11,7 @@
 
 import { SHADOWS_PER_ELEMENT, measureShadows, releaseAll } from './backdropShadow';
 import { DROPS_PER_MASK, MAX_MASKS, measureDrops, releaseAllDrops } from './backdropDropShadow';
-import { MAX_LIGHTS, installTorch, packLights, stepMood, stepTorch } from './lights';
+import { MAX_LIGHTS, packLights, stepMood } from './lights';
 import { COLUMNS, SLOTS, embers } from './backdropEmbers';
 
 const VERT = `#version 300 es
@@ -50,11 +50,10 @@ uniform vec4 uElD[${MAX_ELEMENTS}];
 uniform vec4 uElE[${MAX_ELEMENTS}];
 uniform int uElCount;
 
-// Event lights (x, y, radius, strength) and colours; the mouse torch (x, y,
-// strength); the mood tint (r, g, b, strength). See lights.ts.
+// Event lights (x, y, radius, strength) and colours; the mood tint (r, g,
+// b, strength). See lights.ts.
 uniform vec4 uLightA[${MAX_LIGHTS}];
 uniform vec4 uLightC[${MAX_LIGHTS}];
-uniform vec3 uTorch;
 uniform vec4 uMood;
 
 // Embers by screen column: row c holds the embers that reach column c,
@@ -203,17 +202,13 @@ void main() {
     col = col * (1.0 - 0.25 * uMood.a) + uMood.rgb * m * 0.3;
   }
 
-  // Event lights and the torch light the stone: an added glow plus a lift of
+  // Event lights light the stone: an added glow plus a lift of
   // what's already there, so the grain shows through.
   for (int i = 0; i < ${MAX_LIGHTS}; i++) {
     vec4 la = uLightA[i];
     if (la.w <= 0.0) continue;
     float g = la.w * gauss(length(p - la.xy) / la.z);
     col = col * (1.0 + 1.5 * g) + uLightC[i].rgb * g * 0.22;
-  }
-  if (uTorch.z > 0.0) {
-    float g = uTorch.z * gauss(length(p - uTorch.xy) / 260.0);
-    col = col * (1.0 + 0.7 * g) + vec3(1.0, 0.55, 0.22) * g * 0.04;
   }
 
   // UI drop shadows. The element paints over its own shadow, so where it is
@@ -438,7 +433,6 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   const uBlobA = U('uBlobA');
   const uLightA = U('uLightA');
   const uLightC = U('uLightC');
-  const uTorch = U('uTorch');
   const uMood = U('uMood');
   const uEmberColor = U('uEmberColor');
   const uElCount = U('uElCount');
@@ -477,7 +471,6 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   const prev = new Float32Array(shadowArrays.reduce((n, arr) => n + arr.length, 0));
   const lightA = new Float32Array(MAX_LIGHTS * 4);
   const lightC = new Float32Array(MAX_LIGHTS * 4);
-  const torch = new Float32Array(3);
   const mood = new Float32Array(4);
 
   // Drop-shadow atlases: unit 0 holds content alpha, unit 1 the blurred alpha.
@@ -521,7 +514,6 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   // On phones and tablets the backdrop-drawn shadows look worse than CSS's,
   // so there every element keeps its CSS shadow and the backdrop draws none.
   const cssShadows = matchMedia('(pointer: coarse)');
-  installTorch();
   const start = performance.now();
   let raf = 0;
   let last = -Infinity;
@@ -554,7 +546,6 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     for (const [k, arr] of Object.entries(mk)) gl!.uniform4fv(mkLoc[k], arr);
     gl!.uniform4fv(uLightA, lightA);
     gl!.uniform4fv(uLightC, lightC);
-    gl!.uniform3fv(uTorch, torch);
     gl!.uniform4fv(uMood, mood);
     gl!.uniform4f(uEmberColor, embers.color[0], embers.color[1], embers.color[2], still ? 0.6 : 1);
     gl!.activeTexture(gl!.TEXTURE2);
@@ -599,7 +590,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   }
 
   // Shadows and fills must track their elements every frame (hover,
-  // transitions, scrolling), and lights, the torch and mood tint animate
+  // transitions, scrolling), and lights and the mood tint animate
   // quickly, so any of those draws at once. Otherwise the backdrop's own
   // motion only needs 30fps (its quickest cycle is a slow 9s breath and the
   // embers drift a few pixels a frame), and with reduced motion nothing is
@@ -611,10 +602,9 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     lastStep = now;
     const nowS = now / 1000;
     const lights = packLights(lightA, lightC, nowS);
-    const torchMoved = stepTorch(dt, torch);
     const moodOn = stepMood(dt, mood);
-    // Lights, torch and mood step once per animation frame; draw() uses the latest values.
-    const lit = lights || torchMoved || moodOn;
+    // Lights and mood step once per animation frame; draw() uses the latest values.
+    const lit = lights || moodOn;
     if (!reduceMotion.matches) embers.step(dt, canvas.clientWidth, canvas.clientHeight);
     const changed = measure() || dirty || lit;
     if (!changed && (reduceMotion.matches || now - last < 33)) return;
@@ -630,13 +620,20 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   // The device-pixel box is exact where supported (it includes pixel snapping
   // at fractional ratios), but it's ignored when it disagrees with the ratio by
   // more than snapping could explain, as it does under DPR emulation.
+  //
+  // Phones and tablets are the exception: there the backdrop draws no crisp
+  // fills or shadows (see cssShadows), just soft light, and their screens run
+  // at 2-3 device pixels per CSS px, so it renders at 1.5 and is scaled up:
+  // a fraction of the work, and the dither still hides every band.
+  const scale = () => (cssShadows.matches && devicePixelRatio > 1.5 ? 1.5 / devicePixelRatio : 1);
   const ro = new ResizeObserver(([entry]) => {
     const box = entry.devicePixelContentBoxSize?.[0];
+    const k = scale();
     const estW = entry.contentRect.width * devicePixelRatio;
     const estH = entry.contentRect.height * devicePixelRatio;
-    const exact = box && Math.abs(box.inlineSize - estW) <= 2 && Math.abs(box.blockSize - estH) <= 2;
-    const w = exact ? box.inlineSize : Math.round(estW);
-    const h = exact ? box.blockSize : Math.round(estH);
+    const exact = k === 1 && box && Math.abs(box.inlineSize - estW) <= 2 && Math.abs(box.blockSize - estH) <= 2;
+    const w = exact ? box.inlineSize : Math.round(estW * k);
+    const h = exact ? box.blockSize : Math.round(estH * k);
     if (w === canvas.width && h === canvas.height) return;
     canvas.width = w;
     canvas.height = h;
@@ -668,8 +665,8 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   reduceMotion.addEventListener('change', onMotionChange);
 
   // Paint the first frame now so the swap from the CSS backdrop is seamless.
-  canvas.width = Math.max(1, Math.round(canvas.clientWidth * devicePixelRatio));
-  canvas.height = Math.max(1, Math.round(canvas.clientHeight * devicePixelRatio));
+  canvas.width = Math.max(1, Math.round(canvas.clientWidth * devicePixelRatio * scale()));
+  canvas.height = Math.max(1, Math.round(canvas.clientHeight * devicePixelRatio * scale()));
   embers.step(0, canvas.clientWidth, canvas.clientHeight);
   measure();
   draw(performance.now());

@@ -12,14 +12,14 @@ import { INSTANCE_FLOATS } from './particles';
 import { NOISE, dropTarget, program, target, type Program, type Target } from './gl';
 
 /** Floats per shape instance: five vec4s (see ShapeType). */
-export const SHAPE_FLOATS = 20;
+export const SHAPE_FLOATS = 24;
 
 /**
  * Procedural shapes. Instance layout:
  *   s0: centre x, centre y, quad half width, quad half height (CSS px)
  *   s1: type, progress 0-1, age (s), seed
  *   s2: r, g, b (HDR, envelope applied)
- *   s3, s4: per-type parameters (documented in the shader)
+ *   s3, s4, s5: per-type parameters (documented in the shader)
  */
 export const ShapeType = {
   Ring: 0,
@@ -30,6 +30,7 @@ export const ShapeType = {
   Edge: 5,
   Flash: 6,
   Sigil: 7,
+  QuadGlow: 8,
 } as const;
 export type ShapeType = (typeof ShapeType)[keyof typeof ShapeType];
 
@@ -131,12 +132,14 @@ layout(location = 2) in vec4 s1;
 layout(location = 3) in vec4 s2;
 layout(location = 4) in vec4 s3;
 layout(location = 5) in vec4 s4;
+layout(location = 6) in vec4 s5;
 uniform vec2 uView;
 out vec2 vP;
 flat out vec4 vA;
 flat out vec3 vC;
 flat out vec4 vQ;
 flat out vec4 vR;
+flat out vec4 vS;
 flat out vec2 vHalf;
 void main() {
   vP = aCorner * s0.zw;
@@ -145,6 +148,7 @@ void main() {
   vC = s2.rgb;
   vQ = s3;
   vR = s4;
+  vS = s5;
   vec2 p = s0.xy + vP;
   vec2 clip = p / uView * 2.0 - 1.0;
   gl_Position = vec4(clip.x, -clip.y, 0.0, 1.0);
@@ -157,6 +161,7 @@ flat in vec4 vA;
 flat in vec3 vC;
 flat in vec4 vQ;
 flat in vec4 vR;
+flat in vec4 vS;
 flat in vec2 vHalf;
 out vec4 o;
 #define PI 3.14159265
@@ -171,6 +176,41 @@ float sdTri(vec2 p, float r) {
   p.x -= clamp(p.x, -2.0 * r, 0.0);
   return -length(p) * sign(p.y);
 }
+// Signed distance to a convex or concave quad (Inigo Quilez's polygon SDF).
+float sdQuad(vec2 p, vec2 a, vec2 b, vec2 c, vec2 d) {
+  vec2 v[4] = vec2[4](a, b, c, d);
+  float dist = dot(p - v[0], p - v[0]);
+  float s = 1.0;
+  for (int i = 0, j = 3; i < 4; j = i, i++) {
+    vec2 e = v[j] - v[i];
+    vec2 w = p - v[i];
+    vec2 q = w - e * clamp(dot(w, e) / dot(e, e), 0.0, 1.0);
+    dist = min(dist, dot(q, q));
+    bvec3 cond = bvec3(p.y >= v[i].y, p.y < v[j].y, e.x * w.y > e.y * w.x);
+    if (all(cond) || all(not(cond))) s *= -1.0;
+  }
+  return s * sqrt(dist);
+}
+
+// Glow around an outline at signed distance d: a soft outer halo and a
+// brighter edge, with optional flames licking upward (up, 0-1, is how high
+// this pixel sits), fading inside unless it bleeds over the element.
+float outlineGlow(float d, float wd, float flameAmt, float bleed, float up, vec2 np, float time, float seed, out float hot) {
+  hot = 0.0;
+  float outer = exp(-max(d, 0.0) / wd);
+  float edge = exp(-abs(d) / max(1.0, wd * 0.12));
+  float inside = mix(smoothstep(-wd * 0.35, 0.0, d), 1.0, bleed);
+  float base = (outer * 0.5 + edge * 0.9) * inside;
+  if (base <= 0.003) return 0.0;
+  float flame = 1.0;
+  if (flameAmt > 0.0) {
+    float n = fbm(np * 0.03 + vec2(0.0, time * 1.8) + seed);
+    flame = mix(1.0, (0.2 + 1.7 * n) * (0.6 + 0.8 * up), flameAmt);
+  }
+  hot = edge * edge * 0.25 * inside;
+  return base * flame;
+}
+
 void main() {
   int type = int(vA.x + 0.5);
   float prog = vA.y;
@@ -191,11 +231,15 @@ void main() {
     float th = max(vQ.y, 0.75);
     float d = (r - vQ.x) / th;
     float front = d > 0.0 ? exp(-d * d * 3.0) : exp(d * 0.9);
-    float n = fbm(dir * 2.6 + vec2(seed, time * 1.3) + vec2(0.0, d * 0.18));
-    float torn = mix(1.0, smoothstep(0.25, 0.75, n) * 1.8, vQ.z);
-    v = front * torn;
-    v += vQ.w * (1.0 - smoothstep(0.0, vQ.x, r)) * (d < 0.0 ? 1.0 : 0.0) * 0.25;
-    hot = exp(-d * d * 12.0) * torn * 0.35;
+    float fill = vQ.w * (1.0 - smoothstep(0.0, vQ.x, r)) * (d < 0.0 ? 1.0 : 0.0) * 0.25;
+    // Most of the quad is empty: only tear the band that's actually lit.
+    if (front > 0.004) {
+      float n = fbm(dir * 2.6 + vec2(seed, time * 1.3) + vec2(0.0, d * 0.18));
+      float torn = mix(1.0, smoothstep(0.25, 0.75, n) * 1.8, vQ.z);
+      v = front * torn;
+      hot = exp(-d * d * 12.0) * torn * 0.35;
+    }
+    v += fill;
   } else if (type == 1) {
     // Flare. q: core radius, streak half length, streak thickness, spikes.
     float core = exp(-(r * r) / (vQ.x * vQ.x)) + 0.4 * exp(-r / (vQ.x * 2.2));
@@ -208,30 +252,25 @@ void main() {
     hot = exp(-(r * r) / (vQ.x * vQ.x * 0.12)) * 1.5;
   } else if (type == 2) {
     // God rays. q: inner radius, outer radius, ray count, sharpness. r: spin speed.
-    float wob = 1.6 * fbm(dir * 1.7 + vec2(seed, time * 0.08));
-    float t = time * vR.x;
-    float n1 = vQ.z;
-    float n2 = floor(vQ.z * 0.62) + 1.0;
-    float rays = pow(0.5 + 0.5 * sin(a * n1 + t + wob), vQ.w)
-               + 0.6 * pow(0.5 + 0.5 * sin(a * n2 - t * 1.3 + wob * 1.7 + 1.3), vQ.w * 1.5);
     float fall = 1.0 - clamp(r / vQ.y, 0.0, 1.0);
-    v = rays * fall * fall * smoothstep(0.0, vQ.x, r) * (0.75 + 0.25 * sin(time * 1.7 + seed));
-    v += exp(-(r * r) / (vQ.x * vQ.x)) * 0.35;
+    if (fall > 0.0) {
+      float wob = 1.6 * vnoise(dir * 2.2 + vec2(seed, time * 0.12));
+      float t = time * vR.x;
+      float n1 = vQ.z;
+      float n2 = floor(vQ.z * 0.62) + 1.0;
+      float rays = pow(0.5 + 0.5 * sin(a * n1 + t + wob), vQ.w)
+                 + 0.6 * pow(0.5 + 0.5 * sin(a * n2 - t * 1.3 + wob * 1.7 + 1.3), vQ.w * 1.5);
+      v = rays * fall * fall * smoothstep(0.0, vQ.x, r) * (0.75 + 0.25 * sin(time * 1.7 + seed));
+      v += exp(-(r * r) / (vQ.x * vQ.x)) * 0.35;
+    }
   } else if (type == 3) {
     // Glow around a rounded rectangle. q: half w, half h, corner radius, glow width.
     // r: flame 0-1, inner bleed 0-1.
     vec2 q = abs(vP) - vec2(vQ.x, vQ.y) + vQ.z;
     float d = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - vQ.z;
-    float wd = vQ.w;
-    float outer = exp(-max(d, 0.0) / wd);
-    float edge = exp(-abs(d) / max(1.0, wd * 0.12));
-    float n = fbm(vec2(vP.x * 0.03, vP.y * 0.03 + time * 1.8) + seed);
     // Flames lick upward: stronger above the element than below it.
-    float up = smoothstep(vQ.y, -vQ.y - wd, vP.y);
-    float flame = mix(1.0, (0.2 + 1.7 * n) * (0.6 + 0.8 * up), vR.x);
-    float inside = mix(smoothstep(-wd * 0.35, 0.0, d), 1.0, vR.y);
-    v = (outer * 0.5 + edge * 0.9) * flame * inside;
-    hot = edge * edge * 0.25 * inside;
+    float up = smoothstep(vQ.y, -vQ.y - vQ.w, vP.y);
+    v = outlineGlow(d, vQ.w, vR.x, vR.y, up, vP, time, seed, hot);
   } else if (type == 4) {
     // Portal vortex. q: radius.
     float rr = r / vQ.x;
@@ -248,11 +287,23 @@ void main() {
     // Screen edge glow. q: width (px), noise.
     vec2 e = vHalf - abs(vP);
     float d = min(e.x, e.y);
-    float n = fbm(vP * 0.004 + vec2(seed, time * 0.35));
-    v = exp(-d / vQ.x) * mix(1.0, 0.3 + 1.4 * n, vQ.y);
+    float g = exp(-d / vQ.x);
+    if (g > 0.004) {
+      float n = fbm(vP * 0.004 + vec2(seed, time * 0.35));
+      v = g * mix(1.0, 0.3 + 1.4 * n, vQ.y);
+    }
   } else if (type == 6) {
     // Soft radial flash. q: radius.
     v = exp(-(r * r) / (vQ.x * vQ.x));
+  } else if (type == 8) {
+    // Glow around a projected quad (an element turned in 3D). q, r: its four
+    // corners relative to the centre, inset by the corner radius. s: corner
+    // radius, glow width, flame, bleed.
+    float d = sdQuad(vP, vQ.xy, vQ.zw, vR.xy, vR.zw) - vS.x;
+    float top = min(min(vQ.y, vQ.w), min(vR.y, vR.w)) - vS.x;
+    float bottom = max(max(vQ.y, vQ.w), max(vR.y, vR.w)) + vS.x;
+    float up = smoothstep(bottom, top - vS.y, vP.y);
+    v = outlineGlow(d, vS.y, vS.z, vS.w, up, vP, time, seed, hot);
   } else {
     // Sigil: an arcane circle that draws itself. q: radius, line width,
     // drawn 0-1, spin (rad/s).
@@ -346,6 +397,16 @@ void main() {
   o = vec4(c / 16.0, 1.0);
 }`;
 
+// Copies the shapes (drawn at lower resolution) into the HDR target.
+const COPY_FS = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uSrc;
+out vec4 o;
+void main() {
+  o = vec4(texture(uSrc, vUv).rgb, 0.0);
+}`;
+
 const COMPOSITE_FS = `#version 300 es
 precision highp float;
 in vec2 vUv;
@@ -384,12 +445,15 @@ export class FxRenderer {
   private downProg: Program;
   private upProg: Program;
   private compProg: Program;
+  private copyProg: Program;
   private particleVao: WebGLVertexArrayObject;
   private shapeVao: WebGLVertexArrayObject;
   private fullVao: WebGLVertexArrayObject;
   private particleBuf: WebGLBuffer;
   private shapeBuf: WebGLBuffer;
   private hdr: Target | null = null;
+  /** Shapes are soft, so they're drawn at about one texel per CSS px, not per device px. */
+  private shapesT: Target | null = null;
   private mips: Target[] = [];
   private internal: number;
   private texType: number;
@@ -430,7 +494,9 @@ export class FxRenderer {
     const d = program(gl, FULL_VS, DOWN_FS, 'bloom-down');
     const u = program(gl, FULL_VS, UP_FS, 'bloom-up');
     const c = program(gl, FULL_VS, COMPOSITE_FS, 'composite');
-    if (!p || !s || !d || !u || !c) throw new Error('shader');
+    const k = program(gl, FULL_VS, COPY_FS, 'copy');
+    if (!p || !s || !d || !u || !c || !k) throw new Error('shader');
+    this.copyProg = k;
     this.particleProg = p;
     this.shapeProg = s;
     this.downProg = d;
@@ -478,23 +544,27 @@ export class FxRenderer {
     return this.gl.isContextLost();
   }
 
-  /** Resizes the drawing buffer and the HDR and bloom targets. */
-  resize(w: number, h: number) {
+  /** Resizes the drawing buffer and the HDR, shape and bloom targets (shapes at `shapeScale` of the buffer). */
+  resize(w: number, h: number, shapeScale = 1) {
     const gl = this.gl;
     w = Math.max(1, w);
     h = Math.max(1, h);
-    if (w === this.width && h === this.height && this.hdr) return;
+    const sw = Math.max(1, Math.round(w * shapeScale));
+    const sh = Math.max(1, Math.round(h * shapeScale));
+    if (w === this.width && h === this.height && this.hdr && this.shapesT?.w === sw && this.shapesT.h === sh) return;
     this.width = w;
     this.height = h;
     gl.canvas.width = w;
     gl.canvas.height = h;
     dropTarget(gl, this.hdr);
+    dropTarget(gl, this.shapesT);
     for (const m of this.mips) dropTarget(gl, m);
     this.hdr = target(gl, w, h, this.internal, this.texType);
+    this.shapesT = target(gl, sw, sh, this.internal, this.texType);
     this.mips = [];
     let mw = w >> 1;
     let mh = h >> 1;
-    while (this.mips.length < 6 && mw >= 8 && mh >= 8) {
+    while (this.mips.length < 5 && mw >= 8 && mh >= 8) {
       this.mips.push(target(gl, mw, mh, this.internal, this.texType));
       mw >>= 1;
       mh >>= 1;
@@ -524,21 +594,38 @@ export class FxRenderer {
     this.cleared = false;
 
     gl.disable(gl.DEPTH_TEST);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, this.hdr.fbo);
-    gl.viewport(0, 0, this.width, this.height);
     gl.clearColor(0, 0, 0, 0);
-    gl.clear(gl.COLOR_BUFFER_BIT);
-    gl.enable(gl.BLEND);
-    gl.blendFunc(gl.ONE, gl.ONE);
 
-    if (nShapes > 0) {
+    if (nShapes > 0 && this.shapesT) {
+      // Shapes first, into their own lower-resolution target...
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this.shapesT.fbo);
+      gl.viewport(0, 0, this.shapesT.w, this.shapesT.h);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.ONE, gl.ONE);
       gl.useProgram(this.shapeProg.prog);
       gl.uniform2f(this.shapeProg.u('uView'), view[0], view[1]);
       gl.bindBuffer(gl.ARRAY_BUFFER, this.shapeBuf);
       gl.bufferSubData(gl.ARRAY_BUFFER, 0, shapes, 0, nShapes * SHAPE_FLOATS);
       gl.bindVertexArray(this.shapeVao);
       gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, nShapes);
+      // ...then filtered up into the HDR target, which they fill completely.
+      gl.disable(gl.BLEND);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this.hdr.fbo);
+      gl.viewport(0, 0, this.width, this.height);
+      gl.useProgram(this.copyProg.prog);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, this.shapesT.tex);
+      gl.uniform1i(this.copyProg.u('uSrc'), 0);
+      gl.bindVertexArray(this.fullVao);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    } else {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this.hdr.fbo);
+      gl.viewport(0, 0, this.width, this.height);
+      gl.clear(gl.COLOR_BUFFER_BIT);
     }
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ONE);
     if (nParticles > 0) {
       gl.useProgram(this.particleProg.prog);
       gl.uniform2f(this.particleProg.u('uView'), view[0], view[1]);
@@ -605,6 +692,7 @@ export class FxRenderer {
   destroy() {
     const gl = this.gl;
     dropTarget(gl, this.hdr);
+    dropTarget(gl, this.shapesT);
     for (const m of this.mips) dropTarget(gl, m);
     gl.getExtension('WEBGL_lose_context')?.loseContext();
   }

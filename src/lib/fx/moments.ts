@@ -6,7 +6,6 @@
 import { after, boxOf, fxActive, shakeView, type Anchor, type Handle, type Vec3 } from './core';
 import {
   C,
-  comet,
   edgeGlow,
   embers,
   emitter,
@@ -25,7 +24,7 @@ import {
   sparks,
 } from './effects';
 import { Shape } from './particles';
-import { particle } from './core';
+import { budget, particle, task } from './core';
 import { light, pulseMood, setMood } from '../lights';
 import { CALM, embers as backdropEmbers } from '../backdropEmbers';
 
@@ -108,10 +107,11 @@ export function cardLanded(card: Element) {
 }
 
 /** The mouse is over a card you can pick: it catches fire. Returns a handle to put it out. */
-export function cardHover(frame: Element, dm: boolean): Handle {
+export function cardHover(frame: Element, card: Element, dm: boolean): Handle {
   if (!fxActive()) return { stop() {} };
   const color = dm ? C.crimson : C.ember;
-  const glow = outline(frame, { color: k3(color, 0.7), width: 14, flame: 0.9, intensity: 0.7, fadeIn: 0.25 });
+  // The frame tilts toward the pointer; `base` lets the fire follow it exactly.
+  const glow = outline(frame, { color: k3(color, 0.7), width: 14, flame: 0.9, intensity: 0.7, fadeIn: 0.25, base: card });
   const rising = emitter(14, () =>
     embers(frame, { count: 1, area: 'top', colors: dm ? [C.crimson, C.ember] : [C.ember, C.gold], rise: [50, 140], life: [0.7, 1.5] }),
   );
@@ -125,10 +125,10 @@ export function cardHover(frame: Element, dm: boolean): Handle {
 }
 
 /** A category is chosen: it flares up; the others burn away. */
-export function cardPicked(card: Element, others: Element[], dm: boolean) {
+export function cardPicked(card: Element, base: Element, others: Element[], dm: boolean) {
   if (!fxActive()) return;
   const main = dm ? C.crimson : C.gold;
-  outline(card, { color: main, width: 20, flame: 1, intensity: 1.3, life: 1.3 });
+  outline(card, { color: main, width: 18, flame: 1, intensity: 1, life: 1.3, base });
   sparks(card, { count: 60, area: 'edge', speed: [150, 700], life: [0.4, 1.1] });
   ring(card, { radius: 260, thickness: 12, life: 0.8, color: main, breakup: 0.6 });
   flare(card, { size: 40, streak: 380, life: 0.7, color: main });
@@ -192,6 +192,8 @@ export type RevealTargets = {
   timedOut?: boolean;
   /** Just the point going to someone else (race, someone else won). */
   otherScored?: boolean;
+  /** The scorer's progress bar before and after the point, 0 to 1. */
+  fill?: { from: number; to: number };
 };
 
 /** The answer is revealed. */
@@ -203,26 +205,26 @@ export function reveal(t: RevealTargets) {
   if (t.answer) {
     const a = t.answer;
     const celebrate = t.good || t.otherScored;
-    outline(a, { color: C.good, width: celebrate ? 16 : 10, flame: celebrate ? 0.8 : 0.3, intensity: celebrate ? 1.1 : 0.7, life: celebrate ? 1.6 : 2.2, bleed: 0.15 });
+    outline(a, { color: C.right, width: celebrate ? 12 : 9, flame: celebrate ? 0.6 : 0.2, intensity: celebrate ? 0.55 : 0.4, life: celebrate ? 1.4 : 2, bleed: 0.1 });
     if (celebrate) {
-      sparks(a, { count: Math.round(46 * hype), area: 'edge', colors: [C.gold, C.goodPale, C.whiteHot], speed: [180, 760 * Math.sqrt(hype)], life: [0.45, 1.2] });
-      ring(a, { radius: 180 * Math.sqrt(hype), thickness: 10, life: 0.7, color: C.good, breakup: 0.5 });
-      flare(a, { size: 26, streak: 320 * Math.sqrt(hype), life: 0.7, color: C.goodPale });
-      glints(a, { count: Math.round(4 * hype), size: [5, 10], delay: [0, 0.6] });
-      light(a, { color: [0.55, 1, 0.45], radius: 260, intensity: 0.55, decay: 1.2 });
+      sparks(a, { count: Math.round(30 * hype), area: 'edge', colors: [C.gold, C.rightPale, C.goldPale], speed: [160, 600 * Math.sqrt(hype)], life: [0.4, 1] });
+      ring(a, { radius: 150 * Math.sqrt(hype), thickness: 10, life: 0.6, color: C.right, breakup: 0.6, intensity: 0.5 });
+      flare(a, { size: 22, streak: 260 * Math.sqrt(hype), life: 0.6, color: C.rightPale, intensity: 0.55 });
+      glints(a, { count: Math.round(3 * hype), size: [5, 9], delay: [0, 0.6] });
+      light(a, { color: [0.85, 1, 0.6], radius: 240, intensity: 0.25, decay: 1.1 });
     } else {
-      glints(a, { count: 3, size: [4, 8], color: C.goodPale, delay: [0.3, 1] });
+      glints(a, { count: 3, size: [4, 8], color: C.rightPale, delay: [0.3, 1] });
     }
   }
 
   if (t.good && t.art) {
     const b = boxOf(t.art);
-    flare(t.art, { size: 46, streak: b.w * 1.1, life: 1, color: C.goldPale, intensity: 0.9 });
-    rays(t.art, { radius: Math.max(b.w, b.h) * 0.75, life: 1.6 + 0.3 * hype, intensity: 0.28 * hype, color: C.gold, count: 16 });
-    embers(t.art, { count: Math.round(18 * hype), area: 'fill', colors: [C.gold, C.ember, C.goodPale], rise: [60, 190], life: [0.8, 1.8] });
-    light(t.art, { color: [1, 0.78, 0.4], radius: 460, intensity: 0.5 + 0.12 * hype, hold: 0.4, decay: 1.6 });
+    flare(t.art, { size: 40, streak: b.w * 0.9, life: 0.9, color: C.goldPale, intensity: 0.6 });
+    rays(t.art, { radius: Math.max(b.w, b.h) * 0.6, life: 1.5 + 0.3 * hype, intensity: 0.16 * hype, color: C.gold, count: 14 });
+    embers(t.art, { count: Math.round(14 * hype), area: 'fill', colors: [C.gold, C.ember, C.rightPale], rise: [60, 190], life: [0.8, 1.8] });
+    light(t.art, { color: [1, 0.8, 0.45], radius: 420, intensity: 0.3 + 0.08 * hype, hold: 0.3, decay: 1.5 });
     if (streak >= 3) {
-      edgeGlow({ color: C.gold, intensity: 0.12, width: 70, life: 1.4 });
+      edgeGlow({ color: C.gold, intensity: 0.07, width: 70, life: 1.4 });
       backdropEmbers.stoke(0.8);
       after(2, () => backdropEmbers.stoke(0));
     }
@@ -230,15 +232,15 @@ export function reveal(t: RevealTargets) {
 
   if (!t.good && !t.otherScored) {
     if (t.chosen) {
-      shards(t.chosen, { count: 26 });
-      sparks(t.chosen, { count: 22, area: 'fill', colors: [C.crimson, C.ember], angle: Math.PI / 2, spread: Math.PI * 1.6, gravity: 900, life: [0.4, 0.9] });
-      outline(t.chosen, { color: C.crimson, width: 12, life: 0.9, intensity: 1, bleed: 0.1 });
-      ring(t.chosen, { radius: 110, thickness: 8, life: 0.5, color: C.crimson, breakup: 0.8 });
-      light(t.chosen, { color: [1, 0.12, 0.06], radius: 220, intensity: 0.6, decay: 1 });
+      shards(t.chosen, { count: 18, colors: [C.wrong, k3(C.wrong, 0.6), C.ember] });
+      sparks(t.chosen, { count: 16, area: 'fill', colors: [C.wrong, C.ember], angle: Math.PI / 2, spread: Math.PI * 1.6, gravity: 900, life: [0.4, 0.9] });
+      outline(t.chosen, { color: C.wrong, width: 10, life: 0.8, intensity: 0.5, bleed: 0.08 });
+      ring(t.chosen, { radius: 100, thickness: 8, life: 0.5, color: C.wrong, breakup: 0.8, intensity: 0.5 });
+      light(t.chosen, { color: [1, 0.3, 0.15], radius: 200, intensity: 0.28, decay: 0.9 });
     }
     if (t.art) {
       const b = boxOf(t.art);
-      light(t.art, { color: [0.9, 0.12, 0.06], radius: 380, intensity: 0.35, decay: 1.3 });
+      light(t.art, { color: [0.9, 0.3, 0.15], radius: 360, intensity: 0.18, decay: 1.2 });
       if (t.timedOut) {
         // Everything turns to ash.
         const top = new DOMRect(b.x - b.w / 2, b.y - b.h / 2, b.w, 10);
@@ -247,66 +249,125 @@ export function reveal(t: RevealTargets) {
         puffs(t.art, { count: 8, area: 'fill', color: [0.25, 0.04, 0.02], size: [20, 40] });
       }
     }
-    edgeGlow({ color: C.crimson, intensity: 0.1, width: 70, life: 0.8 });
-    pulseMood(0.35);
-    shakeView(0.5, 7);
+    edgeGlow({ color: C.wrong, intensity: 0.05, width: 60, life: 0.7 });
+    pulseMood(0.16, [0.9, 0.3, 0.15]);
+    shakeView(0.45, 6);
   }
 
   if (t.stamp) {
     const s = t.stamp;
     after(0.28, () => {
-      const col = t.good ? C.good : C.crimson;
-      ring(s, { radius: 90, thickness: 7, life: 0.45, color: col, breakup: 0.4 });
-      puffs(s, { count: 8, area: 'edge', color: t.good ? [0.12, 0.3, 0.1] : [0.3, 0.05, 0.03], speed: [60, 180] });
-      sparks(s, { count: 14, area: 'edge', colors: t.good ? [C.goodPale, C.gold] : [C.crimson, C.ember], speed: [120, 420], life: [0.3, 0.6] });
+      const col = t.good ? C.right : C.wrong;
+      ring(s, { radius: 80, thickness: 7, life: 0.45, color: col, breakup: 0.5, intensity: 0.55 });
+      puffs(s, { count: 6, area: 'edge', color: t.good ? [0.12, 0.18, 0.07] : [0.2, 0.06, 0.03], speed: [60, 180] });
+      sparks(s, { count: 12, area: 'edge', colors: t.good ? [C.rightPale, C.gold] : [C.wrong, C.ember], speed: [120, 420], life: [0.3, 0.6] });
       shakeView(t.good ? 0.28 : 0.2, 5);
     });
   }
 
   if (t.pill && t.answer && (t.good || t.otherScored)) {
     const pill = t.pill;
-    comet(t.answer, pill, {
-      delay: 0.35,
-      duration: SCORE_LANDS - 0.35,
-      color: t.good ? C.goldPale : C.gold,
-      trail: t.good ? C.gold : C.ember,
-      onArrive: () => scored(pill, streak),
-    });
+    const bar = pill.querySelector('.bar');
+    if (bar && t.fill) fillBar(t.answer, bar, t.fill.from, t.fill.to, t.good);
+    after(SCORE_LANDS, () => scored(pill, streak));
   }
 }
 
-/** Seconds from a reveal until its point lands on the scoreboard. */
-export const SCORE_LANDS = 1.15;
+/** Seconds after a reveal when the stream starts filling the scorer's bar, and how long it takes. */
+export const FILL_START = 0.9;
+export const FILL_SPAN = 0.6;
+/** Seconds from a reveal until its point has landed (the number ticks up). */
+export const SCORE_LANDS = FILL_START + FILL_SPAN;
+
+/**
+ * The point flows from the answer into the scorer's progress bar: a stream of
+ * sparks that land left to right across the part of the bar the point adds
+ * (`from` to `to`, fractions of its width) while the bar fills behind them.
+ */
+export function fillBar(answer: Element, bar: Element, from: number, to: number, good = true) {
+  if (!fxActive()) return;
+  const src = boxOf(answer);
+  const r = bar.getBoundingClientRect();
+  const colors = good ? [C.gold, C.goldPale, C.ember] : [C.ember, C.gold];
+  const n = budget(64);
+  const arrivals: { t: number; x: number; y: number }[] = [];
+  for (let i = 0; i < n; i++) {
+    const u = n > 1 ? i / (n - 1) : 1;
+    // Arrivals sweep along the new segment as the bar fills.
+    const arrive = FILL_START + u * FILL_SPAN + rand(-0.03, 0.03);
+    const delay = Math.max(0.08, arrive - rand(0.55, 0.85));
+    const tx = r.left + r.width * Math.min(1, Math.max(0, from + (to - from) * u));
+    const ty = r.top + r.height / 2 + rand(-0.8, 0.8);
+    const x = src.x + (Math.random() - 0.5) * src.w * 0.9;
+    const y = src.y + (Math.random() - 0.5) * src.h * 0.7;
+    // Bow each path out to one side (and a little up), so the stream fans out and gathers again.
+    const dx = tx - x;
+    const dy = ty - y;
+    const len = Math.hypot(dx, dy) || 1;
+    const side = rand(-0.4, 0.4);
+    const cx = (x + tx) / 2 + (-dy / len) * len * side;
+    const cy = (y + ty) / 2 + (dx / len) * len * side - len * 0.12;
+    // Mostly glowing motes, some with short tails.
+    const mote = i % 3 !== 0;
+    particle({
+      x,
+      y,
+      life: arrive - delay,
+      delay,
+      size: mote ? rand(1.4, 2.4) : rand(0.8, 1.3),
+      sizeEnd: mote ? 1.1 : 0.7,
+      color: mote ? k3(colors[i % colors.length], 0.55) : colors[i % colors.length],
+      colorEnd: C.goldPale,
+      shape: mote ? Shape.Ember : Shape.Spark,
+      stretch: 0.012,
+      fadeIn: 0.25,
+      seek: { cx, cy, tx, ty },
+    });
+    arrivals.push({ t: arrive, x: tx, y: ty });
+  }
+  // Each landing sheds a spark or two off the bar.
+  arrivals.sort((a, b) => a.t - b.t);
+  let k = 0;
+  task((_, age) => {
+    while (k < arrivals.length && arrivals[k].t <= age) {
+      const a = arrivals[k++];
+      if (k % 3 === 0) particle({ x: a.x, y: a.y, life: 0.3, size: 3, sizeEnd: 7, color: k3(C.gold, 0.22), shape: Shape.Glow, fadeIn: 0.1 });
+      sparks(a, { count: 2, speed: [40, 160], angle: -Math.PI / 2, spread: 2.6, life: [0.15, 0.35], size: [0.5, 0.9], gravity: 300 });
+    }
+    return k < arrivals.length;
+  });
+  puffs(answer, { count: 5, area: 'fill', color: [0.16, 0.12, 0.04], speed: [20, 80] });
+}
 
 /** A point lands on a scoreboard entry. */
 export function scored(pill: Element, streak = 1) {
   if (!fxActive()) return;
   const hype = Math.min(3, 1 + (streak - 1) * 0.5);
-  sparks(pill, { count: Math.round(34 * hype), area: 'edge', colors: [C.gold, C.whiteHot, C.ember], speed: [150, 520], life: [0.35, 0.9] });
-  ring(pill, { radius: 110, thickness: 7, life: 0.55, color: C.gold });
-  flare(pill, { size: 18, streak: 200, life: 0.5, color: C.goldPale });
-  glints(pill, { count: 3, size: [4, 8] });
-  outline(pill, { color: C.gold, width: 10, life: 0.9, intensity: 0.9, bleed: 0.2 });
-  light(pill, { color: [1, 0.72, 0.35], radius: 200, intensity: 0.5, decay: 1 });
+  sparks(pill, { count: Math.round(20 * hype), area: 'edge', colors: [C.gold, C.goldPale, C.ember], speed: [120, 420], life: [0.3, 0.8] });
+  ring(pill, { radius: 90, thickness: 7, life: 0.5, color: C.gold, intensity: 0.55 });
+  flare(pill, { size: 16, streak: 170, life: 0.45, color: C.goldPale, intensity: 0.6 });
+  glints(pill, { count: 2, size: [4, 7] });
+  outline(pill, { color: C.gold, width: 9, life: 0.8, intensity: 0.5, bleed: 0.15 });
+  light(pill, { color: [1, 0.72, 0.35], radius: 180, intensity: 0.3, decay: 0.9 });
 }
 
 /** A point is lost (race: a wrong guess). */
 export function lostPoint(pill: Element) {
   if (!fxActive()) return;
   shards(pill, { count: 10, area: 'centre', speed: [60, 200] });
-  outline(pill, { color: C.crimson, width: 8, life: 0.7, intensity: 0.8 });
-  sparks(pill, { count: 10, colors: [C.crimson], angle: Math.PI / 2, spread: 2.4, gravity: 700, life: [0.3, 0.6] });
+  outline(pill, { color: C.wrong, width: 8, life: 0.7, intensity: 0.45 });
+  sparks(pill, { count: 10, colors: [C.wrong], angle: Math.PI / 2, spread: 2.4, gravity: 700, life: [0.3, 0.6] });
 }
 
 /** Someone guessed wrong in a race: a puff of red at the answer they picked. */
 export function raceMiss(option: Element, mine: boolean) {
   if (!fxActive()) return;
-  sparks(option, { count: mine ? 24 : 10, area: 'edge', colors: [C.crimson, C.ember], gravity: 800, life: [0.3, 0.7] });
+  sparks(option, { count: mine ? 24 : 10, area: 'edge', colors: [C.wrong, C.ember], gravity: 800, life: [0.3, 0.7] });
   if (mine) {
     shards(option, { count: 16 });
-    edgeGlow({ color: C.crimson, intensity: 0.14, life: 0.7 });
+    edgeGlow({ color: C.wrong, intensity: 0.05, life: 0.7 });
     shakeView(0.4, 6);
-    pulseMood(0.5);
+    pulseMood(0.16, [0.9, 0.3, 0.15]);
   }
 }
 
@@ -488,7 +549,7 @@ export function titleGlints(title: Element): Handle {
       glints(p, { count: 1, area: 'centre', size: [7, 13], life: [0.6, 1], color: C.goldPale });
       if (Math.random() < 0.5) embers(new DOMRect(r.left + r.width * 0.2, r.bottom - r.height * 0.3, r.width * 0.6, 4), { count: 3, area: 'fill', life: [0.8, 1.6] });
       next();
-    }, rand(1800, 3600));
+    }, rand(3500, 6500));
   };
   next();
   return { stop: () => clearTimeout(timer) };

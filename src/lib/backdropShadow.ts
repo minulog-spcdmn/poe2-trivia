@@ -100,6 +100,24 @@ if (typeof window !== 'undefined') {
 
 const MOVING = /transform|translate|scale|rotate/;
 
+/** Whether an animation moves its target (cached: an animation's keyframes don't change). */
+const movesCache = new WeakMap<Animation, boolean>();
+function moves(anim: Animation, effect: KeyframeEffect): boolean {
+  let m = movesCache.get(anim);
+  if (m === undefined) {
+    if (anim instanceof CSSTransition) m = MOVING.test(anim.transitionProperty);
+    else {
+      try {
+        m = effect.getKeyframes().some((k) => Object.keys(k).some((p) => MOVING.test(p)));
+      } catch {
+        m = true;
+      }
+    }
+    movesCache.set(anim, m);
+  }
+  return m;
+}
+
 /** Elements with a running animation or transition that moves them. */
 function movingElements(): Set<Element> {
   const out = new Set<Element>();
@@ -107,16 +125,7 @@ function movingElements(): Set<Element> {
     if (anim.playState !== 'running') continue;
     const effect = anim.effect as KeyframeEffect | null;
     const target = effect?.target;
-    if (!target) continue;
-    if (anim instanceof CSSTransition) {
-      if (MOVING.test(anim.transitionProperty)) out.add(target);
-      continue;
-    }
-    try {
-      if (effect.getKeyframes().some((k) => Object.keys(k).some((p) => MOVING.test(p)))) out.add(target);
-    } catch {
-      out.add(target);
-    }
+    if (target && moves(anim, effect)) out.add(target);
   }
   return out;
 }
