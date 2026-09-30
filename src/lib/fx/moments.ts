@@ -441,8 +441,8 @@ function coin(x: number, y: number, vx: number, vy: number, o: { life?: [number,
 /**
  * Victory screen: a fountain of gold coins bursts from behind the winner and
  * coins pour from above, in time with the clinking of the victory sound
- * (about 2.6 s), under slowly turning rays and a rune circle in the winner's
- * colour. A player who lost gets falling ash instead. Returns a handle that
+ * (about 2.6 s), under slowly turning rays (the rune circle behind the
+ * winner is SVG, in GameOver). A player who lost gets falling ash instead. Returns a handle that
  * stops the ongoing parts.
  */
 export function victory(avatar: Element, title: Element, color: string, lost: boolean, standings?: Element | null): Handle {
@@ -453,10 +453,9 @@ export function victory(avatar: Element, title: Element, color: string, lost: bo
   const D = Math.hypot(innerWidth, innerHeight);
   flash(avatar, { radius: Math.max(innerWidth, innerHeight) * 0.3, intensity: lost ? 0.04 : 0.08, life: 0.9, delay: 0.1 });
   ring(avatar, { radius: D * 0.5, thickness: 34, life: 1.2, color: main, breakup: 0.85, delay: 0.1, fill: 0.08, intensity: 0.45 });
-  // The rays and rune circle settle after a while, so a victory screen left
-  // open isn't keeping the effects running.
-  handles.push(rays(avatar, { radius: Math.min(700, innerWidth * 0.55), intensity: lost ? 0.14 : 0.28, color: main, count: 16, delay: 0.3, fadeIn: 1.2, life: 14 }));
-  handles.push(sigil(avatar, { radius: 96, color: pc, intensity: 0.5, spin: 0.25, draw: 1.1, delay: 0.5, life: 14 }));
+  // The rays settle after a while, so a victory screen left open isn't
+  // keeping the effects running. (The rune circle behind the avatar is SVG.)
+  handles.push(rays(avatar, { radius: Math.min(650, innerWidth * 0.5), intensity: lost ? 0.08 : 0.15, color: main, count: 16, delay: 0.3, fadeIn: 1.2, life: 14 }));
   after(0.9, () => {
     flare(title, { size: 36, streak: innerWidth * 0.4, life: 1, color: C.goldPale, intensity: 0.7 });
     glints(title, { count: 5, size: [5, 10], delay: [0, 1] });

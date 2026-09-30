@@ -6,7 +6,7 @@
 
 import { fxActive, type Anchor, boxOf, type Vec3 } from './fx/core';
 
-export const MAX_LIGHTS = 6;
+export const MAX_LIGHTS = 8;
 
 type Light = {
   at: Anchor;
@@ -38,8 +38,32 @@ export type LightSpec = {
 export function light(at: Anchor, spec: LightSpec) {
   if (!fxActive()) return;
   const b = boxOf(at);
-  lights.push({ at, x: b.x, y: b.y, attack: 0.08, hold: 0.1, decay: 0.9, ...spec, born: performance.now() / 1000 });
-  if (lights.length > MAX_LIGHTS) lights.shift();
+  const now = performance.now() / 1000;
+  const l: Light = { at, x: b.x, y: b.y, attack: 0.08, hold: 0.1, decay: 0.9, ...spec, born: now };
+  if (lights.length < MAX_LIGHTS) {
+    lights.push(l);
+    return;
+  }
+  // Full: take the place of whichever light gives the least right now, so a
+  // big glow still fading isn't cut off (a visible dip) by a small new one.
+  let weakest = 0;
+  lights.forEach((x, i) => {
+    if (strength(x, now) * x.radius < strength(lights[weakest], now) * lights[weakest].radius) weakest = i;
+  });
+  lights[weakest] = l;
+}
+
+/** A light's strength at `now` (s): up over the attack, held, then easing out over the decay. */
+function strength(l: Light, now: number): number {
+  const t = now - l.born;
+  let k: number;
+  if (t < l.attack) k = t / l.attack;
+  else if (t < l.attack + l.hold) k = 1;
+  else {
+    const u = Math.min(1, (t - l.attack - l.hold) / l.decay);
+    k = (1 - u) * (1 - u);
+  }
+  return l.intensity * k * k * (3 - 2 * k);
 }
 
 /**
@@ -51,20 +75,12 @@ export function packLights(a: Float32Array, c: Float32Array, nowS: number): bool
   c.fill(0);
   lights = lights.filter((l) => nowS - l.born < l.attack + l.hold + l.decay);
   lights.forEach((l, i) => {
-    const t = nowS - l.born;
-    let k: number;
-    if (t < l.attack) k = t / l.attack;
-    else if (t < l.attack + l.hold) k = 1;
-    else {
-      const u = (t - l.attack - l.hold) / l.decay;
-      k = (1 - u) * (1 - u);
-    }
     if (l.at instanceof Element && l.at.isConnected) {
       const b = boxOf(l.at);
       l.x = b.x;
       l.y = b.y;
     }
-    a.set([l.x, l.y, l.radius, l.intensity * k * k * (3 - 2 * k)], i * 4);
+    a.set([l.x, l.y, l.radius, strength(l, nowS)], i * 4);
     c.set([l.color[0], l.color[1], l.color[2], 0], i * 4);
   });
   return lights.length > 0;

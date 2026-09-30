@@ -6,7 +6,7 @@
 // reduced motion, or when WebGL2 isn't available; every call below is then a
 // cheap no-op, so callers never need to check.
 
-import { FxRenderer, SHAPE_FLOATS, type ShapeType } from './renderer';
+import { FxRenderer, SHAPE_FLOATS, ShapeType } from './renderer';
 import { ParticlePool, type ParticleSpec } from './particles';
 
 export type Vec3 = readonly [number, number, number];
@@ -113,7 +113,10 @@ let viewH = 1;
 let dpr = 1;
 const listeners = new Set<(on: boolean) => void>();
 
-/** Quality: 0 full resolution with bloom, 1 lower resolution, 2 lowest without bloom. */
+/**
+ * Quality: 0 full resolution, 1 lower, 2 lowest. Bloom stays on at every
+ * level: switching it off mid-effect would dim everything at once.
+ */
 let quality = 0;
 let slowFor = 0;
 let frameAvg = 16;
@@ -293,6 +296,9 @@ function wake() {
   }
 }
 
+/** Shapes made of thin lines, which need every pixel. */
+const isCrisp = (s: LiveShape) => (s.f.type ?? s.type) === ShapeType.Sigil;
+
 function writeShape(i: number, s: LiveShape, t: number) {
   const o = i * SHAPE_FLOATS;
   const f = s.f;
@@ -325,7 +331,7 @@ function frame(nowMs: number) {
   last = nowMs;
 
   // Adapt quality: if frames keep taking far longer than a display refresh
-  // while effects run, drop resolution, then bloom.
+  // while effects run, drop resolution.
   // (Gaps over 300ms are a background tab or a stall, not the effects.)
   if (rawDt > 0 && rawDt < 0.3) {
     frameAvg += (Math.min(rawDt, 0.1) * 1000 - frameAvg) * 0.12;
@@ -361,7 +367,9 @@ function simulate(dt: number, nowMs: number, render: boolean): boolean {
     else tasks.splice(i, 1);
   }
 
-  let nShapes = 0;
+  // Soft shapes are written first; thin-line shapes (sigils) last, and the
+  // renderer draws those at full resolution so their strokes stay crisp.
+  const visible: [LiveShape, number][] = [];
   shapes = shapes.filter((s) => {
     s.age += dt;
     if (s.age < 0) return true;
@@ -383,9 +391,18 @@ function simulate(dt: number, nowMs: number, render: boolean): boolean {
     }
     const t = Number.isFinite(s.life) ? s.age / s.life : 0;
     s.update(s.f, t, s.age, s.box);
-    if (s.f.k > 0 && nShapes < MAX_SHAPES) writeShape(nShapes++, s, t);
+    if (s.f.k > 0) visible.push([s, t]);
     return true;
   });
+  let nShapes = 0;
+  let nCrisp = 0;
+  for (const crisp of [false, true]) {
+    for (const [s, t] of visible) {
+      if (isCrisp(s) !== crisp || nShapes >= MAX_SHAPES) continue;
+      writeShape(nShapes++, s, t);
+      if (crisp) nCrisp++;
+    }
+  }
 
   const nParticles = pool.step(dt);
 
@@ -401,7 +418,7 @@ function simulate(dt: number, nowMs: number, render: boolean): boolean {
   const busy = nParticles > 0 || nShapes > 0 || tasks.length > 0 || shake.trauma > 0 || shapes.length > 0 || pool.count > 0;
   if (!render) return busy;
   if (nParticles > 0 || nShapes > 0) {
-    renderer.draw([viewW, viewH], dpr, pool.instances, nParticles, shapeData, nShapes);
+    renderer.draw([viewW, viewH], dpr, pool.instances, nParticles, shapeData, nShapes, nCrisp);
     show(true);
   } else {
     renderer.clear();
@@ -452,7 +469,6 @@ function resize() {
   const h = deviceBox && k === 1 ? deviceBox.h : Math.round(viewH * (devicePixelRatio || 1) * k);
   dpr = w / viewW;
   renderer.resize(w, h, Math.min(1, 1 / dpr));
-  renderer.bloom = quality < 2;
   wake();
 }
 

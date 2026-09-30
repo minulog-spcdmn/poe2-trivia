@@ -607,9 +607,10 @@ export class FxRenderer {
 
   /**
    * Draws one frame. `view` is the canvas size in CSS px, `dpr` device pixels
-   * per CSS px of the drawing buffer.
+   * per CSS px of the drawing buffer. The last `nCrisp` of the shapes are
+   * drawn at full resolution (thin lines); the rest at reduced resolution.
    */
-  draw(view: [number, number], dpr: number, particles: Float32Array, nParticles: number, shapes: Float32Array, nShapes: number) {
+  draw(view: [number, number], dpr: number, particles: Float32Array, nParticles: number, shapes: Float32Array, nShapes: number, nCrisp = 0) {
     const gl = this.gl;
     if (!this.hdr) return;
     this.cleared = false;
@@ -617,7 +618,10 @@ export class FxRenderer {
     gl.disable(gl.DEPTH_TEST);
     gl.clearColor(0, 0, 0, 0);
 
-    if (nShapes > 0 && this.shapesT) {
+    const nSoft = nShapes - nCrisp;
+    if (nSoft > 0 && this.shapesT) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.shapeBuf);
+      gl.bufferSubData(gl.ARRAY_BUFFER, 0, shapes, 0, nSoft * SHAPE_FLOATS);
       // Shapes first, into their own lower-resolution target...
       gl.bindFramebuffer(gl.FRAMEBUFFER, this.shapesT.fbo);
       gl.viewport(0, 0, this.shapesT.w, this.shapesT.h);
@@ -626,10 +630,8 @@ export class FxRenderer {
       gl.blendFunc(gl.ONE, gl.ONE);
       gl.useProgram(this.shapeProg.prog);
       gl.uniform2f(this.shapeProg.u('uView'), view[0], view[1]);
-      gl.bindBuffer(gl.ARRAY_BUFFER, this.shapeBuf);
-      gl.bufferSubData(gl.ARRAY_BUFFER, 0, shapes, 0, nShapes * SHAPE_FLOATS);
       gl.bindVertexArray(this.shapeVao);
-      gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, nShapes);
+      gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, nSoft);
       // ...then filtered up into the HDR target, which they fill completely.
       gl.disable(gl.BLEND);
       gl.bindFramebuffer(gl.FRAMEBUFFER, this.hdr.fbo);
@@ -647,6 +649,16 @@ export class FxRenderer {
     }
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE);
+    if (nCrisp > 0) {
+      // Thin-line shapes straight into the full-resolution target.
+      gl.useProgram(this.shapeProg.prog);
+      gl.uniform2f(this.shapeProg.u('uView'), view[0], view[1]);
+      gl.bindVertexArray(this.shapeVao);
+      // (Uploaded after the soft ones were drawn; WebGL keeps the order.)
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.shapeBuf);
+      gl.bufferSubData(gl.ARRAY_BUFFER, 0, shapes, nSoft * SHAPE_FLOATS, nCrisp * SHAPE_FLOATS);
+      gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, nCrisp);
+    }
     if (nParticles > 0) {
       gl.useProgram(this.particleProg.prog);
       gl.uniform2f(this.particleProg.u('uView'), view[0], view[1]);

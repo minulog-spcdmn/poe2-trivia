@@ -4,6 +4,7 @@
   import { session } from '../lib/session.svelte';
   import { playerColor } from '../lib/ui';
   import Avatar from './Avatar.svelte';
+  import ArcaneCircle from './ArcaneCircle.svelte';
   import { CREATOR, DONATE_URL, SITE_URL } from '../lib/site';
   import { backdropShadow } from '../lib/backdropShadow';
   import { fxActive, fxUserOn } from '../lib/fx/core';
@@ -120,6 +121,7 @@
   <p class="kicker" in:fly={{ y: -10, duration: 600 }}>Victory</p>
   {#if winner}
     <div class="crown" bind:this={crown} in:scale={{ start: 0.4, duration: 900, delay: 200 }}>
+      <ArcaneCircle size="236px" color="color-mix(in srgb, {playerColor(winner.hue)}, #f1d99b 45%)" strength={iLost ? 0.35 : 0.6} />
       <Avatar name={winner.name} hue={winner.hue} size={110} />
     </div>
     <h1 bind:this={title} in:fly={{ y: 20, duration: 700, delay: 500 }}>
@@ -192,16 +194,18 @@
   }
   .crown {
     position: relative;
+    isolation: isolate;
     margin-bottom: calc(26px + 1rem);
+  }
+  /* On the avatar only: a filter over the turning rune circle would repaint it every frame. */
+  .crown :global(.avatar) {
     filter: drop-shadow(0 0 30px rgba(241, 217, 155, 0.45));
   }
-  .crown::before {
-    content: '';
-    position: absolute;
-    inset: -26px;
-    border-radius: 50%;
-    border: 1px dashed rgba(201, 164, 92, 0.5);
-    animation: spin 30s linear infinite;
+  /* The rune circle sits behind the avatar. */
+  .crown :global(.arcane) {
+    z-index: -1;
+    margin: auto;
+    inset: -63px;
   }
   h1 {
     font-size: clamp(2.25rem, 6.7vw, 3.8rem);
@@ -315,10 +319,5 @@
   .actions p {
     margin: 0;
     font-style: italic;
-  }
-  @keyframes spin {
-    to {
-      rotate: 360deg;
-    }
   }
 </style>

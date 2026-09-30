@@ -6,7 +6,14 @@
   // Each ring is its own <svg> turned as a whole, so the browser can spin it
   // on the compositor without repainting; the glow is a soft, wide copy of
   // the strokes underneath rather than a filter (which would repaint).
-  let { state = 'idle' }: { state?: 'idle' | 'good' | 'bad' } = $props();
+  // `size`, `color` and `strength` (opacity) override the stage defaults for
+  // other places, like behind the winner on the victory screen.
+  let {
+    state = 'idle',
+    size,
+    color,
+    strength,
+  }: { state?: 'idle' | 'good' | 'bad'; size?: string; color?: string; strength?: number } = $props();
 
   // Rune marks: a few short strokes each, from a fixed seed so every circle
   // carries the same inscription.
@@ -55,7 +62,7 @@
   <circle r="35" class="draw thin" pathLength="100" />
 {/snippet}
 
-<div class="arcane {state}" aria-hidden="true">
+<div class="arcane {state}" aria-hidden="true" style:--size={size} style:color={color} style:opacity={strength}>
   <svg class="ring outer" viewBox="-100 -100 200 200">
     <g class="glow">{@render outer()}</g>
     <g>{@render outer()}</g>
@@ -72,8 +79,8 @@
     inset: 0;
     margin: auto;
     /* The stage is a size container (see QuestionView). */
-    width: min(92cqw, 92cqh, 420px);
-    height: min(92cqw, 92cqh, 420px);
+    width: var(--size, min(92cqw, 92cqh, 420px));
+    height: var(--size, min(92cqw, 92cqh, 420px));
     pointer-events: none;
     opacity: 0.22;
     color: #d9a45a;

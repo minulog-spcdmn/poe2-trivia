@@ -200,8 +200,8 @@ Everything is drawn in WebGL2 with float precision and dithered once at the
   the whole layer at most 1.5 per CSS pixel; the canvas hides itself while
   nothing is alive.
 - Effects can be switched off with the ✦ button in the header, and are off
-  under *prefers-reduced-motion*. Quality drops by itself (resolution, then
-  bloom) on devices that can't keep up. Without WebGL2 the site falls back
+  under *prefers-reduced-motion*. Quality drops by itself (resolution) on
+  devices that can't keep up. Without WebGL2 the site falls back
   to its CSS look.
 
 ### Refreshing item data
