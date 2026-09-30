@@ -100,6 +100,7 @@
       maxlength="20"
       placeholder="e.g. Doryani"
       autocomplete="nickname"
+      spellcheck="false"
       onkeydown={enterName}
     />
 
