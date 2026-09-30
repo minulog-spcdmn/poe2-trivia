@@ -265,6 +265,7 @@
                   {@const t = media.tiles[c.i]}
                   <span
                     class="cell"
+                    class:open={!!t}
                     style:left="{(c.x / media.grid.w) * 100}%"
                     style:top="{(c.y / media.grid.h) * 100}%"
                     style:width="{(c.w / media.grid.w) * 100}%"
@@ -479,12 +480,34 @@
   .cell {
     position: absolute;
     overflow: hidden;
+  }
+  /* The cover is a bevelled plate over the piece. Once the piece is in it falls
+     away, so transparent parts of the art show the backdrop like the full picture. */
+  .cell::after {
+    content: '';
+    position: absolute;
+    inset: 1px;
+    z-index: 1;
+    border-radius: 2px;
     background:
-      radial-gradient(circle at 30% 25%, rgba(201, 164, 92, 0.1), transparent 60%),
-      linear-gradient(160deg, #1a1611, #0a0907);
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M10 2 18 10 10 18 2 10Z' fill='none' stroke='%23c9a45c' stroke-opacity='.3'/%3E%3Cpath d='M10 7 13 10 10 13 7 10Z' fill='%23c9a45c' fill-opacity='.25'/%3E%3C/svg%3E")
+        center / 34% auto no-repeat,
+      radial-gradient(ellipse at 30% 20%, rgba(201, 164, 92, 0.12), transparent 65%),
+      linear-gradient(155deg, #221c14, #0d0b08 70%);
     box-shadow:
-      inset 0 0 0 1px rgba(125, 99, 51, 0.35),
-      inset 0 0 12px rgba(0, 0, 0, 0.8);
+      inset 0 0 0 1px rgba(125, 99, 51, 0.4),
+      inset 1px 1px 0 1px rgba(232, 205, 150, 0.08),
+      inset -1px -1px 0 1px rgba(0, 0, 0, 0.6),
+      inset 0 0 14px rgba(0, 0, 0, 0.7);
+    transition:
+      opacity 0.5s var(--ease-out),
+      transform 0.5s var(--ease-out),
+      filter 0.5s var(--ease-out);
+  }
+  .cell.open::after {
+    opacity: 0;
+    transform: scale(0.7);
+    filter: brightness(2.5);
   }
   .cell img {
     display: block;
@@ -496,8 +519,8 @@
   @keyframes uncover {
     from {
       opacity: 0;
-      transform: scale(1.4);
-      filter: brightness(2.5);
+      transform: scale(1.15);
+      filter: brightness(2);
     }
   }
   .loading {
