@@ -85,7 +85,8 @@ function audio(): Bus | null {
     const files = new Set(Object.values(MOMENTS).flatMap((m) => m.layers.map((l) => l.file)));
     for (const file of files) void load(file).catch(() => {});
   }
-  if (bus.ac.state === 'suspended') void bus.ac.resume();
+  // iOS also parks the context as 'interrupted' after a call or a trip to the lock screen.
+  if (bus.ac.state !== 'running') void bus.ac.resume().catch(() => {});
   return bus;
 }
 
@@ -245,12 +246,20 @@ export function installUiSounds() {
     },
     { capture: true },
   );
-  // Load the sounds and start the ambience with the first interaction.
+  // iOS mutes Web Audio with the ring/silent switch unless the page says it plays media.
+  const session = (navigator as Navigator & { audioSession?: { type: string } }).audioSession;
+  if (session) session.type = 'playback';
+  // Load the sounds and start the ambience with the first interaction, and wake
+  // the context again whenever the phone has suspended it. A touch pointerdown
+  // doesn't count as a user gesture yet (pointerup and touchend do), so listen
+  // for all of them rather than only the first.
   const warm = () => {
-    if (!muted) audio();
+    if (muted) return;
+    audio();
     updateAmbience();
   };
-  addEventListener('pointerdown', warm, { once: true, capture: true });
-  addEventListener('keydown', warm, { once: true, capture: true });
+  for (const type of ['pointerdown', 'pointerup', 'touchend', 'keydown']) {
+    addEventListener(type, warm, { capture: true, passive: true });
+  }
   document.addEventListener('visibilitychange', updateAmbience);
 }
