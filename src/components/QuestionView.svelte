@@ -353,6 +353,7 @@
                   {@const t = media.tiles[c.i]}
                   <span
                     class="cell"
+                    class:open={!!t}
                     style:left="{(c.x / media.grid.w) * 100}%"
                     style:top="{(c.y / media.grid.h) * 100}%"
                     style:width="{(c.w / media.grid.w) * 100}%"
@@ -547,18 +548,21 @@
     place-items: center;
     min-height: 300px;
     container-type: size;
-    /* The glow and the ground under the grid. Drawn by the WebGL backdrop
-       when it can (see lib/backdropShadow.ts, 'stage'); it turns green or red
-       at the reveal. */
+    /* A warm glow behind the item, a cooler rim light from above and a
+       vignette, over a dark ground. Drawn by the WebGL backdrop when it can
+       (see lib/backdropShadow.ts, 'stage'); the warm glow, --bs-fill-a,
+       turns green or red at the reveal. */
     --bs-fill-a: rgba(175, 96, 37, 0.16);
-    --bs-fill-b: #07080c;
     background: var(
       --bs-fill-paint,
-      radial-gradient(ellipse at center, var(--bs-fill-a), transparent 65%),
-      repeating-linear-gradient(0deg, rgba(90, 100, 140, 0.08) 0 1px, transparent 1px 47px),
-      repeating-linear-gradient(90deg, rgba(90, 100, 140, 0.08) 0 1px, transparent 1px 47px),
-      var(--bs-fill-b)
+      radial-gradient(ellipse 55% 50% at 50% 52%, var(--bs-fill-a), transparent 70%),
+      radial-gradient(ellipse 80% 45% at 50% 0%, rgba(90, 110, 160, 0.1), transparent 70%),
+      radial-gradient(ellipse at center, transparent 45%, rgba(0, 0, 0, 0.55) 100%),
+      linear-gradient(180deg, #0c0d12, #060709)
     );
+    box-shadow:
+      inset 0 1px 0 rgba(201, 164, 92, 0.12),
+      inset 0 0 40px rgba(0, 0, 0, 0.6);
     transition: --bs-fill-a 0.9s;
     overflow: hidden;
   }
@@ -588,12 +592,31 @@
   .cell {
     position: absolute;
     overflow: hidden;
+  }
+  /* The cover is a bevelled plate over the piece. Once the piece is in it falls
+     away, so transparent parts of the art show the backdrop like the full picture. */
+  .cell::after {
+    content: '';
+    position: absolute;
+    inset: 1px;
+    z-index: 1;
+    border-radius: 2px;
     background:
-      radial-gradient(circle at 30% 25%, rgba(201, 164, 92, 0.1), transparent 60%),
-      linear-gradient(160deg, #1a1611, #0a0907);
+      linear-gradient(155deg, #221c14, #0d0b08 70%);
     box-shadow:
-      inset 0 0 0 1px rgba(125, 99, 51, 0.35),
-      inset 0 0 12px rgba(0, 0, 0, 0.8);
+      inset 0 0 0 1px rgba(125, 99, 51, 0.4),
+      inset 1px 1px 0 1px rgba(232, 205, 150, 0.08),
+      inset -1px -1px 0 1px rgba(0, 0, 0, 0.6),
+      inset 0 0 14px rgba(0, 0, 0, 0.7);
+    transition:
+      opacity 0.5s var(--ease-out),
+      transform 0.5s var(--ease-out),
+      filter 0.5s var(--ease-out);
+  }
+  .cell.open::after {
+    opacity: 0;
+    transform: scale(0.7);
+    filter: brightness(2.5);
   }
   .cell img {
     display: block;
@@ -605,8 +628,8 @@
   @keyframes uncover {
     from {
       opacity: 0;
-      transform: scale(1.4);
-      filter: brightness(2.5);
+      transform: scale(1.15);
+      filter: brightness(2);
     }
   }
   .loading {
@@ -873,11 +896,12 @@
     height: 250px;
     padding: 1.2rem 0.8rem 0.8rem;
     border: 1px solid transparent;
+    /* Same backdrop as the item art panel. */
     background:
-      radial-gradient(ellipse at center, rgba(175, 96, 37, 0.1), transparent 70%),
-      repeating-linear-gradient(0deg, rgba(90, 100, 140, 0.07) 0 1px, transparent 1px 47px),
-      repeating-linear-gradient(90deg, rgba(90, 100, 140, 0.07) 0 1px, transparent 1px 47px),
-      #07080c;
+      radial-gradient(ellipse 60% 50% at 50% 45%, rgba(175, 96, 37, 0.14), transparent 70%),
+      radial-gradient(ellipse 90% 40% at 50% 0%, rgba(90, 110, 160, 0.09), transparent 70%),
+      radial-gradient(ellipse at center, transparent 45%, rgba(0, 0, 0, 0.5) 100%),
+      linear-gradient(180deg, #0c0d12, #060709);
     cursor: default;
     transition:
       background 0.3s,

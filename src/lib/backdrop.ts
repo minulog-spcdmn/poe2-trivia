@@ -301,21 +301,20 @@ void main() {
         vec4 m = mix(vec4(ca.rgb * ca.a, ca.a), vec4(cb.rgb * cb.a, cb.a), gt);
         fill = vec4(m.a > 0.0 ? m.rgb / m.a : vec3(0.0), m.a);
       } else {
-        // The art stage: a faint grid every 47px (1px lines, from the bottom
-        // and left edges) on cb, under an elliptical glow in ca that fades
-        // out at 65% of the farthest-corner ellipse.
-        vec3 s = cb.rgb;
-        vec3 grid = rgb(90.0, 100.0, 140.0);
-        float gx = mod(lp.x, 47.0);
-        float gy = mod(eb.y - lp.y, 47.0);
-        float hp = px * 0.5;
-        float cx = (clamp(gx + hp, 0.0, 1.0) - clamp(gx - hp, 0.0, 1.0) + clamp(gx + hp - 47.0, 0.0, 1.0)) / px;
-        float cy = (clamp(gy + hp, 0.0, 1.0) - clamp(gy - hp, 0.0, 1.0) + clamp(gy + hp - 47.0, 0.0, 1.0)) / px;
-        s = mix(s, grid, 0.08 * cx);
-        s = mix(s, grid, 0.08 * cy);
-        vec2 e = (lp - halfBox) / (halfBox * 1.4142136);
-        s = mix(s, ca.rgb, ca.a * (1.0 - clamp(length(e) / 0.65, 0.0, 1.0)));
-        fill = vec4(s, cb.a);
+        // The art stage (QuestionView's .art), layer by layer as its CSS
+        // paints it: a dark vertical ground; a vignette (farthest-corner
+        // ellipse, clear to 45%, then to 55% black); a cool rim light from
+        // the top edge (ellipse 80% x 45% at 50% 0%); and the warm glow in ca
+        // (ellipse 55% x 50% at 50% 52%). Each fades out at 70% of its
+        // ellipse, linearly as CSS does.
+        vec3 s = mix(rgb(12.0, 13.0, 18.0), rgb(6.0, 7.0, 9.0), clamp(lp.y / eb.y, 0.0, 1.0));
+        float tv = length((lp - halfBox) / (halfBox * 1.4142136));
+        s = mix(s, vec3(0.0), 0.55 * clamp((tv - 0.45) / 0.55, 0.0, 1.0));
+        float tr = length((lp - vec2(0.5 * eb.x, 0.0)) / (eb.xy * vec2(0.8, 0.45)));
+        s = mix(s, rgb(90.0, 110.0, 160.0), 0.1 * max(0.0, 1.0 - tr / 0.7));
+        float tg = length((lp - eb.xy * vec2(0.5, 0.52)) / (eb.xy * vec2(0.55, 0.5)));
+        s = mix(s, ca.rgb, ca.a * max(0.0, 1.0 - tg / 0.7));
+        fill = vec4(s, 1.0);
       }
       col = mix(col, fill.rgb, fill.a * fc.z * (1.0 - outside));
     }

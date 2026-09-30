@@ -20,7 +20,7 @@
 // they're large and dark: `use:backdropShadow={{ fill: 'linear' }}` makes the
 // backdrop paint the element's background from --bs-fill-a, --bs-fill-b and
 // --bs-fill-angle (a two-stop linear gradient), and 'stage' paints the item
-// art stage (a glow in --bs-fill-a over a faint grid on --bs-fill-b). CSS
+// art stage (its layered glows, the warm one in --bs-fill-a). CSS
 // paints the same gradient through `var(--bs-fill-paint, …)`, which
 // `data-bs-fill` turns transparent while the backdrop draws it. Unlike a soft
 // shadow, a fill has a crisp edge, so it goes back to CSS whenever it could
