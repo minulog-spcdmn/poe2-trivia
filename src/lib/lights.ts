@@ -97,10 +97,13 @@ const mood = {
   pulseColor: [1, 0.15, 0.08] as number[],
 };
 
-/** Tints the whole backdrop toward `color` (eased); strength 0 clears it. */
+/**
+ * Tints the whole backdrop toward `color` (eased); strength 0 clears it. The
+ * tint is kept while effects are off and comes back when they're on again.
+ */
 export function setMood(color: Vec3, strength: number) {
   mood.target = [...color];
-  mood.targetStrength = fxActive() ? strength : 0;
+  mood.targetStrength = strength;
 }
 
 /** A quick swell of colour over the scene (heartbeats), 0-1. */
@@ -113,15 +116,15 @@ export function pulseMood(amount: number, color: Vec3 = [1, 0.15, 0.08]) {
 /** Steps the mood toward its target; returns (r, g, b, strength) and whether it's moving or lit. */
 export function stepMood(dt: number, out: Float32Array): boolean {
   const k = 1 - Math.exp(-dt * 2.2);
-  if (!fxActive()) mood.targetStrength = 0;
+  const wanted = fxActive() ? mood.targetStrength : 0;
   for (let i = 0; i < 3; i++) mood.color[i] += (mood.target[i] - mood.color[i]) * k;
-  mood.strength += (mood.targetStrength - mood.strength) * k;
+  mood.strength += (wanted - mood.strength) * k;
   mood.pulse = Math.max(0, mood.pulse - dt * 1.8);
   const p = mood.pulse * 0.6;
   const total = mood.strength + p;
   for (let i = 0; i < 3; i++) out[i] = total > 0 ? (mood.color[i] * mood.strength + mood.pulseColor[i] * p) / total : 0;
   out[3] = total;
-  return mood.strength > 0.002 || mood.targetStrength > 0 || mood.pulse > 0;
+  return mood.strength > 0.002 || wanted > 0 || mood.pulse > 0;
 }
 
 // ---------- the start page ----------

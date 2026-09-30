@@ -508,6 +508,7 @@ function teardown() {
   pool = null;
   shapes = [];
   tasks = [];
+  shake.trauma = 0;
   applyShake(0, 0);
   for (const l of listeners) l(userOn);
 }

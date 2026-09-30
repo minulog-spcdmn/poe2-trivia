@@ -97,9 +97,10 @@
     if (node.parentElement) tileLifted(node.parentElement);
   }
 
-  // The charge-up ends when the answer is revealed or bounced.
+  // The charge-up ends when the answer is revealed, bounced, or (race) comes
+  // back as a miss.
   $effect(() => {
-    if (reveal || chosen === null) {
+    if (reveal || chosen === null || myMiss) {
       charge?.stop();
       charge = null;
     }
