@@ -453,11 +453,15 @@
     display: grid;
     place-items: center;
     min-height: 300px;
+    /* A warm glow behind the item, a cooler rim light from above and a vignette. */
     background:
-      radial-gradient(ellipse at center, rgba(175, 96, 37, 0.12), transparent 65%),
-      repeating-linear-gradient(0deg, rgba(90, 100, 140, 0.08) 0 1px, transparent 1px 47px),
-      repeating-linear-gradient(90deg, rgba(90, 100, 140, 0.08) 0 1px, transparent 1px 47px),
-      #07080c;
+      radial-gradient(ellipse 55% 50% at 50% 52%, rgba(175, 96, 37, 0.16), transparent 70%),
+      radial-gradient(ellipse 80% 45% at 50% 0%, rgba(90, 110, 160, 0.1), transparent 70%),
+      radial-gradient(ellipse at center, transparent 45%, rgba(0, 0, 0, 0.55) 100%),
+      linear-gradient(180deg, #0c0d12, #060709);
+    box-shadow:
+      inset 0 1px 0 rgba(201, 164, 92, 0.12),
+      inset 0 0 40px rgba(0, 0, 0, 0.6);
     overflow: hidden;
   }
   .frame {
@@ -490,8 +494,6 @@
     z-index: 1;
     border-radius: 2px;
     background:
-      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M10 2 18 10 10 18 2 10Z' fill='none' stroke='%23c9a45c' stroke-opacity='.3'/%3E%3Cpath d='M10 7 13 10 10 13 7 10Z' fill='%23c9a45c' fill-opacity='.25'/%3E%3C/svg%3E")
-        center / 34% auto no-repeat,
       radial-gradient(ellipse at 30% 20%, rgba(201, 164, 92, 0.12), transparent 65%),
       linear-gradient(155deg, #221c14, #0d0b08 70%);
     box-shadow:
