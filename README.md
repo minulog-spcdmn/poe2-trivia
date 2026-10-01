@@ -176,7 +176,7 @@ npm run build      # production build in dist/
 
 Stack: Svelte 5, TypeScript, Vite, PeerJS. Sound effects are layered CC0
 recordings from [Freesound](https://freesound.org) plus a quiet ambience loop
-(about 640 KB in `public/sfx`, see `CREDITS.txt` there), filtered and mixed in
+(about 670 KB in `public/sfx`, see `CREDITS.txt` there), filtered and mixed in
 WebAudio with a generated reverb. `src/lib/soundDesign.ts` sets the layers.
 
 ### Visual effects
