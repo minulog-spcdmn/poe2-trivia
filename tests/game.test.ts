@@ -1,9 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { Engine, ActionError, createGame, DIFFICULTIES, isDifficulty, rulesFor, RARE_GROUPS, nameSimilarity, publicView, type Difficulty, type GameState, type Item, type Question } from '../src/lib/game.ts';
+import { Engine, ActionError, createGame, DIFFICULTIES, isDifficulty, isFake, rulesFor, RARE_GROUPS, nameSimilarity, publicView, type Difficulty, type GameState, type Item, type Question } from '../src/lib/game.ts';
 
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
+const fakes: Record<string, string[]> = JSON.parse(readFileSync(new URL('../src/data/fakes.json', import.meta.url), 'utf8'));
 
 const right = (q: Question) => q.options.indexOf(q.itemId);
 const wrongIdx = (q: Question) => q.options.findIndex((o) => o !== q.itemId);
@@ -709,4 +710,67 @@ test('a returning guest waits for a seat in a full lobby, and gets one freed at 
   assert.ok(s.players.some((p) => p.id === 'w1'), 'the waiting guest takes the empty seat');
   assert.ok(!s.players.some((p) => p.id === 'p11'));
   assert.deepEqual(s.spectators, []);
+});
+
+test('eternal swaps two decoys on name questions for made-up names', () => {
+  const engine = new Engine(items, { rng: seeded(21), fakes });
+  const byId = new Map(items.map((it) => [it.id, it]));
+  for (const difficulty of ['cruel', 'merciless'] as Difficulty[]) {
+    const s = createGame(null, { targetScore: 5, timer: 0, difficulty, mode: 'turns', public: false, locked: false });
+    for (let i = 0; i < 200; i++) {
+      const q = engine.makeQuestion(s, engine.categories[i % engine.categories.length]);
+      assert.ok(!q.options.some(isFake), `${difficulty} has no fakes`);
+    }
+  }
+  const s = createGame(null, { targetScore: 5, timer: 0, difficulty: 'eternal', mode: 'turns', public: false, locked: false });
+  let pairs = 0;
+  let answerPairs = 0;
+  let shownReal = 0;
+  for (let i = 0; i < 4000; i++) {
+    const q = engine.makeQuestion(s, engine.categories[i % engine.categories.length]);
+    assert.equal(q.options.length, DIFFICULTIES.eternal.options);
+    const fakeIdx = q.options.flatMap((id, i) => (isFake(id) ? [i] : []));
+    if (q.mode === 'art') {
+      assert.deepEqual(fakeIdx, [], 'art questions only show real pictures');
+      continue;
+    }
+    assert.equal(fakeIdx.length, DIFFICULTIES.eternal.fakes);
+    assert.equal(new Set(q.labels).size, q.labels.length, 'no name twice');
+    assert.ok(!isFake(q.itemId));
+    shownReal += q.options.length - fakeIdx.length;
+    for (const i of fakeIdx) {
+      // The fake's real twin is on screen, and the label is one of its fakes.
+      const source = q.options[i].split(':')[1];
+      assert.ok(q.options.includes(source), 'twin on screen');
+      assert.ok(fakes[byId.get(source)!.name].includes(q.labels[i]!));
+      pairs++;
+      if (source === q.itemId) answerPairs++;
+    }
+  }
+  // The answer has a fake twin as often as any other real name on screen.
+  const expected = pairs / shownReal;
+  const actual = answerPairs / (shownReal / (DIFFICULTIES.eternal.options - DIFFICULTIES.eternal.fakes));
+  assert.ok(Math.abs(actual - expected) < 0.04, `answer twinned ${actual.toFixed(3)} vs ${expected.toFixed(3)}`);
+});
+
+test('made-up names stay hidden until the reveal, and never count as used items', () => {
+  const engine = new Engine(items, { rng: seeded(4), fakes });
+  let s: GameState = createGame('p0', { targetScore: 3, timer: 0, difficulty: 'eternal', mode: 'turns', public: false, locked: false });
+  s = engine.apply(s, { type: 'join', playerId: 'p0', name: 'A' }, 'p0');
+  s = engine.apply(s, { type: 'start' }, 'p0');
+  s = engine.apply(s, { type: 'pick', category: s.offered[0] }, 'p0');
+  while (!s.question!.options.some(isFake)) s = engine.apply(s, { type: 'reask' }, 'p0');
+  assert.ok(!s.used.some(isFake), 'replaced questions leave no fakes in the used list');
+  const q = s.question!;
+  assert.deepEqual(publicView(s).question!.options, []);
+  const pick = q.options.findIndex(isFake);
+  s = engine.apply(s, { type: 'answer', index: pick }, 'p0');
+  assert.equal(s.reveal!.correct, false);
+  assert.equal(s.players[0].score, 0);
+  // At the reveal every made-up name is shown as such; untouched real decoys stay anonymous.
+  const shown = publicView(s).question!.options;
+  q.options.forEach((id, i) => {
+    if (isFake(id) || i === right(q)) assert.equal(shown[i], id);
+    else assert.equal(shown[i], '');
+  });
 });

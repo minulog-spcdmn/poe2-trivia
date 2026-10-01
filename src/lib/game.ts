@@ -33,10 +33,12 @@ export interface DifficultyRules {
   mirror: number;
   /** How many turns a chosen category stays locked. */
   lockout: number;
+  /** Decoys swapped for made-up names on "name" questions. */
+  fakes: number;
 }
 
 export const DIFFICULTIES: Record<Difficulty, DifficultyRules> = {
-  cruel: { options: 4, groupFirst: true, similarNames: 0, artChance: 0.4, veil: null, grayscale: false, mirror: 0, lockout: 2 },
+  cruel: { options: 4, groupFirst: true, similarNames: 0, artChance: 0.4, veil: null, grayscale: false, mirror: 0, lockout: 2, fakes: 0 },
   merciless: {
     options: 6,
     groupFirst: true,
@@ -46,6 +48,7 @@ export const DIFFICULTIES: Record<Difficulty, DifficultyRules> = {
     grayscale: false,
     mirror: 0,
     lockout: 3,
+    fakes: 0,
   },
   eternal: {
     options: 8,
@@ -56,6 +59,7 @@ export const DIFFICULTIES: Record<Difficulty, DifficultyRules> = {
     grayscale: true,
     mirror: 0.3,
     lockout: 4,
+    fakes: 2,
   },
 };
 
@@ -67,6 +71,14 @@ export const DIFFICULTIES: Record<Difficulty, DifficultyRules> = {
 export const RARE_GROUPS: Record<string, number> = { Tablets: 0.25 };
 
 const weightOf = (it: Item) => RARE_GROUPS[it.group] ?? 1;
+
+/** Option ids of made-up names: `fake:<id of the item it copies>:<which of its fakes>`. */
+const FAKE_PREFIX = 'fake:';
+
+/** A made-up name, not a real item. */
+export function isFake(optionId: string): boolean {
+  return optionId.startsWith(FAKE_PREFIX);
+}
 
 /** A known difficulty (its own key, so names like "toString" don't count). */
 export function isDifficulty(d: unknown): d is Difficulty {
@@ -310,7 +322,8 @@ export function publicView(s: GameState): GameState {
   // Revealed: only the answer and the options someone actually picked are
   // identified; the untouched decoys stay anonymous for later questions.
   const known = new Set<number | null>([s.reveal?.correctIndex ?? -1, s.reveal?.chosenIndex ?? null, ...q.misses.map((m) => m.index)]);
-  return { ...s, used: [], question: { ...q, options: q.options.map((id, i) => (known.has(i) ? id : '')) } };
+  // Made-up names are shown as such: they say nothing about later questions.
+  return { ...s, used: [], question: { ...q, options: q.options.map((id, i) => (known.has(i) || isFake(id) ? id : '')) } };
 }
 
 export function shuffle<T>(arr: T[], rng: Rng): T[] {
@@ -331,12 +344,16 @@ export class Engine {
   readonly byId: Map<string, Item>;
   readonly byCategory: Map<string, Item[]>;
   readonly categories: string[];
+  /** Made-up names for each item (by id), for difficulties that mix them in. */
+  private readonly fakes: Map<string, string[]>;
   private rng: Rng;
   private now: () => number;
 
-  constructor(items: Item[], opts: { rng?: Rng; now?: () => number } = {}) {
+  /** `fakes`: made-up names for items, by item name (src/data/fakes.json). */
+  constructor(items: Item[], opts: { rng?: Rng; now?: () => number; fakes?: Record<string, string[]> } = {}) {
     this.items = items;
     this.byId = new Map(items.map((it) => [it.id, it]));
+    this.fakes = new Map(items.filter((it) => opts.fakes?.[it.name]?.length).map((it) => [it.id, opts.fakes![it.name]]));
     this.byCategory = new Map();
     for (const it of items) {
       const list = this.byCategory.get(it.category) ?? [];
@@ -557,7 +574,7 @@ export class Engine {
           if (p) p.score += 1;
         }
         // None of its pictures come back in the new one (one of them didn't load).
-        for (const id of voided.options) if (!s.used.includes(id)) s.used.push(id);
+        for (const id of voided.options) if (this.byId.has(id) && !s.used.includes(id)) s.used.push(id);
         s.question = this.makeQuestion(s, voided.category);
         s.used.push(s.question.itemId);
         break;
@@ -831,6 +848,29 @@ export class Engine {
     return [anchor, ...sample(near(anchor, others(anchor)), count, this.rng)];
   }
 
+  /**
+   * Swaps `count` decoys for made-up names (in place) and returns the names by
+   * option id. Each fake copies one of the real names left on screen, the
+   * answer as often as any decoy, so a real name next to its fake twin says
+   * nothing about which option is right.
+   */
+  private mixInFakes(options: string[], answerId: string, count: number): Map<string, string> {
+    const names = new Map<string, string>();
+    if (count <= 0 || !this.fakes.size) return names;
+    const decoys = options.flatMap((id, i) => (id === answerId ? [] : [i]));
+    const swap = sample(decoys, count, this.rng);
+    const kept = options.filter((_, i) => !swap.includes(i));
+    const sources = sample(kept.filter((id) => this.fakes.has(id)), swap.length, this.rng);
+    sources.forEach((source, k) => {
+      const list = this.fakes.get(source)!;
+      const n = Math.floor(this.rng() * list.length);
+      const id = `${FAKE_PREFIX}${source}:${n}`;
+      options[swap[k]] = id;
+      names.set(id, list[n]);
+    });
+    return names;
+  }
+
   private simCache = new Map<string, number>();
 
   private similarity(a: Item, b: Item): number {
@@ -907,7 +947,8 @@ export class Engine {
             seed: Math.floor(this.rng() * 2 ** 31),
           }
         : null;
-    const labels = options.map((id) => (mode === 'name' ? this.byId.get(id)!.name : null));
+    const fakeNames = mode === 'name' ? this.mixInFakes(options, answer.id, rules.fakes) : new Map<string, string>();
+    const labels = options.map((id) => (mode === 'name' ? (fakeNames.get(id) ?? this.byId.get(id)!.name) : null));
     const prompt = mode === 'art' ? answer.name : null;
     // Each picture flips on its own roll, so a flipped option says nothing about the answer.
     const mirrored = Array.from({ length: mode === 'art' ? options.length : 1 }, () => rules.mirror > 0 && this.rng() < rules.mirror);
