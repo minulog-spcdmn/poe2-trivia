@@ -1,5 +1,5 @@
 // Generated from the picks on the sound audition page; tweak freely.
-// Each moment is up to four layers played together. Per layer: volume (dB),
+// Each moment is a few layers played together. Per layer: volume (dB),
 // playback rate, delay (ms), high-pass and low-pass cutoffs (Hz) and reverb
 // send. Per moment: 'soften' cuts dB around 3.2 kHz (harshness), and
 // varyPitch/varyGain randomize each play so repeats don't sound identical.
@@ -11,6 +11,12 @@ export type Moment = { layers: Layer[]; soften: number; varyPitch: number; varyG
 
 /** Whole mix: master volume (dB) and 'warmth', a high-shelf cut (dB) above 5 kHz. */
 export const MIX = { volume: 0, warmth: 1 };
+
+/**
+ * How far (ms) into the 'fill' moment its first spark lands on the bar: the
+ * whoosh swells up to it, then the ticks climb across the fill.
+ */
+export const FILL_LEAD = 450;
 
 /** A quiet loop under the whole game; lp is a low-pass cutoff (Hz). */
 export const AMBIENCE = { file: 'amb-6', gain: -44, lp: 5011 };
@@ -74,6 +80,17 @@ export const MOMENTS: Record<Sfx, Moment> = {
       { file: 'layer-metal-2', gain: -41, rate: 1.6, delay: 0, hp: 330, lp: 6483, send: 0.7 },
     ],
   },
+  // A veiled tile's cover falls away: a light stone tap and a puff of air.
+  // It plays every second or so during a question, so it stays faint and varied.
+  lift: {
+    soften: 5,
+    varyPitch: 0.09,
+    varyGain: 2,
+    layers: [
+      { file: 'click-5', gain: -34, rate: 1.25, delay: 0, hp: 300, lp: 6000, send: 0.35 },
+      { file: 'hover-2', gain: -39, rate: 1.15, delay: 10, hp: 400, lp: 9000, send: 0.4 },
+    ],
+  },
   select: {
     soften: 3,
     varyPitch: 0.04,
@@ -91,6 +108,21 @@ export const MOMENTS: Record<Sfx, Moment> = {
       { file: 'correct-7', gain: -17, rate: 1.22, delay: 0, hp: 112, lp: 2035, send: 0.85 },
       { file: 'select-5', gain: -28, rate: 1.46, delay: 40, hp: 449, lp: 6277, send: 0.15 },
       { file: 'yourTurn-2', gain: -39, rate: 1.23, delay: 0, hp: 95, lp: 1651, send: 0.2 },
+    ],
+  },
+  // The point streams into the scorer's bar: a swell up to the first landing
+  // (FILL_LEAD), rising ticks as the sparks land across it, and a ring when it's full.
+  fill: {
+    soften: 6,
+    varyPitch: 0.01,
+    varyGain: 0.5,
+    layers: [
+      { file: 'layer-air-3', gain: -33, rate: 1, delay: 0, hp: 600, lp: 9000, send: 0.5 },
+      { file: 'select-5', gain: -31, rate: 1.5, delay: 450, hp: 500, lp: 9000, send: 0.35 },
+      { file: 'select-5', gain: -31, rate: 1.68, delay: 600, hp: 500, lp: 9000, send: 0.35 },
+      { file: 'select-5', gain: -30, rate: 1.88, delay: 750, hp: 500, lp: 10000, send: 0.4 },
+      { file: 'select-5', gain: -30, rate: 2.1, delay: 900, hp: 500, lp: 10000, send: 0.4 },
+      { file: 'layer-metal-2', gain: -33, rate: 2, delay: 1050, hp: 600, lp: 9000, send: 0.65 },
     ],
   },
   wrong: {
