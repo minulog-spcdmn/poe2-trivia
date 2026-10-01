@@ -167,10 +167,6 @@
       Play hot-seat on this device
     </button>
 
-    {#if session.error}
-      <p class="error" transition:fly={{ y: -6, duration: 250 }}>{session.error}</p>
-    {/if}
-
     {#if connecting}
       <div class="connecting" transition:fade={{ duration: 200 }}>
         <span class="rune" use:portalOn></span>
@@ -417,14 +413,6 @@
   }
   .wide {
     width: 100%;
-  }
-
-  .error {
-    margin: 1rem 0 0;
-    padding: 0.6rem 0.9rem;
-    border-left: 2px solid var(--bad);
-    background: rgba(224, 85, 63, 0.08);
-    color: #f0a595;
   }
 
   .connecting {

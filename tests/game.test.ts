@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { Engine, ActionError, createGame, DIFFICULTIES, isDifficulty, isFake, rulesFor, RARE_GROUPS, nameSimilarity, publicView, renameCategories, type Difficulty, type GameState, type Item, type Question } from '../src/lib/game.ts';
+import { Engine, ActionError, AUTO_NEXT_MS, autoNextLeft, createGame, DIFFICULTIES, isDifficulty, isFake, rulesFor, RARE_GROUPS, nameSimilarity, publicView, renameCategories, type Difficulty, type GameState, type Item, type Question } from '../src/lib/game.ts';
 
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
 const fakes: Record<string, string[]> = JSON.parse(readFileSync(new URL('../src/data/fakes.json', import.meta.url), 'utf8'));
@@ -692,6 +692,41 @@ test('a second Next for the same reveal is dropped quietly', () => {
     () => engine.apply(s, { type: 'next' }, me),
     (err: unknown) => err instanceof ActionError && err.silent,
   );
+});
+
+test('reveals are stamped with the host clock; only the host or (turns) whoever answered moves on', () => {
+  for (const mode of ['turns', 'race'] as const) {
+    let clock = 5_000_000;
+    const engine = new Engine(items, { rng: seeded(3), now: () => clock });
+    let s: GameState = createGame('p0', { targetScore: 9, timer: 0, difficulty: 'cruel', mode, public: false, locked: false });
+    for (const [i, name] of ['A', 'B', 'C'].entries()) s = engine.apply(s, { type: 'join', playerId: `p${i}`, name }, `p${i}`);
+    s = engine.apply(s, { type: 'start' }, 'p0');
+    // Race: anyone answers; turns: whoever's turn it is. Never the host here.
+    if (mode === 'turns') while (s.players[s.turn].id === 'p0') s = engine.apply(s, { type: 'skip' }, 'p0');
+    const answerer = mode === 'turns' ? s.players[s.turn].id : 'p1';
+    if (mode === 'turns') s = engine.apply(s, { type: 'pick', category: s.offered[0] }, answerer);
+    clock += 1234;
+    const q = s.question!;
+    s = engine.apply(s, { type: 'answer', index: right(q), askedAt: q.askedAt }, answerer);
+    assert.equal(s.phase, 'reveal');
+    assert.equal(s.reveal!.at, clock, `${mode}: the reveal is stamped`);
+    clock += 999;
+    const after = engine.apply(s, { type: 'join', playerId: 'late', name: 'Late' }, 'late');
+    assert.equal(after.reveal!.at, s.reveal!.at, `${mode}: later updates keep the stamp`);
+    const bystander = s.players.find((p) => p.id !== 'p0' && p.id !== answerer)!.id;
+    assert.throws(() => engine.apply(s, { type: 'next' }, bystander), ActionError, `${mode}: a bystander can't move on`);
+    if (mode === 'race') assert.throws(() => engine.apply(s, { type: 'next' }, answerer), /host moves the race on/);
+    else assert.equal(engine.apply(s, { type: 'next' }, answerer).phase, 'choosing', 'turns: whoever answered moves on');
+    assert.notEqual(engine.apply(s, { type: 'next' }, 'p0').phase, 'reveal', `${mode}: the host moves on`);
+  }
+});
+
+test('the automatic move on counts down from the reveal stamp', () => {
+  assert.equal(autoNextLeft(1000, 1000), AUTO_NEXT_MS, 'just revealed');
+  assert.equal(autoNextLeft(1000, 1000 + 1500), AUTO_NEXT_MS - 1500);
+  assert.equal(autoNextLeft(1000, 1000 + AUTO_NEXT_MS + 5000), 0, 'long overdue');
+  assert.equal(autoNextLeft(1000, 0), AUTO_NEXT_MS, 'a clock behind the stamp never adds time');
+  assert.equal(autoNextLeft(undefined, 123), AUTO_NEXT_MS, 'no stamp: the full delay');
 });
 
 test('race: asking another question refunds blind guesses and leaves out all the old pictures', () => {
