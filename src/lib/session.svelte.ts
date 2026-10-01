@@ -1178,11 +1178,21 @@ type Saved =
   | { mode: 'host'; code: string; state: GameState; priv: HostPrivate }
   | { mode: 'client'; code: string; name: string };
 const SAVE_KEY = 'poe2trivia.session.v4';
+/**
+ * Before guests' tokens became per-room. A hosted room saved then can't be
+ * resumed (its guests' tokens no longer match), and a guest's saved room
+ * can't be reached by this version; a hot-seat game carries on.
+ */
+const OLD_SAVE_KEY = 'poe2trivia.session.v3';
 
 function readSaved(): Saved | null {
   try {
     const raw = sessionStorage.getItem(SAVE_KEY);
-    return raw ? (JSON.parse(raw) as Saved) : null;
+    if (raw) return JSON.parse(raw) as Saved;
+    const old = sessionStorage.getItem(OLD_SAVE_KEY);
+    sessionStorage.removeItem(OLD_SAVE_KEY);
+    const saved = old ? (JSON.parse(old) as Saved) : null;
+    return saved?.mode === 'local' ? saved : null;
   } catch {
     return null;
   }
