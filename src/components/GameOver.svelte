@@ -9,6 +9,7 @@
   import { backdropShadow } from '../lib/backdropShadow';
   import { fxActive, fxUserOn } from '../lib/fx/core';
   import { victory } from '../lib/fx/moments';
+  import { portal } from '../lib/portal';
 
   const s = $derived(session.state!);
   const standings = $derived([...s.players].sort((a, b) => b.score - a.score));
@@ -116,7 +117,8 @@
   });
 </script>
 
-<canvas bind:this={canvas} class="sparks" aria-hidden="true"></canvas>
+<!-- Fixed to the viewport, so it leaves the app shell (which camera shake moves). -->
+<canvas bind:this={canvas} class="sparks" use:portal aria-hidden="true"></canvas>
 
 <div class="over">
   <p class="kicker" in:fly={{ y: -10, duration: 600 }}>Victory</p>

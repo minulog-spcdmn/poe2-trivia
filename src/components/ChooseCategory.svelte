@@ -95,6 +95,7 @@
       <button
         class="card"
         data-sfx="none"
+        data-fx="none"
         class:dm={!!s.deathmatch}
         class:mine
         class:chosen={picked === cat}

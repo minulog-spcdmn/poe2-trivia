@@ -2,7 +2,9 @@
 // a shockwave where a button is pressed (heavier for primary buttons), a few
 // embers when the mouse finds a control, glints when a text field takes
 // focus, and sparks off the caret while typing. Controls opt out with
-// `data-fx="none"`; components add their own bigger moments on top.
+// `data-fx="none"`, or keep just the hover embers with `data-fx="hover"` when
+// a press starts their own moment (the answers' charge-up); components add
+// their own bigger moments on top.
 
 import { fxActive, type Point } from './core';
 import { C, embers, flare, glints, outline, puffs, rand, ring, sparks } from './effects';
@@ -14,7 +16,7 @@ type Weight = 'heavy' | 'medium' | 'light';
 
 function weightOf(el: Element): Weight {
   if (el.matches('.btn.primary, .btn.big')) return 'heavy';
-  if (el.matches('.btn, .card, .option, .tile, .mode-card, .brand')) return 'medium';
+  if (el.matches('.btn, .option, .tile, .mode-card, .brand')) return 'medium';
   return 'light';
 }
 
@@ -83,7 +85,7 @@ export function installUiFx() {
     (e) => {
       if (e.button !== 0) return;
       const el = (e.target as Element | null)?.closest?.(CONTROL);
-      if (!el || (el as HTMLButtonElement).disabled || el.closest('[data-fx="none"]')) return;
+      if (!el || (el as HTMLButtonElement).disabled || el.closest('[data-fx="none"], [data-fx="hover"]')) return;
       pressAt({ x: e.clientX, y: e.clientY }, el);
     },
     { passive: true, capture: true },
@@ -93,7 +95,7 @@ export function installUiFx() {
     (e) => {
       if (e.detail !== 0) return; // real pointer clicks were handled on pointerdown
       const el = (e.target as Element | null)?.closest?.(CONTROL);
-      if (!el || (el as HTMLButtonElement).disabled || el.closest('[data-fx="none"]')) return;
+      if (!el || (el as HTMLButtonElement).disabled || el.closest('[data-fx="none"], [data-fx="hover"]')) return;
       const r = el.getBoundingClientRect();
       pressAt({ x: r.left + r.width / 2, y: r.top + r.height / 2 }, el);
     },
@@ -110,7 +112,7 @@ export function installUiFx() {
       const el = (e.target as Element | null)?.closest?.(CONTROL) ?? null;
       if (el === hovered) return;
       hovered = el;
-      if (!el || (el as HTMLButtonElement).disabled || el.closest('[data-fx="none"], [data-fx="press"]')) return;
+      if (!el || (el as HTMLButtonElement).disabled || el.closest('[data-fx="none"]')) return;
       const now = performance.now();
       if (now - (lastHover.get(el) ?? 0) < 400) return;
       lastHover.set(el, now);

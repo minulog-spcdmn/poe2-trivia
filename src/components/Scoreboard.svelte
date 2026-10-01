@@ -7,6 +7,7 @@
   import { untrack } from 'svelte';
   import { fxActive } from '../lib/fx/core';
   import { FILL_SPAN, FILL_START, SCORE_LANDS, lostPoint } from '../lib/fx/moments';
+  import { scoreRow, scoreRowOf } from '../lib/scoreRows';
 
   const s = $derived(session.state!);
   const target = $derived(s.settings.targetScore);
@@ -52,7 +53,7 @@
         pending.set(p.id, { to: score, timers });
       } else {
         if (score < was) {
-          const li = document.querySelector(`.board li[data-player="${CSS.escape(p.id)}"]`);
+          const li = scoreRowOf(p.id);
           if (li) lostPoint(li);
         }
         filling[p.id] = false;
@@ -86,7 +87,7 @@
     {@const benched = !!s.deathmatch && s.phase !== 'over' && !s.deathmatch.alive.includes(p.id)}
     {@const duelist = !!s.deathmatch && s.phase !== 'over' && s.deathmatch.alive.includes(p.id)}
     {@const score = scoreOf(p.id, p.score)}
-    <li use:backdropShadow data-player={p.id} class:active class:out class:benched class:duelist class:offline={!p.connected} animate:flip={{ duration: 400 }} style:--c={playerColor(p.hue)}>
+    <li use:backdropShadow use:scoreRow={p.id} class:active class:out class:benched class:duelist class:offline={!p.connected} animate:flip={{ duration: 400 }} style:--c={playerColor(p.hue)}>
       <Avatar name={p.name} hue={p.hue} size={32} dim={!p.connected} />
       <div class="info">
         <span class="name">
