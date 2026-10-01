@@ -52,6 +52,8 @@ export class Embers {
   private flareLevel = 0;
   private flareLeft = 0;
   private pos = new Float32Array(EMBERS * 4);
+  /** Embers placed in each column so far (step's scratch). */
+  private used = new Uint8Array(COLUMNS);
   /** (x, y, size, brightness) per slot, COLUMNS rows of SLOTS; brightness 0 ends a row. */
   readonly data = new Float32Array(COLUMNS * SLOTS * 4);
   /** Halo colour (eased toward `colorTarget`). */
@@ -93,28 +95,42 @@ export class Embers {
     for (let i = 0; i < 3; i++) this.color[i] += (color[i] - this.color[i]) * (1 - Math.exp(-dt * 1.2));
     this.t += dt * (1 + 1.6 * this.heat);
     const t = this.t;
-    this.list.forEach((e, i) => {
+    // This runs every frame, so it writes into its arrays by index and
+    // allocates nothing.
+    const pos = this.pos;
+    for (let i = 0; i < EMBERS; i++) {
+      const e = this.list[i];
       const u = (t / e.period + e.phase) % 1;
-      const x = e.x0 * w + e.drift * u + Math.sin(u * Math.PI * 2 * e.swayRate + e.phase * 6.283) * e.sway;
-      const y = h + 16 - u * (h * 1.08 + 32);
       const fade = Math.min(1, u / 0.1) * (1 - Math.max(0, (u - 0.62) / 0.38));
       const fl = 0.78 + 0.22 * Math.sin(t * e.flicker + i * 1.7) * Math.sin(t * e.flicker * 0.37 + i);
-      this.pos.set([x, y, e.size * (1 + 0.25 * this.heat), e.bright * fade * fl * (1 + 0.8 * this.heat)], i * 4);
-    });
+      pos[i * 4] = e.x0 * w + e.drift * u + Math.sin(u * Math.PI * 2 * e.swayRate + e.phase * 6.283) * e.sway;
+      pos[i * 4 + 1] = h + 16 - u * (h * 1.08 + 32);
+      pos[i * 4 + 2] = e.size * (1 + 0.25 * this.heat);
+      pos[i * 4 + 3] = e.bright * fade * fl * (1 + 0.8 * this.heat);
+    }
     // Sort the embers into the columns their glow reaches, so each pixel of
     // the backdrop only looks at a handful.
-    this.data.fill(0);
-    const used = new Uint8Array(COLUMNS);
+    const data = this.data;
+    const used = this.used;
+    data.fill(0);
+    used.fill(0);
     const colW = w / COLUMNS;
     for (let i = 0; i < EMBERS; i++) {
-      const [x, y, size, b] = this.pos.subarray(i * 4, i * 4 + 4);
+      const x = pos[i * 4];
+      const y = pos[i * 4 + 1];
+      const size = pos[i * 4 + 2];
+      const b = pos[i * 4 + 3];
       if (b <= 0 || y < -40 || y > h + 40) continue;
       const reach = size * 6.4; // where the shader stops drawing it
       const c0 = Math.max(0, Math.floor((x - reach) / colW));
       const c1 = Math.min(COLUMNS - 1, Math.floor((x + reach) / colW));
       for (let c = c0; c <= c1; c++) {
         if (used[c] >= SLOTS) continue;
-        this.data.set([x, y, size, b], (c * SLOTS + used[c]) * 4);
+        const k = (c * SLOTS + used[c]) * 4;
+        data[k] = x;
+        data[k + 1] = y;
+        data[k + 2] = size;
+        data[k + 3] = b;
         used[c]++;
       }
     }

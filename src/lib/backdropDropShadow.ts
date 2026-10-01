@@ -21,6 +21,8 @@
 // (such as the title's thin decorative lines) cast no shadow here. Their CSS
 // shadow is faint enough not to matter.
 
+import { opacityOf } from './opacity';
+
 const tagged = new Set<HTMLElement>();
 
 /** Svelte action: let the backdrop draw this element's drop shadows. */
@@ -152,15 +154,6 @@ function linearOf(node: HTMLElement): Lin | null {
     m = mul(own, m);
   }
   return m;
-}
-
-function effectiveOpacity(node: HTMLElement): number {
-  let o = 1;
-  for (let el: HTMLElement | null = node; el && el !== document.body; el = el.parentElement) {
-    o *= parseFloat(getComputedStyle(el).opacity) || 0;
-    if (o === 0) break;
-  }
-  return o;
 }
 
 // ---------- masks ----------
@@ -429,7 +422,7 @@ export function measureDrops(
     ok &&= drops.length > 0 && drops.length <= DROPS_PER_MASK;
     const lin = ok ? linearOf(node) : null;
     ok &&= !!lin;
-    const opacity = ok ? effectiveOpacity(node) : 0;
+    const opacity = ok ? opacityOf(node) : 0;
     ok &&= opacity > 0;
     if (ok && node instanceof HTMLImageElement) ok = node.complete && node.naturalWidth > 0;
     if (ok && !(node instanceof HTMLImageElement)) ok = document.fonts?.status !== 'loading';

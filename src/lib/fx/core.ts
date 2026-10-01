@@ -8,6 +8,7 @@
 
 import { FxRenderer, SHAPE_FLOATS, ShapeType } from './renderer';
 import { ParticlePool, type ParticleSpec } from './particles';
+import { opacityOf } from '../opacity';
 
 export type Vec3 = readonly [number, number, number];
 export type Point = { x: number; y: number };
@@ -33,15 +34,6 @@ export function boxOf(a: Anchor): Box {
  */
 export function detached(a: Anchor) {
   return a instanceof Element && !a.isConnected;
-}
-
-/** An element's rendered opacity, its ancestors' included. */
-function opacityOf(el: Element): number {
-  let o = 1;
-  for (let e: Element | null = el; e && e !== document.body && o > 0; e = e.parentElement) {
-    o *= parseFloat(getComputedStyle(e).opacity) || 0;
-  }
-  return o;
 }
 
 // ---------- shapes ----------
