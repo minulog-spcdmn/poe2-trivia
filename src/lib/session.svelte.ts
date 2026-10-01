@@ -1156,6 +1156,8 @@ class Session {
     this.error = '';
     this.code = '';
     this.myPlayerId = null;
+    // A guest's offset to its host's clock means nothing for the next room.
+    this.clockOffset = 0;
     this.gaveUp = false;
     // Another tab may have turned streamer mode on since this page loaded.
     this.hideCode = roomPrefs().hideCode;
