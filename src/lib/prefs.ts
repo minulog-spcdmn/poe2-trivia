@@ -25,7 +25,8 @@ export const DEFAULT_PREFS: RoomPrefs = {
   difficulty: DEFAULT_SETTINGS.difficulty,
   mode: 'race',
   public: false,
-  hideCode: false,
+  // Hidden until the host shows it, so a streamer can't put it on screen by accident.
+  hideCode: true,
 };
 
 const isInt = (v: unknown, min: number, max: number): v is number =>
@@ -71,21 +72,19 @@ function write(p: RoomPrefs): boolean {
 
 /**
  * The saved settings. A missing, malformed or outdated entry is replaced with
- * the defaults (keeping a hidden room code from before, so a streamer's code
- * doesn't suddenly show up on screen).
+ * the defaults (which hide the room code, so a streamer's code doesn't
+ * suddenly show up on screen).
  */
 export function loadPrefs(): RoomPrefs {
   let raw: string | null = null;
-  let legacyHide = false;
   try {
     raw = localStorage.getItem(PREFS_KEY);
-    legacyHide = localStorage.getItem(LEGACY_HIDE_KEY) === '1';
   } catch {
     return { ...DEFAULT_PREFS };
   }
   const saved = parsePrefs(raw);
   if (saved) return saved;
-  const fresh = { ...DEFAULT_PREFS, hideCode: legacyHide };
+  const fresh = { ...DEFAULT_PREFS };
   // The old key goes only once the new entry holds its value.
   if (write(fresh)) {
     try {
