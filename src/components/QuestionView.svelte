@@ -15,7 +15,6 @@
   import { FILL_LEAD } from '../lib/soundDesign';
   import { recordReveal } from '../lib/fx/streaks';
   import { scoreRowOf } from '../lib/scoreRows';
-  import type { Handle } from '../lib/fx/core';
   import { fxActive, type Handle } from '../lib/fx/core';
 
   const s = $derived(session.state!);
