@@ -31,6 +31,7 @@ import { cleanName, nameSkeleton } from './names';
 import { prepareMedia, shown, tileDelay, type PreparedMedia } from './media.svelte';
 import { sfx } from './sound';
 import { prefsFrom, roomPrefs, roomSettings, savePrefs } from './prefs';
+import { toasts, type ToastKind } from './toasts.svelte';
 
 export const engine = new Engine(itemData as Item[], { fakes: fakeNames });
 
@@ -166,8 +167,6 @@ class Session {
   status = $state<Status>('idle');
   state = $state.raw<GameState | null>(null);
   code = $state<string>('');
-  error = $state<string>('');
-  toast = $state<string>('');
   /** host clock minus local clock, for timer display on clients */
   clockOffset = $state(0);
   /** This device's player in an online game. */
@@ -205,7 +204,6 @@ class Session {
   private autoNextFor = 0;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
   private joinName = '';
-  private toastTimer: ReturnType<typeof setTimeout> | null = null;
   private retry: ReturnType<typeof setTimeout> | null = null;
   /** Pending step of opening or joining a room (a retry, a give-up); cancelled on leave. */
   private connectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -254,10 +252,8 @@ class Session {
     return Date.now() + this.clockOffset;
   }
 
-  flash(message: string) {
-    this.toast = message;
-    if (this.toastTimer) clearTimeout(this.toastTimer);
-    this.toastTimer = setTimeout(() => (this.toast = ''), 3500);
+  flash(message: string, kind: ToastKind = 'info') {
+    toasts.show(message, kind);
   }
 
   setHideCode(hide: boolean) {
@@ -463,7 +459,7 @@ class Session {
         this.setState(engine.apply(this.state, { type: 'remove', playerId: id }, null));
       } else {
         this.setState(engine.apply(this.state, { type: 'connection', playerId: id, connected: false }, null));
-        this.flash(`${p.name} disconnected`);
+        this.flash(`${p.name} disconnected`, 'warn');
       }
     });
   }
@@ -655,7 +651,7 @@ class Session {
       console.warn('media', err);
       if (this.state?.question?.askedAt === q.askedAt && this.state.phase === 'question') {
         this.artFailedFor = q.askedAt;
-        this.flash("Couldn't load the art for this question.");
+        this.flash("Couldn't load the art for this question.", 'warn');
       }
       return;
     }
@@ -796,7 +792,7 @@ class Session {
           break;
         case 'error':
           if (this.status === 'connecting') this.fail(msg.message);
-          else this.flash(msg.message);
+          else this.flash(msg.message, 'error');
           break;
         case 'kicked':
           this.fail('You were removed from the game.');
@@ -808,7 +804,7 @@ class Session {
           this.fail('You joined this game from another tab or window, so it continues there.');
           break;
         case 'busy':
-          this.flash(msg.message);
+          this.flash(msg.message, 'warn');
           this.retryWhenBusy();
           break;
         case 'ping':
@@ -865,7 +861,7 @@ class Session {
         this.setState(engine.apply(this.state, action, from));
       } catch (err) {
         if (err instanceof ActionError && err.silent) return;
-        this.flash(err instanceof ActionError ? err.message : 'Something went wrong.');
+        this.flash(err instanceof ActionError ? err.message : 'Something went wrong.', 'error');
       }
     };
     const handicap = this.mode === 'host' && this.race && action.type === 'answer' ? this.hostHandicap() : 0;
@@ -1084,7 +1080,7 @@ class Session {
       const name = cur.players[cur.turn]?.name;
       try {
         this.setState(engine.apply(cur, { type: 'skip' }, null));
-        if (name) this.flash(`${name}'s turn was skipped`);
+        if (name) this.flash(`${name}'s turn was skipped`, 'warn');
       } catch {
         /* the turn moved on anyway */
       }
@@ -1119,7 +1115,7 @@ class Session {
   private fail(message: string) {
     const mode = this.mode;
     this.reset();
-    this.error = message;
+    this.flash(message, 'error');
     if (mode === 'client') this.status = 'idle';
   }
 
@@ -1152,7 +1148,6 @@ class Session {
     this.mode = null;
     this.state = null;
     this.status = 'idle';
-    this.error = '';
     this.code = '';
     this.myPlayerId = null;
     this.gaveUp = false;
