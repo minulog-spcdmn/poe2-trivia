@@ -10,9 +10,10 @@
   import { backdropShadow } from '../lib/backdropShadow';
   import ArcaneCircle from './ArcaneCircle.svelte';
   import { untrack } from 'svelte';
-  import { answerCharging, artRevealed, raceMiss, reveal as revealFx, tileLifted } from '../lib/fx/moments';
+  import { FILL_START, answerCharging, artRevealed, raceMiss, reveal as revealFx, tileLifted } from '../lib/fx/moments';
+  import { FILL_LEAD } from '../lib/soundDesign';
   import { recordReveal } from '../lib/fx/streaks';
-  import type { Handle } from '../lib/fx/core';
+  import { fxActive, type Handle } from '../lib/fx/core';
 
   const s = $derived(session.state!);
   const q = $derived(s.question!);
@@ -94,6 +95,7 @@
 
   /** Svelte action: a veiled tile lifts with a puff of light. */
   function lifted(node: HTMLElement) {
+    sfx('lift');
     if (node.parentElement) tileLifted(node.parentElement);
   }
 
@@ -147,6 +149,8 @@
         timedOut: r.timedOut,
         fill,
       });
+      // Your point streaming into the bar. Without effects the bar just jumps, and 'correct' says it all.
+      if (iWon && pill && fill && fxActive()) setTimeout(() => sfx('fill'), FILL_START * 1000 - FILL_LEAD);
     });
   });
 
