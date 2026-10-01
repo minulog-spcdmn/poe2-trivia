@@ -572,7 +572,8 @@ export class FxRenderer {
     h = Math.max(1, h);
     const sw = Math.max(1, Math.round(w * shapeScale));
     const sh = Math.max(1, Math.round(h * shapeScale));
-    if (w === this.width && h === this.height && this.hdr && this.shapesT?.w === sw && this.shapesT.h === sh) return;
+    const shapesFit = this.shapesT ? this.shapesT.w === sw && this.shapesT.h === sh : sw === w && sh === h;
+    if (w === this.width && h === this.height && this.hdr && shapesFit) return;
     this.width = w;
     this.height = h;
     gl.canvas.width = w;
@@ -581,7 +582,9 @@ export class FxRenderer {
     dropTarget(gl, this.shapesT);
     for (const m of this.mips) dropTarget(gl, m);
     this.hdr = target(gl, w, h, this.internal, this.texType);
-    this.shapesT = target(gl, sw, sh, this.internal, this.texType);
+    // At the same size as the HDR target (phones, 1x screens) the shapes go
+    // straight into it: a target of their own would only cost a copy.
+    this.shapesT = sw === w && sh === h ? null : target(gl, sw, sh, this.internal, this.texType);
     this.mips = [];
     let mw = w >> 1;
     let mh = h >> 1;
@@ -618,6 +621,9 @@ export class FxRenderer {
     gl.disable(gl.DEPTH_TEST);
     gl.clearColor(0, 0, 0, 0);
 
+    // Without a shape target of their own, every shape is drawn at full
+    // resolution below, soft and crisp alike.
+    if (!this.shapesT) nCrisp = nShapes;
     const nSoft = nShapes - nCrisp;
     if (nSoft > 0 && this.shapesT) {
       gl.bindBuffer(gl.ARRAY_BUFFER, this.shapeBuf);

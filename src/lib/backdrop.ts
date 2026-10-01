@@ -644,10 +644,13 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     lastStep = now;
     const nowS = now / 1000;
     const lights = packLights(lightA, lightC, nowS);
-    const moodOn = stepMood(dt, mood);
+    const moodState = stepMood(dt, mood);
     const homeMoving = stepHomeScene(dt, home, title);
     // Lights and mood step once per animation frame; draw() uses the latest values.
-    const lit = lights || moodOn || homeMoving;
+    // A mood holding steady (the victory's gold, a deathmatch's red) needs
+    // no more than the backdrop's usual 30fps on phones, where this full-screen
+    // shader is costly and runs under the effects overlay.
+    const lit = lights || homeMoving || moodState === 'moving' || (moodState === 'lit' && !cssShadows.matches);
     if (!reduceMotion.matches) embers.step(dt, canvas.clientWidth, canvas.clientHeight, !fxActive());
     const changed = measure() || dirty || lit;
     if (!changed && (reduceMotion.matches || now - last < 33)) return;

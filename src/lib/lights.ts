@@ -113,18 +113,33 @@ export function pulseMood(amount: number, color: Vec3 = [1, 0.15, 0.08]) {
   mood.pulseColor = [...color];
 }
 
-/** Steps the mood toward its target; returns (r, g, b, strength) and whether it's moving or lit. */
-export function stepMood(dt: number, out: Float32Array): boolean {
+/**
+ * Steps the mood toward its target and writes (r, g, b, strength) to `out`.
+ * Returns 'moving' while it eases or pulses, 'lit' while it holds steady,
+ * and false when there is none.
+ */
+export function stepMood(dt: number, out: Float32Array): 'moving' | 'lit' | false {
   const k = 1 - Math.exp(-dt * 2.2);
   const wanted = fxActive() ? mood.targetStrength : 0;
-  for (let i = 0; i < 3; i++) mood.color[i] += (mood.target[i] - mood.color[i]) * k;
+  let moving = mood.pulse > 0 || Math.abs(wanted - mood.strength) > 0.002;
+  for (let i = 0; i < 3; i++) {
+    // (A colour change only shows while there is some mood.)
+    if (Math.abs(mood.target[i] - mood.color[i]) > 0.002 && (wanted > 0 || mood.strength > 0.002)) moving = true;
+    mood.color[i] += (mood.target[i] - mood.color[i]) * k;
+  }
   mood.strength += (wanted - mood.strength) * k;
+  // Land exactly on the target, so a mood that has settled stops asking for frames.
+  if (!moving) {
+    mood.strength = wanted;
+    for (let i = 0; i < 3; i++) mood.color[i] = mood.target[i];
+  }
   mood.pulse = Math.max(0, mood.pulse - dt * 1.8);
   const p = mood.pulse * 0.6;
   const total = mood.strength + p;
   for (let i = 0; i < 3; i++) out[i] = total > 0 ? (mood.color[i] * mood.strength + mood.pulseColor[i] * p) / total : 0;
   out[3] = total;
-  return mood.strength > 0.002 || wanted > 0 || mood.pulse > 0;
+  if (moving) return 'moving';
+  return mood.strength > 0.002 ? 'lit' : false;
 }
 
 // ---------- the start page ----------

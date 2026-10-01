@@ -25,6 +25,7 @@
     setTimeout(() => (leaving = false), 1500);
   }
   const iWon = $derived(session.mode !== 'local' && winner?.id === session.myPlayerId);
+  const headline = $derived(iWon ? 'You are victorious!' : `${winner?.name} wins!`);
 
   let canvas: HTMLCanvasElement;
   let crown = $state<HTMLElement>();
@@ -125,7 +126,8 @@
       <Avatar name={winner.name} hue={winner.hue} size={110} />
     </div>
     <h1 bind:this={title} in:fly={{ y: 20, duration: 700, delay: 500 }}>
-      {iWon ? 'You are victorious!' : `${winner.name} wins!`}
+      <span class="shade" aria-hidden="true">{headline}</span>
+      <span class="gold">{headline}</span>
     </h1>
     <p class="sub muted" in:fly={{ y: 10, duration: 700, delay: 700 }}>
       {winner.score} {winner.score === 1 ? 'point' : 'points'} after {s.round} {s.settings.mode === 'race' ? (s.round === 1 ? 'question' : 'questions') : s.round === 1 ? 'round' : 'rounds'}
@@ -210,6 +212,20 @@
   h1 {
     font-size: clamp(2.25rem, 6.7vw, 3.8rem);
     font-weight: 900;
+    /* The shadow and the gold are two copies of the text, stacked. */
+    display: grid;
+  }
+  h1 > span {
+    grid-area: 1 / 1;
+  }
+  /* The shadow on a layer of its own, painted once: as a filter on the gold
+     it would be blurred again on every frame of the gleam. */
+  .shade {
+    color: transparent;
+    text-shadow: 0 4px 16px rgba(0, 0, 0, 0.9);
+    will-change: transform;
+  }
+  .gold {
     /* A band of light sweeps across the gold every few seconds. */
     background:
       linear-gradient(100deg, transparent 42%, rgba(255, 250, 232, 0.8) 50%, transparent 58%) no-repeat,
@@ -223,7 +239,6 @@
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;
-    filter: drop-shadow(0 4px 16px rgba(0, 0, 0, 0.9));
     animation: gleam 5s ease-in-out 1.4s infinite;
   }
   @keyframes gleam {
