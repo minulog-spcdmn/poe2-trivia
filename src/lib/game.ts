@@ -222,6 +222,7 @@ export interface GameState {
   offered: string[];
   question: Question | null;
   reveal: Reveal | null;
+  /** Items asked about this game, and made-up names someone fell for (not asked again). */
   used: string[];
   winners: string[];
   /** Sudden-death playoff between players tied at or above the target. */
@@ -322,8 +323,7 @@ export function publicView(s: GameState): GameState {
   // Revealed: only the answer and the options someone actually picked are
   // identified; the untouched decoys stay anonymous for later questions.
   const known = new Set<number | null>([s.reveal?.correctIndex ?? -1, s.reveal?.chosenIndex ?? null, ...q.misses.map((m) => m.index)]);
-  // Made-up names are shown as such: they say nothing about later questions.
-  return { ...s, used: [], question: { ...q, options: q.options.map((id, i) => (known.has(i) || isFake(id) ? id : '')) } };
+  return { ...s, used: [], question: { ...q, options: q.options.map((id, i) => (known.has(i) ? id : '')) } };
 }
 
 export function shuffle<T>(arr: T[], rng: Rng): T[] {
@@ -529,6 +529,7 @@ export class Engine {
           chosenId === null || (q.deadline !== null && from !== null && this.now() > q.deadline + ANSWER_GRACE_MS);
         const correct = !timedOut && chosenId === q.itemId;
         if (correct) active.score += 1;
+        if (!timedOut && chosenId && isFake(chosenId)) s.used.push(chosenId);
         if (s.deathmatch) s.deathmatch.results[active.id] = correct;
         s.reveal = {
           correctId: q.itemId,
@@ -634,6 +635,8 @@ export class Engine {
     }
     player.score -= 1;
     q.misses.push({ playerId: player.id, index });
+    const chosenId = q.options[index];
+    if (isFake(chosenId) && !s.used.includes(chosenId)) s.used.push(chosenId);
     this.checkRaceDone(s);
   }
 
@@ -852,21 +855,27 @@ export class Engine {
    * Swaps `count` decoys for made-up names (in place) and returns the names by
    * option id. Each fake copies one of the real names left on screen, the
    * answer as often as any decoy, so a real name next to its fake twin says
-   * nothing about which option is right.
+   * nothing about which option is right. Fakes in `used` (someone fell for
+   * them this game) only come back when nothing else is left.
    */
-  private mixInFakes(options: string[], answerId: string, count: number): Map<string, string> {
+  private mixInFakes(options: string[], answerId: string, count: number, used: Set<string>): Map<string, string> {
     const names = new Map<string, string>();
     if (count <= 0 || !this.fakes.size) return names;
+    const fakeId = (source: string, n: number) => `${FAKE_PREFIX}${source}:${n}`;
+    /** Which of an item's fakes nobody has fallen for yet. */
+    const fresh = (source: string) => this.fakes.get(source)!.flatMap((_, n) => (used.has(fakeId(source, n)) ? [] : [n]));
     const decoys = options.flatMap((id, i) => (id === answerId ? [] : [i]));
     const swap = sample(decoys, count, this.rng);
     const kept = options.filter((_, i) => !swap.includes(i));
-    const sources = sample(kept.filter((id) => this.fakes.has(id)), swap.length, this.rng);
+    const withFakes = kept.filter((id) => this.fakes.has(id));
+    const sources = sample(withFakes.filter((id) => fresh(id).length), swap.length, this.rng);
+    if (sources.length < swap.length) sources.push(...sample(withFakes.filter((id) => !sources.includes(id)), swap.length - sources.length, this.rng));
     sources.forEach((source, k) => {
-      const list = this.fakes.get(source)!;
-      const n = Math.floor(this.rng() * list.length);
-      const id = `${FAKE_PREFIX}${source}:${n}`;
+      const open = fresh(source);
+      const n = open.length ? open[Math.floor(this.rng() * open.length)] : Math.floor(this.rng() * this.fakes.get(source)!.length);
+      const id = fakeId(source, n);
       options[swap[k]] = id;
-      names.set(id, list[n]);
+      names.set(id, this.fakes.get(source)![n]);
     });
     return names;
   }
@@ -947,7 +956,7 @@ export class Engine {
             seed: Math.floor(this.rng() * 2 ** 31),
           }
         : null;
-    const fakeNames = mode === 'name' ? this.mixInFakes(options, answer.id, rules.fakes) : new Map<string, string>();
+    const fakeNames = mode === 'name' ? this.mixInFakes(options, answer.id, rules.fakes, new Set(s.used)) : new Map<string, string>();
     const labels = options.map((id) => (mode === 'name' ? (fakeNames.get(id) ?? this.byId.get(id)!.name) : null));
     const prompt = mode === 'art' ? answer.name : null;
     // Each picture flips on its own roll, so a flipped option says nothing about the answer.

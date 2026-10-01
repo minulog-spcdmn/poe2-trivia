@@ -767,10 +767,32 @@ test('made-up names stay hidden until the reveal, and never count as used items'
   s = engine.apply(s, { type: 'answer', index: pick }, 'p0');
   assert.equal(s.reveal!.correct, false);
   assert.equal(s.players[0].score, 0);
-  // At the reveal every made-up name is shown as such; untouched real decoys stay anonymous.
+  // Only the picked fake is shown as one; the other fake stays anonymous like any untouched decoy.
   const shown = publicView(s).question!.options;
-  q.options.forEach((id, i) => {
-    if (isFake(id) || i === right(q)) assert.equal(shown[i], id);
-    else assert.equal(shown[i], '');
-  });
+  q.options.forEach((id, i) => assert.equal(shown[i], i === pick || i === right(q) ? id : ''));
+  assert.ok(s.used.includes(q.options[pick]), 'a fake someone fell for is remembered');
+});
+
+test('a made-up name someone fell for is not used again that game', () => {
+  for (const mode of ['turns', 'race'] as const) {
+    const engine = new Engine(items, { rng: seeded(8), fakes });
+    let s: GameState = createGame('p0', { targetScore: 999, timer: 0, difficulty: 'eternal', mode, public: false, locked: false });
+    s = engine.apply(s, { type: 'join', playerId: 'p0', name: 'A' }, 'p0');
+    s = engine.apply(s, { type: 'start' }, 'p0');
+    const fallenFor = new Set<string>();
+    for (let turn = 0; turn < 300; turn++) {
+      if (s.phase === 'choosing') s = engine.apply(s, { type: 'pick', category: s.offered[0] }, 'p0');
+      const q = s.question!;
+      for (const id of q.options) assert.ok(!fallenFor.has(id), `${mode}: ${id} came back`);
+      const pick = q.options.findIndex(isFake);
+      s = engine.apply(s, { type: 'answer', index: pick >= 0 ? pick : right(q) }, 'p0');
+      if (pick >= 0) fallenFor.add(q.options[pick]);
+      if (s.phase === 'question') s = engine.apply(s, { type: 'answer', index: right(q) }, 'p0');
+      s = engine.apply(s, { type: 'next' }, 'p0');
+    }
+    assert.ok(fallenFor.size > 50, `${mode}: fell for ${fallenFor.size}`);
+    // A new game starts with a clean slate.
+    s = engine.apply(s, { type: 'restart', play: true }, 'p0');
+    assert.ok(!s.used.some(isFake));
+  }
 });

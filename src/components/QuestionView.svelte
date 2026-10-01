@@ -67,9 +67,13 @@
   const losers = $derived(q.misses.map((m) => s.players.find((p) => p.id === m.playerId)?.name ?? '?'));
   const losersShort = $derived(losers.length > 3 ? `${losers.slice(0, 2).join(', ')} and ${losers.length - 2} more` : losers.join(', '));
 
-  /** Revealed: is this option a made-up name? */
+  /**
+   * Revealed: a made-up name someone picked. Fakes nobody picked stay
+   * unmarked, like untouched decoys.
+   */
   function fake(index: number) {
-    return !!reveal && !!q.options[index] && isFake(q.options[index]);
+    const picked = race ? q.misses.some((m) => m.index === index) : index === reveal?.chosenIndex;
+    return !!reveal && picked && !!q.options[index] && isFake(q.options[index]);
   }
 
   /** The made-up name the player whose turn it was (or, in a race, you) fell for. */
@@ -880,7 +884,7 @@
   .option.wrong .mark {
     color: #eab3a3;
   }
-  /* Made-up names are struck through at the reveal (same size, so nothing moves). */
+  /* Picked made-up names are struck through at the reveal (same size, so nothing moves). */
   .option.fake .text {
     text-decoration: line-through;
     text-decoration-thickness: 1px;
