@@ -317,6 +317,7 @@ export function rays(at: Anchor, o: { radius?: number; count?: number; sharp?: n
     at,
     life,
     delay: o.delay,
+    calm: true,
     color: o.color ?? C.gold,
     update(f, t, age) {
       const fin = Math.min(1, age / (o.fadeIn ?? 0.8));

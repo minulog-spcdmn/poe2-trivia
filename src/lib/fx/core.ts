@@ -63,6 +63,8 @@ export type ShapeSpec = {
   update: (f: ShapeFrame, t: number, age: number, box: Box) => void;
   /** Dim with the anchor element's opacity (ancestors included). */
   followOpacity?: boolean;
+  /** Changes slowly enough to be drawn at 30fps on phones (see `calm` below). */
+  calm?: boolean;
 };
 
 type LiveShape = ShapeSpec & {
@@ -124,6 +126,18 @@ let frameAvg = 16;
 let slowMs = 22;
 /** After a drop in quality: whether it made frames quicker (see frame()). */
 let probe: { from: number; before: number; time: number; frames: number } | null = null;
+
+/**
+ * On phones, while everything alive is slow (glitter drifting down, rays
+ * turning) and nothing shakes, frames are drawn at about 30fps: each one
+ * costs the same full-screen passes (HDR target, bloom, composite) however
+ * little is in it, and drifting light looks the same at half the rate.
+ * Effects still advance every frame, so timing is unchanged.
+ */
+let calm = false;
+let lastDraw = 0;
+/** Fastest a particle may move and still count as calm: about 7px per frame at 30fps. */
+const CALM_SPEED = 200;
 
 /** Are effects being drawn right now? */
 export function fxActive() {
@@ -330,8 +344,13 @@ function writeShape(i: number, s: LiveShape, t: number) {
 }
 
 function frame(nowMs: number) {
-  raf = 0;
-  if (!renderer || !pool) return;
+  // `raf` stays set while this frame runs: effects that tasks spawn during it
+  // would otherwise wake() a second loop, and every such frame another one,
+  // each drawing the whole overlay again.
+  if (!renderer || !pool) {
+    raf = 0;
+    return;
+  }
   if (renderer.isLost) {
     teardown();
     return;
@@ -373,9 +392,16 @@ function frame(nowMs: number) {
     } else slowFor = Math.max(0, slowFor - rawDt * 0.5);
   }
 
-  const busy = simulate(Math.min(rawDt, 1 / 15), nowMs, true);
-  if (busy) raf = requestAnimationFrame(frame);
-  else show(false);
+  // (25ms rather than 33: a frame that comes a little early isn't skipped too.)
+  const draw = !calm || nowMs - lastDraw >= 25;
+  if (draw) lastDraw = nowMs;
+  let busy = false;
+  try {
+    busy = simulate(Math.min(rawDt, 1 / 15), nowMs, draw);
+  } finally {
+    raf = busy ? requestAnimationFrame(frame) : 0;
+  }
+  if (!busy) show(false);
 }
 
 /** Advances every effect by `dt` seconds and (if `render`) draws. Returns whether anything is still alive. */
@@ -423,15 +449,18 @@ function simulate(dt: number, nowMs: number, render: boolean): boolean {
   });
   let nShapes = 0;
   let nCrisp = 0;
+  let shapesCalm = true;
   for (const crisp of [false, true]) {
     for (const [s, t] of visible) {
       if (isCrisp(s) !== crisp || nShapes >= MAX_SHAPES) continue;
       writeShape(nShapes++, s, t);
       if (crisp) nCrisp++;
+      if (!s.calm) shapesCalm = false;
     }
   }
 
   const nParticles = pool.step(dt);
+  calm = !!coarse?.matches && shapesCalm && shake.trauma === 0 && pool.fastest < CALM_SPEED * CALM_SPEED;
 
   // Shake: trauma decays; the offset follows two noise curves.
   if (shake.trauma > 0) {

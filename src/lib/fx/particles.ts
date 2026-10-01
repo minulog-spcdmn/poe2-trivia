@@ -101,6 +101,8 @@ export const INSTANCE_FLOATS = 12;
 export class ParticlePool {
   readonly cap: number;
   count = 0;
+  /** Squared speed of the fastest particle drawn in the last step, (px/s)². */
+  fastest = 0;
   private d: Float32Array;
   readonly instances: Float32Array;
 
@@ -163,6 +165,7 @@ export class ParticlePool {
     const d = this.d;
     const out = this.instances;
     let n = 0;
+    let fastest = 0;
     for (let i = 0; i < this.count; ) {
       const o = i * STRIDE;
       const age = d[o + F.age] + dt;
@@ -180,6 +183,7 @@ export class ParticlePool {
       const seed = d[o + F.seed];
       if (d[o + F.seek]) {
         this.seekStep(o, age, life, n++);
+        fastest = Infinity;
         continue;
       }
       let vx = d[o + F.vx];
@@ -230,7 +234,9 @@ export class ParticlePool {
       out[q + 10] = (d[o + F.b0] + (d[o + F.b1] - d[o + F.b0]) * ct) * env;
       out[q + 11] = seed;
       n++;
+      fastest = Math.max(fastest, vx * vx + vy * vy);
     }
+    this.fastest = fastest;
     return n;
   }
 
