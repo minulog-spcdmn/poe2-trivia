@@ -67,7 +67,9 @@
   // The whole scene turns crimson for as long as a deathmatch lasts.
   $effect(() => deathmatchMood(!!dm));
 
-  const bannerColor = $derived(dm ? '#e0553f' : race ? 'rgb(224, 138, 68)' : playerColor(active.hue));
+  // One colour for the banner's rules and glow and for its effects, which can't
+  // read CSS variables (so the race colour is --unique-hi written out).
+  const bannerColor = $derived(dm ? '#e0553f' : race ? '#e08a44' : playerColor(active.hue));
   const bannerBig = $derived(race || mine);
 
   /** Svelte action: the turn banner's entrance. Runs once per turn (the stage is keyed). */
@@ -116,7 +118,7 @@
             </span>
           </div>
         {/if}
-        <div class="banner" class:dm={!!dm} style:--c={dm ? '#e0553f' : race ? 'var(--unique-hi)' : playerColor(active.hue)}>
+        <div class="banner" class:dm={!!dm} style:--c={bannerColor}>
           <span class="rule"></span>
           <h2 use:bannerFx={{ color: bannerColor, big: bannerBig }}>{bannerTitle}</h2>
           <span class="rule"></span>

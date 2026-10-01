@@ -4,7 +4,7 @@
 // gold for a victory). Effects code
 // sets them; the backdrop reads them every frame.
 
-import { fxActive, type Anchor, boxOf, type Vec3 } from './fx/core';
+import { fxActive, type Anchor, boxOf, detached, type Vec3 } from './fx/core';
 
 export const MAX_LIGHTS = 8;
 
@@ -36,7 +36,7 @@ export type LightSpec = {
 
 /** Flashes a light behind `at` (followed if it's an element). */
 export function light(at: Anchor, spec: LightSpec) {
-  if (!fxActive()) return;
+  if (!fxActive() || detached(at)) return;
   const b = boxOf(at);
   const now = performance.now() / 1000;
   const l: Light = { at, x: b.x, y: b.y, attack: 0.08, hold: 0.1, decay: 0.9, ...spec, born: now };
