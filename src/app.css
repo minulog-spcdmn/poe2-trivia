@@ -30,9 +30,6 @@
 
 :root {
   --bg: #0a0908;
-  --bg-2: #15120f;
-  --panel: rgba(22, 18, 14, 0.82);
-  --panel-solid: #17130f;
   --line: #3b3024;
   --gold: #c9a45c;
   --gold-hi: #f1d99b;
@@ -41,7 +38,6 @@
   --unique-hi: #e08a44;
   --text: #ddd3c2;
   --muted: #968a77;
-  --good: #6fcf73;
   --bad: #e0553f;
   --radius: 6px;
   --font-display: 'Maragsa', 'Cinzel', 'Trajan Pro', Georgia, serif;
@@ -373,23 +369,8 @@ input {
   margin-bottom: 0.5em;
 }
 
-.divider {
-  height: 1px;
-  border: 0;
-  margin: 1.2rem 0;
-  background: linear-gradient(90deg, transparent, var(--gold-lo), transparent);
-}
-
 .muted {
   color: var(--muted);
-}
-
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
 }
 
 @media (prefers-reduced-motion: reduce) {

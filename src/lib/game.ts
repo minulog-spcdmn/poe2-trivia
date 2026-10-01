@@ -1,6 +1,8 @@
 // Pure game logic. The host (or the single device in hot-seat mode) is the only
 // place this runs; everyone else just renders the state it broadcasts.
 
+import { cleanName, nameProblem } from './names.ts';
+
 export interface Item {
   id: string;
   name: string;
@@ -106,8 +108,6 @@ export interface Veil {
   seconds: number;
   seed: number;
 }
-
-import { cleanName, nameProblem } from './names.ts';
 
 export interface Deathmatch {
   /** Players still in, in turn order. */
@@ -255,7 +255,6 @@ export type Action =
 export const OFFER_COUNT = 3;
 export const MAX_PLAYERS = 12;
 export const MAX_SPECTATORS = 8;
-export { MAX_NAME } from './names.ts';
 
 export const DEFAULT_SETTINGS: Settings = { targetScore: 10, timer: 20, difficulty: 'merciless', mode: 'turns', public: false, locked: false };
 
@@ -291,8 +290,6 @@ export function createGame(hostId: string | null, settings: Settings = DEFAULT_S
     version: 0,
   };
 }
-
-export { cleanName };
 
 /** Spectators take the free seats, in the order they arrived; the rest keep watching. */
 function fillSeats(s: GameState) {
@@ -722,10 +719,6 @@ export class Engine {
   }
 
   /** Next duelist who hasn't answered this round; resolves the round when everyone has. */
-  private advanceDeathmatch(s: GameState) {
-    this.nextDuelist(s);
-  }
-
   private nextDuelist(s: GameState) {
     const dm = s.deathmatch!;
     const connected = (id: string) => s.players.find((p) => p.id === id)?.connected ?? false;
@@ -762,14 +755,13 @@ export class Engine {
     this.nextDuelist(s);
   }
 
-
   /**
    * Moves to the next connected player after seat `from` (-1: before the
    * first seat), ending the game at a round boundary.
    */
   private advance(s: GameState, from = s.turn) {
     if (s.deathmatch) {
-      this.advanceDeathmatch(s);
+      this.nextDuelist(s);
       return;
     }
     const n = s.players.length;
@@ -791,10 +783,7 @@ export class Engine {
           this.finish(s, leaders.map((p) => p.id));
           return;
         }
-        this.startDeathmatch(
-          s,
-          leaders.map((p) => p.id),
-        );
+        this.startDeathmatch(s, leaders.map((p) => p.id));
         return;
       }
       s.round++;
