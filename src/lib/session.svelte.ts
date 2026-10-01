@@ -459,7 +459,7 @@ class Session {
         this.setState(engine.apply(this.state, { type: 'remove', playerId: id }, null));
       } else {
         this.setState(engine.apply(this.state, { type: 'connection', playerId: id, connected: false }, null));
-        this.flash(p.name, 'warn', { title: 'Player disconnected', who: p });
+        this.flash(p.name, 'warn', { title: 'Player disconnected', who: { name: p.name, hue: p.hue } });
       }
     });
   }
@@ -568,7 +568,7 @@ class Session {
     for (const m of this.released) this.sendMedia(conn, guest, m);
     const player = next.players.find((p) => p.id === playerId);
     const watcher = next.spectators?.find((o) => o.id === playerId);
-    if (player) this.flash(player.name, 'info', { title: 'Player joined', who: player });
+    if (player) this.flash(player.name, 'info', { title: 'Player joined', who: { name: player.name, hue: player.hue } });
     else if (watcher) this.flash(watcher.name, 'info', { title: 'Spectator joined', who: { name: watcher.name } });
   }
 
@@ -874,8 +874,8 @@ class Session {
   kick(playerId: string) {
     if (this.mode !== 'host' || playerId === this.priv.myPlayerId) return;
     const s = this.state;
-    const who = [...(s?.players ?? []), ...(s?.spectators ?? [])].find((o) => o.id === playerId);
-    const name = who?.name;
+    const player = s?.players.find((o) => o.id === playerId);
+    const name = (player ?? s?.spectators?.find((o) => o.id === playerId))?.name;
     const p = this.priv;
     for (const [secret, id] of this.secretToPlayer)
       if (id === playerId) p.bannedSecrets = capped([...p.bannedSecrets, secret], MAX_BLOCKED);
@@ -890,7 +890,8 @@ class Session {
       }
     }
     this.dispatch({ type: 'remove', playerId });
-    if (who) this.flash(who.name, 'info', { title: 'Player removed', who });
+    if (player) this.flash(player.name, 'info', { title: 'Player removed', who: { name: player.name, hue: player.hue } });
+    else if (name) this.flash(name, 'info', { title: 'Spectator removed', who: { name } });
   }
 
   leave() {
@@ -1079,10 +1080,10 @@ class Session {
     this.skipTimer = setTimeout(() => {
       const cur = this.state;
       if (!cur || this.skipKey !== key) return;
-      const who = cur.players[cur.turn];
+      const p = cur.players[cur.turn];
       try {
         this.setState(engine.apply(cur, { type: 'skip' }, null));
-        if (who) this.flash(who.name, 'warn', { title: 'Turn skipped', who });
+        if (p) this.flash(p.name, 'warn', { title: 'Turn skipped', who: { name: p.name, hue: p.hue } });
       } catch {
         /* the turn moved on anyway */
       }

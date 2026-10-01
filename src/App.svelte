@@ -17,6 +17,7 @@
   let confirmLeave = $state(false);
   let fxOn = $state(fxUserOn());
   let fxCan = $state(fxAvailable());
+  let headerHeight = $state(0);
   let shell: HTMLElement;
 
   /**
@@ -92,7 +93,7 @@
 
 <div class="shell" bind:this={shell}>
   {#if screen !== 'home'}
-    <header in:fade={{ duration: 300 }}>
+    <header in:fade={{ duration: 300 }} bind:offsetHeight={headerHeight}>
       <button class="brand" onclick={() => (confirmLeave = true)} title="Leave game">
         <svg class="brand-mark" viewBox="20 0 400 391" aria-hidden="true"><path d="M224 390Q255 331 301.0 283.5Q347 236 377 218L407 200L220 -1Q164 31 116.5 82.5Q69 134 50 169L31 204Z" fill="currentColor" /></svg>
         <span>PoE2.Quest</span>
@@ -180,7 +181,7 @@
   {/if}
 </div>
 
-<Toasts />
+<Toasts headerHeight={screen === 'home' ? 0 : headerHeight} />
 
 <FxLayer />
 

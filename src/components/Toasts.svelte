@@ -1,5 +1,7 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import { flip } from 'svelte/animate';
+  import { MediaQuery } from 'svelte/reactivity';
   import { fade, fly } from 'svelte/transition';
   import { session } from '../lib/session.svelte';
   import { toasts, type ToastKind } from '../lib/toasts.svelte';
@@ -7,24 +9,26 @@
   import { twinkle } from '../lib/fx/moments';
   import Avatar from './Avatar.svelte';
 
+  /** Height of the app header, if one is showing: phones keep the stack below it, clear of its buttons. */
+  let { headerHeight = 0 }: { headerHeight?: number } = $props();
+
   // Bottom right on wide screens. On phones the stack sits at the top instead:
   // the keyboard covers the bottom while typing a name or code, and the answer
   // buttons are down there during a game.
-  const narrowQuery = '(max-width: 640px)';
-  let narrow = $state(matchMedia(narrowQuery).matches);
-  $effect(() => {
-    const mq = matchMedia(narrowQuery);
-    const update = () => (narrow = mq.matches);
-    mq.addEventListener('change', update);
-    return () => mq.removeEventListener('change', update);
-  });
+  const narrowQuery = new MediaQuery('(max-width: 640px)');
+  const narrow = $derived(narrowQuery.current);
   const enter = $derived(narrow ? { y: -24, duration: 320 } : { x: 56, duration: 320 });
-  // Phones show fewer at once, so a burst of news can't cover the game.
-  $effect(() => toasts.setMax(narrow ? 2 : 4));
 
   // A guest's lost connection to the host stays up (with what to do about it)
   // until it's back or they leave.
   const lost = $derived(session.mode === 'client' && session.status === 'lost');
+
+  // Phones show fewer at once, so a burst of news can't cover the game. The
+  // lost connection takes one of the places.
+  $effect(() => {
+    const max = (narrow ? 2 : 4) - (lost ? 1 : 0);
+    untrack(() => toasts.setMax(max));
+  });
 
   /** Svelte action: a little sparkle as good news arrives. */
   function sparkle(node: HTMLElement, kind: ToastKind) {
@@ -44,9 +48,17 @@
   </svg>
 {/snippet}
 
-<div class="toasts" class:narrow role="region" aria-label="Notifications" aria-live="polite">
+<!-- One polite live region announces every toast; the toasts carry no live roles of their own, so nothing is read twice. -->
+<div
+  class="toasts"
+  class:narrow
+  style:--header="{headerHeight}px"
+  role="region"
+  aria-label="Notifications"
+  aria-live="polite"
+>
   {#if lost}
-    <div class="toast {session.gaveUp ? 'error' : 'warn'}" role="alert" in:fly={enter} out:fade={{ duration: 200 }}>
+    <div class="toast pinned {session.gaveUp ? 'error' : 'warn'}" in:fly={enter} out:fade={{ duration: 200 }}>
       <span class="seal">
         {#if session.gaveUp}
           <span class="gem">{@render glyph('error')}</span>
@@ -69,7 +81,7 @@
     <div
       class="toast {t.kind}"
       class:held={t.held}
-      role={t.kind === 'error' ? 'alert' : 'status'}
+      role="note"
       style:--life="{t.life}ms"
       use:sparkle={t.kind}
       animate:flip={{ duration: 260 }}
@@ -118,7 +130,7 @@
   }
   /* Phones: across the top, newest first. */
   .toasts.narrow {
-    top: max(10px, env(safe-area-inset-top));
+    top: max(calc(var(--header) + 6px), 10px, env(safe-area-inset-top));
     bottom: auto;
     left: max(10px, env(safe-area-inset-left));
     right: max(10px, env(safe-area-inset-right));
@@ -151,6 +163,10 @@
       0 10px 26px rgba(0, 0, 0, 0.55);
     pointer-events: auto;
     animation: ignite 1.4s var(--ease-out);
+  }
+  /* The lost connection has no close button, so no room is kept for one. */
+  .toast.pinned {
+    padding-right: 0.85rem;
   }
   .toast.warn {
     --hi: #ffd5a1;
