@@ -9,6 +9,7 @@
 
 import Peer, { type DataConnection } from 'peerjs';
 import itemData from '../data/items.json';
+import fakeNames from '../data/fakes.json';
 import {
   Engine,
   createGame,
@@ -31,7 +32,7 @@ import { prepareMedia, shown, tileDelay, type PreparedMedia } from './media.svel
 import { sfx } from './sound';
 import { prefsFrom, roomPrefs, roomSettings, savePrefs } from './prefs';
 
-export const engine = new Engine(itemData as Item[]);
+export const engine = new Engine(itemData as Item[], { fakes: fakeNames });
 
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 export const CODE_LENGTH = 6;
