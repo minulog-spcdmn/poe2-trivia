@@ -170,6 +170,7 @@ class Session {
   toast = $state<string>('');
   /** host clock minus local clock, for timer display on clients */
   clockOffset = $state(0);
+  private clockSynced = false;
   /** This device's player in an online game. */
   myPlayerId = $state<string | null>(null);
   /** Streamer mode: don't show the room code on screen. */
@@ -254,6 +255,17 @@ class Session {
     return Date.now() + this.clockOffset;
   }
 
+  /**
+   * Client: each state message gives the host's clock minus that message's
+   * travel time, so the largest sample is the closest. Keeping it also stops
+   * one late message (queued behind pictures, say) from making countdowns jump.
+   */
+  private syncClock(hostSentAt: number) {
+    const sample = hostSentAt - Date.now();
+    this.clockOffset = this.clockSynced ? Math.max(this.clockOffset, sample) : sample;
+    this.clockSynced = true;
+  }
+
   flash(message: string) {
     this.toast = message;
     if (this.toastTimer) clearTimeout(this.toastTimer);
@@ -328,6 +340,9 @@ class Session {
         let s: GameState = { ...resumeState, spectators: [] };
         for (const p of s.players)
           if (p.id !== me) s = engine.apply(s, { type: 'connection', playerId: p.id, connected: false }, null);
+        // A reveal counts down afresh, so the others can reconnect before it
+        // moves on (moving on skips the seats still offline).
+        if (s.reveal) s = { ...s, reveal: { ...s.reveal, at: Date.now() } };
         this.setState(s);
       } else {
         let s = createGame(me, roomSettings());
@@ -787,7 +802,7 @@ class Session {
           this.myPlayerId = msg.playerId;
           break;
         case 'state':
-          this.clockOffset = msg.now - Date.now();
+          this.syncClock(msg.now);
           if (!this.state || msg.state.version >= this.state.version || msg.state.version === 0) {
             this.onNewState(this.state, msg.state);
             this.state = msg.state;
@@ -1158,6 +1173,7 @@ class Session {
     this.myPlayerId = null;
     // A guest's offset to its host's clock means nothing for the next room.
     this.clockOffset = 0;
+    this.clockSynced = false;
     this.gaveUp = false;
     // Another tab may have turned streamer mode on since this page loaded.
     this.hideCode = roomPrefs().hideCode;

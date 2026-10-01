@@ -33,7 +33,9 @@
   // Online, the reveal moves on by itself. The bar follows the host's clock
   // every frame, so all screens count down together however late the reveal
   // arrived or got drawn (and a rejoin doesn't restart it).
-  const revealAt = $derived(reveal ? (reveal.at ?? untrack(() => session.hostNow())) : 0);
+  // A reveal from an older host has no stamp: count from when it first showed.
+  let unstampedAt = 0;
+  const revealAt = $derived(reveal ? (reveal.at ?? (unstampedAt ||= untrack(() => session.hostNow()))) : 0);
   let autoLeft = $state(1);
   $effect(() => {
     const at = revealAt;
