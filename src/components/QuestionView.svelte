@@ -1,7 +1,7 @@
 <script lang="ts">
   import { fly, fade, scale } from 'svelte/transition';
-  import { session, engine, AUTO_NEXT_SECONDS, autoNextLeft } from '../lib/session.svelte';
-  import { isFake } from '../lib/game';
+  import { session, engine } from '../lib/session.svelte';
+  import { AUTO_NEXT_MS, isFake } from '../lib/game';
   import { shown, gridCells } from '../lib/media.svelte';
   import { itemImage } from '../lib/ui';
   import { sfx } from '../lib/sound';
@@ -30,11 +30,22 @@
   const myMiss = $derived(race && me ? q.misses.find((m) => m.playerId === me) : undefined);
   const winner = $derived(reveal?.winnerId ? s.players.find((p) => p.id === reveal.winnerId) : undefined);
   const iWon = $derived(race ? !!me && reveal?.winnerId === me : !!reveal?.correct);
-  // Online, the reveal moves on by itself: every screen's bar starts where the
-  // host's countdown stands (a late state or a rejoin doesn't restart it). Read
-  // once per reveal, so later updates don't make the bar jump.
-  const revealAt = $derived(reveal?.at ?? 0);
-  const autoDelay = $derived(revealAt && untrack(() => autoNextLeft(s, session.hostNow()) / 1000 - AUTO_NEXT_SECONDS));
+  // Online, the reveal moves on by itself. The bar follows the host's clock
+  // every frame, so all screens count down together however late the reveal
+  // arrived or got drawn (and a rejoin doesn't restart it).
+  const revealAt = $derived(reveal ? (reveal.at ?? untrack(() => session.hostNow())) : 0);
+  let autoLeft = $state(1);
+  $effect(() => {
+    const at = revealAt;
+    if (!at || session.mode === 'local') return;
+    let frame = 0;
+    const tick = () => {
+      autoLeft = Math.max(0, Math.min(1, (at + AUTO_NEXT_MS - session.hostNow()) / AUTO_NEXT_MS));
+      if (autoLeft > 0) frame = requestAnimationFrame(tick);
+    };
+    untrack(tick);
+    return () => cancelAnimationFrame(frame);
+  });
   const timerTotal = $derived(q.deadline ? Math.round((q.deadline - q.askedAt) / 1000) : 0);
   const count = $derived(q.labels.length);
   // Pictures the host has sent for this question.
@@ -195,12 +206,6 @@
     session.dispatch({ type: 'next' });
   }
 
-  // A guest's bar ran out: tell the host it's time, in case its own timer is
-  // running late (a busy or background tab would leave everyone waiting).
-  function barDone() {
-    if (session.mode === 'client') session.dispatch({ type: 'next' });
-  }
-
   function onKey(e: KeyboardEvent) {
     if (e.target instanceof HTMLInputElement) return;
     // Browser shortcuts (Ctrl/Cmd+1 switches tabs), held keys, and an open dialog aren't answers.
@@ -288,7 +293,7 @@
       >
         {race ? 'Next question' : 'Next turn'}
         {#if session.mode !== 'local'}
-          <span class="auto" style:--dur="{AUTO_NEXT_SECONDS}s" style:animation-delay="{autoDelay}s" onanimationend={barDone}></span>
+          <span class="auto" style:transform="scaleX({autoLeft})"></span>
         {/if}
       </button>
     </div>
@@ -1086,13 +1091,6 @@
     width: 100%;
     background: var(--gold-hi);
     transform-origin: left;
-    animation: drain var(--dur) linear forwards;
-  }
-  /* A countdown, not decoration: it keeps running with reduced motion too. */
-  @media (prefers-reduced-motion: reduce) {
-    .result .auto {
-      animation-duration: var(--dur) !important;
-    }
   }
   /* Race avatars: an overlapping stack, out of the flow so they never squeeze
      or rewrap the answer as guesses come in and at the reveal. */
@@ -1152,14 +1150,6 @@
     text-align: center;
   }
 
-  @keyframes drain {
-    from {
-      transform: scaleX(1);
-    }
-    to {
-      transform: scaleX(0);
-    }
-  }
   @keyframes glow {
     50% {
       box-shadow: 0 0 22px rgba(201, 164, 92, 0.35);

@@ -551,16 +551,11 @@ export class Engine {
       case 'next': {
         // Two people pressing Next (or Next and the automatic move on) at once is expected.
         if (s.phase !== 'reveal') throw new ActionError('Nothing to continue.', true);
-        // Once the automatic move on is due, anyone's screen may trigger it:
-        // the host's own timer runs late in a busy or background tab. Before
-        // that, the others' buttons are disabled, so only such a nudge that
-        // arrived a moment early ends up here; the host's timer follows.
-        const due = s.reveal?.at !== undefined && this.now() >= s.reveal.at + AUTO_NEXT_MS;
         if (race) {
-          if (!isHost && !due) throw new ActionError('The host moves the race on.', true);
+          if (!isHost) throw new ActionError('The host moves the race on.');
           this.advanceRace(s);
         } else {
-          if (!isActive && !isHost && !due) throw new ActionError("It's not your turn.", true);
+          if (!isActive && !isHost) throw new ActionError("It's not your turn.");
           this.advance(s);
         }
         break;

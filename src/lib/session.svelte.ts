@@ -1209,8 +1209,6 @@ function writeSaved(saved: Saved | null) {
 }
 
 export const session = new Session();
-export const AUTO_NEXT_SECONDS = AUTO_NEXT_MS / 1000;
-
 /** Milliseconds until the reveal moves on by itself, at host-clock time `now`. */
 export function autoNextLeft(s: GameState, now: number) {
   const at = s.reveal?.at;
