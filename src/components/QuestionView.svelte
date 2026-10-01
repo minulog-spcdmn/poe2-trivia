@@ -1,7 +1,7 @@
 <script lang="ts">
   import { fly, fade, scale } from 'svelte/transition';
-  import { session, engine, AUTO_NEXT_SECONDS } from '../lib/session.svelte';
-  import { isFake } from '../lib/game';
+  import { session, engine } from '../lib/session.svelte';
+  import { AUTO_NEXT_MS, autoNextLeft, isFake } from '../lib/game';
   import { shown, gridCells } from '../lib/media.svelte';
   import { itemImage } from '../lib/ui';
   import { sfx } from '../lib/sound';
@@ -26,10 +26,29 @@
   // Guests only learn the answer (and the items behind the options) at the reveal.
   const item = $derived(q.itemId ? engine.byId.get(q.itemId) : undefined);
   const race = $derived(s.settings.mode === 'race');
+  // Everyone sees the Next button; only the host (and in turns mode, whoever answered) can press it.
   const canNext = $derived(!!reveal && (race ? session.isHost : mine || session.isHost));
   const myMiss = $derived(race && me ? q.misses.find((m) => m.playerId === me) : undefined);
   const winner = $derived(reveal?.winnerId ? s.players.find((p) => p.id === reveal.winnerId) : undefined);
   const iWon = $derived(race ? !!me && reveal?.winnerId === me : !!reveal?.correct);
+  // Online, the reveal moves on by itself. The bar follows the host's clock
+  // every frame, so all screens count down together however late the reveal
+  // arrived or got drawn (and a rejoin doesn't restart it).
+  // A reveal from an older host has no stamp: count from when it first showed.
+  let unstampedAt = 0;
+  const revealAt = $derived(reveal ? (reveal.at ?? (unstampedAt ||= untrack(() => session.hostNow()))) : 0);
+  let autoLeft = $state(1);
+  $effect(() => {
+    const at = revealAt;
+    if (!at || session.mode === 'local') return;
+    let frame = 0;
+    const tick = () => {
+      autoLeft = autoNextLeft(at, session.hostNow()) / AUTO_NEXT_MS;
+      if (autoLeft > 0) frame = requestAnimationFrame(tick);
+    };
+    untrack(tick);
+    return () => cancelAnimationFrame(frame);
+  });
   const timerTotal = $derived(q.deadline ? Math.round((q.deadline - q.askedAt) / 1000) : 0);
   const count = $derived(q.labels.length);
   // Pictures the host has sent for this question.
@@ -267,16 +286,19 @@
         {/if}
         {#if fellFor}{fellFor} isn't a real item.{/if}
       </p>
-      {#if canNext}
-        <button class="btn primary" data-sfx="none" onclick={next}>
-          {race ? 'Next question' : 'Next turn'}
-          {#if session.mode === 'host'}
-            <span class="auto" style:animation-duration="{AUTO_NEXT_SECONDS}s"></span>
-          {/if}
-        </button>
-      {:else}
-        <div class="autobar"><span style:animation-duration="{AUTO_NEXT_SECONDS}s"></span></div>
-      {/if}
+      <button
+        class="btn"
+        class:primary={canNext}
+        data-sfx="none"
+        disabled={!canNext}
+        title={canNext ? undefined : race ? 'The host moves the race on' : `${active.name} or the host moves on`}
+        onclick={next}
+      >
+        {race ? 'Next question' : 'Next turn'}
+        {#if session.mode !== 'local'}
+          <span class="auto" style:transform="scaleX({autoLeft})"></span>
+        {/if}
+      </button>
     </div>
   {:else if session.spectating}
     <p class="spectate muted">You're watching. You'll play in the next game.</p>
@@ -1060,8 +1082,13 @@
     white-space: nowrap;
     overflow: hidden;
   }
-  .auto,
-  .autobar span {
+  /* Not yours to press: a plain button rather than a faded one, so the countdown stays bright. */
+  .result .btn:disabled {
+    opacity: 1;
+    filter: none;
+    color: var(--muted);
+  }
+  .auto {
     position: absolute;
     left: 0;
     bottom: 0;
@@ -1069,13 +1096,6 @@
     width: 100%;
     background: var(--gold-hi);
     transform-origin: left;
-    animation: drain linear forwards;
-  }
-  .autobar {
-    position: relative;
-    width: 120px;
-    height: 2px;
-    background: rgba(255, 255, 255, 0.08);
   }
   /* Race avatars: an overlapping stack, out of the flow so they never squeeze
      or rewrap the answer as guesses come in and at the reveal. */
@@ -1135,14 +1155,6 @@
     text-align: center;
   }
 
-  @keyframes drain {
-    from {
-      transform: scaleX(1);
-    }
-    to {
-      transform: scaleX(0);
-    }
-  }
   @keyframes glow {
     50% {
       box-shadow: 0 0 22px rgba(201, 164, 92, 0.35);

@@ -161,6 +161,17 @@ export interface Settings {
 /** Answers sent just before time ran out still count if they arrive this late (network delay). */
 export const ANSWER_GRACE_MS = 500;
 
+/** Online, a reveal moves on by itself this long after it was shown. */
+export const AUTO_NEXT_MS = 4000;
+
+/**
+ * Milliseconds until a reveal stamped `at` moves on by itself, at host-clock
+ * time `now` (the full delay for a reveal without a stamp).
+ */
+export function autoNextLeft(at: number | undefined, now: number) {
+  return at === undefined ? AUTO_NEXT_MS : Math.min(AUTO_NEXT_MS, Math.max(0, at + AUTO_NEXT_MS - now));
+}
+
 /** Race questions need an end, so "no timer" falls back to this. */
 export const RACE_DEFAULT_TIMER = 30;
 
@@ -200,6 +211,8 @@ export interface Reveal {
   timedOut: boolean;
   /** Race mode: who answered correctly first. */
   winnerId: string | null;
+  /** Host-clock timestamp of the reveal, so every screen counts down to the same move on (missing in older saves). */
+  at?: number;
 }
 
 /** Someone who joined a running game: they watch until the next game starts. */
@@ -591,6 +604,7 @@ export class Engine {
         break;
       }
     }
+    if (s.reveal && !prev.reveal) s.reveal.at = this.now();
     s.version = prev.version + 1;
     return s;
   }
