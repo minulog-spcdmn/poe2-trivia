@@ -632,7 +632,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   }
 
   // Shadows and fills must track their elements every frame (hover,
-  // transitions, scrolling), and lights and the mood tint animate
+  // transitions, scrolling), and lights and a changing mood tint animate
   // quickly, so any of those draws at once. Otherwise the backdrop's own
   // motion only needs 30fps (its quickest cycle is a slow 9s breath and the
   // embers drift a few pixels a frame), and with reduced motion nothing is
@@ -647,11 +647,13 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     const moodState = stepMood(dt, mood);
     const homeMoving = stepHomeScene(dt, home, title);
     // Lights and mood step once per animation frame; draw() uses the latest values.
-    // On phones, where this full-screen shader is the costliest thing on
-    // screen and runs under the effects overlay, soft lights and the mood
-    // (the victory's gold, a deathmatch's red), easing or steady, need no
-    // more than the backdrop's usual 30fps.
-    const soft = lights || !!moodState;
+    // A mood holding steady (the victory's gold, a deathmatch's red) changes
+    // nothing, so it is just drawn along with everything else: at 30fps, or
+    // with reduced motion only when something changes. On phones, where this
+    // full-screen shader is the costliest thing on screen and runs under the
+    // effects overlay, lights and an easing mood need no more than 30fps
+    // either.
+    const soft = lights || moodState === 'moving';
     const lit = homeMoving || (soft && !cssShadows.matches);
     if (!reduceMotion.matches) embers.step(dt, canvas.clientWidth, canvas.clientHeight, !fxActive());
     const changed = measure() || dirty || lit;

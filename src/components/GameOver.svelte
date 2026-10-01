@@ -228,6 +228,8 @@
     will-change: transform;
   }
   .gold {
+    /* Positioned, so it paints over the shade, which its layer would otherwise lift above it. */
+    position: relative;
     /* A band of light sweeps across the gold every few seconds. */
     background:
       linear-gradient(100deg, transparent 42%, rgba(255, 250, 232, 0.8) 50%, transparent 58%) no-repeat,
