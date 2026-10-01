@@ -3,7 +3,9 @@
   import { fade, fly } from 'svelte/transition';
   import { session } from '../lib/session.svelte';
   import { toasts, type ToastKind } from '../lib/toasts.svelte';
+  import { playerColor } from '../lib/ui';
   import { twinkle } from '../lib/fx/moments';
+  import Avatar from './Avatar.svelte';
 
   // Bottom right on wide screens. On phones the stack sits at the top instead:
   // the keyboard covers the bottom while typing a name or code, and the answer
@@ -16,7 +18,9 @@
     mq.addEventListener('change', update);
     return () => mq.removeEventListener('change', update);
   });
-  const enter = $derived(narrow ? { y: -24, duration: 280 } : { x: 48, duration: 280 });
+  const enter = $derived(narrow ? { y: -24, duration: 320 } : { x: 56, duration: 320 });
+  // Phones show fewer at once, so a burst of news can't cover the game.
+  $effect(() => toasts.setMax(narrow ? 2 : 4));
 
   // A guest's lost connection to the host stays up (with what to do about it)
   // until it's back or they leave.
@@ -28,39 +32,32 @@
   }
 </script>
 
-{#snippet icon(kind: ToastKind)}
-  <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+{#snippet glyph(kind: ToastKind)}
+  <svg viewBox="0 0 24 24" aria-hidden="true">
     {#if kind === 'info'}
-      <path class="fill" d="M12 4.5l4.5 7.5-4.5 7.5L7.5 12z" />
+      <path class="solid" d="M12 3.5c.7 4.9 2.6 6.8 7.5 7.5-4.9.7-6.8 2.6-7.5 7.5-.7-4.9-2.6-6.8-7.5-7.5 4.9-.7 6.8-2.6 7.5-7.5z" />
     {:else if kind === 'warn'}
-      <path d="M12 3.8 21 19.5H3z" /><path d="M12 9.5v4.5M12 16.8v.1" />
+      <path d="M12 6v7.5" /><circle class="solid" cx="12" cy="18" r="1.6" />
     {:else}
-      <circle cx="12" cy="12" r="8.5" /><path d="M9 9l6 6M15 9l-6 6" />
+      <path d="M7.5 7.5l9 9M16.5 7.5l-9 9" />
     {/if}
   </svg>
 {/snippet}
 
 <div class="toasts" class:narrow role="region" aria-label="Notifications" aria-live="polite">
   {#if lost}
-    <div
-      class="toast {session.gaveUp ? 'error' : 'warn'}"
-      role="alert"
-      in:fly={enter}
-      out:fade={{ duration: 200 }}
-    >
-      {#if session.gaveUp}
-        {@render icon('error')}
-      {:else}
-        <span class="spinner" aria-hidden="true"></span>
-      {/if}
+    <div class="toast {session.gaveUp ? 'error' : 'warn'}" role="alert" in:fly={enter} out:fade={{ duration: 200 }}>
+      <span class="frame" aria-hidden="true"></span>
+      <span class="seal">
+        {#if session.gaveUp}
+          <span class="gem">{@render glyph('error')}</span>
+        {:else}
+          <span class="gem spin"></span>
+        {/if}
+      </span>
       <div class="body">
-        <p>
-          {#if session.gaveUp}
-            Can't reach the host. The room may have closed.
-          {:else}
-            Connection to the host lost; reconnecting…
-          {/if}
-        </p>
+        <p class="title">{session.gaveUp ? 'Host unreachable' : 'Connection lost'}</p>
+        <p class="msg">{session.gaveUp ? 'The room may have closed.' : 'Reconnecting to the host…'}</p>
         <div class="actions">
           <button class="btn small" onclick={() => session.reconnect()}>Retry</button>
           <button class="btn small ghost" onclick={() => session.leave()}>Leave</button>
@@ -72,19 +69,37 @@
   {#each toasts.list as t (t.id)}
     <div
       class="toast {t.kind}"
+      class:held={t.held}
       role={t.kind === 'error' ? 'alert' : 'status'}
+      style:--life="{t.life}ms"
       use:sparkle={t.kind}
-      animate:flip={{ duration: 250 }}
+      animate:flip={{ duration: 260 }}
       in:fly={enter}
       out:fade={{ duration: 200 }}
       onpointerenter={() => toasts.hold(t.id)}
       onpointerleave={() => toasts.release(t.id)}
     >
-      {@render icon(t.kind)}
-      <div class="body"><p>{t.message}</p></div>
+      <span class="frame" aria-hidden="true"></span>
+      <span class="seal">
+        {#if t.who}
+          <Avatar name={t.who.name} hue={t.who.hue ?? 0} size={36} dim={t.who.hue === undefined} />
+          {#if t.kind !== 'info'}<span class="gem badge">{@render glyph(t.kind)}</span>{/if}
+        {:else}
+          <span class="gem">{@render glyph(t.kind)}</span>
+        {/if}
+      </span>
+      <div class="body">
+        {#if t.who}
+          <p class="title name" style:color={t.who.hue === undefined ? null : playerColor(t.who.hue)}>{t.who.name}</p>
+        {:else if t.title}
+          <p class="title">{t.title}</p>
+        {/if}
+        <p class="msg">{t.message}</p>
+      </div>
       <button class="close" data-sfx="none" onclick={() => toasts.dismiss(t.id)} aria-label="Dismiss">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7 7 17" /></svg>
       </button>
+      <span class="fuse" aria-hidden="true"></span>
     </div>
   {/each}
 </div>
@@ -92,92 +107,163 @@
 <style>
   .toasts {
     position: fixed;
-    right: max(20px, env(safe-area-inset-right));
-    bottom: max(20px, env(safe-area-inset-bottom));
+    right: max(22px, env(safe-area-inset-right));
+    bottom: max(22px, env(safe-area-inset-bottom));
     /* Below the effects layer (95), so a toast's sparkle draws over it. */
     z-index: 90;
     display: flex;
     flex-direction: column;
     align-items: flex-end;
-    gap: 0.6rem;
-    width: min(380px, calc(100vw - 40px));
+    gap: 0.75rem;
+    width: min(370px, calc(100vw - 44px));
     pointer-events: none;
   }
   /* Phones: across the top, newest first. */
   .toasts.narrow {
-    top: max(8px, env(safe-area-inset-top));
+    top: max(10px, env(safe-area-inset-top));
     bottom: auto;
-    left: max(8px, env(safe-area-inset-left));
-    right: max(8px, env(safe-area-inset-right));
+    left: max(10px, env(safe-area-inset-left));
+    right: max(10px, env(safe-area-inset-right));
     width: auto;
     flex-direction: column-reverse;
     align-items: stretch;
-    gap: 0.45rem;
+    gap: 0.55rem;
   }
 
+  /* Each kind is a stone colour: gold for news, amber for trouble, crimson for errors. */
   .toast {
-    --accent: var(--gold);
-    --tint: rgba(201, 164, 92, 0.16);
+    --hi: #f6e3ad;
+    --c: #c9a45c;
+    --lo: #6d5329;
+    --glow: rgba(201, 164, 92, 0.22);
     position: relative;
     display: flex;
-    align-items: flex-start;
-    gap: 0.7rem;
+    align-items: center;
+    gap: 0.85rem;
     width: 100%;
-    padding: 0.7rem 0.6rem 0.7rem 0.85rem;
-    background: linear-gradient(180deg, rgba(34, 26, 16, 0.97), rgba(14, 11, 8, 0.97));
+    min-height: 62px;
+    padding: 0.7rem 2.3rem 0.75rem 0.85rem;
+    background:
+      radial-gradient(130px 90px at 32px 50%, var(--glow), transparent 70%),
+      linear-gradient(180deg, rgba(36, 29, 21, 0.97), rgba(15, 12, 9, 0.98));
     border: 1px solid var(--line);
-    border-left: 3px solid var(--accent);
-    border-radius: 3px;
+    border-radius: var(--radius);
     box-shadow:
-      inset 0 1px 0 rgba(255, 230, 170, 0.08),
-      0 0 0 1px rgba(0, 0, 0, 0.6),
-      0 0 24px var(--tint),
-      0 10px 30px rgba(0, 0, 0, 0.6);
-    color: var(--text);
-    font-size: 1rem;
-    line-height: 1.35;
+      0 0 0 1px rgba(0, 0, 0, 0.65),
+      inset 0 1px 0 rgba(255, 220, 150, 0.07),
+      inset 0 0 22px rgba(0, 0, 0, 0.45),
+      0 16px 36px rgba(0, 0, 0, 0.6);
     pointer-events: auto;
-  }
-  .toast.info {
-    color: var(--gold-hi);
-    text-shadow: 0 0 12px rgba(241, 217, 155, 0.3);
+    animation: ignite 1.4s var(--ease-out);
   }
   .toast.warn {
-    --accent: var(--unique-hi);
-    --tint: rgba(224, 138, 68, 0.16);
+    --hi: #ffd5a1;
+    --c: #e08a44;
+    --lo: #7a3a10;
+    --glow: rgba(224, 138, 68, 0.22);
   }
   .toast.error {
-    --accent: var(--bad);
-    --tint: rgba(224, 85, 63, 0.2);
-    background: linear-gradient(180deg, rgba(48, 20, 15, 0.97), rgba(20, 9, 7, 0.97));
-    color: #f3c2b6;
+    --hi: #ffbcab;
+    --c: #e0553f;
+    --lo: #6e1a10;
+    --glow: rgba(224, 85, 63, 0.26);
+    border-color: #4a2a22;
+  }
+  /* It arrives with a flare of its colour that settles into the panel. */
+  @keyframes ignite {
+    from {
+      border-color: var(--c);
+      box-shadow:
+        0 0 0 1px rgba(0, 0, 0, 0.65),
+        inset 0 1px 0 rgba(255, 220, 150, 0.07),
+        inset 0 0 22px rgba(0, 0, 0, 0.45),
+        0 0 30px var(--glow),
+        0 16px 36px rgba(0, 0, 0, 0.6);
+    }
+  }
+  /* A lit edge along the top, in the toast's colour. */
+  .toast::after {
+    content: '';
+    position: absolute;
+    top: -1px;
+    left: 26px;
+    right: 26px;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--hi), transparent);
+    opacity: 0.55;
+    pointer-events: none;
+  }
+  /* The panels' gold filigree on the corners, drawn at 60% of its size. */
+  .frame {
+    position: absolute;
+    top: -2px;
+    left: -2px;
+    width: calc((100% + 4px) / 0.6);
+    height: calc((100% + 4px) / 0.6);
+    background: var(--filigree);
+    transform: scale(0.6);
+    transform-origin: 0 0;
+    filter: drop-shadow(0 0 3px rgba(224, 138, 68, 0.35));
+    opacity: 0.85;
+    pointer-events: none;
   }
 
-  .icon {
+  /* The stone (or the player's avatar) on the left. */
+  .seal {
+    position: relative;
     flex: none;
+    display: grid;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+  }
+  .gem {
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, var(--hi), var(--c) 55%, var(--lo));
+    box-shadow:
+      0 0 0 2px #0c0a08,
+      0 0 0 3px var(--gold-lo),
+      0 0 16px var(--glow),
+      0 4px 10px rgba(0, 0, 0, 0.5);
+  }
+  .gem svg {
     width: 18px;
     height: 18px;
-    margin-top: 0.12em;
     fill: none;
-    stroke: var(--accent);
-    stroke-width: 1.8;
+    stroke: #160e08;
+    stroke-width: 2.6;
     stroke-linecap: round;
-    stroke-linejoin: round;
-    filter: drop-shadow(0 0 5px var(--accent));
   }
-  .icon .fill {
-    fill: var(--accent);
+  .gem .solid {
+    fill: #160e08;
     stroke: none;
   }
-  .spinner {
-    flex: none;
-    width: 16px;
-    height: 16px;
-    margin-top: 0.15em;
-    border-radius: 50%;
-    border: 2px solid rgba(255, 255, 255, 0.2);
-    border-top-color: var(--gold-hi);
-    animation: spin 0.8s linear infinite;
+  /* On an avatar: a small stone in its corner says what happened to them. */
+  .gem.badge {
+    position: absolute;
+    right: -5px;
+    bottom: -4px;
+    width: 17px;
+    height: 17px;
+    box-shadow:
+      0 0 0 2px #0c0a08,
+      0 0 8px var(--glow);
+  }
+  .gem.badge svg {
+    width: 12px;
+    height: 12px;
+    stroke-width: 3.4;
+  }
+  /* Reconnecting: a dark stone with a turning arc of light. */
+  .gem.spin {
+    background:
+      radial-gradient(circle, #120e0a 56%, transparent 58%),
+      conic-gradient(from 0deg, transparent 0 55%, var(--c) 85%, var(--hi));
+    animation: spin 1s linear infinite;
   }
 
   .body {
@@ -188,6 +274,31 @@
     margin: 0;
     overflow-wrap: anywhere;
   }
+  .title {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 0.78rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    line-height: 1.3;
+    color: var(--hi);
+    text-shadow: 0 0 12px var(--glow);
+  }
+  .title.name {
+    letter-spacing: 0.1em;
+    color: var(--gold-hi);
+  }
+  .title + .msg {
+    margin-top: 0.12rem;
+  }
+  .msg {
+    font-size: 1rem;
+    line-height: 1.3;
+    color: var(--text);
+  }
+  .toast.error .msg {
+    color: #ecd0c6;
+  }
   .actions {
     display: flex;
     gap: 0.5rem;
@@ -195,30 +306,79 @@
   }
 
   .close {
-    flex: none;
+    position: absolute;
+    top: 6px;
+    right: 6px;
     display: grid;
     place-items: center;
     width: 26px;
     height: 26px;
-    margin: -0.15rem 0 -0.15rem 0.1rem;
     padding: 0;
     background: none;
     border: 0;
     border-radius: 50%;
     color: var(--muted);
+    opacity: 0.6;
     cursor: pointer;
-    transition: color 0.2s;
+    transition:
+      color 0.2s,
+      opacity 0.2s,
+      background 0.2s;
+  }
+  .toast:hover .close,
+  .close:focus-visible {
+    opacity: 1;
   }
   .close:hover {
     color: var(--gold-hi);
+    background: rgba(201, 164, 92, 0.1);
   }
   .close svg {
-    width: 14px;
-    height: 14px;
+    width: 13px;
+    height: 13px;
     fill: none;
     stroke: currentColor;
     stroke-width: 2;
     stroke-linecap: round;
+  }
+
+  /* A fuse along the bottom edge that burns down until the toast goes. */
+  .fuse {
+    position: absolute;
+    left: 14px;
+    bottom: -1px;
+    width: calc(100% - 28px);
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--c) 30%, var(--hi));
+    animation: burn var(--life) linear forwards;
+    pointer-events: none;
+  }
+  .fuse::after {
+    content: '';
+    position: absolute;
+    right: -2px;
+    top: -2px;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: #fff4d6;
+    box-shadow:
+      0 0 6px 2px var(--c),
+      0 0 12px 3px var(--glow);
+  }
+  .held .fuse {
+    animation-play-state: paused;
+  }
+  @keyframes burn {
+    to {
+      width: 0;
+    }
+  }
+
+  .narrow .toast {
+    min-height: 56px;
+    padding: 0.6rem 2.2rem 0.65rem 0.75rem;
+    gap: 0.75rem;
   }
 
   @keyframes spin {
