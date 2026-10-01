@@ -548,10 +548,13 @@ export class Engine {
       case 'next': {
         // Two people pressing Next (or Next and the automatic move on) at once is expected.
         if (s.phase !== 'reveal') throw new ActionError('Nothing to continue.', true);
-        // Anyone at the table may move on, not just the host or whoever answered.
-        if (!isHost && !s.players.some((p) => p.id === from)) throw new ActionError('Only players can move the game on.');
-        if (race) this.advanceRace(s);
-        else this.advance(s);
+        if (race) {
+          if (!isHost) throw new ActionError('The host moves the race on.');
+          this.advanceRace(s);
+        } else {
+          if (!isActive && !isHost) throw new ActionError("It's not your turn.");
+          this.advance(s);
+        }
         break;
       }
       case 'skip': {

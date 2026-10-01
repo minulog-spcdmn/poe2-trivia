@@ -25,8 +25,8 @@
   // Guests only learn the answer (and the items behind the options) at the reveal.
   const item = $derived(q.itemId ? engine.byId.get(q.itemId) : undefined);
   const race = $derived(s.settings.mode === 'race');
-  // Everyone at the table may move on; spectators just watch the countdown.
-  const canNext = $derived(!!reveal && (session.isHost || s.players.some((p) => p.id === me)));
+  // Everyone sees the Next button; only the host (and in turns mode, whoever answered) can press it.
+  const canNext = $derived(!!reveal && (race ? session.isHost : mine || session.isHost));
   const myMiss = $derived(race && me ? q.misses.find((m) => m.playerId === me) : undefined);
   const winner = $derived(reveal?.winnerId ? s.players.find((p) => p.id === reveal.winnerId) : undefined);
   const iWon = $derived(race ? !!me && reveal?.winnerId === me : !!reveal?.correct);
@@ -272,16 +272,18 @@
         {/if}
         {#if fellFor}{fellFor} isn't a real item.{/if}
       </p>
-      {#if canNext}
-        <button class="btn primary" data-sfx="none" onclick={next}>
-          {race ? 'Next question' : 'Next turn'}
-          {#if session.mode !== 'local'}
-            <span class="auto" style:animation-duration="{AUTO_NEXT_SECONDS}s" style:animation-delay="{autoDelay}s"></span>
-          {/if}
-        </button>
-      {:else}
-        <div class="autobar"><span style:animation-duration="{AUTO_NEXT_SECONDS}s" style:animation-delay="{autoDelay}s"></span></div>
-      {/if}
+      <button
+        class="btn primary"
+        data-sfx="none"
+        disabled={!canNext}
+        title={canNext ? undefined : race ? 'The host moves the race on' : `${active.name} or the host moves on`}
+        onclick={next}
+      >
+        {race ? 'Next question' : 'Next turn'}
+        {#if session.mode !== 'local'}
+          <span class="auto" style:animation-duration="{AUTO_NEXT_SECONDS}s" style:animation-delay="{autoDelay}s"></span>
+        {/if}
+      </button>
     </div>
   {:else if session.spectating}
     <p class="spectate muted">You're watching. You'll play in the next game.</p>
@@ -1063,8 +1065,7 @@
     white-space: nowrap;
     overflow: hidden;
   }
-  .auto,
-  .autobar span {
+  .auto {
     position: absolute;
     left: 0;
     bottom: 0;
@@ -1073,12 +1074,6 @@
     background: var(--gold-hi);
     transform-origin: left;
     animation: drain linear forwards;
-  }
-  .autobar {
-    position: relative;
-    width: 120px;
-    height: 2px;
-    background: rgba(255, 255, 255, 0.08);
   }
   /* Race avatars: an overlapping stack, out of the flow so they never squeeze
      or rewrap the answer as guesses come in and at the reveal. */

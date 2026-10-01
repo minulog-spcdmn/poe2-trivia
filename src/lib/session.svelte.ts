@@ -37,7 +37,7 @@ export const engine = new Engine(itemData as Item[], { fakes: fakeNames });
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 export const CODE_LENGTH = 6;
 export const CODE_PATTERN = /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/;
-const AUTO_NEXT_MS = 5000;
+const AUTO_NEXT_MS = 4000;
 
 /** Connections that haven't introduced themselves yet, room-wide and per peer. */
 const MAX_PENDING = 8;
