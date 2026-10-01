@@ -139,7 +139,7 @@
     align-items: center;
     gap: 0.65rem;
     width: 100%;
-    padding: 0.5rem 2rem 0.55rem 0.65rem;
+    padding: 0.5rem 2.6rem 0.55rem 0.65rem;
     background:
       radial-gradient(90px 60px at 24px 50%, var(--glow), transparent 70%),
       linear-gradient(180deg, rgba(36, 29, 21, 0.97), rgba(15, 12, 9, 0.98));
@@ -286,67 +286,55 @@
     margin-top: 0.45rem;
   }
 
+  /* A small round button like the header's icon buttons. */
   .close {
     position: absolute;
     top: 50%;
-    right: 6px;
+    right: 8px;
     translate: 0 -50%;
     display: grid;
     place-items: center;
-    width: 22px;
-    height: 22px;
+    width: 24px;
+    height: 24px;
     padding: 0;
-    background: none;
-    border: 0;
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px solid var(--line);
     border-radius: 50%;
     color: var(--muted);
-    opacity: 0.6;
+    box-shadow: inset 0 1px 0 rgba(255, 220, 150, 0.06);
     cursor: pointer;
     transition:
       color 0.2s,
-      opacity 0.2s,
-      background 0.2s;
-  }
-  .toast:hover .close,
-  .close:focus-visible {
-    opacity: 1;
+      border-color 0.2s,
+      box-shadow 0.25s;
   }
   .close:hover {
     color: var(--gold-hi);
-    background: rgba(201, 164, 92, 0.1);
+    border-color: var(--gold-lo);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 220, 150, 0.1),
+      0 0 12px rgba(201, 164, 92, 0.3);
   }
   .close svg {
-    width: 12px;
-    height: 12px;
+    width: 10px;
+    height: 10px;
     fill: none;
     stroke: currentColor;
     stroke-width: 2;
     stroke-linecap: round;
   }
 
-  /* A fuse along the bottom edge that burns down until the toast goes. */
+  /* A line along the bottom edge that runs down until the toast goes. */
   .fuse {
     position: absolute;
     left: 10px;
     bottom: -1px;
     width: calc(100% - 20px);
     height: 1px;
-    background: linear-gradient(90deg, transparent, var(--c) 30%, var(--hi));
+    background: linear-gradient(90deg, transparent, var(--c) 40%);
+    opacity: 0.8;
     animation: burn var(--life) linear forwards;
     pointer-events: none;
-  }
-  .fuse::after {
-    content: '';
-    position: absolute;
-    right: -2px;
-    top: -1.5px;
-    width: 4px;
-    height: 4px;
-    border-radius: 50%;
-    background: #fff4d6;
-    box-shadow:
-      0 0 6px 2px var(--c),
-      0 0 12px 3px var(--glow);
   }
   .held .fuse {
     animation-play-state: paused;
