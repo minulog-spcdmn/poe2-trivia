@@ -74,6 +74,32 @@ export const RARE_GROUPS: Record<string, number> = { Tablets: 0.25 };
 
 const weightOf = (it: Item) => RARE_GROUPS[it.group] ?? 1;
 
+/**
+ * What a category's card lists under its name: its groups, alphabetically,
+ * without the "One-Handed"/"Two-Handed" the name already says. Empty when the
+ * name already says it all (Rings, Gloves & Boots, Lineage Gems).
+ */
+export function categoryContents(category: string, items: Item[]): string[] {
+  if (items.some((it) => it.kind === 'gem')) return [];
+  const groups = [...new Set(items.map((it) => it.group.replace(/^(One|Two)-Handed /, '')))].sort();
+  return groups.every((g) => category.includes(g)) ? [] : groups;
+}
+
+/** Categories that were renamed, by their old name. */
+const RENAMED_CATEGORIES: Record<string, string> = { 'Flasks, Jewels & Relics': 'Flasks, Jewels & More' };
+
+/** A game saved before categories were renamed, with the new names. */
+export function renameCategories(s: GameState): GameState {
+  const rename = (c: string) => RENAMED_CATEGORIES[c] ?? c;
+  return {
+    ...s,
+    players: s.players.map((p) => ({ ...p, recent: p.recent.map(rename) })),
+    offered: s.offered.map(rename),
+    recentCategories: s.recentCategories.map(rename),
+    question: s.question && { ...s.question, category: rename(s.question.category) },
+  };
+}
+
 /** Option ids of made-up names: `fake:<id of the item it copies>:<which of its fakes>`. */
 const FAKE_PREFIX = 'fake:';
 

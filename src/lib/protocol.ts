@@ -4,7 +4,7 @@
 
 import type { Action, GameState } from './game';
 
-export const PROTOCOL_VERSION = 5;
+export const PROTOCOL_VERSION = 6;
 
 /** Guest → host. */
 export type ClientMsg =

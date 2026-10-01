@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { Engine, ActionError, createGame, DIFFICULTIES, isDifficulty, isFake, rulesFor, RARE_GROUPS, nameSimilarity, publicView, type Difficulty, type GameState, type Item, type Question } from '../src/lib/game.ts';
+import { Engine, ActionError, categoryContents, createGame, DIFFICULTIES, isDifficulty, isFake, rulesFor, RARE_GROUPS, nameSimilarity, publicView, renameCategories, type Difficulty, type GameState, type Item, type Question } from '../src/lib/game.ts';
 
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
 const fakes: Record<string, string[]> = JSON.parse(readFileSync(new URL('../src/data/fakes.json', import.meta.url), 'utf8'));
@@ -256,6 +256,41 @@ test('lineage gems are a category', () => {
   assert.ok(engine.byCategory.get('Lineage Gems')!.length >= 20);
 });
 
+test('talismans are two-handed weapons', () => {
+  const talismans = items.filter((it) => it.group === 'Talismans');
+  assert.ok(talismans.length > 0);
+  for (const it of talismans) assert.equal(it.category, 'Two-Handed Weapons', it.name);
+});
+
+test('category cards list what a category holds unless its name says it all', () => {
+  const engine = new Engine(items);
+  const contents = (cat: string) => categoryContents(cat, engine.byCategory.get(cat)!);
+  assert.deepEqual(contents('Off-Hands'), ['Foci', 'Quivers', 'Shields']);
+  assert.deepEqual(contents('One-Handed Weapons'), ['Maces', 'Sceptres', 'Spears', 'Wands']);
+  assert.ok(contents('Two-Handed Weapons').includes('Talismans'));
+  assert.ok(contents('Flasks, Jewels & More').includes('Tablets'));
+  assert.deepEqual(contents('Gloves & Boots'), []);
+  assert.deepEqual(contents('Rings'), []);
+  assert.deepEqual(contents('Lineage Gems'), []);
+});
+
+test('games saved before the category rename resume with the new names', () => {
+  const { engine, s } = setup(['A', 'B']);
+  const old = 'Flasks, Jewels & Relics';
+  const saved: GameState = {
+    ...s,
+    phase: 'choosing',
+    offered: [old, 'Rings', 'Helmets'],
+    players: s.players.map((p) => ({ ...p, recent: [old] })),
+    recentCategories: [old],
+  };
+  const now = renameCategories(saved);
+  for (const cat of [...now.offered, ...now.recentCategories, ...now.players.flatMap((p) => p.recent)]) {
+    assert.ok(engine.categories.includes(cat), cat);
+  }
+  assert.equal(renameCategories({ ...saved, question: engine.makeQuestion(saved, 'Rings') }).question!.category, 'Rings');
+});
+
 test('race mode: first correct answer scores, wrong answers cost a point and lock out', () => {
   let { engine, s } = setup(['A', 'B', 'C'], 2);
   s = engine.apply(s, { type: 'settings', settings: { mode: 'race' } }, 'p0');
@@ -398,7 +433,7 @@ test('guests cannot act for others, join locked rooms, or impersonate', () => {
 
 test('tablets are rarer answers and only fill in as decoys', () => {
   const engine = new Engine(items, { rng: seeded(7) });
-  const cat = 'Flasks, Jewels & Relics';
+  const cat = 'Flasks, Jewels & More';
   const inCat = engine.byCategory.get(cat)!;
   const tablets = inCat.filter((it) => it.group === 'Tablets').length;
   const evenShare = tablets / inCat.length;
@@ -534,7 +569,7 @@ test('earlier answers never come back as decoys, until the category starts over'
 
 test('a tablet answer gets tablet decoys, so a tablet among the options gives nothing away', () => {
   const engine = new Engine(items, { rng: seeded(3) });
-  const cat = 'Flasks, Jewels & Relics';
+  const cat = 'Flasks, Jewels & More';
   for (const difficulty of ['cruel', 'merciless', 'eternal'] as Difficulty[]) {
     for (let i = 0; i < 1500; i++) {
       const s = createGame(null, { targetScore: 5, timer: 0, difficulty, mode: 'turns', public: false, locked: false });
@@ -547,7 +582,7 @@ test('a tablet answer gets tablet decoys, so a tablet among the options gives no
 
 test('a tablet answer still gets only tablet decoys once earlier tablets have been used', () => {
   const engine = new Engine(items, { rng: seeded(11) });
-  const cat = 'Flasks, Jewels & Relics';
+  const cat = 'Flasks, Jewels & More';
   for (const difficulty of ['merciless', 'eternal'] as Difficulty[]) {
     let tabletQuestions = 0;
     for (let game = 0; game < 300; game++) {

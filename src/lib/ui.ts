@@ -1,4 +1,5 @@
 import { engine } from './session.svelte';
+import { categoryContents } from './game';
 import { itemImage } from './ui-paths';
 
 const HUES = [32, 200, 350, 130, 270, 55, 175, 10, 300, 90, 225, 150];
@@ -18,7 +19,7 @@ const ICON_GROUP: Record<string, string> = {
   'Off-Hands': 'Quivers',
   'Gloves & Boots': 'Boots',
   'Amulets & Belts': 'Amulets',
-  'Flasks, Jewels & Relics': 'Flasks',
+  'Flasks, Jewels & More': 'Flasks',
 };
 // Gem art comes as square tiles on cloth, so lineage gems use a cut-out of
 // Oisín's Oath (public/icons/, background removed with rembg, given the same
@@ -40,4 +41,11 @@ for (const cat of engine.categories) {
 /** Absolute URL, safe to use inside CSS custom properties. */
 export function categoryIcon(category: string) {
   return icons.get(category)!;
+}
+
+const contents = new Map(engine.categories.map((cat) => [cat, categoryContents(cat, engine.byCategory.get(cat)!)]));
+
+/** The kinds of item a category holds, for its card (empty when its name says it all). */
+export function categoryGroups(category: string) {
+  return contents.get(category) ?? [];
 }
