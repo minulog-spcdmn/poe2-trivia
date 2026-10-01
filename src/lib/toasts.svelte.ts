@@ -17,6 +17,8 @@ export interface ToastWho {
 export interface ToastOptions {
   title?: string;
   who?: ToastWho;
+  /** Stays up until closed or cleared, without a countdown: the reason a game just ended for you. */
+  sticky?: boolean;
 }
 
 export interface Toast extends ToastOptions {
@@ -49,13 +51,21 @@ class Toasts {
   show(message: string, kind: ToastKind = 'info', opts: ToastOptions = {}) {
     // The same notice again (a double click on a refused action, say) restarts
     // the one already up instead of stacking a copy.
-    const same = this.list.find((t) => t.message === message && t.kind === kind && t.who?.name === opts.who?.name);
+    const same = this.list.find(
+      (t) => t.message === message && t.kind === kind && t.title === opts.title && t.who?.name === opts.who?.name,
+    );
     if (same) this.dismiss(same.id);
     const toast: Toast = { id: this.next++, kind, message, ...opts, life: LIFETIME[kind], held: false };
     this.list = [...this.list, toast];
     this.trim();
-    this.run(toast.id, toast.life);
+    if (!toast.sticky) this.run(toast.id, toast.life);
     return toast.id;
+  }
+
+  /** Takes down the errors, which belong to an attempt that's now over. */
+  clearErrors() {
+    for (const t of this.list) if (t.kind === 'error') this.clear(t.id);
+    this.list = this.list.filter((t) => t.kind !== 'error');
   }
 
   setMax(max: number) {

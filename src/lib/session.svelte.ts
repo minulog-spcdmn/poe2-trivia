@@ -1117,11 +1117,13 @@ class Session {
   private fail(message: string, title?: string) {
     const mode = this.mode;
     this.reset();
-    this.flash(message, 'error', { title });
+    this.flash(message, 'error', { title, sticky: true });
     if (mode === 'client') this.status = 'idle';
   }
 
   private reset() {
+    // A new attempt (or leaving) makes the last one's errors moot.
+    toasts.clearErrors();
     this.beacon?.stop();
     this.beacon = null;
     this.stopMedia();
