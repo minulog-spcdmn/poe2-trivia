@@ -18,7 +18,7 @@ const ICON_GROUP: Record<string, string> = {
   'Off-Hands': 'Quivers',
   'Gloves & Boots': 'Boots',
   'Amulets & Belts': 'Amulets',
-  'Flasks, Jewels & Relics': 'Flasks',
+  'Flasks, Charms, Jewels, Relics & Tablets': 'Flasks',
 };
 // Gem art comes as square tiles on cloth, so lineage gems use a cut-out of
 // Oisín's Oath (public/icons/, background removed with rembg, given the same

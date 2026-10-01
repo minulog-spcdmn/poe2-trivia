@@ -20,6 +20,7 @@ import {
   activeRules,
   ANSWER_GRACE_MS,
   autoNextLeft,
+  renameCategories,
   type Action,
   type GameState,
   type Item,
@@ -286,13 +287,13 @@ class Session {
   resume() {
     const saved = readSaved();
     if (!saved) return;
-    if (saved.mode === 'local') this.startLocal(saved.state);
+    if (saved.mode === 'local') this.startLocal(renameCategories(saved.state));
     else if (saved.mode === 'host') {
       this.reset();
       this.mode = 'host';
       this.status = 'connecting';
       this.loadPrivate(saved.priv);
-      this.openRoom(saved.code, 0, saved.state);
+      this.openRoom(saved.code, 0, renameCategories(saved.state));
     } else if (saved.mode === 'client') this.join(saved.code, saved.name);
   }
 

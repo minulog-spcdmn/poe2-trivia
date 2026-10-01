@@ -28,7 +28,8 @@ const CATEGORY_RULES = [
   ['Weapons/TwoHandWeapons/Staves', 'Staves', 'Two-Handed Weapons'],
   ['Weapons/TwoHandWeapons/Bows', 'Bows', 'Two-Handed Weapons'],
   ['Weapons/TwoHandWeapons/Crossbows', 'Crossbows', 'Two-Handed Weapons'],
-  ['Offhand/Talismans', 'Talismans', 'Off-Hands'],
+  // Druid talismans are two-handed weapons, though their art sits with the off-hands.
+  ['Offhand/Talismans', 'Talismans', 'Two-Handed Weapons'],
   ['Offhand/Shields', 'Shields', 'Off-Hands'],
   ['Offhand/Foci', 'Foci', 'Off-Hands'],
   ['Quivers', 'Quivers', 'Off-Hands'],
@@ -39,11 +40,11 @@ const CATEGORY_RULES = [
   ['Rings', 'Rings', 'Rings'],
   ['Amulets', 'Amulets', 'Amulets & Belts'],
   ['Belts', 'Belts', 'Amulets & Belts'],
-  ['Flasks', 'Flasks', 'Flasks, Jewels & Relics'],
-  ['Charms', 'Charms', 'Flasks, Jewels & Relics'],
-  ['Jewels', 'Jewels', 'Flasks, Jewels & Relics'],
-  ['Relics', 'Relics', 'Flasks, Jewels & Relics'],
-  ['Currency/PrecursorTablets', 'Tablets', 'Flasks, Jewels & Relics'],
+  ['Flasks', 'Flasks', 'Flasks, Charms, Jewels, Relics & Tablets'],
+  ['Charms', 'Charms', 'Flasks, Charms, Jewels, Relics & Tablets'],
+  ['Jewels', 'Jewels', 'Flasks, Charms, Jewels, Relics & Tablets'],
+  ['Relics', 'Relics', 'Flasks, Charms, Jewels, Relics & Tablets'],
+  ['Currency/PrecursorTablets', 'Tablets', 'Flasks, Charms, Jewels, Relics & Tablets'],
 ];
 
 const GEM_SOURCE = 'https://poe2db.tw/us/Lineage_Supports';

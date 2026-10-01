@@ -74,6 +74,21 @@ export const RARE_GROUPS: Record<string, number> = { Tablets: 0.25 };
 
 const weightOf = (it: Item) => RARE_GROUPS[it.group] ?? 1;
 
+/** Categories that were renamed, by their old name. */
+const RENAMED_CATEGORIES: Record<string, string> = { 'Flasks, Jewels & Relics': 'Flasks, Charms, Jewels, Relics & Tablets' };
+
+/** A game saved before categories were renamed, with the new names. */
+export function renameCategories(s: GameState): GameState {
+  const rename = (c: string) => RENAMED_CATEGORIES[c] ?? c;
+  return {
+    ...s,
+    players: s.players.map((p) => ({ ...p, recent: p.recent.map(rename) })),
+    offered: s.offered.map(rename),
+    recentCategories: s.recentCategories.map(rename),
+    question: s.question && { ...s.question, category: rename(s.question.category) },
+  };
+}
+
 /** Option ids of made-up names: `fake:<id of the item it copies>:<which of its fakes>`. */
 const FAKE_PREFIX = 'fake:';
 

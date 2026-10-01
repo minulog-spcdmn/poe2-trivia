@@ -8,9 +8,10 @@ is hosted as a static site on GitHub Pages. No server needed.
 **How to play**
 
 1. On your turn, pick one of three random categories. There are 10 broad,
-   similarly sized categories: One-Handed Weapons, Two-Handed Weapons,
-   Off-Hands, Body Armours, Helmets, Gloves & Boots, Rings, Amulets & Belts,
-   Flasks/Jewels/Relics, and Lineage Gems. A category you pick can't be
+   similarly sized categories: One-Handed Weapons, Two-Handed Weapons
+   (talismans included), Off-Hands, Body Armours, Helmets, Gloves & Boots,
+   Rings, Amulets & Belts, Flasks/Charms/Jewels/Relics/Tablets, and Lineage
+   Gems. A category you pick can't be
    offered to you again for your next 2 turns on Cruel, 3 on Merciless and
    4 on Eternal.
 2. Name the unique item or lineage gem from its art (or, on harder
