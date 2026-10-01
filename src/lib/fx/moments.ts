@@ -30,9 +30,10 @@ import { CALM, embers as backdropEmbers } from '../backdropEmbers';
 
 const k3 = (c: Vec3, k: number): Vec3 => [c[0] * k, c[1] * k, c[2] * k];
 
-/** A CSS colour (hsl() from playerColor, or rgb()) as an HDR colour of the given brightness. */
+/** A CSS colour (hsl() from playerColor, rgb() or #hex) as an HDR colour of the given brightness. */
 export function hdr(css: string, gain = 2.6): Vec3 {
   const m = css.match(/hsl\(\s*([\d.]+)(?:deg)?[\s,]+([\d.]+)%[\s,]+([\d.]+)%/);
+  const hex = css.match(/#([\da-f]{3,8})\b/i)?.[1];
   let rgb: [number, number, number] = [1, 0.8, 0.4];
   if (m) {
     const h = parseFloat(m[1]) / 360;
@@ -48,6 +49,11 @@ export function hdr(css: string, gain = 2.6): Vec3 {
       return p;
     };
     rgb = [f(h + 1 / 3), f(h), f(h - 1 / 3)];
+  } else if (hex) {
+    // #rgb (or #rgba) has one digit per channel, #rrggbb (or #rrggbbaa) two; alpha is ignored.
+    const d = hex.length < 6 ? 1 : 2;
+    const ch = (i: number) => parseInt(hex.slice(i * d, i * d + d).repeat(3 - d), 16) / 255;
+    rgb = [ch(0), ch(1), ch(2)];
   } else {
     const n = css.match(/[\d.]+/g)?.map(Number);
     if (n && n.length >= 3) rgb = [n[0] / 255, n[1] / 255, n[2] / 255];

@@ -9,6 +9,7 @@
   import { backdropShadow } from '../lib/backdropShadow';
   import { fxActive, fxUserOn } from '../lib/fx/core';
   import { victory } from '../lib/fx/moments';
+  import { portal } from '../lib/portal';
 
   const s = $derived(session.state!);
   const standings = $derived([...s.players].sort((a, b) => b.score - a.score));
@@ -116,7 +117,8 @@
   });
 </script>
 
-<canvas bind:this={canvas} class="sparks" aria-hidden="true"></canvas>
+<!-- Fixed to the viewport, so it leaves the app shell (which camera shake moves). -->
+<canvas bind:this={canvas} class="sparks" use:portal aria-hidden="true"></canvas>
 
 <div class="over">
   <p class="kicker" in:fly={{ y: -10, duration: 600 }}>Victory</p>
@@ -226,6 +228,8 @@
     will-change: transform;
   }
   .gold {
+    /* Positioned, so it paints over the shade, which its layer would otherwise lift above it. */
+    position: relative;
     /* A band of light sweeps across the gold every few seconds. */
     background:
       linear-gradient(100deg, transparent 42%, rgba(255, 250, 232, 0.8) 50%, transparent 58%) no-repeat,

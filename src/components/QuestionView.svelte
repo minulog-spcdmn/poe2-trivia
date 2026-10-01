@@ -14,6 +14,8 @@
   import { FILL_START, answerCharging, artRevealed, raceMiss, reveal as revealFx, tileLifted } from '../lib/fx/moments';
   import { FILL_LEAD } from '../lib/soundDesign';
   import { recordReveal } from '../lib/fx/streaks';
+  import { scoreRowOf } from '../lib/scoreRows';
+  import type { Handle } from '../lib/fx/core';
   import { fxActive, type Handle } from '../lib/fx/core';
 
   const s = $derived(session.state!);
@@ -147,7 +149,7 @@
       const scorer = race ? (r.winnerId ?? null) : r.correct ? active.id : null;
       const missed = race ? q.misses.map((m) => m.playerId) : r.correct ? [] : [active.id];
       streak = recordReveal(q.askedAt, scorer, missed);
-      const pill = scorer ? document.querySelector(`.board li[data-player="${CSS.escape(scorer)}"]`) : null;
+      const pill = scorer ? scoreRowOf(scorer) : null;
       // The scorer's bar, before and after this point (the state already counts it).
       const now = scorer ? s.players.find((p) => p.id === scorer)?.score : undefined;
       const target = s.settings.targetScore;
@@ -320,6 +322,7 @@
           <button
             class="tile {st}"
             data-sfx="none"
+            data-fx="hover"
             bind:this={optionEls[i]}
             class:mine
             disabled={!mine || !!reveal || chosen !== null}
@@ -402,6 +405,7 @@
           <button
             class="option {st}"
             data-sfx="none"
+            data-fx="hover"
             bind:this={optionEls[i]}
             use:backdropShadow={{ fill: 'linear' }}
             class:mine

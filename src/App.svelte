@@ -20,10 +20,35 @@
   let shell: HTMLElement;
   let toastEl = $state<HTMLElement | null>(null);
 
+  /**
+   * Dev only: when a shake starts, warns about anything position: fixed in the
+   * shell. The shake's translate makes the shell its containing block, so it
+   * would shake along and be placed against the scrolled shell, not the viewport.
+   */
+  function warnFixedInShell(shell: HTMLElement) {
+    const warned = new WeakSet<Element>();
+    let moving = false;
+    const watch = new MutationObserver(() => {
+      const was = moving;
+      moving = !!shell.style.translate;
+      if (!moving || was) return;
+      for (const el of shell.querySelectorAll('*')) {
+        if (warned.has(el) || getComputedStyle(el).position !== 'fixed') continue;
+        warned.add(el);
+        console.warn('A fixed element inside .shell moves with camera shake; render it with use:portal (lib/portal.ts).', el);
+      }
+    });
+    watch.observe(shell, { attributes: true, attributeFilter: ['style'] });
+    return () => watch.disconnect();
+  }
+
   onMount(() => {
     session.resume();
     // Camera shake moves the UI (#app clips it, so it can't add scrolling).
+    // Anything fixed to the viewport must live outside .shell: App's own
+    // overlays sit after it, and the screens' go to <body> with use:portal.
     const undo = shakeTarget(shell, 1);
+    const unwatch = import.meta.env.DEV ? warnFixedInShell(shell) : () => {};
     const off = onFxChange((on) => {
       fxOn = on;
       fxCan = fxAvailable();
@@ -31,6 +56,7 @@
     fxCan = fxAvailable();
     return () => {
       undo();
+      unwatch();
       off();
     };
   });

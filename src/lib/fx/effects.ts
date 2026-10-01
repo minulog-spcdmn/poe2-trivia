@@ -4,7 +4,7 @@
 
 import { Shape } from './particles';
 import { ShapeType } from './renderer';
-import { after, boxOf, budget, fxActive, particle, shape, task, type Anchor, type Box, type Handle, type Point, type Vec3 } from './core';
+import { after, boxOf, budget, detached, fxActive, particle, shape, task, type Anchor, type Box, type Handle, type Point, type Vec3 } from './core';
 
 // ---------- palette ----------
 
@@ -74,7 +74,7 @@ export type SparkOpts = {
 
 /** Hot, motion-blurred sparks thrown out of `at`. */
 export function sparks(at: Anchor, o: SparkOpts = {}) {
-  if (!fxActive()) return;
+  if (!fxActive() || detached(at)) return;
   const b = boxOf(at);
   const n = budget(o.count ?? 24);
   const [s0, s1] = o.speed ?? [180, 620];
@@ -119,7 +119,7 @@ export type EmberOpts = {
 
 /** Glowing embers that drift up and flicker out. */
 export function embers(at: Anchor, o: EmberOpts = {}) {
-  if (!fxActive()) return;
+  if (!fxActive() || detached(at)) return;
   const b = boxOf(at);
   const n = budget(o.count ?? 10);
   const colors = o.colors ?? [C.ember, C.gold];
@@ -154,7 +154,7 @@ export function embers(at: Anchor, o: EmberOpts = {}) {
 
 /** Glowing shards that break outward and fall (a wrong answer shattering). */
 export function shards(at: Anchor, o: { count?: number; colors?: Vec3[]; speed?: [number, number]; area?: 'fill' | 'centre' } = {}) {
-  if (!fxActive()) return;
+  if (!fxActive() || detached(at)) return;
   const b = boxOf(at);
   const n = budget(o.count ?? 16);
   const [s0, s1] = o.speed ?? [80, 360];
@@ -184,7 +184,7 @@ export function shards(at: Anchor, o: { count?: number; colors?: Vec3[]; speed?:
 
 /** Twinkling four-point stars, scattered over `at`. */
 export function glints(at: Anchor, o: { count?: number; color?: Vec3; size?: [number, number]; life?: [number, number]; area?: 'fill' | 'edge' | 'centre'; delay?: [number, number] } = {}) {
-  if (!fxActive()) return;
+  if (!fxActive() || detached(at)) return;
   const b = boxOf(at);
   const n = budget(o.count ?? 5);
   for (let i = 0; i < n; i++) {
@@ -207,7 +207,7 @@ export function glints(at: Anchor, o: { count?: number; color?: Vec3; size?: [nu
 
 /** Soft glow puffs (dust of light), mostly for impacts. */
 export function puffs(at: Anchor, o: { count?: number; color?: Vec3; size?: [number, number]; speed?: [number, number]; life?: [number, number]; area?: 'fill' | 'edge' | 'centre'; angle?: number; spread?: number } = {}) {
-  if (!fxActive()) return;
+  if (!fxActive() || detached(at)) return;
   const b = boxOf(at);
   const n = budget(o.count ?? 8);
   const [s0, s1] = o.speed ?? [20, 120];
@@ -233,7 +233,7 @@ export function puffs(at: Anchor, o: { count?: number; color?: Vec3; size?: [num
 
 /** Particles pulled into a point from around it (charging up). */
 export function implode(at: Anchor, o: { count?: number; radius?: number; color?: Vec3; life?: number } = {}) {
-  if (!fxActive()) return;
+  if (!fxActive() || detached(at)) return;
   const b = boxOf(at);
   const n = budget(o.count ?? 18);
   const R = o.radius ?? Math.max(60, Math.max(b.w, b.h) * 0.7);
@@ -425,6 +425,7 @@ export function outline(
 
 /** A swirling portal on `at`. Endless; stop the handle to close it. */
 export function portal(at: Anchor, o: { radius?: number; color?: Vec3; intensity?: number } = {}): Handle {
+  if (detached(at)) return { stop() {} };
   const R = o.radius ?? 60;
   const h = shape({
     type: ShapeType.Portal,
