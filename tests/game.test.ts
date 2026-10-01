@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { Engine, ActionError, createGame, DIFFICULTIES, isDifficulty, isFake, rulesFor, RARE_GROUPS, nameSimilarity, publicView, type Difficulty, type GameState, type Item, type Question } from '../src/lib/game.ts';
+import { Engine, ActionError, AUTO_NEXT_MS, createGame, DIFFICULTIES, isDifficulty, isFake, rulesFor, RARE_GROUPS, nameSimilarity, publicView, type Difficulty, type GameState, type Item, type Question } from '../src/lib/game.ts';
 
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
 const fakes: Record<string, string[]> = JSON.parse(readFileSync(new URL('../src/data/fakes.json', import.meta.url), 'utf8'));
@@ -695,6 +695,11 @@ test('reveals are stamped with the host clock; only the host or (turns) whoever 
     if (mode === 'race') assert.throws(() => engine.apply(s, { type: 'next' }, answerer), /host moves the race on/);
     else assert.equal(engine.apply(s, { type: 'next' }, answerer).phase, 'choosing', 'turns: whoever answered moves on');
     assert.notEqual(engine.apply(s, { type: 'next' }, 'p0').phase, 'reveal', `${mode}: the host moves on`);
+    // Once the automatic move on is due, a guest's screen may trigger it (the host's timer can run late).
+    clock = s.reveal!.at! + AUTO_NEXT_MS - 1;
+    assert.throws(() => engine.apply(s, { type: 'next' }, bystander), (e: unknown) => e instanceof ActionError && e.silent, `${mode}: not yet, quietly`);
+    clock += 1;
+    assert.notEqual(engine.apply(s, { type: 'next' }, bystander).phase, 'reveal', `${mode}: due, so anyone's nudge moves on`);
   }
 });
 

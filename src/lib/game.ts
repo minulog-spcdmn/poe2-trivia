@@ -161,6 +161,9 @@ export interface Settings {
 /** Answers sent just before time ran out still count if they arrive this late (network delay). */
 export const ANSWER_GRACE_MS = 500;
 
+/** Online, a reveal moves on by itself this long after it was shown. */
+export const AUTO_NEXT_MS = 4000;
+
 /** Race questions need an end, so "no timer" falls back to this. */
 export const RACE_DEFAULT_TIMER = 30;
 
@@ -548,11 +551,16 @@ export class Engine {
       case 'next': {
         // Two people pressing Next (or Next and the automatic move on) at once is expected.
         if (s.phase !== 'reveal') throw new ActionError('Nothing to continue.', true);
+        // Once the automatic move on is due, anyone's screen may trigger it:
+        // the host's own timer runs late in a busy or background tab. Before
+        // that, the others' buttons are disabled, so only such a nudge that
+        // arrived a moment early ends up here; the host's timer follows.
+        const due = s.reveal?.at !== undefined && this.now() >= s.reveal.at + AUTO_NEXT_MS;
         if (race) {
-          if (!isHost) throw new ActionError('The host moves the race on.');
+          if (!isHost && !due) throw new ActionError('The host moves the race on.', true);
           this.advanceRace(s);
         } else {
-          if (!isActive && !isHost) throw new ActionError("It's not your turn.");
+          if (!isActive && !isHost && !due) throw new ActionError("It's not your turn.", true);
           this.advance(s);
         }
         break;

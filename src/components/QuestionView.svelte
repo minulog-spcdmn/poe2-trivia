@@ -195,6 +195,12 @@
     session.dispatch({ type: 'next' });
   }
 
+  // A guest's bar ran out: tell the host it's time, in case its own timer is
+  // running late (a busy or background tab would leave everyone waiting).
+  function barDone() {
+    if (session.mode === 'client') session.dispatch({ type: 'next' });
+  }
+
   function onKey(e: KeyboardEvent) {
     if (e.target instanceof HTMLInputElement) return;
     // Browser shortcuts (Ctrl/Cmd+1 switches tabs), held keys, and an open dialog aren't answers.
@@ -273,7 +279,8 @@
         {#if fellFor}{fellFor} isn't a real item.{/if}
       </p>
       <button
-        class="btn primary"
+        class="btn"
+        class:primary={canNext}
         data-sfx="none"
         disabled={!canNext}
         title={canNext ? undefined : race ? 'The host moves the race on' : `${active.name} or the host moves on`}
@@ -281,7 +288,7 @@
       >
         {race ? 'Next question' : 'Next turn'}
         {#if session.mode !== 'local'}
-          <span class="auto" style:animation-duration="{AUTO_NEXT_SECONDS}s" style:animation-delay="{autoDelay}s"></span>
+          <span class="auto" style:--dur="{AUTO_NEXT_SECONDS}s" style:animation-delay="{autoDelay}s" onanimationend={barDone}></span>
         {/if}
       </button>
     </div>
@@ -1065,6 +1072,12 @@
     white-space: nowrap;
     overflow: hidden;
   }
+  /* Not yours to press: a plain button rather than a faded one, so the countdown stays bright. */
+  .result .btn:disabled {
+    opacity: 1;
+    filter: none;
+    color: var(--muted);
+  }
   .auto {
     position: absolute;
     left: 0;
@@ -1073,7 +1086,13 @@
     width: 100%;
     background: var(--gold-hi);
     transform-origin: left;
-    animation: drain linear forwards;
+    animation: drain var(--dur) linear forwards;
+  }
+  /* A countdown, not decoration: it keeps running with reduced motion too. */
+  @media (prefers-reduced-motion: reduce) {
+    .result .auto {
+      animation-duration: var(--dur) !important;
+    }
   }
   /* Race avatars: an overlapping stack, out of the flow so they never squeeze
      or rewrap the answer as guesses come in and at the reveal. */
