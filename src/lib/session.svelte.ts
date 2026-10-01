@@ -19,7 +19,7 @@ import {
   publicView,
   activeRules,
   ANSWER_GRACE_MS,
-  AUTO_NEXT_MS,
+  autoNextLeft,
   type Action,
   type GameState,
   type Item,
@@ -1074,7 +1074,7 @@ class Session {
       } catch {
         /* already moved on */
       }
-    }, autoNextLeft(s, Date.now()));
+    }, autoNextLeft(s.reveal?.at, Date.now()));
   }
 
   /** Turns mode: don't let the game wait forever on a player who dropped out on their turn. */
@@ -1227,8 +1227,3 @@ function writeSaved(saved: Saved | null) {
 }
 
 export const session = new Session();
-/** Milliseconds until the reveal moves on by itself, at host-clock time `now`. */
-export function autoNextLeft(s: GameState, now: number) {
-  const at = s.reveal?.at;
-  return at === undefined ? AUTO_NEXT_MS : Math.min(AUTO_NEXT_MS, Math.max(0, at + AUTO_NEXT_MS - now));
-}

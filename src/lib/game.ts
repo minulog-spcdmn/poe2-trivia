@@ -164,6 +164,14 @@ export const ANSWER_GRACE_MS = 500;
 /** Online, a reveal moves on by itself this long after it was shown. */
 export const AUTO_NEXT_MS = 4000;
 
+/**
+ * Milliseconds until a reveal stamped `at` moves on by itself, at host-clock
+ * time `now` (the full delay for a reveal without a stamp).
+ */
+export function autoNextLeft(at: number | undefined, now: number) {
+  return at === undefined ? AUTO_NEXT_MS : Math.min(AUTO_NEXT_MS, Math.max(0, at + AUTO_NEXT_MS - now));
+}
+
 /** Race questions need an end, so "no timer" falls back to this. */
 export const RACE_DEFAULT_TIMER = 30;
 

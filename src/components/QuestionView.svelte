@@ -1,7 +1,7 @@
 <script lang="ts">
   import { fly, fade, scale } from 'svelte/transition';
   import { session, engine } from '../lib/session.svelte';
-  import { AUTO_NEXT_MS, isFake } from '../lib/game';
+  import { AUTO_NEXT_MS, autoNextLeft, isFake } from '../lib/game';
   import { shown, gridCells } from '../lib/media.svelte';
   import { itemImage } from '../lib/ui';
   import { sfx } from '../lib/sound';
@@ -42,7 +42,7 @@
     if (!at || session.mode === 'local') return;
     let frame = 0;
     const tick = () => {
-      autoLeft = Math.max(0, Math.min(1, (at + AUTO_NEXT_MS - session.hostNow()) / AUTO_NEXT_MS));
+      autoLeft = autoNextLeft(at, session.hostNow()) / AUTO_NEXT_MS;
       if (autoLeft > 0) frame = requestAnimationFrame(tick);
     };
     untrack(tick);

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { Engine, ActionError, AUTO_NEXT_MS, createGame, DIFFICULTIES, isDifficulty, isFake, rulesFor, RARE_GROUPS, nameSimilarity, publicView, type Difficulty, type GameState, type Item, type Question } from '../src/lib/game.ts';
+import { Engine, ActionError, AUTO_NEXT_MS, autoNextLeft, createGame, DIFFICULTIES, isDifficulty, isFake, rulesFor, RARE_GROUPS, nameSimilarity, publicView, type Difficulty, type GameState, type Item, type Question } from '../src/lib/game.ts';
 
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
 const fakes: Record<string, string[]> = JSON.parse(readFileSync(new URL('../src/data/fakes.json', import.meta.url), 'utf8'));
@@ -695,9 +695,15 @@ test('reveals are stamped with the host clock; only the host or (turns) whoever 
     if (mode === 'race') assert.throws(() => engine.apply(s, { type: 'next' }, answerer), /host moves the race on/);
     else assert.equal(engine.apply(s, { type: 'next' }, answerer).phase, 'choosing', 'turns: whoever answered moves on');
     assert.notEqual(engine.apply(s, { type: 'next' }, 'p0').phase, 'reveal', `${mode}: the host moves on`);
-    clock += AUTO_NEXT_MS;
-    assert.throws(() => engine.apply(s, { type: 'next' }, bystander), ActionError, `${mode}: not even once the time is up`);
   }
+});
+
+test('the automatic move on counts down from the reveal stamp', () => {
+  assert.equal(autoNextLeft(1000, 1000), AUTO_NEXT_MS, 'just revealed');
+  assert.equal(autoNextLeft(1000, 1000 + 1500), AUTO_NEXT_MS - 1500);
+  assert.equal(autoNextLeft(1000, 1000 + AUTO_NEXT_MS + 5000), 0, 'long overdue');
+  assert.equal(autoNextLeft(1000, 0), AUTO_NEXT_MS, 'a clock behind the stamp never adds time');
+  assert.equal(autoNextLeft(undefined, 123), AUTO_NEXT_MS, 'no stamp: the full delay');
 });
 
 test('race: asking another question refunds blind guesses and leaves out all the old pictures', () => {
