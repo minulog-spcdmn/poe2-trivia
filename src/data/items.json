@@ -28,7 +28,7 @@
   "name": "Against the Darkness",
   "base": "Time-Lost Diamond",
   "group": "Jewels",
-  "category": "Flasks, Jewels & More",
+  "category": "Flasks, Charms, Jewels, Relics & Tablets",
   "kind": "unique"
  },
  {
@@ -108,7 +108,7 @@
   "name": "Arakaali's Gift",
   "base": "Antidote Charm",
   "group": "Charms",
-  "category": "Flasks, Jewels & More",
+  "category": "Flasks, Charms, Jewels, Relics & Tablets",
   "kind": "unique"
  },
  {
@@ -292,7 +292,7 @@
   "name": "Beira's Anguish",
   "base": "Dousing Charm",
   "group": "Charms",
-  "category": "Flasks, Jewels & More",
+  "category": "Flasks, Charms, Jewels, Relics & Tablets",
   "kind": "unique"
  },
  {
@@ -428,7 +428,7 @@
   "name": "Blood of the Warrior",
   "base": "Gargantuan Life Flask",
   "group": "Flasks",
-  "category": "Flasks, Jewels & More",
+  "category": "Flasks, Charms, Jewels, Relics & Tablets",
   "kind": "unique"
  },
  {
@@ -484,7 +484,7 @@
   "name": "Breath of the Mountains",
   "base": "Sapphire Charm",
   "group": "Charms",
-  "category": "Flasks, Jewels & More",
+  "category": "Flasks, Charms, Jewels, Relics & Tablets",
   "kind": "unique"
  },
  {
@@ -668,7 +668,7 @@
   "name": "Clear Skies",
   "base": "Delirium Tablet",
   "group": "Tablets",
-  "category": "Flasks, Jewels & More",
+  "category": "Flasks, Charms, Jewels, Relics & Tablets",
   "kind": "unique"
  },
  {
@@ -716,7 +716,7 @@
   "name": "Controlled Metamorphosis",
   "base": "Diamond",
   "group": "Jewels",
-  "category": "Flasks, Jewels & More",
+  "category": "Flasks, Charms, Jewels, Relics & Tablets",
   "kind": "unique"
  },
  {
@@ -820,7 +820,7 @@
   "name": "Cruel Hegemony",
   "base": "Overseer Tablet",
   "group": "Tablets",
-  "category": "Flasks, Jewels & More",
+  "category": "Flasks, Charms, Jewels, Relics & Tablets",
   "kind": "unique"
  },
  {
@@ -1276,7 +1276,7 @@
   "name": "Flesh Crucible",
   "base": "Diamond",
   "group": "Jewels",
-  "category": "Flasks, Jewels & More",
+  "category": "Flasks, Charms, Jewels, Relics & Tablets",
   "kind": "unique"
  },
  {
@@ -1292,7 +1292,7 @@
   "name": "For Utopia",
   "base": "Stone Charm",
   "group": "Charms",
-  "category": "Flasks, Jewels & More",
+  "category": "Flasks, Charms, Jewels, Relics & Tablets",
   "kind": "unique"
  },
  {
@@ -1308,7 +1308,7 @@
   "name": "Forsaken Bangle",
   "base": "Amethyst Charm",
   "group": "Charms",
-  "category": "Flasks, Jewels & More",
+  "category": "Flasks, Charms, Jewels, Relics & Tablets",
   "kind": "unique"
  },
  {
@@ -1324,7 +1324,7 @@
   "name": "Freedom of Faith",
   "base": "Ritual Tablet",
   "group": "Tablets",
-  "category": "Flasks, Jewels & More",
+  "category": "Flasks, Charms, Jewels, Relics & Tablets",
   "kind": "unique"
  },
  {
@@ -1332,7 +1332,7 @@
   "name": "From Nothing",
   "base": "Diamond",
   "group": "Jewels",
-  "category": "Flasks, Jewels & More",
+  "category": "Flasks, Charms, Jewels, Relics & Tablets",
   "kind": "unique"
  },
  {
@@ -1452,7 +1452,7 @@
   "name": "Grand Spectrum",
   "base": "Ruby",
   "group": "Jewels",
-  "category": "Flasks, Jewels & More",
+  "category": "Flasks, Charms, Jewels, Relics & Tablets",
   "kind": "unique"
  },
  {
@@ -1564,7 +1564,7 @@
   "name": "Heart of the Well",
   "base": "Diamond",
   "group": "Jewels",
-  "category": "Flasks, Jewels & More",
+  "category": "Flasks, Charms, Jewels, Relics & Tablets",
   "kind": "unique"
  },
  {
@@ -1596,7 +1596,7 @@
   "name": "Heroic Tragedy",
   "base": "Timeless Jewel",
   "group": "Jewels",
-  "category": "Flasks, Jewels & More",
+  "category": "Flasks, Charms, Jewels, Relics & Tablets",
   "kind": "unique"
  },
  {
@@ -1876,7 +1876,7 @@
   "name": "Lavianga's Spirits",
   "base": "Gargantuan Mana Flask",
   "group": "Flasks",
-  "category": "Flasks, Jewels & More",
+  "category": "Flasks, Charms, Jewels, Relics & Tablets",
   "kind": "unique"
  },
  {
@@ -2036,7 +2036,7 @@
   "name": "Mastered Domain",
   "base": "Irradiated Tablet",
   "group": "Tablets",
-  "category": "Flasks, Jewels & More",
+  "category": "Flasks, Charms, Jewels, Relics & Tablets",
   "kind": "unique"
  },
  {
@@ -2052,7 +2052,7 @@
   "name": "Megalomaniac",
   "base": "Diamond",
   "group": "Jewels",
-  "category": "Flasks, Jewels & More",
+  "category": "Flasks, Charms, Jewels, Relics & Tablets",
   "kind": "unique"
  },
  {
@@ -2068,7 +2068,7 @@
   "name": "Melting Maelstrom",
   "base": "Ultimate Mana Flask",
   "group": "Flasks",
-  "category": "Flasks, Jewels & More",
+  "category": "Flasks, Charms, Jewels, Relics & Tablets",
   "kind": "unique"
  },
  {
@@ -2148,7 +2148,7 @@
   "name": "Nascent Hope",
   "base": "Thawing Charm",
   "group": "Charms",
-  "category": "Flasks, Jewels & More",
+  "category": "Flasks, Charms, Jewels, Relics & Tablets",
   "kind": "unique"
  },
  {
@@ -2180,7 +2180,7 @@
   "name": "Ngamahu's Chosen",
   "base": "Ruby Charm",
   "group": "Charms",
-  "category": "Flasks, Jewels & More",
+  "category": "Flasks, Charms, Jewels, Relics & Tablets",
   "kind": "unique"
  },
  {
@@ -2244,7 +2244,7 @@
   "name": "Olroth's Resolve",
   "base": "Ultimate Life Flask",
   "group": "Flasks",
-  "category": "Flasks, Jewels & More",
+  "category": "Flasks, Charms, Jewels, Relics & Tablets",
   "kind": "unique"
  },
  {
@@ -2260,7 +2260,7 @@
   "name": "Opportunity",
   "base": "Ultimate Life Flask",
   "group": "Flasks",
-  "category": "Flasks, Jewels & More",
+  "category": "Flasks, Charms, Jewels, Relics & Tablets",
   "kind": "unique"
  },
  {
@@ -2388,7 +2388,7 @@
   "name": "Prism of Belief",
   "base": "Diamond",
   "group": "Jewels",
-  "category": "Flasks, Jewels & More",
+  "category": "Flasks, Charms, Jewels, Relics & Tablets",
   "kind": "unique"
  },
  {
@@ -2540,7 +2540,7 @@
   "name": "Rite of Passage",
   "base": "Golden Charm",
   "group": "Charms",
-  "category": "Flasks, Jewels & More",
+  "category": "Flasks, Charms, Jewels, Relics & Tablets",
   "kind": "unique"
  },
  {
@@ -2660,7 +2660,7 @@
   "name": "Sanguis Heroum",
   "base": "Staunching Charm",
   "group": "Charms",
-  "category": "Flasks, Jewels & More",
+  "category": "Flasks, Charms, Jewels, Relics & Tablets",
   "kind": "unique"
  },
  {
@@ -2684,7 +2684,7 @@
   "name": "Season of the Hunt",
   "base": "Overseer Tablet",
   "group": "Tablets",
-  "category": "Flasks, Jewels & More",
+  "category": "Flasks, Charms, Jewels, Relics & Tablets",
   "kind": "unique"
  },
  {
@@ -2908,7 +2908,7 @@
   "name": "Split Personality",
   "base": "Ruby",
   "group": "Jewels",
-  "category": "Flasks, Jewels & More",
+  "category": "Flasks, Charms, Jewels, Relics & Tablets",
   "kind": "unique"
  },
  {
@@ -3052,7 +3052,7 @@
   "name": "The Adorned",
   "base": "Diamond",
   "group": "Jewels",
-  "category": "Flasks, Jewels & More",
+  "category": "Flasks, Charms, Jewels, Relics & Tablets",
   "kind": "unique"
  },
  {
@@ -3084,7 +3084,7 @@
   "name": "The Black Cat",
   "base": "Grounding Charm",
   "group": "Charms",
-  "category": "Flasks, Jewels & More",
+  "category": "Flasks, Charms, Jewels, Relics & Tablets",
   "kind": "unique"
  },
  {
@@ -3132,7 +3132,7 @@
   "name": "The Burden of Leadership",
   "base": "Tapestry Relic",
   "group": "Relics",
-  "category": "Flasks, Jewels & More",
+  "category": "Flasks, Charms, Jewels, Relics & Tablets",
   "kind": "unique"
  },
  {
@@ -3156,7 +3156,7 @@
   "name": "The Changing Seasons",
   "base": "Seal Relic",
   "group": "Relics",
-  "category": "Flasks, Jewels & More",
+  "category": "Flasks, Charms, Jewels, Relics & Tablets",
   "kind": "unique"
  },
  {
@@ -3196,7 +3196,7 @@
   "name": "The Desperate Alliance",
   "base": "Vase Relic",
   "group": "Relics",
-  "category": "Flasks, Jewels & More",
+  "category": "Flasks, Charms, Jewels, Relics & Tablets",
   "kind": "unique"
  },
  {
@@ -3236,7 +3236,7 @@
   "name": "The Fall of the Axe",
   "base": "Silver Charm",
   "group": "Charms",
-  "category": "Flasks, Jewels & More",
+  "category": "Flasks, Charms, Jewels, Relics & Tablets",
   "kind": "unique"
  },
  {
@@ -3260,7 +3260,7 @@
   "name": "The Grand Project",
   "base": "Irradiated Tablet",
   "group": "Tablets",
-  "category": "Flasks, Jewels & More",
+  "category": "Flasks, Charms, Jewels, Relics & Tablets",
   "kind": "unique"
  },
  {
@@ -3300,7 +3300,7 @@
   "name": "The Last Flame",
   "base": "Incense Relic",
   "group": "Relics",
-  "category": "Flasks, Jewels & More",
+  "category": "Flasks, Charms, Jewels, Relics & Tablets",
   "kind": "unique"
  },
  {
@@ -3356,7 +3356,7 @@
   "name": "The Peacemaker's Draught",
   "base": "Amphora Relic",
   "group": "Relics",
-  "category": "Flasks, Jewels & More",
+  "category": "Flasks, Charms, Jewels, Relics & Tablets",
   "kind": "unique"
  },
  {
@@ -3604,7 +3604,7 @@
   "name": "Uhtred's Chalice",
   "base": "Transcendent Mana Flask",
   "group": "Flasks",
-  "category": "Flasks, Jewels & More",
+  "category": "Flasks, Charms, Jewels, Relics & Tablets",
   "kind": "unique"
  },
  {
@@ -3636,7 +3636,7 @@
   "name": "Undying Hate",
   "base": "Timeless Jewel",
   "group": "Jewels",
-  "category": "Flasks, Jewels & More",
+  "category": "Flasks, Charms, Jewels, Relics & Tablets",
   "kind": "unique"
  },
  {
@@ -3644,7 +3644,7 @@
   "name": "Unforeseen Consequences",
   "base": "Abyss Tablet",
   "group": "Tablets",
-  "category": "Flasks, Jewels & More",
+  "category": "Flasks, Charms, Jewels, Relics & Tablets",
   "kind": "unique"
  },
  {
@@ -3676,7 +3676,7 @@
   "name": "Valako's Roar",
   "base": "Topaz Charm",
   "group": "Charms",
-  "category": "Flasks, Jewels & More",
+  "category": "Flasks, Charms, Jewels, Relics & Tablets",
   "kind": "unique"
  },
  {
@@ -3772,7 +3772,7 @@
   "name": "Visions of Paradise",
   "base": "Irradiated Tablet",
   "group": "Tablets",
-  "category": "Flasks, Jewels & More",
+  "category": "Flasks, Charms, Jewels, Relics & Tablets",
   "kind": "unique"
  },
  {
@@ -3780,7 +3780,7 @@
   "name": "Voices",
   "base": "Sapphire",
   "group": "Jewels",
-  "category": "Flasks, Jewels & More",
+  "category": "Flasks, Charms, Jewels, Relics & Tablets",
   "kind": "unique"
  },
  {
@@ -3908,7 +3908,7 @@
   "name": "Wraeclast Besieged",
   "base": "Breach Tablet",
   "group": "Tablets",
-  "category": "Flasks, Jewels & More",
+  "category": "Flasks, Charms, Jewels, Relics & Tablets",
   "kind": "unique"
  },
  {

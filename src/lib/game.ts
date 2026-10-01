@@ -74,19 +74,8 @@ export const RARE_GROUPS: Record<string, number> = { Tablets: 0.25 };
 
 const weightOf = (it: Item) => RARE_GROUPS[it.group] ?? 1;
 
-/**
- * What a category's card lists under its name: its groups, alphabetically,
- * without the "One-Handed"/"Two-Handed" the name already says. Empty when the
- * name already says it all (Rings, Gloves & Boots, Lineage Gems).
- */
-export function categoryContents(category: string, items: Item[]): string[] {
-  if (items.some((it) => it.kind === 'gem')) return [];
-  const groups = [...new Set(items.map((it) => it.group.replace(/^(One|Two)-Handed /, '')))].sort();
-  return groups.every((g) => category.includes(g)) ? [] : groups;
-}
-
 /** Categories that were renamed, by their old name. */
-const RENAMED_CATEGORIES: Record<string, string> = { 'Flasks, Jewels & Relics': 'Flasks, Jewels & More' };
+const RENAMED_CATEGORIES: Record<string, string> = { 'Flasks, Jewels & Relics': 'Flasks, Charms, Jewels, Relics & Tablets' };
 
 /** A game saved before categories were renamed, with the new names. */
 export function renameCategories(s: GameState): GameState {

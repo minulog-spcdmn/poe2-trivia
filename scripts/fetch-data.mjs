@@ -40,11 +40,11 @@ const CATEGORY_RULES = [
   ['Rings', 'Rings', 'Rings'],
   ['Amulets', 'Amulets', 'Amulets & Belts'],
   ['Belts', 'Belts', 'Amulets & Belts'],
-  ['Flasks', 'Flasks', 'Flasks, Jewels & More'],
-  ['Charms', 'Charms', 'Flasks, Jewels & More'],
-  ['Jewels', 'Jewels', 'Flasks, Jewels & More'],
-  ['Relics', 'Relics', 'Flasks, Jewels & More'],
-  ['Currency/PrecursorTablets', 'Tablets', 'Flasks, Jewels & More'],
+  ['Flasks', 'Flasks', 'Flasks, Charms, Jewels, Relics & Tablets'],
+  ['Charms', 'Charms', 'Flasks, Charms, Jewels, Relics & Tablets'],
+  ['Jewels', 'Jewels', 'Flasks, Charms, Jewels, Relics & Tablets'],
+  ['Relics', 'Relics', 'Flasks, Charms, Jewels, Relics & Tablets'],
+  ['Currency/PrecursorTablets', 'Tablets', 'Flasks, Charms, Jewels, Relics & Tablets'],
 ];
 
 const GEM_SOURCE = 'https://poe2db.tw/us/Lineage_Supports';

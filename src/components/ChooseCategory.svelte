@@ -1,7 +1,7 @@
 <script lang="ts">
   import { cubicOut } from 'svelte/easing';
   import { session } from '../lib/session.svelte';
-  import { categoryGroups, categoryIcon } from '../lib/ui';
+  import { categoryIcon } from '../lib/ui';
   import { rulesFor } from '../lib/game';
   import { sfx } from '../lib/sound';
   import { backdropShadow } from '../lib/backdropShadow';
@@ -113,12 +113,7 @@
           <span class="glare"></span>
           <span class="filigree"></span>
           <span class="icon"><span class="glyph" style:--src="url('{categoryIcon(cat)}')"></span></span>
-          <span class="label">
-            <span class="title">{cat}</span>
-            {#if categoryGroups(cat).length}
-              <span class="groups">{#each categoryGroups(cat) as group (group)}<span>{group}</span>{/each}</span>
-            {/if}
-          </span>
+          <span class="title">{cat}</span>
         </span>
       </button>
     {/each}
@@ -218,12 +213,6 @@
       transform 0.5s var(--ease-out),
       opacity 0.4s;
   }
-  .label {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.3rem;
-  }
   .title {
     font-family: var(--font-display);
     font-weight: 700;
@@ -235,22 +224,6 @@
     transition:
       color 0.3s,
       text-shadow 0.3s;
-  }
-  /* What the category holds, so a quiver under Off-Hands is no surprise.
-     Spaced words rather than bullets, which would end up at a line's start. */
-  .groups {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    gap: 0.1rem 0.75em;
-    font-family: var(--font-display);
-    font-size: 0.72rem;
-    letter-spacing: 0.04em;
-    color: var(--gold);
-    line-height: 1.35;
-  }
-  .groups > span {
-    white-space: nowrap;
   }
 
   @media (min-width: 701px) {
@@ -372,16 +345,9 @@
       width: 60px;
       height: 60px;
     }
-    .label {
-      flex: 1;
-      align-items: flex-start;
-      gap: 0.15rem;
-    }
     .title {
+      flex: 1;
       text-align: left;
-    }
-    .groups {
-      justify-content: flex-start;
     }
     .filigree {
       inset: 3px;
