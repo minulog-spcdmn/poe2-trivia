@@ -200,6 +200,8 @@ export interface Reveal {
   timedOut: boolean;
   /** Race mode: who answered correctly first. */
   winnerId: string | null;
+  /** Host-clock timestamp of the reveal, so every screen counts down to the same move on (missing in older saves). */
+  at?: number;
 }
 
 /** Someone who joined a running game: they watch until the next game starts. */
@@ -546,13 +548,10 @@ export class Engine {
       case 'next': {
         // Two people pressing Next (or Next and the automatic move on) at once is expected.
         if (s.phase !== 'reveal') throw new ActionError('Nothing to continue.', true);
-        if (race) {
-          if (!isHost) throw new ActionError('The host moves the race on.');
-          this.advanceRace(s);
-        } else {
-          if (!isActive && !isHost) throw new ActionError("It's not your turn.");
-          this.advance(s);
-        }
+        // Anyone at the table may move on, not just the host or whoever answered.
+        if (!isHost && !s.players.some((p) => p.id === from)) throw new ActionError('Only players can move the game on.');
+        if (race) this.advanceRace(s);
+        else this.advance(s);
         break;
       }
       case 'skip': {
@@ -594,6 +593,7 @@ export class Engine {
         break;
       }
     }
+    if (s.reveal && !prev.reveal) s.reveal.at = this.now();
     s.version = prev.version + 1;
     return s;
   }

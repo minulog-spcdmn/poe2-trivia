@@ -671,6 +671,34 @@ test('a second Next for the same reveal is dropped quietly', () => {
   );
 });
 
+test('any player may move on from a reveal, spectators may not', () => {
+  for (const mode of ['turns', 'race'] as const) {
+    let clock = 5_000_000;
+    const engine = new Engine(items, { rng: seeded(3), now: () => clock });
+    let s: GameState = createGame('p0', { targetScore: 9, timer: 0, difficulty: 'cruel', mode, public: false, locked: false });
+    for (const [i, name] of ['A', 'B', 'C'].entries()) s = engine.apply(s, { type: 'join', playerId: `p${i}`, name }, `p${i}`);
+    s = engine.apply(s, { type: 'start' }, 'p0');
+    s = engine.apply(s, { type: 'join', playerId: 'late', name: 'Late' }, 'late');
+    // Race: anyone answers; turns: whoever's turn it is.
+    const answerer = mode === 'turns' ? s.players[s.turn].id : 'p1';
+    if (mode === 'turns') s = engine.apply(s, { type: 'pick', category: s.offered[0] }, answerer);
+    clock += 1234;
+    const q = s.question!;
+    s = engine.apply(s, { type: 'answer', index: right(q), askedAt: q.askedAt }, answerer);
+    assert.equal(s.phase, 'reveal');
+    assert.equal(s.reveal!.at, clock, `${mode}: the reveal is stamped with the host clock`);
+    clock += 999;
+    const after = engine.apply(s, { type: 'join', playerId: 'late', name: 'Late' }, 'late');
+    assert.equal(after.reveal!.at, s.reveal!.at, `${mode}: later updates keep the stamp`);
+    assert.throws(() => engine.apply(s, { type: 'next' }, 'late'), /Only players/, `${mode}: spectators watch`);
+    // Neither the host nor whoever answered.
+    const bystander = s.players.find((p) => p.id !== 'p0' && p.id !== answerer)!.id;
+    const moved = engine.apply(s, { type: 'next' }, bystander);
+    assert.notEqual(moved.phase, 'reveal', `${mode}: any seated player moves on`);
+    assert.equal(moved.reveal, null);
+  }
+});
+
 test('race: asking another question refunds blind guesses and leaves out all the old pictures', () => {
   let { engine, s } = setup(['A', 'B', 'C'], 5);
   s = engine.apply(s, { type: 'settings', settings: { mode: 'race' } }, 'p0');

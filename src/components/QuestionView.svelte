@@ -1,6 +1,6 @@
 <script lang="ts">
   import { fly, fade, scale } from 'svelte/transition';
-  import { session, engine, AUTO_NEXT_SECONDS } from '../lib/session.svelte';
+  import { session, engine, AUTO_NEXT_SECONDS, autoNextLeft } from '../lib/session.svelte';
   import { isFake } from '../lib/game';
   import { shown, gridCells } from '../lib/media.svelte';
   import { itemImage } from '../lib/ui';
@@ -25,10 +25,16 @@
   // Guests only learn the answer (and the items behind the options) at the reveal.
   const item = $derived(q.itemId ? engine.byId.get(q.itemId) : undefined);
   const race = $derived(s.settings.mode === 'race');
-  const canNext = $derived(!!reveal && (race ? session.isHost : mine || session.isHost));
+  // Everyone at the table may move on; spectators just watch the countdown.
+  const canNext = $derived(!!reveal && (session.isHost || s.players.some((p) => p.id === me)));
   const myMiss = $derived(race && me ? q.misses.find((m) => m.playerId === me) : undefined);
   const winner = $derived(reveal?.winnerId ? s.players.find((p) => p.id === reveal.winnerId) : undefined);
   const iWon = $derived(race ? !!me && reveal?.winnerId === me : !!reveal?.correct);
+  // Online, the reveal moves on by itself: every screen's bar starts where the
+  // host's countdown stands (a late state or a rejoin doesn't restart it). Read
+  // once per reveal, so later updates don't make the bar jump.
+  const revealAt = $derived(reveal?.at ?? 0);
+  const autoDelay = $derived(revealAt && untrack(() => autoNextLeft(s, session.hostNow()) / 1000 - AUTO_NEXT_SECONDS));
   const timerTotal = $derived(q.deadline ? Math.round((q.deadline - q.askedAt) / 1000) : 0);
   const count = $derived(q.labels.length);
   // Pictures the host has sent for this question.
@@ -269,12 +275,12 @@
       {#if canNext}
         <button class="btn primary" data-sfx="none" onclick={next}>
           {race ? 'Next question' : 'Next turn'}
-          {#if session.mode === 'host'}
-            <span class="auto" style:animation-duration="{AUTO_NEXT_SECONDS}s"></span>
+          {#if session.mode !== 'local'}
+            <span class="auto" style:animation-duration="{AUTO_NEXT_SECONDS}s" style:animation-delay="{autoDelay}s"></span>
           {/if}
         </button>
       {:else}
-        <div class="autobar"><span style:animation-duration="{AUTO_NEXT_SECONDS}s"></span></div>
+        <div class="autobar"><span style:animation-duration="{AUTO_NEXT_SECONDS}s" style:animation-delay="{autoDelay}s"></span></div>
       {/if}
     </div>
   {:else if session.spectating}

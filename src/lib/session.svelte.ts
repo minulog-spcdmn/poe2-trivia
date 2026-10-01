@@ -1041,7 +1041,8 @@ class Session {
 
   /**
    * Online: the reveal moves on by itself after a few seconds. Counted from the
-   * reveal itself, so people joining or leaving meanwhile can't hold it up.
+   * reveal itself, so people joining or leaving meanwhile (or the host
+   * reloading) can't hold it up.
    */
   private scheduleAutoNext(s: GameState) {
     const key = s.phase === 'reveal' && this.mode === 'host' && s.question ? s.question.askedAt : 0;
@@ -1058,7 +1059,7 @@ class Session {
       } catch {
         /* already moved on */
       }
-    }, AUTO_NEXT_MS);
+    }, autoNextLeft(s, Date.now()));
   }
 
   /** Turns mode: don't let the game wait forever on a player who dropped out on their turn. */
@@ -1209,3 +1210,9 @@ function writeSaved(saved: Saved | null) {
 
 export const session = new Session();
 export const AUTO_NEXT_SECONDS = AUTO_NEXT_MS / 1000;
+
+/** Milliseconds until the reveal moves on by itself, at host-clock time `now`. */
+export function autoNextLeft(s: GameState, now: number) {
+  const at = s.reveal?.at;
+  return at === undefined ? AUTO_NEXT_MS : Math.min(AUTO_NEXT_MS, Math.max(0, at + AUTO_NEXT_MS - now));
+}
