@@ -4,10 +4,10 @@
   import { session } from './lib/session.svelte';
   import { isMuted, setMuted, sfx } from './lib/sound';
   import { fxAvailable, fxUserOn, onFxChange, setFxOn, shakeTarget } from './lib/fx/core';
-  import { twinkle } from './lib/fx/moments';
   import { IMPRINT_URL, PRIVACY_URL } from './lib/site';
   import Background from './components/Background.svelte';
   import FxLayer from './components/FxLayer.svelte';
+  import Toasts from './components/Toasts.svelte';
   import Home from './components/Home.svelte';
   import Lobby from './components/Lobby.svelte';
   import Game from './components/Game.svelte';
@@ -17,13 +17,38 @@
   let confirmLeave = $state(false);
   let fxOn = $state(fxUserOn());
   let fxCan = $state(fxAvailable());
+  let headerHeight = $state(0);
   let shell: HTMLElement;
-  let toastEl = $state<HTMLElement | null>(null);
+
+  /**
+   * Dev only: when a shake starts, warns about anything position: fixed in the
+   * shell. The shake's translate makes the shell its containing block, so it
+   * would shake along and be placed against the scrolled shell, not the viewport.
+   */
+  function warnFixedInShell(shell: HTMLElement) {
+    const warned = new WeakSet<Element>();
+    let moving = false;
+    const watch = new MutationObserver(() => {
+      const was = moving;
+      moving = !!shell.style.translate;
+      if (!moving || was) return;
+      for (const el of shell.querySelectorAll('*')) {
+        if (warned.has(el) || getComputedStyle(el).position !== 'fixed') continue;
+        warned.add(el);
+        console.warn('A fixed element inside .shell moves with camera shake; render it with use:portal (lib/portal.ts).', el);
+      }
+    });
+    watch.observe(shell, { attributes: true, attributeFilter: ['style'] });
+    return () => watch.disconnect();
+  }
 
   onMount(() => {
     session.resume();
     // Camera shake moves the UI (#app clips it, so it can't add scrolling).
+    // Anything fixed to the viewport must live outside .shell: App's own
+    // overlays sit after it, and the screens' go to <body> with use:portal.
     const undo = shakeTarget(shell, 1);
+    const unwatch = import.meta.env.DEV ? warnFixedInShell(shell) : () => {};
     const off = onFxChange((on) => {
       fxOn = on;
       fxCan = fxAvailable();
@@ -31,12 +56,9 @@
     fxCan = fxAvailable();
     return () => {
       undo();
+      unwatch();
       off();
     };
-  });
-
-  $effect(() => {
-    if (toastEl) twinkle(toastEl);
   });
 
   function toggleFx() {
@@ -71,7 +93,7 @@
 
 <div class="shell" bind:this={shell}>
   {#if screen !== 'home'}
-    <header in:fade={{ duration: 300 }}>
+    <header in:fade={{ duration: 300 }} bind:offsetHeight={headerHeight}>
       <button class="brand" onclick={() => (confirmLeave = true)} title="Leave game">
         <svg class="brand-mark" viewBox="20 0 400 391" aria-hidden="true"><path d="M224 390Q255 331 301.0 283.5Q347 236 377 218L407 200L220 -1Q164 31 116.5 82.5Q69 134 50 169L31 204Z" fill="currentColor" /></svg>
         <span>PoE2.Quest</span>
@@ -121,8 +143,8 @@
             aria-pressed={fxOn}
           >
             <svg viewBox="0 0 24 24"
-              ><path d="M12 3c.6 3.9 2.1 5.4 6 6-3.9.6-5.4 2.1-6 6-.6-3.9-2.1-5.4-6-6 3.9-.6 5.4-2.1 6-6z" /><path
-                d="M18.5 15.5c.3 1.6.9 2.2 2.5 2.5-1.6.3-2.2.9-2.5 2.5-.3-1.6-.9-2.2-2.5-2.5 1.6-.3 2.2-.9 2.5-2.5z"
+              ><path d="M10.5 3.25c.6 3.9 2.1 5.4 6 6-3.9.6-5.4 2.1-6 6-.6-3.9-2.1-5.4-6-6 3.9-.6 5.4-2.1 6-6z" /><path
+                d="M17 15.75c.3 1.6.9 2.2 2.5 2.5-1.6.3-2.2.9-2.5 2.5-.3-1.6-.9-2.2-2.5-2.5 1.6-.3 2.2-.9 2.5-2.5z"
               />{#if !fxOn}<path d="M4 20 20 4" />{/if}</svg
             >
           </button>
@@ -159,24 +181,7 @@
   {/if}
 </div>
 
-{#if session.mode === 'client' && session.status === 'lost'}
-  <div class="banner" transition:fly={{ y: -40, duration: 300 }}>
-    {#if session.gaveUp}
-      Can't reach the host. The room may have closed.
-    {:else}
-      <span class="spinner"></span>
-      Connection to the host lost; reconnecting…
-    {/if}
-    <button class="btn small" onclick={() => session.reconnect()}>Retry</button>
-    <button class="btn small ghost" onclick={() => session.leave()}>Leave</button>
-  </div>
-{/if}
-
-{#if session.toast}
-  {#key session.toast}
-    <div class="toast" bind:this={toastEl} in:fly={{ y: 30, duration: 300 }} out:fade={{ duration: 200 }}>{session.toast}</div>
-  {/key}
-{/if}
+<Toasts headerHeight={screen === 'home' ? 0 : headerHeight} />
 
 <FxLayer />
 
@@ -374,52 +379,6 @@
   .legal a:hover {
     color: var(--gold-hi);
   }
-  .banner {
-    position: fixed;
-    top: 12px;
-    left: 50%;
-    translate: -50% 0;
-    z-index: 50;
-    display: flex;
-    align-items: center;
-    gap: 0.8rem;
-    padding: 0.6rem 0.8rem 0.6rem 1.1rem;
-    background: #2a1410;
-    border: 1px solid #7a3326;
-    border-radius: 4px;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
-    font-size: 0.95rem;
-  }
-  .spinner {
-    width: 14px;
-    height: 14px;
-    border-radius: 50%;
-    border: 2px solid rgba(255, 255, 255, 0.2);
-    border-top-color: var(--gold-hi);
-    animation: spin 0.8s linear infinite;
-  }
-
-  .toast {
-    position: fixed;
-    bottom: 24px;
-    left: 50%;
-    translate: -50% 0;
-    z-index: 60;
-    padding: 0.65rem 1.4rem;
-    background: linear-gradient(180deg, rgba(34, 26, 16, 0.97), rgba(14, 11, 8, 0.97));
-    border: 1px solid var(--gold-lo);
-    border-radius: 3px;
-    box-shadow:
-      inset 0 1px 0 rgba(255, 230, 170, 0.12),
-      0 0 0 1px rgba(0, 0, 0, 0.6),
-      0 0 24px rgba(201, 164, 92, 0.18),
-      0 10px 30px rgba(0, 0, 0, 0.6);
-    font-size: 1rem;
-    color: var(--gold-hi);
-    text-shadow: 0 0 12px rgba(241, 217, 155, 0.35);
-    white-space: nowrap;
-  }
-
   .modal-backdrop {
     position: fixed;
     inset: 0;
@@ -464,11 +423,6 @@
     }
   }
 
-  @keyframes spin {
-    to {
-      rotate: 360deg;
-    }
-  }
   @keyframes pulse {
     50% {
       opacity: 0.5;

@@ -62,6 +62,21 @@ test('missing or bad entries fall back to the defaults and are rewritten', () =>
   assert.deepEqual(parsePrefs(store.get(PREFS_KEY) ?? null), DEFAULT_PREFS);
 });
 
+test('first-time visitors get a hidden room code', () => {
+  assert.equal(loadPrefs().hideCode, true);
+  store.clear();
+  const ls = globalThis.localStorage as { getItem: (k: string) => string | null };
+  const getItem = ls.getItem;
+  ls.getItem = () => {
+    throw new Error('SecurityError');
+  };
+  try {
+    assert.equal(loadPrefs().hideCode, true);
+  } finally {
+    ls.getItem = getItem;
+  }
+});
+
 test('keeps a room code hidden under the old setting', () => {
   store.set('poe2trivia.hideCode', '1');
   assert.equal(loadPrefs().hideCode, true);

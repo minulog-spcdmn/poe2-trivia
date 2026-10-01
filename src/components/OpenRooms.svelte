@@ -102,10 +102,15 @@
   <header>
     <h2>Open rooms</h2>
     <button class="refresh" onclick={scan} disabled={scanning} aria-label="Refresh room list" title="Refresh">
-      <!-- The arc is centred on the viewBox so the icon turns in place. -->
-      <svg viewBox="0 0 24 24" style:rotate="{angle}deg">
-        <path d="M18.58 14.39A7 7 0 1 1 14.39 5.42" />
-        <path class="head" d="M18.15 6.8 15.6 2.15 13.2 8.7Z" />
+      <!-- The arc is centred on the viewBox so the icon turns in place. The
+           rotation lives inside the SVG, around its exact centre, rather than
+           on the element: a rotated compositor layer gets snapped to device
+           pixels each frame, which makes it wobble at fractional DPRs (phones). -->
+      <svg viewBox="0 0 24 24">
+        <g transform="rotate({angle} 12 12)">
+          <path d="M18.58 14.39A7 7 0 1 1 14.39 5.42" />
+          <path class="head" d="M18.15 6.8 15.6 2.15 13.2 8.7Z" />
+        </g>
       </svg>
     </button>
   </header>
@@ -164,6 +169,9 @@
     height: 32px;
     display: grid;
     place-items: center;
+    /* No UA padding: it squeezes the content box below the icon's width,
+       which pushes the icon off-centre. */
+    padding: 0;
     border-radius: 50%;
     border: 1px solid var(--line);
     background: rgba(0, 0, 0, 0.3);
@@ -184,7 +192,6 @@
     stroke-width: 2;
     stroke-linecap: round;
     stroke-linejoin: round;
-    will-change: rotate;
   }
   .refresh svg .head {
     fill: currentColor;

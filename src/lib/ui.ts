@@ -10,10 +10,6 @@ export function playerColor(slot: number) {
 
 export { itemImage };
 
-export function itemName(id: string) {
-  return engine.byId.get(id)?.name ?? '???';
-}
-
 // Art used (as a silhouette) on the category cards: an item from the group
 // that best represents the category.
 const ICON_GROUP: Record<string, string> = {
@@ -44,9 +40,4 @@ for (const cat of engine.categories) {
 /** Absolute URL, safe to use inside CSS custom properties. */
 export function categoryIcon(category: string) {
   return icons.get(category)!;
-}
-
-export function preload(src: string) {
-  const img = new Image();
-  img.src = src;
 }

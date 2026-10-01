@@ -32,6 +32,7 @@ import { cleanName, nameSkeleton } from './names';
 import { prepareMedia, shown, tileDelay, type PreparedMedia } from './media.svelte';
 import { sfx } from './sound';
 import { prefsFrom, roomPrefs, roomSettings, savePrefs } from './prefs';
+import { toasts, type ToastKind, type ToastOptions } from './toasts.svelte';
 
 export const engine = new Engine(itemData as Item[], { fakes: fakeNames });
 
@@ -166,8 +167,6 @@ class Session {
   status = $state<Status>('idle');
   state = $state.raw<GameState | null>(null);
   code = $state<string>('');
-  error = $state<string>('');
-  toast = $state<string>('');
   /** host clock minus local clock, for timer display on clients */
   clockOffset = $state(0);
   private clockSynced = false;
@@ -206,7 +205,6 @@ class Session {
   private autoNextFor = 0;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
   private joinName = '';
-  private toastTimer: ReturnType<typeof setTimeout> | null = null;
   private retry: ReturnType<typeof setTimeout> | null = null;
   /** Pending step of opening or joining a room (a retry, a give-up); cancelled on leave. */
   private connectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -266,10 +264,8 @@ class Session {
     this.clockSynced = true;
   }
 
-  flash(message: string) {
-    this.toast = message;
-    if (this.toastTimer) clearTimeout(this.toastTimer);
-    this.toastTimer = setTimeout(() => (this.toast = ''), 3500);
+  flash(message: string, kind: ToastKind = 'info', opts?: ToastOptions) {
+    toasts.show(message, kind, opts);
   }
 
   setHideCode(hide: boolean) {
@@ -349,7 +345,7 @@ class Session {
         try {
           s = engine.apply(s, { type: 'join', playerId: me, name: this.joinName }, me);
         } catch (err) {
-          this.fail(err instanceof ActionError ? err.message : 'Could not create the room.');
+          this.fail(err instanceof ActionError ? err.message : 'Could not create the room.', 'Room not opened');
           return;
         }
         this.setState(s);
@@ -380,8 +376,8 @@ class Session {
       console.warn('peer error', err);
       if (this.status !== 'connecting') return;
       if (err.type === 'unavailable-id' && resumeState)
-        this.fail(`Couldn't reopen room ${code}: it still seems to be open, maybe in another tab or window.`);
-      else this.fail(this.networkHint(err.type));
+        this.fail(`Couldn't reopen room ${code}: it still seems to be open, maybe in another tab or window.`, 'Room not reopened');
+      else this.fail(this.networkHint(err.type), 'No connection');
     });
   }
 
@@ -478,7 +474,7 @@ class Session {
         this.setState(engine.apply(this.state, { type: 'remove', playerId: id }, null));
       } else {
         this.setState(engine.apply(this.state, { type: 'connection', playerId: id, connected: false }, null));
-        this.flash(`${p.name} disconnected`);
+        this.flash(p.name, 'warn', { title: 'Player disconnected', who: { name: p.name, hue: p.hue } });
       }
     });
   }
@@ -586,8 +582,9 @@ class Session {
     this.setState(next);
     for (const m of this.released) this.sendMedia(conn, guest, m);
     const player = next.players.find((p) => p.id === playerId);
-    if (player) this.flash(`${player.name} joined`);
-    else this.flash(`${next.spectators?.find((o) => o.id === playerId)?.name} is watching`);
+    const watcher = next.spectators?.find((o) => o.id === playerId);
+    if (player) this.flash(player.name, 'info', { title: 'Player joined', who: { name: player.name, hue: player.hue } });
+    else if (watcher) this.flash(watcher.name, 'info', { title: 'Spectator joined', who: { name: watcher.name } });
   }
 
   /** Remembers a newcomer's token, forgetting the oldest ones of people who are gone once there are too many. */
@@ -670,7 +667,7 @@ class Session {
       console.warn('media', err);
       if (this.state?.question?.askedAt === q.askedAt && this.state.phase === 'question') {
         this.artFailedFor = q.askedAt;
-        this.flash("Couldn't load the art for this question.");
+        this.flash("Couldn't load the art for this question.", 'warn', { title: 'Art missing' });
       }
       return;
     }
@@ -719,7 +716,7 @@ class Session {
     this.joinName = name;
     this.code = code.toUpperCase().trim();
     if (!CODE_PATTERN.test(this.code)) {
-      this.fail(`"${this.code}" isn't a valid room code.`);
+      this.fail(`"${this.code}" isn't a valid room code.`, 'Invalid code');
       return;
     }
     writeSaved({ mode: 'client', code: this.code, name });
@@ -732,11 +729,11 @@ class Session {
     peer.on('error', (err) => {
       if (this.peer !== peer) return;
       if (err.type === 'peer-unavailable') {
-        if (this.status === 'connecting') this.fail(`Room ${this.code} doesn't exist (or the host left).`);
+        if (this.status === 'connecting') this.fail(`Room ${this.code} doesn't exist (or the host left).`, 'Room not found');
         return;
       }
       console.warn('peer error', err);
-      if (this.status === 'connecting') this.fail(this.networkHint(err.type));
+      if (this.status === 'connecting') this.fail(this.networkHint(err.type), 'No connection');
     });
     peer.on('disconnected', () => {
       if (!peer.destroyed) setTimeout(() => !peer.destroyed && peer.reconnect(), 1500);
@@ -749,7 +746,7 @@ class Session {
     if (this.connectTimer) clearTimeout(this.connectTimer);
     this.connectTimer = setTimeout(() => {
       if (peer && this.peer === peer && this.status === 'connecting')
-        this.fail(`Couldn't reach room ${this.code}. Check the code, or try again.`);
+        this.fail(`Couldn't reach room ${this.code}. Check the code, or try again.`, 'No answer');
     }, 15000);
   }
 
@@ -810,20 +807,20 @@ class Session {
           this.status = 'ready';
           break;
         case 'error':
-          if (this.status === 'connecting') this.fail(msg.message);
-          else this.flash(msg.message);
+          if (this.status === 'connecting') this.fail(msg.message, "Couldn't join");
+          else this.flash(msg.message, 'error');
           break;
         case 'kicked':
-          this.fail('You were removed from the game.');
+          this.fail('You were removed from the game.', 'Removed');
           break;
         case 'closed':
-          this.fail('The host closed the room.');
+          this.fail('The host closed the room.', 'Room closed');
           break;
         case 'replaced':
-          this.fail('You joined this game from another tab or window, so it continues there.');
+          this.fail('You joined this game from another tab or window, so it continues there.', 'Moved to another tab');
           break;
         case 'busy':
-          this.flash(msg.message);
+          this.flash(msg.message, 'warn', { title: 'Room busy' });
           this.retryWhenBusy();
           break;
         case 'ping':
@@ -880,7 +877,7 @@ class Session {
         this.setState(engine.apply(this.state, action, from));
       } catch (err) {
         if (err instanceof ActionError && err.silent) return;
-        this.flash(err instanceof ActionError ? err.message : 'Something went wrong.');
+        this.flash(err instanceof ActionError ? err.message : 'Something went wrong.', 'error');
       }
     };
     const handicap = this.mode === 'host' && this.race && action.type === 'answer' ? this.hostHandicap() : 0;
@@ -892,7 +889,8 @@ class Session {
   kick(playerId: string) {
     if (this.mode !== 'host' || playerId === this.priv.myPlayerId) return;
     const s = this.state;
-    const name = [...(s?.players ?? []), ...(s?.spectators ?? [])].find((o) => o.id === playerId)?.name;
+    const player = s?.players.find((o) => o.id === playerId);
+    const name = (player ?? s?.spectators?.find((o) => o.id === playerId))?.name;
     const p = this.priv;
     for (const [secret, id] of this.secretToPlayer)
       if (id === playerId) p.bannedSecrets = capped([...p.bannedSecrets, secret], MAX_BLOCKED);
@@ -907,7 +905,8 @@ class Session {
       }
     }
     this.dispatch({ type: 'remove', playerId });
-    if (name) this.flash(`${name} was removed`);
+    if (player) this.flash(player.name, 'info', { title: 'Player removed', who: { name: player.name, hue: player.hue } });
+    else if (name) this.flash(name, 'info', { title: 'Spectator removed', who: { name } });
   }
 
   leave() {
@@ -1097,10 +1096,10 @@ class Session {
     this.skipTimer = setTimeout(() => {
       const cur = this.state;
       if (!cur || this.skipKey !== key) return;
-      const name = cur.players[cur.turn]?.name;
+      const p = cur.players[cur.turn];
       try {
         this.setState(engine.apply(cur, { type: 'skip' }, null));
-        if (name) this.flash(`${name}'s turn was skipped`);
+        if (p) this.flash(p.name, 'warn', { title: 'Turn skipped', who: { name: p.name, hue: p.hue } });
       } catch {
         /* the turn moved on anyway */
       }
@@ -1132,14 +1131,16 @@ class Session {
     return `Couldn't connect to the matchmaking server (${type}). Check your connection, or play hot-seat on one device.`;
   }
 
-  private fail(message: string) {
+  private fail(message: string, title?: string) {
     const mode = this.mode;
     this.reset();
-    this.error = message;
+    this.flash(message, 'error', { title, sticky: true });
     if (mode === 'client') this.status = 'idle';
   }
 
   private reset() {
+    // A new attempt (or leaving) makes the last one's errors moot.
+    toasts.clearErrors();
     this.beacon?.stop();
     this.beacon = null;
     this.stopMedia();
@@ -1168,7 +1169,6 @@ class Session {
     this.mode = null;
     this.state = null;
     this.status = 'idle';
-    this.error = '';
     this.code = '';
     this.myPlayerId = null;
     // A guest's offset to its host's clock means nothing for the next room.

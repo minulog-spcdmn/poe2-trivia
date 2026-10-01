@@ -2,7 +2,8 @@
   import { flip } from 'svelte/animate';
   import { fly, scale } from 'svelte/transition';
   import { session } from '../lib/session.svelte';
-  import { MAX_PLAYERS, MAX_NAME, difficultyOf, rulesFor, type Difficulty, type GameMode } from '../lib/game';
+  import { MAX_PLAYERS, difficultyOf, rulesFor, type Difficulty, type GameMode } from '../lib/game';
+  import { MAX_NAME } from '../lib/names';
   import { inviteUrl } from '../lib/site';
   import Avatar from './Avatar.svelte';
   import { backdropShadow } from '../lib/backdropShadow';

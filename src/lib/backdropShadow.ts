@@ -30,6 +30,7 @@
 // backdrop).
 
 import { shaking } from './fx/core';
+import { opacityOf } from './opacity';
 
 export type Fill = 'linear' | 'stage';
 export type BackdropOptions = { fill?: Fill } | undefined;
@@ -82,15 +83,6 @@ export function releaseAll() {
   for (const node of shadowed.keys()) release(node);
 }
 
-function effectiveOpacity(node: HTMLElement): number {
-  let o = 1;
-  for (let el: HTMLElement | null = node; el && el !== document.body; el = el.parentElement) {
-    o *= parseFloat(getComputedStyle(el).opacity) || 0;
-    if (o === 0) break;
-  }
-  return o;
-}
-
 // ---------- when fills must go back to CSS ----------
 
 let lastScroll = -Infinity;
@@ -121,7 +113,12 @@ function moves(anim: Animation, effect: KeyframeEffect): boolean {
   return m;
 }
 
-/** Elements with a running animation or transition that moves them. */
+/**
+ * Elements with a running animation or transition that moves them. Scanned
+ * every frame rather than kept until one starts: a hover's transition, say,
+ * shows up here in the frame that first styles it, but its transitionrun (or
+ * animationstart) event only fires a frame later.
+ */
 function movingElements(): Set<Element> {
   const out = new Set<Element>();
   for (const anim of document.getAnimations()) {
@@ -176,6 +173,15 @@ export function measureShadows(
     for (let el: Element | null = node; el; el = el.parentElement) if (moving.has(el)) return true;
     return false;
   };
+  // Ancestors' backgrounds, read once a frame: fills share most of their
+  // ancestors. (An ancestor comes first in document order, so its own
+  // data-bs-fill is settled before any descendant reads it.)
+  const paints = new Map<Element, boolean>();
+  const paintsAt = (el: Element) => {
+    let p = paints.get(el);
+    if (p === undefined) paints.set(el, (p = paintsBackground(getComputedStyle(el))));
+    return p;
+  };
 
   // Fills first when there are more elements than room, then document order.
   const nodes = [...shadowed.keys()].filter((n) => n.isConnected);
@@ -204,7 +210,7 @@ export function measureShadows(
     const reach = soft.reduce((m, s) => Math.max(m, Math.abs(s.oy) + 2 * s.blur), 0) * scale;
     ok &&= rect.right + reach > 0 && rect.left - reach < viewW && rect.bottom + reach > 0 && rect.top - reach < viewH;
 
-    const opacity = ok ? effectiveOpacity(node) : 0;
+    const opacity = ok ? opacityOf(node) : 0;
     ok &&= opacity > 0;
 
     let fill: { kind: number; angle: number; a: number[]; b: number[] } | null = null;
@@ -215,7 +221,7 @@ export function measureShadows(
       // Every ancestor must let the backdrop show through (or be drawn by it).
       let clear = !!a && !!b;
       for (let el = node.parentElement; clear && el && el !== document.body; el = el.parentElement) {
-        if (!filled.has(el) && paintsBackground(getComputedStyle(el))) clear = false;
+        if (!filled.has(el) && paintsAt(el)) clear = false;
       }
       if (clear) fill = { kind: FILL_KIND[fillKind], angle: (angle * Math.PI) / 180, a: a!, b: b! };
     }

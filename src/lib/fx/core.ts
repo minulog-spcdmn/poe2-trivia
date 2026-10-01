@@ -8,6 +8,7 @@
 
 import { FxRenderer, SHAPE_FLOATS, ShapeType } from './renderer';
 import { ParticlePool, type ParticleSpec } from './particles';
+import { opacityOf } from '../opacity';
 
 export type Vec3 = readonly [number, number, number];
 export type Point = { x: number; y: number };
@@ -26,13 +27,13 @@ export function boxOf(a: Anchor): Box {
   return { x: a.x, y: a.y, w: 0, h: 0 };
 }
 
-/** An element's rendered opacity, its ancestors' included. */
-function opacityOf(el: Element): number {
-  let o = 1;
-  for (let e: Element | null = el; e && e !== document.body && o > 0; e = e.parentElement) {
-    o *= parseFloat(getComputedStyle(e).opacity) || 0;
-  }
-  return o;
+/**
+ * Whether `a` is an element that has left the page (the screen moved on
+ * before a delayed effect ran). Its box is all zeros, so an effect on it
+ * would land in the top-left corner; effects skip it instead.
+ */
+export function detached(a: Anchor) {
+  return a instanceof Element && !a.isConnected;
 }
 
 // ---------- shapes ----------
@@ -204,9 +205,33 @@ export function budget(n: number) {
   return Math.max(1, Math.round(n * scale * q));
 }
 
+/**
+ * Which shape makes way for a new one when the list is full: one already
+ * fading out, else the one nearest the end of its life. Never an endless one
+ * still in use (rays, a hover flame): it would vanish mid-moment and its
+ * handle couldn't stop it any more. -1 when only those are left.
+ */
+function leastNeeded(): number {
+  const left = (s: LiveShape) => (s.stopped ? s.fade : s.life - s.age);
+  let fading = -1;
+  let finite = -1;
+  shapes.forEach((s, i) => {
+    if (s.stopped) {
+      if (fading < 0 || left(s) < left(shapes[fading])) fading = i;
+    } else if (Number.isFinite(s.life)) {
+      if (finite < 0 || left(s) < left(shapes[finite])) finite = i;
+    }
+  });
+  return fading >= 0 ? fading : finite;
+}
+
 export function shape(spec: ShapeSpec): Handle {
-  if (!fxActive()) return NOOP;
-  if (shapes.length >= MAX_SHAPES) shapes.shift();
+  if (!fxActive() || detached(spec.at)) return NOOP;
+  if (shapes.length >= MAX_SHAPES) {
+    const i = leastNeeded();
+    if (i < 0) return NOOP;
+    shapes.splice(i, 1);
+  }
   const s: LiveShape = {
     ...spec,
     age: -(spec.delay ?? 0),
@@ -355,7 +380,9 @@ function frame(nowMs: number) {
     teardown();
     return;
   }
-  const rawDt = (nowMs - last) / 1000;
+  // (Never below 0: the first frame after wake() is stamped with the time it
+  // began, which can be a little before wake() read the clock.)
+  const rawDt = Math.max(0, nowMs - last) / 1000;
   last = nowMs;
 
   // Adapt quality: if frames keep taking far longer than a display refresh
@@ -542,14 +569,14 @@ function teardown() {
   for (const l of listeners) l(userOn);
 }
 
-/** Starts the overlay on `c`. Returns a cleanup function. */
-export function startFx(c: HTMLCanvasElement): () => void {
-  canvas = c;
+/** Creates the renderer and particle pool on `c` and follows its size. Returns whether WebGL2 works. */
+function setup(c: HTMLCanvasElement): boolean {
   renderer = FxRenderer.create(c, { maxParticles: 5000, maxShapes: MAX_SHAPES });
-  if (!renderer) return () => {};
+  if (!renderer) return false;
   pool = new ParticlePool(coarse?.matches ? 2000 : 5000);
   quality = coarse?.matches ? 1 : 0;
   probe = null;
+  ro?.disconnect();
   ro = new ResizeObserver(([entry]) => {
     const box = entry.devicePixelContentBoxSize?.[0];
     const estW = entry.contentRect.width * devicePixelRatio;
@@ -565,20 +592,36 @@ export function startFx(c: HTMLCanvasElement): () => void {
   resize();
   shown = true;
   show(false);
+  for (const l of listeners) l(userOn);
+  return true;
+}
+
+/** Starts the overlay on `c`. Returns a cleanup function. */
+export function startFx(c: HTMLCanvasElement): () => void {
+  canvas = c;
+  if (!setup(c)) return () => {};
   const onMotion = () => {
     if (!fxActive()) clearAll();
     for (const l of listeners) l(userOn);
   };
   reduce?.addEventListener('change', onMotion);
+  // Phones often drop the context while the tab is in the background.
+  // preventDefault() asks the browser to give it back; then everything is
+  // built again on it. (The old renderer's objects died with the context, and
+  // its destroy() would lose the restored one, so it's simply dropped.)
   const onLost = (e: Event) => {
     e.preventDefault();
     teardown();
   };
+  const onRestored = () => {
+    if (!renderer) setup(c);
+  };
   c.addEventListener('webglcontextlost', onLost);
-  for (const l of listeners) l(userOn);
+  c.addEventListener('webglcontextrestored', onRestored);
   return () => {
     reduce?.removeEventListener('change', onMotion);
     c.removeEventListener('webglcontextlost', onLost);
+    c.removeEventListener('webglcontextrestored', onRestored);
     renderer?.destroy();
     teardown();
   };
