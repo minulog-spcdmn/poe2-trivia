@@ -14,7 +14,7 @@ export const MIX = { volume: 0, warmth: 1 };
 
 /**
  * How far (ms) into the 'fill' moment its first spark lands on the bar: the
- * whoosh swells up to it, then the ticks climb across the fill.
+ * whoosh swells up to it, then the sparks crackle across the fill.
  */
 export const FILL_LEAD = 450;
 
@@ -80,15 +80,15 @@ export const MOMENTS: Record<Sfx, Moment> = {
       { file: 'layer-metal-2', gain: -41, rate: 1.6, delay: 0, hp: 330, lp: 6483, send: 0.7 },
     ],
   },
-  // A veiled tile's cover falls away: a light stone tap and a puff of air.
-  // It plays every second or so during a question, so it stays faint and varied.
+  // A veiled tile's cover falls away: a muffled puff of air with a soft wooden
+  // body under it. It plays every second or so, so it stays dark and quiet.
   lift: {
-    soften: 5,
-    varyPitch: 0.09,
+    soften: 8,
+    varyPitch: 0.1,
     varyGain: 2,
     layers: [
-      { file: 'click-5', gain: -34, rate: 1.25, delay: 0, hp: 300, lp: 6000, send: 0.35 },
-      { file: 'hover-2', gain: -39, rate: 1.15, delay: 10, hp: 400, lp: 9000, send: 0.4 },
+      { file: 'hover-1', gain: -42, rate: 0.85, delay: 0, hp: 150, lp: 2200, send: 0.5 },
+      { file: 'select-6', gain: -45, rate: 1.3, delay: 0, hp: 120, lp: 900, send: 0.4 },
     ],
   },
   select: {
@@ -111,17 +111,14 @@ export const MOMENTS: Record<Sfx, Moment> = {
     ],
   },
   // The point streams into the scorer's bar: a swell up to the first landing
-  // (FILL_LEAD), rising ticks as the sparks land across it, and a ring when it's full.
+  // (FILL_LEAD), crackling sparks as they land across it, and a ring when it's full.
   fill: {
     soften: 6,
-    varyPitch: 0.01,
+    varyPitch: 0.04,
     varyGain: 0.5,
     layers: [
       { file: 'layer-air-3', gain: -33, rate: 1, delay: 0, hp: 600, lp: 9000, send: 0.5 },
-      { file: 'select-5', gain: -31, rate: 1.5, delay: 450, hp: 500, lp: 9000, send: 0.35 },
-      { file: 'select-5', gain: -31, rate: 1.68, delay: 600, hp: 500, lp: 9000, send: 0.35 },
-      { file: 'select-5', gain: -30, rate: 1.88, delay: 750, hp: 500, lp: 10000, send: 0.4 },
-      { file: 'select-5', gain: -30, rate: 2.1, delay: 900, hp: 500, lp: 10000, send: 0.4 },
+      { file: 'fill-sparks', gain: -30, rate: 1, delay: 450, hp: 1200, lp: 11000, send: 0.3 },
       { file: 'layer-metal-2', gain: -33, rate: 2, delay: 1050, hp: 600, lp: 9000, send: 0.65 },
     ],
   },
