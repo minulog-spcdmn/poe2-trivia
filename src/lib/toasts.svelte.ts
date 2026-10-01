@@ -8,7 +8,7 @@
 /** info: news about the room. warn: something went wrong for someone else. error: it went wrong for you. */
 export type ToastKind = 'info' | 'warn' | 'error';
 
-/** The player a notice is about: shown with their avatar, their name as the title. No hue: a spectator. */
+/** The player a notice is about: shown with their avatar, the message (their name) in their colour. No hue: a spectator. */
 export interface ToastWho {
   name: string;
   hue?: number;

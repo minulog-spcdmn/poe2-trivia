@@ -459,7 +459,7 @@ class Session {
         this.setState(engine.apply(this.state, { type: 'remove', playerId: id }, null));
       } else {
         this.setState(engine.apply(this.state, { type: 'connection', playerId: id, connected: false }, null));
-        this.flash('Lost the connection.', 'warn', { who: p });
+        this.flash(p.name, 'warn', { title: 'Player disconnected', who: p });
       }
     });
   }
@@ -568,8 +568,8 @@ class Session {
     for (const m of this.released) this.sendMedia(conn, guest, m);
     const player = next.players.find((p) => p.id === playerId);
     const watcher = next.spectators?.find((o) => o.id === playerId);
-    if (player) this.flash('Joined the room.', 'info', { who: player });
-    else if (watcher) this.flash('Joined as a spectator.', 'info', { who: { name: watcher.name } });
+    if (player) this.flash(player.name, 'info', { title: 'Player joined', who: player });
+    else if (watcher) this.flash(watcher.name, 'info', { title: 'Spectator joined', who: { name: watcher.name } });
   }
 
   /** Remembers a newcomer's token, forgetting the oldest ones of people who are gone once there are too many. */
@@ -890,7 +890,7 @@ class Session {
       }
     }
     this.dispatch({ type: 'remove', playerId });
-    if (who) this.flash('Was removed from the room.', 'info', { who });
+    if (who) this.flash(who.name, 'info', { title: 'Player removed', who });
   }
 
   leave() {
@@ -1082,7 +1082,7 @@ class Session {
       const who = cur.players[cur.turn];
       try {
         this.setState(engine.apply(cur, { type: 'skip' }, null));
-        if (who) this.flash('Their turn was skipped.', 'warn', { who });
+        if (who) this.flash(who.name, 'warn', { title: 'Turn skipped', who });
       } catch {
         /* the turn moved on anyway */
       }
