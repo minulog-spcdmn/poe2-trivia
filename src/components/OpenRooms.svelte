@@ -169,6 +169,9 @@
     height: 32px;
     display: grid;
     place-items: center;
+    /* No UA padding: it squeezes the content box below the icon's width,
+       which pushes the icon off-centre. */
+    padding: 0;
     border-radius: 50%;
     border: 1px solid var(--line);
     background: rgba(0, 0, 0, 0.3);
