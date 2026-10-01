@@ -12,8 +12,10 @@ export type Sfx =
   | 'turn'
   | 'pick'
   | 'reveal'
+  | 'lift'
   | 'select'
   | 'correct'
+  | 'fill'
   | 'wrong'
   | 'tick'
   | 'join'
@@ -153,15 +155,21 @@ function playLayer(b: Bus, buf: AudioBuffer, l: Layer, soften: number, pitch: nu
   src.start(ac.currentTime + l.delay / 1000);
 }
 
-let lastHover = -1;
+/**
+ * Sounds that can come in bursts, and how close together (ms) they may play:
+ * sweeping across a row of buttons, or a veiled picture that shows up with
+ * several tiles already lifted, shouldn't turn into a rattle.
+ */
+const MIN_GAP: Partial<Record<Sfx, number>> = { hover: 70, lift: 120 };
+const lastPlayed = new Map<Sfx, number>();
 
 export function sfx(name: Sfx) {
   if (muted) return;
-  if (name === 'hover') {
-    // Sweeping across a row of buttons shouldn't turn into a rattle.
+  const gap = MIN_GAP[name];
+  if (gap) {
     const now = performance.now();
-    if (now - lastHover < 70) return;
-    lastHover = now;
+    if (now - (lastPlayed.get(name) ?? -Infinity) < gap) return;
+    lastPlayed.set(name, now);
   }
   const b = audio();
   if (!b) return;

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { fly, fade, scale } from 'svelte/transition';
   import { session, engine, AUTO_NEXT_SECONDS } from '../lib/session.svelte';
+  import { isFake } from '../lib/game';
   import { shown, gridCells } from '../lib/media.svelte';
   import { itemImage } from '../lib/ui';
   import { sfx } from '../lib/sound';
@@ -10,10 +11,12 @@
   import { backdropShadow } from '../lib/backdropShadow';
   import ArcaneCircle from './ArcaneCircle.svelte';
   import { untrack } from 'svelte';
-  import { answerCharging, artRevealed, raceMiss, reveal as revealFx, tileLifted } from '../lib/fx/moments';
+  import { FILL_START, answerCharging, artRevealed, raceMiss, reveal as revealFx, tileLifted } from '../lib/fx/moments';
+  import { FILL_LEAD } from '../lib/soundDesign';
   import { recordReveal } from '../lib/fx/streaks';
   import { scoreRowOf } from '../lib/scoreRows';
   import type { Handle } from '../lib/fx/core';
+  import { fxActive, type Handle } from '../lib/fx/core';
 
   const s = $derived(session.state!);
   const q = $derived(s.question!);
@@ -67,6 +70,21 @@
   const losers = $derived(q.misses.map((m) => s.players.find((p) => p.id === m.playerId)?.name ?? '?'));
   const losersShort = $derived(losers.length > 3 ? `${losers.slice(0, 2).join(', ')} and ${losers.length - 2} more` : losers.join(', '));
 
+  /**
+   * Revealed: a made-up name someone picked. Fakes nobody picked stay
+   * unmarked, like untouched decoys.
+   */
+  function fake(index: number) {
+    const picked = race ? q.misses.some((m) => m.index === index) : index === reveal?.chosenIndex;
+    return !!reveal && picked && !!q.options[index] && isFake(q.options[index]);
+  }
+
+  /** The made-up name the player whose turn it was (or, in a race, you) fell for. */
+  const fellFor = $derived.by(() => {
+    const index = race ? myMiss?.index : reveal?.chosenIndex;
+    return index != null && fake(index) ? optionName(index) : null;
+  });
+
   function optionName(index: number) {
     return q.labels[index] ?? (q.options[index] ? engine.byId.get(q.options[index])?.name : undefined) ?? '';
   }
@@ -95,6 +113,7 @@
 
   /** Svelte action: a veiled tile lifts with a puff of light. */
   function lifted(node: HTMLElement) {
+    sfx('lift');
     if (node.parentElement) tileLifted(node.parentElement);
   }
 
@@ -148,6 +167,8 @@
         timedOut: r.timedOut,
         fill,
       });
+      // Your point streaming into the bar. Without effects the bar just jumps, and 'correct' says it all.
+      if (iWon && pill && fill && fxActive()) setTimeout(() => sfx('fill'), FILL_START * 1000 - FILL_LEAD);
     });
   });
 
@@ -243,8 +264,9 @@
         {:else if reveal.timedOut}
           {active.name} ran out of time.
         {:else}
-          No point for {active.name}.
+          No point for {active.name}{fellFor ? ';' : '.'}
         {/if}
+        {#if fellFor}{fellFor} isn't a real item.{/if}
       </p>
       {#if canNext}
         <button class="btn primary" data-sfx="none" onclick={next}>
@@ -387,6 +409,8 @@
             bind:this={optionEls[i]}
             use:backdropShadow={{ fill: 'linear' }}
             class:mine
+            class:fake={fake(i)}
+            title={fake(i) ? 'Not a real item' : undefined}
             disabled={!mine || !!reveal || chosen !== null}
             onclick={() => answer(i)}
             in:fly={{ x: 40, duration: 450, delay: 300 + i * 90 }}
@@ -867,6 +891,11 @@
   .option.wrong .text,
   .option.wrong .mark {
     color: #eab3a3;
+  }
+  /* Picked made-up names are struck through at the reveal (same size, so nothing moves). */
+  .option.fake .text {
+    text-decoration: line-through;
+    text-decoration-thickness: 1px;
   }
   .option.dim {
     opacity: 0.35;
