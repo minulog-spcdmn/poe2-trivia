@@ -383,7 +383,7 @@
           {:else}
             <div class="head-text" out:fade={{ duration: 150 }}>
               <span class="iname unknown">Unidentified</span>
-              <span class="ibase">{questionTopic(q)}</span>
+              <span class="ibase">{questionTopic(q, true)}</span>
             </div>
           {/if}
         </div>

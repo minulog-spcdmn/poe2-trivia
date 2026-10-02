@@ -74,6 +74,47 @@ const weightOf = (it: Item) => RARE_GROUPS[it.group] ?? 1;
 /** Categories that were renamed, by their old name. */
 const RENAMED_CATEGORIES: Record<string, string> = { 'Flasks, Jewels & Relics': 'Flasks, Charms, Jewels, Relics & Tablets' };
 
+/** Categories and groups named as a single item, for the line under "Unidentified". */
+const SINGULAR: Record<string, string> = {
+  'Amulets & Belts': 'Amulet or Belt',
+  'Body Armours': 'Body Armour',
+  'Flasks, Charms, Jewels, Relics & Tablets': 'Flask, Charm, Jewel, Relic or Tablet',
+  'Gloves & Boots': 'Gloves or Boots',
+  'Lineage Gems': 'Lineage Gem',
+  'Off-Hands': 'Off-Hand',
+  'One-Handed Weapons': 'One-Handed Weapon',
+  'Two-Handed Weapons': 'Two-Handed Weapon',
+  Amulets: 'Amulet',
+  Belts: 'Belt',
+  Boots: 'Boots',
+  Bows: 'Bow',
+  Charms: 'Charm',
+  Crossbows: 'Crossbow',
+  Flasks: 'Flask',
+  Foci: 'Focus',
+  Gloves: 'Gloves',
+  Helmets: 'Helmet',
+  Jewels: 'Jewel',
+  'One-Handed Maces': 'One-Handed Mace',
+  Quarterstaves: 'Quarterstaff',
+  Quivers: 'Quiver',
+  Relics: 'Relic',
+  Rings: 'Ring',
+  Sceptres: 'Sceptre',
+  Shields: 'Shield',
+  Spears: 'Spear',
+  Staves: 'Staff',
+  Tablets: 'Tablet',
+  Talismans: 'Talisman',
+  'Two-Handed Maces': 'Two-Handed Mace',
+  Wands: 'Wand',
+};
+
+/** A category or group named as a single item ("Rings" → "Ring"). */
+export function singular(name: string) {
+  return SINGULAR[name] ?? name;
+}
+
 /** A game saved before categories were renamed, with the new names. */
 export function renameCategories(s: GameState): GameState {
   const rename = (c: string) => RENAMED_CATEGORIES[c] ?? c;
@@ -86,10 +127,16 @@ export function renameCategories(s: GameState): GameState {
   };
 }
 
-/** What the question is about: its groups when that is shorter than the category name. */
-export function questionTopic(q: Question): string {
+/**
+ * What the question is about: its groups when that is shorter than the category
+ * name. `one` names a single item ("Flask or Relic") for the unidentified item.
+ */
+export function questionTopic(q: Question, one = false): string {
   const groups = q.groups?.join(' • ');
-  return groups && groups.length < q.category.length ? groups : q.category;
+  if (!groups || groups.length >= q.category.length) return one ? singular(q.category) : q.category;
+  if (!one) return groups;
+  const names = q.groups!.map(singular);
+  return names.length > 1 ? `${names.slice(0, -1).join(', ')} or ${names.at(-1)}` : names[0];
 }
 
 /** Option ids of made-up names: `fake:<id of the item it copies>:<which of its fakes>`. */

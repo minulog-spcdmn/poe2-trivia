@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { PALETTE } from '../src/lib/palette.ts';
-import { Engine, ActionError, AUTO_NEXT_MS, autoNextLeft, createGame, DIFFICULTIES, isDifficulty, isFake, rulesFor, RARE_GROUPS, nameSimilarity, publicView, questionTopic, renameCategories, MAX_PLAYERS, type Difficulty, type GameState, type Item, type Question } from '../src/lib/game.ts';
+import { Engine, ActionError, AUTO_NEXT_MS, autoNextLeft, createGame, DIFFICULTIES, isDifficulty, isFake, rulesFor, RARE_GROUPS, nameSimilarity, publicView, questionTopic, singular, renameCategories, MAX_PLAYERS, type Difficulty, type GameState, type Item, type Question } from '../src/lib/game.ts';
 
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
 const fakes: Record<string, string[]> = JSON.parse(readFileSync(new URL('../src/data/fakes.json', import.meta.url), 'utf8'));
@@ -291,6 +291,18 @@ test('the topic is the groups in play when that is shorter than the category', (
   assert.equal(questionTopic(q('Helmets', ['Helmets'])), 'Helmets');
   assert.equal(questionTopic(q('Lineage Gems', [])), 'Lineage Gems');
   assert.equal(questionTopic(q('Rings')), 'Rings');
+});
+
+test('the unidentified item names its topic as a single item', () => {
+  const q = (category: string, groups?: string[]) => ({ category, groups }) as Question;
+  assert.equal(questionTopic(q('Gloves & Boots', ['Boots']), true), 'Boots');
+  assert.equal(questionTopic(q('Gloves & Boots', ['Boots', 'Gloves']), true), 'Gloves or Boots');
+  assert.equal(questionTopic(q('Flasks, Charms, Jewels, Relics & Tablets', ['Flasks', 'Relics']), true), 'Flask or Relic');
+  assert.equal(questionTopic(q('Flasks, Charms, Jewels, Relics & Tablets', ['Charms', 'Flasks', 'Jewels']), true), 'Charm, Flask or Jewel');
+  assert.equal(questionTopic(q('Two-Handed Weapons', ['Bows', 'Crossbows']), true), 'Bow or Crossbow');
+  assert.equal(questionTopic(q('Helmets', ['Helmets']), true), 'Helmet');
+  assert.equal(questionTopic(q('Lineage Gems', []), true), 'Lineage Gem');
+  assert.equal(questionTopic(q('Rings'), true), 'Ring');
 });
 
 test('similar-looking names rank above unrelated ones', () => {
@@ -950,4 +962,10 @@ test('zoe_arcana always gets the last avatar colour', () => {
   assert.deepEqual([hue('p0'), hue('p1')], [0, 11]);
   s = engine.apply(s, { type: 'restart' }, 'p0');
   assert.deepEqual([hue('p0'), hue('p1')], [11, 0]);
+});
+
+test('every category and item group has a singular name for the unidentified item', () => {
+  const names = new Set(items.flatMap((it) => (it.kind === 'gem' ? [it.category] : [it.category, it.group])));
+  // A single pair of gloves or boots keeps its plural name.
+  for (const name of names) assert.ok(singular(name) !== name || ['Boots', 'Gloves'].includes(name), name);
 });
