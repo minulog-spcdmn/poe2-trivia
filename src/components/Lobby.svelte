@@ -217,18 +217,19 @@
       {/if}
 
       {#if local}
-        <form class="add" onsubmit={addLocal}>
-          <input
-            class="field"
-            bind:value={newName}
-            maxlength={MAX_NAME}
-            autocomplete="off"
-            spellcheck="false"
-            placeholder={s.players.length ? 'Add another exile' : 'Add the first exile'}
-            disabled={s.players.length >= MAX_PLAYERS}
-          />
-          <button class="btn" type="submit" disabled={!newName.trim()}>Add</button>
-        </form>
+        {#if s.players.length < MAX_PLAYERS}
+          <form class="add" onsubmit={addLocal}>
+            <input
+              class="field"
+              bind:value={newName}
+              maxlength={MAX_NAME}
+              autocomplete="off"
+              spellcheck="false"
+              placeholder={s.players.length ? 'Add another exile' : 'Add the first exile'}
+            />
+            <button class="btn" type="submit" disabled={!newName.trim()}>Add</button>
+          </form>
+        {/if}
         <p class="hint muted">Pass the device around; each player answers on their own turn.</p>
       {:else if s.players.length < 2}
         <p class="hint muted waiting"><span class="pulse"></span>Waiting for exiles to join…</p>
