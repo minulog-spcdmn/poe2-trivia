@@ -1,7 +1,8 @@
 // Pure game logic. The host (or the single device in hot-seat mode) is the only
 // place this runs; everyone else just renders the state it broadcasts.
 
-import { cleanName, nameProblem } from './names.ts';
+import { cleanName, nameProblem, nameSkeleton } from './names.ts';
+import { RUBY } from './palette.ts';
 
 export interface Item {
   id: string;
@@ -329,12 +330,47 @@ function fillSeats(s: GameState) {
   s.spectators = waiting;
 }
 
-/** Adds a player with the first free avatar colour. */
+/**
+ * Avatar colours that always go to one player, even if someone else had them.
+ * Keyed by name skeleton, so every spelling the name check treats as the same
+ * person ("Zoe Arcana", "zoe-arcana") counts.
+ */
+const RESERVED_HUES = new Map([[nameSkeleton('zoe_arcana'), RUBY]]);
+const RESERVED = new Set(RESERVED_HUES.values());
+
+/** The colour reserved for this player's name, if any. */
+const reservedHue = (p: Player) => RESERVED_HUES.get(nameSkeleton(p.name));
+
+/** The first avatar colour nobody else is using, skipping the reserved ones while others are free. */
+function freeHue(s: GameState, except?: Player): number {
+  const used = new Set(s.players.filter((p) => p !== except).map((p) => p.hue));
+  const free = Array.from({ length: MAX_PLAYERS }, (_, i) => i).filter((h) => !used.has(h));
+  return free.find((h) => !RESERVED.has(h)) ?? free[0];
+}
+
+/**
+ * Gives a player their reserved colour if their name has one, moving whoever
+ * had it to a free one; a player without one gives up a reserved colour while
+ * others are free. Only between games, so nobody changes colour mid-match.
+ */
+function settleHue(s: GameState, p: Player) {
+  const hue = reservedHue(p);
+  if (hue === undefined) {
+    if (RESERVED.has(p.hue)) p.hue = freeHue(s, p);
+    return;
+  }
+  if (p.hue === hue) return;
+  const holder = s.players.find((o) => o !== p && o.hue === hue);
+  p.hue = hue;
+  if (holder) holder.hue = freeHue(s, holder);
+}
+
+/** Adds a player with the first free avatar colour (or their reserved one). */
 function seat(s: GameState, id: string, name: string) {
-  const used = new Set(s.players.map((p) => p.hue));
-  let hue = 0;
-  while (used.has(hue)) hue++;
-  s.players.push({ id, name, score: 0, recent: [], connected: true, hue });
+  const p: Player = { id, name, score: 0, recent: [], connected: true, hue: -1 };
+  p.hue = freeHue(s);
+  s.players.push(p);
+  settleHue(s, p);
 }
 
 /**
@@ -446,7 +482,10 @@ export class Engine {
           [...s.players, ...s.spectators].filter((o) => o.id !== action.playerId).map((o) => o.name),
         );
         if (problem) throw new ActionError(problem);
-        if (p) p.name = name;
+        if (p) {
+          p.name = name;
+          if (s.phase === 'lobby') settleHue(s, p);
+        }
         break;
       }
       case 'remove': {
@@ -610,6 +649,9 @@ export class Engine {
         const fresh = createGame(s.hostId, s.settings);
         // Players who left during the game don't come back as ghosts in the lobby.
         fresh.players = s.players.filter((p) => p.connected).map((p) => ({ ...p, score: 0, recent: [] }));
+        // Renames during the game take effect on colours now.
+        const claims = fresh.players.filter((p) => reservedHue(p) !== undefined);
+        for (const p of [...claims, ...fresh.players.filter((p) => !claims.includes(p))]) settleHue(fresh, p);
         fresh.spectators = s.spectators;
         fillSeats(fresh);
         fresh.version = s.version;

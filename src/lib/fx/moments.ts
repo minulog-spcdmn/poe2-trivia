@@ -30,7 +30,7 @@ import { CALM, embers as backdropEmbers } from '../backdropEmbers';
 
 const k3 = (c: Vec3, k: number): Vec3 => [c[0] * k, c[1] * k, c[2] * k];
 
-/** A CSS colour (hsl() from playerColor, rgb() or #hex) as an HDR colour of the given brightness. */
+/** A CSS colour (#hex from playerColor, hsl() or rgb()) as an HDR colour of the given brightness. */
 export function hdr(css: string, gain = 2.6): Vec3 {
   const m = css.match(/hsl\(\s*([\d.]+)(?:deg)?[\s,]+([\d.]+)%[\s,]+([\d.]+)%/);
   const hex = css.match(/#([\da-f]{3,8})\b/i)?.[1];
