@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { PALETTE } from '../src/lib/palette.ts';
-import { Engine, ActionError, AUTO_NEXT_MS, autoNextLeft, createGame, DIFFICULTIES, isDifficulty, isFake, rulesFor, RARE_GROUPS, nameSimilarity, publicView, renameCategories, singularCategory, MAX_PLAYERS, type Difficulty, type GameState, type Item, type Question } from '../src/lib/game.ts';
+import { Engine, ActionError, AUTO_NEXT_MS, autoNextLeft, createGame, DIFFICULTIES, isDifficulty, isFake, rulesFor, RARE_GROUPS, nameSimilarity, publicView, questionTopic, singular, renameCategories, MAX_PLAYERS, type Difficulty, type GameState, type Item, type Question } from '../src/lib/game.ts';
 
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
 const fakes: Record<string, string[]> = JSON.parse(readFileSync(new URL('../src/data/fakes.json', import.meta.url), 'utf8'));
@@ -219,21 +219,38 @@ test('guests see who is watching; the answer stays hidden', () => {
 test('difficulties scale options, decoy kind and question types', () => {
   for (const difficulty of ['cruel', 'merciless', 'eternal'] as Difficulty[]) {
     const rules = DIFFICULTIES[difficulty];
-    let { engine, s } = setup(['A'], 3, difficulty);
+    let { s } = setup(['A'], 3, difficulty);
+    const engine = new Engine(items, { rng: seeded(42), fakes });
     s = engine.apply(s, { type: 'start' }, 'p0');
     const modes = new Set<string>();
     for (let turn = 0; turn < 40; turn++) {
-      s = engine.apply(s, { type: 'pick', category: s.offered[0] }, 'p0');
+      const category = s.offered[0];
+      // What the engine draws decoys from: unseen items, or the whole category
+      // (but its latest answer) once too few are left.
+      const inCat = engine.byCategory.get(category)!;
+      let unused = inCat.filter((it) => !s.used.includes(it.id));
+      if (unused.length < rules.options) {
+        const latest = s.used.findLast((id) => inCat.some((it) => it.id === id));
+        unused = inCat.filter((it) => it.id !== latest);
+      }
+      s = engine.apply(s, { type: 'pick', category }, 'p0');
       const q = s.question!;
       modes.add(q.mode);
       assert.equal(q.options.length, rules.options);
       assert.equal(new Set(q.options).size, rules.options);
       const answer = engine.byId.get(q.itemId)!;
-      for (const id of q.options) assert.equal(engine.byId.get(id)!.category, answer.category, 'decoys share the category');
-      const groupSize = engine.items.filter((it) => it.group === answer.group).length;
-      if (rules.groupFirst && groupSize >= rules.options) {
-        for (const id of q.options) assert.equal(engine.byId.get(id)!.group, answer.group, 'decoys share the group');
+      const real = q.options.filter((id) => !isFake(id)).map((id) => engine.byId.get(id)!);
+      const looks = q.options.map((id) => engine.byId.get(isFake(id) ? id.split(':')[1] : id)!.group);
+      for (const it of real) assert.equal(it.category, answer.category, 'decoys share the category');
+      const sameGroupLeft = unused.filter((it) => it.group === answer.group && it.id !== answer.id).length;
+      if (sameGroupLeft >= rules.options - 1) {
+        for (const it of real) assert.equal(it.group, answer.group, 'decoys share the group');
       }
+      // The topic lists exactly the groups on screen, and never one with a single option.
+      const shown = q.groups ?? [];
+      if (answer.kind === 'gem') assert.deepEqual(shown, []);
+      for (const g of shown) assert.ok(looks.filter((l) => l === g).length >= 2, `${g} has two options`);
+      if (shown.length) for (const l of looks) assert.ok(shown.includes(l), `${l} is listed`);
       assert.equal(!!q.veil, !!rules.veil && q.mode === 'name');
       s = engine.apply(s, { type: 'answer', index: right(q) }, 'p0');
       s = engine.apply(s, { type: 'next' }, 'p0');
@@ -241,6 +258,51 @@ test('difficulties scale options, decoy kind and question types', () => {
     }
     assert.ok(modes.has('art') && modes.has('name'));
   }
+});
+
+test('the topic counts a made-up name under the item it copies', () => {
+  const engine = new Engine(items, { rng: seeded(7), fakes });
+  const s = createGame(null, { targetScore: 5, timer: 0, difficulty: 'eternal', mode: 'turns', public: false, locked: false });
+  const category = 'Flasks, Charms, Jewels, Relics & Tablets';
+  let mixed = 0;
+  let twins = 0;
+  for (let i = 0; i < 3000; i++) {
+    const q = engine.makeQuestion(s, category);
+    const looks = q.options.map((id) => engine.byId.get(isFake(id) ? id.split(':')[1] : id)!.group);
+    const counts = new Map<string, number>();
+    for (const g of looks) counts.set(g, (counts.get(g) ?? 0) + 1);
+    const expected = [...counts.values()].some((n) => n === 1) ? [] : [...counts.keys()].sort();
+    assert.deepEqual(q.groups, expected, 'the groups as they look on screen');
+    if (q.groups!.length > 1) mixed++;
+    // A group with one real name and its made-up twin is listed.
+    const realIn = (g: string) => q.options.filter((id) => !isFake(id) && engine.byId.get(id)!.group === g).length;
+    if (q.groups!.some((g) => realIn(g) === 1)) twins++;
+  }
+  assert.ok(mixed > 0, 'some questions mix groups');
+  assert.ok(twins > 0, 'some groups are listed for a real name and its twin');
+});
+
+test('the topic is the groups in play when that is shorter than the category', () => {
+  const q = (category: string, groups?: string[]) => ({ category, groups }) as Question;
+  assert.equal(questionTopic(q('Gloves & Boots', ['Boots'])), 'Boots');
+  assert.equal(questionTopic(q('Gloves & Boots', ['Boots', 'Gloves'])), 'Gloves & Boots');
+  assert.equal(questionTopic(q('Flasks, Charms, Jewels, Relics & Tablets', ['Flasks', 'Relics'])), 'Flasks • Relics');
+  assert.equal(questionTopic(q('One-Handed Weapons', ['One-Handed Maces', 'Spears'])), 'One-Handed Weapons');
+  assert.equal(questionTopic(q('Helmets', ['Helmets'])), 'Helmets');
+  assert.equal(questionTopic(q('Lineage Gems', [])), 'Lineage Gems');
+  assert.equal(questionTopic(q('Rings')), 'Rings');
+});
+
+test('the unidentified item names its topic as a single item', () => {
+  const q = (category: string, groups?: string[]) => ({ category, groups }) as Question;
+  assert.equal(questionTopic(q('Gloves & Boots', ['Boots']), true), 'Boots');
+  assert.equal(questionTopic(q('Gloves & Boots', ['Boots', 'Gloves']), true), 'Gloves or Boots');
+  assert.equal(questionTopic(q('Flasks, Charms, Jewels, Relics & Tablets', ['Flasks', 'Relics']), true), 'Flask or Relic');
+  assert.equal(questionTopic(q('Flasks, Charms, Jewels, Relics & Tablets', ['Charms', 'Flasks', 'Jewels']), true), 'Charm, Flask or Jewel');
+  assert.equal(questionTopic(q('Two-Handed Weapons', ['Bows', 'Crossbows']), true), 'Bow or Crossbow');
+  assert.equal(questionTopic(q('Helmets', ['Helmets']), true), 'Helmet');
+  assert.equal(questionTopic(q('Lineage Gems', []), true), 'Lineage Gem');
+  assert.equal(questionTopic(q('Rings'), true), 'Ring');
 });
 
 test('similar-looking names rank above unrelated ones', () => {
@@ -902,8 +964,8 @@ test('zoe_arcana always gets the last avatar colour', () => {
   assert.deepEqual([hue('p0'), hue('p1')], [11, 0]);
 });
 
-test('every category has a singular name for the unidentified item', () => {
-  for (const cat of new Set(items.map((it) => it.category))) {
-    assert.notEqual(singularCategory(cat), cat, cat);
-  }
+test('every category and item group has a singular name for the unidentified item', () => {
+  const names = new Set(items.flatMap((it) => (it.kind === 'gem' ? [it.category] : [it.category, it.group])));
+  // A single pair of gloves or boots keeps its plural name.
+  for (const name of names) assert.ok(singular(name) !== name || ['Boots', 'Gloves'].includes(name), name);
 });

@@ -22,8 +22,6 @@ export type QuestionMode = 'name' | 'art';
 
 export interface DifficultyRules {
   options: number;
-  /** Draw decoys from the answer's own group (all rings, all bows…) first. */
-  groupFirst: boolean;
   /** Share of decoys picked for having a name that looks like the answer. */
   similarNames: number;
   /** Chance of an "art" question instead of a "name" question. */
@@ -41,10 +39,9 @@ export interface DifficultyRules {
 }
 
 export const DIFFICULTIES: Record<Difficulty, DifficultyRules> = {
-  cruel: { options: 4, groupFirst: true, similarNames: 0, artChance: 0.4, veil: null, grayscale: false, mirror: 0, lockout: 2, fakes: 0 },
+  cruel: { options: 4, similarNames: 0, artChance: 0.4, veil: null, grayscale: false, mirror: 0, lockout: 2, fakes: 0 },
   merciless: {
     options: 6,
-    groupFirst: true,
     similarNames: 0.5,
     artChance: 0.4,
     veil: { size: 5, share: 0.55 },
@@ -55,7 +52,6 @@ export const DIFFICULTIES: Record<Difficulty, DifficultyRules> = {
   },
   eternal: {
     options: 8,
-    groupFirst: false,
     similarNames: 1,
     artChance: 0.5,
     veil: { size: 7, share: 0.7 },
@@ -78,23 +74,45 @@ const weightOf = (it: Item) => RARE_GROUPS[it.group] ?? 1;
 /** Categories that were renamed, by their old name. */
 const RENAMED_CATEGORIES: Record<string, string> = { 'Flasks, Jewels & Relics': 'Flasks, Charms, Jewels, Relics & Tablets' };
 
-/** One item of each category, for the line under "Unidentified". */
-const SINGULAR_CATEGORIES: Record<string, string> = {
+/** Categories and groups named as a single item, for the line under "Unidentified". */
+const SINGULAR: Record<string, string> = {
   'Amulets & Belts': 'Amulet or Belt',
   'Body Armours': 'Body Armour',
   'Flasks, Charms, Jewels, Relics & Tablets': 'Flask, Charm, Jewel, Relic or Tablet',
   'Gloves & Boots': 'Gloves or Boots',
-  Helmets: 'Helmet',
   'Lineage Gems': 'Lineage Gem',
   'Off-Hands': 'Off-Hand',
   'One-Handed Weapons': 'One-Handed Weapon',
-  Rings: 'Ring',
   'Two-Handed Weapons': 'Two-Handed Weapon',
+  Amulets: 'Amulet',
+  Belts: 'Belt',
+  Boots: 'Boots',
+  Bows: 'Bow',
+  Charms: 'Charm',
+  Crossbows: 'Crossbow',
+  Flasks: 'Flask',
+  Foci: 'Focus',
+  Gloves: 'Gloves',
+  Helmets: 'Helmet',
+  Jewels: 'Jewel',
+  'One-Handed Maces': 'One-Handed Mace',
+  Quarterstaves: 'Quarterstaff',
+  Quivers: 'Quiver',
+  Relics: 'Relic',
+  Rings: 'Ring',
+  Sceptres: 'Sceptre',
+  Shields: 'Shield',
+  Spears: 'Spear',
+  Staves: 'Staff',
+  Tablets: 'Tablet',
+  Talismans: 'Talisman',
+  'Two-Handed Maces': 'Two-Handed Mace',
+  Wands: 'Wand',
 };
 
-/** A category named as a single item ("Rings" → "Ring"). */
-export function singularCategory(category: string) {
-  return SINGULAR_CATEGORIES[category] ?? category;
+/** A category or group named as a single item ("Rings" → "Ring"). */
+export function singular(name: string) {
+  return SINGULAR[name] ?? name;
 }
 
 /** A game saved before categories were renamed, with the new names. */
@@ -107,6 +125,18 @@ export function renameCategories(s: GameState): GameState {
     recentCategories: s.recentCategories.map(rename),
     question: s.question && { ...s.question, category: rename(s.question.category) },
   };
+}
+
+/**
+ * What the question is about: its groups when that is shorter than the category
+ * name. `one` names a single item ("Flask or Relic") for the unidentified item.
+ */
+export function questionTopic(q: Question, one = false): string {
+  const groups = q.groups?.join(' • ');
+  if (!groups || groups.length >= q.category.length) return one ? singular(q.category) : q.category;
+  if (!one) return groups;
+  const names = q.groups!.map(singular);
+  return names.length > 1 ? `${names.slice(0, -1).join(', ')} or ${names.at(-1)}` : names[0];
 }
 
 /** Option ids of made-up names: `fake:<id of the item it copies>:<which of its fakes>`. */
@@ -212,6 +242,13 @@ export const RACE_DEFAULT_TIMER = 30;
 
 export interface Question {
   category: string;
+  /**
+   * Groups of the options on screen (Boots, Charms…), sorted, a made-up name
+   * counting under the item it copies. Says what is in play without pointing
+   * at the answer. Empty for gems and when a group has a single option;
+   * missing in older saves.
+   */
+  groups?: string[];
   mode: QuestionMode;
   /** The answer. Empty in the copy guests receive until the reveal. */
   itemId: string;
@@ -979,6 +1016,23 @@ export class Engine {
   }
 
   /**
+   * Groups of the options, sorted, for the question's topic. A made-up name
+   * counts under the item it copies, the group it looks like, so the topic
+   * only says what is on screen and nothing about which names are real.
+   * Empty when a group has a single option: decoys come from the answer's
+   * group first, so a lone option would most likely be the answer.
+   */
+  private groupsOf(options: string[]): string[] {
+    const counts = new Map<string, number>();
+    for (const option of options) {
+      const id = isFake(option) ? option.slice(FAKE_PREFIX.length, option.lastIndexOf(':')) : option;
+      const group = this.byId.get(id)!.group;
+      counts.set(group, (counts.get(group) ?? 0) + 1);
+    }
+    return [...counts.values()].some((n) => n === 1) ? [] : [...counts.keys()].sort();
+  }
+
+  /**
    * Builds a question from the category. Updates `s.used` when the category
    * has to start over.
    */
@@ -1005,11 +1059,11 @@ export class Engine {
     const answer = this.weightedPick(answerable.length ? answerable : unused.length ? unused : inCat);
 
     const sameGroup = unused.filter((it) => it.id !== answer.id && it.group === answer.group);
-    // Rare groups (tablets) only fill in as decoys when nothing else is left…
+    // Decoys come from the answer's own group (all rings, all bows…): a flask
+    // among tablets would stand out. Other groups only fill in when it runs
+    // too low, and rare groups (tablets) not even then.
     const otherGroup = unused.filter((it) => it.id !== answer.id && it.group !== answer.group && weightOf(it) === 1);
-    // …so a rare answer gets decoys from its own group, or it would stand out.
-    const ownGroup = (rules.groupFirst || weightOf(answer) !== 1) && sameGroup.length >= need;
-    const pool = ownGroup ? sameGroup : [...sameGroup, ...otherGroup];
+    const pool = sameGroup.length >= need ? sameGroup : [...sameGroup, ...otherGroup];
 
     const simCount = Math.min(pool.length, Math.round(need * rules.similarNames));
     const decoys = this.lookalikes(answer, pool, simCount, rules.options);
@@ -1036,11 +1090,13 @@ export class Engine {
           }
         : null;
     const fakeNames = mode === 'name' ? this.mixInFakes(options, answer.id, rules.fakes, new Set(s.used)) : new Map<string, string>();
+    // Gem groups are attributes ("Intelligence"), not kinds of item.
+    const groups = answer.kind === 'gem' ? [] : this.groupsOf(options);
     const labels = options.map((id) => (mode === 'name' ? (fakeNames.get(id) ?? this.byId.get(id)!.name) : null));
     const prompt = mode === 'art' ? answer.name : null;
     // Each picture flips on its own roll, so a flipped option says nothing about the answer.
     const mirrored = Array.from({ length: mode === 'art' ? options.length : 1 }, () => rules.mirror > 0 && this.rng() < rules.mirror);
-    return { category, mode, itemId: answer.id, options, labels, prompt, veil, mirrored, askedAt, deadline, misses: [] };
+    return { category, groups, mode, itemId: answer.id, options, labels, prompt, veil, mirrored, askedAt, deadline, misses: [] };
   }
 }
 
