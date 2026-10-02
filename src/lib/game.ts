@@ -452,6 +452,15 @@ export function shuffle<T>(arr: T[], rng: Rng): T[] {
   return a;
 }
 
+/**
+ * Sizes every group on screen could share in a question that mixes groups
+ * (two rings and two belts, four of each…), when the answer's group has
+ * `siblings` unseen items besides it and the other groups have `others`.
+ */
+function evenSizes(options: number, siblings: number, others: number[]): number[] {
+  return [2, 3, 4].filter((m) => options % m === 0 && m < options && m - 1 <= siblings && others.filter((n) => n >= m).length >= options / m - 1);
+}
+
 function sample<T>(arr: T[], n: number, rng: Rng): T[] {
   return shuffle(arr, rng).slice(0, n);
 }
@@ -971,8 +980,10 @@ export class Engine {
    * Swaps `count` decoys for made-up names (in place) and returns the names by
    * option id. Each fake copies one of the real names left on screen, the
    * answer as often as any decoy, so a real name next to its fake twin says
-   * nothing about which option is right. Fakes in `used` (someone fell for
-   * them this game) only come back when nothing else is left.
+   * nothing about which option is right. A fake takes the place of a decoy
+   * from its twin's group, so each group keeps its count on screen. Fakes in
+   * `used` (someone fell for them this game) only come back when nothing
+   * else is left.
    */
   private mixInFakes(options: string[], answerId: string, count: number, used: Set<string>): Map<string, string> {
     const names = new Map<string, string>();
@@ -980,19 +991,29 @@ export class Engine {
     const fakeId = (source: string, n: number) => `${FAKE_PREFIX}${source}:${n}`;
     /** Which of an item's fakes nobody has fallen for yet. */
     const fresh = (source: string) => this.fakes.get(source)!.flatMap((_, n) => (used.has(fakeId(source, n)) ? [] : [n]));
-    const decoys = options.flatMap((id, i) => (id === answerId ? [] : [i]));
-    const swap = sample(decoys, count, this.rng);
-    const kept = options.filter((_, i) => !swap.includes(i));
-    const withFakes = kept.filter((id) => this.fakes.has(id));
-    const sources = sample(withFakes.filter((id) => fresh(id).length), swap.length, this.rng);
-    if (sources.length < swap.length) sources.push(...sample(withFakes.filter((id) => !sources.includes(id)), swap.length - sources.length, this.rng));
-    sources.forEach((source, k) => {
+    const group = (i: number) => this.byId.get(options[i])!.group;
+    const sources = new Set<number>();
+    const swapped = new Set<number>();
+    const free = (i: number) => !swapped.has(i) && !sources.has(i) && !isFake(options[i]);
+    /** Real names of `i`'s group that stay on screen and could lend it a fake. */
+    const twins = (i: number, freshOnly: boolean) =>
+      options.flatMap((id, j) => (j !== i && free(j) && this.fakes.has(id) && group(j) === group(i) && (!freshOnly || fresh(id).length) ? [j] : []));
+    /** Decoys a fake could stand in for. */
+    const spots = (freshOnly: boolean) => options.flatMap((id, i) => (id !== answerId && free(i) && twins(i, freshOnly).length ? [i] : []));
+    for (let k = 0; k < count; k++) {
+      const freshOnly = spots(true).length > 0;
+      const spot = sample(spots(freshOnly), 1, this.rng)[0];
+      if (spot === undefined) break;
+      const twin = sample(twins(spot, freshOnly), 1, this.rng)[0];
+      const source = options[twin];
       const open = fresh(source);
       const n = open.length ? open[Math.floor(this.rng() * open.length)] : Math.floor(this.rng() * this.fakes.get(source)!.length);
       const id = fakeId(source, n);
-      options[swap[k]] = id;
+      sources.add(twin);
+      swapped.add(spot);
+      options[spot] = id;
       names.set(id, this.fakes.get(source)![n]);
-    });
+    }
     return names;
   }
 
@@ -1013,6 +1034,35 @@ export class Engine {
       if (r < 0) return it;
     }
     return list[list.length - 1];
+  }
+
+  /**
+   * Reshapes the decoys (in place) so every group on screen shows up as often
+   * as the others (two rings and two belts, four of each…), keeping the
+   * decoys' groups where it can. Groups only mix when the answer's own group
+   * runs low, so a group smaller than the rest would most likely hold the
+   * answer. Leaves the decoys be when `pool` has no such set.
+   */
+  private evenOut(answer: Item, decoys: Item[], pool: Item[]): void {
+    const options = decoys.length + 1;
+    const byGroup = new Map<string, Item[]>();
+    for (const it of pool) byGroup.set(it.group, [...(byGroup.get(it.group) ?? []), it]);
+    const siblings = byGroup.get(answer.group) ?? [];
+    byGroup.delete(answer.group);
+    const sizes = evenSizes(options, siblings.length, [...byGroup.values()].map((g) => g.length));
+    const m = sample(sizes, 1, this.rng)[0];
+    if (!m) return;
+    // Groups the decoys already favour first (look-alike names), the rest at random.
+    const onScreen = (group: string) => decoys.filter((d) => d.group === group);
+    const groups = shuffle([...byGroup.keys()].filter((g) => byGroup.get(g)!.length >= m), this.rng)
+      .sort((a, b) => onScreen(b).length - onScreen(a).length)
+      .slice(0, options / m - 1);
+    const fill = (group: string, n: number, from: Item[]) => {
+      const kept = onScreen(group).slice(0, n);
+      return [...kept, ...sample(from.filter((it) => !kept.includes(it)), n - kept.length, this.rng)];
+    };
+    const picked = [...fill(answer.group, m - 1, siblings), ...groups.flatMap((g) => fill(g, m, byGroup.get(g)!))];
+    decoys.splice(0, decoys.length, ...shuffle(picked, this.rng));
   }
 
   /**
@@ -1042,26 +1092,36 @@ export class Engine {
     const need = rules.options - 1;
 
     // Earlier answers never come back as decoys (they'd be easy to rule out).
-    // Once too few unseen items are left for a full set of options, the
-    // category starts over, except for its latest answer.
-    if (this.unusedIn(s, category).length < rules.options) {
+    // An answer needs a full set of unseen decoys from its own group, or one
+    // to share evenly with other groups (two of each, three of each…): a
+    // group smaller than the rest would most likely hold the answer. Rare
+    // groups (tablets) never mix, or one would stand out. Other items sit
+    // out; once none can be asked, the category starts over, except for its
+    // latest answer.
+    const answerable = (unused: Item[]) => {
+      const left = new Map<string, number>();
+      for (const it of unused) left.set(it.group, (left.get(it.group) ?? 0) + 1);
+      const others = (group: string) => [...left].flatMap(([g, n]) => (g === group || Object.hasOwn(RARE_GROUPS, g) ? [] : [n]));
+      return unused.filter((it) => {
+        const siblings = left.get(it.group)! - 1;
+        return siblings >= need || (weightOf(it) === 1 && evenSizes(rules.options, siblings, others(it.group)).length > 0);
+      });
+    };
+    let unused = this.unusedIn(s, category);
+    let candidates = answerable(unused);
+    if (!candidates.length) {
       const inThis = new Set(inCat.map((it) => it.id));
       const latest = s.used.findLast((id) => inThis.has(id));
       s.used = s.used.filter((id) => !inThis.has(id) || id === latest);
+      unused = this.unusedIn(s, category);
+      candidates = answerable(unused);
     }
-    const unused = this.unusedIn(s, category);
-    // A rare answer (a tablet) needs a full set of unseen decoys from its own
-    // group, or it would stand out; once its group runs that low it sits out
-    // until the category starts over.
-    const left = new Map<string, number>();
-    for (const it of unused) left.set(it.group, (left.get(it.group) ?? 0) + 1);
-    const answerable = unused.filter((it) => weightOf(it) === 1 || left.get(it.group)! > need);
-    const answer = this.weightedPick(answerable.length ? answerable : unused.length ? unused : inCat);
+    const answer = this.weightedPick(candidates.length ? candidates : unused.length ? unused : inCat);
 
     const sameGroup = unused.filter((it) => it.id !== answer.id && it.group === answer.group);
     // Decoys come from the answer's own group (all rings, all bows…): a flask
     // among tablets would stand out. Other groups only fill in when it runs
-    // too low, and rare groups (tablets) not even then.
+    // too low, evened out with it, and rare groups (tablets) not even then.
     const otherGroup = unused.filter((it) => it.id !== answer.id && it.group !== answer.group && weightOf(it) === 1);
     const pool = sameGroup.length >= need ? sameGroup : [...sameGroup, ...otherGroup];
 
@@ -1073,6 +1133,7 @@ export class Engine {
       const taken = new Set([answer.id, ...decoys.map((it) => it.id)]);
       decoys.push(...sample(source.filter((it) => !taken.has(it.id)), need - decoys.length, this.rng));
     }
+    if (pool !== sameGroup) this.evenOut(answer, decoys, pool);
 
     const options = shuffle([answer, ...decoys], this.rng).map((it) => it.id);
     const mode: QuestionMode = this.rng() < rules.artChance ? 'art' : 'name';

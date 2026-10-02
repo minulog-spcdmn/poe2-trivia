@@ -260,6 +260,31 @@ test('difficulties scale options, decoy kind and question types', () => {
   }
 });
 
+test('a question that mixes groups shows each as often as the others', () => {
+  for (const difficulty of ['cruel', 'merciless', 'eternal'] as Difficulty[]) {
+    const engine = new Engine(items, { rng: seeded(11), fakes });
+    let mixed = 0;
+    for (const category of engine.categories) {
+      const s = createGame(null, { targetScore: 5, timer: 0, difficulty, mode: 'turns', public: false, locked: false });
+      // Play through the category a few times, so its groups run low.
+      for (let i = 0; i < engine.byCategory.get(category)!.length * 3; i++) {
+        const q = engine.makeQuestion(s, category);
+        s.used.push(q.itemId);
+        // Made-up names count under the item they copy, the group they look like.
+        const counts = new Map<string, number>();
+        for (const id of q.options) {
+          const group = engine.byId.get(isFake(id) ? id.split(':')[1] : id)!.group;
+          counts.set(group, (counts.get(group) ?? 0) + 1);
+        }
+        if (counts.size < 2) continue;
+        mixed++;
+        assert.equal(new Set(counts.values()).size, 1, `${difficulty} ${category}: ${[...counts.values()]}`);
+      }
+    }
+    assert.ok(mixed > 0, `${difficulty} mixes groups`);
+  }
+});
+
 test('the topic counts a made-up name under the item it copies', () => {
   const engine = new Engine(items, { rng: seeded(7), fakes });
   const s = createGame(null, { targetScore: 5, timer: 0, difficulty: 'eternal', mode: 'turns', public: false, locked: false });
