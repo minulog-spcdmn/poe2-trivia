@@ -3,7 +3,7 @@
 // victory look like. Components call these with the elements involved; all
 // of them are no-ops while effects are off.
 
-import { after, boxOf, fxActive, shakeView, type Anchor, type Handle, type Vec3 } from './core';
+import { after, boxOf, fxActive, shakeView, type Anchor, type Handle, type Point, type Vec3 } from './core';
 import {
   C,
   edgeGlow,
@@ -158,13 +158,35 @@ export function artRevealed(art: Element) {
   light(art, { color: [1, 0.7, 0.35], radius: 300, intensity: 0.35, decay: 1 });
 }
 
-/** One veiled tile lifts. */
-export function tileLifted(cell: Element) {
+/** A veiled tile starts to materialise at `at` (the burn's origin); `size` is the tile's width. */
+export function tileIgnites(at: Point, size: number) {
   if (!fxActive()) return;
-  const b = boxOf(cell);
-  puffs(cell, { count: 3, area: 'fill', color: [0.35, 0.24, 0.1], size: [b.w * 0.15, b.w * 0.3], speed: [10, 50] });
-  sparks(cell, { count: 6, area: 'edge', speed: [60, 220], life: [0.25, 0.5], gravity: 200 });
-  if (Math.random() < 0.5) glints(cell, { count: 1, size: [3, 6] });
+  flash(at, { radius: size * 0.45, color: C.gold, intensity: 0.3, life: 0.35 });
+  sparks(at, { count: 4, speed: [40, 160], life: [0.2, 0.45], gravity: -30, size: [0.6, 1.1], colors: [C.whiteHot, C.goldPale] });
+}
+
+/** A mote of light lifting off a materialising tile's burning edge. */
+export function tileMote(at: Point) {
+  if (!fxActive()) return;
+  if (Math.random() < 0.8) {
+    embers(at, {
+      count: 1,
+      colors: [C.gold, C.goldPale, C.whiteHot],
+      size: [1.2, 2.5],
+      life: [0.6, 1.4],
+      rise: [30, 90],
+      scatter: 22,
+      turbulence: 90,
+    });
+  } else {
+    sparks(at, { count: 1, speed: [60, 170], life: [0.25, 0.5], gravity: -60, size: [0.7, 1.2], colors: [C.whiteHot, C.gold] });
+  }
+}
+
+/** A tile has fully materialised. */
+export function tileSettled(cell: Element) {
+  if (!fxActive()) return;
+  if (Math.random() < 0.4) glints(cell, { count: 1, size: [3, 6] });
 }
 
 /** An answer is locked in: energy gathers on it until the reveal. */

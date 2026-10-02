@@ -3,6 +3,7 @@
   import { session, engine } from '../lib/session.svelte';
   import { AUTO_NEXT_MS, autoNextLeft, isFake, questionTopic } from '../lib/game';
   import { shown, gridCells } from '../lib/media.svelte';
+  import { materialize } from '../lib/materialize';
   import { itemImage } from '../lib/ui';
   import { sfx } from '../lib/sound';
   import TimerRing from './TimerRing.svelte';
@@ -11,7 +12,7 @@
   import { backdropShadow } from '../lib/backdropShadow';
   import ArcaneCircle from './ArcaneCircle.svelte';
   import { untrack } from 'svelte';
-  import { FILL_START, answerCharging, artRevealed, raceMiss, reveal as revealFx, tileLifted } from '../lib/fx/moments';
+  import { FILL_START, answerCharging, artRevealed, raceMiss, reveal as revealFx } from '../lib/fx/moments';
   import { FILL_LEAD } from '../lib/soundDesign';
   import { recordReveal } from '../lib/fx/streaks';
   import { scoreRowOf } from '../lib/scoreRows';
@@ -129,10 +130,10 @@
     artRevealed(artEl);
   });
 
-  /** Svelte action: a veiled tile lifts with a puff of light. */
-  function lifted(node: HTMLElement) {
+  /** Svelte action: a veiled tile materialises out of its cover. */
+  function lifted(node: HTMLImageElement) {
     sfx('lift');
-    if (node.parentElement) tileLifted(node.parentElement);
+    return materialize(node);
   }
 
   // The charge-up ends when the answer is revealed, bounced, or (race) comes
@@ -645,8 +646,9 @@
     position: absolute;
     overflow: hidden;
   }
-  /* The cover is a bevelled plate over the piece. Once the piece is in it falls
-     away, so transparent parts of the art show the backdrop like the full picture. */
+  /* The cover is a bevelled plate over the piece. Once the piece is in, a canvas
+     drawn to match takes its place and burns away (lib/materialize.ts), so
+     transparent parts of the art show the backdrop like the full picture. */
   .cell::after {
     content: '';
     position: absolute;
@@ -660,29 +662,15 @@
       inset 1px 1px 0 1px rgba(232, 205, 150, 0.08),
       inset -1px -1px 0 1px rgba(0, 0, 0, 0.6),
       inset 0 0 14px rgba(0, 0, 0, 0.7);
-    transition:
-      opacity 0.5s var(--ease-out),
-      transform 0.5s var(--ease-out),
-      filter 0.5s var(--ease-out);
   }
   .cell.open::after {
-    opacity: 0;
-    transform: scale(0.7);
-    filter: brightness(2.5);
+    display: none;
   }
   .cell img {
     display: block;
     /* A hair larger than the cell so neighbouring pieces meet without seams. */
     width: calc(100% + 1px);
     height: calc(100% + 1px);
-    animation: uncover 0.6s var(--ease-out) both;
-  }
-  @keyframes uncover {
-    from {
-      opacity: 0;
-      transform: scale(1.15);
-      filter: brightness(2);
-    }
   }
   .loading {
     width: 28px;
