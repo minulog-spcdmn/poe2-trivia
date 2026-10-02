@@ -40,6 +40,7 @@ uniform float uBaseStop;
 // B: reach ahead of / behind the centre along the rotated axis, and across
 // it, in units of sqrt(W * H). Unequal reaches make each blob lopsided.
 uniform vec4 uBlobA[${BLOB_COUNT}];
+uniform vec2 uBlobRot[${BLOB_COUNT}]; // (cos, sin) of A's rotation
 uniform vec3 uBlobB[${BLOB_COUNT}];
 uniform vec3 uBlobColor[${BLOB_COUNT}];
 
@@ -56,10 +57,14 @@ uniform int uElCount;
 uniform vec4 uLightA[${MAX_LIGHTS}];
 uniform vec4 uLightC[${MAX_LIGHTS}];
 uniform vec4 uMood;
-// The start page: (rays, title glow, time in s, 0), and the title's centre
-// and half size (CSS px). See setHomeScene in lights.ts.
+// The start page: (rays, title glow, time in s, title breath), and the
+// title's centre and half size (CSS px). See setHomeScene in lights.ts.
 uniform vec4 uHome;
 uniform vec4 uTitle;
+// The god rays' beams: (angle, width, brightness) each, from the time in uHome
+// (see beams() below; they're the same for every pixel, so worked out once a
+// frame).
+uniform vec3 uBeams[7];
 
 // Embers by screen column: row c holds the embers that reach column c,
 // (x, y, size, brightness) each, ending at brightness 0; see backdropEmbers.ts.
@@ -162,9 +167,10 @@ void main() {
   for (int i = 0; i < ${BLOB_COUNT}; i++) {
     vec4 a = uBlobA[i];
     vec3 b = uBlobB[i];
+    vec2 rot = uBlobRot[i];
     vec2 r = p - a.xy * vec2(W, H);
-    float u = dot(r, vec2(cos(a.z), sin(a.z)));
-    float v = dot(r, vec2(-sin(a.z), cos(a.z)));
+    float u = dot(r, rot);
+    float v = dot(r, vec2(-rot.y, rot.x));
     float reach = (u > 0.0 ? b.x : b.y) * S;
     float w = gauss(length(vec2(u / reach, v / (b.z * S))));
     col = mix(col, uBlobColor[i], a.w * w);
@@ -194,12 +200,9 @@ void main() {
     float r = length(dr);
     float beams = 0.0;
     for (int i = 0; i < 7; i++) {
-      float fi = float(i);
-      float a0 = (fi - 3.0) * 0.17 + 0.012 * sin(ht * (0.07 + 0.02 * fi) + fi * 2.1);
-      float bw = 0.055 + 0.025 * sin(fi * 3.1 + 1.0) + 0.012 * sin(ht * 0.21 + fi);
-      float bk = 0.55 + 0.45 * sin(ht * (0.13 + 0.04 * fi) + fi * 1.3);
-      float x = (ang - a0) / bw;
-      beams += bk * exp(-x * x);
+      vec3 b = uBeams[i];
+      float x = (ang - b.x) / b.y;
+      beams += b.z * exp(-x * x);
     }
     // Motes of dust drifting down the shafts.
     float shimmer = 0.82 + 0.18 * sin(r * 0.014 - ht * 0.5 + ang * 9.0);
@@ -208,7 +211,7 @@ void main() {
     col += vec3(1.0, 0.86, 0.62) * beams * shimmer * cone * fall * 0.05 * uHome.x;
   }
   if (uHome.y > 0.0 && uTitle.z > 0.0) {
-    float breath = 0.86 + 0.14 * sin(uHome.z * 0.55);
+    float breath = uHome.w;
     vec2 q = (p - uTitle.xy) / (uTitle.zw * vec2(0.95, 2.4));
     col += vec3(1.0, 0.74, 0.36) * exp(-dot(q, q)) * 0.1 * breath * uHome.y;
     vec2 q2 = (p - uTitle.xy) / (uTitle.zw * vec2(1.9, 5.5));
@@ -367,6 +370,19 @@ function breathe(ms: number, periodMs: number, phase = 0): number {
   return u < 0.5 ? easeInOut(u * 2) : 1 - easeInOut((u - 0.5) * 2);
 }
 
+/**
+ * The start page's god rays at time `t` (s): each beam slowly sways about its
+ * place, narrows and widens, and waxes and wanes. Writes (angle, width,
+ * brightness) per beam to `out`, in radians from straight down.
+ */
+function beams(t: number, out: Float32Array) {
+  for (let i = 0; i < 7; i++) {
+    out[i * 3] = (i - 3) * 0.17 + 0.012 * Math.sin(t * (0.07 + 0.02 * i) + i * 2.1);
+    out[i * 3 + 1] = 0.055 + 0.025 * Math.sin(i * 3.1 + 1.0) + 0.012 * Math.sin(t * 0.21 + i);
+    out[i * 3 + 2] = 0.55 + 0.45 * Math.sin(t * (0.13 + 0.04 * i) + i * 1.3);
+  }
+}
+
 type Blob = {
   color: [number, number, number];
   opacity: number;
@@ -466,6 +482,8 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   const uVignette = U('uVignette');
   const uBaseStop = U('uBaseStop');
   const uBlobA = U('uBlobA');
+  const uBlobRot = U('uBlobRot');
+  const uBeams = U('uBeams');
   const uLightA = U('uLightA');
   const uLightC = U('uLightC');
   const uMood = U('uMood');
@@ -511,6 +529,9 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   const mood = new Float32Array(4);
   const home = new Float32Array(4);
   const title = new Float32Array(4);
+  const blobA = new Float32Array(BLOB_COUNT * 4);
+  const blobRot = new Float32Array(BLOB_COUNT * 2);
+  const beam = new Float32Array(7 * 3);
 
   // Drop-shadow atlases: unit 0 holds content alpha, unit 1 the blurred alpha.
   const texture = (unit: number, filter: number) => {
@@ -577,7 +598,13 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     gl!.uniform2f(uTop, 1 + 0.08 * top, 1 + 0.35 * top);
     gl!.uniform2f(uVignette, 1 - 0.06 * vignette, 1 + 0.07 * vignette);
     gl!.uniform1f(uBaseStop, 0.6 - 0.08 * base);
-    gl!.uniform4fv(uBlobA, paths.flatMap((path) => path(still ? 0 : ms / 1000)));
+    paths.forEach((path, i) => blobA.set(path(still ? 0 : ms / 1000), i * 4));
+    for (let i = 0; i < BLOB_COUNT; i++) {
+      blobRot[i * 2] = Math.cos(blobA[i * 4 + 2]);
+      blobRot[i * 2 + 1] = Math.sin(blobA[i * 4 + 2]);
+    }
+    gl!.uniform4fv(uBlobA, blobA);
+    gl!.uniform2fv(uBlobRot, blobRot);
     for (const [k, arr] of Object.entries(el)) gl!.uniform4fv(elLoc[k as keyof typeof el], arr);
     let count = 0;
     for (let i = 0; i < maxElements; i++) if (el.b[i * 4 + 3] > 0) count = i + 1;
@@ -587,7 +614,10 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     gl!.uniform4fv(uLightC, lightC);
     gl!.uniform4fv(uMood, mood);
     home[2] = still ? 0 : ms / 1000;
+    home[3] = 0.86 + 0.14 * Math.sin(home[2] * 0.55);
+    beams(home[2], beam);
     gl!.uniform4fv(uHome, home);
+    gl!.uniform3fv(uBeams, beam);
     gl!.uniform4fv(uTitle, title);
     gl!.uniform4f(uEmberColor, embers.color[0], embers.color[1], embers.color[2], still ? 0.6 : 1);
     gl!.activeTexture(gl!.TEXTURE2);
