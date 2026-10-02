@@ -3,7 +3,7 @@
 // sender disconnected: a real client never sends malformed messages.
 
 import type { Action, GameState } from './game';
-import { isProof } from './owner.ts';
+import { isNonce, isProof } from './owner.ts';
 
 export const PROTOCOL_VERSION = 7;
 
@@ -11,7 +11,8 @@ export const PROTOCOL_VERSION = 7;
 export type ClientMsg =
   /**
    * `tab`: random per page load, so the host can tell another tab from this one reconnecting.
-   * `owner`: the site's creator proving it's them (lib/owner.ts), so they may use their name.
+   * `owner`: the site's creator proving it's them (lib/owner.ts), so they may use their name;
+   * it signs the host's challenge, so it's only sent once that has arrived.
    */
   | { t: 'hello'; secret: string; name: string; v: number; tab?: string; owner?: string }
   | { t: 'action'; action: Action }
@@ -19,6 +20,8 @@ export type ClientMsg =
 
 /** Host → guest. Media carries question art as image bytes. */
 export type HostMsg =
+  /** Sent first, on every connection: what the site's creator signs to join (lib/owner.ts). */
+  | { t: 'challenge'; nonce: string }
   /** `owner`: a host using the creator's name proving it's them (lib/owner.ts). */
   | { t: 'welcome'; playerId: string; owner?: string }
   | { t: 'state'; state: GameState; now: number }
@@ -102,6 +105,8 @@ export function parseHostMsg(raw: unknown): HostMsg | null {
   const bin = (v: unknown) => v instanceof ArrayBuffer || ArrayBuffer.isView(v);
   const qid = isInt(raw.qid, 0, Number.MAX_SAFE_INTEGER);
   switch (raw.t) {
+    case 'challenge':
+      return isNonce(raw.nonce) ? (raw as HostMsg) : null;
     case 'welcome':
       return isStr(raw.playerId, 64) && (raw.owner === undefined || isProof(raw.owner)) ? (raw as HostMsg) : null;
     case 'state': {

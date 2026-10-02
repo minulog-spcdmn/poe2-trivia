@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cleanName, looksLikeOwner, nameProblem } from '../src/lib/names.ts';
-import { hostClaim, importOwnerKey, joinClaim, listClaim, verifyOwner } from '../src/lib/owner.ts';
+import { cleanName, looksLikeOwner, nameProblem, nameSkeleton } from '../src/lib/names.ts';
+import { checkOwnerKey, hasOwnerKey, hostClaim, importOwnerKey, joinClaim, listClaim, signAsOwner, verifyOwner } from '../src/lib/owner.ts';
 import { parseClientMsg, parseHostMsg } from '../src/lib/protocol.ts';
 
 test("names that pass for the creator's are caught, however they're spelled", () => {
@@ -22,6 +22,10 @@ test("names that pass for the creator's are caught, however they're spelled", ()
     assert.equal(looksLikeOwner(name), false, name);
     assert.equal(nameProblem(name, []), null, name);
   }
+  // The extra look-alikes only count for the creator's name: other names keep their skeletons.
+  assert.equal(nameSkeleton('Lu2'), 'lu');
+  assert.notEqual(nameSkeleton('Exile2'), nameSkeleton('Exilez'));
+  assert.equal(nameSkeleton('Bjørn'), 'bjm');
   // Being the creator doesn't lift the other rules.
   assert.match(nameProblem('Host', [], true) ?? '', /reserved/);
   assert.match(nameProblem('Zoe', ['ZOE'], true) ?? '', /looks too much like/);
@@ -35,7 +39,7 @@ test('only a signature from the key in owner.ts proves anything', async () => {
   assert.equal(await importOwnerKey(d!), null);
   assert.equal(await importOwnerKey('not a key'), null);
   // A signature by any other key, or junk, doesn't verify.
-  const claim = joinClaim('ABCDEF', 'token-token-token-token');
+  const claim = joinClaim('ABCDEF', 'token-token-token-token', 'nonce-nonce-nonce');
   const sig = new Uint8Array(await subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, other.privateKey, new TextEncoder().encode(claim)));
   const forged = Buffer.from(sig).toString('base64url');
   assert.equal(forged.length, 86);
@@ -45,9 +49,11 @@ test('only a signature from the key in owner.ts proves anything', async () => {
 
 test('claims name the room and the asker, and never stand in for one another', () => {
   const claims = [
-    joinClaim('ABCDEF', 'tok'),
-    joinClaim('ABCDEG', 'tok'),
-    joinClaim('ABCDEF', 'tok2'),
+    joinClaim('ABCDEF', 'tok', 'n1'),
+    joinClaim('ABCDEG', 'tok', 'n1'),
+    joinClaim('ABCDEF', 'tok2', 'n1'),
+    // A new connection gets a new nonce from the host: a recorded proof doesn't carry over.
+    joinClaim('ABCDEF', 'tok', 'n2'),
     hostClaim('ABCDEF', 'tok'),
     listClaim('ABCDEF', 'tok'),
   ];
@@ -71,4 +77,40 @@ test('hello and welcome carry a proof only in its exact shape', () => {
   assert.ok(parseHostMsg({ t: 'welcome', playerId: 'p1', owner }));
   assert.ok(parseHostMsg({ t: 'welcome', playerId: 'p1' }));
   assert.equal(parseHostMsg({ t: 'welcome', playerId: 'p1', owner: 'nope' }), null);
+});
+
+test('a stored key that does not fit (an old one, or junk) is dropped and unlocks nothing', async () => {
+  const store = new Map<string, string>();
+  const saved = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => void store.set(k, v),
+      removeItem: (k: string) => void store.delete(k),
+    },
+  });
+  try {
+    assert.equal(await checkOwnerKey(), 'none');
+    const { subtle } = globalThis.crypto;
+    const old = await subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign']);
+    for (const secret of [(await subtle.exportKey('jwk', old.privateKey)).d!, 'B'.repeat(43), 'junk']) {
+      store.set('poe2trivia.ownerKey', secret);
+      assert.equal(hasOwnerKey(), false, secret);
+      assert.equal(await signAsOwner('anything'), null, secret);
+      store.set('poe2trivia.ownerKey', secret);
+      assert.equal(await checkOwnerKey(), 'removed', secret);
+      assert.equal(store.has('poe2trivia.ownerKey'), false, secret);
+      assert.equal(hasOwnerKey(), false, secret);
+    }
+  } finally {
+    if (saved) Object.defineProperty(globalThis, 'localStorage', saved);
+    else delete (globalThis as { localStorage?: unknown }).localStorage;
+  }
+});
+
+test('the host challenge has to be a real nonce', () => {
+  assert.ok(parseHostMsg({ t: 'challenge', nonce: 'Ab3_x-9Zq1Ab3_x-9Zq1' }));
+  for (const nonce of ['short', 'x'.repeat(65), 'has space here', 42, undefined])
+    assert.equal(parseHostMsg({ t: 'challenge', nonce }), null, String(nonce));
 });

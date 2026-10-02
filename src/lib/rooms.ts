@@ -14,6 +14,7 @@ import { PEER_OPTIONS, PEER_PREFIX } from './peer';
 import { isDifficulty, type Difficulty, type GameMode, type Phase } from './game';
 import { cleanName, looksLikeOwner } from './names';
 import { isNonce, listClaim, signAsOwner, verifyOwner } from './owner';
+import { randomToken } from './tokens';
 
 export interface RoomInfo {
   code: string;
@@ -80,8 +81,6 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 /** `hidden`: a room is there, but its listing isn't worth showing (its host pretends to be the creator). */
 type ProbeResult = RoomInfo | 'free' | 'hidden' | null;
 
-const nonce = () => Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('');
-
 /**
  * Tracks outstanding probes on one peer so "peer-unavailable" errors (which
  * PeerJS reports on the peer, not the connection) reach the right probe.
@@ -111,7 +110,7 @@ class Prober {
       };
       const timer = setTimeout(() => done(null), PROBE_TIMEOUT_MS);
       this.waiting.set(id, done);
-      const asked = nonce();
+      const asked = randomToken(24);
       conn = this.peer.connect(id, { reliable: true, metadata: { probe: true, nonce: asked } });
       conn.on('data', async (raw) => {
         const msg = raw as { t?: string; room?: unknown; owner?: unknown };

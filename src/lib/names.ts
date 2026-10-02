@@ -10,9 +10,8 @@ const RESERVED = new Set(['host', 'admin', 'administrator', 'system', 'server', 
 const CONFUSABLES: Record<string, string> = {
   а: 'a', в: 'b', е: 'e', ё: 'e', к: 'k', м: 'm', н: 'h', о: 'o', р: 'p', с: 'c', т: 't', у: 'y', х: 'x',
   і: 'i', ї: 'i', ј: 'j', ѕ: 's', ԁ: 'd', ɡ: 'g', ո: 'n', ս: 'u',
-  α: 'a', β: 'b', ε: 'e', ζ: 'z', η: 'n', ι: 'i', κ: 'k', ν: 'v', ο: 'o', ρ: 'p', τ: 't', υ: 'u', χ: 'x', ω: 'w',
-  є: 'e', ø: 'o', ɵ: 'o', ə: 'e', ɛ: 'e', ƶ: 'z', ȥ: 'z', ɀ: 'z', ʐ: 'z', ʑ: 'z', ᴢ: 'z', ᴏ: 'o', ᴇ: 'e',
-  '0': 'o', '2': 'z', '1': 'l', '3': 'e', '4': 'a', '5': 's', '7': 't', '8': 'b', '$': 's', '@': 'a', '|': 'l', '!': 'i',
+  α: 'a', β: 'b', ε: 'e', η: 'n', ι: 'i', κ: 'k', ν: 'v', ο: 'o', ρ: 'p', τ: 't', υ: 'u', χ: 'x', ω: 'w',
+  '0': 'o', '1': 'l', '3': 'e', '4': 'a', '5': 's', '7': 't', '8': 'b', '$': 's', '@': 'a', '|': 'l', '!': 'i',
 };
 
 /**
@@ -33,10 +32,19 @@ export function cleanName(raw: unknown): string {
   return s;
 }
 
-/** What a name "looks like": lowercase ASCII-ish letters only. */
-export function nameSkeleton(name: string): string {
+/**
+ * More look-alikes, only for telling the creator's name apart. Kept out of
+ * CONFUSABLES so they don't change every other name's skeleton (which the
+ * clash checks and the kicked names saved with a room rely on).
+ */
+const OWNER_CONFUSABLES: Record<string, string> = {
+  ζ: 'z', є: 'e', ø: 'o', ɵ: 'o', ə: 'e', ɛ: 'e', ƶ: 'z', ȥ: 'z', ɀ: 'z', ʐ: 'z', ʑ: 'z', ᴢ: 'z', ᴏ: 'o', ᴇ: 'e', '2': 'z',
+};
+
+/** What a name "looks like": lowercase ASCII-ish letters only. `extra`: more look-alikes to fold. */
+export function nameSkeleton(name: string, extra: Record<string, string> = {}): string {
   const folded = Array.from(name.normalize('NFKD').toLowerCase())
-    .map((c) => CONFUSABLES[c] ?? c)
+    .map((c) => CONFUSABLES[c] ?? extra[c] ?? c)
     .join('')
     .replace(/\p{M}/gu, '')
     .replace(/[^a-z]/g, '')
@@ -60,7 +68,7 @@ const OWNER_SKELETONS = new Set(['zoe', 'zoearcana']);
  * tried both as the letters they look like (z0e) and as left out (zoe_arcana2, Zoe!).
  */
 export const looksLikeOwner = (name: string) =>
-  [name, name.replace(/[^\p{L}\p{M}]/gu, '')].some((n) => OWNER_SKELETONS.has(nameSkeleton(n)));
+  [name, name.replace(/[^\p{L}\p{M}]/gu, '')].some((n) => OWNER_SKELETONS.has(nameSkeleton(n, OWNER_CONFUSABLES)));
 
 /**
  * Returns why a name is not allowed, or null if it's fine. `owner`: the
