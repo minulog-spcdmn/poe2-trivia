@@ -100,7 +100,7 @@
       </button>
       <div class="meta">
         {#if gs && screen === 'game'}
-          {#if session.code && !session.hideCode}
+          {#if session.code && !session.codeHidden}
             <span>Room <b>{session.code}</b></span>
             <span class="dot">•</span>
           {/if}
@@ -120,7 +120,7 @@
         {:else if session.mode === 'local'}
           <span>Hot-seat</span>
         {:else if session.code}
-          <span>Room <b>{session.hideCode ? '••••••' : session.code}</b></span>
+          <span>Room <b>{session.codeHidden ? '••••••' : session.code}</b></span>
         {/if}
       </div>
       <div class="tools">

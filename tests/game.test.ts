@@ -419,6 +419,15 @@ test('guests cannot act for others, join locked rooms, or impersonate', () => {
   assert.throws(() => engine.apply(s, { type: 'settings', settings: { locked: false } }, 'p1'), /host/);
 });
 
+test('only the host hides the room code, at any time', () => {
+  let { engine, s } = setup(['Alva', 'Zana']);
+  s = engine.apply(s, { type: 'start' }, 'p0');
+  s = engine.apply(s, { type: 'settings', settings: { hideCode: true } }, 'p0');
+  assert.equal(s.settings.hideCode, true);
+  assert.equal(publicView(s).settings.hideCode, true);
+  assert.throws(() => engine.apply(s, { type: 'settings', settings: { hideCode: false } }, 'p1'), /host/);
+});
+
 test('tablets are rarer answers and only fill in as decoys', () => {
   const engine = new Engine(items, { rng: seeded(7) });
   const cat = 'Flasks, Charms, Jewels, Relics & Tablets';

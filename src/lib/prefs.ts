@@ -119,6 +119,7 @@ export function roomSettings(p: RoomPrefs = roomPrefs()): Settings {
     mode: p.mode,
     public: p.public,
     locked: false,
+    hideCode: p.hideCode,
   };
 }
 

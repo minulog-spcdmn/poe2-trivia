@@ -75,7 +75,7 @@
     if (copyBtn) twinkle(copyBtn);
     try {
       if (navigator.share && matchMedia('(pointer: coarse)').matches) {
-        await navigator.share({ title: 'PoE2.Quest', text: `Join my PoE2 trivia room ${session.code}`, url: inviteLink });
+        await navigator.share({ title: 'PoE2.Quest', text: session.codeHidden ? 'Join my PoE2 trivia room' : `Join my PoE2 trivia room ${session.code}`, url: inviteLink });
       } else {
         await navigator.clipboard.writeText(inviteLink);
         copied = true;
@@ -119,17 +119,19 @@
   {#if !local}
     <section class="room" in:fly={{ y: -20, duration: 500 }}>
       <span class="label">Room code</span>
-      <div class="code" class:hidden={session.hideCode} aria-label={session.hideCode ? 'Room code hidden' : `Room code ${session.code}`}>
+      <div class="code" class:hidden={session.codeHidden} aria-label={session.codeHidden ? 'Room code hidden' : `Room code ${session.code}`}>
         {#each session.code.split('') as ch, i (i)}
-          <span class="glyph" use:landing={i} style:animation-delay="{i * 80}ms" style:--i={i}>{session.hideCode ? '•' : ch}</span>
+          <span class="glyph" use:landing={i} style:animation-delay="{i * 80}ms" style:--i={i}>{session.codeHidden ? '•' : ch}</span>
         {/each}
+        <!-- aria-disabled, not disabled, so the reason still shows on hover -->
         <button
           class="eye"
-          onclick={() => session.setHideCode(!session.hideCode)}
-          title={session.hideCode ? 'Show the room code' : 'Hide the room code (for streaming)'}
-          aria-label={session.hideCode ? 'Show room code' : 'Hide room code'}
+          aria-disabled={session.hostHidesCode}
+          onclick={() => !session.hostHidesCode && session.setHideCode(!session.hideCode)}
+          title={session.hostHidesCode ? 'The host has hidden the room code' : session.hideCode ? 'Show the room code' : 'Hide the room code (for streaming)'}
+          aria-label={session.hostHidesCode ? 'Room code hidden by the host' : session.hideCode ? 'Show room code' : 'Hide room code'}
         >
-          {#if session.hideCode}
+          {#if session.codeHidden}
             <svg viewBox="0 0 24 24"><path d="M3 3l18 18M10.6 5.1A10 10 0 0 1 12 5c6 0 10 7 10 7a17 17 0 0 1-3.2 3.9M6.1 6.1C3.5 8 2 12 2 12s4 7 10 7a9.7 9.7 0 0 0 5.9-2.1M9.9 9.9a3 3 0 0 0 4.2 4.2" /></svg>
           {:else}
             <svg viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z" /><circle cx="12" cy="12" r="3" /></svg>
@@ -382,6 +384,12 @@
   .lock:hover {
     color: var(--gold-hi);
     border-color: var(--gold-lo);
+  }
+  .eye[aria-disabled='true'] {
+    cursor: default;
+    opacity: 0.45;
+    color: var(--muted);
+    border-color: var(--line);
   }
   .eye svg,
   .lock svg {

@@ -228,6 +228,16 @@ class Session {
     return this.mode === 'client' && !!s && !!this.myPlayerId && !s.players.some((p) => p.id === this.myPlayerId);
   }
 
+  /** The room code is hidden here: this device hides it, or (for a guest) the host does. */
+  get codeHidden() {
+    return this.hideCode || this.hostHidesCode;
+  }
+
+  /** Guest: the host has hidden the room code, so it can't be shown here. */
+  get hostHidesCode() {
+    return this.mode === 'client' && !!this.state?.settings.hideCode;
+  }
+
   get race() {
     return this.state?.settings.mode === 'race';
   }
@@ -272,6 +282,8 @@ class Session {
   setHideCode(hide: boolean) {
     this.hideCode = hide;
     savePrefs({ hideCode: hide });
+    // The host's choice goes to everyone in the room.
+    if (this.mode === 'host') this.dispatch({ type: 'settings', settings: { hideCode: hide } });
   }
 
   // ---- hot-seat ---------------------------------------------------------
@@ -334,7 +346,8 @@ class Session {
         // Everyone else has to reconnect; mark them offline until they do (a
         // lobby keeps their seats, and lets go of the ones still empty when
         // the game starts). Spectators rejoin as spectators when they reconnect.
-        let s: GameState = { ...resumeState, spectators: [] };
+        // Streamer mode may have been switched (maybe in another tab) since the room was saved.
+        let s: GameState = { ...resumeState, spectators: [], settings: { ...resumeState.settings, hideCode: this.hideCode } };
         for (const p of s.players)
           if (p.id !== me) s = engine.apply(s, { type: 'connection', playerId: p.id, connected: false }, null);
         // A reveal counts down afresh, so the others can reconnect before it

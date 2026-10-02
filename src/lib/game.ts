@@ -171,6 +171,8 @@ export interface Settings {
   public: boolean;
   /** No new players may join (people already in the game can still rejoin). */
   locked: boolean;
+  /** Online rooms only: the host hides the room code, so it's hidden on every guest's screen too. */
+  hideCode?: boolean;
 }
 
 /** Answers sent just before time ran out still count if they arrive this late (network delay). */
@@ -490,10 +492,11 @@ export class Engine {
       }
       case 'settings': {
         if (!isHost) throw new ActionError('Only the host can change settings.');
-        // Listing and locking the room can be switched any time; the rules only between games.
+        // Listing, locking and hiding the code can be switched any time; the rules only between games.
         if (typeof action.settings.public === 'boolean') s.settings.public = action.settings.public;
         if (typeof action.settings.locked === 'boolean') s.settings.locked = action.settings.locked;
-        if (Object.keys(action.settings).every((k) => k === 'public' || k === 'locked')) break;
+        if (typeof action.settings.hideCode === 'boolean') s.settings.hideCode = action.settings.hideCode;
+        if (Object.keys(action.settings).every((k) => k === 'public' || k === 'locked' || k === 'hideCode')) break;
         if (s.phase !== 'lobby' && s.phase !== 'over') throw new ActionError('Settings are locked during a game.');
         const { targetScore, timer, difficulty, mode } = action.settings;
         if (mode === 'turns' || mode === 'race') s.settings.mode = mode;

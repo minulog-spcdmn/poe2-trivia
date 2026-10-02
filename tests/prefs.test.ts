@@ -128,5 +128,6 @@ test("saving keeps what another tab saved for the other fields", () => {
 
 test('a new room starts unlocked with the saved settings', () => {
   const s = roomSettings(custom);
-  assert.deepEqual(s, { targetScore: 15, timer: 45, difficulty: 'eternal', mode: 'turns', public: true, locked: false });
+  assert.deepEqual(s, { targetScore: 15, timer: 45, difficulty: 'eternal', mode: 'turns', public: true, locked: false, hideCode: true });
+  assert.equal(roomSettings({ ...custom, hideCode: false }).hideCode, false);
 });
