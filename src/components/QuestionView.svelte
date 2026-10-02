@@ -177,6 +177,7 @@
         answer: optionEls[r.correctIndex],
         chosen: !race && !r.correct && r.chosenIndex != null ? optionEls[r.chosenIndex] : null,
         art: artEl,
+        tiles: q.mode === 'art',
         stamp: stampEl,
         pill,
         streak,
