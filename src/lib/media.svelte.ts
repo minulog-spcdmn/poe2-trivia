@@ -203,9 +203,27 @@ export async function prepareMedia(q: Question, grayscale: boolean): Promise<Pre
   return out;
 }
 
-/** When (ms after the question was asked) tile number `rank` of `count` uncovers. */
-export function tileDelay(q: Question, rank: number, count: number): number {
-  return 400 + (rank * q.veil!.seconds * 1000) / count;
+/** Chance that a tile lifts together with the one before it. */
+const PAIR_CHANCE = 0.15;
+/** How far each gap between lifts may stray from the even pace, either way. */
+const JITTER = 0.35;
+
+/**
+ * When (ms after the question was asked) each of `count` tiles uncovers, by
+ * rank. The gaps between lifts wander a little and now and then two tiles
+ * lift at once (never three), but the gaps are scaled to add up to the even
+ * pace, so the last tile still lifts when it always did.
+ */
+export function tileDelays(q: Question, count: number): number[] {
+  const gaps: number[] = [];
+  for (let rank = 1; rank < count; rank++) {
+    const pair = gaps.at(-1) !== 0 && Math.random() < PAIR_CHANCE;
+    gaps.push(pair ? 0 : rand(1 - JITTER, 1 + JITTER));
+  }
+  const span = (q.veil!.seconds * 1000 * (count - 1)) / count;
+  const total = gaps.reduce((a, b) => a + b, 0);
+  let at = 400;
+  return [at, ...gaps.map((g) => (at += total ? (g * span) / total : 0))].slice(0, count);
 }
 
 // ---- what this device shows -------------------------------------------

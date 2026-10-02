@@ -30,7 +30,7 @@ import { Beacon, type RoomInfo } from './rooms';
 import { parseClientMsg, parseHostMsg, PROTOCOL_VERSION, RateLimit, type HostMsg, type MediaMsg } from './protocol';
 import { capped, FrameGuard, hookFrames, JoinGate, roomSecret } from './guard';
 import { cleanName, nameSkeleton } from './names';
-import { prepareMedia, shown, tileDelay, type PreparedMedia } from './media.svelte';
+import { prepareMedia, shown, tileDelays, type PreparedMedia } from './media.svelte';
 import { sfx } from './sound';
 import { prefsFrom, roomPrefs, roomSettings, savePrefs } from './prefs';
 import { toasts, type ToastKind, type ToastOptions } from './toasts.svelte';
@@ -679,8 +679,9 @@ class Session {
     media.options.forEach((data, index) => this.release({ t: 'option', qid, index, data }));
     if (media.grid) {
       this.release({ t: 'grid', qid, ...media.grid });
+      const delays = tileDelays(q, media.tiles.length);
       media.tiles.forEach((tile, rank) => {
-        const due = q.askedAt + tileDelay(q, rank, media.tiles.length) - Date.now();
+        const due = q.askedAt + delays[rank] - Date.now();
         const go = () => {
           if (this.media?.qid === qid) this.release({ t: 'tile', qid, ...tile });
         };
