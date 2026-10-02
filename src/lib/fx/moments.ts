@@ -187,6 +187,8 @@ export type RevealTargets = {
   /** The chosen wrong answer, if any. */
   chosen?: Element | null;
   art?: Element | null;
+  /** "Find the art": the pictures are the options, so the art's light centres on the right one. */
+  tiles?: boolean;
   stamp?: Element | null;
   /** Scoreboard entry that gains the point. */
   pill?: Element | null;
@@ -222,12 +224,20 @@ export function reveal(t: RevealTargets) {
     }
   }
 
-  if (t.good && t.art) {
+  if (t.good && t.tiles && t.answer) {
+    // The right tile already has its flare and light; the rays just crown it, softly.
+    const a = t.answer;
+    const b = boxOf(a);
+    rays(a, { radius: Math.max(b.w, b.h) * 1.1, life: 1.4 + 0.2 * hype, intensity: 0.07 * Math.sqrt(hype), color: C.gold, count: 12 });
+    embers(a, { count: Math.round(8 * hype), area: 'fill', colors: [C.gold, C.ember, C.rightPale], rise: [50, 150], life: [0.7, 1.5] });
+  } else if (t.good && t.art) {
     const b = boxOf(t.art);
     flare(t.art, { size: 40, streak: b.w * 0.9, life: 0.9, color: C.goldPale, intensity: 0.6 });
     rays(t.art, { radius: Math.max(b.w, b.h) * 0.6, life: 1.5 + 0.3 * hype, intensity: 0.16 * hype, color: C.gold, count: 14 });
     embers(t.art, { count: Math.round(14 * hype), area: 'fill', colors: [C.gold, C.ember, C.rightPale], rise: [60, 190], life: [0.8, 1.8] });
     light(t.art, { color: [1, 0.8, 0.45], radius: 420, intensity: 0.3 + 0.08 * hype, hold: 0.3, decay: 1.5 });
+  }
+  if (t.good && t.art) {
     if (streak >= 3) {
       edgeGlow({ color: C.gold, intensity: 0.07, width: 70, life: 1.4 });
       backdropEmbers.flare(0.8, 2);
