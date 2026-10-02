@@ -11,6 +11,11 @@ export interface RoomPrefs {
   public: boolean;
   /** Streamer mode: don't show the room code on screen. */
   hideCode: boolean;
+  /**
+   * The host pressed the eye themselves. Only then does their choice hide the
+   * code from guests too: the hidden default alone must not lock a whole room.
+   */
+  hideCodeChosen: boolean;
 }
 
 /** Bump when the stored shape changes: entries from another version are replaced with the defaults. */
@@ -27,6 +32,7 @@ export const DEFAULT_PREFS: RoomPrefs = {
   public: false,
   // Hidden until the host shows it, so a streamer can't put it on screen by accident.
   hideCode: true,
+  hideCodeChosen: false,
 };
 
 const isInt = (v: unknown, min: number, max: number): v is number =>
@@ -48,6 +54,8 @@ export function parsePrefs(raw: string | null): RoomPrefs | null {
   if (!isInt(o.targetScore, 1, 50) || !isInt(o.timer, 0, 120)) return null;
   if (!isDifficulty(o.difficulty) || (o.mode !== 'turns' && o.mode !== 'race')) return null;
   if (typeof o.public !== 'boolean' || typeof o.hideCode !== 'boolean') return null;
+  // Entries saved before this existed lack it: the eye was never pressed since.
+  if (o.hideCodeChosen !== undefined && typeof o.hideCodeChosen !== 'boolean') return null;
   return {
     targetScore: o.targetScore,
     timer: o.timer,
@@ -55,6 +63,7 @@ export function parsePrefs(raw: string | null): RoomPrefs | null {
     mode: o.mode,
     public: o.public,
     hideCode: o.hideCode,
+    hideCodeChosen: o.hideCodeChosen === true,
   };
 }
 
@@ -109,6 +118,9 @@ export function savePrefs(change: Partial<RoomPrefs>) {
   write(next);
 }
 
+/** Whether a room this host opens hides the code from its guests too. */
+export const hostHidesCode = (p: RoomPrefs = roomPrefs()) => p.hideCode && p.hideCodeChosen;
+
 /** The game settings a new room starts with. */
 export function roomSettings(p: RoomPrefs = roomPrefs()): Settings {
   return {
@@ -119,7 +131,7 @@ export function roomSettings(p: RoomPrefs = roomPrefs()): Settings {
     mode: p.mode,
     public: p.public,
     locked: false,
-    hideCode: p.hideCode,
+    hideCode: hostHidesCode(p),
   };
 }
 

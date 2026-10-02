@@ -22,7 +22,7 @@ const store = new Map<string, string>();
 };
 beforeEach(() => store.clear());
 
-const custom: RoomPrefs = { targetScore: 15, timer: 45, difficulty: 'eternal', mode: 'turns', public: true, hideCode: true };
+const custom: RoomPrefs = { targetScore: 15, timer: 45, difficulty: 'eternal', mode: 'turns', public: true, hideCode: true, hideCodeChosen: true };
 
 test('round-trips saved settings', () => {
   assert.deepEqual(parsePrefs(serializePrefs(custom)), custom);
@@ -130,4 +130,18 @@ test('a new room starts unlocked with the saved settings', () => {
   const s = roomSettings(custom);
   assert.deepEqual(s, { targetScore: 15, timer: 45, difficulty: 'eternal', mode: 'turns', public: true, locked: false, hideCode: true });
   assert.equal(roomSettings({ ...custom, hideCode: false }).hideCode, false);
+});
+
+test("the hidden default alone doesn't hide the code from guests", () => {
+  assert.equal(loadPrefs().hideCode, true);
+  assert.equal(roomSettings().hideCode, false);
+  savePrefs({ hideCode: true, hideCodeChosen: true });
+  assert.equal(roomSettings().hideCode, true);
+});
+
+test('entries saved before the eye was tracked still load', () => {
+  const { hideCodeChosen: _, ...old } = custom;
+  store.set(PREFS_KEY, JSON.stringify({ v: PREFS_VERSION, ...old }));
+  assert.deepEqual(loadPrefs(), { ...custom, hideCodeChosen: false });
+  assert.equal(roomSettings().hideCode, false);
 });

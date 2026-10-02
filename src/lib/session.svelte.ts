@@ -32,7 +32,7 @@ import { capped, FrameGuard, hookFrames, JoinGate, roomSecret } from './guard';
 import { cleanName, nameSkeleton } from './names';
 import { prepareMedia, shown, tileDelay, type PreparedMedia } from './media.svelte';
 import { sfx } from './sound';
-import { prefsFrom, roomPrefs, roomSettings, savePrefs } from './prefs';
+import { hostHidesCode, prefsFrom, roomPrefs, roomSettings, savePrefs } from './prefs';
 import { toasts, type ToastKind, type ToastOptions } from './toasts.svelte';
 
 export const engine = new Engine(itemData as Item[], { fakes: fakeNames });
@@ -281,7 +281,7 @@ class Session {
 
   setHideCode(hide: boolean) {
     this.hideCode = hide;
-    savePrefs({ hideCode: hide });
+    savePrefs({ hideCode: hide, hideCodeChosen: true });
     // The host's choice goes to everyone in the room.
     if (this.mode === 'host') this.dispatch({ type: 'settings', settings: { hideCode: hide } });
   }
@@ -347,7 +347,7 @@ class Session {
         // lobby keeps their seats, and lets go of the ones still empty when
         // the game starts). Spectators rejoin as spectators when they reconnect.
         // Streamer mode may have been switched (maybe in another tab) since the room was saved.
-        let s: GameState = { ...resumeState, spectators: [], settings: { ...resumeState.settings, hideCode: this.hideCode } };
+        let s: GameState = { ...resumeState, spectators: [], settings: { ...resumeState.settings, hideCode: hostHidesCode() } };
         for (const p of s.players)
           if (p.id !== me) s = engine.apply(s, { type: 'connection', playerId: p.id, connected: false }, null);
         // A reveal counts down afresh, so the others can reconnect before it
