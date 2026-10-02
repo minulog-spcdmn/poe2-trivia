@@ -144,8 +144,9 @@ with that in mind. Guests, on the other hand, are treated as untrusted:
 - **Names.** Invisible and direction-flipping characters and "zalgo" text
   are removed. Names that pose as the host or look like another player's
   (e.g. using Cyrillic letters or `0` for `o`) are rejected.
-- **The creator's name.** Only the site's creator may use zoe_arcana or any
-  name that looks like it has "zoe" in it (Zoe, z0ë, Zoey…). Their browsers
+- **The creator's name.** Only the site's creator may use zoe_arcana, or
+  Zoe on its own, spelled any way that looks the same (z0ë, ZOE_4RCANA…;
+  names that merely contain it, like Zoey, are fine). Their browsers
   hold the secret half of a signing key (`src/lib/owner.ts`), and the name
   needs a fresh signature tied to the room: the host checks it when they
   join, guests check it from a host using the name (and leave if it's

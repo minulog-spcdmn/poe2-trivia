@@ -48,13 +48,19 @@ export function nameSkeleton(name: string): string {
 }
 
 /**
- * What only the site's creator (zoe_arcana, `CREATOR` in site.ts) may be
- * called: any name that looks like it has "zoe" in it (Zoe, z0ë, Zoey, xX_ZOE_Xx).
+ * What only the site's creator (`CREATOR` in site.ts) may be called: their
+ * name, or just its first part, spelled any way that looks the same
+ * (Zoe, z0ë, ZOE_4RCANA, Zoë Arcana). Names that merely contain it don't
+ * count (Zoey, Ozoemena).
  */
-const OWNER_SKELETON = 'zoe';
+const OWNER_SKELETONS = new Set(['zoe', 'zoearcana']);
 
-/** Whether a name could pass for the site's creator. */
-export const looksLikeOwner = (name: string) => nameSkeleton(name).includes(OWNER_SKELETON);
+/**
+ * Whether a name could pass for the site's creator. Digits and symbols are
+ * tried both as the letters they look like (z0e) and as left out (zoe_arcana2, Zoe!).
+ */
+export const looksLikeOwner = (name: string) =>
+  [name, name.replace(/[^\p{L}\p{M}]/gu, '')].some((n) => OWNER_SKELETONS.has(nameSkeleton(n)));
 
 /**
  * Returns why a name is not allowed, or null if it's fine. `owner`: the

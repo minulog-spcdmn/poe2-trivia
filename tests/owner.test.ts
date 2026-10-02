@@ -6,8 +6,9 @@ import { parseClientMsg, parseHostMsg } from '../src/lib/protocol.ts';
 
 test("names that pass for the creator's are caught, however they're spelled", () => {
   const lookalikes = [
-    'zoe_arcana', 'Zoe', 'ZOE', 'zoë', 'Zoé', 'z0e', 'Z0Ë', 'zo3', '2oe', 'z o e', 'z.o.e', 'Zooee', 'Zoey', 'xX_Zoe_Xx',
-    'zoe arcana', 'Zoe_Arcana2', 'ｚｏｅ', '𝓩𝓸𝓮', 'ᴢᴏᴇ', 'Ζoe', 'zοe', 'zое', 'zøe', 'z​oe', 'z̈oe',
+    'zoe_arcana', 'Zoe', 'ZOE', 'zoë', 'Zoé', 'z0e', 'Z0Ë', 'zo3', '2oe', 'z o e', 'z.o.e', 'Zooee', 'Zoe!', 'zoe1',
+    'zoe arcana', 'Zoë Arcana', 'ZOE_4RCANA', 'zoe_arcanna', 'Zoe_Arcana2', 'z0e.arcana', 'ｚｏｅ', '𝓩𝓸𝓮', 'ᴢᴏᴇ',
+    'Ζoe', 'zοe', 'zое', 'zøe', 'z\u200boe', 'z\u0308oe',
   ];
   for (const raw of lookalikes) {
     const name = cleanName(raw);
@@ -16,7 +17,8 @@ test("names that pass for the creator's are caught, however they're spelled", ()
     // The creator, once proven, may use any of them.
     assert.equal(nameProblem(name, [], true), null, raw);
   }
-  for (const name of ['Zana', 'Zeo', 'Arcana', 'Rose', 'Joe', 'Zed', 'Chloe', 'Doryani']) {
+  // Only the name itself: other names that happen to contain it are fine.
+  for (const name of ['Ozoemena', 'Zoey', 'xX_Zoe_Xx', 'Zoe the Bold', 'zoe_arcana_fan', 'Zana', 'Zeo', 'Arcana', 'Rose', 'Joe', 'Chloe', 'Doryani']) {
     assert.equal(looksLikeOwner(name), false, name);
     assert.equal(nameProblem(name, []), null, name);
   }
