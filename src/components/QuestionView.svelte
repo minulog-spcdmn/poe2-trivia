@@ -1,7 +1,7 @@
 <script lang="ts">
   import { fly, fade, scale } from 'svelte/transition';
   import { session, engine } from '../lib/session.svelte';
-  import { AUTO_NEXT_MS, autoNextLeft, isFake } from '../lib/game';
+  import { AUTO_NEXT_MS, autoNextLeft, isFake, questionTopic } from '../lib/game';
   import { shown, gridCells } from '../lib/media.svelte';
   import { itemImage } from '../lib/ui';
   import { sfx } from '../lib/sound';
@@ -315,7 +315,7 @@
 
 <div class="question">
   <div class="topline">
-    <span class="chip">{q.category}</span>
+    <span class="chip">{questionTopic(q)}</span>
     <span class="task">{q.mode === 'art' ? 'Pick the art that matches the name' : 'Name this item'}</span>
     {#if q.deadline}
       <TimerRing deadline={q.deadline} total={timerTotal} stopped={!!reveal} />
@@ -383,7 +383,7 @@
           {:else}
             <div class="head-text" out:fade={{ duration: 150 }}>
               <span class="iname unknown">Unidentified</span>
-              <span class="ibase">{q.category}</span>
+              <span class="ibase">{questionTopic(q)}</span>
             </div>
           {/if}
         </div>

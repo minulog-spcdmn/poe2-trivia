@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { PALETTE } from '../src/lib/palette.ts';
-import { Engine, ActionError, AUTO_NEXT_MS, autoNextLeft, createGame, DIFFICULTIES, isDifficulty, isFake, rulesFor, RARE_GROUPS, nameSimilarity, publicView, renameCategories, MAX_PLAYERS, type Difficulty, type GameState, type Item, type Question } from '../src/lib/game.ts';
+import { Engine, ActionError, AUTO_NEXT_MS, autoNextLeft, createGame, DIFFICULTIES, isDifficulty, isFake, rulesFor, RARE_GROUPS, nameSimilarity, publicView, questionTopic, renameCategories, MAX_PLAYERS, type Difficulty, type GameState, type Item, type Question } from '../src/lib/game.ts';
 
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
 const fakes: Record<string, string[]> = JSON.parse(readFileSync(new URL('../src/data/fakes.json', import.meta.url), 'utf8'));
@@ -231,9 +231,11 @@ test('difficulties scale options, decoy kind and question types', () => {
       const answer = engine.byId.get(q.itemId)!;
       for (const id of q.options) assert.equal(engine.byId.get(id)!.category, answer.category, 'decoys share the category');
       const groupSize = engine.items.filter((it) => it.group === answer.group).length;
-      if (rules.groupFirst && groupSize >= rules.options) {
+      if (groupSize >= rules.options) {
         for (const id of q.options) assert.equal(engine.byId.get(id)!.group, answer.group, 'decoys share the group');
       }
+      const groups = [...new Set(q.options.map((id) => engine.byId.get(id)!.group))].sort();
+      assert.deepEqual(q.groups, answer.kind === 'gem' ? [] : groups, 'groups list what is in play');
       assert.equal(!!q.veil, !!rules.veil && q.mode === 'name');
       s = engine.apply(s, { type: 'answer', index: right(q) }, 'p0');
       s = engine.apply(s, { type: 'next' }, 'p0');
@@ -241,6 +243,17 @@ test('difficulties scale options, decoy kind and question types', () => {
     }
     assert.ok(modes.has('art') && modes.has('name'));
   }
+});
+
+test('the topic is the groups in play when that is shorter than the category', () => {
+  const q = (category: string, groups?: string[]) => ({ category, groups }) as Question;
+  assert.equal(questionTopic(q('Gloves & Boots', ['Boots'])), 'Boots');
+  assert.equal(questionTopic(q('Gloves & Boots', ['Boots', 'Gloves'])), 'Gloves & Boots');
+  assert.equal(questionTopic(q('Flasks, Charms, Jewels, Relics & Tablets', ['Flasks', 'Relics'])), 'Flasks • Relics');
+  assert.equal(questionTopic(q('One-Handed Weapons', ['One-Handed Maces', 'Spears'])), 'One-Handed Weapons');
+  assert.equal(questionTopic(q('Helmets', ['Helmets'])), 'Helmets');
+  assert.equal(questionTopic(q('Lineage Gems', [])), 'Lineage Gems');
+  assert.equal(questionTopic(q('Rings')), 'Rings');
 });
 
 test('similar-looking names rank above unrelated ones', () => {
