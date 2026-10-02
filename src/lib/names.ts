@@ -1,5 +1,6 @@
 // Player name hygiene: strip invisible / direction-flipping characters and
-// "zalgo" stacks, and catch names that impersonate the host or another player.
+// "zalgo" stacks, and catch names that impersonate the host, another player or
+// the site's creator.
 
 export const MAX_NAME = 20;
 
@@ -9,8 +10,9 @@ const RESERVED = new Set(['host', 'admin', 'administrator', 'system', 'server', 
 const CONFUSABLES: Record<string, string> = {
   а: 'a', в: 'b', е: 'e', ё: 'e', к: 'k', м: 'm', н: 'h', о: 'o', р: 'p', с: 'c', т: 't', у: 'y', х: 'x',
   і: 'i', ї: 'i', ј: 'j', ѕ: 's', ԁ: 'd', ɡ: 'g', ո: 'n', ս: 'u',
-  α: 'a', β: 'b', ε: 'e', η: 'n', ι: 'i', κ: 'k', ν: 'v', ο: 'o', ρ: 'p', τ: 't', υ: 'u', χ: 'x', ω: 'w',
-  '0': 'o', '1': 'l', '3': 'e', '4': 'a', '5': 's', '7': 't', '8': 'b', '$': 's', '@': 'a', '|': 'l', '!': 'i',
+  α: 'a', β: 'b', ε: 'e', ζ: 'z', η: 'n', ι: 'i', κ: 'k', ν: 'v', ο: 'o', ρ: 'p', τ: 't', υ: 'u', χ: 'x', ω: 'w',
+  є: 'e', ø: 'o', ɵ: 'o', ə: 'e', ɛ: 'e', ƶ: 'z', ȥ: 'z', ɀ: 'z', ʐ: 'z', ʑ: 'z', ᴢ: 'z', ᴏ: 'o', ᴇ: 'e',
+  '0': 'o', '2': 'z', '1': 'l', '3': 'e', '4': 'a', '5': 's', '7': 't', '8': 'b', '$': 's', '@': 'a', '|': 'l', '!': 'i',
 };
 
 /**
@@ -45,12 +47,25 @@ export function nameSkeleton(name: string): string {
   return folded || name.toLowerCase();
 }
 
-/** Returns why a name is not allowed, or null if it's fine. */
-export function nameProblem(name: string, others: string[]): string | null {
+/**
+ * What only the site's creator (zoe_arcana, `CREATOR` in site.ts) may be
+ * called: any name that looks like it has "zoe" in it (Zoe, z0ë, Zoey, xX_ZOE_Xx).
+ */
+const OWNER_SKELETON = 'zoe';
+
+/** Whether a name could pass for the site's creator. */
+export const looksLikeOwner = (name: string) => nameSkeleton(name).includes(OWNER_SKELETON);
+
+/**
+ * Returns why a name is not allowed, or null if it's fine. `owner`: the
+ * creator proved it's them (lib/owner.ts), so their own name is allowed.
+ */
+export function nameProblem(name: string, others: string[], owner = false): string | null {
   if (!name) return 'Please enter a name with at least one letter or number.';
   const skel = nameSkeleton(name);
   if (RESERVED.has(skel) || RESERVED.has(name.toLowerCase().replace(/[^a-z]/g, '')))
     return `"${name}" is reserved. Pick another name.`;
+  if (!owner && looksLikeOwner(name)) return `"${name}" is too close to the creator's name. Pick another name.`;
   const clash = others.find((o) => nameSkeleton(o) === skel);
   if (clash) return `"${name}" looks too much like "${clash}". Pick another name.`;
   return null;

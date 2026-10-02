@@ -1,6 +1,8 @@
 <script lang="ts">
   import { fade, fly } from 'svelte/transition';
   import { engine, session, savedName, saveName, CODE_LENGTH } from '../lib/session.svelte';
+  import { cleanName, nameProblem } from '../lib/names';
+  import { hasOwnerKey } from '../lib/owner';
   import { shuffle } from '../lib/game';
   import { itemImage } from '../lib/ui';
   import OpenRooms from './OpenRooms.svelte';
@@ -23,12 +25,15 @@
 
   function needName() {
     const n = name.trim();
-    if (!n) {
+    // Names nobody may use (the creator's one included) are turned down here, before anything opens.
+    const problem = n ? nameProblem(cleanName(n), [], hasOwnerKey()) : null;
+    if (!n || problem) {
       nameError = true;
       const field = document.getElementById('name');
       if (field) refuse(field);
       setTimeout(() => (nameError = false), 600);
       document.getElementById('name')?.focus();
+      if (problem) session.flash(problem, 'error', { title: 'Pick another name' });
       return null;
     }
     saveName(n);

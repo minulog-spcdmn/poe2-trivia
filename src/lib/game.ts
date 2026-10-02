@@ -264,9 +264,12 @@ export interface GameState {
 }
 
 export type Action =
-  /** `returning`: set by the host for someone who was already in this room (may pass the lock). */
-  | { type: 'join'; playerId: string; name: string; returning?: boolean }
-  | { type: 'rename'; playerId: string; name: string }
+  /**
+   * `returning`: set by the host for someone who was already in this room (may pass the lock).
+   * `owner`: set by the host once the player proved they're the site's creator (lib/owner.ts).
+   */
+  | { type: 'join'; playerId: string; name: string; returning?: boolean; owner?: boolean }
+  | { type: 'rename'; playerId: string; name: string; owner?: boolean }
   | { type: 'remove'; playerId: string }
   | { type: 'connection'; playerId: string; connected: boolean }
   | { type: 'settings'; settings: Partial<Settings> }
@@ -417,7 +420,7 @@ export class Engine {
         // Someone the host already knows may come back through the lock (a lobby
         // drops people who disconnect, so a refresh would otherwise shut them out).
         if (s.settings.locked && !action.returning) throw new ActionError('The host has locked this room.');
-        const problem = nameProblem(name, [...s.players, ...s.spectators].map((o) => o.name));
+        const problem = nameProblem(name, [...s.players, ...s.spectators].map((o) => o.name), !!action.owner);
         if (problem) throw new ActionError(problem);
         if (s.phase !== 'lobby') {
           // Too late for this game: watch it and take a seat in the next one.
@@ -444,6 +447,7 @@ export class Engine {
         const problem = nameProblem(
           name,
           [...s.players, ...s.spectators].filter((o) => o.id !== action.playerId).map((o) => o.name),
+          !!action.owner,
         );
         if (problem) throw new ActionError(problem);
         if (p) p.name = name;

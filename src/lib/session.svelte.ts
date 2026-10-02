@@ -6,6 +6,8 @@
 // get question art as altered image bytes, identify themselves with a secret
 // token that only this room's host ever sees (a different one per room), and
 // everything they send is checked and rate limited, down to the raw frames.
+// The site creator's name is the one exception to "the host is trusted": a
+// host going by it has to prove it's them (lib/owner.ts), or guests leave.
 
 import Peer, { type DataConnection } from 'peerjs';
 import itemData from '../data/items.json';
@@ -27,9 +29,11 @@ import {
 } from './game';
 import { PEER_OPTIONS, PEER_PREFIX } from './peer';
 import { Beacon, type RoomInfo } from './rooms';
-import { parseClientMsg, parseHostMsg, PROTOCOL_VERSION, RateLimit, type HostMsg, type MediaMsg } from './protocol';
+import { parseClientMsg, parseHostMsg, PROTOCOL_VERSION, RateLimit, type ClientMsg, type HostMsg, type MediaMsg } from './protocol';
 import { capped, FrameGuard, hookFrames, JoinGate, roomSecret } from './guard';
-import { cleanName, nameSkeleton } from './names';
+import { cleanName, looksLikeOwner, nameSkeleton } from './names';
+import { hasOwnerKey, hostClaim, joinClaim, signAsOwner, verifyOwner } from './owner';
+import { CREATOR } from './site';
 import { prepareMedia, shown, tileDelay, type PreparedMedia } from './media.svelte';
 import { sfx } from './sound';
 import { prefsFrom, roomPrefs, roomSettings, savePrefs } from './prefs';
@@ -136,6 +140,8 @@ interface Guest {
   tab: string | null;
   /** When the connection came in. */
   since: number;
+  /** Its hello is being checked (a signature takes a moment): further hellos are ignored. */
+  greeting: boolean;
 }
 
 /** Host-only data that must survive a page refresh but never reach guests. */
@@ -196,6 +202,8 @@ class Session {
   private joins = new JoinGate();
   /** Client: the token for the room being joined. */
   private helloSecret: Promise<string> | null = null;
+  /** Client: whether the host proved it's the site's creator (only asked of a host going by that name). */
+  private hostIsOwner: Promise<boolean> = Promise.resolve(false);
   private media: PreparedMedia | null = null;
   private mediaTimers: ReturnType<typeof setTimeout>[] = [];
   /** Media messages already released for the current question (for late joiners). */
@@ -344,7 +352,7 @@ class Session {
       } else {
         let s = createGame(me, roomSettings());
         try {
-          s = engine.apply(s, { type: 'join', playerId: me, name: this.joinName }, me);
+          s = engine.apply(s, { type: 'join', playerId: me, name: this.joinName, owner: hasOwnerKey() }, me);
         } catch (err) {
           this.fail(err instanceof ActionError ? err.message : 'Could not create the room.', 'Room not opened');
           return;
@@ -418,6 +426,7 @@ class Session {
       mediaAt: null,
       tab: null,
       since: Date.now(),
+      greeting: false,
     };
     this.guests.set(conn, guest);
     const helloTimer = setTimeout(() => !guest.playerId && this.drop(conn), HELLO_TIMEOUT_MS);
@@ -436,10 +445,14 @@ class Session {
       }
       try {
         if (msg.t === 'hello') {
-          if (guest.playerId) return;
+          if (guest.playerId || guest.greeting) return;
           guest.tab = msg.tab ?? null;
           clearTimeout(helloTimer);
-          this.handleHello(conn, guest, msg.secret, msg.name, msg.v);
+          guest.greeting = true;
+          void this.ownerProofs(msg).then(({ owner, proof }) => {
+            guest.greeting = false;
+            if (this.state && this.guests.get(conn) === guest) this.greet(conn, guest, msg, owner, proof);
+          });
         } else if (msg.t === 'pong') {
           const sent = guest.pings.get(msg.n);
           if (sent !== undefined) {
@@ -454,9 +467,7 @@ class Session {
         }
       } catch (err) {
         if (err instanceof ActionError && err.silent) return;
-        const message = err instanceof ActionError ? err.message : 'Something went wrong.';
-        if (msg.t === 'hello') this.dismiss(conn, { t: 'error', message });
-        else this.send(conn, { t: 'error', message });
+        this.send(conn, { t: 'error', message: err instanceof ActionError ? err.message : 'Something went wrong.' });
       }
     });
     conn.on('close', () => {
@@ -543,7 +554,31 @@ class Session {
     this.drop(conn);
   }
 
-  private handleHello(conn: DataConnection, guest: Guest, secret: string, name: string, v: number) {
+  /**
+   * The signatures a hello calls for: whether the guest proved they're the
+   * site's creator, and this host's proof that it is (when it goes by that name).
+   */
+  private async ownerProofs(msg: Extract<ClientMsg, { t: 'hello' }>): Promise<{ owner: boolean; proof: string | null }> {
+    const s = this.state;
+    const me = s?.players.find((p) => p.id === s.hostId);
+    const [owner, proof] = await Promise.all([
+      msg.owner ? verifyOwner(joinClaim(this.code, msg.secret), msg.owner) : false,
+      me && msg.tab && looksLikeOwner(me.name) ? signAsOwner(hostClaim(this.code, msg.tab)) : null,
+    ]);
+    return { owner, proof };
+  }
+
+  /** Lets a guest in (or turns them away, saying why). */
+  private greet(conn: DataConnection, guest: Guest, msg: Extract<ClientMsg, { t: 'hello' }>, owner: boolean, proof: string | null) {
+    try {
+      this.handleHello(conn, guest, msg.secret, msg.name, msg.v, owner, proof);
+    } catch (err) {
+      if (err instanceof ActionError && err.silent) return;
+      this.dismiss(conn, { t: 'error', message: err instanceof ActionError ? err.message : 'Something went wrong.' });
+    }
+  }
+
+  private handleHello(conn: DataConnection, guest: Guest, secret: string, name: string, v: number, owner: boolean, proof: string | null) {
     if (v !== PROTOCOL_VERSION) throw new ActionError('Your game version is out of date. Please reload the page.');
     const known = this.secretToPlayer.get(secret);
     // A kicked player stays out, under their old token or (as a newcomer) their old name.
@@ -563,7 +598,7 @@ class Session {
     try {
       if (!known && this.priv.bannedNames.includes(nameSkeleton(cleanName(name))))
         throw new ActionError('Someone with a name like that was removed from this room. Pick another name.');
-      next = engine.apply(this.state!, { type: 'join', playerId, name, returning: !!known }, playerId);
+      next = engine.apply(this.state!, { type: 'join', playerId, name, returning: !!known, owner }, playerId);
     } catch (err) {
       this.joins.rejected(secret, !!known);
       throw err;
@@ -579,7 +614,7 @@ class Session {
         else this.drop(c);
       }
     guest.playerId = playerId;
-    this.send(conn, { t: 'welcome', playerId });
+    this.send(conn, proof ? { t: 'welcome', playerId, owner: proof } : { t: 'welcome', playerId });
     this.setState(next);
     for (const m of this.released) this.sendMedia(conn, guest, m);
     const player = next.players.find((p) => p.id === playerId);
@@ -776,8 +811,11 @@ class Session {
     stale?.close();
     conn.on('open', async () => {
       const secret = await this.helloSecret;
-      if (secret && this.hostConn === conn && conn.open)
-        conn.send({ t: 'hello', secret, name: this.joinName, v: PROTOCOL_VERSION, tab: myTab });
+      if (!secret) return;
+      // The site's creator proves it's them, or the host won't let them use their name.
+      const owner = looksLikeOwner(this.joinName) ? await signAsOwner(joinClaim(this.code, secret)) : null;
+      if (this.hostConn === conn && conn.open)
+        conn.send({ t: 'hello', secret, name: this.joinName, v: PROTOCOL_VERSION, tab: myTab, ...(owner && { owner }) });
     });
     // A host that vanishes (crashed tab, lost Wi-Fi) often never fires 'close'.
     // It pings every few seconds, so silence means the connection is dead.
@@ -798,6 +836,7 @@ class Session {
       switch (msg.t) {
         case 'welcome':
           this.myPlayerId = msg.playerId;
+          this.hostIsOwner = verifyOwner(hostClaim(this.code, myTab), msg.owner);
           break;
         case 'state':
           this.syncClock(msg.now);
@@ -806,6 +845,7 @@ class Session {
             this.state = msg.state;
           }
           this.status = 'ready';
+          this.checkHostName(conn, msg.state);
           break;
         case 'error':
           if (this.status === 'connecting') this.fail(msg.message, "Couldn't join");
@@ -832,6 +872,16 @@ class Session {
       }
     });
     conn.on('close', () => this.hostLost(conn));
+  }
+
+  /** Client: leaves a room whose host goes by the site creator's name without proving it's them. */
+  private checkHostName(conn: DataConnection, s: GameState) {
+    const host = s.players.find((p) => p.id === s.hostId);
+    if (!host || !looksLikeOwner(host.name)) return;
+    void this.hostIsOwner.then((ok) => {
+      if (ok || this.hostConn !== conn || this.mode !== 'client') return;
+      this.fail(`The host of this room is pretending to be ${CREATOR}. Join another room.`, 'Impostor host');
+    });
   }
 
   private hostLost(conn: DataConnection) {
@@ -871,6 +921,9 @@ class Session {
       this.hostConn?.send({ t: 'action', action });
       return;
     }
+    // Only this device's own player (or anyone at a hot-seat game) can be the site's creator.
+    if (action.type === 'join' || action.type === 'rename')
+      action = { ...action, owner: hasOwnerKey() && (this.mode === 'local' || action.playerId === this.myPlayerId) };
     const from = this.mode === 'local' ? null : this.myPlayerId;
     const run = () => {
       if (!this.state) return;
@@ -1184,6 +1237,7 @@ class Session {
     this.secretToPlayer = new Map();
     this.joins = new JoinGate();
     this.helloSecret = null;
+    this.hostIsOwner = Promise.resolve(false);
     if (this.retry) clearTimeout(this.retry);
     if (this.connectTimer) clearTimeout(this.connectTimer);
     this.connectTimer = null;

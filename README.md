@@ -144,6 +144,13 @@ with that in mind. Guests, on the other hand, are treated as untrusted:
 - **Names.** Invisible and direction-flipping characters and "zalgo" text
   are removed. Names that pose as the host or look like another player's
   (e.g. using Cyrillic letters or `0` for `o`) are rejected.
+- **The creator's name.** Only the site's creator may use zoe_arcana or any
+  name that looks like it has "zoe" in it (Zoe, z0ë, Zoey…). Their browsers
+  hold the secret half of a signing key (`src/lib/owner.ts`), and the name
+  needs a fresh signature tied to the room: the host checks it when they
+  join, guests check it from a host using the name (and leave if it's
+  missing), and the room list hides a room whose host can't prove it. This
+  is the one place guests don't simply trust the host.
 - **Public room list.** Entries come from strangers, so each one is
   validated. The list and the scan are capped, and a room answers only a
   limited number of listing probes at a time.
@@ -221,6 +228,15 @@ npm run fetch-data
 Each item's group and category come from its art folder; see
 `CATEGORY_RULES` in `scripts/fetch-data.mjs`. Image files are named with a hash, so the URL
 doesn't reveal the answer.
+
+### The creator's key
+
+To let a browser use the creator's name, open the site once with
+`#owner=<secret>` at the end of the address; the key is saved in that browser
+and taken out of the address. `#owner=forget` removes it again. To replace the
+key (say, if the secret leaked), run `node scripts/owner-key.mjs`, put the
+printed public key into `OWNER_PUBLIC_KEY` in `src/lib/owner.ts` and deploy;
+the old secret stops working. The secret never goes into the repo.
 
 ### Self-hosted signalling (optional)
 

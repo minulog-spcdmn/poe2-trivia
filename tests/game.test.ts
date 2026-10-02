@@ -404,6 +404,10 @@ test('guests cannot act for others, join locked rooms, or impersonate', () => {
   assert.throws(() => engine.apply(s, { type: 'join', playerId: 'p9', name: 'Zаna' }, 'p9'), /looks too much like/); // Cyrillic а
   assert.throws(() => engine.apply(s, { type: 'join', playerId: 'p9', name: 'A1va' }, 'p9'), /looks too much like/);
   assert.throws(() => engine.apply(s, { type: 'join', playerId: 'p9', name: '\u200b\u202e ' }, 'p9'), /at least one letter/);
+  // The creator's name takes their proof, which only the host can vouch for (guests can't send joins).
+  assert.throws(() => engine.apply(s, { type: 'join', playerId: 'p9', name: 'z0e_arcana' }, 'p9'), /creator/);
+  assert.equal(engine.apply(s, { type: 'join', playerId: 'p9', name: 'zoe_arcana', owner: true }, 'p9').players.at(-1)!.name, 'zoe_arcana');
+  assert.throws(() => engine.apply(s, { type: 'rename', playerId: 'p1', name: 'Zoe' }, 'p0'), /creator/);
   s = engine.apply(s, { type: 'join', playerId: 'p9', name: 'Dori\u202eevil\u200b' }, 'p9');
   assert.equal(s.players.find((p) => p.id === 'p9')!.name, 'Dorievil');
   s = engine.apply(s, { type: 'settings', settings: { locked: true } }, 'p0');
