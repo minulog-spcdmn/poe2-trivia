@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { Engine, ActionError, AUTO_NEXT_MS, autoNextLeft, createGame, DIFFICULTIES, isDifficulty, isFake, rulesFor, RARE_GROUPS, nameSimilarity, publicView, renameCategories, type Difficulty, type GameState, type Item, type Question } from '../src/lib/game.ts';
+import { PALETTE } from '../src/lib/palette.ts';
+import { Engine, ActionError, AUTO_NEXT_MS, autoNextLeft, createGame, DIFFICULTIES, isDifficulty, isFake, rulesFor, RARE_GROUPS, nameSimilarity, publicView, renameCategories, MAX_PLAYERS, type Difficulty, type GameState, type Item, type Question } from '../src/lib/game.ts';
 
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
 const fakes: Record<string, string[]> = JSON.parse(readFileSync(new URL('../src/data/fakes.json', import.meta.url), 'utf8'));
@@ -877,4 +878,26 @@ test('zoe_arcana always gets the last avatar colour', () => {
   assert.equal(s.players[0].hue, 11);
   s = engine.apply(s, { type: 'join', playerId: 'c', name: 'C' }, 'c');
   assert.equal(s.players.find((p) => p.id === 'c')!.hue, 0, 'her old colour is free again');
+
+  // Any spelling the name check treats as the same name counts.
+  ({ engine, s } = setup(['A']));
+  s = engine.apply(s, { type: 'join', playerId: 'z', name: 'Zoe Arcana' }, 'z');
+  assert.equal(s.players.find((p) => p.id === 'z')!.hue, 11);
+  assert.equal(PALETTE.length, MAX_PLAYERS, 'one colour per seat, ruby last');
+
+  // Renaming away from it gives it up.
+  ({ engine, s } = setup(['A', 'B']));
+  s = engine.apply(s, { type: 'rename', playerId: 'p0', name: 'zoe_arcana' }, 'p0');
+  s = engine.apply(s, { type: 'rename', playerId: 'p0', name: 'Ash' }, 'p0');
+  assert.equal(s.players[0].hue, 0);
+
+  // Mid-game renames don't recolour anyone until the next game.
+  ({ engine, s } = setup(['A', 'B']));
+  s.players[1].hue = 11;
+  s = engine.apply(s, { type: 'start' }, 'p0');
+  const hue = (id: string) => s.players.find((p) => p.id === id)!.hue;
+  s = engine.apply(s, { type: 'rename', playerId: 'p0', name: 'zoe_arcana' }, 'p0');
+  assert.deepEqual([hue('p0'), hue('p1')], [0, 11]);
+  s = engine.apply(s, { type: 'restart' }, 'p0');
+  assert.deepEqual([hue('p0'), hue('p1')], [11, 0]);
 });
