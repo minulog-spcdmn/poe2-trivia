@@ -1,7 +1,7 @@
 <script lang="ts">
   import { fly, fade, scale } from 'svelte/transition';
   import { session, engine } from '../lib/session.svelte';
-  import { AUTO_NEXT_MS, autoNextLeft, isFake } from '../lib/game';
+  import { AUTO_NEXT_MS, autoNextLeft, isFake, singularCategory } from '../lib/game';
   import { shown, gridCells } from '../lib/media.svelte';
   import { itemImage } from '../lib/ui';
   import { sfx } from '../lib/sound';
@@ -383,7 +383,7 @@
           {:else}
             <div class="head-text" out:fade={{ duration: 150 }}>
               <span class="iname unknown">Unidentified</span>
-              <span class="ibase">{q.category}</span>
+              <span class="ibase">{singularCategory(q.category)}</span>
             </div>
           {/if}
         </div>

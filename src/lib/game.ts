@@ -78,6 +78,25 @@ const weightOf = (it: Item) => RARE_GROUPS[it.group] ?? 1;
 /** Categories that were renamed, by their old name. */
 const RENAMED_CATEGORIES: Record<string, string> = { 'Flasks, Jewels & Relics': 'Flasks, Charms, Jewels, Relics & Tablets' };
 
+/** One item of each category, for the line under "Unidentified". */
+const SINGULAR_CATEGORIES: Record<string, string> = {
+  'Amulets & Belts': 'Amulet or Belt',
+  'Body Armours': 'Body Armour',
+  'Flasks, Charms, Jewels, Relics & Tablets': 'Flask, Charm, Jewel, Relic or Tablet',
+  'Gloves & Boots': 'Gloves or Boots',
+  Helmets: 'Helmet',
+  'Lineage Gems': 'Lineage Gem',
+  'Off-Hands': 'Off-Hand',
+  'One-Handed Weapons': 'One-Handed Weapon',
+  Rings: 'Ring',
+  'Two-Handed Weapons': 'Two-Handed Weapon',
+};
+
+/** A category named as a single item ("Rings" → "Ring"). */
+export function singularCategory(category: string) {
+  return SINGULAR_CATEGORIES[category] ?? category;
+}
+
 /** A game saved before categories were renamed, with the new names. */
 export function renameCategories(s: GameState): GameState {
   const rename = (c: string) => RENAMED_CATEGORIES[c] ?? c;

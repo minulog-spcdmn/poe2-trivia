@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { PALETTE } from '../src/lib/palette.ts';
-import { Engine, ActionError, AUTO_NEXT_MS, autoNextLeft, createGame, DIFFICULTIES, isDifficulty, isFake, rulesFor, RARE_GROUPS, nameSimilarity, publicView, renameCategories, MAX_PLAYERS, type Difficulty, type GameState, type Item, type Question } from '../src/lib/game.ts';
+import { Engine, ActionError, AUTO_NEXT_MS, autoNextLeft, createGame, DIFFICULTIES, isDifficulty, isFake, rulesFor, RARE_GROUPS, nameSimilarity, publicView, renameCategories, singularCategory, MAX_PLAYERS, type Difficulty, type GameState, type Item, type Question } from '../src/lib/game.ts';
 
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
 const fakes: Record<string, string[]> = JSON.parse(readFileSync(new URL('../src/data/fakes.json', import.meta.url), 'utf8'));
@@ -900,4 +900,10 @@ test('zoe_arcana always gets the last avatar colour', () => {
   assert.deepEqual([hue('p0'), hue('p1')], [0, 11]);
   s = engine.apply(s, { type: 'restart' }, 'p0');
   assert.deepEqual([hue('p0'), hue('p1')], [11, 0]);
+});
+
+test('every category has a singular name for the unidentified item', () => {
+  for (const cat of new Set(items.map((it) => it.category))) {
+    assert.notEqual(singularCategory(cat), cat, cat);
+  }
 });
