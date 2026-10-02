@@ -1,6 +1,8 @@
 <script lang="ts">
   import { fade, fly } from 'svelte/transition';
   import { engine, session, savedName, saveName, CODE_LENGTH } from '../lib/session.svelte';
+  import { cleanName, looksLikeOwner, nameProblem } from '../lib/names';
+  import { checkOwnerKey } from '../lib/owner';
   import { shuffle } from '../lib/game';
   import { itemImage } from '../lib/ui';
   import OpenRooms from './OpenRooms.svelte';
@@ -21,29 +23,35 @@
   const total = engine.items.length;
   const showcase = shuffle(engine.items, Math.random).slice(0, 7);
 
-  function needName() {
+  async function needName() {
     const n = name.trim();
-    if (!n) {
+    // Names nobody may use (the creator's one included) are turned down here,
+    // before anything opens. Whether this browser may use the creator's name
+    // is settled first (on page load it may still be being checked).
+    const owner = !!n && looksLikeOwner(cleanName(n)) && (await checkOwnerKey()) === 'ok';
+    const problem = n ? nameProblem(cleanName(n), [], owner) : null;
+    if (!n || problem) {
       nameError = true;
       const field = document.getElementById('name');
       if (field) refuse(field);
       setTimeout(() => (nameError = false), 600);
       document.getElementById('name')?.focus();
+      if (problem) session.flash(problem, 'error', { title: 'Pick another name' });
       return null;
     }
     saveName(n);
     return n;
   }
 
-  function host() {
-    const n = needName();
+  async function host() {
+    const n = await needName();
     if (!n) return;
     session.host(n);
   }
 
-  function join(e?: Event) {
+  async function join(e?: Event) {
     e?.preventDefault();
-    const n = needName();
+    const n = await needName();
     if (!n) return;
     if (code.length < CODE_LENGTH) {
       document.getElementById('code')?.focus();
@@ -55,14 +63,14 @@
 
   function joinListed(roomCode: string) {
     code = roomCode;
-    join();
+    void join();
   }
 
   /** Enter in the name field: join if a room code has been entered (or is still missing letters), otherwise open a room. */
   function enterName(e: KeyboardEvent) {
     if (e.key !== 'Enter' || e.isComposing || connecting) return;
-    if (code) join();
-    else host();
+    if (code) void join();
+    else void host();
   }
 
   function local() {

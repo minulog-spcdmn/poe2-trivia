@@ -4,7 +4,8 @@
   import { session } from './lib/session.svelte';
   import { getVolume, isMuted, setMuted, setVolume, sfx } from './lib/sound';
   import { fxAvailable, fxUserOn, onFxChange, setFxOn, shakeTarget } from './lib/fx/core';
-  import { IMPRINT_URL, PRIVACY_URL } from './lib/site';
+  import { CREATOR, IMPRINT_URL, PRIVACY_URL } from './lib/site';
+  import { checkOwnerKey, takeOwnerKeyFromUrl } from './lib/owner';
   import Background from './components/Background.svelte';
   import FxLayer from './components/FxLayer.svelte';
   import Toasts from './components/Toasts.svelte';
@@ -44,8 +45,25 @@
     return () => watch.disconnect();
   }
 
+  /** Saves a key from the address, then checks the one this browser holds (an old one is dropped, with a note). */
+  async function takeOwnerKey() {
+    const r = await takeOwnerKeyFromUrl();
+    if (r === 'saved') session.flash(`This browser may now use the name ${CREATOR}.`, 'info', { title: 'Owner key saved' });
+    else if (r === 'forgotten') session.flash(`This browser can no longer use the name ${CREATOR}.`, 'info', { title: 'Owner key removed' });
+    else if (r === 'invalid') session.flash("That owner key doesn't fit, so nothing was saved.", 'error', { title: 'Owner key refused' });
+    else if (r === 'unchecked') session.flash("The owner key couldn't be checked in this browser, so nothing was saved.", 'error', { title: 'Owner key not saved' });
+    if ((await checkOwnerKey()) === 'removed')
+      session.flash(`The owner key saved in this browser is out of date, so it was removed. Open the new link to use the name ${CREATOR} here.`, 'warn', {
+        title: 'Owner key out of date',
+      });
+  }
+
   onMount(() => {
     session.resume();
+    // The site's creator unlocks their name in this browser with a link (lib/owner.ts),
+    // opened fresh or pasted over the address of the page already open.
+    void takeOwnerKey();
+    window.addEventListener('hashchange', takeOwnerKey);
     // Camera shake moves the UI (#app clips it, so it can't add scrolling).
     // Anything fixed to the viewport must live outside .shell: App's own
     // overlays sit after it, and the screens' go to <body> with use:portal.
@@ -57,6 +75,7 @@
     });
     fxCan = fxAvailable();
     return () => {
+      window.removeEventListener('hashchange', takeOwnerKey);
       undo();
       unwatch();
       off();

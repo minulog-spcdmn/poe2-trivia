@@ -3,19 +3,28 @@
 // sender disconnected: a real client never sends malformed messages.
 
 import type { Action, GameState } from './game';
+import { isNonce, isProof } from './owner.ts';
 
-export const PROTOCOL_VERSION = 6;
+export const PROTOCOL_VERSION = 7;
 
 /** Guest → host. */
 export type ClientMsg =
-  /** `tab`: random per page load, so the host can tell another tab from this one reconnecting. */
-  | { t: 'hello'; secret: string; name: string; v: number; tab?: string }
+  /**
+   * `tab`: random per page load, so the host can tell another tab from this one reconnecting.
+   * `owner`: the site's creator proving it's them (lib/owner.ts), so they may use their name;
+   * it signs the host's challenge, so it's only sent once that has arrived.
+   * `nonce`: new for each connection; a host holding the creator's key signs it in the welcome.
+   */
+  | { t: 'hello'; secret: string; name: string; v: number; tab?: string; owner?: string; nonce?: string }
   | { t: 'action'; action: Action }
   | { t: 'pong'; n: number };
 
 /** Host → guest. Media carries question art as image bytes. */
 export type HostMsg =
-  | { t: 'welcome'; playerId: string }
+  /** Sent first, on every connection: what the site's creator signs to join (lib/owner.ts). */
+  | { t: 'challenge'; nonce: string }
+  /** `owner`: a host using the creator's name proving it's them (lib/owner.ts). */
+  | { t: 'welcome'; playerId: string; owner?: string }
   | { t: 'state'; state: GameState; now: number }
   | { t: 'error'; message: string }
   | { t: 'kicked' }
@@ -56,9 +65,17 @@ export function parseClientMsg(raw: unknown): ClientMsg | null {
       if (!isStr(raw.secret, 64) || !SECRET.test(raw.secret) || !isStr(raw.name, 200) || !isInt(raw.v, 0, 1e6))
         return null;
       if (raw.tab !== undefined && !(isStr(raw.tab, 64) && TAB.test(raw.tab))) return null;
-      return raw.tab === undefined
-        ? { t: 'hello', secret: raw.secret, name: raw.name, v: raw.v }
-        : { t: 'hello', secret: raw.secret, name: raw.name, v: raw.v, tab: raw.tab };
+      if (raw.owner !== undefined && !isProof(raw.owner)) return null;
+      if (raw.nonce !== undefined && !isNonce(raw.nonce)) return null;
+      return {
+        t: 'hello',
+        secret: raw.secret,
+        name: raw.name,
+        v: raw.v,
+        ...(raw.tab !== undefined && { tab: raw.tab }),
+        ...(raw.owner !== undefined && { owner: raw.owner }),
+        ...(raw.nonce !== undefined && { nonce: raw.nonce }),
+      };
     case 'pong':
       return isInt(raw.n, 0, Number.MAX_SAFE_INTEGER) ? { t: 'pong', n: raw.n } : null;
     case 'action': {
@@ -91,8 +108,10 @@ export function parseHostMsg(raw: unknown): HostMsg | null {
   const bin = (v: unknown) => v instanceof ArrayBuffer || ArrayBuffer.isView(v);
   const qid = isInt(raw.qid, 0, Number.MAX_SAFE_INTEGER);
   switch (raw.t) {
+    case 'challenge':
+      return isNonce(raw.nonce) ? (raw as HostMsg) : null;
     case 'welcome':
-      return isStr(raw.playerId, 64) ? (raw as HostMsg) : null;
+      return isStr(raw.playerId, 64) && (raw.owner === undefined || isProof(raw.owner)) ? (raw as HostMsg) : null;
     case 'state': {
       const s = raw.state;
       return isObj(s) && Array.isArray(s.players) && isObj(s.settings) && typeof raw.now === 'number'

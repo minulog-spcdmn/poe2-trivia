@@ -5,11 +5,16 @@
 // rooms by probing slots in batches and stop after a batch that is entirely
 // empty. Probes past slot 30 are spaced out so a busy site doesn't get us
 // throttled by the free signalling server.
+//
+// A room whose host goes by the site creator's name is listed only if the
+// listing proves it's them (lib/owner.ts).
 
 import Peer, { type DataConnection } from 'peerjs';
 import { PEER_OPTIONS, PEER_PREFIX } from './peer';
 import { isDifficulty, type Difficulty, type GameMode, type Phase } from './game';
-import { cleanName } from './names';
+import { cleanName, looksLikeOwner } from './names';
+import { isNonce, listClaim, signAsOwner, verifyOwner } from './owner';
+import { randomToken } from './tokens';
 
 export interface RoomInfo {
   code: string;
@@ -73,7 +78,8 @@ export const slotId = (n: number) => `${PEER_PREFIX}pub-${n}`;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-type ProbeResult = RoomInfo | 'free' | null;
+/** `hidden`: a room is there, but its listing isn't worth showing (its host pretends to be the creator). */
+type ProbeResult = RoomInfo | 'free' | 'hidden' | null;
 
 /**
  * Tracks outstanding probes on one peer so "peer-unavailable" errors (which
@@ -104,12 +110,14 @@ class Prober {
       };
       const timer = setTimeout(() => done(null), PROBE_TIMEOUT_MS);
       this.waiting.set(id, done);
-      conn = this.peer.connect(id, { reliable: true, metadata: { probe: true } });
-      conn.on('data', (raw) => {
-        const msg = raw as { t?: string; room?: unknown };
+      const asked = randomToken(24);
+      conn = this.peer.connect(id, { reliable: true, metadata: { probe: true, nonce: asked } });
+      conn.on('data', async (raw) => {
+        const msg = raw as { t?: string; room?: unknown; owner?: unknown };
         if (msg?.t !== 'info') return;
         const room = parseRoomInfo(msg.room);
-        done(room ?? null);
+        if (room && looksLikeOwner(room.host) && !(await verifyOwner(listClaim(room.code, asked), msg.owner))) done('hidden');
+        else done(room ?? null);
       });
       conn.on('error', () => done(null));
     });
@@ -150,7 +158,7 @@ export async function scanRooms(onRoom: (room: RoomInfo) => void, cancelled: () 
           const r = await prober.probe(id);
           if (r && r !== 'free') {
             found++;
-            if (!cancelled() && listed++ < MAX_LISTED) onRoom(r);
+            if (r !== 'hidden' && !cancelled() && listed++ < MAX_LISTED) onRoom(r);
           }
         }),
       );
@@ -259,9 +267,12 @@ export class Beacon {
         release();
       }, 4000);
       // Probes only need to listen; anything they send is ignored.
-      conn.on('open', () => {
+      conn.on('open', async () => {
         const room = this.info();
-        if (room) conn.send({ t: 'info', room });
+        const asked = (conn.metadata as { nonce?: unknown } | undefined)?.nonce;
+        // The creator's own room proves it's theirs, or nobody would see it.
+        const owner = room && isNonce(asked) && looksLikeOwner(room.host) ? await signAsOwner(listClaim(room.code, asked)) : null;
+        if (room && conn.open) conn.send(owner ? { t: 'info', room, owner } : { t: 'info', room });
         setTimeout(() => conn.close(), 2000);
       });
     });

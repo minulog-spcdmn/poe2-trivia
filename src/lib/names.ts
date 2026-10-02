@@ -1,5 +1,8 @@
 // Player name hygiene: strip invisible / direction-flipping characters and
-// "zalgo" stacks, and catch names that impersonate the host or another player.
+// "zalgo" stacks, and catch names that impersonate the host, another player or
+// the site's creator.
+
+import { CREATOR } from './site.ts';
 
 export const MAX_NAME = 20;
 
@@ -31,10 +34,21 @@ export function cleanName(raw: unknown): string {
   return s;
 }
 
-/** What a name "looks like": lowercase ASCII-ish letters only. */
-export function nameSkeleton(name: string): string {
+/**
+ * More look-alikes, only for telling the creator's name apart. Kept out of
+ * CONFUSABLES so they don't change every other name's skeleton (which the
+ * clash checks and the kicked names saved with a room rely on).
+ */
+const OWNER_CONFUSABLES: Record<string, string> = {
+  ζ: 'z', є: 'e', ø: 'o', ɵ: 'o', ə: 'e', ɛ: 'e', ƶ: 'z', ȥ: 'z', ɀ: 'z', ʐ: 'z', ʑ: 'z', ᴢ: 'z', ᴏ: 'o', ᴇ: 'e', '2': 'z',
+  // Armenian, Coptic, Cherokee, Lisu, Tifinagh and other letters drawn like z, o or e (lowercased).
+  օ: 'o', ⲟ: 'o', ꮓ: 'z', ꭼ: 'e', ꮻ: 'o', ꓜ: 'z', ꓳ: 'o', ꓰ: 'e', ⵔ: 'o', ꝋ: 'o', ℮: 'e',
+};
+
+/** What a name "looks like": lowercase ASCII-ish letters only. `extra`: more look-alikes to fold. */
+export function nameSkeleton(name: string, extra: Record<string, string> = {}): string {
   const folded = Array.from(name.normalize('NFKD').toLowerCase())
-    .map((c) => CONFUSABLES[c] ?? c)
+    .map((c) => CONFUSABLES[c] ?? extra[c] ?? c)
     .join('')
     .replace(/\p{M}/gu, '')
     .replace(/[^a-z]/g, '')
@@ -45,12 +59,55 @@ export function nameSkeleton(name: string): string {
   return folded || name.toLowerCase();
 }
 
-/** Returns why a name is not allowed, or null if it's fine. */
-export function nameProblem(name: string, others: string[]): string | null {
+/**
+ * What only the site's creator (`CREATOR` in site.ts) may be called: their
+ * name, or just its first part, spelled any way that looks the same
+ * (Zoe, z0ë, ZOE_4RCANA, Zoë Arcana). Names that merely contain it don't
+ * count (Zoey, Ozoemena).
+ */
+const OWNER_SKELETONS = [CREATOR, CREATOR.split(/[^\p{L}\p{N}]+/u)[0]].map((n) => nameSkeleton(n, OWNER_CONFUSABLES));
+
+/**
+ * Whether some reading of `name` folds to `target`: letters as they look,
+ * each digit or symbol either as the letter it looks like (z0e) or left out
+ * (zoe_arcana2, Zoe!), in any mix (Z0e1), and doubled letters counted once,
+ * as in `nameSkeleton`.
+ */
+function readsAs(name: string, target: string): boolean {
+  // How much of the target the letters so far spell out, for each way of reading them.
+  let spelled = new Set([0]);
+  for (const c of name.normalize('NFKD').toLowerCase()) {
+    if (/\p{M}/u.test(c)) continue;
+    const folded = (CONFUSABLES[c] ?? OWNER_CONFUSABLES[c] ?? c).replace('i', 'l');
+    const letter = /^[a-z]$/.test(folded) ? folded : null;
+    // A letter has to fit (other letters drop out, as in the skeleton); anything else may also be left out.
+    const readings = /\p{L}/u.test(c) ? [letter] : [null, letter];
+    const next = new Set<number>();
+    for (const n of spelled)
+      for (const r of readings) {
+        if (r === null) next.add(n);
+        else if (n > 0 && r === target[n - 1]) next.add(n);
+        else if (r === target[n]) next.add(n + 1);
+      }
+    spelled = next;
+    if (!spelled.size) return false;
+  }
+  return spelled.has(target.length);
+}
+
+/** Whether a name could pass for the site's creator. */
+export const looksLikeOwner = (name: string) => OWNER_SKELETONS.some((target) => readsAs(name, target));
+
+/**
+ * Returns why a name is not allowed, or null if it's fine. `owner`: the
+ * creator proved it's them (lib/owner.ts), so their own name is allowed.
+ */
+export function nameProblem(name: string, others: string[], owner = false): string | null {
   if (!name) return 'Please enter a name with at least one letter or number.';
   const skel = nameSkeleton(name);
   if (RESERVED.has(skel) || RESERVED.has(name.toLowerCase().replace(/[^a-z]/g, '')))
     return `"${name}" is reserved. Pick another name.`;
+  if (!owner && looksLikeOwner(name)) return `"${name}" is too close to the creator's name. Pick another name.`;
   const clash = others.find((o) => nameSkeleton(o) === skel);
   if (clash) return `"${name}" looks too much like "${clash}". Pick another name.`;
   return null;

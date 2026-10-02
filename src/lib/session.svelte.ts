@@ -6,6 +6,8 @@
 // get question art as altered image bytes, identify themselves with a secret
 // token that only this room's host ever sees (a different one per room), and
 // everything they send is checked and rate limited, down to the raw frames.
+// The site creator's name is the one exception to "the host is trusted": a
+// host going by it has to prove it's them (lib/owner.ts), or guests leave.
 
 import Peer, { type DataConnection } from 'peerjs';
 import itemData from '../data/items.json';
@@ -27,9 +29,12 @@ import {
 } from './game';
 import { PEER_OPTIONS, PEER_PREFIX } from './peer';
 import { Beacon, type RoomInfo } from './rooms';
-import { parseClientMsg, parseHostMsg, PROTOCOL_VERSION, RateLimit, type HostMsg, type MediaMsg } from './protocol';
+import { parseClientMsg, parseHostMsg, PROTOCOL_VERSION, RateLimit, type ClientMsg, type HostMsg, type MediaMsg } from './protocol';
 import { capped, FrameGuard, hookFrames, JoinGate, roomSecret } from './guard';
-import { cleanName, nameSkeleton } from './names';
+import { cleanName, looksLikeOwner, nameSkeleton } from './names';
+import { checkOwnerKey, hasOwnerKey, hostClaim, joinClaim, signAsOwner, verifyOwner } from './owner';
+import { CREATOR } from './site';
+import { randomToken } from './tokens';
 import { prepareMedia, shown, tileDelay, type PreparedMedia } from './media.svelte';
 import { sfx } from './sound';
 import { prefsFrom, roomPrefs, roomSettings, savePrefs } from './prefs';
@@ -57,6 +62,10 @@ const ROOM_BUSY = 'The room is busy right now. Trying again…';
 const BUSY_RETRY_MS = 5000;
 /** A connection must introduce itself within this time. */
 const HELLO_TIMEOUT_MS = 6000;
+/** Signatures checked or made for a hello (lib/owner.ts) that take longer count as missing. */
+const PROOF_TIMEOUT_MS = 5000;
+/** Client: how long a hello under the creator's name waits for the host's challenge. */
+const CHALLENGE_WAIT_MS = 2500;
 const PING_EVERY_MS = 3000;
 /** Guests: no message from the host for this long means it's gone. */
 const HOST_SILENCE_MS = 15000;
@@ -75,11 +84,6 @@ const MEDIA_TIMEOUT_MS = 15000;
 
 export type Mode = 'local' | 'host' | 'client';
 export type Status = 'idle' | 'connecting' | 'ready' | 'lost';
-
-function randomToken(len: number, alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789') {
-  const buf = crypto.getRandomValues(new Uint32Array(len));
-  return Array.from(buf, (n) => alphabet[n % alphabet.length]).join('');
-}
 
 const randomCode = () => randomToken(CODE_LENGTH, CODE_ALPHABET);
 
@@ -136,6 +140,10 @@ interface Guest {
   tab: string | null;
   /** When the connection came in. */
   since: number;
+  /** Its hello is being checked (a signature takes a moment): further hellos are ignored. */
+  greeting: boolean;
+  /** Sent to it first: what the site's creator signs to join (lib/owner.ts). */
+  nonce: string;
 }
 
 /** Host-only data that must survive a page refresh but never reach guests. */
@@ -196,6 +204,10 @@ class Session {
   private joins = new JoinGate();
   /** Client: the token for the room being joined. */
   private helloSecret: Promise<string> | null = null;
+  /** Client: whether the host proved it's the site's creator (only asked of a host going by that name). */
+  private hostIsOwner: Promise<boolean> = Promise.resolve(false);
+  /** Client: the host's name as last checked by `checkHostName`. */
+  private checkedHostName: string | null = null;
   private media: PreparedMedia | null = null;
   private mediaTimers: ReturnType<typeof setTimeout>[] = [];
   /** Media messages already released for the current question (for late joiners). */
@@ -305,7 +317,11 @@ class Session {
     this.status = 'connecting';
     this.joinName = name;
     this.loadPrivate(noPrivate(randomToken(12)));
-    this.openRoom(randomCode(), 0);
+    // Whether this browser may use the creator's name is settled first (it
+    // takes a moment, and normally happened long before, on page load).
+    void checkOwnerKey().then(() => {
+      if (this.mode === 'host' && this.status === 'connecting' && !this.peer) this.openRoom(randomCode(), 0);
+    });
   }
 
   private loadPrivate(p: HostPrivate) {
@@ -344,7 +360,7 @@ class Session {
       } else {
         let s = createGame(me, roomSettings());
         try {
-          s = engine.apply(s, { type: 'join', playerId: me, name: this.joinName }, me);
+          s = engine.apply(s, { type: 'join', playerId: me, name: this.joinName, owner: hasOwnerKey() }, me);
         } catch (err) {
           this.fail(err instanceof ActionError ? err.message : 'Could not create the room.', 'Room not opened');
           return;
@@ -418,8 +434,11 @@ class Session {
       mediaAt: null,
       tab: null,
       since: Date.now(),
+      greeting: false,
+      nonce: randomToken(24),
     };
     this.guests.set(conn, guest);
+    conn.on('open', () => this.send(conn, { t: 'challenge', nonce: guest.nonce }));
     const helloTimer = setTimeout(() => !guest.playerId && this.drop(conn), HELLO_TIMEOUT_MS);
     this.guardFrames(conn);
     conn.on('data', (raw) => {
@@ -436,10 +455,11 @@ class Session {
       }
       try {
         if (msg.t === 'hello') {
-          if (guest.playerId) return;
+          if (guest.playerId || guest.greeting) return;
           guest.tab = msg.tab ?? null;
+          // It said hello in time; the signature step has its own limit (PROOF_TIMEOUT_MS).
           clearTimeout(helloTimer);
-          this.handleHello(conn, guest, msg.secret, msg.name, msg.v);
+          this.handleHello(conn, guest, msg);
         } else if (msg.t === 'pong') {
           const sent = guest.pings.get(msg.n);
           if (sent !== undefined) {
@@ -543,31 +563,77 @@ class Session {
     this.drop(conn);
   }
 
-  private handleHello(conn: DataConnection, guest: Guest, secret: string, name: string, v: number) {
-    if (v !== PROTOCOL_VERSION) throw new ActionError('Your game version is out of date. Please reload the page.');
-    const known = this.secretToPlayer.get(secret);
+  /**
+   * A guest introduces themselves. The cheap refusals come first (old
+   * version, kicked, too many joins), so nobody gets the host to check or
+   * make a signature (lib/owner.ts) without paying for it out of the join
+   * budgets.
+   */
+  private handleHello(conn: DataConnection, guest: Guest, msg: Extract<ClientMsg, { t: 'hello' }>) {
+    if (msg.v !== PROTOCOL_VERSION) throw new ActionError('Your game version is out of date. Please reload the page.');
+    const known = !!this.secretToPlayer.get(msg.secret);
     // A kicked player stays out, under their old token or (as a newcomer) their old name.
-    if (this.priv.bannedSecrets.includes(secret)) {
+    if (this.priv.bannedSecrets.includes(msg.secret)) {
       this.dismiss(conn, { t: 'kicked' });
       return;
     }
     // Everything past this point is paid for out of the join budgets, turned-down attempts included.
-    const busy = this.joins.admit(secret, !!known);
+    const busy = this.joins.admit(msg.secret, known);
     if (busy) {
       // Not a refusal: the client tries again a little later.
       this.dismiss(conn, { t: 'busy', message: busy });
       return;
     }
-    const playerId = known ?? randomToken(12);
-    let next: GameState;
-    try {
-      if (!known && this.priv.bannedNames.includes(nameSkeleton(cleanName(name))))
-        throw new ActionError('Someone with a name like that was removed from this room. Pick another name.');
-      next = engine.apply(this.state!, { type: 'join', playerId, name, returning: !!known }, playerId);
-    } catch (err) {
-      this.joins.rejected(secret, !!known);
-      throw err;
+    guest.greeting = true;
+    // Signatures take milliseconds; one that hangs counts as no proof, so the guest still hears why.
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<{ owner: boolean; proof: null }>((resolve) => {
+      timer = setTimeout(() => resolve({ owner: false, proof: null }), PROOF_TIMEOUT_MS);
+    });
+    void Promise.race([this.ownerProofs(guest, msg), timeout]).then(({ owner, proof }) => {
+      clearTimeout(timer);
+      guest.greeting = false;
+      // Gone meanwhile: the attempt is over, so it gives its join allowance back like a refusal.
+      if (!this.state || this.guests.get(conn) !== guest) return this.joins.rejected(msg.secret, known);
+      try {
+        this.admit(conn, guest, msg.secret, msg.name, known, owner, proof);
+      } catch (err) {
+        this.joins.rejected(msg.secret, known);
+        if (err instanceof ActionError && err.silent) return;
+        this.dismiss(conn, { t: 'error', message: err instanceof ActionError ? err.message : 'Something went wrong.' });
+      }
+    });
+  }
+
+  /**
+   * The signatures a hello calls for: whether a guest using the site
+   * creator's name proved it's them, and, when this host holds the creator's
+   * key, its proof for the guest's nonce (sent whatever the host's name is
+   * now, so it still counts if the host takes the name later; `signAsOwner`
+   * settles whether this browser holds the key, even right after a refresh).
+   */
+  private async ownerProofs(guest: Guest, msg: Extract<ClientMsg, { t: 'hello' }>): Promise<{ owner: boolean; proof: string | null }> {
+    const [owner, proof] = await Promise.all([
+      msg.owner && looksLikeOwner(cleanName(msg.name)) ? verifyOwner(joinClaim(this.code, msg.secret, guest.nonce), msg.owner) : false,
+      msg.nonce ? signAsOwner(hostClaim(this.code, msg.nonce)) : null,
+    ]);
+    return { owner, proof };
+  }
+
+  /** Lets a guest in, once past the checks in `handleHello`; throws why not. */
+  private admit(conn: DataConnection, guest: Guest, secret: string, name: string, wasKnown: boolean, owner: boolean, proof: string | null) {
+    // Kicked while their signature was being checked: they stay out.
+    if (this.priv.bannedSecrets.includes(secret) || this.priv.bannedPeers.includes(conn.peer)) {
+      this.joins.rejected(secret, wasKnown);
+      this.dismiss(conn, { t: 'kicked' });
+      return;
     }
+    // Another connection of theirs may have got in meanwhile.
+    const known = this.secretToPlayer.get(secret);
+    const playerId = known ?? randomToken(12);
+    if (!known && this.priv.bannedNames.includes(nameSkeleton(cleanName(name))))
+      throw new ActionError('Someone with a name like that was removed from this room. Pick another name.');
+    const next = engine.apply(this.state!, { type: 'join', playerId, name, returning: wasKnown || !!known, owner }, playerId);
     if (!known) this.rememberSecret(secret, playerId, next);
     // Only one live connection per player (e.g. after a refresh). When it's
     // another tab, say why, so it doesn't reconnect and take the seat back; the
@@ -579,7 +645,7 @@ class Session {
         else this.drop(c);
       }
     guest.playerId = playerId;
-    this.send(conn, { t: 'welcome', playerId });
+    this.send(conn, proof ? { t: 'welcome', playerId, owner: proof } : { t: 'welcome', playerId });
     this.setState(next);
     for (const m of this.released) this.sendMedia(conn, guest, m);
     const player = next.players.find((p) => p.id === playerId);
@@ -774,10 +840,35 @@ class Session {
     const conn = this.peer.connect(PEER_PREFIX + this.code, { reliable: true });
     this.hostConn = conn;
     stale?.close();
-    conn.on('open', async () => {
+    // New for this connection: a host holding the creator's key signs it in the welcome.
+    const asked = randomToken(24);
+    // The site's creator proves it's them, or the host won't let them use their
+    // name: they sign the host's challenge, so a hello under that name (judged
+    // as the host will see it) waits for it, though not forever: a host on an
+    // older build never sends one, and should still get to say it's out of date.
+    const proving = looksLikeOwner(cleanName(this.joinName));
+    let opened = false;
+    let nonce: string | null = null;
+    let waited = false;
+    let sent = false;
+    const hello = async () => {
+      if (sent || !opened || (proving && !nonce && !waited)) return;
+      sent = true;
       const secret = await this.helloSecret;
-      if (secret && this.hostConn === conn && conn.open)
-        conn.send({ t: 'hello', secret, name: this.joinName, v: PROTOCOL_VERSION, tab: myTab });
+      if (!secret) return;
+      // Null when this browser doesn't hold the key: the host then says why the name isn't allowed.
+      const owner = proving && nonce ? await signAsOwner(joinClaim(this.code, secret, nonce)) : null;
+      if (this.hostConn === conn && conn.open)
+        conn.send({ t: 'hello', secret, name: this.joinName, v: PROTOCOL_VERSION, tab: myTab, nonce: asked, ...(owner && { owner }) });
+    };
+    conn.on('open', () => {
+      opened = true;
+      void hello();
+      if (proving)
+        setTimeout(() => {
+          waited = true;
+          void hello();
+        }, CHALLENGE_WAIT_MS);
     });
     // A host that vanishes (crashed tab, lost Wi-Fi) often never fires 'close'.
     // It pings every few seconds, so silence means the connection is dead.
@@ -796,8 +887,14 @@ class Session {
       const msg = parseHostMsg(raw);
       if (!msg) return;
       switch (msg.t) {
+        case 'challenge':
+          nonce = msg.nonce;
+          void hello();
+          break;
         case 'welcome':
           this.myPlayerId = msg.playerId;
+          this.hostIsOwner = verifyOwner(hostClaim(this.code, asked), msg.owner);
+          this.checkedHostName = null;
           break;
         case 'state':
           this.syncClock(msg.now);
@@ -806,6 +903,7 @@ class Session {
             this.state = msg.state;
           }
           this.status = 'ready';
+          this.checkHostName(conn, msg.state);
           break;
         case 'error':
           if (this.status === 'connecting') this.fail(msg.message, "Couldn't join");
@@ -832,6 +930,22 @@ class Session {
       }
     });
     conn.on('close', () => this.hostLost(conn));
+  }
+
+  /**
+   * Client: leaves a room whose host goes by the site creator's name without
+   * having proved it's them (in the welcome). Checked again only when the
+   * host's name changes.
+   */
+  private checkHostName(conn: DataConnection, s: GameState) {
+    const host = s.players.find((p) => p.id === s.hostId);
+    if (!host || host.name === this.checkedHostName) return;
+    this.checkedHostName = host.name;
+    if (!looksLikeOwner(host.name)) return;
+    void this.hostIsOwner.then((ok) => {
+      if (ok || this.hostConn !== conn || this.mode !== 'client') return;
+      this.fail(`The host of this room is pretending to be ${CREATOR}. Join another room.`, 'Impostor host');
+    });
   }
 
   private hostLost(conn: DataConnection) {
@@ -871,6 +985,9 @@ class Session {
       this.hostConn?.send({ t: 'action', action });
       return;
     }
+    // Only this device's own player (or anyone at a hot-seat game) can be the site's creator.
+    if (action.type === 'join' || action.type === 'rename')
+      action = { ...action, owner: hasOwnerKey() && (this.mode === 'local' || action.playerId === this.myPlayerId) };
     const from = this.mode === 'local' ? null : this.myPlayerId;
     const run = () => {
       if (!this.state) return;
@@ -1184,6 +1301,8 @@ class Session {
     this.secretToPlayer = new Map();
     this.joins = new JoinGate();
     this.helloSecret = null;
+    this.hostIsOwner = Promise.resolve(false);
+    this.checkedHostName = null;
     if (this.retry) clearTimeout(this.retry);
     if (this.connectTimer) clearTimeout(this.connectTimer);
     this.connectTimer = null;

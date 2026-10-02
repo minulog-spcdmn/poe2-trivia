@@ -492,6 +492,10 @@ test('guests cannot act for others, join locked rooms, or impersonate', () => {
   assert.throws(() => engine.apply(s, { type: 'join', playerId: 'p9', name: 'Zаna' }, 'p9'), /looks too much like/); // Cyrillic а
   assert.throws(() => engine.apply(s, { type: 'join', playerId: 'p9', name: 'A1va' }, 'p9'), /looks too much like/);
   assert.throws(() => engine.apply(s, { type: 'join', playerId: 'p9', name: '\u200b\u202e ' }, 'p9'), /at least one letter/);
+  // The creator's name takes their proof, which only the host can vouch for (guests can't send joins).
+  assert.throws(() => engine.apply(s, { type: 'join', playerId: 'p9', name: 'z0e_arcana' }, 'p9'), /creator/);
+  assert.equal(engine.apply(s, { type: 'join', playerId: 'p9', name: 'zoe_arcana', owner: true }, 'p9').players.at(-1)!.name, 'zoe_arcana');
+  assert.throws(() => engine.apply(s, { type: 'rename', playerId: 'p1', name: 'Zoe' }, 'p0'), /creator/);
   s = engine.apply(s, { type: 'join', playerId: 'p9', name: 'Dori\u202eevil\u200b' }, 'p9');
   assert.equal(s.players.find((p) => p.id === 'p9')!.name, 'Dorievil');
   s = engine.apply(s, { type: 'settings', settings: { locked: true } }, 'p0');
@@ -945,36 +949,37 @@ test('a made-up name someone fell for is not used again that game', () => {
 
 test('zoe_arcana always gets the last avatar colour', () => {
   const names = ['Ash', 'Bram', 'Cyra', 'Dusk', 'Ember', 'Fenn', 'Gale', 'Hollis', 'Iris', 'Jarek', 'Kestrel'];
+  // (owner: the host checked her proof, lib/owner.ts.)
   // Others fill the colours in order and leave the reserved one for last.
   let { engine, s } = setup(names);
   assert.deepEqual(s.players.map((p) => p.hue), [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
-  s = engine.apply(s, { type: 'join', playerId: 'z', name: 'Zoe_Arcana' }, 'z');
+  s = engine.apply(s, { type: 'join', playerId: 'z', name: 'Zoe_Arcana', owner: true }, 'z');
   assert.equal(s.players.find((p) => p.id === 'z')!.hue, 11);
 
   // Whoever had it moves to a free colour when she joins.
   ({ engine, s } = setup(['A', 'B', 'C']));
   s.players[1].hue = 11;
-  s = engine.apply(s, { type: 'join', playerId: 'z', name: 'zoe_arcana' }, 'z');
+  s = engine.apply(s, { type: 'join', playerId: 'z', name: 'zoe_arcana', owner: true }, 'z');
   assert.equal(s.players.find((p) => p.id === 'z')!.hue, 11);
   assert.equal(s.players[1].hue, 1);
   assert.equal(new Set(s.players.map((p) => p.hue)).size, 4);
 
   // Renaming to it claims it too.
   ({ engine, s } = setup(['A', 'B']));
-  s = engine.apply(s, { type: 'rename', playerId: 'p0', name: 'zoe_arcana' }, 'p0');
+  s = engine.apply(s, { type: 'rename', playerId: 'p0', name: 'zoe_arcana', owner: true }, 'p0');
   assert.equal(s.players[0].hue, 11);
   s = engine.apply(s, { type: 'join', playerId: 'c', name: 'C' }, 'c');
   assert.equal(s.players.find((p) => p.id === 'c')!.hue, 0, 'her old colour is free again');
 
   // Any spelling the name check treats as the same name counts.
   ({ engine, s } = setup(['A']));
-  s = engine.apply(s, { type: 'join', playerId: 'z', name: 'Zoe Arcana' }, 'z');
+  s = engine.apply(s, { type: 'join', playerId: 'z', name: 'Zoe Arcana', owner: true }, 'z');
   assert.equal(s.players.find((p) => p.id === 'z')!.hue, 11);
   assert.equal(PALETTE.length, MAX_PLAYERS, 'one colour per seat, ruby last');
 
   // Renaming away from it gives it up.
   ({ engine, s } = setup(['A', 'B']));
-  s = engine.apply(s, { type: 'rename', playerId: 'p0', name: 'zoe_arcana' }, 'p0');
+  s = engine.apply(s, { type: 'rename', playerId: 'p0', name: 'zoe_arcana', owner: true }, 'p0');
   s = engine.apply(s, { type: 'rename', playerId: 'p0', name: 'Ash' }, 'p0');
   assert.equal(s.players[0].hue, 0);
 
@@ -983,7 +988,7 @@ test('zoe_arcana always gets the last avatar colour', () => {
   s.players[1].hue = 11;
   s = engine.apply(s, { type: 'start' }, 'p0');
   const hue = (id: string) => s.players.find((p) => p.id === id)!.hue;
-  s = engine.apply(s, { type: 'rename', playerId: 'p0', name: 'zoe_arcana' }, 'p0');
+  s = engine.apply(s, { type: 'rename', playerId: 'p0', name: 'zoe_arcana', owner: true }, 'p0');
   assert.deepEqual([hue('p0'), hue('p1')], [0, 11]);
   s = engine.apply(s, { type: 'restart' }, 'p0');
   assert.deepEqual([hue('p0'), hue('p1')], [11, 0]);

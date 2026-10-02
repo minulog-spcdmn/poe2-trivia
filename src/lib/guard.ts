@@ -3,6 +3,7 @@
 // it can be tested on its own.
 
 import { RateLimit } from './protocol.ts';
+import { base64url } from './tokens.ts';
 
 /**
  * Largest data-channel frame a guest may send. A real client's biggest
@@ -177,12 +178,6 @@ export class JoinGate {
 export function capped<T>(list: T[], max: number): T[] {
   return list.length > max ? list.slice(list.length - max) : list;
 }
-
-const base64url = (bytes: Uint8Array) =>
-  btoa(String.fromCharCode(...bytes))
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/, '');
 
 /**
  * The token a browser shows the host of room `code`: an HMAC of its own
