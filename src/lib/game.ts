@@ -329,12 +329,32 @@ function fillSeats(s: GameState) {
   s.spectators = waiting;
 }
 
-/** Adds a player with the first free avatar colour. */
+/** Avatar colours that always go to one player (by lowercased name), even if someone else had them. */
+const RESERVED_HUES: Record<string, number> = { zoe_arcana: 11 };
+
+/** The first avatar colour nobody else is using, skipping the reserved ones while others are free. */
+function freeHue(s: GameState, except?: Player): number {
+  const used = new Set(s.players.filter((p) => p !== except).map((p) => p.hue));
+  const reserved = new Set(Object.values(RESERVED_HUES));
+  const free = Array.from({ length: MAX_PLAYERS }, (_, i) => i).filter((h) => !used.has(h));
+  return free.find((h) => !reserved.has(h)) ?? free[0];
+}
+
+/** Gives a player their reserved colour if their name has one, moving whoever had it to a free one. */
+function claimHue(s: GameState, p: Player) {
+  const hue = RESERVED_HUES[p.name.toLowerCase()];
+  if (hue === undefined || p.hue === hue) return;
+  const holder = s.players.find((o) => o !== p && o.hue === hue);
+  p.hue = hue;
+  if (holder) holder.hue = freeHue(s, holder);
+}
+
+/** Adds a player with the first free avatar colour (or their reserved one). */
 function seat(s: GameState, id: string, name: string) {
-  const used = new Set(s.players.map((p) => p.hue));
-  let hue = 0;
-  while (used.has(hue)) hue++;
-  s.players.push({ id, name, score: 0, recent: [], connected: true, hue });
+  const p: Player = { id, name, score: 0, recent: [], connected: true, hue: -1 };
+  p.hue = freeHue(s);
+  s.players.push(p);
+  claimHue(s, p);
 }
 
 /**
@@ -446,7 +466,10 @@ export class Engine {
           [...s.players, ...s.spectators].filter((o) => o.id !== action.playerId).map((o) => o.name),
         );
         if (problem) throw new ActionError(problem);
-        if (p) p.name = name;
+        if (p) {
+          p.name = name;
+          claimHue(s, p);
+        }
         break;
       }
       case 'remove': {

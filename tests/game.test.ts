@@ -854,3 +854,27 @@ test('a made-up name someone fell for is not used again that game', () => {
     assert.ok(!s.used.some(isFake));
   }
 });
+
+test('zoe_arcana always gets the last avatar colour', () => {
+  const names = ['Ash', 'Bram', 'Cyra', 'Dusk', 'Ember', 'Fenn', 'Gale', 'Hollis', 'Iris', 'Jarek', 'Kestrel'];
+  // Others fill the colours in order and leave the reserved one for last.
+  let { engine, s } = setup(names);
+  assert.deepEqual(s.players.map((p) => p.hue), [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+  s = engine.apply(s, { type: 'join', playerId: 'z', name: 'Zoe_Arcana' }, 'z');
+  assert.equal(s.players.find((p) => p.id === 'z')!.hue, 11);
+
+  // Whoever had it moves to a free colour when she joins.
+  ({ engine, s } = setup(['A', 'B', 'C']));
+  s.players[1].hue = 11;
+  s = engine.apply(s, { type: 'join', playerId: 'z', name: 'zoe_arcana' }, 'z');
+  assert.equal(s.players.find((p) => p.id === 'z')!.hue, 11);
+  assert.equal(s.players[1].hue, 1);
+  assert.equal(new Set(s.players.map((p) => p.hue)).size, 4);
+
+  // Renaming to it claims it too.
+  ({ engine, s } = setup(['A', 'B']));
+  s = engine.apply(s, { type: 'rename', playerId: 'p0', name: 'zoe_arcana' }, 'p0');
+  assert.equal(s.players[0].hue, 11);
+  s = engine.apply(s, { type: 'join', playerId: 'c', name: 'C' }, 'c');
+  assert.equal(s.players.find((p) => p.id === 'c')!.hue, 0, 'her old colour is free again');
+});
