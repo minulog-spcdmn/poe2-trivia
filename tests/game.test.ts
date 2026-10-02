@@ -240,6 +240,7 @@ test('difficulties scale options, decoy kind and question types', () => {
       assert.equal(new Set(q.options).size, rules.options);
       const answer = engine.byId.get(q.itemId)!;
       const real = q.options.filter((id) => !isFake(id)).map((id) => engine.byId.get(id)!);
+      const looks = q.options.map((id) => engine.byId.get(isFake(id) ? id.split(':')[1] : id)!.group);
       for (const it of real) assert.equal(it.category, answer.category, 'decoys share the category');
       const sameGroupLeft = unused.filter((it) => it.group === answer.group && it.id !== answer.id).length;
       if (sameGroupLeft >= rules.options - 1) {
@@ -248,8 +249,8 @@ test('difficulties scale options, decoy kind and question types', () => {
       // The topic lists exactly the groups on screen, and never one with a single option.
       const shown = q.groups ?? [];
       if (answer.kind === 'gem') assert.deepEqual(shown, []);
-      for (const g of shown) assert.ok(real.filter((it) => it.group === g).length >= 2, `${g} has two real options`);
-      if (shown.length) for (const it of real) assert.ok(shown.includes(it.group), `${it.group} is listed`);
+      for (const g of shown) assert.ok(looks.filter((l) => l === g).length >= 2, `${g} has two options`);
+      if (shown.length) for (const l of looks) assert.ok(shown.includes(l), `${l} is listed`);
       assert.equal(!!q.veil, !!rules.veil && q.mode === 'name');
       s = engine.apply(s, { type: 'answer', index: right(q) }, 'p0');
       s = engine.apply(s, { type: 'next' }, 'p0');
@@ -259,18 +260,26 @@ test('difficulties scale options, decoy kind and question types', () => {
   }
 });
 
-test('the topic only lists groups with real options on screen, made-up names aside', () => {
+test('the topic counts a made-up name under the item it copies', () => {
   const engine = new Engine(items, { rng: seeded(7), fakes });
   const s = createGame(null, { targetScore: 5, timer: 0, difficulty: 'eternal', mode: 'turns', public: false, locked: false });
   const category = 'Flasks, Charms, Jewels, Relics & Tablets';
   let mixed = 0;
+  let twins = 0;
   for (let i = 0; i < 3000; i++) {
     const q = engine.makeQuestion(s, category);
-    const real = q.options.filter((id) => !isFake(id)).map((id) => engine.byId.get(id)!);
-    for (const g of q.groups!) assert.ok(real.filter((it) => it.group === g).length >= 2, `${g} has two real options`);
+    const looks = q.options.map((id) => engine.byId.get(isFake(id) ? id.split(':')[1] : id)!.group);
+    const counts = new Map<string, number>();
+    for (const g of looks) counts.set(g, (counts.get(g) ?? 0) + 1);
+    const expected = [...counts.values()].some((n) => n === 1) ? [] : [...counts.keys()].sort();
+    assert.deepEqual(q.groups, expected, 'the groups as they look on screen');
     if (q.groups!.length > 1) mixed++;
+    // A group with one real name and its made-up twin is listed.
+    const realIn = (g: string) => q.options.filter((id) => !isFake(id) && engine.byId.get(id)!.group === g).length;
+    if (q.groups!.some((g) => realIn(g) === 1)) twins++;
   }
   assert.ok(mixed > 0, 'some questions mix groups');
+  assert.ok(twins > 0, 'some groups are listed for a real name and its twin');
 });
 
 test('the topic is the groups in play when that is shorter than the category', () => {

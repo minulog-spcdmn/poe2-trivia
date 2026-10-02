@@ -196,9 +196,10 @@ export const RACE_DEFAULT_TIMER = 30;
 export interface Question {
   category: string;
   /**
-   * Groups of the real options (Boots, Charms…), sorted. Says what is in
-   * play without pointing at the answer. Empty for gems and when a group has
-   * a single option; missing in older saves.
+   * Groups of the options on screen (Boots, Charms…), sorted, a made-up name
+   * counting under the item it copies. Says what is in play without pointing
+   * at the answer. Empty for gems and when a group has a single option;
+   * missing in older saves.
    */
   groups?: string[];
   mode: QuestionMode;
@@ -968,14 +969,16 @@ export class Engine {
   }
 
   /**
-   * Groups of the real options, sorted, for the question's topic. Empty when
-   * a group has a single option: decoys come from the answer's group first,
-   * so a lone option would most likely be the answer.
+   * Groups of the options, sorted, for the question's topic. A made-up name
+   * counts under the item it copies, the group it looks like, so the topic
+   * only says what is on screen and nothing about which names are real.
+   * Empty when a group has a single option: decoys come from the answer's
+   * group first, so a lone option would most likely be the answer.
    */
   private groupsOf(options: string[]): string[] {
     const counts = new Map<string, number>();
-    for (const id of options) {
-      if (isFake(id)) continue;
+    for (const option of options) {
+      const id = isFake(option) ? option.slice(FAKE_PREFIX.length, option.lastIndexOf(':')) : option;
       const group = this.byId.get(id)!.group;
       counts.set(group, (counts.get(group) ?? 0) + 1);
     }
