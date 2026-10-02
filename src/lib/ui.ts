@@ -1,11 +1,13 @@
 import { engine } from './session.svelte';
 import { itemImage } from './ui-paths';
 
-const HUES = [32, 200, 350, 130, 270, 55, 175, 10, 300, 90, 225, 150];
+// Jewel tones (sapphire, ruby, emerald, topaz, amethyst, ...), picked in OKLCH
+// so every seat is about as bright as the others. Seats fill in order, so the
+// first four are the most distinct; blue first keeps seat 1 off the gold UI.
+const PALETTE = ['#5aa3ec', '#ea6a64', '#5ec386', '#d8b349', '#a67ad6', '#53c1c7', '#e9884d', '#d4679f', '#a4c665', '#8391e2', '#6bc4b3', '#da7d9b'];
 
 export function playerColor(slot: number) {
-  const h = HUES[slot % HUES.length];
-  return `hsl(${h} 55% 55%)`;
+  return PALETTE[slot % PALETTE.length];
 }
 
 export { itemImage };
