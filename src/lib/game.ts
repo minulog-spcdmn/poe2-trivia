@@ -22,8 +22,6 @@ export type QuestionMode = 'name' | 'art';
 
 export interface DifficultyRules {
   options: number;
-  /** Draw decoys from the answer's own group (all rings, all bows…) first. */
-  groupFirst: boolean;
   /** Share of decoys picked for having a name that looks like the answer. */
   similarNames: number;
   /** Chance of an "art" question instead of a "name" question. */
@@ -41,10 +39,9 @@ export interface DifficultyRules {
 }
 
 export const DIFFICULTIES: Record<Difficulty, DifficultyRules> = {
-  cruel: { options: 4, groupFirst: true, similarNames: 0, artChance: 0.4, veil: null, grayscale: false, mirror: 0, lockout: 2, fakes: 0 },
+  cruel: { options: 4, similarNames: 0, artChance: 0.4, veil: null, grayscale: false, mirror: 0, lockout: 2, fakes: 0 },
   merciless: {
     options: 6,
-    groupFirst: true,
     similarNames: 0.5,
     artChance: 0.4,
     veil: { size: 5, share: 0.55 },
@@ -55,7 +52,6 @@ export const DIFFICULTIES: Record<Difficulty, DifficultyRules> = {
   },
   eternal: {
     options: 8,
-    groupFirst: false,
     similarNames: 1,
     artChance: 0.5,
     veil: { size: 7, share: 0.7 },
@@ -88,6 +84,12 @@ export function renameCategories(s: GameState): GameState {
     recentCategories: s.recentCategories.map(rename),
     question: s.question && { ...s.question, category: rename(s.question.category) },
   };
+}
+
+/** What the question is about: its groups when that is shorter than the category name. */
+export function questionTopic(q: Question): string {
+  const groups = q.groups?.join(' • ');
+  return groups && groups.length < q.category.length ? groups : q.category;
 }
 
 /** Option ids of made-up names: `fake:<id of the item it copies>:<which of its fakes>`. */
@@ -193,6 +195,13 @@ export const RACE_DEFAULT_TIMER = 30;
 
 export interface Question {
   category: string;
+  /**
+   * Groups of the options on screen (Boots, Charms…), sorted, a made-up name
+   * counting under the item it copies. Says what is in play without pointing
+   * at the answer. Empty for gems and when a group has a single option;
+   * missing in older saves.
+   */
+  groups?: string[];
   mode: QuestionMode;
   /** The answer. Empty in the copy guests receive until the reveal. */
   itemId: string;
@@ -960,6 +969,23 @@ export class Engine {
   }
 
   /**
+   * Groups of the options, sorted, for the question's topic. A made-up name
+   * counts under the item it copies, the group it looks like, so the topic
+   * only says what is on screen and nothing about which names are real.
+   * Empty when a group has a single option: decoys come from the answer's
+   * group first, so a lone option would most likely be the answer.
+   */
+  private groupsOf(options: string[]): string[] {
+    const counts = new Map<string, number>();
+    for (const option of options) {
+      const id = isFake(option) ? option.slice(FAKE_PREFIX.length, option.lastIndexOf(':')) : option;
+      const group = this.byId.get(id)!.group;
+      counts.set(group, (counts.get(group) ?? 0) + 1);
+    }
+    return [...counts.values()].some((n) => n === 1) ? [] : [...counts.keys()].sort();
+  }
+
+  /**
    * Builds a question from the category. Updates `s.used` when the category
    * has to start over.
    */
@@ -986,11 +1012,11 @@ export class Engine {
     const answer = this.weightedPick(answerable.length ? answerable : unused.length ? unused : inCat);
 
     const sameGroup = unused.filter((it) => it.id !== answer.id && it.group === answer.group);
-    // Rare groups (tablets) only fill in as decoys when nothing else is left…
+    // Decoys come from the answer's own group (all rings, all bows…): a flask
+    // among tablets would stand out. Other groups only fill in when it runs
+    // too low, and rare groups (tablets) not even then.
     const otherGroup = unused.filter((it) => it.id !== answer.id && it.group !== answer.group && weightOf(it) === 1);
-    // …so a rare answer gets decoys from its own group, or it would stand out.
-    const ownGroup = (rules.groupFirst || weightOf(answer) !== 1) && sameGroup.length >= need;
-    const pool = ownGroup ? sameGroup : [...sameGroup, ...otherGroup];
+    const pool = sameGroup.length >= need ? sameGroup : [...sameGroup, ...otherGroup];
 
     const simCount = Math.min(pool.length, Math.round(need * rules.similarNames));
     const decoys = this.lookalikes(answer, pool, simCount, rules.options);
@@ -1017,11 +1043,13 @@ export class Engine {
           }
         : null;
     const fakeNames = mode === 'name' ? this.mixInFakes(options, answer.id, rules.fakes, new Set(s.used)) : new Map<string, string>();
+    // Gem groups are attributes ("Intelligence"), not kinds of item.
+    const groups = answer.kind === 'gem' ? [] : this.groupsOf(options);
     const labels = options.map((id) => (mode === 'name' ? (fakeNames.get(id) ?? this.byId.get(id)!.name) : null));
     const prompt = mode === 'art' ? answer.name : null;
     // Each picture flips on its own roll, so a flipped option says nothing about the answer.
     const mirrored = Array.from({ length: mode === 'art' ? options.length : 1 }, () => rules.mirror > 0 && this.rng() < rules.mirror);
-    return { category, mode, itemId: answer.id, options, labels, prompt, veil, mirrored, askedAt, deadline, misses: [] };
+    return { category, groups, mode, itemId: answer.id, options, labels, prompt, veil, mirrored, askedAt, deadline, misses: [] };
   }
 }
 
