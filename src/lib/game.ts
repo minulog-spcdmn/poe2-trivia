@@ -196,8 +196,9 @@ export const RACE_DEFAULT_TIMER = 30;
 export interface Question {
   category: string;
   /**
-   * Groups of the options (Boots, Charms…), sorted. Says what is in play
-   * without pointing at the answer. Empty for gems; missing in older saves.
+   * Groups of the real options (Boots, Charms…), sorted. Says what is in
+   * play without pointing at the answer. Empty for gems and when a group has
+   * a single option; missing in older saves.
    */
   groups?: string[];
   mode: QuestionMode;
@@ -967,6 +968,21 @@ export class Engine {
   }
 
   /**
+   * Groups of the real options, sorted, for the question's topic. Empty when
+   * a group has a single option: decoys come from the answer's group first,
+   * so a lone option would most likely be the answer.
+   */
+  private groupsOf(options: string[]): string[] {
+    const counts = new Map<string, number>();
+    for (const id of options) {
+      if (isFake(id)) continue;
+      const group = this.byId.get(id)!.group;
+      counts.set(group, (counts.get(group) ?? 0) + 1);
+    }
+    return [...counts.values()].some((n) => n === 1) ? [] : [...counts.keys()].sort();
+  }
+
+  /**
    * Builds a question from the category. Updates `s.used` when the category
    * has to start over.
    */
@@ -1023,9 +1039,9 @@ export class Engine {
             seed: Math.floor(this.rng() * 2 ** 31),
           }
         : null;
-    // Gem groups are attributes ("Intelligence"), not kinds of item.
-    const groups = answer.kind === 'gem' ? [] : [...new Set(options.map((id) => this.byId.get(id)!.group))].sort();
     const fakeNames = mode === 'name' ? this.mixInFakes(options, answer.id, rules.fakes, new Set(s.used)) : new Map<string, string>();
+    // Gem groups are attributes ("Intelligence"), not kinds of item.
+    const groups = answer.kind === 'gem' ? [] : this.groupsOf(options);
     const labels = options.map((id) => (mode === 'name' ? (fakeNames.get(id) ?? this.byId.get(id)!.name) : null));
     const prompt = mode === 'art' ? answer.name : null;
     // Each picture flips on its own roll, so a flipped option says nothing about the answer.

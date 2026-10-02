@@ -219,23 +219,37 @@ test('guests see who is watching; the answer stays hidden', () => {
 test('difficulties scale options, decoy kind and question types', () => {
   for (const difficulty of ['cruel', 'merciless', 'eternal'] as Difficulty[]) {
     const rules = DIFFICULTIES[difficulty];
-    let { engine, s } = setup(['A'], 3, difficulty);
+    let { s } = setup(['A'], 3, difficulty);
+    const engine = new Engine(items, { rng: seeded(42), fakes });
     s = engine.apply(s, { type: 'start' }, 'p0');
     const modes = new Set<string>();
     for (let turn = 0; turn < 40; turn++) {
-      s = engine.apply(s, { type: 'pick', category: s.offered[0] }, 'p0');
+      const category = s.offered[0];
+      // What the engine draws decoys from: unseen items, or the whole category
+      // (but its latest answer) once too few are left.
+      const inCat = engine.byCategory.get(category)!;
+      let unused = inCat.filter((it) => !s.used.includes(it.id));
+      if (unused.length < rules.options) {
+        const latest = s.used.findLast((id) => inCat.some((it) => it.id === id));
+        unused = inCat.filter((it) => it.id !== latest);
+      }
+      s = engine.apply(s, { type: 'pick', category }, 'p0');
       const q = s.question!;
       modes.add(q.mode);
       assert.equal(q.options.length, rules.options);
       assert.equal(new Set(q.options).size, rules.options);
       const answer = engine.byId.get(q.itemId)!;
-      for (const id of q.options) assert.equal(engine.byId.get(id)!.category, answer.category, 'decoys share the category');
-      const groupSize = engine.items.filter((it) => it.group === answer.group).length;
-      if (groupSize >= rules.options) {
-        for (const id of q.options) assert.equal(engine.byId.get(id)!.group, answer.group, 'decoys share the group');
+      const real = q.options.filter((id) => !isFake(id)).map((id) => engine.byId.get(id)!);
+      for (const it of real) assert.equal(it.category, answer.category, 'decoys share the category');
+      const sameGroupLeft = unused.filter((it) => it.group === answer.group && it.id !== answer.id).length;
+      if (sameGroupLeft >= rules.options - 1) {
+        for (const it of real) assert.equal(it.group, answer.group, 'decoys share the group');
       }
-      const groups = [...new Set(q.options.map((id) => engine.byId.get(id)!.group))].sort();
-      assert.deepEqual(q.groups, answer.kind === 'gem' ? [] : groups, 'groups list what is in play');
+      // The topic lists exactly the groups on screen, and never one with a single option.
+      const shown = q.groups ?? [];
+      if (answer.kind === 'gem') assert.deepEqual(shown, []);
+      for (const g of shown) assert.ok(real.filter((it) => it.group === g).length >= 2, `${g} has two real options`);
+      if (shown.length) for (const it of real) assert.ok(shown.includes(it.group), `${it.group} is listed`);
       assert.equal(!!q.veil, !!rules.veil && q.mode === 'name');
       s = engine.apply(s, { type: 'answer', index: right(q) }, 'p0');
       s = engine.apply(s, { type: 'next' }, 'p0');
@@ -243,6 +257,20 @@ test('difficulties scale options, decoy kind and question types', () => {
     }
     assert.ok(modes.has('art') && modes.has('name'));
   }
+});
+
+test('the topic only lists groups with real options on screen, made-up names aside', () => {
+  const engine = new Engine(items, { rng: seeded(7), fakes });
+  const s = createGame(null, { targetScore: 5, timer: 0, difficulty: 'eternal', mode: 'turns', public: false, locked: false });
+  const category = 'Flasks, Charms, Jewels, Relics & Tablets';
+  let mixed = 0;
+  for (let i = 0; i < 3000; i++) {
+    const q = engine.makeQuestion(s, category);
+    const real = q.options.filter((id) => !isFake(id)).map((id) => engine.byId.get(id)!);
+    for (const g of q.groups!) assert.ok(real.filter((it) => it.group === g).length >= 2, `${g} has two real options`);
+    if (q.groups!.length > 1) mixed++;
+  }
+  assert.ok(mixed > 0, 'some questions mix groups');
 });
 
 test('the topic is the groups in play when that is shorter than the category', () => {
