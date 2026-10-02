@@ -182,6 +182,8 @@ export function measureShadows(
     if (p === undefined) paints.set(el, (p = paintsBackground(getComputedStyle(el))));
     return p;
   };
+  // Opacities likewise (nothing below changes one).
+  const opacities = new Map<Element, number>();
 
   // Fills first when there are more elements than room, then document order.
   const nodes = [...shadowed.keys()].filter((n) => n.isConnected);
@@ -210,7 +212,7 @@ export function measureShadows(
     const reach = soft.reduce((m, s) => Math.max(m, Math.abs(s.oy) + 2 * s.blur), 0) * scale;
     ok &&= rect.right + reach > 0 && rect.left - reach < viewW && rect.bottom + reach > 0 && rect.top - reach < viewH;
 
-    const opacity = ok ? opacityOf(node) : 0;
+    const opacity = ok ? opacityOf(node, opacities) : 0;
     ok &&= opacity > 0;
 
     let fill: { kind: number; angle: number; a: number[]; b: number[] } | null = null;

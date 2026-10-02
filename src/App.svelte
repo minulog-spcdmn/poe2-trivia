@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { fade, fly } from 'svelte/transition';
   import { session } from './lib/session.svelte';
-  import { isMuted, setMuted, sfx } from './lib/sound';
+  import { getVolume, isMuted, setMuted, setVolume, sfx } from './lib/sound';
   import { fxAvailable, fxUserOn, onFxChange, setFxOn, shakeTarget } from './lib/fx/core';
   import { CREATOR, IMPRINT_URL, PRIVACY_URL } from './lib/site';
   import { checkOwnerKey, takeOwnerKeyFromUrl } from './lib/owner';
@@ -15,6 +15,8 @@
   import GameOver from './components/GameOver.svelte';
 
   let muted = $state(isMuted());
+  let volume = $state(getVolume());
+  const silent = $derived(muted || volume === 0);
   let confirmLeave = $state(false);
   let fxOn = $state(fxUserOn());
   let fxCan = $state(fxAvailable());
@@ -97,9 +99,19 @@
   });
 
   function toggleMute() {
-    muted = !muted;
-    setMuted(muted);
-    if (!muted) sfx('click');
+    if (silent) {
+      // Unmuting with the slider all the way down would still be silent.
+      if (volume === 0) setVolume((volume = 0.5));
+      setMuted((muted = false));
+      sfx('click');
+    } else {
+      setMuted((muted = true));
+    }
+  }
+
+  function slide(e: Event) {
+    setVolume((volume = (e.currentTarget as HTMLInputElement).valueAsNumber));
+    if (muted && volume > 0) setMuted((muted = false));
   }
 
   function leave() {
@@ -143,15 +155,33 @@
         {/if}
       </div>
       <div class="tools">
-        <button class="icon-btn" data-sfx="none" onclick={toggleMute} title={muted ? 'Unmute' : 'Mute'} aria-label="Toggle sound">
-          {#if muted}
-            <svg viewBox="0 0 24 24"><path d="M4 9h4l5-4v14l-5-4H4z" /><path d="M16 9l5 6M21 9l-5 6" /></svg>
-          {:else}
-            <svg viewBox="0 0 24 24"
-              ><path d="M4 9h4l5-4v14l-5-4H4z" /><path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12" /></svg
-            >
-          {/if}
-        </button>
+        <div class="volume">
+          <button class="icon-btn" data-sfx="none" onclick={toggleMute} title={silent ? 'Unmute' : 'Mute'} aria-label="Toggle sound">
+            {#if silent}
+              <svg viewBox="0 0 24 24"><path d="M4 9h4l5-4v14l-5-4H4z" /><path d="M16 9l5 6M21 9l-5 6" /></svg>
+            {:else}
+              <svg viewBox="0 0 24 24"
+                ><path d="M4 9h4l5-4v14l-5-4H4z" /><path d="M16.5 8.5a5 5 0 0 1 0 7" />{#if volume > 0.5}<path
+                    d="M19 6a8.5 8.5 0 0 1 0 12"
+                  />{/if}</svg
+              >
+            {/if}
+          </button>
+          <!-- Desktop only: shows while the pointer is over the button. Phones keep the plain mute toggle. -->
+          <div class="volume-pop">
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.05"
+              value={muted ? 0 : volume}
+              oninput={slide}
+              onchange={() => sfx('click')}
+              aria-label="Volume"
+              style:--fill="{(muted ? 0 : volume) * 100}%"
+            />
+          </div>
+        </div>
         {#if fxCan}
           <button
             class="icon-btn"
@@ -360,6 +390,89 @@
   }
   .icon-btn:active {
     transform: scale(0.94);
+  }
+  .volume {
+    position: relative;
+  }
+  .volume-pop {
+    display: none;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .volume-pop {
+      display: block;
+      position: absolute;
+      top: 100%;
+      left: 50%;
+      z-index: 20;
+      /* The padding bridges the gap to the button, so the pointer can travel down without it closing. */
+      padding-top: 0.4rem;
+      translate: -50% -4px;
+      opacity: 0;
+      visibility: hidden;
+      transition:
+        opacity 0.2s,
+        translate 0.2s var(--ease-out),
+        visibility 0s 0.2s;
+    }
+    .volume:hover .volume-pop,
+    .volume:focus-within .volume-pop {
+      opacity: 1;
+      visibility: visible;
+      translate: -50% 0;
+      transition:
+        opacity 0.2s,
+        translate 0.2s var(--ease-out);
+    }
+  }
+  .volume-pop input {
+    display: block;
+    writing-mode: vertical-lr;
+    direction: rtl;
+    width: 38px;
+    height: 120px;
+    margin: 0;
+    padding: 0.8rem 0;
+    appearance: none;
+    background: rgba(10, 9, 8, 0.9);
+    backdrop-filter: blur(4px);
+    border: 1px solid var(--gold-lo);
+    border-radius: 19px;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 220, 150, 0.08),
+      0 0 16px rgba(201, 164, 92, 0.2);
+    cursor: pointer;
+  }
+  .volume-pop input::-webkit-slider-runnable-track {
+    width: 4px;
+    border-radius: 2px;
+    background: linear-gradient(0deg, var(--gold) var(--fill), var(--line) var(--fill));
+  }
+  .volume-pop input::-moz-range-track {
+    width: 4px;
+    border-radius: 2px;
+    background: var(--line);
+  }
+  .volume-pop input::-moz-range-progress {
+    width: 4px;
+    border-radius: 2px;
+    background: var(--gold);
+  }
+  .volume-pop input::-webkit-slider-thumb {
+    appearance: none;
+    width: 12px;
+    height: 12px;
+    margin-left: -4px;
+    border-radius: 50%;
+    background: var(--gold-hi);
+    box-shadow: 0 0 8px rgba(241, 217, 155, 0.6);
+  }
+  .volume-pop input::-moz-range-thumb {
+    width: 12px;
+    height: 12px;
+    border: 0;
+    border-radius: 50%;
+    background: var(--gold-hi);
+    box-shadow: 0 0 8px rgba(241, 217, 155, 0.6);
   }
   .icon-btn.off {
     opacity: 0.6;

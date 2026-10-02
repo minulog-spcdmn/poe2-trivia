@@ -1,7 +1,8 @@
 // Pure game logic. The host (or the single device in hot-seat mode) is the only
 // place this runs; everyone else just renders the state it broadcasts.
 
-import { cleanName, nameProblem } from './names.ts';
+import { cleanName, nameProblem, nameSkeleton } from './names.ts';
+import { RUBY } from './palette.ts';
 
 export interface Item {
   id: string;
@@ -21,8 +22,6 @@ export type QuestionMode = 'name' | 'art';
 
 export interface DifficultyRules {
   options: number;
-  /** Draw decoys from the answer's own group (all rings, all bows…) first. */
-  groupFirst: boolean;
   /** Share of decoys picked for having a name that looks like the answer. */
   similarNames: number;
   /** Chance of an "art" question instead of a "name" question. */
@@ -40,10 +39,9 @@ export interface DifficultyRules {
 }
 
 export const DIFFICULTIES: Record<Difficulty, DifficultyRules> = {
-  cruel: { options: 4, groupFirst: true, similarNames: 0, artChance: 0.4, veil: null, grayscale: false, mirror: 0, lockout: 2, fakes: 0 },
+  cruel: { options: 4, similarNames: 0, artChance: 0.4, veil: null, grayscale: false, mirror: 0, lockout: 2, fakes: 0 },
   merciless: {
     options: 6,
-    groupFirst: true,
     similarNames: 0.5,
     artChance: 0.4,
     veil: { size: 5, share: 0.55 },
@@ -54,7 +52,6 @@ export const DIFFICULTIES: Record<Difficulty, DifficultyRules> = {
   },
   eternal: {
     options: 8,
-    groupFirst: false,
     similarNames: 1,
     artChance: 0.5,
     veil: { size: 7, share: 0.7 },
@@ -77,6 +74,47 @@ const weightOf = (it: Item) => RARE_GROUPS[it.group] ?? 1;
 /** Categories that were renamed, by their old name. */
 const RENAMED_CATEGORIES: Record<string, string> = { 'Flasks, Jewels & Relics': 'Flasks, Charms, Jewels, Relics & Tablets' };
 
+/** Categories and groups named as a single item, for the line under "Unidentified". */
+const SINGULAR: Record<string, string> = {
+  'Amulets & Belts': 'Amulet or Belt',
+  'Body Armours': 'Body Armour',
+  'Flasks, Charms, Jewels, Relics & Tablets': 'Flask, Charm, Jewel, Relic or Tablet',
+  'Gloves & Boots': 'Gloves or Boots',
+  'Lineage Gems': 'Lineage Gem',
+  'Off-Hands': 'Off-Hand',
+  'One-Handed Weapons': 'One-Handed Weapon',
+  'Two-Handed Weapons': 'Two-Handed Weapon',
+  Amulets: 'Amulet',
+  Belts: 'Belt',
+  Boots: 'Boots',
+  Bows: 'Bow',
+  Charms: 'Charm',
+  Crossbows: 'Crossbow',
+  Flasks: 'Flask',
+  Foci: 'Focus',
+  Gloves: 'Gloves',
+  Helmets: 'Helmet',
+  Jewels: 'Jewel',
+  'One-Handed Maces': 'One-Handed Mace',
+  Quarterstaves: 'Quarterstaff',
+  Quivers: 'Quiver',
+  Relics: 'Relic',
+  Rings: 'Ring',
+  Sceptres: 'Sceptre',
+  Shields: 'Shield',
+  Spears: 'Spear',
+  Staves: 'Staff',
+  Tablets: 'Tablet',
+  Talismans: 'Talisman',
+  'Two-Handed Maces': 'Two-Handed Mace',
+  Wands: 'Wand',
+};
+
+/** A category or group named as a single item ("Rings" → "Ring"). */
+export function singular(name: string) {
+  return SINGULAR[name] ?? name;
+}
+
 /** A game saved before categories were renamed, with the new names. */
 export function renameCategories(s: GameState): GameState {
   const rename = (c: string) => RENAMED_CATEGORIES[c] ?? c;
@@ -87,6 +125,18 @@ export function renameCategories(s: GameState): GameState {
     recentCategories: s.recentCategories.map(rename),
     question: s.question && { ...s.question, category: rename(s.question.category) },
   };
+}
+
+/**
+ * What the question is about: its groups when that is shorter than the category
+ * name. `one` names a single item ("Flask or Relic") for the unidentified item.
+ */
+export function questionTopic(q: Question, one = false): string {
+  const groups = q.groups?.join(' • ');
+  if (!groups || groups.length >= q.category.length) return one ? singular(q.category) : q.category;
+  if (!one) return groups;
+  const names = q.groups!.map(singular);
+  return names.length > 1 ? `${names.slice(0, -1).join(', ')} or ${names.at(-1)}` : names[0];
 }
 
 /** Option ids of made-up names: `fake:<id of the item it copies>:<which of its fakes>`. */
@@ -192,6 +242,13 @@ export const RACE_DEFAULT_TIMER = 30;
 
 export interface Question {
   category: string;
+  /**
+   * Groups of the options on screen (Boots, Charms…), sorted, a made-up name
+   * counting under the item it copies. Says what is in play without pointing
+   * at the answer. Empty for gems and when a group has a single option;
+   * missing in older saves.
+   */
+  groups?: string[];
   mode: QuestionMode;
   /** The answer. Empty in the copy guests receive until the reveal. */
   itemId: string;
@@ -332,12 +389,47 @@ function fillSeats(s: GameState) {
   s.spectators = waiting;
 }
 
-/** Adds a player with the first free avatar colour. */
+/**
+ * Avatar colours that always go to one player, even if someone else had them.
+ * Keyed by name skeleton, so every spelling the name check treats as the same
+ * person ("Zoe Arcana", "zoe-arcana") counts.
+ */
+const RESERVED_HUES = new Map([[nameSkeleton('zoe_arcana'), RUBY]]);
+const RESERVED = new Set(RESERVED_HUES.values());
+
+/** The colour reserved for this player's name, if any. */
+const reservedHue = (p: Player) => RESERVED_HUES.get(nameSkeleton(p.name));
+
+/** The first avatar colour nobody else is using, skipping the reserved ones while others are free. */
+function freeHue(s: GameState, except?: Player): number {
+  const used = new Set(s.players.filter((p) => p !== except).map((p) => p.hue));
+  const free = Array.from({ length: MAX_PLAYERS }, (_, i) => i).filter((h) => !used.has(h));
+  return free.find((h) => !RESERVED.has(h)) ?? free[0];
+}
+
+/**
+ * Gives a player their reserved colour if their name has one, moving whoever
+ * had it to a free one; a player without one gives up a reserved colour while
+ * others are free. Only between games, so nobody changes colour mid-match.
+ */
+function settleHue(s: GameState, p: Player) {
+  const hue = reservedHue(p);
+  if (hue === undefined) {
+    if (RESERVED.has(p.hue)) p.hue = freeHue(s, p);
+    return;
+  }
+  if (p.hue === hue) return;
+  const holder = s.players.find((o) => o !== p && o.hue === hue);
+  p.hue = hue;
+  if (holder) holder.hue = freeHue(s, holder);
+}
+
+/** Adds a player with the first free avatar colour (or their reserved one). */
 function seat(s: GameState, id: string, name: string) {
-  const used = new Set(s.players.map((p) => p.hue));
-  let hue = 0;
-  while (used.has(hue)) hue++;
-  s.players.push({ id, name, score: 0, recent: [], connected: true, hue });
+  const p: Player = { id, name, score: 0, recent: [], connected: true, hue: -1 };
+  p.hue = freeHue(s);
+  s.players.push(p);
+  settleHue(s, p);
 }
 
 /**
@@ -361,6 +453,15 @@ export function shuffle<T>(arr: T[], rng: Rng): T[] {
     [a[i], a[j]] = [a[j], a[i]];
   }
   return a;
+}
+
+/**
+ * Sizes every group on screen could share in a question that mixes groups
+ * (two rings and two belts, four of each…), when the answer's group has
+ * `siblings` unseen items besides it and the other groups have `others`.
+ */
+function evenSizes(options: number, siblings: number, others: number[]): number[] {
+  return [2, 3, 4].filter((m) => options % m === 0 && m < options && m - 1 <= siblings && others.filter((n) => n >= m).length >= options / m - 1);
 }
 
 function sample<T>(arr: T[], n: number, rng: Rng): T[] {
@@ -450,7 +551,10 @@ export class Engine {
           !!action.owner,
         );
         if (problem) throw new ActionError(problem);
-        if (p) p.name = name;
+        if (p) {
+          p.name = name;
+          if (s.phase === 'lobby') settleHue(s, p);
+        }
         break;
       }
       case 'remove': {
@@ -614,6 +718,9 @@ export class Engine {
         const fresh = createGame(s.hostId, s.settings);
         // Players who left during the game don't come back as ghosts in the lobby.
         fresh.players = s.players.filter((p) => p.connected).map((p) => ({ ...p, score: 0, recent: [] }));
+        // Renames during the game take effect on colours now.
+        const claims = fresh.players.filter((p) => reservedHue(p) !== undefined);
+        for (const p of [...claims, ...fresh.players.filter((p) => !claims.includes(p))]) settleHue(fresh, p);
         fresh.spectators = s.spectators;
         fillSeats(fresh);
         fresh.version = s.version;
@@ -877,8 +984,10 @@ export class Engine {
    * Swaps `count` decoys for made-up names (in place) and returns the names by
    * option id. Each fake copies one of the real names left on screen, the
    * answer as often as any decoy, so a real name next to its fake twin says
-   * nothing about which option is right. Fakes in `used` (someone fell for
-   * them this game) only come back when nothing else is left.
+   * nothing about which option is right. A fake takes the place of a decoy
+   * from its twin's group, so each group keeps its count on screen. Fakes in
+   * `used` (someone fell for them this game) only come back when nothing
+   * else is left.
    */
   private mixInFakes(options: string[], answerId: string, count: number, used: Set<string>): Map<string, string> {
     const names = new Map<string, string>();
@@ -886,19 +995,29 @@ export class Engine {
     const fakeId = (source: string, n: number) => `${FAKE_PREFIX}${source}:${n}`;
     /** Which of an item's fakes nobody has fallen for yet. */
     const fresh = (source: string) => this.fakes.get(source)!.flatMap((_, n) => (used.has(fakeId(source, n)) ? [] : [n]));
-    const decoys = options.flatMap((id, i) => (id === answerId ? [] : [i]));
-    const swap = sample(decoys, count, this.rng);
-    const kept = options.filter((_, i) => !swap.includes(i));
-    const withFakes = kept.filter((id) => this.fakes.has(id));
-    const sources = sample(withFakes.filter((id) => fresh(id).length), swap.length, this.rng);
-    if (sources.length < swap.length) sources.push(...sample(withFakes.filter((id) => !sources.includes(id)), swap.length - sources.length, this.rng));
-    sources.forEach((source, k) => {
+    const group = (i: number) => this.byId.get(options[i])!.group;
+    const sources = new Set<number>();
+    const swapped = new Set<number>();
+    const free = (i: number) => !swapped.has(i) && !sources.has(i) && !isFake(options[i]);
+    /** Real names of `i`'s group that stay on screen and could lend it a fake. */
+    const twins = (i: number, freshOnly: boolean) =>
+      options.flatMap((id, j) => (j !== i && free(j) && this.fakes.has(id) && group(j) === group(i) && (!freshOnly || fresh(id).length) ? [j] : []));
+    /** Decoys a fake could stand in for. */
+    const spots = (freshOnly: boolean) => options.flatMap((id, i) => (id !== answerId && free(i) && twins(i, freshOnly).length ? [i] : []));
+    for (let k = 0; k < count; k++) {
+      const freshOnly = spots(true).length > 0;
+      const spot = sample(spots(freshOnly), 1, this.rng)[0];
+      if (spot === undefined) break;
+      const twin = sample(twins(spot, freshOnly), 1, this.rng)[0];
+      const source = options[twin];
       const open = fresh(source);
       const n = open.length ? open[Math.floor(this.rng() * open.length)] : Math.floor(this.rng() * this.fakes.get(source)!.length);
       const id = fakeId(source, n);
-      options[swap[k]] = id;
+      sources.add(twin);
+      swapped.add(spot);
+      options[spot] = id;
       names.set(id, this.fakes.get(source)![n]);
-    });
+    }
     return names;
   }
 
@@ -922,6 +1041,52 @@ export class Engine {
   }
 
   /**
+   * Reshapes the decoys (in place) so every group on screen shows up as often
+   * as the others (two rings and two belts, four of each…), keeping the
+   * decoys' groups where it can. Groups only mix when the answer's own group
+   * runs low, so a group smaller than the rest would most likely hold the
+   * answer. Leaves the decoys be when `pool` has no such set.
+   */
+  private evenOut(answer: Item, decoys: Item[], pool: Item[]): void {
+    const options = decoys.length + 1;
+    const byGroup = new Map<string, Item[]>();
+    for (const it of pool) byGroup.set(it.group, [...(byGroup.get(it.group) ?? []), it]);
+    const siblings = byGroup.get(answer.group) ?? [];
+    byGroup.delete(answer.group);
+    const sizes = evenSizes(options, siblings.length, [...byGroup.values()].map((g) => g.length));
+    const m = sample(sizes, 1, this.rng)[0];
+    if (!m) return;
+    // Groups the decoys already favour first (look-alike names), the rest at random.
+    const onScreen = (group: string) => decoys.filter((d) => d.group === group);
+    const groups = shuffle([...byGroup.keys()].filter((g) => byGroup.get(g)!.length >= m), this.rng)
+      .sort((a, b) => onScreen(b).length - onScreen(a).length)
+      .slice(0, options / m - 1);
+    const fill = (group: string, n: number, from: Item[]) => {
+      const kept = onScreen(group).slice(0, n);
+      return [...kept, ...sample(from.filter((it) => !kept.includes(it)), n - kept.length, this.rng)];
+    };
+    const picked = [...fill(answer.group, m - 1, siblings), ...groups.flatMap((g) => fill(g, m, byGroup.get(g)!))];
+    decoys.splice(0, decoys.length, ...shuffle(picked, this.rng));
+  }
+
+  /**
+   * Groups of the options, sorted, for the question's topic. A made-up name
+   * counts under the item it copies, the group it looks like, so the topic
+   * only says what is on screen and nothing about which names are real.
+   * Empty when a group has a single option: decoys come from the answer's
+   * group first, so a lone option would most likely be the answer.
+   */
+  private groupsOf(options: string[]): string[] {
+    const counts = new Map<string, number>();
+    for (const option of options) {
+      const id = isFake(option) ? option.slice(FAKE_PREFIX.length, option.lastIndexOf(':')) : option;
+      const group = this.byId.get(id)!.group;
+      counts.set(group, (counts.get(group) ?? 0) + 1);
+    }
+    return [...counts.values()].some((n) => n === 1) ? [] : [...counts.keys()].sort();
+  }
+
+  /**
    * Builds a question from the category. Updates `s.used` when the category
    * has to start over.
    */
@@ -931,28 +1096,38 @@ export class Engine {
     const need = rules.options - 1;
 
     // Earlier answers never come back as decoys (they'd be easy to rule out).
-    // Once too few unseen items are left for a full set of options, the
-    // category starts over, except for its latest answer.
-    if (this.unusedIn(s, category).length < rules.options) {
+    // An answer needs a full set of unseen decoys from its own group, or one
+    // to share evenly with other groups (two of each, three of each…): a
+    // group smaller than the rest would most likely hold the answer. Rare
+    // groups (tablets) never mix, or one would stand out. Other items sit
+    // out; once none can be asked, the category starts over, except for its
+    // latest answer.
+    const answerable = (unused: Item[]) => {
+      const left = new Map<string, number>();
+      for (const it of unused) left.set(it.group, (left.get(it.group) ?? 0) + 1);
+      const others = (group: string) => [...left].flatMap(([g, n]) => (g === group || Object.hasOwn(RARE_GROUPS, g) ? [] : [n]));
+      return unused.filter((it) => {
+        const siblings = left.get(it.group)! - 1;
+        return siblings >= need || (weightOf(it) === 1 && evenSizes(rules.options, siblings, others(it.group)).length > 0);
+      });
+    };
+    let unused = this.unusedIn(s, category);
+    let candidates = answerable(unused);
+    if (!candidates.length) {
       const inThis = new Set(inCat.map((it) => it.id));
       const latest = s.used.findLast((id) => inThis.has(id));
       s.used = s.used.filter((id) => !inThis.has(id) || id === latest);
+      unused = this.unusedIn(s, category);
+      candidates = answerable(unused);
     }
-    const unused = this.unusedIn(s, category);
-    // A rare answer (a tablet) needs a full set of unseen decoys from its own
-    // group, or it would stand out; once its group runs that low it sits out
-    // until the category starts over.
-    const left = new Map<string, number>();
-    for (const it of unused) left.set(it.group, (left.get(it.group) ?? 0) + 1);
-    const answerable = unused.filter((it) => weightOf(it) === 1 || left.get(it.group)! > need);
-    const answer = this.weightedPick(answerable.length ? answerable : unused.length ? unused : inCat);
+    const answer = this.weightedPick(candidates.length ? candidates : unused.length ? unused : inCat);
 
     const sameGroup = unused.filter((it) => it.id !== answer.id && it.group === answer.group);
-    // Rare groups (tablets) only fill in as decoys when nothing else is left…
+    // Decoys come from the answer's own group (all rings, all bows…): a flask
+    // among tablets would stand out. Other groups only fill in when it runs
+    // too low, evened out with it, and rare groups (tablets) not even then.
     const otherGroup = unused.filter((it) => it.id !== answer.id && it.group !== answer.group && weightOf(it) === 1);
-    // …so a rare answer gets decoys from its own group, or it would stand out.
-    const ownGroup = (rules.groupFirst || weightOf(answer) !== 1) && sameGroup.length >= need;
-    const pool = ownGroup ? sameGroup : [...sameGroup, ...otherGroup];
+    const pool = sameGroup.length >= need ? sameGroup : [...sameGroup, ...otherGroup];
 
     const simCount = Math.min(pool.length, Math.round(need * rules.similarNames));
     const decoys = this.lookalikes(answer, pool, simCount, rules.options);
@@ -962,6 +1137,7 @@ export class Engine {
       const taken = new Set([answer.id, ...decoys.map((it) => it.id)]);
       decoys.push(...sample(source.filter((it) => !taken.has(it.id)), need - decoys.length, this.rng));
     }
+    if (pool !== sameGroup) this.evenOut(answer, decoys, pool);
 
     const options = shuffle([answer, ...decoys], this.rng).map((it) => it.id);
     const mode: QuestionMode = this.rng() < rules.artChance ? 'art' : 'name';
@@ -979,11 +1155,13 @@ export class Engine {
           }
         : null;
     const fakeNames = mode === 'name' ? this.mixInFakes(options, answer.id, rules.fakes, new Set(s.used)) : new Map<string, string>();
+    // Gem groups are attributes ("Intelligence"), not kinds of item.
+    const groups = answer.kind === 'gem' ? [] : this.groupsOf(options);
     const labels = options.map((id) => (mode === 'name' ? (fakeNames.get(id) ?? this.byId.get(id)!.name) : null));
     const prompt = mode === 'art' ? answer.name : null;
     // Each picture flips on its own roll, so a flipped option says nothing about the answer.
     const mirrored = Array.from({ length: mode === 'art' ? options.length : 1 }, () => rules.mirror > 0 && this.rng() < rules.mirror);
-    return { category, mode, itemId: answer.id, options, labels, prompt, veil, mirrored, askedAt, deadline, misses: [] };
+    return { category, groups, mode, itemId: answer.id, options, labels, prompt, veil, mirrored, askedAt, deadline, misses: [] };
   }
 }
 

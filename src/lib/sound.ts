@@ -46,7 +46,34 @@ export function setMuted(value: boolean) {
   updateAmbience();
 }
 
-type Bus = { ac: AudioContext; master: AudioNode; wet: AudioNode };
+/** The player's volume, 0 to 1, on top of the mix level (desktop slider). */
+let volume = (() => {
+  try {
+    const v = parseFloat(localStorage.getItem('poe2trivia.volume') ?? '');
+    return Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 1;
+  } catch {
+    return 1;
+  }
+})();
+
+export function getVolume() {
+  return volume;
+}
+
+export function setVolume(value: number) {
+  volume = Math.min(1, Math.max(0, value));
+  try {
+    localStorage.setItem('poe2trivia.volume', String(volume));
+  } catch {
+    /* ignore */
+  }
+  if (bus) bus.user.gain.setTargetAtTime(userGain(), bus.ac.currentTime, 0.03);
+}
+
+/** Squared, so the slider feels even to the ear rather than bunching up at the top. */
+const userGain = () => volume * volume;
+
+type Bus = { ac: AudioContext; master: AudioNode; user: GainNode; wet: AudioNode };
 let bus: Bus | null = null;
 const buffers = new Map<string, Promise<AudioBuffer>>();
 /** Decoded and ready to play right now. */
@@ -75,7 +102,9 @@ function audio(): Bus | null {
     shelf.gain.value = -MIX.warmth;
     const master = ac.createGain();
     master.gain.value = 0.9 * db(MIX.volume);
-    master.connect(shelf).connect(comp).connect(ac.destination);
+    const user = ac.createGain();
+    user.gain.value = userGain();
+    master.connect(shelf).connect(comp).connect(user).connect(ac.destination);
 
     const reverb = ac.createConvolver();
     reverb.buffer = hall(ac, 2.8);
@@ -83,7 +112,7 @@ function audio(): Bus | null {
     wet.gain.value = 0.5;
     wet.connect(reverb).connect(master);
 
-    bus = { ac, master, wet };
+    bus = { ac, master, user, wet };
     const files = new Set(Object.values(MOMENTS).flatMap((m) => m.layers.map((l) => l.file)));
     for (const file of files) void load(file).catch(() => {});
   }
