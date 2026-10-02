@@ -469,7 +469,9 @@
     font-size: 0.8rem;
     letter-spacing: 0.16em;
     text-transform: uppercase;
-    padding: 0.4em 1em;
+    /* Letter spacing also trails the last letter, so the right padding gives
+       that space back to keep the label optically centered. */
+    padding: 0.4em calc(1em - 0.16em) 0.4em 1em;
     color: var(--gold-hi);
     border: 1px solid var(--gold-lo);
     background: rgba(0, 0, 0, 0.4);
