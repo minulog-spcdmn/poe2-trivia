@@ -32,10 +32,44 @@ function csp(env: Record<string, string>): Plugin {
   };
 }
 
+/**
+ * The fonts the start page shows, as their built file names begin. The page
+ * is rendered by script, so the browser would only find them once the bundle
+ * has run and laid out text; preloading fetches them alongside the bundle, so
+ * the text appears in its own fonts instead of swapping from a fallback.
+ */
+const FIRST_SCREEN_FONTS = [
+  'maragsa-display-',
+  'cinzel-latin-700-normal-',
+  'eb-garamond-latin-400-normal-',
+  'eb-garamond-latin-400-italic-',
+];
+
+function preloadFonts(): Plugin {
+  return {
+    name: 'preload-fonts',
+    apply: 'build',
+    transformIndexHtml: {
+      order: 'post',
+      handler(_html, ctx) {
+        if (!ctx.bundle || !ctx.filename.endsWith('/index.html')) return;
+        const files = Object.keys(ctx.bundle).filter(
+          (f) => f.endsWith('.woff2') && FIRST_SCREEN_FONTS.some((name) => f.split('/').pop()!.startsWith(name)),
+        );
+        return files.map((f) => ({
+          tag: 'link',
+          attrs: { rel: 'preload', href: `./${f}`, as: 'font', type: 'font/woff2', crossorigin: '' },
+          injectTo: 'head' as const,
+        }));
+      },
+    },
+  };
+}
+
 export default defineConfig(({ mode }) => ({
   // Relative base so the build works on any GitHub Pages sub-path.
   base: './',
-  plugins: [svelte(), csp(loadEnv(mode, process.cwd(), 'VITE_'))],
+  plugins: [svelte(), csp(loadEnv(mode, process.cwd(), 'VITE_')), preloadFonts()],
   build: {
     rollupOptions: {
       // Legal pages are plain static pages so they work without JavaScript.

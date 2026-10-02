@@ -145,11 +145,16 @@ function ownLinear(cs: CSSStyleDeclaration): Lin | null {
   return m;
 }
 
-/** Linear map from the element's local px to the viewport, ancestors included. */
-function linearOf(node: HTMLElement): Lin | null {
+/**
+ * Linear map from the element's local px to the viewport, ancestors included.
+ * `cache` holds each element's own transform, so the tagged elements' shared
+ * ancestors are read once a pass (reading a computed transform is costly).
+ */
+function linearOf(node: HTMLElement, cache: Map<Element, Lin | null>): Lin | null {
   let m: Lin = [1, 0, 0, 1];
   for (let el: Element | null = node; el; el = el.parentElement) {
-    const own = ownLinear(getComputedStyle(el));
+    let own = cache.get(el);
+    if (own === undefined) cache.set(el, (own = ownLinear(getComputedStyle(el))));
     if (!own) return null;
     m = mul(own, m);
   }
@@ -413,16 +418,21 @@ export function measureDrops(
   viewH: number,
 ): Atlases | null {
   for (const arr of [a, b, c, d, e, off, col]) arr.fill(0);
-  const active: [HTMLElement, Mask, Lin, number][] = [];
+  const active: [HTMLElement, Mask, Lin, number, DOMRect][] = [];
+  // Per-element style reads, shared by the tagged elements' common ancestors.
+  // Nothing below changes a transform or an opacity (data-bs-drop only swaps
+  // the filter), so they hold for the whole pass.
+  const linears = new Map<Element, Lin | null>();
+  const opacities = new Map<Element, number>();
   for (const node of tagged) {
     let ok = node.isConnected && active.length < MAX_MASKS;
     const cs = ok ? getComputedStyle(node) : null;
     const decl = cs ? cs.getPropertyValue('--drop-shadow').trim() : '';
     const drops = decl ? parseDrops(decl) : [];
     ok &&= drops.length > 0 && drops.length <= DROPS_PER_MASK;
-    const lin = ok ? linearOf(node) : null;
+    const lin = ok ? linearOf(node, linears) : null;
     ok &&= !!lin;
-    const opacity = ok ? opacityOf(node) : 0;
+    const opacity = ok ? opacityOf(node, opacities) : 0;
     ok &&= opacity > 0;
     if (ok && node instanceof HTMLImageElement) ok = node.complete && node.naturalWidth > 0;
     if (ok && !(node instanceof HTMLImageElement)) ok = document.fonts?.status !== 'loading';
@@ -459,7 +469,7 @@ export function measureDrops(
       continue;
     }
     if (!node.hasAttribute('data-bs-drop')) node.setAttribute('data-bs-drop', '');
-    active.push([node, mask!, lin!, opacity]);
+    active.push([node, mask!, lin!, opacity, rect!]);
   }
 
   let atlases: Atlases | null = null;
@@ -468,8 +478,7 @@ export function measureDrops(
     atlasDirty = false;
   }
 
-  active.forEach(([node, m, lin, opacity], i) => {
-    const rect = node.getBoundingClientRect();
+  active.forEach(([node, m, lin, opacity, rect], i) => {
     const det = lin[0] * lin[3] - lin[1] * lin[2];
     a.set([rect.left + rect.width / 2, rect.top + rect.height / 2, node.offsetWidth, node.offsetHeight], i * 4);
     b.set([lin[3] / det, -lin[1] / det, -lin[2] / det, lin[0] / det], i * 4);
