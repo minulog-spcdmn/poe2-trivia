@@ -62,6 +62,10 @@ const ROOM_BUSY = 'The room is busy right now. Trying again…';
 const BUSY_RETRY_MS = 5000;
 /** A connection must introduce itself within this time. */
 const HELLO_TIMEOUT_MS = 6000;
+/** Signatures checked or made for a hello (lib/owner.ts) that take longer count as missing. */
+const PROOF_TIMEOUT_MS = 5000;
+/** Client: how long a hello under the creator's name waits for the host's challenge. */
+const CHALLENGE_WAIT_MS = 2500;
 const PING_EVERY_MS = 3000;
 /** Guests: no message from the host for this long means it's gone. */
 const HOST_SILENCE_MS = 15000;
@@ -453,8 +457,9 @@ class Session {
         if (msg.t === 'hello') {
           if (guest.playerId || guest.greeting) return;
           guest.tab = msg.tab ?? null;
-          // The hello timeout keeps running until the hello is dealt with.
-          this.handleHello(conn, guest, msg, () => clearTimeout(helloTimer));
+          // It said hello in time; the signature step has its own limit (PROOF_TIMEOUT_MS).
+          clearTimeout(helloTimer);
+          this.handleHello(conn, guest, msg);
         } else if (msg.t === 'pong') {
           const sent = guest.pings.get(msg.n);
           if (sent !== undefined) {
@@ -562,9 +567,9 @@ class Session {
    * A guest introduces themselves. The cheap refusals come first (old
    * version, kicked, too many joins), so nobody gets the host to check or
    * make a signature (lib/owner.ts) without paying for it out of the join
-   * budgets. `settled`: the hello is dealt with, one way or the other.
+   * budgets.
    */
-  private handleHello(conn: DataConnection, guest: Guest, msg: Extract<ClientMsg, { t: 'hello' }>, settled: () => void) {
+  private handleHello(conn: DataConnection, guest: Guest, msg: Extract<ClientMsg, { t: 'hello' }>) {
     if (msg.v !== PROTOCOL_VERSION) throw new ActionError('Your game version is out of date. Please reload the page.');
     const known = !!this.secretToPlayer.get(msg.secret);
     // A kicked player stays out, under their old token or (as a newcomer) their old name.
@@ -580,10 +585,16 @@ class Session {
       return;
     }
     guest.greeting = true;
-    void this.ownerProofs(guest, msg).then(({ owner, proof }) => {
+    // Signatures take milliseconds; one that hangs counts as no proof, so the guest still hears why.
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<{ owner: boolean; proof: null }>((resolve) => {
+      timer = setTimeout(() => resolve({ owner: false, proof: null }), PROOF_TIMEOUT_MS);
+    });
+    void Promise.race([this.ownerProofs(guest, msg), timeout]).then(({ owner, proof }) => {
+      clearTimeout(timer);
       guest.greeting = false;
-      settled();
-      if (!this.state || this.guests.get(conn) !== guest) return;
+      // Gone meanwhile: the attempt is over, so it gives its join allowance back like a refusal.
+      if (!this.state || this.guests.get(conn) !== guest) return this.joins.rejected(msg.secret, known);
       try {
         this.admit(conn, guest, msg.secret, msg.name, known, owner, proof);
       } catch (err) {
@@ -597,19 +608,26 @@ class Session {
   /**
    * The signatures a hello calls for: whether a guest using the site
    * creator's name proved it's them, and, when this host holds the creator's
-   * key, its proof for the guest (sent whatever its name is now, so it still
-   * counts if the host takes the name later).
+   * key, its proof for the guest's nonce (sent whatever the host's name is
+   * now, so it still counts if the host takes the name later; `signAsOwner`
+   * settles whether this browser holds the key, even right after a refresh).
    */
   private async ownerProofs(guest: Guest, msg: Extract<ClientMsg, { t: 'hello' }>): Promise<{ owner: boolean; proof: string | null }> {
     const [owner, proof] = await Promise.all([
       msg.owner && looksLikeOwner(cleanName(msg.name)) ? verifyOwner(joinClaim(this.code, msg.secret, guest.nonce), msg.owner) : false,
-      msg.tab && hasOwnerKey() ? signAsOwner(hostClaim(this.code, msg.tab)) : null,
+      msg.nonce ? signAsOwner(hostClaim(this.code, msg.nonce)) : null,
     ]);
     return { owner, proof };
   }
 
   /** Lets a guest in, once past the checks in `handleHello`; throws why not. */
   private admit(conn: DataConnection, guest: Guest, secret: string, name: string, wasKnown: boolean, owner: boolean, proof: string | null) {
+    // Kicked while their signature was being checked: they stay out.
+    if (this.priv.bannedSecrets.includes(secret) || this.priv.bannedPeers.includes(conn.peer)) {
+      this.joins.rejected(secret, wasKnown);
+      this.dismiss(conn, { t: 'kicked' });
+      return;
+    }
     // Another connection of theirs may have got in meanwhile.
     const known = this.secretToPlayer.get(secret);
     const playerId = known ?? randomToken(12);
@@ -822,26 +840,35 @@ class Session {
     const conn = this.peer.connect(PEER_PREFIX + this.code, { reliable: true });
     this.hostConn = conn;
     stale?.close();
+    // New for this connection: a host holding the creator's key signs it in the welcome.
+    const asked = randomToken(24);
     // The site's creator proves it's them, or the host won't let them use their
-    // name: they sign the host's challenge, so their hello waits for it.
+    // name: they sign the host's challenge, so a hello under that name (judged
+    // as the host will see it) waits for it, though not forever: a host on an
+    // older build never sends one, and should still get to say it's out of date.
+    const proving = looksLikeOwner(cleanName(this.joinName));
     let opened = false;
     let nonce: string | null = null;
+    let waited = false;
     let sent = false;
     const hello = async () => {
-      if (sent || !opened) return;
-      // Judged on the name as the host will see it.
-      const proving = looksLikeOwner(cleanName(this.joinName)) && (await checkOwnerKey()) === 'ok';
-      if (sent || (proving && !nonce)) return;
+      if (sent || !opened || (proving && !nonce && !waited)) return;
       sent = true;
       const secret = await this.helloSecret;
       if (!secret) return;
+      // Null when this browser doesn't hold the key: the host then says why the name isn't allowed.
       const owner = proving && nonce ? await signAsOwner(joinClaim(this.code, secret, nonce)) : null;
       if (this.hostConn === conn && conn.open)
-        conn.send({ t: 'hello', secret, name: this.joinName, v: PROTOCOL_VERSION, tab: myTab, ...(owner && { owner }) });
+        conn.send({ t: 'hello', secret, name: this.joinName, v: PROTOCOL_VERSION, tab: myTab, nonce: asked, ...(owner && { owner }) });
     };
     conn.on('open', () => {
       opened = true;
       void hello();
+      if (proving)
+        setTimeout(() => {
+          waited = true;
+          void hello();
+        }, CHALLENGE_WAIT_MS);
     });
     // A host that vanishes (crashed tab, lost Wi-Fi) often never fires 'close'.
     // It pings every few seconds, so silence means the connection is dead.
@@ -866,7 +893,7 @@ class Session {
           break;
         case 'welcome':
           this.myPlayerId = msg.playerId;
-          this.hostIsOwner = verifyOwner(hostClaim(this.code, myTab), msg.owner);
+          this.hostIsOwner = verifyOwner(hostClaim(this.code, asked), msg.owner);
           this.checkedHostName = null;
           break;
         case 'state':

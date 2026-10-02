@@ -2,6 +2,8 @@
 // "zalgo" stacks, and catch names that impersonate the host, another player or
 // the site's creator.
 
+import { CREATOR } from './site.ts';
+
 export const MAX_NAME = 20;
 
 const RESERVED = new Set(['host', 'admin', 'administrator', 'system', 'server', 'moderator', 'mod', 'you', 'ggg']);
@@ -39,6 +41,8 @@ export function cleanName(raw: unknown): string {
  */
 const OWNER_CONFUSABLES: Record<string, string> = {
   ζ: 'z', є: 'e', ø: 'o', ɵ: 'o', ə: 'e', ɛ: 'e', ƶ: 'z', ȥ: 'z', ɀ: 'z', ʐ: 'z', ʑ: 'z', ᴢ: 'z', ᴏ: 'o', ᴇ: 'e', '2': 'z',
+  // Armenian, Coptic, Cherokee, Lisu, Tifinagh and other letters drawn like z, o or e (lowercased).
+  օ: 'o', ⲟ: 'o', ꮓ: 'z', ꭼ: 'e', ꮻ: 'o', ꓜ: 'z', ꓳ: 'o', ꓰ: 'e', ⵔ: 'o', ꝋ: 'o', ℮: 'e',
 };
 
 /** What a name "looks like": lowercase ASCII-ish letters only. `extra`: more look-alikes to fold. */
@@ -61,14 +65,38 @@ export function nameSkeleton(name: string, extra: Record<string, string> = {}): 
  * (Zoe, z0ë, ZOE_4RCANA, Zoë Arcana). Names that merely contain it don't
  * count (Zoey, Ozoemena).
  */
-const OWNER_SKELETONS = new Set(['zoe', 'zoearcana']);
+const OWNER_SKELETONS = [CREATOR, CREATOR.split(/[^\p{L}\p{N}]+/u)[0]].map((n) => nameSkeleton(n, OWNER_CONFUSABLES));
 
 /**
- * Whether a name could pass for the site's creator. Digits and symbols are
- * tried both as the letters they look like (z0e) and as left out (zoe_arcana2, Zoe!).
+ * Whether some reading of `name` folds to `target`: letters as they look,
+ * each digit or symbol either as the letter it looks like (z0e) or left out
+ * (zoe_arcana2, Zoe!), in any mix (Z0e1), and doubled letters counted once,
+ * as in `nameSkeleton`.
  */
-export const looksLikeOwner = (name: string) =>
-  [name, name.replace(/[^\p{L}\p{M}]/gu, '')].some((n) => OWNER_SKELETONS.has(nameSkeleton(n, OWNER_CONFUSABLES)));
+function readsAs(name: string, target: string): boolean {
+  // How much of the target the letters so far spell out, for each way of reading them.
+  let spelled = new Set([0]);
+  for (const c of name.normalize('NFKD').toLowerCase()) {
+    if (/\p{M}/u.test(c)) continue;
+    const folded = (CONFUSABLES[c] ?? OWNER_CONFUSABLES[c] ?? c).replace('i', 'l');
+    const letter = /^[a-z]$/.test(folded) ? folded : null;
+    // A letter has to fit (other letters drop out, as in the skeleton); anything else may also be left out.
+    const readings = /\p{L}/u.test(c) ? [letter] : [null, letter];
+    const next = new Set<number>();
+    for (const n of spelled)
+      for (const r of readings) {
+        if (r === null) next.add(n);
+        else if (n > 0 && r === target[n - 1]) next.add(n);
+        else if (r === target[n]) next.add(n + 1);
+      }
+    spelled = next;
+    if (!spelled.size) return false;
+  }
+  return spelled.has(target.length);
+}
+
+/** Whether a name could pass for the site's creator. */
+export const looksLikeOwner = (name: string) => OWNER_SKELETONS.some((target) => readsAs(name, target));
 
 /**
  * Returns why a name is not allowed, or null if it's fine. `owner`: the

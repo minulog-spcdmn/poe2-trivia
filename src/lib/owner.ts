@@ -5,9 +5,9 @@
 // room code and a nonce the checker picked, so a copied one is useless:
 //   • joining: the host sends every new connection a nonce, and checks the
 //     guest's signature over it (with the room code and the guest's token);
-//   • hosting: each guest checks the host's signature over the room code and
-//     the guest's own tab id, and leaves a room whose host uses the name
-//     without one;
+//   • hosting: each guest sends a nonce with its hello, checks the host's
+//     signature over it (with the room code), and leaves a room whose host
+//     uses the name without one;
 //   • the room list: each browser looking checks the listing's signature over
 //     the room code and a nonce it picked, and hides the room otherwise.
 // A new key: node scripts/owner-key.mjs
@@ -36,8 +36,8 @@ export const isNonce = (v: unknown): v is string => typeof v === 'string' && NON
 
 /** What the creator signs to join room `code`, with their token for it, for the connection the host sent `nonce`. */
 export const joinClaim = (code: string, token: string, nonce: string) => `poe2.quest join ${code} ${token} ${nonce}`;
-/** What the creator signs, as host of room `code`, for the guest whose tab is `tab`. */
-export const hostClaim = (code: string, tab: string) => `poe2.quest host ${code} ${tab}`;
+/** What the creator signs, as host of room `code`, for the guest connection that sent `nonce`. */
+export const hostClaim = (code: string, nonce: string) => `poe2.quest host ${code} ${nonce}`;
 /** What the creator's room listing signs for a browser that asked with `nonce`. */
 export const listClaim = (code: string, nonce: string) => `poe2.quest list ${code} ${nonce}`;
 
@@ -49,17 +49,21 @@ const subtle = () => globalThis.crypto?.subtle ?? null;
 /** Imported once; a failed import isn't kept, so the next check tries again. */
 let publicKey: Promise<CryptoKey> | null = null;
 
+function ownerPublicKey(s: SubtleCrypto): Promise<CryptoKey> {
+  if (!publicKey) {
+    const importing = s.importKey('jwk', { kty: 'EC', crv: 'P-256', ...OWNER_PUBLIC_KEY }, ALGORITHM, false, ['verify']);
+    publicKey = importing;
+    importing.catch(() => publicKey === importing && (publicKey = null));
+  }
+  return publicKey;
+}
+
 /** Whether `proof` is the creator's signature of `claim`. */
 export async function verifyOwner(claim: string, proof: unknown): Promise<boolean> {
   const s = subtle();
   if (!s || !isProof(proof)) return false;
   try {
-    if (!publicKey) {
-      const importing = s.importKey('jwk', { kty: 'EC', crv: 'P-256', ...OWNER_PUBLIC_KEY }, ALGORITHM, false, ['verify']);
-      publicKey = importing;
-      importing.catch(() => publicKey === importing && (publicKey = null));
-    }
-    return await s.verify(SIGNING, await publicKey, fromBase64url(proof), bytes(claim));
+    return await s.verify(SIGNING, await ownerPublicKey(s), fromBase64url(proof), bytes(claim));
   } catch {
     return false;
   }
@@ -81,13 +85,12 @@ export async function importOwnerKey(secret: string): Promise<CryptoKey | null |
     // Some browsers check that the secret fits the public half right here.
     return (err as Error)?.name === 'DataError' ? null : undefined;
   }
-  // Others don't: a test signature does.
+  // Others don't: a test signature does. Only a clean "doesn't verify" means
+  // the key doesn't fit; an error along the way says nothing.
   try {
-    const test = 'poe2.quest key check';
-    const sig = base64url(new Uint8Array(await s.sign(SIGNING, key, bytes(test))));
-    if (await verifyOwner(test, sig)) return key;
-    // A failure to verify our own signature, rather than a wrong one, says nothing.
-    return publicKey ? null : undefined;
+    const test = bytes('poe2.quest key check');
+    const sig = await s.sign(SIGNING, key, test);
+    return (await s.verify(SIGNING, await ownerPublicKey(s), sig, test)) ? key : null;
   } catch {
     return undefined;
   }

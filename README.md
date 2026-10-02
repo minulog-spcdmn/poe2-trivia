@@ -150,8 +150,10 @@ with that in mind. Guests, on the other hand, are treated as untrusted:
   hold the secret half of a signing key (`src/lib/owner.ts`), and the name
   needs a fresh signature tied to the room: the host checks it when they
   join, guests check it from a host using the name (and leave if it's
-  missing), and the room list hides a room whose host can't prove it. This
-  is the one place guests don't simply trust the host.
+  missing), and the room list hides a room whose host can't prove it. Guests
+  can only check the host's own name this way: a host running a modified
+  copy of the game could still show the name on another seat in its own
+  room, as it could show anything else there.
 - **Public room list.** Entries come from strangers, so each one is
   validated. The list and the scan are capped, and a room answers only a
   limited number of listing probes at a time.

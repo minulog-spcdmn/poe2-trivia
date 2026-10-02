@@ -13,8 +13,9 @@ export type ClientMsg =
    * `tab`: random per page load, so the host can tell another tab from this one reconnecting.
    * `owner`: the site's creator proving it's them (lib/owner.ts), so they may use their name;
    * it signs the host's challenge, so it's only sent once that has arrived.
+   * `nonce`: new for each connection; a host holding the creator's key signs it in the welcome.
    */
-  | { t: 'hello'; secret: string; name: string; v: number; tab?: string; owner?: string }
+  | { t: 'hello'; secret: string; name: string; v: number; tab?: string; owner?: string; nonce?: string }
   | { t: 'action'; action: Action }
   | { t: 'pong'; n: number };
 
@@ -65,6 +66,7 @@ export function parseClientMsg(raw: unknown): ClientMsg | null {
         return null;
       if (raw.tab !== undefined && !(isStr(raw.tab, 64) && TAB.test(raw.tab))) return null;
       if (raw.owner !== undefined && !isProof(raw.owner)) return null;
+      if (raw.nonce !== undefined && !isNonce(raw.nonce)) return null;
       return {
         t: 'hello',
         secret: raw.secret,
@@ -72,6 +74,7 @@ export function parseClientMsg(raw: unknown): ClientMsg | null {
         v: raw.v,
         ...(raw.tab !== undefined && { tab: raw.tab }),
         ...(raw.owner !== undefined && { owner: raw.owner }),
+        ...(raw.nonce !== undefined && { nonce: raw.nonce }),
       };
     case 'pong':
       return isInt(raw.n, 0, Number.MAX_SAFE_INTEGER) ? { t: 'pong', n: raw.n } : null;
