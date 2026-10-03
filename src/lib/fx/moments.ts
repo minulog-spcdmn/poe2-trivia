@@ -183,6 +183,20 @@ export function patchMote(at: Point) {
   }
 }
 
+/** A mote drifting up off a seam where the veiled item is still missing a part. */
+export function veilMote(at: Point) {
+  if (!fxActive()) return;
+  embers(at, {
+    count: 1,
+    colors: [C.gold, C.goldPale],
+    size: [0.8, 1.8],
+    life: [0.8, 1.6],
+    rise: [12, 40],
+    scatter: 12,
+    turbulence: 60,
+  });
+}
+
 /** A patch has fully fizzled in. */
 export function patchSettled(patch: Element) {
   if (!fxActive()) return;

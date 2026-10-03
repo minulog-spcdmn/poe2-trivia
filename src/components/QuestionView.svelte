@@ -4,6 +4,7 @@
   import { AUTO_NEXT_MS, autoNextLeft, isFake, questionTopic } from '../lib/game';
   import { shown } from '../lib/media.svelte';
   import { materialize } from '../lib/materialize';
+  import { frontier } from '../lib/frontier';
   import { itemImage } from '../lib/ui';
   import { sfx } from '../lib/sound';
   import TimerRing from './TimerRing.svelte';
@@ -409,6 +410,7 @@
                     use:appear={p.url}
                   ></canvas>
                 {/each}
+                <canvas class="frontier" aria-hidden="true" use:frontier={{ w: v.w, h: v.h, patches }}></canvas>
               </span>
               </span>
             {:else if media?.art}
@@ -646,6 +648,21 @@
   .patch {
     position: absolute;
     display: block;
+  }
+  /* The glow along seams where the item is still missing a part
+     (lib/frontier.ts), added as light over the patches. */
+  .frontier {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    mix-blend-mode: screen;
+  }
+  @supports (mix-blend-mode: plus-lighter) {
+    .frontier {
+      mix-blend-mode: plus-lighter;
+    }
   }
   .loading {
     width: 28px;

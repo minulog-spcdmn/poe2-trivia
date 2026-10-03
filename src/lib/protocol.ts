@@ -30,8 +30,11 @@ export type HostMsg =
 export type MediaMsg =
   | { t: 'art'; qid: number; w: number; h: number; data: ArrayBuffer }
   | { t: 'veil'; qid: number; w: number; h: number }
-  | { t: 'patch'; qid: number; i: number; x: number; y: number; w: number; h: number; data: ArrayBuffer }
+  | { t: 'patch'; qid: number; i: number; x: number; y: number; w: number; h: number; data: ArrayBuffer; edges: ArrayBuffer }
   | { t: 'option'; qid: number; index: number; data: ArrayBuffer };
+
+/** A patch's edges: (x, y, patch) triples of 16-bit numbers, a few thousand at most. */
+const MAX_EDGE_BYTES = 6 * 16384;
 
 /** Roughly how big a decoded message is; guests never need more than this. */
 const MAX_CLIENT_MSG_CHARS = 2000;
@@ -114,7 +117,8 @@ export function parseHostMsg(raw: unknown): HostMsg | null {
       return qid && isInt(raw.w, 1, 4096) && isInt(raw.h, 1, 4096) ? (raw as HostMsg) : null;
     case 'patch':
       return qid && bin(raw.data) && isInt(raw.i, 0, 255) && isInt(raw.x, 0, 4096) && isInt(raw.y, 0, 4096) &&
-        isInt(raw.w, 1, 4096) && isInt(raw.h, 1, 4096)
+        isInt(raw.w, 1, 4096) && isInt(raw.h, 1, 4096) && bin(raw.edges) &&
+        (raw.edges as ArrayBuffer).byteLength % 6 === 0 && (raw.edges as ArrayBuffer).byteLength <= MAX_EDGE_BYTES
         ? (raw as HostMsg)
         : null;
     case 'option':

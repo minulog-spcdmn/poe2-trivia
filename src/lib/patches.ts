@@ -40,6 +40,13 @@ export interface RawPatch {
   h: number;
   /** RGBA, w × h: the patch's pixels, everything else transparent. */
   pixels: Uint8ClampedArray;
+  /**
+   * Where the item carries on into another patch: (x, y, patch) triples, x and
+   * y relative to this patch, for each of its own pixels that touches a pixel
+   * of that other patch (`patch` is its index in the result). Guests use it to
+   * show where something is still missing.
+   */
+  edges: Uint16Array;
 }
 
 /** Pixels at or below this alpha count as transparent. */
@@ -121,6 +128,9 @@ export function cutPatches(rgba: Uint8ClampedArray, W: number, H: number, size: 
     if (x > x1[k]) x1[k] = x;
     if (y > y1[k]) y1[k] = y;
   }
+  // Seeds can end up with no pixels; the rest are numbered as they come out.
+  const index = new Int16Array(n).fill(-1);
+  for (let k = 0, m = 0; k < n; k++) if (x1[k] >= 0) index[k] = m++;
   const out: RawPatch[] = [];
   for (let k = 0; k < n; k++) {
     if (x1[k] < 0) continue;
@@ -129,26 +139,33 @@ export function cutPatches(rgba: Uint8ClampedArray, W: number, H: number, size: 
     const w = Math.min(W - 1, x1[k] + 1) - px + 1;
     const h = Math.min(H - 1, y1[k] + 1) - py + 1;
     const pixels = new Uint8ClampedArray(w * h * 4);
+    const edges: number[] = [];
     for (let y = 0; y < h; y++) {
       for (let x = 0; x < w; x++) {
         const gx = px + x;
         const gy = py + y;
         const g = gy * W + gx;
         if (label[g] < 0) continue;
-        let mine = label[g] === k;
-        for (let dy = -1; dy <= 1 && !mine; dy++) {
-          for (let dx = -1; dx <= 1 && !mine; dx++) {
+        const own = label[g] === k;
+        let mine = own;
+        const others: number[] = [];
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
             const nx = gx + dx;
             const ny = gy + dy;
-            if (nx >= 0 && ny >= 0 && nx < W && ny < H && label[ny * W + nx] === k) mine = true;
+            if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+            const l = label[ny * W + nx];
+            if (l === k) mine = true;
+            else if (l >= 0 && !others.includes(l)) others.push(l);
           }
         }
         if (!mine) continue;
         const o = (y * w + x) * 4;
         pixels.set(rgba.subarray(g * 4, g * 4 + 4), o);
+        if (own) for (const l of others) edges.push(x, y, index[l]);
       }
     }
-    out.push({ x: px, y: py, w, h, pixels });
+    out.push({ x: px, y: py, w, h, pixels, edges: Uint16Array.from(edges) });
   }
   return out;
 }

@@ -61,3 +61,21 @@ test('the same seed cuts the same patches', () => {
 test('a fully transparent picture has no patches', () => {
   assert.deepEqual(cutPatches(new Uint8ClampedArray(20 * 20 * 4), 20, 20, 5, 1), []);
 });
+
+test('edges mark where a patch meets another, from both sides', () => {
+  const W = 90;
+  const H = 120;
+  const patches = cutPatches(ellipse(W, H), W, H, 5, 321);
+  const meets = new Set<string>();
+  patches.forEach((p, k) => {
+    assert.equal(p.edges.length % 3, 0);
+    assert.ok(p.edges.length > 0, `patch ${k} touches nothing`);
+    for (let e = 0; e < p.edges.length; e += 3) {
+      const [x, y, other] = [p.edges[e], p.edges[e + 1], p.edges[e + 2]];
+      assert.ok(other < patches.length && other !== k);
+      assert.ok(x < p.w && y < p.h && p.pixels[(y * p.w + x) * 4 + 3] > 0, 'an edge lies on the patch');
+      meets.add(`${k}-${other}`);
+    }
+  });
+  for (const m of meets) assert.ok(meets.has(m.split('-').reverse().join('-')), `${m} one-sided`);
+});

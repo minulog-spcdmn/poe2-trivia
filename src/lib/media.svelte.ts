@@ -16,6 +16,8 @@ export interface Patch {
   w: number;
   h: number;
   data: ArrayBuffer;
+  /** Where the item carries on into other patches (see RawPatch.edges). */
+  edges: ArrayBuffer;
 }
 
 /** A veiled picture's size; its patches are placed on it. */
@@ -161,12 +163,12 @@ export async function prepareMedia(q: Question, grayscale: boolean): Promise<Pre
   const order = seededOrder(patches.length, q.veil.seed);
   out.patches = await Promise.all(
     order.map(async (i) => {
-      const { x, y, w, h, pixels } = patches[i];
+      const { x, y, w, h, pixels, edges } = patches[i];
       const piece = document.createElement('canvas');
       piece.width = w;
       piece.height = h;
       piece.getContext('2d')!.putImageData(new ImageData(pixels as Uint8ClampedArray<ArrayBuffer>, w, h), 0, 0);
-      return { i, x, y, w, h, data: await encode(piece, true) };
+      return { i, x, y, w, h, data: await encode(piece, true), edges: edges.buffer as ArrayBuffer };
     }),
   );
   return out;
@@ -204,6 +206,15 @@ export interface ShownPatch {
   w: number;
   h: number;
   url: string;
+  /** (x, y, patch) triples: where this patch meets another (see RawPatch.edges). */
+  edges: Uint16Array;
+}
+
+/** Binary from the wire (an ArrayBuffer or a view of one) as 16-bit numbers. */
+function uint16s(data: ArrayBuffer | ArrayBufferView): Uint16Array {
+  const bytes = data instanceof ArrayBuffer ? new Uint8Array(data) : new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+  // Copied, so the numbers start on an even byte whatever the view's offset.
+  return new Uint16Array(bytes.slice(0, bytes.length & ~1).buffer);
 }
 
 class Shown {
@@ -244,7 +255,10 @@ class Shown {
         this.veil = { w: m.w, h: m.h };
         break;
       case 'patch':
-        this.patches = { ...this.patches, [m.i]: { i: m.i, x: m.x, y: m.y, w: m.w, h: m.h, url: this.url(m.data) } };
+        this.patches = {
+          ...this.patches,
+          [m.i]: { i: m.i, x: m.x, y: m.y, w: m.w, h: m.h, url: this.url(m.data), edges: uint16s(m.edges) },
+        };
         break;
       case 'option':
         this.options = { ...this.options, [m.index]: this.url(m.data) };

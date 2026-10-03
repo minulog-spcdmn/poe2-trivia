@@ -1,24 +1,36 @@
 // A patch of veiled art fizzles in. Its visible pixels appear grain by grain
-// in a noisy order: each one flares up as a hot glint, then the patch glows
-// as a golden silhouette that cools into the picture. Motes of light lift off
-// wherever grains are appearing. Transparent pixels are never touched, so the
-// magic keeps to the item's own shape.
+// in a noisy order. A scatter of twinkling sparks runs just ahead of where
+// grains are appearing; each grain flares up as a hot glint and settles into
+// the picture lit from within by golden light, which then slowly cools.
+// Motes of light lift off wherever grains are appearing. Transparent pixels
+// are never touched, so the magic keeps to the item's own shape.
 
 import { valueNoise } from './patches';
 import { patchIgnites, patchMote, patchSettled } from './fx/moments';
 
 /** How long a patch takes to fizzle in, ms. */
 const DURATION = 1000;
-/** How long each grain glints before it settles, and how long the glow takes to cool, as fractions of the fizzle. */
-const GLINT = 0.08;
-const AFTERGLOW = 0.35;
+/**
+ * As fractions of the fizzle: how far ahead of the appearing grains sparks
+ * twinkle, how long each grain glints, and how long its glow takes to cool.
+ */
+const AHEAD = 0.16;
+const GLINT = 0.07;
+const AFTERGLOW = 0.45;
+/** Share of the pixels that twinkle as sparks before they appear. */
+const SPARKLY = 0.12;
 /** Motes per second while grains are appearing. */
 const MOTES = 50;
 /** Fizzles at once; past this (a picture arriving with many patches in) patches just fade in. */
 const MAX_FIZZLING = 10;
 
-const HOT = [255, 248, 228];
-const GOLD = [255, 192, 96];
+const HOT = [255, 250, 236];
+/** The inner light, added to the art: pale gold while hot, cooling to amber. */
+const LIGHT_HOT = [235, 205, 140];
+const LIGHT_COOL = [150, 80, 18];
+/** The mist the item gathers out of, and how thick it gets. */
+const MIST = [255, 196, 110];
+const MIST_ALPHA = 0.4;
 
 const reduce = typeof matchMedia === 'function' ? matchMedia('(prefers-reduced-motion: reduce)') : null;
 let fizzling = 0;
@@ -95,8 +107,12 @@ export function materialize(canvas: HTMLCanvasElement, url: string) {
     });
     for (const i of lit) px[i * 4 + 3] = 0;
     ctx.putImageData(art, 0, 0);
+    // Some pixels twinkle as sparks before they appear, each at its own pace.
+    const twinkle = new Uint8Array(lit.length);
+    for (let j = 0; j < lit.length; j++) if (Math.random() < SPARKLY) twinkle[j] = 1 + Math.floor(Math.random() * 255);
     let settled = 0;
     let shown = 0;
+    let ahead = 0;
 
     const end = 1 + GLINT + AFTERGLOW;
     let start = 0;
@@ -118,22 +134,39 @@ export function materialize(canvas: HTMLCanvasElement, url: string) {
         px[o + 3] = src[o + 3];
       }
       while (shown < lit.length && order[shown] <= t) shown++;
+      while (ahead < lit.length && order[ahead] <= t + AHEAD) ahead++;
+      // Ahead of the grains a faint golden mist gathers in the item's shape,
+      // with sparks twinkling in and out of it, brighter as the grains near.
+      for (let j = shown; j < ahead; j++) {
+        const o = lit[j] * 4;
+        const near = 1 - (order[j] - t) / AHEAD;
+        if (twinkle[j]) {
+          const tw = 0.5 + 0.5 * Math.sin(now / 38 + twinkle[j]);
+          px[o] = HOT[0];
+          px[o + 1] = HOT[1];
+          px[o + 2] = HOT[2];
+          px[o + 3] = src[o + 3] * near * near * tw;
+        } else {
+          px[o] = MIST[0];
+          px[o + 1] = MIST[1];
+          px[o + 2] = MIST[2];
+          px[o + 3] = src[o + 3] * MIST_ALPHA * near * near;
+        }
+      }
       for (let j = settled; j < shown; j++) {
         const d = t - order[j];
         const o = lit[j] * 4;
         if (d < GLINT) {
-          // Appearing: a hot glint.
-          px[o] = HOT[0];
-          px[o + 1] = HOT[1];
-          px[o + 2] = HOT[2];
-          px[o + 3] = src[o + 3] * (d / GLINT);
+          // Appearing: a hot glint that settles into the lit picture.
+          const u = d / GLINT;
+          for (let c = 0; c < 3; c++) px[o + c] = HOT[c] + (src[o + c] + LIGHT_HOT[c] - HOT[c]) * u;
+          px[o + 3] = src[o + 3] * (0.4 + 0.6 * u);
         } else {
-          // In: golden, cooling into the picture.
+          // In: the picture, lit from within by light that cools from pale
+          // gold to amber and fades, so the art's detail shows throughout.
           const g = 1 - (d - GLINT) / AFTERGLOW;
-          const k = g * g * 0.85;
-          px[o] = src[o] + (GOLD[0] + (HOT[0] - GOLD[0]) * g - src[o]) * k;
-          px[o + 1] = src[o + 1] + (GOLD[1] + (HOT[1] - GOLD[1]) * g - src[o + 1]) * k;
-          px[o + 2] = src[o + 2] + (GOLD[2] + (HOT[2] - GOLD[2]) * g - src[o + 2]) * k;
+          const k = g * g;
+          for (let c = 0; c < 3; c++) px[o + c] = src[o + c] + (LIGHT_COOL[c] + (LIGHT_HOT[c] - LIGHT_COOL[c]) * g) * k;
           px[o + 3] = src[o + 3];
         }
       }
