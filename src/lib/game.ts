@@ -15,52 +15,94 @@ export interface Item {
   kind: 'unique' | 'gem';
 }
 
-export type Difficulty = 'cruel' | 'merciless' | 'eternal';
+/** The three ready-made difficulties. */
+export type Preset = 'cruel' | 'merciless' | 'eternal';
+/** A preset, or the host's own mix of the knobs. */
+export type Difficulty = Preset | 'custom';
 
 /** Name the item from its art, or pick the right art for a name. */
 export type QuestionMode = 'name' | 'art';
 
-export interface DifficultyRules {
+/** How the tiles over the art lift: not at all, quickly (5×5) or slowly (7×7). */
+export type VeilSpeed = 'off' | 'fast' | 'slow';
+
+/** What a difficulty is made of: each knob takes one of the values in `KNOB_STEPS`. */
+export interface Knobs {
   options: number;
   /** Share of decoys picked for having a name that looks like the answer. */
   similarNames: number;
+  /** Decoys swapped for made-up names on "name" questions. */
+  fakes: number;
   /** Chance of an "art" question instead of a "name" question. */
   artChance: number;
-  /** Art is hidden under tiles that lift one by one; fraction of the timer it takes. */
-  veil: { size: number; share: number } | null;
+  /** Art hidden under tiles that lift one by one (presets: race only). */
+  veil: VeilSpeed;
   /** "Art" question pictures are shown without colour. */
   grayscale: boolean;
   /** Chance of each picture being shown flipped left to right. */
   mirror: number;
   /** How many turns a chosen category stays locked. */
   lockout: number;
-  /** Decoys swapped for made-up names on "name" questions. */
-  fakes: number;
 }
 
-export const DIFFICULTIES: Record<Difficulty, DifficultyRules> = {
-  cruel: { options: 4, similarNames: 0, artChance: 0.4, veil: null, grayscale: false, mirror: 0, lockout: 2, fakes: 0 },
-  merciless: {
-    options: 6,
-    similarNames: 0.5,
-    artChance: 0.4,
-    veil: { size: 5, share: 0.55 },
-    grayscale: false,
-    mirror: 0,
-    lockout: 3,
-    fakes: 0,
-  },
-  eternal: {
-    options: 8,
-    similarNames: 1,
-    artChance: 0.5,
-    veil: { size: 7, share: 0.7 },
-    grayscale: true,
-    mirror: 0.3,
-    lockout: 4,
-    fakes: 2,
-  },
+/** The values each knob can take, easiest first. */
+export const KNOB_STEPS = {
+  options: [4, 6, 8],
+  similarNames: [0, 0.5, 1],
+  fakes: [0, 1, 2],
+  artChance: [0, 0.4, 0.5, 1],
+  veil: ['off', 'fast', 'slow'],
+  grayscale: [false, true],
+  mirror: [0, 0.3],
+  lockout: [0, 1, 2, 3, 4],
+} as const satisfies { [K in keyof Knobs]: readonly Knobs[K][] };
+
+export const PRESETS: Record<Preset, Knobs> = {
+  cruel: { options: 4, similarNames: 0, fakes: 0, artChance: 0.4, veil: 'off', grayscale: false, mirror: 0, lockout: 2 },
+  merciless: { options: 6, similarNames: 0.5, fakes: 0, artChance: 0.4, veil: 'fast', grayscale: false, mirror: 0, lockout: 3 },
+  eternal: { options: 8, similarNames: 1, fakes: 2, artChance: 0.5, veil: 'slow', grayscale: true, mirror: 0.3, lockout: 4 },
 };
+
+/** Tile grid size, and the share of the timer it takes the last tile to lift. */
+const VEILS: Record<VeilSpeed, { size: number; share: number } | null> = {
+  off: null,
+  fast: { size: 5, share: 0.55 },
+  slow: { size: 7, share: 0.7 },
+};
+
+/** The knobs as the engine uses them. */
+export interface DifficultyRules extends Omit<Knobs, 'veil'> {
+  /** Art is hidden under tiles that lift one by one; fraction of the timer it takes. */
+  veil: { size: number; share: number } | null;
+}
+
+/** Knobs from anywhere (an action, an old save): each one off the allowed steps takes its value in `fallback`. */
+export function cleanKnobs(raw: unknown, fallback: Knobs = PRESETS[DEFAULT_PRESET]): Knobs {
+  const o = typeof raw === 'object' && raw !== null ? (raw as Record<string, unknown>) : {};
+  const out = { ...fallback } as Record<keyof Knobs, unknown>;
+  for (const k of Object.keys(KNOB_STEPS) as (keyof Knobs)[]) {
+    if ((KNOB_STEPS[k] as readonly unknown[]).includes(o[k])) out[k] = o[k];
+  }
+  return out as unknown as Knobs;
+}
+
+/** One step harder on every knob that makes a question harder (deathmatch on a custom difficulty). */
+function harderKnobs(k: Knobs): Knobs {
+  const up = <K extends keyof Knobs>(key: K): Knobs[K] => {
+    const steps = KNOB_STEPS[key] as unknown as readonly Knobs[K][];
+    return steps[Math.min(steps.length - 1, steps.indexOf(k[key]) + 1)];
+  };
+  // The question mix and lockout stay, and a veil the host turned off stays off.
+  return {
+    ...k,
+    options: up('options'),
+    similarNames: up('similarNames'),
+    fakes: up('fakes'),
+    veil: k.veil === 'off' ? 'off' : up('veil'),
+    grayscale: true,
+    mirror: up('mirror'),
+  };
+}
 
 /**
  * Groups that come up less often (relative weight when picking the answer),
@@ -149,7 +191,7 @@ export function isFake(optionId: string): boolean {
 
 /** A known difficulty (its own key, so names like "toString" don't count). */
 export function isDifficulty(d: unknown): d is Difficulty {
-  return typeof d === 'string' && Object.hasOwn(DIFFICULTIES, d);
+  return d === 'custom' || (typeof d === 'string' && Object.hasOwn(PRESETS, d));
 }
 
 /** The difficulty to play, falling back to the default for a missing or unknown one. */
@@ -157,15 +199,35 @@ export function difficultyOf(d: unknown): Difficulty {
   return isDifficulty(d) ? d : DEFAULT_SETTINGS.difficulty;
 }
 
-/** The rules for the current question (deathmatch questions are one tier harder). */
-export function activeRules(s: GameState): DifficultyRules {
-  const base = difficultyOf(s.settings.difficulty);
-  return DIFFICULTIES[s.deathmatch ? HARDER[base] : base];
+/**
+ * The knobs a room plays with: its preset's, or the host's own; `harder` for
+ * deathmatch questions (one preset up, or one step up on each custom knob). A
+ * preset's tiles only lift in race: on your own turn nobody beats you to the
+ * answer, so waiting for them is just a delay. A custom veil applies in both modes.
+ */
+export function knobsOf(settings: Pick<Settings, 'difficulty'> & Partial<Settings>, harder = false): Knobs {
+  const d = difficultyOf(settings.difficulty);
+  if (d === 'custom') {
+    const k = cleanKnobs(settings.custom);
+    return harder ? harderKnobs(k) : k;
+  }
+  const k = PRESETS[harder ? HARDER[d] : d];
+  return settings.mode === 'race' ? { ...k } : { ...k, veil: 'off' };
 }
 
-export function rulesFor(difficulty: string | undefined): DifficultyRules {
-  return DIFFICULTIES[difficultyOf(difficulty)];
+/** The rules a room plays with (see `knobsOf`). */
+export function rulesFor(settings: Pick<Settings, 'difficulty'> & Partial<Settings>, harder = false): DifficultyRules {
+  const k = knobsOf(settings, harder);
+  return { ...k, veil: VEILS[k.veil] };
 }
+
+/** The rules for the current question (deathmatch questions are one tier harder). */
+export function activeRules(s: GameState): DifficultyRules {
+  return rulesFor(s.settings, !!s.deathmatch);
+}
+
+/** The last `lockout` categories of a list (none for a lockout of 0). */
+export const lastPicks = (picks: string[], lockout: number) => (lockout > 0 ? picks.slice(-lockout) : []);
 
 export interface Veil {
   size: number;
@@ -189,7 +251,7 @@ export interface Deathmatch {
 }
 
 /** Deathmatch questions are one tier harder. */
-const HARDER: Record<Difficulty, Difficulty> = { cruel: 'merciless', merciless: 'eternal', eternal: 'eternal' };
+const HARDER: Record<Preset, Preset> = { cruel: 'merciless', merciless: 'eternal', eternal: 'eternal' };
 
 export type Phase = 'lobby' | 'choosing' | 'question' | 'reveal' | 'over';
 
@@ -216,6 +278,8 @@ export interface Settings {
   /** Seconds per question, 0 = no timer (race mode always uses a timer). */
   timer: number;
   difficulty: Difficulty;
+  /** The knobs for the "custom" difficulty (kept while a preset is picked; missing in older saves). */
+  custom?: Knobs;
   mode: GameMode;
   /** Online rooms only: listed in the "open rooms" browser. */
   public: boolean;
@@ -326,7 +390,8 @@ export type Action =
   | { type: 'rename'; playerId: string; name: string }
   | { type: 'remove'; playerId: string }
   | { type: 'connection'; playerId: string; connected: boolean }
-  | { type: 'settings'; settings: Partial<Settings> }
+  /** `custom`: only the knobs that change. */
+  | { type: 'settings'; settings: Partial<Omit<Settings, 'custom'>> & { custom?: Partial<Knobs> } }
   | { type: 'start' }
   | { type: 'pick'; category: string }
   | { type: 'answer'; index: number | null; askedAt?: number }
@@ -341,7 +406,16 @@ export const OFFER_COUNT = 3;
 export const MAX_PLAYERS = 12;
 export const MAX_SPECTATORS = 8;
 
-export const DEFAULT_SETTINGS: Settings = { targetScore: 10, timer: 20, difficulty: 'merciless', mode: 'turns', public: false, locked: false };
+const DEFAULT_PRESET: Preset = 'merciless';
+export const DEFAULT_SETTINGS: Settings = {
+  targetScore: 10,
+  timer: 20,
+  difficulty: DEFAULT_PRESET,
+  custom: { ...PRESETS[DEFAULT_PRESET] },
+  mode: 'turns',
+  public: false,
+  locked: false,
+};
 
 export class ActionError extends Error {
   /** Expected races (e.g. an answer arriving after the question closed): don't bother the user. */
@@ -599,9 +673,11 @@ export class Engine {
         if (typeof action.settings.locked === 'boolean') s.settings.locked = action.settings.locked;
         if (Object.keys(action.settings).every((k) => k === 'public' || k === 'locked')) break;
         if (s.phase !== 'lobby' && s.phase !== 'over') throw new ActionError('Settings are locked during a game.');
-        const { targetScore, timer, difficulty, mode } = action.settings;
+        const { targetScore, timer, difficulty, custom, mode } = action.settings;
         if (mode === 'turns' || mode === 'race') s.settings.mode = mode;
         if (isDifficulty(difficulty)) s.settings.difficulty = difficulty;
+        // Knobs change one at a time; anything off the allowed steps keeps its old value.
+        if (typeof custom === 'object' && custom !== null) s.settings.custom = cleanKnobs(custom, cleanKnobs(s.settings.custom));
         if (targetScore !== undefined) s.settings.targetScore = Math.max(1, Math.min(50, Math.round(targetScore)));
         if (timer !== undefined) s.settings.timer = Math.max(0, Math.min(120, Math.round(timer)));
         break;
@@ -636,7 +712,7 @@ export class Engine {
         if (!isActive) throw new ActionError("It's not your turn.");
         if (!s.offered.includes(action.category)) throw new ActionError('That category is not on offer.');
         if (!s.deathmatch) {
-          active.recent = [...active.recent, action.category].slice(-rulesFor(s.settings.difficulty).lockout);
+          active.recent = lastPicks([...active.recent, action.category], rulesFor(s.settings).lockout);
         }
         s.question = this.makeQuestion(s, action.category);
         s.used.push(s.question.itemId);
@@ -815,7 +891,7 @@ export class Engine {
     const allowed = this.categories.filter((c) => !s.recentCategories.includes(c));
     const fresh = allowed.filter((c) => this.unusedIn(s, c).length > 0);
     const category = sample(fresh.length ? fresh : allowed, 1, this.rng)[0];
-    s.recentCategories = [...s.recentCategories, category].slice(-rulesFor(s.settings.difficulty).lockout);
+    s.recentCategories = lastPicks([...s.recentCategories, category], rulesFor(s.settings).lockout);
     s.offered = [];
     s.reveal = null;
     s.question = this.makeQuestion(s, category);

@@ -15,7 +15,7 @@
    * search rather than a flicker.
    */
   const MIN_SCAN_MS = 1500;
-  const DIFF_NAMES: Record<string, string> = { cruel: 'Cruel', merciless: 'Merciless', eternal: 'Eternal' };
+  const DIFF_NAMES: Record<string, string> = { cruel: 'Cruel', merciless: 'Merciless', eternal: 'Eternal', custom: 'Custom' };
 
   let rooms = $state<RoomInfo[]>([]);
   let scanning = $state(false);

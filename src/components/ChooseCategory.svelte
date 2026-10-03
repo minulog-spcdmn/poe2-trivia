@@ -11,6 +11,7 @@
   const s = $derived(session.state!);
   const active = $derived(s.players[s.turn]);
   const mine = $derived(session.myTurn);
+  const lockout = $derived(rulesFor(s.settings).lockout);
 
   let picked = $state<string | null>(null);
 
@@ -121,8 +122,8 @@
 
   {#if s.deathmatch}
     <p class="note muted">{mine ? 'Tap the card when you are ready.' : 'Questions are one difficulty harder.'}</p>
-  {:else if mine}
-    <p class="note muted">A category you choose stays locked for your next {rulesFor(s.settings.difficulty).lockout} turns.</p>
+  {:else if mine && lockout > 0}
+    <p class="note muted">A category you choose stays locked for your next {lockout === 1 ? 'turn' : `${lockout} turns`}.</p>
   {/if}
 </div>
 

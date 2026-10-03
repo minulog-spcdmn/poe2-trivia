@@ -13,7 +13,7 @@ is hosted as a static site on GitHub Pages. No server needed.
    Rings, Amulets & Belts, Flasks/Charms/Jewels/Relics/Tablets, and Lineage
    Gems. A category you pick can't be
    offered to you again for your next 2 turns on Cruel, 3 on Merciless and
-   4 on Eternal.
+   4 on Eternal (Custom sets its own).
 2. Name the unique item or lineage gem from its art (or, on harder
    difficulties, pick the right art for a name). A correct answer scores a point.
 3. The first player to reach the host's target score wins. The game only ends
@@ -27,7 +27,7 @@ is hosted as a static site on GitHub Pages. No server needed.
 Items aren't repeated within a game until a category runs out, and earlier answers never come back as wrong answers (so they can't be ruled out from memory). Precursor tablets come up about a quarter as often as other items; a tablet question only offers tablets (once too few unseen tablets are left for that, they sit out until the category starts over), and tablets don't appear in other questions.
 
 **Race mode** (online only): no turns. Everyone sees the same question at the
-same time, in a random category (never one of the last 2, 3 or 4, by difficulty).
+same time, in a random category (never one of the last 2, 3 or 4, by difficulty, or as many as Custom sets).
 - The first correct answer scores +1 and ends the question.
 - A wrong answer costs −1 and locks that player out until the next question.
   Everyone sees live who guessed what.
@@ -41,8 +41,22 @@ same time, in a random category (never one of the last 2, 3 or 4, by difficulty)
 | | Options | Wrong answers | Extras |
 |---|---|---|---|
 | Cruel | 4 | Same kind (all rings, all bows, all Strength gems…) | 40% of questions are "find the art": you get a name and pick one of the pictures |
-| Merciless (default) | 6 | Same kind, half of them look-alike names | The art is hidden under tiles that lift one by one |
-| Eternal | 8 | Look-alike names from the whole category | Tiles lift more slowly; "find the art" pictures are shown in grayscale; each picture has a 30% chance of being mirrored left to right (the answer and any picked picture are marked *Mirrored* at the reveal) |
+| Merciless (default) | 6 | Same kind, half of them look-alike names | In race, the art is hidden under tiles that lift one by one |
+| Eternal | 8 | Look-alike names from the whole category, two of them made up | In race, the tiles lift more slowly; "find the art" pictures are shown in grayscale; each picture has a 30% chance of being mirrored left to right (the answer and any picked picture are marked *Mirrored* at the reveal) |
+
+The presets only lift tiles in race mode, where answering from part of the art
+can beat the others to it. On your own turn nobody is racing you, so the tiles
+would just be a wait.
+
+**Custom** starts from the preset that was picked (as it plays in the chosen
+mode) and lets the host set each knob: options (4, 6, 8), look-alike names
+(none, half, all), made-up names (0 to 2), the share of "find the art"
+questions (off, 40%, 50%, 100%), tiles over the art (off, fast, slow; in
+either mode), grayscale pictures, mirrored pictures (off, 30%) and how many
+turns a picked category stays locked (off to 4). The knobs fold away behind a
+button; everyone else sees the custom rules described under the difficulty.
+In a deathmatch, each knob goes one step harder, but tiles the host turned
+off stay off. The host's browser remembers the last custom setup.
 
 Look-alike names form a cluster, and the answer's place in it is random: the
 name that looks most (or least) like the others is no more likely to be right
