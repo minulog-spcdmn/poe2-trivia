@@ -3,7 +3,7 @@
   import { session, engine } from '../lib/session.svelte';
   import { AUTO_NEXT_MS, autoNextLeft, isFake, questionTopic } from '../lib/game';
   import { shown } from '../lib/media.svelte';
-  import { materialize } from '../lib/materialize';
+  import { materialize, type BurnParams } from '../lib/materialize';
   import { frontier } from '../lib/frontier';
   import { itemImage } from '../lib/ui';
   import { sfx } from '../lib/sound';
@@ -131,10 +131,10 @@
     artRevealed(artEl);
   });
 
-  /** Svelte action: a patch of veiled art fizzles in. */
-  function appear(node: HTMLCanvasElement, url: string) {
-    sfx('lift');
-    return materialize(node, url);
+  /** Svelte action: a patch of veiled art burns in. */
+  function appear(node: HTMLCanvasElement, params: BurnParams) {
+    sfx('burn');
+    return materialize(node, params);
   }
 
   // The charge-up ends when the answer is revealed, bounced, or (race) comes
@@ -407,10 +407,15 @@
                     style:top="{(p.y / v.h) * 100}%"
                     style:width="{(p.w / v.w) * 100}%"
                     style:height="{(p.h / v.h) * 100}%"
-                    use:appear={p.url}
+                    use:appear={{
+                      url: p.url,
+                      edges: p.edges,
+                      before: patches.filter((o) => o.i !== p.i).map((o) => o.i),
+                      step: v.step,
+                    }}
                   ></canvas>
                 {/each}
-                <canvas class="frontier" aria-hidden="true" use:frontier={{ w: v.w, h: v.h, patches }}></canvas>
+                <canvas class="frontier" aria-hidden="true" use:frontier={{ w: v.w, h: v.h, step: v.step, patches }}></canvas>
               </span>
               </span>
             {:else if media?.art}
@@ -649,7 +654,7 @@
     position: absolute;
     display: block;
   }
-  /* The glow along seams where the item is still missing a part
+  /* The fire along seams where the item is still missing a part
      (lib/frontier.ts), added as light over the patches. */
   .frontier {
     position: absolute;

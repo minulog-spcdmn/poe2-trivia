@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cutPatches } from '../src/lib/patches.ts';
+import { cutPatches, spreadOrder } from '../src/lib/patches.ts';
 
 /** A W × H picture: an opaque ellipse with a soft edge on a transparent background. */
 function ellipse(W: number, H: number): Uint8ClampedArray {
@@ -94,4 +94,23 @@ test('patches are about the same size, so every step reveals about as much', () 
     const spread = Math.sqrt(areas.reduce((a, b) => a + (b - mean) ** 2, 0) / areas.length) / mean;
     assert.ok(spread < 0.3, `seed ${seed}: sizes vary by ${(spread * 100).toFixed(0)}%`);
   }
+});
+
+test('the reveal spreads: each patch touches one revealed before it', () => {
+  const W = 180;
+  const H = 240;
+  const patches = cutPatches(ellipse(W, H), W, H, 5, 11);
+  const touches = (a: number, b: number) => {
+    const e = patches[a].edges;
+    for (let j = 2; j < e.length; j += 3) if (e[j] === b) return true;
+    return false;
+  };
+  for (const seed of [1, 2, 3]) {
+    const order = spreadOrder(patches, seed);
+    assert.deepEqual([...order].sort((a, b) => a - b), patches.map((_, k) => k));
+    order.forEach((k, r) => {
+      if (r > 0) assert.ok(order.slice(0, r).some((j) => touches(k, j)), `patch ${k} (step ${r}) touches nothing revealed`);
+    });
+  }
+  assert.deepEqual(spreadOrder(patches, 5), spreadOrder(patches, 5));
 });

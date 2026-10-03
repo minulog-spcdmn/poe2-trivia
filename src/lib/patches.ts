@@ -137,15 +137,24 @@ export function cutPatches(rgba: Uint8ClampedArray, W: number, H: number, size: 
   // Each visible pixel joins the seed nearest to it after a noisy nudge,
   // which turns the straight borders between seeds ragged.
   const cell = Math.sqrt(lit.length / n);
-  const amp = cell * 0.2;
+  const amp = cell * 0.32;
   const freq = 1 / Math.max(2, cell * 0.5);
   const nseed = (rand() * 2 ** 31) | 0;
   const label = new Int16Array(W * H).fill(-1);
   for (const p of lit) {
     const x = p % W;
     const y = (p / W) | 0;
-    const wx = x + (valueNoise(x * freq, y * freq, nseed) - 0.5) * 2 * amp;
-    const wy = y + (valueNoise(x * freq + 31.7, y * freq + 11.3, nseed) - 0.5) * 2 * amp;
+    // Two scales of nudge: broad bends, and a finer wobble on top, so no
+    // border runs straight for long.
+    const f2 = freq * 3;
+    const wx =
+      x +
+      (valueNoise(x * freq, y * freq, nseed) - 0.5) * 2 * amp +
+      (valueNoise(x * f2 + 7.1, y * f2 + 3.9, nseed) - 0.5) * amp * 0.8;
+    const wy =
+      y +
+      (valueNoise(x * freq + 31.7, y * freq + 11.3, nseed) - 0.5) * 2 * amp +
+      (valueNoise(x * f2 + 51.3, y * f2 + 23.9, nseed) - 0.5) * amp * 0.8;
     let best = Infinity;
     let k = 0;
     for (let j = 0; j < n; j++) {
@@ -212,4 +221,43 @@ export function cutPatches(rgba: Uint8ClampedArray, W: number, H: number, size: 
     out.push({ x: px, y: py, w, h, pixels, edges: Uint16Array.from(edges) });
   }
   return out;
+}
+
+/**
+ * The order patches are revealed in: the reveal spreads through the item
+ * like fire. It starts at a random patch, and each next one is a neighbour
+ * of what's already revealed (one sharing more border with it is likelier,
+ * so the revealed part grows as a whole rather than in tendrils). Only when
+ * nothing revealed touches the rest (an item in separate pieces) does it
+ * start again somewhere new.
+ */
+export function spreadOrder(patches: RawPatch[], seed: number): number[] {
+  const n = patches.length;
+  const rand = seededRandom(seed ^ 0x5bd1e995);
+  // How many border pixels each pair of patches shares.
+  const contact = patches.map(() => new Map<number, number>());
+  patches.forEach((p, k) => {
+    for (let j = 2; j < p.edges.length; j += 3) contact[k].set(p.edges[j], (contact[k].get(p.edges[j]) ?? 0) + 1);
+  });
+  const done = new Uint8Array(n);
+  const pull = new Float64Array(n);
+  const order: number[] = [];
+  while (order.length < n) {
+    let next = -1;
+    let total = 0;
+    for (let k = 0; k < n; k++) if (!done[k]) total += pull[k];
+    if (total > 0) {
+      let r = rand() * total;
+      for (let k = 0; k < n && next < 0; k++) if (!done[k] && (r -= pull[k]) <= 0) next = k;
+      if (next < 0) for (let k = n - 1; k >= 0 && next < 0; k--) if (!done[k] && pull[k] > 0) next = k;
+    } else {
+      const left = [];
+      for (let k = 0; k < n; k++) if (!done[k]) left.push(k);
+      next = left[Math.floor(rand() * left.length)];
+    }
+    done[next] = 1;
+    order.push(next);
+    for (const [j, c] of contact[next]) if (!done[j]) pull[j] += c;
+  }
+  return order;
 }

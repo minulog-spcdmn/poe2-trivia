@@ -1,28 +1,38 @@
 // Where a veiled item is still missing a part, the edge of what has appeared
-// smoulders like burning parchment: a soft ember glow whose hot spots flicker
-// and drift along the seam, with embers rising off it. Each patch says where
-// it meets other patches (its edges); a seam starts to smoulder as soon as
-// its patch begins to fizzle in, and dies down while the patch on its other
-// side fizzles in. Only seams between two parts of the item smoulder, never
-// the item's own outline, so it shows that something is missing there, not
-// what.
+// keeps burning: a soft ember glow whose hot spots flicker and drift along
+// the seam, with flames licking up and out of it towards the missing part.
+// Each patch says where it meets other patches (its edges). A seam catches
+// as the fire burning its patch in reaches it, and dies down as the fire
+// moves on into the patch on its other side. Only seams between two parts of
+// the item burn, never the item's own outline, so it shows that something is
+// missing there, not what.
 
 import type { ShownPatch } from './media.svelte';
 import { valueNoise } from './patches';
-import { veilMote } from './fx/moments';
+import { burnDuration } from './materialize';
+import { fxDensity, veilFlame } from './fx/moments';
 
-/** A seam glows up over the first part of its patch's fizzle, and dies down over its neighbour's, ms. */
-const GROW_MS = 700;
-const FADE_MS = 900;
+/**
+ * As fractions of a patch's burn: a seam catches when the fire gets there
+ * (glowing up from GROW_AT to GROW_END), and dies down over the first FADE of
+ * the burn that carries the fire on across it.
+ */
+const GROW_AT = 0.35;
+const GROW_END = 0.9;
+const FADE = 0.35;
 /** Redraws per second. */
 const FPS = 30;
 /** How far the glow reaches from the seam, in art pixels. */
 const REACH = 7;
+/** How far the glow leans out of its patch towards the missing part, in art pixels. */
+const PUSH = 2.5;
+/** Room around each seam's glow: its reach plus the lean. */
+const PAD = REACH + PUSH + 1;
 /** Each seam is drawn this many times with different hot spots, blended over time so they flicker. */
 const LAYERS = 3;
-/** Embers rising off the seams at once, at most, and seam pixels per ember. */
-const MAX_EMBERS = 36;
-const PIXELS_PER_EMBER = 7;
+/** Flames off the seams per second, at most, and per seam pixel. */
+const MAX_FLAMES = 60;
+const FLAMES_PER_PIXEL = 0.3;
 
 const reduce = typeof matchMedia === 'function' ? matchMedia('(prefers-reduced-motion: reduce)') : null;
 
@@ -38,7 +48,7 @@ function sprite(size: number, stops: [number, string][]): HTMLCanvasElement {
   g.fillRect(0, 0, size, size);
   return c;
 }
-let sprites: { haze: HTMLCanvasElement; ember: HTMLCanvasElement; spark: HTMLCanvasElement } | null = null;
+let sprites: { haze: HTMLCanvasElement; ember: HTMLCanvasElement } | null = null;
 function lights() {
   sprites ??= {
     haze: sprite(64, [
@@ -51,11 +61,6 @@ function lights() {
       [0.35, 'rgba(255, 140, 40, 0.6)'],
       [1, 'rgba(255, 90, 20, 0)'],
     ]),
-    spark: sprite(16, [
-      [0, 'rgba(255, 236, 190, 1)'],
-      [0.4, 'rgba(255, 170, 70, 0.7)'],
-      [1, 'rgba(255, 110, 30, 0)'],
-    ]),
   };
   return sprites;
 }
@@ -65,6 +70,8 @@ type Seam = {
   from: number;
   to: number;
   pts: number[];
+  /** Out of its patch, towards the missing part (a unit vector). */
+  out: { x: number; y: number };
   x0: number;
   y0: number;
   x1: number;
@@ -72,12 +79,12 @@ type Seam = {
   layers: HTMLCanvasElement[] | null;
 };
 
-type Ember = { seam: Seam; x: number; y: number; vx: number; vy: number; born: number; life: number; size: number };
-
 export interface FrontierParams {
   /** The art's size in its own pixels. */
   w: number;
   h: number;
+  /** Time between patches, ms. */
+  step: number;
   patches: ShownPatch[];
 }
 
@@ -95,11 +102,10 @@ export function frontier(canvas: HTMLCanvasElement, params: FrontierParams) {
   let H = 0;
   /** Canvas pixels per art pixel. */
   let k = 1;
-  let embers: Ember[] = [];
   /** The layers of all seams at full glow, and which seams they hold. */
   let base: HTMLCanvasElement[] | null = null;
   let baseKey = '';
-  let motes = 0;
+  let flames = 0;
   let raf = 0;
   let last = 0;
   let stopped = false;
@@ -116,16 +122,19 @@ export function frontier(canvas: HTMLCanvasElement, params: FrontierParams) {
     return true;
   };
 
-  /** 0 to 1: how far a patch has come in, easing over `ms` from its arrival. */
-  const ramp = (i: number, now: number, ms: number) => {
+  /** 0 to 1, easing, between fractions `a` and `b` of patch i's burn. */
+  const ramp = (i: number, now: number, a: number, b: number) => {
     const at = arrived.get(i);
     if (at === undefined) return 0;
-    const u = Math.min(1, Math.max(0, (now - at) / ms));
+    const d = burnDuration(cur.step);
+    const u = Math.min(1, Math.max(0, (now - at - a * d) / ((b - a) * d)));
     return u * u * (3 - 2 * u);
   };
+  const grown = (s: Seam, now: number) => ramp(s.from, now, GROW_AT, GROW_END);
+  const faded = (s: Seam, now: number) => ramp(s.to, now, 0, FADE);
 
-  /** How strongly a seam smoulders: up with its patch, down with the one across it. */
-  const strength = (s: Seam, now: number) => ramp(s.from, now, GROW_MS) * (1 - ramp(s.to, now, FADE_MS));
+  /** How strongly a seam burns: up as the fire reaches it, down as it moves on. */
+  const strength = (s: Seam, now: number) => grown(s, now) * (1 - faded(s, now));
 
   /**
    * The seam's glow, drawn once per layer: a wide ember haze and a tighter
@@ -134,10 +143,10 @@ export function frontier(canvas: HTMLCanvasElement, params: FrontierParams) {
    */
   const build = (s: Seam): HTMLCanvasElement[] => {
     const { haze, ember } = lights();
-    const ox = s.x0 - REACH;
-    const oy = s.y0 - REACH;
-    const cw = Math.ceil((s.x1 - s.x0 + 1 + 2 * REACH) * k);
-    const ch = Math.ceil((s.y1 - s.y0 + 1 + 2 * REACH) * k);
+    const ox = s.x0 - PAD;
+    const oy = s.y0 - PAD;
+    const cw = Math.ceil((s.x1 - s.x0 + 1 + 2 * PAD) * k);
+    const ch = Math.ceil((s.y1 - s.y0 + 1 + 2 * PAD) * k);
     const out: HTMLCanvasElement[] = [];
     for (let layer = 0; layer < LAYERS; layer++) {
       const c = document.createElement('canvas');
@@ -152,8 +161,9 @@ export function frontier(canvas: HTMLCanvasElement, params: FrontierParams) {
         const n = valueNoise(x / 6, y / 6, seed) * 0.7 + valueNoise(x / 2.5, y / 2.5, seed + 1) * 0.3;
         const v = Math.max(0, (n - 0.3) / 0.6);
         const hot = Math.min(1, v * v);
-        const cx = (x - ox) * k;
-        const cy = (y - oy) * k;
+        // Pushed a little out of the patch, so the fire spills into the gap.
+        const cx = (x + s.out.x * PUSH - ox) * k;
+        const cy = (y + s.out.y * PUSH - oy) * k;
         if (j % 6 === 0) {
           const d = REACH * 2 * k * (0.7 + 0.3 * hot);
           g.globalAlpha = 0.09 + 0.2 * hot;
@@ -189,13 +199,11 @@ export function frontier(canvas: HTMLCanvasElement, params: FrontierParams) {
         y0 = Math.min(y0, pts[j + 1]);
         y1 = Math.max(y1, pts[j + 1]);
       }
-      seams.set(`${p.i}>${to}`, { from: p.i, to, pts, x0, y0, x1, y1, layers: null });
+      const ox = (x0 + x1) / 2 - (p.x + p.w / 2);
+      const oy = (y0 + y1) / 2 - (p.y + p.h / 2);
+      const len = Math.hypot(ox, oy) || 1;
+      seams.set(`${p.i}>${to}`, { from: p.i, to, pts, out: { x: ox / len, y: oy / len }, x0, y0, x1, y1, layers: null });
     }
-  };
-
-  const viewport = (x: number, y: number) => {
-    const r = canvas.getBoundingClientRect();
-    return { x: r.left + (x / cur.w) * r.width, y: r.top + (y / cur.h) * r.height };
   };
 
   /** A random seam pixel, seams weighted by how much of them is glowing. */
@@ -231,8 +239,8 @@ export function frontier(canvas: HTMLCanvasElement, params: FrontierParams) {
       still ? 1 / LAYERS : (0.5 + 0.5 * Math.sin(now / 260 + (layer * 2 * Math.PI) / LAYERS)) * (2 / LAYERS);
     const breath = still ? 1 : 0.85 + 0.15 * Math.sin(now / 900);
     for (const [key, s] of seams) {
-      const growing = ramp(s.from, now, GROW_MS) < 1;
-      const dying = arrived.has(s.to) && ramp(s.to, now, FADE_MS) < 1;
+      const growing = grown(s, now) < 1;
+      const dying = arrived.has(s.to) && faded(s, now) < 1;
       if (growing || dying) changing = true;
       const a = strength(s, now);
       if (a <= 0) {
@@ -256,8 +264,8 @@ export function frontier(canvas: HTMLCanvasElement, params: FrontierParams) {
         steady.push(s);
         continue;
       }
-      const dx = (s.x0 - REACH) * k;
-      const dy = (s.y0 - REACH) * k;
+      const dx = (s.x0 - PAD) * k;
+      const dy = (s.y0 - PAD) * k;
       for (let layer = 0; layer < LAYERS; layer++) {
         ctx.globalAlpha = Math.min(1, a * weight(layer) * breath);
         ctx.drawImage(s.layers[layer], dx, dy);
@@ -273,7 +281,7 @@ export function frontier(canvas: HTMLCanvasElement, params: FrontierParams) {
         const g = c.getContext('2d')!;
         g.clearRect(0, 0, W, H);
         g.globalCompositeOperation = 'lighter';
-        for (const s of steady) g.drawImage(s.layers![layer], (s.x0 - REACH) * k, (s.y0 - REACH) * k);
+        for (const s of steady) g.drawImage(s.layers![layer], (s.x0 - PAD) * k, (s.y0 - PAD) * k);
       });
     }
     if (base && steady.length) {
@@ -284,34 +292,17 @@ export function frontier(canvas: HTMLCanvasElement, params: FrontierParams) {
     }
 
     if (!still && live.length) {
-      // Embers rise off the seams, flicker and fade.
-      const { spark } = lights();
-      const want = Math.min(MAX_EMBERS, Math.ceil(glowing / 2 / PIXELS_PER_EMBER));
-      embers = embers.filter((e) => now - e.born < e.life && strength(e.seam, now) > 0);
-      while (embers.length < want) {
+      // Flames lick up off the seams, leaning out towards the missing part.
+      const rate = Math.min(MAX_FLAMES, 4 + (glowing / 2) * FLAMES_PER_PIXEL) * fxDensity();
+      flames = Math.min(3, flames + dt * rate);
+      for (; flames >= 1; flames--) {
         const p = pickPoint(live, glowing);
-        embers.push({
-          ...p,
-          vx: (Math.random() - 0.5) * 4,
-          vy: -(4 + Math.random() * 10),
-          born: now - Math.random() * 300,
-          life: 500 + Math.random() * 900,
-          size: 1.5 + Math.random() * 2,
-        });
-      }
-      for (const e of embers) {
-        e.x += e.vx * dt;
-        e.y += e.vy * dt;
-        const age = (now - e.born) / e.life;
-        ctx.globalAlpha = Math.sin(Math.PI * age) * (0.55 + 0.45 * Math.sin(now / 50 + e.x * 7)) * strength(e.seam, now);
-        const d = e.size * k;
-        ctx.drawImage(spark, e.x * k - d / 2, e.y * k - d / 2, d, d);
-      }
-      // And now and then a mote of light drifts up off them.
-      motes = Math.min(2, motes + dt * Math.min(8, 1.5 + glowing / 2 / 300));
-      for (; motes >= 1; motes--) {
-        const p = pickPoint(live, glowing);
-        veilMote(viewport(p.x, p.y));
+        const r = canvas.getBoundingClientRect();
+        veilFlame(
+          { x: r.left + (p.x / cur.w) * r.width, y: r.top + (p.y / cur.h) * r.height },
+          { x: p.seam.out.x * 22, y: p.seam.out.y * 22 },
+          0.8,
+        );
       }
     }
     ctx.globalAlpha = 1;

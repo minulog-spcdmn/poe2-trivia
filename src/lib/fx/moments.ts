@@ -158,49 +158,62 @@ export function artRevealed(art: Element) {
   light(art, { color: [1, 0.7, 0.35], radius: 300, intensity: 0.35, decay: 1 });
 }
 
-/** A patch of veiled art starts to fizzle in at `at`; `size` is the patch's width. */
-export function patchIgnites(at: Point, size: number) {
+/** The veiled art catches fire at `at` (where the first patch starts to burn in); `size` is its width. */
+export function veilIgnites(at: Point, size: number) {
   if (!fxActive()) return;
-  flash(at, { radius: Math.min(60, size * 0.35), color: C.gold, intensity: 0.22, life: 0.35 });
-  sparks(at, { count: 3, speed: [40, 140], life: [0.2, 0.4], gravity: -30, size: [0.6, 1.1], colors: [C.whiteHot, C.goldPale] });
+  flash(at, { radius: Math.min(70, size * 0.4), color: C.ember, intensity: 0.3, life: 0.5 });
+  sparks(at, { count: 6, speed: [40, 160], life: [0.3, 0.6], gravity: -80, size: [0.6, 1.2], colors: [C.whiteHot, C.gold, C.ember] });
 }
 
-/** A mote of light lifting off a grain of a patch as it appears. */
-export function patchMote(at: Point) {
-  if (!fxActive()) return;
-  if (Math.random() < 0.8) {
-    embers(at, {
-      count: 1,
-      colors: [C.gold, C.goldPale, C.whiteHot],
-      size: [1.1, 2.3],
-      life: [0.6, 1.4],
-      rise: [30, 90],
-      scatter: 22,
-      turbulence: 90,
-    });
-  } else {
-    sparks(at, { count: 1, speed: [60, 170], life: [0.25, 0.5], gravity: -60, size: [0.7, 1.2], colors: [C.whiteHot, C.gold] });
-  }
+/** How many of a continuous effect's particles this device draws, 0 to 1 (fewer on phones and under load). */
+export function fxDensity() {
+  return budget(100) / 100;
 }
 
-/** A mote drifting up off a seam where the veiled item is still missing a part. */
-export function veilMote(at: Point) {
+/**
+ * A lick of flame off veiled art that is burning into being: a soft light
+ * that rises, swells and cools from gold to deep red as it fades. `lean`
+ * (px/s) pushes it sideways, towards where the item is still missing; `heat`
+ * scales it (the advancing front burns hotter than a waiting seam).
+ */
+export function veilFlame(at: Point, lean: Point = { x: 0, y: 0 }, heat = 1) {
   if (!fxActive()) return;
-  embers(at, {
-    count: 1,
-    colors: [C.gold, C.goldPale],
-    size: [0.8, 1.8],
-    life: [0.8, 1.6],
-    rise: [12, 40],
-    scatter: 12,
-    turbulence: 60,
+  particle({
+    x: at.x + rand(-1.5, 1.5),
+    y: at.y + rand(-1.5, 1.5),
+    vx: lean.x + rand(-10, 10),
+    vy: lean.y - rand(20, 55) * heat,
+    life: rand(0.35, 0.8),
+    size: rand(2.4, 4.2) * heat,
+    sizeEnd: rand(5, 9) * heat,
+    color: Math.random() < 0.3 ? k3(C.whiteHot, 0.8 * heat) : k3(C.gold, 0.9 * heat),
+    colorEnd: k3(C.emberDeep, 0.2),
+    gravity: -70,
+    drag: 1.4,
+    shape: Shape.Glow,
+    flicker: 0.4,
+    fadeIn: 0.12,
+    turbulence: 180,
   });
-}
-
-/** A patch has fully fizzled in. */
-export function patchSettled(patch: Element) {
-  if (!fxActive()) return;
-  if (Math.random() < 0.4) glints(patch, { count: 1, size: [3, 6] });
+  // Now and then a spark flies up out of it.
+  if (Math.random() < 0.12) {
+    particle({
+      x: at.x,
+      y: at.y,
+      vx: lean.x * 1.5 + rand(-25, 25),
+      vy: -rand(50, 120),
+      life: rand(0.6, 1.3),
+      size: rand(0.9, 1.6),
+      sizeEnd: 0.3,
+      color: C.gold,
+      colorEnd: k3(C.emberDeep, 0.4),
+      gravity: -20,
+      drag: 0.8,
+      shape: Shape.Ember,
+      flicker: 0.6,
+      turbulence: 220,
+    });
+  }
 }
 
 /** An answer is locked in: energy gathers on it until the reveal. */

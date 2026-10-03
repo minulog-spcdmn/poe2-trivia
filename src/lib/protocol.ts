@@ -29,7 +29,7 @@ export type HostMsg =
 
 export type MediaMsg =
   | { t: 'art'; qid: number; w: number; h: number; data: ArrayBuffer }
-  | { t: 'veil'; qid: number; w: number; h: number }
+  | { t: 'veil'; qid: number; w: number; h: number; step: number }
   | { t: 'patch'; qid: number; i: number; x: number; y: number; w: number; h: number; data: ArrayBuffer; edges: ArrayBuffer }
   | { t: 'option'; qid: number; index: number; data: ArrayBuffer };
 
@@ -114,7 +114,7 @@ export function parseHostMsg(raw: unknown): HostMsg | null {
     case 'art':
       return qid && bin(raw.data) && isInt(raw.w, 1, 4096) && isInt(raw.h, 1, 4096) ? (raw as HostMsg) : null;
     case 'veil':
-      return qid && isInt(raw.w, 1, 4096) && isInt(raw.h, 1, 4096) ? (raw as HostMsg) : null;
+      return qid && isInt(raw.w, 1, 4096) && isInt(raw.h, 1, 4096) && isInt(raw.step, 0, 120000) ? (raw as HostMsg) : null;
     case 'patch':
       return qid && bin(raw.data) && isInt(raw.i, 0, 255) && isInt(raw.x, 0, 4096) && isInt(raw.y, 0, 4096) &&
         isInt(raw.w, 1, 4096) && isInt(raw.h, 1, 4096) && bin(raw.edges) &&

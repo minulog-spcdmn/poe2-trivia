@@ -5,7 +5,7 @@
 // questions only the patches of it that have been uncovered so far.
 
 import { itemImage } from './ui-paths';
-import { cutPatches, seededRandom } from './patches';
+import { cutPatches, spreadOrder } from './patches';
 import type { MediaMsg } from './protocol';
 import type { Question } from './game';
 
@@ -20,10 +20,11 @@ export interface Patch {
   edges: ArrayBuffer;
 }
 
-/** A veiled picture's size; its patches are placed on it. */
+/** A veiled picture's size (its patches are placed on it), and the time between patches, ms. */
 export interface VeilArt {
   w: number;
   h: number;
+  step: number;
 }
 
 /** Everything a question can show, prepared once by the host. */
@@ -132,17 +133,6 @@ function encode(canvas: HTMLCanvasElement, lossless = false): Promise<ArrayBuffe
   );
 }
 
-/** Patch order for veiled questions, given the seed. */
-export function seededOrder(n: number, seed: number): number[] {
-  const next = seededRandom(seed);
-  const a = Array.from({ length: n }, (_, i) => i);
-  for (let i = n - 1; i > 0; i--) {
-    const j = Math.floor(next() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
-}
-
 /** Host side: builds the art for a question (full question, with the answer). */
 export async function prepareMedia(q: Question, grayscale: boolean): Promise<PreparedMedia> {
   const out: PreparedMedia = { qid: q.askedAt, art: null, veil: null, patches: [], options: [] };
@@ -158,9 +148,9 @@ export async function prepareMedia(q: Question, grayscale: boolean): Promise<Pre
     out.art = { w: W, h: H, data: await encode(canvas) };
     return out;
   }
-  out.veil = { w: W, h: H };
   const patches = cutPatches(canvas.getContext('2d')!.getImageData(0, 0, W, H).data, W, H, q.veil.size, q.veil.seed);
-  const order = seededOrder(patches.length, q.veil.seed);
+  out.veil = { w: W, h: H, step: Math.round((q.veil.seconds * 1000) / Math.max(1, patches.length)) };
+  const order = spreadOrder(patches, q.veil.seed);
   out.patches = await Promise.all(
     order.map(async (i) => {
       const { x, y, w, h, pixels, edges } = patches[i];
@@ -174,27 +164,14 @@ export async function prepareMedia(q: Question, grayscale: boolean): Promise<Pre
   return out;
 }
 
-/** Chance that a patch appears together with the one before it. */
-const PAIR_CHANCE = 0.08;
-/** How far each gap between patches may stray from the even pace, either way. */
-const JITTER = 0.12;
-
 /**
  * When (ms after the question was asked) each of `count` patches appears, by
- * rank. The gaps between them wander a little and now and then two appear
- * at once (never three), but the gaps are scaled to add up to the even pace,
- * so the last patch still appears when it always did.
+ * rank: at an even pace, so the reveal burns through the item steadily, the
+ * last patch appearing `seconds` after the first.
  */
 export function patchDelays(q: Question, count: number): number[] {
-  const gaps: number[] = [];
-  for (let rank = 1; rank < count; rank++) {
-    const pair = gaps.at(-1) !== 0 && Math.random() < PAIR_CHANCE;
-    gaps.push(pair ? 0 : rand(1 - JITTER, 1 + JITTER));
-  }
-  const span = (q.veil!.seconds * 1000 * (count - 1)) / count;
-  const total = gaps.reduce((a, b) => a + b, 0);
-  let at = 400;
-  return [at, ...gaps.map((g) => (at += total ? (g * span) / total : 0))].slice(0, count);
+  const step = count > 1 ? (q.veil!.seconds * 1000) / count : 0;
+  return Array.from({ length: count }, (_, rank) => 400 + rank * step);
 }
 
 // ---- what this device shows -------------------------------------------
@@ -252,7 +229,7 @@ class Shown {
         this.art = { url: this.url(m.data), w: m.w, h: m.h };
         break;
       case 'veil':
-        this.veil = { w: m.w, h: m.h };
+        this.veil = { w: m.w, h: m.h, step: m.step };
         break;
       case 'patch':
         this.patches = {

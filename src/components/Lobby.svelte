@@ -21,12 +21,12 @@
     {
       id: 'merciless',
       name: 'Merciless',
-      blurb: 'Six options, half of them with names that look alike. The art fizzles in patch by patch.',
+      blurb: 'Six options, half of them with names that look alike. The art burns into view bit by bit.',
     },
     {
       id: 'eternal',
       name: 'Eternal',
-      blurb: 'Eight look-alike names, two of them made up. The art fizzles in slowly, "find the art" pictures lose their colour, and some pictures are mirrored. Good luck, exile.',
+      blurb: 'Eight look-alike names, two of them made up. The art burns into view slowly, "find the art" pictures lose their colour, and some pictures are mirrored. Good luck, exile.',
     },
   ];
 

@@ -80,15 +80,17 @@ export const MOMENTS: Record<Sfx, Moment> = {
       { file: 'layer-metal-2', gain: -41, rate: 1.6, delay: 0, hp: 330, lp: 6483, send: 0.7 },
     ],
   },
-  // A patch of veiled art fizzles in: a muffled puff of air with a soft wooden
-  // body under it. It plays every second or so, so it stays dark and quiet.
-  lift: {
-    soften: 8,
-    varyPitch: 0.1,
-    varyGain: 2,
+  // A patch of veiled art burns into being: the fire catches with a soft
+  // whoosh, a reversed swell draws it in and a few crackles follow. It plays
+  // every second or so while the art burns in, so it stays low and warm.
+  burn: {
+    soften: 7,
+    varyPitch: 0.08,
+    varyGain: 1.5,
     layers: [
-      { file: 'hover-1', gain: -42, rate: 0.85, delay: 0, hp: 150, lp: 2200, send: 0.5 },
-      { file: 'select-6', gain: -45, rate: 1.3, delay: 0, hp: 120, lp: 900, send: 0.4 },
+      { file: 'layer-texture-4', gain: -37, rate: 0.85, delay: 0, hp: 120, lp: 3800, send: 0.45 },
+      { file: 'layer-air-4', gain: -40, rate: 0.9, delay: 0, hp: 250, lp: 4500, send: 0.6 },
+      { file: 'fill-sparks', gain: -45, rate: 0.95, delay: 150, hp: 1400, lp: 8000, send: 0.3 },
     ],
   },
   select: {
