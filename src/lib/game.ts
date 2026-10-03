@@ -313,7 +313,11 @@ export interface GameState {
   offered: string[];
   question: Question | null;
   reveal: Reveal | null;
-  /** Items asked about this game, and made-up names someone fell for (not asked again). */
+  /**
+   * Items asked about in this room, and made-up names someone fell for (not
+   * asked again). Kept from one game to the next, so a new game in the same
+   * room doesn't repeat the last one; categories start over as they run out.
+   */
   used: string[];
   winners: string[];
   /** Sudden-death playoff between players tied at or above the target. */
@@ -632,7 +636,6 @@ export class Engine {
           p.score = 0;
           p.recent = [];
         }
-        s.used = [];
         s.round = 1;
         s.turnCount = 0;
         s.winners = [];
@@ -737,6 +740,7 @@ export class Engine {
         fillSeats(fresh);
         fresh.version = s.version;
         fresh.lastAskedAt = s.lastAskedAt;
+        fresh.used = s.used;
         Object.assign(s, fresh);
         if (action.play) return this.apply(s, { type: 'start' }, from);
         break;

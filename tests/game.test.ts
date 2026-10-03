@@ -919,7 +919,7 @@ test('made-up names stay hidden until the reveal, and never count as used items'
   assert.ok(s.used.includes(q.options[pick]), 'a fake someone fell for is remembered');
 });
 
-test('a made-up name someone fell for is not used again that game', () => {
+test('a made-up name someone fell for is not used again in that room', () => {
   for (const mode of ['turns', 'race'] as const) {
     const engine = new Engine(items, { rng: seeded(8), fakes });
     let s: GameState = createGame('p0', { targetScore: 999, timer: 0, difficulty: 'eternal', mode, public: false, locked: false });
@@ -937,10 +937,36 @@ test('a made-up name someone fell for is not used again that game', () => {
       s = engine.apply(s, { type: 'next' }, 'p0');
     }
     assert.ok(fallenFor.size > 50, `${mode}: fell for ${fallenFor.size}`);
-    // A new game starts with a clean slate.
+    // The next game in the room remembers them too.
     s = engine.apply(s, { type: 'restart', play: true }, 'p0');
-    assert.ok(!s.used.some(isFake));
+    for (const id of fallenFor) assert.ok(s.used.includes(id), `${mode}: ${id} forgotten`);
   }
+});
+
+test('the next game in a room asks about other items than the last one', () => {
+  let { engine, s } = setup(['A', 'B'], 5);
+  s = engine.apply(s, { type: 'start' }, 'p0');
+  const play = () => {
+    const asked: string[] = [];
+    while (s.phase !== 'over') {
+      const id = s.players[s.turn].id;
+      s = engine.apply(s, { type: 'pick', category: s.offered[0] }, id);
+      asked.push(s.question!.itemId);
+      // Only A answers right, so nobody ties into a deathmatch.
+      const q = s.question!;
+      s = engine.apply(s, { type: 'answer', index: id === 'p0' ? right(q) : wrongIdx(q) }, id);
+      s = engine.apply(s, { type: 'next' }, id);
+    }
+    return asked;
+  };
+  const first = play();
+  s = engine.apply(s, { type: 'restart' }, 'p0');
+  assert.deepEqual(s.used, first, 'the lobby keeps what was asked');
+  s = engine.apply(s, { type: 'start' }, 'p0');
+  const second = play();
+  for (const id of second) assert.ok(!first.includes(id), `${id} asked again`);
+  // A new room starts with a clean slate.
+  assert.deepEqual(createGame('p0').used, []);
 });
 
 test('zoe_arcana always gets the last avatar colour', () => {
