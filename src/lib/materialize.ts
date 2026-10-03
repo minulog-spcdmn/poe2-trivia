@@ -1,40 +1,46 @@
-// A patch of veiled art burns into being. The fire comes from the part of
-// the item already there: a ragged front sweeps across the patch from the
-// seam it shares with it (the very first patch catches at a point and burns
-// outward). Just ahead of the front the item's shape glows like embers with
-// a few sparks; on the front a hot line runs from deep orange to white; behind
-// it the art stands lit from within, the light cooling to amber. Flames lick
-// off the front, leaning the way the fire is moving. Transparent pixels are
-// never touched, so the fire keeps to the item's own shape.
+// A patch of veiled art fizzles into being, the magic spreading from the
+// part of the item already there: a ragged front sweeps across the patch from
+// the seam it shares with it (the very first patch catches at a point and
+// spreads outward). The front is a band of grains, each flaring up as a hot
+// glint and settling into the picture lit from within by golden light that
+// slowly cools; ahead of it the item's shape gathers out of a faint golden
+// mist with a few sparks twinkling in it. Sparks fly off the front, leaning
+// the way it moves. Transparent pixels are never touched, so the magic keeps
+// to the item's own shape.
 
 import { valueNoise } from './patches';
-import { fxDensity, veilFlame, veilIgnites } from './fx/moments';
+import { fxDensity, veilIgnites, veilSpark } from './fx/moments';
 
-/** How long a patch takes to burn in, given the time between patches: a bit longer, so the fire never stops. */
+/** How long a patch takes to come in, given the time between patches: a bit longer, so the magic never stalls. */
 export function burnDuration(step: number) {
   return Math.min(2400, Math.max(900, step * 1.6));
 }
 
-/** As fractions of the burn: the ember glow ahead of the front, the sparks ahead of that, the hot line, the cooling light. */
+/**
+ * As fractions of the burn: the mist ahead of the front, the twinkling ahead
+ * of that, how long each grain glints, and how long its light takes to cool.
+ */
 const RIM = 0.1;
-const AHEAD = 0.12;
-const LINE = 0.07;
-const COOL = 0.4;
+const AHEAD = 0.14;
+const LINE = 0.06;
+const COOL = 0.45;
 /** How ragged the front is, in art pixels either way. */
 const ROUGH = 5;
-/** Share of the pixels ahead of the front that spark. */
-const SPARKLY = 0.05;
-/** Flames off the front per second, at most. */
-const FLAMES = 70;
+/** How far single grains stray from the front, in art pixels either way: the fizzle. */
+const GRAIN = 4;
+/** Share of the pixels ahead of the front that twinkle. */
+const SPARKLY = 0.08;
+/** Sparks off the front per second, at most. */
+const SPARKS = 130;
 /** Burns at once; past this (a picture arriving with many patches in) patches just fade in. */
 const MAX_BURNING = 10;
 
-const HOT = [255, 246, 220];
-const FRONT = [255, 120, 30];
-const PREHEAT = [255, 84, 16];
+const HOT = [255, 250, 232];
+/** The mist the item gathers out of. */
+const MIST = [255, 190, 100];
 /** The inner light, added to the art: pale gold while hot, cooling to amber. */
-const LIGHT_HOT = [230, 180, 100];
-const LIGHT_COOL = [140, 60, 10];
+const LIGHT_HOT = [235, 200, 130];
+const LIGHT_COOL = [150, 75, 15];
 
 const reduce = typeof matchMedia === 'function' ? matchMedia('(prefers-reduced-motion: reduce)') : null;
 let burning = 0;
@@ -74,7 +80,7 @@ export interface BurnParams {
   url: string;
   /** The patch's edges: (x, y, patch) triples (see RawPatch.edges). */
   edges: Uint16Array;
-  /** Patches already there when this one arrived: the fire spreads in from them. */
+  /** Patches already there when this one arrived: the magic spreads in from them. */
   before: number[];
   /** Time between patches, ms. */
   step: number;
@@ -107,7 +113,7 @@ export function materialize(canvas: HTMLCanvasElement, params: BurnParams) {
     for (let i = 0; i < W * H; i++) if (src[i * 4 + 3] > 0) vis.push(i);
     if (!vis.length) return stop();
 
-    // The fire starts where this patch meets what's already there.
+    // The magic starts where this patch meets what's already there.
     const dist = new Float32Array(W * H).fill(Infinity);
     const before = new Set(params.before);
     const e = params.edges;
@@ -144,8 +150,9 @@ export function materialize(canvas: HTMLCanvasElement, params: BurnParams) {
     }
     chamfer(dist, W, H);
 
-    // When each pixel burns in: its distance from the fire's start, made
-    // ragged with noise so the front licks forward unevenly.
+    // When each pixel comes in: its distance from where the magic started,
+    // made ragged with noise so the front licks forward unevenly, and each
+    // grain nudged on its own so the front fizzles.
     const seed = (Math.random() * 2 ** 31) | 0;
     const when = new Float32Array(vis.length);
     let lo = Infinity;
@@ -154,7 +161,7 @@ export function materialize(canvas: HTMLCanvasElement, params: BurnParams) {
       const ax = (i % W) / sx;
       const ay = ((i / W) | 0) / sy;
       const n = valueNoise(ax / 5, ay / 5, seed) * 0.65 + valueNoise(ax / 2, ay / 2, seed + 1) * 0.35;
-      const v = dist[i] / sx + (n - 0.5) * 2 * ROUGH;
+      const v = dist[i] / sx + (n - 0.5) * 2 * ROUGH + (Math.random() - 0.5) * 2 * GRAIN;
       when[j] = v;
       if (v < lo) lo = v;
       if (v > hi) hi = v;
@@ -174,7 +181,7 @@ export function materialize(canvas: HTMLCanvasElement, params: BurnParams) {
     for (const i of lit) px[i * 4 + 3] = 0;
     ctx.putImageData(art, 0, 0);
 
-    /** Which way the fire is moving at pixel i, as a sideways push (screen px/s) for its flames. */
+    /** Which way the front is moving at pixel i, as a sideways push (screen px/s) for its sparks. */
     const lean = (i: number) => {
       const x = i % W;
       const y = (i / W) | 0;
@@ -195,7 +202,7 @@ export function materialize(canvas: HTMLCanvasElement, params: BurnParams) {
     let ahead = 0;
     let start = 0;
     let last = 0;
-    let flames = 0;
+    let sparks = 0;
     const density = fxDensity();
 
     const frame = (now: number) => {
@@ -216,7 +223,7 @@ export function materialize(canvas: HTMLCanvasElement, params: BurnParams) {
       while (rim < lit.length && order[rim] <= t + RIM) rim++;
       while (ahead < lit.length && order[ahead] <= t + RIM + AHEAD) ahead++;
 
-      // Far ahead: a spark here and there.
+      // Far ahead: sparks twinkle in and out.
       for (let j = rim; j < ahead; j++) {
         if (!spark[j]) continue;
         const o = lit[j] * 4;
@@ -224,29 +231,31 @@ export function materialize(canvas: HTMLCanvasElement, params: BurnParams) {
         px[o] = HOT[0];
         px[o + 1] = HOT[1];
         px[o + 2] = HOT[2];
-        px[o + 3] = src[o + 3] * near * (0.5 + 0.5 * Math.sin(now / 40 + spark[j]));
+        px[o + 3] = src[o + 3] * near * (0.5 + 0.5 * Math.sin(now / 38 + spark[j]));
       }
-      // Just ahead: the item's shape glows like embers, hotter near the front.
+      // Just ahead: a faint golden mist gathers in the item's shape, the
+      // twinkling sparks brighter in it.
       for (let j = shown; j < rim; j++) {
         const o = lit[j] * 4;
         const k = 1 - (order[j] - t) / RIM;
-        px[o] = PREHEAT[0];
-        px[o + 1] = PREHEAT[1];
-        px[o + 2] = PREHEAT[2];
-        px[o + 3] = src[o + 3] * 0.6 * k * k;
+        if (spark[j]) {
+          px[o] = HOT[0];
+          px[o + 1] = HOT[1];
+          px[o + 2] = HOT[2];
+          px[o + 3] = src[o + 3] * (0.5 + 0.5 * k) * (0.5 + 0.5 * Math.sin(now / 38 + spark[j]));
+        } else {
+          px[o] = MIST[0];
+          px[o + 1] = MIST[1];
+          px[o + 2] = MIST[2];
+          px[o + 3] = src[o + 3] * 0.4 * k * k;
+        }
       }
-      // The front: deep orange at its leading edge, white-hot, then the art.
+      // The front: each grain flares up as a hot glint and settles into the lit picture.
       for (let j = line; j < shown; j++) {
         const o = lit[j] * 4;
         const u = (t - order[j]) / LINE;
-        if (u < 0.35) {
-          const m = u / 0.35;
-          for (let c = 0; c < 3; c++) px[o + c] = FRONT[c] + (HOT[c] - FRONT[c]) * m;
-        } else {
-          const m = (u - 0.35) / 0.65;
-          for (let c = 0; c < 3; c++) px[o + c] = HOT[c] + (src[o + c] + LIGHT_HOT[c] - HOT[c]) * m;
-        }
-        px[o + 3] = src[o + 3];
+        for (let c = 0; c < 3; c++) px[o + c] = HOT[c] + (src[o + c] + LIGHT_HOT[c] - HOT[c]) * u;
+        px[o + 3] = src[o + 3] * (0.45 + 0.55 * u);
       }
       // Behind it: the art, lit from within, the light cooling and fading.
       for (let j = settled; j < line; j++) {
@@ -258,16 +267,16 @@ export function materialize(canvas: HTMLCanvasElement, params: BurnParams) {
       }
       ctx.putImageData(art, 0, 0);
 
-      // Flames lick off the front, more the longer it is.
+      // Sparks fly off the front, more the longer it is.
       const front = shown - line;
       if (front > 0) {
         const r = canvas.getBoundingClientRect();
         const scale = r.width / W;
-        const rate = Math.min(FLAMES, 10 + (front / (sx * sy)) * 0.9) * density;
-        flames = Math.min(4, flames + ((now - last) / 1000) * rate);
-        for (; flames >= 1; flames--) {
+        const rate = Math.min(SPARKS, 16 + (front / (sx * sy)) * 1.6) * density;
+        sparks = Math.min(6, sparks + ((now - last) / 1000) * rate);
+        for (; sparks >= 1; sparks--) {
           const i = lit[line + Math.floor(Math.random() * front)];
-          veilFlame({ x: r.left + (i % W) * scale, y: r.top + ((i / W) | 0) * scale }, lean(i), 1.15);
+          veilSpark({ x: r.left + (i % W) * scale, y: r.top + ((i / W) | 0) * scale }, lean(i), 1);
         }
       }
       last = now;

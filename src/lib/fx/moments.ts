@@ -158,11 +158,12 @@ export function artRevealed(art: Element) {
   light(art, { color: [1, 0.7, 0.35], radius: 300, intensity: 0.35, decay: 1 });
 }
 
-/** The veiled art catches fire at `at` (where the first patch starts to burn in); `size` is its width. */
+/** The magic catches at `at` (where the first patch of veiled art starts to come in); `size` is its width. */
 export function veilIgnites(at: Point, size: number) {
   if (!fxActive()) return;
-  flash(at, { radius: Math.min(70, size * 0.4), color: C.ember, intensity: 0.3, life: 0.5 });
-  sparks(at, { count: 6, speed: [40, 160], life: [0.3, 0.6], gravity: -80, size: [0.6, 1.2], colors: [C.whiteHot, C.gold, C.ember] });
+  flash(at, { radius: Math.min(40, size * 0.25), color: C.gold, intensity: 0.25, life: 0.35 });
+  sparks(at, { count: 12, speed: [50, 200], life: [0.3, 0.7], gravity: -40, size: [0.5, 1.1], colors: [C.whiteHot, C.goldPale, C.gold] });
+  glints(at, { count: 2, size: [3, 6], life: [0.3, 0.5] });
 }
 
 /** How many of a continuous effect's particles this device draws, 0 to 1 (fewer on phones and under load). */
@@ -171,47 +172,62 @@ export function fxDensity() {
 }
 
 /**
- * A lick of flame off veiled art that is burning into being: a soft light
- * that rises, swells and cools from gold to deep red as it fades. `lean`
- * (px/s) pushes it sideways, towards where the item is still missing; `heat`
- * scales it (the advancing front burns hotter than a waiting seam).
+ * A little particle flying off veiled art as it comes in, or off a seam
+ * where the item is still missing a part: mostly crisp sparks streaking up
+ * and out and curling as they cool, now and then a glint or a drifting
+ * ember. `lean` (px/s) pushes it the way the magic is moving; `heat` scales
+ * how fast and bright it flies.
  */
-export function veilFlame(at: Point, lean: Point = { x: 0, y: 0 }, heat = 1) {
+export function veilSpark(at: Point, lean: Point = { x: 0, y: 0 }, heat = 1) {
   if (!fxActive()) return;
-  particle({
-    x: at.x + rand(-1.5, 1.5),
-    y: at.y + rand(-1.5, 1.5),
-    vx: lean.x + rand(-10, 10),
-    vy: lean.y - rand(20, 55) * heat,
-    life: rand(0.35, 0.8),
-    size: rand(2.4, 4.2) * heat,
-    sizeEnd: rand(5, 9) * heat,
-    color: Math.random() < 0.3 ? k3(C.whiteHot, 0.8 * heat) : k3(C.gold, 0.9 * heat),
-    colorEnd: k3(C.emberDeep, 0.2),
-    gravity: -70,
-    drag: 1.4,
-    shape: Shape.Glow,
-    flicker: 0.4,
-    fadeIn: 0.12,
-    turbulence: 180,
-  });
-  // Now and then a spark flies up out of it.
-  if (Math.random() < 0.12) {
+  const roll = Math.random();
+  if (roll < 0.72) {
+    const a = -Math.PI / 2 + rand(-0.9, 0.9);
+    const v = rand(40, 150) * heat;
     particle({
       x: at.x,
       y: at.y,
-      vx: lean.x * 1.5 + rand(-25, 25),
-      vy: -rand(50, 120),
-      life: rand(0.6, 1.3),
-      size: rand(0.9, 1.6),
+      vx: Math.cos(a) * v + lean.x * 1.6,
+      vy: Math.sin(a) * v + lean.y * 1.6,
+      life: rand(0.35, 0.9),
+      size: rand(0.55, 1.05),
+      color: Math.random() < 0.45 ? C.whiteHot : C.gold,
+      colorEnd: k3(C.ember, 0.35),
+      gravity: rand(-30, 60),
+      drag: 1.6,
+      shape: Shape.Spark,
+      stretch: 0.035,
+      turbulence: 160,
+    });
+  } else if (roll < 0.86) {
+    particle({
+      x: at.x + rand(-2, 2),
+      y: at.y + rand(-2, 2),
+      vx: lean.x * 0.4 + rand(-8, 8),
+      vy: lean.y * 0.4 - rand(5, 25),
+      life: rand(0.25, 0.55),
+      size: rand(2, 4) * heat,
+      color: k3(C.goldPale, 0.9),
+      shape: Shape.Glint,
+      spin: rand(-2, 2),
+      fadeIn: 0.3,
+    });
+  } else {
+    particle({
+      x: at.x,
+      y: at.y,
+      vx: lean.x + rand(-15, 15),
+      vy: lean.y - rand(20, 60),
+      life: rand(0.7, 1.4),
+      size: rand(0.8, 1.5),
       sizeEnd: 0.3,
       color: C.gold,
       colorEnd: k3(C.emberDeep, 0.4),
-      gravity: -20,
+      gravity: -25,
       drag: 0.8,
       shape: Shape.Ember,
       flicker: 0.6,
-      turbulence: 220,
+      turbulence: 200,
     });
   }
 }

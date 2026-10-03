@@ -1,16 +1,16 @@
 // Where a veiled item is still missing a part, the edge of what has appeared
-// keeps burning: a soft ember glow whose hot spots flicker and drift along
-// the seam, with flames licking up and out of it towards the missing part.
-// Each patch says where it meets other patches (its edges). A seam catches
-// as the fire burning its patch in reaches it, and dies down as the fire
-// moves on into the patch on its other side. Only seams between two parts of
-// the item burn, never the item's own outline, so it shows that something is
-// missing there, not what.
+// stays alive with magic: a thin golden glow whose hot spots flicker and
+// drift along the seam, grains twinkling on it, and little sparks flying up
+// and out of it towards the missing part. Each patch says where it meets
+// other patches (its edges). A seam lights up as the magic coming into its
+// patch reaches it, and dies down as the magic moves on into the patch on its
+// other side. Only seams between two parts of the item glow, never the item's
+// own outline, so it shows that something is missing there, not what.
 
 import type { ShownPatch } from './media.svelte';
 import { valueNoise } from './patches';
 import { burnDuration } from './materialize';
-import { fxDensity, veilFlame } from './fx/moments';
+import { fxDensity, veilSpark } from './fx/moments';
 
 /**
  * As fractions of a patch's burn: a seam catches when the fire gets there
@@ -23,16 +23,19 @@ const FADE = 0.35;
 /** Redraws per second. */
 const FPS = 30;
 /** How far the glow reaches from the seam, in art pixels. */
-const REACH = 7;
+const REACH = 4;
 /** How far the glow leans out of its patch towards the missing part, in art pixels. */
-const PUSH = 2.5;
+const PUSH = 1.5;
 /** Room around each seam's glow: its reach plus the lean. */
 const PAD = REACH + PUSH + 1;
 /** Each seam is drawn this many times with different hot spots, blended over time so they flicker. */
 const LAYERS = 3;
-/** Flames off the seams per second, at most, and per seam pixel. */
-const MAX_FLAMES = 60;
-const FLAMES_PER_PIXEL = 0.3;
+/** Sparks off the seams per second, at most, and per seam pixel. */
+const MAX_SPARKS = 80;
+const SPARKS_PER_PIXEL = 0.45;
+/** Grains twinkling on the seams at once, at most, and seam pixels per grain. */
+const MAX_TWINKLES = 60;
+const PIXELS_PER_TWINKLE = 5;
 
 const reduce = typeof matchMedia === 'function' ? matchMedia('(prefers-reduced-motion: reduce)') : null;
 
@@ -48,18 +51,23 @@ function sprite(size: number, stops: [number, string][]): HTMLCanvasElement {
   g.fillRect(0, 0, size, size);
   return c;
 }
-let sprites: { haze: HTMLCanvasElement; ember: HTMLCanvasElement } | null = null;
+let sprites: { haze: HTMLCanvasElement; ember: HTMLCanvasElement; grain: HTMLCanvasElement } | null = null;
 function lights() {
   sprites ??= {
     haze: sprite(64, [
-      [0, 'rgba(255, 96, 24, 1)'],
-      [0.45, 'rgba(220, 60, 12, 0.45)'],
-      [1, 'rgba(160, 30, 0, 0)'],
+      [0, 'rgba(255, 150, 50, 1)'],
+      [0.45, 'rgba(230, 100, 20, 0.4)'],
+      [1, 'rgba(180, 60, 0, 0)'],
     ]),
     ember: sprite(32, [
-      [0, 'rgba(255, 200, 110, 1)'],
-      [0.35, 'rgba(255, 140, 40, 0.6)'],
-      [1, 'rgba(255, 90, 20, 0)'],
+      [0, 'rgba(255, 210, 130, 1)'],
+      [0.35, 'rgba(255, 150, 50, 0.6)'],
+      [1, 'rgba(255, 100, 20, 0)'],
+    ]),
+    grain: sprite(16, [
+      [0, 'rgba(255, 252, 238, 1)'],
+      [0.35, 'rgba(255, 220, 150, 0.8)'],
+      [1, 'rgba(255, 170, 70, 0)'],
     ]),
   };
   return sprites;
@@ -78,6 +86,8 @@ type Seam = {
   y1: number;
   layers: HTMLCanvasElement[] | null;
 };
+
+type Twinkle = { seam: Seam; x: number; y: number; born: number; life: number; size: number };
 
 export interface FrontierParams {
   /** The art's size in its own pixels. */
@@ -105,7 +115,8 @@ export function frontier(canvas: HTMLCanvasElement, params: FrontierParams) {
   /** The layers of all seams at full glow, and which seams they hold. */
   let base: HTMLCanvasElement[] | null = null;
   let baseKey = '';
-  let flames = 0;
+  let sparks = 0;
+  let twinkles: Twinkle[] = [];
   let raf = 0;
   let last = 0;
   let stopped = false;
@@ -161,16 +172,16 @@ export function frontier(canvas: HTMLCanvasElement, params: FrontierParams) {
         const n = valueNoise(x / 6, y / 6, seed) * 0.7 + valueNoise(x / 2.5, y / 2.5, seed + 1) * 0.3;
         const v = Math.max(0, (n - 0.3) / 0.6);
         const hot = Math.min(1, v * v);
-        // Pushed a little out of the patch, so the fire spills into the gap.
+        // Pushed a little out of the patch, so the glow spills into the gap.
         const cx = (x + s.out.x * PUSH - ox) * k;
         const cy = (y + s.out.y * PUSH - oy) * k;
         if (j % 6 === 0) {
           const d = REACH * 2 * k * (0.7 + 0.3 * hot);
-          g.globalAlpha = 0.09 + 0.2 * hot;
+          g.globalAlpha = 0.06 + 0.14 * hot;
           g.drawImage(haze, cx - d / 2, cy - d / 2, d, d);
         }
-        const e = 4.5 * k * (0.6 + 0.4 * hot);
-        g.globalAlpha = 0.04 + 0.26 * hot;
+        const e = 2.6 * k * (0.7 + 0.3 * hot);
+        g.globalAlpha = 0.05 + 0.3 * hot;
         g.drawImage(ember, cx - e / 2, cy - e / 2, e, e);
       }
       out.push(c);
@@ -292,16 +303,31 @@ export function frontier(canvas: HTMLCanvasElement, params: FrontierParams) {
     }
 
     if (!still && live.length) {
-      // Flames lick up off the seams, leaning out towards the missing part.
-      const rate = Math.min(MAX_FLAMES, 4 + (glowing / 2) * FLAMES_PER_PIXEL) * fxDensity();
-      flames = Math.min(3, flames + dt * rate);
-      for (; flames >= 1; flames--) {
+      // Grains twinkle on the seams, each for a moment.
+      const want = Math.min(MAX_TWINKLES, Math.ceil(glowing / 2 / PIXELS_PER_TWINKLE));
+      twinkles = twinkles.filter((g) => now - g.born < g.life && strength(g.seam, now) > 0);
+      while (twinkles.length < want) {
+        const p = pickPoint(live, glowing);
+        twinkles.push({ ...p, born: now - Math.random() * 150, life: 150 + Math.random() * 450, size: 1 + Math.random() * 1.6 });
+      }
+      const { grain } = lights();
+      for (const g of twinkles) {
+        const a = Math.sin((Math.PI * (now - g.born)) / g.life);
+        if (a <= 0) continue;
+        ctx.globalAlpha = a * strength(g.seam, now);
+        const d = g.size * k;
+        ctx.drawImage(grain, g.x * k - d / 2, g.y * k - d / 2, d, d);
+      }
+      // And little sparks fly up off them, leaning out towards the missing part.
+      const rate = Math.min(MAX_SPARKS, 6 + (glowing / 2) * SPARKS_PER_PIXEL) * fxDensity();
+      sparks = Math.min(4, sparks + dt * rate);
+      for (; sparks >= 1; sparks--) {
         const p = pickPoint(live, glowing);
         const r = canvas.getBoundingClientRect();
-        veilFlame(
+        veilSpark(
           { x: r.left + (p.x / cur.w) * r.width, y: r.top + (p.y / cur.h) * r.height },
-          { x: p.seam.out.x * 22, y: p.seam.out.y * 22 },
-          0.8,
+          { x: p.seam.out.x * 25, y: p.seam.out.y * 25 },
+          0.75,
         );
       }
     }
