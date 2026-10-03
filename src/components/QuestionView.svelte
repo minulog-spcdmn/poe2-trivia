@@ -3,7 +3,7 @@
   import { session, engine } from '../lib/session.svelte';
   import { AUTO_NEXT_MS, autoNextLeft, isFake, questionTopic } from '../lib/game';
   import { shown } from '../lib/media.svelte';
-  import { materialize, type BurnParams } from '../lib/materialize';
+  import { burnDuration, FINALE_MS, materialize, type BurnParams } from '../lib/materialize';
   import { frontier } from '../lib/frontier';
   import { itemImage } from '../lib/ui';
   import { sfx } from '../lib/sound';
@@ -13,7 +13,7 @@
   import { backdropShadow } from '../lib/backdropShadow';
   import ArcaneCircle from './ArcaneCircle.svelte';
   import { untrack } from 'svelte';
-  import { FILL_START, answerCharging, artRevealed, raceMiss, reveal as revealFx } from '../lib/fx/moments';
+  import { FILL_START, answerCharging, artRevealed, raceMiss, reveal as revealFx, veilComplete, veilHandoff } from '../lib/fx/moments';
   import { FILL_LEAD } from '../lib/soundDesign';
   import { recordReveal } from '../lib/fx/streaks';
   import { scoreRowOf } from '../lib/scoreRows';
@@ -60,6 +60,97 @@
   const patches = $derived(Object.values(media?.patches ?? {}));
   // Size of the art shown during the question: keeps the reveal from jumping.
   const hint = $derived(media?.veil ?? media?.art ?? null);
+
+  // Veiled art: when the newest patch will have finished coming in (ms, page
+  // clock). At the reveal the rest of the picture comes in quickly first, and
+  // only then hands over to the full art (veilDone).
+  let patchesSeen = 0;
+  let veilSettles = 0;
+  let veilDone = $state(false);
+  $effect(() => {
+    const n = patches.length;
+    const v = media?.veil;
+    untrack(() => {
+      if (n === patchesSeen) return;
+      patchesSeen = n;
+      if (n && v) veilSettles = performance.now() + (reveal ? FINALE_MS : burnDuration(v.step));
+    });
+  });
+  $effect(() => {
+    if (!reveal) {
+      veilDone = false;
+      return;
+    }
+    const v = media?.veil;
+    if (!v) return;
+    // Waits for the rest to come in; should some never arrive, it gives up
+    // a while after the last one did.
+    const whole = patches.length >= v.count;
+    const wait = whole ? Math.max(0, untrack(() => veilSettles) + 100 - performance.now()) : 2500;
+    const timer = setTimeout(() => (veilDone = true), wait);
+    return () => clearTimeout(timer);
+  });
+  // The full art loads as the reveal starts, so the veiled picture only hands
+  // over once it can show (or after a while, should it not load).
+  let fullLoaded = $state(false);
+  $effect(() => {
+    if (!reveal || !item) {
+      fullLoaded = false;
+      return;
+    }
+    let live = true;
+    const done = () => live && (fullLoaded = true);
+    const img = new Image();
+    img.src = itemImage(item.id);
+    img.decode().then(done, done);
+    const timer = setTimeout(done, 3000);
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+  });
+  /** The full art replaces what was shown during the question. */
+  const showFull = $derived(!!reveal && !!item && (!media?.veil || (veilDone && fullLoaded)));
+
+  // A veiled picture that comes in whole before the reveal shimmers once.
+  let wholeFor = 0;
+  $effect(() => {
+    const v = media?.veil;
+    if (!v || reveal || patches.length < v.count || wholeFor === q.askedAt) return;
+    const qid = q.askedAt;
+    const timer = setTimeout(
+      () => {
+        wholeFor = qid;
+        const el = artEl?.querySelector('.veil');
+        if (!el) return;
+        el.animate([{ filter: 'brightness(1)' }, { filter: 'brightness(1.4) saturate(1.1)' }, { filter: 'brightness(1)' }], {
+          duration: 800,
+          easing: 'ease-in-out',
+        });
+        veilComplete(el);
+      },
+      Math.max(0, untrack(() => veilSettles) - performance.now()),
+    );
+    return () => clearTimeout(timer);
+  });
+
+  /**
+   * Svelte transition: the veiled art hands over to the full picture. It
+   * flares golden, swells a touch towards the full art's size (the copy shown
+   * during the question is padded a little) and fades as the full art fades in.
+   */
+  function handoff(node: Element) {
+    const veil = node.querySelector('.veil');
+    if (veil) veilHandoff(veil);
+    const quick = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    return {
+      duration: quick ? 250 : 700,
+      css: (t: number, u: number) =>
+        quick
+          ? `opacity: ${t}`
+          : `opacity: ${t}; transform: scale(${1 + 0.05 * u}); filter: brightness(${1 + 1.2 * Math.sin(Math.PI * Math.min(1, u * 1.4))}) sepia(${0.45 * u})`,
+    };
+  }
 
   /** Race mode: who guessed which option wrong (and, once revealed, who won). */
   function markers(index: number) {
@@ -131,9 +222,9 @@
     artRevealed(artEl);
   });
 
-  /** Svelte action: a patch of veiled art burns in. */
+  /** Svelte action: a patch of veiled art burns in (the quick ones at the reveal leave the sound to it). */
   function appear(node: HTMLCanvasElement, params: BurnParams) {
-    sfx('burn');
+    if (!params.quick) sfx('burn');
     return materialize(node, params);
   }
 
@@ -393,11 +484,12 @@
         <div class="art" bind:this={artEl} use:backdropShadow={{ fill: 'stage' }}>
           <ArcaneCircle state={reveal ? (iWon ? 'good' : 'bad') : 'idle'} />
           <div class="frame">
-            {#if reveal && item}
+            {#if showFull && item}
               <ArtImage src={itemImage(item.id)} alt={item.name} w={hint?.w} h={hint?.h} float unflip={mirrored(0)} />
-            {:else if media?.veil}
+            {/if}
+            {#if media?.veil && !showFull}
               {@const v = media.veil}
-              <span class="art-slot">
+              <span class="art-slot" out:handoff>
               <span class="art-fit veil" style:--w={v.w} style:--h={v.h} style:--s={1.8}>
                 {#each patches as p (p.i)}
                   <canvas
@@ -412,15 +504,16 @@
                       edges: p.edges,
                       before: patches.filter((o) => o.i !== p.i).map((o) => o.i),
                       step: v.step,
+                      quick: !!reveal,
                     }}
                   ></canvas>
                 {/each}
-                <canvas class="frontier" aria-hidden="true" use:frontier={{ w: v.w, h: v.h, step: v.step, patches }}></canvas>
+                <canvas class="frontier" aria-hidden="true" use:frontier={{ w: v.w, h: v.h, step: v.step, quick: !!reveal, patches }}></canvas>
               </span>
               </span>
-            {:else if media?.art}
+            {:else if !showFull && media?.art}
               <ArtImage src={media.art.url} alt="The item to identify" w={media.art.w} h={media.art.h} float />
-            {:else}
+            {:else if !showFull}
               <span class="loading big" aria-label="Loading"></span>
             {/if}
           </div>

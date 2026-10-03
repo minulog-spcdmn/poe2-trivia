@@ -20,11 +20,12 @@ export interface Patch {
   edges: ArrayBuffer;
 }
 
-/** A veiled picture's size (its patches are placed on it), and the time between patches, ms. */
+/** A veiled picture's size (its patches are placed on it), the time between patches (ms) and how many there are. */
 export interface VeilArt {
   w: number;
   h: number;
   step: number;
+  count: number;
 }
 
 /** Everything a question can show, prepared once by the host. */
@@ -149,7 +150,7 @@ export async function prepareMedia(q: Question, grayscale: boolean): Promise<Pre
     return out;
   }
   const patches = cutPatches(canvas.getContext('2d')!.getImageData(0, 0, W, H).data, W, H, q.veil.size, q.veil.seed);
-  out.veil = { w: W, h: H, step: Math.round((q.veil.seconds * 1000) / Math.max(1, patches.length)) };
+  out.veil = { w: W, h: H, step: Math.round((q.veil.seconds * 1000) / Math.max(1, patches.length)), count: patches.length };
   const order = spreadOrder(patches, q.veil.seed);
   out.patches = await Promise.all(
     order.map(async (i) => {
@@ -229,7 +230,7 @@ class Shown {
         this.art = { url: this.url(m.data), w: m.w, h: m.h };
         break;
       case 'veil':
-        this.veil = { w: m.w, h: m.h, step: m.step };
+        this.veil = { w: m.w, h: m.h, step: m.step, count: m.count };
         break;
       case 'patch':
         this.patches = {

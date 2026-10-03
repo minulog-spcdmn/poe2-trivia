@@ -166,6 +166,22 @@ export function veilIgnites(at: Point, size: number) {
   glints(at, { count: 2, size: [3, 6], life: [0.3, 0.5] });
 }
 
+/** A veiled picture has come in whole: a soft glow over it and a few glints. */
+export function veilComplete(art: Element) {
+  if (!fxActive()) return;
+  const b = boxOf(art);
+  flash(art, { radius: Math.max(b.w, b.h) * 0.45, color: C.gold, intensity: 0.12, life: 0.7 });
+  glints(art, { count: 4, size: [4, 7], delay: [0, 0.4] });
+  sparks(art, { count: 10, area: 'fill', speed: [30, 120], life: [0.4, 0.9], gravity: -40, size: [0.5, 1], colors: [C.whiteHot, C.goldPale, C.gold] });
+}
+
+/** The veiled picture hands over to the full art at the reveal: a shimmer of glints and sparks over it. */
+export function veilHandoff(art: Element) {
+  if (!fxActive()) return;
+  glints(art, { count: 5, size: [4, 8], delay: [0, 0.35] });
+  sparks(art, { count: 16, area: 'fill', speed: [40, 160], life: [0.4, 1], gravity: -50, size: [0.5, 1.1], colors: [C.whiteHot, C.goldPale, C.gold] });
+}
+
 /** How many of a continuous effect's particles this device draws, 0 to 1 (fewer on phones and under load). */
 export function fxDensity() {
   return budget(100) / 100;

@@ -16,6 +16,9 @@ export function burnDuration(step: number) {
   return Math.min(2400, Math.max(900, step * 1.6));
 }
 
+/** How long the rest of the picture takes to come in once the answer is out, per patch (ms). */
+export const FINALE_MS = 650;
+
 /**
  * As fractions of the burn: the mist ahead of the front, the twinkling ahead
  * of that, how long each grain glints, and how long its light takes to cool.
@@ -33,7 +36,7 @@ const SPARKLY = 0.08;
 /** Sparks off the front per second, at most. */
 const SPARKS = 130;
 /** Burns at once; past this (a picture arriving with many patches in) patches just fade in. */
-const MAX_BURNING = 10;
+const MAX_BURNING = 14;
 
 const HOT = [255, 250, 232];
 /** The mist the item gathers out of. */
@@ -84,6 +87,8 @@ export interface BurnParams {
   before: number[];
   /** Time between patches, ms. */
   step: number;
+  /** The answer is out: come in quickly (FINALE_MS). */
+  quick?: boolean;
 }
 
 /**
@@ -192,7 +197,7 @@ export function materialize(canvas: HTMLCanvasElement, params: BurnParams) {
       return { x: (gx / len) * 30, y: (gy / len) * 30 };
     };
 
-    const duration = burnDuration(params.step);
+    const duration = params.quick ? FINALE_MS : burnDuration(params.step);
     const from = -RIM;
     const to = 1 + LINE + COOL;
     let settled = 0;

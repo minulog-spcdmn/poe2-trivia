@@ -9,6 +9,12 @@ How they are layered and filtered is set in src/lib/soundDesign.ts.
 
   amb-6.mp3            Wood fire crackling near flames
                        by felix.blume, https://freesound.org/s/779876/
+  burn-ignite.mp3      Light Fire Sound.wav
+                       by Wdomino, https://freesound.org/s/507724/
+  burn-sizzle.mp3      sparkler_loop2
+                       by funkysandwich, https://freesound.org/s/870292/
+  burn-sparkle.mp3     Sparkling Star 02.wav
+                       by LilMati, https://freesound.org/s/462094/
   click-1.mp3          Perc_Chair_lo
                        by LudwigMueller, https://freesound.org/s/548503/
   click-4.mp3          SingleKnock_Wood
@@ -29,8 +35,6 @@ How they are layered and filtered is set in src/lib/soundDesign.ts.
                        by dsp9000, https://freesound.org/s/76405/
   fill-sparks.mp3      single crackles cut from amb-6.mp3 and pitched up
                        (scripts/make-sparks.mjs)
-  burn.mp3             synthesised (noise, sine pings and partials) with
-                       single crackles cut from amb-6.mp3 (scripts/make-burn.mjs)
   hover-1.mp3          Jacket/Cloth Rustle 7
                        by brandondelehoy, https://freesound.org/s/494793/
   hover-2.mp3          Jacket/Cloth Rustle 4

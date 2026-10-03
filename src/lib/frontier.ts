@@ -9,7 +9,7 @@
 
 import type { ShownPatch } from './media.svelte';
 import { valueNoise } from './patches';
-import { burnDuration } from './materialize';
+import { burnDuration, FINALE_MS } from './materialize';
 import { fxDensity, veilSpark } from './fx/moments';
 
 /**
@@ -95,6 +95,8 @@ export interface FrontierParams {
   h: number;
   /** Time between patches, ms. */
   step: number;
+  /** The answer is out: patches from now on come in quickly (FINALE_MS). */
+  quick?: boolean;
   patches: ShownPatch[];
 }
 
@@ -105,8 +107,8 @@ export interface FrontierParams {
 export function frontier(canvas: HTMLCanvasElement, params: FrontierParams) {
   let cur = params;
   const ctx = canvas.getContext('2d')!;
-  /** When each patch was first seen. */
-  const arrived = new Map<number, number>();
+  /** When each patch was first seen, and how long it takes to come in. */
+  const arrived = new Map<number, { at: number; ms: number }>();
   const seams = new Map<string, Seam>();
   let W = 0;
   let H = 0;
@@ -135,10 +137,9 @@ export function frontier(canvas: HTMLCanvasElement, params: FrontierParams) {
 
   /** 0 to 1, easing, between fractions `a` and `b` of patch i's burn. */
   const ramp = (i: number, now: number, a: number, b: number) => {
-    const at = arrived.get(i);
-    if (at === undefined) return 0;
-    const d = burnDuration(cur.step);
-    const u = Math.min(1, Math.max(0, (now - at - a * d) / ((b - a) * d)));
+    const got = arrived.get(i);
+    if (!got) return 0;
+    const u = Math.min(1, Math.max(0, (now - got.at - a * got.ms) / ((b - a) * got.ms)));
     return u * u * (3 - 2 * u);
   };
   const grown = (s: Seam, now: number) => ramp(s.from, now, GROW_AT, GROW_END);
@@ -346,7 +347,8 @@ export function frontier(canvas: HTMLCanvasElement, params: FrontierParams) {
     cur = next;
     const now = performance.now();
     const fresh = next.patches.filter((p) => !arrived.has(p.i));
-    for (const p of fresh) arrived.set(p.i, now);
+    const ms = next.quick ? FINALE_MS : burnDuration(next.step);
+    for (const p of fresh) arrived.set(p.i, { at: now, ms });
     for (const p of fresh) learn(p);
     wake();
   };

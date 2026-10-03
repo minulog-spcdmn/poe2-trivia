@@ -61,6 +61,7 @@ test('veiled art patches carry their edges, in whole (x, y, patch) triples', () 
   assert.equal(parseHostMsg({ ...patch, edges: new ArrayBuffer(7) }), null);
   assert.equal(parseHostMsg({ ...patch, edges: [1, 2, 3] }), null);
   assert.equal(parseHostMsg({ ...patch, edges: new ArrayBuffer(6 * 20000) }), null);
-  assert.ok(parseHostMsg({ t: 'veil', qid: 5, w: 100, h: 120, step: 900 }));
+  assert.ok(parseHostMsg({ t: 'veil', qid: 5, w: 100, h: 120, step: 900, count: 12 }));
+  assert.equal(parseHostMsg({ t: 'veil', qid: 5, w: 100, h: 120, step: 900 }), null);
   assert.equal(parseHostMsg({ t: 'veil', qid: 5, w: 100, h: 120 }), null);
 });
