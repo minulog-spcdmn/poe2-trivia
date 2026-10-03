@@ -214,7 +214,8 @@
     if (e.target instanceof HTMLInputElement) return;
     // Browser shortcuts (Ctrl/Cmd+1 switches tabs), held keys, and an open dialog aren't answers.
     if (e.ctrlKey || e.metaKey || e.altKey || e.repeat || document.querySelector('[aria-modal="true"]')) return;
-    const n = Number(e.key);
+    // 0 is the tenth option, the key after 9.
+    const n = e.key === '0' ? 10 : Number(e.key);
     if (!reveal && n >= 1 && n <= count) answer(n - 1);
     else if (reveal && canNext && (e.key === 'Enter' || e.key === ' ')) {
       e.preventDefault();
@@ -310,7 +311,7 @@
   {:else if !mine}
     <p class="spectate muted">{active.name} is deciding…</p>
   {:else}
-    <p class="spectate muted">Tip: press 1–{count} to answer.</p>
+    <p class="spectate muted">Tip: press 1–{count === 10 ? '9 and 0' : count} to answer.</p>
   {/if}
 {/snippet}
 
@@ -337,7 +338,7 @@
         </div>
         {@render stamp(true)}
       </div>
-      <div class="tiles" bind:this={artEl} class:many={count > 4} class:six={count === 6}>
+      <div class="tiles" bind:this={artEl} class:many={count > 4} class:six={count === 6} class:ten={count === 10}>
         {#each q.labels as _, i (i)}
           {@const st = optionState(i)}
           {@const src = reveal && q.options[i] ? itemImage(q.options[i]) : media?.options[i]}
@@ -351,7 +352,7 @@
             onclick={() => answer(i)}
             in:scale={{ start: 0.85, duration: 450, delay: 250 + i * 80 }}
           >
-            <span class="key">{i + 1}</span>
+            <span class="key">{(i + 1) % 10}</span>
             {#if src}
               <!-- Named pictures switch to the original art, so a mirrored one turns round. -->
               <span class="pic"><ArtImage {src} alt="Option {i + 1}" scale={1.6} unflip={mirrored(i) && !!q.options[i]} /></span>
@@ -421,7 +422,7 @@
         </div>
       </div>
 
-      <div class="options" class:compact={count > 6}>
+      <div class="options" class:compact={count > 6} class:dense={count > 8}>
         {#each q.labels as label, i (i)}
           {@const st = optionState(i)}
           <button
@@ -438,7 +439,7 @@
             in:fly={{ x: 40, duration: 450, delay: 300 + i * 90 }}
           >
             <span class="sheen"></span>
-            <span class="key">{i + 1}</span>
+            <span class="key">{(i + 1) % 10}</span>
             <span class="text">{label ?? optionName(i)}</span>
             {@render who(i)}
             {#if st === 'right'}<span class="mark" in:scale={{ duration: 300 }}>✓</span>{/if}
@@ -885,6 +886,13 @@
   .compact {
     gap: 0.6rem;
   }
+  .dense .option {
+    padding-top: 0.5rem;
+    padding-bottom: 0.5rem;
+  }
+  .dense {
+    gap: 0.45rem;
+  }
   .option.pending {
     border-color: var(--gold);
     animation: glow 1s ease-in-out infinite;
@@ -942,6 +950,9 @@
   }
   .tiles.six {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .tiles.ten {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
   }
   .tile {
     position: relative;
@@ -1248,7 +1259,8 @@
       margin-top: -5px;
     }
     .tiles,
-    .tiles.six {
+    .tiles.six,
+    .tiles.ten {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
     .tile,
