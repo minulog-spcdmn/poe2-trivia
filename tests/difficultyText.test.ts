@@ -52,8 +52,23 @@ test('deathmatch and lockout wording, and a name for every difficulty', () => {
   assert.deepEqual(Object.keys(DIFFICULTY_NAMES), ['cruel', 'merciless', 'eternal', 'custom']);
 });
 
-test('Unveil is idle when every question is "find the art"', () => {
-  const veil = KNOB_TEXT.find((k) => k.key === 'veil')!;
-  assert.equal(veil.idle!({ ...PRESETS.eternal, artChance: 1 }), 'No name questions to cover');
-  assert.equal(veil.idle!(PRESETS.eternal), undefined);
+test('steps with no effect say why, briefly', () => {
+  const off = (key: string, step: unknown, k: Knobs) =>
+    (KNOB_TEXT.find((t) => t.key === key)!.off as (v: unknown, k: Knobs) => string | undefined)(step, k);
+  for (const step of KNOB_STEPS.veil) assert.equal(off('veil', step, { ...PRESETS.eternal, artChance: 1 }), 'No name questions to cover');
+  assert.equal(off('veil', 'slow', PRESETS.eternal), undefined);
+  assert.equal(off('grayscale', 'art', { ...PRESETS.eternal, artChance: 0 }), 'No "find the art" questions');
+  assert.equal(off('grayscale', 'all', { ...PRESETS.eternal, artChance: 0 }), undefined);
+  assert.equal(off('fakes', 3, { ...PRESETS.eternal, options: 4 }), 'Needs 6 or more options');
+});
+
+test('every hint, and every reason that replaces one, fits on one line', () => {
+  const texts = KNOB_TEXT.flatMap((t) => {
+    const off = t.off as ((v: unknown, k: Knobs) => string | undefined) | undefined;
+    const reasons = (KNOB_STEPS[t.key] as readonly unknown[]).flatMap((v) =>
+      [{ ...PRESETS.eternal, artChance: 0, options: 4 }, { ...PRESETS.eternal, artChance: 1, options: 4 }].map((k) => off?.(v, k)),
+    );
+    return [t.hint, ...reasons.filter((r): r is string => !!r)];
+  });
+  for (const t of texts) assert.ok(t.length <= 38, `${t} (${t.length})`);
 });

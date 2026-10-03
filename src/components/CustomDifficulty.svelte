@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { fade, fly } from 'svelte/transition';
   import { session } from '../lib/session.svelte';
-  import { KNOB_STEPS, knobsOf, maxFakes, type Knobs } from '../lib/game';
+  import { KNOB_STEPS, knobsOf, type Knobs } from '../lib/game';
   import { KNOB_TEXT } from '../lib/difficultyText';
   import { portal } from '../lib/portal';
 
@@ -15,8 +15,9 @@
     session.dispatch({ type: 'settings', settings: { custom: change } });
   }
 
-  /** Made-up names a step would need room for (each copies a real name that stays on screen). */
-  const tooMany = (key: keyof Knobs, step: unknown) => key === 'fakes' && (step as number) > maxFakes(knobs.options);
+  /** Why a step has no effect with the other knobs as they are, if so. */
+  const offFor = (knob: { off?: unknown }, step: unknown) =>
+    (knob.off as ((v: unknown, k: Knobs) => string | undefined) | undefined)?.(step, knobs);
 
   let box = $state<HTMLElement>();
   onMount(() => {
@@ -71,11 +72,12 @@
     <div class="rows">
       {#each KNOB_TEXT as knob (knob.key)}
         {@const steps = KNOB_STEPS[knob.key] as readonly Knobs[typeof knob.key][]}
-        {@const idle = knob.idle?.(knobs)}
-        <div class="row" class:idle>
+        {@const why = offFor(knob, knobs[knob.key])}
+        <!-- The step that's picked keeps its place when it has no effect; the hint says why. -->
+        <div class="row" class:idle={steps.every((step) => offFor(knob, step))}>
           <div class="text">
             <span class="name">{knob.name}</span>
-            <span class="hint">{idle ?? knob.hint}</span>
+            <span class="hint" class:why>{why ?? knob.hint}</span>
           </div>
           <div class="track" style:--n={steps.length} role="radiogroup" aria-label={knob.name}>
             {#each steps as step (String(step))}
@@ -83,8 +85,8 @@
                 class:on={knobs[knob.key] === step}
                 role="radio"
                 aria-checked={knobs[knob.key] === step}
-                disabled={!!idle || tooMany(knob.key, step)}
-                title={tooMany(knob.key, step) ? `Needs ${(step as number) * 2} or more options` : undefined}
+                disabled={!!offFor(knob, step)}
+                title={offFor(knob, step)}
                 onclick={() => set({ [knob.key]: step })}
               >
                 {(knob.label as (v: typeof step) => string)(step)}
@@ -189,6 +191,12 @@
     font-style: italic;
     line-height: 1.25;
     color: var(--muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .hint.why {
+    color: #c99a6a;
   }
 
   /* One joined control per knob, every one the same width. */

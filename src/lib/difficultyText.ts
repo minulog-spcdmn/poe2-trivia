@@ -2,7 +2,7 @@
 // described by the same sentences, and the custom editor uses the same terms,
 // so a knob reads the same wherever it shows up.
 
-import { knobsOf, type Difficulty, type Knobs, type Settings, type VeilSpeed } from './game.ts';
+import { knobsOf, maxFakes, type Difficulty, type Knobs, type Settings, type VeilSpeed } from './game.ts';
 
 /** Display names, in the order the lobby offers them. */
 export const DIFFICULTY_NAMES: Record<Difficulty, string> = {
@@ -83,10 +83,11 @@ export const lockoutText = (turns: number) => `your next ${turns} turns`;
 export interface KnobText<K extends keyof Knobs = keyof Knobs> {
   key: K;
   name: string;
+  /** Kept to one line in the editor, like `off`, so swapping them never moves the rows. */
   hint: string;
   label: (v: Knobs[K]) => string;
-  /** Why the knob has no effect with these settings (shown in place of the hint), if it has none. */
-  idle?: (k: Knobs) => string | undefined;
+  /** Why a step has no effect (or can't be picked) with these settings, if so. */
+  off?: (step: Knobs[K], k: Knobs) => string | undefined;
 }
 
 /**
@@ -102,22 +103,30 @@ export const KNOB_TEXT: { [K in keyof Knobs]: KnobText<K> }[keyof Knobs][] = [
     hint: 'Wrong answers named like the right one',
     label: (v) => (v === 0 ? 'None' : v === 1 ? 'All' : 'Half'),
   },
-  { key: 'fakes', name: 'Made-up names', hint: "Wrong answers that aren't real items", label: (v) => (v ? String(v) : 'None') },
-  { key: 'artChance', name: 'Find the art', hint: 'Questions that give a name and ask for its art', label: often },
+  {
+    key: 'fakes',
+    name: 'Made-up names',
+    hint: "Wrong answers that aren't real items",
+    label: (v) => (v ? String(v) : 'None'),
+    // Each copies a real name that stays on screen.
+    off: (v, k) => (v > maxFakes(k.options) ? `Needs ${v * 2} or more options` : undefined),
+  },
+  { key: 'artChance', name: 'Find the art', hint: 'Pick the art for a given name', label: often },
   {
     key: 'veil',
     name: 'Unveil',
-    hint: 'Art hidden under tiles that lift one by one',
+    hint: 'Tiles over the art lift one by one',
     label: (v) => VEIL_WORD[v],
     // Tiles only cover the art of name questions.
-    idle: (k) => (k.artChance === 1 ? 'No name questions to cover' : undefined),
+    off: (_, k) => (k.artChance === 1 ? 'No name questions to cover' : undefined),
   },
   {
     key: 'grayscale',
     name: 'Grayscale',
     hint: 'Art shown without colour',
     label: (v) => (v === 'off' ? 'Off' : v === 'art' ? 'Find the art' : 'All art'),
+    off: (v, k) => (v === 'art' && k.artChance === 0 ? 'No "find the art" questions' : undefined),
   },
   { key: 'mirror', name: 'Mirrored art', hint: 'Art flipped left to right', label: often },
-  { key: 'lockout', name: 'Category lockout', hint: 'Turns before a picked category comes back', label: (v) => (v ? String(v) : 'None') },
+  { key: 'lockout', name: 'Category lockout', hint: 'Turns until a picked category returns', label: (v) => (v ? String(v) : 'None') },
 ];
