@@ -175,9 +175,9 @@ export async function prepareMedia(q: Question, grayscale: boolean): Promise<Pre
 }
 
 /** Chance that a patch appears together with the one before it. */
-const PAIR_CHANCE = 0.15;
+const PAIR_CHANCE = 0.08;
 /** How far each gap between patches may stray from the even pace, either way. */
-const JITTER = 0.35;
+const JITTER = 0.12;
 
 /**
  * When (ms after the question was asked) each of `count` patches appears, by

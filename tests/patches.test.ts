@@ -79,3 +79,19 @@ test('edges mark where a patch meets another, from both sides', () => {
   });
   for (const m of meets) assert.ok(meets.has(m.split('-').reverse().join('-')), `${m} one-sided`);
 });
+
+test('patches are about the same size, so every step reveals about as much', () => {
+  const W = 180;
+  const H = 240;
+  const art = ellipse(W, H);
+  for (const seed of [1, 2, 3]) {
+    const areas = cutPatches(art, W, H, 5, seed).map((p) => {
+      let a = 0;
+      for (let i = 0; i < p.w * p.h; i++) if (p.pixels[i * 4 + 3]) a++;
+      return a;
+    });
+    const mean = areas.reduce((a, b) => a + b, 0) / areas.length;
+    const spread = Math.sqrt(areas.reduce((a, b) => a + (b - mean) ** 2, 0) / areas.length) / mean;
+    assert.ok(spread < 0.3, `seed ${seed}: sizes vary by ${(spread * 100).toFixed(0)}%`);
+  }
+});

@@ -90,10 +90,54 @@ export function cutPatches(rgba: Uint8ClampedArray, W: number, H: number, size: 
     sy.push(by);
   }
 
+  // A few rounds of moving each seed to the middle of the pixels nearest to
+  // it (Lloyd's relaxation) even out the patches' sizes, so every step of the
+  // reveal shows about as much. Each seed lands on its own pixel nearest that
+  // middle, so it stays on the item even where the item curves.
+  const near = new Int16Array(lit.length);
+  for (let round = 0; round < 8; round++) {
+    const cx = new Float64Array(n);
+    const cy = new Float64Array(n);
+    const count = new Uint32Array(n);
+    lit.forEach((p, q) => {
+      const x = p % W;
+      const y = (p / W) | 0;
+      let best = Infinity;
+      let k = 0;
+      for (let j = 0; j < n; j++) {
+        const d = (x - sx[j]) ** 2 + (y - sy[j]) ** 2;
+        if (d < best) {
+          best = d;
+          k = j;
+        }
+      }
+      near[q] = k;
+      cx[k] += x;
+      cy[k] += y;
+      count[k]++;
+    });
+    const best = new Float64Array(n).fill(Infinity);
+    const nx = sx.slice();
+    const ny = sy.slice();
+    lit.forEach((p, q) => {
+      const k = near[q];
+      const x = p % W;
+      const y = (p / W) | 0;
+      const d = (x - cx[k] / count[k]) ** 2 + (y - cy[k] / count[k]) ** 2;
+      if (d < best[k]) {
+        best[k] = d;
+        nx[k] = x;
+        ny[k] = y;
+      }
+    });
+    sx.splice(0, n, ...nx);
+    sy.splice(0, n, ...ny);
+  }
+
   // Each visible pixel joins the seed nearest to it after a noisy nudge,
   // which turns the straight borders between seeds ragged.
   const cell = Math.sqrt(lit.length / n);
-  const amp = cell * 0.45;
+  const amp = cell * 0.2;
   const freq = 1 / Math.max(2, cell * 0.5);
   const nseed = (rand() * 2 ** 31) | 0;
   const label = new Int16Array(W * H).fill(-1);
