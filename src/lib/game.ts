@@ -24,7 +24,7 @@ export interface DifficultyRules {
   options: number;
   /** Share of decoys picked for having a name that looks like the answer. */
   similarNames: number;
-  /** Chance of an "art" question instead of a "name" question. */
+  /** Share of "art" questions instead of "name" ones (the roll leans against long runs of either). */
   artChance: number;
   /** Art is hidden under tiles that lift one by one; fraction of the timer it takes. */
   veil: { size: number; share: number } | null;
@@ -70,6 +70,12 @@ export const DIFFICULTIES: Record<Difficulty, DifficultyRules> = {
 export const RARE_GROUPS: Record<string, number> = { Tablets: 0.25 };
 
 const weightOf = (it: Item) => RARE_GROUPS[it.group] ?? 1;
+
+/**
+ * How hard the art/name roll leans toward whichever has come up less than its
+ * share: each question it runs behind adds this much to its chance.
+ */
+const ART_LEAN = 0.3;
 
 /** Categories that were renamed, by their old name. */
 const RENAMED_CATEGORIES: Record<string, string> = { 'Flasks, Jewels & Relics': 'Flasks, Charms, Jewels, Relics & Tablets' };
@@ -314,6 +320,12 @@ export interface GameState {
   deathmatch: Deathmatch | null;
   /** Race mode: categories of the last questions, to avoid repeats. */
   recentCategories: string[];
+  /**
+   * How many art questions each player is behind the difficulty's share
+   * (negative: ahead), by player id; race mode keeps one for the room under
+   * "". Missing in older saves.
+   */
+  artLean?: Record<string, number>;
   /** askedAt of the latest question (missing in games saved before it existed). */
   lastAskedAt?: number;
   /** Bumped on every change so clients can ignore stale messages. */
@@ -371,6 +383,7 @@ export function createGame(hostId: string | null, settings: Settings = DEFAULT_S
     winners: [],
     deathmatch: null,
     recentCategories: [],
+    artLean: {},
     lastAskedAt: 0,
     version: 0,
   };
@@ -625,6 +638,7 @@ export class Engine {
         s.winners = [];
         s.deathmatch = null;
         s.recentCategories = [];
+        s.artLean = {};
         // The first turn goes to someone who is actually here.
         s.turn = Math.max(0, s.players.findIndex((p) => p.connected));
         if (race) this.beginRaceQuestion(s, true);
@@ -705,6 +719,8 @@ export class Engine {
         }
         // None of its pictures come back in the new one (one of them didn't load).
         for (const id of voided.options) if (this.byId.has(id) && !s.used.includes(id)) s.used.push(id);
+        // Nor does it count toward the run of art and name questions.
+        this.tallyMode(s, voided.mode, -1);
         s.question = this.makeQuestion(s, voided.category);
         s.used.push(s.question.itemId);
         break;
@@ -1083,6 +1099,26 @@ export class Engine {
   }
 
   /**
+   * Art or name, leaning toward whichever this player (the room, in a race)
+   * has had less of than its share, so long runs of one are rarer and
+   * everyone gets about the same mix. Over a game the share stays
+   * `artChance`. Says nothing about which option is right.
+   */
+  private rollMode(s: GameState): QuestionMode {
+    const behind = s.artLean?.[artKey(s)] ?? 0;
+    const mode: QuestionMode = this.rng() < activeRules(s).artChance + ART_LEAN * behind ? 'art' : 'name';
+    this.tallyMode(s, mode, 1);
+    return mode;
+  }
+
+  /** Counts a question toward its player's art lean (`sign` -1 takes it back). */
+  private tallyMode(s: GameState, mode: QuestionMode, sign: 1 | -1) {
+    const lean = (s.artLean ??= {});
+    const key = artKey(s);
+    lean[key] = (lean[key] ?? 0) + sign * (activeRules(s).artChance - (mode === 'art' ? 1 : 0));
+  }
+
+  /**
    * Builds a question from the category. Updates `s.used` when the category
    * has to start over.
    */
@@ -1136,7 +1172,7 @@ export class Engine {
     if (pool !== sameGroup) this.evenOut(answer, decoys, pool);
 
     const options = shuffle([answer, ...decoys], this.rng).map((it) => it.id);
-    const mode: QuestionMode = this.rng() < rules.artChance ? 'art' : 'name';
+    const mode = this.rollMode(s);
     // Strictly increasing: it doubles as the question's id for late answers.
     const askedAt = Math.max(this.now(), (s.lastAskedAt ?? 0) + 1, (s.question?.askedAt ?? 0) + 1);
     s.lastAskedAt = askedAt;
@@ -1159,6 +1195,11 @@ export class Engine {
     const mirrored = Array.from({ length: mode === 'art' ? options.length : 1 }, () => rules.mirror > 0 && this.rng() < rules.mirror);
     return { category, groups, mode, itemId: answer.id, options, labels, prompt, veil, mirrored, askedAt, deadline, misses: [] };
   }
+}
+
+/** Whose art lean a question counts toward: the player answering it, or the whole room in a race. */
+function artKey(s: GameState): string {
+  return s.settings.mode === 'race' ? '' : (s.players[s.turn]?.id ?? '');
 }
 
 function bigrams(name: string): string[] {
