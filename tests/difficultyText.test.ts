@@ -51,3 +51,9 @@ test('deathmatch and lockout wording, and a name for every difficulty', () => {
   assert.equal(lockoutText(3), 'your next 3 turns');
   assert.deepEqual(Object.keys(DIFFICULTY_NAMES), ['cruel', 'merciless', 'eternal', 'custom']);
 });
+
+test('Unveil is idle when every question is "find the art"', () => {
+  const veil = KNOB_TEXT.find((k) => k.key === 'veil')!;
+  assert.equal(veil.idle!({ ...PRESETS.eternal, artChance: 1 }), 'No name questions to cover');
+  assert.equal(veil.idle!(PRESETS.eternal), undefined);
+});

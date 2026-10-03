@@ -71,10 +71,11 @@
     <div class="rows">
       {#each KNOB_TEXT as knob (knob.key)}
         {@const steps = KNOB_STEPS[knob.key] as readonly Knobs[typeof knob.key][]}
-        <div class="row">
+        {@const idle = knob.idle?.(knobs)}
+        <div class="row" class:idle>
           <div class="text">
             <span class="name">{knob.name}</span>
-            <span class="hint">{knob.hint}</span>
+            <span class="hint">{idle ?? knob.hint}</span>
           </div>
           <div class="track" style:--n={steps.length} role="radiogroup" aria-label={knob.name}>
             {#each steps as step (String(step))}
@@ -82,7 +83,7 @@
                 class:on={knobs[knob.key] === step}
                 role="radio"
                 aria-checked={knobs[knob.key] === step}
-                disabled={tooMany(knob.key, step)}
+                disabled={!!idle || tooMany(knob.key, step)}
                 title={tooMany(knob.key, step) ? `Needs ${(step as number) * 2} or more options` : undefined}
                 onclick={() => set({ [knob.key]: step })}
               >
@@ -216,6 +217,16 @@
   }
   .track button + button {
     border-left: 1px solid var(--line);
+  }
+  /* A knob with no effect right now keeps its step, dimmed, for when it matters again. */
+  .row.idle .name {
+    color: var(--muted);
+  }
+  .row.idle .track {
+    opacity: 0.4;
+  }
+  .row.idle .track button:disabled {
+    opacity: 1;
   }
   .track button:disabled {
     opacity: 0.35;

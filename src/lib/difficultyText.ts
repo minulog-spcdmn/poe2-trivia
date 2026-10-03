@@ -85,6 +85,8 @@ export interface KnobText<K extends keyof Knobs = keyof Knobs> {
   name: string;
   hint: string;
   label: (v: Knobs[K]) => string;
+  /** Why the knob has no effect with these settings (shown in place of the hint), if it has none. */
+  idle?: (k: Knobs) => string | undefined;
 }
 
 /**
@@ -102,7 +104,14 @@ export const KNOB_TEXT: { [K in keyof Knobs]: KnobText<K> }[keyof Knobs][] = [
   },
   { key: 'fakes', name: 'Made-up names', hint: "Wrong answers that aren't real items", label: (v) => (v ? String(v) : 'None') },
   { key: 'artChance', name: 'Find the art', hint: 'Questions that give a name and ask for its art', label: often },
-  { key: 'veil', name: 'Unveil', hint: 'Art hidden under tiles that lift one by one', label: (v) => VEIL_WORD[v] },
+  {
+    key: 'veil',
+    name: 'Unveil',
+    hint: 'Art hidden under tiles that lift one by one',
+    label: (v) => VEIL_WORD[v],
+    // Tiles only cover the art of name questions.
+    idle: (k) => (k.artChance === 1 ? 'No name questions to cover' : undefined),
+  },
   {
     key: 'grayscale',
     name: 'Grayscale',
