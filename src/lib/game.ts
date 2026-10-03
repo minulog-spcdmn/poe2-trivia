@@ -85,7 +85,17 @@ export function cleanKnobs(raw: unknown, fallback: Knobs = PRESETS[DEFAULT_PRESE
   for (const k of Object.keys(KNOB_STEPS) as (keyof Knobs)[]) {
     if ((KNOB_STEPS[k] as readonly unknown[]).includes(o[k])) out[k] = o[k];
   }
-  return out as unknown as Knobs;
+  const knobs = out as unknown as Knobs;
+  knobs.fakes = Math.min(knobs.fakes, maxFakes(knobs.options));
+  return knobs;
+}
+
+/**
+ * Most made-up names a question with `options` options can show: each one
+ * copies a real name that stays on screen, so they take up two options each.
+ */
+export function maxFakes(options: number) {
+  return Math.floor(options / 2);
 }
 
 /** One step harder on every knob that makes a question harder (a deathmatch on Eternal or Custom). */
@@ -676,9 +686,9 @@ export class Engine {
         if (Object.keys(action.settings).every((k) => k === 'public' || k === 'locked')) break;
         if (s.phase !== 'lobby' && s.phase !== 'over') throw new ActionError('Settings are locked during a game.');
         const { targetScore, timer, difficulty, custom, mode } = action.settings;
-        // Custom starts out as the difficulty that was picked, the way it plays in this mode.
-        if (difficulty === 'custom' && !s.settings.custom) s.settings.custom = knobsOf(s.settings);
         if (mode === 'turns' || mode === 'race') s.settings.mode = mode;
+        // Custom starts out as the difficulty that was picked, the way it plays in the (new) mode.
+        if (difficulty === 'custom' && !s.settings.custom) s.settings.custom = knobsOf(s.settings);
         if (isDifficulty(difficulty)) s.settings.difficulty = difficulty;
         // Knobs change one at a time; anything off the allowed steps keeps its old value.
         if (typeof custom === 'object' && custom !== null) s.settings.custom = cleanKnobs(custom, cleanKnobs(s.settings.custom));

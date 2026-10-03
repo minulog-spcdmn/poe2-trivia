@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { fade, fly } from 'svelte/transition';
   import { session } from '../lib/session.svelte';
-  import { KNOB_STEPS, knobsOf, type Knobs } from '../lib/game';
+  import { KNOB_STEPS, knobsOf, maxFakes, type Knobs } from '../lib/game';
   import { KNOB_TEXT } from '../lib/difficultyText';
   import { portal } from '../lib/portal';
 
@@ -15,11 +15,38 @@
     session.dispatch({ type: 'settings', settings: { custom: change } });
   }
 
-  let box = $state<HTMLElement>();
-  onMount(() => box?.focus());
-</script>
+  /** Made-up names a step would need room for (each copies a real name that stays on screen). */
+  const tooMany = (key: keyof Knobs, step: unknown) => key === 'fakes' && (step as number) > maxFakes(knobs.options);
 
-<svelte:window onkeydown={(e) => e.key === 'Escape' && onclose()} />
+  let box = $state<HTMLElement>();
+  onMount(() => {
+    // Focus moves into the dialog and goes back where it was (the Custom button) on close.
+    const before = document.activeElement as HTMLElement | null;
+    box?.focus();
+    return () => before?.focus?.();
+  });
+
+  /** Escape closes; Tab keeps cycling through the dialog's own buttons. */
+  function onkeydown(e: KeyboardEvent) {
+    if (e.key === 'Escape') {
+      e.stopPropagation();
+      onclose();
+      return;
+    }
+    if (e.key !== 'Tab' || !box) return;
+    const items = [...box.querySelectorAll<HTMLElement>('button:not(:disabled)')];
+    const first = items[0];
+    const last = items.at(-1)!;
+    const at = document.activeElement;
+    if (e.shiftKey && (at === first || at === box)) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && at === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  }
+</script>
 
 <div class="backdrop" use:portal transition:fade={{ duration: 150 }} onclick={onclose} role="presentation">
   <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -28,6 +55,7 @@
     bind:this={box}
     transition:fly={{ y: 20, duration: 250 }}
     onclick={(e) => e.stopPropagation()}
+    {onkeydown}
     role="dialog"
     aria-modal="true"
     aria-labelledby="custom-title"
@@ -54,6 +82,8 @@
                 class:on={knobs[knob.key] === step}
                 role="radio"
                 aria-checked={knobs[knob.key] === step}
+                disabled={tooMany(knob.key, step)}
+                title={tooMany(knob.key, step) ? `Needs ${(step as number) * 2} or more options` : undefined}
                 onclick={() => set({ [knob.key]: step })}
               >
                 {(knob.label as (v: typeof step) => string)(step)}
@@ -187,7 +217,11 @@
   .track button + button {
     border-left: 1px solid var(--line);
   }
-  .track button:hover:not(.on) {
+  .track button:disabled {
+    opacity: 0.35;
+    cursor: default;
+  }
+  .track button:hover:not(.on):not(:disabled) {
     color: var(--gold-hi);
     background: rgba(201, 164, 92, 0.08);
   }

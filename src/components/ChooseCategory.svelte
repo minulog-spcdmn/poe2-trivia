@@ -2,7 +2,8 @@
   import { cubicOut } from 'svelte/easing';
   import { session } from '../lib/session.svelte';
   import { categoryIcon } from '../lib/ui';
-  import { rulesFor } from '../lib/game';
+  import { difficultyOf, rulesFor } from '../lib/game';
+  import { deathmatchText, lockoutText } from '../lib/difficultyText';
   import { sfx } from '../lib/sound';
   import { backdropShadow } from '../lib/backdropShadow';
   import { cardHover, cardLanded, cardPicked } from '../lib/fx/moments';
@@ -121,9 +122,9 @@
   </div>
 
   {#if s.deathmatch}
-    <p class="note muted">{mine ? 'Tap the card when you are ready.' : 'Questions are one difficulty harder.'}</p>
+    <p class="note muted">{mine ? 'Tap the card when you are ready.' : deathmatchText(difficultyOf(s.settings.difficulty))}</p>
   {:else if mine && lockout > 0}
-    <p class="note muted">A category you choose stays locked for your next {lockout === 1 ? 'turn' : `${lockout} turns`}.</p>
+    <p class="note muted">A category you choose stays locked for {lockoutText(lockout)}.</p>
   {/if}
 </div>
 

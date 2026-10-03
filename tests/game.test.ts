@@ -1129,3 +1129,18 @@ test('the levels past Eternal: ten options, three made-up names', () => {
   }
   assert.ok(three > 20, `three made-up names in ${three} of 40`);
 });
+
+test('made-up names are capped at half the options, since each copies a real name on screen', () => {
+  assert.equal(cleanKnobs({ ...PRESETS.eternal, options: 4, fakes: 3 }).fakes, 2);
+  assert.equal(cleanKnobs({ ...PRESETS.eternal, options: 6, fakes: 3 }).fakes, 3);
+  let { engine, s } = setup(['A']);
+  s = engine.apply(s, { type: 'settings', settings: { difficulty: 'custom', custom: { options: 8, fakes: 3 } } }, 'p0');
+  s = engine.apply(s, { type: 'settings', settings: { custom: { options: 4 } } }, 'p0');
+  assert.deepEqual([s.settings.custom!.options, s.settings.custom!.fakes], [4, 2]);
+});
+
+test('switching to race and Custom at once copies the preset as it plays in race', () => {
+  let { engine, s } = setup(['A'], 3, 'eternal');
+  s = engine.apply(s, { type: 'settings', settings: { mode: 'race', difficulty: 'custom' } }, 'p0');
+  assert.equal(s.settings.custom!.veil, 'slow');
+});

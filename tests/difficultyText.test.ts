@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { describe, KNOB_TEXT } from '../src/lib/difficultyText.ts';
+import { DIFFICULTY_NAMES, deathmatchText, describe, KNOB_TEXT, lockoutText } from '../src/lib/difficultyText.ts';
 import { KNOB_STEPS, PRESETS, type Knobs } from '../src/lib/game.ts';
 
 test('presets are described the same way in both modes, but their tiles only in race', () => {
@@ -37,4 +37,17 @@ test('every step of every knob has a label, and none repeats within a knob', () 
     assert.equal(new Set(labels).size, labels.length, knob.key);
     for (const l of labels) assert.match(l, /^([A-Z][a-z]*( [a-z]+)*|\d+)$/, `${knob.key}: ${l}`);
   }
+});
+
+test('big questions without look-alikes only promise one kind where the category allows it', () => {
+  assert.match(describe({ difficulty: 'custom', custom: { ...PRESETS.cruel, options: 10 } }), /^Ten options of the same kind where the category allows \(/);
+  assert.match(describe({ difficulty: 'cruel' }), /^Four options of the same kind \(/);
+});
+
+test('deathmatch and lockout wording, and a name for every difficulty', () => {
+  assert.equal(deathmatchText('cruel'), 'Questions are played on Merciless.');
+  assert.equal(deathmatchText('eternal'), 'Questions go one step past Eternal.');
+  assert.equal(deathmatchText('custom'), 'Each setting that makes questions harder goes one step up.');
+  assert.equal(lockoutText(3), 'your next 3 turns');
+  assert.deepEqual(Object.keys(DIFFICULTY_NAMES), ['cruel', 'merciless', 'eternal', 'custom']);
 });

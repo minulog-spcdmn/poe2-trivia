@@ -55,9 +55,9 @@ the same words the presets use.
 
 | Knob | Steps | Past Eternal |
 |---|---|---|
-| Options | 4, 6, 8, 10 | 10 |
+| Options | 4, 6, 8, 10 (keys 1 to 9 and 0 answer) | 10 |
 | Look-alike names | None, Half, All | |
-| Made-up names | None, 1, 2, 3 | 3 |
+| Made-up names | None, 1, 2, 3 (at most half the options: each copies a real name on screen) | 3 |
 | Find the art (share of questions) | Never, Some (40%), Half, Always | |
 | Unveil (tiles over the art, in both modes) | Off, Fast (5×5), Slow (7×7), Slowest (9×9, 80% of the timer) | Slowest |
 | Grayscale | Off, Find the art (its pictures), All art (the art to name too) | All art |

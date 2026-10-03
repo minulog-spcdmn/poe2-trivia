@@ -214,7 +214,8 @@
     if (e.target instanceof HTMLInputElement) return;
     // Browser shortcuts (Ctrl/Cmd+1 switches tabs), held keys, and an open dialog aren't answers.
     if (e.ctrlKey || e.metaKey || e.altKey || e.repeat || document.querySelector('[aria-modal="true"]')) return;
-    const n = Number(e.key);
+    // 0 is the tenth option, the key after 9.
+    const n = e.key === '0' ? 10 : Number(e.key);
     if (!reveal && n >= 1 && n <= count) answer(n - 1);
     else if (reveal && canNext && (e.key === 'Enter' || e.key === ' ')) {
       e.preventDefault();
@@ -310,7 +311,7 @@
   {:else if !mine}
     <p class="spectate muted">{active.name} is deciding…</p>
   {:else}
-    <p class="spectate muted">Tip: press 1–{count} to answer.</p>
+    <p class="spectate muted">Tip: press 1–{count === 10 ? '9 and 0' : count} to answer.</p>
   {/if}
 {/snippet}
 

@@ -53,7 +53,7 @@ export function parsePrefs(raw: string | null): RoomPrefs | null {
   return {
     targetScore: o.targetScore,
     timer: o.timer,
-    difficulty: o.difficulty,
+    difficulty: o.customOn === true && o.custom !== undefined ? 'custom' : o.difficulty,
     // Added later: knobs another build allowed are snapped to this one's, and the rest is kept.
     ...(o.custom === undefined ? {} : { custom: cleanKnobs(o.custom) }),
     mode: o.mode,
@@ -62,7 +62,17 @@ export function parsePrefs(raw: string | null): RoomPrefs | null {
   };
 }
 
-export const serializePrefs = (p: RoomPrefs) => JSON.stringify({ v: PREFS_VERSION, ...p });
+/**
+ * Custom is stored as a flag next to a preset, so a tab still running a build
+ * from before Custom reads the entry (with the preset) instead of throwing
+ * every saved setting away.
+ */
+export const serializePrefs = (p: RoomPrefs) =>
+  JSON.stringify({
+    v: PREFS_VERSION,
+    ...p,
+    ...(p.difficulty === 'custom' ? { difficulty: DEFAULT_SETTINGS.difficulty, customOn: true } : {}),
+  });
 
 /** Whether the entry could be stored. */
 function write(p: RoomPrefs): boolean {

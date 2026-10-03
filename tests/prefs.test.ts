@@ -149,3 +149,13 @@ test('custom knobs are remembered; entries from before them, or with odd knobs, 
     grayscale: PRESETS.merciless.grayscale,
   });
 });
+
+test('a custom room is stored so a build from before Custom still reads the entry', () => {
+  const mine = { ...custom, difficulty: 'custom' as const };
+  const raw = serializePrefs(mine);
+  const stored = JSON.parse(raw);
+  assert.ok(['cruel', 'merciless', 'eternal'].includes(stored.difficulty), 'an older build sees a preset');
+  assert.deepEqual(parsePrefs(raw), mine);
+  // Without knobs to go with it, the flag falls back to the preset.
+  assert.equal(parsePrefs(JSON.stringify({ ...stored, custom: undefined }))?.difficulty, stored.difficulty);
+});

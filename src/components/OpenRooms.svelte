@@ -3,6 +3,7 @@
   import { flip } from 'svelte/animate';
   import { fly, fade } from 'svelte/transition';
   import { scanRooms, type RoomInfo } from '../lib/rooms';
+  import { DIFFICULTY_NAMES } from '../lib/difficultyText';
   import { backdropShadow } from '../lib/backdropShadow';
 
   let { onJoin, disabled = false }: { onJoin: (code: string) => void; disabled?: boolean } = $props();
@@ -15,7 +16,6 @@
    * search rather than a flicker.
    */
   const MIN_SCAN_MS = 1500;
-  const DIFF_NAMES: Record<string, string> = { cruel: 'Cruel', merciless: 'Merciless', eternal: 'Eternal', custom: 'Custom' };
 
   let rooms = $state<RoomInfo[]>([]);
   let scanning = $state(false);
@@ -123,7 +123,7 @@
           <div class="info">
             <span class="host">{r.host}'s room</span>
             <span class="meta">
-              {r.mode === 'race' ? 'Race' : 'Turns'} · {DIFF_NAMES[r.difficulty] ?? r.difficulty} · first to {r.target}{r.spectators ? ` · ${r.spectators} watching` : ''}
+              {r.mode === 'race' ? 'Race' : 'Turns'} · {DIFFICULTY_NAMES[r.difficulty]} · first to {r.target}{r.spectators ? ` · ${r.spectators} watching` : ''}
             </span>
           </div>
           <span class="count" title="Players">{r.players}/{r.maxPlayers}</span>

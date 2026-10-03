@@ -3,7 +3,7 @@
   import { fly, scale } from 'svelte/transition';
   import { session } from '../lib/session.svelte';
   import { MAX_PLAYERS, difficultyOf, rulesFor, type Difficulty, type GameMode } from '../lib/game';
-  import { describe } from '../lib/difficultyText';
+  import { DIFFICULTY_NAMES, describe, lockoutText } from '../lib/difficultyText';
   import CustomDifficulty from './CustomDifficulty.svelte';
   import { MAX_NAME } from '../lib/names';
   import { inviteUrl } from '../lib/site';
@@ -14,12 +14,7 @@
 
   const TIMERS = [0, 10, 15, 20, 30, 45];
   const TARGETS = [5, 10, 15, 20];
-  const DIFFS: { id: Difficulty; name: string }[] = [
-    { id: 'cruel', name: 'Cruel' },
-    { id: 'merciless', name: 'Merciless' },
-    { id: 'eternal', name: 'Eternal' },
-    { id: 'custom', name: 'Custom' },
-  ];
+  const DIFFS = (Object.entries(DIFFICULTY_NAMES) as [Difficulty, string][]).map(([id, name]) => ({ id, name }));
 
   const s = $derived(session.state!);
   const isHost = $derived(session.isHost);
@@ -319,7 +314,7 @@
         {:else}
           <li>On your turn, choose one of three item categories.</li>
           {#if lockout > 0}
-            <li>A category you pick is locked for your next {lockout === 1 ? 'turn' : `${lockout} turns`}.</li>
+            <li>A category you pick is locked for {lockoutText(lockout)}.</li>
           {/if}
           <li>Name the unique or lineage gem from its art; one answer is true.</li>
           <li>Correct answers score a point. First to {s.settings.targetScore} wins, once the round is finished.</li>
