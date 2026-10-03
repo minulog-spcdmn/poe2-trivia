@@ -26,7 +26,7 @@ export interface DifficultyRules {
   similarNames: number;
   /** Chance of an "art" question instead of a "name" question. */
   artChance: number;
-  /** Art is hidden under tiles that lift one by one; fraction of the timer it takes. */
+  /** The art fizzles in patch by patch; fraction of the timer it takes. */
   veil: { size: number; share: number } | null;
   /** "Art" question pictures are shown without colour. */
   grayscale: boolean;
@@ -169,7 +169,7 @@ export function rulesFor(difficulty: string | undefined): DifficultyRules {
 
 export interface Veil {
   size: number;
-  /** Seconds until the last tile has lifted. */
+  /** Seconds until the last patch has appeared. */
   seconds: number;
   seed: number;
 }
@@ -258,7 +258,7 @@ export interface Question {
   labels: (string | null)[];
   /** Art questions: the name to find the picture for. */
   prompt: string | null;
-  /** Tiles hiding the art on name questions (merciless and up). */
+  /** The art fizzling in patch by patch on name questions (merciless and up). */
   veil: Veil | null;
   /**
    * Pictures shown flipped left to right (eternal): one flag per option on art

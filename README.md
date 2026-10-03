@@ -41,8 +41,8 @@ same time, in a random category (never one of the last 2, 3 or 4, by difficulty)
 | | Options | Wrong answers | Extras |
 |---|---|---|---|
 | Cruel | 4 | Same kind (all rings, all bows, all Strength gems…) | 40% of questions are "find the art": you get a name and pick one of the pictures |
-| Merciless (default) | 6 | Same kind, half of them look-alike names | The art is hidden under tiles that lift one by one |
-| Eternal | 8 | Look-alike names from the whole category | Tiles lift more slowly; "find the art" pictures are shown in grayscale; each picture has a 30% chance of being mirrored left to right (the answer and any picked picture are marked *Mirrored* at the reveal) |
+| Merciless (default) | 6 | Same kind, half of them look-alike names | The art fizzles in patch by patch |
+| Eternal | 8 | Look-alike names from the whole category | The art fizzles in more slowly; "find the art" pictures are shown in grayscale; each picture has a 30% chance of being mirrored left to right (the answer and any picked picture are marked *Mirrored* at the reveal) |
 
 Look-alike names form a cluster, and the answer's place in it is random: the
 name that looks most (or least) like the others is no more likely to be right
@@ -97,7 +97,7 @@ with that in mind. Guests, on the other hand, are treated as untrusted:
 - **No image files to look up.** Guests never load an item's image file
   during a question. The host sends a lightly altered copy of the art
   (re-scaled, shifted, noised, re-encoded) straight over the connection. On
-  veiled difficulties it sends only the tiles uncovered so far, so the rest
+  veiled difficulties it sends only the patches revealed so far, so the rest
   of the picture isn't on the guest's machine at all.
 - **Seats can't be taken over.** Each browser has a secret token that only
   its host ever sees; the IDs other players see are random public IDs.

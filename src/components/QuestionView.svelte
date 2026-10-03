@@ -2,7 +2,7 @@
   import { fly, fade, scale } from 'svelte/transition';
   import { session, engine } from '../lib/session.svelte';
   import { AUTO_NEXT_MS, autoNextLeft, isFake, questionTopic } from '../lib/game';
-  import { shown, gridCells } from '../lib/media.svelte';
+  import { shown } from '../lib/media.svelte';
   import { materialize } from '../lib/materialize';
   import { itemImage } from '../lib/ui';
   import { sfx } from '../lib/sound';
@@ -55,10 +55,10 @@
   // Pictures the host has sent for this question.
   const media = $derived(shown.qid === q.askedAt ? shown : null);
 
-  /** Veiled art: the grid cells, uncovered or not. */
-  const cells = $derived(media?.grid ? gridCells(media.grid) : []);
+  /** Veiled art: the patches that have appeared so far. */
+  const patches = $derived(Object.values(media?.patches ?? {}));
   // Size of the art shown during the question: keeps the reveal from jumping.
-  const hint = $derived(media?.grid ?? media?.art ?? null);
+  const hint = $derived(media?.veil ?? media?.art ?? null);
 
   /** Race mode: who guessed which option wrong (and, once revealed, who won). */
   function markers(index: number) {
@@ -124,16 +124,16 @@
   // The art arrives: light it up (once per question).
   let artShown = false;
   $effect(() => {
-    const ready = q.mode === 'art' ? Object.keys(media?.options ?? {}).length > 0 : !!(media?.art || media?.grid);
+    const ready = q.mode === 'art' ? Object.keys(media?.options ?? {}).length > 0 : !!(media?.art || media?.veil);
     if (!ready || artShown || !artEl) return;
     artShown = true;
     artRevealed(artEl);
   });
 
-  /** Svelte action: a veiled tile materialises out of its cover. */
-  function lifted(node: HTMLImageElement) {
+  /** Svelte action: a patch of veiled art fizzles in. */
+  function appear(node: HTMLCanvasElement, url: string) {
     sfx('lift');
-    return materialize(node);
+    return materialize(node, url);
   }
 
   // The charge-up ends when the answer is revealed, bounced, or (race) comes
@@ -394,21 +394,20 @@
           <div class="frame">
             {#if reveal && item}
               <ArtImage src={itemImage(item.id)} alt={item.name} w={hint?.w} h={hint?.h} float unflip={mirrored(0)} />
-            {:else if media?.grid}
+            {:else if media?.veil}
+              {@const v = media.veil}
               <span class="art-slot">
-              <span class="art-fit veil" style:--w={media.grid.w} style:--h={media.grid.h} style:--s={1.8}>
-                {#each cells as c (c.i)}
-                  {@const t = media.tiles[c.i]}
-                  <span
-                    class="cell"
-                    class:open={!!t}
-                    style:left="{(c.x / media.grid.w) * 100}%"
-                    style:top="{(c.y / media.grid.h) * 100}%"
-                    style:width="{(c.w / media.grid.w) * 100}%"
-                    style:height="{(c.h / media.grid.h) * 100}%"
-                  >
-                    {#if t}<img src={t.url} alt="" draggable="false" use:lifted />{/if}
-                  </span>
+              <span class="art-fit veil" style:--w={v.w} style:--h={v.h} style:--s={1.8}>
+                {#each patches as p (p.i)}
+                  <canvas
+                    class="patch"
+                    aria-hidden="true"
+                    style:left="{(p.x / v.w) * 100}%"
+                    style:top="{(p.y / v.h) * 100}%"
+                    style:width="{(p.w / v.w) * 100}%"
+                    style:height="{(p.h / v.h) * 100}%"
+                    use:appear={p.url}
+                  ></canvas>
                 {/each}
               </span>
               </span>
@@ -639,38 +638,14 @@
     inset: 0;
   }
   .veil {
-    /* Tiles are absolutely positioned inside the box. */
+    /* Patches are absolutely positioned inside the box. */
     position: relative;
   }
-  .cell {
+  /* Each patch's canvas spans its bounding box; the parts of the box outside
+     the patch are transparent. */
+  .patch {
     position: absolute;
-    overflow: hidden;
-  }
-  /* The cover is a bevelled plate over the piece. Once the piece is in, a canvas
-     drawn to match takes its place and burns away (lib/materialize.ts), so
-     transparent parts of the art show the backdrop like the full picture. */
-  .cell::after {
-    content: '';
-    position: absolute;
-    inset: 1px;
-    z-index: 1;
-    border-radius: 2px;
-    background:
-      linear-gradient(155deg, #221c14, #0d0b08 70%);
-    box-shadow:
-      inset 0 0 0 1px rgba(125, 99, 51, 0.4),
-      inset 1px 1px 0 1px rgba(232, 205, 150, 0.08),
-      inset -1px -1px 0 1px rgba(0, 0, 0, 0.6),
-      inset 0 0 14px rgba(0, 0, 0, 0.7);
-  }
-  .cell.open::after {
-    display: none;
-  }
-  .cell img {
     display: block;
-    /* A hair larger than the cell so neighbouring pieces meet without seams. */
-    width: calc(100% + 1px);
-    height: calc(100% + 1px);
   }
   .loading {
     width: 28px;

@@ -80,7 +80,7 @@ export const MOMENTS: Record<Sfx, Moment> = {
       { file: 'layer-metal-2', gain: -41, rate: 1.6, delay: 0, hp: 330, lp: 6483, send: 0.7 },
     ],
   },
-  // A veiled tile's cover falls away: a muffled puff of air with a soft wooden
+  // A patch of veiled art fizzles in: a muffled puff of air with a soft wooden
   // body under it. It plays every second or so, so it stays dark and quiet.
   lift: {
     soften: 8,

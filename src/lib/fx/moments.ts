@@ -158,21 +158,21 @@ export function artRevealed(art: Element) {
   light(art, { color: [1, 0.7, 0.35], radius: 300, intensity: 0.35, decay: 1 });
 }
 
-/** A veiled tile starts to materialise at `at` (the burn's origin); `size` is the tile's width. */
-export function tileIgnites(at: Point, size: number) {
+/** A patch of veiled art starts to fizzle in at `at`; `size` is the patch's width. */
+export function patchIgnites(at: Point, size: number) {
   if (!fxActive()) return;
-  flash(at, { radius: size * 0.45, color: C.gold, intensity: 0.3, life: 0.35 });
-  sparks(at, { count: 4, speed: [40, 160], life: [0.2, 0.45], gravity: -30, size: [0.6, 1.1], colors: [C.whiteHot, C.goldPale] });
+  flash(at, { radius: Math.min(60, size * 0.35), color: C.gold, intensity: 0.22, life: 0.35 });
+  sparks(at, { count: 3, speed: [40, 140], life: [0.2, 0.4], gravity: -30, size: [0.6, 1.1], colors: [C.whiteHot, C.goldPale] });
 }
 
-/** A mote of light lifting off a materialising tile's burning edge. */
-export function tileMote(at: Point) {
+/** A mote of light lifting off a grain of a patch as it appears. */
+export function patchMote(at: Point) {
   if (!fxActive()) return;
   if (Math.random() < 0.8) {
     embers(at, {
       count: 1,
       colors: [C.gold, C.goldPale, C.whiteHot],
-      size: [1.2, 2.5],
+      size: [1.1, 2.3],
       life: [0.6, 1.4],
       rise: [30, 90],
       scatter: 22,
@@ -183,10 +183,10 @@ export function tileMote(at: Point) {
   }
 }
 
-/** A tile has fully materialised. */
-export function tileSettled(cell: Element) {
+/** A patch has fully fizzled in. */
+export function patchSettled(patch: Element) {
   if (!fxActive()) return;
-  if (Math.random() < 0.4) glints(cell, { count: 1, size: [3, 6] });
+  if (Math.random() < 0.4) glints(patch, { count: 1, size: [3, 6] });
 }
 
 /** An answer is locked in: energy gathers on it until the reveal. */

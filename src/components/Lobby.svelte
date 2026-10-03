@@ -21,12 +21,12 @@
     {
       id: 'merciless',
       name: 'Merciless',
-      blurb: 'Six options, half of them with names that look alike. The art is hidden under tiles that lift one by one.',
+      blurb: 'Six options, half of them with names that look alike. The art fizzles in patch by patch.',
     },
     {
       id: 'eternal',
       name: 'Eternal',
-      blurb: 'Eight look-alike names, two of them made up. Tiles lift slowly, "find the art" pictures lose their colour, and some pictures are mirrored. Good luck, exile.',
+      blurb: 'Eight look-alike names, two of them made up. The art fizzles in slowly, "find the art" pictures lose their colour, and some pictures are mirrored. Good luck, exile.',
     },
   ];
 

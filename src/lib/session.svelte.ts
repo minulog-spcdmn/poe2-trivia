@@ -30,7 +30,7 @@ import { Beacon, type RoomInfo } from './rooms';
 import { parseClientMsg, parseHostMsg, PROTOCOL_VERSION, RateLimit, type HostMsg, type MediaMsg } from './protocol';
 import { capped, FrameGuard, hookFrames, JoinGate, roomSecret } from './guard';
 import { cleanName, nameSkeleton } from './names';
-import { prepareMedia, shown, tileDelays, type PreparedMedia } from './media.svelte';
+import { prepareMedia, shown, patchDelays, type PreparedMedia } from './media.svelte';
 import { sfx } from './sound';
 import { prefsFrom, roomPrefs, roomSettings, savePrefs } from './prefs';
 import { toasts, type ToastKind, type ToastOptions } from './toasts.svelte';
@@ -677,13 +677,13 @@ class Session {
     const qid = q.askedAt;
     if (media.art) this.release({ t: 'art', qid, ...media.art });
     media.options.forEach((data, index) => this.release({ t: 'option', qid, index, data }));
-    if (media.grid) {
-      this.release({ t: 'grid', qid, ...media.grid });
-      const delays = tileDelays(q, media.tiles.length);
-      media.tiles.forEach((tile, rank) => {
+    if (media.veil) {
+      this.release({ t: 'veil', qid, ...media.veil });
+      const delays = patchDelays(q, media.patches.length);
+      media.patches.forEach((patch, rank) => {
         const due = q.askedAt + delays[rank] - Date.now();
         const go = () => {
-          if (this.media?.qid === qid) this.release({ t: 'tile', qid, ...tile });
+          if (this.media?.qid === qid) this.release({ t: 'patch', qid, ...patch });
         };
         if (due <= 0) go();
         else this.mediaTimers.push(setTimeout(go, due));
@@ -698,7 +698,7 @@ class Session {
   }
 
   private sendMedia(conn: DataConnection, g: Guest, m: MediaMsg) {
-    if (m.t !== 'grid' && (!g.mediaAt || g.mediaAt.qid !== m.qid)) g.mediaAt = { qid: m.qid, at: Date.now() };
+    if (m.t !== 'veil' && (!g.mediaAt || g.mediaAt.qid !== m.qid)) g.mediaAt = { qid: m.qid, at: Date.now() };
     this.send(conn, m);
   }
 

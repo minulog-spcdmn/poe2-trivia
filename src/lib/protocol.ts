@@ -4,7 +4,7 @@
 
 import type { Action, GameState } from './game';
 
-export const PROTOCOL_VERSION = 6;
+export const PROTOCOL_VERSION = 7;
 
 /** Guest → host. */
 export type ClientMsg =
@@ -29,8 +29,8 @@ export type HostMsg =
 
 export type MediaMsg =
   | { t: 'art'; qid: number; w: number; h: number; data: ArrayBuffer }
-  | { t: 'grid'; qid: number; w: number; h: number; cols: number; rows: number }
-  | { t: 'tile'; qid: number; i: number; x: number; y: number; w: number; h: number; data: ArrayBuffer }
+  | { t: 'veil'; qid: number; w: number; h: number }
+  | { t: 'patch'; qid: number; i: number; x: number; y: number; w: number; h: number; data: ArrayBuffer }
   | { t: 'option'; qid: number; index: number; data: ArrayBuffer };
 
 /** Roughly how big a decoded message is; guests never need more than this. */
@@ -110,12 +110,9 @@ export function parseHostMsg(raw: unknown): HostMsg | null {
       return isInt(raw.n, 0, Number.MAX_SAFE_INTEGER) ? (raw as HostMsg) : null;
     case 'art':
       return qid && bin(raw.data) && isInt(raw.w, 1, 4096) && isInt(raw.h, 1, 4096) ? (raw as HostMsg) : null;
-    case 'grid':
-      return qid && isInt(raw.w, 1, 4096) && isInt(raw.h, 1, 4096) && isInt(raw.cols, 1, 64) &&
-        isInt(raw.rows, 1, 64)
-        ? (raw as HostMsg)
-        : null;
-    case 'tile':
+    case 'veil':
+      return qid && isInt(raw.w, 1, 4096) && isInt(raw.h, 1, 4096) ? (raw as HostMsg) : null;
+    case 'patch':
       return qid && bin(raw.data) && isInt(raw.i, 0, 255) && isInt(raw.x, 0, 4096) && isInt(raw.y, 0, 4096) &&
         isInt(raw.w, 1, 4096) && isInt(raw.h, 1, 4096)
         ? (raw as HostMsg)
