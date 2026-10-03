@@ -55,7 +55,7 @@ the same words the presets use.
 
 | Knob | Steps | Past Eternal |
 |---|---|---|
-| Options | 4, 6, 8, 10 (keys 1 to 9 and 0 answer) | 10 |
+| Options | 4, 6, 8, 10 (the tenth is answered with 0, and its badge says 0) | 10 |
 | Look-alike names | None, Half, All | |
 | Made-up names | None, 1, 2, 3 (at most half the options: each copies a real name on screen) | 3 |
 | Find the art (share of questions) | Never, Some (40%), Half, Always | |

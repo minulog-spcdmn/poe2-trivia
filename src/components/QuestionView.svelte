@@ -352,7 +352,7 @@
             onclick={() => answer(i)}
             in:scale={{ start: 0.85, duration: 450, delay: 250 + i * 80 }}
           >
-            <span class="key">{i + 1}</span>
+            <span class="key">{(i + 1) % 10}</span>
             {#if src}
               <!-- Named pictures switch to the original art, so a mirrored one turns round. -->
               <span class="pic"><ArtImage {src} alt="Option {i + 1}" scale={1.6} unflip={mirrored(i) && !!q.options[i]} /></span>
@@ -439,7 +439,7 @@
             in:fly={{ x: 40, duration: 450, delay: 300 + i * 90 }}
           >
             <span class="sheen"></span>
-            <span class="key">{i + 1}</span>
+            <span class="key">{(i + 1) % 10}</span>
             <span class="text">{label ?? optionName(i)}</span>
             {@render who(i)}
             {#if st === 'right'}<span class="mark" in:scale={{ duration: 300 }}>✓</span>{/if}
