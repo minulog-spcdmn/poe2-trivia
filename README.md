@@ -50,8 +50,7 @@ would just be a wait.
 
 **Custom** opens an editor where the host sets each knob. The first time,
 it starts as the preset that was picked (as it plays in the chosen mode);
-after that it keeps its own settings, and **Start from** copies a preset back
-in. Everyone else sees the custom rules described under the difficulty, in
+after that it keeps its own settings. Everyone else sees the custom rules described under the difficulty, in
 the same words the presets use.
 
 | Knob | Steps | Past Eternal |
@@ -60,13 +59,13 @@ the same words the presets use.
 | Look-alike names | None, Half, All | |
 | Made-up names | None, 1, 2, 3 | 3 |
 | Find the art (share of questions) | Never, Some (40%), Half, Always | |
-| Tiles (in both modes) | Off, Fast (5×5), Slow (7×7), Slowest (9×9, 80% of the timer) | Slowest |
+| Unveil (tiles over the art, in both modes) | Off, Fast (5×5), Slow (7×7), Slowest (9×9, 80% of the timer) | Slowest |
 | Grayscale | Off, Find the art (its pictures), All art (the art to name too) | All art |
 | Mirrored art | Never, Some (30%), Half, Always | Half, Always |
 | Category lockout (turns) | None, 2, 3, 4, 5 | 5 |
 
-In a deathmatch, each knob that makes questions harder goes one step up
-(tiles the host turned off stay off). The host's browser remembers the last
+In a deathmatch on Custom or Eternal, each knob that makes questions harder
+goes one step up, into the steps past Eternal (tiles that are off stay off). The host's browser remembers the last
 custom setup.
 
 Look-alike names form a cluster, and the answer's place in it is random: the

@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { fade, fly } from 'svelte/transition';
   import { session } from '../lib/session.svelte';
-  import { KNOB_STEPS, knobsOf, type Knobs, type Preset } from '../lib/game';
+  import { KNOB_STEPS, knobsOf, type Knobs } from '../lib/game';
   import { KNOB_TEXT } from '../lib/difficultyText';
   import { portal } from '../lib/portal';
 
@@ -10,16 +10,6 @@
 
   const s = $derived(session.state!);
   const knobs = $derived(knobsOf(s.settings));
-  const race = $derived(s.settings.mode === 'race');
-
-  const PRESETS: { id: Preset; name: string }[] = [
-    { id: 'cruel', name: 'Cruel' },
-    { id: 'merciless', name: 'Merciless' },
-    { id: 'eternal', name: 'Eternal' },
-  ];
-  /** A preset's knobs as it plays in this room's mode. */
-  const presetKnobs = (id: Preset) => knobsOf({ difficulty: id, mode: s.settings.mode });
-  const same = (a: Knobs, b: Knobs) => (Object.keys(KNOB_STEPS) as (keyof Knobs)[]).every((k) => a[k] === b[k]);
 
   function set(change: Partial<Knobs>) {
     session.dispatch({ type: 'settings', settings: { custom: change } });
@@ -51,18 +41,6 @@
     </header>
 
     <div class="rows">
-      <div class="row start">
-        <div class="text">
-          <span class="name">Start from</span>
-          <span class="hint">A preset's settings in {race ? 'race' : 'take turns'}</span>
-        </div>
-        <div class="track" style:--n={PRESETS.length}>
-          {#each PRESETS as p (p.id)}
-            <button class:on={same(knobs, presetKnobs(p.id))} onclick={() => set(presetKnobs(p.id))}>{p.name}</button>
-          {/each}
-        </div>
-      </div>
-
       {#each KNOB_TEXT as knob (knob.key)}
         {@const steps = KNOB_STEPS[knob.key] as readonly Knobs[typeof knob.key][]}
         <div class="row">
@@ -164,10 +142,6 @@
     gap: 1rem;
     padding: 0.7rem 0;
     border-bottom: 1px solid rgba(59, 48, 36, 0.6);
-  }
-  .row.start {
-    border-bottom-color: var(--line);
-    padding: 0.9rem 0;
   }
   .text {
     display: flex;

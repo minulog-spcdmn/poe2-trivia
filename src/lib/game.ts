@@ -88,7 +88,7 @@ export function cleanKnobs(raw: unknown, fallback: Knobs = PRESETS[DEFAULT_PRESE
   return out as unknown as Knobs;
 }
 
-/** One step harder on every knob that makes a question harder (deathmatch on a custom difficulty). */
+/** One step harder on every knob that makes a question harder (a deathmatch on Eternal or Custom). */
 function harderKnobs(k: Knobs): Knobs {
   const up = <K extends keyof Knobs>(key: K): Knobs[K] => {
     const steps = KNOB_STEPS[key] as unknown as readonly Knobs[K][];
@@ -213,7 +213,8 @@ export function knobsOf(settings: Pick<Settings, 'difficulty'> & Partial<Setting
     const k = cleanKnobs(settings.custom);
     return harder ? harderKnobs(k) : k;
   }
-  const k = PRESETS[harder ? HARDER[d] : d];
+  // Past Eternal, a deathmatch goes on to the steps no preset uses.
+  const k = !harder ? PRESETS[d] : d === 'eternal' ? harderKnobs(PRESETS.eternal) : PRESETS[HARDER[d]];
   return settings.mode === 'race' ? { ...k } : { ...k, veil: 'off' };
 }
 
@@ -252,8 +253,8 @@ export interface Deathmatch {
   startedAt: number;
 }
 
-/** Deathmatch questions are one tier harder. */
-const HARDER: Record<Preset, Preset> = { cruel: 'merciless', merciless: 'eternal', eternal: 'eternal' };
+/** Deathmatch questions are one tier harder (Eternal goes one step up on each knob). */
+const HARDER: Record<Exclude<Preset, 'eternal'>, Preset> = { cruel: 'merciless', merciless: 'eternal' };
 
 export type Phase = 'lobby' | 'choosing' | 'question' | 'reveal' | 'over';
 

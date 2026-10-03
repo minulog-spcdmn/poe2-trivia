@@ -1092,6 +1092,15 @@ test('deathmatch on a custom difficulty turns each knob one step harder, but nev
   assert.deepEqual(rulesFor({ difficulty: 'custom', custom: top as never }, true), rulesFor({ difficulty: 'custom', custom: top as never }), 'the top steps stay');
   // Presets go one tier up, still without tiles outside race.
   assert.deepEqual(rulesFor({ difficulty: 'merciless', mode: 'turns' }, true), { ...PRESETS.eternal, veil: null });
+  // Eternal goes on past itself.
+  assert.deepEqual(rulesFor({ difficulty: 'eternal', mode: 'turns' }, true), {
+    ...PRESETS.eternal,
+    options: 10,
+    fakes: 3,
+    grayscale: 'all',
+    mirror: 0.5,
+    veil: null,
+  });
 });
 
 test("a preset's knobs show its tiles only in race, so a custom copy plays the same", () => {

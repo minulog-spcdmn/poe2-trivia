@@ -67,8 +67,8 @@ export const KNOB_TEXT: { [K in keyof Knobs]: KnobText<K> }[keyof Knobs][] = [
   { key: 'artChance', name: 'Find the art', hint: 'Questions that give a name and ask for its art', label: often },
   {
     key: 'veil',
-    name: 'Tiles',
-    hint: 'Art hidden under tiles that lift one by one, in both modes',
+    name: 'Unveil',
+    hint: 'Art hidden under tiles that lift one by one',
     label: (v) => (v === 'off' ? 'Off' : v === 'fast' ? 'Fast' : v === 'slow' ? 'Slow' : 'Slowest'),
   },
   {
