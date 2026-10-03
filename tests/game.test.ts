@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { PALETTE } from '../src/lib/palette.ts';
-import { Engine, ActionError, AUTO_NEXT_MS, autoNextLeft, createGame, KNOB_STEPS, PRESETS, cleanKnobs, knobsOf, isDifficulty, isFake, rulesFor, RARE_GROUPS, nameSimilarity, publicView, questionTopic, singular, renameCategories, MAX_PLAYERS, type Difficulty, type GameState, type Item, type Question } from '../src/lib/game.ts';
+import { Engine, ActionError, AUTO_NEXT_MS, autoNextLeft, createGame, KNOB_STEPS, PRESETS, cleanKnobs, knobsOf, isDifficulty, isFake, rulesFor, RARE_GROUPS, nameSimilarity, publicView, questionTopic, singular, renameCategories, MAX_PLAYERS, type Difficulty, type Preset, type GameState, type Item, type Question } from '../src/lib/game.ts';
 
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
 const fakes: Record<string, string[]> = JSON.parse(readFileSync(new URL('../src/data/fakes.json', import.meta.url), 'utf8'));
@@ -919,7 +919,7 @@ test('made-up names stay hidden until the reveal, and never count as used items'
   assert.ok(s.used.includes(q.options[pick]), 'a fake someone fell for is remembered');
 });
 
-test('a made-up name someone fell for is not used again that game', () => {
+test('a made-up name someone fell for is not used again in that room', () => {
   for (const mode of ['turns', 'race'] as const) {
     const engine = new Engine(items, { rng: seeded(8), fakes });
     let s: GameState = createGame('p0', { targetScore: 999, timer: 0, difficulty: 'eternal', mode, public: false, locked: false });
@@ -937,10 +937,36 @@ test('a made-up name someone fell for is not used again that game', () => {
       s = engine.apply(s, { type: 'next' }, 'p0');
     }
     assert.ok(fallenFor.size > 50, `${mode}: fell for ${fallenFor.size}`);
-    // A new game starts with a clean slate.
+    // The next game in the room remembers them too.
     s = engine.apply(s, { type: 'restart', play: true }, 'p0');
-    assert.ok(!s.used.some(isFake));
+    for (const id of fallenFor) assert.ok(s.used.includes(id), `${mode}: ${id} forgotten`);
   }
+});
+
+test('the next game in a room asks about other items than the last one', () => {
+  let { engine, s } = setup(['A', 'B'], 5);
+  s = engine.apply(s, { type: 'start' }, 'p0');
+  const play = () => {
+    const asked: string[] = [];
+    while (s.phase !== 'over') {
+      const id = s.players[s.turn].id;
+      s = engine.apply(s, { type: 'pick', category: s.offered[0] }, id);
+      asked.push(s.question!.itemId);
+      // Only A answers right, so nobody ties into a deathmatch.
+      const q = s.question!;
+      s = engine.apply(s, { type: 'answer', index: id === 'p0' ? right(q) : wrongIdx(q) }, id);
+      s = engine.apply(s, { type: 'next' }, id);
+    }
+    return asked;
+  };
+  const first = play();
+  s = engine.apply(s, { type: 'restart' }, 'p0');
+  assert.deepEqual(s.used, first, 'the lobby keeps what was asked');
+  s = engine.apply(s, { type: 'start' }, 'p0');
+  const second = play();
+  for (const id of second) assert.ok(!first.includes(id), `${id} asked again`);
+  // A new room starts with a clean slate.
+  assert.deepEqual(createGame('p0').used, []);
 });
 
 test('zoe_arcana always gets the last avatar colour', () => {
@@ -1143,4 +1169,53 @@ test('switching to race and Custom at once copies the preset as it plays in race
   let { engine, s } = setup(['A'], 3, 'eternal');
   s = engine.apply(s, { type: 'settings', settings: { mode: 'race', difficulty: 'custom' } }, 'p0');
   assert.equal(s.settings.custom!.veil, 'slow');
+});
+
+function longestRun(xs: string[]) {
+  let best = 0;
+  for (let i = 0, run = 0; i < xs.length; i++) best = Math.max(best, (run = i && xs[i] === xs[i - 1] ? run + 1 : 1));
+  return best;
+}
+
+for (const difficulty of ['cruel', 'eternal'] as Difficulty[]) test(`${difficulty} keeps its share of art questions without long runs`, () => {
+  let { engine, s } = setup(['A'], 99, difficulty);
+  s = engine.apply(s, { type: 'start' }, 'p0');
+  const modes = Array.from({ length: 1000 }, () => engine.makeQuestion(s, engine.categories[0]).mode);
+  const share = modes.filter((m) => m === 'art').length / modes.length;
+  assert.ok(Math.abs(share - PRESETS[difficulty as Preset].artChance) < 0.01, `art share ${share}`);
+  assert.ok(longestRun(modes) <= 7, `run of ${longestRun(modes)}`);
+});
+
+test('art questions lean toward whoever has had too few, one tally per player', () => {
+  // A roll that always says "name" until the lean outweighs it.
+  const engine = new Engine(items, { rng: () => 0.99 });
+  let s: GameState = createGame('p0', { ...createGame(null).settings, timer: 0, difficulty: 'cruel' });
+  for (const id of ['p0', 'p1']) s = engine.apply(s, { type: 'join', playerId: id, name: id }, id);
+  s = engine.apply(s, { type: 'start' }, 'p0');
+  const ask = (id: string) => {
+    s.turn = s.players.findIndex((p) => p.id === id);
+    return engine.makeQuestion(s, engine.categories[0]).mode;
+  };
+  // 40% art: five name questions in a row put art 0.4 × 5 behind, enough to win the roll.
+  assert.deepEqual(['p0', 'p0', 'p0', 'p0', 'p0'].map(ask), ['name', 'name', 'name', 'name', 'name']);
+  assert.equal(ask('p1'), 'name', "p0's run doesn't touch p1's tally");
+  assert.equal(ask('p0'), 'art');
+
+  // Race mode keeps one tally for the room (its first question comes with the start).
+  s = engine.apply(engine.apply(s, { type: 'restart' }, 'p0'), { type: 'settings', settings: { mode: 'race' } }, 'p0');
+  s = engine.apply(s, { type: 'start' }, 'p0');
+  assert.equal(s.question!.mode, 'name');
+  assert.deepEqual(['p0', 'p1', 'p0', 'p1'].map(ask), ['name', 'name', 'name', 'name']);
+  assert.equal(ask('p1'), 'art');
+});
+
+test('a question thrown out for failed art does not count toward the art lean', () => {
+  let { engine, s } = setup(['A']);
+  s = engine.apply(s, { type: 'start' }, 'p0');
+  s = engine.apply(s, { type: 'pick', category: s.offered[0] }, 'p0');
+  for (let i = 0; i < 10; i++) {
+    s = engine.apply(s, { type: 'reask' }, 'p0');
+    const art = s.question!.mode === 'art' ? 1 : 0;
+    assert.ok(Math.abs(s.artLean!.p0 - (PRESETS.cruel.artChance - art)) < 1e-9, 'only the latest question counts');
+  }
 });
