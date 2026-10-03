@@ -7,8 +7,8 @@ export interface RoomPrefs {
   targetScore: number;
   timer: number;
   difficulty: Difficulty;
-  /** The host's last custom difficulty. */
-  custom: Knobs;
+  /** The host's last custom difficulty (missing until they first pick it). */
+  custom?: Knobs;
   mode: GameMode;
   public: boolean;
   /** Streamer mode: don't show the room code on screen. */
@@ -25,7 +25,6 @@ export const DEFAULT_PREFS: RoomPrefs = {
   targetScore: DEFAULT_SETTINGS.targetScore,
   timer: DEFAULT_SETTINGS.timer,
   difficulty: DEFAULT_SETTINGS.difficulty,
-  custom: cleanKnobs(DEFAULT_SETTINGS.custom),
   mode: 'race',
   public: false,
   // Hidden until the host shows it, so a streamer can't put it on screen by accident.
@@ -55,8 +54,8 @@ export function parsePrefs(raw: string | null): RoomPrefs | null {
     targetScore: o.targetScore,
     timer: o.timer,
     difficulty: o.difficulty,
-    // Added later: entries without it (or with knobs another build allowed) keep the rest.
-    custom: cleanKnobs(o.custom),
+    // Added later: knobs another build allowed are snapped to this one's, and the rest is kept.
+    ...(o.custom === undefined ? {} : { custom: cleanKnobs(o.custom) }),
     mode: o.mode,
     public: o.public,
     hideCode: o.hideCode,
@@ -121,7 +120,7 @@ export function roomSettings(p: RoomPrefs = roomPrefs()): Settings {
     targetScore: p.targetScore,
     timer: p.timer,
     difficulty: p.difficulty,
-    custom: { ...p.custom },
+    ...(p.custom ? { custom: { ...p.custom } } : {}),
     mode: p.mode,
     public: p.public,
     locked: false,
@@ -139,7 +138,8 @@ export const prefsFrom = (s: Settings): Partial<RoomPrefs> => ({
   targetScore: clampInt(s.targetScore, 1, 50, DEFAULT_PREFS.targetScore),
   timer: clampInt(s.timer, 0, 120, DEFAULT_PREFS.timer),
   difficulty: difficultyOf(s.difficulty),
-  custom: cleanKnobs(s.custom),
+  // Only once the room has one, so a room that never used it keeps the saved one.
+  ...(s.custom ? { custom: cleanKnobs(s.custom) } : {}),
   // Rooms from before race mode existed played in turns.
   mode: s.mode === 'race' ? 'race' : 'turns',
   public: !!s.public,

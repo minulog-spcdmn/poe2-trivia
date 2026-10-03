@@ -23,8 +23,10 @@ export type Difficulty = Preset | 'custom';
 /** Name the item from its art, or pick the right art for a name. */
 export type QuestionMode = 'name' | 'art';
 
-/** How the tiles over the art lift: not at all, quickly (5×5) or slowly (7×7). */
-export type VeilSpeed = 'off' | 'fast' | 'slow';
+/** How the tiles over the art lift: not at all, or ever slower on ever finer grids. */
+export type VeilSpeed = 'off' | 'fast' | 'slow' | 'slowest';
+/** Which art is shown without colour: none, the pictures of "find the art" questions, or all of it. */
+export type Grayscale = 'off' | 'art' | 'all';
 
 /** What a difficulty is made of: each knob takes one of the values in `KNOB_STEPS`. */
 export interface Knobs {
@@ -37,30 +39,29 @@ export interface Knobs {
   artChance: number;
   /** Art hidden under tiles that lift one by one (presets: race only). */
   veil: VeilSpeed;
-  /** "Art" question pictures are shown without colour. */
-  grayscale: boolean;
+  grayscale: Grayscale;
   /** Chance of each picture being shown flipped left to right. */
   mirror: number;
   /** How many turns a chosen category stays locked. */
   lockout: number;
 }
 
-/** The values each knob can take, easiest first. */
+/** The values each knob can take, easiest first (the last ones go past Eternal). */
 export const KNOB_STEPS = {
-  options: [4, 6, 8],
+  options: [4, 6, 8, 10],
   similarNames: [0, 0.5, 1],
-  fakes: [0, 1, 2],
+  fakes: [0, 1, 2, 3],
   artChance: [0, 0.4, 0.5, 1],
-  veil: ['off', 'fast', 'slow'],
-  grayscale: [false, true],
-  mirror: [0, 0.3],
-  lockout: [0, 1, 2, 3, 4],
+  veil: ['off', 'fast', 'slow', 'slowest'],
+  grayscale: ['off', 'art', 'all'],
+  mirror: [0, 0.3, 0.5, 1],
+  lockout: [0, 2, 3, 4, 5],
 } as const satisfies { [K in keyof Knobs]: readonly Knobs[K][] };
 
 export const PRESETS: Record<Preset, Knobs> = {
-  cruel: { options: 4, similarNames: 0, fakes: 0, artChance: 0.4, veil: 'off', grayscale: false, mirror: 0, lockout: 2 },
-  merciless: { options: 6, similarNames: 0.5, fakes: 0, artChance: 0.4, veil: 'fast', grayscale: false, mirror: 0, lockout: 3 },
-  eternal: { options: 8, similarNames: 1, fakes: 2, artChance: 0.5, veil: 'slow', grayscale: true, mirror: 0.3, lockout: 4 },
+  cruel: { options: 4, similarNames: 0, fakes: 0, artChance: 0.4, veil: 'off', grayscale: 'off', mirror: 0, lockout: 2 },
+  merciless: { options: 6, similarNames: 0.5, fakes: 0, artChance: 0.4, veil: 'fast', grayscale: 'off', mirror: 0, lockout: 3 },
+  eternal: { options: 8, similarNames: 1, fakes: 2, artChance: 0.5, veil: 'slow', grayscale: 'art', mirror: 0.3, lockout: 4 },
 };
 
 /** Tile grid size, and the share of the timer it takes the last tile to lift. */
@@ -68,6 +69,7 @@ const VEILS: Record<VeilSpeed, { size: number; share: number } | null> = {
   off: null,
   fast: { size: 5, share: 0.55 },
   slow: { size: 7, share: 0.7 },
+  slowest: { size: 9, share: 0.8 },
 };
 
 /** The knobs as the engine uses them. */
@@ -99,7 +101,7 @@ function harderKnobs(k: Knobs): Knobs {
     similarNames: up('similarNames'),
     fakes: up('fakes'),
     veil: k.veil === 'off' ? 'off' : up('veil'),
-    grayscale: true,
+    grayscale: up('grayscale'),
     mirror: up('mirror'),
   };
 }
@@ -278,7 +280,7 @@ export interface Settings {
   /** Seconds per question, 0 = no timer (race mode always uses a timer). */
   timer: number;
   difficulty: Difficulty;
-  /** The knobs for the "custom" difficulty (kept while a preset is picked; missing in older saves). */
+  /** The knobs for the "custom" difficulty, kept while a preset is picked (missing until it's first chosen). */
   custom?: Knobs;
   mode: GameMode;
   /** Online rooms only: listed in the "open rooms" browser. */
@@ -411,7 +413,6 @@ export const DEFAULT_SETTINGS: Settings = {
   targetScore: 10,
   timer: 20,
   difficulty: DEFAULT_PRESET,
-  custom: { ...PRESETS[DEFAULT_PRESET] },
   mode: 'turns',
   public: false,
   locked: false,
@@ -674,6 +675,8 @@ export class Engine {
         if (Object.keys(action.settings).every((k) => k === 'public' || k === 'locked')) break;
         if (s.phase !== 'lobby' && s.phase !== 'over') throw new ActionError('Settings are locked during a game.');
         const { targetScore, timer, difficulty, custom, mode } = action.settings;
+        // Custom starts out as the difficulty that was picked, the way it plays in this mode.
+        if (difficulty === 'custom' && !s.settings.custom) s.settings.custom = knobsOf(s.settings);
         if (mode === 'turns' || mode === 'race') s.settings.mode = mode;
         if (isDifficulty(difficulty)) s.settings.difficulty = difficulty;
         // Knobs change one at a time; anything off the allowed steps keeps its old value.

@@ -2,7 +2,9 @@
   import { flip } from 'svelte/animate';
   import { fly, scale } from 'svelte/transition';
   import { session } from '../lib/session.svelte';
-  import { KNOB_STEPS, MAX_PLAYERS, difficultyOf, knobsOf, rulesFor, type Difficulty, type GameMode, type Knobs } from '../lib/game';
+  import { MAX_PLAYERS, difficultyOf, rulesFor, type Difficulty, type GameMode } from '../lib/game';
+  import { describe } from '../lib/difficultyText';
+  import CustomDifficulty from './CustomDifficulty.svelte';
   import { MAX_NAME } from '../lib/names';
   import { inviteUrl } from '../lib/site';
   import Avatar from './Avatar.svelte';
@@ -17,50 +19,6 @@
     { id: 'merciless', name: 'Merciless' },
     { id: 'eternal', name: 'Eternal' },
     { id: 'custom', name: 'Custom' },
-  ];
-
-  /** What the presets do; their tiles only lift in race. */
-  function presetBlurb(d: Difficulty, race: boolean): string {
-    switch (d) {
-      case 'cruel':
-        return 'Four options, all of the same kind (all rings, all bows…). Some questions ask you to find the art for a name.';
-      case 'merciless':
-        return race
-          ? 'Six options, half of them with names that look alike. The art is hidden under tiles that lift one by one.'
-          : 'Six options, half of them with names that look alike. In race, the art is also hidden under tiles that lift one by one.';
-      default:
-        return race
-          ? 'Eight look-alike names, two of them made up. Tiles lift slowly, "find the art" pictures lose their colour, and some pictures are mirrored. Good luck, exile.'
-          : 'Eight look-alike names, two of them made up. "Find the art" pictures lose their colour, and some pictures are mirrored; in race, tiles also hide the art. Good luck, exile.';
-    }
-  }
-
-  const COUNT_WORDS: Record<number, string> = { 1: 'one', 2: 'two', 4: 'Four', 6: 'Six', 8: 'Eight' };
-
-  /** A custom difficulty in words, for everyone in the room. */
-  function customBlurb(k: Knobs): string {
-    const lines: string[] = [];
-    const alike = k.similarNames === 0 ? 'all of the same kind' : k.similarNames === 1 ? 'all with look-alike names' : 'half of them with names that look alike';
-    lines.push(`${COUNT_WORDS[k.options]} options, ${alike}${k.fakes ? `, ${COUNT_WORDS[k.fakes]} made up` : ''}.`);
-    if (k.artChance === 1) lines.push('Every question asks you to find the art for a name.');
-    else if (k.artChance > 0) lines.push(`${Math.round(k.artChance * 100)}% of questions ask you to find the art for a name.`);
-    if (k.veil !== 'off') lines.push(k.veil === 'slow' ? 'Tiles hide the art and lift slowly.' : 'The art is hidden under tiles that lift one by one.');
-    if (k.grayscale && k.artChance > 0) lines.push('"Find the art" pictures lose their colour.');
-    if (k.mirror) lines.push('Some pictures are mirrored.');
-    return lines.join(' ');
-  }
-
-  const pct = (v: number) => `${Math.round(v * 100)}%`;
-  /** The custom knobs, in the order they're shown, with a label for each step. */
-  const KNOBS: { [K in keyof Knobs]: { key: K; name: string; label: (v: Knobs[K]) => string } }[keyof Knobs][] = [
-    { key: 'options', name: 'Options', label: String },
-    { key: 'similarNames', name: 'Look-alike names', label: (v) => (v === 0 ? 'None' : v === 1 ? 'All' : 'Half') },
-    { key: 'fakes', name: 'Made-up names', label: String },
-    { key: 'artChance', name: 'Find the art', label: (v) => (v ? pct(v) : 'Off') },
-    { key: 'veil', name: 'Tiles over the art', label: (v) => (v === 'off' ? 'Off' : v === 'fast' ? 'Fast' : 'Slow') },
-    { key: 'grayscale', name: 'Grayscale pictures', label: (v) => (v ? 'On' : 'Off') },
-    { key: 'mirror', name: 'Mirrored pictures', label: (v) => (v ? pct(v) : 'Off') },
-    { key: 'lockout', name: 'Category lockout', label: (v) => (v ? String(v) : 'Off') },
   ];
 
   const s = $derived(session.state!);
@@ -134,21 +92,11 @@
   function setTimer(v: number) {
     session.dispatch({ type: 'settings', settings: { timer: v } });
   }
-  /** Host only: the custom knobs are folded away until asked for. */
-  let tuning = $state(false);
+  /** Host only: the custom difficulty's editor. */
+  let editing = $state(false);
   function setDifficulty(v: Difficulty) {
-    if (v === 'custom') {
-      // Custom starts from the preset that was picked, as it plays in this mode.
-      tuning = true;
-      if (difficulty !== 'custom') {
-        session.dispatch({ type: 'settings', settings: { difficulty: v, custom: knobsOf(s.settings) } });
-        return;
-      }
-    }
-    session.dispatch({ type: 'settings', settings: { difficulty: v } });
-  }
-  function setKnob<K extends keyof Knobs>(key: K, v: Knobs[K]) {
-    session.dispatch({ type: 'settings', settings: { custom: { [key]: v } } });
+    if (v === 'custom') editing = true;
+    if (v !== difficulty) session.dispatch({ type: 'settings', settings: { difficulty: v } });
   }
   function start() {
     session.dispatch({ type: 'start' });
@@ -159,9 +107,7 @@
   const waiting = $derived(s.spectators ?? []);
   const race = $derived(s.settings.mode === 'race');
   const difficulty = $derived(difficultyOf(s.settings.difficulty));
-  const knobs = $derived(knobsOf(s.settings));
   const lockout = $derived(rulesFor(s.settings).lockout);
-  const blurb = $derived(difficulty === 'custom' ? customBlurb(knobs) : presetBlurb(difficulty, race));
 </script>
 
 <div class="lobby">
@@ -328,33 +274,29 @@
         <span class="label">Difficulty</span>
         <div class="seg">
           {#each DIFFS as d (d.id)}
-            <button class:on={difficulty === d.id} disabled={!isHost} onclick={() => setDifficulty(d.id)}>{d.name}</button>
+            {@const edit = d.id === 'custom' && difficulty === 'custom' && isHost}
+            <button
+              class:on={difficulty === d.id}
+              class:edit
+              disabled={!isHost}
+              onclick={() => setDifficulty(d.id)}
+              title={edit ? 'Edit the custom difficulty' : undefined}
+            >
+              {d.name}
+              {#if edit}
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4zM13.5 6.5l4 4" /></svg>
+              {/if}
+            </button>
           {/each}
         </div>
-        {#key blurb}
-          <p class="blurb muted" in:fly={{ y: -4, duration: 250 }}>{blurb}</p>
-        {/key}
-        {#if difficulty === 'custom' && isHost}
-          <button class="tune" aria-expanded={tuning} onclick={() => (tuning = !tuning)}>
-            {tuning ? 'Hide the knobs' : 'Adjust the knobs'}<span class="chev" class:open={tuning} aria-hidden="true">▾</span>
-          </button>
-          {#if tuning}
-            <div class="knobs" transition:fly={{ y: -6, duration: 220 }}>
-              {#each KNOBS as knob (knob.key)}
-                <div class="knob">
-                  <span class="knob-name">{knob.name}</span>
-                  <div class="seg small">
-                    {#each KNOB_STEPS[knob.key] as step (String(step))}
-                      <button class:on={knobs[knob.key] === step} onclick={() => setKnob(knob.key, step)}>
-                        {(knob.label as (v: typeof step) => string)(step)}
-                      </button>
-                    {/each}
-                  </div>
-                </div>
-              {/each}
-            </div>
-          {/if}
-        {/if}
+        <!-- Every description sits in the same cell, so switching never changes the panel's height. -->
+        <div class="blurbs">
+          {#each DIFFS as d (d.id)}
+            <p class="blurb muted" class:shown={difficulty === d.id} aria-hidden={difficulty !== d.id}>
+              {describe({ ...s.settings, difficulty: d.id })}
+            </p>
+          {/each}
+        </div>
       </div>
 
       <div class="setting">
@@ -395,6 +337,10 @@
     </section>
   </div>
 </div>
+
+{#if editing && isHost && difficulty === 'custom'}
+  <CustomDifficulty onclose={() => (editing = false)} />
+{/if}
 
 <style>
   .lobby {
@@ -739,11 +685,30 @@
   .mode-card:disabled:not(.on) {
     opacity: 0.5;
   }
-  .blurb {
+  .blurbs {
+    display: grid;
     margin: 0.5rem 0 0;
+  }
+  .blurb {
+    grid-area: 1 / 1;
+    margin: 0;
     font-size: 0.95rem;
     font-style: italic;
-    min-height: 2.8em;
+    opacity: 0;
+    visibility: hidden;
+    translate: 0 -4px;
+    transition:
+      opacity 0.25s,
+      translate 0.25s,
+      visibility 0s 0.25s;
+  }
+  .blurb.shown {
+    opacity: 1;
+    visibility: visible;
+    translate: 0 0;
+    transition:
+      opacity 0.25s,
+      translate 0.25s;
   }
   .seg {
     display: flex;
@@ -790,62 +755,19 @@
   .seg > button:disabled:not(.on) {
     opacity: 0.5;
   }
-  .tune {
+  .seg > button.edit {
     display: inline-flex;
     align-items: center;
     gap: 0.4em;
-    margin-top: 0.6rem;
-    padding: 0.35em 0.8em;
-    font-family: var(--font-display);
-    font-weight: 700;
-    font-size: 0.72rem;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: var(--muted);
-    background: rgba(0, 0, 0, 0.35);
-    border: 1px solid var(--line);
-    border-radius: 3px;
-    cursor: pointer;
-    transition: all 0.2s;
   }
-  .tune:hover {
-    color: var(--gold-hi);
-    border-color: var(--gold-lo);
-  }
-  .chev {
-    display: inline-block;
-    transition: rotate 0.2s;
-  }
-  .chev.open {
-    rotate: 180deg;
-  }
-  .knobs {
-    display: flex;
-    flex-direction: column;
-    gap: 0.45rem;
-    margin-top: 0.7rem;
-    padding: 0.8rem;
-    background: rgba(0, 0, 0, 0.25);
-    border: 1px solid rgba(59, 48, 36, 0.6);
-    border-radius: 4px;
-  }
-  .knob {
-    display: grid;
-    grid-template-columns: 9.5rem 1fr;
-    align-items: center;
-    gap: 0.6rem;
-  }
-  .knob-name {
-    font-size: 0.95rem;
-    color: var(--muted);
-  }
-  .seg.small {
-    gap: 0.3rem;
-  }
-  .seg.small > button {
-    min-width: 40px;
-    padding: 0.3rem 0.5rem;
-    font-size: 0.75rem;
+  .seg > button svg {
+    width: 12px;
+    height: 12px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
   }
   .stepper {
     display: inline-flex;
@@ -909,10 +831,6 @@
     }
     .seg {
       gap: 0.3rem;
-    }
-    .knob {
-      grid-template-columns: 1fr;
-      gap: 0.25rem;
     }
   }
 </style>

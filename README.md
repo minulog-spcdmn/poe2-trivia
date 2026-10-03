@@ -48,15 +48,26 @@ The presets only lift tiles in race mode, where answering from part of the art
 can beat the others to it. On your own turn nobody is racing you, so the tiles
 would just be a wait.
 
-**Custom** starts from the preset that was picked (as it plays in the chosen
-mode) and lets the host set each knob: options (4, 6, 8), look-alike names
-(none, half, all), made-up names (0 to 2), the share of "find the art"
-questions (off, 40%, 50%, 100%), tiles over the art (off, fast, slow; in
-either mode), grayscale pictures, mirrored pictures (off, 30%) and how many
-turns a picked category stays locked (off to 4). The knobs fold away behind a
-button; everyone else sees the custom rules described under the difficulty.
-In a deathmatch, each knob goes one step harder, but tiles the host turned
-off stay off. The host's browser remembers the last custom setup.
+**Custom** opens an editor where the host sets each knob. The first time,
+it starts as the preset that was picked (as it plays in the chosen mode);
+after that it keeps its own settings, and **Start from** copies a preset back
+in. Everyone else sees the custom rules described under the difficulty, in
+the same words the presets use.
+
+| Knob | Steps | Past Eternal |
+|---|---|---|
+| Options | 4, 6, 8, 10 | 10 |
+| Look-alike names | None, Half, All | |
+| Made-up names | None, 1, 2, 3 | 3 |
+| Find the art (share of questions) | Never, Some (40%), Half, Always | |
+| Tiles (in both modes) | Off, Fast (5×5), Slow (7×7), Slowest (9×9, 80% of the timer) | Slowest |
+| Grayscale | Off, Find the art (its pictures), All art (the art to name too) | All art |
+| Mirrored art | Never, Some (30%), Half, Always | Half, Always |
+| Category lockout (turns) | None, 2, 3, 4, 5 | 5 |
+
+In a deathmatch, each knob that makes questions harder goes one step up
+(tiles the host turned off stay off). The host's browser remembers the last
+custom setup.
 
 Look-alike names form a cluster, and the answer's place in it is random: the
 name that looks most (or least) like the others is no more likely to be right

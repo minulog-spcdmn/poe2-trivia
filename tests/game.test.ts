@@ -1023,7 +1023,14 @@ test('preset tiles lift only in race; a custom veil lifts in both modes', () => 
 
 test('the host can tune a custom difficulty, one knob at a time, within the allowed steps', () => {
   let { engine, s } = setup(['A', 'B']);
-  s = engine.apply(s, { type: 'settings', settings: { difficulty: 'custom', custom: PRESETS.eternal } }, 'p0');
+  // The first time, Custom starts out as the difficulty that was picked.
+  s = engine.apply(s, { type: 'settings', settings: { difficulty: 'eternal', mode: 'race' } }, 'p0');
+  assert.equal(s.settings.custom, undefined);
+  s = engine.apply(s, { type: 'settings', settings: { difficulty: 'custom' } }, 'p0');
+  assert.deepEqual(s.settings.custom, PRESETS.eternal);
+  s = engine.apply(s, { type: 'settings', settings: { difficulty: 'cruel', mode: 'turns' } }, 'p0');
+  s = engine.apply(s, { type: 'settings', settings: { difficulty: 'custom' } }, 'p0');
+  assert.deepEqual(s.settings.custom, PRESETS.eternal, 'and keeps its knobs after that');
   s = engine.apply(s, { type: 'settings', settings: { custom: { options: 4 } } }, 'p0');
   assert.deepEqual(s.settings.custom, { ...PRESETS.eternal, options: 4 });
   // Off the steps (or not a knob at all): ignored, the rest still applies.
@@ -1038,19 +1045,20 @@ test('the host can tune a custom difficulty, one knob at a time, within the allo
 });
 
 test('custom questions follow the knobs', () => {
-  const custom = { options: 6, similarNames: 0, fakes: 1, artChance: 1, veil: 'off', grayscale: true, mirror: 0.3, lockout: 1 } as const;
+  const custom = { options: 10, similarNames: 0, fakes: 1, artChance: 1, veil: 'off', grayscale: 'all', mirror: 0.3, lockout: 2 } as const;
   const engine = new Engine(items, { rng: seeded(9), fakes });
   let s: GameState = createGame('p0', { targetScore: 99, timer: 0, difficulty: 'custom', custom, mode: 'turns', public: false, locked: false });
   s = engine.apply(s, { type: 'join', playerId: 'p0', name: 'A' }, 'p0');
   s = engine.apply(s, { type: 'start' }, 'p0');
-  let last = '';
+  const history: string[] = [];
   for (let i = 0; i < 30; i++) {
-    assert.ok(!s.offered.includes(last), 'locked for one turn');
-    last = s.offered[0];
-    s = engine.apply(s, { type: 'pick', category: last }, 'p0');
+    for (const recent of history.slice(-2)) assert.ok(!s.offered.includes(recent), 'locked for two turns');
+    history.push(s.offered[0]);
+    s = engine.apply(s, { type: 'pick', category: s.offered[0] }, 'p0');
     const q = s.question!;
     assert.equal(q.mode, 'art');
-    assert.equal(q.options.length, 6);
+    assert.equal(q.options.length, 10);
+    assert.equal(new Set(q.options).size, 10);
     assert.equal(q.veil, null);
     s = engine.apply(s, { type: 'answer', index: wrongIdx(q) }, 'p0');
     s = engine.apply(s, { type: 'next' }, 'p0');
@@ -1076,10 +1084,12 @@ test('a lockout of 0 locks nothing', () => {
 });
 
 test('deathmatch on a custom difficulty turns each knob one step harder, but never adds tiles', () => {
-  const base = { options: 4, similarNames: 0.5, fakes: 2, artChance: 0.4, veil: 'off', grayscale: false, mirror: 0, lockout: 2 } as const;
+  const base = { options: 4, similarNames: 0.5, fakes: 3, artChance: 0.4, veil: 'off', grayscale: 'off', mirror: 0, lockout: 2 } as const;
   const hard = rulesFor({ difficulty: 'custom', custom: base, mode: 'turns' }, true);
-  assert.deepEqual(hard, { ...base, options: 6, similarNames: 1, fakes: 2, grayscale: true, mirror: 0.3, veil: null });
-  assert.deepEqual(rulesFor({ difficulty: 'custom', custom: { ...base, veil: 'fast' }, mode: 'turns' }, true).veil, { size: 7, share: 0.7 });
+  assert.deepEqual(hard, { ...base, options: 6, similarNames: 1, fakes: 3, grayscale: 'art', mirror: 0.3, veil: null });
+  assert.deepEqual(rulesFor({ difficulty: 'custom', custom: { ...base, veil: 'slow' }, mode: 'turns' }, true).veil, { size: 9, share: 0.8 });
+  const top = Object.fromEntries(Object.entries(KNOB_STEPS).map(([k, steps]) => [k, steps.at(-1)]));
+  assert.deepEqual(rulesFor({ difficulty: 'custom', custom: top as never }, true), rulesFor({ difficulty: 'custom', custom: top as never }), 'the top steps stay');
   // Presets go one tier up, still without tiles outside race.
   assert.deepEqual(rulesFor({ difficulty: 'merciless', mode: 'turns' }, true), { ...PRESETS.eternal, veil: null });
 });
@@ -1088,4 +1098,25 @@ test("a preset's knobs show its tiles only in race, so a custom copy plays the s
   assert.equal(knobsOf({ difficulty: 'eternal', mode: 'turns' }).veil, 'off');
   assert.equal(knobsOf({ difficulty: 'eternal', mode: 'race' }).veil, 'slow');
   assert.deepEqual(knobsOf({ difficulty: 'custom', custom: { ...PRESETS.cruel, veil: 'fast' }, mode: 'turns' }).veil, 'fast');
+});
+
+test('the levels past Eternal: ten options, three made-up names', () => {
+  const custom = { ...PRESETS.eternal, options: 10, fakes: 3, artChance: 0 };
+  const engine = new Engine(items, { rng: seeded(21), fakes });
+  let s: GameState = createGame('p0', { targetScore: 99, timer: 0, difficulty: 'custom', custom, mode: 'turns', public: false, locked: false });
+  s = engine.apply(s, { type: 'join', playerId: 'p0', name: 'A' }, 'p0');
+  s = engine.apply(s, { type: 'start' }, 'p0');
+  let three = 0;
+  for (let i = 0; i < 40; i++) {
+    s = engine.apply(s, { type: 'pick', category: s.offered[0] }, 'p0');
+    const q = s.question!;
+    assert.equal(q.options.length, 10);
+    assert.ok(q.options.includes(q.itemId));
+    const made = q.options.filter(isFake).length;
+    assert.ok(made <= 3);
+    if (made === 3) three++;
+    s = engine.apply(s, { type: 'answer', index: right(q) }, 'p0');
+    s = engine.apply(s, { type: 'next' }, 'p0');
+  }
+  assert.ok(three > 20, `three made-up names in ${three} of 40`);
 });

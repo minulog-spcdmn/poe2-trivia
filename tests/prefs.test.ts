@@ -22,7 +22,7 @@ const store = new Map<string, string>();
 };
 beforeEach(() => store.clear());
 
-const knobs = { ...PRESETS.cruel, options: 8, veil: 'slow' as const, lockout: 0 };
+const knobs = { ...PRESETS.cruel, options: 10, veil: 'slowest' as const, grayscale: 'all' as const, lockout: 0 };
 const custom: RoomPrefs = { targetScore: 15, timer: 45, difficulty: 'eternal', custom: knobs, mode: 'turns', public: true, hideCode: true };
 
 test('round-trips saved settings', () => {
@@ -104,7 +104,7 @@ test("keeps the old hidden-code setting when the new entry can't be written", ()
 test('settings from a room saved by an older build are made valid before saving', () => {
   const old = { targetScore: 7.6, timer: 999 } as unknown as Settings;
   const p = prefsFrom(old);
-  assert.deepEqual(p, { targetScore: 8, timer: 120, difficulty: 'merciless', custom: PRESETS.merciless, mode: 'turns', public: false });
+  assert.deepEqual(p, { targetScore: 8, timer: 120, difficulty: 'merciless', mode: 'turns', public: false });
   store.set(PREFS_KEY, serializePrefs(custom));
   savePrefs(p);
   assert.deepEqual(parsePrefs(store.get(PREFS_KEY) ?? null), { ...custom, ...p });
@@ -136,8 +136,12 @@ test('custom knobs are remembered; entries from before them, or with odd knobs, 
   const mine = { ...custom, difficulty: 'custom' as const };
   assert.deepEqual(parsePrefs(serializePrefs(mine)), mine);
   const { custom: _, ...older } = custom;
-  assert.deepEqual(parsePrefs(JSON.stringify({ v: PREFS_VERSION, ...older })), { ...custom, custom: PRESETS.merciless });
-  const odd = { ...knobs, options: 5, veil: 'sideways', grayscale: 'yes' };
+  assert.deepEqual(parsePrefs(JSON.stringify({ v: PREFS_VERSION, ...older })), older);
+  // A room that never used Custom keeps the saved knobs.
+  store.set(PREFS_KEY, serializePrefs(custom));
+  savePrefs(prefsFrom({ ...roomSettings(older), difficulty: 'cruel' }));
+  assert.deepEqual(parsePrefs(store.get(PREFS_KEY) ?? null), { ...custom, difficulty: 'cruel' });
+  const odd = { ...knobs, options: 5, veil: 'sideways', grayscale: true };
   assert.deepEqual(parsePrefs(JSON.stringify({ v: PREFS_VERSION, ...custom, custom: odd }))?.custom, {
     ...knobs,
     options: PRESETS.merciless.options,

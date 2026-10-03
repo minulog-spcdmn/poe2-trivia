@@ -337,7 +337,7 @@
         </div>
         {@render stamp(true)}
       </div>
-      <div class="tiles" bind:this={artEl} class:many={count > 4} class:six={count === 6}>
+      <div class="tiles" bind:this={artEl} class:many={count > 4} class:six={count === 6} class:ten={count === 10}>
         {#each q.labels as _, i (i)}
           {@const st = optionState(i)}
           {@const src = reveal && q.options[i] ? itemImage(q.options[i]) : media?.options[i]}
@@ -421,7 +421,7 @@
         </div>
       </div>
 
-      <div class="options" class:compact={count > 6}>
+      <div class="options" class:compact={count > 6} class:dense={count > 8}>
         {#each q.labels as label, i (i)}
           {@const st = optionState(i)}
           <button
@@ -885,6 +885,13 @@
   .compact {
     gap: 0.6rem;
   }
+  .dense .option {
+    padding-top: 0.5rem;
+    padding-bottom: 0.5rem;
+  }
+  .dense {
+    gap: 0.45rem;
+  }
   .option.pending {
     border-color: var(--gold);
     animation: glow 1s ease-in-out infinite;
@@ -942,6 +949,9 @@
   }
   .tiles.six {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .tiles.ten {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
   }
   .tile {
     position: relative;
@@ -1248,7 +1258,8 @@
       margin-top: -5px;
     }
     .tiles,
-    .tiles.six {
+    .tiles.six,
+    .tiles.ten {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
     .tile,
