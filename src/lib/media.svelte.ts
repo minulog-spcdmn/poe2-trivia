@@ -7,7 +7,7 @@
 import { itemImage } from './ui-paths';
 import { cutPatches, spreadOrder, visibleBox } from './patches';
 import type { MediaMsg } from './protocol';
-import type { Question } from './game';
+import type { Grayscale, Question } from './game';
 
 export interface Patch {
   i: number;
@@ -140,15 +140,15 @@ function encode(canvas: HTMLCanvasElement, lossless = false): Promise<ArrayBuffe
 }
 
 /** Host side: builds the art for a question (full question, with the answer). */
-export async function prepareMedia(q: Question, grayscale: boolean): Promise<PreparedMedia> {
+export async function prepareMedia(q: Question, grayscale: Grayscale): Promise<PreparedMedia> {
   const out: PreparedMedia = { qid: q.askedAt, art: null, veil: null, patches: [], options: [] };
   if (q.mode === 'art') {
     out.options = await Promise.all(
-      q.options.map(async (id, i) => encode(await alteredCanvas(id, grayscale, !!q.mirrored?.[i]))),
+      q.options.map(async (id, i) => encode(await alteredCanvas(id, grayscale !== 'off', !!q.mirrored?.[i]))),
     );
     return out;
   }
-  const canvas = await alteredCanvas(q.itemId, false, !!q.mirrored?.[0]);
+  const canvas = await alteredCanvas(q.itemId, grayscale === 'all', !!q.mirrored?.[0]);
   const { width: W, height: H } = canvas;
   if (!q.veil) {
     out.art = { w: W, h: H, data: await encode(canvas) };

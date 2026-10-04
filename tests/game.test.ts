@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { PALETTE } from '../src/lib/palette.ts';
-import { Engine, ActionError, AUTO_NEXT_MS, autoNextLeft, createGame, DIFFICULTIES, isDifficulty, isFake, rulesFor, RARE_GROUPS, nameSimilarity, publicView, questionTopic, singular, renameCategories, MAX_PLAYERS, type Difficulty, type GameState, type Item, type Question } from '../src/lib/game.ts';
+import { Engine, ActionError, AUTO_NEXT_MS, autoNextLeft, createGame, KNOB_STEPS, PRESETS, cleanKnobs, knobsOf, isDifficulty, isFake, rulesFor, RARE_GROUPS, nameSimilarity, publicView, questionTopic, singular, renameCategories, MAX_PLAYERS, type Difficulty, type Preset, type GameState, type Item, type Question } from '../src/lib/game.ts';
 
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
 const fakes: Record<string, string[]> = JSON.parse(readFileSync(new URL('../src/data/fakes.json', import.meta.url), 'utf8'));
@@ -50,7 +50,7 @@ test('offers three categories and locks out picks for two turns', () => {
 });
 
 for (const difficulty of ['merciless', 'eternal'] as Difficulty[]) test(`${difficulty} locks out picks for longer`, () => {
-  const lockout = DIFFICULTIES[difficulty].lockout;
+  const lockout = PRESETS[difficulty].lockout;
   let { engine, s } = setup(['A'], 99, difficulty);
   s = engine.apply(s, { type: 'start' }, 'p0');
   const history: string[] = [];
@@ -218,7 +218,7 @@ test('guests see who is watching; the answer stays hidden', () => {
 
 test('difficulties scale options, decoy kind and question types', () => {
   for (const difficulty of ['cruel', 'merciless', 'eternal'] as Difficulty[]) {
-    const rules = DIFFICULTIES[difficulty];
+    const rules = PRESETS[difficulty];
     let { s } = setup(['A'], 3, difficulty);
     const engine = new Engine(items, { rng: seeded(42), fakes });
     s = engine.apply(s, { type: 'start' }, 'p0');
@@ -251,7 +251,7 @@ test('difficulties scale options, decoy kind and question types', () => {
       if (answer.kind === 'gem') assert.deepEqual(shown, []);
       for (const g of shown) assert.ok(looks.filter((l) => l === g).length >= 2, `${g} has two options`);
       if (shown.length) for (const l of looks) assert.ok(shown.includes(l), `${l} is listed`);
-      assert.equal(!!q.veil, !!rules.veil && q.mode === 'name');
+      assert.equal(q.veil, null, 'a preset only unveils the art in race');
       s = engine.apply(s, { type: 'answer', index: right(q) }, 'p0');
       s = engine.apply(s, { type: 'next' }, 'p0');
       if (s.phase === 'over') s = engine.apply(engine.apply(s, { type: 'restart' }, 'p0'), { type: 'start' }, 'p0');
@@ -464,7 +464,7 @@ test('eternal mirrors some pictures, each on its own roll', () => {
     }
   }
   const rate = flipped / pictures;
-  assert.ok(Math.abs(rate - DIFFICULTIES.eternal.mirror) < 0.03, `mirrored ${rate.toFixed(3)} of pictures`);
+  assert.ok(Math.abs(rate - PRESETS.eternal.mirror) < 0.03, `mirrored ${rate.toFixed(3)} of pictures`);
   // A mirrored option is no more (or less) likely to be the answer.
   assert.ok(Math.abs(answersFlipped / answers - rate) < 0.04, `answer mirrored ${(answersFlipped / answers).toFixed(3)}`);
 });
@@ -551,7 +551,7 @@ test('a tie over the target starts a deathmatch between the tied players only', 
   assert.equal(s.players[s.turn].id, x);
   // One tier harder: cruel -> merciless (6 options).
   s = engine.apply(s, { type: 'pick', category: s.offered[0] }, x);
-  assert.equal(s.question!.options.length, DIFFICULTIES.merciless.options);
+  assert.equal(s.question!.options.length, PRESETS.merciless.options);
   s = engine.apply(s, { type: 'answer', index: right(s.question!) }, x);
   s = engine.apply(s, { type: 'next' }, x);
   // z never gets a deathmatch turn.
@@ -640,7 +640,7 @@ test('earlier answers never come back as decoys, until the category starts over'
     s.used.push(q.itemId);
     s.question = q;
   }
-  assert.ok(new Set(answers).size > size - DIFFICULTIES.eternal.options, 'goes through most of the category first');
+  assert.ok(new Set(answers).size > size - PRESETS.eternal.options, 'goes through most of the category first');
 });
 
 test('a tablet answer gets tablet decoys, so a tablet among the options gives nothing away', () => {
@@ -763,7 +763,7 @@ test('only real difficulties are accepted, not names inherited from Object', () 
   for (const bogus of ['toString', 'constructor', '__proto__']) {
     s = engine.apply(s, { type: 'settings', settings: { difficulty: bogus as Difficulty } }, 'p0');
     assert.equal(s.settings.difficulty, 'cruel');
-    assert.equal(rulesFor(bogus), DIFFICULTIES.merciless, 'unknown falls back to the default');
+    assert.deepEqual(rulesFor({ difficulty: bogus as Difficulty }), rulesFor({ difficulty: 'merciless' }), 'unknown falls back to the default');
     assert.equal(isDifficulty(bogus), false);
   }
   assert.equal(isDifficulty('eternal'), true);
@@ -874,13 +874,13 @@ test('eternal swaps two decoys on name questions for made-up names', () => {
   let shownReal = 0;
   for (let i = 0; i < 4000; i++) {
     const q = engine.makeQuestion(s, engine.categories[i % engine.categories.length]);
-    assert.equal(q.options.length, DIFFICULTIES.eternal.options);
+    assert.equal(q.options.length, PRESETS.eternal.options);
     const fakeIdx = q.options.flatMap((id, i) => (isFake(id) ? [i] : []));
     if (q.mode === 'art') {
       assert.deepEqual(fakeIdx, [], 'art questions only show real pictures');
       continue;
     }
-    assert.equal(fakeIdx.length, DIFFICULTIES.eternal.fakes);
+    assert.equal(fakeIdx.length, PRESETS.eternal.fakes);
     assert.equal(new Set(q.labels).size, q.labels.length, 'no name twice');
     assert.ok(!isFake(q.itemId));
     shownReal += q.options.length - fakeIdx.length;
@@ -895,7 +895,7 @@ test('eternal swaps two decoys on name questions for made-up names', () => {
   }
   // The answer has a fake twin as often as any other real name on screen.
   const expected = pairs / shownReal;
-  const actual = answerPairs / (shownReal / (DIFFICULTIES.eternal.options - DIFFICULTIES.eternal.fakes));
+  const actual = answerPairs / (shownReal / (PRESETS.eternal.options - PRESETS.eternal.fakes));
   assert.ok(Math.abs(actual - expected) < 0.04, `answer twinned ${actual.toFixed(3)} vs ${expected.toFixed(3)}`);
 });
 
@@ -919,7 +919,7 @@ test('made-up names stay hidden until the reveal, and never count as used items'
   assert.ok(s.used.includes(q.options[pick]), 'a fake someone fell for is remembered');
 });
 
-test('a made-up name someone fell for is not used again that game', () => {
+test('a made-up name someone fell for is not used again in that room', () => {
   for (const mode of ['turns', 'race'] as const) {
     const engine = new Engine(items, { rng: seeded(8), fakes });
     let s: GameState = createGame('p0', { targetScore: 999, timer: 0, difficulty: 'eternal', mode, public: false, locked: false });
@@ -937,10 +937,36 @@ test('a made-up name someone fell for is not used again that game', () => {
       s = engine.apply(s, { type: 'next' }, 'p0');
     }
     assert.ok(fallenFor.size > 50, `${mode}: fell for ${fallenFor.size}`);
-    // A new game starts with a clean slate.
+    // The next game in the room remembers them too.
     s = engine.apply(s, { type: 'restart', play: true }, 'p0');
-    assert.ok(!s.used.some(isFake));
+    for (const id of fallenFor) assert.ok(s.used.includes(id), `${mode}: ${id} forgotten`);
   }
+});
+
+test('the next game in a room asks about other items than the last one', () => {
+  let { engine, s } = setup(['A', 'B'], 5);
+  s = engine.apply(s, { type: 'start' }, 'p0');
+  const play = () => {
+    const asked: string[] = [];
+    while (s.phase !== 'over') {
+      const id = s.players[s.turn].id;
+      s = engine.apply(s, { type: 'pick', category: s.offered[0] }, id);
+      asked.push(s.question!.itemId);
+      // Only A answers right, so nobody ties into a deathmatch.
+      const q = s.question!;
+      s = engine.apply(s, { type: 'answer', index: id === 'p0' ? right(q) : wrongIdx(q) }, id);
+      s = engine.apply(s, { type: 'next' }, id);
+    }
+    return asked;
+  };
+  const first = play();
+  s = engine.apply(s, { type: 'restart' }, 'p0');
+  assert.deepEqual(s.used, first, 'the lobby keeps what was asked');
+  s = engine.apply(s, { type: 'start' }, 'p0');
+  const second = play();
+  for (const id of second) assert.ok(!first.includes(id), `${id} asked again`);
+  // A new room starts with a clean slate.
+  assert.deepEqual(createGame('p0').used, []);
 });
 
 test('zoe_arcana always gets the last avatar colour', () => {
@@ -993,4 +1019,203 @@ test('every category and item group has a singular name for the unidentified ite
   const names = new Set(items.flatMap((it) => (it.kind === 'gem' ? [it.category] : [it.category, it.group])));
   // A single pair of gloves or boots keeps its plural name.
   for (const name of names) assert.ok(singular(name) !== name || ['Boots', 'Gloves'].includes(name), name);
+});
+
+test('a preset unveils the art only in race; a custom unveil works in both modes', () => {
+  for (const mode of ['turns', 'race'] as const) {
+    for (const difficulty of ['merciless', 'eternal', 'custom'] as Difficulty[]) {
+      const custom = { ...PRESETS.cruel, artChance: 0, veil: 'fast' as const };
+      const engine = new Engine(items, { rng: seeded(5), fakes });
+      let s: GameState = createGame('p0', { targetScore: 99, timer: 20, difficulty, custom, mode, public: false, locked: false });
+      s = engine.apply(s, { type: 'join', playerId: 'p0', name: 'A' }, 'p0');
+      s = engine.apply(s, { type: 'start' }, 'p0');
+      let named = 0;
+      for (let i = 0; i < 20; i++) {
+        if (s.phase === 'choosing') s = engine.apply(s, { type: 'pick', category: s.offered[0] }, 'p0');
+        const q = s.question!;
+        if (q.mode === 'name') {
+          named++;
+          const veiled = mode === 'race' || difficulty === 'custom';
+          assert.equal(!!q.veil, veiled, `${mode} ${difficulty}`);
+          if (difficulty === 'custom') assert.deepEqual([q.veil!.size, q.veil!.seconds], [5, 20 * 0.55]);
+        }
+        s = engine.apply(s, { type: 'answer', index: wrongIdx(q) }, 'p0');
+        s = engine.apply(s, { type: 'next' }, 'p0');
+      }
+      assert.ok(named > 0);
+    }
+  }
+});
+
+test('the host can tune a custom difficulty, one knob at a time, within the allowed steps', () => {
+  let { engine, s } = setup(['A', 'B']);
+  // The first time, Custom starts out as the difficulty that was picked.
+  s = engine.apply(s, { type: 'settings', settings: { difficulty: 'eternal', mode: 'race' } }, 'p0');
+  assert.equal(s.settings.custom, undefined);
+  s = engine.apply(s, { type: 'settings', settings: { difficulty: 'custom' } }, 'p0');
+  assert.deepEqual(s.settings.custom, PRESETS.eternal);
+  s = engine.apply(s, { type: 'settings', settings: { difficulty: 'cruel', mode: 'turns' } }, 'p0');
+  s = engine.apply(s, { type: 'settings', settings: { difficulty: 'custom' } }, 'p0');
+  assert.deepEqual(s.settings.custom, PRESETS.eternal, 'and keeps its knobs after that');
+  s = engine.apply(s, { type: 'settings', settings: { custom: { options: 4 } } }, 'p0');
+  assert.deepEqual(s.settings.custom, { ...PRESETS.eternal, options: 4 });
+  // Off the steps (or not a knob at all): ignored, the rest still applies.
+  s = engine.apply(s, { type: 'settings', settings: { custom: { options: 5, fakes: 1, lockout: -1, toString: 1 } as never } }, 'p0');
+  assert.deepEqual(s.settings.custom, { ...PRESETS.eternal, options: 4, fakes: 1 });
+  assert.throws(() => engine.apply(s, { type: 'settings', settings: { custom: { options: 8 } } }, 'p1'), /Only the host/);
+  // Switching to a preset keeps the knobs for later.
+  s = engine.apply(s, { type: 'settings', settings: { difficulty: 'cruel' } }, 'p0');
+  assert.deepEqual(s.settings.custom, { ...PRESETS.eternal, options: 4, fakes: 1 });
+  for (const [k, steps] of Object.entries(KNOB_STEPS)) assert.ok(steps.includes(PRESETS.merciless[k as keyof typeof PRESETS.merciless] as never), k);
+  assert.deepEqual(cleanKnobs(null), PRESETS.merciless);
+});
+
+test('custom questions follow the knobs', () => {
+  const custom = { options: 10, similarNames: 0, fakes: 1, artChance: 1, veil: 'off', grayscale: 'all', mirror: 0.3, lockout: 2 } as const;
+  const engine = new Engine(items, { rng: seeded(9), fakes });
+  let s: GameState = createGame('p0', { targetScore: 99, timer: 0, difficulty: 'custom', custom, mode: 'turns', public: false, locked: false });
+  s = engine.apply(s, { type: 'join', playerId: 'p0', name: 'A' }, 'p0');
+  s = engine.apply(s, { type: 'start' }, 'p0');
+  const history: string[] = [];
+  for (let i = 0; i < 30; i++) {
+    for (const recent of history.slice(-2)) assert.ok(!s.offered.includes(recent), 'locked for two turns');
+    history.push(s.offered[0]);
+    s = engine.apply(s, { type: 'pick', category: s.offered[0] }, 'p0');
+    const q = s.question!;
+    assert.equal(q.mode, 'art');
+    assert.equal(q.options.length, 10);
+    assert.equal(new Set(q.options).size, 10);
+    assert.equal(q.veil, null);
+    s = engine.apply(s, { type: 'answer', index: wrongIdx(q) }, 'p0');
+    s = engine.apply(s, { type: 'next' }, 'p0');
+  }
+});
+
+test('a lockout of 0 locks nothing', () => {
+  const engine = new Engine(items, { rng: seeded(4) });
+  let s: GameState = createGame('p0', { targetScore: 99, timer: 0, difficulty: 'custom', custom: { ...PRESETS.cruel, lockout: 0 }, mode: 'turns', public: false, locked: false });
+  s = engine.apply(s, { type: 'join', playerId: 'p0', name: 'A' }, 'p0');
+  s = engine.apply(s, { type: 'start' }, 'p0');
+  let repeats = 0;
+  let last = '';
+  for (let i = 0; i < 40; i++) {
+    if (s.offered.includes(last)) repeats++;
+    last = s.offered[0];
+    s = engine.apply(s, { type: 'pick', category: last }, 'p0');
+    assert.deepEqual(s.players[0].recent, []);
+    s = engine.apply(s, { type: 'answer', index: wrongIdx(s.question!) }, 'p0');
+    s = engine.apply(s, { type: 'next' }, 'p0');
+  }
+  assert.ok(repeats > 0, 'the last pick comes back');
+});
+
+test('deathmatch on a custom difficulty turns each knob one step harder, but never adds an unveil', () => {
+  const base = { options: 4, similarNames: 0.5, fakes: 3, artChance: 0.4, veil: 'off', grayscale: 'off', mirror: 0, lockout: 2 } as const;
+  const hard = rulesFor({ difficulty: 'custom', custom: base, mode: 'turns' }, true);
+  assert.deepEqual(hard, { ...base, options: 6, similarNames: 1, fakes: 3, grayscale: 'art', mirror: 0.3, veil: null });
+  assert.deepEqual(rulesFor({ difficulty: 'custom', custom: { ...base, veil: 'slow' }, mode: 'turns' }, true).veil, { size: 9, share: 0.8 });
+  const top = Object.fromEntries(Object.entries(KNOB_STEPS).map(([k, steps]) => [k, steps.at(-1)]));
+  assert.deepEqual(rulesFor({ difficulty: 'custom', custom: top as never }, true), rulesFor({ difficulty: 'custom', custom: top as never }), 'the top steps stay');
+  // Presets go one tier up, still without an unveil outside race.
+  assert.deepEqual(rulesFor({ difficulty: 'merciless', mode: 'turns' }, true), { ...PRESETS.eternal, veil: null });
+  // Eternal goes on past itself.
+  assert.deepEqual(rulesFor({ difficulty: 'eternal', mode: 'turns' }, true), {
+    ...PRESETS.eternal,
+    options: 10,
+    fakes: 3,
+    grayscale: 'all',
+    mirror: 0.5,
+    veil: null,
+  });
+});
+
+test("a preset's knobs show its unveil only in race, so a custom copy plays the same", () => {
+  assert.equal(knobsOf({ difficulty: 'eternal', mode: 'turns' }).veil, 'off');
+  assert.equal(knobsOf({ difficulty: 'eternal', mode: 'race' }).veil, 'slow');
+  assert.deepEqual(knobsOf({ difficulty: 'custom', custom: { ...PRESETS.cruel, veil: 'fast' }, mode: 'turns' }).veil, 'fast');
+});
+
+test('the levels past Eternal: ten options, three made-up names', () => {
+  const custom = { ...PRESETS.eternal, options: 10, fakes: 3, artChance: 0 };
+  const engine = new Engine(items, { rng: seeded(21), fakes });
+  let s: GameState = createGame('p0', { targetScore: 99, timer: 0, difficulty: 'custom', custom, mode: 'turns', public: false, locked: false });
+  s = engine.apply(s, { type: 'join', playerId: 'p0', name: 'A' }, 'p0');
+  s = engine.apply(s, { type: 'start' }, 'p0');
+  let three = 0;
+  for (let i = 0; i < 40; i++) {
+    s = engine.apply(s, { type: 'pick', category: s.offered[0] }, 'p0');
+    const q = s.question!;
+    assert.equal(q.options.length, 10);
+    assert.ok(q.options.includes(q.itemId));
+    const made = q.options.filter(isFake).length;
+    assert.ok(made <= 3);
+    if (made === 3) three++;
+    s = engine.apply(s, { type: 'answer', index: right(q) }, 'p0');
+    s = engine.apply(s, { type: 'next' }, 'p0');
+  }
+  assert.ok(three > 20, `three made-up names in ${three} of 40`);
+});
+
+test('made-up names are capped at half the options, since each copies a real name on screen', () => {
+  assert.equal(cleanKnobs({ ...PRESETS.eternal, options: 4, fakes: 3 }).fakes, 2);
+  assert.equal(cleanKnobs({ ...PRESETS.eternal, options: 6, fakes: 3 }).fakes, 3);
+  let { engine, s } = setup(['A']);
+  s = engine.apply(s, { type: 'settings', settings: { difficulty: 'custom', custom: { options: 8, fakes: 3 } } }, 'p0');
+  s = engine.apply(s, { type: 'settings', settings: { custom: { options: 4 } } }, 'p0');
+  assert.deepEqual([s.settings.custom!.options, s.settings.custom!.fakes], [4, 2]);
+});
+
+test('switching to race and Custom at once copies the preset as it plays in race', () => {
+  let { engine, s } = setup(['A'], 3, 'eternal');
+  s = engine.apply(s, { type: 'settings', settings: { mode: 'race', difficulty: 'custom' } }, 'p0');
+  assert.equal(s.settings.custom!.veil, 'slow');
+});
+
+function longestRun(xs: string[]) {
+  let best = 0;
+  for (let i = 0, run = 0; i < xs.length; i++) best = Math.max(best, (run = i && xs[i] === xs[i - 1] ? run + 1 : 1));
+  return best;
+}
+
+for (const difficulty of ['cruel', 'eternal'] as Difficulty[]) test(`${difficulty} keeps its share of art questions without long runs`, () => {
+  let { engine, s } = setup(['A'], 99, difficulty);
+  s = engine.apply(s, { type: 'start' }, 'p0');
+  const modes = Array.from({ length: 1000 }, () => engine.makeQuestion(s, engine.categories[0]).mode);
+  const share = modes.filter((m) => m === 'art').length / modes.length;
+  assert.ok(Math.abs(share - PRESETS[difficulty as Preset].artChance) < 0.01, `art share ${share}`);
+  assert.ok(longestRun(modes) <= 7, `run of ${longestRun(modes)}`);
+});
+
+test('art questions lean toward whoever has had too few, one tally per player', () => {
+  // A roll that always says "name" until the lean outweighs it.
+  const engine = new Engine(items, { rng: () => 0.99 });
+  let s: GameState = createGame('p0', { ...createGame(null).settings, timer: 0, difficulty: 'cruel' });
+  for (const id of ['p0', 'p1']) s = engine.apply(s, { type: 'join', playerId: id, name: id }, id);
+  s = engine.apply(s, { type: 'start' }, 'p0');
+  const ask = (id: string) => {
+    s.turn = s.players.findIndex((p) => p.id === id);
+    return engine.makeQuestion(s, engine.categories[0]).mode;
+  };
+  // 40% art: five name questions in a row put art 0.4 × 5 behind, enough to win the roll.
+  assert.deepEqual(['p0', 'p0', 'p0', 'p0', 'p0'].map(ask), ['name', 'name', 'name', 'name', 'name']);
+  assert.equal(ask('p1'), 'name', "p0's run doesn't touch p1's tally");
+  assert.equal(ask('p0'), 'art');
+
+  // Race mode keeps one tally for the room (its first question comes with the start).
+  s = engine.apply(engine.apply(s, { type: 'restart' }, 'p0'), { type: 'settings', settings: { mode: 'race' } }, 'p0');
+  s = engine.apply(s, { type: 'start' }, 'p0');
+  assert.equal(s.question!.mode, 'name');
+  assert.deepEqual(['p0', 'p1', 'p0', 'p1'].map(ask), ['name', 'name', 'name', 'name']);
+  assert.equal(ask('p1'), 'art');
+});
+
+test('a question thrown out for failed art does not count toward the art lean', () => {
+  let { engine, s } = setup(['A']);
+  s = engine.apply(s, { type: 'start' }, 'p0');
+  s = engine.apply(s, { type: 'pick', category: s.offered[0] }, 'p0');
+  for (let i = 0; i < 10; i++) {
+    s = engine.apply(s, { type: 'reask' }, 'p0');
+    const art = s.question!.mode === 'art' ? 1 : 0;
+    assert.ok(Math.abs(s.artLean!.p0 - (PRESETS.cruel.artChance - art)) < 1e-9, 'only the latest question counts');
+  }
 });

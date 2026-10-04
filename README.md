@@ -13,7 +13,7 @@ is hosted as a static site on GitHub Pages. No server needed.
    Rings, Amulets & Belts, Flasks/Charms/Jewels/Relics/Tablets, and Lineage
    Gems. A category you pick can't be
    offered to you again for your next 2 turns on Cruel, 3 on Merciless and
-   4 on Eternal.
+   4 on Eternal (Custom sets its own).
 2. Name the unique item or lineage gem from its art (or, on harder
    difficulties, pick the right art for a name). A correct answer scores a point.
 3. The first player to reach the host's target score wins. The game only ends
@@ -27,7 +27,7 @@ is hosted as a static site on GitHub Pages. No server needed.
 Items aren't repeated within a game until a category runs out, and earlier answers never come back as wrong answers (so they can't be ruled out from memory). Precursor tablets come up about a quarter as often as other items; a tablet question only offers tablets (once too few unseen tablets are left for that, they sit out until the category starts over), and tablets don't appear in other questions.
 
 **Race mode** (online only): no turns. Everyone sees the same question at the
-same time, in a random category (never one of the last 2, 3 or 4, by difficulty).
+same time, in a random category (never one of the last 2, 3 or 4, by difficulty, or as many as Custom sets).
 - The first correct answer scores +1 and ends the question.
 - A wrong answer costs −1 and locks that player out until the next question.
   Everyone sees live who guessed what.
@@ -41,8 +41,32 @@ same time, in a random category (never one of the last 2, 3 or 4, by difficulty)
 | | Options | Wrong answers | Extras |
 |---|---|---|---|
 | Cruel | 4 | Same kind (all rings, all bows, all Strength gems…) | 40% of questions are "find the art": you get a name and pick one of the pictures |
-| Merciless (default) | 6 | Same kind, half of them look-alike names | The art burns into view bit by bit |
-| Eternal | 8 | Look-alike names from the whole category | The art burns into view more slowly; "find the art" pictures are shown in grayscale; each picture has a 30% chance of being mirrored left to right (the answer and any picked picture are marked *Mirrored* at the reveal) |
+| Merciless (default) | 6 | Same kind, half of them look-alike names | In race, the art burns into view bit by bit |
+| Eternal | 8 | Look-alike names from the whole category, two of them made up | In race, the art burns into view more slowly; "find the art" pictures are shown in grayscale; each picture has a 30% chance of being mirrored left to right (the answer and any picked picture are marked *Mirrored* at the reveal) |
+
+The presets only unveil the art in race mode, where answering from part of the
+art can beat the others to it. On your own turn nobody is racing you, so the
+unveil would just be a wait.
+
+**Custom** opens an editor where the host sets each knob. The first time,
+it starts as the preset that was picked (as it plays in the chosen mode);
+after that it keeps its own settings. Everyone else sees the custom rules described under the difficulty, in
+the same words the presets use.
+
+| Knob | Steps | Past Eternal |
+|---|---|---|
+| Options | 4, 6, 8, 10 (the tenth is answered with 0, and its badge says 0) | 10 |
+| Look-alike names | None, Half, All | |
+| Made-up names | None, 1, 2, 3 (at most half the options: each copies a real name on screen) | 3 |
+| Find the art (share of questions) | Never, Some (40%), Half, Always | |
+| Unveil (the art burns into view, in both modes) | Off, Fast (patches the size of a 5×5 grid's cells), Slow (7×7), Slowest (9×9, 80% of the timer) | Slowest |
+| Grayscale | Off, Find the art (its pictures), All art (the art to name too) | All art |
+| Mirrored art | Never, Some (30%), Half, Always | Half, Always |
+| Category lockout (turns) | None, 2, 3, 4, 5 | 5 |
+
+In a deathmatch on Custom or Eternal, each knob that makes questions harder
+goes one step up, into the steps past Eternal (an unveil that is off stays off). The host's browser remembers the last
+custom setup.
 
 Look-alike names form a cluster, and the answer's place in it is random: the
 name that looks most (or least) like the others is no more likely to be right
