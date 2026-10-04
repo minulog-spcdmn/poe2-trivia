@@ -183,7 +183,7 @@
     min-height: 64px;
     place-items: center;
     /* Clear of the braces at the plate's ends. */
-    padding: 0.5rem 4.25rem;
+    padding: 0.5rem 3.6rem;
   }
   .head-text {
     position: relative;

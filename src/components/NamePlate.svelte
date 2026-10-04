@@ -1,102 +1,43 @@
 <script module lang="ts">
-  // The plate behind a unique's name, after the game's own and in the hand
-  // of the alchemist's circle (ArcaneCircle): a framed bar whose ends are
-  // gothic tracery holding the circle's two great seals, drawn with a soft
-  // glow under the lines.
+  // The plate behind a unique's name, in the hand of the alchemist's circle
+  // (ArcaneCircle): gilt lines (a bright line shading off, a dimmer one
+  // inside it, as on the panels' corners) with a soft glow under them.
   // • The frame: a double rule, its corners cut like the panels' filigree,
   //   drawn out from the ends to meet under the name.
-  // • The ends: cusped ogees, one inside another, their lobes swelling like
-  //   flames and pointing in at the name, a mouchette (a curved dagger of
-  //   tracery) in each corner, and set over them a seal, Sol on the left and
-  //   Luna on the right as on the circle, the tracery stopping short of it.
-  //   A small flame runs from each seal towards the name. The signs stay
-  //   dark until the item is known, then flare.
-  // • The field: a net of ogees, as in late gothic tracery, with the
-  //   circle's unreadable script in its cells, faint and fainter still
-  //   under the name.
+  // • The ends: the circle's two great seals, Sol on the left and Luna on
+  //   the right, each in a pointed arch lying on its side, its point aimed
+  //   at the name; the arch's inner line stops short of the seal, as the
+  //   circle's lines stop short of its seals.
+  // • The field: the seals' light. Sol throws fine rays, long and short in
+  //   turn as on the circle; Luna rings herself in halos. Both fade out
+  //   before the name, and both spread out as the signs light at the reveal.
 
-  import { LUNA, LUNA_HATCH, MARKS, SOL_RAYS } from '../lib/alchemy';
+  import { LUNA, LUNA_HATCH, SOL_RAYS } from '../lib/alchemy';
 
   type Pt = [number, number];
   const f = (v: number) => v.toFixed(2);
   const pt = (p: Pt) => `${f(p[0])} ${f(p[1])}`;
   const dist = (p: Pt, q: Pt) => Math.hypot(q[0] - p[0], q[1] - p[1]);
-  const flipY = (pts: Pt[]): Pt[] => pts.map(([x, y]) => [x, -y]);
-  const poly = (pts: Pt[]) => 'M' + pts.map(pt).join('L');
-
-  /** A smooth curve through `pts` (Catmull-Rom), as a polyline `per` points to a span. */
-  function smooth(pts: Pt[], per = 12): Pt[] {
-    const out: Pt[] = [];
-    for (let i = 0; i < pts.length - 1; i++) {
-      const [p0, p1, p2, p3] = [pts[Math.max(0, i - 1)], pts[i], pts[i + 1], pts[Math.min(pts.length - 1, i + 2)]];
-      for (let k = 0; k < per; k++) {
-        const t = k / per;
-        const [t2, t3] = [t * t, t * t * t];
-        out.push(
-          [0, 1].map(
-            (j) => 0.5 * (2 * p1[j] + (p2[j] - p0[j]) * t + (2 * p0[j] - 5 * p1[j] + 4 * p2[j] - p3[j]) * t2 + (3 * p1[j] - p0[j] - 3 * p2[j] + p3[j]) * t3),
-          ) as Pt,
-        );
-      }
-    }
-    out.push(pts.at(-1)!);
-    return out;
-  }
-
-  /** `n` + 1 points along the polyline `c`, evenly spaced by length. */
-  function even(c: Pt[], n: number): Pt[] {
-    const run = c.map(() => 0);
-    for (let i = 1; i < c.length; i++) run[i] = run[i - 1] + dist(c[i - 1], c[i]);
-    const len = run.at(-1)!;
-    return Array.from({ length: n + 1 }, (_, k) => {
-      const s = (k / n) * len;
-      const i = Math.max(1, run.findIndex((r) => r >= s));
-      const t = (s - run[i - 1]) / (run[i] - run[i - 1] || 1);
-      return [c[i - 1][0] + (c[i][0] - c[i - 1][0]) * t, c[i - 1][1] + (c[i][1] - c[i - 1][1]) * t] as Pt;
-    });
-  }
+  const rad = (a: number) => (a * Math.PI) / 180;
 
   /**
-   * Points along an arc from `p` to `q` bulging out (to the left, going
-   * along) by `bulge` of the chord; a negative bulge curves in.
+   * An arc from `p` to `q` as points, bulging out to the left (going along)
+   * by `bulge` of its chord.
    */
-  function arc(p: Pt, q: Pt, bulge: number, n = 10): Pt[] {
+  function arc(p: Pt, q: Pt, bulge: number, n = 24): Pt[] {
     const c = dist(p, q);
-    const s = Math.abs(bulge) * c;
+    const s = bulge * c;
     const r = (c * c) / (8 * s) + s / 2;
     const [ux, uy] = [(q[0] - p[0]) / c, (q[1] - p[1]) / c];
-    const side = Math.sign(bulge);
-    // The centre lies away from the bulge, r less the bulge from the chord's middle.
-    const o: Pt = [(p[0] + q[0]) / 2 - uy * side * (r - s), (p[1] + q[1]) / 2 + ux * side * (r - s)];
+    // The centre lies on the far side of the chord from the bulge.
+    const o: Pt = [(p[0] + q[0]) / 2 - uy * (r - s), (p[1] + q[1]) / 2 + ux * (r - s)];
     const a0 = Math.atan2(p[1] - o[1], p[0] - o[0]);
     let da = Math.atan2(q[1] - o[1], q[0] - o[0]) - a0;
     da = Math.atan2(Math.sin(da), Math.cos(da));
     return Array.from({ length: n + 1 }, (_, k) => [o[0] + r * Math.cos(a0 + (da * k) / n), o[1] + r * Math.sin(a0 + (da * k) / n)] as Pt);
   }
 
-  /**
-   * A cusped ogee lying on its side: from its foot at `x0` it swells to
-   * `h` either side, its edges broken into `n` lobes meeting in cusps, then
-   * draws in, the line turning hollow, to a sharp point at `x1`. Its
-   * outline as points, clockwise from the foot.
-   */
-  function ogee(x0: number, x1: number, h: number, n: number, bulge = 0.2): Pt[] {
-    const w = x1 - x0;
-    const edge = smooth([
-      [x0, 0],
-      [x0 + w * 0.1, -h * 0.55],
-      [x0 + w * 0.32, -h],
-      [x0 + w * 0.6, -h * 0.78],
-      [x0 + w * 0.8, -h * 0.32],
-      [x1, 0],
-    ]);
-    // The lobes along the swell, and the last stretch to the point hollow.
-    const knots = [...even(edge.slice(0, Math.round(edge.length * 0.8)), n), [x1, 0] as Pt];
-    const top = knots.slice(1).flatMap((q, i) => arc(knots[i], q, i === knots.length - 2 ? -0.09 : bulge).slice(i ? 1 : 0));
-    return [...top, ...flipY(top).reverse().slice(1)];
-  }
-
-  /** A line through `pts`, broken where it passes within `r` of `c` (it stops short of a seal there). */
+  /** A polyline through `pts`, broken where it passes within `r` of `c`. */
   function around(pts: Pt[], c: Pt, r: number) {
     const pieces: Pt[][] = [[]];
     for (const p of pts) {
@@ -104,57 +45,42 @@
         if (pieces.at(-1)!.length) pieces.push([]);
       } else pieces.at(-1)!.push(p);
     }
-    return pieces.filter((q) => q.length > 1).map(poly).join('');
+    return pieces
+      .filter((q) => q.length > 1)
+      .map((q) => 'M' + q.map(pt).join('L'))
+      .join('');
   }
 
   // ---- the end (the left one; the right is its mirror) ----------------------
   // In pixels: the plate's edge at x 0, its middle at y 0. Plates are 64 high.
 
-  /** The seal: its middle (the dialog's close button sits there, `SOCKET_X` in from the plate's edge) and ring. */
-  export const SOCKET_X = 17.5;
+  /** The seal's middle, `SOCKET_X` in from the plate's edge (the dialog's close button sits there). */
+  export const SOCKET_X = 20;
   const SEAL: Pt = [SOCKET_X, 0];
-  const SEAL_R = 7.6;
-  /** The circle's signs are drawn for a ring of 13. */
+  /** The seal's ring; the circle draws its signs for a ring of 13. */
+  const SEAL_R = 15;
   const SIGN_SCALE = SEAL_R / 13;
-  const CLEAR = SEAL_R + 1.4;
 
-  /** The ogees, outermost first (foot, point, half-height, lobes a side), each with a dimmer line inside. */
-  const OGEE_LINES = [
-    [3.5, 52, 15, 3],
-    [3.5, 43.5, 10, 3],
-  ].flatMap(([x0, x1, h, n]) => [ogee(x0, x1, h, n), ogee(x0 + 2.4, x1 - 2.8, h - 2.2, n)]);
-  const OGEES = OGEE_LINES.filter((_, k) => k % 2 === 0).map((o) => around(o, SEAL, CLEAR));
-  const OGEES_IN = OGEE_LINES.filter((_, k) => k % 2 === 1).map((o) => around(o, SEAL, CLEAR));
-  const HOLLOW = poly(OGEE_LINES[0]) + 'Z';
-  /** The flame from the seal towards the name. */
-  const FLAME = poly(ogee(SEAL[0] + SEAL_R + 0.9, 40.5, 3.6, 1, 0.14)) + 'Z';
-  const FLAME_IN = poly(ogee(SEAL[0] + SEAL_R + 2.6, 37.5, 1.7, 1, 0.1)) + 'Z';
-
-  // A mouchette in each corner: a teardrop of tracery, its head tucked under
-  // the rule, its tail sweeping down along the outer ogee to their foot.
-  const MOUCHETTE = smooth([
-    [3.6, -2.4],
-    [4.6, -12],
-    [8.4, -21],
-    [15.5, -25.2],
-    [23.5, -24.6],
-    [28, -21],
-    [25.4, -17.6],
-    [17.5, -16.6],
-    [9.8, -11.4],
-    [3.6, -2.4],
-  ]);
-  const MOUCHETTE_IN = smooth([
-    [7, -10.5],
-    [10, -19],
-    [16, -22.4],
-    [22.6, -22],
-    [24.2, -20],
-    [17.6, -18.8],
-    [7, -10.5],
-  ]);
-  const CORNERS = [MOUCHETTE, flipY(MOUCHETTE)].map(poly).join('');
-  const CORNERS_IN = [MOUCHETTE_IN, flipY(MOUCHETTE_IN)].map(poly).join('');
+  /** The arch: two arcs springing from the frame's corners and meeting in a point. */
+  const TIP: Pt = [47, 0];
+  const archSide = (from: Pt, to: Pt, bulge: number) => {
+    const top = arc(from, to, bulge);
+    return [top, top.map(([x, y]) => [x, -y] as Pt)];
+  };
+  const ARCH = archSide([8.5, -26.2], TIP, 0.1)
+    .map((side) => 'M' + side.map(pt).join('L'))
+    .join('');
+  // The inner line, stopping short of the seal.
+  const ARCH_IN = archSide([12, -22.4], [TIP[0] - 4.6, 0], 0.1)
+    .map((side) => around(side, SEAL, SEAL_R + 2.2))
+    .join('');
+  /** The ground inside the arch, set darker. */
+  const HOLLOW = (() => {
+    const [top, bottom] = archSide([8.5, -26.2], TIP, 0.1);
+    return `M2.5 -26.2${top.map((p) => 'L' + pt(p)).join('')}${[...bottom].reverse().map((p) => 'L' + pt(p)).join('')}L2.5 26.2Z`;
+  })();
+  /** A lozenge at the arch's point. */
+  const POINT = `M${TIP[0] - 2.6} 0L${TIP[0]} -1.6L${TIP[0] + 2.6} 0L${TIP[0]} 1.6Z`;
 
   // The frame's corner, cut like the panels' filigree, with a lozenge in
   // the cut; the rules run on from it (see the markup).
@@ -162,38 +88,28 @@
   const CORNER_IN = 'M5.5 16.5V10L10 5.5H16';
   const LOZENGE = 'M5 1.9 8.1 5 5 8.1 1.9 5Z';
 
-  // ---- the field ---------------------------------------------------------------
-  // Reticulated tracery, the net of ogees in late gothic windows: waves
-  // rising and falling against their mirror images, touching crest to
-  // trough, so that every cell is an ogee lying on its side like the ends'.
-  // Each wave is a moulding of two lines. In the cells between a wave and
-  // its mirror, the circle's script, a mark to a cell from a fixed seed; in
-  // the cells between rows, a bead.
+  // ---- the light ---------------------------------------------------------------
+  // From the seal's middle, starting clear of the arch. Long enough for any
+  // plate; the markup fades them out well before the name.
 
-  const BAY = 36;
-  const TILE = 2 * BAY;
-  const AMP = 6.5;
-  const ROW = 2 * AMP;
-  const ROWS = [-2, -1, 0, 1, 2];
-  const wave = (c: number, sign: number, dy: number) =>
-    poly(Array.from({ length: 97 }, (_, k) => [(k / 96) * TILE, c + dy + sign * AMP * Math.sin((4 * Math.PI * k) / 96)] as Pt));
-  const NET = ROWS.flatMap((r) => [1, -1].flatMap((sign) => [-0.7, 0.7].map((dy) => wave(r * ROW, sign, dy)))).join('');
-  let seed = 11;
-  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
-  const NET_MARKS = [-1, 0, 1].flatMap((r) =>
-    [0.25, 0.75, 1.25, 1.75].map((x) => ({ x: x * BAY, y: r * ROW, d: MARKS[Math.floor(rnd() * MARKS.length)] })),
-  );
-  const NET_BEADS = [-1.5, -0.5, 0.5, 1.5]
-    .flatMap((r) => [0, 0.5, 1, 1.5, 2].map((x) => `M${f(x * BAY)} ${f(r * ROW - 0.8)}a0.8 0.8 0 1 1 0 1.6a0.8 0.8 0 1 1 0 -1.6Z`))
+  const LIGHT_FROM = 32;
+  /** Sol's rays: one every 3.75° across the plate, long and short in turn. */
+  const RAYS = Array.from({ length: 25 }, (_, k) => {
+    const a = rad(-45 + k * 3.75);
+    const to = k % 2 ? 140 : 420;
+    return `M${pt([SEAL[0] + LIGHT_FROM * Math.cos(a), LIGHT_FROM * Math.sin(a)])}L${pt([SEAL[0] + to * Math.cos(a), to * Math.sin(a)])}`;
+  }).join('');
+  /** Luna's halos: rings about her, further apart as they spread (stippled, see the styles). */
+  const HALOS = Array.from({ length: 12 }, (_, k) => LIGHT_FROM + k * 9 + k * k * 0.9)
+    .map((r) => `M${f(SEAL[0] + r)} 0A${f(r)} ${f(r)} 0 1 1 ${f(SEAL[0] - r)} 0A${f(r)} ${f(r)} 0 1 1 ${f(SEAL[0] + r)} 0`)
     .join('');
-  const NET_RULES = [-19, -21, 19, 21].map((y) => `M-1 ${y}H${TILE + 1}`).join('');
 </script>
 
 <script lang="ts">
   // `lit` lights the seals' signs (an unidentified item keeps them dark
-  // until the reveal, when they flare); `end` is what the right seal holds:
-  // Luna, or nothing, for a button to sit in it (the dialog's close; see
-  // SOCKET_X).
+  // until the reveal, when they flare and their light spreads); `end` is
+  // what the right seal holds: Luna, or nothing, for a button to sit in it
+  // (the dialog's close; see SOCKET_X).
   let { lit = true, end = 'luna' }: { lit?: boolean; end?: 'luna' | 'empty' } = $props();
 
   const uid = $props.id();
@@ -203,22 +119,16 @@
 <!-- One end of the plate. -->
 {#snippet cap(sign: 'sol' | 'luna' | 'empty')}
   <path d={HOLLOW} class="hollow" />
-  <path d={CORNERS} class="hollow" />
-  {#each OGEES as d, k (k)}
-    <path {d} class="draw gilt" style:--d="{0.15 + k * 0.12}s" pathLength="100" />
-    <path d={OGEES_IN[k]} class="draw dim" style:--d="{0.3 + k * 0.12}s" pathLength="100" />
-  {/each}
-  <path d={CORNERS} class="draw gilt" style:--d="0.1s" pathLength="100" />
-  <path d={CORNERS_IN} class="draw dim" style:--d="0.25s" pathLength="100" />
-  <path d={FLAME} class="draw gilt" style:--d="0.5s" pathLength="100" />
-  <path d={FLAME_IN} class="draw dim" style:--d="0.6s" pathLength="100" />
+  <path d={ARCH} class="draw gilt" style:--d="0.15s" pathLength="100" />
+  <path d={ARCH_IN} class="draw dim" style:--d="0.3s" pathLength="100" />
+  <path d={POINT} class="solid fade" style:--d="0.6s" />
   <!-- The seal, pressed in like the circle's. -->
-  <g class="seal" style:--d="0.35s">
+  <g class="seal" style:--d="0.3s">
     <g transform="translate({pt(SEAL)})">
-      <circle r={SEAL_R + 0.6} class="well" />
-      <circle r={SEAL_R + 3} class="bloom" style:fill="url(#{id('bloom')})" />
+      <circle r={SEAL_R + 0.8} class="well" />
+      <circle r={SEAL_R + 4} class="bloom" style:fill="url(#{id('bloom')})" />
       <circle r={SEAL_R} class="draw gilt" pathLength="100" />
-      <circle r={SEAL_R - 1.3} class="draw dim" pathLength="100" />
+      <circle r={SEAL_R - 1.8} class="draw dim" pathLength="100" />
       {#if sign !== 'empty'}
         <g class="sign" transform="scale({f(SIGN_SCALE)})">
           {#if sign === 'sol'}
@@ -260,26 +170,23 @@
 {/snippet}
 
 <span class="plate" class:lit aria-hidden="true" style:--gilt="url(#{id('gilt')})">
-  <svg class="field" width="100%" height="100%">
-    <defs>
-      <clipPath id={id('band')}><rect x="-1" y="-19" width={TILE + 2} height="38" /></clipPath>
-      <pattern id={id('frieze')} patternUnits="userSpaceOnUse" width={TILE} height="64" x="50%" y="-32">
-        <g transform="translate(0 32)">
-          <g clip-path="url(#{id('band')})">
-            <path d={NET} />
-            <path d={NET_BEADS} class="bead" />
-            {#each NET_MARKS as m, k (k)}
-              <path d={m.d} transform="translate({f(m.x)} {f(m.y)}) scale(1.2)" class="mark" />
-            {/each}
-          </g>
-          <path d={NET_RULES} />
-        </g>
-      </pattern>
-    </defs>
-    <svg y="50%" overflow="visible">
-      <rect y="-32" width="100%" height="64" fill="url(#{id('frieze')})" />
+  <!-- The seals' light, each in its own layer so it can spread without repainting. -->
+  {#each ['sol', 'luna'] as side (side)}
+    <svg class="light {side}" width="100%" height="100%">
+      <defs>
+        <clipPath id={id(`band-${side}`)}><rect y="-24" width="100%" height="48" /></clipPath>
+      </defs>
+      <svg y="50%" overflow="visible">
+        {#if side === 'sol'}
+          <path d={RAYS} clip-path="url(#{id('band-sol')})" />
+        {:else}
+          <svg x="100%" overflow="visible">
+            <g transform="scale(-1 1)"><path d={HALOS} clip-path="url(#{id('band-luna')})" /></g>
+          </svg>
+        {/if}
+      </svg>
     </svg>
-  </svg>
+  {/each}
   <!-- The lines twice, as on the circle: a soft, wide copy for the glow, and the lines. -->
   <svg class="art glow" width="100%" height="100%">{@render plate()}</svg>
   <svg class="art" width="100%" height="100%">
@@ -317,39 +224,41 @@
       inset 0 0 16px rgba(0, 0, 0, 0.5),
       inset 0 -1px 0 #6b4520;
   }
-  .field,
+  .light,
   .art {
     position: absolute;
     inset: 0;
     overflow: visible;
   }
-  /* The frieze: faint, gone under the ends and fainter under the name. */
-  .field {
-    opacity: 0.17;
-    mask-image: linear-gradient(
-      90deg,
-      transparent 56px,
-      #000 100px,
-      rgba(0, 0, 0, 0.4) 38%,
-      rgba(0, 0, 0, 0.4) 62%,
-      #000 calc(100% - 100px),
-      transparent calc(100% - 56px)
-    );
-    animation: fade 1.2s 0.3s ease-out both;
+
+  /* The seals' light: faint while the signs are dark, spreading out from
+     the seals as they light, and gone before the name. */
+  .light {
+    opacity: 0.08;
+    transition: opacity 0.9s;
   }
-  pattern path {
+  .light.sol {
+    transform-origin: 20px 50%;
+    mask-image: linear-gradient(90deg, #000 min(30%, 130px), transparent min(44%, 210px));
+  }
+  .light.luna {
+    transform-origin: calc(100% - 20px) 50%;
+    mask-image: linear-gradient(270deg, #000 min(30%, 130px), transparent min(44%, 210px));
+  }
+  .lit .light {
+    opacity: 0.3;
+    animation: spread 1.6s 0.1s var(--ease-out) both;
+  }
+  .light path {
     fill: none;
     stroke: var(--ink);
     stroke-width: 0.45;
   }
-  pattern .bead {
-    fill: var(--ink);
-    stroke: none;
-  }
-  pattern .mark {
-    stroke-width: 0.4;
+  /* Moonlight in stipple: the halos as rows of fine dots. */
+  .light.luna path {
+    stroke-width: 0.9;
+    stroke-dasharray: 0 2.4;
     stroke-linecap: round;
-    stroke-linejoin: round;
   }
 
   path,
@@ -374,11 +283,10 @@
   .solid {
     fill: #f6c58e;
   }
-  /* The end's tracery is set into a darker ground. */
+  /* The end is set into a darker ground. */
   .hollow {
-    fill: rgba(10, 5, 2, 0.55);
+    fill: rgba(10, 5, 2, 0.5);
   }
-
   .well {
     fill: #0d0703;
   }
@@ -409,14 +317,14 @@
   .sign :global(*) {
     fill: none;
     stroke: #7a4a2a;
-    stroke-width: 0.85;
+    stroke-width: 0.9;
     vector-effect: non-scaling-stroke;
     stroke-linecap: round;
     stroke-linejoin: round;
     transition: stroke 0.8s;
   }
   .sign .hatch {
-    stroke-width: 0.4;
+    stroke-width: 0.45;
   }
   .lit .sign :global(*) {
     stroke: #ffdcaa;
@@ -473,6 +381,12 @@
   @keyframes fade {
     from {
       opacity: 0;
+    }
+  }
+  @keyframes spread {
+    from {
+      opacity: 0.08;
+      transform: scale(0.4);
     }
   }
   @keyframes flare {
