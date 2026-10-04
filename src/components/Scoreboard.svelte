@@ -377,6 +377,8 @@
     flex: 1;
     /* Short names keep the pill from shrinking to a stub (about as wide as "zoe_arcana" on a phone). */
     min-width: 57px;
+    /* A little more air after the avatar than the row's gap. */
+    margin-left: 2px;
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
