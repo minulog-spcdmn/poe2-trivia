@@ -1,11 +1,11 @@
 <script lang="ts">
   // A rune circle that draws itself behind the item art and turns slowly:
-  // a ring of ticks, a band of runes and a pentagram, each turning its own
-  // way. `state` colours it at the reveal.
+  // a ring of runes one way and a heptagram with a rune seal at each point
+  // the other. `state` colours it at the reveal.
   //
-  // Each ring is its own <svg> turned as a whole, so the browser can spin it
-  // on the compositor without repainting; the glow is a soft, wide copy of
-  // the strokes underneath rather than a filter (which would repaint).
+  // Each layer is turned as a whole, so the browser can spin it on the
+  // compositor without repainting; the glow is a soft, wide copy of the
+  // strokes underneath rather than a filter (which would repaint).
   // `size`, `color` and `strength` (opacity) override the stage defaults for
   // other places, like behind the winner on the victory screen.
   let {
@@ -15,8 +15,7 @@
     strength,
   }: { state?: 'idle' | 'good' | 'bad'; size?: string; color?: string; strength?: number } = $props();
 
-  // The inscription: Elder Futhark runes drawn on a small grid (x ±2.5,
-  // y ±4), each followed by a pair of dots like a carved word divider.
+  // Elder Futhark runes, drawn on a small grid (x ±2.5, y ±4).
   const GLYPHS = [
     'M0 -4V4M0 -1L2.5 -3.5M0 1.5L2.5 -1', // fehu
     'M-1 -4V4M-1 -2L2 0L-1 2', // thurisaz
@@ -39,71 +38,84 @@
     'M-2.5 -4V4L2.5 -4V4Z', // dagaz
     'M-2.5 4L2 -1L0 -4L-2 -1L2.5 4', // othala
   ];
-  const RUNES = GLYPHS.map((d, i) => ({ a: (i / GLYPHS.length) * 360, d }));
-  const TICKS = Array.from({ length: 72 }, (_, i) => ({ a: i * 5, long: i % 6 === 0 }));
 
-  // The pentagram, as one line in drawing order (every second point), so it
-  // draws itself in a single stroke. Its points touch a circle of radius R;
-  // the pentagon inside has an inradius of R·cos 72°.
-  const R = 65;
-  const point = (k: number, r = R) => {
-    const t = ((k * 72 - 90) * Math.PI) / 180;
-    return [r * Math.cos(t), r * Math.sin(t)];
+  const f = (v: number) => v.toFixed(2);
+  /** The point at `a` degrees clockwise from the top, `r` from the centre. */
+  const at = (a: number, r: number) => {
+    const t = (a * Math.PI) / 180;
+    return [r * Math.sin(t), -r * Math.cos(t)];
   };
-  const STAR = [0, 2, 4, 1, 3]
-    .map((k) => point(k).map((v) => v.toFixed(2)).join(','))
-    .join(' ');
-  const POINTS = [0, 1, 2, 3, 4].map((k) => point(k));
-  const HEART = R * Math.cos((72 * Math.PI) / 180);
-  // Five smaller runes sit in the bays between the star's arms.
-  const SIGILS = [7, 11, 17, 12, 1].map((g, k) => ({ a: k * 72 + 36, d: GLYPHS[g] }));
+  /** A circle of radius `r`, broken by a `gap` wide at each of `angles`. */
+  const broken = (r: number, angles: number[], gap: number) => {
+    const g = (gap / 2 / r) * (180 / Math.PI);
+    return angles
+      .map((a, i) => {
+        const [x0, y0] = at(a + g, r);
+        const [x1, y1] = at((angles[i + 1] ?? angles[0] + 360) - g, r);
+        return `M${f(x0)} ${f(y0)}A${r} ${r} 0 0 1 ${f(x1)} ${f(y1)}`;
+      })
+      .join('');
+  };
+
+  // The outer ring: one rune in every break.
+  const RING = 90;
+  const RUNES = Array.from({ length: 21 }, (_, i) => ({ a: (i / 21) * 360, d: GLYPHS[i % GLYPHS.length] }));
+  const RING_PATH = broken(
+    RING,
+    RUNES.map((r) => r.a),
+    10,
+  );
+
+  // The heptagram {7/3}: each line joins a point to the third one on, in
+  // drawing order so it traces itself in one go. Every point is a small
+  // seal with its own rune, and the lines stop at its edge.
+  const R = 74;
+  const SEAL = 7;
+  const SEALS = [2, 5, 9, 10, 12, 15, 17].map((g, k) => {
+    const a = (k / 7) * 360;
+    const [x, y] = at(a, R);
+    return { a, x, y, d: GLYPHS[g] };
+  });
+  const STAR = Array.from({ length: 7 }, (_, i) => {
+    const p = SEALS[(i * 3) % 7];
+    const q = SEALS[(i * 3 + 3) % 7];
+    const len = Math.hypot(q.x - p.x, q.y - p.y);
+    const [ux, uy] = [(q.x - p.x) / len, (q.y - p.y) / len];
+    const cut = SEAL + 1;
+    return `M${f(p.x + ux * cut)} ${f(p.y + uy * cut)}L${f(q.x - ux * cut)} ${f(q.y - uy * cut)}`;
+  }).join('');
+  const STAR_RING = broken(
+    R,
+    SEALS.map((s) => s.a),
+    SEAL * 2 + 2,
+  );
 </script>
 
-{#snippet outer()}
-  <circle r="97" class="draw" pathLength="100" />
-  <circle r="93.5" class="draw thin" pathLength="100" />
-  {#each TICKS as t (t.a)}
-    <line y1="-93.5" y2={t.long ? -88 : -91} transform="rotate({t.a})" class="tick" />
-  {/each}
-{/snippet}
-
-{#snippet band()}
-  <circle r="85" class="draw thin" pathLength="100" />
-  <circle r="69" class="draw thin" pathLength="100" />
+{#snippet ring()}
+  <path d={RING_PATH} class="draw thin" pathLength="100" />
   {#each RUNES as r (r.a)}
-    <path d={r.d} transform="rotate({r.a}) translate(0 -77) scale(1.1)" class="rune" />
-    <g transform="rotate({r.a + 180 / RUNES.length})">
-      <circle cy="-78.6" r="0.55" class="dot" />
-      <circle cy="-75.4" r="0.55" class="dot" />
-    </g>
+    <path d={r.d} transform="rotate({r.a}) translate(0 -{RING})" class="rune" />
   {/each}
 {/snippet}
 
 {#snippet star()}
-  <circle r={R} class="draw thin" pathLength="100" />
-  <polygon points={STAR} class="draw pent" pathLength="100" />
-  <circle r={HEART - 1.5} class="draw thin" pathLength="100" />
-  {#each POINTS as [x, y], k (k)}
-    <circle cx={x} cy={y} r="1.6" class="dot" />
-  {/each}
-  {#each SIGILS as s (s.a)}
-    <path d={s.d} transform="rotate({s.a}) translate(0 -46)" class="rune" />
+  <path d={STAR_RING} class="draw thin" pathLength="100" />
+  <path d={STAR} class="draw line" pathLength="100" />
+  {#each SEALS as s (s.a)}
+    <circle cx={f(s.x)} cy={f(s.y)} r={SEAL} class="draw thin" pathLength="100" />
+    <path d={s.d} transform="translate({f(s.x)} {f(s.y)}) rotate({s.a}) scale(0.95)" class="rune" />
   {/each}
 {/snippet}
 
 <div class="arcane {state}" aria-hidden="true" style:--size={size} style:color={color} style:opacity={strength}>
-  <svg class="ring outer" viewBox="-100 -100 200 200">
-    <g class="glow">{@render outer()}</g>
-    <g>{@render outer()}</g>
-  </svg>
-  <svg class="ring band" viewBox="-100 -100 200 200">
-    <g class="glow">{@render band()}</g>
-    <g>{@render band()}</g>
-  </svg>
-  <svg class="ring star" viewBox="-100 -100 200 200">
-    <g class="glow">{@render star()}</g>
-    <g>{@render star()}</g>
-  </svg>
+  <div class="layer ring">
+    <svg class="glow" viewBox="-100 -100 200 200">{@render ring()}</svg>
+    <svg viewBox="-100 -100 200 200">{@render ring()}</svg>
+  </div>
+  <div class="layer star">
+    <svg class="glow" viewBox="-100 -100 200 200">{@render star()}</svg>
+    <svg viewBox="-100 -100 200 200">{@render star()}</svg>
+  </div>
 </div>
 
 <style>
@@ -129,71 +141,64 @@
     opacity: 0.16;
     color: #d98a6e;
   }
-  .ring {
+  .layer,
+  svg {
     position: absolute;
     inset: 0;
     width: 100%;
     height: 100%;
     overflow: visible;
+  }
+  .layer {
     will-change: transform;
   }
-  .outer {
-    animation: turn 90s linear infinite;
-  }
-  .band {
-    animation: turn 60s linear infinite reverse;
+  .ring {
+    animation: turn 120s linear infinite;
   }
   .star {
-    animation: turn 150s linear infinite;
+    animation: turn 80s linear infinite reverse;
   }
-  circle,
-  polygon,
-  .tick,
-  .rune {
+  path,
+  circle {
     fill: none;
     stroke: currentColor;
-    stroke-width: 0.9;
+    stroke-width: 0.6;
     stroke-linecap: round;
+    stroke-linejoin: round;
   }
-  .thin {
-    stroke-width: 0.55;
-  }
-  .tick {
-    stroke-width: 0.5;
+  .line {
+    stroke-width: 0.9;
   }
   .rune {
     stroke-width: 0.75;
-    stroke-linejoin: round;
   }
-  .pent {
-    stroke-width: 0.8;
-    stroke-linejoin: miter;
-  }
-  .dot {
-    fill: currentColor;
-    stroke: none;
-  }
-  /* The glow: the same strokes, wide and faint, underneath. */
+  /* The glow: the same strokes, wide and faint, on their own layer so it
+     can breathe without repainting. */
   .glow {
     opacity: 0.22;
+    animation: breathe 6s ease-in-out infinite alternate;
   }
   .glow :global(*) {
     stroke-width: 3.2;
   }
   .draw {
     stroke-dasharray: 100;
-    animation: draw 1.6s var(--ease-out) both;
+    animation: draw 1.8s var(--ease-out) both;
   }
   .star .draw {
-    animation-delay: 0.25s;
+    animation-delay: 0.3s;
   }
-  .band .draw {
-    animation-delay: 0.5s;
+  /* The runes are carved once the lines are down. */
+  .rune {
+    animation: carve 0.9s 1.2s var(--ease-out) both;
   }
-  /* The runes and dots are carved once the rings are down. */
-  .rune,
-  .dot {
-    animation: carve 0.9s 1.1s var(--ease-out) both;
+  @keyframes breathe {
+    from {
+      opacity: 0.14;
+    }
+    to {
+      opacity: 0.34;
+    }
   }
   @keyframes carve {
     from {
