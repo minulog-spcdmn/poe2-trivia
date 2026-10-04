@@ -3,7 +3,7 @@
 // victory look like. Components call these with the elements involved; all
 // of them are no-ops while effects are off.
 
-import { after, boxOf, fxActive, shakeView, type Anchor, type Handle, type Point, type Vec3 } from './core';
+import { after, boxOf, detached, fxActive, shakeView, type Anchor, type Handle, type Point, type Vec3 } from './core';
 import {
   C,
   edgeGlow,
@@ -440,35 +440,57 @@ export function scored(pill: Element, streak = 1) {
 }
 
 /**
- * A streak of three or more: the streak seal catches fire as it slams down,
- * and keeps smouldering while it's up. Three tiers, each plainly bigger than
- * the last: embers at 3, a blaze at 5 (rays, the backdrop flaring), and at 7
- * a white-hot burst that shakes the screen. Returns a handle to put it out.
+ * A player on a streak burns: their scoreboard entry is wreathed in fire,
+ * with flames licking up off it. `heat` (0 to 1, from lib/fx/streaks) sets
+ * how big: a few low flames at three in a row, a roaring blaze by eight.
+ * Returns a handle to put it out.
  */
-export function streakFire(seal: Element, streak: number): Handle {
-  if (!fxActive() || streak < 3) return { stop() {} };
-  const tier = streak >= 7 ? 3 : streak >= 5 ? 2 : 1;
-  const k = [0, 1, 2.2, 4][tier];
-  const hot = tier === 3 ? C.whiteHot : tier === 2 ? C.gold : C.ember;
-  flash(seal, { radius: 60 + 60 * k, color: hot, intensity: 0.25 + 0.08 * k, life: 0.4 + 0.08 * k });
-  outline(seal, { color: C.ember, radius: 999, width: 8 + 3 * k, flame: 0.4 + 0.15 * k, intensity: 0.5 + 0.08 * k, life: 0.9 + 0.15 * k, bleed: 0.15 });
-  sparks(seal, { count: Math.round(18 * k), area: 'edge', colors: [C.ember, C.gold, hot], speed: [140, 300 + 160 * k], gravity: 300, life: [0.3, 0.6 + 0.15 * k] });
-  ring(seal, { radius: 50 + 30 * k, thickness: 5 + k, life: 0.5, color: hot, breakup: 0.5, intensity: 0.6 });
-  embers(seal, { count: Math.round(10 * k), area: 'top', colors: [C.ember, C.gold], rise: [70, 120 + 50 * k], life: [0.6, 1 + 0.2 * k] });
-  light(seal, { color: [1, 0.55, 0.2], radius: 140 + 50 * k, intensity: 0.2 + 0.05 * k, decay: 0.8 });
-  if (tier >= 2) {
-    const b = boxOf(seal);
-    rays(seal, { radius: b.w * (1 + 0.4 * k), count: 12, life: 1.2 + 0.2 * k, intensity: 0.08 * k, color: hot });
-    flare(seal, { size: 14 + 4 * k, streak: 120 + 50 * k, life: 0.6, color: C.goldPale, intensity: 0.6 });
-    backdropEmbers.flare(0.3 + 0.15 * k, 1 + 0.4 * k);
-  }
-  if (tier === 3) {
-    ring(seal, { radius: 260, from: 40, thickness: 10, life: 0.8, color: C.ember, breakup: 0.7, intensity: 0.5, delay: 0.1 });
-    shakeView(0.35, 6);
-  }
-  return emitter(2 + 3 * k, () =>
-    embers(seal, { count: 1, area: 'top', colors: [C.ember, C.gold], rise: [40, 80 + 15 * k], scatter: 20, life: [0.6, 1.3] }),
+export function ablaze(row: Element, heat: number): Handle {
+  if (!fxActive() || heat <= 0) return { stop() {} };
+  const glow = outline(row, { color: k3(C.ember, 0.6 + 0.5 * heat), width: 10 + 10 * heat, flame: 0.6 + 0.4 * heat, intensity: 0.45 + 0.4 * heat, pulse: 0.3, fadeIn: 0.4 });
+  // Flames: many small hot licks rising off the entry, tapering and
+  // reddening as they climb; together they read as tongues of fire.
+  const flames = emitter(40 + 160 * heat, () => {
+    if (detached(row)) return;
+    const b = boxOf(row);
+    // Mostly off the top edge, some up the rounded ends, so it's wreathed.
+    const side = Math.random() < 0.25 ? Math.sign(Math.random() - 0.5) : 0;
+    const x = side ? b.x + side * (b.w / 2 - rand(0, b.h * 0.3)) : b.x + (Math.random() - 0.5) * (b.w - b.h * 0.6);
+    const y = side ? b.y + rand(-0.4, 0.3) * b.h : b.y - b.h / 2 + rand(0, 6);
+    particle({
+      x,
+      y,
+      vx: side * rand(5, 25) + rand(-10, 10),
+      vy: -rand(50, 100 + 170 * heat),
+      life: rand(0.25, 0.45 + 0.4 * heat),
+      size: rand(3.5, 6 + 7 * heat),
+      sizeEnd: 0.5,
+      color: k3(C.gold, 0.45 + 0.25 * heat),
+      colorEnd: k3(C.crimson, 0.45),
+      shape: Shape.Glow,
+      gravity: -160,
+      drag: 0.6,
+      turbulence: 160 + 120 * heat,
+      fadeIn: 0.15,
+    });
+  });
+  const rising = emitter(3 + 14 * heat, () =>
+    embers(row, { count: 1, area: 'top', colors: [C.ember, C.gold], rise: [50, 90 + 120 * heat], life: [0.6, 1 + 0.8 * heat] }),
   );
+  return {
+    stop(fade = 0.5) {
+      glow.stop(fade);
+      flames.stop();
+      rising.stop();
+    },
+  };
+}
+
+/** A streak ends: the fire on a player's entry goes out in a puff of smoke. */
+export function doused(row: Element) {
+  if (!fxActive()) return;
+  puffs(row, { count: 10, area: 'edge', color: [0.16, 0.13, 0.11], size: [14, 26], speed: [20, 70], life: [0.8, 1.6], angle: -Math.PI / 2, spread: 1.2 });
+  sparks(row, { count: 8, area: 'edge', colors: [C.ember, C.emberDeep], speed: [40, 140], gravity: 200, life: [0.3, 0.6] });
 }
 
 /** A point is lost (race: a wrong guess). */

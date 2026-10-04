@@ -6,8 +6,10 @@
   import { backdropShadow } from '../lib/backdropShadow';
   import { untrack } from 'svelte';
   import { fxActive } from '../lib/fx/core';
-  import { FILL_SPAN, FILL_START, SCORE_LANDS, lostPoint } from '../lib/fx/moments';
+  import type { Handle } from '../lib/fx/core';
+  import { FILL_SPAN, FILL_START, SCORE_LANDS, ablaze, doused, lostPoint } from '../lib/fx/moments';
   import { scoreRow, scoreRowOf } from '../lib/scoreRows';
+  import { heatOf, streakOf } from '../lib/fx/streaks';
 
   const s = $derived(session.state!);
   const target = $derived(s.settings.targetScore);
@@ -65,6 +67,37 @@
   const scoreOf = (id: string, fallback: number) => shown[id] ?? fallback;
   const barOf = (id: string, fallback: number) => barShown[id] ?? fallback;
 
+  // Players on a streak burn. The fire grows as the point lands on their
+  // entry, and goes out the moment the streak breaks.
+  let heat = $state<Record<string, number>>({});
+  const stoking = new Map<string, ReturnType<typeof setTimeout>>();
+  $effect(() => {
+    for (const p of s.players) {
+      const h = heatOf(streakOf(p.id));
+      const was = untrack(() => heat[p.id] ?? 0);
+      if (h === was) continue;
+      clearTimeout(stoking.get(p.id));
+      if (h > was && fxActive() && s.phase === 'reveal') stoking.set(p.id, setTimeout(() => (heat[p.id] = h), SCORE_LANDS * 1000));
+      else heat[p.id] = h;
+    }
+  });
+  $effect(() => () => stoking.forEach(clearTimeout));
+
+  /** Svelte action: sets a row burning at `h` (0 to 1), re-lit as it changes. */
+  function burn(node: HTMLElement, h: number) {
+    let fire: Handle | null = null;
+    let lit = 0;
+    const set = (next: number) => {
+      if (next === lit) return;
+      fire?.stop(0.5);
+      fire = next > 0 ? ablaze(node, next) : null;
+      if (lit > 0 && next === 0) doused(node);
+      lit = next;
+    };
+    set(h);
+    return { update: set, destroy: () => fire?.stop(0.3) };
+  }
+
   // Kicking takes two clicks so a stray tap doesn't remove anyone.
   let confirming = $state<string | null>(null);
   let confirmTimer: ReturnType<typeof setTimeout> | null = null;
@@ -87,7 +120,14 @@
     {@const benched = !!s.deathmatch && s.phase !== 'over' && !s.deathmatch.alive.includes(p.id)}
     {@const duelist = !!s.deathmatch && s.phase !== 'over' && s.deathmatch.alive.includes(p.id)}
     {@const score = scoreOf(p.id, p.score)}
-    <li use:backdropShadow use:scoreRow={p.id} class:active class:out class:benched class:duelist class:offline={!p.connected} animate:flip={{ duration: 400 }} style:--c={playerColor(p.hue)}>
+    {@const fire = heat[p.id] ?? 0}
+    <li
+      use:backdropShadow
+      use:scoreRow={p.id}
+      use:burn={fire}
+      class:ablaze={fire > 0}
+      style:--heat={fire}
+      class:active class:out class:benched class:duelist class:offline={!p.connected} animate:flip={{ duration: 400 }} style:--c={playerColor(p.hue)}>
       <Avatar name={p.name} hue={p.hue} size={32} dim={!p.connected} />
       <div class="info">
         <span class="name">
@@ -177,6 +217,27 @@
     --bs-ring: color-mix(in srgb, var(--c), transparent 60%);
     --bs1-color: color-mix(in srgb, var(--c), transparent 70%);
     transform: translateY(-2px) scale(1.04);
+  }
+  /* On a streak: the entry smoulders under its flames (and still glows with effects off). */
+  li.ablaze {
+    border-color: rgba(255, 140, 50, calc(0.5 + 0.5 * var(--heat)));
+  }
+  li.ablaze::before {
+    content: '';
+    position: absolute;
+    inset: -1px;
+    z-index: -1;
+    border-radius: inherit;
+    pointer-events: none;
+    box-shadow:
+      0 0 calc(8px + 20px * var(--heat)) calc(4px * var(--heat)) rgba(255, 110, 30, calc(0.35 + 0.4 * var(--heat))),
+      0 calc(-6px * var(--heat)) calc(14px + 26px * var(--heat)) rgba(255, 80, 20, calc(0.2 + 0.4 * var(--heat)));
+    animation: smoulder calc(1.4s - 0.8s * var(--heat)) ease-in-out infinite alternate;
+  }
+  @keyframes smoulder {
+    to {
+      opacity: 0.55;
+    }
   }
   li.active::after {
     content: '';
