@@ -4,11 +4,18 @@ All recordings are from Freesound (https://freesound.org) and released under
 Creative Commons Zero (CC0 1.0): https://creativecommons.org/publicdomain/zero/1.0/
 
 They were trimmed, mixed down to mono, loudness-matched and converted to MP3;
-the ambience loop is a 30-second excerpt crossfaded into a seamless loop.
+the ambience loops are excerpts (30 and 12 seconds) crossfaded into
+seamless loops.
 How they are layered and filtered is set in src/lib/soundDesign.ts.
 
   amb-6.mp3            Wood fire crackling near flames
                        by felix.blume, https://freesound.org/s/779876/
+  amb-fire.mp3         the deathmatch's fire loop: 12 seconds of
+                       Roaring House Fire Wall Fall In.wav
+                       by 7778, https://freesound.org/s/196619/
+                       with a quieter, high-passed layer of
+                       Conflagration.wav
+                       by sarson, https://freesound.org/s/177007/
   burn-crackle.mp3     Fire, crackle, sparkler, handheld, burning, fuse
                        by Oldome, https://freesound.org/s/855773/
   burn-embers.mp3      fire crackling loop.wav

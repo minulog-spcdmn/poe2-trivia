@@ -2,13 +2,17 @@
 // backdrop shader (lib/backdrop.ts) beneath the UI. Three depths: far embers
 // are small and slow, near ones larger, brighter and quicker, which gives the
 // dark some parallax. A deathmatch or a victory can stoke them (more speed
-// and glow) through `stoke`, and a big moment flare them up for a few
-// seconds through `flare`.
+// and glow) through `stoke`, a deathmatch can crowd the air with more of
+// them through `swarm`, and a big moment flare them up for a few seconds
+// through `flare`.
 
-export const EMBERS = 36;
+/** The embers that are always there. */
+export const CALM_EMBERS = 36;
+/** All of them, the calm ones and the extra ones a swarm brings in. */
+export const EMBERS = 100;
 /** The shader looks embers up by screen column: COLUMNS strips, SLOTS embers each at most. */
-export const COLUMNS = 16;
-export const SLOTS = 8;
+export const COLUMNS = 24;
+export const SLOTS = 16;
 
 type Ember = {
   x0: number; // fraction of the width
@@ -20,6 +24,8 @@ type Ember = {
   swayRate: number;
   drift: number; // px over the whole rise
   flicker: number;
+  /** How far a swarm has to rise before an extra ember joins it (0 to 1). */
+  gate: number;
 };
 
 const r = Math.random;
@@ -40,6 +46,7 @@ function ember(): Ember {
     swayRate: 0.6 + r() * 1.4,
     drift: (r() - 0.5) * 90,
     flicker: 5 + r() * 6,
+    gate: r() * 0.7,
   };
 }
 
@@ -49,6 +56,8 @@ export class Embers {
   private t = r() * 100;
   private heat = 0;
   private heatTarget = 0;
+  private crowd = 0;
+  private crowdTarget = 0;
   private flareLevel = 0;
   private flareLeft = 0;
   private pos = new Float32Array(EMBERS * 4);
@@ -68,6 +77,11 @@ export class Embers {
   /** Sets how hot they burn for as long as it lasts: 0 is calm, 1 a roaring fire. */
   stoke(level: number) {
     this.heatTarget = level;
+  }
+
+  /** Sets how many there are: 0 is the usual few, 1 crowds the air with every one. */
+  swarm(level: number) {
+    this.crowdTarget = level;
   }
 
   /**
@@ -92,21 +106,26 @@ export class Embers {
     const target = calm ? 0 : Math.max(this.heatTarget, this.flareLeft > 0 ? this.flareLevel : 0);
     const color = calm ? CALM : this.colorTarget;
     this.heat += (target - this.heat) * (1 - Math.exp(-dt * 1.5));
+    this.crowd += ((calm ? 0 : this.crowdTarget) - this.crowd) * (1 - Math.exp(-dt * 0.8));
     for (let i = 0; i < 3; i++) this.color[i] += (color[i] - this.color[i]) * (1 - Math.exp(-dt * 1.2));
     this.t += dt * (1 + 1.6 * this.heat);
     const t = this.t;
     // This runs every frame, so it writes into its arrays by index and
     // allocates nothing.
     const pos = this.pos;
+    // A narrow screen crowds up with fewer of the extra embers.
+    const extra = CALM_EMBERS + (EMBERS - CALM_EMBERS) * Math.min(1, w / 1100);
     for (let i = 0; i < EMBERS; i++) {
       const e = this.list[i];
       const u = (t / e.period + e.phase) % 1;
       const fade = Math.min(1, u / 0.1) * (1 - Math.max(0, (u - 0.62) / 0.38));
+      // The extra embers join a swarm one by one as it builds, and leave as it ebbs.
+      const join = i < CALM_EMBERS ? 1 : i < extra ? Math.min(1, Math.max(0, (this.crowd - e.gate) / 0.3)) : 0;
       const fl = 0.78 + 0.22 * Math.sin(t * e.flicker + i * 1.7) * Math.sin(t * e.flicker * 0.37 + i);
       pos[i * 4] = e.x0 * w + e.drift * u + Math.sin(u * Math.PI * 2 * e.swayRate + e.phase * 6.283) * e.sway;
       pos[i * 4 + 1] = h + 16 - u * (h * 1.08 + 32);
       pos[i * 4 + 2] = e.size * (1 + 0.25 * this.heat);
-      pos[i * 4 + 3] = e.bright * fade * fl * (1 + 0.8 * this.heat);
+      pos[i * 4 + 3] = e.bright * fade * fl * join * (1 + 0.8 * this.heat);
     }
     // Sort the embers into the columns their glow reaches, so each pixel of
     // the backdrop only looks at a handful.
