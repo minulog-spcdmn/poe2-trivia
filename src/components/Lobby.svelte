@@ -5,11 +5,11 @@
   import { MAX_PLAYERS, difficultyOf, rulesFor, type Difficulty, type GameMode } from '../lib/game';
   import { DIFFICULTY_NAMES, describe, lockoutText } from '../lib/difficultyText';
   import CustomDifficulty from './CustomDifficulty.svelte';
-  import { MAX_NAME } from '../lib/names';
+  import { MAX_NAME, nameHeld } from '../lib/names';
   import { inviteUrl } from '../lib/site';
   import Avatar from './Avatar.svelte';
   import { backdropShadow } from '../lib/backdropShadow';
-  import { glyphLanded, playerArrived, twinkle } from '../lib/fx/moments';
+  import { glyphLanded, playerArrived, refuse, twinkle } from '../lib/fx/moments';
   import { onMount } from 'svelte';
 
   const TIMERS = [0, 10, 15, 20, 30, 45];
@@ -21,6 +21,7 @@
   const local = $derived(session.mode === 'local');
 
   let newName = $state('');
+  let nameError = $state(false);
   let copied = $state(false);
 
   const inviteLink = $derived(inviteUrl(session.code));
@@ -29,6 +30,15 @@
     e.preventDefault();
     const name = newName.trim();
     if (!name) return;
+    // The held name needs this device unlocked here too, like on the start page.
+    if (nameHeld(name)) {
+      nameError = true;
+      const field = (e.currentTarget as HTMLFormElement).querySelector('input');
+      if (field) refuse(field);
+      setTimeout(() => (nameError = false), 600);
+      field?.focus();
+      return;
+    }
     const playerId = crypto.randomUUID();
     session.dispatch({ type: 'join', playerId, name });
     // Keep the name to fix it up if it was turned down (hot-seat applies it right away).
@@ -224,6 +234,7 @@
           <form class="add" onsubmit={addLocal}>
             <input
               class="field"
+              class:shake={nameError}
               bind:value={newName}
               maxlength={MAX_NAME}
               autocomplete="off"
@@ -620,6 +631,20 @@
     display: flex;
     gap: 0.5rem;
     margin-top: 1rem;
+  }
+  .shake {
+    animation: shake 0.45s;
+    border-color: var(--bad);
+  }
+  @keyframes shake {
+    20%,
+    60% {
+      translate: -6px 0;
+    }
+    40%,
+    80% {
+      translate: 6px 0;
+    }
   }
   .hint {
     margin: 0.8rem 0 0;
