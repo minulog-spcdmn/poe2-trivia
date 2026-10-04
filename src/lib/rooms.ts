@@ -93,6 +93,9 @@ class Prober {
   }
 
   probe(id: string): Promise<ProbeResult> {
+    // Cut off from the server, PeerJS can't connect (connect() returns
+    // nothing): no answer, as if the probe timed out.
+    if (this.peer.disconnected || this.peer.destroyed) return Promise.resolve(null);
     return new Promise((resolve) => {
       let conn: DataConnection | null = null;
       const done = (r: ProbeResult) => {
@@ -293,6 +296,9 @@ export class Beacon {
         if (peer && peer !== 'taken') this.adopt(peer, n);
         return;
       }
+    } catch (err) {
+      // Runs in the background: try again next time.
+      console.warn('compact', err);
     } finally {
       this.compacting = false;
     }

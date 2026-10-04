@@ -5,7 +5,7 @@
 // questions only the patches of it that have been uncovered so far.
 
 import { itemImage } from './ui-paths';
-import { cutPatches, spreadOrder, visibleBox } from './patches';
+import { cutPatches, spreadOrder, veilPace, visibleBox } from './patches';
 import type { MediaMsg } from './protocol';
 import type { Grayscale, Question } from './game';
 
@@ -21,14 +21,15 @@ export interface Patch {
 }
 
 /**
- * A veiled picture's size (its patches are placed on it), the time between
- * patches (ms), how many there are, and where the item is in it (x, y, w, h
- * of its visible pixels), so the full art can take over in the same place.
+ * A veiled picture's size (its patches are placed on it), how long each patch
+ * takes to burn in (ms), how many there are, and where the item is in it (x,
+ * y, w, h of its visible pixels), so the full art can take over in the same
+ * place.
  */
 export interface VeilArt {
   w: number;
   h: number;
-  step: number;
+  burn: number;
   count: number;
   box: [number, number, number, number];
 }
@@ -159,7 +160,7 @@ export async function prepareMedia(q: Question, grayscale: Grayscale): Promise<P
   out.veil = {
     w: W,
     h: H,
-    step: Math.round((q.veil.seconds * 1000) / Math.max(1, patches.length)),
+    burn: Math.round(veilPace(q.veil.seconds * 1000, patches.length).burn),
     count: patches.length,
     box: visibleBox(pixels, W, H),
   };
@@ -180,11 +181,11 @@ export async function prepareMedia(q: Question, grayscale: Grayscale): Promise<P
 /**
  * When (ms after the question was asked) each of `count` patches appears, by
  * rank: at an even pace, so the reveal burns through the item steadily, the
- * last patch appearing `seconds` after the first.
+ * last patch done burning in `seconds` after the first started (veilPace).
  */
 export function patchDelays(q: Question, count: number): number[] {
-  const step = count > 1 ? (q.veil!.seconds * 1000) / count : 0;
-  return Array.from({ length: count }, (_, rank) => 400 + rank * step);
+  const { gap } = veilPace(q.veil!.seconds * 1000, count);
+  return Array.from({ length: count }, (_, rank) => 400 + rank * gap);
 }
 
 // ---- what this device shows -------------------------------------------
@@ -245,7 +246,7 @@ class Shown {
         this.art = { url: this.url(m.data), w: m.w, h: m.h };
         break;
       case 'veil':
-        this.veil = { w: m.w, h: m.h, step: m.step, count: m.count, box: m.box };
+        this.veil = { w: m.w, h: m.h, burn: m.burn, count: m.count, box: m.box };
         break;
       case 'patch':
         this.patches = {

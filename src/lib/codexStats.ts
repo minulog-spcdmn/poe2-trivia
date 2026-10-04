@@ -41,7 +41,7 @@ export interface CodexStats extends Tally {
   categories: CategoryStats[];
   /** Lowest accuracy first, at least NEMESIS_MIN answers. */
   nemeses: { item: Item; tally: Tally }[];
-  /** Items picked for others, most often first. */
+  /** Items whose art was taken for another's name, most often first. */
   confusions: { answer: Item; picked: Item; n: number }[];
   fooled: { name: string; of: Item | undefined; n: number }[];
 }

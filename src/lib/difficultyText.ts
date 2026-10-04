@@ -38,9 +38,9 @@ export function describe(settings: Pick<Settings, 'difficulty'> & Partial<Settin
 
   const count = cap(NUMBER[k.options]);
   if (k.similarNames === 0) {
-    // Small groups (five crossbows) can't fill a big question on their own.
-    const kind = k.options > 4 ? 'of the same kind where the category allows' : 'of the same kind';
-    lines.push(`${count} options ${kind} (all rings, all bows…)${k.fakes ? `, ${NUMBER[k.fakes]} of them made up` : ''}.`);
+    // Small groups (five crossbows) can't fill a big question on their own,
+    // and once a group runs low the engine mixes groups at any size.
+    lines.push(`${count} options of the same kind where the category allows (all rings, all bows…)${k.fakes ? `, ${NUMBER[k.fakes]} of them made up` : ''}.`);
   } else {
     const alike = k.similarNames === 1 ? 'all' : 'half of them';
     lines.push(`${count} options, ${alike} with look-alike names${k.fakes ? ` and ${NUMBER[k.fakes]} made up` : ''}.`);
