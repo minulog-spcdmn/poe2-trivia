@@ -17,7 +17,7 @@ import {
   type Codex,
   type Encounter,
 } from '../src/lib/codex.ts';
-import { codexStats, median, mixups } from '../src/lib/codexStats.ts';
+import { codexStats, median } from '../src/lib/codexStats.ts';
 
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
 const fakes: Record<string, string[]> = JSON.parse(readFileSync(new URL('../src/data/fakes.json', import.meta.url), 'utf8'));
@@ -147,7 +147,7 @@ const [a, b, c] = items;
 test('records encounters, answers, streaks and confusions', () => {
   let x = emptyCodex();
   x = record(x, enc(1, a.id));
-  assert.deepEqual(x.items[a.id], { seen: 1, first: 1, last: 1, name: { n: 0, ok: 0 }, art: { n: 0, ok: 0 }, mixed: {}, mistaken: {} });
+  assert.deepEqual(x.items[a.id], { seen: 1, first: 1, last: 1, name: { n: 0, ok: 0 }, art: { n: 0, ok: 0 }, mixed: {} });
   assert.equal(x.log.length, 0, 'watching is not an answer');
 
   x = record(x, enc(2, a.id, ok(1500)));
@@ -155,7 +155,7 @@ test('records encounters, answers, streaks and confusions', () => {
   x = record(x, enc(4, a.id, miss(c.id)));
   x = record(x, enc(5, a.id, miss(c.id)));
   x = record(x, enc(6, c.id, ok(2000)));
-  assert.deepEqual(x.items[a.id], { seen: 4, first: 1, last: 5, name: { n: 3, ok: 1 }, art: { n: 0, ok: 0 }, mixed: { [c.id]: 2 }, mistaken: {} });
+  assert.deepEqual(x.items[a.id], { seen: 4, first: 1, last: 5, name: { n: 3, ok: 1 }, art: { n: 0, ok: 0 }, mixed: { [c.id]: 2 } });
   assert.deepEqual(x.items[b.id].art, { n: 1, ok: 1 });
   assert.deepEqual([x.streak, x.best], [1, 2]);
   assert.deepEqual(x.fastest, { ms: 900, id: b.id });
@@ -172,24 +172,23 @@ test('records encounters, answers, streaks and confusions', () => {
   );
 });
 
-test('mix-ups always read "the art of one taken for the other\'s name"', () => {
-  // Name question: a's art shown, b's name picked. a's art was taken for b.
+test('a mix-up reads "the art of one taken for the other\'s name" both ways', () => {
+  // Name question: a's art shown, b's name picked, so a's art was taken for b.
   let x = record(emptyCodex(), enc(1, a.id, miss(b.id)));
-  // Art question: a's name shown, c's art picked. c's art was taken for a.
+  assert.deepEqual(x.items[a.id].mixed, { [b.id]: 1 });
+  assert.equal(x.items[b.id], undefined, 'a name picked is not an item seen');
+  // Find the art: a's name shown, c's art picked, so c's art was taken for a.
   x = record(x, enc(2, a.id, miss(c.id), 'art'));
   assert.deepEqual(x.items[a.id].mixed, { [b.id]: 1 });
-  assert.deepEqual(x.items[a.id].mistaken, { [c.id]: 1 });
-  assert.equal(x.items[c.id], undefined, 'picking its art is not seeing it revealed');
-  assert.equal(codexStats(x, items, categories).seen, 1);
-
-  // The same pair asked both ways adds up.
-  x = record(x, enc(3, b.id, miss(a.id), 'art'));
-  assert.deepEqual(mixups(x).map((m) => `${m.art} ${m.name} ${m.n}`).sort(), [`${a.id} ${b.id} 2`, `${c.id} ${a.id} 1`].sort());
+  assert.deepEqual(x.items[c.id], { seen: 1, first: 2, last: 2, name: { n: 0, ok: 0 }, art: { n: 0, ok: 0 }, mixed: { [a.id]: 1 } });
+  // Again, with c already seen: one more sighting and one more mix-up.
+  x = record(x, enc(3, a.id, miss(c.id), 'art'));
+  assert.deepEqual([x.items[c.id].seen, x.items[c.id].last, x.items[c.id].mixed], [2, 3, { [a.id]: 2 }]);
   assert.deepEqual(
     codexStats(x, items, categories).confusions.map((cf) => [cf.answer.id, cf.picked.id, cf.n]),
     [
-      [a.id, b.id, 2],
-      [c.id, a.id, 1],
+      [c.id, a.id, 2],
+      [a.id, b.id, 1],
     ],
   );
 });
@@ -227,7 +226,6 @@ test('stored codex round-trips and malformed entries are dropped', () => {
   let x = record(emptyCodex(), enc(1, a.id, miss(b.id)));
   x = record(x, enc(2, b.id, ok(700), 'art'));
   x = record(x, enc(3, c.id, miss(`fake:${a.id}:1`, 'Fake')));
-  x = record(x, enc(4, c.id, miss(a.id), 'art'));
   assert.deepEqual(parseCodex(serializeCodex(x)), x);
 
   for (const bad of [null, '', 'nope', '[]', '{}', JSON.stringify({ v: 999, items: {} }), JSON.stringify({ v: 1, items: [] })])
@@ -245,7 +243,7 @@ test('stored codex round-trips and malformed entries are dropped', () => {
       fastest: { ms: 'quick', id: a.id },
     }),
   )!;
-  assert.deepEqual(messy.items[a.id], { seen: 2, first: 1, last: 2, name: { n: 2, ok: 2 }, art: { n: 0, ok: 0 }, mixed: { [c.id]: 2 }, mistaken: {} });
+  assert.deepEqual(messy.items[a.id], { seen: 2, first: 1, last: 2, name: { n: 2, ok: 2 }, art: { n: 0, ok: 0 }, mixed: { [c.id]: 2 } });
   assert.equal(messy.items.broken, undefined);
   assert.deepEqual(messy.log, [{ t: 1, id: a.id, mode: 'name', ok: true, difficulty: 'merciless', race: false }]);
   assert.deepEqual(messy.byDifficulty, { eternal: { n: 3, ok: 1 } });

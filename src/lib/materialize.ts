@@ -11,11 +11,6 @@
 import { valueNoise } from './patches';
 import { fxDensity, veilIgnites, veilSpark } from './fx/moments';
 
-/** How long a patch takes to come in, given the time between patches: a bit longer, so the magic never stalls. */
-export function burnDuration(step: number) {
-  return Math.min(2400, Math.max(900, step * 1.6));
-}
-
 /** How long the rest of the picture takes to come in once the answer is out, per patch (ms). */
 export const FINALE_MS = 650;
 
@@ -85,8 +80,8 @@ export interface BurnParams {
   edges: Uint16Array;
   /** Patches already there when this one arrived: the magic spreads in from them. */
   before: number[];
-  /** Time between patches, ms. */
-  step: number;
+  /** How long the patch takes to burn in, ms (veilPace). */
+  burn: number;
   /** The answer is out: come in quickly (FINALE_MS). */
   quick?: boolean;
 }
@@ -197,7 +192,7 @@ export function materialize(canvas: HTMLCanvasElement, params: BurnParams) {
       return { x: (gx / len) * 30, y: (gy / len) * 30 };
     };
 
-    const duration = params.quick ? FINALE_MS : burnDuration(params.step);
+    const duration = params.quick ? FINALE_MS : params.burn;
     const from = -RIM;
     const to = 1 + LINE + COOL;
     let settled = 0;

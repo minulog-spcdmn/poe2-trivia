@@ -66,8 +66,8 @@ export const PRESETS: Record<Preset, Knobs> = {
 
 /**
  * How finely the art is cut (patches about as big as the tiles of a size ×
- * size grid over the picture), and the share of the timer it takes the last
- * patch to appear.
+ * size grid over the picture), and the share of the timer it takes the whole
+ * item to burn in.
  */
 const VEILS: Record<VeilSpeed, { size: number; share: number } | null> = {
   off: null,
@@ -254,7 +254,7 @@ export const lastPicks = (picks: string[], lockout: number) => (lockout > 0 ? pi
 
 export interface Veil {
   size: number;
-  /** Seconds until the last patch has appeared. */
+  /** Seconds from the first patch starting to the last one done burning in. */
   seconds: number;
   seed: number;
 }

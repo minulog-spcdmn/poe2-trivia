@@ -3,7 +3,7 @@
   import { fade, fly } from 'svelte/transition';
   import { engine } from '../lib/session.svelte';
   import type { Codex, Tally } from '../lib/codex';
-  import { accuracy, mixups } from '../lib/codexStats';
+  import { accuracy } from '../lib/codexStats';
   import { itemImage } from '../lib/ui';
   import { dialogBackdrop } from '../lib/behindDialog';
   import { artRevealed } from '../lib/fx/moments';
@@ -24,11 +24,12 @@
         return it ? [{ item: it, n }] : [];
       })
       .sort((a, b) => b.n - a.n || a.item.name.localeCompare(b.item.name));
-  const mixed = $derived(mixups(codex));
   /** The names its art was taken for. */
-  const tookItFor = $derived(byCount(mixed.flatMap((m) => (m.art === item.id ? [[m.name, m.n] as [string, number]] : []))));
-  /** The art taken for its name. */
-  const tookForIt = $derived(byCount(mixed.flatMap((m) => (m.name === item.id ? [[m.art, m.n] as [string, number]] : []))));
+  const tookItFor = $derived(byCount(Object.entries(entry?.mixed ?? {})));
+  /** The items whose art was taken for its name. */
+  const tookForIt = $derived(
+    byCount(Object.entries(codex.items).flatMap(([id, e]) => (e.mixed[item.id] ? [[id, e.mixed[item.id]] as [string, number]] : []))),
+  );
 
   const date = (t: number) => new Date(t).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
   const times = (n: number) => (n === 1 ? 'once' : n === 2 ? 'twice' : `${n} times`);
