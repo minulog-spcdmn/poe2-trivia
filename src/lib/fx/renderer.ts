@@ -243,6 +243,41 @@ float sdQuad(vec2 p, vec2 a, vec2 b, vec2 c, vec2 d) {
   }
   return s * sqrt(dist);
 }
+// Value noise that wraps every period cells along x (around a circle).
+float pnoise(vec2 p, float period) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  float x0 = mod(i.x, period), x1 = mod(i.x + 1.0, period);
+  return mix(mix(hash12(vec2(x0, i.y)), hash12(vec2(x1, i.y)), u.x),
+             mix(hash12(vec2(x0, i.y + 1.0)), hash12(vec2(x1, i.y + 1.0)), u.x), u.y);
+}
+// One ring of light shafts at u (turns, 0-1) and rn (radius, 0-1 of the
+// reach): n cells round the circle, one shaft in each, with its own width
+// (w, in cells), offset, reach and breathing. root widens them (in cells)
+// near the source, dimming them by as much so the light stays the same.
+float shafts(float u, float rn, float n, float w, float root, float time, float seed) {
+  float x = u * n;
+  float cell = floor(x);
+  float v = 0.0;
+  for (int k = -1; k <= 1; k++) {
+    float c = cell + float(k);
+    float id = mod(c, n);
+    float h1 = hash12(vec2(id, seed));
+    float h2 = hash12(vec2(id + 0.5, seed + 7.31));
+    float h3 = hash12(vec2(id + 0.25, seed + 3.17));
+    float ww = w * (0.5 + 1.1 * h2);
+    float we = min(ww + root, 0.6);
+    float d = (x - c - 0.5 - (h1 - 0.5) * 0.6) / we;
+    float len = 0.55 + 0.45 * h3;
+    float q = rn / len;
+    float breathe = 0.6 + 0.4 * sin(time * (0.4 + 0.5 * h1) + h2 * 6.2832);
+    // A soft shaft with a brighter line down its middle.
+    float body = exp(-d * d) + 0.5 * exp(-d * d * 8.0);
+    v += body * (ww / we) * exp(-q * 2.2) * breathe * (0.45 + 0.55 * h3);
+  }
+  return v;
+}
 
 // Glow around an outline at signed distance d: a soft outer halo and a
 // brighter edge, with optional flames licking upward (up, 0-1, is how high
@@ -303,17 +338,34 @@ void main() {
     v = core + streak + vert + spikes;
     hot = exp(-(r * r) / (vQ.x * vQ.x * 0.12)) * 1.5;
   } else if (type == 2) {
-    // God rays. q: inner radius, outer radius, ray count, sharpness. r: spin speed.
-    float fall = 1.0 - clamp(r / vQ.y, 0.0, 1.0);
-    if (fall > 0.0) {
-      float wob = 1.6 * vnoise(dir * 2.2 + vec2(seed, time * 0.12));
+    // God rays: shafts of light through haze. q: inner radius, outer radius,
+    // ray count, sharpness. r: spin speed.
+    // A main layer of broad shafts and a finer one turning the other way,
+    // each shaft with its own width, place, reach and slow breathing, so no
+    // two look alike. Their roots melt into a soft glow instead of meeting in
+    // a point, and dust drifting outward streaks them like light in smoke.
+    float rn = r / vQ.y;
+    if (rn < 1.0) {
       float t = time * vR.x;
-      float n1 = vQ.z;
-      float n2 = floor(vQ.z * 0.62) + 1.0;
-      float rays = pow(0.5 + 0.5 * sin(a * n1 + t + wob), vQ.w)
-                 + 0.6 * pow(0.5 + 0.5 * sin(a * n2 - t * 1.3 + wob * 1.7 + 1.3), vQ.w * 1.5);
-      v = rays * fall * fall * smoothstep(0.0, vQ.x, r) * (0.75 + 0.25 * sin(time * 1.7 + seed));
-      v += exp(-(r * r) / (vQ.x * vQ.x)) * 0.35;
+      float u = a / (2.0 * PI) + 0.5;
+      float w = 0.3 / sqrt(max(vQ.w, 1.0));
+      // Widen near the root (in cells, by a fixed width in px), keeping the light.
+      float n1 = max(vQ.z, 3.0);
+      float n2 = floor(n1 * 1.7);
+      float root1 = 0.5 * vQ.x * n1 / (2.0 * PI * max(r, 1.0));
+      float root2 = 0.5 * vQ.x * n2 / (2.0 * PI * max(r, 1.0));
+      // Each layer turns one of its cells for every 2 PI of t.
+      float s = shafts(u + t / (2.0 * PI * n1), rn, n1, w, root1, time, seed)
+              + 0.5 * shafts(u - 1.3 * t / (2.0 * PI * n2) + 0.37, rn * 1.25, n2, w * 0.6, root2, time * 1.3, seed + 19.7);
+      // Haze: fine streaks along the shafts with motes drifting out, and
+      // light that wanders slowly round the circle.
+      float haze = (0.6 + 0.8 * pnoise(vec2(u * 64.0, rn * 6.0 - time * 0.3 + seed), 64.0))
+                 * (0.55 + 0.9 * pnoise(vec2(u * 7.0 + seed, time * 0.15), 7.0));
+      float reach = 1.0 - smoothstep(0.55, 1.0, rn);
+      v = 2.0 * s * haze * reach * smoothstep(0.0, vQ.x * 1.5, r);
+      // The source: a soft core in a wider haze, no hard point.
+      float c = r / vQ.x;
+      v += exp(-c * c * 0.6) * 0.3 + exp(-rn * 5.0) * 0.12 * reach;
     }
   } else if (type == 3) {
     // Glow around a rounded rectangle. q: half w, half h, corner radius, glow width.
