@@ -17,7 +17,8 @@
 
   const params = new URLSearchParams(location.search);
   const invite = cleanCode(params.get('room') ?? '');
-  if (params.has('owner') && unlockHeldName(params.get('owner') ?? '')) history.replaceState(null, '', location.pathname);
+  if (params.has('owner'))
+    void unlockHeldName(params.get('owner') ?? '').then((ok) => ok && history.replaceState(null, '', location.pathname));
 
   let name = $state(savedName());
   let code = $state(invite);

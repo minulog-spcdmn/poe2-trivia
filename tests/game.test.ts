@@ -1224,6 +1224,7 @@ test('the held name is refused until the device is unlocked', async () => {
   const { nameHeld, unlockHeldName } = await import('../src/lib/names.ts');
   assert.equal(nameHeld('Doryani'), false);
   assert.equal(nameHeld('Zoe_Arcana'), true);
-  assert.equal(unlockHeldName('nope'), false);
+  assert.equal(await unlockHeldName('nope'), false);
+  assert.equal(await unlockHeldName('minu'), true);
   assert.equal(nameHeld('zoe_arcana'), true);
 });

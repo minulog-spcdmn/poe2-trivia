@@ -45,26 +45,30 @@ export function nameSkeleton(name: string): string {
   return folded || name.toLowerCase();
 }
 
-// A name held back for one person. Opening the site once with ?owner=<passphrase>
-// unlocks it on that device (remembered in localStorage). A deterrent against
-// casual impersonation, not security: it is only checked in the name field, and
-// the hash is public.
+// A name held back for one person. Opening the site once with ?owner=<key>
+// unlocks it on that device (remembered in localStorage). The key is checked
+// against a PBKDF2-SHA256 hash, so it is not in the source. Still a deterrent
+// against casual impersonation, not security: a short key can be brute-forced
+// offline, and the check only runs in the name field.
 const HELD_NAME = 'zoearcana';
-const HELD_KEY_HASH = '26ec19a7';
+const HELD_KEY_HASH = '36b0865798d98a2fc5f9659b8c33010dd90d436e84d1c64f504d93270bfe8073';
+const HELD_SALT = 'poe2trivia.held-name';
 const OWNER_KEY = 'poe2trivia.owner';
 
-function keyHash(s: string): string {
-  let h = 0x811c9dc5;
-  for (const c of s) {
-    h ^= c.charCodeAt(0);
-    h = Math.imul(h, 0x01000193) >>> 0;
-  }
-  return h.toString(16);
+async function keyHash(key: string): Promise<string> {
+  const enc = new TextEncoder();
+  const base = await crypto.subtle.importKey('raw', enc.encode(key), 'PBKDF2', false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', hash: 'SHA-256', salt: enc.encode(HELD_SALT), iterations: 200_000 },
+    base,
+    256,
+  );
+  return Array.from(new Uint8Array(bits), (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-/** Remembers this device as the owner's when the passphrase is right. */
-export function unlockHeldName(key: string): boolean {
-  if (keyHash(key) !== HELD_KEY_HASH) return false;
+/** Remembers this device as the owner's when the key is right. */
+export async function unlockHeldName(key: string): Promise<boolean> {
+  if ((await keyHash(key)) !== HELD_KEY_HASH) return false;
   try {
     localStorage.setItem(OWNER_KEY, HELD_KEY_HASH);
   } catch {}
