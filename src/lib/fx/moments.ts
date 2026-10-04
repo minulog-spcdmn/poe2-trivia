@@ -448,9 +448,9 @@ export function scored(pill: Element, streak = 1) {
  */
 export function ablaze(row: Element, heat: number): Handle {
   if (!fxActive() || heat <= 0) return { stop() {} };
-  const flames = fire(row, { height: 14 + 56 * heat, intensity: 0.9 + 0.7 * heat });
+  const flames = fire(row, { height: 6 + 66 * heat, intensity: 0.45 + 1.0 * heat });
   // Sparks spat out of the fire, drifting up.
-  const rising = emitter(2 + 12 * heat, () =>
+  const rising = emitter(14 * heat, () =>
     embers(row, { count: 1, area: 'top', colors: [C.ember, C.gold], size: [0.8, 1.8], rise: [70, 120 + 140 * heat], scatter: 30, life: [0.5, 0.9 + 0.6 * heat] }),
   );
   return {

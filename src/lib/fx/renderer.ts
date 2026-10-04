@@ -377,16 +377,20 @@ void main() {
     // 1 at the surface, falling to 0 at each tongue's tip.
     float f = clamp(1.0 - max(d, 0.0) / (reach * (0.15 + 1.25 * tongue * tongue) + 2.0), 0.0, 1.0);
     // The roots burn unevenly (hotter under a tongue) and dimmer along the bottom.
-    float T = f * f * smoothstep(-5.0, 0.0, d) * mix(0.3, 1.0, up) * (0.45 + 0.75 * tongue);
+    float T = f * smoothstep(-5.0, 0.0, d) * mix(0.3, 1.0, up) * (0.45 + 0.75 * tongue);
     if (T > 0.002) {
-      col = vC * (vec3(1.0, 0.16, 0.02) * smoothstep(0.0, 0.3, T)
-                + vec3(0.7, 0.55, 0.06) * smoothstep(0.25, 0.65, T)
-                + vec3(0.5, 0.6, 0.55) * smoothstep(0.65, 1.0, T));
+      // Fine flicker inside the body, so it doesn't read as a flat fill.
+      float flick = 0.7 + 0.6 * vnoise(vec2(vP.x * 0.12, vP.y * 0.07 + time * 6.0) + seed);
+      // Light fades out toward the tips rather than ending on an edge.
+      float I = T * T * flick * 1.8;
+      // Black body: red first, green only as it heats up, a touch of blue at the
+      // hottest; the tone map takes the brightest roots toward yellow-white.
+      col = vC * vec3(1.0, 0.18 + 0.42 * T * T, 0.03 + 0.12 * T * T * T) * I;
       v = 1.0;
     }
-    // A soft heat halo hugging the outline.
-    float halo = exp(-abs(d) / (6.0 + H * 0.15)) * smoothstep(-8.0, 0.0, d);
-    col = v > 0.0 ? col + vC * vec3(0.5, 0.12, 0.02) * halo : vC * vec3(0.5, 0.12, 0.02);
+    // A faint heat halo hugging the outline.
+    float halo = exp(-abs(d) / (5.0 + H * 0.1)) * smoothstep(-6.0, 0.0, d) * 0.25;
+    col = v > 0.0 ? col + vC * vec3(0.5, 0.1, 0.02) * halo : vC * vec3(0.5, 0.1, 0.02);
     v = v > 0.0 ? 1.0 : halo;
   } else {
     // Sigil: an arcane circle that draws itself. q: radius, line width,

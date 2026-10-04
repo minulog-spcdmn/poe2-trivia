@@ -35,10 +35,13 @@ export function streakOf(id: string): number {
 
 /** A player burns from this many in a row. */
 export const ABLAZE_FROM = 3;
-/** ...and the fire is at its biggest from this many. */
-export const ABLAZE_FULL = 8;
+/** ...and the fire grows with every answer until this many. */
+export const ABLAZE_FULL = 10;
 
-/** How hard a streak burns: 0 below ABLAZE_FROM, then rising to 1 at ABLAZE_FULL. */
+/**
+ * How hard a streak burns: 0 below ABLAZE_FROM, then a step up with every
+ * answer, from a faint 1/8 at three in a row to 1 at ABLAZE_FULL.
+ */
 export function heatOf(streak: number): number {
   if (streak < ABLAZE_FROM) return 0;
   return Math.min(1, (streak - ABLAZE_FROM + 1) / (ABLAZE_FULL - ABLAZE_FROM + 1));
