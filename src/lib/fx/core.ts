@@ -365,8 +365,11 @@ function wake() {
   }
 }
 
-/** Shapes made of thin lines, which need every pixel. */
-const isCrisp = (s: LiveShape) => (s.f.type ?? s.type) === ShapeType.Sigil;
+/** Shapes made of thin lines or tiny points, which need every pixel (sigils, an aura's motes and runes). */
+const isCrisp = (s: LiveShape) => {
+  const type = s.f.type ?? s.type;
+  return type === ShapeType.Sigil || type === ShapeType.Orbit;
+};
 
 function writeShape(i: number, s: LiveShape, t: number) {
   const o = i * SHAPE_FLOATS;
@@ -468,7 +471,7 @@ function simulate(dt: number, nowMs: number, render: boolean): boolean {
     else tasks.splice(i, 1);
   }
 
-  // Soft shapes are written first; thin-line shapes (sigils) last, and the
+  // Soft shapes are written first; thin-line shapes (sigils, orbits) last, and the
   // renderer draws those at full resolution so their strokes stay crisp.
   const visible: [LiveShape, number][] = [];
   shapes = shapes.filter((s) => {

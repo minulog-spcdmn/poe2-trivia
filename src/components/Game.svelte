@@ -6,6 +6,7 @@
   import ChooseCategory from './ChooseCategory.svelte';
   import QuestionView from './QuestionView.svelte';
   import Avatar from './Avatar.svelte';
+  import PlayerName from './PlayerName.svelte';
   import { sfx } from '../lib/sound';
   import { onMount } from 'svelte';
   import { deathmatchIntro, deathmatchMood, gameStart, turnBanner } from '../lib/fx/moments';
@@ -168,7 +169,7 @@
             {#if i > 0}<span class="vs">vs</span>{/if}
             <span class="face" in:fly={{ y: 20, duration: 500, delay: 300 + i * 150 }}>
               <Avatar name={p.name} hue={p.hue} size={56} />
-              <b>{p.name}</b>
+              <b><PlayerName name={p.name} /></b>
             </span>
           {/if}
         {/each}

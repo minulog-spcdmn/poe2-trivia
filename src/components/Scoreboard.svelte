@@ -3,6 +3,7 @@
   import { session } from '../lib/session.svelte';
   import { playerColor } from '../lib/ui';
   import Avatar from './Avatar.svelte';
+  import PlayerName from './PlayerName.svelte';
   import { backdropShadow } from '../lib/backdropShadow';
   import { untrack } from 'svelte';
   import { fxActive } from '../lib/fx/core';
@@ -91,7 +92,7 @@
       <Avatar name={p.name} hue={p.hue} size={32} dim={!p.connected} />
       <div class="info">
         <span class="name">
-          {p.name}{#if session.mode !== 'local' && p.id === session.myPlayerId}<em>&nbsp;(you)</em>{/if}
+          <PlayerName name={p.name} />{#if session.mode !== 'local' && p.id === session.myPlayerId}<em>&nbsp;(you)</em>{/if}
         </span>
         <span class="bar" class:filling={filling[p.id]} style:--fill-span="{FILL_SPAN}s"
           ><span style:width="{Math.max(0, Math.min(100, (barOf(p.id, p.score) / target) * 100))}%"></span></span

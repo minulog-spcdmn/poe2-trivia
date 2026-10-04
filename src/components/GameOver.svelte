@@ -4,6 +4,7 @@
   import { session } from '../lib/session.svelte';
   import { playerColor } from '../lib/ui';
   import Avatar from './Avatar.svelte';
+  import PlayerName from './PlayerName.svelte';
   import ArcaneCircle from './ArcaneCircle.svelte';
   import { CREATOR, DONATE_URL, SITE_URL } from '../lib/site';
   import { backdropShadow } from '../lib/backdropShadow';
@@ -144,7 +145,7 @@
       <li class:first={rank[i] === 1} in:fly={{ x: -20, duration: 400, delay: 1100 + i * 100 }}>
         <span class="rank">{rank[i]}</span>
         <Avatar name={p.name} hue={p.hue} size={30} />
-        <span class="name">{p.name}</span>
+        <span class="name"><PlayerName name={p.name} /></span>
         <span class="pts">{p.score}</span>
       </li>
     {/each}

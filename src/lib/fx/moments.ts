@@ -3,7 +3,7 @@
 // victory look like. Components call these with the elements involved; all
 // of them are no-ops while effects are off.
 
-import { after, boxOf, fxActive, shakeView, type Anchor, type Handle, type Point, type Vec3 } from './core';
+import { after, boxOf, detached, fxActive, shakeView, type Anchor, type Handle, type Point, type Vec3 } from './core';
 import {
   C,
   edgeGlow,
@@ -25,6 +25,7 @@ import {
 } from './effects';
 import { Shape } from './particles';
 import { budget, particle, task } from './core';
+import { showAura } from './aura';
 import { light, pulseMood, setMood } from '../lights';
 import { CALM, embers as backdropEmbers } from '../backdropEmbers';
 
@@ -709,6 +710,41 @@ export function playerArrived(row: Element) {
   sparks(left, { count: 18, colors: [C.portal, C.portalPale], speed: [100, 360], gravity: 0, drag: 3, life: [0.3, 0.7] });
   outline(row, { color: C.portal, width: 8, life: 1, intensity: 0.6, bleed: 0.15 });
   sparks(row, { count: 12, area: 'edge', colors: [C.gold, C.portalPale], speed: [40, 160], gravity: -40, life: [0.4, 0.8] });
+}
+
+/**
+ * zoe_arcana walks in, out of her own magic rather than a portal: ruby and
+ * gold motes gather on her avatar, then burst, and her aura (aura.ts) takes
+ * over from there.
+ */
+export function creatorArrived(row: Element) {
+  if (!fxActive()) return;
+  const face = row.querySelector('.avatar') ?? row;
+  const R = Math.max(boxOf(face).w / 2, 12);
+  implode(face, { count: 22, radius: R * 4.5, color: C.ruby, life: 0.5 });
+  implode(face, { count: 10, radius: R * 3.6, color: C.goldPale, life: 0.42 });
+  after(0.45, () => {
+    flash(face, { radius: R * 2.2, color: C.ruby, intensity: 0.45, life: 0.6 });
+    ring(face, { radius: R * 4, thickness: 5, life: 0.55, color: C.gold, intensity: 0.7 });
+    sparks(face, { count: 22, colors: [C.ruby, C.gold, C.whiteHot], speed: [90, 330], gravity: 60, drag: 2.6, life: [0.35, 0.8] });
+    glints(face, { count: 3, area: 'edge', size: [4, 8], delay: [0, 0.4] });
+    outline(row, { color: k3(C.ruby, 0.8), width: 8, life: 1.1, intensity: 0.6, bleed: 0.15 });
+    sparks(row, { count: 12, area: 'edge', colors: [C.gold, C.rubyPale], speed: [40, 160], gravity: -40, life: [0.4, 0.8] });
+    light(face, { color: [1, 0.22, 0.28], radius: 240, intensity: 0.3, decay: 1 });
+    showAura();
+  });
+}
+
+/** The notice of her arrival (Toasts.svelte): gold runs round it, and her avatar catches the light. */
+export function heraldNotice(toast: Element) {
+  if (!fxActive()) return;
+  after(0.3, () => {
+    if (detached(toast)) return;
+    outline(toast, { color: k3(C.gold, 0.7), width: 8, life: 1, intensity: 0.5, bleed: 0.1 });
+    glints(toast, { count: 3, area: 'edge', size: [4, 8], delay: [0, 0.3] });
+    const face = toast.querySelector('.avatar');
+    if (face) glints(face, { count: 1, area: 'centre', size: [8, 12], life: [0.5, 0.7] });
+  });
 }
 
 /** A portal opens while connecting. */
