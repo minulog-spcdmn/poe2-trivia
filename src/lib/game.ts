@@ -569,8 +569,19 @@ export function shuffle<T>(arr: T[], rng: Rng): T[] {
  * (two rings and two belts, four of each…), when the answer's group has
  * `siblings` unseen items besides it and the other groups have `others`.
  */
-function evenSizes(options: number, siblings: number, others: number[]): number[] {
-  return [2, 3, 4].filter((m) => options % m === 0 && m < options && m - 1 <= siblings && others.filter((n) => n >= m).length >= options / m - 1);
+function evenSizes(options: number, siblings: number, others: number[], fakes = 0): number[] {
+  return [2, 3, 4].filter(
+    (m) => options % m === 0 && m < options && m - 1 <= siblings && others.filter((n) => n >= m).length >= options / m - 1 && fitsFakes(options, m, fakes),
+  );
+}
+
+/**
+ * Whether groups of `m` leave room for `fakes` made-up names: each copies a
+ * real name of its own group, so a group holds m / 2 of them, rounded down
+ * (two groups of three hold two, three pairs hold three).
+ */
+function fitsFakes(options: number, m: number, fakes: number): boolean {
+  return (options / m) * Math.floor(m / 2) >= fakes;
 }
 
 function sample<T>(arr: T[], n: number, rng: Rng): T[] {
@@ -1182,16 +1193,18 @@ export class Engine {
    * as the others (two rings and two belts, four of each…), keeping the
    * decoys' groups where it can. Groups only mix when the answer's own group
    * runs low, so a group smaller than the rest would most likely hold the
-   * answer. Leaves the decoys be when `pool` has no such set.
+   * answer. Leaves the decoys be when `pool` has no such set. Prefers sizes
+   * with room for `fakes` made-up names.
    */
-  private evenOut(answer: Item, decoys: Item[], pool: Item[]): void {
+  private evenOut(answer: Item, decoys: Item[], pool: Item[], fakes: number): void {
     const options = decoys.length + 1;
     const byGroup = new Map<string, Item[]>();
     for (const it of pool) byGroup.set(it.group, [...(byGroup.get(it.group) ?? []), it]);
     const siblings = byGroup.get(answer.group) ?? [];
     byGroup.delete(answer.group);
     const sizes = evenSizes(options, siblings.length, [...byGroup.values()].map((g) => g.length));
-    const m = sample(sizes, 1, this.rng)[0];
+    const roomy = sizes.filter((m) => fitsFakes(options, m, fakes));
+    const m = sample(roomy.length ? roomy : sizes, 1, this.rng)[0];
     if (!m) return;
     // Groups the decoys already favour first (look-alike names), the rest at random.
     const onScreen = (group: string) => decoys.filter((d) => d.group === group);
@@ -1251,21 +1264,38 @@ export class Engine {
     const rules = activeRules(s);
     const inCat = this.byCategory.get(category) ?? [];
     const need = rules.options - 1;
+    let mode = this.rollMode(s);
+    let fakes = mode === 'name' && this.fakes.size ? rules.fakes : 0;
 
     // Earlier answers never come back as decoys (they'd be easy to rule out).
     // An answer needs a full set of unseen decoys from its own group, or one
     // to share evenly with other groups (two of each, three of each…): a
-    // group smaller than the rest would most likely hold the answer. Rare
-    // groups (tablets) never mix, or one would stand out. Other items sit
-    // out; once none can be asked, the category starts over, except for its
-    // latest answer.
+    // group smaller than the rest would most likely hold the answer. A name
+    // question also needs room for its made-up names: when only a picture
+    // question fits (two groups of three can't hold three fakes), it turns
+    // into one, and the art lean makes up for it later. With no picture
+    // questions at all, it shows the fakes that fit instead. Rare groups
+    // (tablets) never mix, or one would stand out. Other items sit out; once
+    // none can be asked, the category starts over, except for its latest
+    // answer.
     const answerable = (unused: Item[]) => {
+      const roomy = shareable(unused, fakes);
+      if (roomy.length || !fakes) return roomy;
+      const any = shareable(unused, 0);
+      if (any.length && rules.artChance > 0) {
+        this.tallyMode(s, mode, -1);
+        this.tallyMode(s, (mode = 'art'), 1);
+        fakes = 0;
+      }
+      return any;
+    };
+    const shareable = (unused: Item[], fakes: number) => {
       const left = new Map<string, number>();
       for (const it of unused) left.set(it.group, (left.get(it.group) ?? 0) + 1);
       const others = (group: string) => [...left].flatMap(([g, n]) => (g === group || Object.hasOwn(RARE_GROUPS, g) ? [] : [n]));
       return unused.filter((it) => {
         const siblings = left.get(it.group)! - 1;
-        return siblings >= need || (weightOf(it) === 1 && evenSizes(rules.options, siblings, others(it.group)).length > 0);
+        return siblings >= need || (weightOf(it) === 1 && evenSizes(rules.options, siblings, others(it.group), fakes).length > 0);
       });
     };
     let unused = this.unusedIn(s, category);
@@ -1294,10 +1324,9 @@ export class Engine {
       const taken = new Set([answer.id, ...decoys.map((it) => it.id)]);
       decoys.push(...sample(source.filter((it) => !taken.has(it.id)), need - decoys.length, this.rng));
     }
-    if (pool !== sameGroup) this.evenOut(answer, decoys, pool);
+    if (pool !== sameGroup) this.evenOut(answer, decoys, pool, fakes);
 
     const options = shuffle([answer, ...decoys], this.rng).map((it) => it.id);
-    const mode = this.rollMode(s);
     // Strictly increasing: it doubles as the question's id for late answers.
     const askedAt = Math.max(this.now(), (s.lastAskedAt ?? 0) + 1, (s.question?.askedAt ?? 0) + 1);
     s.lastAskedAt = askedAt;
@@ -1311,7 +1340,7 @@ export class Engine {
             seed: Math.floor(this.rng() * 2 ** 31),
           }
         : null;
-    const fakeNames = mode === 'name' ? this.mixInFakes(options, answer.id, rules.fakes, new Set(s.used)) : new Map<string, string>();
+    const fakeNames = mode === 'name' ? this.mixInFakes(options, answer.id, fakes, new Set(s.used)) : new Map<string, string>();
     // Gem groups are attributes ("Intelligence"), not kinds of item.
     const groups = answer.kind === 'gem' ? [] : this.groupsOf(options);
     const labels = options.map((id) => (mode === 'name' ? (fakeNames.get(id) ?? this.byId.get(id)!.name) : null));
