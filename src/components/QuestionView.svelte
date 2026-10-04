@@ -14,7 +14,6 @@
   import { backdropShadow } from '../lib/backdropShadow';
   import ArcaneCircle from './ArcaneCircle.svelte';
   import { untrack } from 'svelte';
-  import { MediaQuery } from 'svelte/reactivity';
   import { FILL_START, answerCharging, artRevealed, raceMiss, reveal as revealFx, veilComplete, veilHandoff, type VerdictTone } from '../lib/fx/moments';
   import { FILL_LEAD } from '../lib/soundDesign';
   import { streakOf } from '../lib/fx/streaks';
@@ -36,8 +35,8 @@
   const winner = $derived(reveal?.winnerId ? s.players.find((p) => p.id === reveal.winnerId) : undefined);
   const iWon = $derived(race ? !!me && reveal?.winnerId === me : !!reveal?.correct);
   /**
-   * The verdict badge at the reveal: its word, icon and colour (amber for
-   * running out of time, gold for a race someone else solved while you watch).
+   * The verdict badge at the reveal: its word, icon and colour (a cool blue
+   * for running out of time, gold for a race someone else solved while you watch).
    */
   const verdict = $derived.by((): { word: string; icon: 'check' | 'cross' | 'clock'; tone: VerdictTone } | null => {
     if (!reveal) return null;
@@ -46,8 +45,6 @@
     if (reveal.timedOut) return { word: "Time's up", icon: 'clock', tone: 'late' };
     return { word: race ? 'No one' : 'Wrong', icon: 'cross', tone: 'bad' };
   });
-  // The verdict sits left of the timer; phones have no room there, so it goes under the timer, on the task line.
-  const narrow = new MediaQuery('(max-width: 760px)');
   // Online, the reveal moves on by itself. The bar follows the host's clock
   // every frame, so all screens count down together however late the reveal
   // arrived or got drawn (and a rejoin doesn't restart it).
@@ -393,10 +390,10 @@
 
 <svelte:window onkeydown={onKey} />
 
-<!-- The verdict at the reveal, a chip like the category's: left of the timer, or (phones) under it. -->
+<!-- The verdict at the reveal, a chip like the category's: left of the timer, or (phones) in its place. -->
 {#snippet verdictBadge()}
   {#if verdict}
-    <div class="verdict {verdict.tone}" class:under={narrow.current} bind:this={verdictEl}>
+    <div class="verdict {verdict.tone}" bind:this={verdictEl}>
       <span class="glyph" aria-hidden="true">
         <svg viewBox="0 0 20 20">
           {#if verdict.icon === 'check'}
@@ -489,16 +486,15 @@
 {/snippet}
 
 <div class="question">
-  <div class="topline">
+  <div class="topline" class:revealed={!!verdict}>
     <span class="chip">{questionTopic(q)}</span>
-    <span class="task">
-      <span class="task-text" class:answered={narrow.current && !!verdict}>{q.mode === 'art' ? 'Pick the art that matches the name' : 'Name this item'}</span>
-      {#if narrow.current}{@render verdictBadge()}{/if}
-    </span>
-    {#if !narrow.current}{@render verdictBadge()}{/if}
-    {#if q.deadline}
-      <TimerRing deadline={q.deadline} total={timerTotal} stopped={!!reveal} />
-    {/if}
+    <span class="task">{q.mode === 'art' ? 'Pick the art that matches the name' : 'Name this item'}</span>
+    <div class="clock" class:revealed={!!verdict}>
+      {@render verdictBadge()}
+      {#if q.deadline}
+        <TimerRing deadline={q.deadline} total={timerTotal} stopped={!!reveal} />
+      {/if}
+    </div>
   </div>
 
   {#if q.mode === 'art'}
@@ -662,18 +658,17 @@
     border-radius: 2px;
   }
   .task {
-    position: relative;
     flex: 1;
     min-width: 0;
     line-height: 1.25;
     font-style: italic;
     color: var(--muted);
   }
-  .task-text {
-    transition: opacity 0.25s;
-  }
-  .task-text.answered {
-    opacity: 0;
+  /* The timer, and left of it the verdict at the reveal. */
+  .clock {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
   }
 
   /* Art and answers share one row: same top, same bottom, whatever the
@@ -876,14 +871,13 @@
     }
   }
   /* The verdict at the reveal: a dark chip like the category's (same type,
-     tracking and height), pill shaped; only its icon and glow take the
-     verdict's colour. It pops in, its icon draws itself, its word wipes in,
-     a ring of light spreads off it and a sheen crosses it; a right answer's
-     keeps glowing softly. */
+     tracking and height), pill shaped; only its icon takes the verdict's
+     colour, the same ones the answers' ✓ and ✕ use. It settles in, its icon
+     draws itself, its word wipes in, a faint gold ring spreads off it and a
+     sheen crosses it. */
   .verdict {
-    --v-icon: #b9de98;
-    --v-rim: rgba(169, 207, 143, 0.7);
-    --v-glow: rgba(150, 200, 105, 0.32);
+    --v-icon: #a9cf8f;
+    --v-rim: rgba(169, 207, 143, 0.5);
     position: relative;
     flex: none;
     display: flex;
@@ -906,48 +900,33 @@
       rgba(0, 0, 0, 0.4);
     border: 1px solid var(--gold-lo);
     border-radius: 999px;
-    box-shadow: 0 0 14px var(--v-glow);
     pointer-events: none;
     animation:
       verdict-in 0.55s var(--ease-out) both,
       verdict-sheen 0.9s ease-in-out 0.45s;
   }
   .verdict.bad {
-    --v-icon: #f0a08a;
-    --v-rim: rgba(226, 132, 106, 0.7);
-    --v-glow: rgba(225, 95, 65, 0.3);
+    --v-icon: #d98a6e;
+    --v-rim: rgba(217, 138, 110, 0.5);
   }
-  /* Out of time: amber, apart from a wrong answer's red. */
+  /* Out of time: the cool blue of the tooltip's extra lines, apart from a wrong answer's red. */
   .verdict.late {
-    --v-icon: #f4b766;
-    --v-rim: rgba(240, 170, 90, 0.7);
-    --v-glow: rgba(240, 150, 60, 0.3);
+    --v-icon: #a9c3dc;
+    --v-rim: rgba(169, 195, 220, 0.5);
   }
   .verdict.neutral {
     --v-icon: var(--gold-hi);
-    --v-rim: rgba(241, 217, 155, 0.7);
-    --v-glow: rgba(255, 200, 110, 0.28);
+    --v-rim: rgba(241, 217, 155, 0.5);
   }
-  /* The ring of light that spreads off it as it lands. */
+  /* The faint gold ring that spreads off it as it lands. */
   .verdict::after {
     content: '';
     position: absolute;
     inset: -1px;
-    border: 1px solid var(--v-rim);
+    border: 1px solid var(--gold);
     border-radius: inherit;
-    box-shadow: 0 0 14px var(--v-glow);
     opacity: 0;
-    animation: verdict-ripple 0.8s var(--ease-out) 0.3s;
-  }
-  /* A right answer's glow breathes, like the streak's. */
-  .verdict.good::before {
-    content: '';
-    position: absolute;
-    inset: -1px;
-    border-radius: inherit;
-    box-shadow: 0 0 24px rgba(160, 215, 110, 0.42);
-    opacity: 0;
-    animation: verdict-breathe 2.6s ease-in-out 1.1s infinite;
+    animation: verdict-ripple 0.7s var(--ease-out) 0.25s;
   }
   /* As tall as the line, so the chip is exactly a category chip's height. */
   .glyph {
@@ -960,7 +939,6 @@
     border: 1px solid var(--v-rim);
     border-radius: 50%;
     background: rgba(0, 0, 0, 0.35);
-    box-shadow: 0 0 8px var(--v-glow);
   }
   .glyph svg {
     width: 1.05em;
@@ -971,7 +949,6 @@
     stroke-width: 2.4;
     stroke-linecap: round;
     stroke-linejoin: round;
-    filter: drop-shadow(0 0 3px var(--v-glow));
   }
   .glyph path {
     stroke-dasharray: 1;
@@ -985,24 +962,11 @@
   .word {
     animation: verdict-word 0.5s var(--ease-out) 0.2s backwards;
   }
-  /* Phones: under the timer, on the task line (which makes way), overhanging into the space around it. */
-  .verdict.under {
-    position: absolute;
-    top: 50%;
-    right: 0;
-    translate: 0 -50%;
-    transform-origin: right center;
-  }
   @keyframes verdict-in {
     from {
       opacity: 0;
-      scale: 0.6;
-      filter: blur(4px);
-    }
-    60% {
-      opacity: 1;
-      scale: 1.05;
-      filter: blur(0);
+      scale: 0.9;
+      filter: blur(3px);
     }
   }
   @keyframes verdict-sheen {
@@ -1012,16 +976,11 @@
   }
   @keyframes verdict-ripple {
     from {
-      opacity: 1;
+      opacity: 0.5;
     }
     to {
-      inset: -12px;
+      inset: -8px;
       opacity: 0;
-    }
-  }
-  @keyframes verdict-breathe {
-    50% {
-      opacity: 1;
     }
   }
   @keyframes verdict-draw {
@@ -1517,6 +1476,28 @@
     }
     .chip {
       margin-right: auto;
+    }
+    /* Phones: the verdict takes the stopped timer's place, level with the
+       category chip (which gives up a long name's end to make room). */
+    .clock {
+      display: grid;
+      justify-items: end;
+    }
+    .clock > :global(*) {
+      grid-area: 1 / 1;
+    }
+    .clock :global(.timer) {
+      transition: opacity 0.3s;
+    }
+    .clock.revealed :global(.timer) {
+      opacity: 0;
+    }
+    .topline.revealed .chip {
+      min-width: 0;
+      max-width: calc(100% - 9.5rem);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
     .option {
       padding: 0.75rem 2.3rem 0.75rem 0.9rem;

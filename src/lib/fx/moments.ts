@@ -358,23 +358,10 @@ export function reveal(t: RevealTargets) {
     shakeView(0.45, 6);
   }
 
-  if (t.verdict) {
-    // As the badge lands (its CSS pop peaks): its rim lights up, and a right
-    // answer's catches a glint of light; a wrong or late one sheds a few embers.
+  if (t.verdict && t.verdictTone === 'good') {
+    // As the badge lands, a right answer's catches a glint of light.
     const v = t.verdict;
-    const tone = t.verdictTone ?? (t.good ? 'good' : 'bad');
-    after(0.3, () => {
-      const col = tone === 'good' ? C.right : tone === 'neutral' ? C.gold : tone === 'late' ? C.ember : C.wrong;
-      outline(v, { color: col, width: 8, life: 0.7, intensity: 0.45, bleed: 0.12 });
-      if (tone === 'bad' || tone === 'late') {
-        sparks(v, { count: 8, area: 'edge', colors: [col, C.ember], speed: [50, 180], size: [0.5, 0.9], life: [0.3, 0.6], gravity: 300 });
-        return;
-      }
-      const pale = tone === 'good' ? C.rightPale : C.goldPale;
-      flare(v, { size: 12, streak: 150, life: 0.55, color: pale, intensity: 0.45 });
-      sparks(v, { count: Math.round(10 * Math.sqrt(hype)), area: 'edge', colors: [pale, C.gold], speed: [80, 260], size: [0.5, 0.9], life: [0.25, 0.55] });
-      glints(v, { count: 2, size: [3, 6], delay: [0.25, 0.7] });
-    });
+    after(0.3, () => glints(v, { count: 2, size: [3, 6], delay: [0, 0.4] }));
   }
 
   if (t.pill && t.answer && (t.good || t.otherScored)) {
