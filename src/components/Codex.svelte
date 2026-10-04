@@ -12,6 +12,7 @@
   import type { Difficulty, Item } from '../lib/game';
   import ArcaneCircle from './ArcaneCircle.svelte';
   import CodexItem from './CodexItem.svelte';
+  import CodexFilter from './CodexFilter.svelte';
 
   let codex = $state.raw(loadCodex());
   onMount(() => {
@@ -121,6 +122,11 @@
     await tick();
     if (only) collection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
+
+  const filterOptions = $derived([
+    { value: '', label: 'All categories', note: `${stats.seen}/${stats.total}` },
+    ...stats.categories.map((c) => ({ value: c.category, label: c.category, icon: categoryIcon(c.category), note: `${c.seen}/${c.total}` })),
+  ]);
 
   let open = $state<Item | null>(null);
   let confirmReset = $state(false);
@@ -326,12 +332,7 @@
         <h2>Collection</h2>
         <div class="controls">
           <input class="field search" type="search" bind:value={search} placeholder="Search names" aria-label="Search names" spellcheck="false" />
-          <select class="field" bind:value={only} aria-label="Category">
-            <option value="">All categories</option>
-            {#each engine.categories as c (c)}
-              <option value={c}>{c}</option>
-            {/each}
-          </select>
+          <CodexFilter bind:value={only} options={filterOptions} label="Category" />
           <div class="seg" role="group" aria-label="View">
             <button class:on={view === 'grid'} aria-pressed={view === 'grid'} onclick={() => (view = 'grid')}>Grid</button>
             <button class:on={view === 'table'} aria-pressed={view === 'table'} onclick={() => (view = 'table')}>Table</button>
@@ -431,7 +432,7 @@
 
     <footer class="end">
       <p>Your codex lives in this browser only; clearing the site's data erases it.</p>
-      <button class="erase" onclick={() => (confirmReset = true)}>Erase codex</button>
+      <button class="btn danger small" onclick={() => (confirmReset = true)}>Erase codex</button>
     </footer>
   {/if}
 </div>
@@ -451,7 +452,7 @@
       <p class="muted">Every item you have met and every answer recorded in this browser is lost. This can't be undone.</p>
       <div class="actions">
         <button class="btn ghost" onclick={() => (confirmReset = false)}>Keep it</button>
-        <button class="btn primary" onclick={reset}>Erase</button>
+        <button class="btn danger" onclick={reset}>Erase</button>
       </div>
     </div>
   </div>
@@ -622,13 +623,11 @@
     display: grid;
     grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
     gap: 1rem;
-    align-items: start;
   }
   .insights {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
     gap: 1rem;
-    align-items: start;
   }
   .panel {
     padding: 1.2rem 1.3rem 1.3rem;
@@ -842,6 +841,7 @@
     display: flex;
     flex-direction: column;
     gap: 1.2rem;
+    margin-top: 1.4rem;
     scroll-margin-top: 1rem;
   }
   .collection > .bar {
@@ -873,14 +873,6 @@
   }
   .controls .search {
     width: 12rem;
-  }
-  select.field {
-    max-width: 16rem;
-    font-family: var(--font-body);
-    cursor: pointer;
-  }
-  select.field option {
-    background: #15110d;
   }
   .seg {
     display: flex;
@@ -1023,8 +1015,8 @@
     border-style: dashed;
   }
   .unknown .art img {
-    filter: brightness(0) drop-shadow(0 0 1px rgba(201, 164, 92, 0.4));
-    opacity: 0.75;
+    filter: brightness(0);
+    opacity: 0.7;
     user-select: none;
   }
   .unknown .name {
@@ -1183,31 +1175,15 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.4rem;
-    margin-top: 0.6rem;
+    gap: 0.8rem;
+    margin-top: 1rem;
     text-align: center;
     font-size: 0.9rem;
-    font-style: italic;
     color: var(--muted);
   }
   .end p {
     margin: 0;
-  }
-  .erase {
-    padding: 0.2rem 0.4rem;
-    background: none;
-    border: 0;
-    cursor: pointer;
-    font-family: var(--font-display);
-    font-size: 0.75rem;
-    font-style: normal;
-    letter-spacing: 0.16em;
-    text-transform: uppercase;
-    color: var(--muted);
-    transition: color 0.2s;
-  }
-  .erase:hover {
-    color: #ff7a5c;
+    font-style: italic;
   }
 
   .backdrop {
@@ -1277,9 +1253,8 @@
     .controls .search {
       width: 100%;
     }
-    .controls select.field {
+    .controls :global(.dd) {
       flex: 1;
-      max-width: none;
     }
     .grid {
       grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
