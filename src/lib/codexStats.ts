@@ -41,9 +41,32 @@ export interface CodexStats extends Tally {
   categories: CategoryStats[];
   /** Lowest accuracy first, at least NEMESIS_MIN answers. */
   nemeses: { item: Item; tally: Tally }[];
-  /** Items picked for others, most often first. */
+  /** Items whose art was taken for others' names, most often first. */
   confusions: { answer: Item; picked: Item; n: number }[];
   fooled: { name: string; of: Item | undefined; n: number }[];
+}
+
+export interface Mixup {
+  /** The item whose art was taken for `name`'s. */
+  art: string;
+  name: string;
+  n: number;
+}
+
+/** Every mix-up, both question types together (see ItemEntry's `mixed`), in no particular order. */
+export function mixups(c: Codex): Mixup[] {
+  const pairs = new Map<string, Mixup>();
+  const put = (art: string, name: string, n: number) => {
+    const key = `${art} ${name}`;
+    const was = pairs.get(key);
+    if (was) was.n += n;
+    else pairs.set(key, { art, name, n });
+  };
+  for (const [id, e] of Object.entries(c.items)) {
+    for (const [other, n] of Object.entries(e.mixed)) put(id, other, n);
+    for (const [other, n] of Object.entries(e.mistaken)) put(other, id, n);
+  }
+  return [...pairs.values()];
 }
 
 export function median(xs: number[]): number | null {
@@ -83,10 +106,11 @@ export function codexStats(c: Codex, items: Item[], categories: string[], limit 
     byMode.name = sum(byMode.name, e.name);
     byMode.art = sum(byMode.art, e.art);
     if (t.n >= NEMESIS_MIN && t.ok < t.n) nemeses.push({ item: it, tally: t });
-    for (const [id, n] of Object.entries(e.mixed)) {
-      const picked = byId.get(id);
-      if (picked) confusions.push({ answer: it, picked, n });
-    }
+  }
+  for (const m of mixups(c)) {
+    const answer = byId.get(m.art);
+    const picked = byId.get(m.name);
+    if (answer && picked && cats.has(answer.category)) confusions.push({ answer, picked, n: m.n });
   }
   for (const cat of cats.values()) cat.groups.sort((a, b) => a.group.localeCompare(b.group));
   nemeses.sort((a, b) => a.tally.ok / a.tally.n - b.tally.ok / b.tally.n || b.tally.n - a.tally.n || a.item.name.localeCompare(b.item.name));

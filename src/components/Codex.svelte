@@ -2,7 +2,7 @@
   import { onMount, tick } from 'svelte';
   import { fade, fly } from 'svelte/transition';
   import { engine } from '../lib/session.svelte';
-  import { CODEX_KEY, loadCodex, resetCodex, type Tally } from '../lib/codex';
+  import { CODEX_KEY, RECENT, loadCodex, resetCodex, type Tally } from '../lib/codex';
   import { accuracy, codexStats, tallyOf } from '../lib/codexStats';
   import { categoryIcon, itemImage } from '../lib/ui';
   import { DIFFICULTY_NAMES } from '../lib/difficultyText';
@@ -32,7 +32,8 @@
     }),
   );
 
-  const pct = (t: Tally) => `${Math.round((accuracy(t) ?? 0) * 100)}%`;
+  /** "?" without answers, as the answer time without a right one. */
+  const pct = (t: Tally) => (t.n ? `${Math.round((accuracy(t) ?? 0) * 100)}%` : '?');
   const secs = (ms: number) => (ms / 1000).toFixed(1);
   const date = (t: number) => new Date(t).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
   const answers = (n: number) => `${n} ${n === 1 ? 'answer' : 'answers'}`;
@@ -176,12 +177,12 @@
         <div class="stat">
           <span class="stat-label">Accuracy</span>
           <span class="stat-value">{pct(stats)}</span>
-          <span class="stat-note">{stats.ok} of {answers(stats.n)}</span>
+          <span class="stat-note">{stats.n ? `${stats.ok} of ${answers(stats.n)}` : 'right answers'}</span>
         </div>
         <div class="stat">
           <span class="stat-label">Lately</span>
           <span class="stat-value">{pct(stats.recent)}</span>
-          <span class="stat-note">your last {answers(stats.recent.n)}</span>
+          <span class="stat-note">your last {answers(stats.recent.n || RECENT)}</span>
         </div>
       </div>
     {/if}

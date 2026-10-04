@@ -26,8 +26,16 @@ export interface ItemEntry {
   /** This player's answers, by question type: named from its art, or its art found for its name. */
   name: Tally;
   art: Tally;
-  /** Real items picked instead of this one, by id, with how often. */
+  /**
+   * Real items mixed up with this one, by id, with how often. Each pair reads
+   * "the art of one taken for the other's name", whichever way it was asked.
+   * `mixed`: names picked for this one's art (name questions); its art was
+   * taken for theirs. `mistaken`: art picked for this one's name (art
+   * questions); their art was taken for this one. That pair is kept here, not
+   * on the picked item, whose entry would make it count as seen.
+   */
   mixed: Record<string, number>;
+  mistaken: Record<string, number>;
 }
 
 /** One of this player's answers, for the stats that look at the recent past. */
@@ -132,8 +140,8 @@ export function record(c: Codex, e: Encounter): Codex {
   // askedAt is what tells it apart, so `last` is always the latest question's.
   if (prev && prev.last === e.at) return c;
   const entry: ItemEntry = prev
-    ? { ...prev, seen: prev.seen + 1, first: Math.min(prev.first, e.at), last: e.at, mixed: { ...prev.mixed } }
-    : { seen: 1, first: e.at, last: e.at, name: noTally(), art: noTally(), mixed: {} };
+    ? { ...prev, seen: prev.seen + 1, first: Math.min(prev.first, e.at), last: e.at, mixed: { ...prev.mixed }, mistaken: { ...prev.mistaken } }
+    : { seen: 1, first: e.at, last: e.at, name: noTally(), art: noTally(), mixed: {}, mistaken: {} };
   const next: Codex = { ...c, items: { ...c.items, [e.itemId]: entry } };
   const a = e.answer;
   if (!a) return next;
@@ -152,7 +160,8 @@ export function record(c: Codex, e: Encounter): Codex {
         next.fooled = { ...c.fooled, [a.pickedLabel]: { of, n: (was?.n ?? 0) + 1, last: e.at } };
       }
     } else if (a.pickedId !== e.itemId) {
-      entry.mixed[a.pickedId] = (entry.mixed[a.pickedId] ?? 0) + 1;
+      const pairs = e.mode === 'art' ? entry.mistaken : entry.mixed;
+      pairs[a.pickedId] = (pairs[a.pickedId] ?? 0) + 1;
     }
   }
   const log: Answer = { t: e.at, id: e.itemId, mode: e.mode, ok: a.ok, difficulty: e.difficulty, race: e.race, ...(ms !== undefined ? { ms } : {}) };
@@ -170,6 +179,11 @@ function tally(v: unknown): Tally {
   const n = count(v.n);
   return { n, ok: Math.min(n, count(v.ok)) };
 }
+function counts(v: unknown): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (isObj(v)) for (const [k, n] of Object.entries(v)) if (count(n) > 0) out[k] = count(n);
+  return out;
+}
 const isMode = (v: unknown): v is QuestionMode => v === 'name' || v === 'art';
 
 /** A stored codex, cleaned up; null when it's missing, malformed or from another version. */
@@ -185,9 +199,16 @@ export function parseCodex(raw: string | null): Codex | null {
   const c = emptyCodex();
   for (const [id, e] of Object.entries(v.items)) {
     if (!isObj(e)) continue;
-    const mixed: Record<string, number> = {};
-    if (isObj(e.mixed)) for (const [k, n] of Object.entries(e.mixed)) if (count(n) > 0) mixed[k] = count(n);
-    c.items[id] = { seen: Math.max(1, count(e.seen)), first: time(e.first), last: time(e.last), name: tally(e.name), art: tally(e.art), mixed };
+    c.items[id] = {
+      seen: Math.max(1, count(e.seen)),
+      first: time(e.first),
+      last: time(e.last),
+      name: tally(e.name),
+      art: tally(e.art),
+      mixed: counts(e.mixed),
+      // Missing in codexes stored before art questions' mix-ups were told apart.
+      mistaken: counts(e.mistaken),
+    };
   }
   if (Array.isArray(v.log))
     for (const a of v.log.slice(-LOG_LIMIT)) {
