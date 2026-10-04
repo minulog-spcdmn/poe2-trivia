@@ -31,6 +31,7 @@
 
 import { shaking } from './fx/core';
 import { cornerPx } from './corner';
+import { linearOf, type Lin } from './linear';
 import { opacityOf } from './opacity';
 
 export type Fill = 'linear' | 'stage';
@@ -186,8 +187,9 @@ export function measureShadows(
     if (p === undefined) paints.set(el, (p = paintsBackground(getComputedStyle(el))));
     return p;
   };
-  // Opacities likewise (nothing below changes one).
+  // Opacities and transforms likewise (nothing below changes one).
   const opacities = new Map<Element, number>();
+  const linears = new Map<Element, Lin | null>();
 
   // Fills first when there are more elements than room, then document order.
   const nodes = [...shadowed.keys()].filter((n) => n.isConnected);
@@ -208,9 +210,11 @@ export function measureShadows(
     const h = node.offsetHeight;
     const rect = node.getBoundingClientRect();
     const scale = w ? rect.width / w : 0;
-    // Only translation and uniform scale map onto an axis-aligned box; any
-    // rotation or 3D turn changes the box's aspect, so leave those to CSS.
-    let ok = w > 0 && h > 0 && scale > 0 && Math.abs(rect.height / h - scale) <= 0.01 * scale;
+    // Only translation and uniform scale map onto an axis-aligned box. Leave
+    // any rotation or 3D turn to CSS, even a slight one (as a card tilting
+    // toward the pointer): its shadow must follow the turned shape.
+    const lin = w > 0 && h > 0 && scale > 0 ? linearOf(node, linears) : null;
+    let ok = !!lin && Math.abs(lin[1]) + Math.abs(lin[2]) <= 1e-3 * lin[0] && Math.abs(lin[3] - lin[0]) <= 1e-3 * lin[0];
 
     // Skip elements whose shadows (or fill) can't reach the viewport.
     // (The shader skips a shadow 4 sigma beyond its offset box.)
