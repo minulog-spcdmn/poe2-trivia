@@ -8,8 +8,7 @@
   import { backdropShadow } from '../lib/backdropShadow';
   import { cardHover, cardPicked, cardRevealed } from '../lib/fx/moments';
   import type { Handle } from '../lib/fx/core';
-  import CardSky from './CardSky.svelte';
-  import CardSun from './CardSun.svelte';
+  import CardPlate from './CardPlate.svelte';
 
   const s = $derived(session.state!);
   const active = $derived(s.players[s.turn]);
@@ -169,18 +168,20 @@
       >
         <span class="turn" in:deal|global={{ i, n: s.offered.length }}>
           <span class="back" aria-hidden="true">
-            <CardSky><CardSun /></CardSky>
+            <CardPlate back />
+            <CardPlate compact />
             <span class="filigree"></span>
             <span class="seal">
               <svg class="emblem" viewBox="20 0 400 391"><path d="M224 390Q255 331 301.0 283.5Q347 236 377 218L407 200L220 -1Q164 31 116.5 82.5Q69 134 50 169L31 204Z" /></svg>
             </span>
           </span>
           <span class="frame" use:backdropShadow>
+            <CardPlate />
             <span class="glare"></span>
             <span class="sheen"></span>
             <span class="filigree"></span>
             <span class="icon">
-              <CardSky drawn><CardSun drawn /></CardSky>
+              <CardPlate compact />
               <span class="lit"><span class="glyph" style:--src="url('{categoryIcon(cat)}')"></span></span>
             </span>
             <span class="title">{cat}</span>
@@ -215,8 +216,9 @@
     gap: 1.4rem;
   }
   .card {
-    /* The engraving's line, and the dark it is cut out of. */
+    /* The engraving's line, its signs (cut deeper), and the dark it is cut out of. */
     --ink: #a8824b;
+    --ink-hi: #c39a5a;
     --ground: #19130d;
     padding: 0;
     border: 0;
@@ -238,13 +240,14 @@
     position: absolute;
     inset: 0;
     display: grid;
-    place-items: center;
+    /* The seal sits where the face's emblem does, in the medallion. */
+    place-items: start center;
+    padding-top: calc(134px - 54px);
     border-radius: 8px;
     overflow: clip;
     border: 1px solid var(--gold-lo);
-    color: var(--ink);
     background:
-      radial-gradient(circle at 50% 50%, rgba(175, 96, 37, 0.2), transparent 55%),
+      radial-gradient(circle at 50% 45%, rgba(175, 96, 37, 0.2), transparent 55%),
       radial-gradient(ellipse 120% 90% at 50% 50%, transparent 50%, rgba(0, 0, 0, 0.5)),
       linear-gradient(170deg, #211912, #0d0a07 70%);
     box-shadow:
@@ -254,15 +257,16 @@
     transform: rotateY(180deg);
     pointer-events: none;
   }
-  .back :global(.sun) {
-    opacity: 0.4;
+  /* The plate, whole on a tall card; on a narrow one in a row, only the
+     medallion, round the seal or the emblem. */
+  .back > :global(.plate),
+  .frame > :global(.plate) {
+    opacity: 0.6;
+    transition: opacity 0.4s;
   }
-  .back :global(.sky) {
-    inset: 14px 16px;
-  }
-  .back :global(.sky > svg),
-  .back :global(.ground) {
-    opacity: 0.55;
+  .back > :global(.plate.compact),
+  .icon > :global(.plate.compact) {
+    display: none;
   }
   .seal {
     position: relative;
@@ -284,20 +288,17 @@
     fill: #c9a45c;
     filter: drop-shadow(0 0 10px rgba(224, 138, 68, 0.55));
   }
+  /* The face is laid out to the plate (see CardPlate): the emblem in its
+     medallion, the name in its nameplate, the same whatever the name's length. */
   .frame {
     position: relative;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.5rem;
-    height: 290px;
-    padding: 1.6rem 1rem 1.2rem;
-    /* The sun's rays run out to the edge and no further. */
+    display: block;
+    height: 300px;
     overflow: clip;
     border-radius: 8px;
     border: 1px solid var(--gold-lo);
     background:
-      radial-gradient(ellipse at 50% 40%, rgba(175, 96, 37, 0.16), transparent 60%),
+      radial-gradient(circle at 50% 134px, rgba(175, 96, 37, 0.16), transparent 110px),
       radial-gradient(ellipse 120% 90% at 50% 45%, transparent 50%, rgba(0, 0, 0, 0.5)),
       linear-gradient(170deg, #211912, #0d0a07 70%);
     --bs1: 16px 40px;
@@ -342,28 +343,13 @@
       filter 0.3s;
   }
   .icon {
-    position: relative;
-    flex: 1;
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: calc(134px - 70px);
+    height: 140px;
     display: grid;
     place-items: center;
-    width: 100%;
-    color: var(--ink);
-  }
-  .icon :global(.sun) {
-    opacity: 0.4;
-    transition: opacity 0.4s;
-  }
-  /* The arch rises a little above the emblem's room and stands on a ground
-     just over the name. */
-  .icon :global(.sky) {
-    inset: -12px 0 -7px;
-    /* The sun stays on the emblem, which is in the middle of the room, not of the arch. */
-    --sun-dy: 2.5px;
-  }
-  .icon :global(.sky > svg),
-  .icon :global(.ground) {
-    opacity: 0.55;
-    transition: opacity 0.4s;
   }
   /* The emblem's glow, on a layer of its own so the engraving stays crisp. */
   .lit {
@@ -373,8 +359,8 @@
     filter: drop-shadow(0 0 12px rgba(224, 138, 68, 0.3)) drop-shadow(0 4px 6px rgba(0, 0, 0, 0.85));
   }
   .glyph {
-    width: 112px;
-    height: 128px;
+    width: 104px;
+    height: 120px;
     background: linear-gradient(180deg, #ecd39a 0%, #b8924f 45%, #5e3f17 100%);
     -webkit-mask: var(--src) center / contain no-repeat;
     mask: var(--src) center / contain no-repeat;
@@ -427,10 +413,18 @@
     }
   }
   .title {
+    position: absolute;
+    left: 22px;
+    right: 22px;
+    top: 236px;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     font-family: var(--font-display);
     font-weight: 700;
     font-size: 1.05rem;
-    letter-spacing: 0.06em;
+    letter-spacing: 0.04em;
     color: var(--gold-hi);
     text-align: center;
     line-height: 1.2;
@@ -456,6 +450,7 @@
   }
   .card.dm {
     --ink: #b0503c;
+    --ink-hi: #cc6450;
     --ground: #170c09;
   }
   .card.dm .glyph {
@@ -511,15 +506,11 @@
     --bs2: 24px 50px;
     --bs2-color: rgba(0, 0, 0, 0.7);
   }
-  .card.mine:not(:global(.down)):hover .icon :global(.sun),
-  .card.chosen .icon :global(.sun) {
-    opacity: 0.6;
-  }
-  .card.mine:not(:global(.down)):hover .icon :global(.sky > svg),
-  .card.mine:not(:global(.down)):hover .icon :global(.ground),
-  .card.chosen .icon :global(.sky > svg),
-  .card.chosen .icon :global(.ground) {
-    opacity: 0.8;
+  .card.mine:not(:global(.down)):hover .frame > :global(.plate),
+  .card.mine:not(:global(.down)):hover .icon > :global(.plate),
+  .card.chosen .frame > :global(.plate),
+  .card.chosen .icon > :global(.plate) {
+    opacity: 0.85;
   }
   .card.mine:not(:global(.down)):hover .glyph {
     transform: scale(1.1) rotate(-3deg);
@@ -587,38 +578,47 @@
       gap: 0.7rem;
     }
     .frame {
+      display: flex;
+      align-items: center;
       height: auto;
-      flex-direction: row;
       padding: 0.8rem 1.2rem;
       gap: 1rem;
     }
     .icon {
+      position: relative;
+      top: auto;
       flex: none;
       width: 64px;
       height: 64px;
     }
-    .icon :global(.sun) {
-      --plate: 132px;
+    .back {
+      place-items: center;
+      padding-top: 0;
     }
-    /* No room for the arch: only the sun, round the emblem. */
-    .icon :global(.sky) {
-      inset: 0;
-      overflow: visible;
-      --sun-dy: 0px;
-    }
-    .icon :global(.sky > svg),
-    .icon :global(.ground) {
+    .back > :global(.plate),
+    .frame > :global(.plate) {
       display: none;
     }
-    .icon :global(.within) {
-      -webkit-mask: none;
-      mask: none;
+    /* Only the medallion, round the emblem (or the seal), and no further than the card. */
+    .back > :global(.plate.compact),
+    .icon > :global(.plate.compact) {
+      display: block;
+      inset: auto;
+      left: 50%;
+      top: 50%;
+      width: 132px;
+      height: 132px;
+      translate: -50% -50%;
+      opacity: 0.6;
     }
     .glyph {
       width: 60px;
       height: 60px;
     }
     .title {
+      position: static;
+      display: block;
+      height: auto;
       flex: 1;
       text-align: left;
     }
