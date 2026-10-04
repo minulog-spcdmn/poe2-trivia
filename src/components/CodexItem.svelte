@@ -128,9 +128,9 @@
       {#if entry}
         <div class="sep" aria-hidden="true"></div>
         <ul class="lines">
-          <li>Met <b>{times(entry.seen)}</b></li>
+          <li>Seen <b>{times(entry.seen)}</b></li>
           <li>
-            {#if entry.first === entry.last}Met on <b>{date(entry.first)}</b>{:else}First met <b>{date(entry.first)}</b>, last <b>{date(entry.last)}</b>{/if}
+            {#if entry.first === entry.last}Seen on <b>{date(entry.first)}</b>{:else}First seen <b>{date(entry.first)}</b>, last <b>{date(entry.last)}</b>{/if}
           </li>
           <li>Named from its art: {#if entry.name.n}<b>{score(entry.name)}</b>{:else}<i>never asked</i>{/if}</li>
           <li>Found from its name: {#if entry.art.n}<b>{score(entry.art)}</b>{:else}<i>never asked</i>{/if}</li>

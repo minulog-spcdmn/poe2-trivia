@@ -68,10 +68,10 @@
   const COLUMNS: { key: SortKey; label: string; short?: string; num?: boolean; wide?: boolean }[] = [
     { key: 'name', label: 'Item' },
     { key: 'type', label: 'Type', wide: true },
-    { key: 'seen', label: 'Met', num: true },
+    { key: 'seen', label: 'Seen', num: true },
     { key: 'right', label: 'Right', num: true },
     { key: 'accuracy', label: 'Accuracy', short: '%', num: true },
-    { key: 'last', label: 'Last met', num: true, wide: true },
+    { key: 'last', label: 'Last seen', num: true, wide: true },
   ];
   const rows = $derived.by(() => {
     const list = engine.items
@@ -167,7 +167,7 @@
   <header class="hero" in:fly={{ y: -10, duration: 600 }}>
     <p class="kicker">Your collection</p>
     <h1>Codex</h1>
-    <p class="tagline">Every unique and lineage gem you have met in a game, and how well you know it.</p>
+    <p class="tagline">Every unique and lineage gem you have seen in a game, and how well you know it.</p>
   </header>
 
   <section class="summary" in:fly={{ y: 20, duration: 700, delay: 150 }}>
@@ -232,7 +232,7 @@
     </div>
   {:else}
     <div class="split" in:fly={{ y: 20, duration: 700, delay: 250 }}>
-      <section class="panel" use:backdropShadow={{ fill: 'linear' }}>
+      <section class="panel" use:backdropShadow>
         <header><h2>By question</h2></header>
         {@render bars([
           { name: 'Name the art', tally: stats.byMode.name },
@@ -244,7 +244,7 @@
         {/if}
       </section>
 
-      <section class="panel" use:backdropShadow={{ fill: 'linear' }}>
+      <section class="panel" use:backdropShadow>
         <header><h2>By category</h2><span class="count">{stats.seen} / {stats.total}</span></header>
         <ul class="bars cats">
           {#each stats.categories as c (c.category)}
@@ -263,7 +263,7 @@
     </div>
 
     <div class="insights" in:fly={{ y: 20, duration: 700, delay: 350 }}>
-      <section class="panel" use:backdropShadow={{ fill: 'linear' }}>
+      <section class="panel" use:backdropShadow>
         <header><h2>Nemeses</h2></header>
         {#if stats.nemeses.length}
           <ul class="rows">
@@ -282,7 +282,7 @@
         {/if}
       </section>
 
-      <section class="panel" use:backdropShadow={{ fill: 'linear' }}>
+      <section class="panel" use:backdropShadow>
         <header><h2>Mix-ups</h2></header>
         {#if stats.confusions.length}
           <ul class="rows">
@@ -304,7 +304,7 @@
         {/if}
       </section>
 
-      <section class="panel" use:backdropShadow={{ fill: 'linear' }}>
+      <section class="panel" use:backdropShadow>
         <header><h2>Made-up names</h2></header>
         {#if stats.fooled.length}
           <ul class="rows">
@@ -346,7 +346,7 @@
             <header>
               {@render glyph(sec.stats.category)}
               <h3>{sec.stats.category}</h3>
-              <span class="muted">{sec.stats.seen} / {sec.stats.total} discovered{sec.stats.n ? ` • ${pct(sec.stats)} right` : ''}</span>
+              <span class="muted">{sec.stats.seen} / {sec.stats.total} discovered{sec.stats.n ? ` • ${pct(sec.stats)} accuracy` : ''}</span>
             </header>
             {#if sec.stats.groups.length > 1}
               <ul class="groups">
@@ -389,7 +389,7 @@
           <p class="none">Nothing found.</p>
         {/each}
       {:else if rows.length}
-        <div class="ledger" use:backdropShadow={{ fill: 'linear' }}>
+        <div class="ledger" use:backdropShadow>
           <table>
             <thead>
               <tr>
@@ -449,7 +449,7 @@
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <div class="confirm panel" transition:fly={{ y: 20, duration: 250 }} onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" tabindex="-1">
       <h3>Erase your codex?</h3>
-      <p class="muted">Every item you have met and every answer recorded in this browser is lost. This can't be undone.</p>
+      <p class="muted">Every item you have seen and every answer recorded in this browser is lost. This can't be undone.</p>
       <div class="actions">
         <button class="btn ghost" onclick={() => (confirmReset = false)}>Keep it</button>
         <button class="btn danger" onclick={reset}>Erase</button>
@@ -618,7 +618,9 @@
     margin: 0 0 1.4rem;
   }
 
-  /* ---- panels, as the lobby's ---- */
+  /* ---- panels, as the lobby's ----
+     The backdrop draws their shadows but not their backgrounds: drawing
+     both, it would lay each panel's shadow over its neighbours. */
   .split {
     display: grid;
     grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
@@ -1009,7 +1011,7 @@
     color: var(--muted);
     line-height: 1;
   }
-  /* Not met yet: only its shape. */
+  /* Not seen yet: only its shape. */
   .unknown {
     background: rgba(0, 0, 0, 0.25);
     border-style: dashed;
@@ -1030,7 +1032,9 @@
     color: var(--muted);
   }
 
-  /* The table: every column fits, nothing scrolls sideways. */
+  /* The table: every column fits, nothing scrolls sideways. Its background,
+     like the panels', is painted here rather than by the backdrop: the
+     backdrop paints each box's shadow over the boxes before it. */
   .ledger {
     border: 1px solid #5a3a1c;
     --bs-fill-a: rgba(5, 4, 3, 0.92);

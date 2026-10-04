@@ -34,8 +34,8 @@
   /** Null until the codex is read. */
   let discovered = $state<number | null>(null);
   void import('../lib/codex').then(({ loadCodex }) => {
-    const met = loadCodex().items;
-    discovered = engine.items.filter((it) => met[it.id]).length;
+    const seen = loadCodex().items;
+    discovered = engine.items.filter((it) => seen[it.id]).length;
   });
   const showcase = shuffle(engine.items, Math.random).slice(0, 7);
 
