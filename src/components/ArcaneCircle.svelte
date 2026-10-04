@@ -1,12 +1,14 @@
 <script lang="ts">
-  // An alchemist's circle that draws itself behind the item art and turns
-  // slowly, in three layers:
+  // An alchemist's circle, engraved, that draws itself behind the item art
+  // and turns slowly, in layers:
   // • the band: the seven planets of the old metals in seals, with lines
   //   of an unreadable alchemical script between them;
-  // • a heptagram, one point per planet, with Sol and Luna sealed inside;
-  // • at the heart, a compass star in a sun whose rays reach out to the
-  //   heptagram's inner circle.
-  // Lines stop short of every seal they meet, as if drawn around it.
+  // • a heptagram of double straps woven over and under, one point per
+  //   planet, with Sol and Luna sealed between its arms, and a sun whose
+  //   long rays run out under the straps into the arms;
+  // • at the heart, a hatched compass star around an eye that stays upright.
+  // Lines stop short of every seal they meet, as if drawn around it, and
+  // carry the odd nick, like a worn plate.
   // `state` colours it at the reveal.
   //
   // Each layer is turned as a whole, so the browser can spin it on the
@@ -21,42 +23,103 @@
     strength,
   }: { state?: 'idle' | 'good' | 'bad'; size?: string; color?: string; strength?: number } = $props();
 
+  type Pt = [number, number];
   type Hole = { x: number; y: number; r: number };
+  /** A strap: a straight band `w` either side of the line from `p` to `q`. */
+  type Strap = { p: Pt; q: Pt; w: number };
+  type Cut = [number, number];
   const f = (v: number) => v.toFixed(2);
+  const pt = (p: Pt) => `${f(p[0])} ${f(p[1])}`;
   const rad = (a: number) => (a * Math.PI) / 180;
   /** The point at `a` degrees clockwise from the top, `r` from the centre. */
-  const at = (a: number, r: number): [number, number] => [r * Math.sin(rad(a)), -r * Math.cos(rad(a))];
+  const at = (a: number, r: number): Pt => [r * Math.sin(rad(a)), -r * Math.cos(rad(a))];
+  const lerp = (p: Pt, q: Pt, t: number): Pt => [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t];
 
   /** What's left of [lo, hi] once the `cuts` are taken out. */
-  const subtract = (lo: number, hi: number, cuts: [number, number][]) => {
-    let parts: [number, number][] = [[lo, hi]];
+  const subtract = (lo: number, hi: number, cuts: Cut[]) => {
+    let parts: Cut[] = [[lo, hi]];
     for (const [c0, c1] of cuts)
-      parts = parts.flatMap(([a, b]): [number, number][] =>
-        c1 <= a || c0 >= b ? [[a, b]] : ([[a, c0], [c1, b]] as [number, number][]).filter(([p, q]) => q - p > 1e-3),
+      parts = parts.flatMap(([a, b]): Cut[] =>
+        c1 <= a || c0 >= b ? [[a, b]] : ([[a, c0], [c1, b]] as Cut[]).filter(([p, q]) => q - p > 1e-3),
       );
     return parts;
   };
 
-  /** A straight line, broken wherever it passes through a hole. */
-  const line = ([x0, y0]: number[], [x1, y1]: number[], holes: Hole[] = []) => {
-    const [dx, dy] = [x1 - x0, y1 - y0];
-    const cuts = holes.flatMap(({ x, y, r }): [number, number][] => {
-      const [fx, fy] = [x0 - x, y0 - y];
-      const a = dx * dx + dy * dy;
-      const b = 2 * (fx * dx + fy * dy);
-      const disc = b * b - 4 * a * (fx * fx + fy * fy - r * r);
-      if (disc <= 0) return [];
-      const s = Math.sqrt(disc);
-      return [[(-b - s) / (2 * a), (-b + s) / (2 * a)]];
-    });
-    return subtract(0, 1, cuts)
-      .map(([t0, t1]) => `M${f(x0 + dx * t0)} ${f(y0 + dy * t0)}L${f(x0 + dx * t1)} ${f(y0 + dy * t1)}`)
+  // The wear on the plate: a nick every 30 units or so, from a fixed seed.
+  // Only the lines are worn: the glow under them runs on unbroken, so a
+  // nick reads as a worn spot rather than a cut.
+  let wearing = false;
+  let wearSeed = 5;
+  const wearRnd = () => (wearSeed = (wearSeed * 16807) % 2147483647) / 2147483647;
+  /** Nicks along a line `len` long, as cuts in [0, `span`]. */
+  const nicks = (len: number, span = 1): Cut[] =>
+    !wearing
+      ? []
+      : Array.from({ length: Math.round((len / 30) * (0.4 + wearRnd() * 1.2)) }, () => {
+          const t = wearRnd() * span;
+          const w = ((0.4 + wearRnd() * 0.8) / len) * span;
+          return [t - w / 2, t + w / 2];
+        });
+
+  /** Where a line from `p` to `q` runs inside a strap, as a cut in [0, 1]. */
+  const underStrap = (p: Pt, q: Pt, { p: a, q: b, w }: Strap): Cut[] => {
+    const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    const [ux, uy] = [(b[0] - a[0]) / len, (b[1] - a[1]) / len];
+    // Signed distance from the strap's centre line, and position along it.
+    const dist = (s: Pt) => (s[0] - a[0]) * -uy + (s[1] - a[1]) * ux;
+    const along = (s: Pt) => (s[0] - a[0]) * ux + (s[1] - a[1]) * uy;
+    const [d0, d1] = [dist(p), dist(q)];
+    if (Math.abs(d1 - d0) < 1e-9) return [];
+    const [t0, t1] = [(-w - d0) / (d1 - d0), (w - d0) / (d1 - d0)].sort((x, y) => x - y);
+    const s = along(lerp(p, q, (t0 + t1) / 2));
+    return s < 0 || s > len ? [] : [[t0, t1]];
+  };
+
+  /** Where a line from `p` to `q` runs inside a circle, as a cut in [0, 1]. */
+  const inside = (p: Pt, q: Pt, { x, y, r }: Hole): Cut | null => {
+    const [dx, dy] = [q[0] - p[0], q[1] - p[1]];
+    const [fx, fy] = [p[0] - x, p[1] - y];
+    const a = dx * dx + dy * dy;
+    const b = 2 * (fx * dx + fy * dy);
+    const disc = b * b - 4 * a * (fx * fx + fy * fy - r * r);
+    return disc > 0 ? [(-b - Math.sqrt(disc)) / (2 * a), (-b + Math.sqrt(disc)) / (2 * a)] : null;
+  };
+
+  /**
+   * A straight line, broken where it meets a hole or passes under a strap
+   * or a ring about the centre (`rings`: radius and half-width).
+   */
+  const line = (
+    p: Pt,
+    q: Pt,
+    {
+      holes = [],
+      under = [],
+      rings = [],
+      cuts = [],
+      worn = true,
+    }: { holes?: Hole[]; under?: Strap[]; rings?: [number, number][]; cuts?: Cut[]; worn?: boolean } = {},
+  ) => {
+    const [dx, dy] = [q[0] - p[0], q[1] - p[1]];
+    const all = [...cuts, ...under.flatMap((s) => underStrap(p, q, s))];
+    for (const h of holes) {
+      const c = inside(p, q, h);
+      if (c) all.push(c);
+    }
+    for (const [r, w] of rings) {
+      const outer = inside(p, q, { x: 0, y: 0, r: r + w });
+      const inner = inside(p, q, { x: 0, y: 0, r: r - w });
+      if (outer) all.push(...(inner ? ([[outer[0], inner[0]], [inner[1], outer[1]]] as Cut[]) : [outer]));
+    }
+    if (worn) all.push(...nicks(Math.hypot(dx, dy)));
+    return subtract(0, 1, all)
+      .map(([t0, t1]) => `M${pt(lerp(p, q, t0))}L${pt(lerp(p, q, t1))}`)
       .join('');
   };
 
   /** A circle about the centre, broken wherever it passes through a hole. */
-  const ring = (r: number, holes: Hole[] = []) => {
-    const cuts: [number, number][] = [];
+  const ring = (r: number, holes: Hole[] = [], worn = true) => {
+    const cuts: Cut[] = [];
     for (const h of holes) {
       const d = Math.hypot(h.x, h.y);
       const cos = (r * r + d * d - h.r * h.r) / (2 * r * d);
@@ -67,15 +130,29 @@
       const m = ((mid % 360) + 360) % 360;
       cuts.push([m - half, m + half], [m - half - 360, m + half - 360], [m - half + 360, m + half + 360]);
     }
-    return subtract(0, 360, cuts)
+    if (worn) cuts.push(...nicks(2 * Math.PI * r, 360));
+    const arcs = subtract(0, 360, cuts);
+    // Join the arc that ends at the top to the one that starts there, so
+    // the ring has no seam.
+    if (arcs.length > 1 && arcs[0][0] === 0 && arcs.at(-1)![1] === 360) arcs.push([arcs.pop()![0], arcs.shift()![1] + 360]);
+    return arcs
       .map(([a0, a1]) => {
         // Arcs under 180° each, so the sweep flags never need to change.
         const n = Math.ceil((a1 - a0) / 170);
-        let d = `M${at(a0, r).map(f).join(' ')}`;
-        for (let k = 1; k <= n; k++) d += `A${r} ${r} 0 0 1 ${at(a0 + ((a1 - a0) * k) / n, r).map(f).join(' ')}`;
-        return d;
+        let d = `M${pt(at(a0, r))}`;
+        for (let k = 1; k <= n; k++) d += `A${r} ${r} 0 0 1 ${pt(at(a0 + ((a1 - a0) * k) / n, r))}`;
+        return a1 - a0 >= 360 ? d + 'Z' : d;
       })
       .join('');
+  };
+
+  /** Engraver's shading: lines across the triangle `o`, `l`, `t`, parallel to its side from `o` to `t`. */
+  const hatch = (o: Pt, l: Pt, t: Pt, gap: number, opts: Parameters<typeof line>[2] = {}) => {
+    const n = Math.floor(Math.hypot(l[0] - o[0], l[1] - o[1]) / gap);
+    return Array.from({ length: n }, (_, i) => {
+      const s = (i + 1) / (n + 1);
+      return line(lerp(o, l, s), lerp(t, l, s), { ...opts, worn: false });
+    }).join('');
   };
 
   // The seven planets and their metals, drawn on a small grid (about ±4).
@@ -89,7 +166,7 @@
     'M-1 -4.4V2M-2.6 -2.8H0.6M-1 -0.4C0.2 -1.8 2.8 -1.6 2.6 0.6C2.4 2.4 0.4 2.6 1.2 4.4', // Saturn • lead
   ];
 
-  // The band: seals on the planets' circle, a word between each pair.
+  // The band: seals on the planets' circle, the script between each pair.
   const BAND_IN = 81;
   const BAND_OUT = 94;
   const BAND = (BAND_IN + BAND_OUT) / 2;
@@ -138,49 +215,142 @@
     return marks.map((m) => ({ ...m, a: m.a + shift }));
   }).flat();
 
-  // The heptagram {7/2}, its points on the band's inner edge, half a step
-  // round from the planets, and a circle in the heptagon at its middle.
-  // Sol above and Luna below sit between that circle and the band.
-  const R = BAND_IN;
+  // The heptagram {7/2}: seven straps, each a pair of lines, their points
+  // just inside the band, half a step round from the planets. Walking the
+  // star in one go, the straps go over and under in turn at every crossing.
+  const W = 0.8;
+  const GAP = 0.7;
+  const R = BAND_IN - 1.8;
   const INNER = R * Math.cos((2 * Math.PI) / 7);
   const BIG = 13;
   const sol = at(0, 65.5);
   const luna = at(180, 65.5);
   const starHoles = [sol, luna].map(([x, y]) => ({ x, y, r: BIG + 1.4 }));
-  const points = Array.from({ length: 7 }, (_, k) => at(((k + 0.5) / 7) * 360, R));
-  const STAR = Array.from({ length: 7 }, (_, i) => line(points[(i * 2) % 7], points[(i * 2 + 2) % 7], starHoles)).join('');
-  const STAR_RING = ring(INNER, starHoles);
-  // Sol: a disc with twelve rays, long and short in turn.
-  const SOL_RAYS = Array.from({ length: 12 }, (_, k) => line(at(k * 30, 6.6), at(k * 30, k % 2 ? 8.4 : 10))).join('');
+  const tips = Array.from({ length: 7 }, (_, k) => at(((k + 0.5) / 7) * 360, R));
+  const straps: Strap[] = Array.from({ length: 7 }, (_, i) => ({ p: tips[(i * 2) % 7], q: tips[(i * 2 + 2) % 7], w: W }));
+  const cross = (a: Strap, b: Strap) => {
+    const [r, s] = [
+      [a.q[0] - a.p[0], a.q[1] - a.p[1]],
+      [b.q[0] - b.p[0], b.q[1] - b.p[1]],
+    ];
+    const den = r[0] * s[1] - r[1] * s[0];
+    const [ex, ey] = [b.p[0] - a.p[0], b.p[1] - a.p[1]];
+    const t = (ex * s[1] - ey * s[0]) / den;
+    const u = (ex * r[1] - ey * r[0]) / den;
+    return t > 0.01 && t < 0.99 && u > 0.01 && u < 0.99 ? t : null;
+  };
+  // Each strap's crossings in order along it; every second one goes under.
+  let turn = 0;
+  const unders = straps.map((a, i) =>
+    straps
+      .map((b, j) => ({ j, t: i === j ? null : cross(a, b) }))
+      .filter((c): c is { j: number; t: number } => c.t !== null)
+      .sort((x, y) => x.t - y.t)
+      .filter(() => turn++ % 2 === 1)
+      .map(({ j }) => ({ ...straps[j], w: W + GAP })),
+  );
+  /** One edge of strap `i`, `side` (±1) of its centre line, mitred to its neighbours at both tips. */
+  const edgeOf = (i: number, side: number): [Pt, Pt] => {
+    const { p, q } = straps[i];
+    const n = (s: Strap): Pt => {
+      const len = Math.hypot(s.q[0] - s.p[0], s.q[1] - s.p[1]);
+      return [-(s.q[1] - s.p[1]) / len, (s.q[0] - s.p[0]) / len];
+    };
+    // At a tip both straps' outer edges meet beyond it, their inner edges
+    // short of it; each tip turns the star the same way, so the same side
+    // of each strap faces out.
+    const [nx, ny] = n(straps[i]);
+    const miter = (tip: Pt, other: Strap): Pt => {
+      const [ox, oy] = n(other);
+      const [bx, by] = [nx + ox, ny + oy];
+      const k = (side * W) / (nx * bx + ny * by);
+      return [tip[0] + bx * k, tip[1] + by * k];
+    };
+    return [miter(p, straps[(i + 6) % 7]), miter(q, straps[(i + 1) % 7])];
+  };
+  const STAR_RING = INNER - W - GAP;
 
-  // The heart: a compass star of eight faceted points in a sun in
-  // splendour, pointed and flaming rays in turn reaching out to the
-  // heptagram's inner circle.
+  // Sol: a disc with twelve rays, long and short in turn.
+  const SOL_RAYS = Array.from({ length: 12 }, (_, k) => line(at(k * 30, 6.6), at(k * 30, k % 2 ? 8.4 : 10), { worn: false })).join('');
+  // Luna: a crescent shaded in hatching, its horns turned out.
+  const LUNA = 'M4.67 -7.11A8.5 8.5 0 1 0 4.67 7.11A7.2 7.2 0 1 1 4.67 -7.11Z';
+  const LUNA_HATCH = Array.from({ length: 13 }, (_, i) => {
+    const y = -6 + i;
+    const x0 = -Math.sqrt(8.5 ** 2 - y * y) + 0.7;
+    const x1 = 3.5 - Math.sqrt(7.2 ** 2 - y * y) - 0.7;
+    return x1 - x0 > 0.3 ? `M${f(x0)} ${y}H${f(x1)}` : '';
+  }).join('');
+
+  // The sun: seven long pointed rays out into the star's arms, passing
+  // under the inner ring and the straps, and seven short ones between,
+  // each hatched down one side.
   const SUN = 31;
-  const HEART = Array.from({ length: 8 }, (_, k) => {
+  const rayStraps = straps.map((s) => ({ ...s, w: W + GAP }));
+  const rays = () =>
+    Array.from({ length: 14 }, (_, k) => {
+      const a = ((k + 1) / 14) * 360;
+      const long = k % 2 === 0;
+      const [base, l, r, tip] = [at(a, SUN), at(a - (long ? 4.5 : 3.6), SUN), at(a + (long ? 4.5 : 3.6), SUN), at(a, long ? R - 8 : STAR_RING - 1.4)];
+      const opts = { holes: starHoles, under: rayStraps, rings: [[STAR_RING, GAP]] as [number, number][] };
+      return line(l, tip, opts) + line(r, tip, opts) + line(base, tip, { ...opts, worn: false }) + hatch(base, l, tip, 0.55, opts);
+    }).join('');
+  // Fine rays between, half as long.
+  const FINE = Array.from({ length: 14 }, (_, k) => {
+    const a = ((k + 0.5) / 14) * 360;
+    return line(at(a, SUN + 1), at(a, SUN + 10), { worn: false });
+  }).join('');
+
+  // The heart: a compass star of eight points from a ring round the eye,
+  // each hatched down one side.
+  const EYE = 15;
+  const COMPASS = Array.from({ length: 8 }, (_, k) => {
     const a = k * 45;
-    const tip = at(a, k % 2 ? 19 : 29);
-    const l = at(a - 22.5, 6);
-    const r = at(a + 22.5, 6);
-    return `M${l.map(f).join(' ')}L${tip.map(f).join(' ')}L${r.map(f).join(' ')}M0 0L${tip.map(f).join(' ')}`;
+    const tip = at(a, k % 2 ? 22 : 28.5);
+    const base = at(a, EYE);
+    const l = at(a - 22.5, EYE / Math.cos(rad(22.5)));
+    const r = at(a + 22.5, EYE / Math.cos(rad(22.5)));
+    return `M${pt(l)}L${pt(tip)}L${pt(r)}M${pt(base)}L${pt(tip)}` + hatch(base, l, tip, 0.6);
   }).join('');
-  const RAYS = Array.from({ length: 16 }, (_, k) => {
-    const a = k * 22.5;
-    const p = (da: number, r: number) => at(a + da, r).map(f).join(' ');
-    // A pointed ray, or a flame that waves out to its tip.
-    if (k % 2 === 0) return `M${p(-4.2, SUN)}L${p(0, INNER - 1.5)}L${p(4.2, SUN)}M${p(0, SUN)}L${p(0, INNER - 6)}`;
-    return (
-      `M${p(-3.2, SUN)}C${p(4, SUN + 4)} ${p(-5, SUN + 8)} ${p(0.5, SUN + 11)}` +
-      `S${p(-1, SUN + 14)} ${p(0, INNER - 4)}` +
-      `C${p(1.5, SUN + 13)} ${p(-1.5, SUN + 10)} ${p(4, SUN + 7)}S${p(0, SUN + 3)} ${p(3.2, SUN)}`
-    );
-  }).join('');
+
+  // The eye: an almond under a lashed lid, the iris engraved in rays.
+  const LIDS = 'M-11.5 0A14.02 14.02 0 0 1 11.5 0A15.73 15.73 0 0 1 -11.5 0Z';
+  const LASHES = [-38, -19, 0, 19, 38]
+    .map((phi) => {
+      const [s, c] = [Math.sin(rad(phi)), Math.cos(rad(phi))];
+      const p: Pt = [14.02 * s, 8.02 - 14.02 * c];
+      const len = phi === 0 ? 2.6 : 2.1;
+      return `M${pt(p)}L${pt([p[0] + s * len, p[1] - c * len])}`;
+    })
+    .join('');
+  // Everything that wears, drawn twice: worn for the lines, whole for
+  // the glow under them.
+  const drawing = (worn: boolean) => {
+    wearing = worn;
+    wearSeed = 5;
+    return {
+      band: [ring(97.5), ring(BAND_OUT, bandHoles), ring(BAND_IN, bandHoles)],
+      star: straps
+        .map((_, i) => [1, -1].map((side) => line(...edgeOf(i, side), { holes: starHoles, under: unders[i] })).join(''))
+        .join(''),
+      starRing: ring(STAR_RING, starHoles),
+      rays: rays(),
+      sun: ring(SUN),
+      sunInner: ring(SUN - 1.6),
+      eyeRing: ring(EYE),
+    };
+  };
+  const CLEAN = drawing(false);
+  const WORN = drawing(true);
+  wearing = false;
+  type Drawing = typeof WORN;
+
+  const IRIS = Array.from({ length: 24 }, (_, k) => line(at(k * 15, 2.4), at(k * 15, 4.4), { worn: false })).join('');
 </script>
 
-{#snippet band()}
-  <path d={ring(97.5)} class="draw thin" pathLength="100" />
-  <path d={ring(BAND_OUT, bandHoles)} class="draw" pathLength="100" />
-  <path d={ring(BAND_IN, bandHoles)} class="draw" pathLength="100" />
+{#snippet band(p: Drawing)}
+  {#each p.band as d, k (k)}
+    <path {d} class={k ? 'draw' : 'draw thin'} pathLength="100" />
+  {/each}
   {#each seals as s (s.a)}
     <circle cx={f(s.x)} cy={f(s.y)} r={SEAL} class="draw" pathLength="100" />
     <circle cx={f(s.x)} cy={f(s.y)} r={SEAL - 1.2} class="draw hair" pathLength="100" />
@@ -191,9 +361,11 @@
   {/each}
 {/snippet}
 
-{#snippet star()}
-  <path d={STAR} class="draw" pathLength="100" />
-  <path d={STAR_RING} class="draw thin" pathLength="100" />
+{#snippet star(p: Drawing)}
+  <path d={p.star} class="draw thin" pathLength="100" />
+  <path d={p.starRing} class="draw thin" pathLength="100" />
+  <path d={p.rays} class="draw hair" pathLength="100" />
+  <path d={FINE} class="draw hair" pathLength="100" />
   {#each [sol, luna] as [x, y], k (k)}
     <circle cx={f(x)} cy={f(y)} r={BIG} class="draw" pathLength="100" />
     <circle cx={f(x)} cy={f(y)} r={BIG - 1.6} class="draw hair" pathLength="100" />
@@ -203,30 +375,34 @@
     <circle r="1.1" class="sign" />
     <path d={SOL_RAYS} class="sign" />
   </g>
-  <path d={PLANETS[1]} transform="translate({f(luna[0])} {f(luna[1])}) rotate(180) scale(2.2)" class="sign" style:--k="2.2" />
+  <g transform="translate({f(luna[0])} {f(luna[1])}) rotate(180)">
+    <path d={LUNA} class="sign" />
+    <path d={LUNA_HATCH} class="sign hatch" />
+  </g>
 {/snippet}
 
-{#snippet heart()}
-  <path d={HEART} class="draw thin" pathLength="100" />
-  <path d={ring(SUN)} class="draw thin" pathLength="100" />
-  <path d={ring(SUN - 2)} class="draw hair" pathLength="100" />
-  <path d={RAYS} class="draw thin" pathLength="100" />
-  <path d={ring(24)} class="dashed" />
+{#snippet heart(p: Drawing)}
+  <path d={p.sun} class="draw thin" pathLength="100" />
+  <path d={p.sunInner} class="draw hair" pathLength="100" />
+  <path d={p.eyeRing} class="draw thin" pathLength="100" />
+  <path d={COMPASS} class="draw hair" pathLength="100" />
+{/snippet}
+
+{#snippet eye(_: Drawing)}
+  <path d={LIDS} class="draw thin" pathLength="100" />
+  <path d={LASHES} class="sign" />
+  <circle r="4.6" class="sign" />
+  <path d={IRIS} class="sign hatch" />
+  <circle r="1.9" class="pupil" />
 {/snippet}
 
 <div class="arcane {state}" aria-hidden="true" style:--size={size} style:color={color} style:opacity={strength}>
-  <div class="layer band">
-    <svg class="glow" viewBox="-100 -100 200 200">{@render band()}</svg>
-    <svg viewBox="-100 -100 200 200">{@render band()}</svg>
-  </div>
-  <div class="layer star">
-    <svg class="glow" viewBox="-100 -100 200 200">{@render star()}</svg>
-    <svg viewBox="-100 -100 200 200">{@render star()}</svg>
-  </div>
-  <div class="layer heart">
-    <svg class="glow" viewBox="-100 -100 200 200">{@render heart()}</svg>
-    <svg viewBox="-100 -100 200 200">{@render heart()}</svg>
-  </div>
+  {#each [band, star, heart, eye] as layer, k (k)}
+    <div class="layer {['band', 'star', 'heart', 'eye'][k]}">
+      <svg class="glow" viewBox="-100 -100 200 200">{@render layer(CLEAN)}</svg>
+      <svg viewBox="-100 -100 200 200">{@render layer(WORN)}</svg>
+    </div>
+  {/each}
 </div>
 
 <style>
@@ -281,21 +457,28 @@
     stroke-linejoin: miter;
     stroke-miterlimit: 12;
   }
+  /* A circle has no ends, but its dash for the drawing does. */
+  circle {
+    stroke-linecap: round;
+  }
   .thin {
     stroke-width: 0.35;
   }
   .hair {
     stroke-width: 0.22;
   }
-  .dashed {
-    stroke-width: 0.3;
-    stroke-dasharray: 6 2 0.5 2;
-  }
   /* A sign drawn at k times its size keeps the same line. */
   .sign {
     stroke-width: calc(0.42px / var(--k, 1));
     stroke-linecap: round;
     stroke-linejoin: round;
+  }
+  .hatch {
+    stroke-width: 0.22;
+  }
+  .pupil {
+    fill: currentColor;
+    stroke: none;
   }
   /* The glow: the same strokes, wide and faint, on their own layer so it
      can breathe without repainting. */
@@ -310,7 +493,7 @@
     stroke-width: calc(2px / var(--k, 1));
   }
   .glow :global(.hair),
-  .glow :global(.dashed) {
+  .glow :global(.hatch) {
     stroke-width: 1;
   }
   .draw {
@@ -323,10 +506,13 @@
   .heart .draw {
     animation-delay: 0.6s;
   }
-  /* The signs, the script and the dashed ring are set down once the lines
-     are drawn. */
+  .eye .draw {
+    animation-delay: 0.9s;
+  }
+  /* The signs, the script and the eye are set down once the lines are
+     drawn. */
   .sign,
-  .dashed {
+  .pupil {
     animation: carve 1s 1.3s var(--ease-out) both;
   }
   @keyframes breathe {
