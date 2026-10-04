@@ -131,7 +131,8 @@
           {/if}
         {:else if session.mode === 'local'}
           <span>Hot-seat</span>
-        {:else if session.code}
+        {:else if session.code && screen !== 'lobby'}
+          <!-- The lobby shows the code in big letters. -->
           <span>Room <b>{session.hideCode ? '••••••' : session.code}</b></span>
         {/if}
       </div>
