@@ -1,16 +1,21 @@
 <script module lang="ts">
-  // The plate behind a unique's name, after the game's own: a framed bar
-  // whose ends are gothic tracery, drawn in the hand of the site's gilded
-  // corners (a bright line shading off, a dimmer one inside it) with a soft
-  // glow under the lines, as on the alchemist's circle.
+  // The plate behind a unique's name, after the game's own and in the hand
+  // of the alchemist's circle (ArcaneCircle): a framed bar whose ends are
+  // gothic tracery holding the circle's two great seals, drawn with a soft
+  // glow under the lines.
   // • The frame: a double rule, its corners cut like the panels' filigree,
   //   drawn out from the ends to meet under the name.
-  // • The ends: three cusped ogees, one inside another, their lobes swelling
-  //   like flames and all pointing in at the name, with a mouchette (a
-  //   curved dagger of tracery) in each corner. The innermost ogee holds an
-  //   ember that lights when the item is known.
-  // • The field: a net of ogees, as in late gothic tracery, faint and
-  //   fainter still under the name.
+  // • The ends: cusped ogees, one inside another, their lobes swelling like
+  //   flames and pointing in at the name, a mouchette (a curved dagger of
+  //   tracery) in each corner, and set over them a seal, Sol on the left and
+  //   Luna on the right as on the circle, the tracery stopping short of it.
+  //   A small flame runs from each seal towards the name. The signs stay
+  //   dark until the item is known, then flare.
+  // • The field: a net of ogees, as in late gothic tracery, with the
+  //   circle's unreadable script in its cells, faint and fainter still
+  //   under the name.
+
+  import { LUNA, LUNA_HATCH, MARKS, SOL_RAYS } from '../lib/alchemy';
 
   type Pt = [number, number];
   const f = (v: number) => v.toFixed(2);
@@ -52,26 +57,30 @@
   }
 
   /**
-   * Arcs from point to point, meeting in cusps, each bulging out (to the
-   * left, going along) by `bulge[i]` of its chord; a negative bulge curves in.
+   * Points along an arc from `p` to `q` bulging out (to the left, going
+   * along) by `bulge` of the chord; a negative bulge curves in.
    */
-  function lobes(pts: Pt[], bulge: number[]) {
-    let d = '';
-    for (let i = 1; i < pts.length; i++) {
-      const c = dist(pts[i - 1], pts[i]);
-      const s = Math.abs(bulge[i - 1]) * c;
-      const r = (c * c) / (8 * s) + s / 2;
-      d += `A${f(r)} ${f(r)} 0 0 ${bulge[i - 1] > 0 ? 1 : 0} ${pt(pts[i])}`;
-    }
-    return d;
+  function arc(p: Pt, q: Pt, bulge: number, n = 10): Pt[] {
+    const c = dist(p, q);
+    const s = Math.abs(bulge) * c;
+    const r = (c * c) / (8 * s) + s / 2;
+    const [ux, uy] = [(q[0] - p[0]) / c, (q[1] - p[1]) / c];
+    const side = Math.sign(bulge);
+    // The centre lies away from the bulge, r less the bulge from the chord's middle.
+    const o: Pt = [(p[0] + q[0]) / 2 - uy * side * (r - s), (p[1] + q[1]) / 2 + ux * side * (r - s)];
+    const a0 = Math.atan2(p[1] - o[1], p[0] - o[0]);
+    let da = Math.atan2(q[1] - o[1], q[0] - o[0]) - a0;
+    da = Math.atan2(Math.sin(da), Math.cos(da));
+    return Array.from({ length: n + 1 }, (_, k) => [o[0] + r * Math.cos(a0 + (da * k) / n), o[1] + r * Math.sin(a0 + (da * k) / n)] as Pt);
   }
 
   /**
    * A cusped ogee lying on its side: from its foot at `x0` it swells to
-   * `h` either side, its edges broken into `n` lobes, then draws in, the
-   * line turning hollow, to a sharp point at `x1`. Clockwise, from the foot.
+   * `h` either side, its edges broken into `n` lobes meeting in cusps, then
+   * draws in, the line turning hollow, to a sharp point at `x1`. Its
+   * outline as points, clockwise from the foot.
    */
-  function ogee(x0: number, x1: number, h: number, n: number, bulge = 0.2) {
+  function ogee(x0: number, x1: number, h: number, n: number, bulge = 0.2): Pt[] {
     const w = x1 - x0;
     const edge = smooth([
       [x0, 0],
@@ -82,25 +91,44 @@
       [x1, 0],
     ]);
     // The lobes along the swell, and the last stretch to the point hollow.
-    const top = [...even(edge.slice(0, Math.round(edge.length * 0.8)), n), [x1, 0] as Pt];
-    const bulges = [...top.slice(2).map(() => bulge), -0.09];
-    const bottom = flipY(top).reverse();
-    return `M${pt(top[0])}${lobes(top, bulges)}${lobes(bottom, [...bulges].reverse())}Z`;
+    const knots = [...even(edge.slice(0, Math.round(edge.length * 0.8)), n), [x1, 0] as Pt];
+    const top = knots.slice(1).flatMap((q, i) => arc(knots[i], q, i === knots.length - 2 ? -0.09 : bulge).slice(i ? 1 : 0));
+    return [...top, ...flipY(top).reverse().slice(1)];
+  }
+
+  /** A line through `pts`, broken where it passes within `r` of `c` (it stops short of a seal there). */
+  function around(pts: Pt[], c: Pt, r: number) {
+    const pieces: Pt[][] = [[]];
+    for (const p of pts) {
+      if (dist(p, c) < r) {
+        if (pieces.at(-1)!.length) pieces.push([]);
+      } else pieces.at(-1)!.push(p);
+    }
+    return pieces.filter((q) => q.length > 1).map(poly).join('');
   }
 
   // ---- the end (the left one; the right is its mirror) ----------------------
   // In pixels: the plate's edge at x 0, its middle at y 0. Plates are 64 high.
 
+  /** The seal: its middle (the dialog's close button sits there, `SOCKET_X` in from the plate's edge) and ring. */
+  export const SOCKET_X = 17.5;
+  const SEAL: Pt = [SOCKET_X, 0];
+  const SEAL_R = 7.6;
+  /** The circle's signs are drawn for a ring of 13. */
+  const SIGN_SCALE = SEAL_R / 13;
+  const CLEAR = SEAL_R + 1.4;
+
   /** The ogees, outermost first (foot, point, half-height, lobes a side), each with a dimmer line inside. */
-  const OGEES = [
+  const OGEE_LINES = [
     [3.5, 52, 15, 3],
     [3.5, 43.5, 10, 3],
-    [3.5, 35, 5.6, 2],
-  ].map(([x0, x1, h, n]) => ({ line: ogee(x0, x1, h, n), inner: ogee(x0 + 2.4, x1 - 2.8, h - 2.2, n) }));
-  /** The ember in the innermost ogee. */
-  const EMBER = ogee(6.5, 31.5, 3.2, 2, 0.08);
-  /** How far in from the plate's edge the middle of the innermost ogee is (where the dialog's close button sits). */
-  export const SOCKET_X = 17;
+  ].flatMap(([x0, x1, h, n]) => [ogee(x0, x1, h, n), ogee(x0 + 2.4, x1 - 2.8, h - 2.2, n)]);
+  const OGEES = OGEE_LINES.filter((_, k) => k % 2 === 0).map((o) => around(o, SEAL, CLEAR));
+  const OGEES_IN = OGEE_LINES.filter((_, k) => k % 2 === 1).map((o) => around(o, SEAL, CLEAR));
+  const HOLLOW = poly(OGEE_LINES[0]) + 'Z';
+  /** The flame from the seal towards the name. */
+  const FLAME = poly(ogee(SEAL[0] + SEAL_R + 0.9, 40.5, 3.6, 1, 0.14)) + 'Z';
+  const FLAME_IN = poly(ogee(SEAL[0] + SEAL_R + 2.6, 37.5, 1.7, 1, 0.1)) + 'Z';
 
   // A mouchette in each corner: a teardrop of tracery, its head tucked under
   // the rule, its tail sweeping down along the outer ogee to their foot.
@@ -138,52 +166,81 @@
   // Reticulated tracery, the net of ogees in late gothic windows: waves
   // rising and falling against their mirror images, touching crest to
   // trough, so that every cell is an ogee lying on its side like the ends'.
-  // Each wave is a moulding of two lines, with a bead in every cell.
+  // Each wave is a moulding of two lines. In the cells between a wave and
+  // its mirror, the circle's script, a mark to a cell from a fixed seed; in
+  // the cells between rows, a bead.
 
   const BAY = 36;
+  const TILE = 2 * BAY;
   const AMP = 6.5;
   const ROW = 2 * AMP;
+  const ROWS = [-2, -1, 0, 1, 2];
   const wave = (c: number, sign: number, dy: number) =>
-    poly(Array.from({ length: 49 }, (_, k) => [(k / 48) * BAY, c + dy + sign * AMP * Math.sin((2 * Math.PI * k) / 48)] as Pt));
-  const NET = [-2, -1, 0, 1, 2]
-    .flatMap((r) => [1, -1].flatMap((sign) => [-0.7, 0.7].map((dy) => wave(r * ROW, sign, dy))))
+    poly(Array.from({ length: 97 }, (_, k) => [(k / 96) * TILE, c + dy + sign * AMP * Math.sin((4 * Math.PI * k) / 96)] as Pt));
+  const NET = ROWS.flatMap((r) => [1, -1].flatMap((sign) => [-0.7, 0.7].map((dy) => wave(r * ROW, sign, dy)))).join('');
+  let seed = 11;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const NET_MARKS = [-1, 0, 1].flatMap((r) =>
+    [0.25, 0.75, 1.25, 1.75].map((x) => ({ x: x * BAY, y: r * ROW, d: MARKS[Math.floor(rnd() * MARKS.length)] })),
+  );
+  const NET_BEADS = [-1.5, -0.5, 0.5, 1.5]
+    .flatMap((r) => [0, 0.5, 1, 1.5, 2].map((x) => `M${f(x * BAY)} ${f(r * ROW - 0.8)}a0.8 0.8 0 1 1 0 1.6a0.8 0.8 0 1 1 0 -1.6Z`))
     .join('');
-  // The beads: in the middle of each cell between a wave and its mirror.
-  const NET_BEADS = [-2, -1, 0, 1, 2]
-    .flatMap((r) => [BAY / 4, (3 * BAY) / 4].map((x) => [x, r * ROW] as Pt))
-    .map(([x, y]) => `M${f(x - 1)} ${f(y)}L${f(x)} ${f(y - 1.6)}L${f(x + 1)} ${f(y)}L${f(x)} ${f(y + 1.6)}Z`)
-    .join('');
-  const NET_RULES = [-19, -21, 19, 21].map((y) => `M-1 ${y}H${BAY + 1}`).join('');
+  const NET_RULES = [-19, -21, 19, 21].map((y) => `M-1 ${y}H${TILE + 1}`).join('');
 </script>
 
 <script lang="ts">
-  // `lit` lights the embers (an unidentified item keeps them dark until the
-  // reveal, when they flare); `end` is what the right end holds: an ember,
-  // or nothing, for a button to sit there (the dialog's close; see SOCKET_X).
-  let { lit = true, end = 'ember' }: { lit?: boolean; end?: 'ember' | 'empty' } = $props();
+  // `lit` lights the seals' signs (an unidentified item keeps them dark
+  // until the reveal, when they flare); `end` is what the right seal holds:
+  // Luna, or nothing, for a button to sit in it (the dialog's close; see
+  // SOCKET_X).
+  let { lit = true, end = 'luna' }: { lit?: boolean; end?: 'luna' | 'empty' } = $props();
 
   const uid = $props.id();
   const id = (n: string) => `${uid}-${n}`;
 </script>
 
 <!-- One end of the plate. -->
-{#snippet cap(holds: 'ember' | 'empty')}
-  <path d={OGEES[0].line} class="hollow" />
+{#snippet cap(sign: 'sol' | 'luna' | 'empty')}
+  <path d={HOLLOW} class="hollow" />
   <path d={CORNERS} class="hollow" />
-  {#if holds === 'ember'}
-    <path d={EMBER} class="ember" style:fill="url(#{id('ember')})" />
-  {/if}
-  {#each OGEES as o, k (k)}
-    <path d={o.line} class="draw gilt" style:--d="{0.15 + k * 0.12}s" pathLength="100" />
-    <path d={o.inner} class="draw dim" style:--d="{0.3 + k * 0.12}s" pathLength="100" />
+  {#each OGEES as d, k (k)}
+    <path {d} class="draw gilt" style:--d="{0.15 + k * 0.12}s" pathLength="100" />
+    <path d={OGEES_IN[k]} class="draw dim" style:--d="{0.3 + k * 0.12}s" pathLength="100" />
   {/each}
   <path d={CORNERS} class="draw gilt" style:--d="0.1s" pathLength="100" />
   <path d={CORNERS_IN} class="draw dim" style:--d="0.25s" pathLength="100" />
+  <path d={FLAME} class="draw gilt" style:--d="0.5s" pathLength="100" />
+  <path d={FLAME_IN} class="draw dim" style:--d="0.6s" pathLength="100" />
+  <!-- The seal, pressed in like the circle's. -->
+  <g class="seal" style:--d="0.35s">
+    <g transform="translate({pt(SEAL)})">
+      <circle r={SEAL_R + 0.6} class="well" />
+      <circle r={SEAL_R + 3} class="bloom" style:fill="url(#{id('bloom')})" />
+      <circle r={SEAL_R} class="draw gilt" pathLength="100" />
+      <circle r={SEAL_R - 1.3} class="draw dim" pathLength="100" />
+      {#if sign !== 'empty'}
+        <g class="sign" transform="scale({f(SIGN_SCALE)})">
+          {#if sign === 'sol'}
+            <circle r="5" />
+            <circle r="1.1" />
+            <path d={SOL_RAYS} />
+          {:else}
+            <!-- Turned as on the circle, her horns facing out. -->
+            <g transform="rotate(180)">
+              <path d={LUNA} />
+              <path d={LUNA_HATCH} class="hatch" />
+            </g>
+          {/if}
+        </g>
+      {/if}
+    </g>
+  </g>
 {/snippet}
 
 {#snippet plate()}
   <!-- The ends, round the middle. -->
-  <svg y="50%" overflow="visible">{@render cap('ember')}</svg>
+  <svg y="50%" overflow="visible">{@render cap('sol')}</svg>
   <svg x="100%" y="50%" overflow="visible"><g transform="scale(-1 1)">{@render cap(end)}</g></svg>
   <!-- The frame, from the corners: the rules run from each end to the middle. -->
   {#each [false, true] as right (right)}
@@ -205,12 +262,15 @@
 <span class="plate" class:lit aria-hidden="true" style:--gilt="url(#{id('gilt')})">
   <svg class="field" width="100%" height="100%">
     <defs>
-      <clipPath id={id('band')}><rect x="-1" y="-19" width={BAY + 2} height="38" /></clipPath>
-      <pattern id={id('frieze')} patternUnits="userSpaceOnUse" width={BAY} height="64" x="50%" y="-32">
+      <clipPath id={id('band')}><rect x="-1" y="-19" width={TILE + 2} height="38" /></clipPath>
+      <pattern id={id('frieze')} patternUnits="userSpaceOnUse" width={TILE} height="64" x="50%" y="-32">
         <g transform="translate(0 32)">
           <g clip-path="url(#{id('band')})">
             <path d={NET} />
             <path d={NET_BEADS} class="bead" />
+            {#each NET_MARKS as m, k (k)}
+              <path d={m.d} transform="translate({f(m.x)} {f(m.y)}) scale(1.2)" class="mark" />
+            {/each}
           </g>
           <path d={NET_RULES} />
         </g>
@@ -230,10 +290,10 @@
         <stop offset="0.45" stop-color="#e59a58" />
         <stop offset="1" stop-color="#9a5226" />
       </linearGradient>
-      <radialGradient id={id('ember')} cx="0.42" cy="0.5" r="0.62">
-        <stop offset="0" stop-color="#ffe2b0" />
-        <stop offset="0.35" stop-color="#f39a48" />
-        <stop offset="1" stop-color="#a8441a" stop-opacity="0" />
+      <radialGradient id={id('bloom')}>
+        <stop offset="0" stop-color="#f7b56c" stop-opacity="0.9" />
+        <stop offset="0.5" stop-color="#ef9446" stop-opacity="0.4" />
+        <stop offset="1" stop-color="#ef9446" stop-opacity="0" />
       </radialGradient>
     </defs>
     {@render plate()}
@@ -286,8 +346,14 @@
     fill: var(--ink);
     stroke: none;
   }
+  pattern .mark {
+    stroke-width: 0.4;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
 
   path,
+  circle,
   line {
     fill: none;
     stroke-linecap: round;
@@ -313,6 +379,10 @@
     fill: rgba(10, 5, 2, 0.55);
   }
 
+  .well {
+    fill: #0d0703;
+  }
+
   /* The glow: the same lines, wide and faint (no filter, so nothing repaints). */
   .glow {
     opacity: 0.16;
@@ -328,21 +398,52 @@
     stroke-width: 1.6;
   }
   .glow .hollow,
-  .glow .ember,
+  .glow .well,
+  .glow .bloom,
   .glow .spark {
     display: none;
   }
 
-  /* The ember: dark until the item is known, then it flares and breathes. */
-  .ember {
-    opacity: 0.12;
+  /* The signs, engraved as on the circle: dark until the item is known,
+     then lit, with a bloom of light behind that flares and breathes. */
+  .sign :global(*) {
+    fill: none;
+    stroke: #7a4a2a;
+    stroke-width: 0.85;
+    vector-effect: non-scaling-stroke;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    transition: stroke 0.8s;
+  }
+  .sign .hatch {
+    stroke-width: 0.4;
+  }
+  .lit .sign :global(*) {
+    stroke: #ffdcaa;
+  }
+  .glow .sign :global(*) {
+    stroke: transparent;
+    stroke-width: 2.6;
+  }
+  .lit .glow .sign :global(*) {
+    stroke: #ffb066;
+  }
+  .bloom {
+    opacity: 0;
+    transform-box: fill-box;
+    transform-origin: center;
     transition: opacity 0.8s;
   }
-  .lit .ember {
-    opacity: 0.85;
+  .lit .bloom {
+    opacity: 0.5;
     animation:
       flare 1.3s ease-out both,
       breathe 6s 1.3s ease-in-out infinite alternate;
+  }
+  .seal {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: stamp 0.55s var(--d) var(--ease-out) both;
   }
 
   .draw {
@@ -352,7 +453,7 @@
   .fade {
     animation: fade 0.6s var(--d, 0s) ease-out both;
   }
-  /* A spark that runs along the outer rules, from the ends to the middle, as the embers light. */
+  /* A spark that runs along the outer rules, from the ends to the middle, as the seals light. */
   .spark {
     stroke: #fff0d6;
     stroke-width: 1.2;
@@ -376,21 +477,28 @@
   }
   @keyframes flare {
     from {
-      opacity: 0.12;
+      opacity: 0;
+      transform: scale(0.4);
     }
     25% {
-      opacity: 1;
+      opacity: 0.8;
     }
     to {
-      opacity: 0.85;
+      opacity: 0.5;
     }
   }
   @keyframes breathe {
     from {
-      opacity: 0.85;
+      opacity: 0.5;
     }
     to {
-      opacity: 0.5;
+      opacity: 0.25;
+    }
+  }
+  @keyframes stamp {
+    from {
+      opacity: 0;
+      transform: scale(1.6);
     }
   }
   @keyframes spark {
