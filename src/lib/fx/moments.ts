@@ -28,7 +28,7 @@ import { Shape } from './particles';
 import { budget, particle, task } from './core';
 import { light, pulseMood, setMood } from '../lights';
 import { CALM, embers as backdropEmbers } from '../backdropEmbers';
-import { blueOf } from './streaks';
+import { burnsBlue } from './streaks';
 
 const k3 = (c: Vec3, k: number): Vec3 => [c[0] * k, c[1] * k, c[2] * k];
 
@@ -444,16 +444,16 @@ export function scored(pill: Element, streak = 1) {
 /**
  * A player on a streak burns: their scoreboard entry is wreathed in fire,
  * with flames licking up off it. `heat` (0 to 1, from lib/fx/streaks) sets
- * how big: a faint smoulder at three in a row, a blaze by ten, turning
- * blue at the very top of a streak.
+ * how big: a faint smoulder at three in a row, growing to a blaze that
+ * turns blue at ten.
  * Returns a handle to put it out.
  */
 export function ablaze(row: Element, heat: number): Handle {
   if (!fxActive() || heat <= 0) return { stop() {} };
   // At the very top of a streak the fire burns blue.
-  const blue = blueOf(heat);
-  const flames = fire(row, { height: 6 + 66 * heat, intensity: 0.45 + 1.0 * heat, blue });
-  const sparkColors = blue > 0.5 ? [C.portal, C.portalPale] : [C.ember, C.gold];
+  const blue = burnsBlue(heat);
+  const flames = fire(row, { height: 6 + 66 * heat, intensity: 0.45 + 1.0 * heat, blue: blue ? 1 : 0 });
+  const sparkColors = blue ? [C.portal, C.portalPale] : [C.ember, C.gold];
   // Sparks spat out of the fire, drifting up.
   const rising = emitter(14 * heat, () =>
     embers(row, { count: 1, area: 'top', colors: sparkColors, size: [0.8, 1.8], rise: [70, 120 + 140 * heat], scatter: 30, life: [0.5, 0.9 + 0.6 * heat] }),
@@ -464,6 +464,15 @@ export function ablaze(row: Element, heat: number): Handle {
       rising.stop();
     },
   };
+}
+
+/** A streak reaches the top: the fire on a player's entry flares up and turns blue. */
+export function turnsBlue(row: Element) {
+  if (!fxActive()) return;
+  flash(row, { radius: 160, color: C.portal, intensity: 0.35, life: 0.6 });
+  ring(row, { radius: 140, thickness: 8, life: 0.6, color: C.portalPale, breakup: 0.6, intensity: 0.5 });
+  sparks(row, { count: 40, area: 'edge', colors: [C.portal, C.portalPale, C.whiteHot], speed: [150, 480], gravity: -60, life: [0.4, 0.9] });
+  embers(row, { count: 16, area: 'top', colors: [C.portal, C.portalPale], rise: [120, 280], life: [0.6, 1.3] });
 }
 
 /** A streak ends: the fire on a player's entry goes out in a puff of smoke. */

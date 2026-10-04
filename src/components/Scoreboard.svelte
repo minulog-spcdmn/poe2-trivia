@@ -7,9 +7,9 @@
   import { untrack } from 'svelte';
   import { fxActive } from '../lib/fx/core';
   import type { Handle } from '../lib/fx/core';
-  import { FILL_SPAN, FILL_START, SCORE_LANDS, ablaze, doused, lostPoint } from '../lib/fx/moments';
+  import { FILL_SPAN, FILL_START, SCORE_LANDS, ablaze, doused, lostPoint, turnsBlue } from '../lib/fx/moments';
   import { scoreRow, scoreRowOf } from '../lib/scoreRows';
-  import { blueOf, heatOf, streakOf } from '../lib/fx/streaks';
+  import { burnsBlue, heatOf, streakOf } from '../lib/fx/streaks';
 
   const s = $derived(session.state!);
   const target = $derived(s.settings.targetScore);
@@ -92,6 +92,7 @@
       fire?.stop(0.5);
       fire = next > 0 ? ablaze(node, next) : null;
       if (lit > 0 && next === 0) doused(node);
+      if (lit > 0 && !burnsBlue(lit) && burnsBlue(next)) turnsBlue(node);
       lit = next;
     };
     set(h);
@@ -127,7 +128,7 @@
       use:burn={fire}
       class:ablaze={fire > 0}
       style:--heat={fire}
-      style:--blue={blueOf(fire) > 0 ? 1 : 0}
+      style:--blue={burnsBlue(fire) ? 1 : 0}
       class:active class:out class:benched class:duelist class:offline={!p.connected} animate:flip={{ duration: 400 }} style:--c={playerColor(p.hue)}>
       <Avatar name={p.name} hue={p.hue} size={32} dim={!p.connected} />
       <div class="info">
@@ -221,7 +222,7 @@
   }
   /* On a streak: the entry smoulders under its flames (and still glows with effects off). */
   li.ablaze {
-    /* Orange, and blue once the fire's roots burn blue at the top of a streak. */
+    /* Orange, and blue at the top of a streak. */
     --flame: color-mix(in srgb, rgb(70, 140, 255) calc(var(--blue) * 100%), rgb(255, 110, 30));
     border-color: color-mix(in srgb, var(--flame) calc(50% + 50% * var(--heat)), transparent);
   }

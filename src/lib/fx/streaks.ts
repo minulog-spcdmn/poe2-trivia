@@ -47,11 +47,10 @@ export function heatOf(streak: number): number {
   return Math.min(1, (streak - ABLAZE_FROM + 1) / (ABLAZE_FULL - ABLAZE_FROM + 1));
 }
 
-/** From this many in a row the fire starts turning blue, roots first... */
-export const BLUE_FROM = 8;
+/** At this many in a row the fire turns blue, and stays blue while the streak lasts. */
+export const BLUE_FROM = ABLAZE_FULL;
 
-/** How blue the fire burns at `heat` (heatOf): 0 below BLUE_FROM, then a step per answer to 1 at ABLAZE_FULL. */
-export function blueOf(heat: number): number {
-  const from = heatOf(BLUE_FROM - 1);
-  return Math.min(1, Math.max(0, (heat - from) / (1 - from)));
+/** Whether a fire burning at `heat` (heatOf) burns blue. */
+export function burnsBlue(heat: number): boolean {
+  return heat > 0 && heat >= heatOf(BLUE_FROM);
 }

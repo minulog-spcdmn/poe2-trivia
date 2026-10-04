@@ -527,7 +527,7 @@ export function edgeGlow(o: { color?: Vec3; width?: number; life?: number; inten
 /**
  * Fire burning on an element: flames rising off its top, licking up its
  * ends, for as long as it's up. `height` is how tall the flames reach, px;
- * `blue` (0-1) turns it from orange to a hotter blue, roots first.
+ * `blue` (0-1) turns it from orange to a hotter blue.
  */
 export function fire(el: Element, o: { height?: number; intensity?: number; blue?: number; fadeIn?: number } = {}): Handle {
   const radius = parseFloat(getComputedStyle(el).borderTopLeftRadius) || 0;
