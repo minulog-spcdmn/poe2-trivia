@@ -35,6 +35,26 @@
   const at = (a: number, r: number): Pt => [r * Math.sin(rad(a)), -r * Math.cos(rad(a))];
   const lerp = (p: Pt, q: Pt, t: number): Pt => [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t];
 
+  /** A piece of a line, and where it runs along the whole (0 to 1). */
+  type Part = { d: string; from: number; to: number };
+  const joined = (parts: Part[]) => parts.map((p) => p.d).join('');
+  const sec = (v: number) => `${v.toFixed(3)}s`;
+  /**
+   * Timing for drawing a broken line in one stroke: each piece starts when
+   * the pen reaches it and draws at the pen's speed, the pen sweeping the
+   * whole in `t` seconds after `delay`, fast at first and slowing at the end.
+   * (A dash can't run on from one piece to the next by itself.)
+   */
+  const stroke = (parts: Part[], delay: number, t: number) => {
+    const when = (y: number) => 1 - Math.sqrt(1 - Math.min(1, Math.max(0, y)));
+    return parts.map(({ d, from, to }) => ({
+      d,
+      delay: sec(delay + when(from) * t),
+      t: sec(Math.max(0.03 * t, (when(to) - when(from)) * t)),
+    }));
+  };
+  type Stroke = ReturnType<typeof stroke>;
+
   /** What's left of [lo, hi] once the `cuts` are taken out. */
   const subtract = (lo: number, hi: number, cuts: Cut[]) => {
     let parts: Cut[] = [[lo, hi]];
@@ -89,7 +109,7 @@
    * A straight line, broken where it meets a hole or passes under a strap
    * or a ring about the centre (`rings`: radius and half-width).
    */
-  const line = (
+  const lineParts = (
     p: Pt,
     q: Pt,
     {
@@ -112,13 +132,12 @@
       if (outer) all.push(...(inner ? ([[outer[0], inner[0]], [inner[1], outer[1]]] as Cut[]) : [outer]));
     }
     if (worn) all.push(...nicks(Math.hypot(dx, dy)));
-    return subtract(0, 1, all)
-      .map(([t0, t1]) => `M${pt(lerp(p, q, t0))}L${pt(lerp(p, q, t1))}`)
-      .join('');
+    return subtract(0, 1, all).map(([t0, t1]) => ({ d: `M${pt(lerp(p, q, t0))}L${pt(lerp(p, q, t1))}`, from: t0, to: t1 }));
   };
+  const line = (...args: Parameters<typeof lineParts>) => joined(lineParts(...args));
 
   /** A circle about the centre, broken wherever it passes through a hole. */
-  const ring = (r: number, holes: Hole[] = [], worn = true) => {
+  const ringParts = (r: number, holes: Hole[] = [], worn = true): Part[] => {
     const cuts: Cut[] = [];
     for (const h of holes) {
       const d = Math.hypot(h.x, h.y);
@@ -135,19 +154,18 @@
     // Join the arc that ends at the top to the one that starts there, so
     // the ring has no seam.
     if (arcs.length > 1 && arcs[0][0] === 0 && arcs.at(-1)![1] === 360) arcs.push([arcs.pop()![0], arcs.shift()![1] + 360]);
-    return arcs
-      .map(([a0, a1]) => {
-        // Arcs under 180° each, so the sweep flags never need to change.
-        const n = Math.ceil((a1 - a0) / 170);
-        let d = `M${pt(at(a0, r))}`;
-        for (let k = 1; k <= n; k++) d += `A${r} ${r} 0 0 1 ${pt(at(a0 + ((a1 - a0) * k) / n, r))}`;
-        return a1 - a0 >= 360 ? d + 'Z' : d;
-      })
-      .join('');
+    return arcs.map(([a0, a1]) => {
+      // Arcs under 180° each, so the sweep flags never need to change.
+      const n = Math.ceil((a1 - a0) / 170);
+      let d = `M${pt(at(a0, r))}`;
+      for (let k = 1; k <= n; k++) d += `A${r} ${r} 0 0 1 ${pt(at(a0 + ((a1 - a0) * k) / n, r))}`;
+      return { d: a1 - a0 >= 360 ? d + 'Z' : d, from: a0 / 360, to: a1 / 360 };
+    });
   };
+  const ring = (...args: Parameters<typeof ringParts>) => joined(ringParts(...args));
 
   /** Engraver's shading: lines across the triangle `o`, `l`, `t`, parallel to its side from `o` to `t`. */
-  const hatch = (o: Pt, l: Pt, t: Pt, gap: number, opts: Parameters<typeof line>[2] = {}) => {
+  const hatch = (o: Pt, l: Pt, t: Pt, gap: number, opts: Parameters<typeof lineParts>[2] = {}) => {
     const n = Math.floor(Math.hypot(l[0] - o[0], l[1] - o[1]) / gap);
     return Array.from({ length: n }, (_, i) => {
       const s = (i + 1) / (n + 1);
@@ -292,8 +310,15 @@
       const long = k % 2 === 0;
       const [base, l, r, tip] = [at(a, SUN), at(a - (long ? 4.5 : 3.6), SUN), at(a + (long ? 4.5 : 3.6), SUN), at(a, long ? R - 8 : STAR_RING - 1.4)];
       const opts = { holes: starHoles, under: rayStraps, rings: [[STAR_RING, GAP]] as [number, number][] };
-      return line(l, tip, opts) + line(r, tip, opts) + line(base, tip, { ...opts, worn: false }) + hatch(base, l, tip, 0.55, opts);
-    }).join('');
+      const delay = 0.7 + k * 0.035;
+      return {
+        lines: [lineParts(l, tip, opts), lineParts(r, tip, opts), lineParts(base, tip, { ...opts, worn: false })].flatMap((parts) =>
+          stroke(parts, delay, long ? 0.6 : 0.4),
+        ),
+        hatch: hatch(base, l, tip, 0.55, opts),
+        delay: sec(delay + 0.25),
+      };
+    });
   // Fine rays between, half as long.
   const FINE = Array.from({ length: 14 }, (_, k) => {
     const a = ((k + 0.5) / 14) * 360;
@@ -312,31 +337,80 @@
     return `M${pt(l)}L${pt(tip)}L${pt(r)}M${pt(base)}L${pt(tip)}` + hatch(base, l, tip, 0.6);
   }).join('');
 
-  // The eye: an almond under a lashed lid, the iris engraved in rays.
-  const LIDS = 'M-11.5 0A14.02 14.02 0 0 1 11.5 0A15.73 15.73 0 0 1 -11.5 0Z';
-  const LASHES = [-38, -19, 0, 19, 38]
-    .map((phi) => {
-      const [s, c] = [Math.sin(rad(phi)), Math.cos(rad(phi))];
-      const p: Pt = [14.02 * s, 8.02 - 14.02 * c];
-      const len = phi === 0 ? 2.6 : 2.1;
-      return `M${pt(p)}L${pt([p[0] + s * len, p[1] - c * len])}`;
+  // The eye, after the Eye of Providence: an almond whose upper lid is cut
+  // twice and shades the eyeball below it in fine arcs; the iris half
+  // hooded, ringed and streaked, with a catchlight in the pupil; and a glory
+  // of fine rays about it. Each lid is an arc of a circle through the
+  // corners (±12, 0) and the given height at the middle.
+  const lid = (h: number) => {
+    const r = (144 + h * h) / (2 * Math.abs(h));
+    return { r, cy: h + Math.sign(-h) * r };
+  };
+  const [UPPER, LOWER, UPPER_RIM, LOWER_RIM] = [lid(-6.6), lid(5.4), lid(-7.7), lid(6.1)];
+  const ALMOND = `M-12 0A${f(UPPER.r)} ${f(UPPER.r)} 0 0 1 12 0A${f(LOWER.r)} ${f(LOWER.r)} 0 0 1 -12 0Z`;
+  const RIMS = `M-12 0A${f(UPPER_RIM.r)} ${f(UPPER_RIM.r)} 0 0 1 12 0M12 0A${f(LOWER_RIM.r)} ${f(LOWER_RIM.r)} 0 0 1 -12 0`;
+  /** How far from `p` along the unit `u` a ray leaves the circle about (0, cy). */
+  const exit = (p: Pt, u: Pt, { r, cy }: { r: number; cy: number }) => {
+    const [fx, fy] = [p[0], p[1] - cy];
+    const b = fx * u[0] + fy * u[1];
+    return -b + Math.sqrt(b * b - (fx * fx + fy * fy - r * r));
+  };
+  // Short strokes across the upper lid, from its edge to its rim.
+  const LID_HATCH = Array.from({ length: 23 }, (_, k) => {
+    const phi = -44 + k * 4;
+    const u: Pt = [Math.sin(rad(phi)), -Math.cos(rad(phi))];
+    const p: Pt = [UPPER.r * u[0], UPPER.cy + UPPER.r * u[1]];
+    const len = exit(p, u, UPPER_RIM);
+    return len > 0.25 ? `M${pt(p)}L${pt([p[0] + u[0] * len, p[1] + u[1] * len])}` : '';
+  }).join('');
+  // The lid's shadow on the eyeball: arcs under its edge, shorter as they fall.
+  const SHADOW = [1, 2, 3, 4]
+    .map((k) => {
+      const r = UPPER.r - k * 0.75;
+      const span = 40 - k * 8;
+      const p = (phi: number) => pt([r * Math.sin(rad(phi)), UPPER.cy - r * Math.cos(rad(phi))]);
+      return `M${p(-span)}A${f(r)} ${f(r)} 0 0 1 ${p(span)}`;
     })
     .join('');
+  const IRIS_Y = -1;
+  const IRIS_R = 6.2;
+  const STREAKS = Array.from({ length: 44 }, (_, k) => {
+    const a = (k / 44) * 360;
+    const [p, q] = [at(a, 2.5), at(a, k % 2 ? 4.6 : IRIS_R - 0.9)];
+    return `M${pt(p)}L${pt(q)}`;
+  }).join('');
+  const COLLARETTE =
+    'M' +
+    Array.from({ length: 73 }, (_, k) => {
+      const a = (k / 72) * 360;
+      return pt(at(a, 3.5 + 0.28 * Math.sin(rad(a * 9))));
+    }).join('L');
+  const PUPIL = 'M0 -2.2A2.2 2.2 0 1 1 0 2.2A2.2 2.2 0 1 1 0 -2.2ZM-0.8 -1.45A0.55 0.55 0 1 0 -0.8 -0.35A0.55 0.55 0 1 0 -0.8 -1.45Z';
+  // The glory: rays from just off the lids out to the ring, long and short.
+  const GLORY = Array.from({ length: 48 }, (_, k) => {
+    const a = ((k + 0.5) / 48) * 360;
+    const u = at(a, 1);
+    const from = exit([0, 0], u, u[1] < 0 ? UPPER_RIM : LOWER_RIM) + 1.4;
+    const to = k % 2 ? EYE - 2.6 : EYE - 1.2;
+    return to - from > 1 ? `M${pt([u[0] * from, u[1] * from])}L${pt([u[0] * to, u[1] * to])}` : '';
+  }).join('');
+
   // Everything that wears, drawn twice: worn for the lines, whole for
   // the glow under them.
   const drawing = (worn: boolean) => {
     wearing = worn;
     wearSeed = 5;
     return {
-      band: [ring(97.5), ring(BAND_OUT, bandHoles), ring(BAND_IN, bandHoles)],
-      star: straps
-        .map((_, i) => [1, -1].map((side) => line(...edgeOf(i, side), { holes: starHoles, under: unders[i] })).join(''))
-        .join(''),
-      starRing: ring(STAR_RING, starHoles),
+      key: worn ? 'w' : 'c',
+      band: [ringParts(97.5), ringParts(BAND_OUT, bandHoles), ringParts(BAND_IN, bandHoles)].map((parts, k) => stroke(parts, 0.55 + k * 0.1, 1.1)),
+      straps: straps.flatMap((_, i) =>
+        [1, -1].map((side) => stroke(lineParts(...edgeOf(i, side), { holes: starHoles, under: unders[i] }), 0.4 + i * 0.09, 0.5)),
+      ),
+      starRing: stroke(ringParts(STAR_RING, starHoles), 0.3, 0.9),
       rays: rays(),
-      sun: ring(SUN),
-      sunInner: ring(SUN - 1.6),
-      eyeRing: ring(EYE),
+      sun: stroke(ringParts(SUN), 0.15, 0.8),
+      sunInner: stroke(ringParts(SUN - 1.6), 0.2, 0.8),
+      eyeRing: stroke(ringParts(EYE), 0.05, 0.7),
     };
   };
   const CLEAN = drawing(false);
@@ -344,65 +418,119 @@
   wearing = false;
   type Drawing = typeof WORN;
 
-  const IRIS = Array.from({ length: 24 }, (_, k) => line(at(k * 15, 2.4), at(k * 15, 4.4), { worn: false })).join('');
+  const uid = $props.id();
 </script>
 
+<!--
+  The summoning, in seconds from the start: a light blooms at the centre,
+  the rings draw outward from the eye, the heptagram is traced strap by
+  strap, the sun's rays shoot out, the planets are stamped round the band
+  and the script written after them, and last of all the eye opens. Each
+  layer winds into place meanwhile, and the glow swells up under it all.
+-->
+
+{#snippet strokes(list: Stroke, cls = '')}
+  {#each list as { d, delay, t }, k (k)}
+    <path {d} class="draw piece {cls}" style:--d={delay} style:--t={t} pathLength="100" />
+  {/each}
+{/snippet}
+
 {#snippet band(p: Drawing)}
-  {#each p.band as d, k (k)}
-    <path {d} class={k ? 'draw' : 'draw thin'} pathLength="100" />
+  {#each p.band as list, k (k)}
+    {@render strokes(list, k ? '' : 'thin')}
   {/each}
-  {#each seals as s (s.a)}
-    <circle cx={f(s.x)} cy={f(s.y)} r={SEAL} class="draw" pathLength="100" />
-    <circle cx={f(s.x)} cy={f(s.y)} r={SEAL - 1.2} class="draw hair" pathLength="100" />
-    <path d={s.d} transform="translate({f(s.x)} {f(s.y)}) rotate({s.a}) scale(1.05)" class="sign" />
+  {#each seals as seal, k (seal.a)}
+    <g class="seal" style:--d={sec(0.95 + k * 0.07)}>
+      <g transform="translate({f(seal.x)} {f(seal.y)}) rotate({seal.a})">
+        <circle r={SEAL} class="draw" style:--t="0.5s" pathLength="100" />
+        <circle r={SEAL - 1.2} class="draw hair" style:--t="0.5s" pathLength="100" />
+        <path d={seal.d} transform="scale(1.05)" class="sign" />
+      </g>
+    </g>
   {/each}
-  {#each SCRIPT as m (m.a)}
-    <path d={m.d} transform="rotate({f(m.a)}) translate(0 -{BAND})" class="sign" />
+  {#each SCRIPT as m, k (m.a)}
+    <path d={m.d} transform="rotate({f(m.a)}) translate(0 -{BAND})" class="sign mark" style:--d={sec(1.15 + (k / SCRIPT.length) * 0.8)} />
   {/each}
 {/snippet}
 
 {#snippet star(p: Drawing)}
-  <path d={p.star} class="draw thin" pathLength="100" />
-  <path d={p.starRing} class="draw thin" pathLength="100" />
-  <path d={p.rays} class="draw hair" pathLength="100" />
-  <path d={FINE} class="draw hair" pathLength="100" />
-  {#each [sol, luna] as [x, y], k (k)}
-    <circle cx={f(x)} cy={f(y)} r={BIG} class="draw" pathLength="100" />
-    <circle cx={f(x)} cy={f(y)} r={BIG - 1.6} class="draw hair" pathLength="100" />
+  {@render strokes(p.starRing, 'thin')}
+  {#each p.straps as edge, k (k)}
+    {@render strokes(edge, 'thin')}
   {/each}
-  <g transform="translate({f(sol[0])} {f(sol[1])})">
-    <circle r="5" class="sign" />
-    <circle r="1.1" class="sign" />
-    <path d={SOL_RAYS} class="sign" />
+  {#each p.rays as ray, k (k)}
+    {@render strokes(ray.lines, 'hair')}
+    <path d={ray.hatch} class="draw hatch" style:--d={ray.delay} style:--t="0.5s" pathLength="100" />
+  {/each}
+  <path d={FINE} class="draw hair" style:--d="1s" style:--t="0.6s" pathLength="100" />
+  <g class="seal" style:--d="1s">
+    <g transform="translate({f(sol[0])} {f(sol[1])})">
+      <circle r={BIG} class="draw" style:--t="0.6s" pathLength="100" />
+      <circle r={BIG - 1.6} class="draw hair" style:--t="0.6s" pathLength="100" />
+      <circle r="5" class="sign" />
+      <circle r="1.1" class="sign" />
+      <path d={SOL_RAYS} class="sign" />
+    </g>
   </g>
-  <g transform="translate({f(luna[0])} {f(luna[1])}) rotate(180)">
-    <path d={LUNA} class="sign" />
-    <path d={LUNA_HATCH} class="sign hatch" />
+  <g class="seal" style:--d="1.12s">
+    <g transform="translate({f(luna[0])} {f(luna[1])}) rotate(180)">
+      <circle r={BIG} class="draw" style:--t="0.6s" pathLength="100" />
+      <circle r={BIG - 1.6} class="draw hair" style:--t="0.6s" pathLength="100" />
+      <path d={LUNA} class="sign" />
+      <path d={LUNA_HATCH} class="sign hatch" />
+    </g>
   </g>
 {/snippet}
 
 {#snippet heart(p: Drawing)}
-  <path d={p.sun} class="draw thin" pathLength="100" />
-  <path d={p.sunInner} class="draw hair" pathLength="100" />
-  <path d={p.eyeRing} class="draw thin" pathLength="100" />
-  <path d={COMPASS} class="draw hair" pathLength="100" />
+  {@render strokes(p.eyeRing, 'thin')}
+  {@render strokes(p.sun, 'thin')}
+  {@render strokes(p.sunInner, 'hair')}
+  <path d={COMPASS} class="draw hair" style:--d="0.3s" style:--t="0.9s" pathLength="100" />
 {/snippet}
 
-{#snippet eye(_: Drawing)}
-  <path d={LIDS} class="draw thin" pathLength="100" />
-  <path d={LASHES} class="sign" />
-  <circle r="4.6" class="sign" />
-  <path d={IRIS} class="sign hatch" />
-  <circle r="1.9" class="pupil" />
+{#snippet glory()}
+  <path d={GLORY} class="draw hair" style:--d="1.35s" style:--t="0.7s" pathLength="100" />
+{/snippet}
+
+{#snippet eye(p: Drawing)}
+  <defs>
+    <clipPath id="{uid}-{p.key}"><path d={ALMOND} /></clipPath>
+  </defs>
+  <g clip-path="url(#{uid}-{p.key})">
+    <g transform="translate(0 {IRIS_Y})">
+      <circle r={IRIS_R} class="iris" />
+      <circle r={IRIS_R - 0.7} class="hatch" />
+      <path d={STREAKS} class="hatch" />
+      <path d={COLLARETTE} class="hatch" />
+      <path d={PUPIL} class="pupil" />
+    </g>
+    <path d={SHADOW} class="hatch" />
+  </g>
+  <path d={ALMOND} class="lid" />
+  <path d={RIMS} class="hatch" />
+  <path d={LID_HATCH} class="hatch" />
 {/snippet}
 
 <div class="arcane {state}" aria-hidden="true" style:--size={size} style:color={color} style:opacity={strength}>
-  {#each [band, star, heart, eye] as layer, k (k)}
-    <div class="layer {['band', 'star', 'heart', 'eye'][k]}">
-      <svg class="glow" viewBox="-100 -100 200 200">{@render layer(CLEAN)}</svg>
-      <svg viewBox="-100 -100 200 200">{@render layer(WORN)}</svg>
+  <div class="summon">
+    <div class="bloom"></div>
+    {#each [band, star, heart] as layer, k (k)}
+      <div class="layer spin {['band', 'star', 'heart'][k]}">
+        <svg class="glow" viewBox="-100 -100 200 200">{@render layer(CLEAN)}</svg>
+        <svg viewBox="-100 -100 200 200">{@render layer(WORN)}</svg>
+      </div>
+    {/each}
+    <div class="layer">
+      <svg class="glow" viewBox="-100 -100 200 200">{@render glory()}</svg>
+      <svg viewBox="-100 -100 200 200">{@render glory()}</svg>
     </div>
-  {/each}
+    <div class="layer eye">
+      <svg class="glow" viewBox="-100 -100 200 200">{@render eye(CLEAN)}</svg>
+      <svg viewBox="-100 -100 200 200">{@render eye(WORN)}</svg>
+    </div>
+    <div class="wave"></div>
+  </div>
 </div>
 
 <style>
@@ -419,6 +547,7 @@
     transition:
       opacity 0.8s,
       color 0.8s;
+    --draw-ease: cubic-bezier(0.55, 0, 0.25, 1);
   }
   .arcane.good {
     opacity: 0.3;
@@ -428,26 +557,51 @@
     opacity: 0.16;
     color: #d98a6e;
   }
+  .summon,
   .layer,
-  svg {
+  svg,
+  .bloom,
+  .wave {
     position: absolute;
     inset: 0;
     width: 100%;
     height: 100%;
     overflow: visible;
   }
+  /* The whole circle settles in from a touch larger as it is drawn. */
+  .summon {
+    animation: settle 2.4s var(--ease-out) both;
+  }
   .layer {
     will-change: transform;
   }
+
+  /* Each ring turns its own way and speed, and first winds into place. */
   .band {
-    animation: turn 240s linear infinite;
+    --turn: 240s;
+    --from: -24deg;
   }
   .star {
-    animation: turn 160s linear infinite reverse;
+    --turn: 160s;
+    --dir: reverse;
+    --from: 40deg;
   }
   .heart {
-    animation: turn 100s linear infinite;
+    --turn: 100s;
+    --from: -70deg;
   }
+  .spin {
+    animation:
+      turn var(--turn) linear infinite var(--dir, normal),
+      wind 2.6s var(--ease-out) both;
+  }
+  /* A wrong answer jars the circle. */
+  .bad .spin {
+    animation:
+      turn var(--turn) linear infinite var(--dir, normal),
+      falter 0.7s var(--ease-out) both;
+  }
+
   path,
   circle {
     fill: none;
@@ -474,17 +628,38 @@
     stroke-linejoin: round;
   }
   .hatch {
-    stroke-width: 0.22;
+    stroke-width: 0.2;
+    stroke-linecap: round;
+  }
+  .lid {
+    stroke-width: 0.45;
+  }
+  .iris {
+    stroke-width: 0.35;
   }
   .pupil {
     fill: currentColor;
+    fill-rule: evenodd;
     stroke: none;
+    transform-box: fill-box;
+    transform-origin: center;
+    transition: transform 0.9s var(--ease-out);
   }
+  /* The eye widens at a right answer and narrows at a wrong one. */
+  .good .pupil {
+    transform: scale(1.3);
+  }
+  .bad .pupil {
+    transform: scale(0.72);
+  }
+
   /* The glow: the same strokes, wide and faint, on their own layer so it
-     can breathe without repainting. */
+     can breathe without repainting. It swells up as the circle is drawn. */
   .glow {
     opacity: 0.22;
-    animation: breathe 6s ease-in-out infinite alternate;
+    animation:
+      glow-in 1.4s 0.8s ease-out both,
+      breathe 6s 2.2s ease-in-out infinite alternate;
   }
   .glow :global(*) {
     stroke-width: 2;
@@ -496,31 +671,69 @@
   .glow :global(.hatch) {
     stroke-width: 1;
   }
+
   .draw {
     stroke-dasharray: 100;
-    animation: draw 2s var(--ease-out) both;
+    animation: draw var(--t, 1s) var(--d, 0s) var(--draw-ease) both;
   }
-  .star .draw {
-    animation-delay: 0.3s;
+  /* A piece of a longer stroke keeps the pen's pace (see stroke()). */
+  .piece {
+    animation-timing-function: linear;
   }
-  .heart .draw {
-    animation-delay: 0.6s;
+  /* Signs are set down once their lines are drawn. */
+  .sign {
+    animation: carve 0.6s calc(var(--d, 0s) + 0.3s) var(--ease-out) both;
   }
-  .eye .draw {
-    animation-delay: 0.9s;
+  .mark {
+    animation-duration: 0.35s;
+    animation-delay: var(--d);
   }
-  /* The signs, the script and the eye are set down once the lines are
-     drawn. */
-  .sign,
-  .pupil {
-    animation: carve 1s 1.3s var(--ease-out) both;
+  /* Seals are pressed in like a stamp. */
+  .seal {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: stamp 0.55s var(--d) var(--ease-out) both;
   }
-  @keyframes breathe {
+
+  /* The eye opens last, and now and then it blinks. */
+  .eye {
+    animation: open 0.8s 1.55s cubic-bezier(0.3, 1.35, 0.5, 1) both;
+  }
+  .eye svg {
+    animation: blink 9s 5s infinite;
+  }
+  .eye .glow {
+    animation:
+      glow-in 1.4s 0.8s ease-out both,
+      breathe 6s 2.2s ease-in-out infinite alternate,
+      blink 9s 5s infinite;
+  }
+
+  /* A light at the centre: it blooms as the circle is summoned and flares
+     at a right answer, with a ring of light running out over the circle. */
+  .bloom {
+    background: radial-gradient(closest-side, color-mix(in srgb, currentColor 55%, transparent), transparent);
+    opacity: 0;
+    animation: bloom 1.5s ease-out both;
+  }
+  .good .bloom {
+    animation: flare 1.6s ease-out both;
+  }
+  .wave {
+    border: 1.5px solid currentColor;
+    border-radius: 50%;
+    box-shadow:
+      0 0 18px currentColor,
+      inset 0 0 18px currentColor;
+    opacity: 0;
+  }
+  .good .wave {
+    animation: wave 1.3s var(--ease-out) both;
+  }
+
+  @keyframes draw {
     from {
-      opacity: 0.14;
-    }
-    to {
-      opacity: 0.34;
+      stroke-dashoffset: 100;
     }
   }
   @keyframes carve {
@@ -528,14 +741,112 @@
       opacity: 0;
     }
   }
-  @keyframes draw {
+  @keyframes stamp {
     from {
-      stroke-dashoffset: 100;
+      opacity: 0;
+      transform: scale(1.6);
+    }
+  }
+  @keyframes settle {
+    from {
+      transform: scale(1.06);
+    }
+  }
+  @keyframes wind {
+    from {
+      transform: rotate(var(--from));
+    }
+  }
+  @keyframes falter {
+    20% {
+      transform: rotate(-2.5deg);
+    }
+    45% {
+      transform: rotate(1.6deg);
+    }
+    70% {
+      transform: rotate(-0.6deg);
     }
   }
   @keyframes turn {
     to {
       rotate: 360deg;
+    }
+  }
+  @keyframes open {
+    from {
+      opacity: 0;
+      scale: 1 0.05;
+    }
+    30% {
+      opacity: 1;
+    }
+  }
+  @keyframes blink {
+    0%,
+    94% {
+      scale: 1 1;
+    }
+    95.5% {
+      scale: 1 0.06;
+    }
+    97.5% {
+      scale: 1 1;
+    }
+  }
+  @keyframes glow-in {
+    from {
+      opacity: 0;
+    }
+    55% {
+      opacity: 0.42;
+    }
+    to {
+      opacity: 0.28;
+    }
+  }
+  @keyframes breathe {
+    from {
+      opacity: 0.28;
+    }
+    to {
+      opacity: 0.1;
+    }
+  }
+  @keyframes bloom {
+    from {
+      opacity: 0;
+      transform: scale(0.15);
+    }
+    25% {
+      opacity: 0.9;
+    }
+    to {
+      opacity: 0;
+      transform: scale(0.9);
+    }
+  }
+  @keyframes flare {
+    from {
+      opacity: 0;
+      transform: scale(0.3);
+    }
+    20% {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
+      transform: scale(1.1);
+    }
+  }
+  @keyframes wave {
+    from {
+      opacity: 1;
+      transform: scale(0.2);
+    }
+    to {
+      opacity: 0;
+      transform: scale(1.15);
     }
   }
 </style>
