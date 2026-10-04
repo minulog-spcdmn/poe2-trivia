@@ -50,7 +50,7 @@
 
 <!-- One polite live region announces every toast; the toasts carry no live roles of their own, so nothing is read twice. -->
 <div
-  class="toasts"
+  class="toasts veiled"
   class:narrow
   style:--header="{headerHeight}px"
   role="region"

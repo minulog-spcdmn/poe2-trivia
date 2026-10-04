@@ -225,6 +225,11 @@ Everything is drawn in WebGL2 with float precision and dithered once at the
   every control gets. Soft shapes render at about one texel per CSS pixel and
   the whole layer at most 1.5 per CSS pixel; the canvas hides itself while
   nothing is alive.
+- **Dialogs** veil the page behind them (`src/lib/veil.ts`). A dark, blurred
+  layer over the page would band the backdrop and hide the dialog's own
+  effects, so the backdrop darkens itself in its shader and the UI takes a CSS
+  filter. The effects layer stays above dialogs and dims its light outside
+  them.
 - Effects can be switched off with the ✦ button in the header, and are off
   under *prefers-reduced-motion*. Quality drops by itself (resolution) on
   devices that can't keep up. Without WebGL2 the site falls back

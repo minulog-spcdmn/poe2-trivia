@@ -14,6 +14,7 @@ import { DROPS_PER_MASK, MAX_MASKS, measureDrops, releaseAllDrops } from './back
 import { MAX_LIGHTS, packLights, stepHomeScene, stepMood } from './lights';
 import { fxActive } from './fx/core';
 import { COLUMNS, SLOTS, embers } from './backdropEmbers';
+import { VEIL_BLUR, VEIL_DIM, veilAmount } from './veil';
 
 const VERT = `#version 300 es
 in vec2 aPos;
@@ -85,6 +86,7 @@ uniform sampler2D uSharp; // content alpha
 uniform sampler2D uBlur;  // blurred alpha, 16-bit in R+G and B+A
 uniform vec2 uSharpSize;
 uniform vec2 uBlurSize;
+uniform float uVeil; // an open dialog's veil over the page, 0-1 (lib/veil.ts)
 
 vec3 rgb(float r, float g, float b) { return vec3(r, g, b) / 255.0; }
 
@@ -290,7 +292,10 @@ void main() {
     vec2 qd = abs(lp - eb.xy * 0.5) - halfBox + rr;
     float sdf = length(max(qd, 0.0)) + min(max(qd.x, qd.y), 0.0) - rr;
     float px = pxLocal * ea.z; // one device pixel in element px
-    float outside = clamp(sdf / px + 0.5, 0.0, 1.0);
+    // Under the veil the UI blurs, so the edge softens with it (a linear
+    // ramp as wide as a Gaussian edge's 10-90% rise).
+    float edge = max(px, 2.56 * ${VEIL_BLUR.toFixed(2)} * uVeil * ea.z);
+    float outside = clamp(sdf / edge + 0.5, 0.0, 1.0);
 
     vec4 fc = uElC[i];
     if (fc.x > 0.5 && outside < 1.0) {
@@ -337,6 +342,10 @@ void main() {
       col = mix(col, c.rgb, c.a * a * outside);
     }
   }
+
+  // The veil darkens it all here, before the dither; CSS darkening the
+  // dithered output would band.
+  col *= 1.0 - ${VEIL_DIM.toFixed(3)} * uVeil;
 
   // TPDF dither of +-1 LSB, per device pixel, ahead of the round-to-nearest
   // 8-bit conversion. The same sample goes to all three channels, so the
@@ -491,6 +500,8 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   const uTitle = U('uTitle');
   const uEmberColor = U('uEmberColor');
   const uElCount = U('uElCount');
+  const uVeil = U('uVeil');
+  let veil = 0;
 
   const el = {
     a: new Float32Array(maxElements * 4),
@@ -619,6 +630,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     gl!.uniform4fv(uHome, home);
     gl!.uniform3fv(uBeams, beam);
     gl!.uniform4fv(uTitle, title);
+    gl!.uniform1f(uVeil, veil);
     gl!.uniform4f(uEmberColor, embers.color[0], embers.color[1], embers.color[2], still ? 0.6 : 1);
     gl!.activeTexture(gl!.TEXTURE2);
     gl!.bindTexture(gl!.TEXTURE_2D, emberTex);
@@ -686,7 +698,11 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     const soft = lights || moodState === 'moving';
     const lit = homeMoving || (soft && !cssShadows.matches);
     if (!reduceMotion.matches) embers.step(dt, canvas.clientWidth, canvas.clientHeight, !fxActive());
-    const changed = measure() || dirty || lit;
+    // A dialog's veil fades in and out with the dialog, in step with the UI's.
+    const v = veilAmount();
+    const veiling = v !== veil;
+    veil = v;
+    const changed = measure() || dirty || lit || veiling;
     if (!changed && ((reduceMotion.matches && !soft) || now - last < 33)) return;
     last = now;
     dirty = false;

@@ -120,6 +120,11 @@ input {
   background: rgba(201, 164, 92, 0.35);
 }
 
+/* The page behind an open dialog: darkened and blurred (see lib/veil.ts). */
+.veiled {
+  filter: var(--veil-filter);
+}
+
 /* ---------- shared building blocks ---------- */
 
 .panel {

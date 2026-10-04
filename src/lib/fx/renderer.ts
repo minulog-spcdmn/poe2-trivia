@@ -10,6 +10,7 @@
 
 import { INSTANCE_FLOATS } from './particles';
 import { NOISE, dropTarget, program, target, type Program, type Target } from './gl';
+import { VEIL_DIM } from '../veil';
 
 /** Floats per shape instance: five vec4s (see ShapeType). */
 export const SHAPE_FLOATS = 24;
@@ -436,6 +437,9 @@ uniform sampler2D uBloom;
 uniform float uBloomAmt;
 uniform float uHasBloom;
 uniform float uExposure;
+uniform float uVeil;   // an open dialog's veil over the page, 0-1 (lib/veil.ts)
+uniform vec4 uClear;   // the dialog, which it leaves clear: x0, y0, x1, y1 (device px, bottom-left origin)
+uniform float uClearR; // its corner radius, device px
 out vec4 o;
 float hash(vec2 p) {
   vec3 p3 = fract(vec3(p.xyx) * 0.1031);
@@ -448,6 +452,13 @@ void main() {
   // Per-channel exponential tone map: linear for faint light, saturating
   // smoothly, so orange sparks burn through yellow toward white.
   vec3 c = 1.0 - exp(-max(hdr, 0.0) * uExposure);
+  // Outside an open dialog, light falls on the veiled page and dims with it.
+  if (uVeil > 0.0) {
+    vec2 h = (uClear.zw - uClear.xy) * 0.5;
+    vec2 qd = abs(gl_FragCoord.xy - uClear.xy - h) - h + uClearR;
+    float sdf = length(max(qd, 0.0)) + min(max(qd.x, qd.y), 0.0) - uClearR;
+    c *= 1.0 - ${VEIL_DIM.toFixed(3)} * uVeil * clamp(sdf + 0.5, 0.0, 1.0);
+  }
   // TPDF dither, only where there is light, so empty pixels stay exactly 0.
   float peak = max(max(c.r, c.g), c.b);
   float n = hash(gl_FragCoord.xy) + hash(gl_FragCoord.xy + 71.3) - 1.0;
@@ -458,6 +469,9 @@ void main() {
 }`;
 
 export type RendererOptions = { maxParticles: number; maxShapes: number };
+
+/** An open dialog's veil (lib/veil.ts): how far it's drawn, and the dialog's box and corner radius in CSS px. */
+export type Veil = { amount: number; box: DOMRect | null; radius: number };
 
 export class FxRenderer {
   private gl: WebGL2RenderingContext;
@@ -613,7 +627,16 @@ export class FxRenderer {
    * per CSS px of the drawing buffer. The last `nCrisp` of the shapes are
    * drawn at full resolution (thin lines); the rest at reduced resolution.
    */
-  draw(view: [number, number], dpr: number, particles: Float32Array, nParticles: number, shapes: Float32Array, nShapes: number, nCrisp = 0) {
+  draw(
+    view: [number, number],
+    dpr: number,
+    particles: Float32Array,
+    nParticles: number,
+    shapes: Float32Array,
+    nShapes: number,
+    nCrisp = 0,
+    veil: Veil = { amount: 0, box: null, radius: 0 },
+  ) {
     const gl = this.gl;
     if (!this.hdr) return;
     this.cleared = false;
@@ -723,6 +746,12 @@ export class FxRenderer {
     // The mip sum carries every level once; scale it to a gentle halo.
     gl.uniform1f(this.compProg.u('uBloomAmt'), bloom ? 0.55 / this.mips.length : 0);
     gl.uniform1f(this.compProg.u('uExposure'), this.hdrFloat ? 1 : 1.2);
+    // Without a dialog box, nothing is left clear.
+    const b = veil.box;
+    gl.uniform1f(this.compProg.u('uVeil'), veil.amount);
+    if (b) gl.uniform4f(this.compProg.u('uClear'), b.left * dpr, (view[1] - b.bottom) * dpr, b.right * dpr, (view[1] - b.top) * dpr);
+    else gl.uniform4f(this.compProg.u('uClear'), -1, -1, -1, -1);
+    gl.uniform1f(this.compProg.u('uClearR'), veil.radius * dpr);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindVertexArray(null);

@@ -6,9 +6,10 @@
 // reduced motion, or when WebGL2 isn't available; every call below is then a
 // cheap no-op, so callers never need to check.
 
-import { FxRenderer, SHAPE_FLOATS, ShapeType } from './renderer';
+import { FxRenderer, SHAPE_FLOATS, ShapeType, type Veil } from './renderer';
 import { ParticlePool, type ParticleSpec } from './particles';
 import { opacityOf } from '../opacity';
+import { veilAmount, veilDialog } from '../veil';
 
 export type Vec3 = readonly [number, number, number];
 export type Point = { x: number; y: number };
@@ -501,13 +502,21 @@ function simulate(dt: number, nowMs: number, render: boolean): boolean {
   const busy = nParticles > 0 || nShapes > 0 || tasks.length > 0 || shake.trauma > 0 || shapes.length > 0 || pool.count > 0;
   if (!render) return busy;
   if (nParticles > 0 || nShapes > 0) {
-    renderer.draw([viewW, viewH], dpr, pool.instances, nParticles, shapeData, nShapes, nCrisp);
+    renderer.draw([viewW, viewH], dpr, pool.instances, nParticles, shapeData, nShapes, nCrisp, veilNow());
     show(true);
   } else {
     renderer.clear();
     show(false);
   }
   return busy;
+}
+
+/** An open dialog's veil, which dims the light outside the dialog (see lib/veil.ts). */
+function veilNow(): Veil {
+  const amount = veilAmount();
+  const dialog = amount > 0 ? veilDialog() : null;
+  if (!dialog) return { amount, box: null, radius: 0 };
+  return { amount, box: dialog.getBoundingClientRect(), radius: parseFloat(getComputedStyle(dialog).borderTopLeftRadius) || 0 };
 }
 
 /**

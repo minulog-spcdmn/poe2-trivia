@@ -5,6 +5,7 @@
   import { KNOB_STEPS, knobsOf, type Knobs } from '../lib/game';
   import { KNOB_TEXT } from '../lib/difficultyText';
   import { portal } from '../lib/portal';
+  import { veil } from '../lib/veil';
 
   let { onclose }: { onclose: () => void } = $props();
 
@@ -49,7 +50,7 @@
   }
 </script>
 
-<div class="backdrop" use:portal transition:fade={{ duration: 150 }} onclick={onclose} role="presentation">
+<div class="backdrop" use:portal use:veil transition:fade={{ duration: 150 }} onclick={onclose} role="presentation">
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <div
     class="editor panel"
@@ -107,13 +108,11 @@
   .backdrop {
     position: fixed;
     inset: 0;
-    /* Above the effects layer (z-index 95), like the other modals. */
-    z-index: 100;
+    /* Below the effects layer, like the leave dialog (App.svelte). */
+    z-index: 94;
     display: grid;
     place-items: center;
     padding: 1rem;
-    background: rgba(0, 0, 0, 0.65);
-    backdrop-filter: blur(3px);
   }
   .editor {
     display: flex;

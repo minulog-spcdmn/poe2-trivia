@@ -30,7 +30,8 @@
   });
 </script>
 
-<div class="bg" class:css={!webgl} aria-hidden="true">
+<!-- The WebGL backdrop veils itself under a dialog (lib/veil.ts); the CSS one takes the filter. -->
+<div class="bg" class:css={!webgl} class:veiled={!webgl} aria-hidden="true">
   <canvas bind:this={canvas} class:hidden={failed}></canvas>
   {#if !webgl}
     <div class="glow"></div>
