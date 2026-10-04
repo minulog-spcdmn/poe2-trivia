@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cutPatches, spreadOrder, visibleBox } from '../src/lib/patches.ts';
+import { cutPatches, spreadOrder, veilPace, visibleBox } from '../src/lib/patches.ts';
 
 /** A W × H picture: an opaque ellipse with a soft edge on a transparent background. */
 function ellipse(W: number, H: number): Uint8ClampedArray {
@@ -124,4 +124,16 @@ test('the visible box hugs the visible pixels', () => {
   px[(25 * W + 2) * 4 + 3] = 5;
   assert.deepEqual(visibleBox(px, W, H), [7, 5, 25, 16]);
   assert.deepEqual(visibleBox(new Uint8ClampedArray(W * H * 4), W, H), [0, 0, W, H]);
+});
+
+test('a veil burns in over its time, however many patches it has', () => {
+  for (const ms of [5500, 16500, 48000])
+    for (let count = 1; count <= 300; count++) {
+      const { gap, burn } = veilPace(ms, count);
+      assert.ok(Math.abs((count - 1) * gap + burn - ms) < 1e-6, `${count} patches over ${ms} ms`);
+      assert.ok(gap >= 0 && burn >= 900 && burn <= ms);
+      // The next patch starts before the last one is done, so the magic never stalls.
+      assert.ok(count === 1 || burn > gap);
+    }
+  assert.deepEqual(veilPace(16500, 1), { gap: 0, burn: 16500 });
 });

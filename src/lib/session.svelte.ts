@@ -63,6 +63,10 @@ const HELLO_TIMEOUT_MS = 6000;
 const PING_EVERY_MS = 3000;
 /** Guests: no message from the host for this long means it's gone. */
 const HOST_SILENCE_MS = 15000;
+/** How long a guest's reconnect attempt may take to open before the next one replaces it. */
+const ATTEMPT_MS = 10000;
+/** Errors from the signalling server that a later try can get past. */
+const NETWORK_ERRORS = new Set(['network', 'server-error', 'socket-error', 'socket-closed']);
 /** No pong for this long: the connection is dead. */
 const DEAD_AFTER_MS = 15000;
 /** Faster than this (after the art reached them) is not a human answer. */
@@ -217,6 +221,8 @@ class Session {
   /** Pending step of opening or joining a room (a retry, a give-up); cancelled on leave. */
   private connectTimer: ReturnType<typeof setTimeout> | null = null;
   private retries = 0;
+  /** When the current attempt to reach the host started (0 once it failed). */
+  private attemptAt = 0;
   private hostWatch: ReturnType<typeof setInterval> | null = null;
   private beacon: Beacon | null = null;
   private skipTimer: ReturnType<typeof setTimeout> | null = null;
@@ -299,6 +305,8 @@ class Session {
     if (saved.mode === 'local') this.startLocal(renameCategories(saved.state));
     else if (saved.mode === 'host') {
       this.reset();
+      // Kept while the room reopens, so neither a refresh nor a failed try loses the game.
+      writeSaved(saved);
       this.mode = 'host';
       this.status = 'connecting';
       this.loadPrivate(saved.priv);
@@ -334,7 +342,9 @@ class Session {
   private openRoom(code: string, attempt: number, resumeState?: GameState) {
     const peer = new Peer(PEER_PREFIX + code, PEER_OPTIONS);
     this.peer = peer;
-    peer.on('open', () => {
+    // 'open' fires again each time the signalling server is reconnected; the
+    // room (and its game) is only built the first time.
+    peer.once('open', () => {
       if (this.peer !== peer) return;
       this.code = code;
       this.status = 'ready';
@@ -385,8 +395,19 @@ class Session {
       if (err.type === 'peer-unavailable') return;
       console.warn('peer error', err);
       if (this.status !== 'connecting') return;
+      if (resumeState && NETWORK_ERRORS.has(err.type) && attempt < 8) {
+        peer.destroy();
+        this.connectTimer = setTimeout(() => this.openRoom(code, attempt + 1, resumeState), 2500);
+        return;
+      }
+      // A room that couldn't be reopened stays saved, so a refresh tries again.
       if (err.type === 'unavailable-id' && resumeState)
-        this.fail(`Couldn't reopen room ${code}: it still seems to be open, maybe in another tab or window.`, 'Room not reopened');
+        this.fail(
+          `Couldn't reopen room ${code}: it still seems to be open, maybe in another tab or window. Refresh to try again.`,
+          'Room not reopened',
+          true,
+        );
+      else if (resumeState) this.fail(`${this.networkHint(err.type)} Refresh to try reopening room ${code}.`, 'Room not reopened', true);
       else this.fail(this.networkHint(err.type), 'No connection');
     });
   }
@@ -762,7 +783,9 @@ class Session {
     const peer = new Peer(PEER_OPTIONS);
     this.peer = peer;
     this.armConnectTimeout();
-    peer.on('open', () => this.peer === peer && this.connectToHost());
+    // 'open' fires again when the signalling server is reconnected: a live
+    // link to the host doesn't need it, a lost one tries again right away.
+    peer.on('open', () => this.peer === peer && this.status !== 'ready' && this.connectToHost());
     peer.on('error', (err) => {
       if (this.peer !== peer) return;
       if (err.type === 'peer-unavailable') {
@@ -804,11 +827,14 @@ class Session {
   }
 
   private connectToHost() {
-    if (!this.peer) return;
+    // Without the signalling server there is no connecting (PeerJS returns
+    // nothing); its reconnect fires 'open', which tries again.
+    if (!this.peer || this.peer.destroyed || this.peer.disconnected) return;
     // Drop the previous attempt so a slow one can't come back alongside the new one.
     const stale = this.hostConn;
     const conn = this.peer.connect(PEER_PREFIX + this.code, { reliable: true });
     this.hostConn = conn;
+    this.attemptAt = Date.now();
     stale?.close();
     conn.on('open', async () => {
       const secret = await this.helloSecret;
@@ -868,13 +894,19 @@ class Session {
           shown.receive(msg);
       }
     });
-    conn.on('close', () => this.hostLost(conn));
+    conn.on('close', () => {
+      // A failed attempt makes way for the next one at once.
+      if (this.hostConn === conn) this.attemptAt = 0;
+      this.hostLost(conn);
+    });
   }
 
   private hostLost(conn: DataConnection) {
     if (this.hostConn === conn && this.mode === 'client' && this.status === 'ready') {
       this.status = 'lost';
       this.retries = 0;
+      // A link that came back on its own after giving up starts a fresh count.
+      this.gaveUp = false;
       this.scheduleRetry();
     }
   }
@@ -887,7 +919,8 @@ class Session {
         this.gaveUp = true;
         return;
       }
-      if (this.peer && !this.peer.destroyed) this.connectToHost();
+      // An attempt still opening (ICE through a relay can take a while) isn't cut short.
+      if (Date.now() - this.attemptAt >= ATTEMPT_MS) this.connectToHost();
       this.scheduleRetry();
     }, 3000);
   }
@@ -896,7 +929,7 @@ class Session {
     if (this.mode !== 'client') return;
     this.retries = 0;
     this.gaveUp = false;
-    if (this.peer && !this.peer.destroyed) this.connectToHost();
+    this.connectToHost();
     this.scheduleRetry();
   }
 
@@ -1057,10 +1090,13 @@ class Session {
     const me = this.myPlayerId;
     const hotSeat = this.mode === 'local';
     // Its own chunk: the first download stays small.
-    void import('./codex').then(({ encounterAt, recordEncounter }) => {
-      const e = encounterAt(next, me, hotSeat, ms);
-      if (e) recordEncounter(e);
-    });
+    // After a redeploy the old chunk is gone; the encounter just goes unrecorded.
+    void import('./codex')
+      .then(({ encounterAt, recordEncounter }) => {
+        const e = encounterAt(next, me, hotSeat, ms);
+        if (e) recordEncounter(e);
+      })
+      .catch((err) => console.warn('codex', err));
   }
 
   /** Side effects that every device plays: sounds, and the notice of the creator's arrival. */
@@ -1207,9 +1243,11 @@ class Session {
     return `Couldn't connect to the matchmaking server (${type}). Check your connection, or play hot-seat on one device.`;
   }
 
-  private fail(message: string, title?: string) {
+  private fail(message: string, title?: string, keepSaved = false) {
     const mode = this.mode;
+    const saved = keepSaved ? readSaved() : null;
     this.reset();
+    if (saved) writeSaved(saved);
     this.flash(message, 'error', { title, sticky: true });
     if (mode === 'client') this.status = 'idle';
   }
@@ -1262,6 +1300,7 @@ class Session {
     this.joins = new JoinGate();
     this.helloSecret = null;
     if (this.retry) clearTimeout(this.retry);
+    this.attemptAt = 0;
     if (this.connectTimer) clearTimeout(this.connectTimer);
     this.connectTimer = null;
     if (this.hostWatch) clearInterval(this.hostWatch);

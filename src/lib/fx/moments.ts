@@ -3,12 +3,13 @@
 // victory look like. Components call these with the elements involved; all
 // of them are no-ops while effects are off.
 
-import { after, boxOf, detached, fxActive, shakeView, type Anchor, type Handle, type Point, type Vec3 } from './core';
+import { after, boxOf, detached, fxActive, isLive, shakeView, type Anchor, type Handle, type Point, type Vec3 } from './core';
 import {
   C,
   edgeGlow,
   embers,
   emitter,
+  fire,
   flare,
   flash,
   glints,
@@ -28,6 +29,7 @@ import { budget, particle, task } from './core';
 import { showAura } from './aura';
 import { light, pulseMood, setMood } from '../lights';
 import { CALM, embers as backdropEmbers } from '../backdropEmbers';
+import { burnsBlue } from './streaks';
 
 const k3 = (c: Vec3, k: number): Vec3 => [c[0] * k, c[1] * k, c[2] * k];
 
@@ -327,13 +329,6 @@ export function reveal(t: RevealTargets) {
     embers(t.art, { count: Math.round(14 * hype), area: 'fill', colors: [C.gold, C.ember, C.rightPale], rise: [60, 190], life: [0.8, 1.8] });
     light(t.art, { color: [1, 0.8, 0.45], radius: 420, intensity: 0.3 + 0.08 * hype, hold: 0.3, decay: 1.5 });
   }
-  if (t.good && t.art) {
-    if (streak >= 3) {
-      edgeGlow({ color: C.gold, intensity: 0.07, width: 70, life: 1.4 });
-      backdropEmbers.flare(0.8, 2);
-    }
-  }
-
   if (!t.good && !t.otherScored) {
     if (t.chosen) {
       shards(t.chosen, { count: 18, colors: [C.wrong, k3(C.wrong, 0.6), C.ember] });
@@ -453,6 +448,50 @@ export function scored(pill: Element, streak = 1) {
   glints(pill, { count: 2, size: [4, 7] });
   outline(pill, { color: C.gold, width: 9, life: 0.8, intensity: 0.5, bleed: 0.15 });
   light(pill, { color: [1, 0.72, 0.35], radius: 180, intensity: 0.3, decay: 0.9 });
+}
+
+/**
+ * A player on a streak burns: their scoreboard entry is wreathed in fire,
+ * with flames licking up off it. `heat` (0 to 1, from lib/fx/streaks) sets
+ * how big: a faint smoulder at three in a row, turning blue at seven,
+ * and a blaze by ten.
+ * Returns a handle to put it out.
+ */
+export function ablaze(row: Element, heat: number): Handle {
+  if (!fxActive() || heat <= 0) return { stop() {} };
+  // At the very top of a streak the fire burns blue.
+  const blue = burnsBlue(heat);
+  const flames = fire(row, { height: 6 + 66 * heat, intensity: 0.45 + 1.0 * heat, blue: blue ? 1 : 0 });
+  // No room for the flames (or the entry is gone): no sparks off nothing either.
+  if (!isLive(flames)) return flames;
+  const sparkColors = blue ? [C.portal, C.portalPale] : [C.ember, C.gold];
+  // Sparks spat out of the fire, drifting up; slower than CALM_SPEED (lib/fx/core.ts),
+  // so a fire that burns all game lets phones draw at 30fps.
+  const rising = emitter(14 * heat, () =>
+    embers(row, { count: 1, area: 'top', colors: sparkColors, size: [0.8, 1.8], rise: [60, 90 + 60 * heat], scatter: 30, gravity: 0, life: [0.6, 1 + 0.6 * heat] }),
+  );
+  return {
+    stop(fade = 0.5) {
+      flames.stop(fade);
+      rising.stop();
+    },
+  };
+}
+
+/** A streak reaches the top: the fire on a player's entry flares up and turns blue. */
+export function turnsBlue(row: Element) {
+  if (!fxActive()) return;
+  flash(row, { radius: 160, color: C.portal, intensity: 0.35, life: 0.6 });
+  ring(row, { radius: 140, thickness: 8, life: 0.6, color: C.portalPale, breakup: 0.6, intensity: 0.5 });
+  sparks(row, { count: 40, area: 'edge', colors: [C.portal, C.portalPale, C.whiteHot], speed: [150, 480], gravity: -60, life: [0.4, 0.9] });
+  embers(row, { count: 16, area: 'top', colors: [C.portal, C.portalPale], rise: [120, 280], life: [0.6, 1.3] });
+}
+
+/** A streak ends: the fire on a player's entry goes out in a puff of smoke. */
+export function doused(row: Element) {
+  if (!fxActive()) return;
+  puffs(row, { count: 10, area: 'edge', color: [0.16, 0.13, 0.11], size: [14, 26], speed: [20, 70], life: [0.8, 1.6], angle: -Math.PI / 2, spread: 1.2 });
+  sparks(row, { count: 8, area: 'edge', colors: [C.ember, C.emberDeep], speed: [40, 140], gravity: 200, life: [0.3, 0.6] });
 }
 
 /** A point is lost (race: a wrong guess). */

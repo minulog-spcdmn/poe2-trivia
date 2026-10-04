@@ -172,6 +172,27 @@ test('records encounters, answers, streaks and confusions', () => {
   );
 });
 
+test('a mix-up reads "the art of one taken for the other\'s name" both ways', () => {
+  // Name question: a's art shown, b's name picked, so a's art was taken for b.
+  let x = record(emptyCodex(), enc(1, a.id, miss(b.id)));
+  assert.deepEqual(x.items[a.id].mixed, { [b.id]: 1 });
+  assert.equal(x.items[b.id], undefined, 'a name picked is not an item seen');
+  // Find the art: a's name shown, c's art picked, so c's art was taken for a.
+  x = record(x, enc(2, a.id, miss(c.id), 'art'));
+  assert.deepEqual(x.items[a.id].mixed, { [b.id]: 1 });
+  assert.deepEqual(x.items[c.id], { seen: 1, first: 2, last: 2, name: { n: 0, ok: 0 }, art: { n: 0, ok: 0 }, mixed: { [a.id]: 1 } });
+  // Again, with c already seen: one more sighting and one more mix-up.
+  x = record(x, enc(3, a.id, miss(c.id), 'art'));
+  assert.deepEqual([x.items[c.id].seen, x.items[c.id].last, x.items[c.id].mixed], [2, 3, { [a.id]: 2 }]);
+  assert.deepEqual(
+    codexStats(x, items, categories).confusions.map((cf) => [cf.answer.id, cf.picked.id, cf.n]),
+    [
+      [c.id, a.id, 2],
+      [a.id, b.id, 1],
+    ],
+  );
+});
+
 test('the same question is only recorded once', () => {
   const once = record(emptyCodex(), enc(10, a.id, ok()));
   assert.equal(record(once, enc(10, a.id, ok())), once);

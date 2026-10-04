@@ -782,6 +782,28 @@ test('a second Next for the same reveal is dropped quietly', () => {
   );
 });
 
+test('turns: an answer landing just after time ran out is dropped quietly', () => {
+  let { engine, s } = setup(['A', 'B']);
+  s = engine.apply(s, { type: 'start' }, 'p0');
+  const me = s.players[s.turn].id;
+  s = engine.apply(s, { type: 'pick', category: s.offered[0] }, me);
+  const q = s.question!;
+  // The host's timer closes the question first.
+  s = engine.apply(s, { type: 'answer', index: null }, null);
+  assert.equal(s.phase, 'reveal');
+  const silent = (err: unknown) => err instanceof ActionError && err.silent;
+  assert.throws(() => engine.apply(s, { type: 'answer', index: 0, askedAt: q.askedAt }, me), silent);
+  // Still quiet once play has moved on to the next pick.
+  s = engine.apply(s, { type: 'next' }, null);
+  assert.equal(s.phase, 'choosing');
+  assert.throws(() => engine.apply(s, { type: 'answer', index: 0, askedAt: q.askedAt }, me), silent);
+  // An answer for no question this game asked is still an error worth showing.
+  assert.throws(
+    () => engine.apply(s, { type: 'answer', index: 0, askedAt: q.askedAt - 1 }, me),
+    (err: unknown) => err instanceof ActionError && !err.silent && /no open question/.test(err.message),
+  );
+});
+
 test('reveals are stamped with the host clock; only the host or (turns) whoever answered moves on', () => {
   for (const mode of ['turns', 'race'] as const) {
     let clock = 5_000_000;
@@ -1245,4 +1267,58 @@ test('the held name is refused until the device is unlocked', async () => {
     if (had) Object.defineProperty(globalThis, 'localStorage', had);
     else delete (globalThis as { localStorage?: unknown }).localStorage;
   }
+});
+
+test('turns: a streak counts your own right answers in a row, and a miss breaks it', () => {
+  let { engine, s } = setup(['A', 'B'], 50);
+  s = engine.apply(s, { type: 'start' }, 'p0');
+  const streak = (id: string) => s.players.find((p) => p.id === id)!.streak;
+  const first = s.players[s.turn].id;
+  const second = s.players.find((p) => p.id !== first)!.id;
+  // first: right, right, wrong, right; second: always wrong, which leaves first's streak alone.
+  const plan: Record<string, boolean[]> = { [first]: [true, true, false, true], [second]: [false, false, false, false] };
+  const want: Record<string, number[]> = { [first]: [1, 2, 0, 1], [second]: [0, 0, 0, 0] };
+  for (let turn = 0; turn < 8; turn++) {
+    const id = s.players[s.turn].id;
+    const n = Math.floor(turn / 2);
+    s = engine.apply(s, { type: 'pick', category: s.offered[0] }, id);
+    const q = s.question!;
+    s = engine.apply(s, { type: 'answer', index: plan[id][n] ? right(q) : wrongIdx(q) }, id);
+    assert.equal(streak(id), want[id][n], `${id}, turn ${turn}`);
+    s = engine.apply(s, { type: 'next' }, id);
+  }
+  assert.equal(streak(first), 1, "the other player's misses don't touch it");
+});
+
+test('race: only the winner keeps a streak going; not being first breaks it too', () => {
+  let { engine, s } = setup(['A', 'B', 'C'], 50);
+  s = engine.apply(s, { type: 'settings', settings: { mode: 'race' } }, 'p0');
+  s = engine.apply(s, { type: 'start' }, 'p0');
+  const streak = (id: string) => s.players.find((p) => p.id === id)!.streak;
+  const win = (id: string) => {
+    s = engine.apply(s, { type: 'answer', index: right(s.question!), askedAt: s.question!.askedAt }, id);
+    s = engine.apply(s, { type: 'next' }, 'p0');
+  };
+  win('p1');
+  win('p1');
+  assert.equal(streak('p1'), 2);
+  // p2 wins while p1 never guessed: p1's streak is over all the same.
+  win('p2');
+  assert.deepEqual([streak('p0'), streak('p1'), streak('p2')], [0, 0, 1]);
+  // Nobody gets it: everyone's breaks.
+  for (const id of ['p0', 'p1', 'p2']) s = engine.apply(s, { type: 'answer', index: wrongIdx(s.question!) }, id);
+  assert.equal(streak('p2'), 0);
+});
+
+test('streaks start over with every game', () => {
+  let { engine, s } = setup(['A'], 2);
+  s = engine.apply(s, { type: 'start' }, 'p0');
+  while (s.phase !== 'over') {
+    if (s.phase === 'choosing') s = engine.apply(s, { type: 'pick', category: s.offered[0] }, 'p0');
+    else if (s.phase === 'question') s = engine.apply(s, { type: 'answer', index: right(s.question!) }, 'p0');
+    else s = engine.apply(s, { type: 'next' }, 'p0');
+  }
+  assert.equal(s.players[0].streak, 2);
+  s = engine.apply(s, { type: 'restart', play: true }, 'p0');
+  assert.equal(s.players[0].streak, 0);
 });
