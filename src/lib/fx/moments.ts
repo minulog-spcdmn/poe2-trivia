@@ -440,26 +440,34 @@ export function scored(pill: Element, streak = 1) {
 }
 
 /**
- * A streak of three or more: the "in a row" badge catches fire as it lands,
- * hotter with every answer, and keeps smouldering while it's up. Returns a
- * handle to put it out.
+ * A streak of three or more: the streak seal catches fire as it slams down,
+ * and keeps smouldering while it's up. Three tiers, each plainly bigger than
+ * the last: embers at 3, a blaze at 5 (rays, the backdrop flaring), and at 7
+ * a white-hot burst that shakes the screen. Returns a handle to put it out.
  */
-export function streakFire(badge: Element, streak: number): Handle {
+export function streakFire(seal: Element, streak: number): Handle {
   if (!fxActive() || streak < 3) return { stop() {} };
-  // 3 in a row is a spark; by 8 it's a blaze.
-  const heat = Math.min(1, (streak - 2) / 6);
-  const k = 1 + heat * 2;
-  flash(badge, { radius: 70 + 110 * heat, color: C.ember, intensity: 0.3 + 0.3 * heat, life: 0.5 });
-  outline(badge, { color: C.ember, width: 9 + 7 * heat, flame: 0.5 + 0.5 * heat, intensity: 0.55 + 0.25 * heat, life: 1.1 + heat, bleed: 0.15 });
-  sparks(badge, { count: Math.round(16 * k), area: 'edge', colors: [C.ember, C.gold, C.whiteHot], speed: [120, 380 * Math.sqrt(k)], gravity: 300, life: [0.3, 0.8] });
-  ring(badge, { radius: 60 * Math.sqrt(k), thickness: 6, life: 0.5, color: C.ember, breakup: 0.5, intensity: 0.6 });
-  flare(badge, { size: 18, streak: 150 * Math.sqrt(k), life: 0.5, color: C.gold, intensity: 0.6 });
-  embers(badge, { count: Math.round(10 * k), area: 'top', colors: [C.ember, C.gold], rise: [70, 200], life: [0.6, 1.4] });
-  light(badge, { color: [1, 0.55, 0.2], radius: 160 + 140 * heat, intensity: 0.25 + 0.2 * heat, decay: 1 });
-  if (streak >= 5) backdropEmbers.flare(0.4 + 0.5 * heat, 1.2 + heat);
-  if (streak >= 7) shakeView(0.12 + 0.1 * heat, 4);
-  return emitter(2 + 8 * heat, () =>
-    embers(badge, { count: 1, area: 'top', colors: [C.ember, C.gold], rise: [40, 110], scatter: 20, life: [0.6, 1.3] }),
+  const tier = streak >= 7 ? 3 : streak >= 5 ? 2 : 1;
+  const k = [0, 1, 2.2, 4][tier];
+  const hot = tier === 3 ? C.whiteHot : tier === 2 ? C.gold : C.ember;
+  flash(seal, { radius: 60 + 60 * k, color: hot, intensity: 0.25 + 0.08 * k, life: 0.4 + 0.08 * k });
+  outline(seal, { color: C.ember, radius: 999, width: 8 + 3 * k, flame: 0.4 + 0.15 * k, intensity: 0.5 + 0.08 * k, life: 0.9 + 0.15 * k, bleed: 0.15 });
+  sparks(seal, { count: Math.round(18 * k), area: 'edge', colors: [C.ember, C.gold, hot], speed: [140, 300 + 160 * k], gravity: 300, life: [0.3, 0.6 + 0.15 * k] });
+  ring(seal, { radius: 50 + 30 * k, thickness: 5 + k, life: 0.5, color: hot, breakup: 0.5, intensity: 0.6 });
+  embers(seal, { count: Math.round(10 * k), area: 'top', colors: [C.ember, C.gold], rise: [70, 120 + 50 * k], life: [0.6, 1 + 0.2 * k] });
+  light(seal, { color: [1, 0.55, 0.2], radius: 140 + 50 * k, intensity: 0.2 + 0.05 * k, decay: 0.8 });
+  if (tier >= 2) {
+    const b = boxOf(seal);
+    rays(seal, { radius: b.w * (1 + 0.4 * k), count: 12, life: 1.2 + 0.2 * k, intensity: 0.08 * k, color: hot });
+    flare(seal, { size: 14 + 4 * k, streak: 120 + 50 * k, life: 0.6, color: C.goldPale, intensity: 0.6 });
+    backdropEmbers.flare(0.3 + 0.15 * k, 1 + 0.4 * k);
+  }
+  if (tier === 3) {
+    ring(seal, { radius: 260, from: 40, thickness: 10, life: 0.8, color: C.ember, breakup: 0.7, intensity: 0.5, delay: 0.1 });
+    shakeView(0.35, 6);
+  }
+  return emitter(2 + 3 * k, () =>
+    embers(seal, { count: 1, area: 'top', colors: [C.ember, C.gold], rise: [40, 80 + 15 * k], scatter: 20, life: [0.6, 1.3] }),
   );
 }
 

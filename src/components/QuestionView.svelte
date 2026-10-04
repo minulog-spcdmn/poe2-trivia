@@ -14,6 +14,7 @@
   import { backdropShadow } from '../lib/backdropShadow';
   import ArcaneCircle from './ArcaneCircle.svelte';
   import { untrack } from 'svelte';
+  import { cubicIn } from 'svelte/easing';
   import { FILL_START, answerCharging, artRevealed, raceMiss, reveal as revealFx, streakFire, veilComplete, veilHandoff } from '../lib/fx/moments';
   import { FILL_LEAD } from '../lib/soundDesign';
   import { recordReveal } from '../lib/fx/streaks';
@@ -264,16 +265,17 @@
   /** The scorer's streak of correct answers, for the result line. */
   let streak = $state(0);
 
-  /** When the streak badge pops into the result line, ms. */
+  /** When the result line's streak badge pops in, ms. */
   const STREAK_IN = 1100;
-  /** What a streak of three or more is called; it grows with the streak. */
-  const streakTitle = (n: number) => (n >= 7 ? 'Unstoppable' : n >= 5 ? 'Blazing' : n >= 3 ? 'Hot streak' : '');
-  /** 0 to 1: how hot the badge burns (3 in a row barely, 8 and on fully). */
-  const streakHeat = (n: number) => Math.min(1, Math.max(0, (n - 2) / 6));
-  /** From three in a row the badge catches fire as it lands, and smoulders while it's up. */
-  function onFire(badge: HTMLElement, n: number) {
+  /** When the streak seal slams down beside the stamp, ms (the stamp lands first). */
+  const SEAL_IN = 650;
+  const SEAL_DROP = 350;
+  /** How hot a streak burns: 0 below three in a row, then 1 from 3, 2 from 5, 3 from 7. */
+  const streakTier = (n: number) => (n >= 7 ? 3 : n >= 5 ? 2 : n >= 3 ? 1 : 0);
+  /** The seal catches fire as it lands, and smoulders while it's up. */
+  function onFire(seal: HTMLElement, n: number) {
     let fire: Handle | null = null;
-    const lit = setTimeout(() => (fire = streakFire(badge, n)), STREAK_IN + 200);
+    const lit = setTimeout(() => (fire = streakFire(seal, n)), SEAL_IN + SEAL_DROP);
     return {
       destroy() {
         clearTimeout(lit);
@@ -401,6 +403,20 @@
     <div class="stamp" bind:this={stampEl} class:in-head={inHead} class:good={iWon} in:scale={{ start: 2.2, duration: 450, opacity: 0 }}>
       {#if iWon}Correct{:else if race && winner}{session.spectating ? 'Solved' : 'Too slow'}{:else if reveal.timedOut}Time's up{:else if race}No one{:else}Wrong{/if}
     </div>
+    <!-- Three in a row and on: a burning seal beside the stamp, bigger and hotter as the streak grows. -->
+    {#if iWon && streak >= 3}
+      <div
+        class="seal tier-{streakTier(streak)}"
+        class:in-head={inHead}
+        use:onFire={streak}
+        in:scale={{ start: 2.6, duration: SEAL_DROP, delay: SEAL_IN, opacity: 0, easing: cubicIn }}
+      >
+        <div class="disc">
+          <span class="count">{streak}</span>
+          <span class="label">in a row</span>
+        </div>
+      </div>
+    {/if}
   {/if}
 {/snippet}
 
@@ -426,10 +442,7 @@
 
 {#snippet streakBadge()}
   {#if streak >= 2}
-    {@const title = streakTitle(streak)}
-    <span class="streak" class:hot={streak >= 3} style:--heat={streakHeat(streak)} use:onFire={streak} in:scale={{ start: 0.5, duration: 400, delay: STREAK_IN }}>
-      {#if title}<span class="tier">{title}</span> • {/if}{streak}<span class="in-a-row"> in a row</span>
-    </span>
+    <span class="streak tier-{streakTier(streak)}" in:scale={{ start: 0.5, duration: 400, delay: STREAK_IN }}>{streak} in a row</span>
   {/if}
 {/snippet}
 
@@ -897,6 +910,144 @@
   .stamp.good {
     color: #a9cf8f;
   }
+  /*
+   * The streak seal: a round wax seal opposite the stamp, its count in Cinzel.
+   * Each tier is bigger and hotter, and from five in a row flames lick up off it.
+   */
+  .seal {
+    --size: 74px;
+    position: absolute;
+    z-index: 2;
+    pointer-events: none;
+    bottom: 12px;
+    left: 14px;
+    width: var(--size);
+    height: var(--size);
+    rotate: 7deg;
+  }
+  .seal .disc {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.1em;
+    border-radius: 50%;
+    color: #fff0d8;
+    background: radial-gradient(circle at 50% 40%, #d8641c, #8a2a06 70%, #4a1202);
+    border: 2px solid #ffb070;
+    box-shadow:
+      inset 0 0 0 3px rgba(60, 15, 0, 0.6),
+      inset 0 0 0 4px rgba(255, 190, 120, 0.4),
+      0 0 18px rgba(255, 120, 40, 0.6);
+    text-shadow: 0 0 8px rgba(255, 180, 100, 0.9);
+    animation: smoulder-seal 1.4s ease-in-out infinite;
+  }
+  .seal .count {
+    font-family: var(--font-cinzel);
+    font-weight: 900;
+    font-size: calc(var(--size) * 0.46);
+    line-height: 1;
+  }
+  /* A dark ribbon across the seal, so the label reads however hot the seal burns. */
+  .seal .label {
+    padding: 0.1em 0.5em 0.05em;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: calc(var(--size) * 0.13);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    color: #ffe6c0;
+    text-shadow: none;
+    background: rgba(40, 8, 0, 0.82);
+    border-radius: 2px;
+  }
+  .seal.tier-2 {
+    --size: 88px;
+  }
+  .seal.tier-2 .disc {
+    color: #3a1500;
+    text-shadow: 0 0 6px rgba(255, 245, 210, 0.9);
+    background: radial-gradient(circle at 50% 40%, #fff0b0, #f0a030 60%, #a04a08);
+    border-color: #fff4d0;
+    animation-duration: 0.8s;
+  }
+  .seal.tier-3 {
+    --size: 102px;
+  }
+  .seal.tier-3 .disc {
+    color: #5a0a00;
+    text-shadow: 0 0 4px #fff;
+    background: radial-gradient(circle at 50% 40%, #fff6e0, #ffc050 45%, #ff5a14 80%, #a01806);
+    border-color: #fff;
+    animation: blaze-seal 0.45s ease-in-out infinite;
+  }
+  /* Flames licking up off the seal, taller at the top tier. */
+  .seal.tier-2::before,
+  .seal.tier-3::before {
+    content: '';
+    position: absolute;
+    z-index: -1;
+    left: 6%;
+    right: 6%;
+    bottom: 50%;
+    height: 95%;
+    border-radius: 50% 50% 40% 40%;
+    background:
+      radial-gradient(ellipse 22% 60% at 30% 100%, rgba(255, 200, 90, 0.9), transparent 70%),
+      radial-gradient(ellipse 26% 80% at 52% 100%, rgba(255, 230, 150, 0.95), transparent 70%),
+      radial-gradient(ellipse 22% 55% at 74% 100%, rgba(255, 150, 50, 0.9), transparent 70%);
+    filter: blur(2px);
+    transform-origin: 50% 100%;
+    animation: lick 0.35s ease-in-out infinite alternate;
+  }
+  .seal.tier-3::before {
+    bottom: 45%;
+    height: 135%;
+    left: 0;
+    right: 0;
+    animation-duration: 0.25s;
+  }
+  @keyframes lick {
+    from {
+      transform: scale(0.92, 0.85) skewX(-4deg);
+      opacity: 0.8;
+    }
+    to {
+      transform: scale(1.04, 1.08) skewX(4deg);
+      opacity: 1;
+    }
+  }
+  @keyframes smoulder-seal {
+    50% {
+      box-shadow:
+        inset 0 0 0 3px rgba(60, 15, 0, 0.6),
+        inset 0 0 0 4px rgba(255, 190, 120, 0.4),
+        0 0 28px rgba(255, 140, 50, 0.85);
+    }
+  }
+  @keyframes blaze-seal {
+    0%,
+    100% {
+      box-shadow:
+        0 0 22px rgba(255, 190, 80, 0.9),
+        0 0 50px rgba(255, 70, 20, 0.6);
+    }
+    50% {
+      box-shadow:
+        0 0 32px rgba(255, 230, 150, 1),
+        0 0 80px rgba(255, 90, 20, 0.8);
+    }
+  }
+  /* "Find the art": the stamp sits in the header, so the seal does too, at the other end. */
+  .seal.in-head {
+    bottom: auto;
+    top: 50%;
+    left: 44px;
+    translate: 0 -50%;
+  }
 
   .options {
     display: grid;
@@ -1252,29 +1403,37 @@
       box-shadow: 0 0 24px rgba(255, 140, 50, 0.55);
     }
   }
-  /* Three in a row and on: the badge burns, hotter (--heat, 0 to 1) the longer it goes. */
-  .streak.hot {
-    font-size: calc(0.8rem + 0.15rem * var(--heat));
-    color: #fff1d6;
-    background: linear-gradient(180deg, rgba(220, 110, 30, 0.85), rgba(120, 35, 5, 0.85));
-    border-color: rgba(255, 190, 110, 0.9);
-    text-shadow: 0 0 8px rgba(255, 200, 120, 0.9);
-    animation: burn-badge calc(1.2s - 0.6s * var(--heat)) ease-in-out infinite;
+  /* Three in a row and on, the badge burns with the seal: orange, then gold, then white-hot. */
+  .streak.tier-1 {
+    color: #fff0d8;
+    background: linear-gradient(180deg, rgba(210, 95, 25, 0.85), rgba(110, 30, 5, 0.85));
+    border-color: rgba(255, 160, 80, 0.9);
   }
-  .streak .tier {
-    color: #ffd27a;
+  .streak.tier-2 {
+    color: #3a1500;
+    text-shadow: 0 0 6px rgba(255, 240, 200, 0.8);
+    background: linear-gradient(180deg, #ffd27a, #e08a24);
+    border-color: #fff0c0;
+    animation-duration: 0.9s;
   }
-  @keyframes burn-badge {
+  .streak.tier-3 {
+    color: #4a0a00;
+    text-shadow: 0 0 6px #fff;
+    background: linear-gradient(180deg, #fffaf0, #ffc860 55%, #ff7a2a);
+    border-color: #fff;
+    animation: blaze-badge 0.5s ease-in-out infinite;
+  }
+  @keyframes blaze-badge {
     0%,
     100% {
       box-shadow:
-        0 0 calc(14px + 14px * var(--heat)) rgba(255, 130, 40, 0.5),
-        0 -4px calc(10px + 16px * var(--heat)) rgba(255, 90, 20, calc(0.25 + 0.35 * var(--heat)));
+        0 0 18px rgba(255, 170, 60, 0.8),
+        0 0 40px rgba(255, 70, 20, 0.5);
     }
     50% {
       box-shadow:
-        0 0 calc(22px + 22px * var(--heat)) rgba(255, 150, 50, 0.75),
-        0 -6px calc(16px + 24px * var(--heat)) rgba(255, 110, 30, calc(0.4 + 0.4 * var(--heat)));
+        0 0 26px rgba(255, 210, 120, 1),
+        0 0 60px rgba(255, 80, 20, 0.7);
     }
   }
   /* However long the result, the button keeps its size. */
@@ -1372,7 +1531,6 @@
     }
   }
 
-  /* On a phone a burning badge keeps to its name and count ("Blazing • 5"). */
   @media (max-width: 760px) {
     .streak.hot .in-a-row {
       display: none;
@@ -1413,6 +1571,20 @@
       right: 6px;
       translate: none;
       font-size: 0.72rem;
+    }
+    .seal {
+      --size: 56px;
+    }
+    .seal.tier-2 {
+      --size: 66px;
+    }
+    .seal.tier-3 {
+      --size: 76px;
+    }
+    .seal.in-head {
+      top: -14px;
+      left: 6px;
+      translate: none;
     }
     .option {
       padding: 0.75rem 2.3rem 0.75rem 0.9rem;
