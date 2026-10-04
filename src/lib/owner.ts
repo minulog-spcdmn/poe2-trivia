@@ -160,6 +160,16 @@ let store: KeyStore = indexedDbStore;
 let checked: CryptoKey | null = null;
 /** A check under way: everyone who asks meanwhile waits for the same one. */
 let checking: Promise<OwnerKeyState> | null = null;
+/**
+ * Checks, saves and removals of the stored key take turns, so a check that
+ * read the old key can't delete a new one saved meanwhile.
+ */
+let queue: Promise<unknown> = Promise.resolve();
+function inTurn<T>(op: () => Promise<T>): Promise<T> {
+  const turn = queue.then(op, op);
+  queue = turn.catch(() => {});
+  return turn;
+}
 
 /** Tests keep the key somewhere else. */
 export function useKeyStore(s: KeyStore) {
@@ -180,10 +190,15 @@ export const OWNER_KEY_UNCHECKED = "This browser's owner key couldn't be checked
  */
 export function checkOwnerKey(): Promise<OwnerKeyState> {
   if (checked) return Promise.resolve('ok');
-  return (checking ??= check().finally(() => (checking = null)));
+  if (checking) return checking;
+  const run: Promise<OwnerKeyState> = inTurn(check).finally(() => {
+    if (checking === run) checking = null;
+  });
+  return (checking = run);
 }
 
 async function check(): Promise<OwnerKeyState> {
+  if (checked) return 'ok';
   let key: CryptoKey | null;
   try {
     key = await store.get();
@@ -224,21 +239,24 @@ export async function saveOwnerKey(secret: string): Promise<'saved' | 'invalid' 
   const key = await importOwnerKey(secret.trim());
   if (key === undefined) return 'unchecked';
   if (!key) return 'invalid';
-  try {
-    await store.set(key);
-  } catch {
-    return 'unchecked';
-  }
-  checked = key;
-  checking = null;
-  return 'saved';
+  return inTurn(async () => {
+    try {
+      await store.set(key);
+    } catch {
+      return 'unchecked' as const;
+    }
+    checked = key;
+    return 'saved' as const;
+  });
 }
 
 /** Removes the creator's key from this browser. */
-export async function forgetOwnerKey() {
+export function forgetOwnerKey(): Promise<void> {
   checked = null;
-  checking = null;
-  await store.delete();
+  return inTurn(async () => {
+    checked = null;
+    await store.delete();
+  });
 }
 
 /**

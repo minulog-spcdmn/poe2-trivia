@@ -39,6 +39,10 @@ test("names that pass for the creator's are caught, however they're spelled", ()
     assert.equal(looksLikeOwner(name), false, name);
     assert.equal(nameProblem(name, []), null, name);
   }
+  // Letters that draw nothing don't make a different name.
+  for (const raw of ['Zoe\u3164', 'zoe_arcana\u3164', 'Zoe\u115F', 'Zoe\uFFA0', '\u3164Zoe', 'Zoe\u2800'])
+    assert.match(nameProblem(cleanName(raw), []) ?? '', /creator/, JSON.stringify(raw));
+  assert.equal(cleanName('Dori\u3164'), 'Dori');
   // The extra look-alikes only count for the creator's name: other names keep their skeletons.
   assert.equal(nameSkeleton('Lu2'), 'lu');
   assert.notEqual(nameSkeleton('Exile2'), nameSkeleton('Exilez'));
@@ -164,6 +168,53 @@ test('checks that come in together share one', () =>
       assert.equal(signs, 1);
     } finally {
       proto.sign = sign;
+    }
+  }));
+
+test('a check that read an old key never deletes a new one saved meanwhile', () =>
+  withStore(async () => {
+    // Stand-ins for the creator's key (the real secret isn't in the repo): signatures by `fresh` verify.
+    const { subtle } = globalThis.crypto;
+    const proto = Object.getPrototypeOf(subtle) as SubtleCrypto;
+    const { importKey, sign, verify } = proto;
+    const old = await otherKey();
+    const fresh = await otherKey();
+    const signer = new WeakMap<ArrayBuffer, CryptoKey>();
+    proto.importKey = function (this: SubtleCrypto, ...args: Parameters<SubtleCrypto['importKey']>) {
+      return args[0] === 'jwk' && (args[1] as JsonWebKey).d ? Promise.resolve(fresh) : importKey.apply(this, args);
+    } as SubtleCrypto['importKey'];
+    proto.sign = async function (this: SubtleCrypto, ...args: Parameters<SubtleCrypto['sign']>) {
+      const sig = await sign.apply(this, args);
+      signer.set(sig, args[1]);
+      return sig;
+    } as SubtleCrypto['sign'];
+    proto.verify = (async (_a: unknown, _k: unknown, sig: ArrayBuffer) => signer.get(sig) === fresh) as unknown as SubtleCrypto['verify'];
+    try {
+      // A store whose reads are slow, so the save happens while the check is under way.
+      let release!: () => void;
+      const slow = new Promise<void>((r) => (release = r));
+      const inner: { key: CryptoKey | null } = { key: old };
+      useKeyStore({
+        get: async () => {
+          const k = inner.key;
+          await slow;
+          return k;
+        },
+        set: async (key) => void (inner.key = key),
+        delete: async () => void (inner.key = null),
+      });
+      const stale = checkOwnerKey();
+      const saving = saveOwnerKey('B'.repeat(43));
+      await new Promise((r) => setTimeout(r, 10));
+      release();
+      assert.equal(await stale, 'removed');
+      assert.equal(await saving, 'saved');
+      assert.equal(inner.key, fresh, 'the new key survived');
+      assert.equal(await checkOwnerKey(), 'ok');
+    } finally {
+      proto.importKey = importKey;
+      proto.sign = sign;
+      proto.verify = verify;
     }
   }));
 

@@ -328,8 +328,11 @@ class Session {
     this.loadPrivate(noPrivate(randomToken(12)));
     // Whether this browser may use the creator's name is settled first (it
     // takes a moment, and normally happened long before, on page load).
-    void checkOwnerKey().then(() => {
-      if (this.mode === 'host' && this.status === 'connecting' && !this.peer) this.openRoom(randomCode(), 0);
+    void checkOwnerKey().then((key) => {
+      if (this.mode !== 'host' || this.status !== 'connecting' || this.peer) return;
+      // The creator's own browser that just couldn't check its key isn't told the name is taken.
+      if (key === 'unchecked' && looksLikeOwner(cleanName(name))) return this.fail(OWNER_KEY_UNCHECKED, 'Owner key not checked');
+      this.openRoom(randomCode(), 0);
     });
   }
 
@@ -883,6 +886,11 @@ class Session {
       sent = true;
       const secret = await this.helloSecret;
       if (!secret) return;
+      if (proving && nonce && (await checkOwnerKey()) === 'unchecked') {
+        // The creator's own browser that couldn't check its key isn't sent off to be told the name is taken.
+        if (this.hostConn === conn) this.fail(OWNER_KEY_UNCHECKED, 'Owner key not checked');
+        return;
+      }
       // Null when this browser doesn't hold the key: the host then says why the name isn't allowed.
       const owner = proving && nonce ? await signAsOwner(joinClaim(this.code, secret, nonce)) : null;
       if (this.hostConn === conn && conn.open)
@@ -965,7 +973,7 @@ class Session {
   /**
    * Client: leaves a room whose host goes by the site creator's name without
    * proving it's them. A proof can still be on its way (the host's signature
-   * was slow, or it only just took the name), so the host gets a moment.
+   * was slow, and it tries again), so the host gets a moment.
    * Checked again only when the host's name changes.
    */
   private checkHostName(conn: DataConnection, s: GameState) {
@@ -1028,22 +1036,15 @@ class Session {
       const named = action;
       // Only this device's own player (or anyone at a hot-seat game) can be the site's creator,
       // and whether this browser holds the key may still be being checked (right after a page load).
+      // (Nothing renames the host mid-room; guests would get no proof for a new creator name.)
       const mine = this.mode === 'local' || named.playerId === this.myPlayerId;
       if (!mine || !looksLikeOwner(cleanName(named.name))) return this.run({ ...named, owner: false });
-      return checkOwnerKey().then(async (key) => {
+      return checkOwnerKey().then((key) => {
         if (key === 'unchecked') return this.flash(OWNER_KEY_UNCHECKED, 'error', { title: 'Owner key not checked' });
-        const owner = key === 'ok';
-        // Taking the creator's name: the guests get the proof before the new name, so they don't leave.
-        if (owner && this.mode === 'host' && named.type === 'rename') await this.sendOwnerProofs();
-        this.run({ ...named, owner });
+        this.run({ ...named, owner: key === 'ok' });
       });
     }
     this.run(action);
-  }
-
-  /** Host: sends every guest its proof that this host is the site's creator. */
-  private sendOwnerProofs() {
-    return Promise.all([...this.guests].filter(([, g]) => g.playerId).map(([c, g]) => this.sendOwnerProof(c, g)));
   }
 
   private run(action: Action) {

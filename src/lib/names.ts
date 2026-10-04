@@ -25,6 +25,10 @@ export function cleanName(raw: unknown): string {
   let s = raw.slice(0, 200).normalize('NFKC');
   // Control and format characters: zero-width joiners, bidi overrides, etc.
   s = s.replace(/[\p{Cc}\p{Cf}\p{Co}\p{Cn}\u2028\u2029]/gu, '');
+  // Letters and symbols that draw nothing (Hangul fillers, the blank Braille
+  // pattern, Khmer inherent vowels), which would let "Zoe" plus a blank pass
+  // for a different name.
+  s = s.replace(/[\u115F\u1160\u3164\uFFA0\u2800\u17B4\u17B5]/gu, '');
   // At most one combining mark per letter (no zalgo towers).
   s = s.replace(/(\p{M})\p{M}+/gu, '$1');
   s = s.replace(/\s+/g, ' ').trim();

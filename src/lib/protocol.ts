@@ -23,7 +23,7 @@ export type ClientMsg =
 export type HostMsg =
   /** Sent first, on every connection: what the site's creator signs to join (lib/owner.ts). */
   | { t: 'challenge'; nonce: string }
-  /** The host's proof that it's the site's creator, sent after the welcome: when it takes the name, or the first try failed. */
+  /** The host's proof that it's the site's creator, sent after the welcome when the first try didn't make it. */
   | { t: 'owner'; owner: string }
   /** `owner`: a host using the creator's name proving it's them (lib/owner.ts). */
   | { t: 'welcome'; playerId: string; owner?: string }
