@@ -8,6 +8,7 @@
   import { backdropShadow } from '../lib/backdropShadow';
   import { cardHover, cardPicked, cardRevealed } from '../lib/fx/moments';
   import type { Handle } from '../lib/fx/core';
+  import CardEngraving from './CardEngraving.svelte';
 
   const s = $derived(session.state!);
   const active = $derived(s.players[s.turn]);
@@ -167,6 +168,7 @@
       >
         <span class="turn" in:deal|global={{ i, n: s.offered.length }}>
           <span class="back" aria-hidden="true">
+            <CardEngraving />
             <span class="filigree"></span>
             <span class="seal">
               <svg class="emblem" viewBox="20 0 400 391"><path d="M224 390Q255 331 301.0 283.5Q347 236 377 218L407 200L220 -1Q164 31 116.5 82.5Q69 134 50 169L31 204Z" /></svg>
@@ -176,7 +178,11 @@
             <span class="glare"></span>
             <span class="sheen"></span>
             <span class="filigree"></span>
-            <span class="icon"><span class="glyph" style:--src="url('{categoryIcon(cat)}')"></span></span>
+            <span class="icon">
+              <CardEngraving drawn />
+              <span class="lit"><span class="glyph" style:--src="url('{categoryIcon(cat)}')"></span></span>
+            </span>
+            <span class="rule"></span>
             <span class="title">{cat}</span>
           </span>
         </span>
@@ -193,6 +199,9 @@
 
 <style>
   .choose {
+    /* A fine grain over the cards, so they read as a worked plate rather than a flat fill. */
+    --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 .86 0 0 0 0 .62 .13 0 0 0 -.045'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")
+      0 0 / 180px;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -231,11 +240,13 @@
     display: grid;
     place-items: center;
     border-radius: 8px;
+    overflow: clip;
     border: 1px solid var(--gold-lo);
+    color: #c9a45c;
     background:
+      var(--grain),
       radial-gradient(circle at 50% 50%, rgba(175, 96, 37, 0.28), transparent 55%),
-      repeating-linear-gradient(45deg, rgba(201, 164, 92, 0.07) 0 1px, transparent 1px 16px),
-      repeating-linear-gradient(-45deg, rgba(201, 164, 92, 0.07) 0 1px, transparent 1px 16px),
+      radial-gradient(ellipse 120% 90% at 50% 50%, transparent 55%, rgba(0, 0, 0, 0.4)),
       linear-gradient(170deg, #2a2016, #120e0a 70%);
     box-shadow:
       inset 0 0 0 4px rgba(0, 0, 0, 0.5),
@@ -244,7 +255,11 @@
     transform: rotateY(180deg);
     pointer-events: none;
   }
+  .back :global(.engraving) {
+    opacity: 0.45;
+  }
   .seal {
+    position: relative;
     display: grid;
     place-items: center;
     width: 108px;
@@ -271,10 +286,14 @@
     gap: 0.5rem;
     height: 290px;
     padding: 1.6rem 1rem 1.2rem;
+    /* The engraving's rays run out to the edge and no further. */
+    overflow: clip;
     border-radius: 8px;
     border: 1px solid var(--gold-lo);
     background:
-      radial-gradient(ellipse at 50% 35%, rgba(175, 96, 37, 0.25), transparent 60%),
+      var(--grain),
+      radial-gradient(ellipse at 50% 38%, rgba(175, 96, 37, 0.25), transparent 62%),
+      radial-gradient(ellipse 120% 90% at 50% 45%, transparent 55%, rgba(0, 0, 0, 0.4)),
       linear-gradient(170deg, #2a2016, #120e0a 70%);
     --bs1: 16px 40px;
     --bs1-color: rgba(0, 0, 0, 0.6);
@@ -296,11 +315,20 @@
       opacity 0.4s,
       filter 0.4s;
   }
-  /* The same gold filigree as the panels, on all four corners. */
+  /* The same gold filigree as the panels, on all four corners, joined by a
+     fine rule along the outer line of each. */
   .filigree {
+    --at: 1px;
+    --end: 30px;
+    --rule: linear-gradient(rgba(201, 164, 92, 0.32), rgba(201, 164, 92, 0.32));
     position: absolute;
     inset: 5px;
-    background: var(--filigree);
+    background:
+      var(--filigree),
+      var(--rule) var(--end) var(--at) / calc(100% - 2 * var(--end)) 1px no-repeat,
+      var(--rule) var(--end) calc(100% - var(--at)) / calc(100% - 2 * var(--end)) 1px no-repeat,
+      var(--rule) var(--at) var(--end) / 1px calc(100% - 2 * var(--end)) no-repeat,
+      var(--rule) calc(100% - var(--at)) var(--end) / 1px calc(100% - 2 * var(--end)) no-repeat;
     opacity: 0.8;
     filter: drop-shadow(0 0 3px rgba(224, 138, 68, 0.35));
     pointer-events: none;
@@ -309,11 +337,45 @@
       filter 0.3s;
   }
   .icon {
+    position: relative;
     flex: 1;
-    filter: drop-shadow(0 0 12px rgba(224, 138, 68, 0.45)) drop-shadow(0 4px 6px rgba(0, 0, 0, 0.8));
     display: grid;
     place-items: center;
     width: 100%;
+    color: #c9a45c;
+  }
+  .icon :global(.engraving) {
+    opacity: 0.5;
+    transition: opacity 0.4s;
+  }
+  /* The emblem's glow, on a layer of its own so the engraving stays crisp. */
+  .lit {
+    position: relative;
+    display: grid;
+    place-items: center;
+    filter: drop-shadow(0 0 12px rgba(224, 138, 68, 0.45)) drop-shadow(0 4px 6px rgba(0, 0, 0, 0.8));
+  }
+  /* A rule with a lozenge between the emblem and the name. */
+  .rule {
+    position: relative;
+    flex: none;
+    width: 64%;
+    height: 7px;
+    color: #c9a45c;
+    background: linear-gradient(90deg, transparent, color-mix(in srgb, currentColor 55%, transparent) 30% 70%, transparent) center / 100% 1px
+      no-repeat;
+  }
+  .rule::before {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 5px;
+    height: 5px;
+    translate: -50% -50%;
+    rotate: 45deg;
+    background: #15100b;
+    border: 1px solid color-mix(in srgb, currentColor 85%, transparent);
   }
   .glyph {
     width: 130px;
@@ -390,11 +452,18 @@
   .card.dm .frame {
     border-color: #8c3a2c;
     background:
-      radial-gradient(ellipse at 50% 35%, rgba(224, 85, 63, 0.3), transparent 60%),
+      var(--grain),
+      radial-gradient(ellipse at 50% 38%, rgba(224, 85, 63, 0.3), transparent 62%),
+      radial-gradient(ellipse 120% 90% at 50% 45%, transparent 55%, rgba(0, 0, 0, 0.4)),
       linear-gradient(170deg, #2a1410, #120a08 70%);
   }
   .card.dm .filigree {
     filter: hue-rotate(-32deg) saturate(1.6) drop-shadow(0 0 3px rgba(224, 85, 63, 0.4));
+  }
+  .card.dm .icon,
+  .card.dm .rule,
+  .card.dm .back {
+    color: #d0604a;
   }
   .card.dm .glyph {
     background: linear-gradient(180deg, #ffd7c9 0%, #e0553f 50%, #6d1a10 100%);
@@ -402,9 +471,9 @@
   .card.dm .back {
     border-color: #8c3a2c;
     background:
+      var(--grain),
       radial-gradient(circle at 50% 50%, rgba(224, 85, 63, 0.3), transparent 55%),
-      repeating-linear-gradient(45deg, rgba(224, 85, 63, 0.08) 0 1px, transparent 1px 16px),
-      repeating-linear-gradient(-45deg, rgba(224, 85, 63, 0.08) 0 1px, transparent 1px 16px),
+      radial-gradient(ellipse 120% 90% at 50% 50%, transparent 55%, rgba(0, 0, 0, 0.4)),
       linear-gradient(170deg, #2a1410, #120a08 70%);
   }
   .card.dm .back .filigree {
@@ -449,6 +518,10 @@
     --bs1-color: rgba(224, 138, 68, 0.3);
     --bs2: 24px 50px;
     --bs2-color: rgba(0, 0, 0, 0.7);
+  }
+  .card.mine:not(:global(.down)):hover .icon :global(.engraving),
+  .card.chosen .icon :global(.engraving) {
+    opacity: 0.75;
   }
   .card.mine:not(:global(.down)):hover .glyph {
     transform: scale(1.1) rotate(-3deg);
@@ -526,6 +599,12 @@
       width: 64px;
       height: 64px;
     }
+    .icon :global(.engraving) {
+      --plate: 132px;
+    }
+    .rule {
+      display: none;
+    }
     .glyph {
       width: 60px;
       height: 60px;
@@ -535,8 +614,18 @@
       text-align: left;
     }
     .filigree {
+      --at: 0.5px;
+      --end: 20px;
       inset: 3px;
-      background-size: 20px 20px;
+      background-size:
+        20px 20px,
+        20px 20px,
+        20px 20px,
+        20px 20px,
+        calc(100% - 2 * var(--end)) 1px,
+        calc(100% - 2 * var(--end)) 1px,
+        1px calc(100% - 2 * var(--end)),
+        1px calc(100% - 2 * var(--end));
     }
     .back {
       transform: rotateX(180deg);
