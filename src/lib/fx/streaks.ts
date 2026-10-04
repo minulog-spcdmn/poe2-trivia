@@ -47,8 +47,11 @@ export function heatOf(streak: number): number {
   return Math.min(1, (streak - ABLAZE_FROM + 1) / (ABLAZE_FULL - ABLAZE_FROM + 1));
 }
 
-/** At this many in a row the fire turns blue, and stays blue while the streak lasts. */
-export const BLUE_FROM = ABLAZE_FULL;
+/**
+ * At this many in a row the fire turns blue, and stays blue while the streak
+ * lasts (still growing until ABLAZE_FULL). Early enough to reach in a game to 10.
+ */
+export const BLUE_FROM = 7;
 
 /** Whether a fire burning at `heat` (heatOf) burns blue. */
 export function burnsBlue(heat: number): boolean {

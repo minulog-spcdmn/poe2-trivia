@@ -444,8 +444,8 @@ export function scored(pill: Element, streak = 1) {
 /**
  * A player on a streak burns: their scoreboard entry is wreathed in fire,
  * with flames licking up off it. `heat` (0 to 1, from lib/fx/streaks) sets
- * how big: a faint smoulder at three in a row, growing to a blaze that
- * turns blue at ten.
+ * how big: a faint smoulder at three in a row, turning blue at seven,
+ * and a blaze by ten.
  * Returns a handle to put it out.
  */
 export function ablaze(row: Element, heat: number): Handle {
