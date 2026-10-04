@@ -830,6 +830,7 @@ class Session {
           this.syncClock(msg.now);
           if (!this.state || msg.state.version >= this.state.version || msg.state.version === 0) {
             this.onNewState(this.state, msg.state);
+            this.noteEncounter(this.state, msg.state);
             this.state = msg.state;
           }
           this.status = 'ready';
@@ -970,10 +971,14 @@ class Session {
     if (next.phase === 'question' && next.question && next.question.askedAt !== prev?.question?.askedAt) {
       void this.startMedia(next);
     } else if (next.phase === 'reveal') {
-      const rest = this.unreleasedPatches();
-      // Keep what was sent, so someone arriving during the reveal still gets the pictures.
-      this.stopMedia(true);
-      this.finishVeil(rest);
+      // Only as the reveal begins: a later change during it (someone joining,
+      // the room going public) would cancel the patches still on their way.
+      if (prev?.phase !== 'reveal' || prev.question?.askedAt !== next.question?.askedAt) {
+        const rest = this.unreleasedPatches();
+        // Keep what was sent, so someone arriving during the reveal still gets the pictures.
+        this.stopMedia(true);
+        this.finishVeil(rest);
+      }
     } else if (next.phase !== 'question') {
       this.stopMedia();
     }
