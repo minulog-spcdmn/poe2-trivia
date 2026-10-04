@@ -159,7 +159,7 @@ export async function prepareMedia(q: Question, grayscale: Grayscale): Promise<P
   out.veil = {
     w: W,
     h: H,
-    step: Math.round((q.veil.seconds * 1000) / Math.max(1, patches.length)),
+    step: Math.round(patchStep(q, patches.length)),
     count: patches.length,
     box: visibleBox(pixels, W, H),
   };
@@ -183,8 +183,13 @@ export async function prepareMedia(q: Question, grayscale: Grayscale): Promise<P
  * last patch appearing `seconds` after the first.
  */
 export function patchDelays(q: Question, count: number): number[] {
-  const step = count > 1 ? (q.veil!.seconds * 1000) / count : 0;
+  const step = patchStep(q, count);
   return Array.from({ length: count }, (_, rank) => 400 + rank * step);
+}
+
+/** The time between patches (ms): the host paces them by it, and every device times each patch's burn by it. */
+function patchStep(q: Question, count: number) {
+  return count > 1 ? (q.veil!.seconds * 1000) / (count - 1) : 0;
 }
 
 // ---- what this device shows -------------------------------------------

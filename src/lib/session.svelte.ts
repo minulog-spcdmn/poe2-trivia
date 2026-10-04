@@ -1090,10 +1090,13 @@ class Session {
     const me = this.myPlayerId;
     const hotSeat = this.mode === 'local';
     // Its own chunk: the first download stays small.
-    void import('./codex').then(({ encounterAt, recordEncounter }) => {
-      const e = encounterAt(next, me, hotSeat, ms);
-      if (e) recordEncounter(e);
-    });
+    // After a redeploy the old chunk is gone; the encounter just goes unrecorded.
+    void import('./codex')
+      .then(({ encounterAt, recordEncounter }) => {
+        const e = encounterAt(next, me, hotSeat, ms);
+        if (e) recordEncounter(e);
+      })
+      .catch((err) => console.warn('codex', err));
   }
 
   /** Side effects that every device plays: sounds, and the notice of the creator's arrival. */

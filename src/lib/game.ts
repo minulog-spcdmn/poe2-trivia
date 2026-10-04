@@ -759,7 +759,11 @@ export class Engine {
           this.raceAnswer(s, action, from);
           break;
         }
-        if (s.phase !== 'question' || !s.question) throw new ActionError('There is no open question.');
+        if (s.phase !== 'question' || !s.question) {
+          // An answer sent just as the timer ran out can land after the question closed; drop it quietly.
+          if (action.askedAt !== undefined && action.askedAt === s.lastAskedAt) throw new ActionError('Too late!', true);
+          throw new ActionError('There is no open question.');
+        }
         if (!isActive) throw new ActionError("It's not your turn.");
         const q = s.question;
         if (action.askedAt !== undefined && action.askedAt !== q.askedAt) throw new ActionError('Too late!', true);

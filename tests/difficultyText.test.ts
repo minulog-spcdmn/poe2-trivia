@@ -6,7 +6,7 @@ import { KNOB_STEPS, PRESETS, type Knobs } from '../src/lib/game.ts';
 test('presets are described the same way in both modes, but their unveil only in race', () => {
   assert.equal(
     describe({ difficulty: 'cruel', mode: 'turns' }),
-    'Four options of the same kind (all rings, all bows…). Some questions ask you to find the art for a name.',
+    'Four options of the same kind where the category allows (all rings, all bows…). Some questions ask you to find the art for a name.',
   );
   assert.equal(
     describe({ difficulty: 'merciless', mode: 'turns' }),
@@ -23,7 +23,7 @@ test('a custom unveil applies in both modes, and only what can happen is describ
   const custom: Knobs = { ...PRESETS.cruel, veil: 'slowest', fakes: 1, mirror: 1, grayscale: 'all' };
   assert.equal(
     describe({ difficulty: 'custom', custom, mode: 'turns' }),
-    'Four options of the same kind (all rings, all bows…), one of them made up. Some questions ask you to find the art for a name. The art burns into view very slowly. All art is shown without colour. All art is mirrored.',
+    'Four options of the same kind where the category allows (all rings, all bows…), one of them made up. Some questions ask you to find the art for a name. The art burns into view very slowly. All art is shown without colour. All art is mirrored.',
   );
   // No "name the art" questions, so nothing to unveil; no "find the art" ones, so no grayscale pictures to mention.
   assert.doesNotMatch(describe({ difficulty: 'custom', custom: { ...custom, artChance: 1 } }), /burns into view/);
@@ -39,9 +39,9 @@ test('every step of every knob has a label, and none repeats within a knob', () 
   }
 });
 
-test('big questions without look-alikes only promise one kind where the category allows it', () => {
+test('questions without look-alikes, whatever their size, only promise one kind where the category allows it', () => {
   assert.match(describe({ difficulty: 'custom', custom: { ...PRESETS.cruel, options: 10 } }), /^Ten options of the same kind where the category allows \(/);
-  assert.match(describe({ difficulty: 'cruel' }), /^Four options of the same kind \(/);
+  assert.match(describe({ difficulty: 'cruel' }), /^Four options of the same kind where the category allows \(/);
 });
 
 test('deathmatch and lockout wording, and a name for every difficulty', () => {
