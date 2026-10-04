@@ -265,8 +265,8 @@ export function answerCharging(option: Element): Handle {
   };
 }
 
-/** The verdict badge's colour: your point, no point, or (watching a race) someone else's. */
-export type VerdictTone = 'good' | 'bad' | 'neutral';
+/** The verdict badge's colour: your point, no point, out of time, or (watching a race) someone else's. */
+export type VerdictTone = 'good' | 'bad' | 'late' | 'neutral';
 
 export type RevealTargets = {
   /** The right answer's button (or tile). */
@@ -360,14 +360,14 @@ export function reveal(t: RevealTargets) {
 
   if (t.verdict) {
     // As the badge lands (its CSS pop peaks): its rim lights up, and a right
-    // answer's catches a glint of light; a wrong one sheds a few embers.
+    // answer's catches a glint of light; a wrong or late one sheds a few embers.
     const v = t.verdict;
     const tone = t.verdictTone ?? (t.good ? 'good' : 'bad');
     after(0.3, () => {
-      const col = tone === 'good' ? C.right : tone === 'neutral' ? C.gold : C.wrong;
+      const col = tone === 'good' ? C.right : tone === 'neutral' ? C.gold : tone === 'late' ? C.ember : C.wrong;
       outline(v, { color: col, width: 8, life: 0.7, intensity: 0.45, bleed: 0.12 });
-      if (tone === 'bad') {
-        sparks(v, { count: 8, area: 'edge', colors: [C.wrong, C.ember], speed: [50, 180], size: [0.5, 0.9], life: [0.3, 0.6], gravity: 300 });
+      if (tone === 'bad' || tone === 'late') {
+        sparks(v, { count: 8, area: 'edge', colors: [col, C.ember], speed: [50, 180], size: [0.5, 0.9], life: [0.3, 0.6], gravity: 300 });
         return;
       }
       const pale = tone === 'good' ? C.rightPale : C.goldPale;
