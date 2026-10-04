@@ -106,7 +106,7 @@
     tabindex="-1"
   >
     <div class="head">
-      <NamePlate end="socket" />
+      <NamePlate end="empty" />
       {#key item.id}
         <div class="head-text" in:fade={{ duration: 250 }}>
           <span class="iname" id="codex-item-name">{item.name}</span>
