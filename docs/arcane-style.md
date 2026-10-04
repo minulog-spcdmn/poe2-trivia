@@ -123,3 +123,8 @@ It plays every time the circle mounts (every question), so the shape has to read
 ## Brief for a new piece
 
 > Make it in the engraved alchemist's circle style described in `docs/arcane-style.md` (reference: `src/components/ArcaneCircle.svelte`): gold `currentColor` on dark, fine sharp lines (0.2 to 0.5 in a 200 unit viewBox), shading by one-sided hatching only, exact computed geometry, lines stopping short of every seal and symbol, a soft unbroken glow under worn lines, alchemical iconography (planets, sun, moon, star polygons, an engraved eye), an unreadable invented script instead of text, layers turning slowly at their own speeds, and a short choreographed entrance where lines draw themselves from the centre outward.
+
+## Shared pieces
+
+- `src/lib/arcane.ts` holds the signs (the seven planets, the script's marks, Luna's crescent) and the engraver's routines in a general form: lines and rings broken at holes and under straps, wear, one-sided hatching, pointed rays, woven star polygons {n/m}, and script along a line. The circle takes its signs from it; new pieces should build on it rather than copy the circle's code.
+- The category cards (`src/lib/cardEngraving.ts`, drawn by `CardEngraving.svelte`) are a still piece in this style, laid out in pixels for the card's measured size: a border of script between two lines with planet seals at the corners; on the face a sun of hatched pointed rays round the emblem, Sol and Luna in great seals, and Saturn's seal over the nameplate; on the back a woven {8/3} star round the seal with Luna above and below.
