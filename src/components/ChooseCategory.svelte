@@ -23,6 +23,8 @@
   const dealAt = (i: number) => 0.15 + i * 0.07;
   const flipAt = (i: number) => 0.62 + i * 0.12;
   const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  /** Cards turn over their longer side: across when stacked as wide rows (narrow screens), else sideways. */
+  const narrow = matchMedia('(max-width: 700px)');
   /** When the deal began; null when the cards appeared without one (as after a refresh). */
   let dealtAt: number | null = null;
   /** Whether card i lies face up yet (it can't be picked or catch fire before). */
@@ -45,6 +47,7 @@
     const turn = flipAt(i) - start;
     const total = turn + FLIP;
     const rot = (i - (n - 1) / 2) * 7;
+    const axis = narrow.matches ? 'X' : 'Y';
     return {
       delay: Math.round(start * 1000),
       duration: Math.round(total * 1000),
@@ -55,7 +58,7 @@
         // Lifted off the table while it turns.
         const lift = Math.sin(Math.PI * f);
         const y = (1 - d) * 90 - lift * 16;
-        return `transform:perspective(1200px) translateY(${y.toFixed(2)}px) rotate(${((1 - d) * rot).toFixed(2)}deg) rotateY(${(180 * (1 - f)).toFixed(2)}deg) scale(${(1 + 0.05 * lift).toFixed(4)})`;
+        return `transform:perspective(1200px) translateY(${y.toFixed(2)}px) rotate(${((1 - d) * rot).toFixed(2)}deg) rotate${axis}(${(180 * (1 - f)).toFixed(2)}deg) scale(${(1 + 0.05 * lift).toFixed(4)})`;
       },
     };
   }
@@ -509,6 +512,9 @@
     .filigree {
       inset: 3px;
       background-size: 20px 20px;
+    }
+    .back {
+      transform: rotateX(180deg);
     }
     .seal {
       width: 52px;
