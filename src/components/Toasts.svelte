@@ -1,9 +1,9 @@
 <script lang="ts">
   import { untrack } from 'svelte';
   import { flip } from 'svelte/animate';
-  import { MediaQuery } from 'svelte/reactivity';
   import { fade, fly } from 'svelte/transition';
   import { session } from '../lib/session.svelte';
+  import { phone } from '../lib/layout';
   import { toasts, type ToastKind } from '../lib/toasts.svelte';
   import { playerColor } from '../lib/ui';
   import { heraldNotice, twinkle } from '../lib/fx/moments';
@@ -16,8 +16,7 @@
   // Bottom right on wide screens. On phones the stack sits at the top instead:
   // the keyboard covers the bottom while typing a name or code, and the answer
   // buttons are down there during a game.
-  const narrowQuery = new MediaQuery('(max-width: 640px)');
-  const narrow = $derived(narrowQuery.current);
+  const narrow = $derived(phone.current);
   const enter = $derived(narrow ? { y: -24, duration: 320 } : { x: 56, duration: 320 });
 
   // A guest's lost connection to the host stays up (with what to do about it)

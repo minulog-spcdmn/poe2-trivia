@@ -21,8 +21,9 @@
 
 
   const race = $derived(s.settings.mode === 'race');
-  // Phones keep the question's timer in the scoreboard pinned to the top, in
-  // view while they scroll down to the answers (QuestionView has it otherwise).
+  // The question's timer: in the scoreboard pinned to the top on phones, in
+  // view while they scroll down to the answers, and beside the question's
+  // topic otherwise. Only ever one, so its ticks never double.
   const q = $derived(s.phase === 'question' || s.phase === 'reveal' ? s.question : null);
 
   // Countdown to the automatic skip of a disconnected player's turn.
@@ -97,17 +98,15 @@
 </script>
 
 {#snippet timer()}
-  {#if phone.current && q?.deadline}
+  {#if q?.deadline}
     {#key q.askedAt}
-      <span class="clock" in:fade={{ duration: 200 }}>
-        <TimerRing deadline={q.deadline} total={Math.round((q.deadline - q.askedAt) / 1000)} stopped={s.phase === 'reveal'} />
-      </span>
+      <TimerRing deadline={q.deadline} total={Math.round((q.deadline - q.askedAt) / 1000)} stopped={s.phase === 'reveal'} />
     {/key}
   {/if}
 {/snippet}
 
 <div class="game">
-  <Scoreboard aside={timer} />
+  <Scoreboard aside={phone.current ? timer : undefined} />
 
   <!-- The outgoing and incoming turn share one grid cell while they cross-fade,
        instead of stacking (which briefly doubled the page height). -->
@@ -147,7 +146,7 @@
         {:else}
           <!-- A new question on the same turn (the host asked another) starts fresh. -->
           {#key s.question?.askedAt}
-            <QuestionView />
+            <QuestionView timer={phone.current ? undefined : timer} />
           {/key}
         {/if}
 
@@ -379,19 +378,6 @@
     margin: 0;
     font-style: italic;
     color: #e6b8aa;
-  }
-  .clock {
-    flex: none;
-    display: grid;
-    width: 44px;
-    height: 44px;
-  }
-  .clock :global(.timer) {
-    width: 44px;
-    height: 44px;
-  }
-  .clock :global(.timer span) {
-    font-size: 1.05rem;
   }
   .skip {
     display: flex;

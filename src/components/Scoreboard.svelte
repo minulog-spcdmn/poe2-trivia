@@ -10,6 +10,7 @@
   import { FILL_SPAN, FILL_START, SCORE_LANDS, ablaze, doused, lostPoint, turnsBlue } from '../lib/fx/moments';
   import { scoreRow, scoreRowOf } from '../lib/scoreRows';
   import { burnsBlue, heatOf, streakOf } from '../lib/fx/streaks';
+  import { phone } from '../lib/layout';
 
   /** Shown at the end of the row (the timer, on phones). */
   let { aside }: { aside?: Snippet } = $props();
@@ -165,21 +166,25 @@
     return { duration: 400, easing: cubicOut, css: (_t: number, u: number) => `translate: ${u * dx}px ${u * dy}px` };
   }
 
-  // Stuck: the strip sticks 1px above the top of the screen, so once it has,
-  // it no longer fits in the view.
+  // Stuck (phones only): the strip sticks 1px above the top of the screen, so
+  // once it has, it no longer fits in the view. Its background then covers
+  // what the backdrop draws under the entries, so CSS paints their shadows.
+  let strip = $state<HTMLElement>();
   let stuck = $state(false);
-  function sticking(node: HTMLElement) {
+  $effect(() => {
+    stuck = false;
+    if (!phone.current || !strip) return;
     const io = new IntersectionObserver(([e]) => (stuck = e.intersectionRatio < 1 && e.boundingClientRect.top < 0), {
       threshold: 1,
     });
-    io.observe(node);
-    return { destroy: () => io.disconnect() };
-  }
+    io.observe(strip);
+    return () => io.disconnect();
+  });
 </script>
 
 <!-- On phones the row sticks to the top of the screen; once it has, it takes a
      background of its own over the content scrolling under it. -->
-<div class="strip" class:stuck use:sticking>
+<div class="strip" class:stuck bind:this={strip}>
   <ol class="board" class:crowded={s.players.length > 6}>
     {#each s.players as p, i (p.id)}
       {@const active = race ? s.phase === 'reveal' && s.reveal?.winnerId === p.id : i === s.turn && s.phase !== 'over'}
@@ -189,7 +194,7 @@
       {@const score = scoreOf(p.id, p.score)}
       {@const fire = heat[p.id] ?? 0}
       <li
-        use:backdropShadow
+        use:backdropShadow={{ off: stuck }}
         use:scoreRow={p.id}
         use:burn={fire}
         class:ablaze={fire > 0}
@@ -560,11 +565,11 @@
         box-shadow 0.25s;
     }
     .strip.stuck {
-      background-color: rgba(10, 8, 6, 0.88);
-      -webkit-backdrop-filter: blur(10px);
-      backdrop-filter: blur(10px);
-      border-bottom-color: rgba(125, 99, 51, 0.35);
-      box-shadow: 0 8px 22px rgba(0, 0, 0, 0.55);
+      background-color: var(--pinned-bg);
+      -webkit-backdrop-filter: var(--pinned-blur);
+      backdrop-filter: var(--pinned-blur);
+      border-bottom: var(--pinned-line);
+      box-shadow: 0 8px var(--pinned-shadow);
     }
     /* One row while it fits (the name of whoever's turn it is gives way first). */
     .board {
@@ -625,6 +630,15 @@
     }
     li.active .info {
       min-width: 0;
+    }
+    /* The timer at the end of the row, smaller than beside the question. */
+    .strip :global(.timer) {
+      flex: none;
+      width: 44px;
+      height: 44px;
+    }
+    .strip :global(.timer span) {
+      font-size: 1.05rem;
     }
     .name {
       max-width: 6rem;

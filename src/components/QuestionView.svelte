@@ -8,20 +8,21 @@
   import { visibleBox } from '../lib/patches';
   import { itemImage } from '../lib/ui';
   import { sfx } from '../lib/sound';
-  import TimerRing from './TimerRing.svelte';
   import Avatar from './Avatar.svelte';
   import ArtImage from './ArtImage.svelte';
   import { backdropShadow } from '../lib/backdropShadow';
   import ArcaneCircle from './ArcaneCircle.svelte';
-  import { untrack } from 'svelte';
-  import { MediaQuery } from 'svelte/reactivity';
+  import { untrack, type Snippet } from 'svelte';
   import { FILL_START, answerCharging, artRevealed, raceMiss, reveal as revealFx, veilComplete, veilHandoff, type VerdictTone } from '../lib/fx/moments';
   import { FILL_LEAD } from '../lib/soundDesign';
   import { streakOf } from '../lib/fx/streaks';
   import { scoreRowOf } from '../lib/scoreRows';
   import { fxActive, type Handle } from '../lib/fx/core';
-  import { dock, phone } from '../lib/layout';
+  import { dock, narrow, phone } from '../lib/layout';
   import { portal } from '../lib/portal';
+
+  /** The question's timer (Game.svelte has it in the scoreboard on phones instead). */
+  let { timer }: { timer?: Snippet } = $props();
 
   const s = $derived(session.state!);
   const q = $derived(s.question!);
@@ -37,8 +38,8 @@
   const myMiss = $derived(race && me ? q.misses.find((m) => m.playerId === me) : undefined);
   const winner = $derived(reveal?.winnerId ? s.players.find((p) => p.id === reveal.winnerId) : undefined);
   const iWon = $derived(race ? !!me && reveal?.winnerId === me : !!reveal?.correct);
-  // Phones have no room beside the timer: the verdict goes on the task line, under the category.
-  const narrow = new MediaQuery('(max-width: 760px)');
+  // Narrow screens have no room beside the timer: the verdict goes on the
+  // task line, beside or under the category (lib/layout.ts).
   /**
    * The verdict badge at the reveal: its word, icon and colour (violet
    * for running out of time, gold for a race someone else solved while you watch).
@@ -68,7 +69,6 @@
     untrack(tick);
     return () => cancelAnimationFrame(frame);
   });
-  const timerTotal = $derived(q.deadline ? Math.round((q.deadline - q.askedAt) / 1000) : 0);
   const count = $derived(q.labels.length);
   // Pictures the host has sent for this question.
   const media = $derived(shown.qid === q.askedAt ? shown : null);
@@ -273,6 +273,8 @@
 
   /** Answer buttons (or picture tiles), by option index. */
   let optionEls = $state<HTMLElement[]>([]);
+  /** At the reveal on phones, the answer to keep clear of the docked bar: the one picked, else the right one. */
+  const keepInView = $derived(reveal ? optionEls[(race ? myMiss?.index : reveal.chosenIndex) ?? reveal.correctIndex] : null);
   /** The art stage (name questions) or the picture grid (art questions). */
   let artEl = $state<HTMLElement | null>(null);
   let verdictEl = $state<HTMLElement | null>(null);
@@ -498,12 +500,10 @@
       {#if narrow.current}{@render verdictBadge()}{/if}
     </span>
     <!-- Phones have the timer in the scoreboard pinned to the top (Game.svelte). -->
-    {#if !narrow.current || (q.deadline && !phone.current)}
+    {#if !narrow.current || timer}
       <div class="clock">
         {#if !narrow.current}{@render verdictBadge()}{/if}
-        {#if q.deadline && !phone.current}
-          <TimerRing deadline={q.deadline} total={timerTotal} stopped={!!reveal} />
-        {/if}
+        {@render timer?.()}
       </div>
     {/if}
   </div>
@@ -643,7 +643,7 @@
     {#if reveal && phone.current}
       <!-- Phones: the result and Next button stay at the bottom of the screen, in
            reach of a thumb, however far down the answers have been scrolled. -->
-      <div class="dock" use:portal use:dock in:fade={{ duration: 200 }} out:fade|global={{ duration: 180 }}>
+      <div class="dock" use:portal use:dock={keepInView} in:fade={{ duration: 200 }} out:fade|global={{ duration: 180 }}>
         {@render footer()}
       </div>
     {:else}
@@ -1602,11 +1602,11 @@
       /* Under the toasts (90) and the effects layer (95). */
       z-index: 20;
       padding: 0.6rem max(1rem, env(safe-area-inset-right)) max(0.6rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
-      background-color: rgba(10, 8, 6, 0.9);
-      -webkit-backdrop-filter: blur(10px);
-      backdrop-filter: blur(10px);
-      border-top: 1px solid rgba(125, 99, 51, 0.35);
-      box-shadow: 0 -8px 22px rgba(0, 0, 0, 0.55);
+      background-color: var(--pinned-bg);
+      -webkit-backdrop-filter: var(--pinned-blur);
+      backdrop-filter: var(--pinned-blur);
+      border-top: var(--pinned-line);
+      box-shadow: 0 -8px var(--pinned-shadow);
     }
     .dock .result p {
       font-size: 1rem;
@@ -1616,10 +1616,23 @@
     .topline {
       margin-bottom: 0.6rem;
     }
+    /* Two lines high, before and at the reveal alike, so the art below never
+       moves: the Mirrored line goes beside the base type. (Only a name long
+       enough to wrap makes it grow.) */
     .head {
       height: auto;
-      min-height: 52px;
-      padding: 0.35rem 1.6rem;
+      min-height: 54px;
+      padding: 0.3rem 1.6rem;
+    }
+    .head-text {
+      flex-flow: row wrap;
+      justify-content: center;
+      align-items: baseline;
+      column-gap: 0.6em;
+    }
+    .head-text .iname {
+      flex-basis: 100%;
+      text-align: center;
     }
     .art {
       height: clamp(180px, 32svh, 230px);
@@ -1627,12 +1640,28 @@
     .stage {
       gap: 0.75rem;
     }
+    /* Longer lists a little tighter still, as on wide screens (the answers
+       48, 46 and 44px tall). */
     .options {
       gap: 0.5rem;
+    }
+    .options.compact {
+      gap: 0.45rem;
+    }
+    .options.dense {
+      gap: 0.4rem;
     }
     .option {
       padding-top: 0.55rem;
       padding-bottom: 0.55rem;
+    }
+    .compact .option {
+      padding-top: 0.5rem;
+      padding-bottom: 0.5rem;
+    }
+    .dense .option {
+      padding-top: 0.45rem;
+      padding-bottom: 0.45rem;
     }
     .tile,
     .tiles.many .tile {
