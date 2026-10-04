@@ -80,7 +80,7 @@ export const MOMENTS: Record<Sfx, Moment> = {
       { file: 'layer-metal-2', gain: -41, rate: 1.6, delay: 0, hp: 330, lp: 6483, send: 0.7 },
     ],
   },
-  // A patch of veiled art fizzles into being: the "crispy burn" mix from the
+  // A patch of veiled art fizzles into being: the "crispy burn 2" mix from the
   // Burn Sound Mixer. A crackling fire loop under a handheld sparkler's
   // crackle, a fuse fizzing and a close-up sparkler spitting at the start;
   // each file is trimmed and faded as it was mixed. It plays every second or
