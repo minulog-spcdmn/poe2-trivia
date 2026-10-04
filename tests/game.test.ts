@@ -25,8 +25,8 @@ function setup(names: string[], target = 3, difficulty: Difficulty = 'cruel') {
 }
 
 test('offers three categories and locks out picks for two turns', () => {
-  const { engine } = setup(['A']);
-  let { s } = setup(['A']);
+  const { engine } = setup(['Ash']);
+  let { s } = setup(['Ash']);
   s = engine.apply(s, { type: 'start' }, 'p0');
   const history: string[] = [];
   for (let turn = 0; turn < 30; turn++) {
@@ -51,7 +51,7 @@ test('offers three categories and locks out picks for two turns', () => {
 
 for (const difficulty of ['merciless', 'eternal'] as Difficulty[]) test(`${difficulty} locks out picks for longer`, () => {
   const lockout = PRESETS[difficulty].lockout;
-  let { engine, s } = setup(['A'], 99, difficulty);
+  let { engine, s } = setup(['Ash'], 99, difficulty);
   s = engine.apply(s, { type: 'start' }, 'p0');
   const history: string[] = [];
   for (let turn = 0; turn < 30; turn++) {
@@ -66,7 +66,7 @@ for (const difficulty of ['merciless', 'eternal'] as Difficulty[]) test(`${diffi
 });
 
 test('only the active player may act and scores are counted', () => {
-  let { engine, s } = setup(['A', 'B']);
+  let { engine, s } = setup(['Ash', 'Bram']);
   s = engine.apply(s, { type: 'start' }, 'p0');
   const active = s.players[s.turn].id;
   const other = s.players.find((p) => p.id !== active)!.id;
@@ -78,7 +78,7 @@ test('only the active player may act and scores are counted', () => {
 });
 
 test('game ends at the end of the round once the target is reached by a single leader', () => {
-  let { engine, s } = setup(['A', 'B'], 2);
+  let { engine, s } = setup(['Ash', 'Bram'], 2);
   s = engine.apply(s, { type: 'start' }, 'p0');
   const winner = s.players[0].id;
   let guard = 0;
@@ -96,7 +96,7 @@ test('game ends at the end of the round once the target is reached by a single l
 });
 
 test('disconnected players are skipped', () => {
-  let { engine, s } = setup(['A', 'B', 'C']);
+  let { engine, s } = setup(['Ash', 'Bram', 'Cora']);
   s = engine.apply(s, { type: 'start' }, 'p0');
   const second = s.players[1].id;
   s = engine.apply(s, { type: 'connection', playerId: second, connected: false }, null);
@@ -109,7 +109,7 @@ test('disconnected players are skipped', () => {
 });
 
 test('play again drops players who left, and the first turn goes to someone present', () => {
-  let { engine, s } = setup(['A', 'B', 'C']);
+  let { engine, s } = setup(['Ash', 'Bram', 'Cora']);
   s = engine.apply(s, { type: 'start' }, 'p0');
   s = engine.apply(s, { type: 'connection', playerId: 'p1', connected: false }, null);
   s = engine.apply(s, { type: 'restart' }, 'p0');
@@ -117,7 +117,7 @@ test('play again drops players who left, and the first turn goes to someone pres
   // A player who drops out in the lobby before the start never gets the first turn.
   for (let seed = 1; seed <= 20; seed++) {
     const e = new Engine(items, { rng: seeded(seed) });
-    let t = setup(['A', 'B', 'C']).s;
+    let t = setup(['Ash', 'Bram', 'Cora']).s;
     t = e.apply(t, { type: 'connection', playerId: 'p2', connected: false }, null);
     t = e.apply(t, { type: 'start' }, 'p0');
     assert.equal(t.players[t.turn].connected, true);
@@ -125,7 +125,7 @@ test('play again drops players who left, and the first turn goes to someone pres
 });
 
 test('joining a running game makes you a spectator who is seated at the restart', () => {
-  let { engine, s } = setup(['A', 'B']);
+  let { engine, s } = setup(['Ash', 'Bram']);
   s = engine.apply(s, { type: 'start' }, 'p0');
   s = engine.apply(s, { type: 'join', playerId: 'late', name: 'Late' }, 'late');
   assert.equal(s.players.length, 2);
@@ -153,24 +153,24 @@ test('joining a running game makes you a spectator who is seated at the restart'
 });
 
 test('spectators leave cleanly, respect the lock and the seat limit', () => {
-  let { engine, s } = setup(['A']);
+  let { engine, s } = setup(['Ash']);
   s = engine.apply(s, { type: 'start' }, 'p0');
-  s = engine.apply(s, { type: 'join', playerId: 'x', name: 'X' }, 'x');
+  s = engine.apply(s, { type: 'join', playerId: 'x', name: 'Xan' }, 'x');
   s = engine.apply(s, { type: 'remove', playerId: 'x' }, null);
   assert.deepEqual(s.spectators, []);
   assert.equal(s.phase, 'choosing');
 
   const locked = engine.apply(s, { type: 'settings', settings: { locked: true } }, 'p0');
-  assert.throws(() => engine.apply(locked, { type: 'join', playerId: 'y', name: 'Y' }, 'y'));
+  assert.throws(() => engine.apply(locked, { type: 'join', playerId: 'y', name: 'Yul' }, 'y'));
 
   // A full table: spectators beyond the free seats keep watching.
   const names = ['Alba', 'Brom', 'Cyra', 'Dusk', 'Ember', 'Fenwick', 'Galt', 'Hollis', 'Iona', 'Jorik', 'Kestrel', 'Lumen'];
   let full = setup(names);
   s = full.engine.apply(full.s, { type: 'start' }, 'p0');
-  s = full.engine.apply(s, { type: 'join', playerId: 'w', name: 'W' }, 'w');
+  s = full.engine.apply(s, { type: 'join', playerId: 'w', name: 'Wynn' }, 'w');
   s = full.engine.apply(s, { type: 'restart' }, 'p0');
   assert.equal(s.players.length, 12);
-  assert.deepEqual(s.spectators, [{ id: 'w', name: 'W' }]);
+  assert.deepEqual(s.spectators, [{ id: 'w', name: 'Wynn' }]);
 });
 
 test('spectators waiting in a full lobby get the first free seat', () => {
@@ -194,7 +194,7 @@ test('spectators waiting in a full lobby get the first free seat', () => {
 });
 
 test('a spectator reconnecting to a locked room keeps their spot', () => {
-  let { engine, s } = setup(['A', 'B']);
+  let { engine, s } = setup(['Ash', 'Bram']);
   s = engine.apply(s, { type: 'start' }, 'p0');
   s = engine.apply(s, { type: 'join', playerId: 'w', name: 'Wren' }, 'w');
   s = engine.apply(s, { type: 'settings', settings: { locked: true } }, 'p0');
@@ -206,7 +206,7 @@ test('a spectator reconnecting to a locked room keeps their spot', () => {
 });
 
 test('guests see who is watching; the answer stays hidden', () => {
-  let { engine, s } = setup(['A']);
+  let { engine, s } = setup(['Ash']);
   s = engine.apply(s, { type: 'start' }, 'p0');
   s = engine.apply(s, { type: 'join', playerId: 'w', name: 'Wren' }, 'w');
   s = engine.apply(s, { type: 'pick', category: s.offered[0] }, 'p0');
@@ -219,7 +219,7 @@ test('guests see who is watching; the answer stays hidden', () => {
 test('difficulties scale options, decoy kind and question types', () => {
   for (const difficulty of ['cruel', 'merciless', 'eternal'] as Difficulty[]) {
     const rules = PRESETS[difficulty];
-    let { s } = setup(['A'], 3, difficulty);
+    let { s } = setup(['Ash'], 3, difficulty);
     const engine = new Engine(items, { rng: seeded(42), fakes });
     s = engine.apply(s, { type: 'start' }, 'p0');
     const modes = new Set<string>();
@@ -351,7 +351,7 @@ test('talismans are two-handed weapons', () => {
 });
 
 test('games saved before the category rename resume with the new names', () => {
-  const { engine, s } = setup(['A', 'B']);
+  const { engine, s } = setup(['Ash', 'Bram']);
   const old = 'Flasks, Jewels & Relics';
   const saved: GameState = {
     ...s,
@@ -368,7 +368,7 @@ test('games saved before the category rename resume with the new names', () => {
 });
 
 test('race mode: first correct answer scores, wrong answers cost a point and lock out', () => {
-  let { engine, s } = setup(['A', 'B', 'C'], 2);
+  let { engine, s } = setup(['Ash', 'Bram', 'Cora'], 2);
   s = engine.apply(s, { type: 'settings', settings: { mode: 'race' } }, 'p0');
   s = engine.apply(s, { type: 'start' }, 'p0');
   assert.equal(s.phase, 'question');
@@ -415,7 +415,7 @@ test('race mode: first correct answer scores, wrong answers cost a point and loc
 });
 
 test('guests never see the answer before the reveal', () => {
-  let { engine, s } = setup(['A', 'B']);
+  let { engine, s } = setup(['Ash', 'Bram']);
   s = engine.apply(s, { type: 'start' }, 'p0');
   s = engine.apply(s, { type: 'pick', category: s.offered[0] }, s.players[s.turn].id);
   const q = s.question!;
@@ -470,7 +470,7 @@ test('eternal mirrors some pictures, each on its own roll', () => {
 });
 
 test('guests only learn which pictures were mirrored at the reveal', () => {
-  let { engine, s } = setup(['A'], 3, 'eternal');
+  let { engine, s } = setup(['Ash'], 3, 'eternal');
   s = engine.apply(s, { type: 'start' }, 'p0');
   // Keep asking until a question has a mirrored picture.
   while (true) {
@@ -487,7 +487,7 @@ test('guests only learn which pictures were mirrored at the reveal', () => {
 
 test('guests cannot act for others, join locked rooms, or impersonate', () => {
   let { engine, s } = setup(['Alva', 'Zana']);
-  assert.throws(() => engine.apply(s, { type: 'join', playerId: 'p0', name: 'X' }, 'p1'), /Not allowed/);
+  assert.throws(() => engine.apply(s, { type: 'join', playerId: 'p0', name: 'Xan' }, 'p1'), /Not allowed/);
   assert.throws(() => engine.apply(s, { type: 'join', playerId: 'p9', name: 'Host' }, 'p9'), /reserved/);
   assert.throws(() => engine.apply(s, { type: 'join', playerId: 'p9', name: 'Zаna' }, 'p9'), /looks too much like/); // Cyrillic а
   assert.throws(() => engine.apply(s, { type: 'join', playerId: 'p9', name: 'A1va' }, 'p9'), /looks too much like/);
@@ -540,7 +540,7 @@ function playTurn(engine: Engine, s: GameState, correct: (id: string) => boolean
 }
 
 test('a tie over the target starts a deathmatch between the tied players only', () => {
-  let { engine, s } = setup(['A', 'B', 'C'], 1);
+  let { engine, s } = setup(['Ash', 'Bram', 'Cora'], 1);
   s = engine.apply(s, { type: 'start' }, 'p0');
   const [x, y, z] = s.players.map((p) => p.id);
   // Round 1: x and y score, z misses -> x and y tied at the target.
@@ -569,7 +569,7 @@ test('a tie over the target starts a deathmatch between the tied players only', 
 });
 
 test('deathmatch: everyone wrong keeps everyone in; three-way ties shrink', () => {
-  let { engine, s } = setup(['A', 'B', 'C'], 1);
+  let { engine, s } = setup(['Ash', 'Bram', 'Cora'], 1);
   s = engine.apply(s, { type: 'start' }, 'p0');
   const ids = s.players.map((p) => p.id);
   for (let i = 0; i < 3; i++) s = playTurn(engine, s, () => true);
@@ -588,7 +588,7 @@ test('deathmatch: everyone wrong keeps everyone in; three-way ties shrink', () =
 });
 
 test('deathmatch: a disconnected duelist forfeits', () => {
-  let { engine, s } = setup(['A', 'B'], 1);
+  let { engine, s } = setup(['Ash', 'Bram'], 1);
   s = engine.apply(s, { type: 'start' }, 'p0');
   for (let i = 0; i < 2; i++) s = playTurn(engine, s, () => true);
   const [x, y] = s.deathmatch!.alive;
@@ -624,7 +624,7 @@ test('the answer is not the name that fits the other options best', () => {
 test('earlier answers never come back as decoys, until the category starts over', () => {
   const engine = new Engine(items, { rng: seeded(5) });
   let s: GameState = createGame(null, { targetScore: 99, timer: 0, difficulty: 'eternal', mode: 'turns', public: false, locked: false });
-  s = engine.apply(s, { type: 'join', playerId: 'p0', name: 'A' }, 'p0');
+  s = engine.apply(s, { type: 'join', playerId: 'p0', name: 'Ash' }, 'p0');
   s = engine.apply(s, { type: 'start' }, null);
   const cat = 'Rings';
   const size = engine.byCategory.get(cat)!.length;
@@ -681,7 +681,7 @@ test('question ids keep increasing even if the clock goes back', () => {
   let clock = 1_000_000;
   const engine = new Engine(items, { rng: seeded(9), now: () => clock });
   let s: GameState = createGame(null, { targetScore: 99, timer: 0, difficulty: 'cruel', mode: 'turns', public: false, locked: false });
-  s = engine.apply(s, { type: 'join', playerId: 'p0', name: 'A' }, 'p0');
+  s = engine.apply(s, { type: 'join', playerId: 'p0', name: 'Ash' }, 'p0');
   s = engine.apply(s, { type: 'start' }, null);
   let last = 0;
   for (let t = 0; t < 5; t++) {
@@ -697,7 +697,7 @@ test('question ids keep increasing even if the clock goes back', () => {
 test('removing the last seat on their turn still ends the round (and the game)', () => {
   const engine = new Engine(items, { rng: seeded(42) });
   let s: GameState = createGame(null, { targetScore: 1, timer: 0, difficulty: 'cruel', mode: 'turns', public: false, locked: false });
-  ['A', 'B', 'C'].forEach((name, i) => (s = engine.apply(s, { type: 'join', playerId: `p${i}`, name }, `p${i}`)));
+  ['Ash', 'Bram', 'Cora'].forEach((name, i) => (s = engine.apply(s, { type: 'join', playerId: `p${i}`, name }, `p${i}`)));
   s = engine.apply(s, { type: 'start' }, null);
   const [x, , z] = s.players.map((p) => p.id);
   s = playTurn(engine, s, (id) => id === x);
@@ -711,7 +711,7 @@ test('removing the last seat on their turn still ends the round (and the game)',
 test('removing a player seated before the active duelist keeps their question', () => {
   const engine = new Engine(items, { rng: seeded(42) });
   let s: GameState = createGame(null, { targetScore: 1, timer: 0, difficulty: 'cruel', mode: 'turns', public: false, locked: false });
-  ['A', 'B', 'C', 'D'].forEach((name, i) => (s = engine.apply(s, { type: 'join', playerId: `p${i}`, name }, `p${i}`)));
+  ['Ash', 'Bram', 'Cora', 'Dax'].forEach((name, i) => (s = engine.apply(s, { type: 'join', playerId: `p${i}`, name }, `p${i}`)));
   s = engine.apply(s, { type: 'start' }, null);
   for (let i = 0; i < 4; i++) s = playTurn(engine, s, () => true);
   assert.equal(s.deathmatch!.alive.length, 4);
@@ -729,7 +729,7 @@ test('removing a player seated before the active duelist keeps their question', 
 });
 
 test('a duelist who drops out and is left behind counts as eliminated', () => {
-  let { engine, s } = setup(['A', 'B'], 1);
+  let { engine, s } = setup(['Ash', 'Bram'], 1);
   s = engine.apply(s, { type: 'start' }, 'p0');
   for (let i = 0; i < 2; i++) s = playTurn(engine, s, () => true);
   const [x, y] = s.deathmatch!.alive;
@@ -740,7 +740,7 @@ test('a duelist who drops out and is left behind counts as eliminated', () => {
 });
 
 test('the host can swap a question for another in the same category, without using up the turn', () => {
-  let { engine, s } = setup(['A', 'B']);
+  let { engine, s } = setup(['Ash', 'Bram']);
   s = engine.apply(s, { type: 'start' }, 'p0');
   const me = s.players[s.turn].id;
   s = engine.apply(s, { type: 'pick', category: s.offered[0] }, me);
@@ -759,7 +759,7 @@ test('the host can swap a question for another in the same category, without usi
 });
 
 test('only real difficulties are accepted, not names inherited from Object', () => {
-  let { engine, s } = setup(['A']);
+  let { engine, s } = setup(['Ash']);
   for (const bogus of ['toString', 'constructor', '__proto__']) {
     s = engine.apply(s, { type: 'settings', settings: { difficulty: bogus as Difficulty } }, 'p0');
     assert.equal(s.settings.difficulty, 'cruel');
@@ -770,7 +770,7 @@ test('only real difficulties are accepted, not names inherited from Object', () 
 });
 
 test('a second Next for the same reveal is dropped quietly', () => {
-  let { engine, s } = setup(['A', 'B']);
+  let { engine, s } = setup(['Ash', 'Bram']);
   s = engine.apply(s, { type: 'start' }, 'p0');
   const me = s.players[s.turn].id;
   s = engine.apply(s, { type: 'pick', category: s.offered[0] }, me);
@@ -783,7 +783,7 @@ test('a second Next for the same reveal is dropped quietly', () => {
 });
 
 test('turns: an answer landing just after time ran out is dropped quietly', () => {
-  let { engine, s } = setup(['A', 'B']);
+  let { engine, s } = setup(['Ash', 'Bram']);
   s = engine.apply(s, { type: 'start' }, 'p0');
   const me = s.players[s.turn].id;
   s = engine.apply(s, { type: 'pick', category: s.offered[0] }, me);
@@ -809,7 +809,7 @@ test('reveals are stamped with the host clock; only the host or (turns) whoever 
     let clock = 5_000_000;
     const engine = new Engine(items, { rng: seeded(3), now: () => clock });
     let s: GameState = createGame('p0', { targetScore: 9, timer: 0, difficulty: 'cruel', mode, public: false, locked: false });
-    for (const [i, name] of ['A', 'B', 'C'].entries()) s = engine.apply(s, { type: 'join', playerId: `p${i}`, name }, `p${i}`);
+    for (const [i, name] of ['Ash', 'Bram', 'Cora'].entries()) s = engine.apply(s, { type: 'join', playerId: `p${i}`, name }, `p${i}`);
     s = engine.apply(s, { type: 'start' }, 'p0');
     // Race: anyone answers; turns: whoever's turn it is. Never the host here.
     if (mode === 'turns') while (s.players[s.turn].id === 'p0') s = engine.apply(s, { type: 'skip' }, 'p0');
@@ -840,7 +840,7 @@ test('the automatic move on counts down from the reveal stamp', () => {
 });
 
 test('race: asking another question refunds blind guesses and leaves out all the old pictures', () => {
-  let { engine, s } = setup(['A', 'B', 'C'], 5);
+  let { engine, s } = setup(['Ash', 'Bram', 'Cora'], 5);
   s = engine.apply(s, { type: 'settings', settings: { mode: 'race' } }, 'p0');
   s = engine.apply(s, { type: 'start' }, 'p0');
   const q = s.question!;
@@ -857,10 +857,10 @@ test('race: asking another question refunds blind guesses and leaves out all the
 });
 
 test('seats kept for players who never came back are let go when the game starts', () => {
-  let { engine, s } = setup(['A', 'B', 'C']);
+  let { engine, s } = setup(['Ash', 'Bram', 'Cora']);
   // The host refreshed: everyone else is offline until they reconnect.
   for (const id of ['p1', 'p2']) s = engine.apply(s, { type: 'connection', playerId: id, connected: false }, null);
-  s = engine.apply(s, { type: 'join', playerId: 'p1', name: 'B' }, 'p1'); // p1 came back
+  s = engine.apply(s, { type: 'join', playerId: 'p1', name: 'Bram' }, 'p1'); // p1 came back
   s = engine.apply(s, { type: 'start' }, 'p0');
   assert.deepEqual(s.players.map((p) => p.id).sort(), ['p0', 'p1']);
 });
@@ -925,7 +925,7 @@ test('merciless and eternal swap decoys on name questions for made-up names', ()
 test('made-up names stay hidden until the reveal, and never count as used items', () => {
   const engine = new Engine(items, { rng: seeded(4), fakes });
   let s: GameState = createGame('p0', { targetScore: 3, timer: 0, difficulty: 'eternal', mode: 'turns', public: false, locked: false });
-  s = engine.apply(s, { type: 'join', playerId: 'p0', name: 'A' }, 'p0');
+  s = engine.apply(s, { type: 'join', playerId: 'p0', name: 'Ash' }, 'p0');
   s = engine.apply(s, { type: 'start' }, 'p0');
   s = engine.apply(s, { type: 'pick', category: s.offered[0] }, 'p0');
   while (!s.question!.options.some(isFake)) s = engine.apply(s, { type: 'reask' }, 'p0');
@@ -946,7 +946,7 @@ test('a made-up name someone fell for is not used again in that room', () => {
   for (const mode of ['turns', 'race'] as const) {
     const engine = new Engine(items, { rng: seeded(8), fakes });
     let s: GameState = createGame('p0', { targetScore: 999, timer: 0, difficulty: 'eternal', mode, public: false, locked: false });
-    s = engine.apply(s, { type: 'join', playerId: 'p0', name: 'A' }, 'p0');
+    s = engine.apply(s, { type: 'join', playerId: 'p0', name: 'Ash' }, 'p0');
     s = engine.apply(s, { type: 'start' }, 'p0');
     const fallenFor = new Set<string>();
     for (let turn = 0; turn < 300; turn++) {
@@ -967,7 +967,7 @@ test('a made-up name someone fell for is not used again in that room', () => {
 });
 
 test('the next game in a room asks about other items than the last one', () => {
-  let { engine, s } = setup(['A', 'B'], 5);
+  let { engine, s } = setup(['Ash', 'Bram'], 5);
   s = engine.apply(s, { type: 'start' }, 'p0');
   const play = () => {
     const asked: string[] = [];
@@ -1001,7 +1001,7 @@ test('zoe_arcana always gets the last avatar colour', () => {
   assert.equal(s.players.find((p) => p.id === 'z')!.hue, 11);
 
   // Whoever had it moves to a free colour when she joins.
-  ({ engine, s } = setup(['A', 'B', 'C']));
+  ({ engine, s } = setup(['Ash', 'Bram', 'Cora']));
   s.players[1].hue = 11;
   s = engine.apply(s, { type: 'join', playerId: 'z', name: 'zoe_arcana' }, 'z');
   assert.equal(s.players.find((p) => p.id === 'z')!.hue, 11);
@@ -1009,26 +1009,26 @@ test('zoe_arcana always gets the last avatar colour', () => {
   assert.equal(new Set(s.players.map((p) => p.hue)).size, 4);
 
   // Renaming to it claims it too.
-  ({ engine, s } = setup(['A', 'B']));
+  ({ engine, s } = setup(['Ash', 'Bram']));
   s = engine.apply(s, { type: 'rename', playerId: 'p0', name: 'zoe_arcana' }, 'p0');
   assert.equal(s.players[0].hue, 11);
-  s = engine.apply(s, { type: 'join', playerId: 'c', name: 'C' }, 'c');
+  s = engine.apply(s, { type: 'join', playerId: 'c', name: 'Cora' }, 'c');
   assert.equal(s.players.find((p) => p.id === 'c')!.hue, 0, 'her old colour is free again');
 
   // Any spelling the name check treats as the same name counts.
-  ({ engine, s } = setup(['A']));
+  ({ engine, s } = setup(['Ash']));
   s = engine.apply(s, { type: 'join', playerId: 'z', name: 'Zoe Arcana' }, 'z');
   assert.equal(s.players.find((p) => p.id === 'z')!.hue, 11);
   assert.equal(PALETTE.length, MAX_PLAYERS, 'one colour per seat, ruby last');
 
   // Renaming away from it gives it up.
-  ({ engine, s } = setup(['A', 'B']));
+  ({ engine, s } = setup(['Ash', 'Bram']));
   s = engine.apply(s, { type: 'rename', playerId: 'p0', name: 'zoe_arcana' }, 'p0');
   s = engine.apply(s, { type: 'rename', playerId: 'p0', name: 'Ash' }, 'p0');
   assert.equal(s.players[0].hue, 0);
 
   // Mid-game renames don't recolour anyone until the next game.
-  ({ engine, s } = setup(['A', 'B']));
+  ({ engine, s } = setup(['Ash', 'Bram']));
   s.players[1].hue = 11;
   s = engine.apply(s, { type: 'start' }, 'p0');
   const hue = (id: string) => s.players.find((p) => p.id === id)!.hue;
@@ -1050,7 +1050,7 @@ test('a preset unveils the art only in race; a custom unveil works in both modes
       const custom = { ...PRESETS.cruel, artChance: 0, veil: 'fast' as const };
       const engine = new Engine(items, { rng: seeded(5), fakes });
       let s: GameState = createGame('p0', { targetScore: 99, timer: 20, difficulty, custom, mode, public: false, locked: false });
-      s = engine.apply(s, { type: 'join', playerId: 'p0', name: 'A' }, 'p0');
+      s = engine.apply(s, { type: 'join', playerId: 'p0', name: 'Ash' }, 'p0');
       s = engine.apply(s, { type: 'start' }, 'p0');
       let named = 0;
       for (let i = 0; i < 20; i++) {
@@ -1071,7 +1071,7 @@ test('a preset unveils the art only in race; a custom unveil works in both modes
 });
 
 test('the host can tune a custom difficulty, one knob at a time, within the allowed steps', () => {
-  let { engine, s } = setup(['A', 'B']);
+  let { engine, s } = setup(['Ash', 'Bram']);
   // The first time, Custom starts out as the difficulty that was picked.
   s = engine.apply(s, { type: 'settings', settings: { difficulty: 'eternal', mode: 'race' } }, 'p0');
   assert.equal(s.settings.custom, undefined);
@@ -1097,7 +1097,7 @@ test('custom questions follow the knobs', () => {
   const custom = { options: 10, similarNames: 0, fakes: 1, artChance: 1, veil: 'off', grayscale: 'all', mirror: 0.3, lockout: 2 } as const;
   const engine = new Engine(items, { rng: seeded(9), fakes });
   let s: GameState = createGame('p0', { targetScore: 99, timer: 0, difficulty: 'custom', custom, mode: 'turns', public: false, locked: false });
-  s = engine.apply(s, { type: 'join', playerId: 'p0', name: 'A' }, 'p0');
+  s = engine.apply(s, { type: 'join', playerId: 'p0', name: 'Ash' }, 'p0');
   s = engine.apply(s, { type: 'start' }, 'p0');
   const history: string[] = [];
   for (let i = 0; i < 30; i++) {
@@ -1117,7 +1117,7 @@ test('custom questions follow the knobs', () => {
 test('a lockout of 0 locks nothing', () => {
   const engine = new Engine(items, { rng: seeded(4) });
   let s: GameState = createGame('p0', { targetScore: 99, timer: 0, difficulty: 'custom', custom: { ...PRESETS.cruel, lockout: 0 }, mode: 'turns', public: false, locked: false });
-  s = engine.apply(s, { type: 'join', playerId: 'p0', name: 'A' }, 'p0');
+  s = engine.apply(s, { type: 'join', playerId: 'p0', name: 'Ash' }, 'p0');
   s = engine.apply(s, { type: 'start' }, 'p0');
   let repeats = 0;
   let last = '';
@@ -1162,7 +1162,7 @@ test('the levels past Eternal: ten options, three made-up names', () => {
   const custom = { ...PRESETS.eternal, options: 10, fakes: 3, artChance: 0 };
   const engine = new Engine(items, { rng: seeded(21), fakes });
   let s: GameState = createGame('p0', { targetScore: 99, timer: 0, difficulty: 'custom', custom, mode: 'turns', public: false, locked: false });
-  s = engine.apply(s, { type: 'join', playerId: 'p0', name: 'A' }, 'p0');
+  s = engine.apply(s, { type: 'join', playerId: 'p0', name: 'Ash' }, 'p0');
   s = engine.apply(s, { type: 'start' }, 'p0');
   let three = 0;
   for (let i = 0; i < 40; i++) {
@@ -1187,7 +1187,7 @@ test('six options with three made-up names show all three, even when groups mix'
     const custom = { ...PRESETS.eternal, options: 6, fakes: 3, artChance };
     const engine = new Engine(items, { rng: seeded(seed), fakes });
     let s: GameState = createGame('p0', { targetScore: 999, timer: 0, difficulty: 'custom', custom, mode: 'turns', public: false, locked: false });
-    s = engine.apply(s, { type: 'join', playerId: 'p0', name: 'A' }, 'p0');
+    s = engine.apply(s, { type: 'join', playerId: 'p0', name: 'Ash' }, 'p0');
     s = engine.apply(s, { type: 'start' }, 'p0');
     let mixed = 0;
     for (let i = 0; i < 300; i++) {
@@ -1213,14 +1213,14 @@ test('six options with three made-up names show all three, even when groups mix'
 test('made-up names are capped at half the options, since each copies a real name on screen', () => {
   assert.equal(cleanKnobs({ ...PRESETS.eternal, options: 4, fakes: 3 }).fakes, 2);
   assert.equal(cleanKnobs({ ...PRESETS.eternal, options: 6, fakes: 3 }).fakes, 3);
-  let { engine, s } = setup(['A']);
+  let { engine, s } = setup(['Ash']);
   s = engine.apply(s, { type: 'settings', settings: { difficulty: 'custom', custom: { options: 8, fakes: 3 } } }, 'p0');
   s = engine.apply(s, { type: 'settings', settings: { custom: { options: 4 } } }, 'p0');
   assert.deepEqual([s.settings.custom!.options, s.settings.custom!.fakes], [4, 2]);
 });
 
 test('switching to race and Custom at once copies the preset as it plays in race', () => {
-  let { engine, s } = setup(['A'], 3, 'eternal');
+  let { engine, s } = setup(['Ash'], 3, 'eternal');
   s = engine.apply(s, { type: 'settings', settings: { mode: 'race', difficulty: 'custom' } }, 'p0');
   assert.equal(s.settings.custom!.veil, 'slow');
 });
@@ -1232,7 +1232,7 @@ function longestRun(xs: string[]) {
 }
 
 for (const difficulty of ['cruel', 'eternal'] as Difficulty[]) test(`${difficulty} keeps its share of art questions without long runs`, () => {
-  let { engine, s } = setup(['A'], 99, difficulty);
+  let { engine, s } = setup(['Ash'], 99, difficulty);
   s = engine.apply(s, { type: 'start' }, 'p0');
   const modes = Array.from({ length: 1000 }, () => engine.makeQuestion(s, engine.categories[0]).mode);
   const share = modes.filter((m) => m === 'art').length / modes.length;
@@ -1264,7 +1264,7 @@ test('art questions lean toward whoever has had too few, one tally per player', 
 });
 
 test('a question thrown out for failed art does not count toward the art lean', () => {
-  let { engine, s } = setup(['A']);
+  let { engine, s } = setup(['Ash']);
   s = engine.apply(s, { type: 'start' }, 'p0');
   s = engine.apply(s, { type: 'pick', category: s.offered[0] }, 'p0');
   for (let i = 0; i < 10; i++) {
@@ -1301,7 +1301,7 @@ test('the held name is refused until the device is unlocked', async () => {
 });
 
 test('turns: a streak counts your own right answers in a row, and a miss breaks it', () => {
-  let { engine, s } = setup(['A', 'B'], 50);
+  let { engine, s } = setup(['Ash', 'Bram'], 50);
   s = engine.apply(s, { type: 'start' }, 'p0');
   const streak = (id: string) => s.players.find((p) => p.id === id)!.streak;
   const first = s.players[s.turn].id;
@@ -1322,7 +1322,7 @@ test('turns: a streak counts your own right answers in a row, and a miss breaks 
 });
 
 test('race: only the winner keeps a streak going; not being first breaks it too', () => {
-  let { engine, s } = setup(['A', 'B', 'C'], 50);
+  let { engine, s } = setup(['Ash', 'Bram', 'Cora'], 50);
   s = engine.apply(s, { type: 'settings', settings: { mode: 'race' } }, 'p0');
   s = engine.apply(s, { type: 'start' }, 'p0');
   const streak = (id: string) => s.players.find((p) => p.id === id)!.streak;
@@ -1342,7 +1342,7 @@ test('race: only the winner keeps a streak going; not being first breaks it too'
 });
 
 test('streaks start over with every game', () => {
-  let { engine, s } = setup(['A'], 2);
+  let { engine, s } = setup(['Ash'], 2);
   s = engine.apply(s, { type: 'start' }, 'p0');
   while (s.phase !== 'over') {
     if (s.phase === 'choosing') s = engine.apply(s, { type: 'pick', category: s.offered[0] }, 'p0');
@@ -1352,4 +1352,13 @@ test('streaks start over with every game', () => {
   assert.equal(s.players[0].streak, 2);
   s = engine.apply(s, { type: 'restart', play: true }, 'p0');
   assert.equal(s.players[0].streak, 0);
+});
+
+test('names need at least two characters', () => {
+  let { engine, s } = setup(['Ash']);
+  assert.throws(() => engine.apply(s, { type: 'join', playerId: 'p1', name: 'B' }, 'p1'), /at least 2/);
+  assert.throws(() => engine.apply(s, { type: 'join', playerId: 'p1', name: ' B​ ' }, 'p1'), /at least 2/);
+  s = engine.apply(s, { type: 'join', playerId: 'p1', name: 'Bo' }, 'p1');
+  assert.equal(s.players[1].name, 'Bo');
+  assert.throws(() => engine.apply(s, { type: 'rename', playerId: 'p1', name: 'B' }, 'p1'), /at least 2/);
 });
