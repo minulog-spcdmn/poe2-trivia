@@ -43,6 +43,10 @@
     dealtAt ??= performance.now();
     // The face's own entrance (see .dealt below) plays with the deal only.
     node.classList.add('dealt');
+    // Face down until it turns halfway (see .down below).
+    const card = node.parentElement;
+    card?.classList.add('down');
+    setTimeout(() => card?.classList.remove('down'), (flipAt(i) + FLIP / 2) * 1000);
     const start = dealAt(i);
     const turn = flipAt(i) - start;
     const total = turn + FLIP;
@@ -412,11 +416,21 @@
       --bs1-color: rgba(224, 85, 63, 0.45);
     }
   }
+  /* While a card lies face down its face is turned away, but the backdrop
+     would still draw the face's shadow (and its hover shadow) under the back,
+     which has a shadow of its own. */
+  .card:global(.down) .frame {
+    --bs1-color: transparent;
+    --bs2-color: transparent;
+  }
+  .card.dm:global(.down) .frame {
+    animation: none;
+  }
   .card.mine {
     cursor: pointer;
   }
-  .card.mine:hover .frame,
-  .card.mine:focus-visible .frame {
+  .card.mine:not(:global(.down)):hover .frame,
+  .card.mine:not(:global(.down)):focus-visible .frame {
     transform: perspective(900px) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg)) translateY(-10px) scale(1.04);
     border-color: var(--gold);
     --bs-ring: rgba(201, 164, 92, 0.6);
@@ -425,7 +439,7 @@
     --bs2: 24px 50px;
     --bs2-color: rgba(0, 0, 0, 0.7);
   }
-  .card.mine:hover .glyph {
+  .card.mine:not(:global(.down)):hover .glyph {
     transform: scale(1.1) rotate(-3deg);
     opacity: 1;
     filter: brightness(1.15);
@@ -441,18 +455,18 @@
     transition: opacity 0.35s;
     pointer-events: none;
   }
-  .card.mine:hover .glare {
+  .card.mine:not(:global(.down)):hover .glare {
     opacity: 1;
   }
-  .card.mine:hover .title {
+  .card.mine:not(:global(.down)):hover .title {
     color: #fff1cf;
     text-shadow: 0 0 14px rgba(241, 217, 155, 0.6);
   }
-  .card.mine:hover .filigree {
+  .card.mine:not(:global(.down)):hover .filigree {
     opacity: 1;
     filter: brightness(1.25) drop-shadow(0 0 5px rgba(255, 170, 90, 0.6));
   }
-  .card.dm.mine:hover .filigree {
+  .card.dm.mine:not(:global(.down)):hover .filigree {
     filter: hue-rotate(-32deg) saturate(1.6) brightness(1.2) drop-shadow(0 0 5px rgba(224, 85, 63, 0.6));
   }
   .card:focus-visible {
@@ -524,7 +538,7 @@
       width: 24px;
       height: 24px;
     }
-    .card.mine:hover .frame {
+    .card.mine:not(:global(.down)):hover .frame {
       transform: translateX(6px);
     }
   }
