@@ -8,6 +8,7 @@
   import { backdropShadow } from '../lib/backdropShadow';
   import { cardHover, cardPicked, cardRevealed } from '../lib/fx/moments';
   import type { Handle } from '../lib/fx/core';
+  import CardBack from './CardBack.svelte';
   import CardPlate from './CardPlate.svelte';
 
   const s = $derived(session.state!);
@@ -168,8 +169,7 @@
       >
         <span class="turn" in:deal|global={{ i, n: s.offered.length }}>
           <span class="back" aria-hidden="true">
-            <CardPlate back />
-            <CardPlate compact />
+            <CardBack />
             <span class="filigree"></span>
             <span class="seal">
               <svg class="emblem" viewBox="20 0 400 391"><path d="M224 390Q255 331 301.0 283.5Q347 236 377 218L407 200L220 -1Q164 31 116.5 82.5Q69 134 50 169L31 204Z" /></svg>
@@ -240,31 +240,29 @@
     position: absolute;
     inset: 0;
     display: grid;
-    /* The seal sits where the face's emblem does, in the medallion. */
-    place-items: start center;
-    padding-top: calc(134px - 54px);
+    place-items: center;
     border-radius: 8px;
     overflow: clip;
     border: 1px solid var(--gold-lo);
     background:
-      radial-gradient(circle at 50% 45%, rgba(175, 96, 37, 0.2), transparent 55%),
+      radial-gradient(circle at 50% 50%, rgba(175, 96, 37, 0.2), transparent 90px),
       radial-gradient(ellipse 120% 90% at 50% 50%, transparent 50%, rgba(0, 0, 0, 0.5)),
       linear-gradient(170deg, #211912, #0d0a07 70%);
+    --ring: rgba(125, 99, 51, 0.35);
     box-shadow:
       inset 0 0 0 4px rgba(0, 0, 0, 0.5),
-      inset 0 0 0 5px rgba(125, 99, 51, 0.35),
+      inset 0 0 0 5px var(--ring),
       0 16px 40px rgba(0, 0, 0, 0.6);
     transform: rotateY(180deg);
     pointer-events: none;
   }
   /* The plate, whole on a tall card; on a narrow one in a row, only the
-     medallion, round the seal or the emblem. */
-  .back > :global(.plate),
-  .frame > :global(.plate) {
+     medallion round the emblem. */
+  .frame > :global(.plate),
+  .icon > :global(.plate) {
     opacity: 0.6;
     transition: opacity 0.4s;
   }
-  .back > :global(.plate.compact),
   .icon > :global(.plate.compact) {
     display: none;
   }
@@ -272,19 +270,19 @@
     position: relative;
     display: grid;
     place-items: center;
-    width: 108px;
-    height: 108px;
+    width: 86px;
+    height: 86px;
     border-radius: 50%;
     border: 1px solid rgba(201, 164, 92, 0.55);
-    background: radial-gradient(circle, rgba(18, 14, 10, 0.9) 55%, rgba(18, 14, 10, 0.4));
+    background: radial-gradient(circle, rgba(18, 14, 10, 0.95) 55%, rgba(18, 14, 10, 0.7));
     box-shadow:
       0 0 0 5px rgba(0, 0, 0, 0.35),
-      0 0 0 6px rgba(125, 99, 51, 0.4),
+      0 0 0 6px var(--ring),
       inset 0 0 24px rgba(224, 138, 68, 0.18);
   }
   .emblem {
-    width: 46px;
-    height: 46px;
+    width: 38px;
+    height: 38px;
     fill: #c9a45c;
     filter: drop-shadow(0 0 10px rgba(224, 138, 68, 0.55));
   }
@@ -327,14 +325,14 @@
     --at: 1px;
     --end: 30px;
     --rule: linear-gradient(rgba(201, 164, 92, 0.26), rgba(201, 164, 92, 0.26));
-    position: absolute;
-    inset: 5px;
-    background:
-      var(--filigree),
+    --rules:
       var(--rule) var(--end) var(--at) / calc(100% - 2 * var(--end)) 1px no-repeat,
       var(--rule) var(--end) calc(100% - var(--at)) / calc(100% - 2 * var(--end)) 1px no-repeat,
       var(--rule) var(--at) var(--end) / 1px calc(100% - 2 * var(--end)) no-repeat,
       var(--rule) calc(100% - var(--at)) var(--end) / 1px calc(100% - 2 * var(--end)) no-repeat;
+    position: absolute;
+    inset: 5px;
+    background: var(--filigree), var(--rules);
     opacity: 0.8;
     filter: drop-shadow(0 0 3px rgba(224, 138, 68, 0.35));
     pointer-events: none;
@@ -440,13 +438,22 @@
   }
   .card.dm .frame {
     border-color: #8c3a2c;
+    --bs-ring: rgba(140, 58, 44, 0.45);
     background:
-      radial-gradient(ellipse at 50% 40%, rgba(224, 85, 63, 0.2), transparent 60%),
+      radial-gradient(circle at 50% 134px, rgba(224, 85, 63, 0.18), transparent 110px),
       radial-gradient(ellipse 120% 90% at 50% 45%, transparent 50%, rgba(0, 0, 0, 0.5)),
       linear-gradient(170deg, #22110d, #0d0706 70%);
   }
+  /* The filigree in red: its gold can't be filtered to a clean red, so its
+     shapes mask a red of their own. */
   .card.dm .filigree {
-    filter: hue-rotate(-32deg) saturate(1.6) drop-shadow(0 0 3px rgba(224, 85, 63, 0.4));
+    background: linear-gradient(135deg, #f0a08a, #c8503a 60%, #9a3424);
+    -webkit-mask: var(--filigree), var(--rules);
+    mask: var(--filigree), var(--rules);
+    filter: none;
+  }
+  .card.dm .title {
+    color: #f3cfc2;
   }
   .card.dm {
     --ink: #b0503c;
@@ -458,13 +465,11 @@
   }
   .card.dm .back {
     border-color: #8c3a2c;
+    --ring: rgba(140, 58, 44, 0.45);
     background:
-      radial-gradient(circle at 50% 50%, rgba(224, 85, 63, 0.22), transparent 55%),
+      radial-gradient(circle at 50% 50%, rgba(224, 85, 63, 0.2), transparent 90px),
       radial-gradient(ellipse 120% 90% at 50% 50%, transparent 50%, rgba(0, 0, 0, 0.5)),
       linear-gradient(170deg, #22110d, #0d0706 70%);
-  }
-  .card.dm .back .filigree {
-    filter: hue-rotate(-32deg) saturate(1.6) drop-shadow(0 0 3px rgba(224, 85, 63, 0.4));
   }
   .card.dm .seal {
     border-color: rgba(224, 85, 63, 0.55);
@@ -506,6 +511,11 @@
     --bs2: 24px 50px;
     --bs2-color: rgba(0, 0, 0, 0.7);
   }
+  .card.dm.mine:not(:global(.down)):hover .frame,
+  .card.dm.mine:not(:global(.down)):focus-visible .frame {
+    border-color: #c0503b;
+    --bs-ring: rgba(224, 85, 63, 0.6);
+  }
   .card.mine:not(:global(.down)):hover .frame > :global(.plate),
   .card.mine:not(:global(.down)):hover .icon > :global(.plate),
   .card.chosen .frame > :global(.plate),
@@ -540,7 +550,11 @@
     filter: brightness(1.25) drop-shadow(0 0 5px rgba(255, 170, 90, 0.6));
   }
   .card.dm.mine:not(:global(.down)):hover .filigree {
-    filter: hue-rotate(-32deg) saturate(1.6) brightness(1.2) drop-shadow(0 0 5px rgba(224, 85, 63, 0.6));
+    filter: brightness(1.25);
+  }
+  .card.dm.mine:not(:global(.down)):hover .title {
+    color: #ffe4db;
+    text-shadow: 0 0 14px rgba(240, 140, 120, 0.6);
   }
   .card:focus-visible {
     outline: none;
@@ -558,6 +572,9 @@
     --bs1-color: rgba(255, 170, 90, 0.5);
     --bs2: 0px 0px;
     --bs2-color: transparent;
+  }
+  .card.dm.chosen .frame {
+    border-color: #e88a74;
   }
   .card.faded .frame {
     opacity: 0.2;
@@ -581,8 +598,9 @@
       display: flex;
       align-items: center;
       height: auto;
-      padding: 0.8rem 1.2rem;
-      gap: 1rem;
+      padding: 0.8rem 1.4rem;
+      /* Room for the medallion between the emblem and the name. */
+      gap: 2rem;
     }
     .icon {
       position: relative;
@@ -591,16 +609,9 @@
       width: 64px;
       height: 64px;
     }
-    .back {
-      place-items: center;
-      padding-top: 0;
-    }
-    .back > :global(.plate),
     .frame > :global(.plate) {
       display: none;
     }
-    /* Only the medallion, round the emblem (or the seal), and no further than the card. */
-    .back > :global(.plate.compact),
     .icon > :global(.plate.compact) {
       display: block;
       inset: auto;
@@ -636,16 +647,41 @@
         1px calc(100% - 2 * var(--end)),
         1px calc(100% - 2 * var(--end));
     }
+    .card.dm .filigree {
+      background-size: auto;
+      -webkit-mask-size:
+        20px 20px,
+        20px 20px,
+        20px 20px,
+        20px 20px,
+        calc(100% - 2 * var(--end)) 1px,
+        calc(100% - 2 * var(--end)) 1px,
+        1px calc(100% - 2 * var(--end)),
+        1px calc(100% - 2 * var(--end));
+      mask-size:
+        20px 20px,
+        20px 20px,
+        20px 20px,
+        20px 20px,
+        calc(100% - 2 * var(--end)) 1px,
+        calc(100% - 2 * var(--end)) 1px,
+        1px calc(100% - 2 * var(--end)),
+        1px calc(100% - 2 * var(--end));
+    }
     .back {
       transform: rotateX(180deg);
     }
     .seal {
-      width: 52px;
-      height: 52px;
+      width: 38px;
+      height: 38px;
+      box-shadow:
+        0 0 0 3px rgba(0, 0, 0, 0.35),
+        0 0 0 4px var(--ring),
+        inset 0 0 12px rgba(224, 138, 68, 0.18);
     }
     .emblem {
-      width: 24px;
-      height: 24px;
+      width: 18px;
+      height: 18px;
     }
     .card.mine:not(:global(.down)):hover .frame {
       transform: translateX(6px);

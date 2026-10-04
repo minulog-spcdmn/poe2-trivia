@@ -17,13 +17,7 @@
   // The card is 220 by 300; the emblem sits in the medallion at (110, 134).
   // `compact` draws only the medallion and its glory, for the narrow cards
   // laid out in a row.
-  type Pt = [number, number];
-  const f = (v: number) => v.toFixed(2);
-  const rad = (a: number) => (a * Math.PI) / 180;
-  const pt = (p: Pt) => `${f(p[0])} ${f(p[1])}`;
-  /** The point at `a` degrees clockwise from the top, `r` from `c`. */
-  const at = (c: Pt, a: number, r: number): Pt => [c[0] + r * Math.sin(rad(a)), c[1] - r * Math.cos(rad(a))];
-  const seg = (p: Pt, q: Pt) => `M${pt(p)}L${pt(q)}`;
+  import { at, crescent, f, glory, pt, rad, ridges, seg, star, wavy, type Pt } from '../lib/engraving';
 
   export const W = 220;
   export const H = 300;
@@ -85,55 +79,14 @@
     return d;
   })();
 
-  /** An eight-pointed star of radius `r`, its points long and short in turn. */
-  const star = (c: Pt, r: number) =>
-    'M' +
-    Array.from({ length: 16 }, (_, k) => at(c, (k / 16) * 360, k % 4 === 0 ? r : k % 2 === 0 ? r * 0.55 : r * 0.2))
-      .map(pt)
-      .join('L') +
-    'Z';
-  /** The star's ridges, from its centre out to each point. */
-  const ridges = (c: Pt, r: number) => Array.from({ length: 8 }, (_, k) => seg(c, at(c, k * 45, k % 2 ? r * 0.55 : r))).join('');
-
-  /**
-   * A wavy ray from `r0` to `r1` out of `c` at `a` degrees: a line that
-   * swings `amp` either side, a half wave every `half`, in quadratic curves.
-   */
-  const wavy = (c: Pt, a: number, r0: number, r1: number, amp: number, half: number) => {
-    const n = Math.max(1, Math.round((r1 - r0) / half));
-    const step = (r1 - r0) / n;
-    let d = `M${pt(at(c, a, r0))}`;
-    for (let i = 0; i < n; i++) {
-      // The control point twice as far out as the wave reaches.
-      const m = at(c, a, r0 + (i + 0.5) * step);
-      const side = (i % 2 ? -1 : 1) * 2 * amp;
-      const ctl: Pt = [m[0] + Math.cos(rad(a)) * side, m[1] + Math.sin(rad(a)) * side];
-      d += `Q${pt(ctl)} ${pt(at(c, a, r0 + (i + 1) * step))}`;
-    }
-    return d;
-  };
-
   // Sol, in the left corner above the arch.
   const SOL: Pt = [41, 41];
   const SOL_RAYS = Array.from({ length: 16 }, (_, k) =>
     k % 2 ? wavy(SOL, k * 22.5, 7.6, 12.6, 0.55, 1.7) : seg(at(SOL, k * 22.5, 7.6), at(SOL, k * 22.5, k % 4 ? 12.4 : 14)),
   ).join('');
-  // Luna, in the right, horns to the sun: a disc less a disc set toward the middle.
+  // Luna, in the right, her horns to the sun.
   const LUNA: Pt = [W - 41, 41];
-  const [MOON_R, CUT_R, CUT_X] = [11, 9.4, -4.2];
-  const LUNA_D = (() => {
-    const x = (MOON_R * MOON_R - CUT_R * CUT_R + CUT_X * CUT_X) / (2 * CUT_X);
-    const y = Math.sqrt(MOON_R * MOON_R - x * x);
-    const p = (dx: number, dy: number) => pt([LUNA[0] + dx, LUNA[1] + dy]);
-    return `M${p(x, -y)}A${MOON_R} ${MOON_R} 0 1 1 ${p(x, y)}A${CUT_R} ${CUT_R} 0 1 0 ${p(x, -y)}Z`;
-  })();
-  // Its shading: short strokes down the thick of the crescent, its lower part.
-  const LUNA_HATCH = Array.from({ length: 6 }, (_, i) => {
-    const x = 5.8 + i * 0.85;
-    const y1 = Math.sqrt(MOON_R * MOON_R - x * x) - 0.7;
-    return y1 > -1 ? seg([LUNA[0] + x, LUNA[1] - 1.5], [LUNA[0] + x, LUNA[1] + y1]) : '';
-  }).join('');
-  const LUNA_STAR: Pt = [LUNA[0] - 5.2, LUNA[1]];
+  const MOON = crescent(11, 9.4, 4.2);
 
   // The sky inside the arch, above the medallion.
   const SKY = [
@@ -163,13 +116,8 @@
     return { x, y, a };
   });
 
-  // The glory: rays from the medallion out to the arch, straight and wavy in
-  // turn, the straight ones long and short.
-  const GLORY = Array.from({ length: 60 }, (_, k) => {
-    const a = k * 6 + 3;
-    if (k % 2) return wavy(C, a, RING + 4, 104, 0.85, 5.5);
-    return seg(at(C, a, RING + 4), at(C, a, k % 4 ? 112 : 140));
-  }).join('');
+  // The glory: rays from the medallion out to the arch.
+  const GLORY = glory(C, 60, RING + 4, [140, 112, 104], 0.85, 5.5);
 
   /** Where the lines stop short, as circles: the signs, and the medallion's own ring. */
   const CUTS = [
@@ -182,8 +130,8 @@
 </script>
 
 <script lang="ts">
-  /** `compact`: only the medallion and its glory. `back`: the card's back, with an ornament for a name. */
-  let { compact = false, back = false }: { compact?: boolean; back?: boolean } = $props();
+  /** `compact`: only the medallion and its glory. */
+  let { compact = false }: { compact?: boolean } = $props();
   const uid = $props.id();
 </script>
 
@@ -254,9 +202,11 @@
       <circle cx={f(SOL[0])} cy={f(SOL[1])} r="4.3" class="hair" />
       <circle cx={f(SOL[0])} cy={f(SOL[1])} r="1" class="fill" />
       <path d={SOL_RAYS} class="hair sol-rays" />
-      <path d={LUNA_D} class="line" />
-      <path d={LUNA_HATCH} class="hair" />
-      <path d={star(LUNA_STAR, 2.6)} class="fill" />
+      <g transform="translate({LUNA[0]} {LUNA[1]})">
+        <path d={MOON.outline} class="line" />
+        <path d={MOON.shade} class="hair" />
+        <path d={star(MOON.star, 2.6)} class="fill" />
+      </g>
       {#each SKY as { c, r }, k (k)}
         <path d={star(c, r)} class="fill" />
       {/each}
@@ -265,13 +215,6 @@
       {/each}
     </g>
 
-    {#if back}
-      <g class="sign">
-        <path d="{seg([64, 260], [100, 260])}{seg([120, 260], [156, 260])}" class="hair" />
-        <path d={star([MID, 260], 6)} class="line" />
-        <path d={ridges([MID, 260], 6)} class="hair" />
-      </g>
-    {/if}
   {/if}
 </svg>
 
