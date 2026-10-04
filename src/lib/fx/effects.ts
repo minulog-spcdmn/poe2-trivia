@@ -3,7 +3,7 @@
 // big beats. Colours are HDR: values above 1 bloom and burn toward white.
 
 import { Shape } from './particles';
-import { ShapeType } from './renderer';
+import { FIRE_REACH, ShapeType } from './renderer';
 import { after, boxOf, budget, detached, fxActive, particle, shape, task, type Anchor, type Box, type Handle, type Point, type Vec3 } from './core';
 
 // ---------- palette ----------
@@ -524,9 +524,6 @@ export function edgeGlow(o: { color?: Vec3; width?: number; life?: number; inten
   });
 }
 
-/** How far the tallest tongue of fire reaches, in flame heights (the shader's bound). */
-const FIRE_REACH = 1.8;
-
 /**
  * Fire burning on an element: flames rising off its top, licking up its
  * ends, for as long as it's up. `height` is how tall the flames reach, px;
@@ -536,26 +533,38 @@ export function fire(el: Element, o: { height?: number; intensity?: number; blue
   const radius = parseFloat(getComputedStyle(el).borderTopLeftRadius) || 0;
   const H = o.height ?? 40;
   // The quad must hold the tallest tongue (FIRE_REACH times H, above the top
-  // and out from the top corners) and the halo inside the 72% where the
-  // shader's fade toward the quad's border begins.
+  // and out from the top corners) and the halo, inside the 72% where the
+  // shader's fade toward the quad's border begins. Flames barely reach below
+  // the element, so the quad is shifted up over them rather than centred.
   const room = (r: number) => (r + 16) / 0.72;
+  // The element's centre, and where the quad was put last frame: the box
+  // stops following the element once it's gone, so shift from the centre
+  // rather than again from the shifted box.
+  let centre = 0;
+  let placed = NaN;
   return shape({
     type: ShapeType.Fire,
     at: el,
     life: Infinity,
     followOpacity: true,
-    // It moves, but slowly enough for the 30fps path on phones.
+    // It moves, but slowly enough to be drawn at 30fps (see `calm` in core.ts).
     calm: true,
     color: [1, 1, 1],
     update(f, _t, age, b) {
+      const above = b.h / 2 + FIRE_REACH * H;
+      const below = b.h / 2 + 8;
+      const shift = (below - above) / 2;
       f.hw = room(b.w / 2 + FIRE_REACH * H);
-      f.hh = room(b.h / 2 + FIRE_REACH * H);
+      f.hh = room((above + below) / 2);
       f.k = (o.intensity ?? 1) * Math.min(1, age / (o.fadeIn ?? 0.5));
       f.q[0] = b.w / 2;
       f.q[1] = b.h / 2;
       f.q[2] = Math.min(radius, b.w / 2, b.h / 2);
       f.q[3] = H;
       f.q[4] = o.blue ?? 0;
+      f.q[5] = -shift;
+      if (b.y !== placed) centre = b.y;
+      b.y = placed = centre + shift;
     },
   });
 }

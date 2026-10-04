@@ -69,6 +69,8 @@
             () => {
               filling[p.id] = false;
               shown[p.id] = barShown[p.id] = latest(p.id, score);
+              // A streak's fire grows as the number ticks up.
+              heat[p.id] = heatOf(streakOf(session.state?.players.find((x) => x.id === p.id)));
             },
           ],
         ]);
@@ -86,23 +88,23 @@
   const scoreOf = (id: string, fallback: number) => shown[id] ?? fallback;
   const barOf = (id: string, fallback: number) => barShown[id] ?? fallback;
 
-  // Players on a streak burn. The fire grows as the point lands on their
-  // entry, and goes out the moment the streak breaks.
+  // Players on a streak burn. The fire grows with the score, as the number
+  // ticks up (the award's last step above); a broken streak puts it out at once.
   let heat = $state<Record<string, number>>({});
-  const stoking = new Map<string, Landing>();
   $effect(() => {
+    const here = new Set<string>();
     for (const p of s.players) {
-      const h = heatOf(streakOf(p.id));
-      if (stoking.get(p.id)?.to === h) continue;
-      cancel(stoking, p.id);
+      here.add(p.id);
+      const h = heatOf(streakOf(p));
       const was = untrack(() => heat[p.id] ?? 0);
-      if (h === was) continue;
-      if (h > was && fxActive() && s.phase === 'reveal') land(stoking, p.id, h, [[SCORE_LANDS, () => (heat[p.id] = h)]]);
-      else heat[p.id] = h;
+      if (h > was && awards.has(p.id)) continue;
+      if (h !== was) heat[p.id] = h;
     }
+    // Players who left take their fire with them.
+    for (const id of Object.keys(untrack(() => heat))) if (!here.has(id)) delete heat[id];
   });
   $effect(() => () => {
-    for (const under of [awards, stoking]) for (const id of [...under.keys()]) cancel(under, id);
+    for (const id of [...awards.keys()]) cancel(awards, id);
   });
 
   /** Svelte action: sets a row burning at `h` (0 to 1), re-lit as it changes. */
@@ -259,8 +261,8 @@
     /* Orange, and blue at the top of a streak. */
     --flame: color-mix(in srgb, rgb(70, 140, 255) calc(var(--blue) * 100%), rgb(255, 110, 30));
   }
-  /* The player whose turn it is keeps their own colour on the border. */
-  li.ablaze:not(.active) {
+  /* Borders that say something (whose turn, answered wrong, a duelist) win over the fire's. */
+  li.ablaze:not(.active, .out, .duelist) {
     border-color: color-mix(in srgb, var(--flame) calc(50% + 50% * var(--heat)), transparent);
   }
   li.ablaze::before {
@@ -273,7 +275,8 @@
     box-shadow:
       0 0 calc(8px + 20px * var(--heat)) calc(4px * var(--heat)) color-mix(in srgb, var(--flame) calc(35% + 40% * var(--heat)), transparent),
       0 calc(-6px * var(--heat)) calc(14px + 26px * var(--heat)) color-mix(in srgb, var(--flame) calc(20% + 40% * var(--heat)), transparent);
-    animation: smoulder calc(1.4s - 0.8s * var(--heat)) ease-in-out infinite alternate;
+    /* A fixed pace: changing an infinite animation's duration as the heat steps up makes it jump. */
+    animation: smoulder 0.9s ease-in-out infinite alternate;
   }
   @keyframes smoulder {
     to {

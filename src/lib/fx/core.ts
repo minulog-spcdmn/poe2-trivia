@@ -87,6 +87,11 @@ type LiveShape = ShapeSpec & {
 export type Handle = { stop: (fadeSeconds?: number) => void };
 const NOOP: Handle = { stop() {} };
 
+/** Whether `h` is something actually running, rather than the stand-in for one that never started. */
+export function isLive(h: Handle) {
+  return h !== NOOP;
+}
+
 // ---------- tasks ----------
 
 /** Runs every frame until it returns false. */
@@ -136,7 +141,9 @@ let probe: { from: number; before: number; time: number; frames: number } | null
  * turning) and nothing shakes, frames are drawn at about 30fps: each one
  * costs the same full-screen passes (HDR target, bloom, composite) however
  * little is in it, and drifting light looks the same at half the rate.
- * Effects still advance every frame, so timing is unchanged.
+ * Effects still advance every frame, so timing is unchanged. On every
+ * device, the same goes while all that's alive is endless and calm (a
+ * streak's fire burning between moments), which can last a whole game.
  */
 let calm = false;
 let lastDraw = 0;
@@ -498,17 +505,19 @@ function simulate(dt: number, nowMs: number, render: boolean): boolean {
   let nShapes = 0;
   let nCrisp = 0;
   let shapesCalm = true;
+  let shapesEndless = true;
   for (const crisp of [false, true]) {
     for (const [s, t] of visible) {
       if (isCrisp(s) !== crisp || nShapes >= MAX_SHAPES) continue;
       writeShape(nShapes++, s, t);
       if (crisp) nCrisp++;
       if (!s.calm) shapesCalm = false;
+      if (Number.isFinite(s.life)) shapesEndless = false;
     }
   }
 
   const nParticles = pool.step(dt);
-  calm = !!coarse?.matches && shapesCalm && shake.trauma === 0 && pool.fastest < CALM_SPEED * CALM_SPEED;
+  calm = (!!coarse?.matches || (nShapes > 0 && shapesEndless)) && shapesCalm && shake.trauma === 0 && pool.fastest < CALM_SPEED * CALM_SPEED;
 
   // Shake: trauma decays; the offset follows two noise curves.
   if (shake.trauma > 0) {

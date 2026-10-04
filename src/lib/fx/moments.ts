@@ -3,7 +3,7 @@
 // victory look like. Components call these with the elements involved; all
 // of them are no-ops while effects are off.
 
-import { after, boxOf, fxActive, shakeView, type Anchor, type Handle, type Point, type Vec3 } from './core';
+import { after, boxOf, fxActive, isLive, shakeView, type Anchor, type Handle, type Point, type Vec3 } from './core';
 import {
   C,
   edgeGlow,
@@ -453,6 +453,8 @@ export function ablaze(row: Element, heat: number): Handle {
   // At the very top of a streak the fire burns blue.
   const blue = burnsBlue(heat);
   const flames = fire(row, { height: 6 + 66 * heat, intensity: 0.45 + 1.0 * heat, blue: blue ? 1 : 0 });
+  // No room for the flames (or the entry is gone): no sparks off nothing either.
+  if (!isLive(flames)) return flames;
   const sparkColors = blue ? [C.portal, C.portalPale] : [C.ember, C.gold];
   // Sparks spat out of the fire, drifting up; slower than CALM_SPEED (lib/fx/core.ts),
   // so a fire that burns all game lets phones draw at 30fps.

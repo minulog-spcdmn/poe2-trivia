@@ -36,6 +36,9 @@ export const ShapeType = {
 } as const;
 export type ShapeType = (typeof ShapeType)[keyof typeof ShapeType];
 
+/** How far the fire's tallest tongue reaches, in flame heights: the shader stops there and effects.ts sizes the quad to it. */
+export const FIRE_REACH = 1.8;
+
 // While a dialog is open (lib/behindDialog.ts), light from the page behind it
 // hides behind the dialog, which on the page is opaque; the dialog's own light
 // (from effects that started inside it) shows over it. Outside it, the
@@ -359,24 +362,26 @@ void main() {
     v = outlineGlow(d, vS.y, vS.z, vS.w, up, vP, time, seed, hot);
   } else if (type == 9) {
     // Fire rising off a rounded rectangle. q: half w, half h, corner radius,
-    // flame height (px). r: blue 0-1. The colour is a gain on a black-body
+    // flame height (px). r: blue 0-1, how far the rectangle's centre sits
+    // below the quad's (the quad is shifted up over the flames). The colour is a gain on a black-body
     // ramp (deep red at the tips, through orange, to yellow at the roots),
     // or its blue counterpart.
+    vec2 lp = vP - vec2(0.0, vR.y);
     vec2 hb = vQ.xy;
     float H = vQ.w;
-    vec2 qq = abs(vP) - hb + vQ.z;
+    vec2 qq = abs(lp) - hb + vQ.z;
     float d = length(max(qq, 0.0)) + min(max(qq.x, qq.y), 0.0) - vQ.z;
     // Flames reach highest above the top, a little way up the ends, barely below.
-    float up = 1.0 - smoothstep(-hb.y, hb.y, vP.y);
+    float up = 1.0 - smoothstep(-hb.y, hb.y, lp.y);
     float reach = H * (0.06 + 0.94 * up * up * up);
-    // Past the tallest tongue (FIRE_REACH in effects.ts) or inside the element
-    // there's no flame: skip the noise, and only the halo below is left.
-    if (d < 1.8 * reach + 2.0 && d > -5.0) {
+    // Past the tallest tongue (FIRE_REACH) or inside the element there's no
+    // flame: skip the noise, and only the halo below is left.
+    if (d < ${FIRE_REACH.toFixed(3)} * reach + 2.0 && d > -5.0) {
       // Turbulence scrolling upward, domain-warped so the tongues sway and split.
-      vec2 p = vP * vec2(0.05, 0.028);
+      vec2 p = lp * vec2(0.05, 0.028);
       vec2 warp = vec2(fbm(p * 0.8 + vec2(seed, time * 0.9)), fbm(p * 0.8 + vec2(seed + 4.1, time * 1.15)));
       float n = fbm(p + vec2(0.0, time * 2.4) + (warp - 0.5) * 1.8 + seed);
-      float lick = vnoise(vec2(vP.x * 0.11 + seed * 3.0, vP.y * 0.04 + time * 3.2));
+      float lick = vnoise(vec2(lp.x * 0.11 + seed * 3.0, lp.y * 0.04 + time * 3.2));
       float tongue = n * 0.8 + lick * 0.45;
       // 1 at the surface, falling to 0 at each tongue's tip.
       float f = clamp(1.0 - max(d, 0.0) / (reach * (0.15 + 1.25 * tongue * tongue) + 2.0), 0.0, 1.0);
@@ -384,7 +389,7 @@ void main() {
       float T = f * smoothstep(-5.0, 0.0, d) * mix(0.3, 1.0, up) * (0.45 + 0.75 * tongue);
       if (T > 0.002) {
         // Fine flicker inside the body, so it doesn't read as a flat fill.
-        float flick = 0.7 + 0.6 * vnoise(vec2(vP.x * 0.12, vP.y * 0.07 + time * 6.0) + seed);
+        float flick = 0.7 + 0.6 * vnoise(vec2(lp.x * 0.12, lp.y * 0.07 + time * 6.0) + seed);
         // Light fades out toward the tips rather than ending on an edge.
         float I = T * T * flick * 1.8;
         // Black body: red first, green only as it heats up, a touch of blue at the

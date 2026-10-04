@@ -9,7 +9,6 @@
   import { sfx } from '../lib/sound';
   import { onMount } from 'svelte';
   import { deathmatchIntro, deathmatchMood, gameStart, turnBanner } from '../lib/fx/moments';
-  import { resetStreaks } from '../lib/fx/streaks';
   import { portal } from '../lib/portal';
 
   const s = $derived(session.state!);
@@ -57,10 +56,7 @@
     introTimer = setTimeout(() => (showIntro = false), 2600);
   });
   let showIntro = $state(false);
-  // A new game (or joining one): streaks start over. Here rather than in
-  // onMount, which runs after the Scoreboard inside has already read them.
-  resetStreaks();
-  // And a wave of light.
+  // A new game (or joining one): a wave of light.
   onMount(() => {
     gameStart();
     return () => deathmatchMood(false);
