@@ -63,7 +63,7 @@ function turn(engine: Engine, s: GameState, answer: (q: Question) => number | nu
 }
 
 test('turns mode: your own answer counts, watching someone else only adds "seen"', () => {
-  let { engine, s } = setup(['A', 'B']);
+  let { engine, s } = setup(['Ash', 'Bram']);
   // Seats are shuffled at the start.
   const first = s.players[s.turn].id;
   const second = s.players[1 - s.turn].id;
@@ -93,25 +93,25 @@ test('turns mode: your own answer counts, watching someone else only adds "seen"
 });
 
 test('running out of time on your turn counts as wrong', () => {
-  let { engine, s } = setup(['A']);
+  let { engine, s } = setup(['Ash']);
   s = turn(engine, s, () => null);
   const e = encounterAt(s, 'p0', false)!;
   assert.deepEqual(e.answer, { ok: false, pickedId: null, pickedLabel: null });
 });
 
 test('nothing to record outside a reveal', () => {
-  let { engine, s } = setup(['A']);
+  let { engine, s } = setup(['Ash']);
   assert.equal(encounterAt(s, 'p0', false), null);
   s = engine.apply(s, { type: 'pick', category: s.offered[0] }, 'p0');
   assert.equal(encounterAt(s, 'p0', false), null);
 });
 
 test('hot-seat: answers only count when one person plays alone', () => {
-  let solo = setup(['A']);
+  let solo = setup(['Ash']);
   let s = turn(solo.engine, solo.s, right);
   assert.equal(encounterAt(s, null, true)!.answer!.ok, true);
 
-  const duo = setup(['A', 'B']);
+  const duo = setup(['Ash', 'Bram']);
   s = turn(duo.engine, duo.s, right);
   const e = encounterAt(s, null, true)!;
   assert.equal(e.itemId, s.question!.itemId);
@@ -119,7 +119,7 @@ test('hot-seat: answers only count when one person plays alone', () => {
 });
 
 test('race mode: the winner and those who missed answered, the rest only saw it', () => {
-  let { engine, s } = setup(['A', 'B', 'C'], 'race');
+  let { engine, s } = setup(['Ash', 'Bram', 'Cora'], 'race');
   const q = s.question!;
   s = engine.apply(s, { type: 'answer', index: wrongIdx(q), askedAt: q.askedAt }, 'p1');
   s = engine.apply(s, { type: 'answer', index: right(q), askedAt: q.askedAt }, 'p2');

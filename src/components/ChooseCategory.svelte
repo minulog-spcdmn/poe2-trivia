@@ -43,6 +43,10 @@
     dealtAt ??= performance.now();
     // The face's own entrance (see .dealt below) plays with the deal only.
     node.classList.add('dealt');
+    // Face down until it turns halfway (see .down below).
+    const card = node.parentElement;
+    card?.classList.add('down');
+    setTimeout(() => card?.classList.remove('down'), (flipAt(i) + FLIP / 2) * 1000);
     const start = dealAt(i);
     const turn = flipAt(i) - start;
     const total = turn + FLIP;
@@ -68,21 +72,32 @@
     if (still) return;
     const t = setTimeout(() => {
       if (dealtAt !== null) cardRevealed(node.querySelector('.frame') ?? node, !!s.deathmatch);
+      // The pointer may already rest on it, having come while it lay face down.
+      if (waiting === i) ignite(i);
     }, (flipAt(i) + FLIP) * 1000);
     return { destroy: () => clearTimeout(t) };
   }
 
   let cardEls = $state<HTMLElement[]>([]);
   let burning: Handle | null = null;
+  /** The face-down card the mouse rests on, to catch fire once it turns up. */
+  let waiting: number | null = null;
 
   function enter(e: PointerEvent, i: number) {
-    if (!mine || picked || e.pointerType !== 'mouse' || !faceUp(i)) return;
+    if (e.pointerType !== 'mouse') return;
+    if (!faceUp(i)) waiting = i;
+    else ignite(i);
+  }
+  function ignite(i: number) {
+    waiting = null;
+    if (!mine || picked) return;
     burning?.stop();
     const card = cardEls[i];
     const frame = card?.querySelector('.frame');
     if (frame) burning = cardHover(frame, card, !!s.deathmatch);
   }
   function leave(e: PointerEvent) {
+    waiting = null;
     burning?.stop();
     burning = null;
     const frame = (e.currentTarget as HTMLElement).querySelector<HTMLElement>('.frame');
@@ -97,8 +112,8 @@
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const x = (e.clientX - r.left) / r.width;
     const y = (e.clientY - r.top) / r.height;
-    frame.style.setProperty('--rx', `${((0.5 - y) * 14).toFixed(2)}deg`);
-    frame.style.setProperty('--ry', `${((x - 0.5) * 16).toFixed(2)}deg`);
+    frame.style.setProperty('--rx', `${((0.5 - y) * 20).toFixed(2)}deg`);
+    frame.style.setProperty('--ry', `${((x - 0.5) * 24).toFixed(2)}deg`);
     frame.style.setProperty('--gx', `${(x * 100).toFixed(1)}%`);
     frame.style.setProperty('--gy', `${(y * 100).toFixed(1)}%`);
   }
@@ -412,11 +427,21 @@
       --bs1-color: rgba(224, 85, 63, 0.45);
     }
   }
+  /* While a card lies face down its face is turned away, but the backdrop
+     would still draw the face's shadow (and its hover shadow) under the back,
+     which has a shadow of its own. */
+  .card:global(.down) .frame {
+    --bs1-color: transparent;
+    --bs2-color: transparent;
+  }
+  .card.dm:global(.down) .frame {
+    animation: none;
+  }
   .card.mine {
     cursor: pointer;
   }
-  .card.mine:hover .frame,
-  .card.mine:focus-visible .frame {
+  .card.mine:not(:global(.down)):hover .frame,
+  .card.mine:not(:global(.down)):focus-visible .frame {
     transform: perspective(900px) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg)) translateY(-10px) scale(1.04);
     border-color: var(--gold);
     --bs-ring: rgba(201, 164, 92, 0.6);
@@ -425,7 +450,7 @@
     --bs2: 24px 50px;
     --bs2-color: rgba(0, 0, 0, 0.7);
   }
-  .card.mine:hover .glyph {
+  .card.mine:not(:global(.down)):hover .glyph {
     transform: scale(1.1) rotate(-3deg);
     opacity: 1;
     filter: brightness(1.15);
@@ -441,18 +466,18 @@
     transition: opacity 0.35s;
     pointer-events: none;
   }
-  .card.mine:hover .glare {
+  .card.mine:not(:global(.down)):hover .glare {
     opacity: 1;
   }
-  .card.mine:hover .title {
+  .card.mine:not(:global(.down)):hover .title {
     color: #fff1cf;
     text-shadow: 0 0 14px rgba(241, 217, 155, 0.6);
   }
-  .card.mine:hover .filigree {
+  .card.mine:not(:global(.down)):hover .filigree {
     opacity: 1;
     filter: brightness(1.25) drop-shadow(0 0 5px rgba(255, 170, 90, 0.6));
   }
-  .card.dm.mine:hover .filigree {
+  .card.dm.mine:not(:global(.down)):hover .filigree {
     filter: hue-rotate(-32deg) saturate(1.6) brightness(1.2) drop-shadow(0 0 5px rgba(224, 85, 63, 0.6));
   }
   .card:focus-visible {
@@ -524,7 +549,7 @@
       width: 24px;
       height: 24px;
     }
-    .card.mine:hover .frame {
+    .card.mine:not(:global(.down)):hover .frame {
       transform: translateX(6px);
     }
   }

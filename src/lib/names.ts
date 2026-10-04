@@ -2,6 +2,7 @@
 // "zalgo" stacks, and catch names that impersonate the host or another player.
 
 export const MAX_NAME = 20;
+export const MIN_NAME = 2;
 
 const RESERVED = new Set(['host', 'admin', 'administrator', 'system', 'server', 'moderator', 'mod', 'you', 'ggg']);
 
@@ -97,9 +98,17 @@ export function nameHeld(name: string, hash = HELD_KEY_HASH): boolean {
   }
 }
 
+/** True when a name is too short to be a name (counted in characters, after cleanup). */
+export function nameTooShort(name: string): boolean {
+  return Array.from(cleanName(name)).length < MIN_NAME;
+}
+
+export const NAME_TOO_SHORT = `Names need at least ${MIN_NAME} characters.`;
+
 /** Returns why a name is not allowed, or null if it's fine. */
 export function nameProblem(name: string, others: string[]): string | null {
   if (!name) return 'Please enter a name with at least one letter or number.';
+  if (nameTooShort(name)) return NAME_TOO_SHORT;
   const skel = nameSkeleton(name);
   if (RESERVED.has(skel) || RESERVED.has(name.toLowerCase().replace(/[^a-z]/g, '')))
     return `"${name}" is reserved. Pick another name.`;

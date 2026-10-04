@@ -13,14 +13,15 @@
 // in `--drop-shadow` (at most two drop-shadow() functions), and paint them as
 // `filter: … var(--drop-shadow-paint, var(--drop-shadow))`. While the backdrop
 // draws the element it sets `data-bs-drop`, which (via app.css) swaps the
-// drop-shadow part of the filter for a no-op. Whenever it can't (3D
-// transforms, fonts or image not ready, over budget, no WebGL), the attribute
+// drop-shadow part of the filter for a no-op. Whenever it can't (3D turns,
+// fonts or image not ready, over budget, no WebGL), the attribute
 // stays off and CSS paints the shadow as usual.
 //
 // Only text and <img> content is masked: a text element's non-text children
 // (such as the title's thin decorative lines) cast no shadow here. Their CSS
 // shadow is faint enough not to matter.
 
+import { linearOf, type Lin } from './linear';
 import { opacityOf } from './opacity';
 
 const tagged = new Set<HTMLElement>();
@@ -112,54 +113,6 @@ function parseDrops(decl: string): Drop[] {
 }
 
 // ---------- geometry ----------
-
-type Lin = [number, number, number, number]; // a b c d: x' = a x + c y, y' = b x + d y
-
-const mul = (m: Lin, n: Lin): Lin => [
-  m[0] * n[0] + m[2] * n[1],
-  m[1] * n[0] + m[3] * n[1],
-  m[0] * n[2] + m[2] * n[3],
-  m[1] * n[2] + m[3] * n[3],
-];
-
-/** The linear part of one element's own transform, or null if it isn't 2D. */
-function ownLinear(cs: CSSStyleDeclaration): Lin | null {
-  let m: Lin = [1, 0, 0, 1];
-  if (cs.rotate && cs.rotate !== 'none') {
-    const r = cs.rotate.match(/^(?:z\s+)?(-?[\d.]+)deg$/);
-    if (!r) return null;
-    const t = (parseFloat(r[1]) * Math.PI) / 180;
-    m = mul(m, [Math.cos(t), Math.sin(t), -Math.sin(t), Math.cos(t)]);
-  }
-  if (cs.scale && cs.scale !== 'none') {
-    const s = cs.scale.split(/\s+/).map(parseFloat);
-    if (s.length > 2) return null;
-    m = mul(m, [s[0], 0, 0, s[1] ?? s[0]]);
-  }
-  if (cs.transform && cs.transform !== 'none') {
-    const t = cs.transform.match(/^matrix\(([^)]+)\)$/);
-    if (!t) return null; // matrix3d: a 3D turn
-    const [a, b, c, d] = t[1].split(',').map(parseFloat);
-    m = mul(m, [a, b, c, d]);
-  }
-  return m;
-}
-
-/**
- * Linear map from the element's local px to the viewport, ancestors included.
- * `cache` holds each element's own transform, so the tagged elements' shared
- * ancestors are read once a pass (reading a computed transform is costly).
- */
-function linearOf(node: HTMLElement, cache: Map<Element, Lin | null>): Lin | null {
-  let m: Lin = [1, 0, 0, 1];
-  for (let el: Element | null = node; el; el = el.parentElement) {
-    let own = cache.get(el);
-    if (own === undefined) cache.set(el, (own = ownLinear(getComputedStyle(el))));
-    if (!own) return null;
-    m = mul(own, m);
-  }
-  return m;
-}
 
 // ---------- masks ----------
 

@@ -5,7 +5,7 @@
   import { MAX_PLAYERS, difficultyOf, rulesFor, type Difficulty, type GameMode } from '../lib/game';
   import { DIFFICULTY_NAMES, describe, lockoutText } from '../lib/difficultyText';
   import CustomDifficulty from './CustomDifficulty.svelte';
-  import { MAX_NAME, isHeldName, nameHeld } from '../lib/names';
+  import { MAX_NAME, isHeldName, nameHeld, nameTooShort } from '../lib/names';
   import { inviteUrl } from '../lib/site';
   import Avatar from './Avatar.svelte';
   import PlayerName from './PlayerName.svelte';
@@ -242,7 +242,7 @@
               spellcheck="false"
               placeholder={s.players.length ? 'Add another exile' : 'Add the first exile'}
             />
-            <button class="btn" type="submit" disabled={!newName.trim()}>Add</button>
+            <button class="btn" type="submit" disabled={nameTooShort(newName)}>Add</button>
           </form>
         {/if}
         <p class="hint muted">Pass the device around; each player answers on their own turn.</p>
