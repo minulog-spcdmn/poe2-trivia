@@ -26,7 +26,10 @@ export interface ItemEntry {
   /** This player's answers, by question type: named from its art, or its art found for its name. */
   name: Tally;
   art: Tally;
-  /** Real items picked instead of this one, by id, with how often. */
+  /**
+   * The items whose names this one's art was taken for, by id, with how often:
+   * their name picked for its art, or its art picked for their name.
+   */
   mixed: Record<string, number>;
 }
 
@@ -125,6 +128,8 @@ export function encounterAt(s: GameState, me: string | null, hotSeat: boolean, m
   return e;
 }
 
+const fresh = (at: number): ItemEntry => ({ seen: 1, first: at, last: at, name: noTally(), art: noTally(), mixed: {} });
+
 /** The codex with the encounter added (the same codex if it was already). */
 export function record(c: Codex, e: Encounter): Codex {
   const prev = c.items[e.itemId];
@@ -133,7 +138,7 @@ export function record(c: Codex, e: Encounter): Codex {
   if (prev && prev.last === e.at) return c;
   const entry: ItemEntry = prev
     ? { ...prev, seen: prev.seen + 1, first: Math.min(prev.first, e.at), last: e.at, mixed: { ...prev.mixed } }
-    : { seen: 1, first: e.at, last: e.at, name: noTally(), art: noTally(), mixed: {} };
+    : fresh(e.at);
   const next: Codex = { ...c, items: { ...c.items, [e.itemId]: entry } };
   const a = e.answer;
   if (!a) return next;
@@ -151,8 +156,16 @@ export function record(c: Codex, e: Encounter): Codex {
         const was = c.fooled[a.pickedLabel];
         next.fooled = { ...c.fooled, [a.pickedLabel]: { of, n: (was?.n ?? 0) + 1, last: e.at } };
       }
-    } else if (a.pickedId !== e.itemId) {
+    } else if (a.pickedId !== e.itemId && e.mode === 'name') {
       entry.mixed[a.pickedId] = (entry.mixed[a.pickedId] ?? 0) + 1;
+    } else if (a.pickedId !== e.itemId) {
+      // "Find the art": the art picked was taken for this name. The reveal
+      // names it, so it counts as seen too.
+      const was = next.items[a.pickedId];
+      next.items[a.pickedId] = {
+        ...(was ? { ...was, seen: was.seen + 1, first: Math.min(was.first, e.at), last: Math.max(was.last, e.at) } : fresh(e.at)),
+        mixed: { ...was?.mixed, [e.itemId]: (was?.mixed[e.itemId] ?? 0) + 1 },
+      };
     }
   }
   const log: Answer = { t: e.at, id: e.itemId, mode: e.mode, ok: a.ok, difficulty: e.difficulty, race: e.race, ...(ms !== undefined ? { ms } : {}) };

@@ -7,9 +7,16 @@
 
   let remaining = $state(Infinity);
   let lastTick = -1;
+  let started = false;
 
   $effect(() => {
-    if (stopped) return;
+    if (stopped) {
+      // Mounted already stopped (a refresh or rejoin during a reveal): show the time that was left.
+      // A ring that ran keeps the value it froze at.
+      if (!started) remaining = Math.max(0, deadline - session.hostNow());
+      return;
+    }
+    started = true;
     let raf = 0;
     const loop = () => {
       remaining = Math.max(0, deadline - session.hostNow());

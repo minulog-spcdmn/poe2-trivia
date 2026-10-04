@@ -9,7 +9,7 @@
 
 import type { ShownPatch } from './media.svelte';
 import { valueNoise } from './patches';
-import { burnDuration, FINALE_MS } from './materialize';
+import { FINALE_MS } from './materialize';
 import { fxDensity, veilSpark } from './fx/moments';
 
 /**
@@ -93,8 +93,8 @@ export interface FrontierParams {
   /** The art's size in its own pixels. */
   w: number;
   h: number;
-  /** Time between patches, ms. */
-  step: number;
+  /** How long each patch takes to burn in, ms (veilPace). */
+  burn: number;
   /** The answer is out: patches from now on come in quickly (FINALE_MS). */
   quick?: boolean;
   patches: ShownPatch[];
@@ -347,7 +347,7 @@ export function frontier(canvas: HTMLCanvasElement, params: FrontierParams) {
     cur = next;
     const now = performance.now();
     const fresh = next.patches.filter((p) => !arrived.has(p.i));
-    const ms = next.quick ? FINALE_MS : burnDuration(next.step);
+    const ms = next.quick ? FINALE_MS : next.burn;
     for (const p of fresh) arrived.set(p.i, { at: now, ms });
     for (const p of fresh) learn(p);
     wake();

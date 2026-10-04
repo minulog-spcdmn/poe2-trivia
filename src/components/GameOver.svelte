@@ -13,7 +13,9 @@
   import { portal } from '../lib/portal';
 
   const s = $derived(session.state!);
-  const standings = $derived([...s.players].sort((a, b) => b.score - a.score));
+  const won = (id: string) => s.winners.includes(id);
+  // Winners first among equal scores: a deathmatch can be won by the only duelist left, level on points.
+  const standings = $derived([...s.players].sort((a, b) => b.score - a.score || +won(b.id) - +won(a.id)));
   const winner = $derived(s.players.find((p) => s.winners.includes(p.id)) ?? standings[0]);
   const spectators = $derived(s.spectators ?? []);
 
@@ -113,7 +115,11 @@
 
   let rank = $derived.by(() => {
     const ranks: number[] = [];
-    standings.forEach((p, i) => ranks.push(i > 0 && p.score === standings[i - 1].score ? ranks[i - 1] : i + 1));
+    // A winner never shares its rank with a player who didn't win.
+    standings.forEach((p, i) => {
+      const prev = standings[i - 1];
+      ranks.push(prev && p.score === prev.score && won(p.id) === won(prev.id) ? ranks[i - 1] : i + 1);
+    });
     return ranks;
   });
 </script>

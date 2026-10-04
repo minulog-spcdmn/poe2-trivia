@@ -3,7 +3,7 @@
   import { session, engine } from '../lib/session.svelte';
   import { AUTO_NEXT_MS, autoNextLeft, isFake, questionTopic } from '../lib/game';
   import { shown } from '../lib/media.svelte';
-  import { burnDuration, FINALE_MS, materialize, type BurnParams } from '../lib/materialize';
+  import { FINALE_MS, materialize, type BurnParams } from '../lib/materialize';
   import { frontier } from '../lib/frontier';
   import { visibleBox } from '../lib/patches';
   import { itemImage } from '../lib/ui';
@@ -74,7 +74,7 @@
     untrack(() => {
       if (n === patchesSeen) return;
       patchesSeen = n;
-      if (n && v) veilSettles = performance.now() + (reveal ? FINALE_MS : burnDuration(v.step));
+      if (n && v) veilSettles = performance.now() + (reveal ? FINALE_MS : v.burn);
     });
   });
   $effect(() => {
@@ -451,7 +451,7 @@
   {:else if race && myMiss}
     <p class="spectate out">Wrong: −1. You're out until the next question.</p>
   {:else if race}
-    <p class="spectate muted">First correct answer wins. Wrong costs a point! Press 1–{count}.</p>
+    <p class="spectate muted">First correct answer wins. Wrong costs a point! Press 1–{count === 10 ? '9 and 0' : count}.</p>
   {:else if !mine}
     <p class="spectate muted">{active.name} is deciding…</p>
   {:else}
@@ -555,12 +555,12 @@
                       url: p.url,
                       edges: p.edges,
                       before: patches.filter((o) => o.i !== p.i).map((o) => o.i),
-                      step: v.step,
+                      burn: v.burn,
                       quick: !!reveal,
                     }}
                   ></canvas>
                 {/each}
-                <canvas class="frontier" aria-hidden="true" use:frontier={{ w: v.w, h: v.h, step: v.step, quick: !!reveal, patches }}></canvas>
+                <canvas class="frontier" aria-hidden="true" use:frontier={{ w: v.w, h: v.h, burn: v.burn, quick: !!reveal, patches }}></canvas>
               </span>
               </span>
             {:else if !showFull && media?.art}

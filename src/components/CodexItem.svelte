@@ -24,9 +24,9 @@
         return it ? [{ item: it, n }] : [];
       })
       .sort((a, b) => b.n - a.n || a.item.name.localeCompare(b.item.name));
-  /** What was picked when this was the answer. */
+  /** The names its art was taken for. */
   const tookItFor = $derived(byCount(Object.entries(entry?.mixed ?? {})));
-  /** What this was picked for. */
+  /** The items whose art was taken for its name. */
   const tookForIt = $derived(
     byCount(Object.entries(codex.items).flatMap(([id, e]) => (e.mixed[item.id] ? [[id, e.mixed[item.id]] as [string, number]] : []))),
   );

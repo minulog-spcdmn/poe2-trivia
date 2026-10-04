@@ -782,6 +782,28 @@ test('a second Next for the same reveal is dropped quietly', () => {
   );
 });
 
+test('turns: an answer landing just after time ran out is dropped quietly', () => {
+  let { engine, s } = setup(['A', 'B']);
+  s = engine.apply(s, { type: 'start' }, 'p0');
+  const me = s.players[s.turn].id;
+  s = engine.apply(s, { type: 'pick', category: s.offered[0] }, me);
+  const q = s.question!;
+  // The host's timer closes the question first.
+  s = engine.apply(s, { type: 'answer', index: null }, null);
+  assert.equal(s.phase, 'reveal');
+  const silent = (err: unknown) => err instanceof ActionError && err.silent;
+  assert.throws(() => engine.apply(s, { type: 'answer', index: 0, askedAt: q.askedAt }, me), silent);
+  // Still quiet once play has moved on to the next pick.
+  s = engine.apply(s, { type: 'next' }, null);
+  assert.equal(s.phase, 'choosing');
+  assert.throws(() => engine.apply(s, { type: 'answer', index: 0, askedAt: q.askedAt }, me), silent);
+  // An answer for no question this game asked is still an error worth showing.
+  assert.throws(
+    () => engine.apply(s, { type: 'answer', index: 0, askedAt: q.askedAt - 1 }, me),
+    (err: unknown) => err instanceof ActionError && !err.silent && /no open question/.test(err.message),
+  );
+});
+
 test('reveals are stamped with the host clock; only the host or (turns) whoever answered moves on', () => {
   for (const mode of ['turns', 'race'] as const) {
     let clock = 5_000_000;

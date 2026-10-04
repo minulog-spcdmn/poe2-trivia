@@ -280,3 +280,19 @@ export function spreadOrder(patches: RawPatch[], seed: number): number[] {
   }
   return order;
 }
+
+/** The shortest a patch takes to burn in (ms), so many small ones still read as a burn. */
+const MIN_BURN = 900;
+/** A patch burns this many times the gap between patches, so the magic never stalls. */
+const BURN_OVERLAP = 1.6;
+
+/**
+ * How a veil of `count` patches comes in over `ms`: a patch starts every `gap`
+ * ms and takes `burn` ms, so the last one has burnt in `ms` after the first
+ * started, however many patches there are (a single one burns all along).
+ */
+export function veilPace(ms: number, count: number): { gap: number; burn: number } {
+  if (count <= 1) return { gap: 0, burn: ms };
+  const burn = Math.max(Math.min(MIN_BURN, ms), (BURN_OVERLAP * ms) / (count - 1 + BURN_OVERLAP));
+  return { gap: (ms - burn) / (count - 1), burn };
+}
