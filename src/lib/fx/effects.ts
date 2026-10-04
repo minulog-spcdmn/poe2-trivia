@@ -524,6 +524,9 @@ export function edgeGlow(o: { color?: Vec3; width?: number; life?: number; inten
   });
 }
 
+/** How far the tallest tongue of fire reaches, in flame heights (the shader's bound). */
+const FIRE_REACH = 1.8;
+
 /**
  * Fire burning on an element: flames rising off its top, licking up its
  * ends, for as long as it's up. `height` is how tall the flames reach, px;
@@ -532,15 +535,21 @@ export function edgeGlow(o: { color?: Vec3; width?: number; life?: number; inten
 export function fire(el: Element, o: { height?: number; intensity?: number; blue?: number; fadeIn?: number } = {}): Handle {
   const radius = parseFloat(getComputedStyle(el).borderTopLeftRadius) || 0;
   const H = o.height ?? 40;
+  // The quad must hold the tallest tongue (FIRE_REACH times H above the top,
+  // half that past the ends) and the halo inside the 72% where the shader's
+  // fade toward the quad's border begins.
+  const room = (r: number) => (r + 16) / 0.72;
   return shape({
     type: ShapeType.Fire,
     at: el,
     life: Infinity,
     followOpacity: true,
+    // It moves, but slowly enough for the 30fps path on phones.
+    calm: true,
     color: [1, 1, 1],
     update(f, _t, age, b) {
-      f.hw = b.w / 2 + H * 0.5 + 16;
-      f.hh = b.h / 2 + H * 2.2;
+      f.hw = room(b.w / 2 + (FIRE_REACH / 2) * H);
+      f.hh = room(b.h / 2 + FIRE_REACH * H);
       f.k = (o.intensity ?? 1) * Math.min(1, age / (o.fadeIn ?? 0.5));
       f.q[0] = b.w / 2;
       f.q[1] = b.h / 2;

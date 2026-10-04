@@ -365,31 +365,37 @@ void main() {
     vec2 hb = vQ.xy;
     float H = vQ.w;
     vec2 qq = abs(vP) - hb + vQ.z;
+    // Fire rises rather than spreading sideways: past the ends, distance counts double.
+    qq.x *= qq.x > 0.0 ? 2.0 : 1.0;
     float d = length(max(qq, 0.0)) + min(max(qq.x, qq.y), 0.0) - vQ.z;
     // Flames reach highest above the top, a little way up the ends, barely below.
-    float up = smoothstep(hb.y, -hb.y, vP.y);
+    float up = 1.0 - smoothstep(-hb.y, hb.y, vP.y);
     float reach = H * (0.06 + 0.94 * up * up * up);
-    // Turbulence scrolling upward, domain-warped so the tongues sway and split.
-    vec2 p = vP * vec2(0.05, 0.028);
-    vec2 warp = vec2(fbm(p * 0.8 + vec2(seed, time * 0.9)), fbm(p * 0.8 + vec2(seed + 4.1, time * 1.15)));
-    float n = fbm(p + vec2(0.0, time * 2.4) + (warp - 0.5) * 1.8 + seed);
-    float lick = vnoise(vec2(vP.x * 0.11 + seed * 3.0, vP.y * 0.04 + time * 3.2));
-    float tongue = n * 0.8 + lick * 0.45;
-    // 1 at the surface, falling to 0 at each tongue's tip.
-    float f = clamp(1.0 - max(d, 0.0) / (reach * (0.15 + 1.25 * tongue * tongue) + 2.0), 0.0, 1.0);
-    // The roots burn unevenly (hotter under a tongue) and dimmer along the bottom.
-    float T = f * smoothstep(-5.0, 0.0, d) * mix(0.3, 1.0, up) * (0.45 + 0.75 * tongue);
-    if (T > 0.002) {
-      // Fine flicker inside the body, so it doesn't read as a flat fill.
-      float flick = 0.7 + 0.6 * vnoise(vec2(vP.x * 0.12, vP.y * 0.07 + time * 6.0) + seed);
-      // Light fades out toward the tips rather than ending on an edge.
-      float I = T * T * flick * 1.8;
-      // Black body: red first, green only as it heats up, a touch of blue at the
-      // hottest; the tone map takes the brightest roots toward yellow-white.
-      vec3 orange = vec3(1.0, 0.18 + 0.42 * T * T, 0.03 + 0.12 * T * T * T);
-      vec3 blue = vec3(0.06 + 0.4 * T * T, 0.22 + 0.5 * T * T, 1.0);
-      col = vC * mix(orange, blue, vR.x) * I;
-      v = 1.0;
+    // Past the tallest tongue (FIRE_REACH in effects.ts) or inside the element
+    // there's no flame: skip the noise, and only the halo below is left.
+    if (d < 1.8 * reach + 2.0 && d > -5.0) {
+      // Turbulence scrolling upward, domain-warped so the tongues sway and split.
+      vec2 p = vP * vec2(0.05, 0.028);
+      vec2 warp = vec2(fbm(p * 0.8 + vec2(seed, time * 0.9)), fbm(p * 0.8 + vec2(seed + 4.1, time * 1.15)));
+      float n = fbm(p + vec2(0.0, time * 2.4) + (warp - 0.5) * 1.8 + seed);
+      float lick = vnoise(vec2(vP.x * 0.11 + seed * 3.0, vP.y * 0.04 + time * 3.2));
+      float tongue = n * 0.8 + lick * 0.45;
+      // 1 at the surface, falling to 0 at each tongue's tip.
+      float f = clamp(1.0 - max(d, 0.0) / (reach * (0.15 + 1.25 * tongue * tongue) + 2.0), 0.0, 1.0);
+      // The roots burn unevenly (hotter under a tongue) and dimmer along the bottom.
+      float T = f * smoothstep(-5.0, 0.0, d) * mix(0.3, 1.0, up) * (0.45 + 0.75 * tongue);
+      if (T > 0.002) {
+        // Fine flicker inside the body, so it doesn't read as a flat fill.
+        float flick = 0.7 + 0.6 * vnoise(vec2(vP.x * 0.12, vP.y * 0.07 + time * 6.0) + seed);
+        // Light fades out toward the tips rather than ending on an edge.
+        float I = T * T * flick * 1.8;
+        // Black body: red first, green only as it heats up, a touch of blue at the
+        // hottest; the tone map takes the brightest roots toward yellow-white.
+        vec3 orange = vec3(1.0, 0.18 + 0.42 * T * T, 0.03 + 0.12 * T * T * T);
+        vec3 blue = vec3(0.06 + 0.4 * T * T, 0.22 + 0.5 * T * T, 1.0);
+        col = vC * mix(orange, blue, vR.x) * I;
+        v = 1.0;
+      }
     }
     // A faint heat halo hugging the outline.
     float halo = exp(-abs(d) / (5.0 + H * 0.1)) * smoothstep(-6.0, 0.0, d) * 0.25;

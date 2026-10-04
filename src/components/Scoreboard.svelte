@@ -5,8 +5,7 @@
   import Avatar from './Avatar.svelte';
   import { backdropShadow } from '../lib/backdropShadow';
   import { untrack } from 'svelte';
-  import { fxActive } from '../lib/fx/core';
-  import type { Handle } from '../lib/fx/core';
+  import { fxActive, onFxChange, type Handle } from '../lib/fx/core';
   import { FILL_SPAN, FILL_START, SCORE_LANDS, ablaze, doused, lostPoint, turnsBlue } from '../lib/fx/moments';
   import { scoreRow, scoreRowOf } from '../lib/scoreRows';
   import { burnsBlue, heatOf, streakOf } from '../lib/fx/streaks';
@@ -18,15 +17,34 @@
   const canKick = $derived(session.mode === 'host');
   const spectators = $derived(s.spectators ?? []);
 
+  // Changes that wait for a point to land (the score ticking up, a streak's
+  // fire growing), per player: the value they land on and their timers.
+  // Other updates from the host in the meantime leave them running.
+  type Landing = { to: number; timers: ReturnType<typeof setTimeout>[] };
+  /** Cancels whatever is under way for player `id` in `under`. */
+  function cancel(under: Map<string, Landing>, id: string) {
+    under.get(id)?.timers.forEach(clearTimeout);
+    under.delete(id);
+  }
+  /** Runs `steps` (seconds from now, action) for player `id`, landing on `to`. The last step ends it. */
+  function land(under: Map<string, Landing>, id: string, to: number, steps: [number, () => void][]) {
+    cancel(under, id);
+    const timers = steps.map(([at, act], i) =>
+      setTimeout(() => {
+        if (i === steps.length - 1) under.delete(id);
+        act();
+      }, at * 1000),
+    );
+    under.set(id, { to, timers });
+  }
+
   // Scores as shown. A point won at a reveal flows into the scorer's bar as a
   // stream of sparks (see fillBar in lib/fx/moments.ts): the bar fills while
   // they land, and the number ticks up when the last one has.
   let shown = $state<Record<string, number>>({});
   let barShown = $state<Record<string, number>>({});
   let filling = $state<Record<string, boolean>>({});
-  // The award under way per player: its timers and the score it lands on.
-  // Other updates from the host during it leave it running.
-  const pending = new Map<string, { to: number; timers: ReturnType<typeof setTimeout>[] }>();
+  const awards = new Map<string, Landing>();
   const latest = (id: string, fallback: number) => session.state?.players.find((x) => x.id === id)?.score ?? fallback;
   $effect(() => {
     for (const p of s.players) {
@@ -36,24 +54,26 @@
         if (was === undefined) shown[p.id] = barShown[p.id] = score;
         continue;
       }
-      const award = pending.get(p.id);
-      if (award?.to === score) continue;
-      award?.timers.forEach(clearTimeout);
-      pending.delete(p.id);
+      if (awards.get(p.id)?.to === score) continue;
       if (score > was && fxActive() && s.phase === 'reveal') {
-        const timers = [
-          setTimeout(() => {
-            filling[p.id] = true;
-            barShown[p.id] = latest(p.id, score);
-          }, FILL_START * 1000),
-          setTimeout(() => {
-            pending.delete(p.id);
-            filling[p.id] = false;
-            shown[p.id] = barShown[p.id] = latest(p.id, score);
-          }, SCORE_LANDS * 1000),
-        ];
-        pending.set(p.id, { to: score, timers });
+        land(awards, p.id, score, [
+          [
+            FILL_START,
+            () => {
+              filling[p.id] = true;
+              barShown[p.id] = latest(p.id, score);
+            },
+          ],
+          [
+            SCORE_LANDS,
+            () => {
+              filling[p.id] = false;
+              shown[p.id] = barShown[p.id] = latest(p.id, score);
+            },
+          ],
+        ]);
       } else {
+        cancel(awards, p.id);
         if (score < was) {
           const li = scoreRowOf(p.id);
           if (li) lostPoint(li);
@@ -63,25 +83,27 @@
       }
     }
   });
-  $effect(() => () => pending.forEach((a) => a.timers.forEach(clearTimeout)));
   const scoreOf = (id: string, fallback: number) => shown[id] ?? fallback;
   const barOf = (id: string, fallback: number) => barShown[id] ?? fallback;
 
   // Players on a streak burn. The fire grows as the point lands on their
   // entry, and goes out the moment the streak breaks.
   let heat = $state<Record<string, number>>({});
-  const stoking = new Map<string, ReturnType<typeof setTimeout>>();
+  const stoking = new Map<string, Landing>();
   $effect(() => {
     for (const p of s.players) {
       const h = heatOf(streakOf(p.id));
+      if (stoking.get(p.id)?.to === h) continue;
+      cancel(stoking, p.id);
       const was = untrack(() => heat[p.id] ?? 0);
       if (h === was) continue;
-      clearTimeout(stoking.get(p.id));
-      if (h > was && fxActive() && s.phase === 'reveal') stoking.set(p.id, setTimeout(() => (heat[p.id] = h), SCORE_LANDS * 1000));
+      if (h > was && fxActive() && s.phase === 'reveal') land(stoking, p.id, h, [[SCORE_LANDS, () => (heat[p.id] = h)]]);
       else heat[p.id] = h;
     }
   });
-  $effect(() => () => stoking.forEach(clearTimeout));
+  $effect(() => () => {
+    for (const under of [awards, stoking]) for (const id of [...under.keys()]) cancel(under, id);
+  });
 
   /** Svelte action: sets a row burning at `h` (0 to 1), re-lit as it changes. */
   function burn(node: HTMLElement, h: number) {
@@ -96,7 +118,19 @@
       lit = next;
     };
     set(h);
-    return { update: set, destroy: () => fire?.stop(0.3) };
+    // Effects switched off and on, or the GL context lost and restored, wipe
+    // every shape: light it again on the new one.
+    const relight = onFxChange(() => {
+      fire?.stop(0);
+      fire = lit > 0 ? ablaze(node, lit) : null;
+    });
+    return {
+      update: set,
+      destroy: () => {
+        relight();
+        fire?.stop(0.3);
+      },
+    };
   }
 
   // Kicking takes two clicks so a stray tap doesn't remove anyone.
@@ -224,6 +258,9 @@
   li.ablaze {
     /* Orange, and blue at the top of a streak. */
     --flame: color-mix(in srgb, rgb(70, 140, 255) calc(var(--blue) * 100%), rgb(255, 110, 30));
+  }
+  /* The player whose turn it is keeps their own colour on the border. */
+  li.ablaze:not(.active) {
     border-color: color-mix(in srgb, var(--flame) calc(50% + 50% * var(--heat)), transparent);
   }
   li.ablaze::before {

@@ -57,9 +57,11 @@
     introTimer = setTimeout(() => (showIntro = false), 2600);
   });
   let showIntro = $state(false);
-  // A new game (or joining one): a wave of light, and streaks start over.
+  // A new game (or joining one): streaks start over. Here rather than in
+  // onMount, which runs after the Scoreboard inside has already read them.
+  resetStreaks();
+  // And a wave of light.
   onMount(() => {
-    resetStreaks();
     gameStart();
     return () => deathmatchMood(false);
   });

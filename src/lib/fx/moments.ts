@@ -454,9 +454,10 @@ export function ablaze(row: Element, heat: number): Handle {
   const blue = burnsBlue(heat);
   const flames = fire(row, { height: 6 + 66 * heat, intensity: 0.45 + 1.0 * heat, blue: blue ? 1 : 0 });
   const sparkColors = blue ? [C.portal, C.portalPale] : [C.ember, C.gold];
-  // Sparks spat out of the fire, drifting up.
+  // Sparks spat out of the fire, drifting up; slower than CALM_SPEED (lib/fx/core.ts),
+  // so a fire that burns all game lets phones draw at 30fps.
   const rising = emitter(14 * heat, () =>
-    embers(row, { count: 1, area: 'top', colors: sparkColors, size: [0.8, 1.8], rise: [70, 120 + 140 * heat], scatter: 30, life: [0.5, 0.9 + 0.6 * heat] }),
+    embers(row, { count: 1, area: 'top', colors: sparkColors, size: [0.8, 1.8], rise: [60, 90 + 60 * heat], scatter: 30, gravity: 0, life: [0.6, 1 + 0.6 * heat] }),
   );
   return {
     stop(fade = 0.5) {
