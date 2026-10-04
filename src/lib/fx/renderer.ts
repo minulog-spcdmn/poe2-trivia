@@ -340,7 +340,6 @@ void main() {
   float seed = vA.w;
   float r = length(vP);
   vec2 dir = r > 0.0 ? vP / r : vec2(1.0, 0.0);
-  float a = atan(vP.y, vP.x);
   vec3 col = vC;
   float v = 0.0;
   float hot = 0.0; // extra white-hot light on top of the colour
@@ -369,6 +368,7 @@ void main() {
     float streak = exp(-(vP.y * vP.y) / (vQ.z * vQ.z)) * sx * sx * sx;
     float sy = max(0.0, 1.0 - abs(vP.y) / (vQ.y * 0.28));
     float vert = exp(-(vP.x * vP.x) / (vQ.z * vQ.z * 0.5)) * sy * sy * sy * 0.35;
+    float a = atan(vP.y, vP.x);
     float spikes = pow(abs(cos(a * 3.0 + seed)), 64.0) * exp(-r / (vQ.x * 2.5)) * vQ.w * 0.6;
     v = core + streak + vert + spikes;
     hot = exp(-(r * r) / (vQ.x * vQ.x * 0.12)) * 1.5;
@@ -384,7 +384,7 @@ void main() {
     float rn = r / vQ.y;
     if (rn < 1.0) {
       float t = time * vR.x;
-      float u = a / (2.0 * PI) + 0.5;
+      float u = atan(vP.y, vP.x) / (2.0 * PI) + 0.5;
       float w = 0.3 / sqrt(max(vQ.w, 1.0));
       // Widen near the root (in cells, by a fixed width in px), keeping the light.
       float n1 = max(vQ.z, 3.0);
@@ -663,6 +663,14 @@ export type Silhouette = { img: HTMLImageElement; x: number; y: number; w: numbe
 const SIL_SIZE = 256;
 const SIL_BLUR = 2.5;
 
+/**
+ * How far the bloom carries light, in texels of its smallest level: each
+ * step, down or up, spreads it about 5 texels of the finer of the two levels,
+ * which adds up to about 10 texels of the smallest one. Past that, all it
+ * adds is exactly 0. (This leaves some to spare.)
+ */
+const BLOOM_REACH = 12;
+
 /** An open dialog (lib/behindDialog.ts): how far it dims the page, and its box and corner radius in CSS px. */
 export type DialogLight = { amount: number; box: DOMRect | null; radius: number };
 const NO_DIALOG: DialogLight = { amount: 0, box: null, radius: 0 };
@@ -871,6 +879,24 @@ export class FxRenderer {
     gl.disable(gl.DEPTH_TEST);
     gl.clearColor(0, 0, 0, 0);
 
+    // The full-screen passes (copy, bloom, composite) only need to cover the
+    // light and as far as the bloom can carry it; past that every pass gives
+    // exactly 0. Each target is cleared whole, then drawn within its share
+    // of that area.
+    const bloom = this.bloom && this.mips.length > 0;
+    const area = this.litArea(view, dpr, particles, nParticles, shapes, nShapes, bloom ? BLOOM_REACH * 2 ** this.mips.length : 4);
+    const within = (t: { w: number; h: number }, clear: boolean) => {
+      if (!area) return;
+      gl.disable(gl.SCISSOR_TEST);
+      if (clear) gl.clear(gl.COLOR_BUFFER_BIT);
+      const kx = t.w / this.width;
+      const ky = t.h / this.height;
+      const x = Math.floor(area[0] * kx);
+      const y = Math.floor(area[1] * ky);
+      gl.scissor(x, y, Math.ceil(area[2] * kx) - x, Math.ceil(area[3] * ky) - y);
+      gl.enable(gl.SCISSOR_TEST);
+    };
+
     // Without a shape target of their own, every shape is drawn at full
     // resolution below, soft and crisp alike.
     if (!this.shapesT) nCrisp = nShapes;
@@ -892,12 +918,14 @@ export class FxRenderer {
       gl.disable(gl.BLEND);
       gl.bindFramebuffer(gl.FRAMEBUFFER, this.hdr.fbo);
       gl.viewport(0, 0, this.width, this.height);
+      within(this.hdr, true);
       gl.useProgram(this.copyProg.prog);
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, this.shapesT.tex);
       gl.uniform1i(this.copyProg.u('uSrc'), 0);
       gl.bindVertexArray(this.fullVao);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      gl.disable(gl.SCISSOR_TEST);
     } else {
       gl.bindFramebuffer(gl.FRAMEBUFFER, this.hdr.fbo);
       gl.viewport(0, 0, this.width, this.height);
@@ -926,7 +954,6 @@ export class FxRenderer {
       gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, nParticles);
     }
 
-    const bloom = this.bloom && this.mips.length > 0;
     gl.bindVertexArray(this.fullVao);
     if (bloom) {
       gl.disable(gl.BLEND);
@@ -935,6 +962,7 @@ export class FxRenderer {
       this.mips.forEach((m, i) => {
         gl.bindFramebuffer(gl.FRAMEBUFFER, m.fbo);
         gl.viewport(0, 0, m.w, m.h);
+        within(m, true);
         gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, src.tex);
         gl.uniform1i(this.downProg.u('uSrc'), 0);
@@ -952,6 +980,7 @@ export class FxRenderer {
         const to = this.mips[i - 1];
         gl.bindFramebuffer(gl.FRAMEBUFFER, to.fbo);
         gl.viewport(0, 0, to.w, to.h);
+        within(to, false);
         gl.bindTexture(gl.TEXTURE_2D, from.tex);
         gl.uniform1i(this.upProg.u('uSrc'), 0);
         gl.uniform2f(this.upProg.u('uTexel'), 1 / from.w, 1 / from.h);
@@ -963,6 +992,7 @@ export class FxRenderer {
     gl.disable(gl.BLEND);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, this.width, this.height);
+    within(this.hdr, true);
     gl.useProgram(this.compProg.prog);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.hdr.tex);
@@ -978,8 +1008,59 @@ export class FxRenderer {
     gl.uniform1f(this.compProg.u('uDim'), dialog.amount);
     behindDialog(this.compProg, false);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    gl.disable(gl.SCISSOR_TEST);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindVertexArray(null);
+  }
+
+  /**
+   * The part of the HDR target this frame can light, widened by `margin` px:
+   * (left, bottom, right, top) in its px, from its bottom-left corner as GL
+   * counts. Null when that's most of the screen anyway.
+   */
+  private litArea(
+    view: [number, number],
+    dpr: number,
+    particles: Float32Array,
+    nParticles: number,
+    shapes: Float32Array,
+    nShapes: number,
+    margin: number,
+  ): [number, number, number, number] | null {
+    // In CSS px: each shape's quad, and a box round each particle's quad
+    // (see PARTICLE_VS; a glint's reaches 4.5 widths, so its corners 6.4).
+    let x0 = Infinity;
+    let y0 = Infinity;
+    let x1 = -Infinity;
+    let y1 = -Infinity;
+    for (let i = 0; i < nShapes; i++) {
+      const o = i * SHAPE_FLOATS;
+      x0 = Math.min(x0, shapes[o] - shapes[o + 2]);
+      x1 = Math.max(x1, shapes[o] + shapes[o + 2]);
+      y0 = Math.min(y0, shapes[o + 1] - shapes[o + 3]);
+      y1 = Math.max(y1, shapes[o + 1] + shapes[o + 3]);
+    }
+    const minPx = 0.85 / dpr;
+    for (let i = 0; i < nParticles; i++) {
+      const o = i * INSTANCE_FLOATS;
+      const shape = particles[o + 7];
+      // A spark streaks half its stretch along its velocity; a coin's flip is at most 1.
+      const len = shape === 1 ? 0.5 * Math.hypot(particles[o + 2], particles[o + 3]) * Math.abs(particles[o + 5]) : shape === 6 ? 1 : 0;
+      const r = len + 6.5 * Math.max(particles[o + 4], minPx);
+      x0 = Math.min(x0, particles[o] - r);
+      x1 = Math.max(x1, particles[o] + r);
+      y0 = Math.min(y0, particles[o + 1] - r);
+      y1 = Math.max(y1, particles[o + 1] + r);
+    }
+    const kx = this.width / view[0];
+    const ky = this.height / view[1];
+    const left = Math.max(0, Math.floor(x0 * kx) - margin);
+    const right = Math.min(this.width, Math.ceil(x1 * kx) + margin);
+    const bottom = Math.max(0, this.height - Math.ceil(y1 * ky) - margin);
+    const top = Math.min(this.height, this.height - Math.floor(y0 * ky) + margin);
+    if (!(right > left && top > bottom)) return null;
+    if ((right - left) * (top - bottom) > 0.75 * this.width * this.height) return null;
+    return [left, bottom, right, top];
   }
 
   /** Makes `img` the silhouette texture, unless it is already. Returns whether it's ready (loaded, and readable). */

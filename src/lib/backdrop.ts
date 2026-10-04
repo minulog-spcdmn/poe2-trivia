@@ -17,24 +17,28 @@ import { COLUMNS, SLOTS, embers } from './backdropEmbers';
 import { DIALOG_BLUR, DIALOG_DIM, openDialog } from './behindDialog';
 
 const VERT = `#version 300 es
-in vec2 aPos;
+layout(location = 0) in vec2 aPos;
 void main() { gl_Position = vec4(aPos, 0.0, 1.0); }
 `;
 
 export const BLOB_COUNT = 5;
 
-const frag = (MAX_ELEMENTS: number) => `#version 300 es
-precision highp float;
-out vec4 fragColor;
-
-uniform vec2 uRes;   // drawing buffer size, device pixels
+/**
+ * The backdrop's soft light: the base gradient, its haze and glows, the
+ * blobs, and the start page's rays and title glow. Nothing in it changes over
+ * less than several CSS px, so where the GPU can draw to a float target it
+ * is drawn at SMOOTH_PX CSS px per texel and filtered up (see startBackdrop):
+ * on a 2x screen that's a sixteenth of the pixels, for most of the
+ * backdrop's own arithmetic. Embers, grain, shadows, fills and the dither
+ * stay per pixel.
+ */
+const SMOOTH = `
 uniform vec2 uSize;  // canvas size, CSS pixels
 
-// Breathing, driven from JS: each is (scale, strength) unless noted.
+// Breathing, driven from JS: each is (scale, strength).
 uniform vec2 uTop;
 uniform vec2 uBottom;
 uniform vec2 uGlow;
-uniform vec2 uVignette; // (reach, strength)
 uniform float uBaseStop;
 
 // Blobs. A: centre (fractions of the viewport), rotation, opacity.
@@ -45,19 +49,6 @@ uniform vec2 uBlobRot[${BLOB_COUNT}]; // (cos, sin) of A's rotation
 uniform vec3 uBlobB[${BLOB_COUNT}];
 uniform vec3 uBlobColor[${BLOB_COUNT}];
 
-// Outer box-shadows and fills of UI elements (see backdropShadow.ts for the layout).
-uniform vec4 uElA[${MAX_ELEMENTS}];
-uniform vec4 uElB[${MAX_ELEMENTS}];
-uniform vec4 uElC[${MAX_ELEMENTS}];
-uniform vec4 uElD[${MAX_ELEMENTS}];
-uniform vec4 uElE[${MAX_ELEMENTS}];
-uniform int uElCount;
-
-// Event lights (x, y, radius, strength) and colours; the mood tint (r, g,
-// b, strength). See lights.ts.
-uniform vec4 uLightA[${MAX_LIGHTS}];
-uniform vec4 uLightC[${MAX_LIGHTS}];
-uniform vec4 uMood;
 // The start page: (rays, title glow, time in s, title breath), and the
 // title's centre and half size (CSS px). See setHomeScene in lights.ts.
 uniform vec4 uHome;
@@ -67,79 +58,12 @@ uniform vec4 uTitle;
 // frame).
 uniform vec3 uBeams[7];
 
-// Embers by screen column: row c holds the embers that reach column c,
-// (x, y, size, brightness) each, ending at brightness 0; see backdropEmbers.ts.
-uniform sampler2D uEmbers;
-uniform vec4 uEmberColor; // halo colour, overall gain
-uniform vec4 uShGeo[${MAX_ELEMENTS * SHADOWS_PER_ELEMENT}];
-uniform vec4 uShCol[${MAX_ELEMENTS * SHADOWS_PER_ELEMENT}];
-
-// Drop shadows of UI elements (see backdropDropShadow.ts for the layout).
-uniform vec4 uMkA[${MAX_MASKS}];
-uniform vec4 uMkB[${MAX_MASKS}];
-uniform vec4 uMkC[${MAX_MASKS}];
-uniform vec4 uMkD[${MAX_MASKS}];
-uniform vec4 uMkE[${MAX_MASKS}];
-uniform vec4 uMkOff[${MAX_MASKS}];
-uniform vec4 uMkCol[${MAX_MASKS * DROPS_PER_MASK}];
-uniform sampler2D uSharp; // content alpha
-uniform sampler2D uBlur;  // blurred alpha, 16-bit in R+G and B+A
-uniform vec2 uSharpSize;
-uniform vec2 uBlurSize;
-uniform float uDialog; // how far an open dialog dims the page, 0-1 (lib/behindDialog.ts)
-
 vec3 rgb(float r, float g, float b) { return vec3(r, g, b) / 255.0; }
 
 float gauss(float d) { return exp(-d * d); }
 
-// Blurred rounded-rectangle shadow (Evan Wallace, "Fast Rounded Rectangle
-// Shadows"): exact Gaussian integral across x via erf, numerically integrated
-// along y. Returns coverage in [0, 1].
-vec2 erf2(vec2 x) {
-  vec2 s = sign(x);
-  vec2 a = abs(x);
-  x = 1.0 + (0.278393 + (0.230389 + 0.078108 * (a * a)) * a) * a;
-  x *= x;
-  return s - s / (x * x);
-}
-
-float shadowX(float x, float y, float sigma, float corner, vec2 halfSize) {
-  float delta = min(halfSize.y - corner - abs(y), 0.0);
-  float curved = halfSize.x - corner + sqrt(max(0.0, corner * corner - delta * delta));
-  vec2 integral = 0.5 + 0.5 * erf2((x + vec2(-curved, curved)) * (0.70710678 / sigma));
-  return integral.y - integral.x;
-}
-
-float roundedBoxShadow(vec2 lower, vec2 upper, vec2 point, float sigma, float corner) {
-  vec2 center = (lower + upper) * 0.5;
-  vec2 halfSize = (upper - lower) * 0.5;
-  corner = min(corner, min(halfSize.x, halfSize.y));
-  point -= center;
-  float low = point.y - halfSize.y;
-  float high = point.y + halfSize.y;
-  float y0 = clamp(-3.0 * sigma, low, high);
-  float y1 = clamp(3.0 * sigma, low, high);
-  float dy = (y1 - y0) / 8.0;
-  float y = y0 + dy * 0.5;
-  float value = 0.0;
-  for (int i = 0; i < 8; i++) {
-    value += shadowX(point.x, point.y - y, sigma, corner, halfSize)
-      * exp(-y * y / (2.0 * sigma * sigma)) * dy;
-    y += dy;
-  }
-  return value * (0.39894228 / sigma);
-}
-
-// Hash without sine (Dave Hoskins); uniform in [0, 1).
-float hash(vec2 p) {
-  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
-  p3 += dot(p3, p3.yzx + 33.33);
-  return fract((p3.x + p3.y) * p3.z);
-}
-
-void main() {
-  vec2 dev = vec2(gl_FragCoord.x, uRes.y - gl_FragCoord.y);
-  vec2 p = dev / uRes * uSize; // CSS px, top-left origin
+// The soft light at p (CSS px, top-left origin).
+vec3 smoothLight(vec2 p) {
   float W = uSize.x;
   float H = uSize.y;
   float S = sqrt(W * H);
@@ -178,20 +102,6 @@ void main() {
     col = mix(col, uBlobColor[i], a.w * w);
   }
 
-  // Embers rising through the dark: a hot core and a wide, dim halo.
-  int column = clamp(int(p.x / W * ${COLUMNS}.0), 0, ${COLUMNS - 1});
-  for (int i = 0; i < ${SLOTS}; i++) {
-    vec4 e = texelFetch(uEmbers, ivec2(i, column), 0);
-    if (e.w <= 0.0) break;
-    vec2 dp = p - e.xy;
-    float r2 = dot(dp, dp);
-    float s2 = e.z * e.z;
-    if (r2 > s2 * 40.0) continue;
-    float core = exp(-r2 / (s2 * 0.3));
-    float halo = exp(-r2 / (s2 * 5.0));
-    col += (mix(uEmberColor.rgb, vec3(1.0, 0.86, 0.6), 0.55) * core * 0.9 + uEmberColor.rgb * halo * 0.3) * e.w * uEmberColor.a;
-  }
-
   // The start page: god rays falling from high above the centre, each beam
   // slowly waxing and waning in place, and a royal glow behind the title.
   if (uHome.x > 0.0) {
@@ -219,6 +129,148 @@ void main() {
     vec2 q2 = (p - uTitle.xy) / (uTitle.zw * vec2(1.9, 5.5));
     col += vec3(0.5, 0.14, 0.2) * exp(-dot(q2, q2)) * 0.05 * uHome.y;
   }
+  return col;
+}
+`;
+
+/** CSS px per texel of the soft light's own target. */
+const SMOOTH_PX = 2;
+
+/** Draws smoothLight() into its own target, a texel per SMOOTH_PX CSS px. */
+const SMOOTH_FRAG = `#version 300 es
+precision highp float;
+out vec4 fragColor;
+uniform vec2 uRes; // the target's size, texels
+${SMOOTH}
+void main() {
+  fragColor = vec4(smoothLight(vec2(gl_FragCoord.x, uRes.y - gl_FragCoord.y) / uRes * uSize), 1.0);
+}
+`;
+
+/**
+ * The backdrop at every device pixel. With `split`, the soft light comes from
+ * uSmooth (drawn by SMOOTH_FRAG); without, it's worked out here.
+ */
+const frag = (MAX_ELEMENTS: number, split: boolean) => `#version 300 es
+precision highp float;
+out vec4 fragColor;
+
+uniform vec2 uRes;   // drawing buffer size, device pixels
+${SMOOTH}
+uniform sampler2D uSmooth;
+uniform vec2 uVignette; // breathing (reach, strength)
+
+// Outer box-shadows and fills of UI elements (see backdropShadow.ts for the layout).
+uniform vec4 uElA[${MAX_ELEMENTS}];
+uniform vec4 uElB[${MAX_ELEMENTS}];
+uniform vec4 uElC[${MAX_ELEMENTS}];
+uniform vec4 uElD[${MAX_ELEMENTS}];
+uniform vec4 uElE[${MAX_ELEMENTS}];
+uniform int uElCount;
+
+// Event lights (x, y, radius, strength) and colours; the mood tint (r, g,
+// b, strength). See lights.ts.
+uniform vec4 uLightA[${MAX_LIGHTS}];
+uniform vec4 uLightC[${MAX_LIGHTS}];
+uniform vec4 uMood;
+
+// Embers by screen column: row c holds the embers that reach column c,
+// (x, y, size, brightness) each, ending at brightness 0; see backdropEmbers.ts.
+uniform sampler2D uEmbers;
+uniform vec4 uEmberColor; // halo colour, overall gain
+uniform vec4 uShGeo[${MAX_ELEMENTS * SHADOWS_PER_ELEMENT}];
+uniform vec4 uShCol[${MAX_ELEMENTS * SHADOWS_PER_ELEMENT}];
+
+// Drop shadows of UI elements (see backdropDropShadow.ts for the layout).
+uniform vec4 uMkA[${MAX_MASKS}];
+uniform vec4 uMkB[${MAX_MASKS}];
+uniform vec4 uMkC[${MAX_MASKS}];
+uniform vec4 uMkD[${MAX_MASKS}];
+uniform vec4 uMkE[${MAX_MASKS}];
+uniform vec4 uMkOff[${MAX_MASKS}];
+uniform vec4 uMkCol[${MAX_MASKS * DROPS_PER_MASK}];
+uniform sampler2D uSharp; // content alpha
+uniform sampler2D uBlur;  // blurred alpha, 16-bit in R+G and B+A
+uniform vec2 uSharpSize;
+uniform vec2 uBlurSize;
+uniform float uDialog; // how far an open dialog dims the page, 0-1 (lib/behindDialog.ts)
+
+// Blurred rounded-rectangle shadow (Evan Wallace, "Fast Rounded Rectangle
+// Shadows"): exact Gaussian integral across x via erf, numerically integrated
+// along y. Returns coverage in [0, 1].
+vec2 erf2(vec2 x) {
+  vec2 s = sign(x);
+  vec2 a = abs(x);
+  x = 1.0 + (0.278393 + (0.230389 + 0.078108 * (a * a)) * a) * a;
+  x *= x;
+  return s - s / (x * x);
+}
+
+float shadowX(float x, float y, float sigma, float corner, vec2 halfSize) {
+  float delta = min(halfSize.y - corner - abs(y), 0.0);
+  float curved = halfSize.x - corner + sqrt(max(0.0, corner * corner - delta * delta));
+  vec2 integral = 0.5 + 0.5 * erf2((x + vec2(-curved, curved)) * (0.70710678 / sigma));
+  return integral.y - integral.x;
+}
+
+float roundedBoxShadow(vec2 lower, vec2 upper, vec2 point, float sigma, float corner) {
+  vec2 center = (lower + upper) * 0.5;
+  vec2 halfSize = (upper - lower) * 0.5;
+  corner = min(corner, min(halfSize.x, halfSize.y));
+  point -= center;
+  // Where the blur (to 3 sigma, as far as the sum below looks) can't reach a
+  // rounded corner, the box is a plain rectangle, whose blur is erf across
+  // times erf down: no sum needed. That's most of the shadow beside a large
+  // element.
+  vec2 clear = halfSize - corner - abs(point) - 3.0 * sigma;
+  if (max(clear.x, clear.y) >= 0.0) {
+    vec2 k = vec2(0.70710678 / sigma);
+    vec2 cover = 0.5 * (erf2((point + halfSize) * k) - erf2((point - halfSize) * k));
+    return cover.x * cover.y;
+  }
+  float low = point.y - halfSize.y;
+  float high = point.y + halfSize.y;
+  float y0 = clamp(-3.0 * sigma, low, high);
+  float y1 = clamp(3.0 * sigma, low, high);
+  float dy = (y1 - y0) / 8.0;
+  float y = y0 + dy * 0.5;
+  float value = 0.0;
+  for (int i = 0; i < 8; i++) {
+    value += shadowX(point.x, point.y - y, sigma, corner, halfSize)
+      * exp(-y * y / (2.0 * sigma * sigma)) * dy;
+    y += dy;
+  }
+  return value * (0.39894228 / sigma);
+}
+
+// Hash without sine (Dave Hoskins); uniform in [0, 1).
+float hash(vec2 p) {
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
+}
+
+void main() {
+  vec2 dev = vec2(gl_FragCoord.x, uRes.y - gl_FragCoord.y);
+  vec2 p = dev / uRes * uSize; // CSS px, top-left origin
+  float W = uSize.x;
+  float H = uSize.y;
+
+  vec3 col = ${split ? 'texture(uSmooth, vec2(p.x / W, 1.0 - p.y / H)).rgb' : 'smoothLight(p)'};
+
+  // Embers rising through the dark: a hot core and a wide, dim halo.
+  int column = clamp(int(p.x / W * ${COLUMNS}.0), 0, ${COLUMNS - 1});
+  for (int i = 0; i < ${SLOTS}; i++) {
+    vec4 e = texelFetch(uEmbers, ivec2(i, column), 0);
+    if (e.w <= 0.0) break;
+    vec2 dp = p - e.xy;
+    float r2 = dot(dp, dp);
+    float s2 = e.z * e.z;
+    if (r2 > s2 * 40.0) continue;
+    float core = exp(-r2 / (s2 * 0.3));
+    float halo = exp(-r2 / (s2 * 5.0));
+    col += (mix(uEmberColor.rgb, vec3(1.0, 0.86, 0.6), 0.55) * core * 0.9 + uEmberColor.rgb * halo * 0.3) * e.w * uEmberColor.a;
+  }
 
   // Lift the dark tones within their own hue. (A flat grey lift, as the old
   // SVG grain gave, washes these near-black colours out.)
@@ -232,9 +284,8 @@ void main() {
 
   // Vignette: darkens smoothly from the centre, reaching about 72% at the
   // corners (farthest-corner ellipse, as in CSS).
-  d = length((p - vec2(0.5 * W, 0.5 * H)) / (vec2(0.5 * W, 0.5 * H) * 1.4142136 * uVignette.x));
-  float vig = d;
-  col *= 1.0 - min(0.9, uVignette.y * 0.72 * pow(d, 2.4));
+  float vig = length((p - vec2(0.5 * W, 0.5 * H)) / (vec2(0.5 * W, 0.5 * H) * 1.4142136 * uVignette.x));
+  col *= 1.0 - min(0.9, uVignette.y * 0.72 * pow(vig, 2.4));
 
   // Mood: the whole scene takes on a colour, welling up from below and the edges.
   if (uMood.a > 0.0) {
@@ -290,7 +341,14 @@ void main() {
     vec4 ea = uElA[i];
     vec4 eb = uElB[i];
     if (eb.w < 0.5) continue;
+    vec4 fc = uElC[i];
     vec2 lp = (p - ea.xy) * ea.z; // element px from its border-box corner
+    if (pass == 0) {
+      // Most pixels are beyond every shadow's reach (ea.w, the per-shadow
+      // test below for all of them at once): skip those first.
+      vec2 far = max(-lp, lp - eb.xy);
+      if (max(far.x, far.y) > ea.w) continue;
+    } else if (fc.x < 0.5) continue;
     vec2 halfBox = eb.xy * 0.5;
     float rr = min(eb.z, min(halfBox.x, halfBox.y));
     vec2 qd = abs(lp - eb.xy * 0.5) - halfBox + rr;
@@ -301,9 +359,8 @@ void main() {
     float edge = max(px, 2.56 * ${DIALOG_BLUR.toFixed(2)} * uDialog * ea.z);
     float outside = clamp(sdf / edge + 0.5, 0.0, 1.0);
 
-    vec4 fc = uElC[i];
     if (pass == 1) {
-      if (fc.x < 0.5 || outside >= 1.0) continue;
+      if (outside >= 1.0) continue;
       vec4 ca = uElD[i];
       vec4 cb = uElE[i];
       vec4 fill;
@@ -459,6 +516,33 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   // most desktop GPUs offer 1024 or more, and get 16.
   const maxElements = gl.getParameter(gl.MAX_FRAGMENT_UNIFORM_VECTORS) >= 400 ? 16 : 10;
 
+  // The soft light (see SMOOTH) gets a half-float target of its own wherever
+  // the GPU can draw to one, which is nearly everywhere; elsewhere the main
+  // pass works it out at every pixel. (An 8-bit target would band.)
+  let smoothTex: WebGLTexture | null = null;
+  let smoothFbo: WebGLFramebuffer | null = null;
+  if (gl.getExtension('EXT_color_buffer_float')) {
+    smoothTex = gl.createTexture();
+    gl.activeTexture(gl.TEXTURE3);
+    gl.bindTexture(gl.TEXTURE_2D, smoothTex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, 1, 1, 0, gl.RGBA, gl.HALF_FLOAT, null);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    smoothFbo = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, smoothFbo);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, smoothTex, 0);
+    if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
+      gl.deleteFramebuffer(smoothFbo);
+      gl.deleteTexture(smoothTex);
+      smoothTex = smoothFbo = null;
+    }
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  }
+  let smoothW = 1;
+  let smoothH = 1;
+
   const compile = (type: number, src: string) => {
     const s = gl.createShader(type)!;
     gl.shaderSource(s, src);
@@ -467,45 +551,61 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     console.warn('Backdrop shader failed to compile; using the CSS backdrop.', gl.getShaderInfoLog(s));
     return null;
   };
-  const vs = compile(gl.VERTEX_SHADER, VERT);
-  const fs = compile(gl.FRAGMENT_SHADER, frag(maxElements));
-  if (!vs || !fs) return null;
-  const prog = gl.createProgram()!;
-  gl.attachShader(prog, vs);
-  gl.attachShader(prog, fs);
-  gl.linkProgram(prog);
-  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
-    console.warn('Backdrop program failed to link; using the CSS backdrop.', gl.getProgramInfoLog(prog));
+  const link = (fragSrc: string) => {
+    const vs = compile(gl.VERTEX_SHADER, VERT);
+    const fs = compile(gl.FRAGMENT_SHADER, fragSrc);
+    if (!vs || !fs) return null;
+    const p = gl.createProgram()!;
+    gl.attachShader(p, vs);
+    gl.attachShader(p, fs);
+    gl.linkProgram(p);
+    if (gl.getProgramParameter(p, gl.LINK_STATUS)) return p;
+    console.warn('Backdrop program failed to link; using the CSS backdrop.', gl.getProgramInfoLog(p));
     return null;
-  }
-  gl.useProgram(prog);
+  };
+  const prog = link(frag(maxElements, !!smoothTex));
+  const smoothProg = smoothTex ? link(SMOOTH_FRAG) : null;
+  if (!prog || (smoothTex && !smoothProg)) return null;
+  // The program that works out the soft light.
+  const soft = smoothProg ?? prog;
 
   // One triangle covering the viewport.
   gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
   gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
-  const aPos = gl.getAttribLocation(prog, 'aPos');
-  gl.enableVertexAttribArray(aPos);
-  gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
 
+  const S = (name: string) => gl.getUniformLocation(soft, name);
+  const sRes = S('uRes');
+  const sSize = S('uSize');
+  const uTop = S('uTop');
+  const uBottom = S('uBottom');
+  const uGlow = S('uGlow');
+  const uBaseStop = S('uBaseStop');
+  const uBlobA = S('uBlobA');
+  const uBlobRot = S('uBlobRot');
+  const uBeams = S('uBeams');
+  const uHome = S('uHome');
+  const uTitle = S('uTitle');
+  gl.useProgram(soft);
+  gl.uniform3fv(S('uBlobB'), BLOBS.flatMap((b) => b.reach));
+  gl.uniform3fv(
+    S('uBlobColor'),
+    BLOBS.flatMap((b) => b.color.map((c) => c / 255)),
+  );
+
+  gl.useProgram(prog);
   const U = (name: string) => gl.getUniformLocation(prog, name);
   const uRes = U('uRes');
   const uSize = U('uSize');
-  const uTop = U('uTop');
-  const uBottom = U('uBottom');
-  const uGlow = U('uGlow');
   const uVignette = U('uVignette');
-  const uBaseStop = U('uBaseStop');
-  const uBlobA = U('uBlobA');
-  const uBlobRot = U('uBlobRot');
-  const uBeams = U('uBeams');
   const uLightA = U('uLightA');
   const uLightC = U('uLightC');
   const uMood = U('uMood');
-  const uHome = U('uHome');
-  const uTitle = U('uTitle');
   const uEmberColor = U('uEmberColor');
   const uElCount = U('uElCount');
   const uDialog = U('uDialog');
+  gl.uniform1i(U('uSmooth'), 3);
   let dialog = 0;
 
   const el = {
@@ -578,12 +678,6 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, SLOTS, COLUMNS, 0, gl.RGBA, gl.FLOAT, null);
   gl.uniform1i(U('uEmbers'), 2);
-
-  gl.uniform3fv(U('uBlobB'), BLOBS.flatMap((b) => b.reach));
-  gl.uniform3fv(
-    U('uBlobColor'),
-    BLOBS.flatMap((b) => b.color.map((c) => c / 255)),
-  );
   const paths = BLOBS.map(blobPath);
 
   const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
@@ -606,13 +700,15 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     const top = still ? 0 : breathe(ms, 17000, 0.6);
     const vignette = still ? 0 : breathe(ms, 23000, 0.15);
     const base = still ? 0 : breathe(ms, 29000, 0.8);
-    gl!.viewport(0, 0, canvas.width, canvas.height);
-    gl!.uniform2f(uRes, canvas.width, canvas.height);
-    gl!.uniform2f(uSize, canvas.clientWidth, canvas.clientHeight);
+    const cssW = canvas.clientWidth;
+    const cssH = canvas.clientHeight;
+
+    // The soft light: into its own target first, or along with the rest.
+    gl!.useProgram(soft);
+    gl!.uniform2f(sSize, cssW, cssH);
     gl!.uniform2f(uGlow, 1 + 0.08 * glow, 1 - 0.4 * glow);
     gl!.uniform2f(uBottom, 1 + 0.1 * bottom, 1 + 0.3 * bottom);
     gl!.uniform2f(uTop, 1 + 0.08 * top, 1 + 0.35 * top);
-    gl!.uniform2f(uVignette, 1 - 0.06 * vignette, 1 + 0.07 * vignette);
     gl!.uniform1f(uBaseStop, 0.6 - 0.08 * base);
     paths.forEach((path, i) => blobA.set(path(still ? 0 : ms / 1000), i * 4));
     for (let i = 0; i < BLOB_COUNT; i++) {
@@ -621,6 +717,34 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     }
     gl!.uniform4fv(uBlobA, blobA);
     gl!.uniform2fv(uBlobRot, blobRot);
+    home[2] = still ? 0 : ms / 1000;
+    home[3] = 0.86 + 0.14 * Math.sin(home[2] * 0.55);
+    beams(home[2], beam);
+    gl!.uniform4fv(uHome, home);
+    gl!.uniform3fv(uBeams, beam);
+    gl!.uniform4fv(uTitle, title);
+    if (smoothProg) {
+      const w = Math.max(1, Math.ceil(cssW / SMOOTH_PX));
+      const h = Math.max(1, Math.ceil(cssH / SMOOTH_PX));
+      if (w !== smoothW || h !== smoothH) {
+        smoothW = w;
+        smoothH = h;
+        gl!.activeTexture(gl!.TEXTURE3);
+        gl!.bindTexture(gl!.TEXTURE_2D, smoothTex);
+        gl!.texImage2D(gl!.TEXTURE_2D, 0, gl!.RGBA16F, w, h, 0, gl!.RGBA, gl!.HALF_FLOAT, null);
+      }
+      gl!.bindFramebuffer(gl!.FRAMEBUFFER, smoothFbo);
+      gl!.viewport(0, 0, w, h);
+      gl!.uniform2f(sRes, w, h);
+      gl!.drawArrays(gl!.TRIANGLES, 0, 3);
+      gl!.bindFramebuffer(gl!.FRAMEBUFFER, null);
+      gl!.useProgram(prog);
+      gl!.uniform2f(uSize, cssW, cssH);
+    }
+
+    gl!.viewport(0, 0, canvas.width, canvas.height);
+    gl!.uniform2f(uRes, canvas.width, canvas.height);
+    gl!.uniform2f(uVignette, 1 - 0.06 * vignette, 1 + 0.07 * vignette);
     for (const [k, arr] of Object.entries(el)) gl!.uniform4fv(elLoc[k as keyof typeof el], arr);
     let count = 0;
     for (let i = 0; i < maxElements; i++) if (el.b[i * 4 + 3] > 0) count = i + 1;
@@ -629,12 +753,6 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     gl!.uniform4fv(uLightA, lightA);
     gl!.uniform4fv(uLightC, lightC);
     gl!.uniform4fv(uMood, mood);
-    home[2] = still ? 0 : ms / 1000;
-    home[3] = 0.86 + 0.14 * Math.sin(home[2] * 0.55);
-    beams(home[2], beam);
-    gl!.uniform4fv(uHome, home);
-    gl!.uniform3fv(uBeams, beam);
-    gl!.uniform4fv(uTitle, title);
     gl!.uniform1f(uDialog, dialog);
     gl!.uniform4f(uEmberColor, embers.color[0], embers.color[1], embers.color[2], still ? 0.6 : 1);
     gl!.activeTexture(gl!.TEXTURE2);

@@ -140,7 +140,9 @@ function paintsBackground(cs: CSSStyleDeclaration) {
 /**
  * Measures the tagged elements and fills the uniform arrays, `max` elements
  * at most:
- * - elA: (left, top, 1 / scale, 0) in CSS px of the viewport
+ * - elA: (left, top, 1 / scale, reach): the corner in CSS px of the viewport,
+ *   and how far beyond the border box its shadows draw, in element px (-1
+ *   with no shadow)
  * - elB: (width, height, corner radius, in use) in the element's own px
  * - elC: (fill kind, angle in radians, opacity, 0); kind 0 = no fill
  * - elD, elE: fill colours (r, g, b, a)
@@ -211,7 +213,9 @@ export function measureShadows(
     let ok = w > 0 && h > 0 && scale > 0 && Math.abs(rect.height / h - scale) <= 0.01 * scale;
 
     // Skip elements whose shadows (or fill) can't reach the viewport.
-    const reach = soft.reduce((m, s) => Math.max(m, Math.abs(s.oy) + 2 * s.blur), 0) * scale;
+    // (The shader skips a shadow 4 sigma beyond its offset box.)
+    const shadowReach = soft.reduce((m, s) => Math.max(m, Math.abs(s.oy) + 2 * s.blur), -1);
+    const reach = Math.max(0, shadowReach) * scale;
     ok &&= rect.right + reach > 0 && rect.left - reach < viewW && rect.bottom + reach > 0 && rect.top - reach < viewH;
 
     const opacity = ok ? opacityOf(node, opacities) : 0;
@@ -243,7 +247,7 @@ export function measureShadows(
     } else node.removeAttribute('data-bs-fill');
 
     const radius = cornerPx(cs.borderTopLeftRadius, w, h);
-    elA.set([rect.left, rect.top, 1 / scale, 0], n * 4);
+    elA.set([rect.left, rect.top, 1 / scale, shadowReach], n * 4);
     elB.set([w, h, radius, 1], n * 4);
     if (fill) {
       elC.set([fill.kind, fill.angle, opacity, 0], n * 4);
