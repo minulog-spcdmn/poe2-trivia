@@ -6,7 +6,6 @@
   import { accuracy } from '../lib/codexStats';
   import { itemImage } from '../lib/ui';
   import { dialogBackdrop } from '../lib/behindDialog';
-  import { backdropShadow } from '../lib/backdropShadow';
   import { artRevealed } from '../lib/fx/moments';
   import type { Item } from '../lib/game';
   import ArtImage from './ArtImage.svelte';
@@ -95,7 +94,6 @@
   <div
     class="tooltip"
     bind:this={box}
-    use:backdropShadow={{ fill: 'linear' }}
     transition:fly={{ y: 20, duration: 250 }}
     onclick={(e) => e.stopPropagation()}
     {onkeydown}
@@ -116,7 +114,7 @@
       </button>
     </div>
 
-    <div class="art" bind:this={art} use:backdropShadow={{ fill: 'stage' }}>
+    <div class="art" bind:this={art}>
       <ArcaneCircle />
       <div class="frame">
         {#key item.id}
@@ -167,16 +165,12 @@
     display: flex;
     flex-direction: column;
     border: 1px solid #5a3a1c;
-    --bs-fill-a: rgba(5, 4, 3, 0.96);
-    --bs-fill-b: rgba(5, 4, 3, 0.96);
-    background: var(--bs-fill-paint, linear-gradient(var(--bs-fill-a), var(--bs-fill-b)));
-    --bs1: 0px 50px;
-    --bs1-color: rgba(175, 96, 37, 0.12);
-    --bs2: 20px 60px;
-    --bs2-color: rgba(0, 0, 0, 0.75);
+    /* Painted here, not by the backdrop: a dialog floats over the page, which would show through. */
+    background: #050403;
     box-shadow:
       0 0 0 1px #000,
-      var(--bs-soft-paint, 0 var(--bs1, 0 0) var(--bs1-color, transparent), 0 var(--bs2, 0 0) var(--bs2-color, transparent));
+      0 0 50px rgba(175, 96, 37, 0.12),
+      0 20px 60px rgba(0, 0, 0, 0.75);
     outline: none;
   }
   .head {
@@ -259,14 +253,11 @@
     display: grid;
     place-items: center;
     container-type: size;
-    --bs-fill-a: rgba(175, 96, 37, 0.16);
-    background: var(
-      --bs-fill-paint,
-      radial-gradient(ellipse 55% 50% at 50% 52%, var(--bs-fill-a), transparent 70%),
+    background:
+      radial-gradient(ellipse 55% 50% at 50% 52%, rgba(175, 96, 37, 0.16), transparent 70%),
       radial-gradient(ellipse 80% 45% at 50% 0%, rgba(90, 110, 160, 0.1), transparent 70%),
       radial-gradient(ellipse at center, transparent 45%, rgba(0, 0, 0, 0.55) 100%),
-      linear-gradient(180deg, #0c0d12, #060709)
-    );
+      linear-gradient(180deg, #0c0d12, #060709);
     box-shadow:
       inset 0 1px 0 rgba(201, 164, 92, 0.12),
       inset 0 0 40px rgba(0, 0, 0, 0.6);

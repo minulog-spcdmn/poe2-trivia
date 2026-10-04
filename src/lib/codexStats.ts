@@ -5,7 +5,7 @@ import type { Difficulty, Item, QuestionMode } from './game.ts';
 import { RECENT, type Codex, type ItemEntry, type Tally } from './codex.ts';
 
 /** Fewer answers than this don't make an item a nemesis. */
-export const NEMESIS_MIN = 3;
+export const NEMESIS_MIN = 2;
 
 const noTally = (): Tally => ({ n: 0, ok: 0 });
 const add = (t: Tally, ok: boolean): Tally => ({ n: t.n + 1, ok: t.ok + (ok ? 1 : 0) });

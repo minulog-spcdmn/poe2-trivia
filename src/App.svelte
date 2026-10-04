@@ -128,9 +128,7 @@
         <span>PoE2.Quest</span>
       </button>
       <div class="meta">
-        {#if codex}
-          <span>Codex</span>
-        {:else if gs && screen === 'game'}
+        {#if gs && screen === 'game'}
           {#if session.code && !session.hideCode}
             <span>Room <b>{session.code}</b></span>
             <span class="dot">•</span>

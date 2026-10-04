@@ -9,8 +9,6 @@
   import { closeCodex } from '../lib/codexRoute.svelte';
   import { backdropShadow } from '../lib/backdropShadow';
   import { dialogBackdrop } from '../lib/behindDialog';
-  import { cardHover, turnBanner } from '../lib/fx/moments';
-  import type { Handle } from '../lib/fx/core';
   import type { Difficulty, Item } from '../lib/game';
   import ArcaneCircle from './ArcaneCircle.svelte';
   import CodexItem from './CodexItem.svelte';
@@ -131,35 +129,6 @@
     codex = loadCodex();
     confirmReset = false;
   }
-
-  /** Svelte action: the title arrives like a turn banner. */
-  function heralded(node: HTMLElement) {
-    const t = setTimeout(() => turnBanner(node, '#c9a45c', false), 250);
-    return { destroy: () => clearTimeout(t) };
-  }
-
-  /** Svelte action: a category card catches fire under the mouse, as in the game. */
-  function burns(node: HTMLElement) {
-    let h: Handle | null = null;
-    const enter = (e: PointerEvent) => {
-      if (e.pointerType !== 'mouse') return;
-      h?.stop();
-      h = cardHover(node.querySelector('.cat-frame') ?? node, node, false);
-    };
-    const leave = () => {
-      h?.stop();
-      h = null;
-    };
-    node.addEventListener('pointerenter', enter);
-    node.addEventListener('pointerleave', leave);
-    return {
-      destroy() {
-        leave();
-        node.removeEventListener('pointerenter', enter);
-        node.removeEventListener('pointerleave', leave);
-      },
-    };
-  }
 </script>
 
 {#snippet meter(t: Tally, label: string)}
@@ -174,7 +143,7 @@
       <li>
         <span class="bar-name">{b.name}</span>
         {@render meter(b.tally, b.name)}
-        <span class="bar-value">{b.tally.n ? pct(b.tally) : ''}</span>
+        <span class="bar-value">{#if b.tally.n}{pct(b.tally)} <small>of {b.tally.n}</small>{:else}<small>no answers</small>{/if}</span>
       </li>
     {/each}
   </ul>
@@ -184,13 +153,16 @@
   <span class="thumb"><img src={itemImage(it.id)} alt="" loading="lazy" /></span>
 {/snippet}
 
+{#snippet glyph(category: string)}
+  <span class="glyph" style:--src="url('{categoryIcon(category)}')" aria-hidden="true"></span>
+{/snippet}
+
 <div class="codex">
-  <div class="banner">
-    <span class="rule"></span>
-    <h1 use:heralded>Codex</h1>
-    <span class="rule"></span>
-  </div>
-  <p class="lede" in:fade={{ duration: 600, delay: 200 }}>Every unique and lineage gem you have met, and how well you know it.</p>
+  <header class="hero" in:fly={{ y: -10, duration: 600 }}>
+    <p class="kicker">Your collection</p>
+    <h1>Codex</h1>
+    <p class="tagline">Every unique and lineage gem you have met in a game, and how well you know it.</p>
+  </header>
 
   <section class="summary" in:fly={{ y: 20, duration: 700, delay: 150 }}>
     {#if stats.seen}
@@ -253,56 +225,41 @@
       <button class="btn primary" onclick={closeCodex}>Begin the hunt</button>
     </div>
   {:else}
-    <ul class="cats" in:fly={{ y: 20, duration: 700, delay: 250 }}>
-      {#each stats.categories as c, i (c.category)}
-        <li style:--i={i}>
-          <button
-            class="cat"
-            class:on={only === c.category}
-            class:dim={!!only && only !== c.category}
-            aria-pressed={only === c.category}
-            data-fx="hover"
-            onclick={() => showCategory(c.category)}
-            title="{c.seen} of {c.total} discovered{c.n ? `, ${c.ok} of ${answers(c.n)} right` : ''}"
-            use:burns
-          >
-            <span class="cat-frame">
-              <span class="glyph" style:--src="url('{categoryIcon(c.category)}')"></span>
-              <span class="cat-name">{c.category}</span>
-              <span class="cat-count">{c.seen}<small> / {c.total}</small></span>
-              <span class="meter" title="{c.seen} of {c.total} discovered">
-                <span class="fill" style:width="{(c.seen / c.total) * 100}%"></span>
-              </span>
-              <span class="cat-acc">{c.n ? `${pct(c)} right` : 'no answers yet'}</span>
-            </span>
-          </button>
-        </li>
-      {/each}
-    </ul>
-
-    <div class="panels" in:fly={{ y: 20, duration: 700, delay: 350 }}>
-      <section class="panel answers" use:backdropShadow={{ fill: 'linear' }}>
-        <header><h2>Answers</h2><span class="count">{stats.ok} of {stats.n} right</span></header>
-        <div class="answer-cols">
-          <div>
-            <h3>By question</h3>
-            {@render bars([
-              { name: 'Name the art', tally: stats.byMode.name },
-              { name: 'Find the art', tally: stats.byMode.art },
-            ])}
-          </div>
-          {#if difficulties.length}
-            <div>
-              <h3>By difficulty</h3>
-              {@render bars(difficulties)}
-            </div>
-          {/if}
-        </div>
+    <div class="split" in:fly={{ y: 20, duration: 700, delay: 250 }}>
+      <section class="panel" use:backdropShadow={{ fill: 'linear' }}>
+        <header><h2>By question</h2></header>
+        {@render bars([
+          { name: 'Name the art', tally: stats.byMode.name },
+          { name: 'Find the art', tally: stats.byMode.art },
+        ])}
+        {#if difficulties.length}
+          <header class="sub"><h2>By difficulty</h2></header>
+          {@render bars(difficulties)}
+        {/if}
       </section>
 
-      {#if stats.nemeses.length}
-        <section class="panel" use:backdropShadow={{ fill: 'linear' }}>
-          <header><h2>Nemeses</h2></header>
+      <section class="panel" use:backdropShadow={{ fill: 'linear' }}>
+        <header><h2>By category</h2><span class="count">{stats.seen} / {stats.total}</span></header>
+        <ul class="bars cats">
+          {#each stats.categories as c (c.category)}
+            <li class:on={only === c.category}>
+              <button class="cat" onclick={() => showCategory(c.category)} title="Show {c.category}">
+                {@render glyph(c.category)}
+                <span class="bar-name">{c.category}</span>
+              </button>
+              <span class="found" title="{c.seen} of {c.total} discovered">{c.seen}/{c.total}</span>
+              {@render meter(c, c.category)}
+              <span class="bar-value">{c.n ? pct(c) : ''}</span>
+            </li>
+          {/each}
+        </ul>
+      </section>
+    </div>
+
+    <div class="insights" in:fly={{ y: 20, duration: 700, delay: 350 }}>
+      <section class="panel" use:backdropShadow={{ fill: 'linear' }}>
+        <header><h2>Nemeses</h2></header>
+        {#if stats.nemeses.length}
           <ul class="rows">
             {#each stats.nemeses as nm (nm.item.id)}
               <li>
@@ -314,12 +271,14 @@
               </li>
             {/each}
           </ul>
-        </section>
-      {/if}
+        {:else}
+          <p class="hint">Items you have answered at least twice and still get wrong show up here.</p>
+        {/if}
+      </section>
 
-      {#if stats.confusions.length}
-        <section class="panel" use:backdropShadow={{ fill: 'linear' }}>
-          <header><h2>Mix-ups</h2></header>
+      <section class="panel" use:backdropShadow={{ fill: 'linear' }}>
+        <header><h2>Mix-ups</h2></header>
+        {#if stats.confusions.length}
           <ul class="rows">
             {#each stats.confusions as cf (cf.answer.id + cf.picked.id)}
               <li>
@@ -334,12 +293,14 @@
               </li>
             {/each}
           </ul>
-        </section>
-      {/if}
+        {:else}
+          <p class="hint">When you take one item for another, the pair shows up here.</p>
+        {/if}
+      </section>
 
-      {#if stats.fooled.length}
-        <section class="panel" use:backdropShadow={{ fill: 'linear' }}>
-          <header><h2>Fooled by</h2></header>
+      <section class="panel" use:backdropShadow={{ fill: 'linear' }}>
+        <header><h2>Made-up names</h2></header>
+        {#if stats.fooled.length}
           <ul class="rows">
             {#each stats.fooled as f (f.name)}
               <li>
@@ -354,62 +315,69 @@
               </li>
             {/each}
           </ul>
-        </section>
-      {/if}
+        {:else}
+          <p class="hint">Fake names you fall for show up here.</p>
+        {/if}
+      </section>
     </div>
 
     <section class="collection" bind:this={collection}>
-      <div class="banner small">
-        <span class="rule"></span>
+      <div class="bar">
         <h2>Collection</h2>
-        <span class="rule"></span>
-      </div>
-      <div class="controls">
-        <input class="field search" type="search" bind:value={search} placeholder="Search your codex" aria-label="Search your codex" spellcheck="false" />
-        {#if only}
-          <button class="filter" onclick={() => (only = '')} title="Show every category" transition:fade={{ duration: 150 }}>
-            {only}
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7 7 17" /></svg>
-          </button>
-        {/if}
-        <div class="seg" role="group" aria-label="View">
-          <button class:on={view === 'grid'} aria-pressed={view === 'grid'} onclick={() => (view = 'grid')}>Grid</button>
-          <button class:on={view === 'table'} aria-pressed={view === 'table'} onclick={() => (view = 'table')}>Table</button>
+        <div class="controls">
+          <input class="field search" type="search" bind:value={search} placeholder="Search names" aria-label="Search names" spellcheck="false" />
+          <select class="field" bind:value={only} aria-label="Category">
+            <option value="">All categories</option>
+            {#each engine.categories as c (c)}
+              <option value={c}>{c}</option>
+            {/each}
+          </select>
+          <div class="seg" role="group" aria-label="View">
+            <button class:on={view === 'grid'} aria-pressed={view === 'grid'} onclick={() => (view = 'grid')}>Grid</button>
+            <button class:on={view === 'table'} aria-pressed={view === 'table'} onclick={() => (view = 'table')}>Table</button>
+          </div>
         </div>
       </div>
 
       {#if view === 'grid'}
         {#each sections as sec (sec.stats.category)}
-          <section class="tooltip" use:backdropShadow={{ fill: 'linear' }}>
-            <div class="head">
-              <div class="head-text">
-                <span class="iname">{sec.stats.category}</span>
-                <span class="ibase">{sec.stats.seen} of {sec.stats.total} discovered{sec.stats.n ? ` • ${pct(sec.stats)} right` : ''}</span>
-              </div>
-            </div>
+          <section class="cat-section">
+            <header>
+              {@render glyph(sec.stats.category)}
+              <h3>{sec.stats.category}</h3>
+              <span class="muted">{sec.stats.seen} / {sec.stats.total} discovered{sec.stats.n ? ` • ${pct(sec.stats)} right` : ''}</span>
+            </header>
             {#if sec.stats.groups.length > 1}
-              <p class="groups">
+              <ul class="groups">
                 {#each sec.stats.groups as g (g.group)}
-                  <span>{g.group} <b>{g.seen}/{g.total}</b>{g.n ? ` • ${pct(g)}` : ''}</span>
+                  <li title="{g.seen} of {g.total} discovered{g.n ? `, ${g.ok} of ${answers(g.n)} right` : ''}">
+                    {g.group} <span class="muted">{g.seen}/{g.total}{g.n ? ` • ${pct(g)}` : ''}</span>
+                  </li>
                 {/each}
-              </p>
+              </ul>
             {/if}
-            <ul class="cells">
+            <ul class="grid">
               {#each sec.items as it (it.id)}
                 {@const e = codex.items[it.id]}
                 <li>
                   {#if e}
                     {@const t = tallyOf(e)}
-                    <button class="cell" data-fx="hover" onclick={() => (open = it)} aria-label="{it.name}{t.n ? `, ${t.ok} of ${answers(t.n)} right` : ''}">
-                      {#if t.n}<span class="score">{t.ok}/{t.n}</span>{/if}
-                      <span class="pic"><img src={itemImage(it.id)} alt="" loading="lazy" /></span>
-                      <span class="caption">{it.name}</span>
-                      {#if t.n}<span class="acc" style:--a={accuracy(t)}></span>{/if}
+                    <button class="tile" onclick={() => (open = it)} aria-label="{it.name}{t.n ? `, ${t.ok} of ${answers(t.n)} right` : ', seen'}">
+                      <span class="art"><img src={itemImage(it.id)} alt="" loading="lazy" /></span>
+                      <span class="name">{it.name}</span>
+                      <span class="status">
+                        {#if t.n}
+                          {@render meter(t, it.name)}
+                        {:else}
+                          <span class="seen-only">seen</span>
+                        {/if}
+                      </span>
                     </button>
                   {:else}
-                    <span class="cell unknown" title="Not discovered yet">
-                      <span class="pic"><img src={itemImage(it.id)} alt="" loading="lazy" draggable="false" /></span>
-                      <span class="caption">Unidentified</span>
+                    <span class="tile unknown" title="Not discovered yet">
+                      <span class="art"><img src={itemImage(it.id)} alt="" loading="lazy" draggable="false" /></span>
+                      <span class="name">Undiscovered</span>
+                      <span class="status"></span>
                     </span>
                   {/if}
                 </li>
@@ -417,10 +385,10 @@
             </ul>
           </section>
         {:else}
-          <p class="none">Nothing in your codex matches.</p>
+          <p class="none">Nothing found.</p>
         {/each}
       {:else if rows.length}
-        <div class="tooltip ledger" use:backdropShadow={{ fill: 'linear' }}>
+        <div class="ledger" use:backdropShadow={{ fill: 'linear' }}>
           <table>
             <thead>
               <tr>
@@ -457,7 +425,7 @@
           </table>
         </div>
       {:else}
-        <p class="none">Nothing in your codex matches.</p>
+        <p class="none">Nothing found.</p>
       {/if}
     </section>
 
@@ -491,68 +459,41 @@
 
 <style>
   .codex {
-    width: min(1100px, 100%);
+    width: min(1080px, 100%);
     margin: 0 auto;
-    padding: 1.2rem 1rem 2.5rem;
+    padding: 1.4rem 1rem 2.5rem;
     display: flex;
     flex-direction: column;
-    gap: 1.6rem;
+    gap: 1.4rem;
   }
 
-  /* ---- title, as the game's turn banner ---- */
-  .banner {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 1.2rem;
-    margin-top: 0.6rem;
-  }
-  .banner h1,
-  .banner h2 {
-    font-size: clamp(2rem, 6vw, 3rem);
-    font-weight: 900;
-    color: var(--gold-hi);
-    text-shadow:
-      0 0 24px rgba(201, 164, 92, 0.45),
-      0 3px 12px rgba(0, 0, 0, 0.9);
-    animation: arrive 0.9s var(--ease-out) both;
-    white-space: nowrap;
-  }
-  .banner.small h2 {
-    font-size: clamp(1.4rem, 4vw, 1.9rem);
-    animation: none;
-  }
-  .rule {
-    flex: 0 1 160px;
-    min-width: 16px;
-    height: 1px;
-    background: linear-gradient(90deg, transparent, var(--gold));
-    animation: grow 0.9s var(--ease-out) both;
-  }
-  .rule:last-child {
-    background: linear-gradient(270deg, transparent, var(--gold));
-  }
-  .banner.small .rule {
-    animation: none;
-  }
-  @keyframes arrive {
-    from {
-      opacity: 0;
-      letter-spacing: 0.4em;
-      filter: blur(6px);
-    }
-  }
-  @keyframes grow {
-    from {
-      transform: scaleX(0);
-      opacity: 0;
-    }
-  }
-  .lede {
-    margin: -1rem 0 0;
+  /* ---- title ---- */
+  .hero {
     text-align: center;
+  }
+  .kicker {
+    margin: 0 0 0.3rem;
+    font-family: var(--font-display);
+    font-size: 0.8rem;
+    letter-spacing: 0.5em;
+    padding-left: 0.5em;
+    text-transform: uppercase;
+    color: var(--unique-hi);
+  }
+  h1 {
+    font-size: clamp(2.4rem, 7vw, 3.6rem);
+    font-weight: 900;
+    letter-spacing: 0.08em;
+    line-height: 1.05;
+    background: linear-gradient(180deg, #fff1c9 20%, #d7b068 55%, #8b6526 95%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    filter: drop-shadow(0 4px 14px rgba(0, 0, 0, 0.8));
+  }
+  .tagline {
+    margin: 0.6rem 0 0;
     font-style: italic;
-    font-size: 1.1rem;
     color: #b8ab95;
   }
 
@@ -610,8 +551,8 @@
     grid-column: 2;
     position: relative;
     isolation: isolate;
-    width: 250px;
-    height: 250px;
+    width: 240px;
+    height: 240px;
     display: grid;
     place-items: center;
   }
@@ -652,7 +593,7 @@
     line-height: 1.1;
   }
   .medal-value {
-    font-size: 3.4rem;
+    font-size: 3.2rem;
   }
   .medal-of {
     font-family: var(--font-cinzel);
@@ -676,136 +617,119 @@
     margin: 0 0 1.4rem;
   }
 
-  /* ---- categories, as small versions of the game's category cards ---- */
-  .cats {
-    list-style: none;
-    margin: 0;
-    padding: 0;
+  /* ---- panels, as the lobby's ---- */
+  .split {
     display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
-    gap: 0.8rem;
+    grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+    gap: 1rem;
+    align-items: start;
   }
-  .cat {
-    width: 100%;
-    height: 100%;
-    padding: 0;
-    border: 0;
-    background: none;
-    cursor: pointer;
-    transition: opacity 0.3s;
+  .insights {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 1rem;
+    align-items: start;
   }
-  .cat-frame {
-    position: relative;
-    height: 100%;
+  .panel {
+    padding: 1.2rem 1.3rem 1.3rem;
+  }
+  .panel header {
     display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.35rem;
-    padding: 1rem 0.8rem 0.9rem;
-    border-radius: 8px;
-    border: 1px solid var(--gold-lo);
-    background:
-      radial-gradient(ellipse at 50% 30%, rgba(175, 96, 37, 0.25), transparent 60%),
-      linear-gradient(170deg, #2a2016, #120e0a 70%);
-    box-shadow:
-      inset 0 0 0 3px rgba(0, 0, 0, 0.5),
-      inset 0 0 0 4px rgba(125, 99, 51, 0.35),
-      0 10px 26px rgba(0, 0, 0, 0.5);
-    transition:
-      transform 0.35s var(--ease-out),
-      border-color 0.3s,
-      box-shadow 0.3s,
-      filter 0.3s;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 0.9rem;
+    padding-bottom: 0.6rem;
+    border-bottom: 1px solid var(--line);
   }
-  /* The game's filigree, on all four corners. */
-  .cat-frame::before {
-    content: '';
-    position: absolute;
-    inset: 4px;
-    background: var(--filigree);
-    background-size: 20px 20px;
-    opacity: 0.75;
-    filter: drop-shadow(0 0 3px rgba(224, 138, 68, 0.35));
-    pointer-events: none;
+  .panel header.sub {
+    margin-top: 1.3rem;
   }
-  .glyph {
-    width: 64px;
-    height: 64px;
-    background: linear-gradient(180deg, #fbe6b0 0%, #c9a45c 45%, #6d4a1c 100%);
-    -webkit-mask: var(--src) center / contain no-repeat;
-    mask: var(--src) center / contain no-repeat;
-    opacity: 0.85;
-    filter: drop-shadow(0 0 10px rgba(224, 138, 68, 0.45));
-    transition:
-      transform 0.5s var(--ease-out),
-      opacity 0.3s;
-  }
-  .cat-name {
-    flex: 1;
-    display: grid;
-    place-items: center;
-    min-height: 2.4em;
-    font-family: var(--font-display);
-    font-weight: 700;
-    font-size: 0.86rem;
-    letter-spacing: 0.04em;
-    line-height: 1.2;
+  .panel h2 {
+    font-size: 0.95rem;
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
     color: var(--gold-hi);
-    text-align: center;
   }
-  .cat-count {
+  .count {
     font-family: var(--font-cinzel);
     font-weight: 700;
-    font-size: 1rem;
-    color: var(--text);
-  }
-  .cat-count small {
-    font-weight: 500;
-    font-size: 0.78rem;
-    color: var(--muted);
-  }
-  .cat .meter {
-    width: 80%;
-    margin-top: 0.15rem;
-  }
-  .cat-acc {
     font-size: 0.85rem;
+    color: var(--gold);
+  }
+  .hint {
+    margin: 0;
+    font-size: 0.95rem;
     font-style: italic;
     color: var(--muted);
   }
-  .cat:hover .cat-frame,
-  .cat:focus-visible .cat-frame {
-    transform: translateY(-4px);
-    border-color: var(--gold);
-    box-shadow:
-      inset 0 0 0 3px rgba(0, 0, 0, 0.5),
-      inset 0 0 0 4px rgba(201, 164, 92, 0.6),
-      0 0 26px rgba(224, 138, 68, 0.25),
-      0 14px 30px rgba(0, 0, 0, 0.6);
+
+  .bars {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
   }
-  .cat:hover .glyph {
-    transform: scale(1.08) rotate(-3deg);
-    opacity: 1;
+  .bars li {
+    display: grid;
+    grid-template-columns: minmax(0, 7rem) minmax(40px, 1fr) 5.2rem;
+    align-items: center;
+    gap: 0.7rem;
   }
-  .cat:focus-visible {
-    outline: none;
+  .bars.cats li {
+    grid-template-columns: minmax(0, 1fr) 3.2rem minmax(40px, 9rem) 2.8rem;
   }
-  .cat.on .cat-frame {
-    border-color: var(--gold-hi);
-    box-shadow:
-      inset 0 0 0 3px rgba(0, 0, 0, 0.4),
-      inset 0 0 0 4px rgba(241, 217, 155, 0.6),
-      0 0 34px rgba(255, 170, 90, 0.35),
-      0 14px 30px rgba(0, 0, 0, 0.6);
+  .bar-name {
+    font-size: 0.98rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
-  .cat.on .glyph {
-    opacity: 1;
+  .bar-value {
+    font-family: var(--font-cinzel);
+    font-size: 0.85rem;
+    color: var(--text);
+    text-align: right;
+    white-space: nowrap;
   }
-  .cat.dim {
-    opacity: 0.55;
+  .bar-value small {
+    color: var(--muted);
+    font-family: var(--font-body);
+    font-size: 0.85rem;
   }
-  .cat.dim:hover {
-    opacity: 1;
+  .found {
+    font-family: var(--font-cinzel);
+    font-size: 0.8rem;
+    color: var(--muted);
+    text-align: right;
+  }
+  .cat {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    min-width: 0;
+    padding: 0;
+    background: none;
+    border: 0;
+    cursor: pointer;
+    text-align: left;
+    color: var(--text);
+    transition: color 0.2s;
+  }
+  .cat:hover,
+  .cats li.on .cat {
+    color: var(--gold-hi);
+  }
+  /* The game's category emblems: the art as a gold silhouette (ChooseCategory). */
+  .glyph {
+    flex: none;
+    width: 24px;
+    height: 24px;
+    background: linear-gradient(180deg, #fbe6b0 0%, #c9a45c 45%, #6d4a1c 100%);
+    -webkit-mask: var(--src) center / contain no-repeat;
+    mask: var(--src) center / contain no-repeat;
+    filter: drop-shadow(0 0 6px rgba(224, 138, 68, 0.45));
   }
 
   /* One hue for every bar: ember to gold, more is more gold. */
@@ -813,6 +737,7 @@
     position: relative;
     display: block;
     height: 6px;
+    min-width: 0;
     border-radius: 3px;
     background: #0b0907;
     box-shadow:
@@ -827,75 +752,6 @@
     box-shadow: 0 0 8px rgba(224, 138, 68, 0.45);
   }
 
-  /* ---- panels, as the lobby's ---- */
-  .panels {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
-    gap: 1rem;
-    align-items: start;
-  }
-  .panel {
-    padding: 1.2rem 1.3rem 1.3rem;
-  }
-  .answers {
-    grid-column: 1 / -1;
-  }
-  .answer-cols {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-    gap: 1rem 3rem;
-  }
-  .answer-cols h3 {
-    margin-bottom: 0.6rem;
-    font-size: 0.74rem;
-    letter-spacing: 0.2em;
-    text-transform: uppercase;
-    color: var(--muted);
-  }
-  .panel header {
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    margin-bottom: 0.9rem;
-    padding-bottom: 0.6rem;
-    border-bottom: 1px solid var(--line);
-  }
-  .panel h2 {
-    font-size: 1rem;
-    text-transform: uppercase;
-    letter-spacing: 0.18em;
-    color: var(--gold-hi);
-  }
-  .count {
-    font-family: var(--font-cinzel);
-    font-weight: 700;
-    font-size: 0.9rem;
-    color: var(--gold);
-  }
-  .bars {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.6rem;
-  }
-  .bars li {
-    display: grid;
-    grid-template-columns: 7rem minmax(30px, 1fr) 3rem;
-    align-items: center;
-    gap: 0.7rem;
-  }
-  .bar-name {
-    font-size: 1rem;
-    white-space: nowrap;
-  }
-  .bar-value {
-    font-family: var(--font-cinzel);
-    font-size: 0.85rem;
-    text-align: right;
-    color: var(--text);
-  }
   .rows {
     list-style: none;
     margin: 0;
@@ -988,51 +844,54 @@
     gap: 1.2rem;
     scroll-margin-top: 1rem;
   }
-  .controls {
+  .collection > .bar {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    justify-content: center;
-    gap: 0.6rem;
+    justify-content: space-between;
+    gap: 0.6rem 1rem;
+    padding-bottom: 0.7rem;
+    border-bottom: 1px solid var(--line);
   }
-  .search {
-    width: min(320px, 100%);
-    padding: 0.5rem 0.8rem;
+  .collection > .bar h2 {
+    margin: 0;
+    font-size: 1.05rem;
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    color: var(--gold-hi);
   }
-  .filter {
-    display: inline-flex;
+  .controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
     align-items: center;
-    gap: 0.4rem;
-    height: 38px;
-    padding: 0 0.8rem;
-    border: 1px solid var(--gold);
-    border-radius: 3px;
-    background: linear-gradient(180deg, #8a5a22, #452a0e);
-    color: #fff1cf;
-    font-family: var(--font-display);
-    font-weight: 700;
-    font-size: 0.8rem;
+  }
+  .controls .field {
+    width: auto;
+    padding: 0.45rem 0.7rem;
+    font-size: 0.95rem;
+  }
+  .controls .search {
+    width: 12rem;
+  }
+  select.field {
+    max-width: 16rem;
+    font-family: var(--font-body);
     cursor: pointer;
   }
-  .filter svg {
-    width: 12px;
-    height: 12px;
-    fill: none;
-    stroke: currentColor;
-    stroke-width: 2.4;
-    stroke-linecap: round;
+  select.field option {
+    background: #15110d;
   }
   .seg {
     display: flex;
-    gap: 0.4rem;
+    gap: 0.3rem;
   }
   .seg > button {
-    min-width: 64px;
-    height: 38px;
-    padding: 0 0.8rem;
+    min-width: 60px;
+    padding: 0.45rem 0.7rem;
     font-family: var(--font-display);
     font-weight: 700;
-    font-size: 0.85rem;
+    font-size: 0.8rem;
     color: var(--muted);
     background: rgba(0, 0, 0, 0.35);
     border: 1px solid var(--line);
@@ -1054,8 +913,133 @@
       0 0 14px rgba(201, 164, 92, 0.3);
   }
 
-  /* PoE-style item tooltip, as in the game (QuestionView). */
-  .tooltip {
+  .cat-section header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.3rem 0.7rem;
+    margin-bottom: 0.5rem;
+  }
+  .cat-section .glyph {
+    width: 30px;
+    height: 30px;
+  }
+  .cat-section h3 {
+    font-size: 1.05rem;
+    letter-spacing: 0.08em;
+    color: var(--gold-hi);
+  }
+  .cat-section header span {
+    font-size: 0.92rem;
+  }
+  .groups {
+    list-style: none;
+    margin: 0 0 0.7rem;
+    padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+  }
+  .groups li {
+    padding: 0.15rem 0.65rem;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    font-size: 0.88rem;
+    background: rgba(0, 0, 0, 0.25);
+  }
+  .grid {
+    list-style: none;
+    margin: 0 0 0.6rem;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(106px, 1fr));
+    gap: 0.5rem;
+  }
+  .tile {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.35rem;
+    padding: 0.5rem 0.5rem 0.55rem;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    background: radial-gradient(ellipse at 50% 35%, rgba(175, 96, 37, 0.1), transparent 70%), rgba(0, 0, 0, 0.35);
+    color: var(--text);
+    text-align: center;
+  }
+  button.tile {
+    cursor: pointer;
+    transition:
+      border-color 0.2s,
+      box-shadow 0.25s,
+      transform 0.2s var(--ease-out);
+  }
+  button.tile:hover {
+    border-color: var(--gold-lo);
+    box-shadow: 0 0 16px rgba(201, 164, 92, 0.2);
+    transform: translateY(-2px);
+  }
+  .art {
+    height: 72px;
+    display: grid;
+    place-items: center;
+  }
+  .art img {
+    max-width: 100%;
+    max-height: 72px;
+    object-fit: contain;
+    filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.7));
+  }
+  .name {
+    font-size: 0.82rem;
+    line-height: 1.2;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    flex: 1;
+  }
+  /* The accuracy bar, or "seen" without answers, on the same line. */
+  .status {
+    height: 0.8rem;
+    display: grid;
+    align-items: center;
+  }
+  .tile .meter {
+    height: 4px;
+  }
+  .seen-only {
+    font-size: 0.75rem;
+    font-style: italic;
+    color: var(--muted);
+    line-height: 1;
+  }
+  /* Not met yet: only its shape. */
+  .unknown {
+    background: rgba(0, 0, 0, 0.25);
+    border-style: dashed;
+  }
+  .unknown .art img {
+    filter: brightness(0) drop-shadow(0 0 1px rgba(201, 164, 92, 0.4));
+    opacity: 0.75;
+    user-select: none;
+  }
+  .unknown .name {
+    font-style: italic;
+    color: var(--muted);
+    opacity: 0.6;
+  }
+  .none {
+    text-align: center;
+    font-style: italic;
+    color: var(--muted);
+  }
+
+  /* The table: every column fits, nothing scrolls sideways. */
+  .ledger {
     border: 1px solid #5a3a1c;
     --bs-fill-a: rgba(5, 4, 3, 0.92);
     --bs-fill-b: rgba(5, 4, 3, 0.92);
@@ -1066,179 +1050,6 @@
       0 0 0 1px #000,
       var(--bs-soft-paint, 0 var(--bs2, 0 0) var(--bs2-color, transparent));
   }
-  .head {
-    position: relative;
-    display: grid;
-    min-height: 60px;
-    place-items: center;
-    padding: 0.4rem 2.6rem;
-    background:
-      linear-gradient(90deg, transparent, rgba(175, 96, 37, 0.35) 20%, rgba(175, 96, 37, 0.35) 80%, transparent),
-      linear-gradient(180deg, #3b2412, #1c1008);
-    border-bottom: 1px solid #6b4520;
-  }
-  .head::before,
-  .head::after {
-    content: '◆';
-    position: absolute;
-    top: 50%;
-    translate: 0 -50%;
-    color: var(--unique);
-    font-size: 0.9rem;
-    opacity: 0.8;
-  }
-  .head::before {
-    left: 14px;
-  }
-  .head::after {
-    right: 14px;
-  }
-  .head-text {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    text-align: center;
-    line-height: 1.15;
-  }
-  .iname {
-    font-family: var(--font-display);
-    font-weight: 700;
-    font-size: 1.15rem;
-    color: var(--unique-hi);
-    text-shadow: 0 0 12px rgba(224, 138, 68, 0.4);
-  }
-  .ibase {
-    font-family: var(--font-display);
-    font-size: 0.85rem;
-    color: #d8a26a;
-    opacity: 0.85;
-  }
-  .groups {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    gap: 0.2rem 1.4rem;
-    margin: 0;
-    padding: 0.55rem 1rem;
-    border-bottom: 1px solid #2a1d10;
-    font-variant: small-caps;
-    letter-spacing: 0.04em;
-    color: #8f9aa6;
-  }
-  .groups b {
-    font-weight: 500;
-    color: #a9c3dc;
-  }
-  /* The items, as the game's picture options: one dark stage per slot. */
-  .cells {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(124px, 1fr));
-    gap: 1px;
-    background: #060709;
-  }
-  .cells li {
-    box-shadow: 0 0 0 1px #2a1d10;
-  }
-  .cell {
-    position: relative;
-    width: 100%;
-    height: 158px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.3rem;
-    padding: 0.9rem 0.5rem 0.7rem;
-    border: 1px solid transparent;
-    background:
-      radial-gradient(ellipse 60% 50% at 50% 42%, rgba(175, 96, 37, 0.14), transparent 70%),
-      radial-gradient(ellipse 90% 40% at 50% 0%, rgba(90, 110, 160, 0.09), transparent 70%),
-      radial-gradient(ellipse at center, transparent 45%, rgba(0, 0, 0, 0.5) 100%),
-      linear-gradient(180deg, #0c0d12, #060709);
-    color: var(--text);
-    text-align: center;
-  }
-  button.cell {
-    cursor: pointer;
-    transition:
-      border-color 0.3s,
-      box-shadow 0.3s;
-  }
-  button.cell:hover,
-  button.cell:focus-visible {
-    outline: none;
-    border-color: var(--gold);
-    box-shadow: inset 0 0 30px rgba(201, 164, 92, 0.18);
-  }
-  .pic {
-    flex: 1;
-    min-height: 0;
-    width: 100%;
-    display: grid;
-    place-items: center;
-    transition: transform 0.35s var(--ease-out);
-  }
-  button.cell:hover .pic {
-    transform: scale(1.07);
-  }
-  .pic img {
-    max-width: 88%;
-    max-height: 92px;
-    object-fit: contain;
-    filter: drop-shadow(0 8px 14px rgba(0, 0, 0, 0.8));
-  }
-  .caption {
-    font-family: var(--font-display);
-    font-weight: 700;
-    font-size: 0.8rem;
-    line-height: 1.2;
-    color: var(--gold-hi);
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-    min-height: 2.4em;
-  }
-  .score {
-    position: absolute;
-    top: 6px;
-    right: 8px;
-    font-family: var(--font-cinzel);
-    font-size: 0.7rem;
-    color: var(--muted);
-  }
-  /* Accuracy, along the slot's lower edge. */
-  .acc {
-    position: absolute;
-    left: 0;
-    bottom: 0;
-    height: 2px;
-    width: calc(var(--a) * 100%);
-    background: linear-gradient(90deg, #6d4a1c, #c9a45c 70%, #f1d99b);
-    box-shadow: 0 0 6px rgba(224, 138, 68, 0.6);
-  }
-  /* Not met yet: only its shape, dark against the stage. */
-  .unknown .pic img {
-    filter: brightness(0) drop-shadow(0 0 1px rgba(201, 164, 92, 0.35)) drop-shadow(0 0 10px rgba(175, 96, 37, 0.25));
-    opacity: 0.85;
-    user-select: none;
-  }
-  .unknown .caption {
-    font-weight: 400;
-    letter-spacing: 0.08em;
-    color: #6f6a62;
-  }
-  .none {
-    margin: 1rem 0;
-    text-align: center;
-    font-style: italic;
-    color: var(--muted);
-  }
-
-  /* The table: every column fits, nothing scrolls sideways. */
   .ledger table {
     width: 100%;
     table-layout: fixed;
@@ -1249,9 +1060,6 @@
     text-align: left;
     background: linear-gradient(180deg, #3b2412, #1c1008);
     border-bottom: 1px solid #6b4520;
-  }
-  th:nth-child(1) {
-    width: auto;
   }
   th:nth-child(2) {
     width: 16%;
@@ -1437,14 +1245,11 @@
       grid-row: 1;
       justify-self: center;
     }
-    .cats {
-      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    .split {
+      grid-template-columns: 1fr;
     }
   }
   @media (max-width: 560px) {
-    .codex {
-      gap: 1.3rem;
-    }
     .summary {
       grid-template-columns: 1fr;
     }
@@ -1452,31 +1257,32 @@
       justify-content: space-around;
     }
     .medallion {
-      width: 220px;
-      height: 220px;
+      width: 210px;
+      height: 210px;
     }
     .medal-value {
-      font-size: 3rem;
+      font-size: 2.8rem;
     }
     .stat-value {
       font-size: 1.9rem;
     }
-    .cats {
-      grid-template-columns: 1fr 1fr;
-      gap: 0.6rem;
+    .bars li {
+      grid-template-columns: minmax(0, 6.5rem) minmax(30px, 1fr) 4.8rem;
+      gap: 0.5rem;
     }
-    .glyph {
-      width: 48px;
-      height: 48px;
+    .bars.cats li {
+      grid-template-columns: minmax(0, 1fr) 2.8rem minmax(30px, 4rem) 2.6rem;
     }
-    .cells {
-      grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+    .controls,
+    .controls .search {
+      width: 100%;
     }
-    .cell {
-      height: 140px;
+    .controls select.field {
+      flex: 1;
+      max-width: none;
     }
-    .pic img {
-      max-height: 76px;
+    .grid {
+      grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
     }
     .wide {
       display: none;
@@ -1495,9 +1301,7 @@
     td {
       padding: 0.3rem 0.4rem;
     }
-    .acc-cell .meter {
-      display: none;
-    }
+    .acc-cell .meter,
     .long {
       display: none;
     }
