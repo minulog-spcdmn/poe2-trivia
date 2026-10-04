@@ -5,7 +5,7 @@
   import { getVolume, isMuted, setMuted, setVolume, sfx } from './lib/sound';
   import { fxAvailable, fxUserOn, onFxChange, setFxOn, shakeTarget } from './lib/fx/core';
   import { IMPRINT_URL, PRIVACY_URL } from './lib/site';
-  import { veil } from './lib/veil';
+  import { dialogBackdrop } from './lib/behindDialog';
   import Background from './components/Background.svelte';
   import FxLayer from './components/FxLayer.svelte';
   import Toasts from './components/Toasts.svelte';
@@ -104,7 +104,7 @@
 
 <Background />
 
-<div class="shell veiled" bind:this={shell}>
+<div class="shell" data-behind-dialog bind:this={shell}>
   {#if screen !== 'home'}
     <header in:fade={{ duration: 300 }} bind:offsetHeight={headerHeight}>
       <button class="brand" onclick={() => (confirmLeave = true)} title="Leave game">
@@ -218,7 +218,7 @@
 <FxLayer />
 
 {#if confirmLeave}
-  <div class="modal-backdrop" use:veil transition:fade={{ duration: 150 }} onclick={() => (confirmLeave = false)}
+  <div class="modal-backdrop" use:dialogBackdrop transition:fade={{ duration: 150 }} onclick={() => (confirmLeave = false)}
     onkeydown={(e) => e.key === 'Escape' && (confirmLeave = false)}
     role="presentation"
   >
@@ -498,7 +498,7 @@
     position: fixed;
     inset: 0;
     /* Below the effects layer (z-index 95), so the dialog's buttons get their
-       effects; the page behind is veiled by lib/veil.ts. */
+       effects; the page behind dims itself (lib/behindDialog.ts). */
     z-index: 94;
     display: grid;
     place-items: center;

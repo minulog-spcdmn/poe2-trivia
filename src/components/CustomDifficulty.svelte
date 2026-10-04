@@ -4,8 +4,7 @@
   import { session } from '../lib/session.svelte';
   import { KNOB_STEPS, knobsOf, type Knobs } from '../lib/game';
   import { KNOB_TEXT } from '../lib/difficultyText';
-  import { portal } from '../lib/portal';
-  import { veil } from '../lib/veil';
+  import { dialogBackdrop } from '../lib/behindDialog';
 
   let { onclose }: { onclose: () => void } = $props();
 
@@ -50,7 +49,7 @@
   }
 </script>
 
-<div class="backdrop" use:portal use:veil transition:fade={{ duration: 150 }} onclick={onclose} role="presentation">
+<div class="backdrop" use:dialogBackdrop transition:fade={{ duration: 150 }} onclick={onclose} role="presentation">
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <div
     class="editor panel"

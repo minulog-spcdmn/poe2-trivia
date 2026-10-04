@@ -10,7 +10,7 @@
 
 import { INSTANCE_FLOATS } from './particles';
 import { NOISE, dropTarget, program, target, type Program, type Target } from './gl';
-import { VEIL_DIM } from '../veil';
+import { DIALOG_DIM } from '../behindDialog';
 
 /** Floats per shape instance: five vec4s (see ShapeType). */
 export const SHAPE_FLOATS = 24;
@@ -19,7 +19,7 @@ export const SHAPE_FLOATS = 24;
  * Procedural shapes. Instance layout:
  *   s0: centre x, centre y, quad half width, quad half height (CSS px)
  *   s1: type, progress 0-1, age (s), seed
- *   s2: r, g, b (HDR, envelope applied)
+ *   s2: r, g, b (HDR, envelope applied), 1 for the page's light (see BEHIND_DIALOG)
  *   s3, s4, s5: per-type parameters (documented in the shader)
  */
 export const ShapeType = {
@@ -35,16 +35,36 @@ export const ShapeType = {
 } as const;
 export type ShapeType = (typeof ShapeType)[keyof typeof ShapeType];
 
+// While a dialog is open (lib/behindDialog.ts), light from the page behind it
+// hides behind the dialog, which on the page is opaque; the dialog's own light
+// (from effects that started inside it) shows over it. Outside it, the
+// composite dims both with the rest of the page.
+const BEHIND_DIALOG = `
+uniform vec4 uDialogBox; // the open dialog: left, top, right, bottom (CSS px)
+uniform float uDialogR;  // its corner radius, CSS px
+uniform float uHide;     // how far it hides the page's light, 0-1
+// Signed distance from the dialog's edge (CSS px), negative inside.
+float dialogSdf(vec2 p) {
+  vec2 h = (uDialogBox.zw - uDialogBox.xy) * 0.5;
+  vec2 q = abs(p - uDialogBox.xy - h) - h + uDialogR;
+  return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - uDialogR;
+}
+// How much of the page's light at p (CSS px) the dialog hides.
+float hiddenAt(vec2 p) {
+  return uHide > 0.0 ? uHide * clamp(0.5 - dialogSdf(p), 0.0, 1.0) : 0.0;
+}`;
+
 const PARTICLE_VS = `#version 300 es
 layout(location = 0) in vec2 aCorner;
 layout(location = 1) in vec4 iA; // x, y, vx, vy
 layout(location = 2) in vec4 iB; // size, stretch, rot, shape
-layout(location = 3) in vec4 iC; // r, g, b, seed
+layout(location = 3) in vec4 iC; // r, g, b, page light (see BEHIND_DIALOG)
 uniform vec2 uView;     // CSS px
 uniform float uMinPx;   // smallest width in CSS px (about one device pixel)
 out vec2 vL;            // px along (dir, normal)
+out vec2 vWorld;        // CSS px
 flat out vec3 vCol;
-flat out vec4 vP;       // shape, size, half length, seed
+flat out vec4 vP;       // shape, size, half length, page light
 void main() {
   float shape = iB.w;
   float size = iB.x;
@@ -83,6 +103,7 @@ void main() {
   vec2 nrm = vec2(-dir.y, dir.x);
   vL = aCorner * ext;
   vec2 p = iA.xy + dir * vL.x + nrm * vL.y;
+  vWorld = p;
   vCol = iC.rgb * energy;
   vP = vec4(shape, w, halfLen, iC.w);
   vec2 clip = p / uView * 2.0 - 1.0;
@@ -92,9 +113,11 @@ void main() {
 const PARTICLE_FS = `#version 300 es
 precision highp float;
 in vec2 vL;
+in vec2 vWorld;
 flat in vec3 vCol;
 flat in vec4 vP;
 out vec4 o;
+${BEHIND_DIALOG}
 void main() {
   float shape = vP.x;
   float w = vP.y;
@@ -144,7 +167,7 @@ void main() {
     float star = exp(-a.y * a.y * 120.0) * exp(-a.x * 1.1) + exp(-a.x * a.x * 120.0) * exp(-a.y * 1.1);
     v += facing * star * 1.3;
   }
-  o = vec4(vCol * v, 0.0);
+  o = vec4(vCol * v * (1.0 - vP.w * hiddenAt(vWorld)), 0.0);
 }`;
 
 const SHAPE_VS = `#version 300 es
@@ -157,8 +180,10 @@ layout(location = 5) in vec4 s4;
 layout(location = 6) in vec4 s5;
 uniform vec2 uView;
 out vec2 vP;
+out vec2 vWorld; // CSS px
 flat out vec4 vA;
 flat out vec3 vC;
+flat out float vBehind; // page light (see BEHIND_DIALOG)
 flat out vec4 vQ;
 flat out vec4 vR;
 flat out vec4 vS;
@@ -168,10 +193,12 @@ void main() {
   vHalf = s0.zw;
   vA = s1;
   vC = s2.rgb;
+  vBehind = s2.w;
   vQ = s3;
   vR = s4;
   vS = s5;
   vec2 p = s0.xy + vP;
+  vWorld = p;
   vec2 clip = p / uView * 2.0 - 1.0;
   gl_Position = vec4(clip.x, -clip.y, 0.0, 1.0);
 }`;
@@ -179,8 +206,10 @@ void main() {
 const SHAPE_FS = `#version 300 es
 precision highp float;
 in vec2 vP;
+in vec2 vWorld;
 flat in vec4 vA;
 flat in vec3 vC;
+flat in float vBehind;
 flat in vec4 vQ;
 flat in vec4 vR;
 flat in vec4 vS;
@@ -188,6 +217,7 @@ flat in vec2 vHalf;
 out vec4 o;
 #define PI 3.14159265
 ${NOISE}
+${BEHIND_DIALOG}
 vec2 rot2(vec2 p, float a) { float c = cos(a), s = sin(a); return vec2(c * p.x - s * p.y, s * p.x + c * p.y); }
 // Equilateral triangle SDF (Inigo Quilez), r = circumradius-ish size.
 float sdTri(vec2 p, float r) {
@@ -364,7 +394,7 @@ void main() {
     v *= win;
     hot *= win;
   }
-  o = vec4(col * v + vec3(1.0, 0.95, 0.85) * hot * max(max(col.r, col.g), col.b), 0.0);
+  o = vec4((col * v + vec3(1.0, 0.95, 0.85) * hot * max(max(col.r, col.g), col.b)) * (1.0 - vBehind * hiddenAt(vWorld)), 0.0);
 }`;
 
 const FULL_VS = `#version 300 es
@@ -437,10 +467,10 @@ uniform sampler2D uBloom;
 uniform float uBloomAmt;
 uniform float uHasBloom;
 uniform float uExposure;
-uniform float uVeil;   // an open dialog's veil over the page, 0-1 (lib/veil.ts)
-uniform vec4 uClear;   // the dialog, which it leaves clear: x0, y0, x1, y1 (device px, bottom-left origin)
-uniform float uClearR; // its corner radius, device px
+uniform vec2 uView;    // CSS px
+uniform float uDim;    // how far an open dialog dims the page, 0-1
 out vec4 o;
+${BEHIND_DIALOG}
 float hash(vec2 p) {
   vec3 p3 = fract(vec3(p.xyx) * 0.1031);
   p3 += dot(p3, p3.yzx + 33.33);
@@ -452,12 +482,10 @@ void main() {
   // Per-channel exponential tone map: linear for faint light, saturating
   // smoothly, so orange sparks burn through yellow toward white.
   vec3 c = 1.0 - exp(-max(hdr, 0.0) * uExposure);
-  // Outside an open dialog, light falls on the veiled page and dims with it.
-  if (uVeil > 0.0) {
-    vec2 h = (uClear.zw - uClear.xy) * 0.5;
-    vec2 qd = abs(gl_FragCoord.xy - uClear.xy - h) - h + uClearR;
-    float sdf = length(max(qd, 0.0)) + min(max(qd.x, qd.y), 0.0) - uClearR;
-    c *= 1.0 - ${VEIL_DIM.toFixed(3)} * uVeil * clamp(sdf + 0.5, 0.0, 1.0);
+  // Outside an open dialog, light falls on the dimmed page and dims with it.
+  if (uDim > 0.0) {
+    float sdf = dialogSdf(vec2(vUv.x, 1.0 - vUv.y) * uView);
+    c *= 1.0 - ${DIALOG_DIM.toFixed(3)} * uDim * clamp(sdf + 0.5, 0.0, 1.0);
   }
   // TPDF dither, only where there is light, so empty pixels stay exactly 0.
   float peak = max(max(c.r, c.g), c.b);
@@ -470,8 +498,9 @@ void main() {
 
 export type RendererOptions = { maxParticles: number; maxShapes: number };
 
-/** An open dialog's veil (lib/veil.ts): how far it's drawn, and the dialog's box and corner radius in CSS px. */
-export type Veil = { amount: number; box: DOMRect | null; radius: number };
+/** An open dialog (lib/behindDialog.ts): how far it dims the page, and its box and corner radius in CSS px. */
+export type DialogLight = { amount: number; box: DOMRect | null; radius: number };
+const NO_DIALOG: DialogLight = { amount: 0, box: null, radius: 0 };
 
 export class FxRenderer {
   private gl: WebGL2RenderingContext;
@@ -626,6 +655,7 @@ export class FxRenderer {
    * Draws one frame. `view` is the canvas size in CSS px, `dpr` device pixels
    * per CSS px of the drawing buffer. The last `nCrisp` of the shapes are
    * drawn at full resolution (thin lines); the rest at reduced resolution.
+   * `dialog` is the open dialog, if any (see BEHIND_DIALOG).
    */
   draw(
     view: [number, number],
@@ -635,11 +665,19 @@ export class FxRenderer {
     shapes: Float32Array,
     nShapes: number,
     nCrisp = 0,
-    veil: Veil = { amount: 0, box: null, radius: 0 },
+    dialog: DialogLight = NO_DIALOG,
   ) {
     const gl = this.gl;
     if (!this.hdr) return;
     this.cleared = false;
+    // Without a dialog box, nothing is hidden and everything is dimmed.
+    const b = dialog.box;
+    const behindDialog = (p: Program, hide: boolean) => {
+      if (b) gl.uniform4f(p.u('uDialogBox'), b.left, b.top, b.right, b.bottom);
+      else gl.uniform4f(p.u('uDialogBox'), -1, -1, -1, -1);
+      gl.uniform1f(p.u('uDialogR'), dialog.radius);
+      gl.uniform1f(p.u('uHide'), hide && b ? dialog.amount : 0);
+    };
 
     gl.disable(gl.DEPTH_TEST);
     gl.clearColor(0, 0, 0, 0);
@@ -659,6 +697,7 @@ export class FxRenderer {
       gl.blendFunc(gl.ONE, gl.ONE);
       gl.useProgram(this.shapeProg.prog);
       gl.uniform2f(this.shapeProg.u('uView'), view[0], view[1]);
+      behindDialog(this.shapeProg, true);
       gl.bindVertexArray(this.shapeVao);
       gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, nSoft);
       // ...then filtered up into the HDR target, which they fill completely.
@@ -682,6 +721,7 @@ export class FxRenderer {
       // Thin-line shapes straight into the full-resolution target.
       gl.useProgram(this.shapeProg.prog);
       gl.uniform2f(this.shapeProg.u('uView'), view[0], view[1]);
+      behindDialog(this.shapeProg, true);
       gl.bindVertexArray(this.shapeVao);
       // (Uploaded after the soft ones were drawn; WebGL keeps the order.)
       gl.bindBuffer(gl.ARRAY_BUFFER, this.shapeBuf);
@@ -692,6 +732,7 @@ export class FxRenderer {
       gl.useProgram(this.particleProg.prog);
       gl.uniform2f(this.particleProg.u('uView'), view[0], view[1]);
       gl.uniform1f(this.particleProg.u('uMinPx'), 0.85 / dpr);
+      behindDialog(this.particleProg, true);
       gl.bindBuffer(gl.ARRAY_BUFFER, this.particleBuf);
       gl.bufferSubData(gl.ARRAY_BUFFER, 0, particles, 0, nParticles * INSTANCE_FLOATS);
       gl.bindVertexArray(this.particleVao);
@@ -746,12 +787,9 @@ export class FxRenderer {
     // The mip sum carries every level once; scale it to a gentle halo.
     gl.uniform1f(this.compProg.u('uBloomAmt'), bloom ? 0.55 / this.mips.length : 0);
     gl.uniform1f(this.compProg.u('uExposure'), this.hdrFloat ? 1 : 1.2);
-    // Without a dialog box, nothing is left clear.
-    const b = veil.box;
-    gl.uniform1f(this.compProg.u('uVeil'), veil.amount);
-    if (b) gl.uniform4f(this.compProg.u('uClear'), b.left * dpr, (view[1] - b.bottom) * dpr, b.right * dpr, (view[1] - b.top) * dpr);
-    else gl.uniform4f(this.compProg.u('uClear'), -1, -1, -1, -1);
-    gl.uniform1f(this.compProg.u('uClearR'), veil.radius * dpr);
+    gl.uniform2f(this.compProg.u('uView'), view[0], view[1]);
+    gl.uniform1f(this.compProg.u('uDim'), dialog.amount);
+    behindDialog(this.compProg, false);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindVertexArray(null);

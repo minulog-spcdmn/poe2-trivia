@@ -117,8 +117,10 @@
   });
 </script>
 
-<!-- Fixed to the viewport, so it leaves the app shell (which camera shake moves). -->
-<canvas bind:this={canvas} class="sparks veiled" use:portal aria-hidden="true"></canvas>
+<!-- Fixed to the viewport, so it leaves the app shell (which camera shake moves).
+     Behind a dialog it only darkens: the sparks are soft already, and a blur
+     would be redone every frame. -->
+<canvas bind:this={canvas} class="sparks" use:portal={'dim'} aria-hidden="true"></canvas>
 
 <div class="over">
   <p class="kicker" in:fly={{ y: -10, duration: 600 }}>Victory</p>

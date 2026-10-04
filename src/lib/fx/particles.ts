@@ -92,10 +92,11 @@ const F = {
   cy: 28,
   tx: 29,
   ty: 30,
+  page: 31, // 1 for the page's light, 0 for an open dialog's (see BEHIND_DIALOG in renderer.ts)
 } as const;
-const STRIDE = 31;
+const STRIDE = 32;
 
-/** Floats per particle in the instance buffer: (x, y, vx, vy) (size, stretch, rot, shape) (r, g, b, seed). */
+/** Floats per particle in the instance buffer: (x, y, vx, vy) (size, stretch, rot, shape) (r, g, b, page light). */
 export const INSTANCE_FLOATS = 12;
 
 export class ParticlePool {
@@ -112,8 +113,11 @@ export class ParticlePool {
     this.instances = new Float32Array(cap * INSTANCE_FLOATS);
   }
 
-  /** Adds a particle; when the pool is full, the oldest-looking one makes way. */
-  spawn(p: ParticleSpec) {
+  /**
+   * Adds a particle; when the pool is full, the oldest-looking one makes way.
+   * `page` is false for light from an open dialog, which shows over it.
+   */
+  spawn(p: ParticleSpec, page = true) {
     let i = this.count;
     if (i >= this.cap) {
       // Replace a random particle rather than refusing: bursts stay complete.
@@ -148,6 +152,7 @@ export class ParticlePool {
     d[o + F.fadeIn] = p.fadeIn ?? 0.04;
     d[o + F.turb] = p.turbulence ?? 0;
     d[o + F.seed] = Math.random() * 1000;
+    d[o + F.page] = page ? 1 : 0;
     const k = p.seek;
     d[o + F.seek] = k ? 1 : 0;
     if (k) {
@@ -232,7 +237,7 @@ export class ParticlePool {
       out[q + 8] = (d[o + F.r0] + (d[o + F.r1] - d[o + F.r0]) * ct) * env;
       out[q + 9] = (d[o + F.g0] + (d[o + F.g1] - d[o + F.g0]) * ct) * env;
       out[q + 10] = (d[o + F.b0] + (d[o + F.b1] - d[o + F.b0]) * ct) * env;
-      out[q + 11] = seed;
+      out[q + 11] = d[o + F.page];
       n++;
       fastest = Math.max(fastest, vx * vx + vy * vy);
     }
@@ -270,7 +275,7 @@ export class ParticlePool {
     out[q + 8] = (d[o + F.r0] + (d[o + F.r1] - d[o + F.r0]) * t) * env;
     out[q + 9] = (d[o + F.g0] + (d[o + F.g1] - d[o + F.g0]) * t) * env;
     out[q + 10] = (d[o + F.b0] + (d[o + F.b1] - d[o + F.b0]) * t) * env;
-    out[q + 11] = d[o + F.seed];
+    out[q + 11] = d[o + F.page];
   }
 
   clear() {
