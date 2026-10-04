@@ -289,12 +289,12 @@ export function reveal(t: RevealTargets) {
   if (!fxActive()) return;
   const streak = t.streak ?? 1;
   const hype = Math.min(3, 1 + (streak - 1) * 0.5);
+  // A tile's item picture (swapped for the original at the reveal): the light shines from behind it.
+  const pic = () => t.answer?.querySelector('.pic .art-fit > img') ?? null;
 
   if (t.answer) {
     const a = t.answer;
     const celebrate = t.good || t.otherScored;
-    // A tile's item picture (swapped for the original at the reveal): the flare shines from behind it.
-    const pic = () => a.querySelector('.pic .art-fit > img');
     outline(a, { color: C.right, width: celebrate ? 12 : 9, flame: celebrate ? 0.6 : 0.2, intensity: celebrate ? 0.55 : 0.4, life: celebrate ? 1.4 : 2, bleed: 0.1 });
     if (celebrate) {
       sparks(a, { count: Math.round(30 * hype), area: 'edge', colors: [C.gold, C.rightPale, C.goldPale], speed: [160, 600 * Math.sqrt(hype)], life: [0.4, 1] });
@@ -312,7 +312,7 @@ export function reveal(t: RevealTargets) {
     // from behind its item.
     const a = t.answer;
     const b = boxOf(a);
-    rays(a, { radius: Math.max(b.w, b.h) * 1.1, life: 1.8 + 0.2 * hype, fadeIn: 0.5, intensity: 0.12 * Math.sqrt(hype), color: C.gold, count: 12, clear: () => a.querySelector('.pic .art-fit > img') });
+    rays(a, { radius: Math.max(b.w, b.h) * 1.1, life: 1.8 + 0.2 * hype, fadeIn: 0.5, intensity: 0.12 * Math.sqrt(hype), color: C.gold, count: 12, clear: pic });
     embers(a, { count: Math.round(8 * hype), area: 'fill', colors: [C.gold, C.ember, C.rightPale], rise: [50, 150], life: [0.7, 1.5] });
   } else if (t.good && t.art) {
     const b = boxOf(t.art);

@@ -457,9 +457,17 @@ function frame(nowMs: number) {
   if (!busy) show(false);
 }
 
+let frameNo = 0;
+
+/** Counts the frames effects are updated in, so values measured once per frame can be shared. */
+export function currentFrame() {
+  return frameNo;
+}
+
 /** Advances every effect by `dt` seconds and (if `render`) draws. Returns whether anything is still alive. */
 function simulate(dt: number, nowMs: number, render: boolean): boolean {
   if (!renderer || !pool) return false;
+  frameNo++;
   for (let i = 0; i < tasks.length; ) {
     const t = tasks[i];
     t.age += dt;
@@ -503,13 +511,14 @@ function simulate(dt: number, nowMs: number, render: boolean): boolean {
   let nShapes = 0;
   let nCrisp = 0;
   let shapesCalm = true;
-  const ready = (sil?: Silhouette | null) => !!sil && sil.img.complete && sil.img.naturalWidth > 0;
+  // (A picture with no size, hidden or scaled away, has no outline to keep clear.)
+  const ready = (sil?: Silhouette | null) => !!sil && sil.w > 0 && sil.h > 0 && sil.img.complete && sil.img.naturalWidth > 0;
   const silhouette = visible.map(([s]) => s.f.silhouette).find(ready) ?? null;
   for (const crisp of [false, true]) {
     for (const [s, t] of visible) {
       if (isCrisp(s) !== crisp || nShapes >= MAX_SHAPES) continue;
       writeShape(nShapes, s, t);
-      if (silhouette && s.f.silhouette?.img === silhouette.img) shapeData[nShapes * SHAPE_FLOATS + 4] += BEHIND_PICTURE;
+      if (silhouette && s.f.silhouette?.img === silhouette.img) shapeData[nShapes * SHAPE_FLOATS + 11] += BEHIND_PICTURE;
       nShapes++;
       if (crisp) nCrisp++;
       if (!s.calm) shapesCalm = false;

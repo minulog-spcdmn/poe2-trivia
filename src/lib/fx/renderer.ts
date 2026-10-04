@@ -19,7 +19,9 @@ export const SHAPE_FLOATS = 24;
  * Procedural shapes. Instance layout:
  *   s0: centre x, centre y, quad half width, quad half height (CSS px)
  *   s1: type, progress 0-1, age (s), seed
- *   s2: r, g, b (HDR, envelope applied), 1 for the page's light (see BEHIND_DIALOG)
+ *   s2: r, g, b (HDR, envelope applied), flags: 1 for the page's light (see
+ *       BEHIND_DIALOG), plus BEHIND_PICTURE when it shines from behind the
+ *       picture in uSil (see Silhouette)
  *   s3, s4, s5: per-type parameters (documented in the shader)
  */
 export const ShapeType = {
@@ -35,8 +37,8 @@ export const ShapeType = {
 } as const;
 export type ShapeType = (typeof ShapeType)[keyof typeof ShapeType];
 
-/** Added to a shape's type when it shines from behind the picture in uSil (see Silhouette). */
-export const BEHIND_PICTURE = 16;
+/** Shape flag (s2.w): it shines from behind the picture in uSil (see Silhouette). */
+export const BEHIND_PICTURE = 2;
 
 // While a dialog is open (lib/behindDialog.ts), light from the page behind it
 // hides behind the dialog, which on the page is opaque; the dialog's own light
@@ -187,6 +189,7 @@ out vec2 vWorld; // CSS px
 flat out vec4 vA;
 flat out vec3 vC;
 flat out float vBehind; // page light (see BEHIND_DIALOG)
+flat out float vPicture; // behind the picture (see Silhouette)
 flat out vec4 vQ;
 flat out vec4 vR;
 flat out vec4 vS;
@@ -196,7 +199,8 @@ void main() {
   vHalf = s0.zw;
   vA = s1;
   vC = s2.rgb;
-  vBehind = s2.w;
+  vBehind = mod(s2.w, ${BEHIND_PICTURE}.0);
+  vPicture = step(${BEHIND_PICTURE}.0, s2.w);
   vQ = s3;
   vR = s4;
   vS = s5;
@@ -213,6 +217,7 @@ in vec2 vWorld;
 flat in vec4 vA;
 flat in vec3 vC;
 flat in float vBehind;
+flat in float vPicture;
 flat in vec4 vQ;
 flat in vec4 vR;
 flat in vec4 vS;
@@ -227,13 +232,23 @@ uniform float uSilOn; // the picture's opacity, 0 without one
 uniform vec4 uSilBox;
 uniform float uSilFlip;
 uniform vec2 uSilFit;
-// How much of the picture covers p, 0-1 (as visible as the picture is).
-float silhouetteAt(vec2 p) {
-  if (uSilOn <= 0.0) return 0.0;
+// Where p (CSS px) falls on the picture's texture.
+vec2 silhouetteUv(vec2 p) {
   vec2 l = (p - uSilBox.xy) / uSilBox.zw;
   l.x /= (uSilFlip < 0.0 ? -1.0 : 1.0) * max(abs(uSilFlip), 0.02);
-  // A level down: smoother still, and the only blur where the canvas can't (older Safari).
-  return smoothstep(0.15, 0.7, textureLod(uSil, 0.5 + 0.5 * l * uSilFit, 1.0).a) * uSilOn;
+  return 0.5 + 0.5 * l * uSilFit;
+}
+// How much of the picture covers p, 0-1 (as visible as the picture is).
+// Half a level down: a little smoother, and some blur where the canvas can't (older Safari).
+float silhouetteAt(vec2 p) {
+  if (uSilOn <= 0.0) return 0.0;
+  return smoothstep(0.15, 0.7, textureLod(uSil, silhouetteUv(p), 0.5).a) * uSilOn;
+}
+// How near p is to the picture, 0-1: its alpha blurred far wider (a small
+// mip), so light right beside a thin item doesn't bloom back over it.
+float silhouetteNear(vec2 p) {
+  if (uSilOn <= 0.0) return 0.0;
+  return smoothstep(0.0, 0.35, textureLod(uSil, silhouetteUv(p), 4.0).a) * uSilOn;
 }
 ${NOISE}
 ${BEHIND_DIALOG}
@@ -319,8 +334,6 @@ float outlineGlow(float d, float wd, float flameAmt, float bleed, float up, vec2
 
 void main() {
   int type = int(vA.x + 0.5);
-  bool behind = type >= ${BEHIND_PICTURE};
-  if (behind) type -= ${BEHIND_PICTURE};
   float prog = vA.y;
   float time = vA.z;
   float seed = vA.w;
@@ -469,11 +482,13 @@ void main() {
     v = lines * drawn;
     v += exp(-pow((r - R) / (lw * 6.0), 2.0)) * 0.15;
   }
-  // Behind the picture: only a faint glow over it, none of the white heat.
-  if (behind) {
+  // Behind the picture: only a faint glow over it, none of the white heat,
+  // and a little less light right around it.
+  if (vPicture > 0.5) {
     float c = silhouetteAt(vWorld);
-    v *= mix(1.0, 0.2, c);
-    hot *= 1.0 - c;
+    float near = silhouetteNear(vWorld);
+    v *= mix(1.0, 0.2, c) * mix(1.0, 0.55, near);
+    hot *= (1.0 - c) * (1.0 - near);
   }
   // Fade everything to zero before the quad's border, so no long tail can
   // show the quad's edge. (The edge glow's quad is the screen itself.)
@@ -595,8 +610,9 @@ export type RendererOptions = { maxParticles: number; maxShapes: number };
 export type Silhouette = { img: HTMLImageElement; x: number; y: number; w: number; h: number; flip: number; alpha: number };
 
 /** Longest side of the silhouette texture, and the blur over it, in its px. */
-const SIL_SIZE = 128;
-const SIL_BLUR = 5;
+// Fine enough that thin items (a spear's shaft) keep most of their alpha.
+const SIL_SIZE = 256;
+const SIL_BLUR = 2.5;
 
 /** An open dialog (lib/behindDialog.ts): how far it dims the page, and its box and corner radius in CSS px. */
 export type DialogLight = { amount: number; box: DOMRect | null; radius: number };
@@ -627,9 +643,11 @@ export class FxRenderer {
   bloom = true;
   private cleared = false;
   private silTex: WebGLTexture | null = null;
-  /** The picture in silTex, and how much of the texture it covers. */
-  private silSrc: HTMLImageElement | null = null;
+  /** The picture in silTex (by URL, so a picture gone from the page isn't kept), and how much of the texture it covers. */
+  private silSrc = '';
   private silFit: [number, number] = [1, 1];
+  /** A picture that couldn't be read (another origin, say): not tried again every frame. */
+  private silFailed = '';
 
   static create(canvas: HTMLCanvasElement, opts: RendererOptions): FxRenderer | null {
     const gl = canvas.getContext('webgl2', {
@@ -915,17 +933,25 @@ export class FxRenderer {
     gl.bindVertexArray(null);
   }
 
-  /**
-   * Makes `img` the silhouette texture: its alpha, blurred, with a margin for
-   * the blur to spread into. Returns whether it's ready (loaded, and readable).
-   */
+  /** Makes `img` the silhouette texture, unless it is already. Returns whether it's ready (loaded, and readable). */
   private loadSilhouette(img: HTMLImageElement): boolean {
-    if (img === this.silSrc) return true;
-    if (!img.complete || !img.naturalWidth) return false;
+    const src = img.currentSrc || img.src;
+    if (src === this.silSrc) return true;
+    if (src === this.silFailed || !img.complete || !img.naturalWidth) return false;
+    if (!this.makeSilhouette(img)) {
+      this.silFailed = src;
+      return false;
+    }
+    this.silSrc = src;
+    return true;
+  }
+
+  /** Draws `img`'s alpha, blurred, into silTex, with a margin for the blur to spread into. False if it can't be read. */
+  private makeSilhouette(img: HTMLImageElement): boolean {
     const k = SIL_SIZE / Math.max(img.naturalWidth, img.naturalHeight);
     const w = Math.max(1, Math.round(img.naturalWidth * k));
     const h = Math.max(1, Math.round(img.naturalHeight * k));
-    const pad = SIL_BLUR * 3;
+    const pad = Math.ceil(SIL_BLUR * 3);
     const c = document.createElement('canvas');
     c.width = w + pad * 2;
     c.height = h + pad * 2;
@@ -949,7 +975,6 @@ export class FxRenderer {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     gl.activeTexture(gl.TEXTURE0);
-    this.silSrc = img;
     this.silFit = [w / c.width, h / c.height];
     return true;
   }
