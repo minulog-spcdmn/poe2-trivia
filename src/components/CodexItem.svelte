@@ -255,14 +255,17 @@
     display: grid;
     place-items: center;
     container-type: size;
+    /* The bottom fades into the tooltip's own colour, so the stage runs on into the text below without an edge. */
     background:
+      linear-gradient(180deg, transparent 55%, #050403),
       radial-gradient(ellipse 55% 50% at 50% 52%, rgba(175, 96, 37, 0.16), transparent 70%),
       radial-gradient(ellipse 80% 45% at 50% 0%, rgba(90, 110, 160, 0.1), transparent 70%),
       radial-gradient(ellipse at center, transparent 45%, rgba(0, 0, 0, 0.55) 100%),
       linear-gradient(180deg, #0c0d12, #060709);
+    /* Shadowed from the top only: an inner shadow paints over the background, so one at the bottom would draw a dark band there. */
     box-shadow:
       inset 0 1px 0 rgba(201, 164, 92, 0.12),
-      inset 0 0 40px rgba(0, 0, 0, 0.6);
+      inset 0 30px 30px -20px rgba(0, 0, 0, 0.6);
     overflow: hidden;
   }
   .frame {
