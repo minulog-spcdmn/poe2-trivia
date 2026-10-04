@@ -375,7 +375,8 @@
   }
   .info {
     flex: 1;
-    min-width: 0;
+    /* Short names keep the pill from shrinking to a stub (about as wide as "zoe_arcana" on a phone). */
+    min-width: 57px;
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
