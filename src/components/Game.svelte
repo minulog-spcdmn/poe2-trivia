@@ -400,4 +400,23 @@
     justify-content: center;
     margin-top: 1.5rem;
   }
+
+  /* Phones: every pixel of height spent here is scrolling between the art and
+     the answers. The scoreboard already marks whose turn it is. */
+  @media (max-width: 640px) {
+    .game {
+      gap: 0.5rem;
+      padding: 0.5rem 1rem 1rem;
+    }
+    .banner {
+      gap: 0.8rem;
+      margin: 0 0 0.5rem;
+    }
+    .banner h2 {
+      font-size: 1.45rem;
+    }
+    .skip {
+      margin-top: 1rem;
+    }
+  }
 </style>

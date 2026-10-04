@@ -552,7 +552,7 @@
       gap: 0.6rem;
       /* Edge to edge, over the game's side padding. */
       margin: 0 -1rem;
-      padding: calc(1px + 0.35rem) max(1rem, env(safe-area-inset-right)) 0.35rem max(1rem, env(safe-area-inset-left));
+      padding: calc(1px + 0.25rem) max(1rem, env(safe-area-inset-right)) 0.25rem max(1rem, env(safe-area-inset-left));
       border-bottom: 1px solid transparent;
       transition:
         background-color 0.25s,
@@ -579,7 +579,7 @@
       min-height: 44px;
       align-items: center;
       align-content: center;
-      padding: 0.35rem 0;
+      padding: 0.25rem 0;
     }
     .board.crowded {
       flex-wrap: wrap;

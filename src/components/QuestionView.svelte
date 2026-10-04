@@ -1611,5 +1611,37 @@
     .dock .result p {
       font-size: 1rem;
     }
+    /* Tighter all round, so less scrolling from the art down to the answers.
+       Answers stay 48px tall, a comfortable tap. */
+    .topline {
+      margin-bottom: 0.6rem;
+    }
+    .head {
+      height: auto;
+      min-height: 52px;
+      padding: 0.35rem 1.6rem;
+    }
+    .art {
+      height: clamp(180px, 32svh, 230px);
+    }
+    .stage {
+      gap: 0.75rem;
+    }
+    .options {
+      gap: 0.5rem;
+    }
+    .option {
+      padding-top: 0.55rem;
+      padding-bottom: 0.55rem;
+    }
+    .tile,
+    .tiles.many .tile {
+      height: 140px;
+    }
+    /* Only a line of text now and then (the reveal's bar is docked). */
+    .footer {
+      min-height: 0;
+      margin-top: 0.75rem;
+    }
   }
 </style>

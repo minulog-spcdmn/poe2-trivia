@@ -576,7 +576,7 @@
     header {
       grid-template-columns: auto 1fr auto;
       gap: 0.5rem;
-      padding: 0.6rem 0.8rem;
+      padding: 0.4rem 0.8rem;
     }
     .brand span:last-child {
       display: none;
