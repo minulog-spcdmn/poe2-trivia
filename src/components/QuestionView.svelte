@@ -14,7 +14,7 @@
   import { backdropShadow } from '../lib/backdropShadow';
   import ArcaneCircle from './ArcaneCircle.svelte';
   import { untrack } from 'svelte';
-  import { FILL_START, answerCharging, artRevealed, raceMiss, reveal as revealFx, veilComplete, veilHandoff } from '../lib/fx/moments';
+  import { FILL_START, answerCharging, artRevealed, raceMiss, reveal as revealFx, streakFire, veilComplete, veilHandoff } from '../lib/fx/moments';
   import { FILL_LEAD } from '../lib/soundDesign';
   import { recordReveal } from '../lib/fx/streaks';
   import { scoreRowOf } from '../lib/scoreRows';
@@ -264,6 +264,24 @@
   /** The scorer's streak of correct answers, for the result line. */
   let streak = $state(0);
 
+  /** When the streak badge pops into the result line, ms. */
+  const STREAK_IN = 1100;
+  /** What a streak of three or more is called; it grows with the streak. */
+  const streakTitle = (n: number) => (n >= 7 ? 'Unstoppable' : n >= 5 ? 'Blazing' : n >= 3 ? 'Hot streak' : '');
+  /** 0 to 1: how hot the badge burns (3 in a row barely, 8 and on fully). */
+  const streakHeat = (n: number) => Math.min(1, Math.max(0, (n - 2) / 6));
+  /** From three in a row the badge catches fire as it lands, and smoulders while it's up. */
+  function onFire(badge: HTMLElement, n: number) {
+    let fire: Handle | null = null;
+    const lit = setTimeout(() => (fire = streakFire(badge, n)), STREAK_IN + 200);
+    return {
+      destroy() {
+        clearTimeout(lit);
+        fire?.stop();
+      },
+    };
+  }
+
   // The art arrives: light it up (once per question).
   let artShown = false;
   $effect(() => {
@@ -406,6 +424,15 @@
   {/if}
 {/snippet}
 
+{#snippet streakBadge()}
+  {#if streak >= 2}
+    {@const title = streakTitle(streak)}
+    <span class="streak" class:hot={streak >= 3} style:--heat={streakHeat(streak)} use:onFire={streak} in:scale={{ start: 0.5, duration: 400, delay: STREAK_IN }}>
+      {#if title}<span class="tier">{title}</span> • {/if}{streak}<span class="in-a-row"> in a row</span>
+    </span>
+  {/if}
+{/snippet}
+
 {#snippet footer()}
   {#if reveal}
     <div class="result" in:fly={{ y: 16, duration: 400, delay: 250 }}>
@@ -413,7 +440,7 @@
         {#if race}
           {#if winner}
             <b class="good">+1</b> {winner.id === me ? 'You were' : `${winner.name} was`} fastest!
-            {#if streak >= 2}<span class="streak" in:scale={{ start: 0.5, duration: 400, delay: 1100 }}>{streak} in a row</span>{/if}
+            {@render streakBadge()}
           {:else if reveal.timedOut}
             Time's up; nobody got it.
           {:else}
@@ -424,7 +451,7 @@
           {/if}
         {:else if reveal.correct}
           <b class="good">+1</b> for {active.name}!
-          {#if streak >= 2}<span class="streak" in:scale={{ start: 0.5, duration: 400, delay: 1100 }}>{streak} in a row</span>{/if}
+          {@render streakBadge()}
         {:else if reveal.timedOut}
           {active.name} ran out of time.
         {:else}
@@ -1217,11 +1244,37 @@
     border-radius: 999px;
     box-shadow: 0 0 16px rgba(255, 120, 40, 0.35);
     text-shadow: 0 0 10px rgba(255, 170, 90, 0.7);
+    white-space: nowrap;
     animation: smoulder-badge 1.6s ease-in-out infinite;
   }
   @keyframes smoulder-badge {
     50% {
       box-shadow: 0 0 24px rgba(255, 140, 50, 0.55);
+    }
+  }
+  /* Three in a row and on: the badge burns, hotter (--heat, 0 to 1) the longer it goes. */
+  .streak.hot {
+    font-size: calc(0.8rem + 0.15rem * var(--heat));
+    color: #fff1d6;
+    background: linear-gradient(180deg, rgba(220, 110, 30, 0.85), rgba(120, 35, 5, 0.85));
+    border-color: rgba(255, 190, 110, 0.9);
+    text-shadow: 0 0 8px rgba(255, 200, 120, 0.9);
+    animation: burn-badge calc(1.2s - 0.6s * var(--heat)) ease-in-out infinite;
+  }
+  .streak .tier {
+    color: #ffd27a;
+  }
+  @keyframes burn-badge {
+    0%,
+    100% {
+      box-shadow:
+        0 0 calc(14px + 14px * var(--heat)) rgba(255, 130, 40, 0.5),
+        0 -4px calc(10px + 16px * var(--heat)) rgba(255, 90, 20, calc(0.25 + 0.35 * var(--heat)));
+    }
+    50% {
+      box-shadow:
+        0 0 calc(22px + 22px * var(--heat)) rgba(255, 150, 50, 0.75),
+        0 -6px calc(16px + 24px * var(--heat)) rgba(255, 110, 30, calc(0.4 + 0.4 * var(--heat)));
     }
   }
   /* However long the result, the button keeps its size. */
@@ -1319,6 +1372,12 @@
     }
   }
 
+  /* On a phone a burning badge keeps to its name and count ("Blazing • 5"). */
+  @media (max-width: 760px) {
+    .streak.hot .in-a-row {
+      display: none;
+    }
+  }
   @media (max-width: 760px) {
     .stage {
       grid-template-columns: 1fr;

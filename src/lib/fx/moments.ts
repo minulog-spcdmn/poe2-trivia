@@ -318,13 +318,6 @@ export function reveal(t: RevealTargets) {
     embers(t.art, { count: Math.round(14 * hype), area: 'fill', colors: [C.gold, C.ember, C.rightPale], rise: [60, 190], life: [0.8, 1.8] });
     light(t.art, { color: [1, 0.8, 0.45], radius: 420, intensity: 0.3 + 0.08 * hype, hold: 0.3, decay: 1.5 });
   }
-  if (t.good && t.art) {
-    if (streak >= 3) {
-      edgeGlow({ color: C.gold, intensity: 0.07, width: 70, life: 1.4 });
-      backdropEmbers.flare(0.8, 2);
-    }
-  }
-
   if (!t.good && !t.otherScored) {
     if (t.chosen) {
       shards(t.chosen, { count: 18, colors: [C.wrong, k3(C.wrong, 0.6), C.ember] });
@@ -444,6 +437,30 @@ export function scored(pill: Element, streak = 1) {
   glints(pill, { count: 2, size: [4, 7] });
   outline(pill, { color: C.gold, width: 9, life: 0.8, intensity: 0.5, bleed: 0.15 });
   light(pill, { color: [1, 0.72, 0.35], radius: 180, intensity: 0.3, decay: 0.9 });
+}
+
+/**
+ * A streak of three or more: the "in a row" badge catches fire as it lands,
+ * hotter with every answer, and keeps smouldering while it's up. Returns a
+ * handle to put it out.
+ */
+export function streakFire(badge: Element, streak: number): Handle {
+  if (!fxActive() || streak < 3) return { stop() {} };
+  // 3 in a row is a spark; by 8 it's a blaze.
+  const heat = Math.min(1, (streak - 2) / 6);
+  const k = 1 + heat * 2;
+  flash(badge, { radius: 70 + 110 * heat, color: C.ember, intensity: 0.3 + 0.3 * heat, life: 0.5 });
+  outline(badge, { color: C.ember, width: 9 + 7 * heat, flame: 0.5 + 0.5 * heat, intensity: 0.55 + 0.25 * heat, life: 1.1 + heat, bleed: 0.15 });
+  sparks(badge, { count: Math.round(16 * k), area: 'edge', colors: [C.ember, C.gold, C.whiteHot], speed: [120, 380 * Math.sqrt(k)], gravity: 300, life: [0.3, 0.8] });
+  ring(badge, { radius: 60 * Math.sqrt(k), thickness: 6, life: 0.5, color: C.ember, breakup: 0.5, intensity: 0.6 });
+  flare(badge, { size: 18, streak: 150 * Math.sqrt(k), life: 0.5, color: C.gold, intensity: 0.6 });
+  embers(badge, { count: Math.round(10 * k), area: 'top', colors: [C.ember, C.gold], rise: [70, 200], life: [0.6, 1.4] });
+  light(badge, { color: [1, 0.55, 0.2], radius: 160 + 140 * heat, intensity: 0.25 + 0.2 * heat, decay: 1 });
+  if (streak >= 5) backdropEmbers.flare(0.4 + 0.5 * heat, 1.2 + heat);
+  if (streak >= 7) shakeView(0.12 + 0.1 * heat, 4);
+  return emitter(2 + 8 * heat, () =>
+    embers(badge, { count: 1, area: 'top', colors: [C.ember, C.gold], rise: [40, 110], scatter: 20, life: [0.6, 1.3] }),
+  );
 }
 
 /** A point is lost (race: a wrong guess). */
