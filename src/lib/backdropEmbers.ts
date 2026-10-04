@@ -106,7 +106,10 @@ export class Embers {
     const target = calm ? 0 : Math.max(this.heatTarget, this.flareLeft > 0 ? this.flareLevel : 0);
     const color = calm ? CALM : this.colorTarget;
     this.heat += (target - this.heat) * (1 - Math.exp(-dt * 1.5));
-    this.crowd += ((calm ? 0 : this.crowdTarget) - this.crowd) * (1 - Math.exp(-dt * 0.8));
+    // A swarm builds slowly but clears out within a second or so, so it never
+    // lingers into the screen after a deathmatch.
+    const crowd = calm ? 0 : this.crowdTarget;
+    this.crowd += (crowd - this.crowd) * (1 - Math.exp(-dt * (crowd > this.crowd ? 0.8 : 4)));
     for (let i = 0; i < 3; i++) this.color[i] += (color[i] - this.color[i]) * (1 - Math.exp(-dt * 1.2));
     this.t += dt * (1 + 1.6 * this.heat);
     const t = this.t;
