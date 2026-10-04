@@ -6,8 +6,9 @@
   import { session } from '../lib/session.svelte';
   import { toasts, type ToastKind } from '../lib/toasts.svelte';
   import { playerColor } from '../lib/ui';
-  import { twinkle } from '../lib/fx/moments';
+  import { heraldNotice, twinkle } from '../lib/fx/moments';
   import Avatar from './Avatar.svelte';
+  import PlayerName from './PlayerName.svelte';
 
   /** Height of the app header, if one is showing: phones keep the stack below it, clear of its buttons. */
   let { headerHeight = 0 }: { headerHeight?: number } = $props();
@@ -30,9 +31,9 @@
     untrack(() => toasts.setMax(max));
   });
 
-  /** Svelte action: a little sparkle as good news arrives. */
-  function sparkle(node: HTMLElement, kind: ToastKind) {
-    if (kind === 'info') requestAnimationFrame(() => node.isConnected && twinkle(node));
+  /** Svelte action: a little sparkle as good news arrives (gold round the creator's notice). */
+  function sparkle(node: HTMLElement, o: { kind: ToastKind; herald?: boolean }) {
+    if (o.kind === 'info') requestAnimationFrame(() => node.isConnected && (o.herald ? heraldNotice(node) : twinkle(node)));
   }
 </script>
 
@@ -82,9 +83,10 @@
     <div
       class="toast {t.kind}"
       class:held={t.held}
+      class:herald={t.herald}
       role="note"
       style:--life="{t.life}ms"
-      use:sparkle={t.kind}
+      use:sparkle={{ kind: t.kind, herald: t.herald }}
       animate:flip={{ duration: 260 }}
       in:fly={enter}
       out:fade={{ duration: 200 }}
@@ -101,8 +103,10 @@
       </span>
       <div class="body">
         {#if t.title}<p class="title">{t.title}</p>{/if}
-        {#if t.who}
-          <p class="msg name" style:color={t.who.hue === undefined ? null : playerColor(t.who.hue)}>{t.message}</p>
+        {#if t.who && t.herald}
+          <p class="msg"><b class="name"><PlayerName name={t.who.name} /></b> {t.message}</p>
+        {:else if t.who}
+          <p class="msg name" style:color={t.who.hue === undefined ? null : playerColor(t.who.hue)}><PlayerName name={t.message} /></p>
         {:else}
           <p class="msg">{t.message}</p>
         {/if}
@@ -181,6 +185,17 @@
     --lo: #6e1a10;
     --glow: rgba(224, 85, 63, 0.26);
     border-color: #4a2a22;
+  }
+  /* The creator's arrival: a gold flare over a ruby glow. */
+  .toast.herald {
+    --hi: #fbe7b5;
+    --c: #e2bf6e;
+    --lo: #7a1d22;
+    --glow: rgba(234, 106, 100, 0.24);
+    border-color: #5a3f22;
+  }
+  .toast.herald::after {
+    opacity: 0.8;
   }
   /* It arrives with a flare of its colour that settles into the panel. */
   @keyframes ignite {
@@ -290,7 +305,8 @@
     color: var(--text);
   }
   /* A player's name, in their colour (a spectator's in gold). */
-  .msg.name {
+  .msg.name,
+  .msg b.name {
     font-weight: 500;
     color: var(--gold-hi);
   }

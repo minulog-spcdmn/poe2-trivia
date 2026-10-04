@@ -6,7 +6,8 @@
   import ChooseCategory from './ChooseCategory.svelte';
   import QuestionView from './QuestionView.svelte';
   import Avatar from './Avatar.svelte';
-  import { sfx } from '../lib/sound';
+  import PlayerName from './PlayerName.svelte';
+  import { fireAmbience, sfx } from '../lib/sound';
   import { onMount } from 'svelte';
   import { deathmatchIntro, deathmatchMood, gameStart, turnBanner } from '../lib/fx/moments';
   import { resetStreaks } from '../lib/fx/streaks';
@@ -61,11 +62,15 @@
   onMount(() => {
     resetStreaks();
     gameStart();
-    return () => deathmatchMood(false);
+    return () => {
+      deathmatchMood(false);
+      fireAmbience(false);
+    };
   });
 
-  // The whole scene turns crimson for as long as a deathmatch lasts.
+  // The whole scene turns crimson, and a fire roars, for as long as a deathmatch lasts.
   $effect(() => deathmatchMood(!!dm));
+  $effect(() => fireAmbience(!!dm));
 
   // One colour for the banner's rules and glow and for its effects, which can't
   // read CSS variables (so the race colour is --unique-hi written out).
@@ -168,7 +173,7 @@
             {#if i > 0}<span class="vs">vs</span>{/if}
             <span class="face" in:fly={{ y: 20, duration: 500, delay: 300 + i * 150 }}>
               <Avatar name={p.name} hue={p.hue} size={56} />
-              <b>{p.name}</b>
+              <b><PlayerName name={p.name} /></b>
             </span>
           {/if}
         {/each}

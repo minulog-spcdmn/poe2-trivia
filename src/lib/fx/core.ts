@@ -6,7 +6,7 @@
 // reduced motion, or when WebGL2 isn't available; every call below is then a
 // cheap no-op, so callers never need to check.
 
-import { FxRenderer, SHAPE_FLOATS, ShapeType, type DialogLight } from './renderer';
+import { BEHIND_PICTURE, FxRenderer, SHAPE_FLOATS, ShapeType, type DialogLight, type Silhouette } from './renderer';
 import { ParticlePool, type ParticleSpec } from './particles';
 import { opacityOf } from '../opacity';
 import { dialogBox, openDialog } from '../behindDialog';
@@ -52,6 +52,11 @@ export type ShapeFrame = {
   color?: Vec3;
   /** Optional shape type override (a shape can change form as it goes). */
   type?: ShapeType;
+  /**
+   * The picture this shines from behind (its outline stays clear). One
+   * picture at a time: the first shape's; shapes naming another get none.
+   */
+  silhouette?: Silhouette | null;
 };
 
 export type ShapeSpec = {
@@ -365,8 +370,11 @@ function wake() {
   }
 }
 
-/** Shapes made of thin lines, which need every pixel. */
-const isCrisp = (s: LiveShape) => (s.f.type ?? s.type) === ShapeType.Sigil;
+/** Shapes made of thin lines or tiny points, which need every pixel (sigils, an aura's motes and runes). */
+const isCrisp = (s: LiveShape) => {
+  const type = s.f.type ?? s.type;
+  return type === ShapeType.Sigil || type === ShapeType.Orbit;
+};
 
 function writeShape(i: number, s: LiveShape, t: number) {
   const o = i * SHAPE_FLOATS;
@@ -452,9 +460,17 @@ function frame(nowMs: number) {
   if (!busy) show(false);
 }
 
+let frameNo = 0;
+
+/** Counts the frames effects are updated in, so values measured once per frame can be shared. */
+export function currentFrame() {
+  return frameNo;
+}
+
 /** Advances every effect by `dt` seconds and (if `render`) draws. Returns whether anything is still alive. */
 function simulate(dt: number, nowMs: number, render: boolean): boolean {
   if (!renderer || !pool) return false;
+  frameNo++;
   for (let i = 0; i < tasks.length; ) {
     const t = tasks[i];
     t.age += dt;
@@ -468,7 +484,7 @@ function simulate(dt: number, nowMs: number, render: boolean): boolean {
     else tasks.splice(i, 1);
   }
 
-  // Soft shapes are written first; thin-line shapes (sigils) last, and the
+  // Soft shapes are written first; thin-line shapes (sigils, orbits) last, and the
   // renderer draws those at full resolution so their strokes stay crisp.
   const visible: [LiveShape, number][] = [];
   shapes = shapes.filter((s) => {
@@ -498,10 +514,15 @@ function simulate(dt: number, nowMs: number, render: boolean): boolean {
   let nShapes = 0;
   let nCrisp = 0;
   let shapesCalm = true;
+  // (A picture with no size, hidden or scaled away, has no outline to keep clear.)
+  const ready = (sil?: Silhouette | null) => !!sil && sil.w > 0 && sil.h > 0 && sil.img.complete && sil.img.naturalWidth > 0;
+  const silhouette = visible.map(([s]) => s.f.silhouette).find(ready) ?? null;
   for (const crisp of [false, true]) {
     for (const [s, t] of visible) {
       if (isCrisp(s) !== crisp || nShapes >= MAX_SHAPES) continue;
-      writeShape(nShapes++, s, t);
+      writeShape(nShapes, s, t);
+      if (silhouette && s.f.silhouette?.img === silhouette.img) shapeData[nShapes * SHAPE_FLOATS + 11] += BEHIND_PICTURE;
+      nShapes++;
       if (crisp) nCrisp++;
       if (!s.calm) shapesCalm = false;
     }
@@ -522,7 +543,7 @@ function simulate(dt: number, nowMs: number, render: boolean): boolean {
   const busy = nParticles > 0 || nShapes > 0 || tasks.length > 0 || shake.trauma > 0 || shapes.length > 0 || pool.count > 0;
   if (!render) return busy;
   if (nParticles > 0 || nShapes > 0) {
-    renderer.draw([viewW, viewH], dpr, pool.instances, nParticles, shapeData, nShapes, nCrisp, dialogNow());
+    renderer.draw([viewW, viewH], dpr, pool.instances, nParticles, shapeData, nShapes, nCrisp, dialogNow(), silhouette);
     show(true);
   } else {
     renderer.clear();

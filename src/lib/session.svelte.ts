@@ -34,6 +34,9 @@ import { prepareMedia, shown, patchDelays, type PreparedMedia } from './media.sv
 import { sfx } from './sound';
 import { prefsFrom, roomPrefs, roomSettings, savePrefs } from './prefs';
 import { toasts, type ToastKind, type ToastOptions } from './toasts.svelte';
+import { creatorArrival } from './herald';
+import { RUBY } from './palette';
+import { CREATOR_TITLE } from './site';
 
 export const engine = new Engine(itemData as Item[], { fakes: fakeNames });
 
@@ -187,6 +190,10 @@ class Session {
   idle = $state(false);
   /** Host: the question (askedAt) whose art could not be loaded, so guests got no pictures. */
   private artFailedFor = $state(0);
+  /** Every player and spectator id this device has seen in the room, so only the creator's real arrival gets a notice (lib/herald.ts). */
+  private seen = new Set<string>();
+  /** Whom the state change under way announces, if anyone: their notice replaces the plain "joined" one. */
+  private heralded: string | null = null;
 
   private peer: Peer | null = null;
   private hostConn: DataConnection | null = null;
@@ -586,6 +593,8 @@ class Session {
     for (const m of this.released) this.sendMedia(conn, guest, m);
     const player = next.players.find((p) => p.id === playerId);
     const watcher = next.spectators?.find((o) => o.id === playerId);
+    // The creator's first arrival has a notice of its own (see onNewState).
+    if (this.heralded === playerId) return;
     if (player) this.flash(player.name, 'info', { title: 'Player joined', who: { name: player.name, hue: player.hue } });
     else if (watcher) this.flash(watcher.name, 'info', { title: 'Spectator joined', who: { name: watcher.name } });
   }
@@ -1054,8 +1063,18 @@ class Session {
     });
   }
 
-  /** Side effects that every device plays: sounds. */
+  /** Side effects that every device plays: sounds, and the notice of the creator's arrival. */
   private onNewState(prev: GameState | null, next: GameState) {
+    const arrival = creatorArrival(prev, next, this.seen);
+    this.heralded = arrival?.id ?? null;
+    // Online, everyone but herself is told who walked in. Her colour is
+    // ruby even while she only watches and has none yet.
+    if (arrival && this.mode !== 'local' && arrival.id !== this.myPlayerId)
+      this.flash(arrival.watching ? 'is watching' : 'has arrived', 'info', {
+        title: CREATOR_TITLE,
+        who: { name: arrival.name, hue: arrival.hue ?? RUBY },
+        herald: true,
+      });
     if (!prev) return;
     const me = this.myPlayerId;
     if ((prev.phase === 'lobby' || prev.phase === 'over') && (next.phase === 'choosing' || next.phase === 'question')) {
@@ -1237,6 +1256,8 @@ class Session {
     if (this.saveTimer) clearTimeout(this.saveTimer);
     this.saveTimer = null;
     this.priv = noPrivate();
+    this.seen.clear();
+    this.heralded = null;
     this.secretToPlayer = new Map();
     this.joins = new JoinGate();
     this.helloSecret = null;

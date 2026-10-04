@@ -19,6 +19,8 @@ export interface ToastOptions {
   who?: ToastWho;
   /** Stays up until closed or cleared, without a countdown: the reason a game just ended for you. */
   sticky?: boolean;
+  /** The creator's arrival (lib/herald.ts): gold and ruby, and the message follows her name ("has arrived"). */
+  herald?: boolean;
 }
 
 export interface Toast extends ToastOptions {
