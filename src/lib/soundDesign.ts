@@ -80,19 +80,20 @@ export const MOMENTS: Record<Sfx, Moment> = {
       { file: 'layer-metal-2', gain: -41, rate: 1.6, delay: 0, hp: 330, lp: 6483, send: 0.7 },
     ],
   },
-  // A patch of veiled art fizzles into being: a small magical flame catching
-  // (burn-ignite), a shower of tiny star glints as its grains sparkle in
-  // (burn-sparkle) and a sparkler's fizz dying away as the sparks fly
-  // (burn-sizzle). It plays every second or so while the art comes in, so it
-  // sits under the other moments.
+  // A patch of veiled art fizzles into being: the "crispy burn" mix from the
+  // Burn Sound Mixer. A crackling fire loop under a handheld sparkler's
+  // crackle, a fuse fizzing and a close-up sparkler spitting at the start;
+  // each file is trimmed and faded as it was mixed. It plays every second or
+  // so while the art comes in, so it sits under the other moments.
   burn: {
-    soften: 4,
-    varyPitch: 0.07,
+    soften: 5.5,
+    varyPitch: 0.18,
     varyGain: 1.5,
     layers: [
-      { file: 'burn-ignite', gain: -30, rate: 1, delay: 0, hp: 90, lp: 12000, send: 0.35 },
-      { file: 'burn-sparkle', gain: -40, rate: 1.05, delay: 40, hp: 1500, lp: 16000, send: 0.5 },
-      { file: 'burn-sizzle', gain: -34, rate: 1, delay: 60, hp: 1200, lp: 11000, send: 0.25 },
+      { file: 'burn-crackle', gain: -40, rate: 1, delay: 270, hp: 173, lp: 16000, send: 0.48 },
+      { file: 'burn-embers', gain: -37.5, rate: 1, delay: 0, hp: 60, lp: 16000, send: 0.96 },
+      { file: 'burn-fuse', gain: -40, rate: 1, delay: 140, hp: 55, lp: 16000, send: 0.3 },
+      { file: 'burn-sparkler', gain: -44.5, rate: 1, delay: 0, hp: 59, lp: 7176, send: 0.3 },
     ],
   },
   select: {
