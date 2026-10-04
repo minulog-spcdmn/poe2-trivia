@@ -1609,7 +1609,9 @@
     .head {
       height: auto;
       min-height: 54px;
-      padding: 0.3rem 1.6rem;
+      padding: 0.3rem 2.9rem;
+      /* The name plate's ends drawn smaller, to leave the name room. */
+      --end-scale: 0.84;
     }
     .head-text {
       flex-flow: row wrap;
