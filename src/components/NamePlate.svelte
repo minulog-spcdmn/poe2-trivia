@@ -1,22 +1,20 @@
 <script module lang="ts">
-  // The plate behind a unique's name, after the game's own header and
-  // engraved in the hand of the alchemist's circle (see docs/arcane-style.md
-  // and ArcaneCircle): fine gilt lines from exact geometry, shading by
-  // hatching on one side, the odd nick of wear, lines stopping short of
-  // every seal, and a soft, unbroken glow under it all.
+  // The plate behind a unique's name, after the game's own header: a dark
+  // bar in a copper frame whose ends are gothic tracery, every line a
+  // bevelled copper moulding (lit on its upper edge, shadowed below). The
+  // tracery is exact geometry, drawn with compasses (see
+  // docs/arcane-style.md), and it holds one of the alchemist's circle's two
+  // great seals at each end, the mouldings stopping short of it.
   // • The frame: a double rule, its corners cut like the panels' filigree,
   //   drawn out from the ends to meet under the name.
-  // • The ends, alike but for their seals. Two gothic ogees, one inside the
-  //   other, drawn with compasses: from a common foot an arc swells to the
-  //   crown and a reverse arc, tangent to it, draws in to a needle point
-  //   aimed at the name. Each is a moulding of two lines hatched on its
-  //   shaded side. A mouchette (a curved dagger of tracery, a head and two
-  //   arcs tangent to it) in each corner. Over the foot, one of the circle's
-  //   two great seals: Sol on the left, Luna on the right. A small ogee runs
-  //   on from each seal like a flame.
-  // • The field: a net of ogees, waves against their mirror images, each a
-  //   strap woven over and under the next as the circle's star is, with a
-  //   lozenge in every cell; faint, and fainter still under the name.
+  // • The ends, alike but for their seals (Sol on the left, Luna on the
+  //   right): two cusped ogees, one inside the other, springing from the
+  //   post and swelling in two lobes before drawing in, hollow, to a point
+  //   aimed at the name; and in each corner a mouchette, a teardrop of
+  //   tracery, its head under the rule and its tail on the post.
+  // • The field: an interlace of waves against their mirror images, each
+  //   strap crossing its neighbours in the rows above and below too, over
+  //   and under in turn; faint, as if cut into the dark.
 
   import { LUNA, LUNA_HATCH, SOL_RAYS } from '../lib/alchemy';
 
@@ -27,48 +25,45 @@
   const dist = (p: Pt, q: Pt) => Math.hypot(q[0] - p[0], q[1] - p[1]);
   const flipY = (pts: Pt[]): Pt[] => pts.map(([x, y]) => [x, -y]);
   const poly = (pts: Pt[]) => 'M' + pts.map(pt).join('L');
+  const deg = (v: number) => (v * Math.PI) / 180;
   /** The point at angle `a` (radians, screen coordinates) and radius `r` about `c`. */
   const on = (c: Pt, r: number, a: number): Pt => [c[0] + r * Math.cos(a), c[1] + r * Math.sin(a)];
-  /** Points along the arc about `c` of radius `r` from angle `a0` to `a1`, `step` apart (a pixel by default). */
-  const arc = (c: Pt, r: number, a0: number, a1: number, step = 1): Pt[] => {
-    const n = Math.max(4, Math.ceil((Math.abs(a1 - a0) * r) / step));
+  /** Points along the arc about `c` of radius `r` from angle `a0` to `a1`, about a pixel apart. */
+  const arc = (c: Pt, r: number, a0: number, a1: number): Pt[] => {
+    const n = Math.max(4, Math.ceil(Math.abs(a1 - a0) * r));
     return Array.from({ length: n + 1 }, (_, k) => on(c, r, a0 + ((a1 - a0) * k) / n));
+  };
+  /** Points along the arc from `p` to `q` that bulges out (to the left, going along) by `bulge` of the chord; a negative bulge curves in. */
+  const arcTo = (p: Pt, q: Pt, bulge: number): Pt[] => {
+    const c = dist(p, q);
+    const s = Math.abs(bulge) * c;
+    const r = (c * c) / (8 * s) + s / 2;
+    const [ux, uy] = [(q[0] - p[0]) / c, (q[1] - p[1]) / c];
+    const side = Math.sign(bulge);
+    const o: Pt = [(p[0] + q[0]) / 2 - uy * side * (r - s), (p[1] + q[1]) / 2 + ux * side * (r - s)];
+    const a0 = Math.atan2(p[1] - o[1], p[0] - o[0]);
+    let da = Math.atan2(q[1] - o[1], q[0] - o[0]) - a0;
+    da = Math.atan2(Math.sin(da), Math.cos(da));
+    return arc(o, r, a0, a0 + da);
   };
 
   // ---- strokes ------------------------------------------------------------------
 
-  // The wear on the plate: a nick every 30 units or so, 0.4 to 1.2 long, from
-  // a fixed seed so every plate is worn alike. Only the lines wear; the glow
-  // under them runs on unbroken.
-  let wearing = false;
-  let wearSeed = 5;
-  const wearRnd = () => (wearSeed = (wearSeed * 16807) % 2147483647) / 2147483647;
-
   /** A piece of a line, and where it runs along the whole (0 to 1). */
   type Part = { d: string; from: number; to: number };
 
-  /** A line through `pts`, broken where it passes within a hole (it stops short of a seal) and, when worn, nicked. */
+  /** A line through `pts`, broken where it passes within a hole (it stops short of a seal there). */
   function pieces(pts: Pt[], holes: Hole[] = []): Part[] {
     const run = [0];
     for (let i = 1; i < pts.length; i++) run.push(run[i - 1] + dist(pts[i - 1], pts[i]));
     const len = run.at(-1)!;
-    const nicks = wearing
-      ? Array.from({ length: Math.round((len / 30) * (0.4 + wearRnd() * 1.2)) }, () => {
-          const at = wearRnd() * len;
-          const w = 0.4 + wearRnd() * 0.8;
-          return [at - w / 2, at + w / 2];
-        })
-      : [];
     const parts: Part[] = [];
     let cur: number[] = [];
     const flush = () => {
       if (cur.length > 1) parts.push({ d: poly(cur.map((i) => pts[i])), from: run[cur[0]] / len, to: run[cur.at(-1)!] / len });
       cur = [];
     };
-    pts.forEach((p, i) => {
-      if (holes.some((h) => dist(p, h.c) < h.r) || nicks.some(([a, b]) => run[i] > a && run[i] < b)) flush();
-      else cur.push(i);
-    });
+    pts.forEach((p, i) => (holes.some((h) => dist(p, h.c) < h.r) ? flush() : cur.push(i)));
     flush();
     return parts;
   }
@@ -78,7 +73,7 @@
    * Timing for drawing a broken line in one stroke, as the circle does: each
    * piece starts when the pen reaches it and draws at the pen's pace, the pen
    * sweeping the whole in `t` seconds after `delay`, fast at first and
-   * slowing at the end. (A dash can't run on from one piece to the next.)
+   * slowing at the end.
    */
   const stroke = (parts: Part[], delay: number, t: number) => {
     const when = (y: number) => 1 - Math.sqrt(1 - Math.min(1, Math.max(0, y)));
@@ -90,61 +85,61 @@
   // In pixels: the plate's edge at x 0, its middle at y 0. Plates are 64 high.
 
   /** The seal's middle, `SOCKET_X` in from the plate's edge (the dialog's close button sits there). */
-  export const SOCKET_X = 17;
+  export const SOCKET_X = 14.5;
   const SEAL: Pt = [SOCKET_X, 0];
   /** The seal's ring; the circle draws its signs for a ring of 13. */
-  const SEAL_R = 12.5;
+  const SEAL_R = 10.5;
   const SIGN_SCALE = SEAL_R / 13;
-  const HOLES = [{ c: SEAL, r: SEAL_R + 1 }];
+  const HOLES = [{ c: SEAL, r: SEAL_R + 1.8 }];
 
   /**
-   * A gothic ogee lying on its side, drawn with compasses, as a moulding
-   * `band` wide. From the end's post at (`x0`, ±`foot`) an arc of radius
-   * `r1` swells out and round, like an onion dome, and a reverse arc
-   * tangent to it draws in to a needle point at `x1`. Returns the outline,
-   * the line inside it (the same arcs, `band` in), and hatching across the
-   * moulding on its shaded (lower) side.
+   * A cusped ogee lying on its side, drawn with compasses: from its foot on
+   * the post at `x0` it rises along an arc of height `h`, its edge broken
+   * into lobes (arcs bulging out, meeting in sharp cusps) at the fractions
+   * `knots` of the way, and the last stretch turns hollow to a point at `x1`.
+   * Its outline, from the foot round both sides.
    */
-  function ogee(x0: number, foot: number, x1: number, r1: number, band: number) {
-    const c1: Pt = [x0 + r1, -foot];
-    // The reverse arc's centre stands over the point, the two circles touching.
-    const dx = x1 - c1[0];
-    const r2 = (dx * dx + foot * foot - r1 * r1) / (2 * (r1 + foot));
-    const c2: Pt = [x1, -r2];
-    const knee = Math.atan2(c2[1] - c1[1], c2[0] - c1[0]) + 2 * Math.PI;
-    const back = Math.atan2(c1[1] - c2[1], c1[0] - c2[0]);
-    /** The upper side, `inset` in from the outline: the swell, and the reverse arc down to the axis. */
-    const side = (inset: number, step = 1) => {
-      const r = r2 + inset;
-      return {
-        swell: arc(c1, r1 - inset, Math.PI, knee, step),
-        draw: arc(c2, r, back, Math.PI - Math.asin(Math.min(1, r2 / r)), step),
-      };
-    };
-    const [outer, inner] = [side(0), side(band)];
-    const spaced = side(0, 1.25);
-    const whole = (t: { swell: Pt[]; draw: Pt[] }) => {
-      const top = [...t.swell, ...t.draw.slice(1)];
-      return [...top, ...flipY(top).reverse().slice(1)];
-    };
-    // Hatching: across the moulding, along the radii of the arcs it is
-    // drawn with, as finely spaced as on the circle.
-    const across = (pts: Pt[], c: Pt, inward: number) =>
-      pts.map((p) => {
-        const d = dist(p, c);
-        return [p, [p[0] + ((c[0] - p[0]) / d) * inward, p[1] + ((c[1] - p[1]) / d) * inward]] as [Pt, Pt];
-      });
-    const hatch = [...across(spaced.swell, c1, band * 0.85), ...across(spaced.draw, c2, -band * 0.85)]
-      .map(([p, q]) => [[p[0], -p[1]], [q[0], -q[1]]] as [Pt, Pt])
-      .filter(([p]) => !HOLES.some((o) => dist(p, o.c) < o.r + 0.6));
-    return { line: whole(outer), inner: whole(inner), hatch: hatch.map(([p, q]) => `M${pt(p)}L${pt(q)}`).join('') };
+  function ogee(x0: number, x1: number, h: number, knots: number[]): Pt[] {
+    // The arc it is set out on, through the foot, the point and its crown.
+    const L = x1 - x0;
+    const R = (L * L) / 4 / (2 * h) + h / 2;
+    const o: Pt = [x0 + L / 2, -h + R];
+    const a0 = Math.atan2(-o[1], x0 - o[0]);
+    const a1 = Math.atan2(-o[1], x1 - o[0]) + 2 * Math.PI;
+    const at = (t: number) => on(o, R, a0 + (a1 - a0) * t);
+    const ks = [0, ...knots, 1].map(at);
+    const top = ks.slice(1).flatMap((q, i) => arcTo(ks[i], q, i === ks.length - 2 ? -0.13 : 0.17).slice(i ? 1 : 0));
+    return [...top, ...flipY(top).reverse().slice(1)];
   }
+  const OUTER = ogee(3, 44, 21, [0.36, 0.68]);
+  const INNER = ogee(3, 38.5, 16, [0.42, 0.72]);
+  /** The innermost, from the seal's edge, a small dark lozenge pointing on at the name. */
+  const HEART = ogee(SEAL[0] + SEAL_R + 1.6, 33, 4.2, [0.5]);
 
-  // Two ogees, one inside the other, springing from the post either side of
-  // the seal, which sits in their swell.
-  const OGEES = [ogee(3, 9, 50, 15, 2), ogee(3, 7, 43, 11, 1.7)];
-  /** A lozenge on the outer ogee's point. */
-  const FINIAL = 'M48.4 0L51.4 -1.7L54.4 0L51.4 1.7Z';
+  /**
+   * A mouchette: a round head of radius `r` about `head`, and two arcs from
+   * the tail at `tail`, each tangent to the head (at angles `a1` and `a2`,
+   * the first the side facing the frame). Its outline, from the tail round
+   * the head and back.
+   */
+  function mouchette(head: Pt, r: number, tail: Pt, a1: number, a2: number): Pt[] {
+    /** The arc from the tail that touches the head at angle `a`. */
+    const flank = (a: number) => {
+      const u: Pt = [Math.cos(a), Math.sin(a)];
+      const p = on(head, r, a);
+      const d: Pt = [p[0] - tail[0], p[1] - tail[1]];
+      const R = (d[0] * d[0] + d[1] * d[1]) / (2 * (d[0] * u[0] + d[1] * u[1]));
+      const c: Pt = [p[0] - u[0] * R, p[1] - u[1] * R];
+      const t0 = Math.atan2(tail[1] - c[1], tail[0] - c[0]);
+      let t1 = Math.atan2(p[1] - c[1], p[0] - c[0]);
+      if (t1 - t0 > Math.PI) t1 -= 2 * Math.PI;
+      if (t0 - t1 > Math.PI) t1 += 2 * Math.PI;
+      return arc(c, Math.abs(R), t0, t1);
+    };
+    // Round the head the far way from the tail, from one flank to the other.
+    return [...flank(a1), ...arc(head, r, a1, a2 > a1 ? a2 : a2 + 2 * Math.PI).slice(1), ...flank(a2).reverse().slice(1)];
+  }
+  const LEAF = mouchette([15.5, -21.6], 4.2, [4.6, -12.5], deg(-150), deg(40));
 
   // The frame's corner, cut like the panels' filigree, with a lozenge in
   // the cut; the rules run on from it (see the markup).
@@ -152,73 +147,55 @@
   const CORNER_IN = 'M5.5 16.5V10L10 5.5H16';
   const LOZENGE = 'M5 1.9 8.1 5 5 8.1 1.9 5Z';
 
-  /** Everything at the end that wears, drawn twice: worn for the lines, whole for the glow under them. */
-  const drawing = (worn: boolean) => {
-    wearing = worn;
-    wearSeed = 5;
-    const line = (pts: Pt[], delay: number, t: number) => stroke(pieces(pts, HOLES), delay, t);
-    /** A secondary line: cut round the seal but never worn. */
-    const fine = (pts: Pt[], delay: number, t: number) => {
-      const was = wearing;
-      wearing = false;
-      const out = stroke(pieces(pts, HOLES), delay, t);
-      wearing = was;
-      return out;
-    };
-    return {
-      key: worn ? 'w' : 'c',
-      ogees: OGEES.map((o, k) => ({ line: line(o.line, 0.15 + k * 0.12, 0.9), inner: fine(o.inner, 0.3 + k * 0.12, 0.9) })),
-      ring: stroke(pieces(arc(SEAL, SEAL_R, -Math.PI / 2, 1.5 * Math.PI)), 0.3, 0.6),
-    };
+  const END = {
+    ogees: [OUTER, INNER, HEART].map((o, k) => stroke(pieces(o, HOLES), 0.15 + k * 0.15, 0.9)),
+    leaves: [LEAF, flipY(LEAF)].flatMap((l) => stroke(pieces(l, HOLES), 0.3, 0.7)),
+    ring: stroke(pieces(arc(SEAL, SEAL_R, -Math.PI / 2, 1.5 * Math.PI)), 0.3, 0.6),
   };
-  const CLEAN = drawing(false);
-  const WORN = drawing(true);
-  wearing = false;
-  type Drawing = typeof WORN;
-
-  const HOLLOW = `${poly(OGEES[0].line)}Z`;
+  /** The grounds the tracery is set into: darker inside the ogees, a deep red in the leaves. */
+  const GROUND = poly(OUTER) + 'Z';
+  const LEAF_GROUND = [LEAF, flipY(LEAF)].map((l) => poly(l) + 'Z').join('');
 
   // ---- the field ---------------------------------------------------------------
-  // Waves rising and falling against their mirror images, so that every cell
-  // between a wave and its mirror is an ogee lying on its side like the
-  // ends'. Each wave is a strap of two lines; where a wave crosses its
-  // mirror it goes over, then under at the next crossing, the strap
-  // underneath cut clear of the one on top.
+  // Waves against their mirror images, the rows closer together than the
+  // waves are tall, so that every strap crosses not just its own mirror but
+  // the mirrors in the rows above and below. Six crossings a wave, and the
+  // straps go over and under in turn along each, as the circle's star does.
 
-  const BAY = 36;
-  const AMP = 5.5;
-  const ROW = 14;
-  const W = 0.7;
+  const BAY = 40;
+  const AMP = 8.5;
+  const ROW = 11;
+  const W = 0.75;
   const GAP = 0.7;
-  const ROWS = [-1, 0, 1];
-  const waveLine = (c: number, sign: number): Pt[] =>
-    Array.from({ length: 145 }, (_, k) => [(k / 144) * BAY, c + sign * AMP * Math.sin((2 * Math.PI * k) / 144)] as Pt);
-  /** A strap's edge `side` (±1) of the wave, cut where it passes under its mirror. */
-  const strapEdge = (c: number, sign: number, side: number) => {
-    const mid = waveLine(c, sign);
-    const mirror = waveLine(c, -sign);
-    const edge = mid.map((p, i) => {
-      const [q, r] = [mid[Math.max(0, i - 1)], mid[Math.min(mid.length - 1, i + 1)]];
+  const ROWS = [-3, -2, -1, 0, 1, 2, 3];
+  /** Where along a wave (as an angle) it crosses a mirror in the next row up or down. */
+  const SKEW = Math.asin(ROW / (2 * AMP));
+  // Along a rising wave the crossings come at 0, SKEW, π - SKEW, π, π + SKEW
+  // and 2π - SKEW; it goes under at every second one. Its mirror goes under
+  // at the others.
+  const UNDER = { rise: [SKEW, Math.PI, 2 * Math.PI - SKEW], fall: [0, Math.PI - SKEW, Math.PI + SKEW, 2 * Math.PI] };
+  const wave = (c: number, sign: number): Pt[] =>
+    Array.from({ length: 241 }, (_, k) => [(k / 240) * BAY, c + sign * AMP * Math.sin((2 * Math.PI * k) / 240)] as Pt);
+  const STRANDS = ROWS.flatMap((r) => [1, -1].map((sign) => ({ sign, mid: wave(r * ROW, sign) })));
+  /** One edge of a strap, `side` (±1) of its wave, cut where it passes under another. */
+  const strapEdge = (s: (typeof STRANDS)[number], side: number) => {
+    const others = STRANDS.filter((o) => o.sign !== s.sign);
+    const under = s.sign > 0 ? UNDER.rise : UNDER.fall;
+    const pieces: Pt[][] = [[]];
+    s.mid.forEach((p, i) => {
+      const [q, r] = [s.mid[Math.max(0, i - 1)], s.mid[Math.min(s.mid.length - 1, i + 1)]];
       const len = dist(q, r);
-      return [p[0] - ((r[1] - q[1]) / len) * W * side, p[1] + ((r[0] - q[0]) / len) * W * side] as Pt;
+      const e: Pt = [p[0] - ((r[1] - q[1]) / len) * W * side, p[1] + ((r[0] - q[0]) / len) * W * side];
+      const theta = (2 * Math.PI * p[0]) / BAY;
+      const crossing = under.some((a) => Math.abs(theta - a) < 0.5);
+      const near = crossing && others.some((o) => o.mid.some((m) => Math.abs(m[0] - e[0]) < 3 && dist(m, e) < W + GAP));
+      if (near) {
+        if (pieces.at(-1)!.length) pieces.push([]);
+      } else pieces.at(-1)!.push(e);
     });
-    // The rising wave goes over at the ends of the bay and under in the middle; its mirror the other way.
-    const under = (x: number) => (sign > 0 ? Math.abs(x - BAY / 2) < BAY / 4 : Math.abs(x - BAY / 2) > BAY / 4);
-    const out: Pt[][] = [[]];
-    for (const p of edge) {
-      const near = Math.min(...mirror.map((m) => dist(p, m)));
-      if (under(p[0]) && near < W + GAP) {
-        if (out.at(-1)!.length) out.push([]);
-      } else out.at(-1)!.push(p);
-    }
-    return out.filter((q) => q.length > 1).map(poly).join('');
+    return pieces.filter((q) => q.length > 1).map(poly).join('');
   };
-  const NET = ROWS.flatMap((r) => [1, -1].flatMap((sign) => [1, -1].map((side) => strapEdge(r * ROW, sign, side)))).join('');
-  /** A lozenge in the middle of each cell between a wave and its mirror. */
-  const NET_BEADS = ROWS.flatMap((r) => [BAY / 4, (3 * BAY) / 4].map((x) => [x, r * ROW] as Pt))
-    .map(([x, y]) => `M${f(x - 1)} ${f(y)}L${f(x)} ${f(y - 1.6)}L${f(x + 1)} ${f(y)}L${f(x)} ${f(y + 1.6)}Z`)
-    .join('');
-  const NET_RULES = [-19, -21, 19, 21].map((y) => `M-1 ${y}H${BAY + 1}`).join('');
+  const WEAVE = STRANDS.flatMap((s) => [1, -1].map((side) => strapEdge(s, side))).join('');
 </script>
 
 <script lang="ts">
@@ -232,28 +209,29 @@
   const id = (n: string) => `${uid}-${n}`;
 </script>
 
-{#snippet strokes(list: Stroke, cls: string)}
-  {#each list as { d, delay, t }, k (k)}
-    <path {d} class="draw piece {cls}" style:--d={delay} style:--t={t} pathLength="100" />
+<!-- A moulding: a shadow under it, the copper, and a glint along its upper edge. -->
+{#snippet moulding(list: Stroke)}
+  {#each ['shade', 'metal', 'glint'] as layer (layer)}
+    {#each list as { d, delay, t }, k (k)}
+      <path {d} class="draw piece {layer}" style:--d={delay} style:--t={t} pathLength="100" />
+    {/each}
   {/each}
 {/snippet}
 
 <!-- One end of the plate. -->
-{#snippet cap(p: Drawing, sign: 'sol' | 'luna' | 'empty')}
+{#snippet cap(sign: 'sol' | 'luna' | 'empty')}
   <g class="end">
-    <path d={HOLLOW} class="hollow" />
-    {#each p.ogees as o, k (k)}
-      {@render strokes(o.line, 'gilt')}
-      {@render strokes(o.inner, 'dim')}
-      <path d={OGEES[k].hatch} class="hatch fade" style:--d="{0.8 + k * 0.1}s" />
+    <path d={GROUND} class="ground" />
+    <path d={LEAF_GROUND} class="ground leaf" />
+    {#each END.ogees as o, k (k)}
+      {@render moulding(o)}
     {/each}
-    <path d={FINIAL} class="solid fade" style:--d="0.9s" />
+    {@render moulding(END.leaves)}
     <!-- The seal, pressed in like the circle's. -->
     <g class="seal" style:--d="0.3s">
-      <circle cx={SEAL[0]} cy={SEAL[1]} r={SEAL_R + 0.8} class="well" />
+      <circle cx={SEAL[0]} cy={SEAL[1]} r={SEAL_R + 1} class="well" />
       <circle cx={SEAL[0]} cy={SEAL[1]} r={SEAL_R + 3.5} class="bloom" style:fill="url(#{id('bloom')})" />
-      {@render strokes(p.ring, 'gilt')}
-      <circle cx={SEAL[0]} cy={SEAL[1]} r={SEAL_R - 1.5} class="draw dim ring" style:--d="0.4s" style:--t="0.6s" pathLength="100" />
+      {@render moulding(END.ring)}
       {#if sign !== 'empty'}
         <g class="sign" style:--d="0.7s" transform="translate({pt(SEAL)}) scale({f(SIGN_SCALE)})">
           {#if sign === 'sol'}
@@ -273,62 +251,58 @@
   </g>
 {/snippet}
 
-{#snippet plate(p: Drawing)}
-  <!-- The ends, round the middle. -->
-  <svg y="50%" overflow="visible">{@render cap(p, 'sol')}</svg>
-  <svg x="100%" y="50%" overflow="visible"><g transform="scale(-1 1)">{@render cap(p, end)}</g></svg>
-  <!-- The frame, from the corners: the rules run from each end to the middle. -->
-  {#each [false, true] as right (right)}
-    {#each [false, true] as bottom (bottom)}
-      <svg x={right ? '100%' : 0} y={bottom ? '100%' : 0} overflow="visible">
-        <g transform="scale({right ? -1 : 1} {bottom ? -1 : 1})">
-          <path d={CORNER} class="draw gilt" style:--t="0.4s" pathLength="100" />
-          <path d={CORNER_IN} class="draw dim" style:--t="0.4s" pathLength="100" />
-          <path d={LOZENGE} class="solid fade" style:--d="0.3s" />
-          <line x1="14" y1="2.5" x2="50%" y2="2.5" class="draw rule" style:--d="0.3s" pathLength="100" />
-          <line x1="16" y1="5.5" x2="50%" y2="5.5" class="draw dim" style:--d="0.4s" pathLength="100" />
-          <line x1="14" y1="2.5" x2="50%" y2="2.5" class="spark" pathLength="100" />
-        </g>
-      </svg>
-    {/each}
-  {/each}
-{/snippet}
-
-<span class="plate" class:lit aria-hidden="true" style:--gilt="url(#{id('gilt')})">
+<span class="plate" class:lit aria-hidden="true" style:--copper="url(#{id('copper')})">
   <svg class="field" width="100%" height="100%">
     <defs>
-      <clipPath id={id('band')}><rect x="-1" y="-19" width={BAY + 2} height="38" /></clipPath>
-      <pattern id={id('net')} patternUnits="userSpaceOnUse" width={BAY} height="64" x="50%" y="-32">
+      <clipPath id={id('band')}><rect x="-1" y="-21" width={BAY + 2} height="42" /></clipPath>
+      <pattern id={id('weave')} patternUnits="userSpaceOnUse" width={BAY} height="64" x="50%" y="-32">
         <g transform="translate(0 32)">
-          <g clip-path="url(#{id('band')})">
-            <path d={NET} />
-            <path d={NET_BEADS} class="bead" />
-          </g>
-          <path d={NET_RULES} />
+          <path d={WEAVE} clip-path="url(#{id('band')})" />
         </g>
       </pattern>
     </defs>
     <svg y="50%" overflow="visible">
-      <rect y="-32" width="100%" height="64" fill="url(#{id('net')})" />
+      <rect y="-32" width="100%" height="64" fill="url(#{id('weave')})" />
     </svg>
   </svg>
-  <!-- The lines twice, as on the circle: a soft copy for the glow, unworn, and the lines. -->
-  <svg class="art glow" width="100%" height="100%">{@render plate(CLEAN)}</svg>
   <svg class="art" width="100%" height="100%">
     <defs>
-      <!-- Gilt as on the panels' corners: bright where it is lit from above, shading off below. -->
-      <linearGradient id={id('gilt')} gradientUnits="userSpaceOnUse" x1="0" y1="-30" x2="0" y2="30">
-        <stop offset="0" stop-color="#f6e3ad" />
-        <stop offset="0.45" stop-color="#d9a45a" />
-        <stop offset="1" stop-color="#8f6630" />
+      <!-- Copper, lit from above: bright on top, deep below. -->
+      <linearGradient id={id('copper')} gradientUnits="userSpaceOnUse" x1="0" y1="-28" x2="0" y2="28">
+        <stop offset="0" stop-color="#f4bb84" />
+        <stop offset="0.4" stop-color="#cf8148" />
+        <stop offset="1" stop-color="#7a3a18" />
       </linearGradient>
       <radialGradient id={id('bloom')}>
-        <stop offset="0" stop-color="#f7c271" stop-opacity="0.9" />
-        <stop offset="0.5" stop-color="#e59a50" stop-opacity="0.4" />
-        <stop offset="1" stop-color="#e59a50" stop-opacity="0" />
+        <stop offset="0" stop-color="#f7a860" stop-opacity="0.9" />
+        <stop offset="0.5" stop-color="#d9702e" stop-opacity="0.4" />
+        <stop offset="1" stop-color="#d9702e" stop-opacity="0" />
       </radialGradient>
     </defs>
-    {@render plate(WORN)}
+    <!-- The ends, round the middle. -->
+    <svg y="50%" overflow="visible">{@render cap('sol')}</svg>
+    <svg x="100%" y="50%" overflow="visible"><g transform="scale(-1 1)">{@render cap(end)}</g></svg>
+    <!-- The frame, from the corners: the rules run from each end to the middle.
+         Layer by layer, so no corner's shadow falls over another's metal. -->
+    {#each ['shade', 'metal', 'glint', 'inlay'] as layer (layer)}
+      {#each [false, true] as right (right)}
+        {#each [false, true] as bottom (bottom)}
+          <svg x={right ? '100%' : 0} y={bottom ? '100%' : 0} overflow="visible">
+            <g transform="scale({right ? -1 : 1} {bottom ? -1 : 1})">
+              {#if layer === 'inlay'}
+                <path d={CORNER_IN} class="draw fine" style:--t="0.4s" pathLength="100" />
+                <line x1="16" y1="5.5" x2="50%" y2="5.5" class="draw rule fine" style:--d="0.4s" pathLength="100" />
+                <path d={LOZENGE} class="solid fade" style:--d="0.3s" />
+                <line x1="14" y1="2.5" x2="50%" y2="2.5" class="spark" pathLength="100" />
+              {:else}
+                <path d={CORNER} class="draw {layer}" style:--t="0.4s" pathLength="100" />
+                <line x1="14" y1="2.5" x2="50%" y2="2.5" class="draw rule {layer}" style:--d="0.3s" pathLength="100" />
+              {/if}
+            </g>
+          </svg>
+        {/each}
+      {/each}
+    {/each}
   </svg>
 </span>
 
@@ -339,16 +313,13 @@
     z-index: 0;
     overflow: hidden;
     pointer-events: none;
-    /* Old gold, as on the circle. */
-    --ink: #d9a45a;
-    /* A warm glow behind the name, darker towards the ends. */
+    /* Near black, faintly warm, a touch lighter in the upper half, as in the game. */
     background:
-      radial-gradient(ellipse 40% 80% at 50% 50%, rgba(224, 138, 68, 0.24), transparent 72%),
-      linear-gradient(90deg, rgba(0, 0, 0, 0.5), transparent 18%, transparent 82%, rgba(0, 0, 0, 0.5)),
-      linear-gradient(180deg, #3a2210, #26150a 55%, #1a0e06);
+      radial-gradient(ellipse 45% 90% at 50% 50%, rgba(160, 80, 30, 0.12), transparent 75%),
+      linear-gradient(180deg, #2a1d17, #21160f 48%, #160e0a 52%, #120b08);
     box-shadow:
-      inset 0 0 16px rgba(0, 0, 0, 0.5),
-      inset 0 -1px 0 #6b4520;
+      inset 0 0 14px rgba(0, 0, 0, 0.6),
+      inset 0 -1px 0 #5a3418;
   }
   .field,
   .art {
@@ -360,95 +331,60 @@
     transform: scale(var(--end-scale, 1));
   }
 
-  /* The net: faint, gone under the ends and fainter under the name. */
+  /* The interlace: faint, as if cut into the dark, and gone under the ends. */
   .field {
-    opacity: 0.2;
-    mask-image: linear-gradient(
-      90deg,
-      transparent 52px,
-      #000 92px,
-      rgba(0, 0, 0, 0.4) 38%,
-      rgba(0, 0, 0, 0.4) 62%,
-      #000 calc(100% - 92px),
-      transparent calc(100% - 52px)
-    );
+    opacity: 0.16;
+    mask-image: linear-gradient(90deg, transparent 40px, #000 70px, #000 calc(100% - 70px), transparent calc(100% - 40px));
     animation: fade 1.2s 0.3s ease-out both;
   }
   pattern path {
     fill: none;
-    stroke: var(--ink);
-    stroke-width: 0.45;
-  }
-  pattern .bead {
-    fill: var(--ink);
-    stroke: none;
+    stroke: #c47a44;
+    stroke-width: 0.5;
   }
 
-  /* Geometry is cut, not painted: butt ends, mitred corners. */
   path,
   circle,
   line {
     fill: none;
-    stroke-linecap: butt;
-    stroke-linejoin: miter;
-    stroke-miterlimit: 12;
-  }
-  .gilt {
-    stroke: var(--gilt);
-    stroke-width: 1;
-  }
-  .rule {
-    stroke: #e3b56e;
-    stroke-width: 1;
-  }
-  .dim {
-    stroke: #8c6534;
-    stroke-width: 0.55;
-  }
-  .hatch {
-    stroke: #a87c42;
-    stroke-width: 0.35;
     stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  /* A copper moulding, bevelled: a dark shadow below, the metal, a glint above. */
+  /* Opaque, so where the frame's halves overlap under the name it doesn't show. */
+  .shade {
+    stroke: #090403;
+    stroke-width: 3.2;
+    transform: translate(0, 0.7px);
+  }
+  .metal {
+    stroke: var(--copper);
+    stroke-width: 1.9;
+  }
+  .glint {
+    stroke: #f5c697;
+    stroke-width: 0.45;
+    transform: translate(0, -0.5px);
+  }
+  /* The rules meet under the name; square ends overlap there, so the join doesn't show. */
+  .rule {
+    stroke-linecap: square;
+  }
+  .fine {
+    stroke: #8a4a24;
+    stroke-width: 0.8;
   }
   .solid {
-    fill: #f1d99b;
+    fill: #f0b47c;
   }
-  /* A circle has no ends, but its drawing dash does. */
-  .ring {
-    stroke-linecap: round;
+  .ground {
+    fill: rgba(8, 4, 2, 0.55);
   }
-  /* The end is set into a darker ground. */
-  .hollow {
-    fill: rgba(10, 5, 2, 0.5);
+  .ground.leaf {
+    fill: #3a150a;
   }
   .well {
-    fill: #0d0703;
-  }
-
-  /* The glow: the same lines, unworn, wide and faint, breathing (no filter,
-     so nothing repaints). */
-  .glow {
-    opacity: 0.2;
-    animation:
-      glow-in 1.4s 0.5s ease-out both,
-      breathe-glow 6s 1.9s ease-in-out infinite alternate;
-  }
-  .glow .gilt,
-  .glow .rule {
-    stroke: var(--ink);
-    stroke-width: 2;
-  }
-  .glow .dim,
-  .glow .hatch {
-    stroke: var(--ink);
-    stroke-width: 1;
-  }
-  .glow .hollow,
-  .glow .well,
-  .glow .bloom,
-  .glow .spark,
-  .glow .solid {
-    display: none;
+    fill: #0c0603;
   }
 
   /* The signs, engraved as on the circle: dark until the item is known,
@@ -458,25 +394,16 @@
   }
   .sign :global(*) {
     fill: none;
-    stroke: #6e4a2a;
-    stroke-width: 0.85;
+    stroke: #6a3a1e;
+    stroke-width: 0.9;
     vector-effect: non-scaling-stroke;
-    stroke-linecap: round;
-    stroke-linejoin: round;
     transition: stroke 0.8s;
   }
   .sign .hatch {
-    stroke-width: 0.4;
+    stroke-width: 0.45;
   }
   .lit .sign :global(*) {
-    stroke: #f6e3ad;
-  }
-  .glow .sign :global(*) {
-    stroke: transparent;
-    stroke-width: 2;
-  }
-  .lit .glow .sign :global(*) {
-    stroke: #f0b862;
+    stroke: #ffd2a0;
   }
   .bloom {
     opacity: 0;
@@ -510,7 +437,7 @@
   /* A spark that runs along the outer rules, from the ends to the middle, as the seals light. */
   .spark {
     stroke: #fff0d6;
-    stroke-width: 1.1;
+    stroke-width: 1.2;
     stroke-dasharray: 7 200;
     stroke-dashoffset: 7;
     opacity: 0;
@@ -527,25 +454,6 @@
   @keyframes fade {
     from {
       opacity: 0;
-    }
-  }
-  @keyframes glow-in {
-    from {
-      opacity: 0;
-    }
-    55% {
-      opacity: 0.38;
-    }
-    to {
-      opacity: 0.28;
-    }
-  }
-  @keyframes breathe-glow {
-    from {
-      opacity: 0.28;
-    }
-    to {
-      opacity: 0.1;
     }
   }
   @keyframes flare {
