@@ -130,6 +130,17 @@
 </script>
 
 <div class="home">
+  <!-- Out of the way of starting a game, where the in-game header keeps its tools. -->
+  <button class="codex-entry" onclick={openCodex} disabled={connecting} in:fade={{ duration: 600, delay: 700 }}>
+    <svg viewBox="0 0 24 24" aria-hidden="true"
+      ><path d="M12 6.5C10.2 5.2 7.6 4.6 4 4.8v13.4c3.6-.2 6.2.4 8 1.7 1.8-1.3 4.4-1.9 8-1.7V4.8c-3.6-.2-6.2.4-8 1.7zM12 6.5v13.4" /></svg
+    >
+    <span class="codex-text">
+      <span class="codex-label">Codex</span>
+      {#if discovered}<span class="codex-count" in:fade={{ duration: 300 }}>{discovered} / {total}</span>{/if}
+    </span>
+  </button>
+
   <div class="hero">
     <div class="showcase" aria-hidden="true">
       {#each showcase as it, i (it.id)}
@@ -201,14 +212,6 @@
       Play hot-seat on this device
     </button>
 
-    <button class="codex-link" onclick={openCodex} disabled={connecting}>
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5C4 4.7 4.7 4 5.5 4H11v16H5.5c-.8 0-1.5-.7-1.5-1.5zM20 5.5c0-.8-.7-1.5-1.5-1.5H13v16h5.5c.8 0 1.5-.7 1.5-1.5z" /></svg>
-      <span>Codex</span>
-      {#if discovered !== null}
-        <small in:fade={{ duration: 200 }}>{discovered ? `${discovered} / ${total} discovered` : 'every unique you meet, recorded'}</small>
-      {/if}
-    </button>
-
     {#if connecting}
       <div class="connecting" transition:fade={{ duration: 200 }}>
         <span class="rune" use:portalOn></span>
@@ -244,7 +247,76 @@
 </div>
 
 <style>
+  .codex-entry {
+    position: absolute;
+    top: 1rem;
+    right: 1.25rem;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    height: 38px;
+    padding: 0 1rem 0 0.4rem;
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px solid var(--line);
+    border-radius: 19px;
+    cursor: pointer;
+    color: var(--muted);
+    box-shadow: inset 0 1px 0 rgba(255, 220, 150, 0.06);
+    transition:
+      color 0.2s,
+      border-color 0.2s,
+      box-shadow 0.25s,
+      transform 0.2s var(--ease-out);
+  }
+  .codex-entry:hover:not(:disabled) {
+    color: var(--gold-hi);
+    border-color: var(--gold-lo);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 220, 150, 0.1),
+      0 0 16px rgba(201, 164, 92, 0.3);
+    transform: translateY(-1px);
+  }
+  .codex-entry:active:not(:disabled) {
+    transform: scale(0.96);
+  }
+  .codex-entry:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+  .codex-entry svg {
+    width: 28px;
+    height: 28px;
+    padding: 5px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(175, 96, 37, 0.35), transparent 70%);
+    fill: none;
+    stroke: var(--gold);
+    stroke-width: 1.5;
+    stroke-linejoin: round;
+    filter: drop-shadow(0 0 4px rgba(224, 138, 68, 0.5));
+  }
+  .codex-text {
+    display: flex;
+    align-items: baseline;
+    gap: 0.55rem;
+  }
+  .codex-label {
+    font-family: var(--font-cinzel);
+    font-weight: 700;
+    font-size: 0.78rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+  .codex-count {
+    font-family: var(--font-cinzel);
+    font-size: 0.72rem;
+    letter-spacing: 0.06em;
+    color: var(--gold);
+  }
+
   .home {
+    position: relative;
     /* The floating showcase items reach past the screen edges; never scroll sideways for them. */
     overflow-x: clip;
     min-height: 100dvh;
@@ -455,48 +527,6 @@
   }
   .wide {
     width: 100%;
-  }
-
-  .codex-link {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.55rem;
-    width: 100%;
-    margin-top: 0.8rem;
-    padding: 0.4rem;
-    background: none;
-    border: 0;
-    cursor: pointer;
-    color: var(--gold);
-    transition: color 0.2s;
-  }
-  .codex-link:hover:not(:disabled) {
-    color: var(--gold-hi);
-  }
-  .codex-link:disabled {
-    opacity: 0.5;
-    cursor: default;
-  }
-  .codex-link svg {
-    width: 17px;
-    height: 17px;
-    fill: none;
-    stroke: currentColor;
-    stroke-width: 1.6;
-    stroke-linejoin: round;
-  }
-  .codex-link span {
-    font-family: var(--font-display);
-    font-weight: 700;
-    font-size: 0.85rem;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-  }
-  .codex-link small {
-    font-size: 0.95rem;
-    font-style: italic;
-    color: var(--muted);
   }
 
   .connecting {

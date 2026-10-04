@@ -70,8 +70,8 @@
   }
 
   const gs = $derived(session.state);
-  // The codex opens from the start page and after a game; never mid-game, where it would be a cheat sheet.
-  const codexAllowed = $derived(!session.mode || !gs || gs.phase === 'over');
+  // The codex opens from the start page only: in a room it would be a cheat sheet.
+  const codexAllowed = $derived(!session.mode || !gs);
   const screen = $derived(
     codexRoute.open && codexAllowed
       ? 'codex'
@@ -83,12 +83,11 @@
             ? 'over'
             : 'game',
   );
-  // The host started the next game (or a game was resumed): back to it.
+  // A room was joined or resumed meanwhile: back to it.
   $effect(() => {
     if (codexRoute.open && !codexAllowed) closeCodex();
   });
-  // The start page and the codex have no game header.
-  const bare = $derived(screen === 'home' || screen === 'codex');
+  const codex = $derived(screen === 'codex');
 
   // Each screen starts at the top (a guest who scrolled down to the join
   // form shouldn't land halfway down the lobby).
@@ -122,14 +121,16 @@
 <Background />
 
 <div class="shell" data-behind-dialog bind:this={shell}>
-  {#if !bare}
+  {#if screen !== 'home'}
     <header in:fade={{ duration: 300 }} bind:offsetHeight={headerHeight}>
-      <button class="brand" onclick={() => (confirmLeave = true)} title="Leave game">
+      <button class="brand" onclick={() => (codex ? closeCodex() : (confirmLeave = true))} title={codex ? 'Back to the start' : 'Leave game'}>
         <svg class="brand-mark" viewBox="20 0 400 391" aria-hidden="true"><path d="M224 390Q255 331 301.0 283.5Q347 236 377 218L407 200L220 -1Q164 31 116.5 82.5Q69 134 50 169L31 204Z" fill="currentColor" /></svg>
         <span>PoE2.Quest</span>
       </button>
       <div class="meta">
-        {#if gs && screen === 'game'}
+        {#if codex}
+          <span>Codex</span>
+        {:else if gs && screen === 'game'}
           {#if session.code && !session.hideCode}
             <span>Room <b>{session.code}</b></span>
             <span class="dot">•</span>
@@ -198,9 +199,15 @@
             >
           </button>
         {/if}
-        <button class="icon-btn" onclick={() => (confirmLeave = true)} title="Leave" aria-label="Leave game">
-          <svg viewBox="0 0 24 24"><path d="M14 4h5v16h-5M10 8l-4 4 4 4M6 12h10" /></svg>
-        </button>
+        {#if codex}
+          <button class="icon-btn" onclick={closeCodex} title="Close the codex" aria-label="Close the codex">
+            <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18" /></svg>
+          </button>
+        {:else}
+          <button class="icon-btn" onclick={() => (confirmLeave = true)} title="Leave" aria-label="Leave game">
+            <svg viewBox="0 0 24 24"><path d="M14 4h5v16h-5M10 8l-4 4 4 4M6 12h10" /></svg>
+          </button>
+        {/if}
       </div>
     </header>
   {/if}
@@ -235,7 +242,7 @@
   {/if}
 </div>
 
-<Toasts headerHeight={bare ? 0 : headerHeight} />
+<Toasts headerHeight={screen === 'home' ? 0 : headerHeight} />
 
 <FxLayer />
 

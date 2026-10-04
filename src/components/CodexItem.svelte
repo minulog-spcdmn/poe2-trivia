@@ -6,9 +6,13 @@
   import { accuracy } from '../lib/codexStats';
   import { itemImage } from '../lib/ui';
   import { dialogBackdrop } from '../lib/behindDialog';
+  import { backdropShadow } from '../lib/backdropShadow';
+  import { artRevealed } from '../lib/fx/moments';
   import type { Item } from '../lib/game';
   import ArtImage from './ArtImage.svelte';
+  import ArcaneCircle from './ArcaneCircle.svelte';
 
+  // One item of the codex, as a tooltip like the one the game reveals it in.
   let { item, codex, onclose, onopen }: { item: Item; codex: Codex; onclose: () => void; onopen: (item: Item) => void } = $props();
 
   const entry = $derived(codex.items[item.id]);
@@ -27,16 +31,23 @@
   );
 
   const date = (t: number) => new Date(t).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
-  const pct = (t: Tally) => {
-    const a = accuracy(t);
-    return a === null ? '' : `${Math.round(a * 100)}%`;
-  };
+  const times = (n: number) => (n === 1 ? 'once' : n === 2 ? 'twice' : `${n} times`);
+  const score = (t: Tally) => `${t.ok} of ${t.n} (${Math.round((accuracy(t) ?? 0) * 100)}%)`;
 
   let box = $state<HTMLElement>();
+  let art = $state<HTMLElement>();
   onMount(() => {
     const before = document.activeElement as HTMLElement | null;
     box?.focus();
     return () => before?.focus?.();
+  });
+  // Each item that opens comes in with the flare the game reveals art with.
+  $effect(() => {
+    void item.id;
+    const el = art;
+    if (!el) return;
+    const t = setTimeout(() => artRevealed(el), 200);
+    return () => clearTimeout(t);
   });
 
   /** Escape closes; Tab keeps cycling through the dialog's own buttons. */
@@ -63,241 +74,326 @@
 
 {#snippet related(title: string, list: { item: Item; n: number }[])}
   {#if list.length}
-    <section class="related">
-      <h3>{title}</h3>
-      <ul>
-        {#each list as r (r.item.id)}
-          <li>
-            {#if codex.items[r.item.id]}
-              <button class="pick" onclick={() => onopen(r.item)}>
-                <img src={itemImage(r.item.id)} alt="" loading="lazy" />
-                <span>{r.item.name}</span>
-              </button>
-            {:else}
-              <span class="pick">
-                <img src={itemImage(r.item.id)} alt="" loading="lazy" />
-                <span>{r.item.name}</span>
-              </span>
-            {/if}
+    <div class="sep" aria-hidden="true"></div>
+    <p class="label">{title}</p>
+    <ul class="related">
+      {#each list as r (r.item.id)}
+        <li>
+          <button class="pick" onclick={() => onopen(r.item)} disabled={!codex.items[r.item.id]} title={codex.items[r.item.id] ? `Open ${r.item.name}` : undefined}>
+            <img src={itemImage(r.item.id)} alt="" loading="lazy" />
+            <span>{r.item.name}</span>
             <b>{r.n}×</b>
-          </li>
-        {/each}
-      </ul>
-    </section>
+          </button>
+        </li>
+      {/each}
+    </ul>
   {/if}
 {/snippet}
 
 <div class="backdrop" use:dialogBackdrop transition:fade={{ duration: 150 }} onclick={onclose} role="presentation">
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <div
-    class="sheet panel"
+    class="tooltip"
     bind:this={box}
+    use:backdropShadow={{ fill: 'linear' }}
     transition:fly={{ y: 20, duration: 250 }}
     onclick={(e) => e.stopPropagation()}
     {onkeydown}
     role="dialog"
     aria-modal="true"
-    aria-labelledby="codex-item-title"
+    aria-labelledby="codex-item-name"
     tabindex="-1"
   >
-    <div class="top">
-      <div class="art">
+    <div class="head">
+      {#key item.id}
+        <div class="head-text" in:fade={{ duration: 250 }}>
+          <span class="iname" id="codex-item-name">{item.name}</span>
+          <span class="ibase">{item.base}</span>
+        </div>
+      {/key}
+      <button class="close" onclick={onclose} aria-label="Close" title="Close">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
+      </button>
+    </div>
+
+    <div class="art" bind:this={art} use:backdropShadow={{ fill: 'stage' }}>
+      <ArcaneCircle />
+      <div class="frame">
         {#key item.id}
-          <ArtImage src={itemImage(item.id)} alt={item.name} scale={1.4} />
+          <ArtImage src={itemImage(item.id)} alt={item.name} float />
         {/key}
-      </div>
-      <div class="who">
-        <h2 id="codex-item-title">{item.name}</h2>
-        <p class="base">{item.base}</p>
-        <p class="muted where">{item.group} • {item.category}</p>
       </div>
     </div>
 
-    {#if entry}
-      <dl class="facts">
-        <div>
-          <dt>Seen</dt>
-          <dd>{entry.seen}×</dd>
-        </div>
-        <div>
-          <dt>First met</dt>
-          <dd>{date(entry.first)}</dd>
-        </div>
-        <div>
-          <dt>Last met</dt>
-          <dd>{date(entry.last)}</dd>
-        </div>
-        <div>
-          <dt>Name the art</dt>
-          <dd>{#if entry.name.n}{entry.name.ok} of {entry.name.n} <small>{pct(entry.name)}</small>{:else}<small>no answers</small>{/if}</dd>
-        </div>
-        <div>
-          <dt>Find the art</dt>
-          <dd>{#if entry.art.n}{entry.art.ok} of {entry.art.n} <small>{pct(entry.art)}</small>{:else}<small>no answers</small>{/if}</dd>
-        </div>
-      </dl>
-    {/if}
-
-    {@render related('You took it for', tookItFor)}
-    {@render related('You took these for it', tookForIt)}
-
-    <footer>
-      <button class="btn primary" onclick={onclose}>Close</button>
-    </footer>
+    <div class="body">
+      <p class="kind">{item.group} • {item.category}</p>
+      {#if entry}
+        <div class="sep" aria-hidden="true"></div>
+        <ul class="lines">
+          <li>Met <b>{times(entry.seen)}</b></li>
+          <li>
+            {#if entry.first === entry.last}Met on <b>{date(entry.first)}</b>{:else}First met <b>{date(entry.first)}</b>, last <b>{date(entry.last)}</b>{/if}
+          </li>
+          <li>Named from its art: {#if entry.name.n}<b>{score(entry.name)}</b>{:else}<i>never asked</i>{/if}</li>
+          <li>Found from its name: {#if entry.art.n}<b>{score(entry.art)}</b>{:else}<i>never asked</i>{/if}</li>
+        </ul>
+      {/if}
+      {@render related('You took it for', tookItFor)}
+      {@render related('You took these for it', tookForIt)}
+    </div>
   </div>
 </div>
 
 <style>
+  /* The page behind scrolls the dialog on a short screen, so it never shows a scrollbar of its own. */
   .backdrop {
     position: fixed;
     inset: 0;
     /* Below the effects layer, like the leave dialog (App.svelte). */
     z-index: 94;
     display: grid;
-    place-items: center;
     padding: 1rem;
+    overflow-y: auto;
+    scrollbar-width: none;
   }
-  .sheet {
+  .backdrop::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* PoE-style item tooltip, as in the game (QuestionView). */
+  .tooltip {
+    margin: auto;
+    width: min(440px, 100%);
     display: flex;
     flex-direction: column;
-    gap: 1.1rem;
-    width: min(520px, 100%);
-    max-height: calc(100dvh - 2rem);
-    overflow-y: auto;
-    padding: 1.5rem;
+    border: 1px solid #5a3a1c;
+    --bs-fill-a: rgba(5, 4, 3, 0.96);
+    --bs-fill-b: rgba(5, 4, 3, 0.96);
+    background: var(--bs-fill-paint, linear-gradient(var(--bs-fill-a), var(--bs-fill-b)));
+    --bs1: 0px 50px;
+    --bs1-color: rgba(175, 96, 37, 0.12);
+    --bs2: 20px 60px;
+    --bs2-color: rgba(0, 0, 0, 0.75);
+    box-shadow:
+      0 0 0 1px #000,
+      var(--bs-soft-paint, 0 var(--bs1, 0 0) var(--bs1-color, transparent), 0 var(--bs2, 0 0) var(--bs2-color, transparent));
     outline: none;
   }
-  .top {
-    display: flex;
-    gap: 1.2rem;
-    align-items: center;
-  }
-  .art {
-    flex: none;
-    width: 140px;
-    height: 170px;
+  .head {
+    position: relative;
     display: grid;
-    border: 1px solid var(--line);
-    border-radius: 4px;
-    background: radial-gradient(ellipse at 50% 60%, rgba(175, 96, 37, 0.16), transparent 70%), rgba(0, 0, 0, 0.35);
-    padding: 0.6rem;
+    min-height: 64px;
+    place-items: center;
+    padding: 0.5rem 3rem;
+    background:
+      linear-gradient(90deg, transparent, rgba(175, 96, 37, 0.35) 20%, rgba(175, 96, 37, 0.35) 80%, transparent),
+      linear-gradient(180deg, #3b2412, #1c1008);
+    border-bottom: 1px solid #6b4520;
   }
-  h2 {
-    font-size: 1.35rem;
-    color: var(--unique-hi);
-    text-shadow: 0 0 16px rgba(224, 138, 68, 0.3);
+  .head::before {
+    content: '◆';
+    position: absolute;
+    top: 50%;
+    left: 14px;
+    translate: 0 -50%;
+    color: var(--unique);
+    font-size: 0.9rem;
+    opacity: 0.8;
+  }
+  .head-text {
+    grid-area: 1 / 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
     line-height: 1.15;
   }
-  .base {
-    margin: 0.3rem 0 0;
-    color: var(--text);
-  }
-  .where {
-    margin: 0.15rem 0 0;
-    font-size: 0.9rem;
-  }
-
-  .facts {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-    gap: 0.6rem;
-    margin: 0;
-  }
-  .facts div {
-    padding: 0.55rem 0.7rem;
-    border: 1px solid var(--line);
-    border-radius: 4px;
-    background: rgba(0, 0, 0, 0.25);
-  }
-  dt {
+  .iname {
     font-family: var(--font-display);
-    font-size: 0.7rem;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    color: var(--muted);
+    font-weight: 700;
+    font-size: 1.25rem;
+    color: var(--unique-hi);
+    text-shadow: 0 0 12px rgba(224, 138, 68, 0.4);
   }
-  dd {
-    margin: 0.15rem 0 0;
+  .ibase {
+    font-family: var(--font-display);
+    font-size: 0.88rem;
+    color: #d8a26a;
+    opacity: 0.85;
+  }
+  .close {
+    position: absolute;
+    top: 50%;
+    right: 8px;
+    translate: 0 -50%;
+    width: 32px;
+    height: 32px;
+    display: grid;
+    place-items: center;
+    padding: 0;
+    background: none;
+    border: 0;
+    border-radius: 50%;
+    cursor: pointer;
+    color: var(--unique);
+    transition:
+      color 0.2s,
+      background 0.2s;
+  }
+  .close:hover {
     color: var(--gold-hi);
-    font-size: 1.05rem;
+    background: rgba(0, 0, 0, 0.3);
   }
-  dd small {
-    color: var(--muted);
-    font-size: 0.85rem;
+  .close svg {
+    width: 16px;
+    height: 16px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
   }
 
-  .related h3 {
-    font-size: 0.78rem;
-    letter-spacing: 0.16em;
-    text-transform: uppercase;
-    color: var(--muted);
-    margin-bottom: 0.4rem;
+  .art {
+    position: relative;
+    height: 240px;
+    display: grid;
+    place-items: center;
+    container-type: size;
+    --bs-fill-a: rgba(175, 96, 37, 0.16);
+    background: var(
+      --bs-fill-paint,
+      radial-gradient(ellipse 55% 50% at 50% 52%, var(--bs-fill-a), transparent 70%),
+      radial-gradient(ellipse 80% 45% at 50% 0%, rgba(90, 110, 160, 0.1), transparent 70%),
+      radial-gradient(ellipse at center, transparent 45%, rgba(0, 0, 0, 0.55) 100%),
+      linear-gradient(180deg, #0c0d12, #060709)
+    );
+    box-shadow:
+      inset 0 1px 0 rgba(201, 164, 92, 0.12),
+      inset 0 0 40px rgba(0, 0, 0, 0.6);
+    overflow: hidden;
   }
-  .related ul {
+  .frame {
+    position: absolute;
+    inset: 0;
+    margin: auto;
+    width: 80%;
+    height: 84%;
+    display: grid;
+    place-items: center;
+  }
+  .frame > :global(.art-slot) {
+    position: absolute;
+    inset: 0;
+  }
+
+  .body {
+    padding: 0.9rem 1.2rem 1.1rem;
+    text-align: center;
+  }
+  .kind {
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: 0.82rem;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+  }
+  /* The tooltip's separator: a hairline with a gem in the middle. */
+  .sep {
+    position: relative;
+    height: 1px;
+    margin: 0.8rem auto;
+    width: 80%;
+    background: linear-gradient(90deg, transparent, #6b4520 25%, #6b4520 75%, transparent);
+  }
+  .sep::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 5px;
+    height: 5px;
+    translate: -50% -50%;
+    rotate: 45deg;
+    background: var(--unique);
+    box-shadow: 0 0 6px rgba(224, 138, 68, 0.6);
+  }
+  /* Tooltip lines: cool against the warm name, like the game's extra lines. */
+  .lines {
     list-style: none;
     margin: 0;
     padding: 0;
     display: flex;
     flex-direction: column;
-    gap: 0.3rem;
+    gap: 0.2rem;
+    color: #8f9aa6;
+    font-size: 1rem;
+    line-height: 1.3;
   }
-  .related li {
+  .lines b {
+    font-weight: 500;
+    color: #a9c3dc;
+  }
+  .lines i {
+    color: #6d7782;
+  }
+  .label {
+    margin: 0 0 0.45rem;
+    font-family: var(--font-display);
+    font-size: 0.72rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: #d8a26a;
+  }
+  .related {
+    list-style: none;
+    margin: 0;
+    padding: 0;
     display: flex;
-    align-items: center;
-    gap: 0.6rem;
-  }
-  .related b {
-    font-family: var(--font-cinzel);
-    color: var(--gold);
-    font-size: 0.85rem;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.4rem;
   }
   .pick {
-    flex: 1;
-    min-width: 0;
     display: flex;
     align-items: center;
-    gap: 0.6rem;
-    padding: 0.25rem 0.4rem;
-    border: 1px solid transparent;
-    border-radius: 4px;
-    background: none;
-    text-align: left;
+    gap: 0.45rem;
+    padding: 0.2rem 0.65rem 0.2rem 0.25rem;
+    border: 1px solid rgba(107, 69, 32, 0.6);
+    border-radius: 999px;
+    background: rgba(0, 0, 0, 0.4);
     color: var(--text);
-  }
-  button.pick {
+    font-size: 0.95rem;
     cursor: pointer;
     transition:
       border-color 0.2s,
-      background 0.2s;
+      color 0.2s,
+      box-shadow 0.25s;
   }
-  button.pick:hover {
-    border-color: var(--line);
-    background: rgba(0, 0, 0, 0.3);
+  .pick:hover:not(:disabled) {
+    border-color: var(--gold-lo);
     color: var(--gold-hi);
+    box-shadow: 0 0 12px rgba(201, 164, 92, 0.25);
+  }
+  .pick:disabled {
+    cursor: default;
   }
   .pick img {
-    width: 32px;
-    height: 32px;
+    width: 26px;
+    height: 26px;
     object-fit: contain;
-    flex: none;
   }
-  .pick span {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  footer {
-    display: flex;
-    justify-content: flex-end;
+  .pick b {
+    font-family: var(--font-cinzel);
+    font-size: 0.8rem;
+    color: var(--gold);
   }
 
   @media (max-width: 480px) {
-    .sheet {
-      padding: 1.2rem;
+    .art {
+      height: 200px;
     }
-    .top {
-      flex-direction: column;
-      text-align: center;
+    .body {
+      padding: 0.8rem 0.9rem 1rem;
     }
   }
 </style>

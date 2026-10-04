@@ -9,7 +9,10 @@
   import { closeCodex } from '../lib/codexRoute.svelte';
   import { backdropShadow } from '../lib/backdropShadow';
   import { dialogBackdrop } from '../lib/behindDialog';
+  import { cardHover, turnBanner } from '../lib/fx/moments';
+  import type { Handle } from '../lib/fx/core';
   import type { Difficulty, Item } from '../lib/game';
+  import ArcaneCircle from './ArcaneCircle.svelte';
   import CodexItem from './CodexItem.svelte';
 
   let codex = $state.raw(loadCodex());
@@ -30,13 +33,13 @@
     }),
   );
 
-  const pct = (t: Tally) => {
-    const a = accuracy(t);
-    return a === null ? '' : `${Math.round(a * 100)}%`;
-  };
-  const secs = (ms: number) => `${(ms / 1000).toFixed(1)} s`;
-  const date = (t: number) => new Date(t).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+  const pct = (t: Tally) => `${Math.round((accuracy(t) ?? 0) * 100)}%`;
+  const secs = (ms: number) => (ms / 1000).toFixed(1);
+  const date = (t: number) => new Date(t).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
   const answers = (n: number) => `${n} ${n === 1 ? 'answer' : 'answers'}`;
+
+  /** The discovered share as an arc around the medallion (its circle's circumference is 100). */
+  const found = $derived(stats.total ? stats.seen / stats.total : 0);
 
   // ---- the collection ----
 
@@ -59,16 +62,16 @@
       .filter((s) => s.items.length),
   );
 
-  type SortKey = 'name' | 'category' | 'seen' | 'answers' | 'accuracy' | 'last';
+  type SortKey = 'name' | 'type' | 'seen' | 'right' | 'accuracy' | 'last';
   let sortKey = $state<SortKey>('last');
   let sortDown = $state(true);
   /** `wide`: left out on narrow screens. */
-  const COLUMNS: { key: SortKey; label: string; num?: boolean; wide?: boolean }[] = [
+  const COLUMNS: { key: SortKey; label: string; short?: string; num?: boolean; wide?: boolean }[] = [
     { key: 'name', label: 'Item' },
-    { key: 'category', label: 'Type', wide: true },
-    { key: 'seen', label: 'Seen', num: true },
-    { key: 'answers', label: 'Answers', num: true },
-    { key: 'accuracy', label: 'Accuracy', num: true },
+    { key: 'type', label: 'Type', wide: true },
+    { key: 'seen', label: 'Met', num: true },
+    { key: 'right', label: 'Right', num: true },
+    { key: 'accuracy', label: 'Accuracy', short: '%', num: true },
     { key: 'last', label: 'Last met', num: true, wide: true },
   ];
   const rows = $derived.by(() => {
@@ -83,12 +86,12 @@
       switch (sortKey) {
         case 'name':
           return r.item.name;
-        case 'category':
+        case 'type':
           return `${r.item.category} ${r.item.group}`;
         case 'seen':
           return r.entry.seen;
-        case 'answers':
-          return r.tally.n;
+        case 'right':
+          return r.tally.ok;
         case 'accuracy':
           // Items without answers sort after the rest either way.
           return r.acc ?? (sortDown ? -1 : 2);
@@ -109,16 +112,16 @@
     else {
       sortKey = key;
       // Names read A to Z; numbers start with the most.
-      sortDown = key !== 'name' && key !== 'category';
+      sortDown = key !== 'name' && key !== 'type';
     }
   }
 
   let collection = $state<HTMLElement>();
   async function showCategory(category: string) {
-    only = category;
+    only = only === category ? '' : category;
     search = '';
     await tick();
-    collection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (only) collection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
   let open = $state<Item | null>(null);
@@ -127,6 +130,35 @@
     resetCodex();
     codex = loadCodex();
     confirmReset = false;
+  }
+
+  /** Svelte action: the title arrives like a turn banner. */
+  function heralded(node: HTMLElement) {
+    const t = setTimeout(() => turnBanner(node, '#c9a45c', false), 250);
+    return { destroy: () => clearTimeout(t) };
+  }
+
+  /** Svelte action: a category card catches fire under the mouse, as in the game. */
+  function burns(node: HTMLElement) {
+    let h: Handle | null = null;
+    const enter = (e: PointerEvent) => {
+      if (e.pointerType !== 'mouse') return;
+      h?.stop();
+      h = cardHover(node.querySelector('.cat-frame') ?? node, node, false);
+    };
+    const leave = () => {
+      h?.stop();
+      h = null;
+    };
+    node.addEventListener('pointerenter', enter);
+    node.addEventListener('pointerleave', leave);
+    return {
+      destroy() {
+        leave();
+        node.removeEventListener('pointerenter', enter);
+        node.removeEventListener('pointerleave', leave);
+      },
+    };
   }
 </script>
 
@@ -142,210 +174,242 @@
       <li>
         <span class="bar-name">{b.name}</span>
         {@render meter(b.tally, b.name)}
-        <span class="bar-value">{#if b.tally.n}{pct(b.tally)} <small>of {b.tally.n}</small>{:else}<small>no answers</small>{/if}</span>
+        <span class="bar-value">{b.tally.n ? pct(b.tally) : ''}</span>
       </li>
     {/each}
   </ul>
 {/snippet}
 
+{#snippet thumb(it: Item)}
+  <span class="thumb"><img src={itemImage(it.id)} alt="" loading="lazy" /></span>
+{/snippet}
+
 <div class="codex">
-  <div class="top">
-    <button class="btn ghost small back" onclick={closeCodex}>
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg>
-      Back
-    </button>
+  <div class="banner">
+    <span class="rule"></span>
+    <h1 use:heralded>Codex</h1>
+    <span class="rule"></span>
   </div>
+  <p class="lede" in:fade={{ duration: 600, delay: 200 }}>Every unique and lineage gem you have met, and how well you know it.</p>
 
-  <header class="hero" in:fly={{ y: -10, duration: 600 }}>
-    <p class="kicker">Your collection</p>
-    <h1>Codex</h1>
-    <p class="tagline">Every unique and lineage gem you have met in a game, and how well you know it.</p>
-  </header>
-
-  {#if stats.seen === 0}
-    <div class="empty panel" use:backdropShadow={{ fill: 'linear' }} in:fly={{ y: 20, duration: 600, delay: 150 }}>
-      <p>Your codex is empty.</p>
-      <p class="muted">
-        Play a game: every item you see revealed is recorded here, along with how often you named it right. It stays in this browser only.
-      </p>
-      <button class="btn primary" onclick={closeCodex}>Back</button>
-    </div>
-  {:else}
-    <section class="tiles" aria-label="Summary" in:fly={{ y: 20, duration: 600, delay: 100 }}>
-      <div class="tile panel">
-        <span class="tile-label">Discovered</span>
-        <span class="tile-value">{stats.seen}<small> / {stats.total}</small></span>
-        <span class="meter wide" title="{stats.seen} of {stats.total} discovered">
-          <span class="fill" style:width="{(stats.seen / stats.total) * 100}%"></span>
-        </span>
-      </div>
-      <div class="tile panel">
-        <span class="tile-label">Accuracy</span>
-        <span class="tile-value">{stats.n ? pct(stats) : '0%'}</span>
-        <span class="tile-note">{stats.ok} of {answers(stats.n)}</span>
-      </div>
-      <div class="tile panel">
-        <span class="tile-label">Recent</span>
-        <span class="tile-value">{stats.recent.n ? pct(stats.recent) : '0%'}</span>
-        <span class="tile-note">your last {answers(stats.recent.n)}</span>
-      </div>
-      <div class="tile panel">
-        <span class="tile-label">Best streak</span>
-        <span class="tile-value">{stats.best}</span>
-        <span class="tile-note">now {stats.streak} in a row</span>
-      </div>
-      <div class="tile panel">
-        <span class="tile-label">Answer time</span>
-        <span class="tile-value">{stats.medianMs === null ? '?' : secs(stats.medianMs)}</span>
-        <span class="tile-note">
-          {#if stats.fastest}median • fastest {secs(stats.fastest.ms)}{:else}median of right answers{/if}
-        </span>
-      </div>
-    </section>
-
-    <div class="split" in:fly={{ y: 20, duration: 600, delay: 200 }}>
-      <section class="panel box" use:backdropShadow={{ fill: 'linear' }}>
-        <h2>By question</h2>
-        {@render bars([
-          { name: 'Name the art', tally: stats.byMode.name },
-          { name: 'Find the art', tally: stats.byMode.art },
-        ])}
-        {#if difficulties.length}
-          <h2 class="sub">By difficulty</h2>
-          {@render bars(difficulties)}
-        {/if}
-      </section>
-
-      <section class="panel box" use:backdropShadow={{ fill: 'linear' }}>
-        <h2>By category</h2>
-        <ul class="bars cats">
-          {#each stats.categories as c (c.category)}
-            <li>
-              <button class="cat" onclick={() => showCategory(c.category)} title="Show {c.category}">
-                <img src={categoryIcon(c.category)} alt="" />
-                <span class="bar-name">{c.category}</span>
-              </button>
-              <span class="found" title="{c.seen} of {c.total} discovered">{c.seen}/{c.total}</span>
-              {@render meter(c, c.category)}
-              <span class="bar-value">{#if c.n}{pct(c)}{:else}<small>·</small>{/if}</span>
-            </li>
-          {/each}
-        </ul>
-      </section>
-    </div>
-
-    {#if stats.nemeses.length || stats.confusions.length || stats.fooled.length}
-      <div class="insights" in:fly={{ y: 20, duration: 600, delay: 300 }}>
-        {#if stats.nemeses.length}
-          <section class="panel box">
-            <h2>Nemeses</h2>
-            <p class="hint muted">The items you miss most.</p>
-            <ul class="list">
-              {#each stats.nemeses as nm (nm.item.id)}
-                <li>
-                  <button class="pick" onclick={() => (open = nm.item)}>
-                    <img src={itemImage(nm.item.id)} alt="" loading="lazy" />
-                    <span>{nm.item.name}</span>
-                  </button>
-                  <b>{nm.tally.ok}/{nm.tally.n}</b>
-                </li>
-              {/each}
-            </ul>
-          </section>
-        {/if}
-        {#if stats.confusions.length}
-          <section class="panel box">
-            <h2>Mix-ups</h2>
-            <p class="hint muted">What you picked, and what it really was.</p>
-            <ul class="list">
-              {#each stats.confusions as cf (cf.answer.id + cf.picked.id)}
-                <li>
-                  <button class="pick pair" onclick={() => (open = cf.answer)} title="You took {cf.answer.name} for {cf.picked.name}">
-                    <img src={itemImage(cf.answer.id)} alt="" loading="lazy" />
-                    <span><span class="muted">{cf.picked.name}</span> <i>for</i> {cf.answer.name}</span>
-                  </button>
-                  <b>{cf.n}×</b>
-                </li>
-              {/each}
-            </ul>
-          </section>
-        {/if}
-        {#if stats.fooled.length}
-          <section class="panel box">
-            <h2>Made-up names</h2>
-            <p class="hint muted">Fakes you fell for.</p>
-            <ul class="list">
-              {#each stats.fooled as f (f.name)}
-                <li>
-                  <span class="fake">
-                    “{f.name}”
-                    {#if f.of}<small class="muted">a copy of {f.of.name}</small>{/if}
-                  </span>
-                  <b>{f.n}×</b>
-                </li>
-              {/each}
-            </ul>
-          </section>
-        {/if}
+  <section class="summary" in:fly={{ y: 20, duration: 700, delay: 150 }}>
+    {#if stats.seen}
+      <div class="side">
+        <div class="stat">
+          <span class="stat-label">Accuracy</span>
+          <span class="stat-value">{pct(stats)}</span>
+          <span class="stat-note">{stats.ok} of {answers(stats.n)}</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Lately</span>
+          <span class="stat-value">{pct(stats.recent)}</span>
+          <span class="stat-note">your last {answers(stats.recent.n)}</span>
+        </div>
       </div>
     {/if}
 
-    <section class="collection" bind:this={collection}>
-      <div class="bar">
-        <h2>Collection</h2>
-        <div class="controls">
-          <input class="field search" type="search" bind:value={search} placeholder="Search names" aria-label="Search names" spellcheck="false" />
-          <select class="field" bind:value={only} aria-label="Category">
-            <option value="">All categories</option>
-            {#each engine.categories as c (c)}
-              <option value={c}>{c}</option>
-            {/each}
-          </select>
-          <div class="seg" role="group" aria-label="View">
-            <button class:on={view === 'grid'} aria-pressed={view === 'grid'} onclick={() => (view = 'grid')}>Grid</button>
-            <button class:on={view === 'table'} aria-pressed={view === 'table'} onclick={() => (view = 'table')}>Table</button>
+    <div class="medallion">
+      <ArcaneCircle size="100%" strength={0.3} />
+      <svg class="progress" viewBox="-100 -100 200 200" aria-hidden="true">
+        <defs>
+          <linearGradient id="codex-arc" x1="0" y1="-1" x2="0" y2="1">
+            <stop offset="0" stop-color="#fbe6b0" />
+            <stop offset="0.5" stop-color="#c9a45c" />
+            <stop offset="1" stop-color="#e08a44" />
+          </linearGradient>
+        </defs>
+        <circle class="track" r="80" />
+        {#if found > 0}<circle class="arc" r="80" pathLength="100" style:stroke-dasharray="{found * 100} 100" />{/if}
+      </svg>
+      <div class="medal-text">
+        <span class="medal-value">{stats.seen}</span>
+        <span class="medal-of">of {stats.total}</span>
+        <span class="medal-label">discovered</span>
+      </div>
+    </div>
+
+    {#if stats.seen}
+      <div class="side">
+        <div class="stat">
+          <span class="stat-label">Best streak</span>
+          <span class="stat-value">{stats.best}</span>
+          <span class="stat-note">{stats.streak ? `${stats.streak} in a row now` : 'right answers in a row'}</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Answer time</span>
+          <span class="stat-value">{stats.medianMs === null ? '?' : secs(stats.medianMs)}<small>{stats.medianMs === null ? '' : ' s'}</small></span>
+          <span class="stat-note">{stats.fastest ? `typical • quickest ${secs(stats.fastest.ms)} s` : 'typical right answer'}</span>
+        </div>
+      </div>
+    {/if}
+  </section>
+
+  {#if !stats.seen}
+    <div class="empty" in:fly={{ y: 20, duration: 700, delay: 300 }}>
+      <p>Your codex is still blank.</p>
+      <p class="muted">
+        Every item revealed in your games is written into it, with how often you named it right. It is kept in this browser only.
+      </p>
+      <button class="btn primary" onclick={closeCodex}>Begin the hunt</button>
+    </div>
+  {:else}
+    <ul class="cats" in:fly={{ y: 20, duration: 700, delay: 250 }}>
+      {#each stats.categories as c, i (c.category)}
+        <li style:--i={i}>
+          <button
+            class="cat"
+            class:on={only === c.category}
+            class:dim={!!only && only !== c.category}
+            aria-pressed={only === c.category}
+            data-fx="hover"
+            onclick={() => showCategory(c.category)}
+            title="{c.seen} of {c.total} discovered{c.n ? `, ${c.ok} of ${answers(c.n)} right` : ''}"
+            use:burns
+          >
+            <span class="cat-frame">
+              <span class="glyph" style:--src="url('{categoryIcon(c.category)}')"></span>
+              <span class="cat-name">{c.category}</span>
+              <span class="cat-count">{c.seen}<small> / {c.total}</small></span>
+              <span class="meter" title="{c.seen} of {c.total} discovered">
+                <span class="fill" style:width="{(c.seen / c.total) * 100}%"></span>
+              </span>
+              <span class="cat-acc">{c.n ? `${pct(c)} right` : 'no answers yet'}</span>
+            </span>
+          </button>
+        </li>
+      {/each}
+    </ul>
+
+    <div class="panels" in:fly={{ y: 20, duration: 700, delay: 350 }}>
+      <section class="panel answers" use:backdropShadow={{ fill: 'linear' }}>
+        <header><h2>Answers</h2><span class="count">{stats.ok} of {stats.n} right</span></header>
+        <div class="answer-cols">
+          <div>
+            <h3>By question</h3>
+            {@render bars([
+              { name: 'Name the art', tally: stats.byMode.name },
+              { name: 'Find the art', tally: stats.byMode.art },
+            ])}
           </div>
+          {#if difficulties.length}
+            <div>
+              <h3>By difficulty</h3>
+              {@render bars(difficulties)}
+            </div>
+          {/if}
+        </div>
+      </section>
+
+      {#if stats.nemeses.length}
+        <section class="panel" use:backdropShadow={{ fill: 'linear' }}>
+          <header><h2>Nemeses</h2></header>
+          <ul class="rows">
+            {#each stats.nemeses as nm (nm.item.id)}
+              <li>
+                <button class="row" onclick={() => (open = nm.item)}>
+                  {@render thumb(nm.item)}
+                  <span class="row-name"><span>{nm.item.name}</span></span>
+                  <b>{nm.tally.ok}/{nm.tally.n}</b>
+                </button>
+              </li>
+            {/each}
+          </ul>
+        </section>
+      {/if}
+
+      {#if stats.confusions.length}
+        <section class="panel" use:backdropShadow={{ fill: 'linear' }}>
+          <header><h2>Mix-ups</h2></header>
+          <ul class="rows">
+            {#each stats.confusions as cf (cf.answer.id + cf.picked.id)}
+              <li>
+                <button class="row" onclick={() => (open = cf.answer)} title="You took {cf.answer.name} for {cf.picked.name}">
+                  {@render thumb(cf.answer)}
+                  <span class="row-name">
+                    <span>{cf.answer.name}</span>
+                    <small>taken for {cf.picked.name}</small>
+                  </span>
+                  <b>{cf.n}×</b>
+                </button>
+              </li>
+            {/each}
+          </ul>
+        </section>
+      {/if}
+
+      {#if stats.fooled.length}
+        <section class="panel" use:backdropShadow={{ fill: 'linear' }}>
+          <header><h2>Fooled by</h2></header>
+          <ul class="rows">
+            {#each stats.fooled as f (f.name)}
+              <li>
+                <span class="row">
+                  <span class="thumb fake" aria-hidden="true">?</span>
+                  <span class="row-name">
+                    <span class="fake-name">{f.name}</span>
+                    {#if f.of}<small>a made-up twin of {f.of.name}</small>{/if}
+                  </span>
+                  <b>{f.n}×</b>
+                </span>
+              </li>
+            {/each}
+          </ul>
+        </section>
+      {/if}
+    </div>
+
+    <section class="collection" bind:this={collection}>
+      <div class="banner small">
+        <span class="rule"></span>
+        <h2>Collection</h2>
+        <span class="rule"></span>
+      </div>
+      <div class="controls">
+        <input class="field search" type="search" bind:value={search} placeholder="Search your codex" aria-label="Search your codex" spellcheck="false" />
+        {#if only}
+          <button class="filter" onclick={() => (only = '')} title="Show every category" transition:fade={{ duration: 150 }}>
+            {only}
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7 7 17" /></svg>
+          </button>
+        {/if}
+        <div class="seg" role="group" aria-label="View">
+          <button class:on={view === 'grid'} aria-pressed={view === 'grid'} onclick={() => (view = 'grid')}>Grid</button>
+          <button class:on={view === 'table'} aria-pressed={view === 'table'} onclick={() => (view = 'table')}>Table</button>
         </div>
       </div>
 
       {#if view === 'grid'}
         {#each sections as sec (sec.stats.category)}
-          <section class="cat-section">
-            <header>
-              <img src={categoryIcon(sec.stats.category)} alt="" />
-              <h3>{sec.stats.category}</h3>
-              <span class="muted">{sec.stats.seen} / {sec.stats.total} discovered{#if sec.stats.n}{` • ${pct(sec.stats)} right`}{/if}</span>
-            </header>
+          <section class="tooltip" use:backdropShadow={{ fill: 'linear' }}>
+            <div class="head">
+              <div class="head-text">
+                <span class="iname">{sec.stats.category}</span>
+                <span class="ibase">{sec.stats.seen} of {sec.stats.total} discovered{sec.stats.n ? ` • ${pct(sec.stats)} right` : ''}</span>
+              </div>
+            </div>
             {#if sec.stats.groups.length > 1}
-              <ul class="groups">
+              <p class="groups">
                 {#each sec.stats.groups as g (g.group)}
-                  <li title="{g.seen} of {g.total} discovered{g.n ? `, ${g.ok} of ${answers(g.n)} right` : ''}">
-                    {g.group} <span class="muted">{g.seen}/{g.total}{#if g.n}{` • ${pct(g)}`}{/if}</span>
-                  </li>
+                  <span>{g.group} <b>{g.seen}/{g.total}</b>{g.n ? ` • ${pct(g)}` : ''}</span>
                 {/each}
-              </ul>
+              </p>
             {/if}
-            <ul class="grid">
+            <ul class="cells">
               {#each sec.items as it (it.id)}
                 {@const e = codex.items[it.id]}
                 <li>
                   {#if e}
                     {@const t = tallyOf(e)}
-                    <button class="tile-item" onclick={() => (open = it)} aria-label="{it.name}{t.n ? `, ${t.ok} of ${answers(t.n)} right` : ', seen'}">
-                      <span class="thumb"><img src={itemImage(it.id)} alt="" loading="lazy" /></span>
-                      <span class="name">{it.name}</span>
-                      <span class="status">
-                        {#if t.n}
-                          {@render meter(t, it.name)}
-                        {:else}
-                          <span class="seen-only">seen</span>
-                        {/if}
-                      </span>
+                    <button class="cell" data-fx="hover" onclick={() => (open = it)} aria-label="{it.name}{t.n ? `, ${t.ok} of ${answers(t.n)} right` : ''}">
+                      {#if t.n}<span class="score">{t.ok}/{t.n}</span>{/if}
+                      <span class="pic"><img src={itemImage(it.id)} alt="" loading="lazy" /></span>
+                      <span class="caption">{it.name}</span>
+                      {#if t.n}<span class="acc" style:--a={accuracy(t)}></span>{/if}
                     </button>
                   {:else}
-                    <span class="tile-item unknown" title="Not discovered yet" aria-label="Not discovered yet">
-                      <span class="thumb"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7 9-7 9-7-9z" /></svg></span>
-                      <span class="name">Undiscovered</span>
+                    <span class="cell unknown" title="Not discovered yet">
+                      <span class="pic"><img src={itemImage(it.id)} alt="" loading="lazy" draggable="false" /></span>
+                      <span class="caption">Unidentified</span>
                     </span>
                   {/if}
                 </li>
@@ -353,18 +417,17 @@
             </ul>
           </section>
         {:else}
-          <p class="muted none">Nothing found.</p>
+          <p class="none">Nothing in your codex matches.</p>
         {/each}
       {:else if rows.length}
-        <div class="table-wrap panel">
+        <div class="tooltip ledger" use:backdropShadow={{ fill: 'linear' }}>
           <table>
             <thead>
               <tr>
                 {#each COLUMNS as col (col.key)}
                   <th class:num={col.num} class:wide={col.wide} aria-sort={sortKey === col.key ? (sortDown ? 'descending' : 'ascending') : 'none'}>
                     <button onclick={() => sortBy(col.key)}>
-                      {col.label}
-                      <span class="arrow" aria-hidden="true">{sortKey === col.key ? (sortDown ? '▾' : '▴') : ''}</span>
+                      {#if col.short}<span class="long">{col.label}</span><span class="short">{col.short}</span>{:else}{col.label}{/if}<span class="arrow" aria-hidden="true">{sortKey === col.key ? (sortDown ? '▾' : '▴') : ''}</span>
                     </button>
                   </th>
                 {/each}
@@ -374,29 +437,33 @@
               {#each rows as r (r.item.id)}
                 <tr>
                   <td>
-                    <button class="pick" onclick={() => (open = r.item)}>
-                      <img src={itemImage(r.item.id)} alt="" loading="lazy" />
-                      <span>{r.item.name}</span>
+                    <button class="item" onclick={() => (open = r.item)}>
+                      {@render thumb(r.item)}
+                      <span class="item-name"><span>{r.item.name}</span><small>{r.item.base}</small></span>
                     </button>
                   </td>
-                  <td class="muted wide">{r.item.group}</td>
+                  <td class="wide type">{r.item.group}</td>
                   <td class="num">{r.entry.seen}</td>
-                  <td class="num">{r.tally.ok}/{r.tally.n}</td>
-                  <td class="num">{r.tally.n ? pct(r.tally) : ''}</td>
-                  <td class="num muted wide">{date(r.entry.last)}</td>
+                  <td class="num">{#if r.tally.n}{r.tally.ok}<small>/{r.tally.n}</small>{/if}</td>
+                  <td class="num">
+                    {#if r.tally.n}
+                      <span class="acc-cell">{@render meter(r.tally, r.item.name)}<span class="acc-pct">{pct(r.tally)}</span></span>
+                    {/if}
+                  </td>
+                  <td class="num wide when">{date(r.entry.last)}</td>
                 </tr>
               {/each}
             </tbody>
           </table>
         </div>
       {:else}
-        <p class="muted none">Nothing found.</p>
+        <p class="none">Nothing in your codex matches.</p>
       {/if}
     </section>
 
     <footer class="end">
-      <p class="muted">Your codex is kept in this browser only. Clearing the site's data erases it.</p>
-      <button class="btn ghost small" onclick={() => (confirmReset = true)}>Erase codex</button>
+      <p>Your codex lives in this browser only; clearing the site's data erases it.</p>
+      <button class="erase" onclick={() => (confirmReset = true)}>Erase codex</button>
     </footer>
   {/if}
 </div>
@@ -413,7 +480,7 @@
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <div class="confirm panel" transition:fly={{ y: 20, duration: 250 }} onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" tabindex="-1">
       <h3>Erase your codex?</h3>
-      <p class="muted">Every item you met and every answer recorded in this browser is deleted. This can't be undone.</p>
+      <p class="muted">Every item you have met and every answer recorded in this browser is lost. This can't be undone.</p>
       <div class="actions">
         <button class="btn ghost" onclick={() => (confirmReset = false)}>Keep it</button>
         <button class="btn primary" onclick={reset}>Erase</button>
@@ -424,142 +491,386 @@
 
 <style>
   .codex {
-    width: min(1080px, 100%);
+    width: min(1100px, 100%);
     margin: 0 auto;
-    padding: 1rem 1rem 2rem;
+    padding: 1.2rem 1rem 2.5rem;
     display: flex;
     flex-direction: column;
-    gap: 1.4rem;
-  }
-  .top {
-    display: flex;
-  }
-  .back svg {
-    width: 14px;
-    height: 14px;
-    fill: none;
-    stroke: currentColor;
-    stroke-width: 2.2;
-    stroke-linecap: round;
-    stroke-linejoin: round;
+    gap: 1.6rem;
   }
 
-  .hero {
-    text-align: center;
+  /* ---- title, as the game's turn banner ---- */
+  .banner {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1.2rem;
+    margin-top: 0.6rem;
   }
-  .kicker {
-    margin: 0 0 0.3rem;
-    font-family: var(--font-display);
-    font-size: 0.8rem;
-    letter-spacing: 0.5em;
-    padding-left: 0.5em;
-    text-transform: uppercase;
-    color: var(--unique-hi);
-  }
-  h1 {
-    font-size: clamp(2.4rem, 7vw, 3.6rem);
+  .banner h1,
+  .banner h2 {
+    font-size: clamp(2rem, 6vw, 3rem);
     font-weight: 900;
-    letter-spacing: 0.08em;
-    line-height: 1.05;
-    background: linear-gradient(180deg, #fff1c9 20%, #d7b068 55%, #8b6526 95%);
+    color: var(--gold-hi);
+    text-shadow:
+      0 0 24px rgba(201, 164, 92, 0.45),
+      0 3px 12px rgba(0, 0, 0, 0.9);
+    animation: arrive 0.9s var(--ease-out) both;
+    white-space: nowrap;
+  }
+  .banner.small h2 {
+    font-size: clamp(1.4rem, 4vw, 1.9rem);
+    animation: none;
+  }
+  .rule {
+    flex: 0 1 160px;
+    min-width: 16px;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--gold));
+    animation: grow 0.9s var(--ease-out) both;
+  }
+  .rule:last-child {
+    background: linear-gradient(270deg, transparent, var(--gold));
+  }
+  .banner.small .rule {
+    animation: none;
+  }
+  @keyframes arrive {
+    from {
+      opacity: 0;
+      letter-spacing: 0.4em;
+      filter: blur(6px);
+    }
+  }
+  @keyframes grow {
+    from {
+      transform: scaleX(0);
+      opacity: 0;
+    }
+  }
+  .lede {
+    margin: -1rem 0 0;
+    text-align: center;
+    font-style: italic;
+    font-size: 1.1rem;
+    color: #b8ab95;
+  }
+
+  /* ---- summary: the medallion between four figures ---- */
+  .summary {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    gap: 1.5rem;
+  }
+  .side {
+    display: flex;
+    justify-content: space-evenly;
+    gap: 1rem;
+  }
+  .stat {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    min-width: 0;
+  }
+  .stat-label,
+  .medal-label {
+    font-family: var(--font-display);
+    font-size: 0.74rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .stat-value,
+  .medal-value {
+    font-family: var(--font-cinzel);
+    font-weight: 700;
+    line-height: 1.1;
+    background: linear-gradient(180deg, #fff1c9 15%, #d7b068 55%, #9a7230 95%);
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;
-    filter: drop-shadow(0 4px 14px rgba(0, 0, 0, 0.8));
+    filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.8));
   }
-  .tagline {
-    margin: 0.6rem 0 0;
+  .stat-value {
+    font-size: 2.3rem;
+    margin: 0.15rem 0 0.1rem;
+  }
+  .stat-value small {
+    font-size: 1.1rem;
+  }
+  .stat-note {
+    font-size: 0.92rem;
     font-style: italic;
-    color: #b8ab95;
+    color: var(--muted);
+  }
+  .medallion {
+    grid-column: 2;
+    position: relative;
+    isolation: isolate;
+    width: 250px;
+    height: 250px;
+    display: grid;
+    place-items: center;
+  }
+  .medallion :global(.arcane) {
+    z-index: -1;
+  }
+  .progress {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    rotate: -90deg;
+    overflow: visible;
+  }
+  .track {
+    fill: rgba(8, 6, 4, 0.75);
+    stroke: rgba(125, 99, 51, 0.35);
+    stroke-width: 6;
+  }
+  .arc {
+    fill: none;
+    stroke: url(#codex-arc);
+    stroke-width: 4;
+    stroke-linecap: round;
+    filter: drop-shadow(0 0 4px rgba(224, 138, 68, 0.8));
+    animation: fill-arc 1.6s var(--ease-out) 0.4s both;
+  }
+  @keyframes fill-arc {
+    from {
+      stroke-dasharray: 0 100;
+    }
+  }
+  .medal-text {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    line-height: 1.1;
+  }
+  .medal-value {
+    font-size: 3.4rem;
+  }
+  .medal-of {
+    font-family: var(--font-cinzel);
+    font-size: 0.95rem;
+    color: var(--gold);
+    margin-bottom: 0.3rem;
   }
 
   .empty {
     width: min(520px, 100%);
     margin: 0 auto;
-    padding: 1.6rem;
     text-align: center;
   }
   .empty p:first-child {
-    margin-top: 0;
+    margin: 0 0 0.4rem;
     font-family: var(--font-display);
-    font-size: 1.1rem;
+    font-size: 1.3rem;
     color: var(--gold-hi);
   }
+  .empty p {
+    margin: 0 0 1.4rem;
+  }
 
-  /* ---- summary ---- */
-  .tiles {
+  /* ---- categories, as small versions of the game's category cards ---- */
+  .cats {
+    list-style: none;
+    margin: 0;
+    padding: 0;
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     gap: 0.8rem;
   }
-  .tile {
+  .cat {
+    width: 100%;
+    height: 100%;
+    padding: 0;
+    border: 0;
+    background: none;
+    cursor: pointer;
+    transition: opacity 0.3s;
+  }
+  .cat-frame {
+    position: relative;
+    height: 100%;
     display: flex;
     flex-direction: column;
-    gap: 0.2rem;
-    padding: 0.9rem 1rem;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 1rem 0.8rem 0.9rem;
+    border-radius: 8px;
+    border: 1px solid var(--gold-lo);
+    background:
+      radial-gradient(ellipse at 50% 30%, rgba(175, 96, 37, 0.25), transparent 60%),
+      linear-gradient(170deg, #2a2016, #120e0a 70%);
+    box-shadow:
+      inset 0 0 0 3px rgba(0, 0, 0, 0.5),
+      inset 0 0 0 4px rgba(125, 99, 51, 0.35),
+      0 10px 26px rgba(0, 0, 0, 0.5);
+    transition:
+      transform 0.35s var(--ease-out),
+      border-color 0.3s,
+      box-shadow 0.3s,
+      filter 0.3s;
   }
-  .tile-label {
+  /* The game's filigree, on all four corners. */
+  .cat-frame::before {
+    content: '';
+    position: absolute;
+    inset: 4px;
+    background: var(--filigree);
+    background-size: 20px 20px;
+    opacity: 0.75;
+    filter: drop-shadow(0 0 3px rgba(224, 138, 68, 0.35));
+    pointer-events: none;
+  }
+  .glyph {
+    width: 64px;
+    height: 64px;
+    background: linear-gradient(180deg, #fbe6b0 0%, #c9a45c 45%, #6d4a1c 100%);
+    -webkit-mask: var(--src) center / contain no-repeat;
+    mask: var(--src) center / contain no-repeat;
+    opacity: 0.85;
+    filter: drop-shadow(0 0 10px rgba(224, 138, 68, 0.45));
+    transition:
+      transform 0.5s var(--ease-out),
+      opacity 0.3s;
+  }
+  .cat-name {
+    flex: 1;
+    display: grid;
+    place-items: center;
+    min-height: 2.4em;
     font-family: var(--font-display);
-    font-size: 0.72rem;
-    letter-spacing: 0.16em;
-    text-transform: uppercase;
-    color: var(--muted);
-  }
-  .tile-value {
-    font-family: var(--font-cinzel);
-    font-size: 2rem;
     font-weight: 700;
-    line-height: 1.1;
+    font-size: 0.86rem;
+    letter-spacing: 0.04em;
+    line-height: 1.2;
     color: var(--gold-hi);
-    text-shadow: 0 0 16px rgba(241, 217, 155, 0.2);
+    text-align: center;
   }
-  .tile-value small {
+  .cat-count {
+    font-family: var(--font-cinzel);
+    font-weight: 700;
     font-size: 1rem;
-    color: var(--muted);
-    text-shadow: none;
+    color: var(--text);
   }
-  .tile-note {
-    font-size: 0.9rem;
+  .cat-count small {
+    font-weight: 500;
+    font-size: 0.78rem;
     color: var(--muted);
+  }
+  .cat .meter {
+    width: 80%;
+    margin-top: 0.15rem;
+  }
+  .cat-acc {
+    font-size: 0.85rem;
+    font-style: italic;
+    color: var(--muted);
+  }
+  .cat:hover .cat-frame,
+  .cat:focus-visible .cat-frame {
+    transform: translateY(-4px);
+    border-color: var(--gold);
+    box-shadow:
+      inset 0 0 0 3px rgba(0, 0, 0, 0.5),
+      inset 0 0 0 4px rgba(201, 164, 92, 0.6),
+      0 0 26px rgba(224, 138, 68, 0.25),
+      0 14px 30px rgba(0, 0, 0, 0.6);
+  }
+  .cat:hover .glyph {
+    transform: scale(1.08) rotate(-3deg);
+    opacity: 1;
+  }
+  .cat:focus-visible {
+    outline: none;
+  }
+  .cat.on .cat-frame {
+    border-color: var(--gold-hi);
+    box-shadow:
+      inset 0 0 0 3px rgba(0, 0, 0, 0.4),
+      inset 0 0 0 4px rgba(241, 217, 155, 0.6),
+      0 0 34px rgba(255, 170, 90, 0.35),
+      0 14px 30px rgba(0, 0, 0, 0.6);
+  }
+  .cat.on .glyph {
+    opacity: 1;
+  }
+  .cat.dim {
+    opacity: 0.55;
+  }
+  .cat.dim:hover {
+    opacity: 1;
   }
 
-  /* One hue, gold on the panel's line colour: more is more gold. */
+  /* One hue for every bar: ember to gold, more is more gold. */
   .meter {
     position: relative;
     display: block;
     height: 6px;
-    min-width: 40px;
     border-radius: 3px;
-    background: rgba(59, 48, 36, 0.8);
-    overflow: hidden;
-  }
-  .meter.wide {
-    margin-top: 0.4rem;
+    background: #0b0907;
+    box-shadow:
+      inset 0 0 0 1px rgba(125, 99, 51, 0.35),
+      inset 0 1px 2px rgba(0, 0, 0, 0.8);
   }
   .fill {
     position: absolute;
     inset: 0 auto 0 0;
     border-radius: 3px;
-    background: linear-gradient(90deg, var(--gold-lo), var(--gold));
+    background: linear-gradient(90deg, #6d4a1c, #c9a45c 70%, #f1d99b);
+    box-shadow: 0 0 8px rgba(224, 138, 68, 0.45);
   }
 
-  .split {
+  /* ---- panels, as the lobby's ---- */
+  .panels {
     display: grid;
-    grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
-    gap: 0.8rem;
+    grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+    gap: 1rem;
+    align-items: start;
   }
-  .box {
-    padding: 1.1rem 1.2rem;
+  .panel {
+    padding: 1.2rem 1.3rem 1.3rem;
   }
-  h2 {
-    font-size: 0.85rem;
-    letter-spacing: 0.18em;
+  .answers {
+    grid-column: 1 / -1;
+  }
+  .answer-cols {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 1rem 3rem;
+  }
+  .answer-cols h3 {
+    margin-bottom: 0.6rem;
+    font-size: 0.74rem;
+    letter-spacing: 0.2em;
     text-transform: uppercase;
-    color: var(--gold-hi);
-    margin-bottom: 0.7rem;
+    color: var(--muted);
   }
-  h2.sub {
-    margin-top: 1.2rem;
+  .panel header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 0.9rem;
+    padding-bottom: 0.6rem;
+    border-bottom: 1px solid var(--line);
+  }
+  .panel h2 {
+    font-size: 1rem;
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    color: var(--gold-hi);
+  }
+  .count {
+    font-family: var(--font-cinzel);
+    font-weight: 700;
+    font-size: 0.9rem;
+    color: var(--gold);
   }
   .bars {
     list-style: none;
@@ -567,192 +878,161 @@
     padding: 0;
     display: flex;
     flex-direction: column;
-    gap: 0.55rem;
+    gap: 0.6rem;
   }
   .bars li {
     display: grid;
-    grid-template-columns: minmax(0, 8rem) minmax(40px, 1fr) 5.5rem;
+    grid-template-columns: 7rem minmax(30px, 1fr) 3rem;
     align-items: center;
     gap: 0.7rem;
   }
-  .bars.cats li {
-    grid-template-columns: minmax(0, 1fr) 3.2rem minmax(40px, 9rem) 3rem;
-  }
   .bar-name {
-    font-size: 0.95rem;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    font-size: 1rem;
     white-space: nowrap;
   }
   .bar-value {
     font-family: var(--font-cinzel);
     font-size: 0.85rem;
-    color: var(--text);
     text-align: right;
-    white-space: nowrap;
-  }
-  .bar-value small {
-    color: var(--muted);
-    font-family: var(--font-body);
-    font-size: 0.85rem;
-  }
-  .found {
-    font-family: var(--font-cinzel);
-    font-size: 0.8rem;
-    color: var(--muted);
-    text-align: right;
-  }
-  .cat {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    min-width: 0;
-    padding: 0;
-    background: none;
-    border: 0;
-    cursor: pointer;
-    text-align: left;
     color: var(--text);
-    transition: color 0.2s;
   }
-  .cat:hover {
-    color: var(--gold-hi);
-  }
-  .cat img {
-    width: 24px;
-    height: 24px;
-    object-fit: contain;
-    flex: none;
-  }
-
-  .insights {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-    gap: 0.8rem;
-  }
-  .hint {
-    margin: -0.4rem 0 0.6rem;
-    font-size: 0.9rem;
-    font-style: italic;
-  }
-  .list {
+  .rows {
     list-style: none;
     margin: 0;
     padding: 0;
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: 0.4rem;
   }
-  .list li {
+  .row {
+    width: 100%;
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: 0.7rem;
+    padding: 0.35rem 0.7rem 0.35rem 0.35rem;
+    border-radius: 4px;
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid rgba(59, 48, 36, 0.6);
+    color: var(--text);
+    font-size: 1rem;
+    text-align: left;
   }
-  .list b {
+  button.row {
+    cursor: pointer;
+    transition:
+      border-color 0.25s,
+      background 0.25s,
+      color 0.25s;
+  }
+  button.row:hover {
+    border-color: var(--gold-lo);
+    background: rgba(0, 0, 0, 0.4);
+    color: var(--gold-hi);
+  }
+  .row b {
     font-family: var(--font-cinzel);
     font-size: 0.85rem;
     color: var(--gold);
     white-space: nowrap;
   }
-  .pick {
+  .row-name {
     flex: 1;
     min-width: 0;
     display: flex;
-    align-items: center;
-    gap: 0.6rem;
-    padding: 0.2rem 0.4rem;
-    border: 1px solid transparent;
-    border-radius: 4px;
-    background: none;
-    cursor: pointer;
-    text-align: left;
-    color: var(--text);
-    transition:
-      border-color 0.2s,
-      background 0.2s,
-      color 0.2s;
+    flex-direction: column;
+    line-height: 1.2;
   }
-  .pick:hover {
-    border-color: var(--line);
-    background: rgba(0, 0, 0, 0.3);
-    color: var(--gold-hi);
-  }
-  .pick img {
-    width: 32px;
-    height: 32px;
-    object-fit: contain;
-    flex: none;
-  }
-  .pick > span {
+  .row-name > * {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .pair i {
+  .row-name small {
+    font-size: 0.85rem;
+    font-style: italic;
     color: var(--muted);
   }
-  .fake {
-    flex: 1;
-    min-width: 0;
-    padding: 0.2rem 0.4rem;
-    display: flex;
-    flex-direction: column;
-    line-height: 1.25;
+  .fake-name {
+    font-style: italic;
+    text-decoration: line-through rgba(224, 85, 63, 0.6);
+  }
+  /* A small art stage, as the game's. */
+  .thumb {
+    flex: none;
+    width: 40px;
+    height: 40px;
+    display: grid;
+    place-items: center;
+    border-radius: 3px;
+    background:
+      radial-gradient(ellipse 60% 55% at 50% 50%, rgba(175, 96, 37, 0.22), transparent 70%),
+      linear-gradient(180deg, #0c0d12, #060709);
+    box-shadow: inset 0 0 0 1px rgba(90, 58, 28, 0.6);
+  }
+  .thumb img {
+    width: 34px;
+    height: 34px;
+    object-fit: contain;
+    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.8));
+  }
+  .thumb.fake {
+    font-family: var(--font-cinzel);
+    font-weight: 700;
+    color: #8e4434;
   }
 
-  /* ---- collection ---- */
+  /* ---- the collection ---- */
   .collection {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: 1.2rem;
     scroll-margin-top: 1rem;
-  }
-  .collection > .bar {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.6rem 1rem;
-    padding-bottom: 0.6rem;
-    border-bottom: 1px solid var(--line);
-  }
-  .collection > .bar h2 {
-    margin: 0;
-    font-size: 1rem;
   }
   .controls {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.5rem;
     align-items: center;
-  }
-  .controls .field {
-    width: auto;
-    padding: 0.45rem 0.7rem;
-    font-size: 0.95rem;
+    justify-content: center;
+    gap: 0.6rem;
   }
   .search {
-    min-width: 0;
-    width: 12rem !important;
+    width: min(320px, 100%);
+    padding: 0.5rem 0.8rem;
   }
-  select.field {
-    max-width: 16rem;
-    font-family: var(--font-body);
-    cursor: pointer;
-  }
-  select.field option {
-    background: #15110d;
-  }
-  .seg {
-    display: flex;
-    gap: 0.3rem;
-  }
-  .seg > button {
-    min-width: 60px;
-    padding: 0.45rem 0.7rem;
+  .filter {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    height: 38px;
+    padding: 0 0.8rem;
+    border: 1px solid var(--gold);
+    border-radius: 3px;
+    background: linear-gradient(180deg, #8a5a22, #452a0e);
+    color: #fff1cf;
     font-family: var(--font-display);
     font-weight: 700;
     font-size: 0.8rem;
+    cursor: pointer;
+  }
+  .filter svg {
+    width: 12px;
+    height: 12px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2.4;
+    stroke-linecap: round;
+  }
+  .seg {
+    display: flex;
+    gap: 0.4rem;
+  }
+  .seg > button {
+    min-width: 64px;
+    height: 38px;
+    padding: 0 0.8rem;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 0.85rem;
     color: var(--muted);
     background: rgba(0, 0, 0, 0.35);
     border: 1px solid var(--line);
@@ -769,200 +1049,357 @@
     background: linear-gradient(180deg, #8a5a22, #452a0e);
     border-color: var(--gold);
     text-shadow: 0 0 10px rgba(255, 220, 160, 0.5);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 230, 170, 0.3),
+      0 0 14px rgba(201, 164, 92, 0.3);
   }
 
-  .cat-section header {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.3rem 0.7rem;
-    margin-bottom: 0.5rem;
+  /* PoE-style item tooltip, as in the game (QuestionView). */
+  .tooltip {
+    border: 1px solid #5a3a1c;
+    --bs-fill-a: rgba(5, 4, 3, 0.92);
+    --bs-fill-b: rgba(5, 4, 3, 0.92);
+    background: var(--bs-fill-paint, linear-gradient(var(--bs-fill-a), var(--bs-fill-b)));
+    --bs2: 20px 60px;
+    --bs2-color: rgba(0, 0, 0, 0.7);
+    box-shadow:
+      0 0 0 1px #000,
+      var(--bs-soft-paint, 0 var(--bs2, 0 0) var(--bs2-color, transparent));
   }
-  .cat-section header img {
-    width: 28px;
-    height: 28px;
-    object-fit: contain;
+  .head {
+    position: relative;
+    display: grid;
+    min-height: 60px;
+    place-items: center;
+    padding: 0.4rem 2.6rem;
+    background:
+      linear-gradient(90deg, transparent, rgba(175, 96, 37, 0.35) 20%, rgba(175, 96, 37, 0.35) 80%, transparent),
+      linear-gradient(180deg, #3b2412, #1c1008);
+    border-bottom: 1px solid #6b4520;
   }
-  .cat-section h3 {
-    font-size: 1rem;
-    letter-spacing: 0.08em;
-    color: var(--gold-hi);
-  }
-  .cat-section header span {
+  .head::before,
+  .head::after {
+    content: '◆';
+    position: absolute;
+    top: 50%;
+    translate: 0 -50%;
+    color: var(--unique);
     font-size: 0.9rem;
+    opacity: 0.8;
+  }
+  .head::before {
+    left: 14px;
+  }
+  .head::after {
+    right: 14px;
+  }
+  .head-text {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    line-height: 1.15;
+  }
+  .iname {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 1.15rem;
+    color: var(--unique-hi);
+    text-shadow: 0 0 12px rgba(224, 138, 68, 0.4);
+  }
+  .ibase {
+    font-family: var(--font-display);
+    font-size: 0.85rem;
+    color: #d8a26a;
+    opacity: 0.85;
   }
   .groups {
-    list-style: none;
-    margin: 0 0 0.7rem;
-    padding: 0;
     display: flex;
     flex-wrap: wrap;
-    gap: 0.35rem;
+    justify-content: center;
+    gap: 0.2rem 1.4rem;
+    margin: 0;
+    padding: 0.55rem 1rem;
+    border-bottom: 1px solid #2a1d10;
+    font-variant: small-caps;
+    letter-spacing: 0.04em;
+    color: #8f9aa6;
   }
-  .groups li {
-    padding: 0.15rem 0.6rem;
-    border: 1px solid var(--line);
-    border-radius: 999px;
-    font-size: 0.85rem;
-    background: rgba(0, 0, 0, 0.25);
+  .groups b {
+    font-weight: 500;
+    color: #a9c3dc;
   }
-  .grid {
+  /* The items, as the game's picture options: one dark stage per slot. */
+  .cells {
     list-style: none;
     margin: 0;
     padding: 0;
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
-    gap: 0.5rem;
+    grid-template-columns: repeat(auto-fill, minmax(124px, 1fr));
+    gap: 1px;
+    background: #060709;
   }
-  .tile-item {
+  .cells li {
+    box-shadow: 0 0 0 1px #2a1d10;
+  }
+  .cell {
+    position: relative;
     width: 100%;
-    height: 100%;
+    height: 158px;
     display: flex;
     flex-direction: column;
-    align-items: stretch;
-    gap: 0.35rem;
-    padding: 0.5rem 0.5rem 0.55rem;
-    border: 1px solid var(--line);
-    border-radius: 4px;
-    background: radial-gradient(ellipse at 50% 35%, rgba(175, 96, 37, 0.1), transparent 70%), rgba(0, 0, 0, 0.35);
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.9rem 0.5rem 0.7rem;
+    border: 1px solid transparent;
+    background:
+      radial-gradient(ellipse 60% 50% at 50% 42%, rgba(175, 96, 37, 0.14), transparent 70%),
+      radial-gradient(ellipse 90% 40% at 50% 0%, rgba(90, 110, 160, 0.09), transparent 70%),
+      radial-gradient(ellipse at center, transparent 45%, rgba(0, 0, 0, 0.5) 100%),
+      linear-gradient(180deg, #0c0d12, #060709);
     color: var(--text);
     text-align: center;
   }
-  button.tile-item {
+  button.cell {
     cursor: pointer;
     transition:
-      border-color 0.2s,
-      box-shadow 0.25s,
-      transform 0.2s var(--ease-out);
+      border-color 0.3s,
+      box-shadow 0.3s;
   }
-  button.tile-item:hover {
-    border-color: var(--gold-lo);
-    box-shadow: 0 0 16px rgba(201, 164, 92, 0.2);
-    transform: translateY(-2px);
+  button.cell:hover,
+  button.cell:focus-visible {
+    outline: none;
+    border-color: var(--gold);
+    box-shadow: inset 0 0 30px rgba(201, 164, 92, 0.18);
   }
-  .thumb {
-    height: 72px;
+  .pic {
+    flex: 1;
+    min-height: 0;
+    width: 100%;
     display: grid;
     place-items: center;
+    transition: transform 0.35s var(--ease-out);
   }
-  .thumb img {
-    max-width: 100%;
-    max-height: 72px;
+  button.cell:hover .pic {
+    transform: scale(1.07);
+  }
+  .pic img {
+    max-width: 88%;
+    max-height: 92px;
     object-fit: contain;
-    filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.7));
+    filter: drop-shadow(0 8px 14px rgba(0, 0, 0, 0.8));
   }
-  .name {
-    font-size: 0.82rem;
+  .caption {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 0.8rem;
     line-height: 1.2;
+    color: var(--gold-hi);
     display: -webkit-box;
     -webkit-line-clamp: 2;
     line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
-    flex: 1;
+    min-height: 2.4em;
   }
-  /* The accuracy bar, or "seen" without answers, on the same line. */
-  .status {
-    height: 0.8rem;
-    display: grid;
-    align-items: center;
-  }
-  .tile-item .meter {
-    height: 4px;
-    min-width: 0;
-  }
-  .seen-only {
-    font-size: 0.75rem;
-    font-style: italic;
+  .score {
+    position: absolute;
+    top: 6px;
+    right: 8px;
+    font-family: var(--font-cinzel);
+    font-size: 0.7rem;
     color: var(--muted);
-    line-height: 1;
   }
-  .unknown {
-    opacity: 0.45;
-    background: rgba(0, 0, 0, 0.25);
-    border-style: dashed;
+  /* Accuracy, along the slot's lower edge. */
+  .acc {
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    height: 2px;
+    width: calc(var(--a) * 100%);
+    background: linear-gradient(90deg, #6d4a1c, #c9a45c 70%, #f1d99b);
+    box-shadow: 0 0 6px rgba(224, 138, 68, 0.6);
   }
-  .unknown svg {
-    width: 26px;
-    height: 26px;
-    fill: none;
-    stroke: var(--line);
-    stroke-width: 1.4;
+  /* Not met yet: only its shape, dark against the stage. */
+  .unknown .pic img {
+    filter: brightness(0) drop-shadow(0 0 1px rgba(201, 164, 92, 0.35)) drop-shadow(0 0 10px rgba(175, 96, 37, 0.25));
+    opacity: 0.85;
+    user-select: none;
   }
-  .unknown .name {
-    font-style: italic;
-    color: var(--muted);
+  .unknown .caption {
+    font-weight: 400;
+    letter-spacing: 0.08em;
+    color: #6f6a62;
   }
   .none {
+    margin: 1rem 0;
     text-align: center;
     font-style: italic;
+    color: var(--muted);
   }
 
-  .table-wrap {
-    overflow-x: auto;
-    padding: 0.4rem 0.6rem;
-  }
-  table {
+  /* The table: every column fits, nothing scrolls sideways. */
+  .ledger table {
     width: 100%;
+    table-layout: fixed;
     border-collapse: collapse;
-    font-size: 0.95rem;
   }
   th {
+    padding: 0;
     text-align: left;
-    border-bottom: 1px solid var(--line);
+    background: linear-gradient(180deg, #3b2412, #1c1008);
+    border-bottom: 1px solid #6b4520;
+  }
+  th:nth-child(1) {
+    width: auto;
+  }
+  th:nth-child(2) {
+    width: 16%;
+  }
+  th:nth-child(3),
+  th:nth-child(4) {
+    width: 4.6rem;
+  }
+  th:nth-child(5) {
+    width: 9.5rem;
+  }
+  th:nth-child(6) {
+    width: 6.5rem;
   }
   th button {
-    padding: 0.5rem 0.4rem;
+    width: 100%;
+    padding: 0.75rem 0.8rem;
     background: none;
     border: 0;
     cursor: pointer;
+    text-align: inherit;
     font-family: var(--font-display);
     font-size: 0.72rem;
-    letter-spacing: 0.14em;
+    letter-spacing: 0.16em;
     text-transform: uppercase;
-    color: var(--muted);
+    color: #d8a26a;
     white-space: nowrap;
   }
   th button:hover,
   th[aria-sort='ascending'] button,
   th[aria-sort='descending'] button {
-    color: var(--gold-hi);
+    color: var(--unique-hi);
   }
   .arrow {
     display: inline-block;
-    width: 0.7em;
-  }
-  td {
-    padding: 0.2rem 0.4rem;
-    border-bottom: 1px solid rgba(59, 48, 36, 0.5);
-    white-space: nowrap;
-  }
-  td:first-child {
-    max-width: 18rem;
+    width: 0.9em;
+    text-align: right;
   }
   .num {
     text-align: right;
   }
+  td {
+    padding: 0.3rem 0.8rem;
+    border-bottom: 1px solid #1d150c;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  tbody tr {
+    transition: background 0.2s;
+  }
+  tbody tr:hover {
+    background: rgba(175, 96, 37, 0.08);
+  }
+  tbody tr:last-child td {
+    border-bottom: 0;
+  }
   td.num {
     font-family: var(--font-cinzel);
-    font-size: 0.85rem;
+    font-size: 0.88rem;
   }
-  tr:last-child td {
-    border-bottom: 0;
+  td small {
+    color: var(--muted);
+  }
+  .type,
+  .when {
+    color: var(--muted);
+  }
+  .item {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    width: 100%;
+    min-width: 0;
+    padding: 0;
+    background: none;
+    border: 0;
+    cursor: pointer;
+    text-align: left;
+    color: var(--text);
+  }
+  .item-name {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    line-height: 1.2;
+    font-size: 1rem;
+  }
+  .item-name > * {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .item-name small {
+    font-size: 0.82rem;
+    color: #d8a26a;
+    opacity: 0.75;
+  }
+  tbody tr:hover .item-name {
+    color: var(--gold-hi);
+  }
+  .acc-cell {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.6rem;
+    width: 100%;
+  }
+  .acc-cell .meter {
+    flex: 1;
+    max-width: 4.5rem;
+  }
+  .acc-pct {
+    width: 2.6rem;
+  }
+  .short {
+    display: none;
   }
 
   .end {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.5rem;
-    padding-top: 1rem;
-    border-top: 1px solid var(--line);
+    gap: 0.4rem;
+    margin-top: 0.6rem;
     text-align: center;
     font-size: 0.9rem;
+    font-style: italic;
+    color: var(--muted);
   }
   .end p {
     margin: 0;
+  }
+  .erase {
+    padding: 0.2rem 0.4rem;
+    background: none;
+    border: 0;
+    cursor: pointer;
+    font-family: var(--font-display);
+    font-size: 0.75rem;
+    font-style: normal;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--muted);
+    transition: color 0.2s;
+  }
+  .erase:hover {
+    color: #ff7a5c;
   }
 
   .backdrop {
@@ -990,62 +1427,93 @@
     margin-top: 1.2rem;
   }
 
-  @media (max-width: 760px) {
-    .split {
-      grid-template-columns: 1fr;
+  @media (max-width: 900px) {
+    .summary {
+      grid-template-columns: 1fr 1fr;
+      row-gap: 1rem;
+    }
+    .medallion {
+      grid-column: 1 / -1;
+      grid-row: 1;
+      justify-self: center;
+    }
+    .cats {
+      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
     }
   }
-  @media (max-width: 520px) {
-    .tiles {
+  @media (max-width: 560px) {
+    .codex {
+      gap: 1.3rem;
+    }
+    .summary {
+      grid-template-columns: 1fr;
+    }
+    .side {
+      justify-content: space-around;
+    }
+    .medallion {
+      width: 220px;
+      height: 220px;
+    }
+    .medal-value {
+      font-size: 3rem;
+    }
+    .stat-value {
+      font-size: 1.9rem;
+    }
+    .cats {
       grid-template-columns: 1fr 1fr;
+      gap: 0.6rem;
     }
-    .tile-value {
-      font-size: 1.6rem;
+    .glyph {
+      width: 48px;
+      height: 48px;
     }
-    .bars li {
-      grid-template-columns: minmax(0, 6.5rem) minmax(30px, 1fr) 4.8rem;
-      gap: 0.5rem;
+    .cells {
+      grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
     }
-    .bars.cats li {
-      grid-template-columns: minmax(0, 1fr) 2.8rem minmax(30px, 4rem) 2.6rem;
+    .cell {
+      height: 140px;
     }
-    .controls,
-    .search {
-      width: 100% !important;
-    }
-    .controls select.field {
-      flex: 1;
-      max-width: none;
-    }
-    .grid {
-      grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
+    .pic img {
+      max-height: 76px;
     }
     .wide {
       display: none;
     }
-    td:first-child {
-      white-space: normal;
+    th:nth-child(3),
+    th:nth-child(4) {
+      width: 3.4rem;
     }
-    .table-wrap {
-      padding: 0.3rem;
-    }
-    .table-wrap .pick {
-      gap: 0.4rem;
-      padding: 0.2rem;
-    }
-    .table-wrap .pick img {
-      width: 26px;
-      height: 26px;
-    }
-    .table-wrap .pick > span {
-      white-space: normal;
+    th:nth-child(5) {
+      width: 4rem;
     }
     th button {
-      padding: 0.5rem 0.2rem;
-      letter-spacing: 0.06em;
+      padding: 0.7rem 0.4rem;
+      letter-spacing: 0.08em;
     }
     td {
-      padding: 0.2rem;
+      padding: 0.3rem 0.4rem;
+    }
+    .acc-cell .meter {
+      display: none;
+    }
+    .long {
+      display: none;
+    }
+    .short {
+      display: inline;
+    }
+    .item {
+      gap: 0.5rem;
+    }
+    .item .thumb {
+      width: 34px;
+      height: 34px;
+    }
+    .item .thumb img {
+      width: 28px;
+      height: 28px;
     }
   }
 </style>

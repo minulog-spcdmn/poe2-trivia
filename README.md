@@ -72,7 +72,7 @@ Look-alike names form a cluster, and the answer's place in it is random: the
 name that looks most (or least) like the others is no more likely to be right
 than any other.
 
-**Codex:** a page (from the start page, after a game, or at
+**Codex:** a page (from the start page's corner, or at
 `poe2.quest/#codex`) listing every item you have met, with your accuracy per
 item, category, item group, question type and difficulty, your nemeses (lowest
 accuracy, at least 3 answers), mix-ups (what you picked for what), made-up
@@ -80,7 +80,7 @@ names you fell for, streaks and answer times. Every question revealed on your
 screen counts as met; only your own answers count toward accuracy (your turn,
 or your guess in a race; a turn that runs out of time is wrong). In hot-seat,
 answers only count when one person plays alone. Undiscovered items show as
-empty frames, and the codex can't be opened mid-game. It is kept in this
+dark silhouettes, and the codex can't be opened while in a room. It is kept in this
 browser's localStorage only (`src/lib/codex.ts`).
 
 ## Multiplayer
