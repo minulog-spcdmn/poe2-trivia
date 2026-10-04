@@ -13,6 +13,7 @@
   import Lobby from './components/Lobby.svelte';
   import Game from './components/Game.svelte';
   import GameOver from './components/GameOver.svelte';
+  import { closeCodex, codexRoute } from './lib/codexRoute.svelte';
 
   let muted = $state(isMuted());
   let volume = $state(getVolume());
@@ -69,9 +70,25 @@
   }
 
   const gs = $derived(session.state);
+  // The codex opens from the start page and after a game; never mid-game, where it would be a cheat sheet.
+  const codexAllowed = $derived(!session.mode || !gs || gs.phase === 'over');
   const screen = $derived(
-    !session.mode || !gs ? 'home' : gs.phase === 'lobby' ? 'lobby' : gs.phase === 'over' ? 'over' : 'game',
+    codexRoute.open && codexAllowed
+      ? 'codex'
+      : !session.mode || !gs
+        ? 'home'
+        : gs.phase === 'lobby'
+          ? 'lobby'
+          : gs.phase === 'over'
+            ? 'over'
+            : 'game',
   );
+  // The host started the next game (or a game was resumed): back to it.
+  $effect(() => {
+    if (codexRoute.open && !codexAllowed) closeCodex();
+  });
+  // The start page and the codex have no game header.
+  const bare = $derived(screen === 'home' || screen === 'codex');
 
   // Each screen starts at the top (a guest who scrolled down to the join
   // form shouldn't land halfway down the lobby).
@@ -105,7 +122,7 @@
 <Background />
 
 <div class="shell" data-behind-dialog bind:this={shell}>
-  {#if screen !== 'home'}
+  {#if !bare}
     <header in:fade={{ duration: 300 }} bind:offsetHeight={headerHeight}>
       <button class="brand" onclick={() => (confirmLeave = true)} title="Leave game">
         <svg class="brand-mark" viewBox="20 0 400 391" aria-hidden="true"><path d="M224 390Q255 331 301.0 283.5Q347 236 377 218L407 200L220 -1Q164 31 116.5 82.5Q69 134 50 169L31 204Z" fill="currentColor" /></svg>
@@ -197,6 +214,11 @@
           <Lobby />
         {:else if screen === 'game'}
           <Game />
+        {:else if screen === 'codex'}
+          <!-- Loaded when first opened: most visits never do. -->
+          {#await import('./components/Codex.svelte') then { default: Codex }}
+            <Codex />
+          {/await}
         {:else}
           <GameOver />
         {/if}
@@ -213,7 +235,7 @@
   {/if}
 </div>
 
-<Toasts headerHeight={screen === 'home' ? 0 : headerHeight} />
+<Toasts headerHeight={bare ? 0 : headerHeight} />
 
 <FxLayer />
 

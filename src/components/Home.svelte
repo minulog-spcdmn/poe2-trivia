@@ -11,6 +11,7 @@
   import { connecting as portalFx, refuse, titleGlints } from '../lib/fx/moments';
   import type { Handle } from '../lib/fx/core';
   import { setHomeScene } from '../lib/lights';
+  import { openCodex } from '../lib/codexRoute.svelte';
 
   /** Keeps a room code's letters and digits, uppercased, up to its length. */
   const cleanCode = (v: string) => v.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, CODE_LENGTH);
@@ -30,6 +31,12 @@
   let nameError = $state(false);
 
   const total = engine.items.length;
+  /** Null until the codex is read. */
+  let discovered = $state<number | null>(null);
+  void import('../lib/codex').then(({ loadCodex }) => {
+    const met = loadCodex().items;
+    discovered = engine.items.filter((it) => met[it.id]).length;
+  });
   const showcase = shuffle(engine.items, Math.random).slice(0, 7);
 
   function needName() {
@@ -192,6 +199,14 @@
     <div class="or"><span>or</span></div>
     <button class="btn ghost wide" onclick={local} disabled={connecting}>
       Play hot-seat on this device
+    </button>
+
+    <button class="codex-link" onclick={openCodex} disabled={connecting}>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5C4 4.7 4.7 4 5.5 4H11v16H5.5c-.8 0-1.5-.7-1.5-1.5zM20 5.5c0-.8-.7-1.5-1.5-1.5H13v16h5.5c.8 0 1.5-.7 1.5-1.5z" /></svg>
+      <span>Codex</span>
+      {#if discovered !== null}
+        <small in:fade={{ duration: 200 }}>{discovered ? `${discovered} / ${total} discovered` : 'every unique you meet, recorded'}</small>
+      {/if}
     </button>
 
     {#if connecting}
@@ -440,6 +455,48 @@
   }
   .wide {
     width: 100%;
+  }
+
+  .codex-link {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.55rem;
+    width: 100%;
+    margin-top: 0.8rem;
+    padding: 0.4rem;
+    background: none;
+    border: 0;
+    cursor: pointer;
+    color: var(--gold);
+    transition: color 0.2s;
+  }
+  .codex-link:hover:not(:disabled) {
+    color: var(--gold-hi);
+  }
+  .codex-link:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+  .codex-link svg {
+    width: 17px;
+    height: 17px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.6;
+    stroke-linejoin: round;
+  }
+  .codex-link span {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 0.85rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+  .codex-link small {
+    font-size: 0.95rem;
+    font-style: italic;
+    color: var(--muted);
   }
 
   .connecting {

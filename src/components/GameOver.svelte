@@ -10,6 +10,7 @@
   import { fxActive, fxUserOn } from '../lib/fx/core';
   import { victory } from '../lib/fx/moments';
   import { portal } from '../lib/portal';
+  import { openCodex } from '../lib/codexRoute.svelte';
 
   const s = $derived(session.state!);
   const standings = $derived([...s.players].sort((a, b) => b.score - a.score));
@@ -157,6 +158,7 @@
     {:else}
       <p class="muted">Waiting for the host to start a new game…</p>
     {/if}
+    <button class="btn ghost" onclick={openCodex}>Codex</button>
   </div>
   {#if spectators.length}
     <p class="joining muted" in:fly={{ y: 10, duration: 600, delay: 1400 }}>
