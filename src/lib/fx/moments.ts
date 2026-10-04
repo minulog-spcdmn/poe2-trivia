@@ -314,7 +314,8 @@ export function reveal(t: RevealTargets) {
   } else if (t.good && t.art) {
     const b = boxOf(t.art);
     flare(t.art, { size: 40, streak: b.w * 0.9, life: 0.9, color: C.goldPale, intensity: 0.6 });
-    rays(t.art, { radius: Math.max(b.w, b.h) * 0.6, life: 1.5 + 0.3 * hype, intensity: 0.16 * hype, color: C.gold, count: 14 });
+    // From behind the item, not the whole stage.
+    rays(t.art, { radius: Math.max(b.w, b.h) * 0.6, life: 1.5 + 0.3 * hype, intensity: 0.16 * hype, color: C.gold, count: 14, clear: t.art.querySelector('.frame .art-fit') });
     embers(t.art, { count: Math.round(14 * hype), area: 'fill', colors: [C.gold, C.ember, C.rightPale], rise: [60, 190], life: [0.8, 1.8] });
     light(t.art, { color: [1, 0.8, 0.45], radius: 420, intensity: 0.3 + 0.08 * hype, hold: 0.3, decay: 1.5 });
   }
@@ -574,7 +575,7 @@ export function victory(avatar: Element, title: Element, color: string, lost: bo
   ring(avatar, { radius: D * 0.5, thickness: 34, life: 1.2, color: main, breakup: 0.85, delay: 0.1, fill: 0.08, intensity: 0.45 });
   // The rays settle after a while, so a victory screen left open isn't
   // keeping the effects running. (The rune circle behind the avatar is SVG.)
-  handles.push(rays(avatar, { radius: Math.min(650, innerWidth * 0.5), intensity: lost ? 0.08 : 0.15, color: main, count: 16, delay: 0.3, fadeIn: 1.2, life: 14 }));
+  handles.push(rays(avatar, { radius: Math.min(650, innerWidth * 0.5), intensity: lost ? 0.08 : 0.15, color: main, count: 16, delay: 0.3, fadeIn: 1.2, life: 14, clear: avatar.querySelector('.avatar') ?? avatar }));
   later(0.9, () => {
     flare(title, { size: 36, streak: innerWidth * 0.4, life: 1, color: C.goldPale, intensity: 0.7 });
     glints(title, { count: 5, size: [5, 10], delay: [0, 1] });

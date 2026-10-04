@@ -339,7 +339,9 @@ void main() {
     hot = exp(-(r * r) / (vQ.x * vQ.x * 0.12)) * 1.5;
   } else if (type == 2) {
     // God rays: shafts of light through haze. q: inner radius, outer radius,
-    // ray count, sharpness. r: spin speed.
+    // ray count, sharpness. r: spin speed, then the half width, half height
+    // and corner radius of the element they shine from behind (0 for none).
+    // s: that element's centre, relative to the rays'.
     // A main layer of broad shafts and a finer one turning the other way,
     // each shaft with its own width, place, reach and slow breathing, so no
     // two look alike. Their roots melt into a soft glow instead of meeting in
@@ -366,6 +368,14 @@ void main() {
       // The source: a soft core in a wider haze, no hard point.
       float c = r / vQ.x;
       v += exp(-c * c * 0.6) * 0.3 + exp(-rn * 5.0) * 0.12 * reach;
+      // Behind the element: a faint glow over it, the rays starting at its rim.
+      if (vR.y > 0.0) {
+        vec2 h = vR.yz;
+        vec2 e = abs(vP - vS.xy) - h + vR.w;
+        float d = length(max(e, 0.0)) + min(max(e.x, e.y), 0.0) - vR.w;
+        float soft = 8.0 + 0.2 * min(h.x, h.y);
+        v *= mix(0.2, 1.0, smoothstep(-soft, soft * 0.6, d));
+      }
     }
   } else if (type == 3) {
     // Glow around a rounded rectangle. q: half w, half h, corner radius, glow width.

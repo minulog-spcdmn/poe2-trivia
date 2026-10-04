@@ -308,10 +308,21 @@ export function flare(at: Anchor, o: { size?: number; streak?: number; life?: nu
   });
 }
 
-/** Slowly turning god rays. Endless unless `life` is given; stop the handle to fade. */
-export function rays(at: Anchor, o: { radius?: number; count?: number; sharp?: number; color?: Vec3; intensity?: number; life?: number; spin?: number; delay?: number; fadeIn?: number } = {}): Handle {
+/**
+ * Slowly turning god rays. Endless unless `life` is given; stop the handle to
+ * fade. They shine from behind `clear` (by default the anchor, when it's an
+ * element): over its shape only a faint glow is left, so the light frames it
+ * instead of washing it out.
+ */
+export function rays(
+  at: Anchor,
+  o: { radius?: number; count?: number; sharp?: number; color?: Vec3; intensity?: number; life?: number; spin?: number; delay?: number; fadeIn?: number; clear?: Element | null } = {},
+): Handle {
   const R = o.radius ?? 420;
   const life = o.life ?? Infinity;
+  const clear = o.clear === undefined ? (at instanceof Element ? at : null) : o.clear;
+  // Its corner radius, as written (a percentage is resolved against its box).
+  const corner = clear ? getComputedStyle(clear).borderTopLeftRadius : '0';
   return shape({
     type: ShapeType.Rays,
     at,
@@ -319,7 +330,7 @@ export function rays(at: Anchor, o: { radius?: number; count?: number; sharp?: n
     delay: o.delay,
     calm: true,
     color: o.color ?? C.gold,
-    update(f, t, age) {
+    update(f, t, age, b) {
       const fin = Math.min(1, age / (o.fadeIn ?? 0.8));
       const fout = Number.isFinite(life) ? Math.min(1, (1 - t) * 3) : 1;
       f.hw = f.hh = R;
@@ -329,6 +340,15 @@ export function rays(at: Anchor, o: { radius?: number; count?: number; sharp?: n
       f.q[2] = o.count ?? 14;
       f.q[3] = o.sharp ?? 6;
       f.q[4] = o.spin ?? 0.25;
+      const c = clear && clear.isConnected ? boxOf(clear) : null;
+      const hw = c ? c.w / 2 : 0;
+      const hh = c ? c.h / 2 : 0;
+      const r = parseFloat(corner) || 0;
+      f.q[5] = hw;
+      f.q[6] = hh;
+      f.q[7] = Math.min(corner.endsWith('%') ? (r / 100) * Math.min(c?.w ?? 0, c?.h ?? 0) : r, hw, hh);
+      f.q[8] = c ? c.x - b.x : 0;
+      f.q[9] = c ? c.y - b.y : 0;
     },
   });
 }
