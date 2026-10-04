@@ -451,7 +451,7 @@
   {:else if race && myMiss}
     <p class="spectate out">Wrong: −1. You're out until the next question.</p>
   {:else if race}
-    <p class="spectate muted">First correct answer wins. Wrong costs a point! Press 1–{count}.</p>
+    <p class="spectate muted">First correct answer wins. Wrong costs a point! Press 1–{count === 10 ? '9 and 0' : count}.</p>
   {:else if !mine}
     <p class="spectate muted">{active.name} is deciding…</p>
   {:else}
