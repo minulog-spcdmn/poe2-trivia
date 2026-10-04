@@ -1,5 +1,6 @@
 <script lang="ts">
   import { fade, fly } from 'svelte/transition';
+  import { nameHeld, unlockHeldName } from '../lib/names';
   import { engine, session, savedName, saveName, CODE_LENGTH } from '../lib/session.svelte';
   import { shuffle } from '../lib/game';
   import { itemImage } from '../lib/ui';
@@ -16,6 +17,13 @@
 
   const params = new URLSearchParams(location.search);
   const invite = cleanCode(params.get('room') ?? '');
+  if (params.has('owner')) {
+    void unlockHeldName(params.get('owner') ?? '');
+    // Out of the address bar and history either way; other params stay.
+    const url = new URL(location.href);
+    url.searchParams.delete('owner');
+    history.replaceState(history.state, '', url);
+  }
 
   let name = $state(savedName());
   let code = $state(invite);
@@ -26,7 +34,7 @@
 
   function needName() {
     const n = name.trim();
-    if (!n) {
+    if (!n || nameHeld(n)) {
       nameError = true;
       const field = document.getElementById('name');
       if (field) refuse(field);

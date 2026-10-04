@@ -1219,3 +1219,27 @@ test('a question thrown out for failed art does not count toward the art lean', 
     assert.ok(Math.abs(s.artLean!.p0 - (PRESETS.cruel.artChance - art)) < 1e-9, 'only the latest question counts');
   }
 });
+
+test('the held name is refused until the device is unlocked', async () => {
+  const { heldKeyHash, nameHeld, unlockHeldName } = await import('../src/lib/names.ts');
+  const store = new Map<string, string>();
+  const had = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v) },
+  });
+  try {
+    // The real key is not in the repo, so this runs against a test key's hash.
+    const hash = await heldKeyHash('test words');
+    assert.equal(nameHeld('Doryani', hash), false);
+    assert.equal(nameHeld('Zoe_Arcana', hash), true);
+    assert.equal(await unlockHeldName('nope', hash), false);
+    assert.equal(nameHeld('Zoe_Arcana', hash), true, 'a wrong key unlocks nothing');
+    assert.equal(await unlockHeldName('Test-Words', hash), true, 'case and dashes do not count');
+    assert.equal(nameHeld('zoe_arcana', hash), false, 'unlocked on this device');
+    assert.equal(nameHeld('zoe_arcana'), true, 'a device unlocked for another key stays locked');
+  } finally {
+    if (had) Object.defineProperty(globalThis, 'localStorage', had);
+    else delete (globalThis as { localStorage?: unknown }).localStorage;
+  }
+});

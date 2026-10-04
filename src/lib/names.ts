@@ -45,6 +45,53 @@ export function nameSkeleton(name: string): string {
   return folded || name.toLowerCase();
 }
 
+// A name held back for one person. Opening the site once with ?owner=<key>
+// unlocks it on that device (remembered in localStorage). The key is a few
+// random words; only its PBKDF2-SHA256 hash is in the source, and
+// scripts/held-key-hash.mjs makes the hash for a new key. Case, spaces and
+// dashes don't count, so "Ember Tower" and "ember-tower" are the same key.
+// A deterrent against impersonation, not security: the check only runs in
+// the name field.
+const HELD_NAME = 'zoearcana';
+const HELD_KEY_HASH = '5ddd2ad1ad21e94175a14999359a9e8b2b508a70c769f49f71a6d94e5821a607';
+const HELD_SALT = 'poe2trivia.held-name';
+const HELD_ITERATIONS = 600_000;
+const OWNER_KEY = 'poe2trivia.owner';
+
+/** Hex PBKDF2 hash of a key. Throws where Web Crypto is missing (plain http). */
+export async function heldKeyHash(key: string): Promise<string> {
+  const enc = new TextEncoder();
+  const plain = key.normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
+  const base = await crypto.subtle.importKey('raw', enc.encode(plain), 'PBKDF2', false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', hash: 'SHA-256', salt: enc.encode(HELD_SALT), iterations: HELD_ITERATIONS },
+    base,
+    256,
+  );
+  return Array.from(new Uint8Array(bits), (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/** Remembers this device as the owner's when the key is right. */
+export async function unlockHeldName(key: string, hash = HELD_KEY_HASH): Promise<boolean> {
+  try {
+    if ((await heldKeyHash(key)) !== hash) return false;
+    localStorage.setItem(OWNER_KEY, hash);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** True when the name is held and this device is not unlocked. */
+export function nameHeld(name: string, hash = HELD_KEY_HASH): boolean {
+  if (nameSkeleton(cleanName(name)) !== HELD_NAME) return false;
+  try {
+    return localStorage.getItem(OWNER_KEY) !== hash;
+  } catch {
+    return true;
+  }
+}
+
 /** Returns why a name is not allowed, or null if it's fine. */
 export function nameProblem(name: string, others: string[]): string | null {
   if (!name) return 'Please enter a name with at least one letter or number.';
