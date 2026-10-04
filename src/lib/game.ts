@@ -329,8 +329,18 @@ export function autoNextLeft(at: number | undefined, now: number) {
   return at === undefined ? AUTO_NEXT_MS : Math.min(AUTO_NEXT_MS, Math.max(0, at + AUTO_NEXT_MS - now));
 }
 
+/** The seconds per question a room can pick, 0 = no timer. */
+export const TIMER_STEPS = [0, 8, 16, 32, 64] as const;
+
+/** The step nearest `v` (a timer from an older build or an odd action), ties going to the longer one. */
+export function snapTimer(v: number) {
+  let best: number = TIMER_STEPS[0];
+  for (const t of TIMER_STEPS) if (Math.abs(t - v) <= Math.abs(best - v)) best = t;
+  return best;
+}
+
 /** Race questions need an end, so "no timer" falls back to this. */
-export const RACE_DEFAULT_TIMER = 30;
+export const RACE_DEFAULT_TIMER = 16;
 
 export interface Question {
   category: string;
@@ -447,7 +457,7 @@ export const MAX_SPECTATORS = 8;
 const DEFAULT_PRESET: Preset = 'merciless';
 export const DEFAULT_SETTINGS: Settings = {
   targetScore: 10,
-  timer: 20,
+  timer: 16,
   difficulty: DEFAULT_PRESET,
   mode: 'turns',
   public: false,
@@ -744,7 +754,7 @@ export class Engine {
         // Knobs change one at a time; anything off the allowed steps keeps its old value.
         if (typeof custom === 'object' && custom !== null) s.settings.custom = cleanKnobs(custom, cleanKnobs(s.settings.custom));
         if (targetScore !== undefined) s.settings.targetScore = Math.max(1, Math.min(50, Math.round(targetScore)));
-        if (timer !== undefined) s.settings.timer = Math.max(0, Math.min(120, Math.round(timer)));
+        if (typeof timer === 'number' && Number.isFinite(timer)) s.settings.timer = snapTimer(timer);
         break;
       }
       case 'start': {
@@ -1336,7 +1346,7 @@ export class Engine {
       rules.veil && mode === 'name'
         ? {
             size: rules.veil.size,
-            seconds: (timer > 0 ? timer : 20) * rules.veil.share,
+            seconds: (timer > 0 ? timer : DEFAULT_SETTINGS.timer) * rules.veil.share,
             seed: Math.floor(this.rng() * 2 ** 31),
           }
         : null;
