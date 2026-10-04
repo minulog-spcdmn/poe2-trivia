@@ -25,7 +25,7 @@ export const AMBIENCE = { file: 'amb-6', gain: -44, lp: 5011 };
  * A roaring fire that swells up over AMBIENCE for as long as a deathmatch
  * lasts. The file is as loud as AMBIENCE's, so the gains compare directly.
  */
-export const FIRE = { file: 'amb-fire', gain: -34, lp: 9000 };
+export const FIRE = { file: 'amb-fire', gain: -30, lp: 3750 };
 
 export const MOMENTS: Record<Sfx, Moment> = {
   hover: {
