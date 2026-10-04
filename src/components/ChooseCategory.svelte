@@ -72,21 +72,32 @@
     if (still) return;
     const t = setTimeout(() => {
       if (dealtAt !== null) cardRevealed(node.querySelector('.frame') ?? node, !!s.deathmatch);
+      // The pointer may already rest on it, having come while it lay face down.
+      if (waiting === i) ignite(i);
     }, (flipAt(i) + FLIP) * 1000);
     return { destroy: () => clearTimeout(t) };
   }
 
   let cardEls = $state<HTMLElement[]>([]);
   let burning: Handle | null = null;
+  /** The face-down card the mouse rests on, to catch fire once it turns up. */
+  let waiting: number | null = null;
 
   function enter(e: PointerEvent, i: number) {
-    if (!mine || picked || e.pointerType !== 'mouse' || !faceUp(i)) return;
+    if (e.pointerType !== 'mouse') return;
+    if (!faceUp(i)) waiting = i;
+    else ignite(i);
+  }
+  function ignite(i: number) {
+    waiting = null;
+    if (!mine || picked) return;
     burning?.stop();
     const card = cardEls[i];
     const frame = card?.querySelector('.frame');
     if (frame) burning = cardHover(frame, card, !!s.deathmatch);
   }
   function leave(e: PointerEvent) {
+    waiting = null;
     burning?.stop();
     burning = null;
     const frame = (e.currentTarget as HTMLElement).querySelector<HTMLElement>('.frame');
@@ -101,8 +112,8 @@
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const x = (e.clientX - r.left) / r.width;
     const y = (e.clientY - r.top) / r.height;
-    frame.style.setProperty('--rx', `${((0.5 - y) * 14).toFixed(2)}deg`);
-    frame.style.setProperty('--ry', `${((x - 0.5) * 16).toFixed(2)}deg`);
+    frame.style.setProperty('--rx', `${((0.5 - y) * 20).toFixed(2)}deg`);
+    frame.style.setProperty('--ry', `${((x - 0.5) * 24).toFixed(2)}deg`);
     frame.style.setProperty('--gx', `${(x * 100).toFixed(1)}%`);
     frame.style.setProperty('--gy', `${(y * 100).toFixed(1)}%`);
   }
