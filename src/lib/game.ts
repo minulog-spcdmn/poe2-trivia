@@ -1237,20 +1237,30 @@ export class Engine {
     const rules = activeRules(s);
     const inCat = this.byCategory.get(category) ?? [];
     const need = rules.options - 1;
-    const mode = this.rollMode(s);
-    const fakes = mode === 'name' && this.fakes.size ? rules.fakes : 0;
+    let mode = this.rollMode(s);
+    let fakes = mode === 'name' && this.fakes.size ? rules.fakes : 0;
 
     // Earlier answers never come back as decoys (they'd be easy to rule out).
     // An answer needs a full set of unseen decoys from its own group, or one
     // to share evenly with other groups (two of each, three of each…): a
-    // group smaller than the rest would most likely hold the answer. Answers
-    // whose share leaves room for the made-up names go first. Rare groups
+    // group smaller than the rest would most likely hold the answer. A name
+    // question also needs room for its made-up names: when only a picture
+    // question fits (two groups of three can't hold three fakes), it turns
+    // into one, and the art lean makes up for it later. With no picture
+    // questions at all, it shows the fakes that fit instead. Rare groups
     // (tablets) never mix, or one would stand out. Other items sit out; once
     // none can be asked, the category starts over, except for its latest
     // answer.
     const answerable = (unused: Item[]) => {
       const roomy = shareable(unused, fakes);
-      return roomy.length || !fakes ? roomy : shareable(unused, 0);
+      if (roomy.length || !fakes) return roomy;
+      const any = shareable(unused, 0);
+      if (any.length && rules.artChance > 0) {
+        this.tallyMode(s, mode, -1);
+        this.tallyMode(s, (mode = 'art'), 1);
+        fakes = 0;
+      }
+      return any;
     };
     const shareable = (unused: Item[], fakes: number) => {
       const left = new Map<string, number>();
