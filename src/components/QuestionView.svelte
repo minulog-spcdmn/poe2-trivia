@@ -14,7 +14,8 @@
   import { backdropShadow } from '../lib/backdropShadow';
   import ArcaneCircle from './ArcaneCircle.svelte';
   import { untrack } from 'svelte';
-  import { FILL_START, answerCharging, artRevealed, raceMiss, reveal as revealFx, veilComplete, veilHandoff } from '../lib/fx/moments';
+  import { MediaQuery } from 'svelte/reactivity';
+  import { FILL_START, answerCharging, artRevealed, raceMiss, reveal as revealFx, veilComplete, veilHandoff, type VerdictTone } from '../lib/fx/moments';
   import { FILL_LEAD } from '../lib/soundDesign';
   import { streakOf } from '../lib/fx/streaks';
   import { scoreRowOf } from '../lib/scoreRows';
@@ -34,6 +35,16 @@
   const myMiss = $derived(race && me ? q.misses.find((m) => m.playerId === me) : undefined);
   const winner = $derived(reveal?.winnerId ? s.players.find((p) => p.id === reveal.winnerId) : undefined);
   const iWon = $derived(race ? !!me && reveal?.winnerId === me : !!reveal?.correct);
+  /** The verdict badge at the reveal: its word, icon and colour (gold for a race someone else solved while you watch). */
+  const verdict = $derived.by((): { word: string; icon: 'check' | 'cross' | 'clock'; tone: VerdictTone } | null => {
+    if (!reveal) return null;
+    if (iWon) return { word: 'Correct', icon: 'check', tone: 'good' };
+    if (race && winner) return session.spectating ? { word: 'Solved', icon: 'check', tone: 'neutral' } : { word: 'Too slow', icon: 'clock', tone: 'bad' };
+    if (reveal.timedOut) return { word: "Time's up", icon: 'clock', tone: 'bad' };
+    return { word: race ? 'No one' : 'Wrong', icon: 'cross', tone: 'bad' };
+  });
+  // Phones have no room beside the name in an art question's header: the verdict takes the task line's place instead.
+  const narrow = new MediaQuery('(max-width: 760px)');
   // Online, the reveal moves on by itself. The bar follows the host's clock
   // every frame, so all screens count down together however late the reveal
   // arrived or got drawn (and a rejoin doesn't restart it).
@@ -259,7 +270,7 @@
   let optionEls = $state<HTMLElement[]>([]);
   /** The art stage (name questions) or the picture grid (art questions). */
   let artEl = $state<HTMLElement | null>(null);
-  let stampEl = $state<HTMLElement | null>(null);
+  let verdictEl = $state<HTMLElement | null>(null);
   let charge: Handle | null = null;
   /** The scorer's streak of correct answers, for the result line. */
   let streak = $state(0);
@@ -322,7 +333,8 @@
         chosen: !race && !r.correct && r.chosenIndex != null ? optionEls[r.chosenIndex] : null,
         art: artEl,
         tiles: q.mode === 'art',
-        stamp: stampEl,
+        verdict: verdictEl,
+        verdictTone: verdict?.tone,
         pill,
         streak,
         good: iWon,
@@ -378,10 +390,24 @@
 
 <svelte:window onkeydown={onKey} />
 
-{#snippet stamp(inHead = false)}
-  {#if reveal}
-    <div class="stamp" bind:this={stampEl} class:in-head={inHead} class:good={iWon} in:scale={{ start: 2.2, duration: 450, opacity: 0 }}>
-      {#if iWon}Correct{:else if race && winner}{session.spectating ? 'Solved' : 'Too slow'}{:else if reveal.timedOut}Time's up{:else if race}No one{:else}Wrong{/if}
+<!-- The verdict at the reveal, a badge like the streak's: over the art, in an art question's header, or (phones) on the task line. -->
+{#snippet verdictBadge(place: 'art' | 'head' | 'task')}
+  {#if verdict}
+    <div class="verdict on-{place} {verdict.tone}" bind:this={verdictEl}>
+      <span class="glyph" aria-hidden="true">
+        <svg viewBox="0 0 20 20">
+          {#if verdict.icon === 'check'}
+            <path pathLength="1" d="M5.6 10.4l3 3 5.8-6.6" />
+          {:else if verdict.icon === 'cross'}
+            <path pathLength="1" d="M6.6 6.6l6.8 6.8" />
+            <path pathLength="1" d="M13.4 6.6l-6.8 6.8" />
+          {:else}
+            <path pathLength="1" d="M10 4.4a5.6 5.6 0 1 1 0 11.2a5.6 5.6 0 1 1 0-11.2" />
+            <path pathLength="1" d="M10 7v3.2l2.1 1.5" />
+          {/if}
+        </svg>
+      </span>
+      <span class="word">{verdict.word}</span>
     </div>
   {/if}
 {/snippet}
@@ -462,7 +488,10 @@
 <div class="question">
   <div class="topline">
     <span class="chip">{questionTopic(q)}</span>
-    <span class="task">{q.mode === 'art' ? 'Pick the art that matches the name' : 'Name this item'}</span>
+    <span class="task">
+      <span class="task-text" class:answered={q.mode === 'art' && narrow.current && !!verdict}>{q.mode === 'art' ? 'Pick the art that matches the name' : 'Name this item'}</span>
+      {#if q.mode === 'art' && narrow.current}{@render verdictBadge('task')}{/if}
+    </span>
     {#if q.deadline}
       <TimerRing deadline={q.deadline} total={timerTotal} stopped={!!reveal} />
     {/if}
@@ -480,7 +509,7 @@
             <span class="ibase">Which one is it?</span>
           {/if}
         </div>
-        {@render stamp(true)}
+        {#if !narrow.current}{@render verdictBadge('head')}{/if}
       </div>
       <div class="tiles" bind:this={artEl} class:many={count > 4} class:six={count === 6} class:ten={count === 10}>
         {#each q.labels as _, i (i)}
@@ -569,7 +598,7 @@
               <span class="loading big" aria-label="Loading"></span>
             {/if}
           </div>
-          {@render stamp()}
+          {@render verdictBadge('art')}
         </div>
       </div>
 
@@ -631,11 +660,18 @@
     border-radius: 2px;
   }
   .task {
+    position: relative;
     flex: 1;
     min-width: 0;
     line-height: 1.25;
     font-style: italic;
     color: var(--muted);
+  }
+  .task-text {
+    transition: opacity 0.25s;
+  }
+  .task-text.answered {
+    opacity: 0;
   }
 
   /* Art and answers share one row: same top, same bottom, whatever the
@@ -837,38 +873,190 @@
       rotate: 360deg;
     }
   }
-  .stamp {
+  /* The verdict at the reveal: a badge in the streak's style (same type,
+     tracking and pill), green, red or gold. It pops in, its icon draws
+     itself, its word wipes in, a ring of light spreads off it and a sheen
+     crosses it; a right answer's keeps glowing softly. */
+  .verdict {
+    --v-ink: #eef6e2;
+    --v-icon: #cbe8ad;
+    --v-rim: rgba(169, 207, 143, 0.65);
+    --v-glow: rgba(150, 200, 105, 0.35);
+    --v-top: rgba(74, 116, 46, 0.88);
+    --v-bottom: rgba(24, 42, 13, 0.92);
     position: absolute;
     z-index: 2;
-    pointer-events: none;
-    bottom: 18px;
-    right: 18px;
-    padding: 0.2em 0.7em;
+    display: flex;
+    align-items: center;
+    gap: 0.6em;
+    /* Letter spacing also trails the last letter: the right padding gives it back. */
+    padding: 0.3em calc(1.05em - 0.14em) 0.3em 0.3em;
     font-family: var(--font-display);
-    font-weight: 900;
-    font-size: 1.1rem;
-    letter-spacing: 0.15em;
+    font-weight: 700;
+    font-size: 0.85rem;
+    line-height: 1;
+    font-style: normal;
+    letter-spacing: 0.14em;
     text-transform: uppercase;
-    color: #e0907a;
-    border: 2px solid currentColor;
-    border-radius: 3px;
-    rotate: -8deg;
-    background: rgba(8, 3, 2, 0.72);
-    /* A second, inner rule like a seal's rim, and the stamp's own glow. */
+    white-space: nowrap;
+    color: var(--v-ink);
+    text-shadow: 0 0 10px var(--v-glow);
+    /* The sheen (a band of light parked off the left end) over the fill. */
+    background:
+      linear-gradient(100deg, transparent 42%, rgba(255, 250, 232, 0.3) 50%, transparent 58%) 100% 0 / 300% 100% no-repeat,
+      linear-gradient(180deg, var(--v-top), var(--v-bottom));
+    border: 1px solid var(--v-rim);
+    border-radius: 999px;
     box-shadow:
-      inset 0 0 0 2px rgba(0, 0, 0, 0.6),
-      inset 0 0 0 3px color-mix(in srgb, currentColor, transparent 65%),
-      0 0 10px color-mix(in srgb, currentColor, transparent 80%);
+      inset 0 1px 0 rgba(255, 255, 255, 0.12),
+      inset 0 -6px 10px -6px rgba(0, 0, 0, 0.5),
+      0 3px 12px rgba(0, 0, 0, 0.6),
+      0 0 16px var(--v-glow);
+    pointer-events: none;
+    animation:
+      verdict-in 0.55s var(--ease-out) both,
+      verdict-sheen 0.9s ease-in-out 0.45s;
   }
-  .stamp.in-head {
-    bottom: auto;
+  .verdict.bad {
+    --v-ink: #ffe4da;
+    --v-icon: #f2b09c;
+    --v-rim: rgba(226, 132, 106, 0.6);
+    --v-glow: rgba(225, 95, 65, 0.3);
+    --v-top: rgba(140, 48, 28, 0.88);
+    --v-bottom: rgba(52, 15, 8, 0.92);
+  }
+  .verdict.neutral {
+    --v-ink: #fff1d0;
+    --v-icon: var(--gold-hi);
+    --v-rim: rgba(241, 217, 155, 0.6);
+    --v-glow: rgba(255, 190, 90, 0.3);
+    --v-top: rgba(138, 98, 38, 0.88);
+    --v-bottom: rgba(52, 34, 10, 0.92);
+  }
+  /* The ring of light that spreads off it as it lands. */
+  .verdict::after {
+    content: '';
+    position: absolute;
+    inset: -1px;
+    border: 1px solid var(--v-rim);
+    border-radius: inherit;
+    box-shadow: 0 0 14px var(--v-glow);
+    opacity: 0;
+    animation: verdict-ripple 0.8s var(--ease-out) 0.3s;
+  }
+  /* A right answer's glow breathes, like the streak's. */
+  .verdict.good::before {
+    content: '';
+    position: absolute;
+    inset: -1px;
+    border-radius: inherit;
+    box-shadow: 0 0 26px rgba(160, 215, 110, 0.45);
+    opacity: 0;
+    animation: verdict-breathe 2.6s ease-in-out 1.1s infinite;
+  }
+  .glyph {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 1.9em;
+    height: 1.9em;
+    color: var(--v-icon);
+    border: 1px solid var(--v-rim);
+    border-radius: 50%;
+    background: radial-gradient(circle at 50% 30%, rgba(255, 255, 255, 0.16), rgba(0, 0, 0, 0.3) 75%);
+    box-shadow:
+      inset 0 0 6px rgba(0, 0, 0, 0.55),
+      0 0 8px var(--v-glow);
+  }
+  .glyph svg {
+    width: 1.3em;
+    height: 1.3em;
+    overflow: visible;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2.2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    filter: drop-shadow(0 0 3px var(--v-glow));
+  }
+  .glyph path {
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
+    animation: verdict-draw 0.35s var(--ease-out) 0.22s forwards;
+  }
+  /* A cross's second stroke and a clock's hands follow the first. */
+  .glyph svg > :nth-child(2) {
+    animation-delay: 0.4s;
+  }
+  .word {
+    /* The capitals sit a little high in the line box: down to the optical centre. */
+    padding-top: 0.14em;
+    animation: verdict-word 0.5s var(--ease-out) 0.2s backwards;
+  }
+  .verdict.on-art {
+    bottom: 16px;
+    left: 50%;
+    translate: -50% 0;
+  }
+  .verdict.on-head {
     top: 50%;
-    right: 44px;
+    right: 42px;
     translate: 0 -50%;
-    font-size: 0.95rem;
+    font-size: 0.8rem;
   }
-  .stamp.good {
-    color: #a9cf8f;
+  /* Phones: in place of the task line, which it overhangs into the space around it. */
+  .verdict.on-task {
+    top: 50%;
+    left: 0;
+    translate: 0 -50%;
+    transform-origin: left center;
+    font-size: 0.75rem;
+  }
+  @keyframes verdict-in {
+    from {
+      opacity: 0;
+      scale: 0.6;
+      filter: blur(4px);
+    }
+    60% {
+      opacity: 1;
+      scale: 1.05;
+      filter: blur(0);
+    }
+  }
+  @keyframes verdict-sheen {
+    to {
+      background-position: 0 0, 0 0;
+    }
+  }
+  @keyframes verdict-ripple {
+    from {
+      opacity: 1;
+    }
+    to {
+      inset: -12px;
+      opacity: 0;
+    }
+  }
+  @keyframes verdict-breathe {
+    50% {
+      opacity: 1;
+    }
+  }
+  @keyframes verdict-draw {
+    to {
+      stroke-dashoffset: 0;
+    }
+  }
+  @keyframes verdict-word {
+    from {
+      opacity: 0;
+      translate: -0.5em 0;
+      clip-path: inset(-0.5em 100% -0.5em -0.5em);
+    }
+    to {
+      clip-path: inset(-0.5em -0.5em -0.5em -0.5em);
+    }
   }
 
   .options {
@@ -1349,11 +1537,9 @@
     .chip {
       margin-right: auto;
     }
-    .stamp.in-head {
-      top: -10px;
-      right: 6px;
-      translate: none;
-      font-size: 0.72rem;
+    .verdict.on-art {
+      bottom: 12px;
+      font-size: 0.75rem;
     }
     .option {
       padding: 0.75rem 2.3rem 0.75rem 0.9rem;

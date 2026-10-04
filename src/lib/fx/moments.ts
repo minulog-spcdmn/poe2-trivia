@@ -265,6 +265,9 @@ export function answerCharging(option: Element): Handle {
   };
 }
 
+/** The verdict badge's colour: your point, no point, or (watching a race) someone else's. */
+export type VerdictTone = 'good' | 'bad' | 'neutral';
+
 export type RevealTargets = {
   /** The right answer's button (or tile). */
   answer?: Element | null;
@@ -273,7 +276,9 @@ export type RevealTargets = {
   art?: Element | null;
   /** "Find the art": the pictures are the options, so the art's light centres on the right one. */
   tiles?: boolean;
-  stamp?: Element | null;
+  /** The verdict badge ("Correct", "Wrong"...) and its colour. */
+  verdict?: Element | null;
+  verdictTone?: VerdictTone;
   /** Scoreboard entry that gains the point. */
   pill?: Element | null;
   /** Consecutive correct answers, this one included. */
@@ -353,14 +358,22 @@ export function reveal(t: RevealTargets) {
     shakeView(0.45, 6);
   }
 
-  if (t.stamp) {
-    const s = t.stamp;
-    after(0.28, () => {
-      const col = t.good ? C.right : C.wrong;
-      ring(s, { radius: 80, thickness: 7, life: 0.45, color: col, breakup: 0.5, intensity: 0.55 });
-      puffs(s, { count: 6, area: 'edge', color: t.good ? [0.12, 0.18, 0.07] : [0.2, 0.06, 0.03], speed: [60, 180] });
-      sparks(s, { count: 12, area: 'edge', colors: t.good ? [C.rightPale, C.gold] : [C.wrong, C.ember], speed: [120, 420], life: [0.3, 0.6] });
-      shakeView(t.good ? 0.28 : 0.2, 5);
+  if (t.verdict) {
+    // As the badge lands (its CSS pop peaks): its rim lights up, and a right
+    // answer's catches a glint of light; a wrong one sheds a few embers.
+    const v = t.verdict;
+    const tone = t.verdictTone ?? (t.good ? 'good' : 'bad');
+    after(0.3, () => {
+      const col = tone === 'good' ? C.right : tone === 'neutral' ? C.gold : C.wrong;
+      outline(v, { color: col, width: 8, life: 0.7, intensity: 0.45, bleed: 0.12 });
+      if (tone === 'bad') {
+        sparks(v, { count: 8, area: 'edge', colors: [C.wrong, C.ember], speed: [50, 180], size: [0.5, 0.9], life: [0.3, 0.6], gravity: 300 });
+        return;
+      }
+      const pale = tone === 'good' ? C.rightPale : C.goldPale;
+      flare(v, { size: 12, streak: 150, life: 0.55, color: pale, intensity: 0.45 });
+      sparks(v, { count: Math.round(10 * Math.sqrt(hype)), area: 'edge', colors: [pale, C.gold], speed: [80, 260], size: [0.5, 0.9], life: [0.25, 0.55] });
+      glints(v, { count: 2, size: [3, 6], delay: [0.25, 0.7] });
     });
   }
 
