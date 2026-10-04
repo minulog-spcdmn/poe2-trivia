@@ -20,6 +20,7 @@
 // 'blur' only blurs (content inside a 'dim' layer). use:portal sets it on
 // every overlay it moves, so a new one is dimmed without asking.
 
+import { cornerPx } from './corner';
 import { opacityOf } from './opacity';
 
 /** How much the page darkens (as an rgba(0, 0, 0, 0.65) layer over it would). */
@@ -83,7 +84,8 @@ export function dialogBox(): { rect: DOMRect; radius: number } | null {
   fresh();
   if (box === undefined) {
     const dialog = open.backdrop?.querySelector<HTMLElement>('[role="dialog"]');
-    box = dialog ? { rect: dialog.getBoundingClientRect(), radius: parseFloat(getComputedStyle(dialog).borderTopLeftRadius) || 0 } : null;
+    const rect = dialog?.getBoundingClientRect();
+    box = dialog && rect ? { rect, radius: cornerPx(getComputedStyle(dialog).borderTopLeftRadius, rect.width, rect.height) } : null;
   }
   return box;
 }

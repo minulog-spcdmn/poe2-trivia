@@ -19,7 +19,9 @@ export const SHAPE_FLOATS = 24;
  * Procedural shapes. Instance layout:
  *   s0: centre x, centre y, quad half width, quad half height (CSS px)
  *   s1: type, progress 0-1, age (s), seed
- *   s2: r, g, b (HDR, envelope applied), 1 for the page's light (see BEHIND_DIALOG)
+ *   s2: r, g, b (HDR, envelope applied), flags: 1 for the page's light (see
+ *       BEHIND_DIALOG), plus BEHIND_PICTURE when it shines from behind the
+ *       picture in uSil (see Silhouette)
  *   s3, s4, s5: per-type parameters (documented in the shader)
  */
 export const ShapeType = {
@@ -35,6 +37,9 @@ export const ShapeType = {
   Orbit: 9,
 } as const;
 export type ShapeType = (typeof ShapeType)[keyof typeof ShapeType];
+
+/** Shape flag (s2.w): it shines from behind the picture in uSil (see Silhouette). */
+export const BEHIND_PICTURE = 2;
 
 // While a dialog is open (lib/behindDialog.ts), light from the page behind it
 // hides behind the dialog, which on the page is opaque; the dialog's own light
@@ -185,6 +190,7 @@ out vec2 vWorld; // CSS px
 flat out vec4 vA;
 flat out vec3 vC;
 flat out float vBehind; // page light (see BEHIND_DIALOG)
+flat out float vPicture; // behind the picture (see Silhouette)
 flat out vec4 vQ;
 flat out vec4 vR;
 flat out vec4 vS;
@@ -194,7 +200,8 @@ void main() {
   vHalf = s0.zw;
   vA = s1;
   vC = s2.rgb;
-  vBehind = s2.w;
+  vBehind = mod(s2.w, ${BEHIND_PICTURE}.0);
+  vPicture = step(${BEHIND_PICTURE}.0, s2.w);
   vQ = s3;
   vR = s4;
   vS = s5;
@@ -211,12 +218,39 @@ in vec2 vWorld;
 flat in vec4 vA;
 flat in vec3 vC;
 flat in float vBehind;
+flat in float vPicture;
 flat in vec4 vQ;
 flat in vec4 vR;
 flat in vec4 vS;
 flat in vec2 vHalf;
 out vec4 o;
 #define PI 3.14159265
+// A picture the rays shine from behind (see Silhouette): its blurred alpha,
+// its centre and half size (CSS px), how far it's turned (its x scale, -1 to
+// 1) and the part of the texture the picture covers (the rest is margin).
+uniform sampler2D uSil;
+uniform float uSilOn; // the picture's opacity, 0 without one
+uniform vec4 uSilBox;
+uniform float uSilFlip;
+uniform vec2 uSilFit;
+// Where p (CSS px) falls on the picture's texture.
+vec2 silhouetteUv(vec2 p) {
+  vec2 l = (p - uSilBox.xy) / uSilBox.zw;
+  l.x /= (uSilFlip < 0.0 ? -1.0 : 1.0) * max(abs(uSilFlip), 0.02);
+  return 0.5 + 0.5 * l * uSilFit;
+}
+// How much of the picture covers p, 0-1 (as visible as the picture is).
+// Half a level down: a little smoother, and some blur where the canvas can't (older Safari).
+float silhouetteAt(vec2 p) {
+  if (uSilOn <= 0.0) return 0.0;
+  return smoothstep(0.15, 0.7, textureLod(uSil, silhouetteUv(p), 0.5).a) * uSilOn;
+}
+// How near p is to the picture, 0-1: its alpha blurred far wider (a small
+// mip), so light right beside a thin item doesn't bloom back over it.
+float silhouetteNear(vec2 p) {
+  if (uSilOn <= 0.0) return 0.0;
+  return smoothstep(0.0, 0.35, textureLod(uSil, silhouetteUv(p), 4.0).a) * uSilOn;
+}
 ${NOISE}
 ${BEHIND_DIALOG}
 vec2 rot2(vec2 p, float a) { float c = cos(a), s = sin(a); return vec2(c * p.x - s * p.y, s * p.x + c * p.y); }
@@ -243,6 +277,41 @@ float sdQuad(vec2 p, vec2 a, vec2 b, vec2 c, vec2 d) {
     if (all(cond) || all(not(cond))) s *= -1.0;
   }
   return s * sqrt(dist);
+}
+// Value noise that wraps every period cells along x (around a circle).
+float pnoise(vec2 p, float period) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  float x0 = mod(i.x, period), x1 = mod(i.x + 1.0, period);
+  return mix(mix(hash12(vec2(x0, i.y)), hash12(vec2(x1, i.y)), u.x),
+             mix(hash12(vec2(x0, i.y + 1.0)), hash12(vec2(x1, i.y + 1.0)), u.x), u.y);
+}
+// One ring of light shafts at u (turns, 0-1) and rn (radius, 0-1 of the
+// reach): n cells round the circle, one shaft in each, with its own width
+// (w, in cells), offset, reach and breathing. root widens them (in cells)
+// near the source, dimming them by as much so the light stays the same.
+float shafts(float u, float rn, float n, float w, float root, float time, float seed) {
+  float x = u * n;
+  float cell = floor(x);
+  float v = 0.0;
+  for (int k = -1; k <= 1; k++) {
+    float c = cell + float(k);
+    float id = mod(c, n);
+    float h1 = hash12(vec2(id, seed));
+    float h2 = hash12(vec2(id + 0.5, seed + 7.31));
+    float h3 = hash12(vec2(id + 0.25, seed + 3.17));
+    float ww = w * (0.5 + 1.1 * h2);
+    float we = min(ww + root, 0.6);
+    float d = (x - c - 0.5 - (h1 - 0.5) * 0.6) / we;
+    float len = 0.55 + 0.45 * h3;
+    float q = rn / len;
+    float breathe = 0.6 + 0.4 * sin(time * (0.4 + 0.5 * h1) + h2 * 6.2832);
+    // A soft shaft with a brighter line down its middle.
+    float body = exp(-d * d) + 0.5 * exp(-d * d * 8.0);
+    v += body * (ww / we) * exp(-q * 2.2) * breathe * (0.45 + 0.55 * h3);
+  }
+  return v;
 }
 
 // Glow around an outline at signed distance d: a soft outer halo and a
@@ -304,17 +373,44 @@ void main() {
     v = core + streak + vert + spikes;
     hot = exp(-(r * r) / (vQ.x * vQ.x * 0.12)) * 1.5;
   } else if (type == 2) {
-    // God rays. q: inner radius, outer radius, ray count, sharpness. r: spin speed.
-    float fall = 1.0 - clamp(r / vQ.y, 0.0, 1.0);
-    if (fall > 0.0) {
-      float wob = 1.6 * vnoise(dir * 2.2 + vec2(seed, time * 0.12));
+    // God rays: shafts of light through haze. q: inner radius, outer radius,
+    // ray count, sharpness. r: spin speed, then the half width, half height
+    // and corner radius of the element they shine from behind (0 for none).
+    // s: that element's centre, relative to the rays'.
+    // A main layer of broad shafts and a finer one turning the other way,
+    // each shaft with its own width, place, reach and slow breathing, so no
+    // two look alike. Their roots melt into a soft glow instead of meeting in
+    // a point, and dust drifting outward streaks them like light in smoke.
+    float rn = r / vQ.y;
+    if (rn < 1.0) {
       float t = time * vR.x;
-      float n1 = vQ.z;
-      float n2 = floor(vQ.z * 0.62) + 1.0;
-      float rays = pow(0.5 + 0.5 * sin(a * n1 + t + wob), vQ.w)
-                 + 0.6 * pow(0.5 + 0.5 * sin(a * n2 - t * 1.3 + wob * 1.7 + 1.3), vQ.w * 1.5);
-      v = rays * fall * fall * smoothstep(0.0, vQ.x, r) * (0.75 + 0.25 * sin(time * 1.7 + seed));
-      v += exp(-(r * r) / (vQ.x * vQ.x)) * 0.35;
+      float u = a / (2.0 * PI) + 0.5;
+      float w = 0.3 / sqrt(max(vQ.w, 1.0));
+      // Widen near the root (in cells, by a fixed width in px), keeping the light.
+      float n1 = max(vQ.z, 3.0);
+      float n2 = floor(n1 * 1.7);
+      float root1 = 0.5 * vQ.x * n1 / (2.0 * PI * max(r, 1.0));
+      float root2 = 0.5 * vQ.x * n2 / (2.0 * PI * max(r, 1.0));
+      // Each layer turns one of its cells for every 2 PI of t.
+      float s = shafts(u + t / (2.0 * PI * n1), rn, n1, w, root1, time, seed)
+              + 0.5 * shafts(u - 1.3 * t / (2.0 * PI * n2) + 0.37, rn * 1.25, n2, w * 0.6, root2, time * 1.3, seed + 19.7);
+      // Haze: fine streaks along the shafts with motes drifting out, and
+      // light that wanders slowly round the circle.
+      float haze = (0.6 + 0.8 * pnoise(vec2(u * 64.0, rn * 6.0 - time * 0.3 + seed), 64.0))
+                 * (0.55 + 0.9 * pnoise(vec2(u * 7.0 + seed, time * 0.15), 7.0));
+      float reach = 1.0 - smoothstep(0.55, 1.0, rn);
+      v = 2.0 * s * haze * reach * smoothstep(0.0, vQ.x * 1.5, r);
+      // The source: a soft core in a wider haze, no hard point.
+      float c = r / vQ.x;
+      v += exp(-c * c * 0.6) * 0.3 + exp(-rn * 5.0) * 0.12 * reach;
+      // Behind the element: a faint glow over it, the rays starting at its rim.
+      if (vR.y > 0.0) {
+        vec2 h = vR.yz;
+        vec2 e = abs(vP - vS.xy) - h + vR.w;
+        float d = length(max(e, 0.0)) + min(max(e.x, e.y), 0.0) - vR.w;
+        float soft = 8.0 + 0.2 * min(h.x, h.y);
+        v *= mix(0.2, 1.0, smoothstep(-soft, soft * 0.6, d));
+      }
     }
   } else if (type == 3) {
     // Glow around a rounded rectangle. q: half w, half h, corner radius, glow width.
@@ -435,6 +531,14 @@ void main() {
     v = lines * drawn;
     v += exp(-pow((r - R) / (lw * 6.0), 2.0)) * 0.15;
   }
+  // Behind the picture: only a faint glow over it, none of the white heat,
+  // and a little less light right around it.
+  if (vPicture > 0.5) {
+    float c = silhouetteAt(vWorld);
+    float near = silhouetteNear(vWorld);
+    v *= mix(1.0, 0.2, c) * mix(1.0, 0.55, near);
+    hot *= (1.0 - c) * (1.0 - near);
+  }
   // Fade everything to zero before the quad's border, so no long tail can
   // show the quad's edge. (The edge glow's quad is the screen itself.)
   if (type != 5) {
@@ -547,6 +651,18 @@ void main() {
 
 export type RendererOptions = { maxParticles: number; maxShapes: number };
 
+/**
+ * A picture effects shine from behind, so they leave its own shape clear (an
+ * item's outline, not its box): its centre and size in CSS px as laid out,
+ * its x scale (-1 to 1) while it turns round, and its opacity.
+ */
+export type Silhouette = { img: HTMLImageElement; x: number; y: number; w: number; h: number; flip: number; alpha: number };
+
+/** Longest side of the silhouette texture, and the blur over it, in its px. */
+// Fine enough that thin items (a spear's shaft) keep most of their alpha.
+const SIL_SIZE = 256;
+const SIL_BLUR = 2.5;
+
 /** An open dialog (lib/behindDialog.ts): how far it dims the page, and its box and corner radius in CSS px. */
 export type DialogLight = { amount: number; box: DOMRect | null; radius: number };
 const NO_DIALOG: DialogLight = { amount: 0, box: null, radius: 0 };
@@ -575,6 +691,12 @@ export class FxRenderer {
   height = 0;
   bloom = true;
   private cleared = false;
+  private silTex: WebGLTexture | null = null;
+  /** The picture in silTex (by URL, so a picture gone from the page isn't kept), and how much of the texture it covers. */
+  private silSrc = '';
+  private silFit: [number, number] = [1, 1];
+  /** A picture that couldn't be read (another origin, say): not tried again every frame. */
+  private silFailed = '';
 
   static create(canvas: HTMLCanvasElement, opts: RendererOptions): FxRenderer | null {
     const gl = canvas.getContext('webgl2', {
@@ -715,10 +837,28 @@ export class FxRenderer {
     nShapes: number,
     nCrisp = 0,
     dialog: DialogLight = NO_DIALOG,
+    silhouette: Silhouette | null = null,
   ) {
     const gl = this.gl;
     if (!this.hdr) return;
     this.cleared = false;
+    const sil = silhouette && this.loadSilhouette(silhouette.img) ? silhouette : null;
+    const shapeUniforms = () => {
+      const p = this.shapeProg;
+      gl.uniform2f(p.u('uView'), view[0], view[1]);
+      behindDialog(p, true);
+      // Always on its own unit: left on unit 0, the sampler could point at
+      // the target being drawn into, which WebGL refuses to draw.
+      gl.uniform1i(p.u('uSil'), 2);
+      gl.uniform1f(p.u('uSilOn'), sil ? sil.alpha : 0);
+      if (!sil) return;
+      gl.activeTexture(gl.TEXTURE2);
+      gl.bindTexture(gl.TEXTURE_2D, this.silTex);
+      gl.uniform4f(p.u('uSilBox'), sil.x, sil.y, sil.w / 2, sil.h / 2);
+      gl.uniform1f(p.u('uSilFlip'), sil.flip);
+      gl.uniform2f(p.u('uSilFit'), this.silFit[0], this.silFit[1]);
+      gl.activeTexture(gl.TEXTURE0);
+    };
     // Without a dialog box, nothing is hidden and everything is dimmed.
     const b = dialog.box;
     const behindDialog = (p: Program, hide: boolean) => {
@@ -745,8 +885,7 @@ export class FxRenderer {
       gl.enable(gl.BLEND);
       gl.blendFunc(gl.ONE, gl.ONE);
       gl.useProgram(this.shapeProg.prog);
-      gl.uniform2f(this.shapeProg.u('uView'), view[0], view[1]);
-      behindDialog(this.shapeProg, true);
+      shapeUniforms();
       gl.bindVertexArray(this.shapeVao);
       gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, nSoft);
       // ...then filtered up into the HDR target, which they fill completely.
@@ -769,8 +908,7 @@ export class FxRenderer {
     if (nCrisp > 0) {
       // Thin-line shapes straight into the full-resolution target.
       gl.useProgram(this.shapeProg.prog);
-      gl.uniform2f(this.shapeProg.u('uView'), view[0], view[1]);
-      behindDialog(this.shapeProg, true);
+      shapeUniforms();
       gl.bindVertexArray(this.shapeVao);
       // (Uploaded after the soft ones were drawn; WebGL keeps the order.)
       gl.bindBuffer(gl.ARRAY_BUFFER, this.shapeBuf);
@@ -844,8 +982,55 @@ export class FxRenderer {
     gl.bindVertexArray(null);
   }
 
+  /** Makes `img` the silhouette texture, unless it is already. Returns whether it's ready (loaded, and readable). */
+  private loadSilhouette(img: HTMLImageElement): boolean {
+    const src = img.currentSrc || img.src;
+    if (src === this.silSrc) return true;
+    if (src === this.silFailed || !img.complete || !img.naturalWidth) return false;
+    if (!this.makeSilhouette(img)) {
+      this.silFailed = src;
+      return false;
+    }
+    this.silSrc = src;
+    return true;
+  }
+
+  /** Draws `img`'s alpha, blurred, into silTex, with a margin for the blur to spread into. False if it can't be read. */
+  private makeSilhouette(img: HTMLImageElement): boolean {
+    const k = SIL_SIZE / Math.max(img.naturalWidth, img.naturalHeight);
+    const w = Math.max(1, Math.round(img.naturalWidth * k));
+    const h = Math.max(1, Math.round(img.naturalHeight * k));
+    const pad = Math.ceil(SIL_BLUR * 3);
+    const c = document.createElement('canvas');
+    c.width = w + pad * 2;
+    c.height = h + pad * 2;
+    const ctx = c.getContext('2d');
+    if (!ctx) return false;
+    ctx.filter = `blur(${SIL_BLUR}px)`;
+    ctx.drawImage(img, pad, pad, w, h);
+    const gl = this.gl;
+    this.silTex ??= gl.createTexture();
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_2D, this.silTex);
+    try {
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, c);
+    } catch {
+      gl.activeTexture(gl.TEXTURE0);
+      return false;
+    }
+    gl.generateMipmap(gl.TEXTURE_2D);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.activeTexture(gl.TEXTURE0);
+    this.silFit = [w / c.width, h / c.height];
+    return true;
+  }
+
   destroy() {
     const gl = this.gl;
+    if (this.silTex) gl.deleteTexture(this.silTex);
     dropTarget(gl, this.hdr);
     dropTarget(gl, this.shapesT);
     for (const m of this.mips) dropTarget(gl, m);
