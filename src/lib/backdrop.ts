@@ -161,6 +161,8 @@ uniform sampler2D uSmooth;
 uniform vec2 uVignette; // breathing (reach, strength)
 
 // Outer box-shadows and fills of UI elements (see backdropShadow.ts for the layout).
+uniform vec4 uElX[${MAX_ELEMENTS}];
+uniform vec4 uElY[${MAX_ELEMENTS}];
 uniform vec4 uElA[${MAX_ELEMENTS}];
 uniform vec4 uElB[${MAX_ELEMENTS}];
 uniform vec4 uElC[${MAX_ELEMENTS}];
@@ -342,7 +344,17 @@ void main() {
     vec4 eb = uElB[i];
     if (eb.w < 0.5) continue;
     vec4 fc = uElC[i];
-    vec2 lp = (p - ea.xy) * ea.z; // element px from its border-box corner
+    // Element px from its border-box corner, through the element's map
+    // (homogeneous, so a turned element's own plane).
+    vec3 hx = uElX[i].xyz;
+    vec3 hy = uElY[i].xyz;
+    vec3 hp = vec3(dot(hx, vec3(p, 1.0)), dot(hy, vec3(p, 1.0)), dot(ea.xyz, vec3(p, 1.0)));
+    if (hp.z <= 0.0) continue; // beyond its horizon
+    vec2 lp = hp.xy / hp.z;
+    // Element px per CSS px here: the root of the map's local area scale.
+    vec2 jx = (hx.xy - lp.x * ea.xy) / hp.z;
+    vec2 jy = (hy.xy - lp.y * ea.xy) / hp.z;
+    float k = sqrt(abs(jx.x * jy.y - jx.y * jy.x));
     if (pass == 0) {
       // Most pixels are beyond every shadow's reach (ea.w, the per-shadow
       // test below for all of them at once): skip those first.
@@ -353,10 +365,10 @@ void main() {
     float rr = min(eb.z, min(halfBox.x, halfBox.y));
     vec2 qd = abs(lp - eb.xy * 0.5) - halfBox + rr;
     float sdf = length(max(qd, 0.0)) + min(max(qd.x, qd.y), 0.0) - rr;
-    float px = pxLocal * ea.z; // one device pixel in element px
+    float px = pxLocal * k; // one device pixel in element px
     // Behind a dialog the UI blurs, so the edge softens with it (a linear
     // ramp as wide as a Gaussian edge's 10-90% rise).
-    float edge = max(px, 2.56 * ${DIALOG_BLUR.toFixed(2)} * uDialog * ea.z);
+    float edge = max(px, 2.56 * ${DIALOG_BLUR.toFixed(2)} * uDialog * k);
     float outside = clamp(sdf / edge + 0.5, 0.0, 1.0);
 
     if (pass == 1) {
@@ -512,9 +524,9 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   if (!gl) return null;
   const hp = gl.getShaderPrecisionFormat(gl.FRAGMENT_SHADER, gl.HIGH_FLOAT);
   if (!hp || hp.precision === 0) return null;
-  // WebGL2 guarantees 224 fragment uniform vectors, enough for 10 elements;
+  // WebGL2 guarantees 224 fragment uniform vectors, enough for 9 elements;
   // most desktop GPUs offer 1024 or more, and get 16.
-  const maxElements = gl.getParameter(gl.MAX_FRAGMENT_UNIFORM_VECTORS) >= 400 ? 16 : 10;
+  const maxElements = gl.getParameter(gl.MAX_FRAGMENT_UNIFORM_VECTORS) >= 400 ? 16 : 9;
 
   // The soft light (see SMOOTH) gets a half-float target of its own wherever
   // the GPU can draw to one, which is nearly everywhere; elsewhere the main
@@ -609,6 +621,8 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   let dialog = 0;
 
   const el = {
+    x: new Float32Array(maxElements * 4),
+    y: new Float32Array(maxElements * 4),
     a: new Float32Array(maxElements * 4),
     b: new Float32Array(maxElements * 4),
     c: new Float32Array(maxElements * 4),
@@ -618,6 +632,8 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     col: new Float32Array(maxElements * SHADOWS_PER_ELEMENT * 4),
   };
   const elLoc = {
+    x: U('uElX'),
+    y: U('uElY'),
     a: U('uElA'),
     b: U('uElB'),
     c: U('uElC'),
@@ -769,7 +785,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
       releaseAll();
       releaseAllDrops();
     } else {
-      measureShadows(maxElements, el.a, el.b, el.c, el.d, el.e, el.geo, el.col, canvas.clientWidth, canvas.clientHeight);
+      measureShadows(maxElements, el.x, el.y, el.a, el.b, el.c, el.d, el.e, el.geo, el.col, canvas.clientWidth, canvas.clientHeight);
       atlases = measureDrops(mk.a, mk.b, mk.c, mk.d, mk.e, mk.off, mk.col, canvas.clientWidth, canvas.clientHeight);
     }
     let changed = false;
