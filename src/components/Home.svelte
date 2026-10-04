@@ -1,6 +1,6 @@
 <script lang="ts">
   import { fade, fly } from 'svelte/transition';
-  import { claimName } from '../lib/names';
+  import { nameHeld, unlockHeldName } from '../lib/names';
   import { engine, session, savedName, saveName, CODE_LENGTH } from '../lib/session.svelte';
   import { shuffle } from '../lib/game';
   import { itemImage } from '../lib/ui';
@@ -17,6 +17,7 @@
 
   const params = new URLSearchParams(location.search);
   const invite = cleanCode(params.get('room') ?? '');
+  if (params.has('owner') && unlockHeldName(params.get('owner') ?? '')) history.replaceState(null, '', location.pathname);
 
   let name = $state(savedName());
   let code = $state(invite);
@@ -26,9 +27,8 @@
   const showcase = shuffle(engine.items, Math.random).slice(0, 7);
 
   function needName() {
-    const raw = name.trim();
-    const n = claimName(raw);
-    if (!n) {
+    const n = name.trim();
+    if (!n || nameHeld(n)) {
       nameError = true;
       const field = document.getElementById('name');
       if (field) refuse(field);
@@ -36,7 +36,7 @@
       document.getElementById('name')?.focus();
       return null;
     }
-    saveName(raw);
+    saveName(n);
     return n;
   }
 

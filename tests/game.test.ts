@@ -1220,10 +1220,10 @@ test('a question thrown out for failed art does not count toward the art lean', 
   }
 });
 
-test('the held name needs its passphrase', async () => {
-  const { claimName } = await import('../src/lib/names.ts');
-  assert.equal(claimName('zoe_arcana'), null);
-  assert.equal(claimName('Zoe_Arcana#nope'), null);
-  assert.equal(claimName('zoe_arcana#a53cec37'), 'zoe_arcana');
-  assert.equal(claimName('Doryani'), 'Doryani');
+test('the held name is refused until the device is unlocked', async () => {
+  const { nameHeld, unlockHeldName } = await import('../src/lib/names.ts');
+  assert.equal(nameHeld('Doryani'), false);
+  assert.equal(nameHeld('Zoe_Arcana'), true);
+  assert.equal(unlockHeldName('nope'), false);
+  assert.equal(nameHeld('zoe_arcana'), true);
 });

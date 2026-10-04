@@ -45,12 +45,13 @@ export function nameSkeleton(name: string): string {
   return folded || name.toLowerCase();
 }
 
-// A name held back for one person. Typing it needs the passphrase after a "#"
-// (zoe_arcana#<passphrase>); the passphrase is stripped before the name is used.
-// A deterrent against casual impersonation, not security: it is only checked in
-// the name field, and the hash is public.
+// A name held back for one person. Opening the site once with ?owner=<passphrase>
+// unlocks it on that device (remembered in localStorage). A deterrent against
+// casual impersonation, not security: it is only checked in the name field, and
+// the hash is public.
 const HELD_NAME = 'zoearcana';
 const HELD_KEY_HASH = '26ec19a7';
+const OWNER_KEY = 'poe2trivia.owner';
 
 function keyHash(s: string): string {
   let h = 0x811c9dc5;
@@ -61,12 +62,23 @@ function keyHash(s: string): string {
   return h.toString(16);
 }
 
-/** Checks the name field entry against the held name. Returns the name to use, or null if it is held. */
-export function claimName(raw: string): string | null {
-  const [name, ...rest] = raw.split('#');
-  const key = rest.join('#').trim();
-  if (nameSkeleton(cleanName(name)) !== HELD_NAME) return raw;
-  return keyHash(key) === HELD_KEY_HASH ? name.trim() : null;
+/** Remembers this device as the owner's when the passphrase is right. */
+export function unlockHeldName(key: string): boolean {
+  if (keyHash(key) !== HELD_KEY_HASH) return false;
+  try {
+    localStorage.setItem(OWNER_KEY, HELD_KEY_HASH);
+  } catch {}
+  return true;
+}
+
+/** True when the name is held and this device is not unlocked. */
+export function nameHeld(name: string): boolean {
+  if (nameSkeleton(cleanName(name)) !== HELD_NAME) return false;
+  try {
+    return localStorage.getItem(OWNER_KEY) !== HELD_KEY_HASH;
+  } catch {
+    return true;
+  }
 }
 
 /** Returns why a name is not allowed, or null if it's fine. */
