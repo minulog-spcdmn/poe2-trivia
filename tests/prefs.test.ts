@@ -23,7 +23,7 @@ const store = new Map<string, string>();
 beforeEach(() => store.clear());
 
 const knobs = { ...PRESETS.cruel, options: 10, veil: 'slowest' as const, grayscale: 'all' as const, lockout: 0 };
-const custom: RoomPrefs = { targetScore: 15, timer: 45, difficulty: 'eternal', custom: knobs, mode: 'turns', public: true, hideCode: true };
+const custom: RoomPrefs = { targetScore: 15, timer: 32, difficulty: 'eternal', custom: knobs, mode: 'turns', public: true, hideCode: true };
 
 test('round-trips saved settings', () => {
   assert.deepEqual(parsePrefs(serializePrefs(custom)), custom);
@@ -104,7 +104,7 @@ test("keeps the old hidden-code setting when the new entry can't be written", ()
 test('settings from a room saved by an older build are made valid before saving', () => {
   const old = { targetScore: 7.6, timer: 999 } as unknown as Settings;
   const p = prefsFrom(old);
-  assert.deepEqual(p, { targetScore: 8, timer: 120, difficulty: 'merciless', mode: 'turns', public: false });
+  assert.deepEqual(p, { targetScore: 8, timer: 64, difficulty: 'merciless', mode: 'turns', public: false });
   store.set(PREFS_KEY, serializePrefs(custom));
   savePrefs(p);
   assert.deepEqual(parsePrefs(store.get(PREFS_KEY) ?? null), { ...custom, ...p });
@@ -129,7 +129,7 @@ test("saving keeps what another tab saved for the other fields", () => {
 
 test('a new room starts unlocked with the saved settings', () => {
   const s = roomSettings(custom);
-  assert.deepEqual(s, { targetScore: 15, timer: 45, difficulty: 'eternal', custom: knobs, mode: 'turns', public: true, locked: false });
+  assert.deepEqual(s, { targetScore: 15, timer: 32, difficulty: 'eternal', custom: knobs, mode: 'turns', public: true, locked: false });
 });
 
 test('custom knobs are remembered; entries from before them, or with odd knobs, keep the rest', () => {
@@ -158,4 +158,9 @@ test('a custom room is stored so a build from before Custom still reads the entr
   assert.deepEqual(parsePrefs(raw), mine);
   // Without knobs to go with it, the flag falls back to the preset.
   assert.equal(parsePrefs(JSON.stringify({ ...stored, custom: undefined }))?.difficulty, stored.difficulty);
+});
+
+test('a timer saved by an older build snaps to the nearest step', () => {
+  for (const [old, now] of [[10, 8], [15, 16], [20, 16], [30, 32], [45, 32], [120, 64], [0, 0]])
+    assert.equal(parsePrefs(serializePrefs({ ...custom, timer: old }))?.timer, now, String(old));
 });
