@@ -80,15 +80,20 @@ export const MOMENTS: Record<Sfx, Moment> = {
       { file: 'layer-metal-2', gain: -41, rate: 1.6, delay: 0, hp: 330, lp: 6483, send: 0.7 },
     ],
   },
-  // A veiled tile's cover falls away: a muffled puff of air with a soft wooden
-  // body under it. It plays every second or so, so it stays dark and quiet.
-  lift: {
-    soften: 8,
-    varyPitch: 0.1,
-    varyGain: 2,
+  // A patch of veiled art fizzles into being: the "crispy burn 2" mix from the
+  // Burn Sound Mixer. A crackling fire loop under a handheld sparkler's
+  // crackle, a fuse fizzing and a close-up sparkler spitting at the start;
+  // each file is trimmed and faded as it was mixed. It plays every second or
+  // so while the art comes in, so it sits under the other moments.
+  burn: {
+    soften: 5.5,
+    varyPitch: 0.18,
+    varyGain: 1.5,
     layers: [
-      { file: 'hover-1', gain: -42, rate: 0.85, delay: 0, hp: 150, lp: 2200, send: 0.5 },
-      { file: 'select-6', gain: -45, rate: 1.3, delay: 0, hp: 120, lp: 900, send: 0.4 },
+      { file: 'burn-crackle', gain: -40, rate: 1, delay: 270, hp: 173, lp: 16000, send: 0.48 },
+      { file: 'burn-embers', gain: -37.5, rate: 1, delay: 0, hp: 60, lp: 16000, send: 0.96 },
+      { file: 'burn-fuse', gain: -40, rate: 1, delay: 140, hp: 55, lp: 16000, send: 0.3 },
+      { file: 'burn-sparkler', gain: -44.5, rate: 1, delay: 0, hp: 59, lp: 7176, send: 0.3 },
     ],
   },
   select: {

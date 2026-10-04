@@ -9,6 +9,14 @@ How they are layered and filtered is set in src/lib/soundDesign.ts.
 
   amb-6.mp3            Wood fire crackling near flames
                        by felix.blume, https://freesound.org/s/779876/
+  burn-crackle.mp3     Fire, crackle, sparkler, handheld, burning, fuse
+                       by Oldome, https://freesound.org/s/855773/
+  burn-embers.mp3      fire crackling loop.wav
+                       by soundofsong, https://freesound.org/s/650574/
+  burn-fuse.mp3        sparkler_fuse_nm.wav
+                       by Alex_hears_things, https://freesound.org/s/316682/
+  burn-sparkler.mp3    oneSparkler.flac
+                       by RytmenPinnen, https://freesound.org/s/102264/
   click-1.mp3          Perc_Chair_lo
                        by LudwigMueller, https://freesound.org/s/548503/
   click-4.mp3          SingleKnock_Wood

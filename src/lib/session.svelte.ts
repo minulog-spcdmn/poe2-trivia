@@ -30,7 +30,7 @@ import { Beacon, type RoomInfo } from './rooms';
 import { parseClientMsg, parseHostMsg, PROTOCOL_VERSION, RateLimit, type HostMsg, type MediaMsg } from './protocol';
 import { capped, FrameGuard, hookFrames, JoinGate, roomSecret } from './guard';
 import { cleanName, nameSkeleton } from './names';
-import { prepareMedia, shown, tileDelay, type PreparedMedia } from './media.svelte';
+import { prepareMedia, shown, patchDelays, type PreparedMedia } from './media.svelte';
 import { sfx } from './sound';
 import { prefsFrom, roomPrefs, roomSettings, savePrefs } from './prefs';
 import { toasts, type ToastKind, type ToastOptions } from './toasts.svelte';
@@ -677,17 +677,42 @@ class Session {
     const qid = q.askedAt;
     if (media.art) this.release({ t: 'art', qid, ...media.art });
     media.options.forEach((data, index) => this.release({ t: 'option', qid, index, data }));
-    if (media.grid) {
-      this.release({ t: 'grid', qid, ...media.grid });
-      media.tiles.forEach((tile, rank) => {
-        const due = q.askedAt + tileDelay(q, rank, media.tiles.length) - Date.now();
+    if (media.veil) {
+      this.release({ t: 'veil', qid, ...media.veil });
+      const delays = patchDelays(q, media.patches.length);
+      media.patches.forEach((patch, rank) => {
+        const due = q.askedAt + delays[rank] - Date.now();
         const go = () => {
-          if (this.media?.qid === qid) this.release({ t: 'tile', qid, ...tile });
+          if (this.media?.qid === qid) this.release({ t: 'patch', qid, ...patch });
         };
         if (due <= 0) go();
         else this.mediaTimers.push(setTimeout(go, due));
       });
     }
+  }
+
+  /** Patches of the current veiled picture that haven't gone out yet, in order. */
+  private unreleasedPatches() {
+    const media = this.media;
+    if (!media?.veil) return [];
+    const sent = new Set(this.released.flatMap((m) => (m.t === 'patch' ? [m.i] : [])));
+    return media.patches.filter((p) => !sent.has(p.i)).map((p) => ({ qid: media.qid, ...p }));
+  }
+
+  /**
+   * The answer is out, so the rest of a veiled picture goes out now, a few
+   * tens of ms apart: it burns in quickly, still spreading from what's
+   * there, and every device starts each patch's burn in a different frame.
+   */
+  private finishVeil(rest: ReturnType<Session['unreleasedPatches']>) {
+    const gap = Math.min(60, 700 / Math.max(1, rest.length));
+    rest.forEach((patch, k) => {
+      const go = () => {
+        if (this.state?.phase === 'reveal' && this.state.question?.askedAt === patch.qid) this.release({ t: 'patch', ...patch });
+      };
+      if (k === 0) go();
+      else this.mediaTimers.push(setTimeout(go, k * gap));
+    });
   }
 
   private release(m: MediaMsg) {
@@ -697,7 +722,7 @@ class Session {
   }
 
   private sendMedia(conn: DataConnection, g: Guest, m: MediaMsg) {
-    if (m.t !== 'grid' && (!g.mediaAt || g.mediaAt.qid !== m.qid)) g.mediaAt = { qid: m.qid, at: Date.now() };
+    if (m.t !== 'veil' && (!g.mediaAt || g.mediaAt.qid !== m.qid)) g.mediaAt = { qid: m.qid, at: Date.now() };
     this.send(conn, m);
   }
 
@@ -938,8 +963,10 @@ class Session {
     if (next.phase === 'question' && next.question && next.question.askedAt !== prev?.question?.askedAt) {
       void this.startMedia(next);
     } else if (next.phase === 'reveal') {
+      const rest = this.unreleasedPatches();
       // Keep what was sent, so someone arriving during the reveal still gets the pictures.
       this.stopMedia(true);
+      this.finishVeil(rest);
     } else if (next.phase !== 'question') {
       this.stopMedia();
     }

@@ -23,7 +23,7 @@ export type Difficulty = Preset | 'custom';
 /** Name the item from its art, or pick the right art for a name. */
 export type QuestionMode = 'name' | 'art';
 
-/** How the tiles over the art lift: not at all, or ever slower on ever finer grids. */
+/** How the art burns into view: not at all, or ever slower in ever finer patches. */
 export type VeilSpeed = 'off' | 'fast' | 'slow' | 'slowest';
 /** Which art is shown without colour: none, the pictures of "find the art" questions, or all of it. */
 export type Grayscale = 'off' | 'art' | 'all';
@@ -37,7 +37,7 @@ export interface Knobs {
   fakes: number;
   /** Share of "art" questions instead of "name" ones (the roll leans against long runs of either). */
   artChance: number;
-  /** Art hidden under tiles that lift one by one (presets: race only). */
+  /** The art burns into view patch by patch (presets: race only). */
   veil: VeilSpeed;
   grayscale: Grayscale;
   /** Chance of each picture being shown flipped left to right. */
@@ -64,7 +64,11 @@ export const PRESETS: Record<Preset, Knobs> = {
   eternal: { options: 8, similarNames: 1, fakes: 2, artChance: 0.5, veil: 'slow', grayscale: 'art', mirror: 0.3, lockout: 4 },
 };
 
-/** Tile grid size, and the share of the timer it takes the last tile to lift. */
+/**
+ * How finely the art is cut (patches about as big as the tiles of a size ×
+ * size grid over the picture), and the share of the timer it takes the last
+ * patch to appear.
+ */
 const VEILS: Record<VeilSpeed, { size: number; share: number } | null> = {
   off: null,
   fast: { size: 5, share: 0.55 },
@@ -74,7 +78,7 @@ const VEILS: Record<VeilSpeed, { size: number; share: number } | null> = {
 
 /** The knobs as the engine uses them. */
 export interface DifficultyRules extends Omit<Knobs, 'veil'> {
-  /** Art is hidden under tiles that lift one by one; fraction of the timer it takes. */
+  /** The art burns into view patch by patch; fraction of the timer it takes. */
   veil: { size: number; share: number } | null;
 }
 
@@ -220,8 +224,8 @@ export function difficultyOf(d: unknown): Difficulty {
 /**
  * The knobs a room plays with: its preset's, or the host's own; `harder` for
  * deathmatch questions (one preset up, or one step up on each custom knob). A
- * preset's tiles only lift in race: on your own turn nobody beats you to the
- * answer, so waiting for them is just a delay. A custom veil applies in both modes.
+ * preset only veils the art in race: on your own turn nobody beats you to the
+ * answer, so waiting for it is just a delay. A custom veil applies in both modes.
  */
 export function knobsOf(settings: Pick<Settings, 'difficulty'> & Partial<Settings>, harder = false): Knobs {
   const d = difficultyOf(settings.difficulty);
@@ -250,7 +254,7 @@ export const lastPicks = (picks: string[], lockout: number) => (lockout > 0 ? pi
 
 export interface Veil {
   size: number;
-  /** Seconds until the last tile has lifted. */
+  /** Seconds until the last patch has appeared. */
   seconds: number;
   seed: number;
 }
@@ -341,7 +345,7 @@ export interface Question {
   labels: (string | null)[];
   /** Art questions: the name to find the picture for. */
   prompt: string | null;
-  /** Tiles hiding the art on name questions (merciless and up). */
+  /** The art burning into view patch by patch on name questions (merciless and up). */
   veil: Veil | null;
   /**
    * Pictures shown flipped left to right (eternal): one flag per option on art
