@@ -17,8 +17,13 @@
 
   const params = new URLSearchParams(location.search);
   const invite = cleanCode(params.get('room') ?? '');
-  if (params.has('owner'))
-    void unlockHeldName(params.get('owner') ?? '').then((ok) => ok && history.replaceState(null, '', location.pathname));
+  if (params.has('owner')) {
+    void unlockHeldName(params.get('owner') ?? '');
+    // Out of the address bar and history either way; other params stay.
+    const url = new URL(location.href);
+    url.searchParams.delete('owner');
+    history.replaceState(history.state, '', url);
+  }
 
   let name = $state(savedName());
   let code = $state(invite);

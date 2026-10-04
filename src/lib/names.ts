@@ -46,20 +46,25 @@ export function nameSkeleton(name: string): string {
 }
 
 // A name held back for one person. Opening the site once with ?owner=<key>
-// unlocks it on that device (remembered in localStorage). The key is checked
-// against a PBKDF2-SHA256 hash, so it is not in the source. Still a deterrent
-// against casual impersonation, not security: a short key can be brute-forced
-// offline, and the check only runs in the name field.
+// unlocks it on that device (remembered in localStorage). The key is a few
+// random words; only its PBKDF2-SHA256 hash is in the source, and
+// scripts/held-key-hash.mjs makes the hash for a new key. Case, spaces and
+// dashes don't count, so "Ember Tower" and "ember-tower" are the same key.
+// A deterrent against impersonation, not security: the check only runs in
+// the name field.
 const HELD_NAME = 'zoearcana';
-const HELD_KEY_HASH = '36b0865798d98a2fc5f9659b8c33010dd90d436e84d1c64f504d93270bfe8073';
+const HELD_KEY_HASH = '5ddd2ad1ad21e94175a14999359a9e8b2b508a70c769f49f71a6d94e5821a607';
 const HELD_SALT = 'poe2trivia.held-name';
+const HELD_ITERATIONS = 600_000;
 const OWNER_KEY = 'poe2trivia.owner';
 
-async function keyHash(key: string): Promise<string> {
+/** Hex PBKDF2 hash of a key. Throws where Web Crypto is missing (plain http). */
+export async function heldKeyHash(key: string): Promise<string> {
   const enc = new TextEncoder();
-  const base = await crypto.subtle.importKey('raw', enc.encode(key), 'PBKDF2', false, ['deriveBits']);
+  const plain = key.normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
+  const base = await crypto.subtle.importKey('raw', enc.encode(plain), 'PBKDF2', false, ['deriveBits']);
   const bits = await crypto.subtle.deriveBits(
-    { name: 'PBKDF2', hash: 'SHA-256', salt: enc.encode(HELD_SALT), iterations: 200_000 },
+    { name: 'PBKDF2', hash: 'SHA-256', salt: enc.encode(HELD_SALT), iterations: HELD_ITERATIONS },
     base,
     256,
   );
@@ -67,19 +72,21 @@ async function keyHash(key: string): Promise<string> {
 }
 
 /** Remembers this device as the owner's when the key is right. */
-export async function unlockHeldName(key: string): Promise<boolean> {
-  if ((await keyHash(key)) !== HELD_KEY_HASH) return false;
+export async function unlockHeldName(key: string, hash = HELD_KEY_HASH): Promise<boolean> {
   try {
-    localStorage.setItem(OWNER_KEY, HELD_KEY_HASH);
-  } catch {}
-  return true;
+    if ((await heldKeyHash(key)) !== hash) return false;
+    localStorage.setItem(OWNER_KEY, hash);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** True when the name is held and this device is not unlocked. */
-export function nameHeld(name: string): boolean {
+export function nameHeld(name: string, hash = HELD_KEY_HASH): boolean {
   if (nameSkeleton(cleanName(name)) !== HELD_NAME) return false;
   try {
-    return localStorage.getItem(OWNER_KEY) !== HELD_KEY_HASH;
+    return localStorage.getItem(OWNER_KEY) !== hash;
   } catch {
     return true;
   }
