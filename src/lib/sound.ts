@@ -1,9 +1,10 @@
 // Sound effects: layered CC0 recordings (see public/sfx/CREDITS.txt), each
 // layer filtered on its own, all sharing one stone-hall reverb, over a quiet
-// ambience loop. What plays for each moment lives in soundDesign.ts; this
-// file is the mixer, and matches the audition page the design was tuned on.
+// ambience loop (and a roaring fire over it during a deathmatch). What plays
+// for each moment lives in soundDesign.ts; this file is the mixer, and
+// matches the audition page the design was tuned on.
 
-import { AMBIENCE, MIX, MOMENTS, type Layer } from './soundDesign';
+import { AMBIENCE, FIRE, MIX, MOMENTS, type Layer } from './soundDesign';
 
 export type Sfx =
   | 'hover'
@@ -215,41 +216,66 @@ export function sfx(name: Sfx) {
 
 // ---------- ambience ----------
 
-let ambience: { src: AudioBufferSourceNode; gain: GainNode } | null = null;
-let ambienceStarting = false;
+type Loop = typeof AMBIENCE;
+type Playing = { src: AudioBufferSourceNode; gain: GainNode };
 
-/** Play the ambience loop while sound is on and the tab is visible; fade it out otherwise. */
+/**
+ * How fast (time constants in s) each loop fades in and out: the fire swells
+ * up with the deathmatch intro and dies down slowly.
+ */
+const FADES = new Map<Loop, { up: number; down: number }>([
+  [AMBIENCE, { up: 0.8, down: 0.2 }],
+  [FIRE, { up: 1.5, down: 1 }],
+]);
+const playing = new Map<Loop, Playing>();
+const starting = new Set<Loop>();
+let fire = false;
+
+/** Stokes the ambience into a roaring fire for as long as a deathmatch lasts. */
+export function fireAmbience(on: boolean) {
+  fire = on;
+  updateAmbience();
+}
+
+/** Each loop plays while sound is on and the tab is visible (the fire only during a deathmatch). */
+const wanted = (l: Loop) => !muted && document.visibilityState === 'visible' && (l !== FIRE || fire);
+
+/** Starts the loops that should play and fades out the ones that shouldn't. */
 function updateAmbience() {
-  const want = !muted && document.visibilityState === 'visible';
-  if (!want) {
-    if (!ambience || !bus) return;
-    const { src, gain } = ambience;
-    ambience = null;
-    gain.gain.setTargetAtTime(0, bus.ac.currentTime, 0.2);
-    setTimeout(() => src.stop(), 1500);
+  for (const l of FADES.keys()) updateLoop(l);
+}
+
+function updateLoop(l: Loop) {
+  const fade = FADES.get(l)!;
+  if (!wanted(l)) {
+    const p = playing.get(l);
+    if (!p || !bus) return;
+    playing.delete(l);
+    p.gain.gain.setTargetAtTime(0, bus.ac.currentTime, fade.down);
+    setTimeout(() => p.src.stop(), fade.down * 7000);
     return;
   }
-  if (ambience || ambienceStarting) return;
+  if (playing.has(l) || starting.has(l)) return;
   const b = audio();
   if (!b) return;
-  ambienceStarting = true;
-  load(AMBIENCE.file)
+  starting.add(l);
+  load(l.file)
     .then((buf) => {
-      ambienceStarting = false;
-      if (ambience || muted || document.visibilityState !== 'visible') return;
+      starting.delete(l);
+      if (playing.has(l) || !wanted(l)) return;
       const { ac } = b;
       const src = ac.createBufferSource();
       src.buffer = buf;
       src.loop = true;
       const gain = ac.createGain();
       gain.gain.value = 0;
-      gain.gain.setTargetAtTime(db(AMBIENCE.gain), ac.currentTime, 0.8);
-      src.connect(filter(ac, 'lowpass', AMBIENCE.lp)).connect(gain).connect(b.master);
+      gain.gain.setTargetAtTime(db(l.gain), ac.currentTime, fade.up);
+      src.connect(filter(ac, 'lowpass', l.lp)).connect(gain).connect(b.master);
       src.start();
-      ambience = { src, gain };
+      playing.set(l, { src, gain });
     })
     .catch(() => {
-      ambienceStarting = false;
+      starting.delete(l);
     });
 }
 

@@ -511,9 +511,10 @@ function calmScene() {
   setMood([0, 0, 0], 0);
   backdropEmbers.tint(CALM);
   backdropEmbers.stoke(0);
+  backdropEmbers.swarm(0);
 }
 
-/** The deathmatch colours the whole scene while it lasts. */
+/** The deathmatch colours the whole scene, and crowds it with embers, while it lasts. */
 export function deathmatchMood(on: boolean) {
   if (moodOwner === 'victory') return;
   if (!on) {
@@ -523,7 +524,8 @@ export function deathmatchMood(on: boolean) {
   moodOwner = 'deathmatch';
   setMood([1, 0.12, 0.05], 0.55);
   backdropEmbers.tint([1, 0.14, 0.06]);
-  backdropEmbers.stoke(0.45);
+  backdropEmbers.stoke(0.55);
+  backdropEmbers.swarm(1);
 }
 
 // ---------- the end ----------
@@ -592,6 +594,7 @@ export function victory(avatar: Element, title: Element, color: string, lost: bo
   setMood(lost ? [0.6, 0.5, 0.4] : [1, 0.7, 0.3], lost ? 0.18 : 0.35);
   backdropEmbers.tint(lost ? CALM : [1, 0.62, 0.2]);
   backdropEmbers.stoke(lost ? 0 : 0.8);
+  backdropEmbers.swarm(0);
 
   if (!lost) {
     const a = boxOf(avatar);
