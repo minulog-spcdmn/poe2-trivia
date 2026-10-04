@@ -1,11 +1,11 @@
 <script lang="ts">
   // An alchemist's circle that draws itself behind the item art and turns
   // slowly, in three layers:
-  // • the band: the seven planets of the old metals in seals, with the
-  //   seven words of V.I.T.R.I.O.L. written between them;
-  // • a heptagram, one point per planet, with Sol and Luna sealed on the
-  //   circle inside it;
-  // • at the heart, a compass star in a ring of sun rays.
+  // • the band: the seven planets of the old metals in seals, with lines
+  //   of an unreadable alchemical script between them;
+  // • a heptagram, one point per planet, with Sol and Luna sealed inside;
+  // • at the heart, a compass star in a sun whose rays reach out to the
+  //   heptagram's inner circle.
   // Lines stop short of every seal they meet, as if drawn around it.
   // `state` colours it at the reveal.
   //
@@ -20,8 +20,6 @@
     color,
     strength,
   }: { state?: 'idle' | 'good' | 'bad'; size?: string; color?: string; strength?: number } = $props();
-
-  const uid = $props.id();
 
   type Hole = { x: number; y: number; r: number };
   const f = (v: number) => v.toFixed(2);
@@ -95,7 +93,6 @@
   const BAND_IN = 81;
   const BAND_OUT = 94;
   const BAND = (BAND_IN + BAND_OUT) / 2;
-  const WORDS = ['VISITA', 'INTERIORA', 'TERRAE', 'RECTIFICANDO', 'INVENIES', 'OCCULTUM', 'LAPIDEM'];
   const SEAL = 7.2;
   const seals = PLANETS.map((d, k) => {
     const a = (k / 7) * 360;
@@ -103,48 +100,84 @@
     return { a, x, y, d };
   });
   const bandHoles = seals.map(({ x, y }) => ({ x, y, r: SEAL + 1.2 }));
-  // Each word runs along the band from one seal to the next, centred.
-  const words = WORDS.map((w, k) => {
-    const a0 = (k / 7) * 360 + 7;
-    const a1 = ((k + 1) / 7) * 360 - 7;
-    const r = BAND - 1.7;
-    return { w, d: `M${at(a0, r).map(f).join(' ')}A${r} ${r} 0 0 1 ${at(a1, r).map(f).join(' ')}` };
-  });
+
+  // Between the seals, a script nobody can read: small alchemical marks
+  // (the four elements, salt, sulphur and the like) in words of two to
+  // four, picked from a fixed seed so every circle carries the same lines.
+  const MARKS = [
+    'M0 -2L1.7 1.5H-1.7Z', // fire
+    'M0 2L1.7 -1.5H-1.7Z', // water
+    'M0 -2L1.7 1.5H-1.7ZM-1.4 0.4H1.4', // air
+    'M0 2L1.7 -1.5H-1.7ZM-1.4 -0.4H1.4', // earth
+    'M0 -1.6A1.6 1.6 0 1 1 0 1.6A1.6 1.6 0 1 1 0 -1.6M-1.6 0H1.6', // salt
+    'M0 -2.2L1.2 -0.2H-1.2ZM0 -0.2V2.2M-1 1H1', // sulphur
+    'M0 -0.6A1.3 1.3 0 1 1 0 2A1.3 1.3 0 1 1 0 -0.6M0 -0.6V-2.4M-0.9 -1.6H0.9', // antimony
+    'M-1.4 -2L0 2L1.4 -2M-0.9 -0.6H0.9', // arsenic
+    'M-1.2 -2H1.2L-0.6 0C1.8 0 1.8 2.2 -1.2 2', // dram
+    'M-1.5 1C-1.5 -2 1.5 -2 1.5 0S-0.4 2 -0.4 0', // a turn of the pen
+    'M0 -2V2M-1.2 -0.8H1.2', // cross
+    'M0.6 -2A2 2 0 1 0 0.6 2A1.5 1.5 0 1 1 0.6 -2', // crescent
+    'M-1.4 2V-2L1.4 2V-2', // a zigzag
+    'M-1.3 -1.6C0 -2.6 1.6 -1 0 0C-1.6 1 0 2.6 1.3 1.6', // an S
+  ];
+  let seed = 11;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const SCRIPT = Array.from({ length: 7 }, (_, k) => {
+    const from = (k / 7) * 360 + 7.5;
+    const to = ((k + 1) / 7) * 360 - 7.5;
+    const step = 3.1;
+    const marks: { a: number; d: string }[] = [];
+    let a = from;
+    while (a <= to) {
+      const n = 2 + Math.floor(rnd() * 3);
+      for (let i = 0; i < n && a <= to; i++, a += step) marks.push({ a, d: MARKS[Math.floor(rnd() * MARKS.length)] });
+      a += step * 0.7;
+    }
+    // Centre the line between the seals.
+    const shift = (to - (marks.at(-1)?.a ?? to)) / 2;
+    return marks.map((m) => ({ ...m, a: m.a + shift }));
+  }).flat();
 
   // The heptagram {7/2}, its points on the band's inner edge, half a step
-  // round from the planets. Sol above, Luna below, each on the circle the
-  // star's inner heptagon holds.
+  // round from the planets, and a circle in the heptagon at its middle.
+  // Sol above and Luna below sit between that circle and the band.
   const R = BAND_IN;
   const INNER = R * Math.cos((2 * Math.PI) / 7);
-  const BIG = 11;
-  const sol = at(0, INNER);
-  const luna = at(180, INNER);
+  const BIG = 13;
+  const sol = at(0, 65.5);
+  const luna = at(180, 65.5);
   const starHoles = [sol, luna].map(([x, y]) => ({ x, y, r: BIG + 1.4 }));
   const points = Array.from({ length: 7 }, (_, k) => at(((k + 0.5) / 7) * 360, R));
   const STAR = Array.from({ length: 7 }, (_, i) => line(points[(i * 2) % 7], points[(i * 2 + 2) % 7], starHoles)).join('');
   const STAR_RING = ring(INNER, starHoles);
-  // Sol: a disc with eight rays, long and short in turn.
-  const SOL_RAYS = Array.from({ length: 8 }, (_, k) => line(at(k * 45, 5.6), at(k * 45, k % 2 ? 7 : 8.2))).join('');
+  // Sol: a disc with twelve rays, long and short in turn.
+  const SOL_RAYS = Array.from({ length: 12 }, (_, k) => line(at(k * 30, 6.6), at(k * 30, k % 2 ? 8.4 : 10))).join('');
 
   // The heart: a compass star of eight faceted points in a sun in
-  // splendour, pointed and flaming rays in turn.
+  // splendour, pointed and flaming rays in turn reaching out to the
+  // heptagram's inner circle.
+  const SUN = 31;
   const HEART = Array.from({ length: 8 }, (_, k) => {
     const a = k * 45;
-    const tip = at(a, k % 2 ? 22 : 34);
-    const l = at(a - 22.5, 7);
-    const r = at(a + 22.5, 7);
+    const tip = at(a, k % 2 ? 19 : 29);
+    const l = at(a - 22.5, 6);
+    const r = at(a + 22.5, 6);
     return `M${l.map(f).join(' ')}L${tip.map(f).join(' ')}L${r.map(f).join(' ')}M0 0L${tip.map(f).join(' ')}`;
   }).join('');
   const RAYS = Array.from({ length: 16 }, (_, k) => {
     const a = k * 22.5;
     const p = (da: number, r: number) => at(a + da, r).map(f).join(' ');
     // A pointed ray, or a flame that waves out to its tip.
-    if (k % 2 === 0) return `M${p(-3.2, 36)}L${p(0, 47)}L${p(3.2, 36)}`;
-    return `M${p(-2.6, 36)}C${p(3, 39)} ${p(-3.5, 41.5)} ${p(0, 44.5)}C${p(-1, 41.5)} ${p(4.5, 39)} ${p(2.6, 36)}`;
+    if (k % 2 === 0) return `M${p(-4.2, SUN)}L${p(0, INNER - 1.5)}L${p(4.2, SUN)}M${p(0, SUN)}L${p(0, INNER - 6)}`;
+    return (
+      `M${p(-3.2, SUN)}C${p(4, SUN + 4)} ${p(-5, SUN + 8)} ${p(0.5, SUN + 11)}` +
+      `S${p(-1, SUN + 14)} ${p(0, INNER - 4)}` +
+      `C${p(1.5, SUN + 13)} ${p(-1.5, SUN + 10)} ${p(4, SUN + 7)}S${p(0, SUN + 3)} ${p(3.2, SUN)}`
+    );
   }).join('');
 </script>
 
-{#snippet band(glow: boolean)}
+{#snippet band()}
   <path d={ring(97.5)} class="draw thin" pathLength="100" />
   <path d={ring(BAND_OUT, bandHoles)} class="draw" pathLength="100" />
   <path d={ring(BAND_IN, bandHoles)} class="draw" pathLength="100" />
@@ -153,12 +186,9 @@
     <circle cx={f(s.x)} cy={f(s.y)} r={SEAL - 1.2} class="draw hair" pathLength="100" />
     <path d={s.d} transform="translate({f(s.x)} {f(s.y)}) rotate({s.a}) scale(1.05)" class="sign" />
   {/each}
-  {#if !glow}
-    {#each words as w, k (k)}
-      <path id="{uid}-w{k}" d={w.d} class="guide" />
-      <text class="word"><textPath href="#{uid}-w{k}" startOffset="50%">{w.w}</textPath></text>
-    {/each}
-  {/if}
+  {#each SCRIPT as m (m.a)}
+    <path d={m.d} transform="rotate({f(m.a)}) translate(0 -{BAND})" class="sign" />
+  {/each}
 {/snippet}
 
 {#snippet star()}
@@ -169,24 +199,25 @@
     <circle cx={f(x)} cy={f(y)} r={BIG - 1.6} class="draw hair" pathLength="100" />
   {/each}
   <g transform="translate({f(sol[0])} {f(sol[1])})">
-    <circle r="4" class="sign" />
-    <circle r="0.9" class="sign" />
+    <circle r="5" class="sign" />
+    <circle r="1.1" class="sign" />
     <path d={SOL_RAYS} class="sign" />
   </g>
-  <path d={PLANETS[1]} transform="translate({f(luna[0])} {f(luna[1])}) rotate(180) scale(1.7)" class="sign" />
+  <path d={PLANETS[1]} transform="translate({f(luna[0])} {f(luna[1])}) rotate(180) scale(2.2)" class="sign" style:--k="2.2" />
 {/snippet}
 
 {#snippet heart()}
   <path d={HEART} class="draw thin" pathLength="100" />
-  <path d={ring(36)} class="draw hair" pathLength="100" />
+  <path d={ring(SUN)} class="draw thin" pathLength="100" />
+  <path d={ring(SUN - 2)} class="draw hair" pathLength="100" />
   <path d={RAYS} class="draw thin" pathLength="100" />
-  <path d={ring(31)} class="dashed" />
+  <path d={ring(24)} class="dashed" />
 {/snippet}
 
 <div class="arcane {state}" aria-hidden="true" style:--size={size} style:color={color} style:opacity={strength}>
   <div class="layer band">
-    <svg class="glow" viewBox="-100 -100 200 200">{@render band(true)}</svg>
-    <svg viewBox="-100 -100 200 200">{@render band(false)}</svg>
+    <svg class="glow" viewBox="-100 -100 200 200">{@render band()}</svg>
+    <svg viewBox="-100 -100 200 200">{@render band()}</svg>
   </div>
   <div class="layer star">
     <svg class="glow" viewBox="-100 -100 200 200">{@render star()}</svg>
@@ -245,33 +276,26 @@
   circle {
     fill: none;
     stroke: currentColor;
-    stroke-width: 0.8;
-    stroke-linecap: round;
-    stroke-linejoin: round;
+    stroke-width: 0.5;
+    stroke-linecap: butt;
+    stroke-linejoin: miter;
+    stroke-miterlimit: 12;
   }
   .thin {
-    stroke-width: 0.55;
-  }
-  .hair {
     stroke-width: 0.35;
   }
+  .hair {
+    stroke-width: 0.22;
+  }
   .dashed {
-    stroke-width: 0.45;
+    stroke-width: 0.3;
     stroke-dasharray: 6 2 0.5 2;
   }
+  /* A sign drawn at k times its size keeps the same line. */
   .sign {
-    stroke-width: 0.7;
-  }
-  .guide {
-    stroke: none;
-  }
-  .word {
-    fill: currentColor;
-    font-family: var(--font-cinzel);
-    font-weight: 700;
-    font-size: 4.8px;
-    letter-spacing: 0.6px;
-    text-anchor: middle;
+    stroke-width: calc(0.42px / var(--k, 1));
+    stroke-linecap: round;
+    stroke-linejoin: round;
   }
   /* The glow: the same strokes, wide and faint, on their own layer so it
      can breathe without repainting. */
@@ -280,11 +304,14 @@
     animation: breathe 6s ease-in-out infinite alternate;
   }
   .glow :global(*) {
-    stroke-width: 3.2;
+    stroke-width: 2;
+  }
+  .glow :global(.sign) {
+    stroke-width: calc(2px / var(--k, 1));
   }
   .glow :global(.hair),
   .glow :global(.dashed) {
-    stroke-width: 1.6;
+    stroke-width: 1;
   }
   .draw {
     stroke-dasharray: 100;
@@ -296,10 +323,9 @@
   .heart .draw {
     animation-delay: 0.6s;
   }
-  /* The signs, the words and the dashed ring are set down once the lines
+  /* The signs, the script and the dashed ring are set down once the lines
      are drawn. */
   .sign,
-  .word,
   .dashed {
     animation: carve 1s 1.3s var(--ease-out) both;
   }
