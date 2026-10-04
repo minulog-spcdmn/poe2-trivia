@@ -287,6 +287,11 @@ export interface Player {
   connected: boolean;
   /** Stable colour slot for avatars. */
   hue: number;
+  /**
+   * Questions in a row this player got right (missing in older saves and
+   * from older hosts). Turns: their own questions; race: questions they won.
+   */
+  streak?: number;
 }
 
 /**
@@ -572,6 +577,20 @@ function sample<T>(arr: T[], n: number, rng: Rng): T[] {
   return shuffle(arr, rng).slice(0, n);
 }
 
+/**
+ * Counts a reveal into the streaks. Turns: whoever answered keeps theirs
+ * going or loses it. Race: the winner's goes on and everyone else's breaks,
+ * whether they guessed wrong or just weren't first.
+ */
+function countStreaks(s: GameState, r: Reveal) {
+  if (s.settings.mode === 'race') {
+    for (const p of s.players) p.streak = p.id === r.winnerId ? (p.streak ?? 0) + 1 : 0;
+    return;
+  }
+  const answered = s.players[s.turn];
+  if (answered) answered.streak = r.correct ? (answered.streak ?? 0) + 1 : 0;
+}
+
 export class Engine {
   readonly items: Item[];
   readonly byId: Map<string, Item>;
@@ -729,6 +748,7 @@ export class Engine {
         for (const p of s.players) {
           p.score = 0;
           p.recent = [];
+          p.streak = 0;
         }
         s.round = 1;
         s.turnCount = 0;
@@ -826,7 +846,7 @@ export class Engine {
         if (!isHost) throw new ActionError('Only the host can restart.');
         const fresh = createGame(s.hostId, s.settings);
         // Players who left during the game don't come back as ghosts in the lobby.
-        fresh.players = s.players.filter((p) => p.connected).map((p) => ({ ...p, score: 0, recent: [] }));
+        fresh.players = s.players.filter((p) => p.connected).map((p) => ({ ...p, score: 0, recent: [], streak: 0 }));
         // Renames during the game take effect on colours now.
         const claims = fresh.players.filter((p) => reservedHue(p) !== undefined);
         for (const p of [...claims, ...fresh.players.filter((p) => !claims.includes(p))]) settleHue(fresh, p);
@@ -840,7 +860,10 @@ export class Engine {
         break;
       }
     }
-    if (s.reveal && !prev.reveal) s.reveal.at = this.now();
+    if (s.reveal && !prev.reveal) {
+      s.reveal.at = this.now();
+      countStreaks(s, s.reveal);
+    }
     s.version = prev.version + 1;
     return s;
   }

@@ -16,7 +16,7 @@
   import { untrack } from 'svelte';
   import { FILL_START, answerCharging, artRevealed, raceMiss, reveal as revealFx, veilComplete, veilHandoff } from '../lib/fx/moments';
   import { FILL_LEAD } from '../lib/soundDesign';
-  import { recordReveal } from '../lib/fx/streaks';
+  import { streakOf } from '../lib/fx/streaks';
   import { scoreRowOf } from '../lib/scoreRows';
   import { fxActive, type Handle } from '../lib/fx/core';
 
@@ -309,8 +309,8 @@
     revealed = true;
     untrack(() => {
       const scorer = race ? (r.winnerId ?? null) : r.correct ? active.id : null;
-      const missed = race ? q.misses.map((m) => m.playerId) : r.correct ? [] : [active.id];
-      streak = recordReveal(q.askedAt, scorer, missed);
+      // The host has already counted this answer into the scorer's streak.
+      streak = scorer ? streakOf(s.players.find((p) => p.id === scorer)) : 0;
       const pill = scorer ? scoreRowOf(scorer) : null;
       // The scorer's bar, before and after this point (the state already counts it).
       const now = scorer ? s.players.find((p) => p.id === scorer)?.score : undefined;
