@@ -289,6 +289,8 @@ export function reveal(t: RevealTargets) {
   if (!fxActive()) return;
   const streak = t.streak ?? 1;
   const hype = Math.min(3, 1 + (streak - 1) * 0.5);
+  // A tile's item picture (swapped for the original at the reveal): the light shines from behind it.
+  const pic = () => t.answer?.querySelector('.pic .art-fit > img') ?? null;
 
   if (t.answer) {
     const a = t.answer;
@@ -297,7 +299,7 @@ export function reveal(t: RevealTargets) {
     if (celebrate) {
       sparks(a, { count: Math.round(30 * hype), area: 'edge', colors: [C.gold, C.rightPale, C.goldPale], speed: [160, 600 * Math.sqrt(hype)], life: [0.4, 1] });
       ring(a, { radius: 150 * Math.sqrt(hype), thickness: 10, life: 0.6, color: C.right, breakup: 0.6, intensity: 0.5 });
-      flare(a, { size: 22, streak: 260 * Math.sqrt(hype), life: 0.6, color: C.rightPale, intensity: 0.55 });
+      flare(a, { size: 22, streak: 260 * Math.sqrt(hype), life: 0.6, color: C.rightPale, intensity: 0.55, clear: pic });
       glints(a, { count: Math.round(3 * hype), size: [5, 9], delay: [0, 0.6] });
       light(a, { color: [0.85, 1, 0.6], radius: 240, intensity: 0.25, decay: 1.1 });
     } else {
@@ -306,15 +308,21 @@ export function reveal(t: RevealTargets) {
   }
 
   if (t.good && t.tiles && t.answer) {
-    // The right tile already has its flare and light; the rays just crown it, softly.
+    // The right tile already has its flare and light; the rays just crown it,
+    // from behind its item.
     const a = t.answer;
     const b = boxOf(a);
-    rays(a, { radius: Math.max(b.w, b.h) * 1.1, life: 1.4 + 0.2 * hype, intensity: 0.07 * Math.sqrt(hype), color: C.gold, count: 12 });
+    rays(a, { radius: Math.max(b.w, b.h) * 1.1, life: 1.8 + 0.2 * hype, fadeIn: 0.5, intensity: 0.12 * Math.sqrt(hype), color: C.gold, count: 12, clear: pic });
     embers(a, { count: Math.round(8 * hype), area: 'fill', colors: [C.gold, C.ember, C.rightPale], rise: [50, 150], life: [0.7, 1.5] });
   } else if (t.good && t.art) {
     const b = boxOf(t.art);
-    flare(t.art, { size: 40, streak: b.w * 0.9, life: 0.9, color: C.goldPale, intensity: 0.6 });
-    rays(t.art, { radius: Math.max(b.w, b.h) * 0.6, life: 1.5 + 0.3 * hype, intensity: 0.16 * hype, color: C.gold, count: 14 });
+    // The flare and rays shine from behind the item (its outline), not over
+    // it. The full picture may still be on its way in (after the veil), so
+    // it's looked up as they go.
+    const art = t.art;
+    const item = () => art.querySelector('.frame .art-fit > img');
+    flare(t.art, { size: 40, streak: b.w * 0.9, life: 0.9, color: C.goldPale, intensity: 0.6, clear: item });
+    rays(t.art, { radius: Math.max(b.w, b.h) * 0.7, life: 2.2 + 0.3 * hype, fadeIn: 0.5, intensity: 0.1 + 0.12 * hype, color: C.gold, count: 14, clear: item });
     embers(t.art, { count: Math.round(14 * hype), area: 'fill', colors: [C.gold, C.ember, C.rightPale], rise: [60, 190], life: [0.8, 1.8] });
     light(t.art, { color: [1, 0.8, 0.45], radius: 420, intensity: 0.3 + 0.08 * hype, hold: 0.3, decay: 1.5 });
   }
@@ -576,7 +584,7 @@ export function victory(avatar: Element, title: Element, color: string, lost: bo
   ring(avatar, { radius: D * 0.5, thickness: 34, life: 1.2, color: main, breakup: 0.85, delay: 0.1, fill: 0.08, intensity: 0.45 });
   // The rays settle after a while, so a victory screen left open isn't
   // keeping the effects running. (The rune circle behind the avatar is SVG.)
-  handles.push(rays(avatar, { radius: Math.min(650, innerWidth * 0.5), intensity: lost ? 0.08 : 0.15, color: main, count: 16, delay: 0.3, fadeIn: 1.2, life: 14 }));
+  handles.push(rays(avatar, { radius: Math.min(650, innerWidth * 0.5), intensity: lost ? 0.08 : 0.15, color: main, count: 16, delay: 0.3, fadeIn: 1.2, life: 14, clear: avatar.querySelector('.avatar') ?? avatar }));
   later(0.9, () => {
     flare(title, { size: 36, streak: innerWidth * 0.4, life: 1, color: C.goldPale, intensity: 0.7 });
     glints(title, { count: 5, size: [5, 10], delay: [0, 1] });

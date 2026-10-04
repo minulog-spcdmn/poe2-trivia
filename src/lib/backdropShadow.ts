@@ -30,6 +30,7 @@
 // backdrop).
 
 import { shaking } from './fx/core';
+import { cornerPx } from './corner';
 import { opacityOf } from './opacity';
 
 export type Fill = 'linear' | 'stage';
@@ -240,8 +241,7 @@ export function measureShadows(
       filled.add(node);
     } else node.removeAttribute('data-bs-fill');
 
-    const r = cs.borderTopLeftRadius;
-    const radius = r.endsWith('%') ? (parseFloat(r) / 100) * Math.min(w, h) : parseFloat(r) || 0;
+    const radius = cornerPx(cs.borderTopLeftRadius, w, h);
     elA.set([rect.left, rect.top, 1 / scale, 0], n * 4);
     elB.set([w, h, radius, 1], n * 4);
     if (fill) {
