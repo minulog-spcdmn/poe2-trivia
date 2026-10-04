@@ -224,6 +224,8 @@ class Session {
   private idleKey = '';
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
+  /** How long this device took to answer the current question (its askedAt), for the codex. */
+  private answered: { qid: number; ms: number } | null = null;
 
   get isHost() {
     return this.mode === 'local' || this.mode === 'host';
@@ -837,6 +839,7 @@ class Session {
           this.syncClock(msg.now);
           if (!this.state || msg.state.version >= this.state.version || msg.state.version === 0) {
             this.onNewState(this.state, msg.state);
+            this.noteEncounter(this.state, msg.state);
             this.state = msg.state;
           }
           this.status = 'ready';
@@ -901,6 +904,10 @@ class Session {
 
   dispatch(action: Action) {
     if (!this.state) return;
+    const q = this.state.question;
+    if (action.type === 'answer' && action.index !== null && q && shown.qid === q.askedAt && this.answered?.qid !== q.askedAt) {
+      this.answered = { qid: q.askedAt, ms: performance.now() - shown.since };
+    }
     if (this.mode === 'client') {
       this.hostConn?.send({ t: 'action', action });
       return;
@@ -968,14 +975,19 @@ class Session {
   private setState(next: GameState) {
     const prev = this.state;
     this.onNewState(prev, next);
+    this.noteEncounter(prev, next);
     this.state = next;
     if (next.phase === 'question' && next.question && next.question.askedAt !== prev?.question?.askedAt) {
       void this.startMedia(next);
     } else if (next.phase === 'reveal') {
-      const rest = this.unreleasedPatches();
-      // Keep what was sent, so someone arriving during the reveal still gets the pictures.
-      this.stopMedia(true);
-      this.finishVeil(rest);
+      // Only as the reveal begins: a later change during it (someone joining,
+      // the room going public) would cancel the patches still on their way.
+      if (prev?.phase !== 'reveal' || prev.question?.askedAt !== next.question?.askedAt) {
+        const rest = this.unreleasedPatches();
+        // Keep what was sent, so someone arriving during the reveal still gets the pictures.
+        this.stopMedia(true);
+        this.finishVeil(rest);
+      }
     } else if (next.phase !== 'question') {
       this.stopMedia();
     }
@@ -1032,6 +1044,23 @@ class Session {
       target: s.settings.targetScore,
       phase: s.settings.locked ? 'locked' : s.phase,
     };
+  }
+
+  /** A question just revealed goes into this browser's codex. */
+  private noteEncounter(prev: GameState | null, next: GameState) {
+    // Not after a refresh into a reveal: it was likely counted before the
+    // refresh. The codex itself skips a question it already has (a rejoin).
+    if (!prev || next.phase !== 'reveal') return;
+    const qid = next.question?.askedAt;
+    if (prev.phase === 'reveal' && prev.question?.askedAt === qid) return;
+    const ms = this.answered?.qid === qid ? this.answered?.ms : undefined;
+    const me = this.myPlayerId;
+    const hotSeat = this.mode === 'local';
+    // Its own chunk: the first download stays small.
+    void import('./codex').then(({ encounterAt, recordEncounter }) => {
+      const e = encounterAt(next, me, hotSeat, ms);
+      if (e) recordEncounter(e);
+    });
   }
 
   /** Side effects that every device plays: sounds, and the notice of the creator's arrival. */
