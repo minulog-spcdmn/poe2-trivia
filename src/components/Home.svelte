@@ -13,8 +13,11 @@
   import type { Handle } from '../lib/fx/core';
   import { setHomeScene } from '../lib/lights';
 
+  /** Keeps a room code's letters and digits, uppercased, up to its length. */
+  const cleanCode = (v: string) => v.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, CODE_LENGTH);
+
   const params = new URLSearchParams(location.search);
-  const invite = (params.get('room') ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, CODE_LENGTH);
+  const invite = cleanCode(params.get('room') ?? '');
 
   let name = $state(savedName());
   let code = $state(invite);
@@ -72,6 +75,21 @@
     if (e.key !== 'Enter' || e.isComposing || connecting) return;
     if (code) void join();
     else void host();
+  }
+
+  /**
+   * A paste is cleaned before the field's length limit applies, so spaces or
+   * line breaks copied along with a code (e.g. from the lobby's big letters)
+   * don't use up its six places. A pasted invite link gives its room code.
+   */
+  function pasteCode(e: ClipboardEvent) {
+    const text = e.clipboardData?.getData('text');
+    if (text == null) return;
+    e.preventDefault();
+    const field = e.currentTarget as HTMLInputElement;
+    const linked = /[?&]room=([^&#\s]+)/.exec(text)?.[1];
+    if (linked) code = cleanCode(linked);
+    else code = cleanCode(code.slice(0, field.selectionStart ?? code.length) + text + code.slice(field.selectionEnd ?? code.length));
   }
 
   function local() {
@@ -157,7 +175,8 @@
             id="code"
             class="field code"
             bind:value={code}
-            oninput={() => (code = code.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, CODE_LENGTH))}
+            oninput={() => (code = cleanCode(code))}
+            onpaste={pasteCode}
             placeholder="CODE"
             maxlength={CODE_LENGTH}
             autocomplete="off"

@@ -3,30 +3,30 @@ import assert from 'node:assert/strict';
 import { DIFFICULTY_NAMES, deathmatchText, describe, KNOB_TEXT, lockoutText } from '../src/lib/difficultyText.ts';
 import { KNOB_STEPS, PRESETS, type Knobs } from '../src/lib/game.ts';
 
-test('presets are described the same way in both modes, but their tiles only in race', () => {
+test('presets are described the same way in both modes, but their unveil only in race', () => {
   assert.equal(
     describe({ difficulty: 'cruel', mode: 'turns' }),
     'Four options of the same kind (all rings, all bows…). Some questions ask you to find the art for a name.',
   );
   assert.equal(
     describe({ difficulty: 'merciless', mode: 'turns' }),
-    'Six options, half of them with look-alike names. Some questions ask you to find the art for a name. In race, tiles hide the art and lift one by one.',
+    'Six options, half of them with look-alike names. Some questions ask you to find the art for a name. In race, the art burns into view bit by bit.',
   );
   assert.equal(
     describe({ difficulty: 'eternal', mode: 'race' }),
-    'Eight options, all with look-alike names and two made up. Half the questions ask you to find the art for a name. Tiles hide the art and lift slowly. "Find the art" pictures are shown without colour. Some art is mirrored.',
+    'Eight options, all with look-alike names and two made up. Half the questions ask you to find the art for a name. The art burns into view slowly. "Find the art" pictures are shown without colour. Some art is mirrored.',
   );
-  assert.match(describe({ difficulty: 'eternal', mode: 'turns' }), /In race, tiles hide the art and lift slowly\./);
+  assert.match(describe({ difficulty: 'eternal', mode: 'turns' }), /In race, the art burns into view slowly\./);
 });
 
-test('custom tiles apply in both modes, and only what can happen is described', () => {
+test('a custom unveil applies in both modes, and only what can happen is described', () => {
   const custom: Knobs = { ...PRESETS.cruel, veil: 'slowest', fakes: 1, mirror: 1, grayscale: 'all' };
   assert.equal(
     describe({ difficulty: 'custom', custom, mode: 'turns' }),
-    'Four options of the same kind (all rings, all bows…), one of them made up. Some questions ask you to find the art for a name. Tiles hide the art and lift very slowly. All art is shown without colour. All art is mirrored.',
+    'Four options of the same kind (all rings, all bows…), one of them made up. Some questions ask you to find the art for a name. The art burns into view very slowly. All art is shown without colour. All art is mirrored.',
   );
-  // No "name the art" questions, so no tiles; no "find the art" ones, so no grayscale pictures to mention.
-  assert.doesNotMatch(describe({ difficulty: 'custom', custom: { ...custom, artChance: 1 } }), /Tiles/);
+  // No "name the art" questions, so nothing to unveil; no "find the art" ones, so no grayscale pictures to mention.
+  assert.doesNotMatch(describe({ difficulty: 'custom', custom: { ...custom, artChance: 1 } }), /burns into view/);
   assert.doesNotMatch(describe({ difficulty: 'custom', custom: { ...PRESETS.eternal, artChance: 0 } }), /colour/);
 });
 

@@ -251,7 +251,7 @@ test('difficulties scale options, decoy kind and question types', () => {
       if (answer.kind === 'gem') assert.deepEqual(shown, []);
       for (const g of shown) assert.ok(looks.filter((l) => l === g).length >= 2, `${g} has two options`);
       if (shown.length) for (const l of looks) assert.ok(shown.includes(l), `${l} is listed`);
-      assert.equal(q.veil, null, 'preset tiles only lift in race');
+      assert.equal(q.veil, null, 'a preset only unveils the art in race');
       s = engine.apply(s, { type: 'answer', index: right(q) }, 'p0');
       s = engine.apply(s, { type: 'next' }, 'p0');
       if (s.phase === 'over') s = engine.apply(engine.apply(s, { type: 'restart' }, 'p0'), { type: 'start' }, 'p0');
@@ -1026,7 +1026,7 @@ test('every category and item group has a singular name for the unidentified ite
   for (const name of names) assert.ok(singular(name) !== name || ['Boots', 'Gloves'].includes(name), name);
 });
 
-test('preset tiles lift only in race; a custom veil lifts in both modes', () => {
+test('a preset unveils the art only in race; a custom unveil works in both modes', () => {
   for (const mode of ['turns', 'race'] as const) {
     for (const difficulty of ['merciless', 'eternal', 'custom'] as Difficulty[]) {
       const custom = { ...PRESETS.cruel, artChance: 0, veil: 'fast' as const };
@@ -1114,14 +1114,14 @@ test('a lockout of 0 locks nothing', () => {
   assert.ok(repeats > 0, 'the last pick comes back');
 });
 
-test('deathmatch on a custom difficulty turns each knob one step harder, but never adds tiles', () => {
+test('deathmatch on a custom difficulty turns each knob one step harder, but never adds an unveil', () => {
   const base = { options: 4, similarNames: 0.5, fakes: 3, artChance: 0.4, veil: 'off', grayscale: 'off', mirror: 0, lockout: 2 } as const;
   const hard = rulesFor({ difficulty: 'custom', custom: base, mode: 'turns' }, true);
   assert.deepEqual(hard, { ...base, options: 6, similarNames: 1, fakes: 3, grayscale: 'art', mirror: 0.3, veil: null });
   assert.deepEqual(rulesFor({ difficulty: 'custom', custom: { ...base, veil: 'slow' }, mode: 'turns' }, true).veil, { size: 9, share: 0.8 });
   const top = Object.fromEntries(Object.entries(KNOB_STEPS).map(([k, steps]) => [k, steps.at(-1)]));
   assert.deepEqual(rulesFor({ difficulty: 'custom', custom: top as never }, true), rulesFor({ difficulty: 'custom', custom: top as never }), 'the top steps stay');
-  // Presets go one tier up, still without tiles outside race.
+  // Presets go one tier up, still without an unveil outside race.
   assert.deepEqual(rulesFor({ difficulty: 'merciless', mode: 'turns' }, true), { ...PRESETS.eternal, veil: null });
   // Eternal goes on past itself.
   assert.deepEqual(rulesFor({ difficulty: 'eternal', mode: 'turns' }, true), {
@@ -1134,7 +1134,7 @@ test('deathmatch on a custom difficulty turns each knob one step harder, but nev
   });
 });
 
-test("a preset's knobs show its tiles only in race, so a custom copy plays the same", () => {
+test("a preset's knobs show its unveil only in race, so a custom copy plays the same", () => {
   assert.equal(knobsOf({ difficulty: 'eternal', mode: 'turns' }).veil, 'off');
   assert.equal(knobsOf({ difficulty: 'eternal', mode: 'race' }).veil, 'slow');
   assert.deepEqual(knobsOf({ difficulty: 'custom', custom: { ...PRESETS.cruel, veil: 'fast' }, mode: 'turns' }).veil, 'fast');

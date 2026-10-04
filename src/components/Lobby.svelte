@@ -56,6 +56,17 @@
     return { destroy: () => clearTimeout(t) };
   }
 
+  /**
+   * Each letter is its own box, so a plain copy puts line breaks (pasted as
+   * spaces) between them. Copy just the letters instead.
+   */
+  function copyCode(e: ClipboardEvent) {
+    const text = getSelection()?.toString().replace(/\s/g, '');
+    if (!text || !e.clipboardData) return;
+    e.clipboardData.setData('text/plain', text);
+    e.preventDefault();
+  }
+
   let copyBtn = $state<HTMLButtonElement>();
 
   async function copy() {
@@ -111,9 +122,11 @@
     <section class="room" in:fly={{ y: -20, duration: 500 }}>
       <span class="label">Room code</span>
       <div class="code" class:hidden={session.hideCode} aria-label={session.hideCode ? 'Room code hidden' : `Room code ${session.code}`}>
-        {#each session.code.split('') as ch, i (i)}
-          <span class="glyph" use:landing={i} style:animation-delay="{i * 80}ms" style:--i={i}>{session.hideCode ? '•' : ch}</span>
-        {/each}
+        <span class="glyphs" oncopy={copyCode}>
+          {#each session.code.split('') as ch, i (i)}
+            <span class="glyph" use:landing={i} style:animation-delay="{i * 80}ms" style:--i={i}>{session.hideCode ? '•' : ch}</span>
+          {/each}
+        </span>
         <button
           class="eye"
           onclick={() => session.setHideCode(!session.hideCode)}
@@ -461,9 +474,15 @@
     gap: 0.6rem;
     margin-bottom: 1.8rem;
   }
-  .code {
+  .code,
+  .glyphs {
     display: flex;
     gap: 0.5rem;
+  }
+  /* One click or long press selects the whole code. */
+  .glyphs {
+    -webkit-user-select: all;
+    user-select: all;
   }
   .glyph {
     width: clamp(46px, 11vw, 64px);
@@ -808,8 +827,11 @@
   }
   @media (max-width: 520px) {
     .code {
-      gap: 0.35rem;
       align-items: center;
+    }
+    .code,
+    .glyphs {
+      gap: 0.35rem;
     }
     .glyph {
       width: 38px;

@@ -22,7 +22,7 @@ function often(v: number): Often {
 }
 
 const VEIL_WORD: Record<VeilSpeed, string> = { off: 'Off', fast: 'Fast', slow: 'Slow', slowest: 'Slowest' };
-const VEIL_PACE: Record<Exclude<VeilSpeed, 'off'>, string> = { fast: 'one by one', slow: 'slowly', slowest: 'very slowly' };
+const VEIL_PACE: Record<Exclude<VeilSpeed, 'off'>, string> = { fast: 'bit by bit', slow: 'slowly', slowest: 'very slowly' };
 const ART_SHARE: Record<Exclude<Often, 'Never'>, string> = {
   Some: 'Some questions ask',
   Half: 'Half the questions ask',
@@ -49,11 +49,11 @@ export function describe(settings: Pick<Settings, 'difficulty'> & Partial<Settin
   const art = often(k.artChance);
   if (art !== 'Never') lines.push(`${ART_SHARE[art]} you to find the art for a name.`);
 
-  // Tiles only cover the art of name questions. A preset only uses them in
+  // Only the art of name questions burns into view. A preset only does it in
   // race, so in take turns its description still says what race adds.
   const raceOnly = !custom && settings.mode !== 'race';
   const veil = raceOnly ? knobsOf({ ...settings, mode: 'race' }).veil : k.veil;
-  if (veil !== 'off' && art !== 'Always') lines.push(`${raceOnly ? 'In race, tiles' : 'Tiles'} hide the art and lift ${VEIL_PACE[veil]}.`);
+  if (veil !== 'off' && art !== 'Always') lines.push(`${raceOnly ? 'In race, the' : 'The'} art burns into view ${VEIL_PACE[veil]}.`);
 
   if (k.grayscale === 'all') lines.push('All art is shown without colour.');
   else if (k.grayscale === 'art' && art !== 'Never') lines.push('"Find the art" pictures are shown without colour.');
@@ -115,9 +115,9 @@ export const KNOB_TEXT: { [K in keyof Knobs]: KnobText<K> }[keyof Knobs][] = [
   {
     key: 'veil',
     name: 'Unveil',
-    hint: 'Tiles over the art lift one by one',
+    hint: 'The art burns into view bit by bit',
     label: (v) => VEIL_WORD[v],
-    // Tiles only cover the art of name questions.
+    // Only the art of name questions burns into view.
     off: (_, k) => (k.artChance === 1 ? 'No name questions to cover' : undefined),
   },
   {
