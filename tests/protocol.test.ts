@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseClientMsg, RateLimit } from '../src/lib/protocol.ts';
+import { parseClientMsg, parseHostMsg, RateLimit } from '../src/lib/protocol.ts';
 
 const secret = 'abcdefghijklmnopqrstuvwxyz012345';
 
@@ -50,4 +50,21 @@ test('rate limit allows bursts but not floods', () => {
   for (let i = 0; i < 100; i++) if (r.take()) ok++;
   assert.equal(ok, 20);
   assert.equal(r.strikes, 80);
+});
+
+test('veiled art patches carry their edges, in whole (x, y, patch) triples', () => {
+  const patch = { t: 'patch', qid: 5, i: 3, x: 10, y: 20, w: 30, h: 40, data: new ArrayBuffer(8) };
+  assert.ok(parseHostMsg({ ...patch, edges: new Uint16Array([1, 2, 4, 3, 2, 4]).buffer }));
+  assert.ok(parseHostMsg({ ...patch, edges: new Uint8Array(12) }), 'a view of the bytes is fine');
+  assert.ok(parseHostMsg({ ...patch, edges: new ArrayBuffer(0) }), 'a patch may touch nothing');
+  assert.equal(parseHostMsg(patch), null);
+  assert.equal(parseHostMsg({ ...patch, edges: new ArrayBuffer(7) }), null);
+  assert.equal(parseHostMsg({ ...patch, edges: [1, 2, 3] }), null);
+  assert.equal(parseHostMsg({ ...patch, edges: new ArrayBuffer(6 * 20000) }), null);
+  const veil = { t: 'veil', qid: 5, w: 100, h: 120, step: 900, count: 12, box: [4, 6, 90, 108] };
+  assert.ok(parseHostMsg(veil));
+  assert.equal(parseHostMsg({ ...veil, box: undefined }), null);
+  assert.equal(parseHostMsg({ ...veil, box: [1, 2, 3] }), null);
+  assert.equal(parseHostMsg({ ...veil, count: undefined }), null);
+  assert.equal(parseHostMsg({ t: 'veil', qid: 5, w: 100, h: 120 }), null);
 });

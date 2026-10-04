@@ -2,7 +2,10 @@
   import { fly, fade, scale } from 'svelte/transition';
   import { session, engine } from '../lib/session.svelte';
   import { AUTO_NEXT_MS, autoNextLeft, isFake, questionTopic } from '../lib/game';
-  import { shown, gridCells } from '../lib/media.svelte';
+  import { shown } from '../lib/media.svelte';
+  import { burnDuration, FINALE_MS, materialize, type BurnParams } from '../lib/materialize';
+  import { frontier } from '../lib/frontier';
+  import { visibleBox } from '../lib/patches';
   import { itemImage } from '../lib/ui';
   import { sfx } from '../lib/sound';
   import TimerRing from './TimerRing.svelte';
@@ -11,7 +14,7 @@
   import { backdropShadow } from '../lib/backdropShadow';
   import ArcaneCircle from './ArcaneCircle.svelte';
   import { untrack } from 'svelte';
-  import { FILL_START, answerCharging, artRevealed, raceMiss, reveal as revealFx, tileLifted } from '../lib/fx/moments';
+  import { FILL_START, answerCharging, artRevealed, raceMiss, reveal as revealFx, veilComplete, veilHandoff } from '../lib/fx/moments';
   import { FILL_LEAD } from '../lib/soundDesign';
   import { recordReveal } from '../lib/fx/streaks';
   import { scoreRowOf } from '../lib/scoreRows';
@@ -54,10 +57,151 @@
   // Pictures the host has sent for this question.
   const media = $derived(shown.qid === q.askedAt ? shown : null);
 
-  /** Veiled art: the grid cells, uncovered or not. */
-  const cells = $derived(media?.grid ? gridCells(media.grid) : []);
+  /** Veiled art: the patches that have appeared so far. */
+  const patches = $derived(Object.values(media?.patches ?? {}));
   // Size of the art shown during the question: keeps the reveal from jumping.
-  const hint = $derived(media?.grid ?? media?.art ?? null);
+  const hint = $derived(media?.veil ?? media?.art ?? null);
+
+  // Veiled art: when the newest patch will have finished coming in (ms, page
+  // clock). At the reveal the rest of the picture comes in quickly first, and
+  // only then hands over to the full art (veilDone).
+  let patchesSeen = 0;
+  let veilSettles = 0;
+  let veilDone = $state(false);
+  $effect(() => {
+    const n = patches.length;
+    const v = media?.veil;
+    untrack(() => {
+      if (n === patchesSeen) return;
+      patchesSeen = n;
+      if (n && v) veilSettles = performance.now() + (reveal ? FINALE_MS : burnDuration(v.step));
+    });
+  });
+  $effect(() => {
+    if (!reveal) {
+      veilDone = false;
+      return;
+    }
+    const v = media?.veil;
+    if (!v) return;
+    // Waits for the rest to come in; should some never arrive, it gives up
+    // a while after the last one did.
+    const whole = patches.length >= v.count;
+    const wait = whole ? Math.max(0, untrack(() => veilSettles) + 100 - performance.now()) : 2500;
+    const timer = setTimeout(() => (veilDone = true), wait);
+    return () => clearTimeout(timer);
+  });
+  // The full art loads as the reveal starts, so the veiled picture only hands
+  // over once it can show (or after a while, should it not load). Its size
+  // and where the item is in it let the veiled copy line up with it first.
+  let fullLoaded = $state(false);
+  let full = $state<{ w: number; h: number; box: [number, number, number, number] } | null>(null);
+  $effect(() => {
+    if (!reveal || !item) {
+      fullLoaded = false;
+      full = null;
+      return;
+    }
+    let live = true;
+    const done = () => live && (fullLoaded = true);
+    const img = new Image();
+    img.src = itemImage(item.id);
+    img.decode().then(() => {
+      if (!live) return;
+      const c = document.createElement('canvas');
+      c.width = img.naturalWidth;
+      c.height = img.naturalHeight;
+      const g = c.getContext('2d', { willReadFrequently: true })!;
+      g.drawImage(img, 0, 0);
+      full = { w: c.width, h: c.height, box: visibleBox(g.getImageData(0, 0, c.width, c.height).data, c.width, c.height) };
+      done();
+    }, done);
+    const timer = setTimeout(done, 3000);
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+  });
+
+
+  /**
+   * At the reveal the veiled copy moves and scales so its item sits exactly
+   * where the full art's will (the copy was re-scaled and padded a little by
+   * the host): both boxes follow .art-fit's sizing, so it's worked out from
+   * the slot's size, each picture's size and where its visible pixels are.
+   */
+  const veilFit = $derived.by(() => {
+    const v = media?.veil;
+    const slot = artEl?.querySelector('.frame');
+    if (!reveal || !v || !full || !slot) return null;
+    const cw = slot.clientWidth;
+    const ch = slot.clientHeight;
+    const place = (w: number, h: number, [bx, by, bw, bh]: number[]) => {
+      const fw = Math.min(cw, (ch * w) / h, w * 1.8);
+      const fh = Math.min(ch, (cw * h) / w, h * 1.8);
+      const k = fw / w;
+      return { x: (cw - fw) / 2 + bx * k, y: (ch - fh) / 2 + by * k, w: bw * k, h: bh * k };
+    };
+    const from = place(v.w, v.h, v.box);
+    // A mirrored item starts the reveal mirrored, as it was shown.
+    const fb = full.box;
+    const to = place(full.w, full.h, mirrored(0) ? [full.w - fb[0] - fb[2], fb[1], fb[2], fb[3]] : fb);
+    const k = (to.w / from.w + to.h / from.h) / 2;
+    if (!isFinite(k) || k <= 0) return null;
+    return `translate(${to.x - k * from.x}px, ${to.y - k * from.y}px) scale(${k})`;
+  });
+  // The handover waits for the copy to have moved into place.
+  let fitted = $state(false);
+  $effect(() => {
+    if (!veilFit) {
+      fitted = false;
+      return;
+    }
+    const timer = setTimeout(() => (fitted = true), 480);
+    return () => clearTimeout(timer);
+  });
+  /** The full art replaces what was shown during the question. */
+  const showFull = $derived(!!reveal && !!item && (!media?.veil || (veilDone && fullLoaded && (fitted || !full))));
+
+  // A veiled picture that comes in whole before the reveal shimmers once.
+  let wholeFor = 0;
+  $effect(() => {
+    const v = media?.veil;
+    if (!v || reveal || patches.length < v.count || wholeFor === q.askedAt) return;
+    const qid = q.askedAt;
+    const timer = setTimeout(
+      () => {
+        wholeFor = qid;
+        const el = artEl?.querySelector('.veil');
+        if (!el) return;
+        el.animate([{ filter: 'brightness(1)' }, { filter: 'brightness(1.4) saturate(1.1)' }, { filter: 'brightness(1)' }], {
+          duration: 800,
+          easing: 'ease-in-out',
+        });
+        veilComplete(el);
+      },
+      Math.max(0, untrack(() => veilSettles) - performance.now()),
+    );
+    return () => clearTimeout(timer);
+  });
+
+  /**
+   * Svelte transition: the veiled art (already lined up with it, see
+   * veilFit) hands over to the full picture: it flares golden and fades as
+   * the full art fades in.
+   */
+  function handoff(node: Element) {
+    const veil = node.querySelector('.veil');
+    if (veil) veilHandoff(veil);
+    const quick = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    return {
+      duration: quick ? 250 : 700,
+      css: (t: number, u: number) =>
+        quick
+          ? `opacity: ${t}`
+          : `opacity: ${t}; filter: brightness(${1 + 1.2 * Math.sin(Math.PI * Math.min(1, u * 1.4))}) sepia(${0.45 * u})`,
+    };
+  }
 
   /** Race mode: who guessed which option wrong (and, once revealed, who won). */
   function markers(index: number) {
@@ -123,16 +267,16 @@
   // The art arrives: light it up (once per question).
   let artShown = false;
   $effect(() => {
-    const ready = q.mode === 'art' ? Object.keys(media?.options ?? {}).length > 0 : !!(media?.art || media?.grid);
+    const ready = q.mode === 'art' ? Object.keys(media?.options ?? {}).length > 0 : !!(media?.art || media?.veil);
     if (!ready || artShown || !artEl) return;
     artShown = true;
     artRevealed(artEl);
   });
 
-  /** Svelte action: a veiled tile lifts with a puff of light. */
-  function lifted(node: HTMLElement) {
-    sfx('lift');
-    if (node.parentElement) tileLifted(node.parentElement);
+  /** Svelte action: a patch of veiled art burns in (the quick ones at the reveal leave the sound to it). */
+  function appear(node: HTMLCanvasElement, params: BurnParams) {
+    if (!params.quick) sfx('burn');
+    return materialize(node, params);
   }
 
   // The charge-up ends when the answer is revealed, bounced, or (race) comes
@@ -392,29 +536,36 @@
         <div class="art" bind:this={artEl} use:backdropShadow={{ fill: 'stage' }}>
           <ArcaneCircle state={reveal ? (iWon ? 'good' : 'bad') : 'idle'} />
           <div class="frame">
-            {#if reveal && item}
-              <ArtImage src={itemImage(item.id)} alt={item.name} w={hint?.w} h={hint?.h} float unflip={mirrored(0)} />
-            {:else if media?.grid}
-              <span class="art-slot">
-              <span class="art-fit veil" style:--w={media.grid.w} style:--h={media.grid.h} style:--s={1.8}>
-                {#each cells as c (c.i)}
-                  {@const t = media.tiles[c.i]}
-                  <span
-                    class="cell"
-                    class:open={!!t}
-                    style:left="{(c.x / media.grid.w) * 100}%"
-                    style:top="{(c.y / media.grid.h) * 100}%"
-                    style:width="{(c.w / media.grid.w) * 100}%"
-                    style:height="{(c.h / media.grid.h) * 100}%"
-                  >
-                    {#if t}<img src={t.url} alt="" draggable="false" use:lifted />{/if}
-                  </span>
+            {#if showFull && item}
+              <ArtImage src={itemImage(item.id)} alt={item.name} w={full?.w ?? hint?.w} h={full?.h ?? hint?.h} float unflip={mirrored(0)} />
+            {/if}
+            {#if media?.veil && !showFull}
+              {@const v = media.veil}
+              <span class="art-slot veil-slot" style:transform={veilFit} out:handoff>
+              <span class="art-fit veil" style:--w={v.w} style:--h={v.h} style:--s={1.8}>
+                {#each patches as p (p.i)}
+                  <canvas
+                    class="patch"
+                    aria-hidden="true"
+                    style:left="{(p.x / v.w) * 100}%"
+                    style:top="{(p.y / v.h) * 100}%"
+                    style:width="{(p.w / v.w) * 100}%"
+                    style:height="{(p.h / v.h) * 100}%"
+                    use:appear={{
+                      url: p.url,
+                      edges: p.edges,
+                      before: patches.filter((o) => o.i !== p.i).map((o) => o.i),
+                      step: v.step,
+                      quick: !!reveal,
+                    }}
+                  ></canvas>
                 {/each}
+                <canvas class="frontier" aria-hidden="true" use:frontier={{ w: v.w, h: v.h, step: v.step, quick: !!reveal, patches }}></canvas>
               </span>
               </span>
-            {:else if media?.art}
+            {:else if !showFull && media?.art}
               <ArtImage src={media.art.url} alt="The item to identify" w={media.art.w} h={media.art.h} float />
-            {:else}
+            {:else if !showFull}
               <span class="loading big" aria-label="Loading"></span>
             {/if}
           </div>
@@ -639,50 +790,33 @@
     inset: 0;
   }
   .veil {
-    /* Tiles are absolutely positioned inside the box. */
+    /* Patches are absolutely positioned inside the box. */
     position: relative;
   }
-  .cell {
+  /* Lines up with the full art at the reveal (veilFit). */
+  .veil-slot {
+    transform-origin: 0 0;
+    transition: transform 0.45s var(--ease-out);
+  }
+  /* Each patch's canvas spans its bounding box; the parts of the box outside
+     the patch are transparent. */
+  .patch {
     position: absolute;
-    overflow: hidden;
-  }
-  /* The cover is a bevelled plate over the piece. Once the piece is in it falls
-     away, so transparent parts of the art show the backdrop like the full picture. */
-  .cell::after {
-    content: '';
-    position: absolute;
-    inset: 1px;
-    z-index: 1;
-    border-radius: 2px;
-    background:
-      linear-gradient(155deg, #221c14, #0d0b08 70%);
-    box-shadow:
-      inset 0 0 0 1px rgba(125, 99, 51, 0.4),
-      inset 1px 1px 0 1px rgba(232, 205, 150, 0.08),
-      inset -1px -1px 0 1px rgba(0, 0, 0, 0.6),
-      inset 0 0 14px rgba(0, 0, 0, 0.7);
-    transition:
-      opacity 0.5s var(--ease-out),
-      transform 0.5s var(--ease-out),
-      filter 0.5s var(--ease-out);
-  }
-  .cell.open::after {
-    opacity: 0;
-    transform: scale(0.7);
-    filter: brightness(2.5);
-  }
-  .cell img {
     display: block;
-    /* A hair larger than the cell so neighbouring pieces meet without seams. */
-    width: calc(100% + 1px);
-    height: calc(100% + 1px);
-    animation: uncover 0.6s var(--ease-out) both;
   }
-  @keyframes uncover {
-    from {
-      opacity: 0;
-      transform: scale(1.15);
-      filter: brightness(2);
+  /* The fire along seams where the item is still missing a part
+     (lib/frontier.ts), added as light over the patches. */
+  .frontier {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    mix-blend-mode: screen;
+  }
+  @supports (mix-blend-mode: plus-lighter) {
+    .frontier {
+      mix-blend-mode: plus-lighter;
     }
   }
   .loading {

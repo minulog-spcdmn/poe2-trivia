@@ -3,7 +3,7 @@
 // victory look like. Components call these with the elements involved; all
 // of them are no-ops while effects are off.
 
-import { after, boxOf, fxActive, shakeView, type Anchor, type Handle, type Vec3 } from './core';
+import { after, boxOf, fxActive, shakeView, type Anchor, type Handle, type Point, type Vec3 } from './core';
 import {
   C,
   edgeGlow,
@@ -158,13 +158,94 @@ export function artRevealed(art: Element) {
   light(art, { color: [1, 0.7, 0.35], radius: 300, intensity: 0.35, decay: 1 });
 }
 
-/** One veiled tile lifts. */
-export function tileLifted(cell: Element) {
+/** The magic catches at `at` (where the first patch of veiled art starts to come in); `size` is its width. */
+export function veilIgnites(at: Point, size: number) {
   if (!fxActive()) return;
-  const b = boxOf(cell);
-  puffs(cell, { count: 3, area: 'fill', color: [0.35, 0.24, 0.1], size: [b.w * 0.15, b.w * 0.3], speed: [10, 50] });
-  sparks(cell, { count: 6, area: 'edge', speed: [60, 220], life: [0.25, 0.5], gravity: 200 });
-  if (Math.random() < 0.5) glints(cell, { count: 1, size: [3, 6] });
+  flash(at, { radius: Math.min(40, size * 0.25), color: C.gold, intensity: 0.25, life: 0.35 });
+  sparks(at, { count: 12, speed: [50, 200], life: [0.3, 0.7], gravity: -40, size: [0.5, 1.1], colors: [C.whiteHot, C.goldPale, C.gold] });
+  glints(at, { count: 2, size: [3, 6], life: [0.3, 0.5] });
+}
+
+/** A veiled picture has come in whole: a soft glow over it and a few glints. */
+export function veilComplete(art: Element) {
+  if (!fxActive()) return;
+  const b = boxOf(art);
+  flash(art, { radius: Math.max(b.w, b.h) * 0.45, color: C.gold, intensity: 0.12, life: 0.7 });
+  glints(art, { count: 4, size: [4, 7], delay: [0, 0.4] });
+  sparks(art, { count: 10, area: 'fill', speed: [30, 120], life: [0.4, 0.9], gravity: -40, size: [0.5, 1], colors: [C.whiteHot, C.goldPale, C.gold] });
+}
+
+/** The veiled picture hands over to the full art at the reveal: a shimmer of glints and sparks over it. */
+export function veilHandoff(art: Element) {
+  if (!fxActive()) return;
+  glints(art, { count: 5, size: [4, 8], delay: [0, 0.35] });
+  sparks(art, { count: 16, area: 'fill', speed: [40, 160], life: [0.4, 1], gravity: -50, size: [0.5, 1.1], colors: [C.whiteHot, C.goldPale, C.gold] });
+}
+
+/** How many of a continuous effect's particles this device draws, 0 to 1 (fewer on phones and under load). */
+export function fxDensity() {
+  return budget(100) / 100;
+}
+
+/**
+ * A little particle flying off veiled art as it comes in, or off a seam
+ * where the item is still missing a part: mostly crisp sparks streaking up
+ * and out and curling as they cool, now and then a glint or a drifting
+ * ember. `lean` (px/s) pushes it the way the magic is moving; `heat` scales
+ * how fast and bright it flies.
+ */
+export function veilSpark(at: Point, lean: Point = { x: 0, y: 0 }, heat = 1) {
+  if (!fxActive()) return;
+  const roll = Math.random();
+  if (roll < 0.72) {
+    const a = -Math.PI / 2 + rand(-0.9, 0.9);
+    const v = rand(40, 150) * heat;
+    particle({
+      x: at.x,
+      y: at.y,
+      vx: Math.cos(a) * v + lean.x * 1.6,
+      vy: Math.sin(a) * v + lean.y * 1.6,
+      life: rand(0.35, 0.9),
+      size: rand(0.55, 1.05),
+      color: Math.random() < 0.45 ? C.whiteHot : C.gold,
+      colorEnd: k3(C.ember, 0.35),
+      gravity: rand(-30, 60),
+      drag: 1.6,
+      shape: Shape.Spark,
+      stretch: 0.035,
+      turbulence: 160,
+    });
+  } else if (roll < 0.86) {
+    particle({
+      x: at.x + rand(-2, 2),
+      y: at.y + rand(-2, 2),
+      vx: lean.x * 0.4 + rand(-8, 8),
+      vy: lean.y * 0.4 - rand(5, 25),
+      life: rand(0.25, 0.55),
+      size: rand(2, 4) * heat,
+      color: k3(C.goldPale, 0.9),
+      shape: Shape.Glint,
+      spin: rand(-2, 2),
+      fadeIn: 0.3,
+    });
+  } else {
+    particle({
+      x: at.x,
+      y: at.y,
+      vx: lean.x + rand(-15, 15),
+      vy: lean.y - rand(20, 60),
+      life: rand(0.7, 1.4),
+      size: rand(0.8, 1.5),
+      sizeEnd: 0.3,
+      color: C.gold,
+      colorEnd: k3(C.emberDeep, 0.4),
+      gravity: -25,
+      drag: 0.8,
+      shape: Shape.Ember,
+      flicker: 0.6,
+      turbulence: 200,
+    });
+  }
 }
 
 /** An answer is locked in: energy gathers on it until the reveal. */
