@@ -21,7 +21,7 @@ function weightOf(el: Element): Weight {
 }
 
 function danger(el: Element) {
-  return el.matches('.kick, .remove, .kick-inline, .kick.confirm');
+  return el.matches('.kick, .remove, .kick-inline, .kick.confirm, .btn.danger');
 }
 
 const scaleC = (c: readonly number[], k: number) => [c[0] * k, c[1] * k, c[2] * k] as const;

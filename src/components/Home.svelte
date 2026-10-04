@@ -11,6 +11,7 @@
   import { connecting as portalFx, refuse, titleGlints } from '../lib/fx/moments';
   import type { Handle } from '../lib/fx/core';
   import { setHomeScene } from '../lib/lights';
+  import { openCodex } from '../lib/codexRoute.svelte';
 
   /** Keeps a room code's letters and digits, uppercased, up to its length. */
   const cleanCode = (v: string) => v.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, CODE_LENGTH);
@@ -30,6 +31,12 @@
   let nameError = $state(false);
 
   const total = engine.items.length;
+  /** Null until the codex is read. */
+  let discovered = $state<number | null>(null);
+  void import('../lib/codex').then(({ loadCodex }) => {
+    const seen = loadCodex().items;
+    discovered = engine.items.filter((it) => seen[it.id]).length;
+  });
   const showcase = shuffle(engine.items, Math.random).slice(0, 7);
 
   function needName() {
@@ -123,6 +130,17 @@
 </script>
 
 <div class="home">
+  <!-- Out of the way of starting a game, where the in-game header keeps its tools. -->
+  <button class="codex-entry" onclick={openCodex} disabled={connecting} in:fade={{ duration: 600, delay: 700 }}>
+    <svg viewBox="0 0 24 24" aria-hidden="true"
+      ><path d="M12 6.5C10.2 5.2 7.6 4.6 4 4.8v13.4c3.6-.2 6.2.4 8 1.7 1.8-1.3 4.4-1.9 8-1.7V4.8c-3.6-.2-6.2.4-8 1.7zM12 6.5v13.4" /></svg
+    >
+    <span class="codex-text">
+      <span class="codex-label">Codex</span>
+      {#if discovered}<span class="codex-count" in:fade={{ duration: 300 }}>{discovered} / {total}</span>{/if}
+    </span>
+  </button>
+
   <div class="hero">
     <div class="showcase" aria-hidden="true">
       {#each showcase as it, i (it.id)}
@@ -229,7 +247,76 @@
 </div>
 
 <style>
+  .codex-entry {
+    position: absolute;
+    top: 1rem;
+    right: 1.25rem;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    height: 38px;
+    padding: 0 1rem 0 0.4rem;
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px solid var(--line);
+    border-radius: 19px;
+    cursor: pointer;
+    color: var(--muted);
+    box-shadow: inset 0 1px 0 rgba(255, 220, 150, 0.06);
+    transition:
+      color 0.2s,
+      border-color 0.2s,
+      box-shadow 0.25s,
+      transform 0.2s var(--ease-out);
+  }
+  .codex-entry:hover:not(:disabled) {
+    color: var(--gold-hi);
+    border-color: var(--gold-lo);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 220, 150, 0.1),
+      0 0 16px rgba(201, 164, 92, 0.3);
+    transform: translateY(-1px);
+  }
+  .codex-entry:active:not(:disabled) {
+    transform: scale(0.96);
+  }
+  .codex-entry:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+  .codex-entry svg {
+    width: 28px;
+    height: 28px;
+    padding: 5px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(175, 96, 37, 0.35), transparent 70%);
+    fill: none;
+    stroke: var(--gold);
+    stroke-width: 1.5;
+    stroke-linejoin: round;
+    filter: drop-shadow(0 0 4px rgba(224, 138, 68, 0.5));
+  }
+  .codex-text {
+    display: flex;
+    align-items: baseline;
+    gap: 0.55rem;
+  }
+  .codex-label {
+    font-family: var(--font-cinzel);
+    font-weight: 700;
+    font-size: 0.78rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+  .codex-count {
+    font-family: var(--font-cinzel);
+    font-size: 0.72rem;
+    letter-spacing: 0.06em;
+    color: var(--gold);
+  }
+
   .home {
+    position: relative;
     /* The floating showcase items reach past the screen edges; never scroll sideways for them. */
     overflow-x: clip;
     min-height: 100dvh;

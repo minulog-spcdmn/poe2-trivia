@@ -213,6 +213,8 @@ class Shown {
   veil = $state<VeilArt | null>(null);
   patches = $state<Record<number, ShownPatch>>({});
   options = $state<Record<number, string>>({});
+  /** When this question's first picture arrived (page clock), for the codex's answer times. */
+  since = 0;
   private urls: string[] = [];
 
   private url(data: ArrayBuffer) {
@@ -228,6 +230,7 @@ class Shown {
     for (const u of this.urls) URL.revokeObjectURL(u);
     this.urls = [];
     this.qid = qid;
+    this.since = performance.now();
     this.art = null;
     this.veil = null;
     this.patches = {};

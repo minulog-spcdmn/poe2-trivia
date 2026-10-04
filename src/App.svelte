@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { fade, fly } from 'svelte/transition';
   import { session } from './lib/session.svelte';
   import { getVolume, isMuted, setMuted, setVolume, sfx } from './lib/sound';
@@ -13,6 +13,7 @@
   import Lobby from './components/Lobby.svelte';
   import Game from './components/Game.svelte';
   import GameOver from './components/GameOver.svelte';
+  import { closeCodex, codexRoute } from './lib/codexRoute.svelte';
 
   let muted = $state(isMuted());
   let volume = $state(getVolume());
@@ -69,9 +70,47 @@
   }
 
   const gs = $derived(session.state);
+  // The codex opens from the start page only: in a room it would be a cheat sheet.
+  const codexAllowed = $derived(!session.mode || !gs);
   const screen = $derived(
-    !session.mode || !gs ? 'home' : gs.phase === 'lobby' ? 'lobby' : gs.phase === 'over' ? 'over' : 'game',
+    codexRoute.open && codexAllowed
+      ? 'codex'
+      : !session.mode || !gs
+        ? 'home'
+        : gs.phase === 'lobby'
+          ? 'lobby'
+          : gs.phase === 'over'
+            ? 'over'
+            : 'game',
   );
+  // A room was joined or resumed meanwhile: back to it.
+  $effect(() => {
+    if (codexRoute.open && !codexAllowed) closeCodex();
+  });
+  const codex = $derived(screen === 'codex');
+
+  /** How long the outgoing screen takes to fade (the .screen transition below). */
+  const SCREEN_OUT_MS = 150;
+  /**
+   * The header comes and goes with the start page, but only once the
+   * outgoing screen has faded: in the meantime it would push that screen
+   * down (or let it jump up) by its own height.
+   */
+  let headerOn = $state(untrack(() => screen !== 'home'));
+  $effect(() => {
+    const want = screen !== 'home';
+    if (want === untrack(() => headerOn)) return;
+    const t = setTimeout(() => (headerOn = want), SCREEN_OUT_MS);
+    return () => clearTimeout(t);
+  });
+
+  // The codex page is its own chunk: fetch it ahead, so opening it doesn't wait.
+  let codexPage: Promise<typeof import('./components/Codex.svelte')> | null = null;
+  const loadCodexPage = () => (codexPage ??= import('./components/Codex.svelte'));
+  onMount(() => {
+    const t = setTimeout(loadCodexPage, 2000);
+    return () => clearTimeout(t);
+  });
 
   // Each screen starts at the top (a guest who scrolled down to the join
   // form shouldn't land halfway down the lobby).
@@ -105,9 +144,9 @@
 <Background />
 
 <div class="shell" data-behind-dialog bind:this={shell}>
-  {#if screen !== 'home'}
+  {#if headerOn}
     <header in:fade={{ duration: 300 }} bind:offsetHeight={headerHeight}>
-      <button class="brand" onclick={() => (confirmLeave = true)} title="Leave game">
+      <button class="brand" onclick={() => (codex ? closeCodex() : (confirmLeave = true))} title={codex ? 'Back to the start' : 'Leave game'}>
         <svg class="brand-mark" viewBox="20 0 400 391" aria-hidden="true"><path d="M224 390Q255 331 301.0 283.5Q347 236 377 218L407 200L220 -1Q164 31 116.5 82.5Q69 134 50 169L31 204Z" fill="currentColor" /></svg>
         <span>PoE2.Quest</span>
       </button>
@@ -181,22 +220,33 @@
             >
           </button>
         {/if}
-        <button class="icon-btn" onclick={() => (confirmLeave = true)} title="Leave" aria-label="Leave game">
-          <svg viewBox="0 0 24 24"><path d="M14 4h5v16h-5M10 8l-4 4 4 4M6 12h10" /></svg>
-        </button>
+        {#if codex}
+          <button class="icon-btn" onclick={closeCodex} title="Close the codex" aria-label="Close the codex">
+            <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18" /></svg>
+          </button>
+        {:else}
+          <button class="icon-btn" onclick={() => (confirmLeave = true)} title="Leave" aria-label="Leave game">
+            <svg viewBox="0 0 24 24"><path d="M14 4h5v16h-5M10 8l-4 4 4 4M6 12h10" /></svg>
+          </button>
+        {/if}
       </div>
     </header>
   {/if}
 
   <main>
     {#key screen}
-      <div class="screen" in:fade={{ duration: 350, delay: 150 }} out:fade={{ duration: 150 }}>
+      <div class="screen" in:fade={{ duration: 350, delay: SCREEN_OUT_MS }} out:fade={{ duration: SCREEN_OUT_MS }}>
         {#if screen === 'home'}
           <Home />
         {:else if screen === 'lobby'}
           <Lobby />
         {:else if screen === 'game'}
           <Game />
+        {:else if screen === 'codex'}
+          <!-- Loaded when first opened: most visits never do. -->
+          {#await loadCodexPage() then { default: Codex }}
+            <Codex />
+          {/await}
         {:else}
           <GameOver />
         {/if}
@@ -213,7 +263,7 @@
   {/if}
 </div>
 
-<Toasts headerHeight={screen === 'home' ? 0 : headerHeight} />
+<Toasts headerHeight={headerOn ? headerHeight : 0} />
 
 <FxLayer />
 

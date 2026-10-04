@@ -278,9 +278,13 @@ void main() {
     col = mix(col, c1.rgb, c1.a * (t1.r + t1.g / 255.0) * (1.0 - content));
   }
 
-  // UI elements in document order: each one's fill inside its border box,
-  // then its shadows outside it, as CSS paints them.
+  // UI elements in two passes: every element's shadows outside its border
+  // box, then every fill inside it, in document order. So a shadow only ever
+  // lands on the backdrop, never on a neighbouring box: the same as while
+  // the page scrolls, when CSS paints the fills over these shadows. (CSS on
+  // its own would lay a later box's shadow over the boxes before it.)
   float pxLocal = uSize.x / uRes.x; // CSS px per device px
+  for (int pass = 0; pass < 2; pass++)
   for (int i = 0; i < ${MAX_ELEMENTS}; i++) {
     if (i >= uElCount) break;
     vec4 ea = uElA[i];
@@ -298,7 +302,8 @@ void main() {
     float outside = clamp(sdf / edge + 0.5, 0.0, 1.0);
 
     vec4 fc = uElC[i];
-    if (fc.x > 0.5 && outside < 1.0) {
+    if (pass == 1) {
+      if (fc.x < 0.5 || outside >= 1.0) continue;
       vec4 ca = uElD[i];
       vec4 cb = uElE[i];
       vec4 fill;
@@ -326,8 +331,8 @@ void main() {
         fill = vec4(s, 1.0);
       }
       col = mix(col, fill.rgb, fill.a * fc.z * (1.0 - outside));
+      continue;
     }
-
     if (outside <= 0.0) continue;
     for (int j = 0; j < ${SHADOWS_PER_ELEMENT}; j++) {
       vec4 g = uShGeo[i * ${SHADOWS_PER_ELEMENT} + j];

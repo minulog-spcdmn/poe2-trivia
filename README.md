@@ -72,6 +72,17 @@ Look-alike names form a cluster, and the answer's place in it is random: the
 name that looks most (or least) like the others is no more likely to be right
 than any other.
 
+**Codex:** a page (from the start page's corner, or at
+`poe2.quest/#codex`) listing every item you have seen, with your accuracy per
+item, category, item group, question type and difficulty, your nemeses (lowest
+accuracy, at least 2 answers), mix-ups (what you picked for what), made-up
+names you fell for, streaks and answer times. Every question revealed on your
+screen counts as seen; only your own answers count toward accuracy (your turn,
+or your guess in a race; a turn that runs out of time is wrong). In hot-seat,
+answers only count when one person plays alone. Undiscovered items show as
+dark silhouettes, and the codex can't be opened while in a room. It is kept in this
+browser's localStorage only (`src/lib/codex.ts`).
+
 ## Multiplayer
 
 - **Online (peer-to-peer):** the host creates a room and shares the 6-character
@@ -225,6 +236,18 @@ Everything is drawn in WebGL2 with float precision and dithered once at the
   every control gets. Soft shapes render at about one texel per CSS pixel and
   the whole layer at most 1.5 per CSS pixel; the canvas hides itself while
   nothing is alive.
+- **The creator** (zoe_arcana, a name only an unlocked device can take; a
+  deterrent, not proof) is marked out. Gold motes circle her avatar on a
+  tilted orbit, passing behind it on the far side, in a ruby glow with
+  embers rising off it (`src/lib/fx/aura.ts`; one `Orbit` shape draws an
+  avatar's orbit), and in the lobby she arrives out of gathering motes
+  rather than a portal. The aura shows on all her avatars at once with a
+  short breath between showings, when the effects loop can sleep; a gilded
+  ring (CSS) marks her then and with effects off. Her name is struck in gold
+  foil, and a glint of light crosses it every nine seconds
+  (`src/lib/glint.ts`: one timer, transforms only, nothing under
+  *prefers-reduced-motion*). Online, everyone else gets a notice when she
+  walks into the room (`src/lib/herald.ts`).
 - **Dialogs** dim the page behind them (`src/lib/behindDialog.ts`). A dark,
   blurred layer over the page would band the backdrop and hide the dialog's
   own effects, so the backdrop darkens itself in its shader and the UI takes a

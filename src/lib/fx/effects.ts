@@ -3,8 +3,10 @@
 // big beats. Colours are HDR: values above 1 bloom and burn toward white.
 
 import { Shape } from './particles';
-import { FIRE_REACH, ShapeType } from './renderer';
-import { after, boxOf, budget, detached, fxActive, particle, shape, task, type Anchor, type Box, type Handle, type Point, type Vec3 } from './core';
+import { FIRE_REACH, ShapeType, type Silhouette } from './renderer';
+import { cornerPx } from '../corner';
+import { opacityOf } from '../opacity';
+import { after, boxOf, budget, currentFrame, detached, fxActive, particle, shape, task, type Anchor, type Box, type Handle, type Point, type Vec3 } from './core';
 
 // ---------- palette ----------
 
@@ -27,6 +29,9 @@ export const C = {
   portalPale: [1.6, 2.2, 3.2],
   ash: [0.5, 0.42, 0.36],
   chaos: [1.6, 0.5, 2.6],
+  /** zoe_arcana's magic (aura.ts): a deep ruby, set off with gold. */
+  ruby: [2.3, 0.3, 0.42],
+  rubyPale: [2.6, 1.0, 1.05],
 } satisfies Record<string, Vec3>;
 
 export const rand = (lo: number, hi: number) => lo + Math.random() * (hi - lo);
@@ -285,8 +290,23 @@ export function ring(at: Anchor, o: { radius?: number; from?: number; thickness?
   });
 }
 
-/** A lens flare: hot core plus an anamorphic streak. */
-export function flare(at: Anchor, o: { size?: number; streak?: number; life?: number; color?: Vec3; spikes?: number; delay?: number; intensity?: number } = {}) {
+/** What effects shine from behind: an element, or a function asked every frame (for a picture about to be swapped for another). */
+export type Clear = Element | null | (() => Element | null);
+
+/** The element `clear` names now, if it's on the page. */
+function clearing(clear: Clear | undefined): Element | null {
+  const el = (typeof clear === 'function' ? clear() : clear) ?? null;
+  return el?.isConnected ? el : null;
+}
+
+/** The picture `clear` names now, if it's one, for an effect to shine from behind its outline. */
+function silhouetteFor(clear: Clear | undefined): Silhouette | null {
+  const el = clearing(clear);
+  return el instanceof HTMLImageElement ? silhouetteOf(el) : null;
+}
+
+/** A lens flare: hot core plus an anamorphic streak. With a picture as `clear`, from behind it. */
+export function flare(at: Anchor, o: { size?: number; streak?: number; life?: number; color?: Vec3; spikes?: number; delay?: number; intensity?: number; clear?: Clear } = {}) {
   const size = o.size ?? 26;
   const streak = o.streak ?? 260;
   return shape({
@@ -304,14 +324,27 @@ export function flare(at: Anchor, o: { size?: number; streak?: number; life?: nu
       f.q[1] = f.hw;
       f.q[2] = Math.max(1.2, size * 0.09);
       f.q[3] = o.spikes ?? 0.6;
+      f.silhouette = silhouetteFor(o.clear);
     },
   });
 }
 
-/** Slowly turning god rays. Endless unless `life` is given; stop the handle to fade. */
-export function rays(at: Anchor, o: { radius?: number; count?: number; sharp?: number; color?: Vec3; intensity?: number; life?: number; spin?: number; delay?: number; fadeIn?: number } = {}): Handle {
+/**
+ * Slowly turning god rays. Endless unless `life` is given; stop the handle to
+ * fade. With `clear` they shine from behind that element: over its shape only
+ * a faint glow is left, so the light frames it instead of washing it out. For
+ * an image that's the picture's own outline (an item, not its box), as
+ * visible as the picture is; for anything else its box, with its corner radius.
+ */
+export function rays(
+  at: Anchor,
+  o: { radius?: number; count?: number; sharp?: number; color?: Vec3; intensity?: number; life?: number; spin?: number; delay?: number; fadeIn?: number; clear?: Clear } = {},
+): Handle {
   const R = o.radius ?? 420;
   const life = o.life ?? Infinity;
+  // The cleared element's corner radius as computed, read once per element.
+  let cornerOf: Element | null = null;
+  let corner = '0';
   return shape({
     type: ShapeType.Rays,
     at,
@@ -319,7 +352,7 @@ export function rays(at: Anchor, o: { radius?: number; count?: number; sharp?: n
     delay: o.delay,
     calm: true,
     color: o.color ?? C.gold,
-    update(f, t, age) {
+    update(f, t, age, b) {
       const fin = Math.min(1, age / (o.fadeIn ?? 0.8));
       const fout = Number.isFinite(life) ? Math.min(1, (1 - t) * 3) : 1;
       f.hw = f.hh = R;
@@ -329,8 +362,48 @@ export function rays(at: Anchor, o: { radius?: number; count?: number; sharp?: n
       f.q[2] = o.count ?? 14;
       f.q[3] = o.sharp ?? 6;
       f.q[4] = o.spin ?? 0.25;
+      const el = clearing(o.clear);
+      f.silhouette = el instanceof HTMLImageElement ? silhouetteOf(el) : null;
+      const c = el && !f.silhouette ? boxOf(el) : null;
+      if (c && el !== cornerOf) {
+        cornerOf = el;
+        corner = getComputedStyle(el!).borderTopLeftRadius;
+      }
+      const hw = c ? c.w / 2 : 0;
+      const hh = c ? c.h / 2 : 0;
+      f.q[5] = hw;
+      f.q[6] = hh;
+      f.q[7] = c ? Math.min(cornerPx(corner, c.w, c.h), hw, hh) : 0;
+      f.q[8] = c ? c.x - b.x : 0;
+      f.q[9] = c ? c.y - b.y : 0;
     },
   });
+}
+
+/** Silhouettes measured this frame, so effects sharing a picture measure it once. */
+const silhouettes = new WeakMap<HTMLImageElement, { frame: number; sil: Silhouette }>();
+
+/**
+ * Where a picture is, for effects to shine from behind it: its box at its
+ * own proportions, centred where it's drawn and as tall as it's drawn; how
+ * far it's turned round (drawn narrower than that, by its own or an
+ * ancestor's transform; mirrored by its own), so the light keeps to its
+ * outline while it turns; and how visible it is.
+ */
+function silhouetteOf(img: HTMLImageElement): Silhouette {
+  const frame = currentFrame();
+  const known = silhouettes.get(img);
+  if (known?.frame === frame) return known.sil;
+  const r = img.getBoundingClientRect();
+  const h = r.height;
+  const w = img.offsetHeight ? (img.offsetWidth * h) / img.offsetHeight : r.width;
+  const tf = getComputedStyle(img).transform;
+  const m = tf === 'none' ? null : new DOMMatrix(tf);
+  const mirrored = !!m && m.a * m.d < 0;
+  const turn = w > 0 ? Math.min(1, r.width / w) : 1;
+  const sil = { img, x: r.left + r.width / 2, y: r.top + h / 2, w, h, flip: mirrored ? -turn : turn, alpha: opacityOf(img) };
+  silhouettes.set(img, { frame, sil });
+  return sil;
 }
 
 /**
@@ -385,8 +458,7 @@ export function outline(
 ): Handle {
   const width = o.width ?? 14;
   const life = o.life ?? Infinity;
-  const cs = getComputedStyle(el);
-  const radius = o.radius ?? (parseFloat(cs.borderTopLeftRadius) || 0);
+  const corner = getComputedStyle(el).borderTopLeftRadius;
   const pad = o.pad ?? 0;
   return shape({
     type: ShapeType.RectGlow,
@@ -401,7 +473,7 @@ export function outline(
       f.hw = b.w / 2 + width * 4 + pad;
       f.hh = b.h / 2 + width * 4 + pad;
       f.k = (o.intensity ?? 1) * fin * fade * pulse;
-      const r = Math.min(radius, b.w / 2, b.h / 2);
+      const r = Math.min(o.radius ?? cornerPx(corner, b.w, b.h), b.w / 2, b.h / 2);
       const quad = o.base && el instanceof HTMLElement && el.isConnected ? projectedCorners(el, o.base, r, b) : null;
       if (quad) {
         f.type = ShapeType.QuadGlow;

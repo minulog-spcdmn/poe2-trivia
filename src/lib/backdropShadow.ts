@@ -30,6 +30,7 @@
 // backdrop).
 
 import { shaking } from './fx/core';
+import { cornerPx } from './corner';
 import { opacityOf } from './opacity';
 
 export type Fill = 'linear' | 'stage';
@@ -145,8 +146,9 @@ function paintsBackground(cs: CSSStyleDeclaration) {
  * - elD, elE: fill colours (r, g, b, a)
  * - geo: (offset x, offset y, sigma, spread) per shadow, element px
  * - col: (r, g, b, alpha) per shadow, alpha 0 for unused slots
- * Elements go in document order, so later ones paint over earlier ones as in
- * CSS. Shadows go in paint order (--bs2 under --bs1, as listed in CSS).
+ * Elements go in document order, so later fills paint over earlier ones as in
+ * CSS; every shadow goes under every fill (see the shader). Shadows go in
+ * paint order (--bs2 under --bs1, as listed in CSS).
  */
 export function measureShadows(
   max: number,
@@ -240,8 +242,7 @@ export function measureShadows(
       filled.add(node);
     } else node.removeAttribute('data-bs-fill');
 
-    const r = cs.borderTopLeftRadius;
-    const radius = r.endsWith('%') ? (parseFloat(r) / 100) * Math.min(w, h) : parseFloat(r) || 0;
+    const radius = cornerPx(cs.borderTopLeftRadius, w, h);
     elA.set([rect.left, rect.top, 1 / scale, 0], n * 4);
     elB.set([w, h, radius, 1], n * 4);
     if (fill) {

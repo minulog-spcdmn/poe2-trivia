@@ -1222,7 +1222,9 @@ test('a question thrown out for failed art does not count toward the art lean', 
 });
 
 test('the held name is refused until the device is unlocked', async () => {
-  const { heldKeyHash, nameHeld, unlockHeldName } = await import('../src/lib/names.ts');
+  const { heldKeyHash, isHeldName, nameHeld, unlockHeldName } = await import('../src/lib/names.ts');
+  for (const n of ['zoe_arcana', 'Zoe Arcana', 'zoe-arcana', 'Z0E_ARCANA', 'ｚｏｅ＿ａｒｃａｎａ']) assert.ok(isHeldName(n), n);
+  for (const n of ['zoe', 'arcana', 'Doryani', 'zoe_arcana2x', '']) assert.ok(!isHeldName(n), n);
   const store = new Map<string, string>();
   const had = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
   Object.defineProperty(globalThis, 'localStorage', {
