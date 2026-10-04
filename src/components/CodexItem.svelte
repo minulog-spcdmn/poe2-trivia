@@ -7,7 +7,7 @@
   import { itemImage } from '../lib/ui';
   import { dialogBackdrop } from '../lib/behindDialog';
   import { artRevealed } from '../lib/fx/moments';
-  import type { Item } from '../lib/game';
+  import { singular, type Item } from '../lib/game';
   import ArtImage from './ArtImage.svelte';
   import ArcaneCircle from './ArcaneCircle.svelte';
 
@@ -15,6 +15,8 @@
   let { item, codex, onclose, onopen }: { item: Item; codex: Codex; onclose: () => void; onopen: (item: Item) => void } = $props();
 
   const entry = $derived(codex.items[item.id]);
+  /** What it is, as one item: "Wand", "Ring". A gem's group is only its attribute, so gems say "Lineage Gem". */
+  const kind = $derived(singular(item.kind === 'gem' ? item.category : item.group));
   const byCount = (pairs: [string, number][]) =>
     pairs
       .flatMap(([id, n]) => {
@@ -124,7 +126,7 @@
     </div>
 
     <div class="body">
-      <p class="kind">{item.group} • {item.category}</p>
+      <p class="kind">{kind}</p>
       {#if entry}
         <div class="sep" aria-hidden="true"></div>
         <ul class="lines">

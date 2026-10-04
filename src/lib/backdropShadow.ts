@@ -145,8 +145,9 @@ function paintsBackground(cs: CSSStyleDeclaration) {
  * - elD, elE: fill colours (r, g, b, a)
  * - geo: (offset x, offset y, sigma, spread) per shadow, element px
  * - col: (r, g, b, alpha) per shadow, alpha 0 for unused slots
- * Elements go in document order, so later ones paint over earlier ones as in
- * CSS. Shadows go in paint order (--bs2 under --bs1, as listed in CSS).
+ * Elements go in document order, so later fills paint over earlier ones as in
+ * CSS; every shadow goes under every fill (see the shader). Shadows go in
+ * paint order (--bs2 under --bs1, as listed in CSS).
  */
 export function measureShadows(
   max: number,

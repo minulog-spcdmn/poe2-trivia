@@ -232,7 +232,7 @@
     </div>
   {:else}
     <div class="split" in:fly={{ y: 20, duration: 700, delay: 250 }}>
-      <section class="panel" use:backdropShadow>
+      <section class="panel" use:backdropShadow={{ fill: 'linear' }}>
         <header><h2>By question</h2></header>
         {@render bars([
           { name: 'Name the art', tally: stats.byMode.name },
@@ -244,7 +244,7 @@
         {/if}
       </section>
 
-      <section class="panel" use:backdropShadow>
+      <section class="panel" use:backdropShadow={{ fill: 'linear' }}>
         <header><h2>By category</h2><span class="count">{stats.seen} / {stats.total}</span></header>
         <ul class="bars cats">
           {#each stats.categories as c (c.category)}
@@ -263,7 +263,7 @@
     </div>
 
     <div class="insights" in:fly={{ y: 20, duration: 700, delay: 350 }}>
-      <section class="panel" use:backdropShadow>
+      <section class="panel" use:backdropShadow={{ fill: 'linear' }}>
         <header><h2>Nemeses</h2></header>
         {#if stats.nemeses.length}
           <ul class="rows">
@@ -282,7 +282,7 @@
         {/if}
       </section>
 
-      <section class="panel" use:backdropShadow>
+      <section class="panel" use:backdropShadow={{ fill: 'linear' }}>
         <header><h2>Mix-ups</h2></header>
         {#if stats.confusions.length}
           <ul class="rows">
@@ -304,7 +304,7 @@
         {/if}
       </section>
 
-      <section class="panel" use:backdropShadow>
+      <section class="panel" use:backdropShadow={{ fill: 'linear' }}>
         <header><h2>Made-up names</h2></header>
         {#if stats.fooled.length}
           <ul class="rows">
@@ -389,7 +389,7 @@
           <p class="none">Nothing found.</p>
         {/each}
       {:else if rows.length}
-        <div class="ledger" use:backdropShadow>
+        <div class="ledger" use:backdropShadow={{ fill: 'linear' }}>
           <table>
             <thead>
               <tr>
@@ -618,9 +618,7 @@
     margin: 0 0 1.4rem;
   }
 
-  /* ---- panels, as the lobby's ----
-     The backdrop draws their shadows but not their backgrounds: drawing
-     both, it would lay each panel's shadow over its neighbours. */
+  /* ---- panels, as the lobby's ---- */
   .split {
     display: grid;
     grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
@@ -1032,9 +1030,7 @@
     color: var(--muted);
   }
 
-  /* The table: every column fits, nothing scrolls sideways. Its background,
-     like the panels', is painted here rather than by the backdrop: the
-     backdrop paints each box's shadow over the boxes before it. */
+  /* The table: every column fits, nothing scrolls sideways. */
   .ledger {
     border: 1px solid #5a3a1c;
     --bs-fill-a: rgba(5, 4, 3, 0.92);
