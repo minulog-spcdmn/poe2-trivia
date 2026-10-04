@@ -306,6 +306,8 @@
     min-height: 100dvh;
     display: flex;
     flex-direction: column;
+    /* Room at the end for a bar fixed to the bottom of the screen (lib/layout.ts). */
+    padding-bottom: var(--dock, 0px);
   }
 
   header {

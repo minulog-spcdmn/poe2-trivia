@@ -20,7 +20,8 @@
   import { streakOf } from '../lib/fx/streaks';
   import { scoreRowOf } from '../lib/scoreRows';
   import { fxActive, type Handle } from '../lib/fx/core';
-  import { phone } from '../lib/layout';
+  import { dock, phone } from '../lib/layout';
+  import { portal } from '../lib/portal';
 
   const s = $derived(session.state!);
   const q = $derived(s.question!);
@@ -638,7 +639,17 @@
     </div>
   {/if}
 
-  <div class="footer" class:pinned={!!reveal}>{@render footer()}</div>
+  <div class="footer">
+    {#if reveal && phone.current}
+      <!-- Phones: the result and Next button stay at the bottom of the screen, in
+           reach of a thumb, however far down the answers have been scrolled. -->
+      <div class="dock" use:portal use:dock in:fade={{ duration: 200 }} out:fade|global={{ duration: 180 }}>
+        {@render footer()}
+      </div>
+    {:else}
+      {@render footer()}
+    {/if}
+  </div>
 </div>
 
 <style>
@@ -1581,21 +1592,23 @@
   }
 
   @media (max-width: 640px) {
-    /* The reveal's result and Next button stay at the bottom of the screen, in
-       reach of a thumb, however far down the answers have been scrolled. */
-    .footer.pinned {
-      position: sticky;
+    /* Fixed rather than sticky: a sticky bar would stop at the end of the
+       question, with the legal links below it. */
+    .dock {
+      position: fixed;
+      left: 0;
+      right: 0;
       bottom: 0;
-      z-index: 10;
-      margin: 1rem -1rem 0;
+      /* Under the toasts (90) and the effects layer (95). */
+      z-index: 20;
       padding: 0.6rem max(1rem, env(safe-area-inset-right)) max(0.6rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
-      background-color: rgba(10, 8, 6, 0.88);
+      background-color: rgba(10, 8, 6, 0.9);
       -webkit-backdrop-filter: blur(10px);
       backdrop-filter: blur(10px);
       border-top: 1px solid rgba(125, 99, 51, 0.35);
       box-shadow: 0 -8px 22px rgba(0, 0, 0, 0.55);
     }
-    .footer.pinned .result p {
+    .dock .result p {
       font-size: 1rem;
     }
   }

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { flip } from 'svelte/animate';
+  import { cubicOut } from 'svelte/easing';
   import { session } from '../lib/session.svelte';
   import { playerColor } from '../lib/ui';
   import Avatar from './Avatar.svelte';
@@ -153,6 +153,18 @@
     session.kick(id);
   }
 
+  /**
+   * Svelte animation: entries glide to their new places. Unlike flip it never
+   * scales them, which would stretch a pill (and its avatar) as it grows or
+   * shrinks between turns on phones. It moves them with `translate`, so the
+   * active entry's own transform stays.
+   */
+  function glide(_node: Element, { from, to }: { from: DOMRect; to: DOMRect }) {
+    const dx = from.left - to.left;
+    const dy = from.top - to.top;
+    return { duration: 400, easing: cubicOut, css: (_t: number, u: number) => `translate: ${u * dx}px ${u * dy}px` };
+  }
+
   // Stuck: the strip sticks 1px above the top of the screen, so once it has,
   // it no longer fits in the view.
   let stuck = $state(false);
@@ -183,7 +195,7 @@
         class:ablaze={fire > 0}
         style:--heat={fire}
         style:--blue={burnsBlue(fire) ? 1 : 0}
-        class:active class:out class:benched class:duelist class:offline={!p.connected} animate:flip={{ duration: 400 }} style:--c={playerColor(p.hue)}>
+        class:active class:out class:benched class:duelist class:offline={!p.connected} animate:glide style:--c={playerColor(p.hue)}>
         <Avatar name={p.name} hue={p.hue} size={32} dim={!p.connected} />
         <div class="info">
           <span class="name">
@@ -562,6 +574,11 @@
       justify-content: flex-start;
       /* Room for the score badges that hang off the avatars' corners. */
       gap: 0.45rem;
+      /* As tall as the timer beside it, so the strip keeps its height when
+         the timer comes and goes. */
+      min-height: 44px;
+      align-items: center;
+      align-content: center;
       padding: 0.35rem 0;
     }
     .board.crowded {
@@ -608,10 +625,6 @@
     }
     li.active .info {
       min-width: 0;
-    }
-    /* No pointer down into the content scrolling under the strip. */
-    li.active::after {
-      display: none;
     }
     .name {
       max-width: 6rem;
