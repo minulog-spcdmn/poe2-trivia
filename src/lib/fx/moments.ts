@@ -102,13 +102,13 @@ export function turnBanner(title: Element, color: string, big: boolean) {
 
 // ---------- categories ----------
 
-/** A category card lands on the table. */
-export function cardLanded(card: Element) {
+/** A category card lands face up: light runs round its edge, its emblem kindles and lights the table. */
+export function cardRevealed(frame: Element, dm: boolean) {
   if (!fxActive()) return;
-  const r = card.getBoundingClientRect();
-  const floor = new DOMRect(r.left + 12, r.bottom - 6, r.width - 24, 8);
-  puffs(floor, { count: 7, area: 'fill', color: [0.3, 0.16, 0.06], speed: [40, 140], angle: -Math.PI / 2, spread: Math.PI });
-  sparks(floor, { count: 10, area: 'fill', angle: -Math.PI / 2, spread: 1.6, speed: [120, 380], life: [0.3, 0.6] });
+  outline(frame, { color: k3(dm ? C.crimson : C.gold, 0.75), width: 10, intensity: 0.8, life: 0.85, fadeIn: 0.06 });
+  flash(frame.querySelector('.icon') ?? frame, { radius: 90, color: dm ? C.crimson : C.ember, intensity: 0.16, life: 0.6 });
+  glints(frame, { count: 2, area: 'edge', size: [4, 7], delay: [0, 0.2] });
+  light(frame, { color: dm ? [1, 0.2, 0.08] : [1, 0.62, 0.28], radius: 240, intensity: 0.22, decay: 0.9 });
 }
 
 /** The mouse is over a card you can pick: it catches fire. Returns a handle to put it out. */
