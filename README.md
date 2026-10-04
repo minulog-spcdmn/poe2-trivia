@@ -258,12 +258,15 @@ doesn't reveal the answer.
 
 ### The creator's key
 
-To let a browser use the creator's name, open the site once with
-`#owner=<secret>` at the end of the address; the key is saved in that browser
-and taken out of the address. `#owner=forget` removes it again. To replace the
-key (say, if the secret leaked), run `node scripts/owner-key.mjs`, put the
-printed public key into `OWNER_PUBLIC_KEY` in `src/lib/owner.ts` and deploy;
-the old secret stops working. The secret never goes into the repo.
+To let a browser use the creator's name, open the site once with `#owner` at
+the end of the address (`https://poe2.quest/#owner`) and paste the secret when
+asked. The browser keeps it in a form that can sign but can't be read back
+(a non-extractable key in IndexedDB). Never put the secret in the address
+itself: the browser would keep it in its history, so the site refuses it there.
+`#owner=forget` removes the key again. To replace the key (say, if the secret
+leaked), run `node scripts/owner-key.mjs`, put the printed public key into
+`OWNER_PUBLIC_KEY` in `src/lib/owner.ts` and deploy; the old secret stops
+working. The secret never goes into the repo.
 
 ### Self-hosted signalling (optional)
 

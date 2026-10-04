@@ -10,6 +10,10 @@
 //     uses the name without one;
 //   • the room list: each browser looking checks the listing's signature over
 //     the room code and a nonce it picked, and hides the room otherwise.
+// The creator's browser keeps the key as a non-extractable CryptoKey in
+// IndexedDB: it can sign with it, but no script can read the secret back.
+// The secret is pasted in once (open the site with #owner), never put in the
+// address, where it would stay in the browser's history.
 // A new key: node scripts/owner-key.mjs
 
 import { base64url, fromBase64url } from './tokens.ts';
@@ -17,9 +21,7 @@ import { base64url, fromBase64url } from './tokens.ts';
 /** The public half of the creator's key (P-256 coordinates, base64url). */
 const OWNER_PUBLIC_KEY = { x: 'idKRiqon1E5aWA_uolv4BQYhFI9o7lyE7iirGkU8f68', y: 'mPHMs_sbTo_nCeGjEEJXvbvQjrUtmQ4sDx0w7tgD3ck' };
 
-/** Where a browser keeps the secret half. */
-const STORAGE_KEY = 'poe2trivia.ownerKey';
-/** Opening the site with this in the address saves the key: `#owner=<secret>` (or `#owner=forget`). */
+/** Opening the site with `#owner` asks for the key; `#owner=forget` removes it. */
 const URL_PARAM = 'owner';
 
 const ALGORITHM = { name: 'ECDSA', namedCurve: 'P-256' };
@@ -70,9 +72,28 @@ export async function verifyOwner(claim: string, proof: unknown): Promise<boolea
 }
 
 /**
- * The signing key for a secret. Null if it isn't the other half of the
- * public key; undefined if that couldn't be checked (no WebCrypto, or it
- * failed for some other reason), so nothing should be concluded from it.
+ * Whether `key` is the creator's: a test signature that verifies against the
+ * public key. Undefined when that couldn't be checked (an error along the
+ * way), so nothing should be concluded from it.
+ */
+async function keyFits(key: CryptoKey): Promise<boolean | undefined> {
+  const s = subtle();
+  if (!s) return undefined;
+  const alg = key.algorithm as EcKeyAlgorithm;
+  if (alg.name !== 'ECDSA' || alg.namedCurve !== 'P-256' || !key.usages.includes('sign')) return false;
+  try {
+    const test = bytes('poe2.quest key check');
+    const sig = await s.sign(SIGNING, key, test);
+    return await s.verify(SIGNING, await ownerPublicKey(s), sig, test);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The signing key for a secret (not extractable). Null if it isn't the other
+ * half of the public key; undefined if that couldn't be checked (no WebCrypto,
+ * or it failed for some other reason).
  */
 export async function importOwnerKey(secret: string): Promise<CryptoKey | null | undefined> {
   const s = subtle();
@@ -85,90 +106,167 @@ export async function importOwnerKey(secret: string): Promise<CryptoKey | null |
     // Some browsers check that the secret fits the public half right here.
     return (err as Error)?.name === 'DataError' ? null : undefined;
   }
-  // Others don't: a test signature does. Only a clean "doesn't verify" means
-  // the key doesn't fit; an error along the way says nothing.
-  try {
-    const test = bytes('poe2.quest key check');
-    const sig = await s.sign(SIGNING, key, test);
-    return (await s.verify(SIGNING, await ownerPublicKey(s), sig, test)) ? key : null;
-  } catch {
-    return undefined;
-  }
+  // Others don't: the test signature does.
+  const fits = await keyFits(key);
+  return fits ? key : fits === false ? null : undefined;
 }
 
-function readKey(): string | null {
-  try {
-    return localStorage.getItem(STORAGE_KEY);
-  } catch {
-    return null;
-  }
+/** Where this browser keeps the creator's key. */
+export interface KeyStore {
+  get(): Promise<CryptoKey | null>;
+  set(key: CryptoKey): Promise<void>;
+  delete(): Promise<void>;
 }
 
-/** The stored secret's key, once it was found to fit (failed checks aren't kept, so they're tried again). */
-let checked: { secret: string; key: CryptoKey } | null = null;
+/** IndexedDB, which can hold a CryptoKey as it is (localStorage could only hold the secret itself). */
+const indexedDbStore: KeyStore = (() => {
+  const DB = 'poe2trivia';
+  const STORE = 'keys';
+  const ID = 'owner';
+  const open = () =>
+    new Promise<IDBDatabase>((resolve, reject) => {
+      if (typeof indexedDB === 'undefined') return reject(new Error('IndexedDB is not available'));
+      const req = indexedDB.open(DB, 1);
+      req.onupgradeneeded = () => req.result.createObjectStore(STORE);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  const run = async <T>(mode: IDBTransactionMode, op: (store: IDBObjectStore) => IDBRequest<T>) => {
+    const db = await open();
+    try {
+      return await new Promise<T>((resolve, reject) => {
+        const tx = db.transaction(STORE, mode);
+        const req = op(tx.objectStore(STORE));
+        tx.oncomplete = () => resolve(req.result);
+        tx.onerror = tx.onabort = () => reject(tx.error);
+      });
+    } finally {
+      db.close();
+    }
+  };
+  return {
+    get: async () => {
+      const key = await run<unknown>('readonly', (s) => s.get(ID));
+      return key instanceof CryptoKey ? key : null;
+    },
+    set: (key) => run('readwrite', (s) => s.put(key, ID)).then(() => {}),
+    delete: () => run('readwrite', (s) => s.delete(ID)).then(() => {}),
+  };
+})();
+
+let store: KeyStore = indexedDbStore;
+
+/** The stored key, once it was found to fit (failed checks aren't kept, so they're tried again). */
+let checked: CryptoKey | null = null;
+/** A check under way: everyone who asks meanwhile waits for the same one. */
+let checking: Promise<OwnerKeyState> | null = null;
+
+/** Tests keep the key somewhere else. */
+export function useKeyStore(s: KeyStore) {
+  store = s;
+  checked = null;
+  checking = null;
+}
+
+export type OwnerKeyState = 'ok' | 'none' | 'removed' | 'unchecked';
+
+/** What to tell the creator when their key couldn't be checked (rather than that their own name is taken). */
+export const OWNER_KEY_UNCHECKED = "This browser's owner key couldn't be checked just now. Try again in a moment.";
 
 /**
  * Checks the key this browser holds. One that doesn't fit the public half
  * (an old key, after a new one was made) is forgotten: `removed`. `unchecked`:
  * couldn't tell this time (it's kept and tried again later).
  */
-export async function checkOwnerKey(): Promise<'ok' | 'none' | 'removed' | 'unchecked'> {
-  const secret = readKey();
-  if (!secret) return 'none';
-  if (checked?.secret === secret) return 'ok';
-  const key = await importOwnerKey(secret);
-  if (key) {
-    if (readKey() === secret) checked = { secret, key };
+export function checkOwnerKey(): Promise<OwnerKeyState> {
+  if (checked) return Promise.resolve('ok');
+  return (checking ??= check().finally(() => (checking = null)));
+}
+
+async function check(): Promise<OwnerKeyState> {
+  let key: CryptoKey | null;
+  try {
+    key = await store.get();
+  } catch {
+    return 'unchecked';
+  }
+  if (!key) return 'none';
+  const fits = await keyFits(key);
+  if (fits) {
+    checked = key;
     return 'ok';
   }
-  if (key === undefined) return 'unchecked';
+  if (fits === undefined) return 'unchecked';
   try {
-    if (localStorage.getItem(STORAGE_KEY) === secret) localStorage.removeItem(STORAGE_KEY);
+    await store.delete();
   } catch {
-    /* ignore */
+    /* tried again next time */
   }
   return 'removed';
 }
 
 /** Whether this browser holds the creator's key, and it has been found to fit (see `checkOwnerKey`). */
-export const hasOwnerKey = () => !!checked && checked.secret === readKey();
+export const hasOwnerKey = () => checked !== null;
 
 /** The creator's signature of `claim`, or null when this browser doesn't hold the key (or it doesn't fit). */
 export async function signAsOwner(claim: string): Promise<string | null> {
   const s = subtle();
   if (!s || (await checkOwnerKey()) !== 'ok' || !checked) return null;
   try {
-    return base64url(new Uint8Array(await s.sign(SIGNING, checked.key, bytes(claim))));
+    return base64url(new Uint8Array(await s.sign(SIGNING, checked, bytes(claim))));
   } catch {
     return null;
   }
 }
 
+/** Saves the creator's key from its secret (as pasted in). */
+export async function saveOwnerKey(secret: string): Promise<'saved' | 'invalid' | 'unchecked'> {
+  const key = await importOwnerKey(secret.trim());
+  if (key === undefined) return 'unchecked';
+  if (!key) return 'invalid';
+  try {
+    await store.set(key);
+  } catch {
+    return 'unchecked';
+  }
+  checked = key;
+  checking = null;
+  return 'saved';
+}
+
+/** Removes the creator's key from this browser. */
+export async function forgetOwnerKey() {
+  checked = null;
+  checking = null;
+  await store.delete();
+}
+
 /**
- * Saves (or forgets) the key given in the address (`#owner=…`), and takes it
- * out of the address right away so it doesn't end up in a bookmark or a
- * screenshot. Says what happened, or null if the address had nothing for it.
+ * Handles `#owner` in the address: asks for the key (with `ask`) and saves
+ * it, or removes it for `#owner=forget`, and takes it out of the address.
+ * A secret put in the address itself isn't saved: the browser has already
+ * recorded it in its history (`in-address`). Null if the address had nothing
+ * for it; `cancelled` if nothing was pasted.
  */
-export async function takeOwnerKeyFromUrl(): Promise<'saved' | 'forgotten' | 'invalid' | 'unchecked' | null> {
+export async function takeOwnerKeyFromUrl(
+  ask: () => string | null,
+): Promise<'saved' | 'forgotten' | 'invalid' | 'unchecked' | 'in-address' | 'cancelled' | null> {
   const params = new URLSearchParams(location.hash.slice(1));
-  const secret = params.get(URL_PARAM);
-  if (secret === null) return null;
+  if (!params.has(URL_PARAM)) return null;
+  const value = params.get(URL_PARAM);
   params.delete(URL_PARAM);
   const hash = params.toString();
   history.replaceState(history.state, '', `${location.pathname}${location.search}${hash ? `#${hash}` : ''}`);
-  try {
-    if (secret === 'forget') {
-      localStorage.removeItem(STORAGE_KEY);
-      checked = null;
-      return 'forgotten';
+  if (value === 'forget') {
+    try {
+      await forgetOwnerKey();
+    } catch {
+      return 'unchecked';
     }
-    const key = await importOwnerKey(secret);
-    if (key === undefined) return 'unchecked';
-    if (!key) return 'invalid';
-    localStorage.setItem(STORAGE_KEY, secret);
-    checked = { secret, key };
-    return 'saved';
-  } catch {
-    return 'invalid';
+    return 'forgotten';
   }
+  if (value) return 'in-address';
+  const secret = ask();
+  if (!secret?.trim()) return 'cancelled';
+  return saveOwnerKey(secret);
 }

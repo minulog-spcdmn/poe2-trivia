@@ -2,7 +2,7 @@
   import { fade, fly } from 'svelte/transition';
   import { engine, session, savedName, saveName, CODE_LENGTH } from '../lib/session.svelte';
   import { cleanName, looksLikeOwner, nameProblem } from '../lib/names';
-  import { checkOwnerKey } from '../lib/owner';
+  import { checkOwnerKey, OWNER_KEY_UNCHECKED } from '../lib/owner';
   import { shuffle } from '../lib/game';
   import { itemImage } from '../lib/ui';
   import OpenRooms from './OpenRooms.svelte';
@@ -28,8 +28,9 @@
     // Names nobody may use (the creator's one included) are turned down here,
     // before anything opens. Whether this browser may use the creator's name
     // is settled first (on page load it may still be being checked).
-    const owner = !!n && looksLikeOwner(cleanName(n)) && (await checkOwnerKey()) === 'ok';
-    const problem = n ? nameProblem(cleanName(n), [], owner) : null;
+    const key = n && looksLikeOwner(cleanName(n)) ? await checkOwnerKey() : 'none';
+    // The creator's own browser that just couldn't check its key isn't told the name is taken.
+    const problem = key === 'unchecked' ? OWNER_KEY_UNCHECKED : n ? nameProblem(cleanName(n), [], key === 'ok') : null;
     if (!n || problem) {
       nameError = true;
       const field = document.getElementById('name');

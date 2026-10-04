@@ -32,7 +32,7 @@ import { Beacon, type RoomInfo } from './rooms';
 import { parseClientMsg, parseHostMsg, PROTOCOL_VERSION, RateLimit, type ClientMsg, type HostMsg, type MediaMsg } from './protocol';
 import { capped, FrameGuard, hookFrames, JoinGate, roomSecret } from './guard';
 import { cleanName, looksLikeOwner, nameSkeleton } from './names';
-import { checkOwnerKey, hasOwnerKey, hostClaim, joinClaim, signAsOwner, verifyOwner } from './owner';
+import { checkOwnerKey, hasOwnerKey, hostClaim, joinClaim, OWNER_KEY_UNCHECKED, signAsOwner, verifyOwner } from './owner';
 import { CREATOR } from './site';
 import { randomToken } from './tokens';
 import { prepareMedia, shown, tileDelay, type PreparedMedia } from './media.svelte';
@@ -64,8 +64,15 @@ const BUSY_RETRY_MS = 5000;
 const HELLO_TIMEOUT_MS = 6000;
 /** Signatures checked or made for a hello (lib/owner.ts) that take longer count as missing. */
 const PROOF_TIMEOUT_MS = 5000;
-/** Client: how long a hello under the creator's name waits for the host's challenge. */
-const CHALLENGE_WAIT_MS = 2500;
+/**
+ * Client: how long a hello under the creator's name waits for the host's
+ * challenge (hosts send it as soon as the connection opens; one on an older
+ * build never does). A challenge any later couldn't be answered in time
+ * anyway: the host gives up on a hello after HELLO_TIMEOUT_MS.
+ */
+const CHALLENGE_WAIT_MS = 5000;
+/** Client: how long a host going by the creator's name has to send its proof before guests leave. */
+const HOST_PROOF_GRACE_MS = 8000;
 const PING_EVERY_MS = 3000;
 /** Guests: no message from the host for this long means it's gone. */
 const HOST_SILENCE_MS = 15000;
@@ -144,6 +151,8 @@ interface Guest {
   greeting: boolean;
   /** Sent to it first: what the site's creator signs to join (lib/owner.ts). */
   nonce: string;
+  /** What it sent with its hello, for this host to sign when it goes by the creator's name. */
+  helloNonce: string | null;
 }
 
 /** Host-only data that must survive a page refresh but never reach guests. */
@@ -436,6 +445,7 @@ class Session {
       since: Date.now(),
       greeting: false,
       nonce: randomToken(24),
+      helloNonce: null,
     };
     this.guests.set(conn, guest);
     conn.on('open', () => this.send(conn, { t: 'challenge', nonce: guest.nonce }));
@@ -585,6 +595,7 @@ class Session {
       return;
     }
     guest.greeting = true;
+    guest.helloNonce = msg.nonce ?? null;
     // Signatures take milliseconds; one that hangs counts as no proof, so the guest still hears why.
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<{ owner: boolean; proof: null }>((resolve) => {
@@ -607,17 +618,31 @@ class Session {
 
   /**
    * The signatures a hello calls for: whether a guest using the site
-   * creator's name proved it's them, and, when this host holds the creator's
-   * key, its proof for the guest's nonce (sent whatever the host's name is
-   * now, so it still counts if the host takes the name later; `signAsOwner`
-   * settles whether this browser holds the key, even right after a refresh).
+   * creator's name proved it's them, and this host's proof for the guest's
+   * nonce while the host goes by that name (only then: under any other name,
+   * the creator stays anonymous). `signAsOwner` settles whether this browser
+   * holds the key, even right after a refresh.
    */
   private async ownerProofs(guest: Guest, msg: Extract<ClientMsg, { t: 'hello' }>): Promise<{ owner: boolean; proof: string | null }> {
     const [owner, proof] = await Promise.all([
       msg.owner && looksLikeOwner(cleanName(msg.name)) ? verifyOwner(joinClaim(this.code, msg.secret, guest.nonce), msg.owner) : false,
-      msg.nonce ? signAsOwner(hostClaim(this.code, msg.nonce)) : null,
+      msg.nonce && this.hostUsesOwnerName() ? signAsOwner(hostClaim(this.code, msg.nonce)) : null,
     ]);
     return { owner, proof };
+  }
+
+  /** Host: whether its own name is the site creator's. */
+  private hostUsesOwnerName() {
+    const s = this.state;
+    const me = s?.players.find((p) => p.id === s.hostId);
+    return !!me && looksLikeOwner(me.name);
+  }
+
+  /** Host: sends a guest its proof that this host is the site's creator (after the welcome). */
+  private async sendOwnerProof(conn: DataConnection, guest: Guest) {
+    if (!guest.helloNonce) return;
+    const owner = await signAsOwner(hostClaim(this.code, guest.helloNonce));
+    if (owner && this.guests.get(conn) === guest) this.send(conn, { t: 'owner', owner });
   }
 
   /** Lets a guest in, once past the checks in `handleHello`; throws why not. */
@@ -646,6 +671,8 @@ class Session {
       }
     guest.playerId = playerId;
     this.send(conn, proof ? { t: 'welcome', playerId, owner: proof } : { t: 'welcome', playerId });
+    // Going by the creator's name but the signature didn't make it: one more try, before the guest gives up on us.
+    if (!proof && this.hostUsesOwnerName()) setTimeout(() => void this.sendOwnerProof(conn, guest), 1000);
     this.setState(next);
     for (const m of this.released) this.sendMedia(conn, guest, m);
     const player = next.players.find((p) => p.id === playerId);
@@ -896,6 +923,9 @@ class Session {
           this.hostIsOwner = verifyOwner(hostClaim(this.code, asked), msg.owner);
           this.checkedHostName = null;
           break;
+        case 'owner':
+          this.hostIsOwner = verifyOwner(hostClaim(this.code, asked), msg.owner);
+          break;
         case 'state':
           this.syncClock(msg.now);
           if (!this.state || msg.state.version >= this.state.version || msg.state.version === 0) {
@@ -934,17 +964,25 @@ class Session {
 
   /**
    * Client: leaves a room whose host goes by the site creator's name without
-   * having proved it's them (in the welcome). Checked again only when the
-   * host's name changes.
+   * proving it's them. A proof can still be on its way (the host's signature
+   * was slow, or it only just took the name), so the host gets a moment.
+   * Checked again only when the host's name changes.
    */
   private checkHostName(conn: DataConnection, s: GameState) {
     const host = s.players.find((p) => p.id === s.hostId);
     if (!host || host.name === this.checkedHostName) return;
     this.checkedHostName = host.name;
     if (!looksLikeOwner(host.name)) return;
-    void this.hostIsOwner.then((ok) => {
-      if (ok || this.hostConn !== conn || this.mode !== 'client') return;
-      this.fail(`The host of this room is pretending to be ${CREATOR}. Join another room.`, 'Impostor host');
+    const name = host.name;
+    void this.hostIsOwner.then(async (ok) => {
+      if (ok) return;
+      await new Promise((resolve) => setTimeout(resolve, HOST_PROOF_GRACE_MS));
+      if (this.hostConn !== conn || this.mode !== 'client' || this.checkedHostName !== name || (await this.hostIsOwner)) return;
+      // Without WebCrypto (no secure connection) nothing can be checked here at all.
+      const message = globalThis.crypto?.subtle
+        ? `The host of this room goes by ${CREATOR} but couldn't prove it's them. Join another room.`
+        : `This room's host goes by ${CREATOR}, and this browser can't check that (it needs a secure connection). Join another room.`;
+      this.fail(message, 'Host not verified');
     });
   }
 
@@ -979,17 +1017,39 @@ class Session {
 
   // ---- actions ----------------------------------------------------------
 
-  dispatch(action: Action) {
+  /** Applies an action (or sends it to the host). Settles once it's applied, when that has to wait (see below). */
+  dispatch(action: Action): void | Promise<void> {
     if (!this.state) return;
     if (this.mode === 'client') {
       this.hostConn?.send({ t: 'action', action });
       return;
     }
-    // Only this device's own player (or anyone at a hot-seat game) can be the site's creator.
-    if (action.type === 'join' || action.type === 'rename')
-      action = { ...action, owner: hasOwnerKey() && (this.mode === 'local' || action.playerId === this.myPlayerId) };
+    if (action.type === 'join' || action.type === 'rename') {
+      const named = action;
+      // Only this device's own player (or anyone at a hot-seat game) can be the site's creator,
+      // and whether this browser holds the key may still be being checked (right after a page load).
+      const mine = this.mode === 'local' || named.playerId === this.myPlayerId;
+      if (!mine || !looksLikeOwner(cleanName(named.name))) return this.run({ ...named, owner: false });
+      return checkOwnerKey().then(async (key) => {
+        if (key === 'unchecked') return this.flash(OWNER_KEY_UNCHECKED, 'error', { title: 'Owner key not checked' });
+        const owner = key === 'ok';
+        // Taking the creator's name: the guests get the proof before the new name, so they don't leave.
+        if (owner && this.mode === 'host' && named.type === 'rename') await this.sendOwnerProofs();
+        this.run({ ...named, owner });
+      });
+    }
+    this.run(action);
+  }
+
+  /** Host: sends every guest its proof that this host is the site's creator. */
+  private sendOwnerProofs() {
+    return Promise.all([...this.guests].filter(([, g]) => g.playerId).map(([c, g]) => this.sendOwnerProof(c, g)));
+  }
+
+  private run(action: Action) {
+    if (!this.state) return;
     const from = this.mode === 'local' ? null : this.myPlayerId;
-    const run = () => {
+    const apply = () => {
       if (!this.state) return;
       try {
         this.setState(engine.apply(this.state, action, from));
@@ -999,8 +1059,8 @@ class Session {
       }
     };
     const handicap = this.mode === 'host' && this.race && action.type === 'answer' ? this.hostHandicap() : 0;
-    if (handicap > 0) setTimeout(run, handicap);
-    else run();
+    if (handicap > 0) setTimeout(apply, handicap);
+    else apply();
   }
 
   /** Removes a player for the rest of this session (lobby or mid-game). */

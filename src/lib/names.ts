@@ -43,6 +43,7 @@ const OWNER_CONFUSABLES: Record<string, string> = {
   ζ: 'z', є: 'e', ø: 'o', ɵ: 'o', ə: 'e', ɛ: 'e', ƶ: 'z', ȥ: 'z', ɀ: 'z', ʐ: 'z', ʑ: 'z', ᴢ: 'z', ᴏ: 'o', ᴇ: 'e', '2': 'z',
   // Armenian, Coptic, Cherokee, Lisu, Tifinagh and other letters drawn like z, o or e (lowercased).
   օ: 'o', ⲟ: 'o', ꮓ: 'z', ꭼ: 'e', ꮻ: 'o', ꓜ: 'z', ꓳ: 'o', ꓰ: 'e', ⵔ: 'o', ꝋ: 'o', ℮: 'e',
+  ǝ: 'e', ԑ: 'e', ɘ: 'e', ʒ: 'z', ӡ: 'z', ⱬ: 'z', ө: 'o',
 };
 
 /** What a name "looks like": lowercase ASCII-ish letters only. `extra`: more look-alikes to fold. */
@@ -71,28 +72,38 @@ const OWNER_SKELETONS = [CREATOR, CREATOR.split(/[^\p{L}\p{N}]+/u)[0]].map((n) =
  * Whether some reading of `name` folds to `target`: letters as they look,
  * each digit or symbol either as the letter it looks like (z0e) or left out
  * (zoe_arcana2, Zoe!), in any mix (Z0e1), and doubled letters counted once,
- * as in `nameSkeleton`.
+ * as in `nameSkeleton`. No look-alike table is complete, so a letter none of
+ * them knows may stand in for the next letter of the target (Zoǝ), up to one
+ * in three; it never just drops out, so "Zoe 太郎" isn't the creator's name,
+ * and neither is a short name written in another script altogether.
  */
 function readsAs(name: string, target: string): boolean {
-  // How much of the target the letters so far spell out, for each way of reading them.
-  let spelled = new Set([0]);
+  const maxStandIns = Math.floor(target.length / 3);
+  // Each way of reading the name so far: how much of the target it spells, and with how many stand-ins.
+  let readings = new Map<string, [number, number]>([['0:0', [0, 0]]]);
   for (const c of name.normalize('NFKD').toLowerCase()) {
     if (/\p{M}/u.test(c)) continue;
     const folded = (CONFUSABLES[c] ?? OWNER_CONFUSABLES[c] ?? c).replace('i', 'l');
     const letter = /^[a-z]$/.test(folded) ? folded : null;
-    // A letter has to fit (other letters drop out, as in the skeleton); anything else may also be left out.
-    const readings = /\p{L}/u.test(c) ? [letter] : [null, letter];
-    const next = new Set<number>();
-    for (const n of spelled)
-      for (const r of readings) {
-        if (r === null) next.add(n);
-        else if (n > 0 && r === target[n - 1]) next.add(n);
-        else if (r === target[n]) next.add(n + 1);
+    const isLetter = /\p{L}/u.test(c);
+    const next = new Map<string, [number, number]>();
+    const add = (n: number, w: number) => next.set(`${n}:${w}`, [n, w]);
+    for (const [n, w] of readings.values()) {
+      if (isLetter && !letter) {
+        // An unknown letter: a stand-in for the next one, if any are left.
+        if (n < target.length && w < maxStandIns) add(n + 1, w + 1);
+        continue;
       }
-    spelled = next;
-    if (!spelled.size) return false;
+      // A digit or symbol may also be left out.
+      if (!isLetter) add(n, w);
+      if (!letter) continue;
+      if (n > 0 && letter === target[n - 1]) add(n, w);
+      else if (letter === target[n]) add(n + 1, w);
+    }
+    readings = next;
+    if (!readings.size) return false;
   }
-  return spelled.has(target.length);
+  return [...readings.values()].some(([n]) => n === target.length);
 }
 
 /** Whether a name could pass for the site's creator. */

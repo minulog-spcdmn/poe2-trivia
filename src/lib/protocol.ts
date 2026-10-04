@@ -5,7 +5,7 @@
 import type { Action, GameState } from './game';
 import { isNonce, isProof } from './owner.ts';
 
-export const PROTOCOL_VERSION = 7;
+export const PROTOCOL_VERSION = 8;
 
 /** Guest → host. */
 export type ClientMsg =
@@ -23,6 +23,8 @@ export type ClientMsg =
 export type HostMsg =
   /** Sent first, on every connection: what the site's creator signs to join (lib/owner.ts). */
   | { t: 'challenge'; nonce: string }
+  /** The host's proof that it's the site's creator, sent after the welcome: when it takes the name, or the first try failed. */
+  | { t: 'owner'; owner: string }
   /** `owner`: a host using the creator's name proving it's them (lib/owner.ts). */
   | { t: 'welcome'; playerId: string; owner?: string }
   | { t: 'state'; state: GameState; now: number }
@@ -110,6 +112,8 @@ export function parseHostMsg(raw: unknown): HostMsg | null {
   switch (raw.t) {
     case 'challenge':
       return isNonce(raw.nonce) ? (raw as HostMsg) : null;
+    case 'owner':
+      return isProof(raw.owner) ? (raw as HostMsg) : null;
     case 'welcome':
       return isStr(raw.playerId, 64) && (raw.owner === undefined || isProof(raw.owner)) ? (raw as HostMsg) : null;
     case 'state': {

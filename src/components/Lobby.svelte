@@ -25,13 +25,14 @@
 
   const inviteLink = $derived(inviteUrl(session.code));
 
-  function addLocal(e: Event) {
+  async function addLocal(e: Event) {
     e.preventDefault();
     const name = newName.trim();
     if (!name) return;
     const playerId = crypto.randomUUID();
-    session.dispatch({ type: 'join', playerId, name });
-    // Keep the name to fix it up if it was turned down (hot-seat applies it right away).
+    // Settles once it's applied (the creator's name waits for the owner key check).
+    await session.dispatch({ type: 'join', playerId, name });
+    // Keep the name to fix it up if it was turned down.
     if (session.state?.players.some((p) => p.id === playerId)) newName = '';
   }
 
