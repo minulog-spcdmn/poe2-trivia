@@ -8,7 +8,7 @@
   import { dialogBackdrop } from '../lib/behindDialog';
   import { artRevealed } from '../lib/fx/moments';
   import { singular, type Item } from '../lib/game';
-  import NamePlate from './NamePlate.svelte';
+  import NamePlate, { SOCKET_X } from './NamePlate.svelte';
   import ArtImage from './ArtImage.svelte';
   import ArcaneCircle from './ArcaneCircle.svelte';
 
@@ -113,7 +113,7 @@
           <span class="ibase">{item.base}</span>
         </div>
       {/key}
-      <button class="close" onclick={onclose} aria-label="Close" title="Close">
+      <button class="close" style:--socket="{SOCKET_X}px" onclick={onclose} aria-label="Close" title="Close">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
       </button>
     </div>
@@ -207,12 +207,12 @@
     color: #d8a26a;
     opacity: 0.85;
   }
-  /* In the empty socket of the plate's right brace. */
+  /* Centred in the empty end of the name plate. */
   .close {
     position: absolute;
     top: 50%;
-    right: 21px;
-    translate: 0 -50%;
+    right: var(--socket);
+    translate: 50% -50%;
     width: 32px;
     height: 32px;
     display: grid;
@@ -222,10 +222,8 @@
     border: 0;
     border-radius: 50%;
     cursor: pointer;
-    color: var(--unique);
-    transition:
-      color 0.2s,
-      background 0.2s;
+    color: var(--unique-hi);
+    transition: color 0.2s;
   }
   .close:hover {
     color: var(--gold-hi);
