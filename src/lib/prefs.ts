@@ -1,7 +1,7 @@
 // The host's room settings, remembered in this browser so the next room they
 // open starts the way they left the last one.
 
-import { DEFAULT_SETTINGS, cleanKnobs, difficultyOf, isDifficulty, type Difficulty, type GameMode, type Knobs, type Settings } from './game.ts';
+import { DEFAULT_SETTINGS, cleanKnobs, difficultyOf, isDifficulty, snapTimer, type Difficulty, type GameMode, type Knobs, type Settings } from './game.ts';
 
 export interface RoomPrefs {
   targetScore: number;
@@ -52,7 +52,8 @@ export function parsePrefs(raw: string | null): RoomPrefs | null {
   if (typeof o.public !== 'boolean' || typeof o.hideCode !== 'boolean') return null;
   return {
     targetScore: o.targetScore,
-    timer: o.timer,
+    // Older builds offered other steps: take the nearest one.
+    timer: snapTimer(o.timer),
     difficulty: o.customOn === true && o.custom !== undefined ? 'custom' : o.difficulty,
     // Added later: knobs another build allowed are snapped to this one's, and the rest is kept.
     ...(o.custom === undefined ? {} : { custom: cleanKnobs(o.custom) }),
@@ -146,7 +147,7 @@ const clampInt = (v: unknown, min: number, max: number, fallback: number) =>
  */
 export const prefsFrom = (s: Settings): Partial<RoomPrefs> => ({
   targetScore: clampInt(s.targetScore, 1, 50, DEFAULT_PREFS.targetScore),
-  timer: clampInt(s.timer, 0, 120, DEFAULT_PREFS.timer),
+  timer: snapTimer(clampInt(s.timer, 0, 120, DEFAULT_PREFS.timer)),
   difficulty: difficultyOf(s.difficulty),
   // Only once the room has one, so a room that never used it keeps the saved one.
   ...(s.custom ? { custom: cleanKnobs(s.custom) } : {}),

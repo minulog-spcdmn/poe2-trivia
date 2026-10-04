@@ -306,6 +306,8 @@
     min-height: 100dvh;
     display: flex;
     flex-direction: column;
+    /* Room at the end for a bar fixed to the bottom of the screen (lib/layout.ts). */
+    padding-bottom: var(--dock, 0px);
   }
 
   header {
@@ -574,7 +576,7 @@
     header {
       grid-template-columns: auto 1fr auto;
       gap: 0.5rem;
-      padding: 0.6rem 0.8rem;
+      padding: 0.4rem 0.8rem;
     }
     .brand span:last-child {
       display: none;

@@ -7,10 +7,12 @@
   import QuestionView from './QuestionView.svelte';
   import Avatar from './Avatar.svelte';
   import PlayerName from './PlayerName.svelte';
+  import TimerRing from './TimerRing.svelte';
   import { fireAmbience, sfx } from '../lib/sound';
   import { onMount } from 'svelte';
   import { deathmatchIntro, deathmatchMood, gameStart, turnBanner } from '../lib/fx/moments';
   import { portal } from '../lib/portal';
+  import { phone } from '../lib/layout';
 
   const s = $derived(session.state!);
   const active = $derived(s.players[s.turn]);
@@ -19,6 +21,10 @@
 
 
   const race = $derived(s.settings.mode === 'race');
+  // The question's timer: in the scoreboard pinned to the top on phones, in
+  // view while they scroll down to the answers, and beside the question's
+  // topic otherwise. Only ever one, so its ticks never double.
+  const q = $derived(s.phase === 'question' || s.phase === 'reveal' ? s.question : null);
 
   // Countdown to the automatic skip of a disconnected player's turn.
   let now = $state(Date.now());
@@ -91,8 +97,16 @@
   );
 </script>
 
+{#snippet timer()}
+  {#if q?.deadline}
+    {#key q.askedAt}
+      <TimerRing deadline={q.deadline} total={Math.round((q.deadline - q.askedAt) / 1000)} stopped={s.phase === 'reveal'} />
+    {/key}
+  {/if}
+{/snippet}
+
 <div class="game">
-  <Scoreboard />
+  <Scoreboard aside={phone.current ? timer : undefined} />
 
   <!-- The outgoing and incoming turn share one grid cell while they cross-fade,
        instead of stacking (which briefly doubled the page height). -->
@@ -132,7 +146,7 @@
         {:else}
           <!-- A new question on the same turn (the host asked another) starts fresh. -->
           {#key s.question?.askedAt}
-            <QuestionView />
+            <QuestionView timer={phone.current ? undefined : timer} />
           {/key}
         {/if}
 
@@ -371,5 +385,24 @@
     align-items: center;
     justify-content: center;
     margin-top: 1.5rem;
+  }
+
+  /* Phones: every pixel of height spent here is scrolling between the art and
+     the answers. The scoreboard already marks whose turn it is. */
+  @media (max-width: 640px) {
+    .game {
+      gap: 0.5rem;
+      padding: 0.5rem 1rem 1rem;
+    }
+    .banner {
+      gap: 0.8rem;
+      margin: 0 0 0.5rem;
+    }
+    .banner h2 {
+      font-size: 1.45rem;
+    }
+    .skip {
+      margin-top: 1rem;
+    }
   }
 </style>

@@ -32,7 +32,7 @@ same time, in a random category (never one of the last 2, 3 or 4, by difficulty,
 - A wrong answer costs −1 and locks that player out until the next question.
   Everyone sees live who guessed what.
 - The first player to reach the target score wins.
-- Race questions always have a timer (30 s if the host picked "off").
+- Race questions always have a timer (16 s if the host picked "off").
 - The host's own answers reach the game instantly, while guests' answers
   travel over the network, so the host has a small speed edge.
 
@@ -117,7 +117,7 @@ browser's localStorage only (`src/lib/codex.ts`).
 - **Hot-seat:** everyone plays on one device and passes it around.
 
 The host picks the mode (take turns or race), the difficulty, the target score and an optional time limit
-per question (off / 10–45 s).
+per question (off / 8 / 16 / 32 / 64 s).
 
 ## Fair play & safety
 
