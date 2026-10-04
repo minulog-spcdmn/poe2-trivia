@@ -5,7 +5,7 @@
 // questions only the patches of it that have been uncovered so far.
 
 import { itemImage } from './ui-paths';
-import { cutPatches, spreadOrder } from './patches';
+import { cutPatches, spreadOrder, visibleBox } from './patches';
 import type { MediaMsg } from './protocol';
 import type { Question } from './game';
 
@@ -20,12 +20,17 @@ export interface Patch {
   edges: ArrayBuffer;
 }
 
-/** A veiled picture's size (its patches are placed on it), the time between patches (ms) and how many there are. */
+/**
+ * A veiled picture's size (its patches are placed on it), the time between
+ * patches (ms), how many there are, and where the item is in it (x, y, w, h
+ * of its visible pixels), so the full art can take over in the same place.
+ */
 export interface VeilArt {
   w: number;
   h: number;
   step: number;
   count: number;
+  box: [number, number, number, number];
 }
 
 /** Everything a question can show, prepared once by the host. */
@@ -149,8 +154,15 @@ export async function prepareMedia(q: Question, grayscale: boolean): Promise<Pre
     out.art = { w: W, h: H, data: await encode(canvas) };
     return out;
   }
-  const patches = cutPatches(canvas.getContext('2d')!.getImageData(0, 0, W, H).data, W, H, q.veil.size, q.veil.seed);
-  out.veil = { w: W, h: H, step: Math.round((q.veil.seconds * 1000) / Math.max(1, patches.length)), count: patches.length };
+  const pixels = canvas.getContext('2d')!.getImageData(0, 0, W, H).data;
+  const patches = cutPatches(pixels, W, H, q.veil.size, q.veil.seed);
+  out.veil = {
+    w: W,
+    h: H,
+    step: Math.round((q.veil.seconds * 1000) / Math.max(1, patches.length)),
+    count: patches.length,
+    box: visibleBox(pixels, W, H),
+  };
   const order = spreadOrder(patches, q.veil.seed);
   out.patches = await Promise.all(
     order.map(async (i) => {
@@ -230,7 +242,7 @@ class Shown {
         this.art = { url: this.url(m.data), w: m.w, h: m.h };
         break;
       case 'veil':
-        this.veil = { w: m.w, h: m.h, step: m.step, count: m.count };
+        this.veil = { w: m.w, h: m.h, step: m.step, count: m.count, box: m.box };
         break;
       case 'patch':
         this.patches = {

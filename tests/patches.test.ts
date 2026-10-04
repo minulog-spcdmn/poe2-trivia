@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cutPatches, spreadOrder } from '../src/lib/patches.ts';
+import { cutPatches, spreadOrder, visibleBox } from '../src/lib/patches.ts';
 
 /** A W × H picture: an opaque ellipse with a soft edge on a transparent background. */
 function ellipse(W: number, H: number): Uint8ClampedArray {
@@ -113,4 +113,15 @@ test('the reveal spreads: each patch touches one revealed before it', () => {
     });
   }
   assert.deepEqual(spreadOrder(patches, 5), spreadOrder(patches, 5));
+});
+
+test('the visible box hugs the visible pixels', () => {
+  const W = 40;
+  const H = 30;
+  const px = new Uint8ClampedArray(W * H * 4);
+  px[(5 * W + 7) * 4 + 3] = 255;
+  px[(20 * W + 31) * 4 + 3] = 255;
+  px[(25 * W + 2) * 4 + 3] = 5;
+  assert.deepEqual(visibleBox(px, W, H), [7, 5, 25, 16]);
+  assert.deepEqual(visibleBox(new Uint8ClampedArray(W * H * 4), W, H), [0, 0, W, H]);
 });

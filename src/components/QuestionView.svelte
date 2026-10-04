@@ -5,6 +5,7 @@
   import { shown } from '../lib/media.svelte';
   import { burnDuration, FINALE_MS, materialize, type BurnParams } from '../lib/materialize';
   import { frontier } from '../lib/frontier';
+  import { visibleBox } from '../lib/patches';
   import { itemImage } from '../lib/ui';
   import { sfx } from '../lib/sound';
   import TimerRing from './TimerRing.svelte';
@@ -91,26 +92,76 @@
     return () => clearTimeout(timer);
   });
   // The full art loads as the reveal starts, so the veiled picture only hands
-  // over once it can show (or after a while, should it not load).
+  // over once it can show (or after a while, should it not load). Its size
+  // and where the item is in it let the veiled copy line up with it first.
   let fullLoaded = $state(false);
+  let full = $state<{ w: number; h: number; box: [number, number, number, number] } | null>(null);
   $effect(() => {
     if (!reveal || !item) {
       fullLoaded = false;
+      full = null;
       return;
     }
     let live = true;
     const done = () => live && (fullLoaded = true);
     const img = new Image();
     img.src = itemImage(item.id);
-    img.decode().then(done, done);
+    img.decode().then(() => {
+      if (!live) return;
+      const c = document.createElement('canvas');
+      c.width = img.naturalWidth;
+      c.height = img.naturalHeight;
+      const g = c.getContext('2d', { willReadFrequently: true })!;
+      g.drawImage(img, 0, 0);
+      full = { w: c.width, h: c.height, box: visibleBox(g.getImageData(0, 0, c.width, c.height).data, c.width, c.height) };
+      done();
+    }, done);
     const timer = setTimeout(done, 3000);
     return () => {
       live = false;
       clearTimeout(timer);
     };
   });
+
+
+  /**
+   * At the reveal the veiled copy moves and scales so its item sits exactly
+   * where the full art's will (the copy was re-scaled and padded a little by
+   * the host): both boxes follow .art-fit's sizing, so it's worked out from
+   * the slot's size, each picture's size and where its visible pixels are.
+   */
+  const veilFit = $derived.by(() => {
+    const v = media?.veil;
+    const slot = artEl?.querySelector('.frame');
+    if (!reveal || !v || !full || !slot) return null;
+    const cw = slot.clientWidth;
+    const ch = slot.clientHeight;
+    const place = (w: number, h: number, [bx, by, bw, bh]: number[]) => {
+      const fw = Math.min(cw, (ch * w) / h, w * 1.8);
+      const fh = Math.min(ch, (cw * h) / w, h * 1.8);
+      const k = fw / w;
+      return { x: (cw - fw) / 2 + bx * k, y: (ch - fh) / 2 + by * k, w: bw * k, h: bh * k };
+    };
+    const from = place(v.w, v.h, v.box);
+    // A mirrored item starts the reveal mirrored, as it was shown.
+    const fb = full.box;
+    const to = place(full.w, full.h, mirrored(0) ? [full.w - fb[0] - fb[2], fb[1], fb[2], fb[3]] : fb);
+    const k = (to.w / from.w + to.h / from.h) / 2;
+    if (!isFinite(k) || k <= 0) return null;
+    return `translate(${to.x - k * from.x}px, ${to.y - k * from.y}px) scale(${k})`;
+  });
+  // The handover waits for the copy to have moved into place.
+  let fitted = $state(false);
+  $effect(() => {
+    if (!veilFit) {
+      fitted = false;
+      return;
+    }
+    const timer = setTimeout(() => (fitted = true), 480);
+    return () => clearTimeout(timer);
+  });
   /** The full art replaces what was shown during the question. */
-  const showFull = $derived(!!reveal && !!item && (!media?.veil || (veilDone && fullLoaded)));
+  const showFull = $derived(!!reveal && !!item && (!media?.veil || (veilDone && fullLoaded && (fitted || !full))));
 
   // A veiled picture that comes in whole before the reveal shimmers once.
   let wholeFor = 0;
@@ -135,9 +186,9 @@
   });
 
   /**
-   * Svelte transition: the veiled art hands over to the full picture. It
-   * flares golden, swells a touch towards the full art's size (the copy shown
-   * during the question is padded a little) and fades as the full art fades in.
+   * Svelte transition: the veiled art (already lined up with it, see
+   * veilFit) hands over to the full picture: it flares golden and fades as
+   * the full art fades in.
    */
   function handoff(node: Element) {
     const veil = node.querySelector('.veil');
@@ -148,7 +199,7 @@
       css: (t: number, u: number) =>
         quick
           ? `opacity: ${t}`
-          : `opacity: ${t}; transform: scale(${1 + 0.05 * u}); filter: brightness(${1 + 1.2 * Math.sin(Math.PI * Math.min(1, u * 1.4))}) sepia(${0.45 * u})`,
+          : `opacity: ${t}; filter: brightness(${1 + 1.2 * Math.sin(Math.PI * Math.min(1, u * 1.4))}) sepia(${0.45 * u})`,
     };
   }
 
@@ -485,11 +536,11 @@
           <ArcaneCircle state={reveal ? (iWon ? 'good' : 'bad') : 'idle'} />
           <div class="frame">
             {#if showFull && item}
-              <ArtImage src={itemImage(item.id)} alt={item.name} w={hint?.w} h={hint?.h} float unflip={mirrored(0)} />
+              <ArtImage src={itemImage(item.id)} alt={item.name} w={full?.w ?? hint?.w} h={full?.h ?? hint?.h} float unflip={mirrored(0)} />
             {/if}
             {#if media?.veil && !showFull}
               {@const v = media.veil}
-              <span class="art-slot" out:handoff>
+              <span class="art-slot veil-slot" style:transform={veilFit} out:handoff>
               <span class="art-fit veil" style:--w={v.w} style:--h={v.h} style:--s={1.8}>
                 {#each patches as p (p.i)}
                   <canvas
@@ -740,6 +791,11 @@
   .veil {
     /* Patches are absolutely positioned inside the box. */
     position: relative;
+  }
+  /* Lines up with the full art at the reveal (veilFit). */
+  .veil-slot {
+    transform-origin: 0 0;
+    transition: transform 0.45s var(--ease-out);
   }
   /* Each patch's canvas spans its bounding box; the parts of the box outside
      the patch are transparent. */

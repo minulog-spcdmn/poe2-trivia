@@ -52,6 +52,25 @@ export interface RawPatch {
 /** Pixels at or below this alpha count as transparent. */
 const CLEAR = 8;
 
+/** Where a picture's visible pixels are: x, y, w, h (the whole picture if none are). */
+export function visibleBox(rgba: Uint8ClampedArray, W: number, H: number): [number, number, number, number] {
+  let x0 = W;
+  let y0 = H;
+  let x1 = -1;
+  let y1 = -1;
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      if (rgba[(y * W + x) * 4 + 3] <= CLEAR) continue;
+      if (x < x0) x0 = x;
+      if (x > x1) x1 = x;
+      if (y < y0) y0 = y;
+      if (y > y1) y1 = y;
+    }
+  }
+  return x1 < 0 ? [0, 0, W, H] : [x0, y0, x1 - x0 + 1, y1 - y0 + 1];
+}
+
+
 /**
  * Splits the visible pixels of a W × H RGBA picture into patches. `size` is
  * the veil's grid size: the patches come out about as big as the tiles of a
