@@ -1361,16 +1361,13 @@
     .option .mark {
       right: 0.7rem;
     }
-    /* Phones have no room beside the answer: the stack sits on the row's top
-       edge, smaller, with enough space between rows to keep it clear of the
-       answer above. */
-    .options,
-    .options.compact {
-      gap: 1.1rem;
-    }
+    /* Phones have no spare room beside the answer: the stack, smaller, takes
+       its own place in the row after the answer, which wraps around it. */
     .option .who-picked {
-      top: 0;
-      right: 0.5rem;
+      position: static;
+      flex: none;
+      translate: none;
+      margin-left: -0.4rem;
     }
     .who-picked :global(.avatar) {
       width: 18px;
