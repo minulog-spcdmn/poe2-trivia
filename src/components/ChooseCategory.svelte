@@ -86,7 +86,7 @@
     {#if s.deathmatch}
       {#if mine}Sudden death: your category is drawn at random.{:else}<span class="muted">Sudden death for</span> {active.name}<span class="muted">…</span>{/if}
     {:else if mine}
-      Choose your category{#if active.recent.length}{' '}<span class="muted">(locked: {active.recent.join(', ')})</span>{/if}
+      Choose your category
     {:else}
       <span class="muted">Waiting for</span> {active.name} <span class="muted">to choose a category…</span>
     {/if}
