@@ -1238,16 +1238,21 @@ export class Engine {
     const inCat = this.byCategory.get(category) ?? [];
     const need = rules.options - 1;
     const mode = this.rollMode(s);
-    const fakes = mode === 'name' ? rules.fakes : 0;
+    const fakes = mode === 'name' && this.fakes.size ? rules.fakes : 0;
 
     // Earlier answers never come back as decoys (they'd be easy to rule out).
     // An answer needs a full set of unseen decoys from its own group, or one
     // to share evenly with other groups (two of each, three of each…): a
-    // group smaller than the rest would most likely hold the answer, and
-    // with room for the made-up names. Rare groups (tablets) never mix, or
-    // one would stand out. Other items sit out; once none can be asked, the
-    // category starts over, except for its latest answer.
+    // group smaller than the rest would most likely hold the answer. Answers
+    // whose share leaves room for the made-up names go first. Rare groups
+    // (tablets) never mix, or one would stand out. Other items sit out; once
+    // none can be asked, the category starts over, except for its latest
+    // answer.
     const answerable = (unused: Item[]) => {
+      const roomy = shareable(unused, fakes);
+      return roomy.length || !fakes ? roomy : shareable(unused, 0);
+    };
+    const shareable = (unused: Item[], fakes: number) => {
       const left = new Map<string, number>();
       for (const it of unused) left.set(it.group, (left.get(it.group) ?? 0) + 1);
       const others = (group: string) => [...left].flatMap(([g, n]) => (g === group || Object.hasOwn(RARE_GROUPS, g) ? [] : [n]));
