@@ -168,7 +168,7 @@
 <!-- On phones the row sticks to the top of the screen; once it has, it takes a
      background of its own over the content scrolling under it. -->
 <div class="strip" class:stuck use:sticking>
-  <ol class="board" class:crowded={s.players.length > 5}>
+  <ol class="board" class:crowded={s.players.length > 6}>
     {#each s.players as p, i (p.id)}
       {@const active = race ? s.phase === 'reveal' && s.reveal?.winnerId === p.id : i === s.turn && s.phase !== 'over'}
       {@const out = race && s.phase !== 'over' && missed.has(p.id)}
@@ -560,7 +560,8 @@
       min-width: 0;
       flex-wrap: nowrap;
       justify-content: flex-start;
-      gap: 0.45rem 0.6rem;
+      /* Room for the score badges that hang off the avatars' corners. */
+      gap: 0.45rem;
       padding: 0.35rem 0;
     }
     .board.crowded {
@@ -576,8 +577,8 @@
       flex: 0 1 auto;
     }
     li :global(.avatar) {
-      width: 28px;
-      height: 28px;
+      width: 26px;
+      height: 26px;
     }
     /* The others are an avatar with their score on it. Their names stay for screen readers. */
     li:not(.active) {
@@ -621,7 +622,7 @@
     }
     /* Where the ⚡ sits on a lone avatar. */
     li:not(.active) .off {
-      left: 20px;
+      left: 18px;
     }
   }
 </style>
