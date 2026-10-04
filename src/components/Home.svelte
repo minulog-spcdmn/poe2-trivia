@@ -1,5 +1,6 @@
 <script lang="ts">
   import { fade, fly } from 'svelte/transition';
+  import { claimName } from '../lib/names';
   import { engine, session, savedName, saveName, CODE_LENGTH } from '../lib/session.svelte';
   import { shuffle } from '../lib/game';
   import { itemImage } from '../lib/ui';
@@ -25,7 +26,8 @@
   const showcase = shuffle(engine.items, Math.random).slice(0, 7);
 
   function needName() {
-    const n = name.trim();
+    const raw = name.trim();
+    const n = claimName(raw);
     if (!n) {
       nameError = true;
       const field = document.getElementById('name');
@@ -34,7 +36,7 @@
       document.getElementById('name')?.focus();
       return null;
     }
-    saveName(n);
+    saveName(raw);
     return n;
   }
 

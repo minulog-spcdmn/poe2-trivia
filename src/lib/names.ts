@@ -45,6 +45,30 @@ export function nameSkeleton(name: string): string {
   return folded || name.toLowerCase();
 }
 
+// A name held back for one person. Typing it needs the passphrase after a "#"
+// (zoe_arcana#<passphrase>); the passphrase is stripped before the name is used.
+// A deterrent against casual impersonation, not security: it is only checked in
+// the name field, and the hash is public.
+const HELD_NAME = 'zoearcana';
+const HELD_KEY_HASH = '26ec19a7';
+
+function keyHash(s: string): string {
+  let h = 0x811c9dc5;
+  for (const c of s) {
+    h ^= c.charCodeAt(0);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h.toString(16);
+}
+
+/** Checks the name field entry against the held name. Returns the name to use, or null if it is held. */
+export function claimName(raw: string): string | null {
+  const [name, ...rest] = raw.split('#');
+  const key = rest.join('#').trim();
+  if (nameSkeleton(cleanName(name)) !== HELD_NAME) return raw;
+  return keyHash(key) === HELD_KEY_HASH ? name.trim() : null;
+}
+
 /** Returns why a name is not allowed, or null if it's fine. */
 export function nameProblem(name: string, others: string[]): string | null {
   if (!name) return 'Please enter a name with at least one letter or number.';

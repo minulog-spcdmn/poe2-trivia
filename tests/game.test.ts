@@ -1219,3 +1219,11 @@ test('a question thrown out for failed art does not count toward the art lean', 
     assert.ok(Math.abs(s.artLean!.p0 - (PRESETS.cruel.artChance - art)) < 1e-9, 'only the latest question counts');
   }
 });
+
+test('the held name needs its passphrase', async () => {
+  const { claimName } = await import('../src/lib/names.ts');
+  assert.equal(claimName('zoe_arcana'), null);
+  assert.equal(claimName('Zoe_Arcana#nope'), null);
+  assert.equal(claimName('zoe_arcana#a53cec37'), 'zoe_arcana');
+  assert.equal(claimName('Doryani'), 'Doryani');
+});
