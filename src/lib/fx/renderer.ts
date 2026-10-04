@@ -365,8 +365,6 @@ void main() {
     vec2 hb = vQ.xy;
     float H = vQ.w;
     vec2 qq = abs(vP) - hb + vQ.z;
-    // Fire rises rather than spreading sideways: past the ends, distance counts double.
-    qq.x *= qq.x > 0.0 ? 2.0 : 1.0;
     float d = length(max(qq, 0.0)) + min(max(qq.x, qq.y), 0.0) - vQ.z;
     // Flames reach highest above the top, a little way up the ends, barely below.
     float up = 1.0 - smoothstep(-hb.y, hb.y, vP.y);

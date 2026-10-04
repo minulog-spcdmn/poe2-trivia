@@ -535,9 +535,9 @@ const FIRE_REACH = 1.8;
 export function fire(el: Element, o: { height?: number; intensity?: number; blue?: number; fadeIn?: number } = {}): Handle {
   const radius = parseFloat(getComputedStyle(el).borderTopLeftRadius) || 0;
   const H = o.height ?? 40;
-  // The quad must hold the tallest tongue (FIRE_REACH times H above the top,
-  // half that past the ends) and the halo inside the 72% where the shader's
-  // fade toward the quad's border begins.
+  // The quad must hold the tallest tongue (FIRE_REACH times H, above the top
+  // and out from the top corners) and the halo inside the 72% where the
+  // shader's fade toward the quad's border begins.
   const room = (r: number) => (r + 16) / 0.72;
   return shape({
     type: ShapeType.Fire,
@@ -548,7 +548,7 @@ export function fire(el: Element, o: { height?: number; intensity?: number; blue
     calm: true,
     color: [1, 1, 1],
     update(f, _t, age, b) {
-      f.hw = room(b.w / 2 + (FIRE_REACH / 2) * H);
+      f.hw = room(b.w / 2 + FIRE_REACH * H);
       f.hh = room(b.h / 2 + FIRE_REACH * H);
       f.k = (o.intensity ?? 1) * Math.min(1, age / (o.fadeIn ?? 0.5));
       f.q[0] = b.w / 2;
