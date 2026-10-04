@@ -3,6 +3,8 @@
   import { fly, scale } from 'svelte/transition';
   import { session } from '../lib/session.svelte';
   import { MAX_PLAYERS, difficultyOf, rulesFor, type Difficulty, type GameMode } from '../lib/game';
+  import { DIFFICULTY_NAMES, describe, lockoutText } from '../lib/difficultyText';
+  import CustomDifficulty from './CustomDifficulty.svelte';
   import { MAX_NAME } from '../lib/names';
   import { inviteUrl } from '../lib/site';
   import Avatar from './Avatar.svelte';
@@ -12,23 +14,7 @@
 
   const TIMERS = [0, 10, 15, 20, 30, 45];
   const TARGETS = [5, 10, 15, 20];
-  const DIFFS: { id: Difficulty; name: string; blurb: string }[] = [
-    {
-      id: 'cruel',
-      name: 'Cruel',
-      blurb: 'Four options, all of the same kind (all rings, all bows…). Some questions ask you to find the art for a name.',
-    },
-    {
-      id: 'merciless',
-      name: 'Merciless',
-      blurb: 'Six options, half of them with names that look alike. The art is hidden under tiles that lift one by one.',
-    },
-    {
-      id: 'eternal',
-      name: 'Eternal',
-      blurb: 'Eight look-alike names, two of them made up. Tiles lift slowly, "find the art" pictures lose their colour, and some pictures are mirrored. Good luck, exile.',
-    },
-  ];
+  const DIFFS = (Object.entries(DIFFICULTY_NAMES) as [Difficulty, string][]).map(([id, name]) => ({ id, name }));
 
   const s = $derived(session.state!);
   const isHost = $derived(session.isHost);
@@ -101,8 +87,11 @@
   function setTimer(v: number) {
     session.dispatch({ type: 'settings', settings: { timer: v } });
   }
+  /** Host only: the custom difficulty's editor. */
+  let editing = $state(false);
   function setDifficulty(v: Difficulty) {
-    session.dispatch({ type: 'settings', settings: { difficulty: v } });
+    if (v === 'custom') editing = true;
+    if (v !== difficulty) session.dispatch({ type: 'settings', settings: { difficulty: v } });
   }
   function start() {
     session.dispatch({ type: 'start' });
@@ -113,6 +102,7 @@
   const waiting = $derived(s.spectators ?? []);
   const race = $derived(s.settings.mode === 'race');
   const difficulty = $derived(difficultyOf(s.settings.difficulty));
+  const lockout = $derived(rulesFor(s.settings).lockout);
 </script>
 
 <div class="lobby">
@@ -279,12 +269,29 @@
         <span class="label">Difficulty</span>
         <div class="seg">
           {#each DIFFS as d (d.id)}
-            <button class:on={difficulty === d.id} disabled={!isHost} onclick={() => setDifficulty(d.id)}>{d.name}</button>
+            {@const edit = d.id === 'custom' && difficulty === 'custom' && isHost}
+            <button
+              class:on={difficulty === d.id}
+              class:edit
+              disabled={!isHost}
+              onclick={() => setDifficulty(d.id)}
+              title={edit ? 'Edit the custom difficulty' : undefined}
+            >
+              {d.name}
+              {#if edit}
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4zM13.5 6.5l4 4" /></svg>
+              {/if}
+            </button>
           {/each}
         </div>
-        {#key difficulty}
-          <p class="blurb muted" in:fly={{ y: -4, duration: 250 }}>{DIFFS.find((d) => d.id === difficulty)?.blurb}</p>
-        {/key}
+        <!-- Every description sits in the same cell, so switching never changes the panel's height. -->
+        <div class="blurbs">
+          {#each DIFFS as d (d.id)}
+            <p class="blurb muted" class:shown={difficulty === d.id} aria-hidden={difficulty !== d.id}>
+              {describe({ ...s.settings, difficulty: d.id })}
+            </p>
+          {/each}
+        </div>
       </div>
 
       <div class="setting">
@@ -306,7 +313,9 @@
           <li>First to {s.settings.targetScore} wins.</li>
         {:else}
           <li>On your turn, choose one of three item categories.</li>
-          <li>A category you pick is locked for your next {rulesFor(s.settings.difficulty).lockout} turns.</li>
+          {#if lockout > 0}
+            <li>A category you pick is locked for {lockoutText(lockout)}.</li>
+          {/if}
           <li>Name the unique or lineage gem from its art; one answer is true.</li>
           <li>Correct answers score a point. First to {s.settings.targetScore} wins, once the round is finished.</li>
           <li>Tied at the top? The tied players settle it in a sudden-death deathmatch.</li>
@@ -323,6 +332,10 @@
     </section>
   </div>
 </div>
+
+{#if editing && isHost && difficulty === 'custom'}
+  <CustomDifficulty onclose={() => (editing = false)} />
+{/if}
 
 <style>
   .lobby {
@@ -667,11 +680,30 @@
   .mode-card:disabled:not(.on) {
     opacity: 0.5;
   }
-  .blurb {
+  .blurbs {
+    display: grid;
     margin: 0.5rem 0 0;
+  }
+  .blurb {
+    grid-area: 1 / 1;
+    margin: 0;
     font-size: 0.95rem;
     font-style: italic;
-    min-height: 2.8em;
+    opacity: 0;
+    visibility: hidden;
+    translate: 0 -4px;
+    transition:
+      opacity 0.25s,
+      translate 0.25s,
+      visibility 0s 0.25s;
+  }
+  .blurb.shown {
+    opacity: 1;
+    visibility: visible;
+    translate: 0 0;
+    transition:
+      opacity 0.25s,
+      translate 0.25s;
   }
   .seg {
     display: flex;
@@ -717,6 +749,20 @@
   }
   .seg > button:disabled:not(.on) {
     opacity: 0.5;
+  }
+  .seg > button.edit {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4em;
+  }
+  .seg > button svg {
+    width: 12px;
+    height: 12px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
   }
   .stepper {
     display: inline-flex;

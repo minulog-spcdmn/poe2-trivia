@@ -12,7 +12,7 @@ import {
   serializePrefs,
   type RoomPrefs,
 } from '../src/lib/prefs.ts';
-import type { Difficulty, Settings } from '../src/lib/game.ts';
+import { PRESETS, type Difficulty, type Settings } from '../src/lib/game.ts';
 
 const store = new Map<string, string>();
 (globalThis as { localStorage?: unknown }).localStorage = {
@@ -22,7 +22,8 @@ const store = new Map<string, string>();
 };
 beforeEach(() => store.clear());
 
-const custom: RoomPrefs = { targetScore: 15, timer: 45, difficulty: 'eternal', mode: 'turns', public: true, hideCode: true };
+const knobs = { ...PRESETS.cruel, options: 10, veil: 'slowest' as const, grayscale: 'all' as const, lockout: 0 };
+const custom: RoomPrefs = { targetScore: 15, timer: 45, difficulty: 'eternal', custom: knobs, mode: 'turns', public: true, hideCode: true };
 
 test('round-trips saved settings', () => {
   assert.deepEqual(parsePrefs(serializePrefs(custom)), custom);
@@ -128,5 +129,33 @@ test("saving keeps what another tab saved for the other fields", () => {
 
 test('a new room starts unlocked with the saved settings', () => {
   const s = roomSettings(custom);
-  assert.deepEqual(s, { targetScore: 15, timer: 45, difficulty: 'eternal', mode: 'turns', public: true, locked: false });
+  assert.deepEqual(s, { targetScore: 15, timer: 45, difficulty: 'eternal', custom: knobs, mode: 'turns', public: true, locked: false });
+});
+
+test('custom knobs are remembered; entries from before them, or with odd knobs, keep the rest', () => {
+  const mine = { ...custom, difficulty: 'custom' as const };
+  assert.deepEqual(parsePrefs(serializePrefs(mine)), mine);
+  const { custom: _, ...older } = custom;
+  assert.deepEqual(parsePrefs(JSON.stringify({ v: PREFS_VERSION, ...older })), older);
+  // A room that never used Custom keeps the saved knobs.
+  store.set(PREFS_KEY, serializePrefs(custom));
+  savePrefs(prefsFrom({ ...roomSettings(older), difficulty: 'cruel' }));
+  assert.deepEqual(parsePrefs(store.get(PREFS_KEY) ?? null), { ...custom, difficulty: 'cruel' });
+  const odd = { ...knobs, options: 5, veil: 'sideways', grayscale: true };
+  assert.deepEqual(parsePrefs(JSON.stringify({ v: PREFS_VERSION, ...custom, custom: odd }))?.custom, {
+    ...knobs,
+    options: PRESETS.merciless.options,
+    veil: PRESETS.merciless.veil,
+    grayscale: PRESETS.merciless.grayscale,
+  });
+});
+
+test('a custom room is stored so a build from before Custom still reads the entry', () => {
+  const mine = { ...custom, difficulty: 'custom' as const };
+  const raw = serializePrefs(mine);
+  const stored = JSON.parse(raw);
+  assert.ok(['cruel', 'merciless', 'eternal'].includes(stored.difficulty), 'an older build sees a preset');
+  assert.deepEqual(parsePrefs(raw), mine);
+  // Without knobs to go with it, the flag falls back to the preset.
+  assert.equal(parsePrefs(JSON.stringify({ ...stored, custom: undefined }))?.difficulty, stored.difficulty);
 });
