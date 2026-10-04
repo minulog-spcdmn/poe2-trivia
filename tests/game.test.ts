@@ -858,45 +858,46 @@ test('a returning guest waits for a seat in a full lobby, and gets one freed at 
   assert.deepEqual(s.spectators, []);
 });
 
-test('eternal swaps two decoys on name questions for made-up names', () => {
+test('merciless and eternal swap decoys on name questions for made-up names', () => {
   const engine = new Engine(items, { rng: seeded(21), fakes });
   const byId = new Map(items.map((it) => [it.id, it]));
-  for (const difficulty of ['cruel', 'merciless'] as Difficulty[]) {
+  const cruel = createGame(null, { targetScore: 5, timer: 0, difficulty: 'cruel', mode: 'turns', public: false, locked: false });
+  for (let i = 0; i < 200; i++) {
+    const q = engine.makeQuestion(cruel, engine.categories[i % engine.categories.length]);
+    assert.ok(!q.options.some(isFake), 'cruel has no fakes');
+  }
+  for (const difficulty of ['merciless', 'eternal'] as const) {
+    const { options, fakes: count } = PRESETS[difficulty];
     const s = createGame(null, { targetScore: 5, timer: 0, difficulty, mode: 'turns', public: false, locked: false });
-    for (let i = 0; i < 200; i++) {
+    let pairs = 0;
+    let answerPairs = 0;
+    let shownReal = 0;
+    for (let i = 0; i < 4000; i++) {
       const q = engine.makeQuestion(s, engine.categories[i % engine.categories.length]);
-      assert.ok(!q.options.some(isFake), `${difficulty} has no fakes`);
+      assert.equal(q.options.length, options);
+      const fakeIdx = q.options.flatMap((id, i) => (isFake(id) ? [i] : []));
+      if (q.mode === 'art') {
+        assert.deepEqual(fakeIdx, [], 'art questions only show real pictures');
+        continue;
+      }
+      assert.equal(fakeIdx.length, count, difficulty);
+      assert.equal(new Set(q.labels).size, q.labels.length, 'no name twice');
+      assert.ok(!isFake(q.itemId));
+      shownReal += q.options.length - fakeIdx.length;
+      for (const i of fakeIdx) {
+        // The fake's real twin is on screen, and the label is one of its fakes.
+        const source = q.options[i].split(':')[1];
+        assert.ok(q.options.includes(source), 'twin on screen');
+        assert.ok(fakes[byId.get(source)!.name].includes(q.labels[i]!));
+        pairs++;
+        if (source === q.itemId) answerPairs++;
+      }
     }
+    // The answer has a fake twin as often as any other real name on screen.
+    const expected = pairs / shownReal;
+    const actual = answerPairs / (shownReal / (options - count));
+    assert.ok(Math.abs(actual - expected) < 0.04, `${difficulty}: answer twinned ${actual.toFixed(3)} vs ${expected.toFixed(3)}`);
   }
-  const s = createGame(null, { targetScore: 5, timer: 0, difficulty: 'eternal', mode: 'turns', public: false, locked: false });
-  let pairs = 0;
-  let answerPairs = 0;
-  let shownReal = 0;
-  for (let i = 0; i < 4000; i++) {
-    const q = engine.makeQuestion(s, engine.categories[i % engine.categories.length]);
-    assert.equal(q.options.length, PRESETS.eternal.options);
-    const fakeIdx = q.options.flatMap((id, i) => (isFake(id) ? [i] : []));
-    if (q.mode === 'art') {
-      assert.deepEqual(fakeIdx, [], 'art questions only show real pictures');
-      continue;
-    }
-    assert.equal(fakeIdx.length, PRESETS.eternal.fakes);
-    assert.equal(new Set(q.labels).size, q.labels.length, 'no name twice');
-    assert.ok(!isFake(q.itemId));
-    shownReal += q.options.length - fakeIdx.length;
-    for (const i of fakeIdx) {
-      // The fake's real twin is on screen, and the label is one of its fakes.
-      const source = q.options[i].split(':')[1];
-      assert.ok(q.options.includes(source), 'twin on screen');
-      assert.ok(fakes[byId.get(source)!.name].includes(q.labels[i]!));
-      pairs++;
-      if (source === q.itemId) answerPairs++;
-    }
-  }
-  // The answer has a fake twin as often as any other real name on screen.
-  const expected = pairs / shownReal;
-  const actual = answerPairs / (shownReal / (PRESETS.eternal.options - PRESETS.eternal.fakes));
-  assert.ok(Math.abs(actual - expected) < 0.04, `answer twinned ${actual.toFixed(3)} vs ${expected.toFixed(3)}`);
 });
 
 test('made-up names stay hidden until the reveal, and never count as used items', () => {
