@@ -359,8 +359,9 @@ void main() {
     v = outlineGlow(d, vS.y, vS.z, vS.w, up, vP, time, seed, hot);
   } else if (type == 9) {
     // Fire rising off a rounded rectangle. q: half w, half h, corner radius,
-    // flame height (px). The colour is a gain on a black-body ramp: deep red
-    // at the tips, through orange and yellow, to white-hot at the roots.
+    // flame height (px). r: blue 0-1. The colour is a gain on a black-body
+    // ramp (deep red at the tips, through orange, to yellow at the roots);
+    // as it turns blue, the blue climbs from the roots to the tips.
     vec2 hb = vQ.xy;
     float H = vQ.w;
     vec2 qq = abs(vP) - hb + vQ.z;
@@ -385,12 +386,20 @@ void main() {
       float I = T * T * flick * 1.8;
       // Black body: red first, green only as it heats up, a touch of blue at the
       // hottest; the tone map takes the brightest roots toward yellow-white.
-      col = vC * vec3(1.0, 0.18 + 0.42 * T * T, 0.03 + 0.12 * T * T * T) * I;
+      vec3 orange = vec3(1.0, 0.18 + 0.42 * T * T, 0.03 + 0.12 * T * T * T);
+      vec3 blue = vec3(0.06 + 0.4 * T * T, 0.22 + 0.5 * T * T, 1.0);
+      // Blue climbs up from the roots like a gas flame's base, orange above it,
+      // so the two meet in a narrow seam rather than mixing into purple.
+      float rise = 1.0 - f;
+      float seam = vR.x > 0.0 ? vR.x * 1.1 + 0.05 + (tongue - 0.5) * 0.25 : -1.0;
+      col = vC * mix(blue, orange, smoothstep(seam - 0.06, seam + 0.06, rise)) * I;
       v = 1.0;
     }
     // A faint heat halo hugging the outline.
     float halo = exp(-abs(d) / (5.0 + H * 0.1)) * smoothstep(-6.0, 0.0, d) * 0.25;
-    col = v > 0.0 ? col + vC * vec3(0.5, 0.1, 0.02) * halo : vC * vec3(0.5, 0.1, 0.02);
+    // It hugs the roots, so it turns blue with them.
+    vec3 haloCol = vR.x > 0.0 ? vec3(0.04, 0.12, 0.5) : vec3(0.5, 0.1, 0.02);
+    col = v > 0.0 ? col + vC * haloCol * halo : vC * haloCol;
     v = v > 0.0 ? 1.0 : halo;
   } else {
     // Sigil: an arcane circle that draws itself. q: radius, line width,

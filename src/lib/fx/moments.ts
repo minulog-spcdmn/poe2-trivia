@@ -28,6 +28,7 @@ import { Shape } from './particles';
 import { budget, particle, task } from './core';
 import { light, pulseMood, setMood } from '../lights';
 import { CALM, embers as backdropEmbers } from '../backdropEmbers';
+import { blueOf } from './streaks';
 
 const k3 = (c: Vec3, k: number): Vec3 => [c[0] * k, c[1] * k, c[2] * k];
 
@@ -443,15 +444,19 @@ export function scored(pill: Element, streak = 1) {
 /**
  * A player on a streak burns: their scoreboard entry is wreathed in fire,
  * with flames licking up off it. `heat` (0 to 1, from lib/fx/streaks) sets
- * how big: a few low flames at three in a row, a roaring blaze by eight.
+ * how big: a faint smoulder at three in a row, a blaze by ten, turning
+ * blue at the very top of a streak.
  * Returns a handle to put it out.
  */
 export function ablaze(row: Element, heat: number): Handle {
   if (!fxActive() || heat <= 0) return { stop() {} };
-  const flames = fire(row, { height: 6 + 66 * heat, intensity: 0.45 + 1.0 * heat });
+  // At the very top of a streak the fire burns blue.
+  const blue = blueOf(heat);
+  const flames = fire(row, { height: 6 + 66 * heat, intensity: 0.45 + 1.0 * heat, blue });
+  const sparkColors = blue > 0.5 ? [C.portal, C.portalPale] : [C.ember, C.gold];
   // Sparks spat out of the fire, drifting up.
   const rising = emitter(14 * heat, () =>
-    embers(row, { count: 1, area: 'top', colors: [C.ember, C.gold], size: [0.8, 1.8], rise: [70, 120 + 140 * heat], scatter: 30, life: [0.5, 0.9 + 0.6 * heat] }),
+    embers(row, { count: 1, area: 'top', colors: sparkColors, size: [0.8, 1.8], rise: [70, 120 + 140 * heat], scatter: 30, life: [0.5, 0.9 + 0.6 * heat] }),
   );
   return {
     stop(fade = 0.5) {

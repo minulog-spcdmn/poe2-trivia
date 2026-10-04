@@ -9,7 +9,7 @@
   import type { Handle } from '../lib/fx/core';
   import { FILL_SPAN, FILL_START, SCORE_LANDS, ablaze, doused, lostPoint } from '../lib/fx/moments';
   import { scoreRow, scoreRowOf } from '../lib/scoreRows';
-  import { heatOf, streakOf } from '../lib/fx/streaks';
+  import { blueOf, heatOf, streakOf } from '../lib/fx/streaks';
 
   const s = $derived(session.state!);
   const target = $derived(s.settings.targetScore);
@@ -127,6 +127,7 @@
       use:burn={fire}
       class:ablaze={fire > 0}
       style:--heat={fire}
+      style:--blue={blueOf(fire) > 0 ? 1 : 0}
       class:active class:out class:benched class:duelist class:offline={!p.connected} animate:flip={{ duration: 400 }} style:--c={playerColor(p.hue)}>
       <Avatar name={p.name} hue={p.hue} size={32} dim={!p.connected} />
       <div class="info">
@@ -220,7 +221,9 @@
   }
   /* On a streak: the entry smoulders under its flames (and still glows with effects off). */
   li.ablaze {
-    border-color: rgba(255, 140, 50, calc(0.5 + 0.5 * var(--heat)));
+    /* Orange, and blue once the fire's roots burn blue at the top of a streak. */
+    --flame: color-mix(in srgb, rgb(70, 140, 255) calc(var(--blue) * 100%), rgb(255, 110, 30));
+    border-color: color-mix(in srgb, var(--flame) calc(50% + 50% * var(--heat)), transparent);
   }
   li.ablaze::before {
     content: '';
@@ -230,8 +233,8 @@
     border-radius: inherit;
     pointer-events: none;
     box-shadow:
-      0 0 calc(8px + 20px * var(--heat)) calc(4px * var(--heat)) rgba(255, 110, 30, calc(0.35 + 0.4 * var(--heat))),
-      0 calc(-6px * var(--heat)) calc(14px + 26px * var(--heat)) rgba(255, 80, 20, calc(0.2 + 0.4 * var(--heat)));
+      0 0 calc(8px + 20px * var(--heat)) calc(4px * var(--heat)) color-mix(in srgb, var(--flame) calc(35% + 40% * var(--heat)), transparent),
+      0 calc(-6px * var(--heat)) calc(14px + 26px * var(--heat)) color-mix(in srgb, var(--flame) calc(20% + 40% * var(--heat)), transparent);
     animation: smoulder calc(1.4s - 0.8s * var(--heat)) ease-in-out infinite alternate;
   }
   @keyframes smoulder {
