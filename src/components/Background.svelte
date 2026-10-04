@@ -30,7 +30,9 @@
   });
 </script>
 
-<div class="bg" class:css={!webgl} aria-hidden="true">
+<!-- Behind a dialog the WebGL backdrop darkens itself (lib/behindDialog.ts); the
+     CSS one takes the filter, without the blur, which would fade its edges. -->
+<div class="bg" class:css={!webgl} data-behind-dialog={webgl ? undefined : 'dim'} aria-hidden="true">
   <canvas bind:this={canvas} class:hidden={failed}></canvas>
   {#if !webgl}
     <div class="glow"></div>

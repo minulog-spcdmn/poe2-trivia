@@ -6,9 +6,10 @@
 // reduced motion, or when WebGL2 isn't available; every call below is then a
 // cheap no-op, so callers never need to check.
 
-import { FxRenderer, SHAPE_FLOATS, ShapeType } from './renderer';
+import { FxRenderer, SHAPE_FLOATS, ShapeType, type DialogLight } from './renderer';
 import { ParticlePool, type ParticleSpec } from './particles';
 import { opacityOf } from '../opacity';
+import { dialogBox, openDialog } from '../behindDialog';
 
 export type Vec3 = readonly [number, number, number];
 export type Point = { x: number; y: number };
@@ -78,6 +79,8 @@ type LiveShape = ShapeSpec & {
   stopped: boolean;
   /** The anchor's opacity, when followed. */
   opacity: number;
+  /** Light from the page, which an open dialog hides (see onPage). */
+  page: boolean;
   f: ShapeFrame;
 };
 
@@ -192,9 +195,26 @@ export function now() {
 
 // ---------- spawning ----------
 
+/**
+ * Whether light starting at `a` belongs to the page, which an open dialog
+ * hides and dims (lib/behindDialog.ts), rather than to the dialog itself:
+ * everything but effects that start inside the open dialog. It stays the
+ * page's or the dialog's for its whole life, wherever it goes.
+ */
+function onPage(a: Anchor): boolean {
+  const { backdrop } = openDialog();
+  if (!backdrop) return true;
+  if (a instanceof Element) return !backdrop.contains(a);
+  const box = dialogBox();
+  if (!box) return true;
+  const { x, y } = boxOf(a);
+  const r = box.rect;
+  return x < r.left || x > r.right || y < r.top || y > r.bottom;
+}
+
 export function particle(p: ParticleSpec) {
   if (!fxActive()) return;
-  pool!.spawn(p);
+  pool!.spawn(p, onPage(p));
   wake();
 }
 
@@ -241,6 +261,7 @@ export function shape(spec: ShapeSpec): Handle {
     fadeTotal: 0,
     stopped: false,
     opacity: 1,
+    page: onPage(spec.at),
     f: { hw: 0, hh: 0, k: 1, q: new Array(12).fill(0) },
   };
   shapes.push(s);
@@ -364,7 +385,7 @@ function writeShape(i: number, s: LiveShape, t: number) {
   shapeData[o + 8] = c[0] * k;
   shapeData[o + 9] = c[1] * k;
   shapeData[o + 10] = c[2] * k;
-  shapeData[o + 11] = 0;
+  shapeData[o + 11] = s.page ? 1 : 0;
   for (let j = 0; j < 12; j++) shapeData[o + 12 + j] = f.q[j] ?? 0;
 }
 
@@ -501,13 +522,20 @@ function simulate(dt: number, nowMs: number, render: boolean): boolean {
   const busy = nParticles > 0 || nShapes > 0 || tasks.length > 0 || shake.trauma > 0 || shapes.length > 0 || pool.count > 0;
   if (!render) return busy;
   if (nParticles > 0 || nShapes > 0) {
-    renderer.draw([viewW, viewH], dpr, pool.instances, nParticles, shapeData, nShapes, nCrisp);
+    renderer.draw([viewW, viewH], dpr, pool.instances, nParticles, shapeData, nShapes, nCrisp, dialogNow());
     show(true);
   } else {
     renderer.clear();
     show(false);
   }
   return busy;
+}
+
+/** The open dialog, which hides the page's light behind it and dims all light outside it (lib/behindDialog.ts). */
+function dialogNow(): DialogLight {
+  const { amount } = openDialog();
+  const box = amount > 0 ? dialogBox() : null;
+  return { amount, box: box?.rect ?? null, radius: box?.radius ?? 0 };
 }
 
 /**

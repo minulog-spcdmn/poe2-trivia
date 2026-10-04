@@ -156,8 +156,9 @@
 </div>
 
 {#if showIntro && dm}
-  <div class="dm-intro" use:portal transition:fade={{ duration: 400 }} aria-live="polite">
-    <div class="dm-intro-inner" in:scale={{ start: 1.6, duration: 600, opacity: 0 }}>
+  <!-- Behind a dialog the flat fill only darkens (a blur would thin its edges) and the words blur. -->
+  <div class="dm-intro" use:portal={'dim'} transition:fade={{ duration: 400 }} aria-live="polite">
+    <div class="dm-intro-inner" data-behind-dialog="blur" in:scale={{ start: 1.6, duration: 600, opacity: 0 }}>
       <p class="dm-kicker">It's a tie</p>
       <h1 use:introFx>Deathmatch</h1>
       <div class="dm-faces">

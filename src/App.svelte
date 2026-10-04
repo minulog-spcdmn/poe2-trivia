@@ -5,6 +5,7 @@
   import { getVolume, isMuted, setMuted, setVolume, sfx } from './lib/sound';
   import { fxAvailable, fxUserOn, onFxChange, setFxOn, shakeTarget } from './lib/fx/core';
   import { IMPRINT_URL, PRIVACY_URL } from './lib/site';
+  import { dialogBackdrop } from './lib/behindDialog';
   import Background from './components/Background.svelte';
   import FxLayer from './components/FxLayer.svelte';
   import Toasts from './components/Toasts.svelte';
@@ -103,7 +104,7 @@
 
 <Background />
 
-<div class="shell" bind:this={shell}>
+<div class="shell" data-behind-dialog bind:this={shell}>
   {#if screen !== 'home'}
     <header in:fade={{ duration: 300 }} bind:offsetHeight={headerHeight}>
       <button class="brand" onclick={() => (confirmLeave = true)} title="Leave game">
@@ -217,7 +218,7 @@
 <FxLayer />
 
 {#if confirmLeave}
-  <div class="modal-backdrop" transition:fade={{ duration: 150 }} onclick={() => (confirmLeave = false)}
+  <div class="modal-backdrop" use:dialogBackdrop transition:fade={{ duration: 150 }} onclick={() => (confirmLeave = false)}
     onkeydown={(e) => e.key === 'Escape' && (confirmLeave = false)}
     role="presentation"
   >
@@ -496,13 +497,12 @@
   .modal-backdrop {
     position: fixed;
     inset: 0;
-    /* Above the effects layer (z-index 95), which it dims and blurs like the rest of the page. */
-    z-index: 100;
+    /* Below the effects layer (z-index 95), so the dialog's buttons get their
+       effects; the page behind dims itself (lib/behindDialog.ts). */
+    z-index: 94;
     display: grid;
     place-items: center;
     padding: 1rem;
-    background: rgba(0, 0, 0, 0.65);
-    backdrop-filter: blur(3px);
   }
   .modal {
     width: min(420px, 100%);
