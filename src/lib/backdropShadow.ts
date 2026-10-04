@@ -37,7 +37,12 @@ import { linearOf, type Lin } from './linear';
 import { opacityOf } from './opacity';
 
 export type Fill = 'linear' | 'stage';
-export type BackdropOptions = { fill?: Fill } | undefined;
+/**
+ * `off` leaves the element to CSS for now: for one that something with a
+ * background of its own has come to cover (as the scoreboard pinned over the
+ * page on phones), which would hide whatever the backdrop drew under it.
+ */
+export type BackdropOptions = { fill?: Fill; off?: boolean } | undefined;
 
 const shadowed = new Map<HTMLElement, BackdropOptions>();
 
@@ -268,7 +273,7 @@ export function measureShadows(
   const linears = new Map<Element, Lin | null>();
 
   // Fills first when there are more elements than room, then document order.
-  const nodes = [...shadowed.keys()].filter((n) => n.isConnected);
+  const nodes = [...shadowed.keys()].filter((n) => n.isConnected && !shadowed.get(n)?.off);
   nodes.sort((a, b) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
   const withFill = nodes.filter((n) => shadowed.get(n)?.fill);
   const chosen = new Set([...withFill, ...nodes.filter((n) => !shadowed.get(n)?.fill)].slice(0, max));

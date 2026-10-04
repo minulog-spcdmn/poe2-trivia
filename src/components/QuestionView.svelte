@@ -8,19 +8,22 @@
   import { visibleBox } from '../lib/patches';
   import { itemImage } from '../lib/ui';
   import { sfx } from '../lib/sound';
-  import TimerRing from './TimerRing.svelte';
   import Avatar from './Avatar.svelte';
   import ArtImage from './ArtImage.svelte';
   import { backdropShadow } from '../lib/backdropShadow';
   import ArcaneCircle from './ArcaneCircle.svelte';
   import NamePlate from './NamePlate.svelte';
-  import { untrack } from 'svelte';
-  import { MediaQuery } from 'svelte/reactivity';
+  import { untrack, type Snippet } from 'svelte';
   import { FILL_START, answerCharging, artRevealed, raceMiss, reveal as revealFx, veilComplete, veilHandoff, type VerdictTone } from '../lib/fx/moments';
   import { FILL_LEAD } from '../lib/soundDesign';
   import { streakOf } from '../lib/fx/streaks';
   import { scoreRowOf } from '../lib/scoreRows';
   import { fxActive, type Handle } from '../lib/fx/core';
+  import { dock, narrow, phone } from '../lib/layout';
+  import { portal } from '../lib/portal';
+
+  /** The question's timer (Game.svelte has it in the scoreboard on phones instead). */
+  let { timer }: { timer?: Snippet } = $props();
 
   const s = $derived(session.state!);
   const q = $derived(s.question!);
@@ -36,8 +39,8 @@
   const myMiss = $derived(race && me ? q.misses.find((m) => m.playerId === me) : undefined);
   const winner = $derived(reveal?.winnerId ? s.players.find((p) => p.id === reveal.winnerId) : undefined);
   const iWon = $derived(race ? !!me && reveal?.winnerId === me : !!reveal?.correct);
-  // Phones have no room beside the timer: the verdict goes on the task line, under the category.
-  const narrow = new MediaQuery('(max-width: 760px)');
+  // Narrow screens have no room beside the timer: the verdict goes on the
+  // task line, beside or under the category (lib/layout.ts).
   /**
    * The verdict badge at the reveal: its word, icon and colour (violet
    * for running out of time, gold for a race someone else solved while you watch).
@@ -67,7 +70,6 @@
     untrack(tick);
     return () => cancelAnimationFrame(frame);
   });
-  const timerTotal = $derived(q.deadline ? Math.round((q.deadline - q.askedAt) / 1000) : 0);
   const count = $derived(q.labels.length);
   // Pictures the host has sent for this question.
   const media = $derived(shown.qid === q.askedAt ? shown : null);
@@ -272,6 +274,8 @@
 
   /** Answer buttons (or picture tiles), by option index. */
   let optionEls = $state<HTMLElement[]>([]);
+  /** At the reveal on phones, the answer to keep clear of the docked bar: the one picked, else the right one. */
+  const keepInView = $derived(reveal ? optionEls[(race ? myMiss?.index : reveal.chosenIndex) ?? reveal.correctIndex] : null);
   /** The art stage (name questions) or the picture grid (art questions). */
   let artEl = $state<HTMLElement | null>(null);
   let verdictEl = $state<HTMLElement | null>(null);
@@ -481,11 +485,11 @@
   {:else if race && myMiss}
     <p class="spectate out">Wrong: −1. You're out until the next question.</p>
   {:else if race}
-    <p class="spectate muted">First correct answer wins. Wrong costs a point! Press 1–{count === 10 ? '9 and 0' : count}.</p>
+    <p class="spectate muted">First correct answer wins. Wrong costs a point!<span class="keys"> Press 1–{count === 10 ? '9 and 0' : count}.</span></p>
   {:else if !mine}
     <p class="spectate muted">{active.name} is deciding…</p>
   {:else}
-    <p class="spectate muted">Tip: press 1–{count === 10 ? '9 and 0' : count} to answer.</p>
+    <p class="spectate muted keys">Tip: press 1–{count === 10 ? '9 and 0' : count} to answer.</p>
   {/if}
 {/snippet}
 
@@ -496,12 +500,13 @@
       <span class="task-text" class:answered={narrow.current && !!verdict}>{q.mode === 'art' ? 'Pick the art that matches the name' : 'Name this item'}</span>
       {#if narrow.current}{@render verdictBadge()}{/if}
     </span>
-    <div class="clock">
-      {#if !narrow.current}{@render verdictBadge()}{/if}
-      {#if q.deadline}
-        <TimerRing deadline={q.deadline} total={timerTotal} stopped={!!reveal} />
-      {/if}
-    </div>
+    <!-- Phones have the timer in the scoreboard pinned to the top (Game.svelte). -->
+    {#if !narrow.current || timer}
+      <div class="clock">
+        {#if !narrow.current}{@render verdictBadge()}{/if}
+        {@render timer?.()}
+      </div>
+    {/if}
   </div>
 
   {#if q.mode === 'art'}
@@ -638,7 +643,17 @@
     </div>
   {/if}
 
-  <div class="footer">{@render footer()}</div>
+  <div class="footer">
+    {#if reveal && phone.current}
+      <!-- Phones: the result and Next button stay at the bottom of the screen, in
+           reach of a thumb, however far down the answers have been scrolled. -->
+      <div class="dock" use:portal use:dock={keepInView} in:fade={{ duration: 200 }} out:fade|global={{ duration: 180 }}>
+        {@render footer()}
+      </div>
+    {:else}
+      {@render footer()}
+    {/if}
+  </div>
 </div>
 
 <style>
@@ -1491,20 +1506,18 @@
       min-height: 0;
       margin-bottom: 0.8rem;
     }
-    .task {
-      order: 3;
-      flex-basis: 100%;
-      font-size: 0.95rem;
-    }
     .footer {
       margin-top: 1rem;
     }
     .chip {
       margin-right: auto;
     }
-    /* Phones: the task line is a chip's height, so the verdict can take its
-       place at the reveal, under the category, without moving anything. */
+    /* Phones: the task line (beside the category when there's room, under it
+       when not) is a chip's height, so the verdict can take its place at the
+       reveal without moving anything. */
     .task {
+      flex: 1 1 12rem;
+      font-size: 0.95rem;
       display: grid;
       align-items: center;
       justify-items: start;
@@ -1555,6 +1568,96 @@
     .tile,
     .tiles.many .tile {
       height: 150px;
+    }
+  }
+
+  /* Touch screens have no number keys to press. */
+  @media (hover: none) and (pointer: coarse) {
+    .keys {
+      display: none;
+    }
+  }
+
+  @media (max-width: 640px) {
+    /* Fixed rather than sticky: a sticky bar would stop at the end of the
+       question, with the legal links below it. */
+    .dock {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      /* Under the toasts (90) and the effects layer (95). */
+      z-index: 20;
+      padding: 0.6rem max(1rem, env(safe-area-inset-right)) max(0.6rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
+      background-color: var(--pinned-bg);
+      -webkit-backdrop-filter: var(--pinned-blur);
+      backdrop-filter: var(--pinned-blur);
+      border-top: var(--pinned-line);
+      box-shadow: 0 -8px var(--pinned-shadow);
+    }
+    .dock .result p {
+      font-size: 1rem;
+    }
+    /* Tighter all round, so less scrolling from the art down to the answers.
+       Answers stay 48px tall, a comfortable tap. */
+    .topline {
+      margin-bottom: 0.6rem;
+    }
+    /* Two lines high, before and at the reveal alike, so the art below never
+       moves: the Mirrored line goes beside the base type. (Only a name long
+       enough to wrap makes it grow.) */
+    .head {
+      height: auto;
+      min-height: 54px;
+      padding: 0.3rem 1.6rem;
+    }
+    .head-text {
+      flex-flow: row wrap;
+      justify-content: center;
+      align-items: baseline;
+      column-gap: 0.6em;
+    }
+    .head-text .iname {
+      flex-basis: 100%;
+      text-align: center;
+    }
+    .art {
+      height: clamp(180px, 32svh, 230px);
+    }
+    .stage {
+      gap: 0.75rem;
+    }
+    /* Longer lists a little tighter still, as on wide screens (the answers
+       48, 46 and 44px tall). */
+    .options {
+      gap: 0.5rem;
+    }
+    .options.compact {
+      gap: 0.45rem;
+    }
+    .options.dense {
+      gap: 0.4rem;
+    }
+    .option {
+      padding-top: 0.55rem;
+      padding-bottom: 0.55rem;
+    }
+    .compact .option {
+      padding-top: 0.5rem;
+      padding-bottom: 0.5rem;
+    }
+    .dense .option {
+      padding-top: 0.45rem;
+      padding-bottom: 0.45rem;
+    }
+    .tile,
+    .tiles.many .tile {
+      height: 140px;
+    }
+    /* Only a line of text now and then (the reveal's bar is docked). */
+    .footer {
+      min-height: 0;
+      margin-top: 0.75rem;
     }
   }
 </style>

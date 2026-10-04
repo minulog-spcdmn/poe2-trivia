@@ -2,7 +2,7 @@
   import { flip } from 'svelte/animate';
   import { fly, scale } from 'svelte/transition';
   import { session } from '../lib/session.svelte';
-  import { MAX_PLAYERS, difficultyOf, rulesFor, type Difficulty, type GameMode } from '../lib/game';
+  import { MAX_PLAYERS, RACE_DEFAULT_TIMER, TIMER_STEPS, difficultyOf, rulesFor, type Difficulty, type GameMode } from '../lib/game';
   import { DIFFICULTY_NAMES, describe, lockoutText } from '../lib/difficultyText';
   import CustomDifficulty from './CustomDifficulty.svelte';
   import { MAX_NAME, isHeldName, nameHeld, nameTooShort } from '../lib/names';
@@ -13,7 +13,6 @@
   import { creatorArrived, glyphLanded, playerArrived, refuse, twinkle } from '../lib/fx/moments';
   import { onMount } from 'svelte';
 
-  const TIMERS = [0, 10, 15, 20, 30, 45];
   const TARGETS = [5, 10, 15, 20];
   const DIFFS = (Object.entries(DIFFICULTY_NAMES) as [Difficulty, string][]).map(([id, name]) => ({ id, name }));
 
@@ -98,7 +97,7 @@
     session.dispatch({ type: 'settings', settings: { targetScore: v } });
   }
   function setMode(mode: GameMode) {
-    session.dispatch({ type: 'settings', settings: mode === 'race' && s.settings.timer === 0 ? { mode, timer: 20 } : { mode } });
+    session.dispatch({ type: 'settings', settings: mode === 'race' && s.settings.timer === 0 ? { mode, timer: RACE_DEFAULT_TIMER } : { mode } });
   }
   function setLocked(v: boolean) {
     session.dispatch({ type: 'settings', settings: { locked: v } });
@@ -322,7 +321,7 @@
       <div class="setting">
         <span class="label">Time per question</span>
         <div class="seg">
-          {#each TIMERS as t (t)}
+          {#each TIMER_STEPS as t (t)}
             <button class:on={s.settings.timer === t} disabled={!isHost || (race && t === 0)} onclick={() => setTimer(t)}>
               {t === 0 ? 'Off' : `${t}s`}
             </button>
