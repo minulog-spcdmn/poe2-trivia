@@ -5,11 +5,14 @@
   import Avatar from './Avatar.svelte';
   import PlayerName from './PlayerName.svelte';
   import { backdropShadow } from '../lib/backdropShadow';
-  import { untrack } from 'svelte';
+  import { untrack, type Snippet } from 'svelte';
   import { fxActive, onFxChange, type Handle } from '../lib/fx/core';
   import { FILL_SPAN, FILL_START, SCORE_LANDS, ablaze, doused, lostPoint, turnsBlue } from '../lib/fx/moments';
   import { scoreRow, scoreRowOf } from '../lib/scoreRows';
   import { burnsBlue, heatOf, streakOf } from '../lib/fx/streaks';
+
+  /** Shown at the end of the row (the timer, on phones). */
+  let { aside }: { aside?: Snippet } = $props();
 
   const s = $derived(session.state!);
   const target = $derived(s.settings.targetScore);
@@ -149,54 +152,70 @@
     confirming = null;
     session.kick(id);
   }
+
+  // Stuck: the strip sticks 1px above the top of the screen, so once it has,
+  // it no longer fits in the view.
+  let stuck = $state(false);
+  function sticking(node: HTMLElement) {
+    const io = new IntersectionObserver(([e]) => (stuck = e.intersectionRatio < 1 && e.boundingClientRect.top < 0), {
+      threshold: 1,
+    });
+    io.observe(node);
+    return { destroy: () => io.disconnect() };
+  }
 </script>
 
-<ol class="board">
-  {#each s.players as p, i (p.id)}
-    {@const active = race ? s.phase === 'reveal' && s.reveal?.winnerId === p.id : i === s.turn && s.phase !== 'over'}
-    {@const out = race && s.phase !== 'over' && missed.has(p.id)}
-    {@const benched = !!s.deathmatch && s.phase !== 'over' && !s.deathmatch.alive.includes(p.id)}
-    {@const duelist = !!s.deathmatch && s.phase !== 'over' && s.deathmatch.alive.includes(p.id)}
-    {@const score = scoreOf(p.id, p.score)}
-    {@const fire = heat[p.id] ?? 0}
-    <li
-      use:backdropShadow
-      use:scoreRow={p.id}
-      use:burn={fire}
-      class:ablaze={fire > 0}
-      style:--heat={fire}
-      style:--blue={burnsBlue(fire) ? 1 : 0}
-      class:active class:out class:benched class:duelist class:offline={!p.connected} animate:flip={{ duration: 400 }} style:--c={playerColor(p.hue)}>
-      <Avatar name={p.name} hue={p.hue} size={32} dim={!p.connected} />
-      <div class="info">
-        <span class="name">
-          <PlayerName name={p.name} />{#if session.mode !== 'local' && p.id === session.myPlayerId}<em>&nbsp;(you)</em>{/if}
-        </span>
-        <span class="bar" class:filling={filling[p.id]} style:--fill-span="{FILL_SPAN}s"
-          ><span style:width="{Math.max(0, Math.min(100, (barOf(p.id, p.score) / target) * 100))}%"></span></span
-        >
-      </div>
-      {#key score}
-        <span class="score" class:negative={score < 0} class:bump={race ? active : score > 0} class:down={out}
-          >{score}</span
-        >
-      {/key}
-      {#if !p.connected}<span class="off" title="Disconnected">⚡</span>{/if}
-      {#if canKick && p.id !== s.hostId}
-        <button
-          class="kick"
-          class:confirm={confirming === p.id}
-          onclick={() => kick(p.id)}
-          title="Remove {p.name} from the game"
-          aria-label="Remove {p.name}"
-        >
-          {confirming === p.id ? 'Kick?' : '×'}
-        </button>
-      {/if}
-      {#if out}<span class="x" title="Answered wrong">✕</span>{/if}
-    </li>
-  {/each}
-</ol>
+<!-- On phones the row sticks to the top of the screen; once it has, it takes a
+     background of its own over the content scrolling under it. -->
+<div class="strip" class:stuck use:sticking>
+  <ol class="board" class:crowded={s.players.length > 5}>
+    {#each s.players as p, i (p.id)}
+      {@const active = race ? s.phase === 'reveal' && s.reveal?.winnerId === p.id : i === s.turn && s.phase !== 'over'}
+      {@const out = race && s.phase !== 'over' && missed.has(p.id)}
+      {@const benched = !!s.deathmatch && s.phase !== 'over' && !s.deathmatch.alive.includes(p.id)}
+      {@const duelist = !!s.deathmatch && s.phase !== 'over' && s.deathmatch.alive.includes(p.id)}
+      {@const score = scoreOf(p.id, p.score)}
+      {@const fire = heat[p.id] ?? 0}
+      <li
+        use:backdropShadow
+        use:scoreRow={p.id}
+        use:burn={fire}
+        class:ablaze={fire > 0}
+        style:--heat={fire}
+        style:--blue={burnsBlue(fire) ? 1 : 0}
+        class:active class:out class:benched class:duelist class:offline={!p.connected} animate:flip={{ duration: 400 }} style:--c={playerColor(p.hue)}>
+        <Avatar name={p.name} hue={p.hue} size={32} dim={!p.connected} />
+        <div class="info">
+          <span class="name">
+            <PlayerName name={p.name} />{#if session.mode !== 'local' && p.id === session.myPlayerId}<em>&nbsp;(you)</em>{/if}
+          </span>
+          <span class="bar" class:filling={filling[p.id]} style:--fill-span="{FILL_SPAN}s"
+            ><span style:width="{Math.max(0, Math.min(100, (barOf(p.id, p.score) / target) * 100))}%"></span></span
+          >
+        </div>
+        {#key score}
+          <span class="score" class:negative={score < 0} class:bump={race ? active : score > 0} class:down={out}
+            >{score}</span
+          >
+        {/key}
+        {#if !p.connected}<span class="off" title="Disconnected">⚡</span>{/if}
+        {#if canKick && p.id !== s.hostId}
+          <button
+            class="kick"
+            class:confirm={confirming === p.id}
+            onclick={() => kick(p.id)}
+            title="Remove {p.name} from the game"
+            aria-label="Remove {p.name}"
+          >
+            {confirming === p.id ? 'Kick?' : '×'}
+          </button>
+        {/if}
+        {#if out}<span class="x" title="Answered wrong">✕</span>{/if}
+      </li>
+    {/each}
+  </ol>
+  {@render aside?.()}
+</div>
 {#if spectators.length}
   <p class="watching">
     <span class="eye" aria-hidden="true">👁</span>
@@ -507,19 +526,102 @@
   }
 
   @media (max-width: 640px) {
+    /* Pinned to the top of the screen while playing (lib/layout.ts): one slim
+       row of avatars and scores, with the name and progress of whoever's turn
+       it is, and the timer at the end. Sticky rather than fixed, so it shakes
+       with the page and the effects aimed at a score land where it is. */
+    .strip {
+      position: sticky;
+      /* 1px above the top, so it knows when it's stuck (see sticking). */
+      top: -1px;
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      /* Edge to edge, over the game's side padding. */
+      margin: 0 -1rem;
+      padding: calc(1px + 0.35rem) max(1rem, env(safe-area-inset-right)) 0.35rem max(1rem, env(safe-area-inset-left));
+      border-bottom: 1px solid transparent;
+      transition:
+        background-color 0.25s,
+        border-color 0.25s,
+        box-shadow 0.25s;
+    }
+    .strip.stuck {
+      background-color: rgba(10, 8, 6, 0.88);
+      -webkit-backdrop-filter: blur(10px);
+      backdrop-filter: blur(10px);
+      border-bottom-color: rgba(125, 99, 51, 0.35);
+      box-shadow: 0 8px 22px rgba(0, 0, 0, 0.55);
+    }
+    /* One row while it fits (the name of whoever's turn it is gives way first). */
     .board {
-      gap: 0.4rem;
+      flex: 1;
+      min-width: 0;
+      flex-wrap: nowrap;
+      justify-content: flex-start;
+      gap: 0.45rem 0.6rem;
+      padding: 0.35rem 0;
+    }
+    .board.crowded {
+      flex-wrap: wrap;
     }
     li {
+      flex: none;
       min-width: 0;
-      padding: 0.3rem 0.6rem 0.3rem 0.3rem;
+      gap: 0.4rem;
+      padding: 2px 0.6rem 2px 2px;
+    }
+    li.active {
+      flex: 0 1 auto;
+    }
+    li :global(.avatar) {
+      width: 28px;
+      height: 28px;
+    }
+    /* The others are an avatar with their score on it. Their names stay for screen readers. */
+    li:not(.active) {
+      padding: 2px;
+    }
+    li:not(.active) .info {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+    }
+    li:not(.active) .score {
+      position: absolute;
+      right: -6px;
+      bottom: -4px;
+      display: grid;
+      place-items: center;
+      min-width: 18px;
+      height: 18px;
+      padding: 0 4px;
+      font-size: 0.72rem;
+      line-height: 1;
+      background: #0c0a08;
+      border: 1px solid color-mix(in srgb, var(--c), black 30%);
+      border-radius: 9px;
+    }
+    li.active .info {
+      min-width: 0;
+    }
+    /* No pointer down into the content scrolling under the strip. */
+    li.active::after {
+      display: none;
     }
     .name {
-      max-width: 5.5rem;
+      max-width: 6rem;
       font-size: 0.85rem;
     }
     .score {
       font-size: 1.05rem;
+    }
+    /* Where the ⚡ sits on a lone avatar. */
+    li:not(.active) .off {
+      left: 20px;
     }
   }
 </style>

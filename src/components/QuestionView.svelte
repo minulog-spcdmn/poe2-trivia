@@ -19,6 +19,7 @@
   import { streakOf } from '../lib/fx/streaks';
   import { scoreRowOf } from '../lib/scoreRows';
   import { fxActive, type Handle } from '../lib/fx/core';
+  import { phone } from '../lib/layout';
 
   const s = $derived(session.state!);
   const q = $derived(s.question!);
@@ -451,11 +452,11 @@
   {:else if race && myMiss}
     <p class="spectate out">Wrong: −1. You're out until the next question.</p>
   {:else if race}
-    <p class="spectate muted">First correct answer wins. Wrong costs a point! Press 1–{count === 10 ? '9 and 0' : count}.</p>
+    <p class="spectate muted">First correct answer wins. Wrong costs a point!<span class="keys"> Press 1–{count === 10 ? '9 and 0' : count}.</span></p>
   {:else if !mine}
     <p class="spectate muted">{active.name} is deciding…</p>
   {:else}
-    <p class="spectate muted">Tip: press 1–{count === 10 ? '9 and 0' : count} to answer.</p>
+    <p class="spectate muted keys">Tip: press 1–{count === 10 ? '9 and 0' : count} to answer.</p>
   {/if}
 {/snippet}
 
@@ -463,7 +464,8 @@
   <div class="topline">
     <span class="chip">{questionTopic(q)}</span>
     <span class="task">{q.mode === 'art' ? 'Pick the art that matches the name' : 'Name this item'}</span>
-    {#if q.deadline}
+    <!-- Phones have it in the scoreboard pinned to the top (Game.svelte). -->
+    {#if q.deadline && !phone.current}
       <TimerRing deadline={q.deadline} total={timerTotal} stopped={!!reveal} />
     {/if}
   </div>
@@ -601,7 +603,7 @@
     </div>
   {/if}
 
-  <div class="footer">{@render footer()}</div>
+  <div class="footer" class:pinned={!!reveal}>{@render footer()}</div>
 </div>
 
 <style>
@@ -1338,9 +1340,9 @@
       min-height: 0;
       margin-bottom: 0.8rem;
     }
+    /* Beside the topic when there's room, below it when not. */
     .task {
-      order: 3;
-      flex-basis: 100%;
+      flex: 1 1 12rem;
       font-size: 0.95rem;
     }
     .footer {
@@ -1397,6 +1399,33 @@
     .tile,
     .tiles.many .tile {
       height: 150px;
+    }
+  }
+
+  /* Touch screens have no number keys to press. */
+  @media (hover: none) and (pointer: coarse) {
+    .keys {
+      display: none;
+    }
+  }
+
+  @media (max-width: 640px) {
+    /* The reveal's result and Next button stay at the bottom of the screen, in
+       reach of a thumb, however far down the answers have been scrolled. */
+    .footer.pinned {
+      position: sticky;
+      bottom: 0;
+      z-index: 10;
+      margin: 1rem -1rem 0;
+      padding: 0.6rem max(1rem, env(safe-area-inset-right)) max(0.6rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
+      background-color: rgba(10, 8, 6, 0.88);
+      -webkit-backdrop-filter: blur(10px);
+      backdrop-filter: blur(10px);
+      border-top: 1px solid rgba(125, 99, 51, 0.35);
+      box-shadow: 0 -8px 22px rgba(0, 0, 0, 0.55);
+    }
+    .footer.pinned .result p {
+      font-size: 1rem;
     }
   }
 </style>

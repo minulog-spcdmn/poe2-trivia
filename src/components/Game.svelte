@@ -7,10 +7,12 @@
   import QuestionView from './QuestionView.svelte';
   import Avatar from './Avatar.svelte';
   import PlayerName from './PlayerName.svelte';
+  import TimerRing from './TimerRing.svelte';
   import { fireAmbience, sfx } from '../lib/sound';
   import { onMount } from 'svelte';
   import { deathmatchIntro, deathmatchMood, gameStart, turnBanner } from '../lib/fx/moments';
   import { portal } from '../lib/portal';
+  import { phone } from '../lib/layout';
 
   const s = $derived(session.state!);
   const active = $derived(s.players[s.turn]);
@@ -19,6 +21,9 @@
 
 
   const race = $derived(s.settings.mode === 'race');
+  // Phones keep the question's timer in the scoreboard pinned to the top, in
+  // view while they scroll down to the answers (QuestionView has it otherwise).
+  const q = $derived(s.phase === 'question' || s.phase === 'reveal' ? s.question : null);
 
   // Countdown to the automatic skip of a disconnected player's turn.
   let now = $state(Date.now());
@@ -91,8 +96,18 @@
   );
 </script>
 
+{#snippet timer()}
+  {#if phone.current && q?.deadline}
+    {#key q.askedAt}
+      <span class="clock" in:fade={{ duration: 200 }}>
+        <TimerRing deadline={q.deadline} total={Math.round((q.deadline - q.askedAt) / 1000)} stopped={s.phase === 'reveal'} />
+      </span>
+    {/key}
+  {/if}
+{/snippet}
+
 <div class="game">
-  <Scoreboard />
+  <Scoreboard aside={timer} />
 
   <!-- The outgoing and incoming turn share one grid cell while they cross-fade,
        instead of stacking (which briefly doubled the page height). -->
@@ -364,6 +379,19 @@
     margin: 0;
     font-style: italic;
     color: #e6b8aa;
+  }
+  .clock {
+    flex: none;
+    display: grid;
+    width: 44px;
+    height: 44px;
+  }
+  .clock :global(.timer) {
+    width: 44px;
+    height: 44px;
+  }
+  .clock :global(.timer span) {
+    font-size: 1.05rem;
   }
   .skip {
     display: flex;
