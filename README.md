@@ -225,6 +225,18 @@ Everything is drawn in WebGL2 with float precision and dithered once at the
   every control gets. Soft shapes render at about one texel per CSS pixel and
   the whole layer at most 1.5 per CSS pixel; the canvas hides itself while
   nothing is alive.
+- **The creator** (zoe_arcana, a name only an unlocked device can take; a
+  deterrent, not proof) is marked out. Gold motes circle her avatar on a
+  tilted orbit, passing behind it on the far side, in a ruby glow with
+  embers rising off it (`src/lib/fx/aura.ts`; one `Orbit` shape draws an
+  avatar's orbit), and in the lobby she arrives out of gathering motes
+  rather than a portal. The aura shows on all her avatars at once with a
+  short breath between showings, when the effects loop can sleep; a gilded
+  ring (CSS) marks her then and with effects off. Her name is struck in gold
+  foil, and a glint of light crosses it every nine seconds
+  (`src/lib/glint.ts`: one timer, transforms only, nothing under
+  *prefers-reduced-motion*). Online, everyone else gets a notice when she
+  walks into the room (`src/lib/herald.ts`).
 - **Dialogs** dim the page behind them (`src/lib/behindDialog.ts`). A dark,
   blurred layer over the page would band the backdrop and hide the dialog's
   own effects, so the backdrop darkens itself in its shader and the UI takes a

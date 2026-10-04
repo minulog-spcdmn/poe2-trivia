@@ -51,7 +51,7 @@ export function nameSkeleton(name: string): string {
 // scripts/held-key-hash.mjs makes the hash for a new key. Case, spaces and
 // dashes don't count, so "Ember Tower" and "ember-tower" are the same key.
 // A deterrent against impersonation, not security: the check only runs in
-// the name field.
+// the fields where names are typed (the start page and hot-seat lobby).
 const HELD_NAME = 'zoearcana';
 const HELD_KEY_HASH = '5ddd2ad1ad21e94175a14999359a9e8b2b508a70c769f49f71a6d94e5821a607';
 const HELD_SALT = 'poe2trivia.held-name';
@@ -82,9 +82,14 @@ export async function unlockHeldName(key: string, hash = HELD_KEY_HASH): Promise
   }
 }
 
+/** Whether a name is the held one, in any spelling the name check treats as the same ("Zoe Arcana"). */
+export function isHeldName(name: string): boolean {
+  return nameSkeleton(cleanName(name)) === HELD_NAME;
+}
+
 /** True when the name is held and this device is not unlocked. */
 export function nameHeld(name: string, hash = HELD_KEY_HASH): boolean {
-  if (nameSkeleton(cleanName(name)) !== HELD_NAME) return false;
+  if (!isHeldName(name)) return false;
   try {
     return localStorage.getItem(OWNER_KEY) !== hash;
   } catch {

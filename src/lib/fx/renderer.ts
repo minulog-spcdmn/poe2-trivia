@@ -34,6 +34,7 @@ export const ShapeType = {
   Flash: 6,
   Sigil: 7,
   QuadGlow: 8,
+  Orbit: 9,
 } as const;
 export type ShapeType = (typeof ShapeType)[keyof typeof ShapeType];
 
@@ -452,6 +453,54 @@ void main() {
     float bottom = max(max(vQ.y, vQ.w), max(vR.y, vR.w)) + vS.x;
     float up = smoothstep(bottom, top - vS.y, vP.y);
     v = outlineGlow(d, vS.y, vS.z, vS.w, up, vP, time, seed, hot);
+  } else if (type == 9) {
+    // Orbit: an aura around a disc (an avatar). Up to three motes of light
+    // circle it on a tilted orbit, each trailing light along it; the far
+    // side is dimmer and passes behind the disc, which hides it, and a glow
+    // can seep out from behind the disc's edge. q: disc radius, orbit
+    // radius, tilt (the orbit's height over its width), roll (rad). r: lead
+    // mote's angle (rad; motes travel toward larger angles), mote count,
+    // trail length (rad), mote radius. s: edge glow strength in w (x, y, z
+    // unused). Lengths in CSS px. The motes' spacing and sizes are MOTES in
+    // fx/orbit.ts, which places them the same way.
+    const float LAG[3] = float[3](0.0, 2.25, 4.2);
+    const float SIZE[3] = float[3](1.0, 0.78, 0.62);
+    // What the disc lets through from behind it: 0 over it, 1 outside.
+    float clear = smoothstep(vQ.x - 0.7, vQ.x + 0.7, r);
+    vec2 ab = vec2(vQ.y, max(vQ.y * vQ.z, 0.01));
+    vec2 p = rot2(vP, -vQ.w);
+    // Distance to the orbit's ellipse (Inigo Quilez's approximation) and the
+    // angle along it, counterclockwise on screen from its right end. Its
+    // lower half is the near side.
+    float k0 = length(p / ab);
+    float k1 = length(p / (ab * ab));
+    float d = k0 * (k0 - 1.0) / max(k1, 1e-4);
+    float th = atan(-p.y / ab.y, p.x / ab.x);
+    float near = -sin(th);
+    float seen = mix(clear, 1.0, smoothstep(-0.12, 0.12, near)) * (0.68 + 0.32 * near);
+    for (int i = 0; i < 3; i++) {
+      if (float(i) >= vR.y) break;
+      float head = vR.x - LAG[i];
+      float size = vR.w * SIZE[i];
+      // The trail, along the orbit behind the head, thinning as it fades.
+      float lag = mod(head - th, 2.0 * PI);
+      if (lag < vR.z) {
+        float u = lag / vR.z;
+        float w = size * (0.8 - 0.5 * u);
+        v += exp(-d * d / (w * w)) * (1.0 - u) * (1.0 - u) * 0.6 * seen;
+      }
+      // The head: a hot core in a soft glow, a little bigger on the near
+      // side; behind the disc, its light hides behind the disc's edge.
+      float hn = -sin(head);
+      float hs = size * (1.0 + 0.22 * hn);
+      vec2 e = p - vec2(cos(head), -sin(head)) * ab;
+      float e2 = dot(e, e) / (hs * hs);
+      float hseen = mix(clear, 1.0, smoothstep(-0.12, 0.12, hn)) * (0.68 + 0.32 * hn);
+      v += (exp(-e2) + 0.18 * exp(-e2 * 0.12)) * hseen;
+      hot += exp(-e2 * 4.0) * hseen * 0.7;
+    }
+    // The glow from the disc's edge.
+    v += exp(-max(r - vQ.x, 0.0) / (1.2 + vQ.x * 0.12)) * vS.w * clear;
   } else {
     // Sigil: an arcane circle that draws itself. q: radius, line width,
     // drawn 0-1, spin (rad/s).
