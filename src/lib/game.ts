@@ -60,7 +60,7 @@ export const KNOB_STEPS = {
 
 export const PRESETS: Record<Preset, Knobs> = {
   cruel: { options: 4, similarNames: 0, fakes: 0, artChance: 0.4, veil: 'off', grayscale: 'off', mirror: 0, lockout: 2 },
-  merciless: { options: 6, similarNames: 0.5, fakes: 0, artChance: 0.4, veil: 'fast', grayscale: 'off', mirror: 0, lockout: 3 },
+  merciless: { options: 6, similarNames: 0.5, fakes: 1, artChance: 0.4, veil: 'fast', grayscale: 'off', mirror: 0, lockout: 3 },
   eternal: { options: 8, similarNames: 1, fakes: 2, artChance: 0.5, veil: 'slow', grayscale: 'art', mirror: 0.3, lockout: 4 },
 };
 

@@ -41,8 +41,8 @@ same time, in a random category (never one of the last 2, 3 or 4, by difficulty,
 | | Options | Wrong answers | Extras |
 |---|---|---|---|
 | Cruel | 4 | Same kind (all rings, all bows, all Strength gems…) | 40% of questions are "find the art": you get a name and pick one of the pictures |
-| Merciless (default) | 6 | Same kind, half of them look-alike names | In race, the art burns into view bit by bit |
-| Eternal | 8 | Look-alike names from the whole category, two of them made up | In race, the art burns into view more slowly; "find the art" pictures are shown in grayscale; each picture has a 30% chance of being mirrored left to right (the answer and any picked picture are marked *Mirrored* at the reveal) |
+| Merciless (default) | 6 | Same kind, half of them look-alike names, one made up | In race, the art burns into view bit by bit |
+| Eternal | 8 | Same kind where the category has enough, all look-alike names, two of them made up | In race, the art burns into view more slowly; "find the art" pictures are shown in grayscale; each picture has a 30% chance of being mirrored left to right (the answer and any picked picture are marked *Mirrored* at the reveal) |
 
 The presets only unveil the art in race mode, where answering from part of the
 art can beat the others to it. On your own turn nobody is racing you, so the

@@ -10,7 +10,7 @@ test('presets are described the same way in both modes, but their unveil only in
   );
   assert.equal(
     describe({ difficulty: 'merciless', mode: 'turns' }),
-    'Six options, half of them with look-alike names. Some questions ask you to find the art for a name. In race, the art burns into view bit by bit.',
+    'Six options, half of them with look-alike names and one made up. Some questions ask you to find the art for a name. In race, the art burns into view bit by bit.',
   );
   assert.equal(
     describe({ difficulty: 'eternal', mode: 'race' }),
