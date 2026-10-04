@@ -6,7 +6,7 @@
 // reduced motion, or when WebGL2 isn't available; every call below is then a
 // cheap no-op, so callers never need to check.
 
-import { FxRenderer, SHAPE_FLOATS, ShapeType, type DialogLight } from './renderer';
+import { FxRenderer, SHAPE_FLOATS, ShapeType, type DialogLight, type Silhouette } from './renderer';
 import { ParticlePool, type ParticleSpec } from './particles';
 import { opacityOf } from '../opacity';
 import { dialogBox, openDialog } from '../behindDialog';
@@ -52,6 +52,11 @@ export type ShapeFrame = {
   color?: Vec3;
   /** Optional shape type override (a shape can change form as it goes). */
   type?: ShapeType;
+  /**
+   * Rays: the picture they shine from behind. Only one shape at a time gets
+   * it (the first); in it, q[5] is set to -1 to say so.
+   */
+  silhouette?: Silhouette | null;
 };
 
 export type ShapeSpec = {
@@ -498,10 +503,17 @@ function simulate(dt: number, nowMs: number, render: boolean): boolean {
   let nShapes = 0;
   let nCrisp = 0;
   let shapesCalm = true;
+  let silhouette: Silhouette | null = null;
   for (const crisp of [false, true]) {
     for (const [s, t] of visible) {
       if (isCrisp(s) !== crisp || nShapes >= MAX_SHAPES) continue;
-      writeShape(nShapes++, s, t);
+      writeShape(nShapes, s, t);
+      const sil = s.f.silhouette;
+      if (!silhouette && sil && sil.img.complete && sil.img.naturalWidth > 0) {
+        silhouette = sil;
+        shapeData[nShapes * SHAPE_FLOATS + 12 + 5] = -1;
+      }
+      nShapes++;
       if (crisp) nCrisp++;
       if (!s.calm) shapesCalm = false;
     }
@@ -522,7 +534,7 @@ function simulate(dt: number, nowMs: number, render: boolean): boolean {
   const busy = nParticles > 0 || nShapes > 0 || tasks.length > 0 || shake.trauma > 0 || shapes.length > 0 || pool.count > 0;
   if (!render) return busy;
   if (nParticles > 0 || nShapes > 0) {
-    renderer.draw([viewW, viewH], dpr, pool.instances, nParticles, shapeData, nShapes, nCrisp, dialogNow());
+    renderer.draw([viewW, viewH], dpr, pool.instances, nParticles, shapeData, nShapes, nCrisp, dialogNow(), silhouette);
     show(true);
   } else {
     renderer.clear();

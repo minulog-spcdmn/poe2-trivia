@@ -306,16 +306,19 @@ export function reveal(t: RevealTargets) {
   }
 
   if (t.good && t.tiles && t.answer) {
-    // The right tile already has its flare and light; the rays just crown it, softly.
+    // The right tile already has its flare and light; the rays just crown it,
+    // softly, from behind its item (whose picture is swapped for the original now).
     const a = t.answer;
     const b = boxOf(a);
-    rays(a, { radius: Math.max(b.w, b.h) * 1.1, life: 1.4 + 0.2 * hype, intensity: 0.07 * Math.sqrt(hype), color: C.gold, count: 12 });
+    rays(a, { radius: Math.max(b.w, b.h) * 1.1, life: 1.4 + 0.2 * hype, intensity: 0.07 * Math.sqrt(hype), color: C.gold, count: 12, clear: () => a.querySelector('.pic .art-fit > img') });
     embers(a, { count: Math.round(8 * hype), area: 'fill', colors: [C.gold, C.ember, C.rightPale], rise: [50, 150], life: [0.7, 1.5] });
   } else if (t.good && t.art) {
     const b = boxOf(t.art);
     flare(t.art, { size: 40, streak: b.w * 0.9, life: 0.9, color: C.goldPale, intensity: 0.6 });
-    // From behind the item, not the whole stage.
-    rays(t.art, { radius: Math.max(b.w, b.h) * 0.6, life: 1.5 + 0.3 * hype, intensity: 0.16 * hype, color: C.gold, count: 14, clear: t.art.querySelector('.frame .art-fit') });
+    // From behind the item (its outline), not the whole stage. The full
+    // picture may still be on its way in (after the veil), so it's looked up as it goes.
+    const art = t.art;
+    rays(t.art, { radius: Math.max(b.w, b.h) * 0.6, life: 1.5 + 0.3 * hype, intensity: 0.16 * hype, color: C.gold, count: 14, clear: () => art.querySelector('.frame .art-fit > img') });
     embers(t.art, { count: Math.round(14 * hype), area: 'fill', colors: [C.gold, C.ember, C.rightPale], rise: [60, 190], life: [0.8, 1.8] });
     light(t.art, { color: [1, 0.8, 0.45], radius: 420, intensity: 0.3 + 0.08 * hype, hold: 0.3, decay: 1.5 });
   }

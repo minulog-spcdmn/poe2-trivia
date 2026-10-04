@@ -216,6 +216,22 @@ flat in vec4 vS;
 flat in vec2 vHalf;
 out vec4 o;
 #define PI 3.14159265
+// A picture the rays shine from behind (see Silhouette): its blurred alpha,
+// its centre and half size (CSS px), how far it's turned (its x scale, -1 to
+// 1) and the part of the texture the picture covers (the rest is margin).
+uniform sampler2D uSil;
+uniform float uSilOn; // the picture's opacity, 0 without one
+uniform vec4 uSilBox;
+uniform float uSilFlip;
+uniform vec2 uSilFit;
+// How much of the picture covers p, 0-1 (as visible as the picture is).
+float silhouetteAt(vec2 p) {
+  if (uSilOn <= 0.0) return 0.0;
+  vec2 l = (p - uSilBox.xy) / uSilBox.zw;
+  l.x /= (uSilFlip < 0.0 ? -1.0 : 1.0) * max(abs(uSilFlip), 0.02);
+  // A level down: smoother still, and the only blur where the canvas can't (older Safari).
+  return smoothstep(0.15, 0.7, textureLod(uSil, 0.5 + 0.5 * l * uSilFit, 1.0).a) * uSilOn;
+}
 ${NOISE}
 ${BEHIND_DIALOG}
 vec2 rot2(vec2 p, float a) { float c = cos(a), s = sin(a); return vec2(c * p.x - s * p.y, s * p.x + c * p.y); }
@@ -340,8 +356,8 @@ void main() {
   } else if (type == 2) {
     // God rays: shafts of light through haze. q: inner radius, outer radius,
     // ray count, sharpness. r: spin speed, then the half width, half height
-    // and corner radius of the element they shine from behind (0 for none).
-    // s: that element's centre, relative to the rays'.
+    // and corner radius of the element they shine from behind (0 for none,
+    // -1 for the picture in uSil). s: that element's centre, relative to the rays'.
     // A main layer of broad shafts and a finer one turning the other way,
     // each shaft with its own width, place, reach and slow breathing, so no
     // two look alike. Their roots melt into a soft glow instead of meeting in
@@ -369,7 +385,9 @@ void main() {
       float c = r / vQ.x;
       v += exp(-c * c * 0.6) * 0.3 + exp(-rn * 5.0) * 0.12 * reach;
       // Behind the element: a faint glow over it, the rays starting at its rim.
-      if (vR.y > 0.0) {
+      if (vR.y < 0.0) {
+        v *= mix(1.0, 0.2, silhouetteAt(vWorld));
+      } else if (vR.y > 0.0) {
         vec2 h = vR.yz;
         vec2 e = abs(vP - vS.xy) - h + vR.w;
         float d = length(max(e, 0.0)) + min(max(e.x, e.y), 0.0) - vR.w;
@@ -560,6 +578,17 @@ void main() {
 
 export type RendererOptions = { maxParticles: number; maxShapes: number };
 
+/**
+ * A picture the rays shine from behind, so they leave its own shape clear
+ * (an item's outline, not its box): its centre and size in CSS px as laid
+ * out, its x scale (-1 to 1) while it turns round, and its opacity.
+ */
+export type Silhouette = { img: HTMLImageElement; x: number; y: number; w: number; h: number; flip: number; alpha: number };
+
+/** Longest side of the silhouette texture, and the blur over it, in its px. */
+const SIL_SIZE = 128;
+const SIL_BLUR = 5;
+
 /** An open dialog (lib/behindDialog.ts): how far it dims the page, and its box and corner radius in CSS px. */
 export type DialogLight = { amount: number; box: DOMRect | null; radius: number };
 const NO_DIALOG: DialogLight = { amount: 0, box: null, radius: 0 };
@@ -588,6 +617,10 @@ export class FxRenderer {
   height = 0;
   bloom = true;
   private cleared = false;
+  private silTex: WebGLTexture | null = null;
+  /** The picture in silTex, and how much of the texture it covers. */
+  private silSrc: HTMLImageElement | null = null;
+  private silFit: [number, number] = [1, 1];
 
   static create(canvas: HTMLCanvasElement, opts: RendererOptions): FxRenderer | null {
     const gl = canvas.getContext('webgl2', {
@@ -728,10 +761,28 @@ export class FxRenderer {
     nShapes: number,
     nCrisp = 0,
     dialog: DialogLight = NO_DIALOG,
+    silhouette: Silhouette | null = null,
   ) {
     const gl = this.gl;
     if (!this.hdr) return;
     this.cleared = false;
+    const sil = silhouette && this.loadSilhouette(silhouette.img) ? silhouette : null;
+    const shapeUniforms = () => {
+      const p = this.shapeProg;
+      gl.uniform2f(p.u('uView'), view[0], view[1]);
+      behindDialog(p, true);
+      // Always on its own unit: left on unit 0, the sampler could point at
+      // the target being drawn into, which WebGL refuses to draw.
+      gl.uniform1i(p.u('uSil'), 2);
+      gl.uniform1f(p.u('uSilOn'), sil ? sil.alpha : 0);
+      if (!sil) return;
+      gl.activeTexture(gl.TEXTURE2);
+      gl.bindTexture(gl.TEXTURE_2D, this.silTex);
+      gl.uniform4f(p.u('uSilBox'), sil.x, sil.y, sil.w / 2, sil.h / 2);
+      gl.uniform1f(p.u('uSilFlip'), sil.flip);
+      gl.uniform2f(p.u('uSilFit'), this.silFit[0], this.silFit[1]);
+      gl.activeTexture(gl.TEXTURE0);
+    };
     // Without a dialog box, nothing is hidden and everything is dimmed.
     const b = dialog.box;
     const behindDialog = (p: Program, hide: boolean) => {
@@ -758,8 +809,7 @@ export class FxRenderer {
       gl.enable(gl.BLEND);
       gl.blendFunc(gl.ONE, gl.ONE);
       gl.useProgram(this.shapeProg.prog);
-      gl.uniform2f(this.shapeProg.u('uView'), view[0], view[1]);
-      behindDialog(this.shapeProg, true);
+      shapeUniforms();
       gl.bindVertexArray(this.shapeVao);
       gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, nSoft);
       // ...then filtered up into the HDR target, which they fill completely.
@@ -782,8 +832,7 @@ export class FxRenderer {
     if (nCrisp > 0) {
       // Thin-line shapes straight into the full-resolution target.
       gl.useProgram(this.shapeProg.prog);
-      gl.uniform2f(this.shapeProg.u('uView'), view[0], view[1]);
-      behindDialog(this.shapeProg, true);
+      shapeUniforms();
       gl.bindVertexArray(this.shapeVao);
       // (Uploaded after the soft ones were drawn; WebGL keeps the order.)
       gl.bindBuffer(gl.ARRAY_BUFFER, this.shapeBuf);
@@ -857,8 +906,48 @@ export class FxRenderer {
     gl.bindVertexArray(null);
   }
 
+  /**
+   * Makes `img` the silhouette texture: its alpha, blurred, with a margin for
+   * the blur to spread into. Returns whether it's ready (loaded, and readable).
+   */
+  private loadSilhouette(img: HTMLImageElement): boolean {
+    if (img === this.silSrc) return true;
+    if (!img.complete || !img.naturalWidth) return false;
+    const k = SIL_SIZE / Math.max(img.naturalWidth, img.naturalHeight);
+    const w = Math.max(1, Math.round(img.naturalWidth * k));
+    const h = Math.max(1, Math.round(img.naturalHeight * k));
+    const pad = SIL_BLUR * 3;
+    const c = document.createElement('canvas');
+    c.width = w + pad * 2;
+    c.height = h + pad * 2;
+    const ctx = c.getContext('2d');
+    if (!ctx) return false;
+    ctx.filter = `blur(${SIL_BLUR}px)`;
+    ctx.drawImage(img, pad, pad, w, h);
+    const gl = this.gl;
+    this.silTex ??= gl.createTexture();
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_2D, this.silTex);
+    try {
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, c);
+    } catch {
+      gl.activeTexture(gl.TEXTURE0);
+      return false;
+    }
+    gl.generateMipmap(gl.TEXTURE_2D);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.activeTexture(gl.TEXTURE0);
+    this.silSrc = img;
+    this.silFit = [w / c.width, h / c.height];
+    return true;
+  }
+
   destroy() {
     const gl = this.gl;
+    if (this.silTex) gl.deleteTexture(this.silTex);
     dropTarget(gl, this.hdr);
     dropTarget(gl, this.shapesT);
     for (const m of this.mips) dropTarget(gl, m);

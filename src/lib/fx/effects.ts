@@ -3,7 +3,8 @@
 // big beats. Colours are HDR: values above 1 bloom and burn toward white.
 
 import { Shape } from './particles';
-import { ShapeType } from './renderer';
+import { ShapeType, type Silhouette } from './renderer';
+import { opacityOf } from '../opacity';
 import { after, boxOf, budget, detached, fxActive, particle, shape, task, type Anchor, type Box, type Handle, type Point, type Vec3 } from './core';
 
 // ---------- palette ----------
@@ -312,17 +313,21 @@ export function flare(at: Anchor, o: { size?: number; streak?: number; life?: nu
  * Slowly turning god rays. Endless unless `life` is given; stop the handle to
  * fade. They shine from behind `clear` (by default the anchor, when it's an
  * element): over its shape only a faint glow is left, so the light frames it
- * instead of washing it out.
+ * instead of washing it out. For an image that's the picture's own outline
+ * (an item, not its box), as visible as the picture is; for anything else its
+ * box, with its corner radius. A function is asked again every frame, for a
+ * picture that's about to be swapped for another.
  */
 export function rays(
   at: Anchor,
-  o: { radius?: number; count?: number; sharp?: number; color?: Vec3; intensity?: number; life?: number; spin?: number; delay?: number; fadeIn?: number; clear?: Element | null } = {},
+  o: { radius?: number; count?: number; sharp?: number; color?: Vec3; intensity?: number; life?: number; spin?: number; delay?: number; fadeIn?: number; clear?: Element | null | (() => Element | null) } = {},
 ): Handle {
   const R = o.radius ?? 420;
   const life = o.life ?? Infinity;
-  const clear = o.clear === undefined ? (at instanceof Element ? at : null) : o.clear;
+  const pick = typeof o.clear === 'function' ? o.clear : null;
+  const fixed = typeof o.clear === 'function' ? null : o.clear === undefined ? (at instanceof Element ? at : null) : o.clear;
   // Its corner radius, as written (a percentage is resolved against its box).
-  const corner = clear ? getComputedStyle(clear).borderTopLeftRadius : '0';
+  const corner = fixed && !(fixed instanceof HTMLImageElement) ? getComputedStyle(fixed).borderTopLeftRadius : '0';
   return shape({
     type: ShapeType.Rays,
     at,
@@ -340,6 +345,12 @@ export function rays(
       f.q[2] = o.count ?? 14;
       f.q[3] = o.sharp ?? 6;
       f.q[4] = o.spin ?? 0.25;
+      const clear = pick ? pick() : fixed;
+      if (clear instanceof HTMLImageElement || pick) {
+        f.q[5] = f.q[6] = f.q[7] = f.q[8] = f.q[9] = 0;
+        f.silhouette = clear instanceof HTMLImageElement && clear.isConnected ? silhouetteOf(clear) : null;
+        return;
+      }
       const c = clear && clear.isConnected ? boxOf(clear) : null;
       const hw = c ? c.w / 2 : 0;
       const hh = c ? c.h / 2 : 0;
@@ -351,6 +362,21 @@ export function rays(
       f.q[9] = c ? c.y - b.y : 0;
     },
   });
+}
+
+/**
+ * Where a picture is, for rays to shine from behind it: its box as laid out
+ * (centred where it's drawn, as tall as it's drawn) and how far it's turned
+ * round (its x scale), so the light keeps to its outline while it turns,
+ * and how visible it is.
+ */
+function silhouetteOf(img: HTMLImageElement): Silhouette {
+  const r = img.getBoundingClientRect();
+  const tf = getComputedStyle(img).transform;
+  const flip = tf === 'none' ? 1 : new DOMMatrix(tf).a;
+  const h = r.height;
+  const w = img.offsetHeight ? (img.offsetWidth * h) / img.offsetHeight : r.width;
+  return { img, x: r.left + r.width / 2, y: r.top + h / 2, w, h, flip, alpha: opacityOf(img) };
 }
 
 /**
