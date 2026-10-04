@@ -1,6 +1,7 @@
 <script lang="ts">
   import { fade, fly } from 'svelte/transition';
-  import { nameHeld, unlockHeldName } from '../lib/names';
+  import { NAME_TOO_SHORT, nameHeld, nameTooShort, unlockHeldName } from '../lib/names';
+  import { toasts } from '../lib/toasts.svelte';
   import { engine, session, savedName, saveName, CODE_LENGTH } from '../lib/session.svelte';
   import { shuffle } from '../lib/game';
   import { itemImage } from '../lib/ui';
@@ -41,7 +42,8 @@
 
   function needName() {
     const n = name.trim();
-    if (!n || nameHeld(n)) {
+    if (!n || nameTooShort(n) || nameHeld(n)) {
+      if (n && nameTooShort(n)) toasts.show(NAME_TOO_SHORT, 'error');
       nameError = true;
       const field = document.getElementById('name');
       if (field) refuse(field);
