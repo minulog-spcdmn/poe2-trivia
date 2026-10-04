@@ -32,6 +32,7 @@ export const ShapeType = {
   Flash: 6,
   Sigil: 7,
   QuadGlow: 8,
+  Fire: 9,
 } as const;
 export type ShapeType = (typeof ShapeType)[keyof typeof ShapeType];
 
@@ -356,6 +357,37 @@ void main() {
     float bottom = max(max(vQ.y, vQ.w), max(vR.y, vR.w)) + vS.x;
     float up = smoothstep(bottom, top - vS.y, vP.y);
     v = outlineGlow(d, vS.y, vS.z, vS.w, up, vP, time, seed, hot);
+  } else if (type == 9) {
+    // Fire rising off a rounded rectangle. q: half w, half h, corner radius,
+    // flame height (px). The colour is a gain on a black-body ramp: deep red
+    // at the tips, through orange and yellow, to white-hot at the roots.
+    vec2 hb = vQ.xy;
+    float H = vQ.w;
+    vec2 qq = abs(vP) - hb + vQ.z;
+    float d = length(max(qq, 0.0)) + min(max(qq.x, qq.y), 0.0) - vQ.z;
+    // Flames reach highest above the top, a little way up the ends, barely below.
+    float up = smoothstep(hb.y, -hb.y, vP.y);
+    float reach = H * (0.06 + 0.94 * up * up * up);
+    // Turbulence scrolling upward, domain-warped so the tongues sway and split.
+    vec2 p = vP * vec2(0.05, 0.028);
+    vec2 warp = vec2(fbm(p * 0.8 + vec2(seed, time * 0.9)), fbm(p * 0.8 + vec2(seed + 4.1, time * 1.15)));
+    float n = fbm(p + vec2(0.0, time * 2.4) + (warp - 0.5) * 1.8 + seed);
+    float lick = vnoise(vec2(vP.x * 0.11 + seed * 3.0, vP.y * 0.04 + time * 3.2));
+    float tongue = n * 0.8 + lick * 0.45;
+    // 1 at the surface, falling to 0 at each tongue's tip.
+    float f = clamp(1.0 - max(d, 0.0) / (reach * (0.15 + 1.25 * tongue * tongue) + 2.0), 0.0, 1.0);
+    // The roots burn unevenly (hotter under a tongue) and dimmer along the bottom.
+    float T = f * f * smoothstep(-5.0, 0.0, d) * mix(0.3, 1.0, up) * (0.45 + 0.75 * tongue);
+    if (T > 0.002) {
+      col = vC * (vec3(1.0, 0.16, 0.02) * smoothstep(0.0, 0.3, T)
+                + vec3(0.7, 0.55, 0.06) * smoothstep(0.25, 0.65, T)
+                + vec3(0.5, 0.6, 0.55) * smoothstep(0.65, 1.0, T));
+      v = 1.0;
+    }
+    // A soft heat halo hugging the outline.
+    float halo = exp(-abs(d) / (6.0 + H * 0.15)) * smoothstep(-8.0, 0.0, d);
+    col = v > 0.0 ? col + vC * vec3(0.5, 0.12, 0.02) * halo : vC * vec3(0.5, 0.12, 0.02);
+    v = v > 0.0 ? 1.0 : halo;
   } else {
     // Sigil: an arcane circle that draws itself. q: radius, line width,
     // drawn 0-1, spin (rad/s).

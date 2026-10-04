@@ -3,12 +3,13 @@
 // victory look like. Components call these with the elements involved; all
 // of them are no-ops while effects are off.
 
-import { after, boxOf, detached, fxActive, shakeView, type Anchor, type Handle, type Point, type Vec3 } from './core';
+import { after, boxOf, fxActive, shakeView, type Anchor, type Handle, type Point, type Vec3 } from './core';
 import {
   C,
   edgeGlow,
   embers,
   emitter,
+  fire,
   flare,
   flash,
   glints,
@@ -447,40 +448,14 @@ export function scored(pill: Element, streak = 1) {
  */
 export function ablaze(row: Element, heat: number): Handle {
   if (!fxActive() || heat <= 0) return { stop() {} };
-  const glow = outline(row, { color: k3(C.ember, 0.6 + 0.5 * heat), width: 10 + 10 * heat, flame: 0.6 + 0.4 * heat, intensity: 0.45 + 0.4 * heat, pulse: 0.3, fadeIn: 0.4 });
-  // Flames: many small hot licks rising off the entry, tapering and
-  // reddening as they climb; together they read as tongues of fire.
-  const flames = emitter(40 + 160 * heat, () => {
-    if (detached(row)) return;
-    const b = boxOf(row);
-    // Mostly off the top edge, some up the rounded ends, so it's wreathed.
-    const side = Math.random() < 0.25 ? Math.sign(Math.random() - 0.5) : 0;
-    const x = side ? b.x + side * (b.w / 2 - rand(0, b.h * 0.3)) : b.x + (Math.random() - 0.5) * (b.w - b.h * 0.6);
-    const y = side ? b.y + rand(-0.4, 0.3) * b.h : b.y - b.h / 2 + rand(0, 6);
-    particle({
-      x,
-      y,
-      vx: side * rand(5, 25) + rand(-10, 10),
-      vy: -rand(50, 100 + 170 * heat),
-      life: rand(0.25, 0.45 + 0.4 * heat),
-      size: rand(3.5, 6 + 7 * heat),
-      sizeEnd: 0.5,
-      color: k3(C.gold, 0.45 + 0.25 * heat),
-      colorEnd: k3(C.crimson, 0.45),
-      shape: Shape.Glow,
-      gravity: -160,
-      drag: 0.6,
-      turbulence: 160 + 120 * heat,
-      fadeIn: 0.15,
-    });
-  });
-  const rising = emitter(3 + 14 * heat, () =>
-    embers(row, { count: 1, area: 'top', colors: [C.ember, C.gold], rise: [50, 90 + 120 * heat], life: [0.6, 1 + 0.8 * heat] }),
+  const flames = fire(row, { height: 14 + 56 * heat, intensity: 0.9 + 0.7 * heat });
+  // Sparks spat out of the fire, drifting up.
+  const rising = emitter(2 + 12 * heat, () =>
+    embers(row, { count: 1, area: 'top', colors: [C.ember, C.gold], size: [0.8, 1.8], rise: [70, 120 + 140 * heat], scatter: 30, life: [0.5, 0.9 + 0.6 * heat] }),
   );
   return {
     stop(fade = 0.5) {
-      glow.stop(fade);
-      flames.stop();
+      flames.stop(fade);
       rising.stop();
     },
   };
