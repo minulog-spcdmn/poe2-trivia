@@ -6,7 +6,7 @@
 // reduced motion, or when WebGL2 isn't available; every call below is then a
 // cheap no-op, so callers never need to check.
 
-import { FxRenderer, SHAPE_FLOATS, ShapeType, type DialogLight, type Silhouette } from './renderer';
+import { BEHIND_PICTURE, FxRenderer, SHAPE_FLOATS, ShapeType, type DialogLight, type Silhouette } from './renderer';
 import { ParticlePool, type ParticleSpec } from './particles';
 import { opacityOf } from '../opacity';
 import { dialogBox, openDialog } from '../behindDialog';
@@ -53,8 +53,8 @@ export type ShapeFrame = {
   /** Optional shape type override (a shape can change form as it goes). */
   type?: ShapeType;
   /**
-   * Rays: the picture they shine from behind. Only one shape at a time gets
-   * it (the first); in it, q[5] is set to -1 to say so.
+   * The picture this shines from behind (its outline stays clear). One
+   * picture at a time: the first shape's; shapes naming another get none.
    */
   silhouette?: Silhouette | null;
 };
@@ -503,16 +503,13 @@ function simulate(dt: number, nowMs: number, render: boolean): boolean {
   let nShapes = 0;
   let nCrisp = 0;
   let shapesCalm = true;
-  let silhouette: Silhouette | null = null;
+  const ready = (sil?: Silhouette | null) => !!sil && sil.img.complete && sil.img.naturalWidth > 0;
+  const silhouette = visible.map(([s]) => s.f.silhouette).find(ready) ?? null;
   for (const crisp of [false, true]) {
     for (const [s, t] of visible) {
       if (isCrisp(s) !== crisp || nShapes >= MAX_SHAPES) continue;
       writeShape(nShapes, s, t);
-      const sil = s.f.silhouette;
-      if (!silhouette && sil && sil.img.complete && sil.img.naturalWidth > 0) {
-        silhouette = sil;
-        shapeData[nShapes * SHAPE_FLOATS + 12 + 5] = -1;
-      }
+      if (silhouette && s.f.silhouette?.img === silhouette.img) shapeData[nShapes * SHAPE_FLOATS + 4] += BEHIND_PICTURE;
       nShapes++;
       if (crisp) nCrisp++;
       if (!s.calm) shapesCalm = false;

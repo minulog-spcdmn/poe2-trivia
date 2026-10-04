@@ -35,6 +35,9 @@ export const ShapeType = {
 } as const;
 export type ShapeType = (typeof ShapeType)[keyof typeof ShapeType];
 
+/** Added to a shape's type when it shines from behind the picture in uSil (see Silhouette). */
+export const BEHIND_PICTURE = 16;
+
 // While a dialog is open (lib/behindDialog.ts), light from the page behind it
 // hides behind the dialog, which on the page is opaque; the dialog's own light
 // (from effects that started inside it) shows over it. Outside it, the
@@ -316,6 +319,8 @@ float outlineGlow(float d, float wd, float flameAmt, float bleed, float up, vec2
 
 void main() {
   int type = int(vA.x + 0.5);
+  bool behind = type >= ${BEHIND_PICTURE};
+  if (behind) type -= ${BEHIND_PICTURE};
   float prog = vA.y;
   float time = vA.z;
   float seed = vA.w;
@@ -356,8 +361,8 @@ void main() {
   } else if (type == 2) {
     // God rays: shafts of light through haze. q: inner radius, outer radius,
     // ray count, sharpness. r: spin speed, then the half width, half height
-    // and corner radius of the element they shine from behind (0 for none,
-    // -1 for the picture in uSil). s: that element's centre, relative to the rays'.
+    // and corner radius of the element they shine from behind (0 for none).
+    // s: that element's centre, relative to the rays'.
     // A main layer of broad shafts and a finer one turning the other way,
     // each shaft with its own width, place, reach and slow breathing, so no
     // two look alike. Their roots melt into a soft glow instead of meeting in
@@ -385,9 +390,7 @@ void main() {
       float c = r / vQ.x;
       v += exp(-c * c * 0.6) * 0.3 + exp(-rn * 5.0) * 0.12 * reach;
       // Behind the element: a faint glow over it, the rays starting at its rim.
-      if (vR.y < 0.0) {
-        v *= mix(1.0, 0.2, silhouetteAt(vWorld));
-      } else if (vR.y > 0.0) {
+      if (vR.y > 0.0) {
         vec2 h = vR.yz;
         vec2 e = abs(vP - vS.xy) - h + vR.w;
         float d = length(max(e, 0.0)) + min(max(e.x, e.y), 0.0) - vR.w;
@@ -465,6 +468,12 @@ void main() {
     float drawn = 1.0 - smoothstep(vQ.z - 0.02, vQ.z, at);
     v = lines * drawn;
     v += exp(-pow((r - R) / (lw * 6.0), 2.0)) * 0.15;
+  }
+  // Behind the picture: only a faint glow over it, none of the white heat.
+  if (behind) {
+    float c = silhouetteAt(vWorld);
+    v *= mix(1.0, 0.2, c);
+    hot *= 1.0 - c;
   }
   // Fade everything to zero before the quad's border, so no long tail can
   // show the quad's edge. (The edge glow's quad is the screen itself.)
@@ -579,9 +588,9 @@ void main() {
 export type RendererOptions = { maxParticles: number; maxShapes: number };
 
 /**
- * A picture the rays shine from behind, so they leave its own shape clear
- * (an item's outline, not its box): its centre and size in CSS px as laid
- * out, its x scale (-1 to 1) while it turns round, and its opacity.
+ * A picture effects shine from behind, so they leave its own shape clear (an
+ * item's outline, not its box): its centre and size in CSS px as laid out,
+ * its x scale (-1 to 1) while it turns round, and its opacity.
  */
 export type Silhouette = { img: HTMLImageElement; x: number; y: number; w: number; h: number; flip: number; alpha: number };
 

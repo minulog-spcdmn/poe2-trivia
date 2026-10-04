@@ -286,8 +286,17 @@ export function ring(at: Anchor, o: { radius?: number; from?: number; thickness?
   });
 }
 
-/** A lens flare: hot core plus an anamorphic streak. */
-export function flare(at: Anchor, o: { size?: number; streak?: number; life?: number; color?: Vec3; spikes?: number; delay?: number; intensity?: number } = {}) {
+/** What effects shine from behind: an element, or a function asked every frame (for a picture about to be swapped for another). */
+export type Clear = Element | null | (() => Element | null);
+
+/** The picture `clear` names now, if it's one, for an effect to shine from behind its outline. */
+function silhouetteFor(clear: Clear | undefined): Silhouette | null {
+  const el = typeof clear === 'function' ? clear() : clear;
+  return el instanceof HTMLImageElement && el.isConnected ? silhouetteOf(el) : null;
+}
+
+/** A lens flare: hot core plus an anamorphic streak. With a picture as `clear`, from behind it. */
+export function flare(at: Anchor, o: { size?: number; streak?: number; life?: number; color?: Vec3; spikes?: number; delay?: number; intensity?: number; clear?: Clear } = {}) {
   const size = o.size ?? 26;
   const streak = o.streak ?? 260;
   return shape({
@@ -305,6 +314,7 @@ export function flare(at: Anchor, o: { size?: number; streak?: number; life?: nu
       f.q[1] = f.hw;
       f.q[2] = Math.max(1.2, size * 0.09);
       f.q[3] = o.spikes ?? 0.6;
+      f.silhouette = silhouetteFor(o.clear);
     },
   });
 }
@@ -315,12 +325,11 @@ export function flare(at: Anchor, o: { size?: number; streak?: number; life?: nu
  * element): over its shape only a faint glow is left, so the light frames it
  * instead of washing it out. For an image that's the picture's own outline
  * (an item, not its box), as visible as the picture is; for anything else its
- * box, with its corner radius. A function is asked again every frame, for a
- * picture that's about to be swapped for another.
+ * box, with its corner radius.
  */
 export function rays(
   at: Anchor,
-  o: { radius?: number; count?: number; sharp?: number; color?: Vec3; intensity?: number; life?: number; spin?: number; delay?: number; fadeIn?: number; clear?: Element | null | (() => Element | null) } = {},
+  o: { radius?: number; count?: number; sharp?: number; color?: Vec3; intensity?: number; life?: number; spin?: number; delay?: number; fadeIn?: number; clear?: Clear } = {},
 ): Handle {
   const R = o.radius ?? 420;
   const life = o.life ?? Infinity;
@@ -345,13 +354,12 @@ export function rays(
       f.q[2] = o.count ?? 14;
       f.q[3] = o.sharp ?? 6;
       f.q[4] = o.spin ?? 0.25;
-      const clear = pick ? pick() : fixed;
-      if (clear instanceof HTMLImageElement || pick) {
+      if (pick || fixed instanceof HTMLImageElement) {
         f.q[5] = f.q[6] = f.q[7] = f.q[8] = f.q[9] = 0;
-        f.silhouette = clear instanceof HTMLImageElement && clear.isConnected ? silhouetteOf(clear) : null;
+        f.silhouette = silhouetteFor(pick ?? fixed);
         return;
       }
-      const c = clear && clear.isConnected ? boxOf(clear) : null;
+      const c = fixed && fixed.isConnected ? boxOf(fixed) : null;
       const hw = c ? c.w / 2 : 0;
       const hh = c ? c.h / 2 : 0;
       const r = parseFloat(corner) || 0;
@@ -365,7 +373,7 @@ export function rays(
 }
 
 /**
- * Where a picture is, for rays to shine from behind it: its box as laid out
+ * Where a picture is, for effects to shine from behind it: its box as laid out
  * (centred where it's drawn, as tall as it's drawn) and how far it's turned
  * round (its x scale), so the light keeps to its outline while it turns,
  * and how visible it is.

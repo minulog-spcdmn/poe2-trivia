@@ -293,11 +293,13 @@ export function reveal(t: RevealTargets) {
   if (t.answer) {
     const a = t.answer;
     const celebrate = t.good || t.otherScored;
+    // A tile's item picture (swapped for the original at the reveal): the flare shines from behind it.
+    const pic = () => a.querySelector('.pic .art-fit > img');
     outline(a, { color: C.right, width: celebrate ? 12 : 9, flame: celebrate ? 0.6 : 0.2, intensity: celebrate ? 0.55 : 0.4, life: celebrate ? 1.4 : 2, bleed: 0.1 });
     if (celebrate) {
       sparks(a, { count: Math.round(30 * hype), area: 'edge', colors: [C.gold, C.rightPale, C.goldPale], speed: [160, 600 * Math.sqrt(hype)], life: [0.4, 1] });
       ring(a, { radius: 150 * Math.sqrt(hype), thickness: 10, life: 0.6, color: C.right, breakup: 0.6, intensity: 0.5 });
-      flare(a, { size: 22, streak: 260 * Math.sqrt(hype), life: 0.6, color: C.rightPale, intensity: 0.55 });
+      flare(a, { size: 22, streak: 260 * Math.sqrt(hype), life: 0.6, color: C.rightPale, intensity: 0.55, clear: pic });
       glints(a, { count: Math.round(3 * hype), size: [5, 9], delay: [0, 0.6] });
       light(a, { color: [0.85, 1, 0.6], radius: 240, intensity: 0.25, decay: 1.1 });
     } else {
@@ -307,18 +309,20 @@ export function reveal(t: RevealTargets) {
 
   if (t.good && t.tiles && t.answer) {
     // The right tile already has its flare and light; the rays just crown it,
-    // softly, from behind its item (whose picture is swapped for the original now).
+    // from behind its item.
     const a = t.answer;
     const b = boxOf(a);
-    rays(a, { radius: Math.max(b.w, b.h) * 1.1, life: 1.4 + 0.2 * hype, intensity: 0.07 * Math.sqrt(hype), color: C.gold, count: 12, clear: () => a.querySelector('.pic .art-fit > img') });
+    rays(a, { radius: Math.max(b.w, b.h) * 1.1, life: 1.8 + 0.2 * hype, fadeIn: 0.5, intensity: 0.12 * Math.sqrt(hype), color: C.gold, count: 12, clear: () => a.querySelector('.pic .art-fit > img') });
     embers(a, { count: Math.round(8 * hype), area: 'fill', colors: [C.gold, C.ember, C.rightPale], rise: [50, 150], life: [0.7, 1.5] });
   } else if (t.good && t.art) {
     const b = boxOf(t.art);
-    flare(t.art, { size: 40, streak: b.w * 0.9, life: 0.9, color: C.goldPale, intensity: 0.6 });
-    // From behind the item (its outline), not the whole stage. The full
-    // picture may still be on its way in (after the veil), so it's looked up as it goes.
+    // The flare and rays shine from behind the item (its outline), not over
+    // it. The full picture may still be on its way in (after the veil), so
+    // it's looked up as they go.
     const art = t.art;
-    rays(t.art, { radius: Math.max(b.w, b.h) * 0.6, life: 1.5 + 0.3 * hype, intensity: 0.16 * hype, color: C.gold, count: 14, clear: () => art.querySelector('.frame .art-fit > img') });
+    const item = () => art.querySelector('.frame .art-fit > img');
+    flare(t.art, { size: 40, streak: b.w * 0.9, life: 0.9, color: C.goldPale, intensity: 0.6, clear: item });
+    rays(t.art, { radius: Math.max(b.w, b.h) * 0.7, life: 2.2 + 0.3 * hype, fadeIn: 0.5, intensity: 0.1 + 0.12 * hype, color: C.gold, count: 14, clear: item });
     embers(t.art, { count: Math.round(14 * hype), area: 'fill', colors: [C.gold, C.ember, C.rightPale], rise: [60, 190], life: [0.8, 1.8] });
     light(t.art, { color: [1, 0.8, 0.45], radius: 420, intensity: 0.3 + 0.08 * hype, hold: 0.3, decay: 1.5 });
   }
