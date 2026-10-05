@@ -1,13 +1,15 @@
 <script lang="ts">
   import { cubicInOut, cubicOut } from 'svelte/easing';
   import { session } from '../lib/session.svelte';
-  import { categoryIcon } from '../lib/ui';
+  import { categoryIcon, categoryIconTweak, categoryIcons } from '../lib/ui';
+  import { fits, fitStyle, measure } from '../lib/iconFit.svelte';
   import { difficultyOf, rulesFor } from '../lib/game';
   import { deathmatchText, lockoutText } from '../lib/difficultyText';
   import { sfx } from '../lib/sound';
   import { backdropShadow } from '../lib/backdropShadow';
   import { cardHover, cardPicked, cardRevealed } from '../lib/fx/moments';
   import type { Handle } from '../lib/fx/core';
+  import CardEngraving from './CardEngraving.svelte';
 
   const s = $derived(session.state!);
   const active = $derived(s.players[s.turn]);
@@ -15,6 +17,9 @@
   const lockout = $derived(rulesFor(s.settings).lockout);
 
   let picked = $state<string | null>(null);
+
+  // Size each emblem by its visible shape (see lib/iconFit); measured while the cards lie face down.
+  for (const url of categoryIcons()) measure(url);
 
   // The deal: the cards slide in face down one after another, then turn face
   // up from left to right. Seconds from when they appear.
@@ -135,6 +140,19 @@
 </script>
 
 <div class="choose">
+  <!-- The emblems' shadow (see .lit): cast from the art's solid shape only. -->
+  <svg class="defs" aria-hidden="true">
+    <filter id="card-emblem-shadow" x="-20%" y="-20%" width="140%" height="140%" color-interpolation-filters="sRGB">
+      <!-- The art's faint baked-in shadow would cast a dark disc: keep only what's at least half opaque. -->
+      <feComponentTransfer in="SourceAlpha" result="solid"><feFuncA type="discrete" tableValues="0 1" /></feComponentTransfer>
+      <!-- The original card's shadow: tight, just below it, as if lifted off the card. -->
+      <feGaussianBlur in="solid" stdDeviation="3" />
+      <feOffset dy="4" result="shade" />
+      <feFlood flood-color="#000" flood-opacity="0.8" />
+      <feComposite operator="in" in2="shade" result="shadow" />
+      <feMerge><feMergeNode in="shadow" /><feMergeNode in="SourceGraphic" /></feMerge>
+    </filter>
+  </svg>
   <p class="prompt">
     {#if s.deathmatch}
       {#if mine}Sudden death: your category is drawn at random.{:else}<span class="muted">Sudden death for</span> {active.name}<span class="muted">…</span>{/if}
@@ -167,16 +185,17 @@
       >
         <span class="turn" in:deal|global={{ i, n: s.offered.length }}>
           <span class="back" aria-hidden="true">
+            <CardEngraving side="back" />
             <span class="filigree"></span>
-            <span class="seal">
-              <svg class="emblem" viewBox="20 0 400 391"><path d="M224 390Q255 331 301.0 283.5Q347 236 377 218L407 200L220 -1Q164 31 116.5 82.5Q69 134 50 169L31 204Z" /></svg>
-            </span>
           </span>
           <span class="frame" use:backdropShadow>
+            <CardEngraving side="face" />
             <span class="glare"></span>
             <span class="sheen"></span>
             <span class="filigree"></span>
-            <span class="icon"><span class="glyph" style:--src="url('{categoryIcon(cat)}')"></span></span>
+            <span class="icon">
+              <span class="lit"><span class="glyph" class:fit={!!fits[categoryIcon(cat)]} style={fitStyle(categoryIcon(cat), categoryIconTweak(cat))} style:--src="url('{categoryIcon(cat)}')"></span></span>
+            </span>
             <span class="title">{cat}</span>
           </span>
         </span>
@@ -192,6 +211,11 @@
 </div>
 
 <style>
+  .defs {
+    position: absolute;
+    width: 0;
+    height: 0;
+  }
   .choose {
     display: flex;
     flex-direction: column;
@@ -209,6 +233,12 @@
     gap: 1.4rem;
   }
   .card {
+    /* The engraving's gold, and the warm glow in the face's window. */
+    --ink: #c9a05a;
+    --warm: #c8682a;
+    /* A faint grain over both sides, so they read as worked plates rather than flat fills. */
+    --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 .86 0 0 0 0 .62 .08 0 0 0 -.025'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")
+      0 0 / 180px;
     padding: 0;
     border: 0;
     background: none;
@@ -228,54 +258,42 @@
   .back {
     position: absolute;
     inset: 0;
-    display: grid;
-    place-items: center;
     border-radius: 8px;
+    overflow: clip;
     border: 1px solid var(--gold-lo);
     background:
-      radial-gradient(circle at 50% 50%, rgba(175, 96, 37, 0.28), transparent 55%),
-      repeating-linear-gradient(45deg, rgba(201, 164, 92, 0.07) 0 1px, transparent 1px 16px),
-      repeating-linear-gradient(-45deg, rgba(201, 164, 92, 0.07) 0 1px, transparent 1px 16px),
-      linear-gradient(170deg, #2a2016, #120e0a 70%);
+      var(--grain),
+      radial-gradient(circle at 50% 50%, rgba(175, 96, 37, 0.2), transparent 90px),
+      radial-gradient(ellipse 120% 90% at 50% 50%, transparent 50%, rgba(0, 0, 0, 0.5)),
+      linear-gradient(170deg, #211912, #0d0a07 70%);
+    --ring: rgba(125, 99, 51, 0.35);
     box-shadow:
       inset 0 0 0 4px rgba(0, 0, 0, 0.5),
-      inset 0 0 0 5px rgba(125, 99, 51, 0.35),
+      inset 0 0 0 5px var(--ring),
       0 16px 40px rgba(0, 0, 0, 0.6);
     transform: rotateY(180deg);
     pointer-events: none;
   }
-  .seal {
-    display: grid;
-    place-items: center;
-    width: 108px;
-    height: 108px;
-    border-radius: 50%;
-    border: 1px solid rgba(201, 164, 92, 0.55);
-    background: radial-gradient(circle, rgba(18, 14, 10, 0.9) 55%, rgba(18, 14, 10, 0.4));
-    box-shadow:
-      0 0 0 5px rgba(0, 0, 0, 0.35),
-      0 0 0 6px rgba(125, 99, 51, 0.4),
-      inset 0 0 24px rgba(224, 138, 68, 0.18);
+  /* The engraved plates (see lib/cardEngraving), behind what the card shows. */
+  .frame > :global(.engraving),
+  .back > :global(.engraving) {
+    opacity: 0.6;
+    transition: opacity 0.4s;
   }
-  .emblem {
-    width: 46px;
-    height: 46px;
-    fill: #c9a45c;
-    filter: drop-shadow(0 0 10px rgba(224, 138, 68, 0.55));
-  }
+  /* The face is laid out to its plate (see lib/cardEngraving, TALL): the
+     emblem in the arch, the name in the nameplate, the same whatever the
+     name's length. Inside its border the card is 298 high. */
   .frame {
     position: relative;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.5rem;
-    height: 290px;
-    padding: 1.6rem 1rem 1.2rem;
+    display: block;
+    height: 300px;
+    overflow: clip;
     border-radius: 8px;
     border: 1px solid var(--gold-lo);
     background:
-      radial-gradient(ellipse at 50% 35%, rgba(175, 96, 37, 0.25), transparent 60%),
-      linear-gradient(170deg, #2a2016, #120e0a 70%);
+      var(--grain),
+      radial-gradient(ellipse 120% 90% at 50% 45%, transparent 50%, rgba(0, 0, 0, 0.5)),
+      linear-gradient(170deg, #211912, #0d0a07 70%);
     --bs1: 16px 40px;
     --bs1-color: rgba(0, 0, 0, 0.6);
     --bs-shade: rgba(0, 0, 0, 0.5);
@@ -296,11 +314,20 @@
       opacity 0.4s,
       filter 0.4s;
   }
-  /* The same gold filigree as the panels, on all four corners. */
+  /* The same gold filigree as the panels, on all four corners, joined by a
+     fine rule along the outer line of each. */
   .filigree {
+    --at: 1px;
+    --end: 30px;
+    --rule: linear-gradient(rgba(201, 164, 92, 0.26), rgba(201, 164, 92, 0.26));
+    --rules:
+      var(--rule) var(--end) var(--at) / calc(100% - 2 * var(--end)) 1px no-repeat,
+      var(--rule) var(--end) calc(100% - var(--at)) / calc(100% - 2 * var(--end)) 1px no-repeat,
+      var(--rule) var(--at) var(--end) / 1px calc(100% - 2 * var(--end)) no-repeat,
+      var(--rule) calc(100% - var(--at)) var(--end) / 1px calc(100% - 2 * var(--end)) no-repeat;
     position: absolute;
     inset: 5px;
-    background: var(--filigree);
+    background: var(--filigree), var(--rules);
     opacity: 0.8;
     filter: drop-shadow(0 0 3px rgba(224, 138, 68, 0.35));
     pointer-events: none;
@@ -309,22 +336,53 @@
       filter 0.3s;
   }
   .icon {
-    flex: 1;
-    filter: drop-shadow(0 0 12px rgba(224, 138, 68, 0.45)) drop-shadow(0 4px 6px rgba(0, 0, 0, 0.8));
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: calc(132px - 75px);
+    height: 150px;
+    display: grid;
+    /* Centred even when an item grown larger (--e-k) overflows the cell
+       (its row then outgrows the cell, so the row is centred too). */
+    place-items: unsafe center;
+    place-content: unsafe center;
+  }
+  /* The emblem's shadow and warm glow, on a layer of its own so the
+     engraving stays crisp. The shadow comes from #card-emblem-shadow, cast
+     from the art's solid shape only. */
+  .lit {
+    position: relative;
     display: grid;
     place-items: center;
-    width: 100%;
+    filter: drop-shadow(0 0 12px rgba(224, 138, 68, 0.45)) url(#card-emblem-shadow);
   }
   .glyph {
     width: 130px;
     height: 150px;
+    /* The original card's gold, opaque so the glory's rays stay behind it. */
     background: linear-gradient(180deg, #fbe6b0 0%, #c9a45c 45%, #6d4a1c 100%);
     -webkit-mask: var(--src) center / contain no-repeat;
     mask: var(--src) center / contain no-repeat;
-    opacity: 0.85;
     transition:
       transform 0.5s var(--ease-out),
       opacity 0.4s;
+  }
+  /* Once measured: the box is the visible item, scaled to a common weight
+     (lib/iconFit) and by the item's own --e-k, and the image is placed so
+     its visible part fills it. An item drawn larger grows upward, its foot
+     where it was, and --e-up and --e-left move it. --e-s scales it all
+     down for a card in a row. */
+  .glyph.fit {
+    --e-k: var(--e-kin, 1);
+    --u: calc(var(--e-s, 1) * var(--e-k) * 1px);
+    translate: calc(var(--e-left, 0) * var(--e-s, 1) * -1px)
+      calc(min(0px, (1 - var(--e-k)) * var(--e-h) * var(--e-s, 1) * 0.5px) - var(--e-up, 0) * var(--e-s, 1) * 1px);
+    width: calc(var(--e-w) * var(--u));
+    height: calc(var(--e-h) * var(--u));
+    -webkit-mask-size: calc(var(--e-iw) * var(--u)) calc(var(--e-ih) * var(--u));
+    mask-size: calc(var(--e-iw) * var(--u)) calc(var(--e-ih) * var(--u));
+    -webkit-mask-position: calc(var(--e-x) * var(--u) * -1) calc(var(--e-y) * var(--u) * -1);
+    mask-position: calc(var(--e-x) * var(--u) * -1) calc(var(--e-y) * var(--u) * -1);
   }
   /* As the face turns up in the deal, its emblem kindles and light runs across it. */
   .turn:global(.dealt) .glyph {
@@ -369,11 +427,20 @@
       translate: 420% 0;
     }
   }
+  /* In the nameplate (TALL.plateTop down to 14 from the foot). */
   .title {
+    position: absolute;
+    left: 22px;
+    right: 22px;
+    top: 238px;
+    height: 46px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     font-family: var(--font-display);
     font-weight: 700;
     font-size: 1.05rem;
-    letter-spacing: 0.06em;
+    letter-spacing: 0.04em;
     color: var(--gold-hi);
     text-align: center;
     line-height: 1.2;
@@ -389,33 +456,38 @@
   }
   .card.dm .frame {
     border-color: #8c3a2c;
+    --bs-ring: rgba(140, 58, 44, 0.45);
     background:
-      radial-gradient(ellipse at 50% 35%, rgba(224, 85, 63, 0.3), transparent 60%),
-      linear-gradient(170deg, #2a1410, #120a08 70%);
+      var(--grain),
+      radial-gradient(ellipse 120% 90% at 50% 45%, transparent 50%, rgba(0, 0, 0, 0.5)),
+      linear-gradient(170deg, #22110d, #0d0706 70%);
   }
+  /* The filigree in red: its gold can't be filtered to a clean red, so its
+     shapes mask a red of their own. */
   .card.dm .filigree {
-    filter: hue-rotate(-32deg) saturate(1.6) drop-shadow(0 0 3px rgba(224, 85, 63, 0.4));
+    background: linear-gradient(135deg, #f0a08a, #c8503a 60%, #9a3424);
+    -webkit-mask: var(--filigree), var(--rules);
+    mask: var(--filigree), var(--rules);
+    filter: none;
+  }
+  .card.dm .title {
+    color: #f3cfc2;
+  }
+  .card.dm {
+    --ink: #c85a44;
+    --warm: #e0553f;
   }
   .card.dm .glyph {
     background: linear-gradient(180deg, #ffd7c9 0%, #e0553f 50%, #6d1a10 100%);
   }
   .card.dm .back {
     border-color: #8c3a2c;
+    --ring: rgba(140, 58, 44, 0.45);
     background:
-      radial-gradient(circle at 50% 50%, rgba(224, 85, 63, 0.3), transparent 55%),
-      repeating-linear-gradient(45deg, rgba(224, 85, 63, 0.08) 0 1px, transparent 1px 16px),
-      repeating-linear-gradient(-45deg, rgba(224, 85, 63, 0.08) 0 1px, transparent 1px 16px),
-      linear-gradient(170deg, #2a1410, #120a08 70%);
-  }
-  .card.dm .back .filigree {
-    filter: hue-rotate(-32deg) saturate(1.6) drop-shadow(0 0 3px rgba(224, 85, 63, 0.4));
-  }
-  .card.dm .seal {
-    border-color: rgba(224, 85, 63, 0.55);
-  }
-  .card.dm .emblem {
-    fill: #e0553f;
-    filter: drop-shadow(0 0 10px rgba(224, 85, 63, 0.6));
+      var(--grain),
+      radial-gradient(circle at 50% 50%, rgba(224, 85, 63, 0.2), transparent 90px),
+      radial-gradient(ellipse 120% 90% at 50% 50%, transparent 50%, rgba(0, 0, 0, 0.5)),
+      linear-gradient(170deg, #22110d, #0d0706 70%);
   }
   .card.dm.mine .frame {
     animation: menace 2.4s ease-in-out infinite;
@@ -450,6 +522,15 @@
     --bs2: 24px 50px;
     --bs2-color: rgba(0, 0, 0, 0.7);
   }
+  .card.dm.mine:not(:global(.down)):hover .frame,
+  .card.dm.mine:not(:global(.down)):focus-visible .frame {
+    border-color: #c0503b;
+    --bs-ring: rgba(224, 85, 63, 0.6);
+  }
+  .card.mine:not(:global(.down)):hover .frame > :global(.engraving),
+  .card.chosen .frame > :global(.engraving) {
+    opacity: 0.85;
+  }
   .card.mine:not(:global(.down)):hover .glyph {
     transform: scale(1.1) rotate(-3deg);
     opacity: 1;
@@ -478,7 +559,11 @@
     filter: brightness(1.25) drop-shadow(0 0 5px rgba(255, 170, 90, 0.6));
   }
   .card.dm.mine:not(:global(.down)):hover .filigree {
-    filter: hue-rotate(-32deg) saturate(1.6) brightness(1.2) drop-shadow(0 0 5px rgba(224, 85, 63, 0.6));
+    filter: brightness(1.25);
+  }
+  .card.dm.mine:not(:global(.down)):hover .title {
+    color: #ffe4db;
+    text-shadow: 0 0 14px rgba(240, 140, 120, 0.6);
   }
   .card:focus-visible {
     outline: none;
@@ -496,6 +581,9 @@
     --bs1-color: rgba(255, 170, 90, 0.5);
     --bs2: 0px 0px;
     --bs2-color: transparent;
+  }
+  .card.dm.chosen .frame {
+    border-color: #e88a74;
   }
   .card.faded .frame {
     opacity: 0.2;
@@ -516,12 +604,29 @@
       gap: 0.7rem;
     }
     .frame {
+      display: flex;
+      align-items: center;
       height: auto;
-      flex-direction: row;
-      padding: 0.8rem 1.2rem;
-      gap: 1rem;
+      /* The emblem 54 in and the divider halfway to the name (ROW). */
+      padding: 13px 22px;
+      gap: 32px;
+      /* No window in a row: the warm glow sits round the emblem instead. */
+      background:
+        var(--grain),
+        radial-gradient(circle at 54px 50%, color-mix(in srgb, var(--warm) 28%, transparent), transparent 62px),
+        radial-gradient(ellipse 120% 90% at 50% 45%, transparent 50%, rgba(0, 0, 0, 0.5)),
+        linear-gradient(170deg, #211912, #0d0a07 70%);
+    }
+    .card.dm .frame {
+      background:
+        var(--grain),
+        radial-gradient(circle at 54px 50%, color-mix(in srgb, var(--warm) 28%, transparent), transparent 62px),
+        radial-gradient(ellipse 120% 90% at 50% 45%, transparent 50%, rgba(0, 0, 0, 0.5)),
+        linear-gradient(170deg, #22110d, #0d0706 70%);
     }
     .icon {
+      position: relative;
+      top: auto;
       flex: none;
       width: 64px;
       height: 64px;
@@ -529,25 +634,56 @@
     .glyph {
       width: 60px;
       height: 60px;
+      --e-s: 0.5;
+    }
+    /* A row has no room for an item to grow. */
+    .glyph.fit {
+      --e-k: min(var(--e-kin, 1), 1);
     }
     .title {
+      position: static;
+      display: block;
+      height: auto;
       flex: 1;
       text-align: left;
     }
     .filigree {
+      --at: 0.5px;
+      --end: 20px;
       inset: 3px;
-      background-size: 20px 20px;
+      background-size:
+        20px 20px,
+        20px 20px,
+        20px 20px,
+        20px 20px,
+        calc(100% - 2 * var(--end)) 1px,
+        calc(100% - 2 * var(--end)) 1px,
+        1px calc(100% - 2 * var(--end)),
+        1px calc(100% - 2 * var(--end));
+    }
+    .card.dm .filigree {
+      background-size: auto;
+      -webkit-mask-size:
+        20px 20px,
+        20px 20px,
+        20px 20px,
+        20px 20px,
+        calc(100% - 2 * var(--end)) 1px,
+        calc(100% - 2 * var(--end)) 1px,
+        1px calc(100% - 2 * var(--end)),
+        1px calc(100% - 2 * var(--end));
+      mask-size:
+        20px 20px,
+        20px 20px,
+        20px 20px,
+        20px 20px,
+        calc(100% - 2 * var(--end)) 1px,
+        calc(100% - 2 * var(--end)) 1px,
+        1px calc(100% - 2 * var(--end)),
+        1px calc(100% - 2 * var(--end));
     }
     .back {
       transform: rotateX(180deg);
-    }
-    .seal {
-      width: 52px;
-      height: 52px;
-    }
-    .emblem {
-      width: 24px;
-      height: 24px;
     }
     .card.mine:not(:global(.down)):hover .frame {
       transform: translateX(6px);
