@@ -2,7 +2,24 @@
 // described by the same sentences, and the custom editor uses the same terms,
 // so a knob reads the same wherever it shows up.
 
-import { AZURITE_FAST_MS, BLAST_OPTIONS, DELVE_MIN_TIMER, FIND_TIMER, FLARE_MS, delveChangeAt, delveLockout, delveTimer, type FindKind } from './delve.ts';
+import {
+  BLAST_OPTIONS,
+  BLAST_TIMER,
+  DELVE_MIN_TIMER,
+  FIND_DEEPER,
+  FLARE_MS,
+  SHARDS_PER_WARD,
+  delveChangeAt,
+  delveLockout,
+  delveTimer,
+  findDepth,
+  findReward,
+  findTimer,
+  veinWindow,
+  type FindKind,
+  type Inventory,
+  type ItemKind,
+} from './delve.ts';
 import { knobsOf, maxFakes, type Difficulty, type Knobs, type Settings, type VeilSpeed } from './game.ts';
 
 /** Display names, in the order the lobby offers them. */
@@ -167,35 +184,74 @@ export const DELVE_LADDER: { depth: number; text: string }[] = [
   { depth: 55, text: 'Seven seconds' },
 ];
 
+/** Small numbers in words, for the notes under the cards. */
+const WORDS = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen'];
+const words = (n: number) => WORDS[n] ?? String(n);
+
+/** An item as a reward, with its article. */
+export const ITEM_TEXT: Record<ItemKind, string> = {
+  wards: 'an Azurite Ward',
+  shards: 'an azurite shard',
+  flares: 'a flare',
+  dynamite: 'dynamite',
+};
+
 /**
- * The finds: the card's name, its tagline, and its risk and reward in a line
- * for the player choosing (`mine`) or for those watching.
+ * The finds: the card's name, the tagline on its card, and what it is in a
+ * line for those watching.
  */
-export const FIND_TEXT: Record<FindKind, { name: string; tag: string; mine: string; others: string }> = {
+export const FIND_TEXT: Record<FindKind, { name: string; tag: string; others: string }> = {
   azurite: {
     name: 'Azurite Vein',
-    tag: 'Mine it fast for an Azurite Ward',
-    mine: `The hardest question, on ${FIND_TIMER} seconds; right within ${AZURITE_FAST_MS / 1000} wins the ward, which takes your next loss.`,
-    others: 'An Azurite Vein: the hardest question, and an Azurite Ward for a fast right answer.',
+    tag: 'A ward if fast, a shard if slow',
+    others: `An Azurite Vein: a question from ${words(FIND_DEEPER)} depths deeper, for an Azurite Ward or a shard of one.`,
   },
   flare: {
     name: 'Flare Cache',
     tag: 'Answer right for a flare',
-    mine: `The hardest question, on ${FIND_TIMER} seconds; a flare burns by itself as your clock runs out, for ${FLARE_MS / 1000} seconds more.`,
-    others: 'A Flare Cache: the hardest question, and a flare for a right answer.',
+    others: `A Flare Cache: a question from ${words(FIND_DEEPER)} depths deeper, for a flare.`,
   },
   dynamite: {
     name: 'Dynamite Cache',
     tag: 'Answer right for dynamite',
-    mine: `The hardest question, on ${FIND_TIMER} seconds; dynamite blasts open a card of your choice, with ${BLAST_OPTIONS} options.`,
-    others: 'A Dynamite Cache: the hardest question, and dynamite for a right answer.',
+    others: `A Dynamite Cache: a question from ${words(FIND_DEEPER)} depths deeper, for dynamite.`,
   },
 };
 
-/** The card blasted open with dynamite. */
+/**
+ * A find's risk and reward, for the player choosing at depth `depth` while
+ * holding `inv` (`blasted`: they blasted it open, so it asks a safe question).
+ */
+export function findNote(kind: FindKind, depth: number, inv: Inventory, blasted = false): string {
+  const secs = blasted ? BLAST_TIMER : findTimer(depth);
+  const ask = blasted ? `Blasted open: a safe question, on ${secs} seconds.` : `A question from depth ${findDepth(depth)}, on ${secs} seconds.`;
+  const fast = findReward(kind, inv, true);
+  if (!fast) return `${ask} You can carry no more.`;
+  /** The reward, saying why when it stands in for the find's own. */
+  const earns = (item: ItemKind, own: ItemKind) => (item === own ? ITEM_TEXT[item] : `${ITEM_TEXT[item]}, as you carry all the ${own === 'shards' ? 'wards' : own} you can`);
+  if (kind === 'azurite') {
+    const slow = findReward(kind, inv, false)!;
+    if (fast === 'wards' && slow === 'shards') {
+      const forge = inv.shards + 1 >= SHARDS_PER_WARD ? 'it forges a ward with yours' : `${words(SHARDS_PER_WARD)} forge a ward`;
+      return `${ask} Right within ${veinWindow(secs) / 1000} seconds mines ${ITEM_TEXT.wards}, which takes your next loss; slower, ${ITEM_TEXT.shards} (${forge}).`;
+    }
+    return `${ask} Right earns ${earns(fast, 'wards')}.`;
+  }
+  const own: ItemKind = kind === 'flare' ? 'flares' : 'dynamite';
+  const what = fast !== own ? '' : kind === 'flare' ? `, which burns by itself as your clock runs out, for ${FLARE_MS / 1000} seconds more` : ', which blasts open a safe card while you choose';
+  return `${ask} Right earns ${earns(fast, own)}${what}.`;
+}
+
+/** The card blasted open with dynamite, and the choice of what to blast. */
 export const BLAST_TEXT = {
   tag: 'Blasted open',
   button: 'Blast open a card',
   pick: 'Blast open which category?',
-  note: `Any category, locked or not: ${BLAST_OPTIONS} options, and nothing to find.`,
+  find: (name: string) => `Blast the ${name} open`,
+  others: 'Or another category',
+  note: `Any category, locked or not, as a safe question: ${words(BLAST_OPTIONS)} options, no look-alikes or made-up names, ${BLAST_TIMER} seconds.`,
+  /** After `note`, while a find is on offer. */
+  withFind: 'Blast the find open and it asks the same safe question, for its reward.',
+  /** Under the cards, once a card is blasted open. */
+  opened: `A safe question: ${words(BLAST_OPTIONS)} options, no look-alikes or made-up names, ${BLAST_TIMER} seconds; nothing to find.`,
 };

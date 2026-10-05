@@ -3,16 +3,19 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import {
-  AZURITE_FAST_MS,
   BLAST_OPTIONS,
+  BLAST_TIMER,
   DELVE_LIVES,
   FINDS,
-  FIND_TILE_VEIL,
-  FIND_TIMER,
+  FIND_DEEPER,
   FLARE_AT_MS,
   FLARE_MS,
+  SHARDS_PER_WARD,
   blastRules,
   findRules,
+  findTileVeil,
+  findTimer,
+  veinWindow,
   DELVE_MAX_LOCKOUT,
   DELVE_RULESET,
   compareDelvers,
@@ -115,12 +118,13 @@ test('the ruleset is pinned to the curve and the protocol', () => {
   // Changing the curve changes this hash: bump DELVE_RULESET and PROTOCOL_VERSION with it, then update the pin.
   const table: unknown[] = DEPTHS.slice(0, 100).map((d) => [delveRules(d), delveTimer(d), delveTileVeil(d)]);
   // The finds too: where and how often they turn up, what they ask, and what their items do.
-  table.push([FINDS, FIND_TIMER, FIND_TILE_VEIL, AZURITE_FAST_MS, FLARE_AT_MS, FLARE_MS, BLAST_OPTIONS, findRules(13), blastRules(40)]);
+  table.push([FINDS, FIND_DEEPER, SHARDS_PER_WARD, FLARE_AT_MS, FLARE_MS, BLAST_OPTIONS, BLAST_TIMER, blastRules(40)]);
+  table.push(DEPTHS.slice(0, 100).map((d) => [findRules(d), findTimer(d), findTileVeil(d), veinWindow(findTimer(d))]));
   const hash = createHash('sha256').update(JSON.stringify(table)).digest('hex').slice(0, 16);
   assert.deepEqual([DELVE_RULESET, PROTOCOL_VERSION, hash], [1, 10, PINNED_HASH]);
 });
 
-const PINNED_HASH = 'bfe320bd6647f89f';
+const PINNED_HASH = 'bb54e90ec0127831';
 
 function run(losses: Record<string, number[]>, round = 10, seats = Object.keys(losses)): GameState {
   const s = createGame('a');

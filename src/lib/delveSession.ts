@@ -1,6 +1,6 @@
 // The session's Delve decisions, apart from PeerJS and Svelte so tests can reach them.
 
-import { DELVE_LIVES, FLARE_AT_MS, flaresOf, inventoryOf, livesOf, wardsOf, type ItemKind } from './delve.ts';
+import { DELVE_LIVES, FLARE_AT_MS, ITEM_KINDS, flaresOf, inventoryOf, livesOf, wardsOf, type ItemKind } from './delve.ts';
 import type { GameState } from './game.ts';
 
 /** The longest the host waits for the art to reach the player answering before their clock starts anyway. */
@@ -79,15 +79,16 @@ export function livesLost(prev: GameState | null, next: GameState): { playerId: 
 
 /**
  * Items gained or used up by this change, per player and item, for the phial,
- * sounds and effects: a find answered right, a ward breaking (a reveal, or a
- * turn missed while away), a flare burning, dynamite blasting a card open.
+ * sounds and effects: a find answered right (two shards forging a ward show
+ * as a shard used and a ward gained), a ward breaking (a reveal, or a turn
+ * missed while away), a flare burning, dynamite blasting a card open.
  * `left`: how many they hold now.
  */
 export function inventoryChanges(prev: GameState | null, next: GameState): { playerId: string; item: ItemKind; change: 'gained' | 'used'; left: number }[] {
   if (!prev?.delve || !next.delve || prev.delve.startedAt !== next.delve.startedAt) return [];
   return next.players.flatMap((p) => {
     const [before, after] = [inventoryOf(prev, p.id), inventoryOf(next, p.id)];
-    return (['wards', 'flares', 'dynamite'] as const).flatMap((item) =>
+    return ITEM_KINDS.flatMap((item) =>
       after[item] === before[item] ? [] : [{ playerId: p.id, item, change: after[item] > before[item] ? ('gained' as const) : ('used' as const), left: after[item] }],
     );
   });

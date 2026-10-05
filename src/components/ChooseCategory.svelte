@@ -4,15 +4,15 @@
   import { categoryIcon, categoryIconTweak, categoryIcons } from '../lib/ui';
   import { fits, fitStyle, maskOf, measure } from '../lib/iconFit.svelte';
   import { activeRules, difficultyOf, lastPicks } from '../lib/game';
-  import { BLAST_TEXT, FIND_TEXT, deathmatchText, lockoutText } from '../lib/difficultyText';
-  import { blastedOffer, delveLockout, dynamiteOf, findOffer, type FindKind } from '../lib/delve';
+  import { BLAST_TEXT, FIND_TEXT, deathmatchText, findNote, lockoutText } from '../lib/difficultyText';
+  import { blastedOffer, delveLockout, dynamiteOf, findOffer, inventoryOf, type FindKind } from '../lib/delve';
   import { sfx } from '../lib/sound';
   import { backdropShadow } from '../lib/backdropShadow';
   import { cardHover, cardPicked, cardRevealed } from '../lib/fx/moments';
   import { fxActive, type Handle, type Vec3 } from '../lib/fx/core';
   import { C, embers, emitter, flare, glints, outline, puffs, ring, shards, sparks } from '../lib/fx/effects';
   import { light } from '../lib/lights';
-  import { at, hatch, line, pointedRay, pt, seeded, type Pt } from '../lib/arcane';
+  import { findArt } from '../lib/findArt';
   import CardEngraving from './CardEngraving.svelte';
 
   const s = $derived(session.state!);
@@ -37,187 +37,28 @@
   const kindOf = (cat: string): FindKind | 'blast' | null => (find?.category === cat ? find.kind : blasted === cat ? 'blast' : null);
 
   // ---- finds --------------------------------------------------------------
-  // A find is the same card worked over in its own colour, cut in the cards'
-  // engraved manner (exact geometry, one-sided hatching, a soft glow under
-  // the lines, docs/arcane-style.md): an Azurite Vein shot through with
-  // seams of blue crystal, two clusters growing out of them; a Flare Cache
-  // with a signal flare bursting in its corner; a Dynamite Cache with a
-  // bundle of sticks, its fuse lit. A card blasted open is cracked from the
-  // blast.
+  // A find is the ordinary card, its gold engraving and emblem untouched, with
+  // its find grown into the window beside the pedestal (lib/findArt): azurite
+  // breaking out of the frame, a signal flare burning, a bundle of dynamite
+  // with its fuse lit. A card blasted open has its corner blown off; a find
+  // blasted open shows both.
 
-  type Plate = { glow: { cls: string; d: string }[]; lines: { cls: string; d: string }[] };
-
-  /** One pointed hexagonal crystal from `b` toward `a` degrees: its outline, a ridge, the lit and the shaded face. */
-  function crystal(b: Pt, a: number, len: number, hw: number) {
-    const [l, r] = [at(b, a - 90, hw), at(b, a + 90, hw)];
-    const [ls, rs] = [at(l, a, len * 0.72), at(r, a, len * 0.72)];
-    const tip = at(b, a, len);
-    // The ridge is off centre, so one face is wider: the facet toward the light.
-    const ridge = at(b, a + 90, hw * 0.3);
-    const ridgeTop = at(ridge, a, len * 0.8);
-    return {
-      lines: `M${pt(l)}L${pt(ls)}L${pt(tip)}L${pt(rs)}L${pt(r)}` + line(ridge, ridgeTop) + line(ridgeTop, tip),
-      hatch: hatch(ridge, r, ridgeTop, 1.3),
-      lit: `M${pt(l)}L${pt(ls)}L${pt(tip)}L${pt(ridgeTop)}L${pt(ridge)}Z`,
-      dark: `M${pt(ridge)}L${pt(ridgeTop)}L${pt(tip)}L${pt(rs)}L${pt(r)}Z`,
-    };
-  }
-
-  /** Degrees clockwise from the top, from `p` toward `q`. */
-  const headingOf = (p: Pt, q: Pt) => (Math.atan2(q[0] - p[0], p[1] - q[1]) * 180) / Math.PI;
-
-  /**
-   * A seam from `p` heading `a` degrees: straight runs that turn a little at
-   * each joint (from a fixed seed, so every card is worked alike), a sliver
-   * that narrows to nothing, with one branch.
-   */
-  function seam(p: Pt, a: number, runs: number, step: number, width: number, rnd: () => number, branch = true): string {
-    const pts: Pt[] = [p];
-    let dir = a;
-    for (let i = 0; i < runs; i++) {
-      dir += (rnd() - 0.5) * 60;
-      // Never far off its heading, so the seam crosses the card rather than curling.
-      dir = a + Math.max(-35, Math.min(35, dir - a));
-      pts.push(at(pts[i], dir, step * (0.7 + rnd() * 0.6)));
-    }
-    const half = (i: number) => (width / 2) * (1 - i / runs);
-    const side = (turn: number) => pts.map((q, i) => at(q, (i < runs ? headingOf(q, pts[i + 1]) : dir) + turn, half(i)));
-    let d = `M${side(-90).map(pt).join('L')}L${side(90).reverse().map(pt).join('L')}Z`;
-    if (branch && runs > 3) {
-      const from = Math.floor(runs / 2);
-      d += seam(pts[from], a + (rnd() < 0.5 ? -40 : 40), runs - from, step * 0.7, width * 0.5, rnd, false);
-    }
-    return d;
-  }
-
-  /** A small star of `n` fine rays about `c`, long and short in turn: a glint or a spark. */
-  function glint(c: Pt, r: number, n = 8) {
-    return Array.from({ length: n }, (_, k) => line(at(c, (k * 360) / n, r * 0.25), at(c, (k * 360) / n, k % 2 ? r * 0.55 : r))).join('');
-  }
-
-  /** The azurite worked into a card of `w` × `h` (a tall card, or a row on narrow screens). */
-  function veins(w: number, h: number, row: boolean): Plate {
-    const rnd = seeded(20251005);
-    // Where the clusters grow from (an edge), and each crystal's heading, length and half width.
-    const clusters: { b: Pt; c: [number, number, number][] }[] = row
-      ? [
-          { b: [w - 4, h - 3], c: [[-48, 24, 4.2], [-72, 16, 3.4], [-26, 15, 3]] },
-          { b: [w * 0.62, -2], c: [[200, 13, 3], [168, 10, 2.6]] },
-        ]
-      : [
-          { b: [3, 226], c: [[42, 34, 5.2], [70, 22, 4.2], [18, 20, 3.6]] },
-          { b: [w - 3, 64], c: [[222, 30, 4.8], [248, 19, 3.8], [196, 17, 3.4]] },
-        ];
-    const seams = (
-      row
-        ? [seam([w - 10, h - 6], -95, 7, 16, 2.2, rnd), seam([w * 0.62, 4], 200, 3, 12, 1.6, rnd), seam([0, h * 0.2], 110, 3, 11, 1.4, rnd, false)]
-        : [seam([10, 220], 80, 5, 14, 2.2, rnd), seam([w - 10, 70], 205, 6, 15, 2.2, rnd), seam([w * 0.3, h], 10, 3, 12, 1.6, rnd, false), seam([w * 0.72, 0], 170, 3, 11, 1.4, rnd, false)]
-    ).join('');
-    const ks = clusters.flatMap(({ b, c }) => c.map(([a, len, hw]) => crystal(b, a, len, hw)));
-    const edges = ks.map((k) => k.lines).join('');
-    return {
-      glow: [
-        { cls: 'core', d: seams },
-        { cls: 'edge', d: edges },
-      ],
-      lines: [
-        { cls: 'lit', d: ks.map((k) => k.lit).join('') },
-        { cls: 'dark', d: ks.map((k) => k.dark).join('') },
-        { cls: 'core', d: seams },
-        { cls: 'edge', d: edges },
-        { cls: 'hatch', d: ks.map((k) => k.hatch).join('') },
-      ],
-    };
-  }
-
-  /** A signal flare bursting in the card's corner: pointed rays round a hot core, fine rays beyond, and sparks. */
-  function flareBurst(w: number, h: number, row: boolean): Plate {
-    // On a row it sits small in the top corner, clear of the name.
-    const [c, k]: [Pt, number] = row ? [[w - 20, 17], 0.6] : [[w - 38, 44], 1];
-    const rays = Array.from({ length: 8 }, (_, i) => pointedRay(c, i * 45, 6 * k, (i % 2 ? 15 : 25) * k, 14, 1.1));
-    const fine = Array.from({ length: 16 }, (_, i) => line(at(c, i * 22.5 + 11.25, 18 * k), at(c, i * 22.5 + 11.25, (i % 2 ? 34 : 46) * k))).join('');
-    const rnd = seeded(7);
-    const sparks = row ? '' : Array.from({ length: 6 }, () => glint(at(c, 160 + rnd() * 140, 52 + rnd() * 60), 3 + rnd() * 2.5)).join('');
-    const r = 4.5 * k;
-    const core = `M${pt(at(c, 0, r))}A${r} ${r} 0 1 1 ${pt(at(c, 180, r))}A${r} ${r} 0 1 1 ${pt(at(c, 0, r))}Z`;
-    const edges = rays.map((r) => r.lines).join('');
-    return {
-      glow: [
-        { cls: 'core', d: core },
-        { cls: 'edge', d: edges + sparks },
-      ],
-      lines: [
-        { cls: 'core', d: core },
-        { cls: 'edge', d: edges },
-        { cls: 'hatch', d: rays.map((r) => r.hatch).join('') },
-        { cls: 'hair', d: fine + sparks },
-      ],
-    };
-  }
-
-  /** A bundle of three sticks of dynamite, bound twice, its fuse curling up to a spark. */
-  function sticks(w: number, h: number, row: boolean): Plate {
-    // Low in the window's corner on a tall card; small in the top corner of a row, clear of the name.
-    const [base, tilt, len, hw]: [Pt, number, number, number] = row ? [[w - 44, 30], 72, 22, 2.8] : [[28, 230], 16, 36, 4];
-    const out: string[] = [];
-    const shade: string[] = [];
-    // Each stick lies along `tilt`, side by side across it, shaded down its far side.
-    for (const k of [-1, 0, 1]) {
-      const foot = at(base, tilt + 90, k * hw * 2.1);
-      const head = at(foot, tilt, len);
-      out.push(`M${pt(at(foot, tilt - 90, hw))}L${pt(at(head, tilt - 90, hw))}L${pt(at(head, tilt + 90, hw))}L${pt(at(foot, tilt + 90, hw))}Z`);
-      for (let t = 1.2; t < len; t += 1.3) {
-        const m = at(foot, tilt, t);
-        shade.push(line(at(m, tilt + 90, hw), at(m, tilt + 90, hw * 0.3)));
-      }
-    }
-    // The bands, across all three.
-    const band = (t: number) => {
-      const m = at(base, tilt, len * t);
-      return line(at(m, tilt - 90, hw * 3.3), at(m, tilt + 90, hw * 3.3));
-    };
-    const top = at(base, tilt, len);
-    // The fuse: an arc off the middle stick's head, then the spark.
-    const r = row ? 7 : 12;
-    const centre = at(top, tilt + 90, r);
-    const end = at(centre, tilt - 90 + 150, r);
-    const fuse = `M${pt(top)}A${r} ${r} 0 0 1 ${pt(end)}`;
-    const spark = glint(end, row ? 4.5 : 6, 8);
-    return {
-      glow: [
-        { cls: 'core', d: spark },
-        { cls: 'edge', d: out.join('') + fuse },
-      ],
-      lines: [
-        { cls: 'dark', d: out.join('') },
-        { cls: 'edge', d: out.join('') + band(0.25) + band(0.72) + fuse },
-        { cls: 'hatch', d: shade.join('') },
-        { cls: 'hair', d: spark },
-      ],
-    };
-  }
-
-  /** Cracks from the blast that opened the card, running out from where it struck. */
-  function cracks(w: number, h: number, row: boolean): Plate {
-    const rnd = seeded(31);
-    // Struck at a corner of the face, clear of the emblem and the name.
-    const c: Pt = row ? [w - 40, h - 12] : [w - 36, 40];
-    const d = Array.from({ length: 9 }, (_, k) => seam(c, k * 40 + rnd() * 20, row ? 3 : 4, row ? 12 : 16, 1.4, rnd, false)).join('');
-    return { glow: [{ cls: 'core', d }], lines: [{ cls: 'soot', d }] };
-  }
-
-  const PLATES: Record<FindKind | 'blast', (w: number, h: number, row: boolean) => Plate> = {
-    azurite: veins,
-    flare: flareBurst,
-    dynamite: sticks,
-    blast: cracks,
-  };
-  /** Each card's measured size, for its plate. */
+  /** Each card's measured size inside its border, for its art. */
   let sizes = $state<Record<string, [number, number]>>({});
-  const plateOf = (cat: string, kind: FindKind | 'blast') => {
+  const uid = $props.id();
+  function artOf(cat: string, kind: FindKind | 'blast') {
     const [w, h] = sizes[cat] ?? [0, 0];
-    return w && h ? PLATES[kind](w, h, w > h) : null;
-  };
+    if (!w || !h) return null;
+    const i = s.offered.indexOf(cat);
+    const art = findArt(kind, w, h, `${uid}-${i}`);
+    // A find blasted open: its own art, and the blast's cracks over it.
+    if (kind !== 'blast' && blasted === cat) {
+      const blast = findArt('blast', w, h, `${uid}-${i}b`);
+      return { svg: art.svg + blast.svg, clip: blast.clip, w, h };
+    }
+    return { ...art, w, h };
+  }
+  const arts = $derived(Object.fromEntries(s.offered.map((cat) => [cat, kindOf(cat) ? artOf(cat, kindOf(cat)!) : null])));
 
   // Their effects: azurite rings like crystal, a flare and dynamite throw sparks.
   const FX: Record<FindKind | 'blast', { main: Vec3; pale: Vec3 }> = {
@@ -427,6 +268,7 @@
         data-fx="none"
         class:dm={!!s.deathmatch}
         class:special={!!kindOf(cat)}
+        class:cut={!!arts[cat]?.clip}
         data-find={kindOf(cat)}
         aria-describedby={kindOf(cat) ? 'find-note' : undefined}
         class:mine
@@ -447,26 +289,21 @@
             <CardEngraving side="back" />
             <span class="filigree"></span>
           </span>
-          <span class="frame" use:backdropShadow>
+          <span class="frame" use:backdropShadow style:clip-path={arts[cat]?.clip ?? undefined}>
             <CardEngraving side="face" />
+            <span class="glare"></span>
+            <span class="sheen"></span>
+            <span class="filigree"></span>
             {#if kindOf(cat)}
               {@const kind = kindOf(cat)!}
-              {@const plate = plateOf(cat, kind)}
+              {@const art = arts[cat]}
               <span class="worked" bind:clientWidth={null, (w) => (sizes[cat] = [w ?? 0, sizes[cat]?.[1] ?? 0])} bind:clientHeight={null, (h) => (sizes[cat] = [sizes[cat]?.[0] ?? 0, h ?? 0])} aria-hidden="true">
-                {#if plate}
-                  <svg class="glow" viewBox="0 0 {sizes[cat][0]} {sizes[cat][1]}">
-                    {#each plate.glow as p (p.cls)}<path class={p.cls} d={p.d} />{/each}
-                  </svg>
-                  <svg class="lines" viewBox="0 0 {sizes[cat][0]} {sizes[cat][1]}">
-                    {#each plate.lines as p (p.cls)}<path class={p.cls} d={p.d} />{/each}
-                  </svg>
+                {#if art}
+                  <svg viewBox="0 0 {art.w} {art.h}">{@html art.svg}</svg>
                 {/if}
               </span>
               <span class="find-tag">{kind === 'blast' ? BLAST_TEXT.tag : FIND_TEXT[kind].name}</span>
             {/if}
-            <span class="glare"></span>
-            <span class="sheen"></span>
-            <span class="filigree"></span>
             <span class="icon">
               <span class="lit"><span class="glyph" class:fit={!!fits[categoryIcon(cat)]} style={fitStyle(categoryIcon(cat), categoryIconTweak(cat))} style:--src="url('{maskOf(categoryIcon(cat))}')"></span></span>
             </span>
@@ -485,6 +322,10 @@
         </button>
       {:else}
         <p class="blast-q">{BLAST_TEXT.pick}</p>
+        {#if find}
+          <button class="btn small blast-find" data-find={find.kind} onclick={() => blast(find.category)}>{BLAST_TEXT.find(FIND_TEXT[find.kind].name)}</button>
+          <p class="blast-q muted">{BLAST_TEXT.others}</p>
+        {/if}
         <div class="blast-list">
           {#each blastable as c (c)}
             <button class="btn small" class:locked={lockedNow.includes(c)} onclick={() => blast(c)}>
@@ -492,17 +333,18 @@
             </button>
           {/each}
         </div>
-        <p class="note muted">{BLAST_TEXT.note}</p>
+        <p class="note muted">{BLAST_TEXT.note}{#if find}{' '}{BLAST_TEXT.withFind}{/if}</p>
         <button class="btn ghost small" onclick={() => (blasting = false)}>Keep the dynamite</button>
       {/if}
     </div>
   {/if}
   {#if find && !s.deathmatch}
     <p class="note find-note" data-find={find.kind} id="find-note">
-      {#if mine}<strong>{FIND_TEXT[find.kind].tag}.</strong> {FIND_TEXT[find.kind].mine}{:else}{FIND_TEXT[find.kind].others}{/if}
+      {#if mine}<strong>{FIND_TEXT[find.kind].tag}.</strong> {findNote(find.kind, s.round, inventoryOf(s, active.id), blasted === find.category)}{:else}{FIND_TEXT[find.kind].others}{/if}
     </p>
-  {:else if blasted && mine}
-    <p class="note find-note" data-find="blast" id="find-note">{BLAST_TEXT.note}</p>
+  {/if}
+  {#if blasted && mine && blasted !== find?.category}
+    <p class="note find-note" data-find="blast" id={find ? undefined : 'find-note'}>{BLAST_TEXT.opened}</p>
   {/if}
   {#if s.deathmatch}
     <p class="note muted">{mine ? 'Tap the card when you are ready.' : deathmatchText(difficultyOf(s.settings.difficulty))}</p>
@@ -914,108 +756,73 @@
   }
 
   /* ---- finds ---------------------------------------------------------------
-     A find is the same card in its own colour: the engraving and filigree,
-     the emblem, a slow pulse of light round it, and its plate (see
-     veins(), flareBurst(), sticks() above) worked over the face. A card
-     blasted open is the plain card, cracked and sooted. */
+     A find is the ordinary card, gold and engraved, with its find grown into
+     the window (lib/findArt), its frame lit in the find's colour, and the
+     warm glow in its window turned to the find's light. */
   .card[data-find='azurite'] {
-    --ink: #7fb2ec;
     --warm: #2f78d8;
-    --f-hi: #d6eaff;
-    --f: #6fa8ec;
-    --f-line: #b9dbff;
-    --f-core: #a9d0ff;
-    --f-glow: #4f9cff;
-    --f-lit: rgba(150, 200, 255, 0.24);
-    --f-dark: rgba(16, 40, 96, 0.55);
-    --f-border: #3a6db5;
-    --f-ring: rgba(80, 140, 230, 0.45);
+    --f: #8cbcf0;
+    --f-hi: #dcedff;
+    --f-border: #4a78b8;
     --f-pulse: rgba(70, 140, 255, 0.4);
-    --f-bg: #111a2a;
-    --f-glyph: linear-gradient(180deg, #eef7ff 0%, #6fa8ec 48%, #1d3f86 100%);
-    --f-filigree: linear-gradient(135deg, #d6eaff, #5c9ae8 60%, #2a5aa8);
+    --f-glow: rgba(70, 140, 255, 0.28);
   }
-  /* A signal flare's hot rose red, apart from the deathmatch's ember red. */
   .card[data-find='flare'] {
-    --ink: #e38c9e;
     --warm: #e0405f;
+    --f: #ff8fa1;
     --f-hi: #ffe1e6;
-    --f: #ff7088;
-    --f-line: #ffc4cc;
-    --f-core: #fff0f2;
-    --f-glow: #ff4d6a;
-    --f-lit: rgba(255, 170, 180, 0.25);
-    --f-dark: rgba(110, 20, 40, 0.5);
-    --f-border: #a83a55;
-    --f-ring: rgba(220, 80, 110, 0.45);
-    --f-pulse: rgba(255, 70, 100, 0.38);
-    --f-bg: #22101a;
-    --f-glyph: linear-gradient(180deg, #fff0f2 0%, #ff7a90 50%, #7a1830 100%);
-    --f-filigree: linear-gradient(135deg, #ffe1e6, #ff7088 60%, #a02a45);
+    --f-border: #a84a5c;
+    --f-pulse: rgba(255, 70, 100, 0.36);
+    --f-glow: rgba(255, 70, 100, 0.25);
   }
-  /* Soot and a lit fuse. */
   .card[data-find='dynamite'] {
-    --ink: #d58a52;
     --warm: #e0602a;
+    --f: #f4a868;
     --f-hi: #ffe3c8;
-    --f: #f08a3c;
-    --f-line: #ffc79a;
-    --f-core: #fff1d8;
-    --f-glow: #ff7a2a;
-    --f-lit: rgba(255, 190, 140, 0.2);
-    --f-dark: rgba(150, 38, 18, 0.6);
-    --f-border: #a4502a;
-    --f-ring: rgba(220, 110, 60, 0.45);
-    --f-pulse: rgba(255, 110, 40, 0.38);
-    --f-bg: #1d1311;
-    --f-glyph: linear-gradient(180deg, #fff1de 0%, #f0954a 50%, #6a2a0c 100%);
-    --f-filigree: linear-gradient(135deg, #ffe3c8, #f08a3c 60%, #8a3a14);
+    --f-border: #a4602a;
+    --f-pulse: rgba(255, 120, 40, 0.36);
+    --f-glow: rgba(255, 120, 40, 0.25);
   }
   .card[data-find='blast'] {
+    --warm: #a04a1a;
+    --f: #d8a070;
     --f-hi: #f3dcc4;
-    --f: #c98a58;
-    --f-line: #8a7564;
-    --f-core: #ff9a50;
-    --f-glow: #ff7a2a;
-    --f-border: #6e5848;
-    --f-ring: rgba(150, 120, 90, 0.4);
-    --f-pulse: rgba(255, 120, 50, 0.25);
-    --f-bg: #1a1512;
+    --f-border: #7a5a40;
+    --f-pulse: rgba(255, 110, 40, 0.28);
+    --f-glow: rgba(255, 110, 40, 0.2);
   }
   .card.special .frame {
     border-color: var(--f-border);
-    --bs-ring: var(--f-ring);
-    background:
-      var(--grain),
-      radial-gradient(ellipse 120% 90% at 50% 45%, transparent 50%, rgba(0, 0, 0, 0.5)),
-      linear-gradient(170deg, var(--f-bg), #070608 70%);
+    --bs-ring: color-mix(in srgb, var(--f-border) 45%, transparent);
+  }
+  /* Its light, once it lies face up (face down, the back has a shadow of its own). */
+  .card.special:not(:global(.down)) .frame {
+    --bs1: 0px 34px;
+    --bs1-color: var(--f-glow);
+  }
+  /* A card with its corner blown off: the backdrop would shadow the whole
+     rectangle, so its shadow and glow follow the broken shape instead. */
+  .card.cut:not(:global(.down)) .frame,
+  .card.cut.mine:not(:global(.down)):hover .frame,
+  .card.cut.chosen .frame {
+    --bs1-color: transparent;
+    --bs2-color: transparent;
+    animation: none;
+  }
+  .card.cut {
+    filter: drop-shadow(0 14px 18px rgba(0, 0, 0, 0.6)) drop-shadow(0 0 12px var(--f-glow));
   }
   .card.special.mine .frame {
     animation: pulse 3.2s ease-in-out infinite;
   }
   @keyframes pulse {
     50% {
-      --bs1: 0px 45px;
+      --bs1: 0px 46px;
       --bs1-color: var(--f-pulse);
     }
   }
   .card.special:global(.down) .frame {
     animation: none;
-  }
-  .card.special:not([data-find='blast']) .filigree {
-    background: var(--f-filigree);
-    -webkit-mask: var(--filigree), var(--rules);
-    mask: var(--filigree), var(--rules);
-    filter: none;
-  }
-  .card.special:not([data-find='blast']) .icon {
-    filter: drop-shadow(0 0 12px color-mix(in srgb, var(--f-glow) 55%, transparent));
-  }
-  .card.special:not([data-find='blast']) .glyph {
-    background: var(--f-glyph);
-  }
-  .card.special .title {
-    color: var(--f-hi);
   }
   .card.special.mine:not(:global(.down)):hover .frame,
   .card.special.mine:not(:global(.down)):focus-visible .frame {
@@ -1023,15 +830,8 @@
     --bs-ring: color-mix(in srgb, var(--f) 60%, transparent);
     --bs1-color: var(--f-pulse);
   }
-  .card.special.mine:not(:global(.down)):hover .title {
-    color: #fff;
-    text-shadow: 0 0 14px color-mix(in srgb, var(--f) 60%, transparent);
-  }
-  .card.special.mine:not(:global(.down)):hover .filigree {
-    filter: brightness(1.25);
-  }
   .card.special.chosen .frame {
-    border-color: var(--f-line);
+    border-color: var(--f);
     --bs1-color: var(--f-pulse);
   }
   .worked {
@@ -1046,79 +846,198 @@
     height: 100%;
     overflow: visible;
   }
-  /* The glow: the same shapes, wider, under the lines, breathing. */
-  .worked .glow {
-    opacity: 0.22;
-    animation: breathe 5s ease-in-out infinite;
-  }
-  .worked .glow path {
-    fill: var(--f-glow);
-    stroke: var(--f-glow);
-    stroke-width: 3;
-    stroke-linejoin: round;
-  }
-  .worked .glow .edge {
-    fill: none;
-    stroke-width: 2.4;
-  }
-  @keyframes breathe {
-    50% {
-      opacity: 0.45;
-    }
-  }
-  .worked .lines path {
-    fill: none;
-    stroke-linecap: butt;
-    stroke-linejoin: miter;
-    stroke-miterlimit: 12;
-  }
-  .worked .lines .core {
-    fill: var(--f-core);
-    opacity: 0.85;
-  }
-  .worked .lines .edge {
-    stroke: var(--f-line);
-    stroke-width: 0.7;
-  }
-  .worked .lines .hair {
-    stroke: var(--f-line);
-    stroke-width: 0.35;
-    opacity: 0.8;
-  }
-  .worked .lines .hatch {
-    stroke: var(--f);
-    stroke-width: 0.4;
-    stroke-linecap: round;
-  }
-  .worked .lines .lit {
-    fill: var(--f-lit);
-  }
-  .worked .lines .dark {
-    fill: var(--f-dark);
-  }
-  .worked .lines .soot {
-    fill: rgba(10, 8, 6, 0.85);
-    stroke: var(--f-line);
-    stroke-width: 0.4;
-  }
-  /* What the card is, on a small plate at its head (in its name on a row). */
+  /* What the card is, on a small plaque over the keystone, lozenges at its
+     ends like the nameplate's (in its name on a row). */
   .find-tag {
     position: absolute;
-    top: 9px;
+    top: 8px;
     left: 50%;
     translate: -50% 0;
-    padding: 2px 9px 3px;
+    padding: 3px 12px 4px;
     font-family: var(--font-display);
-    font-size: 0.62rem;
+    font-size: 0.6rem;
     font-weight: 700;
-    letter-spacing: 0.16em;
+    letter-spacing: 0.18em;
     text-transform: uppercase;
     white-space: nowrap;
     color: var(--f-hi);
-    background: linear-gradient(color-mix(in srgb, var(--f-bg) 70%, #000), #08070a);
-    border: 1px solid color-mix(in srgb, var(--f) 55%, transparent);
-    border-radius: 2px;
-    box-shadow: 0 0 10px var(--f-pulse);
+    background: linear-gradient(#1a140e, #0a0806);
+    border: 1px solid color-mix(in srgb, var(--gold) 70%, transparent);
+    box-shadow:
+      inset 0 0 0 2px #0a0806,
+      inset 0 0 0 2.5px color-mix(in srgb, var(--f) 55%, transparent),
+      0 0 12px var(--f-pulse);
+  }
+  .find-tag::before,
+  .find-tag::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    width: 6px;
+    height: 6px;
+    background: #0a0806;
+    border: 1px solid color-mix(in srgb, var(--gold) 70%, transparent);
+    rotate: 45deg;
+    translate: 0 -50%;
+  }
+  .find-tag::before {
+    left: -4px;
+  }
+  .find-tag::after {
+    right: -4px;
+  }
+
+  /* The art's motion, transform and opacity only: a glint now and then on the
+     azurite and a light sweeping over it, the flare's flame flickering and its
+     embers rising, the fuse sputtering, the broken edge smouldering. Held
+     still with the effects off or reduced motion. */
+  .worked :global(.glint) {
+    opacity: 0;
+    transform: scale(0.2) rotate(-20deg);
+    animation: glint 5.2s ease-in-out infinite;
+  }
+  @keyframes glint {
+    0%,
+    74%,
+    100% {
+      opacity: 0;
+      transform: scale(0.2) rotate(-20deg);
+    }
+    82% {
+      opacity: 1;
+      transform: scale(1) rotate(10deg);
+    }
+    90% {
+      opacity: 0;
+      transform: scale(0.5) rotate(30deg);
+    }
+  }
+  .worked :global(.ember-glint) {
+    animation-duration: 2.4s;
+  }
+  .worked :global(.sweep) {
+    opacity: 0;
+    animation: sweep 6.5s cubic-bezier(0.45, 0, 0.4, 1) infinite;
+  }
+  @keyframes sweep {
+    0% {
+      opacity: 0;
+      translate: 0 0;
+    }
+    4% {
+      opacity: 1;
+    }
+    26% {
+      opacity: 1;
+      translate: var(--sweep) 0;
+    }
+    30%,
+    100% {
+      opacity: 0;
+      translate: var(--sweep) 0;
+    }
+  }
+  .worked :global(.flame) {
+    animation: flicker 1.1s ease-in-out infinite;
+  }
+  @keyframes flicker {
+    0%,
+    100% {
+      transform: scale(1, 1);
+    }
+    22% {
+      transform: scale(0.94, 1.08) skewX(-2deg);
+    }
+    47% {
+      transform: scale(1.05, 0.93) skewX(1.5deg);
+    }
+    71% {
+      transform: scale(0.97, 1.05) skewX(-1deg);
+    }
+  }
+  .worked :global(:is(.flare-light, .spark-light)) {
+    animation: throb 1.7s ease-in-out infinite;
+  }
+  @keyframes throb {
+    50% {
+      opacity: 0.78;
+    }
+  }
+  .worked :global(.ember) {
+    opacity: 0;
+    animation: rise 2.4s linear infinite;
+  }
+  @keyframes rise {
+    0% {
+      opacity: 0;
+      translate: 0 0;
+    }
+    15% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+      translate: var(--drift) var(--rise);
+    }
+  }
+  .worked :global(.spark) {
+    animation: sputter 0.55s steps(1) infinite;
+  }
+  @keyframes sputter {
+    0% {
+      transform: scale(1) rotate(0);
+    }
+    25% {
+      transform: scale(0.72) rotate(14deg);
+    }
+    50% {
+      transform: scale(1.12) rotate(-6deg);
+    }
+    75% {
+      transform: scale(0.86) rotate(22deg);
+    }
+  }
+  .worked :global(.spit) {
+    opacity: 0;
+    animation: spit 0.9s ease-out infinite;
+  }
+  @keyframes spit {
+    0% {
+      opacity: 1;
+      translate: 0 0;
+    }
+    70%,
+    100% {
+      opacity: 0;
+      translate: var(--dx) var(--dy);
+    }
+  }
+  .worked :global(.smoulder) {
+    animation: smoulder 2.8s ease-in-out infinite;
+  }
+  @keyframes smoulder {
+    50% {
+      opacity: 0.35;
+    }
+  }
+  /* Face down, and while another card is chosen, nothing moves. */
+  .card:global(.down) .worked :global(*),
+  .card.faded .worked :global(*) {
+    animation-play-state: paused;
+  }
+  :global(html[data-still]) .worked :global(*) {
+    animation: none;
+  }
+  :global(html[data-still]) .worked :global(:is(.sweep, .glint, .ember, .spit)) {
+    opacity: 0;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .worked :global(*) {
+      animation: none;
+    }
+    .worked :global(:is(.sweep, .glint, .ember, .spit)) {
+      opacity: 0;
+    }
   }
   .find-tag-row {
     display: none;
@@ -1170,6 +1089,22 @@
   }
   .blast-q {
     margin: 0;
+  }
+  .blast-q.muted {
+    margin-bottom: -0.2rem;
+    font-size: 0.9rem;
+  }
+  .blast-find {
+    border-color: var(--f-border, #a4502a);
+    color: #ffd2ad;
+  }
+  .blast-find[data-find='azurite'] {
+    --f-border: #4a78b8;
+    color: #dcedff;
+  }
+  .blast-find[data-find='flare'] {
+    --f-border: #a84a5c;
+    color: #ffe1e6;
   }
   .blast-list {
     display: flex;
@@ -1270,12 +1205,11 @@
         1px calc(100% - 2 * var(--end)),
         1px calc(100% - 2 * var(--end));
     }
-    .card.special .frame {
-      background:
-        var(--grain),
-        radial-gradient(circle at 62px 50%, color-mix(in srgb, var(--warm, #c8682a) 28%, transparent), transparent 74px),
-        radial-gradient(ellipse 120% 90% at 50% 45%, transparent 50%, rgba(0, 0, 0, 0.5)),
-        linear-gradient(170deg, var(--f-bg), #070608 70%);
+    /* Over the find's art, which sits at the row's end: the name keeps clear of it. */
+    .card.special .title {
+      position: relative;
+      inset: auto;
+      padding-right: 46px;
     }
     .find-tag {
       display: none;

@@ -4,29 +4,32 @@
 import { cleanName, nameProblem, nameSkeleton } from './names.ts';
 import { RUBY } from './palette.ts';
 import {
-  AZURITE_FAST_MS,
   DELVE_MAX_LOCKOUT,
   DELVE_PICK_MS,
   DELVE_REJOIN_MS,
   DELVE_RESUME_GRACE_MS,
   DELVE_RULESET,
   FINDS,
-  FIND_TILE_VEIL,
-  FIND_TIMER,
   FLARE_AT_MS,
   FLARE_MS,
   blastRules,
   compareDelvers,
   delveLockout,
+  delveQuestionTimer,
   delveRules,
   delveTileVeil,
   delveTimer,
-  findFor,
+  findReward,
   findRules,
+  findTileVeil,
+  hasRoom,
   inventoryOf,
   isGroupRun,
   questionTimer,
   tileVeilSize,
+  veinWindow,
+  ITEM_KINDS,
+  SHARDS_PER_WARD,
   livesOf,
   standingIds,
   type FindKind,
@@ -276,17 +279,17 @@ export function rulesFor(settings: Pick<Settings, 'difficulty'> & Partial<Settin
 
 /**
  * The rules for the current question (deathmatch questions are one tier
- * harder; Delve's follow the depth, a find's are as hard as any, and a card
- * blasted open has fewer options).
+ * harder; Delve's follow the depth, a find's are those of deeper down, and a
+ * card blasted open plays as at the surface).
  */
 export function activeRules(s: GameState): DifficultyRules {
   if (!s.delve) return rulesFor(s.settings, !!s.deathmatch);
   return delveQuestionRules(s.round, s.question ?? {});
 }
 
-/** The rules of a Delve question at depth `d`, for a find or a blasted card. */
+/** The rules of a Delve question at depth `d`, for a find or a blasted card (a find blasted open plays as a blasted card). */
 function delveQuestionRules(d: number, q: Pick<Question, 'find' | 'blasted'>): DifficultyRules {
-  return q.find ? findRules(d) : q.blasted ? blastRules(d) : delveRules(d);
+  return q.blasted ? blastRules(d) : q.find ? findRules(d) : delveRules(d);
 }
 
 /** The last `lockout` categories of a list (none for a lockout of 0). */
@@ -343,7 +346,10 @@ export interface Delve {
   inventory?: Record<string, Inventory>;
   /** The find among the cards on offer, or null (missing in older saves). */
   find?: { category: string; kind: FindKind } | null;
-  /** The card the player on turn blasted open with dynamite (once a turn), or null. */
+  /**
+   * The card the player on turn blasted open with dynamite (once a turn): a
+   * fourth card, or the find on offer. Null if none (missing in older saves).
+   */
   blasted?: string | null;
 }
 
@@ -457,11 +463,11 @@ export interface Question {
   /** Delve: host clock when the clock started, once the art has reached the player answering. */
   clockAt?: number;
   /**
-   * Delve: asked from a find, under the hardest rules and the shortest clock;
-   * a right answer earns its item (an Azurite Vein's only within AZURITE_FAST_MS).
+   * Delve: asked from a find, under the rules and clock of deeper down; a
+   * right answer earns its item (see delve.ts findReward).
    */
   find?: FindKind;
-  /** Delve: asked from a card blasted open with dynamite (fewer options, no reward). */
+  /** Delve: asked from a card blasted open with dynamite, as at the surface (a find's still earns its item). */
   blasted?: boolean;
   /** Delve: a flare burnt on this question, and its deadline moved (once a question). */
   flared?: boolean;
@@ -480,8 +486,10 @@ export interface Reveal {
   winnerId: string | null;
   /** Host-clock timestamp of the reveal, so every screen counts down to the same move on (missing in older saves). */
   at?: number;
-  /** Delve: the item this right answer to a find earned. */
+  /** Delve: the item this right answer to a find earned ('wards' for a shard that forged one). */
   gained?: ItemKind;
+  /** Delve: the shard this answer earned forged a ward with the one held. */
+  forged?: boolean;
   /** Delve: an Azurite Ward took this loss instead of a life. */
   warded?: boolean;
 }
@@ -961,13 +969,13 @@ export class Engine {
           chosenId === null || (q.deadline !== null && from !== null && this.now() > q.deadline + ANSWER_GRACE_MS);
         const correct = !timedOut && chosenId === q.itemId;
         let gained: ItemKind | undefined;
+        let forged = false;
         let warded = false;
         if (correct) {
           active.score += 1;
-          if (s.delve && q.find && (q.find !== 'azurite' || this.answeredFast(s, q, from))) {
-            const item = findFor(q.find).item;
-            if (this.gain(s, active.id, item)) gained = item;
-          }
+          // A right answer to a find always earns something (see delve.ts findReward).
+          const reward = s.delve && q.find ? findReward(q.find, inventoryOf(s, active.id), this.answeredFast(s, q, from)) : null;
+          if (reward) [gained, forged] = this.gain(s, active.id, reward);
         } else if (s.delve) warded = this.loseLife(s, active.id) === 'ward';
         if (!timedOut && chosenId && isFake(chosenId)) s.used.push(chosenId);
         if (s.deathmatch) s.deathmatch.results[active.id] = correct;
@@ -980,6 +988,7 @@ export class Engine {
           timedOut,
           winnerId: correct ? active.id : null,
           ...(gained ? { gained } : {}),
+          ...(forged ? { forged } : {}),
           ...(warded ? { warded } : {}),
         };
         s.phase = 'reveal';
@@ -1112,10 +1121,12 @@ export class Engine {
         if (!isActive) throw new ActionError("It's not your turn.");
         if (dm.blasted) throw new ActionError('Only one card a turn can be blasted open.', true);
         if (typeof action.category !== 'string' || !this.byCategory.has(action.category)) throw new ActionError('There is no such category.');
-        if (s.offered.includes(action.category)) throw new ActionError('That category is already on offer.');
+        // A fourth card, or the find on offer (its question made safe, its reward kept).
+        const theFind = dm.find?.category === action.category && s.offered.includes(action.category);
+        if (s.offered.includes(action.category) && !theFind) throw new ActionError('That category is already on offer.');
         if (!this.spend(s, active.id, 'dynamite')) throw new ActionError('You have no dynamite.');
         dm.blasted = action.category;
-        s.offered.push(action.category);
+        if (!theFind) s.offered.push(action.category);
         break;
       }
     }
@@ -1232,7 +1243,7 @@ export class Engine {
       active.recent = lastPicks([...active.recent, category], DELVE_MAX_LOCKOUT);
       s.delve.pickBy = null;
       if (s.delve.find?.category === category) kind = { find: s.delve.find.kind };
-      else if (s.delve.blasted === category) kind = { blasted: true };
+      if (s.delve.blasted === category) kind.blasted = true;
     } else if (!s.deathmatch) {
       active.recent = lastPicks([...active.recent, category], rulesFor(s.settings).lockout);
     }
@@ -1254,13 +1265,22 @@ export class Engine {
     return 'life';
   }
 
-  /** One more of an item for a player still standing, up to its cap; false when they hold all they can. */
-  private gain(s: GameState, id: string, item: ItemKind): boolean {
+  /**
+   * One more of an item for a player still standing, if they have room for it
+   * (delve.ts hasRoom). A shard that makes SHARDS_PER_WARD forges a ward.
+   * Says what they gained (undefined for nothing) and whether a ward was forged.
+   */
+  private gain(s: GameState, id: string, item: ItemKind): [ItemKind | undefined, boolean] {
     const inv = inventoryOf(s, id);
-    if (inv[item] >= findCap(item) || livesOf(s, id) <= 0) return false;
-    inv[item]++;
+    if (!hasRoom(inv, item) || livesOf(s, id) <= 0) return [undefined, false];
+    let forged = false;
+    if (item === 'shards' && inv.shards + 1 >= SHARDS_PER_WARD) {
+      inv.shards = 0;
+      inv.wards++;
+      forged = true;
+    } else inv[item]++;
     (s.delve!.inventory ??= {})[id] = inv;
-    return true;
+    return [forged ? 'wards' : item, forged];
   }
 
   /** Uses up one of an item; false when the player has none. */
@@ -1273,21 +1293,22 @@ export class Engine {
   }
 
   /**
-   * An answer arrived within AZURITE_FAST_MS of the clock starting, measured
-   * on the host. A guest saw the clock start up to a one-way trip late and
+   * An answer arrived within an Azurite Vein's fast window (delve.ts
+   * veinWindow) of the clock starting, measured on the host. A guest saw the clock start up to a one-way trip late and
    * their answer takes another to arrive, so it gets the same allowance as an
    * answer at the deadline; the host's own and hot-seat answers travel nowhere.
    */
   private answeredFast(s: GameState, q: Question, from: string | null): boolean {
     if (q.clockAt === undefined) return false;
     const guest = from !== null && from !== s.hostId;
-    return this.now() - q.clockAt <= AZURITE_FAST_MS + (guest ? ANSWER_GRACE_MS : 0);
+    return this.now() - q.clockAt <= veinWindow(delveQuestionTimer(s.round, q)) + (guest ? ANSWER_GRACE_MS : 0);
   }
 
   /**
    * Whether one of the cards on offer is a find, which and of what: one roll
-   * against the finds' slices (delve.ts FINDS), each open from its depth, an
-   * item the player holds all they can of coming up empty.
+   * against the finds' slices (delve.ts FINDS), each open from its depth. A
+   * player who holds all they can of everything finds nothing: no find could
+   * give them anything.
    */
   private rollFind(s: GameState, player: Player | undefined): { category: string; kind: FindKind } | null {
     if (!s.delve || !player || !s.offered.length) return null;
@@ -1296,7 +1317,7 @@ export class Engine {
     let r = this.rng();
     const inv = inventoryOf(s, player.id);
     for (const f of open) {
-      if (r < f.chance) return inv[f.item] >= f.max ? null : { category: sample(s.offered, 1, this.rng)[0], kind: f.kind };
+      if (r < f.chance) return ITEM_KINDS.some((item) => hasRoom(inv, item)) ? { category: sample(s.offered, 1, this.rng)[0], kind: f.kind } : null;
       r -= f.chance;
     }
     return null;
@@ -1678,11 +1699,11 @@ export class Engine {
 
   /**
    * Builds a question from the category. Updates `s.used` when the category
-   * has to start over. Delve: a `find` gets the hardest rules and the
-   * shortest clock there are, whatever the depth; a `blasted` card fewer options.
+   * has to start over. Delve: a `find` gets the rules and clock of deeper
+   * down (delve.ts findRules); a `blasted` card, a find's too, the surface's.
    */
   makeQuestion(s: GameState, category: string, kind: Pick<Question, 'find' | 'blasted'> = {}): Question {
-    const special: Pick<Question, 'find' | 'blasted'> = !s.delve ? {} : kind.find ? { find: kind.find } : kind.blasted ? { blasted: true } : {};
+    const special: Pick<Question, 'find' | 'blasted'> = !s.delve ? {} : { ...(kind.find ? { find: kind.find } : {}), ...(kind.blasted ? { blasted: true } : {}) };
     const rules = s.delve ? delveQuestionRules(s.round, special) : activeRules(s);
     const inCat = this.byCategory.get(category) ?? [];
     const need = rules.options - 1;
@@ -1756,8 +1777,8 @@ export class Engine {
     // Delve: the clock starts once the art has reached the player answering (the 'clock' action).
     const deadline = !s.delve && timer > 0 ? askedAt + timer * 1000 : null;
     // Delve: deep down, "find the art" pictures may burn in as well, each cut much coarser.
-    const tiles = mode === 'art' && !!rules.veil && !!s.delve && this.rng() < (special.find ? FIND_TILE_VEIL : delveTileVeil(s.round));
-    const delveSecs = special.find ? FIND_TIMER : delveTimer(s.round);
+    const tiles = mode === 'art' && !!rules.veil && !!s.delve && this.rng() < (special.find ? findTileVeil(s.round) : delveTileVeil(s.round));
+    const delveSecs = delveQuestionTimer(s.round, special);
     const veil: Veil | null =
       rules.veil && (mode === 'name' || tiles)
         ? {
@@ -1828,9 +1849,4 @@ export function nameSimilarity(a: string, b: string): number {
 
 function validIndex(index: unknown, count: number): number | null {
   return typeof index === 'number' && Number.isInteger(index) && index >= 0 && index < count ? index : null;
-}
-
-/** The most of an item a player can hold. */
-function findCap(item: ItemKind): number {
-  return FINDS.find((f) => f.item === item)!.max;
 }
