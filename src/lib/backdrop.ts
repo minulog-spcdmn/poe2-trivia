@@ -14,7 +14,7 @@ import { DROPS_PER_MASK, MAX_MASKS, measureDrops, releaseAllDrops } from './back
 import { MAX_LIGHTS, packLights, stepHomeScene, stepMood } from './lights';
 import { fxActive, fxUserOn, onFxChange } from './fx/core';
 import { COLUMNS, SLOTS, embers } from './backdropEmbers';
-import { currentDescent, snapDescent, stepDescent } from './descent';
+import { currentDescent, snapDescent, stepDescent, targetDescent } from './descent';
 import { DIALOG_BLUR, DIALOG_DIM, openDialog } from './behindDialog';
 
 const VERT = `#version 300 es
@@ -506,6 +506,9 @@ const BLOBS: Blob[] = [
   { color: [110, 80, 45], opacity: 0.05, home: [0.3, 0.35], wander: [0.12, 0.1], reach: [0.2, 0.3, 0.1] },
   { color: [2, 1, 1], opacity: 0.35, home: [0.55, 0.6], wander: [0.18, 0.1], reach: [0.25, 0.18, 0.12] },
 ];
+/** Delve: how far down the smoke cools (a factor per channel), and the azure two of the blobs turn. */
+const BLOB_COOL = [0.55, 0.5, 0.62];
+const BLOB_AZURE = [30 / 255, 62 / 255, 115 / 255];
 
 const TAU = Math.PI * 2;
 const rand = (lo: number, hi: number) => lo + Math.random() * (hi - lo);
@@ -763,14 +766,13 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     gl!.uniform2f(uBottom, (1 + 0.1 * bottom) * (1 + 0.15 * dsc.deep), (1 + 0.3 * bottom) * (1 + 0.4 * dsc.deep) * (1 - 0.85 * dsc.blue));
     gl!.uniform2f(uTop, 1 + 0.08 * top, (1 + 0.35 * top) * (1 - dsc.deep) ** 1.5);
     // The smoke darkens and cools with depth, and two of the warm blobs turn azure.
-    BLOBS.forEach((b, i) => {
+    for (let i = 0; i < BLOBS.length; i++) {
       for (let c = 0; c < 3; c++) {
-        const cool = [0.55, 0.5, 0.62][c];
-        let v = (b.color[c] / 255) * (1 + (cool - 1) * dsc.deep);
-        if (i < 2) v += ([30, 62, 115][c] / 255 - v) * 0.55 * dsc.blue;
+        let v = (BLOBS[i].color[c] / 255) * (1 + (BLOB_COOL[c] - 1) * dsc.deep);
+        if (i < 2) v += (BLOB_AZURE[c] - v) * 0.55 * dsc.blue;
         blobColor[i * 3 + c] = v;
       }
-    });
+    }
     gl!.uniform3fv(uBlobColor, blobColor);
     gl!.uniform1f(uBaseStop, 0.6 - 0.08 * base);
     paths.forEach((path, i) => blobA.set(path(still ? 0 : ms / 1000), i * 4));
@@ -895,11 +897,14 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     // either.
     // Delve's depth eases in; holding still, it changes at once (it is game information).
     const descending = still ? snapDescent() : stepDescent(dt);
-    embers.descend(currentDescent());
+    embers.descend(currentDescent(), targetDescent().blue);
     // Arrived at a depth: the embers still in the old colour take the new one (after a rejoin, all of them).
     if (wasDescending && !descending) embers.recolor();
     wasDescending = descending;
-    const soft = lights || moodState === 'moving' || descending;
+    // A depth easing in is a slow change of colour: 30fps is plenty. Holding
+    // still, the one frame it changes in must be drawn.
+    if (still && descending) dirty = true;
+    const soft = lights || moodState === 'moving';
     const lit = homeMoving || (soft && !cssShadows.matches);
     if (!still) embers.step(dt, canvas.clientWidth, canvas.clientHeight, !fxActive());
     else if (descending) embers.step(0, canvas.clientWidth, canvas.clientHeight, true, true);

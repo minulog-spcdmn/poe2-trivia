@@ -89,6 +89,7 @@ export class Embers {
   /** Each ember's place in its rise last step, to see it start a new one. */
   private lastU = new Float32Array(EMBERS);
   private depth: EmberDepth = { agit: 0, red: 0, blue: 0, veins: 0, abyss: 0 };
+  private aim = 0;
   /** How restless they are, eased. */
   private agit = 0;
   /** The draft that pushes them sideways, on a clock of its own. */
@@ -138,14 +139,19 @@ export class Embers {
     return this.heat;
   }
 
-  /** Follows the depth of a Delve (all zero outside one). */
-  descend(d: EmberDepth) {
+  /**
+   * Follows the depth of a Delve (all zero outside one). `aim` is the share of
+   * blue embers at the depth the scene is heading for: an ember starting a
+   * new rise takes that colour, so none turns back while the depth eases in.
+   */
+  descend(d: EmberDepth, aim = d.blue) {
     this.depth = d;
+    this.aim = aim;
   }
 
-  /** Every ember takes the depth's colour at once (a new stratum, a rejoin), instead of at its next rise. */
+  /** Every ember takes the colour of the depth it heads for at once (a new stratum, a rejoin), instead of at its next rise. */
   recolor() {
-    for (let i = 0; i < EMBERS; i++) this.cold[i] = this.depth.blue > this.coldGate[i] ? 1 : 0;
+    for (let i = 0; i < EMBERS; i++) this.cold[i] = this.aim > this.coldGate[i] ? 1 : 0;
   }
 
   /**
@@ -192,7 +198,7 @@ export class Embers {
       const join = i < CALM_EMBERS ? 1 : i < extra ? Math.min(1, Math.max(0, (this.crowd - e.gate) / 0.3)) : 0;
       const fl = 1 - flickerDepth + flickerDepth * Math.sin(t * e.flicker + i * 1.7) * Math.sin(t * e.flicker * 0.37 + i);
       // A new rise: this ember now burns blue or not, as deep as the scene is.
-      if (u < this.lastU[i]) this.cold[i] = dep.blue > this.coldGate[i] ? 1 : 0;
+      if (u < this.lastU[i]) this.cold[i] = this.aim > this.coldGate[i] ? 1 : 0;
       this.lastU[i] = u;
       const cold = this.cold[i] === 1;
       pos[i * 4] = e.x0 * w + (e.drift + gust) * u + Math.sin(u * Math.PI * 2 * e.swayRate + e.phase * 6.283) * e.sway * (1 + 0.7 * a);
@@ -219,7 +225,11 @@ export class Embers {
     data.fill(0);
     used.fill(0);
     const colW = w / COLUMNS;
-    for (let i = 0; i < EMBERS + MAX_VEINS; i++) {
+    // The glints first: they are few and still, and a column too crowded to
+    // hold every glow would otherwise drop one, and it would blink out.
+    const all = EMBERS + MAX_VEINS;
+    for (let j = 0; j < all; j++) {
+      const i = (j + EMBERS) % all;
       const x = pos[i * 4];
       const y = pos[i * 4 + 1];
       const size = pos[i * 4 + 2];

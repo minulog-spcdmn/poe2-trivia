@@ -121,9 +121,20 @@ export function snapDescent(): boolean {
   return true;
 }
 
+// Read every frame, so each is worked out once per depth rather than per call.
+let shownMemo = { at: NaN, d: descent(0) };
+let targetMemo = { at: NaN, d: descent(0) };
+
 /** The scene as shown right now. */
 export function currentDescent(): Descent {
-  return descent(shown);
+  if (shownMemo.at !== shown) shownMemo = { at: shown, d: descent(shown) };
+  return shownMemo.d;
+}
+
+/** The scene the shown one is heading for. */
+export function targetDescent(): Descent {
+  if (targetMemo.at !== target) targetMemo = { at: target, d: descent(target) };
+  return targetMemo.d;
 }
 
 /** The depth the scene shows right now (tests). */

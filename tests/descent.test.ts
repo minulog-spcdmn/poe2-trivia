@@ -130,3 +130,16 @@ test('named depths: where the descent turns, then the bottomless dark every 25 p
   assert.equal(milestoneAt(101), null);
   assert.ok(MILESTONES.some((m) => m.depth === BLUE_FROM), 'the first blue embers have a name');
 });
+
+test('while the depth eases in, embers take the colour of the depth it heads for, and none turns back', () => {
+  const e = new Embers();
+  e.step(0.05, 1200, 800);
+  // Shown: still warm. Heading for: all blue.
+  e.descend(SURFACE, 1);
+  e.recolor();
+  e.step(0.01, 1200, 800);
+  assert.ok(slots(e).filter(([, , size]) => size > 0).length < 5, 'a recolor goes by where the scene heads');
+  for (let i = 0; i < 300; i++) e.step(0.1, 1200, 800);
+  const warm = slots(e).filter(([, , size]) => size > 0).length;
+  assert.equal(warm, 0, `${warm} turned back warm on a new rise`);
+});

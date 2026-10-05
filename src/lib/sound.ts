@@ -170,37 +170,41 @@ function hall(ac: AudioContext, seconds: number) {
 /**
  * Delve's rumble: brown noise, lowpassed twice, that loops without a seam
  * (its end is faded into its start). Its level is about AMBIENCE's file's,
- * so RUMBLE's gain compares with AMBIENCE's.
+ * so RUMBLE's gain compares with AMBIENCE's. One channel is worked out; the
+ * other plays the same loop half a turn on, which sounds as wide and is
+ * seamless too.
  */
 export function rumble(ac: Pick<BaseAudioContext, 'sampleRate' | 'createBuffer'>) {
-  const seconds = 8;
-  const fade = Math.floor(ac.sampleRate * 1);
+  const seconds = 6;
+  const fade = Math.floor(ac.sampleRate * 0.75);
   const len = Math.floor(ac.sampleRate * seconds);
   const buf = ac.createBuffer(2, len, ac.sampleRate);
   const k = 1 - Math.exp((-2 * Math.PI * RUMBLE.lp) / ac.sampleRate);
-  for (let ch = 0; ch < 2; ch++) {
-    const raw = new Float32Array(len + fade);
-    let brown = 0;
-    let a = 0;
-    let b = 0;
-    let sum = 0;
-    for (let i = 0; i < raw.length; i++) {
-      brown = (brown + 0.02 * (Math.random() * 2 - 1)) * 0.998;
-      a += k * (brown - a);
-      b += k * (a - b);
-      raw[i] = b;
-      sum += b * b;
-    }
-    // About -26 dB RMS, like the ambience file's -29 mean with a little more weight.
-    const scale = 0.05 / Math.sqrt(sum / raw.length || 1);
-    const d = buf.getChannelData(ch);
-    for (let i = 0; i < len; i++) {
-      // The tail past the end crossfades into the start, so the loop point is seamless.
-      const t = i < fade ? i / fade : 1;
-      // Equal power: the two halves are unrelated noise, so a straight fade would dip.
-      d[i] = (raw[i] * Math.sqrt(t) + (i < fade ? raw[len + i] * Math.sqrt(1 - t) : 0)) * scale;
-    }
+  const raw = new Float32Array(len + fade);
+  let brown = 0;
+  let a = 0;
+  let b = 0;
+  let sum = 0;
+  for (let i = 0; i < raw.length; i++) {
+    brown = (brown + 0.02 * (Math.random() * 2 - 1)) * 0.998;
+    a += k * (brown - a);
+    b += k * (a - b);
+    raw[i] = b;
+    sum += b * b;
   }
+  // About -26 dB RMS, like the ambience file's -29 mean with a little more weight.
+  const scale = 0.05 / Math.sqrt(sum / raw.length || 1);
+  const left = buf.getChannelData(0);
+  const right = buf.getChannelData(1);
+  const half = len >> 1;
+  for (let i = 0; i < len; i++) {
+    // The tail past the end crossfades into the start, so the loop point is
+    // seamless. Equal power: the two halves are unrelated noise, so a straight
+    // fade would dip.
+    const t = i < fade ? i / fade : 1;
+    left[i] = (raw[i] * Math.sqrt(t) + (i < fade ? raw[len + i] * Math.sqrt(1 - t) : 0)) * scale;
+  }
+  for (let i = 0; i < len; i++) right[i] = left[(i + half) % len];
   return buf;
 }
 
@@ -294,6 +298,12 @@ export function fireAmbience(on: boolean) {
 export function depthAmbience(d: number) {
   if (d === depth) return;
   depth = d;
+  // The rumble takes a moment to work out: do it while the run starts, not as it comes in.
+  if (d > 0 && bus && !buffers.has(RUMBLE.file)) {
+    const b = bus;
+    const idle = (globalThis as { requestIdleCallback?: (f: () => void) => void }).requestIdleCallback ?? ((f: () => void) => setTimeout(f, 200));
+    idle(() => bus === b && void load(RUMBLE.file).catch(() => {}));
+  }
   updateAmbience();
   if (!bus) return;
   for (const [l, p] of playing) shape(l, p, bus.ac.currentTime, DEPTH_EASE);
