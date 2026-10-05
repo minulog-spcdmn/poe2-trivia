@@ -537,15 +537,20 @@
     color: transparent;
     filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.8));
   }
+  .stat-label {
+    margin-bottom: 0.35rem;
+  }
   .stat-value {
     font-size: 2.3rem;
-    margin: 0.15rem 0 0.1rem;
+    line-height: 1;
+    margin-bottom: 0.3rem;
   }
   .stat-value small {
     font-size: 1.1rem;
   }
   .stat-note {
     font-size: 0.92rem;
+    line-height: 1.3;
     font-style: italic;
     color: var(--muted);
   }
@@ -1229,6 +1234,7 @@
   @media (max-width: 560px) {
     .summary {
       grid-template-columns: 1fr;
+      row-gap: 1.75rem;
     }
     .side {
       justify-content: space-around;
