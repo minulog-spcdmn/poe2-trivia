@@ -10,6 +10,7 @@ import { BEHIND_PICTURE, FxRenderer, SHAPE_FLOATS, ShapeType, pictureReady, type
 import { ParticlePool, type ParticleSpec } from './particles';
 import { opacityOf } from '../opacity';
 import { dialogBox, openDialog } from '../behindDialog';
+import { readStored, writeStored } from '../storage';
 
 export type Vec3 = readonly [number, number, number];
 export type Point = { x: number; y: number };
@@ -104,14 +105,7 @@ export type Task = (dt: number, age: number) => boolean;
 
 // ---------- state ----------
 
-const FX_KEY = 'poe2trivia.fx';
-let userOn = (() => {
-  try {
-    return localStorage.getItem(FX_KEY) !== '0';
-  } catch {
-    return true;
-  }
-})();
+let userOn = readStored('fx') !== '0';
 const reduce = typeof matchMedia === 'function' ? matchMedia('(prefers-reduced-motion: reduce)') : null;
 const coarse = typeof matchMedia === 'function' ? matchMedia('(pointer: coarse)') : null;
 
@@ -171,11 +165,7 @@ export function fxAvailable() {
 
 export function setFxOn(on: boolean) {
   userOn = on;
-  try {
-    localStorage.setItem(FX_KEY, on ? '1' : '0');
-  } catch {
-    /* ignore */
-  }
+  writeStored('fx', on ? '1' : '0');
   if (!fxActive()) clearAll();
   for (const l of listeners) l(on);
 }
