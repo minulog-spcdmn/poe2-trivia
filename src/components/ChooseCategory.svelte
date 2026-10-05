@@ -1,7 +1,7 @@
 <script lang="ts">
   import { cubicInOut, cubicOut } from 'svelte/easing';
   import { session } from '../lib/session.svelte';
-  import { categoryIcon, categoryIcons } from '../lib/ui';
+  import { categoryIcon, categoryIconScale, categoryIcons } from '../lib/ui';
   import { fits, fitStyle, measure } from '../lib/iconFit.svelte';
   import { difficultyOf, rulesFor } from '../lib/game';
   import { deathmatchText, lockoutText } from '../lib/difficultyText';
@@ -194,7 +194,7 @@
             <span class="sheen"></span>
             <span class="filigree"></span>
             <span class="icon">
-              <span class="lit"><span class="glyph" class:fit={!!fits[categoryIcon(cat)]} style={fitStyle(categoryIcon(cat))} style:--src="url('{categoryIcon(cat)}')"></span></span>
+              <span class="lit"><span class="glyph" class:fit={!!fits[categoryIcon(cat)]} style={fitStyle(categoryIcon(cat), categoryIconScale(cat))} style:--src="url('{categoryIcon(cat)}')"></span></span>
             </span>
             <span class="title">{cat}</span>
           </span>
@@ -342,7 +342,10 @@
     top: calc(132px - 75px);
     height: 150px;
     display: grid;
-    place-items: center;
+    /* Centred even when an item grown larger (--e-k) overflows the cell
+       (its row then outgrows the cell, so the row is centred too). */
+    place-items: unsafe center;
+    place-content: unsafe center;
   }
   /* The emblem's shadow and warm glow, on a layer of its own so the
      engraving stays crisp. The shadow comes from #card-emblem-shadow, cast
@@ -365,10 +368,13 @@
       opacity 0.4s;
   }
   /* Once measured: the box is the visible item, scaled to a common weight
-     (lib/iconFit), and the image is placed so its visible part fills it.
-     --e-s scales it all down for a card in a row. */
+     (lib/iconFit) and by the item's own --e-k, and the image is placed so
+     its visible part fills it. An item drawn larger grows upward, its foot
+     where it was. --e-s scales it all down for a card in a row. */
   .glyph.fit {
-    --u: calc(var(--e-s, 1) * 1px);
+    --e-k: var(--e-kin, 1);
+    --u: calc(var(--e-s, 1) * var(--e-k) * 1px);
+    translate: 0 min(0px, calc((1 - var(--e-k)) * var(--e-h) * var(--e-s, 1) * 0.5px));
     width: calc(var(--e-w) * var(--u));
     height: calc(var(--e-h) * var(--u));
     -webkit-mask-size: calc(var(--e-iw) * var(--u)) calc(var(--e-ih) * var(--u));
@@ -627,6 +633,10 @@
       width: 60px;
       height: 60px;
       --e-s: 0.5;
+    }
+    /* A row has no room for an item to grow. */
+    .glyph.fit {
+      --e-k: min(var(--e-kin, 1), 1);
     }
     .title {
       position: static;

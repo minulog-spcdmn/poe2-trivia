@@ -22,6 +22,15 @@ const ICON_ITEM: Record<string, string> = {
   'Amulets & Belts': 'Astramentis',
   'Flasks, Charms, Jewels, Relics & Tablets': "Uhtred's Chalice",
 };
+// Each chosen item's size against the common one (lib/iconFit), set by eye:
+// the slim weapons grow up toward the arch, standing where they stood.
+const ICON_SCALE: Record<string, number> = {
+  "Adonia's Ego": 1.28,
+  "Death's Harp": 1.28,
+  "Ming's Heart": 0.88,
+  "Uhtred's Chalice": 0.94,
+};
+const scales = new Map<string, number>();
 // Should one of those leave the data, an item from the group that best
 // represents the category.
 const ICON_GROUP: Record<string, string> = {
@@ -45,6 +54,7 @@ for (const cat of engine.categories) {
     continue;
   }
   const named = list.find((it) => it.name === ICON_ITEM[cat]);
+  if (named) scales.set(cat, ICON_SCALE[named.name] ?? 1);
   const preferred = list.filter((it) => it.group === ICON_GROUP[cat]);
   const pool = preferred.length ? preferred : list;
   icons.set(cat, new URL(itemImage((named ?? pool[Math.floor(pool.length / 2)]).id), document.baseURI).href);
@@ -58,4 +68,9 @@ export function categoryIcon(category: string) {
 /** Every category's icon (to measure them all ahead of the deal). */
 export function categoryIcons() {
   return [...icons.values()];
+}
+
+/** How much larger (or smaller) than the common size to draw a category's icon. */
+export function categoryIconScale(category: string) {
+  return scales.get(category) ?? 1;
 }
