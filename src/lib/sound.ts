@@ -5,6 +5,7 @@
 // matches the audition page the design was tuned on.
 
 import { AMBIENCE, FIRE, MIX, MOMENTS, type Layer } from './soundDesign';
+import { STORE } from './channel';
 
 export type Sfx =
   | 'hover'
@@ -27,7 +28,7 @@ export type Sfx =
 
 let muted = (() => {
   try {
-    return localStorage.getItem('poe2trivia.muted') === '1';
+    return localStorage.getItem(`${STORE}muted`) === '1';
   } catch {
     return false;
   }
@@ -40,7 +41,7 @@ export function isMuted() {
 export function setMuted(value: boolean) {
   muted = value;
   try {
-    localStorage.setItem('poe2trivia.muted', value ? '1' : '0');
+    localStorage.setItem(`${STORE}muted`, value ? '1' : '0');
   } catch {
     /* ignore */
   }
@@ -50,7 +51,7 @@ export function setMuted(value: boolean) {
 /** The player's volume, 0 to 1, on top of the mix level (desktop slider). */
 let volume = (() => {
   try {
-    const v = parseFloat(localStorage.getItem('poe2trivia.volume') ?? '');
+    const v = parseFloat(localStorage.getItem(`${STORE}volume`) ?? '');
     return Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 1;
   } catch {
     return 1;
@@ -64,7 +65,7 @@ export function getVolume() {
 export function setVolume(value: number) {
   volume = Math.min(1, Math.max(0, value));
   try {
-    localStorage.setItem('poe2trivia.volume', String(volume));
+    localStorage.setItem(`${STORE}volume`, String(volume));
   } catch {
     /* ignore */
   }

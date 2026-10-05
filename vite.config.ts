@@ -34,6 +34,23 @@ function csp(env: Record<string, string>): Plugin {
 }
 
 /**
+ * The beta build (VITE_CHANNEL=beta, served at poe2.quest/beta/): kept out of
+ * search results, and its tabs say Beta.
+ */
+function betaPages(env: Record<string, string>): Plugin {
+  return {
+    name: 'beta-pages',
+    apply: 'build',
+    transformIndexHtml(html) {
+      if (env.VITE_CHANNEL !== 'beta') return html;
+      // The legal pages carry noindex already.
+      const noindex = html.includes('name="robots"') ? '' : '<meta name="robots" content="noindex" />\n    ';
+      return html.replace('<title>', `${noindex}<title>Beta • `);
+    },
+  };
+}
+
+/**
  * The fonts the start page shows, as their built file names begin. The page
  * is rendered by script, so the browser would only find them once the bundle
  * has run and laid out text; preloading fetches them alongside the bundle, so
@@ -96,19 +113,22 @@ const hoverOnlyWhereHoverable = {
   },
 };
 
-export default defineConfig(({ mode }) => ({
-  // Relative base so the build works on any GitHub Pages sub-path.
-  base: './',
-  plugins: [svelte(), csp(loadEnv(mode, process.cwd(), 'VITE_')), preloadFonts()],
-  css: { postcss: { plugins: [hoverOnlyWhereHoverable] } },
-  build: {
-    rollupOptions: {
-      // Legal pages are plain static pages so they work without JavaScript.
-      input: {
-        main: 'index.html',
-        impressum: 'impressum.html',
-        datenschutz: 'datenschutz.html',
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), 'VITE_');
+  return {
+    // Relative base so the build works on any GitHub Pages sub-path.
+    base: './',
+    plugins: [svelte(), csp(env), betaPages(env), preloadFonts()],
+    css: { postcss: { plugins: [hoverOnlyWhereHoverable] } },
+    build: {
+      rollupOptions: {
+        // Legal pages are plain static pages so they work without JavaScript.
+        input: {
+          main: 'index.html',
+          impressum: 'impressum.html',
+          datenschutz: 'datenschutz.html',
+        },
       },
     },
-  },
-}));
+  };
+});

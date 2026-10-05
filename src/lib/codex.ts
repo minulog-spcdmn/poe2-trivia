@@ -9,6 +9,7 @@
 // only count when one person plays alone.
 
 import { difficultyOf, isFake, type Difficulty, type GameState, type QuestionMode } from './game.ts';
+import { STORE } from './channel.ts';
 
 export interface Tally {
   /** Answers given. */
@@ -87,7 +88,7 @@ export interface Encounter {
   };
 }
 
-export const CODEX_KEY = 'poe2trivia.codex';
+export const CODEX_KEY = `${STORE}codex`;
 /** Bump when the stored shape changes incompatibly. */
 export const CODEX_VERSION = 1;
 export const LOG_LIMIT = 2000;

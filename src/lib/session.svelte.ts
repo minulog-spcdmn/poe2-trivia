@@ -37,6 +37,7 @@ import { toasts, type ToastKind, type ToastOptions } from './toasts.svelte';
 import { creatorArrival } from './herald';
 import { RUBY } from './palette';
 import { CREATOR_TITLE } from './site';
+import { STORE } from './channel';
 
 export const engine = new Engine(itemData as Item[], { fakes: fakeNames });
 
@@ -118,14 +119,14 @@ function writeLocal(key: string, value: string) {
   }
 }
 
-export const savedName = () => readLocal('poe2trivia.name') ?? '';
-export const saveName = (name: string) => writeLocal('poe2trivia.name', name);
+export const savedName = () => readLocal(`${STORE}name`) ?? '';
+export const saveName = (name: string) => writeLocal(`${STORE}name`, name);
 
 /**
  * This browser's secret. It proves "I'm the same player" when rejoining and
  * is only ever sent to the host, never shown to other players.
  */
-const mySecret = stored('poe2trivia.secret', () => randomToken(32));
+const mySecret = stored(`${STORE}secret`, () => randomToken(32));
 /** This page load (tabs share the secret; the host tells them apart by this). */
 const myTab = randomToken(16);
 
@@ -779,7 +780,7 @@ class Session {
     }
     writeSaved({ mode: 'client', code: this.code, name });
     const room = this.code;
-    this.helloSecret = roomSecret(mySecret, room).catch(() => stored(`poe2trivia.secret.${room}`, () => randomToken(32)));
+    this.helloSecret = roomSecret(mySecret, room).catch(() => stored(`${STORE}secret.${room}`, () => randomToken(32)));
     const peer = new Peer(PEER_OPTIONS);
     this.peer = peer;
     this.armConnectTimeout();
@@ -1313,13 +1314,13 @@ type Saved =
   | { mode: 'local'; state: GameState }
   | { mode: 'host'; code: string; state: GameState; priv: HostPrivate }
   | { mode: 'client'; code: string; name: string };
-const SAVE_KEY = 'poe2trivia.session.v4';
+const SAVE_KEY = `${STORE}session.v4`;
 /**
  * Before guests' tokens became per-room. A hosted room saved then can't be
  * resumed (its guests' tokens no longer match), and a guest's saved room
  * can't be reached by this version; a hot-seat game carries on.
  */
-const OLD_SAVE_KEY = 'poe2trivia.session.v3';
+const OLD_SAVE_KEY = `${STORE}session.v3`;
 
 function readSaved(): Saved | null {
   try {

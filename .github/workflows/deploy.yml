@@ -1,22 +1,40 @@
 name: Deploy to GitHub Pages
 
+# poe2.quest is built from main, poe2.quest/beta/ from the beta branch. Pages
+# serves one upload per site, so every run builds and deploys both.
+#
+# To put a branch on the beta: run this workflow (on main) with that branch or
+# commit as "beta". Once the beta is live, the beta branch points at it, so
+# later deploys of main keep showing it. Run it with "beta" empty to redeploy
+# as is.
+
 on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      beta:
+        description: Branch or commit to put on poe2.quest/beta/ (empty keeps the current beta)
+        required: false
+        default: ''
 
 permissions:
-  contents: read
+  contents: write # to move the beta branch
   pages: write
   id-token: write
 
+# Runs queue rather than cancel each other: a cancelled run could drop a beta
+# that was asked for. (GitHub still keeps only the newest waiting run.)
 concurrency:
   group: pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
-  build:
+  deploy:
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -26,16 +44,49 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
+
+      - name: Find the beta
+        id: beta
+        env:
+          WANTED: ${{ inputs.beta }}
+        run: |
+          if [ -n "$WANTED" ]; then
+            ref="$WANTED"
+          elif git ls-remote --exit-code --heads origin beta > /dev/null; then
+            ref=beta
+          else
+            echo "No beta branch yet; deploying the live site only."
+            exit 0
+          fi
+          git fetch --depth 1 origin -- "$ref"
+          echo "sha=$(git rev-parse FETCH_HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Build the beta
+        if: steps.beta.outputs.sha
+        env:
+          SHA: ${{ steps.beta.outputs.sha }}
+          NEW: ${{ inputs.beta }}
+        run: |
+          git worktree add --detach beta-src "$SHA"
+          cd beta-src
+          if ! grep -qs VITE_CHANNEL src/lib/channel.ts; then
+            echo "::error::$SHA predates the beta build (no src/lib/channel.ts), so it would share the live game's rooms and saves. Merge main into it first."
+            exit 1
+          fi
+          npm ci
+          # A new beta is tested; the current one passed when it went up.
+          if [ -n "$NEW" ]; then npm test; fi
+          VITE_CHANNEL=beta npm run build
+          cp -r dist ../dist/beta
+
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
       - id: deployment
         uses: actions/deploy-pages@v4
+
+      - name: Point the beta branch at the new beta
+        if: inputs.beta != ''
+        env:
+          SHA: ${{ steps.beta.outputs.sha }}
+        run: git push --force origin "$SHA:refs/heads/beta"

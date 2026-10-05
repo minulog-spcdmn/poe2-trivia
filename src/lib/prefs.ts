@@ -2,6 +2,7 @@
 // open starts the way they left the last one.
 
 import { DEFAULT_SETTINGS, cleanKnobs, difficultyOf, isDifficulty, snapTimer, type Difficulty, type GameMode, type Knobs, type Settings } from './game.ts';
+import { STORE } from './channel.ts';
 
 export interface RoomPrefs {
   targetScore: number;
@@ -17,9 +18,9 @@ export interface RoomPrefs {
 
 /** Bump when the stored shape changes: entries from another version are replaced with the defaults. */
 export const PREFS_VERSION = 1;
-export const PREFS_KEY = 'poe2trivia.roomPrefs';
+export const PREFS_KEY = `${STORE}roomPrefs`;
 /** Where "hide the room code" was kept before the other settings were remembered too. */
-const LEGACY_HIDE_KEY = 'poe2trivia.hideCode';
+const LEGACY_HIDE_KEY = `${STORE}hideCode`;
 
 export const DEFAULT_PREFS: RoomPrefs = {
   targetScore: DEFAULT_SETTINGS.targetScore,

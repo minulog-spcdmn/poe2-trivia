@@ -10,6 +10,7 @@ import { BEHIND_PICTURE, FxRenderer, SHAPE_FLOATS, ShapeType, pictureReady, type
 import { ParticlePool, type ParticleSpec } from './particles';
 import { opacityOf } from '../opacity';
 import { dialogBox, openDialog } from '../behindDialog';
+import { STORE } from '../channel';
 
 export type Vec3 = readonly [number, number, number];
 export type Point = { x: number; y: number };
@@ -104,7 +105,7 @@ export type Task = (dt: number, age: number) => boolean;
 
 // ---------- state ----------
 
-const FX_KEY = 'poe2trivia.fx';
+const FX_KEY = `${STORE}fx`;
 let userOn = (() => {
   try {
     return localStorage.getItem(FX_KEY) !== '0';

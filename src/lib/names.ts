@@ -57,6 +57,7 @@ const HELD_NAME = 'zoearcana';
 const HELD_KEY_HASH = '5ddd2ad1ad21e94175a14999359a9e8b2b508a70c769f49f71a6d94e5821a607';
 const HELD_SALT = 'poe2trivia.held-name';
 const HELD_ITERATIONS = 600_000;
+// Not under STORE: a device unlocked for the live game is unlocked for the beta too.
 const OWNER_KEY = 'poe2trivia.owner';
 
 /** Hex PBKDF2 hash of a key. Throws where Web Crypto is missing (plain http). */
