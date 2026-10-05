@@ -248,12 +248,6 @@
       <section class="panel by-cat" use:backdropShadow={{ fill: 'linear' }}>
         <header class="cat-cols"><h2>By category</h2><span class="col-label">Accuracy</span></header>
         <ul class="bars cats">
-          <li class="total">
-            <span class="bar-name">All categories</span>
-            <span class="found" title="{stats.seen} of {stats.total} discovered">{stats.seen}/{stats.total}</span>
-            {@render meter(stats, 'All categories')}
-            <span class="bar-value">{stats.n ? pct(stats) : ''}</span>
-          </li>
           {#each stats.categories as c (c.category)}
             <li>
               <button class="cat" class:on={only === c.category} aria-pressed={only === c.category} onclick={() => showCategory(c.category)} title="Show {c.category}">
@@ -679,7 +673,7 @@
     align-items: center;
     gap: 0.7rem;
   }
-  /* The header, the total and each category share the same columns: name, found, accuracy bar and figure. */
+  /* The header and each category share the same columns: name, found, accuracy bar and figure. */
   .by-cat {
     --cols: minmax(0, 1fr) 3.2rem minmax(40px, 9rem) 2.8rem;
   }
@@ -689,7 +683,6 @@
   .bars.cats li {
     display: block;
   }
-  .bars.cats .total,
   .cat {
     display: grid;
     grid-template-columns: var(--cols);
@@ -699,20 +692,6 @@
     margin: 0 -0.6rem;
     padding: 0.3rem 0.6rem;
     border-radius: 4px;
-  }
-  .bars.cats .total {
-    margin: 0 0 0.4rem;
-    padding: 0.3rem 0 0.6rem;
-    border-bottom: 1px solid var(--line);
-    border-radius: 0;
-  }
-  .total .bar-name {
-    font-style: italic;
-    color: var(--gold-hi);
-  }
-  .total .found {
-    font-weight: 700;
-    color: var(--gold);
   }
   .panel header.cat-cols {
     display: grid;
@@ -1315,7 +1294,6 @@
     .by-cat {
       --cols: minmax(0, 1fr) 2.8rem minmax(30px, 4rem) 2.6rem;
     }
-    .bars.cats .total,
     .cat,
     .panel header.cat-cols {
       column-gap: 0.5rem;
