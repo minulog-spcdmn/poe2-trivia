@@ -1,20 +1,25 @@
 <script lang="ts">
-  // Delve: a player's lives as an engraved phial of three chambers of living
-  // ember. Lit chambers hold a flowing, flickering fire with motes rising in
-  // it; spent ones are dark glass. They go dark from the end (the top, when
-  // the phial stands upright on a phone). The chamber of a life just lost
-  // flares and empties; Scoreboard.svelte bursts its fire out into the effects
-  // layer from the chamber (data-k) as it does.
+  // Delve: a player's lives as an engraved phial of three chambers of life
+  // essence. A lit chamber holds a soft living light that beats like a heart
+  // (all three in one rhythm), each with a motion of its own: a tide swaying
+  // to and fro, a swirl of two wisps, motes streaming toward the tip. Spent
+  // ones are dark glass. They go dark from the end (the top, when the phial
+  // stands upright on a phone). The light of a life just lost flares and
+  // pours out of the end of its chamber; Scoreboard.svelte jets it out of the
+  // phial into the effects layer (lifeLost in lib/fx/moments.ts) as it does.
   import { DELVE_LIVES } from '../lib/delve';
 
   let {
     lives,
     draining = -1,
+    surge = 0,
     vertical = false,
   }: {
     lives: number;
-    /** The chamber (0 to 2) of the life just lost, while it empties; -1 otherwise. */
+    /** The chamber (0 to 2) of the life just lost, while it pours out; -1 otherwise. */
     draining?: number;
+    /** Changes each time a wave of light should run through the lit chambers (a question survived). */
+    surge?: number;
     vertical?: boolean;
   } = $props();
 
@@ -22,16 +27,20 @@
 </script>
 
 <!-- The phial is drawn lying down (64 × 12); upright it is turned a quarter. -->
-<span class="phial" class:vertical role="img" aria-label="{lives} {lives === 1 ? 'life' : 'lives'} left">
+<span class="phial" class:vertical class:low={lives === 1} role="img" aria-label="{lives} {lives === 1 ? 'life' : 'lives'} left">
   <span class="body">
     {#each CHAMBERS as k (k)}
-      <span
-        class="chamber c{k}"
-        data-k={k}
-        class:lit={k < lives}
-        class:last={k === 0 && lives === 1}
-        class:draining={k === draining}
-      ><span class="core"></span></span>
+      <span class="chamber c{k}" data-k={k} class:lit={k < lives} class:draining={k === draining && k >= lives}>
+        {#if k < lives}
+          <span class="wisp"></span>
+          <span class="beat"></span>
+          {#if surge}
+            {#key surge}<span class="surge" style:animation-delay="{0.08 + k * 0.11}s"></span>{/key}
+          {/if}
+        {:else if k === draining}
+          <span class="drain"></span>
+        {/if}
+      </span>
     {/each}
     <svg viewBox="0 0 64 12" aria-hidden="true">
       <!-- The gold frame with pointed ends, an engraved hairline inside it, and the walls between chambers. -->
@@ -45,6 +54,8 @@
 <style>
   .phial {
     --w: 54px;
+    /* One unit of the 64 × 12 drawing. */
+    --u: calc(var(--w) / 64);
     position: relative;
     display: inline-block;
     width: var(--w);
@@ -118,139 +129,213 @@
     clip-path: polygon(0 0, 77% 0, 100% 50%, 77% 100%, 0 100%);
   }
 
-  /* Living ember: two bands of fire flowing across each other at different
-     speeds over a molten bed, a bright meniscus on top, motes rising through it. */
-  .chamber.lit {
+  /* Life essence: a soft light, palest at its heart and deepening to rose at
+     the glass, with a pale sheen where the glass curves over it. Each chamber
+     holds its heart in its own place. Nothing here is animated but the
+     layers inside (by transform and opacity only). */
+  .chamber.lit,
+  .drain {
+    --at: 50% 58%;
     background:
-      linear-gradient(180deg, rgba(255, 236, 180, 0.85) 0, rgba(255, 200, 120, 0) 22%),
-      repeating-linear-gradient(105deg, rgba(255, 196, 96, 0) 0 5px, rgba(255, 190, 90, 0.55) 8px, rgba(255, 196, 96, 0) 12px) 0 0 / 25px 100%,
-      repeating-linear-gradient(72deg, rgba(255, 96, 30, 0) 0 4px, rgba(255, 128, 44, 0.5) 7px, rgba(255, 96, 30, 0) 11px) 0 0 / 19px 100%,
-      radial-gradient(ellipse 120% 140% at 50% 110%, #ff8a32 0%, #c22a10 52%, #4d0705 100%);
-    animation:
-      flow 2.8s linear infinite,
-      flicker 1.9s ease-in-out infinite alternate;
+      linear-gradient(180deg, rgba(255, 226, 214, 0.45) 0, rgba(255, 226, 214, 0) 24%),
+      radial-gradient(ellipse 80% 120% at var(--at), #ffe4cf 0%, #ff8a68 20%, #ec3a48 46%, #9c0f2c 74%, #3c0410 100%);
   }
-  /* The heart of the fire: a hot glow wandering through the chamber. */
-  .core {
+  .c0.lit {
+    --at: 58% 62%;
+  }
+  .c2.lit {
+    --at: 40% 52%;
+  }
+  /* The last life: its light sinks to a deeper red. */
+  .low .chamber.lit {
+    background:
+      linear-gradient(180deg, rgba(255, 200, 190, 0.35) 0, rgba(255, 200, 190, 0) 24%),
+      radial-gradient(ellipse 80% 120% at var(--at), #ffb49c 0%, #f25a52 20%, #c81e38 46%, #6e0820 74%, #2a030c 100%);
+  }
+
+  .wisp,
+  .beat,
+  .surge,
+  .drain {
     position: absolute;
-    inset: -20% -30%;
-    display: none;
-    background: radial-gradient(closest-side, rgba(255, 232, 160, 0.8), rgba(255, 170, 70, 0.25) 55%, rgba(255, 140, 50, 0) 100%) 0 50% / 55% 100% no-repeat;
-    mix-blend-mode: screen;
-    animation: wander 3.7s ease-in-out infinite alternate;
+    pointer-events: none;
   }
-  .lit .core {
-    display: block;
+
+  /* The heartbeat: the heart of the light swells twice (lub, dub) and rests.
+     The same rhythm in every chamber, as there is one life in them. */
+  .beat {
+    inset: -25% -15%;
+    background: radial-gradient(closest-side, rgba(255, 240, 222, 0.8), rgba(255, 150, 110, 0.35) 45%, rgba(255, 90, 80, 0) 100%);
+    opacity: 0.3;
+    animation: beat 1.3s ease-out infinite;
   }
-  /* Motes: sparks of the life force drifting up through it, on three
-     spacings that never line up, so they don't read as a grid. */
-  .chamber.lit::after {
-    content: '';
-    position: absolute;
-    inset: -60% 0 0;
-    background:
-      radial-gradient(circle, rgba(255, 246, 210, 0.95) 0 0.5px, transparent 1px) 1px 0 / 11px 9px,
-      radial-gradient(circle, rgba(255, 214, 150, 0.8) 0 0.4px, transparent 0.9px) 6px 4px / 17px 13px,
-      radial-gradient(circle, rgba(255, 190, 120, 0.7) 0 0.35px, transparent 0.8px) 3px 7px / 7px 19px;
-    mix-blend-mode: screen;
-    opacity: 0.75;
-    animation: motes 2.9s linear infinite;
+  .low .beat {
+    /* Weaker and quicker: a heart racing on the last life. */
+    background: radial-gradient(closest-side, rgba(255, 210, 190, 0.6), rgba(255, 110, 90, 0.3) 45%, rgba(255, 80, 70, 0) 100%);
+    animation-duration: 0.82s;
   }
-  /* Each chamber at its own point of the same motions, so they don't move as one. */
-  .c1,
-  .c1::after,
-  .c1 .core {
-    animation-delay: -1.1s;
-  }
-  .c2,
-  .c2::after,
-  .c2 .core {
-    animation-delay: -2.3s;
-  }
-  /* The last life: redder, hotter flicker, its surface trembling. */
-  .chamber.lit.last {
-    background:
-      linear-gradient(180deg, rgba(255, 210, 170, 0.8) 0, rgba(255, 160, 110, 0) 24%),
-      repeating-linear-gradient(105deg, rgba(255, 140, 80, 0) 0 5px, rgba(255, 140, 80, 0.55) 8px, rgba(255, 140, 80, 0) 12px) 0 0 / 25px 100%,
-      repeating-linear-gradient(72deg, rgba(255, 60, 30, 0) 0 4px, rgba(255, 80, 40, 0.5) 7px, rgba(255, 60, 30, 0) 11px) 0 0 / 19px 100%,
-      radial-gradient(ellipse 120% 140% at 50% 110%, #ff5a2a 0%, #a8140c 52%, #3d0405 100%);
-    animation:
-      flow 1.9s linear infinite,
-      flicker 0.7s ease-in-out infinite alternate,
-      tremble 0.45s ease-in-out infinite alternate;
-  }
-  @keyframes flow {
-    to {
-      background-position:
-        0 0,
-        25px 0,
-        -19px 0,
-        0 0;
+  @keyframes beat {
+    0% {
+      opacity: 0.3;
+      transform: scale(0.86);
+    }
+    11% {
+      opacity: 1;
+      transform: scale(1.08);
+    }
+    24% {
+      opacity: 0.5;
+      transform: scale(0.94);
+    }
+    35% {
+      opacity: 0.85;
+      transform: scale(1.03);
+    }
+    62%,
+    100% {
+      opacity: 0.3;
+      transform: scale(0.86);
     }
   }
-  @keyframes flicker {
+
+  /* The first chamber: a tide. Two pale veils sway to and fro across it, out of step. */
+  .c0 .wisp {
+    top: 0;
+    bottom: 0;
+    left: -70%;
+    width: 240%;
+    background:
+      radial-gradient(ellipse 13% 42% at 32% 36%, rgba(255, 236, 206, 0.75), rgba(255, 236, 206, 0) 100%),
+      radial-gradient(ellipse 17% 38% at 58% 74%, rgba(255, 170, 120, 0.55), rgba(255, 170, 120, 0) 100%),
+      radial-gradient(ellipse 10% 30% at 76% 30%, rgba(255, 226, 190, 0.5), rgba(255, 226, 190, 0) 100%);
+    animation: tide 3.4s ease-in-out infinite alternate;
+  }
+  @keyframes tide {
     from {
-      filter: brightness(0.9) saturate(1.05);
+      transform: translateX(-16%);
     }
     to {
-      filter: brightness(1.2) saturate(1.1);
+      transform: translateX(12%);
     }
   }
-  @keyframes tremble {
-    to {
-      translate: 0 0.4px;
-    }
+
+  /* The second: a swirl. Two wisps circle each other, on an orbit squashed
+     flat to the chamber (the wrapper is squashed, its child turns). */
+  .c1 .wisp {
+    left: 50%;
+    top: 50%;
+    width: 130%;
+    aspect-ratio: 1;
+    translate: -50% -50%;
+    transform: scaleY(0.42);
   }
-  @keyframes motes {
-    to {
-      transform: translateY(38%);
-      background-position:
-        3px -18px,
-        4px -22px,
-        5px -12px;
-    }
-  }
-  @keyframes wander {
-    to {
-      background-position: 100% 40%;
-    }
-  }
-  /* A life just lost: the chamber flares white-hot and its fire drains out. */
-  .chamber.draining::before {
+  .c1 .wisp::before {
     content: '';
     position: absolute;
     inset: 0;
-    background: radial-gradient(ellipse 120% 140% at 50% 110%, #ffd27a, #ff6a24 55%, #8a1408);
-    animation: release 0.9s ease-in forwards;
+    background:
+      radial-gradient(circle at 26% 50%, rgba(255, 244, 222, 0.9) 0, rgba(255, 190, 150, 0.45) 8%, rgba(255, 190, 150, 0) 17%),
+      radial-gradient(circle at 76% 50%, rgba(255, 170, 120, 0.7) 0, rgba(255, 170, 120, 0) 13%);
+    animation: swirl 4.6s linear infinite;
   }
-  @keyframes release {
-    0% {
-      filter: brightness(2.4);
-      clip-path: inset(0 0 0 0);
+  @keyframes swirl {
+    to {
+      rotate: 360deg;
     }
-    25% {
-      filter: brightness(1.6);
+  }
+
+  /* The third: motes streaming toward the tip, on two spacings that never
+     line up. The field slides exactly one shared period, so it loops unseen. */
+  .c2 .wisp {
+    top: 0;
+    bottom: 0;
+    left: calc(var(--u) * -18);
+    right: 0;
+    background:
+      radial-gradient(circle, rgba(255, 246, 226, 0.95) 0 calc(var(--u) * 0.42), transparent calc(var(--u) * 0.9)) 0 calc(var(--u) * 1.3) / calc(var(--u) * 6) calc(var(--u) * 5.3),
+      radial-gradient(circle, rgba(255, 190, 150, 0.85) 0 calc(var(--u) * 0.36), transparent calc(var(--u) * 0.85)) calc(var(--u) * 2.4) calc(var(--u) * 4.4) / calc(var(--u) * 9) calc(var(--u) * 7.6),
+      radial-gradient(circle, rgba(255, 228, 196, 0.8) 0 calc(var(--u) * 0.3), transparent calc(var(--u) * 0.8)) calc(var(--u) * 11) calc(var(--u) * 2.6) / calc(var(--u) * 18) calc(var(--u) * 6.1);
+    animation: stream 1.9s linear infinite;
+  }
+  @keyframes stream {
+    to {
+      transform: translateX(calc(var(--u) * 18));
+    }
+  }
+
+  /* A question survived: a wave of light runs through the lit chambers toward the end. */
+  .surge {
+    top: 0;
+    bottom: 0;
+    left: -100%;
+    width: 100%;
+    background: linear-gradient(90deg, rgba(255, 250, 240, 0), rgba(255, 250, 240, 0.9) 55%, rgba(255, 250, 240, 0));
+    animation: surge 0.7s ease-in-out both;
+  }
+  @keyframes surge {
+    from {
+      transform: translateX(0);
+    }
+    to {
+      transform: translateX(200%);
+    }
+  }
+
+  /* A life just lost: its light flares and pours out of the end of the
+     chamber (toward the tip, the way the phial jets it out), its tail thinning. */
+  .drain {
+    top: 0;
+    bottom: 0;
+    left: -45%;
+    width: 145%;
+    -webkit-mask-image: linear-gradient(90deg, transparent, #000 31%);
+    mask-image: linear-gradient(90deg, transparent, #000 31%);
+    animation: pour 1s cubic-bezier(0.4, 0, 0.75, 0.7) both;
+  }
+  .drain::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse 70% 90% at 60% 55%, #fff4e0, rgba(255, 214, 170, 0.6) 70%, rgba(255, 190, 150, 0.3));
+    animation: flare 0.55s ease-out both;
+  }
+  @keyframes pour {
+    0%,
+    8% {
+      transform: translateX(0);
     }
     100% {
-      filter: brightness(1);
-      clip-path: inset(100% 0 0 0);
+      transform: translateX(100%);
     }
   }
+  @keyframes flare {
+    0% {
+      opacity: 0;
+    }
+    18% {
+      opacity: 0.75;
+    }
+    100% {
+      opacity: 0;
+    }
+  }
+
   @media (prefers-reduced-motion: reduce) {
-    .chamber.lit,
-    .chamber.lit::after,
-    .core,
-    .chamber.draining::before {
+    .wisp,
+    .wisp::before,
+    .beat,
+    .surge {
       animation: none;
     }
-    .chamber.draining::before {
+    .surge,
+    .drain {
       display: none;
     }
   }
-  /* Effects off (the low-power mode): the fire glows but holds still. */
-  :global(html[data-still]) .chamber.lit,
-  :global(html[data-still]) .chamber.lit::after,
-  :global(html[data-still]) .core {
+  /* Effects off (the low-power mode): the light glows but holds still. */
+  :global(html[data-still]) .wisp,
+  :global(html[data-still]) .wisp::before,
+  :global(html[data-still]) .beat {
     animation-play-state: paused;
   }
 </style>

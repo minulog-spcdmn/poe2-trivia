@@ -29,6 +29,9 @@ export const C = {
   portalPale: [1.6, 2.2, 3.2],
   ash: [0.5, 0.42, 0.36],
   chaos: [1.6, 0.5, 2.6],
+  /** Delve's life essence (the phial's light): a warm rose red, and its pale heart. */
+  life: [2.7, 0.62, 0.5],
+  lifePale: [3.0, 2.0, 1.55],
   /** zoe_arcana's magic (aura.ts): a deep ruby, set off with gold. */
   ruby: [2.3, 0.3, 0.42],
   rubyPale: [2.6, 1.0, 1.05],

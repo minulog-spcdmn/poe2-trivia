@@ -9,7 +9,7 @@
   import { backdropShadow } from '../lib/backdropShadow';
   import { untrack, type Snippet } from 'svelte';
   import { fxActive, onFxChange, type Handle } from '../lib/fx/core';
-  import { FILL_SPAN, FILL_START, SCORE_LANDS, ablaze, doused, lifeLost, lostPoint, turnsBlue } from '../lib/fx/moments';
+  import { FILL_SPAN, FILL_START, SCORE_LANDS, ablaze, doused, lifeHeld, lifeLost, lostPoint, turnsBlue } from '../lib/fx/moments';
   import { scoreRow, scoreRowOf } from '../lib/scoreRows';
   import { burnsBlue, heatOf, streakOf } from '../lib/fx/streaks';
   import { phone } from '../lib/layout';
@@ -27,13 +27,28 @@
   /** Delve: lives instead of a score. */
   const run = $derived(s.delve ?? null);
 
-  const area = (e: Element) => {
-    const r = e.getBoundingClientRect();
-    return r.width * r.height;
-  };
-  // Delve: a life lost makes the player's entry flinch, and the chamber of the phial empties.
-  // In step with the reveal's verdict, a moment after the answer shows.
+  /**
+   * The phial shown in a player's entry: upright beside the avatar (phones,
+   * an entry shrunk to its avatar) or lying under the name.
+   */
+  function shownPhial(li: Element): { phial: Element; upright: boolean } | null {
+    const side = li.querySelector('.phial-side');
+    if (side && getComputedStyle(side).display !== 'none') {
+      const phial = side.querySelector('.phial');
+      if (phial) return { phial, upright: true };
+    }
+    const phial = li.querySelector('.info .phial');
+    return phial ? { phial, upright: false } : null;
+  }
+
+  /** Seconds a lost life's chamber takes to pour out (Phial.svelte's pour), and its jet with it. */
+  const POUR = 1.1;
+  // Delve: a life lost makes the player's entry flinch, and the chamber of the
+  // phial pours its light out, in step with the reveal's verdict, a moment
+  // after the answer shows. Until then the life stays lit (`held`), and a
+  // player who just fell keeps their phial until it has poured out.
   let hit = $state<Record<string, number>>({});
+  let held = $state<Record<string, number>>({});
   let livesSeen: Record<string, number> = {};
   let runSeen = 0;
   $effect(() => {
@@ -49,22 +64,41 @@
       if (was === undefined || now >= was) continue;
       const id = p.id;
       const mine = session.mode === 'local' ? true : id === session.myPlayerId;
+      held[id] = was;
       setTimeout(() => {
+        delete held[id];
         hit[id] = now;
         const li = scoreRowOf(id);
-        // The fire bursts out of the chamber that emptied, wherever the phial shows (lying or upright).
-        // A fallen player's phial is gone (only a hidden one is left): then out of their row.
-        const chamber =
-          li &&
-          [...li.querySelectorAll(`.chamber[data-k="${now}"]`)]
-            .filter((c) => area(c) > 0)
-            .sort((a, b) => area(b) - area(a))[0];
-        if (li) lifeLost(li, chamber ?? li, now, mine);
+        // The light jets out of the end of whichever phial shows (lying or upright).
+        const flow = li ? shownPhial(li) : null;
+        const chamber = flow?.phial.querySelector(`.chamber[data-k="${now}"]`);
+        if (li) lifeLost(li, chamber ?? li, now, mine, flow ?? undefined);
         if (mine) sfx('lifeLost');
         setTimeout(() => {
           if (hit[id] === now) delete hit[id];
-        }, 1200);
+        }, POUR * 1000);
       }, 450);
+    }
+  });
+
+  // Delve has no points: a question survived sends a wave of light through
+  // the phial instead, as the result line comes in.
+  let surge = $state<Record<string, number>>({});
+  let survivedSeen: Record<string, number> = {};
+  $effect(() => {
+    if (!run) return;
+    const reveal = s.phase === 'reveal';
+    for (const p of s.players) {
+      const was = survivedSeen[p.id];
+      survivedSeen[p.id] = p.score;
+      if (was === undefined || p.score <= was || !reveal) continue;
+      const id = p.id;
+      setTimeout(() => {
+        surge[id] = (untrack(() => surge[id]) ?? 0) + 1;
+        const li = scoreRowOf(id);
+        const flow = li ? shownPhial(li) : null;
+        if (flow) lifeHeld(flow.phial);
+      }, 550);
     }
   });
 
@@ -242,7 +276,8 @@
       {@const score = scoreOf(p.id, p.score)}
       {@const fire = heat[p.id] ?? 0}
       {@const lives = run ? livesOf(s, p.id) : 0}
-      {@const fell = run ? fellAt(s, p.id) : null}
+      {@const fell = run && !(p.id in hit) && !(p.id in held) ? fellAt(s, p.id) : null}
+      {@const shownLives = held[p.id] ?? lives}
       <li
         use:backdropShadow={{ off: stuck }}
         use:scoreRow={p.id}
@@ -254,12 +289,12 @@
         <Avatar name={p.name} hue={p.hue} size={32} dim={!p.connected} />
         <div class="info">
           <span class="name">
-            <PlayerName name={p.name} />{#if session.mode !== 'local' && p.id === session.myPlayerId}<em>&nbsp;(you)</em>{/if}
+            <PlayerName name={p.name} />{#if session.mode !== 'local' && p.id === session.myPlayerId && s.players.length > 1}<em>&nbsp;(you)</em>{/if}
           </span>
           {#if run && fell !== null}
             <span class="fell-at">Fell at depth {fell}</span>
           {:else if run}
-            <Phial {lives} draining={hit[p.id] ?? -1} />
+            <Phial lives={shownLives} draining={hit[p.id] ?? -1} surge={surge[p.id] ?? 0} />
           {:else}
             <span class="bar" class:filling={filling[p.id]} style:--fill-span="{FILL_SPAN}s"
               ><span style:width="{Math.max(0, Math.min(100, (barOf(p.id, p.score) / target) * 100))}%"></span></span
@@ -268,7 +303,7 @@
         </div>
         {#if run}
           <!-- Phones only, on the entries shrunk to an avatar: the phial upright beside it. -->
-          <span class="phial-side"><Phial {lives} draining={hit[p.id] ?? -1} vertical /></span>
+          <span class="phial-side"><Phial lives={shownLives} draining={hit[p.id] ?? -1} surge={surge[p.id] ?? 0} vertical /></span>
         {:else}
           {#key score}
             <span class="score" class:negative={score < 0} class:bump={race ? active : score > 0} class:down={out}
@@ -427,15 +462,29 @@
     opacity: 0.4;
     filter: grayscale(0.7);
   }
+  /* Fallen: once the last life has poured out, the entry fades to grey. */
   li.fallen {
     opacity: 0.45;
     filter: grayscale(0.85);
+    transition:
+      border-color 0.35s,
+      --bs-ring 0.35s,
+      --bs1-color 0.35s,
+      transform 0.35s var(--ease-out),
+      opacity 0.9s ease,
+      filter 0.9s ease;
   }
   .fell-at {
+    animation: fell-in 0.6s ease both;
     font-size: 0.8rem;
     font-style: italic;
     line-height: 1;
     color: var(--muted);
+  }
+  @keyframes fell-in {
+    from {
+      opacity: 0;
+    }
   }
   li.hit {
     animation: flinch 0.5s var(--ease-out);

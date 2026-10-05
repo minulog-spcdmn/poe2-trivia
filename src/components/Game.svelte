@@ -13,7 +13,7 @@
   import { deathmatchIntro, deathmatchMood, gameStart, turnBanner } from '../lib/fx/moments';
   import { portal } from '../lib/portal';
   import { phone } from '../lib/layout';
-  import { delveDepth, delveTimer, fellAt, isGroupRun, livesOf } from '../lib/delve';
+  import { delveDepth, delveTimer, fellAt, isGroupRun } from '../lib/delve';
   import { delveChange } from '../lib/difficultyText';
   import { milestoneAt } from '../lib/descent';
   import { descended, milestoneReached } from '../lib/fx/moments';
@@ -175,45 +175,32 @@
       card = next;
       sfx('stratum');
       if (cardTimer) clearTimeout(cardTimer);
-      cardTimer = setTimeout(() => card?.key === key && (card = null), 2600);
+      cardTimer = setTimeout(() => card?.key === key && (card = null), 2400);
     });
   });
   $effect(() => () => {
     if (cardTimer) clearTimeout(cardTimer);
   });
-  /** Svelte action: a milestone's card breaks into the scene. */
+  /** Svelte action: a milestone's plaque breaks into the scene, once it has unfolded. */
   function cardFx(node: HTMLElement, c: Card) {
-    milestoneReached(node, c.cold);
+    const t = setTimeout(() => milestoneReached(node, c.cold), 200);
+    return { destroy: () => clearTimeout(t) };
+  }
+  // The plaque lies over the kicker and banner (the head of the stage), never
+  // over the cards or the question below, so it is as tall as the head.
+  let headH = $state(0);
+  let plaqueW = $state(0);
+  let plaqueH = $state(0);
+  /** How far the plaque's pointed ends reach in, px. */
+  const point = $derived(Math.min(plaqueH * 0.42, 24));
+  /** The plaque's outline (`inset` px in from its edge), pointed at both ends. */
+  function plaquePath(w: number, h: number, inset: number) {
+    const p = point;
+    const k = inset * 1.1;
+    return `M${inset} ${h / 2}L${p + k * 0.4} ${inset}H${w - p - k * 0.4}L${w - inset} ${h / 2}L${w - p - k * 0.4} ${h - inset}H${p + k * 0.4}Z`;
   }
 
   const myFall = $derived(session.fallen && session.myPlayerId ? fellAt(s, session.myPlayerId) : null);
-
-  // Delve: losing one of your own lives is hard to miss (on one device, anyone's is yours).
-  let lostLife = $state<{ key: number; left: number } | null>(null);
-  let lostTimer: ReturnType<typeof setTimeout> | null = null;
-  let livesSeen: Record<string, number> = {};
-  let runSeen = 0;
-  $effect(() => {
-    if (!run) return;
-    if (run.startedAt !== runSeen) {
-      runSeen = run.startedAt;
-      livesSeen = {};
-    }
-    for (const p of s.players) {
-      const now = livesOf(s, p.id);
-      const was = livesSeen[p.id];
-      livesSeen[p.id] = now;
-      if (was === undefined || now >= was) continue;
-      if (!(local || p.id === session.myPlayerId)) continue;
-      const shown = { key: performance.now(), left: now };
-      // In step with the scoreboard's draining globe, a moment after the answer shows.
-      setTimeout(() => {
-        lostLife = shown;
-        if (lostTimer) clearTimeout(lostTimer);
-        lostTimer = setTimeout(() => lostLife?.key === shown.key && (lostLife = null), 1700);
-      }, 450);
-    }
-  });
 </script>
 
 {#snippet timer()}
@@ -254,14 +241,16 @@
             </span>
           </div>
         {/if}
-        {#if run}
-          <!-- Kept even when empty, so the banner stays put from one depth to the next. -->
-          <p class="kicker" class:deep={depth >= 21} class:change={!!change}>{kicker || '\u00a0'}</p>
-        {/if}
-        <div class="banner" class:dm={!!dm} style:--c={bannerColor}>
-          <span class="rule"></span>
-          <h2 use:bannerFx={{ color: bannerColor, big: bannerBig }}>{bannerTitle}</h2>
-          <span class="rule"></span>
+        <div class="head" bind:clientHeight={headH}>
+          {#if run}
+            <!-- Kept even when empty, so the banner stays put from one depth to the next. -->
+            <p class="kicker" class:deep={depth >= 21} class:change={!!change}>{kicker || '\u00a0'}</p>
+          {/if}
+          <div class="banner" class:dm={!!dm} style:--c={bannerColor}>
+            <span class="rule"></span>
+            <h2 use:bannerFx={{ color: bannerColor, big: bannerBig }}>{bannerTitle}</h2>
+            <span class="rule"></span>
+          </div>
         </div>
 
         {#if s.phase === 'choosing'}
@@ -298,26 +287,37 @@
         {/if}
       </div>
     {/key}
+    {#if card}
+      {#key card.key}
+        <!-- Delve: a named depth, on an engraved plaque laid over the banner for a
+             moment. It covers nothing below it and never takes a tap. -->
+        <div
+          class="m-card"
+          class:cold={card.cold}
+          style:height="{headH}px"
+          style:--p="{point}px"
+          bind:clientWidth={plaqueW}
+          bind:clientHeight={plaqueH}
+          use:cardFx={card}
+          aria-live="polite"
+          out:fade={{ duration: 400 }}
+        >
+          <svg class="m-frame" width={plaqueW} height={plaqueH} aria-hidden="true">
+            {#if plaqueW && plaqueH}
+              <path class="m-rim" d={plaquePath(plaqueW, plaqueH, 0.75)} />
+              <path class="m-hair" d={plaquePath(plaqueW, plaqueH, 3.5)} />
+              <path class="m-gem" d="M{point * 0.62 - 2.6} {plaqueH / 2}l2.6 -2.6 2.6 2.6 -2.6 2.6Z" />
+              <path class="m-gem" d="M{plaqueW - point * 0.62 - 2.6} {plaqueH / 2}l2.6 -2.6 2.6 2.6 -2.6 2.6Z" />
+            {/if}
+          </svg>
+          <span class="m-sheen" aria-hidden="true"></span>
+          <p class="m-kicker">{card.kicker}{#if card.line}<span class="m-sep">•</span><span class="m-line">{card.line}</span>{/if}</p>
+          <p class="m-title">{card.title}</p>
+        </div>
+      {/key}
+    {/if}
   </div>
 </div>
-
-{#if card}
-  {#key card.key}
-    <!-- Over the cards for a moment, but never in the way of a pick. -->
-    <div class="m-card" class:cold={card.cold} use:portal={'dim'} use:cardFx={card} aria-live="polite" in:scale={{ start: 0.92, duration: 450 }} out:fade={{ duration: 450 }}>
-      <p class="m-kicker">{card.kicker}</p>
-      <p class="m-title">{card.title}</p>
-      {#if card.line}<p class="m-line">{card.line}</p>{/if}
-    </div>
-  {/key}
-{/if}
-
-{#if lostLife}
-  {#key lostLife.key}
-    <!-- The screen's edges darken red for a moment, effects or not; nothing on it is covered. -->
-    <div class="life-lost" class:last={lostLife.left <= 1} use:portal={'dim'} aria-hidden="true" out:fade={{ duration: 300 }}></div>
-  {/key}
-{/if}
 
 {#if showIntro && dm}
   <!-- Behind a dialog the flat fill only darkens (a blur would thin its edges) and the words blur. -->
@@ -359,89 +359,160 @@
     flex-direction: column;
     align-items: stretch;
   }
-  /* Delve: a named depth (or the last one standing, or deeper than ever). */
-  .m-card {
-    position: fixed;
-    left: 50%;
-    top: calc(var(--view-h, 100vh) * 0.4);
-    translate: -50% -50%;
-    z-index: 65;
-    pointer-events: none;
-    width: min(92vw, 560px);
-    padding: 1.6rem 1rem 1.4rem;
-    text-align: center;
-    /* A pool of dark behind the words, fading out on every side. */
-    background: radial-gradient(closest-side, rgba(6, 4, 3, 0.86), rgba(6, 4, 3, 0.6) 60%, rgba(6, 4, 3, 0) 100%);
+  /* The kicker and banner. Holds their margins, so the plaque laid over it
+     (.m-card) reaches exactly down to what follows. */
+  .head {
+    display: flow-root;
   }
-  .m-card.cold {
-    background: radial-gradient(closest-side, rgba(3, 5, 9, 0.88), rgba(3, 5, 9, 0.6) 60%, rgba(3, 5, 9, 0) 100%);
+  /* Delve: a named depth (or the last one standing, or deeper than ever), on
+     an opaque engraved plaque with pointed ends like the phials', laid over
+     the head of the stage. */
+  .m-card {
+    grid-area: 1 / 1;
+    align-self: start;
+    justify-self: center;
+    position: relative;
+    z-index: 2;
+    pointer-events: none;
+    box-sizing: border-box;
+    width: min(100%, 560px);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.15rem;
+    padding: 0 2rem;
+    text-align: center;
+    animation: m-unfold 0.45s var(--ease-out) both;
+  }
+  .m-card::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    clip-path: polygon(0 50%, var(--p) 0, calc(100% - var(--p)) 0, 100% 50%, calc(100% - var(--p)) 100%, var(--p) 100%);
+    background:
+      radial-gradient(ellipse 60% 120% at 50% 0%, rgba(201, 164, 92, 0.16), rgba(201, 164, 92, 0) 70%),
+      linear-gradient(180deg, #17110b, #0b0806);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.7);
+  }
+  .m-card.cold::before {
+    background:
+      radial-gradient(ellipse 60% 120% at 50% 0%, rgba(120, 160, 230, 0.16), rgba(120, 160, 230, 0) 70%),
+      linear-gradient(180deg, #0c1018, #06080d);
+  }
+  .m-frame {
+    position: absolute;
+    inset: 0;
+    overflow: visible;
+    filter: drop-shadow(0 0 4px rgba(0, 0, 0, 0.9));
+  }
+  .m-rim {
+    fill: none;
+    stroke: #c9a45c;
+    stroke-width: 1.5;
+    stroke-linejoin: miter;
+  }
+  .m-hair {
+    fill: none;
+    stroke: rgba(241, 217, 155, 0.4);
+    stroke-width: 0.6;
+  }
+  .m-gem {
+    fill: none;
+    stroke: #c9a45c;
+    stroke-width: 0.9;
+  }
+  .cold .m-rim,
+  .cold .m-gem {
+    stroke: #8fb4e8;
+  }
+  .cold .m-hair {
+    stroke: rgba(190, 214, 250, 0.4);
+  }
+  /* Light runs once across the plaque as it unfolds (clipped to it). */
+  .m-sheen {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    clip-path: polygon(0 50%, var(--p) 0, calc(100% - var(--p)) 0, 100% 50%, calc(100% - var(--p)) 100%, var(--p) 100%);
+  }
+  .m-sheen::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: -40%;
+    width: 40%;
+    background: linear-gradient(100deg, rgba(255, 236, 190, 0), rgba(255, 236, 190, 0.22) 50%, rgba(255, 236, 190, 0));
+    animation: m-sheen 1.1s ease-in-out 0.25s both;
+  }
+  @keyframes m-unfold {
+    from {
+      opacity: 0;
+      transform: scaleX(0.4);
+    }
+  }
+  @keyframes m-sheen {
+    to {
+      transform: translateX(350%);
+    }
   }
   .m-kicker {
     margin: 0;
     font-family: var(--font-cinzel);
     font-weight: 700;
-    font-size: 0.85rem;
-    letter-spacing: 0.3em;
+    font-size: 0.78rem;
+    line-height: 1.2;
+    letter-spacing: 0.24em;
     text-transform: uppercase;
     color: var(--gold);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+    animation: m-words 0.4s ease-out 0.15s both;
+  }
+  .m-sep {
+    margin: 0 0.6em 0 0.35em;
+  }
+  .m-line {
+    color: var(--gold-hi);
   }
   .m-title {
-    margin: 0.3rem 0 0.2rem;
+    margin: 0;
     font-family: var(--font-display);
     font-weight: 900;
-    font-size: clamp(2rem, 9vw, 3.4rem);
+    font-size: clamp(1.4rem, 4.2vw, 2.3rem);
     line-height: 1.05;
     color: var(--gold-hi);
     text-shadow:
-      0 0 28px rgba(255, 170, 70, 0.45),
-      0 3px 12px rgba(0, 0, 0, 0.95);
+      0 0 18px rgba(255, 170, 70, 0.35),
+      0 2px 6px rgba(0, 0, 0, 0.95);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+    animation: m-words 0.45s ease-out 0.2s both;
+  }
+  @keyframes m-words {
+    from {
+      opacity: 0;
+    }
   }
   .cold .m-kicker {
     color: #8fb4e8;
   }
+  .cold .m-line {
+    color: #cfe0fb;
+  }
   .cold .m-title {
     color: #dce9ff;
     text-shadow:
-      0 0 28px rgba(90, 150, 255, 0.5),
-      0 3px 12px rgba(0, 0, 0, 0.95);
-  }
-  .m-line {
-    margin: 0;
-    font-style: italic;
-    font-size: 1.05rem;
-    color: var(--muted);
+      0 0 18px rgba(90, 150, 255, 0.4),
+      0 2px 6px rgba(0, 0, 0, 0.95);
   }
 
-  /* Delve: losing your own life darkens the screen's edges red for a moment. */
-  .life-lost {
-    position: fixed;
-    inset: 0 0 auto;
-    height: var(--screen-h, 100vh);
-    z-index: 60;
-    pointer-events: none;
-    box-shadow: inset 0 0 90px rgba(170, 18, 14, 0.55);
-    animation: bleed 1.5s ease-out both;
-  }
-  .life-lost.last {
-    box-shadow: inset 0 0 130px rgba(190, 18, 14, 0.7);
-  }
-  @keyframes bleed {
-    0% {
-      opacity: 0;
-    }
-    18% {
-      opacity: 1;
-    }
-    100% {
-      opacity: 0;
-    }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .life-lost {
-      animation: none;
-      opacity: 0.6;
-    }
-  }
   .kicker {
     margin: 0.4rem 0 -0.4rem;
     text-align: center;
@@ -653,6 +724,17 @@
     }
     .banner h2 {
       font-size: 1.45rem;
+    }
+    .m-card {
+      gap: 0.1rem;
+      padding: 0 1.6rem;
+    }
+    .m-kicker {
+      font-size: 0.62rem;
+      letter-spacing: 0.16em;
+    }
+    .m-title {
+      font-size: 1.3rem;
     }
     .skip {
       margin-top: 1rem;

@@ -501,26 +501,84 @@ export function lostPoint(pill: Element) {
   sparks(pill, { count: 10, colors: [C.wrong], angle: Math.PI / 2, spread: 2.4, gravity: 700, life: [0.3, 0.6] });
 }
 
+/** Where a phial jets its light out: the phial and whether it stands upright (then up, else toward its right end). */
+export type PhialFlow = { phial: Element; upright: boolean };
+
 /**
- * Delve: a player loses a life. The ember life force of the phial's chamber
- * that empties (`chamber`) bursts out: a flash, sparks spraying up and out,
- * embers drifting up from it and its light on the stone; the player's entry
- * glows red at the edge. When it is your own life (`mine`) the screen's
- * edges flare red as well, harder on the last one (`left`: lives still left).
+ * Delve: a player loses a life. The light of the phial's chamber that
+ * empties (`chamber`) pours out of the end of the phial (`flow`) in a jet
+ * along its axis, strongest at first and weakening as the chamber drains;
+ * the jet's sparks slow and its motes and mist drift apart and rise. The
+ * player's entry glows red at the edge. `left`: lives still left (the last
+ * one's jet is longer, and your own jars the view a little). Without a
+ * phial (`flow` missing) the light rises from `chamber`.
  */
-export function lifeLost(pill: Element, chamber: Element, left: number, mine: boolean) {
+export function lifeLost(pill: Element, chamber: Element, left: number, mine: boolean, flow?: PhialFlow) {
   if (!fxActive()) return;
-  const hot = left === 0 ? [C.crimson, C.ember, C.gold] : [C.ember, C.gold, C.goldPale];
-  flash(chamber, { radius: 70, color: C.ember, intensity: 0.55, life: 0.45 });
-  sparks(chamber, { count: left === 0 ? 46 : 32, area: 'fill', colors: hot, speed: [90, 340], angle: -Math.PI / 2, spread: 2.6, gravity: 260, life: [0.35, 0.9] });
-  embers(chamber, { count: 22, area: 'top', colors: [C.ember, C.gold], size: [0.9, 2], rise: [70, 190], scatter: 70, life: [0.8, 1.7] });
-  ring(chamber, { radius: 60, thickness: 5, life: 0.5, color: C.ember, intensity: 0.45, breakup: 0.5 });
-  light(chamber, { color: [1, 0.48, 0.18], radius: 200, intensity: 0.45, decay: 0.8 });
-  outline(pill, { color: C.crimson, width: 9, life: 0.8, intensity: 0.45 });
-  if (!mine) return;
-  edgeGlow({ color: C.crimson, intensity: left <= 1 ? 0.16 : 0.1, width: left <= 1 ? 110 : 80, life: 1.1 });
-  pulseMood(left <= 1 ? 0.4 : 0.25, [1, 0.12, 0.06]);
-  shakeView(left === 0 ? 0.6 : 0.45, left === 0 ? 9 : 7);
+  const last = left === 0;
+  const dir = flow && !flow.upright ? { x: 1, y: 0 } : { x: 0, y: -1 };
+  const across = { x: -dir.y, y: dir.x };
+  /** The phial's open end (or the chamber's middle), where it is now. */
+  const tip = (): Point & { half: number } => {
+    if (!flow || detached(flow.phial)) {
+      const b = boxOf(chamber);
+      return { x: b.x, y: b.y, half: 2 };
+    }
+    const r = flow.phial.getBoundingClientRect();
+    return flow.upright
+      ? { x: r.left + r.width / 2, y: r.top + 1, half: r.width * 0.3 }
+      : { x: r.right - 1, y: r.top + r.height / 2, half: r.height * 0.3 };
+  };
+  const span = last ? 0.9 : 0.75;
+  const rate = budget(last ? 230 : 170);
+  const pale = C.lifePale;
+  const warm = k3(C.life, 1.1);
+  flash(chamber, { radius: 12, color: C.life, intensity: 0.22, life: 0.3 });
+  const t0 = tip();
+  flash(t0, { radius: 10, color: C.life, intensity: 0.2, life: span });
+  light(t0, { color: [1, 0.36, 0.3], radius: 150, intensity: 0.25, hold: span * 0.5, decay: 0.8 });
+  let acc = 0;
+  task((dt, age) => {
+    if (age > span) return false;
+    if (detached(chamber)) return false;
+    // The jet weakens as the chamber empties.
+    const k = Math.pow(1 - age / span, 0.6);
+    acc += rate * dt * (0.35 + 0.65 * k);
+    const t = tip();
+    const c = boxOf(chamber);
+    for (; acc >= 1; acc--) {
+      // Most of it leaves by the open end; some is seen streaming through the glass toward it.
+      const inside = Math.random() < 0.25;
+      const at = inside
+        ? { x: c.x + (Math.random() - 0.5) * c.w, y: c.y + (Math.random() - 0.5) * c.h }
+        : { x: t.x + across.x * rand(-t.half, t.half), y: t.y + across.y * rand(-t.half, t.half) };
+      // A narrow cone, fanning out a little as the jet tires.
+      const a = rand(-1, 1) * (0.14 + 0.2 * (1 - k));
+      const vx = dir.x * Math.cos(a) - dir.y * Math.sin(a);
+      const vy = dir.y * Math.cos(a) + dir.x * Math.sin(a);
+      const v = rand(220, 640) * (0.45 + 0.55 * k) * (last ? 1.15 : 1);
+      const roll = Math.random();
+      if (roll < 0.42) {
+        particle({ x: at.x, y: at.y, vx: vx * v, vy: vy * v, life: rand(0.3, 0.65), size: rand(0.6, 1.2), color: Math.random() < 0.5 ? pale : warm, colorEnd: k3(C.life, 0.3), gravity: -40, drag: 3, shape: Shape.Spark, stretch: 0.03, turbulence: 90 });
+      } else if (roll < 0.8) {
+        particle({ x: at.x, y: at.y, vx: vx * v * 0.75, vy: vy * v * 0.75, life: rand(0.6, 1.3), size: rand(0.9, 1.9), sizeEnd: 0.3, color: Math.random() < 0.35 ? pale : warm, colorEnd: k3(C.life, 0.25), gravity: -55, drag: 2.6, shape: Shape.Ember, flicker: 0.4, turbulence: 170 });
+      } else {
+        // Mist: soft light that spreads and fades as the jet disperses.
+        particle({ x: at.x, y: at.y, vx: vx * v * 0.5, vy: vy * v * 0.5, life: rand(0.5, 0.9), size: rand(3, 5), sizeEnd: rand(9, 14), color: k3(C.life, 0.45), colorEnd: k3(C.life, 0.06), gravity: -30, drag: 2.4, shape: Shape.Glow, fadeIn: 0.15, turbulence: 60 });
+      }
+    }
+    return true;
+  });
+  outline(pill, { color: C.wrong, width: 8, life: 0.9, intensity: 0.4 });
+  if (mine && last) shakeView(0.3, 4);
+}
+
+/** Delve: a question survived. The phial (`phial`) catches the light for a moment as a wave runs through it. */
+export function lifeHeld(phial: Element) {
+  if (!fxActive()) return;
+  glints(phial, { count: 2, size: [3, 6], color: C.lifePale, delay: [0.1, 0.5] });
+  embers(phial, { count: 5, area: 'fill', colors: [C.life, C.lifePale], size: [0.7, 1.4], rise: [30, 80], scatter: 20, life: [0.6, 1.1] });
+  light(phial, { color: [1, 0.42, 0.36], radius: 110, intensity: 0.22, decay: 0.8 });
 }
 
 /**
@@ -532,23 +590,28 @@ export function descended() {
 }
 
 /**
- * Delve: a named depth reached (its card is `card`). A ring and rays break
- * from the depth's number, sparks and embers rise from below, the backdrop's
- * embers flare and all take the depth's colour; `cold` once they burn blue.
+ * Delve: a named depth reached; its plaque (`card`) lies over the banner.
+ * Light streaks along it, sparks fly off its pointed ends, embers rise off
+ * its top edge and it lights the stage; the backdrop's embers flare and all
+ * take the depth's colour. `cold` once they burn blue.
  */
 export function milestoneReached(card: Element, cold: boolean) {
   backdropEmbers.flare(0.85, 2.4);
   backdropEmbers.recolor();
-  if (!fxActive()) return;
+  if (!fxActive() || detached(card)) return;
   const main = cold ? C.portal : C.gold;
   const pale = cold ? C.portalPale : C.goldPale;
-  ring(card, { radius: 260, thickness: 10, life: 1.1, color: main, breakup: 0.6, intensity: 0.5 });
-  flare(card, { size: 26, streak: 320, life: 0.9, color: pale, intensity: 0.6 });
-  glints(card, { count: 6, size: [4, 8] });
-  sparks(card, { count: 40, area: 'edge', colors: [main, pale], speed: [100, 380], gravity: -40, life: [0.5, 1.2] });
-  embers({ x: innerWidth / 2, y: innerHeight }, { count: 40, colors: [main, pale], rise: [160, 420], scatter: innerWidth * 0.5, life: [1.2, 2.4] });
-  light({ x: innerWidth / 2, y: innerHeight }, { color: cold ? [0.35, 0.6, 1] : [1, 0.6, 0.25], radius: innerHeight * 0.75, intensity: 0.5, decay: 1.2 });
-  shakeView(0.35, 6);
+  const b = boxOf(card);
+  flare(card, { size: 12, streak: b.w * 0.6, life: 0.8, color: pale, intensity: 0.3 });
+  glints(card, { count: 4, area: 'edge', size: [4, 8], delay: [0.1, 0.7] });
+  for (const side of [-1, 1]) {
+    const end = { x: b.x + (side * b.w) / 2, y: b.y };
+    sparks(end, { count: 16, angle: side > 0 ? 0 : Math.PI, spread: 0.7, colors: [main, pale], speed: [120, 420], gravity: -30, drag: 2.4, life: [0.4, 0.9] });
+    flash(end, { radius: 30, color: main, intensity: 0.3, life: 0.5 });
+  }
+  const top = new DOMRect(b.x - b.w * 0.4, b.y - b.h / 2, b.w * 0.8, 2);
+  embers(top, { count: 18, area: 'fill', colors: [main, pale], rise: [50, 150], scatter: 30, life: [0.8, 1.6] });
+  light(card, { color: cold ? [0.35, 0.6, 1] : [1, 0.65, 0.3], radius: Math.max(220, b.w * 0.6), intensity: 0.2, decay: 1.1 });
 }
 
 /** Someone guessed wrong in a race: a puff of red at the answer they picked. */

@@ -372,7 +372,8 @@
         tiles: q.mode === 'art',
         verdict: verdictEl,
         verdictTone: verdict?.tone,
-        pill,
+        // Delve has no points to land (the scoreboard's phial answers a question survived).
+        pill: s.delve ? null : pill,
         streak,
         good: iWon,
         otherScored: race && !!winner && !iWon,
@@ -502,8 +503,12 @@
             {who} {you ? 'delve' : 'delves'} on.
             {#if streak >= 2}<span class="streak" in:scale={{ start: 0.5, duration: 400, delay: 1100 }}>{streak} in a row</span>{/if}
           {:else}
-            <!-- The life that went drains out of its globe. -->
-            <span class="lost-globe" class:last={left <= 1} aria-hidden="true"><span class="blood"></span></span>
+            <!-- The life that went: a chamber of the phial, its light pouring out of the tip. -->
+            <span class="lost-vial" class:last={left <= 1} aria-hidden="true"
+              ><span class="glass"><span class="essence"></span></span><svg viewBox="0 0 24 10"
+                ><path class="rim" d="M0.6 0.6H18.6L23.3 5 18.6 9.4H0.6Z" /><path class="hair" d="M2.2 2H17.9L21.4 5 17.9 8H2.2Z" /></svg
+              ></span
+            >
             {#if fallsNow}
               {who} {you ? 'fall' : 'falls'} at depth {s.round}.
             {:else if reveal.timedOut}
@@ -971,51 +976,71 @@
     width: 44px;
     height: 44px;
   }
-  /* Delve: a life globe in a gold rim, like the game's, whose blood sinks
-     out as the result line comes in. */
-  .lost-globe {
+  /* Delve: one chamber of the scoreboard's phial (Phial.svelte), standing on
+     the line's baseline, whose light pours out of its tip as the line comes in. */
+  .lost-vial {
     position: relative;
     display: inline-block;
-    vertical-align: -0.28em;
-    width: 1.25em;
-    height: 1.25em;
-    margin-right: 0.35em;
-    border-radius: 50%;
+    vertical-align: baseline;
+    width: 1.5em;
+    height: 0.625em;
+    margin-right: 0.4em;
+  }
+  .lost-vial svg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+  }
+  .lost-vial .rim {
+    fill: none;
+    stroke: #c9a45c;
+    stroke-width: 1.1;
+  }
+  .lost-vial .hair {
+    fill: none;
+    stroke: rgba(241, 217, 155, 0.35);
+    stroke-width: 0.45;
+  }
+  /* The hollow inside the rim (in units of the 24 × 10 drawing): dark glass, hatched along the bottom. */
+  .lost-vial .glass {
+    position: absolute;
+    left: calc(100% * 1.2 / 24);
+    top: 12%;
+    width: calc(100% * 21.4 / 24);
+    height: 76%;
     overflow: hidden;
-    background: radial-gradient(circle at 50% 40%, #1b120d, #050403);
-    box-shadow:
-      0 0 0 1px var(--gold-lo),
-      0 0 10px rgba(214, 40, 30, 0.45);
-  }
-  .lost-globe::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    border-radius: 50%;
-    background: radial-gradient(ellipse 34% 22% at 36% 26%, rgba(255, 244, 236, 0.7), transparent 72%);
-  }
-  .lost-globe .blood {
-    position: absolute;
-    inset: 0;
+    clip-path: polygon(0 0, 81% 0, 100% 50%, 81% 100%, 0 100%);
     background:
-      linear-gradient(180deg, rgba(255, 120, 90, 0.6) 0, rgba(255, 120, 90, 0) 2px),
-      radial-gradient(circle at 50% 70%, #d22b22, #8a1010 50%, #3a0406);
-    animation: lost-blood 1.3s ease-in-out 0.5s both;
+      repeating-linear-gradient(135deg, rgba(201, 164, 92, 0.22) 0 0.5px, transparent 0.5px 2.2px) 0 100% / 100% 45% no-repeat,
+      linear-gradient(180deg, #0b0806, #150d08);
   }
-  @keyframes lost-blood {
-    0% {
-      clip-path: inset(0 0 0 0);
-      filter: brightness(1.7);
-    }
-    20% {
-      filter: brightness(1);
-    }
-    100% {
-      clip-path: inset(100% 0 0 0);
+  .lost-vial .essence {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: -45%;
+    width: 145%;
+    background:
+      linear-gradient(180deg, rgba(255, 226, 214, 0.45) 0, rgba(255, 226, 214, 0) 24%),
+      radial-gradient(ellipse 60% 120% at 62% 58%, #ffe4cf 0%, #ff8a68 20%, #ec3a48 46%, #9c0f2c 74%, #3c0410 100%);
+    -webkit-mask-image: linear-gradient(90deg, transparent, #000 31%);
+    mask-image: linear-gradient(90deg, transparent, #000 31%);
+    animation: vial-pour 1s cubic-bezier(0.55, 0, 0.8, 0.45) 0.7s both;
+  }
+  .lost-vial.last .essence {
+    background:
+      linear-gradient(180deg, rgba(255, 200, 190, 0.35) 0, rgba(255, 200, 190, 0) 24%),
+      radial-gradient(ellipse 60% 120% at 62% 58%, #ffb49c 0%, #f25a52 20%, #c81e38 46%, #6e0820 74%, #2a030c 100%);
+  }
+  @keyframes vial-pour {
+    to {
+      transform: translateX(100%);
     }
   }
   @media (prefers-reduced-motion: reduce) {
-    .lost-globe .blood {
+    .lost-vial .essence {
       display: none;
     }
   }
@@ -1261,6 +1286,9 @@
       transparent
     );
     transform: skewX(-18deg);
+    /* Parked off the left end, it would still lean into a tall picture's
+       top-left corner (the skew), so it only shows while it sweeps. */
+    opacity: 0;
   }
   .sheen::after {
     content: '';
@@ -1355,9 +1383,11 @@
   @keyframes sweep {
     from {
       translate: 0 0;
+      opacity: 1;
     }
     to {
       translate: 560% 0;
+      opacity: 1;
     }
   }
   @keyframes key-ripple {
@@ -1961,8 +1991,8 @@
     }
     /* Delve's eight answers, on a clock down to seven seconds: two columns of
        names (a long one takes two lines) and the pictures four to a row, so
-       all of them are in view under the art. No numbers: there are no keys to
-       press on a phone. */
+       all of them are in view under the art. Their numbers shrink to small
+       seals, so the answers can still be called out by number. */
     /* The task line beside the category, two lines if need be, never under it. */
     .topline.snug {
       flex-wrap: nowrap;
@@ -1981,10 +2011,14 @@
     }
     .snug .option {
       min-height: 50px;
-      padding: 0.4rem 1.5rem 0.4rem 0.7rem;
+      gap: 0.4rem;
+      padding: 0.4rem 1.4rem 0.4rem 0.4rem;
     }
     .snug .key {
-      display: none;
+      width: 20px;
+      height: 20px;
+      padding-top: 1px;
+      font-size: 0.66rem;
     }
     .snug .text {
       font-size: 0.98rem;
@@ -2005,6 +2039,10 @@
     .tiles.snug .tile {
       height: 136px;
       padding: 0.5rem 0.25rem;
+    }
+    .tiles.snug .tile .key {
+      top: 4px;
+      left: 4px;
     }
     .tiles.snug .tile .mark {
       top: 4px;
