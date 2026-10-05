@@ -298,23 +298,26 @@ it goes live. Pages serves one upload per site, so every deploy has both:
 `main` in `dist/` and the beta in `dist/beta/`.
 
 - **Put a branch on the beta:** Actions → *Deploy to GitHub Pages* → Run
-  workflow (on `main`), with the branch, tag or full commit SHA as *beta*.
-  Its tests run, both sites deploy, and the commit is recorded as a
-  deployment to the `beta` environment (on the repo's front page, under
-  Deployments), so later deploys of `main` keep showing it. Its build is
-  cached, so they don't build it again.
+  workflow (on `main`), with the branch, tag or commit SHA as *beta*. Its
+  tests run, the commit is recorded as a deployment to the `beta`
+  environment (on the repo's front page, under Deployments), and both sites
+  deploy. Later deploys of `main` keep showing it, from a build cached by
+  commit.
 - **Ship it:** merge the branch into `main` as usual. The beta stays as it
   is until the next one goes up.
 - **Stack changes:** the beta shows one commit at a time. To test a change
   together with the one already on the beta, start its branch from that
-  commit (the newest `beta` deployment; the run that put it up is named
-  *Beta: (branch)*) instead of `main`.
+  commit instead of `main`: the newest `beta` deployment, also shown as
+  *Beta commit* in the summary of the newest successful run named
+  *Beta: (branch)*. (The branch itself may have moved on since.)
 - **A run that only waited** is cancelled when another run queues behind it
   (GitHub keeps one waiting run per group); run it again.
 
-If the beta stops building (say a dependency it pins disappears), deploys of
-`main` go ahead without `/beta/` and say so in a warning; putting a branch on
-the beta brings it back. A commit from before the beta existed can't go on
+The beta's own code (install scripts, tests, build) runs in a job of its own
+with a read-only token, apart from the live site's build. If the beta can't be
+found or built (say a dependency it pins disappears), deploys of `main` go
+ahead without `/beta/` and say so in a warning; putting a branch on the beta
+brings it back. A commit from before the beta existed can't go on
 it, since it would share the live game's rooms and saves; merge `main` into
 it first.
 

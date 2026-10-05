@@ -14,7 +14,9 @@ function* files(dir: string): Generator<string> {
 }
 
 // The beta shares the live game's origin; src/lib/storage.ts gives its keys
-// their own start. Storage used anywhere else could skip that.
+// their own start. Storage used anywhere else could skip that, so outside it
+// the names may only appear in comments (any other mention, an alias or
+// `localStorage?.` included, fails), and so may a storage event's storageArea.
 test('only src/lib/storage.ts touches localStorage and sessionStorage', () => {
   const bad: string[] = [];
   for (const f of files(src)) {
@@ -22,7 +24,8 @@ test('only src/lib/storage.ts touches localStorage and sessionStorage', () => {
     readFileSync(f, 'utf8')
       .split('\n')
       .forEach((line, i) => {
-        if (/\b(local|session)Storage\s*[.[]/.test(line)) bad.push(`${relative(src, f)}:${i + 1}`);
+        const code = /^\s*(\*|\/\*|\/\/|<!--)/.test(line) ? '' : line.replace(/\/\/.*$/, '');
+        if (/\b(local|session)Storage\b|\bstorageArea\b/.test(code)) bad.push(`${relative(src, f)}:${i + 1}`);
       });
   }
   assert.deepEqual(bad, []);

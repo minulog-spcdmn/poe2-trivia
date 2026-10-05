@@ -2,7 +2,7 @@
 // open starts the way they left the last one.
 
 import { DEFAULT_SETTINGS, cleanKnobs, difficultyOf, isDifficulty, snapTimer, type Difficulty, type GameMode, type Knobs, type Settings } from './game.ts';
-import { readStored, removeLegacy, storeKey, writeStored } from './storage.ts';
+import { removeLegacy, storeKey, tryReadStored, writeStored } from './storage.ts';
 
 export interface RoomPrefs {
   targetScore: number;
@@ -88,7 +88,10 @@ function write(p: RoomPrefs): boolean {
  * suddenly show up on screen).
  */
 export function loadPrefs(): RoomPrefs {
-  const saved = parsePrefs(readStored(PREFS));
+  const raw = tryReadStored(PREFS);
+  // Unreadable isn't missing: leave whatever is stored alone.
+  if (raw === undefined) return { ...DEFAULT_PREFS };
+  const saved = parsePrefs(raw);
   if (saved) return saved;
   const fresh = { ...DEFAULT_PREFS };
   // The old key goes only once the new entry holds its value.
