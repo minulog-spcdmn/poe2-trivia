@@ -247,8 +247,10 @@
           onclick={() => (tab = t.key)}
           onkeydown={tabKey}
         >
-          <span class="tab-label">{t.label}</span>
-          <span class="tab-note">{t.key === 'items' ? `${stats.seen}/${stats.total}` : (delveBest ?? '')}</span>
+          <span class="tab-in">
+            <span class="tab-label">{t.label}</span>
+            {#if t.key === 'items'}<span class="tab-note">{stats.seen}/{stats.total}</span>{:else if delveBest}<span class="tab-note">{delveBest}</span>{/if}
+          </span>
         </button>
       {/each}
     </div>
@@ -603,15 +605,11 @@
     width: min(440px, 100%);
     border-bottom: 1px solid var(--line);
   }
-  /* The label centred over its underline, its number centred under it. */
   .tabs button {
-    position: relative;
     flex: 1;
     display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.1rem;
-    padding: 0.5rem 0.8rem 0.55rem;
+    justify-content: center;
+    padding: 0.55rem 0.8rem 0.6rem;
     background: none;
     border: 0;
     cursor: pointer;
@@ -625,24 +623,30 @@
     letter-spacing: 0.22em;
     text-transform: uppercase;
   }
+  /* The label and its number are one unit: centred together, and the underline spans both. */
+  .tab-in {
+    position: relative;
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.5rem;
+  }
   .tab-label {
-    /* Its trailing letter spacing, given back on the left, so the word sits truly centred. */
-    padding-left: 0.22em;
+    /* No trailing letter spacing: the unit ends where its letters do. */
+    margin-right: -0.22em;
   }
   .tab-note {
-    min-height: 1.2em;
     font-family: var(--font-cinzel);
     font-size: 0.78rem;
-    line-height: 1.2;
     color: var(--gold-lo);
     transition: color 0.25s;
   }
-  .tabs button::after {
+  .tab-in::after {
     content: '';
     position: absolute;
-    left: 18%;
-    right: 18%;
-    bottom: -1px;
+    left: -0.7rem;
+    right: -0.7rem;
+    /* Down through the button's padding onto the tabs' line. */
+    bottom: calc(-0.6rem - 1px);
     height: 2px;
     background: linear-gradient(90deg, transparent, var(--unique-hi), #fbe6b0, var(--unique-hi), transparent);
     box-shadow: 0 0 10px rgba(224, 138, 68, 0.6);
@@ -662,7 +666,7 @@
   .tabs button.on .tab-note {
     color: var(--gold);
   }
-  .tabs button.on::after {
+  .tabs button.on .tab-in::after {
     opacity: 1;
     scale: 1 1;
   }

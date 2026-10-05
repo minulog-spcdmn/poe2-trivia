@@ -18,7 +18,7 @@
     otherRules,
     runStory,
     runsOf,
-    toward,
+    zoneOf,
     zoneRisks,
     zonesReached,
   } from '../lib/codexStats';
@@ -28,14 +28,16 @@
   import type { Item } from '../lib/game';
   import DelveLastRun from './codex/DelveLastRun.svelte';
   import DelveRunLog from './codex/DelveRunLog.svelte';
-  import ShareDepth from './codex/ShareDepth.svelte';
+  import ArcaneCircle from './ArcaneCircle.svelte';
 
   // The Codex's Delve page, a sibling of the Collection (Codex.svelte) and
-  // built from its parts: four figures around your best (with what's next and
-  // the share button), your last run in a row, rows of bars for where and to
-  // what you lose lives, lists for the deadliest items, finds and zones, and
-  // every run in the Collection's table. Alone comes first, together beside
-  // it; under the current rules only (runs under others are only listed).
+  // built from its parts: four figures around your deepest in the rune
+  // circle (with no arc: depth has nothing to fill), your last run in a row,
+  // one panel per topic (what kills you and the deadliest items, then where
+  // you fall, finds and wards, the zones you reached), and every run in the
+  // Collection's table. Alone comes first, together beside it; under the
+  // current rules only (runs under others are only listed). Zones ahead are
+  // never named: they are a surprise.
   // codexStats.ts says what each number means.
   let { codex, records, onopen, onbegin }: { codex: Codex; records: DelveRecords; onopen: (item: Item) => void; onbegin: () => void } = $props();
 
@@ -66,7 +68,6 @@
   const allRuns = $derived(solo.runs + group.runs);
 
   const best = $derived(main.deepest);
-  const ahead = $derived(best ? toward(best) : null);
 
   // ---- the runs ----
 
@@ -119,17 +120,18 @@
         value: dynamite.taken,
         note: [...(dynamite.gained.dynamite ? [[dynamite.gained.dynamite, word(dynamite.gained.dynamite, 'stick')] as [number, string]] : []), ...missed(dynamite, 'missed')],
       });
-    if (deaths.blasted) out.push({ name: 'Dynamite went off', value: deaths.blasted, note: [[0, 'art laid bare, wrong answers blown away']] });
-    if (deaths.warded) out.push({ name: 'Lives warded', value: deaths.warded, note: [[0, 'a ward broke instead']] });
+    if (deaths.blasted) out.push({ name: 'Dynamite blasts', value: deaths.blasted, note: [[0, 'art laid bare, wrong answers blown away']] });
+    if (deaths.warded) out.push({ name: 'Lives warded', value: deaths.warded, note: [[0, 'a ward broke in its place']] });
     if (finds.flaresBurnt) out.push({ name: 'Flares burnt', value: finds.flaresBurnt, note: [[5, 's more on the clock each']] });
     return out;
   });
 
   // ---- zones reached, alone or together ----
 
-  const climb = $derived(climbOf(records, alone));
+  /** Alone and together as one: each new deepest, and the zones they reached. */
+  const climb = $derived(mergeClimbs(climbOf(records, true), climbOf(records, false)));
   const steps = $derived(milestones(climb));
-  const zones = $derived(zonesReached(mergeClimbs(climbOf(records, true), climbOf(records, false))));
+  const zones = $derived(zonesReached(climb));
   const ZONE_ROWS = 6;
   let allZones = $state(false);
   const zoneRows = $derived(allZones || zones.reached.length <= ZONE_ROWS + 1 ? [...zones.reached].reverse() : zones.reached.slice(-ZONE_ROWS).reverse());
@@ -148,13 +150,13 @@
   <span class="glyph" style:--src="url('{categoryIcon(category)}')" aria-hidden="true"></span>
 {/snippet}
 
-{#snippet zonesPanel(withFinds: boolean)}
+{#snippet zonesPanel()}
         <section class="panel" use:backdropShadow={{ fill: 'linear' }} aria-labelledby="zone-h">
           <header><h2 id="zone-h">Zones reached</h2>{#if zones.biomes}<span class="col-label">{zones.biomes} {word(zones.biomes, 'biome')}</span>{/if}</header>
           {#if zones.reached.length}
             {#if steps.length > 1}
               <p class="climb">
-                <span class="climb-label">Best {kindWord} over time</span>
+                <span class="climb-label">Deepest over time</span>
                 <span class="climb-steps"
                   >{#each steps as s, i (i)}{#if i}<span class="arrow" aria-hidden="true"> → </span><span class="sr-only">, then </span>{/if}{#if s === null}<span
                         class="gap">…</span
@@ -163,13 +165,6 @@
               </p>
             {/if}
             <ol class="list zones">
-              {#if zones.next}
-                <li class="next">
-                  <span class="z-depth n">{zones.next.depth}</span>
-                  <span class="l-name"><span><span aria-hidden="true">? ? ?</span><span class="sr-only">Not reached yet</span></span></span>
-                  <span class="z-when">next</span>
-                </li>
-              {/if}
               {#each zoneRows as z (z.k)}
                 <li>
                   <span class="z-depth n">{z.depth}</span>
@@ -182,14 +177,13 @@
               <button class="more" onclick={() => (allZones = true)}>Show all {zones.reached.length} zones</button>
             {/if}
           {:else}
-            <p class="hint">The zones your runs fall in, every ten depths, and when you first got there show up here.</p>
+            <p class="hint">The zones you reach, and when you first got there, show up here.</p>
           {/if}
-          {#if withFinds}{@render findList(true)}{/if}
         </section>
 {/snippet}
 
-{#snippet findList(sub: boolean)}
-  <header class:sub><h2 id="find-h">Finds and wards</h2></header>
+{#snippet findList()}
+  <header><h2 id="find-h">Finds and wards</h2></header>
           {#if findRows.length}
             <ul class="list">
               {#each findRows as f (f.name)}
@@ -223,10 +217,10 @@
       <section class="summary" in:fly={rise(150)}>
         <div class="side">
           <div class="stat">
-            <span class="stat-label">Best {otherWord}</span>
+            <span class="stat-label">Deepest {otherWord}</span>
             <span class="stat-value">{other.deepest ?? '?'}</span>
             <span class="stat-note"
-              >{#if other.runs}<span class="n">{fmt(other.runs)}</span> {word(other.runs, 'run')} {otherWord}{#if alone && other.wins}{' • '}<span class="n">{other.wins}</span> {word(other.wins, 'win')}{/if}{:else}no run {otherWord} yet{/if}</span
+              >{#if other.runs}<span class="n">{fmt(other.runs)}</span> {word(other.runs, 'run')}{#if alone && other.wins}{' • '}<span class="n">{other.wins}</span> {word(other.wins, 'win')}{/if}{:else}no run {otherWord} yet{/if}</span
             >
           </div>
           <div class="stat">
@@ -236,21 +230,19 @@
           </div>
         </div>
 
-        <div class="headline">
-          <span class="stat-label">Best {kindWord}</span>
-          {#if best}
-            <span class="best">
-              <span class="best-value">{best}</span>
-              <ShareDepth depth={best} />
-            </span>
-            {#if ahead}
-              <span class="best-zone">in {ahead.here.name}</span>
-              <span class="next">Next zone: <b>{ahead.next.name}</b> at <span class="n">{ahead.next.depth}</span></span>
+        <div class="medallion">
+          <ArcaneCircle size="100%" strength={0.3} />
+          <svg class="disc" viewBox="-100 -100 200 200" aria-hidden="true"><circle r="80" /></svg>
+          <div class="medal-text">
+            <span class="medal-label">Deepest</span>
+            <span class="medal-value">{best ?? '?'}</span>
+            {#if best}
+              <span class="medal-zone">{zoneOf(best).name}</span>
+              <span class="medal-note">{kindWord}</span>
+            {:else}
+              <span class="medal-note">{main.left ? 'no fall yet' : kindWord}</span>
             {/if}
-          {:else}
-            <span class="best"><span class="best-value">?</span></span>
-            <span class="next">{main.left ? 'Your runs so far were left before their last life went.' : 'Fall in a run to set your best.'}</span>
-          {/if}
+          </div>
         </div>
 
         <div class="side">
@@ -277,29 +269,6 @@
 
       {#if allRuns >= MIN_RUNS}
       <div class="split" in:fly={rise(280)}>
-        <section class="panel" use:backdropShadow={{ fill: 'linear' }} aria-labelledby="fall-h">
-          <header><h2 id="fall-h">Where you fall</h2><span class="col-label">Lives lost</span></header>
-          {#if !risks.length}
-            <p class="hint">Once {ZONE_MIN_RUNS} runs reach a zone: the lives you lose there, out of the runs that got there.</p>
-          {:else}
-            <ul class="bars">
-              {#each risks.slice(0, ZONES_SHOWN) as z (z.k)}
-                <li title="{z.name}, depths {z.depth} to {z.to}: {z.lives} {word(z.lives, 'life', 'lives')} lost in the {z.reached} {word(z.reached, 'run')} that got there">
-                  <span class="bar-name">{z.name}</span>
-                  {@render meter(z.rate / riskTop)}
-                  <span class="bar-value">{fmt(z.lives)} <small>in {fmt(z.reached)} {word(z.reached, 'run')}</small></span>
-                </li>
-              {/each}
-            </ul>
-            <p class="foot">
-              {#if worstZone}Most lives go in <b>{worstZone.name}</b>: <span class="n">{worstZone.lives}</span> lost in the
-                <span class="n">{worstZone.reached}</span> {word(worstZone.reached, 'run')} that got there.{/if}
-              Alone and together; a zone shows once <span class="n">{ZONE_MIN_RUNS}</span> runs reach it{risks.length > ZONES_SHOWN ? `, the ${ZONES_SHOWN} highest here` : ''}.
-            </p>
-          {/if}
-          {@render findList(true)}
-        </section>
-
         <section class="panel by-cat" use:backdropShadow={{ fill: 'linear' }} aria-labelledby="kill-h">
           <header><h2 id="kill-h">What kills you</h2><span class="col-label">Lives lost</span></header>
           {#if !deaths.lives}
@@ -324,9 +293,7 @@
             {/if}
           {/if}
         </section>
-      </div>
 
-      <div class="insights" in:fly={rise(350)}>
         <section class="panel" use:backdropShadow={{ fill: 'linear' }} aria-labelledby="items-h">
           <header><h2 id="items-h">Deadliest items</h2><span class="col-label">Lives lost</span></header>
           {#if deaths.items.length}
@@ -345,9 +312,36 @@
             <p class="hint">Items that cost you lives, from {ITEM_MIN} answers each, show up here.</p>
           {/if}
         </section>
+      </div>
 
+      <div class="insights" in:fly={rise(350)}>
+        <section class="panel" use:backdropShadow={{ fill: 'linear' }} aria-labelledby="fall-h">
+          <header><h2 id="fall-h">Where you fall</h2><span class="col-label">Lives lost</span></header>
+          {#if !risks.length}
+            <p class="hint">Once {ZONE_MIN_RUNS} runs reach a zone: the lives you lose there, out of the runs that got there.</p>
+          {:else}
+            <ul class="bars">
+              {#each risks.slice(0, ZONES_SHOWN) as z (z.k)}
+                <li title="{z.name}, depths {z.depth} to {z.to}: {z.lives} {word(z.lives, 'life', 'lives')} lost in the {z.reached} {word(z.reached, 'run')} that got there">
+                  <span class="bar-name">{z.name}</span>
+                  {@render meter(z.rate / riskTop)}
+                  <span class="bar-value">{fmt(z.lives)} <small>in {fmt(z.reached)} {word(z.reached, 'run')}</small></span>
+                </li>
+              {/each}
+            </ul>
+            <p class="foot">
+              {#if worstZone}Most lives go in <b>{worstZone.name}</b>: <span class="n">{worstZone.lives}</span> lost in the
+                <span class="n">{worstZone.reached}</span> {word(worstZone.reached, 'run')} that got there.{/if}
+              Alone and together; a zone shows once <span class="n">{ZONE_MIN_RUNS}</span> runs reach it{risks.length > ZONES_SHOWN ? `, the ${ZONES_SHOWN} highest here` : ''}.
+            </p>
+          {/if}
+        </section>
 
-        {@render zonesPanel(false)}
+        {#if findRows.length}
+          <section class="panel" use:backdropShadow={{ fill: 'linear' }} aria-labelledby="find-h">{@render findList()}</section>
+        {/if}
+
+        {@render zonesPanel()}
       </div>
       {:else}
         <p class="waiting" in:fly={rise(280)}>
@@ -355,11 +349,10 @@
           <span class="n">{MIN_RUNS - allRuns}</span> to go.
         </p>
         <div class="insights" in:fly={rise(350)}>
-          <!-- A few finds sit under the zones rather than in a panel of their own, half empty. -->
-          {#if findRows.length >= 3}
-            <section class="panel" use:backdropShadow={{ fill: 'linear' }} aria-labelledby="find-h">{@render findList(false)}</section>
+          {#if findRows.length}
+            <section class="panel" use:backdropShadow={{ fill: 'linear' }} aria-labelledby="find-h">{@render findList()}</section>
           {/if}
-          {@render zonesPanel(findRows.length > 0 && findRows.length < 3)}
+          {@render zonesPanel()}
         </div>
       {/if}
     {:else}
@@ -413,8 +406,7 @@
     justify-content: space-evenly;
     gap: 1rem;
   }
-  .stat,
-  .headline {
+  .stat {
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -430,7 +422,7 @@
     color: var(--muted);
   }
   .stat-value,
-  .best-value {
+  .medal-value {
     font-family: var(--font-cinzel);
     font-weight: 700;
     line-height: 1;
@@ -450,44 +442,59 @@
     font-style: italic;
     color: var(--muted);
   }
-  .headline {
+  /* The Collection's medallion: the rune circle round a dark disc, your deepest inside. No arc: depth has no end to fill to. */
+  .medallion {
     grid-column: 2;
-    width: 240px;
-  }
-  /* The number stays centred; the share button hangs beside it. */
-  .best {
     position: relative;
-    display: flex;
-    justify-content: center;
+    isolation: isolate;
+    width: 240px;
+    height: 240px;
+    display: grid;
+    place-items: center;
   }
-  .best-value {
-    font-size: 3.6rem;
-    padding: 0 0.1em;
+  .medallion :global(.arcane) {
+    z-index: -1;
   }
-  .best :global(.share) {
+  .disc {
     position: absolute;
-    left: 100%;
-    top: 50%;
-    translate: 0.4rem -50%;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    fill: rgba(8, 6, 4, 0.75);
   }
-  .best-zone {
-    margin-top: 0.15rem;
+  .medal-text {
+    position: relative;
+    width: 150px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    line-height: 1.1;
+  }
+  .medal-label {
     font-family: var(--font-display);
-    font-size: 0.95rem;
+    font-size: 0.74rem;
+    letter-spacing: 0.2em;
+    padding-left: 0.2em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .medal-value {
+    margin: 0.15rem 0 0.2rem;
+    font-size: 3.2rem;
+  }
+  .medal-zone {
+    font-family: var(--font-display);
+    font-size: 0.9rem;
+    line-height: 1.2;
     letter-spacing: 0.04em;
     color: var(--gold);
   }
-  .next {
-    margin-top: 0.35rem;
-    font-size: 0.92rem;
-    line-height: 1.3;
+  .medal-note {
+    margin-top: 0.15rem;
+    font-size: 0.9rem;
     font-style: italic;
     color: var(--muted);
-  }
-  .next b {
-    font-weight: 400;
-    font-style: normal;
-    color: var(--text);
   }
 
   .empty {
@@ -508,7 +515,7 @@
   /* ---- panels ---- */
   .split {
     display: grid;
-    grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
     gap: 1rem;
   }
   .insights {
@@ -535,9 +542,6 @@
     font-size: 0.95rem;
     font-style: italic;
     color: var(--muted);
-  }
-  .panel header.sub {
-    margin-top: 1.3rem;
   }
   .panel h2 {
     font-size: 0.95rem;
@@ -582,7 +586,7 @@
   }
   .bars li {
     display: grid;
-    grid-template-columns: minmax(0, 8.5rem) minmax(40px, 1fr) 5.6rem;
+    grid-template-columns: minmax(0, 1fr) minmax(24px, 3.5rem) auto;
     align-items: center;
     gap: 0.7rem;
   }
@@ -776,18 +780,6 @@
     color: var(--muted);
     white-space: nowrap;
   }
-  .next .z-depth,
-  .next .l-name {
-    color: var(--muted);
-  }
-  .next .l-name {
-    font-family: var(--font-cinzel);
-    letter-spacing: 0.2em;
-  }
-  .next .z-when {
-    font-style: italic;
-    font-size: 0.85rem;
-  }
   .climb {
     margin: 0 0 0.6rem;
     display: flex;
@@ -840,7 +832,7 @@
       grid-template-columns: 1fr 1fr;
       row-gap: 1rem;
     }
-    .headline {
+    .medallion {
       grid-column: 1 / -1;
       grid-row: 1;
       justify-self: center;
@@ -852,7 +844,7 @@
   @media (max-width: 560px) {
     .summary {
       grid-template-columns: 1fr;
-      row-gap: 1.5rem;
+      row-gap: 1.75rem;
     }
     .side {
       justify-content: space-around;
@@ -863,14 +855,17 @@
     .stat-value {
       font-size: 1.9rem;
     }
-    .best-value {
-      font-size: 3.2rem;
+    .medallion {
+      width: 210px;
+      height: 210px;
+    }
+    .medal-value {
+      font-size: 2.8rem;
     }
     .panel {
       padding: 1rem 1rem 1.1rem;
     }
     .bars li {
-      grid-template-columns: minmax(0, 1fr) minmax(30px, 3.5rem) 5.4rem;
       gap: 0.5rem;
     }
     .bars.cats li {

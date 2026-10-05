@@ -95,10 +95,10 @@
             <tr class="group">
               <td colspan="4">
                 {#if g.ruleset === null}
-                  Rules changed during the run<small>: resumed by a build with other rules, never a best</small>
+                  Rules changed mid-run<small>: resumed by a build with other rules, never counted</small>
                 {:else}
-                  Under other rules<small
-                    >: never compared with today's{#if g.solo !== null}{' • '}best alone <span class="n">{g.solo}</span>{/if}{#if g.group !== null}{' • '}together <span
+                  Other rules<small
+                    >: never compared with today's{#if g.solo !== null}{' • '}deepest alone <span class="n">{g.solo}</span>{/if}{#if g.group !== null}{' • '}together <span
                         class="n">{g.group}</span
                       >{/if}</small
                   >

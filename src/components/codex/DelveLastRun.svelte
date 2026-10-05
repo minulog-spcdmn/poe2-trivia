@@ -39,7 +39,7 @@
   <div class="text">
     <p class="lead">
       {who} • {run.left ? 'left' : 'fell'} in <span class="zname">{zone.name}</span>{#if run.left}, <span class="n">{kept}</span>
-        {kept === 1 ? 'life' : 'lives'} to spare{/if}{#if isBest}{' • '}<span class="up">your best</span>{/if}
+        {kept === 1 ? 'life' : 'lives'} to spare{/if}{#if isBest}{' • '}<span class="up">your deepest</span>{/if}
     </p>
     <p class="note">
       <span class="n">{when(run.at)}</span>{#if diff !== null && median !== null && !isBest}{' • '}{#if diff > 0}<span class="n">{typical(diff)}</span> deeper than{:else if diff < 0}<span class="n">{typical(-diff)}</span> short of{:else}right at{/if}
