@@ -52,9 +52,15 @@
     if (matchMedia('(prefers-reduced-motion: reduce)').matches || fxActive() || !fxUserOn()) return;
     const ctx = canvas.getContext('2d')!;
     const dpr = Math.min(2, devicePixelRatio);
+    // Sized from the canvas, which keeps its height when a phone's toolbar
+    // slides in or out; innerHeight follows the toolbar.
+    let w = 0;
+    let h = 0;
     const resize = () => {
-      canvas.width = innerWidth * dpr;
-      canvas.height = innerHeight * dpr;
+      w = canvas.clientWidth;
+      h = canvas.clientHeight;
+      canvas.width = w * dpr;
+      canvas.height = h * dpr;
     };
     resize();
     addEventListener('resize', resize);
@@ -83,7 +89,7 @@
       t++;
       if (t < 200 && t % 40 === 1) burst(innerWidth * (0.2 + Math.random() * 0.6), innerHeight * (0.2 + Math.random() * 0.3), 90);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.clearRect(0, 0, innerWidth, innerHeight);
+      ctx.clearRect(0, 0, w, h);
       for (let i = parts.length - 1; i >= 0; i--) {
         const p = parts[i];
         p.vy += 0.12;
@@ -92,7 +98,7 @@
         p.y += p.vy;
         p.life -= 0.008;
         p.spin += 0.2;
-        if (p.life <= 0 || p.y > innerHeight + 20) {
+        if (p.life <= 0 || p.y > h + 20) {
           parts.splice(i, 1);
           continue;
         }
@@ -184,6 +190,7 @@
     inset: 0;
     width: 100vw;
     height: 100vh;
+    height: 100lvh;
     pointer-events: none;
     z-index: 5;
   }

@@ -11,11 +11,14 @@
 <canvas bind:this={canvas} class="fx" aria-hidden="true"></canvas>
 
 <style>
+  /* lvh, not 100%: a fixed height, so a phone's toolbar sliding in or out
+     doesn't resize the canvas mid-effect (see Background.svelte). */
   .fx {
     position: fixed;
     inset: 0;
     width: 100%;
     height: 100%;
+    height: 100lvh;
     z-index: 95;
     pointer-events: none;
     mix-blend-mode: screen;

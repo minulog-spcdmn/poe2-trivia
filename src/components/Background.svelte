@@ -55,9 +55,14 @@
 </div>
 
 <style>
+  /* As tall as the viewport with the browser's toolbars hidden (lvh), so a
+     phone's toolbar sliding in or out while scrolling covers or uncovers the
+     bottom edge instead of resizing the backdrop, which would make it jump.
+     (Where lvh isn't supported, inset: 0 sizes it as before.) */
   .bg {
     position: fixed;
     inset: 0;
+    height: 100lvh;
     z-index: 0;
     overflow: hidden;
   }
