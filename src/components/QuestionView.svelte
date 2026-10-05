@@ -104,7 +104,7 @@
     // Waits for the rest to come in; should some never arrive, it gives up
     // a while after the last one did.
     const whole = patches.length >= v.count;
-    const wait = whole ? Math.max(0, untrack(() => veilSettles) + 100 - performance.now()) : 2500;
+    const wait = whole ? Math.max(0, untrack(() => veilSettles) + 50 - performance.now()) : 2500;
     const timer = setTimeout(() => (veilDone = true), wait);
     return () => clearTimeout(timer);
   });
@@ -212,7 +212,7 @@
     if (veil) veilHandoff(veil);
     const quick = matchMedia('(prefers-reduced-motion: reduce)').matches;
     return {
-      duration: quick ? 250 : 700,
+      duration: quick ? 250 : 400,
       css: (t: number, u: number) =>
         quick
           ? `opacity: ${t}`
@@ -421,7 +421,7 @@
 {/snippet}
 
 {#snippet mirrorLine()}
-  <span class="mirrored" in:fade={{ duration: 300, delay: 450 }}>Mirrored</span>
+  <span class="mirrored" in:fade={{ duration: 300, delay: 250 }}>Mirrored</span>
 {/snippet}
 
 {#snippet who(index: number)}
@@ -589,6 +589,7 @@
                 {#each patches as p (p.i)}
                   <canvas
                     class="patch"
+                    data-shape
                     aria-hidden="true"
                     style:left="{(p.x / v.w) * 100}%"
                     style:top="{(p.y / v.h) * 100}%"

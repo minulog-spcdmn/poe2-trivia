@@ -737,7 +737,7 @@ class Session {
    * there, and every device starts each patch's burn in a different frame.
    */
   private finishVeil(rest: ReturnType<Session['unreleasedPatches']>) {
-    const gap = Math.min(60, 700 / Math.max(1, rest.length));
+    const gap = Math.min(30, 300 / Math.max(1, rest.length));
     rest.forEach((patch, k) => {
       const go = () => {
         if (this.state?.phase === 'reveal' && this.state.question?.askedAt === patch.qid) this.release({ t: 'patch', ...patch });

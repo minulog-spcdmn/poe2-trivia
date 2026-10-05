@@ -53,7 +53,7 @@
     filter: drop-shadow(0 12px 25px rgba(0, 0, 0, 0.8));
   }
   .unflip {
-    animation: unflip 0.7s var(--ease-out) 0.45s backwards;
+    animation: unflip 0.45s var(--ease-out) 0.25s backwards;
   }
   @keyframes unflip {
     from {
