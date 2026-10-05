@@ -3,10 +3,10 @@
 // opened, carries them.
 
 import type { Difficulty, Item, QuestionMode } from './game.ts';
-import { RECENT, livesCost, type Codex, type ItemEntry, type Tally } from './codex.ts';
-import { DELVE_RULESET } from './delve.ts';
-import { tallyOf as runsTally, type DelveRecords, type DelveTally, type Frontier } from './delveRecord.ts';
-import { milestoneAt } from './descent.ts';
+import { RECENT, answerLives, answerWards, livesCost, type Answer, type Codex, type ItemEntry, type Tally } from './codex.ts';
+import { DELVE_RULESET, type FindKind, type ItemKind } from './delve.ts';
+import { MAX_DEPTH, bestKey, tallyOf as runsTally, type DelveRecords, type DelveRun, type DelveTally, type Frontier } from './delveRecord.ts';
+import { stratumName } from './descent.ts';
 
 /** Fewer answers than this don't make an item a nemesis. */
 export const NEMESIS_MIN = 2;
@@ -120,171 +120,343 @@ export function codexStats(c: Codex, items: Item[], categories: string[], limit 
 }
 
 // ---- Delve -------------------------------------------------------------------
+//
+// What every number on the Delve page means. All of them are under the
+// current rules (DELVE_RULESET) and of one kind of run, alone or together;
+// runs under other rules, or resumed across a change of rules, are only
+// listed, apart, with their own bests.
+// - A run is counted once it ends: it fell (its third life went), or it was
+//   left standing (see delveRecord.ts). Both count as runs that got that deep.
+// - A best is the deepest fall; a run left never is one.
+// - The typical depth is the median depth runs fell at, from MIN_RUNS falls.
+// - Where you fall: lives lost in a zone per run that reached it.
+// - What kills you: lives lost per answer, from every Delve answer (alone or
+//   together: the codex keeps answers by item, not by run), a cave-in two.
 
-/** The atlas shows every named depth down to here at least, found or not. */
-export const ATLAS_DEPTH = 100;
-/** How far past a depth to look for the next named one. */
-const LOOKAHEAD = 1000;
+/** Most stats wait for this many runs: fewer say little. */
+export const MIN_RUNS = 3;
+/** A zone's death rate is shown once this many runs reached it. */
+export const ZONE_MIN_RUNS = 5;
+/** An item's death rate is shown from this many answers. */
+export const ITEM_MIN = 2;
+/** A category's death rate is shown from this many answers. */
+export const CATEGORY_MIN = 5;
+/** Depths in a zone (a stratum of the descent). */
+export const ZONE_SIZE = 10;
+
+export type DelveKind = 'solo' | 'group';
 
 export interface Zone {
-  /** Where it begins (milestoneAt names it). */
+  /** The stratum: 0 for depths 1 to 10. */
+  k: number;
+  /** Its first and last depth. */
   depth: number;
+  to: number;
+  /** Its biome, numbered from its second time round past 100 ("Frozen Hollow II"). */
   name: string;
-  /** First reached then (this browser's clock); null while undiscovered. */
-  at: number | null;
 }
 
-/** The named depth a depth lies in: the nearest one at or above it, or null above the first. */
-export function zoneOf(depth: number): { depth: number; name: string } | null {
-  for (let d = Math.floor(depth); d >= 1; d--) {
-    const name = milestoneAt(d);
-    if (name) return { depth: d, name };
-  }
-  return null;
-}
-
-/** The next named depth below `depth`, or null if none comes within LOOKAHEAD. */
-export function nextZone(depth: number): { depth: number; name: string } | null {
-  for (let d = Math.max(1, Math.floor(depth) + 1); d <= depth + LOOKAHEAD; d++) {
-    const name = milestoneAt(d);
-    if (name) return { depth: d, name };
-  }
-  return null;
-}
-
-/**
- * The named depths from the top, with when each was first reached: every one
- * down to ATLAS_DEPTH or the deepest reached, and always at least one still to find.
- */
-export function zoneAtlas(frontier: Frontier[], through = ATLAS_DEPTH): Zone[] {
-  const deepest = frontier.at(-1)?.depth ?? 0;
-  const out: Zone[] = [];
-  for (let d = 1; d <= Math.max(through, deepest); d++) {
-    const name = milestoneAt(d);
-    if (name) out.push({ depth: d, name, at: frontier.find((f) => f.depth >= d)?.at ?? null });
-  }
-  if (out.every((z) => z.at !== null)) {
-    const next = nextZone(Math.max(through, deepest));
-    if (next) out.push({ ...next, at: null });
-  }
+function roman(n: number): string {
+  const parts: [number, string][] = [[100, 'C'], [90, 'XC'], [50, 'L'], [40, 'XL'], [10, 'X'], [9, 'IX'], [5, 'V'], [4, 'IV'], [1, 'I']];
+  let out = '';
+  for (const [v, s] of parts) for (; n >= v; n -= v) out += s;
   return out;
 }
 
-export type DelveKind = 'all' | 'solo' | 'group';
-
-export interface DepthCount {
-  depth: number;
-  /** Runs that ended here (their last life). */
-  ends: number;
-  /** Earlier lives lost here. */
-  lost: number;
+const LAST_ZONE = Math.floor((MAX_DEPTH - 1) / ZONE_SIZE);
+const zoneNames: string[] = [];
+/** Zone `k`, named as the descent names its stratum. */
+export function zone(k: number): Zone {
+  const at = Math.max(0, Math.min(LAST_ZONE, Math.floor(k)));
+  for (let j = zoneNames.length; j <= at; j++) {
+    const biome = stratumName(j);
+    let seen = 0;
+    for (let i = 0; i < j; i++) if (stratumName(i) === biome) seen++;
+    zoneNames.push(seen ? `${biome} ${roman(seen + 1)}` : biome);
+  }
+  return { k: at, depth: at * ZONE_SIZE + 1, to: (at + 1) * ZONE_SIZE, name: zoneNames[at] };
 }
+
+/** The zone a depth lies in (depths 1 to 10: the first). */
+export const zoneOf = (depth: number): Zone => zone(Math.floor((Math.max(1, Math.floor(depth)) - 1) / ZONE_SIZE));
+
+/** From a depth toward the next zone: how many depths are left, and how far through its own zone it is (0 to 1). */
+export function toward(depth: number): { here: Zone; next: Zone; left: number; share: number } {
+  const here = zoneOf(depth);
+  const next = zone(here.k + 1);
+  return { here, next, left: next.depth - depth, share: (depth - here.depth + 1) / (ZONE_SIZE + 1) };
+}
+
+/** The median of values given as counts by value, without spelling them out. */
+export function medianOfCounts(m: Record<number, number>): number | null {
+  const entries = Object.entries(m)
+    .map(([k, n]) => [Number(k), n] as const)
+    .filter(([, n]) => n > 0)
+    .sort((a, b) => a[0] - b[0]);
+  const total = entries.reduce((a, [, n]) => a + n, 0);
+  if (!total) return null;
+  const at = (i: number) => {
+    let seen = 0;
+    for (const [v, n] of entries) if ((seen += n) > i) return v;
+    return entries.at(-1)![0];
+  };
+  return (at((total - 1) >> 1) + at(total >> 1)) / 2;
+}
+
+const sumOf = (m: Record<number, number> | undefined) => Object.values(m ?? {}).reduce((a, b) => a + b, 0);
 
 export interface DelveSummary {
+  /** Runs counted: fallen and left. */
   runs: number;
-  solo: number;
-  group: number;
+  fell: number;
+  left: number;
   /** Group runs won. */
   wins: number;
-  /** Of the depths runs ended at. */
+  /** The median depth runs fell at; null before MIN_RUNS falls. */
   median: number | null;
-  mean: number | null;
-  /** Every depth from 1 to the deepest with anything, in order. */
-  depths: DepthCount[];
+  best: DelveRun | null;
+  /** The deepest fall: the best's, or (if the best was lost, records written by a broken build) the tally's. */
+  deepest: number | null;
 }
 
-/** The counted runs of a kind under a ruleset (this one by default), as the page shows them. */
-export function delveSummary(r: DelveRecords, kind: DelveKind = 'all', ruleset = DELVE_RULESET): DelveSummary {
-  const solo = runsTally(r, true, ruleset);
-  const group = runsTally(r, false, ruleset);
-  const count = (t: DelveTally) => Object.values(t.ends).reduce((a, b) => a + b, 0);
-  const picked = kind === 'solo' ? [solo] : kind === 'group' ? [group] : [solo, group];
-  const ends = new Map<number, number>();
-  const lost = new Map<number, number>();
-  for (const t of picked) {
-    for (const [d, n] of Object.entries(t.ends)) ends.set(+d, (ends.get(+d) ?? 0) + n);
-    for (const [d, n] of Object.entries(t.lost)) lost.set(+d, (lost.get(+d) ?? 0) + n);
-  }
-  const deepest = Math.max(0, ...ends.keys(), ...lost.keys());
-  const depths: DepthCount[] = [];
-  for (let d = 1; d <= deepest; d++) depths.push({ depth: d, ends: ends.get(d) ?? 0, lost: lost.get(d) ?? 0 });
-  const all = [...ends].sort((a, b) => a[0] - b[0]).flatMap(([d, n]) => Array<number>(n).fill(d));
+/** The counted runs of a kind under a ruleset (this one by default). */
+export function delveSummary(r: DelveRecords, kind: DelveKind, ruleset = DELVE_RULESET): DelveSummary {
+  const t = runsTally(r, kind === 'solo', ruleset);
+  const fell = sumOf(t.ends);
+  const left = sumOf(t.left);
+  const best = r.bests[bestKey(ruleset, kind === 'solo')] ?? null;
   return {
-    runs: all.length,
-    solo: count(solo),
-    group: count(group),
-    wins: group.wins,
-    median: median(all),
-    mean: all.length ? all.reduce((a, b) => a + b, 0) / all.length : null,
-    depths,
+    runs: fell + left,
+    fell,
+    left,
+    wins: t.wins,
+    median: fell >= MIN_RUNS ? medianOfCounts(t.ends) : null,
+    best,
+    deepest: best?.depth ?? (fell ? Math.max(...Object.keys(t.ends).map(Number)) : null),
   };
 }
 
-export interface DelveItemStats {
-  /** Every Delve answer. */
-  answers: Tally;
-  /** The items that cost the most lives, deepest loss first among equals. */
-  costly: { item: Item; lives: number; at: number }[];
-  /** The items named right at the greatest depths. */
-  deepest: { item: Item; depth: number }[];
+export interface ZoneRisk extends Zone {
+  /** Runs that got this deep. */
+  reached: number;
+  /** Lives they lost in it. */
+  lives: number;
+  /** Lives lost per run that reached it. */
+  rate: number;
 }
 
-export function delveItemStats(c: Codex, items: Item[], limit = 5): DelveItemStats {
-  let answers = noTally();
-  const costly: DelveItemStats['costly'] = [];
-  const deepest: DelveItemStats['deepest'] = [];
-  for (const it of items) {
-    const d = c.items[it.id]?.delve;
-    if (!d) continue;
-    answers = sum(answers, d);
-    if (livesCost(d) > 0) costly.push({ item: it, lives: livesCost(d), at: d.lostAt });
-    if (d.deepest) deepest.push({ item: it, depth: d.deepest });
+/** Lives lost in each zone per run that reached it, from the top, while at least `min` runs got there. */
+export function zoneRisks(t: DelveTally, min = ZONE_MIN_RUNS): ZoneRisk[] {
+  const stopped = new Map<number, number>();
+  const lives = new Map<number, number>();
+  const into = (m: Map<number, number>, d: string, n: number) => {
+    const k = zoneOf(Number(d)).k;
+    m.set(k, (m.get(k) ?? 0) + n);
+  };
+  for (const [d, n] of Object.entries(t.ends)) {
+    into(stopped, d, n);
+    into(lives, d, n);
   }
-  costly.sort((a, b) => b.lives - a.lives || b.at - a.at || a.item.name.localeCompare(b.item.name));
-  deepest.sort((a, b) => b.depth - a.depth || a.item.name.localeCompare(b.item.name));
-  return { answers, costly: costly.slice(0, limit), deepest: deepest.slice(0, limit) };
-}
-
-export interface DepthBand {
-  /** The named depth it begins at, or null for the depths above the first. */
-  name: string | null;
-  from: number;
-  /** Its last depth; null for the deepest band, which goes on. */
-  to: number | null;
-  tally: Tally;
-}
-
-/**
- * Delve accuracy by named depth: one band from each named depth to the next
- * (and one above the first), down to the deepest of `deepest` and the answers.
- */
-export function depthBands(c: Codex, deepest: number): DepthBand[] {
-  const bottom = Math.max(deepest, 1, ...Object.keys(c.byDepth).map(Number));
-  const bands: DepthBand[] = [];
-  for (let from = 1; from <= bottom; ) {
-    const next = nextZone(from);
-    const to = next ? next.depth - 1 : null;
-    let tally = noTally();
-    for (let d = from; d <= (to ?? bottom); d++) if (c.byDepth[d]) tally = sum(tally, c.byDepth[d]);
-    bands.push({ name: milestoneAt(from), from, to, tally });
-    if (to === null) break;
-    from = to + 1;
-  }
-  return bands;
-}
-
-/** The items that cost this player a life in each run, in the order they did, by run id (runs recorded since the codex kept it). */
-export function lostTo(c: Codex, items: Item[]): Map<number, { item: Item; depth: number }[]> {
-  const byId = new Map(items.map((it) => [it.id, it]));
-  const out = new Map<number, { item: Item; depth: number }[]>();
-  for (const a of c.log) {
-    // A wrong answer a ward took cost no life.
-    if (a.ok || a.warded || a.run === undefined || a.depth === undefined) continue;
-    const item = byId.get(a.id);
-    if (!item) continue;
-    const list = out.get(a.run) ?? [];
-    list.push({ item, depth: a.depth });
-    out.set(a.run, list);
+  for (const [d, n] of Object.entries(t.left ?? {})) into(stopped, d, n);
+  for (const [d, n] of Object.entries(t.lost)) into(lives, d, n);
+  let reached = sumOf(Object.fromEntries(stopped));
+  const out: ZoneRisk[] = [];
+  for (let k = 0; reached >= min && reached > 0; k++) {
+    const z = zone(k);
+    const n = lives.get(k) ?? 0;
+    out.push({ ...z, reached, lives: n, rate: n / reached });
+    reached -= stopped.get(k) ?? 0;
   }
   return out;
 }
+
+export interface ZoneReached extends Zone {
+  /** When a run first got this deep. */
+  at: number;
+}
+
+export interface ZoneProgress {
+  /** From the top down. */
+  reached: ZoneReached[];
+  /** Distinct biomes among them. */
+  biomes: number;
+  /** The next zone, still to find. */
+  next: Zone | null;
+}
+
+/** The zones a climb of bests got to, each dated by the run that first did. */
+export function zonesReached(climb: Frontier[]): ZoneProgress {
+  const deepest = climb.at(-1)?.depth ?? 0;
+  if (!deepest) return { reached: [], biomes: 0, next: null };
+  const last = zoneOf(deepest).k;
+  const reached: ZoneReached[] = [];
+  for (let k = 0; k <= last; k++) {
+    const z = zone(k);
+    reached.push({ ...z, at: climb.find((f) => f.depth >= z.depth)?.at ?? climb.at(-1)!.at });
+  }
+  const biomes = new Set(reached.map((z) => stratumName(z.k))).size;
+  return { reached, biomes, next: last < LAST_ZONE ? zone(last + 1) : null };
+}
+
+/** The listed runs of a kind under a ruleset (this one by default), its rules kept to, newest first. */
+export function runsOf(r: DelveRecords, kind: DelveKind, ruleset = DELVE_RULESET): DelveRun[] {
+  return r.runs.filter((x) => x.ruleset === ruleset && !x.mixed && x.players < 2 === (kind === 'solo')).reverse();
+}
+
+export interface RulesGroup {
+  /** The ruleset, or null for runs whose rules changed as they were resumed. */
+  ruleset: number | null;
+  /** Newest first. */
+  runs: DelveRun[];
+  /** Its own bests, alone and together (none for runs whose rules changed). */
+  solo: number | null;
+  group: number | null;
+}
+
+/** The listed runs under other rules, each ruleset apart (newest first), then those whose rules changed mid-run. */
+export function otherRules(r: DelveRecords, ruleset = DELVE_RULESET): RulesGroup[] {
+  const out = new Map<number | null, RulesGroup>();
+  const group = (rs: number | null) => {
+    let g = out.get(rs);
+    if (!g) out.set(rs, (g = { ruleset: rs, runs: [], solo: rs === null ? null : (r.bests[bestKey(rs, true)]?.depth ?? null), group: rs === null ? null : (r.bests[bestKey(rs, false)]?.depth ?? null) }));
+    return g;
+  };
+  for (const run of [...r.runs].reverse()) if (run.mixed || run.ruleset !== ruleset) group(run.mixed ? null : run.ruleset).runs.push(run);
+  // Bests under other rules whose runs have all left the list still show.
+  for (const k of Object.keys(r.bests)) {
+    const rs = Number(k.split(':')[0]);
+    if (rs !== ruleset) group(rs);
+  }
+  return [...out.values()].sort((a, b) => (a.ruleset === null ? 1 : b.ruleset === null ? -1 : b.ruleset - a.ruleset));
+}
+
+export interface DeathRate {
+  /** Answers, and the lives they cost. */
+  n: number;
+  lives: number;
+  /** Lives per answer. */
+  rate: number;
+}
+
+export interface DelveDeaths {
+  answers: Tally;
+  lives: number;
+  /** Categories by lives per answer, from CATEGORY_MIN answers, the deadliest first. */
+  categories: (DeathRate & { category: string })[];
+  /** Items by lives per answer, from ITEM_MIN answers that cost any, the deadliest first. */
+  items: (DeathRate & { item: Item })[];
+}
+
+/** What costs lives in Delve, by category and by item (an item's category comes from its id). */
+export function delveDeaths(c: Codex, items: Item[], limit = 5): DelveDeaths {
+  let answers = noTally();
+  let lives = 0;
+  const cats = new Map<string, { n: number; lives: number }>();
+  const worst: DelveDeaths['items'] = [];
+  for (const it of items) {
+    const d = c.items[it.id]?.delve;
+    if (!d) continue;
+    const cost = livesCost(d);
+    answers = sum(answers, d);
+    lives += cost;
+    const cat = cats.get(it.category) ?? { n: 0, lives: 0 };
+    cats.set(it.category, { n: cat.n + d.n, lives: cat.lives + cost });
+    if (d.n >= ITEM_MIN && cost > 0) worst.push({ item: it, n: d.n, lives: cost, rate: cost / d.n });
+  }
+  const byRate = (a: DeathRate, b: DeathRate) => b.rate - a.rate || b.lives - a.lives || b.n - a.n;
+  worst.sort((a, b) => byRate(a, b) || a.item.name.localeCompare(b.item.name));
+  return {
+    answers,
+    lives,
+    categories: [...cats]
+      .filter(([, t]) => t.n >= CATEGORY_MIN)
+      .map(([category, t]) => ({ category, ...t, rate: t.lives / t.n }))
+      .sort((a, b) => byRate(a, b) || a.category.localeCompare(b.category)),
+    items: worst.slice(0, limit),
+  };
+}
+
+export interface FindTally {
+  /** Questions taken from this find. */
+  taken: number;
+  /** Answered right. */
+  ok: number;
+  /** What the right answers earned. */
+  gained: Partial<Record<ItemKind, number>>;
+  /** Lives and wards the wrong answers took. */
+  lives: number;
+  wards: number;
+}
+
+export interface FindStats {
+  finds: Record<FindKind, FindTally>;
+  /** Azurite Wards that broke, each in place of a life. */
+  wardsBroke: number;
+  flaresBurnt: number;
+}
+
+const noFind = (): FindTally => ({ taken: 0, ok: 0, gained: {}, lives: 0, wards: 0 });
+
+/** Finds taken and how they ended, wards that saved a life and flares burnt, over these answers. */
+export function findStats(answers: Iterable<Answer>): FindStats {
+  const out: FindStats = { finds: { azurite: noFind(), flare: noFind(), dynamite: noFind() }, wardsBroke: 0, flaresBurnt: 0 };
+  for (const a of answers) {
+    if (a.depth === undefined) continue;
+    out.wardsBroke += answerWards(a);
+    if (a.flared) out.flaresBurnt++;
+    if (!a.find) continue;
+    const f = out.finds[a.find];
+    f.taken++;
+    if (a.ok) {
+      f.ok++;
+      if (a.gained) f.gained[a.gained] = (f.gained[a.gained] ?? 0) + 1;
+    } else {
+      f.lives += answerLives(a);
+      f.wards += answerWards(a);
+    }
+  }
+  return out;
+}
+
+/** This player's Delve answers by run (its id), oldest first. */
+export function answersByRun(c: Codex): Map<number, Answer[]> {
+  const out = new Map<number, Answer[]>();
+  for (const a of c.log) {
+    if (a.run === undefined || a.depth === undefined) continue;
+    const list = out.get(a.run);
+    if (list) list.push(a);
+    else out.set(a.run, [a]);
+  }
+  return out;
+}
+
+export interface LifeLost {
+  depth: number;
+  zone: Zone;
+  /** The item whose answer cost it; null when none is logged (a pick that ran out, a run from before). */
+  item: Item | null;
+  /** Lost to a cave-in, with another life. */
+  caveIn: boolean;
+}
+
+export interface RunStory {
+  lives: LifeLost[];
+  finds: FindStats;
+  /** Answers logged for it. */
+  answers: number;
+}
+
+/** Where each of a run's lives went and what took it, and the finds it took, from the answers logged for it. */
+export function runStory(run: DelveRun, answers: Answer[], byId: Map<string, Item>): RunStory {
+  const slots = answers.flatMap((a) => {
+    const n = answerLives(a);
+    return Array.from({ length: n }, () => ({ depth: a.depth!, id: a.id, caveIn: n > 1, used: false }));
+  });
+  const lives = (run.losses ?? (run.left ? [] : [run.depth])).map((depth) => {
+    const slot = slots.find((s) => !s.used && s.depth === depth);
+    if (slot) slot.used = true;
+    return { depth, zone: zoneOf(depth), item: (slot && byId.get(slot.id)) || null, caveIn: !!slot?.caveIn };
+  });
+  return { lives, finds: findStats(answers), answers: answers.length };
+}
+

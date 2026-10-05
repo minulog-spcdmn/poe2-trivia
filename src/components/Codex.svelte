@@ -1,12 +1,13 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
   import { fade, fly } from 'svelte/transition';
-  import { engine } from '../lib/session.svelte';
+  import { engine, savedName, session } from '../lib/session.svelte';
+  import { nameHeld, nameTooShort } from '../lib/names';
   import { CODEX_KEY, RECENT, loadCodex, resetCodex, type Tally } from '../lib/codex';
-  import { accuracy, codexStats, tallyOf } from '../lib/codexStats';
+  import { accuracy, codexStats, delveSummary, tallyOf } from '../lib/codexStats';
   import { categoryIcon, itemImage } from '../lib/ui';
   import { DIFFICULTY_NAMES } from '../lib/difficultyText';
-  import { closeCodex } from '../lib/codexRoute.svelte';
+  import { closeCodex, codexRoute } from '../lib/codexRoute.svelte';
   import { backdropShadow } from '../lib/backdropShadow';
   import { dialogBackdrop } from '../lib/behindDialog';
   import type { Difficulty, Item } from '../lib/game';
@@ -14,7 +15,11 @@
   import CodexItem from './CodexItem.svelte';
   import CodexFilter from './CodexFilter.svelte';
   import CodexDelve from './CodexDelve.svelte';
-  import { DELVE_RECORD_KEY, deepestEver, loadRecords, resetRecords } from '../lib/delveRecord';
+  import { DELVE_RECORD_KEY, loadRecords, resetRecords } from '../lib/delveRecord';
+
+  /** Svelte's transitions run whatever the system says: with reduced motion, things just appear. */
+  const still = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const calm = <T extends { duration?: number; delay?: number }>(p: T): T => (still ? { ...p, duration: 0, delay: 0 } : p);
 
   let codex = $state.raw(loadCodex());
   let delve = $state.raw(loadRecords());
@@ -151,8 +156,30 @@
     { key: 'delve', label: 'Delve' },
   ];
   let tab = $state<Tab>('items');
-  const deepest = $derived(deepestEver(delve));
-  const delved = $derived(delve.runs.length > 0 || deepest > 0);
+  /** The tab's note: your best alone under the current rules (together, before a run alone). */
+  const delveBest = $derived(delveSummary(delve, 'solo').deepest ?? delveSummary(delve, 'group').deepest);
+  const delved = $derived(delve.runs.length > 0 || delve.frontier.length > 0 || Object.keys(delve.bests).length > 0);
+
+  /**
+   * "Begin the descent": a run alone straight away under the name this
+   * browser plays as; without one, the start page with Delve chosen for the
+   * game it opens.
+   */
+  function beginDelve() {
+    const name = savedName().trim();
+    const known = !!name && !nameTooShort(name) && !nameHeld(name);
+    if (!known) session.delveLink = true;
+    closeCodex();
+    if (!known) return;
+    // Once the codex is closed: a game starting under it would close it a second time (App), going back twice.
+    const go = () => {
+      if (codexRoute.open) return;
+      removeEventListener('popstate', go);
+      if (!session.state) session.startDelve(name);
+    };
+    if (codexRoute.open) addEventListener('popstate', go);
+    else go();
+  }
   /** Anything to show (or erase): the tabs and the footer only come with it. */
   const kept = $derived(stats.seen > 0 || delved);
   const tabs = new Map<Tab, HTMLButtonElement>();
@@ -198,7 +225,7 @@
 {/snippet}
 
 <div class="codex">
-  <header class="hero" in:fly={{ y: -10, duration: 600 }}>
+  <header class="hero" in:fly={calm({ y: -10, duration: 600 })}>
     <p class="kicker">Your collection</p>
     <h1>Codex</h1>
     <p class="tagline">
@@ -207,7 +234,7 @@
   </header>
 
   {#if kept}
-    <div class="tabs" role="tablist" aria-label="Codex pages" in:fly={{ y: -6, duration: 500, delay: 100 }}>
+    <div class="tabs" role="tablist" aria-label="Codex pages" in:fly={calm({ y: -6, duration: 500, delay: 100 })}>
       {#each TABS as t (t.key)}
         <button
           {@attach tabRef(t.key)}
@@ -221,7 +248,7 @@
           onkeydown={tabKey}
         >
           <span class="tab-label">{t.label}</span>
-          <span class="tab-note">{t.key === 'items' ? `${stats.seen}/${stats.total}` : deepest || ''}</span>
+          <span class="tab-note">{t.key === 'items' ? `${stats.seen}/${stats.total}` : (delveBest ?? '')}</span>
         </button>
       {/each}
     </div>
@@ -229,10 +256,10 @@
 
   <div class="page" id="codex-page" role={kept ? 'tabpanel' : undefined} aria-labelledby={kept ? `codex-tab-${tab}` : undefined}>
   {#if tab === 'delve' && kept}
-    <CodexDelve {codex} records={delve} onopen={(it) => (open = it)} onbegin={closeCodex} />
+    <CodexDelve {codex} records={delve} onopen={(it) => (open = it)} onbegin={beginDelve} />
   {:else}
 
-  <section class="summary" in:fly={{ y: 20, duration: 700, delay: 150 }}>
+  <section class="summary" in:fly={calm({ y: 20, duration: 700, delay: 150 })}>
     {#if stats.seen}
       <div class="side">
         <div class="stat">
@@ -285,7 +312,7 @@
   </section>
 
   {#if !stats.seen}
-    <div class="empty" in:fly={{ y: 20, duration: 700, delay: 300 }}>
+    <div class="empty" in:fly={calm({ y: 20, duration: 700, delay: 300 })}>
       <p>Your codex is still blank.</p>
       <p class="muted">
         Every item revealed in your games is written into it, with how often you named it right. It is kept in this browser only.
@@ -293,7 +320,7 @@
       <button class="btn primary" onclick={closeCodex}>Begin the hunt</button>
     </div>
   {:else}
-    <div class="split" in:fly={{ y: 20, duration: 700, delay: 250 }}>
+    <div class="split" in:fly={calm({ y: 20, duration: 700, delay: 250 })}>
       <section class="panel" use:backdropShadow={{ fill: 'linear' }}>
         <header><h2>By question</h2></header>
         {@render bars([
@@ -326,7 +353,7 @@
       </section>
     </div>
 
-    <div class="insights" in:fly={{ y: 20, duration: 700, delay: 350 }}>
+    <div class="insights" in:fly={calm({ y: 20, duration: 700, delay: 350 })}>
       <section class="panel" use:backdropShadow={{ fill: 'linear' }}>
         <header><h2>Nemeses</h2></header>
         {#if stats.nemeses.length}
@@ -516,7 +543,7 @@
     role="presentation"
   >
     <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <div class="confirm panel" transition:fly={{ y: 20, duration: 250 }} onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" tabindex="-1">
+    <div class="confirm panel" transition:fly={calm({ y: 20, duration: 250 })} onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" tabindex="-1">
       <h3>Erase your codex?</h3>
       <p class="muted">Every item you have seen, every answer and every Delve run recorded in this browser is lost. This can't be undone.</p>
       <div class="actions">

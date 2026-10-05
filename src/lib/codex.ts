@@ -14,11 +14,14 @@
 // Each also notes how many of its questions came from a find or a blasted
 // card, how many Azurite Wards broke in place of its lives, and, where a
 // wrong answer to an Azurite Vein caved in for two, the lives it cost.
+// The log also keeps, per Delve answer, the find it came from and what it
+// earned, a flare burnt on it, and on a cave-in the lives and wards it took,
+// so a run can be told back (codexStats.ts runStory).
 // The fields Delve added are optional, so codexes written before them read as
 // they were and the version stays.
 
 import { difficultyOf, isFake, type Difficulty, type GameState, type QuestionMode } from './game.ts';
-import { delveTier, type FindKind } from './delve.ts';
+import { ITEM_KINDS, delveTier, type FindKind, type ItemKind } from './delve.ts';
 
 export interface Tally {
   /** Answers given. */
@@ -83,7 +86,21 @@ export interface Answer {
   run?: number;
   /** Delve: wrong, but an Azurite Ward took the loss (no life lost). */
   warded?: true;
+  /** Delve: asked from this find. */
+  find?: FindKind;
+  /** Delve: what a right answer to a find earned ('wards' for a shard that forged one). */
+  gained?: ItemKind;
+  /** Delve: a flare burnt on this question. */
+  flared?: true;
+  /** Delve, on a cave-in: lives it took and wards that broke in their place (otherwise see answerLives). */
+  lives?: number;
+  wards?: number;
 }
+
+/** Lives a logged answer cost: one a wrong Delve answer, none if wards took it, a cave-in's own count. */
+export const answerLives = (a: Answer) => a.lives ?? (a.ok || a.depth === undefined || a.warded ? 0 : 1);
+/** Azurite Wards that broke on a logged answer, each in place of a life. */
+export const answerWards = (a: Answer) => a.wards ?? (a.warded ? 1 : 0);
 
 /** A made-up name this player fell for. */
 export interface Fooled {
@@ -123,7 +140,18 @@ export interface Encounter {
    * blasted open; whether wards took a wrong answer's whole loss; and on a
    * cave-in (an Azurite Vein missed), the lives and wards it took.
    */
-  delve?: { depth: number; run: number; find?: FindKind; blasted?: true; warded?: true; lost?: { lives: number; wards: number } };
+  delve?: {
+    depth: number;
+    run: number;
+    find?: FindKind;
+    blasted?: true;
+    warded?: true;
+    lost?: { lives: number; wards: number };
+    /** What a right answer to the find earned. */
+    gained?: ItemKind;
+    /** A flare burnt on the question. */
+    flared?: true;
+  };
   /** Present when this device's player answered (or let their turn's time run out). */
   answer?: {
     ok: boolean;
@@ -167,6 +195,8 @@ export function encounterAt(s: GameState, me: string | null, hotSeat: boolean, m
       ...(q.blasted ? { blasted: true as const } : {}),
       ...(r.warded ? { warded: true as const } : {}),
       ...(r.caveIn && r.lost ? { lost: { lives: r.lost.lives, wards: r.lost.wards } } : {}),
+      ...(r.gained ? { gained: r.gained } : {}),
+      ...(q.flared ? { flared: true as const } : {}),
     };
   let picked: number | null;
   let ok: boolean;
@@ -261,6 +291,10 @@ export function record(c: Codex, e: Encounter): Codex {
     ...(ms !== undefined ? { ms } : {}),
     ...(dv ? { depth: dv.depth, run: dv.run } : {}),
     ...(warded ? { warded: true as const } : {}),
+    ...(dv?.find ? { find: dv.find } : {}),
+    ...(dv?.gained && a.ok ? { gained: dv.gained } : {}),
+    ...(dv?.flared ? { flared: true as const } : {}),
+    ...(dv?.lost && !a.ok ? { lives: lives, wards: wardsBroke } : {}),
   };
   next.log = [...c.log, log].slice(-LOG_LIMIT);
   return next;
@@ -277,6 +311,9 @@ function tally(v: unknown): Tally {
   return { n, ok: Math.min(n, count(v.ok)) };
 }
 const isMode = (v: unknown): v is QuestionMode => v === 'name' || v === 'art';
+const isFind = (v: unknown): v is FindKind => v === 'azurite' || v === 'flare' || v === 'dynamite';
+/** Lives or wards one answer can take: a cave-in takes at most two. */
+const isLoss = (v: unknown) => v === 0 || v === 1 || v === 2;
 /** A Delve depth (a whole number from 1), or 0. */
 const depth = (v: unknown) => (typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 1e6 ? v : 0);
 function delveItem(v: unknown): DelveItem | undefined {
@@ -345,6 +382,10 @@ export function parseCodex(raw: string | null): Codex | null {
         ...(ms ? { ms } : {}),
         ...(d && run !== null ? { depth: d, run } : {}),
         ...(a.warded === true && !a.ok ? { warded: true as const } : {}),
+        ...(d && isFind(a.find) ? { find: a.find } : {}),
+        ...(d && a.ok && ITEM_KINDS.includes(a.gained as ItemKind) ? { gained: a.gained as ItemKind } : {}),
+        ...(d && a.flared === true ? { flared: true as const } : {}),
+        ...(d && !a.ok && isLoss(a.lives) && isLoss(a.wards) ? { lives: a.lives as number, wards: a.wards as number } : {}),
       });
     }
   if (isObj(v.byDifficulty))

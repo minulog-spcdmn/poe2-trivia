@@ -15,6 +15,10 @@
   // One item of the codex, as a tooltip like the one the game reveals it in.
   let { item, codex, onclose, onopen }: { item: Item; codex: Codex; onclose: () => void; onopen: (item: Item) => void } = $props();
 
+  /** Svelte's transitions run whatever the system says: with reduced motion, things just appear. */
+  const still = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const calm = <T extends { duration?: number; delay?: number }>(p: T): T => (still ? { ...p, duration: 0, delay: 0 } : p);
+
   const entry = $derived(codex.items[item.id]);
   /** What it is, as one item: "Wand", "Ring". A gem's group is only its attribute, so gems say "Lineage Gem". */
   const kind = $derived(singular(item.kind === 'gem' ? item.category : item.group));
@@ -97,7 +101,7 @@
   <div
     class="tooltip"
     bind:this={box}
-    transition:fly={{ y: 20, duration: 250 }}
+    transition:fly={calm({ y: 20, duration: 250 })}
     onclick={(e) => e.stopPropagation()}
     {onkeydown}
     role="dialog"

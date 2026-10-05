@@ -2,8 +2,13 @@ import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   DELVE_RECORD_KEY,
+  MAX_COUNT,
+  MAX_DEPTH,
   RUN_LIMIT,
   addRun,
+  climbOf,
+  leftEvent,
+  recordLeft,
   bestOf,
   deepestEver,
   emptyRecords,
@@ -192,4 +197,100 @@ test('new fields that make no sense are dropped, the rest kept', () => {
   assert.deepEqual(rec.runs.map((x) => x.losses), [[2, 5, 9], undefined, undefined, undefined, undefined]);
   assert.deepEqual(rec.tallies, { '1:solo': { wins: 2, ends: { 9: 2 }, lost: { 4: 1 } } });
   assert.deepEqual(rec.frontier, [{ depth: 9, at: 1 }]);
+});
+
+// ---- whose run, runs left standing, and what can't be true -------------------
+
+test('two players of one browser in the same room keep a run each', () => {
+  const fallen = run({ a: [2, 5, 9], b: [3, 4, 6] });
+  const ra = runEvent(run({ a: [2, 5], b: [3, 4, 6] }), fallen, 'a')!;
+  const rb = runEvent(run({ a: [2, 5], b: [3, 4] }), run({ a: [2, 5], b: [3, 4, 6] }), 'b')!;
+  assert.deepEqual([ra.who, rb.who], ['a', 'b']);
+  let rec = addRun(emptyRecords(), ra).records;
+  rec = addRun(rec, rb).records;
+  assert.equal(rec.runs.length, 2);
+  assert.deepEqual(tallyOf(rec, false).ends, { 6: 1, 9: 1 });
+});
+
+test('a group win is the same run: it keeps when it fell and counts once', () => {
+  let rec = addRun(emptyRecords(), r({ id: 3, at: 100, depth: 14, players: 3, who: 'a', losses: [4, 14, 14] })).records;
+  rec = addRun(rec, r({ id: 3, at: 900, depth: 14, players: 3, who: 'a', won: true, losses: [4, 14, 14] })).records;
+  assert.equal(rec.runs.length, 1);
+  assert.equal(rec.runs[0].at, 100);
+  assert.equal(rec.runs[0].won, true);
+  assert.deepEqual(tallyOf(rec, false), { wins: 1, ends: { 14: 1 }, lost: { 4: 1, 14: 1 } });
+});
+
+test('hot-seat with several players: the group run is recorded once, at its end, as deep as its deepest', () => {
+  const prev = run({ a: [1, 2, 7], b: [3, 4] });
+  const over = { ...run({ a: [1, 2, 7], b: [3, 4, 9] }), phase: 'over' as const, winners: ['b'] };
+  assert.equal(runEvent(run({ a: [1, 2], b: [3] }), prev, null, true), null, 'not as one of them falls');
+  const e = runEvent(prev, over, null, true)!;
+  assert.deepEqual([e.depth, e.players, e.won, e.hot, e.who, e.losses], [9, 2, false, true, undefined, [3, 4, 9]]);
+  assert.equal(runEvent(over, { ...over, version: 9 }, null, true), null, 'once');
+  // Alone on the device: theirs, at their fall.
+  const solo = runEvent(run({ a: [1, 2] }), run({ a: [1, 2, 5] }), null, true)!;
+  assert.deepEqual([solo.depth, solo.players, solo.hot], [5, 1, undefined]);
+});
+
+test('a run left standing is recorded as left, never a best, and its fall replaces it', () => {
+  const standing = run({ a: [3, 8] }, { round: 12 });
+  assert.equal(leftEvent(run({ a: [] }, { phase: 'lobby' }), 'a'), null);
+  assert.equal(leftEvent(run({ a: [3, 8, 11] }, { round: 12 }), 'a'), null, 'already fell');
+  assert.equal(leftEvent(standing, 'someone else'), null);
+  const left = leftEvent(standing, 'a')!;
+  assert.deepEqual([left.depth, left.left, left.losses, left.who], [12, true, [3, 8], 'a']);
+  let out = addRun(emptyRecords(), left);
+  assert.equal(out.best, false);
+  assert.equal(bestOf(out.records, true), null);
+  assert.deepEqual(tallyOf(out.records, true), { wins: 0, ends: {}, lost: { 3: 1, 8: 1 }, left: { 12: 1 } });
+  assert.equal(deepestEver(out.records), 12, 'it did get that deep');
+  // It goes on after all (a rejoin) and falls: the fall replaces it.
+  out = addRun(out.records, { ...left, left: undefined, depth: 15, losses: [3, 8, 15] });
+  assert.equal(out.records.runs.length, 1);
+  assert.equal(out.best, true);
+  assert.deepEqual(tallyOf(out.records, true), { wins: 0, ends: { 15: 1 }, lost: { 3: 1, 8: 1 } });
+  // Through storage, and round-tripped.
+  recordLeft(standing, 'a');
+  assert.equal(loadRecords().runs[0].left, true);
+  assert.deepEqual(parseRecords(serializeRecords(loadRecords())), loadRecords());
+  // Hot-seat group left mid-run: the group's.
+  const hot = leftEvent(run({ a: [1, 2, 4], b: [5] }, { round: 7 }), null, true)!;
+  assert.deepEqual([hot.depth, hot.hot, hot.losses], [7, true, [5]]);
+});
+
+test('each best is kept as a climb, rebuilt for records written before it was', () => {
+  let rec = emptyRecords();
+  for (const [id, depth] of [[1, 8], [2, 5], [3, 12], [4, 12], [5, 20]] as const) rec = addRun(rec, r({ id, at: id * 10, depth })).records;
+  rec = addRun(rec, r({ id: 6, at: 60, depth: 30, mixed: true })).records;
+  assert.deepEqual(climbOf(rec, true), [
+    { depth: 8, at: 10 },
+    { depth: 12, at: 30 },
+    { depth: 20, at: 50 },
+  ]);
+  const old = parseRecords(JSON.stringify({ v: 1, runs: [r({ id: 5, at: 50, depth: 7 }), r({ id: 6, at: 60, depth: 11 })], bests: { '1:solo': r({ id: 1, at: 10, depth: 23 }) } }))!;
+  assert.deepEqual(climbOf(old, true), [{ depth: 23, at: 10 }]);
+  // Never past the best, never a step that doesn't go deeper.
+  const odd = parseRecords(
+    JSON.stringify({ v: 1, runs: [], bests: { '1:solo': r({ id: 1, at: 10, depth: 23 }) }, climbs: { '1:solo': [{ depth: 30, at: 5 }, { depth: 9, at: 1 }, { depth: 4, at: 2 }], nonsense: [] } }),
+  )!;
+  assert.deepEqual(odd.climbs, { '1:solo': [{ depth: 9, at: 1 }, { depth: 23, at: 10 }] });
+});
+
+test('depths and counts no run could reach are dropped or capped, so nothing is endless', () => {
+  const rec = parseRecords(
+    JSON.stringify({
+      v: 1,
+      runs: [r({ id: 1, depth: MAX_DEPTH + 1 }), r({ id: 2, depth: 20000, losses: [19990, 19995, 20000] }), r({ id: 3, depth: MAX_DEPTH })],
+      bests: { '1:solo': r({ id: 2, depth: 1e6 }) },
+      tallies: { '1:solo': { wins: 0, ends: { 5: Number.MAX_SAFE_INTEGER, 20000: 1 }, lost: { 4: 2e9 }, left: { 3: 1e12 } } },
+      frontier: [{ depth: 1e6, at: 1 }],
+    }),
+  )!;
+  assert.deepEqual(rec.runs.map((x) => x.id), [3]);
+  assert.deepEqual(rec.bests, {});
+  assert.deepEqual(rec.tallies['1:solo'], { wins: 0, ends: { 5: MAX_COUNT }, lost: { 4: MAX_COUNT }, left: { 3: MAX_COUNT } });
+  assert.equal(deepestEver(rec), MAX_DEPTH);
+  // A run from the game deeper than that is held at it.
+  assert.equal(runEvent(run({ a: [2, 5] }), run({ a: [2, 5, 5000] }), 'a')!.depth, MAX_DEPTH);
 });

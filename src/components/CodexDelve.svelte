@@ -1,370 +1,387 @@
 <script lang="ts">
   import { fly } from 'svelte/transition';
   import { engine } from '../lib/session.svelte';
-  import type { Codex, Tally } from '../lib/codex';
-  import { accuracy, delveItemStats, delveSummary, depthBands, lostTo, nextZone, zoneAtlas, zoneOf, type DelveKind } from '../lib/codexStats';
-  import { bestOf, deepestEver, type DelveRecords, type DelveRun } from '../lib/delveRecord';
-  import { DELVE_RULESET } from '../lib/delve';
-  import { itemImage } from '../lib/ui';
+  import type { Codex } from '../lib/codex';
+  import {
+    CATEGORY_MIN,
+    ITEM_MIN,
+    MIN_RUNS,
+    ZONE_MIN_RUNS,
+    answersByRun,
+    delveDeaths,
+    delveSummary,
+    findStats,
+    otherRules,
+    runStory,
+    runsOf,
+    toward,
+    zoneRisks,
+    zonesReached,
+    type DelveKind,
+  } from '../lib/codexStats';
+  import { climbOf, tallyOf, type DelveRecords } from '../lib/delveRecord';
+  import { shareText } from '../lib/delveShare';
+  import { categoryIcon, itemImage } from '../lib/ui';
   import { backdropShadow } from '../lib/backdropShadow';
   import type { Item } from '../lib/game';
   import ArcaneCircle from './ArcaneCircle.svelte';
+  import DelveLastRun from './codex/DelveLastRun.svelte';
+  import DelveProgress from './codex/DelveProgress.svelte';
+  import DelveRunLog from './codex/DelveRunLog.svelte';
 
-  // The Codex's Delve page: how deep this browser has been, where its lives
-  // went, the named depths it has found, and the items that cost it.
+  // The Codex's Delve page: your best and where it heads, your last run, how
+  // you have climbed, where and to what you lose lives, what finds and wards
+  // did for you, the zones you have reached, and every run. Every number is
+  // under the current rules and of one kind of run, alone or together (the
+  // switch); codexStats.ts says what each one means.
   let { codex, records, onopen, onbegin }: { codex: Codex; records: DelveRecords; onopen: (item: Item) => void; onbegin: () => void } = $props();
 
-  const date = (t: number) => new Date(t).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
-  const pct = (t: Tally) => `${Math.round((accuracy(t) ?? 0) * 100)}%`;
+  const still = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const rise = (delay: number) => ({ y: 20, duration: still ? 0 : 700, delay: still ? 0 : delay });
+
+  const date = (t: number) => new Date(t).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
   const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
-  /** A list read out: "4, 9 and 13". */
-  const listed = (xs: (string | number)[]) => (xs.length < 2 ? `${xs[0] ?? ''}` : `${xs.slice(0, -1).join(', ')} and ${xs.at(-1)}`);
-  /** A depth range as the page writes it (an en dash, not a hyphen). */
-  const range = (from: number, to: number | null) => (to === null ? `${from}+` : from === to ? `${from}` : `${from}–${to}`);
+  const rate = (x: number) => x.toFixed(2);
+  const fmt = (n: number) => n.toLocaleString();
+  const range = (from: number, to: number) => `${from}–${to}`;
 
-  const soloBest = $derived(bestOf(records, true));
-  const groupBest = $derived(bestOf(records, false));
-  const deepest = $derived(deepestEver(records));
-  const all = $derived(delveSummary(records));
-  const hasRuns = $derived(records.runs.length > 0 || all.runs > 0);
+  // ---- which runs: alone or together ----
 
-  // ---- the medallion: the deepest, and the way to the next named depth ----
+  const solo = $derived(delveSummary(records, 'solo'));
+  const group = $derived(delveSummary(records, 'group'));
+  const both = $derived(solo.runs > 0 && group.runs > 0);
+  let picked = $state<DelveKind | null>(null);
+  const kind = $derived<DelveKind>(picked ?? (solo.runs || solo.best || !(group.runs || group.best) ? 'solo' : 'group'));
+  const sum = $derived(kind === 'solo' ? solo : group);
+  const other = $derived(kind === 'solo' ? group : solo);
+  const alone = $derived(kind === 'solo');
+  const kindWord = $derived(alone ? 'alone' : 'together');
 
-  const here = $derived(zoneOf(deepest));
-  const ahead = $derived(nextZone(deepest));
-  /** How far from the named depth it lies in toward the next one, never quite there. */
-  const toNext = $derived.by(() => {
-    if (!ahead || !deepest) return 0;
-    const from = here?.depth ?? 1;
-    return (deepest - from + 1) / (ahead.depth - from + 1);
-  });
+  const others = $derived(otherRules(records));
+  /** Anything at all, under any rules. */
+  const anything = $derived(records.runs.length > 0 || records.frontier.length > 0 || Object.keys(records.bests).length > 0);
+  /** Anything under the current rules. */
+  const current = $derived(solo.runs + group.runs > 0 || !!solo.best || !!group.best);
 
-  // ---- lives lost by depth ----
+  // ---- the hero ----
 
-  let kind = $state<DelveKind>('all');
-  const both = $derived(all.solo > 0 && all.group > 0);
-  const shown = $derived(both ? delveSummary(records, kind) : all);
-  /** At most this many columns; deeper charts put several depths in one. */
-  const MAX_COLUMNS = 50;
-  const chart = $derived.by(() => {
-    const depthsShown = Math.max(10, shown.depths.length);
-    const size = Math.ceil(depthsShown / MAX_COLUMNS);
-    const count = Math.ceil(depthsShown / size);
-    const cols = Array.from({ length: count }, (_, i) => {
-      const from = i * size + 1;
-      const to = from + size - 1;
-      const inside = shown.depths.filter((d) => d.depth >= from && d.depth <= to);
-      const zone = Array.from({ length: size }, (_, k) => from + k).find((d) => zoneAt(d));
-      return {
-        from,
-        to,
-        ends: inside.reduce((n, d) => n + d.ends, 0),
-        lost: inside.reduce((n, d) => n + d.lost, 0),
-        zone: zone === undefined ? null : { depth: zone, name: zoneAt(zone)! },
-      };
-    });
-    const top = Math.max(1, ...cols.map((c) => c.ends + c.lost));
-    const last = count * size;
-    const step = [1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000].find((s) => last / s <= 6) ?? 1000;
-    const ticks = [1, ...Array.from({ length: Math.floor(last / step) }, (_, i) => (i + 1) * step)].filter((d, i, a) => d <= last && (i === 0 || d - a[0] >= step / 2));
-    return { cols, top, size, last, ticks: ticks.map((d) => ({ depth: d, at: ((Math.floor((d - 1) / size) + 0.5) / count) * 100 })) };
-  });
-  /** Named depths in the chart, read through the atlas so a name is looked up once. */
-  const atlas = $derived(zoneAtlas(records.frontier));
-  const zoneNames = $derived(new Map(atlas.map((z) => [z.depth, z.name])));
-  const zoneAt = (d: number) => zoneNames.get(d) ?? null;
-  const chartLabel = $derived.by(() => {
-    if (!shown.runs) return 'No runs yet.';
-    const worst = shown.depths.reduce((a, b) => (b.ends + b.lost > a.ends + a.lost ? b : a));
-    return `Lives lost by depth, depths 1 to ${chart.last}: most at depth ${worst.depth}, ${plural(worst.ends + worst.lost, 'life', 'lives')}.`;
-  });
-  const colTitle = (c: (typeof chart.cols)[number]) =>
-    `${chart.size > 1 ? `Depths ${range(c.from, c.to)}` : `Depth ${c.from}`}: ${c.ends || c.lost ? [c.ends ? `${plural(c.ends, 'run')} ended` : '', c.lost ? `${plural(c.lost, 'earlier life', 'earlier lives')} lost` : ''].filter(Boolean).join(', ') : 'no lives lost'}${c.zone ? `. ${c.zone.name} begins at ${c.zone.depth}` : ''}`;
+  /** Your best: the deepest fall (of this kind, under these rules). */
+  const best = $derived(sum.deepest);
+  const ahead = $derived(best ? toward(best) : null);
+  /** The arc runs from the zone's first depth (bottom left) round to the next zone's (bottom right). */
+  const GAP = 60;
+  const at = (deg: number, r = 80) => [r * Math.sin((deg * Math.PI) / 180), -r * Math.cos((deg * Math.PI) / 180)];
+  const [sx, sy] = at(180 + GAP / 2);
+  const [ex, ey] = at(180 - GAP / 2);
+  const arcPath = `M ${sx.toFixed(2)} ${sy.toFixed(2)} A 80 80 0 1 1 ${ex.toFixed(2)} ${ey.toFixed(2)}`;
 
-  // ---- the atlas ----
-
-  const found = $derived(atlas.filter((z) => z.at !== null).length);
-  /** Where the deepest goes in the atlas: after the last named depth it reached. */
-  const markAfter = $derived(deepest && !atlas.some((z) => z.depth === deepest) ? atlas.findLastIndex((z) => z.depth <= deepest) : null);
-
-  // ---- items ----
-
-  const items = $derived(delveItemStats(codex, engine.items));
-  const bands = $derived(depthBands(codex, deepest).filter((b) => b.tally.n || b.from <= deepest));
-
-  // ---- the runs ----
-
-  const lost = $derived(lostTo(codex, engine.items));
-  const SHORT_LIST = 8;
-  let allRuns = $state(false);
-  const runs = $derived([...records.runs].reverse());
-  const listedRuns = $derived(allRuns ? runs : runs.slice(0, SHORT_LIST));
-  const runScale = $derived(Math.max(10, ...runs.map((r) => r.depth)));
-  const who = (r: DelveRun) => (r.players < 2 ? 'Alone' : `${r.players} players`);
-  function runTitle(r: DelveRun) {
-    const losses = r.losses?.length ? `; lives lost at ${r.losses.length > 1 ? 'depths' : 'depth'} ${listed(r.losses)}` : '';
-    return `${who(r)}, ${date(r.at)}: fell at depth ${r.depth}${losses}${r.won ? '; delved deepest of the group' : ''}`;
+  let shared = $state(false);
+  async function share() {
+    if (!best) return;
+    const text = shareText(best);
+    try {
+      if (matchMedia('(pointer: coarse)').matches && navigator.share) await navigator.share({ text });
+      else {
+        await navigator.clipboard.writeText(text);
+        shared = true;
+        setTimeout(() => (shared = false), 2000);
+      }
+    } catch {
+      /* dismissed */
+    }
   }
+
+  // ---- the runs of this kind ----
+
+  const runs = $derived(runsOf(records, kind));
+  const byRun = $derived(answersByRun(codex));
+  const last = $derived(runs[0] ?? null);
+  const story = $derived(last ? runStory(last, byRun.get(last.id) ?? [], engine.byId) : null);
+  const climb = $derived(climbOf(records, alone));
+
+  // ---- where you fall ----
+
+  /** Zones shown at most; deeper ones are summed up in a line. */
+  const ZONES_SHOWN = 12;
+  const risks = $derived(zoneRisks(tallyOf(records, alone)));
+  const riskTop = $derived(Math.max(0.0001, ...risks.map((z) => z.rate)));
+  const worstZone = $derived(risks.length > 1 ? risks.reduce((a, b) => (b.rate > a.rate ? b : a)) : null);
+
+  // ---- what kills you ----
+
+  const deaths = $derived(delveDeaths(codex, engine.items));
+  const catTop = $derived(Math.max(0.0001, ...deaths.categories.map((c) => c.rate)));
+  const allRuns = $derived(solo.runs + group.runs);
+
+  // ---- finds and wards ----
+
+  const finds = $derived(findStats(codex.log));
+  const vein = $derived(finds.finds.azurite);
+  const cache = $derived(finds.finds.flare);
+  const dynamite = $derived(finds.finds.dynamite);
+  const anyFinds = $derived(vein.taken + cache.taken + dynamite.taken + finds.wardsBroke + finds.flaresBurnt > 0);
+  /** A tile's note: counts and what they are, the counts in Cinzel. */
+  type Note = [number, string][];
+  const word = (n: number, one: string, many = `${one}s`) => (n === 1 ? one : many);
+  function veinNote(): Note {
+    const out: Note = [];
+    if (vein.gained.wards) out.push([vein.gained.wards, word(vein.gained.wards, 'ward')]);
+    if (vein.gained.shards) out.push([vein.gained.shards, word(vein.gained.shards, 'shard')]);
+    if (vein.taken - vein.ok) out.push([vein.taken - vein.ok, 'caved in']);
+    return out;
+  }
+  function cacheNote(t: typeof cache, what: 'flare' | 'stick'): Note {
+    const got = (what === 'flare' ? t.gained.flares : t.gained.dynamite) ?? 0;
+    const out: Note = [];
+    if (got) out.push([got, word(got, what)]);
+    if (t.taken - t.ok) out.push([t.taken - t.ok, 'missed']);
+    return out;
+  }
+
+  // ---- zones reached ----
+
+  const zones = $derived(zonesReached(climb));
+  /** Zone rows shown before the rest fold away above them. */
+  const ZONE_ROWS = 8;
+  let allZones = $state(false);
+  const zoneRows = $derived(allZones || zones.reached.length <= ZONE_ROWS + 2 ? zones.reached : zones.reached.slice(-ZONE_ROWS));
+  const zonesHidden = $derived(zones.reached.length - zoneRows.length);
 </script>
 
 {#snippet thumb(it: Item)}
   <span class="thumb"><img src={itemImage(it.id)} alt="" loading="lazy" /></span>
 {/snippet}
 
-{#snippet mark()}
-  <li class="mark">
-    <span class="node" aria-hidden="true"></span>
-    <span class="z-depth">{deepest}</span>
-    <span class="z-name">Your deepest</span>
-    <span class="z-when"></span>
-  </li>
+{#snippet note(parts: [number, string][], none: string)}
+  {#if parts.length}{#each parts as [n, w], i (i)}{i ? ' • ' : ''}<span class="n">{n}</span> {w}{/each}{:else}{none}{/if}
 {/snippet}
 
-{#snippet meter(t: Tally)}
-  <span class="meter"><span class="fill" style:width="{(accuracy(t) ?? 0) * 100}%"></span></span>
+{#snippet waiting(what: string)}
+  <p class="hint">{what}</p>
 {/snippet}
 
 <div class="delve-page">
-  {#if hasRuns}
-    <section class="summary" in:fly={{ y: 20, duration: 700, delay: 100 }}>
-      <div class="side">
-        <div class="stat">
-          <span class="stat-label">Deepest alone</span>
-          <span class="stat-value">{soloBest?.depth ?? '?'}</span>
-          <span class="stat-note">{soloBest ? date(soloBest.at) : 'no run alone yet'}</span>
-        </div>
-        <div class="stat">
-          <span class="stat-label">Deepest together</span>
-          <span class="stat-value">{groupBest?.depth ?? '?'}</span>
-          <span class="stat-note">{groupBest ? `${groupBest.players} players${groupBest.won ? ', delved deepest' : ''}` : 'no group run yet'}</span>
-        </div>
-      </div>
-
-      <div
-        class="medallion"
-        role="img"
-        aria-label="Deepest you have been: depth {deepest}{here ? `, in ${here.name}` : ''}{ahead ? `. ${plural(ahead.depth - deepest, 'depth')} to the next named depth` : ''}."
-      >
-        <ArcaneCircle size="100%" strength={0.3} />
-        <svg class="progress" viewBox="-100 -100 200 200" aria-hidden="true">
-          <defs>
-            <linearGradient id="delve-arc" x1="0" y1="-1" x2="0" y2="1">
-              <stop offset="0" stop-color="#ffd59a" />
-              <stop offset="0.5" stop-color="#e08a44" />
-              <stop offset="1" stop-color="#c22a10" />
-            </linearGradient>
-          </defs>
-          <circle class="track" r="80" />
-          {#if toNext > 0}<circle class="arc" r="80" pathLength="100" style:stroke-dasharray="{toNext * 100} 100" />{/if}
-        </svg>
-        <div class="medal-text" aria-hidden="true">
-          <span class="medal-label">deepest</span>
-          <span class="medal-value">{deepest}</span>
-          <span class="medal-zone">{here?.name ?? 'The surface'}</span>
-          {#if ahead}<span class="medal-next">{ahead.depth - deepest} to the next</span>{/if}
-        </div>
-      </div>
-
-      <div class="side">
-        <div class="stat">
-          <span class="stat-label">Runs</span>
-          <span class="stat-value">{all.runs}</span>
-          <span class="stat-note">{all.group ? `${all.solo} alone, ${all.group} together` : 'all of them alone'}</span>
-        </div>
-        <div class="stat">
-          <span class="stat-label">Typical depth</span>
-          <span class="stat-value">{all.median === null ? '?' : Math.round(all.median)}</span>
-          <span class="stat-note">{all.mean === null ? 'where runs end' : `average ${all.mean.toFixed(1)}`}{all.wins ? `; ${plural(all.wins, 'group win')}` : ''}</span>
-        </div>
-      </div>
-    </section>
-  {:else}
-    <div class="empty" in:fly={{ y: 20, duration: 700, delay: 100 }}>
+  {#if !anything}
+    <div class="empty" in:fly={rise(100)}>
       <p>You have not delved yet.</p>
       <p class="muted">
-        Three lives, one depth deeper every round, and the same rules for everyone. Your runs, the named depths you reach and the items that cost you
-        lives are written here.
+        Three lives, one depth deeper every round, and the same rules for everyone. Your runs, the zones you reach and the items that cost you lives are
+        written here.
       </p>
       <button class="btn primary" onclick={onbegin}>Begin the descent</button>
     </div>
-  {/if}
+  {:else}
+    {#if both}
+      <div class="seg kinds" role="group" aria-label="Runs shown" in:fly={rise(50)}>
+        {#each [['solo', 'Alone'], ['group', 'Together']] as [k, label] (k)}
+          <button class:on={kind === k} aria-pressed={kind === k} onclick={() => (picked = k as DelveKind)}>{label}</button>
+        {/each}
+      </div>
+    {/if}
 
-  <div class="split" class:solo-atlas={!hasRuns} in:fly={{ y: 20, duration: 700, delay: 200 }}>
-    {#if hasRuns}
-      <section class="panel" use:backdropShadow={{ fill: 'linear' }}>
-        <header>
-          <h2>Lives lost by depth</h2>
-          {#if both}
-            <div class="seg" role="group" aria-label="Runs shown">
-              {#each [['all', 'All'], ['solo', 'Alone'], ['group', 'Together']] as [k, label] (k)}
-                <button class:on={kind === k} aria-pressed={kind === k} onclick={() => (kind = k as DelveKind)}>{label}</button>
-              {/each}
-            </div>
+    {#if current}
+      <section class="delve-hero" in:fly={rise(100)}>
+        <div class="medallion">
+          <ArcaneCircle size="100%" strength={0.3} />
+          <svg class="gauge" viewBox="-100 -100 200 200" aria-hidden="true">
+            <defs>
+              <linearGradient id="delve-arc" x1="0" y1="1" x2="1" y2="0">
+                <stop offset="0" stop-color="#c22a10" />
+                <stop offset="0.55" stop-color="#e08a44" />
+                <stop offset="1" stop-color="#ffd59a" />
+              </linearGradient>
+            </defs>
+            <circle class="disc" r="80" />
+            <path class="track" d={arcPath} />
+            {#if ahead}<path class="arc" d={arcPath} pathLength="100" style:stroke-dasharray="{ahead.share * 100} 100" />{/if}
+          </svg>
+          {#if ahead}
+            <span class="arc-end from" aria-hidden="true">{ahead.here.depth}</span>
+            <span class="arc-end to" aria-hidden="true">{ahead.next.depth}</span>
           {/if}
-        </header>
-        <figure class="chart">
-          <div class="plot" role="img" aria-label={chartLabel}>
-            <span class="y-top" aria-hidden="true">{plural(chart.top, 'life', 'lives')}</span>
-            <ol class="cols" class:dense={chart.cols.length > 30} aria-hidden="true">
-              {#each chart.cols as c (c.from)}
-                <li title={colTitle(c)} class:zone={!!c.zone}>
-                  {#if c.ends}<span class="ends" style:height="{(c.ends / chart.top) * 100}%"></span>{/if}
-                  {#if c.lost}<span class="lost" style:height="{(c.lost / chart.top) * 100}%"></span>{/if}
+          <div class="medal-text">
+            <span class="medal-label">Best {kindWord}</span>
+            {#if best}
+              <span class="medal-value">{best}</span>
+              <span class="medal-zone">{ahead?.here.name}</span>
+            {:else}
+              <span class="medal-none">no fall yet</span>
+            {/if}
+          </div>
+        </div>
+        <div class="hero-text">
+          {#if ahead}
+            <p class="toward">
+              <b class="n">{ahead.left}</b> {ahead.left === 1 ? 'depth' : 'depths'} to <span class="zname">{ahead.next.name}</span>
+            </p>
+          {:else}
+            <p class="toward">{sum.left ? 'Your runs so far were left before their last life went.' : 'Fall in a run to set your best.'}</p>
+          {/if}
+          <p class="sub">
+            {#if other.deepest}<span>Best {alone ? 'together' : 'alone'} <b class="n">{other.deepest}</b></span>{' • '}{/if}<span
+              ><b class="n">{fmt(sum.runs)}</b> {sum.runs === 1 ? 'run' : 'runs'} {kindWord}</span
+            >{#if sum.left}<span>, <b class="n">{fmt(sum.left)}</b> left early</span>{/if}{#if !alone && sum.wins}<span>{' • '}<b class="n">{fmt(sum.wins)}</b> {sum.wins === 1 ? 'win' : 'wins'}</span>{/if}
+          </p>
+          {#if best}
+            <button class="btn ghost small tall" onclick={share}>{shared ? 'Copied' : 'Share your best'}</button>
+          {/if}
+        </div>
+      </section>
+    {:else}
+      <div class="empty" in:fly={rise(100)}>
+        <p>No run under the current rules yet.</p>
+        <p class="muted">The descent has changed since your runs below, so their depths are kept apart and never compared with new ones.</p>
+        <button class="btn primary" onclick={onbegin}>Begin the descent</button>
+      </div>
+    {/if}
+
+    {#if current}
+      <div class="grid" in:fly={rise(200)}>
+        {#if last && story}
+          <DelveLastRun run={last} {story} median={sum.median} {best} {onopen} />
+        {/if}
+
+        <div class="col">
+        <DelveProgress {climb} {runs} summary={sum} {kindWord} />
+
+        <section class="panel o3" use:backdropShadow={{ fill: 'linear' }} aria-labelledby="kill-h">
+          <header><h2 id="kill-h">What kills you</h2><span class="col-label">Lives per answer</span></header>
+          {#if allRuns < MIN_RUNS}
+            {@render waiting(`After ${MIN_RUNS} runs: the kinds of item and the items that cost you the most lives for each answer.`)}
+          {:else if !deaths.lives}
+            {@render waiting('No answer has cost you a life yet.')}
+          {:else}
+            {#if deaths.categories.length}
+              <ul class="bars">
+                {#each deaths.categories.slice(0, 6) as c (c.category)}
+                  <li>
+                    <span class="bar-name cat"><span class="glyph" style:--src="url('{categoryIcon(c.category)}')" aria-hidden="true"></span><span>{c.category}</span></span>
+                    <span class="meter" aria-hidden="true"><span class="fill ember" style:width="{(c.rate / catTop) * 100}%"></span></span>
+                    <span class="bar-value"><b class="n">{rate(c.rate)}</b><small>of <span class="n">{fmt(c.n)}</span></small></span>
+                  </li>
+                {/each}
+              </ul>
+            {/if}
+            {#if deaths.items.length}
+              <h3 class="sub-h">Deadliest items</h3>
+              <ul class="rows">
+                {#each deaths.items as d (d.item.id)}
+                  <li>
+                    <button class="row" onclick={() => onopen(d.item)}>
+                      {@render thumb(d.item)}
+                      <span class="row-name"><span>{d.item.name}</span><small><span class="n">{d.lives}</span> {d.lives === 1 ? 'life' : 'lives'} in <span class="n">{d.n}</span> answers</small></span>
+                      <b class="n">{rate(d.rate)}</b>
+                    </button>
+                  </li>
+                {/each}
+              </ul>
+            {/if}
+            <p class="foot">From every Delve answer, alone or together; a cave-in counts two lives. Kinds from {CATEGORY_MIN} answers, items from {ITEM_MIN}.</p>
+          {/if}
+        </section>
+
+        </div>
+        <div class="col">
+        <section class="panel o2" use:backdropShadow={{ fill: 'linear' }} aria-labelledby="fall-h">
+          <header><h2 id="fall-h">Where you fall</h2><span class="col-label">Lives per run</span></header>
+          {#if sum.runs < MIN_RUNS}
+            {@render waiting(`After ${MIN_RUNS} runs ${kindWord}: the lives you lose in each zone, per run that got there.`)}
+          {:else if !risks.length}
+            {@render waiting(`Once ${ZONE_MIN_RUNS} runs ${kindWord} reach a zone: the lives you lose there, per run that got there.`)}
+          {:else}
+            <ul class="bars">
+              {#each risks.slice(0, ZONES_SHOWN) as z (z.k)}
+                <li class:worst={worstZone?.k === z.k}>
+                  <span class="bar-name"><span>{z.name}</span><small class="n">{range(z.depth, z.to)}</small></span>
+                  <span class="meter" aria-hidden="true"><span class="fill ember" style:width="{(z.rate / riskTop) * 100}%"></span></span>
+                  <span class="bar-value"><b class="n">{rate(z.rate)}</b><small>of <span class="n">{fmt(z.reached)}</span></small></span>
                 </li>
               {/each}
-            </ol>
-          </div>
-          <div class="x-axis" aria-hidden="true">
-            {#each chart.ticks as t (t.depth)}<span style:left="{t.at}%">{t.depth}</span>{/each}
-          </div>
-          <table class="sr-only">
-            <caption>Lives lost by depth</caption>
-            <thead><tr><th>Depth</th><th>Runs ended</th><th>Earlier lives lost</th></tr></thead>
-            <tbody>
-              {#each shown.depths.filter((d) => d.ends || d.lost) as d (d.depth)}
-                <tr><td>{d.depth}</td><td>{d.ends}</td><td>{d.lost}</td></tr>
+            </ul>
+            <p class="foot">
+              {#if worstZone}Most lives go in <b>{worstZone.name}</b>: <b class="n">{rate(worstZone.rate)}</b> a run that gets there.{/if}
+              Zones show once {ZONE_MIN_RUNS} runs reach them{risks.length > ZONES_SHOWN ? `; ${risks.length - ZONES_SHOWN} deeper ones are left out` : ''}.
+            </p>
+          {/if}
+        </section>
+
+        <section class="panel o4" use:backdropShadow={{ fill: 'linear' }} aria-labelledby="find-h">
+          <header><h2 id="find-h">Finds and wards</h2></header>
+          {#if anyFinds}
+            <ul class="tiles">
+              <li>
+                <span class="tile-label">Azurite Veins</span>
+                <b class="tile-value">{vein.taken}</b>
+                <span class="tile-note">{@render note(veinNote(), 'none taken')}</span>
+              </li>
+              <li>
+                <span class="tile-label">Flare Caches</span>
+                <b class="tile-value">{cache.taken}</b>
+                <span class="tile-note">{@render note(cacheNote(cache, 'flare'), 'none taken')}</span>
+              </li>
+              {#if dynamite.taken}
+                <li>
+                  <span class="tile-label">Dynamite Caches</span>
+                  <b class="tile-value">{dynamite.taken}</b>
+                  <span class="tile-note">{@render note(cacheNote(dynamite, 'stick'), '')}</span>
+                </li>
+              {/if}
+              <li>
+                <span class="tile-label">Lives warded</span>
+                <b class="tile-value">{finds.wardsBroke}</b>
+                <span class="tile-note">wards that broke in their place</span>
+              </li>
+              <li>
+                <span class="tile-label">Flares burnt</span>
+                <b class="tile-value">{finds.flaresBurnt}</b>
+                <span class="tile-note">each <span class="n">5</span> s more on the clock</span>
+              </li>
+            </ul>
+            <p class="foot">From your latest Delve answers, alone or together.</p>
+          {:else}
+            {@render waiting('The veins and caches you take, the wards that save a life and the flares you burn are written here as you delve.')}
+          {/if}
+        </section>
+
+        <section class="panel o5" use:backdropShadow={{ fill: 'linear' }} aria-labelledby="zone-h">
+          <header>
+            <h2 id="zone-h">Zones reached</h2>
+            {#if zones.reached.length}<span class="col-label">{plural(zones.biomes, 'biome')}</span>{/if}
+          </header>
+          {#if zones.reached.length}
+            <ol class="atlas">
+              {#if zonesHidden > 0}
+                <li class="fold">
+                  <button class="btn ghost small tall" onclick={() => (allZones = true)}>{plural(zonesHidden, 'zone')} above</button>
+                </li>
+              {/if}
+              {#each zoneRows as z (z.k)}
+                <li class="found" class:here={z.k === zones.reached.at(-1)?.k}>
+                  <span class="node" aria-hidden="true"></span>
+                  <span class="z-depth n">{z.depth}</span>
+                  <span class="z-name">{z.name}</span>
+                  <span class="z-when n">{date(z.at)}</span>
+                </li>
               {/each}
-            </tbody>
-          </table>
-          <figcaption class="legend">
-            <span><i class="key ends"></i>Last life (where a run ended)</span>
-            <span><i class="key lost"></i>Earlier lives</span>
-            <span><i class="key zone"></i>Named depth</span>
-          </figcaption>
-        </figure>
-      </section>
-    {/if}
-
-    <section class="panel" use:backdropShadow={{ fill: 'linear' }}>
-      <header>
-        <h2>Named depths</h2>
-        <span class="col-label">{found} of {atlas.length} found</span>
-      </header>
-      <ol class="atlas">
-        {#if markAfter === -1}{@render mark()}{/if}
-        {#each atlas as z, i (z.depth)}
-          <li class:found={z.at !== null} class:here={here?.depth === z.depth}>
-            <span class="node" aria-hidden="true"></span>
-            <span class="z-depth">{z.depth}</span>
-            {#if z.at !== null}
-              <span class="z-name">{z.name}</span>
-              <span class="z-when" title="First reached {date(z.at)}">{date(z.at)}</span>
-            {:else}
-              <span class="z-name unknown" aria-label="Undiscovered">???</span>
-              <span class="z-when"></span>
-            {/if}
-          </li>
-          {#if i === markAfter}{@render mark()}{/if}
-        {/each}
-      </ol>
-    </section>
-  </div>
-
-  {#if hasRuns}
-    <div class="insights" in:fly={{ y: 20, duration: 700, delay: 300 }}>
-      <section class="panel" use:backdropShadow={{ fill: 'linear' }}>
-        <header><h2>Cost you lives</h2><span class="col-label">Lives</span></header>
-        {#if items.costly.length}
-          <ul class="rows">
-            {#each items.costly as c (c.item.id)}
-              <li>
-                <button class="row" onclick={() => onopen(c.item)} title="Cost you {plural(c.lives, 'life', 'lives')}, the deepest at depth {c.at}">
-                  {@render thumb(c.item)}
-                  <span class="row-name"><span>{c.item.name}</span><small>{c.at ? `deepest at depth ${c.at}` : c.item.base}</small></span>
-                  <b>{c.lives}</b>
-                </button>
-              </li>
-            {/each}
-          </ul>
-        {:else}
-          <p class="hint">The items you miss in Delve, each one a life, show up here.</p>
-        {/if}
-      </section>
-
-      <section class="panel" use:backdropShadow={{ fill: 'linear' }}>
-        <header><h2>Deepest answers</h2><span class="col-label">Depth</span></header>
-        {#if items.deepest.length}
-          <ul class="rows">
-            {#each items.deepest as d (d.item.id)}
-              <li>
-                <button class="row" onclick={() => onopen(d.item)} title="Named right at depth {d.depth}">
-                  {@render thumb(d.item)}
-                  <span class="row-name"><span>{d.item.name}</span><small>{zoneOf(d.depth)?.name ?? 'The surface'}</small></span>
-                  <b>{d.depth}</b>
-                </button>
-              </li>
-            {/each}
-          </ul>
-        {:else}
-          <p class="hint">The items you name right at your greatest depths show up here.</p>
-        {/if}
-      </section>
-
-      <section class="panel" use:backdropShadow={{ fill: 'linear' }}>
-        <header><h2>By depth</h2><span class="col-label">Accuracy</span></header>
-        {#if items.answers.n}
-          <ul class="bands">
-            {#each bands as b (b.from)}
-              <li title="Depths {range(b.from, b.to)}: {b.tally.n ? `${b.tally.ok} of ${plural(b.tally.n, 'answer')} right` : 'no answers'}">
-                <span class="band-name"><span>{b.name ?? 'The surface'}</span><small>{range(b.from, b.to)}</small></span>
-                {@render meter(b.tally)}
-                <span class="band-value">{#if b.tally.n}{pct(b.tally)} <small>of {b.tally.n}</small>{:else}<small>none</small>{/if}</span>
-              </li>
-            {/each}
-          </ul>
-        {:else}
-          <p class="hint">How often you answer right, from one named depth to the next.</p>
-        {/if}
-      </section>
-    </div>
-
-    {#if runs.length}
-      <section class="runs-section" in:fly={{ y: 20, duration: 700, delay: 350 }}>
-        <div class="bar">
-          <h2>Last runs</h2>
-          <span class="muted">{runs.length > SHORT_LIST && !allRuns ? `${SHORT_LIST} of ${runs.length}` : plural(runs.length, 'run')}</span>
+              {#if zones.next}
+                <li class="next">
+                  <span class="node" aria-hidden="true"></span>
+                  <span class="z-depth n">{zones.next.depth}</span>
+                  <span class="z-name unknown"><span aria-hidden="true">???</span><span class="sr-only">Undiscovered</span></span>
+                  <span class="z-when">next</span>
+                </li>
+              {/if}
+            </ol>
+            <p class="foot">The zones your best {kindWord} got to, and when it first did.</p>
+          {:else}
+            {@render waiting(`The zones your runs ${kindWord} fall in, every ten depths, are marked here.`)}
+          {/if}
+        </section>
         </div>
-        <ol class="runs" use:backdropShadow={{ fill: 'linear' }}>
-          {#each listedRuns as r (r.id)}
-            {@const took = lost.get(r.id) ?? []}
-            {@const zone = zoneOf(r.depth)}
-            <li class="run" class:won={r.won} class:group={r.players > 1}>
-              <span class="r-depth" title="Fell at depth {r.depth}">{r.depth}</span>
-              <span class="r-main">
-                <span class="r-head">
-                  <span class="r-who">{who(r)}</span>
-                  {#if r.won}<span class="badge" title="Delved deepest of the group">Won</span>{/if}
-                  {#if r.mixed || r.ruleset !== DELVE_RULESET}<span class="badge old" title="Played under other rules; never counts as a best">Older rules</span>{/if}
-                  <span class="r-zone">{zone?.name ?? 'The surface'}</span>
-                </span>
-                <span class="r-track" role="img" aria-label={runTitle(r)} title={runTitle(r)}>
-                  <span class="r-fill" style:width="{(r.depth / runScale) * 100}%"></span>
-                  {#each r.losses ?? [r.depth] as l, k (k)}
-                    <span class="pip" class:fall={k === (r.losses?.length ?? 1) - 1} style:left="{(l / runScale) * 100}%"></span>
-                  {/each}
-                </span>
-              </span>
-              <span class="r-side">
-                <span class="r-date">{date(r.at)}</span>
-                {#if took.length}
-                  <span class="r-took">
-                    <span class="r-took-label">lost to</span>
-                    {#each took as t, k (k)}
-                      <button class="mini" onclick={() => onopen(t.item)} title="Cost you a life at depth {t.depth}: {t.item.name}" aria-label="Cost you a life at depth {t.depth}: {t.item.name}">
-                        <img src={itemImage(t.item.id)} alt="" loading="lazy" />
-                      </button>
-                    {/each}
-                  </span>
-                {/if}
-              </span>
-            </li>
-          {/each}
-        </ol>
-        {#if runs.length > SHORT_LIST}
-          <button class="btn ghost small more" onclick={() => (allRuns = !allRuns)}>{allRuns ? 'Fewer runs' : `All ${runs.length} runs`}</button>
-        {/if}
-      </section>
+      </div>
     {/if}
+
+    <DelveRunLog {runs} {others} {byRun} {kindWord} total={sum.runs} {onopen} />
   {/if}
 </div>
 
@@ -375,160 +392,18 @@
     gap: 1.4rem;
   }
 
-  /* ---- summary: as the collection's, the deepest in the medallion ---- */
-  .summary {
-    display: grid;
-    grid-template-columns: 1fr auto 1fr;
-    align-items: center;
-    gap: 1.5rem;
-  }
-  .side {
-    display: flex;
-    justify-content: space-evenly;
-    gap: 1rem;
-  }
-  .stat {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    text-align: center;
-    min-width: 0;
-  }
-  .stat-label,
-  .medal-label {
-    font-family: var(--font-display);
-    font-size: 0.74rem;
-    letter-spacing: 0.2em;
-    text-transform: uppercase;
-    color: var(--muted);
-  }
-  .stat-label {
-    margin-bottom: 0.35rem;
-  }
-  .stat-value,
-  .medal-value {
+  /* ---- shared by the page's parts (codex/Delve*.svelte) ---- */
+  .delve-page :global(.n) {
     font-family: var(--font-cinzel);
+    font-style: normal;
     font-weight: 700;
-    line-height: 1;
-    background: linear-gradient(180deg, #fff1c9 15%, #d7b068 55%, #9a7230 95%);
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-    filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.8));
+    font-variant-numeric: lining-nums tabular-nums;
   }
-  .stat-value {
-    font-size: 2.3rem;
-    margin-bottom: 0.3rem;
-  }
-  .stat-note {
-    font-size: 0.92rem;
-    line-height: 1.3;
-    font-style: italic;
-    color: var(--muted);
-  }
-  .medallion {
-    grid-column: 2;
-    position: relative;
-    isolation: isolate;
-    width: 240px;
-    height: 240px;
-    display: grid;
-    place-items: center;
-  }
-  .medallion :global(.arcane) {
-    z-index: -1;
-  }
-  .progress {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    rotate: -90deg;
-    overflow: visible;
-  }
-  .track {
-    fill: rgba(8, 6, 4, 0.78);
-    stroke: rgba(125, 99, 51, 0.35);
-    stroke-width: 6;
-  }
-  .arc {
-    fill: none;
-    stroke: url(#delve-arc);
-    stroke-width: 4;
-    stroke-linecap: round;
-    filter: drop-shadow(0 0 4px rgba(224, 108, 50, 0.85));
-    animation: fill-arc 1.6s var(--ease-out) 0.4s both;
-  }
-  @keyframes fill-arc {
-    from {
-      stroke-dasharray: 0 100;
-    }
-  }
-  .medal-text {
-    position: relative;
-    width: 150px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    text-align: center;
-  }
-  .medal-label {
-    font-size: 0.68rem;
-  }
-  .medal-value {
-    font-size: 3.2rem;
-    margin: 0.15rem 0 0.25rem;
-  }
-  .medal-zone {
-    font-family: var(--font-display);
-    font-size: 0.78rem;
-    line-height: 1.25;
-    letter-spacing: 0.06em;
-    color: var(--gold);
-  }
-  .medal-next {
-    margin-top: 0.2rem;
-    font-size: 0.82rem;
-    font-style: italic;
-    color: var(--muted);
-  }
-
-  .empty {
-    width: min(520px, 100%);
-    margin: 0 auto;
-    text-align: center;
-  }
-  .empty p:first-child {
-    margin: 0 0 0.4rem;
-    font-family: var(--font-display);
-    font-size: 1.3rem;
-    color: var(--gold-hi);
-  }
-  .empty p {
-    margin: 0 0 1.4rem;
-  }
-
-  /* ---- panels, as the collection's ---- */
-  .split {
-    display: grid;
-    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
-    gap: 1rem;
-  }
-  .split.solo-atlas {
-    grid-template-columns: minmax(0, 1fr);
-    width: min(520px, 100%);
-    margin: 0 auto;
-  }
-  .insights {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-    gap: 1rem;
-  }
-  .panel {
+  .delve-page :global(.panel) {
     padding: 1.2rem 1.3rem 1.3rem;
     min-width: 0;
   }
-  .panel header {
+  .delve-page :global(.panel > header) {
     display: flex;
     flex-wrap: wrap;
     justify-content: space-between;
@@ -539,35 +414,89 @@
     border-bottom: 1px solid var(--line);
     min-height: 2.3rem;
   }
-  .panel h2 {
+  .delve-page :global(.panel h2) {
     font-size: 0.95rem;
     text-transform: uppercase;
     letter-spacing: 0.18em;
     color: var(--gold-hi);
   }
-  .col-label {
+  .delve-page :global(.col-label) {
     font-family: var(--font-display);
     font-size: 0.72rem;
     letter-spacing: 0.16em;
     text-transform: uppercase;
     color: #d8a26a;
   }
-  .hint {
+  .delve-page :global(.hint) {
     margin: 0;
-    font-size: 0.95rem;
+    font-size: 0.98rem;
     font-style: italic;
     color: var(--muted);
   }
+  .delve-page :global(.foot) {
+    margin: 0.8rem 0 0;
+    font-size: 0.9rem;
+    font-style: italic;
+    line-height: 1.35;
+    color: var(--muted);
+  }
+  .delve-page :global(.foot b:not(.n)) {
+    font-weight: 400;
+    color: var(--text);
+  }
+  .delve-page :global(.thumb) {
+    flex: none;
+    width: 40px;
+    height: 40px;
+    display: grid;
+    place-items: center;
+    border-radius: 3px;
+    background:
+      radial-gradient(ellipse 60% 55% at 50% 50%, rgba(175, 96, 37, 0.22), transparent 70%),
+      linear-gradient(180deg, #0c0d12, #060709);
+    box-shadow: inset 0 0 0 1px rgba(90, 58, 28, 0.6);
+  }
+  .delve-page :global(.thumb img) {
+    width: 34px;
+    height: 34px;
+    object-fit: contain;
+    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.8));
+  }
+  .delve-page :global(.thumb.none) {
+    font-family: var(--font-cinzel);
+    color: var(--muted);
+  }
+  .delve-page :global(.tall) {
+    min-height: 40px;
+  }
+  .delve-page :global(.sr-only) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  /* ---- alone or together ---- */
   .seg {
     display: flex;
-    gap: 0.25rem;
+    gap: 0.3rem;
+  }
+  .kinds {
+    align-self: center;
   }
   .seg > button {
-    padding: 0.3rem 0.55rem;
+    min-height: 40px;
+    min-width: 6.5rem;
+    padding: 0.3rem 0.9rem;
     font-family: var(--font-display);
     font-weight: 700;
-    font-size: 0.7rem;
-    letter-spacing: 0.04em;
+    font-size: 0.78rem;
+    letter-spacing: 0.08em;
     color: var(--muted);
     background: rgba(0, 0, 0, 0.35);
     border: 1px solid var(--line);
@@ -586,134 +515,364 @@
     box-shadow: inset 0 1px 0 rgba(255, 230, 170, 0.3);
   }
 
-  /* ---- the chart: a column per depth, ember for the falls, gold for the lives before ---- */
-  .chart {
-    margin: 0;
+  /* ---- the hero: your best in the medallion, the arc to the next zone ---- */
+  .delve-hero {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.9rem;
+    text-align: center;
   }
-  .plot {
+  .medallion {
     position: relative;
-    height: 150px;
-    padding-top: 1rem;
-    border-bottom: 1px solid var(--gold-lo);
-    background: repeating-linear-gradient(0deg, transparent 0 calc(25% - 1px), rgba(125, 99, 51, 0.14) calc(25% - 1px) 25%) 0 1rem / 100% calc(100% - 1rem) no-repeat;
+    isolation: isolate;
+    width: 250px;
+    height: 250px;
+    display: grid;
+    place-items: center;
   }
-  .y-top {
+  .medallion :global(.arcane) {
+    z-index: -1;
+  }
+  .gauge {
     position: absolute;
-    top: -0.2rem;
-    left: 0;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+  }
+  .disc {
+    fill: rgba(8, 6, 4, 0.78);
+  }
+  .track {
+    fill: none;
+    stroke: rgba(125, 99, 51, 0.35);
+    stroke-width: 6;
+  }
+  .arc {
+    fill: none;
+    stroke: url(#delve-arc);
+    stroke-width: 4;
+    stroke-linecap: round;
+    filter: drop-shadow(0 0 4px rgba(224, 108, 50, 0.85));
+    animation: fill-arc 1.6s var(--ease-out) 0.4s both;
+  }
+  @keyframes fill-arc {
+    from {
+      stroke-dasharray: 0 100;
+    }
+  }
+  /* The arc's ends: the zone's first depth, and the next zone's. */
+  .arc-end {
+    position: absolute;
+    bottom: 13%;
+    font-family: var(--font-cinzel);
+    font-weight: 700;
+    font-size: 0.78rem;
+    color: var(--muted);
+  }
+  .arc-end.from {
+    left: 21%;
+  }
+  .arc-end.to {
+    right: 21%;
+    color: #e8a36a;
+  }
+  .medal-text {
+    position: relative;
+    width: 150px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .medal-label {
+    font-family: var(--font-display);
+    font-size: 0.68rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .medal-value {
+    font-family: var(--font-cinzel);
+    font-weight: 700;
+    font-size: 3.4rem;
+    line-height: 1;
+    margin: 0.2rem 0 0.25rem;
+    background: linear-gradient(180deg, #fff1c9 15%, #d7b068 55%, #9a7230 95%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.8));
+  }
+  .medal-zone {
+    font-family: var(--font-display);
+    font-size: 0.8rem;
+    line-height: 1.25;
+    letter-spacing: 0.06em;
+    color: var(--gold);
+  }
+  .medal-none {
+    margin-top: 0.5rem;
+    font-style: italic;
+    color: var(--muted);
+  }
+  .hero-text {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .toward {
+    margin: 0;
+    font-size: 1.15rem;
+    color: var(--text);
+  }
+  .toward .n {
+    color: #ffb070;
+  }
+  .zname {
+    font-family: var(--font-display);
+    letter-spacing: 0.04em;
+    color: var(--gold-hi);
+  }
+  .sub {
+    margin: 0;
+    font-size: 0.98rem;
+    font-style: italic;
+    color: var(--muted);
+  }
+  .sub .n {
+    color: var(--gold-hi);
+    font-size: 0.92em;
+  }
+
+  .empty {
+    width: min(520px, 100%);
+    margin: 0 auto;
+    text-align: center;
+  }
+  .empty p:first-child {
+    margin: 0 0 0.4rem;
+    font-family: var(--font-display);
+    font-size: 1.3rem;
+    color: var(--gold-hi);
+  }
+  .empty p {
+    margin: 0 0 1.4rem;
+  }
+
+  /* ---- the panels ---- */
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem;
+    align-items: start;
+  }
+  .grid > :global(.wide) {
+    grid-column: 1 / -1;
+  }
+  /* Two columns of panels, each as tall as it needs; one column on narrow screens, in the page's order. */
+  .col {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+  .sub-h {
+    margin: 1.1rem 0 0.6rem;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+    color: var(--gold);
+  }
+
+  /* Rows of a rate: a name, a bar and its value written out. */
+  .bars {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+  }
+  .bars li {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(40px, 6rem) 4.6rem;
+    align-items: center;
+    gap: 0.6rem;
+    min-height: 2.2rem;
+  }
+  .bar-name {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    line-height: 1.15;
+  }
+  .bar-name > span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.98rem;
+  }
+  .bar-name small {
+    font-size: 0.72rem;
+    color: var(--muted);
+  }
+  .bar-name.cat {
+    flex-direction: row;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .glyph {
+    flex: none;
+    width: 20px;
+    height: 20px;
+    background: var(--gold);
+    mask: var(--src) center / contain no-repeat;
+    -webkit-mask: var(--src) center / contain no-repeat;
+  }
+  .worst .bar-name > span {
+    color: #ffb070;
+  }
+  .bar-value {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    line-height: 1.1;
+  }
+  .bar-value b {
+    font-size: 0.92rem;
+    color: var(--gold-hi);
+  }
+  .bar-value small {
     font-size: 0.8rem;
     font-style: italic;
     color: var(--muted);
   }
-  .cols {
+  .bar-value small .n {
+    font-size: 0.72rem;
+  }
+  .meter {
+    position: relative;
+    display: block;
+    height: 6px;
+    min-width: 0;
+    border-radius: 3px;
+    background: #0b0907;
+    box-shadow:
+      inset 0 0 0 1px rgba(125, 99, 51, 0.35),
+      inset 0 1px 2px rgba(0, 0, 0, 0.8);
+  }
+  .fill {
+    position: absolute;
+    inset: 0 auto 0 0;
+    min-width: 2px;
+    border-radius: 3px;
+  }
+  .fill.ember {
+    background: linear-gradient(90deg, #4d0705, #c22a10 55%, #ff8a32);
+    box-shadow: 0 0 8px rgba(224, 85, 40, 0.4);
+  }
+
+  .rows {
     list-style: none;
     margin: 0;
     padding: 0;
-    height: 100%;
     display: flex;
-    align-items: stretch;
-    gap: 2px;
+    flex-direction: column;
+    gap: 0.4rem;
   }
-  .cols.dense {
-    gap: 1px;
+  .row {
+    width: 100%;
+    min-height: 48px;
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    padding: 0.3rem 0.7rem 0.3rem 0.3rem;
+    border-radius: 4px;
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid rgba(59, 48, 36, 0.6);
+    color: var(--text);
+    font-size: 1rem;
+    text-align: left;
+    cursor: pointer;
+    transition:
+      border-color 0.25s,
+      background 0.25s,
+      color 0.25s;
   }
-  .cols li {
-    position: relative;
+  .row:hover {
+    border-color: var(--gold-lo);
+    background: rgba(0, 0, 0, 0.4);
+    color: var(--gold-hi);
+  }
+  .row > b {
+    font-size: 0.92rem;
+    color: var(--gold);
+  }
+  .row-name {
     flex: 1;
     min-width: 0;
     display: flex;
-    flex-direction: column-reverse;
+    flex-direction: column;
+    line-height: 1.2;
   }
-  /* Where a named depth begins: a hairline up the plot, crowned with a small lozenge. */
-  .cols li.zone::before {
-    content: '';
-    position: absolute;
-    left: 50%;
-    top: -0.5rem;
-    bottom: 0;
-    width: 1px;
-    background: linear-gradient(180deg, rgba(185, 207, 240, 0.55), rgba(185, 207, 240, 0.05));
+  .row-name > * {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
-  .cols li.zone::after {
-    content: '';
-    position: absolute;
-    left: calc(50% - 3px);
-    top: -0.75rem;
-    width: 5px;
-    height: 5px;
-    rotate: 45deg;
-    border: 1px solid #b9cff0;
-    background: #10141c;
-  }
-  .ends,
-  .lost {
-    position: relative;
-    display: block;
-    width: 100%;
-    max-width: 18px;
-    margin: 0 auto;
-  }
-  .ends {
-    border-radius: 0 0 1px 1px;
-    background: linear-gradient(180deg, #ff9a4a, #c22a10 60%, #6d0f07);
-    box-shadow: 0 0 8px rgba(224, 85, 40, 0.45);
-  }
-  .lost {
-    border-radius: 2px 2px 0 0;
-    background: linear-gradient(180deg, #e6c47e, #8a6428);
-    opacity: 0.8;
-  }
-  .lost:last-child,
-  .ends:last-child {
-    border-top-left-radius: 2px;
-    border-top-right-radius: 2px;
-  }
-  .x-axis {
-    position: relative;
-    height: 1.3rem;
-    margin-top: 0.25rem;
-  }
-  .x-axis span {
-    position: absolute;
-    translate: -50% 0;
-    font-family: var(--font-cinzel);
-    font-size: 0.72rem;
-    color: var(--muted);
-  }
-  .legend {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.3rem 1rem;
-    margin-top: 0.5rem;
-    font-size: 0.88rem;
+  .row-name small {
+    font-size: 0.85rem;
     font-style: italic;
     color: var(--muted);
   }
-  .legend span {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
-  }
-  .key {
-    width: 10px;
-    height: 10px;
-    border-radius: 1px;
-  }
-  .key.ends {
-    background: linear-gradient(180deg, #ff9a4a, #c22a10);
-  }
-  .key.lost {
-    background: linear-gradient(180deg, #e6c47e, #8a6428);
-  }
-  .key.zone {
-    width: 6px;
-    height: 6px;
-    margin: 0 2px;
-    rotate: 45deg;
-    border: 1px solid #b9cff0;
+  .row-name small .n {
+    font-size: 0.75rem;
   }
 
-  /* ---- the atlas: the named depths strung down a shaft ---- */
+  /* ---- finds and wards: a tile each ---- */
+  .tiles {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.6rem;
+  }
+  .tiles li {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    padding: 0.6rem 0.75rem;
+    border: 1px solid rgba(59, 48, 36, 0.6);
+    border-radius: 4px;
+    background: rgba(0, 0, 0, 0.25);
+  }
+  .tile-label {
+    font-family: var(--font-display);
+    font-size: 0.68rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .tile-value {
+    font-family: var(--font-cinzel);
+    font-size: 1.6rem;
+    line-height: 1.1;
+    color: var(--gold-hi);
+  }
+  .tile-note :global(.n) {
+    font-size: 0.78rem;
+  }
+  .tile-note {
+    font-size: 0.86rem;
+    font-style: italic;
+    line-height: 1.25;
+    color: var(--muted);
+  }
+
+  /* ---- zones reached: strung down a shaft ---- */
   .atlas {
     position: relative;
     list-style: none;
@@ -722,7 +881,7 @@
     display: grid;
     grid-template-columns: 14px auto minmax(0, 1fr) auto;
     column-gap: 0.6rem;
-    row-gap: 0.45rem;
+    row-gap: 0.55rem;
   }
   .atlas::before {
     content: '';
@@ -735,6 +894,10 @@
   }
   .atlas li {
     display: contents;
+  }
+  .atlas li.fold > :global(button) {
+    grid-column: 2 / -1;
+    justify-self: start;
   }
   .node {
     position: relative;
@@ -758,15 +921,12 @@
   }
   .z-depth {
     align-self: baseline;
-    font-family: var(--font-cinzel);
-    font-weight: 700;
     font-size: 0.82rem;
     text-align: right;
-    font-variant-numeric: tabular-nums;
-    color: var(--muted);
-  }
-  .found .z-depth {
     color: var(--gold-hi);
+  }
+  .next .z-depth {
+    color: var(--muted);
   }
   .z-name {
     align-self: baseline;
@@ -775,7 +935,7 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     font-family: var(--font-display);
-    font-size: 0.86rem;
+    font-size: 0.88rem;
     letter-spacing: 0.04em;
     color: var(--text);
   }
@@ -789,426 +949,50 @@
   }
   .z-when {
     align-self: baseline;
-    font-family: var(--font-cinzel);
     font-size: 0.72rem;
-    color: var(--muted);
-    white-space: nowrap;
-  }
-  .mark .node {
-    width: 5px;
-    height: 5px;
-    border: 0;
-    border-radius: 50%;
-    rotate: none;
-    background: #ff8a32;
-    box-shadow: 0 0 8px 2px rgba(255, 110, 40, 0.7);
-  }
-  .mark .z-depth,
-  .mark .z-name {
-    font-family: var(--font-body);
-    font-style: italic;
     font-weight: 400;
-    font-size: 0.9rem;
-    letter-spacing: 0;
-    color: #e8a36a;
-  }
-  .mark .z-depth {
-    font-family: var(--font-cinzel);
-    font-style: normal;
-    font-size: 0.78rem;
-  }
-
-  /* ---- rows of items, as the collection's ---- */
-  .rows {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.4rem;
-  }
-  .row {
-    width: 100%;
-    display: flex;
-    align-items: center;
-    gap: 0.7rem;
-    padding: 0.35rem 0.7rem 0.35rem 0.35rem;
-    border-radius: 4px;
-    background: rgba(0, 0, 0, 0.25);
-    border: 1px solid rgba(59, 48, 36, 0.6);
-    color: var(--text);
-    font-size: 1rem;
-    text-align: left;
-    cursor: pointer;
-    transition:
-      border-color 0.25s,
-      background 0.25s,
-      color 0.25s;
-  }
-  .row:hover {
-    border-color: var(--gold-lo);
-    background: rgba(0, 0, 0, 0.4);
-    color: var(--gold-hi);
-  }
-  .row b {
-    font-family: var(--font-cinzel);
-    font-size: 0.95rem;
-    color: var(--gold);
+    color: var(--muted);
     white-space: nowrap;
   }
-  .row-name {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    line-height: 1.2;
-  }
-  .row-name > * {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .row-name small {
-    font-size: 0.85rem;
+  .next .z-when {
     font-style: italic;
-    color: var(--muted);
-  }
-  .thumb {
-    flex: none;
-    width: 40px;
-    height: 40px;
-    display: grid;
-    place-items: center;
-    border-radius: 3px;
-    background:
-      radial-gradient(ellipse 60% 55% at 50% 50%, rgba(175, 96, 37, 0.22), transparent 70%),
-      linear-gradient(180deg, #0c0d12, #060709);
-    box-shadow: inset 0 0 0 1px rgba(90, 58, 28, 0.6);
-  }
-  .thumb img {
-    width: 34px;
-    height: 34px;
-    object-fit: contain;
-    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.8));
-  }
-
-  /* ---- accuracy by named depth ---- */
-  .bands {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.55rem;
-  }
-  .bands li {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(36px, 5rem) 4.4rem;
-    align-items: center;
-    gap: 0.6rem;
-  }
-  .band-name {
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    line-height: 1.15;
-  }
-  .band-name > span {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: 0.95rem;
-  }
-  .band-name small {
-    font-family: var(--font-cinzel);
-    font-size: 0.7rem;
-    color: var(--muted);
-  }
-  .band-value {
-    font-family: var(--font-cinzel);
     font-size: 0.85rem;
-    text-align: right;
-    white-space: nowrap;
-  }
-  .band-value small {
-    font-family: var(--font-body);
-    font-size: 0.85rem;
-    color: var(--muted);
-  }
-  .meter {
-    position: relative;
-    display: block;
-    height: 6px;
-    min-width: 0;
-    border-radius: 3px;
-    background: #0b0907;
-    box-shadow:
-      inset 0 0 0 1px rgba(125, 99, 51, 0.35),
-      inset 0 1px 2px rgba(0, 0, 0, 0.8);
-  }
-  .fill {
-    position: absolute;
-    inset: 0 auto 0 0;
-    border-radius: 3px;
-    background: linear-gradient(90deg, #6d4a1c, #c9a45c 70%, #f1d99b);
-    box-shadow: 0 0 8px rgba(224, 138, 68, 0.45);
-  }
-
-  /* ---- the runs: each one a phial laid on its side, as long as it went deep ---- */
-  .runs-section {
-    display: flex;
-    flex-direction: column;
-    gap: 0.9rem;
-  }
-  .runs-section > .bar {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    padding-bottom: 0.7rem;
-    border-bottom: 1px solid var(--line);
-  }
-  .runs-section h2 {
-    margin: 0;
-    font-size: 1.05rem;
-    text-transform: uppercase;
-    letter-spacing: 0.18em;
-    color: var(--gold-hi);
-  }
-  .runs-section .muted {
-    font-size: 0.92rem;
-    font-style: italic;
-  }
-  .runs {
-    list-style: none;
-    margin: 0;
-    padding: 0.2rem 0;
-    border: 1px solid #5a3a1c;
-    --bs-fill-a: rgba(5, 4, 3, 0.92);
-    --bs-fill-b: rgba(5, 4, 3, 0.92);
-    background: var(--bs-fill-paint, linear-gradient(var(--bs-fill-a), var(--bs-fill-b)));
-    --bs2: 20px 60px;
-    --bs2-color: rgba(0, 0, 0, 0.7);
-    box-shadow:
-      0 0 0 1px #000,
-      var(--bs-soft-paint, 0 var(--bs2, 0 0) var(--bs2-color, transparent));
-  }
-  .run {
-    display: grid;
-    grid-template-columns: 3.4rem minmax(0, 1fr) auto;
-    align-items: center;
-    gap: 0.4rem 1rem;
-    padding: 0.6rem 1rem;
-  }
-  .run + .run {
-    border-top: 1px solid #1d150c;
-  }
-  .r-depth {
-    font-family: var(--font-cinzel);
-    font-weight: 700;
-    font-size: 1.6rem;
-    line-height: 1;
-    text-align: center;
-    color: var(--gold-hi);
-    text-shadow: 0 0 12px rgba(224, 138, 68, 0.35);
-  }
-  .r-main {
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.45rem;
-  }
-  .r-head {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    gap: 0.2rem 0.6rem;
-    min-width: 0;
-  }
-  .r-who {
-    font-family: var(--font-display);
-    font-size: 0.85rem;
-    letter-spacing: 0.08em;
-    color: var(--text);
-  }
-  .r-zone {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: 0.92rem;
-    font-style: italic;
-    color: var(--muted);
-  }
-  .badge {
-    align-self: center;
-    padding: 0.05rem 0.45rem 0;
-    border: 1px solid var(--gold-lo);
-    border-radius: 999px;
-    font-family: var(--font-display);
-    font-size: 0.62rem;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    color: var(--gold-hi);
-    background: rgba(138, 90, 34, 0.25);
-  }
-  .badge.old {
-    border-color: var(--line);
-    color: var(--muted);
-    background: none;
-  }
-  .r-track {
-    position: relative;
-    display: block;
-    height: 8px;
-    margin-right: 6px;
-    border-radius: 4px;
-    background: #0b0907;
-    box-shadow:
-      inset 0 0 0 1px rgba(125, 99, 51, 0.35),
-      inset 0 1px 2px rgba(0, 0, 0, 0.8);
-  }
-  .r-fill {
-    position: absolute;
-    inset: 1px auto 1px 1px;
-    border-radius: 3px;
-    background: linear-gradient(90deg, #4d0705, #c22a10 55%, #ff8a32);
-    box-shadow: 0 0 8px rgba(224, 85, 40, 0.4);
-  }
-  .group .r-fill {
-    background: linear-gradient(90deg, #3d2205, #b06a1c 55%, #ffc26a);
-    box-shadow: 0 0 8px rgba(224, 138, 68, 0.35);
-  }
-  /* A life lost there: a notch in the phial; the last one, where the run ended, burns. */
-  .pip {
-    position: absolute;
-    top: 50%;
-    width: 8px;
-    height: 8px;
-    translate: -50% -50%;
-    rotate: 45deg;
-    border: 1px solid #e6c47e;
-    background: #1a120a;
-  }
-  .pip.fall {
-    width: 10px;
-    height: 10px;
-    border-color: #ffd59a;
-    background: radial-gradient(circle, #fff1c9, #ff8a32 45%, #c22a10);
-    box-shadow: 0 0 8px rgba(255, 120, 50, 0.8);
-  }
-  .r-side {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 0.35rem;
-  }
-  .r-date {
-    font-family: var(--font-cinzel);
-    font-size: 0.78rem;
-    color: var(--muted);
-    white-space: nowrap;
-  }
-  .r-took {
-    display: flex;
-    align-items: center;
-    gap: 0.25rem;
-  }
-  .r-took-label {
-    margin-right: 0.25rem;
-    font-size: 0.85rem;
-    font-style: italic;
-    color: var(--muted);
-  }
-  .mini {
-    width: 30px;
-    height: 30px;
-    padding: 0;
-    display: grid;
-    place-items: center;
-    border: 0;
-    border-radius: 3px;
-    background:
-      radial-gradient(ellipse 60% 55% at 50% 50%, rgba(194, 42, 16, 0.25), transparent 70%),
-      linear-gradient(180deg, #0c0d12, #060709);
-    box-shadow: inset 0 0 0 1px rgba(110, 40, 22, 0.7);
-    cursor: pointer;
-    transition: box-shadow 0.2s;
-  }
-  .mini:hover {
-    box-shadow:
-      inset 0 0 0 1px var(--gold),
-      0 0 10px rgba(224, 138, 68, 0.35);
-  }
-  .mini img {
-    width: 25px;
-    height: 25px;
-    object-fit: contain;
-    filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.8));
-  }
-  .more {
-    align-self: center;
-  }
-
-  .sr-only {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
-    border: 0;
   }
 
   @media (max-width: 900px) {
-    .summary {
-      grid-template-columns: 1fr 1fr;
-      row-gap: 1rem;
+    .grid {
+      display: flex;
+      flex-direction: column;
     }
-    .medallion {
-      grid-column: 1 / -1;
-      grid-row: 1;
-      justify-self: center;
+    .col {
+      display: contents;
     }
-    .split {
-      grid-template-columns: minmax(0, 1fr);
+    .o2 {
+      order: 2;
+    }
+    .o3 {
+      order: 3;
+    }
+    .o4 {
+      order: 4;
+    }
+    .o5 {
+      order: 5;
     }
   }
   @media (max-width: 560px) {
-    .summary {
-      grid-template-columns: 1fr;
-      row-gap: 1.75rem;
-    }
-    .side {
-      justify-content: space-around;
-    }
     .medallion {
-      width: 210px;
-      height: 210px;
+      width: 220px;
+      height: 220px;
     }
     .medal-value {
-      font-size: 2.8rem;
+      font-size: 3rem;
     }
-    .stat-value {
-      font-size: 1.9rem;
-    }
-    .panel {
+    .delve-page :global(.panel) {
       padding: 1rem 1rem 1.1rem;
     }
-    .run {
-      grid-template-columns: 2.6rem minmax(0, 1fr);
-      padding: 0.6rem 0.8rem;
-      column-gap: 0.7rem;
-    }
-    .r-depth {
-      grid-row: span 2;
-      font-size: 1.35rem;
-    }
-    .r-side {
-      flex-direction: row;
-      align-items: center;
-      justify-content: space-between;
+    .bars li {
+      grid-template-columns: minmax(0, 1fr) minmax(40px, 4.5rem) 4.2rem;
     }
   }
 </style>
