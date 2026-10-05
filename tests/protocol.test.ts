@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseClientMsg, parseHostMsg, RateLimit } from '../src/lib/protocol.ts';
+import { LEGACY_VERSION_TEXT, parseClientMsg, parseHostMsg, PROTOCOL_VERSION, RateLimit, versionProblem, versionRefusal } from '../src/lib/protocol.ts';
 
 const secret = 'abcdefghijklmnopqrstuvwxyz012345';
 
@@ -30,6 +30,13 @@ test('rejects anything a real client would never send', () => {
     { t: 'hello', secret, name: 'x'.repeat(5000), v: 3 },
     { t: 'action', action: { type: 'settings', settings: { targetScore: 1 } } }, // host only
     { t: 'action', action: { type: 'start' } },
+    { t: 'action', action: { type: 'settings', settings: { mode: 'delve' } } },
+    { t: 'action', action: { type: 'clock', askedAt: 1 } }, // Delve: the host's alone
+    { t: 'action', action: { type: 'expire' } },
+    { t: 'action', action: { type: 'resumed' } },
+    { t: 'action', action: { type: 'skip' } },
+    { t: 'action', action: { type: 'reask' } },
+    { t: 'action', action: { type: 'restart' } },
     { t: 'action', action: { type: 'join', playerId: 'someone', name: 'x' } },
     { t: 'action', action: { type: 'remove', playerId: 'someone' } },
     { t: 'action', action: { type: 'answer', index: 'x' } },
@@ -67,4 +74,14 @@ test('veiled art patches carry their edges, in whole (x, y, patch) triples', () 
   assert.equal(parseHostMsg({ ...veil, box: [1, 2, 3] }), null);
   assert.equal(parseHostMsg({ ...veil, count: undefined }), null);
   assert.equal(parseHostMsg({ t: 'veil', qid: 5, w: 100, h: 120 }), null);
+});
+
+test('a version mismatch says which side has to reload', () => {
+  assert.equal(versionProblem(PROTOCOL_VERSION), null);
+  assert.match(versionProblem(PROTOCOL_VERSION - 1)!, /^Your game is out of date/);
+  assert.match(versionProblem(PROTOCOL_VERSION + 1)!, /host's game is out of date/);
+  // What hosts before version 10 send, whichever side is behind.
+  assert.equal(LEGACY_VERSION_TEXT, 'Your game version is out of date. Please reload the page.');
+  assert.match(versionRefusal(LEGACY_VERSION_TEXT), /different versions/);
+  assert.equal(versionRefusal('The lobby is full.'), 'The lobby is full.');
 });

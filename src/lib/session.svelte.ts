@@ -27,7 +27,7 @@ import {
 } from './game';
 import { PEER_OPTIONS, PEER_PREFIX } from './peer';
 import { Beacon, type RoomInfo } from './rooms';
-import { parseClientMsg, parseHostMsg, PROTOCOL_VERSION, RateLimit, type HostMsg, type MediaMsg } from './protocol';
+import { parseClientMsg, parseHostMsg, PROTOCOL_VERSION, RateLimit, versionProblem, versionRefusal, type HostMsg, type MediaMsg } from './protocol';
 import { capped, FrameGuard, hookFrames, JoinGate, roomSecret } from './guard';
 import { cleanName, nameSkeleton } from './names';
 import { prepareMedia, shown, patchDelays, type PreparedMedia } from './media.svelte';
@@ -574,7 +574,8 @@ class Session {
   }
 
   private handleHello(conn: DataConnection, guest: Guest, secret: string, name: string, v: number) {
-    if (v !== PROTOCOL_VERSION) throw new ActionError('Your game version is out of date. Please reload the page.');
+    const outdated = versionProblem(v);
+    if (outdated) throw new ActionError(outdated);
     const known = this.secretToPlayer.get(secret);
     // A kicked player stays out, under their old token or (as a newcomer) their old name.
     if (this.priv.bannedSecrets.includes(secret)) {
@@ -871,7 +872,7 @@ class Session {
           this.status = 'ready';
           break;
         case 'error':
-          if (this.status === 'connecting') this.fail(msg.message, "Couldn't join");
+          if (this.status === 'connecting') this.fail(versionRefusal(msg.message), "Couldn't join");
           else this.flash(msg.message, 'error');
           break;
         case 'kicked':

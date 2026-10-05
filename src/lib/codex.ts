@@ -9,6 +9,7 @@
 // only count when one person plays alone.
 
 import { difficultyOf, isFake, type Difficulty, type GameState, type QuestionMode } from './game.ts';
+import { delveTier } from './delve.ts';
 
 export interface Tally {
   /** Answers given. */
@@ -108,7 +109,9 @@ export function encounterAt(s: GameState, me: string | null, hotSeat: boolean, m
   const r = s.reveal;
   if (s.phase !== 'reveal' || !q || !r || !r.correctId) return null;
   const race = s.settings.mode === 'race';
-  const e: Encounter = { at: q.askedAt, itemId: r.correctId, mode: q.mode, difficulty: difficultyOf(s.settings.difficulty), race };
+  // Delve answers are filed under the preset their depth plays like, not the room's leftover setting.
+  const difficulty = s.delve ? delveTier(s.round) : difficultyOf(s.settings.difficulty);
+  const e: Encounter = { at: q.askedAt, itemId: r.correctId, mode: q.mode, difficulty, race };
   let picked: number | null;
   let ok: boolean;
   if (race) {

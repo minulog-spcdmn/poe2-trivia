@@ -328,3 +328,14 @@ test('stats: completion, categories, nemeses and confusions', () => {
   );
   assert.equal(RECENT, 100);
 });
+
+test('Delve answers are filed under the preset their depth plays like', () => {
+  let { engine, s } = setup(['Ash'], 'delve');
+  s = { ...s, round: 30 };
+  s = engine.apply(s, { type: 'pick', category: s.offered[0] }, 'p0');
+  s = engine.apply(s, { type: 'clock', askedAt: s.question!.askedAt }, null);
+  s = engine.apply(s, { type: 'answer', index: right(s.question!), askedAt: s.question!.askedAt }, 'p0');
+  const e = encounterAt(s, 'p0', false)!;
+  assert.equal(e.difficulty, 'eternal', 'not the room\'s leftover Cruel');
+  assert.equal(e.answer!.ok, true);
+});

@@ -3,6 +3,7 @@
 
 import { cleanName, nameProblem, nameSkeleton } from './names.ts';
 import { RUBY } from './palette.ts';
+import { DELVE_MAX_LOCKOUT, DELVE_PICK_MS, DELVE_REJOIN_MS, DELVE_RESUME_GRACE_MS, DELVE_RULESET, compareDelvers, delveLockout, delveRules, delveTimer, isGroupRun, livesOf, standingIds } from './delve.ts';
 
 export interface Item {
   id: string;
@@ -244,9 +245,9 @@ export function rulesFor(settings: Pick<Settings, 'difficulty'> & Partial<Settin
   return { ...k, veil: VEILS[k.veil] };
 }
 
-/** The rules for the current question (deathmatch questions are one tier harder). */
+/** The rules for the current question (deathmatch questions are one tier harder; Delve's follow the depth). */
 export function activeRules(s: GameState): DifficultyRules {
-  return rulesFor(s.settings, !!s.deathmatch);
+  return s.delve ? delveRules(s.round) : rulesFor(s.settings, !!s.deathmatch);
 }
 
 /** The last `lockout` categories of a list (none for a lockout of 0). */
@@ -271,6 +272,30 @@ export interface Deathmatch {
   eliminated: string[];
   /** turnCount when it started (lets clients play the intro once). */
   startedAt: number;
+}
+
+/** A Delve run (see delve.ts). Lives and falls are read from `losses`, never stored twice. */
+export interface Delve {
+  /** Everyone seated when the run started; only its length is read (one: a solo run). */
+  entrants: string[];
+  /** Depths at which each seated player lost a life, oldest first; the third is where they fell. */
+  losses: Record<string, number[]>;
+  /** Group runs: who was left standing alone, and the depth they had just finished. */
+  lastStanding: { id: string; depth: number } | null;
+  /** DELVE_RULESET when the run started. */
+  ruleset: number;
+  /** Resumed by a build with another ruleset: plays on, but never counts as a best. */
+  mixed?: boolean;
+  /** Host clock when the run started (the run's id in records). */
+  startedAt: number;
+  /** Online group runs, while choosing: host clock when a card is picked for the player; null otherwise. */
+  pickBy: number | null;
+  /** This turn's extension for a player who came back late is used up. */
+  pickExtended: boolean;
+  /** Standing players the host's reload cut off who haven't come back since. */
+  excused: string[];
+  /** An excused player's turn waits at least until then (host clock). */
+  graceUntil: number;
 }
 
 /** Deathmatch questions are one tier harder (Eternal goes one step up on each knob). */
@@ -298,8 +323,13 @@ export interface Player {
  * turns: players take turns choosing a category and answering.
  * race: everyone answers the same question; first correct answer scores,
  * wrong answers cost a point and lock that player out of the question.
+ * delve: turns with three lives and no settings, one depth deeper each round
+ * (see delve.ts); the last one standing wins.
  */
-export type GameMode = 'turns' | 'race';
+export type GameMode = 'turns' | 'race' | 'delve';
+
+/** A known game mode. */
+export const isGameMode = (m: unknown): m is GameMode => m === 'turns' || m === 'race' || m === 'delve';
 
 export interface Settings {
   targetScore: number;
@@ -370,8 +400,10 @@ export interface Question {
   mirrored?: boolean[];
   /** Host-clock timestamp when the question was asked. */
   askedAt: number;
-  /** Host-clock timestamp when time runs out, null without timer. */
+  /** Host-clock timestamp when time runs out, null without timer (and in Delve until the clock starts). */
   deadline: number | null;
+  /** Delve: host clock when the clock started, once the art has reached the player answering. */
+  clockAt?: number;
   /** Race mode: wrong answers so far, in order. Those players are locked out. */
   misses: { playerId: string; index: number }[];
 }
@@ -420,6 +452,8 @@ export interface GameState {
   deathmatch: Deathmatch | null;
   /** Race mode: categories of the last questions, to avoid repeats. */
   recentCategories: string[];
+  /** The Delve run in progress (or just over); null otherwise, missing in older saves. */
+  delve?: Delve | null;
   /**
    * How many art questions each player is behind the difficulty's share
    * (negative: ahead), by player id; race mode keeps one for the room under
@@ -448,7 +482,13 @@ export type Action =
   /** Host: swap the open question for a new one in the same category (its art failed to load). */
   | { type: 'reask' }
   /** Back to the lobby, seating the spectators; with `play`, the next game starts right away. */
-  | { type: 'restart'; play?: boolean };
+  | { type: 'restart'; play?: boolean }
+  /** Host only (Delve): the art has reached the player answering, so their clock starts at `at` (host clock). */
+  | { type: 'clock'; askedAt: number; at?: number }
+  /** Host only (Delve): the time to pick ran out; a random card for a connected player, a lost life for one who isn't. */
+  | { type: 'expire' }
+  /** Host only (Delve): the host reopened its room after a reload. */
+  | { type: 'resumed' };
 
 export const OFFER_COUNT = 3;
 export const MAX_PLAYERS = 12;
@@ -492,6 +532,7 @@ export function createGame(hostId: string | null, settings: Settings = DEFAULT_S
     winners: [],
     deathmatch: null,
     recentCategories: [],
+    delve: null,
     artLean: {},
     lastAskedAt: 0,
     version: 0,
@@ -558,7 +599,12 @@ function seat(s: GameState, id: string, name: string) {
 export function publicView(s: GameState): GameState {
   const q = s.question;
   if (!q) return { ...s, used: [] };
-  if (s.phase === 'question') return { ...s, used: [], question: { ...q, itemId: '', options: [], mirrored: [] } };
+  if (s.phase === 'question') {
+    const hidden = { ...q, itemId: '', options: [], mirrored: [] };
+    // Delve: nothing to read off the clock either, until the art has reached the player answering.
+    if (s.delve && q.deadline === null) return { ...s, used: [], question: { ...hidden, labels: q.labels.map(() => null), prompt: null, groups: [] } };
+    return { ...s, used: [], question: hidden };
+  }
   // Revealed: only the answer and the options someone actually picked are
   // identified; the untouched decoys stay anonymous for later questions.
   const known = new Set<number | null>([s.reveal?.correctIndex ?? -1, s.reveal?.chosenIndex ?? null, ...q.misses.map((m) => m.index)]);
@@ -727,9 +773,17 @@ export class Engine {
             s.turn = (s.turn - 1 + s.players.length) % s.players.length;
             this.nextDuelist(s);
           }
-        } else if (idx < s.turn) s.turn--;
-        // Their turn: carry on from the seat before, so the end of the round is still checked.
-        else if (idx === s.turn) this.advance(s, idx - 1);
+        } else {
+          if (s.delve) {
+            // Gone from the run: their losses, their excuse and any claim to last standing.
+            delete s.delve.losses[action.playerId];
+            s.delve.excused = s.delve.excused.filter((id) => id !== action.playerId);
+            if (s.delve.lastStanding?.id === action.playerId) s.delve.lastStanding = null;
+          }
+          if (idx < s.turn) s.turn--;
+          // Their turn: carry on from the seat before, so the end of the round is still checked.
+          else if (idx === s.turn) this.advance(s, idx - 1);
+        }
         break;
       }
       case 'connection': {
@@ -737,6 +791,7 @@ export class Engine {
         const p = s.players.find((p) => p.id === action.playerId);
         if (p) p.connected = action.connected;
         if (race) this.checkRaceDone(s);
+        if (p && action.connected && s.delve) this.delveReturn(s, p);
         break;
       }
       case 'settings': {
@@ -747,7 +802,7 @@ export class Engine {
         if (Object.keys(action.settings).every((k) => k === 'public' || k === 'locked')) break;
         if (s.phase !== 'lobby' && s.phase !== 'over') throw new ActionError('Settings are locked during a game.');
         const { targetScore, timer, difficulty, custom, mode } = action.settings;
-        if (mode === 'turns' || mode === 'race') s.settings.mode = mode;
+        if (isGameMode(mode)) s.settings.mode = mode;
         // Custom starts out as the difficulty that was picked, the way it plays in the (new) mode.
         if (difficulty === 'custom' && !s.settings.custom) s.settings.custom = knobsOf(s.settings);
         if (isDifficulty(difficulty)) s.settings.difficulty = difficulty;
@@ -777,6 +832,22 @@ export class Engine {
         s.deathmatch = null;
         s.recentCategories = [];
         s.artLean = {};
+        s.delve = null;
+        if (s.settings.mode === 'delve') {
+          // Every run draws from the whole pool, so one run's depth means the same as another's.
+          s.used = [];
+          s.delve = {
+            entrants: s.players.map((p) => p.id),
+            losses: {},
+            lastStanding: null,
+            ruleset: DELVE_RULESET,
+            startedAt: this.now(),
+            pickBy: null,
+            pickExtended: false,
+            excused: [],
+            graceUntil: 0,
+          };
+        }
         // The first turn goes to someone who is actually here.
         s.turn = Math.max(0, s.players.findIndex((p) => p.connected));
         if (race) this.beginRaceQuestion(s, true);
@@ -784,15 +855,14 @@ export class Engine {
         break;
       }
       case 'pick': {
-        if (s.phase !== 'choosing') throw new ActionError('Not the time to pick a category.');
+        if (s.phase !== 'choosing') {
+          // Delve: a pick that lost the race against the card picked for this player when their time ran out.
+          if (s.delve && s.phase === 'question' && isActive) throw new ActionError('Too late!', true);
+          throw new ActionError('Not the time to pick a category.');
+        }
         if (!isActive) throw new ActionError("It's not your turn.");
         if (!s.offered.includes(action.category)) throw new ActionError('That category is not on offer.');
-        if (!s.deathmatch) {
-          active.recent = lastPicks([...active.recent, action.category], rulesFor(s.settings).lockout);
-        }
-        s.question = this.makeQuestion(s, action.category);
-        s.used.push(s.question.itemId);
-        s.phase = 'question';
+        this.takePick(s, active, action.category);
         break;
       }
       case 'answer': {
@@ -808,12 +878,15 @@ export class Engine {
         if (!isActive) throw new ActionError("It's not your turn.");
         const q = s.question;
         if (action.askedAt !== undefined && action.askedAt !== q.askedAt) throw new ActionError('Too late!', true);
+        // Delve: nobody answers a question whose clock hasn't started (a stray key in hot-seat included).
+        if (s.delve && q.deadline === null && action.index !== null) throw new ActionError('Too early.', true);
         const index = validIndex(action.index, q.options.length);
         const chosenId = index === null ? null : q.options[index];
         const timedOut =
           chosenId === null || (q.deadline !== null && from !== null && this.now() > q.deadline + ANSWER_GRACE_MS);
         const correct = !timedOut && chosenId === q.itemId;
         if (correct) active.score += 1;
+        else if (s.delve) this.loseLife(s, active.id);
         if (!timedOut && chosenId && isFake(chosenId)) s.used.push(chosenId);
         if (s.deathmatch) s.deathmatch.results[active.id] = correct;
         s.reveal = {
@@ -841,6 +914,8 @@ export class Engine {
         break;
       }
       case 'skip': {
+        // A skipped turn would cost a life, so nobody decides that by hand (the host's own id included).
+        if (s.delve) throw new ActionError('Delve has no skipping.');
         if (!isHost) throw new ActionError('Only the host can skip a turn.');
         if (s.phase !== 'choosing' && s.phase !== 'question') throw new ActionError('Nothing to skip.');
         if (race) this.advanceRace(s);
@@ -853,6 +928,8 @@ export class Engine {
       case 'reask': {
         if (!isHost) throw new ActionError('Only the host can change the question.');
         if (s.phase !== 'question' || !s.question) throw new ActionError('There is no open question.', true);
+        // Delve: a question on the clock can't be traded for another.
+        if (s.delve && s.question.deadline !== null) throw new ActionError('The clock is already running.', true);
         const voided = s.question;
         // Race: blind guesses on a question that is thrown out don't cost anything.
         for (const m of voided.misses) {
@@ -882,6 +959,52 @@ export class Engine {
         fresh.used = s.used;
         Object.assign(s, fresh);
         if (action.play) return this.apply(s, { type: 'start' }, from);
+        break;
+      }
+      case 'clock': {
+        if (from !== null) throw new ActionError('Not allowed.');
+        const q = s.question;
+        // Already running (a resumed host releasing the art again) or a question that is gone: nothing to start.
+        if (!s.delve || s.phase !== 'question' || !q || q.askedAt !== action.askedAt || q.deadline !== null) break;
+        const now = this.now();
+        const at = typeof action.at === 'number' && Number.isFinite(action.at) ? action.at : now;
+        q.clockAt = Math.min(Math.max(at, now), now + 1000);
+        q.deadline = q.clockAt + delveTimer(s.round) * 1000;
+        break;
+      }
+      case 'expire': {
+        if (from !== null) throw new ActionError('Not allowed.');
+        const dm = s.delve;
+        if (!dm || s.phase !== 'choosing' || dm.pickBy === null || !active || this.now() < dm.pickBy - 250) break;
+        if (active.connected) {
+          // Hesitating costs nothing: a card is picked, and its clock runs as usual.
+          this.takePick(s, active, sample(s.offered, 1, this.rng)[0]);
+        } else {
+          // Gone while their turn ran out: that costs a life, with nothing to reveal.
+          this.loseLife(s, active.id);
+          s.offered = [];
+          this.advanceDelve(s, s.turn);
+        }
+        break;
+      }
+      case 'resumed': {
+        if (from !== null) throw new ActionError('Not allowed.');
+        const dm = s.delve;
+        if (!dm || s.phase === 'lobby' || s.phase === 'over') break;
+        // Everyone the reload cut off gets a while to come back before their turn runs.
+        dm.excused = s.players.filter((p) => !p.connected && livesOf(s, p.id) > 0).map((p) => p.id);
+        dm.graceUntil = this.now() + DELVE_RESUME_GRACE_MS;
+        if (s.phase === 'question' && s.question && active && !active.connected) {
+          // A guest's question: their answer may have been lost while the host was gone, so it is
+          // set aside and they pick again from the same cards. Its pictures don't come back.
+          const voided = s.question;
+          for (const id of voided.options) if (this.byId.has(id) && !s.used.includes(id)) s.used.push(id);
+          this.tallyMode(s, voided.mode, -1);
+          active.recent.pop();
+          s.question = null;
+          s.phase = 'choosing';
+        }
+        if (s.phase === 'choosing') this.stampPickBy(s);
         break;
       }
     }
@@ -985,6 +1108,106 @@ export class Engine {
     s.phase = 'question';
   }
 
+  // ---- delve ------------------------------------------------------------
+
+  /** The player on turn picks a category (by hand, or when their time to pick runs out). */
+  private takePick(s: GameState, active: Player, category: string) {
+    if (s.delve) {
+      active.recent = lastPicks([...active.recent, category], DELVE_MAX_LOCKOUT);
+      s.delve.pickBy = null;
+    } else if (!s.deathmatch) {
+      active.recent = lastPicks([...active.recent, category], rulesFor(s.settings).lockout);
+    }
+    s.question = this.makeQuestion(s, category);
+    s.used.push(s.question.itemId);
+    s.phase = 'question';
+  }
+
+  /** Takes a life from a player who still has one; a lost life also ends their streak. */
+  private loseLife(s: GameState, id: string) {
+    if (livesOf(s, id) <= 0) return;
+    (s.delve!.losses[id] ??= []).push(s.round);
+    const p = s.players.find((p) => p.id === id);
+    if (p) p.streak = 0;
+  }
+
+  /**
+   * When the player on turn has to have picked: online group runs only (alone or
+   * on one device nobody waits). A player the host's reload cut off gets until
+   * the end of the grace at least.
+   */
+  private stampPickBy(s: GameState) {
+    const dm = s.delve!;
+    const p = s.players[s.turn];
+    dm.pickExtended = false;
+    if (!isGroupRun(s) || s.hostId === null || !p) {
+      dm.pickBy = null;
+      return;
+    }
+    const excused = dm.excused.includes(p.id) && !p.connected;
+    dm.pickBy = Math.max(this.now() + DELVE_PICK_MS, excused ? dm.graceUntil : 0);
+  }
+
+  /**
+   * A player came back. Their excuse ends, and if it is their turn to pick with
+   * little time left, they get a few seconds more, once per turn, so dropping
+   * out and back in can't hold up the room.
+   */
+  private delveReturn(s: GameState, p: Player) {
+    const dm = s.delve!;
+    dm.excused = dm.excused.filter((id) => id !== p.id);
+    const now = this.now();
+    if (s.phase !== 'choosing' || s.players[s.turn]?.id !== p.id || dm.pickBy === null || dm.pickExtended) return;
+    if (dm.pickBy - now < DELVE_REJOIN_MS) {
+      dm.pickBy = now + DELVE_REJOIN_MS;
+      dm.pickExtended = true;
+    }
+  }
+
+  /**
+   * Moves to the next player with lives left after seat `from`, disconnected
+   * or not (their turn runs out like anyone's). Passing the last seat ends the
+   * round and goes one depth deeper; the run ends once nobody is left standing.
+   */
+  private advanceDelve(s: GameState, from: number) {
+    const dm = s.delve!;
+    const n = s.players.length;
+    let next = from;
+    let wrapped = false;
+    let found = false;
+    for (let i = 0; i < n; i++) {
+      next++;
+      if (next >= n) {
+        next = 0;
+        wrapped = true;
+      }
+      if (livesOf(s, s.players[next].id) > 0) {
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      // Alone, nobody wins: the depth is the result. Together, the one who went deepest.
+      let best: string[] = [];
+      if (isGroupRun(s)) {
+        for (const p of s.players) {
+          const c = best.length ? compareDelvers(s, p.id, best[0]) : 1;
+          if (c > 0) best = [p.id];
+          else if (c === 0) best.push(p.id);
+        }
+      }
+      this.finish(s, best);
+      return;
+    }
+    if (wrapped) {
+      const standing = standingIds(s);
+      if (standing.length === 1 && isGroupRun(s) && !dm.lastStanding) dm.lastStanding = { id: standing[0], depth: s.round };
+      s.round++;
+    }
+    s.turn = next;
+    this.beginTurn(s, false);
+  }
+
   // ---- turns mode -------------------------------------------------------
 
   private beginTurn(s: GameState, first: boolean) {
@@ -994,9 +1217,11 @@ export class Engine {
     s.reveal = null;
     // In a deathmatch nobody picks their favourite: one random category.
     s.offered = s.deathmatch ? [this.randomCategory(s)] : this.offerCategories(s, s.players[s.turn]);
+    if (s.delve) this.stampPickBy(s);
   }
 
   private finish(s: GameState, winners: string[]) {
+    if (s.delve) s.delve.pickBy = null;
     s.phase = 'over';
     s.winners = winners;
     s.question = null;
@@ -1058,6 +1283,10 @@ export class Engine {
    * first seat), ending the game at a round boundary.
    */
   private advance(s: GameState, from = s.turn) {
+    if (s.delve) {
+      this.advanceDelve(s, from);
+      return;
+    }
     if (s.deathmatch) {
       this.nextDuelist(s);
       return;
@@ -1096,7 +1325,9 @@ export class Engine {
   }
 
   offerCategories(s: GameState, player: Player): string[] {
-    const allowed = this.categories.filter((c) => !player.recent.includes(c));
+    // Delve keeps a longer history and locks out as many picks as the depth says, from this turn on.
+    const locked = s.delve ? lastPicks(player.recent, delveLockout(s.round)) : player.recent;
+    const allowed = this.categories.filter((c) => !locked.includes(c));
     const fresh = allowed.filter((c) => this.unusedIn(s, c).length > 0);
     const stale = allowed.filter((c) => !fresh.includes(c));
     const pick = sample(fresh, OFFER_COUNT, this.rng);
@@ -1341,7 +1572,8 @@ export class Engine {
     const askedAt = Math.max(this.now(), (s.lastAskedAt ?? 0) + 1, (s.question?.askedAt ?? 0) + 1);
     s.lastAskedAt = askedAt;
     const timer = s.settings.mode === 'race' ? s.settings.timer || RACE_DEFAULT_TIMER : s.settings.timer;
-    const deadline = timer > 0 ? askedAt + timer * 1000 : null;
+    // Delve: the clock starts once the art has reached the player answering (the 'clock' action).
+    const deadline = !s.delve && timer > 0 ? askedAt + timer * 1000 : null;
     const veil: Veil | null =
       rules.veil && mode === 'name'
         ? {
