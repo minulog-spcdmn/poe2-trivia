@@ -13,6 +13,8 @@
   import { backdropShadow } from '../lib/backdropShadow';
   import { creatorArrived, glyphLanded, playerArrived, refuse, twinkle } from '../lib/fx/moments';
   import { onMount } from 'svelte';
+  import { categoryIcons } from '../lib/ui';
+  import { measure } from '../lib/iconFit.svelte';
 
   const TARGETS = [5, 10, 15, 20];
   const DIFFS = (Object.entries(DIFFICULTY_NAMES) as [Difficulty, string][]).map(([id, name]) => ({ id, name }));
@@ -26,6 +28,13 @@
   let copied = $state(false);
 
   const inviteLink = $derived(inviteUrl(session.code));
+
+  // Measure the category cards' emblems (lib/iconFit) while the party
+  // gathers, so the first deal doesn't have to.
+  onMount(() => {
+    const t = setTimeout(() => categoryIcons().forEach(measure), 1000);
+    return () => clearTimeout(t);
+  });
 
   function addLocal(e: Event) {
     e.preventDefault();

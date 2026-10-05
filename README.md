@@ -313,7 +313,10 @@ Everything is drawn in WebGL2 with float precision and dithered once at the
   CSS filter. The effects layer stays above dialogs: the page's light hides
   behind the dialog and dims outside it, while the dialog's own light shows.
 - Effects can be switched off with the ✦ button in the header, and are off
-  under *prefers-reduced-motion*. Quality drops by itself (resolution) on
+  under *prefers-reduced-motion*. Switched off, they also still the
+  backdrop where it stands (no breathing, drifting or rising embers), which
+  is then only redrawn when something changes: a low-power mode for phones
+  that run hot. Quality drops by itself (resolution) on
   devices that can't keep up. Without WebGL2 the site falls back
   to its CSS look.
 

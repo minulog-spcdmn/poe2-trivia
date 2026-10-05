@@ -33,14 +33,20 @@
     started = true;
     let raf = 0;
     const loop = () => {
-      remaining = Math.max(0, end - session.hostNow());
-      const secs = Math.ceil(remaining / 1000);
+      const left = Math.max(0, end - session.hostNow());
+      const secs = Math.ceil(left / 1000);
+      // The ring is redrawn only once its end has moved a third of a pixel
+      // (or the number changes): on a 20 s timer about 25 times a second
+      // rather than every frame, and each redraw repaints its glow.
+      if (secs !== Math.ceil(remaining / 1000) || left === 0 || (Math.abs(remaining - left) * C) / (total * 1000) >= 1 / 3) {
+        remaining = left;
+      }
       if (secs <= warnFrom && secs > 0 && secs !== lastTick) {
         lastTick = secs;
         sfx('tick');
         if (el) timerTick(el, secs);
       }
-      if (remaining > 0) raf = requestAnimationFrame(loop);
+      if (left > 0) raf = requestAnimationFrame(loop);
     };
     loop();
     return () => cancelAnimationFrame(raf);

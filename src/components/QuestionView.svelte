@@ -395,6 +395,15 @@
     }, 2500);
   }
 
+  /** Moves the light inside an answer with the pointer. */
+  function glare(e: PointerEvent) {
+    if (e.pointerType !== 'mouse') return;
+    const el = e.currentTarget as HTMLElement;
+    const r = el.getBoundingClientRect();
+    el.style.setProperty('--gx', `${(e.clientX - r.left).toFixed(0)}px`);
+    el.style.setProperty('--gy', `${(e.clientY - r.top).toFixed(0)}px`);
+  }
+
   function next() {
     sfx('click');
     session.dispatch({ type: 'next' });
@@ -582,9 +591,12 @@
             class:mine
             disabled={!mine || !!reveal || chosen !== null || waiting}
             onclick={() => answer(i)}
+            onpointermove={glare}
             in:scale={{ start: 0.85, duration: 450, delay: 250 + i * 80 }}
           >
+            <span class="sheen"></span>
             <span class="key">{(i + 1) % 10}</span>
+            <span class="cue" aria-hidden="true"></span>
             {#if src}
               <!-- Named pictures switch to the original art, so a mirrored one turns round. -->
               <span class="pic"><ArtImage {src} alt="Option {i + 1}" scale={1.6} unflip={mirrored(i) && !!q.options[i]} /></span>
@@ -704,11 +716,13 @@
             title={fake(i) ? 'Not a real item' : undefined}
             disabled={!mine || !!reveal || chosen !== null || waiting}
             onclick={() => answer(i)}
+            onpointermove={glare}
             in:fly={{ x: 40, duration: 450, delay: 300 + i * 90 }}
           >
             <span class="sheen"></span>
             <span class="key">{(i + 1) % 10}</span>
             <span class="text" class:veiled={waiting}>{waiting ? '\u00a0' : (label ?? optionName(i))}</span>
+            <span class="cue" aria-hidden="true"></span>
             {@render who(i)}
             {#if st === 'right'}<span class="mark" in:scale={{ duration: 300 }}>✓</span>{/if}
             {#if st === 'wrong'}<span class="mark" in:scale={{ duration: 300 }}>✕</span>{/if}
@@ -1092,10 +1106,21 @@
       0 0 8px rgba(var(--v-tint), 0.45);
     animation: verdict-flare 0.9s var(--ease-out) 0.2s backwards;
   }
+  /* A right answer's glyph breathes: a wider glow on a layer of its own
+     fades in and out (fading it is free, where animating the box-shadow
+     would repaint every frame until the next question). */
   .verdict.good .glyph {
-    animation:
-      verdict-flare 0.9s var(--ease-out) 0.2s backwards,
-      verdict-breathe 2.6s ease-in-out 1.2s infinite;
+    position: relative;
+  }
+  .verdict.good .glyph::before {
+    content: '';
+    position: absolute;
+    inset: -1px;
+    border-radius: 50%;
+    box-shadow: 0 0 13px 1px rgba(var(--v-tint), 0.45);
+    opacity: 0;
+    animation: verdict-breathe 2.6s ease-in-out 1.2s infinite;
+    pointer-events: none;
   }
   .glyph svg {
     width: 1.05em;
@@ -1141,9 +1166,7 @@
   }
   @keyframes verdict-breathe {
     50% {
-      box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.15),
-        0 0 13px 1px rgba(var(--v-tint), 0.6);
+      opacity: 1;
     }
   }
   @keyframes verdict-ripple {
@@ -1193,17 +1216,24 @@
     border-radius: 4px;
     cursor: default;
     isolation: isolate;
-    box-shadow: inset 0 1px 0 rgba(255, 220, 150, 0.05);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 220, 150, 0.05),
+      inset 0 0 0 1px var(--bs-ring),
+      var(--bs-soft-paint, 0 var(--bs1, 0 0) var(--bs1-color, transparent));
     transition:
       transform 0.25s var(--ease-out),
-      border-color 0.25s,
-      box-shadow 0.25s,
+      border-color 0.3s,
       opacity 0.4s,
+      --bs-ring 0.3s,
+      --bs1 0.4s,
+      --bs1-color 0.4s,
       --bs-fill-a 0.4s,
       --bs-fill-b 0.4s;
   }
-  /* A band of light that sweeps across on hover (clipped by its own box,
-     so the race avatars on the row's edge aren't), and a lit edge on the left. */
+  /* What lights up while the pointer is on an answer, a row or a picture
+     (clipped by the answer's own box, so the race avatars on a row's edge
+     aren't): a glow that follows the pointer, embers smouldering along the
+     bottom, and a band of light that sweeps across once. */
   .sheen {
     position: absolute;
     z-index: -1;
@@ -1219,50 +1249,105 @@
     bottom: 0;
     left: -40%;
     width: 30%;
-    background: linear-gradient(100deg, transparent, rgba(255, 236, 196, 0.1), transparent);
+    background: linear-gradient(
+      100deg,
+      transparent,
+      rgba(255, 236, 196, 0.07) 40%,
+      rgba(255, 246, 225, 0.16) 50%,
+      rgba(255, 236, 196, 0.07) 60%,
+      transparent
+    );
     transform: skewX(-18deg);
-    pointer-events: none;
   }
-  .option::after {
+  .sheen::after {
     content: '';
     position: absolute;
-    left: 0;
-    top: 12%;
-    bottom: 12%;
-    width: 2px;
-    background: linear-gradient(180deg, transparent, var(--gold-hi), transparent);
-    box-shadow: 0 0 10px rgba(255, 180, 90, 0.8);
+    inset: 0;
+    background:
+      radial-gradient(circle 160px at var(--gx, 30%) var(--gy, 50%), rgba(255, 214, 150, 0.12), transparent 70%),
+      radial-gradient(ellipse 50% 80% at 50% 135%, rgba(255, 140, 50, 0.28), transparent 70%);
     opacity: 0;
-    transition: opacity 0.25s;
+    transition: opacity 0.35s;
+  }
+  /* Light along the top edge, opening out from the middle. */
+  .option::after,
+  .tile::after {
+    content: '';
+    position: absolute;
+    top: -1px;
+    left: 6%;
+    right: 6%;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, #fff1cf, transparent);
+    filter: drop-shadow(0 0 3px rgba(255, 180, 90, 0.9));
+    opacity: 0;
+    scale: 0.4 1;
+    transition:
+      opacity 0.3s,
+      scale 0.5s var(--ease-out);
     pointer-events: none;
   }
   .option.mine:not(:disabled) {
     cursor: pointer;
   }
-  .option.mine:not(:disabled):hover {
-    transform: translateX(6px);
+  /* Hovered, or picked and waiting for the verdict: the row stays put and lights up. */
+  .option.mine:not(:disabled):hover,
+  .option.mine:not(:disabled):focus-visible,
+  .option.pending {
     border-color: var(--gold);
-    --bs-fill-a: rgba(58, 43, 26, 0.95);
-    box-shadow:
-      inset 0 1px 0 rgba(255, 220, 150, 0.1),
-      0 0 22px rgba(201, 164, 92, 0.22);
+    --bs-ring: rgba(241, 217, 155, 0.1);
+    --bs-fill-a: rgba(70, 48, 25, 0.96);
+    --bs-fill-b: rgba(29, 22, 14, 0.95);
+    --bs1: 0px 26px;
+    --bs1-color: rgba(224, 138, 68, 0.2);
   }
-  .option.mine:not(:disabled):hover .sheen::before {
-    animation: sweep 0.7s var(--ease-out);
+  :is(.option, .tile).mine:not(:disabled):hover .sheen::before {
+    animation: sweep 0.8s var(--ease-out);
   }
-  .option.mine:not(:disabled):hover::after {
+  :is(.option, .tile).mine:not(:disabled):hover .sheen::after,
+  :is(.option, .tile).mine:not(:disabled):focus-visible .sheen::after,
+  :is(.option, .tile).pending .sheen::after,
+  :is(.option, .tile).mine:not(:disabled):hover .cue,
+  :is(.option, .tile).mine:not(:disabled):focus-visible .cue,
+  :is(.option, .tile).pending .cue,
+  :is(.option, .tile).mine:not(:disabled):hover::after,
+  :is(.option, .tile).mine:not(:disabled):focus-visible::after,
+  :is(.option, .tile).pending::after {
     opacity: 1;
   }
-  .option.mine:not(:disabled):hover .key {
-    color: #fff1cf;
-    border-color: var(--gold);
-    box-shadow: 0 0 12px rgba(241, 217, 155, 0.45);
+  :is(.option, .tile).mine:not(:disabled):hover::after,
+  :is(.option, .tile).mine:not(:disabled):focus-visible::after,
+  :is(.option, .tile).pending::after {
+    scale: 1 1;
   }
-  .option.mine:not(:disabled):hover .text {
+  :is(.option, .tile).mine:not(:disabled):hover .key,
+  :is(.option, .tile).mine:not(:disabled):focus-visible .key,
+  :is(.option, .tile).pending .key {
+    color: #fff4d8;
+    border-color: var(--gold-hi);
+    box-shadow: 0 0 12px rgba(241, 217, 155, 0.4);
+  }
+  :is(.option, .tile).mine:not(:disabled):hover .key::before,
+  :is(.option, .tile).mine:not(:disabled):focus-visible .key::before,
+  :is(.option, .tile).pending .key::before {
+    opacity: 1;
+  }
+  :is(.option, .tile).mine:not(:disabled):hover .key::after {
+    animation: key-ripple 0.7s var(--ease-out);
+  }
+  .option.mine:not(:disabled):hover .text,
+  .option.mine:not(:disabled):focus-visible .text,
+  .option.pending .text {
     color: #fff1dc;
+    text-shadow: 0 0 14px rgba(241, 217, 155, 0.35);
+  }
+  :is(.option, .tile).mine:not(:disabled):hover .cue,
+  :is(.option, .tile).mine:not(:disabled):focus-visible .cue,
+  :is(.option, .tile).pending .cue {
+    translate: 0 -50%;
   }
   .option.mine:not(:disabled):active {
-    transform: translateX(6px) scale(0.985);
+    transform: scale(0.985);
   }
   @keyframes sweep {
     from {
@@ -1272,7 +1357,18 @@
       translate: 560% 0;
     }
   }
+  @keyframes key-ripple {
+    from {
+      opacity: 0.7;
+    }
+    to {
+      inset: -7px;
+      opacity: 0;
+    }
+  }
   .key {
+    position: relative;
+    isolation: isolate;
     flex: none;
     width: 28px;
     height: 28px;
@@ -1292,6 +1388,43 @@
       border-color 0.25s,
       box-shadow 0.25s;
   }
+  /* Lit like a seal held to the light, and a ring of it running out once. */
+  .key::before,
+  .key::after {
+    content: '';
+    position: absolute;
+    border-radius: 50%;
+    pointer-events: none;
+  }
+  .key::before {
+    z-index: -1;
+    inset: 0;
+    background: radial-gradient(circle at 50% 30%, rgba(196, 128, 50, 0.6), rgba(60, 36, 12, 0.5) 75%);
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+  .key::after {
+    inset: -1px;
+    border: 1px solid var(--gold-hi);
+    opacity: 0;
+  }
+  /* A gold diamond in the room kept for the ✓/✕, sliding in on hover. */
+  .cue {
+    position: absolute;
+    top: 50%;
+    right: 1.05rem;
+    width: 6px;
+    height: 6px;
+    translate: 6px -50%;
+    rotate: 45deg;
+    background: linear-gradient(135deg, #fff1cf, var(--gold) 55%, var(--gold-lo));
+    box-shadow: 0 0 8px rgba(255, 180, 90, 0.7);
+    opacity: 0;
+    transition:
+      opacity 0.3s,
+      translate 0.4s var(--ease-out);
+    pointer-events: none;
+  }
   .text {
     flex: 1;
     font-family: var(--font-display);
@@ -1299,6 +1432,9 @@
     font-size: 1.08rem;
     color: #e9c8a2;
     letter-spacing: 0.02em;
+    transition:
+      color 0.25s,
+      text-shadow 0.25s;
   }
   .mark {
     font-size: 1.3rem;
@@ -1328,7 +1464,6 @@
     gap: 0.45rem;
   }
   .option.pending {
-    border-color: var(--gold);
     animation: glow 1s ease-in-out infinite;
   }
   .option.right {
@@ -1405,6 +1540,7 @@
       radial-gradient(ellipse at center, transparent 45%, rgba(0, 0, 0, 0.5) 100%),
       linear-gradient(180deg, #0c0d12, #060709);
     cursor: default;
+    isolation: isolate;
     transition:
       background 0.3s,
       border-color 0.3s,
@@ -1434,15 +1570,31 @@
   .tile.mine:not(:disabled) {
     cursor: pointer;
   }
-  .tile.mine:not(:disabled):hover {
-    border-color: var(--gold);
-    box-shadow: inset 0 0 30px rgba(201, 164, 92, 0.18);
-  }
-  .tile.mine:not(:disabled):hover .pic {
-    transform: scale(1.06);
-  }
+  /* Hovered, or picked and waiting for the verdict: lit like the answer rows,
+     and the picture comes forward. */
+  .tile.mine:not(:disabled):hover,
+  .tile.mine:not(:disabled):focus-visible,
   .tile.pending {
     border-color: var(--gold);
+    box-shadow:
+      inset 0 0 0 1px rgba(241, 217, 155, 0.1),
+      inset 0 0 30px rgba(201, 164, 92, 0.18);
+  }
+  .tile.mine:not(:disabled):hover .pic,
+  .tile.mine:not(:disabled):focus-visible .pic,
+  .tile.pending .pic {
+    transform: scale(1.06);
+  }
+  /* A picture is tall: a wider glow, and the embers kept to the bottom edge. */
+  .tile .sheen::after {
+    background:
+      radial-gradient(circle 200px at var(--gx, 50%) var(--gy, 50%), rgba(255, 214, 150, 0.13), transparent 70%),
+      radial-gradient(ellipse 70% 22% at 50% 106%, rgba(255, 140, 50, 0.34), transparent 70%);
+  }
+  /* The diamond sits level with the key, under where the ✓/✕ goes. */
+  .tile .cue {
+    top: 22px;
+    right: 17px;
   }
   .tile.right {
     border-color: #5d8a50;
@@ -1502,6 +1654,7 @@
   }
   /* A streak of correct answers. */
   .streak {
+    position: relative;
     display: inline-block;
     margin-left: 0.6em;
     padding: 0.1em 0.7em 0.05em;
@@ -1517,11 +1670,22 @@
     border-radius: 999px;
     box-shadow: 0 0 16px rgba(255, 120, 40, 0.35);
     text-shadow: 0 0 10px rgba(255, 170, 90, 0.7);
+  }
+  /* It smoulders: a wider glow fades in and out on a layer of its own (see
+     .glyph::before). */
+  .streak::before {
+    content: '';
+    position: absolute;
+    inset: -1px;
+    border-radius: inherit;
+    box-shadow: 0 0 24px rgba(255, 140, 50, 0.4);
+    opacity: 0;
     animation: smoulder-badge 1.6s ease-in-out infinite;
+    pointer-events: none;
   }
   @keyframes smoulder-badge {
     50% {
-      box-shadow: 0 0 24px rgba(255, 140, 50, 0.55);
+      opacity: 1;
     }
   }
   /* However long the result, the button keeps its size. */
@@ -1605,7 +1769,8 @@
 
   @keyframes glow {
     50% {
-      box-shadow: 0 0 22px rgba(201, 164, 92, 0.35);
+      --bs1: 0px 32px;
+      --bs1-color: rgba(241, 190, 110, 0.36);
     }
   }
   @keyframes shake {
@@ -1722,8 +1887,6 @@
       z-index: 20;
       padding: 0.6rem max(1rem, env(safe-area-inset-right)) max(0.6rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
       background-color: var(--pinned-bg);
-      -webkit-backdrop-filter: var(--pinned-blur);
-      backdrop-filter: var(--pinned-blur);
       border-top: var(--pinned-line);
       box-shadow: 0 -8px var(--pinned-shadow);
     }
