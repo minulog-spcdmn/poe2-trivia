@@ -7,13 +7,19 @@
   // stands upright on a phone). The light of a life just lost flares and
   // pours out of the end of its chamber; Scoreboard.svelte jets it out of the
   // phial into the effects layer (lifeLost in lib/fx/moments.ts) as it does.
-  import { DELVE_LIVES } from '../lib/delve';
+  // What the player carries stands at its tip (Inventory.svelte): Azurite
+  // Wards, which break before a life does, and the finds they hold.
+  import { DELVE_LIVES, type Inventory as Carried } from '../lib/delve';
+  import { vesselLabel, type InventoryMoment } from '../lib/inventoryArt';
+  import Inventory from './Inventory.svelte';
 
   let {
     lives,
     draining = -1,
     surge = 0,
     vertical = false,
+    inv = null,
+    moment = null,
   }: {
     lives: number;
     /** The chamber (0 to 2) of the life just lost, while it pours out; -1 otherwise. */
@@ -21,37 +27,53 @@
     /** Changes each time a wave of light should run through the lit chambers (a question survived). */
     surge?: number;
     vertical?: boolean;
+    /** What the player carries (upright, only the crystals show here; the scoreboard shows the rest). */
+    inv?: Carried | null;
+    /** What just happened to it, to play on it. */
+    moment?: InventoryMoment | null;
   } = $props();
 
   const CHAMBERS = Array.from({ length: DELVE_LIVES }, (_, k) => k);
 </script>
 
 <!-- The phial is drawn lying down (64 × 12); upright it is turned a quarter. -->
-<span class="phial" class:vertical class:low={lives === 1} role="img" aria-label="{lives} {lives === 1 ? 'life' : 'lives'} left">
-  <span class="body">
-    {#each CHAMBERS as k (k)}
-      <span class="chamber c{k}" data-k={k} class:lit={k < lives} class:draining={k === draining && k >= lives}>
-        {#if k < lives}
-          <span class="wisp"></span>
-          <span class="beat"></span>
-          {#if surge}
-            {#key surge}<span class="surge" style:animation-delay="{0.08 + k * 0.11}s"></span>{/key}
+<span class="vessel" class:vertical role="img" aria-label={vesselLabel(lives, inv)}>
+  <span class="phial" class:vertical class:low={lives === 1}>
+    <span class="body">
+      {#each CHAMBERS as k (k)}
+        <span class="chamber c{k}" data-k={k} class:lit={k < lives} class:draining={k === draining && k >= lives}>
+          {#if k < lives}
+            <span class="wisp"></span>
+            <span class="beat"></span>
+            {#if surge}
+              {#key surge}<span class="surge" style:animation-delay="{0.08 + k * 0.11}s"></span>{/key}
+            {/if}
+          {:else if k === draining}
+            <span class="drain"></span>
           {/if}
-        {:else if k === draining}
-          <span class="drain"></span>
-        {/if}
-      </span>
-    {/each}
-    <svg viewBox="0 0 64 12" aria-hidden="true">
-      <!-- The gold frame with pointed ends, an engraved hairline inside it, and the walls between chambers. -->
-      <path class="frame" d="M0.6 6 6.2 0.6H57.8L63.4 6 57.8 11.4H6.2Z" />
-      <path class="inner" d="M2.3 6 6.9 1.6H57.1L61.7 6 57.1 10.4H6.9Z" />
-      <path class="wall" d="M22.5 0.6V11.4M41.5 0.6V11.4" />
-    </svg>
+        </span>
+      {/each}
+      <svg viewBox="0 0 64 12" aria-hidden="true">
+        <!-- The gold frame with pointed ends, an engraved hairline inside it, and the walls between chambers. -->
+        <path class="frame" d="M0.6 6 6.2 0.6H57.8L63.4 6 57.8 11.4H6.2Z" />
+        <path class="inner" d="M2.3 6 6.9 1.6H57.1L61.7 6 57.1 10.4H6.9Z" />
+        <path class="wall" d="M22.5 0.6V11.4M41.5 0.6V11.4" />
+      </svg>
+    </span>
   </span>
+  {#if inv}<Inventory {inv} {vertical} part={vertical ? 'crystals' : 'all'} {moment} />{/if}
 </span>
 
 <style>
+  .vessel {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    position: relative;
+  }
+  .vessel.vertical {
+    display: block;
+  }
   .phial {
     --w: 54px;
     /* One unit of the 64 × 12 drawing. */

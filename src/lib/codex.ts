@@ -11,11 +11,14 @@
 // Delve answers also note their depth and run: each item keeps how deep it
 // was answered and how often it cost a life, and the log links the lives a run
 // lost to the items that took them (the run list is in lib/delveRecord.ts).
+// Each also notes how many of its questions came from a find or a blasted
+// card, how many Azurite Wards broke in place of its lives, and, where a
+// wrong answer to an Azurite Vein caved in for two, the lives it cost.
 // The fields Delve added are optional, so codexes written before them read as
 // they were and the version stays.
 
 import { difficultyOf, isFake, type Difficulty, type GameState, type QuestionMode } from './game.ts';
-import { delveTier } from './delve.ts';
+import { delveTier, type FindKind } from './delve.ts';
 
 export interface Tally {
   /** Answers given. */
@@ -46,9 +49,23 @@ export interface ItemEntry {
 export interface DelveItem extends Tally {
   /** The deepest depth it was named right at (0: never). */
   deepest: number;
-  /** The deepest depth it cost a life at (0: never). */
+  /** The deepest depth it cost a life at (0: never; a wrong answer a ward took costs none). */
   lostAt: number;
+  /** Of these answers: asked from a find (a deeper question, for an item). Missing for none. */
+  finds?: number;
+  /** Asked from a card blasted open with dynamite (as at the surface). Missing for none. */
+  blasted?: number;
+  /** Azurite Wards that broke on its wrong answers, in place of lives. Missing for none. */
+  warded?: number;
+  /**
+   * Lives it cost. Missing in codexes from before an Azurite Vein could cave
+   * in for two: then one a wrong answer, but for those a ward took.
+   */
+  lives?: number;
 }
+
+/** Lives an item cost. */
+export const livesCost = (d: DelveItem) => d.lives ?? Math.max(0, d.n - d.ok - (d.warded ?? 0));
 
 /** One of this player's answers, for the stats that look at the recent past. */
 export interface Answer {
@@ -64,6 +81,8 @@ export interface Answer {
   /** Delve: the depth it was answered at, and the run (its start, as the run list's id). */
   depth?: number;
   run?: number;
+  /** Delve: wrong, but an Azurite Ward took the loss (no life lost). */
+  warded?: true;
 }
 
 /** A made-up name this player fell for. */
@@ -98,8 +117,13 @@ export interface Encounter {
   mode: QuestionMode;
   difficulty: Difficulty;
   race: boolean;
-  /** Present in Delve: the depth the question was asked at, and the run's start (its id in the run list). */
-  delve?: { depth: number; run: number };
+  /**
+   * Present in Delve: the depth the question was asked at, and the run's start
+   * (its id in the run list); the find it came from or whether it was a card
+   * blasted open; whether wards took a wrong answer's whole loss; and on a
+   * cave-in (an Azurite Vein missed), the lives and wards it took.
+   */
+  delve?: { depth: number; run: number; find?: FindKind; blasted?: true; warded?: true; lost?: { lives: number; wards: number } };
   /** Present when this device's player answered (or let their turn's time run out). */
   answer?: {
     ok: boolean;
@@ -135,7 +159,15 @@ export function encounterAt(s: GameState, me: string | null, hotSeat: boolean, m
   // Delve answers are filed under the preset their depth plays like, not the room's leftover setting.
   const difficulty = s.delve ? delveTier(s.round) : difficultyOf(s.settings.difficulty);
   const e: Encounter = { at: q.askedAt, itemId: r.correctId, mode: q.mode, difficulty, race };
-  if (s.delve) e.delve = { depth: Math.max(1, s.round), run: s.delve.startedAt };
+  if (s.delve)
+    e.delve = {
+      depth: Math.max(1, s.round),
+      run: s.delve.startedAt,
+      ...(q.find ? { find: q.find } : {}),
+      ...(q.blasted ? { blasted: true as const } : {}),
+      ...(r.warded ? { warded: true as const } : {}),
+      ...(r.caveIn && r.lost ? { lost: { lives: r.lost.lives, wards: r.lost.wards } } : {}),
+    };
   let picked: number | null;
   let ok: boolean;
   if (race) {
@@ -176,13 +208,27 @@ export function record(c: Codex, e: Encounter): Codex {
   const ms = a.ok && a.ms !== undefined && Number.isFinite(a.ms) && a.ms > 0 ? Math.round(a.ms) : undefined;
   if (ms !== undefined && (!c.fastest || ms < c.fastest.ms)) next.fastest = { ms, id: e.itemId };
   const dv = e.delve;
+  // What a wrong answer cost: one life, or a ward in its place; a cave-in two of them.
+  const lives = a.ok || !dv ? 0 : (dv.lost?.lives ?? (dv.warded ? 0 : 1));
+  const wardsBroke = a.ok || !dv ? 0 : (dv.lost?.wards ?? (dv.warded ? 1 : 0));
+  const warded = !a.ok && !!dv && lives === 0;
   if (dv) {
     const was = entry.delve ?? { n: 0, ok: 0, deepest: 0, lostAt: 0 };
+    const more = (n: number | undefined, yes: boolean) => (n ?? 0) + (yes ? 1 : 0) || undefined;
+    const finds = more(was.finds, !!dv.find);
+    const blasted = more(was.blasted, !!dv.blasted);
+    const wards = (was.warded ?? 0) + wardsBroke;
     entry.delve = {
       ...add(was, a.ok),
       deepest: a.ok ? Math.max(was.deepest, dv.depth) : was.deepest,
-      lostAt: a.ok ? was.lostAt : Math.max(was.lostAt, dv.depth),
+      lostAt: lives ? Math.max(was.lostAt, dv.depth) : was.lostAt,
+      ...(finds ? { finds } : {}),
+      ...(blasted ? { blasted } : {}),
+      ...(wards ? { warded: wards } : {}),
     };
+    // Kept only where one life a wrong answer (but for a ward) doesn't add up: after a cave-in.
+    const cost = livesCost(was) + lives;
+    if (cost !== livesCost({ ...entry.delve, lives: undefined })) entry.delve.lives = cost;
     next.byDepth = { ...c.byDepth, [dv.depth]: add(c.byDepth[dv.depth] ?? noTally(), a.ok) };
   }
   if (!a.ok && a.pickedId) {
@@ -214,6 +260,7 @@ export function record(c: Codex, e: Encounter): Codex {
     race: e.race,
     ...(ms !== undefined ? { ms } : {}),
     ...(dv ? { depth: dv.depth, run: dv.run } : {}),
+    ...(warded ? { warded: true as const } : {}),
   };
   next.log = [...c.log, log].slice(-LOG_LIMIT);
   return next;
@@ -236,8 +283,24 @@ function delveItem(v: unknown): DelveItem | undefined {
   if (!isObj(v)) return undefined;
   const t = tally(v);
   if (!t.n) return undefined;
+  // Never more than there were answers (wrong ones, for those a ward took).
+  const upTo = (x: unknown, max: number) => Math.min(max, count(x)) || undefined;
+  const finds = upTo(v.finds, t.n);
+  const blasted = upTo(v.blasted, t.n);
+  // A wrong answer breaks at most two wards or takes two lives (a cave-in).
+  const warded = upTo(v.warded, 2 * (t.n - t.ok));
+  const lives = v.lives === undefined ? undefined : Math.min(2 * (t.n - t.ok), count(v.lives));
+  const cost = lives ?? t.n - t.ok - Math.min(warded ?? 0, t.n - t.ok);
   // A right answer has a depth, a wrong one too; without one the depth is unknown (0).
-  return { ...t, deepest: t.ok ? depth(v.deepest) : 0, lostAt: t.ok < t.n ? depth(v.lostAt) : 0 };
+  return {
+    ...t,
+    deepest: t.ok ? depth(v.deepest) : 0,
+    lostAt: cost > 0 ? depth(v.lostAt) : 0,
+    ...(finds ? { finds } : {}),
+    ...(blasted ? { blasted } : {}),
+    ...(warded ? { warded } : {}),
+    ...(lives !== undefined ? { lives } : {}),
+  };
 }
 
 /** A stored codex, cleaned up; null when it's missing, malformed or from another version. */
@@ -281,6 +344,7 @@ export function parseCodex(raw: string | null): Codex | null {
         race: a.race === true,
         ...(ms ? { ms } : {}),
         ...(d && run !== null ? { depth: d, run } : {}),
+        ...(a.warded === true && !a.ok ? { warded: true as const } : {}),
       });
     }
   if (isObj(v.byDifficulty))

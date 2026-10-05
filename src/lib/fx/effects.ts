@@ -35,6 +35,9 @@ export const C = {
   /** zoe_arcana's magic (aura.ts): a deep ruby, set off with gold. */
   ruby: [2.3, 0.3, 0.42],
   rubyPale: [2.6, 1.0, 1.05],
+  /** Delve's Azurite Wards: a deep crystal blue, and the pale light inside it. */
+  azurite: [0.5, 1.15, 3.1],
+  azuritePale: [1.7, 2.4, 3.3],
 } satisfies Record<string, Vec3>;
 
 export const rand = (lo: number, hi: number) => lo + Math.random() * (hi - lo);
@@ -161,7 +164,7 @@ export function embers(at: Anchor, o: EmberOpts = {}) {
 }
 
 /** Glowing shards that break outward and fall (a wrong answer shattering). */
-export function shards(at: Anchor, o: { count?: number; colors?: Vec3[]; speed?: [number, number]; area?: 'fill' | 'centre' } = {}) {
+export function shards(at: Anchor, o: { count?: number; colors?: Vec3[]; cool?: Vec3; speed?: [number, number]; size?: [number, number]; area?: 'fill' | 'centre' } = {}) {
   if (!fxActive() || detached(at)) return;
   const b = boxOf(at);
   const n = budget(o.count ?? 16);
@@ -177,10 +180,10 @@ export function shards(at: Anchor, o: { count?: number; colors?: Vec3[]; speed?:
       vx: Math.cos(a) * v,
       vy: Math.sin(a) * v - rand(40, 160),
       life: rand(0.6, 1.3),
-      size: rand(2.5, 6),
+      size: rand(...(o.size ?? [2.5, 6])),
       sizeEnd: 1.2,
       color: pick(colors),
-      colorEnd: scale(C.blood, 0.5),
+      colorEnd: o.cool ?? scale(C.blood, 0.5),
       gravity: 900,
       drag: 1.2,
       shape: Shape.Shard,

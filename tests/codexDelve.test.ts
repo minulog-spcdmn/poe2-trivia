@@ -196,3 +196,83 @@ test('the summary: runs alone and together, median and mean, and lives by depth'
   assert.deepEqual([solo.runs, solo.median], [2, 7]);
   assert.equal(delveSummary(emptyRecords()).median, null);
 });
+
+test('Delve answers note finds, blasted cards and wards, and a warded answer costs no life', async () => {
+  const { livesCost } = await import('../src/lib/codex.ts');
+  const with_ = (e: Encounter, more: NonNullable<Encounter['delve']>): Encounter => ({ ...e, delve: { ...e.delve!, ...more } });
+  const x = codexOf(
+    with_(dv(1, a.id, 9, true), { depth: 9, run: 100, find: 'azurite' }),
+    with_(dv(2, a.id, 12, false), { depth: 12, run: 100, find: 'flare', warded: true }),
+    with_(dv(3, a.id, 6, false), { depth: 6, run: 100, blasted: true }),
+    dv(4, a.id, 4, true),
+  );
+  const d = x.items[a.id].delve!;
+  assert.deepEqual(d, { n: 4, ok: 2, deepest: 9, lostAt: 6, finds: 2, blasted: 1, warded: 1 });
+  assert.equal(livesCost(d), 1);
+  assert.deepEqual(
+    x.log.map((l) => l.warded ?? false),
+    [false, true, false, false],
+  );
+  // The ward's answer took no life from the run.
+  assert.deepEqual(
+    lostTo(x, items).get(100)?.map((l) => l.depth),
+    [6],
+  );
+  assert.deepEqual(
+    delveItemStats(x, items).costly.map((c) => [c.item.id, c.lives, c.at]),
+    [[a.id, 1, 6]],
+  );
+  // Round trip, and an answer only a ward took is no cost at all.
+  assert.deepEqual(parseCodex(serializeCodex(x)), x);
+  const only = codexOf(with_(dv(5, b.id, 3, false), { depth: 3, run: 100, warded: true }));
+  assert.deepEqual(only.items[b.id].delve, { n: 1, ok: 0, deepest: 0, lostAt: 0, warded: 1 });
+  assert.deepEqual(delveItemStats(only, items).costly, []);
+  // Nonsense counts are capped to the answers they could be.
+  const messy = parseCodex(
+    JSON.stringify({ v: 1, items: { [c.id]: { seen: 1, first: 1, last: 1, name: {}, art: {}, mixed: {}, delve: { n: 2, ok: 1, deepest: 3, lostAt: 4, finds: 9, blasted: -1, warded: 5 } } } }),
+  )!;
+  assert.deepEqual(messy.items[c.id].delve, { n: 2, ok: 1, deepest: 3, lostAt: 0, finds: 2, warded: 2 });
+  // Codexes from before lives were counted: one a wrong answer, but for those a ward took.
+  const old = parseCodex(
+    JSON.stringify({ v: 1, items: { [c.id]: { seen: 1, first: 1, last: 1, name: {}, art: {}, mixed: {}, delve: { n: 3, ok: 0, deepest: 0, lostAt: 4, warded: 1 } } } }),
+  )!;
+  assert.equal(livesCost(old.items[c.id].delve!), 2);
+  assert.equal(old.items[c.id].delve!.lostAt, 4);
+});
+
+test('a cave-in costs the lives it took, and the wards that broke in their place', async () => {
+  const { livesCost } = await import('../src/lib/codex.ts');
+  const cave = (at: number, depth: number, lives: number, wards: number): Encounter => ({
+    ...dv(at, a.id, depth, false),
+    delve: { depth, run: 100, find: 'azurite', ...(lives ? {} : { warded: true as const }), lost: { lives, wards } },
+  });
+  const x = codexOf(cave(1, 8, 2, 0), cave(2, 12, 1, 1), cave(3, 15, 0, 2), dv(4, a.id, 3, false));
+  const d = x.items[a.id].delve!;
+  assert.deepEqual(d, { n: 4, ok: 0, deepest: 0, lostAt: 12, finds: 3, warded: 3, lives: 4 });
+  assert.equal(livesCost(d), 4);
+  assert.equal(x.log.filter((l) => l.warded).length, 1, 'only the answer the wards took whole cost no life');
+  assert.deepEqual(parseCodex(serializeCodex(x)), x);
+});
+
+test('a Delve reveal says what the question came from and whether a ward took its loss', async () => {
+  const { Engine, createGame, isFake } = await import('../src/lib/game.ts');
+  const { encounterAt } = await import('../src/lib/codex.ts');
+  const fakes: Record<string, string[]> = JSON.parse(readFileSync(new URL('../src/data/fakes.json', import.meta.url), 'utf8'));
+  let seed = 11;
+  const engine = new Engine(items, { rng: () => ((seed = (seed * 1664525 + 1013904223) >>> 0), seed / 2 ** 32), now: () => 1_000_000, fakes });
+  let s = createGame(null, { targetScore: 1, timer: 0, difficulty: 'eternal', mode: 'delve', public: false, locked: false });
+  s = engine.apply(s, { type: 'join', playerId: 'p0', name: 'Ash' }, null);
+  s = engine.apply(s, { type: 'start' }, null);
+  // A find among the cards, and two wards to take its cave-in.
+  s = structuredClone(s);
+  s.delve!.find = { category: s.offered[0], kind: 'azurite' };
+  s.delve!.inventory = { p0: { wards: 2, flares: 0, dynamite: 0, shards: 0 } };
+  s = engine.apply(s, { type: 'pick', category: s.offered[0] }, null);
+  s = engine.apply(s, { type: 'clock', askedAt: s.question!.askedAt }, null);
+  const q = s.question!;
+  s = engine.apply(s, { type: 'answer', index: q.options.findIndex((o) => o !== q.itemId && !isFake(o)), askedAt: q.askedAt }, null);
+  assert.equal(s.reveal?.warded, true);
+  const e = encounterAt(s, null, true)!;
+  assert.deepEqual(e.delve, { depth: 1, run: s.delve!.startedAt, find: 'azurite', warded: true, lost: { lives: 0, wards: 2 } });
+  assert.equal(e.answer?.ok, false);
+});

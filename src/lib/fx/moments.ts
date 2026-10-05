@@ -581,6 +581,88 @@ export function lifeHeld(phial: Element) {
   light(phial, { color: [1, 0.42, 0.36], radius: 110, intensity: 0.22, decay: 0.8 });
 }
 
+// ---------- Delve's finds ----------
+
+/** Where an element is now, so an effect stays where it was after the element goes. */
+const rectOf = (el: Element) => el.getBoundingClientRect();
+
+/**
+ * Delve: an Azurite Ward forms at the phial's tip (`pip`, its crystal): blue
+ * light gathers into it, and as it settles it flashes and glints. `forged`
+ * from two shards: more light, and a ring of it running out.
+ */
+export function wardFormed(pip: Element, forged: boolean) {
+  if (!fxActive() || detached(pip)) return;
+  implode(pip, { count: forged ? 22 : 14, radius: forged ? 48 : 34, color: C.azurite, life: forged ? 0.55 : 0.45 });
+  after(forged ? 0.5 : 0.4, () => {
+    if (detached(pip)) return;
+    flash(pip, { radius: forged ? 26 : 16, color: C.azurite, intensity: forged ? 0.42 : 0.3, life: 0.55 });
+    glints(pip, { count: forged ? 3 : 2, area: 'centre', size: [6, 11], color: C.azuritePale, life: [0.5, 0.85], delay: [0, 0.25] });
+    sparks(pip, { count: forged ? 12 : 6, colors: [C.azuritePale, C.azurite], cool: k3(C.azurite, 0.3), speed: [60, 200], gravity: -40, drag: 3, life: [0.25, 0.55] });
+    if (forged) ring(pip, { radius: 42, from: 6, thickness: 4, life: 0.6, color: C.azurite, breakup: 0.45, fill: 0, intensity: 0.6 });
+    light(pip, { color: [0.4, 0.65, 1], radius: forged ? 160 : 110, intensity: forged ? 0.3 : 0.2, decay: 0.9 });
+  });
+}
+
+/** Delve: an azurite shard toward the next ward lands at the phial's tip (`pip`). */
+export function shardFound(pip: Element) {
+  if (!fxActive() || detached(pip)) return;
+  flash(pip, { radius: 12, color: C.azurite, intensity: 0.22, life: 0.4 });
+  sparks(pip, { count: 8, colors: [C.azuritePale, C.azurite], cool: k3(C.azurite, 0.3), speed: [40, 150], gravity: 160, life: [0.25, 0.5] });
+  glints(pip, { count: 1, area: 'centre', size: [5, 8], color: C.azuritePale, delay: [0.15, 0.25] });
+}
+
+/**
+ * Delve: an Azurite Ward shatters in place of a life (`pip`: the breaking
+ * crystal). No light leaves the phial: the crystal bursts into splinters of
+ * blue that fall, a cold ring runs out from it, and the player's entry
+ * (`pill`) is rimmed in blue rather than red.
+ */
+export function wardShattered(pip: Element, pill: Element, mine: boolean) {
+  if (!fxActive() || detached(pip)) return;
+  const at = rectOf(pip);
+  flash(at, { radius: 22, color: C.azuritePale, intensity: 0.45, life: 0.3 });
+  shards(at, { count: 12, colors: [C.azurite, C.azuritePale, k3(C.azurite, 0.6)], cool: k3(C.azurite, 0.25), speed: [60, 230], size: [1.6, 3.6], area: 'centre' });
+  sparks(at, { count: 14, colors: [C.azuritePale, C.azurite], cool: k3(C.azurite, 0.3), speed: [120, 380], gravity: 320, life: [0.2, 0.5] });
+  ring(at, { radius: 36, from: 4, thickness: 3, life: 0.45, color: C.azurite, breakup: 0.7, fill: 0, intensity: 0.7 });
+  light(at, { color: [0.4, 0.62, 1], radius: 130, intensity: 0.25, decay: 0.7 });
+  if (!detached(pill)) outline(pill, { color: k3(C.azurite, 0.8), width: 8, life: 0.8, intensity: 0.45 });
+  if (mine) shakeView(0.15, 3);
+}
+
+/** Delve: a flare found (`icon`, its engraving in the player's entry): it catches and settles. */
+export function flareFound(icon: Element) {
+  if (!fxActive() || detached(icon)) return;
+  flash(icon, { radius: 16, color: C.ember, intensity: 0.3, life: 0.45 });
+  sparks(icon, { count: 10, colors: [C.ember, C.whiteHot, C.gold], speed: [60, 200], gravity: -30, drag: 3, life: [0.25, 0.5] });
+  embers(icon, { count: 6, area: 'fill', colors: [C.ember, C.gold], rise: [30, 80], scatter: 15, life: [0.5, 1] });
+  glints(icon, { count: 1, area: 'centre', size: [6, 10], color: C.goldPale, delay: [0.1, 0.2] });
+}
+
+/**
+ * Delve: a flare burns as the clock runs out, for more time. A hot flash
+ * round the timer (`timer`) with a ring of fire running out of it and sparks
+ * off its edge; the player's entry (`pill`) flares up at its rim, and its
+ * flare (`icon`) flashes as it is used.
+ */
+export function flareBurns(timer: Element | null, pill: Element | null, icon: Element | null) {
+  if (!fxActive()) return;
+  if (timer && !detached(timer)) {
+    const b = boxOf(timer);
+    const r = Math.max(b.w, b.h) / 2;
+    flash(timer, { radius: r * 2.2, color: C.ember, intensity: 0.32, life: 0.7 });
+    ring(timer, { radius: r * 2.8, from: r * 0.9, thickness: 6, life: 0.75, color: C.ember, breakup: 0.5, fill: 0, intensity: 0.8 });
+    ring(timer, { radius: r * 1.9, from: r * 0.9, thickness: 3, life: 0.5, color: C.whiteHot, breakup: 0.3, fill: 0, intensity: 0.5, delay: 0.08 });
+    sparks(timer, { count: 26, area: 'edge', colors: [C.ember, C.whiteHot, C.gold], speed: [120, 420], gravity: -60, drag: 2, life: [0.3, 0.7] });
+    light(timer, { color: [1, 0.55, 0.2], radius: 180, intensity: 0.25, hold: 0.15, decay: 0.9 });
+  }
+  if (pill && !detached(pill)) {
+    outline(pill, { color: C.ember, width: 10, life: 0.9, intensity: 0.55 });
+    embers(pill, { count: 10, area: 'edge', colors: [C.ember, C.gold], rise: [30, 90], life: [0.5, 1] });
+  }
+  if (icon && !detached(icon)) flash(icon, { radius: 16, color: C.whiteHot, intensity: 0.35, life: 0.4 });
+}
+
 /**
  * Delve: one depth deeper. The backdrop's embers flare up for a moment, and
  * any still in the old colour take the new one (lib/backdropEmbers.ts).
@@ -593,17 +675,20 @@ export function descended() {
  * Delve: a named depth reached; its plaque (`card`) lies over the banner.
  * Light streaks along it, sparks fly off its pointed ends, embers rise off
  * its top edge and it lights the stage; the backdrop's embers flare and all
- * take the depth's colour. `cold` once they burn blue.
+ * take the depth's colour. `accent`: the stratum's colour (a CSS colour,
+ * lib/descent.ts accentAt), which tints all of it.
  */
-export function milestoneReached(card: Element, cold: boolean) {
+export function milestoneReached(card: Element, accent: string) {
   backdropEmbers.flare(0.85, 2.4);
   backdropEmbers.recolor();
   if (!fxActive() || detached(card)) return;
-  const main = cold ? C.portal : C.gold;
-  const pale = cold ? C.portalPale : C.goldPale;
+  const tint = hdr(accent, 1);
+  const main = k3(tint, 2.7);
+  // Its pale: the colour run most of the way to white, as light at its hottest.
+  const pale: Vec3 = [1.6 + tint[0] * 1.2, 1.6 + tint[1] * 1.2, 1.6 + tint[2] * 1.2];
   const b = boxOf(card);
   flare(card, { size: 12, streak: b.w * 0.6, life: 0.8, color: pale, intensity: 0.3 });
-  glints(card, { count: 4, area: 'edge', size: [4, 8], delay: [0.1, 0.7] });
+  glints(card, { count: 4, area: 'edge', size: [4, 8], color: pale, delay: [0.1, 0.7] });
   for (const side of [-1, 1]) {
     const end = { x: b.x + (side * b.w) / 2, y: b.y };
     sparks(end, { count: 16, angle: side > 0 ? 0 : Math.PI, spread: 0.7, colors: [main, pale], speed: [120, 420], gravity: -30, drag: 2.4, life: [0.4, 0.9] });
@@ -611,7 +696,7 @@ export function milestoneReached(card: Element, cold: boolean) {
   }
   const top = new DOMRect(b.x - b.w * 0.4, b.y - b.h / 2, b.w * 0.8, 2);
   embers(top, { count: 18, area: 'fill', colors: [main, pale], rise: [50, 150], scatter: 30, life: [0.8, 1.6] });
-  light(card, { color: cold ? [0.35, 0.6, 1] : [1, 0.65, 0.3], radius: Math.max(220, b.w * 0.6), intensity: 0.2, decay: 1.1 });
+  light(card, { color: unit(tint), radius: Math.max(220, b.w * 0.6), intensity: 0.2, decay: 1.1 });
 }
 
 /** Someone guessed wrong in a race: a puff of red at the answer they picked. */

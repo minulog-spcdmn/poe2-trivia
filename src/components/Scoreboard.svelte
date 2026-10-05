@@ -6,14 +6,33 @@
   import Avatar from './Avatar.svelte';
   import PlayerName from './PlayerName.svelte';
   import Phial from './Phial.svelte';
+  import Inventory from './Inventory.svelte';
   import { backdropShadow } from '../lib/backdropShadow';
-  import { untrack, type Snippet } from 'svelte';
+  import { tick, untrack, type Snippet } from 'svelte';
   import { fxActive, onFxChange, type Handle } from '../lib/fx/core';
-  import { FILL_SPAN, FILL_START, SCORE_LANDS, ablaze, doused, lifeHeld, lifeLost, lostPoint, turnsBlue } from '../lib/fx/moments';
+  import {
+    FILL_SPAN,
+    FILL_START,
+    SCORE_LANDS,
+    ablaze,
+    doused,
+    flareBurns,
+    flareFound,
+    lifeHeld,
+    lifeLost,
+    lostPoint,
+    shardFound,
+    turnsBlue,
+    wardFormed,
+    wardShattered,
+  } from '../lib/fx/moments';
   import { scoreRow, scoreRowOf } from '../lib/scoreRows';
   import { burnsBlue, heatOf, streakOf } from '../lib/fx/streaks';
   import { phone } from '../lib/layout';
-  import { fellAt, livesOf } from '../lib/delve';
+  import { fellAt, inventoryOf, livesOf, type Inventory as Carried } from '../lib/delve';
+  import { inventoryChanges } from '../lib/delveSession';
+  import { momentOf, type InventoryMoment } from '../lib/inventoryArt';
+  import type { GameState } from '../lib/game';
 
   /** Shown at the end of the row (the timer, on phones). */
   let { aside }: { aside?: Snippet } = $props();
@@ -65,21 +84,113 @@
       const id = p.id;
       const mine = session.mode === 'local' ? true : id === session.myPlayerId;
       held[id] = was;
-      setTimeout(() => {
-        delete held[id];
-        hit[id] = now;
-        const li = scoreRowOf(id);
-        // The light jets out of the end of whichever phial shows (lying or upright).
-        const flow = li ? shownPhial(li) : null;
-        const chamber = flow?.phial.querySelector(`.chamber[data-k="${now}"]`);
-        if (li) lifeLost(li, chamber ?? li, now, mine, flow ?? undefined);
-        if (mine) sfx('lifeLost');
-        setTimeout(() => {
-          if (hit[id] === now) delete hit[id];
-        }, POUR * 1000);
-      }, 450);
+      // A cave-in can take two lives: they pour out one after the other, the
+      // top chamber first. When a ward broke first, its shatter leads.
+      const r = s.reveal;
+      const after = 450 + (r?.caveIn && r.lost?.wards ? 650 : 0);
+      for (let k = was - 1; k >= now; k--) {
+        const left = k;
+        setTimeout(
+          () => {
+            if (left === now) delete held[id];
+            else held[id] = left;
+            hit[id] = left;
+            const li = scoreRowOf(id);
+            // The light jets out of the end of whichever phial shows (lying or upright).
+            const flow = li ? shownPhial(li) : null;
+            const chamber = flow?.phial.querySelector(`.chamber[data-k="${left}"]`);
+            if (li) lifeLost(li, chamber ?? li, left, mine, flow ?? undefined);
+            if (mine) sfx('lifeLost');
+            setTimeout(() => {
+              if (hit[id] === left) delete hit[id];
+            }, POUR * 1000);
+          },
+          after + (was - 1 - k) * POUR * 750,
+        );
+      }
     }
   });
+
+  // Delve: what each player carries, on their phial. A change shows in step
+  // with what caused it: a ward shatters at the reveal just as a life would
+  // pour out, a find lands as the result line comes in, a flare burns at once.
+  // Until then the entry keeps what they held (`invHeld`); `invMoment` plays
+  // the change on the phial (Inventory.svelte) and here in the effects layer.
+  let invHeld = $state<Record<string, Carried>>({});
+  let invMoment = $state<Record<string, InventoryMoment>>({});
+  let invPrev: GameState | null = null;
+  let momentKey = 0;
+  const carried = (id: string) => invHeld[id] ?? inventoryOf(s, id);
+  /** What inventoryChanges reads of a state, copied: the next state may be the same object, changed. */
+  const invSnapshot = (st: GameState) =>
+    ({
+      phase: st.phase,
+      players: st.players.map((p) => ({ id: p.id })),
+      delve: st.delve && { startedAt: st.delve.startedAt, inventory: Object.fromEntries(Object.entries(st.delve.inventory ?? {}).map(([id, inv]) => [id, { ...inv }])) },
+    }) as unknown as GameState;
+  $effect(() => {
+    const next = s;
+    const was = invPrev;
+    invPrev = invSnapshot(next);
+    if (!run || !was) return;
+    const atReveal = next.phase === 'reveal' && was.phase !== 'reveal';
+    const byPlayer = new Map<string, ReturnType<typeof inventoryChanges>>();
+    for (const c of inventoryChanges(was, next)) byPlayer.set(c.playerId, [...(byPlayer.get(c.playerId) ?? []), c]);
+    for (const [id, changes] of byPlayer) {
+      const kind = momentOf(changes);
+      if (!kind) continue;
+      const delay = !atReveal ? 0 : kind === 'shatter' ? 450 : 700;
+      // A cave-in can break two wards at once.
+      const broke = Math.max(1, inventoryOf(was, id).wards - inventoryOf(next, id).wards);
+      if (delay) invHeld[id] = inventoryOf(was, id);
+      setTimeout(() => playMoment(id, kind, kind === 'shatter' ? broke : 1), delay);
+    }
+  });
+
+  /** The phial showing in a player's entry, with what it carries, and the counted finds beside it. */
+  function shownVessel(li: Element) {
+    const flow = shownPhial(li);
+    const vessel = flow?.phial.closest('.vessel') ?? null;
+    return { flow, vessel, counts: flow?.upright ? li.querySelector('.side-counts') : vessel };
+  }
+
+  function playMoment(id: string, kind: InventoryMoment['kind'], n = 1) {
+    delete invHeld[id];
+    const key = ++momentKey;
+    invMoment[id] = { kind, key, ...(n > 1 ? { n } : {}) };
+    setTimeout(() => {
+      if (invMoment[id]?.key === key) delete invMoment[id];
+    }, 1300);
+    const mine = session.mode === 'local' || id === session.myPlayerId;
+    void tick().then(() => {
+      const li = scoreRowOf(id);
+      if (!li) return;
+      const { vessel, counts } = shownVessel(li);
+      const pip = (sel: string) => vessel?.querySelector(sel) ?? null;
+      if (kind === 'ward' || kind === 'forge') {
+        const el = pip('.pip.ward.fresh');
+        if (el) wardFormed(el, kind === 'forge');
+        if (mine) sfx('fill');
+      } else if (kind === 'shard') {
+        const el = pip('.pip.shard');
+        if (el) shardFound(el);
+        if (mine) sfx('select');
+      } else if (kind === 'shatter') {
+        vessel?.querySelectorAll('.pip.ghost').forEach((el, i) => setTimeout(() => wardShattered(el, li, mine && i === 0), i * 120));
+        if (mine) sfx('pick');
+      } else if (kind === 'flare' || kind === 'dynamite') {
+        const el = counts?.querySelector(`[data-pip="${kind}"]`);
+        if (el && kind === 'flare') flareFound(el);
+        if (mine) sfx('select');
+      } else if (kind === 'burn') {
+        // The ring on screen (the last one: an old one may still be fading out).
+        const timer = [...document.querySelectorAll('.timer')].filter((t) => t.getClientRects().length).at(-1) ?? null;
+        flareBurns(timer, li, counts?.querySelector('[data-pip="flare"]') ?? null);
+        // Everyone hears it: the clock everyone watches just got longer.
+        sfx('burn');
+      } else if (kind === 'blast' && mine) sfx('burn');
+    });
+  }
 
   // Delve has no points: a question survived sends a wave of light through
   // the phial instead, as the result line comes in.
@@ -278,6 +389,8 @@
       {@const lives = run ? livesOf(s, p.id) : 0}
       {@const fell = run && !(p.id in hit) && !(p.id in held) ? fellAt(s, p.id) : null}
       {@const shownLives = held[p.id] ?? lives}
+      {@const inv = run ? carried(p.id) : null}
+      {@const moment = invMoment[p.id] ?? null}
       <li
         use:backdropShadow={{ off: stuck }}
         use:scoreRow={p.id}
@@ -285,7 +398,7 @@
         class:ablaze={fire > 0}
         style:--heat={fire}
         style:--blue={burnsBlue(fire, !!run) ? 1 : 0}
-        class:active class:out class:benched class:duelist class:fallen={fell !== null} class:hit={p.id in hit} class:offline={!p.connected} animate:glide style:--c={playerColor(p.hue)}>
+        class:active class:out class:benched class:duelist class:fallen={fell !== null} class:hit={p.id in hit} class:warded={moment?.kind === 'shatter'} class:offline={!p.connected} animate:glide style:--c={playerColor(p.hue)}>
         <Avatar name={p.name} hue={p.hue} size={32} dim={!p.connected} />
         <div class="info">
           <span class="name">
@@ -294,7 +407,7 @@
           {#if run && fell !== null}
             <span class="fell-at">Fell at depth {fell}</span>
           {:else if run}
-            <Phial lives={shownLives} draining={hit[p.id] ?? -1} surge={surge[p.id] ?? 0} />
+            <Phial lives={shownLives} draining={hit[p.id] ?? -1} surge={surge[p.id] ?? 0} {inv} {moment} />
           {:else}
             <span class="bar" class:filling={filling[p.id]} style:--fill-span="{FILL_SPAN}s"
               ><span style:width="{Math.max(0, Math.min(100, (barOf(p.id, p.score) / target) * 100))}%"></span></span
@@ -303,7 +416,11 @@
         </div>
         {#if run}
           <!-- Phones only, on the entries shrunk to an avatar: the phial upright beside it. -->
-          <span class="phial-side"><Phial lives={shownLives} draining={hit[p.id] ?? -1} surge={surge[p.id] ?? 0} vertical /></span>
+          <span class="phial-side"><Phial lives={shownLives} draining={hit[p.id] ?? -1} surge={surge[p.id] ?? 0} vertical {inv} {moment} /></span>
+          <!-- And there, the flares and dynamite they carry, on the avatar's other corner. -->
+          {#if fell === null && inv && (inv.flares > 0 || inv.dynamite > 0 || moment?.kind === 'burn')}
+            <span class="side-counts"><Inventory {inv} part="counts" {moment} /></span>
+          {/if}
         {:else}
           {#key score}
             <span class="score" class:negative={score < 0} class:bump={race ? active : score > 0} class:down={out}
@@ -501,15 +618,22 @@
       translate: -1px 0;
     }
   }
+  /* A ward shattered in place of a life: the entry jolts, rimmed in azurite. */
+  li.warded {
+    animation: flinch 0.5s var(--ease-out);
+    border-color: rgba(110, 165, 240, 0.75);
+  }
   /* The upright phial only shows on phones, beside an entry shrunk to an avatar (below). */
-  .phial-side {
+  .phial-side,
+  .side-counts {
     display: none;
   }
   .info :global(.phial) {
     margin-top: 2px;
   }
   @media (prefers-reduced-motion: reduce) {
-    li.hit {
+    li.hit,
+    li.warded {
       animation: none;
     }
 
@@ -782,6 +906,23 @@
       top: 50%;
       translate: 0 -50%;
       filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.9));
+    }
+    /* The flares and dynamite they carry: a small dark chip on the avatar's lower left corner. */
+    li:not(.active) .side-counts {
+      display: block;
+      position: absolute;
+      left: -6px;
+      bottom: -5px;
+      padding: 1px 3px 1px 2px;
+      background: #0c0a08;
+      border: 1px solid color-mix(in srgb, var(--c), black 45%);
+      border-radius: 7px;
+      --inv-h: 9px;
+      line-height: 0;
+    }
+    li:not(.active) .side-counts :global(.inventory),
+    li:not(.active) .side-counts :global(.counts) {
+      gap: 3px;
     }
     li.active .info {
       min-width: 0;

@@ -3,7 +3,7 @@
 // opened, carries them.
 
 import type { Difficulty, Item, QuestionMode } from './game.ts';
-import { RECENT, type Codex, type ItemEntry, type Tally } from './codex.ts';
+import { RECENT, livesCost, type Codex, type ItemEntry, type Tally } from './codex.ts';
 import { DELVE_RULESET } from './delve.ts';
 import { tallyOf as runsTally, type DelveRecords, type DelveTally, type Frontier } from './delveRecord.ts';
 import { milestoneAt } from './descent.ts';
@@ -237,7 +237,7 @@ export function delveItemStats(c: Codex, items: Item[], limit = 5): DelveItemSta
     const d = c.items[it.id]?.delve;
     if (!d) continue;
     answers = sum(answers, d);
-    if (d.n > d.ok) costly.push({ item: it, lives: d.n - d.ok, at: d.lostAt });
+    if (livesCost(d) > 0) costly.push({ item: it, lives: livesCost(d), at: d.lostAt });
     if (d.deepest) deepest.push({ item: it, depth: d.deepest });
   }
   costly.sort((a, b) => b.lives - a.lives || b.at - a.at || a.item.name.localeCompare(b.item.name));
@@ -278,7 +278,8 @@ export function lostTo(c: Codex, items: Item[]): Map<number, { item: Item; depth
   const byId = new Map(items.map((it) => [it.id, it]));
   const out = new Map<number, { item: Item; depth: number }[]>();
   for (const a of c.log) {
-    if (a.ok || a.run === undefined || a.depth === undefined) continue;
+    // A wrong answer a ward took cost no life.
+    if (a.ok || a.warded || a.run === undefined || a.depth === undefined) continue;
     const item = byId.get(a.id);
     if (!item) continue;
     const list = out.get(a.run) ?? [];

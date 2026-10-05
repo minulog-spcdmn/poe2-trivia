@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { fade, fly } from 'svelte/transition';
   import { engine } from '../lib/session.svelte';
-  import type { Codex, Tally } from '../lib/codex';
+  import { livesCost, type Codex, type Tally } from '../lib/codex';
   import { accuracy } from '../lib/codexStats';
   import { itemImage } from '../lib/ui';
   import { dialogBackdrop } from '../lib/behindDialog';
@@ -138,6 +138,23 @@
           </li>
           <li>Named from its art: {#if entry.name.n}<b>{score(entry.name)}</b>{:else}<i>never asked</i>{/if}</li>
           <li>Found from its name: {#if entry.art.n}<b>{score(entry.art)}</b>{:else}<i>never asked</i>{/if}</li>
+          {#if entry.delve}
+            {@const d = entry.delve}
+            {@const lives = livesCost(d)}
+            <li>
+              In Delve: <b>{d.n}</b> answered, <b>{d.ok}</b> right{#if d.deepest}, as deep as depth <b>{d.deepest}</b>{/if}
+            </li>
+            {#if d.n > d.ok}
+              <li>
+                {#if lives}Cost you a life <b>{times(lives)}</b>{#if d.lostAt}, deepest at depth <b>{d.lostAt}</b>{/if}{:else}Never cost you a life{/if}{#if d.warded}; it broke <b>{d.warded === 1 ? 'an Azurite Ward' : `${d.warded} Azurite Wards`}</b>{/if}
+              </li>
+            {/if}
+            {#if d.finds || d.blasted}
+              <li>
+                {#if d.finds}Asked from a find <b>{times(d.finds)}</b>{/if}{#if d.blasted}{d.finds ? ', from' : 'Asked from'} a card blasted open <b>{times(d.blasted)}</b>{/if}
+              </li>
+            {/if}
+          {/if}
         </ul>
       {/if}
       {@render related('You took it for', tookItFor)}

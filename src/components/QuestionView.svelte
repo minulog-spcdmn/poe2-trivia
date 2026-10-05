@@ -22,6 +22,8 @@
   import { dock, narrow, phone } from '../lib/layout';
   import { portal } from '../lib/portal';
   import { fellAt, isGroupRun, livesOf } from '../lib/delve';
+  import ItemGlyph from './ItemGlyph.svelte';
+  import type { GlyphKind } from '../lib/inventoryArt';
 
   /** The question's timer (Game.svelte has it in the scoreboard on phones instead). */
   let { timer }: { timer?: Snippet } = $props();
@@ -42,6 +44,28 @@
   const iWon = $derived(race ? !!me && reveal?.winnerId === me : !!reveal?.correct);
   /** Delve: the player answering just lost their last life. */
   const fallsNow = $derived(!!s.delve && !!reveal && !reveal.correct && fellAt(s, active.id) === s.round);
+  /** Delve: you answering (online, or alone on this device), or someone else, by name. */
+  const delveYou = $derived(!!s.delve && (active.id === me || (session.mode === 'local' && !isGroupRun(s))));
+  /**
+   * Delve: what a right answer to a find earned, in words, and its engraving:
+   * a ward mined, a shard (too slow for a ward, from an Azurite Vein) or a
+   * ward forged from two, a flare or dynamite found.
+   */
+  const gainLine = $derived.by((): { glyph: GlyphKind; text: string } | null => {
+    const got = reveal?.correct ? reveal.gained : undefined;
+    if (!s.delve || !got) return null;
+    const who = delveYou ? 'You' : active.name;
+    if (got === 'wards' && reveal?.forged) return { glyph: 'ward', text: `${delveYou ? 'Your' : `${active.name}'s`} two shards forged an Azurite Ward.` };
+    if (got === 'wards') return { glyph: 'ward', text: `${who} mined an Azurite Ward.` };
+    if (got === 'shards')
+      return {
+        glyph: 'shard',
+        text: q.find === 'azurite' ? `Too slow for a Ward; ${delveYou ? 'you' : active.name} mined an azurite shard, and one more forges one.` : `${who} found an azurite shard; one more forges a Ward.`,
+      };
+    if (got === 'flares') return { glyph: 'flare', text: `${who} found a flare; it burns by itself when time runs short.` };
+    return { glyph: 'dynamite', text: `${who} found a stick of dynamite.` };
+  });
+
   // Narrow screens have no room beside the timer: the verdict goes on the
   // task line, beside or under the category (lib/layout.ts).
   /**
@@ -496,12 +520,48 @@
             <span class="minus" title={losers.join(', ')}>−1 {losersShort}</span>
           {/if}
         {:else if s.delve}
-          {@const you = active.id === me || (session.mode === 'local' && !isGroupRun(s))}
+          {@const you = delveYou}
           {@const who = you ? 'You' : active.name}
+          {@const whom = you ? 'you' : active.name}
           {@const left = livesOf(s, active.id)}
           {#if reveal.correct}
-            {who} {you ? 'delve' : 'delves'} on.
+            {#if gainLine}
+              <!-- What the find earned, beside its engraving. -->
+              <span class="found-glyph" aria-hidden="true"><ItemGlyph kind={gainLine.glyph} /></span>{gainLine.text}
+            {:else}
+              {who} {you ? 'delve' : 'delves'} on.
+            {/if}
             {#if streak >= 2}<span class="streak" in:scale={{ start: 0.5, duration: 400, delay: 1100 }}>{streak} in a row</span>{/if}
+          {:else if reveal.caveIn && reveal.lost && !fallsNow}
+            <!-- An Azurite Vein caved in for two losses: the wards that broke, and the lives that went. -->
+            {#if reveal.lost.wards}
+              <span class="lost-ward" aria-hidden="true"
+                ><span class="piece l"><ItemGlyph kind="ward" piece="left" /></span><span class="piece r"><ItemGlyph kind="ward" piece="right" /></span></span
+              >
+            {/if}
+            {#if reveal.lost.lives}
+              <span class="lost-vial" class:last={left <= 1} aria-hidden="true"
+                ><span class="glass"><span class="essence"></span></span><svg viewBox="0 0 24 10"
+                  ><path class="rim" d="M0.6 0.6H18.6L23.3 5 18.6 9.4H0.6Z" /><path class="hair" d="M2.2 2H17.9L21.4 5 17.9 8H2.2Z" /></svg
+                ></span
+              >
+            {/if}
+            {#if reveal.timedOut}The darkness took {whom}.{/if}
+            The vein caves in{you ? '' : ` on ${active.name}`}:
+            {#if reveal.lost.wards >= 2}
+              two Azurite Wards broke.
+            {:else if reveal.lost.wards === 1}
+              {you ? 'your' : 'their'} Azurite Ward broke, and a life with it; {left === 1 ? 'last one left' : `${left} left`}.
+            {:else}
+              two lives lost; {left === 1 ? 'last one left' : `${left} left`}.
+            {/if}
+          {:else if reveal.warded}
+            <!-- The ward that took the loss: a crystal splitting along its crack. -->
+            <span class="lost-ward" aria-hidden="true"
+              ><span class="piece l"><ItemGlyph kind="ward" piece="left" /></span><span class="piece r"><ItemGlyph kind="ward" piece="right" /></span></span
+            >
+            {#if reveal.timedOut}The darkness took {whom}.{/if}
+            {you ? 'Your' : `${active.name}'s`} Azurite Ward shattered; no life lost.
           {:else}
             <!-- The life that went: a chamber of the phial, its light pouring out of the tip. -->
             <span class="lost-vial" class:last={left <= 1} aria-hidden="true"
@@ -509,10 +569,12 @@
                 ><path class="rim" d="M0.6 0.6H18.6L23.3 5 18.6 9.4H0.6Z" /><path class="hair" d="M2.2 2H17.9L21.4 5 17.9 8H2.2Z" /></svg
               ></span
             >
-            {#if fallsNow}
+            {#if fallsNow && reveal.timedOut}
+              The darkness took {whom} for good at depth {s.round}.
+            {:else if fallsNow}
               {who} {you ? 'fall' : 'falls'} at depth {s.round}.
             {:else if reveal.timedOut}
-              {who} ran out of time; {left === 1 ? 'last life' : `${left} lives left`}.
+              The darkness took {whom}; {left === 1 ? 'last life left' : `${left} lives left`}.
             {:else}
               {who} {you ? 'lose' : 'loses'} a life; {left === 1 ? 'last one left' : `${left} left`}.
             {/if}
@@ -1042,6 +1104,67 @@
   @media (prefers-reduced-motion: reduce) {
     .lost-vial .essence {
       display: none;
+    }
+  }
+
+  /* Delve: what a find earned, its engraving standing on the line's baseline. */
+  .found-glyph {
+    display: inline-block;
+    vertical-align: -0.12em;
+    margin-right: 0.4em;
+    --h: 0.95em;
+  }
+  .found-glyph :global(.glyph) {
+    animation: found-in 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.25) 0.6s both;
+    transform-origin: 50% 100%;
+  }
+  @keyframes found-in {
+    from {
+      opacity: 0;
+      transform: scale(0.2);
+    }
+  }
+  /* Delve: the ward that took a loss, splitting as the line comes in. */
+  .lost-ward {
+    position: relative;
+    display: inline-block;
+    vertical-align: -0.12em;
+    width: 0.65em;
+    height: 0.95em;
+    margin-right: 0.45em;
+    --h: 0.95em;
+  }
+  .lost-ward .piece {
+    position: absolute;
+    left: 0;
+    top: 0;
+    transform-origin: 50% 90%;
+  }
+  .lost-ward .l {
+    animation: ward-split-l 0.6s cubic-bezier(0.3, 0, 0.6, 1) 0.7s both;
+  }
+  .lost-ward .r {
+    animation: ward-split-r 0.6s cubic-bezier(0.3, 0, 0.6, 1) 0.7s both;
+  }
+  @keyframes ward-split-l {
+    to {
+      opacity: 0.55;
+      transform: translate(-0.12em, 0.05em) rotate(-14deg);
+    }
+  }
+  @keyframes ward-split-r {
+    to {
+      opacity: 0.55;
+      transform: translate(0.12em, 0.06em) rotate(11deg);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .found-glyph :global(.glyph) {
+      animation: none;
+    }
+    .lost-ward .piece {
+      animation-duration: 0s;
+      animation-delay: 0s;
     }
   }
 
