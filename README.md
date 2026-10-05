@@ -36,6 +36,42 @@ same time, in a random category (never one of the last 2, 3 or 4, by difficulty,
 - The host's own answers reach the game instantly, while guests' answers
   travel over the network, so the host has a small speed edge.
 
+**Delve** (online or on one device): no settings. Everyone plays the exact same
+rules, so "I reached depth 30" means the same thing for everyone.
+- On your turn, pick one of three categories and name the item, as in turns
+  mode. Each round takes everyone still standing one depth deeper.
+- Everyone has **three lives**. A wrong answer, running out of time, or
+  missing your turn while you're disconnected costs one.
+- Every four depths the rules get harder:
+
+  | Depth | Options | Look-alikes | Made up | Find the art | Grayscale | Mirrored | Timer | Lockout |
+  |---|---|---|---|---|---|---|---|---|
+  | 1-4 | 4 | none | 0 | never | off | never | 20 s | 2 |
+  | 5-8 | 4 | none | 0 | 40% | off | never | 19 s | 2 |
+  | 9-12 | 6 | none | 0 | 40% | off | never | 18 s | 2 |
+  | 13-16 | 6 | half | 1 | 40% | off | never | 17 s | 3 |
+  | 17-20 | 8 | half | 1 | 40% | off | never | 16 s | 3 |
+  | 21-24 | 8 | all | 2 | half | off | never | 15 s | 3 |
+  | 25-28 | 8 | all | 2 | half | find the art | 30% | 14 s | 4 |
+  | 29-32 | 8 | all | 3 | half | find the art | 30% | 13 s | 4 |
+  | 33-36 | 8 | all | 3 | half | all art | half | 12 s | 5 |
+  | 37-40 | 8 | all | 3 | half | all art | always | 11 s | 6 |
+  | 41 on | the same | | | | | | 10 s, one less every four depths, down to 5 s at 61 | 7 |
+
+- **Alone**, you delve until your third life is gone; the depth where it went
+  is your result. **Together**, the last one standing wins and keeps delving
+  to their own last life. If the last players fall at the same depth, whoever
+  lost their earlier lives deeper wins; identical runs share the win.
+- Each run starts with the whole item pool. A group uses it up faster than
+  one player, so a group's depths are a little easier than a solo depth.
+- The clock starts once the art has reached the player answering (the host
+  waits at most 3 s for it), and nobody sees the options before that.
+- Online, a player has 20 s to pick a category, or one is picked for them.
+  A player who is disconnected when that runs out loses a life. Nobody can
+  skip a turn by hand. After the host reloads, players who were cut off
+  get a minute to come back, and a guest's open question is set aside.
+- "Delve alone" on the start page starts a solo run straight away.
+
 **Difficulty** (the host chooses):
 
 | | Options | Wrong answers | Extras |
@@ -164,6 +200,13 @@ with that in mind. Guests, on the other hand, are treated as untrusted:
 - **Race fairness.** The host's own answers are delayed by a typical guest's
   one-way network latency, measured with pings. Pings carry random numbers,
   so a guest can't answer them early to look closer than it is.
+- **Delve fairness.** A guest's clock starts once the host's queue to them
+  is empty (plus half a round trip), waiting at most 3 s, and the art goes
+  to the player answering before anyone else. A guest on a link slow enough
+  to need more than 3 s for the pictures loses the rest, and the host's own
+  art is instant, so the host still has a small edge. In Delve the host
+  can't skip anyone's turn; a missed turn only costs a life when the time to
+  pick runs out.
 - **Host tools.** The host can:
   - lock the room so no one new can join or watch (people already in the
     room can still get back in, e.g. after a refresh)
@@ -174,7 +217,9 @@ with that in mind. Guests, on the other hand, are treated as untrusted:
     who is still in the room also bars their name (and look-alikes of it)
     for anyone new; removing an offline player doesn't
   - skip the turn of a player who is still connected but hasn't picked a
-    category (or, without a timer, answered) for 30 seconds
+    category (or, without a timer, answered) for 30 seconds (not in Delve,
+    where a skipped turn would cost a life: there the 20 s to pick and the
+    question's clock decide)
   - hide the room code on screen for streaming
 - **Names.** Invisible and direction-flipping characters and "zalgo" text
   are removed. Names that pose as the host or look like another player's

@@ -11,11 +11,21 @@
   import { fxActive, fxUserOn } from '../lib/fx/core';
   import { victory } from '../lib/fx/moments';
   import { portal } from '../lib/portal';
+  import { DELVE_RULESET, delveStandings, isGroupRun } from '../lib/delve';
 
   const s = $derived(session.state!);
   const won = (id: string) => s.winners.includes(id);
+  // Delve: ranked by how deep each went, and alone there is no winner, only a depth.
+  const run = $derived(s.delve ?? null);
+  const solo = $derived(!!run && !isGroupRun(s));
+  const delveRows = $derived(run ? delveStandings(s) : []);
+  const depthOf = (id: string) => delveRows.find((r) => r.id === id)?.depth ?? 0;
   // Winners first among equal scores: a deathmatch can be won by the only duelist left, level on points.
-  const standings = $derived([...s.players].sort((a, b) => b.score - a.score || +won(b.id) - +won(a.id)));
+  const standings = $derived(
+    run
+      ? delveRows.map((r) => s.players.find((p) => p.id === r.id)!).filter(Boolean)
+      : [...s.players].sort((a, b) => b.score - a.score || +won(b.id) - +won(a.id)),
+  );
   const winner = $derived(s.players.find((p) => s.winners.includes(p.id)) ?? standings[0]);
   const spectators = $derived(s.spectators ?? []);
 
@@ -29,15 +39,69 @@
     setTimeout(() => (leaving = false), 1500);
   }
   const iWon = $derived(session.mode !== 'local' && winner?.id === session.myPlayerId);
-  const headline = $derived(iWon ? 'You are victorious!' : `${winner?.name} wins!`);
+  const sharers = $derived(s.winners.map((id) => s.players.find((p) => p.id === id)?.name).filter(Boolean) as string[]);
+  const headline = $derived.by(() => {
+    if (!run) return iWon ? 'You are victorious!' : `${winner?.name} wins!`;
+    if (solo) return `Depth ${winner ? depthOf(winner.id) : s.round}`;
+    if (sharers.length > 1) return `${sharers.slice(0, -1).join(', ')} and ${sharers.at(-1)} share the win`;
+    return iWon ? 'You delved deepest!' : `${winner?.name} delved deepest!`;
+  });
+  const kicker = $derived(!run ? 'Victory' : run.lastStanding && run.lastStanding.id === winner?.id && !solo ? 'Last one standing' : 'Delve');
+  /** Delve: what the depth means, and how a tie was settled. */
+  const delveSub = $derived.by(() => {
+    if (!run || !winner) return '';
+    const row = delveRows.find((r) => r.id === winner.id);
+    if (!row) return '';
+    if (solo) return row.losses.length ? `Lives lost at depths ${listOf(row.losses)}.` : '';
+    const parts = [`Fell at depth ${row.depth}`];
+    if (run.lastStanding?.id === winner.id) parts.push(`last one standing from depth ${run.lastStanding.depth}`);
+    const second = delveRows[1];
+    if (second && second.depth === row.depth && second.rank !== row.rank) {
+      // Settled by the earlier lives: the first loss (from the end) where the two differ.
+      const a = [...row.losses].reverse();
+      const b = [...second.losses].reverse();
+      const k = a.findIndex((d, i) => d !== b[i]);
+      if (k > 0) {
+        const name = s.players.find((p) => p.id === second.id)?.name ?? '?';
+        parts.push(`tied with ${name}, who lost their ${k === 1 ? 'second' : 'first'} life sooner (${b[k]}, against ${a[k]})`);
+      }
+    }
+    return parts.join('; ') + '.';
+  });
+  const listOf = (xs: number[]) => (xs.length > 1 ? `${xs.slice(0, -1).join(', ')} and ${xs.at(-1)}` : `${xs[0]}`);
+
+  // Delve: tell someone how deep you got.
+  let shared = $state(false);
+  async function shareDepth() {
+    const me = session.myPlayerId;
+    const mine = solo ? winner : s.players.find((p) => p.id === me);
+    if (!mine) return;
+    const depth = depthOf(mine.id);
+    const text = solo
+      ? `I reached depth ${depth} in Delve, alone (ruleset ${DELVE_RULESET}). poe2.quest`
+      : `I fell at depth ${depth} in a ${s.players.length}-player Delve (ruleset ${DELVE_RULESET}). poe2.quest`;
+    try {
+      if (matchMedia('(pointer: coarse)').matches && navigator.share) await navigator.share({ text });
+      else {
+        await navigator.clipboard.writeText(text);
+        shared = true;
+        setTimeout(() => (shared = false), 2000);
+      }
+    } catch {
+      /* dismissed */
+    }
+  }
+  const canShare = $derived(!!run && (solo || (!!session.myPlayerId && s.players.some((p) => p.id === session.myPlayerId))));
 
   let canvas: HTMLCanvasElement;
   let crown = $state<HTMLElement>();
   let title = $state<HTMLElement>();
   let standingsEl = $state<HTMLElement>();
   // A player who lost (online) sees a quieter screen.
+  // A Delve run alone ends with the last life: no victory to celebrate.
   const iLost = $derived(
-    session.mode !== 'local' && !!session.myPlayerId && s.players.some((p) => p.id === session.myPlayerId) && !s.winners.includes(session.myPlayerId),
+    solo ||
+      (session.mode !== 'local' && !!session.myPlayerId && s.players.some((p) => p.id === session.myPlayerId) && !s.winners.includes(session.myPlayerId)),
   );
 
   // The celebration: rays, fireworks and glitter (lib/fx/moments.ts).
@@ -49,7 +113,7 @@
 
   // Without the effects layer (no WebGL2), simpler gold sparks on a 2D canvas.
   onMount(() => {
-    if (matchMedia('(prefers-reduced-motion: reduce)').matches || fxActive() || !fxUserOn()) return;
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches || fxActive() || !fxUserOn() || iLost) return;
     const ctx = canvas.getContext('2d')!;
     const dpr = Math.min(2, devicePixelRatio);
     // Sized from the canvas, which keeps its height while a phone's toolbars
@@ -123,6 +187,7 @@
   });
 
   let rank = $derived.by(() => {
+    if (run) return delveRows.map((r) => r.rank);
     const ranks: number[] = [];
     // A winner never shares its rank with a player who didn't win.
     standings.forEach((p, i) => {
@@ -139,10 +204,17 @@
 <canvas bind:this={canvas} class="sparks" use:portal={'dim'} aria-hidden="true"></canvas>
 
 <div class="over">
-  <p class="kicker" in:fly={{ y: -10, duration: 600 }}>Victory</p>
+  <p class="kicker" in:fly={{ y: -10, duration: 600 }}>{kicker}</p>
   {#if winner}
     <div class="crown" bind:this={crown} in:scale={{ start: 0.4, duration: 900, delay: 200 }}>
-      <ArcaneCircle size="212px" color="color-mix(in srgb, {playerColor(winner.hue)}, #f1d99b 45%)" strength={iLost ? 0.35 : 0.6} />
+      <!-- Delve: the deeper the run went, the colder the circle. -->
+      <ArcaneCircle
+        size="212px"
+        color={run && depthOf(winner.id) >= 25
+          ? `color-mix(in srgb, #a9bfdc ${Math.round(Math.min(1, 0.15 + ((depthOf(winner.id) - 25) / 16) * 0.85) * 100)}%, #f1d99b)`
+          : `color-mix(in srgb, ${playerColor(winner.hue)}, #f1d99b 45%)`}
+        strength={iLost ? 0.35 : 0.6}
+      />
       <Avatar name={winner.name} hue={winner.hue} size={110} />
     </div>
     <h1 bind:this={title} in:fly={{ y: 20, duration: 700, delay: 500 }}>
@@ -150,8 +222,12 @@
       <span class="gold">{headline}</span>
     </h1>
     <p class="sub muted" in:fly={{ y: 10, duration: 700, delay: 700 }}>
-      {winner.score} {winner.score === 1 ? 'point' : 'points'} after {s.round} {s.settings.mode === 'race' ? (s.round === 1 ? 'question' : 'questions') : s.round === 1 ? 'round' : 'rounds'}
-      {#if s.deathmatch}· won the deathmatch in round {s.deathmatch.round}{/if}
+      {#if run}
+        {delveSub}{#if run.mixed}{delveSub ? ' ' : ''}Finished under newer rules.{/if}
+      {:else}
+        {winner.score} {winner.score === 1 ? 'point' : 'points'} after {s.round} {s.settings.mode === 'race' ? (s.round === 1 ? 'question' : 'questions') : s.round === 1 ? 'round' : 'rounds'}
+        {#if s.deathmatch}· won the deathmatch in round {s.deathmatch.round}{/if}
+      {/if}
     </p>
   {/if}
 
@@ -161,7 +237,11 @@
         <span class="rank">{rank[i]}</span>
         <Avatar name={p.name} hue={p.hue} size={30} />
         <span class="name"><PlayerName name={p.name} /></span>
-        <span class="pts">{p.score}</span>
+        {#if run}
+          <span class="pts depth" title="Fell at depth {depthOf(p.id)}">{depthOf(p.id)}</span>
+        {:else}
+          <span class="pts">{p.score}</span>
+        {/if}
       </li>
     {/each}
   </ol>
@@ -169,9 +249,12 @@
   <div class="actions" in:fly={{ y: 20, duration: 600, delay: 1300 }}>
     {#if session.isHost}
       <button class="btn primary big" disabled={leaving} onclick={() => again(true)}>Play again</button>
-      <button class="btn ghost" disabled={leaving} onclick={() => again(false)}>Change settings</button>
+      <button class="btn ghost" disabled={leaving} onclick={() => again(false)}>{run ? 'Back to lobby' : 'Change settings'}</button>
     {:else}
       <p class="muted">Waiting for the host to start a new game…</p>
+    {/if}
+    {#if canShare}
+      <button class="btn ghost" onclick={shareDepth}>{shared ? 'Copied!' : 'Share depth'}</button>
     {/if}
   </div>
   {#if spectators.length}

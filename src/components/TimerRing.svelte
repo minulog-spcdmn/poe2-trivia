@@ -3,25 +3,39 @@
   import { sfx } from '../lib/sound';
   import { timerTick } from '../lib/fx/moments';
 
-  let { deadline, total, stopped = false }: { deadline: number; total: number; stopped?: boolean } = $props();
+  /**
+   * `deadline` null: the clock hasn't started yet (Delve waits for the art), so
+   * the ring stays full. `warnFrom`: the seconds that tick and glow urgent.
+   */
+  let {
+    deadline,
+    total,
+    stopped = false,
+    warnFrom = 5,
+  }: { deadline: number | null; total: number; stopped?: boolean; warnFrom?: number } = $props();
 
   let remaining = $state(Infinity);
   let lastTick = -1;
   let started = false;
 
   $effect(() => {
+    if (deadline === null) {
+      remaining = total * 1000;
+      return;
+    }
+    const end = deadline;
     if (stopped) {
       // Mounted already stopped (a refresh or rejoin during a reveal): show the time that was left.
       // A ring that ran keeps the value it froze at.
-      if (!started) remaining = Math.max(0, deadline - session.hostNow());
+      if (!started) remaining = Math.max(0, end - session.hostNow());
       return;
     }
     started = true;
     let raf = 0;
     const loop = () => {
-      remaining = Math.max(0, deadline - session.hostNow());
+      remaining = Math.max(0, end - session.hostNow());
       const secs = Math.ceil(remaining / 1000);
-      if (secs <= 5 && secs > 0 && secs !== lastTick) {
+      if (secs <= warnFrom && secs > 0 && secs !== lastTick) {
         lastTick = secs;
         sfx('tick');
         if (el) timerTick(el, secs);
@@ -36,7 +50,7 @@
   const C = 2 * Math.PI * R;
   const frac = $derived(Math.min(1, remaining / (total * 1000)));
   const secs = $derived(Number.isFinite(remaining) ? Math.ceil(remaining / 1000) : total);
-  const urgent = $derived(remaining <= 5000);
+  const urgent = $derived(remaining <= warnFrom * 1000);
 
   let el = $state<HTMLElement>();
 </script>

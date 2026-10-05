@@ -5,6 +5,7 @@
   import { MAX_PLAYERS, RACE_DEFAULT_TIMER, TIMER_STEPS, difficultyOf, rulesFor, type Difficulty, type GameMode } from '../lib/game';
   import { DIFFICULTY_NAMES, describe, lockoutText } from '../lib/difficultyText';
   import CustomDifficulty from './CustomDifficulty.svelte';
+  import DelveLadder from './DelveLadder.svelte';
   import { MAX_NAME, isHeldName, nameHeld, nameTooShort } from '../lib/names';
   import { inviteUrl } from '../lib/site';
   import Avatar from './Avatar.svelte';
@@ -122,6 +123,7 @@
   /** Spectators left over when the last game filled every seat. */
   const waiting = $derived(s.spectators ?? []);
   const race = $derived(s.settings.mode === 'race');
+  const delve = $derived(s.settings.mode === 'delve');
   const difficulty = $derived(difficultyOf(s.settings.difficulty));
   const lockout = $derived(rulesFor(s.settings).lockout);
 </script>
@@ -256,7 +258,7 @@
       <div class="setting">
         <span class="label">Mode</span>
         <div class="modes">
-          <button class="mode-card" class:on={!race} disabled={!isHost} onclick={() => setMode('turns')}>
+          <button class="mode-card" class:on={s.settings.mode === 'turns'} disabled={!isHost} onclick={() => setMode('turns')}>
             <b>Take turns</b>
             <span>Pick a category, answer alone. Wrong answers score nothing.</span>
           </button>
@@ -272,65 +274,82 @@
               {#if local}Online only: everyone needs their own device.{:else}Everyone answers at once. Fastest correct answer +1, wrong answer −1.{/if}
             </span>
           </button>
+          <button class="mode-card wide" class:on={delve} disabled={!isHost} onclick={() => setMode('delve')}>
+            <b>Delve</b>
+            <span>Three lives. One depth deeper each round, and harder. Last one standing.</span>
+          </button>
         </div>
       </div>
 
-      <div class="setting">
-        <span class="label">Points to win</span>
-        <div class="seg">
-          {#each TARGETS as t (t)}
-            <button class:on={s.settings.targetScore === t} disabled={!isHost} onclick={() => setTarget(t)}>{t}</button>
-          {/each}
-          <span class="stepper">
-            <button disabled={!isHost || s.settings.targetScore <= 1} onclick={() => setTarget(s.settings.targetScore - 1)} aria-label="Fewer points">−</button>
-            <b>{s.settings.targetScore}</b>
-            <button disabled={!isHost || s.settings.targetScore >= 50} onclick={() => setTarget(s.settings.targetScore + 1)} aria-label="More points">+</button>
-          </span>
+      {#if delve}
+        <div class="setting">
+          <span class="label">The descent</span>
+          <DelveLadder />
+          <p class="ladder-note muted">No settings: everyone delves by the same rules, so a depth means the same for all.</p>
         </div>
-      </div>
+      {:else}
+        <div class="setting">
+          <span class="label">Points to win</span>
+          <div class="seg">
+            {#each TARGETS as t (t)}
+              <button class:on={s.settings.targetScore === t} disabled={!isHost} onclick={() => setTarget(t)}>{t}</button>
+            {/each}
+            <span class="stepper">
+              <button disabled={!isHost || s.settings.targetScore <= 1} onclick={() => setTarget(s.settings.targetScore - 1)} aria-label="Fewer points">−</button>
+              <b>{s.settings.targetScore}</b>
+              <button disabled={!isHost || s.settings.targetScore >= 50} onclick={() => setTarget(s.settings.targetScore + 1)} aria-label="More points">+</button>
+            </span>
+          </div>
+        </div>
 
-      <div class="setting">
-        <span class="label">Difficulty</span>
-        <div class="seg">
-          {#each DIFFS as d (d.id)}
-            {@const edit = d.id === 'custom' && difficulty === 'custom' && isHost}
-            <button
-              class:on={difficulty === d.id}
-              class:edit
-              disabled={!isHost}
-              onclick={() => setDifficulty(d.id)}
-              title={edit ? 'Edit the custom difficulty' : undefined}
-            >
-              {d.name}
-              {#if edit}
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4zM13.5 6.5l4 4" /></svg>
-              {/if}
-            </button>
-          {/each}
+        <div class="setting">
+          <span class="label">Difficulty</span>
+          <div class="seg">
+            {#each DIFFS as d (d.id)}
+              {@const edit = d.id === 'custom' && difficulty === 'custom' && isHost}
+              <button
+                class:on={difficulty === d.id}
+                class:edit
+                disabled={!isHost}
+                onclick={() => setDifficulty(d.id)}
+                title={edit ? 'Edit the custom difficulty' : undefined}
+              >
+                {d.name}
+                {#if edit}
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4zM13.5 6.5l4 4" /></svg>
+                {/if}
+              </button>
+            {/each}
+          </div>
+          <!-- Every description sits in the same cell, so switching never changes the panel's height. -->
+          <div class="blurbs">
+            {#each DIFFS as d (d.id)}
+              <p class="blurb muted" class:shown={difficulty === d.id} aria-hidden={difficulty !== d.id}>
+                {describe({ ...s.settings, difficulty: d.id })}
+              </p>
+            {/each}
+          </div>
         </div>
-        <!-- Every description sits in the same cell, so switching never changes the panel's height. -->
-        <div class="blurbs">
-          {#each DIFFS as d (d.id)}
-            <p class="blurb muted" class:shown={difficulty === d.id} aria-hidden={difficulty !== d.id}>
-              {describe({ ...s.settings, difficulty: d.id })}
-            </p>
-          {/each}
-        </div>
-      </div>
 
-      <div class="setting">
-        <span class="label">Time per question</span>
-        <div class="seg">
-          {#each TIMER_STEPS as t (t)}
-            <button class:on={s.settings.timer === t} disabled={!isHost || (race && t === 0)} onclick={() => setTimer(t)}>
-              {t === 0 ? 'Off' : `${t}s`}
-            </button>
-          {/each}
+        <div class="setting">
+          <span class="label">Time per question</span>
+          <div class="seg">
+            {#each TIMER_STEPS as t (t)}
+              <button class:on={s.settings.timer === t} disabled={!isHost || (race && t === 0)} onclick={() => setTimer(t)}>
+                {t === 0 ? 'Off' : `${t}s`}
+              </button>
+            {/each}
+          </div>
         </div>
-      </div>
+      {/if}
 
       <ul class="rules muted">
-        {#if race}
+        {#if delve}
+          <li>On your turn, choose one of three item categories.</li>
+          <li>Everyone has three lives; a wrong answer, running out of time or missing your turn while away costs one.</li>
+          <li>Each round takes you one depth deeper: less time, longer lockouts, harder questions.</li>
+          <li>The last one standing wins and delves on to their last life. Alone, see how deep you get.</li>
+        {:else if race}
           <li>Everyone sees the same question at the same time.</li>
           <li>The first correct answer scores a point and ends the question.</li>
           <li>A wrong answer costs a point and locks you out until the next question.</li>
@@ -348,7 +367,7 @@
 
       <div class="start">
         {#if isHost}
-          <button class="btn primary big" disabled={!canStart} onclick={start}>Begin the hunt</button>
+          <button class="btn primary big" disabled={!canStart} onclick={start}>{delve ? 'Begin the descent' : 'Begin the hunt'}</button>
         {:else}
           <p class="muted waiting"><span class="pulse"></span>Waiting for the host to start…</p>
         {/if}
@@ -357,7 +376,7 @@
   </div>
 </div>
 
-{#if editing && isHost && difficulty === 'custom'}
+{#if editing && isHost && difficulty === 'custom' && !delve}
   <CustomDifficulty onclose={() => (editing = false)} />
 {/if}
 
@@ -689,6 +708,14 @@
     border-radius: 4px;
     cursor: pointer;
     transition: all 0.2s;
+  }
+  .mode-card.wide {
+    grid-column: 1 / -1;
+  }
+  .ladder-note {
+    margin: 0.6rem 0 0;
+    font-size: 0.95rem;
+    font-style: italic;
   }
   .mode-card b {
     font-family: var(--font-display);

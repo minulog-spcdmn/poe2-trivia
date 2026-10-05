@@ -104,6 +104,13 @@
     session.startLocal();
   }
 
+  /** Delve alone: three lives, as deep as you can go, straight into the first depth. */
+  function delveAlone() {
+    const n = needName();
+    if (!n) return;
+    session.startDelve(n);
+  }
+
   const connecting = $derived(session.status === 'connecting');
 
   /**
@@ -210,9 +217,10 @@
     </div>
 
     <div class="or"><span>or</span></div>
-    <button class="btn ghost wide" onclick={local} disabled={connecting}>
-      Play hot-seat on this device
-    </button>
+    <div class="solo">
+      <button class="btn ghost" onclick={delveAlone} disabled={connecting} title="Three lives; see how deep you get">Delve alone</button>
+      <button class="btn ghost" onclick={local} disabled={connecting}>Play hot-seat on this device</button>
+    </div>
 
     {#if connecting}
       <div class="connecting" transition:fade={{ duration: 200 }}>
@@ -527,8 +535,15 @@
     height: 1px;
     background: var(--line);
   }
-  .wide {
-    width: 100%;
+  .solo {
+    display: grid;
+    grid-template-columns: 1fr 2fr;
+    gap: 0.5rem;
+  }
+  @media (max-width: 560px) {
+    .solo {
+      grid-template-columns: 1fr;
+    }
   }
 
   .connecting {

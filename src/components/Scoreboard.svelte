@@ -11,6 +11,7 @@
   import { scoreRow, scoreRowOf } from '../lib/scoreRows';
   import { burnsBlue, heatOf, streakOf } from '../lib/fx/streaks';
   import { phone } from '../lib/layout';
+  import { DELVE_LIVES, fellAt, livesOf } from '../lib/delve';
 
   /** Shown at the end of the row (the timer, on phones). */
   let { aside }: { aside?: Snippet } = $props();
@@ -21,6 +22,9 @@
   const missed = $derived(new Set(s.question?.misses.map((m) => m.playerId) ?? []));
   const canKick = $derived(session.mode === 'host');
   const spectators = $derived(s.spectators ?? []);
+  /** Delve: lives instead of a score. */
+  const run = $derived(s.delve ?? null);
+  const PIPS = Array.from({ length: DELVE_LIVES }, (_, k) => k);
 
   // Changes that wait for a point to land (the score ticking up, a streak's
   // fire growing), per player: the value they land on and their timers.
@@ -193,6 +197,8 @@
       {@const duelist = !!s.deathmatch && s.phase !== 'over' && s.deathmatch.alive.includes(p.id)}
       {@const score = scoreOf(p.id, p.score)}
       {@const fire = heat[p.id] ?? 0}
+      {@const lives = run ? livesOf(s, p.id) : 0}
+      {@const fell = run ? fellAt(s, p.id) : null}
       <li
         use:backdropShadow={{ off: stuck }}
         use:scoreRow={p.id}
@@ -200,21 +206,41 @@
         class:ablaze={fire > 0}
         style:--heat={fire}
         style:--blue={burnsBlue(fire) ? 1 : 0}
-        class:active class:out class:benched class:duelist class:offline={!p.connected} animate:glide style:--c={playerColor(p.hue)}>
+        class:active class:out class:benched class:duelist class:fallen={fell !== null} class:offline={!p.connected} animate:glide style:--c={playerColor(p.hue)}>
         <Avatar name={p.name} hue={p.hue} size={32} dim={!p.connected} />
         <div class="info">
           <span class="name">
             <PlayerName name={p.name} />{#if session.mode !== 'local' && p.id === session.myPlayerId}<em>&nbsp;(you)</em>{/if}
           </span>
-          <span class="bar" class:filling={filling[p.id]} style:--fill-span="{FILL_SPAN}s"
-            ><span style:width="{Math.max(0, Math.min(100, (barOf(p.id, p.score) / target) * 100))}%"></span></span
-          >
+          {#if run}
+            <span class="pips" aria-hidden="true">
+              {#each PIPS as k (k)}<i class:spent={k >= lives}></i>{/each}
+            </span>
+          {:else}
+            <span class="bar" class:filling={filling[p.id]} style:--fill-span="{FILL_SPAN}s"
+              ><span style:width="{Math.max(0, Math.min(100, (barOf(p.id, p.score) / target) * 100))}%"></span></span
+            >
+          {/if}
         </div>
-        {#key score}
-          <span class="score" class:negative={score < 0} class:bump={race ? active : score > 0} class:down={out}
-            >{score}</span
-          >
-        {/key}
+        {#if run}
+          <!-- Lives left, or the depth where they fell. -->
+          {#key lives}
+            <span
+              class="score lives"
+              class:fell={fell !== null}
+              class:down={lives < DELVE_LIVES}
+              title={fell !== null ? `Fell at depth ${fell}` : `${lives} ${lives === 1 ? 'life' : 'lives'} left`}
+              aria-label={fell !== null ? `Fell at depth ${fell}` : `${lives} ${lives === 1 ? 'life' : 'lives'} left`}
+              >{fell ?? lives}</span
+            >
+          {/key}
+        {:else}
+          {#key score}
+            <span class="score" class:negative={score < 0} class:bump={race ? active : score > 0} class:down={out}
+              >{score}</span
+            >
+          {/key}
+        {/if}
         {#if !p.connected}<span class="off" title="Disconnected">⚡</span>{/if}
         {#if canKick && p.id !== s.hostId}
           <button
@@ -365,6 +391,37 @@
   li.benched {
     opacity: 0.4;
     filter: grayscale(0.7);
+  }
+  li.fallen {
+    opacity: 0.45;
+    filter: grayscale(0.85);
+  }
+  /* Delve: a life is an ember; a spent one is its empty socket. */
+  .pips {
+    display: flex;
+    gap: 5px;
+    align-items: center;
+    height: 7px;
+  }
+  .pips i {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 40% 35%, #fff3d2, #ffb35c 45%, #c4561c);
+    box-shadow: 0 0 6px rgba(255, 140, 60, 0.6);
+    transition:
+      background 0.4s,
+      box-shadow 0.4s;
+  }
+  .pips i.spent {
+    background: transparent;
+    box-shadow: inset 0 0 0 1px rgba(255, 179, 92, 0.35);
+  }
+  .score.lives {
+    color: #ffb35c;
+  }
+  .score.lives.fell {
+    color: #9a8f80;
   }
   li.duelist {
     border-color: rgba(224, 85, 63, 0.55);

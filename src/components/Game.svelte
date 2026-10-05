@@ -13,6 +13,8 @@
   import { deathmatchIntro, deathmatchMood, gameStart, turnBanner } from '../lib/fx/moments';
   import { portal } from '../lib/portal';
   import { phone } from '../lib/layout';
+  import { delveDepth, delveStratum, delveTimer, fellAt, isGroupRun, STRATUM_DEPTHS } from '../lib/delve';
+  import { delveChange } from '../lib/difficultyText';
 
   const s = $derived(session.state!);
   const active = $derived(s.players[s.turn]);
@@ -21,6 +23,9 @@
 
 
   const race = $derived(s.settings.mode === 'race');
+  const run = $derived(s.delve ?? null);
+  const depth = $derived(delveDepth(s));
+  const group = $derived(isGroupRun(s));
   // The question's timer: in the scoreboard pinned to the top on phones, in
   // view while they scroll down to the answers, and beside the question's
   // topic otherwise. Only ever one, so its ticks never double.
@@ -93,14 +98,54 @@
   }
 
   const bannerTitle = $derived(
-    race ? `Question ${s.turnCount + 1}` : mine && !local ? 'Your turn' : `${active.name}'s turn`,
+    race
+      ? `Question ${s.turnCount + 1}`
+      : run && !group
+        ? `Depth ${depth}`
+        : mine && !local
+          ? 'Your turn'
+          : `${active.name}'s turn`,
   );
+
+  // Delve: the line over the banner says how deep, how long, and what just changed.
+  const seconds = $derived(q?.deadline ? Math.round((q.deadline - (q.clockAt ?? q.askedAt)) / 1000) : delveTimer(depth));
+  const change = $derived(depth > 1 && (depth - 1) % STRATUM_DEPTHS === 0 ? delveChange(delveStratum(depth)) : null);
+  const kicker = $derived.by(() => {
+    if (!run) return '';
+    const parts: string[] = [];
+    if (run.lastStanding && group) parts.push('Last one standing');
+    if (group) parts.push(`Depth ${depth}`);
+    parts.push(`${seconds} s`);
+    if (change) parts.push(change);
+    return parts.join(' • ');
+  });
+  // Short timers only sound urgent near the end.
+  const warnFrom = $derived(run ? Math.max(3, Math.min(5, Math.round(seconds * 0.35))) : 5);
+
+  // Delve: the countdown to a card being picked (or a life lost), on every device.
+  let hostNow = $state(session.hostNow());
+  $effect(() => {
+    if (!run?.pickBy || s.phase !== 'choosing') return;
+    hostNow = session.hostNow();
+    const id = setInterval(() => (hostNow = session.hostNow()), 500);
+    return () => clearInterval(id);
+  });
+  const pickLeft = $derived(run?.pickBy && s.phase === 'choosing' ? Math.max(0, Math.ceil((run.pickBy - hostNow) / 1000)) : 0);
+  const pickLine = $derived.by(() => {
+    if (!run?.pickBy || s.phase !== 'choosing' || !active) return '';
+    if (!active.connected && run.excused.includes(active.id) && hostNow < run.graceUntil)
+      return `Waiting for ${active.name} after the host's reload; ${pickLeft}s left.`;
+    if (!active.connected) return `${active.name} is disconnected; they lose a life in ${pickLeft}s.`;
+    if (!mine && pickLeft <= 10) return `A card is chosen for ${active.name} in ${pickLeft}s.`;
+    return '';
+  });
+  const myFall = $derived(session.fallen && session.myPlayerId ? fellAt(s, session.myPlayerId) : null);
 </script>
 
 {#snippet timer()}
-  {#if q?.deadline}
+  {#if q?.deadline || (run && q && s.phase === 'question')}
     {#key q.askedAt}
-      <TimerRing deadline={q.deadline} total={Math.round((q.deadline - q.askedAt) / 1000)} stopped={s.phase === 'reveal'} />
+      <TimerRing deadline={q.deadline} total={seconds} stopped={s.phase === 'reveal'} {warnFrom} />
     {/key}
   {/if}
 {/snippet}
@@ -135,6 +180,9 @@
             </span>
           </div>
         {/if}
+        {#if kicker}
+          <p class="kicker" class:deep={depth >= 25}>{kicker}</p>
+        {/if}
         <div class="banner" class:dm={!!dm} style:--c={bannerColor}>
           <span class="rule"></span>
           <h2 use:bannerFx={{ color: bannerColor, big: bannerBig }}>{bannerTitle}</h2>
@@ -150,7 +198,13 @@
           {/key}
         {/if}
 
-        {#if session.isHost && !local && !race && !active.connected && s.phase !== 'reveal'}
+        {#if pickLine}
+          <p class="delve-line muted" transition:fade>{pickLine}</p>
+        {/if}
+        {#if myFall !== null}
+          <p class="delve-line muted">You fell at depth {myFall}; watching.</p>
+        {/if}
+        {#if session.isHost && !local && !race && !run && !active.connected && s.phase !== 'reveal'}
           <div class="skip" transition:fade>
             <span class="muted">{active.name} is disconnected{skipIn ? `; skipping in ${skipIn}s` : ''}.</span>
             <button class="btn small" onclick={() => skipTurn(session.skipAt)}>Skip their turn</button>
@@ -211,6 +265,25 @@
     display: flex;
     flex-direction: column;
     align-items: stretch;
+  }
+  .kicker {
+    margin: 0.4rem 0 -0.4rem;
+    text-align: center;
+    font-family: var(--font-cinzel);
+    font-weight: 700;
+    font-size: 0.72rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--gold);
+  }
+  .kicker.deep {
+    color: #b9cff0;
+  }
+  .delve-line {
+    margin: 0.8rem 0 0;
+    text-align: center;
+    font-size: 0.95rem;
+    font-style: italic;
   }
   .banner {
     display: flex;

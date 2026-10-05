@@ -130,3 +130,36 @@ export const KNOB_TEXT: { [K in keyof Knobs]: KnobText<K> }[keyof Knobs][] = [
   { key: 'mirror', name: 'Mirrored art', hint: 'Art flipped left to right', label: often },
   { key: 'lockout', name: 'Category lockout', hint: 'Turns until a picked category returns', label: (v) => (v ? String(v) : 'None') },
 ];
+
+/** What changes at the first depth of a Delve stratum (none for the first). */
+const DELVE_CHANGES: Record<number, string> = {
+  2: 'Find the art',
+  3: 'Six options',
+  4: 'Look-alike and made-up names',
+  5: 'Eight options',
+  6: 'All look-alikes',
+  7: 'Grayscale art, mirrored pictures',
+  8: 'Three made-up names',
+  9: 'All grayscale',
+  10: 'Always mirrored',
+  11: 'Longest lockout',
+  12: 'Less time',
+  13: 'Less time',
+  14: 'Less time',
+  15: 'Less time',
+  16: 'Five seconds',
+};
+
+/** The change a new Delve stratum brings, or null; past the last one the rules stay as they are. */
+export function delveChange(stratum: number): string | null {
+  return DELVE_CHANGES[stratum] ?? null;
+}
+
+/** The milestones of a descent, for the lobby and the start page. */
+export const DELVE_LADDER: { depth: number; text: string }[] = [
+  { depth: 1, text: 'Four options, 20 seconds' },
+  { depth: 13, text: 'Look-alike and made-up names' },
+  { depth: 25, text: 'Grayscale, mirrored pictures' },
+  { depth: 41, text: 'Longest lockout, 10 seconds' },
+  { depth: 61, text: 'The abyss; 5 seconds' },
+];

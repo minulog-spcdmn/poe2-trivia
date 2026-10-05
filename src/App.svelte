@@ -151,7 +151,16 @@
         <span>PoE2.Quest</span>
       </button>
       <div class="meta">
-        {#if gs && screen === 'game'}
+        {#if gs?.delve && (screen === 'game' || screen === 'over')}
+          <!-- Delve: no target, just how deep. -->
+          {#if session.code && !session.hideCode}
+            <span>Room <b>{session.code}</b></span>
+          {:else}
+            <span>Delve</span>
+          {/if}
+          <span class="dot">•</span>
+          <span class="depth" class:deep={gs.round >= 25}>Depth <b>{gs.round}</b></span>
+        {:else if gs && screen === 'game'}
           {#if session.code && !session.hideCode}
             <span>Room <b>{session.code}</b></span>
             <span class="dot">•</span>
@@ -385,6 +394,10 @@
   }
   .spectating {
     color: var(--gold-hi);
+  }
+  /* Past the Cold Fire (depth 25) the depth burns blue. */
+  .depth.deep b {
+    color: #b9cff0;
   }
   .deathmatch {
     color: #ff7a5c;

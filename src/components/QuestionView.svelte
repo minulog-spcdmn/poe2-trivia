@@ -21,6 +21,7 @@
   import { fxActive, type Handle } from '../lib/fx/core';
   import { dock, narrow, phone } from '../lib/layout';
   import { portal } from '../lib/portal';
+  import { fellAt, isGroupRun, livesOf } from '../lib/delve';
 
   /** The question's timer (Game.svelte has it in the scoreboard on phones instead). */
   let { timer }: { timer?: Snippet } = $props();
@@ -39,6 +40,8 @@
   const myMiss = $derived(race && me ? q.misses.find((m) => m.playerId === me) : undefined);
   const winner = $derived(reveal?.winnerId ? s.players.find((p) => p.id === reveal.winnerId) : undefined);
   const iWon = $derived(race ? !!me && reveal?.winnerId === me : !!reveal?.correct);
+  /** Delve: the player answering just lost their last life. */
+  const fallsNow = $derived(!!s.delve && !!reveal && !reveal.correct && fellAt(s, active.id) === s.round);
   // Narrow screens have no room beside the timer: the verdict goes on the
   // task line, beside or under the category (lib/layout.ts).
   /**
@@ -49,6 +52,7 @@
     if (!reveal) return null;
     if (iWon) return { word: 'Correct', icon: 'check', tone: 'good' };
     if (race && winner) return session.spectating ? { word: 'Solved', icon: 'check', tone: 'neutral' } : { word: 'Too slow', icon: 'clock', tone: 'late' };
+    if (fallsNow) return { word: 'Fallen', icon: 'cross', tone: 'bad' };
     if (reveal.timedOut) return { word: "Time's up", icon: 'clock', tone: 'late' };
     return { word: race ? 'No one' : 'Wrong', icon: 'cross', tone: 'bad' };
   });
@@ -73,6 +77,17 @@
   const count = $derived(q.labels.length);
   // Pictures the host has sent for this question.
   const media = $derived(shown.qid === q.askedAt ? shown : null);
+  /**
+   * Delve: nothing to see or answer until the clock runs and every picture is
+   * in, so the timer only counts time the player could actually use.
+   */
+  const waiting = $derived(
+    !!s.delve &&
+      !reveal &&
+      (q.deadline === null || (q.mode === 'art' ? Object.keys(media?.options ?? {}).length < count : !media?.art)),
+  );
+  /** Delve's timers are short: the options come in quickly. */
+  const quick = $derived(!!s.delve);
 
   /** Veiled art: the patches that have appeared so far. */
   const patches = $derived(Object.values(media?.patches ?? {}));
@@ -332,7 +347,8 @@
       streak = scorer ? streakOf(s.players.find((p) => p.id === scorer)) : 0;
       const pill = scorer ? scoreRowOf(scorer) : null;
       // The scorer's bar, before and after this point (the state already counts it).
-      const now = scorer ? s.players.find((p) => p.id === scorer)?.score : undefined;
+      // Delve has no score to fill.
+      const now = scorer && !s.delve ? s.players.find((p) => p.id === scorer)?.score : undefined;
       const target = s.settings.targetScore;
       const frac = (v: number) => Math.min(1, Math.max(0, v / target));
       const fill = now === undefined ? undefined : { from: frac(now - 1), to: frac(now) };
@@ -356,7 +372,7 @@
   });
 
   function answer(index: number) {
-    if (!mine || reveal || chosen !== null) return;
+    if (!mine || reveal || chosen !== null || waiting) return;
     // Time's up: the host only waits a moment longer for answers already on their way.
     if (q.deadline && session.hostNow() > q.deadline) return;
     chosen = index;
@@ -380,7 +396,7 @@
     if (e.ctrlKey || e.metaKey || e.altKey || e.repeat || document.querySelector('[aria-modal="true"]')) return;
     // 0 is the tenth option, the key after 9.
     const n = e.key === '0' ? 10 : Number(e.key);
-    if (!reveal && n >= 1 && n <= count) answer(n - 1);
+    if (!reveal && !waiting && n >= 1 && n <= count) answer(n - 1);
     else if (reveal && canNext && (e.key === 'Enter' || e.key === ' ')) {
       e.preventDefault();
       next();
@@ -456,6 +472,20 @@
           {#if q.misses.length}
             <span class="minus" title={losers.join(', ')}>−1 {losersShort}</span>
           {/if}
+        {:else if s.delve}
+          {@const you = active.id === me || (session.mode === 'local' && !isGroupRun(s))}
+          {@const who = you ? 'You' : active.name}
+          {@const left = livesOf(s, active.id)}
+          {#if reveal.correct}
+            {who} {you ? 'delve' : 'delves'} on.
+            {#if streak >= 2}<span class="streak" in:scale={{ start: 0.5, duration: 400, delay: 1100 }}>{streak} in a row</span>{/if}
+          {:else if fallsNow}
+            {who} {you ? 'fall' : 'falls'} at depth {s.round}.
+          {:else if reveal.timedOut}
+            {who} ran out of time; {left} {left === 1 ? 'life' : 'lives'} left.
+          {:else}
+            {who} {you ? 'lose' : 'loses'} a life; {left} left.
+          {/if}
         {:else if reveal.correct}
           <b class="good">+1</b> for {active.name}!
           {#if streak >= 2}<span class="streak" in:scale={{ start: 0.5, duration: 400, delay: 1100 }}>{streak} in a row</span>{/if}
@@ -509,7 +539,13 @@
     {/if}
   </div>
 
-  {#if q.mode === 'art'}
+  {#if waiting}
+    <!-- Delve: the art is on its way to the player answering; the clock starts when it is there. -->
+    <div class="descending" use:backdropShadow={{ fill: 'linear' }} out:fade={{ duration: 120 }}>
+      <span class="loading big" aria-label="Loading"></span>
+      <span class="muted">Descending…</span>
+    </div>
+  {:else if q.mode === 'art'}
     <!-- Name given, pick the matching art. -->
     <div class="tooltip wide" use:backdropShadow={{ fill: 'linear' }} class:good={reveal && iWon} class:bad={reveal && !iWon}>
       <div class="head">
@@ -535,7 +571,7 @@
             class:mine
             disabled={!mine || !!reveal || chosen !== null}
             onclick={() => answer(i)}
-            in:scale={{ start: 0.85, duration: 450, delay: 250 + i * 80 }}
+            in:scale={{ start: 0.85, duration: quick ? 250 : 450, delay: quick ? i * 40 : 250 + i * 80 }}
           >
             <span class="key">{(i + 1) % 10}</span>
             {#if src}
@@ -630,7 +666,7 @@
             title={fake(i) ? 'Not a real item' : undefined}
             disabled={!mine || !!reveal || chosen !== null}
             onclick={() => answer(i)}
-            in:fly={{ x: 40, duration: 450, delay: 300 + i * 90 }}
+            in:fly={{ x: 40, duration: quick ? 250 : 450, delay: quick ? i * 40 : 300 + i * 90 }}
           >
             <span class="sheen"></span>
             <span class="key">{(i + 1) % 10}</span>
@@ -879,6 +915,23 @@
   .loading.big {
     width: 44px;
     height: 44px;
+  }
+  .descending {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.9rem;
+    min-height: clamp(220px, 40svh, 360px);
+    font-style: italic;
+    --bs-fill-a: rgba(5, 4, 3, 0.85);
+    --bs-fill-b: rgba(5, 4, 3, 0.85);
+    background: var(--bs-fill-paint, linear-gradient(var(--bs-fill-a), var(--bs-fill-b)));
+    border: 1px solid var(--line);
+    border-radius: 4px;
+  }
+  .descending .loading {
+    margin: 0;
   }
   @keyframes spin {
     to {

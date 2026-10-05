@@ -3,7 +3,7 @@
   import { session } from '../lib/session.svelte';
   import { categoryIcon, categoryIconTweak, categoryIcons } from '../lib/ui';
   import { fits, fitStyle, maskOf, measure } from '../lib/iconFit.svelte';
-  import { difficultyOf, rulesFor } from '../lib/game';
+  import { activeRules, difficultyOf } from '../lib/game';
   import { deathmatchText, lockoutText } from '../lib/difficultyText';
   import { sfx } from '../lib/sound';
   import { backdropShadow } from '../lib/backdropShadow';
@@ -14,7 +14,18 @@
   const s = $derived(session.state!);
   const active = $derived(s.players[s.turn]);
   const mine = $derived(session.myTurn);
-  const lockout = $derived(rulesFor(s.settings).lockout);
+  // The lockout in force (in Delve it grows with depth).
+  const lockout = $derived(activeRules(s).lockout);
+
+  // Delve: the last seconds before a card is picked for you.
+  let hostNow = $state(session.hostNow());
+  $effect(() => {
+    if (!s.delve?.pickBy) return;
+    hostNow = session.hostNow();
+    const id = setInterval(() => (hostNow = session.hostNow()), 500);
+    return () => clearInterval(id);
+  });
+  const pickLeft = $derived(s.delve?.pickBy ? Math.max(0, Math.ceil((s.delve.pickBy - hostNow) / 1000)) : null);
 
   let picked = $state<string | null>(null);
 
@@ -192,6 +203,8 @@
 
   {#if s.deathmatch}
     <p class="note muted">{mine ? 'Tap the card when you are ready.' : deathmatchText(difficultyOf(s.settings.difficulty))}</p>
+  {:else if mine && pickLeft !== null && pickLeft <= 10}
+    <p class="note muted">A card is chosen for you in {pickLeft}s.</p>
   {:else if mine && lockout > 0}
     <p class="note muted">A category you choose stays locked for {lockoutText(lockout)}.</p>
   {/if}
