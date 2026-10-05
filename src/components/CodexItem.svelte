@@ -169,8 +169,14 @@
     display: flex;
     flex-direction: column;
     border: 1px solid #5a3a1c;
-    /* Painted here, not by the backdrop: a dialog floats over the page, which would show through. */
-    background: #050403;
+    /*
+     * Painted here, not by the backdrop: a dialog floats over the page, which
+     * would show through. A faint grain (as on the page's backdrop) dithers the
+     * art stage's glows, which would band this close to black.
+     */
+    background:
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.025'/%3E%3C/svg%3E"),
+      #030201;
     box-shadow:
       0 0 0 1px #000,
       0 0 50px rgba(175, 96, 37, 0.12),
@@ -243,14 +249,15 @@
     display: grid;
     place-items: center;
     container-type: size;
+    /*
+     * Only light on the tooltip's own colour, no darker base of its own: each
+     * glow dies out before the bottom edge, so the stage runs on into the text
+     * below without a seam.
+     */
     background:
-      radial-gradient(ellipse 55% 50% at 50% 52%, rgba(175, 96, 37, 0.16), transparent 70%),
-      radial-gradient(ellipse 80% 45% at 50% 0%, rgba(90, 110, 160, 0.1), transparent 70%),
-      radial-gradient(ellipse at center, transparent 45%, rgba(0, 0, 0, 0.55) 100%),
-      linear-gradient(180deg, #0c0d12, #060709);
-    box-shadow:
-      inset 0 1px 0 rgba(201, 164, 92, 0.12),
-      inset 0 0 40px rgba(0, 0, 0, 0.6);
+      radial-gradient(ellipse 55% 50% at 50% 50%, rgba(175, 96, 37, 0.14), transparent),
+      radial-gradient(ellipse 80% 60% at 50% 0%, rgba(90, 110, 160, 0.1), transparent);
+    box-shadow: inset 0 1px 0 rgba(201, 164, 92, 0.12);
     overflow: hidden;
   }
   .frame {
