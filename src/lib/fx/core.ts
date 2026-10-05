@@ -6,7 +6,7 @@
 // reduced motion, or when WebGL2 isn't available; every call below is then a
 // cheap no-op, so callers never need to check.
 
-import { BEHIND_PICTURE, FxRenderer, SHAPE_FLOATS, ShapeType, type DialogLight, type Silhouette } from './renderer';
+import { BEHIND_PICTURE, FxRenderer, SHAPE_FLOATS, ShapeType, pictureReady, type DialogLight, type Silhouette } from './renderer';
 import { ParticlePool, type ParticleSpec } from './particles';
 import { opacityOf } from '../opacity';
 import { dialogBox, openDialog } from '../behindDialog';
@@ -523,13 +523,13 @@ function simulate(dt: number, nowMs: number, render: boolean): boolean {
   let shapesCalm = true;
   let shapesEndless = true;
   // (A picture with no size, hidden or scaled away, has no outline to keep clear.)
-  const ready = (sil?: Silhouette | null) => !!sil && sil.w > 0 && sil.h > 0 && sil.img.complete && sil.img.naturalWidth > 0;
+  const ready = (sil?: Silhouette | null) => !!sil && sil.w > 0 && sil.h > 0 && pictureReady(sil.pic);
   const silhouette = visible.map(([s]) => s.f.silhouette).find(ready) ?? null;
   for (const crisp of [false, true]) {
     for (const [s, t] of visible) {
       if (isCrisp(s) !== crisp || nShapes >= MAX_SHAPES) continue;
       writeShape(nShapes, s, t);
-      if (silhouette && s.f.silhouette?.img === silhouette.img) shapeData[nShapes * SHAPE_FLOATS + 11] += BEHIND_PICTURE;
+      if (silhouette && s.f.silhouette?.pic === silhouette.pic) shapeData[nShapes * SHAPE_FLOATS + 11] += BEHIND_PICTURE;
       nShapes++;
       if (crisp) nCrisp++;
       if (!s.calm) shapesCalm = false;

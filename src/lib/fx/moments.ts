@@ -325,10 +325,10 @@ export function reveal(t: RevealTargets) {
   } else if (t.good && t.art) {
     const b = boxOf(t.art);
     // The flare and rays shine from behind the item (its outline), not over
-    // it. The full picture may still be on its way in (after the veil), so
-    // it's looked up as they go.
+    // it. Veiled art is still burning in when they start, and only then
+    // hands over to the full picture, so it's looked up as they go.
     const art = t.art;
-    const item = () => art.querySelector('.frame .art-fit > img');
+    const item = () => art.querySelector('.frame .art-fit > img') ?? art.querySelector('.frame .veil');
     flare(t.art, { size: 40, streak: b.w * 0.9, life: 0.9, color: C.goldPale, intensity: 0.6, clear: item });
     rays(t.art, { radius: Math.max(b.w, b.h) * 0.7, life: 2.2 + 0.3 * hype, fadeIn: 0.5, intensity: 0.1 + 0.12 * hype, color: C.gold, count: 14, clear: item });
     embers(t.art, { count: Math.round(14 * hype), area: 'fill', colors: [C.gold, C.ember, C.rightPale], rise: [60, 190], life: [0.8, 1.8] });
