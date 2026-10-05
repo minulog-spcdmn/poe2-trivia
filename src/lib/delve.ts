@@ -60,8 +60,10 @@ const VEIL_PACE: Record<VeilSpeed, DifficultyRules['veil']> = {
 
 /**
  * The question knobs, each from the depth where it starts. Quick steps at
- * first, so a run gets going: Cruel at the top, Merciless by depth 5, Eternal
- * by 13, then past Eternal. Options stop at 8: at 10 only pairs of groups can
+ * first, so a run gets going, but four options for the first four depths
+ * (look-alike names from depth 3 make them harder meanwhile), six from 5, a
+ * made-up name from 7, eight from 10: Cruel at the top, Merciless by depth
+ * 7, Eternal by 13, then past Eternal. Options stop at 8: at 10 only pairs of groups can
  * share a question, so most small groups (wands, quivers, relics…) could never
  * be the answer. From depth 25 the art burns into view, one step slower every
  * 25 depths (and its clock only starts once the art is out); grayscale only
@@ -69,9 +71,9 @@ const VEIL_PACE: Record<VeilSpeed, DifficultyRules['veil']> = {
  */
 export const DELVE_STEPS: (DelveKnobs & { from: number })[] = [
   { from: 1, options: 4, similarNames: 0, fakes: 0, artChance: 0.4, grayscale: 'off', mirror: 0, veil: 'off' },
-  { from: 3, options: 6, similarNames: 0.5, fakes: 0, artChance: 0.4, grayscale: 'off', mirror: 0, veil: 'off' },
-  { from: 5, options: 6, similarNames: 0.5, fakes: 1, artChance: 0.4, grayscale: 'off', mirror: 0, veil: 'off' },
-  { from: 7, options: 8, similarNames: 0.5, fakes: 1, artChance: 0.4, grayscale: 'off', mirror: 0, veil: 'off' },
+  { from: 3, options: 4, similarNames: 0.5, fakes: 0, artChance: 0.4, grayscale: 'off', mirror: 0, veil: 'off' },
+  { from: 5, options: 6, similarNames: 0.5, fakes: 0, artChance: 0.4, grayscale: 'off', mirror: 0, veil: 'off' },
+  { from: 7, options: 6, similarNames: 0.5, fakes: 1, artChance: 0.4, grayscale: 'off', mirror: 0, veil: 'off' },
   { from: 10, options: 8, similarNames: 1, fakes: 2, artChance: 0.5, grayscale: 'off', mirror: 0, veil: 'off' },
   { from: 13, options: 8, similarNames: 1, fakes: 2, artChance: 0.5, grayscale: 'off', mirror: 0.3, veil: 'off' },
   { from: 17, options: 8, similarNames: 1, fakes: 3, artChance: 0.5, grayscale: 'off', mirror: 0.3, veil: 'off' },
@@ -129,8 +131,8 @@ export function delveChangeAt(d: number): 'knobs' | 'lockout' | 'timer' | null {
  * item. An Azurite Vein yields an Azurite Ward (a ward takes a loss in place of
  * a life) to a fast answer and a shard to a slow one (two shards forge a ward);
  * a Flare Cache a flare (it burns by itself as the clock runs out, for more
- * time); a Dynamite Cache dynamite (while choosing, it blasts open a safe
- * fourth card, or the find on offer).
+ * time); a Dynamite Cache dynamite, though for now none turns up
+ * (DYNAMITE_ON).
  */
 export type FindKind = 'azurite' | 'flare' | 'dynamite';
 
@@ -156,25 +158,52 @@ export const DELVE_MAX_DYNAMITE = 3;
 export const SHARDS_PER_WARD = 2;
 
 /**
- * Where each find turns up, and how often. One roll per offer, against these
- * slices in turn, so an offer holds at most one find and every depth offers
- * the same chances in every run: a find on one offer in ten from depth 5, one
- * in five from 8, one in three from 12. Flares come first (more time is the
- * gentlest help), azurite once Merciless has settled in, dynamite once
- * lockouts bite. A find turns up whatever the player holds, unless they hold
- * all they can of everything (see findReward).
+ * Whether Dynamite Caches turn up. Off while dynamite is redesigned (it is to
+ * go off by itself at half the clock, blasting the pictures plain and half
+ * the wrong answers away): no cache is ever rolled. Dynamite in the state
+ * and the engine's old blast action stay until that is built. Switched on,
+ * the caps below make room for it, so a third of offers still hold a find.
  */
-export const FINDS: { kind: FindKind; item: ItemKind; from: number; chance: number; max: number }[] = [
-  { kind: 'flare', item: 'flares', from: 5, chance: 0.1, max: DELVE_MAX_FLARES },
-  { kind: 'azurite', item: 'wards', from: 8, chance: 0.12, max: DELVE_MAX_WARDS },
-  { kind: 'dynamite', item: 'dynamite', from: 12, chance: 0.11, max: DELVE_MAX_DYNAMITE },
+export const DYNAMITE_ON = false;
+
+/** The depth by which every find has reached its full chance, which it holds from there on. */
+export const FIND_RAMP_TO = 50;
+
+/**
+ * Where each find turns up, and how often: from depth `from` it is on an
+ * offer `start` of the time, rising evenly to `cap` at FIND_RAMP_TO and
+ * holding there. Fixed by depth, so a depth offers the same chances in every
+ * run. One roll per offer against the finds' slices in turn, so an offer
+ * holds at most one find, and a find whose item the player on turn can't
+ * carry any more of is never rolled (its slice finds nothing), so it never
+ * changes the others' chances.
+ *
+ * The Azurite Vein comes first and stays the rarer deep down: a ward takes a
+ * whole loss, the strongest thing to carry. The Flare Cache comes deepest,
+ * where clocks run short and flares get burnt, and so ends up the more
+ * common. Together, one offer in three from depth 50. The Dynamite Cache,
+ * when on, comes in between, from depth 10.
+ */
+export const FINDS: { kind: FindKind; item: ItemKind; from: number; start: number; cap: number; max: number }[] = [
+  { kind: 'azurite', item: 'wards', from: 5, start: 0.04, cap: DYNAMITE_ON ? 0.11 : 0.15, max: DELVE_MAX_WARDS },
+  { kind: 'flare', item: 'flares', from: 15, start: 0.04, cap: DYNAMITE_ON ? 0.13 : 0.18, max: DELVE_MAX_FLARES },
+  { kind: 'dynamite', item: 'dynamite', from: 10, start: DYNAMITE_ON ? 0.04 : 0, cap: DYNAMITE_ON ? 0.09 : 0, max: DELVE_MAX_DYNAMITE },
 ];
 
 /** The find that yields an item. */
 export const findFor = (kind: FindKind) => FINDS.find((f) => f.kind === kind)!;
 
+/** How likely an offer at depth `d` is to hold a find of `kind` (for a player with room for its item). */
+export function findChance(kind: FindKind, d: number): number {
+  const { from, start, cap } = findFor(kind);
+  const depth = depthOf(d);
+  if (depth < from || cap <= 0) return 0;
+  const t = Math.min(1, (depth - from) / (FIND_RAMP_TO - from));
+  return Math.round((start + (cap - start) * t) * 10_000) / 10_000;
+}
+
 /** The shallowest depth with any find. */
-export const FINDS_FROM = Math.min(...FINDS.map((f) => f.from));
+export const FINDS_FROM = Math.min(...FINDS.filter((f) => f.cap > 0).map((f) => f.from));
 
 /**
  * A find's question is the question of this many depths deeper: hard, but not
@@ -253,15 +282,12 @@ export const hasRoom = (inv: Inventory, item: ItemKind) => (item === 'shards' ? 
 /**
  * What a right answer to a find earns a player holding `inv`: a ward from an
  * Azurite Vein answered `fast`, a shard from one answered slower, a flare or
- * dynamite from their caches. A player who holds all they can of that gets
- * the first of a flare, dynamite or a shard they have room for instead, so a
- * right answer always earns something; null only for a player who holds all
- * they can of everything (and to whom no find is offered).
+ * dynamite from their caches; null if they can't carry it (no such find is
+ * offered to them, but one could be planted by hand or come from an older save).
  */
 export function findReward(kind: FindKind, inv: Inventory, fast: boolean): ItemKind | null {
   const own: ItemKind = kind === 'azurite' ? (fast ? 'wards' : 'shards') : findFor(kind).item;
-  const order: ItemKind[] = [own, 'flares', 'dynamite', 'shards'];
-  return order.find((item) => hasRoom(inv, item)) ?? null;
+  return hasRoom(inv, own) ? own : null;
 }
 
 /** The preset a depth plays most like, for filing answers in the codex. */

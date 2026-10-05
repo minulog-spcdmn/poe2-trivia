@@ -3,8 +3,6 @@
 // so a knob reads the same wherever it shows up.
 
 import {
-  BLAST_OPTIONS,
-  BLAST_TIMER,
   DELVE_MIN_TIMER,
   FIND_DEEPER,
   FLARE_MS,
@@ -151,10 +149,10 @@ export const KNOB_TEXT: { [K in keyof Knobs]: KnobText<K> }[keyof Knobs][] = [
 
 /** What each step of the Delve curve brings, by the depth where it starts (delve.ts DELVE_STEPS). */
 export const DELVE_STEP_TEXT: Record<number, string> = {
-  3: 'Six options, look-alike names',
-  5: 'A made-up name',
-  7: 'Eight options',
-  10: 'All look-alikes, two made up',
+  3: 'Look-alike names',
+  5: 'Six options',
+  7: 'A made-up name',
+  10: 'Eight options, two made up',
   13: 'Mirrored pictures',
   17: 'Three made-up names',
   21: 'More mirrored pictures',
@@ -178,7 +176,8 @@ export function delveChange(depth: number): string | null {
 /** The milestones of a descent, for the lobby and the start page. */
 export const DELVE_LADDER: { depth: number; text: string }[] = [
   { depth: 1, text: 'Four options, 16 seconds' },
-  { depth: 3, text: 'Look-alike names, then made-up ones' },
+  { depth: 3, text: 'Look-alike names' },
+  { depth: 5, text: 'Six options, then made-up names' },
   { depth: 25, text: 'The art burns into view' },
   { depth: 40, text: 'All art in grayscale' },
   { depth: 55, text: 'Seven seconds' },
@@ -220,38 +219,20 @@ export const FIND_TEXT: Record<FindKind, { name: string; tag: string; others: st
 
 /**
  * A find's risk and reward, for the player choosing at depth `depth` while
- * holding `inv` (`blasted`: they blasted it open, so it asks a safe question).
+ * holding `inv`. A find is only offered to a player with room for its item.
  */
-export function findNote(kind: FindKind, depth: number, inv: Inventory, blasted = false): string {
-  const secs = blasted ? BLAST_TIMER : findTimer(depth);
-  const ask = blasted ? `Blasted open: a safe question, on ${secs} seconds.` : `A question from depth ${findDepth(depth)}, on ${secs} seconds.`;
+export function findNote(kind: FindKind, depth: number, inv: Inventory): string {
+  const secs = findTimer(depth);
+  const ask = `A question from depth ${findDepth(depth)}, on ${secs} seconds.`;
   const fast = findReward(kind, inv, true);
   if (!fast) return `${ask} You can carry no more.`;
-  /** The reward, saying why when it stands in for the find's own. */
-  const earns = (item: ItemKind, own: ItemKind) => (item === own ? ITEM_TEXT[item] : `${ITEM_TEXT[item]}, as you carry all the ${own === 'shards' ? 'wards' : own} you can`);
   if (kind === 'azurite') {
-    const slow = findReward(kind, inv, false)!;
-    if (fast === 'wards' && slow === 'shards') {
-      const forge = inv.shards + 1 >= SHARDS_PER_WARD ? 'it forges a ward with yours' : `${words(SHARDS_PER_WARD)} forge a ward`;
-      return `${ask} Right within ${veinWindow(secs) / 1000} seconds mines ${ITEM_TEXT.wards}, which takes your next loss; slower, ${ITEM_TEXT.shards} (${forge}).`;
-    }
-    return `${ask} Right earns ${earns(fast, 'wards')}.`;
+    const forge = inv.shards + 1 >= SHARDS_PER_WARD ? 'it forges a ward with yours' : `${words(SHARDS_PER_WARD)} forge a ward`;
+    return `${ask} Right within ${veinWindow(secs) / 1000} seconds mines ${ITEM_TEXT.wards}, which takes your next loss; slower, ${ITEM_TEXT.shards} (${forge}).`;
   }
-  const own: ItemKind = kind === 'flare' ? 'flares' : 'dynamite';
-  const what = fast !== own ? '' : kind === 'flare' ? `, which burns by itself as your clock runs out, for ${FLARE_MS / 1000} seconds more` : ', which blasts open a safe card while you choose';
-  return `${ask} Right earns ${earns(fast, own)}${what}.`;
+  const what =
+    kind === 'flare'
+      ? `, which burns by itself as your clock runs out, for ${FLARE_MS / 1000} seconds more`
+      : ', which goes off by itself when half your clock has run out, blasting the pictures plain and half the wrong answers away';
+  return `${ask} Right earns ${ITEM_TEXT[fast]}${what}.`;
 }
-
-/** The card blasted open with dynamite, and the choice of what to blast. */
-export const BLAST_TEXT = {
-  tag: 'Blasted open',
-  button: 'Blast open a card',
-  pick: 'Blast open which category?',
-  find: (name: string) => `Blast the ${name} open`,
-  others: 'Or another category',
-  note: `Any category, locked or not, as a safe question: ${words(BLAST_OPTIONS)} options, no look-alikes or made-up names, ${BLAST_TIMER} seconds.`,
-  /** After `note`, while a find is on offer. */
-  withFind: 'Blast the find open and it asks the same safe question, for its reward.',
-  /** Under the cards, once a card is blasted open. */
-  opened: `A safe question: ${words(BLAST_OPTIONS)} options, no look-alikes or made-up names, ${BLAST_TIMER} seconds; nothing to find.`,
-};

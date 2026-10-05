@@ -7,6 +7,7 @@ import {
   BLAST_TIMER,
   DELVE_LIVES,
   FINDS,
+  findChance,
   FIND_DEEPER,
   FLARE_AT_MS,
   FLARE_MS,
@@ -50,6 +51,24 @@ test('every depth plays knob values that exist', () => {
     assert.ok(r.fakes <= maxFakes(r.options), `fakes fit at ${d}`);
     assert.ok(r.options <= 8, `at most 8 options at ${d}`);
   }
+});
+
+test('four options last until depth 5, made harder meanwhile by look-alike names', () => {
+  const knobs = (d: number) => {
+    const r = delveRules(d);
+    return [r.options, r.similarNames, r.fakes];
+  };
+  assert.deepEqual([1, 2, 3, 4, 5, 6, 7, 9, 10].map(knobs), [
+    [4, 0, 0],
+    [4, 0, 0],
+    [4, 0.5, 0],
+    [4, 0.5, 0],
+    [6, 0.5, 0],
+    [6, 0.5, 0],
+    [6, 0.5, 1],
+    [6, 0.5, 1],
+    [8, 1, 2],
+  ]);
 });
 
 test('the curve only ever gets harder', () => {
@@ -119,12 +138,13 @@ test('the ruleset is pinned to the curve and the protocol', () => {
   const table: unknown[] = DEPTHS.slice(0, 100).map((d) => [delveRules(d), delveTimer(d), delveTileVeil(d)]);
   // The finds too: where and how often they turn up, what they ask, and what their items do.
   table.push([FINDS, FIND_DEEPER, SHARDS_PER_WARD, FLARE_AT_MS, FLARE_MS, BLAST_OPTIONS, BLAST_TIMER, blastRules(40)]);
+  table.push(DEPTHS.slice(0, 100).map((d) => FINDS.map((f) => findChance(f.kind, d))));
   table.push(DEPTHS.slice(0, 100).map((d) => [findRules(d), findTimer(d), findTileVeil(d), veinWindow(findTimer(d))]));
   const hash = createHash('sha256').update(JSON.stringify(table)).digest('hex').slice(0, 16);
   assert.deepEqual([DELVE_RULESET, PROTOCOL_VERSION, hash], [1, 10, PINNED_HASH]);
 });
 
-const PINNED_HASH = 'bb54e90ec0127831';
+const PINNED_HASH = 'f0b281883fb3817a';
 
 function run(losses: Record<string, number[]>, round = 10, seats = Object.keys(losses)): GameState {
   const s = createGame('a');

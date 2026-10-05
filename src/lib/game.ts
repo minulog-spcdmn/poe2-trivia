@@ -19,6 +19,7 @@ import {
   delveRules,
   delveTileVeil,
   delveTimer,
+  findChance,
   findReward,
   findRules,
   findTileVeil,
@@ -28,7 +29,6 @@ import {
   questionTimer,
   tileVeilSize,
   veinWindow,
-  ITEM_KINDS,
   SHARDS_PER_WARD,
   livesOf,
   standingIds,
@@ -973,7 +973,7 @@ export class Engine {
         let warded = false;
         if (correct) {
           active.score += 1;
-          // A right answer to a find always earns something (see delve.ts findReward).
+          // A right answer to a find earns its item (see delve.ts findReward): it is only offered to a player with room for it.
           const reward = s.delve && q.find ? findReward(q.find, inventoryOf(s, active.id), this.answeredFast(s, q, from)) : null;
           if (reward) [gained, forged] = this.gain(s, active.id, reward);
         } else if (s.delve) warded = this.loseLife(s, active.id) === 'ward';
@@ -1306,18 +1306,18 @@ export class Engine {
 
   /**
    * Whether one of the cards on offer is a find, which and of what: one roll
-   * against the finds' slices (delve.ts FINDS), each open from its depth. A
-   * player who holds all they can of everything finds nothing: no find could
-   * give them anything.
+   * against the finds' slices at this depth (delve.ts findChance). A find
+   * whose item the player on turn can't carry any more of is never offered:
+   * its slice finds nothing, so the others' chances stay the depth's.
    */
   private rollFind(s: GameState, player: Player | undefined): { category: string; kind: FindKind } | null {
     if (!s.delve || !player || !s.offered.length) return null;
-    const open = FINDS.filter((f) => s.round >= f.from);
-    if (!open.length) return null;
+    const slices = FINDS.map((f) => ({ ...f, chance: findChance(f.kind, s.round) })).filter((f) => f.chance > 0);
+    if (!slices.length) return null;
     let r = this.rng();
     const inv = inventoryOf(s, player.id);
-    for (const f of open) {
-      if (r < f.chance) return ITEM_KINDS.some((item) => hasRoom(inv, item)) ? { category: sample(s.offered, 1, this.rng)[0], kind: f.kind } : null;
+    for (const f of slices) {
+      if (r < f.chance) return hasRoom(inv, f.item) ? { category: sample(s.offered, 1, this.rng)[0], kind: f.kind } : null;
       r -= f.chance;
     }
     return null;

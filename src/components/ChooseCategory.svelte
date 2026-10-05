@@ -3,16 +3,15 @@
   import { engine, session } from '../lib/session.svelte';
   import { categoryIcon, categoryIconTweak, categoryIcons } from '../lib/ui';
   import { fits, fitStyle, maskOf, measure } from '../lib/iconFit.svelte';
-  import { activeRules, difficultyOf, lastPicks } from '../lib/game';
-  import { BLAST_TEXT, FIND_TEXT, deathmatchText, findNote, lockoutText } from '../lib/difficultyText';
-  import { blastedOffer, delveLockout, dynamiteOf, findOffer, inventoryOf, type FindKind } from '../lib/delve';
+  import { activeRules, difficultyOf } from '../lib/game';
+  import { FIND_TEXT, deathmatchText, findNote, lockoutText } from '../lib/difficultyText';
+  import { findOffer, inventoryOf, type FindKind } from '../lib/delve';
   import { sfx } from '../lib/sound';
   import { backdropShadow } from '../lib/backdropShadow';
   import { cardHover, cardPicked, cardRevealed } from '../lib/fx/moments';
   import { fxActive, type Handle, type Vec3 } from '../lib/fx/core';
   import { C, embers, emitter, flare, glints, outline, puffs, ring, shards, sparks } from '../lib/fx/effects';
   import { light } from '../lib/lights';
-  import { findArt } from '../lib/findArt';
   import CardEngraving from './CardEngraving.svelte';
 
   const s = $derived(session.state!);
@@ -30,53 +29,33 @@
     return () => clearInterval(id);
   });
   const pickLeft = $derived(s.delve?.pickBy ? Math.max(0, Math.ceil((s.delve.pickBy - hostNow) / 1000)) : null);
-  /** Delve: the find among the cards on offer, and the card blasted open, if any. */
+  /** Delve: the find among the cards on offer, if any. */
   const find = $derived(findOffer(s));
-  const blasted = $derived(blastedOffer(s));
-  /** What a card is: a find of some kind, blasted open, or plain. */
-  const kindOf = (cat: string): FindKind | 'blast' | null => (find?.category === cat ? find.kind : blasted === cat ? 'blast' : null);
+  /** What a card is: a find of some kind, or plain. */
+  const kindOf = (cat: string): FindKind | null => (find?.category === cat ? find.kind : null);
 
   // ---- finds --------------------------------------------------------------
-  // A find is the ordinary card, its gold engraving and emblem untouched, with
-  // its find grown into the window beside the pedestal (lib/findArt): azurite
-  // breaking out of the frame, a signal flare burning, a bundle of dynamite
-  // with its fuse lit. A card blasted open has its corner blown off; a find
-  // blasted open shows both.
-
-  /** Each card's measured size inside its border, for its art. */
-  let sizes = $state<Record<string, [number, number]>>({});
-  const uid = $props.id();
-  function artOf(cat: string, kind: FindKind | 'blast') {
-    const [w, h] = sizes[cat] ?? [0, 0];
-    if (!w || !h) return null;
-    const i = s.offered.indexOf(cat);
-    const art = findArt(kind, w, h, `${uid}-${i}`);
-    // A find blasted open: its own art, and the blast's cracks over it.
-    if (kind !== 'blast' && blasted === cat) {
-      const blast = findArt('blast', w, h, `${uid}-${i}b`);
-      return { svg: art.svg + blast.svg, clip: blast.clip, w, h };
-    }
-    return { ...art, w, h };
-  }
-  const arts = $derived(Object.fromEntries(s.offered.map((cat) => [cat, kindOf(cat) ? artOf(cat, kindOf(cat)!) : null])));
+  // A find is the ordinary card, its plate engraved by the same hand with
+  // the find's motif crowning the emblem (lib/findEngraving): azurite prisms
+  // fanned out through the arch, the emblem in a flare's sun, or in a ring
+  // blown apart; the ink tinted the find's colour.
 
   // Their effects: azurite rings like crystal, a flare and dynamite throw sparks.
-  const FX: Record<FindKind | 'blast', { main: Vec3; pale: Vec3 }> = {
+  const FX: Record<FindKind, { main: Vec3; pale: Vec3 }> = {
     azurite: { main: C.portal, pale: C.portalPale },
-    flare: { main: [3.0, 0.45, 0.75], pale: [3.0, 1.7, 1.9] },
+    flare: { main: [3.0, 0.62, 0.32], pale: [3.0, 1.9, 1.3] },
     dynamite: { main: C.ember, pale: C.whiteHot },
-    blast: { main: C.ember, pale: C.gold },
   };
   const dim = (c: Vec3, k: number): Vec3 => [c[0] * k, c[1] * k, c[2] * k];
-  function findRevealed(frame: Element, kind: FindKind | 'blast') {
+  function findRevealed(frame: Element, kind: FindKind) {
     if (!fxActive()) return;
     const { main, pale } = FX[kind];
     outline(frame, { color: dim(main, 0.8), width: 10, intensity: 0.9, life: 1, fadeIn: 0.06 });
     glints(frame, { count: 5, area: 'edge', color: pale, size: [4, 8], delay: [0, 0.4] });
-    if (kind === 'blast') sparks(frame, { count: 40, area: 'fill', speed: [120, 520], life: [0.3, 0.9] });
-    light(frame, { color: kind === 'azurite' ? [0.3, 0.6, 1] : [1, 0.4, 0.3], radius: 260, intensity: 0.3, decay: 0.9 });
+    if (kind === 'dynamite') sparks(frame, { count: 40, area: 'fill', speed: [120, 520], life: [0.3, 0.9] });
+    light(frame, { color: kind === 'azurite' ? [0.3, 0.6, 1] : [1, 0.5, 0.25], radius: 260, intensity: 0.3, decay: 0.9 });
   }
-  function findHover(frame: Element, card: Element, kind: FindKind | 'blast'): Handle {
+  function findHover(frame: Element, card: Element, kind: FindKind): Handle {
     if (!fxActive()) return { stop() {} };
     const { main, pale } = FX[kind];
     const glow = outline(frame, { color: dim(main, 0.7), width: 12, flame: kind === 'azurite' ? 0.25 : 0.7, pulse: 0.4, intensity: 0.7, fadeIn: 0.25, base: card });
@@ -89,7 +68,7 @@
     };
   }
   /** A find is chosen: azurite rings out like struck crystal and sheds shards, the others go up in sparks; the other cards burn away. */
-  function findPicked(card: Element, base: Element, others: Element[], kind: FindKind | 'blast') {
+  function findPicked(card: Element, base: Element, others: Element[], kind: FindKind) {
     if (!fxActive()) return;
     const { main, pale } = FX[kind];
     for (const o of others) {
@@ -105,19 +84,6 @@
   }
 
   let picked = $state<string | null>(null);
-
-  // ---- dynamite -----------------------------------------------------------
-  const dynamite = $derived(mine && active && !s.deathmatch && s.delve ? dynamiteOf(s, active.id) : 0);
-  const canBlast = $derived(dynamite > 0 && !s.delve?.blasted && !picked);
-  /** Categories that could be blasted open: any not on offer, locked or not. */
-  const blastable = $derived(engine.categories.filter((c) => !s.offered.includes(c)));
-  const lockedNow = $derived(s.delve && active ? lastPicks(active.recent, delveLockout(s.round)) : []);
-  let blasting = $state(false);
-  function blast(category: string) {
-    blasting = false;
-    sfx('pick');
-    session.dispatch({ type: 'blast', category });
-  }
 
   // Size each emblem by its visible shape (see lib/iconFit); measured while the cards lie face down.
   for (const url of categoryIcons()) measure(url);
@@ -268,7 +234,6 @@
         data-fx="none"
         class:dm={!!s.deathmatch}
         class:special={!!kindOf(cat)}
-        class:cut={!!arts[cat]?.clip}
         data-find={kindOf(cat)}
         aria-describedby={kindOf(cat) ? 'find-note' : undefined}
         class:mine
@@ -286,65 +251,32 @@
       >
         <span class="turn" in:deal|global={{ i, n: s.offered.length }}>
           <span class="back" aria-hidden="true">
-            <CardEngraving side="back" />
+            <CardEngraving side="back" find={kindOf(cat)} />
             <span class="filigree"></span>
           </span>
-          <span class="frame" use:backdropShadow style:clip-path={arts[cat]?.clip ?? undefined}>
-            <CardEngraving side="face" />
+          <span class="frame" use:backdropShadow>
+            <CardEngraving side="face" find={kindOf(cat)} />
             <span class="glare"></span>
             <span class="sheen"></span>
             <span class="filigree"></span>
             {#if kindOf(cat)}
               {@const kind = kindOf(cat)!}
-              {@const art = arts[cat]}
-              <span class="worked" bind:clientWidth={null, (w) => (sizes[cat] = [w ?? 0, sizes[cat]?.[1] ?? 0])} bind:clientHeight={null, (h) => (sizes[cat] = [sizes[cat]?.[0] ?? 0, h ?? 0])} aria-hidden="true">
-                {#if art}
-                  <svg viewBox="0 0 {art.w} {art.h}">{@html art.svg}</svg>
-                {/if}
-              </span>
-              <span class="find-tag">{kind === 'blast' ? BLAST_TEXT.tag : FIND_TEXT[kind].name}</span>
+              <span class="find-tag">{FIND_TEXT[kind].name}</span>
             {/if}
             <span class="icon">
               <span class="lit"><span class="glyph" class:fit={!!fits[categoryIcon(cat)]} style={fitStyle(categoryIcon(cat), categoryIconTweak(cat))} style:--src="url('{maskOf(categoryIcon(cat))}')"></span></span>
             </span>
-            <span class="title">{#if kindOf(cat)}{@const kind = kindOf(cat)!}<span class="find-tag-row">{kind === 'blast' ? BLAST_TEXT.tag : FIND_TEXT[kind].name}</span>{/if}{cat}</span>
+            <span class="title">{#if kindOf(cat)}{@const kind = kindOf(cat)!}<span class="find-tag-row">{FIND_TEXT[kind].name}</span>{/if}{cat}</span>
           </span>
         </span>
       </button>
     {/each}
   </div>
 
-  {#if canBlast}
-    <div class="blast">
-      {#if !blasting}
-        <button class="btn small blast-btn" onclick={() => (blasting = true)}>
-          {BLAST_TEXT.button}<span class="count" aria-label="{dynamite} dynamite">{dynamite}</span>
-        </button>
-      {:else}
-        <p class="blast-q">{BLAST_TEXT.pick}</p>
-        {#if find}
-          <button class="btn small blast-find" data-find={find.kind} onclick={() => blast(find.category)}>{BLAST_TEXT.find(FIND_TEXT[find.kind].name)}</button>
-          <p class="blast-q muted">{BLAST_TEXT.others}</p>
-        {/if}
-        <div class="blast-list">
-          {#each blastable as c (c)}
-            <button class="btn small" class:locked={lockedNow.includes(c)} onclick={() => blast(c)}>
-              {c}{#if lockedNow.includes(c)}<span class="lock">locked</span>{/if}
-            </button>
-          {/each}
-        </div>
-        <p class="note muted">{BLAST_TEXT.note}{#if find}{' '}{BLAST_TEXT.withFind}{/if}</p>
-        <button class="btn ghost small" onclick={() => (blasting = false)}>Keep the dynamite</button>
-      {/if}
-    </div>
-  {/if}
   {#if find && !s.deathmatch}
     <p class="note find-note" data-find={find.kind} id="find-note">
-      {#if mine}<strong>{FIND_TEXT[find.kind].tag}.</strong> {findNote(find.kind, s.round, inventoryOf(s, active.id), blasted === find.category)}{:else}{FIND_TEXT[find.kind].others}{/if}
+      {#if mine}<strong>{FIND_TEXT[find.kind].tag}.</strong> {findNote(find.kind, s.round, inventoryOf(s, active.id))}{:else}{FIND_TEXT[find.kind].others}{/if}
     </p>
-  {/if}
-  {#if blasted && mine && blasted !== find?.category}
-    <p class="note find-note" data-find="blast" id={find ? undefined : 'find-note'}>{BLAST_TEXT.opened}</p>
   {/if}
   {#if s.deathmatch}
     <p class="note muted">{mine ? 'Tap the card when you are ready.' : deathmatchText(difficultyOf(s.settings.difficulty))}</p>
@@ -750,46 +682,54 @@
     font-size: 0.95rem;
   }
   /* Two notes under the cards sit closer than the cards sit to them. */
-  .find-note + .note,
-  .blast + .note {
+  .find-note + .note {
     margin-top: -1rem;
   }
 
   /* ---- finds ---------------------------------------------------------------
-     A find is the ordinary card, gold and engraved, with its find grown into
-     the window (lib/findArt), its frame lit in the find's colour, and the
-     warm glow in its window turned to the find's light. */
+     A find is the ordinary card, its plate engraved with the find's motif
+     (CardEngraving, lib/findEngraving), the plate's ink, its emblem and its
+     name tinted the find's colour: a cold azurite, a flare's red gold. The
+     filigree stays the panels' gold. */
   .card[data-find='azurite'] {
-    --warm: #2f78d8;
-    --f: #8cbcf0;
+    --ink: #86b0e6;
+    --warm: #2a62c0;
+    --f: #9cc4f0;
     --f-hi: #dcedff;
-    --f-border: #4a78b8;
-    --f-pulse: rgba(70, 140, 255, 0.4);
-    --f-glow: rgba(70, 140, 255, 0.28);
+    --f-border: #4a6a9a;
+    --f-pulse: rgba(70, 140, 255, 0.34);
+    --f-glow: rgba(70, 140, 255, 0.22);
+    --f-glyph: linear-gradient(180deg, #eef6ff 0%, #9cc0ea 45%, #2a4a7a 100%);
   }
   .card[data-find='flare'] {
-    --warm: #e0405f;
-    --f: #ff8fa1;
-    --f-hi: #ffe1e6;
-    --f-border: #a84a5c;
-    --f-pulse: rgba(255, 70, 100, 0.36);
-    --f-glow: rgba(255, 70, 100, 0.25);
+    --ink: #e59a72;
+    --warm: #d8432a;
+    --f: #f4a080;
+    --f-hi: #ffe4d6;
+    --f-border: #9a4a3a;
+    --f-pulse: rgba(255, 110, 60, 0.34);
+    --f-glow: rgba(255, 110, 60, 0.22);
+    --f-glyph: linear-gradient(180deg, #fff0dc 0%, #eea070 45%, #7a2a12 100%);
   }
+  /* Black powder: the ink an ash grey, the window lit by its ember. */
   .card[data-find='dynamite'] {
-    --warm: #e0602a;
-    --f: #f4a868;
-    --f-hi: #ffe3c8;
-    --f-border: #a4602a;
-    --f-pulse: rgba(255, 120, 40, 0.36);
-    --f-glow: rgba(255, 120, 40, 0.25);
+    --ink: #bdb2a2;
+    --warm: #e0662a;
+    --f: #e8c49a;
+    --f-hi: #f6e8d6;
+    --f-border: #7d6e5c;
+    --f-pulse: rgba(255, 120, 40, 0.3);
+    --f-glow: rgba(255, 120, 40, 0.2);
+    --f-glyph: linear-gradient(180deg, #fbf3e6 0%, #c8b8a0 45%, #4a3a2a 100%);
   }
-  .card[data-find='blast'] {
-    --warm: #a04a1a;
-    --f: #d8a070;
-    --f-hi: #f3dcc4;
-    --f-border: #7a5a40;
-    --f-pulse: rgba(255, 110, 40, 0.28);
-    --f-glow: rgba(255, 110, 40, 0.2);
+  .card.special .glyph {
+    background: var(--f-glyph);
+  }
+  .card.special .title {
+    color: var(--f-hi);
+  }
+  .card.special .back {
+    border-color: var(--f-border);
   }
   .card.special .frame {
     border-color: var(--f-border);
@@ -799,18 +739,6 @@
   .card.special:not(:global(.down)) .frame {
     --bs1: 0px 34px;
     --bs1-color: var(--f-glow);
-  }
-  /* A card with its corner blown off: the backdrop would shadow the whole
-     rectangle, so its shadow and glow follow the broken shape instead. */
-  .card.cut:not(:global(.down)) .frame,
-  .card.cut.mine:not(:global(.down)):hover .frame,
-  .card.cut.chosen .frame {
-    --bs1-color: transparent;
-    --bs2-color: transparent;
-    animation: none;
-  }
-  .card.cut {
-    filter: drop-shadow(0 14px 18px rgba(0, 0, 0, 0.6)) drop-shadow(0 0 12px var(--f-glow));
   }
   .card.special.mine .frame {
     animation: pulse 3.2s ease-in-out infinite;
@@ -833,18 +761,6 @@
   .card.special.chosen .frame {
     border-color: var(--f);
     --bs1-color: var(--f-pulse);
-  }
-  .worked {
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-  }
-  .worked svg {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    overflow: visible;
   }
   /* What the card is, on a small plaque over the keystone, lozenges at its
      ends like the nameplate's (in its name on a row). */
@@ -887,157 +803,10 @@
     right: -4px;
   }
 
-  /* The art's motion, transform and opacity only: a glint now and then on the
-     azurite and a light sweeping over it, the flare's flame flickering and its
-     embers rising, the fuse sputtering, the broken edge smouldering. Held
-     still with the effects off or reduced motion. */
-  .worked :global(.glint) {
-    opacity: 0;
-    transform: scale(0.2) rotate(-20deg);
-    animation: glint 5.2s ease-in-out infinite;
-  }
-  @keyframes glint {
-    0%,
-    74%,
-    100% {
-      opacity: 0;
-      transform: scale(0.2) rotate(-20deg);
-    }
-    82% {
-      opacity: 1;
-      transform: scale(1) rotate(10deg);
-    }
-    90% {
-      opacity: 0;
-      transform: scale(0.5) rotate(30deg);
-    }
-  }
-  .worked :global(.ember-glint) {
-    animation-duration: 2.4s;
-  }
-  .worked :global(.sweep) {
-    opacity: 0;
-    animation: sweep 6.5s cubic-bezier(0.45, 0, 0.4, 1) infinite;
-  }
-  @keyframes sweep {
-    0% {
-      opacity: 0;
-      translate: 0 0;
-    }
-    4% {
-      opacity: 1;
-    }
-    26% {
-      opacity: 1;
-      translate: var(--sweep) 0;
-    }
-    30%,
-    100% {
-      opacity: 0;
-      translate: var(--sweep) 0;
-    }
-  }
-  .worked :global(.flame) {
-    animation: flicker 1.1s ease-in-out infinite;
-  }
-  @keyframes flicker {
-    0%,
-    100% {
-      transform: scale(1, 1);
-    }
-    22% {
-      transform: scale(0.94, 1.08) skewX(-2deg);
-    }
-    47% {
-      transform: scale(1.05, 0.93) skewX(1.5deg);
-    }
-    71% {
-      transform: scale(0.97, 1.05) skewX(-1deg);
-    }
-  }
-  .worked :global(:is(.flare-light, .spark-light)) {
-    animation: throb 1.7s ease-in-out infinite;
-  }
-  @keyframes throb {
-    50% {
-      opacity: 0.78;
-    }
-  }
-  .worked :global(.ember) {
-    opacity: 0;
-    animation: rise 2.4s linear infinite;
-  }
-  @keyframes rise {
-    0% {
-      opacity: 0;
-      translate: 0 0;
-    }
-    15% {
-      opacity: 1;
-    }
-    100% {
-      opacity: 0;
-      translate: var(--drift) var(--rise);
-    }
-  }
-  .worked :global(.spark) {
-    animation: sputter 0.55s steps(1) infinite;
-  }
-  @keyframes sputter {
-    0% {
-      transform: scale(1) rotate(0);
-    }
-    25% {
-      transform: scale(0.72) rotate(14deg);
-    }
-    50% {
-      transform: scale(1.12) rotate(-6deg);
-    }
-    75% {
-      transform: scale(0.86) rotate(22deg);
-    }
-  }
-  .worked :global(.spit) {
-    opacity: 0;
-    animation: spit 0.9s ease-out infinite;
-  }
-  @keyframes spit {
-    0% {
-      opacity: 1;
-      translate: 0 0;
-    }
-    70%,
-    100% {
-      opacity: 0;
-      translate: var(--dx) var(--dy);
-    }
-  }
-  .worked :global(.smoulder) {
-    animation: smoulder 2.8s ease-in-out infinite;
-  }
-  @keyframes smoulder {
-    50% {
-      opacity: 0.35;
-    }
-  }
-  /* Face down, and while another card is chosen, nothing moves. */
-  .card:global(.down) .worked :global(*),
-  .card.faded .worked :global(*) {
+  /* A find's plate moves (see CardEngraving): face down, and while another card is chosen, it holds still. */
+  .card:global(.down) :global(.engraving *),
+  .card.faded :global(.engraving *) {
     animation-play-state: paused;
-  }
-  :global(html[data-still]) .worked :global(*) {
-    animation: none;
-  }
-  :global(html[data-still]) .worked :global(:is(.sweep, .glint, .ember, .spit)) {
-    opacity: 0;
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .worked :global(*) {
-      animation: none;
-    }
-    .worked :global(:is(.sweep, .glint, .ember, .spit)) {
-      opacity: 0;
-    }
   }
   .find-tag-row {
     display: none;
@@ -1050,74 +819,13 @@
     color: #a9cdf5;
   }
   .find-note[data-find='flare'] {
-    color: #f3b2bd;
+    color: #f4b496;
   }
-  .find-note[data-find='dynamite'],
-  .find-note[data-find='blast'] {
+  .find-note[data-find='dynamite'] {
     color: #eebf96;
   }
   .find-note strong {
     font-weight: 600;
-  }
-
-  /* ---- dynamite ------------------------------------------------------------ */
-  .blast {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.7rem;
-    max-width: 40rem;
-  }
-  .blast-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.6em;
-    border-color: #a4502a;
-    color: #ffd2ad;
-  }
-  .count {
-    display: inline-grid;
-    place-items: center;
-    min-width: 1.5em;
-    height: 1.5em;
-    border-radius: 50%;
-    font-family: var(--font-cinzel);
-    font-weight: 700;
-    font-size: 0.85em;
-    color: #1a0d06;
-    background: #f08a3c;
-  }
-  .blast-q {
-    margin: 0;
-  }
-  .blast-q.muted {
-    margin-bottom: -0.2rem;
-    font-size: 0.9rem;
-  }
-  .blast-find {
-    border-color: var(--f-border, #a4502a);
-    color: #ffd2ad;
-  }
-  .blast-find[data-find='azurite'] {
-    --f-border: #4a78b8;
-    color: #dcedff;
-  }
-  .blast-find[data-find='flare'] {
-    --f-border: #a84a5c;
-    color: #ffe1e6;
-  }
-  .blast-list {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    gap: 0.5rem;
-  }
-  .blast-list .lock {
-    margin-left: 0.5em;
-    font-size: 0.75em;
-    opacity: 0.7;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
   }
 
   @media (max-width: 700px) {
@@ -1204,12 +912,6 @@
         calc(100% - 2 * var(--end)) 1px,
         1px calc(100% - 2 * var(--end)),
         1px calc(100% - 2 * var(--end));
-    }
-    /* Over the find's art, which sits at the row's end: the name keeps clear of it. */
-    .card.special .title {
-      position: relative;
-      inset: auto;
-      padding-right: 46px;
     }
     .find-tag {
       display: none;

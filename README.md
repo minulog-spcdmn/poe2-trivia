@@ -42,8 +42,9 @@ rules, so "I reached depth 30" means the same thing for everyone.
   mode. Each round takes everyone still standing one depth deeper.
 - Everyone has **three lives**. A wrong answer, running out of time, or
   missing your turn while you're disconnected costs one.
-- Every few depths the rules get harder: Merciless by depth 5, Eternal by
-  13, then past it. The timer starts at 16 s and loses a second every six
+- Every few depths the rules get harder: four options until depth 5 (with
+  look-alike names from 3), Merciless by depth 7, Eternal by 13, then past
+  it. The timer starts at 16 s and loses a second every six
   depths, down to 7 s from depth 55 (long enough that, even under the
   slowest unveil, half the art is in with over 3 s left); the lockout grows
   from 2 turns to 7.
@@ -51,9 +52,9 @@ rules, so "I reached depth 30" means the same thing for everyone.
   | From depth | Options | Look-alikes | Made up | Find the art | Mirrored | Unveil | Grayscale |
   |---|---|---|---|---|---|---|---|
   | 1 | 4 | none | 0 | 40% | never | off | off |
-  | 3 | 6 | half | 0 | 40% | never | off | off |
-  | 5 | 6 | half | 1 | 40% | never | off | off |
-  | 7 | 8 | half | 1 | 40% | never | off | off |
+  | 3 | 4 | half | 0 | 40% | never | off | off |
+  | 5 | 6 | half | 0 | 40% | never | off | off |
+  | 7 | 6 | half | 1 | 40% | never | off | off |
   | 10 | 8 | all | 2 | half | never | off | off |
   | 13 | 8 | all | 2 | half | 30% | off | off |
   | 17 | 8 | all | 3 | half | 30% | off | off |

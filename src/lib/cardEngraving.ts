@@ -17,6 +17,11 @@
 //
 // Laid in a row (on phones) the face keeps its emblem in a glory beside
 // a divider, and the back lays its mandorla down.
+//
+// A Variant redraws parts of a plate for a special card (Delve's finds, see
+// lib/findEngraving): the spandrels' seals, the glory, the back's heart, and
+// anything over the face, its own lines marked as the motif and the plate's
+// kept out of where the motif stands (`knockout`), so they stop short of it.
 
 import {
   arc,
@@ -31,11 +36,12 @@ import {
   type Hole,
   type LineOpts,
   type Pt,
-} from './arcane';
-import { LUNA, LUNA_HATCH } from './alchemy';
+} from './arcane.ts';
+import { LUNA, LUNA_HATCH } from './alchemy.ts';
 
 export type Cls = 'main' | 'thin' | 'hair' | 'hatch' | 'shade' | 'ray' | 'lattice' | 'sign' | 'fill';
-export type Stroke = { d: string; cls: Cls };
+/** `motif`: drawn by a Variant over the plate (see Plate.knockout). */
+export type Stroke = { d: string; cls: Cls; motif?: boolean };
 /** Where the glory's rays fade in from its centre (from `from` on) and out again (by `r`). */
 export type Fade = { c: Pt; from: number; r: number };
 
@@ -46,10 +52,10 @@ export const TALL = { panelFoot: 232, plateTop: 238, emblemY: 132 };
 /** A card in a row: the emblem's centre from the left, and the divider after it. */
 export const ROW = { emblemX: 62, divider: 118 };
 
-type Box = [number, number, number, number];
+export type Box = [number, number, number, number];
 
 /** Where a line from `p` to `q` runs inside a box, as a cut in [0, 1]. */
-const inBox = (p: Pt, q: Pt, [x0, y0, x1, y1]: Box): Cut | null => {
+export const inBox = (p: Pt, q: Pt, [x0, y0, x1, y1]: Box): Cut | null => {
   let [t0, t1] = [0, 1];
   const d = [q[0] - p[0], q[1] - p[1]];
   for (const [pk, qk] of [
@@ -70,7 +76,7 @@ const inBox = (p: Pt, q: Pt, [x0, y0, x1, y1]: Box): Cut | null => {
 };
 
 /** Where a line from `p` to `q` runs inside a disc, as [t0, t1] (unclamped), if it meets it. */
-const throughDisc = (p: Pt, q: Pt, c: Pt, r: number): Cut | null => {
+export const throughDisc = (p: Pt, q: Pt, c: Pt, r: number): Cut | null => {
   const [dx, dy] = [q[0] - p[0], q[1] - p[1]];
   const [fx, fy] = [p[0] - c[0], p[1] - c[1]];
   const a = dx * dx + dy * dy;
@@ -89,7 +95,7 @@ const inEllipse = (p: Pt, q: Pt, c: Pt, rx: number, ry: number): Cut | null => {
 };
 
 /** A mandorla: the lens where two discs of radius `r` about `a` and `b` overlap. */
-type Lens = { a: Pt; b: Pt; r: number };
+export type Lens = { a: Pt; b: Pt; r: number };
 /** Where a line from `p` to `q` runs inside a lens, as a cut in [0, 1]. */
 const inLens = (p: Pt, q: Pt, { a, b, r }: Lens): Cut | null => {
   const [u, v] = [throughDisc(p, q, a, r), throughDisc(p, q, b, r)];
@@ -121,13 +127,17 @@ const notched = (x0: number, y0: number, x1: number, y1: number, n: number, d: n
 };
 
 /** A plate being drawn: strokes by class. */
-class Plate {
+export class Plate {
   out: Stroke[] = [];
   fade: Fade | null = null;
   /** The face's window (inside the arch), which the card's warm glow fills. */
   window: string | null = null;
+  /** While true, what is added is a Variant's motif. */
+  motif = false;
+  /** Filled shapes (path data) where the plate's own lines are left out, so they stop short of the motif. */
+  knockout = '';
   add(d: string, cls: Cls) {
-    if (d) this.out.push({ d, cls });
+    if (d) this.out.push(this.motif ? { d, cls, motif: true } : { d, cls });
   }
   /** A frame of two lines with notched corners, broken at `holes`. */
   frame(x0: number, y0: number, x1: number, y1: number, holes: Hole[] = []) {
@@ -249,7 +259,7 @@ class Plate {
 }
 
 /** Path data `d` (absolute commands only) turned by `turn` degrees, scaled by `k` and moved to `c`. */
-const transform = (d: string, c: Pt, k = 1, turn = 0) => {
+export const transform = (d: string, c: Pt, k = 1, turn = 0) => {
   const [cos, sin] = [Math.cos(rad(turn)), Math.sin(rad(turn))];
   const map = (x: number, y: number) => `${f(c[0] + k * (x * cos - y * sin))} ${f(c[1] + k * (x * sin + y * cos))}`;
   const tokens = d.match(/[A-Za-z]|-?\d*\.?\d+(?:e-?\d+)?/g) ?? [];
@@ -301,8 +311,57 @@ const cornerCircle = (corner: Pt, inset: number, a: Pt, r: number): Hole => {
   return { c: [corner[0] + dir[0] * (inset + lo), corner[1] + dir[1] * (inset + lo)], r: lo };
 };
 
+/** Where things stand on a tall face, for a Variant to draw round. */
+export type TallLayout = {
+  row: false;
+  w: number;
+  h: number;
+  /** The panel the arch stands in, and its inside (within its two lines). */
+  panel: Box;
+  inner: Box;
+  /** The nameplate. */
+  plate: Box;
+  /** The arch: its centre (at the springing), inner and outer radius. */
+  arch: { A: Pt; ri: number; ro: number };
+  /** The floor's line, and the pedestal's cap and base (half widths). */
+  floor: number;
+  pedestal: { capTop: number; capR: number; baseR: number };
+  /** The emblem's centre. */
+  emblem: Pt;
+  /** The circles Sol and Luna fill. */
+  sol: Hole;
+  luna: Hole;
+};
+/** Where things stand on a face in a row. */
+export type RowLayout = { row: true; w: number; h: number; emblem: Pt; divider: number };
+/** Where things stand on a back. */
+export type BackLayout = { w: number; h: number; row: boolean; c: Pt; lens: Lens; sunR: number; holes: Hole[]; room: (deg: number) => number };
+
+/** Parts of a plate redrawn for a special card; what a hook adds is its motif unless said otherwise. */
+export interface Variant {
+  /** In place of Sol and Luna, in the circles they would fill. */
+  spandrels?(p: Plate, sol: Hole, luna: Hole): void;
+  /**
+   * In place of the glory behind the emblem (part of the plate, not the
+   * motif): straight lines only, as the pedestal is cut out of them.
+   * `reach` gives how far a ray at a heading may run.
+   */
+  glory?(p: Plate, c: Pt, reach: (deg: number) => number, row: boolean): void;
+  /** Over a face once it is drawn. */
+  face?(p: Plate, g: TallLayout | RowLayout): void;
+  /** In place of the sun and its glory at the heart of the back. */
+  back?(p: Plate, g: BackLayout): void;
+}
+
+/** Runs a Variant's hook, what it adds marked as the motif (or not). */
+const hook = (p: Plate, motif: boolean, draw: () => void) => {
+  p.motif = motif;
+  draw();
+  p.motif = false;
+};
+
 /** The face of a tall card `w` by `h`. */
-const tallFace = (w: number, h: number, p: Plate) => {
+const tallFace = (w: number, h: number, p: Plate, v?: Variant) => {
   const MID = w / 2;
   const [x0, y0, x1, y1] = [16, 16, w - 16, TALL.panelFoot];
   const inner: Box = [x0 + 2.5, y0 + 2.5, x1 - 2.5, y1 - 2.5];
@@ -436,8 +495,11 @@ const tallFace = (w: number, h: number, p: Plate) => {
   // Sol and Luna in the spandrels, each as large as the corner allows.
   const corners = [cornerCircle([x0, y0], 2.5, A, ro), cornerCircle([x1, y0], 2.5, A, ro)];
   const [sol, luna] = corners.map(({ c, r }) => ({ c, r: Math.min(13, r - 3.5) }));
-  p.sol(sol.c, sol.r);
-  p.luna(luna.c, (luna.r / 8.5) * 0.95, 180);
+  if (v?.spandrels) hook(p, true, () => v.spandrels!(p, sol, luna));
+  else {
+    p.sol(sol.c, sol.r);
+    p.luna(luna.c, (luna.r / 8.5) * 0.95, 180);
+  }
 
   // The spandrels and the strips beside the arch, hatched in lines rising
   // to the middle (mirrored either side), clear of the arch, the imposts,
@@ -481,11 +543,17 @@ const tallFace = (w: number, h: number, p: Plate) => {
     return Math.min(...ts.filter((t) => t > 0));
   };
   // Few and faint, from well clear of the emblem, so it reads alone at a glance.
-  p.glory(C, 64, 66, reach, 0.6);
+  const before = p.out.length;
+  if (v?.glory) hook(p, false, () => v.glory!(p, C, reach, false));
+  else p.glory(C, 64, 66, reach, 0.6);
   // The pedestal stands in front of the rays.
-  p.out = p.out.map((s) => (s.cls === 'ray' ? { ...s, d: clipOut(s.d, daisCuts) } : s));
+  p.out = p.out.map((s, i) => (s.cls === 'ray' || (v?.glory && i >= before) ? { ...s, d: clipOut(s.d, daisCuts) } : s));
   p.fade = { c: C, from: 70, r: 128 };
   p.window = `M${f(MID - ri)} ${f(y1 - 2.5)}V${f(S)}A${f(ri)} ${f(ri)} 0 0 1 ${f(MID + ri)} ${f(S)}V${f(y1 - 2.5)}Z`;
+  if (v?.face) {
+    const g: TallLayout = { row: false, w, h, panel: [x0, y0, x1, y1], inner, plate, arch: { A, ri, ro }, floor, pedestal: { capTop, capR, baseR }, emblem: C, sol, luna };
+    hook(p, true, () => v.face!(p, g));
+  }
 };
 
 /** Straight segments `d` (M…L… pairs) with the stretches `cuts` gives taken out. */
@@ -501,7 +569,7 @@ const clipOut = (d: string, cuts: (a: Pt, b: Pt) => Cut[]) =>
     .join('');
 
 /** The face of a card `w` by `h` laid in a row: the emblem in a glory, a divider before the name. */
-const rowFace = (w: number, h: number, p: Plate) => {
+const rowFace = (w: number, h: number, p: Plate, v?: Variant) => {
   const C: Pt = [ROW.emblemX, h / 2];
   const x = ROW.divider;
   const mid: Pt = [x, h / 2];
@@ -513,12 +581,14 @@ const rowFace = (w: number, h: number, p: Plate) => {
     const ts = [u[0] > 1e-9 ? (box[2] - C[0]) / u[0] : u[0] < -1e-9 ? (box[0] - C[0]) / u[0] : Infinity, u[1] > 1e-9 ? (box[3] - C[1]) / u[1] : u[1] < -1e-9 ? (box[1] - C[1]) / u[1] : Infinity];
     return Math.min(...ts);
   };
-  p.glory(C, 64, 28, reach, 0.6);
+  if (v?.glory) hook(p, false, () => v.glory!(p, C, reach, true));
+  else p.glory(C, 64, 28, reach, 0.6);
   p.fade = { c: C, from: 32, r: 64 };
+  if (v?.face) hook(p, true, () => v.face!(p, { row: true, w, h, emblem: C, divider: x }));
 };
 
 /** The back of a card `w` by `h`. */
-const back = (w: number, h: number, p: Plate) => {
+const back = (w: number, h: number, p: Plate, v?: Variant) => {
   const row = w > h;
   const c: Pt = [w / 2, h / 2];
   const inset = row ? 10 : 16;
@@ -548,20 +618,33 @@ const back = (w: number, h: number, p: Plate) => {
   const holes: Hole[] = moons.map((m) => ({ c: m, r: 8.5 * moonK + 3 }));
   // The sun at the heart, in a glory out to the mandorla's edge.
   const sunR = row ? 9 : 17;
-  p.glory(c, row ? 72 : 96, sunR + 2, (deg) => lensReach(c, deg, lens) - 2, 0.68, { holes });
   const room = (deg: number) => lensReach(c, deg, lens) - 3;
-  p.sun(c, sunR, Math.min(row ? 24 : 42, room(0)), Math.min(row ? 18 : 31, room(22.5)), { holes });
+  if (v?.back) hook(p, true, () => v.back!(p, { w, h, row, c, lens, sunR, holes, room }));
+  else {
+    p.glory(c, row ? 72 : 96, sunR + 2, (deg) => lensReach(c, deg, lens) - 2, 0.68, { holes });
+    p.sun(c, sunR, Math.min(row ? 24 : 42, room(0)), Math.min(row ? 18 : 31, room(22.5)), { holes });
+  }
   p.fade = { c, from: 0, r: row ? len + 10 : len + 6 };
 };
 
-/** The strokes of one side of a card `w` by `h`, and where its glory fades. */
-export const engrave = (side: 'face' | 'back', w: number, h: number) => {
+/**
+ * The strokes of one side of a card `w` by `h`, and where its glory fades;
+ * `v` redraws parts of it for a special card. The motif's strokes come
+ * after the plate's, and `knockout` is where the plate's are left out.
+ */
+export const engrave = (side: 'face' | 'back', w: number, h: number, v?: Variant) => {
   const p = new Plate();
-  if (side === 'back') back(w, h, p);
-  else if (w > h) rowFace(w, h, p);
-  else tallFace(w, h, p);
-  // Merge each class into one path.
-  const by = new Map<Cls, string>();
-  for (const { d, cls } of p.out) by.set(cls, (by.get(cls) ?? '') + d);
-  return { strokes: [...by].map(([cls, d]) => ({ cls, d })), fade: p.fade, window: p.window };
+  if (side === 'back') back(w, h, p, v);
+  else if (w > h) rowFace(w, h, p, v);
+  else tallFace(w, h, p, v);
+  // Merge each class into one path (the motif's apart).
+  const by = new Map<string, Stroke>();
+  for (const { d, cls, motif } of p.out) {
+    const key = motif ? `${cls}*` : cls;
+    const s = by.get(key);
+    if (s) s.d += d;
+    else by.set(key, motif ? { d, cls, motif } : { d, cls });
+  }
+  const strokes = [...by.values()].sort((a, b) => Number(!!a.motif) - Number(!!b.motif)).map(({ cls, d, motif }) => (motif ? { cls, d, motif } : { cls, d }));
+  return { strokes, fade: p.fade, window: p.window, knockout: p.knockout || null };
 };

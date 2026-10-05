@@ -9,12 +9,13 @@ import {
   DELVE_MAX_FLARES,
   DELVE_MAX_WARDS,
   DELVE_MIN_TIMER,
+  DYNAMITE_ON,
   FINDS,
   FINDS_FROM,
   FIND_DEEPER,
+  FIND_RAMP_TO,
   FLARE_AT_MS,
   FLARE_MS,
-  ITEM_KINDS,
   SHARDS_PER_WARD,
   blastRules,
   blastedOffer,
@@ -23,6 +24,7 @@ import {
   delveTileVeil,
   delveTimer,
   dynamiteOf,
+  findChance,
   findDepth,
   findOffer,
   findReward,
@@ -224,96 +226,130 @@ test('a blasted card is a safe question at any depth: as at the surface, on the 
 
 // ---- rewards ---------------------------------------------------------------
 
-test('a right answer to a find always earns something, unless the player carries all they can of everything', () => {
-  // Its own item first.
+test("a right answer to a find earns its own item, and nothing else when there's no room for it", () => {
   assert.equal(findReward('azurite', NONE, true), 'wards');
   assert.equal(findReward('azurite', NONE, false), 'shards');
   assert.equal(findReward('flare', NONE, false), 'flares');
   assert.equal(findReward('dynamite', NONE, false), 'dynamite');
   assert.equal(findReward('flare', NONE, true), 'flares', 'speed only matters to a vein');
-  // Full of it: a flare, dynamite or a shard instead, the first there is room for.
-  const wards3 = { ...NONE, wards: 3 };
-  assert.equal(findReward('azurite', wards3, true), 'flares');
-  assert.equal(findReward('azurite', wards3, false), 'flares');
-  assert.equal(findReward('azurite', { ...wards3, flares: 3 }, true), 'dynamite');
-  assert.equal(findReward('flare', { ...NONE, flares: 3 }, false), 'dynamite');
-  assert.equal(findReward('flare', { ...NONE, flares: 3, dynamite: 3 }, false), 'shards');
-  assert.equal(findReward('dynamite', { ...NONE, dynamite: 3 }, false), 'flares');
-  assert.equal(findReward('dynamite', { ...NONE, dynamite: 3, flares: 3 }, false), 'shards');
-  // A shard only toward a ward there is room for.
+  // A shard toward the last ward there is room for.
+  assert.equal(findReward('azurite', { ...NONE, wards: 2, shards: 1 }, false), 'shards');
   assert.equal(hasRoom({ ...NONE, wards: 2, shards: 1 }, 'shards'), true);
   assert.equal(hasRoom({ ...NONE, wards: 3 }, 'shards'), false);
-  for (const kind of ['azurite', 'flare', 'dynamite'] as const) for (const fast of [true, false]) assert.equal(findReward(kind, FULL, fast), null);
-  // Anything short of full earns something.
-  for (const item of ITEM_KINDS.filter((k) => k !== 'shards')) {
-    const inv = { ...FULL, [item]: FULL[item] - 1 };
-    for (const kind of ['azurite', 'flare', 'dynamite'] as const) assert.notEqual(findReward(kind, inv, false), null, `${kind} short of ${item}`);
+  // Full of it: nothing, never something else instead.
+  for (const fast of [true, false]) {
+    assert.equal(findReward('azurite', { ...NONE, wards: 3 }, fast), null);
+    assert.equal(findReward('flare', { ...NONE, flares: 3 }, fast), null);
+    assert.equal(findReward('dynamite', { ...NONE, dynamite: 3 }, fast), null);
+    for (const kind of ['azurite', 'flare', 'dynamite'] as const) assert.equal(findReward(kind, FULL, fast), null);
   }
 });
 
 // ---- the offer -------------------------------------------------------------
 
-test('finds turn up from fixed depths, with fixed chances: one offer in ten from 5, one in five from 8, one in three from 12', () => {
+test('each find ramps from a low chance at its first depth to its cap at depth 50, fixed by depth; the Flare Cache comes deepest', () => {
   assert.deepEqual(
-    FINDS.map((f) => [f.kind, f.item, f.from, f.max]),
+    FINDS.map((f) => [f.kind, f.item, f.max]),
     [
-      ['flare', 'flares', 5, DELVE_MAX_FLARES],
-      ['azurite', 'wards', 8, DELVE_MAX_WARDS],
-      ['dynamite', 'dynamite', 12, DELVE_MAX_DYNAMITE],
+      ['azurite', 'wards', DELVE_MAX_WARDS],
+      ['flare', 'flares', DELVE_MAX_FLARES],
+      ['dynamite', 'dynamite', DELVE_MAX_DYNAMITE],
     ],
   );
   assert.deepEqual([DELVE_MAX_WARDS, DELVE_MAX_FLARES, DELVE_MAX_DYNAMITE, SHARDS_PER_WARD], [3, 3, 3, 2]);
-  const total = (d: number) => FINDS.filter((f) => d >= f.from).reduce((sum, f) => sum + f.chance, 0);
+  assert.equal(FIND_RAMP_TO, 50);
+  assert.equal(FINDS_FROM, 5);
+  // Where each starts, and how.
+  assert.deepEqual([findChance('azurite', 4), findChance('azurite', 5)], [0, 0.04]);
+  assert.deepEqual([findChance('flare', 14), findChance('flare', 15)], [0, 0.04]);
+  const live = FINDS.filter((f) => f.cap > 0);
+  assert.ok(Math.max(...live.map((f) => f.from)) === findFor('flare').from, 'the Flare Cache comes deepest');
+  for (const f of live) {
+    let prev = 0;
+    for (let d = 1; d <= 120; d++) {
+      const c = findChance(f.kind, d);
+      assert.ok(c >= prev, `${f.kind} never less likely deeper (${d})`);
+      if (d >= f.from && d < FIND_RAMP_TO) assert.ok(c < f.cap, `${f.kind} below its cap at ${d}`);
+      if (d >= FIND_RAMP_TO) assert.equal(c, f.cap, `${f.kind} at its cap from ${FIND_RAMP_TO}`);
+      prev = c;
+    }
+    assert.equal(findChance(f.kind, 50), findChance(f.kind, 300), 'held from there on');
+  }
+  // Rare at first, about one offer in three by depth 50.
+  const total = (d: number) => FINDS.reduce((sum, f) => sum + findChance(f.kind, d), 0);
   assert.equal(total(4), 0);
-  assert.ok(Math.abs(total(5) - 0.1) < 1e-9);
-  assert.ok(total(8) >= 0.2 && total(8) <= 0.25, `${total(8)} at 8`);
-  assert.ok(total(12) >= 0.3 && total(12) <= 0.35, `${total(12)} by 12`);
-  assert.equal(total(200), total(12), 'no more often deeper down');
+  assert.ok(total(5) <= 0.05, `${total(5)} at 5`);
+  assert.ok(total(15) >= 0.1 && total(15) <= 0.14, `${total(15)} at 15`);
+  assert.ok(Math.abs(total(50) - 0.33) < 0.005, `${total(50)} at 50`);
+  assert.equal(total(200), total(50));
+  // Odd depths read as the surface.
+  for (const d of [NaN, -3, 0]) assert.equal(total(d), 0);
 });
 
-test('one roll per offer: at most one find, each from its depth, about as often as its chance', () => {
+/** The find that yields an item (as delve.ts findFor). */
+const findFor = (kind: FindKind) => FINDS.find((f) => f.kind === kind)!;
+
+test('dynamite is switched off: no Dynamite Cache is ever rolled', () => {
+  assert.equal(DYNAMITE_ON, false);
+  for (let d = 1; d <= 200; d++) assert.equal(findChance('dynamite', d), 0);
+  const h = delve(['Ash'], { seed: 9 });
+  at(h, 40);
+  for (let i = 0; i < 300; i++) {
+    assert.notEqual(h.s.delve!.find?.kind, 'dynamite');
+    h.plainTurn();
+  }
+});
+
+test('one roll per offer: at most one find, each from its depth, about as often as its chance there', () => {
   const h = delve(['Ash'], { seed: 3 });
+  at(h, 1);
   const seen: Record<FindKind, number> = { azurite: 0, flare: 0, dynamite: 0 };
-  const turns: Record<FindKind, number> = { azurite: 0, flare: 0, dynamite: 0 };
-  for (let i = 0; i < 900; i++) {
+  const expected: Record<FindKind, number> = { azurite: 0, flare: 0, dynamite: 0 };
+  for (let i = 0; i < 1500; i++) {
     const s = h.s;
     assert.equal(s.phase, 'choosing');
     const f = s.delve!.find ?? null;
     assert.deepEqual(findOffer(s), f);
     if (f) {
       assert.ok(s.offered.includes(f.category), 'the find is one of the cards on offer');
-      assert.ok(s.round >= FINDS.find((x) => x.kind === f.kind)!.from, `${f.kind} at depth ${s.round}`);
+      assert.ok(findChance(f.kind, s.round) > 0, `${f.kind} at depth ${s.round}`);
       seen[f.kind]++;
     }
-    for (const x of FINDS) if (s.round >= x.from) turns[x.kind]++;
+    for (const x of FINDS) expected[x.kind] += findChance(x.kind, s.round);
     // Never answering a find keeps the player empty-handed, so every find stays on offer.
     h.plainTurn();
   }
   for (const x of FINDS) {
-    const share = seen[x.kind] / turns[x.kind];
-    assert.ok(Math.abs(share - x.chance) < 0.04, `${x.kind}: ${seen[x.kind]} of ${turns[x.kind]}`);
+    const sd = Math.sqrt(Math.max(1, expected[x.kind]));
+    assert.ok(Math.abs(seen[x.kind] - expected[x.kind]) < 4 * sd, `${x.kind}: ${seen[x.kind]}, expected about ${Math.round(expected[x.kind])}`);
   }
 });
 
-test('a find turns up even for someone full of its item, but never for someone full of everything', () => {
-  const h = delve(['Ash'], { seed: 5 });
-  at(h, 30);
-  const id = h.active().id;
-  h.give(id, { wards: DELVE_MAX_WARDS });
-  let veins = 0;
-  for (let i = 0; i < 200; i++) {
-    if (h.s.delve!.find?.kind === 'azurite') veins++;
-    h.plainTurn();
-  }
-  assert.ok(veins > 10, `${veins} veins`);
-
-  const full = delve(['Ash'], { seed: 5 });
-  at(full, 30);
-  full.give(full.active().id, FULL);
-  for (let i = 0; i < 150; i++) {
-    assert.equal(full.s.delve!.find, null, `depth ${full.s.round}`);
-    full.plainTurn();
-  }
+test("a find whose item the player is full of is never offered, and the others' chances stay the depth's", () => {
+  // Full of wards: never a vein, flares as often as ever.
+  const runs = (inv: Partial<Inventory>) => {
+    const h = delve(['Ash'], { seed: 5 });
+    at(h, 50);
+    h.give(h.active().id, inv);
+    const seen: Record<FindKind, number> = { azurite: 0, flare: 0, dynamite: 0 };
+    for (let i = 0; i < 400; i++) {
+      const f = h.s.delve!.find;
+      if (f) seen[f.kind]++;
+      h.edit((c) => (c.round = 50));
+      h.plainTurn();
+    }
+    return seen;
+  };
+  const wardsFull = runs({ wards: DELVE_MAX_WARDS });
+  assert.equal(wardsFull.azurite, 0);
+  assert.ok(wardsFull.flare > 400 * findChance('flare', 50) * 0.6, `${wardsFull.flare} flares`);
+  const flaresFull = runs({ flares: DELVE_MAX_FLARES });
+  assert.equal(flaresFull.flare, 0);
+  assert.ok(flaresFull.azurite > 400 * findChance('azurite', 50) * 0.6, `${flaresFull.azurite} veins`);
+  // Two wards and a shard: room for one more, so veins still come.
+  assert.ok(runs({ wards: 2, shards: 1 }).azurite > 0);
+  // Full of everything: nothing at all.
+  assert.deepEqual(runs(FULL), { azurite: 0, flare: 0, dynamite: 0 });
 });
 
 // ---- a find's question -----------------------------------------------------
@@ -430,29 +466,19 @@ test('an Azurite Vein mines a ward for a fast right answer, and a shard for a sl
   assert.deepEqual(inventoryOf(kept.s, id), { ...NONE, wards: 1, shards: 1 });
 });
 
-test('a find whose item the player is full of earns something else', () => {
-  const vein = found('azurite', { host: null, inv: { wards: 3 } });
-  const id = vein.active().id;
-  vein.answer(true);
-  assert.equal(vein.s.reveal!.gained, 'flares');
-  assert.deepEqual(inventoryOf(vein.s, id), { ...NONE, wards: 3, flares: 1 });
-
-  const flare = found('flare', { host: null, inv: { flares: 3 } });
-  flare.answer(true);
-  assert.equal(flare.s.reveal!.gained, 'dynamite');
-
-  const dyn = found('dynamite', { host: null, inv: { dynamite: 3, flares: 3, wards: 1, shards: 1 } });
-  dyn.answer(true);
-  assert.equal(dyn.s.reveal!.gained, 'wards');
-  assert.equal(dyn.s.reveal!.forged, true);
-  assert.deepEqual(inventoryOf(dyn.s, id), { ...NONE, dynamite: 3, flares: 3, wards: 2 });
-
-  // Full of everything (a find planted by hand: none is offered then): a right answer stands, with nothing to carry.
-  const full = found('flare', { host: null, inv: FULL });
-  full.answer(true);
-  assert.equal(full.s.reveal!.correct, true);
-  assert.equal(full.s.reveal!.gained, undefined);
-  assert.deepEqual(inventoryOf(full.s, id), FULL);
+test('a find planted for a player full of its item: a right answer stands, with nothing to carry', () => {
+  for (const [kind, inv] of [
+    ['azurite', { wards: 3 }],
+    ['flare', { flares: 3 }],
+    ['flare', FULL],
+  ] as const) {
+    const h = found(kind, { host: null, inv });
+    const id = h.active().id;
+    h.answer(true);
+    assert.equal(h.s.reveal!.correct, true);
+    assert.equal(h.s.reveal!.gained, undefined);
+    assert.deepEqual(inventoryOf(h.s, id), { ...NONE, ...inv });
+  }
 });
 
 test('wrong or out of time on a find costs a life like any other', () => {

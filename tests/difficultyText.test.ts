@@ -84,20 +84,19 @@ test('every depth that gets harder in Delve says how', async () => {
 });
 
 test('the notes under a find say what it asks and what a right answer earns, whatever the player carries', async () => {
-  const { findNote, FIND_TEXT, BLAST_TEXT } = await import('../src/lib/difficultyText.ts');
-  const { findTimer, findDepth, veinWindow, BLAST_TIMER, BLAST_OPTIONS } = await import('../src/lib/delve.ts');
+  const { findNote, FIND_TEXT } = await import('../src/lib/difficultyText.ts');
+  const { findTimer, findDepth, veinWindow } = await import('../src/lib/delve.ts');
   const none = { wards: 0, flares: 0, dynamite: 0, shards: 0 };
   assert.equal(
     findNote('azurite', 8, none),
     `A question from depth ${findDepth(8)}, on ${findTimer(8)} seconds. Right within ${veinWindow(findTimer(8)) / 1000} seconds mines an Azurite Ward, which takes your next loss; slower, an azurite shard (two forge a ward).`,
   );
   assert.match(findNote('azurite', 40, { ...none, shards: 1 }), /Right within 4 seconds .*\(it forges a ward with yours\)\.$/);
-  assert.match(findNote('azurite', 20, { ...none, wards: 3 }), /Right earns a flare, as you carry all the wards you can\.$/);
-  assert.match(findNote('azurite', 20, none, true), new RegExp(`^Blasted open: a safe question, on ${BLAST_TIMER} seconds\\. Right within 8 seconds`));
-  assert.match(findNote('flare', 5, none), /^A question from depth 20, on 13 seconds\. Right earns a flare, which burns by itself/);
-  assert.match(findNote('flare', 20, { ...none, flares: 3 }), /Right earns dynamite, as you carry all the flares you can\.$/);
-  assert.match(findNote('dynamite', 12, none), /Right earns dynamite, which blasts open a safe card while you choose\.$/);
+  assert.match(findNote('azurite', 20, { ...none, wards: 3 }), /You can carry no more\.$/);
+  assert.match(findNote('flare', 15, none), /^A question from depth 30, on 12 seconds\. Right earns a flare, which burns by itself/);
+  assert.match(findNote('flare', 20, { ...none, flares: 3 }), /You can carry no more\.$/);
+  assert.match(findNote('azurite', 20, { ...none, wards: 2, shards: 1 }), /slower, an azurite shard \(it forges a ward with yours\)\.$/);
+  assert.match(findNote('dynamite', 12, none), /Right earns dynamite, which goes off by itself when half your clock has run out/);
   assert.match(findNote('dynamite', 12, { wards: 3, flares: 3, dynamite: 3, shards: 0 }), /You can carry no more\.$/);
   for (const t of Object.values(FIND_TEXT)) assert.match(t.others, /fifteen depths deeper/);
-  assert.match(BLAST_TEXT.note, new RegExp(`${['four'][BLAST_OPTIONS - 4]} options.*${BLAST_TIMER} seconds`));
 });
