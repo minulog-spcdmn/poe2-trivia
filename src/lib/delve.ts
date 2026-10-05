@@ -36,11 +36,21 @@ const depthOf = (d: number) => (Number.isFinite(d) ? Math.max(1, Math.floor(d)) 
  */
 export const DELVE_MIN_TIMER = 7;
 
-/** Seconds per question: 16 at the top, one less every six depths, down to DELVE_MIN_TIMER from depth 55. */
-export const delveTimer = (d: number) => Math.max(DELVE_MIN_TIMER, 16 - Math.floor((depthOf(d) - 1) / 6));
+/**
+ * Depths where the clock loses a second: 16 s from the start, 15 from depth
+ * 13… down to DELVE_MIN_TIMER from 58. Slow at first, where a lost second
+ * hurts most, then quicker; never on a depth where something else changes.
+ */
+const TIMER_FROM = [13, 19, 27, 34, 39, 44, 48, 53, 58];
+
+/** Seconds per question: 16 at the top, one less at each of TIMER_FROM, never below DELVE_MIN_TIMER. */
+export const delveTimer = (d: number) => {
+  const depth = depthOf(d);
+  return Math.max(DELVE_MIN_TIMER, 16 - TIMER_FROM.filter((from) => depth >= from).length);
+};
 
 /** Depths where the lockout grows: 2 turns from the start, then 3, 4… up to DELVE_MAX_LOCKOUT. */
-const LOCKOUT_FROM = [1, 7, 13, 21, 29, 37];
+const LOCKOUT_FROM = [1, 9, 23, 37, 66, 91];
 
 /** Turns a picked category stays locked. */
 export function delveLockout(d: number): number {
@@ -48,6 +58,11 @@ export function delveLockout(d: number): number {
   return 1 + LOCKOUT_FROM.filter((from) => depth >= from).length;
 }
 
+/**
+ * Delve's own knob values: look-alikes and mirroring also come in quarters
+ * (0.25, 0.75), between the steps the Custom editor offers, so the curve can
+ * change one thing a little at a time.
+ */
 type DelveKnobs = Pick<DifficultyRules, 'options' | 'similarNames' | 'fakes' | 'artChance' | 'grayscale' | 'mirror'> & { veil: VeilSpeed };
 
 /** How each veil speed cuts and paces the art (the same as game.ts VEILS; tests/delve.test.ts checks). */
@@ -59,31 +74,37 @@ const VEIL_PACE: Record<VeilSpeed, DifficultyRules['veil']> = {
 };
 
 /**
- * The question knobs, each from the depth where it starts. Quick steps at
- * first, so a run gets going, but four options for the first four depths
- * (look-alike names from depth 3 make them harder meanwhile), six from 5, a
- * made-up name from 7, eight from 10: Cruel at the top, Merciless by depth
- * 7, Eternal by 13, then past Eternal. Options stop at 8: at 10 only pairs of groups can
- * share a question, so most small groups (wands, quivers, relics…) could never
- * be the answer. From depth 25 the art burns into view, one step slower every
- * 25 depths (and its clock only starts once the art is out); grayscale only
- * comes after that, so the first art to burn in is in colour.
+ * The question knobs, each from the depth where it starts: one change at a
+ * time, and never on a depth where the timer or the lockout changes, so each
+ * step can be felt (and named) on its own. Four options for the first ten
+ * depths, made harder by look-alike and made-up names meanwhile; six from 11,
+ * eight from 31. Options stop at 8: at 10 only pairs of groups can share a
+ * question, so most small groups (wands, quivers, relics…) could never be the
+ * answer. From depth 25 the art burns into view, slower from 50 and slowest
+ * from 75 (its clock only starts once the art is out); grayscale only comes
+ * after that, so the first art to burn in is in colour. The last step is at
+ * 81; past depth 100 only delveMoreFakes and the tile veil keep rising.
  */
 export const DELVE_STEPS: (DelveKnobs & { from: number })[] = [
   { from: 1, options: 4, similarNames: 0, fakes: 0, artChance: 0.4, grayscale: 'off', mirror: 0, veil: 'off' },
-  { from: 3, options: 4, similarNames: 0.5, fakes: 0, artChance: 0.4, grayscale: 'off', mirror: 0, veil: 'off' },
-  { from: 5, options: 6, similarNames: 0.5, fakes: 0, artChance: 0.4, grayscale: 'off', mirror: 0, veil: 'off' },
-  { from: 7, options: 6, similarNames: 0.5, fakes: 1, artChance: 0.4, grayscale: 'off', mirror: 0, veil: 'off' },
-  { from: 10, options: 8, similarNames: 1, fakes: 2, artChance: 0.5, grayscale: 'off', mirror: 0, veil: 'off' },
-  { from: 13, options: 8, similarNames: 1, fakes: 2, artChance: 0.5, grayscale: 'off', mirror: 0.3, veil: 'off' },
-  { from: 17, options: 8, similarNames: 1, fakes: 3, artChance: 0.5, grayscale: 'off', mirror: 0.3, veil: 'off' },
-  { from: 21, options: 8, similarNames: 1, fakes: 3, artChance: 0.5, grayscale: 'off', mirror: 0.5, veil: 'off' },
-  { from: 25, options: 8, similarNames: 1, fakes: 3, artChance: 0.5, grayscale: 'off', mirror: 0.5, veil: 'fast' },
-  { from: 30, options: 8, similarNames: 1, fakes: 3, artChance: 0.5, grayscale: 'art', mirror: 0.5, veil: 'fast' },
-  { from: 35, options: 8, similarNames: 1, fakes: 3, artChance: 0.5, grayscale: 'art', mirror: 1, veil: 'fast' },
-  { from: 40, options: 8, similarNames: 1, fakes: 3, artChance: 0.5, grayscale: 'all', mirror: 1, veil: 'fast' },
-  { from: 50, options: 8, similarNames: 1, fakes: 3, artChance: 0.5, grayscale: 'all', mirror: 1, veil: 'slow' },
-  { from: 75, options: 8, similarNames: 1, fakes: 3, artChance: 0.5, grayscale: 'all', mirror: 1, veil: 'slowest' },
+  { from: 3, options: 4, similarNames: 0.25, fakes: 0, artChance: 0.4, grayscale: 'off', mirror: 0, veil: 'off' },
+  { from: 5, options: 4, similarNames: 0.25, fakes: 1, artChance: 0.4, grayscale: 'off', mirror: 0, veil: 'off' },
+  { from: 7, options: 4, similarNames: 0.5, fakes: 1, artChance: 0.4, grayscale: 'off', mirror: 0, veil: 'off' },
+  { from: 11, options: 6, similarNames: 0.5, fakes: 1, artChance: 0.4, grayscale: 'off', mirror: 0, veil: 'off' },
+  { from: 15, options: 6, similarNames: 0.5, fakes: 1, artChance: 0.4, grayscale: 'off', mirror: 0.25, veil: 'off' },
+  { from: 17, options: 6, similarNames: 0.5, fakes: 2, artChance: 0.4, grayscale: 'off', mirror: 0.25, veil: 'off' },
+  { from: 21, options: 6, similarNames: 0.75, fakes: 2, artChance: 0.4, grayscale: 'off', mirror: 0.25, veil: 'off' },
+  { from: 25, options: 6, similarNames: 0.75, fakes: 2, artChance: 0.4, grayscale: 'off', mirror: 0.25, veil: 'fast' },
+  { from: 29, options: 6, similarNames: 0.75, fakes: 2, artChance: 0.4, grayscale: 'off', mirror: 0.5, veil: 'fast' },
+  { from: 31, options: 8, similarNames: 0.75, fakes: 2, artChance: 0.4, grayscale: 'off', mirror: 0.5, veil: 'fast' },
+  { from: 41, options: 8, similarNames: 0.75, fakes: 2, artChance: 0.5, grayscale: 'art', mirror: 0.5, veil: 'fast' },
+  { from: 45, options: 8, similarNames: 0.75, fakes: 3, artChance: 0.5, grayscale: 'art', mirror: 0.5, veil: 'fast' },
+  { from: 50, options: 8, similarNames: 0.75, fakes: 3, artChance: 0.5, grayscale: 'art', mirror: 0.5, veil: 'slow' },
+  { from: 55, options: 8, similarNames: 1, fakes: 3, artChance: 0.5, grayscale: 'art', mirror: 0.5, veil: 'slow' },
+  { from: 61, options: 8, similarNames: 1, fakes: 3, artChance: 0.5, grayscale: 'all', mirror: 0.5, veil: 'slow' },
+  { from: 71, options: 8, similarNames: 1, fakes: 3, artChance: 0.5, grayscale: 'all', mirror: 0.75, veil: 'slow' },
+  { from: 75, options: 8, similarNames: 1, fakes: 3, artChance: 0.5, grayscale: 'all', mirror: 0.75, veil: 'slowest' },
+  { from: 81, options: 8, similarNames: 1, fakes: 3, artChance: 0.5, grayscale: 'all', mirror: 1, veil: 'slowest' },
 ];
 
 /** The step of the curve a depth plays. */
@@ -108,17 +129,35 @@ export function delveTileVeil(d: number): number {
  */
 export const tileVeilSize = (size: number) => Math.min(4, Math.ceil(size / 2));
 
+/**
+ * Endless, past the last step: from this depth a growing share of name
+ * questions gets a fourth made-up name (as many as eight options hold), two
+ * percent more every depth, all of them by depth 150.
+ */
+export const MORE_FAKES_FROM = 101;
+
+/** The share of a depth's name questions that get one more made-up name than its step's. */
+export function delveMoreFakes(d: number): number {
+  const depth = depthOf(d);
+  return depth < MORE_FAKES_FROM ? 0 : Math.min(1, Math.round((depth - MORE_FAKES_FROM + 1) * 2) / 100);
+}
+
 /** The rules of a depth. */
 export function delveRules(d: number): DifficultyRules {
   const { from: _, veil, ...k } = stepOf(d);
-  return { ...k, veil: VEIL_PACE[veil], lockout: delveLockout(d) };
+  const more = delveMoreFakes(d);
+  return { ...k, veil: VEIL_PACE[veil], lockout: delveLockout(d), ...(more ? { moreFakes: more } : {}) };
 }
 
-/** What gets harder at this depth, if anything: new question rules, a longer lockout, or less time. */
+/**
+ * What gets harder at this depth, if anything: new question rules (a step of
+ * the curve, or the first fourth made-up names), a longer lockout, or less
+ * time. Only one at a time (tests/delve.test.ts checks).
+ */
 export function delveChangeAt(d: number): 'knobs' | 'lockout' | 'timer' | null {
   const depth = depthOf(d);
   if (depth === 1) return null;
-  if (stepOf(depth) !== stepOf(depth - 1)) return 'knobs';
+  if (stepOf(depth) !== stepOf(depth - 1) || depth === MORE_FAKES_FROM) return 'knobs';
   if (delveLockout(depth) !== delveLockout(depth - 1)) return 'lockout';
   if (delveTimer(depth) !== delveTimer(depth - 1)) return 'timer';
   return null;
@@ -184,10 +223,10 @@ export const FIND_RAMP_TO = 50;
  * common. Together, one offer in three from depth 50. The Dynamite Cache,
  * when on, comes in between, from depth 10.
  */
-export const FINDS: { kind: FindKind; item: ItemKind; from: number; start: number; cap: number; max: number }[] = [
-  { kind: 'azurite', item: 'wards', from: 5, start: 0.04, cap: DYNAMITE_ON ? 0.11 : 0.15, max: DELVE_MAX_WARDS },
-  { kind: 'flare', item: 'flares', from: 15, start: 0.04, cap: DYNAMITE_ON ? 0.13 : 0.18, max: DELVE_MAX_FLARES },
-  { kind: 'dynamite', item: 'dynamite', from: 10, start: DYNAMITE_ON ? 0.04 : 0, cap: DYNAMITE_ON ? 0.09 : 0, max: DELVE_MAX_DYNAMITE },
+export const FINDS: { kind: FindKind; item: ItemKind; from: number; start: number; cap: number; max: number; deeper: number; losses: number }[] = [
+  { kind: 'azurite', item: 'wards', from: 5, start: 0.04, cap: DYNAMITE_ON ? 0.11 : 0.15, max: DELVE_MAX_WARDS, deeper: 15, losses: 2 },
+  { kind: 'flare', item: 'flares', from: 15, start: 0.04, cap: DYNAMITE_ON ? 0.13 : 0.18, max: DELVE_MAX_FLARES, deeper: 20, losses: 1 },
+  { kind: 'dynamite', item: 'dynamite', from: 10, start: DYNAMITE_ON ? 0.04 : 0, cap: DYNAMITE_ON ? 0.09 : 0, max: DELVE_MAX_DYNAMITE, deeper: 15, losses: 1 },
 ];
 
 /** The find that yields an item. */
@@ -206,28 +245,39 @@ export function findChance(kind: FindKind, d: number): number {
 export const FINDS_FROM = Math.min(...FINDS.filter((f) => f.cap > 0).map((f) => f.from));
 
 /**
- * A find's question is the question of this many depths deeper: hard, but not
- * the hardest there is until the curve runs out (depth 60 asks depth 75's).
+ * A find's question is the question of `deeper` depths down (FINDS): hard,
+ * but not the hardest there is until the curve runs out. The Flare Cache
+ * asks from further down than the Azurite Vein, whose risk is the cave-in
+ * instead (see findLosses).
  */
-export const FIND_DEEPER = 15;
-
-/** The depth whose question a find at depth `d` asks. */
-export const findDepth = (d: number) => depthOf(d) + FIND_DEEPER;
-
-/** Seconds on the clock for a find's question: the deeper depth's. */
-export const findTimer = (d: number) => delveTimer(findDepth(d));
-
-/** The share of a find's "find the art" questions whose pictures burn into view: the deeper depth's. */
-export const findTileVeil = (d: number) => delveTileVeil(findDepth(d));
+export const findDepth = (kind: FindKind, d: number) => depthOf(d) + findFor(kind).deeper;
 
 /**
- * The rules of a find's question at depth `d`: those of FIND_DEEPER depths
- * deeper, a risk for the reward. The mix of art and name questions and the
- * lockout stay the depth's: neither makes the question harder, and the art
- * lean counts every question alike.
+ * Losses a wrong answer (or a time-out) to a find costs: two for an Azurite
+ * Vein, whose seam caves in; one for the rest. Each is taken by a ward first
+ * if the player holds one, and a player falls on their last life whatever is
+ * left, so on it a cave-in costs no more than any miss. A card blasted open
+ * is made safe: one loss, whatever it is.
  */
-export function findRules(d: number): DifficultyRules {
-  return { ...delveRules(findDepth(d)), artChance: stepOf(d).artChance, lockout: delveLockout(d) };
+export const findLosses = (kind: FindKind) => findFor(kind).losses;
+
+/** Whether a wrong answer to this find caves in (costs more than one loss). */
+export const cavesIn = (kind: FindKind) => findLosses(kind) > 1;
+
+/** Seconds on the clock for a find's question: the deeper depth's. */
+export const findTimer = (kind: FindKind, d: number) => delveTimer(findDepth(kind, d));
+
+/** The share of a find's "find the art" questions whose pictures burn into view: the deeper depth's. */
+export const findTileVeil = (kind: FindKind, d: number) => delveTileVeil(findDepth(kind, d));
+
+/**
+ * The rules of a find's question at depth `d`: those of its deeper depth, a
+ * risk for the reward. The mix of art and name questions and the lockout stay
+ * the depth's: neither makes the question harder, and the art lean counts
+ * every question alike.
+ */
+export function findRules(kind: FindKind, d: number): DifficultyRules {
+  return { ...delveRules(findDepth(kind, d)), artChance: stepOf(d).artChance, lockout: delveLockout(d) };
 }
 
 /**
@@ -272,7 +322,7 @@ export function blastRules(d: number): DifficultyRules {
 
 /** Seconds a Delve question at depth `d` starts with: a blasted card's, a find's, or the depth's. */
 export const delveQuestionTimer = (d: number, q: { find?: FindKind; blasted?: boolean }) =>
-  q.blasted ? BLAST_TIMER : q.find ? findTimer(d) : delveTimer(d);
+  q.blasted ? BLAST_TIMER : q.find ? findTimer(q.find, d) : delveTimer(d);
 
 const CAPS: Inventory = { wards: DELVE_MAX_WARDS, flares: DELVE_MAX_FLARES, dynamite: DELVE_MAX_DYNAMITE, shards: SHARDS_PER_WARD - 1 };
 
@@ -293,7 +343,7 @@ export function findReward(kind: FindKind, inv: Inventory, fast: boolean): ItemK
 /** The preset a depth plays most like, for filing answers in the codex. */
 export function delveTier(d: number): Preset {
   const depth = depthOf(d);
-  return depth < 5 ? 'cruel' : depth < 13 ? 'merciless' : 'eternal';
+  return depth < 11 ? 'cruel' : depth < 31 ? 'merciless' : 'eternal';
 }
 
 // ---- reading a run --------------------------------------------------------
@@ -354,7 +404,11 @@ export const questionTimer = (s: GameState) => (s.delve && s.question ? delveQue
 /** An Azurite Vein's fast window for the question in play, in ms from its clock's start (0 for any other question). */
 export const veinWindowMs = (s: GameState) => (s.delve && s.question?.find === 'azurite' ? veinWindow(questionTimer(s)) : 0);
 
-/** The depth where a player lost their last life, or null while they still stand. */
+/**
+ * The depth where a player lost their last life, or null while they still
+ * stand. A cave-in takes two lives at once, so the same depth can be in
+ * `losses` twice, the fall among them.
+ */
 export function fellAt(s: GameState, id: string): number | null {
   return s.delve?.losses[id]?.[DELVE_LIVES - 1] ?? null;
 }

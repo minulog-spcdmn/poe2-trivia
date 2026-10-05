@@ -67,13 +67,16 @@ export function delveNotices(prev: GameState | null, next: GameState): DelveNoti
   return out;
 }
 
-/** Lives lost by this change, per player, for sounds and effects (a reveal or a missed turn). */
-export function livesLost(prev: GameState | null, next: GameState): { playerId: string; left: number }[] {
+/**
+ * Lives lost by this change, per player, for sounds and effects (a reveal or a
+ * missed turn): how many (two when an Azurite Vein caves in) and how many are left.
+ */
+export function livesLost(prev: GameState | null, next: GameState): { playerId: string; left: number; lost: number }[] {
   if (!prev?.delve || !next.delve || prev.delve.startedAt !== next.delve.startedAt) return [];
   return next.players.flatMap((p) => {
     const before = livesOf(prev, p.id);
     const after = livesOf(next, p.id);
-    return after < before && before <= DELVE_LIVES ? [{ playerId: p.id, left: after }] : [];
+    return after < before && before <= DELVE_LIVES ? [{ playerId: p.id, left: after, lost: before - after }] : [];
   });
 }
 

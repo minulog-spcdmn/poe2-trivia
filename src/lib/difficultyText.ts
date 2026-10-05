@@ -4,13 +4,15 @@
 
 import {
   DELVE_MIN_TIMER,
-  FIND_DEEPER,
   FLARE_MS,
   SHARDS_PER_WARD,
+  cavesIn,
   delveChangeAt,
   delveLockout,
   delveTimer,
   findDepth,
+  findFor,
+  findLosses,
   findReward,
   findTimer,
   veinWindow,
@@ -147,21 +149,30 @@ export const KNOB_TEXT: { [K in keyof Knobs]: KnobText<K> }[keyof Knobs][] = [
   { key: 'lockout', name: 'Category lockout', hint: 'Turns until a picked category returns', label: (v) => (v ? String(v) : 'None') },
 ];
 
-/** What each step of the Delve curve brings, by the depth where it starts (delve.ts DELVE_STEPS). */
+/**
+ * What each step of the Delve curve brings, by the depth where it starts
+ * (delve.ts DELVE_STEPS), and the first fourth made-up names (MORE_FAKES_FROM).
+ */
 export const DELVE_STEP_TEXT: Record<number, string> = {
-  3: 'Look-alike names',
-  5: 'Six options',
-  7: 'A made-up name',
-  10: 'Eight options, two made up',
-  13: 'Mirrored pictures',
-  17: 'Three made-up names',
-  21: 'More mirrored pictures',
+  3: 'A look-alike name',
+  5: 'A made-up name',
+  7: 'More look-alikes',
+  11: 'Six options',
+  15: 'Mirrored pictures',
+  17: 'Two made-up names',
+  21: 'Mostly look-alikes',
   25: 'The art burns into view',
-  30: 'Find the art in grayscale',
-  35: 'Always mirrored',
-  40: 'All art in grayscale',
+  29: 'More mirrored pictures',
+  31: 'Eight options',
+  41: 'Find the art in grayscale',
+  45: 'Three made-up names',
   50: 'The art burns in slower',
+  55: 'Only look-alikes',
+  61: 'All art in grayscale',
+  71: 'Mostly mirrored',
   75: 'The art burns in slowest',
+  81: 'Always mirrored',
+  101: 'Now and then, four made-up names',
 };
 
 /** What gets harder at a Delve depth, in a few words, or null when nothing does. */
@@ -176,15 +187,15 @@ export function delveChange(depth: number): string | null {
 /** The milestones of a descent, for the lobby and the start page. */
 export const DELVE_LADDER: { depth: number; text: string }[] = [
   { depth: 1, text: 'Four options, 16 seconds' },
-  { depth: 3, text: 'Look-alike names' },
-  { depth: 5, text: 'Six options, then made-up names' },
+  { depth: 3, text: 'Look-alike and made-up names' },
+  { depth: 11, text: 'Six options, then eight from 31' },
   { depth: 25, text: 'The art burns into view' },
-  { depth: 40, text: 'All art in grayscale' },
-  { depth: 55, text: 'Seven seconds' },
+  { depth: 58, text: 'Seven seconds' },
+  { depth: 61, text: 'All art in grayscale' },
 ];
 
 /** Small numbers in words, for the notes under the cards. */
-const WORDS = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen'];
+const WORDS = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen', 'twenty'];
 const words = (n: number) => WORDS[n] ?? String(n);
 
 /** An item as a reward, with its article. */
@@ -195,6 +206,12 @@ export const ITEM_TEXT: Record<ItemKind, string> = {
   dynamite: 'dynamite',
 };
 
+/** How far down a find's question comes from, in words ("fifteen depths deeper"). */
+const deeperText = (kind: FindKind) => `${words(findFor(kind).deeper)} depths deeper`;
+
+/** What a wrong answer to a find that caves in costs, in words ("two lives"). */
+const caveInText = (kind: FindKind) => `${words(findLosses(kind))} lives`;
+
 /**
  * The finds: the card's name, the tagline on its card, and what it is in a
  * line for those watching.
@@ -203,36 +220,39 @@ export const FIND_TEXT: Record<FindKind, { name: string; tag: string; others: st
   azurite: {
     name: 'Azurite Vein',
     tag: 'A ward if fast, a shard if slow',
-    others: `An Azurite Vein: a question from ${words(FIND_DEEPER)} depths deeper, for an Azurite Ward or a shard of one.`,
+    others: `An Azurite Vein: a question from ${deeperText('azurite')}, for an Azurite Ward or a shard of one; wrong, it caves in for ${caveInText('azurite')}.`,
   },
   flare: {
     name: 'Flare Cache',
     tag: 'Answer right for a flare',
-    others: `A Flare Cache: a question from ${words(FIND_DEEPER)} depths deeper, for a flare.`,
+    others: `A Flare Cache: a question from ${deeperText('flare')}, for a flare.`,
   },
   dynamite: {
     name: 'Dynamite Cache',
     tag: 'Answer right for dynamite',
-    others: `A Dynamite Cache: a question from ${words(FIND_DEEPER)} depths deeper, for dynamite.`,
+    others: `A Dynamite Cache: a question from ${deeperText('dynamite')}, for dynamite.`,
   },
 };
 
 /**
  * A find's risk and reward, for the player choosing at depth `depth` while
- * holding `inv`. A find is only offered to a player with room for its item.
+ * holding `inv`: the depth it asks, its clock, what a right answer earns and,
+ * for a vein, what a wrong one costs. A find is only offered to a player with
+ * room for its item.
  */
 export function findNote(kind: FindKind, depth: number, inv: Inventory): string {
-  const secs = findTimer(depth);
-  const ask = `A question from depth ${findDepth(depth)}, on ${secs} seconds.`;
+  const secs = findTimer(kind, depth);
+  const ask = `A question from depth ${findDepth(kind, depth)}, on ${secs} seconds.`;
+  const risk = cavesIn(kind) ? ` Wrong caves in: ${caveInText(kind)}.` : '';
   const fast = findReward(kind, inv, true);
-  if (!fast) return `${ask} You can carry no more.`;
+  if (!fast) return `${ask} You can carry no more.${risk}`;
   if (kind === 'azurite') {
     const forge = inv.shards + 1 >= SHARDS_PER_WARD ? 'it forges a ward with yours' : `${words(SHARDS_PER_WARD)} forge a ward`;
-    return `${ask} Right within ${veinWindow(secs) / 1000} seconds mines ${ITEM_TEXT.wards}, which takes your next loss; slower, ${ITEM_TEXT.shards} (${forge}).`;
+    return `${ask} Right within ${veinWindow(secs) / 1000} seconds mines ${ITEM_TEXT.wards}, slower ${ITEM_TEXT.shards} (${forge}).${risk}`;
   }
   const what =
     kind === 'flare'
       ? `, which burns by itself as your clock runs out, for ${FLARE_MS / 1000} seconds more`
       : ', which goes off by itself when half your clock has run out, blasting the pictures plain and half the wrong answers away';
-  return `${ask} Right earns ${ITEM_TEXT[fast]}${what}.`;
+  return `${ask} Right earns ${ITEM_TEXT[fast]}${what}.${risk}`;
 }

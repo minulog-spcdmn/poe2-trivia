@@ -65,7 +65,10 @@ test('notices: a life lost without a question, and a question set aside by a rel
   const missed = run();
   missed.delve!.losses = { b: [3] };
   assert.deepEqual(delveNotices(prev, missed), [{ kind: 'missed', playerId: 'b' }]);
-  assert.deepEqual(livesLost(prev, missed), [{ playerId: 'b', left: 2 }]);
+  assert.deepEqual(livesLost(prev, missed), [{ playerId: 'b', left: 2, lost: 1 }]);
+  const caved = run();
+  caved.delve!.losses = { b: [3, 3] };
+  assert.deepEqual(livesLost(prev, caved), [{ playerId: 'b', left: 1, lost: 2 }], 'a cave-in takes two at once');
 
   const revealed = { ...missed, phase: 'reveal' as const, reveal: { correctId: 'x', chosenId: 'y', correctIndex: 0, chosenIndex: 1, correct: false, timedOut: false, winnerId: null } };
   assert.deepEqual(delveNotices(prev, revealed), [], 'a wrong answer speaks for itself');

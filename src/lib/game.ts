@@ -19,7 +19,9 @@ import {
   delveRules,
   delveTileVeil,
   delveTimer,
+  cavesIn,
   findChance,
+  findLosses,
   findReward,
   findRules,
   findTileVeil,
@@ -109,10 +111,15 @@ const VEILS: Record<VeilSpeed, { size: number; share: number } | null> = {
   slowest: { size: 9, share: 0.8 },
 };
 
-/** The knobs as the engine uses them. */
+/**
+ * The knobs as the engine uses them. Delve's curve also plays values between
+ * the Custom editor's steps (look-alikes and mirroring in quarters).
+ */
 export interface DifficultyRules extends Omit<Knobs, 'veil'> {
   /** The art burns into view patch by patch; fraction of the timer it takes. */
   veil: { size: number; share: number } | null;
+  /** Delve, past depth 100: the share of name questions with one more made-up name than `fakes`, as far as they fit. */
+  moreFakes?: number;
 }
 
 /** Knobs from anywhere (an action, an old save): each one off the allowed steps takes its value in `fallback`. */
@@ -289,7 +296,7 @@ export function activeRules(s: GameState): DifficultyRules {
 
 /** The rules of a Delve question at depth `d`, for a find or a blasted card (a find blasted open plays as a blasted card). */
 function delveQuestionRules(d: number, q: Pick<Question, 'find' | 'blasted'>): DifficultyRules {
-  return q.blasted ? blastRules(d) : q.find ? findRules(d) : delveRules(d);
+  return q.blasted ? blastRules(d) : q.find ? findRules(q.find, d) : delveRules(d);
 }
 
 /** The last `lockout` categories of a list (none for a lockout of 0). */
@@ -490,8 +497,15 @@ export interface Reveal {
   gained?: ItemKind;
   /** Delve: the shard this answer earned forged a ward with the one held. */
   forged?: boolean;
-  /** Delve: an Azurite Ward took this loss instead of a life. */
+  /** Delve: Azurite Wards took this answer's whole loss, so no life was lost. */
   warded?: boolean;
+  /**
+   * Delve: a wrong answer (or a time-out) to an Azurite Vein, which caves in
+   * for two losses (delve.ts findLosses). Lost a life on the last one: just that.
+   */
+  caveIn?: boolean;
+  /** Delve, on a cave-in: lives it took (0 to 2) and wards that broke in their place (0 to 2). */
+  lost?: { lives: number; wards: number };
 }
 
 /** Someone who joined a running game: they watch until the next game starts. */
@@ -971,12 +985,22 @@ export class Engine {
         let gained: ItemKind | undefined;
         let forged = false;
         let warded = false;
+        let caveIn: Pick<Reveal, 'caveIn' | 'lost'> = {};
         if (correct) {
           active.score += 1;
           // A right answer to a find earns its item (see delve.ts findReward): it is only offered to a player with room for it.
           const reward = s.delve && q.find ? findReward(q.find, inventoryOf(s, active.id), this.answeredFast(s, q, from)) : null;
           if (reward) [gained, forged] = this.gain(s, active.id, reward);
-        } else if (s.delve) warded = this.loseLife(s, active.id) === 'ward';
+        } else if (s.delve) {
+          // An Azurite Vein caves in for two losses, each taken by a ward if
+          // one is held; on the last life the first loss is the fall, and
+          // there is nothing left to take. A card blasted open is safe.
+          const losses = q.find && !q.blasted ? findLosses(q.find) : 1;
+          const took = Array.from({ length: losses }, () => this.loseLife(s, active.id));
+          const lost = { lives: took.filter((t) => t === 'life').length, wards: took.filter((t) => t === 'ward').length };
+          warded = lost.wards > 0 && lost.lives === 0;
+          if (q.find && !q.blasted && cavesIn(q.find)) caveIn = { caveIn: true, lost };
+        }
         if (!timedOut && chosenId && isFake(chosenId)) s.used.push(chosenId);
         if (s.deathmatch) s.deathmatch.results[active.id] = correct;
         s.reveal = {
@@ -990,6 +1014,7 @@ export class Engine {
           ...(gained ? { gained } : {}),
           ...(forged ? { forged } : {}),
           ...(warded ? { warded } : {}),
+          ...caveIn,
         };
         s.phase = 'reveal';
         break;
@@ -1709,6 +1734,8 @@ export class Engine {
     const need = rules.options - 1;
     let mode = this.rollMode(s);
     let fakes = mode === 'name' && this.fakes.size ? rules.fakes : 0;
+    // Delve, past depth 100: now and then one more made-up name, as far as they fit.
+    if (fakes && rules.moreFakes && this.rng() < rules.moreFakes) fakes = Math.min(maxFakes(rules.options), fakes + 1);
 
     // Earlier answers never come back as decoys (they'd be easy to rule out).
     // An answer needs a full set of unseen decoys from its own group, or one
@@ -1777,7 +1804,7 @@ export class Engine {
     // Delve: the clock starts once the art has reached the player answering (the 'clock' action).
     const deadline = !s.delve && timer > 0 ? askedAt + timer * 1000 : null;
     // Delve: deep down, "find the art" pictures may burn in as well, each cut much coarser.
-    const tiles = mode === 'art' && !!rules.veil && !!s.delve && this.rng() < (special.find ? findTileVeil(s.round) : delveTileVeil(s.round));
+    const tiles = mode === 'art' && !!rules.veil && !!s.delve && this.rng() < (special.find ? findTileVeil(special.find, s.round) : delveTileVeil(s.round));
     const delveSecs = delveQuestionTimer(s.round, special);
     const veil: Veil | null =
       rules.veil && (mode === 'name' || tiles)

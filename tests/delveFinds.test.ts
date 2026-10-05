@@ -12,14 +12,17 @@ import {
   DYNAMITE_ON,
   FINDS,
   FINDS_FROM,
-  FIND_DEEPER,
   FIND_RAMP_TO,
   FLARE_AT_MS,
   FLARE_MS,
   SHARDS_PER_WARD,
   blastRules,
   blastedOffer,
+  cavesIn,
   delveLockout,
+  delveStandings,
+  fellAt,
+  findLosses,
   delveRules,
   delveTileVeil,
   delveTimer,
@@ -136,64 +139,89 @@ function online(who: 'guest' | 'host', depth = 20) {
 // ---- the rules -------------------------------------------------------------
 
 const KNOBS = ['options', 'similarNames', 'fakes', 'grayscale', 'mirror'] as const;
-const order = (k: (typeof KNOBS)[number], v: unknown) => (KNOB_STEPS[k] as readonly unknown[]).indexOf(v);
+const GRAY = KNOB_STEPS.grayscale as readonly string[];
+/** A knob's value as a number that only grows as the curve gets harder. */
+const level = (k: (typeof KNOBS)[number], v: unknown) => (k === 'grayscale' ? GRAY.indexOf(v as string) : (v as number));
+const LIVE = ['azurite', 'flare'] as const;
+const DEEPER: Record<FindKind, number> = { azurite: 15, flare: 20, dynamite: 15 };
 
-test("a find asks the question of fifteen depths deeper: its rules, its clock and its pictures' veil", () => {
-  assert.equal(FIND_DEEPER, 15);
-  for (const d of [FINDS_FROM, 8, 12, 13, 20, 40, 59, 60, 75, 300]) {
-    const [r, deep] = [findRules(d), delveRules(d + FIND_DEEPER)];
-    assert.equal(findDepth(d), d + FIND_DEEPER);
-    for (const k of KNOBS) assert.equal(r[k], deep[k], `${k} at ${d}`);
-    assert.deepEqual(r.veil, deep.veil, `veil at ${d}`);
-    assert.equal(findTimer(d), delveTimer(d + FIND_DEEPER));
-    assert.equal(findTileVeil(d), delveTileVeil(d + FIND_DEEPER));
-    // Neither the art/name mix nor the lockout makes a question harder: they stay the depth's.
-    assert.equal(r.artChance, delveRules(d).artChance);
-    assert.equal(r.lockout, delveLockout(d));
-  }
+test('an Azurite Vein asks the question of fifteen depths deeper, a Flare Cache of twenty: its rules, its clock and its pictures\' veil', () => {
+  assert.deepEqual(
+    FINDS.map((f) => [f.kind, f.deeper]),
+    Object.entries(DEEPER),
+  );
+  for (const kind of ['azurite', 'flare', 'dynamite'] as const)
+    for (const d of [FINDS_FROM, 8, 12, 13, 20, 40, 59, 60, 75, 300]) {
+      const deeper = d + DEEPER[kind];
+      const [r, deep] = [findRules(kind, d), delveRules(deeper)];
+      assert.equal(findDepth(kind, d), deeper);
+      for (const k of KNOBS) assert.equal(r[k], deep[k], `${kind} ${k} at ${d}`);
+      assert.deepEqual(r.veil, deep.veil, `veil at ${d}`);
+      assert.equal(r.moreFakes, deep.moreFakes, `fourth fakes at ${d}`);
+      assert.equal(findTimer(kind, d), delveTimer(deeper));
+      assert.equal(findTileVeil(kind, d), delveTileVeil(deeper));
+      // Neither the art/name mix nor the lockout makes a question harder: they stay the depth's.
+      assert.equal(r.artChance, delveRules(d).artChance);
+      assert.equal(r.lockout, delveLockout(d));
+    }
+  // Odd depths read as the surface.
+  assert.equal(findDepth('flare', NaN), 21);
+  assert.deepEqual([findDepth('azurite', 20), findDepth('flare', 20)], [35, 40]);
 });
 
-test('a find is never easier than its depth, nearly always harder, and the hardest there is only from depth 60', () => {
+test('a find is never easier than its depth, nearly always harder, and the hardest there is only once its question is from 150 down', () => {
   const deepest = delveRules(1000);
-  for (let d = FINDS_FROM; d <= 200; d++) {
-    const [r, here] = [findRules(d), delveRules(d)];
-    for (const k of KNOBS) assert.ok(order(k, r[k]) >= order(k, here[k]), `${k} eases at ${d}`);
-    assert.ok(findTimer(d) <= delveTimer(d), `more time at ${d}`);
-    const harder = KNOBS.some((k) => r[k] !== here[k]) || JSON.stringify(r.veil) !== JSON.stringify(here.veil) || findTimer(d) < delveTimer(d);
-    // Harder wherever the curve has anything harder within fifteen depths (from 50 to 59 it has nothing until 75).
-    if (d < 50 || (d >= 60 && d < 75)) assert.ok(harder, `nothing harder at ${d}`);
-    const hardest = KNOBS.every((k) => r[k] === deepest[k]) && JSON.stringify(r.veil) === JSON.stringify(deepest.veil) && findTimer(d) === DELVE_MIN_TIMER;
-    assert.equal(hardest, d >= 60, `the hardest question at ${d}`);
-  }
+  for (const kind of LIVE)
+    for (let d = FINDS_FROM; d <= 200; d++) {
+      const [r, here] = [findRules(kind, d), delveRules(d)];
+      for (const k of KNOBS) assert.ok(level(k, r[k]) >= level(k, here[k]), `${kind}: ${k} eases at ${d}`);
+      assert.ok(findTimer(kind, d) <= delveTimer(d), `more time at ${d}`);
+      const harder =
+        KNOBS.some((k) => r[k] !== here[k]) ||
+        JSON.stringify(r.veil) !== JSON.stringify(here.veil) ||
+        (r.moreFakes ?? 0) > (here.moreFakes ?? 0) ||
+        findTileVeil(kind, d) > delveTileVeil(d) ||
+        findTimer(kind, d) < delveTimer(d);
+      assert.ok(findTileVeil(kind, d) >= delveTileVeil(d), `fewer veiled pictures at ${d}`);
+      // Harder wherever the curve has anything harder further down (the tile veil rises to 124, the fourth fakes to 150).
+      if (d < 150) assert.ok(harder, `${kind}: nothing harder at ${d}`);
+      const hardest =
+        KNOBS.every((k) => r[k] === deepest[k]) && JSON.stringify(r.veil) === JSON.stringify(deepest.veil) && r.moreFakes === 1 && findTimer(kind, d) === DELVE_MIN_TIMER;
+      assert.equal(hardest, findDepth(kind, d) >= 150, `${kind}: the hardest question at ${d}`);
+    }
 });
 
 test("a find's clock is fair: never the shortest near the top, and never shorter than any depth's", () => {
-  // At the first finds, a find gets 13 s, not the 7 of depth 55.
-  assert.equal(findTimer(FINDS_FROM), 13);
-  assert.equal(findTimer(8), 13);
-  assert.equal(findTimer(12), 12);
-  assert.equal(findTimer(40), DELVE_MIN_TIMER);
-  for (let d = 1; d <= 200; d++) assert.ok(findTimer(d) >= DELVE_MIN_TIMER && findTimer(d) <= 16);
+  // At the first finds, a vein gets 14 s, not the 7 of depth 58.
+  assert.equal(findTimer('azurite', FINDS_FROM), 14);
+  assert.equal(findTimer('azurite', 8), 15 - 1);
+  assert.equal(findTimer('azurite', 20), 12);
+  assert.equal(findTimer('flare', 15), 12);
+  assert.equal(findTimer('flare', 20), 11);
+  assert.equal(findTimer('azurite', 43), DELVE_MIN_TIMER);
+  assert.equal(findTimer('flare', 38), DELVE_MIN_TIMER);
+  for (const kind of LIVE) for (let d = 1; d <= 300; d++) assert.ok(findTimer(kind, d) >= DELVE_MIN_TIMER && findTimer(kind, d) <= 16);
 });
 
 test('even a find has half its art in with over 3 s left, and an Azurite Vein half of it in before its window closes', () => {
-  for (let d = FINDS_FROM; d <= 200; d++) {
-    const secs = findTimer(d);
-    const ms = secs * 1000;
-    const veil = findRules(d).veil;
-    if (!veil) continue;
-    // The art of a name question (see tests/delve.test.ts for where these timings come from).
-    const whole = veilPace(ms * veil.share, veil.size ** 2);
-    const halfArt = 400 + (veil.size ** 2 / 2) * whole.gap + whole.burn;
-    // A "find the art" picture, the last of which starts up to half a step late.
-    const count = tileVeilSize(veil.size) ** 2;
-    const tile = veilPace(ms * veil.share, count);
-    const halfTile = 400 + tile.gap / 2 + (count / 2) * tile.gap + tile.burn;
-    for (const half of [halfArt, halfTile]) {
-      assert.ok(ms - half >= 3000, `depth ${d}: ${Math.round(ms - half)} ms left with half the art in`);
-      assert.ok(half <= veinWindow(secs), `depth ${d}: half the art in at ${Math.round(half)} ms, the window closes at ${veinWindow(secs)}`);
+  for (const kind of LIVE)
+    for (let d = FINDS_FROM; d <= 300; d++) {
+      const secs = findTimer(kind, d);
+      const ms = secs * 1000;
+      const veil = findRules(kind, d).veil;
+      if (!veil) continue;
+      // The art of a name question (see tests/delve.test.ts for where these timings come from).
+      const whole = veilPace(ms * veil.share, veil.size ** 2);
+      const halfArt = 400 + (veil.size ** 2 / 2) * whole.gap + whole.burn;
+      // A "find the art" picture, the last of which starts up to half a step late.
+      const count = tileVeilSize(veil.size) ** 2;
+      const tile = veilPace(ms * veil.share, count);
+      const halfTile = 400 + tile.gap / 2 + (count / 2) * tile.gap + tile.burn;
+      for (const half of [halfArt, halfTile]) {
+        assert.ok(ms - half >= 3000, `${kind} at ${d}: ${Math.round(ms - half)} ms left with half the art in`);
+        if (kind === 'azurite') assert.ok(half <= veinWindow(secs), `depth ${d}: half the art in at ${Math.round(half)} ms, the window closes at ${veinWindow(secs)}`);
+      }
     }
-  }
 });
 
 test("the Azurite Vein's window is the first half of the clock, in whole seconds", () => {
@@ -354,7 +382,7 @@ test("a find whose item the player is full of is never offered, and the others' 
 
 // ---- a find's question -----------------------------------------------------
 
-test('picking a find asks the question of fifteen depths deeper, on its clock', () => {
+test('picking a find asks the question of its deeper depth, on its clock', () => {
   let names = 0;
   let arts = 0;
   for (let seed = 1; seed <= 30; seed++) {
@@ -366,7 +394,7 @@ test('picking a find asks the question of fifteen depths deeper, on its clock', 
     const card = h.plant(kind);
     h.act({ type: 'pick', category: card });
     const q = h.s.question!;
-    const rules = findRules(depth);
+    const rules = findRules(kind, depth);
     assert.equal(q.find, kind);
     assert.equal(q.blasted, undefined);
     assert.deepEqual(activeRules(h.s), rules);
@@ -382,11 +410,11 @@ test('picking a find asks the question of fifteen depths deeper, on its clock', 
       if (rules.mirror === 1) assert.ok(q.mirrored!.every(Boolean), 'every picture mirrored');
       if (q.veil) assert.equal(q.veil.size, tileVeilSize(rules.veil!.size), 'a "find the art" picture burns in, cut coarser');
     }
-    if (q.veil) assert.equal(q.veil.seconds, findTimer(depth) * rules.veil!.share);
+    if (q.veil) assert.equal(q.veil.seconds, findTimer(kind, depth) * rules.veil!.share);
     h.clockIn();
-    assert.equal(h.s.question!.deadline! - h.s.question!.clockAt!, findTimer(depth) * 1000);
-    assert.equal(questionTimer(h.s), findTimer(depth));
-    assert.equal(veinWindowMs(h.s), kind === 'azurite' ? veinWindow(findTimer(depth)) : 0);
+    assert.equal(h.s.question!.deadline! - h.s.question!.clockAt!, findTimer(kind, depth) * 1000);
+    assert.equal(questionTimer(h.s), findTimer(kind, depth));
+    assert.equal(veinWindowMs(h.s), kind === 'azurite' ? veinWindow(findTimer(kind, depth)) : 0);
     assert.equal(h.active().recent.at(-1), card, 'locked like any pick');
   }
   assert.ok(names > 0 && arts > 0, `${names} name and ${arts} art questions`);
@@ -415,13 +443,13 @@ function found(kind: FindKind, opts: { host?: string | null; inv?: Partial<Inven
 }
 
 /** The fast window of a vein at depth 20. */
-const WINDOW = veinWindow(findTimer(20));
+const WINDOW = veinWindow(findTimer('azurite', 20));
 
 test('a right answer to a Flare or Dynamite Cache earns its item at any speed', () => {
   for (const kind of ['flare', 'dynamite'] as const) {
     const h = found(kind);
     const id = h.active().id;
-    h.clock.now += findTimer(20) * 1000 - 100;
+    h.clock.now += findTimer(kind, 20) * 1000 - 100;
     h.answer(true);
     assert.equal(h.s.reveal!.gained, kind === 'flare' ? 'flares' : 'dynamite');
     assert.deepEqual(inventoryOf(h.s, id), { ...NONE, flares: kind === 'flare' ? 1 : 0, dynamite: kind === 'dynamite' ? 1 : 0 });
@@ -449,7 +477,7 @@ test('an Azurite Vein mines a ward for a fast right answer, and a shard for a sl
 
   // A second slow one forges the ward.
   const again = found('azurite', { host: null, inv: { shards: 1 } });
-  again.clock.now += findTimer(20) * 1000 - 50;
+  again.clock.now += findTimer('azurite', 20) * 1000 - 50;
   prev = again.s;
   again.answer(true);
   assert.deepEqual(inventoryOf(again.s, id), { ...NONE, wards: 1 });
@@ -481,20 +509,130 @@ test('a find planted for a player full of its item: a right answer stands, with 
   }
 });
 
-test('wrong or out of time on a find costs a life like any other', () => {
-  for (const kind of ['azurite', 'flare', 'dynamite'] as const) {
+test('wrong or out of time on a Flare or Dynamite Cache costs a life like any other', () => {
+  for (const kind of ['flare', 'dynamite'] as const) {
     const wrong = found(kind);
     const id = wrong.active().id;
     wrong.answer(false);
     assert.equal(livesOf(wrong.s, id), DELVE_LIVES - 1);
     assert.deepEqual(inventoryOf(wrong.s, id), NONE);
     assert.equal(wrong.s.reveal!.gained, undefined);
+    assert.equal(wrong.s.reveal!.caveIn, undefined);
+    assert.equal(wrong.s.reveal!.lost, undefined);
     const late = found(kind);
-    late.clock.now += findTimer(20) * 1000 + ANSWER_GRACE_MS + 1;
+    late.clock.now += findTimer(kind, 20) * 1000 + ANSWER_GRACE_MS + 1;
     late.act({ type: 'answer', index: null, askedAt: late.s.question!.askedAt });
     assert.equal(livesOf(late.s, id), DELVE_LIVES - 1);
     assert.deepEqual(inventoryOf(late.s, id), NONE);
   }
+});
+
+// ---- the cave-in -----------------------------------------------------------
+
+test('only an Azurite Vein caves in', () => {
+  assert.deepEqual(
+    (['azurite', 'flare', 'dynamite'] as const).map((k) => [findLosses(k), cavesIn(k)]),
+    [
+      [2, true],
+      [1, false],
+      [1, false],
+    ],
+  );
+});
+
+test('a wrong answer or a time-out on an Azurite Vein caves in: two losses, a ward taking each first, never more than the last life', () => {
+  // [lives, wards] before → [lives, wards] after, and what the reveal says.
+  const cases: [number, number, number, number, boolean][] = [
+    // lives, wards, lives after, wards after, warded (no life lost)
+    [3, 0, 1, 0, false],
+    [3, 1, 2, 0, false],
+    [3, 2, 3, 0, true],
+    [3, 3, 3, 1, true],
+    [2, 0, 0, 0, false],
+    [2, 1, 1, 0, false],
+    [2, 2, 2, 0, true],
+    [2, 3, 2, 1, true],
+    [1, 0, 0, 0, false],
+    [1, 1, 0, 0, false],
+    [1, 2, 1, 0, true],
+    [1, 3, 1, 1, true],
+  ];
+  for (const timedOut of [false, true])
+    for (const [lives, wards, livesAfter, wardsAfter, warded] of cases) {
+      const h = delve(['Ash'], { host: null });
+      at(h, 20);
+      const id = h.active().id;
+      h.edit((c) => (c.delve!.losses[id] = [3, 7].slice(0, DELVE_LIVES - lives)));
+      h.give(id, { wards });
+      h.edit((c) => (c.players[0].streak = 4));
+      h.act({ type: 'pick', category: h.plant('azurite') });
+      h.clockIn();
+      const prev = h.s;
+      if (timedOut) {
+        h.clock.now += findTimer('azurite', 20) * 1000 + ANSWER_GRACE_MS + 1;
+        h.act({ type: 'answer', index: null, askedAt: h.s.question!.askedAt });
+      } else h.answer(false);
+      const what = `${lives} lives, ${wards} wards${timedOut ? ', timed out' : ''}`;
+      const r = h.s.reveal!;
+      assert.equal(livesOf(h.s, id), livesAfter, what);
+      assert.equal(wardsOf(h.s, id), wardsAfter, what);
+      assert.equal(r.caveIn, true, what);
+      assert.deepEqual(r.lost, { lives: lives - livesAfter, wards: wards - wardsAfter }, what);
+      assert.equal(r.warded, warded || undefined, what);
+      assert.equal(r.timedOut, timedOut, what);
+      assert.equal(h.s.players[0].streak, 0, what);
+      // The losses list takes one entry per life, the same depth twice for two.
+      assert.deepEqual(h.s.delve!.losses[id], [...[3, 7].slice(0, DELVE_LIVES - lives), ...Array(lives - livesAfter).fill(20)], what);
+      assert.equal(fellAt(h.s, id), livesAfter === 0 ? 20 : null, what);
+      // Guests see the cave-in and what it took.
+      assert.deepEqual([publicView(h.s).reveal!.caveIn, publicView(h.s).reveal!.lost], [r.caveIn, r.lost], what);
+      if (wards - wardsAfter) assert.ok(inventoryChanges(prev, h.s).some((c) => c.item === 'wards' && c.change === 'used'), what);
+      if (livesAfter === 0) {
+        h.act({ type: 'next' });
+        assert.equal(h.s.phase, 'over', `${what}: a solo run ends`);
+      }
+    }
+});
+
+test('a right answer to a vein still pays, and a vein blasted open is made safe: one loss', () => {
+  const ok = found('azurite');
+  ok.answer(true);
+  assert.equal(ok.s.reveal!.caveIn, undefined);
+  assert.equal(ok.s.reveal!.gained, 'wards');
+
+  const h = delve(['Ash'], { host: null });
+  at(h, 20);
+  const id = h.active().id;
+  h.give(id, { dynamite: 1 });
+  const card = h.plant('azurite');
+  h.act({ type: 'blast', category: card });
+  h.act({ type: 'pick', category: card });
+  h.clockIn();
+  h.answer(false);
+  assert.equal(livesOf(h.s, id), DELVE_LIVES - 1);
+  assert.equal(h.s.reveal!.caveIn, undefined);
+});
+
+test('a cave-in in a group run: the fall, and the standings with two losses at one depth', () => {
+  const h = delve(['Ash', 'Brea'], { host: null });
+  at(h, 30);
+  const id = h.active().id;
+  const other = h.s.players.find((p) => p.id !== id)!.id;
+  h.edit((c) => (c.delve!.losses = { [id]: [10], [other]: [12, 30] }));
+  h.act({ type: 'pick', category: h.plant('azurite') });
+  h.clockIn();
+  h.answer(false);
+  assert.deepEqual(h.s.delve!.losses[id], [10, 30, 30]);
+  assert.equal(fellAt(h.s, id), 30);
+  assert.equal(livesOf(h.s, id), 0);
+  // The other player stands, so ranks first; the fallen one is second.
+  assert.deepEqual(
+    delveStandings(h.s).map((r) => [r.id, r.rank, r.depth, r.losses]),
+    [
+      [other, 1, 30, [12, 30]],
+      [id, 2, 30, [10, 30, 30]],
+    ],
+  );
 });
 
 test("a guest's answer to a vein gets the same network allowance as at the deadline; the host's own needs none", () => {
@@ -700,7 +838,7 @@ test('a flare on an Azurite Vein gives more time, not a longer fast window: a sh
   h.answer(true);
   assert.equal(h.s.reveal!.correct, true);
   assert.equal(h.s.reveal!.gained, 'shards');
-  assert.equal(questionTimer(h.s), findTimer(20), "the question still started with the find's clock");
+  assert.equal(questionTimer(h.s), findTimer('azurite', 20), "the question still started with the find's clock");
 });
 
 // ---- dynamite --------------------------------------------------------------
@@ -868,8 +1006,8 @@ test('guests see the find, the question it asked and everyone\'s items, but neve
   assert.equal(view.question!.itemId, '');
   assert.deepEqual(view.question!.options, []);
   assert.equal(view.question!.clockAt, h.s.question!.clockAt, 'guests can draw the fast window');
-  assert.equal(questionTimer(view), findTimer(20));
-  assert.equal(veinWindowMs(view), veinWindow(findTimer(20)), 'guests can draw the fast window');
+  assert.equal(questionTimer(view), findTimer('azurite', 20));
+  assert.equal(veinWindowMs(view), veinWindow(findTimer('azurite', 20)), 'guests can draw the fast window');
 });
 
 test('leaving or being kicked takes your items with you, and a new run starts with none', () => {
@@ -944,4 +1082,31 @@ test('a game saved before finds plays on without them', () => {
   assert.equal(livesOf(h.s, id), DELVE_LIVES - 1);
   h.act({ type: 'next' });
   assert.equal(h.s.phase, 'choosing');
+});
+
+// ---- endless ---------------------------------------------------------------
+
+test('past depth 100, name questions now and then show a fourth made-up name; from 150 every one that has room', () => {
+  const count = (depth: number) => {
+    const fakes: number[] = [];
+    for (let seed = 1; seed <= 40; seed++) {
+      const h = delve(['Ash'], { host: null, seed });
+      for (let i = 0; i < 6; i++) {
+        at(h, depth);
+        h.act({ type: 'pick', category: h.s.offered.find((c) => c !== h.s.delve!.find?.category)! });
+        const q = h.s.question!;
+        if (q.mode === 'name') fakes.push(q.options.filter(isFake).length);
+        h.clockIn();
+        h.answer(true);
+        h.act({ type: 'next' });
+      }
+    }
+    return fakes;
+  };
+  const at100 = count(100);
+  assert.ok(at100.every((n) => n <= 3), 'never four before 101');
+  const at150 = count(150);
+  assert.ok(at150.every((n) => n <= 4), 'never more than eight options hold');
+  const four = at150.filter((n) => n === 4).length;
+  assert.ok(four >= at150.length * 0.8, `${four} of ${at150.length} name questions with four at 150`);
 });

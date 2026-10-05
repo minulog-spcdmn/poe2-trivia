@@ -75,28 +75,47 @@ test('every hint, and every reason that replaces one, fits on one line', () => {
 
 test('every depth that gets harder in Delve says how', async () => {
   const { delveChange, DELVE_LADDER, DELVE_STEP_TEXT } = await import('../src/lib/difficultyText.ts');
-  const { DELVE_STEPS, delveChangeAt, delveTimer } = await import('../src/lib/delve.ts');
+  const { DELVE_STEPS, MORE_FAKES_FROM, delveChangeAt, delveTimer } = await import('../src/lib/delve.ts');
   for (const step of DELVE_STEPS.slice(1)) assert.ok(DELVE_STEP_TEXT[step.from], `no line for the step at ${step.from}`);
-  for (let d = 1; d <= 120; d++) assert.equal(delveChange(d) === null, delveChangeAt(d) === null, `depth ${d}`);
-  assert.equal(delveChange(55), 'Seven seconds');
+  assert.ok(DELVE_STEP_TEXT[MORE_FAKES_FROM]);
+  for (let d = 1; d <= 300; d++) assert.equal(delveChange(d) === null, delveChangeAt(d) === null, `depth ${d}`);
+  assert.deepEqual([3, 5, 7, 9, 11, 13, 58, 81, 91, 101].map(delveChange), [
+    'A look-alike name',
+    'A made-up name',
+    'More look-alikes',
+    'Locked for 3 turns',
+    'Six options',
+    'Less time',
+    'Seven seconds',
+    'Always mirrored',
+    'Locked for 7 turns',
+    'Now and then, four made-up names',
+  ]);
   assert.equal(delveTimer(DELVE_LADDER[0].depth), 16);
-  assert.equal(delveTimer(DELVE_LADDER.at(-1)!.depth), 7);
+  for (const row of DELVE_LADDER.slice(1)) assert.notEqual(delveChange(row.depth), null, `nothing changes at ${row.depth}`);
+  assert.deepEqual(DELVE_LADDER.map((r) => r.depth), [...DELVE_LADDER.map((r) => r.depth)].sort((a, b) => a - b));
+  assert.equal(delveChange(DELVE_LADDER.find((r) => r.text === 'Seven seconds')!.depth), 'Seven seconds');
 });
 
-test('the notes under a find say what it asks and what a right answer earns, whatever the player carries', async () => {
+test('the notes under a find say what it asks, what a right answer earns and what a vein\'s cave-in costs, whatever the player carries', async () => {
   const { findNote, FIND_TEXT } = await import('../src/lib/difficultyText.ts');
-  const { findTimer, findDepth, veinWindow } = await import('../src/lib/delve.ts');
   const none = { wards: 0, flares: 0, dynamite: 0, shards: 0 };
   assert.equal(
-    findNote('azurite', 8, none),
-    `A question from depth ${findDepth(8)}, on ${findTimer(8)} seconds. Right within ${veinWindow(findTimer(8)) / 1000} seconds mines an Azurite Ward, which takes your next loss; slower, an azurite shard (two forge a ward).`,
+    findNote('azurite', 20, none),
+    'A question from depth 35, on 12 seconds. Right within 6 seconds mines an Azurite Ward, slower an azurite shard (two forge a ward). Wrong caves in: two lives.',
   );
-  assert.match(findNote('azurite', 40, { ...none, shards: 1 }), /Right within 4 seconds .*\(it forges a ward with yours\)\.$/);
-  assert.match(findNote('azurite', 20, { ...none, wards: 3 }), /You can carry no more\.$/);
-  assert.match(findNote('flare', 15, none), /^A question from depth 30, on 12 seconds\. Right earns a flare, which burns by itself/);
-  assert.match(findNote('flare', 20, { ...none, flares: 3 }), /You can carry no more\.$/);
-  assert.match(findNote('azurite', 20, { ...none, wards: 2, shards: 1 }), /slower, an azurite shard \(it forges a ward with yours\)\.$/);
+  assert.match(findNote('azurite', 8, none), /^A question from depth 23, on 14 seconds\. Right within 7 seconds/);
+  assert.match(findNote('azurite', 40, { ...none, shards: 1 }), /Right within 4 seconds .*\(it forges a ward with yours\)\. Wrong caves in: two lives\.$/);
+  assert.match(findNote('azurite', 20, { ...none, wards: 3 }), /You can carry no more\. Wrong caves in: two lives\.$/);
+  assert.equal(
+    findNote('flare', 15, none),
+    'A question from depth 35, on 12 seconds. Right earns a flare, which burns by itself as your clock runs out, for 5 seconds more.',
+  );
+  assert.match(findNote('flare', 20, { ...none, flares: 3 }), /^A question from depth 40, on 11 seconds\. You can carry no more\.$/);
+  assert.match(findNote('azurite', 20, { ...none, wards: 2, shards: 1 }), /slower an azurite shard \(it forges a ward with yours\)\./);
   assert.match(findNote('dynamite', 12, none), /Right earns dynamite, which goes off by itself when half your clock has run out/);
   assert.match(findNote('dynamite', 12, { wards: 3, flares: 3, dynamite: 3, shards: 0 }), /You can carry no more\.$/);
-  for (const t of Object.values(FIND_TEXT)) assert.match(t.others, /fifteen depths deeper/);
+  assert.match(FIND_TEXT.azurite.others, /fifteen depths deeper.*caves in for two lives/);
+  assert.match(FIND_TEXT.flare.others, /twenty depths deeper/);
+  assert.doesNotMatch(FIND_TEXT.flare.others, /caves in/);
 });

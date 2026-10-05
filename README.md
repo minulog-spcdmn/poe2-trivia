@@ -41,38 +41,64 @@ rules, so "I reached depth 30" means the same thing for everyone.
 - On your turn, pick one of three categories and name the item, as in turns
   mode. Each round takes everyone still standing one depth deeper.
 - Everyone has **three lives**. A wrong answer, running out of time, or
-  missing your turn while you're disconnected costs one.
-- Every few depths the rules get harder: four options until depth 5 (with
-  look-alike names from 3), Merciless by depth 7, Eternal by 13, then past
-  it. The timer starts at 16 s and loses a second every six
-  depths, down to 7 s from depth 55 (long enough that, even under the
-  slowest unveil, half the art is in with over 3 s left); the lockout grows
-  from 2 turns to 7.
+  missing your turn while you're disconnected costs one (a miss on an
+  Azurite Vein two, see Finds).
+- Every few depths the rules get harder, one thing at a time: four options
+  for the first ten depths (with look-alike names from 3 and a made-up one
+  from 5), six from 11, eight from 31. Until depth 58 something gets harder
+  at least every three depths (a new rule, less time or a longer lockout,
+  never two at once), and nothing ever gets easier. The last new rule comes
+  at depth 81.
 
   | From depth | Options | Look-alikes | Made up | Find the art | Mirrored | Unveil | Grayscale |
   |---|---|---|---|---|---|---|---|
   | 1 | 4 | none | 0 | 40% | never | off | off |
-  | 3 | 4 | half | 0 | 40% | never | off | off |
-  | 5 | 6 | half | 0 | 40% | never | off | off |
-  | 7 | 6 | half | 1 | 40% | never | off | off |
-  | 10 | 8 | all | 2 | half | never | off | off |
-  | 13 | 8 | all | 2 | half | 30% | off | off |
-  | 17 | 8 | all | 3 | half | 30% | off | off |
-  | 21 | 8 | all | 3 | half | half | off | off |
-  | 25 | 8 | all | 3 | half | half | fast | off |
-  | 30 | 8 | all | 3 | half | half | fast | find the art |
-  | 35 | 8 | all | 3 | half | always | fast | find the art |
-  | 40 | 8 | all | 3 | half | always | fast | all art |
-  | 50 | 8 | all | 3 | half | always | slow | all art |
-  | 75 | 8 | all | 3 | half | always | slowest | all art |
+  | 3 | 4 | a quarter | 0 | 40% | never | off | off |
+  | 5 | 4 | a quarter | 1 | 40% | never | off | off |
+  | 7 | 4 | half | 1 | 40% | never | off | off |
+  | 11 | 6 | half | 1 | 40% | never | off | off |
+  | 15 | 6 | half | 1 | 40% | 25% | off | off |
+  | 17 | 6 | half | 2 | 40% | 25% | off | off |
+  | 21 | 6 | three quarters | 2 | 40% | 25% | off | off |
+  | 25 | 6 | three quarters | 2 | 40% | 25% | fast | off |
+  | 29 | 6 | three quarters | 2 | 40% | half | fast | off |
+  | 31 | 8 | three quarters | 2 | 40% | half | fast | off |
+  | 41 | 8 | three quarters | 2 | half | half | fast | find the art |
+  | 45 | 8 | three quarters | 3 | half | half | fast | find the art |
+  | 50 | 8 | three quarters | 3 | half | half | slow | find the art |
+  | 55 | 8 | all | 3 | half | half | slow | find the art |
+  | 61 | 8 | all | 3 | half | half | slow | all art |
+  | 71 | 8 | all | 3 | half | 75% | slow | all art |
+  | 75 | 8 | all | 3 | half | 75% | slowest | all art |
+  | 81 | 8 | all | 3 | half | always | slowest | all art |
+
+  The quarters (look-alikes and mirroring) are Delve's own: the Custom
+  editor keeps its steps. The timer starts at 16 s and loses a second at
+  depths 13, 19, 27, 34, 39, 44, 48, 53 and 58, where it stops at 7 s: long
+  enough that, even under the slowest unveil, half the art is in with over
+  3 s left. The lockout is 2 turns from depth 1, then 3 from 9, 4 from 23,
+  5 from 37, 6 from 66 and 7 from 91.
 
   The unveil comes before grayscale, so the first art to burn in is in
   colour. It starts with the question's clock. From depth 25 it also takes
   "find the art" pictures: 1% of those questions at depth 25, one percent
   more every depth, all of them from depth 124. Each picture is cut much
   coarser than a whole item (3 × 3 fast, 4 × 4 slower), so eight of them stay
-  a few dozen patches to send. The lockout is 2 turns from depth 1, then 3
-  from 7, 4 from 13, 5 from 21, 6 from 29 and 7 from 37.
+  a few dozen patches to send.
+- **Endless.** Past depth 100 the rules hold, but from 101 a growing share
+  of name questions gets a fourth made-up name (2% at 101, 2% more every
+  depth, all of them from 150), and "find the art" pictures keep burning in
+  more often until depth 124.
+- **Finds.** From depth 5 one of the cards on offer is now and then a find:
+  pick it and answer right for an item. An **Azurite Vein** asks the question
+  of 15 depths deeper; a right answer within the first half of its clock
+  mines an Azurite Ward (it takes your next loss in place of a life), a
+  slower one a shard (two forge a ward). A wrong answer or a time-out on a
+  vein caves in: it costs two lives, a ward taking each loss first if you
+  hold one (on your last life you simply fall). A **Flare Cache** (from depth
+  15) asks the question of 20 depths deeper for a flare, which burns by
+  itself as your clock runs out for 5 s more; a miss there costs one life as
+  usual. The card says the depth it asks, its clock and the risk.
 - **Alone**, you delve until your third life is gone; the depth where it went
   is your result. **Together**, the last one standing wins and keeps delving
   to their own last life. If the last players fall at the same depth, whoever
@@ -93,11 +119,14 @@ rules, so "I reached depth 30" means the same thing for everyone.
   glints in the walls from depth 13, and from depth 21 (where a streak's fire
   first burns blue) the embers start burning blue, all of them by 50. The
   ambience sinks with it, and a slow rumble rises under it.
-- Named depths mark where it turns: The Galleries (7), The Mirror Halls (13),
-  The Azurite Veins (21), The Burning Veil (25), The Grey Deep (40), The Cold
-  Fire (50), The Abyss (75), then The Bottomless Dark every 25 past it. A
-  card names each as you reach it, and also marks the last one standing and
-  a solo run going deeper than ever.
+- Every ten depths the descent enters a new stratum, each named after a
+  Delve biome, with a scene of its own: Magma Fissure (11), Frozen Hollow
+  (21), Fungal Caverns (31), Vaal Outpost (41), Abyssal Depths (51),
+  Petrified Forest (61), Sulphur Vents (71), Abyssal City (81) and Primeval
+  Ruins (91), below the Mines of depths 1 to 10. Past 100 the biomes come
+  round again, never the same twice in a row. A card names each as you
+  reach it, and also marks the last one standing and a solo run going
+  deeper than ever.
 - Your deepest run alone and together are kept in this browser (start page,
   end screen and Codex, with your last runs). A run resumed by a build with
   other rules still shows, but never counts as a best.
