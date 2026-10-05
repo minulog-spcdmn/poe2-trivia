@@ -212,12 +212,12 @@
         <div class="stat">
           <span class="stat-label">Best streak</span>
           <span class="stat-value">{stats.best}</span>
-          <span class="stat-note">{stats.streak ? `${stats.streak} in a row now` : 'right answers in a row'}</span>
+          <span class="stat-note">{stats.streak ? `current streak: ${stats.streak}` : 'right answers in a row'}</span>
         </div>
         <div class="stat">
-          <span class="stat-label">Answer time</span>
+          <span class="stat-label">Typical time</span>
           <span class="stat-value">{stats.medianMs === null ? '?' : secs(stats.medianMs)}<small>{stats.medianMs === null ? '' : ' s'}</small></span>
-          <span class="stat-note">{stats.fastest ? `typical • quickest ${secs(stats.fastest.ms)} s` : 'typical right answer'}</span>
+          <span class="stat-note">{stats.fastest ? `your fastest: ${secs(stats.fastest.ms)} s` : 'per right answer'}</span>
         </div>
       </div>
     {/if}
@@ -537,15 +537,20 @@
     color: transparent;
     filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.8));
   }
+  .stat-label {
+    margin-bottom: 0.35rem;
+  }
   .stat-value {
     font-size: 2.3rem;
-    margin: 0.15rem 0 0.1rem;
+    line-height: 1;
+    margin-bottom: 0.3rem;
   }
   .stat-value small {
     font-size: 1.1rem;
   }
   .stat-note {
     font-size: 0.92rem;
+    line-height: 1.3;
     font-style: italic;
     color: var(--muted);
   }
@@ -1229,6 +1234,7 @@
   @media (max-width: 560px) {
     .summary {
       grid-template-columns: 1fr;
+      row-gap: 1.75rem;
     }
     .side {
       justify-content: space-around;
