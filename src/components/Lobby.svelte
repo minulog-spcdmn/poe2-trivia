@@ -329,6 +329,7 @@
         </div>
         <!-- The chosen mode's description, under a notch that points up at it. -->
         <div class="about" id="mode-blurb" style:--at={peek ? 1 : MODES.findIndex((m) => m.id === s.settings.mode)} class:peek>
+          <span class="about-frame" aria-hidden="true"></span>
           {#key peek ? 'peek' : s.settings.mode}
             <div class="about-text" in:fly={{ y: -6, duration: 260 }}>
               {#if peek}
@@ -816,33 +817,44 @@
     outline: 1px solid var(--gold-hi);
     outline-offset: 2px;
   }
-  /* The chosen mode's description, notched under its button. */
+  /* The chosen mode's description, notched under its button. The box and its
+     notch are drawn solid in one layer that is faded as a whole, so they merge
+     into one shape: the notch can reach into the box's border (no hairline gap
+     where they meet) without the overlap showing darker. */
   .about {
     --notch: 7px;
     position: relative;
     margin-top: calc(0.5rem + var(--notch));
     padding: 0.55rem 0.8rem 0.6rem;
-    background: rgba(0, 0, 0, 0.3);
-    border: 1px solid rgba(201, 164, 92, 0.32);
-    border-radius: 4px;
   }
-  .about::before {
+  .about-frame {
+    --line: #c9a45c;
+    position: absolute;
+    inset: 0;
+    opacity: 0.32;
+    background: rgba(0, 0, 0, 0.94);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    pointer-events: none;
+  }
+  .about-frame::before {
     content: '';
     position: absolute;
-    top: calc(-1 * var(--notch) - 1px);
+    /* One pixel into the border, so the two always touch. */
+    top: calc(-1 * var(--notch));
     /* Under the middle of the chosen button: three columns, two gaps of 0.5rem. */
-    left: calc((100% - 1rem) / 6 + var(--at, 0) * ((100% - 1rem) / 3 + 0.5rem) - var(--notch));
+    left: calc((100% - 1rem) / 6 + var(--at, 0) * ((100% - 1rem) / 3 + 0.5rem) - var(--notch) - 1px);
     width: calc(2 * var(--notch));
     height: var(--notch);
-    background: rgba(201, 164, 92, 0.32);
+    background: var(--line);
     clip-path: polygon(50% 0, 100% 100%, 0 100%);
     transition: left 0.3s var(--ease-out);
   }
-  .about.peek {
-    border-color: rgba(224, 85, 63, 0.35);
+  .about.peek .about-frame {
+    --line: #e0553f;
   }
-  .about.peek::before {
-    background: rgba(224, 85, 63, 0.35);
+  .about-text {
+    position: relative;
   }
   .about p {
     margin: 0;
