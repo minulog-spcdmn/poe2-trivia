@@ -1,8 +1,8 @@
 <script module lang="ts">
   // The plate behind a unique's name, after the game's own header: a dark
-  // bar in a copper frame whose ends are gothic tracery, every line a
-  // bevelled copper moulding (lit on its upper edge, shadowed below). The
-  // tracery is exact geometry, drawn with compasses (see
+  // bar in a copper frame whose ends are gothic tracery, drawn as the
+  // circle is drawn: flat lines with a soft glow behind them. The tracery is
+  // exact geometry, drawn with compasses (see
   // docs/arcane-style.md), and it holds one of the alchemist's circle's two
   // great seals at each end, the mouldings stopping short of it.
   // • The frame: a double rule, its corners cut like the panels' filigree,
@@ -14,7 +14,8 @@
   //   tracery, its head under the rule and its tail on the post.
   // • The field: an interlace of waves against their mirror images, each
   //   strap crossing its neighbours in the rows above and below too, over
-  //   and under in turn; faint, as if cut into the dark.
+  //   and under in turn, tiled over the whole plate; faint and softened,
+  //   as if cut into the dark.
 
   import { LUNA, LUNA_HATCH, SOL_RAYS } from '../lib/alchemy';
 
@@ -167,7 +168,9 @@
   const ROW = 11;
   const W = 0.75;
   const GAP = 0.7;
-  const ROWS = [-3, -2, -1, 0, 1, 2, 3];
+  // The pattern repeats every row, so a tile one row high holds it; the rows
+  // either side are drawn too, for the waves that reach into it.
+  const ROWS = [-2, -1, 0, 1, 2, 3];
   /** Where along a wave (as an angle) it crosses a mirror in the next row up or down. */
   const SKEW = Math.asin(ROW / (2 * AMP));
   // Along a rising wave the crossings come at 0, SKEW, π - SKEW, π, π + SKEW
@@ -209,12 +212,10 @@
   const id = (n: string) => `${uid}-${n}`;
 </script>
 
-<!-- A moulding: a shadow under it, the copper, and a glint along its upper edge. -->
+<!-- A line of the tracery, drawn in one pen stroke across its gaps. -->
 {#snippet moulding(list: Stroke)}
-  {#each ['shade', 'metal', 'glint'] as layer (layer)}
-    {#each list as { d, delay, t }, k (k)}
-      <path {d} class="draw piece {layer}" style:--d={delay} style:--t={t} pathLength="100" />
-    {/each}
+  {#each list as { d, delay, t }, k (k)}
+    <path {d} class="draw piece metal" style:--d={delay} style:--t={t} pathLength="100" />
   {/each}
 {/snippet}
 
@@ -251,58 +252,52 @@
   </g>
 {/snippet}
 
-<span class="plate" class:lit aria-hidden="true" style:--copper="url(#{id('copper')})">
+{#snippet plate()}
+  <!-- The ends, round the middle. -->
+  <svg y="50%" overflow="visible">{@render cap('sol')}</svg>
+  <svg x="100%" y="50%" overflow="visible"><g transform="scale(-1 1)">{@render cap(end)}</g></svg>
+  <!-- The frame, from the corners: the rules run from each end to the middle. -->
+  {#each ['metal', 'inlay'] as layer (layer)}
+    {#each [false, true] as right (right)}
+      {#each [false, true] as bottom (bottom)}
+        <svg x={right ? '100%' : 0} y={bottom ? '100%' : 0} overflow="visible">
+          <g transform="scale({right ? -1 : 1} {bottom ? -1 : 1})">
+            {#if layer === 'inlay'}
+              <path d={CORNER_IN} class="draw fine" style:--t="0.4s" pathLength="100" />
+              <line x1="16" y1="5.5" x2="50%" y2="5.5" class="draw rule fine" style:--d="0.4s" pathLength="100" />
+              <path d={LOZENGE} class="solid fade" style:--d="0.3s" />
+              <line x1="14" y1="2.5" x2="50%" y2="2.5" class="spark" pathLength="100" />
+            {:else}
+              <path d={CORNER} class="draw {layer}" style:--t="0.4s" pathLength="100" />
+              <line x1="14" y1="2.5" x2="50%" y2="2.5" class="draw rule {layer}" style:--d="0.3s" pathLength="100" />
+            {/if}
+          </g>
+        </svg>
+      {/each}
+    {/each}
+  {/each}
+{/snippet}
+
+<span class="plate" class:lit aria-hidden="true">
   <svg class="field" width="100%" height="100%">
     <defs>
-      <clipPath id={id('band')}><rect x="-1" y="-21" width={BAY + 2} height="42" /></clipPath>
-      <pattern id={id('weave')} patternUnits="userSpaceOnUse" width={BAY} height="64" x="50%" y="-32">
-        <g transform="translate(0 32)">
-          <path d={WEAVE} clip-path="url(#{id('band')})" />
-        </g>
+      <pattern id={id('weave')} patternUnits="userSpaceOnUse" width={BAY} height={ROW} x="50%" y="50%">
+        <path d={WEAVE} />
       </pattern>
     </defs>
-    <svg y="50%" overflow="visible">
-      <rect y="-32" width="100%" height="64" fill="url(#{id('weave')})" />
-    </svg>
+    <rect width="100%" height="100%" fill="url(#{id('weave')})" />
   </svg>
+  <!-- The lines twice, as on the circle: a soft, wide copy for the glow, and the lines. -->
+  <svg class="art glow" width="100%" height="100%">{@render plate()}</svg>
   <svg class="art" width="100%" height="100%">
     <defs>
-      <!-- Copper, lit from above: bright on top, deep below. -->
-      <linearGradient id={id('copper')} gradientUnits="userSpaceOnUse" x1="0" y1="-28" x2="0" y2="28">
-        <stop offset="0" stop-color="#f4bb84" />
-        <stop offset="0.4" stop-color="#cf8148" />
-        <stop offset="1" stop-color="#7a3a18" />
-      </linearGradient>
       <radialGradient id={id('bloom')}>
         <stop offset="0" stop-color="#f7a860" stop-opacity="0.9" />
         <stop offset="0.5" stop-color="#d9702e" stop-opacity="0.4" />
         <stop offset="1" stop-color="#d9702e" stop-opacity="0" />
       </radialGradient>
     </defs>
-    <!-- The ends, round the middle. -->
-    <svg y="50%" overflow="visible">{@render cap('sol')}</svg>
-    <svg x="100%" y="50%" overflow="visible"><g transform="scale(-1 1)">{@render cap(end)}</g></svg>
-    <!-- The frame, from the corners: the rules run from each end to the middle.
-         Layer by layer, so no corner's shadow falls over another's metal. -->
-    {#each ['shade', 'metal', 'glint', 'inlay'] as layer (layer)}
-      {#each [false, true] as right (right)}
-        {#each [false, true] as bottom (bottom)}
-          <svg x={right ? '100%' : 0} y={bottom ? '100%' : 0} overflow="visible">
-            <g transform="scale({right ? -1 : 1} {bottom ? -1 : 1})">
-              {#if layer === 'inlay'}
-                <path d={CORNER_IN} class="draw fine" style:--t="0.4s" pathLength="100" />
-                <line x1="16" y1="5.5" x2="50%" y2="5.5" class="draw rule fine" style:--d="0.4s" pathLength="100" />
-                <path d={LOZENGE} class="solid fade" style:--d="0.3s" />
-                <line x1="14" y1="2.5" x2="50%" y2="2.5" class="spark" pathLength="100" />
-              {:else}
-                <path d={CORNER} class="draw {layer}" style:--t="0.4s" pathLength="100" />
-                <line x1="14" y1="2.5" x2="50%" y2="2.5" class="draw rule {layer}" style:--d="0.3s" pathLength="100" />
-              {/if}
-            </g>
-          </svg>
-        {/each}
-      {/each}
-    {/each}
+    {@render plate()}
   </svg>
 </span>
 
@@ -318,7 +313,7 @@
       radial-gradient(ellipse 45% 90% at 50% 50%, rgba(160, 80, 30, 0.12), transparent 75%),
       linear-gradient(180deg, #2a1d17, #21160f 48%, #160e0a 52%, #120b08);
     box-shadow:
-      inset 0 0 14px rgba(0, 0, 0, 0.6),
+      inset 0 0 8px rgba(0, 0, 0, 0.55),
       inset 0 -1px 0 #5a3418;
   }
   .field,
@@ -331,16 +326,19 @@
     transform: scale(var(--end-scale, 1));
   }
 
-  /* The interlace: faint, as if cut into the dark, and gone under the ends. */
+  /* The interlace: over the whole plate, faint and softened, as if cut
+     into the dark; fainter still under the ends' tracery. (Static, so the
+     blur is painted once.) */
   .field {
-    opacity: 0.16;
-    mask-image: linear-gradient(90deg, transparent 40px, #000 70px, #000 calc(100% - 70px), transparent calc(100% - 40px));
+    opacity: 0.11;
+    filter: blur(0.45px);
+    mask-image: linear-gradient(90deg, rgba(0, 0, 0, 0.35) 30px, #000 64px, #000 calc(100% - 64px), rgba(0, 0, 0, 0.35) calc(100% - 30px));
     animation: fade 1.2s 0.3s ease-out both;
   }
   pattern path {
     fill: none;
     stroke: #c47a44;
-    stroke-width: 0.5;
+    stroke-width: 0.55;
   }
 
   path,
@@ -350,32 +348,21 @@
     stroke-linecap: round;
     stroke-linejoin: round;
   }
-  /* A copper moulding, bevelled: a dark shadow below, the metal, a glint above. */
-  /* Opaque, so where the frame's halves overlap under the name it doesn't show. */
-  .shade {
-    stroke: #090403;
-    stroke-width: 3.2;
-    transform: translate(0, 0.7px);
-  }
+  /* The lines: flat copper, calmer than the name, as fine as the circle's. */
   .metal {
-    stroke: var(--copper);
-    stroke-width: 1.9;
-  }
-  .glint {
-    stroke: #f5c697;
-    stroke-width: 0.45;
-    transform: translate(0, -0.5px);
+    stroke: #b06c3c;
+    stroke-width: 1.3;
   }
   /* The rules meet under the name; square ends overlap there, so the join doesn't show. */
   .rule {
     stroke-linecap: square;
   }
   .fine {
-    stroke: #8a4a24;
-    stroke-width: 0.8;
+    stroke: #6e3b1e;
+    stroke-width: 0.7;
   }
   .solid {
-    fill: #f0b47c;
+    fill: #c98552;
   }
   .ground {
     fill: rgba(8, 4, 2, 0.55);
@@ -385,6 +372,31 @@
   }
   .well {
     fill: #0c0603;
+  }
+
+  /* The glow: the same lines, wide and faint, breathing as the circle's
+     does (on its own layer, so nothing repaints). */
+  .glow {
+    opacity: 0.2;
+    animation:
+      fade 1.4s 0.5s ease-out both,
+      breathe-glow 6s 1.9s ease-in-out infinite alternate;
+  }
+  .glow .metal {
+    stroke: #d98a4e;
+    stroke-width: 3.6;
+  }
+  .glow .fine {
+    stroke: #d98a4e;
+    stroke-width: 1.8;
+  }
+  .glow .ground,
+  .glow .well,
+  .glow .bloom,
+  .glow .sign,
+  .glow .solid,
+  .glow .spark {
+    display: none;
   }
 
   /* The signs, engraved as on the circle: dark until the item is known,
@@ -454,6 +466,14 @@
   @keyframes fade {
     from {
       opacity: 0;
+    }
+  }
+  @keyframes breathe-glow {
+    from {
+      opacity: 0.22;
+    }
+    to {
+      opacity: 0.1;
     }
   }
   @keyframes flare {
