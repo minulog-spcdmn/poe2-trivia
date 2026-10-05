@@ -14,8 +14,8 @@
   //   tracery, its head under the rule and its tail on the post.
   // • The field: an interlace of waves against their mirror images, each
   //   strap crossing its neighbours in the rows above and below too, over
-  //   and under in turn, tiled over the whole plate; faint and softened,
-  //   as if cut into the dark.
+  //   and under in turn, tiled over the whole plate; faint, as if cut into
+  //   the dark.
 
   import { LUNA, LUNA_HATCH, SOL_RAYS } from '../lib/alchemy';
 
@@ -93,29 +93,74 @@
   const SIGN_SCALE = SEAL_R / 13;
   const HOLES = [{ c: SEAL, r: SEAL_R + 1.8 }];
 
-  /**
-   * A cusped ogee lying on its side, drawn with compasses: from its foot on
-   * the post at `x0` it rises along an arc of height `h`, its edge broken
-   * into lobes (arcs bulging out, meeting in sharp cusps) at the fractions
-   * `knots` of the way, and the last stretch turns hollow to a point at `x1`.
-   * Its outline, from the foot round both sides.
-   */
-  function ogee(x0: number, x1: number, h: number, knots: number[]): Pt[] {
-    // The arc it is set out on, through the foot, the point and its crown.
-    const L = x1 - x0;
-    const R = (L * L) / 4 / (2 * h) + h / 2;
-    const o: Pt = [x0 + L / 2, -h + R];
-    const a0 = Math.atan2(-o[1], x0 - o[0]);
-    const a1 = Math.atan2(-o[1], x1 - o[0]) + 2 * Math.PI;
-    const at = (t: number) => on(o, R, a0 + (a1 - a0) * t);
-    const ks = [0, ...knots, 1].map(at);
-    const top = ks.slice(1).flatMap((q, i) => arcTo(ks[i], q, i === ks.length - 2 ? -0.13 : 0.17).slice(i ? 1 : 0));
-    return [...top, ...flipY(top).reverse().slice(1)];
+  /** The circle through three points: its centre and radius. */
+  function circle3(p: Pt, q: Pt, r: Pt): { c: Pt; r: number } {
+    const d = 2 * (p[0] * (q[1] - r[1]) + q[0] * (r[1] - p[1]) + r[0] * (p[1] - q[1]));
+    const sq = (v: Pt) => v[0] * v[0] + v[1] * v[1];
+    const c: Pt = [
+      (sq(p) * (q[1] - r[1]) + sq(q) * (r[1] - p[1]) + sq(r) * (p[1] - q[1])) / d,
+      (sq(p) * (r[0] - q[0]) + sq(q) * (p[0] - r[0]) + sq(r) * (q[0] - p[0])) / d,
+    ];
+    return { c, r: dist(c, p) };
   }
-  const OUTER = ogee(3, 44, 21, [0.36, 0.68]);
-  const INNER = ogee(3, 38.5, 16, [0.42, 0.72]);
-  /** The innermost, from the seal's edge, a small dark lozenge pointing on at the name. */
-  const HEART = ogee(SEAL[0] + SEAL_R + 1.6, 33, 4.2, [0.5]);
+
+  /**
+   * One side (the upper) of a flamed ogee arch lying on its side, drawn
+   * with compasses. It is set out on the arc through its springing on the
+   * post (`x0`, -`foot`), its crown (a third of the way, at -`h`) and its
+   * point (`x1`, 0). At the fractions `knots` of the way along that arc the
+   * edge rises to a spike, pushed `spike` out and leaning towards the point;
+   * between spikes it swells out and sweeps hollow up into the next spike,
+   * like a flame, and the last stretch draws in, hollow, to the point.
+   */
+  function flamedSide(x0: number, foot: number, x1: number, h: number, knots: number[], spike: number): Pt[] {
+    const L = x1 - x0;
+    const base = circle3([x0, -foot], [x0 + L * 0.34, -h], [x1, 0]);
+    const a0 = Math.atan2(-foot - base.c[1], x0 - base.c[0]);
+    let a1 = Math.atan2(-base.c[1], x1 - base.c[0]);
+    if (a1 < a0) a1 += 2 * Math.PI;
+    const at = (t: number) => on(base.c, base.r, a0 + (a1 - a0) * t);
+    /** The spike at `t`: out from the arc's centre, and leaning on along it. */
+    const spikeAt = (t: number): Pt => {
+      const p = at(t);
+      const a = a0 + (a1 - a0) * t;
+      const out: Pt = [Math.cos(a), Math.sin(a)];
+      const on_: Pt = [-Math.sin(a), Math.cos(a)];
+      return [p[0] + out[0] * spike + on_[0] * spike * 1.25, p[1] + out[1] * spike + on_[1] * spike * 1.25];
+    };
+    const pts: Pt[] = [[x0, -foot]];
+    let prev = 0;
+    for (const t of knots) {
+      // A flame: swell out to a waist set a little in from the arc, then
+      // sweep up, hollow, into the spike.
+      const waist = at(prev + (t - prev) * 0.5);
+      pts.push(...arcTo(pts.at(-1)!, waist, 0.09).slice(1), ...arcTo(waist, spikeAt(t), -0.24).slice(1));
+      prev = t;
+    }
+    const waist = at(prev + (1 - prev) * 0.45);
+    pts.push(...arcTo(pts.at(-1)!, waist, 0.08).slice(1), ...arcTo(waist, [x1, 0], -0.14).slice(1));
+    return pts;
+  }
+  /** A flamed ogee: both sides, from the post round to the post. */
+  const flamed = (...args: Parameters<typeof flamedSide>) => {
+    const top = flamedSide(...args);
+    return [...top, ...flipY(top).reverse().slice(1)];
+  };
+
+  // Three arches, one inside another, springing from the post at their own
+  // heights so their lines never meet; each with a fine line inside it.
+  const ARCHES = [
+    { x0: 3, foot: 13, x1: 48, h: 18.8, knots: [0.3, 0.62], spike: 4.2 },
+    { x0: 3, foot: 7.5, x1: 41, h: 14.5, knots: [0.36, 0.66], spike: 3.2 },
+  ];
+  const OUTER = flamed(ARCHES[0].x0, ARCHES[0].foot, ARCHES[0].x1, ARCHES[0].h, ARCHES[0].knots, ARCHES[0].spike);
+  const INNER = flamed(ARCHES[1].x0, ARCHES[1].foot, ARCHES[1].x1, ARCHES[1].h, ARCHES[1].knots, ARCHES[1].spike);
+  const OUTER_IN = flamed(3, 13, 44.5, 16.9, [0.32, 0.63], 3);
+  const INNER_IN = flamed(3, 7.5, 37.8, 12.8, [0.38, 0.67], 2.3);
+  /** The innermost, from the seal's edge, a small flame pointing on at the name. */
+  const HEART = flamed(SEAL[0] + SEAL_R + 2.4, 0.01, 34.5, 4.2, [0.5], 1.6);
+  /** Lozenges on the arches' points. */
+  const FINIALS = [48, 41].map((x) => `M${x - 0.8} 0L${x + 1.6} -1.5L${x + 4} 0L${x + 1.6} 1.5Z`).join('');
 
   /**
    * A mouchette: a round head of radius `r` about `head`, and two arcs from
@@ -140,7 +185,8 @@
     // Round the head the far way from the tail, from one flank to the other.
     return [...flank(a1), ...arc(head, r, a1, a2 > a1 ? a2 : a2 + 2 * Math.PI).slice(1), ...flank(a2).reverse().slice(1)];
   }
-  const LEAF = mouchette([15.5, -21.6], 4.2, [4.6, -12.5], deg(-150), deg(40));
+  // Tucked into the corner above the outer arch's springing, clear of it.
+  const LEAF = mouchette([9.6, -23.4], 2.6, [4.6, -15.4], deg(-160), deg(20));
 
   // The frame's corner, cut like the panels' filigree, with a lozenge in
   // the cut; the rules run on from it (see the markup).
@@ -150,6 +196,7 @@
 
   const END = {
     ogees: [OUTER, INNER, HEART].map((o, k) => stroke(pieces(o, HOLES), 0.15 + k * 0.15, 0.9)),
+    fine: [OUTER_IN, INNER_IN].map((o, k) => stroke(pieces(o, HOLES), 0.35 + k * 0.15, 0.9)),
     leaves: [LEAF, flipY(LEAF)].flatMap((l) => stroke(pieces(l, HOLES), 0.3, 0.7)),
     ring: stroke(pieces(arc(SEAL, SEAL_R, -Math.PI / 2, 1.5 * Math.PI)), 0.3, 0.6),
   };
@@ -224,10 +271,16 @@
   <g class="end">
     <path d={GROUND} class="ground" />
     <path d={LEAF_GROUND} class="ground leaf" />
+    {#each END.fine as list, k (k)}
+      {#each list as { d, delay, t }, j (j)}
+        <path {d} class="draw piece fine" style:--d={delay} style:--t={t} pathLength="100" />
+      {/each}
+    {/each}
     {#each END.ogees as o, k (k)}
       {@render moulding(o)}
     {/each}
     {@render moulding(END.leaves)}
+    <path d={FINIALS} class="solid fade" style:--d="0.9s" />
     <!-- The seal, pressed in like the circle's. -->
     <g class="seal" style:--d="0.3s">
       <circle cx={SEAL[0]} cy={SEAL[1]} r={SEAL_R + 1} class="well" />
@@ -285,7 +338,8 @@
         <path d={WEAVE} />
       </pattern>
     </defs>
-    <rect width="100%" height="100%" fill="url(#{id('weave')})" />
+    <!-- Oversized (the plate clips it): a percentage height here resolved short of the plate. -->
+    <rect y="-200" width="100%" height="400" fill="url(#{id('weave')})" />
   </svg>
   <!-- The lines twice, as on the circle: a soft, wide copy for the glow, and the lines. -->
   <svg class="art glow" width="100%" height="100%">{@render plate()}</svg>
@@ -326,12 +380,10 @@
     transform: scale(var(--end-scale, 1));
   }
 
-  /* The interlace: over the whole plate, faint and softened, as if cut
-     into the dark; fainter still under the ends' tracery. (Static, so the
-     blur is painted once.) */
+  /* The interlace: over the whole plate, faint, as if cut into the dark;
+     fainter still under the ends' tracery. */
   .field {
-    opacity: 0.11;
-    filter: blur(0.45px);
+    opacity: 0.085;
     mask-image: linear-gradient(90deg, rgba(0, 0, 0, 0.35) 30px, #000 64px, #000 calc(100% - 64px), rgba(0, 0, 0, 0.35) calc(100% - 30px));
     animation: fade 1.2s 0.3s ease-out both;
   }
@@ -358,8 +410,8 @@
     stroke-linecap: square;
   }
   .fine {
-    stroke: #6e3b1e;
-    stroke-width: 0.7;
+    stroke: #5e3219;
+    stroke-width: 0.6;
   }
   .solid {
     fill: #c98552;
