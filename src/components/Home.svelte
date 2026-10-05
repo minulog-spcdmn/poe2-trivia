@@ -183,12 +183,13 @@
     <div class="modes">
       <section class="mode">
         <h2>Host a game</h2>
-        <p class="muted">Open a room and share the code with your party.</p>
+        <p class="muted">Open a room and share the code with your party, or play alone.</p>
         <button class="btn primary" onclick={host} disabled={connecting}>Create room</button>
       </section>
 
       <section class="mode">
         <h2>Join a game</h2>
+        <p class="muted">Enter the code your host shared to join their room.</p>
         <form onsubmit={join}>
           <input
             id="code"
@@ -510,6 +511,8 @@
     text-align: center;
     text-transform: uppercase;
     min-width: 0;
+    /* Stretched to the Join button's height, so this row matches Create room. */
+    padding-block: 0;
   }
 
   .or {
