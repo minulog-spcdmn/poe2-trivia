@@ -23,5 +23,5 @@ test('a fallen run sounds low and slow, from files other moments already load', 
 });
 
 test('the shared depth is a dare, with the site', () => {
-  assert.equal(shareText(23), 'I reached depth 23 in Delve, can you beat me? poe2.quest');
+  assert.equal(shareText(23), 'I reached depth 23 in Delve, can you beat me? poe2.quest/?delve');
 });

@@ -13,6 +13,7 @@
   import type { Handle } from '../lib/fx/core';
   import { setHomeScene } from '../lib/lights';
   import { openCodex } from '../lib/codexRoute.svelte';
+  import { DELVE_LINK_PARAM } from '../lib/delveShare';
 
   /** Keeps a room code's letters and digits, uppercased, up to its length. */
   const cleanCode = (v: string) => v.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, CODE_LENGTH);
@@ -28,6 +29,22 @@
   }
 
   let name = $state(savedName());
+
+  // A delver's shared link (?delve): someone who has played here before (a
+  // name is saved) goes straight into a run alone; anyone else finds Delve
+  // chosen in the lobby they open. Not over a game that's being resumed:
+  // App resumes it on mount, after this, so look once that's had its turn.
+  if (params.has(DELVE_LINK_PARAM)) {
+    const url = new URL(location.href);
+    url.searchParams.delete(DELVE_LINK_PARAM);
+    history.replaceState(history.state, '', url);
+    session.delveLink = true;
+    const known = name.trim();
+    if (known && !nameTooShort(known) && !nameHeld(known))
+      setTimeout(() => {
+        if (session.status === 'idle' && !session.state) session.startDelve(known);
+      });
+  }
   let code = $state(invite);
   let nameError = $state(false);
 

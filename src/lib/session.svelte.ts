@@ -21,6 +21,7 @@ import {
   ANSWER_GRACE_MS,
   autoNextLeft,
   renameCategories,
+  DEFAULT_SETTINGS,
   type Action,
   type GameState,
   type Item,
@@ -323,7 +324,22 @@ class Session {
     this.reset();
     this.mode = 'local';
     this.status = 'ready';
-    this.setState(resume ?? createGame(null));
+    this.setState(resume ?? createGame(null, this.delveLink ? { ...DEFAULT_SETTINGS, mode: 'delve' } : undefined));
+    if (!resume) this.delveLink = false;
+  }
+
+  /**
+   * Came in through a delver's shared link (?delve): the next game they open
+   * here, hot-seat or a room, starts on Delve.
+   */
+  delveLink = false;
+
+  /** A Delve run alone on this device, straight from a shared link. */
+  startDelve(name: string) {
+    this.delveLink = true;
+    this.startLocal();
+    this.dispatch({ type: 'join', playerId: crypto.randomUUID(), name });
+    this.dispatch({ type: 'start' });
   }
 
   /** Picks up a hot-seat game or a hosted room after a page refresh. */
@@ -391,7 +407,8 @@ class Session {
         if (s.delve) s = engine.apply(s, { type: 'resumed' }, null);
         this.setState(s);
       } else {
-        let s = createGame(me, roomSettings());
+        let s = createGame(me, this.delveLink ? { ...roomSettings(), mode: 'delve' } : roomSettings());
+        this.delveLink = false;
         try {
           s = engine.apply(s, { type: 'join', playerId: me, name: this.joinName }, me);
         } catch (err) {
