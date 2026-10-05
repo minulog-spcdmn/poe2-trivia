@@ -8,20 +8,19 @@ export function playerColor(slot: number) {
 
 export { itemImage };
 
-// Art used (as a silhouette) on the category cards: for each category the
-// item whose silhouette reads clearest at a glance (picked from contact
-// sheets of every item's silhouette), by name so a data refresh that
-// reorders the items keeps it.
+// Art used (as a silhouette) on the category cards: for each category an
+// item picked from all of them shown on the card, by name so a data refresh
+// that reorders the items keeps it.
 const ICON_ITEM: Record<string, string> = {
-  'One-Handed Weapons': "Brynhand's Mark",
-  'Two-Handed Weapons': "Lioneye's Glare",
-  'Off-Hands': "Calgyra's Arc",
-  'Body Armours': 'Tabula Rasa',
+  'One-Handed Weapons': "Adonia's Ego",
+  'Two-Handed Weapons': "Death's Harp",
+  'Off-Hands': "Cadiro's Gambit",
+  'Body Armours': "Cospri's Will",
   Helmets: 'Horns of Bynden',
-  'Gloves & Boots': "Leopold's Applause",
-  Rings: 'Evergrasping Ring',
-  'Amulets & Belts': 'Rondel of Fragility',
-  'Flasks, Charms, Jewels, Relics & Tablets': "Lavianga's Spirits",
+  'Gloves & Boots': 'Decree of Flight',
+  Rings: "Ming's Heart",
+  'Amulets & Belts': 'Astramentis',
+  'Flasks, Charms, Jewels, Relics & Tablets': "Uhtred's Chalice",
 };
 // Should one of those leave the data, an item from the group that best
 // represents the category.
