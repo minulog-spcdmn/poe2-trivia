@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { bestOf, loadRecords } from '../lib/delveRecord';
   import { fade, fly } from 'svelte/transition';
   import { NAME_TOO_SHORT, nameHeld, nameTooShort, unlockHeldName } from '../lib/names';
   import { toasts } from '../lib/toasts.svelte';
@@ -39,6 +40,8 @@
     discovered = engine.items.filter((it) => seen[it.id]).length;
   });
   const showcase = shuffle(engine.items, Math.random).slice(0, 7);
+  /** The deepest this browser has delved alone, under the current rules. */
+  const deepest = bestOf(loadRecords(), true)?.depth ?? null;
 
   function needName() {
     const n = name.trim();
@@ -218,7 +221,9 @@
 
     <div class="or"><span>or</span></div>
     <div class="solo">
-      <button class="btn ghost" onclick={delveAlone} disabled={connecting} title="Three lives; see how deep you get">Delve alone</button>
+      <button class="btn ghost delve" onclick={delveAlone} disabled={connecting} title="Three lives; see how deep you get">
+        Delve alone{#if deepest}<span class="deepest">Deepest {deepest}</span>{/if}
+      </button>
       <button class="btn ghost" onclick={local} disabled={connecting}>Play hot-seat on this device</button>
     </div>
 
@@ -534,6 +539,19 @@
     flex: 1;
     height: 1px;
     background: var(--line);
+  }
+  .delve {
+    display: inline-flex;
+    align-items: baseline;
+    justify-content: center;
+    gap: 0.6em;
+  }
+  .deepest {
+    font-family: var(--font-cinzel);
+    font-size: 0.72em;
+    letter-spacing: 0.08em;
+    color: var(--gold-hi);
+    opacity: 0.85;
   }
   .solo {
     display: grid;

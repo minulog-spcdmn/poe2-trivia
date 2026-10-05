@@ -39,6 +39,7 @@ import { creatorArrival } from './herald';
 import { RUBY } from './palette';
 import { CREATOR_TITLE } from './site';
 import { DELVE_RULESET, livesOf } from './delve';
+import { bestOf, loadRecords, recordRun, runEvent } from './delveRecord';
 import { DELVE_CLOCK_CAP_MS, DRAIN_POLL_MS, clockStart, delveNotices, drained, expireIn, mayAutoReask, reaskDelay } from './delveSession';
 
 export const engine = new Engine(itemData as Item[], { fakes: fakeNames });
@@ -187,6 +188,13 @@ class Session {
   hideCode = $state(roomPrefs().hideCode);
   /** Reconnecting to the host has been given up. */
   gaveUp = $state(false);
+  /**
+   * Delve: how this device's run measured up, once it fell (`id`: the run's
+   * startedAt). `best`: deeper than ever, alone or in a group as it was.
+   */
+  delveResult = $state<{ id: number; depth: number; previousBest: number | null; best: boolean } | null>(null);
+  /** Delve: the deepest this device had gone (alone or in a group, as this run is) when the run began. */
+  bestAtStart = $state<number | null>(null);
   /** Host: when the disconnected active player's turn will be skipped (0 = not pending). */
   skipAt = $state(0);
   /**
@@ -983,6 +991,7 @@ class Session {
         case 'state':
           this.syncClock(msg.now);
           if (!this.state || msg.state.version >= this.state.version || msg.state.version === 0) {
+            this.noteRun(this.state, msg.state);
             this.onNewState(this.state, msg.state);
             this.noteEncounter(this.state, msg.state);
             this.state = msg.state;
@@ -1126,6 +1135,7 @@ class Session {
 
   private setState(next: GameState) {
     const prev = this.state;
+    this.noteRun(prev, next);
     this.onNewState(prev, next);
     this.noteEncounter(prev, next);
     this.state = next;
@@ -1201,6 +1211,27 @@ class Session {
     };
   }
 
+  /**
+   * Delve: this device's run goes into its records as it falls (a guest may
+   * close the tab before the end), and again at the end when it won a group.
+   * Hot-seat runs count only alone.
+   */
+  private noteRun(prev: GameState | null, next: GameState) {
+    const d = next.delve;
+    if (!d) return;
+    if (prev?.delve?.startedAt !== d.startedAt) {
+      this.delveResult = null;
+      this.bestAtStart = bestOf(loadRecords(), d.entrants.length < 2, d.ruleset)?.depth ?? null;
+    }
+    const me = this.mode === 'local' ? (d.entrants.length === 1 ? (next.players[0]?.id ?? null) : null) : this.myPlayerId;
+    const run = runEvent(prev, next, me);
+    if (!run) return;
+    const r = recordRun(run);
+    if (!r) return;
+    const was = this.delveResult?.id === run.id ? this.delveResult : null;
+    this.delveResult = { id: run.id, depth: run.depth, previousBest: was ? was.previousBest : r.previousBest, best: was ? was.best : r.best };
+  }
+
   /** A question just revealed goes into this browser's codex. */
   private noteEncounter(prev: GameState | null, next: GameState) {
     // Not after a refresh into a reveal: it was likely counted before the
@@ -1250,8 +1281,8 @@ class Session {
     }
     if (next.phase === 'over' && prev.phase !== 'over') {
       // Hot-seat and spectators celebrate whoever won; a player who lost hears a toll instead.
-      // A Delve run alone has no winner: it ends with the last life.
-      const alone = !!next.delve && next.delve.entrants.length < 2;
+      // A Delve run alone has no winner: it ends with the last life (unless it went deeper than ever).
+      const alone = !!next.delve && next.delve.entrants.length < 2 && !this.delveResult?.best;
       const lost = alone || (this.mode !== 'local' && !!me && next.players.some((p) => p.id === me) && !next.winners.includes(me));
       sfx(lost ? 'defeat' : 'victory');
       return;

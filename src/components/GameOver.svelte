@@ -18,6 +18,8 @@
   // Delve: ranked by how deep each went, and alone there is no winner, only a depth.
   const run = $derived(s.delve ?? null);
   const solo = $derived(!!run && !isGroupRun(s));
+  /** Alone: this run went deeper than ever (lib/delveRecord.ts). */
+  const newBest = $derived(!!run && session.delveResult?.id === run.startedAt && session.delveResult.best);
   const delveRows = $derived(run ? delveStandings(s) : []);
   const depthOf = (id: string) => delveRows.find((r) => r.id === id)?.depth ?? 0;
   // Winners first among equal scores: a deathmatch can be won by the only duelist left, level on points.
@@ -46,13 +48,26 @@
     if (sharers.length > 1) return `${sharers.slice(0, -1).join(', ')} and ${sharers.at(-1)} share the win`;
     return iWon ? 'You delved deepest!' : `${winner?.name} delved deepest!`;
   });
-  const kicker = $derived(!run ? 'Victory' : run.lastStanding && run.lastStanding.id === winner?.id && !solo ? 'Last one standing' : 'Delve');
+  const kicker = $derived(
+    !run
+      ? 'Victory'
+      : solo && newBest && session.delveResult?.previousBest !== null
+        ? 'Deeper than ever'
+        : run.lastStanding && run.lastStanding.id === winner?.id && !solo
+          ? 'Last one standing'
+          : 'Delve',
+  );
   /** Delve: what the depth means, and how a tie was settled. */
   const delveSub = $derived.by(() => {
     if (!run || !winner) return '';
     const row = delveRows.find((r) => r.id === winner.id);
     if (!row) return '';
-    if (solo) return row.losses.length ? `Lives lost at depths ${listOf(row.losses)}.` : '';
+    if (solo) {
+      // Measured against this browser's deepest run alone (lib/delveRecord.ts).
+      const r = session.delveResult?.id === run.startedAt ? session.delveResult : null;
+      const record = !r || run.mixed ? '' : r.best ? (r.previousBest === null ? ' Your first descent.' : ` Your deepest yet; the last best was ${r.previousBest}.`) : ` Your best is depth ${r.previousBest}.`;
+      return (row.losses.length ? `Lives lost at depths ${listOf(row.losses)}.` : '') + record;
+    }
     const parts = [`Fell at depth ${row.depth}`];
     if (run.lastStanding?.id === winner.id) parts.push(`last one standing from depth ${run.lastStanding.depth}`);
     const second = delveRows[1];
@@ -98,9 +113,9 @@
   let title = $state<HTMLElement>();
   let standingsEl = $state<HTMLElement>();
   // A player who lost (online) sees a quieter screen.
-  // A Delve run alone ends with the last life: no victory to celebrate.
+  // A Delve run alone ends with the last life: no victory to celebrate, unless it went deeper than ever.
   const iLost = $derived(
-    solo ||
+    (solo && !newBest) ||
       (session.mode !== 'local' && !!session.myPlayerId && s.players.some((p) => p.id === session.myPlayerId) && !s.winners.includes(session.myPlayerId)),
   );
 

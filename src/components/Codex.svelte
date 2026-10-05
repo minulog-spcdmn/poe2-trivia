@@ -13,12 +13,15 @@
   import ArcaneCircle from './ArcaneCircle.svelte';
   import CodexItem from './CodexItem.svelte';
   import CodexFilter from './CodexFilter.svelte';
+  import { DELVE_RECORD_KEY, bestOf, loadRecords, resetRecords } from '../lib/delveRecord';
 
   let codex = $state.raw(loadCodex());
+  let delve = $state.raw(loadRecords());
   onMount(() => {
     // A game in another tab may add to it meanwhile.
     const reload = (e: StorageEvent) => {
       if (e.key === CODEX_KEY || e.key === null) codex = loadCodex();
+      if (e.key === DELVE_RECORD_KEY || e.key === null) delve = loadRecords();
     };
     addEventListener('storage', reload);
     return () => removeEventListener('storage', reload);
@@ -133,9 +136,17 @@
   let confirmReset = $state(false);
   function reset() {
     resetCodex();
+    resetRecords();
     codex = loadCodex();
+    delve = loadRecords();
     confirmReset = false;
   }
+
+  // Delve: the deepest runs alone and together (this ruleset), and the last few.
+  const soloBest = $derived(bestOf(delve, true));
+  const groupBest = $derived(bestOf(delve, false));
+  const lastRuns = $derived(delve.runs.slice(-10));
+  const deepestShown = $derived(Math.max(1, ...lastRuns.map((r) => r.depth)));
 </script>
 
 {#snippet meter(t: Tally, label: string)}
@@ -222,6 +233,37 @@
       </div>
     {/if}
   </section>
+
+  {#if delve.runs.length}
+    <section class="panel delve" use:backdropShadow={{ fill: 'linear' }} in:fly={{ y: 20, duration: 700, delay: 200 }}>
+      <header><h2>Delve</h2></header>
+      <div class="delve-stats">
+        <div class="stat">
+          <span class="stat-label">Deepest alone</span>
+          <span class="stat-value">{soloBest?.depth ?? '?'}</span>
+          <span class="stat-note">{soloBest ? date(soloBest.at) : 'no run alone yet'}</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Deepest together</span>
+          <span class="stat-value">{groupBest?.depth ?? '?'}</span>
+          <span class="stat-note">{groupBest ? `${groupBest.players} players${groupBest.won ? ', delved deepest' : ''}` : 'no group run yet'}</span>
+        </div>
+      </div>
+      <!-- The last runs, oldest first: the deeper, the taller. -->
+      <ol class="runs" aria-label="Your last Delve runs">
+        {#each lastRuns as r (r.id)}
+          <li
+            class:alone={r.players < 2}
+            class:won={r.won}
+            title="{r.players < 2 ? 'Alone' : `${r.players} players`}: fell at depth {r.depth}, {date(r.at)}{r.mixed ? ' (older rules)' : ''}"
+          >
+            <span class="run-bar" style:height="{Math.max(8, (r.depth / deepestShown) * 56)}px"></span>
+            <span class="run-depth">{r.depth}</span>
+          </li>
+        {/each}
+      </ol>
+    </section>
+  {/if}
 
   {#if !stats.seen}
     <div class="empty" in:fly={{ y: 20, duration: 700, delay: 300 }}>
@@ -452,7 +494,7 @@
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <div class="confirm panel" transition:fly={{ y: 20, duration: 250 }} onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" tabindex="-1">
       <h3>Erase your codex?</h3>
-      <p class="muted">Every item you have seen and every answer recorded in this browser is lost. This can't be undone.</p>
+      <p class="muted">Every item you have seen, every answer and every Delve run recorded in this browser is lost. This can't be undone.</p>
       <div class="actions">
         <button class="btn ghost" onclick={() => (confirmReset = false)}>Keep it</button>
         <button class="btn danger" onclick={reset}>Erase</button>
@@ -541,6 +583,49 @@
   }
   .stat-label {
     margin-bottom: 0.35rem;
+  }
+  .delve {
+    margin: 0 0 1.5rem;
+  }
+  .delve-stats {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin: 0.4rem 0 1.2rem;
+  }
+  .runs {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    gap: 0.5rem;
+    min-height: 80px;
+  }
+  .runs li {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.25rem;
+  }
+  /* An ember phial standing on end, as tall as the run was deep. */
+  .run-bar {
+    width: 10px;
+    border: 1px solid #c9a45c;
+    border-radius: 2px;
+    background: radial-gradient(ellipse 120% 100% at 50% 100%, #ff8a32, #c22a10 55%, #4d0705);
+  }
+  .runs li:not(.alone) .run-bar {
+    background: radial-gradient(ellipse 120% 100% at 50% 100%, #ffc26a, #b06a1c 55%, #3d2205);
+  }
+  .run-depth {
+    font-family: var(--font-cinzel);
+    font-size: 0.72rem;
+    color: var(--muted);
+  }
+  .runs li.won .run-depth {
+    color: var(--gold-hi);
   }
   .stat-value {
     font-size: 2.3rem;
