@@ -7,6 +7,12 @@
 // someone else's turn, losing a race before guessing, or spectating only adds
 // "seen". In hot-seat the device can't tell its players apart, so answers
 // only count when one person plays alone.
+//
+// Delve answers also note their depth and run: each item keeps how deep it
+// was answered and how often it cost a life, and the log links the lives a run
+// lost to the items that took them (the run list is in lib/delveRecord.ts).
+// The fields Delve added are optional, so codexes written before them read as
+// they were and the version stays.
 
 import { difficultyOf, isFake, type Difficulty, type GameState, type QuestionMode } from './game.ts';
 import { delveTier } from './delve.ts';
@@ -32,6 +38,16 @@ export interface ItemEntry {
    * their name picked for its art, or its art picked for their name.
    */
   mixed: Record<string, number>;
+  /** This player's Delve answers to it; missing until there is one. */
+  delve?: DelveItem;
+}
+
+/** One item's Delve answers. In Delve every wrong answer on your own turn costs a life. */
+export interface DelveItem extends Tally {
+  /** The deepest depth it was named right at (0: never). */
+  deepest: number;
+  /** The deepest depth it cost a life at (0: never). */
+  lostAt: number;
 }
 
 /** One of this player's answers, for the stats that look at the recent past. */
@@ -45,6 +61,9 @@ export interface Answer {
   race: boolean;
   /** From the first picture on this device to the click (missing on timeouts). */
   ms?: number;
+  /** Delve: the depth it was answered at, and the run (its start, as the run list's id). */
+  depth?: number;
+  run?: number;
 }
 
 /** A made-up name this player fell for. */
@@ -67,6 +86,8 @@ export interface Codex {
   best: number;
   /** Quickest right answer ever. */
   fastest: { ms: number; id: string } | null;
+  /** Delve answers by depth. */
+  byDepth: Record<number, Tally>;
 }
 
 /** What one revealed question means for the codex. */
@@ -77,6 +98,8 @@ export interface Encounter {
   mode: QuestionMode;
   difficulty: Difficulty;
   race: boolean;
+  /** Present in Delve: the depth the question was asked at, and the run's start (its id in the run list). */
+  delve?: { depth: number; run: number };
   /** Present when this device's player answered (or let their turn's time run out). */
   answer?: {
     ok: boolean;
@@ -95,7 +118,7 @@ export const LOG_LIMIT = 2000;
 /** "Recent" accuracy looks at this many answers. */
 export const RECENT = 100;
 
-export const emptyCodex = (): Codex => ({ items: {}, log: [], byDifficulty: {}, fooled: {}, streak: 0, best: 0, fastest: null });
+export const emptyCodex = (): Codex => ({ items: {}, log: [], byDifficulty: {}, fooled: {}, streak: 0, best: 0, fastest: null, byDepth: {} });
 
 const noTally = (): Tally => ({ n: 0, ok: 0 });
 const add = (t: Tally, ok: boolean): Tally => ({ n: t.n + 1, ok: t.ok + (ok ? 1 : 0) });
@@ -112,6 +135,7 @@ export function encounterAt(s: GameState, me: string | null, hotSeat: boolean, m
   // Delve answers are filed under the preset their depth plays like, not the room's leftover setting.
   const difficulty = s.delve ? delveTier(s.round) : difficultyOf(s.settings.difficulty);
   const e: Encounter = { at: q.askedAt, itemId: r.correctId, mode: q.mode, difficulty, race };
+  if (s.delve) e.delve = { depth: Math.max(1, s.round), run: s.delve.startedAt };
   let picked: number | null;
   let ok: boolean;
   if (race) {
@@ -151,6 +175,16 @@ export function record(c: Codex, e: Encounter): Codex {
   next.best = Math.max(c.best, next.streak);
   const ms = a.ok && a.ms !== undefined && Number.isFinite(a.ms) && a.ms > 0 ? Math.round(a.ms) : undefined;
   if (ms !== undefined && (!c.fastest || ms < c.fastest.ms)) next.fastest = { ms, id: e.itemId };
+  const dv = e.delve;
+  if (dv) {
+    const was = entry.delve ?? { n: 0, ok: 0, deepest: 0, lostAt: 0 };
+    entry.delve = {
+      ...add(was, a.ok),
+      deepest: a.ok ? Math.max(was.deepest, dv.depth) : was.deepest,
+      lostAt: a.ok ? was.lostAt : Math.max(was.lostAt, dv.depth),
+    };
+    next.byDepth = { ...c.byDepth, [dv.depth]: add(c.byDepth[dv.depth] ?? noTally(), a.ok) };
+  }
   if (!a.ok && a.pickedId) {
     if (isFake(a.pickedId)) {
       // fake:<id of the item it copies>:<which of its fakes>
@@ -171,7 +205,16 @@ export function record(c: Codex, e: Encounter): Codex {
       };
     }
   }
-  const log: Answer = { t: e.at, id: e.itemId, mode: e.mode, ok: a.ok, difficulty: e.difficulty, race: e.race, ...(ms !== undefined ? { ms } : {}) };
+  const log: Answer = {
+    t: e.at,
+    id: e.itemId,
+    mode: e.mode,
+    ok: a.ok,
+    difficulty: e.difficulty,
+    race: e.race,
+    ...(ms !== undefined ? { ms } : {}),
+    ...(dv ? { depth: dv.depth, run: dv.run } : {}),
+  };
   next.log = [...c.log, log].slice(-LOG_LIMIT);
   return next;
 }
@@ -187,6 +230,15 @@ function tally(v: unknown): Tally {
   return { n, ok: Math.min(n, count(v.ok)) };
 }
 const isMode = (v: unknown): v is QuestionMode => v === 'name' || v === 'art';
+/** A Delve depth (a whole number from 1), or 0. */
+const depth = (v: unknown) => (typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 1e6 ? v : 0);
+function delveItem(v: unknown): DelveItem | undefined {
+  if (!isObj(v)) return undefined;
+  const t = tally(v);
+  if (!t.n) return undefined;
+  // A right answer has a depth, a wrong one too; without one the depth is unknown (0).
+  return { ...t, deepest: t.ok ? depth(v.deepest) : 0, lostAt: t.ok < t.n ? depth(v.lostAt) : 0 };
+}
 
 /** A stored codex, cleaned up; null when it's missing, malformed or from another version. */
 export function parseCodex(raw: string | null): Codex | null {
@@ -203,13 +255,33 @@ export function parseCodex(raw: string | null): Codex | null {
     if (!isObj(e)) continue;
     const mixed: Record<string, number> = {};
     if (isObj(e.mixed)) for (const [k, n] of Object.entries(e.mixed)) if (count(n) > 0) mixed[k] = count(n);
-    c.items[id] = { seen: Math.max(1, count(e.seen)), first: time(e.first), last: time(e.last), name: tally(e.name), art: tally(e.art), mixed };
+    const dv = delveItem(e.delve);
+    c.items[id] = {
+      seen: Math.max(1, count(e.seen)),
+      first: time(e.first),
+      last: time(e.last),
+      name: tally(e.name),
+      art: tally(e.art),
+      mixed,
+      ...(dv ? { delve: dv } : {}),
+    };
   }
   if (Array.isArray(v.log))
     for (const a of v.log.slice(-LOG_LIMIT)) {
       if (!isObj(a) || typeof a.id !== 'string' || !isMode(a.mode) || typeof a.ok !== 'boolean') continue;
       const ms = count(a.ms);
-      c.log.push({ t: time(a.t), id: a.id, mode: a.mode, ok: a.ok, difficulty: difficultyOf(a.difficulty), race: a.race === true, ...(ms ? { ms } : {}) });
+      const d = depth(a.depth);
+      const run = typeof a.run === 'number' && Number.isSafeInteger(a.run) && a.run >= 0 ? a.run : null;
+      c.log.push({
+        t: time(a.t),
+        id: a.id,
+        mode: a.mode,
+        ok: a.ok,
+        difficulty: difficultyOf(a.difficulty),
+        race: a.race === true,
+        ...(ms ? { ms } : {}),
+        ...(d && run !== null ? { depth: d, run } : {}),
+      });
     }
   if (isObj(v.byDifficulty))
     for (const [d, t] of Object.entries(v.byDifficulty)) if (difficultyOf(d) === d) c.byDifficulty[d as Difficulty] = tally(t);
@@ -219,6 +291,12 @@ export function parseCodex(raw: string | null): Codex | null {
   c.streak = count(v.streak);
   c.best = Math.max(c.streak, count(v.best));
   if (isObj(v.fastest) && typeof v.fastest.id === 'string' && count(v.fastest.ms) > 0) c.fastest = { ms: count(v.fastest.ms), id: v.fastest.id };
+  if (isObj(v.byDepth))
+    for (const [k, t] of Object.entries(v.byDepth)) {
+      const d = depth(Number(k));
+      const n = tally(t);
+      if (d && n.n) c.byDepth[d] = n;
+    }
   return c;
 }
 

@@ -1,8 +1,12 @@
-// The numbers the codex page shows, worked out from the stored codex. Apart
-// from codex.ts so that only the page, loaded when it's opened, carries them.
+// The numbers the codex page shows, worked out from the stored codex (and the
+// Delve records). Apart from codex.ts so that only the page, loaded when it's
+// opened, carries them.
 
 import type { Difficulty, Item, QuestionMode } from './game.ts';
 import { RECENT, type Codex, type ItemEntry, type Tally } from './codex.ts';
+import { DELVE_RULESET } from './delve.ts';
+import { tallyOf as runsTally, type DelveRecords, type DelveTally, type Frontier } from './delveRecord.ts';
+import { milestoneAt } from './descent.ts';
 
 /** Fewer answers than this don't make an item a nemesis. */
 export const NEMESIS_MIN = 2;
@@ -113,4 +117,173 @@ export function codexStats(c: Codex, items: Item[], categories: string[], limit 
       .slice(0, limit)
       .map(({ name, of, n }) => ({ name, of, n })),
   };
+}
+
+// ---- Delve -------------------------------------------------------------------
+
+/** The atlas shows every named depth down to here at least, found or not. */
+export const ATLAS_DEPTH = 100;
+/** How far past a depth to look for the next named one. */
+const LOOKAHEAD = 1000;
+
+export interface Zone {
+  /** Where it begins (milestoneAt names it). */
+  depth: number;
+  name: string;
+  /** First reached then (this browser's clock); null while undiscovered. */
+  at: number | null;
+}
+
+/** The named depth a depth lies in: the nearest one at or above it, or null above the first. */
+export function zoneOf(depth: number): { depth: number; name: string } | null {
+  for (let d = Math.floor(depth); d >= 1; d--) {
+    const name = milestoneAt(d);
+    if (name) return { depth: d, name };
+  }
+  return null;
+}
+
+/** The next named depth below `depth`, or null if none comes within LOOKAHEAD. */
+export function nextZone(depth: number): { depth: number; name: string } | null {
+  for (let d = Math.max(1, Math.floor(depth) + 1); d <= depth + LOOKAHEAD; d++) {
+    const name = milestoneAt(d);
+    if (name) return { depth: d, name };
+  }
+  return null;
+}
+
+/**
+ * The named depths from the top, with when each was first reached: every one
+ * down to ATLAS_DEPTH or the deepest reached, and always at least one still to find.
+ */
+export function zoneAtlas(frontier: Frontier[], through = ATLAS_DEPTH): Zone[] {
+  const deepest = frontier.at(-1)?.depth ?? 0;
+  const out: Zone[] = [];
+  for (let d = 1; d <= Math.max(through, deepest); d++) {
+    const name = milestoneAt(d);
+    if (name) out.push({ depth: d, name, at: frontier.find((f) => f.depth >= d)?.at ?? null });
+  }
+  if (out.every((z) => z.at !== null)) {
+    const next = nextZone(Math.max(through, deepest));
+    if (next) out.push({ ...next, at: null });
+  }
+  return out;
+}
+
+export type DelveKind = 'all' | 'solo' | 'group';
+
+export interface DepthCount {
+  depth: number;
+  /** Runs that ended here (their last life). */
+  ends: number;
+  /** Earlier lives lost here. */
+  lost: number;
+}
+
+export interface DelveSummary {
+  runs: number;
+  solo: number;
+  group: number;
+  /** Group runs won. */
+  wins: number;
+  /** Of the depths runs ended at. */
+  median: number | null;
+  mean: number | null;
+  /** Every depth from 1 to the deepest with anything, in order. */
+  depths: DepthCount[];
+}
+
+/** The counted runs of a kind under a ruleset (this one by default), as the page shows them. */
+export function delveSummary(r: DelveRecords, kind: DelveKind = 'all', ruleset = DELVE_RULESET): DelveSummary {
+  const solo = runsTally(r, true, ruleset);
+  const group = runsTally(r, false, ruleset);
+  const count = (t: DelveTally) => Object.values(t.ends).reduce((a, b) => a + b, 0);
+  const picked = kind === 'solo' ? [solo] : kind === 'group' ? [group] : [solo, group];
+  const ends = new Map<number, number>();
+  const lost = new Map<number, number>();
+  for (const t of picked) {
+    for (const [d, n] of Object.entries(t.ends)) ends.set(+d, (ends.get(+d) ?? 0) + n);
+    for (const [d, n] of Object.entries(t.lost)) lost.set(+d, (lost.get(+d) ?? 0) + n);
+  }
+  const deepest = Math.max(0, ...ends.keys(), ...lost.keys());
+  const depths: DepthCount[] = [];
+  for (let d = 1; d <= deepest; d++) depths.push({ depth: d, ends: ends.get(d) ?? 0, lost: lost.get(d) ?? 0 });
+  const all = [...ends].sort((a, b) => a[0] - b[0]).flatMap(([d, n]) => Array<number>(n).fill(d));
+  return {
+    runs: all.length,
+    solo: count(solo),
+    group: count(group),
+    wins: group.wins,
+    median: median(all),
+    mean: all.length ? all.reduce((a, b) => a + b, 0) / all.length : null,
+    depths,
+  };
+}
+
+export interface DelveItemStats {
+  /** Every Delve answer. */
+  answers: Tally;
+  /** The items that cost the most lives, deepest loss first among equals. */
+  costly: { item: Item; lives: number; at: number }[];
+  /** The items named right at the greatest depths. */
+  deepest: { item: Item; depth: number }[];
+}
+
+export function delveItemStats(c: Codex, items: Item[], limit = 5): DelveItemStats {
+  let answers = noTally();
+  const costly: DelveItemStats['costly'] = [];
+  const deepest: DelveItemStats['deepest'] = [];
+  for (const it of items) {
+    const d = c.items[it.id]?.delve;
+    if (!d) continue;
+    answers = sum(answers, d);
+    if (d.n > d.ok) costly.push({ item: it, lives: d.n - d.ok, at: d.lostAt });
+    if (d.deepest) deepest.push({ item: it, depth: d.deepest });
+  }
+  costly.sort((a, b) => b.lives - a.lives || b.at - a.at || a.item.name.localeCompare(b.item.name));
+  deepest.sort((a, b) => b.depth - a.depth || a.item.name.localeCompare(b.item.name));
+  return { answers, costly: costly.slice(0, limit), deepest: deepest.slice(0, limit) };
+}
+
+export interface DepthBand {
+  /** The named depth it begins at, or null for the depths above the first. */
+  name: string | null;
+  from: number;
+  /** Its last depth; null for the deepest band, which goes on. */
+  to: number | null;
+  tally: Tally;
+}
+
+/**
+ * Delve accuracy by named depth: one band from each named depth to the next
+ * (and one above the first), down to the deepest of `deepest` and the answers.
+ */
+export function depthBands(c: Codex, deepest: number): DepthBand[] {
+  const bottom = Math.max(deepest, 1, ...Object.keys(c.byDepth).map(Number));
+  const bands: DepthBand[] = [];
+  for (let from = 1; from <= bottom; ) {
+    const next = nextZone(from);
+    const to = next ? next.depth - 1 : null;
+    let tally = noTally();
+    for (let d = from; d <= (to ?? bottom); d++) if (c.byDepth[d]) tally = sum(tally, c.byDepth[d]);
+    bands.push({ name: milestoneAt(from), from, to, tally });
+    if (to === null) break;
+    from = to + 1;
+  }
+  return bands;
+}
+
+/** The items that cost this player a life in each run, in the order they did, by run id (runs recorded since the codex kept it). */
+export function lostTo(c: Codex, items: Item[]): Map<number, { item: Item; depth: number }[]> {
+  const byId = new Map(items.map((it) => [it.id, it]));
+  const out = new Map<number, { item: Item; depth: number }[]>();
+  for (const a of c.log) {
+    if (a.ok || a.run === undefined || a.depth === undefined) continue;
+    const item = byId.get(a.id);
+    if (!item) continue;
+    const list = out.get(a.run) ?? [];
+    list.push({ item, depth: a.depth });
+    out.set(a.run, list);
+  }
+  return out;
 }

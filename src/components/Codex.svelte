@@ -13,7 +13,8 @@
   import ArcaneCircle from './ArcaneCircle.svelte';
   import CodexItem from './CodexItem.svelte';
   import CodexFilter from './CodexFilter.svelte';
-  import { DELVE_RECORD_KEY, bestOf, loadRecords, resetRecords } from '../lib/delveRecord';
+  import CodexDelve from './CodexDelve.svelte';
+  import { DELVE_RECORD_KEY, deepestEver, loadRecords, resetRecords } from '../lib/delveRecord';
 
   let codex = $state.raw(loadCodex());
   let delve = $state.raw(loadRecords());
@@ -142,11 +143,32 @@
     confirmReset = false;
   }
 
-  // Delve: the deepest runs alone and together (this ruleset), and the last few.
-  const soloBest = $derived(bestOf(delve, true));
-  const groupBest = $derived(bestOf(delve, false));
-  const lastRuns = $derived(delve.runs.slice(-10));
-  const deepestShown = $derived(Math.max(1, ...lastRuns.map((r) => r.depth)));
+  // ---- two pages: the collection, and Delve (CodexDelve) ----
+
+  type Tab = 'items' | 'delve';
+  const TABS: { key: Tab; label: string }[] = [
+    { key: 'items', label: 'Collection' },
+    { key: 'delve', label: 'Delve' },
+  ];
+  let tab = $state<Tab>('items');
+  const deepest = $derived(deepestEver(delve));
+  const delved = $derived(delve.runs.length > 0 || deepest > 0);
+  /** Anything to show (or erase): the tabs and the footer only come with it. */
+  const kept = $derived(stats.seen > 0 || delved);
+  const tabs = new Map<Tab, HTMLButtonElement>();
+  const tabRef = (key: Tab) => (el: HTMLButtonElement) => {
+    tabs.set(key, el);
+    return () => tabs.delete(key);
+  };
+  /** Arrow keys move between the tabs, as a tab list does. */
+  function tabKey(e: KeyboardEvent) {
+    const step = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
+    if (!step) return;
+    e.preventDefault();
+    const i = TABS.findIndex((t) => t.key === tab);
+    tab = TABS[(i + step + TABS.length) % TABS.length].key;
+    tabs.get(tab)?.focus();
+  }
 </script>
 
 {#snippet meter(t: Tally, label: string)}
@@ -179,8 +201,36 @@
   <header class="hero" in:fly={{ y: -10, duration: 600 }}>
     <p class="kicker">Your collection</p>
     <h1>Codex</h1>
-    <p class="tagline">Every unique and lineage gem you have seen in a game, and how well you know it.</p>
+    <p class="tagline">
+      {tab === 'delve' ? 'Every descent you have made, the depths you have named, and what they cost you.' : 'Every unique and lineage gem you have seen in a game, and how well you know it.'}
+    </p>
   </header>
+
+  {#if kept}
+    <div class="tabs" role="tablist" aria-label="Codex pages" in:fly={{ y: -6, duration: 500, delay: 100 }}>
+      {#each TABS as t (t.key)}
+        <button
+          {@attach tabRef(t.key)}
+          role="tab"
+          id="codex-tab-{t.key}"
+          class:on={tab === t.key}
+          aria-selected={tab === t.key}
+          aria-controls="codex-page"
+          tabindex={tab === t.key ? 0 : -1}
+          onclick={() => (tab = t.key)}
+          onkeydown={tabKey}
+        >
+          <span class="tab-label">{t.label}</span>
+          <span class="tab-note">{t.key === 'items' ? `${stats.seen}/${stats.total}` : deepest || ''}</span>
+        </button>
+      {/each}
+    </div>
+  {/if}
+
+  <div class="page" id="codex-page" role={kept ? 'tabpanel' : undefined} aria-labelledby={kept ? `codex-tab-${tab}` : undefined}>
+  {#if tab === 'delve' && kept}
+    <CodexDelve {codex} records={delve} onopen={(it) => (open = it)} onbegin={closeCodex} />
+  {:else}
 
   <section class="summary" in:fly={{ y: 20, duration: 700, delay: 150 }}>
     {#if stats.seen}
@@ -233,37 +283,6 @@
       </div>
     {/if}
   </section>
-
-  {#if delve.runs.length}
-    <section class="panel delve" use:backdropShadow={{ fill: 'linear' }} in:fly={{ y: 20, duration: 700, delay: 200 }}>
-      <header><h2>Delve</h2></header>
-      <div class="delve-stats">
-        <div class="stat">
-          <span class="stat-label">Deepest alone</span>
-          <span class="stat-value">{soloBest?.depth ?? '?'}</span>
-          <span class="stat-note">{soloBest ? date(soloBest.at) : 'no run alone yet'}</span>
-        </div>
-        <div class="stat">
-          <span class="stat-label">Deepest together</span>
-          <span class="stat-value">{groupBest?.depth ?? '?'}</span>
-          <span class="stat-note">{groupBest ? `${groupBest.players} players${groupBest.won ? ', delved deepest' : ''}` : 'no group run yet'}</span>
-        </div>
-      </div>
-      <!-- The last runs, oldest first: the deeper, the taller. -->
-      <ol class="runs" aria-label="Your last Delve runs">
-        {#each lastRuns as r (r.id)}
-          <li
-            class:alone={r.players < 2}
-            class:won={r.won}
-            title="{r.players < 2 ? 'Alone' : `${r.players} players`}: fell at depth {r.depth}, {date(r.at)}{r.mixed ? ' (older rules)' : ''}"
-          >
-            <span class="run-bar" style:height="{Math.max(8, (r.depth / deepestShown) * 56)}px"></span>
-            <span class="run-depth">{r.depth}</span>
-          </li>
-        {/each}
-      </ol>
-    </section>
-  {/if}
 
   {#if !stats.seen}
     <div class="empty" in:fly={{ y: 20, duration: 700, delay: 300 }}>
@@ -475,8 +494,13 @@
       {/if}
     </section>
 
+  {/if}
+  {/if}
+  </div>
+
+  {#if kept}
     <footer class="end">
-      <p>Your codex lives in this browser only; clearing the site's data erases it.</p>
+      <p>Your codex and your Delve runs live in this browser only; clearing the site's data erases them.</p>
       <button class="btn danger small" onclick={() => (confirmReset = true)}>Erase codex</button>
     </footer>
   {/if}
@@ -543,6 +567,77 @@
     color: #b8ab95;
   }
 
+  /* ---- the two pages ---- */
+  .tabs {
+    display: flex;
+    justify-content: center;
+    gap: 0.4rem;
+    margin: -0.4rem auto 0;
+    width: min(440px, 100%);
+    border-bottom: 1px solid var(--line);
+  }
+  .tabs button {
+    position: relative;
+    flex: 1;
+    display: flex;
+    align-items: baseline;
+    justify-content: center;
+    gap: 0.55rem;
+    padding: 0.55rem 0.8rem 0.6rem;
+    background: none;
+    border: 0;
+    cursor: pointer;
+    color: var(--muted);
+    transition: color 0.25s;
+  }
+  .tab-label {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 0.86rem;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+  }
+  .tab-note {
+    font-family: var(--font-cinzel);
+    font-size: 0.78rem;
+    color: var(--gold-lo);
+    transition: color 0.25s;
+  }
+  .tabs button::after {
+    content: '';
+    position: absolute;
+    left: 18%;
+    right: 18%;
+    bottom: -1px;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--unique-hi), #fbe6b0, var(--unique-hi), transparent);
+    box-shadow: 0 0 10px rgba(224, 138, 68, 0.6);
+    opacity: 0;
+    scale: 0.4 1;
+    transition:
+      opacity 0.3s,
+      scale 0.4s var(--ease-out);
+  }
+  .tabs button:hover {
+    color: var(--gold-hi);
+  }
+  .tabs button.on {
+    color: var(--gold-hi);
+    text-shadow: 0 0 12px rgba(224, 138, 68, 0.35);
+  }
+  .tabs button.on .tab-note {
+    color: var(--gold);
+  }
+  .tabs button.on::after {
+    opacity: 1;
+    scale: 1 1;
+  }
+  .page {
+    display: flex;
+    flex-direction: column;
+    gap: 1.4rem;
+  }
+
   /* ---- summary: the medallion between four figures ---- */
   .summary {
     display: grid;
@@ -583,49 +678,6 @@
   }
   .stat-label {
     margin-bottom: 0.35rem;
-  }
-  .delve {
-    margin: 0 0 1.5rem;
-  }
-  .delve-stats {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 1rem;
-    margin: 0.4rem 0 1.2rem;
-  }
-  .runs {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    align-items: flex-end;
-    justify-content: center;
-    gap: 0.5rem;
-    min-height: 80px;
-  }
-  .runs li {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.25rem;
-  }
-  /* An ember phial standing on end, as tall as the run was deep. */
-  .run-bar {
-    width: 10px;
-    border: 1px solid #c9a45c;
-    border-radius: 2px;
-    background: radial-gradient(ellipse 120% 100% at 50% 100%, #ff8a32, #c22a10 55%, #4d0705);
-  }
-  .runs li:not(.alone) .run-bar {
-    background: radial-gradient(ellipse 120% 100% at 50% 100%, #ffc26a, #b06a1c 55%, #3d2205);
-  }
-  .run-depth {
-    font-family: var(--font-cinzel);
-    font-size: 0.72rem;
-    color: var(--muted);
-  }
-  .runs li.won .run-depth {
-    color: var(--gold-hi);
   }
   .stat-value {
     font-size: 2.3rem;

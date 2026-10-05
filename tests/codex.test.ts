@@ -338,4 +338,5 @@ test('Delve answers are filed under the preset their depth plays like', () => {
   const e = encounterAt(s, 'p0', false)!;
   assert.equal(e.difficulty, 'eternal', 'not the room\'s leftover Cruel');
   assert.equal(e.answer!.ok, true);
+  assert.deepEqual(e.delve, { depth: 30, run: s.delve!.startedAt }, 'its depth and run, for the Delve page');
 });
