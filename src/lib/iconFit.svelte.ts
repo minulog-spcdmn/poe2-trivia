@@ -61,9 +61,9 @@ export function measure(url: string) {
     .finally(() => pending.delete(url));
 }
 
-/** The emblem's style for an icon, `k` times the common size and moved `up`: its fit as custom properties, once measured. */
-export function fitStyle(url: string, { k = 1, up = 0 } = {}) {
+/** The emblem's style for an icon, `k` times the common size and moved `up` and `left`: its fit as custom properties, once measured. */
+export function fitStyle(url: string, { k = 1, up = 0, left = 0 } = {}) {
   const f = fits[url];
   if (!f) return '';
-  return `--e-kin:${k};--e-up:${up};--e-iw:${f.iw.toFixed(1)};--e-ih:${f.ih.toFixed(1)};--e-x:${f.x.toFixed(1)};--e-y:${f.y.toFixed(1)};--e-w:${f.w.toFixed(1)};--e-h:${f.h.toFixed(1)}`;
+  return `--e-kin:${k};--e-up:${up};--e-left:${left};--e-iw:${f.iw.toFixed(1)};--e-ih:${f.ih.toFixed(1)};--e-x:${f.x.toFixed(1)};--e-y:${f.y.toFixed(1)};--e-w:${f.w.toFixed(1)};--e-h:${f.h.toFixed(1)}`;
 }

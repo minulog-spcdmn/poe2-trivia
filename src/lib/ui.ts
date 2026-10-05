@@ -23,17 +23,22 @@ const ICON_ITEM: Record<string, string> = {
   'Flasks, Charms, Jewels, Relics & Tablets': "Uhtred's Chalice",
 };
 // Each chosen item's size against the common one (lib/iconFit), and how far
-// to move it up (pixels at a tall card's size), set by eye: an item drawn
-// larger grows up toward the arch, standing where it stood.
-const ICON_FIT: Record<string, { k?: number; up?: number }> = {
+// to move it up and left (pixels at a tall card's size), set by eye: an
+// item drawn larger grows up toward the arch, standing where it stood.
+type Tweak = { k: number; up: number; left: number };
+const ICON_FIT: Record<string, Partial<Tweak>> = {
   "Adonia's Ego": { k: 1.2 },
-  "Death's Harp": { k: 1.28 },
+  // Its tip on the card's middle (it stands 58% of the way across).
+  "Death's Harp": { k: 1.22, left: 4 },
+  'Horns of Bynden': { up: 8 },
+  "Oisín's Oath": { k: 0.94 },
   "Cadiro's Gambit": { k: 1.08 },
   "Cospri's Will": { k: 1.08 },
   "Ming's Heart": { k: 0.88, up: 10 },
   "Uhtred's Chalice": { k: 0.94 },
 };
-const tweaks = new Map<string, { k: number; up: number }>();
+const tweaks = new Map<string, Tweak>();
+const tweak = (name: string): Tweak => ({ k: 1, up: 0, left: 0, ...ICON_FIT[name] });
 // Should one of those leave the data, an item from the group that best
 // represents the category.
 const ICON_GROUP: Record<string, string> = {
@@ -54,10 +59,11 @@ for (const cat of engine.categories) {
   const list = engine.byCategory.get(cat)!;
   if (list[0].kind === 'gem') {
     icons.set(cat, GEM_ICON);
+    tweaks.set(cat, tweak("Oisín's Oath"));
     continue;
   }
   const named = list.find((it) => it.name === ICON_ITEM[cat]);
-  if (named) tweaks.set(cat, { k: ICON_FIT[named.name]?.k ?? 1, up: ICON_FIT[named.name]?.up ?? 0 });
+  if (named) tweaks.set(cat, tweak(named.name));
   const preferred = list.filter((it) => it.group === ICON_GROUP[cat]);
   const pool = preferred.length ? preferred : list;
   icons.set(cat, new URL(itemImage((named ?? pool[Math.floor(pool.length / 2)]).id), document.baseURI).href);
@@ -73,7 +79,7 @@ export function categoryIcons() {
   return [...icons.values()];
 }
 
-/** How much larger (or smaller) than the common size to draw a category's icon, and how far to move it up. */
-export function categoryIconTweak(category: string) {
-  return tweaks.get(category) ?? { k: 1, up: 0 };
+/** How much larger (or smaller) than the common size to draw a category's icon, and how far to move it up and left. */
+export function categoryIconTweak(category: string): Tweak {
+  return tweaks.get(category) ?? { k: 1, up: 0, left: 0 };
 }
