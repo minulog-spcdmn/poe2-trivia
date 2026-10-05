@@ -4,6 +4,7 @@
   import { playerColor } from '../lib/ui';
   import Avatar from './Avatar.svelte';
   import PlayerName from './PlayerName.svelte';
+  import Phial from './Phial.svelte';
   import { backdropShadow } from '../lib/backdropShadow';
   import { untrack, type Snippet } from 'svelte';
   import { fxActive, onFxChange, type Handle } from '../lib/fx/core';
@@ -11,7 +12,7 @@
   import { scoreRow, scoreRowOf } from '../lib/scoreRows';
   import { burnsBlue, heatOf, streakOf } from '../lib/fx/streaks';
   import { phone } from '../lib/layout';
-  import { DELVE_LIVES, fellAt, livesOf } from '../lib/delve';
+  import { fellAt, livesOf } from '../lib/delve';
 
   /** Shown at the end of the row (the timer, on phones). */
   let { aside }: { aside?: Snippet } = $props();
@@ -24,9 +25,12 @@
   const spectators = $derived(s.spectators ?? []);
   /** Delve: lives instead of a score. */
   const run = $derived(s.delve ?? null);
-  const PIPS = Array.from({ length: DELVE_LIVES }, (_, k) => k);
 
-  // Delve: a life lost makes the player's entry flinch, and the globe that went drains.
+  const area = (e: Element) => {
+    const r = e.getBoundingClientRect();
+    return r.width * r.height;
+  };
+  // Delve: a life lost makes the player's entry flinch, and the chamber of the phial empties.
   // In step with the reveal's verdict, a moment after the answer shows.
   let hit = $state<Record<string, number>>({});
   let livesSeen: Record<string, number> = {};
@@ -47,7 +51,9 @@
       setTimeout(() => {
         hit[id] = now;
         const li = scoreRowOf(id);
-        if (li) lifeLost(li, now, mine);
+        // The fire bursts out of the chamber that emptied, wherever the phial shows (lying or upright).
+        const chamber = li && [...li.querySelectorAll(`.chamber[data-k="${now}"]`)].sort((a, b) => area(b) - area(a))[0];
+        if (li) lifeLost(li, chamber ?? li, now, mine);
         setTimeout(() => {
           if (hit[id] === now) delete hit[id];
         }, 1200);
@@ -246,12 +252,7 @@
           {#if run && fell !== null}
             <span class="fell-at">Fell at depth {fell}</span>
           {:else if run}
-            <!-- Life globes: full ones glow, spent ones are empty sockets. -->
-            <span class="globes" role="img" aria-label="{lives} {lives === 1 ? 'life' : 'lives'} left">
-              {#each PIPS as k (k)}
-                <i class:spent={k >= lives} class:draining={hit[p.id] === k}></i>
-              {/each}
-            </span>
+            <Phial {lives} draining={hit[p.id] ?? -1} />
           {:else}
             <span class="bar" class:filling={filling[p.id]} style:--fill-span="{FILL_SPAN}s"
               ><span style:width="{Math.max(0, Math.min(100, (barOf(p.id, p.score) / target) * 100))}%"></span></span
@@ -259,10 +260,8 @@
           {/if}
         </div>
         {#if run}
-          <!-- Phones only, on the entries shrunk to an avatar: lives left (a globe), or the depth they fell at. -->
-          {#key lives}
-            <span class="score lives" class:fell={fell !== null} class:down={lives < DELVE_LIVES} aria-hidden="true">{fell ?? lives}</span>
-          {/key}
+          <!-- Phones only, on the entries shrunk to an avatar: the phial upright beside it. -->
+          <span class="phial-side"><Phial {lives} draining={hit[p.id] ?? -1} vertical /></span>
         {:else}
           {#key score}
             <span class="score" class:negative={score < 0} class:bump={race ? active : score > 0} class:down={out}
@@ -425,61 +424,6 @@
     opacity: 0.45;
     filter: grayscale(0.85);
   }
-  /* Delve: a life is a globe of blood in a gold rim, like the game's life
-     globe; a spent one is its empty socket. */
-  .globes {
-    display: flex;
-    gap: 5px;
-    align-items: center;
-    height: 10px;
-    padding-left: 1px;
-  }
-  .globes i {
-    position: relative;
-    width: 9px;
-    height: 9px;
-    border-radius: 50%;
-    background:
-      radial-gradient(circle at 34% 30%, rgba(255, 214, 196, 0.85) 0 9%, transparent 26%),
-      radial-gradient(circle at 50% 60%, #c8251f 0%, #86100f 52%, #3c0406 100%);
-    box-shadow:
-      0 0 0 1px var(--gold-lo),
-      0 0 5px rgba(214, 40, 30, 0.55),
-      inset 0 -1.5px 2px rgba(0, 0, 0, 0.55);
-    transition:
-      background 0.5s,
-      box-shadow 0.5s;
-  }
-  .globes i.spent {
-    background: radial-gradient(circle at 50% 40%, #1b120d, #070504);
-    box-shadow:
-      0 0 0 1px rgba(125, 99, 51, 0.55),
-      inset 0 1px 2px rgba(0, 0, 0, 0.9);
-  }
-  /* The life just lost: it flares, then the blood sinks out of it. */
-  .globes i.draining::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    border-radius: 50%;
-    background: radial-gradient(circle at 50% 60%, #ff6a4a, #a3141a 60%, #3c0406);
-    animation: drain 0.9s var(--ease-out) forwards;
-  }
-  @keyframes drain {
-    0% {
-      clip-path: inset(0 0 0 0);
-      filter: brightness(1.8);
-      box-shadow: 0 0 10px rgba(255, 70, 40, 0.9);
-    }
-    30% {
-      clip-path: inset(0 0 0 0);
-      filter: brightness(1.2);
-    }
-    100% {
-      clip-path: inset(100% 0 0 0);
-      filter: none;
-    }
-  }
   .fell-at {
     font-size: 0.8rem;
     font-style: italic;
@@ -501,17 +445,18 @@
       translate: -1px 0;
     }
   }
-  /* The count is only needed where the globes don't fit (phones, below). */
-  .score.lives {
+  /* The upright phial only shows on phones, beside an entry shrunk to an avatar (below). */
+  .phial-side {
     display: none;
+  }
+  .info :global(.phial) {
+    margin-top: 2px;
   }
   @media (prefers-reduced-motion: reduce) {
     li.hit {
       animation: none;
     }
-    .globes i.draining::after {
-      display: none;
-    }
+
   }
   li.duelist {
     border-color: rgba(224, 85, 63, 0.55);
@@ -773,21 +718,14 @@
       border: 1px solid color-mix(in srgb, var(--c), black 30%);
       border-radius: 9px;
     }
-    /* Delve: the badge is a small life globe with the lives left in it; grey with the depth once fallen. */
-    li:not(.active) .score.lives {
-      display: grid;
-      color: #fff1e8;
-      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
-      background:
-        radial-gradient(circle at 34% 28%, rgba(255, 214, 196, 0.55) 0 10%, transparent 30%),
-        radial-gradient(circle at 50% 60%, #b8221d, #6e0c0d 60%, #2e0305);
-      border-color: var(--gold-lo);
-    }
-    li:not(.active) .score.lives.fell {
-      color: #b5aa98;
-      text-shadow: none;
-      background: #14100c;
-      border-color: rgba(125, 99, 51, 0.5);
+    /* Delve: the phial stands upright beside the avatar, centred on it. */
+    li:not(.active) .phial-side {
+      display: block;
+      position: absolute;
+      right: -7px;
+      top: 50%;
+      translate: 0 -50%;
+      filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.9));
     }
     li.active .info {
       min-width: 0;

@@ -502,17 +502,21 @@ export function lostPoint(pill: Element) {
 }
 
 /**
- * Delve: a player loses a life. Their entry cracks and bleeds sparks; when it
- * is your own life (`mine`), the edges of the screen flare red as well, and
- * harder on the last one (`left`: lives still left).
+ * Delve: a player loses a life. The ember life force of the phial's chamber
+ * that empties (`chamber`) bursts out: a flash, sparks spraying up and out,
+ * embers drifting up from it and its light on the stone; the player's entry
+ * glows red at the edge. When it is your own life (`mine`) the screen's
+ * edges flare red as well, harder on the last one (`left`: lives still left).
  */
-export function lifeLost(pill: Element, left: number, mine: boolean) {
+export function lifeLost(pill: Element, chamber: Element, left: number, mine: boolean) {
   if (!fxActive()) return;
-  shards(pill, { count: left === 0 ? 22 : 14, area: 'centre', colors: [C.crimson, C.wrong], speed: [80, 260] });
-  sparks(pill, { count: 18, area: 'edge', colors: [C.crimson, C.ember], gravity: 600, life: [0.3, 0.7] });
-  ring(pill, { radius: 110, thickness: 7, life: 0.55, color: C.crimson, intensity: 0.55, breakup: 0.4 });
-  outline(pill, { color: C.crimson, width: 10, life: 0.9, intensity: 0.6 });
-  light(pill, { color: [1, 0.2, 0.12], radius: 220, intensity: 0.45, decay: 0.8 });
+  const hot = left === 0 ? [C.crimson, C.ember, C.gold] : [C.ember, C.gold, C.goldPale];
+  flash(chamber, { radius: 70, color: C.ember, intensity: 0.55, life: 0.45 });
+  sparks(chamber, { count: left === 0 ? 46 : 32, area: 'fill', colors: hot, speed: [90, 340], angle: -Math.PI / 2, spread: 2.6, gravity: 260, life: [0.35, 0.9] });
+  embers(chamber, { count: 22, area: 'top', colors: [C.ember, C.gold], size: [0.9, 2], rise: [70, 190], scatter: 70, life: [0.8, 1.7] });
+  ring(chamber, { radius: 60, thickness: 5, life: 0.5, color: C.ember, intensity: 0.45, breakup: 0.5 });
+  light(chamber, { color: [1, 0.48, 0.18], radius: 200, intensity: 0.45, decay: 0.8 });
+  outline(pill, { color: C.crimson, width: 9, life: 0.8, intensity: 0.45 });
   if (!mine) return;
   edgeGlow({ color: C.crimson, intensity: left <= 1 ? 0.16 : 0.1, width: left <= 1 ? 110 : 80, life: 1.1 });
   pulseMood(left <= 1 ? 0.4 : 0.25, [1, 0.12, 0.06]);

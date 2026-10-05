@@ -21,6 +21,10 @@
   const silent = $derived(muted || volume === 0);
   let confirmLeave = $state(false);
   let fxOn = $state(fxUserOn());
+  // CSS animations that only decorate (the Delve phial's fire) hold still with the effects off.
+  $effect(() => {
+    document.documentElement.toggleAttribute('data-still', !fxOn);
+  });
   let fxCan = $state(fxAvailable());
   let headerHeight = $state(0);
   let shell: HTMLElement;
