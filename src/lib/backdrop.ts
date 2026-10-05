@@ -34,6 +34,7 @@ export const BLOB_COUNT = 5;
  */
 const SMOOTH = `
 uniform vec2 uSize;  // canvas size, CSS pixels
+uniform float uViewH; // the height the scene is laid out for, CSS pixels (see viewH)
 
 // Breathing, driven from JS: each is (scale, strength).
 uniform vec2 uTop;
@@ -65,7 +66,7 @@ float gauss(float d) { return exp(-d * d); }
 // The soft light at p (CSS px, top-left origin).
 vec3 smoothLight(vec2 p) {
   float W = uSize.x;
-  float H = uSize.y;
+  float H = uViewH;
   float S = sqrt(W * H);
 
   // Vertical base: #0d0b09 at the top, #080706 at uBaseStop, #0d0907 at the
@@ -286,12 +287,13 @@ void main() {
 
   // Vignette: darkens smoothly from the centre, reaching about 72% at the
   // corners (farthest-corner ellipse, as in CSS).
-  float vig = length((p - vec2(0.5 * W, 0.5 * H)) / (vec2(0.5 * W, 0.5 * H) * 1.4142136 * uVignette.x));
+  float V = uViewH;
+  float vig = length((p - vec2(0.5 * W, 0.5 * V)) / (vec2(0.5 * W, 0.5 * V) * 1.4142136 * uVignette.x));
   col *= 1.0 - min(0.9, uVignette.y * 0.72 * pow(vig, 2.4));
 
   // Mood: the whole scene takes on a colour, welling up from below and the edges.
   if (uMood.a > 0.0) {
-    float below = gauss(length((p - vec2(0.5 * W, 1.12 * H)) / vec2(0.95 * W, 0.8 * H)));
+    float below = gauss(length((p - vec2(0.5 * W, 1.12 * V)) / vec2(0.95 * W, 0.8 * V)));
     float m = uMood.a * (0.06 + 0.42 * below + 0.14 * pow(vig, 2.0));
     col = col * (1.0 - 0.25 * uMood.a) + uMood.rgb * m * 0.3;
   }
@@ -590,6 +592,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   const S = (name: string) => gl.getUniformLocation(soft, name);
   const sRes = S('uRes');
   const sSize = S('uSize');
+  const sViewH = S('uViewH');
   const uTop = S('uTop');
   const uBottom = S('uBottom');
   const uGlow = S('uGlow');
@@ -610,6 +613,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   const U = (name: string) => gl.getUniformLocation(prog, name);
   const uRes = U('uRes');
   const uSize = U('uSize');
+  const uViewH = U('uViewH');
   const uVignette = U('uVignette');
   const uLightA = U('uLightA');
   const uLightC = U('uLightC');
@@ -722,6 +726,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     // The soft light: into its own target first, or along with the rest.
     gl!.useProgram(soft);
     gl!.uniform2f(sSize, cssW, cssH);
+    gl!.uniform1f(sViewH, viewH);
     gl!.uniform2f(uGlow, 1 + 0.08 * glow, 1 - 0.4 * glow);
     gl!.uniform2f(uBottom, 1 + 0.1 * bottom, 1 + 0.3 * bottom);
     gl!.uniform2f(uTop, 1 + 0.08 * top, 1 + 0.35 * top);
@@ -756,6 +761,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
       gl!.bindFramebuffer(gl!.FRAMEBUFFER, null);
       gl!.useProgram(prog);
       gl!.uniform2f(uSize, cssW, cssH);
+      gl!.uniform1f(uViewH, viewH);
     }
 
     gl!.viewport(0, 0, canvas.width, canvas.height);
@@ -861,6 +867,27 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   // at 2-3 device pixels per CSS px, so it renders at 1.5 and is scaled up:
   // a fraction of the work, and the dither still hides every band.
   const scale = () => (cssShadows.matches && devicePixelRatio > 1.5 ? 1.5 / devicePixelRatio : 1);
+
+  // The canvas is as tall as the viewport with a phone's toolbars hidden, but
+  // the scene is laid out for the height with them showing (--view-h in
+  // app.css): constant while they slide, so nothing moves, and centred on
+  // what's visible while they show. A hidden probe measures that height.
+  const viewProbe = document.createElement('div');
+  viewProbe.setAttribute('aria-hidden', 'true');
+  viewProbe.style.cssText = 'position:fixed;top:0;left:0;width:0;height:var(--view-h);visibility:hidden;pointer-events:none';
+  document.body.append(viewProbe);
+  let viewH = 1;
+  const measureView = () => {
+    const h = viewProbe.offsetHeight;
+    viewH = Math.max(1, h > 0 ? Math.min(h, canvas.clientHeight) : canvas.clientHeight);
+  };
+  const viewRo = new ResizeObserver(() => {
+    const before = viewH;
+    measureView();
+    if (viewH !== before) draw(performance.now());
+  });
+  viewRo.observe(viewProbe);
+
   const ro = new ResizeObserver(([entry]) => {
     const box = entry.devicePixelContentBoxSize?.[0];
     const k = scale();
@@ -872,6 +899,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     if (w === canvas.width && h === canvas.height) return;
     canvas.width = w;
     canvas.height = h;
+    measureView();
     draw(performance.now());
   });
   try {
@@ -883,6 +911,8 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   function stop() {
     cancelAnimationFrame(raf);
     ro.disconnect();
+    viewRo.disconnect();
+    viewProbe.remove();
     canvas.removeEventListener('webglcontextlost', lost);
     reduceMotion.removeEventListener('change', onMotionChange);
     releaseAll();
@@ -903,6 +933,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   canvas.width = Math.max(1, Math.round(canvas.clientWidth * devicePixelRatio * scale()));
   canvas.height = Math.max(1, Math.round(canvas.clientHeight * devicePixelRatio * scale()));
   embers.step(0, canvas.clientWidth, canvas.clientHeight);
+  measureView();
   measure();
   draw(performance.now());
   raf = requestAnimationFrame(frame);
