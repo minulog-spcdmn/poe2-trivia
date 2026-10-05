@@ -25,7 +25,7 @@ export const DEFAULT_PREFS: RoomPrefs = {
   targetScore: DEFAULT_SETTINGS.targetScore,
   timer: DEFAULT_SETTINGS.timer,
   difficulty: DEFAULT_SETTINGS.difficulty,
-  mode: 'race',
+  mode: 'turns',
   public: false,
   // Hidden until the host shows it, so a streamer can't put it on screen by accident.
   hideCode: true,
