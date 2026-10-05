@@ -141,7 +141,7 @@
   const myFall = $derived(session.fallen && session.myPlayerId ? fellAt(s, session.myPlayerId) : null);
 
   // Delve: losing one of your own lives is hard to miss (on one device, anyone's is yours).
-  let lostLife = $state<{ key: number; left: number; name: string | null } | null>(null);
+  let lostLife = $state<{ key: number; left: number } | null>(null);
   let lostTimer: ReturnType<typeof setTimeout> | null = null;
   let livesSeen: Record<string, number> = {};
   let runSeen = 0;
@@ -157,8 +157,8 @@
       livesSeen[p.id] = now;
       if (was === undefined || now >= was) continue;
       if (!(local || p.id === session.myPlayerId)) continue;
-      const shown = { key: performance.now(), left: now, name: local && group ? p.name : null };
-      // In step with the scoreboard's broken heart, a moment after the answer shows.
+      const shown = { key: performance.now(), left: now };
+      // In step with the scoreboard's draining globe, a moment after the answer shows.
       setTimeout(() => {
         lostLife = shown;
         if (lostTimer) clearTimeout(lostTimer);
@@ -166,13 +166,6 @@
       }, 450);
     }
   });
-  const lostText = (l: { left: number; name: string | null }) => {
-    const what = l.left === 0 ? 'Fallen' : l.left === 1 ? 'Last life' : `${l.left === 2 ? 'Two' : l.left} lives left`;
-    return l.name ? `${l.name}: ${what.toLowerCase()}` : what;
-  };
-  /** A heart (20 × 18), in two halves along a crack, so it can break. */
-  const HALF_L = 'M10 17C4.2 12.6 1 9.6 1 6a4.5 4.5 0 0 1 9-1.2L8.8 8.2 11 10.6 9.2 13.4Z';
-  const HALF_R = 'M10 4.8A4.5 4.5 0 0 1 19 6c0 3.6-3.2 6.6-9 11L9.2 13.4 11 10.6 8.8 8.2Z';
 </script>
 
 {#snippet timer()}
@@ -262,13 +255,8 @@
 
 {#if lostLife}
   {#key lostLife.key}
-    <div class="life-lost" class:last={lostLife.left <= 1} use:portal aria-live="polite" out:fade={{ duration: 300 }}>
-      <svg viewBox="-2 -2 24 22" aria-hidden="true">
-        <path class="half l" d={HALF_L} />
-        <path class="half r" d={HALF_R} />
-      </svg>
-      <p>{lostText(lostLife)}</p>
-    </div>
+    <!-- The screen's edges darken red for a moment, effects or not; nothing on it is covered. -->
+    <div class="life-lost" class:last={lostLife.left <= 1} use:portal={'dim'} aria-hidden="true" out:fade={{ duration: 300 }}></div>
   {/key}
 {/if}
 
@@ -312,114 +300,34 @@
     flex-direction: column;
     align-items: stretch;
   }
-  /* Delve: your heart breaks near the top of the screen, clear of the answers. */
+  /* Delve: losing your own life darkens the screen's edges red for a moment. */
   .life-lost {
     position: fixed;
-    left: 50%;
-    top: calc(var(--screen-h, 100vh) * 0.16);
-    translate: -50% 0;
+    inset: 0 0 auto;
+    height: var(--screen-h, 100vh);
     z-index: 60;
     pointer-events: none;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.4rem;
+    box-shadow: inset 0 0 90px rgba(170, 18, 14, 0.55);
+    animation: bleed 1.5s ease-out both;
   }
-  .life-lost svg {
-    width: 84px;
-    height: 76px;
-    overflow: visible;
-    filter: drop-shadow(0 0 14px rgba(255, 50, 40, 0.75)) drop-shadow(0 4px 10px rgba(0, 0, 0, 0.9));
+  .life-lost.last {
+    box-shadow: inset 0 0 130px rgba(190, 18, 14, 0.7);
   }
-  .half {
-    fill: #d8333b;
-    stroke: #ffb0a0;
-    stroke-width: 0.6;
-    transform-box: fill-box;
-    animation: 1.5s var(--ease-out) both;
-  }
-  .half.l {
-    transform-origin: 100% 100%;
-    animation-name: break-l;
-  }
-  .half.r {
-    transform-origin: 0% 100%;
-    animation-name: break-r;
-  }
-  @keyframes break-l {
+  @keyframes bleed {
     0% {
-      scale: 0.4;
       opacity: 0;
     }
     18% {
-      scale: 1.1;
       opacity: 1;
-    }
-    35% {
-      scale: 1;
-      translate: 0 0;
-      rotate: 0deg;
-    }
-    100% {
-      translate: -9px 14px;
-      rotate: -22deg;
-      opacity: 0;
-    }
-  }
-  @keyframes break-r {
-    0% {
-      scale: 0.4;
-      opacity: 0;
-    }
-    18% {
-      scale: 1.1;
-      opacity: 1;
-    }
-    35% {
-      scale: 1;
-      translate: 0 0;
-      rotate: 0deg;
-    }
-    100% {
-      translate: 9px 16px;
-      rotate: 24deg;
-      opacity: 0;
-    }
-  }
-  .life-lost p {
-    margin: 0;
-    font-family: var(--font-display);
-    font-weight: 700;
-    font-size: 1.15rem;
-    letter-spacing: 0.08em;
-    color: #ffc2b6;
-    text-shadow:
-      0 0 14px rgba(255, 60, 40, 0.7),
-      0 2px 8px rgba(0, 0, 0, 0.95);
-    animation: life-text 1.6s var(--ease-out) both;
-  }
-  .life-lost.last p {
-    color: #ff8a7a;
-    font-size: 1.35rem;
-  }
-  @keyframes life-text {
-    0% {
-      opacity: 0;
-      translate: 0 6px;
-    }
-    20%,
-    75% {
-      opacity: 1;
-      translate: 0 0;
     }
     100% {
       opacity: 0;
     }
   }
   @media (prefers-reduced-motion: reduce) {
-    .half,
-    .life-lost p {
+    .life-lost {
       animation: none;
+      opacity: 0.6;
     }
   }
   .kicker {

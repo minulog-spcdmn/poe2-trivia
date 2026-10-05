@@ -489,12 +489,16 @@
           {#if reveal.correct}
             {who} {you ? 'delve' : 'delves'} on.
             {#if streak >= 2}<span class="streak" in:scale={{ start: 0.5, duration: 400, delay: 1100 }}>{streak} in a row</span>{/if}
-          {:else if fallsNow}
-            {who} {you ? 'fall' : 'falls'} at depth {s.round}.
-          {:else if reveal.timedOut}
-            {who} ran out of time; {left} {left === 1 ? 'life' : 'lives'} left.
           {:else}
-            {who} {you ? 'lose' : 'loses'} a life; {left} left.
+            <!-- The life that went drains out of its globe. -->
+            <span class="lost-globe" class:last={left <= 1} aria-hidden="true"><span class="blood"></span></span>
+            {#if fallsNow}
+              {who} {you ? 'fall' : 'falls'} at depth {s.round}.
+            {:else if reveal.timedOut}
+              {who} ran out of time; {left === 1 ? 'last life' : `${left} lives left`}.
+            {:else}
+              {who} {you ? 'lose' : 'loses'} a life; {left === 1 ? 'last one left' : `${left} left`}.
+            {/if}
           {/if}
         {:else if reveal.correct}
           <b class="good">+1</b> for {active.name}!
@@ -950,6 +954,55 @@
     width: 44px;
     height: 44px;
   }
+  /* Delve: a life globe in a gold rim, like the game's, whose blood sinks
+     out as the result line comes in. */
+  .lost-globe {
+    position: relative;
+    display: inline-block;
+    vertical-align: -0.28em;
+    width: 1.25em;
+    height: 1.25em;
+    margin-right: 0.35em;
+    border-radius: 50%;
+    overflow: hidden;
+    background: radial-gradient(circle at 50% 40%, #1b120d, #050403);
+    box-shadow:
+      0 0 0 1px var(--gold-lo),
+      0 0 10px rgba(214, 40, 30, 0.45);
+  }
+  .lost-globe::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: radial-gradient(ellipse 34% 22% at 36% 26%, rgba(255, 244, 236, 0.7), transparent 72%);
+  }
+  .lost-globe .blood {
+    position: absolute;
+    inset: 0;
+    background:
+      linear-gradient(180deg, rgba(255, 120, 90, 0.6) 0, rgba(255, 120, 90, 0) 2px),
+      radial-gradient(circle at 50% 70%, #d22b22, #8a1010 50%, #3a0406);
+    animation: lost-blood 1.3s ease-in-out 0.5s both;
+  }
+  @keyframes lost-blood {
+    0% {
+      clip-path: inset(0 0 0 0);
+      filter: brightness(1.7);
+    }
+    20% {
+      filter: brightness(1);
+    }
+    100% {
+      clip-path: inset(100% 0 0 0);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .lost-globe .blood {
+      display: none;
+    }
+  }
+
   /* Delve: the words come in once the clock runs. */
   .text,
   .iname {

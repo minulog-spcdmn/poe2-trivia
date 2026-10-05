@@ -24,11 +24,9 @@
   const spectators = $derived(s.spectators ?? []);
   /** Delve: lives instead of a score. */
   const run = $derived(s.delve ?? null);
-  /** A heart, for lives (20 × 18). */
-  const HEART = 'M10 17C4.2 12.6 1 9.6 1 6a4.5 4.5 0 0 1 9-1.2A4.5 4.5 0 0 1 19 6c0 3.6-3.2 6.6-9 11z';
   const PIPS = Array.from({ length: DELVE_LIVES }, (_, k) => k);
 
-  // Delve: a life lost makes the player's entry flinch, and the heart that went breaks.
+  // Delve: a life lost makes the player's entry flinch, and the globe that went drains.
   // In step with the reveal's verdict, a moment after the answer shows.
   let hit = $state<Record<string, number>>({});
   let livesSeen: Record<string, number> = {};
@@ -245,10 +243,13 @@
           <span class="name">
             <PlayerName name={p.name} />{#if session.mode !== 'local' && p.id === session.myPlayerId}<em>&nbsp;(you)</em>{/if}
           </span>
-          {#if run}
-            <span class="pips" aria-hidden="true">
+          {#if run && fell !== null}
+            <span class="fell-at">Fell at depth {fell}</span>
+          {:else if run}
+            <!-- Life globes: full ones glow, spent ones are empty sockets. -->
+            <span class="globes" role="img" aria-label="{lives} {lives === 1 ? 'life' : 'lives'} left">
               {#each PIPS as k (k)}
-                <svg viewBox="0 0 20 18" class:spent={k >= lives} class:breaking={hit[p.id] === k}><path d={HEART} /></svg>
+                <i class:spent={k >= lives} class:draining={hit[p.id] === k}></i>
               {/each}
             </span>
           {:else}
@@ -258,16 +259,9 @@
           {/if}
         </div>
         {#if run}
-          <!-- Lives left, or the depth where they fell. -->
+          <!-- Phones only, on the entries shrunk to an avatar: lives left (a globe), or the depth they fell at. -->
           {#key lives}
-            <span
-              class="score lives"
-              class:fell={fell !== null}
-              class:down={lives < DELVE_LIVES}
-              title={fell !== null ? `Fell at depth ${fell}` : `${lives} ${lives === 1 ? 'life' : 'lives'} left`}
-              aria-label={fell !== null ? `Fell at depth ${fell}` : `${lives} ${lives === 1 ? 'life' : 'lives'} left`}
-              >{#if fell === null}<svg class="heart" viewBox="0 0 20 18" aria-hidden="true"><path d={HEART} /></svg>{/if}{fell ?? lives}</span
-            >
+            <span class="score lives" class:fell={fell !== null} class:down={lives < DELVE_LIVES} aria-hidden="true">{fell ?? lives}</span>
           {/key}
         {:else}
           {#key score}
@@ -431,82 +425,92 @@
     opacity: 0.45;
     filter: grayscale(0.85);
   }
-  /* Delve: a life is a heart; a spent one is its outline. */
-  .pips {
+  /* Delve: a life is a globe of blood in a gold rim, like the game's life
+     globe; a spent one is its empty socket. */
+  .globes {
     display: flex;
-    gap: 3px;
+    gap: 5px;
     align-items: center;
-    height: 11px;
+    height: 10px;
+    padding-left: 1px;
   }
-  .pips svg {
-    width: 12px;
-    height: 11px;
-    overflow: visible;
-  }
-  .pips path,
-  .score.lives .heart path {
-    fill: #d8333b;
-    stroke: #ff8a7a;
-    stroke-width: 1;
-    filter: drop-shadow(0 0 3px rgba(255, 60, 50, 0.6));
+  .globes i {
+    position: relative;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background:
+      radial-gradient(circle at 34% 30%, rgba(255, 214, 196, 0.85) 0 9%, transparent 26%),
+      radial-gradient(circle at 50% 60%, #c8251f 0%, #86100f 52%, #3c0406 100%);
+    box-shadow:
+      0 0 0 1px var(--gold-lo),
+      0 0 5px rgba(214, 40, 30, 0.55),
+      inset 0 -1.5px 2px rgba(0, 0, 0, 0.55);
     transition:
-      fill 0.4s,
-      stroke 0.4s,
-      filter 0.4s;
+      background 0.5s,
+      box-shadow 0.5s;
   }
-  .pips svg.spent path {
-    fill: transparent;
-    stroke: rgba(216, 51, 59, 0.45);
-    filter: none;
+  .globes i.spent {
+    background: radial-gradient(circle at 50% 40%, #1b120d, #070504);
+    box-shadow:
+      0 0 0 1px rgba(125, 99, 51, 0.55),
+      inset 0 1px 2px rgba(0, 0, 0, 0.9);
   }
-  .pips svg.breaking {
-    animation: heart-break 0.9s var(--ease-out);
+  /* The life just lost: it flares, then the blood sinks out of it. */
+  .globes i.draining::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: radial-gradient(circle at 50% 60%, #ff6a4a, #a3141a 60%, #3c0406);
+    animation: drain 0.9s var(--ease-out) forwards;
   }
-  @keyframes heart-break {
+  @keyframes drain {
     0% {
-      scale: 1;
+      clip-path: inset(0 0 0 0);
+      filter: brightness(1.8);
+      box-shadow: 0 0 10px rgba(255, 70, 40, 0.9);
     }
-    20% {
-      scale: 1.9;
-      filter: brightness(2);
+    30% {
+      clip-path: inset(0 0 0 0);
+      filter: brightness(1.2);
     }
     100% {
-      scale: 1;
+      clip-path: inset(100% 0 0 0);
+      filter: none;
     }
+  }
+  .fell-at {
+    font-size: 0.8rem;
+    font-style: italic;
+    line-height: 1;
+    color: var(--muted);
   }
   li.hit {
     animation: flinch 0.5s var(--ease-out);
-    border-color: rgba(224, 85, 63, 0.8);
-    box-shadow: 0 0 18px rgba(216, 51, 59, 0.45);
+    border-color: rgba(200, 60, 45, 0.7);
   }
   @keyframes flinch {
     20% {
-      translate: -5px 0;
+      translate: -4px 0;
     }
     45% {
-      translate: 4px 0;
+      translate: 3px 0;
     }
     70% {
-      translate: -2px 0;
+      translate: -1px 0;
     }
   }
+  /* The count is only needed where the globes don't fit (phones, below). */
   .score.lives {
-    display: inline-flex;
-    align-items: center;
-    gap: 3px;
-    color: #ffb4a8;
-  }
-  .score.lives .heart {
-    width: 0.8em;
-    height: 0.72em;
-  }
-  .score.lives.fell {
-    color: #9a8f80;
+    display: none;
   }
   @media (prefers-reduced-motion: reduce) {
-    .pips svg.breaking,
     li.hit {
       animation: none;
+    }
+    .globes i.draining::after {
+      display: none;
     }
   }
   li.duelist {
@@ -770,6 +774,22 @@
       background: #0c0a08;
       border: 1px solid color-mix(in srgb, var(--c), black 30%);
       border-radius: 9px;
+    }
+    /* Delve: the badge is a small life globe with the lives left in it; grey with the depth once fallen. */
+    li:not(.active) .score.lives {
+      display: grid;
+      color: #fff1e8;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+      background:
+        radial-gradient(circle at 34% 28%, rgba(255, 214, 196, 0.55) 0 10%, transparent 30%),
+        radial-gradient(circle at 50% 60%, #b8221d, #6e0c0d 60%, #2e0305);
+      border-color: var(--gold-lo);
+    }
+    li:not(.active) .score.lives.fell {
+      color: #b5aa98;
+      text-shadow: none;
+      background: #14100c;
+      border-color: rgba(125, 99, 51, 0.5);
     }
     li.active .info {
       min-width: 0;
