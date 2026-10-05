@@ -21,7 +21,6 @@ import {
   ANSWER_GRACE_MS,
   autoNextLeft,
   renameCategories,
-  DEFAULT_SETTINGS,
   type Action,
   type GameState,
   type Item,
@@ -325,13 +324,6 @@ class Session {
     this.mode = 'local';
     this.status = 'ready';
     this.setState(resume ?? createGame(null));
-  }
-
-  /** A Delve run alone on this device, straight from the start page. */
-  startDelve(name: string) {
-    this.startLocal(createGame(null, { ...DEFAULT_SETTINGS, mode: 'delve' }));
-    this.dispatch({ type: 'join', playerId: crypto.randomUUID(), name });
-    this.dispatch({ type: 'start' });
   }
 
   /** Picks up a hot-seat game or a hosted room after a page refresh. */
@@ -1286,10 +1278,9 @@ class Session {
     }
     if (next.phase === 'over' && prev.phase !== 'over') {
       // Hot-seat and spectators celebrate whoever won; a player who lost hears a toll instead.
-      // A Delve run alone has no winner: it ends with the last life (unless it went deeper than ever).
-      const alone = !!next.delve && next.delve.entrants.length < 2 && !this.delveResult?.best;
-      const lost = alone || (this.mode !== 'local' && !!me && next.players.some((p) => p.id === me) && !next.winners.includes(me));
-      sfx(lost ? 'defeat' : 'victory');
+      // A Delve run ends with the last life, never a victory: it dies down.
+      const lost = this.mode !== 'local' && !!me && next.players.some((p) => p.id === me) && !next.winners.includes(me);
+      sfx(next.delve ? 'fallen' : lost ? 'defeat' : 'victory');
       return;
     }
     if (next.settings.mode === 'race' && next.phase !== 'over') {

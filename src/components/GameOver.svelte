@@ -10,8 +10,10 @@
   import { backdropShadow } from '../lib/backdropShadow';
   import { fxActive, fxUserOn } from '../lib/fx/core';
   import { victory } from '../lib/fx/moments';
+  import { fallen } from '../lib/fx/delveEnd';
+  import { shareText } from '../lib/delveShare';
   import { portal } from '../lib/portal';
-  import { DELVE_RULESET, delveStandings, isGroupRun } from '../lib/delve';
+  import { delveStandings, isGroupRun } from '../lib/delve';
   import { BLUE_FROM } from '../lib/descent';
 
   const s = $derived(session.state!);
@@ -43,20 +45,26 @@
   }
   const iWon = $derived(session.mode !== 'local' && winner?.id === session.myPlayerId);
   const sharers = $derived(s.winners.map((id) => s.players.find((p) => p.id === id)?.name).filter(Boolean) as string[]);
+  // A descent has no victory: alone it ends where you fell, and a group's
+  // deepest delver went furthest before falling (or stood last), nothing more.
   const headline = $derived.by(() => {
     if (!run) return iWon ? 'You are victorious!' : `${winner?.name} wins!`;
     if (solo) return `Depth ${winner ? depthOf(winner.id) : s.round}`;
-    if (sharers.length > 1) return `${sharers.slice(0, -1).join(', ')} and ${sharers.at(-1)} share the win`;
-    return iWon ? 'You delved deepest!' : `${winner?.name} delved deepest!`;
+    if (sharers.length > 1) return `${sharers.slice(0, -1).join(', ')} and ${sharers.at(-1)} delved deepest`;
+    return iWon ? 'You delved deepest' : `${winner?.name} delved deepest`;
   });
+  /** Alone, deeper than this browser has been before (not the very first run). */
+  const deeper = $derived(solo && newBest && session.delveResult?.previousBest !== null);
   const kicker = $derived(
     !run
       ? 'Victory'
-      : solo && newBest && session.delveResult?.previousBest !== null
-        ? 'Deeper than ever'
-        : run.lastStanding && run.lastStanding.id === winner?.id && !solo
+      : solo
+        ? deeper
+          ? 'Deeper than ever'
+          : 'Fallen'
+        : run.lastStanding && run.lastStanding.id === winner?.id
           ? 'Last one standing'
-          : 'Delve',
+          : 'The descent ends',
   );
   /** Delve: what the depth means, and how a tie was settled. */
   const delveSub = $derived.by(() => {
@@ -86,16 +94,13 @@
   });
   const listOf = (xs: number[]) => (xs.length > 1 ? `${xs.slice(0, -1).join(', ')} and ${xs.at(-1)}` : `${xs[0]}`);
 
-  // Delve: tell someone how deep you got.
+  // Delve: dare someone to go deeper.
   let shared = $state(false);
   async function shareDepth() {
     const me = session.myPlayerId;
     const mine = solo ? winner : s.players.find((p) => p.id === me);
     if (!mine) return;
-    const depth = depthOf(mine.id);
-    const text = solo
-      ? `I reached depth ${depth} in Delve, alone (ruleset ${DELVE_RULESET}). poe2.quest`
-      : `I fell at depth ${depth} in a ${s.players.length}-player Delve (ruleset ${DELVE_RULESET}). poe2.quest`;
+    const text = shareText(depthOf(mine.id));
     try {
       if (matchMedia('(pointer: coarse)').matches && navigator.share) await navigator.share({ text });
       else {
@@ -113,23 +118,24 @@
   let crown = $state<HTMLElement>();
   let title = $state<HTMLElement>();
   let standingsEl = $state<HTMLElement>();
-  // A player who lost (online) sees a quieter screen.
-  // A Delve run alone ends with the last life: no victory to celebrate, unless it went deeper than ever.
+  // A player who lost (online) sees a quieter screen. (Delve has its own ending, below.)
   const iLost = $derived(
-    (solo && !newBest) ||
-      (session.mode !== 'local' && !!session.myPlayerId && s.players.some((p) => p.id === session.myPlayerId) && !s.winners.includes(session.myPlayerId)),
+    session.mode !== 'local' && !!session.myPlayerId && s.players.some((p) => p.id === session.myPlayerId) && !s.winners.includes(session.myPlayerId),
   );
 
-  // The celebration: rays, fireworks and glitter (lib/fx/moments.ts).
+  // The celebration: rays, fireworks and glitter (lib/fx/moments.ts). A
+  // descent ends instead with its last embers going out (lib/fx/delveEnd.ts).
   onMount(() => {
     if (!crown || !title || !winner) return;
-    const h = victory(crown, title, playerColor(winner.hue), iLost, standingsEl);
+    const h = run
+      ? fallen(crown, title, { best: deeper, standings: solo ? null : standingsEl })
+      : victory(crown, title, playerColor(winner.hue), iLost, standingsEl);
     return () => h.stop();
   });
 
   // Without the effects layer (no WebGL2), simpler gold sparks on a 2D canvas.
   onMount(() => {
-    if (matchMedia('(prefers-reduced-motion: reduce)').matches || fxActive() || !fxUserOn() || iLost) return;
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches || fxActive() || !fxUserOn() || iLost || run) return;
     const ctx = canvas.getContext('2d')!;
     const dpr = Math.min(2, devicePixelRatio);
     // Sized from the canvas, which keeps its height while a phone's toolbars
@@ -219,17 +225,17 @@
      would be redone every frame. -->
 <canvas bind:this={canvas} class="sparks" use:portal={'dim'} aria-hidden="true"></canvas>
 
-<div class="over">
+<div class="over" class:delve={!!run} class:deeper>
   <p class="kicker" in:fly={{ y: -10, duration: 600 }}>{kicker}</p>
   {#if winner}
-    <div class="crown" bind:this={crown} in:scale={{ start: 0.4, duration: 900, delay: 200 }}>
+    <div class="crown" class:fallen={solo} bind:this={crown} in:scale={{ start: 0.4, duration: 900, delay: 200 }}>
       <!-- Delve: the deeper the run went, the colder the circle. -->
       <ArcaneCircle
         size="212px"
         color={run && depthOf(winner.id) >= BLUE_FROM
           ? `color-mix(in srgb, #a9bfdc ${Math.round(Math.min(1, 0.15 + ((depthOf(winner.id) - BLUE_FROM) / 16) * 0.85) * 100)}%, #f1d99b)`
           : `color-mix(in srgb, ${playerColor(winner.hue)}, #f1d99b 45%)`}
-        strength={iLost ? 0.35 : 0.6}
+        strength={run ? (deeper ? 0.42 : 0.3) : iLost ? 0.35 : 0.6}
       />
       <Avatar name={winner.name} hue={winner.hue} size={110} />
     </div>
@@ -265,12 +271,25 @@
   <div class="actions" in:fly={{ y: 20, duration: 600, delay: 1300 }}>
     {#if session.isHost}
       <button class="btn primary big" disabled={leaving} onclick={() => again(true)}>Play again</button>
-      <button class="btn ghost" disabled={leaving} onclick={() => again(false)}>{run ? 'Back to lobby' : 'Change settings'}</button>
+      <button class="btn ghost" disabled={leaving} onclick={() => again(false)}>{#if run}<span><span class="roomy">Back to</span> lobby</span>{:else}Change settings{/if}</button>
     {:else}
       <p class="muted">Waiting for the host to start a new game…</p>
     {/if}
     {#if canShare}
-      <button class="btn ghost" onclick={shareDepth}>{shared ? 'Copied!' : 'Share depth'}</button>
+      <span class="share">
+        <button class="btn ghost" onclick={shareDepth} aria-label="Share your depth" title="Share your depth">
+          {#if shared}
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
+          {:else}
+            <!-- Three linked seals: the share sign. -->
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="18" cy="5.5" r="2.6" /><circle cx="6" cy="12" r="2.6" /><circle cx="18" cy="18.5" r="2.6" />
+              <path d="M8.3 10.8l7.4-4M8.3 13.2l7.4 4" />
+            </svg>
+          {/if}
+        </button>
+        {#if shared}<span class="copied" role="status" transition:fly={{ y: 4, duration: 200 }}>Copied</span>{/if}
+      </span>
     {/if}
   </div>
   {#if spectators.length}
@@ -375,6 +394,30 @@
         0 0;
     }
   }
+  /* Delve: no victory. The title is cold, worn metal and holds still; the
+     kicker is ash, warming to gold only for a run deeper than ever. */
+  .delve .kicker {
+    color: var(--muted);
+  }
+  .delve.deeper .kicker {
+    color: var(--gold-hi);
+    text-shadow: 0 0 14px rgba(241, 217, 155, 0.35);
+  }
+  .delve .gold {
+    background: linear-gradient(180deg, #ece4d4 8%, #a89f90 55%, #5f574b);
+    -webkit-background-clip: text;
+    background-clip: text;
+    animation: none;
+  }
+  .delve.deeper .gold {
+    background: linear-gradient(180deg, #fbecc6 8%, #c9a45c 55%, #7a5a26);
+    -webkit-background-clip: text;
+    background-clip: text;
+  }
+  /* Alone, the fallen delver's portrait has lost its colour. */
+  .crown.fallen :global(.avatar) {
+    filter: grayscale(0.75) brightness(0.8) drop-shadow(0 0 22px rgba(169, 191, 220, 0.25));
+  }
   .sub {
     margin: 0.4rem 0 1.8rem;
     font-style: italic;
@@ -451,6 +494,46 @@
   .joining {
     margin: 1rem 0 0;
     font-style: italic;
+  }
+  /* Share: an icon button the height of its neighbours, with a note when the text was copied. */
+  .share {
+    position: relative;
+    display: inline-flex;
+  }
+  .share .btn {
+    padding: 0.7em;
+  }
+  .share svg {
+    width: 1.45em;
+    height: 1.45em;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .copied {
+    position: absolute;
+    left: 50%;
+    bottom: calc(100% + 0.45rem);
+    translate: -50% 0;
+    padding: 0.2em 0.6em;
+    font-family: var(--font-display);
+    font-size: 0.68rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    color: var(--gold-hi);
+    background: rgba(13, 10, 7, 0.9);
+    border: 1px solid var(--gold-lo);
+    border-radius: 3px;
+    pointer-events: none;
+  }
+  /* A phone fits Delve's three actions on one row as Play again, Lobby and the share icon. */
+  @media (max-width: 420px) {
+    .roomy {
+      display: none;
+    }
   }
   .actions p {
     margin: 0;

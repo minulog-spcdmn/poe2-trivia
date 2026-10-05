@@ -6,6 +6,8 @@
   import { DIFFICULTY_NAMES, describe, lockoutText } from '../lib/difficultyText';
   import CustomDifficulty from './CustomDifficulty.svelte';
   import DelveLadder from './DelveLadder.svelte';
+  import ModeIcon from './ModeIcon.svelte';
+  import { bestOf, loadRecords } from '../lib/delveRecord';
   import { MAX_NAME, isHeldName, nameHeld, nameTooShort } from '../lib/names';
   import { inviteUrl } from '../lib/site';
   import Avatar from './Avatar.svelte';
@@ -17,6 +19,11 @@
   import { measure } from '../lib/iconFit.svelte';
 
   const TARGETS = [5, 10, 15, 20];
+  const MODES: { id: GameMode; name: string }[] = [
+    { id: 'turns', name: 'Take turns' },
+    { id: 'race', name: 'Race' },
+    { id: 'delve', name: 'Delve' },
+  ];
   const DIFFS = (Object.entries(DIFFICULTY_NAMES) as [Difficulty, string][]).map(([id, name]) => ({ id, name }));
 
   const s = $derived(session.state!);
@@ -109,6 +116,39 @@
   function setMode(mode: GameMode) {
     session.dispatch({ type: 'settings', settings: mode === 'race' && s.settings.timer === 0 ? { mode, timer: RACE_DEFAULT_TIMER } : { mode } });
   }
+  /** Hot-seat: Race can't be played here, so tapping it only says why (for a few seconds, in the mode's description). */
+  let peek = $state(false);
+  let peekTimer: ReturnType<typeof setTimeout> | undefined;
+  onMount(() => () => clearTimeout(peekTimer));
+  const offline = (m: GameMode) => m === 'race' && local;
+  function pickMode(m: GameMode, node: HTMLElement) {
+    if (offline(m)) {
+      refuse(node);
+      peek = true;
+      clearTimeout(peekTimer);
+      peekTimer = setTimeout(() => (peek = false), 3500);
+      return;
+    }
+    peek = false;
+    if (m !== s.settings.mode) setMode(m);
+  }
+  /** The modes are a radio group: the arrow keys move the choice along it (skipping Race in hot-seat). */
+  function modeKeys(e: KeyboardEvent) {
+    const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+    if (!step || !isHost) return;
+    e.preventDefault();
+    const open = MODES.filter((m) => !offline(m.id));
+    const i = open.findIndex((m) => m.id === s.settings.mode);
+    const next = open[(i + step + open.length) % open.length].id;
+    setMode(next);
+    (e.currentTarget as HTMLElement).querySelector<HTMLElement>(`[data-mode="${next}"]`)?.focus();
+  }
+  // The deepest this browser has delved, alone or with others (hot-seat runs count only alone).
+  const records = loadRecords();
+  const bestAlone = bestOf(records, true)?.depth ?? null;
+  const bestTogether = bestOf(records, false)?.depth ?? null;
+  const deepest = $derived(s.players.length < 2 ? bestAlone : local ? null : bestTogether);
+
   function setLocked(v: boolean) {
     session.dispatch({ type: 'settings', settings: { locked: v } });
   }
@@ -265,28 +305,46 @@
       <header><h2>Rules</h2></header>
 
       <div class="setting">
-        <span class="label">Mode</span>
-        <div class="modes">
-          <button class="mode-card" class:on={s.settings.mode === 'turns'} disabled={!isHost} onclick={() => setMode('turns')}>
-            <b>Take turns</b>
-            <span>Pick a category, answer alone. Wrong answers score nothing.</span>
-          </button>
-          <button
-            class="mode-card"
-            class:on={race}
-            disabled={!isHost || local}
-            onclick={() => setMode('race')}
-            title={local ? 'Race needs every player on their own device' : undefined}
-          >
-            <b>Race</b>
-            <span>
-              {#if local}Online only: everyone needs their own device.{:else}Everyone answers at once. Fastest correct answer +1, wrong answer −1.{/if}
-            </span>
-          </button>
-          <button class="mode-card wide" class:on={delve} disabled={!isHost} onclick={() => setMode('delve')}>
-            <b>Delve</b>
-            <span>Three lives. One depth deeper each round, and harder. Last one standing.</span>
-          </button>
+        <span class="label" id="mode-label">Mode</span>
+        <div class="modes" role="radiogroup" aria-labelledby="mode-label" aria-describedby="mode-blurb" tabindex={-1} onkeydown={modeKeys}>
+          {#each MODES as m (m.id)}
+            {@const on = s.settings.mode === m.id}
+            <button
+              class="mode"
+              class:on
+              class:off={offline(m.id)}
+              role="radio"
+              aria-checked={on}
+              aria-disabled={offline(m.id) || undefined}
+              tabindex={on ? 0 : -1}
+              data-mode={m.id}
+              disabled={!isHost}
+              title={offline(m.id) ? 'Race needs every player on their own device' : undefined}
+              onclick={(e) => pickMode(m.id, e.currentTarget)}
+            >
+              <ModeIcon mode={m.id} />
+              <b>{m.name}</b>
+            </button>
+          {/each}
+        </div>
+        <!-- The chosen mode's description, under a notch that points up at it. -->
+        <div class="about" id="mode-blurb" style:--at={peek ? 1 : MODES.findIndex((m) => m.id === s.settings.mode)} class:peek>
+          {#key peek ? 'peek' : s.settings.mode}
+            <div class="about-text" in:fly={{ y: -6, duration: 260 }}>
+              {#if peek}
+                <p>Race is online only: everyone answers on their own device. Host a room to race.</p>
+              {:else if delve}
+                <p>Three lives. One depth deeper each round, and harder. Last one standing; alone, see how deep you get.</p>
+                {#if deepest}
+                  <p class="deepest">{s.players.length < 2 ? 'Your deepest alone' : 'Your deepest with others'} <b>{deepest}</b></p>
+                {/if}
+              {:else if race}
+                <p>Everyone answers at once. Fastest correct answer +1, wrong answer −1.</p>
+              {:else}
+                <p>Pick a category, answer alone. Wrong answers score nothing.</p>
+              {/if}
+            </div>
+          {/key}
         </div>
       </div>
 
@@ -703,44 +761,37 @@
   }
   .modes {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(3, 1fr);
     gap: 0.5rem;
   }
-  .mode-card {
+  .mode {
     display: flex;
     flex-direction: column;
-    gap: 0.2rem;
-    padding: 0.7rem 0.85rem;
-    text-align: left;
+    align-items: center;
+    gap: 0.35rem;
+    min-width: 0;
+    padding: 0.7rem 0.4rem 0.6rem;
+    color: var(--gold);
     background: rgba(0, 0, 0, 0.35);
     border: 1px solid var(--line);
     border-radius: 4px;
     cursor: pointer;
     transition: all 0.2s;
   }
-  .mode-card.wide {
-    grid-column: 1 / -1;
-  }
-  .ladder-note {
-    margin: 0.6rem 0 0;
-    font-size: 0.95rem;
-    font-style: italic;
-  }
-  .mode-card b {
+  .mode b {
     font-family: var(--font-display);
     font-size: 0.9rem;
     letter-spacing: 0.06em;
+    white-space: nowrap;
     color: var(--gold-hi);
   }
-  .mode-card span {
-    font-size: 0.9rem;
-    line-height: 1.3;
-    color: var(--muted);
-  }
-  .mode-card:hover:not(:disabled) {
+  .mode:hover:not(:disabled) {
     border-color: var(--gold-lo);
+    --glow: 0.26;
   }
-  .mode-card.on {
+  .mode.on {
+    color: var(--gold-hi);
+    --glow: 0.34;
     background: linear-gradient(180deg, rgba(122, 79, 29, 0.55), rgba(69, 42, 14, 0.55));
     border-color: var(--gold);
     box-shadow:
@@ -748,17 +799,78 @@
       inset 0 0 18px rgba(255, 150, 60, 0.12),
       0 0 18px rgba(201, 164, 92, 0.25);
   }
-  .mode-card.on b {
+  .mode.on b {
     text-shadow: 0 0 12px rgba(241, 217, 155, 0.45);
   }
-  .mode-card.on span {
-    color: #e3d3b4;
-  }
-  .mode-card:disabled {
+  .mode:disabled {
     cursor: default;
   }
-  .mode-card:disabled:not(.on) {
+  .mode:disabled:not(.on),
+  .mode.off {
     opacity: 0.5;
+  }
+  .mode.off {
+    cursor: not-allowed;
+  }
+  .mode:focus-visible {
+    outline: 1px solid var(--gold-hi);
+    outline-offset: 2px;
+  }
+  /* The chosen mode's description, notched under its button. */
+  .about {
+    --notch: 7px;
+    position: relative;
+    margin-top: calc(0.5rem + var(--notch));
+    padding: 0.55rem 0.8rem 0.6rem;
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(201, 164, 92, 0.32);
+    border-radius: 4px;
+  }
+  .about::before {
+    content: '';
+    position: absolute;
+    top: calc(-1 * var(--notch) - 1px);
+    /* Under the middle of the chosen button: three columns, two gaps of 0.5rem. */
+    left: calc((100% - 1rem) / 6 + var(--at, 0) * ((100% - 1rem) / 3 + 0.5rem) - var(--notch));
+    width: calc(2 * var(--notch));
+    height: var(--notch);
+    background: rgba(201, 164, 92, 0.32);
+    clip-path: polygon(50% 0, 100% 100%, 0 100%);
+    transition: left 0.3s var(--ease-back, ease);
+  }
+  .about.peek {
+    border-color: rgba(224, 85, 63, 0.35);
+  }
+  .about.peek::before {
+    background: rgba(224, 85, 63, 0.35);
+  }
+  .about p {
+    margin: 0;
+    font-size: 0.95rem;
+    font-style: italic;
+    line-height: 1.35;
+    color: #e3d3b4;
+  }
+  .about p.deepest {
+    margin-top: 0.3rem;
+    font-style: normal;
+    font-family: var(--font-display);
+    font-size: 0.72rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .deepest b {
+    margin-left: 0.4em;
+    font-family: var(--font-cinzel);
+    font-size: 1rem;
+    letter-spacing: 0.04em;
+    color: var(--gold-hi);
+  }
+  .ladder-note {
+    margin: 0.6rem 0 0;
+    font-size: 0.95rem;
+    font-style: italic;
   }
   .blurbs {
     display: grid;
@@ -821,7 +933,7 @@
   }
   .seg > button:active:not(:disabled),
   .stepper button:active:not(:disabled),
-  .mode-card:active:not(:disabled) {
+  .mode:active:not(:disabled, .off) {
     transform: scale(0.96);
   }
   .seg button:disabled {

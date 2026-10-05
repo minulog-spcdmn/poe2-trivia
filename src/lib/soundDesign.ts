@@ -232,4 +232,18 @@ export const MOMENTS: Record<Sfx, Moment> = {
       { file: 'burn-sparkler', gain: -36, rate: 1.1, delay: 60, hp: 900, lp: 11000, send: 0.35 },
     ],
   },
+  // The end of a descent, alone or in a group: no fanfare. The defeat toll
+  // slowed and lowered, a deep thud as the floor gives way, a breath falling
+  // away into the hall, and an ember crackling out once it has rung.
+  fallen: {
+    soften: 5,
+    varyPitch: 0.01,
+    varyGain: 0.5,
+    layers: [
+      { file: 'defeat-4', gain: -15, rate: 0.62, delay: 0, hp: 30, lp: 2600, send: 0.8 },
+      { file: 'layer-sub-2', gain: -21, rate: 0.5, delay: 0, hp: 20, lp: 600, send: 0.5 },
+      { file: 'layer-air-4', gain: -30, rate: 0.55, delay: 80, hp: 150, lp: 2400, send: 0.85 },
+      { file: 'burn-embers', gain: -39, rate: 0.75, delay: 1100, hp: 250, lp: 5000, send: 0.95 },
+    ],
+  },
 };

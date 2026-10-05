@@ -29,7 +29,9 @@ export type Sfx =
   /** Delve: a named depth reached. */
   | 'stratum'
   /** Delve: a life's ember bursts out of the phial. */
-  | 'lifeLost';
+  | 'lifeLost'
+  /** Delve: the run is over; no victory, just the last ember going out. */
+  | 'fallen';
 
 let muted = (() => {
   try {
