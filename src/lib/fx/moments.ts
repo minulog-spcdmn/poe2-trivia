@@ -457,10 +457,9 @@ export function scored(pill: Element, streak = 1) {
  * and a blaze by ten.
  * Returns a handle to put it out.
  */
-export function ablaze(row: Element, heat: number): Handle {
+export function ablaze(row: Element, heat: number, blue = burnsBlue(heat)): Handle {
   if (!fxActive() || heat <= 0) return { stop() {} };
   // At the very top of a streak the fire burns blue.
-  const blue = burnsBlue(heat);
   const flames = fire(row, { height: 6 + 66 * heat, intensity: 0.45 + 1.0 * heat, blue: blue ? 1 : 0 });
   // No room for the flames (or the entry is gone): no sparks off nothing either.
   if (!isLive(flames)) return flames;
@@ -500,6 +499,24 @@ export function lostPoint(pill: Element) {
   shards(pill, { count: 10, area: 'centre', speed: [60, 200] });
   outline(pill, { color: C.wrong, width: 8, life: 0.7, intensity: 0.45 });
   sparks(pill, { count: 10, colors: [C.wrong], angle: Math.PI / 2, spread: 2.4, gravity: 700, life: [0.3, 0.6] });
+}
+
+/**
+ * Delve: a player loses a life. Their entry cracks and bleeds sparks; when it
+ * is your own life (`mine`), the edges of the screen flare red as well, and
+ * harder on the last one (`left`: lives still left).
+ */
+export function lifeLost(pill: Element, left: number, mine: boolean) {
+  if (!fxActive()) return;
+  shards(pill, { count: left === 0 ? 22 : 14, area: 'centre', colors: [C.crimson, C.wrong], speed: [80, 260] });
+  sparks(pill, { count: 18, area: 'edge', colors: [C.crimson, C.ember], gravity: 600, life: [0.3, 0.7] });
+  ring(pill, { radius: 110, thickness: 7, life: 0.55, color: C.crimson, intensity: 0.55, breakup: 0.4 });
+  outline(pill, { color: C.crimson, width: 10, life: 0.9, intensity: 0.6 });
+  light(pill, { color: [1, 0.2, 0.12], radius: 220, intensity: 0.45, decay: 0.8 });
+  if (!mine) return;
+  edgeGlow({ color: C.crimson, intensity: left <= 1 ? 0.16 : 0.1, width: left <= 1 ? 110 : 80, life: 1.1 });
+  pulseMood(left <= 1 ? 0.4 : 0.25, [1, 0.12, 0.06]);
+  shakeView(left === 0 ? 0.6 : 0.45, left === 0 ? 9 : 7);
 }
 
 /** Someone guessed wrong in a race: a puff of red at the answer they picked. */

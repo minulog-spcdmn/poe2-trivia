@@ -7,7 +7,7 @@
   import { backdropShadow } from '../lib/backdropShadow';
   import { untrack, type Snippet } from 'svelte';
   import { fxActive, onFxChange, type Handle } from '../lib/fx/core';
-  import { FILL_SPAN, FILL_START, SCORE_LANDS, ablaze, doused, lostPoint, turnsBlue } from '../lib/fx/moments';
+  import { FILL_SPAN, FILL_START, SCORE_LANDS, ablaze, doused, lifeLost, lostPoint, turnsBlue } from '../lib/fx/moments';
   import { scoreRow, scoreRowOf } from '../lib/scoreRows';
   import { burnsBlue, heatOf, streakOf } from '../lib/fx/streaks';
   import { phone } from '../lib/layout';
@@ -24,7 +24,38 @@
   const spectators = $derived(s.spectators ?? []);
   /** Delve: lives instead of a score. */
   const run = $derived(s.delve ?? null);
+  /** A heart, for lives (20 × 18). */
+  const HEART = 'M10 17C4.2 12.6 1 9.6 1 6a4.5 4.5 0 0 1 9-1.2A4.5 4.5 0 0 1 19 6c0 3.6-3.2 6.6-9 11z';
   const PIPS = Array.from({ length: DELVE_LIVES }, (_, k) => k);
+
+  // Delve: a life lost makes the player's entry flinch, and the heart that went breaks.
+  // In step with the reveal's verdict, a moment after the answer shows.
+  let hit = $state<Record<string, number>>({});
+  let livesSeen: Record<string, number> = {};
+  let runSeen = 0;
+  $effect(() => {
+    if (!run) return;
+    if (run.startedAt !== runSeen) {
+      runSeen = run.startedAt;
+      livesSeen = {};
+    }
+    for (const p of s.players) {
+      const now = livesOf(s, p.id);
+      const was = livesSeen[p.id];
+      livesSeen[p.id] = now;
+      if (was === undefined || now >= was) continue;
+      const id = p.id;
+      const mine = session.mode === 'local' ? true : id === session.myPlayerId;
+      setTimeout(() => {
+        hit[id] = now;
+        const li = scoreRowOf(id);
+        if (li) lifeLost(li, now, mine);
+        setTimeout(() => {
+          if (hit[id] === now) delete hit[id];
+        }, 1200);
+      }, 450);
+    }
+  });
 
   // Changes that wait for a point to land (the score ticking up, a streak's
   // fire growing), per player: the value they land on and their timers.
@@ -79,7 +110,7 @@
               filling[p.id] = false;
               shown[p.id] = barShown[p.id] = latest(p.id, score);
               // A streak's fire grows as the number ticks up.
-              heat[p.id] = heatOf(streakOf(session.state?.players.find((x) => x.id === p.id)));
+              heat[p.id] = heatOf(streakOf(session.state?.players.find((x) => x.id === p.id)), !!session.state?.delve);
             },
           ],
         ]);
@@ -104,7 +135,7 @@
     const here = new Set<string>();
     for (const p of s.players) {
       here.add(p.id);
-      const h = heatOf(streakOf(p));
+      const h = heatOf(streakOf(p), !!s.delve);
       const was = untrack(() => heat[p.id] ?? 0);
       if (h > was && awards.has(p.id)) continue;
       if (h !== was) heat[p.id] = h;
@@ -116,24 +147,26 @@
     for (const id of [...awards.keys()]) cancel(awards, id);
   });
 
-  /** Svelte action: sets a row burning at `h` (0 to 1), re-lit as it changes. */
-  function burn(node: HTMLElement, h: number) {
+  /** Svelte action: sets a row burning at `h` (0 to 1), re-lit as it changes. `delve`: the long scale (lib/fx/streaks). */
+  function burn(node: HTMLElement, o: { h: number; delve: boolean }) {
     let fire: Handle | null = null;
     let lit = 0;
-    const set = (next: number) => {
+    let delve = o.delve;
+    const set = ({ h: next, delve: long }: { h: number; delve: boolean }) => {
+      delve = long;
       if (next === lit) return;
       fire?.stop(0.5);
-      fire = next > 0 ? ablaze(node, next) : null;
+      fire = next > 0 ? ablaze(node, next, burnsBlue(next, delve)) : null;
       if (lit > 0 && next === 0) doused(node);
-      if (lit > 0 && !burnsBlue(lit) && burnsBlue(next)) turnsBlue(node);
+      if (lit > 0 && !burnsBlue(lit, delve) && burnsBlue(next, delve)) turnsBlue(node);
       lit = next;
     };
-    set(h);
+    set(o);
     // Effects switched off and on, or the GL context lost and restored, wipe
     // every shape: light it again on the new one.
     const relight = onFxChange(() => {
       fire?.stop(0);
-      fire = lit > 0 ? ablaze(node, lit) : null;
+      fire = lit > 0 ? ablaze(node, lit, burnsBlue(lit, delve)) : null;
     });
     return {
       update: set,
@@ -202,11 +235,11 @@
       <li
         use:backdropShadow={{ off: stuck }}
         use:scoreRow={p.id}
-        use:burn={fire}
+        use:burn={{ h: fire, delve: !!run }}
         class:ablaze={fire > 0}
         style:--heat={fire}
-        style:--blue={burnsBlue(fire) ? 1 : 0}
-        class:active class:out class:benched class:duelist class:fallen={fell !== null} class:offline={!p.connected} animate:glide style:--c={playerColor(p.hue)}>
+        style:--blue={burnsBlue(fire, !!run) ? 1 : 0}
+        class:active class:out class:benched class:duelist class:fallen={fell !== null} class:hit={p.id in hit} class:offline={!p.connected} animate:glide style:--c={playerColor(p.hue)}>
         <Avatar name={p.name} hue={p.hue} size={32} dim={!p.connected} />
         <div class="info">
           <span class="name">
@@ -214,7 +247,9 @@
           </span>
           {#if run}
             <span class="pips" aria-hidden="true">
-              {#each PIPS as k (k)}<i class:spent={k >= lives}></i>{/each}
+              {#each PIPS as k (k)}
+                <svg viewBox="0 0 20 18" class:spent={k >= lives} class:breaking={hit[p.id] === k}><path d={HEART} /></svg>
+              {/each}
             </span>
           {:else}
             <span class="bar" class:filling={filling[p.id]} style:--fill-span="{FILL_SPAN}s"
@@ -231,7 +266,7 @@
               class:down={lives < DELVE_LIVES}
               title={fell !== null ? `Fell at depth ${fell}` : `${lives} ${lives === 1 ? 'life' : 'lives'} left`}
               aria-label={fell !== null ? `Fell at depth ${fell}` : `${lives} ${lives === 1 ? 'life' : 'lives'} left`}
-              >{fell ?? lives}</span
+              >{#if fell === null}<svg class="heart" viewBox="0 0 20 18" aria-hidden="true"><path d={HEART} /></svg>{/if}{fell ?? lives}</span
             >
           {/key}
         {:else}
@@ -396,32 +431,83 @@
     opacity: 0.45;
     filter: grayscale(0.85);
   }
-  /* Delve: a life is an ember; a spent one is its empty socket. */
+  /* Delve: a life is a heart; a spent one is its outline. */
   .pips {
     display: flex;
-    gap: 5px;
+    gap: 3px;
     align-items: center;
-    height: 7px;
+    height: 11px;
   }
-  .pips i {
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: radial-gradient(circle at 40% 35%, #fff3d2, #ffb35c 45%, #c4561c);
-    box-shadow: 0 0 6px rgba(255, 140, 60, 0.6);
+  .pips svg {
+    width: 12px;
+    height: 11px;
+    overflow: visible;
+  }
+  .pips path,
+  .score.lives .heart path {
+    fill: #d8333b;
+    stroke: #ff8a7a;
+    stroke-width: 1;
+    filter: drop-shadow(0 0 3px rgba(255, 60, 50, 0.6));
     transition:
-      background 0.4s,
-      box-shadow 0.4s;
+      fill 0.4s,
+      stroke 0.4s,
+      filter 0.4s;
   }
-  .pips i.spent {
-    background: transparent;
-    box-shadow: inset 0 0 0 1px rgba(255, 179, 92, 0.35);
+  .pips svg.spent path {
+    fill: transparent;
+    stroke: rgba(216, 51, 59, 0.45);
+    filter: none;
+  }
+  .pips svg.breaking {
+    animation: heart-break 0.9s var(--ease-out);
+  }
+  @keyframes heart-break {
+    0% {
+      scale: 1;
+    }
+    20% {
+      scale: 1.9;
+      filter: brightness(2);
+    }
+    100% {
+      scale: 1;
+    }
+  }
+  li.hit {
+    animation: flinch 0.5s var(--ease-out);
+    border-color: rgba(224, 85, 63, 0.8);
+    box-shadow: 0 0 18px rgba(216, 51, 59, 0.45);
+  }
+  @keyframes flinch {
+    20% {
+      translate: -5px 0;
+    }
+    45% {
+      translate: 4px 0;
+    }
+    70% {
+      translate: -2px 0;
+    }
   }
   .score.lives {
-    color: #ffb35c;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    color: #ffb4a8;
+  }
+  .score.lives .heart {
+    width: 0.8em;
+    height: 0.72em;
   }
   .score.lives.fell {
     color: #9a8f80;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .pips svg.breaking,
+    li.hit {
+      animation: none;
+    }
   }
   li.duelist {
     border-color: rgba(224, 85, 63, 0.55);

@@ -13,6 +13,14 @@ export const ABLAZE_FULL = 10;
  */
 export const BLUE_FROM = 7;
 
+/**
+ * Delve runs go on for dozens of depths: there the fire grows over a longer
+ * streak, and only turns blue at a streak that can't come before the depth
+ * where the backdrop's embers start turning blue too.
+ */
+export const DELVE_ABLAZE_FULL = 25;
+export const DELVE_BLUE_FROM = 21;
+
 /** A player's current streak (0 from hosts that don't count them yet). */
 export function streakOf(p: { streak?: number } | undefined): number {
   return p?.streak ?? 0;
@@ -20,14 +28,16 @@ export function streakOf(p: { streak?: number } | undefined): number {
 
 /**
  * How hard a streak burns: 0 below ABLAZE_FROM, then a step up with every
- * answer, from a faint 1/8 at three in a row to 1 at ABLAZE_FULL.
+ * answer, from a faint 1/8 at three in a row to 1 at ABLAZE_FULL (Delve:
+ * DELVE_ABLAZE_FULL).
  */
-export function heatOf(streak: number): number {
+export function heatOf(streak: number, delve = false): number {
   if (streak < ABLAZE_FROM) return 0;
-  return Math.min(1, (streak - ABLAZE_FROM + 1) / (ABLAZE_FULL - ABLAZE_FROM + 1));
+  const full = delve ? DELVE_ABLAZE_FULL : ABLAZE_FULL;
+  return Math.min(1, (streak - ABLAZE_FROM + 1) / (full - ABLAZE_FROM + 1));
 }
 
-/** Whether a fire burning at `heat` (heatOf) burns blue. */
-export function burnsBlue(heat: number): boolean {
-  return heat > 0 && heat >= heatOf(BLUE_FROM);
+/** Whether a fire burning at `heat` (heatOf, with the same `delve`) burns blue. */
+export function burnsBlue(heat: number, delve = false): boolean {
+  return heat > 0 && heat >= heatOf(delve ? DELVE_BLUE_FROM : BLUE_FROM, delve);
 }

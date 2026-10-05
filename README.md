@@ -42,22 +42,29 @@ rules, so "I reached depth 30" means the same thing for everyone.
   mode. Each round takes everyone still standing one depth deeper.
 - Everyone has **three lives**. A wrong answer, running out of time, or
   missing your turn while you're disconnected costs one.
-- Every four depths the rules get harder:
+- Every few depths the rules get harder: Merciless by depth 5, Eternal by
+  13, then past it. The timer starts at 16 s and loses a second every three
+  depths, down to 7 s from depth 28 (long enough that, even under the
+  slowest unveil, half the art is in with over 3 s left); the lockout grows
+  from 2 turns to 7.
 
-  | Depth | Options | Look-alikes | Made up | Find the art | Grayscale | Mirrored | Timer | Lockout |
-  |---|---|---|---|---|---|---|---|---|
-  | 1-4 | 4 | none | 0 | never | off | never | 20 s | 2 |
-  | 5-8 | 4 | none | 0 | 40% | off | never | 19 s | 2 |
-  | 9-12 | 6 | none | 0 | 40% | off | never | 18 s | 2 |
-  | 13-16 | 6 | half | 1 | 40% | off | never | 17 s | 3 |
-  | 17-20 | 8 | half | 1 | 40% | off | never | 16 s | 3 |
-  | 21-24 | 8 | all | 2 | half | off | never | 15 s | 3 |
-  | 25-28 | 8 | all | 2 | half | find the art | 30% | 14 s | 4 |
-  | 29-32 | 8 | all | 3 | half | find the art | 30% | 13 s | 4 |
-  | 33-36 | 8 | all | 3 | half | all art | half | 12 s | 5 |
-  | 37-40 | 8 | all | 3 | half | all art | always | 11 s | 6 |
-  | 41 on | the same | | | | | | 10 s, one less every four depths, down to 5 s at 61 | 7 |
+  | From depth | Options | Look-alikes | Made up | Find the art | Grayscale | Mirrored | Unveil |
+  |---|---|---|---|---|---|---|---|
+  | 1 | 4 | none | 0 | 40% | off | never | off |
+  | 3 | 6 | half | 0 | 40% | off | never | off |
+  | 5 | 6 | half | 1 | 40% | off | never | off |
+  | 7 | 8 | half | 1 | 40% | off | never | off |
+  | 10 | 8 | all | 2 | half | off | never | off |
+  | 13 | 8 | all | 2 | half | find the art | 30% | off |
+  | 17 | 8 | all | 3 | half | find the art | 30% | off |
+  | 21 | 8 | all | 3 | half | all art | half | off |
+  | 25 | 8 | all | 3 | half | all art | always | fast |
+  | 50 | 8 | all | 3 | half | all art | always | slow |
+  | 75 | 8 | all | 3 | half | all art | always | slowest |
 
+  The lockout is 2 turns from depth 1, then 3 from 7, 4 from 13, 5 from 21,
+  6 from 29 and 7 from 37. The unveil (name questions only) starts with the
+  question's clock.
 - **Alone**, you delve until your third life is gone; the depth where it went
   is your result. **Together**, the last one standing wins and keeps delving
   to their own last life. If the last players fall at the same depth, whoever

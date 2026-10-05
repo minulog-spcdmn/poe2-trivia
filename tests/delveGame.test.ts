@@ -109,8 +109,12 @@ test('questions take their shape from the depth', () => {
     h.pick();
     const q = h.s.question!;
     assert.equal(q.options.length, delveRules(depth).options, `options at ${depth}`);
-    assert.equal(q.veil, null);
-    if (depth === 1) assert.equal(q.mode, 'name', 'no art questions at the start');
+    // From depth 25 the art of a name question burns in, paced by Delve's own timer.
+    const veil = delveRules(depth).veil;
+    if (veil && q.mode === 'name') {
+      assert.equal(q.veil!.size, veil.size);
+      assert.equal(q.veil!.seconds, delveTimer(depth) * veil.share);
+    } else assert.equal(q.veil, null);
     const madeUp = q.options.filter(isFake).length;
     assert.ok(madeUp <= delveRules(depth).fakes);
   }

@@ -73,17 +73,12 @@ test('every hint, and every reason that replaces one, fits on one line', () => {
   for (const t of texts) assert.ok(t.length <= 38, `${t} (${t.length})`);
 });
 
-test('every Delve stratum that changes the rules says how', async () => {
-  const { delveChange, DELVE_LADDER } = await import('../src/lib/difficultyText.ts');
-  const { delveRules, delveTimer, delveLockout } = await import('../src/lib/delve.ts');
-  for (let stratum = 2; stratum <= 16; stratum++) {
-    const d = (stratum - 1) * 4 + 1;
-    const changed = JSON.stringify([delveRules(d), delveTimer(d), delveLockout(d)]) !== JSON.stringify([delveRules(d - 1), delveTimer(d - 1), delveLockout(d - 1)]);
-    assert.ok(changed, `stratum ${stratum} changes nothing`);
-    assert.ok(delveChange(stratum), `stratum ${stratum} has no line`);
-  }
-  assert.equal(delveChange(1), null);
-  assert.equal(delveChange(17), null);
-  assert.equal(delveTimer(DELVE_LADDER[0].depth), 20);
-  assert.equal(delveTimer(DELVE_LADDER.at(-1)!.depth), 5);
+test('every depth that gets harder in Delve says how', async () => {
+  const { delveChange, DELVE_LADDER, DELVE_STEP_TEXT } = await import('../src/lib/difficultyText.ts');
+  const { DELVE_STEPS, delveChangeAt, delveTimer } = await import('../src/lib/delve.ts');
+  for (const step of DELVE_STEPS.slice(1)) assert.ok(DELVE_STEP_TEXT[step.from], `no line for the step at ${step.from}`);
+  for (let d = 1; d <= 120; d++) assert.equal(delveChange(d) === null, delveChangeAt(d) === null, `depth ${d}`);
+  assert.equal(delveChange(28), 'Seven seconds');
+  assert.equal(delveTimer(DELVE_LADDER[0].depth), 16);
+  assert.equal(delveTimer(DELVE_LADDER.at(-1)!.depth), 7);
 });

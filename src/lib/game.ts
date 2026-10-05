@@ -1578,7 +1578,7 @@ export class Engine {
       rules.veil && mode === 'name'
         ? {
             size: rules.veil.size,
-            seconds: (timer > 0 ? timer : DEFAULT_SETTINGS.timer) * rules.veil.share,
+            seconds: (s.delve ? delveTimer(s.round) : timer > 0 ? timer : DEFAULT_SETTINGS.timer) * rules.veil.share,
             seed: Math.floor(this.rng() * 2 ** 31),
           }
         : null;

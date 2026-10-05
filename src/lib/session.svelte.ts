@@ -747,15 +747,8 @@ class Session {
     media.options.forEach((data, index) => this.release({ t: 'option', qid, index, data }));
     if (media.veil) {
       this.release({ t: 'veil', qid, ...media.veil });
-      const delays = patchDelays(q, media.patches.length);
-      media.patches.forEach((patch, rank) => {
-        const due = q.askedAt + delays[rank] - Date.now();
-        const go = () => {
-          if (this.media?.qid === qid) this.release({ t: 'patch', qid, ...patch });
-        };
-        if (due <= 0) go();
-        else this.mediaTimers.push(setTimeout(go, due));
-      });
+      // Delve: the art burns in from when the clock starts (startClock), not from when the question was asked.
+      if (!timing) this.burnVeil(qid, q.askedAt);
     }
     if (guestTurn) this.waitForArrival(qid, active.id);
     else if (timing) this.startClock(qid, Date.now());
@@ -781,12 +774,30 @@ class Session {
     poll();
   }
 
+  /** Veiled art: its patches go out on schedule, counted from `from` (host clock). */
+  private burnVeil(qid: number, from: number) {
+    const media = this.media;
+    const q = this.state?.question;
+    if (!media?.veil || media.qid !== qid || !q?.veil) return;
+    const delays = patchDelays(q, media.patches.length);
+    media.patches.forEach((patch, rank) => {
+      const due = from + delays[rank] - Date.now();
+      const go = () => {
+        if (this.media?.qid === qid) this.release({ t: 'patch', qid, ...patch });
+      };
+      if (due <= 0) go();
+      else this.mediaTimers.push(setTimeout(go, due));
+    });
+  }
+
   /** Delve: the question's clock starts at `at` (host clock), and everyone else gets the art. */
   private startClock(qid: number, at: number) {
     const cur = this.state;
     if (!cur || cur.question?.askedAt !== qid || cur.question.deadline !== null) return;
     this.setState(engine.apply(cur, { type: 'clock', askedAt: qid, at }, null));
     this.releaseHeld();
+    const clockAt = this.state?.question?.clockAt;
+    if (clockAt !== undefined) this.burnVeil(qid, clockAt);
   }
 
   /** Delve: the art held back from everyone but the player answering goes out to them now. */

@@ -2,6 +2,7 @@
 // described by the same sentences, and the custom editor uses the same terms,
 // so a knob reads the same wherever it shows up.
 
+import { DELVE_MIN_TIMER, delveChangeAt, delveLockout, delveTimer } from './delve.ts';
 import { knobsOf, maxFakes, type Difficulty, type Knobs, type Settings, type VeilSpeed } from './game.ts';
 
 /** Display names, in the order the lobby offers them. */
@@ -131,35 +132,35 @@ export const KNOB_TEXT: { [K in keyof Knobs]: KnobText<K> }[keyof Knobs][] = [
   { key: 'lockout', name: 'Category lockout', hint: 'Turns until a picked category returns', label: (v) => (v ? String(v) : 'None') },
 ];
 
-/** What changes at the first depth of a Delve stratum (none for the first). */
-const DELVE_CHANGES: Record<number, string> = {
-  2: 'Find the art',
-  3: 'Six options',
-  4: 'Look-alike and made-up names',
-  5: 'Eight options',
-  6: 'All look-alikes',
-  7: 'Grayscale art, mirrored pictures',
-  8: 'Three made-up names',
-  9: 'All grayscale',
-  10: 'Always mirrored',
-  11: 'Longest lockout',
-  12: 'Less time',
-  13: 'Less time',
-  14: 'Less time',
-  15: 'Less time',
-  16: 'Five seconds',
+/** What each step of the Delve curve brings, by the depth where it starts (delve.ts DELVE_STEPS). */
+export const DELVE_STEP_TEXT: Record<number, string> = {
+  3: 'Six options, look-alike names',
+  5: 'A made-up name',
+  7: 'Eight options',
+  10: 'All look-alikes, two made up',
+  13: 'Grayscale art, mirrored pictures',
+  17: 'Three made-up names',
+  21: 'All art in grayscale',
+  25: 'The art burns into view; always mirrored',
+  50: 'The art burns in slower',
+  75: 'The art burns in slowest',
 };
 
-/** The change a new Delve stratum brings, or null; past the last one the rules stay as they are. */
-export function delveChange(stratum: number): string | null {
-  return DELVE_CHANGES[stratum] ?? null;
+/** What gets harder at a Delve depth, in a few words, or null when nothing does. */
+export function delveChange(depth: number): string | null {
+  const change = delveChangeAt(depth);
+  if (change === 'knobs') return DELVE_STEP_TEXT[depth] ?? null;
+  if (change === 'lockout') return `Locked for ${delveLockout(depth)} turns`;
+  if (change === 'timer') return delveTimer(depth) === DELVE_MIN_TIMER ? 'Seven seconds' : 'Less time';
+  return null;
 }
 
 /** The milestones of a descent, for the lobby and the start page. */
 export const DELVE_LADDER: { depth: number; text: string }[] = [
-  { depth: 1, text: 'Four options, 20 seconds' },
-  { depth: 13, text: 'Look-alike and made-up names' },
-  { depth: 25, text: 'Grayscale, mirrored pictures' },
-  { depth: 41, text: 'Longest lockout, 10 seconds' },
-  { depth: 61, text: 'The abyss; 5 seconds' },
+  { depth: 1, text: 'Four options, 16 seconds' },
+  { depth: 3, text: 'Look-alike names, then made-up ones' },
+  { depth: 7, text: 'Eight options' },
+  { depth: 13, text: 'Grayscale, mirrored pictures' },
+  { depth: 25, text: 'The art burns into view' },
+  { depth: 28, text: 'Seven seconds' },
 ];

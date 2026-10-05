@@ -4,7 +4,7 @@
 // means the same thing to everyone. Only types come from game.ts, so the engine
 // can import this module without a cycle.
 
-import type { DifficultyRules, GameState, Preset } from './game.ts';
+import type { DifficultyRules, GameState, Preset, VeilSpeed } from './game.ts';
 
 export const DELVE_LIVES = 3;
 
@@ -27,55 +27,85 @@ export const DELVE_REJOIN_MS = 10_000;
 /** After the host reloads, players who were cut off get this long to come back before their turn runs. */
 export const DELVE_RESUME_GRACE_MS = 60_000;
 
-/** Depths per stratum: the rules change at the first depth of each. */
-export const STRATUM_DEPTHS = 4;
-
 /** Depth as a whole number from 1 (anything odd counts as the surface). */
 const depthOf = (d: number) => (Number.isFinite(d) ? Math.max(1, Math.floor(d)) : 1);
 
-/** Which stratum a depth is in: 1 for depths 1-4, 2 for 5-8, and so on. */
-export const delveStratum = (d: number) => Math.ceil(depthOf(d) / STRATUM_DEPTHS);
+/**
+ * The shortest a question gets. Long enough that, under the slowest veil, half
+ * the art has burnt in with over 3 s still left to answer (at 6 s it would be 2.7).
+ */
+export const DELVE_MIN_TIMER = 7;
 
-/** Seconds per question: 20 at the top, one less each stratum, never under 5. */
-export const delveTimer = (d: number) => Math.max(5, 21 - delveStratum(d));
+/** Seconds per question: 16 at the top, one less every three depths, never under DELVE_MIN_TIMER (from depth 28). */
+export const delveTimer = (d: number) => Math.max(DELVE_MIN_TIMER, 16 - Math.floor((depthOf(d) - 1) / 3));
 
-const LOCKOUTS = [2, 2, 2, 3, 3, 3, 4, 4, 5, 6];
+/** Depths where the lockout grows: 2 turns from the start, then 3, 4… up to DELVE_MAX_LOCKOUT. */
+const LOCKOUT_FROM = [1, 7, 13, 21, 29, 37];
 
-/** Turns a picked category stays locked: longer each few strata, at most DELVE_MAX_LOCKOUT. */
-export const delveLockout = (d: number) => LOCKOUTS[delveStratum(d) - 1] ?? DELVE_MAX_LOCKOUT;
+/** Turns a picked category stays locked. */
+export function delveLockout(d: number): number {
+  const depth = depthOf(d);
+  return 1 + LOCKOUT_FROM.filter((from) => depth >= from).length;
+}
 
-type DelveKnobs = Pick<DifficultyRules, 'options' | 'similarNames' | 'fakes' | 'artChance' | 'grayscale' | 'mirror'>;
+type DelveKnobs = Pick<DifficultyRules, 'options' | 'similarNames' | 'fakes' | 'artChance' | 'grayscale' | 'mirror'> & { veil: VeilSpeed };
+
+/** How each veil speed cuts and paces the art (the same as game.ts VEILS; tests/delve.test.ts checks). */
+const VEIL_PACE: Record<VeilSpeed, DifficultyRules['veil']> = {
+  off: null,
+  fast: { size: 5, share: 0.55 },
+  slow: { size: 7, share: 0.7 },
+  slowest: { size: 9, share: 0.8 },
+};
 
 /**
- * The question knobs of each stratum, one step at a time: Cruel without art
- * questions, then Cruel, Merciless and Eternal as turns plays them, then past
- * Eternal. Options stop at 8: at 10 only pairs of groups can share a question,
- * so most small groups (wands, quivers, relics…) could never be the answer.
- * No veil: on your own turn it would only eat into the timer.
+ * The question knobs, each from the depth where it starts. Quick steps at
+ * first, so a run gets going: Cruel at the top, Merciless by depth 5, Eternal
+ * by 13, then past Eternal. Options stop at 8: at 10 only pairs of groups can
+ * share a question, so most small groups (wands, quivers, relics…) could never
+ * be the answer. From depth 25 the art of name questions burns into view,
+ * one step slower every 25 depths; its clock only starts once the art is out.
  */
-const DELVE_KNOBS: DelveKnobs[] = [
-  { options: 4, similarNames: 0, fakes: 0, artChance: 0, grayscale: 'off', mirror: 0 },
-  { options: 4, similarNames: 0, fakes: 0, artChance: 0.4, grayscale: 'off', mirror: 0 },
-  { options: 6, similarNames: 0, fakes: 0, artChance: 0.4, grayscale: 'off', mirror: 0 },
-  { options: 6, similarNames: 0.5, fakes: 1, artChance: 0.4, grayscale: 'off', mirror: 0 },
-  { options: 8, similarNames: 0.5, fakes: 1, artChance: 0.4, grayscale: 'off', mirror: 0 },
-  { options: 8, similarNames: 1, fakes: 2, artChance: 0.5, grayscale: 'off', mirror: 0 },
-  { options: 8, similarNames: 1, fakes: 2, artChance: 0.5, grayscale: 'art', mirror: 0.3 },
-  { options: 8, similarNames: 1, fakes: 3, artChance: 0.5, grayscale: 'art', mirror: 0.3 },
-  { options: 8, similarNames: 1, fakes: 3, artChance: 0.5, grayscale: 'all', mirror: 0.5 },
-  { options: 8, similarNames: 1, fakes: 3, artChance: 0.5, grayscale: 'all', mirror: 1 },
+export const DELVE_STEPS: (DelveKnobs & { from: number })[] = [
+  { from: 1, options: 4, similarNames: 0, fakes: 0, artChance: 0.4, grayscale: 'off', mirror: 0, veil: 'off' },
+  { from: 3, options: 6, similarNames: 0.5, fakes: 0, artChance: 0.4, grayscale: 'off', mirror: 0, veil: 'off' },
+  { from: 5, options: 6, similarNames: 0.5, fakes: 1, artChance: 0.4, grayscale: 'off', mirror: 0, veil: 'off' },
+  { from: 7, options: 8, similarNames: 0.5, fakes: 1, artChance: 0.4, grayscale: 'off', mirror: 0, veil: 'off' },
+  { from: 10, options: 8, similarNames: 1, fakes: 2, artChance: 0.5, grayscale: 'off', mirror: 0, veil: 'off' },
+  { from: 13, options: 8, similarNames: 1, fakes: 2, artChance: 0.5, grayscale: 'art', mirror: 0.3, veil: 'off' },
+  { from: 17, options: 8, similarNames: 1, fakes: 3, artChance: 0.5, grayscale: 'art', mirror: 0.3, veil: 'off' },
+  { from: 21, options: 8, similarNames: 1, fakes: 3, artChance: 0.5, grayscale: 'all', mirror: 0.5, veil: 'off' },
+  { from: 25, options: 8, similarNames: 1, fakes: 3, artChance: 0.5, grayscale: 'all', mirror: 1, veil: 'fast' },
+  { from: 50, options: 8, similarNames: 1, fakes: 3, artChance: 0.5, grayscale: 'all', mirror: 1, veil: 'slow' },
+  { from: 75, options: 8, similarNames: 1, fakes: 3, artChance: 0.5, grayscale: 'all', mirror: 1, veil: 'slowest' },
 ];
+
+/** The step of the curve a depth plays. */
+function stepOf(d: number) {
+  const depth = depthOf(d);
+  return DELVE_STEPS.findLast((step) => depth >= step.from)!;
+}
 
 /** The rules of a depth. */
 export function delveRules(d: number): DifficultyRules {
-  const k = DELVE_KNOBS[Math.min(delveStratum(d), DELVE_KNOBS.length) - 1];
-  return { ...k, veil: null, lockout: delveLockout(d) };
+  const { from: _, veil, ...k } = stepOf(d);
+  return { ...k, veil: VEIL_PACE[veil], lockout: delveLockout(d) };
+}
+
+/** What gets harder at this depth, if anything: new question rules, a longer lockout, or less time. */
+export function delveChangeAt(d: number): 'knobs' | 'lockout' | 'timer' | null {
+  const depth = depthOf(d);
+  if (depth === 1) return null;
+  if (stepOf(depth) !== stepOf(depth - 1)) return 'knobs';
+  if (delveLockout(depth) !== delveLockout(depth - 1)) return 'lockout';
+  if (delveTimer(depth) !== delveTimer(depth - 1)) return 'timer';
+  return null;
 }
 
 /** The preset a depth plays most like, for filing answers in the codex. */
 export function delveTier(d: number): Preset {
-  const stratum = delveStratum(d);
-  return stratum <= 3 ? 'cruel' : stratum <= 6 ? 'merciless' : 'eternal';
+  const depth = depthOf(d);
+  return depth < 5 ? 'cruel' : depth < 13 ? 'merciless' : 'eternal';
 }
 
 // ---- reading a run --------------------------------------------------------

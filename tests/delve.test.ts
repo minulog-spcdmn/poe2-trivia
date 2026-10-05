@@ -10,7 +10,8 @@ import {
   delveLockout,
   delveRules,
   delveStandings,
-  delveStratum,
+  delveChangeAt,
+  DELVE_STEPS,
   delveTier,
   delveTimer,
   fellAt,
@@ -34,7 +35,6 @@ test('every depth plays knob values that exist', () => {
     assert.ok((KNOB_STEPS.mirror as readonly number[]).includes(r.mirror), `mirror at ${d}`);
     assert.ok(r.fakes <= maxFakes(r.options), `fakes fit at ${d}`);
     assert.ok(r.options <= 8, `at most 8 options at ${d}`);
-    assert.equal(r.veil, null);
   }
 });
 
@@ -52,26 +52,45 @@ test('the curve only ever gets harder', () => {
 
 test('timer and lockout stay within bounds', () => {
   for (const d of DEPTHS) {
-    assert.ok(Number.isInteger(delveTimer(d)) && delveTimer(d) >= 5 && delveTimer(d) <= 20);
+    assert.ok(Number.isInteger(delveTimer(d)) && delveTimer(d) >= 7 && delveTimer(d) <= 16);
     assert.ok(delveLockout(d) >= 2 && delveLockout(d) <= DELVE_MAX_LOCKOUT);
   }
-  assert.equal(delveTimer(1), 20);
-  assert.equal(delveTimer(61), 5);
-  assert.equal(delveTimer(1000), 5);
-  assert.equal(delveLockout(41), DELVE_MAX_LOCKOUT);
+  assert.equal(delveTimer(1), 16);
+  assert.equal(delveTimer(28), 7);
+  assert.equal(delveTimer(27), 8);
+  assert.equal(delveTimer(1000), 7);
+  assert.equal(delveLockout(1), 2);
+  assert.equal(delveLockout(37), DELVE_MAX_LOCKOUT);
 });
 
-test('the rules change at the first depth of each stratum, every four depths', () => {
-  const same = (a: number, b: number) => JSON.stringify(delveRules(a)) === JSON.stringify(delveRules(b)) && delveTimer(a) === delveTimer(b);
-  for (const d of DEPTHS.slice(1)) {
-    if ((d - 1) % 4 === 0 && d <= 61) assert.ok(!same(d - 1, d), `nothing changes at ${d}`);
-    if ((d - 1) % 4 !== 0) assert.ok(same(d - 1, d), `rules change mid-stratum at ${d}`);
+test('something gets harder every few depths until the floor', () => {
+  // No stretch longer than three depths without a change, until the timer stops at depth 28.
+  let last = 1;
+  for (const d of DEPTHS.slice(1, 28)) {
+    const change = delveChangeAt(d);
+    const same = JSON.stringify([delveRules(d), delveTimer(d)]) === JSON.stringify([delveRules(d - 1), delveTimer(d - 1)]);
+    assert.equal(change === null, same, `delveChangeAt disagrees at ${d}`);
+    if (change) last = d;
+    assert.ok(d - last < 3, `nothing changes from ${last} to ${d}`);
   }
-  assert.deepEqual([1, 4, 5, 8, 9].map(delveStratum), [1, 1, 2, 2, 3]);
+  // Past that, the lockout grows twice and the veil slows down every 25 depths.
+  const later = new Map([
+    [29, 'lockout'],
+    [37, 'lockout'],
+    [50, 'knobs'],
+    [75, 'knobs'],
+  ]);
+  for (const d of DEPTHS.slice(28)) assert.equal(delveChangeAt(d), later.get(d) ?? null, `depth ${d}`);
+  assert.equal(delveChangeAt(1), null);
+  assert.deepEqual(
+    DELVE_STEPS.map((s) => s.from),
+    [...DELVE_STEPS.map((s) => s.from)].sort((a, b) => a - b),
+  );
+  assert.equal(DELVE_STEPS[0].from, 1);
 });
 
 test('depths are filed under the preset they play like', () => {
-  assert.deepEqual([1, 12, 13, 24, 25, 100].map(delveTier), ['cruel', 'cruel', 'merciless', 'merciless', 'eternal', 'eternal']);
+  assert.deepEqual([1, 4, 5, 12, 13, 100].map(delveTier), ['cruel', 'cruel', 'merciless', 'merciless', 'eternal', 'eternal']);
 });
 
 test('odd depths still give rules', () => {
@@ -94,7 +113,7 @@ test('the ruleset is pinned to the curve and the protocol', () => {
   assert.deepEqual([DELVE_RULESET, PROTOCOL_VERSION, hash], [1, 10, PINNED_HASH]);
 });
 
-const PINNED_HASH = '11e513ec71a9e5e0';
+const PINNED_HASH = 'e001487660973cd0';
 
 function run(losses: Record<string, number[]>, round = 10, seats = Object.keys(losses)): GameState {
   const s = createGame('a');
@@ -140,4 +159,29 @@ test('standings: deeper falls first, then later earlier losses, equal runs share
     ['c', 'a', 'b'],
   );
   assert.equal(delveStandings(run({ a: [1, 2, 1000] }, 1000))[0].depth, 1000);
+});
+
+test('the art burns into view from depth 25, a step slower every 25 depths, as the presets pace it', async () => {
+  const { rulesFor } = await import('../src/lib/game.ts');
+  const paced = (veil: 'off' | 'fast' | 'slow' | 'slowest') =>
+    rulesFor({ difficulty: 'custom', mode: 'turns', custom: { ...delveRules(1), veil, lockout: 2 } as never }).veil;
+  assert.equal(delveRules(24).veil, null);
+  assert.deepEqual(delveRules(25).veil, paced('fast'));
+  assert.deepEqual(delveRules(49).veil, paced('fast'));
+  assert.deepEqual(delveRules(50).veil, paced('slow'));
+  assert.deepEqual(delveRules(75).veil, paced('slowest'));
+  assert.deepEqual(delveRules(500).veil, paced('slowest'));
+});
+
+test('even under the slowest veil, half the art is in with about 3 s left at the shortest timer', async () => {
+  const { veilPace } = await import('../src/lib/patches.ts');
+  for (const d of [25, 50, 75, 200]) {
+    const ms = delveTimer(d) * 1000;
+    const veilMs = ms * delveRules(d).veil!.share;
+    // The veil is cut into about size × size patches; the first starts 400 ms in (media.svelte.ts patchDelays).
+    const count = delveRules(d).veil!.size ** 2;
+    const { gap, burn } = veilPace(veilMs, count);
+    const halfIn = 400 + (count / 2) * gap + burn;
+    assert.ok(ms - halfIn >= 3000, `depth ${d}: ${Math.round(ms - halfIn)} ms left with half the art in`);
+  }
 });

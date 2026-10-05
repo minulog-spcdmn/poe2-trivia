@@ -13,7 +13,7 @@
   import { deathmatchIntro, deathmatchMood, gameStart, turnBanner } from '../lib/fx/moments';
   import { portal } from '../lib/portal';
   import { phone } from '../lib/layout';
-  import { delveDepth, delveStratum, delveTimer, fellAt, isGroupRun, STRATUM_DEPTHS } from '../lib/delve';
+  import { delveDepth, delveTimer, fellAt, isGroupRun, livesOf } from '../lib/delve';
   import { delveChange } from '../lib/difficultyText';
 
   const s = $derived(session.state!);
@@ -107,15 +107,14 @@
           : `${active.name}'s turn`,
   );
 
-  // Delve: the line over the banner says how deep, how long, and what just changed.
+  // Delve: the line over the banner says what just got harder (and, together, how deep).
   const seconds = $derived(q?.deadline ? Math.round((q.deadline - (q.clockAt ?? q.askedAt)) / 1000) : delveTimer(depth));
-  const change = $derived(depth > 1 && (depth - 1) % STRATUM_DEPTHS === 0 ? delveChange(delveStratum(depth)) : null);
+  const change = $derived(run ? delveChange(depth) : null);
   const kicker = $derived.by(() => {
     if (!run) return '';
     const parts: string[] = [];
     if (run.lastStanding && group) parts.push('Last one standing');
     if (group) parts.push(`Depth ${depth}`);
-    parts.push(`${seconds} s`);
     if (change) parts.push(change);
     return parts.join(' • ');
   });
@@ -140,6 +139,40 @@
     return '';
   });
   const myFall = $derived(session.fallen && session.myPlayerId ? fellAt(s, session.myPlayerId) : null);
+
+  // Delve: losing one of your own lives is hard to miss (on one device, anyone's is yours).
+  let lostLife = $state<{ key: number; left: number; name: string | null } | null>(null);
+  let lostTimer: ReturnType<typeof setTimeout> | null = null;
+  let livesSeen: Record<string, number> = {};
+  let runSeen = 0;
+  $effect(() => {
+    if (!run) return;
+    if (run.startedAt !== runSeen) {
+      runSeen = run.startedAt;
+      livesSeen = {};
+    }
+    for (const p of s.players) {
+      const now = livesOf(s, p.id);
+      const was = livesSeen[p.id];
+      livesSeen[p.id] = now;
+      if (was === undefined || now >= was) continue;
+      if (!(local || p.id === session.myPlayerId)) continue;
+      const shown = { key: performance.now(), left: now, name: local && group ? p.name : null };
+      // In step with the scoreboard's broken heart, a moment after the answer shows.
+      setTimeout(() => {
+        lostLife = shown;
+        if (lostTimer) clearTimeout(lostTimer);
+        lostTimer = setTimeout(() => lostLife?.key === shown.key && (lostLife = null), 1700);
+      }, 450);
+    }
+  });
+  const lostText = (l: { left: number; name: string | null }) => {
+    const what = l.left === 0 ? 'Fallen' : l.left === 1 ? 'Last life' : `${l.left === 2 ? 'Two' : l.left} lives left`;
+    return l.name ? `${l.name}: ${what.toLowerCase()}` : what;
+  };
+  /** A heart (20 × 18), in two halves along a crack, so it can break. */
+  const HALF_L = 'M10 17C4.2 12.6 1 9.6 1 6a4.5 4.5 0 0 1 9-1.2L8.8 8.2 11 10.6 9.2 13.4Z';
+  const HALF_R = 'M10 4.8A4.5 4.5 0 0 1 19 6c0 3.6-3.2 6.6-9 11L9.2 13.4 11 10.6 8.8 8.2Z';
 </script>
 
 {#snippet timer()}
@@ -180,8 +213,9 @@
             </span>
           </div>
         {/if}
-        {#if kicker}
-          <p class="kicker" class:deep={depth >= 25}>{kicker}</p>
+        {#if run}
+          <!-- Kept even when empty, so the banner stays put from one depth to the next. -->
+          <p class="kicker" class:deep={depth >= 21} class:change={!!change}>{kicker || '\u00a0'}</p>
         {/if}
         <div class="banner" class:dm={!!dm} style:--c={bannerColor}>
           <span class="rule"></span>
@@ -226,6 +260,18 @@
   </div>
 </div>
 
+{#if lostLife}
+  {#key lostLife.key}
+    <div class="life-lost" class:last={lostLife.left <= 1} use:portal aria-live="polite" out:fade={{ duration: 300 }}>
+      <svg viewBox="-2 -2 24 22" aria-hidden="true">
+        <path class="half l" d={HALF_L} />
+        <path class="half r" d={HALF_R} />
+      </svg>
+      <p>{lostText(lostLife)}</p>
+    </div>
+  {/key}
+{/if}
+
 {#if showIntro && dm}
   <!-- Behind a dialog the flat fill only darkens (a blur would thin its edges) and the words blur. -->
   <div class="dm-intro" use:portal={'dim'} transition:fade={{ duration: 400 }} aria-live="polite">
@@ -266,6 +312,116 @@
     flex-direction: column;
     align-items: stretch;
   }
+  /* Delve: your heart breaks near the top of the screen, clear of the answers. */
+  .life-lost {
+    position: fixed;
+    left: 50%;
+    top: calc(var(--screen-h, 100vh) * 0.16);
+    translate: -50% 0;
+    z-index: 60;
+    pointer-events: none;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .life-lost svg {
+    width: 84px;
+    height: 76px;
+    overflow: visible;
+    filter: drop-shadow(0 0 14px rgba(255, 50, 40, 0.75)) drop-shadow(0 4px 10px rgba(0, 0, 0, 0.9));
+  }
+  .half {
+    fill: #d8333b;
+    stroke: #ffb0a0;
+    stroke-width: 0.6;
+    transform-box: fill-box;
+    animation: 1.5s var(--ease-out) both;
+  }
+  .half.l {
+    transform-origin: 100% 100%;
+    animation-name: break-l;
+  }
+  .half.r {
+    transform-origin: 0% 100%;
+    animation-name: break-r;
+  }
+  @keyframes break-l {
+    0% {
+      scale: 0.4;
+      opacity: 0;
+    }
+    18% {
+      scale: 1.1;
+      opacity: 1;
+    }
+    35% {
+      scale: 1;
+      translate: 0 0;
+      rotate: 0deg;
+    }
+    100% {
+      translate: -9px 14px;
+      rotate: -22deg;
+      opacity: 0;
+    }
+  }
+  @keyframes break-r {
+    0% {
+      scale: 0.4;
+      opacity: 0;
+    }
+    18% {
+      scale: 1.1;
+      opacity: 1;
+    }
+    35% {
+      scale: 1;
+      translate: 0 0;
+      rotate: 0deg;
+    }
+    100% {
+      translate: 9px 16px;
+      rotate: 24deg;
+      opacity: 0;
+    }
+  }
+  .life-lost p {
+    margin: 0;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 1.15rem;
+    letter-spacing: 0.08em;
+    color: #ffc2b6;
+    text-shadow:
+      0 0 14px rgba(255, 60, 40, 0.7),
+      0 2px 8px rgba(0, 0, 0, 0.95);
+    animation: life-text 1.6s var(--ease-out) both;
+  }
+  .life-lost.last p {
+    color: #ff8a7a;
+    font-size: 1.35rem;
+  }
+  @keyframes life-text {
+    0% {
+      opacity: 0;
+      translate: 0 6px;
+    }
+    20%,
+    75% {
+      opacity: 1;
+      translate: 0 0;
+    }
+    100% {
+      opacity: 0;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .half,
+    .life-lost p {
+      animation: none;
+    }
+  }
   .kicker {
     margin: 0.4rem 0 -0.4rem;
     text-align: center;
@@ -275,6 +431,10 @@
     letter-spacing: 0.12em;
     text-transform: uppercase;
     color: var(--gold);
+  }
+  .kicker.change {
+    color: var(--gold-hi);
+    text-shadow: 0 0 12px rgba(241, 217, 155, 0.35);
   }
   .kicker.deep {
     color: #b9cff0;

@@ -84,10 +84,8 @@
   const waiting = $derived(
     !!s.delve &&
       !reveal &&
-      (q.deadline === null || (q.mode === 'art' ? Object.keys(media?.options ?? {}).length < count : !media?.art)),
+      (q.deadline === null || (q.mode === 'art' ? Object.keys(media?.options ?? {}).length < count : !(media?.art || media?.veil))),
   );
-  /** Delve's timers are short: the options come in quickly. */
-  const quick = $derived(!!s.delve);
 
   /** Veiled art: the patches that have appeared so far. */
   const patches = $derived(Object.values(media?.patches ?? {}));
@@ -539,19 +537,14 @@
     {/if}
   </div>
 
-  {#if waiting}
-    <!-- Delve: the art is on its way to the player answering; the clock starts when it is there. -->
-    <div class="descending" use:backdropShadow={{ fill: 'linear' }} out:fade={{ duration: 120 }}>
-      <span class="loading big" aria-label="Loading"></span>
-      <span class="muted">Descending…</span>
-    </div>
-  {:else if q.mode === 'art'}
+  <!-- Delve: until the clock runs (waiting), the question keeps its shape but shows nothing to read. -->
+  {#if q.mode === 'art'}
     <!-- Name given, pick the matching art. -->
     <div class="tooltip wide" use:backdropShadow={{ fill: 'linear' }} class:good={reveal && iWon} class:bad={reveal && !iWon}>
       <div class="head">
         <NamePlate />
         <div class="head-text">
-          <span class="iname">{q.prompt}</span>
+          <span class="iname" class:veiled={waiting}>{waiting || !q.prompt ? '\u00a0' : q.prompt}</span>
           {#if reveal && item}
             <span class="ibase" in:fade>{item.base}</span>
           {:else}
@@ -562,16 +555,16 @@
       <div class="tiles" bind:this={artEl} class:many={count > 4} class:six={count === 6} class:ten={count === 10}>
         {#each q.labels as _, i (i)}
           {@const st = optionState(i)}
-          {@const src = reveal && q.options[i] ? itemImage(q.options[i]) : media?.options[i]}
+          {@const src = reveal && q.options[i] ? itemImage(q.options[i]) : waiting ? undefined : media?.options[i]}
           <button
             class="tile {st}"
             data-sfx="none"
             data-fx="hover"
             bind:this={optionEls[i]}
             class:mine
-            disabled={!mine || !!reveal || chosen !== null}
+            disabled={!mine || !!reveal || chosen !== null || waiting}
             onclick={() => answer(i)}
-            in:scale={{ start: 0.85, duration: quick ? 250 : 450, delay: quick ? i * 40 : 250 + i * 80 }}
+            in:scale={{ start: 0.85, duration: 450, delay: 250 + i * 80 }}
           >
             <span class="key">{(i + 1) % 10}</span>
             {#if src}
@@ -643,7 +636,7 @@
                 <canvas class="frontier" aria-hidden="true" use:frontier={{ w: v.w, h: v.h, burn: v.burn, quick: !!reveal, patches }}></canvas>
               </span>
               </span>
-            {:else if !showFull && media?.art}
+            {:else if !showFull && media?.art && !waiting}
               <ArtImage src={media.art.url} alt="The item to identify" w={media.art.w} h={media.art.h} float />
             {:else if !showFull}
               <span class="loading big" aria-label="Loading"></span>
@@ -664,13 +657,13 @@
             class:mine
             class:fake={fake(i)}
             title={fake(i) ? 'Not a real item' : undefined}
-            disabled={!mine || !!reveal || chosen !== null}
+            disabled={!mine || !!reveal || chosen !== null || waiting}
             onclick={() => answer(i)}
-            in:fly={{ x: 40, duration: quick ? 250 : 450, delay: quick ? i * 40 : 300 + i * 90 }}
+            in:fly={{ x: 40, duration: 450, delay: 300 + i * 90 }}
           >
             <span class="sheen"></span>
             <span class="key">{(i + 1) % 10}</span>
-            <span class="text">{label ?? optionName(i)}</span>
+            <span class="text" class:veiled={waiting}>{waiting ? '\u00a0' : (label ?? optionName(i))}</span>
             {@render who(i)}
             {#if st === 'right'}<span class="mark" in:scale={{ duration: 300 }}>✓</span>{/if}
             {#if st === 'wrong'}<span class="mark" in:scale={{ duration: 300 }}>✕</span>{/if}
@@ -916,22 +909,13 @@
     width: 44px;
     height: 44px;
   }
-  .descending {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 0.9rem;
-    min-height: clamp(220px, 40svh, 360px);
-    font-style: italic;
-    --bs-fill-a: rgba(5, 4, 3, 0.85);
-    --bs-fill-b: rgba(5, 4, 3, 0.85);
-    background: var(--bs-fill-paint, linear-gradient(var(--bs-fill-a), var(--bs-fill-b)));
-    border: 1px solid var(--line);
-    border-radius: 4px;
+  /* Delve: the words come in once the clock runs. */
+  .text,
+  .iname {
+    transition: opacity 0.2s;
   }
-  .descending .loading {
-    margin: 0;
+  .veiled {
+    opacity: 0;
   }
   @keyframes spin {
     to {
