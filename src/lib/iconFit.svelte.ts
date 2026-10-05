@@ -5,9 +5,16 @@
 // at least half opaque) are measured once, and the item is scaled to a
 // common visual weight, within the window. Until an icon is measured the
 // card falls back to fitting the whole image (see ChooseCategory).
+//
+// The art also carries a faint baked-in shadow, which a mask would turn
+// into a haze of gold and a drop shadow into a dark disc. So each icon gets
+// a clean mask too: the haze (nearly all of it under 72 of 255) taken out,
+// and the edges' softer pixels made fainter so they stay smooth.
+// (An SVG filter could do this on the page, but WebKit draws SVG filters on
+// HTML as a box round the element.)
 
-/** An icon's fit, in pixels at a tall card's size: the image's drawn size, and the visible part's offset and size in it (with room for its soft edges). */
-export type Fit = { iw: number; ih: number; x: number; y: number; w: number; h: number };
+/** An icon's fit, in pixels at a tall card's size: the image's drawn size, and the visible part's offset and size in it (with room for its soft edges); and its clean mask's URL. */
+export type Fit = { iw: number; ih: number; x: number; y: number; w: number; h: number; mask: string };
 
 /**
  * The visible item's typical size (the geometric mean of its width and
@@ -21,6 +28,8 @@ const MAX_W = 120;
 const MAX_H = 118;
 /** Room round the visible part for the art's soft edges (pixels under half opaque). */
 const PAD = 8;
+/** The clean mask's edge: pixels less opaque than this go, more opaque than that stay whole, those between ramp up. */
+const EDGE = [72, 216] as const;
 
 export const fits = $state<Record<string, Fit>>({});
 const pending = new Set<string>();
@@ -55,10 +64,28 @@ export function measure(url: string) {
       if (x1 < 0) return;
       const [w, h] = [x1 - x0 + 1, y1 - y0 + 1];
       const k = Math.min(WEIGHT / Math.sqrt(w * h), Math.sqrt(INK / ink), MAX_W / w, MAX_H / h);
-      fits[url] = { iw: iw * k, ih: ih * k, x: x0 * k - PAD, y: y0 * k - PAD, w: w * k + 2 * PAD, h: h * k + 2 * PAD };
+      const fit = { iw: iw * k, ih: ih * k, x: x0 * k - PAD, y: y0 * k - PAD, w: w * k + 2 * PAD, h: h * k + 2 * PAD };
+      const clean = g.createImageData(iw, ih);
+      for (let i = 0; i < a.length; i += 4) {
+        const t = Math.min(1, Math.max(0, (a[i + 3]! - EDGE[0]) / (EDGE[1] - EDGE[0])));
+        clean.data.fill(255, i, i + 3);
+        clean.data[i + 3] = Math.round(t * 255);
+      }
+      g.putImageData(clean, 0, 0);
+      return new Promise<void>((done) =>
+        c.toBlob((blob) => {
+          if (blob) fits[url] = { ...fit, mask: URL.createObjectURL(blob) };
+          done();
+        }),
+      );
     })
     .catch(() => {})
     .finally(() => pending.delete(url));
+}
+
+/** The mask to draw an icon with: its clean one once measured, else the image itself. */
+export function maskOf(url: string) {
+  return fits[url]?.mask ?? url;
 }
 
 /** The emblem's style for an icon, `k` times the common size and moved `up` and `left`: its fit as custom properties, once measured. */
