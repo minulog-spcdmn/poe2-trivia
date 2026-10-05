@@ -13,6 +13,19 @@
 
 <span class="engraving" bind:clientWidth={w} bind:clientHeight={h} aria-hidden="true">
   {#if plate}
+    {#if plate.window && plate.fade}
+      <!-- The card's warm glow, behind the emblem and only inside the window. -->
+      <svg class="window" viewBox="0 0 {w} {h}">
+        <defs>
+          <radialGradient id="{uid}-warm" cx={plate.fade.c[0]} cy={plate.fade.c[1]} r="96" gradientUnits="userSpaceOnUse" gradientTransform="translate({plate.fade.c[0]} {plate.fade.c[1]}) scale(1 1.15) translate({-plate.fade.c[0]} {-plate.fade.c[1]})">
+            <stop offset="0" class="warm" style="stop-opacity: 0.5" />
+            <stop offset="0.55" class="warm" style="stop-opacity: 0.2" />
+            <stop offset="1" class="warm" style="stop-opacity: 0" />
+          </radialGradient>
+        </defs>
+        <path d={plate.window} style:fill="url(#{uid}-warm)" />
+      </svg>
+    {/if}
     {#each ['glow', 'lines'] as layer (layer)}
       <svg class={layer} viewBox="0 0 {w} {h}">
         {#if plate.fade}
@@ -48,6 +61,9 @@
     width: 100%;
     height: 100%;
     overflow: visible;
+  }
+  .warm {
+    stop-color: var(--warm);
   }
   path {
     fill: none;
@@ -89,6 +105,9 @@
   }
   .fill {
     fill: currentColor;
+    stroke: none;
+  }
+  .window path {
     stroke: none;
   }
   /* The glow: the same strokes, wide and faint, under the lines. */

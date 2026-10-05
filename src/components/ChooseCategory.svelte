@@ -1,7 +1,8 @@
 <script lang="ts">
   import { cubicInOut, cubicOut } from 'svelte/easing';
   import { session } from '../lib/session.svelte';
-  import { categoryIcon } from '../lib/ui';
+  import { categoryIcon, categoryIcons } from '../lib/ui';
+  import { fits, fitStyle, measure } from '../lib/iconFit.svelte';
   import { difficultyOf, rulesFor } from '../lib/game';
   import { deathmatchText, lockoutText } from '../lib/difficultyText';
   import { sfx } from '../lib/sound';
@@ -16,6 +17,9 @@
   const lockout = $derived(rulesFor(s.settings).lockout);
 
   let picked = $state<string | null>(null);
+
+  // Size each emblem by its visible shape (see lib/iconFit); measured while the cards lie face down.
+  for (const url of categoryIcons()) measure(url);
 
   // The deal: the cards slide in face down one after another, then turn face
   // up from left to right. Seconds from when they appear.
@@ -141,13 +145,10 @@
     <filter id="card-emblem-shadow" x="-20%" y="-20%" width="140%" height="140%" color-interpolation-filters="sRGB">
       <!-- The art's faint baked-in shadow would cast a dark disc: keep only what's at least half opaque. -->
       <feComponentTransfer in="SourceAlpha" result="solid"><feFuncA type="discrete" tableValues="0 1" /></feComponentTransfer>
-      <!-- A tight dark rim round the silhouette, and a softer shadow below it. -->
-      <feMorphology in="solid" operator="dilate" radius="1.2" result="wide" />
-      <feGaussianBlur in="wide" stdDeviation="1.6" result="rim" />
-      <feGaussianBlur in="solid" stdDeviation="4" result="soft" />
-      <feOffset in="soft" dy="4" result="drop" />
-      <feMerge result="shade"><feMergeNode in="drop" /><feMergeNode in="rim" /></feMerge>
-      <feFlood flood-color="#060403" flood-opacity="0.85" />
+      <!-- A soft, wide shadow, a little below it. -->
+      <feGaussianBlur in="solid" stdDeviation="7" />
+      <feOffset dy="3" result="shade" />
+      <feFlood flood-color="#060403" flood-opacity="0.55" />
       <feComposite operator="in" in2="shade" result="shadow" />
       <feMerge><feMergeNode in="shadow" /><feMergeNode in="SourceGraphic" /></feMerge>
     </filter>
@@ -193,7 +194,7 @@
             <span class="sheen"></span>
             <span class="filigree"></span>
             <span class="icon">
-              <span class="lit"><span class="glyph" style:--src="url('{categoryIcon(cat)}')"></span></span>
+              <span class="lit"><span class="glyph" class:fit={!!fits[categoryIcon(cat)]} style={fitStyle(categoryIcon(cat))} style:--src="url('{categoryIcon(cat)}')"></span></span>
             </span>
             <span class="title">{cat}</span>
           </span>
@@ -232,8 +233,9 @@
     gap: 1.4rem;
   }
   .card {
-    /* The engraving's gold. */
+    /* The engraving's gold, and the warm glow in the face's window. */
     --ink: #c9a05a;
+    --warm: #c8682a;
     /* A faint grain over both sides, so they read as worked plates rather than flat fills. */
     --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 .86 0 0 0 0 .62 .08 0 0 0 -.025'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")
       0 0 / 180px;
@@ -290,7 +292,6 @@
     border: 1px solid var(--gold-lo);
     background:
       var(--grain),
-      radial-gradient(ellipse 78% 52% at 50% 132px, rgba(175, 96, 37, 0.3), transparent),
       radial-gradient(ellipse 120% 90% at 50% 45%, transparent 50%, rgba(0, 0, 0, 0.5)),
       linear-gradient(170deg, #211912, #0d0a07 70%);
     --bs1: 16px 40px;
@@ -362,6 +363,18 @@
     transition:
       transform 0.5s var(--ease-out),
       opacity 0.4s;
+  }
+  /* Once measured: the box is the visible item, scaled to a common weight
+     (lib/iconFit), and the image is placed so its visible part fills it.
+     --e-s scales it all down for a card in a row. */
+  .glyph.fit {
+    --u: calc(var(--e-s, 1) * 1px);
+    width: calc(var(--e-w) * var(--u));
+    height: calc(var(--e-h) * var(--u));
+    -webkit-mask-size: calc(var(--e-iw) * var(--u)) calc(var(--e-ih) * var(--u));
+    mask-size: calc(var(--e-iw) * var(--u)) calc(var(--e-ih) * var(--u));
+    -webkit-mask-position: calc(var(--e-x) * var(--u) * -1) calc(var(--e-y) * var(--u) * -1);
+    mask-position: calc(var(--e-x) * var(--u) * -1) calc(var(--e-y) * var(--u) * -1);
   }
   /* As the face turns up in the deal, its emblem kindles and light runs across it. */
   .turn:global(.dealt) .glyph {
@@ -438,7 +451,6 @@
     --bs-ring: rgba(140, 58, 44, 0.45);
     background:
       var(--grain),
-      radial-gradient(ellipse 78% 52% at 50% 132px, rgba(224, 85, 63, 0.3), transparent),
       radial-gradient(ellipse 120% 90% at 50% 45%, transparent 50%, rgba(0, 0, 0, 0.5)),
       linear-gradient(170deg, #22110d, #0d0706 70%);
   }
@@ -455,6 +467,7 @@
   }
   .card.dm {
     --ink: #c85a44;
+    --warm: #e0553f;
   }
   .card.dm .glyph {
     background: linear-gradient(180deg, #e2b2a2 0%, #b4432f 50%, #52140b 100%);
@@ -589,6 +602,19 @@
       /* The emblem 54 in and the divider halfway to the name (ROW). */
       padding: 13px 22px;
       gap: 32px;
+      /* No window in a row: the warm glow sits round the emblem instead. */
+      background:
+        var(--grain),
+        radial-gradient(circle at 54px 50%, color-mix(in srgb, var(--warm) 28%, transparent), transparent 62px),
+        radial-gradient(ellipse 120% 90% at 50% 45%, transparent 50%, rgba(0, 0, 0, 0.5)),
+        linear-gradient(170deg, #211912, #0d0a07 70%);
+    }
+    .card.dm .frame {
+      background:
+        var(--grain),
+        radial-gradient(circle at 54px 50%, color-mix(in srgb, var(--warm) 28%, transparent), transparent 62px),
+        radial-gradient(ellipse 120% 90% at 50% 45%, transparent 50%, rgba(0, 0, 0, 0.5)),
+        linear-gradient(170deg, #22110d, #0d0706 70%);
     }
     .icon {
       position: relative;
@@ -600,6 +626,7 @@
     .glyph {
       width: 60px;
       height: 60px;
+      --e-s: 0.5;
     }
     .title {
       position: static;

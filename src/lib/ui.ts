@@ -39,3 +39,8 @@ for (const cat of engine.categories) {
 export function categoryIcon(category: string) {
   return icons.get(category)!;
 }
+
+/** Every category's icon (to measure them all ahead of the deal). */
+export function categoryIcons() {
+  return [...icons.values()];
+}

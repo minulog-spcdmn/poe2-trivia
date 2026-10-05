@@ -125,6 +125,8 @@ const notched = (x0: number, y0: number, x1: number, y1: number, n: number, d: n
 class Plate {
   out: Stroke[] = [];
   fade: Fade | null = null;
+  /** The face's window (inside the arch), which the card's warm glow fills. */
+  window: string | null = null;
   add(d: string, cls: Cls) {
     if (d) this.out.push({ d, cls });
   }
@@ -484,6 +486,7 @@ const tallFace = (w: number, h: number, p: Plate) => {
   // The pedestal stands in front of the rays.
   p.out = p.out.map((s) => (s.cls === 'ray' ? { ...s, d: clipOut(s.d, daisCuts) } : s));
   p.fade = { c: C, from: 60, r: 128 };
+  p.window = `M${f(MID - ri)} ${f(y1 - 2.5)}V${f(S)}A${f(ri)} ${f(ri)} 0 0 1 ${f(MID + ri)} ${f(S)}V${f(y1 - 2.5)}Z`;
 };
 
 /** Straight segments `d` (M…L… pairs) with the stretches `cuts` gives taken out. */
@@ -561,5 +564,5 @@ export const engrave = (side: 'face' | 'back', w: number, h: number) => {
   // Merge each class into one path.
   const by = new Map<Cls, string>();
   for (const { d, cls } of p.out) by.set(cls, (by.get(cls) ?? '') + d);
-  return { strokes: [...by].map(([cls, d]) => ({ cls, d })), fade: p.fade };
+  return { strokes: [...by].map(([cls, d]) => ({ cls, d })), fade: p.fade, window: p.window };
 };
