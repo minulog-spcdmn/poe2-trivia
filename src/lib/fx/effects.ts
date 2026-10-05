@@ -620,7 +620,11 @@ export function sigil(at: Anchor, o: { radius?: number; color?: Vec3; life?: num
   });
 }
 
-/** Glow creeping in from the screen edges (danger, urgency). */
+/**
+ * Glow creeping in from the screen edges (danger, urgency). It frames the
+ * visible area (innerWidth/innerHeight) rather than the canvas, which reaches
+ * under a phone's toolbars, so it follows them as they slide.
+ */
 export function edgeGlow(o: { color?: Vec3; width?: number; life?: number; intensity?: number; noise?: number } = {}) {
   const life = o.life ?? 0.8;
   return shape({

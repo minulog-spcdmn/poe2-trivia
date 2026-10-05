@@ -11,11 +11,14 @@
 <canvas bind:this={canvas} class="fx" aria-hidden="true"></canvas>
 
 <style>
+  /* A fixed height, so a phone's toolbars sliding don't resize (and clear)
+     the canvas (see --screen-h in app.css). Effects are placed by the
+     elements they play on; the edge glow follows the visible area. */
   .fx {
     position: fixed;
     inset: 0;
     width: 100%;
-    height: 100%;
+    height: var(--screen-h);
     z-index: 95;
     pointer-events: none;
     mix-blend-mode: screen;

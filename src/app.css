@@ -56,6 +56,16 @@
   --pinned-bg: rgba(10, 8, 6, 0.94);
   --pinned-line: 1px solid rgba(125, 99, 51, 0.35);
   --pinned-shadow: 22px rgba(0, 0, 0, 0.55);
+  /* Phone browsers slide their toolbars in and out while the page scrolls,
+     resizing the viewport. Layers that paint the whole screen (the backdrop,
+     the effects) are --screen-h tall, the height with the toolbars hidden, so
+     the toolbars cover and uncover their bottom edge instead of resizing them.
+     What they compose (gradients, the vignette) is laid out for --view-h, the
+     height with the toolbars showing, so it sits centred in what's visible
+     then. Both stay put while the toolbars slide. Overlays that centre a
+     dialog keep inset: 0, so it stays centred in what's visible. */
+  --screen-h: 100vh;
+  --view-h: 100vh;
   /* Gold filigree for the four corners of panels and cards, as one background. */
   --filigree:
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23f6e3ad'/%3E%3Cstop offset='.5' stop-color='%23c9a45c'/%3E%3Cstop offset='1' stop-color='%236d5329' stop-opacity='0'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cg transform=''%3E%3Cpath d='M1.5 29V8L8 1.5h21' fill='none' stroke='url(%23g)' stroke-width='1.6'/%3E%3Cpath d='M5.5 24V10.5l5-5H24' fill='none' stroke='%238a6a35' stroke-opacity='.6' stroke-width='.9'/%3E%3Cpath d='M4.8 1.6 8 4.8 4.8 8 1.6 4.8Z' fill='%23f6e3ad'/%3E%3Ccircle cx='12.5' cy='12.5' r='1.1' fill='%23c9a45c' fill-opacity='.8'/%3E%3C/g%3E%3C/svg%3E") top left / 30px 30px no-repeat,
@@ -63,6 +73,13 @@
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23f6e3ad'/%3E%3Cstop offset='.5' stop-color='%23c9a45c'/%3E%3Cstop offset='1' stop-color='%236d5329' stop-opacity='0'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cg transform='translate(0 30) scale(1 -1)'%3E%3Cpath d='M1.5 29V8L8 1.5h21' fill='none' stroke='url(%23g)' stroke-width='1.6'/%3E%3Cpath d='M5.5 24V10.5l5-5H24' fill='none' stroke='%238a6a35' stroke-opacity='.6' stroke-width='.9'/%3E%3Cpath d='M4.8 1.6 8 4.8 4.8 8 1.6 4.8Z' fill='%23f6e3ad'/%3E%3Ccircle cx='12.5' cy='12.5' r='1.1' fill='%23c9a45c' fill-opacity='.8'/%3E%3C/g%3E%3C/svg%3E") bottom left / 30px 30px no-repeat,
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23f6e3ad'/%3E%3Cstop offset='.5' stop-color='%23c9a45c'/%3E%3Cstop offset='1' stop-color='%236d5329' stop-opacity='0'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cg transform='translate(30 30) scale(-1 -1)'%3E%3Cpath d='M1.5 29V8L8 1.5h21' fill='none' stroke='url(%23g)' stroke-width='1.6'/%3E%3Cpath d='M5.5 24V10.5l5-5H24' fill='none' stroke='%238a6a35' stroke-opacity='.6' stroke-width='.9'/%3E%3Cpath d='M4.8 1.6 8 4.8 4.8 8 1.6 4.8Z' fill='%23f6e3ad'/%3E%3Ccircle cx='12.5' cy='12.5' r='1.1' fill='%23c9a45c' fill-opacity='.8'/%3E%3C/g%3E%3C/svg%3E") bottom right / 30px 30px no-repeat;
   color-scheme: dark;
+}
+
+@supports (height: 100lvh) {
+  :root {
+    --screen-h: 100lvh;
+    --view-h: 100svh;
+  }
 }
 
 * {

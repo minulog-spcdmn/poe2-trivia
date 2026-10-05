@@ -2,7 +2,7 @@
   import { cubicInOut, cubicOut } from 'svelte/easing';
   import { session } from '../lib/session.svelte';
   import { categoryIcon, categoryIconTweak, categoryIcons } from '../lib/ui';
-  import { fits, fitStyle, measure } from '../lib/iconFit.svelte';
+  import { fits, fitStyle, maskOf, measure } from '../lib/iconFit.svelte';
   import { difficultyOf, rulesFor } from '../lib/game';
   import { deathmatchText, lockoutText } from '../lib/difficultyText';
   import { sfx } from '../lib/sound';
@@ -140,20 +140,6 @@
 </script>
 
 <div class="choose">
-  <!-- The emblems' shadow (see .lit): cast from the art's solid shape only. -->
-  <svg class="defs" aria-hidden="true">
-    <!-- Its region is roomy so a small or slim emblem (in a row, on phones) keeps all of its shadow. -->
-    <filter id="card-emblem-shadow" x="-50%" y="-50%" width="200%" height="200%" color-interpolation-filters="sRGB">
-      <!-- The art's faint baked-in shadow would cast a dark disc: keep only what's at least half opaque. -->
-      <feComponentTransfer in="SourceAlpha" result="solid"><feFuncA type="discrete" tableValues="0 1" /></feComponentTransfer>
-      <!-- The original card's shadow: tight, just below it, as if lifted off the card. -->
-      <feGaussianBlur in="solid" stdDeviation="3" />
-      <feOffset dy="4" result="shade" />
-      <feFlood flood-color="#000" flood-opacity="0.8" />
-      <feComposite operator="in" in2="shade" result="shadow" />
-      <feMerge><feMergeNode in="shadow" /><feMergeNode in="SourceGraphic" /></feMerge>
-    </filter>
-  </svg>
   <p class="prompt">
     {#if s.deathmatch}
       {#if mine}Sudden death: your category is drawn at random.{:else}<span class="muted">Sudden death for</span> {active.name}<span class="muted">…</span>{/if}
@@ -195,7 +181,7 @@
             <span class="sheen"></span>
             <span class="filigree"></span>
             <span class="icon">
-              <span class="lit"><span class="glyph" class:fit={!!fits[categoryIcon(cat)]} style={fitStyle(categoryIcon(cat), categoryIconTweak(cat))} style:--src="url('{categoryIcon(cat)}')"></span></span>
+              <span class="lit"><span class="glyph" class:fit={!!fits[categoryIcon(cat)]} style={fitStyle(categoryIcon(cat), categoryIconTweak(cat))} style:--src="url('{maskOf(categoryIcon(cat))}')"></span></span>
             </span>
             <span class="title">{cat}</span>
           </span>
@@ -212,11 +198,6 @@
 </div>
 
 <style>
-  .defs {
-    position: absolute;
-    width: 0;
-    height: 0;
-  }
   .choose {
     display: flex;
     flex-direction: column;
@@ -348,17 +329,19 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    /* The emblem's warm glow, under its shadow (see .lit). */
+    filter: drop-shadow(0 0 12px rgba(224, 138, 68, 0.45));
   }
-  /* The emblem's shadow and warm glow, on a layer of its own so the
-     engraving stays crisp. The shadow comes from #card-emblem-shadow, cast
-     from the art's solid shape only; the glow comes after it, as an SVG
-     filter's region would cut a wide glow off round a small emblem (WebKit
-     shows the cut as a box). */
+  /* The emblem's shadow, on a layer of its own so the engraving stays
+     crisp: the original card's, tight, just below it, as if lifted off the
+     card. It's cast from the clean mask (see lib/iconFit), so the art's own
+     faint shadow casts none, and it lies over the glow (on .icon) rather
+     than under it, where the glow would wash it out. */
   .lit {
     position: relative;
     display: grid;
     place-items: center;
-    filter: url(#card-emblem-shadow) drop-shadow(0 0 12px rgba(224, 138, 68, 0.45));
+    filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.8));
   }
   .glyph {
     width: 130px;

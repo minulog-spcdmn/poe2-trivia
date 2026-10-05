@@ -52,12 +52,21 @@
     if (matchMedia('(prefers-reduced-motion: reduce)').matches || fxActive() || !fxUserOn()) return;
     const ctx = canvas.getContext('2d')!;
     const dpr = Math.min(2, devicePixelRatio);
+    // Sized from the canvas, which keeps its height while a phone's toolbars
+    // slide (innerHeight follows them), and only when that size changes:
+    // setting the size clears the canvas.
+    let w = 0;
+    let h = 0;
     const resize = () => {
-      canvas.width = innerWidth * dpr;
-      canvas.height = innerHeight * dpr;
+      if (canvas.clientWidth === w && canvas.clientHeight === h) return;
+      w = canvas.clientWidth;
+      h = canvas.clientHeight;
+      canvas.width = w * dpr;
+      canvas.height = h * dpr;
     };
     resize();
-    addEventListener('resize', resize);
+    const ro = new ResizeObserver(resize);
+    ro.observe(canvas);
     const colors = ['#f1d99b', '#c9a45c', '#e08a44', '#fff4d6', playerColor(winner?.hue ?? 0)];
     type P = { x: number; y: number; vx: number; vy: number; life: number; size: number; c: string; spin: number };
     const parts: P[] = [];
@@ -81,9 +90,9 @@
     let t = 0;
     const tick = () => {
       t++;
-      if (t < 200 && t % 40 === 1) burst(innerWidth * (0.2 + Math.random() * 0.6), innerHeight * (0.2 + Math.random() * 0.3), 90);
+      if (t < 200 && t % 40 === 1) burst(w * (0.2 + Math.random() * 0.6), h * (0.2 + Math.random() * 0.3), 90);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.clearRect(0, 0, innerWidth, innerHeight);
+      ctx.clearRect(0, 0, w, h);
       for (let i = parts.length - 1; i >= 0; i--) {
         const p = parts[i];
         p.vy += 0.12;
@@ -92,7 +101,7 @@
         p.y += p.vy;
         p.life -= 0.008;
         p.spin += 0.2;
-        if (p.life <= 0 || p.y > innerHeight + 20) {
+        if (p.life <= 0 || p.y > h + 20) {
           parts.splice(i, 1);
           continue;
         }
@@ -109,7 +118,7 @@
     raf = requestAnimationFrame(tick);
     return () => {
       cancelAnimationFrame(raf);
-      removeEventListener('resize', resize);
+      ro.disconnect();
     };
   });
 
@@ -183,7 +192,7 @@
     position: fixed;
     inset: 0;
     width: 100vw;
-    height: 100vh;
+    height: var(--screen-h);
     pointer-events: none;
     z-index: 5;
   }
