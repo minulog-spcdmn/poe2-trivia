@@ -1160,7 +1160,8 @@
     cursor: pointer;
   }
   /* Hovered, or picked and waiting for the verdict: the row stays put and lights up. */
-  .option.mine:not(:disabled):is(:hover, :focus-visible),
+  .option.mine:not(:disabled):hover,
+  .option.mine:not(:disabled):focus-visible,
   .option.pending {
     border-color: var(--gold);
     --bs-ring: rgba(241, 217, 155, 0.1);
@@ -1172,32 +1173,46 @@
   :is(.option, .tile).mine:not(:disabled):hover .sheen::before {
     animation: sweep 0.8s var(--ease-out);
   }
-  :is(:is(.option, .tile).mine:not(:disabled):is(:hover, :focus-visible), :is(.option, .tile).pending) .sheen::after,
-  :is(:is(.option, .tile).mine:not(:disabled):is(:hover, :focus-visible), :is(.option, .tile).pending) .cue,
-  :is(.option, .tile).mine:not(:disabled):is(:hover, :focus-visible)::after,
+  :is(.option, .tile).mine:not(:disabled):hover .sheen::after,
+  :is(.option, .tile).mine:not(:disabled):focus-visible .sheen::after,
+  :is(.option, .tile).pending .sheen::after,
+  :is(.option, .tile).mine:not(:disabled):hover .cue,
+  :is(.option, .tile).mine:not(:disabled):focus-visible .cue,
+  :is(.option, .tile).pending .cue,
+  :is(.option, .tile).mine:not(:disabled):hover::after,
+  :is(.option, .tile).mine:not(:disabled):focus-visible::after,
   :is(.option, .tile).pending::after {
     opacity: 1;
   }
-  :is(.option, .tile).mine:not(:disabled):is(:hover, :focus-visible)::after,
+  :is(.option, .tile).mine:not(:disabled):hover::after,
+  :is(.option, .tile).mine:not(:disabled):focus-visible::after,
   :is(.option, .tile).pending::after {
     scale: 1 1;
   }
-  :is(:is(.option, .tile).mine:not(:disabled):is(:hover, :focus-visible), :is(.option, .tile).pending) .key {
+  :is(.option, .tile).mine:not(:disabled):hover .key,
+  :is(.option, .tile).mine:not(:disabled):focus-visible .key,
+  :is(.option, .tile).pending .key {
     color: #fff4d8;
     border-color: var(--gold-hi);
     box-shadow: 0 0 12px rgba(241, 217, 155, 0.4);
   }
-  :is(:is(.option, .tile).mine:not(:disabled):is(:hover, :focus-visible), :is(.option, .tile).pending) .key::before {
+  :is(.option, .tile).mine:not(:disabled):hover .key::before,
+  :is(.option, .tile).mine:not(:disabled):focus-visible .key::before,
+  :is(.option, .tile).pending .key::before {
     opacity: 1;
   }
   :is(.option, .tile).mine:not(:disabled):hover .key::after {
     animation: key-ripple 0.7s var(--ease-out);
   }
-  :is(.option.mine:not(:disabled):is(:hover, :focus-visible), .option.pending) .text {
+  .option.mine:not(:disabled):hover .text,
+  .option.mine:not(:disabled):focus-visible .text,
+  .option.pending .text {
     color: #fff1dc;
     text-shadow: 0 0 14px rgba(241, 217, 155, 0.35);
   }
-  :is(:is(.option, .tile).mine:not(:disabled):is(:hover, :focus-visible), :is(.option, .tile).pending) .cue {
+  :is(.option, .tile).mine:not(:disabled):hover .cue,
+  :is(.option, .tile).mine:not(:disabled):focus-visible .cue,
+  :is(.option, .tile).pending .cue {
     translate: 0 -50%;
   }
   .option.mine:not(:disabled):active {
@@ -1426,14 +1441,17 @@
   }
   /* Hovered, or picked and waiting for the verdict: lit like the answer rows,
      and the picture comes forward. */
-  .tile.mine:not(:disabled):is(:hover, :focus-visible),
+  .tile.mine:not(:disabled):hover,
+  .tile.mine:not(:disabled):focus-visible,
   .tile.pending {
     border-color: var(--gold);
     box-shadow:
       inset 0 0 0 1px rgba(241, 217, 155, 0.1),
       inset 0 0 30px rgba(201, 164, 92, 0.18);
   }
-  :is(.tile.mine:not(:disabled):is(:hover, :focus-visible), .tile.pending) .pic {
+  .tile.mine:not(:disabled):hover .pic,
+  .tile.mine:not(:disabled):focus-visible .pic,
+  .tile.pending .pic {
     transform: scale(1.06);
   }
   /* A picture is tall: a wider glow, and the embers kept to the bottom edge. */
