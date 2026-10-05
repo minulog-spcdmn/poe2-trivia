@@ -504,12 +504,6 @@
     gap: 0.5rem;
     margin-top: auto;
   }
-  /* Both modes end on one row of the same height: the host's button and the
-     code field with its button. */
-  .mode .btn,
-  .mode .field {
-    height: 3.1rem;
-  }
   .code {
     font-family: var(--font-cinzel);
     font-weight: 700;
@@ -517,6 +511,8 @@
     text-align: center;
     text-transform: uppercase;
     min-width: 0;
+    /* Stretched to the Join button's height, so this row matches Create room. */
+    padding-block: 0;
   }
 
   .or {
