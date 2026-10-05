@@ -1,260 +1,200 @@
 <script lang="ts">
   import { DELVE_LIVES } from '../../lib/delve';
-  import { zoneOf, type FindStats, type RunStory } from '../../lib/codexStats';
+  import { zoneOf, type RunStory } from '../../lib/codexStats';
   import type { DelveRun } from '../../lib/delveRecord';
   import { itemImage } from '../../lib/ui';
-  import { backdropShadow } from '../../lib/backdropShadow';
   import type { Item } from '../../lib/game';
-  import Num from './Num.svelte';
 
-  // The latest run: how deep, where each life went and what took it, the
-  // finds it took, and how it compares with your typical depth.
+  // The latest run in one row: how deep, where, when and how it compares, and
+  // a small picture of each item that cost a life, its depth beneath.
   let { run, story, median, best, onopen }: { run: DelveRun; story: RunStory; median: number | null; best: number | null; onopen: (item: Item) => void } =
     $props();
 
-  const when = (t: number) =>
-    new Date(t).toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-  const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+  const when = (t: number) => new Date(t).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
   const typical = (m: number) => (Number.isInteger(m) ? `${m}` : m.toFixed(1));
 
-  const who = $derived(
-    run.hot ? `Hot-seat, ${run.players} players: the group's deepest` : run.players < 2 ? 'Alone' : `${run.players} players${run.won ? ', delved deepest' : ''}`,
-  );
+  const who = $derived(run.hot ? `Hot-seat, ${run.players} players` : run.players < 2 ? 'Alone' : `${run.players} players`);
   const zone = $derived(zoneOf(run.depth));
   /** Lives still in the phial when a run was left. */
   const kept = $derived(run.left ? DELVE_LIVES - story.lives.length : 0);
   const diff = $derived(median === null || run.left ? null : run.depth - median);
-
-  const word = (n: number, one: string, many = `${one}s`) => (n === 1 ? one : many);
-  /** What the run's finds came to: a count and what it counts, then how it ended. */
-  function findsOf(f: FindStats): { n: number; what: string; how?: string }[] {
-    const v = f.finds.azurite;
-    const c = f.finds.flare;
-    const d = f.finds.dynamite;
-    const out: { n: number; what: string; how?: string }[] = [];
-    if (v.taken) {
-      const how = [v.gained.wards ? plural(v.gained.wards, 'ward') : '', v.gained.shards ? plural(v.gained.shards, 'shard') : '', v.taken - v.ok ? `${v.taken - v.ok} caved in` : '']
-        .filter(Boolean)
-        .join(', ');
-      out.push({ n: v.taken, what: word(v.taken, 'Azurite Vein'), how });
-    }
-    if (c.taken) out.push({ n: c.taken, what: word(c.taken, 'Flare Cache'), how: c.gained.flares ? plural(c.gained.flares, 'flare') : 'missed' });
-    if (d.taken) out.push({ n: d.taken, what: word(d.taken, 'Dynamite Cache') });
-    if (f.wardsBroke) out.push({ n: f.wardsBroke, what: `${word(f.wardsBroke, 'ward')} broke in place of a life` });
-    if (f.flaresBurnt) out.push({ n: f.flaresBurnt, what: `${word(f.flaresBurnt, 'flare')} burnt` });
+  const isBest = $derived(!run.left && best === run.depth);
+  /** Finds it took, in a few words. */
+  const found = $derived.by(() => {
+    const f = story.finds.finds;
+    const out: [number, string][] = [];
+    if (f.azurite.taken) out.push([f.azurite.taken, f.azurite.taken === 1 ? 'vein' : 'veins']);
+    if (f.flare.taken) out.push([f.flare.taken, f.flare.taken === 1 ? 'flare cache' : 'flare caches']);
+    if (f.dynamite.taken) out.push([f.dynamite.taken, f.dynamite.taken === 1 ? 'dynamite cache' : 'dynamite caches']);
+    if (story.finds.wardsBroke) out.push([story.finds.wardsBroke, story.finds.wardsBroke === 1 ? 'ward broke' : 'wards broke']);
     return out;
-  }
-  const finds = $derived(findsOf(story.finds));
+  });
 </script>
 
-<section class="panel wide last" use:backdropShadow={{ fill: 'linear' }} aria-labelledby="last-h">
-  <header>
-    <h2 id="last-h">Last run</h2>
-    <span class="when n">{when(run.at)}</span>
-  </header>
-  <div class="body">
-    <div class="depth" class:left={run.left}>
-      <span class="big n">{run.depth}</span>
-      <span class="label">{run.left ? 'left at' : 'fell at'}</span>
-    </div>
-    <div class="info">
-      <p class="lead">
-        {who}. {run.left ? 'Left' : 'Fell'} in <span class="zname">{zone.name}</span>{#if run.left}, with <b class="n">{kept}</b> {kept === 1 ? 'life' : 'lives'} to spare{/if}.
-        {#if !run.left && best === run.depth}
-          <span class="cmp up">Your best.</span>
-        {:else if diff !== null && median !== null}
-          <span class="cmp" class:up={diff > 0}>
-            {#if diff > 0}<b class="n">{typical(diff)}</b> deeper than{:else if diff < 0}<b class="n">{typical(-diff)}</b> short of{:else}Right at{/if} your typical
-            <b class="n">{typical(median)}</b>.
-          </span>
-        {/if}
-      </p>
-      {#if story.lives.length}
-        <ol class="lives" aria-label="Where each life went">
-          {#each story.lives as l, i (i)}
-            {@const fall = !run.left && i === story.lives.length - 1}
-            <li>
-              <span class="pip" class:fall aria-hidden="true"></span>
-              <span class="l-depth n">{l.depth}</span>
-              {#if l.item}
-                {@const it = l.item}
-                <button class="took" onclick={() => onopen(it)} aria-label="{fall ? 'Your last life' : `Life ${i + 1}`}, depth {l.depth}: {it.name}{l.caveIn ? ', a cave-in' : ''}">
-                  <span class="thumb"><img src={itemImage(it.id)} alt="" loading="lazy" /></span>
-                  <span class="took-name"><span>{it.name}</span><small>in {l.zone.name}{l.caveIn ? ' • a cave-in' : ''}</small></span>
-                </button>
-              {:else}
-                <span class="took none"><span class="thumb none" aria-hidden="true">?</span><span class="took-name"><span class="faint">not logged</span><small>in {l.zone.name}</small></span></span>
-              {/if}
-            </li>
-          {/each}
-        </ol>
-      {:else if run.left}
-        <p class="quiet">Not a life lost.</p>
-      {/if}
-      <p class="quiet">
-        {#if finds.length}{#each finds as f, i (i)}{i ? ' • ' : ''}<span class="n">{f.n}</span> {f.what}{#if f.how}&nbsp;(<Num text={f.how} />){/if}{/each}.{:else if story.answers}No finds taken.{:else if run.hot}Hot-seat answers with several players aren't written into the codex.{:else}No answer of yours was logged for this run.{/if}
-      </p>
-    </div>
+<section class="last" aria-labelledby="last-h">
+  <div class="depth">
+    <span class="label" id="last-h">Last run</span>
+    <span class="value">{run.depth}</span>
   </div>
+  <div class="text">
+    <p class="lead">
+      {who} • {run.left ? 'left' : 'fell'} in <span class="zname">{zone.name}</span>{#if run.left}, <span class="n">{kept}</span>
+        {kept === 1 ? 'life' : 'lives'} to spare{/if}{#if isBest}{' • '}<span class="up">your best</span>{/if}
+    </p>
+    <p class="note">
+      <span class="n">{when(run.at)}</span>{#if diff !== null && median !== null && !isBest}{' • '}{#if diff > 0}<span class="n">{typical(diff)}</span> deeper than{:else if diff < 0}<span class="n">{typical(-diff)}</span> short of{:else}right at{/if}
+        your typical <span class="n">{typical(median)}</span>{/if}{#each found as [n, w] (w)}{' • '}<span class="n">{n}</span> {w}{/each}
+    </p>
+  </div>
+  {#if story.lives.length}
+    <ol class="lost" aria-label="Lives lost">
+      {#each story.lives as l, i (i)}
+        <li>
+          {#if l.item}
+            {@const it = l.item}
+            <button class="thumb" onclick={() => onopen(it)} title="Depth {l.depth}, {l.zone.name}: {it.name}{l.caveIn ? ' (a cave-in)' : ''}" aria-label="Life lost at depth {l.depth} to {it.name}{l.caveIn ? ', a cave-in' : ''}">
+              <img src={itemImage(it.id)} alt="" loading="lazy" />
+            </button>
+          {:else}
+            <span class="thumb none" title="Depth {l.depth}: not logged" role="img" aria-label="Life lost at depth {l.depth}, item not logged">?</span>
+          {/if}
+          <span class="at n" aria-hidden="true">{l.depth}</span>
+        </li>
+      {/each}
+    </ol>
+  {:else if run.left}
+    <p class="note">No life lost</p>
+  {/if}
 </section>
 
 <style>
-  .when {
-    font-size: 0.78rem;
-    font-weight: 400;
-    color: var(--muted);
-  }
-  .body {
+  /* As the Collection's rows: a dark strip with a fine border. */
+  .last {
     display: grid;
-    grid-template-columns: 5.5rem minmax(0, 1fr);
-    gap: 1rem;
-    align-items: start;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.4rem 1.1rem;
+    padding: 0.55rem 0.9rem;
+    border: 1px solid rgba(59, 48, 36, 0.6);
+    border-radius: 4px;
+    background: rgba(0, 0, 0, 0.25);
   }
   .depth {
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding-top: 0.2rem;
+    min-width: 4.2rem;
   }
-  .big {
-    font-size: 2.8rem;
-    line-height: 1;
+  .label {
+    font-family: var(--font-display);
+    font-size: 0.66rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .value {
+    font-family: var(--font-cinzel);
+    font-weight: 700;
+    font-size: 1.7rem;
+    line-height: 1.05;
     background: linear-gradient(180deg, #fff1c9 15%, #d7b068 55%, #9a7230 95%);
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;
     filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.8));
   }
-  .label {
-    margin-top: 0.3rem;
-    font-family: var(--font-display);
-    font-size: 0.66rem;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
-    color: var(--muted);
-  }
-  .info {
+  .text {
     min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.7rem;
+  }
+  .text p {
+    margin: 0;
   }
   .lead {
-    margin: 0;
-    font-size: 1.05rem;
-    line-height: 1.4;
+    font-size: 1rem;
+    line-height: 1.3;
   }
   .zname {
-    font-family: var(--font-display);
-    letter-spacing: 0.04em;
     color: var(--gold-hi);
   }
-  .cmp {
+  .up {
+    color: var(--gold);
     font-style: italic;
+  }
+  .note {
+    font-size: 0.88rem;
+    font-style: italic;
+    line-height: 1.3;
     color: var(--muted);
   }
-  .cmp.up {
-    color: #e8a36a;
+  .n {
+    font-family: var(--font-cinzel);
+    font-style: normal;
+    font-size: 0.85em;
   }
-  .cmp .n {
-    font-size: 0.9em;
-  }
-  .lives {
+  .lost {
     list-style: none;
     margin: 0;
     padding: 0;
-    display: grid;
-    grid-template-columns: 12px 2.2rem minmax(0, 1fr);
-    align-items: center;
-    column-gap: 0.6rem;
-    row-gap: 0.4rem;
-  }
-  .lives li {
-    display: contents;
-  }
-  .pip {
-    justify-self: center;
-    width: 8px;
-    height: 8px;
-    rotate: 45deg;
-    border: 1px solid #e6c47e;
-    background: #1a120a;
-  }
-  .pip.fall {
-    width: 10px;
-    height: 10px;
-    border-color: #ffd59a;
-    background: radial-gradient(circle, #fff1c9, #ff8a32 45%, #c22a10);
-    box-shadow: 0 0 8px rgba(255, 120, 50, 0.8);
-  }
-  .l-depth {
-    font-size: 0.9rem;
-    text-align: right;
-    color: var(--gold-hi);
-  }
-  .faint {
-    font-style: italic;
-    color: var(--muted);
-  }
-  .took {
-    min-width: 0;
-    min-height: 44px;
     display: flex;
-    align-items: center;
-    gap: 0.55rem;
-    padding: 2px 0.6rem 2px 2px;
-    border: 1px solid transparent;
-    border-radius: 4px;
-    background: none;
-    color: var(--text);
-    font-size: 0.98rem;
-    text-align: left;
-    cursor: pointer;
-    transition:
-      border-color 0.2s,
-      background 0.2s;
+    gap: 0.35rem;
   }
-  button.took:hover {
-    border-color: var(--gold-lo);
-    background: rgba(0, 0, 0, 0.35);
-  }
-  .took.none {
-    cursor: default;
-  }
-  .took-name {
-    min-width: 0;
+  .lost li {
     display: flex;
     flex-direction: column;
-    line-height: 1.15;
+    align-items: center;
+    gap: 0.1rem;
   }
-  .took-name > * {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .took-name small {
-    font-size: 0.85rem;
-    font-style: italic;
+  .at {
+    font-size: 0.7rem;
+    line-height: 1;
     color: var(--muted);
   }
-  .quiet .n,
-  .lead .n {
-    font-size: 0.85em;
+  /* A small art stage, as the Collection's. */
+  .thumb {
+    flex: none;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    display: grid;
+    place-items: center;
+    border: 0;
+    border-radius: 3px;
+    background:
+      radial-gradient(ellipse 60% 55% at 50% 50%, rgba(175, 96, 37, 0.22), transparent 70%),
+      linear-gradient(180deg, #0c0d12, #060709);
+    box-shadow: inset 0 0 0 1px rgba(90, 58, 28, 0.6);
   }
-  .quiet {
-    margin: 0;
-    font-size: 0.95rem;
-    font-style: italic;
+  button.thumb {
+    cursor: pointer;
+    transition: box-shadow 0.2s;
+  }
+  button.thumb:hover {
+    box-shadow:
+      inset 0 0 0 1px var(--gold-lo),
+      0 0 10px rgba(201, 164, 92, 0.25);
+  }
+  .thumb img {
+    width: 34px;
+    height: 34px;
+    object-fit: contain;
+    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.8));
+  }
+  .thumb.none {
+    font-family: var(--font-cinzel);
     color: var(--muted);
   }
 
   @media (max-width: 560px) {
-    .body {
-      grid-template-columns: 3.6rem minmax(0, 1fr);
-      gap: 0.7rem;
+    .last {
+      grid-template-columns: auto minmax(0, 1fr);
+      padding: 0.55rem 0.7rem;
+      column-gap: 0.8rem;
     }
-    .big {
-      font-size: 2.2rem;
+    .depth {
+      grid-row: span 2;
+      align-self: start;
+      min-width: 3.6rem;
     }
   }
 </style>

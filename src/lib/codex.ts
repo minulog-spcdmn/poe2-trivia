@@ -11,8 +11,8 @@
 // Delve answers also note their depth and run: each item keeps how deep it
 // was answered and how often it cost a life, and the log links the lives a run
 // lost to the items that took them (the run list is in lib/delveRecord.ts).
-// Each also notes how many of its questions came from a find or a blasted
-// card, how many Azurite Wards broke in place of its lives, and, where a
+// Each also notes how many of its questions came from a find or had dynamite
+// go off on them, how many Azurite Wards broke in place of its lives, and, where a
 // wrong answer to an Azurite Vein caved in for two, the lives it cost.
 // The log also keeps, per Delve answer, the find it came from and what it
 // earned, a flare burnt on it, and on a cave-in the lives and wards it took,
@@ -56,7 +56,7 @@ export interface DelveItem extends Tally {
   lostAt: number;
   /** Of these answers: asked from a find (a deeper question, for an item). Missing for none. */
   finds?: number;
-  /** Asked from a card blasted open with dynamite (as at the surface). Missing for none. */
+  /** Questions on it where a stick of dynamite went off (at half the clock). Missing for none. */
   blasted?: number;
   /** Azurite Wards that broke on its wrong answers, in place of lives. Missing for none. */
   warded?: number;
@@ -136,8 +136,8 @@ export interface Encounter {
   race: boolean;
   /**
    * Present in Delve: the depth the question was asked at, and the run's start
-   * (its id in the run list); the find it came from or whether it was a card
-   * blasted open; whether wards took a wrong answer's whole loss; and on a
+   * (its id in the run list); the find it came from; whether dynamite went
+   * off on it; whether wards took a wrong answer's whole loss; and on a
    * cave-in (an Azurite Vein missed), the lives and wards it took.
    */
   delve?: {

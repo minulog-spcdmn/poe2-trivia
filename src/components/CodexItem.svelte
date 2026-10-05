@@ -155,7 +155,7 @@
             {/if}
             {#if d.finds || d.blasted}
               <li>
-                {#if d.finds}Asked from a find <b>{times(d.finds)}</b>{/if}{#if d.blasted}{d.finds ? ', from' : 'Asked from'} a card blasted open <b>{times(d.blasted)}</b>{/if}
+                {#if d.finds}Asked from a find <b>{times(d.finds)}</b>{/if}{#if d.blasted}{d.finds ? '; dynamite' : 'Dynamite'} went off on it <b>{times(d.blasted)}</b>{/if}
               </li>
             {/if}
           {/if}

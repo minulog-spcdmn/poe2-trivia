@@ -129,8 +129,9 @@ export function codexStats(c: Codex, items: Item[], categories: string[], limit 
 //   left standing (see delveRecord.ts). Both count as runs that got that deep.
 // - A best is the deepest fall; a run left never is one.
 // - The typical depth is the median depth runs fell at, from MIN_RUNS falls.
-// - Where you fall: lives lost in a zone per run that reached it.
-// - What kills you: lives lost per answer, from every Delve answer (alone or
+// - Where you fall: lives lost in a zone, and the runs that reached it (alone
+//   and together as one, mergeTallies: they are your lives either way).
+// - What kills you: lives lost and answers, from every Delve answer (alone or
 //   together: the codex keeps answers by item, not by run), a cave-in two.
 
 /** Most stats wait for this many runs: fewer say little. */
@@ -234,6 +235,39 @@ export function delveSummary(r: DelveRecords, kind: DelveKind, ruleset = DELVE_R
     best,
     deepest: best?.depth ?? (fell ? Math.max(...Object.keys(t.ends).map(Number)) : null),
   };
+}
+
+/** Tallies as one: runs alone and together counted together. */
+export function mergeTallies(...ts: DelveTally[]): DelveTally {
+  const add = (into: Record<number, number>, m: Record<number, number> | undefined) => {
+    for (const [d, n] of Object.entries(m ?? {})) into[Number(d)] = (into[Number(d)] ?? 0) + n;
+  };
+  const out: DelveTally = { wins: 0, ends: {}, lost: {} };
+  const left: Record<number, number> = {};
+  for (const t of ts) {
+    out.wins += t.wins;
+    add(out.ends, t.ends);
+    add(out.lost, t.lost);
+    add(left, t.left);
+  }
+  return Object.keys(left).length ? { ...out, left } : out;
+}
+
+/** Lives a tally's runs lost: each fall's last, and every one before it (runs from before losses were kept count only their last). */
+export const livesLost = (t: DelveTally) => sumOf(t.ends) + sumOf(t.lost);
+
+/** Climbs as one: each step deeper than every one before it, from any of them, oldest first. */
+export function mergeClimbs(...cs: Frontier[][]): Frontier[] {
+  const out: Frontier[] = [];
+  for (const f of cs.flat().sort((a, b) => a.at - b.at || a.depth - b.depth)) if (f.depth > (out.at(-1)?.depth ?? 0)) out.push(f);
+  return out;
+}
+
+/** A climb's depths to show in a line, the first and the latest few: [6, null, 20, 35, 43] (null for those left out). */
+export function milestones(climb: Frontier[], max = 5): (number | null)[] {
+  const ds = climb.map((f) => f.depth);
+  if (ds.length <= max) return ds;
+  return [ds[0], null, ...ds.slice(-(max - 1))];
 }
 
 export interface ZoneRisk extends Zone {
@@ -341,6 +375,10 @@ export interface DeathRate {
 export interface DelveDeaths {
   answers: Tally;
   lives: number;
+  /** Wards that broke in place of a life. */
+  warded: number;
+  /** Questions a stick of dynamite went off on. */
+  blasted: number;
   /** Categories by lives per answer, from CATEGORY_MIN answers, the deadliest first. */
   categories: (DeathRate & { category: string })[];
   /** Items by lives per answer, from ITEM_MIN answers that cost any, the deadliest first. */
@@ -351,6 +389,8 @@ export interface DelveDeaths {
 export function delveDeaths(c: Codex, items: Item[], limit = 5): DelveDeaths {
   let answers = noTally();
   let lives = 0;
+  let warded = 0;
+  let blasted = 0;
   const cats = new Map<string, { n: number; lives: number }>();
   const worst: DelveDeaths['items'] = [];
   for (const it of items) {
@@ -359,6 +399,8 @@ export function delveDeaths(c: Codex, items: Item[], limit = 5): DelveDeaths {
     const cost = livesCost(d);
     answers = sum(answers, d);
     lives += cost;
+    warded += d.warded ?? 0;
+    blasted += d.blasted ?? 0;
     const cat = cats.get(it.category) ?? { n: 0, lives: 0 };
     cats.set(it.category, { n: cat.n + d.n, lives: cat.lives + cost });
     if (d.n >= ITEM_MIN && cost > 0) worst.push({ item: it, n: d.n, lives: cost, rate: cost / d.n });
@@ -368,6 +410,8 @@ export function delveDeaths(c: Codex, items: Item[], limit = 5): DelveDeaths {
   return {
     answers,
     lives,
+    warded,
+    blasted,
     categories: [...cats]
       .filter(([, t]) => t.n >= CATEGORY_MIN)
       .map(([category, t]) => ({ category, ...t, rate: t.lives / t.n }))

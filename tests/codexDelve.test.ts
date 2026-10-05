@@ -8,7 +8,11 @@ import {
   delveDeaths,
   delveSummary,
   findStats,
+  livesLost,
   medianOfCounts,
+  mergeClimbs,
+  mergeTallies,
+  milestones,
   otherRules,
   runStory,
   toward,
@@ -369,4 +373,48 @@ test('a Delve reveal says what the question came from and whether a ward took it
   const e = encounterAt(s, null, true)!;
   assert.deepEqual(e.delve, { depth: 1, run: s.delve!.startedAt, find: 'azurite', warded: true, lost: { lives: 0, wards: 2 } });
   assert.equal(e.answer?.ok, false);
+});
+
+test('alone and together as one: tallies summed, climbs merged into one frontier, lives lost counted', () => {
+  let rec = emptyRecords();
+  rec = addRun(rec, run({ id: 1, at: 1, depth: 9, losses: [2, 5, 9] })).records;
+  rec = addRun(rec, run({ id: 2, at: 2, depth: 14, players: 3, won: true, losses: [3, 14, 14] })).records;
+  rec = addRun(rec, run({ id: 3, at: 3, depth: 12, losses: [4, 12, 12] })).records;
+  rec = addRun(rec, run({ id: 4, at: 4, depth: 6, losses: [6], left: true })).records;
+  const both = mergeTallies(tallyOf(rec, true), tallyOf(rec, false));
+  assert.deepEqual(both.ends, { 9: 1, 12: 1, 14: 1 });
+  assert.deepEqual(both.lost, { 2: 1, 5: 1, 3: 1, 14: 1, 4: 1, 12: 1, 6: 1 });
+  assert.deepEqual(both.left, { 6: 1 });
+  assert.equal(both.wins, 1);
+  assert.equal(livesLost(both), 10, 'three falls of three lives, and the one life of the run left');
+  assert.deepEqual(zoneRisks(both, 1)[0], { ...zone(0), reached: 4, lives: 6, rate: 6 / 4 });
+
+  const climb = mergeClimbs(
+    [
+      { depth: 9, at: 1 },
+      { depth: 12, at: 3 },
+    ],
+    [{ depth: 14, at: 2 }],
+  );
+  assert.deepEqual(
+    climb.map((f) => f.depth),
+    [9, 14],
+    'a step only where it went deeper than every one before it',
+  );
+});
+
+test('milestones keep the first best and the latest few, with a gap between', () => {
+  const at = (...ds: number[]) => ds.map((depth, i) => ({ depth, at: i }));
+  assert.deepEqual(milestones(at(3, 8, 12)), [3, 8, 12]);
+  assert.deepEqual(milestones(at(3, 8, 12, 20, 26, 35, 43)), [3, null, 20, 26, 35, 43]);
+  assert.deepEqual(milestones([]), []);
+});
+
+test('what kills you also counts the wards that broke in a life\'s place and the dynamite that went off', () => {
+  const warded = (at: number): Encounter => ({ ...dv(at, a.id, 12, false), delve: { depth: 12, run: 1, warded: true } });
+  const blast = (at: number, ok: boolean): Encounter => ({ ...dv(at, b.id, 14, ok), delve: { depth: 14, run: 1, blasted: true } });
+  const d = delveDeaths(codexOf(warded(1), warded(2), blast(3, true), blast(4, false), dv(5, c.id, 3, false)), items);
+  assert.equal(d.warded, 2);
+  assert.equal(d.blasted, 2);
+  assert.equal(d.lives, 2, 'a warded answer costs no life');
 });

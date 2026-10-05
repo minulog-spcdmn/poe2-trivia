@@ -603,14 +603,15 @@
     width: min(440px, 100%);
     border-bottom: 1px solid var(--line);
   }
+  /* The label centred over its underline, its number centred under it. */
   .tabs button {
     position: relative;
     flex: 1;
     display: flex;
-    align-items: baseline;
-    justify-content: center;
-    gap: 0.55rem;
-    padding: 0.55rem 0.8rem 0.6rem;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.1rem;
+    padding: 0.5rem 0.8rem 0.55rem;
     background: none;
     border: 0;
     cursor: pointer;
@@ -624,9 +625,15 @@
     letter-spacing: 0.22em;
     text-transform: uppercase;
   }
+  .tab-label {
+    /* Its trailing letter spacing, given back on the left, so the word sits truly centred. */
+    padding-left: 0.22em;
+  }
   .tab-note {
+    min-height: 1.2em;
     font-family: var(--font-cinzel);
     font-size: 0.78rem;
+    line-height: 1.2;
     color: var(--gold-lo);
     transition: color 0.25s;
   }
