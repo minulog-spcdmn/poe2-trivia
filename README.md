@@ -389,6 +389,18 @@ Each item's group and category come from its art folder; see
 `CATEGORY_RULES` in `scripts/fetch-data.mjs`. Image files are named with a hash, so the URL
 doesn't reveal the answer.
 
+After the art changes, rebuild the look-alike table (needs ffmpeg):
+
+```sh
+npm run looks
+```
+
+It writes `src/data/looks.json`: for every item, the twelve items of its
+group whose art looks most like it, each with a score from 0 to 1 (silhouette,
+edges and colour, mirror-blind; see `scripts/looks.mjs`). Deep in Delve,
+decoys are picked from it (`src/lib/looks.ts`). The output only changes when
+the art does; items added without rerunning it just have no look-alikes.
+
 ### Self-hosted signalling (optional)
 
 To use your own [PeerJS server](https://github.com/peers/peerjs-server)
