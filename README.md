@@ -85,6 +85,23 @@ rules, so "I reached depth 30" means the same thing for everyone.
   skip a turn by hand. After the host reloads, players who were cut off
   get a minute to come back, and a guest's open question is set aside.
 - "Delve alone" on the start page starts a solo run straight away.
+- Your lives are a phial of three chambers of living ember beside your name.
+  A lost life bursts out of its chamber; the last one burns red and trembles.
+- The deeper the run, the deeper the scene: the hall darkens and closes in,
+  the glow from below turns blood red, the embers grow restless, azurite
+  glints in the walls from depth 13, and from depth 21 (where a streak's fire
+  first burns blue) the embers start burning blue, all of them by 50. The
+  ambience sinks with it, and a slow rumble rises under it.
+- Named depths mark where it turns: The Galleries (7), The Mirror Halls (13),
+  The Azurite Veins (21), The Burning Veil (25), The Grey Deep (40), The Cold
+  Fire (50), The Abyss (75), then The Bottomless Dark every 25 past it. A
+  card names each as you reach it, and also marks the last one standing and
+  a solo run going deeper than ever.
+- Your deepest run alone and together are kept in this browser (start page,
+  end screen and Codex, with your last runs). A run resumed by a build with
+  other rules still shows, but never counts as a best.
+- On a phone, eight answers fit on the screen: names in two columns,
+  pictures four to a row.
 
 **Difficulty** (the host chooses):
 
@@ -307,6 +324,12 @@ Everything is drawn in WebGL2 with float precision and dithered once at the
   (`src/lib/glint.ts`: one timer, transforms only, nothing under
   *prefers-reduced-motion*). Online, everyone else gets a notice when she
   walks into the room (`src/lib/herald.ts`).
+- **Delve's descent** (`src/lib/descent.ts`): the run's depth becomes a few
+  numbers (how deep, restless, red, blue, veined and abyssal the scene is)
+  that ease along at about two seconds a depth. The backdrop's shaders and
+  embers (`src/lib/backdropEmbers.ts`; a blue ember is a negative size), the
+  CSS fallback and the ambience (`depthAmbience` in `src/lib/sound.ts`)
+  follow them.
 - **Dialogs** dim the page behind them (`src/lib/behindDialog.ts`). A dark,
   blurred layer over the page would band the backdrop and hide the dialog's
   own effects, so the backdrop darkens itself in its shader and the UI takes a

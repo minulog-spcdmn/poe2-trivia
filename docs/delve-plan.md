@@ -1,5 +1,11 @@
 # Delve: implementation plan
 
+> **Historical.** This is the plan Delve was first built from. Playtests have
+> since changed the curve (a faster start, the unveil from depth 25, a 7 s
+> floor from depth 55), the lives (a phial, not hearts), the descent's
+> thresholds and much more. The README and `src/lib/delve.ts` describe the
+> game as it is.
+
 This plan merges the three design notes: rules and curve, the visual and audio descent, and multiplayer, network and state. I checked the code wherever the notes disagree or a claim looked doubtful. Appendix A lists each conflict and how it was resolved. Appendix B lists the claims I checked and what the code says. This revision takes in a review. I checked each review issue against the code, and in some cases with the real engine; the notes at the end say which issues I accepted and which I rejected.
 
 ---
