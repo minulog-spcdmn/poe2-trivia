@@ -913,6 +913,10 @@
         1px calc(100% - 2 * var(--end)),
         1px calc(100% - 2 * var(--end));
     }
+    /* The vein's crystals rise at the row's far end: the name keeps clear of them. */
+    .card[data-find='azurite'] .title {
+      padding-right: 56px;
+    }
     .find-tag {
       display: none;
     }

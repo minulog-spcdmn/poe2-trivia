@@ -339,8 +339,8 @@ export type BackLayout = { w: number; h: number; row: boolean; c: Pt; lens: Lens
 
 /** Parts of a plate redrawn for a special card; what a hook adds is its motif unless said otherwise. */
 export interface Variant {
-  /** In place of Sol and Luna, in the circles they would fill. */
-  spandrels?(p: Plate, sol: Hole, luna: Hole): void;
+  /** In place of Sol and Luna, in the circles they would fill, on a face `w` wide. */
+  spandrels?(p: Plate, sol: Hole, luna: Hole, w: number): void;
   /**
    * In place of the glory behind the emblem (part of the plate, not the
    * motif): straight lines only, as the pedestal is cut out of them.
@@ -495,7 +495,7 @@ const tallFace = (w: number, h: number, p: Plate, v?: Variant) => {
   // Sol and Luna in the spandrels, each as large as the corner allows.
   const corners = [cornerCircle([x0, y0], 2.5, A, ro), cornerCircle([x1, y0], 2.5, A, ro)];
   const [sol, luna] = corners.map(({ c, r }) => ({ c, r: Math.min(13, r - 3.5) }));
-  if (v?.spandrels) hook(p, true, () => v.spandrels!(p, sol, luna));
+  if (v?.spandrels) hook(p, true, () => v.spandrels!(p, sol, luna, w));
   else {
     p.sol(sol.c, sol.r);
     p.luna(luna.c, (luna.r / 8.5) * 0.95, 180);

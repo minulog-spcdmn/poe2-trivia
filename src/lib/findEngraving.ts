@@ -6,25 +6,31 @@
 // Variant. What sets them apart is engraved, never painted: the motif and
 // the tint the card gives the ink (ChooseCategory).
 //
-// Each crowns the emblem: what the plain card has as its glory of rays is
-// made into the find, and breaks out through the arch, whose lines stop
-// short of it, as the band's rings stop at a seal.
+// Each card keeps the plain card's composition and puts the find in three
+// places: in the left spandrel, in Sol's place, the find's seal; in the
+// right, in Luna's, its alchemical sign; and round the emblem, made from the
+// card's own glory, its motif, breaking out through the arch, whose lines
+// stop short of it, as the band's rings stop at a seal.
 //
-// • Azurite Vein: seven hexagonal prisms fanned out from behind the
-//   pedestal, each computed from its section, hatched down the faces turned
-//   from the light (the upper left, as on the rest of the plate), the inner
-//   ones standing in front. The back holds a crystal seen end on, in a glory
-//   that ends on a hexagon.
-// • Flare Cache: the emblem in a sun, a double ring with pointed rays,
-//   hatched down one side, long and short in turn, the long ones out to the
-//   panel; the glory behind it a burst of fine rays in three lengths. The
-//   back holds a flare's burst about the sign of fire.
-// • Dynamite Cache: the emblem in a ring blown apart, its arcs thrown out
-//   each its own way, shards flying out between them in rings, the outer
-//   ones out through the arch. The back holds nitre, black powder's salt,
-//   in a ring blown apart.
+// • Azurite Vein: a crystal seen end on, and Venus, copper's sign (azurite
+//   is copper's blue ore); a cluster of hexagonal prisms grows out of the
+//   floor in the window's right corner, out through the arch and the panel,
+//   each computed from its section and hatched down the faces turned from
+//   the light (the upper left, as on the rest of the plate), over a glory
+//   that ends on a hexagon, as a crystal grows. The back holds the crystal
+//   in that glory.
+// • Flare Cache: a flare's burst about the sign of fire, so large it breaks
+//   the arch, and sulphur, the flare's brimstone; the emblem in a sun, a
+//   double ring with pointed rays hatched down one side, long and short in
+//   turn, the long ones out to the panel, over a glory of fine rays in three
+//   lengths. The back holds the burst.
+// • Dynamite Cache: a small ring blown apart, its shards out over the arch,
+//   and nitre, black powder's salt; the emblem in a ring blown apart, its
+//   arcs thrown out each its own way, shards flying out between them in
+//   rings. The back holds nitre in a ring blown apart.
 //
-// Laid in a row (phones) the same, round the emblem at the row's start.
+// Laid in a row (phones) the spandrels are gone: the vein's crystals grow at
+// the row's far end, the sun and the broken ring stand round the emblem.
 
 import { arc, at, hatch, lerp, line, pointedRay, pt, rad, type Cut, type Hole, type Pt } from './arcane.ts';
 import { type BackLayout, type Plate, type RowLayout, type TallLayout, type Variant } from './cardEngraving.ts';
@@ -334,16 +340,35 @@ function burstGlory(p: Plate, c: Pt, reach: (deg: number) => number, row: boolea
   p.add(rays, 'ray');
 }
 
-// ---- the faces ------------------------------------------------------------------
+// ---- the signs ------------------------------------------------------------------
 
-/** Where a prism out of `root` toward `a` meets a circle about `c` of radius `r` (how long it is to there). */
-const reachCircle = (root: Pt, a: number, c: Pt, r: number) => {
-  const u = at([0, 0], a, 1);
-  const fx = root[0] - c[0];
-  const fy = root[1] - c[1];
-  const b = fx * u[0] + fy * u[1];
-  return -b + Math.sqrt(b * b - (fx * fx + fy * fy - r * r));
-};
+/** Venus, the sign of copper (azurite is copper's blue ore), `r` from its centre to its ends: a ring on a cross, the ring shaded inside. */
+function copperSign(p: Plate, c: Pt, r: number) {
+  const rr = r * 0.44;
+  const o: Pt = [c[0], c[1] - r + rr];
+  p.add(arc(o, rr, 0, 360) + line([c[0], o[1] + rr], [c[0], c[1] + r]) + line([c[0] - rr * 0.85, c[1] + r * 0.5], [c[0] + rr * 0.85, c[1] + r * 0.5]), 'sign');
+  let h = '';
+  for (let y = -rr + 1; y < rr - 0.6; y += 0.9) {
+    const x = Math.sqrt(rr * rr - y * y) - 0.6;
+    if (x > 0.8) h += line([o[0] + x * 0.25, o[1] + y], [o[0] + x, o[1] + y]);
+  }
+  p.add(h, 'hatch');
+}
+
+/** Sulphur, the flare's brimstone, `r` from its centre to its ends: the sign of fire over a cross, hatched down its right. */
+function sulphurSign(p: Plate, c: Pt, r: number) {
+  const [top, base] = [c[1] - r, c[1] + r * 0.12];
+  const half = (base - top) * 0.62;
+  const tri: Pt[] = [
+    [c[0], top],
+    [c[0] + half, base],
+    [c[0] - half, base],
+  ];
+  p.add(poly(tri) + line([c[0], base], [c[0], c[1] + r]) + line([c[0] - half * 0.7, c[1] + r * 0.58], [c[0] + half * 0.7, c[1] + r * 0.58]), 'sign');
+  p.add(hatch([c[0], base], tri[1], tri[0], 0.7), 'hatch');
+}
+
+// ---- the faces ------------------------------------------------------------------
 
 /** The pedestal's outline on a tall face, which stands in front of anything behind the emblem. */
 const pedestal = (g: TallLayout): Pt[] => {
@@ -359,23 +384,32 @@ const pedestal = (g: TallLayout): Pt[] => {
   ];
 };
 
-/** The Azurite Vein crowning the emblem: prisms fanned out from behind the pedestal, each breaking out through the arch. */
+/** The Azurite Vein's crystals: a cluster rooted in the floor's right corner, out through the arch and the panel. */
 function veinTall(p: Plate, g: TallLayout) {
   const k = g.w / 218;
-  const root: Pt = [g.arch.A[0], g.pedestal.capTop - 4];
-  const out = g.arch.ro + 7 * k;
-  const P = (a: number, hw: number, phase: number, over = 0): Prism => ({ root, a, len: reachCircle(root, a, g.arch.A, out + over * k), hw: hw * k, phase });
-  // Outer first, so the inner stand in front.
-  const prisms = [P(-74, 6, 20), P(74, 6, 160), P(-52, 7.4, 10), P(52, 7.4, 170), P(-32, 8.6, 25, -2), P(32, 8.6, 155, -2), P(0, 10, 90, -14)];
-  const ped = pedestal(g);
-  cluster(p, prisms, { polys: [ped], holes: [g.sol, g.luna].map((h) => ({ c: h.c, r: h.r + 3 })) }, k, ped[0][1]);
+  const root: Pt = [g.arch.A[0] + g.arch.ri - 10 * k, g.floor + 3];
+  const P = (a: number, len: number, hw: number, phase: number, dx = 0): Prism => ({ root: [root[0] + dx * k, root[1]], a, len: len * k, hw: hw * k, phase });
+  // Back to front.
+  const prisms = [P(-32, 64, 5.6, 14, -8), P(40, 62, 5.4, 22, 5), P(-11, 92, 7.4, 40, -3), P(15, 128, 9.6, 18, 2), P(-50, 34, 4.2, 30, -12), P(5, 42, 5, 8, 0), P(30, 30, 4, 44, 9)];
+  // The floor's front edge hides their roots.
+  const ground: Pt[] = [
+    [root[0] - 50 * k, g.floor + 0.6],
+    [root[0] + 50 * k, g.floor + 0.6],
+    [root[0] + 50 * k, g.floor + 40],
+    [root[0] - 50 * k, g.floor + 40],
+  ];
+  cluster(p, prisms, { polys: [ground], holes: [{ c: g.luna.c, r: g.luna.r + 3 }] }, k);
 }
 
-/** The flare crowning the emblem: long pointed rays out of the glory, breaking out through the arch to the panel, short ones between. */
+/** The flare's sun round the emblem: long pointed rays out of the glory, breaking out through the arch to the panel, short ones between. */
 function flareTall(p: Plate, g: TallLayout) {
   const k = g.w / 218;
   const C = g.emblem;
-  const holes = [g.sol, g.luna].map((h) => ({ c: h.c, r: h.r + 3 }));
+  // Short of the burst in Sol's place and the sign in Luna's.
+  const holes = [
+    { c: g.sol.c, r: BURST * k * 0.8 + 3 },
+    { c: g.luna.c, r: g.luna.r + 3 },
+  ];
   const r0 = 64 * k;
   sunRing(p, C, r0);
   for (const [a, long] of [-108, -84, -60, -38, 38, 60, 84, 108].map((a, i) => [a, i % 2 === (a < 0 ? 0 : 1)] as const)) {
@@ -426,12 +460,19 @@ const throughHole = (c: Pt, a: number, h: Hole) => {
   return disc > 0 && -b - Math.sqrt(disc) > 0 ? -b - Math.sqrt(disc) : null;
 };
 
-/** The Azurite Vein in a row, crowning the emblem: prisms fanned out behind it. */
+/** The Azurite Vein in a row: its crystals rising at the row's far end. */
 function veinRow(p: Plate, g: RowLayout) {
   const k = g.h / 110;
-  const root: Pt = [g.emblem[0], g.h - 4];
-  const P = (a: number, len: number, hw: number, phase: number): Prism => ({ root, a, len: len * k, hw: hw * k, phase });
-  cluster(p, [P(-66, 62, 4.4, 20), P(66, 62, 4.4, 40), P(-40, 84, 5.2, 10), P(40, 84, 5.2, 30), P(-16, 96, 6, 25), P(16, 96, 6, 5)], NONE, k);
+  const root: Pt = [g.w - 40 * k, g.h - 6];
+  const P = (a: number, len: number, hw: number, phase: number, dx = 0): Prism => ({ root: [root[0] + dx * k, root[1]], a, len: len * k, hw: hw * k, phase });
+  const prisms = [P(-34, 46, 4.2, 14, -6), P(34, 52, 4.4, 22, 6), P(-12, 70, 5.4, 40, -2), P(14, 92, 6.8, 18, 2), P(-50, 26, 3.4, 30, -10), P(4, 30, 3.8, 8, 0)];
+  const ground: Pt[] = [
+    [root[0] - 60, g.h - 9],
+    [root[0] + 60, g.h - 9],
+    [root[0] + 60, g.h + 30],
+    [root[0] - 60, g.h + 30],
+  ];
+  cluster(p, prisms, { polys: [ground], holes: [] }, k);
 }
 
 /** The flare in a row, crowning the emblem: long pointed rays out of its glory. */
@@ -537,8 +578,13 @@ const inside = (q: Pt, ps: Pt[]) => inPoly(q, [q[0] + 1e-3, q[1] + 1e-3], ps) !=
 function dynamiteTall(p: Plate, g: TallLayout) {
   const k = g.w / 218;
   const ped = grow(pedestal(g), 2);
+  // Clear of the small ring in Sol's place (and its shards) and the sign in Luna's.
+  const clear = [
+    { c: g.sol.c, r: SMALL_RING * k * 1.95 + 3 },
+    { c: g.luna.c, r: g.luna.r + 4 },
+  ];
   const room = (q: Pt) =>
-    q[0] > g.inner[0] + 2 && q[0] < g.inner[2] - 2 && q[1] > g.inner[1] + 2 && q[1] < g.pedestal.capTop - 6 && !inside(q, ped) && [g.sol, g.luna].every((h) => Math.hypot(q[0] - h.c[0], q[1] - h.c[1]) > h.r + 4);
+    q[0] > g.inner[0] + 2 && q[0] < g.inner[2] - 2 && q[1] > g.inner[1] + 2 && q[1] < g.pedestal.capTop - 6 && !inside(q, ped) && clear.every((h) => Math.hypot(q[0] - h.c[0], q[1] - h.c[1]) > h.r);
   shattered(p, g.emblem, 58 * k, room);
 }
 
@@ -555,12 +601,56 @@ function dynamiteBack(p: Plate, g: BackLayout) {
   shattered(p, g.c, r, room, g.row ? 1 : 2);
 }
 
+// ---- the spandrels ------------------------------------------------------------
+
+/** How far a flare's burst in Sol's place reaches, on a card 218 wide. */
+const BURST = 30;
+/** How wide the ring blown apart in Sol's place is, on a card 218 wide. */
+const SMALL_RING = 14;
+
+/** The outlines of a burst's pointed rays, for the plate to stop short of. */
+const rayShadows = (c: Pt, r: number) =>
+  Array.from({ length: 16 }, (_, i) => {
+    const a = i * 22.5;
+    const len = i % 4 === 0 ? r : i % 2 === 0 ? r * 0.78 : r * 0.6;
+    const w = i % 4 === 0 ? 3.4 : 2.8;
+    return poly([at(at(c, a, r * 0.3), a - 90, w), at(c, a, len + 1.5), at(at(c, a, r * 0.3), a + 90, w)]);
+  }).join('');
+
+/** A disc, as path data. */
+const disc = (c: Pt, r: number) => `M${pt([c[0] + r, c[1]])}A${r} ${r} 0 1 1 ${pt([c[0] - r, c[1]])}A${r} ${r} 0 1 1 ${pt([c[0] + r, c[1]])}Z`;
+
+/** The spandrels of a find's tall face: its seal in Sol's place, its alchemical sign in Luna's. */
+function spandrels(kind: FindKind, p: Plate, sol: Hole, luna: Hole, w: number) {
+  const k = w / 218;
+  if (kind === 'azurite') {
+    crystalSeal(p, sol.c, sol.r * 0.92);
+    copperSign(p, luna.c, luna.r * 0.82);
+  } else if (kind === 'flare') {
+    // So large it breaks the arch: the plate stops short of its heart, its fine rays and each pointed ray.
+    const r = BURST * k;
+    burst(p, sol.c, r);
+    p.knockout += disc(sol.c, r * 0.62 + 1.2) + rayShadows(sol.c, r);
+    sulphurSign(p, luna.c, luna.r * 0.82);
+  } else {
+    // A flash at its heart; its shards fly out over the panel, clear of the plaque over the keystone.
+    const r = SMALL_RING * k;
+    const room = (q: Pt) => Math.hypot(q[0] - sol.c[0], q[1] - sol.c[1]) < r * 2 && q[0] > 12 && q[1] > 12 && !(q[1] < 30 && Math.abs(q[0] - w / 2) < 52);
+    shattered(p, sol.c, r, room, 2);
+    p.star(sol.c, r * 0.42);
+    nitreSign(p, luna.c, luna.r * 0.82);
+  }
+}
+
 // ---- the variants ---------------------------------------------------------------
 
 /** The plate of a find's card. */
 export function findVariant(kind: FindKind): Variant {
-  const v: Variant = {};
-  if (kind === 'azurite') v.back = veinBack;
+  const v: Variant = { spandrels: (p, sol, luna, w) => spandrels(kind, p, sol, luna, w) };
+  if (kind === 'azurite') {
+    v.back = veinBack;
+    v.glory = crystalGlory;
+  }
   if (kind === 'flare') {
     v.back = flareBack;
     v.glory = burstGlory;
