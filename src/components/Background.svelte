@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { startBackdrop } from '../lib/backdrop';
+  import { onDescent, type Descent } from '../lib/descent';
 
   // Ambient backdrop: warm glow, vignette and slowly rising embers. The WebGL
   // backdrop draws its own embers; these CSS ones are for the fallback.
@@ -15,6 +16,11 @@
   // The backdrop is painted by a dithered WebGL canvas (see lib/backdrop.ts);
   // the CSS layers below are the fallback when WebGL is unavailable.
   let canvas: HTMLCanvasElement;
+  // Delve: the CSS backdrop follows the depth too (the WebGL one reads it itself).
+  let dsc = $state<Descent>({ deep: 0, agit: 0, red: 0, blue: 0, veins: 0, abyss: 0 });
+  onMount(() => onDescent((d) => (dsc = d)));
+  /** The first this many CSS embers burn blue. */
+  const coldEmbers = $derived(Math.round(embers.length * dsc.blue));
   let webgl = $state(false);
   let failed = $state(false);
 
@@ -41,6 +47,7 @@
     {#each embers as e, i (i)}
       <span
         class="ember"
+        class:cold={i < coldEmbers}
         style:left="{e.left}%"
         style:width="{e.size}px"
         style:height="{e.size}px"
@@ -50,6 +57,8 @@
       ></span>
     {/each}
     </div>
+    <div class="deep" style:opacity={dsc.deep * 0.55}></div>
+    <div class="azure" style:opacity={dsc.blue}></div>
     <div class="vignette"></div>
   {/if}
 </div>
@@ -106,6 +115,25 @@
       transparent 45%,
       rgba(0, 0, 0, 0.75) 100%
     );
+  }
+  /* Delve: darker deeper down, with a cold light from below once the embers turn blue. */
+  .deep,
+  .azure {
+    position: absolute;
+    inset: 0;
+    transition: opacity 4s;
+  }
+  .deep {
+    background: linear-gradient(180deg, #020306, #04050a);
+  }
+  .azure {
+    background: radial-gradient(90% calc(0.55 * var(--view-h)) at 50% calc(1.16 * var(--view-h)), rgba(34, 80, 150, 0.24), transparent 70%);
+  }
+  .ember.cold {
+    background: #9cc8ff;
+    box-shadow:
+      0 0 6px 2px rgba(110, 170, 255, 0.6),
+      0 0 14px 4px rgba(60, 110, 230, 0.25);
   }
   .ember {
     position: absolute;

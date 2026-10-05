@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { setDescent } from './lib/descent';
   import { onMount, untrack } from 'svelte';
   import { fade, fly } from 'svelte/transition';
   import { session } from './lib/session.svelte';
@@ -88,6 +89,10 @@
     if (codexRoute.open && !codexAllowed) closeCodex();
   });
   const codex = $derived(screen === 'codex');
+
+  // Delve: the scene descends with the run, and holds its depth on the end screen
+  // (a screenshot shows how deep it went); everywhere else it is the surface.
+  $effect(() => setDescent(gs?.delve && (screen === 'game' || screen === 'over') ? gs.round : 0));
 
   /** How long the outgoing screen takes to fade (the .screen transition below). */
   const SCREEN_OUT_MS = 150;

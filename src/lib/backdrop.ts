@@ -14,6 +14,7 @@ import { DROPS_PER_MASK, MAX_MASKS, measureDrops, releaseAllDrops } from './back
 import { MAX_LIGHTS, packLights, stepHomeScene, stepMood } from './lights';
 import { fxActive, fxUserOn, onFxChange } from './fx/core';
 import { COLUMNS, SLOTS, embers } from './backdropEmbers';
+import { currentDescent, snapDescent, stepDescent } from './descent';
 import { DIALOG_BLUR, DIALOG_DIM, openDialog } from './behindDialog';
 
 const VERT = `#version 300 es
@@ -50,6 +51,9 @@ uniform vec2 uBlobRot[${BLOB_COUNT}]; // (cos, sin) of A's rotation
 uniform vec3 uBlobB[${BLOB_COUNT}];
 uniform vec3 uBlobColor[${BLOB_COUNT}];
 
+// Delve's depth (lib/descent.ts): (deep, red, blue, abyss), all 0 outside one.
+uniform vec4 uDeep;
+
 // The start page: (rays, title glow, time in s, title breath), and the
 // title's centre and half size (CSS px). See setHomeScene in lights.ts.
 uniform vec4 uHome;
@@ -75,6 +79,14 @@ vec3 smoothLight(vec2 p) {
   vec3 col = t < uBaseStop
     ? mix(rgb(13.0, 11.0, 9.0), rgb(8.0, 7.0, 6.0), smoothstep(0.0, uBaseStop, t))
     : mix(rgb(8.0, 7.0, 6.0), rgb(13.0, 9.0, 7.0), smoothstep(uBaseStop, 1.0, t));
+  // Deeper down the hall turns darker and cooler, and cold creeps up from below.
+  if (uDeep.x > 0.0) {
+    vec3 deepBase = t < uBaseStop
+      ? mix(rgb(8.0, 8.0, 10.0), rgb(4.0, 4.0, 6.0), smoothstep(0.0, uBaseStop, t))
+      : mix(rgb(4.0, 4.0, 6.0), rgb(7.0, 6.0, 9.0), smoothstep(uBaseStop, 1.0, t));
+    col = mix(col, deepBase, uDeep.x);
+    col = mix(col, rgb(6.0, 8.0, 13.0), 0.6 * uDeep.z * smoothstep(0.45, 1.0, t));
+  }
 
   // Warm haze from above the top edge.
   float d = length((p - vec2(0.5 * W, -0.1 * H)) / (vec2(0.6 * W, 0.5 * H) * uTop.x));
@@ -82,7 +94,13 @@ vec3 smoothLight(vec2 p) {
 
   // Ember glow from below the bottom edge.
   d = length((p - vec2(0.5 * W, 1.1 * H)) / (vec2(0.8 * W, 0.6 * H) * uBottom.x));
-  col = mix(col, rgb(140.0, 60.0, 20.0), uBottom.y * 0.28 * gauss(d / 0.5));
+  col = mix(col, mix(rgb(140.0, 60.0, 20.0), rgb(118.0, 26.0, 14.0), uDeep.y), uBottom.y * 0.28 * gauss(d / 0.5));
+
+  // Deep down, a cold azure light wells up from the floor.
+  if (uDeep.z > 0.0) {
+    d = length((p - vec2(0.5 * W, 1.12 * H)) / vec2(1.0 * W, 0.7 * H));
+    col = mix(col, rgb(34.0, 80.0, 150.0), uDeep.z * 0.4 * gauss(d / 0.5));
+  }
 
   // Central gold glow, scaled about the screen centre.
   vec2 q = vec2(0.5 * W, 0.5 * H) + (p - vec2(0.5 * W, 0.5 * H)) / uGlow.x;
@@ -272,7 +290,11 @@ void main() {
     if (r2 > s2 * 40.0) continue;
     float core = exp(-r2 / (s2 * 0.3));
     float halo = exp(-r2 / (s2 * 5.0));
-    col += (mix(uEmberColor.rgb, vec3(1.0, 0.86, 0.6), 0.55) * core * 0.9 + uEmberColor.rgb * halo * 0.3) * e.w * uEmberColor.a;
+    // A negative size marks a blue ember (deep in a Delve): an azure halo round a blue-white core.
+    bool cold = e.z < 0.0;
+    vec3 tint = cold ? vec3(0.34, 0.62, 1.0) : uEmberColor.rgb;
+    vec3 hot = cold ? mix(tint, vec3(0.86, 0.94, 1.0), 0.62) : mix(tint, vec3(1.0, 0.86, 0.6), 0.55);
+    col += (hot * core * 0.9 + tint * halo * 0.3) * e.w * uEmberColor.a;
   }
 
   // Lift the dark tones within their own hue. (A flat grey lift, as the old
@@ -602,12 +624,11 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   const uBeams = S('uBeams');
   const uHome = S('uHome');
   const uTitle = S('uTitle');
+  const uDeep = S('uDeep');
+  const uBlobColor = S('uBlobColor');
   gl.useProgram(soft);
   gl.uniform3fv(S('uBlobB'), BLOBS.flatMap((b) => b.reach));
-  gl.uniform3fv(
-    S('uBlobColor'),
-    BLOBS.flatMap((b) => b.color.map((c) => c / 255)),
-  );
+  const blobColor = new Float32Array(BLOB_COUNT * 3);
 
   gl.useProgram(prog);
   const U = (name: string) => gl.getUniformLocation(prog, name);
@@ -734,11 +755,26 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     gl!.useProgram(soft);
     gl!.uniform2f(sSize, cssW, cssH);
     gl!.uniform1f(sViewH, viewH);
-    gl!.uniform2f(uGlow, 1 + 0.08 * glow, 1 - 0.4 * glow);
-    gl!.uniform2f(uBottom, 1 + 0.1 * bottom, 1 + 0.3 * bottom);
-    gl!.uniform2f(uTop, 1 + 0.08 * top, 1 + 0.35 * top);
+    // Delve: deeper, the haze from above fades, the lamp dims, the glow from below
+    // spreads and reddens, and gives way to the cold as the embers turn blue.
+    const dsc = currentDescent();
+    gl!.uniform4f(uDeep, dsc.deep, dsc.red, dsc.blue, dsc.abyss);
+    gl!.uniform2f(uGlow, (1 + 0.08 * glow) * (1 - 0.2 * dsc.deep), (1 - 0.4 * glow) * (1 - 0.3 * dsc.deep));
+    gl!.uniform2f(uBottom, (1 + 0.1 * bottom) * (1 + 0.15 * dsc.deep), (1 + 0.3 * bottom) * (1 + 0.4 * dsc.deep) * (1 - 0.85 * dsc.blue));
+    gl!.uniform2f(uTop, 1 + 0.08 * top, (1 + 0.35 * top) * (1 - dsc.deep) ** 1.5);
+    // The smoke darkens and cools with depth, and two of the warm blobs turn azure.
+    BLOBS.forEach((b, i) => {
+      for (let c = 0; c < 3; c++) {
+        const cool = [0.55, 0.5, 0.62][c];
+        let v = (b.color[c] / 255) * (1 + (cool - 1) * dsc.deep);
+        if (i < 2) v += ([30, 62, 115][c] / 255 - v) * 0.55 * dsc.blue;
+        blobColor[i * 3 + c] = v;
+      }
+    });
+    gl!.uniform3fv(uBlobColor, blobColor);
     gl!.uniform1f(uBaseStop, 0.6 - 0.08 * base);
     paths.forEach((path, i) => blobA.set(path(still ? 0 : ms / 1000), i * 4));
+    for (let i = 0; i < BLOB_COUNT; i++) blobA[i * 4 + 3] *= 1 + (i < 4 ? 0.35 : 0.45) * dsc.deep;
     for (let i = 0; i < BLOB_COUNT; i++) {
       blobRot[i * 2] = Math.cos(blobA[i * 4 + 2]);
       blobRot[i * 2 + 1] = Math.sin(blobA[i * 4 + 2]);
@@ -773,7 +809,8 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
 
     gl!.viewport(0, 0, canvas.width, canvas.height);
     gl!.uniform2f(uRes, canvas.width, canvas.height);
-    gl!.uniform2f(uVignette, 1 - 0.06 * vignette, 1 + 0.07 * vignette);
+    // Deeper, the walls close in.
+    gl!.uniform2f(uVignette, (1 - 0.06 * vignette) * (1 - 0.2 * dsc.deep), (1 + 0.07 * vignette) * (1 + 0.25 * dsc.deep));
     for (const [k, arr] of Object.entries(el)) gl!.uniform4fv(elLoc[k as keyof typeof el], arr);
     let count = 0;
     for (let i = 0; i < maxElements; i++) if (el.b[i * 4 + 3] > 0) count = i + 1;
@@ -838,6 +875,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   // embers drift a few pixels a frame), and while calm() nothing is drawn
   // until something changes.
   let dirty = false;
+  let wasDescending = false;
   function frame(now: number) {
     raf = requestAnimationFrame(frame);
     const dt = Math.min(0.1, (now - lastStep) / 1000);
@@ -855,9 +893,16 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     // full-screen shader is the costliest thing on screen and runs under the
     // effects overlay, lights and an easing mood need no more than 30fps
     // either.
-    const soft = lights || moodState === 'moving';
+    // Delve's depth eases in; holding still, it changes at once (it is game information).
+    const descending = still ? snapDescent() : stepDescent(dt);
+    embers.descend(currentDescent());
+    // Arrived at a depth: the embers still in the old colour take the new one (after a rejoin, all of them).
+    if (wasDescending && !descending) embers.recolor();
+    wasDescending = descending;
+    const soft = lights || moodState === 'moving' || descending;
     const lit = homeMoving || (soft && !cssShadows.matches);
     if (!still) embers.step(dt, canvas.clientWidth, canvas.clientHeight, !fxActive());
+    else if (descending) embers.step(0, canvas.clientWidth, canvas.clientHeight, true, true);
     // A dialog's dimming fades in and out with the dialog, in step with the UI's.
     const d = openDialog().amount;
     const fading = d !== dialog;
