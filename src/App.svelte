@@ -147,7 +147,11 @@
   {#if headerOn}
     <header in:fade={{ duration: 300 }} bind:offsetHeight={headerHeight}>
       <button class="brand" onclick={() => (codex ? closeCodex() : (confirmLeave = true))} title={codex ? 'Back to the start' : 'Leave game'}>
-        <svg class="brand-mark" viewBox="20 0 400 391" aria-hidden="true"><path d="M224 390Q255 331 301.0 283.5Q347 236 377 218L407 200L220 -1Q164 31 116.5 82.5Q69 134 50 169L31 204Z" fill="currentColor" /></svg>
+        <span class="brand-mark" aria-hidden="true">
+          {#each ['', 'hot'] as cls (cls)}
+            <svg class={cls} viewBox="20 0 400 391"><path d="M224 390Q255 331 301.0 283.5Q347 236 377 218L407 200L220 -1Q164 31 116.5 82.5Q69 134 50 169L31 204Z" fill="currentColor" /></svg>
+          {/each}
+        </span>
         <span>PoE2.Quest</span>
       </button>
       <div class="meta">
@@ -209,7 +213,7 @@
             class="icon-btn"
             class:off={!fxOn}
             onclick={toggleFx}
-            title={fxOn ? 'Turn visual effects off' : 'Turn visual effects on'}
+            title={fxOn ? 'Turn visual effects off (saves power)' : 'Turn visual effects on'}
             aria-label="Toggle visual effects"
             aria-pressed={fxOn}
           >
@@ -355,15 +359,30 @@
     text-shadow: 0 0 16px rgba(241, 217, 155, 0.55);
   }
   .brand-mark {
+    position: relative;
+    flex: none;
     color: var(--unique-hi);
     width: 0.8rem;
     height: 0.72rem;
+  }
+  .brand-mark svg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
     filter: drop-shadow(0 0 6px rgba(224, 138, 68, 0.7));
+  }
+  /* It kindles: a hotter copy on top fades in and out. Fading a layer
+     painted once costs nothing per frame, where animating the filter itself
+     would repaint it every frame for as long as the header shows. */
+  .brand-mark .hot {
+    filter: drop-shadow(0 0 10px rgba(255, 150, 70, 0.95)) brightness(1.2);
+    opacity: 0;
     animation: kindle 3.2s ease-in-out infinite;
   }
   @keyframes kindle {
     50% {
-      filter: drop-shadow(0 0 10px rgba(255, 150, 70, 0.95)) brightness(1.2);
+      opacity: 1;
     }
   }
 

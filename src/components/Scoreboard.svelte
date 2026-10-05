@@ -566,8 +566,6 @@
     }
     .strip.stuck {
       background-color: var(--pinned-bg);
-      -webkit-backdrop-filter: var(--pinned-blur);
-      backdrop-filter: var(--pinned-blur);
       border-bottom: var(--pinned-line);
       box-shadow: 0 8px var(--pinned-shadow);
     }

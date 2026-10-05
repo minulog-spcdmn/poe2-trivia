@@ -107,8 +107,10 @@ function audio(): Bus | null {
     user.gain.value = userGain();
     master.connect(shelf).connect(comp).connect(user).connect(ac.destination);
 
+    // The hall's impulse takes a moment to work out: not in the tap that
+    // starts the sound (the first sounds just play dry).
     const reverb = ac.createConvolver();
-    reverb.buffer = hall(ac, 2.8);
+    setTimeout(() => (reverb.buffer = hall(ac, 2.8)), 300);
     const wet = ac.createGain();
     wet.gain.value = 0.5;
     wet.connect(reverb).connect(master);
@@ -243,6 +245,21 @@ const wanted = (l: Loop) => !muted && document.visibilityState === 'visible' && 
 /** Starts the loops that should play and fades out the ones that shouldn't. */
 function updateAmbience() {
   for (const l of FADES.keys()) updateLoop(l);
+  if (!wanted(AMBIENCE)) rest();
+}
+
+/**
+ * While muted or out of sight, the audio context is suspended once the loops
+ * have faded out: a running one keeps the audio hardware and its render
+ * thread busy even when all it plays is silence. The next sound (or the
+ * ambience coming back) resumes it (see audio()).
+ */
+let resting: ReturnType<typeof setTimeout> | undefined;
+function rest() {
+  clearTimeout(resting);
+  resting = setTimeout(() => {
+    if (bus && !wanted(AMBIENCE) && bus.ac.state === 'running') void bus.ac.suspend().catch(() => {});
+  }, 1500);
 }
 
 function updateLoop(l: Loop) {
