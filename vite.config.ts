@@ -35,7 +35,7 @@ function csp(env: Record<string, string>): Plugin {
 
 /**
  * The beta build (VITE_CHANNEL=beta, served at poe2.quest/beta/): kept out of
- * search results, and its tabs say Beta.
+ * search results, and its tabs and link previews say Beta and point to it.
  */
 function betaPages(env: Record<string, string>): Plugin {
   return {
@@ -45,7 +45,14 @@ function betaPages(env: Record<string, string>): Plugin {
       if (env.VITE_CHANNEL !== 'beta') return html;
       // The legal pages carry noindex already.
       const noindex = html.includes('name="robots"') ? '' : '<meta name="robots" content="noindex" />\n    ';
-      return html.replace('<title>', `${noindex}<title>Beta • `);
+      return (
+        html
+          .replace('<title>', `${noindex}<title>Beta • `)
+          // A noindex page shouldn't name another as its canonical.
+          .replace(/\n\s*<link rel="canonical"[^>]*>/, '')
+          .replace(/(property="og:url" content=")https:\/\/poe2\.quest\//, '$1https://poe2.quest/beta/')
+          .replace(/((?:property="og:title"|name="twitter:title") content=")/g, '$1Beta • ')
+      );
     },
   };
 }

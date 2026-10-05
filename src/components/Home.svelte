@@ -378,6 +378,7 @@
 
   /* Marks the beta build (poe2.quest/beta/) so testers know where they are. */
   .beta {
+    position: relative;
     display: inline-block;
     margin: 0 0 0.8rem;
     padding: 0.2rem 0.6rem 0.15rem 0.85rem;

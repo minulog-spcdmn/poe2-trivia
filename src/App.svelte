@@ -153,7 +153,7 @@
             <svg class={cls} viewBox="20 0 400 391"><path d="M224 390Q255 331 301.0 283.5Q347 236 377 218L407 200L220 -1Q164 31 116.5 82.5Q69 134 50 169L31 204Z" fill="currentColor" /></svg>
           {/each}
         </span>
-        <span>PoE2.Quest{#if BETA}<small class="beta">Beta</small>{/if}</span>
+        <span>PoE2.Quest{#if BETA}{' '}<small class="beta">Beta</small>{/if}</span>
       </button>
       <div class="meta">
         {#if gs && screen === 'game'}
@@ -361,7 +361,7 @@
   }
   /* Phones hide the name and this with it; the start page and the tab title still say Beta. */
   .beta {
-    margin-left: 0.5em;
+    margin-left: 0.2em;
     font-family: var(--font-cinzel);
     font-size: 0.62rem;
     letter-spacing: 0.2em;

@@ -293,34 +293,42 @@ GitHub Actions**.
 
 ### Beta
 
-A second build is served at **poe2.quest/beta/**, from the `beta` branch, for
-trying a change before it goes live. Pages serves one upload per site, so
-every deploy builds both: `main` into `dist/` and `beta` into `dist/beta/`.
+A second build is served at **poe2.quest/beta/**, for trying a change before
+it goes live. Pages serves one upload per site, so every deploy has both:
+`main` in `dist/` and the beta in `dist/beta/`.
 
 - **Put a branch on the beta:** Actions → *Deploy to GitHub Pages* → Run
-  workflow (on `main`), with the branch or commit as *beta*. Its tests run,
-  both sites deploy, and then the `beta` branch is moved to it, so later
-  deploys of `main` keep showing it.
+  workflow (on `main`), with the branch, tag or full commit SHA as *beta*.
+  Its tests run, both sites deploy, and the commit is recorded as a
+  deployment to the `beta` environment (on the repo's front page, under
+  Deployments), so later deploys of `main` keep showing it. Its build is
+  cached, so they don't build it again.
 - **Ship it:** merge the branch into `main` as usual. The beta stays as it
   is until the next one goes up.
-- **Stack changes:** the beta shows one branch at a time. To test a change
-  together with the one already on the beta, start its branch from `beta`
-  instead of `main`.
+- **Stack changes:** the beta shows one commit at a time. To test a change
+  together with the one already on the beta, start its branch from that
+  commit (the newest `beta` deployment; the run that put it up is named
+  *Beta: (branch)*) instead of `main`.
+- **A run that only waited** is cancelled when another run queues behind it
+  (GitHub keeps one waiting run per group); run it again.
+
+If the beta stops building (say a dependency it pins disappears), deploys of
+`main` go ahead without `/beta/` and say so in a warning; putting a branch on
+the beta brings it back. A commit from before the beta existed can't go on
+it, since it would share the live game's rooms and saves; merge `main` into
+it first.
 
 The beta is built with `VITE_CHANNEL=beta` (`src/lib/channel.ts`), which keeps
 it apart from the live game:
 
 - its rooms and open-room listings use their own PeerJS prefix, so live and
   beta players never meet
-- its invite links point to `/beta/`
-- it keeps its own codex, settings and saves (every storage key starts with
-  `STORE`); only the creator unlock is shared
+- its invite links and link previews point to `/beta/`
+- it keeps its own codex, settings and saves: all storage goes through
+  `src/lib/storage.ts`, which starts the beta's keys differently (a test keeps
+  other modules off storage); only the creator unlock is shared
 - it says Beta on the start page, in the header and in the tab title, and
   asks search engines not to index it
-
-A commit from before the beta existed can't go on it (the workflow refuses,
-since it would share the live game's rooms and saves); merge `main` into it
-first.
 
 ---
 

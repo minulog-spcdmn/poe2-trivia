@@ -1,12 +1,17 @@
 name: Deploy to GitHub Pages
+run-name: "${{ inputs.beta && format('Beta: {0}', inputs.beta) || github.event.head_commit.message || 'Redeploy' }}"
 
-# poe2.quest is built from main, poe2.quest/beta/ from the beta branch. Pages
-# serves one upload per site, so every run builds and deploys both.
+# poe2.quest is built from main, poe2.quest/beta/ from the commit put on the
+# beta. Pages serves one upload per site, so every run deploys both.
 #
-# To put a branch on the beta: run this workflow (on main) with that branch or
-# commit as "beta". Once the beta is live, the beta branch points at it, so
-# later deploys of main keep showing it. Run it with "beta" empty to redeploy
-# as is.
+# To put a branch on the beta: run this workflow (on main) with that branch,
+# tag or full commit SHA as "beta". Its tests run, both sites deploy, and the
+# commit is recorded as a deployment to the "beta" environment, which later
+# runs build again (or take from the cache). Run it with "beta" empty to
+# redeploy as is.
+#
+# The beta is recorded as a deployment rather than a branch: the Actions token
+# can't move a branch across changes to workflow files.
 
 on:
   push:
@@ -14,29 +19,33 @@ on:
   workflow_dispatch:
     inputs:
       beta:
-        description: Branch or commit to put on poe2.quest/beta/ (empty keeps the current beta)
+        description: Branch, tag or full commit SHA to put on poe2.quest/beta/ (empty keeps the current beta)
         required: false
         default: ''
 
-permissions:
-  contents: write # to move the beta branch
-  pages: write
-  id-token: write
+permissions: {}
 
-# Runs queue rather than cancel each other: a cancelled run could drop a beta
-# that was asked for. (GitHub still keeps only the newest waiting run.)
+# Runs queue rather than cancel each other, so a run never stops halfway
+# through putting up a beta. GitHub keeps only the newest waiting run, though:
+# a beta run still waiting when another run queues is cancelled and has to be
+# run again.
 concurrency:
   group: pages
   cancel-in-progress: false
 
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+    permissions:
+      contents: read
+      deployments: read
+    outputs:
+      # Set only when this run puts up a new beta.
+      beta: ${{ steps.added.outputs.sha }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -46,47 +55,110 @@ jobs:
       - run: npm run build
 
       - name: Find the beta
-        id: beta
+        id: find
         env:
           WANTED: ${{ inputs.beta }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           if [ -n "$WANTED" ]; then
-            ref="$WANTED"
-          elif git ls-remote --exit-code --heads origin beta > /dev/null; then
-            ref=beta
+            echo "ref=$WANTED" >> "$GITHUB_OUTPUT"
           else
-            echo "No beta branch yet; deploying the live site only."
-            exit 0
+            sha=$(gh api "repos/$GITHUB_REPOSITORY/deployments?environment=beta&per_page=1" --jq '.[0].sha // empty')
+            [ -n "$sha" ] || echo "No beta yet; deploying the live site only."
+            echo "ref=$sha" >> "$GITHUB_OUTPUT"
           fi
-          git fetch --depth 1 origin -- "$ref"
-          echo "sha=$(git rev-parse FETCH_HEAD)" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        if: steps.find.outputs.ref
+        with:
+          ref: ${{ steps.find.outputs.ref }}
+          path: beta-src
+          persist-credentials: false
+      - name: Resolve the beta's commit
+        id: sha
+        if: steps.find.outputs.ref
+        run: echo "sha=$(git -C beta-src rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
+      # The beta's build depends only on its commit, so a deploy of main
+      # reuses it instead of building it again.
+      - id: cache
+        if: steps.sha.outputs.sha
+        uses: actions/cache/restore@v4
+        with:
+          path: beta-dist
+          key: beta-dist-v1-${{ steps.sha.outputs.sha }}
       - name: Build the beta
-        if: steps.beta.outputs.sha
+        id: build-beta
+        if: steps.sha.outputs.sha && steps.cache.outputs.cache-hit != 'true'
+        # A beta that no longer builds mustn't hold up the live site; one
+        # being put up now must build.
+        continue-on-error: ${{ !inputs.beta }}
         env:
-          SHA: ${{ steps.beta.outputs.sha }}
           NEW: ${{ inputs.beta }}
+        working-directory: beta-src
         run: |
-          git worktree add --detach beta-src "$SHA"
-          cd beta-src
           if ! grep -qs VITE_CHANNEL src/lib/channel.ts; then
-            echo "::error::$SHA predates the beta build (no src/lib/channel.ts), so it would share the live game's rooms and saves. Merge main into it first."
+            echo "::error::This commit predates the beta build (no src/lib/channel.ts), so it would share the live game's rooms and saves. Merge main into it first."
             exit 1
           fi
           npm ci
           # A new beta is tested; the current one passed when it went up.
           if [ -n "$NEW" ]; then npm test; fi
           VITE_CHANNEL=beta npm run build
-          cp -r dist ../dist/beta
+          mv dist ../beta-dist
+      - if: steps.build-beta.outcome == 'success'
+        uses: actions/cache/save@v4
+        with:
+          path: beta-dist
+          key: beta-dist-v1-${{ steps.sha.outputs.sha }}
+
+      - name: Add the beta to the site
+        id: added
+        if: steps.sha.outputs.sha
+        env:
+          NEW: ${{ inputs.beta }}
+          SHA: ${{ steps.sha.outputs.sha }}
+        run: |
+          if [ ! -d beta-dist ]; then
+            echo "::warning::The beta ($SHA) didn't build, so poe2.quest/beta/ is left out of this deploy. Put a branch on the beta to bring it back."
+            exit 0
+          fi
+          cp -r beta-dist dist/beta
+          if [ -n "$NEW" ]; then echo "sha=$SHA" >> "$GITHUB_OUTPUT"; fi
 
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - id: deployment
         uses: actions/deploy-pages@v4
 
-      - name: Point the beta branch at the new beta
-        if: inputs.beta != ''
+  record-beta:
+    needs: [build, deploy]
+    if: needs.build.outputs.beta
+    runs-on: ubuntu-latest
+    permissions:
+      deployments: write
+    steps:
+      - name: Record the new beta
         env:
-          SHA: ${{ steps.beta.outputs.sha }}
-        run: git push --force origin "$SHA:refs/heads/beta"
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ needs.build.outputs.beta }}
+          WANTED: ${{ inputs.beta }}
+        run: |
+          id=$(jq -n --arg sha "$SHA" --arg wanted "$WANTED" \
+            '{ref: $sha, environment: "beta", description: $wanted[0:140], auto_merge: false, required_contexts: [], production_environment: false}' \
+            | gh api "repos/$GITHUB_REPOSITORY/deployments" --input - --jq .id)
+          gh api "repos/$GITHUB_REPOSITORY/deployments/$id/statuses" \
+            -f state=success \
+            -f environment_url=https://poe2.quest/beta/ \
+            -f log_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" > /dev/null
