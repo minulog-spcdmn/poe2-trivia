@@ -26,26 +26,12 @@
   const dist = (p: Pt, q: Pt) => Math.hypot(q[0] - p[0], q[1] - p[1]);
   const flipY = (pts: Pt[]): Pt[] => pts.map(([x, y]) => [x, -y]);
   const poly = (pts: Pt[]) => 'M' + pts.map(pt).join('L');
-  const deg = (v: number) => (v * Math.PI) / 180;
   /** The point at angle `a` (radians, screen coordinates) and radius `r` about `c`. */
   const on = (c: Pt, r: number, a: number): Pt => [c[0] + r * Math.cos(a), c[1] + r * Math.sin(a)];
   /** Points along the arc about `c` of radius `r` from angle `a0` to `a1`, about a pixel apart. */
   const arc = (c: Pt, r: number, a0: number, a1: number): Pt[] => {
     const n = Math.max(4, Math.ceil(Math.abs(a1 - a0) * r));
     return Array.from({ length: n + 1 }, (_, k) => on(c, r, a0 + ((a1 - a0) * k) / n));
-  };
-  /** Points along the arc from `p` to `q` that bulges out (to the left, going along) by `bulge` of the chord; a negative bulge curves in. */
-  const arcTo = (p: Pt, q: Pt, bulge: number): Pt[] => {
-    const c = dist(p, q);
-    const s = Math.abs(bulge) * c;
-    const r = (c * c) / (8 * s) + s / 2;
-    const [ux, uy] = [(q[0] - p[0]) / c, (q[1] - p[1]) / c];
-    const side = Math.sign(bulge);
-    const o: Pt = [(p[0] + q[0]) / 2 - uy * side * (r - s), (p[1] + q[1]) / 2 + ux * side * (r - s)];
-    const a0 = Math.atan2(p[1] - o[1], p[0] - o[0]);
-    let da = Math.atan2(q[1] - o[1], q[0] - o[0]) - a0;
-    da = Math.atan2(Math.sin(da), Math.cos(da));
-    return arc(o, r, a0, a0 + da);
   };
 
   // ---- strokes ------------------------------------------------------------------
@@ -85,124 +71,80 @@
   // ---- the end (the left one; the right is its mirror) ----------------------
   // In pixels: the plate's edge at x 0, its middle at y 0. Plates are 64 high.
 
-  /** The seal's middle, `SOCKET_X` in from the plate's edge (the dialog's close button sits there). */
-  export const SOCKET_X = 14.5;
+  // Traced from a sketch of the end drawn 84 high, its middle at y 42, and
+  // scaled to the plate: the sketch's curves, cleaned up and made exactly
+  // symmetric about the middle. Upper halves; the lower are their mirrors.
+  const S = 64 / 84;
+  const T = ([x, y]: Pt): Pt => [x * S, (y - 42) * S];
+  /** A cubic Bézier from `a` to `d`, as points. */
+  const cubic = (a: Pt, b: Pt, c: Pt, d: Pt, n = 40): Pt[] =>
+    Array.from({ length: n + 1 }, (_, k) => {
+      const t = k / n;
+      const u = 1 - t;
+      return [0, 1].map((j) => u * u * u * a[j] + 3 * u * u * t * b[j] + 3 * u * t * t * c[j] + t * t * t * d[j]) as Pt;
+    });
+  /** A run of cubic Béziers in the sketch's coordinates, as points on the plate. */
+  const trace = (start: Pt, ...curves: [Pt, Pt, Pt][]): Pt[] => {
+    const out: Pt[] = [T(start)];
+    let p = start;
+    for (const [b, c, d] of curves) {
+      out.push(...cubic(T(p), T(b), T(c), T(d)).slice(1));
+      p = d;
+    }
+    return out;
+  };
+  /** A sketch y on the plate's outer and inner rules (2.5 and 5.5 in from its edge). */
+  const OUTER_RULE = 42 - 29.5 / S;
+  const INNER_RULE = 42 - 26.5 / S;
+
+  /** The seal's middle, `SOCKET_X` in from the plate's edge (the dialog's close button sits there), in the ogee's swell. */
+  export const SOCKET_X = 27.5;
   const SEAL: Pt = [SOCKET_X, 0];
   /** The seal's ring; the circle draws its signs for a ring of 13. */
-  const SEAL_R = 10.5;
+  const SEAL_R = 10;
   const SIGN_SCALE = SEAL_R / 13;
-  const HOLES = [{ c: SEAL, r: SEAL_R + 1.8 }];
+  const HOLES = [{ c: SEAL, r: SEAL_R + 1.6 }];
 
-  /** The circle through three points: its centre and radius. */
-  function circle3(p: Pt, q: Pt, r: Pt): { c: Pt; r: number } {
-    const d = 2 * (p[0] * (q[1] - r[1]) + q[0] * (r[1] - p[1]) + r[0] * (p[1] - q[1]));
-    const sq = (v: Pt) => v[0] * v[0] + v[1] * v[1];
-    const c: Pt = [
-      (sq(p) * (q[1] - r[1]) + sq(q) * (r[1] - p[1]) + sq(r) * (p[1] - q[1])) / d,
-      (sq(p) * (r[0] - q[0]) + sq(q) * (p[0] - r[0]) + sq(r) * (q[0] - p[0])) / d,
-    ];
-    return { c, r: dist(c, p) };
-  }
+  /** The cusp where the ogee meets the flame. */
+  const CUSP: Pt = [40.6, 22.7];
+  // The ogee: from the post it rises, hollow then swelling, over its crown
+  // and down to the cusp.
+  const OGEE = trace([3.6, 40.7], [[7, 40.7], [14.9, 38.6], [20.1, 30.2]], [[26.6, 19.7], [31.6, 19.7], [33.1, 19.7]], [[34.8, 19.7], [38.9, 20.4], CUSP]);
+  // The flame: from the point it sweeps back in two lobes to sharp cusps,
+  // the second the ogee's, then rises and runs on as the frame's inner rule.
+  const FLAME_LOBES = trace([66.1, 42], [[61.1, 34.3], [50.9, 24], [50.1, 33.2]], [[52.6, 24.2], [47.8, 13.5], CUSP]);
+  const FLAME_RISE = trace(CUSP, [[41, 19.7], [36.1, 12.7], [35.1, 9.2]], [[33.6, 4.6], [53.1, INNER_RULE], [70.6, INNER_RULE]]);
+  /** Where the flame becomes the inner rule. */
+  const INNER_RULE_X = 70.6 * S;
+  // A fine line from the seal on to the point, inside the flame.
+  const SPINE = trace([40.6, 31.2], [[44.6, 29.2], [49.6, 38.2], [56.1, 42]]);
+  // The spandrel in the corner: its back an arc from the post up to the
+  // outer rule, its face scalloped in three lobes meeting in cusps that
+  // point into the corner.
+  const SPANDREL = trace(
+    [33.6, OUTER_RULE],
+    [[32.4, 8.9], [25, 8.2], [21.6, 6.7]],
+    [[27.6, 28.7], [13.6, 26.7], [9.6, 19.7]],
+    [[9.6, 35.2], [4.6, 35.2], [1.6, 36.2]],
+    [[0.9, 29], [3.2, 12.1], [21.6, OUTER_RULE]],
+  );
+  /** Where the spandrel meets the outer rule, which runs on from there. */
+  const OUTER_RULE_X = 21.6 * S;
 
-  /**
-   * One side (the upper) of a flamed ogee arch lying on its side, drawn
-   * with compasses. It is set out on the arc through its springing on the
-   * post (`x0`, -`foot`), its crown (a third of the way, at -`h`) and its
-   * point (`x1`, 0). At the fractions `knots` of the way along that arc the
-   * edge rises to a spike, pushed `spike` out and leaning towards the point;
-   * between spikes it swells out and sweeps hollow up into the next spike,
-   * like a flame, and the last stretch draws in, hollow, to the point.
-   */
-  function flamedSide(x0: number, foot: number, x1: number, h: number, knots: number[], spike: number): Pt[] {
-    const L = x1 - x0;
-    const base = circle3([x0, -foot], [x0 + L * 0.34, -h], [x1, 0]);
-    const a0 = Math.atan2(-foot - base.c[1], x0 - base.c[0]);
-    let a1 = Math.atan2(-base.c[1], x1 - base.c[0]);
-    if (a1 < a0) a1 += 2 * Math.PI;
-    const at = (t: number) => on(base.c, base.r, a0 + (a1 - a0) * t);
-    /** The spike at `t`: out from the arc's centre, and leaning on along it. */
-    const spikeAt = (t: number): Pt => {
-      const p = at(t);
-      const a = a0 + (a1 - a0) * t;
-      const out: Pt = [Math.cos(a), Math.sin(a)];
-      const on_: Pt = [-Math.sin(a), Math.cos(a)];
-      return [p[0] + out[0] * spike + on_[0] * spike * 1.25, p[1] + out[1] * spike + on_[1] * spike * 1.25];
-    };
-    const pts: Pt[] = [[x0, -foot]];
-    let prev = 0;
-    for (const t of knots) {
-      // A flame: swell out to a waist set a little in from the arc, then
-      // sweep up, hollow, into the spike.
-      const waist = at(prev + (t - prev) * 0.5);
-      pts.push(...arcTo(pts.at(-1)!, waist, 0.09).slice(1), ...arcTo(waist, spikeAt(t), -0.24).slice(1));
-      prev = t;
-    }
-    const waist = at(prev + (1 - prev) * 0.45);
-    pts.push(...arcTo(pts.at(-1)!, waist, 0.08).slice(1), ...arcTo(waist, [x1, 0], -0.14).slice(1));
-    return pts;
-  }
-  /** A flamed ogee: both sides, from the post round to the post. */
-  const flamed = (...args: Parameters<typeof flamedSide>) => {
-    const top = flamedSide(...args);
-    return [...top, ...flipY(top).reverse().slice(1)];
-  };
-
-  // Three arches, one inside another, springing from the post at their own
-  // heights so their lines never meet; each with a fine line inside it.
-  const ARCHES = [
-    { x0: 3, foot: 13, x1: 48, h: 18.8, knots: [0.3, 0.62], spike: 4.2 },
-    { x0: 3, foot: 7.5, x1: 41, h: 14.5, knots: [0.36, 0.66], spike: 3.2 },
-  ];
-  const OUTER = flamed(ARCHES[0].x0, ARCHES[0].foot, ARCHES[0].x1, ARCHES[0].h, ARCHES[0].knots, ARCHES[0].spike);
-  const INNER = flamed(ARCHES[1].x0, ARCHES[1].foot, ARCHES[1].x1, ARCHES[1].h, ARCHES[1].knots, ARCHES[1].spike);
-  const OUTER_IN = flamed(3, 13, 44.5, 16.9, [0.32, 0.63], 3);
-  const INNER_IN = flamed(3, 7.5, 37.8, 12.8, [0.38, 0.67], 2.3);
-  /** The innermost, from the seal's edge, a small flame pointing on at the name. */
-  const HEART = flamed(SEAL[0] + SEAL_R + 2.4, 0.01, 34.5, 4.2, [0.5], 1.6);
-  /** Lozenges on the arches' points. */
-  const FINIALS = [48, 41].map((x) => `M${x - 0.8} 0L${x + 1.6} -1.5L${x + 4} 0L${x + 1.6} 1.5Z`).join('');
-
-  /**
-   * A mouchette: a round head of radius `r` about `head`, and two arcs from
-   * the tail at `tail`, each tangent to the head (at angles `a1` and `a2`,
-   * the first the side facing the frame). Its outline, from the tail round
-   * the head and back.
-   */
-  function mouchette(head: Pt, r: number, tail: Pt, a1: number, a2: number): Pt[] {
-    /** The arc from the tail that touches the head at angle `a`. */
-    const flank = (a: number) => {
-      const u: Pt = [Math.cos(a), Math.sin(a)];
-      const p = on(head, r, a);
-      const d: Pt = [p[0] - tail[0], p[1] - tail[1]];
-      const R = (d[0] * d[0] + d[1] * d[1]) / (2 * (d[0] * u[0] + d[1] * u[1]));
-      const c: Pt = [p[0] - u[0] * R, p[1] - u[1] * R];
-      const t0 = Math.atan2(tail[1] - c[1], tail[0] - c[0]);
-      let t1 = Math.atan2(p[1] - c[1], p[0] - c[0]);
-      if (t1 - t0 > Math.PI) t1 -= 2 * Math.PI;
-      if (t0 - t1 > Math.PI) t1 += 2 * Math.PI;
-      return arc(c, Math.abs(R), t0, t1);
-    };
-    // Round the head the far way from the tail, from one flank to the other.
-    return [...flank(a1), ...arc(head, r, a1, a2 > a1 ? a2 : a2 + 2 * Math.PI).slice(1), ...flank(a2).reverse().slice(1)];
-  }
-  // Tucked into the corner above the outer arch's springing, clear of it.
-  const LEAF = mouchette([9.6, -23.4], 2.6, [4.6, -15.4], deg(-160), deg(20));
-
-  // The frame's corner, cut like the panels' filigree, with a lozenge in
-  // the cut; the rules run on from it (see the markup).
-  const CORNER = 'M2.5 19V8.5L8.5 2.5H14';
-  const CORNER_IN = 'M5.5 16.5V10L10 5.5H16';
-  const LOZENGE = 'M5 1.9 8.1 5 5 8.1 1.9 5Z';
-
+  const both = (pts: Pt[]) => [pts, flipY(pts)];
   const END = {
-    ogees: [OUTER, INNER, HEART].map((o, k) => stroke(pieces(o, HOLES), 0.15 + k * 0.15, 0.9)),
-    fine: [OUTER_IN, INNER_IN].map((o, k) => stroke(pieces(o, HOLES), 0.35 + k * 0.15, 0.9)),
-    leaves: [LEAF, flipY(LEAF)].flatMap((l) => stroke(pieces(l, HOLES), 0.3, 0.7)),
+    spandrels: both(SPANDREL).flatMap((l) => stroke(pieces(l, HOLES), 0.1, 0.8)),
+    ogees: both(OGEE).flatMap((l) => stroke(pieces(l, HOLES), 0.2, 0.7)),
+    flames: both([...FLAME_LOBES, ...FLAME_RISE.slice(1)]).flatMap((l) => stroke(pieces(l, HOLES), 0.3, 0.9)),
+    spines: both(SPINE).flatMap((l) => stroke(pieces(l, HOLES), 0.6, 0.4)),
     ring: stroke(pieces(arc(SEAL, SEAL_R, -Math.PI / 2, 1.5 * Math.PI)), 0.3, 0.6),
   };
-  /** The grounds the tracery is set into: darker inside the ogees, a deep red in the leaves. */
-  const GROUND = poly(OUTER) + 'Z';
-  const LEAF_GROUND = [LEAF, flipY(LEAF)].map((l) => poly(l) + 'Z').join('');
+  /** The grounds the tracery is set into: darker inside the ogee and flame, a deep red in the spandrels. */
+  const GROUND = poly([...OGEE, ...[...FLAME_LOBES].reverse().slice(1), ...flipY(FLAME_LOBES).slice(1), ...flipY(OGEE).reverse().slice(1)]) + 'Z';
+  const SPINE_PATHS = END.spines.map((p) => p.d).join('');
+  const SPANDREL_GROUND = both(SPANDREL)
+    .map((l) => poly(l) + 'Z')
+    .join('');
 
   // ---- the field ---------------------------------------------------------------
   // Waves against their mirror images, the rows closer together than the
@@ -270,17 +212,19 @@
 {#snippet cap(sign: 'sol' | 'luna' | 'empty')}
   <g class="end">
     <path d={GROUND} class="ground" />
-    <path d={LEAF_GROUND} class="ground leaf" />
-    {#each END.fine as list, k (k)}
-      {#each list as { d, delay, t }, j (j)}
-        <path {d} class="draw piece fine" style:--d={delay} style:--t={t} pathLength="100" />
-      {/each}
+    <path d={SPANDREL_GROUND} class="ground leaf" />
+    <path d={SPINE_PATHS} class="draw fine" style:--d="0.6s" pathLength="100" />
+    <!-- The frame: the outer rule runs on from the spandrels, the inner from
+         the flames, past the middle (the other end's rules overlap them
+         there, unseen), so they scale with the end. -->
+    {#each [-1, 1] as side (side)}
+      <line x1={f(OUTER_RULE_X)} y1={side * 29.5} x2="70%" y2={side * 29.5} class="draw rule metal thin" style:--d="0.6s" pathLength="100" />
+      <line x1={f(INNER_RULE_X)} y1={side * 26.5} x2="70%" y2={side * 26.5} class="draw rule metal" style:--d="1.1s" pathLength="100" />
+      <line x1={f(OUTER_RULE_X)} y1={side * 29.5} x2="52%" y2={side * 29.5} class="spark" pathLength="100" />
     {/each}
-    {#each END.ogees as o, k (k)}
-      {@render moulding(o)}
-    {/each}
-    {@render moulding(END.leaves)}
-    <path d={FINIALS} class="solid fade" style:--d="0.9s" />
+    {@render moulding(END.spandrels)}
+    {@render moulding(END.ogees)}
+    {@render moulding(END.flames)}
     <!-- The seal, pressed in like the circle's. -->
     <g class="seal" style:--d="0.3s">
       <circle cx={SEAL[0]} cy={SEAL[1]} r={SEAL_R + 1} class="well" />
@@ -309,26 +253,6 @@
   <!-- The ends, round the middle. -->
   <svg y="50%" overflow="visible">{@render cap('sol')}</svg>
   <svg x="100%" y="50%" overflow="visible"><g transform="scale(-1 1)">{@render cap(end)}</g></svg>
-  <!-- The frame, from the corners: the rules run from each end to the middle. -->
-  {#each ['metal', 'inlay'] as layer (layer)}
-    {#each [false, true] as right (right)}
-      {#each [false, true] as bottom (bottom)}
-        <svg x={right ? '100%' : 0} y={bottom ? '100%' : 0} overflow="visible">
-          <g transform="scale({right ? -1 : 1} {bottom ? -1 : 1})">
-            {#if layer === 'inlay'}
-              <path d={CORNER_IN} class="draw fine" style:--t="0.4s" pathLength="100" />
-              <line x1="16" y1="5.5" x2="50%" y2="5.5" class="draw rule fine" style:--d="0.4s" pathLength="100" />
-              <path d={LOZENGE} class="solid fade" style:--d="0.3s" />
-              <line x1="14" y1="2.5" x2="50%" y2="2.5" class="spark" pathLength="100" />
-            {:else}
-              <path d={CORNER} class="draw {layer}" style:--t="0.4s" pathLength="100" />
-              <line x1="14" y1="2.5" x2="50%" y2="2.5" class="draw rule {layer}" style:--d="0.3s" pathLength="100" />
-            {/if}
-          </g>
-        </svg>
-      {/each}
-    {/each}
-  {/each}
 {/snippet}
 
 <span class="plate" class:lit aria-hidden="true">
@@ -405,16 +329,15 @@
     stroke: #b06c3c;
     stroke-width: 1.3;
   }
-  /* The rules meet under the name; square ends overlap there, so the join doesn't show. */
   .rule {
-    stroke-linecap: square;
+    stroke-linecap: butt;
+  }
+  .metal.thin {
+    stroke-width: 0.9;
   }
   .fine {
-    stroke: #5e3219;
-    stroke-width: 0.6;
-  }
-  .solid {
-    fill: #c98552;
+    stroke: #8a4d26;
+    stroke-width: 0.7;
   }
   .ground {
     fill: rgba(8, 4, 2, 0.55);
@@ -446,7 +369,6 @@
   .glow .well,
   .glow .bloom,
   .glow .sign,
-  .glow .solid,
   .glow .spark {
     display: none;
   }
@@ -494,9 +416,6 @@
   /* A piece of a longer line keeps the pen's pace (see stroke()). */
   .piece {
     animation-timing-function: linear;
-  }
-  .fade {
-    animation: fade 0.6s var(--d, 0s) ease-out both;
   }
   /* A spark that runs along the outer rules, from the ends to the middle, as the seals light. */
   .spark {
