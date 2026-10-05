@@ -587,9 +587,9 @@ export function lifeHeld(phial: Element) {
 const rectOf = (el: Element) => el.getBoundingClientRect();
 
 /**
- * Delve: an Azurite Ward forms at the phial's tip (`pip`, its crystal): blue
- * light gathers into it, and as it settles it flashes and glints. `forged`
- * from two shards: more light, and a ring of it running out.
+ * Delve: an Azurite Ward crystallises onto a chamber of the phial (`pip`, its
+ * casing): blue light gathers into it, and as it settles it flashes and
+ * glints. `forged` from two shards: more light, and a ring of it running out.
  */
 export function wardFormed(pip: Element, forged: boolean) {
   if (!fxActive() || detached(pip)) return;
@@ -604,7 +604,7 @@ export function wardFormed(pip: Element, forged: boolean) {
   });
 }
 
-/** Delve: an azurite shard toward the next ward lands at the phial's tip (`pip`). */
+/** Delve: an azurite shard toward the next ward lands on its chamber (`pip`, the half casing). */
 export function shardFound(pip: Element) {
   if (!fxActive() || detached(pip)) return;
   flash(pip, { radius: 12, color: C.azurite, intensity: 0.22, life: 0.4 });
@@ -613,16 +613,17 @@ export function shardFound(pip: Element) {
 }
 
 /**
- * Delve: an Azurite Ward shatters in place of a life (`pip`: the breaking
- * crystal). No light leaves the phial: the crystal bursts into splinters of
- * blue that fall, a cold ring runs out from it, and the player's entry
- * (`pill`) is rimmed in blue rather than red.
+ * Delve: an Azurite Ward shatters in place of a life (`pip`: the casing
+ * bursting off its chamber). No light leaves the phial: the casing breaks
+ * into splinters of blue from all along the chamber that fall, a cold ring
+ * runs out from it, and the player's entry (`pill`) is rimmed in blue rather
+ * than red.
  */
 export function wardShattered(pip: Element, pill: Element, mine: boolean) {
   if (!fxActive() || detached(pip)) return;
   const at = rectOf(pip);
   flash(at, { radius: 22, color: C.azuritePale, intensity: 0.45, life: 0.3 });
-  shards(at, { count: 12, colors: [C.azurite, C.azuritePale, k3(C.azurite, 0.6)], cool: k3(C.azurite, 0.25), speed: [60, 230], size: [1.6, 3.6], area: 'centre' });
+  shards(at, { count: 12, colors: [C.azurite, C.azuritePale, k3(C.azurite, 0.6)], cool: k3(C.azurite, 0.25), speed: [60, 230], size: [1.6, 3.6], area: 'fill' });
   sparks(at, { count: 14, colors: [C.azuritePale, C.azurite], cool: k3(C.azurite, 0.3), speed: [120, 380], gravity: 320, life: [0.2, 0.5] });
   ring(at, { radius: 36, from: 4, thickness: 3, life: 0.45, color: C.azurite, breakup: 0.7, fill: 0, intensity: 0.7 });
   light(at, { color: [0.4, 0.62, 1], radius: 130, intensity: 0.25, decay: 0.7 });

@@ -7,10 +7,15 @@
   // stands upright on a phone). The light of a life just lost flares and
   // pours out of the end of its chamber; Scoreboard.svelte jets it out of the
   // phial into the effects layer (lifeLost in lib/fx/moments.ts) as it does.
-  // What the player carries stands at its tip (Inventory.svelte): Azurite
-  // Wards, which break before a life does, and the finds they hold.
+  // Azurite Wards, which break before a life does, encase the chambers in
+  // crystal from the base, one each (CASINGS in lib/inventoryArt.ts), and a
+  // shard toward the next ward is half a casing; a ward forming crystallises
+  // onto its chamber, and one breaking in place of a life bursts off it in two
+  // pieces, the outermost first. The flares and dynamite a player carries
+  // stand counted beside the phial lying down (Inventory.svelte); upright, the
+  // scoreboard shows them by the avatar.
   import { DELVE_LIVES, type Inventory as Carried } from '../lib/delve';
-  import { vesselLabel, type InventoryMoment } from '../lib/inventoryArt';
+  import { CASINGS, vesselLabel, type Casing, type InventoryMoment } from '../lib/inventoryArt';
   import Inventory from './Inventory.svelte';
 
   let {
@@ -27,14 +32,55 @@
     /** Changes each time a wave of light should run through the lit chambers (a question survived). */
     surge?: number;
     vertical?: boolean;
-    /** What the player carries (upright, only the crystals show here; the scoreboard shows the rest). */
+    /** What the player carries (its wards and shards on the chambers; lying, its flares and dynamite beside it). */
     inv?: Carried | null;
     /** What just happened to it, to play on it. */
     moment?: InventoryMoment | null;
   } = $props();
 
   const CHAMBERS = Array.from({ length: DELVE_LIVES }, (_, k) => k);
+  const uid = $props.id();
+
+  type Cased = { k: number; kind: 'whole' | 'shard' | 'ghost'; fresh: boolean };
+  /** The casings on the chambers: whole wards from the base, a shard after them, and wards just broken bursting off. */
+  const casings = $derived.by((): Cased[] => {
+    const wards = inv?.wards ?? 0;
+    const m = moment?.kind;
+    const out: Cased[] = [];
+    for (let k = 0; k < Math.min(wards, CASINGS.length); k++) out.push({ k, kind: 'whole', fresh: (m === 'ward' || m === 'forge') && k === wards - 1 });
+    if (inv?.shards && wards < CASINGS.length) out.push({ k: wards, kind: 'shard', fresh: m === 'shard' });
+    if (m === 'shatter') for (let k = wards; k < Math.min(wards + (moment?.n ?? 1), CASINGS.length); k++) out.push({ k, kind: 'ghost', fresh: true });
+    return out;
+  });
 </script>
+
+<!-- One casing drawn in the phial's units, its glaze and front edges clipped to the chamber's hollow. -->
+{#snippet art(c: Casing, id: string)}
+  <defs>
+    <linearGradient id="{id}-g" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#8cc4ff" stop-opacity="0.6" />
+      <stop offset="0.32" stop-color="#8cc4ff" stop-opacity="0.1" />
+      <stop offset="0.68" stop-color="#3f7fe0" stop-opacity="0.1" />
+      <stop offset="1" stop-color="#3f7fe0" stop-opacity="0.6" />
+    </linearGradient>
+    <clipPath id="{id}-h"><path d={c.hollow} /></clipPath>
+    {#if c.clip}<clipPath id="{id}-c"><path d={c.clip} /></clipPath>{/if}
+  </defs>
+  <g clip-path={c.clip ? `url(#${id}-c)` : undefined}>
+    <g clip-path="url(#{id}-h)">
+      <path class="glaze" d={c.hollow} fill="url(#{id}-g)" />
+      <path class="front" d={c.front} />
+    </g>
+    {#each c.faces as face, i (i)}
+      <path class="face {face.tone}" d={face.d} />
+    {/each}
+    <path class="hatch" d={c.hatch} />
+    <path class="edges" d={c.edges} />
+    <path class="catch" d={c.catch} />
+    <path class="rim" d={c.rim} />
+  </g>
+  {#if c.crack}<path class="crack" d={c.crack} />{/if}
+{/snippet}
 
 <!-- The phial is drawn lying down (64 × 12); upright it is turned a quarter. -->
 <span class="vessel" class:vertical role="img" aria-label={vesselLabel(lives, inv)}>
@@ -59,9 +105,31 @@
         <path class="inner" d="M2.3 6 6.9 1.6H57.1L61.7 6 57.1 10.4H6.9Z" />
         <path class="wall" d="M22.5 0.6V11.4M41.5 0.6V11.4" />
       </svg>
+      {#each casings as c (`${c.kind}${c.k}${c.kind === 'ghost' ? moment?.key : ''}`)}
+        {@const set = CASINGS[c.k]}
+        <span
+          class="casing {c.kind}"
+          class:fresh={c.fresh}
+          class:forged={c.fresh && moment?.kind === 'forge'}
+          data-k={c.k}
+          style:--from={set.whole.from}
+          style:--to={set.whole.to}
+        >
+          {#if c.kind === 'ghost'}
+            {#each set.pieces as piece, i (i)}
+              <svg class="piece p{i}" viewBox="0 0 64 12" aria-hidden="true">{@render art(piece, `${uid}-x${c.k}${i}`)}</svg>
+            {/each}
+          {:else}
+            {#key c.fresh ? moment?.key : 0}
+              <svg class="grow" viewBox="0 0 64 12" aria-hidden="true">{@render art(c.kind === 'whole' ? set.whole : set.shard, `${uid}-${c.kind}${c.k}`)}</svg>
+              {#if c.fresh}<span class="flash"></span>{/if}
+            {/key}
+          {/if}
+        </span>
+      {/each}
     </span>
   </span>
-  {#if inv}<Inventory {inv} {vertical} part={vertical ? 'crystals' : 'all'} {moment} />{/if}
+  {#if inv && !vertical}<Inventory {inv} {moment} />{/if}
 </span>
 
 <style>
@@ -342,7 +410,174 @@
     }
   }
 
+
+  /* An Azurite Ward: a casing of crystal round a chamber (CASINGS in
+     lib/inventoryArt.ts). Its box spans the chamber (--from to --to, in the
+     phial's units), so the effects layer aims at the chamber; its drawing is
+     the whole phial's, shifted back to line up. Azurite as the finds are
+     coloured (ItemGlyph.svelte): deep in shadow, bright where it faces you. */
+  .casing {
+    --span: calc(var(--to) - var(--from));
+    position: absolute;
+    top: 0;
+    height: 100%;
+    left: calc(100% * var(--from) / 64);
+    width: calc(100% * var(--span) / 64);
+    pointer-events: none;
+    --dark: #0f2f70;
+    --mid: #2a63c4;
+    --lit: #6fb4ff;
+    --edge: rgba(214, 236, 255, 0.55);
+    --shade: rgba(4, 12, 34, 0.9);
+    --catch: #eef8ff;
+  }
+  .casing svg {
+    position: absolute;
+    top: 0;
+    height: 100%;
+    left: calc(-100% * var(--from) / var(--span));
+    width: calc(100% * 64 / var(--span));
+    overflow: visible;
+    filter: drop-shadow(0 0 calc(var(--u) * 0.7) rgba(70, 140, 255, 0.6));
+  }
+  .face {
+    stroke: none;
+  }
+  .face.dark {
+    fill: var(--dark);
+  }
+  .face.mid {
+    fill: var(--mid);
+  }
+  .face.lit {
+    fill: var(--lit);
+  }
+  .front {
+    fill: none;
+    stroke: rgba(200, 228, 255, 0.5);
+    stroke-width: 0.3;
+  }
+  .casing .hatch {
+    fill: none;
+    stroke: var(--shade);
+    stroke-width: 0.3;
+    stroke-linecap: round;
+  }
+  .casing .edges {
+    fill: none;
+    stroke: var(--edge);
+    stroke-width: 0.32;
+    stroke-linecap: round;
+  }
+  .catch {
+    fill: none;
+    stroke: var(--catch);
+    stroke-width: 0.4;
+    stroke-linecap: round;
+    opacity: 0.8;
+  }
+  .rim {
+    fill: none;
+    stroke: #c9a45c;
+    stroke-width: 0.5;
+    stroke-linejoin: miter;
+    stroke-miterlimit: 12;
+  }
+  .crack {
+    fill: none;
+    stroke: var(--catch);
+    stroke-width: 0.45;
+    stroke-linejoin: miter;
+  }
+
+  /* A ward forming crystallises onto its chamber: the casing closes in round
+     it from wide and short, growing from the base end, and a cold light
+     flashes in it as it settles (with a glint from the effects layer). A
+     shard grows the same, as far as it reaches. */
+  .fresh .grow {
+    /* The chamber's base end, in the drawing's box (the whole phial's). */
+    transform-origin: calc(100% * var(--from) / 64) 50%;
+    animation: encase 0.75s cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
+  }
+  .forged .grow {
+    animation-duration: 1s;
+  }
+  @keyframes encase {
+    from {
+      opacity: 0;
+      transform: scale(0.2, 2.2);
+    }
+    45% {
+      opacity: 1;
+    }
+  }
+  .flash {
+    position: absolute;
+    inset: -70% -10%;
+    background: radial-gradient(closest-side, rgba(225, 240, 255, 0.95), rgba(110, 175, 255, 0.45) 50%, rgba(110, 175, 255, 0) 100%);
+    animation: flash 0.9s ease-out 0.2s both;
+  }
+  .forged .flash {
+    inset: -120% -25%;
+    animation-duration: 1.2s;
+  }
+  @keyframes flash {
+    from {
+      opacity: 0;
+      transform: scale(0.4);
+    }
+    25% {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
+      transform: scale(1.15);
+    }
+  }
+
+  /* A ward breaking in place of a life: its casing cracks along the chamber
+     and the two halves burst off it, above and below, and fade (the effects
+     layer throws its splinters). The light inside is untouched. */
+  .piece {
+    transform-origin: calc(100% * (var(--from) + var(--to)) / 128) 50%;
+    animation: burst-a 0.85s cubic-bezier(0.3, 0, 0.7, 1) both;
+  }
+  .piece.p1 {
+    animation-name: burst-b;
+  }
+  @keyframes burst-a {
+    0%,
+    10% {
+      opacity: 1;
+      transform: none;
+    }
+    to {
+      opacity: 0;
+      transform: translate(calc(var(--u) * -2), calc(var(--u) * -11)) rotate(-9deg);
+    }
+  }
+  @keyframes burst-b {
+    0%,
+    10% {
+      opacity: 1;
+      transform: none;
+    }
+    to {
+      opacity: 0;
+      transform: translate(calc(var(--u) * 2.5), calc(var(--u) * 12)) rotate(7deg);
+    }
+  }
+
   @media (prefers-reduced-motion: reduce) {
+    .grow,
+    .flash,
+    .piece {
+      animation: none;
+    }
+    .flash,
+    .ghost {
+      display: none;
+    }
     .wisp,
     .wisp::before,
     .beat,
@@ -359,5 +594,8 @@
   :global(html[data-still]) .wisp::before,
   :global(html[data-still]) .beat {
     animation-play-state: paused;
+  }
+  :global(html[data-still]) .flash {
+    display: none;
   }
 </style>

@@ -115,7 +115,8 @@
   // with what caused it: a ward shatters at the reveal just as a life would
   // pour out, a find lands as the result line comes in, a flare burns at once.
   // Until then the entry keeps what they held (`invHeld`); `invMoment` plays
-  // the change on the phial (Inventory.svelte) and here in the effects layer.
+  // the change on the phial (Phial.svelte, its wards on the chambers; Inventory.svelte,
+  // the counted finds) and here in the effects layer.
   let invHeld = $state<Record<string, Carried>>({});
   let invMoment = $state<Record<string, InventoryMoment>>({});
   let invPrev: GameState | null = null;
@@ -167,16 +168,17 @@
       if (!li) return;
       const { vessel, counts } = shownVessel(li);
       const pip = (sel: string) => vessel?.querySelector(sel) ?? null;
+      // A ward's casing and a shard are on the chambers; a breaking ward bursts off its own.
       if (kind === 'ward' || kind === 'forge') {
-        const el = pip('.pip.ward.fresh');
+        const el = pip('.casing.whole.fresh');
         if (el) wardFormed(el, kind === 'forge');
         if (mine) sfx('fill');
       } else if (kind === 'shard') {
-        const el = pip('.pip.shard');
+        const el = pip('.casing.shard');
         if (el) shardFound(el);
         if (mine) sfx('select');
       } else if (kind === 'shatter') {
-        vessel?.querySelectorAll('.pip.ghost').forEach((el, i) => setTimeout(() => wardShattered(el, li, mine && i === 0), i * 120));
+        vessel?.querySelectorAll('.casing.ghost').forEach((el, i) => setTimeout(() => wardShattered(el, li, mine && i === 0), i * 120));
         if (mine) sfx('pick');
       } else if (kind === 'flare' || kind === 'dynamite') {
         const el = counts?.querySelector(`[data-pip="${kind}"]`);
@@ -187,7 +189,7 @@
         const timer = [...document.querySelectorAll('.timer')].filter((t) => t.getClientRects().length).at(-1) ?? null;
         flareBurns(timer, li, counts?.querySelector('[data-pip="flare"]') ?? null);
         // Everyone hears it: the clock everyone watches just got longer.
-        sfx('burn');
+        sfx('flare');
       }
       // A blast is heard from QuestionView, where the stick goes off.
     });
@@ -420,7 +422,7 @@
           <span class="phial-side"><Phial lives={shownLives} draining={hit[p.id] ?? -1} surge={surge[p.id] ?? 0} vertical {inv} {moment} /></span>
           <!-- And there, the flares and dynamite they carry, on the avatar's other corner. -->
           {#if fell === null && inv && (inv.flares > 0 || inv.dynamite > 0 || moment?.kind === 'burn' || moment?.kind === 'blast')}
-            <span class="side-counts"><Inventory {inv} part="counts" {moment} /></span>
+            <span class="side-counts"><Inventory {inv} {moment} /></span>
           {/if}
         {:else}
           {#key score}
@@ -921,8 +923,7 @@
       --inv-h: 9px;
       line-height: 0;
     }
-    li:not(.active) .side-counts :global(.inventory),
-    li:not(.active) .side-counts :global(.counts) {
+    li:not(.active) .side-counts :global(.inventory) {
       gap: 3px;
     }
     li.active .info {

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { GLYPHS, WARD_CRACK, inventoryWords, momentOf, vesselLabel } from '../src/lib/inventoryArt.ts';
+import { CASINGS, GLYPHS, WARD_CRACK, inventoryWords, momentOf, vesselLabel } from '../src/lib/inventoryArt.ts';
 import type { Inventory } from '../src/lib/delve.ts';
 
 const inv = (o: Partial<Inventory> = {}): Inventory => ({ wards: 0, flares: 0, dynamite: 0, shards: 0, ...o });
@@ -38,4 +38,28 @@ test('the glyphs are drawn from finite numbers only', () => {
   for (const kind of ['ward', 'shard', 'dynamite'] as const) assert.ok(GLYPHS[kind].hatch.length > 0, kind);
   assert.match(WARD_CRACK.left, /^M.*Z$/);
   assert.match(WARD_CRACK.right, /^M.*Z$/);
+});
+
+test('a ward encases one chamber each, from the base, and breaks into two pieces', () => {
+  assert.equal(CASINGS.length, 3);
+  const finite = (d: string | undefined) => assert.doesNotMatch(d ?? '', /NaN|Infinity|undefined/);
+  CASINGS.forEach(({ whole, shard, pieces }, k) => {
+    for (const c of [whole, shard, ...pieces]) {
+      for (const d of [c.rim, c.edges, c.hatch, c.catch, c.hollow, c.front, c.clip, c.crack, ...c.faces.map((f) => f.d)]) finite(d);
+      assert.match(c.rim, /^M.*Z$/, `chamber ${k}`);
+      assert.ok(c.hatch.length > 0, `chamber ${k} is hatched below`);
+    }
+    // Each casing spans its own chamber, in order along the phial, and two never overlap.
+    assert.ok(whole.from < whole.to);
+    if (k) assert.ok(CASINGS[k - 1].whole.to < whole.from, `casings ${k - 1} and ${k} overlap`);
+    // A shard is cut away past its middle; a breaking ward's two pieces share one crack.
+    assert.match(shard.clip ?? '', /^M.*Z$/);
+    assert.ok(shard.crack);
+    assert.notEqual(pieces[0].clip, pieces[1].clip);
+    assert.equal(pieces[0].crack, pieces[1].crack);
+    assert.equal(whole.clip, undefined);
+  });
+  // The pointed ends reach past the frame (0 to 64) by the casing's standoff, no further.
+  assert.ok(CASINGS[0].whole.from < 0 && CASINGS[0].whole.from > -4);
+  assert.ok(CASINGS[2].whole.to > 64 && CASINGS[2].whole.to < 68);
 });

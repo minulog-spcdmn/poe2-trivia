@@ -5,7 +5,7 @@
 // (the left, away from the light), as docs/arcane-style.md asks. Each glyph is
 // drawn in its own box, in units of about a pixel at the scoreboard's size.
 
-import { arc, at, hatch, line, pt, type Pt } from './arcane.ts';
+import { arc, at, hatch, lerp, line, pt, type Pt } from './arcane.ts';
 import type { Inventory } from './delve.ts';
 
 /** A face of a glyph: its outline, and how it is lit (dark faces get hatched). */
@@ -232,6 +232,179 @@ export const WARD_CRACK = (() => {
     line: open(crack.slice(1, -1)),
   };
 })();
+
+// ---- the casing: a ward on the phial -------------------------------------------
+
+/*
+ * An Azurite Ward is drawn on the phial itself (Phial.svelte), in the
+ * phial's 64 x 12 units: a sleeve of crystal encasing one chamber. Above the
+ * gold frame a lit band, below it a band hatched across, bevelled in to the
+ * frame at each wall and following a pointed end round in two facets; over
+ * the chamber's light a clear front face, its two long edges and a glaze
+ * that thickens toward the frame. Wards encase the chambers from the base
+ * (one each, up to three), and the outermost breaks first. A shard toward the
+ * next ward is that casing's base half, broken off jagged.
+ */
+
+/** The phial's frame: its top and bottom, its middle, and the walls between chambers (Phial.svelte draws the same). */
+const FRAME = { top: 0.6, bottom: 11.4, mid: 6, walls: [22.5, 41.5] };
+/** Each chamber's ends: a wall's x, or the phial's pointed end. */
+const CHAMBER_ENDS: [number | 'point', number | 'point'][] = [
+  ['point', FRAME.walls[0]],
+  [FRAME.walls[0], FRAME.walls[1]],
+  [FRAME.walls[1], 'point'],
+];
+/** The pointed ends on the frame (tip, upper and lower corner), left and right. */
+const POINTS = {
+  left: { tip: [0.6, FRAME.mid] as Pt, top: [6.2, FRAME.top] as Pt, bot: [6.2, FRAME.bottom] as Pt },
+  right: { tip: [63.4, FRAME.mid] as Pt, top: [57.8, FRAME.top] as Pt, bot: [57.8, FRAME.bottom] as Pt },
+};
+/** How far the casing stands off the frame, and how far short of a wall it stops (so two casings read as two). */
+const STANDOFF = 2.2;
+const WALL_GAP = 0.6;
+
+/** Where the line through `p` along `u` meets the line through `q` along `v`. */
+function meet(p: Pt, u: Pt, q: Pt, v: Pt): Pt {
+  const t = ((q[0] - p[0]) * v[1] - (q[1] - p[1]) * v[0]) / (u[0] * v[1] - u[1] * v[0]);
+  return [p[0] + u[0] * t, p[1] + u[1] * t];
+}
+/** The line from `a` to `b` moved `d` to its outer side (its left as drawn, clockwise round the frame). */
+function outward(a: Pt, b: Pt, d: number): [Pt, Pt] {
+  const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+  const n: Pt = [((b[1] - a[1]) / len) * d, (-(b[0] - a[0]) / len) * d];
+  return [
+    [a[0] + n[0], a[1] + n[1]],
+    [b[0] + n[0], b[1] + n[1]],
+  ];
+}
+const along = ([a, b]: [Pt, Pt]): Pt => [b[0] - a[0], b[1] - a[1]];
+
+export interface Casing {
+  faces: Face[];
+  /** The outline, in gold. */
+  rim: string;
+  /** Edges where the bands bend round the frame. */
+  edges: string;
+  /** One-sided hatching across the lower band and the lower facet of a point. */
+  hatch: string;
+  /** A pale line where the light catches the front face. */
+  catch: string;
+  /** The chamber's hollow, which the glaze and the front's edges are clipped to. */
+  hollow: string;
+  /** The front face's long edges, across the light. */
+  front: string;
+  /** Where it is cut away (a shard: all but the base half; a breaking ward's piece: the other side of the crack). */
+  clip?: string;
+  /** A broken edge, cut bright. */
+  crack?: string;
+  /** How far along the phial it reaches, from its base end to its outer end (in units). */
+  from: number;
+  to: number;
+}
+
+function casing(k: number): Casing {
+  const [le, re] = CHAMBER_ENDS[k];
+  const { top, bottom, mid } = FRAME;
+  const up = top - STANDOFF;
+  const dn = bottom + STANDOFF;
+  type End = { oTop: Pt; fTop: Pt; oBot: Pt; fBot: Pt; tip?: { o: Pt; f: Pt } };
+  const end = (e: number | 'point', side: -1 | 1): End => {
+    if (e === 'point') {
+      const P = side < 0 ? POINTS.left : POINTS.right;
+      // The slanted edges, moved out, meet the bands and each other.
+      const sTop = side < 0 ? outward(P.tip, P.top, STANDOFF) : outward(P.top, P.tip, STANDOFF);
+      const sBot = side < 0 ? outward(P.bot, P.tip, STANDOFF) : outward(P.tip, P.bot, STANDOFF);
+      return {
+        oTop: meet(sTop[0], along(sTop), [0, up], [1, 0]),
+        fTop: P.top,
+        oBot: meet(sBot[0], along(sBot), [0, dn], [1, 0]),
+        fBot: P.bot,
+        tip: { o: meet(sTop[0], along(sTop), sBot[0], along(sBot)), f: P.tip },
+      };
+    }
+    const x = e - side * WALL_GAP;
+    const bevel = STANDOFF * 0.8;
+    return { oTop: [x - side * bevel, up], fTop: [x, top], oBot: [x - side * bevel, dn], fBot: [x, bottom] };
+  };
+  const L = end(le, -1);
+  const R = end(re, 1);
+  const faces: Face[] = [
+    { d: poly([L.oTop, R.oTop, R.fTop, L.fTop]), tone: 'lit' },
+    { d: poly([L.fBot, R.fBot, R.oBot, L.oBot]), tone: 'dark' },
+  ];
+  // The lower band, hatched across on a slant.
+  let shade = '';
+  const x0 = Math.max(L.oBot[0], L.fBot[0]);
+  const x1 = Math.min(R.oBot[0], R.fBot[0]);
+  for (let x = x0 + 0.7; x < x1 - 0.3; x += 1) shade += line([x, bottom + 0.4], [x - 1.1, dn - 0.3]);
+  let edges = '';
+  for (const E of [L, R]) {
+    edges += line(E.oTop, E.fTop) + line(E.oBot, E.fBot);
+    if (!E.tip) continue;
+    faces.push({ d: poly([E.oTop, E.tip.o, E.tip.f, E.fTop]), tone: 'mid' });
+    faces.push({ d: poly([E.tip.o, E.oBot, E.fBot, E.tip.f]), tone: 'dark' });
+    edges += line(E.tip.o, E.tip.f);
+    shade += hatch(E.tip.f, E.tip.o, E.fBot, 0.8);
+  }
+  // The hollow, as Phial.svelte's chambers sit in it.
+  const inL = typeof le === 'number' ? le + WALL_GAP : 2.3;
+  const inR = typeof re === 'number' ? re - WALL_GAP : 61.7;
+  const hollow: Pt[] = typeof le === 'number' ? [[inL, 1.6], [inL, 10.4]] : [[6.9, 1.6], [2.3, mid], [6.9, 10.4]];
+  hollow.push(...((typeof re === 'number' ? [[inR, 10.4], [inR, 1.6]] : [[57.1, 10.4], [61.7, mid], [57.1, 1.6]]) as Pt[]));
+  const outline: Pt[] = [L.oTop, R.oTop, ...(R.tip ? [R.tip.o] : [R.fTop, R.fBot]), R.oBot, L.oBot, ...(L.tip ? [L.tip.o] : [L.fBot, L.fTop])];
+  const span = inR - inL;
+  return {
+    faces,
+    rim: poly(outline),
+    edges,
+    hatch: shade,
+    catch: line([inL + span * 0.1, 2.5], [inR - span * 0.35, 2.5]),
+    hollow: poly(hollow),
+    front: line([0, 3.5], [64, 3.5]) + line([0, 8.5], [64, 8.5]),
+    from: L.tip ? L.tip.o[0] : L.fTop[0],
+    to: R.tip ? R.tip.o[0] : R.fTop[0],
+  };
+}
+
+/** Points along a jagged break from `a` to `b`, swinging `swing` either side in turn at each of `n` steps. */
+function jagged(a: Pt, b: Pt, n: number, swing: number): Pt[] {
+  const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+  const across: Pt = [-(b[1] - a[1]) / len, (b[0] - a[0]) / len];
+  // A fixed pattern of swings, so it reads as broken, not as a zigzag ruled by hand.
+  const SW = [0.9, -0.6, 1, -0.8, 0.55, -1, 0.7];
+  return Array.from({ length: n + 1 }, (_, i) => {
+    const p = lerp(a, b, i / n);
+    const w = i === 0 || i === n ? 0 : SW[i % SW.length] * swing;
+    return [p[0] + across[0] * w, p[1] + across[1] * w] as Pt;
+  });
+}
+
+/**
+ * The casings, drawn once: for each chamber a whole ward, the shard (its base
+ * half, broken off across the chamber), and the two pieces it breaks into
+ * when it shatters (split along its length, so the bands burst off above and
+ * below the light).
+ */
+export const CASINGS = [0, 1, 2].map((k) => {
+  const whole = casing(k);
+  const up = FRAME.top - STANDOFF - 0.6;
+  const dn = FRAME.bottom + STANDOFF + 0.6;
+  // The shard's break, a little past the chamber's middle.
+  const m = (whole.from + whole.to) / 2;
+  const brk = jagged([m + 0.6, up], [m - 0.2, dn], 5, 1);
+  // The shatter's crack, along the casing from end to end.
+  const crack = jagged([whole.from, FRAME.mid + 0.3], [whole.to, FRAME.mid - 0.3], 7, 1.1);
+  const [a, z] = [whole.from - 4, whole.to + 4];
+  const across = [[a, crack[0][1]], ...crack, [z, crack.at(-1)![1]]] as Pt[];
+  return {
+    whole,
+    shard: { ...whole, clip: poly([[-4, up], ...brk, [-4, dn]]), crack: open(brk.slice(1, -1)) },
+    pieces: [
+      { ...whole, clip: poly([[a, up], ...across, [z, up]]), crack: open(crack) },
+      { ...whole, clip: poly([[a, dn], ...across, [z, dn]]), crack: open(crack) },
+    ] as [Casing, Casing],
+  };
+});
 
 // ---- words -------------------------------------------------------------------
 
