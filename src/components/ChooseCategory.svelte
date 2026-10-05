@@ -136,6 +136,22 @@
 </script>
 
 <div class="choose">
+  <!-- The emblems' shadow (see .lit): cast from the art's solid shape only. -->
+  <svg class="defs" aria-hidden="true">
+    <filter id="card-emblem-shadow" x="-20%" y="-20%" width="140%" height="140%" color-interpolation-filters="sRGB">
+      <!-- The art's faint baked-in shadow would cast a dark disc: keep only what's at least half opaque. -->
+      <feComponentTransfer in="SourceAlpha" result="solid"><feFuncA type="discrete" tableValues="0 1" /></feComponentTransfer>
+      <!-- A tight dark rim round the silhouette, and a softer shadow below it. -->
+      <feMorphology in="solid" operator="dilate" radius="1.2" result="wide" />
+      <feGaussianBlur in="wide" stdDeviation="1.6" result="rim" />
+      <feGaussianBlur in="solid" stdDeviation="4" result="soft" />
+      <feOffset in="soft" dy="4" result="drop" />
+      <feMerge result="shade"><feMergeNode in="drop" /><feMergeNode in="rim" /></feMerge>
+      <feFlood flood-color="#060403" flood-opacity="0.85" />
+      <feComposite operator="in" in2="shade" result="shadow" />
+      <feMerge><feMergeNode in="shadow" /><feMergeNode in="SourceGraphic" /></feMerge>
+    </filter>
+  </svg>
   <p class="prompt">
     {#if s.deathmatch}
       {#if mine}Sudden death: your category is drawn at random.{:else}<span class="muted">Sudden death for</span> {active.name}<span class="muted">…</span>{/if}
@@ -194,6 +210,11 @@
 </div>
 
 <style>
+  .defs {
+    position: absolute;
+    width: 0;
+    height: 0;
+  }
   .choose {
     display: flex;
     flex-direction: column;
@@ -269,7 +290,7 @@
     border: 1px solid var(--gold-lo);
     background:
       var(--grain),
-      radial-gradient(circle at 50% 132px, rgba(175, 96, 37, 0.18), transparent 110px),
+      radial-gradient(ellipse 78% 52% at 50% 132px, rgba(175, 96, 37, 0.3), transparent),
       radial-gradient(ellipse 120% 90% at 50% 45%, transparent 50%, rgba(0, 0, 0, 0.5)),
       linear-gradient(170deg, #211912, #0d0a07 70%);
     --bs1: 16px 40px;
@@ -322,20 +343,20 @@
     display: grid;
     place-items: center;
   }
-  /* The emblem's glow, on a layer of its own so the engraving stays crisp.
-     No dark shadow: the art's faint baked-in shadow would cast it as a dark
-     disc over the rays behind. */
+  /* The emblem's shadow and warm glow, on a layer of its own so the
+     engraving stays crisp. The shadow comes from #card-emblem-shadow, cast
+     from the art's solid shape only. */
   .lit {
     position: relative;
     display: grid;
     place-items: center;
-    filter: drop-shadow(0 0 12px rgba(224, 138, 68, 0.3));
+    filter: url(#card-emblem-shadow) drop-shadow(0 0 14px rgba(224, 138, 68, 0.45));
   }
   .glyph {
     width: 130px;
     height: 150px;
     /* Opaque, so the glory's rays stay behind it; its gold toned down to match. */
-    background: linear-gradient(180deg, #d8c08c 0%, #a8864a 45%, #533814 100%);
+    background: linear-gradient(180deg, #e4cc96 0%, #b18d4f 45%, #583c16 100%);
     -webkit-mask: var(--src) center / contain no-repeat;
     mask: var(--src) center / contain no-repeat;
     transition:
@@ -417,7 +438,7 @@
     --bs-ring: rgba(140, 58, 44, 0.45);
     background:
       var(--grain),
-      radial-gradient(circle at 50% 132px, rgba(224, 85, 63, 0.2), transparent 110px),
+      radial-gradient(ellipse 78% 52% at 50% 132px, rgba(224, 85, 63, 0.3), transparent),
       radial-gradient(ellipse 120% 90% at 50% 45%, transparent 50%, rgba(0, 0, 0, 0.5)),
       linear-gradient(170deg, #22110d, #0d0706 70%);
   }
