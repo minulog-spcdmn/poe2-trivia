@@ -334,7 +334,7 @@
               {#if peek}
                 <p>Race is online only: everyone answers on their own device. Host a room to race.</p>
               {:else if delve}
-                <p>Three lives. One depth deeper each round, and harder. Last one standing; alone, see how deep you get.</p>
+                <p>Three lives. Each round goes a depth deeper, and harder.</p>
                 {#if deepest}
                   <p class="deepest">{s.players.length < 2 ? 'Your deepest alone' : 'Your deepest with others'} <b>{deepest}</b></p>
                 {/if}
@@ -836,7 +836,7 @@
     height: var(--notch);
     background: rgba(201, 164, 92, 0.32);
     clip-path: polygon(50% 0, 100% 100%, 0 100%);
-    transition: left 0.3s var(--ease-back, ease);
+    transition: left 0.3s var(--ease-out);
   }
   .about.peek {
     border-color: rgba(224, 85, 63, 0.35);
