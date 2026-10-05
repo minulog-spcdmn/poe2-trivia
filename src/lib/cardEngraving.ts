@@ -44,7 +44,7 @@ export type Fade = { c: Pt; from: number; r: number };
 /** A tall card's face: the panel's foot, the nameplate's top, and the emblem's centre. */
 export const TALL = { panelFoot: 232, plateTop: 238, emblemY: 132 };
 /** A card in a row: the emblem's centre from the left, and the divider after it. */
-export const ROW = { emblemX: 54, divider: 102 };
+export const ROW = { emblemX: 62, divider: 118 };
 
 type Box = [number, number, number, number];
 
@@ -513,8 +513,8 @@ const rowFace = (w: number, h: number, p: Plate) => {
     const ts = [u[0] > 1e-9 ? (box[2] - C[0]) / u[0] : u[0] < -1e-9 ? (box[0] - C[0]) / u[0] : Infinity, u[1] > 1e-9 ? (box[3] - C[1]) / u[1] : u[1] < -1e-9 ? (box[1] - C[1]) / u[1] : Infinity];
     return Math.min(...ts);
   };
-  p.glory(C, 60, 24, reach, 0.6);
-  p.fade = { c: C, from: 28, r: 54 };
+  p.glory(C, 64, 28, reach, 0.6);
+  p.fade = { c: C, from: 32, r: 64 };
 };
 
 /** The back of a card `w` by `h`. */
