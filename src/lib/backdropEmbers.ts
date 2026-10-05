@@ -4,17 +4,39 @@
 // dark some parallax. A deathmatch or a victory can stoke them (more speed
 // and glow) through `stoke`, a deathmatch can crowd the air with more of
 // them through `swarm`, and a big moment flare them up for a few seconds
-// through `flare`. In Delve the depth (lib/descent.ts) makes them restless,
-// deepens their glow toward blood red and turns more and more of them blue,
-// and glints of azurite catch in the walls (`descend`).
+// through `flare`. In Delve each stratum (lib/descent.ts) has embers of its
+// own: their colour, how many, how fast, large and restless they are,
+// whether they rise or sink, and what glints in the walls (`descend`). A new
+// stratum's colour spreads ember by ember, as each starts a new rise.
+
+import { lookOf, SURFACE, type Descent, type Look } from './descent.ts';
 
 /** The embers that are always there. */
 export const CALM_EMBERS = 36;
 /** All of them, the calm ones and the extra ones a swarm brings in. */
 export const EMBERS = 100;
-/** The shader looks embers up by screen column: COLUMNS strips, SLOTS embers each at most. */
+/**
+ * The shader looks embers up by tile: the screen is cut into COLUMNS by ROWS
+ * tiles, each holding at most SLOTS embers (those whose glow reaches it), so
+ * a pixel only looks at the few near it rather than a whole column's.
+ */
 export const COLUMNS = 24;
-export const SLOTS = 16;
+export const ROWS = 12;
+export const TILES = COLUMNS * ROWS;
+export const SLOTS = 12;
+/**
+ * Colours the embers burn in at once: four strata (the one the scene is
+ * turning into, the one before, and room for the strata an ember from
+ * further up or down still burns in), then the glints'.
+ */
+export const PALETTE = 5;
+export const GLINT_COLOR = 4;
+/** An ember's size field holds its palette entry too: size + SIZE_STRIDE * entry (sizes stay well under it). */
+export const SIZE_STRIDE = 32;
+/** Glints in the side walls, and glints anywhere (the stars of a starless stratum). */
+export const WALL_GLINTS = 12;
+export const FREE_GLINTS = 22;
+export const GLINTS = WALL_GLINTS + FREE_GLINTS;
 
 type Ember = {
   x0: number; // fraction of the width
@@ -33,32 +55,22 @@ type Ember = {
 const r = Math.random;
 
 /** The usual orange halo. */
-export const CALM = [1, 0.45, 0.12] as const;
-/** The halo deep down, before the blue: blood red. */
-const DEEP_RED = [1, 0.3, 0.07] as const;
-/** Glints of azurite in the walls, at most (fewer on narrow screens). */
-export const MAX_VEINS = 14;
+export const CALM = SURFACE.ember;
 
-/** What the depth asks of the embers (see lib/descent.ts). */
-export interface EmberDepth {
-  agit: number;
-  red: number;
-  blue: number;
-  veins: number;
-  abyss: number;
-}
+type Glint = { x: number; y: number; rate: number; phase: number; size: number; gate: number };
 
-type Vein = { x: number; y: number; rate: number; phase: number; size: number };
-
-/** A glint in one of the side walls (fractions of the screen). */
-function vein(): Vein {
+/** A glint (fractions of the screen): in one of the side walls, or anywhere. */
+function glint(k: number): Glint {
+  const wall = k < WALL_GLINTS;
   const left = r() < 0.5;
   return {
-    x: left ? 0.03 + r() * 0.19 : 0.78 + r() * 0.19,
-    y: 0.12 + r() * 0.78,
+    x: wall ? (left ? 0.03 + r() * 0.19 : 0.78 + r() * 0.19) : 0.04 + r() * 0.92,
+    y: wall ? 0.12 + r() * 0.78 : 0.05 + r() * 0.88,
     rate: 0.4 + r() * 0.9,
     phase: r() * 6.283,
-    size: 1.7 + r() * 1.1,
+    size: wall ? 1.7 + r() * 1.1 : 1.4 + r() * 1.3,
+    // They come in one by one as a stratum's glints grow.
+    gate: ((wall ? k : k - WALL_GLINTS) + r()) / (wall ? WALL_GLINTS : FREE_GLINTS),
   };
 }
 
@@ -79,21 +91,34 @@ function ember(): Ember {
   };
 }
 
+/** The palette entry stratum `k` burns in. */
+const entryOf = (k: number) => (((k + 1) % 4) + 4) % 4;
+
 export class Embers {
   private list = Array.from({ length: EMBERS }, ember);
-  private veinList = Array.from({ length: MAX_VEINS }, vein);
-  /** Which embers burn blue; each decides when it starts a new rise, so the blue spreads ember by ember. */
-  private cold = new Uint8Array(EMBERS);
-  /** How much blue it takes for each ember to burn blue (fixed per ember). */
-  private coldGate = Float32Array.from({ length: EMBERS }, () => r());
+  private glintList = Array.from({ length: GLINTS }, (_, k) => glint(k));
+  /** The stratum each ember burns in; each takes a new one only as it starts a new rise, so a colour spreads ember by ember. */
+  private burn = new Int32Array(EMBERS).fill(-1);
+  /** How far into a stratum's turn it takes for each ember to burn in it (fixed per ember). */
+  private burnGate = Float32Array.from({ length: EMBERS }, () => r());
+  /** Which embers sink rather than rise, also decided at each new rise, and what share it takes. */
+  private sink = new Uint8Array(EMBERS);
+  private sinkGate = Float32Array.from({ length: EMBERS }, () => r());
   /** Each ember's place in its rise last step, to see it start a new one. */
   private lastU = new Float32Array(EMBERS);
-  private depth: EmberDepth = { agit: 0, red: 0, blue: 0, veins: 0, abyss: 0 };
-  private aim = 0;
-  /** How restless they are, eased. */
+  private look: Look = SURFACE;
+  /** The stratum the scene heads for, and how far it has turned into it. */
+  private aim = { stratum: 0, turn: 0 };
+  /** The strata the palette holds (the one aimed at), to rebuild it only when that changes. */
+  private paletteFor = NaN;
+  private strataColor = new Float32Array(PALETTE * 7);
+  /** How restless they are, how fast and how large, eased. */
   private agit = 0;
-  /** The draft that pushes them sideways, on a clock of its own. */
+  private pace = 1;
+  private scale = 1;
+  /** The draft that pushes them sideways, and the glints' twinkle, on clocks of their own. */
   private gustT = r() * 100;
+  private glintT = r() * 100;
   /** Ember clock: runs faster while stoked. */
   private t = r() * 100;
   private heat = 0;
@@ -102,16 +127,21 @@ export class Embers {
   private crowdTarget = 0;
   private flareLevel = 0;
   private flareLeft = 0;
-  private pos = new Float32Array((EMBERS + MAX_VEINS) * 4);
-  /** Embers placed in each column so far (step's scratch). */
-  private used = new Uint8Array(COLUMNS);
-  /** (x, y, size, brightness) per slot, COLUMNS rows of SLOTS; brightness 0 ends a row. */
-  readonly data = new Float32Array(COLUMNS * SLOTS * 4);
-  /** Halo colour (eased toward `colorTarget`). */
+  /** (x, y, size + SIZE_STRIDE * palette entry, brightness) of every ember and then every glint. */
+  private pos = new Float32Array((EMBERS + GLINTS) * 4);
+  /** Embers placed in each tile so far (step's scratch). */
+  private used = new Uint8Array(TILES);
+  /** (x, y, size + SIZE_STRIDE * palette entry, brightness) per slot, TILES rows of SLOTS; brightness 0 ends a row. */
+  readonly data = new Float32Array(TILES * SLOTS * 4);
+  /** Per palette entry: the halo colour and how far the core burns toward `core`. */
+  readonly halo = new Float32Array(PALETTE * 4);
+  readonly core = new Float32Array(PALETTE * 3);
+  /** The tint a moment lays over them (eased toward `colorTarget`), and how far it covers the stratum's colours. */
   readonly color: number[] = [...CALM];
   private colorTarget: number[] = [...CALM];
+  private tinted = 0;
 
-  /** Tints the embers (their halo; the core stays near white). */
+  /** Tints the embers (their halo; the core stays near white). CALM gives them back their own colours. */
   tint(c: readonly number[] = CALM) {
     this.colorTarget = [...c];
   }
@@ -140,46 +170,86 @@ export class Embers {
   }
 
   /**
-   * Follows the depth of a Delve (all zero outside one). `aim` is the share of
-   * blue embers at the depth the scene is heading for: an ember starting a
-   * new rise takes that colour, so none turns back while the depth eases in.
+   * Follows a Delve (the surface outside one): `shown` is the scene as shown,
+   * whose look they take; `aim` the scene it heads for. An ember starting a
+   * new rise burns in the stratum `aim` is in, or the one before while it is
+   * still turning, so none turns back while the depth eases in.
    */
-  descend(d: EmberDepth, aim = d.blue) {
-    this.depth = d;
+  descend(shown: Descent, aim: { stratum: number; turn: number } = shown) {
+    this.look = shown.look;
     this.aim = aim;
   }
 
-  /** Every ember takes the colour of the depth it heads for at once (a new stratum, a rejoin), instead of at its next rise. */
+  /** The stratum ember `i` burns in if it starts now. */
+  private pick(i: number) {
+    return this.aim.turn > this.burnGate[i] ? this.aim.stratum : this.aim.stratum - 1;
+  }
+
+  /**
+   * Every ember takes the colour of the depth it heads for at once (a new
+   * stratum, a rejoin), instead of at its next rise. It happens at the next
+   * step, after the backdrop has passed on the depth just set.
+   */
   recolor() {
-    for (let i = 0; i < EMBERS; i++) this.cold[i] = this.aim > this.coldGate[i] ? 1 : 0;
+    this.recolorDue = true;
+  }
+  private recolorDue = false;
+
+  /** The colours of the strata around the one aimed at, by palette entry. */
+  private strataPalette() {
+    const k = this.aim.stratum;
+    if (k === this.paletteFor) return;
+    this.paletteFor = k;
+    for (let s = k - 2; s <= k + 1; s++) {
+      const look = lookOf(s);
+      const o = entryOf(s) * 7;
+      this.strataColor.set(look.ember, o);
+      this.strataColor.set(look.core, o + 3);
+      this.strataColor[o + 6] = look.coreMix;
+    }
   }
 
   /**
    * Advances by `dt` seconds and writes (x, y, size, brightness) per ember.
-   * With `calm` (effects off) they settle back to their usual self.
+   * With `calm` (effects off) they settle back to their usual pace; the
+   * stratum's colours and sizes stay, as part of the scene.
    */
   step(dt: number, w: number, h: number, calm = false, snap = false) {
-    const dep = this.depth;
+    const look = this.look;
+    const ease = (rate: number) => (snap ? 1 : 1 - Math.exp(-dt * rate));
     this.flareLeft = Math.max(0, this.flareLeft - dt);
-    // Deep down they burn hotter and crowd the air a little, but never with effects off.
-    const restless = calm ? 0 : dep.agit;
-    this.agit += (restless - this.agit) * (snap ? 1 : 1 - Math.exp(-dt * 1.5));
-    const target = calm ? 0 : Math.max(this.heatTarget, this.flareLeft > 0 ? this.flareLevel : 0, 0.5 * this.agit);
-    // The depth's colour is part of the scene, so it stays with effects off.
-    const base = calm ? CALM : this.colorTarget;
-    const red = 0.6 * dep.red;
+    this.agit += ((calm ? 0 : look.agit) - this.agit) * ease(1.5);
+    this.pace += ((calm ? 1 : look.speed) - this.pace) * ease(1);
+    this.scale += (look.size - this.scale) * ease(1);
+    const target = calm ? 0 : Math.max(this.heatTarget, this.flareLeft > 0 ? this.flareLevel : 0);
     this.heat += (target - this.heat) * (1 - Math.exp(-dt * 1.5));
     // A swarm builds slowly but clears out within a second or so, so it never
     // lingers into the screen after a deathmatch.
-    const crowd = calm ? 0 : Math.max(this.crowdTarget, 0.6 * this.agit);
+    const crowd = calm ? 0 : Math.max(this.crowdTarget, look.crowd);
     this.crowd += (crowd - this.crowd) * (1 - Math.exp(-dt * (crowd > this.crowd ? 0.8 : 4)));
-    for (let i = 0; i < 3; i++) {
-      const c = base[i] + (DEEP_RED[i] - base[i]) * red;
-      this.color[i] += (c - this.color[i]) * (snap ? 1 : 1 - Math.exp(-dt * 1.2));
+    // A moment's tint (a deathmatch's red, a victory's gold) covers the stratum's colours while it lasts.
+    const base = calm ? CALM : this.colorTarget;
+    const tinted = !calm && base.some((c, i) => c !== CALM[i]) ? 1 : 0;
+    this.tinted += (tinted - this.tinted) * ease(1.2);
+    for (let i = 0; i < 3; i++) this.color[i] += (base[i] - this.color[i]) * ease(1.2);
+    this.strataPalette();
+    if (snap || this.recolorDue) for (let i = 0; i < EMBERS; i++) this.burn[i] = this.pick(i);
+    this.recolorDue = false;
+    const sc = this.strataColor;
+    for (let k = 0; k < 4; k++) {
+      for (let i = 0; i < 3; i++) {
+        this.halo[k * 4 + i] = sc[k * 7 + i] + (this.color[i] - sc[k * 7 + i]) * this.tinted;
+        this.core[k * 3 + i] = sc[k * 7 + 3 + i];
+      }
+      this.halo[k * 4 + 3] = sc[k * 7 + 6];
     }
-    if (snap) this.recolor();
-    this.t += dt * (1 + 1.6 * this.heat);
+    for (let i = 0; i < 3; i++) this.core[GLINT_COLOR * 3 + i] = 1;
+    this.halo.set(look.glint, GLINT_COLOR * 4);
+    this.halo[GLINT_COLOR * 4 + 3] = 0.6;
+
+    this.t += dt * this.pace * (1 + 1.6 * this.heat);
     this.gustT += dt * (0.2 + 0.35 * this.agit);
+    this.glintT += dt;
     const a = this.agit;
     // A draft that comes and goes, pushing the restless ones sideways.
     const gust = a * 42 * (0.65 * Math.sin(this.gustT + 1.3) + 0.35 * Math.sin(2.3 * this.gustT));
@@ -190,6 +260,8 @@ export class Embers {
     const pos = this.pos;
     // A narrow screen crowds up with fewer of the extra embers.
     const extra = CALM_EMBERS + (EMBERS - CALM_EMBERS) * Math.min(1, w / 1100);
+    const sizeK = (1 + 0.25 * this.heat) * this.scale;
+    const brightK = (1 + 0.8 * this.heat) * look.bright;
     for (let i = 0; i < EMBERS; i++) {
       const e = this.list[i];
       const u = (t / e.period + e.phase) % 1;
@@ -197,56 +269,67 @@ export class Embers {
       // The extra embers join a swarm one by one as it builds, and leave as it ebbs.
       const join = i < CALM_EMBERS ? 1 : i < extra ? Math.min(1, Math.max(0, (this.crowd - e.gate) / 0.3)) : 0;
       const fl = 1 - flickerDepth + flickerDepth * Math.sin(t * e.flicker + i * 1.7) * Math.sin(t * e.flicker * 0.37 + i);
-      // A new rise: this ember now burns blue or not, as deep as the scene is.
-      if (u < this.lastU[i]) this.cold[i] = this.aim > this.coldGate[i] ? 1 : 0;
+      // A new rise: this ember now burns in the stratum the scene heads for, and rises or sinks as it does.
+      if (u < this.lastU[i] || snap) {
+        this.burn[i] = this.pick(i);
+        this.sink[i] = look.fall > this.sinkGate[i] ? 1 : 0;
+      }
       this.lastU[i] = u;
-      const cold = this.cold[i] === 1;
+      const travel = u * (h * 1.08 + 32);
       pos[i * 4] = e.x0 * w + (e.drift + gust) * u + Math.sin(u * Math.PI * 2 * e.swayRate + e.phase * 6.283) * e.sway * (1 + 0.7 * a);
-      pos[i * 4 + 1] = h + 16 - u * (h * 1.08 + 32);
-      // A blue ember is passed to the shader as a negative size (it squares the size anyway).
-      pos[i * 4 + 2] = e.size * (1 + 0.25 * this.heat) * (cold ? -1 : 1);
-      pos[i * 4 + 3] = e.bright * fade * fl * join * (1 + 0.8 * this.heat) * (cold ? 1.3 + 0.4 * dep.abyss : 1);
+      pos[i * 4 + 1] = this.sink[i] ? travel - 16 : h + 16 - travel;
+      pos[i * 4 + 2] = e.size * sizeK + SIZE_STRIDE * entryOf(this.burn[i]);
+      pos[i * 4 + 3] = e.bright * fade * fl * join * brightK;
     }
-    // Glints of azurite in the walls: still, each twinkling on its own.
-    const veins = Math.round(6 + 8 * Math.min(1, w / 1100));
-    for (let k = 0; k < MAX_VEINS; k++) {
-      const v = this.veinList[k];
+    // Glints: still, each twinkling on its own, coming in one by one with
+    // the stratum's glints (fewer on a narrow screen), in the walls or, as
+    // the stratum spreads them, anywhere.
+    const narrow = 0.55 + 0.45 * Math.min(1, w / 1100);
+    for (let k = 0; k < GLINTS; k++) {
+      const g = this.glintList[k];
       const i = EMBERS + k;
-      const tw = 0.5 + 0.5 * Math.sin(t * v.rate + v.phase);
-      pos[i * 4] = v.x * w;
-      pos[i * 4 + 1] = v.y * h;
-      pos[i * 4 + 2] = -v.size;
-      pos[i * 4 + 3] = k < veins ? dep.veins * (0.35 + 0.85 * tw * tw) : 0;
+      const amount = look.glints * (k < WALL_GLINTS ? 1 - look.spread : look.spread);
+      const show = Math.min(1, Math.max(0, (amount - g.gate / narrow) / 0.15 + 1));
+      const tw = 0.5 + 0.5 * Math.sin(this.glintT * g.rate + g.phase);
+      pos[i * 4] = g.x * w;
+      pos[i * 4 + 1] = g.y * h;
+      pos[i * 4 + 2] = g.size + SIZE_STRIDE * GLINT_COLOR;
+      pos[i * 4 + 3] = amount > 0 ? show * Math.min(1, amount * 4) * (0.35 + 0.85 * tw * tw) : 0;
     }
-    // Sort the embers into the columns their glow reaches, so each pixel of
+    // Sort the embers into the tiles their glow reaches, so each pixel of
     // the backdrop only looks at a handful.
     const data = this.data;
     const used = this.used;
     data.fill(0);
     used.fill(0);
     const colW = w / COLUMNS;
-    // The glints first: they are few and still, and a column too crowded to
+    const rowH = h / ROWS;
+    // The glints first: they are few and still, and a tile too crowded to
     // hold every glow would otherwise drop one, and it would blink out.
-    const all = EMBERS + MAX_VEINS;
+    const all = EMBERS + GLINTS;
     for (let j = 0; j < all; j++) {
       const i = (j + EMBERS) % all;
       const x = pos[i * 4];
       const y = pos[i * 4 + 1];
-      const size = pos[i * 4 + 2];
+      const z = pos[i * 4 + 2];
       const b = pos[i * 4 + 3];
       if (b <= 0 || y < -40 || y > h + 40) continue;
-      const reach = Math.abs(size) * 6.4; // where the shader stops drawing it
+      const reach = (z % SIZE_STRIDE) * 6.4; // where the shader stops drawing it
       const c0 = Math.max(0, Math.floor((x - reach) / colW));
       const c1 = Math.min(COLUMNS - 1, Math.floor((x + reach) / colW));
-      for (let c = c0; c <= c1; c++) {
-        if (used[c] >= SLOTS) continue;
-        const k = (c * SLOTS + used[c]) * 4;
-        data[k] = x;
-        data[k + 1] = y;
-        data[k + 2] = size;
-        data[k + 3] = b;
-        used[c]++;
-      }
+      const r0 = Math.max(0, Math.floor((y - reach) / rowH));
+      const r1 = Math.min(ROWS - 1, Math.floor((y + reach) / rowH));
+      for (let row = r0; row <= r1; row++)
+        for (let c = c0; c <= c1; c++) {
+          const tile = row * COLUMNS + c;
+          if (used[tile] >= SLOTS) continue;
+          const k = (tile * SLOTS + used[tile]) * 4;
+          data[k] = x;
+          data[k + 1] = y;
+          data[k + 2] = z;
+          data[k + 3] = b;
+          used[tile]++;
+        }
     }
   }
 }

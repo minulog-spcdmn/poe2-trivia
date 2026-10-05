@@ -13,7 +13,7 @@ import { SHADOWS_PER_ELEMENT, measureShadows, releaseAll } from './backdropShado
 import { DROPS_PER_MASK, MAX_MASKS, measureDrops, releaseAllDrops } from './backdropDropShadow';
 import { MAX_LIGHTS, packLights, stepHomeScene, stepMood } from './lights';
 import { fxActive, fxUserOn, onFxChange } from './fx/core';
-import { COLUMNS, SLOTS, embers } from './backdropEmbers';
+import { COLUMNS, PALETTE, ROWS, SIZE_STRIDE, SLOTS, TILES, embers } from './backdropEmbers';
 import { currentDescent, snapDescent, stepDescent, targetDescent } from './descent';
 import { DIALOG_BLUR, DIALOG_DIM, openDialog } from './behindDialog';
 
@@ -51,8 +51,14 @@ uniform vec2 uBlobRot[${BLOB_COUNT}]; // (cos, sin) of A's rotation
 uniform vec3 uBlobB[${BLOB_COUNT}];
 uniform vec3 uBlobColor[${BLOB_COUNT}];
 
-// Delve's depth (lib/descent.ts): (deep, red, blue, abyss), all 0 outside one.
-uniform vec4 uDeep;
+// Delve's stratum (lib/descent.ts; the surface's look outside one): the light
+// from below (rgb, strength), the haze's colour, the dark's hue (rgb) and how
+// much of the hall its uneven dark swallows, and smoke of the stratum's
+// colour (rgb, strength).
+uniform vec4 uFloor;
+uniform vec3 uHaze;
+uniform vec4 uShade;
+uniform vec4 uMist;
 
 // The start page: (rays, title glow, time in s, title breath), and the
 // title's centre and half size (CSS px). See setHomeScene in lights.ts.
@@ -67,6 +73,20 @@ vec3 rgb(float r, float g, float b) { return vec3(r, g, b) / 255.0; }
 
 float gauss(float d) { return exp(-d * d); }
 
+// Value noise for Delve's smoke and dark: smooth, with no direction or
+// shape of its own. (Hash without sine, Dave Hoskins.)
+float nhash(vec2 p) {
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
+}
+float vnoise(vec2 x) {
+  vec2 i = floor(x);
+  vec2 f = fract(x);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(nhash(i), nhash(i + vec2(1.0, 0.0)), f.x), mix(nhash(i + vec2(0.0, 1.0)), nhash(i + 1.0), f.x), f.y);
+}
+
 // The soft light at p (CSS px, top-left origin).
 vec3 smoothLight(vec2 p) {
   float W = uSize.x;
@@ -79,28 +99,16 @@ vec3 smoothLight(vec2 p) {
   vec3 col = t < uBaseStop
     ? mix(rgb(13.0, 11.0, 9.0), rgb(8.0, 7.0, 6.0), smoothstep(0.0, uBaseStop, t))
     : mix(rgb(8.0, 7.0, 6.0), rgb(13.0, 9.0, 7.0), smoothstep(uBaseStop, 1.0, t));
-  // Deeper down the hall turns darker and cooler, and cold creeps up from below.
-  if (uDeep.x > 0.0) {
-    vec3 deepBase = t < uBaseStop
-      ? mix(rgb(8.0, 8.0, 10.0), rgb(4.0, 4.0, 6.0), smoothstep(0.0, uBaseStop, t))
-      : mix(rgb(4.0, 4.0, 6.0), rgb(7.0, 6.0, 9.0), smoothstep(uBaseStop, 1.0, t));
-    col = mix(col, deepBase, uDeep.x);
-    col = mix(col, rgb(6.0, 8.0, 13.0), 0.6 * uDeep.z * smoothstep(0.45, 1.0, t));
-  }
+  // Each stratum of a Delve tints the dark its own way.
+  col *= uShade.rgb;
 
-  // Warm haze from above the top edge.
+  // Warm haze from above the top edge (a stratum's own colour in a Delve).
   float d = length((p - vec2(0.5 * W, -0.1 * H)) / (vec2(0.6 * W, 0.5 * H) * uTop.x));
-  col = mix(col, rgb(120.0, 95.0, 60.0), uTop.y * 0.18 * gauss(d / 0.5));
+  col = mix(col, uHaze, uTop.y * 0.18 * gauss(d / 0.5));
 
-  // Ember glow from below the bottom edge.
+  // Ember glow from below the bottom edge (in a Delve, the stratum's light).
   d = length((p - vec2(0.5 * W, 1.1 * H)) / (vec2(0.8 * W, 0.6 * H) * uBottom.x));
-  col = mix(col, mix(rgb(140.0, 60.0, 20.0), rgb(118.0, 26.0, 14.0), uDeep.y), uBottom.y * 0.28 * gauss(d / 0.5));
-
-  // Deep down, a cold azure light wells up from the floor.
-  if (uDeep.z > 0.0) {
-    d = length((p - vec2(0.5 * W, 1.12 * H)) / vec2(1.0 * W, 0.7 * H));
-    col = mix(col, rgb(34.0, 80.0, 150.0), uDeep.z * 0.4 * gauss(d / 0.5));
-  }
+  col = mix(col, uFloor.rgb, uBottom.y * uFloor.a * gauss(d / 0.5));
 
   // Central gold glow, scaled about the screen centre.
   vec2 q = vec2(0.5 * W, 0.5 * H) + (p - vec2(0.5 * W, 0.5 * H)) / uGlow.x;
@@ -119,6 +127,23 @@ vec3 smoothLight(vec2 p) {
     float reach = (u > 0.0 ? b.x : b.y) * S;
     float w = gauss(length(vec2(u / reach, v / (b.z * S))));
     col = mix(col, uBlobColor[i], a.w * w);
+  }
+
+  // Delve: smoke of the stratum's colour, and a dark that gathers out of
+  // the same smoke. Both come from domain-warped noise drifting on the
+  // backdrop's clock, so the dark is uneven and slowly shifting: heavier
+  // toward the edges and the ceiling, but with no edge, ellipse or other
+  // shape that could be picked out.
+  if (uShade.a > 0.0 || uMist.a > 0.0) {
+    float tm = uHome.z;
+    vec2 u = p / S * 2.4;
+    vec2 warp = vec2(vnoise(u * 0.6 + vec2(tm * 0.021, 3.1)), vnoise(u * 0.6 + vec2(7.3, -tm * 0.017)));
+    vec2 v = u + 2.2 * warp + vec2(-tm * 0.013, tm * 0.009);
+    float n = 0.5 * vnoise(v) + 0.3 * vnoise(v * 2.03 + 11.7) + 0.2 * vnoise(v * 4.1 - 5.3);
+    col = mix(col, uMist.rgb, uMist.a * smoothstep(0.42, 0.82, n));
+    vec2 c = (p - vec2(0.5 * W, 0.62 * H)) / vec2(W, H) + 0.4 * (warp - 0.5);
+    float edge = length(c * vec2(1.4, 1.15));
+    col *= 1.0 - uShade.a * smoothstep(0.08, 0.9, edge + 0.9 * (0.52 - n));
   }
 
   // The start page: god rays falling from high above the centre, each beam
@@ -195,10 +220,15 @@ uniform vec4 uLightA[${MAX_LIGHTS}];
 uniform vec4 uLightC[${MAX_LIGHTS}];
 uniform vec4 uMood;
 
-// Embers by screen column: row c holds the embers that reach column c,
-// (x, y, size, brightness) each, ending at brightness 0; see backdropEmbers.ts.
+// Embers by screen tile: row t holds the embers whose glow reaches tile t,
+// (x, y, size + ${SIZE_STRIDE} * palette entry, brightness) each, ending at
+// brightness 0; see backdropEmbers.ts.
 uniform sampler2D uEmbers;
-uniform vec4 uEmberColor; // halo colour, overall gain
+// The embers' palette: halo colour and how far the core burns toward
+// uEmberCore, per entry (see backdropEmbers.ts); and their overall gain.
+uniform vec4 uEmberHalo[${PALETTE}];
+uniform vec3 uEmberCore[${PALETTE}];
+uniform float uEmberGain;
 uniform vec4 uShGeo[${MAX_ELEMENTS * SHADOWS_PER_ELEMENT}];
 uniform vec4 uShCol[${MAX_ELEMENTS * SHADOWS_PER_ELEMENT}];
 
@@ -280,21 +310,21 @@ void main() {
   vec3 col = ${split ? 'texture(uSmooth, vec2(p.x / W, 1.0 - p.y / H)).rgb' : 'smoothLight(p)'};
 
   // Embers rising through the dark: a hot core and a wide, dim halo.
-  int column = clamp(int(p.x / W * ${COLUMNS}.0), 0, ${COLUMNS - 1});
+  int tile = clamp(int(p.y / H * ${ROWS}.0), 0, ${ROWS - 1}) * ${COLUMNS} + clamp(int(p.x / W * ${COLUMNS}.0), 0, ${COLUMNS - 1});
   for (int i = 0; i < ${SLOTS}; i++) {
-    vec4 e = texelFetch(uEmbers, ivec2(i, column), 0);
+    vec4 e = texelFetch(uEmbers, ivec2(i, tile), 0);
     if (e.w <= 0.0) break;
+    float entry = floor(e.z * ${(1 / SIZE_STRIDE).toFixed(6)});
+    float size = e.z - ${SIZE_STRIDE}.0 * entry;
     vec2 dp = p - e.xy;
     float r2 = dot(dp, dp);
-    float s2 = e.z * e.z;
+    float s2 = size * size;
     if (r2 > s2 * 40.0) continue;
     float core = exp(-r2 / (s2 * 0.3));
     float halo = exp(-r2 / (s2 * 5.0));
-    // A negative size marks a blue ember (deep in a Delve): an azure halo round a blue-white core.
-    bool cold = e.z < 0.0;
-    vec3 tint = cold ? vec3(0.34, 0.62, 1.0) : uEmberColor.rgb;
-    vec3 hot = cold ? mix(tint, vec3(0.86, 0.94, 1.0), 0.62) : mix(tint, vec3(1.0, 0.86, 0.6), 0.55);
-    col += (hot * core * 0.9 + tint * halo * 0.3) * e.w * uEmberColor.a;
+    vec4 tint = uEmberHalo[int(entry)];
+    vec3 hot = mix(tint.rgb, uEmberCore[int(entry)], tint.a);
+    col += (hot * core * 0.9 + tint.rgb * halo * 0.3) * e.w * uEmberGain;
   }
 
   // Lift the dark tones within their own hue. (A flat grey lift, as the old
@@ -506,9 +536,6 @@ const BLOBS: Blob[] = [
   { color: [110, 80, 45], opacity: 0.05, home: [0.3, 0.35], wander: [0.12, 0.1], reach: [0.2, 0.3, 0.1] },
   { color: [2, 1, 1], opacity: 0.35, home: [0.55, 0.6], wander: [0.18, 0.1], reach: [0.25, 0.18, 0.12] },
 ];
-/** Delve: how far down the smoke cools (a factor per channel), and the azure two of the blobs turn. */
-const BLOB_COOL = [0.55, 0.5, 0.62];
-const BLOB_AZURE = [30 / 255, 62 / 255, 115 / 255];
 
 const TAU = Math.PI * 2;
 const rand = (lo: number, hi: number) => lo + Math.random() * (hi - lo);
@@ -627,7 +654,10 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   const uBeams = S('uBeams');
   const uHome = S('uHome');
   const uTitle = S('uTitle');
-  const uDeep = S('uDeep');
+  const uFloor = S('uFloor');
+  const uHaze = S('uHaze');
+  const uShade = S('uShade');
+  const uMist = S('uMist');
   const uBlobColor = S('uBlobColor');
   gl.useProgram(soft);
   gl.uniform3fv(S('uBlobB'), BLOBS.flatMap((b) => b.reach));
@@ -642,7 +672,9 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   const uLightA = U('uLightA');
   const uLightC = U('uLightC');
   const uMood = U('uMood');
-  const uEmberColor = U('uEmberColor');
+  const uEmberHalo = U('uEmberHalo');
+  const uEmberCore = U('uEmberCore');
+  const uEmberGain = U('uEmberGain');
   const uElCount = U('uElCount');
   const uDialog = U('uDialog');
   gl.uniform1i(U('uSmooth'), 3);
@@ -714,13 +746,13 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   gl.uniform2f(uSharpSize, 1, 1);
   gl.uniform2f(uBlurSize, 1, 1);
 
-  // Ember positions by screen column, one float texel each (unit 2).
+  // Ember positions by screen tile, one float texel each (unit 2).
   const emberTex = gl.createTexture();
   gl.activeTexture(gl.TEXTURE2);
   gl.bindTexture(gl.TEXTURE_2D, emberTex);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, SLOTS, COLUMNS, 0, gl.RGBA, gl.FLOAT, null);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, SLOTS, TILES, 0, gl.RGBA, gl.FLOAT, null);
   gl.uniform1i(U('uEmbers'), 2);
   const paths = BLOBS.map(blobPath);
 
@@ -758,25 +790,28 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     gl!.useProgram(soft);
     gl!.uniform2f(sSize, cssW, cssH);
     gl!.uniform1f(sViewH, viewH);
-    // Delve: deeper, the haze from above fades, the lamp dims, the glow from below
-    // spreads and reddens, and gives way to the cold as the embers turn blue.
-    const dsc = currentDescent();
-    gl!.uniform4f(uDeep, dsc.deep, dsc.red, dsc.blue, dsc.abyss);
-    gl!.uniform2f(uGlow, (1 + 0.08 * glow) * (1 - 0.2 * dsc.deep), (1 - 0.4 * glow) * (1 - 0.3 * dsc.deep));
-    gl!.uniform2f(uBottom, (1 + 0.1 * bottom) * (1 + 0.15 * dsc.deep), (1 + 0.3 * bottom) * (1 + 0.4 * dsc.deep) * (1 - 0.85 * dsc.blue));
-    gl!.uniform2f(uTop, 1 + 0.08 * top, (1 + 0.35 * top) * (1 - dsc.deep) ** 1.5);
-    // The smoke darkens and cools with depth, and two of the warm blobs turn azure.
+    // Delve: the stratum's look (the surface's outside one): its light from
+    // below, haze, lamp, smoke, and dark.
+    const look = currentDescent().look;
+    gl!.uniform4f(uFloor, look.floor[0] / 255, look.floor[1] / 255, look.floor[2] / 255, look.floorK);
+    gl!.uniform3f(uHaze, look.haze[0] / 255, look.haze[1] / 255, look.haze[2] / 255);
+    gl!.uniform4f(uShade, look.shade[0], look.shade[1], look.shade[2], look.dark);
+    gl!.uniform4f(uMist, look.mist[0] / 255, look.mist[1] / 255, look.mist[2] / 255, look.mistK);
+    gl!.uniform2f(uGlow, 1 + 0.08 * glow, (1 - 0.4 * glow) * look.lamp);
+    gl!.uniform2f(uBottom, (1 + 0.1 * bottom) * look.floorH, 1 + 0.3 * bottom);
+    gl!.uniform2f(uTop, 1 + 0.08 * top, (1 + 0.35 * top) * look.hazeK);
+    // The two low blobs take the stratum's smoke, the two high ones its upper smoke.
     for (let i = 0; i < BLOBS.length; i++) {
+      const smoke = i < 2 ? look.smoke : look.smokeHi;
       for (let c = 0; c < 3; c++) {
-        let v = (BLOBS[i].color[c] / 255) * (1 + (BLOB_COOL[c] - 1) * dsc.deep);
-        if (i < 2) v += (BLOB_AZURE[c] - v) * 0.55 * dsc.blue;
-        blobColor[i * 3 + c] = v;
+        const v = BLOBS[i].color[c];
+        blobColor[i * 3 + c] = (i < 4 ? v + (smoke[c] - v) * look.smokeMix : v) / 255;
       }
     }
     gl!.uniform3fv(uBlobColor, blobColor);
     gl!.uniform1f(uBaseStop, 0.6 - 0.08 * base);
     paths.forEach((path, i) => blobA.set(path(still ? 0 : ms / 1000), i * 4));
-    for (let i = 0; i < BLOB_COUNT; i++) blobA[i * 4 + 3] *= 1 + (i < 4 ? 0.35 : 0.45) * dsc.deep;
+    for (let i = 0; i < BLOB_COUNT; i++) blobA[i * 4 + 3] *= i < 4 ? look.smokeK : look.shadowK;
     for (let i = 0; i < BLOB_COUNT; i++) {
       blobRot[i * 2] = Math.cos(blobA[i * 4 + 2]);
       blobRot[i * 2 + 1] = Math.sin(blobA[i * 4 + 2]);
@@ -811,8 +846,9 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
 
     gl!.viewport(0, 0, canvas.width, canvas.height);
     gl!.uniform2f(uRes, canvas.width, canvas.height);
-    // Deeper, the walls close in.
-    gl!.uniform2f(uVignette, (1 - 0.06 * vignette) * (1 - 0.2 * dsc.deep), (1 + 0.07 * vignette) * (1 + 0.25 * dsc.deep));
+    // Deep down the stratum's uneven dark takes over from the vignette, so
+    // its ellipse never shows.
+    gl!.uniform2f(uVignette, 1 - 0.06 * vignette, (1 + 0.07 * vignette) * (1 - 0.6 * look.dark));
     for (const [k, arr] of Object.entries(el)) gl!.uniform4fv(elLoc[k as keyof typeof el], arr);
     let count = 0;
     for (let i = 0; i < maxElements; i++) if (el.b[i * 4 + 3] > 0) count = i + 1;
@@ -822,10 +858,12 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     gl!.uniform4fv(uLightC, lightC);
     gl!.uniform4fv(uMood, mood);
     gl!.uniform1f(uDialog, dialog);
-    gl!.uniform4f(uEmberColor, embers.color[0], embers.color[1], embers.color[2], calm() ? 0.6 : 1);
+    gl!.uniform4fv(uEmberHalo, embers.halo);
+    gl!.uniform3fv(uEmberCore, embers.core);
+    gl!.uniform1f(uEmberGain, calm() ? 0.6 : 1);
     gl!.activeTexture(gl!.TEXTURE2);
     gl!.bindTexture(gl!.TEXTURE_2D, emberTex);
-    gl!.texSubImage2D(gl!.TEXTURE_2D, 0, 0, 0, SLOTS, COLUMNS, gl!.RGBA, gl!.FLOAT, embers.data);
+    gl!.texSubImage2D(gl!.TEXTURE_2D, 0, 0, 0, SLOTS, TILES, gl!.RGBA, gl!.FLOAT, embers.data);
     gl!.drawArrays(gl!.TRIANGLES, 0, 3);
   }
 
@@ -897,7 +935,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     // either.
     // Delve's depth eases in; holding still, it changes at once (it is game information).
     const descending = still ? snapDescent() : stepDescent(dt);
-    embers.descend(currentDescent(), targetDescent().blue);
+    embers.descend(currentDescent(), targetDescent());
     // Arrived at a depth: the embers still in the old colour take the new one (after a rejoin, all of them).
     if (wasDescending && !descending) embers.recolor();
     wasDescending = descending;
