@@ -1,62 +1,260 @@
-// The engraved plates of the category cards, in the alchemist's circle's
-// style (docs/arcane-style.md), laid out in pixels for a card's measured
-// size. CardEngraving draws them.
+// The engraved plates of the category cards: old tarot cards in fine gold
+// line, cut with the alchemist's circle's craft (docs/arcane-style.md:
+// exact geometry, shading by one-sided hatching, lines stopping short of
+// what they meet, a soft glow under them), but drawn as cards, not circles.
+// They are laid out in pixels for a card's measured size; CardEngraving
+// draws them, and the site's filigree sits on the corners as on any panel.
 //
-// Both sides share a border: two lines with a band of the circle's
-// unreadable script between them, and a seal at each corner holding one
-// of the four lesser planets (Mercury, Venus, Mars, Jupiter).
+// The face (a tall card) is a window: a panel with notched corners and,
+// standing in it, a round arch with a keystone and imposts. In the
+// spandrels above it Sol and Luna, the corners round them hatched; inside
+// it a glory of fine rays behind the emblem, which floats over a stepped
+// plinth on a hatched floor. Under the panel, a nameplate.
 //
-// The face (a tall card): the emblem stands in a sun of sixteen pointed
-// rays, hatched down one side, with fine rays between. Its long diagonal
-// rays point up at Sol and Luna in great seals in the corners and down
-// at two eight-pointed stars, and stop short of them. A divider under the
-// picture carries Saturn's seal, and below it is the nameplate. So all
-// seven planets are on the face, once each.
+// The back, the same either way up: a panel laid with a lattice of
+// diamonds, and in its middle a mandorla, a sun at its heart in a glory
+// of rays, a crescent above it and below, horns out, a star on each tip.
 //
-// The back (the same either way up): a woven eight-pointed star {8/3}
-// round the card's seal, a sun inside it whose long rays run out into the
-// star's arms, passing under its straps, Luna above and below in great
-// seals, and a small star in each corner.
-//
-// Laid in a row (on phones) the face keeps its emblem in a square cell
-// at the left, ringed, behind a divider; the back lays its sun down, Luna
-// to either side, its rays running out sideways.
+// Laid in a row (on phones) the face keeps its emblem in a glory beside
+// a divider, and the back lays its mandorla down.
 
 import {
+  arc,
   at,
   f,
   line,
   LUNA,
   LUNA_HATCH,
-  PLANETS,
   pointedRay,
+  pt,
   rad,
-  ring,
-  script,
-  seeded,
   star8,
-  wear as wearOf,
-  wovenStar,
+  type Cut,
   type Hole,
   type LineOpts,
   type Pt,
-  type Wear,
 } from './arcane';
 
-export type Cls = 'main' | 'thin' | 'hair' | 'hatch' | 'sign' | 'script' | 'fill';
+export type Cls = 'main' | 'thin' | 'hair' | 'hatch' | 'shade' | 'ray' | 'lattice' | 'sign' | 'fill';
 export type Stroke = { d: string; cls: Cls };
+/** Where the glory's rays fade out from, and how far they reach. */
+export type Fade = { c: Pt; r: number };
 
 // Where things sit, in pixels from the card's top left (inside its border).
-// ChooseCategory's CSS places the emblem, the name and the seal to match.
-/** A tall card: the border's lines' insets, and the nameplate's height (under a divider 5 across). */
-export const TALL = { band: [9, 17], plate: 46, seal: 72 };
-/** On a tall card `h` high, the emblem's centre: midway down the picture, between the border and the divider. */
-export const emblemY = (h: number) => (h - TALL.plate - 5) / 2;
-/** A card in a row: the border's lines' insets and the emblem's cell, square on the left. */
-export const ROW = { band: [6, 13], cell: 80, seal: 38 };
+// ChooseCategory's CSS places the emblem and the name to match.
+/** A tall card's face: the panel's foot, the nameplate's top, and the emblem's centre. */
+export const TALL = { panelFoot: 232, plateTop: 238, emblemY: 132 };
+/** A card in a row: the emblem's centre from the left, and the divider after it. */
+export const ROW = { emblemX: 54, divider: 102 };
+
+type Box = [number, number, number, number];
+
+/** Where a line from `p` to `q` runs inside a box, as a cut in [0, 1]. */
+const inBox = (p: Pt, q: Pt, [x0, y0, x1, y1]: Box): Cut | null => {
+  let [t0, t1] = [0, 1];
+  const d = [q[0] - p[0], q[1] - p[1]];
+  for (const [pk, qk] of [
+    [-d[0], p[0] - x0],
+    [d[0], x1 - p[0]],
+    [-d[1], p[1] - y0],
+    [d[1], y1 - p[1]],
+  ]) {
+    if (Math.abs(pk) < 1e-12) {
+      if (qk < 0) return null;
+      continue;
+    }
+    const t = qk / pk;
+    if (pk < 0) t0 = Math.max(t0, t);
+    else t1 = Math.min(t1, t);
+  }
+  return t0 < t1 ? [t0, t1] : null;
+};
+
+/** Where a line from `p` to `q` runs inside a disc, as [t0, t1] (unclamped), if it meets it. */
+const throughDisc = (p: Pt, q: Pt, c: Pt, r: number): Cut | null => {
+  const [dx, dy] = [q[0] - p[0], q[1] - p[1]];
+  const [fx, fy] = [p[0] - c[0], p[1] - c[1]];
+  const a = dx * dx + dy * dy;
+  const b = 2 * (fx * dx + fy * dy);
+  const disc = b * b - 4 * a * (fx * fx + fy * fy - r * r);
+  return disc > 0 ? [(-b - Math.sqrt(disc)) / (2 * a), (-b + Math.sqrt(disc)) / (2 * a)] : null;
+};
+
+/** Where a line from `p` to `q` runs inside an ellipse about `c`, as a cut in [0, 1]. */
+const inEllipse = (p: Pt, q: Pt, c: Pt, rx: number, ry: number): Cut | null => {
+  const k = rx / ry;
+  const t = throughDisc([p[0], c[1] + (p[1] - c[1]) * k], [q[0], c[1] + (q[1] - c[1]) * k], c, rx);
+  if (!t) return null;
+  const [t0, t1] = [Math.max(0, t[0]), Math.min(1, t[1])];
+  return t0 < t1 ? [t0, t1] : null;
+};
+
+/** A mandorla: the lens where two discs of radius `r` about `a` and `b` overlap. */
+type Lens = { a: Pt; b: Pt; r: number };
+/** Where a line from `p` to `q` runs inside a lens, as a cut in [0, 1]. */
+const inLens = (p: Pt, q: Pt, { a, b, r }: Lens): Cut | null => {
+  const [u, v] = [throughDisc(p, q, a, r), throughDisc(p, q, b, r)];
+  if (!u || !v) return null;
+  const [t0, t1] = [Math.max(u[0], v[0], 0), Math.min(u[1], v[1], 1)];
+  return t0 < t1 ? [t0, t1] : null;
+};
+/** How far a ray out of `c` (inside the lens) at `deg` runs before it leaves it. */
+const lensReach = (c: Pt, deg: number, { a, b, r }: Lens) => {
+  const far = at(c, deg, 1000);
+  return Math.min(...[a, b].map((o) => (throughDisc(c, far, o, r)?.[1] ?? 0) * 1000));
+};
+
+/** A rectangle with its corners notched by quarter circles of radius `n` about them, its sides `d` in, broken at `holes`. */
+const notched = (x0: number, y0: number, x1: number, y1: number, n: number, d: number, holes: Hole[] = []) => {
+  const s = Math.sqrt(n * n - d * d);
+  const o = { holes };
+  const corner = (from: Pt, to: Pt) => `M${pt(from)}A${n} ${n} 0 0 0 ${pt(to)}`;
+  return [
+    line([x0 + s, y0 + d], [x1 - s, y0 + d], o),
+    corner([x1 - s, y0 + d], [x1 - d, y0 + s]),
+    line([x1 - d, y0 + s], [x1 - d, y1 - s], o),
+    corner([x1 - d, y1 - s], [x1 - s, y1 - d]),
+    line([x1 - s, y1 - d], [x0 + s, y1 - d], o),
+    corner([x0 + s, y1 - d], [x0 + d, y1 - s]),
+    line([x0 + d, y1 - s], [x0 + d, y0 + s], o),
+    corner([x0 + d, y0 + s], [x0 + s, y0 + d]),
+  ].join('');
+};
+
+/** A plate being drawn: strokes by class. */
+class Plate {
+  out: Stroke[] = [];
+  fade: Fade | null = null;
+  add(d: string, cls: Cls) {
+    if (d) this.out.push({ d, cls });
+  }
+  /** A frame of two lines with notched corners, broken at `holes`. */
+  frame(x0: number, y0: number, x1: number, y1: number, holes: Hole[] = []) {
+    this.add(notched(x0, y0, x1, y1, 5, 0, holes), 'main');
+    this.add(notched(x0, y0, x1, y1, 7.5, 2.5, holes), 'hair');
+  }
+  /** A lozenge set on a frame's line, upright or (`flat`) lying along it. */
+  lozenge(c: Pt, flat = false) {
+    const [a, b] = flat ? [3.6, 2.2] : [2.2, 3.6];
+    this.add(`M${pt([c[0], c[1] - b])}L${pt([c[0] + a, c[1]])}L${pt([c[0], c[1] + b])}L${pt([c[0] - a, c[1]])}Z`, 'thin');
+    this.add(line([c[0], c[1] - b + 1], [c[0], c[1] + b - 1]), 'hatch');
+  }
+  /** An eight-pointed star, each point with a ridge and hatched down one side. */
+  star(c: Pt, r: number) {
+    const s = star8(c, r);
+    this.add(s.outline, 'sign');
+    this.add(s.ridges, 'hatch');
+    this.add(s.hatch, 'hatch');
+  }
+  /** Sol, `r` across his rays: a disc with a dot, pointed rays hatched down one side and fine ones between. */
+  sol(c: Pt, r: number) {
+    this.add(arc(c, r * 0.36, 0, 360), 'thin');
+    this.add(arc(c, r * 0.27, 0, 360), 'hair');
+    this.add(`M${pt([c[0] + r * 0.07, c[1]])}A${f(r * 0.07)} ${f(r * 0.07)} 0 1 1 ${pt([c[0] - r * 0.07, c[1]])}A${f(r * 0.07)} ${f(r * 0.07)} 0 1 1 ${pt([c[0] + r * 0.07, c[1]])}Z`, 'fill');
+    const r0 = r * 0.46;
+    for (let k = 0; k < 16; k++) {
+      const a = k * 22.5;
+      if (k % 2) {
+        this.add(line(at(c, a, r0), at(c, a, r * 0.72)), 'hatch');
+        continue;
+      }
+      const ray = pointedRay(c, a, r0, k % 4 ? r * 0.82 : r, (Math.asin(Math.min(1, 1.05 / r0)) * 180) / Math.PI, 0.7);
+      this.add(ray.lines, 'hair');
+      this.add(ray.hatch, 'hatch');
+    }
+  }
+  /** Luna, her horns (unturned) to the right, scaled from the circle's `k` times and turned `turn`. */
+  luna(c: Pt, k: number, turn: number) {
+    const place = (d: string) => transform(d, c, k, turn);
+    this.add(place(LUNA), 'sign');
+    this.add(place(LUNA_HATCH), 'hatch');
+  }
+  /**
+   * Fine rays out of `c`, long and short in turn, as far as `reach` gives,
+   * the short ones `short` of the way. Thinned toward the centre, as an
+   * engraver would (or they'd run together): every fourth starts at `r0`,
+   * every other one further out, the rest further still.
+   */
+  glory(c: Pt, n: number, r0: number, reach: (deg: number) => number, short: number, o: LineOpts = {}) {
+    const rays = Array.from({ length: n }, (_, k) => {
+      const a = ((k + 0.5) / n) * 360;
+      const r1 = reach(a) - 2;
+      const from = r0 * (k % 4 === 0 ? 1 : k % 2 === 0 ? 2.4 : 3.8);
+      const end = k % 2 ? from + (r1 - from) * short : r1;
+      return end - from > 4 ? line(at(c, a, from), at(c, a, end), o) : '';
+    });
+    this.add(rays.join(''), 'ray');
+  }
+  /**
+   * A sun of pointed rays, hatched down one side, about a double ring of
+   * radius `r`, its rays long and short in turn, to `long` and `short`.
+   */
+  sun(c: Pt, r: number, long: number, short: number, o: LineOpts = {}) {
+    this.add(arc(c, r, 0, 360), 'main');
+    this.add(arc(c, r - 1.4, 0, 360), 'hair');
+    this.add(arc(c, r * 0.32, 0, 360), 'thin');
+    this.add(arc(c, r * 0.07, 0, 360), 'fill');
+    for (let k = 0; k < 16; k++) {
+      const a = k * 22.5;
+      const r1 = k % 2 ? short : long;
+      const ray = pointedRay(c, a, r + 1.5, r1, (Math.asin((k % 2 ? 2.3 : 3) / (r + 1.5)) * 180) / Math.PI, 1, o);
+      this.add(ray.lines, 'hair');
+      this.add(ray.hatch, 'hatch');
+    }
+  }
+  /** A field of diamonds, a bead where they meet, over the box `b`, left out inside `lens` (and `pad` round it). */
+  lattice(b: Box, c: Pt, lens: Lens) {
+    const [W, H] = [8, 11];
+    const [x0, y0, x1, y1] = b;
+    const pad = { ...lens, r: lens.r + 6 };
+    let d = '';
+    // Lines along u + v = n and u - v = n, where u and v count diamonds from `c`.
+    const n0 = Math.ceil((Math.abs(x0 - c[0]) + Math.abs(x1 - c[0])) / W + (Math.abs(y0 - c[1]) + Math.abs(y1 - c[1])) / H);
+    for (let n = -n0; n <= n0; n++)
+      for (const s of [1, -1]) {
+        // The line through (c.x + n W, c.y) going (W, -s H) per diamond.
+        const p: Pt = [c[0] + n * W - 40 * W, c[1] + s * 40 * H];
+        const q: Pt = [c[0] + n * W + 40 * W, c[1] - s * 40 * H];
+        const inside = inBox(p, q, b);
+        if (!inside) continue;
+        const [a, e]: Pt[] = [inside[0], inside[1]].map((t) => [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t]);
+        const cut = inLens(a, e, pad);
+        d += line(a, e, { cuts: cut ? [cut] : [] });
+      }
+    this.add(d, 'lattice');
+    let beads = '';
+    for (let i = -n0; i <= n0; i++)
+      for (let j = -n0; j <= n0; j++) {
+        if ((i + j) % 2) continue;
+        const p: Pt = [c[0] + (i * W) / 2, c[1] + (j * H) / 2];
+        if (p[0] < x0 + 1 || p[0] > x1 - 1 || p[1] < y0 + 1 || p[1] > y1 - 1) continue;
+        if (Math.hypot(p[0] - pad.a[0], p[1] - pad.a[1]) < pad.r && Math.hypot(p[0] - pad.b[0], p[1] - pad.b[1]) < pad.r) continue;
+        beads += `M${pt([p[0] + 0.6, p[1]])}A0.6 0.6 0 1 1 ${pt([p[0] - 0.6, p[1]])}A0.6 0.6 0 1 1 ${pt([p[0] + 0.6, p[1]])}Z`;
+      }
+    this.add(beads, 'fill');
+  }
+  /** A mandorla's edge, two lines, broken at `holes`. */
+  mandorla(lens: Lens, holes: Hole[]) {
+    for (const [dr, cls] of [
+      [3.5, 'thin'],
+      [0, 'hair'],
+    ] as const) {
+      const r = lens.r + dr;
+      for (const [o, other] of [
+        [lens.a, lens.b],
+        [lens.b, lens.a],
+      ]) {
+        // The arc of this disc that bounds the lens: between the tips, on the side facing the other centre.
+        const half = (Math.acos(Math.hypot(other[0] - o[0], other[1] - o[1]) / 2 / r) * 180) / Math.PI;
+        const toward = (Math.atan2(other[0] - o[0], -(other[1] - o[1])) * 180) / Math.PI;
+        this.add(arc(o, r, toward - half, toward + half, { holes }), cls);
+      }
+    }
+  }
+}
 
 /** Path data `d` (absolute commands only) turned by `turn` degrees, scaled by `k` and moved to `c`. */
-const place = (d: string, c: Pt, k = 1, turn = 0) => {
+const transform = (d: string, c: Pt, k = 1, turn = 0) => {
   const [cos, sin] = [Math.cos(rad(turn)), Math.sin(rad(turn))];
   const map = (x: number, y: number) => `${f(c[0] + k * (x * cos - y * sin))} ${f(c[1] + k * (x * sin + y * cos))}`;
   const tokens = d.match(/[A-Za-z]|-?\d*\.?\d+(?:e-?\d+)?/g) ?? [];
@@ -89,220 +287,230 @@ const place = (d: string, c: Pt, k = 1, turn = 0) => {
       out += (i ? ' ' : '') + map(x, y);
       [cx, cy] = [x, y];
     }
-    // After a move, further pairs are lines.
     if (cmd === 'M') cmd = 'L';
   }
   return out;
 };
 
-/** A plate being drawn: strokes by class, worn or (for the glow) whole. */
-class Plate {
-  out: Stroke[] = [];
-  constructor(readonly wear: Wear) {}
-  add(d: string, cls: Cls) {
-    if (d) this.out.push({ d, cls });
+/** The largest circle in the corner of the box at `corner` (inside lines `inset` in), clear of a disc about `a` of radius `r`. */
+const cornerCircle = (corner: Pt, inset: number, a: Pt, r: number): Hole => {
+  // Its centre lies on the corner's diagonal; find where it touches the disc.
+  const dir: Pt = [Math.sign(a[0] - corner[0]), Math.sign(a[1] - corner[1])];
+  let [lo, hi] = [0, 200];
+  for (let i = 0; i < 50; i++) {
+    const m = (lo + hi) / 2;
+    const c: Pt = [corner[0] + dir[0] * (inset + m), corner[1] + dir[1] * (inset + m)];
+    if (Math.hypot(a[0] - c[0], a[1] - c[1]) - r > m) lo = m;
+    else hi = m;
   }
-  /** Lines worn as the plate is (signs and hatching never wear). */
-  opts(o: LineOpts = {}): LineOpts {
-    return { ...o, wear: this.wear };
+  return { c: [corner[0] + dir[0] * (inset + lo), corner[1] + dir[1] * (inset + lo)], r: lo };
+};
+
+/** The face of a tall card `w` by `h`. */
+const tallFace = (w: number, h: number, p: Plate) => {
+  const MID = w / 2;
+  const [x0, y0, x1, y1] = [16, 16, w - 16, TALL.panelFoot];
+  const inner: Box = [x0 + 2.5, y0 + 2.5, x1 - 2.5, y1 - 2.5];
+  const plate: Box = [16, TALL.plateTop, w - 16, h - 14];
+  const plateMid = (plate[1] + plate[3]) / 2;
+  p.frame(x0, y0, x1, y1);
+  p.frame(...plate, [
+    { c: [plate[0], plateMid], r: 4.5 },
+    { c: [plate[2], plateMid], r: 4.5 },
+  ]);
+  p.lozenge([plate[0], plateMid]);
+  p.lozenge([plate[2], plateMid]);
+
+  // The arch: a half circle on two sides, its springing at S.
+  const ri = MID - 26;
+  const ro = ri + 3.5;
+  const S = 110;
+  const A: Pt = [MID, S];
+  // The keystone, flaring a little, its left half hatched; the arcs stop at it.
+  const key = [at(A, -4.5, ri), at(A, 4.5, ri), at(A, 5.4, ro + 2.2), at(A, -5.4, ro + 2.2)];
+  p.add(`M${key.map(pt).join('L')}Z`, 'thin');
+  for (const a of [-1.1, -2.2, -3.3]) p.add(line(at(A, a, ri + 0.6), at(A, a * 1.15, ro + 1.6)), 'hatch');
+  // The imposts where the arch springs from its sides: a block across both lines.
+  const imposts: Box[] = [-1, 1].map((s) => {
+    const [a, b] = [MID + s * (ro + 1.8), MID + s * (ri - 4)];
+    return [Math.min(a, b), S - 2.5, Math.max(a, b), S + 2];
+  });
+  for (const [bx0, by0, bx1, by1] of imposts) {
+    p.add(`M${f(bx0)} ${f(by0)}H${f(bx1)}V${f(by1)}H${f(bx0)}Z`, 'thin');
+    for (let x = bx0 + 1.4; x < bx1 - 0.6; x += 1.4) p.add(line([x, by1 - 0.7], [x, by1 - 1.9]), 'hatch');
   }
-  /** A seal: a double ring of radius `r` round a sign drawn `k` times its size. */
-  seal(c: Pt, r: number, sign: string, k: number, turn = 0) {
-    this.add(ring(c, r, this.opts()), 'thin');
-    this.add(ring(c, r - r * 0.17), 'hair');
-    this.add(place(sign, c, k, turn), 'sign');
+  for (const [r, cls, off] of [
+    [ro, 'main', 5.3],
+    [ri, 'thin', 4.5],
+  ] as const) {
+    const spring = (Math.asin(2.5 / r) * 180) / Math.PI;
+    p.add(arc(A, r, -90 + spring, -off) + arc(A, r, off, 90 - spring), cls);
+    p.add(line([MID - r, S + 2], [MID - r, y1]) + line([MID + r, S + 2], [MID + r, y1]), cls);
   }
-  /** Sol in a great seal of radius 13 · `k`: a disc with a dot, and twelve rays long and short. */
-  sol(c: Pt, k = 1) {
-    this.add(ring(c, 13 * k, this.opts()), 'main');
-    this.add(ring(c, 11.4 * k), 'hair');
-    this.add(ring(c, 5 * k), 'sign');
-    this.add(ring(c, 1.1 * k), 'fill');
-    this.add(Array.from({ length: 12 }, (_, i) => line(at(c, i * 30, 6.6 * k), at(c, i * 30, (i % 2 ? 8.4 : 10) * k))).join(''), 'sign');
+  // The arch's moulding in relief: shaded down its left half, as if lit from the right.
+  const spring = (Math.asin(2.5 / ri) * 180) / Math.PI;
+  for (const d of [1.2, 2.3]) p.add(arc(A, ri + d, -90 + spring, -4.6), 'hatch');
+
+  // The round dais the emblem floats over, seen from a little above: its
+  // top an ellipse, its front a band, shaded down its right side; it stands
+  // on a floor hatched in lines.
+  const floor = y1 - 9;
+  const [dx, dy, dh] = [54, 5, 6];
+  const top: Pt = [MID, floor - dh];
+  const ell = (c: Pt, from: number, to: number) => {
+    const pts = Array.from({ length: 49 }, (_, i) => {
+      const t = rad(from + ((to - from) * i) / 48);
+      return pt([c[0] + dx * Math.cos(t), c[1] + dy * Math.sin(t)]);
+    });
+    return `M${pts.join('L')}`;
+  };
+  p.add(ell(top, 0, 360) + 'Z', 'thin');
+  p.add(ell([MID, floor], 0, 180), 'thin');
+  p.add(line([MID - dx, top[1]], [MID - dx, floor]) + line([MID + dx, top[1]], [MID + dx, floor]), 'thin');
+  for (let x = MID + dx * 0.3; x < MID + dx - 0.6; x += 1.3) {
+    const y = dy * Math.sqrt(1 - ((x - MID) / dx) ** 2);
+    p.add(line([x, top[1] + y + 0.7], [x, floor + y - 0.7]), 'hatch');
   }
-  /** Luna in a great seal of radius 13 · `k`, her horns turned by `turn` from the right. */
-  luna(c: Pt, turn: number, k = 1) {
-    this.add(ring(c, 13 * k, this.opts()), 'main');
-    this.add(ring(c, 11.4 * k), 'hair');
-    this.add(place(LUNA, c, k, turn), 'sign');
-    this.add(place(LUNA_HATCH, c, k, turn), 'hatch');
-  }
-  /** An eight-pointed star, each point with a ridge and hatched down one side. */
-  star(c: Pt, r: number) {
-    const s = star8(c, r);
-    this.add(s.outline, 'sign');
-    this.add(s.ridges, 'hatch');
-    this.add(s.hatch, 'hatch');
-  }
-  /**
-   * A sun's ring of pointed rays out of `c` from `r0`, long and short in
-   * turn, the first at `from` degrees; each as long as `tip` gives (left
-   * out if that's too short to read).
-   */
-  rays(c: Pt, n: number, r0: number, tip: (a: number, long: boolean) => number, o: LineOpts, from = 0) {
-    for (let k = 0; k < n; k++) {
-      const a = from + (k / n) * 360;
-      const long = k % 2 === 0;
-      const r1 = tip(a, long);
-      if (r1 - r0 < 8) continue;
-      // Their bases as wide on the card as the circle's look on the stage.
-      const half = (Math.asin((long ? 4.2 : 3.4) / r0) * 180) / Math.PI;
-      const ray = pointedRay(c, a, r0, r1, half, 1.15, this.opts(o));
-      this.add(ray.lines, 'hair');
-      this.add(ray.hatch, 'hatch');
-    }
-  }
-  /** Fine straight rays between the pointed ones. */
-  fine(c: Pt, n: number, r0: number, r1: number, o: LineOpts) {
-    this.add(Array.from({ length: n }, (_, k) => line(at(c, ((k + 0.5) / n) * 360, r0), at(c, ((k + 0.5) / n) * 360, r1), o)).join(''), 'hair');
-  }
-  /**
-   * The border: two lines `b0` and `b1` in from the edges of a `w` by `h`
-   * card, a seal at each corner, and the script between.
-   */
-  border(w: number, h: number, [b0, b1]: number[], scale: number) {
-    const m = (b0 + b1) / 2;
-    const r = (b1 - b0) * 0.8;
-    const corners: Pt[] = [
-      [m, m],
-      [w - m, m],
-      [w - m, h - m],
-      [m, h - m],
-    ];
-    const holes: Hole[] = corners.map((c) => ({ c, r: r + 1.2 }));
-    for (const b of [b0, b1]) {
-      const pts: Pt[] = [
-        [b, b],
-        [w - b, b],
-        [w - b, h - b],
-        [b, h - b],
-      ];
-      for (let i = 0; i < 4; i++) this.add(line(pts[i], pts[(i + 1) % 4], this.opts({ holes })), b === b0 ? 'main' : 'thin');
-    }
-    const signs = [PLANETS.mercury, PLANETS.venus, PLANETS.mars, PLANETS.jupiter];
-    corners.forEach((c, i) => this.seal(c, r, signs[i], (r / 7.2) * 0.95));
-    // Round the card, each side's marks upright toward the edge they run along.
-    const rnd = seeded(11);
-    const gap = r + 3;
-    const sides: [Pt, Pt, number][] = [
-      [[m + gap, m], [w - m - gap, m], 0],
-      [[w - m, m + gap], [w - m, h - m - gap], 90],
-      [[w - m - gap, h - m], [m + gap, h - m], 180],
-      [[m, h - m - gap], [m, m + gap], 270],
-    ];
-    this.add(
-      sides
-        .flatMap(([p, q, up]) => script(p, q, scale, up, rnd))
-        .map((s) => place(s.d, s.at, scale, s.up))
-        .join(''),
-      'script',
+  const daisCuts = (a: Pt, b: Pt) =>
+    [inEllipse(a, b, top, dx + 1, dy + 1), inEllipse(a, b, [MID, floor], dx + 1, dy + 1), inBox(a, b, [MID - dx - 1, top[1], MID + dx + 1, floor])].filter(
+      (c): c is Cut => !!c,
     );
-    return r;
+  p.add(line([MID - ri, floor], [MID + ri, floor], { cuts: daisCuts([MID - ri, floor], [MID + ri, floor]) }), 'thin');
+  for (let y = floor + 1.6; y < y1 - 2.5; y += 1.6) {
+    const [a, b]: Pt[] = [
+      [MID - ri + 0.6, y],
+      [MID + ri - 0.6, y],
+    ];
+    p.add(line(a, b, { cuts: daisCuts(a, b) }), 'hatch');
   }
-}
 
-/** How far a ray out of `c` at `a` runs before it leaves the box [x0, x1] by [y0, y1]. */
-const reach = (c: Pt, a: number, [x0, y0, x1, y1]: number[]) => {
-  const [dx, dy] = [Math.sin(rad(a)), -Math.cos(rad(a))];
-  const ts = [dx > 1e-9 ? (x1 - c[0]) / dx : dx < -1e-9 ? (x0 - c[0]) / dx : Infinity, dy > 1e-9 ? (y1 - c[1]) / dy : dy < -1e-9 ? (y0 - c[1]) / dy : Infinity];
-  return Math.min(...ts);
-};
+  // Sol and Luna in the spandrels, each as large as the corner allows.
+  const corners = [cornerCircle([x0, y0], 2.5, A, ro), cornerCircle([x1, y0], 2.5, A, ro)];
+  const [sol, luna] = corners.map(({ c, r }) => ({ c, r: Math.min(13, r - 3.5) }));
+  p.sol(sol.c, sol.r);
+  p.luna(luna.c, (luna.r / 8.5) * 0.95, 180);
 
-/** The face of a card `w` by `h`. */
-const face = (w: number, h: number, p: Plate) => {
-  if (w > h) {
-    const b1 = ROW.band[1];
-    p.border(w, h, ROW.band, 0.95);
-    // The emblem's cell, and the divider beside it.
-    const x = b1 + ROW.cell;
-    for (const dx of [-2.5, 2.5]) p.add(line([x + dx, b1], [x + dx, h - b1], p.opts()), 'thin');
-    const c: Pt = [b1 + ROW.cell / 2, h / 2];
-    const r = Math.min(ROW.cell / 2, h / 2 - b1) - 3;
-    p.add(ring(c, r, p.opts()), 'main');
-    p.add(ring(c, r - 1.6), 'hair');
-    // A small star in each corner of the cell.
-    const d = Math.hypot(ROW.cell / 2, h / 2 - b1) - 7;
-    for (const a of [45, 135, 225, 315]) p.star(at(c, a, d), 3.6);
-    return;
-  }
-  const b1 = TALL.band[1];
-  const sealR = p.border(w, h, TALL.band, 1.1);
-  // The divider over the nameplate, Saturn's seal in its middle.
-  const y = h - b1 - TALL.plate - 2.5;
-  const saturn: Pt = [w / 2, y];
-  for (const dy of [-2.5, 2.5]) p.add(line([b1, y + dy], [w - b1, y + dy], p.opts({ holes: [{ c: saturn, r: sealR + 1.2 }] })), 'thin');
-  p.seal(saturn, sealR, PLANETS.saturn, (sealR / 7.2) * 0.95);
-  // The picture: the sun round the emblem, Sol and Luna above, stars below.
-  const c: Pt = [w / 2, emblemY(h)];
-  const box = [b1 + 3, b1 + 3, w - b1 - 3, y - 2.5 - 3];
-  const SUN = 60;
-  const far = 106;
-  const sol = at(c, -45, far);
-  const luna = at(c, 45, far);
-  const stars = [at(c, -135, far - 6), at(c, 135, far - 6)];
-  const holes: Hole[] = [
-    { c: sol, r: 14.4 },
-    { c: luna, r: 14.4 },
-    ...stars.map((s) => ({ c: s, r: 11 })),
+  // The spandrels and the strips beside the arch, hatched in lines rising
+  // to the middle (mirrored either side), clear of the arch, the imposts,
+  // Sol and Luna.
+  const shadeHoles: Hole[] = [
+    { c: A, r: ro + 0.8 },
+    { c: sol.c, r: sol.r + 2.5 },
+    { c: luna.c, r: luna.r + 2.5 },
   ];
-  p.add(ring(c, SUN, p.opts()), 'main');
-  p.add(ring(c, SUN - 1.6), 'thin');
-  p.rays(c, 16, SUN, (a, long) => Math.min(long ? 98 : 80, reach(c, a, box)), { holes });
-  p.fine(c, 16, SUN + 1, SUN + 12, { holes });
-  p.sol(sol);
-  p.luna(luna, 180);
-  for (const s of stars) p.star(s, 8.5);
+  const shadeBoxes: Box[] = [[MID - ro - 0.8, S, MID + ro + 0.8, y1], ...imposts.map(([a, b, c, d]): Box => [a - 0.8, b - 0.8, c + 0.8, d + 0.8])];
+  let shade = '';
+  for (const side of [1, -1]) {
+    const mx = (x: number) => (side > 0 ? x : w - x);
+    for (let k = inner[0] + inner[1]; k < MID + inner[3]; k += 3.1) {
+      const a: Pt = [Math.max(inner[0], k - inner[3]), 0];
+      a[1] = k - a[0];
+      const b: Pt = [Math.min(MID, k - inner[1]), 0];
+      b[1] = k - b[0];
+      if (b[0] - a[0] < 0.3) continue;
+      const [pa, pb]: Pt[] = [
+        [mx(a[0]), a[1]],
+        [mx(b[0]), b[1]],
+      ];
+      shade += line(pa, pb, { holes: shadeHoles, cuts: shadeBoxes.map((bx) => inBox(pa, pb, bx)).filter((c): c is Cut => !!c) });
+    }
+  }
+  p.add(shade, 'shade');
+
+  // The glory behind the emblem, out to the arch and the floor, clear of the plinth.
+  const C: Pt = [MID, TALL.emblemY];
+  const reach = (deg: number) => {
+    const u: Pt = [Math.sin(rad(deg)), -Math.cos(rad(deg))];
+    const ts: number[] = [];
+    if (u[1] > 1e-9) ts.push((floor - C[1]) / u[1]);
+    if (Math.abs(u[0]) > 1e-9) {
+      const t = ((u[0] > 0 ? MID + ri : MID - ri) - C[0]) / u[0];
+      if (C[1] + t * u[1] >= S) ts.push(t);
+    }
+    const far = throughDisc(C, [C[0] + u[0] * 1000, C[1] + u[1] * 1000], A, ri);
+    if (far && C[1] + far[1] * 1000 * u[1] <= S) ts.push(far[1] * 1000);
+    return Math.min(...ts.filter((t) => t > 0));
+  };
+  p.glory(C, 120, 11, reach, 0.62);
+  // The dais stands in front of the rays.
+  p.out = p.out.map((s) => (s.cls === 'ray' ? { ...s, d: clipOut(s.d, daisCuts) } : s));
+  p.fade = { c: C, r: 118 };
 };
 
-/** The back of a card `w` by `h`, round its seal. */
+/** Straight segments `d` (M…L… pairs) with the stretches `cuts` gives taken out. */
+const clipOut = (d: string, cuts: (a: Pt, b: Pt) => Cut[]) =>
+  [...d.matchAll(/M(-?[\d.]+) (-?[\d.]+)L(-?[\d.]+) (-?[\d.]+)/g)]
+    .map((m) => {
+      const [a, b]: Pt[] = [
+        [Number(m[1]), Number(m[2])],
+        [Number(m[3]), Number(m[4])],
+      ];
+      return line(a, b, { cuts: cuts(a, b) });
+    })
+    .join('');
+
+/** The face of a card `w` by `h` laid in a row: the emblem in a glory, a divider before the name. */
+const rowFace = (w: number, h: number, p: Plate) => {
+  const C: Pt = [ROW.emblemX, h / 2];
+  const x = ROW.divider;
+  const mid: Pt = [x, h / 2];
+  for (const dx of [-1.25, 1.25]) p.add(line([x + dx, 14], [x + dx, h - 14], { holes: [{ c: mid, r: 4.5 }] }), dx < 0 ? 'thin' : 'hair');
+  p.lozenge(mid);
+  const box: Box = [10, 9, x - 6, h - 9];
+  const reach = (deg: number) => {
+    const u: Pt = [Math.sin(rad(deg)), -Math.cos(rad(deg))];
+    const ts = [u[0] > 1e-9 ? (box[2] - C[0]) / u[0] : u[0] < -1e-9 ? (box[0] - C[0]) / u[0] : Infinity, u[1] > 1e-9 ? (box[3] - C[1]) / u[1] : u[1] < -1e-9 ? (box[1] - C[1]) / u[1] : Infinity];
+    return Math.min(...ts);
+  };
+  p.glory(C, 72, 6, reach, 0.6);
+  p.fade = { c: C, r: 52 };
+};
+
+/** The back of a card `w` by `h`. */
 const back = (w: number, h: number, p: Plate) => {
+  const row = w > h;
   const c: Pt = [w / 2, h / 2];
-  if (w > h) {
-    const seal = ROW.seal;
-    const b1 = ROW.band[1];
-    p.border(w, h, ROW.band, 0.95);
-    const box = [b1 + 3, b1 + 3, w - b1 - 3, h - b1 - 3];
-    const SUN = seal / 2 + 8;
-    const lunas = [-1, 1].map((s) => [c[0] + s * 92, c[1]] as Pt);
-    const stars = [-1, 1].map((s) => [c[0] + s * 128, c[1]] as Pt);
-    const holes: Hole[] = [...lunas.map((l) => ({ c: l, r: 14.4 })), ...stars.map((s) => ({ c: s, r: 10 }))];
-    p.add(ring(c, SUN, p.opts()), 'main');
-    p.add(ring(c, SUN - 1.6), 'thin');
-    p.rays(c, 12, SUN, (a, long) => Math.min(long ? 80 : 54, reach(c, a, box)), { holes });
-    p.fine(c, 12, SUN + 1, Math.min(SUN + 7, h / 2 - b1 - 3), { holes });
-    p.luna(lunas[0], 180);
-    p.luna(lunas[1], 0);
-    for (const s of stars) if (s[0] - 8 > b1 && s[0] + 8 < w - b1) p.star(s, 7.5);
-    return;
-  }
-  p.border(w, h, TALL.band, 1.1);
-  const SUN = TALL.seal / 2 + 10;
-  const lunas: Pt[] = [
-    [c[0], c[1] - 112],
-    [c[0], c[1] + 112],
-  ];
-  const corners = [-45, 45, 135, 225].map((a) => at(c, a, 112));
-  const holes: Hole[] = [...lunas.map((l) => ({ c: l, r: 14.4 })), ...corners.map((s) => ({ c: s, r: 10 }))];
-  const star = wovenStar(c, 8, 3, 86, 1, 0.9, 0, p.opts({ holes }));
-  const under = star.straps.map((s) => ({ ...s, w: s.w + 0.9 }));
-  p.add(star.edges, 'thin');
-  p.add(ring(c, SUN, p.opts()), 'main');
-  p.add(ring(c, SUN - 1.6), 'thin');
-  // Long rays out into the star's arms, short ones between, passing under its straps.
-  p.rays(c, 16, SUN, (_, long) => (long ? 74 : 62), { holes, under }, 22.5);
-  p.fine(c, 16, SUN + 1, SUN + 9, { holes, under });
-  p.luna(lunas[0], -90);
-  p.luna(lunas[1], 90);
-  for (const s of corners) p.star(s, 8);
+  const inset = row ? 10 : 16;
+  p.frame(inset, inset, w - inset, h - inset);
+  // The mandorla: standing on a tall card, lying in a row. Its half length
+  // and half width give the two discs it's cut from.
+  const [len, wid] = row ? [Math.min(122, w / 2 - 50), h / 2 - inset - 11] : [108, 60];
+  const R = (len * len + wid * wid) / (2 * wid);
+  const off = R - wid;
+  const lens: Lens = row
+    ? { a: [c[0], c[1] - off], b: [c[0], c[1] + off], r: R }
+    : { a: [c[0] - off, c[1]], b: [c[0] + off, c[1]], r: R };
+  const tipAt = (s: number, extra: number): Pt => (row ? [c[0] + s * (len + extra), c[1]] : [c[0], c[1] + s * (len + extra)]);
+  // Its outer line, 3.5 out, meets further along than the inner; a star
+  // sits just past it, and both lines stop short of the star.
+  const outer = Math.sqrt((R + 3.5) ** 2 - off * off) - len;
+  const tipStar = row ? 5.5 : 7;
+  const tips = [-1, 1].map((s) => tipAt(s, outer + tipStar * 0.55));
+  const tipHole = Math.max(tipStar + 2, outer + tipStar * 0.55 + 1.5);
+  p.lattice([inset + 3, inset + 3, w - inset - 3, h - inset - 3], c, lens);
+  p.mandorla(lens, tips.map((t) => ({ c: t, r: tipHole })));
+  for (const t of tips) p.star(t, tipStar);
+  // Crescents toward either tip, horns out.
+  const moonK = row ? 0.95 : 1.35;
+  const moons = [-1, 1].map((s) => tipAt(s, row ? -62 : -40));
+  moons.forEach((m, i) => p.luna(m, moonK, row ? (i ? 0 : 180) : i ? 90 : -90));
+  const holes: Hole[] = moons.map((m) => ({ c: m, r: 8.5 * moonK + 3 }));
+  // The sun at the heart, in a glory out to the mandorla's edge.
+  const sunR = row ? 9 : 17;
+  p.glory(c, row ? 72 : 96, sunR + 2, (deg) => lensReach(c, deg, lens) - 2, 0.68, { holes });
+  const room = (deg: number) => lensReach(c, deg, lens) - 3;
+  p.sun(c, sunR, Math.min(row ? 24 : 42, room(0)), Math.min(row ? 18 : 31, room(22.5)), { holes });
+  p.fade = { c, r: row ? len + 10 : len + 6 };
 };
 
-/** The strokes of one side of a card `w` by `h`: worn for the lines, or whole for the glow under them. */
-export const engrave = (side: 'face' | 'back', w: number, h: number, worn: boolean) => {
-  const p = new Plate(worn ? wearOf(5) : null);
-  if (side === 'face') face(w, h, p);
-  else back(w, h, p);
+/** The strokes of one side of a card `w` by `h`, and where its glory fades. */
+export const engrave = (side: 'face' | 'back', w: number, h: number) => {
+  const p = new Plate();
+  if (side === 'back') back(w, h, p);
+  else if (w > h) rowFace(w, h, p);
+  else tallFace(w, h, p);
   // Merge each class into one path.
   const by = new Map<Cls, string>();
   for (const { d, cls } of p.out) by.set(cls, (by.get(cls) ?? '') + d);
-  return [...by].map(([cls, d]) => ({ cls, d }));
+  return { strokes: [...by].map(([cls, d]) => ({ cls, d })), fade: p.fade };
 };

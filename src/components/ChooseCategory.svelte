@@ -169,14 +169,13 @@
         <span class="turn" in:deal|global={{ i, n: s.offered.length }}>
           <span class="back" aria-hidden="true">
             <CardEngraving side="back" />
-            <span class="seal">
-              <svg class="emblem" viewBox="20 0 400 391"><path d="M224 390Q255 331 301.0 283.5Q347 236 377 218L407 200L220 -1Q164 31 116.5 82.5Q69 134 50 169L31 204Z" /></svg>
-            </span>
+            <span class="filigree"></span>
           </span>
           <span class="frame" use:backdropShadow>
             <CardEngraving side="face" />
             <span class="glare"></span>
             <span class="sheen"></span>
+            <span class="filigree"></span>
             <span class="icon">
               <span class="lit"><span class="glyph" style:--src="url('{categoryIcon(cat)}')"></span></span>
             </span>
@@ -212,8 +211,8 @@
     gap: 1.4rem;
   }
   .card {
-    /* The engraving's gold (the alchemist's circle's). */
-    --ink: #d9a45a;
+    /* The engraving's gold. */
+    --ink: #c9a05a;
     padding: 0;
     border: 0;
     background: none;
@@ -233,8 +232,6 @@
   .back {
     position: absolute;
     inset: 0;
-    display: grid;
-    place-items: center;
     border-radius: 8px;
     overflow: clip;
     border: 1px solid var(--gold-lo);
@@ -253,33 +250,12 @@
   /* The engraved plates (see lib/cardEngraving), behind what the card shows. */
   .frame > :global(.engraving),
   .back > :global(.engraving) {
-    opacity: 0.5;
+    opacity: 0.6;
     transition: opacity 0.4s;
   }
-  .seal {
-    position: relative;
-    display: grid;
-    place-items: center;
-    /* As wide as the plate expects (TALL.seal, ROW.seal). */
-    width: 72px;
-    height: 72px;
-    border-radius: 50%;
-    border: 1px solid rgba(201, 164, 92, 0.55);
-    background: radial-gradient(circle, rgba(18, 14, 10, 0.95) 55%, rgba(18, 14, 10, 0.7));
-    box-shadow:
-      0 0 0 5px rgba(0, 0, 0, 0.35),
-      0 0 0 6px var(--ring),
-      inset 0 0 24px rgba(224, 138, 68, 0.18);
-  }
-  .emblem {
-    width: 32px;
-    height: 32px;
-    fill: #c9a45c;
-    filter: drop-shadow(0 0 10px rgba(224, 138, 68, 0.55));
-  }
-  /* The face is laid out to its plate (see lib/cardEngraving): the emblem
-     in the sun, the name in the nameplate, the same whatever the name's
-     length. Inside its border the card is 298 high. */
+  /* The face is laid out to its plate (see lib/cardEngraving, TALL): the
+     emblem in the arch, the name in the nameplate, the same whatever the
+     name's length. Inside its border the card is 298 high. */
   .frame {
     position: relative;
     display: block;
@@ -288,7 +264,7 @@
     border-radius: 8px;
     border: 1px solid var(--gold-lo);
     background:
-      radial-gradient(circle at 50% 124px, rgba(175, 96, 37, 0.16), transparent 110px),
+      radial-gradient(circle at 50% 132px, rgba(175, 96, 37, 0.18), transparent 110px),
       radial-gradient(ellipse 120% 90% at 50% 45%, transparent 50%, rgba(0, 0, 0, 0.5)),
       linear-gradient(170deg, #211912, #0d0a07 70%);
     --bs1: 16px 40px;
@@ -311,30 +287,52 @@
       opacity 0.4s,
       filter 0.4s;
   }
+  /* The same gold filigree as the panels, on all four corners, joined by a
+     fine rule along the outer line of each. */
+  .filigree {
+    --at: 1px;
+    --end: 30px;
+    --rule: linear-gradient(rgba(201, 164, 92, 0.26), rgba(201, 164, 92, 0.26));
+    --rules:
+      var(--rule) var(--end) var(--at) / calc(100% - 2 * var(--end)) 1px no-repeat,
+      var(--rule) var(--end) calc(100% - var(--at)) / calc(100% - 2 * var(--end)) 1px no-repeat,
+      var(--rule) var(--at) var(--end) / 1px calc(100% - 2 * var(--end)) no-repeat,
+      var(--rule) calc(100% - var(--at)) var(--end) / 1px calc(100% - 2 * var(--end)) no-repeat;
+    position: absolute;
+    inset: 5px;
+    background: var(--filigree), var(--rules);
+    opacity: 0.8;
+    filter: drop-shadow(0 0 3px rgba(224, 138, 68, 0.35));
+    pointer-events: none;
+    transition:
+      opacity 0.3s,
+      filter 0.3s;
+  }
   .icon {
     position: absolute;
     left: 0;
     right: 0;
-    /* Centred on the sun: emblemY(298). */
-    top: calc(123.5px - 70px);
-    height: 140px;
+    top: calc(132px - 75px);
+    height: 150px;
     display: grid;
     place-items: center;
   }
-  /* The emblem's glow, on a layer of its own so the engraving stays crisp. */
+  /* The emblem's glow, on a layer of its own so the engraving stays crisp.
+     No dark shadow: the art's faint baked-in shadow would cast it as a dark
+     disc over the rays behind. */
   .lit {
     position: relative;
     display: grid;
     place-items: center;
-    filter: drop-shadow(0 0 12px rgba(224, 138, 68, 0.3)) drop-shadow(0 4px 6px rgba(0, 0, 0, 0.85));
+    filter: drop-shadow(0 0 12px rgba(224, 138, 68, 0.3));
   }
   .glyph {
-    width: 104px;
-    height: 120px;
-    background: linear-gradient(180deg, #ecd39a 0%, #b8924f 45%, #5e3f17 100%);
+    width: 130px;
+    height: 150px;
+    /* Opaque, so the glory's rays stay behind it; its gold toned down to match. */
+    background: linear-gradient(180deg, #d8c08c 0%, #a8864a 45%, #533814 100%);
     -webkit-mask: var(--src) center / contain no-repeat;
     mask: var(--src) center / contain no-repeat;
-    opacity: 0.85;
     transition:
       transform 0.5s var(--ease-out),
       opacity 0.4s;
@@ -382,12 +380,12 @@
       translate: 420% 0;
     }
   }
-  /* In the nameplate: between the divider and the border (TALL). */
+  /* In the nameplate (TALL.plateTop down to 14 from the foot). */
   .title {
     position: absolute;
-    left: 23px;
-    right: 23px;
-    top: 235px;
+    left: 22px;
+    right: 22px;
+    top: 238px;
     height: 46px;
     display: flex;
     align-items: center;
@@ -413,18 +411,26 @@
     border-color: #8c3a2c;
     --bs-ring: rgba(140, 58, 44, 0.45);
     background:
-      radial-gradient(circle at 50% 124px, rgba(224, 85, 63, 0.18), transparent 110px),
+      radial-gradient(circle at 50% 132px, rgba(224, 85, 63, 0.2), transparent 110px),
       radial-gradient(ellipse 120% 90% at 50% 45%, transparent 50%, rgba(0, 0, 0, 0.5)),
       linear-gradient(170deg, #22110d, #0d0706 70%);
+  }
+  /* The filigree in red: its gold can't be filtered to a clean red, so its
+     shapes mask a red of their own. */
+  .card.dm .filigree {
+    background: linear-gradient(135deg, #f0a08a, #c8503a 60%, #9a3424);
+    -webkit-mask: var(--filigree), var(--rules);
+    mask: var(--filigree), var(--rules);
+    filter: none;
   }
   .card.dm .title {
     color: #f3cfc2;
   }
   .card.dm {
-    --ink: #d0604a;
+    --ink: #c85a44;
   }
   .card.dm .glyph {
-    background: linear-gradient(180deg, #f0c4b4 0%, #c84a36 50%, #5e170e 100%);
+    background: linear-gradient(180deg, #e2b2a2 0%, #b4432f 50%, #52140b 100%);
   }
   .card.dm .back {
     border-color: #8c3a2c;
@@ -433,13 +439,6 @@
       radial-gradient(circle at 50% 50%, rgba(224, 85, 63, 0.2), transparent 90px),
       radial-gradient(ellipse 120% 90% at 50% 50%, transparent 50%, rgba(0, 0, 0, 0.5)),
       linear-gradient(170deg, #22110d, #0d0706 70%);
-  }
-  .card.dm .seal {
-    border-color: rgba(224, 85, 63, 0.55);
-  }
-  .card.dm .emblem {
-    fill: #e0553f;
-    filter: drop-shadow(0 0 10px rgba(224, 85, 63, 0.6));
   }
   .card.dm.mine .frame {
     animation: menace 2.4s ease-in-out infinite;
@@ -481,7 +480,7 @@
   }
   .card.mine:not(:global(.down)):hover .frame > :global(.engraving),
   .card.chosen .frame > :global(.engraving) {
-    opacity: 0.8;
+    opacity: 0.85;
   }
   .card.mine:not(:global(.down)):hover .glyph {
     transform: scale(1.1) rotate(-3deg);
@@ -505,6 +504,13 @@
   .card.mine:not(:global(.down)):hover .title {
     color: #fff1cf;
     text-shadow: 0 0 14px rgba(241, 217, 155, 0.6);
+  }
+  .card.mine:not(:global(.down)):hover .filigree {
+    opacity: 1;
+    filter: brightness(1.25) drop-shadow(0 0 5px rgba(255, 170, 90, 0.6));
+  }
+  .card.dm.mine:not(:global(.down)):hover .filigree {
+    filter: brightness(1.25);
   }
   .card.dm.mine:not(:global(.down)):hover .title {
     color: #ffe4db;
@@ -548,15 +554,13 @@
       width: min(360px, 100%);
       gap: 0.7rem;
     }
-    /* Laid out to the plate in a row (ROW): the emblem in the middle of
-       its cell, 13 + 80 / 2 = 53 in, and the name after the divider, 95.5
-       in, with room to breathe. */
     .frame {
       display: flex;
       align-items: center;
       height: auto;
-      padding: 18px 18px 18px 21px;
-      gap: 26px;
+      /* The emblem 54 in and the divider halfway to the name (ROW). */
+      padding: 13px 22px;
+      gap: 32px;
     }
     .icon {
       position: relative;
@@ -576,20 +580,43 @@
       flex: 1;
       text-align: left;
     }
+    .filigree {
+      --at: 0.5px;
+      --end: 20px;
+      inset: 3px;
+      background-size:
+        20px 20px,
+        20px 20px,
+        20px 20px,
+        20px 20px,
+        calc(100% - 2 * var(--end)) 1px,
+        calc(100% - 2 * var(--end)) 1px,
+        1px calc(100% - 2 * var(--end)),
+        1px calc(100% - 2 * var(--end));
+    }
+    .card.dm .filigree {
+      background-size: auto;
+      -webkit-mask-size:
+        20px 20px,
+        20px 20px,
+        20px 20px,
+        20px 20px,
+        calc(100% - 2 * var(--end)) 1px,
+        calc(100% - 2 * var(--end)) 1px,
+        1px calc(100% - 2 * var(--end)),
+        1px calc(100% - 2 * var(--end));
+      mask-size:
+        20px 20px,
+        20px 20px,
+        20px 20px,
+        20px 20px,
+        calc(100% - 2 * var(--end)) 1px,
+        calc(100% - 2 * var(--end)) 1px,
+        1px calc(100% - 2 * var(--end)),
+        1px calc(100% - 2 * var(--end));
+    }
     .back {
       transform: rotateX(180deg);
-    }
-    .seal {
-      width: 38px;
-      height: 38px;
-      box-shadow:
-        0 0 0 3px rgba(0, 0, 0, 0.35),
-        0 0 0 4px var(--ring),
-        inset 0 0 12px rgba(224, 138, 68, 0.18);
-    }
-    .emblem {
-      width: 18px;
-      height: 18px;
     }
     .card.mine:not(:global(.down)):hover .frame {
       transform: translateX(6px);

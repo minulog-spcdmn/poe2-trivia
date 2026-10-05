@@ -153,6 +153,29 @@ export const ring = (c: Pt, r: number, { holes = [], wear = null }: Pick<LineOpt
     .join('');
 };
 
+/** An arc about `c` from `a0` to `a1` degrees (clockwise, `a0` < `a1`), broken wherever it passes through a hole, and worn. */
+export const arc = (c: Pt, r: number, a0: number, a1: number, { holes = [], wear = null }: Pick<LineOpts, 'holes' | 'wear'> = {}) => {
+  const cuts: Cut[] = [];
+  for (const h of holes) {
+    const [hx, hy] = [h.c[0] - c[0], h.c[1] - c[1]];
+    const d = Math.hypot(hx, hy);
+    const cos = (r * r + d * d - h.r * h.r) / (2 * r * d);
+    if (Math.abs(cos) >= 1) continue;
+    const m = (Math.atan2(hx, -hy) * 180) / Math.PI;
+    const half = (Math.acos(cos) * 180) / Math.PI;
+    for (const k of [-360, 0, 360]) cuts.push([m - half + k, m + half + k]);
+  }
+  if (wear) cuts.push(...wear((2 * Math.PI * r * (a1 - a0)) / 360, a1 - a0).map(([u, v]): Cut => [a0 + u, a0 + v]));
+  return subtract(a0, a1, cuts)
+    .map(([b0, b1]) => {
+      const n = Math.ceil((b1 - b0) / 170);
+      let d = `M${pt(at(c, b0, r))}`;
+      for (let k = 1; k <= n; k++) d += `A${f(r)} ${f(r)} 0 0 1 ${pt(at(c, b0 + ((b1 - b0) * k) / n, r))}`;
+      return d;
+    })
+    .join('');
+};
+
 /** Engraver's shading: lines across the triangle `o`, `l`, `t`, parallel to its side from `o` to `t`. */
 export const hatch = (o: Pt, l: Pt, t: Pt, gap: number, opts: LineOpts = {}) => {
   const n = Math.floor(Math.hypot(l[0] - o[0], l[1] - o[1]) / gap);
