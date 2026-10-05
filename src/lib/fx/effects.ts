@@ -302,7 +302,7 @@ function clearing(clear: Clear | undefined): Element | null {
 /** The picture `clear` names now, if it's one, for an effect to shine from behind its outline. */
 function silhouetteFor(clear: Clear | undefined): Silhouette | null {
   const el = clearing(clear);
-  return el instanceof HTMLImageElement ? silhouetteOf(el) : null;
+  return el && isPicture(el) ? silhouetteOf(el) : null;
 }
 
 /** A lens flare: hot core plus an anamorphic streak. With a picture as `clear`, from behind it. */
@@ -333,7 +333,7 @@ export function flare(at: Anchor, o: { size?: number; streak?: number; life?: nu
  * Slowly turning god rays. Endless unless `life` is given; stop the handle to
  * fade. With `clear` they shine from behind that element: over its shape only
  * a faint glow is left, so the light frames it instead of washing it out. For
- * an image that's the picture's own outline (an item, not its box), as
+ * a picture (see isPicture) that's its own outline (an item, not its box), as
  * visible as the picture is; for anything else its box, with its corner radius.
  */
 export function rays(
@@ -363,7 +363,7 @@ export function rays(
       f.q[3] = o.sharp ?? 6;
       f.q[4] = o.spin ?? 0.25;
       const el = clearing(o.clear);
-      f.silhouette = el instanceof HTMLImageElement ? silhouetteOf(el) : null;
+      f.silhouette = el && isPicture(el) ? silhouetteOf(el) : null;
       const c = el && !f.silhouette ? boxOf(el) : null;
       if (c && el !== cornerOf) {
         cornerOf = el;
@@ -381,7 +381,50 @@ export function rays(
 }
 
 /** Silhouettes measured this frame, so effects sharing a picture measure it once. */
-const silhouettes = new WeakMap<HTMLImageElement, { frame: number; sil: Silhouette }>();
+const silhouettes = new WeakMap<Element, { frame: number; sil: Silhouette }>();
+
+/**
+ * Whether effects can shine from behind `el`'s own outline: an image, or a
+ * picture put together from pieces (veiled art), an element whose canvases
+ * marked `data-shape` make it up, each laid out over its own part of it.
+ */
+function isPicture(el: Element): el is HTMLElement {
+  return el instanceof HTMLImageElement || (el instanceof HTMLElement && !!el.querySelector('canvas[data-shape]'));
+}
+
+/** A picture put together from pieces, drawn on one canvas, and when that was last brought up to date. */
+const assembled = new WeakMap<HTMLElement, { pic: HTMLCanvasElement; key: string; at: number }>();
+let assembledCount = 0;
+/** How often an assembled picture is redrawn while its pieces change (burning in), ms. */
+const ASSEMBLE_EVERY = 60;
+
+/** The pieces of `el` (see isPicture) on one canvas at most 256 px across, about as they're shown now. */
+function assemble(el: HTMLElement): { pic: HTMLCanvasElement; key: string } {
+  const now = performance.now();
+  let a = assembled.get(el);
+  if (a && now - a.at < ASSEMBLE_EVERY) return a;
+  const W = el.offsetWidth;
+  const H = el.offsetHeight;
+  const k = 256 / Math.max(1, W, H);
+  if (!a) {
+    a = { pic: document.createElement('canvas'), key: '', at: 0 };
+    assembled.set(el, a);
+  }
+  const c = a.pic;
+  c.width = Math.max(1, Math.round(W * k));
+  c.height = Math.max(1, Math.round(H * k));
+  const g = c.getContext('2d');
+  if (g) {
+    for (const piece of el.querySelectorAll<HTMLCanvasElement>('canvas[data-shape]')) {
+      if (!piece.width || !piece.height) continue;
+      g.globalAlpha = parseFloat(getComputedStyle(piece).opacity) || 0;
+      g.drawImage(piece, piece.offsetLeft * k, piece.offsetTop * k, piece.offsetWidth * k, piece.offsetHeight * k);
+    }
+  }
+  a.key = `assembled:${++assembledCount}`;
+  a.at = now;
+  return a;
+}
 
 /**
  * Where a picture is, for effects to shine from behind it: its box at its
@@ -390,19 +433,20 @@ const silhouettes = new WeakMap<HTMLImageElement, { frame: number; sil: Silhouet
  * ancestor's transform; mirrored by its own), so the light keeps to its
  * outline while it turns; and how visible it is.
  */
-function silhouetteOf(img: HTMLImageElement): Silhouette {
+function silhouetteOf(el: HTMLElement): Silhouette {
   const frame = currentFrame();
-  const known = silhouettes.get(img);
+  const known = silhouettes.get(el);
   if (known?.frame === frame) return known.sil;
-  const r = img.getBoundingClientRect();
+  const { pic, key } = el instanceof HTMLImageElement ? { pic: el, key: el.currentSrc || el.src } : assemble(el);
+  const r = el.getBoundingClientRect();
   const h = r.height;
-  const w = img.offsetHeight ? (img.offsetWidth * h) / img.offsetHeight : r.width;
-  const tf = getComputedStyle(img).transform;
+  const w = el.offsetHeight ? (el.offsetWidth * h) / el.offsetHeight : r.width;
+  const tf = getComputedStyle(el).transform;
   const m = tf === 'none' ? null : new DOMMatrix(tf);
   const mirrored = !!m && m.a * m.d < 0;
   const turn = w > 0 ? Math.min(1, r.width / w) : 1;
-  const sil = { img, x: r.left + r.width / 2, y: r.top + h / 2, w, h, flip: mirrored ? -turn : turn, alpha: opacityOf(img) };
-  silhouettes.set(img, { frame, sil });
+  const sil = { pic, key, x: r.left + r.width / 2, y: r.top + h / 2, w, h, flip: mirrored ? -turn : turn, alpha: opacityOf(el) };
+  silhouettes.set(el, { frame, sil });
   return sil;
 }
 

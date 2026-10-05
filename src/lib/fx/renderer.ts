@@ -702,10 +702,17 @@ export type RendererOptions = { maxParticles: number; maxShapes: number };
 
 /**
  * A picture effects shine from behind, so they leave its own shape clear (an
- * item's outline, not its box): its centre and size in CSS px as laid out,
- * its x scale (-1 to 1) while it turns round, and its opacity.
+ * item's outline, not its box): what it's drawn from (an image, or a canvas
+ * it was put together on) and a key that changes whenever that does, its
+ * centre and size in CSS px as laid out, its x scale (-1 to 1) while it
+ * turns round, and its opacity.
  */
-export type Silhouette = { img: HTMLImageElement; x: number; y: number; w: number; h: number; flip: number; alpha: number };
+export type Silhouette = { pic: HTMLImageElement | HTMLCanvasElement; key: string; x: number; y: number; w: number; h: number; flip: number; alpha: number };
+
+/** Whether a silhouette's picture can be drawn: loaded, and not empty. */
+export function pictureReady(pic: HTMLImageElement | HTMLCanvasElement) {
+  return pic instanceof HTMLImageElement ? pic.complete && pic.naturalWidth > 0 : pic.width > 0 && pic.height > 0;
+}
 
 /** Longest side of the silhouette texture, and the blur over it, in its px. */
 // Fine enough that thin items (a spear's shaft) keep most of their alpha.
@@ -749,8 +756,8 @@ export class FxRenderer {
   bloom = true;
   private cleared = false;
   private silTex: WebGLTexture | null = null;
-  /** The picture in silTex (by URL, so a picture gone from the page isn't kept), and how much of the texture it covers. */
-  private silSrc = '';
+  /** The picture in silTex (by its silhouette's key, so a picture gone from the page isn't kept), and how much of the texture it covers. */
+  private silKey = '';
   private silFit: [number, number] = [1, 1];
   /** A picture that couldn't be read (another origin, say): not tried again every frame. */
   private silFailed = '';
@@ -899,7 +906,7 @@ export class FxRenderer {
     const gl = this.gl;
     if (!this.hdr) return;
     this.cleared = false;
-    const sil = silhouette && this.loadSilhouette(silhouette.img) ? silhouette : null;
+    const sil = silhouette && this.loadSilhouette(silhouette) ? silhouette : null;
     const shapeUniforms = () => {
       const p = this.shapeProg;
       gl.uniform2f(p.u('uView'), view[0], view[1]);
@@ -1112,24 +1119,24 @@ export class FxRenderer {
     return [left, bottom, right, top];
   }
 
-  /** Makes `img` the silhouette texture, unless it is already. Returns whether it's ready (loaded, and readable). */
-  private loadSilhouette(img: HTMLImageElement): boolean {
-    const src = img.currentSrc || img.src;
-    if (src === this.silSrc) return true;
-    if (src === this.silFailed || !img.complete || !img.naturalWidth) return false;
-    if (!this.makeSilhouette(img)) {
-      this.silFailed = src;
+  /** Makes the silhouette's picture the silhouette texture, unless it is already. Returns whether it's ready (loaded, and readable). */
+  private loadSilhouette({ pic, key }: Silhouette): boolean {
+    if (key === this.silKey) return true;
+    if (key === this.silFailed || !pictureReady(pic)) return false;
+    if (!this.makeSilhouette(pic)) {
+      this.silFailed = key;
       return false;
     }
-    this.silSrc = src;
+    this.silKey = key;
     return true;
   }
 
-  /** Draws `img`'s alpha, blurred, into silTex, with a margin for the blur to spread into. False if it can't be read. */
-  private makeSilhouette(img: HTMLImageElement): boolean {
-    const k = SIL_SIZE / Math.max(img.naturalWidth, img.naturalHeight);
-    const w = Math.max(1, Math.round(img.naturalWidth * k));
-    const h = Math.max(1, Math.round(img.naturalHeight * k));
+  /** Draws `pic`'s alpha, blurred, into silTex, with a margin for the blur to spread into. False if it can't be read. */
+  private makeSilhouette(pic: HTMLImageElement | HTMLCanvasElement): boolean {
+    const [pw, ph] = pic instanceof HTMLImageElement ? [pic.naturalWidth, pic.naturalHeight] : [pic.width, pic.height];
+    const k = SIL_SIZE / Math.max(pw, ph);
+    const w = Math.max(1, Math.round(pw * k));
+    const h = Math.max(1, Math.round(ph * k));
     const pad = Math.ceil(SIL_BLUR * 3);
     const c = document.createElement('canvas');
     c.width = w + pad * 2;
@@ -1137,7 +1144,7 @@ export class FxRenderer {
     const ctx = c.getContext('2d');
     if (!ctx) return false;
     ctx.filter = `blur(${SIL_BLUR}px)`;
-    ctx.drawImage(img, pad, pad, w, h);
+    ctx.drawImage(pic, pad, pad, w, h);
     const gl = this.gl;
     this.silTex ??= gl.createTexture();
     gl.activeTexture(gl.TEXTURE2);

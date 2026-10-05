@@ -12,7 +12,7 @@ import { valueNoise } from './patches';
 import { fxDensity, veilIgnites, veilSpark } from './fx/moments';
 
 /** How long the rest of the picture takes to come in once the answer is out, per patch (ms). */
-export const FINALE_MS = 650;
+export const FINALE_MS = 400;
 
 /**
  * As fractions of the burn: the mist ahead of the front, the twinkling ahead
