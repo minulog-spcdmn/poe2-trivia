@@ -195,4 +195,26 @@ export const MOMENTS: Record<Sfx, Moment> = {
       { file: 'defeat-4', gain: -13, rate: 0.86, delay: 0, hp: 40, lp: 9000, send: 0.65 },
     ],
   },
+  // Delve. Built from files already loaded for other moments, so they add no bytes.
+  stratum: {
+    soften: 6,
+    varyPitch: 0.02,
+    varyGain: 1,
+    layers: [
+      { file: 'defeat-5', gain: -27, rate: 0.6, delay: 0, hp: 40, lp: 3200, send: 0.85 },
+      { file: 'layer-sub-2', gain: -22, rate: 0.55, delay: 0, hp: 20, lp: 900, send: 0.6 },
+      { file: 'layer-air-4', gain: -31, rate: 0.8, delay: 60, hp: 200, lp: 4200, send: 0.8 },
+      { file: 'layer-metal-2', gain: -39, rate: 0.5, delay: 250, hp: 300, lp: 6000, send: 0.9 },
+    ],
+  },
+  lifeLost: {
+    soften: 6,
+    varyPitch: 0.04,
+    varyGain: 1,
+    layers: [
+      { file: 'burn-fuse', gain: -30, rate: 0.75, delay: 0, hp: 200, lp: 7000, send: 0.4 },
+      { file: 'layer-sub-5', gain: -27, rate: 0.85, delay: 0, hp: 20, lp: 1200, send: 0.5 },
+      { file: 'burn-sparkler', gain: -36, rate: 1.1, delay: 60, hp: 900, lp: 11000, send: 0.35 },
+    ],
+  },
 };

@@ -15,6 +15,9 @@
   import { phone } from '../lib/layout';
   import { delveDepth, delveTimer, fellAt, isGroupRun, livesOf } from '../lib/delve';
   import { delveChange } from '../lib/difficultyText';
+  import { milestoneAt } from '../lib/descent';
+  import { descended, milestoneReached } from '../lib/fx/moments';
+  import { untrack } from 'svelte';
 
   const s = $derived(session.state!);
   const active = $derived(s.players[s.turn]);
@@ -138,6 +141,51 @@
     if (!mine && pickLeft <= 10) return `A card is chosen for ${active.name} in ${pickLeft}s.`;
     return '';
   });
+  // Delve: a card at the start of a depth worth marking. Never on a rejoin or
+  // the first depth: only when the run is seen going one deeper.
+  type Card = { key: string; kicker: string; title: string; line: string | null; cold: boolean };
+  let card = $state<Card | null>(null);
+  let cardTimer: ReturnType<typeof setTimeout> | null = null;
+  let depthSeen = '';
+  let standingSeen = 0;
+  $effect(() => {
+    if (!run || s.phase !== 'choosing') return;
+    const key = `${run.startedAt}:${depth}`;
+    if (key === depthSeen) return;
+    const deeper = depthSeen.startsWith(`${run.startedAt}:`);
+    depthSeen = key;
+    if (!deeper) {
+      standingSeen = run.lastStanding ? run.startedAt : 0;
+      return;
+    }
+    untrack(() => {
+      descended();
+      const cold = depth >= 21;
+      const name = milestoneAt(depth);
+      const best = session.bestAtStart;
+      const stand = run.lastStanding && standingSeen !== run.startedAt ? s.players.find((p) => p.id === run.lastStanding!.id) : null;
+      let next: Card | null = null;
+      if (stand) {
+        standingSeen = run.startedAt;
+        next = { key, kicker: 'Last one standing', title: stand.name, line: 'Delves on alone', cold };
+      } else if (name) next = { key, kicker: `Depth ${depth}`, title: name, line: delveChange(depth), cold };
+      else if (!group && best !== null && depth === best + 1)
+        next = { key, kicker: 'Deeper than ever', title: `Depth ${depth}`, line: `Past your best of ${best}`, cold };
+      if (!next) return;
+      card = next;
+      sfx('stratum');
+      if (cardTimer) clearTimeout(cardTimer);
+      cardTimer = setTimeout(() => card?.key === key && (card = null), 2600);
+    });
+  });
+  $effect(() => () => {
+    if (cardTimer) clearTimeout(cardTimer);
+  });
+  /** Svelte action: a milestone's card breaks into the scene. */
+  function cardFx(node: HTMLElement, c: Card) {
+    milestoneReached(node, c.cold);
+  }
+
   const myFall = $derived(session.fallen && session.myPlayerId ? fellAt(s, session.myPlayerId) : null);
 
   // Delve: losing one of your own lives is hard to miss (on one device, anyone's is yours).
@@ -253,6 +301,17 @@
   </div>
 </div>
 
+{#if card}
+  {#key card.key}
+    <!-- Over the cards for a moment, but never in the way of a pick. -->
+    <div class="m-card" class:cold={card.cold} use:portal={'dim'} use:cardFx={card} aria-live="polite" in:scale={{ start: 0.92, duration: 450 }} out:fade={{ duration: 450 }}>
+      <p class="m-kicker">{card.kicker}</p>
+      <p class="m-title">{card.title}</p>
+      {#if card.line}<p class="m-line">{card.line}</p>{/if}
+    </div>
+  {/key}
+{/if}
+
 {#if lostLife}
   {#key lostLife.key}
     <!-- The screen's edges darken red for a moment, effects or not; nothing on it is covered. -->
@@ -300,6 +359,59 @@
     flex-direction: column;
     align-items: stretch;
   }
+  /* Delve: a named depth (or the last one standing, or deeper than ever). */
+  .m-card {
+    position: fixed;
+    left: 50%;
+    top: calc(var(--view-h, 100vh) * 0.4);
+    translate: -50% -50%;
+    z-index: 65;
+    pointer-events: none;
+    width: min(92vw, 560px);
+    padding: 1.6rem 1rem 1.4rem;
+    text-align: center;
+    /* A pool of dark behind the words, fading out on every side. */
+    background: radial-gradient(closest-side, rgba(6, 4, 3, 0.86), rgba(6, 4, 3, 0.6) 60%, rgba(6, 4, 3, 0) 100%);
+  }
+  .m-card.cold {
+    background: radial-gradient(closest-side, rgba(3, 5, 9, 0.88), rgba(3, 5, 9, 0.6) 60%, rgba(3, 5, 9, 0) 100%);
+  }
+  .m-kicker {
+    margin: 0;
+    font-family: var(--font-cinzel);
+    font-weight: 700;
+    font-size: 0.85rem;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    color: var(--gold);
+  }
+  .m-title {
+    margin: 0.3rem 0 0.2rem;
+    font-family: var(--font-display);
+    font-weight: 900;
+    font-size: clamp(2rem, 9vw, 3.4rem);
+    line-height: 1.05;
+    color: var(--gold-hi);
+    text-shadow:
+      0 0 28px rgba(255, 170, 70, 0.45),
+      0 3px 12px rgba(0, 0, 0, 0.95);
+  }
+  .cold .m-kicker {
+    color: #8fb4e8;
+  }
+  .cold .m-title {
+    color: #dce9ff;
+    text-shadow:
+      0 0 28px rgba(90, 150, 255, 0.5),
+      0 3px 12px rgba(0, 0, 0, 0.95);
+  }
+  .m-line {
+    margin: 0;
+    font-style: italic;
+    font-size: 1.05rem;
+    color: var(--muted);
+  }
+
   /* Delve: losing your own life darkens the screen's edges red for a moment. */
   .life-lost {
     position: fixed;

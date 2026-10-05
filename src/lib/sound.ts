@@ -23,7 +23,11 @@ export type Sfx =
   | 'start'
   | 'deathmatch'
   | 'victory'
-  | 'defeat';
+  | 'defeat'
+  /** Delve: a named depth reached. */
+  | 'stratum'
+  /** Delve: a life's ember bursts out of the phial. */
+  | 'lifeLost';
 
 let muted = (() => {
   try {

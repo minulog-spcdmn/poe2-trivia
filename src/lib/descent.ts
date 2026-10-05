@@ -55,6 +55,30 @@ export function descent(depth: number): Descent {
   };
 }
 
+// ---- the named depths -------------------------------------------------------
+
+/** Depths with a name, each where the descent (or the rules) visibly turns. */
+export const MILESTONES: { depth: number; name: string }[] = [
+  { depth: 7, name: 'The Galleries' },
+  { depth: 13, name: 'The Mirror Halls' },
+  { depth: 21, name: 'The Azurite Veins' },
+  { depth: 25, name: 'The Burning Veil' },
+  { depth: 40, name: 'The Grey Deep' },
+  { depth: 50, name: 'The Cold Fire' },
+  { depth: 75, name: 'The Abyss' },
+];
+/** Past the abyss, every this many depths. */
+const BOTTOMLESS_EVERY = 25;
+
+/** The name of the depth, if it has one. */
+export function milestoneAt(depth: number): string | null {
+  const d = Math.floor(depth);
+  const named = MILESTONES.find((m) => m.depth === d);
+  if (named) return named.name;
+  const last = MILESTONES[MILESTONES.length - 1].depth;
+  return d > last && (d - last) % BOTTOMLESS_EVERY === 0 ? 'The Bottomless Dark' : null;
+}
+
 // ---- the eased channel ----------------------------------------------------
 
 /** The depth the scene shows, easing toward the depth of the game. */

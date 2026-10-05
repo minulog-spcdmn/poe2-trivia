@@ -523,6 +523,34 @@ export function lifeLost(pill: Element, chamber: Element, left: number, mine: bo
   shakeView(left === 0 ? 0.6 : 0.45, left === 0 ? 9 : 7);
 }
 
+/**
+ * Delve: one depth deeper. The backdrop's embers flare up for a moment, and
+ * any still in the old colour take the new one (lib/backdropEmbers.ts).
+ */
+export function descended() {
+  backdropEmbers.flare(0.35, 1.2);
+}
+
+/**
+ * Delve: a named depth reached (its card is `card`). A ring and rays break
+ * from the depth's number, sparks and embers rise from below, the backdrop's
+ * embers flare and all take the depth's colour; `cold` once they burn blue.
+ */
+export function milestoneReached(card: Element, cold: boolean) {
+  backdropEmbers.flare(0.85, 2.4);
+  backdropEmbers.recolor();
+  if (!fxActive()) return;
+  const main = cold ? C.portal : C.gold;
+  const pale = cold ? C.portalPale : C.goldPale;
+  ring(card, { radius: 260, thickness: 10, life: 1.1, color: main, breakup: 0.6, intensity: 0.5 });
+  flare(card, { size: 26, streak: 320, life: 0.9, color: pale, intensity: 0.6 });
+  glints(card, { count: 6, size: [4, 8] });
+  sparks(card, { count: 40, area: 'edge', colors: [main, pale], speed: [100, 380], gravity: -40, life: [0.5, 1.2] });
+  embers({ x: innerWidth / 2, y: innerHeight }, { count: 40, colors: [main, pale], rise: [160, 420], scatter: innerWidth * 0.5, life: [1.2, 2.4] });
+  light({ x: innerWidth / 2, y: innerHeight }, { color: cold ? [0.35, 0.6, 1] : [1, 0.6, 0.25], radius: innerHeight * 0.75, intensity: 0.5, decay: 1.2 });
+  shakeView(0.35, 6);
+}
+
 /** Someone guessed wrong in a race: a puff of red at the answer they picked. */
 export function raceMiss(option: Element, mine: boolean) {
   if (!fxActive()) return;

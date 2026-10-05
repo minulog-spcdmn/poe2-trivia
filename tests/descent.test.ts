@@ -116,3 +116,17 @@ test('with effects off the depth still colours the embers, but they stay calm', 
   assert.equal(e.level, 0, 'not stoked');
   assert.ok(e.color[1] < 0.4, `reddened: ${e.color.map((c) => c.toFixed(2))}`);
 });
+
+test('named depths: where the descent turns, then the bottomless dark every 25 past the abyss', async () => {
+  const { MILESTONES, milestoneAt } = await import('../src/lib/descent.ts');
+  const { delveChangeAt } = await import('../src/lib/delve.ts');
+  assert.equal(milestoneAt(1), null);
+  for (const m of MILESTONES) {
+    assert.equal(milestoneAt(m.depth), m.name);
+    assert.ok(delveChangeAt(m.depth) !== null || m.depth === BLUE_FROM, `${m.name} at ${m.depth} changes nothing`);
+  }
+  assert.equal(milestoneAt(100), 'The Bottomless Dark');
+  assert.equal(milestoneAt(125), 'The Bottomless Dark');
+  assert.equal(milestoneAt(101), null);
+  assert.ok(MILESTONES.some((m) => m.depth === BLUE_FROM), 'the first blue embers have a name');
+});

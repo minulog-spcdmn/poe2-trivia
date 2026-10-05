@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { sfx } from '../lib/sound';
   import { cubicOut } from 'svelte/easing';
   import { session } from '../lib/session.svelte';
   import { playerColor } from '../lib/ui';
@@ -54,6 +55,7 @@
         // The fire bursts out of the chamber that emptied, wherever the phial shows (lying or upright).
         const chamber = li && [...li.querySelectorAll(`.chamber[data-k="${now}"]`)].sort((a, b) => area(b) - area(a))[0];
         if (li) lifeLost(li, chamber ?? li, now, mine);
+        if (mine) sfx('lifeLost');
         setTimeout(() => {
           if (hit[id] === now) delete hit[id];
         }, 1200);
