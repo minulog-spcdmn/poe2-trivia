@@ -26,6 +26,9 @@ import {
   DELVE_STEPS,
   MORE_FAKES_FROM,
   delveMoreFakes,
+  LOOKALIKES_FROM,
+  LOOKALIKES_ASKED_FROM,
+  delveLookalikes,
   tileVeilSize,
   delveTier,
   delveTimer,
@@ -103,6 +106,7 @@ test('the curve only ever gets harder', () => {
     assert.ok(gray(b.grayscale) >= gray(a.grayscale), `grayscale eases at ${d}`);
     assert.ok((b.veil?.size ?? 0) >= (a.veil?.size ?? 0), `the veil speeds up at ${d}`);
     assert.ok((b.moreFakes ?? 0) >= (a.moreFakes ?? 0), `fewer fourth fakes at ${d}`);
+    assert.ok((b.lookalikes ?? 0) >= (a.lookalikes ?? 0), `fewer look-alike pictures at ${d}`);
     assert.ok(delveTileVeil(d) >= delveTileVeil(d - 1), `fewer veiled pictures at ${d}`);
     assert.ok(delveTimer(d) <= delveTimer(d - 1), `timer grows at ${d}`);
     assert.ok(delveLockout(d) >= delveLockout(d - 1), `lockout shrinks at ${d}`);
@@ -115,6 +119,21 @@ test('past depth 100 a growing share of name questions gets a fourth made-up nam
   assert.equal(delveRules(100).moreFakes, undefined, 'nothing to say before it starts');
   assert.equal(delveRules(150).moreFakes, 1);
   assert.equal(maxFakes(8), 4);
+});
+
+test('from depth 85 a growing share of questions picks its look-alikes by their art, every question from 134', () => {
+  assert.equal(LOOKALIKES_FROM, 85);
+  assert.deepEqual([1, 81, 84, 85, 86, 100, 133, 134, 300].map(delveLookalikes), [0, 0, 0, 0.02, 0.04, 0.32, 0.98, 1, 1]);
+  assert.equal(delveRules(84).lookalikes, undefined, 'nothing to say before it starts');
+  assert.equal(delveRules(85).lookalikes, 0.02);
+  assert.equal(delveRules(134).lookalikes, 1);
+  // It only makes look-alikes pick differently, so it comes where every question already has them all.
+  assert.equal(delveRules(LOOKALIKES_FROM).similarNames, 1);
+  // Finds ask from up to twenty depths deeper, so a flare at 65 already gets it.
+  assert.equal(LOOKALIKES_ASKED_FROM, 65);
+  assert.equal(findRules('flare', 64).lookalikes, undefined);
+  assert.equal(findRules('flare', 65).lookalikes, 0.02);
+  assert.equal(findRules('azurite', 70).lookalikes, 0.02);
 });
 
 test('timer and lockout stay within bounds', () => {
@@ -133,20 +152,21 @@ test('timer and lockout stay within bounds', () => {
 
 test('something gets harder every few depths, one thing at a time', () => {
   // Never more than three depths without a change until the timer stops at 58,
-  // then ever further apart: the last step at 81, the last lockout at 91, the
-  // first fourth made-up names at 101.
+  // then ever further apart: the last step at 81, the first look-alike
+  // pictures at 85, the last lockout at 91, the first fourth made-up names at 101.
   const changes: number[] = [];
   for (const d of DEPTHS.slice(1)) {
     const change = delveChangeAt(d);
-    const strip = (x: number) => ({ ...delveRules(x), moreFakes: undefined });
+    const strip = (x: number) => ({ ...delveRules(x), moreFakes: undefined, lookalikes: undefined });
     const same = JSON.stringify([strip(d), delveTimer(d)]) === JSON.stringify([strip(d - 1), delveTimer(d - 1)]);
-    if (d !== MORE_FAKES_FROM) assert.equal(change === null, same, `delveChangeAt disagrees at ${d}`);
+    if (d !== MORE_FAKES_FROM && d !== LOOKALIKES_FROM) assert.equal(change === null, same, `delveChangeAt disagrees at ${d}`);
     // One change per depth: knobs, timer and lockout never move together.
     const moved = [JSON.stringify(strip(d)) !== JSON.stringify({ ...strip(d - 1), lockout: delveLockout(d) }), delveLockout(d) !== delveLockout(d - 1), delveTimer(d) !== delveTimer(d - 1)];
     assert.ok(moved.filter(Boolean).length <= 1, `two changes at ${d}`);
     if (change) changes.push(d);
   }
-  assert.deepEqual(changes, [3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31, 34, 37, 39, 41, 44, 45, 48, 50, 53, 55, 58, 61, 66, 71, 75, 81, 91, 101]);
+  assert.deepEqual(changes, [3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31, 34, 37, 39, 41, 44, 45, 48, 50, 53, 55, 58, 61, 66, 71, 75, 81, 85, 91, 101]);
+  assert.equal(delveChangeAt(LOOKALIKES_FROM), 'knobs');
   assert.deepEqual(
     changes.filter((d) => d <= 58).map((d, i, all) => d - (all[i - 1] ?? 1)).filter((gap) => gap > 3),
     [],
@@ -178,7 +198,7 @@ test('there are always three categories left to offer at the longest lockout', (
 
 test('the ruleset is pinned to the curve and the protocol', () => {
   // Changing the curve changes this hash: bump DELVE_RULESET and PROTOCOL_VERSION with it, then update the pin.
-  // (Delve isn't released yet, so the new curve kept both and only moved the pin; so did dynamite going off by itself.)
+  // (Delve isn't released yet, so the new curve kept both and only moved the pin; so did dynamite going off by itself, and look-alike pictures.)
   const table: unknown[] = DEPTHS.map((d) => [delveRules(d), delveTimer(d), delveTileVeil(d)]);
   // The finds too: where and how often they turn up, what they ask and cost, and what their items do.
   const clocks = Array.from({ length: 10 }, (_, i) => i + 7);
@@ -191,7 +211,7 @@ test('the ruleset is pinned to the curve and the protocol', () => {
   assert.deepEqual([DELVE_RULESET, PROTOCOL_VERSION, hash], [1, 10, PINNED_HASH]);
 });
 
-const PINNED_HASH = '73960b2aa4832cec';
+const PINNED_HASH = '978e3f2be038bc1c';
 
 function run(losses: Record<string, number[]>, round = 10, seats = Object.keys(losses)): GameState {
   const s = createGame('a');

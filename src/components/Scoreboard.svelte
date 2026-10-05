@@ -188,7 +188,8 @@
         flareBurns(timer, li, counts?.querySelector('[data-pip="flare"]') ?? null);
         // Everyone hears it: the clock everyone watches just got longer.
         sfx('burn');
-      } else if (kind === 'blast' && mine) sfx('burn');
+      }
+      // A blast is heard from QuestionView, where the stick goes off.
     });
   }
 
@@ -418,7 +419,7 @@
           <!-- Phones only, on the entries shrunk to an avatar: the phial upright beside it. -->
           <span class="phial-side"><Phial lives={shownLives} draining={hit[p.id] ?? -1} surge={surge[p.id] ?? 0} vertical {inv} {moment} /></span>
           <!-- And there, the flares and dynamite they carry, on the avatar's other corner. -->
-          {#if fell === null && inv && (inv.flares > 0 || inv.dynamite > 0 || moment?.kind === 'burn')}
+          {#if fell === null && inv && (inv.flares > 0 || inv.dynamite > 0 || moment?.kind === 'burn' || moment?.kind === 'blast')}
             <span class="side-counts"><Inventory {inv} part="counts" {moment} /></span>
           {/if}
         {:else}

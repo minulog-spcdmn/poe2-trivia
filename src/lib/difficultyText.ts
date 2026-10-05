@@ -151,7 +151,8 @@ export const KNOB_TEXT: { [K in keyof Knobs]: KnobText<K> }[keyof Knobs][] = [
 
 /**
  * What each step of the Delve curve brings, by the depth where it starts
- * (delve.ts DELVE_STEPS), and the first fourth made-up names (MORE_FAKES_FROM).
+ * (delve.ts DELVE_STEPS), the first look-alikes picked by their art
+ * (LOOKALIKES_FROM) and the first fourth made-up names (MORE_FAKES_FROM).
  */
 export const DELVE_STEP_TEXT: Record<number, string> = {
   3: 'A look-alike name',
@@ -172,6 +173,7 @@ export const DELVE_STEP_TEXT: Record<number, string> = {
   71: 'Mostly mirrored',
   75: 'The art burns in slowest',
   81: 'Always mirrored',
+  85: 'Look-alike pictures',
   101: 'Now and then, four made-up names',
 };
 

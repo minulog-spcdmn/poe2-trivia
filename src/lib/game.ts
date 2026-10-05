@@ -3,6 +3,7 @@
 
 import { cleanName, nameProblem, nameSkeleton } from './names.ts';
 import { RUBY } from './palette.ts';
+import type { Looks } from './looks.ts';
 import {
   DELVE_MAX_LOCKOUT,
   DELVE_PICK_MS,
@@ -121,6 +122,8 @@ export interface DifficultyRules extends Omit<Knobs, 'veil'> {
   veil: { size: number; share: number } | null;
   /** Delve, past depth 100: the share of name questions with one more made-up name than `fakes`, as far as they fit. */
   moreFakes?: number;
+  /** Delve, from depth 85: the share of questions whose look-alikes are picked by their art instead of their names. */
+  lookalikes?: number;
 }
 
 /** Knobs from anywhere (an action, an old save): each one off the allowed steps takes its value in `fallback`. */
@@ -760,9 +763,14 @@ export class Engine {
   private readonly fakes: Map<string, string[]>;
   private rng: Rng;
   private now: () => number;
+  /** Which items' art looks alike (src/lib/looks.ts), once it has been fetched. */
+  private looks: Looks | null;
 
-  /** `fakes`: made-up names for items, by item name (src/data/fakes.json). */
-  constructor(items: Item[], opts: { rng?: Rng; now?: () => number; fakes?: Record<string, string[]> } = {}) {
+  /**
+   * `fakes`: made-up names for items, by item name (src/data/fakes.json).
+   * `looks`: the look-alike table, if at hand already (else see setLooks).
+   */
+  constructor(items: Item[], opts: { rng?: Rng; now?: () => number; fakes?: Record<string, string[]>; looks?: Looks | null } = {}) {
     this.items = items;
     this.byId = new Map(items.map((it) => [it.id, it]));
     this.fakes = new Map(items.filter((it) => opts.fakes?.[it.name]?.length).map((it) => [it.id, opts.fakes![it.name]]));
@@ -775,6 +783,16 @@ export class Engine {
     this.categories = [...this.byCategory.keys()].sort();
     this.rng = opts.rng ?? Math.random;
     this.now = opts.now ?? Date.now;
+    this.looks = opts.looks ?? null;
+  }
+
+  /**
+   * Hands over the look-alike table, fetched once a Delve run gets deep
+   * enough to want it. Until then a question rolled to pick its look-alikes
+   * by their art picks them by their names, as at shallower depths.
+   */
+  setLooks(looks: Looks | null) {
+    this.looks = looks;
   }
 
   /**
@@ -1572,17 +1590,22 @@ export class Engine {
   }
 
   /**
-   * Decoys picked for looking alike: a cluster of names around an anchor. The
-   * answer plays any role in it as often as a decoy would (the anchor, another
-   * member, or one of the random fillers outside it), so "the name that fits
-   * the others best" doesn't give it away.
+   * Decoys picked for looking alike: a cluster of names (or, `byArt`, of
+   * pictures) around an anchor. The answer plays any role in it as often as a
+   * decoy would (the anchor, another member, or one of the random fillers
+   * outside it), so "the name that fits the others best" doesn't give it
+   * away.
    */
-  private lookalikes(answer: Item, pool: Item[], count: number, options: number): Item[] {
+  private lookalikes(answer: Item, pool: Item[], count: number, options: number, byArt = false): Item[] {
     if (count <= 0) return [];
+    // By art only with the table at hand and the answer in it (items added
+    // since it was built have no look-alikes); by name otherwise.
+    const looks = byArt && this.looks?.looksLike(answer.id).length ? this.looks : null;
+    const like = looks ? (a: Item, b: Item) => looks.lookScore(a.id, b.id) : (a: Item, b: Item) => this.similarity(a, b);
     // The items most like `to`, with a few to spare so the pick still varies.
     const near = (to: Item, from: Item[]) =>
       shuffle(from, this.rng) // random order among equal scores
-        .map((it) => ({ it, score: this.similarity(to, it) + (it.group === to.group ? 0.15 : 0) }))
+        .map((it) => ({ it, score: like(to, it) + (it.group === to.group ? 0.15 : 0) }))
         .sort((a, b) => b.score - a.score)
         .slice(0, Math.max(count + 2, Math.ceil(count * 1.5)))
         .map((r) => r.it);
@@ -1595,8 +1618,14 @@ export class Engine {
     }
     if (role < count + 1) {
       // The answer is a member: anchor on an item that has the answer among its look-alikes.
-      const anchors = pool.filter((a) => near(a, [answer, ...others(a)]).includes(answer));
-      const anchor = sample(anchors.length ? anchors : pool, 1, this.rng)[0];
+      // Art is ranked sparsely, within a group: an item with no score at all
+      // can still have the answer among its closest, by chance, when the pool
+      // runs low. So by art the anchor must look like the answer too.
+      const anchors = pool.filter((a) => (!looks || like(a, answer) > 0) && near(a, [answer, ...others(a)]).includes(answer));
+      // An odd picture may be among nobody's closest, and a cluster around any
+      // item at all would leave it the odd one out: then the anchor is one of
+      // the items it looks most like instead.
+      const anchor = sample(anchors.length ? anchors : looks ? near(answer, pool) : pool, 1, this.rng)[0];
       const mates = near(anchor, [answer, ...others(anchor)]).filter((it) => it !== answer);
       return [anchor, ...sample(mates, count - 1, this.rng)];
     }
@@ -1798,7 +1827,12 @@ export class Engine {
     const pool = sameGroup.length >= need ? sameGroup : [...sameGroup, ...otherGroup];
 
     const simCount = Math.min(pool.length, Math.round(need * rules.similarNames));
-    const decoys = this.lookalikes(answer, pool, simCount, rules.options);
+    // Delve, from depth 85: now and then the look-alikes are picked by their
+    // art (for a picture question its wrong pictures, for a name question the
+    // names of items drawn like it). Rolled whether or not the table has come
+    // yet, so the rest of the question rolls the same either way.
+    const byArt = !!rules.lookalikes && this.rng() < rules.lookalikes;
+    const decoys = this.lookalikes(answer, pool, simCount, rules.options, byArt);
     // Rest at random, preferring the same group, then the category, then anything.
     for (const source of [pool, unused, inCat, this.items]) {
       if (decoys.length >= need) break;

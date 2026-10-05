@@ -2,10 +2,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import type { Item } from '../src/lib/game.ts';
-import { looksLike, lookScore, lookalikePool } from '../src/lib/looks.ts';
+import { loadLooks, readLooks } from '../src/lib/looks.ts';
 
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
 const raw = JSON.parse(readFileSync(new URL('../src/data/looks.json', import.meta.url), 'utf8'));
+const { looksLike, lookScore, lookalikePool } = readLooks(raw);
 const byName = new Map(items.map((it) => [it.name, it]));
 const byId = new Map(items.map((it) => [it.id, it]));
 const id = (name: string) => byName.get(name)!.id;
@@ -89,4 +90,12 @@ test('the same input gives the same pool', () => {
       it.name,
     );
   }
+});
+
+test('loadLooks fetches the same table, once', async () => {
+  const [a, b] = await Promise.all([loadLooks(), loadLooks()]);
+  assert.equal(a, b);
+  for (const it of items.slice(0, 40)) assert.deepEqual(a.looksLike(it.id), looksLike(it.id));
+  const palm = id('Guiding Palm of the Eye');
+  assert.equal(a.lookScore(palm, id('Guiding Palm of the Heart')), lookScore(palm, id('Guiding Palm of the Heart')));
 });

@@ -83,7 +83,8 @@ const VEIL_PACE: Record<VeilSpeed, DifficultyRules['veil']> = {
  * answer. From depth 25 the art burns into view, slower from 50 and slowest
  * from 75 (its clock only starts once the art is out); grayscale only comes
  * after that, so the first art to burn in is in colour. The last step is at
- * 81; past depth 100 only delveMoreFakes and the tile veil keep rising.
+ * 81; past it only the tile veil, delveLookalikes (from 85) and
+ * delveMoreFakes (from 101) keep rising.
  */
 export const DELVE_STEPS: (DelveKnobs & { from: number })[] = [
   { from: 1, options: 4, similarNames: 0, fakes: 0, artChance: 0.4, grayscale: 'off', mirror: 0, veil: 'off' },
@@ -142,22 +143,40 @@ export function delveMoreFakes(d: number): number {
   return depth < MORE_FAKES_FROM ? 0 : Math.min(1, Math.round((depth - MORE_FAKES_FROM + 1) * 2) / 100);
 }
 
+/**
+ * From this depth a growing share of questions picks its look-alikes by their
+ * art instead of their names: the wrong pictures of "find the art" look like
+ * the answer's, and the wrong names of "name the item" belong to items drawn
+ * like it. Two percent at 85, two percent more every depth, every question
+ * from 134. A depth of its own: the timer has stopped by then, the last step
+ * is at 81 and the last lockout at 91.
+ */
+export const LOOKALIKES_FROM = 85;
+
+/** The share of a depth's questions whose look-alikes are picked by their art (src/lib/looks.ts). */
+export function delveLookalikes(d: number): number {
+  const depth = depthOf(d);
+  return depth < LOOKALIKES_FROM ? 0 : Math.min(1, Math.round((depth - LOOKALIKES_FROM + 1) * 2) / 100);
+}
+
 /** The rules of a depth. */
 export function delveRules(d: number): DifficultyRules {
   const { from: _, veil, ...k } = stepOf(d);
   const more = delveMoreFakes(d);
-  return { ...k, veil: VEIL_PACE[veil], lockout: delveLockout(d), ...(more ? { moreFakes: more } : {}) };
+  const looks = delveLookalikes(d);
+  return { ...k, veil: VEIL_PACE[veil], lockout: delveLockout(d), ...(looks ? { lookalikes: looks } : {}), ...(more ? { moreFakes: more } : {}) };
 }
 
 /**
  * What gets harder at this depth, if anything: new question rules (a step of
- * the curve, or the first fourth made-up names), a longer lockout, or less
- * time. Only one at a time (tests/delve.test.ts checks).
+ * the curve, the first look-alike pictures, or the first fourth made-up
+ * names), a longer lockout, or less time. Only one at a time
+ * (tests/delve.test.ts checks).
  */
 export function delveChangeAt(d: number): 'knobs' | 'lockout' | 'timer' | null {
   const depth = depthOf(d);
   if (depth === 1) return null;
-  if (stepOf(depth) !== stepOf(depth - 1) || depth === MORE_FAKES_FROM) return 'knobs';
+  if (stepOf(depth) !== stepOf(depth - 1) || depth === LOOKALIKES_FROM || depth === MORE_FAKES_FROM) return 'knobs';
   if (delveLockout(depth) !== delveLockout(depth - 1)) return 'lockout';
   if (delveTimer(depth) !== delveTimer(depth - 1)) return 'timer';
   return null;
@@ -240,6 +259,12 @@ export function findChance(kind: FindKind, d: number): number {
 
 /** The shallowest depth with any find. */
 export const FINDS_FROM = Math.min(...FINDS.filter((f) => f.cap > 0).map((f) => f.from));
+
+/**
+ * The shallowest depth whose questions may pick look-alikes by their art: a
+ * find asks from further down, so a little above LOOKALIKES_FROM.
+ */
+export const LOOKALIKES_ASKED_FROM = LOOKALIKES_FROM - Math.max(...FINDS.filter((f) => f.cap > 0).map((f) => f.deeper));
 
 /**
  * A find's question is the question of `deeper` depths down (FINDS): hard,

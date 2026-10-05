@@ -48,7 +48,7 @@ rules, so "I reached depth 30" means the same thing for everyone.
   from 5), six from 11, eight from 31. Until depth 58 something gets harder
   at least every three depths (a new rule, less time or a longer lockout,
   never two at once), and nothing ever gets easier. The last new rule comes
-  at depth 81.
+  at depth 85.
 
   | From depth | Options | Look-alikes | Made up | Find the art | Mirrored | Unveil | Grayscale |
   |---|---|---|---|---|---|---|---|
@@ -71,6 +71,7 @@ rules, so "I reached depth 30" means the same thing for everyone.
   | 71 | 8 | all | 3 | half | 75% | slow | all art |
   | 75 | 8 | all | 3 | half | 75% | slowest | all art |
   | 81 | 8 | all | 3 | half | always | slowest | all art |
+  | 85 | 8 | all, more and more by their art | 3 | half | always | slowest | all art |
 
   The quarters (look-alikes and mirroring) are Delve's own: the Custom
   editor keeps its steps. The timer starts at 16 s and loses a second at
@@ -85,10 +86,18 @@ rules, so "I reached depth 30" means the same thing for everyone.
   more every depth, all of them from depth 124. Each picture is cut much
   coarser than a whole item (3 × 3 fast, 4 × 4 slower), so eight of them stay
   a few dozen patches to send.
+- **Look-alike pictures.** From depth 85 a growing share of questions picks
+  its look-alikes by their art instead of their names (2% at 85, 2% more
+  every depth, every question from 134): the wrong pictures of "find the art"
+  look like the answer's, and the wrong names of "name the item" belong to
+  items drawn like it. The answer still sits anywhere in the cluster, so the
+  picture that fits the others best doesn't give it away. The host only
+  fetches the look-alike table (`src/data/looks.json`, about 26 KiB gzipped)
+  once a run reaches depth 55; until it arrives, look-alikes go by name.
 - **Endless.** Past depth 100 the rules hold, but from 101 a growing share
   of name questions gets a fourth made-up name (2% at 101, 2% more every
-  depth, all of them from 150), and "find the art" pictures keep burning in
-  more often until depth 124.
+  depth, all of them from 150), "find the art" pictures keep burning in
+  more often until depth 124, and look-alike pictures take over until 134.
 - **Finds.** From depth 5 one of the cards on offer is now and then a find:
   pick it and answer right for an item. An **Azurite Vein** asks the question
   of 15 depths deeper; a right answer within the first half of its clock

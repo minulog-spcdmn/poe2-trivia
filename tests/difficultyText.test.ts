@@ -75,11 +75,12 @@ test('every hint, and every reason that replaces one, fits on one line', () => {
 
 test('every depth that gets harder in Delve says how', async () => {
   const { delveChange, DELVE_LADDER, DELVE_STEP_TEXT } = await import('../src/lib/difficultyText.ts');
-  const { DELVE_STEPS, MORE_FAKES_FROM, delveChangeAt, delveTimer } = await import('../src/lib/delve.ts');
+  const { DELVE_STEPS, LOOKALIKES_FROM, MORE_FAKES_FROM, delveChangeAt, delveTimer } = await import('../src/lib/delve.ts');
   for (const step of DELVE_STEPS.slice(1)) assert.ok(DELVE_STEP_TEXT[step.from], `no line for the step at ${step.from}`);
+  assert.ok(DELVE_STEP_TEXT[LOOKALIKES_FROM]);
   assert.ok(DELVE_STEP_TEXT[MORE_FAKES_FROM]);
   for (let d = 1; d <= 300; d++) assert.equal(delveChange(d) === null, delveChangeAt(d) === null, `depth ${d}`);
-  assert.deepEqual([3, 5, 7, 9, 11, 13, 58, 81, 91, 101].map(delveChange), [
+  assert.deepEqual([3, 5, 7, 9, 11, 13, 58, 81, 85, 91, 101].map(delveChange), [
     'A look-alike name',
     'A made-up name',
     'More look-alikes',
@@ -88,6 +89,7 @@ test('every depth that gets harder in Delve says how', async () => {
     'Less time',
     'Seven seconds',
     'Always mirrored',
+    'Look-alike pictures',
     'Locked for 7 turns',
     'Now and then, four made-up names',
   ]);

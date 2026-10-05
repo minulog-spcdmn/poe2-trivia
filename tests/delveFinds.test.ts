@@ -154,6 +154,7 @@ test('an Azurite Vein asks the question of fifteen depths deeper, a Flare Cache 
       for (const k of KNOBS) assert.equal(r[k], deep[k], `${kind} ${k} at ${d}`);
       assert.deepEqual(r.veil, deep.veil, `veil at ${d}`);
       assert.equal(r.moreFakes, deep.moreFakes, `fourth fakes at ${d}`);
+      assert.equal(r.lookalikes, deep.lookalikes, `look-alike pictures at ${d}`);
       assert.equal(findTimer(kind, d), delveTimer(deeper));
       assert.equal(findTileVeil(kind, d), delveTileVeil(deeper));
       // Neither the art/name mix nor the lockout makes a question harder: they stay the depth's.
@@ -176,6 +177,7 @@ test('a find is never easier than its depth, nearly always harder, and the harde
         KNOBS.some((k) => r[k] !== here[k]) ||
         JSON.stringify(r.veil) !== JSON.stringify(here.veil) ||
         (r.moreFakes ?? 0) > (here.moreFakes ?? 0) ||
+        (r.lookalikes ?? 0) > (here.lookalikes ?? 0) ||
         findTileVeil(kind, d) > delveTileVeil(d) ||
         findTimer(kind, d) < delveTimer(d);
       assert.ok(findTileVeil(kind, d) >= delveTileVeil(d), `fewer veiled pictures at ${d}`);

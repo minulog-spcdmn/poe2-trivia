@@ -38,11 +38,29 @@ import { toasts, type ToastKind, type ToastOptions } from './toasts.svelte';
 import { creatorArrival } from './herald';
 import { RUBY } from './palette';
 import { CREATOR_TITLE } from './site';
-import { DELVE_RULESET, blastClears, dynamiteOf, livesOf } from './delve';
+import { DELVE_RULESET, LOOKALIKES_ASKED_FROM, blastClears, dynamiteOf, livesOf } from './delve';
+import { loadLooks } from './looks';
 import { bestOf, loadRecords, recordLeft, recordRun, runEvent } from './delveRecord';
 import { DELVE_CLOCK_CAP_MS, DRAIN_POLL_MS, clockStart, delveNotices, drained, dynamiteIn, expireIn, flareIn, mayAutoReask, reaskDelay } from './delveSession';
 
 export const engine = new Engine(itemData as Item[], { fakes: fakeNames });
+
+/**
+ * Delve: the depth from which whoever builds the questions fetches the
+ * look-alike table, ten depths before any question can want it, so nobody
+ * else (and no shallower run) downloads it. Until it arrives, look-alikes go
+ * by name (Engine.setLooks).
+ */
+const LOOKS_FETCH_FROM = LOOKALIKES_ASKED_FROM - 10;
+let looksFetched = false;
+function fetchLooks() {
+  if (looksFetched) return;
+  looksFetched = true;
+  loadLooks().then(
+    (looks) => engine.setLooks(looks),
+    () => (looksFetched = false), // offline: try again on a later change
+  );
+}
 
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 export const CODE_LENGTH = 6;
@@ -1191,6 +1209,7 @@ class Session {
     this.onNewState(prev, next);
     this.noteEncounter(prev, next);
     this.state = next;
+    if (this.isHost && next.delve && next.round >= LOOKS_FETCH_FROM) fetchLooks();
     if (next.phase === 'question' && next.question && next.question.askedAt !== prev?.question?.askedAt) {
       void this.startMedia(next);
     } else if (next.phase === 'question' && next.question?.blasted && prev?.question?.askedAt === next.question.askedAt && !prev.question.blasted) {
