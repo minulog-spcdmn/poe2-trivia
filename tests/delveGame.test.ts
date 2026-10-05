@@ -255,14 +255,16 @@ test('nobody waits on a clock to pick alone or on one device', () => {
 test('coming back late to pick gives a few seconds more, once per turn', () => {
   const h = delve(['Ash', 'Brea']);
   const id = h.active().id;
+  const back = () => h.act({ type: 'join', playerId: id, name: h.active().name, returning: true }, id);
   h.act({ type: 'connection', playerId: id, connected: false });
   h.clock.now = h.s.delve!.pickBy! - 3000;
-  h.act({ type: 'connection', playerId: id, connected: true });
+  // A guest comes back through 'join', as the session sends it.
+  back();
   assert.equal(h.s.delve!.pickBy, h.clock.now + DELVE_REJOIN_MS);
   const extended = h.s.delve!.pickBy;
   h.clock.now += DELVE_REJOIN_MS - 1000;
   h.act({ type: 'connection', playerId: id, connected: false });
-  h.act({ type: 'connection', playerId: id, connected: true });
+  back();
   assert.equal(h.s.delve!.pickBy, extended, 'only once per turn');
 });
 
@@ -298,7 +300,7 @@ test('after a host reload, a guest question is set aside and the cut-off players
   throwsSilently(() => h.act({ type: 'answer', index: right(voided), askedAt: voided.askedAt }, guest.id), /late/);
 
   const other = guest.id === 'p1' ? 'p2' : 'p1';
-  h.act({ type: 'connection', playerId: other, connected: true });
+  h.act({ type: 'join', playerId: other, name: 'back', returning: true }, other);
   assert.deepEqual(h.s.delve!.excused, [guest.id]);
 
   h.clock.now = h.s.delve!.pickBy!;

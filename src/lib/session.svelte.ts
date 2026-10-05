@@ -249,7 +249,7 @@ class Session {
    */
   private held: { qid: number; activeId: string } | null = null;
   /** Delve: the art failed this many times on this turn (turnCount), for the backoff. */
-  private reaskFails = { turn: -1, n: 0 };
+  private reaskFails = { turn: '', n: 0 };
   private expireTimer: ReturnType<typeof setTimeout> | null = null;
   private expireKey = '';
 
@@ -755,11 +755,11 @@ class Session {
     media.options.forEach((data, index) => this.release({ t: 'option', qid, index, data }));
     // Delve: veiled "find the art" pictures; their patches burn in once the clock starts.
     media.tiles.forEach((t, tile) => this.release({ t: 'veil', qid, tile, ...t.veil }));
-    if (media.veil) {
-      this.release({ t: 'veil', qid, ...media.veil });
-      // Delve: the art burns in from when the clock starts (startClock), not from when the question was asked.
-      if (!timing) this.burnVeil(qid, q.askedAt);
-    }
+    if (media.veil) this.release({ t: 'veil', qid, ...media.veil });
+    // Delve: the art (or the pictures) burn in from when the clock starts
+    // (startClock), not from when the question was asked; a question resumed
+    // with its clock already running burns from that clock's start.
+    if (!timing && (media.veil || media.tiles.length)) this.burnVeil(qid, q.clockAt ?? q.askedAt);
     if (guestTurn) this.waitForArrival(qid, active.id);
     else if (timing) this.startClock(qid, Date.now());
   }
@@ -836,7 +836,9 @@ class Session {
    */
   private reaskLater(s: GameState) {
     const qid = s.question!.askedAt;
-    if (this.reaskFails.turn !== s.turnCount) this.reaskFails = { turn: s.turnCount, n: 0 };
+    // Per turn of this run (turns count from 0 again in the next one).
+    const turn = `${s.delve?.startedAt}:${s.turnCount}`;
+    if (this.reaskFails.turn !== turn) this.reaskFails = { turn, n: 0 };
     const n = this.reaskFails.n++;
     if (n === 1) this.flash('The art for this question keeps failing to load; trying another.', 'warn', { title: 'Art missing' });
     this.mediaTimers.push(
@@ -1464,7 +1466,7 @@ class Session {
     if (this.expireTimer) clearTimeout(this.expireTimer);
     this.expireTimer = null;
     this.expireKey = '';
-    this.reaskFails = { turn: -1, n: 0 };
+    this.reaskFails = { turn: '', n: 0 };
     this.artFailedFor = 0;
     for (const c of this.guests.keys()) c.close();
     this.guests.clear();

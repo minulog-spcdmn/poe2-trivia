@@ -706,6 +706,8 @@ export class Engine {
         if (existing) {
           // Rejoining keeps the original name, so a seat can't be renamed on the way back.
           existing.connected = true;
+          // A guest coming back arrives here (the session only ever reports a drop as 'connection').
+          if (s.delve) this.delveReturn(s, existing);
           break;
         }
         // Already watching (e.g. a second connection after a refresh): nothing changes.
