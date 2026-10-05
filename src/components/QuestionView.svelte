@@ -544,9 +544,12 @@
             class:mine
             disabled={!mine || !!reveal || chosen !== null}
             onclick={() => answer(i)}
+            onpointermove={glare}
             in:scale={{ start: 0.85, duration: 450, delay: 250 + i * 80 }}
           >
+            <span class="sheen"></span>
             <span class="key">{(i + 1) % 10}</span>
+            <span class="cue" aria-hidden="true"></span>
             {#if src}
               <!-- Named pictures switch to the original art, so a mirrored one turns round. -->
               <span class="pic"><ArtImage {src} alt="Option {i + 1}" scale={1.6} unflip={mirrored(i) && !!q.options[i]} /></span>
@@ -1087,10 +1090,10 @@
       --bs-fill-a 0.4s,
       --bs-fill-b 0.4s;
   }
-  /* What lights up while the pointer is on an answer (clipped by the row's
-     own box, so the race avatars on its edge aren't): a glow that follows the
-     pointer, embers smouldering along the bottom, and a band of light that
-     sweeps across once. */
+  /* What lights up while the pointer is on an answer, a row or a picture
+     (clipped by the answer's own box, so the race avatars on a row's edge
+     aren't): a glow that follows the pointer, embers smouldering along the
+     bottom, and a band of light that sweeps across once. */
   .sheen {
     position: absolute;
     z-index: -1;
@@ -1127,7 +1130,8 @@
     transition: opacity 0.35s;
   }
   /* Light along the top edge, opening out from the middle. */
-  .option::after {
+  .option::after,
+  .tile::after {
     content: '';
     position: absolute;
     top: -1px;
@@ -1156,35 +1160,35 @@
     --bs1: 0px 26px;
     --bs1-color: rgba(224, 138, 68, 0.2);
   }
-  .option.mine:not(:disabled):hover .sheen::before {
+  :is(.option, .tile).mine:not(:disabled):hover .sheen::before {
     animation: sweep 0.8s var(--ease-out);
   }
-  :is(.option.mine:not(:disabled):is(:hover, :focus-visible), .option.pending) .sheen::after,
-  :is(.option.mine:not(:disabled):is(:hover, :focus-visible), .option.pending) .cue,
-  .option.mine:not(:disabled):is(:hover, :focus-visible)::after,
-  .option.pending::after {
+  :is(:is(.option, .tile).mine:not(:disabled):is(:hover, :focus-visible), :is(.option, .tile).pending) .sheen::after,
+  :is(:is(.option, .tile).mine:not(:disabled):is(:hover, :focus-visible), :is(.option, .tile).pending) .cue,
+  :is(.option, .tile).mine:not(:disabled):is(:hover, :focus-visible)::after,
+  :is(.option, .tile).pending::after {
     opacity: 1;
   }
-  .option.mine:not(:disabled):is(:hover, :focus-visible)::after,
-  .option.pending::after {
+  :is(.option, .tile).mine:not(:disabled):is(:hover, :focus-visible)::after,
+  :is(.option, .tile).pending::after {
     scale: 1 1;
   }
-  :is(.option.mine:not(:disabled):is(:hover, :focus-visible), .option.pending) .key {
+  :is(:is(.option, .tile).mine:not(:disabled):is(:hover, :focus-visible), :is(.option, .tile).pending) .key {
     color: #fff4d8;
     border-color: var(--gold-hi);
     box-shadow: 0 0 12px rgba(241, 217, 155, 0.4);
   }
-  :is(.option.mine:not(:disabled):is(:hover, :focus-visible), .option.pending) .key::before {
+  :is(:is(.option, .tile).mine:not(:disabled):is(:hover, :focus-visible), :is(.option, .tile).pending) .key::before {
     opacity: 1;
   }
-  .option.mine:not(:disabled):hover .key::after {
+  :is(.option, .tile).mine:not(:disabled):hover .key::after {
     animation: key-ripple 0.7s var(--ease-out);
   }
   :is(.option.mine:not(:disabled):is(:hover, :focus-visible), .option.pending) .text {
     color: #fff1dc;
     text-shadow: 0 0 14px rgba(241, 217, 155, 0.35);
   }
-  :is(.option.mine:not(:disabled):is(:hover, :focus-visible), .option.pending) .cue {
+  :is(:is(.option, .tile).mine:not(:disabled):is(:hover, :focus-visible), :is(.option, .tile).pending) .cue {
     translate: 0 -50%;
   }
   .option.mine:not(:disabled):active {
@@ -1381,6 +1385,7 @@
       radial-gradient(ellipse at center, transparent 45%, rgba(0, 0, 0, 0.5) 100%),
       linear-gradient(180deg, #0c0d12, #060709);
     cursor: default;
+    isolation: isolate;
     transition:
       background 0.3s,
       border-color 0.3s,
@@ -1410,15 +1415,28 @@
   .tile.mine:not(:disabled) {
     cursor: pointer;
   }
-  .tile.mine:not(:disabled):hover {
-    border-color: var(--gold);
-    box-shadow: inset 0 0 30px rgba(201, 164, 92, 0.18);
-  }
-  .tile.mine:not(:disabled):hover .pic {
-    transform: scale(1.06);
-  }
+  /* Hovered, or picked and waiting for the verdict: lit like the answer rows,
+     and the picture comes forward. */
+  .tile.mine:not(:disabled):is(:hover, :focus-visible),
   .tile.pending {
     border-color: var(--gold);
+    box-shadow:
+      inset 0 0 0 1px rgba(241, 217, 155, 0.1),
+      inset 0 0 30px rgba(201, 164, 92, 0.18);
+  }
+  :is(.tile.mine:not(:disabled):is(:hover, :focus-visible), .tile.pending) .pic {
+    transform: scale(1.06);
+  }
+  /* A picture is tall: a wider glow, and the embers kept to the bottom edge. */
+  .tile .sheen::after {
+    background:
+      radial-gradient(circle 200px at var(--gx, 50%) var(--gy, 50%), rgba(255, 214, 150, 0.13), transparent 70%),
+      radial-gradient(ellipse 70% 22% at 50% 106%, rgba(255, 140, 50, 0.34), transparent 70%);
+  }
+  /* The diamond sits level with the key, under where the ✓/✕ goes. */
+  .tile .cue {
+    top: 22px;
+    right: 17px;
   }
   .tile.right {
     border-color: #5d8a50;
