@@ -245,18 +245,20 @@
         {/if}
       </section>
 
-      <section class="panel" use:backdropShadow={{ fill: 'linear' }}>
-        <header><h2>By category</h2><span class="count">{stats.seen} / {stats.total}</span></header>
+      <section class="panel by-cat" use:backdropShadow={{ fill: 'linear' }}>
+        <header class="cat-cols"><h2>By category</h2><span class="col-label">Accuracy</span></header>
         <ul class="bars cats">
           {#each stats.categories as c (c.category)}
-            <li class:on={only === c.category}>
-              <button class="cat" onclick={() => showCategory(c.category)} title="Show {c.category}">
-                {@render glyph(c.category)}
-                <span class="bar-name">{c.category}</span>
+            <li>
+              <button class="cat" class:on={only === c.category} aria-pressed={only === c.category} onclick={() => showCategory(c.category)} title="Show {c.category}">
+                <span class="cat-name">
+                  {@render glyph(c.category)}
+                  <span class="bar-name">{c.category}</span>
+                </span>
+                <span class="found" title="{c.seen} of {c.total} discovered">{c.seen}/{c.total}</span>
+                {@render meter(c, c.category)}
+                <span class="bar-value">{c.n ? pct(c) : ''}</span>
               </button>
-              <span class="found" title="{c.seen} of {c.total} discovered">{c.seen}/{c.total}</span>
-              {@render meter(c, c.category)}
-              <span class="bar-value">{c.n ? pct(c) : ''}</span>
             </li>
           {/each}
         </ul>
@@ -655,12 +657,6 @@
     letter-spacing: 0.18em;
     color: var(--gold-hi);
   }
-  .count {
-    font-family: var(--font-cinzel);
-    font-weight: 700;
-    font-size: 0.85rem;
-    color: var(--gold);
-  }
   .hint {
     margin: 0;
     font-size: 0.95rem;
@@ -682,8 +678,42 @@
     align-items: center;
     gap: 0.7rem;
   }
+  /* The header and each category share the same columns: name, found, accuracy bar and figure. */
+  .by-cat {
+    --cols: minmax(0, 1fr) 3.2rem minmax(40px, 9rem) 2.8rem;
+  }
+  .bars.cats {
+    gap: 0.1rem;
+  }
   .bars.cats li {
-    grid-template-columns: minmax(0, 1fr) 3.2rem minmax(40px, 9rem) 2.8rem;
+    display: block;
+  }
+  .cat {
+    display: grid;
+    grid-template-columns: var(--cols);
+    align-items: center;
+    gap: 0.7rem;
+    /* Padded for the highlight, pulled back out to line up with the header. */
+    margin: 0 -0.6rem;
+    padding: 0.3rem 0.6rem;
+    border-radius: 4px;
+  }
+  .panel header.cat-cols {
+    display: grid;
+    grid-template-columns: var(--cols);
+    column-gap: 0.7rem;
+  }
+  .cat-cols h2 {
+    grid-column: 1 / 3;
+  }
+  .col-label {
+    grid-column: 3 / 5;
+    justify-self: end;
+    font-family: var(--font-display);
+    font-size: 0.72rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: #d8a26a;
   }
   .bar-name {
     font-size: 0.98rem;
@@ -710,21 +740,35 @@
     text-align: right;
   }
   .cat {
-    display: flex;
-    align-items: center;
-    gap: 0.55rem;
-    min-width: 0;
-    padding: 0;
+    width: calc(100% + 1.2rem);
     background: none;
     border: 0;
     cursor: pointer;
     text-align: left;
+    font: inherit;
     color: var(--text);
-    transition: color 0.2s;
+    transition:
+      color 0.2s,
+      background-color 0.2s;
   }
-  .cat:hover,
-  .cats li.on .cat {
+  .cat-name {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    min-width: 0;
+  }
+  .cat:hover {
+    background: rgba(175, 96, 37, 0.1);
     color: var(--gold-hi);
+  }
+  .cat.on {
+    background: rgba(201, 164, 92, 0.14);
+    box-shadow: inset 2px 0 0 var(--gold);
+    color: var(--gold-hi);
+  }
+  .cat:hover .found,
+  .cat.on .found {
+    color: var(--text);
   }
   /* The game's category emblems: the art as a gold silhouette (ChooseCategory). */
   .glyph {
@@ -1253,8 +1297,12 @@
       grid-template-columns: minmax(0, 6.5rem) minmax(30px, 1fr) 4.8rem;
       gap: 0.5rem;
     }
-    .bars.cats li {
-      grid-template-columns: minmax(0, 1fr) 2.8rem minmax(30px, 4rem) 2.6rem;
+    .by-cat {
+      --cols: minmax(0, 1fr) 2.8rem minmax(30px, 4rem) 2.6rem;
+    }
+    .cat,
+    .panel header.cat-cols {
+      column-gap: 0.5rem;
     }
     .controls,
     .controls .search {
