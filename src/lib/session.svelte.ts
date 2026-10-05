@@ -40,7 +40,7 @@ import { RUBY } from './palette';
 import { CREATOR_TITLE } from './site';
 import { DELVE_RULESET, livesOf } from './delve';
 import { bestOf, loadRecords, recordRun, runEvent } from './delveRecord';
-import { DELVE_CLOCK_CAP_MS, DRAIN_POLL_MS, clockStart, delveNotices, drained, expireIn, mayAutoReask, reaskDelay } from './delveSession';
+import { DELVE_CLOCK_CAP_MS, DRAIN_POLL_MS, clockStart, delveNotices, drained, expireIn, flareIn, mayAutoReask, reaskDelay } from './delveSession';
 
 export const engine = new Engine(itemData as Item[], { fakes: fakeNames });
 
@@ -252,6 +252,8 @@ class Session {
   private reaskFails = { turn: '', n: 0 };
   private expireTimer: ReturnType<typeof setTimeout> | null = null;
   private expireKey = '';
+  private flareTimer: ReturnType<typeof setTimeout> | null = null;
+  private flareKey = '';
 
   get isHost() {
     return this.mode === 'local' || this.mode === 'host';
@@ -1274,7 +1276,8 @@ class Session {
       const who = { name: p.name, hue: p.hue };
       if (n.kind === 'missed') {
         sfx('wrong');
-        this.flash('Their time ran out while they were away; one life lost.', 'warn', { title: 'Turn missed', who });
+        const lost = n.warded ? 'an Azurite Ward broke instead of a life' : 'one life lost';
+        this.flash(`Their time ran out while they were away; ${lost}.`, 'warn', { title: 'Turn missed', who });
       } else this.flash('The host reloaded, so this question was set aside; no life lost.', 'info', { title: 'Question set aside', who });
     }
     if ((prev.phase === 'lobby' || prev.phase === 'over') && (next.phase === 'choosing' || next.phase === 'question')) {
@@ -1330,6 +1333,28 @@ class Session {
     this.scheduleIdle(s);
     this.scheduleAutoNext(s);
     this.scheduleExpire(s);
+    this.scheduleFlare(s);
+  }
+
+  /** Delve: as the answering player's clock nears its end, one of their flares burns (host or this device only). */
+  private scheduleFlare(s: GameState) {
+    const left = this.mode !== 'client' ? flareIn(s, Date.now()) : null;
+    const key = left === null ? '' : `${s.question?.askedAt}:${s.question?.deadline}`;
+    if (key === this.flareKey) return;
+    if (this.flareTimer) clearTimeout(this.flareTimer);
+    this.flareTimer = null;
+    this.flareKey = key;
+    if (left === null) return;
+    const askedAt = s.question!.askedAt;
+    this.flareTimer = setTimeout(() => {
+      const cur = this.state;
+      if (!cur || this.flareKey !== key) return;
+      try {
+        this.setState(engine.apply(cur, { type: 'flare', askedAt }, null));
+      } catch {
+        /* the question closed anyway */
+      }
+    }, left);
   }
 
   /** Delve: when the time to pick runs out, a card is picked (or a life lost, for a player who is away). */
@@ -1466,6 +1491,9 @@ class Session {
     if (this.expireTimer) clearTimeout(this.expireTimer);
     this.expireTimer = null;
     this.expireKey = '';
+    if (this.flareTimer) clearTimeout(this.flareTimer);
+    this.flareTimer = null;
+    this.flareKey = '';
     this.reaskFails = { turn: '', n: 0 };
     this.artFailedFor = 0;
     for (const c of this.guests.keys()) c.close();

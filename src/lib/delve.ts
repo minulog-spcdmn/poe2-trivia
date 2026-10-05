@@ -122,6 +122,97 @@ export function delveChangeAt(d: number): 'knobs' | 'lockout' | 'timer' | null {
   return null;
 }
 
+// ---- finds -----------------------------------------------------------------
+
+/**
+ * Special cards found among those on offer: pick one and answer right for an
+ * item. An Azurite Vein yields an Azurite Ward (a ward takes a loss in place of
+ * a life) but only to a fast answer; a Flare Cache a flare (it burns by itself
+ * as the clock runs out, for more time); a Dynamite Cache dynamite (it blasts
+ * open a fourth, easier card while choosing).
+ */
+export type FindKind = 'azurite' | 'flare' | 'dynamite';
+
+/** What a player carries through a run. */
+export interface Inventory {
+  wards: number;
+  flares: number;
+  dynamite: number;
+}
+export type ItemKind = keyof Inventory;
+
+/** Azurite Wards a player can hold at once. */
+export const DELVE_MAX_WARDS = 3;
+/** Flares a player can hold at once. */
+export const DELVE_MAX_FLARES = 3;
+/** Sticks of dynamite a player can hold at once. */
+export const DELVE_MAX_DYNAMITE = 3;
+
+/**
+ * Where each find turns up, and how often. One roll per offer, against these
+ * slices in turn, so an offer holds at most one find and every depth offers
+ * the same chances in every run. A slice whose item the player already holds
+ * all they can of comes up empty: the risk would win them nothing, and the
+ * other finds keep their chances. Flares come first (more time is the gentlest
+ * help), azurite where Eternal starts, dynamite once lockouts bite.
+ */
+export const FINDS: { kind: FindKind; item: ItemKind; from: number; chance: number; max: number }[] = [
+  { kind: 'flare', item: 'flares', from: 8, chance: 0.1, max: DELVE_MAX_FLARES },
+  { kind: 'azurite', item: 'wards', from: 13, chance: 0.15, max: DELVE_MAX_WARDS },
+  { kind: 'dynamite', item: 'dynamite', from: 18, chance: 0.1, max: DELVE_MAX_DYNAMITE },
+];
+
+/** The find that yields an item. */
+export const findFor = (kind: FindKind) => FINDS.find((f) => f.kind === kind)!;
+
+/** The shallowest depth with any find. */
+export const FINDS_FROM = Math.min(...FINDS.map((f) => f.from));
+
+/** Seconds on the clock for a find's question: the fewest there are, at any depth. */
+export const FIND_TIMER = DELVE_MIN_TIMER;
+
+/** Every "find the art" picture of a find's question burns into view, as at the deepest depths. */
+export const FIND_TILE_VEIL = 1;
+
+/**
+ * A right answer this soon after an Azurite Vein's clock started earns a ward
+ * (4 of its 7 s, so the window closes as the clock shows 3). Under its slowest
+ * veil that is the shortest window that still lets half the art burn in first
+ * (tests/delveFinds.test.ts checks).
+ */
+export const AZURITE_FAST_MS = 4000;
+
+/**
+ * The rules of a find's question at depth `d`: the deepest step of the curve
+ * whatever the depth (eight options, all look-alikes, three made-up names, all
+ * art in grayscale and mirrored, the slowest veil), a risk for the reward. The
+ * mix of art and name questions and the lockout stay the depth's: neither makes
+ * the question harder, and the art lean counts every question alike.
+ */
+export function findRules(d: number): DifficultyRules {
+  const { from: _, veil, ...k } = DELVE_STEPS.at(-1)!;
+  return { ...k, artChance: stepOf(d).artChance, veil: VEIL_PACE[veil], lockout: delveLockout(d) };
+}
+
+/** When a flare burns: this long before the answering player's clock runs out. */
+export const FLARE_AT_MS = 1000;
+
+/** How much longer a burning flare keeps the clock running. */
+export const FLARE_MS = 5000;
+
+/** Options on a card blasted open with dynamite. */
+export const BLAST_OPTIONS = 4;
+
+/**
+ * The rules of a card blasted open with dynamite: the depth's, with fewer
+ * options to pick from (and no more made-up names than four options hold:
+ * each copies a real name on screen, see game.ts maxFakes).
+ */
+export function blastRules(d: number): DifficultyRules {
+  const r = delveRules(d);
+  return { ...r, options: BLAST_OPTIONS, fakes: Math.min(r.fakes, Math.floor(BLAST_OPTIONS / 2)) };
+}
+
 /** The preset a depth plays most like, for filing answers in the codex. */
 export function delveTier(d: number): Preset {
   const depth = depthOf(d);
@@ -141,6 +232,46 @@ export function livesOf(s: GameState, id: string): number {
   if (!s.delve || !s.players.some((p) => p.id === id)) return 0;
   return Math.max(0, DELVE_LIVES - (s.delve.losses[id]?.length ?? 0));
 }
+
+const EMPTY: Inventory = { wards: 0, flares: 0, dynamite: 0 };
+const CAPS: Inventory = { wards: DELVE_MAX_WARDS, flares: DELVE_MAX_FLARES, dynamite: DELVE_MAX_DYNAMITE };
+
+/**
+ * What a seated player carries: nothing outside Delve, for anyone without a
+ * seat, or in older saves; odd counts read as something sane.
+ */
+export function inventoryOf(s: GameState, id: string): Inventory {
+  const raw = s.delve && s.players.some((p) => p.id === id) ? s.delve.inventory?.[id] : undefined;
+  if (!raw) return { ...EMPTY };
+  const clean = (k: ItemKind) => {
+    const n = raw[k];
+    return typeof n === 'number' && Number.isFinite(n) ? Math.max(0, Math.min(CAPS[k], Math.floor(n))) : 0;
+  };
+  return { wards: clean('wards'), flares: clean('flares'), dynamite: clean('dynamite') };
+}
+
+/** Azurite Wards a player holds: each takes a loss in place of a life. */
+export const wardsOf = (s: GameState, id: string) => inventoryOf(s, id).wards;
+/** Flares a player holds. */
+export const flaresOf = (s: GameState, id: string) => inventoryOf(s, id).flares;
+/** Dynamite a player holds. */
+export const dynamiteOf = (s: GameState, id: string) => inventoryOf(s, id).dynamite;
+
+/** The find among the cards on offer to the player on turn, or null. */
+export function findOffer(s: GameState): { category: string; kind: FindKind } | null {
+  const f = s.delve?.find;
+  return s.phase === 'choosing' && f && s.offered.includes(f.category) ? f : null;
+}
+
+/** The card the player on turn blasted open with dynamite, or null. */
+export const blastedOffer = (s: GameState): string | null =>
+  s.phase === 'choosing' && s.delve?.blasted && s.offered.includes(s.delve.blasted) ? s.delve.blasted : null;
+
+/**
+ * Seconds the question in play started with: a find's always has the fewest,
+ * otherwise the depth's (a flare's extra time not counted).
+ */
+export const questionTimer = (s: GameState) => (s.delve && s.question?.find ? FIND_TIMER : delveTimer(s.round));
 
 /** The depth where a player lost their last life, or null while they still stand. */
 export function fellAt(s: GameState, id: string): number | null {

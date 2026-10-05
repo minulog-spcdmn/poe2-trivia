@@ -1,14 +1,18 @@
 <script lang="ts">
   import { cubicInOut, cubicOut } from 'svelte/easing';
-  import { session } from '../lib/session.svelte';
+  import { engine, session } from '../lib/session.svelte';
   import { categoryIcon, categoryIconTweak, categoryIcons } from '../lib/ui';
   import { fits, fitStyle, maskOf, measure } from '../lib/iconFit.svelte';
-  import { activeRules, difficultyOf } from '../lib/game';
-  import { deathmatchText, lockoutText } from '../lib/difficultyText';
+  import { activeRules, difficultyOf, lastPicks } from '../lib/game';
+  import { BLAST_TEXT, FIND_TEXT, deathmatchText, lockoutText } from '../lib/difficultyText';
+  import { blastedOffer, delveLockout, dynamiteOf, findOffer, type FindKind } from '../lib/delve';
   import { sfx } from '../lib/sound';
   import { backdropShadow } from '../lib/backdropShadow';
   import { cardHover, cardPicked, cardRevealed } from '../lib/fx/moments';
-  import type { Handle } from '../lib/fx/core';
+  import { fxActive, type Handle, type Vec3 } from '../lib/fx/core';
+  import { C, embers, emitter, flare, glints, outline, puffs, ring, shards, sparks } from '../lib/fx/effects';
+  import { light } from '../lib/lights';
+  import { at, hatch, line, pointedRay, pt, seeded, type Pt } from '../lib/arcane';
   import CardEngraving from './CardEngraving.svelte';
 
   const s = $derived(session.state!);
@@ -26,8 +30,253 @@
     return () => clearInterval(id);
   });
   const pickLeft = $derived(s.delve?.pickBy ? Math.max(0, Math.ceil((s.delve.pickBy - hostNow) / 1000)) : null);
+  /** Delve: the find among the cards on offer, and the card blasted open, if any. */
+  const find = $derived(findOffer(s));
+  const blasted = $derived(blastedOffer(s));
+  /** What a card is: a find of some kind, blasted open, or plain. */
+  const kindOf = (cat: string): FindKind | 'blast' | null => (find?.category === cat ? find.kind : blasted === cat ? 'blast' : null);
+
+  // ---- finds --------------------------------------------------------------
+  // A find is the same card worked over in its own colour, cut in the cards'
+  // engraved manner (exact geometry, one-sided hatching, a soft glow under
+  // the lines, docs/arcane-style.md): an Azurite Vein shot through with
+  // seams of blue crystal, two clusters growing out of them; a Flare Cache
+  // with a signal flare bursting in its corner; a Dynamite Cache with a
+  // bundle of sticks, its fuse lit. A card blasted open is cracked from the
+  // blast.
+
+  type Plate = { glow: { cls: string; d: string }[]; lines: { cls: string; d: string }[] };
+
+  /** One pointed hexagonal crystal from `b` toward `a` degrees: its outline, a ridge, the lit and the shaded face. */
+  function crystal(b: Pt, a: number, len: number, hw: number) {
+    const [l, r] = [at(b, a - 90, hw), at(b, a + 90, hw)];
+    const [ls, rs] = [at(l, a, len * 0.72), at(r, a, len * 0.72)];
+    const tip = at(b, a, len);
+    // The ridge is off centre, so one face is wider: the facet toward the light.
+    const ridge = at(b, a + 90, hw * 0.3);
+    const ridgeTop = at(ridge, a, len * 0.8);
+    return {
+      lines: `M${pt(l)}L${pt(ls)}L${pt(tip)}L${pt(rs)}L${pt(r)}` + line(ridge, ridgeTop) + line(ridgeTop, tip),
+      hatch: hatch(ridge, r, ridgeTop, 1.3),
+      lit: `M${pt(l)}L${pt(ls)}L${pt(tip)}L${pt(ridgeTop)}L${pt(ridge)}Z`,
+      dark: `M${pt(ridge)}L${pt(ridgeTop)}L${pt(tip)}L${pt(rs)}L${pt(r)}Z`,
+    };
+  }
+
+  /** Degrees clockwise from the top, from `p` toward `q`. */
+  const headingOf = (p: Pt, q: Pt) => (Math.atan2(q[0] - p[0], p[1] - q[1]) * 180) / Math.PI;
+
+  /**
+   * A seam from `p` heading `a` degrees: straight runs that turn a little at
+   * each joint (from a fixed seed, so every card is worked alike), a sliver
+   * that narrows to nothing, with one branch.
+   */
+  function seam(p: Pt, a: number, runs: number, step: number, width: number, rnd: () => number, branch = true): string {
+    const pts: Pt[] = [p];
+    let dir = a;
+    for (let i = 0; i < runs; i++) {
+      dir += (rnd() - 0.5) * 60;
+      // Never far off its heading, so the seam crosses the card rather than curling.
+      dir = a + Math.max(-35, Math.min(35, dir - a));
+      pts.push(at(pts[i], dir, step * (0.7 + rnd() * 0.6)));
+    }
+    const half = (i: number) => (width / 2) * (1 - i / runs);
+    const side = (turn: number) => pts.map((q, i) => at(q, (i < runs ? headingOf(q, pts[i + 1]) : dir) + turn, half(i)));
+    let d = `M${side(-90).map(pt).join('L')}L${side(90).reverse().map(pt).join('L')}Z`;
+    if (branch && runs > 3) {
+      const from = Math.floor(runs / 2);
+      d += seam(pts[from], a + (rnd() < 0.5 ? -40 : 40), runs - from, step * 0.7, width * 0.5, rnd, false);
+    }
+    return d;
+  }
+
+  /** A small star of `n` fine rays about `c`, long and short in turn: a glint or a spark. */
+  function glint(c: Pt, r: number, n = 8) {
+    return Array.from({ length: n }, (_, k) => line(at(c, (k * 360) / n, r * 0.25), at(c, (k * 360) / n, k % 2 ? r * 0.55 : r))).join('');
+  }
+
+  /** The azurite worked into a card of `w` × `h` (a tall card, or a row on narrow screens). */
+  function veins(w: number, h: number, row: boolean): Plate {
+    const rnd = seeded(20251005);
+    // Where the clusters grow from (an edge), and each crystal's heading, length and half width.
+    const clusters: { b: Pt; c: [number, number, number][] }[] = row
+      ? [
+          { b: [w - 4, h - 3], c: [[-48, 24, 4.2], [-72, 16, 3.4], [-26, 15, 3]] },
+          { b: [w * 0.62, -2], c: [[200, 13, 3], [168, 10, 2.6]] },
+        ]
+      : [
+          { b: [3, 226], c: [[42, 34, 5.2], [70, 22, 4.2], [18, 20, 3.6]] },
+          { b: [w - 3, 64], c: [[222, 30, 4.8], [248, 19, 3.8], [196, 17, 3.4]] },
+        ];
+    const seams = (
+      row
+        ? [seam([w - 10, h - 6], -95, 7, 16, 2.2, rnd), seam([w * 0.62, 4], 200, 3, 12, 1.6, rnd), seam([0, h * 0.2], 110, 3, 11, 1.4, rnd, false)]
+        : [seam([10, 220], 80, 5, 14, 2.2, rnd), seam([w - 10, 70], 205, 6, 15, 2.2, rnd), seam([w * 0.3, h], 10, 3, 12, 1.6, rnd, false), seam([w * 0.72, 0], 170, 3, 11, 1.4, rnd, false)]
+    ).join('');
+    const ks = clusters.flatMap(({ b, c }) => c.map(([a, len, hw]) => crystal(b, a, len, hw)));
+    const edges = ks.map((k) => k.lines).join('');
+    return {
+      glow: [
+        { cls: 'core', d: seams },
+        { cls: 'edge', d: edges },
+      ],
+      lines: [
+        { cls: 'lit', d: ks.map((k) => k.lit).join('') },
+        { cls: 'dark', d: ks.map((k) => k.dark).join('') },
+        { cls: 'core', d: seams },
+        { cls: 'edge', d: edges },
+        { cls: 'hatch', d: ks.map((k) => k.hatch).join('') },
+      ],
+    };
+  }
+
+  /** A signal flare bursting in the card's corner: pointed rays round a hot core, fine rays beyond, and sparks. */
+  function flareBurst(w: number, h: number, row: boolean): Plate {
+    // On a row it sits small in the top corner, clear of the name.
+    const [c, k]: [Pt, number] = row ? [[w - 20, 17], 0.6] : [[w - 38, 44], 1];
+    const rays = Array.from({ length: 8 }, (_, i) => pointedRay(c, i * 45, 6 * k, (i % 2 ? 15 : 25) * k, 14, 1.1));
+    const fine = Array.from({ length: 16 }, (_, i) => line(at(c, i * 22.5 + 11.25, 18 * k), at(c, i * 22.5 + 11.25, (i % 2 ? 34 : 46) * k))).join('');
+    const rnd = seeded(7);
+    const sparks = row ? '' : Array.from({ length: 6 }, () => glint(at(c, 160 + rnd() * 140, 52 + rnd() * 60), 3 + rnd() * 2.5)).join('');
+    const r = 4.5 * k;
+    const core = `M${pt(at(c, 0, r))}A${r} ${r} 0 1 1 ${pt(at(c, 180, r))}A${r} ${r} 0 1 1 ${pt(at(c, 0, r))}Z`;
+    const edges = rays.map((r) => r.lines).join('');
+    return {
+      glow: [
+        { cls: 'core', d: core },
+        { cls: 'edge', d: edges + sparks },
+      ],
+      lines: [
+        { cls: 'core', d: core },
+        { cls: 'edge', d: edges },
+        { cls: 'hatch', d: rays.map((r) => r.hatch).join('') },
+        { cls: 'hair', d: fine + sparks },
+      ],
+    };
+  }
+
+  /** A bundle of three sticks of dynamite, bound twice, its fuse curling up to a spark. */
+  function sticks(w: number, h: number, row: boolean): Plate {
+    // Low in the window's corner on a tall card; small in the top corner of a row, clear of the name.
+    const [base, tilt, len, hw]: [Pt, number, number, number] = row ? [[w - 44, 30], 72, 22, 2.8] : [[28, 230], 16, 36, 4];
+    const out: string[] = [];
+    const shade: string[] = [];
+    // Each stick lies along `tilt`, side by side across it, shaded down its far side.
+    for (const k of [-1, 0, 1]) {
+      const foot = at(base, tilt + 90, k * hw * 2.1);
+      const head = at(foot, tilt, len);
+      out.push(`M${pt(at(foot, tilt - 90, hw))}L${pt(at(head, tilt - 90, hw))}L${pt(at(head, tilt + 90, hw))}L${pt(at(foot, tilt + 90, hw))}Z`);
+      for (let t = 1.2; t < len; t += 1.3) {
+        const m = at(foot, tilt, t);
+        shade.push(line(at(m, tilt + 90, hw), at(m, tilt + 90, hw * 0.3)));
+      }
+    }
+    // The bands, across all three.
+    const band = (t: number) => {
+      const m = at(base, tilt, len * t);
+      return line(at(m, tilt - 90, hw * 3.3), at(m, tilt + 90, hw * 3.3));
+    };
+    const top = at(base, tilt, len);
+    // The fuse: an arc off the middle stick's head, then the spark.
+    const r = row ? 7 : 12;
+    const centre = at(top, tilt + 90, r);
+    const end = at(centre, tilt - 90 + 150, r);
+    const fuse = `M${pt(top)}A${r} ${r} 0 0 1 ${pt(end)}`;
+    const spark = glint(end, row ? 4.5 : 6, 8);
+    return {
+      glow: [
+        { cls: 'core', d: spark },
+        { cls: 'edge', d: out.join('') + fuse },
+      ],
+      lines: [
+        { cls: 'dark', d: out.join('') },
+        { cls: 'edge', d: out.join('') + band(0.25) + band(0.72) + fuse },
+        { cls: 'hatch', d: shade.join('') },
+        { cls: 'hair', d: spark },
+      ],
+    };
+  }
+
+  /** Cracks from the blast that opened the card, running out from where it struck. */
+  function cracks(w: number, h: number, row: boolean): Plate {
+    const rnd = seeded(31);
+    // Struck at a corner of the face, clear of the emblem and the name.
+    const c: Pt = row ? [w - 40, h - 12] : [w - 36, 40];
+    const d = Array.from({ length: 9 }, (_, k) => seam(c, k * 40 + rnd() * 20, row ? 3 : 4, row ? 12 : 16, 1.4, rnd, false)).join('');
+    return { glow: [{ cls: 'core', d }], lines: [{ cls: 'soot', d }] };
+  }
+
+  const PLATES: Record<FindKind | 'blast', (w: number, h: number, row: boolean) => Plate> = {
+    azurite: veins,
+    flare: flareBurst,
+    dynamite: sticks,
+    blast: cracks,
+  };
+  /** Each card's measured size, for its plate. */
+  let sizes = $state<Record<string, [number, number]>>({});
+  const plateOf = (cat: string, kind: FindKind | 'blast') => {
+    const [w, h] = sizes[cat] ?? [0, 0];
+    return w && h ? PLATES[kind](w, h, w > h) : null;
+  };
+
+  // Their effects: azurite rings like crystal, a flare and dynamite throw sparks.
+  const FX: Record<FindKind | 'blast', { main: Vec3; pale: Vec3 }> = {
+    azurite: { main: C.portal, pale: C.portalPale },
+    flare: { main: [3.0, 0.45, 0.75], pale: [3.0, 1.7, 1.9] },
+    dynamite: { main: C.ember, pale: C.whiteHot },
+    blast: { main: C.ember, pale: C.gold },
+  };
+  const dim = (c: Vec3, k: number): Vec3 => [c[0] * k, c[1] * k, c[2] * k];
+  function findRevealed(frame: Element, kind: FindKind | 'blast') {
+    if (!fxActive()) return;
+    const { main, pale } = FX[kind];
+    outline(frame, { color: dim(main, 0.8), width: 10, intensity: 0.9, life: 1, fadeIn: 0.06 });
+    glints(frame, { count: 5, area: 'edge', color: pale, size: [4, 8], delay: [0, 0.4] });
+    if (kind === 'blast') sparks(frame, { count: 40, area: 'fill', speed: [120, 520], life: [0.3, 0.9] });
+    light(frame, { color: kind === 'azurite' ? [0.3, 0.6, 1] : [1, 0.4, 0.3], radius: 260, intensity: 0.3, decay: 0.9 });
+  }
+  function findHover(frame: Element, card: Element, kind: FindKind | 'blast'): Handle {
+    if (!fxActive()) return { stop() {} };
+    const { main, pale } = FX[kind];
+    const glow = outline(frame, { color: dim(main, 0.7), width: 12, flame: kind === 'azurite' ? 0.25 : 0.7, pulse: 0.4, intensity: 0.7, fadeIn: 0.25, base: card });
+    const twinkle = emitter(5, () => glints(frame, { count: 1, area: 'edge', color: pale, size: [3, 7] }));
+    return {
+      stop() {
+        glow.stop(0.35);
+        twinkle.stop();
+      },
+    };
+  }
+  /** A find is chosen: azurite rings out like struck crystal and sheds shards, the others go up in sparks; the other cards burn away. */
+  function findPicked(card: Element, base: Element, others: Element[], kind: FindKind | 'blast') {
+    if (!fxActive()) return;
+    const { main, pale } = FX[kind];
+    for (const o of others) {
+      embers(o, { count: 24, area: 'fill', colors: [C.ember, C.emberDeep, C.ash], rise: [60, 200], life: [0.6, 1.6] });
+      puffs(o, { count: 6, area: 'fill', color: [0.14, 0.09, 0.05] });
+    }
+    outline(card, { color: main, width: 16, flame: kind === 'azurite' ? 0.3 : 0.9, intensity: 1, life: 1.3, base });
+    if (kind === 'azurite') shards(card, { count: 26, colors: [main, pale, C.whiteHot], speed: [180, 520] });
+    sparks(card, { count: 40, area: 'edge', speed: [120, 560], life: [0.3, 0.9], colors: [pale, main] });
+    ring(card, { radius: 260, thickness: 10, life: 0.8, color: main, breakup: 0.3 });
+    flare(card, { size: 36, streak: 340, life: 0.7, color: pale });
+    light(card, { color: kind === 'azurite' ? [0.3, 0.6, 1] : [1, 0.45, 0.3], radius: 360, intensity: 0.7, decay: 1.2 });
+  }
 
   let picked = $state<string | null>(null);
+
+  // ---- dynamite -----------------------------------------------------------
+  const dynamite = $derived(mine && active && !s.deathmatch && s.delve ? dynamiteOf(s, active.id) : 0);
+  const canBlast = $derived(dynamite > 0 && !s.delve?.blasted && !picked);
+  /** Categories that could be blasted open: any not on offer, locked or not. */
+  const blastable = $derived(engine.categories.filter((c) => !s.offered.includes(c)));
+  const lockedNow = $derived(s.delve && active ? lastPicks(active.recent, delveLockout(s.round)) : []);
+  let blasting = $state(false);
+  function blast(category: string) {
+    blasting = false;
+    sfx('pick');
+    session.dispatch({ type: 'blast', category });
+  }
 
   // Size each emblem by its visible shape (see lib/iconFit); measured while the cards lie face down.
   for (const url of categoryIcons()) measure(url);
@@ -87,7 +336,12 @@
   function revealed(node: HTMLElement, i: number) {
     if (still) return;
     const t = setTimeout(() => {
-      if (dealtAt !== null) cardRevealed(node.querySelector('.frame') ?? node, !!s.deathmatch);
+      const frame = node.querySelector('.frame') ?? node;
+      if (dealtAt !== null) {
+        const kind = kindOf(s.offered[i]);
+        if (kind) findRevealed(frame, kind);
+        else cardRevealed(frame, !!s.deathmatch);
+      }
       // The pointer may already rest on it, having come while it lay face down.
       if (waiting === i) ignite(i);
     }, (flipAt(i) + FLIP) * 1000);
@@ -110,7 +364,8 @@
     burning?.stop();
     const card = cardEls[i];
     const frame = card?.querySelector('.frame');
-    if (frame) burning = cardHover(frame, card, !!s.deathmatch);
+    const kind = kindOf(s.offered[i]);
+    if (frame) burning = kind ? findHover(frame, card, kind) : cardHover(frame, card, !!s.deathmatch);
   }
   function leave(e: PointerEvent) {
     waiting = null;
@@ -142,7 +397,10 @@
     burning?.stop();
     burning = null;
     const frame = cardEls[i]?.querySelector('.frame');
-    if (frame) cardPicked(frame, cardEls[i], cardEls.filter((_, j) => j !== i).map((c) => c.querySelector('.frame') ?? c), !!s.deathmatch);
+    const others = cardEls.filter((c, j) => c && j !== i).map((c) => c.querySelector('.frame') ?? c);
+    const kind = kindOf(category);
+    if (frame && kind) findPicked(frame, cardEls[i], others, kind);
+    else if (frame) cardPicked(frame, cardEls[i], others, !!s.deathmatch);
     sfx('pick');
     session.dispatch({ type: 'pick', category });
     // Allow a retry if the host rejected the pick.
@@ -161,13 +419,16 @@
     {/if}
   </p>
 
-  <div class="cards" class:single={s.offered.length === 1}>
+  <div class="cards" class:single={s.offered.length === 1} style:--n={s.offered.length}>
     {#each s.offered as cat, i (cat)}
       <button
         class="card"
         data-sfx="none"
         data-fx="none"
         class:dm={!!s.deathmatch}
+        class:special={!!kindOf(cat)}
+        data-find={kindOf(cat)}
+        aria-describedby={kindOf(cat) ? 'find-note' : undefined}
         class:mine
         class:chosen={picked === cat}
         class:faded={picked && picked !== cat}
@@ -188,19 +449,61 @@
           </span>
           <span class="frame" use:backdropShadow>
             <CardEngraving side="face" />
+            {#if kindOf(cat)}
+              {@const kind = kindOf(cat)!}
+              {@const plate = plateOf(cat, kind)}
+              <span class="worked" bind:clientWidth={null, (w) => (sizes[cat] = [w ?? 0, sizes[cat]?.[1] ?? 0])} bind:clientHeight={null, (h) => (sizes[cat] = [sizes[cat]?.[0] ?? 0, h ?? 0])} aria-hidden="true">
+                {#if plate}
+                  <svg class="glow" viewBox="0 0 {sizes[cat][0]} {sizes[cat][1]}">
+                    {#each plate.glow as p (p.cls)}<path class={p.cls} d={p.d} />{/each}
+                  </svg>
+                  <svg class="lines" viewBox="0 0 {sizes[cat][0]} {sizes[cat][1]}">
+                    {#each plate.lines as p (p.cls)}<path class={p.cls} d={p.d} />{/each}
+                  </svg>
+                {/if}
+              </span>
+              <span class="find-tag">{kind === 'blast' ? BLAST_TEXT.tag : FIND_TEXT[kind].name}</span>
+            {/if}
             <span class="glare"></span>
             <span class="sheen"></span>
             <span class="filigree"></span>
             <span class="icon">
               <span class="lit"><span class="glyph" class:fit={!!fits[categoryIcon(cat)]} style={fitStyle(categoryIcon(cat), categoryIconTweak(cat))} style:--src="url('{maskOf(categoryIcon(cat))}')"></span></span>
             </span>
-            <span class="title">{cat}</span>
+            <span class="title">{#if kindOf(cat)}{@const kind = kindOf(cat)!}<span class="find-tag-row">{kind === 'blast' ? BLAST_TEXT.tag : FIND_TEXT[kind].name}</span>{/if}{cat}</span>
           </span>
         </span>
       </button>
     {/each}
   </div>
 
+  {#if canBlast}
+    <div class="blast">
+      {#if !blasting}
+        <button class="btn small blast-btn" onclick={() => (blasting = true)}>
+          {BLAST_TEXT.button}<span class="count" aria-label="{dynamite} dynamite">{dynamite}</span>
+        </button>
+      {:else}
+        <p class="blast-q">{BLAST_TEXT.pick}</p>
+        <div class="blast-list">
+          {#each blastable as c (c)}
+            <button class="btn small" class:locked={lockedNow.includes(c)} onclick={() => blast(c)}>
+              {c}{#if lockedNow.includes(c)}<span class="lock">locked</span>{/if}
+            </button>
+          {/each}
+        </div>
+        <p class="note muted">{BLAST_TEXT.note}</p>
+        <button class="btn ghost small" onclick={() => (blasting = false)}>Keep the dynamite</button>
+      {/if}
+    </div>
+  {/if}
+  {#if find && !s.deathmatch}
+    <p class="note find-note" data-find={find.kind} id="find-note">
+      {#if mine}<strong>{FIND_TEXT[find.kind].tag}.</strong> {FIND_TEXT[find.kind].mine}{:else}{FIND_TEXT[find.kind].others}{/if}
+    </p>
+  {:else if blasted && mine}
+    <p class="note find-note" data-find="blast" id="find-note">{BLAST_TEXT.note}</p>
+  {/if}
   {#if s.deathmatch}
     <p class="note muted">{mine ? 'Tap the card when you are ready.' : deathmatchText(difficultyOf(s.settings.difficulty))}</p>
   {:else if mine && pickLeft !== null && pickLeft <= 10}
@@ -224,7 +527,7 @@
   }
   .cards {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 220px));
+    grid-template-columns: repeat(var(--n, 3), minmax(0, 220px));
     gap: 1.4rem;
   }
   .card {
@@ -604,6 +907,283 @@
     font-style: italic;
     font-size: 0.95rem;
   }
+  /* Two notes under the cards sit closer than the cards sit to them. */
+  .find-note + .note,
+  .blast + .note {
+    margin-top: -1rem;
+  }
+
+  /* ---- finds ---------------------------------------------------------------
+     A find is the same card in its own colour: the engraving and filigree,
+     the emblem, a slow pulse of light round it, and its plate (see
+     veins(), flareBurst(), sticks() above) worked over the face. A card
+     blasted open is the plain card, cracked and sooted. */
+  .card[data-find='azurite'] {
+    --ink: #7fb2ec;
+    --warm: #2f78d8;
+    --f-hi: #d6eaff;
+    --f: #6fa8ec;
+    --f-line: #b9dbff;
+    --f-core: #a9d0ff;
+    --f-glow: #4f9cff;
+    --f-lit: rgba(150, 200, 255, 0.24);
+    --f-dark: rgba(16, 40, 96, 0.55);
+    --f-border: #3a6db5;
+    --f-ring: rgba(80, 140, 230, 0.45);
+    --f-pulse: rgba(70, 140, 255, 0.4);
+    --f-bg: #111a2a;
+    --f-glyph: linear-gradient(180deg, #eef7ff 0%, #6fa8ec 48%, #1d3f86 100%);
+    --f-filigree: linear-gradient(135deg, #d6eaff, #5c9ae8 60%, #2a5aa8);
+  }
+  /* A signal flare's hot rose red, apart from the deathmatch's ember red. */
+  .card[data-find='flare'] {
+    --ink: #e38c9e;
+    --warm: #e0405f;
+    --f-hi: #ffe1e6;
+    --f: #ff7088;
+    --f-line: #ffc4cc;
+    --f-core: #fff0f2;
+    --f-glow: #ff4d6a;
+    --f-lit: rgba(255, 170, 180, 0.25);
+    --f-dark: rgba(110, 20, 40, 0.5);
+    --f-border: #a83a55;
+    --f-ring: rgba(220, 80, 110, 0.45);
+    --f-pulse: rgba(255, 70, 100, 0.38);
+    --f-bg: #22101a;
+    --f-glyph: linear-gradient(180deg, #fff0f2 0%, #ff7a90 50%, #7a1830 100%);
+    --f-filigree: linear-gradient(135deg, #ffe1e6, #ff7088 60%, #a02a45);
+  }
+  /* Soot and a lit fuse. */
+  .card[data-find='dynamite'] {
+    --ink: #d58a52;
+    --warm: #e0602a;
+    --f-hi: #ffe3c8;
+    --f: #f08a3c;
+    --f-line: #ffc79a;
+    --f-core: #fff1d8;
+    --f-glow: #ff7a2a;
+    --f-lit: rgba(255, 190, 140, 0.2);
+    --f-dark: rgba(150, 38, 18, 0.6);
+    --f-border: #a4502a;
+    --f-ring: rgba(220, 110, 60, 0.45);
+    --f-pulse: rgba(255, 110, 40, 0.38);
+    --f-bg: #1d1311;
+    --f-glyph: linear-gradient(180deg, #fff1de 0%, #f0954a 50%, #6a2a0c 100%);
+    --f-filigree: linear-gradient(135deg, #ffe3c8, #f08a3c 60%, #8a3a14);
+  }
+  .card[data-find='blast'] {
+    --f-hi: #f3dcc4;
+    --f: #c98a58;
+    --f-line: #8a7564;
+    --f-core: #ff9a50;
+    --f-glow: #ff7a2a;
+    --f-border: #6e5848;
+    --f-ring: rgba(150, 120, 90, 0.4);
+    --f-pulse: rgba(255, 120, 50, 0.25);
+    --f-bg: #1a1512;
+  }
+  .card.special .frame {
+    border-color: var(--f-border);
+    --bs-ring: var(--f-ring);
+    background:
+      var(--grain),
+      radial-gradient(ellipse 120% 90% at 50% 45%, transparent 50%, rgba(0, 0, 0, 0.5)),
+      linear-gradient(170deg, var(--f-bg), #070608 70%);
+  }
+  .card.special.mine .frame {
+    animation: pulse 3.2s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    50% {
+      --bs1: 0px 45px;
+      --bs1-color: var(--f-pulse);
+    }
+  }
+  .card.special:global(.down) .frame {
+    animation: none;
+  }
+  .card.special:not([data-find='blast']) .filigree {
+    background: var(--f-filigree);
+    -webkit-mask: var(--filigree), var(--rules);
+    mask: var(--filigree), var(--rules);
+    filter: none;
+  }
+  .card.special:not([data-find='blast']) .icon {
+    filter: drop-shadow(0 0 12px color-mix(in srgb, var(--f-glow) 55%, transparent));
+  }
+  .card.special:not([data-find='blast']) .glyph {
+    background: var(--f-glyph);
+  }
+  .card.special .title {
+    color: var(--f-hi);
+  }
+  .card.special.mine:not(:global(.down)):hover .frame,
+  .card.special.mine:not(:global(.down)):focus-visible .frame {
+    border-color: var(--f);
+    --bs-ring: color-mix(in srgb, var(--f) 60%, transparent);
+    --bs1-color: var(--f-pulse);
+  }
+  .card.special.mine:not(:global(.down)):hover .title {
+    color: #fff;
+    text-shadow: 0 0 14px color-mix(in srgb, var(--f) 60%, transparent);
+  }
+  .card.special.mine:not(:global(.down)):hover .filigree {
+    filter: brightness(1.25);
+  }
+  .card.special.chosen .frame {
+    border-color: var(--f-line);
+    --bs1-color: var(--f-pulse);
+  }
+  .worked {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+  .worked svg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+  }
+  /* The glow: the same shapes, wider, under the lines, breathing. */
+  .worked .glow {
+    opacity: 0.22;
+    animation: breathe 5s ease-in-out infinite;
+  }
+  .worked .glow path {
+    fill: var(--f-glow);
+    stroke: var(--f-glow);
+    stroke-width: 3;
+    stroke-linejoin: round;
+  }
+  .worked .glow .edge {
+    fill: none;
+    stroke-width: 2.4;
+  }
+  @keyframes breathe {
+    50% {
+      opacity: 0.45;
+    }
+  }
+  .worked .lines path {
+    fill: none;
+    stroke-linecap: butt;
+    stroke-linejoin: miter;
+    stroke-miterlimit: 12;
+  }
+  .worked .lines .core {
+    fill: var(--f-core);
+    opacity: 0.85;
+  }
+  .worked .lines .edge {
+    stroke: var(--f-line);
+    stroke-width: 0.7;
+  }
+  .worked .lines .hair {
+    stroke: var(--f-line);
+    stroke-width: 0.35;
+    opacity: 0.8;
+  }
+  .worked .lines .hatch {
+    stroke: var(--f);
+    stroke-width: 0.4;
+    stroke-linecap: round;
+  }
+  .worked .lines .lit {
+    fill: var(--f-lit);
+  }
+  .worked .lines .dark {
+    fill: var(--f-dark);
+  }
+  .worked .lines .soot {
+    fill: rgba(10, 8, 6, 0.85);
+    stroke: var(--f-line);
+    stroke-width: 0.4;
+  }
+  /* What the card is, on a small plate at its head (in its name on a row). */
+  .find-tag {
+    position: absolute;
+    top: 9px;
+    left: 50%;
+    translate: -50% 0;
+    padding: 2px 9px 3px;
+    font-family: var(--font-display);
+    font-size: 0.62rem;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    color: var(--f-hi);
+    background: linear-gradient(color-mix(in srgb, var(--f-bg) 70%, #000), #08070a);
+    border: 1px solid color-mix(in srgb, var(--f) 55%, transparent);
+    border-radius: 2px;
+    box-shadow: 0 0 10px var(--f-pulse);
+  }
+  .find-tag-row {
+    display: none;
+  }
+  .find-note {
+    text-align: center;
+    max-width: 34rem;
+  }
+  .find-note[data-find='azurite'] {
+    color: #a9cdf5;
+  }
+  .find-note[data-find='flare'] {
+    color: #f3b2bd;
+  }
+  .find-note[data-find='dynamite'],
+  .find-note[data-find='blast'] {
+    color: #eebf96;
+  }
+  .find-note strong {
+    font-weight: 600;
+  }
+
+  /* ---- dynamite ------------------------------------------------------------ */
+  .blast {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.7rem;
+    max-width: 40rem;
+  }
+  .blast-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.6em;
+    border-color: #a4502a;
+    color: #ffd2ad;
+  }
+  .count {
+    display: inline-grid;
+    place-items: center;
+    min-width: 1.5em;
+    height: 1.5em;
+    border-radius: 50%;
+    font-family: var(--font-cinzel);
+    font-weight: 700;
+    font-size: 0.85em;
+    color: #1a0d06;
+    background: #f08a3c;
+  }
+  .blast-q {
+    margin: 0;
+  }
+  .blast-list {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.5rem;
+  }
+  .blast-list .lock {
+    margin-left: 0.5em;
+    font-size: 0.75em;
+    opacity: 0.7;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+  }
 
   @media (max-width: 700px) {
     .cards {
@@ -689,6 +1269,24 @@
         calc(100% - 2 * var(--end)) 1px,
         1px calc(100% - 2 * var(--end)),
         1px calc(100% - 2 * var(--end));
+    }
+    .card.special .frame {
+      background:
+        var(--grain),
+        radial-gradient(circle at 62px 50%, color-mix(in srgb, var(--warm, #c8682a) 28%, transparent), transparent 74px),
+        radial-gradient(ellipse 120% 90% at 50% 45%, transparent 50%, rgba(0, 0, 0, 0.5)),
+        linear-gradient(170deg, var(--f-bg), #070608 70%);
+    }
+    .find-tag {
+      display: none;
+    }
+    .find-tag-row {
+      display: block;
+      margin-bottom: 2px;
+      font-size: 0.6rem;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--f);
     }
     .back {
       transform: rotateX(180deg);

@@ -2,7 +2,7 @@
 // described by the same sentences, and the custom editor uses the same terms,
 // so a knob reads the same wherever it shows up.
 
-import { DELVE_MIN_TIMER, delveChangeAt, delveLockout, delveTimer } from './delve.ts';
+import { AZURITE_FAST_MS, BLAST_OPTIONS, DELVE_MIN_TIMER, FIND_TIMER, FLARE_MS, delveChangeAt, delveLockout, delveTimer, type FindKind } from './delve.ts';
 import { knobsOf, maxFakes, type Difficulty, type Knobs, type Settings, type VeilSpeed } from './game.ts';
 
 /** Display names, in the order the lobby offers them. */
@@ -166,3 +166,36 @@ export const DELVE_LADDER: { depth: number; text: string }[] = [
   { depth: 40, text: 'All art in grayscale' },
   { depth: 55, text: 'Seven seconds' },
 ];
+
+/**
+ * The finds: the card's name, its tagline, and its risk and reward in a line
+ * for the player choosing (`mine`) or for those watching.
+ */
+export const FIND_TEXT: Record<FindKind, { name: string; tag: string; mine: string; others: string }> = {
+  azurite: {
+    name: 'Azurite Vein',
+    tag: 'Mine it fast for an Azurite Ward',
+    mine: `The hardest question, on ${FIND_TIMER} seconds; right within ${AZURITE_FAST_MS / 1000} wins the ward, which takes your next loss.`,
+    others: 'An Azurite Vein: the hardest question, and an Azurite Ward for a fast right answer.',
+  },
+  flare: {
+    name: 'Flare Cache',
+    tag: 'Answer right for a flare',
+    mine: `The hardest question, on ${FIND_TIMER} seconds; a flare burns by itself as your clock runs out, for ${FLARE_MS / 1000} seconds more.`,
+    others: 'A Flare Cache: the hardest question, and a flare for a right answer.',
+  },
+  dynamite: {
+    name: 'Dynamite Cache',
+    tag: 'Answer right for dynamite',
+    mine: `The hardest question, on ${FIND_TIMER} seconds; dynamite blasts open a card of your choice, with ${BLAST_OPTIONS} options.`,
+    others: 'A Dynamite Cache: the hardest question, and dynamite for a right answer.',
+  },
+};
+
+/** The card blasted open with dynamite. */
+export const BLAST_TEXT = {
+  tag: 'Blasted open',
+  button: 'Blast open a card',
+  pick: 'Blast open which category?',
+  note: `Any category, locked or not: ${BLAST_OPTIONS} options, and nothing to find.`,
+};

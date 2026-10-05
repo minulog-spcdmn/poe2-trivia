@@ -1,6 +1,6 @@
 // The session's Delve decisions, apart from PeerJS and Svelte so tests can reach them.
 
-import { DELVE_LIVES, livesOf } from './delve.ts';
+import { DELVE_LIVES, FLARE_AT_MS, flaresOf, inventoryOf, livesOf, wardsOf, type ItemKind } from './delve.ts';
 import type { GameState } from './game.ts';
 
 /** The longest the host waits for the art to reach the player answering before their clock starts anyway. */
@@ -42,6 +42,8 @@ export function drained(conn: { bufferSize?: number; dataChannel?: { bufferedAmo
 export interface DelveNotice {
   kind: 'missed' | 'setAside';
   playerId: string;
+  /** missed: an Azurite Ward took the loss, not a life. */
+  warded?: boolean;
 }
 
 /**
@@ -55,6 +57,7 @@ export function delveNotices(prev: GameState | null, next: GameState): DelveNoti
   if (!next.reveal) {
     for (const p of next.players) {
       if (livesOf(next, p.id) < livesOf(prev, p.id)) out.push({ kind: 'missed', playerId: p.id });
+      else if (wardsOf(next, p.id) < wardsOf(prev, p.id)) out.push({ kind: 'missed', playerId: p.id, warded: true });
     }
   }
   const active = prev.players[prev.turn];
@@ -72,4 +75,33 @@ export function livesLost(prev: GameState | null, next: GameState): { playerId: 
     const after = livesOf(next, p.id);
     return after < before && before <= DELVE_LIVES ? [{ playerId: p.id, left: after }] : [];
   });
+}
+
+/**
+ * Items gained or used up by this change, per player and item, for the phial,
+ * sounds and effects: a find answered right, a ward breaking (a reveal, or a
+ * turn missed while away), a flare burning, dynamite blasting a card open.
+ * `left`: how many they hold now.
+ */
+export function inventoryChanges(prev: GameState | null, next: GameState): { playerId: string; item: ItemKind; change: 'gained' | 'used'; left: number }[] {
+  if (!prev?.delve || !next.delve || prev.delve.startedAt !== next.delve.startedAt) return [];
+  return next.players.flatMap((p) => {
+    const [before, after] = [inventoryOf(prev, p.id), inventoryOf(next, p.id)];
+    return (['wards', 'flares', 'dynamite'] as const).flatMap((item) =>
+      after[item] === before[item] ? [] : [{ playerId: p.id, item, change: after[item] > before[item] ? ('gained' as const) : ('used' as const), left: after[item] }],
+    );
+  });
+}
+
+/**
+ * Milliseconds until the host burns a flare for the player answering (as their
+ * clock nears its end), or null when none will: the clock isn't running, a
+ * flare already burnt on this question, or the player holds none or is away
+ * (a flare can't help someone who can't answer).
+ */
+export function flareIn(s: GameState, now: number): number | null {
+  const q = s.question;
+  const p = s.players[s.turn];
+  if (!s.delve || s.phase !== 'question' || !q || q.deadline === null || q.flared || !p?.connected || flaresOf(s, p.id) <= 0) return null;
+  return Math.max(0, q.deadline - FLARE_AT_MS - now);
 }
