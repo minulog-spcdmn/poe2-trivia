@@ -183,12 +183,13 @@
     <div class="modes">
       <section class="mode">
         <h2>Host a game</h2>
-        <p class="muted">Open a room and share the code with your party.</p>
+        <p class="muted">Open a room and share the code with your party, or play alone.</p>
         <button class="btn primary" onclick={host} disabled={connecting}>Create room</button>
       </section>
 
       <section class="mode">
         <h2>Join a game</h2>
+        <p class="muted">Enter the code your host shared to join their room.</p>
         <form onsubmit={join}>
           <input
             id="code"
@@ -502,6 +503,12 @@
     display: flex;
     gap: 0.5rem;
     margin-top: auto;
+  }
+  /* Both modes end on one row of the same height: the host's button and the
+     code field with its button. */
+  .mode .btn,
+  .mode .field {
+    height: 3.1rem;
   }
   .code {
     font-family: var(--font-cinzel);
