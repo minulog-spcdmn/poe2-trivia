@@ -212,7 +212,7 @@
     if (veil) veilHandoff(veil);
     const quick = matchMedia('(prefers-reduced-motion: reduce)').matches;
     return {
-      duration: quick ? 250 : 500,
+      duration: quick ? 250 : 400,
       css: (t: number, u: number) =>
         quick
           ? `opacity: ${t}`
@@ -421,7 +421,7 @@
 {/snippet}
 
 {#snippet mirrorLine()}
-  <span class="mirrored" in:fade={{ duration: 300, delay: 450 }}>Mirrored</span>
+  <span class="mirrored" in:fade={{ duration: 300, delay: 250 }}>Mirrored</span>
 {/snippet}
 
 {#snippet who(index: number)}
