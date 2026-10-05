@@ -1,7 +1,7 @@
 <script lang="ts">
   import { cubicInOut, cubicOut } from 'svelte/easing';
   import { session } from '../lib/session.svelte';
-  import { categoryIcon, categoryIconScale, categoryIcons } from '../lib/ui';
+  import { categoryIcon, categoryIconTweak, categoryIcons } from '../lib/ui';
   import { fits, fitStyle, measure } from '../lib/iconFit.svelte';
   import { difficultyOf, rulesFor } from '../lib/game';
   import { deathmatchText, lockoutText } from '../lib/difficultyText';
@@ -194,7 +194,7 @@
             <span class="sheen"></span>
             <span class="filigree"></span>
             <span class="icon">
-              <span class="lit"><span class="glyph" class:fit={!!fits[categoryIcon(cat)]} style={fitStyle(categoryIcon(cat), categoryIconScale(cat))} style:--src="url('{categoryIcon(cat)}')"></span></span>
+              <span class="lit"><span class="glyph" class:fit={!!fits[categoryIcon(cat)]} style={fitStyle(categoryIcon(cat), categoryIconTweak(cat))} style:--src="url('{categoryIcon(cat)}')"></span></span>
             </span>
             <span class="title">{cat}</span>
           </span>
@@ -370,11 +370,12 @@
   /* Once measured: the box is the visible item, scaled to a common weight
      (lib/iconFit) and by the item's own --e-k, and the image is placed so
      its visible part fills it. An item drawn larger grows upward, its foot
-     where it was. --e-s scales it all down for a card in a row. */
+     where it was, and --e-up moves it up. --e-s scales it all down for a
+     card in a row. */
   .glyph.fit {
     --e-k: var(--e-kin, 1);
     --u: calc(var(--e-s, 1) * var(--e-k) * 1px);
-    translate: 0 min(0px, calc((1 - var(--e-k)) * var(--e-h) * var(--e-s, 1) * 0.5px));
+    translate: 0 calc(min(0px, (1 - var(--e-k)) * var(--e-h) * var(--e-s, 1) * 0.5px) - var(--e-up, 0) * var(--e-s, 1) * 1px);
     width: calc(var(--e-w) * var(--u));
     height: calc(var(--e-h) * var(--u));
     -webkit-mask-size: calc(var(--e-iw) * var(--u)) calc(var(--e-ih) * var(--u));
