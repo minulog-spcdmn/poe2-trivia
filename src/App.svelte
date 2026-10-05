@@ -213,7 +213,7 @@
             class="icon-btn"
             class:off={!fxOn}
             onclick={toggleFx}
-            title={fxOn ? 'Turn visual effects off' : 'Turn visual effects on'}
+            title={fxOn ? 'Turn visual effects off (saves power)' : 'Turn visual effects on'}
             aria-label="Toggle visual effects"
             aria-pressed={fxOn}
           >

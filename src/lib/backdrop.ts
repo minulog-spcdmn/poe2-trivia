@@ -12,7 +12,7 @@
 import { SHADOWS_PER_ELEMENT, measureShadows, releaseAll } from './backdropShadow';
 import { DROPS_PER_MASK, MAX_MASKS, measureDrops, releaseAllDrops } from './backdropDropShadow';
 import { MAX_LIGHTS, packLights, stepHomeScene, stepMood } from './lights';
-import { fxActive } from './fx/core';
+import { fxActive, fxUserOn, onFxChange } from './fx/core';
 import { COLUMNS, SLOTS, embers } from './backdropEmbers';
 import { DIALOG_BLUR, DIALOG_DIM, openDialog } from './behindDialog';
 
@@ -697,20 +697,27 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   const paths = BLOBS.map(blobPath);
 
   const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
+  // With the visual effects switched off (the ✦ in the header) the backdrop
+  // holds still too, where it stands, and is only drawn when something
+  // changes: the low-power mode, for phones that run hot. (Reduced motion
+  // goes further and rests everything.)
+  const calm = () => reduceMotion.matches || !fxUserOn();
   // On phones and tablets the backdrop-drawn shadows look worse than CSS's,
   // so there every element keeps its CSS shadow and the backdrop draws none.
   const cssShadows = matchMedia('(pointer: coarse)');
-  const start = performance.now();
+  /** The backdrop's own clock (ms): it stops while calm(). */
+  let clock = 0;
   let raf = 0;
   let last = -Infinity;
   let lastStep = performance.now();
 
-  function draw(now: number) {
+  function draw() {
     // Every gradient breathes on its own cycle; the periods share no common
     // factor, so the combined motion takes hours to repeat. Reduced motion
-    // freezes them all (and the blobs and embers) at rest.
-    const ms = now - start;
+    // freezes them all (and the blobs and embers) at rest; the effects
+    // switched off freeze them where they are.
     const still = reduceMotion.matches;
+    const ms = still ? 0 : clock;
     const glow = still ? 0 : breathe(ms, 9000);
     const bottom = still ? 0 : breathe(ms, 13000, 0.3);
     const top = still ? 0 : breathe(ms, 17000, 0.6);
@@ -770,7 +777,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     gl!.uniform4fv(uLightC, lightC);
     gl!.uniform4fv(uMood, mood);
     gl!.uniform1f(uDialog, dialog);
-    gl!.uniform4f(uEmberColor, embers.color[0], embers.color[1], embers.color[2], still ? 0.6 : 1);
+    gl!.uniform4f(uEmberColor, embers.color[0], embers.color[1], embers.color[2], calm() ? 0.6 : 1);
     gl!.activeTexture(gl!.TEXTURE2);
     gl!.bindTexture(gl!.TEXTURE_2D, emberTex);
     gl!.texSubImage2D(gl!.TEXTURE_2D, 0, 0, 0, SLOTS, COLUMNS, gl!.RGBA, gl!.FLOAT, embers.data);
@@ -822,12 +829,14 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   // transitions, scrolling), and lights and a changing mood tint animate
   // quickly, so any of those draws at once. Otherwise the backdrop's own
   // motion only needs 30fps (its quickest cycle is a slow 9s breath and the
-  // embers drift a few pixels a frame), and with reduced motion nothing is
-  // drawn until something changes.
+  // embers drift a few pixels a frame), and while calm() nothing is drawn
+  // until something changes.
   let dirty = false;
   function frame(now: number) {
     raf = requestAnimationFrame(frame);
     const dt = Math.min(0.1, (now - lastStep) / 1000);
+    const still = calm();
+    if (!still) clock += now - lastStep;
     lastStep = now;
     const nowS = now / 1000;
     const lights = packLights(lightA, lightC, nowS);
@@ -836,22 +845,22 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     // Lights and mood step once per animation frame; draw() uses the latest values.
     // A mood holding steady (the victory's gold, a deathmatch's red) changes
     // nothing, so it is just drawn along with everything else: at 30fps, or
-    // with reduced motion only when something changes. On phones, where this
+    // while calm only when something changes. On phones, where this
     // full-screen shader is the costliest thing on screen and runs under the
     // effects overlay, lights and an easing mood need no more than 30fps
     // either.
     const soft = lights || moodState === 'moving';
     const lit = homeMoving || (soft && !cssShadows.matches);
-    if (!reduceMotion.matches) embers.step(dt, canvas.clientWidth, canvas.clientHeight, !fxActive());
+    if (!still) embers.step(dt, canvas.clientWidth, canvas.clientHeight, !fxActive());
     // A dialog's dimming fades in and out with the dialog, in step with the UI's.
     const d = openDialog().amount;
     const fading = d !== dialog;
     dialog = d;
     const changed = measure() || dirty || lit || fading;
-    if (!changed && ((reduceMotion.matches && !soft) || now - last < 33)) return;
+    if (!changed && ((still && !soft) || now - last < 33)) return;
     last = now;
     dirty = false;
-    draw(now);
+    draw();
   }
 
   const onMotionChange = () => (dirty = true);
@@ -881,7 +890,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     if (w === canvas.width && h === canvas.height) return;
     canvas.width = w;
     canvas.height = h;
-    draw(performance.now());
+    draw();
   });
   try {
     ro.observe(canvas, { box: 'device-pixel-content-box' });
@@ -894,6 +903,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     ro.disconnect();
     canvas.removeEventListener('webglcontextlost', lost);
     reduceMotion.removeEventListener('change', onMotionChange);
+    offFx();
     releaseAll();
     releaseAllDrops();
   }
@@ -907,13 +917,14 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   }
   canvas.addEventListener('webglcontextlost', lost);
   reduceMotion.addEventListener('change', onMotionChange);
+  const offFx = onFxChange(onMotionChange);
 
   // Paint the first frame now so the swap from the CSS backdrop is seamless.
   canvas.width = Math.max(1, Math.round(canvas.clientWidth * devicePixelRatio * scale()));
   canvas.height = Math.max(1, Math.round(canvas.clientHeight * devicePixelRatio * scale()));
   embers.step(0, canvas.clientWidth, canvas.clientHeight);
   measure();
-  draw(performance.now());
+  draw();
   raf = requestAnimationFrame(frame);
 
   return stop;
