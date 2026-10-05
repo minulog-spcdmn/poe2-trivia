@@ -1,10 +1,12 @@
 // Sound effects: layered CC0 recordings (see public/sfx/CREDITS.txt), each
 // layer filtered on its own, all sharing one stone-hall reverb, over a quiet
-// ambience loop (and a roaring fire over it during a deathmatch). What plays
+// ambience loop (a roaring fire over it during a deathmatch, and in Delve
+// darker and lower the deeper the run, over a rumble). What plays
 // for each moment lives in soundDesign.ts; this file is the mixer, and
 // matches the audition page the design was tuned on.
 
-import { AMBIENCE, FIRE, MIX, MOMENTS, type Layer } from './soundDesign';
+import { descent } from './descent.ts';
+import { AMBIENCE, DEPTH, FIRE, MIX, MOMENTS, RUMBLE, type Layer } from './soundDesign.ts';
 
 export type Sfx =
   | 'hover'
@@ -132,13 +134,16 @@ function load(file: string) {
   let p = buffers.get(file);
   if (!p) {
     const ac = bus!.ac;
-    p = fetch(new URL(`${import.meta.env.BASE_URL}sfx/${file}.mp3`, document.baseURI))
-      .then((r) => r.arrayBuffer())
-      .then((data) => ac.decodeAudioData(data))
-      .then((buf) => {
-        ready.set(file, buf);
-        return buf;
-      });
+    const decoded =
+      file === RUMBLE.file
+        ? Promise.resolve(rumble(ac))
+        : fetch(new URL(`${import.meta.env.BASE_URL}sfx/${file}.mp3`, document.baseURI))
+            .then((r) => r.arrayBuffer())
+            .then((data) => ac.decodeAudioData(data));
+    p = decoded.then((buf) => {
+      ready.set(file, buf);
+      return buf;
+    });
     buffers.set(file, p);
   }
   return p;
@@ -157,6 +162,43 @@ function hall(ac: AudioContext, seconds: number) {
       lp += (0.45 - 0.4 * p) * (Math.random() * 2 - 1 - lp);
       const onset = Math.min(1, i / (ac.sampleRate * 0.015));
       d[i] = lp * onset * Math.pow(1 - p, 3);
+    }
+  }
+  return buf;
+}
+
+/**
+ * Delve's rumble: brown noise, lowpassed twice, that loops without a seam
+ * (its end is faded into its start). Its level is about AMBIENCE's file's,
+ * so RUMBLE's gain compares with AMBIENCE's.
+ */
+export function rumble(ac: Pick<BaseAudioContext, 'sampleRate' | 'createBuffer'>) {
+  const seconds = 8;
+  const fade = Math.floor(ac.sampleRate * 1);
+  const len = Math.floor(ac.sampleRate * seconds);
+  const buf = ac.createBuffer(2, len, ac.sampleRate);
+  const k = 1 - Math.exp((-2 * Math.PI * RUMBLE.lp) / ac.sampleRate);
+  for (let ch = 0; ch < 2; ch++) {
+    const raw = new Float32Array(len + fade);
+    let brown = 0;
+    let a = 0;
+    let b = 0;
+    let sum = 0;
+    for (let i = 0; i < raw.length; i++) {
+      brown = (brown + 0.02 * (Math.random() * 2 - 1)) * 0.998;
+      a += k * (brown - a);
+      b += k * (a - b);
+      raw[i] = b;
+      sum += b * b;
+    }
+    // About -26 dB RMS, like the ambience file's -29 mean with a little more weight.
+    const scale = 0.05 / Math.sqrt(sum / raw.length || 1);
+    const d = buf.getChannelData(ch);
+    for (let i = 0; i < len; i++) {
+      // The tail past the end crossfades into the start, so the loop point is seamless.
+      const t = i < fade ? i / fade : 1;
+      // Equal power: the two halves are unrelated noise, so a straight fade would dip.
+      d[i] = (raw[i] * Math.sqrt(t) + (i < fade ? raw[len + i] * Math.sqrt(1 - t) : 0)) * scale;
     }
   }
   return buf;
@@ -223,19 +265,24 @@ export function sfx(name: Sfx) {
 // ---------- ambience ----------
 
 type Loop = typeof AMBIENCE;
-type Playing = { src: AudioBufferSourceNode; gain: GainNode };
+type Playing = { src: AudioBufferSourceNode; gain: GainNode; lp: BiquadFilterNode; send: GainNode; stop: () => void };
 
 /**
  * How fast (time constants in s) each loop fades in and out: the fire swells
- * up with the deathmatch intro and dies down slowly.
+ * up with the deathmatch intro and dies down slowly, and Delve's rumble
+ * comes up from below over a few seconds.
  */
 const FADES = new Map<Loop, { up: number; down: number }>([
   [AMBIENCE, { up: 0.8, down: 0.2 }],
   [FIRE, { up: 1.5, down: 1 }],
+  [RUMBLE, { up: 3, down: 1.5 }],
 ]);
 const playing = new Map<Loop, Playing>();
 const starting = new Set<Loop>();
 let fire = false;
+/** Delve's depth (0 outside it), and how fast (s) the sound follows it: about the backdrop's two seconds a depth. */
+let depth = 0;
+const DEPTH_EASE = 1.5;
 
 /** Stokes the ambience into a roaring fire for as long as a deathmatch lasts. */
 export function fireAmbience(on: boolean) {
@@ -243,8 +290,45 @@ export function fireAmbience(on: boolean) {
   updateAmbience();
 }
 
-/** Each loop plays while sound is on and the tab is visible (the fire only during a deathmatch). */
-const wanted = (l: Loop) => !muted && document.visibilityState === 'visible' && (l !== FIRE || fire);
+/** Delve: the ambience darkens and lowers with the depth of the run, over a rumble (0: the usual ambience). */
+export function depthAmbience(d: number) {
+  if (d === depth) return;
+  depth = d;
+  updateAmbience();
+  if (!bus) return;
+  for (const [l, p] of playing) shape(l, p, bus.ac.currentTime, DEPTH_EASE);
+}
+
+/** The rumble comes in a few depths down. */
+const rumbles = () => descent(depth).deep > 0.12;
+
+/** Each loop plays while sound is on and the tab is visible (the fire only during a deathmatch, the rumble only deep in Delve). */
+const wanted = (l: Loop) =>
+  !muted && document.visibilityState === 'visible' && (l !== FIRE || fire) && (l !== RUMBLE || rumbles());
+
+/** A loop's level, cutoff, speed and reverb send at the current depth. */
+function target(l: Loop) {
+  const { deep, abyss } = descent(depth);
+  if (l === AMBIENCE)
+    return {
+      gain: db(l.gain + DEPTH.gain * deep),
+      // Down in octaves, so the highs go evenly rather than all at the end.
+      lp: l.lp * Math.pow(DEPTH.lp / l.lp, deep),
+      rate: 1 + (DEPTH.rate - 1) * deep,
+      send: DEPTH.send * deep,
+    };
+  if (l === RUMBLE) return { gain: db(l.gain + RUMBLE.abyss * abyss), lp: l.lp, rate: 1, send: 0.3 };
+  return { gain: db(l.gain), lp: l.lp, rate: 1, send: 0 };
+}
+
+/** Moves a playing loop toward its target (`tc`: time constant in s). */
+function shape(l: Loop, p: Playing, at: number, tc: number) {
+  const t = target(l);
+  p.gain.gain.setTargetAtTime(t.gain, at, tc);
+  p.lp.frequency.setTargetAtTime(t.lp, at, tc);
+  p.src.playbackRate.setTargetAtTime(t.rate, at, tc);
+  p.send.gain.setTargetAtTime(t.send, at, tc);
+}
 
 /** Starts the loops that should play and fades out the ones that shouldn't. */
 function updateAmbience() {
@@ -273,7 +357,7 @@ function updateLoop(l: Loop) {
     if (!p || !bus) return;
     playing.delete(l);
     p.gain.gain.setTargetAtTime(0, bus.ac.currentTime, fade.down);
-    setTimeout(() => p.src.stop(), fade.down * 7000);
+    setTimeout(p.stop, fade.down * 7000);
     return;
   }
   if (playing.has(l) || starting.has(l)) return;
@@ -288,12 +372,36 @@ function updateLoop(l: Loop) {
       const src = ac.createBufferSource();
       src.buffer = buf;
       src.loop = true;
+      const lp = filter(ac, 'lowpass', l.lp);
       const gain = ac.createGain();
       gain.gain.value = 0;
-      gain.gain.setTargetAtTime(db(l.gain), ac.currentTime, fade.up);
-      src.connect(filter(ac, 'lowpass', l.lp)).connect(gain).connect(b.master);
-      src.start();
-      playing.set(l, { src, gain });
+      const send = ac.createGain();
+      send.gain.value = 0;
+      src.connect(lp).connect(gain).connect(b.master);
+      gain.connect(send).connect(b.wet);
+      const nodes: AudioScheduledSourceNode[] = [src];
+      if (l === RUMBLE) {
+        // The rumble breathes: a slow swell and ebb on its level.
+        const breath = ac.createGain();
+        breath.gain.value = 1 - RUMBLE.breath / 2;
+        const lfo = ac.createOscillator();
+        lfo.frequency.value = 1 / RUMBLE.period;
+        const depthOf = ac.createGain();
+        depthOf.gain.value = RUMBLE.breath / 2;
+        lfo.connect(depthOf).connect(breath.gain);
+        lp.disconnect();
+        lp.connect(breath).connect(gain);
+        lfo.start();
+        nodes.push(lfo);
+      }
+      const p: Playing = { src, gain, lp, send, stop: () => nodes.forEach((n) => n.stop()) };
+      // In place at once, then the level fades up to where the depth wants it.
+      shape(l, p, ac.currentTime, 0.001);
+      gain.gain.cancelScheduledValues(ac.currentTime);
+      gain.gain.setValueAtTime(0, ac.currentTime);
+      gain.gain.setTargetAtTime(target(l).gain, ac.currentTime, fade.up);
+      src.start(0, l === RUMBLE ? Math.random() * buf.duration : 0);
+      playing.set(l, p);
     })
     .catch(() => {
       starting.delete(l);

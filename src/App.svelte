@@ -3,7 +3,7 @@
   import { onMount, untrack } from 'svelte';
   import { fade, fly } from 'svelte/transition';
   import { session } from './lib/session.svelte';
-  import { getVolume, isMuted, setMuted, setVolume, sfx } from './lib/sound';
+  import { depthAmbience, getVolume, isMuted, setMuted, setVolume, sfx } from './lib/sound';
   import { fxAvailable, fxUserOn, onFxChange, setFxOn, shakeTarget } from './lib/fx/core';
   import { IMPRINT_URL, PRIVACY_URL } from './lib/site';
   import { dialogBackdrop } from './lib/behindDialog';
@@ -96,7 +96,12 @@
 
   // Delve: the scene descends with the run, and holds its depth on the end screen
   // (a screenshot shows how deep it went); everywhere else it is the surface.
-  $effect(() => setDescent(gs?.delve && (screen === 'game' || screen === 'over') ? gs.round : 0));
+  // The ambience follows it down.
+  $effect(() => {
+    const depth = gs?.delve && (screen === 'game' || screen === 'over') ? gs.round : 0;
+    setDescent(depth);
+    depthAmbience(depth);
+  });
 
   /** How long the outgoing screen takes to fade (the .screen transition below). */
   const SCREEN_OUT_MS = 150;

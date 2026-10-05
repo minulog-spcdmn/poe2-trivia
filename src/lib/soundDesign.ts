@@ -27,6 +27,21 @@ export const AMBIENCE = { file: 'amb-6', gain: -44, lp: 5011 };
  */
 export const FIRE = { file: 'amb-fire', gain: -30, lp: 3750 };
 
+/**
+ * Delve: how AMBIENCE changes all the way down (at descent's deep = 1, see
+ * lib/descent.ts). It loses its highs, slows and drops in pitch, grows a
+ * little louder and rings further into the hall.
+ */
+export const DEPTH = { lp: 1300, rate: 0.82, gain: 5, send: 0.45 };
+
+/**
+ * Delve: a slow, breathing rumble under AMBIENCE, generated (lowpassed brown
+ * noise, its level about AMBIENCE's file's). It comes in a few depths down at
+ * `gain` and swells by `abyss` dB toward the abyss; `breath` is how deep its
+ * swell (0 to 1) and `period` how long (s).
+ */
+export const RUMBLE = { file: 'rumble', gain: -50, abyss: 7, lp: 140, breath: 0.4, period: 13 };
+
 export const MOMENTS: Record<Sfx, Moment> = {
   hover: {
     soften: 5.5,
