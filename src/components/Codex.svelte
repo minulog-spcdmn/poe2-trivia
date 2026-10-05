@@ -212,12 +212,12 @@
         <div class="stat">
           <span class="stat-label">Best streak</span>
           <span class="stat-value">{stats.best}</span>
-          <span class="stat-note">{stats.streak ? `${stats.streak} in a row now` : 'right answers in a row'}</span>
+          <span class="stat-note">{stats.streak ? `current streak: ${stats.streak}` : 'right answers in a row'}</span>
         </div>
         <div class="stat">
-          <span class="stat-label">Answer time</span>
+          <span class="stat-label">Typical time</span>
           <span class="stat-value">{stats.medianMs === null ? '?' : secs(stats.medianMs)}<small>{stats.medianMs === null ? '' : ' s'}</small></span>
-          <span class="stat-note">{stats.fastest ? `typical • quickest ${secs(stats.fastest.ms)} s` : 'typical right answer'}</span>
+          <span class="stat-note">{stats.fastest ? `your fastest: ${secs(stats.fastest.ms)} s` : 'per right answer'}</span>
         </div>
       </div>
     {/if}
