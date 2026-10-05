@@ -188,6 +188,14 @@
     return pieces.filter((q) => q.length > 1).map(poly).join('');
   };
   const WEAVE = STRANDS.flatMap((s) => [1, -1].map((side) => strapEdge(s, side))).join('');
+  /**
+   * One tile of the weave, as a CSS background: it repeats over the whole
+   * plate whatever its height, in every browser (an SVG pattern fill fell
+   * short of the plate's top and bottom on some phones).
+   */
+  const WEAVE_TILE = `url("data:image/svg+xml,${encodeURIComponent(
+    `<svg xmlns='http://www.w3.org/2000/svg' width='${BAY}' height='${ROW}' viewBox='0 0 ${BAY} ${ROW}'><path d='${WEAVE}' fill='none' stroke='#c47a44' stroke-width='0.55'/></svg>`,
+  )}")`;
 </script>
 
 <script lang="ts">
@@ -256,15 +264,7 @@
 {/snippet}
 
 <span class="plate" class:lit aria-hidden="true">
-  <svg class="field" width="100%" height="100%">
-    <defs>
-      <pattern id={id('weave')} patternUnits="userSpaceOnUse" width={BAY} height={ROW} x="50%" y="50%">
-        <path d={WEAVE} />
-      </pattern>
-    </defs>
-    <!-- Oversized (the plate clips it): a percentage height here resolved short of the plate. -->
-    <rect y="-200" width="100%" height="400" fill="url(#{id('weave')})" />
-  </svg>
+  <span class="field" style:background-image={WEAVE_TILE} style:--tile="{BAY}px {ROW}px"></span>
   <!-- The lines twice, as on the circle: a soft, wide copy for the glow, and the lines. -->
   <svg class="art glow" width="100%" height="100%">{@render plate()}</svg>
   <svg class="art" width="100%" height="100%">
@@ -300,6 +300,9 @@
     inset: 0;
     overflow: visible;
   }
+  .field {
+    display: block;
+  }
   .end {
     transform: scale(var(--end-scale, 1));
   }
@@ -307,14 +310,12 @@
   /* The interlace: over the whole plate, faint, as if cut into the dark;
      fainter still under the ends' tracery. */
   .field {
+    background-size: var(--tile);
+    background-position: center;
+    background-repeat: repeat;
     opacity: 0.085;
     mask-image: linear-gradient(90deg, rgba(0, 0, 0, 0.35) 30px, #000 64px, #000 calc(100% - 64px), rgba(0, 0, 0, 0.35) calc(100% - 30px));
     animation: fade 1.2s 0.3s ease-out both;
-  }
-  pattern path {
-    fill: none;
-    stroke: #c47a44;
-    stroke-width: 0.55;
   }
 
   path,
