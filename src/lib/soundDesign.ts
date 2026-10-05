@@ -246,4 +246,31 @@ export const MOMENTS: Record<Sfx, Moment> = {
       { file: 'burn-embers', gain: -39, rate: 0.75, delay: 1100, hp: 250, lp: 5000, send: 0.95 },
     ],
   },
+  // A stick of dynamite: its fuse fizzing for a breath (the sparkler's fuse,
+  // quicker and brighter, with a spit of sparkler over it)…
+  fuse: {
+    soften: 4,
+    varyPitch: 0.04,
+    varyGain: 1,
+    layers: [
+      { file: 'burn-fuse', gain: -27, rate: 1.2, delay: 0, hp: 380, lp: 14000, send: 0.25 },
+      { file: 'burn-sparkler', gain: -35, rate: 1.35, delay: 90, hp: 900, lp: 15000, send: 0.2 },
+    ],
+  },
+  // …then the blast: a deep boom, the gate slam's crack and its echo off the
+  // hall, a dull thud under it, stone chips landing and a crackle of burning.
+  blast: {
+    soften: 5,
+    varyPitch: 0.035,
+    varyGain: 0.5,
+    layers: [
+      { file: 'layer-sub-2', gain: -13, rate: 0.72, delay: 0, hp: 20, lp: 1500, send: 0.55 },
+      { file: 'start-7', gain: -22, rate: 0.82, delay: 0, hp: 70, lp: 6000, send: 0.6 },
+      { file: 'wrong-3', gain: -24, rate: 0.62, delay: 0, hp: 30, lp: 2600, send: 0.2 },
+      { file: 'layer-sub-5', gain: -24, rate: 0.8, delay: 10, hp: 20, lp: 600, send: 0.3 },
+      { file: 'click-5', gain: -31, rate: 0.75, delay: 170, hp: 400, lp: 9000, send: 0.5 },
+      { file: 'click-5', gain: -34, rate: 0.95, delay: 260, hp: 500, lp: 9000, send: 0.55 },
+      { file: 'burn-crackle', gain: -33, rate: 0.9, delay: 120, hp: 250, lp: 11000, send: 0.6 },
+    ],
+  },
 };

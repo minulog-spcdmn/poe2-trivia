@@ -12,7 +12,8 @@ import {
   FINDS,
   FLARE_AT_MS,
   FLARE_MS,
-  blastRules,
+  blastAtMs,
+  blastCount,
   compareDelvers,
   delveLockout,
   delveQuestionTimer,
@@ -286,17 +287,16 @@ export function rulesFor(settings: Pick<Settings, 'difficulty'> & Partial<Settin
 
 /**
  * The rules for the current question (deathmatch questions are one tier
- * harder; Delve's follow the depth, a find's are those of deeper down, and a
- * card blasted open plays as at the surface).
+ * harder; Delve's follow the depth, and a find's are those of deeper down).
  */
 export function activeRules(s: GameState): DifficultyRules {
   if (!s.delve) return rulesFor(s.settings, !!s.deathmatch);
   return delveQuestionRules(s.round, s.question ?? {});
 }
 
-/** The rules of a Delve question at depth `d`, for a find or a blasted card (a find blasted open plays as a blasted card). */
-function delveQuestionRules(d: number, q: Pick<Question, 'find' | 'blasted'>): DifficultyRules {
-  return q.blasted ? blastRules(d) : q.find ? findRules(q.find, d) : delveRules(d);
+/** The rules of a Delve question at depth `d`, for a find or not. */
+function delveQuestionRules(d: number, q: Pick<Question, 'find'>): DifficultyRules {
+  return q.find ? findRules(q.find, d) : delveRules(d);
 }
 
 /** The last `lockout` categories of a list (none for a lockout of 0). */
@@ -353,11 +353,6 @@ export interface Delve {
   inventory?: Record<string, Inventory>;
   /** The find among the cards on offer, or null (missing in older saves). */
   find?: { category: string; kind: FindKind } | null;
-  /**
-   * The card the player on turn blasted open with dynamite (once a turn): a
-   * fourth card, or the find on offer. Null if none (missing in older saves).
-   */
-  blasted?: string | null;
 }
 
 /** Deathmatch questions are one tier harder (Eternal goes one step up on each knob). */
@@ -474,8 +469,15 @@ export interface Question {
    * right answer earns its item (see delve.ts findReward).
    */
   find?: FindKind;
-  /** Delve: asked from a card blasted open with dynamite, as at the surface (a find's still earns its item). */
+  /**
+   * Delve: a stick of dynamite went off on this question, at half its clock
+   * (once a question): the art shown plain from then on (in colour,
+   * unmirrored and whole; the host sends a clean copy), and `blownAway`'s
+   * options blasted off the board.
+   */
   blasted?: boolean;
+  /** Delve, once `blasted`: the wrong options it blew away, by index, in order. */
+  blownAway?: number[];
   /** Delve: a flare burnt on this question, and its deadline moved (once a question). */
   flared?: boolean;
   /** Race mode: wrong answers so far, in order. Those players are locked out. */
@@ -578,8 +580,8 @@ export type Action =
   | { type: 'resumed' }
   /** Host only (Delve): the answering player's clock is about to run out, so one of their flares burns. */
   | { type: 'flare'; askedAt: number }
-  /** Delve, while choosing: the player on turn spends dynamite to open a fourth card, any category. */
-  | { type: 'blast'; category: string };
+  /** Host only (Delve): half the answering player's clock has run out, so a stick of their dynamite goes off. */
+  | { type: 'dynamite'; askedAt: number };
 
 export const OFFER_COUNT = 3;
 export const MAX_PLAYERS = 12;
@@ -942,7 +944,6 @@ export class Engine {
             graceUntil: 0,
             inventory: {},
             find: null,
-            blasted: null,
           };
         }
         // The first turn goes to someone who is actually here.
@@ -977,6 +978,8 @@ export class Engine {
         if (action.askedAt !== undefined && action.askedAt !== q.askedAt) throw new ActionError('Too late!', true);
         // Delve: nobody answers a question whose clock hasn't started (a stray key in hot-seat included).
         if (s.delve && q.deadline === null && action.index !== null) throw new ActionError('Too early.', true);
+        // An option dynamite blew away still counts if picked (a guest's click
+        // may have crossed the blast on its way): it is wrong either way.
         const index = validIndex(action.index, q.options.length);
         const chosenId = index === null ? null : q.options[index];
         const timedOut =
@@ -994,12 +997,12 @@ export class Engine {
         } else if (s.delve) {
           // An Azurite Vein caves in for two losses, each taken by a ward if
           // one is held; on the last life the first loss is the fall, and
-          // there is nothing left to take. A card blasted open is safe.
-          const losses = q.find && !q.blasted ? findLosses(q.find) : 1;
+          // there is nothing left to take.
+          const losses = q.find ? findLosses(q.find) : 1;
           const took = Array.from({ length: losses }, () => this.loseLife(s, active.id));
           const lost = { lives: took.filter((t) => t === 'life').length, wards: took.filter((t) => t === 'ward').length };
           warded = lost.wards > 0 && lost.lives === 0;
-          if (q.find && !q.blasted && cavesIn(q.find)) caveIn = { caveIn: true, lost };
+          if (q.find && cavesIn(q.find)) caveIn = { caveIn: true, lost };
         }
         if (!timedOut && chosenId && isFake(chosenId)) s.used.push(chosenId);
         if (s.deathmatch) s.deathmatch.results[active.id] = correct;
@@ -1139,19 +1142,17 @@ export class Engine {
         q.deadline = Math.max(q.deadline, now) + FLARE_MS;
         break;
       }
-      case 'blast': {
-        const dm = s.delve;
-        if (!dm) throw new ActionError('There is nothing to blast here.');
-        if (s.phase !== 'choosing') throw new ActionError('Not the time to pick a category.', true);
-        if (!isActive) throw new ActionError("It's not your turn.");
-        if (dm.blasted) throw new ActionError('Only one card a turn can be blasted open.', true);
-        if (typeof action.category !== 'string' || !this.byCategory.has(action.category)) throw new ActionError('There is no such category.');
-        // A fourth card, or the find on offer (its question made safe, its reward kept).
-        const theFind = dm.find?.category === action.category && s.offered.includes(action.category);
-        if (s.offered.includes(action.category) && !theFind) throw new ActionError('That category is already on offer.');
-        if (!this.spend(s, active.id, 'dynamite')) throw new ActionError('You have no dynamite.');
-        dm.blasted = action.category;
-        if (!theFind) s.offered.push(action.category);
+      case 'dynamite': {
+        if (from !== null) throw new ActionError('Not allowed.');
+        const q = s.question;
+        // Only on the clock, once a question, before an answer or the time-out is in.
+        if (!s.delve || s.phase !== 'question' || !q || q.askedAt !== action.askedAt || q.deadline === null || q.clockAt === undefined || q.blasted || !active) break;
+        const now = this.now();
+        // Half the clock gone (a flare's extra time not counted), and the player here to use it.
+        if (!active.connected || now < q.clockAt + blastAtMs(s) - 250 || now > q.deadline + ANSWER_GRACE_MS) break;
+        if (!this.spend(s, active.id, 'dynamite')) break;
+        q.blasted = true;
+        q.blownAway = this.blownAway(q);
         break;
       }
     }
@@ -1259,16 +1260,15 @@ export class Engine {
 
   /**
    * The player on turn picks a category (by hand, or when their time to pick
-   * runs out). Picking a find or a blasted card is an ordinary pick of it:
-   * which card is which is the host's own record, so a guest can't make one up.
+   * runs out). Picking a find is an ordinary pick of it: which card is which
+   * is the host's own record, so a guest can't make one up.
    */
   private takePick(s: GameState, active: Player, category: string) {
-    let kind: Pick<Question, 'find' | 'blasted'> = {};
+    let kind: Pick<Question, 'find'> = {};
     if (s.delve) {
       active.recent = lastPicks([...active.recent, category], DELVE_MAX_LOCKOUT);
       s.delve.pickBy = null;
       if (s.delve.find?.category === category) kind = { find: s.delve.find.kind };
-      if (s.delve.blasted === category) kind.blasted = true;
     } else if (!s.deathmatch) {
       active.recent = lastPicks([...active.recent, category], rulesFor(s.settings).lockout);
     }
@@ -1306,6 +1306,19 @@ export class Engine {
     } else inv[item]++;
     (s.delve!.inventory ??= {})[id] = inv;
     return [forged ? 'wards' : item, forged];
+  }
+
+  /**
+   * The wrong options a stick of dynamite blows away (delve.ts blastCount):
+   * made-up names first, the trick of a name as the veil is the art's, then
+   * real decoys at random. The answer is never made up, and the rest go at
+   * random, so what is left says nothing more about which option is right.
+   */
+  private blownAway(q: Question): number[] {
+    const wrong = q.options.flatMap((id, i) => (id === q.itemId ? [] : [i]));
+    const fakes = shuffle(wrong.filter((i) => isFake(q.options[i])), this.rng);
+    const real = shuffle(wrong.filter((i) => !isFake(q.options[i])), this.rng);
+    return [...fakes, ...real].slice(0, blastCount(q.options.length)).sort((a, b) => a - b);
   }
 
   /** Uses up one of an item; false when the player has none. */
@@ -1436,7 +1449,6 @@ export class Engine {
     s.offered = s.deathmatch ? [this.randomCategory(s)] : this.offerCategories(s, s.players[s.turn]);
     if (s.delve) {
       s.delve.find = this.rollFind(s, s.players[s.turn]);
-      s.delve.blasted = null;
       this.stampPickBy(s);
     }
   }
@@ -1445,7 +1457,6 @@ export class Engine {
     if (s.delve) {
       s.delve.pickBy = null;
       s.delve.find = null;
-      s.delve.blasted = null;
     }
     s.phase = 'over';
     s.winners = winners;
@@ -1725,10 +1736,10 @@ export class Engine {
   /**
    * Builds a question from the category. Updates `s.used` when the category
    * has to start over. Delve: a `find` gets the rules and clock of deeper
-   * down (delve.ts findRules); a `blasted` card, a find's too, the surface's.
+   * down (delve.ts findRules).
    */
-  makeQuestion(s: GameState, category: string, kind: Pick<Question, 'find' | 'blasted'> = {}): Question {
-    const special: Pick<Question, 'find' | 'blasted'> = !s.delve ? {} : { ...(kind.find ? { find: kind.find } : {}), ...(kind.blasted ? { blasted: true } : {}) };
+  makeQuestion(s: GameState, category: string, kind: Pick<Question, 'find'> = {}): Question {
+    const special: Pick<Question, 'find'> = s.delve && kind.find ? { find: kind.find } : {};
     const rules = s.delve ? delveQuestionRules(s.round, special) : activeRules(s);
     const inCat = this.byCategory.get(category) ?? [];
     const need = rules.options - 1;

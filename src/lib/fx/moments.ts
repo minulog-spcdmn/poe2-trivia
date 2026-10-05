@@ -1030,3 +1030,136 @@ export function titleGlints(title: Element): Handle {
   next();
   return { stop: () => clearTimeout(timer) };
 }
+
+// ---------- dynamite ----------
+
+/** Delve: how long a stick of dynamite's fuse hisses before it goes off (ms); every screen lights it this far ahead. */
+export const FUSE_MS = 650;
+
+/** Delve: how long before the blast the art starts to crack (ms). */
+export const CRACK_MS = 220;
+
+/**
+ * Delve: a stick of dynamite's fuse burns down. A fizzing point runs round
+ * the art's frame (`art`), up its left side from the foot and along the top
+ * to the middle, spitting sparks and a thread of smoke, over FUSE_MS. It
+ * stops there by itself, or when stopped.
+ */
+export function dynamiteFuse(art: Element): Handle {
+  if (!fxActive() || detached(art)) return { stop() {} };
+  const b = boxOf(art);
+  const [l, t, foot] = [b.x - b.w / 2 + 6, b.y - b.h / 2 + 6, b.y + b.h / 2 - 6];
+  const up = foot - t;
+  const along = b.x - l;
+  const at = (u: number): Point => {
+    const d = u * (up + along);
+    return d < up ? { x: l, y: foot - d } : { x: l + d - up, y: t };
+  };
+  const dur = FUSE_MS / 1000;
+  let acc = 0;
+  return task((dt, age) => {
+    if (detached(art)) return false;
+    // Quick at first, slowing as it nears the charge.
+    const p = at(1 - Math.pow(1 - Math.min(1, age / dur), 1.6));
+    acc += dt * 70;
+    while (acc >= 1) {
+      acc--;
+      sparks(p, { count: 1, speed: [60, 240], gravity: 380, drag: 2.6, life: [0.12, 0.35], size: [0.5, 1], colors: [C.whiteHot, C.gold, C.ember] });
+    }
+    if (Math.random() < dt * 24) puffs(p, { count: 1, color: [0.07, 0.055, 0.045], size: [3, 6], speed: [8, 26], life: [0.4, 0.8], angle: -Math.PI / 2, spread: 0.8 });
+    if (Math.random() < dt * 30) flash(p, { radius: 10, color: C.ember, intensity: 0.5, life: 0.12 });
+    return age < dur;
+  });
+}
+
+export type BlastTargets = {
+  /** The art stage (name questions) or the picture grid (art questions). */
+  art: Element | null;
+  /** The answers (or pictures) blown away. */
+  blown: Element[];
+  /** The player whose dynamite it is: their screen shakes harder. */
+  mine: boolean;
+};
+
+/**
+ * Delve: a stick of dynamite goes off at half the clock. A white-hot burst
+ * at the heart of the art with a ring of fire and a shockwave running out,
+ * the stone of the art breaking into falling chips and smoke, embers
+ * drifting up; each answer it blows away bursts too, one after another.
+ * The colour flooding back into the art is the component's (ArtImage flood).
+ */
+export function dynamiteBlast(t: BlastTargets) {
+  if (!fxActive()) return;
+  if (t.art && !detached(t.art)) {
+    const b = boxOf(t.art);
+    const r = Math.max(b.w, b.h);
+    flash(t.art, { radius: r * 0.7, color: C.whiteHot, intensity: 0.55, life: 0.45 });
+    flare(t.art, { size: 46, streak: b.w * 1.1, life: 0.55, color: C.whiteHot, intensity: 0.8 });
+    ring(t.art, { radius: r * 0.95, from: 10, thickness: 14, life: 0.7, color: C.ember, breakup: 0.55, fill: 0.25, intensity: 0.9 });
+    ring(t.art, { radius: r * 0.6, from: 6, thickness: 5, life: 0.4, color: C.whiteHot, breakup: 0.3, fill: 0, intensity: 0.6, delay: 0.04 });
+    sparks(t.art, { count: 70, speed: [220, 900], life: [0.3, 0.9], gravity: 600, colors: [C.whiteHot, C.gold, C.ember] });
+    shards(t.art, { count: 26, area: 'fill', colors: [[0.9, 0.72, 0.55], [0.55, 0.45, 0.38], C.ember], cool: k3(C.ash, 0.4), speed: [140, 520], size: [2, 5] });
+    puffs(t.art, { count: 12, area: 'centre', color: [0.1, 0.075, 0.06], size: [16, 34], speed: [60, 240], life: [0.8, 1.6] });
+    after(0.12, () => embers(t.art!, { count: 20, area: 'fill', colors: [C.ember, C.gold], rise: [40, 140], life: [0.8, 1.8] }));
+    after(0.3, () => glints(t.art!, { count: 5, size: [4, 9], color: C.goldPale, delay: [0, 0.4] }));
+    light(t.art, { color: [1, 0.62, 0.3], radius: 460, intensity: 0.6, hold: 0.08, decay: 1.1 });
+  }
+  t.blown.forEach((el, i) => {
+    after(0.05 + i * 0.07, () => {
+      if (detached(el)) return;
+      flash(el, { radius: 40, color: C.ember, intensity: 0.4, life: 0.3 });
+      sparks(el, { count: 18, area: 'fill', speed: [120, 460], life: [0.25, 0.6], gravity: 500, colors: [C.whiteHot, C.ember, C.gold] });
+      shards(el, { count: 10, colors: [[0.85, 0.68, 0.5], [0.5, 0.4, 0.33], C.ember], cool: k3(C.ash, 0.4), speed: [100, 380], size: [1.6, 3.6] });
+      puffs(el, { count: 5, area: 'fill', color: [0.09, 0.07, 0.055], size: [10, 22], speed: [30, 120], life: [0.6, 1.2] });
+    });
+  });
+  pulseMood(0.22, [1, 0.5, 0.2]);
+  shakeView(t.mine ? 0.6 : 0.4, t.mine ? 10 : 7);
+}
+
+/**
+ * The cracks that run through art about to be blasted, in a 100 × 100 box
+ * round its middle: `main` from the heart outward, each a few jagged
+ * segments with a branch or two, and `fine` short splits across between
+ * them. Fixed by `seed`, so every screen cracks a picture alike.
+ */
+export function blastCracks(seed: number, arms = 7): { main: string[]; fine: string[] } {
+  let x = (Math.abs(Math.floor(seed)) % 2147483646) + 1;
+  const rnd = () => (x = (x * 16807) % 2147483647) / 2147483647;
+  const f = (v: number) => v.toFixed(1);
+  const main: string[] = [];
+  const fine: string[] = [];
+  const turn = rnd() * 360;
+  for (let k = 0; k < arms; k++) {
+    let a = turn + (k * 360) / arms + (rnd() - 0.5) * (240 / arms);
+    let r = 2 + rnd() * 3;
+    let p = { x: 50 + r * Math.sin((a * Math.PI) / 180), y: 50 - r * Math.cos((a * Math.PI) / 180) };
+    let d = `M${f(p.x)} ${f(p.y)}`;
+    const reach = 42 + rnd() * 22;
+    while (r < reach) {
+      a += (rnd() - 0.5) * 38;
+      const step = 5 + rnd() * 7;
+      r += step;
+      p = { x: p.x + step * Math.sin((a * Math.PI) / 180), y: p.y - step * Math.cos((a * Math.PI) / 180) };
+      d += `L${f(p.x)} ${f(p.y)}`;
+      if (rnd() < 0.22 && r < reach - 10) {
+        // A branch splits off and dies out.
+        const b = a + (rnd() < 0.5 ? -1 : 1) * (25 + rnd() * 25);
+        const len = 6 + rnd() * 10;
+        const q = { x: p.x + len * Math.sin((b * Math.PI) / 180), y: p.y - len * Math.cos((b * Math.PI) / 180) };
+        fine.push(`M${f(p.x)} ${f(p.y)}L${f(q.x)} ${f(q.y)}`);
+      }
+    }
+    main.push(d);
+  }
+  // A broken ring of splits round the heart, where the blast hit hardest.
+  const ringR = 12 + rnd() * 6;
+  for (let k = 0; k < arms; k++) {
+    if (rnd() < 0.35) continue;
+    const a0 = turn + ((k + 0.2) * 360) / arms;
+    const a1 = a0 + (360 / arms) * (0.35 + rnd() * 0.35);
+    const pt = (a: number, rr: number) => `${f(50 + rr * Math.sin((a * Math.PI) / 180))} ${f(50 - rr * Math.cos((a * Math.PI) / 180))}`;
+    fine.push(`M${pt(a0, ringR + (rnd() - 0.5) * 3)}L${pt((a0 + a1) / 2, ringR + (rnd() - 0.5) * 4)}L${pt(a1, ringR + (rnd() - 0.5) * 3)}`);
+  }
+  return { main, fine };
+}

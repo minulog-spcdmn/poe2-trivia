@@ -2,8 +2,6 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
-  BLAST_OPTIONS,
-  BLAST_TIMER,
   DELVE_LIVES,
   DELVE_MAX_DYNAMITE,
   DELVE_MAX_FLARES,
@@ -16,8 +14,6 @@ import {
   FLARE_AT_MS,
   FLARE_MS,
   SHARDS_PER_WARD,
-  blastRules,
-  blastedOffer,
   cavesIn,
   delveLockout,
   delveStandings,
@@ -232,24 +228,7 @@ test("the Azurite Vein's window is the first half of the clock, in whole seconds
   }
   assert.equal(veinWindow(13), 7000);
   assert.equal(veinWindow(7), 4000);
-  assert.equal(veinWindow(BLAST_TIMER), 8000);
-});
-
-test('a blasted card is a safe question at any depth: as at the surface, on the longest clock', () => {
-  const surface = delveRules(1);
-  assert.equal(BLAST_TIMER, delveTimer(1));
-  assert.equal(BLAST_TIMER, 16);
-  assert.equal(BLAST_OPTIONS, 4);
-  for (const d of [1, 13, 20, 40, 75, 300]) {
-    const r = blastRules(d);
-    assert.deepEqual(
-      { options: r.options, similarNames: r.similarNames, fakes: r.fakes, grayscale: r.grayscale, mirror: r.mirror, veil: r.veil },
-      { options: 4, similarNames: 0, fakes: 0, grayscale: 'off', mirror: 0, veil: null },
-    );
-    for (const k of KNOBS) assert.equal(r[k], surface[k]);
-    assert.equal(r.artChance, delveRules(d).artChance);
-    assert.equal(r.lockout, delveLockout(d));
-  }
+  assert.equal(veinWindow(16), 8000);
 });
 
 // ---- rewards ---------------------------------------------------------------
@@ -307,7 +286,7 @@ test('each find ramps from a low chance at its first depth to its cap at depth 5
   const total = (d: number) => FINDS.reduce((sum, f) => sum + findChance(f.kind, d), 0);
   assert.equal(total(4), 0);
   assert.ok(total(5) <= 0.05, `${total(5)} at 5`);
-  assert.ok(total(15) >= 0.1 && total(15) <= 0.14, `${total(15)} at 15`);
+  assert.ok(total(15) >= 0.1 && total(15) <= 0.15, `${total(15)} at 15`);
   assert.ok(Math.abs(total(50) - 0.33) < 0.005, `${total(50)} at 50`);
   assert.equal(total(200), total(50));
   // Odd depths read as the surface.
@@ -317,15 +296,29 @@ test('each find ramps from a low chance at its first depth to its cap at depth 5
 /** The find that yields an item (as delve.ts findFor). */
 const findFor = (kind: FindKind) => FINDS.find((f) => f.kind === kind)!;
 
-test('dynamite is switched off: no Dynamite Cache is ever rolled', () => {
-  assert.equal(DYNAMITE_ON, false);
-  for (let d = 1; d <= 200; d++) assert.equal(findChance('dynamite', d), 0);
+test('the Dynamite Cache turns up from depth 10, 4% rising to 9% at 50, between the vein and the flare', () => {
+  assert.equal(DYNAMITE_ON, true);
+  assert.deepEqual(
+    FINDS.map((f) => [f.kind, f.from, f.start, f.cap]),
+    [
+      ['azurite', 5, 0.04, 0.11],
+      ['flare', 15, 0.04, 0.13],
+      ['dynamite', 10, 0.04, 0.09],
+    ],
+  );
+  assert.deepEqual([9, 10, 30, 50, 120].map((d) => findChance('dynamite', d)), [0, 0.04, 0.065, 0.09, 0.09]);
+  // The rarest of the three at its cap, and rarer than the vein from the start of the flare's.
+  for (let d = 15; d <= 200; d++) assert.ok(findChance('dynamite', d) < findChance('flare', d) || d < 50, `${d}`);
+  assert.ok(findChance('dynamite', 50) < findChance('azurite', 50));
+  // Rolled as often as its chance, for a player with room for it.
   const h = delve(['Ash'], { seed: 9 });
-  at(h, 40);
-  for (let i = 0; i < 300; i++) {
-    assert.notEqual(h.s.delve!.find?.kind, 'dynamite');
+  let seen = 0;
+  for (let i = 0; i < 600; i++) {
+    h.edit((c) => (c.round = 50));
+    if (h.s.delve!.find?.kind === 'dynamite') seen++;
     h.plainTurn();
   }
+  assert.ok(Math.abs(seen - 600 * 0.09) < 4 * Math.sqrt(600 * 0.09), `${seen} Dynamite Caches in 600 offers`);
 });
 
 test('one roll per offer: at most one find, each from its depth, about as often as its chance there', () => {
@@ -594,7 +587,7 @@ test('a wrong answer or a time-out on an Azurite Vein caves in: two losses, a wa
     }
 });
 
-test('a right answer to a vein still pays, and a vein blasted open is made safe: one loss', () => {
+test('a right answer to a vein still pays, and dynamite going off on one still leaves its cave-in', () => {
   const ok = found('azurite');
   ok.answer(true);
   assert.equal(ok.s.reveal!.caveIn, undefined);
@@ -604,13 +597,15 @@ test('a right answer to a vein still pays, and a vein blasted open is made safe:
   at(h, 20);
   const id = h.active().id;
   h.give(id, { dynamite: 1 });
-  const card = h.plant('azurite');
-  h.act({ type: 'blast', category: card });
-  h.act({ type: 'pick', category: card });
+  h.act({ type: 'pick', category: h.plant('azurite') });
   h.clockIn();
+  const q = h.s.question!;
+  h.clock.now = q.clockAt! + veinWindow(questionTimer(h.s));
+  h.act({ type: 'dynamite', askedAt: q.askedAt });
+  assert.equal(h.s.question!.blasted, true);
   h.answer(false);
-  assert.equal(livesOf(h.s, id), DELVE_LIVES - 1);
-  assert.equal(h.s.reveal!.caveIn, undefined);
+  assert.equal(livesOf(h.s, id), DELVE_LIVES - 2);
+  assert.equal(h.s.reveal!.caveIn, true);
 });
 
 test('a cave-in in a group run: the fall, and the standings with two losses at one depth', () => {
@@ -720,15 +715,11 @@ test('a player who runs out of time to pick while away loses a ward first', () =
   assert.deepEqual(inventoryChanges(prev, h.s), [{ playerId: id, item: 'wards', change: 'used', left: 0 }]);
 });
 
-test('a card picked for a player who hesitated is never the find, even one blasted open', () => {
+test('a card picked for a player who hesitated is never the find', () => {
   for (let seed = 1; seed <= 30; seed++) {
     const h = delve(['Ash', 'Brea'], { seed });
     at(h, 20);
-    const card = h.plant(seed % 2 ? 'azurite' : 'flare');
-    if (seed % 3 === 0) {
-      h.give(h.active().id, { dynamite: 1 });
-      h.act({ type: 'blast', category: card });
-    }
+    const card = h.plant((['azurite', 'flare', 'dynamite'] as const)[seed % 3]);
     h.clock.now = h.s.delve!.pickBy!;
     h.act({ type: 'expire' });
     assert.notEqual(h.s.question!.category, card);
@@ -841,140 +832,6 @@ test('a flare on an Azurite Vein gives more time, not a longer fast window: a sh
   assert.equal(questionTimer(h.s), findTimer('azurite', 20), "the question still started with the find's clock");
 });
 
-// ---- dynamite --------------------------------------------------------------
-
-/** A category not on offer that isn't locked, and one that is (made the player's last pick). */
-function lockedAndFree(h: ReturnType<typeof delve>) {
-  const spare = h.engine.categories.filter((x) => !h.s.offered.includes(x));
-  h.edit((c) => (c.players[c.turn].recent = [spare[0]]));
-  return { locked: spare[0], free: spare[1] };
-}
-
-test('dynamite blasts open a fourth card, even a locked one, once a turn', () => {
-  const h = delve(['Ash'], { host: null });
-  at(h, 20);
-  const id = h.active().id;
-  h.give(id, { dynamite: 2 });
-  const { locked } = lockedAndFree(h);
-  const prev = h.s;
-  h.act({ type: 'blast', category: locked });
-  assert.deepEqual(h.s.offered.slice(3), [locked]);
-  assert.equal(blastedOffer(h.s), locked);
-  assert.equal(dynamiteOf(h.s, id), 1);
-  assert.deepEqual(inventoryChanges(prev, h.s), [{ playerId: id, item: 'dynamite', change: 'used', left: 1 }]);
-  assert.throws(() => h.act({ type: 'blast', category: h.engine.categories.find((x) => !h.s.offered.includes(x))! }), /Only one/);
-  h.act({ type: 'pick', category: locked });
-  h.clockIn();
-  h.answer(true);
-  h.act({ type: 'next' });
-  assert.equal(h.s.offered.length, 3);
-  assert.equal(h.s.delve!.blasted, null);
-  // A new turn, a new blast.
-  h.act({ type: 'blast', category: h.engine.categories.find((x) => !h.s.offered.includes(x))! });
-  assert.equal(dynamiteOf(h.s, id), 0);
-});
-
-test('a card blasted open asks a safe question at any depth: four options, nothing made up, plain art, the longest clock', () => {
-  let names = 0;
-  let arts = 0;
-  for (let seed = 1; seed <= 24; seed++) {
-    const depth = [20, 60, 120][seed % 3];
-    const h = delve(['Ash'], { host: null, seed });
-    at(h, depth);
-    h.give(h.active().id, { dynamite: 1 });
-    const cat = h.engine.categories.find((x) => !h.s.offered.includes(x))!;
-    h.act({ type: 'blast', category: cat });
-    h.act({ type: 'pick', category: cat });
-    const q = h.s.question!;
-    assert.equal(q.blasted, true);
-    assert.equal(q.find, undefined);
-    assert.deepEqual(activeRules(h.s), blastRules(depth));
-    assert.equal(q.options.length, BLAST_OPTIONS);
-    assert.equal(q.options.filter(isFake).length, 0, 'nothing made up');
-    assert.equal(q.veil, null, 'nothing burns in');
-    assert.ok(q.mirrored!.every((m) => !m), 'nothing mirrored');
-    if (q.mode === 'name') names++;
-    else arts++;
-    h.clockIn();
-    assert.equal(h.s.question!.deadline! - h.s.question!.clockAt!, BLAST_TIMER * 1000);
-    assert.equal(questionTimer(h.s), BLAST_TIMER);
-    assert.equal(veinWindowMs(h.s), 0);
-    h.answer(true);
-    assert.equal(h.s.reveal!.gained, undefined, 'nothing to find');
-  }
-  assert.ok(names > 0 && arts > 0, `${names} name and ${arts} art questions`);
-});
-
-test('dynamite can blast the find on offer open: its question made safe, its reward kept', () => {
-  for (const kind of ['azurite', 'flare', 'dynamite'] as const) {
-    const h = delve(['Ash'], { host: null, seed: 7 });
-    at(h, 40);
-    const id = h.active().id;
-    h.give(id, { dynamite: 2 });
-    const card = h.plant(kind);
-    const offered = [...h.s.offered];
-    h.act({ type: 'blast', category: card });
-    assert.deepEqual(h.s.offered, offered, 'no fourth card');
-    assert.equal(blastedOffer(h.s), card);
-    assert.deepEqual(findOffer(h.s), { category: card, kind });
-    assert.equal(dynamiteOf(h.s, id), 1);
-    assert.throws(() => h.act({ type: 'blast', category: h.engine.categories.find((x) => !h.s.offered.includes(x))! }), /Only one/);
-    h.act({ type: 'pick', category: card });
-    const q = h.s.question!;
-    assert.equal(q.find, kind);
-    assert.equal(q.blasted, true);
-    assert.deepEqual(activeRules(h.s), blastRules(40));
-    assert.equal(q.options.length, BLAST_OPTIONS);
-    h.clockIn();
-    assert.equal(questionTimer(h.s), BLAST_TIMER);
-    // A vein's window is half the safe question's clock.
-    assert.equal(veinWindowMs(h.s), kind === 'azurite' ? veinWindow(BLAST_TIMER) : 0);
-    h.clock.now += veinWindow(BLAST_TIMER);
-    h.answer(true);
-    assert.equal(h.s.reveal!.gained, kind === 'azurite' ? 'wards' : kind === 'flare' ? 'flares' : 'dynamite');
-  }
-});
-
-test('dynamite can\'t be blasted without any, off turn, outside choosing, or at a plain card already on offer', () => {
-  const h = delve(['Ash', 'Brea']);
-  at(h, 20);
-  const on = h.active().id;
-  const off = h.s.players.find((p) => p.id !== on)!.id;
-  const fresh = () => h.engine.categories.find((x) => !h.s.offered.includes(x))!;
-  assert.throws(() => h.act({ type: 'blast', category: fresh() }, on), /no dynamite/);
-  h.give(on, { dynamite: 1 });
-  h.give(off, { dynamite: 1 });
-  assert.throws(() => h.act({ type: 'blast', category: fresh() }, off), /not your turn/);
-  assert.throws(() => h.act({ type: 'blast', category: h.s.offered[0] }, on), /already on offer/);
-  // Not even the card that was a find, once it isn't.
-  h.plant('flare');
-  h.edit((c) => (c.delve!.find = { category: 'Socks', kind: 'flare' }));
-  assert.throws(() => h.act({ type: 'blast', category: h.s.offered[0] }, on), /already on offer/);
-  assert.throws(() => h.act({ type: 'blast', category: 'Socks' }, on), /no such/);
-  assert.throws(() => h.act({ type: 'blast', category: 42 } as never, on), /no such/);
-  assert.equal(dynamiteOf(h.s, on), 1);
-  h.act({ type: 'pick', category: h.s.offered[0] }, on);
-  assert.throws(() => h.act({ type: 'blast', category: fresh() }, on));
-  assert.equal(dynamiteOf(h.s, on), 1);
-  // Not in another mode either.
-  const engine = new Engine(items);
-  let t = createGame('p0', { ...SETTINGS, mode: 'turns' });
-  t = engine.apply(t, { type: 'join', playerId: 'p0', name: 'Ash' }, 'p0');
-  t = engine.apply(t, { type: 'start' }, 'p0');
-  assert.throws(() => engine.apply(t, { type: 'blast', category: engine.categories[0] }, 'p0'));
-});
-
-test('a guest blasts with their own dynamite on their own turn, and the host can\'t spend it for them', () => {
-  const { h, id } = online('guest');
-  h.give(id, { dynamite: 1 });
-  h.give('p0', { dynamite: 1 });
-  const cat = h.engine.categories.find((x) => !h.s.offered.includes(x))!;
-  h.act({ type: 'blast', category: cat }, id);
-  assert.equal(dynamiteOf(h.s, id), 0);
-  assert.equal(dynamiteOf(h.s, 'p0'), 1);
-  assert.equal(blastedOffer(publicView(h.s)), cat);
-});
-
 // ---- trust, views and lifetimes --------------------------------------------
 
 test("guests can't make up a find or award themselves items", () => {
@@ -1024,7 +881,6 @@ test('leaving or being kicked takes your items with you, and a new run starts wi
   h.act({ type: 'restart', play: true }, 'p0');
   assert.deepEqual(h.s.delve!.inventory, {});
   assert.equal(h.s.delve!.find, null);
-  assert.equal(h.s.delve!.blasted, null);
 });
 
 test('a question asked again, or set aside by a host reload, keeps what it was', () => {
@@ -1035,16 +891,6 @@ test('a question asked again, or set aside by a host reload, keeps what it was',
   h.act({ type: 'reask' });
   assert.equal(h.s.question!.find, 'flare');
   assert.equal(h.s.question!.category, card);
-
-  const b = delve(['Ash'], { host: null });
-  at(b, 20);
-  b.give(b.active().id, { dynamite: 1 });
-  const blasted = b.engine.categories.find((x) => !b.s.offered.includes(x))!;
-  b.act({ type: 'blast', category: blasted });
-  b.act({ type: 'pick', category: blasted });
-  b.act({ type: 'reask' });
-  assert.equal(b.s.question!.blasted, true);
-  assert.equal(b.s.question!.options.length, BLAST_OPTIONS);
 
   // A guest's question is set aside after a host reload, and the same cards come back.
   const { h: g, id } = online('guest');
@@ -1072,10 +918,8 @@ test('a game saved before finds plays on without them', () => {
   h.edit((c) => {
     delete c.delve!.inventory;
     delete c.delve!.find;
-    delete c.delve!.blasted;
   });
   assert.equal(findOffer(h.s), null);
-  assert.equal(blastedOffer(h.s), null);
   h.act({ type: 'pick', category: h.s.offered[0] });
   h.clockIn();
   h.answer(false);

@@ -14,7 +14,22 @@
   import ArcaneCircle from './ArcaneCircle.svelte';
   import NamePlate from './NamePlate.svelte';
   import { untrack, type Snippet } from 'svelte';
-  import { FILL_START, answerCharging, artRevealed, raceMiss, reveal as revealFx, veilComplete, veilHandoff, type VerdictTone } from '../lib/fx/moments';
+  import {
+    CRACK_MS,
+    FILL_START,
+    FUSE_MS,
+    answerCharging,
+    artRevealed,
+    blastCracks,
+    dynamiteBlast,
+    dynamiteFuse,
+    raceMiss,
+    reveal as revealFx,
+    veilComplete,
+    veilHandoff,
+    type VerdictTone,
+  } from '../lib/fx/moments';
+  import { dynamiteIn } from '../lib/delveSession';
   import { FILL_LEAD } from '../lib/soundDesign';
   import { streakOf } from '../lib/fx/streaks';
   import { scoreRowOf } from '../lib/scoreRows';
@@ -121,6 +136,98 @@
   // Size of the art shown during the question: keeps the reveal from jumping.
   const hint = $derived(media?.veil ?? media?.art ?? null);
 
+  // ---- dynamite ----
+  // Delve: a stick of the answering player's dynamite goes off at half the
+  // clock. Every screen lights its fuse a moment ahead (FUSE_MS), cracks the
+  // art just before, and sets it off when the host says it went off: the
+  // art floods with colour as the plain copy arrives (media.clean), and the
+  // answers it blew away are blasted off the board.
+
+  /** The options dynamite blew away (disabled at once; blasted on screen as it goes off). */
+  const blown = $derived(new Set(s.delve ? (q.blownAway ?? []) : []));
+  /** How far the blast has got on this screen. A question already blasted when it shows is just plain. */
+  let blast = $state<'none' | 'fuse' | 'crack' | 'blown'>(untrack(() => (q.blasted ? 'blown' : 'none')));
+  /** The plain art, once the blast has gone off here and it has arrived. */
+  const plain = $derived(blast === 'blown' ? (media?.clean ?? null) : null);
+  const plainTile = (i: number) => (blast === 'blown' ? media?.cleanTiles[i] : undefined);
+  /** The plain art has flooded in over what was shown, which can go. */
+  let floodDone = $state(untrack(() => !!q.blasted));
+  $effect(() => {
+    if (floodDone || (!plain && !Object.keys(media?.cleanTiles ?? {}).length) || blast !== 'blown') return;
+    const timer = setTimeout(() => (floodDone = true), 900);
+    return () => clearTimeout(timer);
+  });
+  /** The cracks through the art (the same on every screen), and through each picture. */
+  const cracks = $derived(blastCracks(q.askedAt));
+  const tileCracks = $derived(Array.from({ length: count }, (_, i) => blastCracks(q.askedAt + 7919 * (i + 1), 5)));
+  let fuse: Handle | null = null;
+  let fuseAt = 0;
+  const blastTimers: ReturnType<typeof setTimeout>[] = [];
+  $effect(() => () => {
+    fuse?.stop();
+    blastTimers.forEach(clearTimeout);
+  });
+  function lightFuse() {
+    if (blast !== 'none') return;
+    blast = 'fuse';
+    fuseAt = performance.now();
+    sfx('fuse');
+    if (artEl) fuse = dynamiteFuse(artEl);
+  }
+  function crack() {
+    if (blast === 'fuse') blast = 'crack';
+  }
+  /** It didn't go off after all (an answer came first, or the player left). */
+  function snuff() {
+    if (blast !== 'fuse' && blast !== 'crack') return;
+    fuse?.stop();
+    fuse = null;
+    blast = 'none';
+  }
+  function goOff() {
+    if (blast === 'blown') return;
+    blast = 'blown';
+    fuse?.stop();
+    fuse = null;
+    sfx('blast');
+    dynamiteBlast({ art: artEl, blown: [...blown].flatMap((i) => (optionEls[i] ? [optionEls[i]] : [])), mine });
+  }
+  // The fuse is lit ahead of half the clock, on every screen alike.
+  $effect(() => {
+    if (reveal || q.blasted) return;
+    const left = dynamiteIn(s, session.hostNow());
+    if (left === null) {
+      untrack(snuff);
+      return;
+    }
+    const timers = [setTimeout(lightFuse, Math.max(0, left - FUSE_MS)), setTimeout(crack, Math.max(0, left - CRACK_MS))];
+    return () => timers.forEach(clearTimeout);
+  });
+  // It went off: crack the art if that hasn't started, then blow, once the fuse has had its moment.
+  $effect(() => {
+    if (!q.blasted) {
+      if (reveal) untrack(snuff);
+      return;
+    }
+    untrack(() => {
+      const was = blast;
+      if (was === 'blown') return;
+      // Not seen coming (the fuse wasn't lit here): a short one.
+      if (was === 'none') lightFuse();
+      if (was !== 'crack') blastTimers.push(setTimeout(crack, was === 'none' ? 160 : 0));
+      const wait = was === 'none' ? 360 : Math.max(was === 'crack' ? 0 : 150, Math.min(FUSE_MS, fuseAt + FUSE_MS - performance.now()));
+      blastTimers.push(setTimeout(goOff, wait));
+    });
+  });
+  /** "Your dynamite went off" or someone else's, and how many answers it took. */
+  const blastLine = $derived.by(() => {
+    if (!q.blasted || blast !== 'blown' || reveal) return null;
+    const n = blown.size;
+    const whose = delveYou ? 'Your' : `${active.name}'s`;
+    const many = ['no', 'one', 'two', 'three', 'four'][n] ?? String(n);
+    return `${whose} dynamite went off: the art laid bare, and ${many} wrong ${n === 1 ? 'answer' : 'answers'} blown away.`;
+  });
+
   // Veiled art: when the newest patch will have finished coming in (ms, page
   // clock). At the reveal the rest of the picture comes in quickly first, and
   // only then hands over to the full art (veilDone).
@@ -220,7 +327,7 @@
     return () => clearTimeout(timer);
   });
   /** The full art replaces what was shown during the question. */
-  const showFull = $derived(!!reveal && !!item && (!media?.veil || (veilDone && fullLoaded && (fitted || !full))));
+  const showFull = $derived(!!reveal && !!item && (!media?.veil || !!plain || (veilDone && fullLoaded && (fitted || !full))));
 
   // A veiled picture that comes in whole before the reveal shimmers once.
   let wholeFor = 0;
@@ -250,6 +357,8 @@
    * the full art fades in.
    */
   function handoff(node: Element) {
+    // Under the plain art dynamite laid bare, it just goes.
+    if (!reveal) return { duration: 0 };
     const veil = node.querySelector('.veil');
     if (veil) veilHandoff(veil);
     const quick = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -284,7 +393,8 @@
 
   /** Revealed: was this picture (option index, or 0 for a name question's art) shown mirrored? */
   function mirrored(index: number) {
-    return !!reveal && !!q.mirrored?.[index];
+    // Dynamite already showed it the right way round.
+    return !!reveal && !!q.mirrored?.[index] && !q.blasted;
   }
 
   /** Race reveal: who lost a point, the first few by name so the line stays short. */
@@ -410,7 +520,7 @@
   });
 
   function answer(index: number) {
-    if (!mine || reveal || chosen !== null || waiting) return;
+    if (!mine || reveal || chosen !== null || waiting || blown.has(index)) return;
     // Time's up: the host only waits a moment longer for answers already on their way.
     if (q.deadline && session.hostNow() > q.deadline) return;
     chosen = index;
@@ -481,6 +591,19 @@
       <span class="word">{verdict.word}</span>
     </div>
   {/if}
+{/snippet}
+
+<!-- Delve: the cracks dynamite drives through the art just before it goes off; they burst as it does. -->
+{#snippet crackLines(c: { main: string[]; fine: string[] })}
+  <svg class="cracks" class:burst={blast === 'blown'} viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+    {#each c.main as d, k (k)}
+      <path class="seam" pathLength="1" d={d} style:--k={k} />
+      <path class="hot" pathLength="1" d={d} style:--k={k} />
+    {/each}
+    {#each c.fine as d, k (k)}
+      <path class="hot fine" pathLength="1" d={d} style:--k={k} />
+    {/each}
+  </svg>
 {/snippet}
 
 {#snippet mirrorLine()}
@@ -603,6 +726,8 @@
         {/if}
       </button>
     </div>
+  {:else if blastLine}
+    <p class="spectate blast-line" in:fade={{ duration: 300 }}><span class="found-glyph" aria-hidden="true"><ItemGlyph kind="dynamite" /></span>{blastLine}</p>
   {:else if session.spectating}
     <p class="spectate muted">You're watching. You'll play in the next game.</p>
   {:else if race && myMiss}
@@ -650,16 +775,22 @@
       <div class="tiles" bind:this={artEl} class:many={count > 4} class:six={count === 6} class:ten={count === 10} class:snug>
         {#each q.labels as _, i (i)}
           {@const st = optionState(i)}
-          {@const src = reveal && q.options[i] ? itemImage(q.options[i]) : waiting ? undefined : media?.options[i]}
+          {@const known = !!reveal && !!q.options[i]}
+          {@const src = known ? itemImage(q.options[i]) : waiting ? undefined : media?.options[i]}
           <!-- Delve: a veiled picture burns in patch by patch, until the reveal names it. -->
           {@const tv = !src && !waiting ? media?.tileVeils[i] : undefined}
+          <!-- Delve: dynamite laid it bare; it floods in over what was there, which then goes. -->
+          {@const bare = known ? undefined : plainTile(i)}
+          {@const gone = !!bare && floodDone}
           <button
             class="tile {st}"
             data-sfx="none"
             data-fx="hover"
             bind:this={optionEls[i]}
             class:mine
-            disabled={!mine || !!reveal || chosen !== null || waiting}
+            class:blasted={blast === 'blown' && blown.has(i)}
+            aria-label={blown.has(i) ? `Option ${i + 1}, blasted away` : undefined}
+            disabled={!mine || !!reveal || chosen !== null || waiting || blown.has(i)}
             onclick={() => answer(i)}
             onpointermove={glare}
             in:scale={{ start: 0.85, duration: 450, delay: 250 + i * 80 }}
@@ -667,35 +798,41 @@
             <span class="sheen"></span>
             <span class="key">{(i + 1) % 10}</span>
             <span class="cue" aria-hidden="true"></span>
-            {#if src}
-              <!-- Named pictures switch to the original art, so a mirrored one turns round. -->
-              <span class="pic"><ArtImage {src} alt="Option {i + 1}" scale={1.6} unflip={mirrored(i) && !!q.options[i]} /></span>
-            {:else if tv}
-              {@const ps = tilePatches(i)}
-              <span class="pic">
-                <span class="art-slot">
-                  <span class="art-fit veil" style:--w={tv.w} style:--h={tv.h} style:--s={1.6}>
-                    {#each ps as p (p.i)}
-                      <canvas
-                        class="patch"
-                        data-shape
-                        aria-hidden="true"
-                        style:left="{(p.x / tv.w) * 100}%"
-                        style:top="{(p.y / tv.h) * 100}%"
-                        style:width="{(p.w / tv.w) * 100}%"
-                        style:height="{(p.h / tv.h) * 100}%"
-                        use:appearTile={{
-                          url: p.url,
-                          edges: p.edges,
-                          before: ps.filter((o) => o.i !== p.i).map((o) => o.i),
-                          burn: tv.burn,
-                          quick: !!reveal,
-                        }}
-                      ></canvas>
-                    {/each}
-                    <canvas class="frontier" aria-hidden="true" use:frontier={{ w: tv.w, h: tv.h, burn: tv.burn, quick: !!reveal, patches: ps }}></canvas>
+            {#if (src || tv) && !gone || bare}
+              <span class="pic" class:crumbling={!!bare && !floodDone}>
+                {#if src && !gone}
+                  <!-- Named pictures switch to the original art, so a mirrored one turns round. -->
+                  <ArtImage {src} alt="Option {i + 1}" scale={1.6} unflip={mirrored(i) && !!q.options[i]} />
+                {:else if tv && !gone}
+                  {@const ps = tilePatches(i)}
+                  <span class="art-slot">
+                    <span class="art-fit veil" style:--w={tv.w} style:--h={tv.h} style:--s={1.6}>
+                      {#each ps as p (p.i)}
+                        <canvas
+                          class="patch"
+                          data-shape
+                          aria-hidden="true"
+                          style:left="{(p.x / tv.w) * 100}%"
+                          style:top="{(p.y / tv.h) * 100}%"
+                          style:width="{(p.w / tv.w) * 100}%"
+                          style:height="{(p.h / tv.h) * 100}%"
+                          use:appearTile={{
+                            url: p.url,
+                            edges: p.edges,
+                            before: ps.filter((o) => o.i !== p.i).map((o) => o.i),
+                            burn: tv.burn,
+                            quick: !!reveal,
+                          }}
+                        ></canvas>
+                      {/each}
+                      <canvas class="frontier" aria-hidden="true" use:frontier={{ w: tv.w, h: tv.h, burn: tv.burn, quick: !!reveal, patches: ps }}></canvas>
+                    </span>
                   </span>
-                </span>
+                {/if}
+                {#if bare}
+                  <span class="plain-slot"><ArtImage src={bare.url} w={bare.w} h={bare.h} alt="Option {i + 1}" scale={1.6} flood /></span>
+                {/if}
+                {#if !reveal && (blast === 'crack' || (blast === 'blown' && !floodDone))}{@render crackLines(tileCracks[i])}{/if}
               </span>
             {:else}
               <span class="loading" aria-label="Loading"></span>
@@ -734,11 +871,13 @@
         </div>
         <div class="art" bind:this={artEl} use:backdropShadow={{ fill: 'stage' }}>
           <ArcaneCircle state={reveal ? (iWon ? 'good' : 'bad') : 'idle'} />
-          <div class="frame">
+          <div class="frame" class:crumbling={!!plain && !floodDone && !reveal} class:jolt={blast === 'blown' && !reveal}>
             {#if showFull && item}
               <ArtImage src={itemImage(item.id)} alt={item.name} w={full?.w ?? hint?.w} h={full?.h ?? hint?.h} float unflip={mirrored(0)} />
             {/if}
-            {#if media?.veil && !showFull}
+            {#if plain && floodDone && !showFull}
+              <!-- Dynamite laid it bare: what was shown has gone. -->
+            {:else if media?.veil && !showFull}
               {@const v = media.veil}
               <span class="art-slot veil-slot" style:transform={veilFit} out:handoff>
               <span class="art-fit veil" style:--w={v.w} style:--h={v.h} style:--s={1.8}>
@@ -765,9 +904,13 @@
               </span>
             {:else if !showFull && media?.art && !waiting}
               <ArtImage src={media.art.url} alt="The item to identify" w={media.art.w} h={media.art.h} float />
-            {:else if !showFull}
+            {:else if !showFull && !plain}
               <span class="loading big" aria-label="Loading"></span>
             {/if}
+            {#if plain && !showFull}
+              <span class="plain-slot"><ArtImage src={plain.url} alt="The item to identify" w={plain.w} h={plain.h} float flood /></span>
+            {/if}
+            {#if !reveal && (blast === 'crack' || (blast === 'blown' && !floodDone))}{@render crackLines(cracks)}{/if}
           </div>
         </div>
       </div>
@@ -783,15 +926,20 @@
             use:backdropShadow={{ fill: 'linear' }}
             class:mine
             class:fake={fake(i)}
-            title={fake(i) ? 'Not a real item' : undefined}
-            disabled={!mine || !!reveal || chosen !== null || waiting}
+            class:blasted={blast === 'blown' && blown.has(i)}
+            title={fake(i) ? 'Not a real item' : blown.has(i) ? 'Blasted away' : undefined}
+            disabled={!mine || !!reveal || chosen !== null || waiting || blown.has(i)}
             onclick={() => answer(i)}
             onpointermove={glare}
             in:fly={{ x: 40, duration: 450, delay: 300 + i * 90 }}
           >
             <span class="sheen"></span>
             <span class="key">{(i + 1) % 10}</span>
-            <span class="text" class:veiled={waiting}>{waiting ? '\u00a0' : (label ?? optionName(i))}</span>
+            <span class="text" class:veiled={waiting}
+              >{#if blast === 'blown' && blown.has(i)}<!-- Blown off the board, and left as soot where it stood. --><span class="stack"
+                  ><span class="words">{label ?? optionName(i)}</span><span class="soot" aria-hidden="true">{label ?? optionName(i)}</span></span
+                >{:else}{waiting ? '\u00a0' : (label ?? optionName(i))}{/if}</span
+            >
             <span class="cue" aria-hidden="true"></span>
             {@render who(i)}
             {#if st === 'right'}<span class="mark" in:scale={{ duration: 300 }}>✓</span>{/if}
@@ -1166,6 +1314,182 @@
       animation-duration: 0s;
       animation-delay: 0s;
     }
+  }
+
+  /* ---- Delve: dynamite ----
+     Cracks run out from the heart of the art just before it goes off: a dark
+     seam with a hot edge, drawn from the middle out; as it goes off they
+     burst outward and fade. */
+  .cracks {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    pointer-events: none;
+    z-index: 2;
+  }
+  .cracks path {
+    fill: none;
+    vector-effect: non-scaling-stroke;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
+    animation: crack-run 0.2s cubic-bezier(0.3, 0.6, 0.4, 1) calc(var(--k, 0) * 14ms) forwards;
+  }
+  .cracks .seam {
+    stroke: rgba(8, 5, 3, 0.85);
+    stroke-width: 2.6px;
+  }
+  .cracks .hot {
+    stroke: #ffd9a0;
+    stroke-width: 0.9px;
+    filter: drop-shadow(0 0 2px rgba(255, 120, 40, 0.95));
+  }
+  .cracks .hot.fine {
+    stroke-width: 0.6px;
+    opacity: 0.75;
+    animation-delay: calc(80ms + var(--k, 0) * 10ms);
+  }
+  @keyframes crack-run {
+    to {
+      stroke-dashoffset: 0;
+    }
+  }
+  .cracks.burst {
+    animation: crack-burst 0.5s ease-out forwards;
+  }
+  @keyframes crack-burst {
+    from {
+      filter: brightness(2.5);
+    }
+    to {
+      opacity: 0;
+      scale: 1.3;
+    }
+  }
+  /* The plain art floods in (ArtImage flood) over what was shown, which
+     flares, swells and falls away under it. */
+  .plain-slot {
+    position: absolute;
+    inset: 0;
+    display: block;
+  }
+  .frame > .plain-slot {
+    z-index: 1;
+  }
+  .frame.jolt > :global(.art-slot) {
+    animation: jolt 0.6s ease-out;
+  }
+  @keyframes jolt {
+    12% {
+      filter: brightness(2.2) saturate(1.3);
+      scale: 1.04;
+    }
+  }
+  .crumbling > :global(.art-slot) {
+    animation: crumble 0.85s ease-in forwards;
+  }
+  @keyframes crumble {
+    15% {
+      filter: brightness(2.4) sepia(0.4);
+      scale: 1.04;
+    }
+    to {
+      opacity: 0;
+      filter: brightness(0.4) blur(3px);
+      scale: 1.1;
+    }
+  }
+  /* An answer blown away: its words are blown off the row, and only soot
+     is left where they stood; the row itself is scorched. */
+  .option.blasted {
+    border-color: #3a2a1f;
+    --bs-fill-a: rgba(24, 17, 12, 0.95);
+    --bs-fill-b: rgba(12, 9, 7, 0.95);
+    --bs1-color: transparent;
+    box-shadow:
+      inset 0 0 22px rgba(0, 0, 0, 0.75),
+      inset 0 0 0 1px rgba(150, 70, 30, 0.12);
+  }
+  .option.blasted .key {
+    opacity: 0.3;
+  }
+  .stack {
+    display: grid;
+  }
+  .stack > * {
+    grid-area: 1 / 1;
+  }
+  .stack .words {
+    animation: blow-off 0.6s cubic-bezier(0.2, 0.6, 0.4, 1) forwards;
+  }
+  @keyframes blow-off {
+    15% {
+      color: #fff1d8;
+      text-shadow: 0 0 12px rgba(255, 150, 60, 0.9);
+    }
+    to {
+      opacity: 0;
+      translate: 70px -16px;
+      rotate: 5deg;
+      filter: blur(3px);
+    }
+  }
+  .soot {
+    color: rgba(150, 120, 96, 0.42);
+    text-decoration: line-through;
+    text-decoration-thickness: 1px;
+    text-decoration-color: rgba(110, 80, 60, 0.6);
+    animation: soot-in 0.5s ease-out 0.35s backwards;
+  }
+  @keyframes soot-in {
+    from {
+      opacity: 0;
+    }
+  }
+  /* A picture blown away: it is thrown back, burnt black, a ghost of it left. */
+  .tile.blasted {
+    box-shadow:
+      inset 0 0 46px rgba(0, 0, 0, 0.85),
+      inset 0 0 0 1px rgba(150, 70, 30, 0.14);
+  }
+  .tile.blasted .pic {
+    animation: tile-blow 0.7s cubic-bezier(0.2, 0.6, 0.4, 1) forwards;
+  }
+  @keyframes tile-blow {
+    12% {
+      filter: brightness(2.2);
+      scale: 1.06;
+    }
+    to {
+      opacity: 0.16;
+      filter: grayscale(1) brightness(0.55);
+      scale: 0.84;
+      rotate: -4deg;
+    }
+  }
+  .tile.blasted .key {
+    opacity: 0.3;
+  }
+  .blast-line {
+    color: #eebf96;
+  }
+  /* Effects off: no cracks, and the old art just fades. */
+  :global(html[data-still]) .cracks {
+    display: none;
+  }
+  :global(html[data-still]) .crumbling > :global(.art-slot) {
+    animation: crumble-still 0.3s ease-out forwards;
+  }
+  @keyframes crumble-still {
+    to {
+      opacity: 0;
+    }
+  }
+  :global(html[data-still]) .frame.jolt > :global(.art-slot) {
+    animation: none;
   }
 
   /* Delve: the words come in once the clock runs. */
@@ -1707,6 +2031,7 @@
     height: 200px;
   }
   .pic {
+    position: relative;
     display: block;
     flex: 1;
     width: 92%;

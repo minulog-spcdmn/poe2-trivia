@@ -4,7 +4,7 @@
 // means the same thing to everyone. Only types come from game.ts, so the engine
 // can import this module without a cycle.
 
-import type { DifficultyRules, GameState, Preset, VeilSpeed } from './game.ts';
+import type { DifficultyRules, GameState, Grayscale, Preset, Question, VeilSpeed } from './game.ts';
 
 export const DELVE_LIVES = 3;
 
@@ -170,8 +170,8 @@ export function delveChangeAt(d: number): 'knobs' | 'lockout' | 'timer' | null {
  * item. An Azurite Vein yields an Azurite Ward (a ward takes a loss in place of
  * a life) to a fast answer and a shard to a slow one (two shards forge a ward);
  * a Flare Cache a flare (it burns by itself as the clock runs out, for more
- * time); a Dynamite Cache dynamite, though for now none turns up
- * (DYNAMITE_ON).
+ * time); a Dynamite Cache dynamite (it goes off by itself at half the clock,
+ * blasting the art plain and half the wrong answers away).
  */
 export type FindKind = 'azurite' | 'flare' | 'dynamite';
 
@@ -197,13 +197,10 @@ export const DELVE_MAX_DYNAMITE = 3;
 export const SHARDS_PER_WARD = 2;
 
 /**
- * Whether Dynamite Caches turn up. Off while dynamite is redesigned (it is to
- * go off by itself at half the clock, blasting the pictures plain and half
- * the wrong answers away): no cache is ever rolled. Dynamite in the state
- * and the engine's old blast action stay until that is built. Switched on,
- * the caps below make room for it, so a third of offers still hold a find.
+ * Whether Dynamite Caches turn up. Switched off, no cache is ever rolled and
+ * the other finds' caps grow to keep a third of offers holding a find.
  */
-export const DYNAMITE_ON = false;
+export const DYNAMITE_ON = true;
 
 /** The depth by which every find has reached its full chance, which it holds from there on. */
 export const FIND_RAMP_TO = 50;
@@ -220,8 +217,8 @@ export const FIND_RAMP_TO = 50;
  * The Azurite Vein comes first and stays the rarer deep down: a ward takes a
  * whole loss, the strongest thing to carry. The Flare Cache comes deepest,
  * where clocks run short and flares get burnt, and so ends up the more
- * common. Together, one offer in three from depth 50. The Dynamite Cache,
- * when on, comes in between, from depth 10.
+ * common. The Dynamite Cache comes in between, from depth 10, and stays the
+ * rarest. Together, one offer in three from depth 50.
  */
 export const FINDS: { kind: FindKind; item: ItemKind; from: number; start: number; cap: number; max: number; deeper: number; losses: number }[] = [
   { kind: 'azurite', item: 'wards', from: 5, start: 0.04, cap: DYNAMITE_ON ? 0.11 : 0.15, max: DELVE_MAX_WARDS, deeper: 15, losses: 2 },
@@ -256,8 +253,8 @@ export const findDepth = (kind: FindKind, d: number) => depthOf(d) + findFor(kin
  * Losses a wrong answer (or a time-out) to a find costs: two for an Azurite
  * Vein, whose seam caves in; one for the rest. Each is taken by a ward first
  * if the player holds one, and a player falls on their last life whatever is
- * left, so on it a cave-in costs no more than any miss. A card blasted open
- * is made safe: one loss, whatever it is.
+ * left, so on it a cave-in costs no more than any miss. Dynamite going off
+ * on it changes none of that.
  */
 export const findLosses = (kind: FindKind) => findFor(kind).losses;
 
@@ -301,28 +298,31 @@ export const FLARE_AT_MS = 1000;
 /** How much longer a burning flare keeps the clock running. */
 export const FLARE_MS = 5000;
 
-/** The depth whose rules a card blasted open with dynamite plays: the surface's. */
-const BLAST_DEPTH = 1;
-
-/** Options on a card blasted open with dynamite. */
-export const BLAST_OPTIONS = delveRules(BLAST_DEPTH).options;
-
-/** Seconds on the clock for a card blasted open: the longest there are. */
-export const BLAST_TIMER = delveTimer(BLAST_DEPTH);
+/**
+ * When a stick of dynamite goes off (ms from the clock's start, for a
+ * question that started with `secs`): once half the clock has run out,
+ * rounded up to a whole second like the Azurite Vein's fast window, which it
+ * closes, so a blast never helps mine a ward.
+ */
+export const blastAt = (secs: number) => veinWindow(secs);
 
 /**
- * The rules of a card blasted open with dynamite, at any depth: a safe turn,
- * as at the surface (four options, no look-alikes or made-up names, the art in
- * colour, unmirrored and unveiled, on the longest clock). The mix of art and
- * name questions and the lockout stay the depth's, as for a find.
+ * How many wrong answers dynamite blows away from a question of `options`:
+ * half of the wrong ones, rounded down, never leaving fewer than two options.
  */
-export function blastRules(d: number): DifficultyRules {
-  return { ...delveRules(BLAST_DEPTH), artChance: stepOf(d).artChance, lockout: delveLockout(d) };
+export const blastCount = (options: number) => Math.max(0, Math.min(Math.floor((options - 1) / 2), options - 2));
+
+/**
+ * Whether dynamite has anything to clear from a question's art: art burning
+ * in, a picture mirrored, or art without colour (`grayscale`, the rules'),
+ * so the host has plain art to send (on the host: the full question).
+ */
+export function blastClears(q: Pick<Question, 'mode' | 'veil' | 'mirrored'>, grayscale: Grayscale): boolean {
+  return !!q.veil || !!q.mirrored?.some(Boolean) || grayscale === 'all' || (grayscale === 'art' && q.mode === 'art');
 }
 
-/** Seconds a Delve question at depth `d` starts with: a blasted card's, a find's, or the depth's. */
-export const delveQuestionTimer = (d: number, q: { find?: FindKind; blasted?: boolean }) =>
-  q.blasted ? BLAST_TIMER : q.find ? findTimer(q.find, d) : delveTimer(d);
+/** Seconds a Delve question at depth `d` starts with: a find's, or the depth's. */
+export const delveQuestionTimer = (d: number, q: { find?: FindKind }) => (q.find ? findTimer(q.find, d) : delveTimer(d));
 
 const CAPS: Inventory = { wards: DELVE_MAX_WARDS, flares: DELVE_MAX_FLARES, dynamite: DELVE_MAX_DYNAMITE, shards: SHARDS_PER_WARD - 1 };
 
@@ -391,18 +391,17 @@ export function findOffer(s: GameState): { category: string; kind: FindKind } | 
   return s.phase === 'choosing' && f && s.offered.includes(f.category) ? f : null;
 }
 
-/** The card the player on turn blasted open with dynamite, or null. */
-export const blastedOffer = (s: GameState): string | null =>
-  s.phase === 'choosing' && s.delve?.blasted && s.offered.includes(s.delve.blasted) ? s.delve.blasted : null;
-
 /**
- * Seconds the question in play started with: a blasted card's, a find's or the
- * depth's (a flare's extra time not counted).
+ * Seconds the question in play started with: a find's or the depth's (a
+ * flare's extra time not counted).
  */
 export const questionTimer = (s: GameState) => (s.delve && s.question ? delveQuestionTimer(s.round, s.question) : delveTimer(s.round));
 
 /** An Azurite Vein's fast window for the question in play, in ms from its clock's start (0 for any other question). */
 export const veinWindowMs = (s: GameState) => (s.delve && s.question?.find === 'azurite' ? veinWindow(questionTimer(s)) : 0);
+
+/** When dynamite goes off on the question in play, in ms from its clock's start (blastAt). */
+export const blastAtMs = (s: GameState) => blastAt(questionTimer(s));
 
 /**
  * The depth where a player lost their last life, or null while they still

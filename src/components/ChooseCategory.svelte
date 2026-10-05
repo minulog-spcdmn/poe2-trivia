@@ -4,8 +4,9 @@
   import { categoryIcon, categoryIconTweak, categoryIcons } from '../lib/ui';
   import { fits, fitStyle, maskOf, measure } from '../lib/iconFit.svelte';
   import { activeRules, difficultyOf } from '../lib/game';
-  import { FIND_TEXT, deathmatchText, findNote, lockoutText } from '../lib/difficultyText';
-  import { findOffer, inventoryOf, type FindKind } from '../lib/delve';
+  import { FIND_TEXT, caveInLabel, deathmatchText, findNote, lockoutText } from '../lib/difficultyText';
+  import { cavesIn, findDepth, findOffer, inventoryOf, type FindKind } from '../lib/delve';
+  import { CAVE_IN_MARK } from '../lib/findEngraving';
   import { sfx } from '../lib/sound';
   import { backdropShadow } from '../lib/backdropShadow';
   import { cardHover, cardPicked, cardRevealed } from '../lib/fx/moments';
@@ -43,7 +44,7 @@
   // Their effects: azurite rings like crystal, a flare and dynamite throw sparks.
   const FX: Record<FindKind, { main: Vec3; pale: Vec3 }> = {
     azurite: { main: C.portal, pale: C.portalPale },
-    flare: { main: [3.0, 0.62, 0.32], pale: [3.0, 1.9, 1.3] },
+    flare: { main: [3.1, 0.38, 0.62], pale: [3.1, 1.55, 1.75] },
     dynamite: { main: C.ember, pale: C.whiteHot },
   };
   const dim = (c: Vec3, k: number): Vec3 => [c[0] * k, c[1] * k, c[2] * k];
@@ -53,7 +54,7 @@
     outline(frame, { color: dim(main, 0.8), width: 10, intensity: 0.9, life: 1, fadeIn: 0.06 });
     glints(frame, { count: 5, area: 'edge', color: pale, size: [4, 8], delay: [0, 0.4] });
     if (kind === 'dynamite') sparks(frame, { count: 40, area: 'fill', speed: [120, 520], life: [0.3, 0.9] });
-    light(frame, { color: kind === 'azurite' ? [0.3, 0.6, 1] : [1, 0.5, 0.25], radius: 260, intensity: 0.3, decay: 0.9 });
+    light(frame, { color: kind === 'azurite' ? [0.3, 0.6, 1] : kind === 'flare' ? [1, 0.25, 0.4] : [1, 0.5, 0.25], radius: 260, intensity: 0.3, decay: 0.9 });
   }
   function findHover(frame: Element, card: Element, kind: FindKind): Handle {
     if (!fxActive()) return { stop() {} };
@@ -80,7 +81,7 @@
     sparks(card, { count: 40, area: 'edge', speed: [120, 560], life: [0.3, 0.9], colors: [pale, main] });
     ring(card, { radius: 260, thickness: 10, life: 0.8, color: main, breakup: 0.3 });
     flare(card, { size: 36, streak: 340, life: 0.7, color: pale });
-    light(card, { color: kind === 'azurite' ? [0.3, 0.6, 1] : [1, 0.45, 0.3], radius: 360, intensity: 0.7, decay: 1.2 });
+    light(card, { color: kind === 'azurite' ? [0.3, 0.6, 1] : kind === 'flare' ? [1, 0.25, 0.4] : [1, 0.45, 0.3], radius: 360, intensity: 0.7, decay: 1.2 });
   }
 
   let picked = $state<string | null>(null);
@@ -215,6 +216,23 @@
   }
 </script>
 
+<!-- A find's depth on a small engraved plate, hung under its name (a row: beside it), and the vein's cave-in mark. -->
+{#snippet depthPlate(kind: FindKind, where: 'tall' | 'row')}
+  <span class="depth-plate {where}">
+    <span class="dp-word">Depth</span>
+    <b class="dp-n">{findDepth(kind, s.round)}</b>
+    {#if cavesIn(kind)}
+      <svg class="cave-in" viewBox={CAVE_IN_MARK.box} role="img" aria-label={caveInLabel(kind)}>
+        <title>{caveInLabel(kind)}</title>
+        <g class="glow" aria-hidden="true"><path d={CAVE_IN_MARK.main} /></g>
+        <path class="main" d={CAVE_IN_MARK.main} />
+        <path class="shade" d={CAVE_IN_MARK.shade} />
+        <path class="shade" d={CAVE_IN_MARK.hatch} />
+      </svg>
+    {/if}
+  </span>
+{/snippet}
+
 <div class="choose">
   <p class="prompt">
     {#if s.deathmatch}
@@ -262,11 +280,17 @@
             {#if kindOf(cat)}
               {@const kind = kindOf(cat)!}
               <span class="find-tag">{FIND_TEXT[kind].name}</span>
+              {@render depthPlate(kind, 'tall')}
             {/if}
             <span class="icon">
               <span class="lit"><span class="glyph" class:fit={!!fits[categoryIcon(cat)]} style={fitStyle(categoryIcon(cat), categoryIconTweak(cat))} style:--src="url('{maskOf(categoryIcon(cat))}')"></span></span>
             </span>
-            <span class="title">{#if kindOf(cat)}{@const kind = kindOf(cat)!}<span class="find-tag-row">{FIND_TEXT[kind].name}</span>{/if}{cat}</span>
+            <span class="title"
+              >{#if kindOf(cat)}{@const kind = kindOf(cat)!}<span class="find-tag-row">{FIND_TEXT[kind].name}</span>{/if}{cat}{#if kindOf(cat)}{@render depthPlate(
+                    kindOf(cat)!,
+                    'row',
+                  )}{/if}</span
+            >
           </span>
         </span>
       </button>
@@ -701,15 +725,26 @@
     --f-glow: rgba(70, 140, 255, 0.22);
     --f-glyph: linear-gradient(180deg, #eef6ff 0%, #9cc0ea 45%, #2a4a7a 100%);
   }
+  /* A signal flare's crimson: rose lines, a red frame and a strong red halo,
+     well apart from the gold of a plain card and the ember of dynamite. */
   .card[data-find='flare'] {
-    --ink: #e59a72;
-    --warm: #d8432a;
-    --f: #f4a080;
-    --f-hi: #ffe4d6;
-    --f-border: #9a4a3a;
-    --f-pulse: rgba(255, 110, 60, 0.34);
-    --f-glow: rgba(255, 110, 60, 0.22);
-    --f-glyph: linear-gradient(180deg, #fff0dc 0%, #eea070 45%, #7a2a12 100%);
+    --ink: #ec7088;
+    --warm: #d4163c;
+    --f: #ff7d96;
+    --f-hi: #ffe1e8;
+    --f-border: #b0324c;
+    --f-pulse: rgba(255, 40, 85, 0.5);
+    --f-glow: rgba(255, 40, 85, 0.32);
+    --f-glyph: linear-gradient(180deg, #ffeae6 0%, #ee5a6e 45%, #680718 100%);
+  }
+  .card[data-find='flare'] .frame {
+    background:
+      var(--grain),
+      radial-gradient(ellipse 120% 90% at 50% 45%, transparent 50%, rgba(0, 0, 0, 0.5)),
+      linear-gradient(170deg, #26110f, #0e0607 70%);
+  }
+  .card.special[data-find='flare']:not(:global(.down)) .frame {
+    --bs1: 0px 44px;
   }
   /* Black powder: the ink an ash grey, the window lit by its ember. */
   .card[data-find='dynamite'] {
@@ -803,6 +838,97 @@
     right: -4px;
   }
 
+  /* The depth a find asks, on a small plate hung from the plaque over the
+     keystone by two fine chains, lozenges at its ends like the plaque's. The
+     number in Cinzel; for the vein, its cave-in engraved after it. */
+  .depth-plate {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.32em;
+    font-family: var(--font-display);
+    font-size: 0.56rem;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    line-height: 1;
+    color: var(--f-hi);
+  }
+  .depth-plate.tall {
+    position: absolute;
+    top: 31px;
+    left: 50%;
+    translate: -50% 0;
+    padding: 3px 9px 3px 10px;
+    background: linear-gradient(#17110c, #090705);
+    border: 1px solid color-mix(in srgb, var(--gold) 55%, transparent);
+    box-shadow:
+      inset 0 0 0 1.5px #090705,
+      inset 0 0 0 2px color-mix(in srgb, var(--f) 40%, transparent),
+      0 0 10px color-mix(in srgb, var(--f-pulse) 70%, transparent);
+  }
+  /* The chains it hangs by, from the plaque above. */
+  .depth-plate.tall::before {
+    content: '';
+    position: absolute;
+    left: 22%;
+    right: 22%;
+    bottom: 100%;
+    height: 6px;
+    border-left: 1px solid color-mix(in srgb, var(--gold) 55%, transparent);
+    border-right: 1px solid color-mix(in srgb, var(--gold) 55%, transparent);
+  }
+  .depth-plate.tall::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: -3px;
+    right: -3px;
+    height: 4px;
+    translate: 0 -50%;
+    background:
+      linear-gradient(45deg, transparent 35%, color-mix(in srgb, var(--gold) 55%, transparent) 35% 65%, transparent 65%) 0 0 / 4px 4px no-repeat,
+      linear-gradient(45deg, transparent 35%, color-mix(in srgb, var(--gold) 55%, transparent) 35% 65%, transparent 65%) 100% 0 / 4px 4px no-repeat;
+    pointer-events: none;
+  }
+  .dp-n {
+    font-family: var(--font-cinzel);
+    font-weight: 700;
+    font-size: 1.12em;
+    letter-spacing: 0.04em;
+    color: #fff4e2;
+  }
+  .cave-in {
+    height: 1.25em;
+    width: calc(1.25em * 20 / 12);
+    margin-left: 0.2em;
+    overflow: visible;
+    color: var(--f);
+  }
+  .cave-in path {
+    fill: none;
+    stroke: currentColor;
+    vector-effect: non-scaling-stroke;
+    stroke-linecap: round;
+    stroke-linejoin: miter;
+    stroke-miterlimit: 12;
+  }
+  .cave-in .main {
+    stroke-width: 0.85px;
+  }
+  .cave-in .shade {
+    stroke-width: 0.4px;
+    opacity: 0.8;
+  }
+  .cave-in .glow path {
+    stroke-width: 2px;
+    opacity: 0.22;
+    filter: blur(0.6px);
+  }
+  .depth-plate.row {
+    display: none;
+  }
+
   /* A find's plate moves (see CardEngraving): face down, and while another card is chosen, it holds still. */
   .card:global(.down) :global(.engraving *),
   .card.faded :global(.engraving *) {
@@ -819,7 +945,7 @@
     color: #a9cdf5;
   }
   .find-note[data-find='flare'] {
-    color: #f4b496;
+    color: #f7a3b3;
   }
   .find-note[data-find='dynamite'] {
     color: #eebf96;
@@ -847,6 +973,13 @@
         radial-gradient(circle at 62px 50%, color-mix(in srgb, var(--warm) 28%, transparent), transparent 74px),
         radial-gradient(ellipse 120% 90% at 50% 45%, transparent 50%, rgba(0, 0, 0, 0.5)),
         linear-gradient(170deg, #211912, #0d0a07 70%);
+    }
+    .card[data-find='flare'] .frame {
+      background:
+        var(--grain),
+        radial-gradient(circle at 62px 50%, color-mix(in srgb, var(--warm) 32%, transparent), transparent 74px),
+        radial-gradient(ellipse 120% 90% at 50% 45%, transparent 50%, rgba(0, 0, 0, 0.5)),
+        linear-gradient(170deg, #26110f, #0e0607 70%);
     }
     .card.dm .frame {
       background:
@@ -919,6 +1052,22 @@
     }
     .find-tag {
       display: none;
+    }
+    .depth-plate.tall {
+      display: none;
+    }
+    /* In a row, the plate sits under the name. */
+    .depth-plate.row {
+      display: flex;
+      width: fit-content;
+      margin-top: 5px;
+      padding: 3px 8px 3px 9px;
+      font-size: 0.56rem;
+      background: linear-gradient(#17110c, #090705);
+      border: 1px solid color-mix(in srgb, var(--gold) 55%, transparent);
+      box-shadow:
+        inset 0 0 0 1.5px #090705,
+        inset 0 0 0 2px color-mix(in srgb, var(--f) 40%, transparent);
     }
     .find-tag-row {
       display: block;

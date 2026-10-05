@@ -1,6 +1,6 @@
 // The session's Delve decisions, apart from PeerJS and Svelte so tests can reach them.
 
-import { DELVE_LIVES, FLARE_AT_MS, ITEM_KINDS, flaresOf, inventoryOf, livesOf, wardsOf, type ItemKind } from './delve.ts';
+import { DELVE_LIVES, FLARE_AT_MS, ITEM_KINDS, blastAtMs, dynamiteOf, flaresOf, inventoryOf, livesOf, wardsOf, type ItemKind } from './delve.ts';
 import type { GameState } from './game.ts';
 
 /** The longest the host waits for the art to reach the player answering before their clock starts anyway. */
@@ -84,7 +84,7 @@ export function livesLost(prev: GameState | null, next: GameState): { playerId: 
  * Items gained or used up by this change, per player and item, for the phial,
  * sounds and effects: a find answered right (two shards forging a ward show
  * as a shard used and a ward gained), a ward breaking (a reveal, or a turn
- * missed while away), a flare burning, dynamite blasting a card open.
+ * missed while away), a flare burning, a stick of dynamite going off.
  * `left`: how many they hold now.
  */
 export function inventoryChanges(prev: GameState | null, next: GameState): { playerId: string; item: ItemKind; change: 'gained' | 'used'; left: number }[] {
@@ -108,4 +108,17 @@ export function flareIn(s: GameState, now: number): number | null {
   const p = s.players[s.turn];
   if (!s.delve || s.phase !== 'question' || !q || q.deadline === null || q.flared || !p?.connected || flaresOf(s, p.id) <= 0) return null;
   return Math.max(0, q.deadline - FLARE_AT_MS - now);
+}
+
+/**
+ * Milliseconds until a stick of the answering player's dynamite goes off (at
+ * half their clock, delve.ts blastAt), or null when none will: the clock
+ * isn't running, dynamite already went off on this question, or the player
+ * holds none or is away. Read on every screen too, for the fuse before it.
+ */
+export function dynamiteIn(s: GameState, now: number): number | null {
+  const q = s.question;
+  const p = s.players[s.turn];
+  if (!s.delve || s.phase !== 'question' || !q || q.deadline === null || q.clockAt === undefined || q.blasted || !p?.connected || dynamiteOf(s, p.id) <= 0) return null;
+  return Math.max(0, q.clockAt + blastAtMs(s) - now);
 }

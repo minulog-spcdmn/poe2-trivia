@@ -31,7 +31,11 @@ export type Sfx =
   /** Delve: a life's ember bursts out of the phial. */
   | 'lifeLost'
   /** Delve: the run is over; no victory, just the last ember going out. */
-  | 'fallen';
+  | 'fallen'
+  /** Delve: a stick of dynamite's fuse hisses. */
+  | 'fuse'
+  /** Delve: the dynamite goes off. */
+  | 'blast';
 
 let muted = (() => {
   try {

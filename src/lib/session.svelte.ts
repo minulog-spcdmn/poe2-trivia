@@ -31,16 +31,16 @@ import { Beacon, type RoomInfo } from './rooms';
 import { parseClientMsg, parseHostMsg, PROTOCOL_VERSION, RateLimit, versionProblem, versionRefusal, type HostMsg, type MediaMsg } from './protocol';
 import { capped, FrameGuard, hookFrames, JoinGate, roomSecret } from './guard';
 import { cleanName, nameSkeleton } from './names';
-import { prepareMedia, shown, patchDelays, type PreparedMedia } from './media.svelte';
+import { prepareClean, prepareMedia, shown, patchDelays, type CleanMedia, type PreparedMedia } from './media.svelte';
 import { sfx } from './sound';
 import { prefsFrom, roomPrefs, roomSettings, savePrefs } from './prefs';
 import { toasts, type ToastKind, type ToastOptions } from './toasts.svelte';
 import { creatorArrival } from './herald';
 import { RUBY } from './palette';
 import { CREATOR_TITLE } from './site';
-import { DELVE_RULESET, livesOf } from './delve';
-import { bestOf, loadRecords, recordRun, runEvent } from './delveRecord';
-import { DELVE_CLOCK_CAP_MS, DRAIN_POLL_MS, clockStart, delveNotices, drained, expireIn, flareIn, mayAutoReask, reaskDelay } from './delveSession';
+import { DELVE_RULESET, blastClears, dynamiteOf, livesOf } from './delve';
+import { bestOf, loadRecords, recordLeft, recordRun, runEvent } from './delveRecord';
+import { DELVE_CLOCK_CAP_MS, DRAIN_POLL_MS, clockStart, delveNotices, drained, dynamiteIn, expireIn, flareIn, mayAutoReask, reaskDelay } from './delveSession';
 
 export const engine = new Engine(itemData as Item[], { fakes: fakeNames });
 
@@ -254,6 +254,10 @@ class Session {
   private expireKey = '';
   private flareTimer: ReturnType<typeof setTimeout> | null = null;
   private flareKey = '';
+  private dynamiteTimer: ReturnType<typeof setTimeout> | null = null;
+  private dynamiteKey = '';
+  /** Delve: the plain art for when the answering player's dynamite goes off, made ahead, never sent before it does. */
+  private clean: { qid: number; art: Promise<CleanMedia> } | null = null;
 
   get isHost() {
     return this.mode === 'local' || this.mode === 'host';
@@ -743,7 +747,9 @@ class Session {
       const timeout = new Promise<never>((_, reject) => {
         timer = setTimeout(() => reject(new Error('Preparing the art timed out')), MEDIA_TIMEOUT_MS);
       });
-      media = await Promise.race([prepareMedia(q, activeRules(s).grayscale), timeout]).finally(() => clearTimeout(timer));
+      // Dynamite already went off (a host back from a reload): the art as it left it.
+      const plain = q.blasted ? { ...q, veil: null, mirrored: q.mirrored?.map(() => false) } : q;
+      media = await Promise.race([prepareMedia(plain, q.blasted ? 'off' : activeRules(s).grayscale), timeout]).finally(() => clearTimeout(timer));
     } catch (err) {
       console.warn('media', err);
       if (this.state?.question?.askedAt === q.askedAt && this.state.phase === 'question') {
@@ -762,6 +768,13 @@ class Session {
     const guestTurn =
       timing && this.mode === 'host' && !!active && active.id !== this.priv.myPlayerId && [...this.guests.values()].some((g) => g.playerId === active.id);
     this.held = guestTurn ? { qid, activeId: active.id } : null;
+    // Dynamite will go off on this question if the player holds some: its
+    // plain art is made in a moment, once this art is on its way.
+    if (s.delve && active && !q.blasted && dynamiteOf(s, active.id) > 0 && blastClears(q, activeRules(s).grayscale)) {
+      const art = new Promise((r) => setTimeout(r, 500)).then(() => prepareClean(q));
+      art.catch(() => {});
+      this.clean = { qid, art };
+    }
     if (media.art) this.release({ t: 'art', qid, ...media.art });
     media.options.forEach((data, index) => this.release({ t: 'option', qid, index, data }));
     // Delve: veiled "find the art" pictures; their patches burn in once the clock starts.
@@ -825,6 +838,31 @@ class Session {
     this.releaseHeld();
     const clockAt = this.state?.question?.clockAt;
     if (clockAt !== undefined) this.burnVeil(qid, clockAt);
+  }
+
+  /**
+   * Delve: a stick of dynamite went off. What was burning in stops, and
+   * everyone gets the art plain (in colour, unmirrored, whole), only now.
+   */
+  private async blastMedia(s: GameState) {
+    const q = s.question!;
+    const qid = q.askedAt;
+    if (this.media?.qid !== qid) return;
+    for (const t of this.mediaTimers) clearTimeout(t);
+    this.mediaTimers = [];
+    if (!blastClears(q, activeRules(s).grayscale)) return;
+    let clean: CleanMedia;
+    try {
+      clean = await (this.clean?.qid === qid ? this.clean.art : prepareClean(q));
+    } catch (err) {
+      console.warn('clean art', err);
+      return;
+    }
+    // Still this question (a reveal that came first still shows the decoys plain).
+    const now = this.state;
+    if (now?.question?.askedAt !== qid || (now.phase !== 'question' && now.phase !== 'reveal')) return;
+    if (clean.art) this.release({ t: 'clean', qid, ...clean.art });
+    clean.tiles.forEach((t, tile) => this.release({ t: 'clean', qid, tile, ...t }));
   }
 
   /** Delve: the art held back from everyone but the player answering goes out to them now. */
@@ -902,6 +940,7 @@ class Session {
     this.mediaTimers = [];
     this.media = null;
     this.held = null;
+    this.clean = null;
     if (!keepReleased) this.released = [];
   }
 
@@ -1154,11 +1193,15 @@ class Session {
     this.state = next;
     if (next.phase === 'question' && next.question && next.question.askedAt !== prev?.question?.askedAt) {
       void this.startMedia(next);
+    } else if (next.phase === 'question' && next.question?.blasted && prev?.question?.askedAt === next.question.askedAt && !prev.question.blasted) {
+      // Sent after the state below, so the plain art never arrives before the blast does.
+      void this.blastMedia(next);
     } else if (next.phase === 'reveal') {
       // Only as the reveal begins: a later change during it (someone joining,
       // the room going public) would cancel the patches still on their way.
       if (prev?.phase !== 'reveal' || prev.question?.askedAt !== next.question?.askedAt) {
-        const rest = this.unreleasedPatches();
+        // Art dynamite laid bare has nothing left to burn in.
+        const rest = next.question?.blasted ? [] : this.unreleasedPatches();
         // Delve: a question that ended before its clock started still shows everyone its art.
         this.releaseHeld();
         // Keep what was sent, so someone arriving during the reveal still gets the pictures.
@@ -1236,8 +1279,7 @@ class Session {
       this.delveResult = null;
       this.bestAtStart = bestOf(loadRecords(), d.entrants.length < 2, d.ruleset)?.depth ?? null;
     }
-    const me = this.mode === 'local' ? (d.entrants.length === 1 ? (next.players[0]?.id ?? null) : null) : this.myPlayerId;
-    const run = runEvent(prev, next, me);
+    const run = runEvent(prev, next, this.myPlayerId, this.mode === 'local');
     if (!run) return;
     const r = recordRun(run);
     if (!r) return;
@@ -1342,6 +1384,28 @@ class Session {
     this.scheduleAutoNext(s);
     this.scheduleExpire(s);
     this.scheduleFlare(s);
+    this.scheduleDynamite(s);
+  }
+
+  /** Delve: once half the answering player's clock has run out, a stick of their dynamite goes off (host or this device only). */
+  private scheduleDynamite(s: GameState) {
+    const left = this.mode !== 'client' ? dynamiteIn(s, Date.now()) : null;
+    const key = left === null ? '' : `${s.question?.askedAt}:${s.question?.clockAt}`;
+    if (key === this.dynamiteKey) return;
+    if (this.dynamiteTimer) clearTimeout(this.dynamiteTimer);
+    this.dynamiteTimer = null;
+    this.dynamiteKey = key;
+    if (left === null) return;
+    const askedAt = s.question!.askedAt;
+    this.dynamiteTimer = setTimeout(() => {
+      const cur = this.state;
+      if (!cur || this.dynamiteKey !== key) return;
+      try {
+        this.setState(engine.apply(cur, { type: 'dynamite', askedAt }, null));
+      } catch {
+        /* the question closed anyway */
+      }
+    }, left);
   }
 
   /** Delve: as the answering player's clock nears its end, one of their flares burns (host or this device only). */
@@ -1476,6 +1540,7 @@ class Session {
   }
 
   private reset() {
+    if (this.state) recordLeft(this.state, this.myPlayerId, this.mode === 'local');
     // A new attempt (or leaving) makes the last one's errors moot.
     toasts.clearErrors();
     this.beacon?.stop();
@@ -1502,6 +1567,9 @@ class Session {
     if (this.flareTimer) clearTimeout(this.flareTimer);
     this.flareTimer = null;
     this.flareKey = '';
+    if (this.dynamiteTimer) clearTimeout(this.dynamiteTimer);
+    this.dynamiteTimer = null;
+    this.dynamiteKey = '';
     this.reaskFails = { turn: '', n: 0 };
     this.artFailedFor = 0;
     for (const c of this.guests.keys()) c.close();

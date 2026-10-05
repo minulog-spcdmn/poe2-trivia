@@ -668,3 +668,56 @@ export function findVariant(kind: FindKind): Variant {
   };
   return v;
 }
+
+// ---- the cave-in mark -----------------------------------------------------------
+
+/**
+ * The Azurite Vein's cave-in, as a small mark beside the depth its card asks
+ * (ChooseCategory): a mine's arch with its keystone gone, the break jagged
+ * either side, and two stones falling into the dark mouth (the two lives a
+ * miss costs), each hatched down the side turned from the light, the mouth
+ * shaded by level lines that stop short of them. In a box 20 × 16 round the
+ * foot of the arch's middle.
+ */
+export const CAVE_IN_MARK = (() => {
+  const c: Pt = [0, 6];
+  const [ri, ro] = [6.4, 8.6];
+  const gap = 15;
+  // A wedge of the arch between `a0` and `a1`, moved by `d` and turned `turn` degrees about its middle.
+  const wedge = (a0: number, a1: number, d: Pt, turn: number): Pt[] => {
+    const ps = [at(c, a0, ro), at(c, a1, ro), at(c, a1, ri), at(c, a0, ri)];
+    const m = centroid(ps);
+    const [s, co] = [Math.sin(rad(turn)), Math.cos(rad(turn))];
+    return ps.map(([x, y]) => [m[0] + (x - m[0]) * co - (y - m[1]) * s + d[0], m[1] + (x - m[0]) * s + (y - m[1]) * co + d[1]] as Pt);
+  };
+  const key = wedge(-gap + 2, gap - 2, [0.4, 5.4], 16);
+  const chip = wedge(-gap - 2, -gap + 7, [-0.6, 7.6], -28).map((q) => lerp(centroid(wedge(-gap - 2, -gap + 7, [-0.6, 7.6], -28)), q, 0.62));
+  const stones = [key, chip];
+  const shields: Shields = { polys: stones.map((ps) => grow(ps, 0.7)), holes: [] };
+  let main = '';
+  // The arch, broken at the top where its keystone fell.
+  for (const r of [ri, ro]) main += arc(c, r, -90, -gap) + arc(c, r, gap, 90);
+  // Its stones' joints, and the jagged break either side of the gap.
+  for (const a of [-62, -36, 36, 62]) main += line(at(c, a, ri), at(c, a, ro));
+  for (const side of [-1, 1]) {
+    const jag = [at(c, side * gap, ri), at(c, side * (gap + 3), ri + 0.8), at(c, side * (gap - 1.5), ri + 1.4), at(c, side * (gap + 2.5), ro - 0.5), at(c, side * gap, ro)];
+    main += `M${jag.map(pt).join('L')}`;
+  }
+  // The ground either side of the mouth.
+  main += line([-9.8, 6], [-ro - 0.4, 6]) + line([ro + 0.4, 6], [9.8, 6]);
+  // The falling stones.
+  for (const ps of stones) main += poly(ps);
+  // Shading: the dark of the mouth in level lines, stopping short of the stones.
+  let shade = '';
+  for (let y = -1.4; y < 5.6; y += 1.1) {
+    const half = Math.sqrt(Math.max(0, ri * ri - (c[1] - y) ** 2)) - 0.7;
+    if (half > 1) shade += seg([-half, y], [half, y], shields);
+  }
+  // Each stone hatched down the side turned from the light (the lower right).
+  let hatching = '';
+  for (const ps of stones) {
+    const [a, b, cc, d] = ps;
+    hatching += hatchQuad(lerp(a, b, 0.5), b, cc, lerp(d, cc, 0.5), 0.55);
+  }
+  return { box: '-10 -4.5 20 12', main, shade, hatch: hatching };
+})();

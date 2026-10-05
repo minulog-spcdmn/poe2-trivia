@@ -164,6 +164,31 @@ export async function prepareMedia(q: Question, grayscale: Grayscale): Promise<P
   return out;
 }
 
+/** Delve: the plain art dynamite lays bare, prepared by the host and only sent once it has gone off. */
+export interface CleanMedia {
+  qid: number;
+  /** A name question's art. */
+  art: { w: number; h: number; data: ArrayBuffer } | null;
+  /** A "find the art" question's pictures, by option. */
+  tiles: { w: number; h: number; data: ArrayBuffer }[];
+}
+
+/**
+ * Host side: the art of a question as dynamite leaves it: every picture in
+ * colour, the right way round and whole, each a fresh altered copy (it
+ * matches neither the original file nor what was shown before).
+ */
+export async function prepareClean(q: Question): Promise<CleanMedia> {
+  const ids = q.mode === 'art' ? q.options : [q.itemId];
+  const pictures = await Promise.all(
+    ids.map(async (id) => {
+      const canvas = await alteredCanvas(id, false);
+      return { w: canvas.width, h: canvas.height, data: await encode(canvas) };
+    }),
+  );
+  return q.mode === 'art' ? { qid: q.askedAt, art: null, tiles: pictures } : { qid: q.askedAt, art: pictures[0], tiles: [] };
+}
+
 /** A picture cut into `size` × `size`-ish patches, in the order they uncover, burning in over `seconds`. */
 async function cutVeil(canvas: HTMLCanvasElement, size: number, seconds: number, seed: number): Promise<{ veil: VeilArt; patches: Patch[] }> {
   const { width: W, height: H } = canvas;
@@ -229,6 +254,9 @@ class Shown {
   /** Veiled "find the art" pictures (Delve), by option: their size and burn, and the patches in so far. */
   tileVeils = $state<Record<number, VeilArt>>({});
   tilePatches = $state<Record<number, Record<number, ShownPatch>>>({});
+  /** Delve: the plain art dynamite laid bare (a name question's, or the pictures by option). */
+  clean = $state<{ url: string; w: number; h: number } | null>(null);
+  cleanTiles = $state<Record<number, { url: string; w: number; h: number }>>({});
   /** When this question's first picture arrived (page clock), for the codex's answer times. */
   since = 0;
   private urls: string[] = [];
@@ -253,6 +281,8 @@ class Shown {
     this.options = {};
     this.tileVeils = {};
     this.tilePatches = {};
+    this.clean = null;
+    this.cleanTiles = {};
   }
 
   receive(m: MediaMsg) {
@@ -277,6 +307,12 @@ class Shown {
       case 'option':
         this.options = { ...this.options, [m.index]: this.url(m.data) };
         break;
+      case 'clean': {
+        const c = { url: this.url(m.data), w: m.w, h: m.h };
+        if (m.tile === undefined) this.clean = c;
+        else this.cleanTiles = { ...this.cleanTiles, [m.tile]: c };
+        break;
+      }
     }
   }
 

@@ -6,7 +6,7 @@
   // Upright (phones), they grow from the tip as a small cluster. Flares and
   // dynamite are small engravings with their count. A `moment` plays on them:
   // a crystal forming (mined or forged), shattering into two pieces, a find
-  // landing, a flare burning.
+  // landing, a flare burning, a stick of dynamite going off.
   import type { Inventory } from '../lib/delve';
   import type { InventoryMoment } from '../lib/inventoryArt';
   import ItemGlyph from './ItemGlyph.svelte';
@@ -37,7 +37,7 @@
   /** Upright, the cluster's crystals lean out from the middle: the first stands straight, then left, then right. */
   const LEAN = [0, -30, 30];
   const crystals = $derived(part !== 'counts' && pips.length > 0);
-  const counts = $derived(part !== 'crystals' && (inv.flares > 0 || inv.dynamite > 0 || moment?.kind === 'burn'));
+  const counts = $derived(part !== 'crystals' && (inv.flares > 0 || inv.dynamite > 0 || moment?.kind === 'burn' || moment?.kind === 'blast'));
 </script>
 
 {#if crystals || counts}
@@ -74,9 +74,10 @@
             <b>{inv.flares}</b>
           </span>
         {/if}
-        {#if inv.dynamite > 0}
-          <span class="count dynamite" class:fresh={moment?.kind === 'dynamite'} data-pip="dynamite">
-            {#key moment?.kind === 'dynamite' ? moment.key : 0}
+        {#if inv.dynamite > 0 || moment?.kind === 'blast'}
+          <!-- A stick going off: it shudders, flares and is gone, the count already one down. -->
+          <span class="count dynamite" class:fresh={moment?.kind === 'dynamite'} class:lit={moment?.kind === 'blast'} data-pip="dynamite">
+            {#key moment?.kind === 'dynamite' || moment?.kind === 'blast' ? moment.key : 0}
               <span class="grow"><ItemGlyph kind="dynamite" /></span>
             {/key}
             <b>{inv.dynamite}</b>
@@ -213,6 +214,21 @@
   .count.burning .grow {
     animation: burn 1s ease-out both;
   }
+  /* A stick of dynamite goes off: it shudders as the fuse burns down, swells
+     in a white-hot flash and is gone; the flash lingers as a red glow. */
+  .count.lit::after {
+    width: 30px;
+    height: 30px;
+    margin: -15px 0 0 -15px;
+    background: radial-gradient(closest-side, rgba(255, 246, 228, 1), rgba(255, 120, 50, 0.6) 40%, rgba(200, 40, 20, 0) 100%);
+    animation: glow 1s ease-out 0.45s both;
+  }
+  .count.lit .grow {
+    animation: lit 1.1s ease-in both;
+  }
+  .count.lit b {
+    animation: count-in 0.4s ease-out 0.7s both;
+  }
   @keyframes form {
     from {
       opacity: 0;
@@ -238,6 +254,36 @@
   @keyframes burn {
     15% {
       transform: scale(1.35);
+    }
+  }
+  @keyframes lit {
+    0%,
+    36% {
+      transform: none;
+    }
+    6%,
+    18%,
+    30% {
+      transform: translateX(-0.6px) rotate(-6deg);
+    }
+    12%,
+    24% {
+      transform: translateX(0.6px) rotate(6deg);
+    }
+    48% {
+      opacity: 1;
+      transform: scale(1.45);
+      filter: brightness(2.2);
+    }
+    to {
+      opacity: 0.2;
+      transform: scale(0.6);
+      filter: brightness(0.6);
+    }
+  }
+  @keyframes count-in {
+    from {
+      opacity: 0;
     }
   }
 
@@ -292,6 +338,10 @@
     .count::after,
     .pip.ghost {
       display: none;
+    }
+    .count.lit .grow,
+    .count.lit b {
+      animation: none !important;
     }
   }
 </style>

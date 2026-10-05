@@ -212,6 +212,9 @@ const deeperText = (kind: FindKind) => `${words(findFor(kind).deeper)} depths de
 /** What a wrong answer to a find that caves in costs, in words ("two lives"). */
 const caveInText = (kind: FindKind) => `${words(findLosses(kind))} lives`;
 
+/** A find's cave-in mark, in words for those who can't see it: "A miss caves in for two lives". */
+export const caveInLabel = (kind: FindKind) => `A miss caves in for ${caveInText(kind)}`;
+
 /**
  * The finds: the card's name, the tagline on its card, and what it is in a
  * line for those watching.
