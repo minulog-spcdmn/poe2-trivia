@@ -99,25 +99,48 @@ test('every depth that gets harder in Delve says how', async () => {
   assert.equal(delveChange(DELVE_LADDER.find((r) => r.text === 'Seven seconds')!.depth), 'Seven seconds');
 });
 
-test('the notes under a find say what it asks, what a right answer earns and what a vein\'s cave-in costs, whatever the player carries', async () => {
-  const { findNote, FIND_TEXT } = await import('../src/lib/difficultyText.ts');
+test('the notes under a find say what its item does, that the question is harder and what a miss costs; never a depth', async () => {
+  const { findNote, FIND_TEXT, caveInLabel } = await import('../src/lib/difficultyText.ts');
   const none = { wards: 0, flares: 0, dynamite: 0, shards: 0 };
+  assert.equal(FIND_TEXT.azurite.tag, 'Answer fast for an Azurite Ward');
   assert.equal(
-    findNote('azurite', 20, none),
-    'A question from depth 35, on 12 seconds. Right within 6 seconds mines an Azurite Ward, slower an azurite shard (two forge a ward). Wrong caves in: two lives.',
+    findNote('azurite', none),
+    'A ward takes your next lost life instead. Right in the second half of the time, you get a shard; two make a ward. The question is a bit harder, and a wrong answer loses two lives.',
   );
-  assert.match(findNote('azurite', 8, none), /^A question from depth 23, on 14 seconds\. Right within 7 seconds/);
-  assert.match(findNote('azurite', 40, { ...none, shards: 1 }), /Right within 4 seconds .*\(it forges a ward with yours\)\. Wrong caves in: two lives\.$/);
-  assert.match(findNote('azurite', 20, { ...none, wards: 3 }), /You can carry no more\. Wrong caves in: two lives\.$/);
+  assert.match(findNote('azurite', { ...none, shards: 1 }), /you get a shard; it makes a ward with yours\./);
+  assert.equal(findNote('azurite', { ...none, wards: 3 }), 'You can carry no more. The question is a bit harder, and a wrong answer loses two lives.');
+  assert.equal(FIND_TEXT.flare.tag, 'Answer right for a flare');
+  assert.equal(findNote('flare', none), 'When your time runs out, it burns and gives you five more seconds. The question is a bit harder.');
+  assert.equal(findNote('flare', { ...none, flares: 3 }), 'You can carry no more. The question is a bit harder. Your flares stay unused on it.');
+  assert.equal(FIND_TEXT.dynamite.tag, 'Answer right for dynamite');
   assert.equal(
-    findNote('flare', 15, none),
-    'A question from depth 35, on 12 seconds. Right earns a flare, which burns by itself as your clock runs out, for 5 seconds more.',
+    findNote('dynamite', none),
+    'Halfway through your time, it clears the picture and blows away half the wrong answers. The question is a bit harder.',
   );
-  assert.match(findNote('flare', 20, { ...none, flares: 3 }), /^A question from depth 40, on 11 seconds\. You can carry no more\.$/);
-  assert.match(findNote('azurite', 20, { ...none, wards: 2, shards: 1 }), /slower an azurite shard \(it forges a ward with yours\)\./);
-  assert.match(findNote('dynamite', 12, none), /Right earns dynamite, which goes off by itself when half your clock has run out/);
-  assert.match(findNote('dynamite', 12, { wards: 3, flares: 3, dynamite: 3, shards: 0 }), /You can carry no more\.$/);
-  assert.match(FIND_TEXT.azurite.others, /fifteen depths deeper.*caves in for two lives/);
-  assert.match(FIND_TEXT.flare.others, /twenty depths deeper/);
-  assert.doesNotMatch(FIND_TEXT.flare.others, /caves in/);
+  // What the player carries won't go off on a find's question, and the note says so.
+  assert.match(findNote('dynamite', { ...none, flares: 1 }), / Your flare stays unused on it\.$/);
+  assert.match(findNote('flare', { ...none, dynamite: 2 }), / Your dynamite stays unused on it\.$/);
+  assert.match(findNote('azurite', { ...none, flares: 2, dynamite: 1 }), / Your flares and dynamite stay unused on it\.$/);
+  assert.match(findNote('dynamite', { wards: 3, flares: 3, dynamite: 3, shards: 0 }), /^You can carry no more\./);
+  assert.equal(
+    FIND_TEXT.azurite.others,
+    'An Azurite Vein: a harder question, for an Azurite Ward if answered fast or a shard if slower; a wrong answer loses two lives.',
+  );
+  assert.equal(FIND_TEXT.flare.others, 'A Flare Cache: a harder question, for a flare that gives five more seconds when the time runs out.');
+  assert.equal(
+    FIND_TEXT.dynamite.others,
+    'A Dynamite Cache: a harder question, for dynamite that clears the picture and blows away half the wrong answers at half time.',
+  );
+  assert.equal(caveInLabel('azurite'), 'A wrong answer loses two lives');
+  // Plain words: no depths, no clocks in seconds (only the flare's five), no bullets in these body-font sentences.
+  const all = [
+    ...Object.values(FIND_TEXT).flatMap((t) => [t.tag, t.others]),
+    ...(['azurite', 'flare', 'dynamite'] as const).flatMap((k) =>
+      [none, { ...none, shards: 1 }, { wards: 3, flares: 3, dynamite: 3, shards: 0 }, { ...none, flares: 2, dynamite: 1 }].map((inv) => findNote(k, inv)),
+    ),
+  ];
+  for (const t of all) {
+    assert.doesNotMatch(t, /depth|\d/i, t);
+    assert.ok(!t.includes('•') && !t.includes(String.fromCharCode(0x2014)), t);
+  }
 });

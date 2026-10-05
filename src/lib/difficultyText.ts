@@ -10,12 +10,8 @@ import {
   delveChangeAt,
   delveLockout,
   delveTimer,
-  findDepth,
-  findFor,
   findLosses,
   findReward,
-  findTimer,
-  veinWindow,
   type FindKind,
   type Inventory,
   type ItemKind,
@@ -197,7 +193,7 @@ export const DELVE_LADDER: { depth: number; text: string }[] = [
 ];
 
 /** Small numbers in words, for the notes under the cards. */
-const WORDS = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen', 'twenty'];
+const WORDS = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'];
 const words = (n: number) => WORDS[n] ?? String(n);
 
 /** An item as a reward, with its article. */
@@ -208,56 +204,68 @@ export const ITEM_TEXT: Record<ItemKind, string> = {
   dynamite: 'dynamite',
 };
 
-/** How far down a find's question comes from, in words ("fifteen depths deeper"). */
-const deeperText = (kind: FindKind) => `${words(findFor(kind).deeper)} depths deeper`;
-
 /** What a wrong answer to a find that caves in costs, in words ("two lives"). */
 const caveInText = (kind: FindKind) => `${words(findLosses(kind))} lives`;
 
-/** A find's cave-in mark, in words for those who can't see it: "A miss caves in for two lives". */
-export const caveInLabel = (kind: FindKind) => `A miss caves in for ${caveInText(kind)}`;
+/** A find's cave-in mark, in words for those who can't see it: "A wrong answer loses two lives". */
+export const caveInLabel = (kind: FindKind) => `A wrong answer loses ${caveInText(kind)}`;
+
+/** The mark that takes the place of a find's depth on its card, in words. */
+export const HARDER_LABEL = 'A harder question';
+
+/** What each item does once you have it, as the find's note says it. */
+const DOES: Record<'flare' | 'dynamite', string> = {
+  flare: `When your time runs out, it burns and gives you ${words(FLARE_MS / 1000)} more seconds.`,
+  dynamite: 'Halfway through your time, it clears the picture and blows away half the wrong answers.',
+};
+
+/** "The question is a bit harder", and what a miss costs when it costs more than a life. */
+const risk = (kind: FindKind) =>
+  `The question is a bit harder${cavesIn(kind) ? `, and a wrong answer loses ${caveInText(kind)}` : ''}.`;
 
 /**
- * The finds: the card's name, the tagline on its card, and what it is in a
- * line for those watching.
+ * The finds: the card's name, the tagline on its card (what to do), and what
+ * it is in a line for those watching. Plain words: what the item does, that
+ * the question is harder, and what a miss costs; never the depth it asks.
  */
 export const FIND_TEXT: Record<FindKind, { name: string; tag: string; others: string }> = {
   azurite: {
     name: 'Azurite Vein',
-    tag: 'A ward if fast, a shard if slow',
-    others: `An Azurite Vein: a question from ${deeperText('azurite')}, for an Azurite Ward or a shard of one; wrong, it caves in for ${caveInText('azurite')}.`,
+    tag: 'Answer fast for an Azurite Ward',
+    others: `An Azurite Vein: a harder question, for an Azurite Ward if answered fast or a shard if slower${cavesIn('azurite') ? `; a wrong answer loses ${caveInText('azurite')}` : ''}.`,
   },
   flare: {
     name: 'Flare Cache',
     tag: 'Answer right for a flare',
-    others: `A Flare Cache: a question from ${deeperText('flare')}, for a flare.`,
+    others: `A Flare Cache: a harder question, for a flare that gives ${words(FLARE_MS / 1000)} more seconds when the time runs out${cavesIn('flare') ? `; a wrong answer loses ${caveInText('flare')}` : ''}.`,
   },
   dynamite: {
     name: 'Dynamite Cache',
     tag: 'Answer right for dynamite',
-    others: `A Dynamite Cache: a question from ${deeperText('dynamite')}, for dynamite.`,
+    others: `A Dynamite Cache: a harder question, for dynamite that clears the picture and blows away half the wrong answers at half time${cavesIn('dynamite') ? `; a wrong answer loses ${caveInText('dynamite')}` : ''}.`,
   },
 };
 
+/** "Your flare stays unused on it": what the player holds that won't go off on a find's question. */
+function unused(inv: Inventory): string {
+  const held = [inv.flares ? (inv.flares > 1 ? 'flares' : 'flare') : '', inv.dynamite ? 'dynamite' : ''].filter(Boolean);
+  if (!held.length) return '';
+  const one = held.length === 1 && held[0] !== 'flares';
+  return ` Your ${held.join(' and ')} ${one ? 'stays' : 'stay'} unused on it.`;
+}
+
 /**
- * A find's risk and reward, for the player choosing at depth `depth` while
- * holding `inv`: the depth it asks, its clock, what a right answer earns and,
- * for a vein, what a wrong one costs. A find is only offered to a player with
- * room for its item.
+ * A find's note, for the player choosing while holding `inv`, after its
+ * tagline: what its item does, that the question is a bit harder, what a
+ * miss costs when it is more than a life, and that what they carry won't go
+ * off on it. A find is only offered to a player with room for its item.
  */
-export function findNote(kind: FindKind, depth: number, inv: Inventory): string {
-  const secs = findTimer(kind, depth);
-  const ask = `A question from depth ${findDepth(kind, depth)}, on ${secs} seconds.`;
-  const risk = cavesIn(kind) ? ` Wrong caves in: ${caveInText(kind)}.` : '';
-  const fast = findReward(kind, inv, true);
-  if (!fast) return `${ask} You can carry no more.${risk}`;
+export function findNote(kind: FindKind, inv: Inventory): string {
+  const tail = `${risk(kind)}${unused(inv)}`;
+  if (!findReward(kind, inv, true)) return `You can carry no more. ${tail}`;
   if (kind === 'azurite') {
-    const forge = inv.shards + 1 >= SHARDS_PER_WARD ? 'it forges a ward with yours' : `${words(SHARDS_PER_WARD)} forge a ward`;
-    return `${ask} Right within ${veinWindow(secs) / 1000} seconds mines ${ITEM_TEXT.wards}, slower ${ITEM_TEXT.shards} (${forge}).${risk}`;
+    const forge = inv.shards + 1 >= SHARDS_PER_WARD ? 'it makes a ward with yours' : `${words(SHARDS_PER_WARD)} make a ward`;
+    return `A ward takes your next lost life instead. Right in the second half of the time, you get a shard; ${forge}. ${tail}`;
   }
-  const what =
-    kind === 'flare'
-      ? `, which burns by itself as your clock runs out, for ${FLARE_MS / 1000} seconds more`
-      : ', which goes off by itself when half your clock has run out, blasting the pictures plain and half the wrong answers away';
-  return `${ask} Right earns ${ITEM_TEXT[fast]}${what}.${risk}`;
+  return `${DOES[kind]} ${tail}`;
 }

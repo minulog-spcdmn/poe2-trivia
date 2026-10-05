@@ -246,6 +246,26 @@ export const MOMENTS: Record<Sfx, Moment> = {
       { file: 'burn-embers', gain: -39, rate: 0.75, delay: 1100, hp: 250, lp: 5000, send: 0.95 },
     ],
   },
+  // A road flare struck as the clock hits 0: the striker's scratch (a card
+  // dealt, high and bright), a dry pop as the head catches, a quick burst of
+  // fire as it flares up, then a loud hiss that sputters on (the sparkler's
+  // fuse slowed and thinned to its highs, twice over, with the sparkler and
+  // a few sparks spitting through it) for about a second and a half.
+  flare: {
+    soften: 4.5,
+    varyPitch: 0.04,
+    varyGain: 1,
+    layers: [
+      { file: 'pick-5', gain: -24, rate: 1.3, delay: 0, hp: 1600, lp: 12000, send: 0.15 },
+      { file: 'click-5', gain: -22, rate: 1.45, delay: 75, hp: 700, lp: 9000, send: 0.3 },
+      { file: 'click-1', gain: -28, rate: 0.8, delay: 75, hp: 180, lp: 4000, send: 0.2 },
+      { file: 'layer-texture-4', gain: -23, rate: 1.2, delay: 55, hp: 300, lp: 9000, send: 0.35 },
+      { file: 'burn-fuse', gain: -17, rate: 0.85, delay: 80, hp: 1800, lp: 14000, send: 0.25 },
+      { file: 'burn-sparkler', gain: -27, rate: 0.9, delay: 150, hp: 700, lp: 12000, send: 0.25 },
+      { file: 'fill-sparks', gain: -28, rate: 0.8, delay: 320, hp: 1500, lp: 11000, send: 0.3 },
+      { file: 'burn-fuse', gain: -24, rate: 1, delay: 700, hp: 2500, lp: 13000, send: 0.35 },
+    ],
+  },
   // A stick of dynamite: its fuse fizzing for a breath (the sparkler's fuse,
   // quicker and brighter, with a spit of sparkler over it)…
   fuse: {

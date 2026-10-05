@@ -188,9 +188,10 @@ export function delveChangeAt(d: number): 'knobs' | 'lockout' | 'timer' | null {
  * Special cards found among those on offer: pick one and answer right for an
  * item. An Azurite Vein yields an Azurite Ward (a ward takes a loss in place of
  * a life) to a fast answer and a shard to a slow one (two shards forge a ward);
- * a Flare Cache a flare (it burns by itself as the clock runs out, for more
+ * a Flare Cache a flare (it burns by itself as the clock hits 0, for more
  * time); a Dynamite Cache dynamite (it goes off by itself at half the clock,
- * blasting the art plain and half the wrong answers away).
+ * blasting the art plain and half the wrong answers away, and holds the clock
+ * while it does). Flares and dynamite never go off on a find's own question.
  */
 export type FindKind = 'azurite' | 'flare' | 'dynamite';
 
@@ -278,8 +279,8 @@ export const findDepth = (kind: FindKind, d: number) => depthOf(d) + findFor(kin
  * Losses a wrong answer (or a time-out) to a find costs: two for an Azurite
  * Vein, whose seam caves in; one for the rest. Each is taken by a ward first
  * if the player holds one, and a player falls on their last life whatever is
- * left, so on it a cave-in costs no more than any miss. Dynamite going off
- * on it changes none of that.
+ * left, so on it a cave-in costs no more than any miss. No flare or
+ * dynamite goes off on a find's question (itemsWorkOn).
  */
 export const findLosses = (kind: FindKind) => findFor(kind).losses;
 
@@ -317,17 +318,25 @@ export const veinWindow = (secs: number) => Math.ceil(secs / 2) * 1000;
  */
 export const AZURITE_FAST_MS = veinWindow(DELVE_MIN_TIMER);
 
-/** When a flare burns: this long before the answering player's clock runs out. */
-export const FLARE_AT_MS = 1000;
-
-/** How much longer a burning flare keeps the clock running. */
+/**
+ * How much longer a burning flare keeps the clock running. It burns as the
+ * answering player's clock hits 0 (before the time-out is taken), so an
+ * answer at any time before that keeps it.
+ */
 export const FLARE_MS = 5000;
+
+/**
+ * How long the clock holds when a stick of dynamite goes off: about as long
+ * as the blast takes on screen (QuestionView), so watching it costs no time.
+ * The deadline moves on by as much (see clockLeft).
+ */
+export const BLAST_PAUSE_MS = 1000;
 
 /**
  * When a stick of dynamite goes off (ms from the clock's start, for a
  * question that started with `secs`): once half the clock has run out,
- * rounded up to a whole second like the Azurite Vein's fast window, which it
- * closes, so a blast never helps mine a ward.
+ * rounded up to a whole second like the Azurite Vein's fast window (it never
+ * goes off on a vein, see itemsWorkOn).
  */
 export const blastAt = (secs: number) => veinWindow(secs);
 
@@ -344,6 +353,26 @@ export const blastCount = (options: number) => Math.max(0, Math.min(Math.floor((
  */
 export function blastClears(q: Pick<Question, 'mode' | 'veil' | 'mirrored'>, grayscale: Grayscale): boolean {
   return !!q.veil || !!q.mirrored?.some(Boolean) || grayscale === 'all' || (grayscale === 'art' && q.mode === 'art');
+}
+
+/**
+ * Whether flares and dynamite go off on a question: never on a find's own
+ * (an Azurite Vein, a Flare or Dynamite Cache), whose risk is taken as it is.
+ */
+export const itemsWorkOn = (q: Pick<Question, 'find'>) => !q.find;
+
+/**
+ * Milliseconds left on a question's clock at `now` (host clock), holding
+ * still while dynamite's pause lasts (`held`, whose time the deadline was
+ * moved on by), so a ring drawn from it holds instead of jumping. Infinity
+ * while the clock hasn't started.
+ */
+export function clockLeft(q: Pick<Question, 'deadline' | 'held'>, now: number): number {
+  if (q.deadline === null) return Infinity;
+  const h = q.held;
+  // Before the pause (a screen whose clock runs a little behind the host's) all of it is still to come.
+  const pausing = h && now < h.until ? h.until - Math.max(now, h.from) : 0;
+  return Math.max(0, q.deadline - now - pausing);
 }
 
 /** Seconds a Delve question at depth `d` starts with: a find's, or the depth's. */

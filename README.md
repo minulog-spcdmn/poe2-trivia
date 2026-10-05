@@ -99,15 +99,27 @@ rules, so "I reached depth 30" means the same thing for everyone.
   depth, all of them from 150), "find the art" pictures keep burning in
   more often until depth 124, and look-alike pictures take over until 134.
 - **Finds.** From depth 5 one of the cards on offer is now and then a find:
-  pick it and answer right for an item. An **Azurite Vein** asks the question
-  of 15 depths deeper; a right answer within the first half of its clock
-  mines an Azurite Ward (it takes your next loss in place of a life), a
-  slower one a shard (two forge a ward). A wrong answer or a time-out on a
-  vein caves in: it costs two lives, a ward taking each loss first if you
-  hold one (on your last life you simply fall). A **Flare Cache** (from depth
-  15) asks the question of 20 depths deeper for a flare, which burns by
-  itself as your clock runs out for 5 s more; a miss there costs one life as
-  usual. The card says the depth it asks, its clock and the risk.
+  pick it and answer right for an item. Its question is a bit harder (that
+  of 15 to 20 depths deeper, with its shorter clock); the card only says
+  "Harder", and the note under the cards says what the item does.
+  - An **Azurite Vein** (from depth 5): a right answer within the first half
+    of its clock mines an **Azurite Ward**, which takes your next lost life
+    instead; a slower one a shard (two make a ward). A wrong answer or a
+    time-out on a vein caves in: it costs two lives, a ward taking each loss
+    first if you hold one (on your last life you simply fall).
+  - A **Flare Cache** (from depth 15) gives a **flare**. When your clock hits
+    0 it burns by itself and gives you 5 s more (once a question). An answer
+    at any time before that keeps it; a guest's answer still on its way when
+    it burns gives it back.
+  - A **Dynamite Cache** (from depth 10) gives **dynamite**. Halfway through
+    your clock (rounded up to a whole second) a stick goes off by itself
+    (once a question): the art shows plain (in colour, unmirrored and whole)
+    and half the wrong answers are blown away, never leaving fewer than two.
+    The clock holds for the second the blast takes, so watching it costs
+    nothing.
+  - Flares and dynamite never go off on a find's own question, which is
+    played as it is. A miss on a Flare or Dynamite Cache costs one life as
+    usual. You carry up to three of each item.
 - **Alone**, you delve until your third life is gone; the depth where it went
   is your result. **Together**, the last one standing wins and keeps delving
   to their own last life. If the last players fall at the same depth, whoever

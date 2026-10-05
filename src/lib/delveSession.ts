@@ -1,6 +1,6 @@
 // The session's Delve decisions, apart from PeerJS and Svelte so tests can reach them.
 
-import { DELVE_LIVES, FLARE_AT_MS, ITEM_KINDS, blastAtMs, dynamiteOf, flaresOf, inventoryOf, livesOf, wardsOf, type ItemKind } from './delve.ts';
+import { DELVE_LIVES, ITEM_KINDS, blastAtMs, dynamiteOf, flaresOf, inventoryOf, itemsWorkOn, livesOf, wardsOf, type ItemKind } from './delve.ts';
 import type { GameState } from './game.ts';
 
 /** The longest the host waits for the art to reach the player answering before their clock starts anyway. */
@@ -99,26 +99,28 @@ export function inventoryChanges(prev: GameState | null, next: GameState): { pla
 
 /**
  * Milliseconds until the host burns a flare for the player answering (as their
- * clock nears its end), or null when none will: the clock isn't running, a
- * flare already burnt on this question, or the player holds none or is away
+ * clock hits 0, before the time-out is taken, so an answer at any time before
+ * keeps it), or null when none will: the clock isn't running, a flare already
+ * burnt on this question, it is a find's, or the player holds none or is away
  * (a flare can't help someone who can't answer).
  */
 export function flareIn(s: GameState, now: number): number | null {
   const q = s.question;
   const p = s.players[s.turn];
-  if (!s.delve || s.phase !== 'question' || !q || q.deadline === null || q.flared || !p?.connected || flaresOf(s, p.id) <= 0) return null;
-  return Math.max(0, q.deadline - FLARE_AT_MS - now);
+  if (!s.delve || s.phase !== 'question' || !q || q.deadline === null || q.flared || !itemsWorkOn(q) || !p?.connected || flaresOf(s, p.id) <= 0) return null;
+  return Math.max(0, q.deadline - now);
 }
 
 /**
  * Milliseconds until a stick of the answering player's dynamite goes off (at
  * half their clock, delve.ts blastAt), or null when none will: the clock
- * isn't running, dynamite already went off on this question, or the player
- * holds none or is away. Read on every screen too, for the fuse before it.
+ * isn't running, dynamite already went off on this question, it is a find's,
+ * or the player holds none or is away. Read on every screen too, for the fuse
+ * before it.
  */
 export function dynamiteIn(s: GameState, now: number): number | null {
   const q = s.question;
   const p = s.players[s.turn];
-  if (!s.delve || s.phase !== 'question' || !q || q.deadline === null || q.clockAt === undefined || q.blasted || !p?.connected || dynamiteOf(s, p.id) <= 0) return null;
+  if (!s.delve || s.phase !== 'question' || !q || q.deadline === null || q.clockAt === undefined || q.blasted || !itemsWorkOn(q) || !p?.connected || dynamiteOf(s, p.id) <= 0) return null;
   return Math.max(0, q.clockAt + blastAtMs(s) - now);
 }

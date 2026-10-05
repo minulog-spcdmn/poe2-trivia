@@ -6,7 +6,7 @@ import {
   DELVE_LIVES,
   FINDS,
   findChance,
-  FLARE_AT_MS,
+  BLAST_PAUSE_MS,
   FLARE_MS,
   SHARDS_PER_WARD,
   blastAt,
@@ -198,11 +198,11 @@ test('there are always three categories left to offer at the longest lockout', (
 
 test('the ruleset is pinned to the curve and the protocol', () => {
   // Changing the curve changes this hash: bump DELVE_RULESET and PROTOCOL_VERSION with it, then update the pin.
-  // (Delve isn't released yet, so the new curve kept both and only moved the pin; so did dynamite going off by itself, and look-alike pictures.)
+  // (Delve isn't released yet, so the new curve kept both and only moved the pin; so did dynamite going off by itself, look-alike pictures, and the flare burning at 0 and the blast holding the clock.)
   const table: unknown[] = DEPTHS.map((d) => [delveRules(d), delveTimer(d), delveTileVeil(d)]);
   // The finds too: where and how often they turn up, what they ask and cost, and what their items do.
   const clocks = Array.from({ length: 10 }, (_, i) => i + 7);
-  table.push([FINDS, SHARDS_PER_WARD, FLARE_AT_MS, FLARE_MS, clocks.map(blastAt), [2, 3, 4, 6, 8, 10].map(blastCount)]);
+  table.push([FINDS, SHARDS_PER_WARD, FLARE_MS, BLAST_PAUSE_MS, clocks.map(blastAt), [2, 3, 4, 6, 8, 10].map(blastCount)]);
   table.push(DEPTHS.slice(0, 100).map((d) => FINDS.map((f) => findChance(f.kind, d))));
   table.push(
     DEPTHS.slice(0, 100).map((d) => FINDS.map((f) => [findRules(f.kind, d), findTimer(f.kind, d), findTileVeil(f.kind, d), veinWindow(findTimer(f.kind, d))])),
@@ -211,7 +211,7 @@ test('the ruleset is pinned to the curve and the protocol', () => {
   assert.deepEqual([DELVE_RULESET, PROTOCOL_VERSION, hash], [1, 10, PINNED_HASH]);
 });
 
-const PINNED_HASH = '978e3f2be038bc1c';
+const PINNED_HASH = '79f9e12dbee54a10';
 
 function run(losses: Record<string, number[]>, round = 10, seats = Object.keys(losses)): GameState {
   const s = createGame('a');

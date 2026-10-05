@@ -11,7 +11,7 @@ import {
   DELVE_RESUME_GRACE_MS,
   DELVE_RULESET,
   FINDS,
-  FLARE_AT_MS,
+  BLAST_PAUSE_MS,
   FLARE_MS,
   blastAtMs,
   blastCount,
@@ -30,6 +30,7 @@ import {
   hasRoom,
   inventoryOf,
   isGroupRun,
+  itemsWorkOn,
   questionTimer,
   tileVeilSize,
   veinWindow,
@@ -481,8 +482,16 @@ export interface Question {
   blasted?: boolean;
   /** Delve, once `blasted`: the wrong options it blew away, by index, in order. */
   blownAway?: number[];
-  /** Delve: a flare burnt on this question, and its deadline moved (once a question). */
+  /**
+   * Delve, once `blasted`: the clock held still from `from` to `until` (host
+   * clock) while the blast went off, and the deadline moved on by as much
+   * (delve.ts BLAST_PAUSE_MS, clockLeft).
+   */
+  held?: { from: number; until: number };
+  /** Delve: a flare burnt on this question as its clock hit 0, and its deadline moved (once a question). */
   flared?: boolean;
+  /** Delve, once `flared`: when it burnt (host clock). */
+  flaredAt?: number;
   /** Race mode: wrong answers so far, in order. Those players are locked out. */
   misses: { playerId: string; index: number }[];
 }
@@ -996,13 +1005,30 @@ export class Engine {
         if (action.askedAt !== undefined && action.askedAt !== q.askedAt) throw new ActionError('Too late!', true);
         // Delve: nobody answers a question whose clock hasn't started (a stray key in hot-seat included).
         if (s.delve && q.deadline === null && action.index !== null) throw new ActionError('Too early.', true);
+        // Delve: the clock has hit 0 with a flare in hand that hasn't burnt
+        // yet (its timer came late, or after this one). The time-out is not
+        // taken: the flare burns instead, as it would have at 0. An answer
+        // meanwhile was given before then, so it counts and keeps the flare.
+        const flareDue = this.flareDue(s, active) && this.now() >= q.deadline!;
+        if (flareDue && from === null && action.index === null) {
+          this.burnFlare(s, active);
+          break;
+        }
         // An option dynamite blew away still counts if picked (a guest's click
         // may have crossed the blast on its way): it is wrong either way.
         const index = validIndex(action.index, q.options.length);
         const chosenId = index === null ? null : q.options[index];
         const timedOut =
-          chosenId === null || (q.deadline !== null && from !== null && this.now() > q.deadline + ANSWER_GRACE_MS);
+          chosenId === null || (q.deadline !== null && from !== null && !flareDue && this.now() > q.deadline + ANSWER_GRACE_MS);
         const correct = !timedOut && chosenId === q.itemId;
+        // A guest's answer that crossed the flare on its way (sent before their
+        // clock hit 0, as the host's allowance for answers in flight has it)
+        // keeps the flare: it goes back in their pack.
+        if (!timedOut && q.flared && q.flaredAt !== undefined && from !== null && from !== s.hostId && this.now() <= q.flaredAt + ANSWER_GRACE_MS) {
+          this.gain(s, active.id, 'flares');
+          delete q.flared;
+          delete q.flaredAt;
+        }
         let gained: ItemKind | undefined;
         let forged = false;
         let warded = false;
@@ -1151,26 +1177,27 @@ export class Engine {
       case 'flare': {
         if (from !== null) throw new ActionError('Not allowed.');
         const q = s.question;
-        // Only on the clock, once a question, and only before the time-out is in.
-        if (!s.delve || s.phase !== 'question' || !q || q.askedAt !== action.askedAt || q.deadline === null || q.flared || !active) break;
+        // As the clock hits 0 (a timer a moment early still counts), and only before the time-out is in.
+        if (!q || q.askedAt !== action.askedAt || !this.flareDue(s, active)) break;
         const now = this.now();
-        if (!active.connected || now < q.deadline - FLARE_AT_MS - 250 || now > q.deadline + ANSWER_GRACE_MS) break;
-        if (!this.spend(s, active.id, 'flares')) break;
-        q.flared = true;
-        q.deadline = Math.max(q.deadline, now) + FLARE_MS;
+        if (now < q.deadline! - 250 || now > q.deadline! + ANSWER_GRACE_MS) break;
+        this.burnFlare(s, active);
         break;
       }
       case 'dynamite': {
         if (from !== null) throw new ActionError('Not allowed.');
         const q = s.question;
-        // Only on the clock, once a question, before an answer or the time-out is in.
-        if (!s.delve || s.phase !== 'question' || !q || q.askedAt !== action.askedAt || q.deadline === null || q.clockAt === undefined || q.blasted || !active) break;
+        // Only on the clock, once a question and never a find's, before an answer or the time-out is in.
+        if (!s.delve || s.phase !== 'question' || !q || q.askedAt !== action.askedAt || q.deadline === null || q.clockAt === undefined || q.blasted || !itemsWorkOn(q) || !active) break;
         const now = this.now();
         // Half the clock gone (a flare's extra time not counted), and the player here to use it.
         if (!active.connected || now < q.clockAt + blastAtMs(s) - 250 || now > q.deadline + ANSWER_GRACE_MS) break;
         if (!this.spend(s, active.id, 'dynamite')) break;
         q.blasted = true;
         q.blownAway = this.blownAway(q);
+        // The clock holds while it goes off: the deadline moves on by as much.
+        q.held = { from: now, until: now + BLAST_PAUSE_MS };
+        q.deadline += BLAST_PAUSE_MS;
         break;
       }
     }
@@ -1337,6 +1364,27 @@ export class Engine {
     const fakes = shuffle(wrong.filter((i) => isFake(q.options[i])), this.rng);
     const real = shuffle(wrong.filter((i) => !isFake(q.options[i])), this.rng);
     return [...fakes, ...real].slice(0, blastCount(q.options.length)).sort((a, b) => a - b);
+  }
+
+  /**
+   * Delve: a flare would burn for the player answering once their clock hits
+   * 0: it runs, none has burnt on this question, it isn't a find's, and they
+   * are here and hold one (a flare can't help someone who can't answer).
+   */
+  private flareDue(s: GameState, active: Player | undefined): active is Player {
+    const q = s.question;
+    if (!s.delve || s.phase !== 'question' || !q || q.deadline === null || q.flared || !itemsWorkOn(q) || !active?.connected) return false;
+    return inventoryOf(s, active.id).flares > 0;
+  }
+
+  /** Delve: one of the answering player's flares burns (see flareDue), and the clock runs FLARE_MS longer from 0 (or from now, should that be later). */
+  private burnFlare(s: GameState, active: Player) {
+    const q = s.question!;
+    const now = this.now();
+    if (!this.spend(s, active.id, 'flares')) return;
+    q.flared = true;
+    q.flaredAt = Math.min(now, q.deadline!);
+    q.deadline = Math.max(q.deadline!, now) + FLARE_MS;
   }
 
   /** Uses up one of an item; false when the player has none. */

@@ -11,7 +11,6 @@ import {
   FINDS,
   FINDS_FROM,
   FIND_RAMP_TO,
-  FLARE_AT_MS,
   FLARE_MS,
   SHARDS_PER_WARD,
   cavesIn,
@@ -33,6 +32,7 @@ import {
   flaresOf,
   hasRoom,
   inventoryOf,
+  itemsWorkOn,
   livesOf,
   questionTimer,
   shardsOf,
@@ -589,7 +589,7 @@ test('a wrong answer or a time-out on an Azurite Vein caves in: two losses, a wa
     }
 });
 
-test('a right answer to a vein still pays, and dynamite going off on one still leaves its cave-in', () => {
+test('a right answer to a vein still pays, and dynamite held over one neither goes off nor saves it from its cave-in', () => {
   const ok = found('azurite');
   ok.answer(true);
   assert.equal(ok.s.reveal!.caveIn, undefined);
@@ -604,10 +604,11 @@ test('a right answer to a vein still pays, and dynamite going off on one still l
   const q = h.s.question!;
   h.clock.now = q.clockAt! + veinWindow(questionTimer(h.s));
   h.act({ type: 'dynamite', askedAt: q.askedAt });
-  assert.equal(h.s.question!.blasted, true);
+  assert.equal(h.s.question!.blasted, undefined);
   h.answer(false);
   assert.equal(livesOf(h.s, id), DELVE_LIVES - 2);
   assert.equal(h.s.reveal!.caveIn, true);
+  assert.equal(dynamiteOf(h.s, id), 1);
 });
 
 test('a cave-in in a group run: the fall, and the standings with two losses at one depth', () => {
@@ -736,21 +737,23 @@ function flaring(flares = 1, opts: { host?: string | null } = { host: null }) {
   const h = delve(['Ash'], opts);
   at(h, 20);
   h.give(h.active().id, { flares });
-  h.act({ type: 'pick', category: h.s.offered[0] });
+  h.act({ type: 'pick', category: h.s.offered.find((c) => c !== h.s.delve!.find?.category)! });
   h.clockIn();
   return h;
 }
 
-test('a flare burns by itself as the clock nears its end, once a question, and moves the deadline', () => {
+test('a flare burns by itself as the clock hits 0, not a second before: once a question, and moves the deadline', () => {
   const h = flaring(2);
   const id = h.active().id;
   const q = h.s.question!;
-  assert.equal(flareIn(h.s, h.clock.now), q.deadline! - FLARE_AT_MS - h.clock.now);
-  // Too early: nothing burns.
+  assert.equal(flareIn(h.s, h.clock.now), q.deadline! - h.clock.now, 'due at 0');
+  // With a second left (when it used to burn), nothing burns.
+  h.clock.now = q.deadline! - 1000;
   h.act({ type: 'flare', askedAt: q.askedAt });
   assert.equal(flaresOf(h.s, id), 2);
   assert.equal(h.s.question!.flared, undefined);
-  h.clock.now = q.deadline! - FLARE_AT_MS;
+  // At 0 (a timer a moment early still counts).
+  h.clock.now = q.deadline! - 100;
   const prev = h.s;
   h.act({ type: 'flare', askedAt: q.askedAt });
   assert.equal(flaresOf(h.s, id), 1);
@@ -759,7 +762,7 @@ test('a flare burns by itself as the clock nears its end, once a question, and m
   assert.deepEqual(inventoryChanges(prev, h.s), [{ playerId: id, item: 'flares', change: 'used', left: 1 }]);
   assert.equal(flareIn(h.s, h.clock.now), null, 'once a question');
   // A second burn does nothing.
-  h.clock.now = h.s.question!.deadline! - FLARE_AT_MS;
+  h.clock.now = h.s.question!.deadline!;
   h.act({ type: 'flare', askedAt: q.askedAt });
   assert.equal(flaresOf(h.s, id), 1);
   // Guests see the new deadline, and the answer counts until it.
@@ -769,12 +772,92 @@ test('a flare burns by itself as the clock nears its end, once a question, and m
   assert.equal(h.s.reveal!.correct, true);
 });
 
+test('an answer at any time before 0 keeps the flare, right or wrong', () => {
+  for (const [left, ok] of [[1000, true], [1, true], [1, false]] as const) {
+    const h = flaring(1);
+    const id = h.active().id;
+    h.clock.now = h.s.question!.deadline! - left;
+    h.answer(ok);
+    assert.equal(h.s.phase, 'reveal');
+    assert.equal(h.s.reveal!.correct, ok);
+    assert.equal(h.s.question!.flared, undefined);
+    assert.equal(flaresOf(h.s, id), 1, `${left} ms left`);
+  }
+});
+
+test("the flare beats the time-out: the host's time-out finds it due and burns it instead", () => {
+  // The flare's timer never came (or came after the time-out): the time-out burns it.
+  const h = flaring(1);
+  const id = h.active().id;
+  const q = h.s.question!;
+  h.clock.now = q.deadline! + ANSWER_GRACE_MS;
+  h.act({ type: 'answer', index: null }, null);
+  assert.equal(h.s.phase, 'question', 'no time-out');
+  assert.equal(h.s.reveal, null);
+  assert.equal(h.s.question!.flared, true);
+  assert.equal(flaresOf(h.s, id), 0);
+  assert.equal(livesOf(h.s, id), DELVE_LIVES);
+  assert.equal(h.s.question!.deadline, h.clock.now + FLARE_MS, 'the whole flare from now');
+  // Its own time-out then comes as usual.
+  h.clock.now = h.s.question!.deadline! + ANSWER_GRACE_MS;
+  h.act({ type: 'answer', index: null }, null);
+  assert.equal(h.s.reveal!.timedOut, true);
+  assert.equal(livesOf(h.s, id), DELVE_LIVES - 1);
+
+  // In order, the flare's timer (at 0) comes before the time-out's (ANSWER_GRACE_MS later).
+  const o = flaring(1);
+  assert.equal(flareIn(o.s, o.clock.now), o.s.question!.deadline! - o.clock.now);
+  assert.ok(flareIn(o.s, o.clock.now)! < o.s.question!.deadline! + ANSWER_GRACE_MS - o.clock.now);
+});
+
+test("a guest's answer on its way as the flare burns keeps it; one sent in the flare's time spends it", () => {
+  for (const after of [0, ANSWER_GRACE_MS, ANSWER_GRACE_MS + 1]) {
+    const { h, id } = online('guest');
+    h.give(id, { flares: 1 });
+    h.act({ type: 'pick', category: h.s.offered.find((c) => c !== h.s.delve!.find?.category)! }, id);
+    h.clockIn();
+    const q = h.s.question!;
+    h.clock.now = q.deadline!;
+    h.act({ type: 'flare', askedAt: q.askedAt });
+    assert.equal(flaresOf(h.s, id), 0);
+    h.clock.now += after;
+    const prev = h.s;
+    h.answer(true, id);
+    assert.equal(h.s.reveal!.correct, true);
+    const kept = after <= ANSWER_GRACE_MS;
+    assert.equal(flaresOf(h.s, id), kept ? 1 : 0, `${after} ms after`);
+    assert.equal(h.s.question!.flared, kept ? undefined : true);
+    if (kept) assert.deepEqual(inventoryChanges(prev, h.s), [{ playerId: id, item: 'flares', change: 'gained', left: 1 }]);
+  }
+  // Late on the host (its timers slept): a guest's answer from before 0 counts, and the flare stays unburnt.
+  const { h, id } = online('guest');
+  h.give(id, { flares: 1 });
+  h.act({ type: 'pick', category: h.s.offered.find((c) => c !== h.s.delve!.find?.category)! }, id);
+  h.clockIn();
+  h.clock.now = h.s.question!.deadline! + ANSWER_GRACE_MS + 400;
+  h.answer(true, id);
+  assert.equal(h.s.reveal!.timedOut, false);
+  assert.equal(h.s.reveal!.correct, true);
+  assert.equal(flaresOf(h.s, id), 1);
+  // The host's own answer after the flare burnt spends it: it travels nowhere.
+  const own = online('host');
+  own.h.give(own.id, { flares: 1 });
+  own.h.act({ type: 'pick', category: own.h.s.offered.find((c) => c !== own.h.s.delve!.find?.category)! }, own.id);
+  own.h.clockIn();
+  own.h.clock.now = own.h.s.question!.deadline!;
+  own.h.act({ type: 'flare', askedAt: own.h.s.question!.askedAt });
+  own.h.clock.now += 100;
+  own.h.answer(true, own.id);
+  assert.equal(flaresOf(own.h.s, own.id), 0);
+});
+
 test('a flare that fires late still saves the player, and never after the time-out or an answer', () => {
   const late = flaring();
   const q = late.s.question!;
   late.clock.now = q.deadline! + ANSWER_GRACE_MS;
   late.act({ type: 'flare', askedAt: q.askedAt });
   assert.equal(late.s.question!.deadline, late.clock.now + FLARE_MS);
+  assert.equal(late.s.question!.flaredAt, q.deadline, 'it burnt as the clock hit 0');
 
   const tooLate = flaring();
   tooLate.clock.now = tooLate.s.question!.deadline! + ANSWER_GRACE_MS + 1;
@@ -783,14 +866,22 @@ test('a flare that fires late still saves the player, and never after the time-o
 
   const answered = flaring();
   const askedAt = answered.s.question!.askedAt;
-  answered.clock.now = answered.s.question!.deadline! - FLARE_AT_MS;
+  answered.clock.now = answered.s.question!.deadline! - 10;
   answered.answer(true);
+  answered.clock.now += 10;
   answered.act({ type: 'flare', askedAt });
   assert.equal(flaresOf(answered.s, answered.active().id), 1);
   assert.equal(answered.s.phase, 'reveal');
 
+  const timedOut = flaring(0);
+  timedOut.clock.now = timedOut.s.question!.deadline! + ANSWER_GRACE_MS;
+  timedOut.act({ type: 'answer', index: null }, null);
+  timedOut.give(timedOut.active().id, { flares: 1 });
+  timedOut.act({ type: 'flare', askedAt });
+  assert.equal(timedOut.s.question!.flared, undefined);
+
   const stale = flaring();
-  stale.clock.now = stale.s.question!.deadline! - FLARE_AT_MS;
+  stale.clock.now = stale.s.question!.deadline!;
   stale.act({ type: 'flare', askedAt: stale.s.question!.askedAt - 1 });
   assert.equal(stale.s.question!.flared, undefined);
 });
@@ -800,38 +891,51 @@ test('no flare burns before the clock starts, without one, for someone away, or 
   at(h, 20);
   const id = h.active().id;
   h.give(id, { flares: 1 });
-  h.act({ type: 'pick', category: h.s.offered[0] });
+  h.act({ type: 'pick', category: h.s.offered.find((c) => c !== h.s.delve!.find?.category)! });
   assert.equal(flareIn(h.s, h.clock.now), null, 'not before the clock starts');
   h.act({ type: 'flare', askedAt: h.s.question!.askedAt });
   assert.equal(h.s.question!.flared, undefined);
   h.clockIn();
-  h.clock.now = h.s.question!.deadline! - FLARE_AT_MS;
+  h.clock.now = h.s.question!.deadline!;
   assert.throws(() => h.act({ type: 'flare', askedAt: h.s.question!.askedAt }, id));
   assert.throws(() => h.act({ type: 'flare', askedAt: h.s.question!.askedAt }, 'p0'));
   h.act({ type: 'connection', playerId: id, connected: false });
   assert.equal(flareIn(h.s, h.clock.now), null, 'not for someone away');
   h.act({ type: 'flare', askedAt: h.s.question!.askedAt });
   assert.equal(flaresOf(h.s, id), 1);
+  // Nor does the time-out burn one for them.
+  h.clock.now += ANSWER_GRACE_MS;
+  h.act({ type: 'answer', index: null }, null);
+  assert.equal(h.s.reveal!.timedOut, true);
+  assert.equal(flaresOf(h.s, id), 1);
 
   const none = flaring(0);
   assert.equal(flareIn(none.s, none.clock.now), null);
-  none.clock.now = none.s.question!.deadline! - FLARE_AT_MS;
+  none.clock.now = none.s.question!.deadline!;
   none.act({ type: 'flare', askedAt: none.s.question!.askedAt });
   assert.equal(none.s.question!.flared, undefined);
 });
 
-test('a flare on an Azurite Vein gives more time, not a longer fast window: a shard, not a ward', () => {
-  const h = found('azurite');
-  const id = h.active().id;
-  h.give(id, { flares: 1 });
-  const q = h.s.question!;
-  h.clock.now = q.deadline! - FLARE_AT_MS;
-  h.act({ type: 'flare', askedAt: q.askedAt });
-  assert.equal(veinWindowMs(h.s), WINDOW, 'the window stays where it was');
-  h.answer(true);
-  assert.equal(h.s.reveal!.correct, true);
-  assert.equal(h.s.reveal!.gained, 'shards');
-  assert.equal(questionTimer(h.s), findTimer('azurite', 20), "the question still started with the find's clock");
+test("no flare burns on a find's own question: the time-out is taken and the flare kept", () => {
+  for (const kind of ['azurite', 'flare', 'dynamite'] as const) {
+    const h = found(kind, { host: null, inv: { flares: 2 } });
+    const id = h.active().id;
+    const q = h.s.question!;
+    assert.equal(itemsWorkOn(q), false);
+    assert.equal(flareIn(h.s, h.clock.now), null, kind);
+    h.clock.now = q.deadline!;
+    h.act({ type: 'flare', askedAt: q.askedAt });
+    assert.equal(h.s.question!.flared, undefined);
+    h.clock.now = q.deadline! + ANSWER_GRACE_MS;
+    h.act({ type: 'answer', index: null }, null);
+    assert.equal(h.s.reveal!.timedOut, true, kind);
+    assert.equal(flaresOf(h.s, id), 2, kind);
+    assert.equal(livesOf(h.s, id), DELVE_LIVES - findLosses(kind));
+  }
+  // The vein's fast window is just its own.
+  const v = found('azurite', { host: null, inv: { flares: 1 } });
+  assert.equal(veinWindowMs(v.s), WINDOW);
+  assert.equal(questionTimer(v.s), findTimer('azurite', 20), "the question started with the find's clock");
 });
 
 // ---- trust, views and lifetimes --------------------------------------------

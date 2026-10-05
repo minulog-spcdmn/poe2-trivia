@@ -1,20 +1,24 @@
 // Delve's dynamite: a stick goes off by itself once half the answering
 // player's clock has run out, laying the art bare and blowing half the wrong
-// answers away (see delve.ts blastAt, blastCount and game.ts 'dynamite').
+// answers away, and the clock holds while it does (see delve.ts blastAt,
+// blastCount, BLAST_PAUSE_MS, clockLeft and game.ts 'dynamite').
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
+  BLAST_PAUSE_MS,
   DELVE_LIVES,
-  FLARE_AT_MS,
   FLARE_MS,
   blastAt,
   blastAtMs,
   blastClears,
   blastCount,
+  clockLeft,
   dynamiteOf,
+  findLosses,
   flaresOf,
+  itemsWorkOn,
   livesOf,
   questionTimer,
   veinWindow,
@@ -141,8 +145,9 @@ test('a stick goes off by itself at half the clock, once a question, and is used
   assert.equal(dynamiteOf(h.s, id), 1);
   assert.deepEqual(inventoryChanges(prev, h.s), [{ playerId: id, item: 'dynamite', change: 'used', left: 1 }]);
   assert.equal(momentOf(inventoryChanges(prev, h.s)), 'blast');
-  // The clock runs on as it was.
-  assert.equal(h.s.question!.deadline, q.deadline);
+  // The clock holds while it goes off: the deadline moves on by as much.
+  assert.equal(h.s.question!.deadline, q.deadline! + BLAST_PAUSE_MS);
+  assert.deepEqual(h.s.question!.held, { from: h.clock.now, until: h.clock.now + BLAST_PAUSE_MS });
   // Once a question.
   assert.equal(dynamiteIn(h.s, h.clock.now), null);
   const removed = h.s.question!.blownAway;
@@ -343,7 +348,32 @@ test('a question where it went off is recorded as such, its art left as asked fo
 
 // ---- with flares and finds ----------------------------------------------------
 
-test('with a flare too: the dynamite goes off at half the clock, the flare near its end, both used', () => {
+test('the clock holds for the blast: what is left stays put while it goes off, then runs on, and the time-out follows', () => {
+  const h = holding({ dynamite: 1 });
+  const q = h.s.question!;
+  h.clock.now = h.due();
+  const at = h.clock.now;
+  const left = q.deadline! - at;
+  assert.equal(clockLeft(q, at), left, 'before: as the deadline says');
+  h.blast();
+  const b = h.s.question!;
+  // A screen a little behind the host's clock still counts down to the blast.
+  assert.equal(clockLeft(b, at - 300), left + 300);
+  for (const t of [0, 1, 400, BLAST_PAUSE_MS - 1, BLAST_PAUSE_MS]) assert.equal(clockLeft(b, at + t), left, `${t} ms into the blast`);
+  assert.equal(clockLeft(b, at + BLAST_PAUSE_MS + 250), left - 250, 'then runs on');
+  assert.equal(clockLeft(b, b.deadline!), 0);
+  assert.equal(clockLeft(b, b.deadline! + 5000), 0);
+  assert.equal(clockLeft({ deadline: null }, at), Infinity, 'not started');
+  // Guests get the hold too.
+  assert.deepEqual(publicView(h.s).question!.held, b.held);
+  // An answer in the held second counts; one after the old deadline but before the new one too.
+  h.clock.now = q.deadline! + ANSWER_GRACE_MS + 100;
+  h.act({ type: 'answer', index: right(b), askedAt: b.askedAt }, 'p0');
+  assert.equal(h.s.reveal!.timedOut, false);
+  assert.equal(h.s.reveal!.correct, true);
+});
+
+test('with a flare too: the dynamite goes off at half the clock, the flare as it hits 0 after the hold, both used', () => {
   const h = holding({ dynamite: 1, flares: 1 });
   const id = h.active().id;
   const q = h.s.question!;
@@ -352,15 +382,20 @@ test('with a flare too: the dynamite goes off at half the clock, the flare near 
   h.clock.now = h.due();
   h.blast();
   assert.equal(h.s.question!.blasted, true);
-  assert.equal(h.s.question!.deadline, q.deadline, 'the blast gives no time');
-  assert.equal(flareIn(h.s, h.clock.now), q.deadline! - FLARE_AT_MS - h.clock.now, 'the flare still burns as the clock runs out');
-  h.clock.now = q.deadline! - FLARE_AT_MS;
+  const end = q.deadline! + BLAST_PAUSE_MS;
+  assert.equal(h.s.question!.deadline, end, 'the blast holds the clock');
+  assert.equal(flareIn(h.s, h.clock.now), end - h.clock.now, 'the flare burns at the new 0');
+  // Not at the old 0.
+  h.clock.now = q.deadline!;
+  h.act({ type: 'flare', askedAt: q.askedAt });
+  assert.equal(h.s.question!.flared, undefined);
+  h.clock.now = end;
   h.act({ type: 'flare', askedAt: q.askedAt });
   assert.equal(h.s.question!.flared, true);
-  assert.equal(h.s.question!.deadline, q.deadline! + FLARE_MS);
+  assert.equal(h.s.question!.deadline, end + FLARE_MS);
   assert.deepEqual([dynamiteOf(h.s, id), flaresOf(h.s, id)], [0, 0]);
   // The answer still counts in the flare's time.
-  h.clock.now = q.deadline! + FLARE_MS - 10;
+  h.clock.now = end + FLARE_MS - 10;
   h.act({ type: 'answer', index: right(q), askedAt: q.askedAt }, null);
   assert.equal(h.s.reveal!.correct, true);
 });
@@ -377,26 +412,31 @@ test("a flare's extra time never moves the blast, nor does one burning first", (
   assert.equal(dynamiteIn(h.s, h.clock.now), due - h.clock.now);
 });
 
-test("on an Azurite Vein it goes off as the fast window closes: it never helps mine a ward, and the cave-in stays", () => {
-  const h = holding({ dynamite: 1 }, { depth: 20, find: 'azurite' });
-  const q = h.s.question!;
-  assert.equal(h.due(), q.clockAt! + veinWindow(questionTimer(h.s)));
-  h.clock.now = h.due();
-  h.blast();
-  assert.equal(h.s.question!.blasted, true);
-  h.clock.now += 1;
-  h.act({ type: 'answer', index: right(q), askedAt: q.askedAt });
-  assert.equal(h.s.reveal!.gained, 'shards', 'after the blast, only a shard');
-
-  for (const find of ['flare', 'dynamite'] as const) {
-    const c = holding({ dynamite: 1 }, { depth: 20, find });
+test("no dynamite goes off on a find's own question: no fuse, no blast, no hold, and the stick is kept", () => {
+  for (const find of ['azurite', 'flare', 'dynamite'] as const) {
+    const c = holding({ dynamite: 2 }, { depth: 20, find });
+    const id = c.active().id;
+    const q = c.s.question!;
+    assert.equal(q.find, find);
+    assert.equal(itemsWorkOn(q), false);
+    assert.equal(dynamiteIn(c.s, c.clock.now), null, `${find}: no fuse on any screen`);
     c.clock.now = c.due();
     c.blast();
-    assert.equal(c.s.question!.find, find);
-    assert.equal(c.s.question!.blasted, true);
-    c.act({ type: 'answer', index: right(c.s.question!), askedAt: c.s.question!.askedAt });
-    assert.equal(c.s.reveal!.gained, find === 'flare' ? 'flares' : 'dynamite', "a cache's reward still comes");
+    assert.equal(c.s.question!.blasted, undefined, find);
+    assert.equal(c.s.question!.held, undefined);
+    assert.equal(c.s.question!.deadline, q.deadline);
+    assert.equal(dynamiteOf(c.s, id), 2);
+    // Played as it is: a right answer earns the find's item, a miss costs what it costs.
+    c.act({ type: 'answer', index: right(q), askedAt: q.askedAt });
+    assert.equal(c.s.reveal!.correct, true);
+    assert.ok(c.s.reveal!.gained, `${find}: its reward`);
   }
+  const miss = holding({ dynamite: 1 }, { depth: 20, find: 'azurite' });
+  miss.clock.now = miss.due();
+  miss.blast();
+  miss.act({ type: 'answer', index: miss.s.question!.options.findIndex((o) => o !== miss.s.question!.itemId), askedAt: miss.s.question!.askedAt });
+  assert.equal(livesOf(miss.s, miss.active().id), DELVE_LIVES - findLosses('azurite'));
+  assert.equal(dynamiteOf(miss.s, miss.active().id), 1);
 });
 
 // ---- the wire -------------------------------------------------------------------

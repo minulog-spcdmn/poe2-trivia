@@ -4,8 +4,8 @@
   import { categoryIcon, categoryIconTweak, categoryIcons } from '../lib/ui';
   import { fits, fitStyle, maskOf, measure } from '../lib/iconFit.svelte';
   import { activeRules, difficultyOf } from '../lib/game';
-  import { FIND_TEXT, caveInLabel, deathmatchText, findNote, lockoutText } from '../lib/difficultyText';
-  import { cavesIn, findDepth, findOffer, inventoryOf, type FindKind } from '../lib/delve';
+  import { FIND_TEXT, HARDER_LABEL, caveInLabel, deathmatchText, findNote, lockoutText } from '../lib/difficultyText';
+  import { cavesIn, findOffer, inventoryOf, type FindKind } from '../lib/delve';
   import { CAVE_IN_MARK } from '../lib/findEngraving';
   import { sfx } from '../lib/sound';
   import { backdropShadow } from '../lib/backdropShadow';
@@ -216,11 +216,10 @@
   }
 </script>
 
-<!-- A find's depth on a small engraved plate, hung under its name (a row: beside it), and the vein's cave-in mark. -->
-{#snippet depthPlate(kind: FindKind, where: 'tall' | 'row')}
-  <span class="depth-plate {where}">
-    <span class="dp-word">Depth</span>
-    <b class="dp-n">{findDepth(kind, s.round)}</b>
+<!-- A find asks a harder question: said on a small engraved plate hung under its name (a row: under it), with the vein's cave-in mark. -->
+{#snippet harderPlate(kind: FindKind, where: 'tall' | 'row')}
+  <span class="harder-plate {where}" title={HARDER_LABEL}>
+    <span class="hp-word">Harder</span>
     {#if cavesIn(kind)}
       <svg class="cave-in" viewBox={CAVE_IN_MARK.box} role="img" aria-label={caveInLabel(kind)}>
         <title>{caveInLabel(kind)}</title>
@@ -280,13 +279,13 @@
             {#if kindOf(cat)}
               {@const kind = kindOf(cat)!}
               <span class="find-tag">{FIND_TEXT[kind].name}</span>
-              {@render depthPlate(kind, 'tall')}
+              {@render harderPlate(kind, 'tall')}
             {/if}
             <span class="icon">
               <span class="lit"><span class="glyph" class:fit={!!fits[categoryIcon(cat)]} style={fitStyle(categoryIcon(cat), categoryIconTweak(cat))} style:--src="url('{maskOf(categoryIcon(cat))}')"></span></span>
             </span>
             <span class="title"
-              >{#if kindOf(cat)}{@const kind = kindOf(cat)!}<span class="find-tag-row">{FIND_TEXT[kind].name}</span>{/if}{cat}{#if kindOf(cat)}{@render depthPlate(
+              >{#if kindOf(cat)}{@const kind = kindOf(cat)!}<span class="find-tag-row">{FIND_TEXT[kind].name}</span>{/if}{cat}{#if kindOf(cat)}{@render harderPlate(
                     kindOf(cat)!,
                     'row',
                   )}{/if}</span
@@ -299,7 +298,7 @@
 
   {#if find && !s.deathmatch}
     <p class="note find-note" data-find={find.kind} id="find-note">
-      {#if mine}<strong>{FIND_TEXT[find.kind].tag}.</strong> {findNote(find.kind, s.round, inventoryOf(s, active.id))}{:else}{FIND_TEXT[find.kind].others}{/if}
+      {#if mine}<strong>{FIND_TEXT[find.kind].tag}.</strong> {findNote(find.kind, inventoryOf(s, active.id))}{:else}{FIND_TEXT[find.kind].others}{/if}
     </p>
   {/if}
   {#if s.deathmatch}
@@ -838,10 +837,10 @@
     right: -4px;
   }
 
-  /* The depth a find asks, on a small plate hung from the plaque over the
-     keystone by two fine chains, lozenges at its ends like the plaque's. The
-     number in Cinzel; for the vein, its cave-in engraved after it. */
-  .depth-plate {
+  /* "Harder" (a find asks a harder question), on a small plate hung from the
+     plaque over the keystone by two fine chains, lozenges at its ends like
+     the plaque's; for the vein, its cave-in engraved after it. */
+  .harder-plate {
     display: inline-flex;
     align-items: center;
     gap: 0.32em;
@@ -854,7 +853,7 @@
     line-height: 1;
     color: var(--f-hi);
   }
-  .depth-plate.tall {
+  .harder-plate.tall {
     position: absolute;
     top: 31px;
     left: 50%;
@@ -868,7 +867,7 @@
       0 0 10px color-mix(in srgb, var(--f-pulse) 70%, transparent);
   }
   /* The chains it hangs by, from the plaque above. */
-  .depth-plate.tall::before {
+  .harder-plate.tall::before {
     content: '';
     position: absolute;
     left: 22%;
@@ -878,7 +877,7 @@
     border-left: 1px solid color-mix(in srgb, var(--gold) 55%, transparent);
     border-right: 1px solid color-mix(in srgb, var(--gold) 55%, transparent);
   }
-  .depth-plate.tall::after {
+  .harder-plate.tall::after {
     content: '';
     position: absolute;
     top: 50%;
@@ -890,13 +889,6 @@
       linear-gradient(45deg, transparent 35%, color-mix(in srgb, var(--gold) 55%, transparent) 35% 65%, transparent 65%) 0 0 / 4px 4px no-repeat,
       linear-gradient(45deg, transparent 35%, color-mix(in srgb, var(--gold) 55%, transparent) 35% 65%, transparent 65%) 100% 0 / 4px 4px no-repeat;
     pointer-events: none;
-  }
-  .dp-n {
-    font-family: var(--font-cinzel);
-    font-weight: 700;
-    font-size: 1.12em;
-    letter-spacing: 0.04em;
-    color: #fff4e2;
   }
   .cave-in {
     height: 1.25em;
@@ -925,7 +917,7 @@
     opacity: 0.22;
     filter: blur(0.6px);
   }
-  .depth-plate.row {
+  .harder-plate.row {
     display: none;
   }
 
@@ -1053,11 +1045,11 @@
     .find-tag {
       display: none;
     }
-    .depth-plate.tall {
+    .harder-plate.tall {
       display: none;
     }
     /* In a row, the plate sits under the name. */
-    .depth-plate.row {
+    .harder-plate.row {
       display: flex;
       width: fit-content;
       margin-top: 5px;

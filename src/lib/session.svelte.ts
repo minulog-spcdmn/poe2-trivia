@@ -38,7 +38,7 @@ import { toasts, type ToastKind, type ToastOptions } from './toasts.svelte';
 import { creatorArrival } from './herald';
 import { RUBY } from './palette';
 import { CREATOR_TITLE } from './site';
-import { DELVE_RULESET, LOOKALIKES_ASKED_FROM, blastClears, dynamiteOf, livesOf } from './delve';
+import { DELVE_RULESET, LOOKALIKES_ASKED_FROM, blastClears, dynamiteOf, itemsWorkOn, livesOf } from './delve';
 import { loadLooks } from './looks';
 import { bestOf, loadRecords, recordLeft, recordRun, runEvent } from './delveRecord';
 import { DELVE_CLOCK_CAP_MS, DRAIN_POLL_MS, clockStart, delveNotices, drained, dynamiteIn, expireIn, flareIn, mayAutoReask, reaskDelay } from './delveSession';
@@ -786,9 +786,9 @@ class Session {
     const guestTurn =
       timing && this.mode === 'host' && !!active && active.id !== this.priv.myPlayerId && [...this.guests.values()].some((g) => g.playerId === active.id);
     this.held = guestTurn ? { qid, activeId: active.id } : null;
-    // Dynamite will go off on this question if the player holds some: its
-    // plain art is made in a moment, once this art is on its way.
-    if (s.delve && active && !q.blasted && dynamiteOf(s, active.id) > 0 && blastClears(q, activeRules(s).grayscale)) {
+    // Dynamite will go off on this question if the player holds some (never
+    // on a find's): its plain art is made in a moment, once this art is on its way.
+    if (s.delve && active && !q.blasted && itemsWorkOn(q) && dynamiteOf(s, active.id) > 0 && blastClears(q, activeRules(s).grayscale)) {
       const art = new Promise((r) => setTimeout(r, 500)).then(() => prepareClean(q));
       art.catch(() => {});
       this.clean = { qid, art };
@@ -1387,6 +1387,10 @@ class Session {
   private scheduleTimers(s: GameState) {
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
+    // Delve: a flare burns as the clock hits 0, set before the time-out below
+    // (which comes ANSWER_GRACE_MS later) so it is applied first; should the
+    // time-out still get there first, the engine burns the flare instead.
+    this.scheduleFlare(s);
     if (s.phase === 'question' && s.question?.deadline) {
       const version = s.version;
       this.timer = setTimeout(
@@ -1402,7 +1406,6 @@ class Session {
     this.scheduleIdle(s);
     this.scheduleAutoNext(s);
     this.scheduleExpire(s);
-    this.scheduleFlare(s);
     this.scheduleDynamite(s);
   }
 
@@ -1427,7 +1430,7 @@ class Session {
     }, left);
   }
 
-  /** Delve: as the answering player's clock nears its end, one of their flares burns (host or this device only). */
+  /** Delve: as the answering player's clock hits 0, one of their flares burns (host or this device only). */
   private scheduleFlare(s: GameState) {
     const left = this.mode !== 'client' ? flareIn(s, Date.now()) : null;
     const key = left === null ? '' : `${s.question?.askedAt}:${s.question?.deadline}`;
