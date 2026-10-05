@@ -778,13 +778,19 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   }
 
   // Measures the shadowed elements; true if anything changed since last time.
+  // On phones and tablets there's nothing to measure: everything is let go
+  // to CSS once, and nothing changes until the pointer does.
+  let released = false;
   function measure() {
     let atlases: ReturnType<typeof measureDrops> = null;
     if (cssShadows.matches) {
+      if (released) return false;
+      released = true;
       for (const arr of shadowArrays) arr.fill(0);
       releaseAll();
       releaseAllDrops();
     } else {
+      released = false;
       measureShadows(maxElements, el.x, el.y, el.a, el.b, el.c, el.d, el.e, el.geo, el.col, canvas.clientWidth, canvas.clientHeight);
       atlases = measureDrops(mk.a, mk.b, mk.c, mk.d, mk.e, mk.off, mk.col, canvas.clientWidth, canvas.clientHeight);
     }
@@ -858,9 +864,12 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   //
   // Phones and tablets are the exception: there the backdrop draws no crisp
   // fills or shadows (see cssShadows), just soft light, and their screens run
-  // at 2-3 device pixels per CSS px, so it renders at 1.5 and is scaled up:
-  // a fraction of the work, and the dither still hides every band.
-  const scale = () => (cssShadows.matches && devicePixelRatio > 1.5 ? 1.5 / devicePixelRatio : 1);
+  // at 2-3 device pixels per CSS px, so it renders at one pixel per CSS px
+  // and is scaled up: a ninth of the work on a 3x screen, for a canvas
+  // redrawn 30 times a second for as long as the page is open. The grain is
+  // per CSS px anyway, the embers are soft glows, and the dither still hides
+  // every band.
+  const scale = () => (cssShadows.matches && devicePixelRatio > 1 ? 1 / devicePixelRatio : 1);
   const ro = new ResizeObserver(([entry]) => {
     const box = entry.devicePixelContentBoxSize?.[0];
     const k = scale();
