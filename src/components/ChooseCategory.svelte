@@ -142,7 +142,8 @@
 <div class="choose">
   <!-- The emblems' shadow (see .lit): cast from the art's solid shape only. -->
   <svg class="defs" aria-hidden="true">
-    <filter id="card-emblem-shadow" x="-20%" y="-20%" width="140%" height="140%" color-interpolation-filters="sRGB">
+    <!-- Its region is roomy so a small or slim emblem (in a row, on phones) keeps all of its shadow. -->
+    <filter id="card-emblem-shadow" x="-50%" y="-50%" width="200%" height="200%" color-interpolation-filters="sRGB">
       <!-- The art's faint baked-in shadow would cast a dark disc: keep only what's at least half opaque. -->
       <feComponentTransfer in="SourceAlpha" result="solid"><feFuncA type="discrete" tableValues="0 1" /></feComponentTransfer>
       <!-- The original card's shadow: tight, just below it, as if lifted off the card. -->
@@ -341,20 +342,23 @@
     right: 0;
     top: calc(132px - 75px);
     height: 150px;
-    display: grid;
-    /* Centred even when an item grown larger (--e-k) overflows the cell
-       (its row then outgrows the cell, so the row is centred too). */
-    place-items: unsafe center;
-    place-content: unsafe center;
+    /* Centred even when an item grown larger (--e-k) overflows the cell:
+       a flex box overflows both ways alike, where a grid would need
+       `unsafe`, which older iOS Safari drops. */
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
   /* The emblem's shadow and warm glow, on a layer of its own so the
      engraving stays crisp. The shadow comes from #card-emblem-shadow, cast
-     from the art's solid shape only. */
+     from the art's solid shape only; the glow comes after it, as an SVG
+     filter's region would cut a wide glow off round a small emblem (WebKit
+     shows the cut as a box). */
   .lit {
     position: relative;
     display: grid;
     place-items: center;
-    filter: drop-shadow(0 0 12px rgba(224, 138, 68, 0.45)) url(#card-emblem-shadow);
+    filter: url(#card-emblem-shadow) drop-shadow(0 0 12px rgba(224, 138, 68, 0.45));
   }
   .glyph {
     width: 130px;
@@ -509,6 +513,14 @@
   .card.dm:global(.down) .frame {
     animation: none;
   }
+  /* Only the side that faces up is shown. backface-visibility alone isn't
+     enough in WebKit (every browser on iOS): the emblem, with a filter and
+     an animation of its own, shows through the back while it lies face down.
+     The sides swap as the card stands on edge, where neither shows. */
+  .card:global(.down) .frame,
+  .card:not(:global(.down)) .back {
+    visibility: hidden;
+  }
   .card.mine {
     cursor: pointer;
   }
@@ -601,26 +613,26 @@
     .cards {
       grid-template-columns: 1fr;
       width: min(360px, 100%);
-      gap: 0.7rem;
+      gap: 0.9rem;
     }
     .frame {
       display: flex;
       align-items: center;
       height: auto;
-      /* The emblem 54 in and the divider halfway to the name (ROW). */
-      padding: 13px 22px;
+      /* The emblem 62 in and the divider halfway to the name (ROW). */
+      padding: 15px 22px;
       gap: 32px;
       /* No window in a row: the warm glow sits round the emblem instead. */
       background:
         var(--grain),
-        radial-gradient(circle at 54px 50%, color-mix(in srgb, var(--warm) 28%, transparent), transparent 62px),
+        radial-gradient(circle at 62px 50%, color-mix(in srgb, var(--warm) 28%, transparent), transparent 74px),
         radial-gradient(ellipse 120% 90% at 50% 45%, transparent 50%, rgba(0, 0, 0, 0.5)),
         linear-gradient(170deg, #211912, #0d0a07 70%);
     }
     .card.dm .frame {
       background:
         var(--grain),
-        radial-gradient(circle at 54px 50%, color-mix(in srgb, var(--warm) 28%, transparent), transparent 62px),
+        radial-gradient(circle at 62px 50%, color-mix(in srgb, var(--warm) 28%, transparent), transparent 74px),
         radial-gradient(ellipse 120% 90% at 50% 45%, transparent 50%, rgba(0, 0, 0, 0.5)),
         linear-gradient(170deg, #22110d, #0d0706 70%);
     }
@@ -628,13 +640,13 @@
       position: relative;
       top: auto;
       flex: none;
-      width: 64px;
-      height: 64px;
+      width: 80px;
+      height: 80px;
     }
     .glyph {
-      width: 60px;
-      height: 60px;
-      --e-s: 0.5;
+      width: 74px;
+      height: 74px;
+      --e-s: 0.58;
     }
     /* A row has no room for an item to grow. */
     .glyph.fit {
