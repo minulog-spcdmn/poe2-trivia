@@ -14,7 +14,8 @@ import { DROPS_PER_MASK, MAX_MASKS, measureDrops, releaseAllDrops } from './back
 import { MAX_LIGHTS, packLights, stepHomeScene, stepMood } from './lights';
 import { fxActive, fxUserOn, onFxChange } from './fx/core';
 import { COLUMNS, PALETTE, ROWS, SIZE_STRIDE, SLOTS, TILES, embers } from './backdropEmbers';
-import { currentDescent, snapDescent, stepDescent, targetDescent } from './descent';
+import { ENV, currentDescent, snapDescent, stepDescent, targetDescent } from './descent';
+import { pressureLevel } from './darkness';
 import { DIALOG_BLUR, DIALOG_DIM, openDialog } from './behindDialog';
 
 const VERT = `#version 300 es
@@ -59,6 +60,13 @@ uniform vec4 uFloor;
 uniform vec3 uHaze;
 uniform vec4 uShade;
 uniform vec4 uMist;
+// How much of each stratum's environment shows (ENVIRONMENTS in
+// lib/descent.ts, four to a vec4); where the void's two eddies turn (x, y
+// each, fractions of the screen; the embers swirl round the same); and the
+// dark closing in from the edges: (depth, the question's clock).
+uniform vec4 uEnv[3];
+uniform vec4 uEddy;
+uniform vec2 uDark;
 
 // The start page: (rays, title glow, time in s, title breath), and the
 // title's centre and half size (CSS px). See setHomeScene in lights.ts.
@@ -85,6 +93,197 @@ float vnoise(vec2 x) {
   vec2 f = fract(x);
   f = f * f * (3.0 - 2.0 * f);
   return mix(mix(nhash(i), nhash(i + vec2(1.0, 0.0)), f.x), mix(nhash(i + vec2(0.0, 1.0)), nhash(i + 1.0), f.x), f.y);
+}
+
+float fbm(vec2 x) { return 0.5 * vnoise(x) + 0.3 * vnoise(x * 2.03 + 11.7) + 0.2 * vnoise(x * 4.1 - 5.3); }
+// Ridged noise: 1 along the winding seams where the noise crosses its middle.
+float ridge(vec2 x) { return 1.0 - abs(2.0 * vnoise(x) - 1.0); }
+// The smallest of three or four distances, smoothly, so no crease runs in
+// from the corners.
+float smin3(float a, float b, float c, float k) { return -k * log(exp(-a / k) + exp(-b / k) + exp(-c / k)); }
+float smin4(float a, float b, float c, float d, float k) { return -k * log(exp(-a / k) + exp(-b / k) + exp(-c / k) + exp(-d / k)); }
+
+// Delve's environments, one to a stratum: what makes each a place rather
+// than a colour. All are noise, soft-edged and slowly moving, like the rest
+// of the backdrop; nothing in them is a shape that could be picked out.
+// p in CSS px, q = p / S, xy = fractions of the screen, tm the clock (s).
+vec3 environments(vec3 col, vec2 p, vec2 q, vec2 xy, float S, float W, float H, float tm, float dark) {
+  vec4 e0 = uEnv[0];
+  vec4 e1 = uEnv[1];
+  vec4 e2 = uEnv[2];
+  float side = 1.0 - smoothstep(0.0, 0.3, min(xy.x, 1.0 - xy.x));
+  // What glows still shows through the dark closing in, dimmed.
+  float lit = 1.0 - 0.6 * dark;
+
+  // The Mines: lamps hung along the walls, each a warm pool that gutters,
+  // and the rock's seams running across, catching their light.
+  if (e0.x > 0.0) {
+    vec2 wq = q + 0.25 * vec2(vnoise(q * 1.3 + 2.0), vnoise(q * 1.3 + 9.0));
+    float seam = pow(ridge(vec2(wq.x * 1.4, wq.y * 7.0)), 6.0);
+    float lamps = 0.0;
+    for (int i = 0; i < 4; i++) {
+      float fi = float(i);
+      vec2 at = vec2(i < 2 ? 0.05 + 0.06 * fi : 0.87 + 0.06 * (fi - 2.0), 0.3 + 0.45 * fract(fi * 0.618 + 0.1)) * vec2(W, H);
+      vec2 d = (p - at) / S;
+      float gutter = 0.7 + 0.3 * vnoise(vec2(tm * 2.6, fi * 7.0));
+      lamps += gutter * gauss(length(d) / (0.16 * (0.7 + 0.6 * vnoise(d * 5.0 + fi * 3.1))));
+    }
+    lamps = min(1.2, lamps);
+    col *= 1.0 - e0.x * 0.45 * seam * (1.0 - min(1.0, lamps));
+    col += e0.x * lit * (rgb(255.0, 140.0, 50.0) * lamps * (0.1 + 0.25 * seam) + rgb(90.0, 50.0, 22.0) * seam * 0.04);
+  }
+
+  // Magma Fissure: cracks glowing through the rock, branching as they
+  // climb and brightest low down, the light pulsing up them and the heat
+  // shimmering over them. A crack is where a warped noise crosses its
+  // middle: jagged, like a coastline, and never closed into a shape.
+  if (e0.y > 0.0) {
+    vec2 m = vec2(q.x * 4.0, q.y * 2.0);
+    m += 0.4 * vec2(vnoise(m * 0.7 + 4.0), vnoise(m * 0.7 - 2.0));
+    m.x += 0.04 * (vnoise(vec2(q.x * 9.0, q.y * 6.0 + tm * 1.4)) - 0.5);
+    float n1 = fbm(m);
+    float n2 = fbm(m * 1.9 + 7.7);
+    float c1 = clamp(1.0 - abs(n1 - 0.5) * 9.0, 0.0, 1.0);
+    float c2 = clamp(1.0 - abs(n2 - 0.5) * 12.0, 0.0, 1.0) * smoothstep(0.15, 0.0, abs(n1 - 0.5));
+    float crack = c1 * c1 * c1 + 0.8 * c2 * c2 * c2;
+    float low = 0.25 + 0.75 * smoothstep(0.1, 1.0, xy.y) + 0.3 * side;
+    float flow = 0.35 + 0.65 * vnoise(vec2(m.x * 1.2, m.y * 1.6 + tm * 0.4));
+    float heat = crack * low * flow;
+    col += e0.y * lit * (rgb(255.0, 70.0, 14.0) * heat * 0.6 + rgb(255.0, 215.0, 140.0) * pow(heat, 3.0) * 0.5
+      + rgb(150.0, 18.0, 4.0) * smoothstep(0.2, 0.0, abs(n1 - 0.5)) * low * flow * 0.1);
+  }
+
+  // Frozen Hollow: frost creeping in from the walls and the ceiling, a
+  // feathered rim of ice needles grown along three directions, as ice
+  // grows, catching the light here and there, and a cold glitter in the air.
+  if (e0.z > 0.0) {
+    float fe = smin3(p.x / S, (W - p.x) / S, 1.2 * p.y / S, 0.05);
+    float rim = smoothstep(0.0, 0.2, 0.24 + 0.28 * (fbm(q * 2.6 + 1.7) - 0.5) - fe);
+    float needles = 0.0;
+    for (int i = 0; i < 3; i++) {
+      float a = float(i) * 2.0944 + 0.35;
+      vec2 dir = vec2(cos(a), sin(a));
+      vec2 u = vec2(dot(q, dir), dot(q, vec2(-dir.y, dir.x)));
+      needles = max(needles, vnoise(vec2(u.x * 16.0, u.y * 70.0) + float(i) * 13.0));
+    }
+    // In patches, thickest at the rim, and thinning out into the hall.
+    float patches = smoothstep(0.45, 0.75, fbm(q * 3.2 + 4.0));
+    float cr = smoothstep(0.7, 0.97, needles) * patches * rim * (0.5 + 0.5 * vnoise(q * 9.0));
+    float glitter = smoothstep(0.72, 1.0, vnoise(q * 36.0 + vec2(tm * 0.2, 0.0))) * (0.3 + cr);
+    col = mix(col, rgb(160.0, 200.0, 240.0), e0.z * lit * (rim * (0.1 + 0.08 * patches) + 0.3 * cr));
+    col += e0.z * lit * rgb(215.0, 238.0, 255.0) * (rim + 0.2) * glitter * 0.3;
+  }
+
+  // Fungal Caverns: clusters of glowing caps in the walls and along the
+  // floor, each cap pulsing softly to a slow beat of its own, and a green
+  // glow about the clusters.
+  if (e0.w > 0.0) {
+    float place = 0.2 + 0.8 * max(side, smoothstep(0.35, 1.0, xy.y));
+    float pocket = smoothstep(0.42, 0.72, vnoise(q * 2.6 + 3.3)) * place;
+    float caps = 0.0;
+    for (int i = 0; i < 2; i++) {
+      float k = i == 0 ? 30.0 : 52.0;
+      vec2 g = q * k + float(i) * 17.0;
+      vec2 cell = floor(g);
+      float h = nhash(cell);
+      vec2 f = fract(g) - 0.2 - 0.6 * vec2(nhash(cell + 3.1), nhash(cell + 8.7));
+      // Caps only grow in the clusters, thickest in their hearts.
+      float grow = smoothstep(0.45 + 0.4 * h, 0.75 + 0.2 * h, vnoise((cell + 0.5) / k * 2.6 + 3.3));
+      float size = (i == 0 ? 0.012 : 0.02) * (0.5 + h);
+      caps += grow * exp(-dot(f, f) / size) * (0.45 + 0.55 * sin(tm * (0.6 + h) + h * 40.0)) * (i == 0 ? 1.0 : 0.6);
+    }
+    float beat = 0.6 + 0.4 * sin(tm * 0.7 + 6.283 * vnoise(q * 1.3 + 8.0));
+    col += e0.w * lit * (rgb(40.0, 190.0, 130.0) * pocket * beat * 0.16 + rgb(190.0, 255.0, 140.0) * caps * (0.4 + 0.6 * place) * 0.85);
+  }
+
+  // Vaal Outpost: shafts of dusty gold light falling slantwise from above,
+  // gold dust sinking through them, and in them, faintly, worn carving.
+  if (e1.x > 0.0) {
+    float s = (p.x - 0.4 * p.y) / S;
+    float b = 0.7 * vnoise(vec2(s * 6.0, tm * 0.03)) + 0.3 * vnoise(vec2(s * 14.0 + 3.0, tm * 0.05));
+    float shaft = pow(smoothstep(0.5, 0.82, b), 1.5);
+    float fade = 0.15 + 0.85 * pow(1.0 - xy.y, 1.3);
+    float dust = 0.45 + 0.55 * fbm(vec2(q.x * 9.0, q.y * 9.0 - tm * 0.07));
+    float f = fract(6.0 * vnoise(q * 9.0 + 9.0) + 0.5 * vnoise(q * 30.0));
+    float carve = 0.86 + 0.14 * smoothstep(0.0, 0.5, f) * (1.0 - smoothstep(0.85, 1.0, f));
+    col += e1.x * lit * (rgb(255.0, 196.0, 104.0) * shaft * fade * dust * carve * 0.42 + rgb(110.0, 80.0, 30.0) * fade * carve * 0.03);
+  }
+
+  // Abyssal Depths: the void coiling round two slow eddies (the embers
+  // swirl round the same), torn violet tendrils with the dark between them.
+  if (e1.y > 0.0) {
+    float v = 0.0;
+    float near = 0.0;
+    for (int i = 0; i < 2; i++) {
+      vec2 c = (i == 0 ? uEddy.xy : uEddy.zw) * vec2(W, H);
+      vec2 d = (p - c) / S;
+      d += 0.12 * vec2(vnoise(q * 3.0 + float(i) * 7.0), vnoise(q * 3.0 + 4.0 + float(i) * 7.0)) - 0.06;
+      float r = length(d);
+      float a = (i == 0 ? 1.0 : -1.0) * atan(d.y, d.x) + 2.2 * log(r + 0.05) - tm * 0.1;
+      float arm = vnoise(vec2(cos(a), sin(a)) * 1.5 + vec2(r * 4.0, float(i) * 5.0));
+      float torn = smoothstep(0.3, 0.7, fbm(q * 4.0 + vec2(tm * 0.03, float(i) * 3.0)));
+      float reach = exp(-r * r / 0.16);
+      v += smoothstep(0.4, 0.8, arm) * torn * reach;
+      near += reach;
+    }
+    col *= 1.0 - e1.y * 0.45 * min(1.0, near) * (1.0 - min(1.0, v));
+    col += e1.y * lit * (rgb(140.0, 60.0, 255.0) * v * 0.16 + rgb(225.0, 190.0, 255.0) * pow(v, 3.0) * 0.08);
+  }
+
+  // Petrified Forest: stone trunks standing in the fog, pale mist
+  // drifting past in layers, the far one behind the trunks and the nearer
+  // ones in front, faster.
+  if (e1.z > 0.0) {
+    float tx = q.x * 4.5 + 0.5 * vnoise(vec2(q.x * 2.0, q.y * 1.4));
+    float trunks = smoothstep(0.56, 0.78, vnoise(vec2(tx, 3.0))) * smoothstep(-0.3, 0.5, xy.y);
+    trunks = max(trunks, 0.6 * smoothstep(0.6, 0.82, vnoise(vec2(tx * 2.3 + 7.0, 5.0))) * smoothstep(-0.1, 0.6, xy.y));
+    float mist[3];
+    for (int i = 0; i < 3; i++) {
+      float fi = float(i);
+      float k = 1.5 + 0.9 * fi;
+      float layer = fbm(vec2(q.x * k - tm * (0.012 + 0.016 * fi) * k, q.y * k * 2.6 + fi * 5.0));
+      mist[i] = smoothstep(0.36, 0.76, layer) * gauss((xy.y - 0.25 - 0.28 * fi) / 0.26) * (0.6 + 0.2 * fi);
+    }
+    vec3 fog = rgb(150.0, 160.0, 166.0);
+    float thin = e1.z * 0.3 * (1.0 - 0.5 * dark);
+    col = mix(col, fog, thin * (0.25 + min(1.0, mist[0] + 0.5)));
+    col = mix(col, rgb(10.0, 11.0, 12.0), e1.z * 0.85 * trunks);
+    col = mix(col, fog, thin * min(1.0, mist[1] + mist[2]));
+  }
+
+  // Sulphur Vents: fumes billowing up from below in columns, spreading
+  // and thinning as they rise, lit from the vents.
+  if (e1.w > 0.0) {
+    float up = 1.0 - xy.y;
+    float xc = (p.x - 0.5 * W) / S;
+    float vents = smoothstep(0.5, 0.78, vnoise(vec2(xc * 3.0 / (0.6 + 1.0 * up) + 10.0, 2.0)));
+    vec2 bq = vec2(xc * 4.5, q.y * 1.8 + tm * 0.16);
+    float billow = fbm(bq + 0.6 * vec2(vnoise(bq * 1.3 + vec2(0.0, tm * 0.1)), 0.0));
+    float plume = vents * smoothstep(0.35, 0.72, billow) * smoothstep(1.25, 0.15, up);
+    col = mix(col, rgb(160.0, 180.0, 64.0), e1.w * 0.4 * plume * (1.0 - 0.5 * dark));
+    col += e1.w * lit * rgb(210.0, 235.0, 90.0) * plume * (0.3 + 0.7 * xy.y) * 0.08;
+  }
+
+  // Abyssal City: all but black, fog banks drifting at two depths in front
+  // of the far lights (drawn per pixel, see main()).
+  if (e2.x > 0.0) {
+    float fog = smoothstep(0.45, 0.8, fbm(vec2(q.x * 1.6 - tm * 0.01, q.y * 5.0))) * gauss((xy.y - 0.7) / 0.3);
+    fog += 0.6 * smoothstep(0.5, 0.85, fbm(vec2(q.x * 2.6 - tm * 0.025, q.y * 7.0 + 4.0))) * gauss((xy.y - 0.42) / 0.25);
+    col *= 1.0 - e2.x * 0.4;
+    col += e2.x * lit * rgb(46.0, 60.0, 130.0) * fog * 0.14;
+  }
+
+  // Primeval Ruins: white-hot fire welling up from below and licking up
+  // the walls, the air over it shimmering in rising waves.
+  if (e2.y > 0.0) {
+    vec2 hq = vec2(q.x * 3.0, q.y * 2.0 + tm * 0.5);
+    float haze = fbm(hq + 0.6 * vec2(vnoise(hq * 1.7 + tm * 0.2), 0.0));
+    float rise = xy.y + 0.28 * (haze - 0.5) + 0.35 * side * (0.5 + haze);
+    float hot = smoothstep(0.3, 1.15, rise);
+    col += e2.y * lit * (rgb(255.0, 96.0, 24.0) * hot * 0.34 + rgb(255.0, 240.0, 200.0) * pow(hot, 3.0) * 0.6);
+    col *= 1.0 + e2.y * 0.8 * (vnoise(vec2(q.x * 13.0, q.y * 5.0 + tm * 1.8)) - 0.5) * hot;
+  }
+  return col;
 }
 
 // The soft light at p (CSS px, top-left origin).
@@ -143,8 +342,24 @@ vec3 smoothLight(vec2 p) {
     col = mix(col, uMist.rgb, uMist.a * smoothstep(0.42, 0.82, n));
     vec2 c = (p - vec2(0.5 * W, 0.62 * H)) / vec2(W, H) + 0.4 * (warp - 0.5);
     float edge = length(c * vec2(1.4, 1.15));
-    col *= 1.0 - uShade.a * smoothstep(0.08, 0.9, edge + 0.9 * (0.52 - n));
+    col *= 1.0 - 0.75 * uShade.a * smoothstep(0.08, 0.9, edge + 0.9 * (0.52 - n));
   }
+
+  // The dark closing in from the edges, deeper down (uDark.x) and as a
+  // question's clock runs down (uDark.y): drifting noise, reaching in
+  // unevenly, so it never reads as an ellipse. What glows in the stratum's
+  // environment still shows through it, dimmed.
+  float dark = 0.0;
+  if (uDark.x + uDark.y > 0.0) {
+    float tm = uHome.z;
+    vec2 q = p / S;
+    float e = smin4(p.x / S, (W - p.x) / S, 1.2 * p.y / S, 1.2 * (H - p.y) / S, 0.06);
+    float n = fbm(q * 2.6 + vec2(tm * 0.02, -tm * 0.015) + 0.5 * vnoise(q * 1.1 - tm * 0.01));
+    float reach = 0.02 + 0.42 * uDark.x + 0.26 * uDark.y;
+    dark = smoothstep(-0.06, 0.14, reach - e + 0.2 * (n - 0.5));
+    col *= (1.0 - 0.92 * dark) * (1.0 - 0.2 * uDark.x) * (1.0 - 0.3 * uDark.y);
+  }
+  if (uShade.a > 0.0 || uMist.a > 0.0) col = environments(col, p, p / S, p / vec2(W, H), S, W, H, uHome.z, dark);
 
   // The start page: god rays falling from high above the centre, each beam
   // slowly waxing and waning in place, and a royal glow behind the title.
@@ -229,6 +444,8 @@ uniform sampler2D uEmbers;
 uniform vec4 uEmberHalo[${PALETTE}];
 uniform vec3 uEmberCore[${PALETTE}];
 uniform float uEmberGain;
+// Abyssal City's far lights: how many show (0 to 1), and the clock (s).
+uniform vec2 uCity;
 uniform vec4 uShGeo[${MAX_ELEMENTS * SHADOWS_PER_ELEMENT}];
 uniform vec4 uShCol[${MAX_ELEMENTS * SHADOWS_PER_ELEMENT}];
 
@@ -308,6 +525,26 @@ void main() {
   float H = uSize.y;
 
   vec3 col = ${split ? 'texture(uSmooth, vec2(p.x / W, 1.0 - p.y / H)).rgb' : 'smoothLight(p)'};
+
+  // Abyssal City: far cold lights, like windows or stars, gathered in
+  // clusters at two depths that drift past at two speeds. Each is a point a
+  // pixel or two across, too fine for the soft light's own target.
+  if (uCity.x > 0.0) {
+    for (int i = 0; i < 2; i++) {
+      float cs = i == 0 ? 7.0 : 12.0;
+      vec2 pp = p + vec2(uCity.y * (i == 0 ? 1.0 : 2.6), 0.0);
+      vec2 cell = floor(pp / cs);
+      float h = hash(cell + float(i) * 31.0);
+      float cluster = vnoise(cell * (i == 0 ? 0.11 : 0.07) + float(i) * 9.0);
+      if (h < 0.84 || cluster < 0.5) continue;
+      vec2 at = (cell + 0.3 + 0.4 * vec2(hash(cell + 7.0), hash(cell + 13.0))) * cs;
+      vec2 d = pp - at;
+      float tw = 0.65 + 0.35 * sin(uCity.y * (0.4 + 1.6 * h) + h * 60.0);
+      float lit = smoothstep(0.5, 0.7, cluster) * (i == 0 ? 0.7 : 1.2) * (0.3 + 0.7 * smoothstep(0.0, 0.6, p.y / uViewH));
+      float r2 = dot(d, d);
+      col += mix(vec3(0.55, 0.65, 1.0), vec3(1.0, 0.85, 0.6), step(0.975, h)) * (exp(-r2 / (i == 0 ? 0.6 : 1.1)) + 0.12 * exp(-r2 / 9.0)) * tw * lit * 0.8 * uCity.x;
+    }
+  }
 
   // Embers rising through the dark: a hot core and a wide, dim halo.
   int tile = clamp(int(p.y / H * ${ROWS}.0), 0, ${ROWS - 1}) * ${COLUMNS} + clamp(int(p.x / W * ${COLUMNS}.0), 0, ${COLUMNS - 1});
@@ -658,6 +895,10 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   const uHaze = S('uHaze');
   const uShade = S('uShade');
   const uMist = S('uMist');
+  const uEnv = S('uEnv');
+  const uEddy = S('uEddy');
+  const uDark = S('uDark');
+  const env = new Float32Array(12);
   const uBlobColor = S('uBlobColor');
   gl.useProgram(soft);
   gl.uniform3fv(S('uBlobB'), BLOBS.flatMap((b) => b.reach));
@@ -675,6 +916,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   const uEmberHalo = U('uEmberHalo');
   const uEmberCore = U('uEmberCore');
   const uEmberGain = U('uEmberGain');
+  const uCity = U('uCity');
   const uElCount = U('uElCount');
   const uDialog = U('uDialog');
   gl.uniform1i(U('uSmooth'), 3);
@@ -771,6 +1013,8 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   let last = -Infinity;
   let lastStep = performance.now();
 
+  /** The question's clock as the dark last drawn shows it (lib/darkness.ts). */
+  let pressure = 0;
   function draw() {
     // Every gradient breathes on its own cycle; the periods share no common
     // factor, so the combined motion takes hours to repeat. Reduced motion
@@ -797,6 +1041,11 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     gl!.uniform3f(uHaze, look.haze[0] / 255, look.haze[1] / 255, look.haze[2] / 255);
     gl!.uniform4f(uShade, look.shade[0], look.shade[1], look.shade[2], look.dark);
     gl!.uniform4f(uMist, look.mist[0] / 255, look.mist[1] / 255, look.mist[2] / 255, look.mistK);
+    // Its environment, and the dark closing in with the depth and the clock.
+    for (let i = 0; i < ENV; i++) env[i] = look.env[i] < 0.002 ? 0 : look.env[i];
+    gl!.uniform4fv(uEnv, env);
+    gl!.uniform4fv(uEddy, embers.eddies);
+    gl!.uniform2f(uDark, currentDescent().close, pressure);
     gl!.uniform2f(uGlow, 1 + 0.08 * glow, (1 - 0.4 * glow) * look.lamp);
     gl!.uniform2f(uBottom, (1 + 0.1 * bottom) * look.floorH, 1 + 0.3 * bottom);
     gl!.uniform2f(uTop, 1 + 0.08 * top, (1 + 0.35 * top) * look.hazeK);
@@ -861,6 +1110,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     gl!.uniform4fv(uEmberHalo, embers.halo);
     gl!.uniform3fv(uEmberCore, embers.core);
     gl!.uniform1f(uEmberGain, calm() ? 0.6 : 1);
+    gl!.uniform2f(uCity, env[8], home[2]);
     gl!.activeTexture(gl!.TEXTURE2);
     gl!.bindTexture(gl!.TEXTURE_2D, emberTex);
     gl!.texSubImage2D(gl!.TEXTURE_2D, 0, 0, 0, SLOTS, TILES, gl!.RGBA, gl!.FLOAT, embers.data);
@@ -918,9 +1168,10 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   let wasDescending = false;
   function frame(now: number) {
     raf = requestAnimationFrame(frame);
-    const dt = Math.min(0.1, (now - lastStep) / 1000);
+    // (A frame's time can come before the last one's; it never runs backwards here.)
+    const dt = Math.max(0, Math.min(0.1, (now - lastStep) / 1000));
     const still = calm();
-    if (!still) clock += now - lastStep;
+    if (!still) clock += 1000 * dt;
     lastStep = now;
     const nowS = now / 1000;
     const lights = packLights(lightA, lightC, nowS);
@@ -935,6 +1186,13 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     // either.
     // Delve's depth eases in; holding still, it changes at once (it is game information).
     const descending = still ? snapDescent() : stepDescent(dt);
+    // The dark of a question's clock eases in and out by itself: drawn at
+    // 30fps with everything else, or, holding still, in steps of a fiftieth.
+    const p = pressureLevel(now);
+    if (p !== pressure && (Math.abs(p - pressure) > (still ? 0.02 : 0.002) || p === 0)) {
+      pressure = p;
+      if (still) dirty = true;
+    }
     embers.descend(currentDescent(), targetDescent());
     // Arrived at a depth: the embers still in the old colour take the new one (after a rejoin, all of them).
     if (wasDescending && !descending) embers.recolor();

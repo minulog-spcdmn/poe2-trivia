@@ -2,7 +2,8 @@
   import { session } from '../lib/session.svelte';
   import { sfx } from '../lib/sound';
   import { timerTick } from '../lib/fx/moments';
-  import { AZURITE_FAST_MS, questionTimer } from '../lib/delve';
+  import { questionTimer, veinWindowMs } from '../lib/delve';
+  import { claimPressure, pressureOf, type Pressure } from '../lib/darkness';
 
   /**
    * `deadline` null: the clock hasn't started yet (Delve waits for the art), so
@@ -18,16 +19,15 @@
   // Delve: the ring spans the time the question started with (a find's is
   // always the shortest, whatever `total` says before its clock starts, and a
   // flare's extra time fills it back up rather than stretching it). On an
-  // Azurite Vein its first AZURITE_FAST_MS (a right answer earns a ward) are
-  // drawn in azurite at the head of the ring.
+  // Azurite Vein its fast window (veinWindowMs: a right answer in it earns a
+  // ward) is drawn in azurite at the head of the ring.
   const st = $derived(session.state);
   const q = $derived(st?.delve ? st.question : null);
   const azurite = $derived(q?.find === 'azurite');
   const span = $derived(st?.delve && q ? questionTimer(st) : total);
   /** Milliseconds left on the clock when the fast window closes. */
-  const fastEnd = $derived(
-    deadline !== null && q?.clockAt !== undefined ? deadline - q.clockAt - AZURITE_FAST_MS : span * 1000 - AZURITE_FAST_MS,
-  );
+  const fastMs = $derived(st ? veinWindowMs(st) : 0);
+  const fastEnd = $derived(deadline !== null && q?.clockAt !== undefined ? deadline - q.clockAt - fastMs : span * 1000 - fastMs);
 
   let remaining = $state(Infinity);
 
@@ -47,6 +47,21 @@
   let lastTick = -1;
   let started = false;
 
+  // Delve: while the clock runs, the light shrinks with it (lib/darkness.ts).
+  // The ring of the question on screen drives it (a new one takes over from
+  // one still fading out), and lets it lift when the clock stops.
+  const delve = $derived(!!st?.delve);
+  let dark: Pressure | null = null;
+  $effect(() => {
+    if (!delve || deadline === null || stopped) return;
+    const own = claimPressure();
+    dark = own;
+    return () => {
+      own.release();
+      if (dark === own) dark = null;
+    };
+  });
+
   $effect(() => {
     if (deadline === null) {
       remaining = span * 1000;
@@ -64,6 +79,7 @@
     const loop = () => {
       const left = Math.max(0, end - session.hostNow());
       const secs = Math.ceil(left / 1000);
+      dark?.set(pressureOf(left, span * 1000, warnFrom));
       // The ring is redrawn only once its end has moved a third of a pixel
       // (or the number changes): on a 20 s timer about 25 times a second
       // rather than every frame, and each redraw repaints its glow.

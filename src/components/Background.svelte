@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { startBackdrop } from '../lib/backdrop';
-  import { descent, lookOf, onDescent, type Descent } from '../lib/descent';
+  import { ENVIRONMENTS, descent, lookOf, onDescent, type Descent } from '../lib/descent';
 
   // Ambient backdrop: warm glow, vignette and slowly rising embers. The WebGL
   // backdrop draws its own embers; these CSS ones are for the fallback.
@@ -49,7 +49,14 @@
     <div class="glow"></div>
     <div class="floor" style:--floor={css(look.floor, look.floorK)} style:--floor-h={look.floorH}></div>
     <div class="mist" style:--mist={css(look.mist, 1)} style:opacity={look.mistK * 3}></div>
+    <!-- Each stratum's environment, roughly (lib/backdrop.ts draws them properly). -->
+    {#each ENVIRONMENTS as name, i (name)}
+      {#if look.env[i] > 0}
+        <div class="env env-{name}" style:opacity={look.env[i]}></div>
+      {/if}
+    {/each}
     <div class="dark" style:opacity={look.dark}></div>
+    <div class="dark close" style:opacity={dsc.close}></div>
     <div class="grain"></div>
     <div class="embers">
     {#each embers as e, i (i)}
@@ -172,6 +179,73 @@
       radial-gradient(30% 40% at 0% 78%, rgba(0, 0, 0, 0.75), transparent),
       radial-gradient(40% 30% at 88% 96%, rgba(0, 0, 0, 0.7), transparent),
       radial-gradient(26% 22% at 34% 30%, rgba(0, 0, 0, 0.35), transparent);
+  }
+  .env {
+    position: absolute;
+    inset: 0;
+  }
+  .env-lamps {
+    background:
+      radial-gradient(14% 18% at 6% 34%, rgba(255, 140, 50, 0.12), transparent),
+      radial-gradient(12% 16% at 93% 52%, rgba(255, 140, 50, 0.1), transparent),
+      radial-gradient(10% 14% at 10% 74%, rgba(255, 140, 50, 0.08), transparent);
+  }
+  .env-magma {
+    background:
+      radial-gradient(30% 22% at 22% 104%, rgba(255, 80, 16, 0.22), transparent),
+      radial-gradient(26% 30% at 78% 102%, rgba(255, 60, 10, 0.18), transparent),
+      radial-gradient(8% 40% at 4% 90%, rgba(200, 30, 6, 0.14), transparent);
+  }
+  .env-frost {
+    background:
+      radial-gradient(16% 60% at 0% 40%, rgba(150, 190, 235, 0.16), transparent),
+      radial-gradient(14% 50% at 100% 30%, rgba(150, 190, 235, 0.14), transparent),
+      radial-gradient(50% 10% at 50% 0%, rgba(150, 190, 235, 0.12), transparent);
+  }
+  .env-spores {
+    background:
+      radial-gradient(9% 7% at 8% 86%, rgba(90, 230, 150, 0.18), transparent),
+      radial-gradient(7% 6% at 88% 78%, rgba(150, 255, 140, 0.15), transparent),
+      radial-gradient(6% 5% at 30% 97%, rgba(90, 230, 150, 0.14), transparent);
+  }
+  .env-shafts {
+    background: repeating-linear-gradient(-70deg, transparent 0 9%, rgba(255, 200, 110, 0.06) 13%, transparent 18% 27%);
+    mask-image: linear-gradient(to bottom, #000, transparent 85%);
+  }
+  .env-void {
+    background:
+      radial-gradient(22% 26% at 17% 64%, rgba(140, 60, 255, 0.14), transparent),
+      radial-gradient(20% 24% at 82% 33%, rgba(140, 60, 255, 0.12), transparent);
+  }
+  .env-mist {
+    background:
+      linear-gradient(to bottom, transparent 18%, rgba(140, 150, 156, 0.08) 30%, transparent 42%, rgba(140, 150, 156, 0.1) 58%, transparent 70%, rgba(140, 150, 156, 0.1) 86%, transparent);
+  }
+  .env-plumes {
+    background:
+      radial-gradient(9% 60% at 26% 100%, rgba(170, 190, 70, 0.14), transparent),
+      radial-gradient(11% 70% at 64% 100%, rgba(170, 190, 70, 0.12), transparent),
+      radial-gradient(7% 45% at 90% 100%, rgba(170, 190, 70, 0.1), transparent);
+  }
+  .env-city {
+    background:
+      radial-gradient(circle, rgba(150, 170, 255, 0.5) 0.6px, transparent 1.4px) 0 0 / 53px 37px,
+      radial-gradient(circle, rgba(150, 170, 255, 0.3) 0.5px, transparent 1.2px) 17px 11px / 31px 43px,
+      rgba(0, 0, 0, 0.3);
+    mask-image: linear-gradient(to bottom, transparent, #000 50%);
+  }
+  .env-heat {
+    background:
+      radial-gradient(70% 34% at 50% 108%, rgba(255, 240, 200, 0.2), transparent),
+      radial-gradient(90% 50% at 40% 110%, rgba(255, 100, 24, 0.18), transparent);
+  }
+  /* The dark closing in with the depth (descent.ts's close): at the edges only. */
+  .close {
+    background:
+      radial-gradient(30% 50% at 0% 40%, rgba(0, 0, 0, 0.85), transparent),
+      radial-gradient(28% 46% at 100% 60%, rgba(0, 0, 0, 0.85), transparent),
+      radial-gradient(50% 20% at 40% 0%, rgba(0, 0, 0, 0.7), transparent),
+      radial-gradient(46% 18% at 64% 100%, rgba(0, 0, 0, 0.7), transparent);
   }
   .ember {
     position: absolute;

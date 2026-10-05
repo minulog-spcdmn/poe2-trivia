@@ -6,8 +6,9 @@
 // them through `swarm`, and a big moment flare them up for a few seconds
 // through `flare`. In Delve each stratum (lib/descent.ts) has embers of its
 // own: their colour, how many, how fast, large and restless they are,
-// whether they rise or sink, and what glints in the walls (`descend`). A new
-// stratum's colour spreads ember by ember, as each starts a new rise.
+// whether they rise or sink, whether eddies pull them round or sparks burst
+// up from below, and what glints in the walls (`descend`). A new stratum's
+// colour spreads ember by ember, as each starts a new rise.
 
 import { lookOf, SURFACE, type Descent, type Look } from './descent.ts';
 
@@ -37,6 +38,10 @@ export const SIZE_STRIDE = 32;
 export const WALL_GLINTS = 12;
 export const FREE_GLINTS = 22;
 export const GLINTS = WALL_GLINTS + FREE_GLINTS;
+/** Sparks a burst throws up from below (in a stratum with bursts). */
+export const SPARKS = 18;
+/** Where the backdrop's eddies turn (lib/backdrop.ts draws the void coiling round the same two). */
+export const EDDY_REACH = 0.34;
 
 type Ember = {
   x0: number; // fraction of the width
@@ -119,6 +124,13 @@ export class Embers {
   /** The draft that pushes them sideways, and the glints' twinkle, on clocks of their own. */
   private gustT = r() * 100;
   private glintT = r() * 100;
+  /** The stratum aimed at last step: a jump of more than one recolours them all at once. */
+  private aimed = 0;
+  /** Sparks: (x, y, vx, vy, age, life) each, and the seconds to the next burst. */
+  private sparks = new Float32Array(SPARKS * 6);
+  private burstIn = 2;
+  /** The two eddies' centres, (x, y) each as fractions of the screen; their pull is the look's `eddy`. */
+  readonly eddies = new Float32Array(4);
   /** Ember clock: runs faster while stoked. */
   private t = r() * 100;
   private heat = 0;
@@ -128,7 +140,7 @@ export class Embers {
   private flareLevel = 0;
   private flareLeft = 0;
   /** (x, y, size + SIZE_STRIDE * palette entry, brightness) of every ember and then every glint. */
-  private pos = new Float32Array((EMBERS + GLINTS) * 4);
+  private pos = new Float32Array((EMBERS + GLINTS + SPARKS) * 4);
   /** Embers placed in each tile so far (step's scratch). */
   private used = new Uint8Array(TILES);
   /** (x, y, size + SIZE_STRIDE * palette entry, brightness) per slot, TILES rows of SLOTS; brightness 0 ends a row. */
@@ -178,6 +190,9 @@ export class Embers {
   descend(shown: Descent, aim: { stratum: number; turn: number } = shown) {
     this.look = shown.look;
     this.aim = aim;
+    // A jump (leaving a run, a rejoin): the scene cross-fades straight there, and the embers go with it.
+    if (Math.abs(aim.stratum - this.aimed) > 1) this.recolorDue = true;
+    this.aimed = aim.stratum;
   }
 
   /** The stratum ember `i` burns in if it starts now. */
@@ -251,6 +266,15 @@ export class Embers {
     this.gustT += dt * (0.2 + 0.35 * this.agit);
     this.glintT += dt;
     const a = this.agit;
+    // The eddies wander slowly about the walls, one low on the left, one high on the right.
+    const gt = this.glintT;
+    const ed = this.eddies;
+    ed[0] = 0.17 + 0.06 * Math.sin(gt * 0.05);
+    ed[1] = 0.64 + 0.08 * Math.sin(gt * 0.037 + 1);
+    ed[2] = 0.82 + 0.05 * Math.sin(gt * 0.043 + 2);
+    ed[3] = 0.33 + 0.08 * Math.sin(gt * 0.031 + 4);
+    const eddy = calm ? 0 : look.eddy;
+    const reach2 = (EDDY_REACH * Math.min(w, h)) ** 2;
     // A draft that comes and goes, pushing the restless ones sideways.
     const gust = a * 42 * (0.65 * Math.sin(this.gustT + 1.3) + 0.35 * Math.sin(2.3 * this.gustT));
     const flickerDepth = 0.22 + 0.2 * a;
@@ -276,8 +300,25 @@ export class Embers {
       }
       this.lastU[i] = u;
       const travel = u * (h * 1.08 + 32);
-      pos[i * 4] = e.x0 * w + (e.drift + gust) * u + Math.sin(u * Math.PI * 2 * e.swayRate + e.phase * 6.283) * e.sway * (1 + 0.7 * a);
-      pos[i * 4 + 1] = this.sink[i] ? travel - 16 : h + 16 - travel;
+      let x = e.x0 * w + (e.drift + gust) * u + Math.sin(u * Math.PI * 2 * e.swayRate + e.phase * 6.283) * e.sway * (1 + 0.7 * a);
+      let y = this.sink[i] ? travel - 16 : h + 16 - travel;
+      // Near an eddy an ember is swung round its centre, and drawn in a little.
+      if (eddy > 0) {
+        for (let k = 0; k < 2; k++) {
+          const cx = ed[k * 2] * w;
+          const cy = ed[k * 2 + 1] * h;
+          const dx = x - cx;
+          const dy = y - cy;
+          const f = eddy * Math.exp(-(dx * dx + dy * dy) / reach2);
+          const turn = (k ? -2.6 : 2.6) * f;
+          const c = Math.cos(turn) * (1 - 0.3 * f);
+          const sn = Math.sin(turn) * (1 - 0.3 * f);
+          x = cx + dx * c - dy * sn;
+          y = cy + dx * sn + dy * c;
+        }
+      }
+      pos[i * 4] = x;
+      pos[i * 4 + 1] = y;
       pos[i * 4 + 2] = e.size * sizeK + SIZE_STRIDE * entryOf(this.burn[i]);
       pos[i * 4 + 3] = e.bright * fade * fl * join * brightK;
     }
@@ -291,10 +332,39 @@ export class Embers {
       const amount = look.glints * (k < WALL_GLINTS ? 1 - look.spread : look.spread);
       const show = Math.min(1, Math.max(0, (amount - g.gate / narrow) / 0.15 + 1));
       const tw = 0.5 + 0.5 * Math.sin(this.glintT * g.rate + g.phase);
-      pos[i * 4] = g.x * w;
+      // The ones out in the open drift slowly past, the larger (nearer) faster.
+      const span = w * 1.08;
+      pos[i * 4] = k < WALL_GLINTS ? g.x * w : ((((g.x * w - this.glintT * (1.2 + 2.6 * (g.size - 1.4))) % span) + span) % span) - w * 0.04;
       pos[i * 4 + 1] = g.y * h;
       pos[i * 4 + 2] = g.size + SIZE_STRIDE * GLINT_COLOR;
       pos[i * 4 + 3] = amount > 0 ? show * Math.min(1, amount * 4) * (0.35 + 0.85 * tw * tw) : 0;
+    }
+    // Sparks: now and then a burst of them flies up from below, slows and dies.
+    if (!calm && look.burst > 0.02 && dt > 0) {
+      this.burstIn -= dt;
+      if (this.burstIn <= 0) {
+        this.burst(w, h, look.burst);
+        this.burstIn = (2.5 + r() * 4.5) / (0.35 + 0.65 * look.burst);
+      }
+    }
+    const sp = this.sparks;
+    const sparkEntry = SIZE_STRIDE * entryOf(this.aim.stratum);
+    for (let j = 0; j < SPARKS; j++) {
+      const o = j * 6;
+      const i = EMBERS + GLINTS + j;
+      if (sp[o + 4] >= sp[o + 5]) {
+        pos[i * 4 + 3] = 0;
+        continue;
+      }
+      sp[o + 3] += 300 * dt;
+      sp[o] += sp[o + 2] * dt;
+      sp[o + 1] += sp[o + 3] * dt;
+      sp[o + 4] += dt;
+      const left = 1 - sp[o + 4] / sp[o + 5];
+      pos[i * 4] = sp[o];
+      pos[i * 4 + 1] = sp[o + 1];
+      pos[i * 4 + 2] = (1.1 + 0.5 * (j % 3)) * this.scale + sparkEntry;
+      pos[i * 4 + 3] = Math.max(0, left) ** 1.4 * 1.5 * (0.75 + 0.25 * Math.sin(t * 23 + j * 2.1)) * look.bright;
     }
     // Sort the embers into the tiles their glow reaches, so each pixel of
     // the backdrop only looks at a handful.
@@ -306,7 +376,7 @@ export class Embers {
     const rowH = h / ROWS;
     // The glints first: they are few and still, and a tile too crowded to
     // hold every glow would otherwise drop one, and it would blink out.
-    const all = EMBERS + GLINTS;
+    const all = EMBERS + GLINTS + SPARKS;
     for (let j = 0; j < all; j++) {
       const i = (j + EMBERS) % all;
       const x = pos[i * 4];
@@ -330,6 +400,25 @@ export class Embers {
           data[k + 3] = b;
           used[tile]++;
         }
+    }
+  }
+
+  /** Throws a burst of sparks up from somewhere along the floor. */
+  private burst(w: number, h: number, level: number) {
+    const sp = this.sparks;
+    const x = (0.06 + r() * 0.88) * w;
+    const lift = Math.sqrt(h / 800);
+    let n = Math.round(7 + 10 * level);
+    for (let j = 0; j < SPARKS && n > 0; j++) {
+      const o = j * 6;
+      if (sp[o + 4] < sp[o + 5]) continue;
+      n--;
+      sp[o] = x + (r() - 0.5) * 30;
+      sp[o + 1] = h + 6;
+      sp[o + 2] = (r() - 0.5) * 160;
+      sp[o + 3] = -(300 + r() * 330) * lift;
+      sp[o + 4] = 0;
+      sp[o + 5] = 1.1 + r() * 1.3;
     }
   }
 }

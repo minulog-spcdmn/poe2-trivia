@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { BLUE_FROM, setDescent } from './lib/descent';
+  import { accentAt, setDescent } from './lib/descent';
   import { onMount, untrack } from 'svelte';
   import { fade, fly } from 'svelte/transition';
   import { session } from './lib/session.svelte';
@@ -8,6 +8,7 @@
   import { IMPRINT_URL, PRIVACY_URL } from './lib/site';
   import { dialogBackdrop } from './lib/behindDialog';
   import Background from './components/Background.svelte';
+  import Darkness from './components/Darkness.svelte';
   import FxLayer from './components/FxLayer.svelte';
   import Toasts from './components/Toasts.svelte';
   import Home from './components/Home.svelte';
@@ -156,6 +157,8 @@
 </script>
 
 <Background />
+<!-- Delve: the light shrinking at the screen's edges as a question's clock runs down. -->
+<Darkness active={!!gs?.delve && screen === 'game'} />
 
 <div class="shell" data-behind-dialog bind:this={shell}>
   {#if headerOn}
@@ -181,7 +184,7 @@
             <span class="spectating" title="You joined mid-game. You'll play in the next game.">Spectating</span>
             <span class="dot">•</span>
           {/if}
-          <span class="depth" class:deep={gs.round >= BLUE_FROM}>Depth <b>{gs.round}</b></span>
+          <span class="depth" style:--accent={accentAt(gs.round)}>Depth <b>{gs.round}</b></span>
         {:else if gs && screen === 'game'}
           {#if session.code && !session.hideCode}
             <span>Room <b>{session.code}</b></span>
@@ -432,9 +435,13 @@
   .spectating {
     color: var(--gold-hi);
   }
-  /* Where the embers start burning blue (descent.ts), the depth does too. */
-  .depth.deep b {
-    color: #b9cff0;
+  /* The depth takes its stratum's colour (descent.ts), as the scene turns into it. */
+  .depth b {
+    color: var(--accent);
+    text-shadow: 0 0 10px color-mix(in srgb, var(--accent) 35%, transparent);
+    transition:
+      color 1.2s,
+      text-shadow 1.2s;
   }
   .deathmatch {
     color: #ff7a5c;

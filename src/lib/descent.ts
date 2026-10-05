@@ -1,16 +1,20 @@
 // How deep the scene is: Delve's depth turned into what the backdrop, its
 // embers and the ambience follow. The descent passes through strata, one
-// every ten depths, each with a look of its own: the light welling up from
+// every ten depths, each a place of its own: the light welling up from
 // below, the smoke, how dark the hall is, what the embers burn like and how
-// they move, and what glints in the walls. Depth 1 is the usual scene; the
-// first stratum kindles over depths 1 to 10, and from then on each one turns
-// into the next over the first five depths of its own ten, so a stratum is
-// recognisable from its middle on. The blue embers are the third stratum,
-// from depth 21 (where a streak's fire can first burn blue). Each is named
-// after a Delve biome. Past depth 100 the strata go on for ever, each
-// pairing the hall of one deep stratum with the embers of another, so no two
-// in a row look alike, and each is announced by its hall's biome again.
-// Pure, apart from the eased channel at the bottom that the backdrop reads.
+// they move, what glints in the walls, and the features the backdrop draws
+// for it alone (the environments: magma veins, frost, spore light, shafts of
+// light, ...). Depth 1 is the usual scene; the first stratum kindles over
+// depths 1 to 7, and from then on each one creeps in over the last three
+// depths of the one before and settles over the first two of its own, so it
+// is mostly there by the time its name is announced. Each is named after a
+// Delve biome. Past depth 100 the strata go on for ever, each pairing the
+// hall of one deep stratum with the embers of another (and half its
+// features), so no two in a row look alike, and each is announced by its
+// hall's biome again. And the deeper, the closer the dark: it creeps in from
+// the edges a little with every depth of a stratum, and opens out again
+// into the next. Pure, apart from the eased channel at the bottom that the
+// backdrop reads.
 
 type RGB = [number, number, number];
 
@@ -55,7 +59,24 @@ export interface Look {
   glint: RGB;
   glints: number;
   spread: number;
+  /** Sparks bursting up from below now and then, and how often (0 to 1). */
+  burst: number;
+  /** Eddies in the dark that pull the embers round (0 to 1). */
+  eddy: number;
+  /** How much of each environment the backdrop draws (ENV of them, 0 to 1; see ENVIRONMENTS). */
+  env: number[];
+  /** The stratum's colour for text on the dark header (the depth). */
+  accent: RGB;
 }
+
+/**
+ * The environments the backdrop draws, one to a stratum through 100 (the
+ * order of STRATA): what each draws is in lib/backdrop.ts.
+ */
+export const ENVIRONMENTS = ['lamps', 'magma', 'frost', 'spores', 'shafts', 'void', 'mist', 'plumes', 'city', 'heat'] as const;
+export const ENV = ENVIRONMENTS.length;
+/** Only environment `k` (the rest 0). */
+const only = (k: number) => ENVIRONMENTS.map((_, i) => (i === k ? 1 : 0));
 
 /** The usual scene (outside Delve, and depth 1). */
 export const SURFACE: Look = {
@@ -86,6 +107,10 @@ export const SURFACE: Look = {
   glint: [0.34, 0.62, 1],
   glints: 0,
   spread: 0,
+  burst: 0,
+  eddy: 0,
+  env: ENVIRONMENTS.map(() => 0),
+  accent: [238, 206, 140],
 };
 
 /**
@@ -107,6 +132,7 @@ export const STRATA: { name: string; announced: boolean; look: Look }[] = [
       ember: [1, 0.5, 0.13], core: [1, 0.88, 0.6], coreMix: 0.58,
       crowd: 0.4, speed: 1.15, size: 1.05, bright: 1.1, agit: 0.2, fall: 0,
       glint: [1, 0.6, 0.2], glints: 0, spread: 0,
+      burst: 0, eddy: 0, env: only(0), accent: [240, 172, 96],
     },
   },
   {
@@ -122,10 +148,12 @@ export const STRATA: { name: string; announced: boolean; look: Look }[] = [
       ember: [1, 0.16, 0.08], core: [1, 0.6, 0.48], coreMix: 0.5,
       crowd: 0.3, speed: 0.8, size: 1.25, bright: 1.1, agit: 0.25, fall: 0,
       glint: [1, 0.22, 0.16], glints: 0.35, spread: 0,
+      burst: 1, eddy: 0, env: only(1), accent: [255, 116, 88],
     },
   },
   {
-    // Frozen: cold azure light from the floor, blue embers, azurite glinting.
+    // Frozen: cold azure light from the floor, frost creeping in from the
+    // walls, ice motes drifting down, azurite glinting.
     name: 'Frozen Hollow',
     announced: true,
     look: {
@@ -135,12 +163,14 @@ export const STRATA: { name: string; announced: boolean; look: Look }[] = [
       smoke: [28, 56, 104], smokeHi: [40, 52, 76], smokeMix: 1, smokeK: 1.4, shadowK: 1.3,
       mist: [30, 66, 124], mistK: 0.06,
       ember: [0.34, 0.62, 1], core: [0.86, 0.94, 1], coreMix: 0.62,
-      crowd: 0.45, speed: 1, size: 1, bright: 1.3, agit: 0.35, fall: 0,
+      crowd: 0.45, speed: 0.55, size: 1, bright: 1.3, agit: 0.3, fall: 1,
       glint: [0.4, 0.7, 1], glints: 1, spread: 0,
+      burst: 0, eddy: 0, env: only(2), accent: [150, 202, 255],
     },
   },
   {
-    // Fungal: a sickly green-black, spores drifting and swaying.
+    // Fungal: a sickly green-black, clusters of spore light pulsing low in
+    // the walls, spores drifting and swaying.
     name: 'Fungal Caverns',
     announced: true,
     look: {
@@ -150,12 +180,13 @@ export const STRATA: { name: string; announced: boolean; look: Look }[] = [
       smoke: [38, 66, 18], smokeHi: [30, 44, 22], smokeMix: 1, smokeK: 1.5, shadowK: 1.4,
       mist: [50, 100, 20], mistK: 0.09,
       ember: [0.6, 1, 0.18], core: [0.92, 1, 0.62], coreMix: 0.5,
-      crowd: 0.55, speed: 0.55, size: 1.3, bright: 1, agit: 0.6, fall: 0,
+      crowd: 0.55, speed: 0.45, size: 1.3, bright: 1, agit: 0.6, fall: 0.3,
       glint: [0.7, 1, 0.3], glints: 0.25, spread: 0.3,
+      burst: 0, eddy: 0.2, env: only(3), accent: [166, 232, 112],
     },
   },
   {
-    // Vaal gold: molten veins in the walls, gold dust sifting down.
+    // Vaal gold: dusty shafts of light from above on carved stone, gold dust sifting down.
     name: 'Vaal Outpost',
     announced: true,
     look: {
@@ -167,10 +198,11 @@ export const STRATA: { name: string; announced: boolean; look: Look }[] = [
       ember: [1, 0.82, 0.34], core: [1, 0.97, 0.84], coreMix: 0.62,
       crowd: 0.35, speed: 0.45, size: 0.75, bright: 1.25, agit: 0.1, fall: 0.6,
       glint: [1, 0.86, 0.42], glints: 1, spread: 0.35,
+      burst: 0, eddy: 0, env: only(4), accent: [242, 204, 106],
     },
   },
   {
-    // The abyss: violet light, restless embers swirling in the draft.
+    // The abyss: violet light, void coiling in the dark, embers pulled round in its eddies.
     name: 'Abyssal Depths',
     announced: true,
     look: {
@@ -182,10 +214,11 @@ export const STRATA: { name: string; announced: boolean; look: Look }[] = [
       ember: [0.72, 0.34, 1], core: [0.95, 0.85, 1], coreMix: 0.55,
       crowd: 0.7, speed: 1.35, size: 0.9, bright: 1.2, agit: 0.85, fall: 0,
       glint: [0.8, 0.5, 1], glints: 0.6, spread: 0.5,
+      burst: 0, eddy: 1, env: only(5), accent: [198, 152, 255],
     },
   },
   {
-    // Petrified: a pale, stone-grey fog, large ghostly wisps rising slowly.
+    // Petrified: stone trunks in a pale fog that drifts in layers, ash flakes falling.
     name: 'Petrified Forest',
     announced: true,
     look: {
@@ -195,13 +228,14 @@ export const STRATA: { name: string; announced: boolean; look: Look }[] = [
       smoke: [72, 78, 84], smokeHi: [80, 84, 90], smokeMix: 1, smokeK: 1.1, shadowK: 1.2,
       mist: [100, 112, 122], mistK: 0.08,
       ember: [0.72, 0.92, 0.95], core: [1, 1, 1], coreMix: 0.7,
-      crowd: 0.3, speed: 0.45, size: 1.75, bright: 0.8, agit: 0.2, fall: 0,
+      crowd: 0.3, speed: 0.4, size: 1.6, bright: 0.8, agit: 0.25, fall: 0.75,
       glint: [0.85, 0.95, 1], glints: 0, spread: 0,
+      burst: 0, eddy: 0, env: only(6), accent: [204, 214, 222],
     },
   },
   {
-    // Sulphur vents: a sickly green-blue light from above, motes sinking
-    // through the fumes as through water.
+    // Sulphur vents: yellow-green fumes billowing up from below in columns,
+    // motes rising with them.
     name: 'Sulphur Vents',
     announced: true,
     look: {
@@ -211,12 +245,13 @@ export const STRATA: { name: string; announced: boolean; look: Look }[] = [
       smoke: [28, 58, 44], smokeHi: [40, 74, 54], smokeMix: 1, smokeK: 1.4, shadowK: 1.4,
       mist: [52, 96, 58], mistK: 0.07,
       ember: [0.4, 1, 0.68], core: [0.86, 1, 0.9], coreMix: 0.55,
-      crowd: 0.5, speed: 0.5, size: 1, bright: 1.1, agit: 0.3, fall: 1,
+      crowd: 0.5, speed: 0.6, size: 1, bright: 1.1, agit: 0.3, fall: 0,
       glint: [0.72, 1, 0.5], glints: 0.4, spread: 0.7,
+      burst: 0.15, eddy: 0, env: only(7), accent: [214, 232, 104],
     },
   },
   {
-    // The drowned city: near black, a few still motes, cold lights all over like stars.
+    // The drowned city: near black, a few still motes, far cold lights at many depths, drifting past.
     name: 'Abyssal City',
     announced: true,
     look: {
@@ -228,10 +263,12 @@ export const STRATA: { name: string; announced: boolean; look: Look }[] = [
       ember: [0.55, 0.62, 1], core: [1, 1, 1], coreMix: 0.75,
       crowd: 0, speed: 0.25, size: 0.7, bright: 1.4, agit: 0.05, fall: 0,
       glint: [0.75, 0.8, 1], glints: 1, spread: 1,
+      burst: 0, eddy: 0, env: only(8), accent: [156, 170, 236],
     },
   },
   {
-    // Primeval: the bottom of the world, white-hot fire roaring under black smoke.
+    // Primeval: the bottom of the world, white-hot fire roaring under black
+    // smoke, the air shimmering, a swarm of embers.
     name: 'Primeval Ruins',
     announced: true,
     look: {
@@ -243,6 +280,7 @@ export const STRATA: { name: string; announced: boolean; look: Look }[] = [
       ember: [1, 0.4, 0.07], core: [1, 0.95, 0.8], coreMix: 0.72,
       crowd: 1, speed: 1.9, size: 1.1, bright: 1.3, agit: 0.9, fall: 0,
       glint: [1, 0.35, 0.1], glints: 0.7, spread: 0.15,
+      burst: 0.7, eddy: 0.25, env: only(9), accent: [255, 222, 176],
     },
   },
 ];
@@ -250,7 +288,7 @@ export const STRATA: { name: string; announced: boolean; look: Look }[] = [
 /** Past the last stratum, the strata it pairs come from these (all but the first). */
 const DEEP = STRATA.slice(1);
 /** The parts of a look that make the hall; the rest are its embers and glints. */
-const HALL_KEYS = ['shade', 'dark', 'floor', 'floorK', 'floorH', 'haze', 'hazeK', 'lamp', 'smoke', 'smokeHi', 'smokeMix', 'smokeK', 'shadowK', 'mist', 'mistK'] as const;
+const HALL_KEYS = ['shade', 'dark', 'floor', 'floorK', 'floorH', 'haze', 'hazeK', 'lamp', 'smoke', 'smokeHi', 'smokeMix', 'smokeK', 'shadowK', 'mist', 'mistK', 'accent'] as const;
 
 /**
  * Past the last stratum: the hall of one deep stratum with the embers of
@@ -264,13 +302,24 @@ function pairing(k: number): { hall: number; embers: number } {
   return { hall, embers };
 }
 
-/** The look of stratum `k` (-1 is the surface, 0 depths 1 to 10, and on for ever). */
+/** The looks past the last stratum, made once each (they are read every frame). */
+const paired = new Map<number, Look>();
+
+/**
+ * The look of stratum `k` (-1 is the surface, 0 depths 1 to 10, and on for
+ * ever). Past the last, the hall's environment and half the embers'.
+ */
 export function lookOf(k: number): Look {
   if (k < 0) return SURFACE;
   if (k < STRATA.length) return STRATA[k].look;
+  let look = paired.get(k);
+  if (look) return look;
   const { hall, embers } = pairing(k);
-  const look = { ...DEEP[embers].look };
-  for (const key of HALL_KEYS) (look as Record<string, unknown>)[key] = DEEP[hall].look[key];
+  look = { ...DEEP[embers].look };
+  for (const key of HALL_KEYS) (look as unknown as Record<string, unknown>)[key] = DEEP[hall].look[key];
+  look.env = DEEP[hall].look.env.map((v, i) => Math.min(1, v + 0.5 * DEEP[embers].look.env[i]));
+  if (paired.size > 64) paired.clear();
+  paired.set(k, look);
   return look;
 }
 
@@ -280,20 +329,31 @@ export function stratumName(k: number): string {
   return DEEP[pairing(k).hall].name;
 }
 
-/** Each stratum after the first turns into view over this many depths from its start. */
-const TURN = 5;
+/** A stratum starts creeping in this many depths before its first... */
+const LEAD = 3;
+/** ...and has settled this many depths into it. */
+const SETTLE = 2;
 
 /**
  * The stratum a depth is in, or turning into, and how far (0 to 1): from
- * depth 1 to 10 the surface kindles into the first stratum, then stratum k
- * turns in over depths 10k to 10k + TURN (depth 20 is still all the second,
- * 21 starts the third).
+ * depth 1 to 7 the surface kindles into the first stratum, then stratum k
+ * turns in over depths 10k - LEAD to 10k + SETTLE. So at depth 21, where the
+ * third is announced, it is nine tenths there (two thirds at 20), and all
+ * there from 22.
  */
 export function strataAt(depth: number): { stratum: number; turn: number } {
   const d = Number.isFinite(depth) ? Math.max(0, depth) : 0;
-  if (d < 10) return { stratum: 0, turn: smoothstep(1, 10, d) };
-  const k = Math.floor(d / 10);
-  return { stratum: k, turn: smoothstep(10 * k, 10 * k + TURN, d) };
+  const k = Math.floor((d + LEAD) / 10);
+  if (k === 0) return { stratum: 0, turn: smoothstep(1, 10 - LEAD, d) };
+  return { stratum: k, turn: smoothstep(10 * k - LEAD, 10 * k + SETTLE, d) };
+}
+
+/** The stratum a depth is named after: 0 for depths 1 to 10, 1 for 11 to 20, ... */
+const stratumOf = (depth: number) => Math.max(0, Math.floor((Math.floor(depth) - 1) / 10));
+
+/** The colour the depth is shown in on the header: its stratum's. */
+export function accentAt(depth: number): string {
+  return `rgb(${(depth >= 1 ? lookOf(stratumOf(depth)) : SURFACE).accent.join(', ')})`;
 }
 
 export interface Descent {
@@ -301,6 +361,12 @@ export interface Descent {
   deep: number;
   /** The deepest dark, from about depth 50 to 75 (the ambience follows it). */
   abyss: number;
+  /**
+   * How close the dark has crept in from the edges, 0 to 1: a little more
+   * with every depth of a stratum, opening out again as the next comes in,
+   * and on the whole closer the deeper.
+   */
+  close: number;
   /** The stratum the scene is in or turning into (see strataAt), and how far. */
   stratum: number;
   turn: number;
@@ -318,34 +384,65 @@ function smoothstep(a: number, b: number, x: number) {
   return t * t * (3 - 2 * t);
 }
 
+/** A look to write into (see mixInto). */
+function blank(): Look {
+  const look = { ...SURFACE };
+  for (const key of Object.keys(look) as (keyof Look)[]) {
+    const v = look[key];
+    if (Array.isArray(v)) (look as Record<string, unknown>)[key] = [...v];
+  }
+  return look;
+}
+
+/** Writes `a` blended `t` of the way to `b` into `out`, without allocating. */
+function mixInto(out: Look, a: Look, b: Look, t: number): Look {
+  const o = out as unknown as Record<string, number | number[]>;
+  for (const key of Object.keys(a) as (keyof Look)[]) {
+    const x = a[key];
+    const y = b[key];
+    if (Array.isArray(x)) {
+      const arr = o[key] as number[];
+      for (let i = 0; i < x.length; i++) arr[i] = x[i] + ((y as number[])[i] - x[i]) * t;
+    } else o[key] = x + ((y as number) - x) * t;
+  }
+  return out;
+}
+
 /** Two looks blended, `t` of the way from `a` to `b`. */
 export function mixLook(a: Look, b: Look, t: number): Look {
   if (t <= 0) return a;
   if (t >= 1) return b;
-  const out: Record<string, number | number[]> = {};
-  for (const key of Object.keys(a) as (keyof Look)[]) {
-    const x = a[key];
-    const y = b[key];
-    out[key] = Array.isArray(x) ? x.map((v, i) => v + ((y as RGB)[i] - v) * t) : x + ((y as number) - x) * t;
-  }
-  return out as unknown as Look;
+  return mixInto(blank(), a, b, t);
 }
+
+/** How close the dark has crept in at a depth (see Descent.close). */
+function closeness(d: number) {
+  if (d < 1) return 0;
+  const k = Math.floor((d - 1) / 10);
+  const within = Math.min(1, (d - 1 - 10 * k) / 9) * (1 - smoothstep(10 * k + 8, 10 * k + 11, d));
+  return 0.45 * (1 - Math.exp(-(d - 1) / 40)) + 0.55 * within;
+}
+
+/** Writes the scene at a depth into `out` (its look is written over, never shared). */
+function fill(out: Descent, depth: number): Descent {
+  const d = Number.isFinite(depth) ? Math.max(0, depth) : 0;
+  const { stratum, turn } = strataAt(d);
+  const look = mixInto(out.look, lookOf(stratum - 1), lookOf(stratum), turn);
+  out.deep = d < 1 ? 0 : 1 - Math.exp(-(d - 1) / 22);
+  // Within a stratum the dark still creeps in a little with every depth.
+  look.dark += (1 - look.dark) * 0.15 * out.deep;
+  out.abyss = smoothstep(ABYSS_FROM, ABYSS_FULL, d);
+  out.close = closeness(d);
+  out.stratum = stratum;
+  out.turn = turn;
+  return out;
+}
+
+const fresh = (): Descent => ({ deep: 0, abyss: 0, close: 0, stratum: 0, turn: 0, look: blank() });
 
 /** The scene at a depth (0 outside Delve: the usual scene). Fractional depths ease between whole ones. */
 export function descent(depth: number): Descent {
-  const d = Number.isFinite(depth) ? Math.max(0, depth) : 0;
-  const { stratum, turn } = strataAt(d);
-  const look = mixLook(lookOf(stratum - 1), lookOf(stratum), turn);
-  const deep = d < 1 ? 0 : 1 - Math.exp(-(d - 1) / 22);
-  // Within a stratum the dark still creeps in a little with every depth.
-  const dark = look.dark + (1 - look.dark) * 0.15 * deep;
-  return {
-    deep,
-    abyss: smoothstep(ABYSS_FROM, ABYSS_FULL, d),
-    stratum,
-    turn,
-    look: dark === look.dark ? look : { ...look, dark },
-  };
+  return fill(fresh(), depth);
 }
 
 // ---- the named depths -------------------------------------------------------
@@ -369,12 +466,30 @@ export function milestoneAt(depth: number): string | null {
 /** The depth the scene shows, easing toward the depth of the game. */
 let shown = 0;
 let target = 0;
+/**
+ * A jump of more than JUMP depths (leaving a run, a rejoin deep down, a new
+ * run after one) doesn't walk the scene through every stratum between: it
+ * cross-fades straight there over FADE seconds, from `from` (the scene as it
+ * was shown), `fadeT` of the way.
+ */
+const JUMP = 3;
+const FADE = 1.6;
+let fading = false;
+let fadeT = 0;
+const from = fresh();
 const listeners = new Set<(d: Descent) => void>();
 
 /** Sets the depth the scene heads for (0 outside Delve). */
 export function setDescent(depth: number) {
   const d = Number.isFinite(depth) ? Math.max(0, depth) : 0;
   if (d === target) return;
+  if (Math.abs(d - shown) > JUMP || (d === 0 && shown > 0)) {
+    copyInto(from, currentDescent());
+    fading = true;
+    fadeT = 0;
+    fadeAt = NaN;
+    shown = d;
+  }
   target = d;
   for (const f of listeners) f(descent(d));
 }
@@ -388,38 +503,70 @@ export function onDescent(f: (d: Descent) => void): () => void {
 
 /**
  * Eases the shown depth toward the target by `dt` seconds: one depth takes
- * about two seconds, a long way (back to the surface after a run) about eight,
- * and it never jumps. Returns whether it is still moving.
+ * about a second, so a new stratum is well in while its card is up; a jump
+ * cross-fades (see JUMP). Returns whether it is still moving.
  */
 export function stepDescent(dt: number): boolean {
+  if (fading) {
+    fadeT += dt / FADE;
+    if (fadeT >= 1) fading = false;
+  }
   const diff = target - shown;
-  if (diff === 0) return false;
-  const step = Math.max(Math.abs(diff) * (1 - Math.exp(-dt / 1.6)), 0.4 * dt);
+  if (diff === 0) return fading;
+  const step = Math.max(Math.abs(diff) * (1 - Math.exp(-dt / 0.7)), dt);
   shown = Math.abs(diff) <= step ? target : shown + Math.sign(diff) * step;
   return true;
 }
 
 /** Jumps straight to the target (the backdrop holding still). Returns whether that changed anything. */
 export function snapDescent(): boolean {
-  if (shown === target) return false;
+  if (shown === target && !fading) return false;
   shown = target;
+  fading = false;
   return true;
 }
 
-// Read every frame, so each is worked out once per depth rather than per call.
-let shownMemo = { at: NaN, d: descent(0) };
-let targetMemo = { at: NaN, d: descent(0) };
+function copyInto(out: Descent, d: Descent) {
+  out.deep = d.deep;
+  out.abyss = d.abyss;
+  out.close = d.close;
+  out.stratum = d.stratum;
+  out.turn = d.turn;
+  mixInto(out.look, d.look, d.look, 0);
+}
+
+// Read every frame, so each is worked out once per change rather than per
+// call, and into the same objects, so easing allocates nothing.
+const shownNow = fresh();
+const fadeNow = fresh();
+const targetNow = fresh();
+let shownAt = NaN;
+let fadeAt = NaN;
+let fadeShownAt = NaN;
+let targetAt = NaN;
 
 /** The scene as shown right now. */
 export function currentDescent(): Descent {
-  if (shownMemo.at !== shown) shownMemo = { at: shown, d: descent(shown) };
-  return shownMemo.d;
+  if (shownAt !== shown) fill(shownNow, (shownAt = shown));
+  if (!fading) return shownNow;
+  if (fadeAt === fadeT && fadeShownAt === shown) return fadeNow;
+  fadeAt = fadeT;
+  fadeShownAt = shown;
+  const t = smoothstep(0, 1, fadeT);
+  const mix = (a: number, b: number) => a + (b - a) * t;
+  fadeNow.deep = mix(from.deep, shownNow.deep);
+  fadeNow.abyss = mix(from.abyss, shownNow.abyss);
+  fadeNow.close = mix(from.close, shownNow.close);
+  fadeNow.stratum = shownNow.stratum;
+  fadeNow.turn = shownNow.turn;
+  mixInto(fadeNow.look, from.look, shownNow.look, t);
+  return fadeNow;
 }
 
 /** The scene the shown one is heading for. */
 export function targetDescent(): Descent {
-  if (targetMemo.at !== target) targetMemo = { at: target, d: descent(target) };
-  return targetMemo.d;
+  if (targetAt !== target) fill(targetNow, (targetAt = target));
+  return targetNow;
 }
 
 /** The depth the scene shows right now (tests). */
