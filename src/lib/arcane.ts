@@ -1,7 +1,7 @@
 // The engraver's hand behind the arcane pieces (see docs/arcane-style.md):
-// the alchemical signs the alchemist's circle (ArcaneCircle) is cut with,
-// and its routines for cutting lines, in a form any piece can use. Points
-// are [x, y]; angles run clockwise from the top, in degrees.
+// the alchemist's circle's routines for cutting lines, in a form any piece
+// can use (the signs themselves are in lib/alchemy). Points are [x, y];
+// angles run clockwise from the top, in degrees.
 //
 // Lines come back as SVG path data, already broken wherever they meet a
 // hole (a circle round a seal or a sign), pass under a strap, or are worn.
@@ -20,45 +20,6 @@ export const pt = (p: Pt) => `${f(p[0])} ${f(p[1])}`;
 export const lerp = (p: Pt, q: Pt, t: number): Pt => [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t];
 /** The point at `a` degrees clockwise from the top, `r` from `c`. */
 export const at = (c: Pt, a: number, r: number): Pt => [c[0] + r * Math.sin(rad(a)), c[1] - r * Math.cos(rad(a))];
-
-// The seven planets and their metals, drawn on a small grid (about ±4.6).
-export const PLANETS = {
-  sol: 'M0 -3.6A3.6 3.6 0 1 1 0 3.6A3.6 3.6 0 1 1 0 -3.6M0 -0.6A0.6 0.6 0 1 1 0 0.6A0.6 0.6 0 1 1 0 -0.6', // gold
-  luna: 'M1 -4A4.2 4.2 0 1 0 1 4A3.3 3.3 0 1 1 1 -4Z', // silver
-  mercury: 'M-2.2 -4.6A2.2 2.2 0 0 0 2.2 -4.6M0 -3.2A1.9 1.9 0 1 1 0 0.6A1.9 1.9 0 1 1 0 -3.2M0 0.6V4.6M-1.6 2.8H1.6', // quicksilver
-  venus: 'M0 -4.4A2.4 2.4 0 1 1 0 0.4A2.4 2.4 0 1 1 0 -4.4M0 0.4V4.6M-1.8 2.6H1.8', // copper
-  mars: 'M-1 -1.4A2.6 2.6 0 1 1 -1 3.8A2.6 2.6 0 1 1 -1 -1.4M0.9 -0.5L3.6 -3.2M1.2 -3.4H3.6V-1', // iron
-  jupiter: 'M-3 -2.2C-3 -4.6 0.4 -4.6 0.2 -2.2C0 -0.4 -2 0.8 -3 1.4H3.2M1.6 -3.8V4.4', // tin
-  saturn: 'M-1 -4.4V2M-2.6 -2.8H0.6M-1 -0.4C0.2 -1.8 2.8 -1.6 2.6 0.6C2.4 2.4 0.4 2.6 1.2 4.4', // lead
-};
-
-// The marks of a script nobody can read (the four elements, salt, sulphur
-// and the like), about ±2 tall.
-export const MARKS = [
-  'M0 -2L1.7 1.5H-1.7Z', // fire
-  'M0 2L1.7 -1.5H-1.7Z', // water
-  'M0 -2L1.7 1.5H-1.7ZM-1.4 0.4H1.4', // air
-  'M0 2L1.7 -1.5H-1.7ZM-1.4 -0.4H1.4', // earth
-  'M0 -1.6A1.6 1.6 0 1 1 0 1.6A1.6 1.6 0 1 1 0 -1.6M-1.6 0H1.6', // salt
-  'M0 -2.2L1.2 -0.2H-1.2ZM0 -0.2V2.2M-1 1H1', // sulphur
-  'M0 -0.6A1.3 1.3 0 1 1 0 2A1.3 1.3 0 1 1 0 -0.6M0 -0.6V-2.4M-0.9 -1.6H0.9', // antimony
-  'M-1.4 -2L0 2L1.4 -2M-0.9 -0.6H0.9', // arsenic
-  'M-1.2 -2H1.2L-0.6 0C1.8 0 1.8 2.2 -1.2 2', // dram
-  'M-1.5 1C-1.5 -2 1.5 -2 1.5 0S-0.4 2 -0.4 0', // a turn of the pen
-  'M0 -2V2M-1.2 -0.8H1.2', // cross
-  'M0.6 -2A2 2 0 1 0 0.6 2A1.5 1.5 0 1 1 0.6 -2', // crescent
-  'M-1.4 2V-2L1.4 2V-2', // a zigzag
-  'M-1.3 -1.6C0 -2.6 1.6 -1 0 0C-1.6 1 0 2.6 1.3 1.6', // an S
-];
-
-// Luna, for a seal of radius 13: a crescent, horns to the right, shaded in hatching.
-export const LUNA = 'M4.67 -7.11A8.5 8.5 0 1 0 4.67 7.11A7.2 7.2 0 1 1 4.67 -7.11Z';
-export const LUNA_HATCH = Array.from({ length: 13 }, (_, i) => {
-  const y = -6 + i;
-  const x0 = -Math.sqrt(8.5 ** 2 - y * y) + 0.7;
-  const x1 = 3.5 - Math.sqrt(7.2 ** 2 - y * y) - 0.7;
-  return x1 - x0 > 0.3 ? `M${f(x0)} ${y}H${f(x1)}` : '';
-}).join('');
 
 /** A generator of numbers in [0, 1) from a fixed seed, so every copy of a piece comes out the same. */
 export const seeded = (seed: number) => () => (seed = (seed * 16807) % 2147483647) / 2147483647;
@@ -259,22 +220,3 @@ export const star8 = (c: Pt, r: number) => {
   };
 };
 
-/**
- * An unreadable script written along the line from `p` to `q`: marks from
- * MARKS at `scale`, in words of two to four, picked by `rnd`, the line
- * centred between its ends. Each mark stands upright toward `up` degrees
- * (0 = the top of the page). Returns where each mark goes and what it is.
- */
-export const script = (p: Pt, q: Pt, scale: number, up: number, rnd: () => number) => {
-  const len = Math.hypot(q[0] - p[0], q[1] - p[1]);
-  const step = 4.6 * scale;
-  const ts: number[] = [];
-  let s = step / 2;
-  while (s <= len - step / 2) {
-    const n = 2 + Math.floor(rnd() * 3);
-    for (let i = 0; i < n && s <= len - step / 2; i++, s += step) ts.push(s);
-    s += step * 0.7;
-  }
-  const shift = (len - (ts.at(-1) ?? 0) - step / 2) / 2;
-  return ts.map((t) => ({ at: lerp(p, q, (t + shift) / len), d: MARKS[Math.floor(rnd() * MARKS.length)], up }));
-};

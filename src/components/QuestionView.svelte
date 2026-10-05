@@ -12,6 +12,7 @@
   import ArtImage from './ArtImage.svelte';
   import { backdropShadow } from '../lib/backdropShadow';
   import ArcaneCircle from './ArcaneCircle.svelte';
+  import NamePlate from './NamePlate.svelte';
   import { untrack, type Snippet } from 'svelte';
   import { FILL_START, answerCharging, artRevealed, raceMiss, reveal as revealFx, veilComplete, veilHandoff, type VerdictTone } from '../lib/fx/moments';
   import { FILL_LEAD } from '../lib/soundDesign';
@@ -512,6 +513,7 @@
     <!-- Name given, pick the matching art. -->
     <div class="tooltip wide" use:backdropShadow={{ fill: 'linear' }} class:good={reveal && iWon} class:bad={reveal && !iWon}>
       <div class="head">
+        <NamePlate />
         <div class="head-text">
           <span class="iname">{q.prompt}</span>
           {#if reveal && item}
@@ -559,6 +561,8 @@
     <div class="stage">
       <div class="tooltip" use:backdropShadow={{ fill: 'linear' }} class:good={reveal && iWon} class:bad={reveal && !iWon}>
         <div class="head">
+          <!-- The gems stay dark until the item is identified. -->
+          <NamePlate lit={!!(reveal && item)} />
           {#if reveal && item}
             <div class="head-text" in:fly={{ y: 10, duration: 450 }}>
               <span class="iname">{item.name}</span>
@@ -743,28 +747,11 @@
     display: grid;
     height: 64px;
     place-items: center;
-    background:
-      linear-gradient(90deg, transparent, rgba(175, 96, 37, 0.35) 20%, rgba(175, 96, 37, 0.35) 80%, transparent),
-      linear-gradient(180deg, #3b2412, #1c1008);
-    border-bottom: 1px solid #6b4520;
-  }
-  .head::before,
-  .head::after {
-    content: '◆';
-    position: absolute;
-    top: 50%;
-    translate: 0 -50%;
-    color: var(--unique);
-    font-size: 0.9rem;
-    opacity: 0.8;
-  }
-  .head::before {
-    left: 14px;
-  }
-  .head::after {
-    right: 14px;
+    /* Clear of the braces at the plate's ends. */
+    padding: 0 3.6rem;
   }
   .head-text {
+    position: relative;
     grid-area: 1 / 1;
     display: flex;
     flex-direction: column;
@@ -1622,7 +1609,9 @@
     .head {
       height: auto;
       min-height: 54px;
-      padding: 0.3rem 1.6rem;
+      padding: 0.3rem 2.9rem;
+      /* The name plate's ends drawn smaller, to leave the name room. */
+      --end-scale: 0.84;
     }
     .head-text {
       flex-flow: row wrap;

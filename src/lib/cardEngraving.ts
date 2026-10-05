@@ -23,8 +23,6 @@ import {
   at,
   f,
   line,
-  LUNA,
-  LUNA_HATCH,
   pointedRay,
   pt,
   rad,
@@ -34,6 +32,7 @@ import {
   type LineOpts,
   type Pt,
 } from './arcane';
+import { LUNA, LUNA_HATCH } from './alchemy';
 
 export type Cls = 'main' | 'thin' | 'hair' | 'hatch' | 'shade' | 'ray' | 'lattice' | 'sign' | 'fill';
 export type Stroke = { d: string; cls: Cls };
