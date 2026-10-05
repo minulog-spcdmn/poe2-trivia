@@ -75,6 +75,9 @@
     return () => cancelAnimationFrame(frame);
   });
   const count = $derived(q.labels.length);
+  // Delve: from eight answers on, phones lay them out tighter (see .snug), so
+  // a short clock isn't spent scrolling down to them.
+  const snug = $derived(!!s.delve && count > 6);
   // Pictures the host has sent for this question.
   const media = $derived(shown.qid === q.askedAt ? shown : null);
   /** "Find the art" pictures in so far: whole, or (veiled, in Delve) ready to burn in. */
@@ -547,7 +550,7 @@
 {/snippet}
 
 <div class="question">
-  <div class="topline">
+  <div class="topline" class:snug>
     <span class="chip">{questionTopic(q)}</span>
     <span class="task">
       <span class="task-text" class:answered={narrow.current && !!verdict}>{q.mode === 'art' ? 'Pick the art that matches the name' : 'Name this item'}</span>
@@ -577,7 +580,7 @@
           {/if}
         </div>
       </div>
-      <div class="tiles" bind:this={artEl} class:many={count > 4} class:six={count === 6} class:ten={count === 10}>
+      <div class="tiles" bind:this={artEl} class:many={count > 4} class:six={count === 6} class:ten={count === 10} class:snug>
         {#each q.labels as _, i (i)}
           {@const st = optionState(i)}
           {@const src = reveal && q.options[i] ? itemImage(q.options[i]) : waiting ? undefined : media?.options[i]}
@@ -644,7 +647,7 @@
       </div>
     </div>
   {:else}
-    <div class="stage">
+    <div class="stage" class:snug>
       <div class="tooltip" use:backdropShadow={{ fill: 'linear' }} class:good={reveal && iWon} class:bad={reveal && !iWon}>
         <div class="head">
           <!-- The gems stay dark until the item is identified. -->
@@ -702,7 +705,7 @@
         </div>
       </div>
 
-      <div class="options" class:compact={count > 6} class:dense={count > 8}>
+      <div class="options" class:compact={count > 6} class:dense={count > 8} class:snug>
         {#each q.labels as label, i (i)}
           {@const st = optionState(i)}
           <button
@@ -1955,6 +1958,58 @@
     .footer {
       min-height: 0;
       margin-top: 0.75rem;
+    }
+    /* Delve's eight answers, on a clock down to seven seconds: two columns of
+       names (a long one takes two lines) and the pictures four to a row, so
+       all of them are in view under the art. No numbers: there are no keys to
+       press on a phone. */
+    /* The task line beside the category, two lines if need be, never under it. */
+    .topline.snug {
+      flex-wrap: nowrap;
+    }
+    .topline.snug .task {
+      flex: 1 1 0;
+      font-size: 0.85rem;
+      line-height: 1.1;
+    }
+    .stage.snug .art {
+      height: clamp(150px, 23svh, 230px);
+    }
+    .options.snug {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 0.4rem;
+    }
+    .snug .option {
+      min-height: 50px;
+      padding: 0.4rem 1.5rem 0.4rem 0.7rem;
+    }
+    .snug .key {
+      display: none;
+    }
+    .snug .text {
+      font-size: 0.98rem;
+      line-height: 1.12;
+      letter-spacing: 0.01em;
+      overflow-wrap: anywhere;
+    }
+    .snug .option .mark {
+      right: 0.5rem;
+      font-size: 1.1rem;
+    }
+    .snug .cue {
+      right: 0.6rem;
+    }
+    .tiles.snug {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+    .tiles.snug .tile {
+      height: 136px;
+      padding: 0.5rem 0.25rem;
+    }
+    .tiles.snug .tile .mark {
+      top: 4px;
+      right: 6px;
+      font-size: 1.05rem;
     }
   }
 </style>
