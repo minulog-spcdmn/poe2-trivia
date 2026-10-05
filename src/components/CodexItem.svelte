@@ -8,6 +8,7 @@
   import { dialogBackdrop } from '../lib/behindDialog';
   import { artRevealed } from '../lib/fx/moments';
   import { singular, type Item } from '../lib/game';
+  import NamePlate, { SOCKET_X } from './NamePlate.svelte';
   import ArtImage from './ArtImage.svelte';
   import ArcaneCircle from './ArcaneCircle.svelte';
 
@@ -105,13 +106,14 @@
     tabindex="-1"
   >
     <div class="head">
+      <NamePlate end="empty" />
       {#key item.id}
         <div class="head-text" in:fade={{ duration: 250 }}>
           <span class="iname" id="codex-item-name">{item.name}</span>
           <span class="ibase">{item.base}</span>
         </div>
       {/key}
-      <button class="close" onclick={onclose} aria-label="Close" title="Close">
+      <button class="close" style:--socket="{SOCKET_X}px" onclick={onclose} aria-label="Close" title="Close">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
       </button>
     </div>
@@ -186,23 +188,11 @@
     display: grid;
     min-height: 64px;
     place-items: center;
-    padding: 0.5rem 3rem;
-    background:
-      linear-gradient(90deg, transparent, rgba(175, 96, 37, 0.35) 20%, rgba(175, 96, 37, 0.35) 80%, transparent),
-      linear-gradient(180deg, #3b2412, #1c1008);
-    border-bottom: 1px solid #6b4520;
-  }
-  .head::before {
-    content: '◆';
-    position: absolute;
-    top: 50%;
-    left: 14px;
-    translate: 0 -50%;
-    color: var(--unique);
-    font-size: 0.9rem;
-    opacity: 0.8;
+    /* Clear of the braces at the plate's ends. */
+    padding: 0.5rem 3.6rem;
   }
   .head-text {
+    position: relative;
     grid-area: 1 / 1;
     display: flex;
     flex-direction: column;
@@ -223,11 +213,12 @@
     color: #d8a26a;
     opacity: 0.85;
   }
+  /* Centred in the empty end of the name plate. */
   .close {
     position: absolute;
     top: 50%;
-    right: 8px;
-    translate: 0 -50%;
+    right: var(--socket);
+    translate: 50% -50%;
     width: 32px;
     height: 32px;
     display: grid;
@@ -237,21 +228,18 @@
     border: 0;
     border-radius: 50%;
     cursor: pointer;
-    color: var(--unique);
-    transition:
-      color 0.2s,
-      background 0.2s;
+    color: var(--unique-hi);
+    transition: color 0.2s;
   }
   .close:hover {
     color: var(--gold-hi);
-    background: rgba(0, 0, 0, 0.3);
   }
   .close svg {
-    width: 16px;
-    height: 16px;
+    width: 10px;
+    height: 10px;
     fill: none;
     stroke: currentColor;
-    stroke-width: 2;
+    stroke-width: 2.6;
     stroke-linecap: round;
   }
 
