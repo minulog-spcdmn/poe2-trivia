@@ -55,26 +55,26 @@
 </div>
 
 <style>
-  /* As tall as the viewport with the browser's toolbars hidden (lvh), so a
-     phone's toolbar sliding in or out while scrolling covers or uncovers the
-     bottom edge instead of resizing the backdrop, which would make it jump.
-     (Where lvh isn't supported, inset: 0 sizes it as before.) */
+  /* A fixed height and a layout for --view-h, so a phone's toolbars sliding
+     don't move it (see --screen-h in app.css). */
   .bg {
     position: fixed;
     inset: 0;
-    height: 100lvh;
+    height: var(--screen-h);
     z-index: 0;
     overflow: hidden;
   }
   .bg.css {
     background:
-      radial-gradient(ellipse 80% 60% at 50% 110%, rgba(140, 60, 20, 0.28), transparent 70%),
-      radial-gradient(ellipse 60% 50% at 50% -10%, rgba(120, 95, 60, 0.18), transparent 70%),
-      linear-gradient(180deg, #0d0b09, #080706 60%, #0d0907);
+      radial-gradient(80% calc(0.6 * var(--view-h)) at 50% calc(1.1 * var(--view-h)), rgba(140, 60, 20, 0.28), transparent 70%),
+      radial-gradient(60% calc(0.5 * var(--view-h)) at 50% calc(-0.1 * var(--view-h)), rgba(120, 95, 60, 0.18), transparent 70%),
+      linear-gradient(180deg, #0d0b09, #080706 calc(0.6 * var(--view-h)), #0d0907 var(--view-h));
   }
   .glow {
     position: absolute;
-    inset: -20%;
+    inset: auto -20%;
+    top: calc(-0.2 * var(--view-h));
+    height: calc(1.4 * var(--view-h));
     background: radial-gradient(circle at 50% 45%, rgba(201, 164, 92, 0.07), transparent 45%);
     animation: breathe 9s ease-in-out infinite;
   }
@@ -100,7 +100,12 @@
   .vignette {
     position: absolute;
     inset: 0;
-    background: radial-gradient(ellipse at center, transparent 45%, rgba(0, 0, 0, 0.75) 100%);
+    /* ellipse at center (farthest-corner) of the --view-h box. */
+    background: radial-gradient(
+      70.71% calc(0.7071 * var(--view-h)) at 50% calc(0.5 * var(--view-h)),
+      transparent 45%,
+      rgba(0, 0, 0, 0.75) 100%
+    );
   }
   .ember {
     position: absolute;
