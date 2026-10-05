@@ -9,8 +9,14 @@
 /** An icon's fit, in pixels at a tall card's size: the image's drawn size, and the visible part's offset and size in it (with room for its soft edges). */
 export type Fit = { iw: number; ih: number; x: number; y: number; w: number; h: number };
 
-/** The visible item's typical size (the geometric mean of its width and height), and the most it may take of the window. */
+/**
+ * The visible item's typical size (the geometric mean of its width and
+ * height), the most ink it may carry (its filled area, so a solid ring or
+ * pendant comes out smaller than a spindly bow of the same bounds), and the
+ * most it may take of the window.
+ */
 const WEIGHT = 108;
+const INK = 5200;
 const MAX_W = 120;
 const MAX_H = 118;
 /** Room round the visible part for the art's soft edges (pixels under half opaque). */
@@ -36,9 +42,11 @@ export function measure(url: string) {
       g.drawImage(img, 0, 0);
       const a = g.getImageData(0, 0, iw, ih).data;
       let [x0, y0, x1, y1] = [iw, ih, -1, -1];
+      let ink = 0;
       for (let y = 0; y < ih; y++)
         for (let x = 0; x < iw; x++)
           if (a[(y * iw + x) * 4 + 3]! >= 128) {
+            ink++;
             if (x < x0) x0 = x;
             if (x > x1) x1 = x;
             if (y < y0) y0 = y;
@@ -46,7 +54,7 @@ export function measure(url: string) {
           }
       if (x1 < 0) return;
       const [w, h] = [x1 - x0 + 1, y1 - y0 + 1];
-      const k = Math.min(WEIGHT / Math.sqrt(w * h), MAX_W / w, MAX_H / h);
+      const k = Math.min(WEIGHT / Math.sqrt(w * h), Math.sqrt(INK / ink), MAX_W / w, MAX_H / h);
       fits[url] = { iw: iw * k, ih: ih * k, x: x0 * k - PAD, y: y0 * k - PAD, w: w * k + 2 * PAD, h: h * k + 2 * PAD };
     })
     .catch(() => {})

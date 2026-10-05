@@ -481,11 +481,11 @@ const tallFace = (w: number, h: number, p: Plate) => {
     if (far && C[1] + far[1] * 1000 * u[1] <= S) ts.push(far[1] * 1000);
     return Math.min(...ts.filter((t) => t > 0));
   };
-  // From behind the emblem, fading in clear of it, so they don't run into it.
-  p.glory(C, 96, 50, reach, 0.62);
+  // Few and faint, from well clear of the emblem, so it reads alone at a glance.
+  p.glory(C, 64, 66, reach, 0.6);
   // The pedestal stands in front of the rays.
   p.out = p.out.map((s) => (s.cls === 'ray' ? { ...s, d: clipOut(s.d, daisCuts) } : s));
-  p.fade = { c: C, from: 60, r: 128 };
+  p.fade = { c: C, from: 70, r: 128 };
   p.window = `M${f(MID - ri)} ${f(y1 - 2.5)}V${f(S)}A${f(ri)} ${f(ri)} 0 0 1 ${f(MID + ri)} ${f(S)}V${f(y1 - 2.5)}Z`;
 };
 

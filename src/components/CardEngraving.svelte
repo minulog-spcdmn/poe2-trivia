@@ -93,7 +93,7 @@
   }
   .ray {
     stroke-width: 0.35;
-    opacity: 0.75;
+    opacity: 0.55;
   }
   .lattice {
     stroke-width: 0.35;

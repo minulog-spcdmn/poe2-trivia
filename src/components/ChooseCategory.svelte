@@ -145,10 +145,10 @@
     <filter id="card-emblem-shadow" x="-20%" y="-20%" width="140%" height="140%" color-interpolation-filters="sRGB">
       <!-- The art's faint baked-in shadow would cast a dark disc: keep only what's at least half opaque. -->
       <feComponentTransfer in="SourceAlpha" result="solid"><feFuncA type="discrete" tableValues="0 1" /></feComponentTransfer>
-      <!-- A soft, wide shadow, a little below it. -->
-      <feGaussianBlur in="solid" stdDeviation="7" />
-      <feOffset dy="3" result="shade" />
-      <feFlood flood-color="#060403" flood-opacity="0.55" />
+      <!-- The original card's shadow: tight, just below it, as if lifted off the card. -->
+      <feGaussianBlur in="solid" stdDeviation="3" />
+      <feOffset dy="4" result="shade" />
+      <feFlood flood-color="#000" flood-opacity="0.8" />
       <feComposite operator="in" in2="shade" result="shadow" />
       <feMerge><feMergeNode in="shadow" /><feMergeNode in="SourceGraphic" /></feMerge>
     </filter>
@@ -351,13 +351,13 @@
     position: relative;
     display: grid;
     place-items: center;
-    filter: url(#card-emblem-shadow) drop-shadow(0 0 14px rgba(224, 138, 68, 0.45));
+    filter: drop-shadow(0 0 12px rgba(224, 138, 68, 0.45)) url(#card-emblem-shadow);
   }
   .glyph {
     width: 130px;
     height: 150px;
-    /* Opaque, so the glory's rays stay behind it; its gold toned down to match. */
-    background: linear-gradient(180deg, #e4cc96 0%, #b18d4f 45%, #583c16 100%);
+    /* The original card's gold, opaque so the glory's rays stay behind it. */
+    background: linear-gradient(180deg, #fbe6b0 0%, #c9a45c 45%, #6d4a1c 100%);
     -webkit-mask: var(--src) center / contain no-repeat;
     mask: var(--src) center / contain no-repeat;
     transition:
@@ -470,7 +470,7 @@
     --warm: #e0553f;
   }
   .card.dm .glyph {
-    background: linear-gradient(180deg, #e2b2a2 0%, #b4432f 50%, #52140b 100%);
+    background: linear-gradient(180deg, #ffd7c9 0%, #e0553f 50%, #6d1a10 100%);
   }
   .card.dm .back {
     border-color: #8c3a2c;
