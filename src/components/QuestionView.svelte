@@ -975,10 +975,21 @@
       0 0 8px rgba(var(--v-tint), 0.45);
     animation: verdict-flare 0.9s var(--ease-out) 0.2s backwards;
   }
+  /* A right answer's glyph breathes: a wider glow on a layer of its own
+     fades in and out (fading it is free, where animating the box-shadow
+     would repaint every frame until the next question). */
   .verdict.good .glyph {
-    animation:
-      verdict-flare 0.9s var(--ease-out) 0.2s backwards,
-      verdict-breathe 2.6s ease-in-out 1.2s infinite;
+    position: relative;
+  }
+  .verdict.good .glyph::before {
+    content: '';
+    position: absolute;
+    inset: -1px;
+    border-radius: 50%;
+    box-shadow: 0 0 13px 1px rgba(var(--v-tint), 0.45);
+    opacity: 0;
+    animation: verdict-breathe 2.6s ease-in-out 1.2s infinite;
+    pointer-events: none;
   }
   .glyph svg {
     width: 1.05em;
@@ -1024,9 +1035,7 @@
   }
   @keyframes verdict-breathe {
     50% {
-      box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.15),
-        0 0 13px 1px rgba(var(--v-tint), 0.6);
+      opacity: 1;
     }
   }
   @keyframes verdict-ripple {
@@ -1496,6 +1505,7 @@
   }
   /* A streak of correct answers. */
   .streak {
+    position: relative;
     display: inline-block;
     margin-left: 0.6em;
     padding: 0.1em 0.7em 0.05em;
@@ -1511,11 +1521,22 @@
     border-radius: 999px;
     box-shadow: 0 0 16px rgba(255, 120, 40, 0.35);
     text-shadow: 0 0 10px rgba(255, 170, 90, 0.7);
+  }
+  /* It smoulders: a wider glow fades in and out on a layer of its own (see
+     .glyph::before). */
+  .streak::before {
+    content: '';
+    position: absolute;
+    inset: -1px;
+    border-radius: inherit;
+    box-shadow: 0 0 24px rgba(255, 140, 50, 0.4);
+    opacity: 0;
     animation: smoulder-badge 1.6s ease-in-out infinite;
+    pointer-events: none;
   }
   @keyframes smoulder-badge {
     50% {
-      box-shadow: 0 0 24px rgba(255, 140, 50, 0.55);
+      opacity: 1;
     }
   }
   /* However long the result, the button keeps its size. */
@@ -1717,8 +1738,6 @@
       z-index: 20;
       padding: 0.6rem max(1rem, env(safe-area-inset-right)) max(0.6rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
       background-color: var(--pinned-bg);
-      -webkit-backdrop-filter: var(--pinned-blur);
-      backdrop-filter: var(--pinned-blur);
       border-top: var(--pinned-line);
       box-shadow: 0 -8px var(--pinned-shadow);
     }
