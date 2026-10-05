@@ -77,14 +77,16 @@
   const count = $derived(q.labels.length);
   // Pictures the host has sent for this question.
   const media = $derived(shown.qid === q.askedAt ? shown : null);
+  /** "Find the art" pictures in so far: whole, or (veiled, in Delve) ready to burn in. */
+  const tilesIn = $derived(Array.from({ length: count }, (_, i) => i).filter((i) => media?.options[i] || media?.tileVeils[i]).length);
+  /** A veiled picture's patches so far. */
+  const tilePatches = (i: number) => Object.values(media?.tilePatches[i] ?? {});
   /**
    * Delve: nothing to see or answer until the clock runs and every picture is
    * in, so the timer only counts time the player could actually use.
    */
   const waiting = $derived(
-    !!s.delve &&
-      !reveal &&
-      (q.deadline === null || (q.mode === 'art' ? Object.keys(media?.options ?? {}).length < count : !(media?.art || media?.veil))),
+    !!s.delve && !reveal && (q.deadline === null || (q.mode === 'art' ? tilesIn < count : !(media?.art || media?.veil))),
   );
 
   /** Veiled art: the patches that have appeared so far. */
@@ -299,7 +301,7 @@
   // The art arrives: light it up (once per question).
   let artShown = false;
   $effect(() => {
-    const ready = q.mode === 'art' ? Object.keys(media?.options ?? {}).length > 0 : !!(media?.art || media?.veil);
+    const ready = q.mode === 'art' ? tilesIn > 0 : !!(media?.art || media?.veil);
     if (!ready || artShown || !artEl) return;
     artShown = true;
     artRevealed(artEl);
@@ -308,6 +310,16 @@
   /** Svelte action: a patch of veiled art burns in (the quick ones at the reveal leave the sound to it). */
   function appear(node: HTMLCanvasElement, params: BurnParams) {
     if (!params.quick) sfx('burn');
+    return materialize(node, params);
+  }
+
+  /** The same for a veiled "find the art" picture: several burn at once, so the sound only now and then. */
+  let tileBurnAt = 0;
+  function appearTile(node: HTMLCanvasElement, params: BurnParams) {
+    if (!params.quick && performance.now() - tileBurnAt > 260) {
+      tileBurnAt = performance.now();
+      sfx('burn');
+    }
     return materialize(node, params);
   }
 
@@ -556,6 +568,8 @@
         {#each q.labels as _, i (i)}
           {@const st = optionState(i)}
           {@const src = reveal && q.options[i] ? itemImage(q.options[i]) : waiting ? undefined : media?.options[i]}
+          <!-- Delve: a veiled picture burns in patch by patch, until the reveal names it. -->
+          {@const tv = !src && !waiting ? media?.tileVeils[i] : undefined}
           <button
             class="tile {st}"
             data-sfx="none"
@@ -570,6 +584,33 @@
             {#if src}
               <!-- Named pictures switch to the original art, so a mirrored one turns round. -->
               <span class="pic"><ArtImage {src} alt="Option {i + 1}" scale={1.6} unflip={mirrored(i) && !!q.options[i]} /></span>
+            {:else if tv}
+              {@const ps = tilePatches(i)}
+              <span class="pic">
+                <span class="art-slot">
+                  <span class="art-fit veil" style:--w={tv.w} style:--h={tv.h} style:--s={1.6}>
+                    {#each ps as p (p.i)}
+                      <canvas
+                        class="patch"
+                        data-shape
+                        aria-hidden="true"
+                        style:left="{(p.x / tv.w) * 100}%"
+                        style:top="{(p.y / tv.h) * 100}%"
+                        style:width="{(p.w / tv.w) * 100}%"
+                        style:height="{(p.h / tv.h) * 100}%"
+                        use:appearTile={{
+                          url: p.url,
+                          edges: p.edges,
+                          before: ps.filter((o) => o.i !== p.i).map((o) => o.i),
+                          burn: tv.burn,
+                          quick: !!reveal,
+                        }}
+                      ></canvas>
+                    {/each}
+                    <canvas class="frontier" aria-hidden="true" use:frontier={{ w: tv.w, h: tv.h, burn: tv.burn, quick: !!reveal, patches: ps }}></canvas>
+                  </span>
+                </span>
+              </span>
             {:else}
               <span class="loading" aria-label="Loading"></span>
             {/if}

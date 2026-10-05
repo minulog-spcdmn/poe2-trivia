@@ -43,8 +43,9 @@ export type HostMsg =
 
 export type MediaMsg =
   | { t: 'art'; qid: number; w: number; h: number; data: ArrayBuffer }
-  | { t: 'veil'; qid: number; w: number; h: number; burn: number; count: number; box: [number, number, number, number] }
-  | { t: 'patch'; qid: number; i: number; x: number; y: number; w: number; h: number; data: ArrayBuffer; edges: ArrayBuffer }
+  /** `tile`: a veiled "find the art" picture (Delve), by option; missing for the art of a name question. */
+  | { t: 'veil'; qid: number; tile?: number; w: number; h: number; burn: number; count: number; box: [number, number, number, number] }
+  | { t: 'patch'; qid: number; tile?: number; i: number; x: number; y: number; w: number; h: number; data: ArrayBuffer; edges: ArrayBuffer }
   | { t: 'option'; qid: number; index: number; data: ArrayBuffer };
 
 /** A patch's edges: (x, y, patch) triples of 16-bit numbers, a few thousand at most. */
@@ -107,6 +108,7 @@ export function parseHostMsg(raw: unknown): HostMsg | null {
   if (!isObj(raw) || typeof raw.t !== 'string') return null;
   const bin = (v: unknown) => v instanceof ArrayBuffer || ArrayBuffer.isView(v);
   const qid = isInt(raw.qid, 0, Number.MAX_SAFE_INTEGER);
+  const tile = raw.tile === undefined || isInt(raw.tile, 0, 16);
   switch (raw.t) {
     case 'welcome':
       return isStr(raw.playerId, 64) ? (raw as HostMsg) : null;
@@ -128,13 +130,13 @@ export function parseHostMsg(raw: unknown): HostMsg | null {
     case 'art':
       return qid && bin(raw.data) && isInt(raw.w, 1, 4096) && isInt(raw.h, 1, 4096) ? (raw as HostMsg) : null;
     case 'veil':
-      return qid && isInt(raw.w, 1, 4096) && isInt(raw.h, 1, 4096) && isInt(raw.burn, 0, 120000) &&
+      return qid && tile && isInt(raw.w, 1, 4096) && isInt(raw.h, 1, 4096) && isInt(raw.burn, 0, 120000) &&
         isInt(raw.count, 0, 256) && Array.isArray(raw.box) && raw.box.length === 4 &&
         raw.box.every((v) => isInt(v, 0, 4096))
         ? (raw as HostMsg)
         : null;
     case 'patch':
-      return qid && bin(raw.data) && isInt(raw.i, 0, 255) && isInt(raw.x, 0, 4096) && isInt(raw.y, 0, 4096) &&
+      return qid && tile && bin(raw.data) && isInt(raw.i, 0, 255) && isInt(raw.x, 0, 4096) && isInt(raw.y, 0, 4096) &&
         isInt(raw.w, 1, 4096) && isInt(raw.h, 1, 4096) && bin(raw.edges) &&
         (raw.edges as ArrayBuffer).byteLength % 6 === 0 && (raw.edges as ArrayBuffer).byteLength <= MAX_EDGE_BYTES
         ? (raw as HostMsg)

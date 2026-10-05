@@ -85,3 +85,14 @@ test('a version mismatch says which side has to reload', () => {
   assert.match(versionRefusal(LEGACY_VERSION_TEXT), /different versions/);
   assert.equal(versionRefusal('The lobby is full.'), 'The lobby is full.');
 });
+
+test('veiled "find the art" pictures say which option they belong to', () => {
+  const veil = { t: 'veil', qid: 5, w: 100, h: 80, burn: 900, count: 16, box: [0, 0, 100, 80] };
+  const patch = { t: 'patch', qid: 5, i: 3, x: 0, y: 0, w: 20, h: 20, data: new ArrayBuffer(8), edges: new ArrayBuffer(6) };
+  assert.ok(parseHostMsg(veil), 'the art of a name question has no tile');
+  assert.ok(parseHostMsg({ ...veil, tile: 7 }));
+  assert.ok(parseHostMsg({ ...patch, tile: 0 }));
+  assert.equal(parseHostMsg({ ...veil, tile: 17 }), null);
+  assert.equal(parseHostMsg({ ...patch, tile: -1 }), null);
+  assert.equal(parseHostMsg({ ...patch, tile: '2' }), null);
+});

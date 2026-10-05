@@ -462,3 +462,29 @@ test('hot-seat with several players plays out to a winner by depth', () => {
   assert.ok(h.s.winners.length >= 1);
   for (const w of h.s.winners) for (const p of h.s.players) assert.ok(compareDelvers(h.s, w, p.id) >= 0);
 });
+
+test('deep down, "find the art" pictures burn in too, more often the deeper', async () => {
+  const { delveTileVeil, tileVeilSize } = await import('../src/lib/delve.ts');
+  const share = (depth: number) => {
+    let art = 0;
+    let veiled = 0;
+    for (let seed = 1; art < 300 && seed < 4000; seed++) {
+      const h = delve(['Ash'], { seed });
+      h.s = { ...h.s, round: depth };
+      h.pick();
+      const q = h.s.question!;
+      if (q.mode !== 'art') continue;
+      art++;
+      if (q.veil) {
+        veiled++;
+        assert.equal(q.veil.size, tileVeilSize(delveRules(depth).veil!.size));
+        assert.equal(q.veil.seconds, delveTimer(depth) * delveRules(depth).veil!.share);
+      }
+    }
+    return veiled / art;
+  };
+  assert.equal(share(24), 0);
+  assert.equal(share(200), 1);
+  const mid = share(74);
+  assert.ok(Math.abs(mid - delveTileVeil(74)) < 0.1, `about half at depth 74, got ${mid}`);
+});

@@ -28,7 +28,5 @@ test('in Delve the fire grows over a long run, and only burns blue deep down', a
   assert.equal(burnsBlue(heatOf(DELVE_BLUE_FROM - 1, true), true), false);
   assert.equal(burnsBlue(heatOf(DELVE_BLUE_FROM, true), true), true);
   assert.equal(burnsBlue(heatOf(BLUE_FROM, true), true), false, 'not blue at seven');
-  // A streak can't be longer than the depth: blue fire never comes before the blue embers.
-  const { delveRules } = await import('../src/lib/delve.ts');
-  assert.equal(delveRules(DELVE_BLUE_FROM).grayscale, 'all');
+  // A streak can't be longer than the depth: blue fire never comes before depth 21.
 });

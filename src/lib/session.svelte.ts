@@ -745,6 +745,8 @@ class Session {
     this.held = guestTurn ? { qid, activeId: active.id } : null;
     if (media.art) this.release({ t: 'art', qid, ...media.art });
     media.options.forEach((data, index) => this.release({ t: 'option', qid, index, data }));
+    // Delve: veiled "find the art" pictures; their patches burn in once the clock starts.
+    media.tiles.forEach((t, tile) => this.release({ t: 'veil', qid, tile, ...t.veil }));
     if (media.veil) {
       this.release({ t: 'veil', qid, ...media.veil });
       // Delve: the art burns in from when the clock starts (startClock), not from when the question was asked.
@@ -778,15 +780,21 @@ class Session {
   private burnVeil(qid: number, from: number) {
     const media = this.media;
     const q = this.state?.question;
-    if (!media?.veil || media.qid !== qid || !q?.veil) return;
-    const delays = patchDelays(q, media.patches.length);
-    media.patches.forEach((patch, rank) => {
-      const due = from + delays[rank] - Date.now();
-      const go = () => {
-        if (this.media?.qid === qid) this.release({ t: 'patch', qid, ...patch });
-      };
-      if (due <= 0) go();
-      else this.mediaTimers.push(setTimeout(go, due));
+    if (!media || media.qid !== qid || !q?.veil) return;
+    const sets = veiledSets(media);
+    sets.forEach(({ tile, patches }, k) => {
+      const delays = patchDelays(q, patches.length);
+      // Several pictures take turns within half a step, so their patches don't all flare at once
+      // (and the last one is no more than half a step behind: tests/delve.test.ts).
+      const offset = patches.length > 1 ? ((delays[1] - delays[0]) * k) / sets.length / 2 : 0;
+      patches.forEach((patch, rank) => {
+        const due = from + delays[rank] + offset - Date.now();
+        const go = () => {
+          if (this.media?.qid === qid) this.release({ t: 'patch', qid, ...(tile === undefined ? {} : { tile }), ...patch });
+        };
+        if (due <= 0) go();
+        else this.mediaTimers.push(setTimeout(go, due));
+      });
     });
   }
 
@@ -833,9 +841,12 @@ class Session {
   /** Patches of the current veiled picture that haven't gone out yet, in order. */
   private unreleasedPatches() {
     const media = this.media;
-    if (!media?.veil) return [];
-    const sent = new Set(this.released.flatMap((m) => (m.t === 'patch' ? [m.i] : [])));
-    return media.patches.filter((p) => !sent.has(p.i)).map((p) => ({ qid: media.qid, ...p }));
+    if (!media) return [];
+    const key = (tile: number | undefined, i: number) => `${tile ?? ''}:${i}`;
+    const sent = new Set(this.released.flatMap((m) => (m.t === 'patch' ? [key(m.tile, m.i)] : [])));
+    return veiledSets(media).flatMap(({ tile, patches }) =>
+      patches.filter((p) => !sent.has(key(tile, p.i))).map((p) => ({ qid: media.qid, ...(tile === undefined ? {} : { tile }), ...p })),
+    );
   }
 
   /**
@@ -1470,6 +1481,12 @@ const SAVE_KEY = 'poe2trivia.session.v4';
  * can't be reached by this version; a hot-seat game carries on.
  */
 const OLD_SAVE_KEY = 'poe2trivia.session.v3';
+
+/** The veiled pictures of a question: the art of a name question, or each "find the art" picture (`tile`). */
+function veiledSets(media: PreparedMedia): { tile: number | undefined; patches: PreparedMedia['patches'] }[] {
+  if (media.veil) return [{ tile: undefined, patches: media.patches }];
+  return media.tiles.map((t, tile) => ({ tile, patches: t.patches }));
+}
 
 /** A Delve run saved by a build with other rules plays on, but never counts as a best. */
 function underRuleset(s: GameState): GameState {

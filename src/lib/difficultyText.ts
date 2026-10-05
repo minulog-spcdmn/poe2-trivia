@@ -138,10 +138,13 @@ export const DELVE_STEP_TEXT: Record<number, string> = {
   5: 'A made-up name',
   7: 'Eight options',
   10: 'All look-alikes, two made up',
-  13: 'Grayscale art, mirrored pictures',
+  13: 'Mirrored pictures',
   17: 'Three made-up names',
-  21: 'All art in grayscale',
-  25: 'The art burns into view; always mirrored',
+  21: 'More mirrored pictures',
+  25: 'The art burns into view',
+  30: 'Find the art in grayscale',
+  35: 'Always mirrored',
+  40: 'All art in grayscale',
   50: 'The art burns in slower',
   75: 'The art burns in slowest',
 };
@@ -159,8 +162,7 @@ export function delveChange(depth: number): string | null {
 export const DELVE_LADDER: { depth: number; text: string }[] = [
   { depth: 1, text: 'Four options, 16 seconds' },
   { depth: 3, text: 'Look-alike names, then made-up ones' },
-  { depth: 7, text: 'Eight options' },
-  { depth: 13, text: 'Grayscale, mirrored pictures' },
   { depth: 25, text: 'The art burns into view' },
-  { depth: 28, text: 'Seven seconds' },
+  { depth: 40, text: 'All art in grayscale' },
+  { depth: 55, text: 'Seven seconds' },
 ];

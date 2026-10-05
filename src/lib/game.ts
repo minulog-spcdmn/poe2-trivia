@@ -3,7 +3,7 @@
 
 import { cleanName, nameProblem, nameSkeleton } from './names.ts';
 import { RUBY } from './palette.ts';
-import { DELVE_MAX_LOCKOUT, DELVE_PICK_MS, DELVE_REJOIN_MS, DELVE_RESUME_GRACE_MS, DELVE_RULESET, compareDelvers, delveLockout, delveRules, delveTimer, isGroupRun, livesOf, standingIds } from './delve.ts';
+import { DELVE_MAX_LOCKOUT, DELVE_PICK_MS, DELVE_REJOIN_MS, DELVE_RESUME_GRACE_MS, DELVE_RULESET, compareDelvers, delveLockout, delveRules, delveTileVeil, delveTimer, isGroupRun, tileVeilSize, livesOf, standingIds } from './delve.ts';
 
 export interface Item {
   id: string;
@@ -390,7 +390,10 @@ export interface Question {
   labels: (string | null)[];
   /** Art questions: the name to find the picture for. */
   prompt: string | null;
-  /** The art burning into view patch by patch on name questions (merciless and up). */
+  /**
+   * The art burning into view patch by patch on name questions (merciless and
+   * up), or on Delve's deep "find the art" questions each picture on its own.
+   */
   veil: Veil | null;
   /**
    * Pictures shown flipped left to right (eternal): one flag per option on art
@@ -1574,10 +1577,12 @@ export class Engine {
     const timer = s.settings.mode === 'race' ? s.settings.timer || RACE_DEFAULT_TIMER : s.settings.timer;
     // Delve: the clock starts once the art has reached the player answering (the 'clock' action).
     const deadline = !s.delve && timer > 0 ? askedAt + timer * 1000 : null;
+    // Delve: deep down, "find the art" pictures may burn in as well, each cut much coarser.
+    const tiles = mode === 'art' && !!rules.veil && !!s.delve && this.rng() < delveTileVeil(s.round);
     const veil: Veil | null =
-      rules.veil && mode === 'name'
+      rules.veil && (mode === 'name' || tiles)
         ? {
-            size: rules.veil.size,
+            size: tiles ? tileVeilSize(rules.veil.size) : rules.veil.size,
             seconds: (s.delve ? delveTimer(s.round) : timer > 0 ? timer : DEFAULT_SETTINGS.timer) * rules.veil.share,
             seed: Math.floor(this.rng() * 2 ** 31),
           }

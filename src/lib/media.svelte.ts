@@ -43,6 +43,8 @@ export interface PreparedMedia {
   patches: Patch[];
   /** Art questions: one picture per option. */
   options: ArrayBuffer[];
+  /** Veiled art questions (Delve): each option's picture cut into patches instead. */
+  tiles: { veil: VeilArt; patches: Patch[] }[];
 }
 
 const imageCache = new Map<string, Promise<HTMLImageElement>>();
@@ -142,11 +144,12 @@ function encode(canvas: HTMLCanvasElement, lossless = false): Promise<ArrayBuffe
 
 /** Host side: builds the art for a question (full question, with the answer). */
 export async function prepareMedia(q: Question, grayscale: Grayscale): Promise<PreparedMedia> {
-  const out: PreparedMedia = { qid: q.askedAt, art: null, veil: null, patches: [], options: [] };
+  const out: PreparedMedia = { qid: q.askedAt, art: null, veil: null, patches: [], options: [], tiles: [] };
   if (q.mode === 'art') {
-    out.options = await Promise.all(
-      q.options.map(async (id, i) => encode(await alteredCanvas(id, grayscale !== 'off', !!q.mirrored?.[i]))),
-    );
+    const canvases = await Promise.all(q.options.map((id, i) => alteredCanvas(id, grayscale !== 'off', !!q.mirrored?.[i])));
+    // Each picture cut on its own seed, so no two burn in alike.
+    if (q.veil) out.tiles = await Promise.all(canvases.map((c, i) => cutVeil(c, q.veil!.size, q.veil!.seconds, q.veil!.seed + i)));
+    else out.options = await Promise.all(canvases.map((c) => encode(c)));
     return out;
   }
   const canvas = await alteredCanvas(q.itemId, grayscale === 'all', !!q.mirrored?.[0]);
@@ -155,19 +158,28 @@ export async function prepareMedia(q: Question, grayscale: Grayscale): Promise<P
     out.art = { w: W, h: H, data: await encode(canvas) };
     return out;
   }
+  const cut = await cutVeil(canvas, q.veil.size, q.veil.seconds, q.veil.seed);
+  out.veil = cut.veil;
+  out.patches = cut.patches;
+  return out;
+}
+
+/** A picture cut into `size` × `size`-ish patches, in the order they uncover, burning in over `seconds`. */
+async function cutVeil(canvas: HTMLCanvasElement, size: number, seconds: number, seed: number): Promise<{ veil: VeilArt; patches: Patch[] }> {
+  const { width: W, height: H } = canvas;
   const pixels = canvas.getContext('2d')!.getImageData(0, 0, W, H).data;
-  const patches = cutPatches(pixels, W, H, q.veil.size, q.veil.seed);
-  out.veil = {
+  const cut = cutPatches(pixels, W, H, size, seed);
+  const veil = {
     w: W,
     h: H,
-    burn: Math.round(veilPace(q.veil.seconds * 1000, patches.length).burn),
-    count: patches.length,
+    burn: Math.round(veilPace(seconds * 1000, cut.length).burn),
+    count: cut.length,
     box: visibleBox(pixels, W, H),
   };
-  const order = spreadOrder(patches, q.veil.seed);
-  out.patches = await Promise.all(
+  const order = spreadOrder(cut, seed);
+  const patches = await Promise.all(
     order.map(async (i) => {
-      const { x, y, w, h, pixels, edges } = patches[i];
+      const { x, y, w, h, pixels, edges } = cut[i];
       const piece = document.createElement('canvas');
       piece.width = w;
       piece.height = h;
@@ -175,7 +187,7 @@ export async function prepareMedia(q: Question, grayscale: Grayscale): Promise<P
       return { i, x, y, w, h, data: await encode(piece, true), edges: edges.buffer as ArrayBuffer };
     }),
   );
-  return out;
+  return { veil, patches };
 }
 
 /**
@@ -214,6 +226,9 @@ class Shown {
   veil = $state<VeilArt | null>(null);
   patches = $state<Record<number, ShownPatch>>({});
   options = $state<Record<number, string>>({});
+  /** Veiled "find the art" pictures (Delve), by option: their size and burn, and the patches in so far. */
+  tileVeils = $state<Record<number, VeilArt>>({});
+  tilePatches = $state<Record<number, Record<number, ShownPatch>>>({});
   /** When this question's first picture arrived (page clock), for the codex's answer times. */
   since = 0;
   private urls: string[] = [];
@@ -236,6 +251,8 @@ class Shown {
     this.veil = null;
     this.patches = {};
     this.options = {};
+    this.tileVeils = {};
+    this.tilePatches = {};
   }
 
   receive(m: MediaMsg) {
@@ -245,15 +262,18 @@ class Shown {
       case 'art':
         this.art = { url: this.url(m.data), w: m.w, h: m.h };
         break;
-      case 'veil':
-        this.veil = { w: m.w, h: m.h, burn: m.burn, count: m.count, box: m.box };
+      case 'veil': {
+        const v = { w: m.w, h: m.h, burn: m.burn, count: m.count, box: m.box };
+        if (m.tile === undefined) this.veil = v;
+        else this.tileVeils = { ...this.tileVeils, [m.tile]: v };
         break;
-      case 'patch':
-        this.patches = {
-          ...this.patches,
-          [m.i]: { i: m.i, x: m.x, y: m.y, w: m.w, h: m.h, url: this.url(m.data), edges: uint16s(m.edges) },
-        };
+      }
+      case 'patch': {
+        const p = { i: m.i, x: m.x, y: m.y, w: m.w, h: m.h, url: this.url(m.data), edges: uint16s(m.edges) };
+        if (m.tile === undefined) this.patches = { ...this.patches, [m.i]: p };
+        else this.tilePatches = { ...this.tilePatches, [m.tile]: { ...this.tilePatches[m.tile], [m.i]: p } };
         break;
+      }
       case 'option':
         this.options = { ...this.options, [m.index]: this.url(m.data) };
         break;

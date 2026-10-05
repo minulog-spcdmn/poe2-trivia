@@ -11,7 +11,9 @@ import {
   delveRules,
   delveStandings,
   delveChangeAt,
+  delveTileVeil,
   DELVE_STEPS,
+  tileVeilSize,
   delveTier,
   delveTimer,
   fellAt,
@@ -56,31 +58,25 @@ test('timer and lockout stay within bounds', () => {
     assert.ok(delveLockout(d) >= 2 && delveLockout(d) <= DELVE_MAX_LOCKOUT);
   }
   assert.equal(delveTimer(1), 16);
-  assert.equal(delveTimer(28), 7);
-  assert.equal(delveTimer(27), 8);
+  assert.equal(delveTimer(55), 7);
+  assert.equal(delveTimer(54), 8);
   assert.equal(delveTimer(1000), 7);
   assert.equal(delveLockout(1), 2);
   assert.equal(delveLockout(37), DELVE_MAX_LOCKOUT);
 });
 
 test('something gets harder every few depths until the floor', () => {
-  // No stretch longer than three depths without a change, until the timer stops at depth 28.
+  // Never more than six depths without a change, until the timer stops at depth 55.
   let last = 1;
-  for (const d of DEPTHS.slice(1, 28)) {
+  for (const d of DEPTHS.slice(1, 55)) {
     const change = delveChangeAt(d);
     const same = JSON.stringify([delveRules(d), delveTimer(d)]) === JSON.stringify([delveRules(d - 1), delveTimer(d - 1)]);
     assert.equal(change === null, same, `delveChangeAt disagrees at ${d}`);
     if (change) last = d;
-    assert.ok(d - last < 3, `nothing changes from ${last} to ${d}`);
+    assert.ok(d - last <= 6, `nothing changes from ${last} to ${d}`);
   }
-  // Past that, the lockout grows twice and the veil slows down every 25 depths.
-  const later = new Map([
-    [29, 'lockout'],
-    [37, 'lockout'],
-    [50, 'knobs'],
-    [75, 'knobs'],
-  ]);
-  for (const d of DEPTHS.slice(28)) assert.equal(delveChangeAt(d), later.get(d) ?? null, `depth ${d}`);
+  // Past that, only the veil slows down once more.
+  for (const d of DEPTHS.slice(55)) assert.equal(delveChangeAt(d), d === 75 ? 'knobs' : null, `depth ${d}`);
   assert.equal(delveChangeAt(1), null);
   assert.deepEqual(
     DELVE_STEPS.map((s) => s.from),
@@ -108,12 +104,12 @@ test('there are always three categories left to offer at the longest lockout', (
 
 test('the ruleset is pinned to the curve and the protocol', () => {
   // Changing the curve changes this hash: bump DELVE_RULESET and PROTOCOL_VERSION with it, then update the pin.
-  const table = DEPTHS.slice(0, 100).map((d) => [delveRules(d), delveTimer(d)]);
+  const table = DEPTHS.slice(0, 100).map((d) => [delveRules(d), delveTimer(d), delveTileVeil(d)]);
   const hash = createHash('sha256').update(JSON.stringify(table)).digest('hex').slice(0, 16);
   assert.deepEqual([DELVE_RULESET, PROTOCOL_VERSION, hash], [1, 10, PINNED_HASH]);
 });
 
-const PINNED_HASH = 'e001487660973cd0';
+const PINNED_HASH = '1e20acd0ec7c5f74';
 
 function run(losses: Record<string, number[]>, round = 10, seats = Object.keys(losses)): GameState {
   const s = createGame('a');
@@ -183,5 +179,33 @@ test('even under the slowest veil, half the art is in with about 3 s left at the
     const { gap, burn } = veilPace(veilMs, count);
     const halfIn = 400 + (count / 2) * gap + burn;
     assert.ok(ms - halfIn >= 3000, `depth ${d}: ${Math.round(ms - halfIn)} ms left with half the art in`);
+  }
+});
+
+test('"find the art" pictures burn in too from depth 25, one percent more of them each depth', () => {
+  assert.equal(delveTileVeil(24), 0);
+  assert.equal(delveTileVeil(25), 0.01);
+  assert.equal(delveTileVeil(74), 0.5);
+  assert.equal(delveTileVeil(124), 1);
+  assert.equal(delveTileVeil(500), 1);
+  // Cut coarser than a whole item: at most 4 × 4 per picture, so eight pictures stay 128 patches.
+  assert.deepEqual([5, 7, 9].map(tileVeilSize), [3, 4, 4]);
+});
+
+test('the first art to burn in is in colour', () => {
+  const first = DEPTHS.find((d) => delveRules(d).veil)!;
+  assert.equal(delveRules(first).grayscale, 'off');
+  assert.ok(DEPTHS.find((d) => delveRules(d).grayscale !== 'off')! > first);
+});
+
+test('a veiled picture also has half its patches in with over 3 s left', async () => {
+  const { veilPace } = await import('../src/lib/patches.ts');
+  for (const d of [25, 50, 75, 200]) {
+    const ms = delveTimer(d) * 1000;
+    const count = tileVeilSize(delveRules(d).veil!.size) ** 2;
+    const { gap, burn } = veilPace(ms * delveRules(d).veil!.share, count);
+    // The last picture starts up to half a step late (session.svelte.ts burnVeil).
+    const halfIn = 400 + gap / 2 + (count / 2) * gap + burn;
+    assert.ok(ms - halfIn >= 3000, `depth ${d}: ${Math.round(ms - halfIn)} ms left with half a picture in`);
   }
 });

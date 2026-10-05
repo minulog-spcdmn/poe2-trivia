@@ -78,7 +78,7 @@ test('every depth that gets harder in Delve says how', async () => {
   const { DELVE_STEPS, delveChangeAt, delveTimer } = await import('../src/lib/delve.ts');
   for (const step of DELVE_STEPS.slice(1)) assert.ok(DELVE_STEP_TEXT[step.from], `no line for the step at ${step.from}`);
   for (let d = 1; d <= 120; d++) assert.equal(delveChange(d) === null, delveChangeAt(d) === null, `depth ${d}`);
-  assert.equal(delveChange(28), 'Seven seconds');
+  assert.equal(delveChange(55), 'Seven seconds');
   assert.equal(delveTimer(DELVE_LADDER[0].depth), 16);
   assert.equal(delveTimer(DELVE_LADDER.at(-1)!.depth), 7);
 });
