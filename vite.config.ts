@@ -1,4 +1,5 @@
 import { svelte } from '@sveltejs/vite-plugin-svelte';
+import type { AtRule, Node, Rule } from 'postcss';
 import { defineConfig, loadEnv, type Plugin } from 'vite';
 
 /**
@@ -66,10 +67,40 @@ function preloadFonts(): Plugin {
   };
 }
 
+/**
+ * Hover styles only for devices that can really hover. A touch screen fakes
+ * a hover on tap and keeps it until the next tap elsewhere, so a tapped card
+ * or button would stay lifted and lit. Every selector with `:hover` (in the
+ * app's CSS and every component's) moves into `@media (hover: hover)`; the
+ * other selectors of the same rule (`:focus-visible` and the like) stay put.
+ */
+const HOVER_MEDIA = '(hover: hover)';
+
+const hoverOnlyWhereHoverable = {
+  postcssPlugin: 'hover-only-where-hoverable',
+  Rule(rule: Rule, { AtRule }: { AtRule: typeof import('postcss').AtRule }) {
+    if (!rule.selector.includes(':hover')) return;
+    for (let p: Node | undefined = rule.parent; p; p = p.parent) {
+      if (p.type === 'atrule' && (p as AtRule).params.includes(HOVER_MEDIA)) return;
+    }
+    const hover = rule.selectors.filter((s) => s.includes(':hover'));
+    const rest = rule.selectors.filter((s) => !s.includes(':hover'));
+    const media = new AtRule({ name: 'media', params: HOVER_MEDIA });
+    media.append(rule.clone({ selectors: hover }));
+    if (rest.length) {
+      rule.selectors = rest;
+      rule.after(media);
+    } else {
+      rule.replaceWith(media);
+    }
+  },
+};
+
 export default defineConfig(({ mode }) => ({
   // Relative base so the build works on any GitHub Pages sub-path.
   base: './',
   plugins: [svelte(), csp(loadEnv(mode, process.cwd(), 'VITE_')), preloadFonts()],
+  css: { postcss: { plugins: [hoverOnlyWhereHoverable] } },
   build: {
     rollupOptions: {
       // Legal pages are plain static pages so they work without JavaScript.
