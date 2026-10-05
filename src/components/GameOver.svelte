@@ -12,6 +12,7 @@
   import { victory } from '../lib/fx/moments';
   import { portal } from '../lib/portal';
   import { DELVE_RULESET, delveStandings, isGroupRun } from '../lib/delve';
+  import { BLUE_FROM } from '../lib/descent';
 
   const s = $derived(session.state!);
   const won = (id: string) => s.winners.includes(id);
@@ -225,8 +226,8 @@
       <!-- Delve: the deeper the run went, the colder the circle. -->
       <ArcaneCircle
         size="212px"
-        color={run && depthOf(winner.id) >= 25
-          ? `color-mix(in srgb, #a9bfdc ${Math.round(Math.min(1, 0.15 + ((depthOf(winner.id) - 25) / 16) * 0.85) * 100)}%, #f1d99b)`
+        color={run && depthOf(winner.id) >= BLUE_FROM
+          ? `color-mix(in srgb, #a9bfdc ${Math.round(Math.min(1, 0.15 + ((depthOf(winner.id) - BLUE_FROM) / 16) * 0.85) * 100)}%, #f1d99b)`
           : `color-mix(in srgb, ${playerColor(winner.hue)}, #f1d99b 45%)`}
         strength={iLost ? 0.35 : 0.6}
       />

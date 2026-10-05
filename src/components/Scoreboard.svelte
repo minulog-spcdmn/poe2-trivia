@@ -53,7 +53,12 @@
         hit[id] = now;
         const li = scoreRowOf(id);
         // The fire bursts out of the chamber that emptied, wherever the phial shows (lying or upright).
-        const chamber = li && [...li.querySelectorAll(`.chamber[data-k="${now}"]`)].sort((a, b) => area(b) - area(a))[0];
+        // A fallen player's phial is gone (only a hidden one is left): then out of their row.
+        const chamber =
+          li &&
+          [...li.querySelectorAll(`.chamber[data-k="${now}"]`)]
+            .filter((c) => area(c) > 0)
+            .sort((a, b) => area(b) - area(a))[0];
         if (li) lifeLost(li, chamber ?? li, now, mine);
         if (mine) sfx('lifeLost');
         setTimeout(() => {

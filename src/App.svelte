@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { setDescent } from './lib/descent';
+  import { BLUE_FROM, setDescent } from './lib/descent';
   import { onMount, untrack } from 'svelte';
   import { fade, fly } from 'svelte/transition';
   import { session } from './lib/session.svelte';
@@ -177,7 +177,11 @@
             <span>Delve</span>
           {/if}
           <span class="dot">•</span>
-          <span class="depth" class:deep={gs.round >= 25}>Depth <b>{gs.round}</b></span>
+          {#if session.spectating}
+            <span class="spectating" title="You joined mid-game. You'll play in the next game.">Spectating</span>
+            <span class="dot">•</span>
+          {/if}
+          <span class="depth" class:deep={gs.round >= BLUE_FROM}>Depth <b>{gs.round}</b></span>
         {:else if gs && screen === 'game'}
           {#if session.code && !session.hideCode}
             <span>Room <b>{session.code}</b></span>
@@ -428,7 +432,7 @@
   .spectating {
     color: var(--gold-hi);
   }
-  /* Past the Cold Fire (depth 25) the depth burns blue. */
+  /* Where the embers start burning blue (descent.ts), the depth does too. */
   .depth.deep b {
     color: #b9cff0;
   }
