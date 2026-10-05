@@ -37,8 +37,8 @@ import {
 
 export type Cls = 'main' | 'thin' | 'hair' | 'hatch' | 'shade' | 'ray' | 'lattice' | 'sign' | 'fill';
 export type Stroke = { d: string; cls: Cls };
-/** Where the glory's rays fade out from, and how far they reach. */
-export type Fade = { c: Pt; r: number };
+/** Where the glory's rays fade in from its centre (from `from` on) and out again (by `r`). */
+export type Fade = { c: Pt; from: number; r: number };
 
 // Where things sit, in pixels from the card's top left (inside its border).
 // ChooseCategory's CSS places the emblem and the name to match.
@@ -169,19 +169,13 @@ class Plate {
     this.add(place(LUNA), 'sign');
     this.add(place(LUNA_HATCH), 'hatch');
   }
-  /**
-   * Fine rays out of `c`, long and short in turn, as far as `reach` gives,
-   * the short ones `short` of the way. Thinned toward the centre, as an
-   * engraver would (or they'd run together): every fourth starts at `r0`,
-   * every other one further out, the rest further still.
-   */
+  /** Fine rays out of `c` from `r0`, long and short in turn, as far as `reach` gives, the short ones `short` of the way. */
   glory(c: Pt, n: number, r0: number, reach: (deg: number) => number, short: number, o: LineOpts = {}) {
     const rays = Array.from({ length: n }, (_, k) => {
       const a = ((k + 0.5) / n) * 360;
       const r1 = reach(a) - 2;
-      const from = r0 * (k % 4 === 0 ? 1 : k % 2 === 0 ? 2.4 : 3.8);
-      const end = k % 2 ? from + (r1 - from) * short : r1;
-      return end - from > 4 ? line(at(c, a, from), at(c, a, end), o) : '';
+      const end = k % 2 ? r0 + (r1 - r0) * short : r1;
+      return end - r0 > 4 ? line(at(c, a, r0), at(c, a, end), o) : '';
     });
     this.add(rays.join(''), 'ray');
   }
@@ -351,35 +345,89 @@ const tallFace = (w: number, h: number, p: Plate) => {
   const spring = (Math.asin(2.5 / ri) * 180) / Math.PI;
   for (const d of [1.2, 2.3]) p.add(arc(A, ri + d, -90 + spring, -4.6), 'hatch');
 
-  // The round dais the emblem floats over, seen from a little above: its
-  // top an ellipse, its front a band, shaded down its right side; it stands
-  // on a floor hatched in lines.
-  const floor = y1 - 9;
-  const [dx, dy, dh] = [54, 5, 6];
-  const top: Pt = [MID, floor - dh];
-  const ell = (c: Pt, from: number, to: number) => {
-    const pts = Array.from({ length: 49 }, (_, i) => {
-      const t = rad(from + ((to - from) * i) / 48);
-      return pt([c[0] + dx * Math.cos(t), c[1] + dy * Math.sin(t)]);
-    });
-    return `M${pts.join('L')}`;
+  // The pedestal the emblem floats over, round, seen from a little above:
+  // a cap with an overhanging lip and a sunk ring on top; a fluted drum,
+  // darkened under the cap, with a rounded moulding at its foot; and a
+  // wider base. Each band is shaded as a cylinder is (strokes crowding
+  // toward its far edge, as the light from the left falls off), and it
+  // casts a shadow to the right on a floor hatched in lines.
+  const floor = y1 - 5;
+  const flat = 0.085;
+  /** Points round an ellipse about `c`, `rx` across (as flat as the pedestal), from `t0` to `t1` degrees (0 to the right, 90 to the front). */
+  const ell = (c: Pt, rx: number, t0: number, t1: number) => {
+    const n = Math.max(2, Math.ceil(Math.abs(t1 - t0) / 5));
+    return `M${Array.from({ length: n + 1 }, (_, i) => {
+      const t = rad(t0 + ((t1 - t0) * i) / n);
+      return pt([c[0] + rx * Math.cos(t), c[1] + rx * flat * Math.sin(t)]);
+    }).join('L')}`;
   };
-  p.add(ell(top, 0, 360) + 'Z', 'thin');
-  p.add(ell([MID, floor], 0, 180), 'thin');
-  p.add(line([MID - dx, top[1]], [MID - dx, floor]) + line([MID + dx, top[1]], [MID + dx, floor]), 'thin');
-  for (let x = MID + dx * 0.3; x < MID + dx - 0.6; x += 1.3) {
-    const y = dy * Math.sqrt(1 - ((x - MID) / dx) ** 2);
-    p.add(line([x, top[1] + y + 0.7], [x, floor + y - 0.7]), 'hatch');
+  /** How far in front of an ellipse's centre line its front edge runs, at `x`. */
+  const front = (rx: number, x: number) => rx * flat * Math.sqrt(Math.max(0, 1 - ((x - MID) / rx) ** 2));
+  const [capR, drumR, baseR] = [47, 40, 53];
+  const [capTop, capFoot, drumFoot] = [floor - 21, floor - 17.5, floor - 5];
+  // The cap: its top with a lip round it and a ring sunk in it, and its front band.
+  p.add(ell([MID, capTop], capR, 0, 360) + 'Z', 'thin');
+  p.add(ell([MID, capTop], capR - 3.5, 0, 360) + 'Z', 'hair');
+  p.add(ell([MID, capTop], capR - 10, 0, 360) + 'Z', 'hair');
+  p.add(ell([MID, capTop + 0.8], capR - 10, 200, 340), 'hatch');
+  p.add(ell([MID, capFoot], capR, 0, 180), 'thin');
+  p.add(line([MID - capR, capTop], [MID - capR, capFoot]) + line([MID + capR, capTop], [MID + capR, capFoot]), 'thin');
+  // The drum, from under the cap's overhang to the base.
+  const under = capFoot + front(capR, MID + drumR);
+  p.add(line([MID - drumR, under], [MID - drumR, drumFoot]) + line([MID + drumR, under], [MID + drumR, drumFoot]), 'thin');
+  p.add(ell([MID, drumFoot], drumR, 0, 180), 'thin');
+  p.add(ell([MID, capFoot + 1.2], drumR, 8, 172), 'hatch');
+  // The drum's fluting, at even steps round it, and the moulding at its foot.
+  let flutes = '';
+  for (let t = -72; t <= 72; t += 18) {
+    const x = MID + drumR * Math.sin(rad(t));
+    flutes += line([x, capFoot + front(capR, x) + 1.6], [x, drumFoot - 2.4 + front(drumR + 1.4, x)]);
   }
+  p.add(flutes, 'hair');
+  p.add(ell([MID, drumFoot - 2.2], drumR + 1.4, 0, 180), 'thin');
+  // The base: its top, seen round the drum, and its front band.
+  const past = (Math.acos(drumR / baseR) * 180) / Math.PI;
+  p.add(ell([MID, drumFoot], baseR, 0, 180) + ell([MID, drumFoot], baseR, 180, 180 + past) + ell([MID, drumFoot], baseR, 360 - past, 360), 'thin');
+  p.add(ell([MID, floor], baseR, 0, 180), 'thin');
+  p.add(line([MID - baseR, drumFoot], [MID - baseR, floor]) + line([MID + baseR, drumFoot], [MID + baseR, floor]), 'thin');
+  // Cylinder shading: strokes at even steps round each band, so they crowd
+  // toward its edges; the right side shaded, the far left only at its rim.
+  const shadeBand = (rx: number, topAt: (x: number) => number, footY: number) => {
+    let d = '';
+    for (const t of [-87, -82, -77, ...Array.from({ length: 17 }, (_, i) => 22 + i * 4)]) {
+      const x = MID + rx * Math.sin(rad(t));
+      const [a, b] = [topAt(x) + 0.6, footY + front(rx, x) - 0.6];
+      if (b - a > 0.6) d += line([x, a], [x, b]);
+    }
+    p.add(d, 'hatch');
+  };
+  shadeBand(capR, (x) => capTop + front(capR, x), capFoot);
+  shadeBand(drumR, (x) => capFoot + front(capR, x), drumFoot);
+  shadeBand(baseR, (x) => drumFoot + front(baseR, x), floor);
+  // What the pedestal hides: the rays behind it, and the floor under it.
   const daisCuts = (a: Pt, b: Pt) =>
-    [inEllipse(a, b, top, dx + 1, dy + 1), inEllipse(a, b, [MID, floor], dx + 1, dy + 1), inBox(a, b, [MID - dx - 1, top[1], MID + dx + 1, floor])].filter(
-      (c): c is Cut => !!c,
-    );
+    [
+      inEllipse(a, b, [MID, capTop], capR + 1, capR * flat + 1),
+      inEllipse(a, b, [MID, floor], baseR + 1, baseR * flat + 1),
+      inBox(a, b, [MID - capR - 1, capTop, MID + capR + 1, drumFoot]),
+      inBox(a, b, [MID - baseR - 1, drumFoot, MID + baseR + 1, floor]),
+    ].filter((c): c is Cut => !!c);
   p.add(line([MID - ri, floor], [MID + ri, floor], { cuts: daisCuts([MID - ri, floor], [MID + ri, floor]) }), 'thin');
   for (let y = floor + 1.6; y < y1 - 2.5; y += 1.6) {
     const [a, b]: Pt[] = [
       [MID - ri + 0.6, y],
       [MID + ri - 0.6, y],
+    ];
+    p.add(line(a, b, { cuts: daisCuts(a, b) }), 'hatch');
+  }
+  // Its shadow on the floor, falling to the right: strokes between the floor's.
+  const shadow: Pt = [MID + 14, floor + 1.2];
+  for (let y = floor + 0.8; y < y1 - 2.5; y += 1.6) {
+    const half = 62 * Math.sqrt(Math.max(0, 1 - ((y - shadow[1]) / 4.5) ** 2));
+    if (half < 2) continue;
+    const [a, b]: Pt[] = [
+      [Math.max(MID - ri + 0.6, shadow[0] - half * 0.55), y],
+      [Math.min(MID + ri - 0.6, shadow[0] + half), y],
     ];
     p.add(line(a, b, { cuts: daisCuts(a, b) }), 'hatch');
   }
@@ -431,10 +479,11 @@ const tallFace = (w: number, h: number, p: Plate) => {
     if (far && C[1] + far[1] * 1000 * u[1] <= S) ts.push(far[1] * 1000);
     return Math.min(...ts.filter((t) => t > 0));
   };
-  p.glory(C, 120, 11, reach, 0.62);
-  // The dais stands in front of the rays.
+  // From behind the emblem, fading in clear of it, so they don't run into it.
+  p.glory(C, 96, 50, reach, 0.62);
+  // The pedestal stands in front of the rays.
   p.out = p.out.map((s) => (s.cls === 'ray' ? { ...s, d: clipOut(s.d, daisCuts) } : s));
-  p.fade = { c: C, r: 118 };
+  p.fade = { c: C, from: 60, r: 128 };
 };
 
 /** Straight segments `d` (M…L… pairs) with the stretches `cuts` gives taken out. */
@@ -462,8 +511,8 @@ const rowFace = (w: number, h: number, p: Plate) => {
     const ts = [u[0] > 1e-9 ? (box[2] - C[0]) / u[0] : u[0] < -1e-9 ? (box[0] - C[0]) / u[0] : Infinity, u[1] > 1e-9 ? (box[3] - C[1]) / u[1] : u[1] < -1e-9 ? (box[1] - C[1]) / u[1] : Infinity];
     return Math.min(...ts);
   };
-  p.glory(C, 72, 6, reach, 0.6);
-  p.fade = { c: C, r: 52 };
+  p.glory(C, 60, 24, reach, 0.6);
+  p.fade = { c: C, from: 28, r: 54 };
 };
 
 /** The back of a card `w` by `h`. */
@@ -500,7 +549,7 @@ const back = (w: number, h: number, p: Plate) => {
   p.glory(c, row ? 72 : 96, sunR + 2, (deg) => lensReach(c, deg, lens) - 2, 0.68, { holes });
   const room = (deg: number) => lensReach(c, deg, lens) - 3;
   p.sun(c, sunR, Math.min(row ? 24 : 42, room(0)), Math.min(row ? 18 : 31, room(22.5)), { holes });
-  p.fade = { c, r: row ? len + 10 : len + 6 };
+  p.fade = { c, from: 0, r: row ? len + 10 : len + 6 };
 };
 
 /** The strokes of one side of a card `w` by `h`, and where its glory fades. */

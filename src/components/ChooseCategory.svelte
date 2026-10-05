@@ -213,6 +213,9 @@
   .card {
     /* The engraving's gold. */
     --ink: #c9a05a;
+    /* A faint grain over both sides, so they read as worked plates rather than flat fills. */
+    --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 .86 0 0 0 0 .62 .08 0 0 0 -.025'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")
+      0 0 / 180px;
     padding: 0;
     border: 0;
     background: none;
@@ -236,6 +239,7 @@
     overflow: clip;
     border: 1px solid var(--gold-lo);
     background:
+      var(--grain),
       radial-gradient(circle at 50% 50%, rgba(175, 96, 37, 0.2), transparent 90px),
       radial-gradient(ellipse 120% 90% at 50% 50%, transparent 50%, rgba(0, 0, 0, 0.5)),
       linear-gradient(170deg, #211912, #0d0a07 70%);
@@ -264,6 +268,7 @@
     border-radius: 8px;
     border: 1px solid var(--gold-lo);
     background:
+      var(--grain),
       radial-gradient(circle at 50% 132px, rgba(175, 96, 37, 0.18), transparent 110px),
       radial-gradient(ellipse 120% 90% at 50% 45%, transparent 50%, rgba(0, 0, 0, 0.5)),
       linear-gradient(170deg, #211912, #0d0a07 70%);
@@ -411,6 +416,7 @@
     border-color: #8c3a2c;
     --bs-ring: rgba(140, 58, 44, 0.45);
     background:
+      var(--grain),
       radial-gradient(circle at 50% 132px, rgba(224, 85, 63, 0.2), transparent 110px),
       radial-gradient(ellipse 120% 90% at 50% 45%, transparent 50%, rgba(0, 0, 0, 0.5)),
       linear-gradient(170deg, #22110d, #0d0706 70%);
@@ -436,6 +442,7 @@
     border-color: #8c3a2c;
     --ring: rgba(140, 58, 44, 0.45);
     background:
+      var(--grain),
       radial-gradient(circle at 50% 50%, rgba(224, 85, 63, 0.2), transparent 90px),
       radial-gradient(ellipse 120% 90% at 50% 50%, transparent 50%, rgba(0, 0, 0, 0.5)),
       linear-gradient(170deg, #22110d, #0d0706 70%);
