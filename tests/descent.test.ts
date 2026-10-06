@@ -94,9 +94,10 @@ test('the look changes gradually: never much of a stratum from one depth to the 
   for (let d = 0.5; d <= 400; d += 0.5) {
     const now = descent(d).look;
     const { stratum } = strataAt(d);
-    // A stratum turns in over five depths, the first over nine.
+    // A stratum turns in over five depths, the first over nine; its colour
+    // turns quickest, over the two depths where the light is dimmest.
     const whole = difference(lookOf(stratum - 1), lookOf(stratum));
-    assert.ok(difference(prev, now) <= 0.17 * whole + 0.02, `a jump at ${d}`);
+    assert.ok(difference(prev, now) <= 0.26 * whole + 0.02, `a jump at ${d}`);
     prev = now;
   }
 });
@@ -122,6 +123,26 @@ test('each stratum creeps in over the last three depths before it and is mostly 
   }
   // Blue is one stratum among many, not the last.
   assert.ok(!blue(STRATA.length - 1));
+});
+
+test('one place gives way to the next: the old recedes before the new arrives, and the light is dimmest between', () => {
+  const light = (l: Look) => l.floorK + l.hazeK * 0.3;
+  for (let k = 1; k <= 30; k++) {
+    const a = lookOf(k - 1);
+    const b = lookOf(k);
+    const mine = (env: number[], own: number[], other: number[]) => env.reduce((m, v, i) => (own[i] > other[i] ? Math.max(m, v) : m), 0);
+    for (let d = 10 * k - 3; d <= 10 * k + 2; d += 0.25) {
+      const l = descent(d).look;
+      const old = mine(l.env, a.env, b.env);
+      const next = mine(l.env, b.env, a.env);
+      assert.ok(Math.min(old, next) < 0.35, `both places half there at ${d} (${old.toFixed(2)}, ${next.toFixed(2)})`);
+    }
+    // The depth before the card: the old place mostly gone, the new one coming in.
+    const before = descent(10 * k).look;
+    assert.ok(mine(before.env, a.env, b.env) < 0.2 && mine(before.env, b.env, a.env) > 0.3, `turn at ${10 * k}`);
+    const mid = descent(10 * k - 0.5).look;
+    assert.ok(light(mid) < 0.75 * (light(a) + light(b)) / 2, `no dimming between strata ${k - 1} and ${k}`);
+  }
 });
 
 test('each stratum through 100 is an environment of its own; past 100 they pair up, never the same twice in a row', () => {
@@ -152,11 +173,14 @@ test('the depth on the header takes the colour of its stratum', () => {
   }
 });
 
-test('the dark closes in a little with every depth of a stratum, opens out into the next, and is closer the deeper', () => {
+test('the dark closes in a little with every depth of a stratum, most as it gives way, opens out into the next, and is closer the deeper', () => {
   for (let k = 0; k < 30; k++) {
-    for (let d = 10 * k + 1; d < 10 * k + 8; d++)
+    for (let d = 10 * k + 2; d < 10 * k + 9; d++)
       assert.ok(descent(d + 1).close > descent(d).close + 0.03, `no closer at ${d + 1}`);
-    assert.ok(descent(10 * k + 11).close < descent(10 * k + 8).close, `no opening out at ${10 * k + 11}`);
+    assert.ok(descent(10 * k + 11).close < descent(10 * k + 9).close - 0.2, `no opening out at ${10 * k + 11}`);
+    // It turns from closing in to opening out smoothly.
+    for (let d = 10 * k + 2; d < 10 * k + 12; d += 0.25)
+      assert.ok(Math.abs(descent(d + 0.25).close - descent(d).close) < 0.1, `a jump at ${d}`);
   }
   assert.ok(descent(61).close > descent(11).close + 0.1);
   for (let d = 0; d <= 1000; d += 0.25) {

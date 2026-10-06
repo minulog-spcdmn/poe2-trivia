@@ -239,13 +239,16 @@
       radial-gradient(70% 34% at 50% 108%, rgba(255, 240, 200, 0.2), transparent),
       radial-gradient(90% 50% at 40% 110%, rgba(255, 100, 24, 0.18), transparent);
   }
-  /* The dark closing in with the depth (descent.ts's close): at the edges only. */
+  /* The light about you drawing in with the depth (descent.ts's close): a
+     soft falloff from each edge, eased like a Gaussian so it shows no line,
+     the corners darkest where the two meet. */
   .close {
+    --edge: rgba(0, 0, 0, 0.8), rgba(0, 0, 0, 0.62) 6%, rgba(0, 0, 0, 0.36) 13%, rgba(0, 0, 0, 0.14) 21%, rgba(0, 0, 0, 0.03) 29%, transparent 36%;
     background:
-      radial-gradient(30% 50% at 0% 40%, rgba(0, 0, 0, 0.85), transparent),
-      radial-gradient(28% 46% at 100% 60%, rgba(0, 0, 0, 0.85), transparent),
-      radial-gradient(50% 20% at 40% 0%, rgba(0, 0, 0, 0.7), transparent),
-      radial-gradient(46% 18% at 64% 100%, rgba(0, 0, 0, 0.7), transparent);
+      linear-gradient(to right, var(--edge)),
+      linear-gradient(to left, var(--edge)),
+      linear-gradient(to bottom, var(--edge)),
+      linear-gradient(to top, var(--edge));
   }
   .ember {
     position: absolute;

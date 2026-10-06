@@ -7,14 +7,18 @@
 // light, ...). Depth 1 is the usual scene; the first stratum kindles over
 // depths 1 to 7, and from then on each one creeps in over the last three
 // depths of the one before and settles over the first two of its own, so it
-// is mostly there by the time its name is announced. Each is named after a
-// Delve biome. Past depth 100 the strata go on for ever, each pairing the
-// hall of one deep stratum with the embers of another (and half its
-// features), so no two in a row look alike, and each is announced by its
-// hall's biome again. And the deeper, the closer the dark: it creeps in from
-// the edges a little with every depth of a stratum, and opens out again
-// into the next. Pure, apart from the eased channel at the bottom that the
-// backdrop reads.
+// is mostly there by the time its name is announced. One place doesn't melt
+// into the next: the old one's features recede first (the cracks cool, the
+// frost withdraws to the walls, the lamps gutter out) and its light dims, the
+// colour turns while it is dim, and the new one's features arrive from where
+// they come from (see blendInto). Each is named after a Delve biome. Past
+// depth 100 the strata go on for ever, each pairing the hall of one deep
+// stratum with the embers of another (and half its features), so no two in
+// a row look alike, and each is announced by its hall's biome again. And the
+// deeper, the less light about you: it draws in a little with every depth
+// of a stratum, most as one place gives way to the next, and opens out again
+// as the next arrives. Pure, apart from the eased channel at the bottom that
+// the backdrop reads.
 
 type RGB = [number, number, number];
 
@@ -363,8 +367,8 @@ export interface Descent {
   abyss: number;
   /**
    * How close the dark has crept in from the edges, 0 to 1: a little more
-   * with every depth of a stratum, opening out again as the next comes in,
-   * and on the whole closer the deeper.
+   * with every depth of a stratum, most as it gives way to the next, opening
+   * out again as the next arrives, and on the whole closer the deeper.
    */
   close: number;
   /** The stratum the scene is in or turning into (see strataAt), and how far. */
@@ -415,19 +419,82 @@ export function mixLook(a: Look, b: Look, t: number): Look {
   return mixInto(blank(), a, b, t);
 }
 
-/** How close the dark has crept in at a depth (see Descent.close). */
+/**
+ * How one place gives way to the next, `t` of the way through a turn: the
+ * old one's features have receded by `leave` (most of the way by the middle),
+ * the new one's arrive from a third of the way on, and between the two the
+ * light is dimmest. Its colour turns over the middle, while it is dim, so the
+ * two never mix into mud. At the depths a turn is seen at (a tenth, a third,
+ * two thirds and nine tenths of the way) that is: the old place a little
+ * dimmer; the old place fading, the new one only hinted; the new one coming
+ * in with a trace of the old; nearly all the new one.
+ */
+const leave = (t: number) => smoothstep(0, 0.75, t);
+const arrive = (t: number) => smoothstep(0.3, 1, t);
+const hueOf = (t: number) => smoothstep(0.15, 0.85, t);
+/** How dim it is between two places, 0 to about 0.55. */
+export const between = (t: number) => leave(t) * (1 - arrive(t));
+
+/** The parts of a look that are the colour of its light (turned while dim), and how strong it is (dimmed between places). */
+const HUES = ['shade', 'floor', 'haze', 'smoke', 'smokeHi', 'mist', 'glint', 'spread'] as const;
+const LIGHTS = ['floorK', 'hazeK', 'mistK', 'lamp'] as const;
+/** Features of a place, which recede and arrive (see leave and arrive). */
+const FEATURES = ['glints', 'burst', 'eddy'] as const;
+
+/**
+ * Writes the turn from `a` to `b`, `t` of the way, into `out` (see leave).
+ * The embers follow `t` itself: they change colour one by one anyway, as
+ * each starts a new rise.
+ */
+function blendInto(out: Look, a: Look, b: Look, t: number): Look {
+  mixInto(out, a, b, t);
+  if (t <= 0 || t >= 1) return out;
+  const o = out as unknown as Record<string, number | number[]>;
+  const A = a as unknown as Record<string, number | number[]>;
+  const B = b as unknown as Record<string, number | number[]>;
+  const l = leave(t);
+  const r = arrive(t);
+  const h = hueOf(t);
+  const dim = between(t);
+  for (const key of HUES) {
+    const x = A[key];
+    const y = B[key] as number | number[];
+    if (Array.isArray(x)) {
+      const arr = o[key] as number[];
+      for (let i = 0; i < x.length; i++) arr[i] = x[i] + ((y as number[])[i] - x[i]) * h;
+    } else o[key] = x + ((y as number) - x) * h;
+  }
+  // The hall itself darkens a little between two places.
+  for (let i = 0; i < 3; i++) out.shade[i] *= 1 - 0.35 * dim;
+  for (const key of LIGHTS) o[key] = (o[key] as number) * (1 - 0.6 * dim);
+  out.dark += (0.85 - out.dark) * 0.45 * dim;
+  for (const key of FEATURES) o[key] = (A[key] as number) * (1 - l) + (B[key] as number) * r;
+  // An environment both places share stays; the rest recede and arrive.
+  for (let i = 0; i < ENV; i++) out.env[i] = Math.max(a.env[i] * (1 - l) + b.env[i] * r, Math.min(a.env[i], b.env[i]));
+  return out;
+}
+
+/**
+ * How close the dark has crept in at a depth (see Descent.close): from where
+ * a stratum has settled (10k + 2) it draws in a little with every depth,
+ * most at 10k + 9 as the place fades, and opens out again as the next one
+ * arrives (by 10k + 12); and on the whole it is closer the deeper.
+ */
 function closeness(d: number) {
   if (d < 1) return 0;
-  const k = Math.floor((d - 1) / 10);
-  const within = Math.min(1, (d - 1 - 10 * k) / 9) * (1 - smoothstep(10 * k + 8, 10 * k + 11, d));
-  return 0.45 * (1 - Math.exp(-(d - 1) / 40)) + 0.55 * within;
+  const deep = 0.4 * (1 - Math.exp(-(d - 1) / 40));
+  if (d < 2) return deep;
+  const x = d - 10 * Math.floor((d - 2) / 10);
+  const within = Math.min(1, (x - 2) / 7.5) * (1 - arrive(smoothstep(7, 12, x)));
+  return deep + 0.45 * within;
 }
 
 /** Writes the scene at a depth into `out` (its look is written over, never shared). */
 function fill(out: Descent, depth: number): Descent {
   const d = Number.isFinite(depth) ? Math.max(0, depth) : 0;
   const { stratum, turn } = strataAt(d);
-  const look = mixInto(out.look, lookOf(stratum - 1), lookOf(stratum), turn);
+  // The first stratum is the usual hall kindling, not a place giving way to another.
+  const look = (stratum === 0 ? mixInto : blendInto)(out.look, lookOf(stratum - 1), lookOf(stratum), turn);
   out.deep = d < 1 ? 0 : 1 - Math.exp(-(d - 1) / 22);
   // Within a stratum the dark still creeps in a little with every depth.
   look.dark += (1 - look.dark) * 0.15 * out.deep;
@@ -556,10 +623,11 @@ export function currentDescent(): Descent {
   const mix = (a: number, b: number) => a + (b - a) * t;
   fadeNow.deep = mix(from.deep, shownNow.deep);
   fadeNow.abyss = mix(from.abyss, shownNow.abyss);
-  fadeNow.close = mix(from.close, shownNow.close);
+  // Through the dark, as from one stratum to the next.
+  fadeNow.close = mix(from.close, shownNow.close) + 0.4 * between(t) * (1 - Math.max(from.close, shownNow.close));
   fadeNow.stratum = shownNow.stratum;
   fadeNow.turn = shownNow.turn;
-  mixInto(fadeNow.look, from.look, shownNow.look, t);
+  blendInto(fadeNow.look, from.look, shownNow.look, t);
   return fadeNow;
 }
 

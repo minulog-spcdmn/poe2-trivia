@@ -1,10 +1,11 @@
 // The light shrinking with a Delve question's clock: as the time to answer
-// runs out, the dark creeps in from the edges of the screen, faint at first
-// and closing in over the last seconds, and lifts again when the question
-// ends or a flare buys more time. Only a look: it changes nothing in the
-// game. The ring that shows the clock (components/TimerRing.svelte) drives
-// it; the backdrop (lib/backdrop.ts) draws it behind the UI and
-// components/Darkness.svelte at the screen's edges over it.
+// runs out, the light about you draws in from the edges of the screen,
+// faint at first and closing in over the last seconds, and opens out again
+// when the question ends or a flare buys more time. Only a look: it changes
+// nothing in the game. The ring that shows the clock
+// (components/TimerRing.svelte) drives it; the backdrop (lib/backdrop.ts)
+// draws it behind the UI, and components/Darkness.svelte a soft shade along
+// the very edges of the screen over it.
 
 /** How far the clock has run down, 0 to 1, as last set. */
 let target = 0;

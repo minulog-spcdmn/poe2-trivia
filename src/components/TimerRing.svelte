@@ -1,8 +1,9 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import { session } from '../lib/session.svelte';
   import { sfx } from '../lib/sound';
   import { timerTick } from '../lib/fx/moments';
-  import { questionTimer, veinWindowMs } from '../lib/delve';
+  import { clockLeft, questionTimer, veinWindowMs } from '../lib/delve';
   import { claimPressure, pressureOf, type Pressure } from '../lib/darkness';
 
   /**
@@ -31,19 +32,23 @@
 
   let remaining = $state(Infinity);
 
-  // A flare burnt: the deadline moved on, and the ring flares back up.
+  // A flare burnt (the question is `flared`): the ring flares back up. Not
+  // on any move of the deadline, which dynamite's pause moves on too; and
+  // not on mounting a question already flared (a refresh or rejoin).
   let flaring = $state(false);
-  let lastEnd: number | null = null;
+  let wasFlared: boolean | null = null;
   $effect(() => {
-    const end = deadline;
-    if (end !== null && lastEnd !== null && end > lastEnd + 500) {
+    const now = !!q?.flared;
+    const was = wasFlared;
+    wasFlared = now;
+    if (now && was === false) {
       flaring = true;
       const t = setTimeout(() => (flaring = false), 1600);
-      lastEnd = end;
       return () => clearTimeout(t);
     }
-    lastEnd = end;
   });
+  /** The time left at `now`: held still while dynamite's pause is on (see clockLeft). */
+  const leftAt = (end: number, now: number) => untrack(() => clockLeft({ deadline: end, held: q?.held }, now));
   let lastTick = -1;
   let started = false;
 
@@ -71,13 +76,13 @@
     if (stopped) {
       // Mounted already stopped (a refresh or rejoin during a reveal): show the time that was left.
       // A ring that ran keeps the value it froze at.
-      if (!started) remaining = Math.max(0, end - session.hostNow());
+      if (!started) remaining = leftAt(end, session.hostNow());
       return;
     }
     started = true;
     let raf = 0;
     const loop = () => {
-      const left = Math.max(0, end - session.hostNow());
+      const left = leftAt(end, session.hostNow());
       const secs = Math.ceil(left / 1000);
       dark?.set(pressureOf(left, span * 1000, warnFrom));
       // The ring is redrawn only once its end has moved a third of a pixel
