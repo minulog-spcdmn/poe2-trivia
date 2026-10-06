@@ -525,10 +525,14 @@ Everything is drawn in WebGL2 with float precision and dithered once at the
   Through a zone the scene turns steadily into the next (`strataAt`,
   `turnInto`): the embers follow the turn itself, the light, smoke and
   features follow it from the zone's 4th depth (`hallTurn`). The scene's
-  `light` is set so its average brightness follows a falling curve
-  (`luminanceAt`): `estimateLuminance` works out what the backdrop draws,
-  corrected per zone (`HALL_GAIN`) and per depth (`MEASURED`, measured from
-  the backdrop's own frames; measure again after changing what it draws).
+  `light` is set so its average brightness never rises with depth
+  (`luminanceAt`, `lightAt`): `estimateLuminance` works out what the
+  backdrop draws from what each environment adds and dims as it comes in
+  (`ENV_ADD`, `ENV_HALL`), corrected per depth (`MEASURED`), and the light
+  is solved a stretch of depths at a time, moving at most 0.06 a depth.
+  The tables are measured from the backdrop's own frames with
+  `scripts/measure-luminance.mjs`; measure again after changing what it
+  draws.
   The shown depth eases along at about a second a depth, and a jump of
   more than three depths cross-fades straight there. `plunge()` (called by
   `App.svelte` as a question follows the cards) sinks the scene, and the
