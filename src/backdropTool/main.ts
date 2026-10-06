@@ -10,7 +10,7 @@ import FxLayer from '../components/FxLayer.svelte';
 import Tool from './Tool.svelte';
 import { BETA } from '../lib/channel';
 import { BACKDROP_TOOL } from '../lib/storage';
-import { boot } from './tool.svelte';
+import { boot } from './state.svelte';
 
 if (!(import.meta.env.DEV || BETA) || !BACKDROP_TOOL) throw new Error('The backdrop tool only runs on the dev server and the beta, from backdrop.html.');
 

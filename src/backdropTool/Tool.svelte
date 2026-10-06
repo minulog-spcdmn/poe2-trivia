@@ -6,7 +6,7 @@
   import { accentAt, brightnessAt, luminanceAt, stratumName } from '../lib/descent';
   import { PROFILE_NAMES } from '../lib/emberProfiles';
   import { readStored, writeStored } from '../lib/storage';
-  import * as T from './tool.svelte';
+  import * as T from './state.svelte';
 
   const tool = T.tool;
 
