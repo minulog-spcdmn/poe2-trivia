@@ -128,10 +128,13 @@ function change(a: Look, b: Look) {
 }
 
 test('the look changes steadily: every depth a small step, none much bigger than the usual', () => {
-  // Past the first stratum (which kindles from the surface's light), to far down.
+  // Past the first stratum (which kindles from the surface's light), to far
+  // down; the usual step is the zones' (the endgame's generated strata,
+  // quieter, change by less).
   const steps: number[] = [];
   for (let d = 2; d <= 300; d++) steps.push(change(descent(d - 1).look, descent(d).look));
-  const mean = steps.reduce((a, b) => a + b, 0) / steps.length;
+  const zoneSteps = steps.slice(0, 99);
+  const mean = zoneSteps.reduce((a, b) => a + b, 0) / zoneSteps.length;
   const max = Math.max(...steps);
   assert.ok(max < 1.8 * mean, `the largest step ${max.toFixed(3)} is ${(max / mean).toFixed(2)} times the usual ${mean.toFixed(3)}`);
   // Nor does the light the hall is drawn at swing from one depth to the next.
@@ -258,7 +261,7 @@ test("the deeper, the darker: the scene's average brightness never rises, howeve
     const [hall, rest] = measuredAt(d);
     return e.hall * hall * x.light + e.rest * rest;
   };
-  assert.ok(MEASURED.length >= 280 && (MEASURED.length - 100) % 90 === 0, 'measured from the frames, to a whole round of the strata past 190');
+  assert.equal(MEASURED.length, 91, 'measured from the frames, to the last depth whose look is the zones\' alone');
   // Depth by depth (held still, the scene shows only whole depths).
   let prev = lum(1);
   for (let d = 2; d <= 600; d++) {
@@ -307,19 +310,23 @@ test("what the features add, which the light can't take back, changes a little w
   assert.equal(lightAt(0.5), 1);
 });
 
-test('each stratum through 100 is an environment of its own; past 100 they pair up, never the same twice in a row', () => {
+test('each stratum through 100 is an environment of its own; past 100 at most two, quietly, never like the one before', () => {
   assert.equal(SURFACE.env.length, ENV);
   assert.ok(SURFACE.env.every((v) => v === 0));
   STRATA.forEach((s, k) => assert.deepEqual(s.look.env, ENVIRONMENTS.map((_, i) => (i === k ? 1 : 0)), s.name));
-  let prev = lookOf(STRATA.length - 1).env;
+  const mist = ENVIRONMENTS.indexOf('mist');
+  let prev = lookOf(STRATA.length - 1);
   for (let k = STRATA.length; k < 400; k++) {
-    const env = lookOf(k).env;
+    const look = lookOf(k);
+    const env = look.env;
     assert.equal(env.length, ENV);
-    assert.ok(env.every((v) => v >= 0 && v <= 1), `stratum ${k}`);
-    assert.ok(env.filter((v) => v > 0).length === 2, `two environments in stratum ${k}`);
-    assert.ok(env.some((v, i) => Math.abs(v - prev[i]) > 0.4), `stratum ${k} like the one before`);
+    assert.ok(env.every((v) => v >= 0 && v <= 0.65), `stratum ${k}: ${env}`);
+    assert.ok(env.filter((v) => v > 0).length <= 2, `at most two details in stratum ${k}`);
+    // (The petrified mist brings stone trunks in from 0.45: never past the zones.)
+    assert.ok(env[mist] < 0.45, `trunks in stratum ${k}`);
+    assert.ok(difference(prev, look) > 0.5, `stratum ${k} like the one before`);
     assert.equal(lookOf(k), lookOf(k), 'made once');
-    prev = env;
+    prev = look;
   }
 });
 

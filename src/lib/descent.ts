@@ -4,102 +4,32 @@
 // below, the smoke and its colours, how dark the hall is, what the embers
 // burn like and how they move, what glints in the walls, and the features
 // the backdrop draws for it alone (the environments: magma veins, frost,
-// spore light, shafts of light, ...). Each is named after a Delve biome.
+// spore light, shafts of light, ...). The first ten are the zones, each
+// named after a Delve biome, their looks kept in src/data/backdrops.json
+// (lib/backdrops.ts; the backdrop tool, backdrop.html, edits them).
 //
 // One place turns into the next steadily, a little with every depth, never
 // all at once: through a stratum a growing share of the embers burns in the
 // next one's colour (a tenth at its second depth, nine tenths at its last),
 // and from its fourth depth on the next one's light, smoke and features
 // creep in as its own recede, so the next is all there when its name is
-// announced. Past depth 100 the strata go on for ever, each pairing the
-// hall of one deep stratum with the embers of another (and half its
-// features), so no two in a row look alike, and each is announced by its
-// hall's biome again.
+// announced. Past depth 100 the strata go on for ever, each generated from
+// a seed of its own (lib/backdropGen.ts, the same for everyone), its hue
+// moving on from the one before's so no two in a row look alike, and each
+// is announced by the biome it looks most like.
 //
 // And the deeper, the darker, never the other way: the dark draws in from
 // the edges a little with every depth, and the scene's light is set (`light`,
 // see the luminance estimate below) so its average brightness only ever
-// falls, however bright a stratum's fire or gold. Each new depth sinks the
-// scene a little further as its cards are dealt (plunge). Pure, apart from
-// the eased channel and the plunge at the bottom that the backdrop reads.
+// falls, however bright a stratum's fire or gold, generated or not. Each new
+// depth sinks the scene a little further as its cards are dealt (plunge).
+// Pure, apart from the eased channel and the plunge at the bottom that the
+// backdrop reads.
 
-type RGB = [number, number, number];
+import { ENV, ENVIRONMENTS, HALL_FROM, hallTurn, type Look } from './backdropData.ts';
+import { endgameAt, endgameName, onBackdrops, zones } from './backdrops.ts';
 
-/** A stratum's look. Colours of light are 0-255; ember colours 0-1. */
-export interface Look {
-  /** The dark of the hall, per channel (1 is the surface's). */
-  shade: RGB;
-  /** How much of the hall the uneven dark swallows, 0 to 1. */
-  dark: number;
-  /** The light welling up from below, its strength and its reach. */
-  floor: RGB;
-  floorK: number;
-  floorH: number;
-  /** The haze from above and its strength (1 at the surface). */
-  haze: RGB;
-  hazeK: number;
-  /** The glow in the middle: its colour (the surface's is gold) and strength (1 at the surface). */
-  glow: RGB;
-  lamp: number;
-  /**
-   * The drifting smoke, a colour to each of its four drifts (low left, low
-   * right, high right, high left; see BLOBS), so the colours mix as they
-   * pass each other, as on the start page; their opacity, and the shadow's.
-   */
-  smoke: RGB;
-  smokeB: RGB;
-  smokeHi: RGB;
-  smokeHiB: RGB;
-  smokeK: number;
-  shadowK: number;
-  /** Smoke of the stratum's colour gathering in the dark, and how much. */
-  mist: RGB;
-  mistK: number;
-  /** The embers' halo, the colour their core burns toward, and how far. */
-  ember: RGB;
-  core: RGB;
-  coreMix: number;
-  /** Share of the extra embers in the air (0 to 1), and how fast, large and bright they burn. */
-  crowd: number;
-  speed: number;
-  size: number;
-  bright: number;
-  /** How restless they are: sway, draft and flicker (0 to 1). */
-  agit: number;
-  /** Share of them sinking like dust instead of rising (0 to 1). */
-  fall: number;
-  /** What glints in the walls: its colour, how much of it (0 to 1), and how far from the walls it spreads (1: all over, like stars). */
-  glint: RGB;
-  glints: number;
-  spread: number;
-  /** Sparks bursting up from below now and then, and how often (0 to 1). */
-  burst: number;
-  /** Eddies in the dark that pull the embers round (0 to 1). */
-  eddy: number;
-  /** How much of each environment the backdrop draws (ENV of them, 0 to 1; see ENVIRONMENTS). */
-  env: number[];
-  /** The stratum's colour for text on the dark header (the depth). */
-  accent: RGB;
-  /**
-   * How bright its hall is lit, times the scene's light (1 the Mines'): a
-   * stratum whose features burn bright (fire, gold) is lit less, one whose
-   * dark swallows more is lit more, so each keeps to the scene's brightness
-   * (luminanceAt) at a light (Descent.light) of about 1 where it settles,
-   * and the light only eases a little through a turn. Measured with
-   * scripts/measure-luminance.mjs: the light each needed at its second depth
-   * with this at 1.
-   */
-  lightK: number;
-}
-
-/**
- * The environments the backdrop draws, one to a stratum through 100 (the
- * order of STRATA): what each draws is in lib/backdrop.ts.
- */
-export const ENVIRONMENTS = ['lamps', 'magma', 'frost', 'spores', 'shafts', 'void', 'mist', 'plumes', 'city', 'heat'] as const;
-export const ENV = ENVIRONMENTS.length;
-/** Only environment `k` (the rest 0). */
-const only = (k: number) => ENVIRONMENTS.map((_, i) => (i === k ? 1 : 0));
+export { ENV, ENVIRONMENTS, HALL_FROM, hallTurn, type Look };
 
 /** The usual scene (outside Delve). */
 export const SURFACE: Look = {
@@ -140,227 +70,60 @@ export const SURFACE: Look = {
 };
 
 /**
- * The strata, depths 1-10, 11-20, ... 91-100, each named after a Delve biome
+ * The zones, depths 1-10, 11-20, ... 91-100, each named after a Delve biome
  * of Path of Exile and announced by it as it begins (the Mines, depths 1 to
- * 10, are where every run starts, so they aren't). Each mixes colours the
- * way the start page does: a few neighbouring hues in its smoke, one in the
- * light from below, another in the haze above and the glow between, so the
- * colours shift as the smoke drifts, rather than one flat tint.
+ * 10, are where every run starts, so they aren't). Their looks are kept in
+ * src/data/backdrops.json (lib/backdrops.ts). Each mixes colours the way the
+ * start page does: a few neighbouring hues in its smoke, one in the light
+ * from below, another in the haze above and the glow between, so the
+ * colours shift as the smoke drifts, rather than one flat tint:
+ * - The Mines: the usual hall, its fire below a little stronger, its smoke
+ *   a little thicker.
+ * - Magma Fissure: vermilion and crimson smoke, wine and sienna above, the
+ *   glow of the fissures orange; heavy slow embers, garnet in the walls.
+ * - Frozen Hollow: azure and teal smoke, periwinkle and slate above, a pale
+ *   ice glow; frost creeping in from the walls, ice motes drifting down.
+ * - Fungal Caverns: moss and teal-green smoke, olive above with a mauve
+ *   shadow drifting through, a pale green glow; spore light pulsing low.
+ * - Vaal Outpost: gold and amber smoke, sand and terracotta above, dusty
+ *   shafts of light from above on carved stone, gold dust sifting down.
+ * - Abyssal Depths: violet and indigo smoke, magenta-plum above, a lilac
+ *   glow; void coiling in the dark, embers pulled round in its eddies.
+ * - Petrified Forest: sage and blue-grey smoke, warm ash and lichen above;
+ *   stone trunks in a pale fog that drifts in layers, ash flakes falling.
+ * - Sulphur Vents: sulphur and green smoke, ochre and teal above;
+ *   yellow-green fumes billowing up from below in columns.
+ * - Abyssal City: navy and indigo smoke, a faint teal and violet above,
+ *   near black; a few still motes, far cold lights at many depths.
+ * - Primeval Ruins: the bottom of the world, orange and blood-red smoke over
+ *   soot and smoky brown, white-hot fire roaring below black smoke.
  */
-export const STRATA: { name: string; announced: boolean; look: Look }[] = [
-  {
-    // The mines: the usual hall, its fire below a little stronger, its smoke a little thicker.
-    name: 'The Mines',
-    announced: false,
-    look: {
-      shade: [0.84, 0.78, 0.72], dark: 0.12,
-      floor: [170, 76, 24], floorK: 0.22, floorH: 1.1,
-      haze: [122, 94, 58], hazeK: 0.45, glow: [205, 152, 80], lamp: 0.6,
-      smoke: [158, 74, 26], smokeB: [128, 46, 22], smokeHi: [138, 104, 58], smokeHiB: [106, 74, 44], smokeK: 0.9, shadowK: 1.15,
-      mist: [120, 56, 20], mistK: 0.05,
-      ember: [1, 0.5, 0.13], core: [1, 0.88, 0.6], coreMix: 0.58,
-      crowd: 0.4, speed: 1.15, size: 1.05, bright: 1.1, agit: 0.2, fall: 0,
-      glint: [1, 0.6, 0.2], glints: 0, spread: 0,
-      burst: 0, eddy: 0, env: only(0), accent: [240, 172, 96], lightK: 1,
-    },
-  },
-  {
-    // Magma: vermilion and crimson smoke, wine and sienna above, the glow of
-    // the fissures orange; heavy slow embers, garnet in the walls.
-    name: 'Magma Fissure',
-    announced: true,
-    look: {
-      shade: [1, 0.74, 0.7], dark: 0.3,
-      floor: [150, 32, 14], floorK: 0.4, floorH: 1.2,
-      haze: [96, 40, 56], hazeK: 0.6, glow: [210, 98, 50], lamp: 0.7,
-      smoke: [150, 42, 16], smokeB: [112, 20, 28], smokeHi: [124, 60, 32], smokeHiB: [86, 26, 42], smokeK: 1.5, shadowK: 1.3,
-      mist: [105, 16, 20], mistK: 0.07,
-      ember: [1, 0.2, 0.08], core: [1, 0.62, 0.48], coreMix: 0.5,
-      crowd: 0.3, speed: 0.8, size: 1.25, bright: 1.1, agit: 0.25, fall: 0,
-      glint: [1, 0.26, 0.16], glints: 0.35, spread: 0,
-      burst: 1, eddy: 0, env: only(1), accent: [255, 116, 88], lightK: 0.88,
-    },
-  },
-  {
-    // Frozen: azure and teal smoke, periwinkle and slate above, a pale ice
-    // glow; frost creeping in from the walls, ice motes drifting down.
-    name: 'Frozen Hollow',
-    announced: true,
-    look: {
-      shade: [0.78, 0.86, 1.1], dark: 0.38,
-      floor: [36, 100, 176], floorK: 0.38, floorH: 1.15,
-      haze: [96, 92, 150], hazeK: 0.6, glow: [140, 176, 214], lamp: 0.6,
-      smoke: [36, 98, 170], smokeB: [26, 118, 128], smokeHi: [88, 98, 172], smokeHiB: [58, 60, 132], smokeK: 1.4, shadowK: 1.3,
-      mist: [34, 70, 124], mistK: 0.06,
-      ember: [0.38, 0.64, 1], core: [0.86, 0.94, 1], coreMix: 0.62,
-      crowd: 0.45, speed: 0.55, size: 1, bright: 1.25, agit: 0.3, fall: 1,
-      glint: [0.44, 0.72, 1], glints: 1, spread: 0,
-      burst: 0, eddy: 0, env: only(2), accent: [150, 202, 255], lightK: 0.69,
-    },
-  },
-  {
-    // Fungal: moss and teal-green smoke, olive above with a mauve shadow
-    // drifting through, a pale green glow; spore light pulsing low in the walls.
-    name: 'Fungal Caverns',
-    announced: true,
-    look: {
-      shade: [0.84, 1, 0.8], dark: 0.45,
-      floor: [80, 136, 36], floorK: 0.36, floorH: 1.1,
-      haze: [40, 90, 78], hazeK: 0.5, glow: [150, 196, 98], lamp: 0.5,
-      smoke: [86, 134, 30], smokeB: [26, 116, 88], smokeHi: [104, 112, 40], smokeHiB: [84, 60, 96], smokeK: 1.4, shadowK: 1.4,
-      mist: [48, 100, 40], mistK: 0.08,
-      ember: [0.66, 0.96, 0.28], core: [0.92, 1, 0.66], coreMix: 0.5,
-      crowd: 0.55, speed: 0.45, size: 1.3, bright: 1, agit: 0.6, fall: 0.3,
-      glint: [0.72, 1, 0.36], glints: 0.25, spread: 0.3,
-      burst: 0, eddy: 0.2, env: only(3), accent: [166, 232, 112], lightK: 0.55,
-    },
-  },
-  {
-    // Vaal gold: gold and amber smoke, sand and terracotta above, dusty
-    // shafts of light from above on carved stone, gold dust sifting down.
-    name: 'Vaal Outpost',
-    announced: true,
-    look: {
-      shade: [1, 0.88, 0.7], dark: 0.5,
-      floor: [196, 138, 44], floorK: 0.36, floorH: 1.0,
-      haze: [170, 116, 74], hazeK: 0.7, glow: [222, 178, 98], lamp: 0.7,
-      smoke: [176, 124, 32], smokeB: [168, 80, 26], smokeHi: [168, 136, 70], smokeHiB: [140, 70, 58], smokeK: 1.3, shadowK: 1.4,
-      mist: [146, 104, 32], mistK: 0.06,
-      ember: [1, 0.82, 0.36], core: [1, 0.97, 0.84], coreMix: 0.62,
-      crowd: 0.35, speed: 0.45, size: 0.75, bright: 1.2, agit: 0.1, fall: 0.6,
-      glint: [1, 0.86, 0.44], glints: 1, spread: 0.35,
-      burst: 0, eddy: 0, env: only(4), accent: [242, 204, 106], lightK: 0.49,
-    },
-  },
-  {
-    // The abyss: violet and indigo smoke, magenta-plum above, a lilac glow;
-    // void coiling in the dark, embers pulled round in its eddies.
-    name: 'Abyssal Depths',
-    announced: true,
-    look: {
-      shade: [0.86, 0.74, 1.1], dark: 0.6,
-      floor: [104, 44, 164], floorK: 0.4, floorH: 1.2,
-      haze: [50, 50, 120], hazeK: 0.5, glow: [160, 112, 210], lamp: 0.5,
-      smoke: [96, 40, 150], smokeB: [58, 32, 124], smokeHi: [118, 42, 108], smokeHiB: [46, 46, 106], smokeK: 1.6, shadowK: 1.5,
-      mist: [84, 32, 144], mistK: 0.08,
-      ember: [0.74, 0.38, 1], core: [0.95, 0.86, 1], coreMix: 0.55,
-      crowd: 0.7, speed: 1.35, size: 0.9, bright: 1.15, agit: 0.85, fall: 0,
-      glint: [0.82, 0.54, 1], glints: 0.6, spread: 0.5,
-      burst: 0, eddy: 1, env: only(5), accent: [198, 152, 255], lightK: 1.13,
-    },
-  },
-  {
-    // Petrified: sage and blue-grey smoke, warm ash and lichen above;
-    // stone trunks in a pale fog that drifts in layers, ash flakes falling.
-    name: 'Petrified Forest',
-    announced: true,
-    look: {
-      shade: [0.9, 0.95, 1], dark: 0.55,
-      floor: [120, 128, 100], floorK: 0.26, floorH: 1.3,
-      haze: [92, 112, 136], hazeK: 0.6, glow: [176, 184, 172], lamp: 0.4,
-      smoke: [70, 94, 78], smokeB: [62, 78, 108], smokeHi: [106, 90, 70], smokeHiB: [70, 92, 66], smokeK: 1.3, shadowK: 1.2,
-      mist: [98, 110, 118], mistK: 0.08,
-      ember: [0.74, 0.9, 0.92], core: [1, 1, 1], coreMix: 0.7,
-      crowd: 0.3, speed: 0.4, size: 1.6, bright: 0.8, agit: 0.25, fall: 0.75,
-      glint: [0.85, 0.95, 1], glints: 0, spread: 0,
-      burst: 0, eddy: 0, env: only(6), accent: [204, 214, 222], lightK: 0.58,
-    },
-  },
-  {
-    // Sulphur vents: sulphur and green smoke, ochre and teal above;
-    // yellow-green fumes billowing up from below in columns.
-    name: 'Sulphur Vents',
-    announced: true,
-    look: {
-      shade: [0.82, 1, 0.88], dark: 0.62,
-      floor: [62, 110, 52], floorK: 0.3, floorH: 1.0,
-      haze: [128, 128, 50], hazeK: 0.7, glow: [184, 200, 94], lamp: 0.4,
-      smoke: [108, 116, 32], smokeB: [56, 98, 62], smokeHi: [120, 104, 44], smokeHiB: [40, 88, 82], smokeK: 1.5, shadowK: 1.4,
-      mist: [70, 100, 50], mistK: 0.07,
-      ember: [0.5, 1, 0.68], core: [0.88, 1, 0.9], coreMix: 0.55,
-      crowd: 0.5, speed: 0.6, size: 1, bright: 1.1, agit: 0.3, fall: 0,
-      glint: [0.76, 1, 0.52], glints: 0.4, spread: 0.7,
-      burst: 0.15, eddy: 0, env: only(7), accent: [214, 232, 104], lightK: 0.55,
-    },
-  },
-  {
-    // The drowned city: navy and indigo smoke, a faint teal and violet
-    // above, near black; a few still motes, far cold lights at many depths.
-    name: 'Abyssal City',
-    announced: true,
-    look: {
-      shade: [0.84, 0.84, 1.1], dark: 0.72,
-      floor: [58, 44, 126], floorK: 0.46, floorH: 1.0,
-      haze: [28, 58, 92], hazeK: 0.6, glow: [96, 104, 176], lamp: 0.5,
-      smoke: [34, 44, 104], smokeB: [52, 32, 96], smokeHi: [28, 64, 100], smokeHiB: [60, 44, 118], smokeK: 1.8, shadowK: 1.5,
-      mist: [34, 30, 84], mistK: 0.08,
-      ember: [0.56, 0.64, 1], core: [1, 1, 1], coreMix: 0.75,
-      crowd: 0, speed: 0.25, size: 0.7, bright: 1.4, agit: 0.05, fall: 0,
-      glint: [0.75, 0.8, 1], glints: 1, spread: 1,
-      burst: 0, eddy: 0, env: only(8), accent: [156, 170, 236], lightK: 1.52,
-    },
-  },
-  {
-    // Primeval: the bottom of the world, orange and blood-red smoke over
-    // soot and smoky brown, white-hot fire roaring below black smoke.
-    name: 'Primeval Ruins',
-    announced: true,
-    look: {
-      shade: [1, 0.64, 0.52], dark: 0.62,
-      floor: [206, 74, 16], floorK: 0.42, floorH: 1.35,
-      haze: [90, 22, 20], hazeK: 0.35, glow: [232, 140, 62], lamp: 0.4,
-      smoke: [112, 40, 14], smokeB: [84, 20, 14], smokeHi: [46, 24, 18], smokeHiB: [62, 30, 20], smokeK: 1.6, shadowK: 1.6,
-      mist: [150, 46, 12], mistK: 0.06,
-      ember: [1, 0.42, 0.08], core: [1, 0.95, 0.8], coreMix: 0.72,
-      crowd: 1, speed: 1.9, size: 1.1, bright: 1.3, agit: 0.9, fall: 0,
-      glint: [1, 0.38, 0.12], glints: 0.7, spread: 0.15,
-      burst: 0.7, eddy: 0.25, env: only(9), accent: [255, 222, 176], lightK: 0.59,
-    },
-  },
-];
+export const STRATA: readonly { name: string; announced: boolean; look: Look }[] = zones;
 
-/** Past the last stratum, the strata it pairs come from these (all but the first). */
-const DEEP = STRATA.slice(1);
-/** The parts of a look that make the hall; the rest are its embers and glints. */
-const HALL_KEYS = ['shade', 'dark', 'floor', 'floorK', 'floorH', 'haze', 'hazeK', 'glow', 'lamp', 'smoke', 'smokeB', 'smokeHi', 'smokeHiB', 'smokeK', 'shadowK', 'mist', 'mistK', 'accent', 'lightK'] as const;
-
-/**
- * Past the last stratum: the hall of one deep stratum with the embers of
- * another. The hall steps by 4 of 9 each time, so it never repeats twice in
- * a row, and the embers never match the hall.
- */
-function pairing(k: number): { hall: number; embers: number } {
-  const hall = (k * 4) % DEEP.length;
-  let embers = (k * 7 + 3) % DEEP.length;
-  if (embers === hall) embers = (embers + 1) % DEEP.length;
-  return { hall, embers };
-}
-
-/** The looks past the last stratum, made once each (they are read every frame). */
-const paired = new Map<number, Look>();
+/** The looks past the last zone, made once each (they are read every frame), their light worked out. */
+const deep = new Map<number, Look>();
 
 /**
  * The look of stratum `k` (-1 is the surface, 0 depths 1 to 10, and on for
- * ever). Past the last, the hall's environment and half the embers'.
+ * ever). Past the last zone, generated (lib/backdrops.ts), lit to keep to
+ * the scene's brightness where it settles (calibrateLight).
  */
 export function lookOf(k: number): Look {
   if (k < 0) return SURFACE;
   if (k < STRATA.length) return STRATA[k].look;
-  let look = paired.get(k);
+  let look = deep.get(k);
   if (look) return look;
-  const { hall, embers } = pairing(k);
-  look = { ...DEEP[embers].look };
-  for (const key of HALL_KEYS) (look as unknown as Record<string, unknown>)[key] = DEEP[hall].look[key];
-  look.env = DEEP[hall].look.env.map((v, i) => Math.min(1, v + 0.5 * DEEP[embers].look.env[i]));
-  if (paired.size > 64) paired.clear();
-  paired.set(k, look);
+  look = { ...endgameAt(k).look };
+  look.lightK = calibrateLight(look, k);
+  if (deep.size > 256) deep.clear();
+  deep.set(k, look);
   return look;
 }
 
-/** The biome stratum `k` is named after: past the last, the one whose hall it has. */
+/** The biome stratum `k` is named after: past the last zone, the one it looks most like (never the one before's). */
 export function stratumName(k: number): string {
   if (k < STRATA.length) return STRATA[Math.max(0, k)].name;
-  return DEEP[pairing(k).hall].name;
+  return endgameName(k);
 }
 
 /**
@@ -422,7 +185,6 @@ function smoothstep(a: number, b: number, x: number) {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
   return t * t * (3 - 2 * t);
 }
-const clamp01 = (x: number) => Math.min(1, Math.max(0, x));
 
 /** Every key of a look, in one order (worked out once: looks are blended every frame a depth eases in). */
 const KEYS = Object.keys(SURFACE) as (keyof Look)[];
@@ -469,10 +231,6 @@ export function mixLook(a: Look, b: Look, t: number): Look {
 const EMBER_KEYS = new Set<string>(['ember', 'core', 'coreMix', 'crowd', 'speed', 'size', 'bright', 'agit', 'fall']);
 /** Whether each of KEYS is one of them. */
 const IS_EMBER = KEYS.map((key) => EMBER_KEYS.has(key));
-/** How far into a stratum's turn the next one's light, smoke and features begin to creep in (its fourth depth). */
-export const HALL_FROM = 0.25;
-/** How far the next stratum's light, smoke and features have come at `turn`: steadily from HALL_FROM on. */
-export const hallTurn = (turn: number) => clamp01((turn - HALL_FROM) / (1 - HALL_FROM));
 
 /**
  * Writes stratum `a` turning `t` of the way into `b` into `out`: the embers
@@ -580,11 +338,13 @@ export function envTable(row: readonly number[], e: number) {
  * estimate's `hall`, the frame at light 0 over its `rest`], at 900 x 640,
  * held still. The estimate works the noise out at its average and the
  * features from ENV_ADD and ENV_HALL alone, which is near but not exact. To
- * 280, a round of the strata past 190 (they come round every 90 depths, as
- * their pairings do; by then the dark has all but closed in and the rest
- * levelled off, so what comes after looks like it). Measured by
- * scripts/measure-luminance.mjs (calibrate) with the ENV_ tables in place.
- * Empty, the estimate stands as it is.
+ * depth 91, the last whose look is the zones' alone (past it the endgame's
+ * generated strata come in, for which the estimate stands as it is), with
+ * the zones' looks as shipped: a zone whose look has changed since
+ * (`measured` false in src/data/backdrops.json) has the corrections of its
+ * depths dropped rather than applied wrongly (see correction). Measured
+ * by scripts/measure-luminance.mjs (calibrate) with the ENV_ tables in
+ * place. Empty, the estimate stands as it is.
  */
 export const MEASURED: (readonly [number, number])[] = [
   [0.943, 0.974], [0.944, 0.976], [0.944, 0.978], [0.944, 1.044], [0.941, 1.002], [0.938, 0.974], [0.939, 0.979], [0.937, 0.961],
@@ -598,44 +358,41 @@ export const MEASURED: (readonly [number, number])[] = [
   [1.023, 0.671], [1.027, 0.755], [1.022, 0.808], [1.019, 0.853], [1.023, 0.875], [1.025, 0.904], [1.033, 0.921], [1.033, 0.938],
   [1.033, 0.955], [1.036, 0.944], [1.039, 0.967], [1.041, 1.008], [1.04, 1.012], [1.037, 1.027], [1.032, 1.091], [1.024, 1.188],
   [1.012, 1.276], [1.012, 1.257], [1.012, 1.236], [1.009, 1.267], [0.998, 1.092], [0.989, 0.999], [0.982, 0.959], [0.975, 0.927],
-  [0.969, 0.893], [0.965, 0.843], [0.959, 0.838], [0.959, 0.842], [0.958, 0.845], [0.957, 0.836], [0.954, 0.827], [0.957, 0.817],
-  [0.963, 0.816], [0.968, 0.813], [0.965, 0.827], [0.972, 0.905], [0.974, 0.896], [0.974, 0.903], [0.973, 0.909], [0.974, 1.034],
-  [0.967, 0.933], [0.965, 0.888], [0.963, 0.882], [0.958, 0.884], [0.951, 0.903], [0.955, 0.908], [0.961, 0.92], [0.961, 0.914],
-  [0.961, 0.909], [0.962, 0.886], [0.96, 0.882], [0.96, 0.9], [0.961, 0.917], [0.961, 0.945], [0.962, 0.961], [0.965, 1.008],
-  [0.968, 0.96], [0.967, 0.963], [0.968, 0.966], [0.972, 0.952], [0.979, 0.934], [0.986, 0.927], [0.992, 0.906], [0.999, 0.892],
-  [1.006, 0.947], [1.01, 1.003], [1.005, 1.133], [1.005, 1.133], [1.004, 1.134], [1.003, 1.082], [0.997, 0.958], [0.991, 0.909],
-  [0.985, 0.925], [0.982, 0.942], [0.98, 0.955], [0.979, 0.964], [0.976, 1.02], [0.976, 1.019], [0.976, 1.017], [0.978, 1.034],
-  [0.978, 1.026], [0.982, 1.012], [0.988, 1.001], [0.998, 0.977], [1.006, 0.965], [1.019, 0.974], [1.031, 0.993], [1.031, 0.994],
-  [1.031, 0.996], [1.015, 0.983], [0.99, 0.966], [0.966, 0.975], [0.937, 0.993], [0.912, 1.047], [0.891, 1.123], [0.873, 1.241],
-  [0.857, 1.383], [0.857, 1.351], [0.857, 1.317], [0.862, 1.266], [0.876, 1.188], [0.893, 1.112], [0.917, 1.036], [0.946, 0.963],
-  [0.975, 0.893], [0.983, 0.852], [1.019, 0.862], [1.019, 0.876], [1.019, 0.891], [1.013, 0.888], [1.016, 0.814], [1.015, 0.844],
-  [0.999, 0.929], [0.979, 0.957], [0.969, 0.973], [0.949, 0.978], [0.944, 0.994], [0.944, 0.992], [0.944, 0.989], [0.939, 0.975],
-  [0.936, 0.961], [0.939, 0.936], [0.945, 0.91], [0.95, 0.844], [0.948, 0.803], [0.956, 0.85], [0.958, 0.895], [0.958, 0.902],
-  [0.958, 0.909], [0.96, 1.014], [0.956, 0.913], [0.956, 0.866], [0.956, 0.86], [0.953, 0.861], [0.949, 0.881], [0.954, 0.886],
-  [0.96, 0.898], [0.96, 0.893], [0.96, 0.888], [0.961, 0.865], [0.959, 0.861], [0.959, 0.881], [0.96, 0.901], [0.961, 0.932],
-  [0.962, 0.951], [0.965, 1], [0.967, 0.957], [0.967, 0.96], [0.967, 0.964], [0.972, 0.95], [0.979, 0.936], [0.985, 0.933],
-  [0.991, 0.915], [0.999, 0.904], [1.005, 0.966], [1.008, 1.032], [1.003, 1.169], [1.003, 1.169], [1.003, 1.17], [1.002, 1.115],
-  [0.996, 0.981], [0.99, 0.926], [0.984, 0.937], [0.981, 0.951], [0.979, 0.961], [0.978, 0.966], [0.976, 1.021], [0.976, 1.019],
-  [0.976, 1.018], [0.977, 1.034], [0.978, 1.024], [0.982, 1.011], [0.988, 0.999], [0.998, 0.975], [1.006, 0.962], [1.02, 0.972],
-  [1.031, 0.991], [1.031, 0.992], [1.031, 0.994], [1.015, 0.981], [0.989, 0.965], [0.964, 0.977], [0.934, 0.999], [0.908, 1.057],
-  [0.886, 1.136], [0.867, 1.26], [0.85, 1.415], [0.85, 1.38], [0.85, 1.344], [0.856, 1.288], [0.872, 1.206], [0.89, 1.125],
-  [0.915, 1.045], [0.945, 0.967], [0.975, 0.894], [0.984, 0.849], [1.02, 0.858], [1.02, 0.873], [1.02, 0.888], [1.015, 0.886],
-  [1.018, 0.812], [1.015, 0.842], [0.999, 0.926], [0.979, 0.955], [0.969, 0.971], [0.949, 0.977], [0.944, 0.993], [0.944, 0.991],
-  [0.944, 0.988], [0.939, 0.974], [0.936, 0.96], [0.938, 0.935], [0.944, 0.909], [0.948, 0.843], [0.946, 0.802], [0.953, 0.849],
+  [0.969, 0.893], [0.965, 0.843], [0.959, 0.838],
 ];
-/** The corrections at depth `d` (see MEASURED): [hall, rest]. */
+/** Whether zone `k`'s look is the one MEASURED was measured with. */
+const measuredZone = (k: number) => k >= 0 && k < STRATA.length && zones[k].measured;
+/** A zone's own corrections, measured at its first depth (where it shows alone), or none. */
+function anchor(k: number): readonly [number, number] {
+  const d = 10 * k + 1;
+  return measuredZone(k) && d <= MEASURED.length ? MEASURED[d - 1] : NONE;
+}
+const NONE = [1, 1] as const;
+/**
+ * The corrections at whole depth `i`: MEASURED's where the zones the scene
+ * shows there (the one it is in, and the next once it begins to turn into
+ * it) all have their looks as measured. Elsewhere (a zone changed since,
+ * or the endgame's strata coming in past 91) only what still holds of
+ * them: each zone's own (at its first depth), coming and going with it as
+ * the scene turns (the hall's with hallTurn, the embers' with the turn).
+ */
+function correction(i: number): readonly [number, number] {
+  const { stratum, turn } = strataAt(i);
+  if (i <= MEASURED.length && measuredZone(stratum - 1) && (turn === 0 || measuredZone(stratum))) return MEASURED[i - 1];
+  const a = anchor(stratum - 1);
+  const b = anchor(stratum);
+  const h = hallTurn(turn);
+  return [a[0] + (b[0] - a[0]) * h, a[1] + (b[1] - a[1]) * turn];
+}
+/** The corrections at depth `d` (see MEASURED): [hall, rest], eased between whole depths. */
 export function measuredAt(d: number): [number, number] {
-  const n = MEASURED.length;
-  if (n < 190 || d < 1) return [1, 1];
-  const x = measuredDepth(d, n);
-  const i = Math.floor(x);
-  const a = MEASURED[i - 1];
-  const b = MEASURED[measuredDepth(i + 1, n) - 1];
-  const t = x - i;
+  if (!(d >= 1)) return [1, 1];
+  const i = Math.floor(d);
+  const a = correction(i);
+  const b = correction(i + 1);
+  const t = d - i;
   return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
 }
-/** The depth measured that depth `d` comes round to (past the last of the `n` measured, every 90 depths, as the strata do). */
-const measuredDepth = (d: number, n: number) => (d > n ? n - 89 + ((d - (n - 89)) % 90) : d);
 
 /** The grid the estimate is worked out on, over a 900 x 640 screen. */
 const GW = 16;
@@ -845,11 +602,14 @@ const LIGHT_SLACK = 0.004;
 /**
  * The light is worked out at every whole depth to LIGHT_TABLE, a stretch at
  * a time as the scene goes deeper (see extendLights), and eased between
- * them; past it, it comes round every 90 depths as the strata do, everything
- * else (the dark closing in, luminanceAt, featuresAt) having levelled off
- * long before.
+ * them. The strata never come round again (each past the zones is
+ * generated), so neither does the light: the table goes on, a stretch at a
+ * time, to depth 2001, deeper than anyone goes. Past it, everything else
+ * (the dark closing in, luminanceAt, featuresAt) has long levelled off, and
+ * the light keeps to the curve exactly, depth by depth (as it does in the
+ * table wherever the strata leave it the room).
  */
-const LIGHT_TABLE = 1 + 280 + 2 * 90;
+export const LIGHT_TABLE = 1 + 200 * 10;
 /** Per whole depth: the hall and the rest the estimate comes to (measured corrections and all), the light, and the brightness with it. */
 const tableHall = new Float64Array(LIGHT_TABLE + 1);
 const tableRest = new Float64Array(LIGHT_TABLE + 1);
@@ -924,15 +684,44 @@ function extendLights(to: number) {
  */
 export function lightAt(d: number, look: Look = lookAt(blank(), d)): number {
   if (!(d >= 1)) return 1;
-  const x = d > LIGHT_TABLE ? LIGHT_TABLE - 90 + ((d - LIGHT_TABLE) % 90) : d;
-  const i = Math.floor(x);
-  const j = Math.min(LIGHT_TABLE, i + 1);
-  if (settled < j) extendLights(j);
-  if (x === i) return tableLight[i];
-  const level = tableLevel[i] + (tableLevel[j] - tableLevel[i]) * (x - i);
+  let level: number;
+  if (d < LIGHT_TABLE) {
+    const i = Math.floor(d);
+    const j = i + 1;
+    if (settled < j) extendLights(j);
+    if (d === i) return tableLight[i];
+    level = tableLevel[i] + (tableLevel[j] - tableLevel[i]) * (d - i);
+  } else level = luminanceAt(d);
   const e = estimateLuminance(look, closeness(d), featuresAt(d), heatAt(d));
   const [h, r] = measuredAt(d);
   return Math.min(LIGHT_MAX, Math.max(LIGHT_MIN, (level - e.rest * r) / (e.hall * h)));
+}
+
+/**
+ * How bright a look's hall is lit (its lightK) to show as stratum `k`: so
+ * that, settled there (its first depth, the dark crept in as far as it has
+ * by then), the scene keeps to luminanceAt at a light of 1, as the zones'
+ * were measured to. The endgame's generated looks are lit so, and the
+ * backdrop tool lights a zone's changed look so; the Mines' is 1, as their
+ * brightness is the curve's own.
+ */
+export function calibrateLight(look: Look, k: number): number {
+  if (k <= 0) return 1;
+  const d = 10 * k + 1;
+  const e = estimateLuminance({ ...look, dark: look.dark + (1 - look.dark) * 0.15 * deepAt(d), lightK: 1 }, closeness(d), featuresAt(d));
+  return Math.round(1000 * Math.min(4, Math.max(0.1, (luminanceAt(d) - e.rest) / e.hall))) / 1000;
+}
+
+/**
+ * The scene's average brightness at depth `d` as the estimate has it, with
+ * its light and the measured corrections: what the brightness rule keeps
+ * from rising (the backdrop tool's curve; no frame is drawn or read).
+ */
+export function brightnessAt(d: number): number {
+  const x = descent(d);
+  const e = estimateLuminance(x.look, x.close, x.features, heatAt(d));
+  const [h, r] = measuredAt(d);
+  return e.hall * h * x.light + e.rest * r;
 }
 
 /** How deep the ambience is at a depth (see Descent.deep). */
@@ -977,8 +766,9 @@ export const MILESTONES: { depth: number; name: string }[] = STRATA.flatMap((s, 
 
 /**
  * The name of the depth, if it has one: the first depth of every stratum but
- * the first, for ever. Past 100 the biomes come round again, each stratum
- * named after the one whose hall it has, so never the same twice in a row.
+ * the first, for ever. Past 100 the biomes come round again, each generated
+ * stratum named after the one it looks most like, never the same twice in
+ * a row.
  */
 export function milestoneAt(depth: number): string | null {
   const d = Math.floor(depth);
@@ -1075,6 +865,19 @@ let shownAt = NaN;
 let fadeAt = NaN;
 let fadeShownAt = NaN;
 let targetAt = NaN;
+
+// The backdrop tool shows a draft in place of the file's backdrops
+// (setBackdrops in lib/backdrops.ts): everything worked out from the looks
+// is worked out again.
+onBackdrops(() => {
+  deep.clear();
+  depthOne = NaN;
+  tableEnd = 0;
+  settled = 0;
+  shownAt = NaN;
+  fadeAt = NaN;
+  targetAt = NaN;
+});
 
 /** The scene as shown right now. */
 export function currentDescent(): Descent {

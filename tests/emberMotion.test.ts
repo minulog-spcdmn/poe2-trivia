@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { Session } from 'node:inspector/promises';
 import { descent, hallTurn, lookOf, magmaCooling, STRATA } from '../src/lib/descent.ts';
 import { EMBERS, Embers, GLINTS, PALETTE, SIZE_STRIDE, SLOTS, SPARKS, TILES } from '../src/lib/backdropEmbers.ts';
-import { cooling, MOTIONS, motionFor, SURFACE_MOTION, ZONE_MOTION, zoneOf } from '../src/lib/emberMotion.ts';
+import { cooling, MOTIONS, motionFor, motionOf, SURFACE_MOTION, tweakOf, ZONE_MOTION, zoneMotionOf } from '../src/lib/emberMotion.ts';
+import { endgameAt, zones } from '../src/lib/backdrops.ts';
 
 const W = 1200;
 const H = 800;
@@ -46,25 +47,28 @@ const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
 /** Which way each zone's embers go: -1 up, 1 down, 0 neither (drawn into the eddies). */
 const WAY: Record<number, -1 | 0 | 1> = { [-1]: -1, 0: 1, 1: -1, 2: 1, 3: -1, 4: 1, 5: 0, 6: 1, 7: -1, 8: 1, 9: -1 };
 
-test('every stratum has a motion, and past the last each takes the motion of the stratum its embers come from', () => {
+test('every stratum has a motion: each zone its profile as tweaked in backdrops.json, and past the last each its generated one', () => {
   assert.equal(ZONE_MOTION.length, STRATA.length);
-  for (let k = 0; k < STRATA.length; k++) assert.equal(zoneOf(k), k);
-  assert.equal(zoneOf(-1), -1);
-  // (Past the last, a stratum's embers are known by their colours, which no two strata share.)
-  const colours = new Set(STRATA.map((s) => s.look.ember.join()));
-  assert.equal(colours.size, STRATA.length);
-  for (let k = STRATA.length; k < 60; k++) {
-    const z = zoneOf(k);
-    assert.ok(z >= 1 && z < STRATA.length, `stratum ${k}: ${z}`);
-    assert.deepEqual(lookOf(k).ember, STRATA[z].look.ember, `stratum ${k} has the embers of ${STRATA[z].name}`);
-    assert.equal(motionFor(k, 1), main(z));
+  for (let k = 0; k < STRATA.length; k++) {
+    // As shipped, each zone's tweak leaves its profile as it is, field for field.
+    assert.deepEqual(zones[k].motion, tweakOf(ZONE_MOTION[k]), STRATA[k].name);
+    assert.deepEqual(motionOf(zones[k].motion), ZONE_MOTION[k], STRATA[k].name);
+    assert.deepEqual(zoneMotionOf(k), ZONE_MOTION[k], STRATA[k].name);
   }
-  // And they move so: one past 100 goes the way of the zone its embers are from.
+  assert.deepEqual(zoneMotionOf(-1), SURFACE_MOTION);
+  for (let k = STRATA.length; k < 60; k++) {
+    const own = motionOf(endgameAt(k).motion);
+    assert.deepEqual(zoneMotionOf(k).main, own.main, `stratum ${k}`);
+    assert.equal(motionFor(k, 1), motionFor(k, 1));
+    assert.ok(MOTIONS[motionFor(k, 1)].name === own.main.name);
+  }
+  // And they move so: one past 100 goes the way its motion has it.
   for (const k of [10, 13, 23, 31]) {
-    const z = zoneOf(k);
-    if (WAY[z] === 0) continue;
-    const own = moves(zone(k), 120).filter((v) => v.motion === main(z));
-    assert.ok(own.length > 300 && own.every((v) => Math.sign(v.dy) === WAY[z]), `stratum ${k} as ${STRATA[z].name}`);
+    const m = zoneMotionOf(k).main;
+    if (m.swirl > 0 || m.puff > 0 || Math.abs(m.rise) < 0.05) continue;
+    const way = m.rise > 0 ? -1 : 1;
+    const own = moves(zone(k), 120).filter((v) => v.motion === main(k));
+    assert.ok(own.length > 300 && own.every((v) => Math.sign(v.dy) === way || Math.abs(v.dy) < 1e-6), `stratum ${k}: ${m.name}`);
   }
 });
 

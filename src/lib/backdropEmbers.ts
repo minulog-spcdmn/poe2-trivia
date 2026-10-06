@@ -15,6 +15,7 @@
 // the walls, up past you as the scene sinks (`rise`).
 
 import { lookOf, SURFACE, type Descent, type Look } from './descent.ts';
+import { backdropsVersion } from './backdrops.ts';
 import { cooling, MOTIONS, motionFor, type EmberMotion } from './emberMotion.ts';
 
 /** The embers that are always there. */
@@ -156,8 +157,9 @@ export class Embers {
   /** The stratum the scene heads for, and how far it has turned into it; and the same of the scene as shown (the magma cools with it). */
   private aim = { stratum: 0, turn: 0 };
   private shown = { stratum: 0, turn: 0 };
-  /** The strata the palette holds (the one aimed at), to rebuild it only when that changes. */
+  /** The strata the palette holds (the one aimed at), and the backdrops' version it was built from (the tool's drafts), to rebuild it only when either changes. */
   private paletteFor = NaN;
+  private paletteVersion = -1;
   private strataColor = new Float32Array(PALETTE * 7);
   /** How large they are (the look's), eased; and how restless (the look's agit: the deeper their flicker, the dimmer on average), eased. */
   private scale = 1;
@@ -297,8 +299,9 @@ export class Embers {
   /** The colours of the strata around the one aimed at, by palette entry. */
   private strataPalette() {
     const k = this.aim.stratum;
-    if (k === this.paletteFor) return;
+    if (k === this.paletteFor && backdropsVersion === this.paletteVersion) return;
     this.paletteFor = k;
+    this.paletteVersion = backdropsVersion;
     for (let s = k - 2; s <= k + 1; s++) {
       const look = lookOf(s);
       const o = entryOf(s) * 7;

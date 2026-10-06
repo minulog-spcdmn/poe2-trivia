@@ -1,6 +1,10 @@
 import { svelte } from '@sveltejs/vite-plugin-svelte';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import type { AtRule, Node, Rule } from 'postcss';
 import { defineConfig, loadEnv, type Plugin } from 'vite';
+import { backdropsErrors, formatBackdrops, type Backdrops } from './src/lib/backdropData.ts';
+import { PROFILE_NAMES } from './src/lib/emberProfiles.ts';
 
 /**
  * Content Security Policy for the production build: the page may only run its
@@ -91,6 +95,56 @@ function preloadFonts(): Plugin {
   };
 }
 
+/** Where the backdrop tool saves to (and the game reads its zones' looks from). */
+const BACKDROPS_FILE = fileURLToPath(new URL('./src/data/backdrops.json', import.meta.url));
+
+/**
+ * The backdrop tool's Save (backdrop.html, src/backdropTool): on the dev
+ * server only (never in a build), a POST of the whole backdrops file to
+ * /__backdrops/save writes src/data/backdrops.json, once it is checked
+ * (backdropsErrors: every zone, look, motion and the endgame's settings in
+ * shape, the zones' names as they are). JSON from this page only.
+ */
+function backdropSave(): Plugin {
+  return {
+    name: 'backdrop-save',
+    apply: 'serve',
+    configureServer(server) {
+      server.middlewares.use('/__backdrops/save', (req, res) => {
+        const reply = (status: number, body: object) => {
+          res.statusCode = status;
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify(body));
+        };
+        const origin = req.headers.origin;
+        if (req.method !== 'POST') return reply(405, { errors: ['POST only'] });
+        if (!String(req.headers['content-type']).startsWith('application/json') || (origin && new URL(origin).host !== req.headers.host)) {
+          return reply(403, { errors: ['JSON from the tool itself only'] });
+        }
+        let body = '';
+        req.setEncoding('utf8');
+        req.on('data', (chunk: string) => {
+          body += chunk;
+          if (body.length > 1_000_000) req.destroy();
+        });
+        req.on('end', () => {
+          let data: Backdrops;
+          try {
+            data = JSON.parse(body) as Backdrops;
+          } catch {
+            return reply(400, { errors: ['not JSON'] });
+          }
+          const names = (JSON.parse(readFileSync(BACKDROPS_FILE, 'utf8')) as Backdrops).zones.map((z) => z.name);
+          const errors = backdropsErrors(data, names, PROFILE_NAMES);
+          if (errors.length) return reply(400, { errors });
+          writeFileSync(BACKDROPS_FILE, formatBackdrops(data));
+          reply(200, { saved: 'src/data/backdrops.json' });
+        });
+      });
+    },
+  };
+}
+
 /**
  * Hover styles only for devices that can really hover. A touch screen fakes
  * a hover on tap and keeps it until the next tap elsewhere, so a tapped card
@@ -125,7 +179,7 @@ export default defineConfig(({ mode }) => {
   return {
     // Relative base so the build works on any GitHub Pages sub-path.
     base: './',
-    plugins: [svelte(), csp(env), betaPages(env), preloadFonts()],
+    plugins: [svelte(), csp(env), betaPages(env), preloadFonts(), backdropSave()],
     css: { postcss: { plugins: [hoverOnlyWhereHoverable] } },
     build: {
       rollupOptions: {
@@ -134,9 +188,10 @@ export default defineConfig(({ mode }) => {
           main: 'index.html',
           impressum: 'impressum.html',
           datenschutz: 'datenschutz.html',
-          // The effects lab (src/lab): the dev server serves it by itself;
-          // of the builds only the beta has it, never the live game.
-          ...(env.VITE_CHANNEL === 'beta' ? { lab: 'lab.html' } : {}),
+          // The effects lab (src/lab) and the backdrop tool
+          // (src/backdropTool): the dev server serves them by itself; of the
+          // builds only the beta has them, never the live game.
+          ...(env.VITE_CHANNEL === 'beta' ? { lab: 'lab.html', backdrop: 'backdrop.html' } : {}),
         },
       },
     },

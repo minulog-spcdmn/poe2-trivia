@@ -21,8 +21,10 @@
 //     0.5, 0.75 and 1 (ENV_ADD, ENV_HALL; --e and --env for others): paste
 //     them into lib/descent.ts, then
 //   node scripts/measure-luminance.mjs calibrate --skip-env
-//     Each depth to 280 drawn at light 1 and 0 against the estimate
-//     (MEASURED): paste it in too.
+//     Each depth to 91 (the last the zones show alone) drawn at light 1 and
+//     0 against the estimate (MEASURED): paste it in too, and set every
+//     zone's `measured` back to true in src/data/backdrops.json (the
+//     corrections hold for the looks they were measured with).
 //   node scripts/measure-luminance.mjs paired [--from 2] [--to 200] [--frames 8] [--out f.json]
 //     With motion: each depth's change from the one before, the two shown by
 //     turns so the scene's slow breathing (several % over a few seconds)
@@ -241,7 +243,7 @@ try {
       console.log('shot', d);
     }
   } else if (mode === 'calibrate') {
-    const to = Number(opt('to', 280));
+    const to = Number(opt('to', 91));
     const E = String(opt('e', '0.25,0.5,0.75,1')).split(',').map(Number);
     const only = opt('env', null);
     // Each environment at full features, no dark closed in, in its own stratum's hall.

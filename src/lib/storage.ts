@@ -6,6 +6,13 @@ import { BETA } from './channel.ts';
  * plays (runs, codex, saves, settings) reaches the game's records.
  */
 export const LAB = typeof document !== 'undefined' && document.documentElement.hasAttribute('data-lab');
+/**
+ * The backdrop tool (backdrop.html, src/backdropTool: dev and beta builds
+ * only) marks its page `<html data-backdrop-tool>`, and its keys get a start
+ * of their own the same way (its drafts, and the effects setting it runs
+ * with), apart from the game's and the lab's.
+ */
+export const BACKDROP_TOOL = typeof document !== 'undefined' && document.documentElement.hasAttribute('data-backdrop-tool');
 
 /**
  * localStorage and sessionStorage, for the whole site (a test keeps every
@@ -18,7 +25,7 @@ export const LAB = typeof document !== 'undefined' && document.documentElement.h
  * start; the *Key versions take a whole key, for the few the beta must share
  * with the live game or leave alone.
  */
-export const STORE = (BETA ? 'poe2trivia.beta.' : 'poe2trivia.') + (LAB ? 'lab.' : '');
+export const STORE = (BETA ? 'poe2trivia.beta.' : 'poe2trivia.') + (LAB ? 'lab.' : '') + (BACKDROP_TOOL ? 'backdrops.' : '');
 
 export type Area = 'local' | 'session';
 
@@ -86,7 +93,7 @@ export const tryReadStored = (name: string, where: Area = 'local') => tryReadKey
  * A key the live game wrote before it moved to a newer one. Only the live
  * game reads or clears these: they were never the beta's to take over.
  */
-export const readLegacy = (key: string, where: Area = 'local') => (BETA || LAB ? null : readKey(key, where));
+export const readLegacy = (key: string, where: Area = 'local') => (BETA || LAB || BACKDROP_TOOL ? null : readKey(key, where));
 export const removeLegacy = (key: string, where: Area = 'local') => {
-  if (!BETA && !LAB) removeKey(key, where);
+  if (!BETA && !LAB && !BACKDROP_TOOL) removeKey(key, where);
 };

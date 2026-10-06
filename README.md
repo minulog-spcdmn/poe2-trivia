@@ -215,9 +215,12 @@ the same thing for everyone.
   the heat, snow falling, spores hanging in lazy curls, motes settling,
   motes spiralling into the eddies, stone dust falling, puffs rising in
   gusts, cold motes drifting, strong sparks flying up) and glints. Depth 1 is
-  already the Mines; the surface is the start page. Past 100 the zones go
-  on for ever, each pairing one deep zone's hall with another's embers,
-  named after its hall's biome and never the same twice in a row.
+  already the Mines; the surface is the start page. Past 100 the descent
+  goes on for ever, each new zone generated in the same quiet style (a hue
+  and its neighbours, a detail or two, embers moving as the hue's mood has
+  it), the same for everyone, its hue moving well on from the one before,
+  and named after the biome it looks most like, never the same twice in a
+  row.
 - Each zone turns steadily into the next over its whole length, a little
   with every depth, so the next is all there when its name is announced.
   - Its embers take the next zone's colour one by one: a tenth of them at
@@ -530,17 +533,32 @@ Everything is drawn in WebGL2 with float precision and dithered once at the
   hall's dark, the light from below, smoke in four hues, mist, embers,
   glints) and the environments the backdrop draws for it (`ENVIRONMENTS`:
   lamps, magma, frost, spores, shafts, void, mist, plumes, city, heat).
+  The ten zones' looks, each with its embers' motion (a profile of
+  `src/lib/emberProfiles.ts`, tweaked), live in `src/data/backdrops.json`
+  (read by `src/lib/backdrops.ts`; the shapes and the check are in
+  `src/lib/backdropData.ts`), which the backdrop tool edits. Past depth 100
+  every stratum is generated (`src/lib/backdropGen.ts`, pure and seeded):
+  stratum k from its own seed (the file's endgame seed mixed with k, or one
+  pinned by hand), with the file's endgame settings, its hue a golden step
+  on from the one before's (so it moves on by at least about 87 degrees,
+  and stratum k needs no other to be worked out), made once and cached.
   Through a zone the scene turns steadily into the next (`strataAt`,
   `turnInto`): the embers follow the turn itself, the light, smoke and
   features follow it from the zone's 4th depth (`hallTurn`). The scene's
   `light` is set so its average brightness never rises with depth
   (`luminanceAt`, `lightAt`): `estimateLuminance` works out what the
   backdrop draws from what each environment adds and dims as it comes in
-  (`ENV_ADD`, `ENV_HALL`), corrected per depth (`MEASURED`), and the light
-  is solved a stretch of depths at a time, moving at most 0.06 a depth.
+  (`ENV_ADD`, `ENV_HALL`), corrected per depth (`MEASURED`, to depth 91),
+  and the light is solved a stretch of depths at a time, moving at most
+  0.06 a depth, to depth 2001 (past it the curve is kept to exactly). A
+  generated look's own light (`lightK`) is worked out from the estimate
+  (`calibrateLight`), so it settles at a light of about 1 like the zones.
   The tables are measured from the backdrop's own frames with
   `scripts/measure-luminance.mjs`; measure again after changing what it
-  draws.
+  draws. The measured corrections only hold for the zone looks they were
+  measured with (`measured` in the file): a zone given a new look has its
+  depths' corrections dropped (faded out over its turns) rather than
+  applied wrongly.
   The shown depth eases along at about a second a depth, and a jump of
   more than three depths cross-fades straight there. `plunge()` (called by
   `App.svelte` when a deeper depth's cards are dealt, `dealtDeeper`) sinks
@@ -683,6 +701,53 @@ With two players or more the run is co-op:
   `src/lib/storage.ts` then starts every key with `lab.` (after the beta's
   start on the beta), so its runs, codex, saves and settings never reach the
   game's.
+
+### The backdrop tool
+
+`backdrop.html` (`src/backdropTool/`) is a page for picking Delve's
+backdrops by hand: the game's own backdrop full screen (its embers and
+effects layer as in a run), beside a panel docked on the right (a drawer
+on phones) that drives it. It only sets what the backdrop already draws:
+the looks' colours and strengths, how much of each existing detail shows,
+and how the embers move. Every change shows at once.
+
+- **Depth:** a slider from 1 to 250 previews the real descent with the
+  looks being picked (each depth eases in as in a run; a jump of more than
+  three cross-fades), with chips for each zone and **Walk down** (a depth
+  every 1.5 s) to judge the handovers and the embers' colour turning over.
+- **Brightness:** the scene's average brightness by depth (1 to 200), as
+  the game estimates it with its solved light (no frame is drawn or read),
+  beside the curve it keeps to; any depth brighter than the one before is
+  marked.
+- **Zones:** pick one of the ten (the panel jumps to its first depth), then
+  tweak its look: a colour picker for every colour, sliders for every
+  strength (Light and dark, Smoke, Haze, Embers, Glints, Details), and the
+  embers' motion (a profile and its speed, rise or fall, drift, turbulence
+  and swirl). **Use for this zone** puts it in the draft; **Revert** and
+  **As shipped** go back.
+- **Generate:** a new seed (or type one: a number or any word), a strip of
+  six variations, and the generator's settings (hue range, saturation,
+  darkness, detail, embers). **Lock** keeps a group as it is while the
+  rest is generated again.
+- **Endgame:** step through the strata past 100 (11, 12, ...), try other
+  seeds for one and **Pin** the one you like; tune the endgame
+  generator's settings and seed (they shape every unpinned stratum).
+- **Save:** on the dev server **Save to the file** writes
+  `src/data/backdrops.json` (a dev-only endpoint in `vite.config.ts`,
+  checked before it is written; never in a build). Anywhere, **Copy JSON**,
+  **Download JSON** and **Import JSON**. The draft keeps on the device as
+  you go.
+- A zone's look stays exactly as shipped until a new one is saved for it
+  (`tests/backdrops.test.ts` checks depths 0 to 91 against the looks as
+  they were hard-coded). A changed zone is saved with `measured: false`,
+  so its measured brightness corrections are dropped; measure again
+  (`scripts/measure-luminance.mjs calibrate --skip-env`) to restore them,
+  and update `tests/fixtures/shipped-backdrops.json` to the new looks.
+- **Open it:** `npm run dev`, then `http://localhost:5173/backdrop.html`;
+  on the beta, **poe2.quest/beta/backdrop.html**. Like the lab, the live
+  build leaves it out, and its page is marked (`<html
+  data-backdrop-tool>`), so `src/lib/storage.ts` starts its keys with
+  `backdrops.` and its drafts and settings never reach the game's.
 
 ---
 
