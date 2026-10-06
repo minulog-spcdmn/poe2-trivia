@@ -408,7 +408,7 @@
             <PlayerName name={p.name} />{#if session.mode !== 'local' && p.id === session.myPlayerId && s.players.length > 1}<em>&nbsp;(you)</em>{/if}
           </span>
           {#if run && fell !== null}
-            <span class="fell-at">Fell at depth {fell}</span>
+            <span class="fell-at">Perished at depth {fell}</span>
           {:else if run}
             <Phial lives={shownLives} draining={hit[p.id] ?? -1} surge={surge[p.id] ?? 0} {inv} {moment} />
           {:else}

@@ -61,7 +61,7 @@
       : solo
         ? deeper
           ? 'Deeper than ever'
-          : 'Fallen'
+          : 'Perished'
         : run.lastStanding && run.lastStanding.id === winner?.id
           ? 'Last one standing'
           : 'The descent ends',
@@ -77,7 +77,7 @@
       const record = !r || run.mixed ? '' : r.best ? (r.previousBest === null ? ' Your first descent.' : ` Your deepest yet; the last best was ${r.previousBest}.`) : ` Your best is depth ${r.previousBest}.`;
       return (row.losses.length ? `Lives lost at depths ${listOf(row.losses)}.` : '') + record;
     }
-    const parts = [`Fell at depth ${row.depth}`];
+    const parts = [`Perished at depth ${row.depth}`];
     if (run.lastStanding?.id === winner.id) parts.push(`last one standing from depth ${run.lastStanding.depth}`);
     const second = delveRows[1];
     if (second && second.depth === row.depth && second.rank !== row.rank) {
@@ -260,7 +260,7 @@
         <Avatar name={p.name} hue={p.hue} size={30} />
         <span class="name"><PlayerName name={p.name} /></span>
         {#if run}
-          <span class="pts depth" title="Fell at depth {depthOf(p.id)}">{depthOf(p.id)}</span>
+          <span class="pts depth" title="Perished at depth {depthOf(p.id)}">{depthOf(p.id)}</span>
         {:else}
           <span class="pts">{p.score}</span>
         {/if}

@@ -38,7 +38,7 @@
   </div>
   <div class="text">
     <p class="lead">
-      {who} • {run.left ? 'left' : 'fell'} in <span class="zname">{zone.name}</span>{#if run.left}, <span class="n">{kept}</span>
+      {who} • {run.left ? 'left' : 'perished'} in <span class="zname">{zone.name}</span>{#if run.left}, <span class="n">{kept}</span>
         {kept === 1 ? 'life' : 'lives'} to spare{/if}{#if isBest}{' • '}<span class="up">your deepest</span>{/if}
     </p>
     <p class="note">

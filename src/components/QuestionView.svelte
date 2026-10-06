@@ -695,7 +695,7 @@
             {#if fallsNow && reveal.timedOut}
               The darkness took {whom} for good at depth {s.round}.
             {:else if fallsNow}
-              {who} {you ? 'fall' : 'falls'} at depth {s.round}.
+              {who} {you ? 'perish' : 'perishes'} at depth {s.round}.
             {:else if reveal.timedOut}
               The darkness took {whom}; {left === 1 ? 'last life left' : `${left} lives left`}.
             {:else}

@@ -299,7 +299,7 @@
           <p class="delve-line muted" transition:fade>{pickLine}</p>
         {/if}
         {#if myFall !== null}
-          <p class="delve-line muted">You fell at depth {myFall}; watching.</p>
+          <p class="delve-line muted">You perished at depth {myFall}; watching.</p>
         {/if}
         {#if session.isHost && !local && !race && !run && !active.connected && s.phase !== 'reveal'}
           <div class="skip" transition:fade>

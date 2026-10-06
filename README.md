@@ -183,7 +183,7 @@ rules, so "I reached depth 30" means the same thing for everyone.
   marks the last one standing and, alone, the first depth past your best.
   The header names the zone beside the depth, both in its colour (on a
   second line on phones).
-- A run ends as a fall, not a victory. Alone, the end screen says "Fallen"
+- A run ends as a fall, not a victory. Alone, the end screen says "Perished"
   (or "Deeper than ever"), with your depth, where your lives went and your
   best; together, the deepest "delved deepest". The warmth dies out of the
   rune circle and ash settles, to a slowed toll and an ember crackling out.
