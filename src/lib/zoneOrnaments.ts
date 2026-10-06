@@ -80,41 +80,75 @@ const lamp = (d: Draw) => {
   d.light([b, 0], 1.3);
 };
 
-/** Magma Fissure: a crack running out from the point, its zigzag narrowing, one fork, glowing within. */
+/**
+ * Magma Fissure: a fissure opening in the line: its two lips zigzag at
+ * fixed angles, mirror images of each other, widest a third of the way out
+ * and closing to points at both ends; molten light runs straight down its
+ * middle, and the upper lip's face is hatched where it falls into the dark.
+ */
 const cracks = (d: Draw) => {
   const { L, s } = d;
-  const n = 7;
-  const pts: Pt[] = Array.from({ length: n + 1 }, (_, k) => [-1.5 - (L - 1.5) * (k / n), k === 0 ? 0 : (k % 2 ? -1 : 1) * s * 0.5 * (1 - k / (n + 2))]);
-  d.line(pts, 'ember');
-  const fork = pts[3];
-  d.line([fork, [fork[0] - L * 0.16, fork[1] - s * 0.45], [fork[0] - L * 0.28, fork[1] - s * 0.4]], 'ember');
-  // The crack's lips, a hair either side of its first stretch.
-  d.line(pts.slice(0, 4).map(([x, y]) => [x, y - 1.6] as Pt), 'hair');
+  const [x0, x1] = [-L * 0.08, -L * 0.94];
+  d.line([[-1.5, 0], [x0, 0]]);
+  d.line([[x1, 0], [-L, 0]]);
+  const n = 8;
+  const lip = (v: number): Pt[] =>
+    Array.from({ length: n + 1 }, (_, k) => {
+      const t = k / n;
+      // A lens, widest at a third of the way, its edge stepped in and out in turn.
+      const w = s * 0.42 * Math.sin(Math.PI * Math.pow(t, 0.7)) * (k % 2 ? 0.62 : 1);
+      return [x0 + (x1 - x0) * t, v * w] as Pt;
+    });
+  const [up, down] = [lip(-1), lip(1)];
+  d.line(up);
+  d.line(down);
+  d.line([[x0 - 1.2, 0], [x1 + 1.2, 0]], 'ember');
+  // The upper lip's face: strokes from the lip down toward the light, short of it.
+  for (let k = 1; k < n; k++) {
+    const p = up[k];
+    if (Math.abs(p[1]) < 1.6) continue;
+    d.line([[p[0], p[1] + 0.5], [p[0] - 0.4, -0.9]], 'hatch');
+  }
 };
 
 /**
- * Frozen Hollow: an ice crystal growing out from the point: a spine with
- * three pairs of branches at 60°, each shorter than the last and the first
- * forking again, ending in a small hexagonal crystal.
+ * Frozen Hollow: an ice crystal growing out from the end: a spine with four
+ * pairs of branches at 60°, short, long, then shorter, so its outline is a
+ * lozenge, the longest pair branching again; it ends in a small hexagonal
+ * crystal, its table drawn in and its far facets hatched.
  */
 const frost = (d: Draw) => {
   const { L, s } = d;
-  const hexR = Math.min(s * 0.42, L * 0.08);
+  const hexR = Math.min(s * 0.4, L * 0.075);
   const end: Pt = [-L + hexR, 0];
   d.line([[-1.5, 0], [end[0] + hexR, 0]]);
-  d.line([...Array.from({ length: 6 }, (_, k) => [end[0] + hexR * Math.cos(rad(k * 60)), hexR * Math.sin(rad(k * 60))] as Pt), [end[0] + hexR, 0]]);
-  [0.3, 0.52, 0.7].forEach((t, i) => {
+  const hex = (r: number) => [...Array.from({ length: 6 }, (_, k) => [end[0] + r * Math.cos(rad(k * 60)), r * Math.sin(rad(k * 60))] as Pt), [end[0] + r, 0] as Pt];
+  d.line(hex(hexR));
+  d.line(hex(hexR * 0.45), 'hair');
+  // The facets below and to the right of the table, away from the light.
+  const outer = hex(hexR);
+  const inner = hex(hexR * 0.45);
+  for (const k of [0, 1]) d.line([inner[k], outer[k]], 'hatch');
+  hatch(d, inner[0], outer[1], outer[0], 0.9);
+  [
+    [0.18, 0.42],
+    [0.38, 0.95],
+    [0.58, 0.72],
+    [0.76, 0.42],
+  ].forEach(([t, k], i) => {
     const x = -L * t;
-    const len = s * (0.95 - i * 0.25);
+    const len = s * k;
     for (const v of [-1, 1]) {
       const dir: Pt = [-Math.cos(rad(60)), v * Math.sin(rad(60))];
       const tip: Pt = [x + dir[0] * len, dir[1] * len];
-      d.line([[x, 0], tip], i === 0 ? 'main' : 'hair');
-      if (i === 0) {
-        // A twig off the branch, parallel to the spine.
-        const mid: Pt = [x + dir[0] * len * 0.5, dir[1] * len * 0.5];
-        d.line([mid, [mid[0] - len * 0.38, mid[1]]], 'hair');
-      }
+      d.line([[x, 0], tip], i === 1 ? 'main' : 'hair');
+      if (i === 1)
+        for (const u of [0.45, 0.72]) {
+          // Twigs off the longest branch, at 60° to it, toward the tip.
+          const p: Pt = [x + dir[0] * len * u, dir[1] * len * u];
+          const tw: Pt = [-Math.cos(rad(0)), 0];
+          d.line([p, [p[0] + tw[0] * len * 0.28, p[1]]], 'hair');
+        }
     }
   });
 };
@@ -195,24 +229,42 @@ const eddy = (d: Draw) => {
   );
 };
 
-/** Petrified Forest: a stone bough, its twigs forking at fixed angles, with layers of mist drifting across. */
+/**
+ * Petrified Forest: two bare trees of stone standing on the line, the
+ * nearer the taller, their boughs in pairs at 40°, and a layer of mist
+ * drifting through them, broken where it passes behind a trunk.
+ */
 const boughs = (d: Draw) => {
   const { L, s } = d;
-  d.line([[-1.5, 0], [-L * 0.95, 0]]);
-  [
-    [0.28, -1, 1],
-    [0.5, 1, 0.85],
-    [0.7, -1, 0.65],
-  ].forEach(([t, v, k]) => {
-    const p: Pt = [-L * t, 0];
-    const len = s * k;
-    const tip: Pt = [p[0] - len * Math.cos(rad(38)), v * len * Math.sin(rad(38)) * 1.35];
-    d.line([p, tip]);
-    const m: Pt = [(p[0] + tip[0]) / 2, (p[1] + tip[1]) / 2];
-    d.line([m, [m[0] - len * 0.4, m[1] - v * len * 0.12]], 'hair');
-  });
-  d.line([[-L * 0.12, s * 0.82], [-L * 0.62, s * 0.82]], 'hair');
-  d.line([[-L * 0.4, -s * 0.9], [-L * 0.98, -s * 0.9]], 'hair');
+  d.line([[-1.5, 0], [-L, 0]], 'hair');
+  const trees: [number, number][] = [
+    [0.34, 1.2],
+    [0.7, 0.9],
+  ];
+  for (const [t, k] of trees) {
+    const x = -L * t;
+    const h = s * k;
+    d.line([[x, 0], [x, -h]]);
+    [
+      [0.42, 0.42],
+      [0.68, 0.3],
+      [0.88, 0.18],
+    ].forEach(([at, len], i) => {
+      for (const v of [-1, 1]) {
+        const p: Pt = [x, -h * at];
+        const tip: Pt = [x + v * h * len * Math.sin(rad(40)), -h * at - h * len * Math.cos(rad(40))];
+        d.line([p, tip], i === 0 ? 'main' : 'hair');
+      }
+    });
+    // Roots: a short stroke out each side along the line, hatched under.
+    d.line([[x - 1.6, 0.9], [x + 1.6, 0.9]], 'hatch');
+  }
+  // The mist, broken behind the trunks.
+  const y = -s * 0.3;
+  const gaps = trees.map(([t]) => -L * t);
+  const xs = [-L * 0.12, ...gaps.flatMap((g) => [g + 1.4, g - 1.4]), -L * 0.94];
+  for (let i = 0; i + 1 < xs.length; i += 2) d.line([[xs[i], y], [xs[i + 1], y]], 'hatch');
+  d.line([[-L * 0.5, s * 0.55], [-L * 0.9, s * 0.55]], 'hatch');
 };
 
 /** Sulphur Vents: wisps of vapour drifting out and up, each fainter and finer than the last. */
@@ -254,25 +306,28 @@ const skyline = (d: Draw) => {
   d.light([-L * 0.97, -s * 0.25], 0.4);
 };
 
-/** Primeval Ruins: white fire, three pointed tongues fanning out from the point, each with its ridge and hatched down one side. */
+/** Primeval Ruins: white fire, five pointed tongues fanning out from the end, each with its ridge, the middle one hatched down its lower side. */
 const fire = (d: Draw) => {
   const { L, s } = d;
   const o: Pt = [-1.5, 0];
   [
-    [-20, 0.55],
-    [0, 0.85],
-    [20, 0.55],
-  ].forEach(([a, k]) => {
+    [-28, 0.42, 0.14],
+    [-14, 0.68, 0.17],
+    [0, 0.94, 0.22],
+    [14, 0.68, 0.17],
+    [28, 0.42, 0.14],
+  ].forEach(([a, k, w]) => {
     const dir = rad(180 + a);
     const len = (L - 1.5) * k;
-    const half = s * 0.3;
+    const half = s * w;
     const n: Pt = [-Math.sin(dir), Math.cos(dir)];
-    const tip: Pt = [o[0] + len * Math.cos(dir), o[1] + len * Math.sin(dir) * 0.9];
+    const tip: Pt = [o[0] + len * Math.cos(dir), o[1] + len * Math.sin(dir)];
     const l: Pt = [o[0] + n[0] * half, o[1] + n[1] * half];
     const r: Pt = [o[0] - n[0] * half, o[1] - n[1] * half];
-    d.line([l, tip, r]);
+    d.line([l, tip, r], a === 0 ? 'main' : 'hair');
     d.line([o, tip], 'ember');
-    hatch(d, o, l, tip, 1.5);
+    // Only the middle tongue is shaded, down its lower side.
+    if (a === 0) hatch(d, o, r, tip, 1.6);
   });
 };
 

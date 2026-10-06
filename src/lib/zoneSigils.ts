@@ -5,12 +5,32 @@
 // `r / 10`; they are made to read at 14 to 24 px across, so they keep to a
 // handful of strokes. Lines come back as SVG path data: `lines` the main
 // strokes, `fine` the finer ones (a ridge, a stair, the gills), drawn
-// thinner.
+// thinner, and `shade`, hatching down the side of each solid turned from
+// the light (it falls from the upper left, as on the cards).
 
 import { arc, at, line, ring, type Pt } from './arcane.ts';
 import { stratumName } from './descent.ts';
 
-export type Sigil = { lines: string; fine: string };
+export type Sigil = { lines: string; fine: string; shade?: string };
+
+/**
+ * Upright hatching inside the convex polygon `ps`, from `x0` to `x1`, `gap`
+ * apart, each stroke kept `pad` short of the outline.
+ */
+function upright(ps: Pt[], x0: number, x1: number, gap = 1.1, pad = 0.6): string {
+  let out = '';
+  for (let x = x0; x <= x1 + 1e-6; x += gap) {
+    const ys: number[] = [];
+    ps.forEach((a, i) => {
+      const b = ps[(i + 1) % ps.length];
+      if ((a[0] - x) * (b[0] - x) <= 0 && a[0] !== b[0]) ys.push(a[1] + ((b[1] - a[1]) * (x - a[0])) / (b[0] - a[0]));
+    });
+    if (ys.length < 2) continue;
+    const [lo, hi] = [Math.min(...ys) + pad, Math.max(...ys) - pad];
+    if (hi - lo > 0.6) out += line([x, lo], [x, hi]);
+  }
+  return out;
+}
 
 const O: Pt = [0, 0];
 const poly = (pts: Pt[], close = false) => pts.map((p, i) => line(p, pts[(i + 1) % pts.length])).slice(0, close ? pts.length : pts.length - 1).join('');
@@ -21,6 +41,8 @@ function lantern(): Sigil {
   return {
     lines: poly([[-3.2, -4.4], [-4, 4.4], [4, 4.4], [3.2, -4.4]], true) + poly([[-3.2, -4.4], [0, -6.6], [3.2, -4.4]]) + ring([0, -7.9], 1.3) + line([-5.2, 6.4], [5.2, 6.4]),
     fine: poly([[0, -2.6], [1.3, 0.4], [0, 2.6], [-1.3, 0.4]], true) + line([-4, 4.4], [-5.2, 6.4]) + line([4, 4.4], [5.2, 6.4]),
+    // The glass's right side, clear of the flame.
+    shade: upright([[-3.2, -4.4], [3.2, -4.4], [4, 4.4], [-4, 4.4]], 2, 3.8),
   };
 }
 
@@ -46,6 +68,7 @@ function fissure(): Sigil {
   return {
     lines: line(apex, l) + line(apex, r) + line(l, [-1.6, 5.6]) + line([1.2, 5.6], r),
     fine: poly(crack),
+    shade: upright([apex, r, l], 2.6, 7, 1.1, 0.7),
   };
 }
 
@@ -81,6 +104,12 @@ function spore(): Sigil {
   return {
     lines: arc(c, R, -90, 90) + line(rim(-1), rim(1)) + line([-1.5, 3.2], [-1.5, 7.4]) + line([1.5, 3.2], [1.5, 7.4]) + line([-3.6, 8.6], [3.6, 8.6]),
     fine: fine + line([-1.5, 7.4], [-3.6, 8.6]) + line([1.5, 7.4], [3.6, 8.6]),
+    // The dome's right side.
+    shade: upright(
+      Array.from({ length: 19 }, (_, k) => at(c, -90 + k * 10, R)),
+      2.4,
+      7.8,
+    ),
   };
 }
 
@@ -96,6 +125,21 @@ function pyramid(): Sigil {
   return {
     lines: poly(outline) + line([-half(0), y(0)], [half(0), y(0)]) + line([-1.4, y(steps)], [0, y(steps) - 2]) + line([0, y(steps) - 2], [1.4, y(steps)]),
     fine: line([-0.8, y(0)], [-0.8, y(steps)]) + line([0.8, y(0)], [0.8, y(steps)]),
+    // The right half of each tier.
+    shade: Array.from({ length: steps }, (_, i) =>
+      upright(
+        [
+          [1.4, y(i + 1)],
+          [half(i), y(i + 1)],
+          [half(i), y(i)],
+          [1.4, y(i)],
+        ],
+        2.2,
+        half(i) - 0.5,
+        1.1,
+        0.55,
+      ),
+    ).join(''),
   };
 }
 
@@ -138,7 +182,7 @@ function sulphur(): Sigil {
     [-5, -1],
     [5, -1],
   ];
-  return { lines: poly([apex, r, l], true) + line([0, -1], [0, 9]) + line([-4.2, 4], [4.2, 4]), fine: '' };
+  return { lines: poly([apex, r, l], true) + line([0, -1], [0, 9]) + line([-4.2, 4], [4.2, 4]), fine: '', shade: upright([apex, r, l], 1, 4, 1, 0.6) };
 }
 
 /** Abyssal City: three pointed spires, the middle one tallest, over a line of ground. */
@@ -154,6 +198,27 @@ function spires(): Sigil {
   return {
     lines: tower(0, 1.8, 7, -3, -9.2) + tower(-4.8, 1.5, 7, 1, -3.8) + tower(4.8, 1.5, 7, 1, -3.8) + line([-6.9, 7], [6.9, 7]),
     fine: line([0, 7], [0, 2.6]) + line([-4.8, 7], [-4.8, 4.2]) + line([4.8, 7], [4.8, 4.2]),
+    // The right half of each spire.
+    shade: [
+      [0, 1.8, -3, -9.2],
+      [-4.8, 1.5, 1, -3.8],
+      [4.8, 1.5, 1, -3.8],
+    ]
+      .map(([x, w, eave, tip]) =>
+        upright(
+          [
+            [x, tip],
+            [x + w, eave],
+            [x + w, 7],
+            [x, 7],
+          ],
+          x + 0.8,
+          x + w - 0.3,
+          0.9,
+          0.6,
+        ),
+      )
+      .join(''),
   };
 }
 
@@ -162,6 +227,19 @@ function column(): Sigil {
   return {
     lines: line([-2.6, 6], [-2.6, -3.2]) + line([2.6, 6], [2.6, -6.2]) + line([-2.6, -3.2], [-0.6, -4.4]) + line([-0.6, -4.4], [0.6, -3.9]) + line([0.6, -3.9], [2.6, -6.2]) + poly([[-5, 6], [5, 6], [5, 8.4], [-5, 8.4]], true),
     fine: line([0, 6], [0, -3.4]) + line([-3.6, 6], [3.6, 6]),
+    // The shaft's right side, under its broken top.
+    shade: upright(
+      [
+        [0.6, -3.9],
+        [2.6, -6.2],
+        [2.6, 6],
+        [0.6, 6],
+      ],
+      1.3,
+      2.2,
+      0.9,
+      0.6,
+    ),
   };
 }
 

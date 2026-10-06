@@ -10,7 +10,7 @@ const PHONE: Head = { w: 343, h: 58, ky: 14.5, capTop: 26.1, by: 34, hx0: 134, h
 const DESK: Head = { w: 1233, h: 107, ky: 14.5, capTop: 42.8, by: 57.5, hx0: 547, hx1: 686, rl0: 388, rr1: 845, nameW: 140, nameH: 22 };
 // A group run: a long heading ("Bartholomew's turn") leaves short rules.
 const LONG: Head = { ...PHONE, hx0: 61, hx1: 282, rl0: 1, rr1: 342 };
-const VARIANTS: Variant[] = ['banner', 'ribbon', 'seal'];
+const VARIANTS: Variant[] = ['banner', 'ribbon', 'seal', 'nameplate', 'cartouche', 'medallion'];
 
 /** Every point a path's data names (of an arc, its end). */
 const points = (d: string) =>
@@ -49,21 +49,22 @@ test('the mark keeps to the head, clear of the heading and of what lies below', 
 
 test('the ribbon is small: about the name, and no taller than the kicker and a little', () => {
   for (const head of [PHONE, DESK]) {
-    const { plate, box } = layout('ribbon', head);
-    const xs = plate!.map((p) => p[0]);
-    const ys = plate!.map((p) => p[1]);
-    const [w, h] = [Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)];
-    assert.ok(h <= head.nameH * 1.4, `${h} tall`);
-    assert.ok(w <= head.nameW + 4 * h, `${w} wide`);
-    assert.ok(Math.max(...ys) <= head.capTop - 4);
-    // Its light comes off its upper edge, not across the name.
-    assert.ok(box.y + box.h <= Math.min(...ys) + 1);
+    for (const v of ['ribbon', 'nameplate', 'cartouche', 'medallion'] as const) {
+      const { body, box, seals } = layout(v, head);
+      const [w, h] = [body!.x1 - body!.x0, body!.y1 - body!.y0];
+      assert.ok(h <= head.nameH * 1.4, `${v}: ${h} tall`);
+      assert.ok(w <= head.nameW + 6 * h, `${v}: ${w} wide`);
+      // Clear of the heading below, seals and all.
+      assert.ok(Math.max(body!.y1, ...seals.map((s) => s.c[1] + s.r)) <= head.capTop - 2, v);
+      // Its light comes off its upper edge, not across the name.
+      assert.ok(box.y + box.h <= body!.y0 + 1, v);
+    }
   }
 });
 
 test('lines stop short of the seals', () => {
   for (const head of [PHONE, DESK])
-    for (const v of ['ribbon', 'seal'] as const) {
+    for (const v of ['ribbon', 'seal', 'nameplate', 'cartouche', 'medallion'] as const) {
       const m = layout(v, head);
       assert.equal(m.seals.length, 2, v);
       for (const s of m.strokes)

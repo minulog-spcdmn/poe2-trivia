@@ -18,7 +18,7 @@
   import { delveChange } from '../lib/difficultyText';
   import { accentAt, milestoneAt } from '../lib/descent';
   import { zoneAt } from '../lib/zoneSigils';
-  import type { Variant } from '../lib/zoneMark';
+  import { drawsRules, type Variant } from '../lib/zoneMark';
   import ZoneMark from './ZoneMark.svelte';
   import { descended, milestoneReached } from '../lib/fx/moments';
   import { untrack } from 'svelte';
@@ -164,11 +164,13 @@
   let depthSeen = '';
   let standingSeen = 0;
   /**
-   * How the mark is drawn (lib/zoneMark): 'ribbon' (a slim ribbon on the
-   * kicker's line), 'banner' (the banner's rules rising into a cartouche) or
-   * 'seal' (seals stamped beside the heading).
+   * How the mark is drawn (lib/zoneMark): 'medallion' (two seals with the
+   * name's plate slung between them), 'nameplate' (the cards' nameplate),
+   * 'cartouche' (pointed ends), or the earlier 'ribbon', 'banner' (the
+   * banner's rules rising into a cartouche) and 'seal' (seals beside the
+   * heading).
    */
-  const zoneVariant: Variant = 'ribbon';
+  const zoneVariant: Variant = 'medallion';
   /**
    * It starts once the stage has faded in (0.35 s), comes in over about 0.6 s
    * (the pen's sweep), is held 3.5 s, then goes out over 1.2 s.
@@ -270,7 +272,7 @@
             <!-- Kept even when empty, so the banner stays put from one depth to the next. -->
             <p class="kicker" class:deep={depth >= 21} class:change={!!change} class:veiled={!!zone}>{kicker || '\u00a0'}</p>
           {/if}
-          <div class="banner" class:dm={!!dm} class:veiled={!!zone && zoneVariant !== 'ribbon'} style:--c={bannerColor}>
+          <div class="banner" class:dm={!!dm} class:veiled={!!zone && drawsRules(zoneVariant)} style:--c={bannerColor}>
             <span class="rule"></span>
             <h2 use:bannerFx={{ color: bannerColor, big: bannerBig }}>{bannerTitle}</h2>
             <span class="rule"></span>
