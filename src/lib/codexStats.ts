@@ -6,6 +6,7 @@ import type { Difficulty, Item, QuestionMode } from './game.ts';
 import { RECENT, answerLives, answerWards, livesCost, type Answer, type Codex, type ItemEntry, type Tally } from './codex.ts';
 import { DELVE_RULESET, type FindKind, type ItemKind } from './delve.ts';
 import { MAX_DEPTH, bestKey, isTogether, tallyOf as runsTally, type DelveRecords, type DelveRun, type DelveTally, type Frontier } from './delveRecord.ts';
+import { biomeAt } from './backdrops.ts';
 import { stratumName } from './descent.ts';
 
 /** Fewer answers than this don't make an item a nemesis. */
@@ -163,7 +164,7 @@ export interface Zone {
   /** Its first and last depth. */
   depth: number;
   to: number;
-  /** Its biome, numbered from its second time round past 100 ("Frozen Hollow II"). */
+  /** Its name as the descent has it (past 100 a generated stratum's own), numbered should one come round again ("The Drowned Nave II"). */
   name: string;
 }
 
@@ -320,7 +321,7 @@ export interface ZoneReached extends Zone {
 export interface ZoneProgress {
   /** From the top down. */
   reached: ZoneReached[];
-  /** Distinct biomes among them. */
+  /** Distinct biomes among them: the zones, and past them the archetypes (lib/backdrops.ts, biomeAt). */
   biomes: number;
   /** The next zone, still to find. */
   next: Zone | null;
@@ -336,7 +337,7 @@ export function zonesReached(climb: Frontier[]): ZoneProgress {
     const z = zone(k);
     reached.push({ ...z, at: climb.find((f) => f.depth >= z.depth)?.at ?? climb.at(-1)!.at });
   }
-  const biomes = new Set(reached.map((z) => stratumName(z.k))).size;
+  const biomes = new Set(reached.map((z) => biomeAt(z.k))).size;
   return { reached, biomes, next: last < LAST_ZONE ? zone(last + 1) : null };
 }
 

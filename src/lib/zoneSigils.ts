@@ -9,6 +9,7 @@
 // the light (it falls from the upper left, as on the cards).
 
 import { arc, at, line, ring, type Pt } from './arcane.ts';
+import { emblemOf } from './backdrops.ts';
 import { stratumName } from './descent.ts';
 
 export type Sigil = { lines: string; fine: string; shade?: string };
@@ -258,14 +259,14 @@ const BY_NAME: Record<string, () => Sigil> = {
 
 const made = new Map<string, Sigil>();
 
-/** The emblem of the biome called `name` (a stratum's name, lib/descent.ts); the Mines' for any other. */
+/** The emblem of the biome called `name` (a stratum's name, lib/descent.ts): a zone's own, a stratum past the zones its archetype's (lib/backdrops.ts, emblemOf); the Mines' for any other. */
 export function sigilOf(name: string): Sigil {
   let s = made.get(name);
-  if (!s) made.set(name, (s = (BY_NAME[name] ?? lantern)()));
+  if (!s) made.set(name, (s = (BY_NAME[name] ?? BY_NAME[emblemOf(name) ?? ''] ?? lantern)()));
   return s;
 }
 
-/** The zone a depth is in: the Mines for depths 1 to 10, Magma Fissure for 11 to 20, and so on (past 100, the biome its hall is). */
+/** The zone a depth is in: the Mines for depths 1 to 10, Magma Fissure for 11 to 20, and so on (past 100, the generated stratum's own name). */
 export const zoneAt = (depth: number) => stratumName(Math.max(0, Math.floor((depth - 1) / 10)));
 
 /** The biomes that have an emblem of their own. */

@@ -23,6 +23,7 @@ import {
 } from '../src/lib/codexStats.ts';
 import { MAX_COUNT, MAX_DEPTH, addRun, emptyRecords, parseRecords, tallyOf, type DelveRun } from '../src/lib/delveRecord.ts';
 import { milestoneAt, stratumName } from '../src/lib/descent.ts';
+import { ARCHETYPES } from '../src/lib/archetypes.ts';
 
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
 const [a, b, c] = items;
@@ -137,10 +138,11 @@ test('zones: ten depths each, named as the descent names its strata, numbered wh
   assert.equal(zoneOf(1).name, stratumName(0), 'depths 1 to 10 are the first stratum (The Mines), not "the surface"');
   assert.deepEqual([zoneOf(10).k, zoneOf(11).k, zoneOf(20).k, zoneOf(21).k], [0, 1, 1, 2]);
   for (let d = 11; d <= 91; d += 10) assert.equal(zoneOf(d).name, milestoneAt(d), `named as the card names depth ${d}`);
-  // Past 100 names come round again: never twice the same, a second time numbered.
-  const names = Array.from({ length: 60 }, (_, k) => zone(k).name);
+  // Past 100 each stratum has a name of its own; should one come round again, it is numbered.
+  const names = Array.from({ length: 100 }, (_, k) => zone(k).name);
   assert.equal(new Set(names).size, names.length);
-  assert.ok(names.slice(10).some((n) => / [IVXL]+$/.test(n)));
+  for (let k = 10; k < 100; k++) assert.ok(zone(k).name.startsWith(stratumName(k)));
+  assert.ok(names.slice(10, 60).every((n) => !/ [IVXL]+$/.test(n)), 'none numbered in the first fifty past 100');
   assert.deepEqual([zone(4).depth, zone(4).to], [41, 50]);
   assert.equal(zone(1e9).to, Math.ceil(MAX_DEPTH / 10) * 10, 'bounded');
   // The arc from a best to the next zone.
@@ -172,7 +174,7 @@ test('zones reached: dated by the climb, distinct biomes, one teaser', () => {
   // As deep as the records go: a hundred zones at most, no teaser past the last.
   const deep = zonesReached([{ depth: MAX_DEPTH, at: 1 }]);
   assert.equal(deep.reached.length, 100);
-  assert.ok(deep.biomes <= 10);
+  assert.ok(deep.biomes > 10 && deep.biomes <= 10 + ARCHETYPES.length, `${deep.biomes} biomes`);
 });
 
 test('the summary counts from tallies: ends and runs left, a usual depth from MIN_RUNS ends, alone and together apart', () => {

@@ -9,7 +9,7 @@
 import { endgameAt, SHIPPED, setBackdrops, seedAt } from '../lib/backdrops';
 import { backdropsErrors, cloneData, formatBackdrops, withTones, type Backdrops, type GenSettings, type Group, type Look, type MotionTweak } from '../lib/backdropData';
 import { DEFAULT_SETTINGS, freshSeed, generate, hueOf, keepLocked, variationSeed, wrap } from '../lib/backdropGen';
-import { calibrateLight, setDescent } from '../lib/descent';
+import { calibrateLight, setDescent, settledAt } from '../lib/descent';
 import { PROFILE_NAMES, profileOf, tweakOf } from '../lib/emberProfiles';
 import { readStored, writeStored } from '../lib/storage';
 
@@ -19,8 +19,8 @@ type Work = { look: Look; motion: MotionTweak };
 export const ZONES = SHIPPED.zones.length;
 /** How deep the depth slider goes. */
 export const MAX_DEPTH = 250;
-/** Where the zone looks alone, settled: its first depth. */
-export const depthOfStratum = (k: number) => 10 * k + 1;
+/** Where the zone looks alone, settled: its 4th depth, once the handover into it is done (its first for the Mines). */
+export const depthOfStratum = settledAt;
 const NAMES = SHIPPED.zones.map((z) => z.name);
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);

@@ -8,15 +8,20 @@
 // named after a Delve biome, their looks kept in src/data/backdrops.json
 // (lib/backdrops.ts; the backdrop tool, backdrop.html, edits them).
 //
-// One place turns into the next steadily, a little with every depth, never
-// all at once: through a stratum a growing share of the embers burns in the
-// next one's colour (a tenth at its second depth, nine tenths at its last),
-// and from its fourth depth on the next one's light, smoke and features
-// creep in as its own recede, so the next is all there when its name is
-// announced. Past depth 100 the strata go on for ever, each generated from
-// a seed of its own (lib/backdropGen.ts, the same for everyone), its hue
-// moving on from the one before's so no two in a row look alike, and each
-// is announced by the biome it looks most like.
+// One place turns into the next gradually, never all at once, over the ten
+// depths from a zone's 4th to the next one's 4th (strataAt), on an eased
+// curve: slowly at first, fastest half way, settling slowly. A growing
+// share of the embers burns in the next one's colour (a tenth at the
+// zone's 6th depth, half at its 9th, nine tenths at the next one's 2nd),
+// and from its 5th depth the next one's light, smoke and features creep in
+// as its own recede (barely at its 6th, half way by its last, about three
+// quarters as the next is announced, all there by its 4th). So the
+// handover runs on past the boundary into the next zone, whose name is
+// still announced at its first depth. Past depth 100 the strata go on for
+// ever, each one of the archetypes (lib/archetypes.ts) generated from a
+// seed of its own (lib/backdropGen.ts, the same for everyone), never the
+// same archetype twice in a row, and each is announced by a name of its
+// archetype's own (`endgameName`).
 //
 // And the deeper, the darker, never the other way: the dark draws in from
 // the edges a little with every depth, and the scene's light is set (`light`,
@@ -26,10 +31,10 @@
 // Pure, apart from the eased channel and the plunge at the bottom that the
 // backdrop reads.
 
-import { ENV, ENVIRONMENTS, HALL_FROM, hallTurn, toneGain, toneOf, type Look, type RGB, type Tone } from './backdropData.ts';
+import { emberTurn, ENV, ENVIRONMENTS, HALL_FROM, hallTurn, toneGain, toneOf, type Look, type RGB, type Tone } from './backdropData.ts';
 import { endgameAt, endgameName, onBackdrops, zones } from './backdrops.ts';
 
-export { ENV, ENVIRONMENTS, HALL_FROM, hallTurn, toneOf, type Look };
+export { emberTurn, ENV, ENVIRONMENTS, HALL_FROM, hallTurn, toneOf, type Look };
 
 /** The magma among the environments (it cools as it goes out; see magmaCooling). */
 export const MAGMA = ENVIRONMENTS.indexOf('magma');
@@ -127,25 +132,38 @@ export function lookOf(k: number): Look {
   return look;
 }
 
-/** The biome stratum `k` is named after: past the last zone, the one it looks most like (never the one before's). */
+/** Stratum `k`'s name: a zone's, or past the last zone its archetype's next name (`endgameName`, none twice in a long while). */
 export function stratumName(k: number): string {
   if (k < STRATA.length) return STRATA[Math.max(0, k)].name;
   return endgameName(k);
 }
 
 /**
- * The stratum a depth is turning into, and how far (0 to 1): through
- * stratum k (depths 10k + 1 to 10k + 10) the scene turns steadily into
- * stratum k + 1, a tenth of the way with every depth, and is it at 10k + 11.
- * Below depth 1 (only while the scene eases in) the surface turns into the
- * first stratum.
+ * How many depths into a stratum its turn into the next begins: 3, so the
+ * turn runs from its 4th depth (10k + 4) to the next one's (10k + 14).
+ */
+export const TURN_FROM = 3;
+
+/**
+ * The stratum a depth is turning into, and how far (0 to 1, a tenth with
+ * every depth; the embers, light, smoke and features follow it eased, see
+ * emberTurn and hallTurn): from stratum k's 4th depth (10k + 4) the scene
+ * turns into stratum k + 1, and is it at k + 1's 4th (10k + 14), three
+ * depths after k + 1 is announced (10k + 11). Through the Mines' first
+ * depths (1 to 4) it is the Mines alone; below depth 1 (only while the
+ * scene eases in) the surface turns into them.
  */
 export function strataAt(depth: number): { stratum: number; turn: number } {
   const d = Number.isFinite(depth) ? Math.max(0, depth) : 0;
   if (d < 1) return { stratum: 0, turn: d };
-  const k = Math.floor((d - 1) / 10);
-  return { stratum: k + 1, turn: (d - 1) / 10 - k };
+  const x = d - 1 - TURN_FROM;
+  if (x < 0) return { stratum: 1, turn: 0 };
+  const k = Math.floor(x / 10);
+  return { stratum: k + 1, turn: (x - 10 * k) / 10 };
 }
+
+/** The first depth stratum `k` shows alone, the turn into it done: its 4th (depth 1 for the Mines). */
+export const settledAt = (k: number) => (k <= 0 ? 1 : 10 * k + 1 + TURN_FROM);
 
 /** The stratum a depth is named after: 0 for depths 1 to 10, 1 for 11 to 20, ... */
 const stratumOf = (depth: number) => Math.max(0, Math.floor((Math.floor(depth) - 1) / 10));
@@ -183,7 +201,7 @@ export interface Descent {
   look: Look;
 }
 
-/** The depth the azure stratum is announced (the blue streaks begin there). Its embers come in through the ten before. */
+/** The depth the azure stratum is announced (the blue streaks begin there). Its embers come in from the six depths before to the three after (emberTurn). */
 export const BLUE_FROM = 21;
 export const ABYSS_FROM = 50;
 export const ABYSS_FULL = 75;
@@ -260,14 +278,15 @@ export function mixLook(a: Look, b: Look, t: number): Look {
   return mixInto(blank(), a, b, t);
 }
 
-/** The parts of a look the embers follow, a tenth of the way with every depth of a stratum. */
+/** The parts of a look the embers follow, as many of them as burn in the next stratum (emberTurn). */
 const EMBER_KEYS = new Set<string>(['ember', 'core', 'coreMix', 'crowd', 'speed', 'size', 'bright', 'agit', 'fall']);
 /** Whether each of KEYS is one of them. */
 const IS_EMBER = KEYS.map((key) => EMBER_KEYS.has(key));
 
 /**
  * Writes stratum `a` turning `t` of the way into `b` into `out`: the embers
- * follow `t` itself; the light, smoke and features follow hallTurn(t). An
+ * follow emberTurn(t); the light, smoke and features hallTurn(t), their
+ * colours too (mixTones). Both eased, so nothing turns at a steady rate. An
  * environment the two share stays as it is. A magma that goes out (`a` has
  * it, `b` none) cools first, in step with the hall (magmaCooling), and
  * narrows away only after (1 - h^3 of it still there): so it is seen
@@ -276,7 +295,8 @@ const IS_EMBER = KEYS.map((key) => EMBER_KEYS.has(key));
  */
 function turnInto(out: Look, a: Look, b: Look, t: number): Look {
   const h = hallTurn(t);
-  for (let k = 0; k < KEYS.length; k++) mixField(out as unknown as Fields, a as unknown as Fields, b as unknown as Fields, KEYS[k], IS_EMBER[k] ? t : h);
+  const e = emberTurn(t);
+  for (let k = 0; k < KEYS.length; k++) mixField(out as unknown as Fields, a as unknown as Fields, b as unknown as Fields, KEYS[k], IS_EMBER[k] ? e : h);
   out.lightK = mixLight(a.lightK, b.lightK, h);
   for (let i = 0; i < ENV; i++) out.env[i] = Math.max(a.env[i] + (b.env[i] - a.env[i]) * h, Math.min(a.env[i], b.env[i]));
   if (a.env[MAGMA] > 0 && !(b.env[MAGMA] > 0)) out.env[MAGMA] = a.env[MAGMA] * (1 - h * h * h);
@@ -384,33 +404,37 @@ export function envTable(row: readonly number[], e: number) {
  * estimate's `hall`, the frame at light 0 over its `rest`], at 900 x 640,
  * held still. The estimate works the noise out at its average and the
  * features from ENV_ADD and ENV_HALL alone, which is near but not exact. To
- * depth 91, the last whose look is the zones' alone (past it the endgame's
+ * depth 94, the last whose look is the zones' alone (past it the endgame's
  * generated strata come in, for which the estimate stands as it is), with
  * the zones' looks as shipped: a zone whose look has changed since
  * (`measured` false in src/data/backdrops.json) has the corrections of its
  * depths dropped rather than applied wrongly (see correction). Measured
  * by scripts/measure-luminance.mjs (calibrate) with the ENV_ tables in
- * place. Empty, the estimate stands as it is.
+ * place, when the handover ran from a zone's 4th depth to the next one's
+ * first, straight; carried over to the eased handover since, each depth
+ * taking the corrections of the depth that showed the same share of the
+ * next zone's hall then (calibrate measures them afresh). Empty, the
+ * estimate stands as it is.
  */
 export const MEASURED: (readonly [number, number])[] = [
-  [0.943, 0.974], [0.944, 0.976], [0.944, 0.978], [0.944, 1.044], [0.941, 1.002], [0.938, 0.974], [0.939, 0.979], [0.937, 0.961],
-  [0.94, 0.977], [0.938, 0.953], [0.945, 0.988], [0.946, 0.985], [0.946, 0.982], [0.935, 0.967], [0.942, 0.962], [0.953, 0.953],
-  [0.956, 0.939], [0.954, 0.925], [0.95, 0.903], [0.946, 0.98], [0.935, 0.762], [0.934, 0.721], [0.933, 0.685], [0.936, 0.711],
-  [0.939, 0.807], [0.943, 0.845], [0.95, 0.866], [0.956, 0.876], [0.967, 0.888], [0.965, 0.889], [0.982, 0.907], [0.982, 0.917],
-  [0.982, 0.925], [0.982, 0.897], [0.982, 0.909], [0.982, 0.95], [0.982, 0.974], [0.982, 1], [0.982, 1.004], [0.985, 1.019],
-  [0.987, 1.006], [0.987, 1.005], [0.987, 1.003], [0.989, 1.011], [0.989, 1.003], [0.99, 0.988], [0.99, 0.963], [0.993, 0.925],
-  [0.994, 0.917], [0.999, 0.807], [1, 0.933], [1, 0.907], [1, 0.882], [1.001, 0.837], [1.009, 0.768], [1.019, 0.686],
-  [1.028, 0.61], [1.044, 0.535], [1.043, 0.481], [1.03, 0.45], [1.032, 0.486], [1.032, 0.485], [1.032, 0.485], [1.022, 0.567],
-  [1.023, 0.671], [1.027, 0.755], [1.022, 0.808], [1.019, 0.853], [1.023, 0.875], [1.025, 0.904], [1.033, 0.921], [1.033, 0.938],
-  [1.033, 0.955], [1.036, 0.944], [1.039, 0.967], [1.041, 1.008], [1.04, 1.012], [1.037, 1.027], [1.032, 1.091], [1.024, 1.188],
-  [1.012, 1.276], [1.012, 1.257], [1.012, 1.236], [1.009, 1.267], [0.998, 1.092], [0.989, 0.999], [0.982, 0.959], [0.975, 0.927],
-  [0.969, 0.893], [0.965, 0.843], [0.959, 0.838],
+  [0.943, 0.974], [0.944, 0.975], [0.944, 0.976], [0.944, 0.978], [0.944, 1.011], [0.944, 1.028], [0.943, 1.025], [0.94, 0.99],
+  [0.939, 0.977], [0.937, 0.963], [0.94, 0.976], [0.938, 0.955], [0.943, 0.979], [0.945, 0.988], [0.941, 0.974], [0.938, 0.971],
+  [0.938, 0.965], [0.947, 0.958], [0.955, 0.944], [0.954, 0.927], [0.95, 0.907], [0.945, 0.968], [0.938, 0.818], [0.935, 0.762],
+  [0.935, 0.698], [0.935, 0.705], [0.937, 0.754], [0.941, 0.824], [0.947, 0.858], [0.955, 0.875], [0.967, 0.888], [0.966, 0.89],
+  [0.978, 0.902], [0.982, 0.907], [0.982, 0.911], [0.982, 0.904], [0.982, 0.902], [0.982, 0.927], [0.982, 0.965], [0.982, 0.997],
+  [0.982, 1.005], [0.985, 1.018], [0.986, 1.009], [0.987, 1.006], [0.988, 1.007], [0.989, 1.009], [0.989, 1.007], [0.989, 0.996],
+  [0.99, 0.972], [0.993, 0.93], [0.994, 0.911], [0.999, 0.814], [1, 0.901], [1, 0.933], [1, 0.859], [1.001, 0.848],
+  [1.005, 0.806], [1.013, 0.732], [1.025, 0.638], [1.042, 0.545], [1.042, 0.479], [1.03, 0.452], [1.031, 0.477], [1.032, 0.486],
+  [1.027, 0.526], [1.024, 0.547], [1.022, 0.613], [1.025, 0.708], [1.024, 0.788], [1.019, 0.847], [1.023, 0.877], [1.025, 0.905],
+  [1.031, 0.917], [1.033, 0.921], [1.034, 0.95], [1.035, 0.947], [1.037, 0.954], [1.04, 0.985], [1.04, 1.011], [1.037, 1.025],
+  [1.032, 1.096], [1.023, 1.193], [1.015, 1.253], [1.012, 1.276], [1.01, 1.252], [1.01, 1.259], [1.004, 1.189], [0.994, 1.051],
+  [0.985, 0.974], [0.976, 0.931], [0.969, 0.89], [0.965, 0.843], [0.961, 0.839], [0.959, 0.838],
 ];
 /** Whether zone `k`'s look is the one MEASURED was measured with. */
 const measuredZone = (k: number) => k >= 0 && k < STRATA.length && zones[k].measured;
-/** A zone's own corrections, measured at its first depth (where it shows alone), or none. */
+/** A zone's own corrections, measured where it shows alone (settledAt), or none. */
 function anchor(k: number): readonly [number, number] {
-  const d = 10 * k + 1;
+  const d = settledAt(k);
   return measuredZone(k) && d <= MEASURED.length ? MEASURED[d - 1] : NONE;
 }
 const NONE = [1, 1] as const;
@@ -418,9 +442,10 @@ const NONE = [1, 1] as const;
  * The corrections at whole depth `i`: MEASURED's where the zones the scene
  * shows there (the one it is in, and the next once it begins to turn into
  * it) all have their looks as measured. Elsewhere (a zone changed since,
- * or the endgame's strata coming in past 91) only what still holds of
- * them: each zone's own (at its first depth), coming and going with it as
- * the scene turns (the hall's with hallTurn, the embers' with the turn).
+ * or the endgame's strata coming in past 94) only what still holds of
+ * them: each zone's own (where it shows alone), coming and going with it
+ * as the scene turns (the hall's with hallTurn, the rest's with the
+ * embers, emberTurn).
  */
 function correction(i: number): readonly [number, number] {
   const { stratum, turn } = strataAt(i);
@@ -428,7 +453,8 @@ function correction(i: number): readonly [number, number] {
   const a = anchor(stratum - 1);
   const b = anchor(stratum);
   const h = hallTurn(turn);
-  return [a[0] + (b[0] - a[0]) * h, a[1] + (b[1] - a[1]) * turn];
+  const e = emberTurn(turn);
+  return [a[0] + (b[0] - a[0]) * h, a[1] + (b[1] - a[1]) * e];
 }
 /** The corrections at depth `d` (see MEASURED): [hall, rest], eased between whole depths. */
 export function measuredAt(d: number): [number, number] {
@@ -518,9 +544,12 @@ export const magmaGoesOut = (k: number) => k >= 0 && hasMagma(lookOf(k)) && !has
  * How far stratum `k`'s magma has cooled (0 to 1) with the scene turning
  * `turn` of the way into stratum `stratum` (see strataAt): only a magma
  * that goes out (magmaGoesOut), as the scene turns out of its stratum (k
- * is stratum - 1: the Magma Fissure's last depths toward the Frozen
- * Hollow), in step with its hall (hallTurn), so it has cooled and stopped
- * flowing as the next arrives; and all the way once the scene is past it.
+ * is stratum - 1: from the Magma Fissure's 5th depth to the Frozen
+ * Hollow's 4th), in step with its hall (hallTurn, eased), so the frost,
+ * which comes in with the hall and only grows once the magma has well
+ * cooled (env_frost), never shows over bright magma; mostly cooled as the
+ * next is announced, cooled and stopped by its 4th depth; and all the way
+ * once the scene is past it.
  */
 export function magmaCoolingOf(k: number, stratum: number, turn: number): number {
   if (k > stratum - 1 || !magmaGoesOut(k)) return 0;
@@ -837,15 +866,15 @@ export function lightAt(d: number, look: Look = lookAt(blank(), d)): number {
 
 /**
  * How bright a look's hall is lit (its lightK) to show as stratum `k`: so
- * that, settled there (its first depth, the dark crept in as far as it has
- * by then), the scene keeps to luminanceAt at a light of 1, as the zones'
- * were measured to. The endgame's generated looks are lit so, and the
- * backdrop tool lights a zone's changed look so; the Mines' is 1, as their
- * brightness is the curve's own.
+ * that, settled there (settledAt: its 4th depth, the turn into it done, the
+ * dark crept in as far as it has by then), the scene keeps to luminanceAt
+ * at a light of 1, as the zones' were measured to. The endgame's generated
+ * looks are lit so, and the backdrop tool lights a zone's changed look so;
+ * the Mines' is 1, as their brightness is the curve's own.
  */
 export function calibrateLight(look: Look, k: number): number {
   if (k <= 0) return 1;
-  const d = 10 * k + 1;
+  const d = settledAt(k);
   const e = estimateLuminance({ ...look, dark: look.dark + (1 - look.dark) * 0.15 * deepAt(d), lightK: 1 }, closeness(d), featuresAt(d));
   return Math.round(1000 * Math.min(4, Math.max(0.1, (luminanceAt(d) - e.rest) / e.hall))) / 1000;
 }
@@ -904,9 +933,9 @@ export const MILESTONES: { depth: number; name: string }[] = STRATA.flatMap((s, 
 
 /**
  * The name of the depth, if it has one: the first depth of every stratum but
- * the first, for ever. Past 100 the biomes come round again, each generated
- * stratum named after the one it looks most like, never the same twice in
- * a row.
+ * the first, for ever. Past 100 each generated stratum takes its
+ * archetype's next name (`endgameName`), never a zone's and none twice in a
+ * long while.
  */
 export function milestoneAt(depth: number): string | null {
   const d = Math.floor(depth);

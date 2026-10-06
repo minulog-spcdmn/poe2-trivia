@@ -14,6 +14,7 @@
 // so the pen can run outward along the ornament.
 
 import type { Pt } from './arcane.ts';
+import { emblemOf } from './backdrops.ts';
 
 /** main: a gold line; hair: a fine one; hatch: shading; ember: a line that glows (a crack, a flame's ridge). */
 export type OrnamentKind = 'main' | 'hair' | 'hatch' | 'ember';
@@ -344,9 +345,9 @@ const BY_NAME: Record<string, (d: Draw) => void> = {
   'Primeval Ruins': fire,
 };
 
-/** The ornament of the zone called `name` (a stratum's name, lib/descent), `L` px long, within ±`s`. */
+/** The ornament of the zone called `name` (a stratum's name, lib/descent; past the zones, its archetype's zone's, lib/backdrops.ts emblemOf), `L` px long, within ±`s`. */
 export function ornamentOf(name: string, L: number, s: number): Ornament {
-  return build(L, s, BY_NAME[name] ?? lamp);
+  return build(L, s, BY_NAME[name] ?? BY_NAME[emblemOf(name) ?? ''] ?? lamp);
 }
 
 export const ORNAMENT_NAMES = Object.keys(BY_NAME);

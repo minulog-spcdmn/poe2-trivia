@@ -125,8 +125,8 @@ export const ZONE_MOTION: ZoneMotion[] = [
     0.1,
   ),
   // Magma Fissure: heat lifts them fast and ever faster, swaying and
-  // shivering in it, flickering; as the magma cools over its last depths
-  // they slow.
+  // shivering in it, flickering; as the magma cools over its handover to
+  // the next zone they slow.
   zone(motion({ name: 'embers rising on the heat', rise: 1.5, accel: 1, driftSpread: 0.04, sway: 0.8, swayRate: 1.2, shimmer: 2.5, flicker: 0.4, flickerRate: 1.3, cool: 0.7 })),
   // Frozen Hollow, cold and still: snow drifting down slowly on a faint
   // draught, swaying lazily side to side as it falls, catching the light

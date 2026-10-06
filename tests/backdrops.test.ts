@@ -4,9 +4,9 @@ import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { backdropsErrors, cloneData, ENV_TONES, ENVIRONMENTS, formatBackdrops, lookErrors, stopsOf, withTones, type Backdrops, type Look } from '../src/lib/backdropData.ts';
-import { DEFAULT_SETTINGS, generate, hsv, hueDistance, hueOf, keepLocked, seedOf, stratumSeed } from '../src/lib/backdropGen.ts';
-import { endgame, endgameAt, placeAt, SHIPPED, setBackdrops, seedAt, VIVID, zones, zoneSignatures } from '../src/lib/backdrops.ts';
-import { brightnessAt, calibrateLight, descent, LIGHT_STEP, lookOf, luminanceAt, measuredAt, MEASURED, STRATA, stratumName } from '../src/lib/descent.ts';
+import { DEFAULT_SETTINGS, generate, generateStratum, hsv, hueDistance, hueOf, keepLocked, seedOf, stratumSeed } from '../src/lib/backdropGen.ts';
+import { archetypeAt, endgame, endgameAt, SHIPPED, setBackdrops, seedAt, VIVID, zones, zoneSignatures } from '../src/lib/backdrops.ts';
+import { brightnessAt, calibrateLight, descent, LIGHT_STEP, lookOf, luminanceAt, measuredAt, MEASURED, settledAt, STRATA, stratumName } from '../src/lib/descent.ts';
 import { PROFILE_NAMES, SURFACE_MOTION, ZONE_MOTION } from '../src/lib/emberProfiles.ts';
 import { zoneMotionOf } from '../src/lib/emberMotion.ts';
 
@@ -128,26 +128,25 @@ test('locked groups stay as they were when the rest is generated again', () => {
   assert.deepEqual(kept.look.env, b.look.env);
 });
 
-test('the endgame: every stratum generated from its own seed (or a re-roll of it), the same for everyone, the hue moving on each time', () => {
+test('the endgame: every stratum generated from its own seed (or a re-roll of it) as its archetype, the same for everyone, another archetype each time', () => {
   for (let k = STRATA.length; k < 400; k++) {
     const g = endgameAt(k);
     assert.equal(g.seed, (seedAt(k) + g.rolled) >>> 0);
     const steer = { avoid: zoneSignatures(), vivid: VIVID };
-    assert.deepEqual(g, { ...generate(g.seed, endgame.settings, placeAt(k, g.seed), steer), rolled: g.rolled }, `stratum ${k}`);
-    const prev = k === STRATA.length ? hueOf(lookOf(k - 1).smoke).hue : endgameAt(k - 1).hue;
-    assert.ok(hueDistance(g.hue, prev) >= 80, `stratum ${k}: ${g.hue} after ${prev}`);
+    assert.deepEqual(g, { ...generateStratum(g.seed, endgame.settings, archetypeAt(k), steer), rolled: g.rolled }, `stratum ${k}`);
+    if (k > STRATA.length) assert.notEqual(g.kind, endgameAt(k - 1).kind, `stratum ${k}: ${g.kind} twice`);
   }
   // Far down too, never out of the ordinary.
   for (const k of [1e3, 1e5 + 7, 1e8 + 3]) {
     assert.deepEqual(lookErrors(lookOf(k)), []);
-    assert.ok(hueDistance(endgameAt(k).hue, endgameAt(k - 1).hue) >= 80);
-    assert.ok(names.includes(stratumName(k)));
+    assert.notEqual(endgameAt(k).kind, endgameAt(k - 1).kind);
+    assert.ok(stratumName(k) && !names.includes(stratumName(k)) && stratumName(k) !== stratumName(k - 1));
   }
 });
 
 test("each generated stratum is lit to keep to the scene's brightness where it settles", () => {
   for (let k = STRATA.length; k < 60; k++) {
-    const d = 10 * k + 1;
+    const d = settledAt(k);
     assert.equal(lookOf(k).lightK, calibrateLight(endgameAt(k).look, k));
     const light = descent(d).light;
     assert.ok(light > 0.8 && light < 1.25, `stratum ${k}: light ${light.toFixed(3)}`);
@@ -177,12 +176,12 @@ test("the tool's hook shows a draft at once, and the file's again after; the gam
   draft.endgame.settings = { ...draft.endgame.settings, hue: [180, 240] };
   withBackdrops(draft, () => {
     assert.deepEqual(lookOf(3).smoke, [10, 20, 30]);
-    assert.deepEqual(descent(31).look.smoke, [10, 20, 30]);
+    assert.deepEqual(descent(settledAt(3)).look.smoke, [10, 20, 30]);
     assert.equal(seedAt(12), 777);
     assert.equal(endgameAt(12).seed, 777);
     for (let k = 10; k < 30; k++) assert.ok(hueOf(endgameAt(k).look.smoke).sat < 0.15 || hueDistance(hueOf(endgameAt(k).look.smoke).hue, 210) <= 75, `stratum ${k} out of its range`);
     // The changed zone's measured corrections are dropped: none while it shows alone.
-    assert.deepEqual(measuredAt(31), [1, 1]);
+    assert.deepEqual(measuredAt(settledAt(3)), [1, 1]);
     assert.deepEqual(measuredAt(11), kept, 'the zones not changed keep theirs');
     // The light is worked out again, as steadily.
     for (let d = 2; d <= 300; d++) assert.ok(Math.abs(Math.log(descent(d).light / descent(d - 1).light)) <= LIGHT_STEP + 1e-9, `the light swings at ${d}`);

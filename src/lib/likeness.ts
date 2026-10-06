@@ -103,9 +103,10 @@ const TONE_SHARE = 0.7;
  *   turn of hue with the same effects only just reaches it (typically
  *   0.51): it takes a new hue and a new set of effects, or one of them
  *   and different embers and light besides.
- * - The generator reaches it without strain: steered by construction,
- *   about one stratum in eight needs a re-roll and none more than a few
- *   (tests/likeness.test.ts).
+ * - The generator reaches it without strain: each stratum an archetype
+ *   of its own effects (lib/archetypes.ts), none sharing an effect with
+ *   the one before, about one stratum in fifteen needs a re-roll and none
+ *   more than a few (tests/likeness.test.ts).
  *
  * It is a fixed bar, not one worked out from the zones: zones retuned to
  * look alike would otherwise lower it for every stratum.

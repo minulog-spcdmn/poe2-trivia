@@ -110,7 +110,7 @@ vec3 env_lamps(vec3 col, vec2 p, vec2 q, vec2 xy, float S, float W, float H, flo
 // (c1) through them, crimson (c2) at their edges, each crack's heat
 // wandering between them (vary) on the magma's own clock.
 //
-// Over the Magma Fissure's last depths it cools (uFxK.x, magmaCooling in
+// Through its handover to the next zone it cools (uFxK.x, magmaCooling in
 // lib/descent.ts) as real lava does: a dark crust forms from each crack's
 // edges inward, so the cracks narrow and their glow's halo draws in with
 // them; the thin stretches crust over first and the glowing seams linger

@@ -1,11 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { cloneData, ENV_TONES, ENVIRONMENTS, lookErrors, motionErrors, stopsOf, type Backdrops, type Look, type ZoneBackdrop } from '../src/lib/backdropData.ts';
-import { generate, hsv, hueDistance, hueOf } from '../src/lib/backdropGen.ts';
-import { endgame, endgameAt, isPinned, likenessAt, placeAt, SHIPPED, setBackdrops, seedAt, signatureAt, TRIES, VIVID, zones, zoneSignatures } from '../src/lib/backdrops.ts';
+import { EFFECT_FLOOR } from '../src/lib/archetypes.ts';
+import { generate, generateStratum, hsv, hueDistance, hueOf, pickTone, rng } from '../src/lib/backdropGen.ts';
+import { archetypeAt, endgame, endgameAt, isPinned, likenessAt, SHIPPED, setBackdrops, seedAt, signatureAt, TRIES, VIVID, zones, zoneSignatures } from '../src/lib/backdrops.ts';
 import { lookOf, STRATA } from '../src/lib/descent.ts';
 import { PROFILE_NAMES } from '../src/lib/emberProfiles.ts';
-import { colourDistance, difference, EFFECTS, lchOf, nearest, parts, signatureOf, UNLIKE, type Signature } from '../src/lib/likeness.ts';
+import { colourDistance, difference, EFFECTS, lchOf, nearest, parts, signatureOf, toneDistance, UNLIKE, type Signature } from '../src/lib/likeness.ts';
+
+/** Stratum `k` as generated from `seed` (its archetype, steered clear of the zones), not re-rolled. */
+const made = (k: number, seed: number) => generateStratum(seed, endgame.settings, archetypeAt(k), { avoid: zoneSignatures(), vivid: VIVID });
 
 const FIRST = STRATA.length;
 /** The strata checked run from the first past the zones (k 10, stratum 11: depths 101 to 110) to k 1009 (depth 10100). */
@@ -145,7 +149,7 @@ test("the endgame's strata are the same for everyone, whichever is asked for fir
   // And as generated from its seed, by anyone.
   for (const k of ks) {
     const g = endgameAt(k);
-    assert.deepEqual(g, { ...generate(g.seed, endgame.settings, placeAt(k, g.seed), { avoid: zoneSignatures(), vivid: VIVID }), rolled: g.rolled });
+    assert.deepEqual(g, { ...made(k, g.seed), rolled: g.rolled });
   }
 });
 
@@ -155,7 +159,7 @@ test('a pinned seed is never re-rolled, even too like a zone: the tool only warn
   let bad = -1;
   for (; k < 80 && bad < 0; k += 2) {
     for (let s = 0; s < 400 && bad < 0; s++) {
-      const sig = signatureOf(generate(s, endgame.settings, placeAt(k, s), { avoid: zoneSignatures(), vivid: VIVID }));
+      const sig = signatureOf(made(k, s));
       if (nearest(sig, zoneSignatures()).difference < UNLIKE) bad = s;
     }
   }
@@ -171,7 +175,7 @@ test('a pinned seed is never re-rolled, even too like a zone: the tool only warn
       const g = endgameAt(j);
       assert.equal(g.seed, seed);
       assert.equal(g.rolled, 0);
-      assert.deepEqual(g, generate(seed, endgame.settings, placeAt(j, seed), { avoid: zoneSignatures(), vivid: VIVID }));
+      assert.deepEqual(g, made(j, seed));
     }
     // Its likeness says so (the tool's warning).
     assert.ok(likenessAt(k).difference < UNLIKE);
@@ -215,16 +219,16 @@ test("the endgame is more colourful than the zones' generator, still within each
     const g = endgameAt(k);
     const l = g.look;
     steered.push(chroma(l));
-    plain.push(chroma(generate(g.seed, endgame.settings, placeAt(k, g.seed)).look));
-    // Smoke drifts still a few neighbouring hues, as on the start page; muted values.
-    for (const c of [l.smoke, l.smokeB, l.smokeHi, l.smokeHiB, l.floor]) {
+    plain.push(chroma(generate(g.seed, endgame.settings).look));
+    // The smoke's low drifts and its high right one a few neighbouring hues, as on the start page; the rest may take the accents. Muted values.
+    for (const c of [l.smoke, l.smokeB, l.smokeHi]) {
       const { hue: h, sat } = hueOf(c);
       if (sat > 0.15) assert.ok(hueDistance(h, g.hue) <= 60, `stratum ${k + 1}: ${c} off the hue`);
-      assert.ok(sat <= 0.96 && Math.max(...c) <= 200, `stratum ${k + 1}: ${c} too bright`);
     }
-    // At most two quiet details, no trunks, in their kinds' colours.
+    for (const c of [l.smoke, l.smokeB, l.smokeHi, l.smokeHiB, l.floor, l.haze, l.glow]) assert.ok(hueOf(c).sat <= 0.96 && Math.max(...c) <= 200, `stratum ${k + 1}: ${c} too bright`);
+    // One or two effects, each clearly there but quiet, no trunks, in their kinds' colours.
     const details = l.env.filter((v) => v > 0);
-    assert.ok(details.length <= 2 && details.every((v) => v <= 0.65));
+    assert.ok(details.length >= 1 && details.length <= 2 && details.every((v) => v >= EFFECT_FLOOR && v <= 0.65));
     assert.ok(l.env[ENVIRONMENTS.indexOf('mist')] < 0.45);
     l.env.forEach((e, i) => {
       if (!(e > 0)) return;
@@ -239,20 +243,34 @@ test("the endgame is more colourful than the zones' generator, still within each
       if (name === 'frost') for (const c of tone.colors) assert.ok(hueOf(c).sat < 0.12 || hueDistance(hue(c), 215) <= 35);
     });
   }
-  assert.ok(mean(steered) > 1.1 * mean(plain), `the endgame's smoke ${mean(steered).toFixed(3)} against ${mean(plain).toFixed(3)} unsteered`);
-  t.diagnostic(`smoke chroma (OKLCh): the endgame's ${mean(steered).toFixed(3)}, unsteered ${mean(plain).toFixed(3)}, the zones' ${mean(zones.map((z) => chroma(z.look))).toFixed(3)}`);
+  assert.ok(mean(steered) > 1.1 * mean(plain), `the endgame's smoke ${mean(steered).toFixed(3)} against ${mean(plain).toFixed(3)} from the zones' generator`);
+  t.diagnostic(`smoke chroma (OKLCh): the endgame's ${mean(steered).toFixed(3)}, the zones' generator's ${mean(plain).toFixed(3)}, the zones' ${mean(zones.map((z) => chroma(z.look))).toFixed(3)}`);
 });
 
-test("by construction, an effect a zone of a kindred hue is known for comes up less (magma in a red hall)", () => {
-  const magma = ENVIRONMENTS.indexOf('magma');
-  const red = { ...endgame.settings, hue: [355, 20] as [number, number], detail: 1 };
-  let plain = 0;
+test("an effect a zone shows is coloured unlike that zone's, near the colours its archetype has for it", () => {
   let steered = 0;
-  for (let s = 0; s < 400; s++) {
-    if (generate(s, red).look.env[magma] > 0) plain++;
-    if (generate(s, red, undefined, { avoid: zoneSignatures(), vivid: VIVID }).look.env[magma] > 0) steered++;
+  let plain = 0;
+  let n = 0;
+  const sigs = zoneSignatures();
+  for (let k = FIRST; k < 400; k++) {
+    const g = endgameAt(k);
+    g.look.env.forEach((e, i) => {
+      if (!(e > 0)) return;
+      const theirs = sigs.filter((z) => z.fx[i] > 0).map((z) => z.fxTone[i]!);
+      if (!theirs.length) return;
+      const name = ENVIRONMENTS[i];
+      const far = (tone: { colors: number[][] }) => Math.min(...theirs.map((z) => toneDistance(i, tone.colors.map((c) => lchOf(c)), z)));
+      // The same colours picked without a zone to keep from (the same stream of numbers, so the same aim).
+      const hueNow = hueOf(stopsOf(g.look.tones[name]!)[1]).hue;
+      const free = pickTone(name, hueNow, rng(1234 + k), { avoid: [], sat: [0.4, 0.9], bold: VIVID });
+      const kept = pickTone(name, hueNow, rng(1234 + k), { avoid: sigs, sat: [0.4, 0.9], bold: VIVID });
+      steered += far(kept);
+      plain += far(free);
+      n++;
+    });
   }
-  assert.ok(steered < plain / 2, `magma in ${steered} red halls steered, ${plain} not`);
+  assert.ok(n > 50, `${n} effects a zone shows`);
+  assert.ok(steered > plain, `kept from the zones' colours by ${(steered / n).toFixed(3)} against ${(plain / n).toFixed(3)}`);
 });
 
 test('the generator stays cheap: 1000 strata, steered and re-rolled where needed', (t) => {
@@ -261,5 +279,5 @@ test('the generator stays cheap: 1000 strata, steered and re-rolled where needed
   for (let k = FIRST; k < FIRST + 1000; k++) endgameAt(k);
   const ms = performance.now() - start;
   t.diagnostic(`1000 strata in ${ms.toFixed(0)} ms (${ms.toFixed(0)} µs a stratum)`);
-  assert.ok(ms < 3000, `${ms.toFixed(0)} ms`);
+  assert.ok(ms < 2000, `${ms.toFixed(0)} ms`);
 });

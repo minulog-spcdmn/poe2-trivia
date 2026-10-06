@@ -21,7 +21,7 @@
 //     0.5, 0.75 and 1 (ENV_ADD, ENV_HALL; --e and --env for others): paste
 //     them into lib/descent.ts, then
 //   node scripts/measure-luminance.mjs calibrate --skip-env
-//     Each depth to 91 (the last the zones show alone) drawn at light 1 and
+//     Each depth to 94 (the last the zones show alone) drawn at light 1 and
 //     0 against the estimate (MEASURED): paste it in too, and set every
 //     zone's `measured` back to true in src/data/backdrops.json (the
 //     corrections hold for the looks they were measured with).
@@ -243,16 +243,16 @@ try {
       console.log('shot', d);
     }
   } else if (mode === 'calibrate') {
-    const to = Number(opt('to', 91));
+    const to = Number(opt('to', 94));
     const E = String(opt('e', '0.25,0.5,0.75,1')).split(',').map(Number);
     const only = opt('env', null);
-    // Each environment at full features, no dark closed in, in its own stratum's hall.
+    // Each environment at full features, no dark closed in, in its own stratum's hall (where it shows alone, settledAt).
     const add = [];
     const hall = [];
     const STRATA = opt('skip-env', false) ? 0 : await M(() => M.D.STRATA.length);
     for (let i = 0; i < STRATA; i++) {
       if (only !== null && !ranges(only).includes(i)) continue;
-      await M((i) => M.depth(10 * i + 1), i);
+      await M((i) => M.depth(M.D.settledAt(i)), i);
       const base = { close: 0, features: 1 };
       const h0 = (await M((o) => M.set(o), { ...base, light: 1, env: [] })) - (await M((o) => M.set(o), { ...base, light: 0, env: [] }));
       const a = [0];

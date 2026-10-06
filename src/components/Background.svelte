@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { startBackdrop } from '../lib/backdrop';
-  import { ENVIRONMENTS, descent, lookOf, onDescent, toneOf, type Descent } from '../lib/descent';
+  import { ENVIRONMENTS, descent, emberTurn, lookOf, onDescent, toneOf, type Descent } from '../lib/descent';
   import { stopsOf } from '../lib/backdropData';
 
   // Ambient backdrop: warm glow, vignette and slowly rising embers. The WebGL
@@ -26,8 +26,8 @@
   const stopOf = (i: number, k: number) => stopsOf(toneOf(look, i))[k].map(Math.round).join(', ');
   /** Ember colours (0-1) as CSS, the halo dimmed to `a`. */
   const glow = (c: readonly number[], a: number) => css(c.map((v) => v * 255), a);
-  /** The first this many CSS embers burn in the stratum turning in, the rest in the one before. */
-  const turned = $derived(Math.round(embers.length * dsc.turn));
+  /** The first this many CSS embers burn in the stratum turning in, the rest in the one before (as many as emberTurn has it). */
+  const turned = $derived(Math.round(embers.length * emberTurn(dsc.turn)));
   const emberLooks = $derived([lookOf(dsc.stratum - 1), lookOf(dsc.stratum)]);
   let webgl = $state(false);
   let failed = $state(false);

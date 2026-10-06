@@ -6,6 +6,8 @@
 // of a look, how much of each environment the backdrop already draws, a
 // motion profile tweaked); nothing new is drawn.
 //
+// The zones' generator (generate, the backdrop tool's):
+//
 // - One base hue, its neighbours on the wheel in the smoke (as on the start
 //   page, where the smoke's four drifts are a few neighbouring hues), the
 //   light from below near it, the haze a further neighbour; muted, dark.
@@ -18,19 +20,22 @@
 //   kind allows (pickTone).
 // - Embers in the hue, moving as its mood has it, as a soft rule: warm
 //   palettes rise, cold ones fall, violet ones are drawn into the eddies.
-// - For the endgame, steered clear of the hand-made zones (Steer): the
-//   effects a zone of a kindred hue is known for, and its embers' way of
-//   moving, come up less; a second effect a zone already pairs with the
-//   first comes up less; an effect a zone shows takes the colours furthest
-//   from that zone's its rule allows; and the palette is bolder than the
-//   zones'. lib/backdrops.ts re-rolls what still comes out too alike, as
-//   lib/likeness.ts measures it.
+//
+// The endgame's strata (generateStratum) each take an archetype of
+// lib/archetypes.ts instead, a mood with a vibe of its own: its one or two
+// effects, clearly there but quiet; a palette in a colour scheme (a base
+// hue with its neighbours in the smoke, and a contrasting accent in the
+// light from below, the haze, the glow or an effect's colours); its embers'
+// colour and motion; and its character. Bolder than the zones (Steer), each
+// effect a zone shows in colours kept from that zone's; lib/backdrops.ts
+// re-rolls what still comes out too alike, as lib/likeness.ts measures it.
 //
 // Pure and seeded: the same seed and settings always give the same backdrop
 // (the endgame's strata are the same for everyone, see lib/backdrops.ts).
 
 import { ENV_TONES, ENVIRONMENTS, stopsOf, type EnvName, type GenSettings, type Group, type Look, type MotionTweak, type RGB, type Tone } from './backdropData.ts';
 import { profileOf, tweakOf } from './emberProfiles.ts';
+import { ARCHETYPES, EFFECT_CEILING, EFFECT_FLOOR, MIST_CEILING, type HueRef, type Variant } from './archetypes.ts';
 import { lchOf, toneDistance, type LCh, type Signature } from './likeness.ts';
 
 /** The settings the endgame starts from, and the tool's generator. */
@@ -45,6 +50,9 @@ export interface Generated {
   hue: number;
   look: Look;
   motion: MotionTweak;
+  /** A stratum past the zones: its archetype (lib/archetypes.ts, its kind) and its variant's colour scheme. */
+  kind?: string;
+  scheme?: string;
 }
 
 // ---- seeds ---------------------------------------------------------------------
@@ -62,7 +70,7 @@ export function rng(seed: number): () => number {
 }
 
 /** Mixes two whole numbers into a seed. */
-function mix(a: number, b: number): number {
+export function mix(a: number, b: number): number {
   let h = Math.imul((a >>> 0) ^ 0x9e3779b9, 0x85ebca6b) ^ Math.imul(b >>> 0, 0xc2b2ae35);
   h ^= h >>> 16;
   h = Math.imul(h, 0x7feb352d);
@@ -195,73 +203,24 @@ function pick(weights: number[], r: number) {
   return weights.length - 1;
 }
 
-// ---- steering clear of the zones ------------------------------------------------
-
-/**
- * What the endgame's generator keeps clear of, and how boldly it colours.
- * Without it, generate is the zones' generator (the tool's) as it always
- * was.
- */
-export interface Steer {
-  /** The looks to stay unlike (the hand-made zones', lib/likeness.ts's signatures). */
-  avoid: readonly Signature[];
-  /**
-   * How much more colourful than the zones' generator, 0 to 1: more
-   * saturated smoke whose drifts spread further round the wheel, livelier
-   * embers, and each detail's colours drawn from the whole of its rule's
-   * ranges rather than mostly toward the hall's hue.
-   */
-  vivid: number;
-}
-
-/**
- * How much a hall of hue `h` is kin to each zone to avoid (0 to 1): near
- * its smoke's hue, and as much as that smoke is coloured at all (a grey
- * zone, the Petrified Forest, is known by its details, not its hue).
- */
-const kinship = (h: number, avoid: readonly Signature[]) => avoid.map((z) => near(h, z.wheel, 40) * Math.min(1, z.chroma / 0.05));
-
-/**
- * The environments' weights for a hall of hue `h` steered clear of the
- * zones: an effect a zone of a kindred hue is known for weighs much less
- * (magma in a red hall would read as the Magma Fissure), and the void,
- * which takes any hue, and the fog are always a little to hand to change a
- * hall's character.
- */
-function steeredWeights(h: number, steer: Steer, kin: number[]) {
-  return ENVIRONMENTS.map((name, i) => {
-    let w = near(h, ENV_MOOD[name].hue, ENV_MOOD[name].width) + (name === 'void' ? 0.08 : name === 'mist' ? 0.04 : 0.03);
-    steer.avoid.forEach((z, j) => (w *= 1 - 0.9 * kin[j] * z.fx[i]));
-    return Math.max(w, 0.002);
-  });
-}
-
-/** After picking environment `first`: the others weighed less as zones already pair them with it (a combination no zone uses is favoured). */
-function pairWeights(weights: number[], first: number, steer: Steer) {
-  for (const z of steer.avoid) if (z.fx[first] > 0) weights.forEach((w, j) => (weights[j] = w * (1 - 0.7 * z.fx[j] * z.fx[first])));
-}
-
-// ---- the generator ---------------------------------------------------------------
+// ---- the zones' generator ----------------------------------------------------------
 
 /**
  * A backdrop from `seed`, within `settings`: its base hue `place` (0 to 1)
  * of the way through the settings' hue range, or where the seed puts it.
- * Its lightK is 1: how bright its hall is lit is worked out where it is
- * shown (calibrateLight in lib/descent.ts).
+ * The tool's generator for the zones; the endgame's strata are made by
+ * generateStratum instead. Its lightK is 1: how bright its hall is lit is
+ * worked out where it is shown (calibrateLight in lib/descent.ts).
  */
-export function generate(seed: number, settings: GenSettings, place?: number, steer?: Steer): Generated {
+export function generate(seed: number, settings: GenSettings, place?: number): Generated {
   const r = rng(seed);
   const own = r();
   const h = hueAt(settings, place ?? own);
-  const vivid = clamp01(steer?.vivid ?? 0);
-  // (Bolder: a third of the way on to nearly full saturation; never neon, as the values stay the start page's.)
-  const s0 = lerp(settings.sat[0], settings.sat[1], r());
-  const s = Math.min(0.92 + 0.03 * vivid, s0 + (0.95 - s0) * 0.35 * vivid);
+  const s = Math.min(0.92, lerp(settings.sat[0], settings.sat[1], r()));
   const dk = clamp01(settings.darkness + (r() - 0.5) * 0.2);
-  const kin = steer ? kinship(h, steer.avoid) : [];
 
   // The smoke: the base hue and its neighbours, the high drifts paler.
-  const spread = (14 + 22 * r()) * (1 + 0.3 * vivid);
+  const spread = 14 + 22 * r();
   const side = r() < 0.5 ? -1 : 1;
   const v = lerp(0.66, 0.44, dk) * (0.92 + 0.16 * r());
   const smoke = hsv(h, s, v);
@@ -277,7 +236,7 @@ export function generate(seed: number, settings: GenSettings, place?: number, st
 
   // The embers: the hue, bright; their core near white.
   const eh = h + (r() - 0.5) * 24;
-  const es = lerp(0.45, 0.6, vivid) + lerp(0.45, 0.35, vivid) * r();
+  const es = 0.45 + 0.45 * r();
   const ember = hsv(eh, es, 1);
   const core = hsv(eh, 0.08 + 0.18 * r(), 1);
   let accent = hsv(eh, Math.min(0.55, es * 0.7), 1);
@@ -307,7 +266,7 @@ export function generate(seed: number, settings: GenSettings, place?: number, st
     crowd: r2(clamp01(settings.embers + (r() - 0.5) * 0.3)),
     speed: 1,
     size: r2(0.75 + 0.6 * r()),
-    bright: r2(0.9 + 0.1 * vivid + 0.35 * r()),
+    bright: r2(0.9 + 0.35 * r()),
     agit: 0,
     fall: 0,
     glint: [1, 1, 1],
@@ -332,26 +291,30 @@ export function generate(seed: number, settings: GenSettings, place?: number, st
   const amount = clamp01(settings.detail);
   const roll = r();
   const count = amount <= 0 ? 0 : roll < (1 - amount) * 0.45 ? 0 : roll > 1 - amount * 0.35 ? 2 : 1;
-  const weights = steer ? steeredWeights(h, steer, kin) : ENVIRONMENTS.map((name) => near(h, ENV_MOOD[name].hue, ENV_MOOD[name].width) + 0.02);
+  const weights = ENVIRONMENTS.map((name) => near(h, ENV_MOOD[name].hue, ENV_MOOD[name].width) + 0.02);
   for (let n = 0; n < count; n++) {
     const i = pick(weights, r());
     const most = ENV_MOOD[ENVIRONMENTS[i]].most;
     look.env[i] = r2(Math.min(most, 0.15 + (0.25 + 0.35 * amount) * r() + 0.1 * amount));
     weights[i] = 0;
-    if (steer) pairWeights(weights, i, steer);
     // (Its colours from a stream of their own, so the rest of the look is what the seed always gave.)
-    look.tones[ENVIRONMENTS[i]] = pickTone(ENVIRONMENTS[i], h, rng(mix(seed, 0x70e5 + i)), steer);
+    look.tones[ENVIRONMENTS[i]] = pickTone(ENVIRONMENTS[i], h, rng(mix(seed, 0x70e5 + i)));
   }
 
-  // The embers' way of moving, as the hue's mood has it (steered: not as a zone of a kindred hue moves them).
-  const moods = MOTION_MOOD.map((p) => {
-    let w = near(h, p.hue, p.width) + 0.03;
-    steer?.avoid.forEach((z, j) => (w *= z.profile === p.name ? 1 - 0.8 * kin[j] : 1));
-    return w;
-  });
-  const m = MOTION_MOOD[pick(moods, r())];
-  const base = tweakOf(profileOf(m.name));
-  const motion: MotionTweak = {
+  // The embers' way of moving, as the hue's mood has it.
+  const m = MOTION_MOOD[pick(MOTION_MOOD.map((p) => near(h, p.hue, p.width) + 0.03), r())];
+  const motion = motionFrom(m.name, r);
+  look.agit = r2(Math.min(0.9, (0.1 + 0.5 * r()) * motion.turbulence));
+  keepMotion(look, motion, r);
+  // Sparks bursting up from a fire now and then, rising and warm only.
+  if (motion.rise > 0.5 && near(h, 15, 30) > 0.5 && r() < 0.4) look.burst = r2(0.1 + 0.4 * r());
+  return { seed, rolled: 0, hue: Math.round(h), look, motion };
+}
+
+/** A motion profile tweaked a little by the seed. */
+function motionFrom(name: string, r: () => number): MotionTweak {
+  const base = tweakOf(profileOf(name));
+  return {
     profile: base.profile,
     speed: r2(0.8 + 0.4 * r()),
     rise: r2(base.rise * (0.8 + 0.4 * r())),
@@ -359,67 +322,271 @@ export function generate(seed: number, settings: GenSettings, place?: number, st
     turbulence: r2(0.75 + 0.5 * r()),
     swirl: r2(base.swirl * (0.8 + 0.4 * r())),
   };
-  look.agit = r2(Math.min(0.9, (0.1 + 0.5 * r()) * motion.turbulence));
-  // (Kept for the record, as the zones have them: the motion moves them.)
+}
+
+/** The look's record of its motion (kept as the zones have them: the motion moves them). */
+function keepMotion(look: Look, motion: MotionTweak, r: () => number) {
   look.speed = r2(Math.max(0.25, Math.abs(motion.rise) * motion.speed));
   look.fall = motion.rise < 0 ? r2(Math.min(1, 0.4 - motion.rise)) : 0;
   look.eddy = motion.swirl > 0 ? r2(0.6 + 0.4 * r()) : 0;
-  // Sparks bursting up from a fire now and then, rising and warm only.
-  if (motion.rise > 0.5 && near(h, 15, 30) > 0.5 && r() < 0.4) look.burst = r2(0.1 + 0.4 * r());
-  return { seed, rolled: 0, hue: Math.round(h), look, motion };
+}
+
+// ---- the endgame's strata -----------------------------------------------------------
+
+/**
+ * What the endgame's strata keep clear of, and how boldly they colour.
+ */
+export interface Steer {
+  /** The looks to stay unlike (the hand-made zones', lib/likeness.ts's signatures): an effect a zone shows takes, near the colours its archetype has for it, those furthest from that zone's. */
+  avoid: readonly Signature[];
+  /**
+   * How much more colourful than the zones' generator, 0 to 1: more
+   * saturated smoke whose drifts spread further round the wheel, livelier
+   * embers, and each effect's colours in the upper half of its rule's
+   * saturation and variation.
+   */
+  vivid: number;
+}
+
+/** Which of an effect's colour stops shows most (ENV_TONES' weights): its colour, as a viewer reads it. */
+const mainStop = (name: EnvName) => {
+  const w = ENV_TONES[name].weight;
+  return w.indexOf(Math.max(...w));
+};
+/** The hue an effect is seen in: its main stop's. */
+const fxHueOf = (name: EnvName, tone: Tone = ENV_TONES[name].tone) => hueOf(stopsOf(tone)[mainStop(name)]).hue;
+
+/**
+ * The accents a variant's scheme finds from base hue `h` (Scheme in
+ * lib/archetypes.ts), each jittered a little; `fx` the hues of its effects
+ * (their own colours).
+ */
+function accentsOf(v: Variant, h: number, fx: [number, number], r: () => number): [number, number] {
+  const jit = () => (r() - 0.5) * 20;
+  const side = r() < 0.5 ? -1 : 1;
+  switch (v.scheme) {
+    case 'complement':
+      return [wrap(h + 180 + (v.turn ?? 0) + jit()), wrap(h + side * (25 + 10 * r()))];
+    case 'split': {
+      const d = v.turn ?? side * 30;
+      return [wrap(h + 180 + d + jit()), wrap(h + 180 - d + jit())];
+    }
+    case 'triad': {
+      const d = v.turn ?? side * 120;
+      return [wrap(h + d + jit()), wrap(h - d + jit())];
+    }
+    case 'warm-cold':
+      return [wrap((v.from === 'fx2' ? fx[1] : fx[0]) + 0.5 * jit()), wrap(h + side * (25 + 10 * r()))];
+  }
+}
+
+/**
+ * A stratum past the zones from `seed`, as archetype `kind` of
+ * lib/archetypes.ts has it (lib/backdrops.ts deals them out), within
+ * `settings` (their saturation, darkness, detail and embers; their hue
+ * range, if narrowed, pulls the base hue into it), clear of `steer`'s zones
+ * and as colourful as it asks:
+ *
+ * - The palette by its variant's scheme: the base hue in the smoke, its
+ *   neighbours on the wheel in the other drifts (as on the start page),
+ *   and the accents the scheme finds (complementary, split-complementary,
+ *   a muted triad, or an effect's own warm colour against cold smoke)
+ *   given to the light from below, the haze, the glow or the high smoke,
+ *   as the variant has it. Muted and dark, the start page's values.
+ * - Its effects, its first always and its second as often as the
+ *   archetype pairs them, each from EFFECT_FLOOR to at most EFFECT_CEILING
+ *   (the mist under MIST_CEILING), in colours turned toward the hue the
+ *   archetype points it at, within its kind's rules (pickTone).
+ * - Its embers in the archetype's colour, moving one of its ways, as
+ *   restless, many and bursting as its character has it.
+ *
+ * Pure and seeded. Its lightK is 1 (calibrateLight in lib/descent.ts).
+ */
+export function generateStratum(seed: number, settings: GenSettings, kind: number, steer: Steer): Generated {
+  const a = ARCHETYPES[((kind % ARCHETYPES.length) + ARCHETYPES.length) % ARCHETYPES.length];
+  const r = rng(seed);
+  const vivid = clamp01(steer.vivid);
+  const variant = Math.floor(r() * a.variants.length);
+  const vr = a.variants[variant];
+
+  // The base hue, within the variant's window (and the settings' range, where narrowed).
+  let h = wrap(vr.hue[0] + wrap(vr.hue[1] - vr.hue[0]) * r());
+  if (hueSpan(settings) < 360) h = hueAt(settings, placeOf(settings, h));
+  const s0 = lerp(settings.sat[0], settings.sat[1], r()) * (vr.sat ?? 1);
+  const s = Math.min(0.92, s0 + (0.95 - s0) * 0.5 * vivid * (vr.sat ?? 1));
+  const dk = clamp01(settings.darkness + a.dark + (r() - 0.5) * 0.16);
+  const own: [number, number] = [fxHueOf(a.fx[0].env), fxHueOf(a.fx[1].env)];
+  const [a1, a2] = accentsOf(vr, h, own, r);
+  const triad = vr.scheme === 'triad';
+
+  // The effects first (their colours read the hues the palette is built on).
+  const count = r() < a.pair ? 2 : 1;
+  const amount = clamp01(settings.detail);
+  const env = ENVIRONMENTS.map(() => 0);
+  const tones: Look['tones'] = {};
+  const fxHue: [number, number] = [...own];
+  const hueFor = (ref: HueRef): number =>
+    ref === 'base' ? h : ref === 'a1' ? a1 : ref === 'a2' ? a2 : ref === 'fx1' ? fxHue[0] : ref === 'fx2' ? fxHue[1] : 'off' in ref ? wrap(h + ref.off) : ref.at;
+  const strengths = a.fx.map((e) => {
+    const most = e.env === 'mist' ? MIST_CEILING : EFFECT_CEILING;
+    return r2(Math.min(most, e.strength[1], Math.max(EFFECT_FLOOR, lerp(e.strength[0], e.strength[1], clamp01(0.7 * r() + 0.3 * amount)))));
+  });
+  for (let n = 0; n < count; n++) {
+    const e = a.fx[n];
+    const i = ENVIRONMENTS.indexOf(e.env);
+    env[i] = strengths[n];
+    // (Its colours from a stream of their own, so the rest of the look is what the seed always gave.)
+    tones[e.env] = pickTone(e.env, hueFor(e.toward), rng(mix(seed, 0x70e5 + i)), { avoid: steer.avoid, sat: e.sat, bold: vivid });
+    fxHue[n] = fxHueOf(e.env, tones[e.env]);
+  }
+
+  // The palette.
+  const isAccent = (ref: HueRef) => ref !== 'base' && !(typeof ref === 'object' && 'off' in ref && Math.abs(ref.off) <= 45);
+  const spread = (14 + 18 * r()) * (1 + 0.3 * vivid);
+  const side = r() < 0.5 ? -1 : 1;
+  const v = lerp(0.66, 0.44, dk) * (0.92 + 0.16 * r());
+  const smoke = hsv(h, s, v);
+  const smokeB = hsv(h - side * spread * (0.5 + 0.5 * r()), Math.min(0.92, s * (0.9 + 0.15 * r())), v * 0.8);
+  const smokeHi = hsv(h + side * spread * (0.3 + 0.5 * r()), s * 0.62, v * 0.95);
+  const smokeHiB = hsv(hueFor(vr.hiB) + (r() - 0.5) * 10, s * (isAccent(vr.hiB) ? (triad ? 0.45 : 0.55) : 0.6), v * 0.75);
+  const floorS = isAccent(vr.floor) ? Math.min(0.85, Math.max(0.45, s) * (triad ? 0.75 : 0.95)) : Math.min(0.92, s * 1.08);
+  const floor = hsv(hueFor(vr.floor) + (r() - 0.5) * 10, floorS, lerp(0.72, 0.52, dk));
+  const haze = hsv(hueFor(vr.haze) + (r() - 0.5) * 16, Math.min(0.7, Math.max(0.3, s) * (isAccent(vr.haze) ? 0.6 : 0.55)), lerp(0.58, 0.36, dk));
+  const glow = hsv(hueFor(vr.glow) + (r() - 0.5) * 12, Math.min(0.6, Math.max(0.3, s) * 0.5), lerp(0.86, 0.66, dk));
+  const mist = hsv(h, s, lerp(0.48, 0.32, dk));
+  const tint = hsv(h, 1, 1);
+
+  // The embers: the archetype's colour, bright; their core near white.
+  const eh = hueFor(a.ember.hue) + (r() - 0.5) * 16;
+  const es = lerp(a.ember.sat[0], a.ember.sat[1], r());
+  const ember = hsv(eh, es, 1);
+  const core = hsv(eh, Math.min(es, 0.08 + 0.18 * r()), 1);
+  let accent = hsv(eh, Math.min(0.55, Math.max(0.3, es * 0.7)), 1);
+  if (luma(accent) < 0.55) accent = hsv(eh, 0.3, 1);
+
+  const look: Look = {
+    shade: tint.map((c) => r2(0.74 + 0.34 * c)) as RGB,
+    dark: r2(Math.min(0.75, Math.max(0.1, lerp(0.32, 0.68, dk) + (r() - 0.5) * 0.08))),
+    floor: to255(floor),
+    floorK: r2(0.28 + 0.16 * r()),
+    floorH: r2(1 + 0.3 * r()),
+    haze: to255(haze),
+    hazeK: r2(lerp(a.hazeK[0], a.hazeK[1], r())),
+    glow: to255(glow),
+    lamp: r2(0.4 + 0.3 * r()),
+    smoke: to255(smoke),
+    smokeB: to255(smokeB),
+    smokeHi: to255(smokeHi),
+    smokeHiB: to255(smokeHiB),
+    smokeK: r2(Math.min(2.1, Math.max(0.8, lerp(1.2, 1.7, dk) + a.dense + (r() - 0.5) * 0.1))),
+    shadowK: r2(lerp(1.15, 1.55, dk)),
+    mist: to255(mist),
+    mistK: round(0.05 + 0.03 * r(), 0.005),
+    ember: to1(ember),
+    core: to1(core),
+    coreMix: r2(0.5 + 0.25 * r()),
+    crowd: r2(clamp01(settings.embers + a.crowd + (r() - 0.5) * 0.3)),
+    speed: 1,
+    size: r2(0.75 + 0.6 * r()),
+    bright: r2(0.9 + 0.1 * vivid + 0.35 * r()),
+    agit: 0,
+    fall: 0,
+    glint: [1, 1, 1],
+    glints: 0,
+    spread: 0,
+    burst: 0,
+    eddy: 0,
+    env,
+    tones,
+    accent: to255(accent),
+    lightK: 1,
+  };
+
+  // Glints now and then, in the embers' colour or the first accent.
+  look.glint = to1(hsv((r() < 0.5 ? eh : a1) + (r() - 0.5) * 20, 0.4 + 0.3 * r(), 1));
+  if (r() < 0.5) {
+    look.glints = r2(0.2 + 0.4 * r());
+    look.spread = r2(0.7 * r());
+  }
+
+  // The embers' way of moving, one of the archetype's; as restless as it is.
+  const motion = motionFrom(a.motion[Math.floor(r() * a.motion.length)], r);
+  look.agit = r2(Math.min(0.9, lerp(a.agit[0], a.agit[1], r()) * motion.turbulence));
+  keepMotion(look, motion, r);
+  if (a.burst && motion.rise > 0.5) look.burst = r2(lerp(a.burst[0], a.burst[1], r()));
+  return { seed, rolled: 0, hue: Math.round(h), look, motion, kind: a.kind, scheme: vr.scheme };
 }
 
 /** The signed turn (degrees, -180 to 180) from hue `a` to hue `b`. */
 const turnTo = (a: number, b: number) => ((((b - a) % 360) + 540) % 360) - 180;
 
+/** How the endgame picks an effect's colours (pickTone). */
+export interface ToneAim {
+  /** The zones' signatures: where one shows the effect, its colours are kept from theirs. */
+  avoid: readonly Signature[];
+  /** Where in the rule's saturation range (0 its least, 1 its most). */
+  sat: [number, number];
+  /** How bold (Steer's vivid): the variation in the upper half of its rule's range. */
+  bold: number;
+}
+
 /**
- * Colours for environment `name` in a hall of hue `hue`, within its kind's
- * rules (ENV_TONES in lib/backdropData.ts): its own colours turned toward
- * the hall's hue as far as its rule allows, and half way to a turn of its
- * own within that; their saturation scaled and their variation picked
- * within the rule's ranges. Each stop keeps its own value, so a magma's
- * white heat stays white hot and a frost's thick rime stays white.
+ * Colours for environment `name` turned toward hue `hue`, within its kind's
+ * rules (ENV_TONES in lib/backdropData.ts). Each stop keeps its own value,
+ * so a magma's white heat stays white hot and a frost's thick rime stays
+ * white.
  *
- * Steered (the endgame's), bolder and clear of the zones: the turn, the
- * saturation and the variation range over the whole of the rule (the
- * saturation and variation in its upper half), and where a zone shows the
- * effect, the turn is the one of a few across the rule's range whose
- * colours lie furthest from that zone's (a void in a green hall, say,
- * where the Abyssal City has its green one), the hall's hue breaking ties.
+ * The zones' generator: its own colours turned half way toward the hall's
+ * hue as far as its rule allows, and half way to a turn of its own within
+ * that; their saturation and variation anywhere in the rule's ranges.
+ *
+ * The endgame's (`aim`): turned toward `hue` as far as the rule allows,
+ * jittered a little; the saturation where the archetype puts it; and where
+ * a zone shows the effect, of the turns near that one the one whose
+ * colours lie furthest from that zone's (a void in a green hall, say, where
+ * the Abyssal City has its green one), so it keeps its mood but not the
+ * zone's look.
  */
-export function pickTone(name: EnvName, hue: number, r: () => number, steer?: Steer): Tone {
+export function pickTone(name: EnvName, hue: number, r: () => number, aim?: ToneAim): Tone {
   const rule = ENV_TONES[name];
   const own = stopsOf(rule.tone);
   const [lo, hi] = rule.turn;
-  const toward = Math.min(hi, Math.max(lo, turnTo(hueOf(own[1]).hue, hue)));
-  const bold = clamp01(steer?.vivid ?? 0);
-  let turn = lerp(0.5, 0.3, bold) * toward + lerp(0.5, 0.7, bold) * lerp(lo, hi, r());
-  const sat = lerp(rule.sat[0], rule.sat[1], lerp(0, 0.5, bold) + lerp(1, 0.5, bold) * r());
-  const vary = r2(lerp(rule.vary[0], rule.vary[1], lerp(0, 0.5, bold) + lerp(1, 0.5, bold) * r()));
-  const make = (t: number) =>
+  const clampTurn = (t: number) => Math.min(hi, Math.max(lo, t));
+  const toward = clampTurn(turnTo(hueOf(own[1]).hue, hue));
+  const make = (t: number, sat: number) =>
     own.map((c, k) => {
       const { hue: h, sat: s } = hueOf(c);
       const v = Math.max(...c) / 255;
       return to255(hsv(h + t * rule.follow[k], Math.min(1, s * sat), v));
     });
+  if (!aim) {
+    const turn = 0.5 * toward + 0.5 * lerp(lo, hi, r());
+    const sat = lerp(rule.sat[0], rule.sat[1], r());
+    const vary = r2(lerp(rule.vary[0], rule.vary[1], r()));
+    return { colors: make(turn, sat), vary };
+  }
+  const bold = clamp01(aim.bold);
+  let turn = clampTurn(toward + (r() - 0.5) * Math.min(24, 0.3 * (hi - lo)));
+  const sat = lerp(rule.sat[0], rule.sat[1], lerp(aim.sat[0], aim.sat[1], r()));
+  const vary = r2(lerp(rule.vary[0], rule.vary[1], lerp(0, 0.5, bold) + lerp(1, 0.5, bold) * r()));
   const i = ENVIRONMENTS.indexOf(name);
-  const theirs = steer ? steer.avoid.filter((z) => z.fx[i] > 0).map((z) => z.fxTone[i]!) : [];
+  const theirs = aim.avoid.filter((z) => z.fx[i] > 0).map((z) => z.fxTone[i]!);
   if (theirs.length) {
-    // A turn every 30 degrees or so across the rule's range, and the one the hall would have.
-    const n = Math.max(2, Math.round((hi - lo) / 30));
-    const turns = [turn, ...Array.from({ length: n + 1 }, (_, j) => lerp(lo, hi, j / n))];
+    // The turns near it (up to 30 degrees either way, within the rule), the nearer the better.
+    const t0 = turn;
     let best = -Infinity;
-    for (const t of turns) {
-      const lch: LCh[] = make(t).map((c) => lchOf(c));
+    for (const d of [0, -15, 15, -30, 30]) {
+      const t = clampTurn(t0 + d);
+      const lch: LCh[] = make(t, sat).map((c) => lchOf(c));
       const far = Math.min(...theirs.map((z) => toneDistance(i, lch, z)));
-      const score = far - 0.15 * (Math.abs(t - toward) / 360) + 0.02 * r();
+      const score = far - 0.4 * (Math.abs(t - t0) / 180) + 0.01 * r();
       if (score > best) {
         best = score;
         turn = t;
       }
     }
   }
-  return { colors: make(turn), vary };
+  return { colors: make(turn, sat), vary };
 }
 
 /** The groups of a look's fields the tool locks (lib/backdropData.ts's FIELDS), each a list of keys. */

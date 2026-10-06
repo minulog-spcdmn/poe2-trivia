@@ -27,6 +27,10 @@ import {
   stepPlunge,
   estimateLuminance,
   hallTurn,
+  emberTurn,
+  HALL_FROM,
+  settledAt,
+  TURN_FROM,
   dealtDeeper,
   magmaCooling,
   magmaCoolingOf,
@@ -113,10 +117,13 @@ test('every look stays finite and in range, however deep, even for nonsense dept
   }
 });
 
-test('the first ten depths already change, a little with every depth', () => {
-  assert.ok(difference(descent(1).look, descent(4).look) > 0.08, 'depth 4 looks like depth 1');
-  assert.ok(difference(descent(4).look, descent(7).look) > 0.15, 'depth 7 looks like depth 4');
-  assert.ok(difference(descent(7).look, descent(12).look) > 0.4, 'depth 12 looks like depth 7');
+test('the Mines hold for their first depths, but for the dark closing in; then the next zone creeps in, a little with every depth', () => {
+  const diff = (a: number, b: number) => difference(descent(a).look, descent(b).look);
+  assert.ok(diff(1, 4) > 0 && diff(1, 4) < 0.05, `depth 4 already turning (${diff(1, 4).toFixed(3)})`);
+  assert.ok(diff(4, 7) > 0.08, 'depth 7 looks like depth 4');
+  assert.ok(diff(7, 10) > 0.25, 'depth 10 looks like depth 7');
+  assert.ok(diff(10, 14) > 0.2, 'depth 14 looks like depth 10');
+  for (let d = 6; d <= 13; d++) assert.ok(diff(d - 1, d) > 0.01, `depth ${d} looks like depth ${d - 1}`);
 });
 
 test('past the zones, each ten depths look clearly unlike the ten before', () => {
@@ -149,7 +156,12 @@ test('the look changes steadily: every depth a small step, none much bigger than
   const zoneSteps = steps.slice(0, 99);
   const mean = zoneSteps.reduce((a, b) => a + b, 0) / zoneSteps.length;
   const max = Math.max(...steps);
-  assert.ok(max < 1.8 * mean, `the largest step ${max.toFixed(3)} is ${(max / mean).toFixed(2)} times the usual ${mean.toFixed(3)}`);
+  // (The handovers are eased: half way through one a step is half as big
+  // again as its average, and the hall holds still for a depth between two,
+  // so the largest comes to about 2.1 times the usual, where a straight
+  // ramp's came to 1.7. A handover squeezed into four depths would come to
+  // twice that.)
+  assert.ok(max < 2.25 * mean, `the largest step ${max.toFixed(3)} is ${(max / mean).toFixed(2)} times the usual ${mean.toFixed(3)}`);
   // Nor does the light the hall is drawn at swing from one depth to the next.
   for (let d = 2; d <= 600; d++) {
     const step = Math.abs(Math.log(descent(d).light / descent(d - 1).light));
@@ -164,34 +176,73 @@ test('the look changes steadily: every depth a small step, none much bigger than
   }
 });
 
-test("through each stratum the next creeps in: its embers a tenth more each depth, its light and features from the fourth depth on", () => {
+test("each zone hands over to the next from its 4th depth to the next one's 4th, eased: its embers from the 6th, its light and features from the 5th", () => {
+  assert.equal(TURN_FROM, 3);
   for (let k = 1; k <= 40; k++) {
+    // Stratum k is announced at its first depth; the scene turns into it from the 4th depth of the one before to its own 4th.
     const first = 10 * k + 1;
+    const from = first - 10 + TURN_FROM;
+    const to = first + TURN_FROM;
+    assert.equal(settledAt(k), to);
     const turn = (d: number) => strataAt(d).turn;
-    // Through stratum k - 1 (depths first - 10 to first - 1) the scene turns into stratum k.
-    for (let d = first - 10; d < first; d++) assert.equal(strataAt(d).stratum, k, `turning into ${k} at ${d}`);
-    assert.ok(Math.abs(turn(first - 9) - 0.1) < 1e-9, `a tenth of the embers at ${first - 9}`);
-    assert.ok(Math.abs(turn(first - 1) - 0.9) < 1e-9, `nine tenths at ${first - 1}`);
-    assert.equal(hallTurn(turn(first - 8)), 0, `the hall still its own at ${first - 8}`);
-    assert.ok(hallTurn(turn(first - 6)) > 0.05, `the next hall creeping in at ${first - 6}`);
-    // At its card it is all there.
-    assert.deepEqual(descent(first).look.env, lookOf(k).env, `all there at ${first}`);
-    assert.deepEqual(descent(first).look.ember, lookOf(k).ember);
-    assert.equal(stratumName(strataAt(first).stratum - 1), stratumName(k));
+    for (let d = from; d < to; d += 0.25) assert.equal(strataAt(d).stratum, k, `turning into ${k} at ${d}`);
+    assert.equal(turn(from), 0);
+    assert.equal(strataAt(to).stratum, k + 1);
+    assert.equal(turn(to), 0);
+    // The embers: a tenth at the 6th depth, half at the 9th, nine tenths at the next zone's 2nd.
+    const embers = (d: number) => emberTurn(turn(d));
+    assert.equal(embers(from), 0);
+    assert.ok(Math.abs(embers(first - 5) - 0.1) < 0.01, `a tenth of the embers at ${first - 5}: ${embers(first - 5)}`);
+    assert.ok(Math.abs(embers(first - 2) - 0.5) < 1e-9, `half at ${first - 2}`);
+    assert.ok(Math.abs(embers(first + 1) - 0.9) < 0.01, `nine tenths at ${first + 1}: ${embers(first + 1)}`);
+    // The light, smoke and features: nothing yet at the 5th depth, barely at the 6th, about half at the
+    // last, about three quarters as the next is announced, all but there at its 3rd, there at its 4th.
+    const hall = (d: number) => hallTurn(turn(d));
+    for (let d = from; d <= first - 6; d += 0.25) assert.equal(hall(d), 0, `the hall still its own at ${d}`);
+    assert.ok(hall(first - 5) > 0 && hall(first - 5) < 0.05, `barely creeping in at ${first - 5}: ${hall(first - 5)}`);
+    assert.ok(hall(first - 1) > 0.5 && hall(first - 1) < 0.65, `about half at ${first - 1}: ${hall(first - 1)}`);
+    assert.ok(hall(first) > 0.7 && hall(first) < 0.8, `about three quarters at ${first}: ${hall(first)}`);
+    assert.ok(hall(first + 2) > 0.95 && hall(first + 2) < 1, `all but there at ${first + 2}`);
+    assert.deepEqual(descent(to).look.env, lookOf(k).env, `all there at ${to}`);
+    assert.deepEqual(descent(to).look.ember, lookOf(k).ember);
+    // Announced at its first depth, the scene turning into it and mostly there.
+    assert.equal(milestoneAt(first), stratumName(k));
+    assert.equal(strataAt(first).stratum, k);
   }
-  // The azure stratum's blue embers come in through the ten depths before it is announced.
+  // Eased, not a straight ramp: slow to start, fastest half way, slow to settle, never a jump or a step back.
+  for (const [curve, start] of [
+    [hallTurn, HALL_FROM],
+    [emberTurn, 0],
+  ] as const) {
+    const steps: number[] = [];
+    for (let t = start; t < 1 - 1e-9; t += 0.025) steps.push(curve(t + 0.025) - curve(t));
+    const span = steps.length;
+    const even = 1 / span;
+    assert.ok(steps.every((v) => v >= 0), 'never back');
+    assert.ok(Math.max(...steps) <= 1.5 * even + 1e-9, 'never faster than half as fast again as a straight ramp');
+    assert.ok(steps[0] < 0.15 * even && steps[span - 1] < 0.15 * even, 'slow at either end');
+    assert.ok(steps[Math.floor(span / 2)] > 1.4 * even, 'fastest half way');
+    for (let i = 1; i < span / 2; i++) assert.ok(steps[i] > steps[i - 1], 'quickening to half way');
+    for (let i = Math.ceil(span / 2); i < span; i++) assert.ok(steps[i] < steps[i - 1] + 1e-12, 'slowing after');
+    assert.equal(curve(start), 0);
+    assert.equal(curve(1), 1);
+  }
+  // The azure stratum's blue embers come in through the depths around its announcement.
   assert.equal(BLUE_FROM, DELVE_BLUE_FROM);
-  assert.equal(strataAt(BLUE_FROM - 9).stratum, 2);
-  assert.ok(Math.abs(strataAt(BLUE_FROM - 9).turn - 0.1) < 1e-9);
-  assert.equal(strataAt(BLUE_FROM).stratum - 1, 2);
+  assert.deepEqual(strataAt(BLUE_FROM - 7), { stratum: 2, turn: 0 });
+  assert.equal(strataAt(BLUE_FROM).stratum, 2);
+  assert.ok(emberTurn(strataAt(BLUE_FROM).turn) > 0.75);
+  // The Mines' first depths are the Mines alone.
+  for (let d = 1; d <= 4; d += 0.25) assert.deepEqual(strataAt(d), { stratum: 1, turn: 0 });
 });
 
 test('one place turns into the next steadily: its features recede as the next ones come, never back and forth', () => {
   for (let k = 1; k <= 30; k++) {
     const a = lookOf(k - 1);
     const b = lookOf(k);
-    let last = descent(10 * k - 9).look.env;
-    for (let d = 10 * k - 8.75; d <= 10 * k + 1; d += 0.25) {
+    // (From the 4th depth of stratum k - 1 to the 4th of k.)
+    let last = descent(10 * k - 6).look.env;
+    for (let d = 10 * k - 5.75; d <= 10 * k + 4; d += 0.25) {
       const env = descent(d).look.env;
       for (let i = 0; i < ENV; i++) {
         if (b.env[i] > a.env[i]) assert.ok(env[i] >= last[i] - 1e-9, `environment ${i} recedes at ${d}`);
@@ -202,7 +253,7 @@ test('one place turns into the next steadily: its features recede as the next on
   }
 });
 
-test("a magma that goes out cools over its zone's last depths, and has cooled as the next arrives; the light makes way for it", () => {
+test("a magma that goes out cools through its handover, in step with the hall and never behind the frost, and has cooled by the next zone's 4th depth; the light makes way for it", () => {
   const at = (d: number) => {
     const { stratum, turn } = strataAt(d);
     return magmaCooling(stratum, turn);
@@ -219,17 +270,32 @@ test("a magma that goes out cools over its zone's last depths, and has cooled as
   }
   for (const z of out) {
     const first = 10 * z + 1;
-    // Hot through its first depths, cooling steadily from its fourth, all but cooled as the next arrives.
-    for (let d = first; d <= first + 2.5; d += 0.25) assert.equal(at(d), 0, `cooling at ${d}`);
+    // Hot through its first five depths; from the 5th cooling slowly, then
+    // faster, then slowly again, never back, never by a jump; mostly cooled
+    // as the next zone is announced, cooled at its 4th depth.
+    for (let d = first; d <= first + 4; d += 0.25) assert.equal(at(d), 0, `cooling at ${d}`);
     let last = 0;
-    for (let d = first + 2.75; d < first + 10; d += 0.25) {
+    for (let d = first + 4.25; d < first + 13; d += 0.25) {
       assert.ok(at(d) > last && at(d) - last < 0.05, `cooling at ${d}: ${at(d)} after ${last}`);
       last = at(d);
     }
-    assert.ok(last > 0.95, 'all but cooled as the next zone arrives');
-    const x = descent(first + 6);
+    assert.ok(at(first + 5) < 0.05 && at(first + 12) > 0.95, 'slow at either end');
+    assert.ok(at(first + 10) > 0.7 && at(first + 10) < 0.8, 'mostly cooled as the next zone is announced');
+    const settled = strataAt(first + 13);
+    assert.equal(magmaCoolingOf(z, settled.stratum, settled.turn), 1, "cooled at the next zone's 4th depth");
+    assert.equal(descent(first + 13).look.env[ENVIRONMENTS.indexOf('magma')], 0, 'and gone');
+    // In step with the hall, which brings the next zone's features in: none
+    // of them (the frost, say) comes in further than the magma has cooled.
+    const a = lookOf(z);
+    const b = lookOf(z + 1);
+    for (let d = first + 4; d < first + 13; d += 0.25) {
+      assert.equal(at(d), hallTurn(strataAt(d).turn), `in step with the hall at ${d}`);
+      const env = descent(d).look.env;
+      for (let i = 0; i < ENV; i++) if (b.env[i] > 0 && !(a.env[i] > 0)) assert.ok(env[i] <= b.env[i] * at(d) + 1e-9, `${ENVIRONMENTS[i]} ahead of the cooling at ${d}`);
+    }
+    const x = descent(first + 8);
     const hot = estimateLuminance(x.look, x.close, x.features, 1);
-    const cooled = estimateLuminance(x.look, x.close, x.features, magmaHeat(at(first + 6)));
+    const cooled = estimateLuminance(x.look, x.close, x.features, magmaHeat(at(first + 8)));
     assert.equal(cooled.hall, hot.hall);
     assert.ok(cooled.rest < hot.rest, 'the cooling magma adds less');
   }
@@ -309,8 +375,9 @@ test('through a handover an environment both zones draw turns from the one\'s co
   draft.zones[4].measured = draft.zones[5].measured = false;
   setBackdrops(draft);
   try {
-    let prevVoid = toneOf(descent(41).look, 5).colors[1][0];
-    for (let d = 41; d <= 51; d += 0.25) {
+    // (Their handover runs from depth 44 to 54.)
+    let prevVoid = toneOf(descent(44).look, 5).colors[1][0];
+    for (let d = 44; d <= 54; d += 0.25) {
       const look = descent(d).look;
       // The magma keeps its own colours as it goes, the fire its own as it comes (two stops: the middle half way).
       if (look.env[1] > 0) assert.deepEqual(toneOf(look, 1).colors, stopsOf(a.tones.magma!), `magma at ${d}`);
@@ -320,8 +387,8 @@ test('through a handover an environment both zones draw turns from the one\'s co
       assert.ok(v >= prevVoid - 1e-9, `the void turns back at ${d}`);
       prevVoid = v;
     }
-    assert.deepEqual(toneOf(descent(41).look, 5), a.tones.void);
-    assert.deepEqual(toneOf(descent(51).look, 5), b.tones.void);
+    assert.deepEqual(toneOf(descent(44).look, 5), a.tones.void);
+    assert.deepEqual(toneOf(descent(54).look, 5), b.tones.void);
     for (let d = 0; d <= 120; d += 0.25) assert.deepEqual(lookErrors({ ...descent(d).look, lightK: 1 }).filter((e) => e.includes('tones')), [], `tones at ${d}`);
   } finally {
     setBackdrops(SHIPPED);
@@ -378,11 +445,12 @@ test("the deeper, the darker: through the zones the scene's average brightness n
     const [hall, rest] = measuredAt(d);
     return e.hall * hall * x.light + e.rest * rest;
   };
-  assert.equal(MEASURED.length, 91, 'measured from the frames, to the last depth whose look is the zones\' alone');
+  // (The last zone settles at the depth the endgame begins to turn in.)
+  assert.equal(MEASURED.length, settledAt(STRATA.length - 1), 'measured from the frames, to the last depth whose look is the zones\' alone');
   // Through the zones the descent only ever darkens. From the endgame's
-  // arrival on (its look creeps in over the last zone's last depths) the
-  // scene may grow brighter and more colourful, to lift the excitement, but
-  // never by a jump.
+  // arrival on (its look creeps in from the last zone's 5th depth, the
+  // embers a little before) the scene may grow brighter and more colourful,
+  // to lift the excitement, but never by a jump.
   const zonesEnd = 10 * STRATA.length - 3;
   const rise = (d: number) => (d <= zonesEnd ? 1.008 : 1.08);
   // Depth by depth (held still, the scene shows only whole depths).
@@ -506,23 +574,26 @@ test('named depths: the Delve biome of each stratum after the first, as it begin
   for (const m of MILESTONES) assert.equal(milestoneAt(m.depth), m.name);
   const biomes = new Set(MILESTONES.map((m) => m.name));
   let last: string | null = null;
-  const past100 = new Set<string>();
+  const past100: string[] = [];
   for (let d = 11; d <= 3001; d++) {
     const name = milestoneAt(d);
     if (d % 10 !== 1) {
       assert.equal(name, null, `depth ${d}`);
       continue;
     }
-    assert.ok(name && biomes.has(name), `depth ${d}: ${name}`);
+    // Through 100 the zones' biomes; past it each generated stratum's own name, never a zone's.
+    assert.ok(name, `depth ${d}`);
+    assert.equal(biomes.has(name), d <= 100, `depth ${d}: ${name}`);
     assert.notEqual(name, last, `${name} twice in a row at ${d}`);
-    if (d > 100) past100.add(name);
+    if (d > 100) past100.push(name);
     last = name;
   }
-  assert.equal(past100.size, biomes.size, 'every biome comes round again past 100');
+  assert.equal(new Set(past100.slice(0, 50)).size, 50, 'no name twice in the first fifty past 100');
   assert.ok(!milestoneAt(1e6 + 1)?.includes('undefined'));
   assert.equal(milestoneAt(Number.NaN), null);
-  // The card's name matches the stratum the scene has turned into there.
-  assert.equal(strataAt(21).stratum - 1, 2);
+  // The card's name matches the stratum the scene is turning into there, most of the way.
+  assert.equal(stratumName(strataAt(21).stratum), milestoneAt(21));
+  assert.ok(hallTurn(strataAt(21).turn) > 0.5);
 });
 
 test('the shown depth eases to the game depth: about a second a depth, never a jump', () => {
@@ -604,20 +675,23 @@ test('at the surface every ember burns the usual orange and no glint shows', () 
 
 test('a new stratum spreads ember by ember as they start a new rise, or all at once on recolor', () => {
   const e = new Embers();
-  e.descend(descent(11));
+  // The Magma Fissure, settled.
+  e.descend(descent(settledAt(1)));
   e.recolor();
   for (let i = 0; i < 5; i++) e.step(0.05, 1200, 800);
   const blue = () => slots(e).filter(([, , , , entry]) => entry !== GLINT_COLOR && close(halo(e, entry), STRATA[2].look.ember)).length;
-  assert.equal(blue(), 0, 'no blue at depth 11');
-  // Heading for depth 16, half way into the azure stratum's embers.
-  const aim = descent(16);
-  e.descend(descent(11), aim);
+  assert.equal(blue(), 0, `no blue at depth ${settledAt(1)}`);
+  // Heading for depth 19, half way into the azure stratum's embers.
+  const aim = descent(19);
+  const share = emberTurn(aim.turn);
+  assert.equal(share, 0.5);
+  e.descend(descent(settledAt(1)), aim);
   e.step(0.05, 1200, 800);
   assert.ok(blue() < 5, 'the colour should not flip at once');
   e.recolor();
   e.step(0.01, 1200, 800);
   const embers = slots(e).filter(([, , , , entry]) => entry !== GLINT_COLOR).length;
-  assert.ok(blue() / embers > aim.turn - 0.25 && blue() / embers < aim.turn + 0.25, `about ${aim.turn.toFixed(2)} blue after recolor: ${blue()}/${embers}`);
+  assert.ok(blue() / embers > share - 0.25 && blue() / embers < share + 0.25, `about ${share.toFixed(2)} blue after recolor: ${blue()}/${embers}`);
 });
 
 test('glints show as a look has them: in the side walls, or all over; fewer on a phone; none without', () => {
@@ -681,7 +755,7 @@ test('deep down nothing overflows and no tile holds more than its slots', () => 
 
 test('with effects off the stratum still colours the embers, but they stay calm', () => {
   const e = new Embers();
-  e.descend(descent(11), descent(11));
+  e.descend(descent(settledAt(1)), descent(settledAt(1)));
   e.recolor();
   for (let i = 0; i < 200; i++) e.step(0.05, 1200, 800, true);
   assert.equal(e.level, 0, 'not stoked');
@@ -691,7 +765,7 @@ test('with effects off the stratum still colours the embers, but they stay calm'
 
 test("a moment's tint covers the stratum's colours while it lasts, and gives them back", () => {
   const e = new Embers();
-  e.descend(descent(21), descent(21));
+  e.descend(descent(settledAt(2)), descent(settledAt(2)));
   e.recolor();
   e.tint([1, 0.14, 0.06]);
   for (let i = 0; i < 200; i++) e.step(0.05, 1200, 800);
@@ -705,8 +779,8 @@ test("a moment's tint covers the stratum's colours while it lasts, and gives the
 test('while the depth eases in, embers take the colour of the depth it heads for, and none turns back', () => {
   const e = new Embers();
   e.step(0.05, 1200, 800);
-  // Shown: still the surface. Heading for: the azure stratum.
-  const aim = descent(21);
+  // Shown: still the surface. Heading for: the azure stratum, settled.
+  const aim = descent(settledAt(2));
   e.descend(descent(0), aim);
   e.recolor();
   e.step(0.01, 1200, 800);

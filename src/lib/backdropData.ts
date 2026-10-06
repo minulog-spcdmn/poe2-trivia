@@ -167,10 +167,36 @@ export function toneLuma(tone: Tone, i: number): number {
 /** How bright environment `i` comes out in `tone`, against its own colours (1): what it adds to the scene's brightness scales so (lib/descent.ts). */
 export const toneGain = (tone: Tone, i: number) => toneLuma(tone, i) / toneLuma(ENV_TONES[ENVIRONMENTS[i]].tone, i);
 
-/** How far into a stratum's turn the next one's light, smoke and features begin to creep in (its fourth depth). */
-export const HALL_FROM = 0.25;
-/** How far the next stratum's light, smoke and features have come at `turn`: steadily from HALL_FROM on. */
-export const hallTurn = (turn: number) => Math.min(1, Math.max(0, (turn - HALL_FROM) / (1 - HALL_FROM)));
+/**
+ * The handover's curve, 0 to 1 as `x` goes from 0 to 1: eased in and out
+ * (smoothstep), so a stratum begins to turn slowly, turns fastest half way
+ * (half as fast again as a straight ramp, no more: the light has to keep
+ * pace with it) and settles slowly, never with a jump or a kink.
+ */
+export function easeTurn(x: number): number {
+  const t = Math.min(1, Math.max(0, x));
+  return t * t * (3 - 2 * t);
+}
+/**
+ * How far into a stratum's turn (lib/descent.ts, strataAt: from the zone's
+ * 4th depth to the next one's) the next one's light, smoke and features
+ * begin to creep in: a tenth of the way, at the zone's 5th depth.
+ */
+export const HALL_FROM = 0.1;
+/**
+ * How far the next stratum's light, smoke and features have come at `turn`:
+ * eased (easeTurn) from HALL_FROM to the end of the turn, nine depths in
+ * all: barely there at the zone's 6th depth, half way at its last, about
+ * three quarters as the next is announced, and all there at its 4th.
+ */
+export const hallTurn = (turn: number) => easeTurn((turn - HALL_FROM) / (1 - HALL_FROM));
+/**
+ * How many of the embers burn in the next stratum at `turn` (0 to 1): eased
+ * over the whole turn, ten depths: a tenth at the zone's 6th depth, half at
+ * its 9th, nine tenths at the next zone's 2nd. A little ahead of the hall,
+ * as the embers drift up from what lies below.
+ */
+export const emberTurn = (turn: number) => easeTurn(turn);
 
 /**
  * A stratum's embers' way of moving: one of the motion profiles

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Session } from 'node:inspector/promises';
-import { descent, hallTurn, lookOf, magmaCooling, STRATA } from '../src/lib/descent.ts';
+import { descent, HALL_FROM, hallTurn, lookOf, magmaCooling, STRATA } from '../src/lib/descent.ts';
 import { EMBERS, Embers, GLINTS, PALETTE, SIZE_STRIDE, SLOTS, SPARKS, TILES } from '../src/lib/backdropEmbers.ts';
 import { cooling, MOTIONS, motionFor, motionOf, PROFILES, profileOf, SURFACE_MOTION, tweakOf, ZONE_MOTION, zoneMotionOf } from '../src/lib/emberMotion.ts';
 import { PROFILE_NAMES } from '../src/lib/emberProfiles.ts';
@@ -209,8 +209,8 @@ test("a burst's sparks burn in the colour of the zone it belongs to, through its
   if (k < 0) return;
   const at = (EMBERS + GLINTS) * 4;
   const near = (a: ArrayLike<number>, b: readonly number[]) => b.every((v, c) => Math.abs(a[c] - v) < 1e-6);
-  // At its first depth, and all through its handover (the scene already turning into the next zone).
-  for (const d of [10 * k + 1, 10 * k + 5, 10 * k + 8, 10 * k + 10]) {
+  // At its first depth (still turning in), settled, and all through its handover to the next zone (from its 5th depth to the next one's 4th).
+  for (const d of [10 * k + 1, 10 * k + 4, 10 * k + 8, 10 * k + 11, 10 * k + 13]) {
     const e = new Embers();
     e.descend(descent(d));
     e.step(0, W, H);
@@ -314,8 +314,8 @@ test("as a zone hands over, each ember moves as the zone it burns in, and the ma
   const goes = (k: number) => (v: { dy: number }) => !wayOf(zoneMotionOf(k).main) || Math.sign(v.dy) === wayOf(zoneMotionOf(k).main);
   assert.ok(magma.every((v) => v.motion === main(1) && goes(1)(v)), 'the magma goes its way');
   assert.ok(snow.every((v) => v.motion === main(2) && goes(2)(v)), 'the snow goes its way');
-  // Cooling comes in over the zone's later depths, with its hall (as the magma itself cools), for its own embers only, and stays once past.
-  assert.equal(cooling(1, 2, 0.15), 0);
+  // Cooling comes in through the zone's handover, with its hall (as the magma itself cools), for its own embers only, and stays once past.
+  assert.equal(cooling(1, 2, HALL_FROM), 0);
   for (const t of [0.3, 0.5, 0.7, 0.95]) {
     assert.equal(cooling(1, 2, t), hallTurn(t));
     assert.equal(cooling(1, 2, t), magmaCooling(2, t), `in step with the magma at ${t}`);

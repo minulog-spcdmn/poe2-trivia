@@ -1,7 +1,9 @@
 // Delve's backdrops as the game has them: the zones' looks and their embers'
 // motions from src/data/backdrops.json, and past the last zone the endgame,
-// every stratum generated from a seed of its own (lib/backdropGen.ts), the
-// same for everyone. lib/descent.ts and lib/emberMotion.ts read them here.
+// every stratum one of the archetypes (lib/archetypes.ts), dealt out so none
+// comes twice in a row, generated from a seed of its own
+// (lib/backdropGen.ts) and named from its archetype's names, the same for
+// everyone. lib/descent.ts and lib/emberMotion.ts read them here.
 //
 // The backdrop tool (backdrop.html, src/backdropTool) shows a draft in their
 // place through setBackdrops, its hook; the game never calls it, so the game
@@ -9,7 +11,8 @@
 
 import shipped from '../data/backdrops.json' with { type: 'json' };
 import { cloneData, type Backdrops, type Endgame, type ZoneBackdrop } from './backdropData.ts';
-import { generate, hueAt, hueDistance, hueOf, rng, stratumSeed, type Generated, type Steer } from './backdropGen.ts';
+import { ARCHETYPES, composedNames } from './archetypes.ts';
+import { generateStratum, mix, rng, stratumSeed, type Generated, type Steer } from './backdropGen.ts';
 import { difference, nearest, signatureOf, UNLIKE, type Signature } from './likeness.ts';
 
 /** The file's backdrops, as shipped (never changed). */
@@ -51,39 +54,178 @@ export function setBackdrops(data: Backdrops) {
 
 // ---- the endgame ---------------------------------------------------------------
 
-/** The golden ratio's fraction: each stratum's hue moves on by this much of the range, so no two in a row are alike and the hues never settle into a cycle. */
-const GOLDEN = 0.6180339887498949;
-/** How far a stratum's own seed may move its hue off that (a share of the range, either way). */
-const JITTER = 0.07;
-
 /** The seed stratum `k` (0 the first zone) is generated from: pinned by hand, or its own from the endgame's. */
 export const seedAt = (k: number) => endgame.pinned[String(k + 1)] ?? stratumSeed(endgame.seed, k);
 
-/** Where in the hue range the endgame starts (the first stratum past the zones lies as far from the last zone's hue as it can). */
-let startPlace = NaN;
-function start() {
-  if (Number.isNaN(startPlace)) {
-    const last = hueOf(zones[zones.length - 1].look.smoke).hue;
-    let best = 0;
-    for (let i = 0; i <= 100; i++) if (hueDistance(hueAt(endgame.settings, i / 100), last) > hueDistance(hueAt(endgame.settings, best), last) + 1e-9) best = i / 100;
-    startPlace = best;
+// ---- the archetypes dealt out ------------------------------------------------------
+
+/** How many archetypes there are: the deck dealt out a round at a time. */
+const DECK = ARCHETYPES.length;
+/** How far apart the same archetype comes round, all but always: none of a round's first SPREAD is among the round before's last SPREAD (where no order of the round allows it, fewer; about one stratum in a thousand comes round sooner, never twice in a row). */
+export const SPREAD = 4;
+
+/** `items` in a seeded order (`r` its random numbers). */
+function shuffle<T>(items: readonly T[], r: () => number): T[] {
+  const out = [...items];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(r() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
   }
-  return startPlace;
+  return out;
+}
+
+/** Whether two archetypes share an effect (then they never follow each other). */
+const shares = (a: number, b: number) => ARCHETYPES[a].fx.some((x) => ARCHETYPES[b].fx.some((y) => x.env === y.env));
+
+/**
+ * Orders `items` (a seeded search, `r` its random numbers) so that no two
+ * in a row share an effect (nor are the same), the first follows `after`
+ * (an archetype, or -1) and the last goes before `before` without sharing
+ * one either, and none of the first SPREAD is in `notFirst`. Where the
+ * round before leaves no such order, the same with fewer of the first kept
+ * clear of it; failing even that, the seed's shuffle as it is (`strict`:
+ * null instead, at the first failure).
+ */
+function order(items: number[], r: () => number, after: number, before: number, notFirst: ReadonlySet<number>): number[];
+function order(items: number[], r: () => number, after: number, before: number, notFirst: ReadonlySet<number>, strict: true): number[] | null;
+function order(items: number[], r: () => number, after: number, before: number, notFirst: ReadonlySet<number>, strict = false): number[] | null {
+  const pool = shuffle(items, r);
+  for (let spread = SPREAD; spread >= 0; spread--) {
+    const out: number[] = [];
+    const used = new Set<number>();
+    const fits = (a: number) => {
+      const at = out.length;
+      if (at < spread && notFirst.has(a)) return false;
+      const prev = at ? out[at - 1] : after;
+      if (prev >= 0 && shares(prev, a)) return false;
+      return !(at === pool.length - 1 && before >= 0 && shares(a, before));
+    };
+    const place = (): boolean => {
+      if (out.length === pool.length) return true;
+      for (const a of pool) {
+        if (used.has(a) || !fits(a)) continue;
+        out.push(a);
+        used.add(a);
+        if (place()) return true;
+        out.pop();
+        used.delete(a);
+      }
+      return false;
+    };
+    if (place()) return out;
+    if (strict) return null;
+  }
+  return pool;
 }
 
 /**
- * Where stratum `k`'s base hue lies in the range (0 to 1): a golden step on
- * from the one before, moved a little by its seed. So the hue moves on by
- * at least about a quarter of the range from one stratum to the next (87
- * degrees, the whole wheel), whatever the seeds, and stratum k needs no
- * other to be worked out.
+ * The last SPREAD of round `b`: dealt from the round's own seed alone, so
+ * the round after needs nothing more of it. The first of the seed's orders
+ * (a seeded search) whose SPREAD can follow each other, and whose rest can
+ * be ordered before them.
  */
-export function placeAt(k: number, seed = seedAt(k)): number {
-  const n = k - zones.length;
-  const step = (n * GOLDEN) % 1;
-  const p = start() + step + (rng(seed)() - 0.5) * 2 * JITTER;
-  return ((p % 1) + 1) % 1;
+const tails = new Map<number, number[]>();
+function tailOf(b: number): number[] {
+  let tail = tails.get(b);
+  if (!tail) {
+    const r = rng(mix(mix(endgame.seed, 0x7a11), b));
+    const all = shuffle(Array.from({ length: DECK }, (_, i) => i), r);
+    const out: number[] = [];
+    const pick = (): boolean => {
+      if (out.length === SPREAD) {
+        const rest = all.filter((a) => !out.includes(a));
+        return order(rest, () => 0.5, -1, out[0], new Set(), true) !== null;
+      }
+      for (const a of all) {
+        if (out.includes(a) || (out.length && shares(out[out.length - 1], a))) continue;
+        out.push(a);
+        if (pick()) return true;
+        out.pop();
+      }
+      return false;
+    };
+    tail = pick() ? out : all.slice(0, SPREAD);
+    if (tails.size > 256) tails.clear();
+    tails.set(b, tail);
+  }
+  return tail;
 }
+
+const rounds = new Map<number, number[]>();
+/**
+ * Round `b` of the deal: every archetype once, in an order of the endgame's
+ * seed, so that no two in a row share an effect (from one round into the
+ * next as well), and none of its first SPREAD is among the round before's
+ * last SPREAD (as far as any order allows). Its last SPREAD are dealt from its own seed alone
+ * (tailOf), the rest ordered round them and the round before's; so every
+ * round is worked out from two rounds' seeds, whichever is asked for first.
+ */
+function roundOf(b: number): number[] {
+  let deal = rounds.get(b);
+  if (deal) return deal;
+  const tail = tailOf(b);
+  const before = b > 0 ? tailOf(b - 1) : [];
+  const rest = Array.from({ length: DECK }, (_, i) => i).filter((a) => !tail.includes(a));
+  const r = rng(mix(mix(endgame.seed, 0xdec4), b));
+  deal = [...order(rest, r, before.length ? before[before.length - 1] : -1, tail[0], new Set(before)), ...tail];
+  if (rounds.size > 256) rounds.clear();
+  rounds.set(b, deal);
+  return deal;
+}
+
+/**
+ * The archetype of stratum `k` past the zones (its index in ARCHETYPES,
+ * lib/archetypes.ts): dealt out a round at a time, every archetype once a
+ * round, so none comes twice in a row or soon again (all but always
+ * more than SPREAD strata apart), each comes round as often as the others, and two in a row never
+ * share an effect: each stratum differs from the one before in kind. A stratum's seed
+ * (its own, re-rolled or pinned) makes a variation of its archetype.
+ */
+export function archetypeAt(k: number): number {
+  const n = Math.max(0, k - zones.length);
+  return roundOf(Math.floor(n / DECK))[n % DECK];
+}
+
+/** Archetype `a`'s names in the order its strata take them: its curated ones, then its composed ones, each shuffled by the endgame's seed. */
+const nameLists = new Map<number, string[]>();
+function namesOf(a: number): string[] {
+  let list = nameLists.get(a);
+  if (!list) {
+    const arch = ARCHETYPES[a];
+    const r = rng(mix(mix(endgame.seed, 0x4a3e), a));
+    nameLists.set(a, (list = [...shuffle(arch.names, r), ...shuffle(composedNames(arch), r)]));
+  }
+  return list;
+}
+
+/**
+ * The name of stratum `k` past the zones: its archetype's next. An
+ * archetype comes once a round, so its strata take its names one a round,
+ * the curated ones first: none comes round again until all of its names
+ * have been taken, and no two archetypes share a name, so no name ever
+ * follows itself.
+ */
+export function endgameName(k: number): string {
+  const n = Math.max(0, k - zones.length);
+  const list = namesOf(archetypeAt(k));
+  return list[Math.floor(n / DECK) % list.length];
+}
+
+/** Every endgame name, by the archetype it is one of (lib/archetypes.ts). */
+let byName: Map<string, number> | null = null;
+/** The zone whose emblem (its sigil and ornament) a stratum called `name` bears: its own for a zone, its archetype's for one past the zones, or undefined. */
+export function emblemOf(name: string): string | undefined {
+  if (zones.some((z) => z.name === name)) return name;
+  if (!byName) {
+    byName = new Map();
+    ARCHETYPES.forEach((a, i) => [...a.names, ...composedNames(a)].forEach((n) => byName!.set(n, i)));
+  }
+  const a = byName.get(name);
+  return a === undefined ? undefined : ARCHETYPES[a].emblem;
+}
+
+/** What kind of place stratum `k` is: its zone's name, or past the zones its archetype's kind (the codex counts the biomes reached so). */
+export const biomeAt = (k: number) => (k < zones.length ? zones[Math.max(0, k)].name : ARCHETYPES[archetypeAt(k)].kind);
 
 /** The strata past the zones, made once each (their looks are read every frame). */
 const generated = new Map<number, Generated>();
@@ -95,7 +237,7 @@ const generated = new Map<number, Generated>();
  */
 export const VIVID = 1;
 /** How many seeds a stratum tries (its own, then the ones after it) before it settles for the least alike. */
-export const TRIES = 12;
+export const TRIES = 20;
 
 /** The generator's steer: clear of the zones as they are now (worked out again whenever they change). */
 let steer: Steer | null = null;
@@ -144,10 +286,10 @@ function unlikeness(sig: Signature, others: readonly Signature[]) {
 }
 
 /**
- * Stratum `k` past the zones (k from zones.length): generated from its seed
- * with the endgame's settings, its hue where placeAt puts it, steered clear
- * of the zones (lib/backdropGen.ts, Steer). Its look's lightK is 1
- * (lib/descent.ts works it out).
+ * Stratum `k` past the zones (k from zones.length): its archetype
+ * (archetypeAt) generated from its seed with the endgame's settings,
+ * steered clear of the zones (lib/backdropGen.ts, generateStratum). Its
+ * look's lightK is 1 (lib/descent.ts works it out).
  *
  * A stratum's own seed whose look still comes out too like a zone or a
  * neighbour (less than UNLIKE apart, lib/likeness.ts) is re-rolled, the
@@ -160,7 +302,7 @@ export function endgameAt(k: number, seed = seedAt(k)): Generated {
   const own = seed === seedAt(k);
   let g = own ? generated.get(k) : undefined;
   if (g) return g;
-  const make = (s: number) => generate(s, endgame.settings, placeAt(k, s), steerNow());
+  const make = (s: number) => generateStratum(s, endgame.settings, archetypeAt(k), steerNow());
   if (!own || isPinned(k)) g = make(seed);
   else {
     const others = neighboursOf(k).map((j) => signatureAt(endgameAt(j)));
@@ -197,38 +339,8 @@ export function likenessAt(k: number, seed = seedAt(k)) {
   return { zone: zone.index, difference: zone.difference, before: difference(sig, before), after: difference(sig, signatureAt(endgameAt(k + 1))) };
 }
 
-// ---- names -------------------------------------------------------------------
-
-/** The hue each zone's hall is known by (its low smoke's). */
-const zoneHue = (i: number) => hueOf(zones[i].look.smoke).hue;
-/** The detail strong enough to name a stratum after its zone. */
-const NAMING = 0.25;
-
-/** The biome a stratum past the zones looks most like (zones' index, never the first): its strongest detail's, else the nearest hue's; `not`, one it mustn't be. */
-function biomeIndex(k: number, not = -1): number {
-  const g = endgameAt(k);
-  let best = -1;
-  for (let i = 1; i < zones.length; i++) if (i !== not && g.look.env[i] >= NAMING && (best < 0 || g.look.env[i] > g.look.env[best])) best = i;
-  if (best >= 0) return best;
-  for (let i = 1; i < zones.length; i++) if (i !== not && (best < 0 || hueDistance(g.hue, zoneHue(i)) < hueDistance(g.hue, zoneHue(best)))) best = i;
-  return best;
-}
-
-/**
- * The name of stratum `k` past the zones: the biome it looks most like,
- * never the one before's (worked out from a few strata back, so every
- * stratum's is the same whichever is asked for first).
- */
-export function endgameName(k: number): string {
-  const from = Math.max(zones.length, k - 6);
-  let prev = from === zones.length ? zones.length - 1 : biomeIndex(from - 1);
-  for (let j = from; j <= k; j++) {
-    const own = biomeIndex(j);
-    prev = own === prev ? biomeIndex(j, prev) : own;
-  }
-  return zones[prev].name;
-}
-
 onBackdrops(() => {
-  startPlace = NaN;
+  rounds.clear();
+  tails.clear();
+  nameLists.clear();
 });

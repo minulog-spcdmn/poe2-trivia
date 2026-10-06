@@ -9,12 +9,14 @@
 // from below, and what glints in the walls (`descend`); and a way of moving
 // all its own, every ember of it alike (lib/emberMotion.ts: dust sifting
 // down in the Mines, embers rising on the magma's heat, snow falling, motes
-// drawn into the abyss's eddies, ...). Through a stratum a growing share of
-// them burns in the next one's colour and moves its way, each taking both
-// as it starts a new life. Each new depth carries them, and the glints with
-// the walls, up past you as the scene sinks (`rise`).
+// drawn into the abyss's eddies, ...). Through a stratum's handover a
+// growing share of them burns in the next one's colour and moves its way
+// (emberTurn: a tenth at the zone's 6th depth, nine tenths at the next
+// one's 2nd, eased), each taking both as it starts a new life. Each new
+// depth carries them, and the glints with the walls, up past you as the
+// scene sinks (`rise`).
 
-import { hallTurn, lookOf, SURFACE, type Descent, type Look } from './descent.ts';
+import { emberTurn, hallTurn, lookOf, SURFACE, type Descent, type Look } from './descent.ts';
 import { backdropsVersion } from './backdrops.ts';
 import { cooling, MOTIONS, motionFor, type EmberMotion } from './emberMotion.ts';
 
@@ -122,9 +124,10 @@ export class Embers {
   /** The stratum each ember burns in; each takes a new one only as it starts a new life, so a colour spreads ember by ember. */
   private burn = new Int32Array(EMBERS).fill(-1);
   /**
-   * How far into a stratum's turn it takes for each ember to burn in it
-   * (fixed per ember): spread evenly over the turn and dealt out at random,
-   * so the share burning in the new stratum keeps to the turn itself.
+   * How far into a stratum's handover it takes for each ember to burn in it
+   * (fixed per ember, against emberTurn): spread evenly from 0 to 1 and
+   * dealt out at random, so the share burning in the new stratum keeps to
+   * emberTurn.
    */
   private burnGate = spread(EMBERS);
   /** Which embers are a zone's rarer kind (the Mines' lamp sparks): those whose gate is under its share (fixed per ember, spread the same way). */
@@ -284,7 +287,7 @@ export class Embers {
 
   /** The stratum ember `i` burns in if it starts now. */
   private pick(i: number) {
-    return this.aim.turn > this.burnGate[i] ? this.aim.stratum : this.aim.stratum - 1;
+    return emberTurn(this.aim.turn) > this.burnGate[i] ? this.aim.stratum : this.aim.stratum - 1;
   }
 
   /**

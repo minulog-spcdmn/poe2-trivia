@@ -218,19 +218,30 @@ the same thing for everyone.
   motes spiralling into the eddies, stone dust falling, puffs rising in
   gusts, cold motes drifting, strong sparks flying up) and glints. Depth 1 is
   already the Mines; the surface is the start page. Past 100 the descent
-  goes on for ever, each new zone generated in the same quiet style (a hue
-  and its neighbours, a detail or two, embers moving as the hue's mood has
-  it), the same for everyone, its hue moving well on from the one before,
-  and named after the biome it looks most like, never the same twice in a
-  row.
-- Each zone turns steadily into the next over its whole length, a little
-  with every depth, so the next is all there when its name is announced.
+  goes on for ever, each new zone one of twelve archetypes, moods with a
+  vibe of their own (a drowned temple: pale shafts and fog in cold teal
+  light; an ember forge: fire and lamps in slate smoke; a void bloom, a
+  frozen abyss, a sulphur marsh, a lantern necropolis, a sunken garden, a
+  blood eclipse, a glacial pyre, an ashen reliquary, a starfall abyss, a
+  witchfire grove), each with one or two effects clearly there but quiet,
+  a palette in a colour scheme (a base hue with its neighbours and a
+  contrasting accent), and embers of its own; dealt out so none comes
+  twice in a row and no two in a row share an effect, generated from a
+  seed of its own, the same for everyone, and named from its archetype's
+  names ("The Drowned Nave", "Ashen Reliquary"), none twice in the first
+  fifty past 100, never the same twice in a row.
+- Each zone hands over to the next gradually, from its 4th depth to the
+  next zone's 4th, on an eased curve: slow to begin, quickest toward the
+  zone's end, slow to settle, never a straight ramp. The next zone's name
+  is still announced at its first depth, about three quarters of the way
+  through the handover.
   - Its embers take the next zone's colour one by one: a tenth of them at
-    its 2nd depth, nine tenths at its last.
-  - From its 4th depth the next zone's light, smoke and features creep in
-    while its own recede, each feature coming and going its own way (the
-    lamps kindle one by one, cracks heat up and cool, frost grows in from
-    the walls, fire rises from below).
+    its 6th depth, half at its 9th, nine tenths at the next zone's 2nd.
+  - From its 5th depth the next zone's light, smoke and features creep in
+    while its own recede (barely at its 6th, about half by its last, all
+    there at the next zone's 4th), each feature coming and going its own
+    way (the lamps kindle one by one, cracks heat up and cool, frost grows
+    in from the walls, fire rises from below).
 - The deeper, the darker, never the other way. The dark is one smooth fade
   from the edges, corners darkest, and closes in a little with every depth.
   The scene's light is set so its average brightness only ever falls with
@@ -573,18 +584,29 @@ Everything is drawn in WebGL2 with float precision and dithered once at the
   `src/lib/emberProfiles.ts`, tweaked), live in `src/data/backdrops.json`
   (read by `src/lib/backdrops.ts`; the shapes and the check are in
   `src/lib/backdropData.ts`), which the backdrop tool edits. Past depth 100
-  every stratum is generated (`src/lib/backdropGen.ts`, pure and seeded):
-  stratum k from its own seed (the file's endgame seed mixed with k, or one
-  pinned by hand), with the file's endgame settings, its hue a golden step
-  on from the one before's (so it moves on by at least about 87 degrees,
-  and stratum k needs no other to be worked out), made once and cached.
-  Through a zone the scene turns steadily into the next (`strataAt`,
-  `turnInto`): the embers follow the turn itself, the light, smoke and
-  features follow it from the zone's 4th depth (`hallTurn`). The scene's
-  `light` is set so its average brightness never rises with depth
-  (`luminanceAt`, `lightAt`): `estimateLuminance` works out what the
+  every stratum is generated (`src/lib/backdropGen.ts`, `generateStratum`,
+  pure and seeded): stratum k is an archetype of `src/lib/archetypes.ts`
+  (its effects, palette schemes, embers, character and names), dealt out a
+  round at a time by the endgame seed (`archetypeAt` in
+  `src/lib/backdrops.ts`: every archetype once a round, none twice in a
+  row, no two in a row sharing an effect, each round worked out from its
+  own seed and the one before's), made from its own seed (the file's
+  endgame seed mixed with k, or one pinned by hand) with the file's endgame
+  settings, re-rolled where it comes out too like a zone or its neighbour
+  (`src/lib/likeness.ts`), made once and cached. Its name is its
+  archetype's next (`endgameName`): the curated ones first, then epithets
+  and places composed; its sigil and ornament its archetype's zone's
+  (`emblemOf`).
+  From a zone's 4th depth to the next one's the scene turns into the next
+  (`strataAt`, `turnInto`; `TURN_FROM`): the embers follow the turn eased
+  (`emberTurn`), the light, smoke, features and their colours follow it
+  eased from the zone's 5th depth (`hallTurn`, `HALL_FROM`), both on a
+  smoothstep (`easeTurn`), and a magma that goes out cools with the hall
+  (`magmaCooling`). A zone shows alone at its 4th depth (`settledAt`).
+  The scene's `light` is set so its average brightness never rises with
+  depth (`luminanceAt`, `lightAt`): `estimateLuminance` works out what the
   backdrop draws from what each environment adds and dims as it comes in
-  (`ENV_ADD`, `ENV_HALL`), corrected per depth (`MEASURED`, to depth 91),
+  (`ENV_ADD`, `ENV_HALL`), corrected per depth (`MEASURED`, to depth 94),
   and the light is solved a stretch of depths at a time, moving at most
   0.06 a depth, to depth 2001 (past it the curve is kept to exactly). A
   generated look's own light (`lightK`) is worked out from the estimate
@@ -594,7 +616,9 @@ Everything is drawn in WebGL2 with float precision and dithered once at the
   draws. The measured corrections only hold for the zone looks they were
   measured with (`measured` in the file): a zone given a new look has its
   depths' corrections dropped (faded out over its turns) rather than
-  applied wrongly.
+  applied wrongly. (They were measured with the straight handover and
+  carried over to the eased one by the share of the next zone's hall each
+  depth shows; calibrate measures them afresh.)
   The shown depth eases along at about a second a depth, and a jump of
   more than three depths cross-fades straight there. `plunge()` (called by
   `App.svelte` when a deeper depth's cards are dealt, `dealtDeeper`) sinks
@@ -755,19 +779,21 @@ and how the embers move. Every change shows at once.
   the game estimates it with its solved light (no frame is drawn or read),
   beside the curve it keeps to; any depth brighter than the one before is
   marked.
-- **Zones:** pick one of the ten (the panel jumps to its first depth), then
-  tweak its look: a colour picker for every colour, sliders for every
-  strength (Light and dark, Smoke, Haze, Embers, Glints, Details), and the
-  embers' motion (a profile and its speed, rise or fall, drift, turbulence
+- **Zones:** pick one of the ten (the panel jumps to its 4th depth, where
+  it shows alone), then tweak its look: a colour picker for every colour,
+  sliders for every strength (Light and dark, Smoke, Haze, Embers, Glints,
+  Details), and the embers' motion (a profile and its speed, rise or fall, drift, turbulence
   and swirl). **Use for this zone** puts it in the draft; **Revert** and
   **As shipped** go back.
 - **Generate:** a new seed (or type one: a number or any word), a strip of
   six variations, and the generator's settings (hue range, saturation,
   darkness, detail, embers). **Lock** keeps a group as it is while the
   rest is generated again.
-- **Endgame:** step through the strata past 100 (11, 12, ...), try other
-  seeds for one and **Pin** the one you like; tune the endgame
-  generator's settings and seed (they shape every unpinned stratum).
+- **Endgame:** step through the strata past 100 (11, 12, ...), each shown
+  with its name, its archetype, colour scheme and effects; try other seeds
+  for one (variations of its archetype) and **Pin** the one you like; tune
+  the endgame generator's settings and seed (they shape every unpinned
+  stratum; the seed also deals the archetypes and their names).
 - **Save:** on the dev server **Save to the file** writes
   `src/data/backdrops.json` (a dev-only endpoint in `vite.config.ts`,
   checked before it is written; never in a build). Anywhere, **Copy JSON**,

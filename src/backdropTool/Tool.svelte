@@ -101,6 +101,8 @@
   const fmt = (v: number, step = 0.01) => (step >= 1 ? String(Math.round(v)) : v.toFixed(step < 0.01 ? 3 : 2));
 
   const ENV_LABELS: Record<string, string> = { city: 'City lights' };
+  /** The endgame's colour schemes (lib/archetypes.ts, Scheme), as the tool names them. */
+  const SCHEMES: Record<string, string> = { complement: 'complementary accent', split: 'split-complementary', triad: 'muted triad', 'warm-cold': 'warm against cold' };
   const envLabel = (name: string) => ENV_LABELS[name] ?? name[0].toUpperCase() + name.slice(1);
   const MIST = ENVIRONMENTS.indexOf('mist');
 
@@ -119,7 +121,9 @@
   const stratum = $derived.by(() => {
     void shown;
     const seed = T.stratumSeed();
-    return { name: stratumName(tool.stratum), gen: endgameAt(tool.stratum, seed), seed, pinned: T.pinnedSeed() };
+    const gen = endgameAt(tool.stratum, seed);
+    const fx = gen.look.env.flatMap((e, i) => (e > 0 ? [{ name: ENVIRONMENTS[i], e }] : [])).sort((a, b) => b.e - a.e);
+    return { name: stratumName(tool.stratum), gen, fx, seed, pinned: T.pinnedSeed() };
   });
   /** How alike the stratum shown is to its nearest zone and its neighbours (lib/likeness.ts): similarity, 1 less the difference. */
   const likeness = $derived.by(() => {
@@ -282,7 +286,7 @@
           {/each}
           <button class="chip walk" class:on={tool.walking} onclick={() => (tool.walking = !tool.walking)}>{tool.walking ? 'Stop' : 'Walk down'}</button>
         </div>
-        <p class="hint">Walk down goes a depth every 1.5 s, as a run would, to judge the handovers: the next zone's embers take over one by one, its light, smoke and details from its fourth depth. A jump of more than three depths cross-fades.</p>
+        <p class="hint">Walk down goes a depth every 1.5 s, as a run would, to judge the handovers: from a zone's 5th depth to the next one's 4th the next zone's embers take over one by one and its light, smoke and details come in, slowly at first, fastest toward the zone's end, settling slowly. A jump of more than three depths cross-fades.</p>
       </details>
 
       <details open>
@@ -415,6 +419,10 @@
             </div>
             <button class="small" onclick={() => T.showStratum(tool.stratum + 1)} aria-label="The next stratum">›</button>
           </div>
+          <p class="vibe">
+            <b>{stratum.gen.kind ?? 'Generated'}</b>{#if stratum.gen.scheme} • {SCHEMES[stratum.gen.scheme] ?? stratum.gen.scheme}{/if}
+            • {stratum.fx.map((f) => `${envLabel(f.name)} ${f.e.toFixed(2)}`).join(' and ')}
+          </p>
           <div class="line">
             {@render swatch(stratum.gen.look, '', true, () => T.showStratum(tool.stratum), 'Show it')}
             <p class="hint grow">
@@ -442,7 +450,7 @@
           <div class="strip">
             {#each stratumStrip as v (v.seed)}{@render swatch(v.look, '', v.seed === tool.trial, () => T.tryStratumSeed(v.seed), `Seed ${v.seed}`)}{/each}
           </div>
-          <p class="hint">Every stratum past the zones is generated from its own seed, the same for everyone; its hue moves on from the one before's, and it is steered clear of every zone and of its neighbours (re-rolled where it still comes out too alike), so none looks like a hand-made zone or the stratum before. Pin a seed to keep a stratum as it is: a pinned seed is never re-rolled.</p>
+          <p class="hint">Every stratum past the zones is one of the archetypes, dealt out so none comes twice in a row and no two in a row share an effect, and named from its archetype's names (none twice in a long while). Its seed, the same for everyone, makes a variation of it, steered clear of every zone and of its neighbours (re-rolled where it still comes out too alike), so none looks like a hand-made zone or the stratum before. Pin a seed to keep a stratum as it is: a pinned seed is never re-rolled, and keeps its archetype.</p>
         </div>
         <details open>
           <summary>Endgame generator</summary>
@@ -954,6 +962,17 @@
     font-style: normal;
     font-size: 0.78rem;
     color: var(--muted);
+  }
+  /* The endgame stratum's archetype: its mood, scheme and effects. */
+  .vibe {
+    margin: 0.3rem 0 0;
+    font-size: 0.85rem;
+    color: var(--muted);
+  }
+  .vibe b {
+    font-family: var(--font-display);
+    font-weight: normal;
+    color: var(--gold-hi);
   }
 
   .seed {

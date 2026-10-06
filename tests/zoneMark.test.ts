@@ -4,6 +4,8 @@ import { layout, type Head, type Variant } from '../src/lib/zoneMark.ts';
 import { sigilOf, SIGIL_NAMES, zoneAt } from '../src/lib/zoneSigils.ts';
 import { ornamentOf, ORNAMENT_NAMES } from '../src/lib/zoneOrnaments.ts';
 import { STRATA, stratumName } from '../src/lib/descent.ts';
+import { ARCHETYPES, composedNames, NAME_MOST } from '../src/lib/archetypes.ts';
+import { emblemOf } from '../src/lib/backdrops.ts';
 
 // The head of the stage as measured in the app: a 375 px phone and a 1280 px desktop.
 const PHONE: Head = { w: 343, h: 58, ky: 14.5, capTop: 26.1, by: 34, hx0: 134, hx1: 209, rl0: 1, rr1: 342, nameW: 113, nameH: 18.4 };
@@ -22,8 +24,10 @@ const points = (d: string) =>
 
 test('every biome has a sigil of its own, within its seal', () => {
   for (const s of STRATA) assert.ok(SIGIL_NAMES.includes(s.name), s.name);
-  // Past depth 100 the strata are named after a biome too.
-  for (let k = 10; k < 30; k++) assert.ok(SIGIL_NAMES.includes(stratumName(k)));
+  // Past depth 100 each stratum has a name of its own, and bears its archetype's zone's emblem.
+  for (let k = 10; k < 30; k++) assert.ok(SIGIL_NAMES.includes(emblemOf(stratumName(k))!), stratumName(k));
+  for (const a of ARCHETYPES) assert.ok(SIGIL_NAMES.includes(a.emblem) && ORNAMENT_NAMES.includes(a.emblem), a.kind);
+  for (let k = 10; k < 30; k++) assert.deepEqual(sigilOf(stratumName(k)), sigilOf(emblemOf(stratumName(k))!));
   for (const name of SIGIL_NAMES) {
     const { lines, fine } = sigilOf(name);
     assert.ok(lines.length > 20, name);
@@ -96,7 +100,9 @@ test('the zone a depth is in', () => {
   assert.equal(zoneAt(11), 'Magma Fissure');
   assert.equal(zoneAt(21), 'Frozen Hollow');
   assert.equal(zoneAt(100), 'Primeval Ruins');
-  for (let d = 1; d < 400; d++) assert.ok(SIGIL_NAMES.includes(zoneAt(d)) && ORNAMENT_NAMES.includes(zoneAt(d)), `depth ${d}`);
+  for (let d = 1; d <= 100; d++) assert.ok(SIGIL_NAMES.includes(zoneAt(d)) && ORNAMENT_NAMES.includes(zoneAt(d)), `depth ${d}`);
+  // Past 100 the stratum's own name, which bears its archetype's zone's emblem.
+  for (let d = 101; d < 400; d++) assert.ok(SIGIL_NAMES.includes(emblemOf(zoneAt(d))!), `depth ${d}: ${zoneAt(d)}`);
 });
 
 test("each zone's ornament runs out from the point within the ribbon's height, and the whole stays in the column", () => {
@@ -117,4 +123,19 @@ test("each zone's ornament runs out from the point within the ribbon's height, a
       }
     }
   }
+});
+
+test("the endgame's names fit the ribbon on a 375 px phone, as the zones' do", () => {
+  // The phone's measured name (113 px) is about a hand-made zone's length; a name is as wide as its letters, about.
+  const perChar = PHONE.nameW / 14;
+  const names = ARCHETYPES.flatMap((a) => [...a.names, ...composedNames(a)]);
+  const longest = Math.max(...names.map((n) => n.length));
+  assert.ok(longest <= NAME_MOST, `${longest} characters`);
+  const head = { ...PHONE, nameW: perChar * longest };
+  for (const v of VARIANTS) {
+    const m = layout(v, head);
+    for (const [x] of m.strokes.flatMap((s) => points(s.d))) assert.ok(x >= -0.5 && x <= head.w + 0.5, `${v}: x ${x} outside the column`);
+  }
+  // And the ribbon keeps its ornaments, a little shorter at most.
+  assert.ok(layout('ribbon', head).L >= 40);
 });
