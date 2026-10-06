@@ -40,7 +40,7 @@
     url.searchParams.delete(DELVE_LINK_PARAM);
     history.replaceState(history.state, '', url);
     session.delveLink = true;
-    const known = name.trim();
+    const known = savedName().trim();
     if (known && !nameTooShort(known) && !nameHeld(known))
       setTimeout(() => {
         if (session.status === 'idle' && !session.state) session.startDelve(known);
