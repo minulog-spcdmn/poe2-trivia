@@ -61,6 +61,16 @@ type Ember = {
 
 const r = Math.random;
 
+/** n gates spread evenly over 0 to 1 (one in each nth, at random within it), in random order. */
+function spread(n: number): Float32Array {
+  const g = Float32Array.from({ length: n }, (_, i) => (i + r()) / n);
+  for (let i = n - 1; i > 0; i--) {
+    const j = Math.floor(r() * (i + 1));
+    [g[i], g[j]] = [g[j], g[i]];
+  }
+  return g;
+}
+
 /** The usual orange halo. */
 export const CALM = SURFACE.ember;
 
@@ -106,8 +116,12 @@ export class Embers {
   private glintList = Array.from({ length: GLINTS }, (_, k) => glint(k));
   /** The stratum each ember burns in; each takes a new one only as it starts a new rise, so a colour spreads ember by ember. */
   private burn = new Int32Array(EMBERS).fill(-1);
-  /** How far into a stratum's turn it takes for each ember to burn in it (fixed per ember). */
-  private burnGate = Float32Array.from({ length: EMBERS }, () => r());
+  /**
+   * How far into a stratum's turn it takes for each ember to burn in it
+   * (fixed per ember): spread evenly over the turn and dealt out at random,
+   * so the share burning in the new stratum keeps to the turn itself.
+   */
+  private burnGate = spread(EMBERS);
   /** Which embers sink rather than rise, also decided at each new rise, and what share it takes. */
   private sink = new Uint8Array(EMBERS);
   private sinkGate = Float32Array.from({ length: EMBERS }, () => r());
