@@ -907,7 +907,7 @@
     height: var(--notch);
     background: var(--line);
     clip-path: polygon(50% 0, 100% 100%, 0 100%);
-    transition: left 0.3s var(--ease-out);
+    transition: left 0.6s cubic-bezier(0.45, 0, 0.25, 1);
   }
   .about.peek .about-frame {
     --line: #e0553f;
