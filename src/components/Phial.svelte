@@ -2,7 +2,7 @@
   // Delve: a player's lives as an engraved phial of three chambers of life
   // essence. A lit chamber holds a soft living light that beats like a heart
   // (all three in one rhythm), each with a motion of its own: a tide swaying
-  // to and fro, a swirl of two wisps, motes streaming toward the tip. Spent
+  // to and fro, a swirl of two wisps, two glows kindling in turn. Spent
   // ones are dark glass. They go dark from the end (the top, when the phial
   // stands upright on a phone). The light of a life just lost flares and
   // pours out of the end of its chamber; Scoreboard.svelte jets it out of the
@@ -334,22 +334,35 @@
     }
   }
 
-  /* The third: motes streaming toward the tip, on two spacings that never
-     line up. The field slides exactly one shared period, so it loops unseen. */
+  /* The third: a kindling. Two soft glows swell and fade in turn, each
+     drifting a little toward the tip as it brightens, like breath on embers. */
   .c2 .wisp {
-    top: 0;
-    bottom: 0;
-    left: calc(var(--u) * -18);
-    right: 0;
-    background:
-      radial-gradient(circle, rgba(255, 246, 226, 0.95) 0 calc(var(--u) * 0.42), transparent calc(var(--u) * 0.9)) 0 calc(var(--u) * 1.3) / calc(var(--u) * 6) calc(var(--u) * 5.3),
-      radial-gradient(circle, rgba(255, 190, 150, 0.85) 0 calc(var(--u) * 0.36), transparent calc(var(--u) * 0.85)) calc(var(--u) * 2.4) calc(var(--u) * 4.4) / calc(var(--u) * 9) calc(var(--u) * 7.6),
-      radial-gradient(circle, rgba(255, 228, 196, 0.8) 0 calc(var(--u) * 0.3), transparent calc(var(--u) * 0.8)) calc(var(--u) * 11) calc(var(--u) * 2.6) / calc(var(--u) * 18) calc(var(--u) * 6.1);
-    animation: stream 1.9s linear infinite;
+    inset: 0;
   }
-  @keyframes stream {
-    to {
-      transform: translateX(calc(var(--u) * 18));
+  .c2 .wisp::before,
+  .c2 .wisp::after {
+    content: '';
+    position: absolute;
+    inset: -30% -10%;
+    opacity: 0;
+    animation: kindle 3.8s ease-in-out infinite;
+  }
+  .c2 .wisp::before {
+    background: radial-gradient(ellipse 30% 44% at 34% 42%, rgba(255, 240, 220, 0.85), rgba(255, 180, 140, 0.35) 55%, rgba(255, 180, 140, 0) 100%);
+  }
+  .c2 .wisp::after {
+    background: radial-gradient(ellipse 26% 40% at 58% 64%, rgba(255, 200, 160, 0.7), rgba(255, 150, 110, 0.3) 55%, rgba(255, 150, 110, 0) 100%);
+    animation-delay: -1.9s;
+  }
+  @keyframes kindle {
+    0%,
+    100% {
+      opacity: 0;
+      transform: translateX(-6%) scale(0.8);
+    }
+    50% {
+      opacity: 1;
+      transform: translateX(4%) scale(1.06);
     }
   }
 
