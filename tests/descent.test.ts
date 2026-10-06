@@ -365,7 +365,7 @@ test("each environment's features come in steadily: what they add to the brightn
 /** How hot the magma glows in a scene (1, but as it cools: see magmaCooling). */
 const heat = (x: { stratum: number; turn: number }) => magmaHeat(magmaCooling(x.stratum, x.turn));
 
-test("the deeper, the darker: the scene's average brightness never rises, however bright a stratum", () => {
+test("the deeper, the darker: through the zones the scene's average brightness never rises; past them it may, gently", () => {
   /**
    * The average brightness drawn (light scales the hall, not its features or
    * embers; MEASURED says how the frames drawn come out against the
@@ -379,20 +379,26 @@ test("the deeper, the darker: the scene's average brightness never rises, howeve
     return e.hall * hall * x.light + e.rest * rest;
   };
   assert.equal(MEASURED.length, 91, 'measured from the frames, to the last depth whose look is the zones\' alone');
+  // Through the zones the descent only ever darkens. From the endgame's
+  // arrival on (its look creeps in over the last zone's last depths) the
+  // scene may grow brighter and more colourful, to lift the excitement, but
+  // never by a jump.
+  const zonesEnd = 10 * STRATA.length - 3;
+  const rise = (d: number) => (d <= zonesEnd ? 1.008 : 1.08);
   // Depth by depth (held still, the scene shows only whole depths).
   let prev = lum(1);
   for (let d = 2; d <= 600; d++) {
     const now = lum(d);
     // (Where a stratum's features come in faster than the light may ease
     // down, a trace brighter: under 1%, where a frame drawn varies by more.)
-    assert.ok(now <= prev * 1.008, `brighter at ${d}: ${now.toFixed(5)} after ${prev.toFixed(5)}`);
+    assert.ok(now <= prev * rise(d), `brighter at ${d}: ${now.toFixed(5)} after ${prev.toFixed(5)}`);
     prev = now;
   }
   // And while a depth eases in, never more than a trace brighter than the depth it left.
   for (let d = 1.25; d <= 600; d += 0.25) {
     if (d % 1 === 0) continue;
     const before = lum(Math.floor(d));
-    assert.ok(lum(d) <= before * 1.008, `brighter at ${d}: ${lum(d).toFixed(5)} after ${before.toFixed(5)}`);
+    assert.ok(lum(d) <= before * rise(Math.ceil(d)), `brighter at ${d}: ${lum(d).toFixed(5)} after ${before.toFixed(5)}`);
   }
   for (const d of [1e4 + 0.5, 1e6 + 3]) assert.ok(lum(d) <= lum(600) * 1.008, `brighter at ${d}`);
   // Never far from the curve it keeps to, and never brighter than it by much.
@@ -419,7 +425,10 @@ test("what the features add, which the light can't take back, changes a little w
   for (let d = 1; d <= 400; d++) {
     const x = descent(d);
     const rest = estimateLuminance(x.look, x.close, x.features, heat(x)).rest * measuredAt(d)[1];
-    if (d > 1) assert.ok(Math.abs(rest - prev) < 0.08 * luminanceAt(d), `the features jump by ${(rest - prev).toFixed(4)} at ${d}`);
+    // (Coming in, the light must make way for them, so they come in gently;
+    // going out, they only leave the scene a little darker for a while.)
+    const step = rest - prev;
+    if (d > 1) assert.ok(step < 0.08 * luminanceAt(d) && -step < 0.15 * luminanceAt(d), `the features jump by ${step.toFixed(4)} at ${d}`);
     prev = rest;
   }
   // And they burn a little less the deeper.
