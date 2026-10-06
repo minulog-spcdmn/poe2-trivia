@@ -15,7 +15,7 @@ import * as fxMoments from '../lib/fx/moments';
 import { session } from '../lib/session.svelte';
 import { BETA } from '../lib/channel';
 import { LAB } from '../lib/storage';
-import * as lab from './lab.svelte';
+import * as lab from './controls.svelte';
 
 if (!(import.meta.env.DEV || BETA) || !LAB) throw new Error('The lab only runs on the dev server and the beta, from lab.html.');
 

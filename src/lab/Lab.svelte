@@ -10,7 +10,7 @@
   import { isMuted, setMuted } from '../lib/sound';
   import { readStored, writeStored } from '../lib/storage';
   import { reduceMotion, setReduceMotion } from './motion';
-  import * as L from './lab.svelte';
+  import * as L from './controls.svelte';
 
   const s = $derived(session.state);
   const run = $derived(s?.delve ? s : null);
