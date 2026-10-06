@@ -24,6 +24,7 @@ import {
   DEFAULT_SETTINGS,
   type Action,
   type GameState,
+  type Grayscale,
   type Item,
 } from './game';
 import { PEER_OPTIONS, PEER_PREFIX } from './peer';
@@ -749,7 +750,7 @@ class Session {
       });
       // Dynamite already went off (a host back from a reload): the art as it left it.
       const plain = q.blasted ? { ...q, veil: null, mirrored: q.mirrored?.map(() => false) } : q;
-      media = await Promise.race([prepareMedia(plain, q.blasted ? 'off' : activeRules(s).grayscale), timeout]).finally(() => clearTimeout(timer));
+      media = await Promise.race([prepareMedia(plain, q.blasted ? 'off' : this.grayscaleOf(s)), timeout]).finally(() => clearTimeout(timer));
     } catch (err) {
       console.warn('media', err);
       if (this.state?.question?.askedAt === q.askedAt && this.state.phase === 'question') {
@@ -770,7 +771,7 @@ class Session {
     this.held = guestTurn ? { qid, activeId: active.id } : null;
     // Dynamite will go off on this question if the player holds some (never
     // on a find's): its plain art is made in a moment, once this art is on its way.
-    if (s.delve && active && !q.blasted && itemsWorkOn(q) && dynamiteOf(s, active.id) > 0 && blastClears(q, activeRules(s).grayscale)) {
+    if (s.delve && active && !q.blasted && itemsWorkOn(q) && dynamiteOf(s, active.id) > 0 && blastClears(q, this.grayscaleOf(s))) {
       const art = new Promise((r) => setTimeout(r, 500)).then(() => prepareClean(q));
       art.catch(() => {});
       this.clean = { qid, art };
@@ -850,7 +851,7 @@ class Session {
     if (this.media?.qid !== qid) return;
     for (const t of this.mediaTimers) clearTimeout(t);
     this.mediaTimers = [];
-    if (!blastClears(q, activeRules(s).grayscale)) return;
+    if (!blastClears(q, this.grayscaleOf(s))) return;
     let clean: CleanMedia;
     try {
       clean = await (this.clean?.qid === qid ? this.clean.art : prepareClean(q));
@@ -1181,6 +1182,21 @@ class Session {
       return;
     }
     this.reset();
+  }
+
+  // ---- the lab (src/lab: dev and beta only, never called by the game) -----
+
+  /** Lab only: the grayscale the art is prepared with, in place of the rules'. Always null in the game. */
+  labGrayscale: Grayscale | null = null;
+
+  /** Lab only: puts a state in place as the host would, with its timers, sounds, art and records. */
+  labSetState(next: GameState) {
+    this.setState(next);
+  }
+
+  /** The grayscale a question's art is prepared with: the rules' (the lab may force one). */
+  private grayscaleOf(s: GameState): Grayscale {
+    return this.labGrayscale ?? activeRules(s).grayscale;
   }
 
   // ---- internals --------------------------------------------------------

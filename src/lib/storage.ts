@@ -1,6 +1,13 @@
 import { BETA } from './channel.ts';
 
 /**
+ * The effects lab (lab.html, src/lab: dev and beta builds only) marks its
+ * page `<html data-lab>`. Its keys get a start of their own, so nothing it
+ * plays (runs, codex, saves, settings) reaches the game's records.
+ */
+export const LAB = typeof document !== 'undefined' && document.documentElement.hasAttribute('data-lab');
+
+/**
  * localStorage and sessionStorage, for the whole site (a test keeps every
  * other module off them). Reads and writes never throw: storage can be
  * missing, blocked or full.
@@ -11,7 +18,7 @@ import { BETA } from './channel.ts';
  * start; the *Key versions take a whole key, for the few the beta must share
  * with the live game or leave alone.
  */
-export const STORE = BETA ? 'poe2trivia.beta.' : 'poe2trivia.';
+export const STORE = (BETA ? 'poe2trivia.beta.' : 'poe2trivia.') + (LAB ? 'lab.' : '');
 
 export type Area = 'local' | 'session';
 
@@ -61,7 +68,7 @@ export const tryReadStored = (name: string, where: Area = 'local') => tryReadKey
  * A key the live game wrote before it moved to a newer one. Only the live
  * game reads or clears these: they were never the beta's to take over.
  */
-export const readLegacy = (key: string, where: Area = 'local') => (BETA ? null : readKey(key, where));
+export const readLegacy = (key: string, where: Area = 'local') => (BETA || LAB ? null : readKey(key, where));
 export const removeLegacy = (key: string, where: Area = 'local') => {
-  if (!BETA) removeKey(key, where);
+  if (!BETA && !LAB) removeKey(key, where);
 };

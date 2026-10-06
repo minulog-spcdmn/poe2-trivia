@@ -552,6 +552,31 @@ it apart from the live game:
 - it says Beta on the start page, in the header and in the tab title, and
   asks search engines not to index it
 
+### The lab
+
+`lab.html` (`src/lab/`) is a page for trying Delve's moments by hand: the
+real game screen (the app itself, with its backdrop, effects, sounds and
+header) beside a panel that sets up and plays a run on this device. It sets
+the players (1 to 4), whose turn it is, each one's lives, wards, shard,
+flares and dynamite, and the depth (any of 1 to 150, or a zone); deals
+cards with a find among them; asks questions (name the item or find the
+art, a find's, mirrored, unveiled, in grayscale); plays events (a right or
+wrong answer, a time-out, a ward breaking, a cave-in, a flare at 0,
+dynamite at half the clock, items gained, a find answered right, the last
+life, the last one standing, deeper than ever, a new zone, the plunge);
+pauses and moves the clock; shows the end screens; and switches effects,
+sound and reduced motion. Events go through the engine and the session as
+a game's would; setup changes start the run afresh under a new id, so they
+play nothing themselves.
+
+- **Open it:** `npm run dev`, then `http://localhost:5173/lab.html`; on the
+  beta, **poe2.quest/beta/lab.html**. The live build leaves it out (its
+  entry is only added with `VITE_CHANNEL=beta`, see `vite.config.ts`).
+- **Its storage is its own:** the page is marked `<html data-lab>`, and
+  `src/lib/storage.ts` then starts every key with `lab.` (after the beta's
+  start on the beta), so its runs, codex, saves and settings never reach the
+  game's.
+
 ---
 
 Fan project. Not affiliated with Grinding Gear Games. Item data and art from

@@ -134,6 +134,9 @@ export default defineConfig(({ mode }) => {
           main: 'index.html',
           impressum: 'impressum.html',
           datenschutz: 'datenschutz.html',
+          // The effects lab (src/lab): the dev server serves it by itself;
+          // of the builds only the beta has it, never the live game.
+          ...(env.VITE_CHANNEL === 'beta' ? { lab: 'lab.html' } : {}),
         },
       },
     },
