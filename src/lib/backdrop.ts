@@ -14,7 +14,7 @@ import { DROPS_PER_MASK, MAX_MASKS, measureDrops, releaseAllDrops } from './back
 import { MAX_LIGHTS, packLights, stepHomeScene, stepMood } from './lights';
 import { fxActive, fxUserOn, onFxChange } from './fx/core';
 import { COLUMNS, PALETTE, ROWS, SIZE_STRIDE, SLOTS, TILES, embers } from './backdropEmbers';
-import { ENV, currentDescent, snapDescent, stepDescent, targetDescent } from './descent';
+import { BLOBS, ENV, currentDescent, sinking, smokeOf, snapDescent, stepDescent, stepPlunge, targetDescent, type Blob } from './descent';
 import { pressureLevel } from './darkness';
 import { DIALOG_BLUR, DIALOG_DIM, openDialog } from './behindDialog';
 
@@ -67,6 +67,18 @@ uniform vec4 uMist;
 uniform vec4 uEnv[3];
 uniform vec4 uEddy;
 uniform vec2 uDark;
+// The glow in the middle's colour (the surface's gold, a stratum's own).
+// And in one vector (uniform space is tight, see maxElements): how bright
+// the stratum's light is drawn (descent.ts's light: so the scene only ever
+// darkens deeper down); how far the scene has sunk (CSS px; each pick of a
+// card sinks it, see plunge in descent.ts): the walls' and the smoke's noise
+// is read that much further down, the nearer the more; and how bright the
+// stratum's features burn (descent.ts's features).
+uniform vec3 uGlowCol;
+uniform vec3 uScene;
+#define uLight uScene.x
+#define uSink uScene.y
+#define uFeatures uScene.z
 
 // The start page: (rays, title glow, time in s, title breath), and the
 // title's centre and half size (CSS px). See setHomeScene in lights.ts.
@@ -116,8 +128,9 @@ vec3 environments(vec3 col, vec2 p, vec2 q, vec2 xy, float S, float W, float H, 
   vec4 e1 = uEnv[1];
   vec4 e2 = uEnv[2];
   float side = 1.0 - smoothstep(0.0, 0.3, min(xy.x, 1.0 - xy.x));
-  // What glows still shows through the dark closing in, dimmed.
-  float lit = 1.0 - 0.8 * dark;
+  // What glows still shows through the dark closing in, dimmed (and burns a
+  // little less the deeper).
+  float lit = (1.0 - 0.8 * dark) * uFeatures;
 
   // The Mines: lamps hung along the walls, each a warm pool that gutters,
   // and the rock's seams running across, catching their light. They kindle
@@ -135,7 +148,7 @@ vec3 environments(vec3 col, vec2 p, vec2 q, vec2 xy, float S, float W, float H, 
     }
     lamps = min(1.2, lamps);
     col *= 1.0 - e0.x * 0.45 * seam * (1.0 - min(1.0, lamps));
-    col += lit * (rgb(255.0, 140.0, 50.0) * lamps * (0.1 + 0.25 * seam) + e0.x * rgb(90.0, 50.0, 22.0) * seam * 0.04);
+    col += lit * (rgb(255.0, 140.0, 50.0) * lamps * (0.06 + 0.14 * seam) + e0.x * rgb(90.0, 50.0, 22.0) * seam * 0.04);
   }
 
   // Magma Fissure: cracks glowing through the rock, branching as they
@@ -159,7 +172,7 @@ vec3 environments(vec3 col, vec2 p, vec2 q, vec2 xy, float S, float W, float H, 
     float flow = 0.35 + 0.65 * vnoise(vec2(m.x * 1.2, m.y * 1.6 + tm * 0.4));
     float heat = crack * low * flow;
     col *= 1.0 - 1.6 * e * (1.0 - e) * c1 * c1;
-    col += lit * (rgb(255.0, 70.0, 14.0) * heat * 0.6 * e * e + rgb(255.0, 215.0, 140.0) * pow(heat, 3.0) * 0.5 * e * e * e
+    col += lit * (rgb(255.0, 70.0, 14.0) * heat * 0.45 * e * e + rgb(255.0, 215.0, 140.0) * pow(heat, 3.0) * 0.45 * e * e * e
       + rgb(150.0, 18.0, 4.0) * (smoothstep(0.2, 0.0, abs(n1 - 0.5)) * 0.1 + 0.25 * c1 * (1.0 - e)) * low * flow * sqrt(e));
   }
 
@@ -189,7 +202,7 @@ vec3 environments(vec3 col, vec2 p, vec2 q, vec2 xy, float S, float W, float H, 
     vec2 f = fract(g) - 0.3 - 0.4 * vec2(nhash(cell + 1.7), nhash(cell + 9.1));
     float tw = 0.5 + 0.5 * sin(tm * (0.8 + 1.5 * h) + h * 50.0);
     float glitter = step(0.72, h) * exp(-dot(f, f) / 0.012) * tw * tw * (0.3 + cr);
-    col = mix(col, rgb(160.0, 200.0, 240.0), lit * (rim * (0.1 + 0.08 * patches) + 0.2 * cr));
+    col = mix(col, rgb(96.0, 130.0, 170.0), lit * (rim * (0.08 + 0.07 * patches) + 0.25 * cr));
     col += lit * rgb(215.0, 238.0, 255.0) * (rim + 0.2 * e) * glitter * 0.45;
   }
 
@@ -203,18 +216,19 @@ vec3 environments(vec3 col, vec2 p, vec2 q, vec2 xy, float S, float W, float H, 
     float pocket = smoothstep(0.42, 0.72, vnoise(q * 2.6 + 3.3)) * place;
     float caps = 0.0;
     for (int i = 0; i < 2; i++) {
-      float k = i == 0 ? 30.0 : 52.0;
+      float k = i == 0 ? 24.0 : 40.0;
       vec2 g = q * k + float(i) * 17.0;
       vec2 cell = floor(g);
       float h = nhash(cell);
       vec2 f = fract(g) - 0.2 - 0.6 * vec2(nhash(cell + 3.1), nhash(cell + 8.7));
       // Caps only grow in the clusters, thickest in their hearts.
-      float grow = smoothstep(0.45 + 0.4 * h, 0.75 + 0.2 * h, vnoise((cell + 0.5) / k * 2.6 + 3.3)) * smoothstep(0.8 * h, 0.8 * h + 0.2, e);
-      float size = (i == 0 ? 0.012 : 0.02) * (0.5 + h);
+      // As it comes they light from the clusters' hearts outward.
+      float grow = smoothstep(0.45 + 0.4 * h + 0.5 * (1.0 - e), 0.75 + 0.2 * h + 0.5 * (1.0 - e), vnoise((cell + 0.5) / k * 2.6 + 3.3));
+      float size = (i == 0 ? 0.02 : 0.026) * (0.5 + h);
       caps += grow * exp(-dot(f, f) / size) * (0.45 + 0.55 * sin(tm * (0.6 + h) + h * 40.0)) * (i == 0 ? 1.0 : 0.6);
     }
     float beat = 0.6 + 0.4 * sin(tm * 0.7 + 6.283 * vnoise(q * 1.3 + 8.0));
-    col += lit * (rgb(40.0, 190.0, 130.0) * pocket * beat * 0.16 * e + rgb(190.0, 255.0, 140.0) * caps * (0.4 + 0.6 * place) * 0.85);
+    col += lit * (rgb(40.0, 190.0, 130.0) * pocket * beat * 0.16 * e + rgb(190.0, 255.0, 140.0) * caps * place * 0.6);
   }
 
   // Vaal Outpost: shafts of dusty gold light falling slantwise from above,
@@ -225,11 +239,11 @@ vec3 environments(vec3 col, vec2 p, vec2 q, vec2 xy, float S, float W, float H, 
     float s = (p.x - 0.4 * p.y) / S;
     float b = 0.7 * vnoise(vec2(s * 6.0, tm * 0.03)) + 0.3 * vnoise(vec2(s * 14.0 + 3.0, tm * 0.05));
     float shaft = pow(smoothstep(0.5, 0.82, b), 1.5);
-    float fade = (0.15 + 0.85 * pow(1.0 - xy.y, 1.3)) * (1.0 - smoothstep(down - 0.35, down + 0.05, xy.y));
+    float fade = (0.15 + 0.85 * pow(max(0.0, 1.0 - xy.y), 1.3)) * (1.0 - smoothstep(down - 0.35, down + 0.05, xy.y));
     float dust = 0.45 + 0.55 * fbm(vec2(q.x * 9.0, q.y * 9.0 - tm * 0.07));
     float f = fract(6.0 * vnoise(q * 9.0 + 9.0) + 0.5 * vnoise(q * 30.0));
     float carve = 0.86 + 0.14 * smoothstep(0.0, 0.5, f) * (1.0 - smoothstep(0.85, 1.0, f));
-    col += sqrt(e1.x) * lit * (rgb(255.0, 196.0, 104.0) * shaft * fade * dust * carve * 0.42 + rgb(110.0, 80.0, 30.0) * fade * carve * 0.03);
+    col += sqrt(e1.x) * lit * (rgb(255.0, 196.0, 104.0) * shaft * fade * dust * carve * 0.18 + rgb(110.0, 80.0, 30.0) * fade * carve * 0.03);
   }
 
   // Abyssal Depths: the void coiling round two slow eddies (the embers
@@ -277,9 +291,9 @@ vec3 environments(vec3 col, vec2 p, vec2 q, vec2 xy, float S, float W, float H, 
       float layer = fbm(vec2(q.x * k - tm * (0.012 + 0.016 * fi) * k, q.y * k * 2.6 + fi * 5.0));
       mist[i] = smoothstep(0.36, 0.76, layer) * gauss((xy.y - 0.25 - 0.28 * fi) / 0.26) * (0.6 + 0.2 * fi);
     }
-    vec3 fog = rgb(150.0, 160.0, 166.0);
-    float thin = e1.z * e1.z * 0.3 * (1.0 - 0.5 * dark);
-    col = mix(col, fog, thin * (0.25 + min(1.0, mist[0] + 0.5)));
+    vec3 fog = rgb(92.0, 102.0, 110.0);
+    float thin = e1.z * e1.z * 0.09 * (1.0 - 0.5 * dark);
+    col = mix(col, fog, thin * (0.15 + 0.85 * min(1.0, mist[0])));
     col = mix(col, rgb(10.0, 11.0, 12.0), smoothstep(0.45, 1.0, e1.z) * 0.85 * trunks);
     col = mix(col, fog, thin * min(1.0, mist[1] + mist[2]));
   }
@@ -296,8 +310,8 @@ vec3 environments(vec3 col, vec2 p, vec2 q, vec2 xy, float S, float W, float H, 
     float billow = fbm(bq + 0.6 * vec2(vnoise(bq * 1.3 + vec2(0.0, tm * 0.1)), 0.0));
     float plume = vents * smoothstep(0.35, 0.72, billow) * (1.0 - smoothstep(0.15, 1.25, up)) * (1.0 - smoothstep(top - 0.4, top, up + 0.15 * (billow - 0.5)));
     float k = smoothstep(0.0, 0.4, e1.w);
-    col = mix(col, rgb(160.0, 180.0, 64.0), k * 0.4 * plume * (1.0 - 0.5 * dark));
-    col += k * lit * rgb(210.0, 235.0, 90.0) * plume * (0.3 + 0.7 * xy.y) * 0.08;
+    col = mix(col, rgb(110.0, 124.0, 46.0), k * 0.1 * plume * (1.0 - 0.5 * dark));
+    col += k * lit * rgb(210.0, 235.0, 90.0) * plume * (0.3 + 0.7 * xy.y) * 0.05;
   }
 
   // Abyssal City: all but black, fog banks drifting at two depths in front
@@ -317,10 +331,10 @@ vec3 environments(vec3 col, vec2 p, vec2 q, vec2 xy, float S, float W, float H, 
     float e = e2.y;
     vec2 hq = vec2(q.x * 3.0, q.y * 2.0 + tm * 0.5);
     float haze = fbm(hq + 0.6 * vec2(vnoise(hq * 1.7 + tm * 0.2), 0.0));
-    float rise = xy.y + 0.28 * (haze - 0.5) + 0.35 * side * (0.5 + haze);
-    float hot = smoothstep(0.3, 1.15, rise + 0.9 * (e - 1.0));
+    float rise = xy.y + 0.28 * (haze - 0.5) + 0.22 * side * (0.5 + haze);
+    float hot = smoothstep(0.66, 1.3, rise + 0.9 * (e - 1.0));
     float k = smoothstep(0.0, 0.3, e);
-    col += k * lit * (rgb(255.0, 96.0, 24.0) * hot * 0.34 + rgb(255.0, 240.0, 200.0) * pow(hot, 3.0) * 0.6);
+    col += k * lit * (rgb(255.0, 96.0, 24.0) * hot * 0.22 + rgb(255.0, 240.0, 200.0) * pow(hot, 3.0) * 0.3);
     col *= 1.0 + k * 0.8 * (vnoise(vec2(q.x * 13.0, q.y * 5.0 + tm * 1.8)) - 0.5) * hot;
   }
   return col;
@@ -371,7 +385,7 @@ vec3 smoothLight(vec2 p) {
   vec2 q = vec2(0.5 * W, 0.5 * H) + (p - vec2(0.5 * W, 0.5 * H)) / uGlow.x;
   float R = length(vec2(0.7 * W, 0.77 * H));
   d = length(q - vec2(0.5 * W, 0.43 * H)) / R;
-  col = mix(col, rgb(201.0, 164.0, 92.0), uGlow.y * 0.07 * gauss(d / 0.3));
+  col = mix(col, uGlowCol, uGlow.y * 0.07 * gauss(d / 0.3));
 
   // Drifting blobs break up the symmetry of the layers above.
   for (int i = 0; i < ${BLOB_COUNT}; i++) {
@@ -393,7 +407,7 @@ vec3 smoothLight(vec2 p) {
   // shape that could be picked out.
   if (uShade.a > 0.0 || uMist.a > 0.0) {
     float tm = uHome.z;
-    vec2 u = p / S * 2.4;
+    vec2 u = (p + vec2(0.0, 0.6 * uSink)) / S * 2.4;
     vec2 warp = vec2(vnoise(u * 0.6 + vec2(tm * 0.021, 3.1)), vnoise(u * 0.6 + vec2(7.3, -tm * 0.017)));
     vec2 v = u + 2.2 * warp + vec2(-tm * 0.013, tm * 0.009);
     float n = 0.5 * vnoise(v) + 0.3 * vnoise(v * 2.03 + 11.7) + 0.2 * vnoise(v * 4.1 - 5.3);
@@ -403,11 +417,16 @@ vec3 smoothLight(vec2 p) {
     col *= 1.0 - 0.75 * uShade.a * smoothstep(0.08, 0.9, edge + 0.9 * (0.52 - n));
   }
 
+  // The stratum's light, set so the scene's average only ever darkens with
+  // depth; its features are drawn after, at their own brightness, so a
+  // bright one (fire, gold) is balanced by darker surroundings.
+  col *= uLight;
+
   // The light about you drawing in (see closing()). What glows in the
   // stratum's environment still shows through it, dimmed.
   float dark = closing(p);
   if (dark > 0.0) col *= 1.0 - 0.93 * dark;
-  if (uShade.a > 0.0 || uMist.a > 0.0) col = environments(col, p, p / S, p / vec2(W, H), S, W, H, uHome.z, dark);
+  if (uShade.a > 0.0 || uMist.a > 0.0) col = environments(col, p, (p + vec2(0.0, uSink)) / S, p / vec2(W, H), S, W, H, uHome.z, dark);
   // As the clock runs out the light about you dims as it draws in, the
   // stratum's glow and all.
   col *= 1.0 - 0.35 * uDark.y;
@@ -461,6 +480,14 @@ void main() {
  * The backdrop at every device pixel. With `split`, the soft light comes from
  * uSmooth (drawn by SMOOTH_FRAG); without, it's worked out here.
  */
+/**
+ * Fragment uniform vectors the main pass uses apart from the UI elements'
+ * (counted unpacked, with a little to spare), and each element's: its seven
+ * rows and its shadows' two each. Recount when adding a uniform.
+ */
+const FIXED_UNIFORMS = 146;
+const ELEMENT_UNIFORMS = 7 + 2 * SHADOWS_PER_ELEMENT;
+
 const frag = (MAX_ELEMENTS: number, split: boolean) => `#version 300 es
 precision highp float;
 out vec4 fragColor;
@@ -494,7 +521,11 @@ uniform sampler2D uEmbers;
 // uEmberCore, per entry (see backdropEmbers.ts); and their overall gain.
 uniform vec4 uEmberHalo[${PALETTE}];
 uniform vec3 uEmberCore[${PALETTE}];
-uniform float uEmberGain;
+// Their overall gain, and how far they streak up in a plunge (their glow
+// drawn that much taller).
+uniform vec2 uEmberK;
+#define uEmberGain uEmberK.x
+#define uStreak uEmberK.y
 // Abyssal City's far lights: how many show (0 to 1), and the clock (s).
 uniform vec2 uCity;
 uniform vec4 uShGeo[${MAX_ELEMENTS * SHADOWS_PER_ELEMENT}];
@@ -585,7 +616,7 @@ void main() {
   if (uCity.x > 0.0) {
     for (int i = 0; i < 2; i++) {
       float cs = i == 0 ? 7.0 : 12.0;
-      vec2 pp = p + vec2(uCity.y * (i == 0 ? 1.0 : 2.6), 0.0);
+      vec2 pp = p + vec2(uCity.y * (i == 0 ? 1.0 : 2.6), uSink * (i == 0 ? 0.3 : 0.6));
       vec2 cell = floor(pp / cs);
       float h = hash(cell + float(i) * 31.0);
       float cluster = vnoise(cell * (i == 0 ? 0.11 : 0.07) + float(i) * 9.0);
@@ -608,7 +639,7 @@ void main() {
     if (e.w <= 0.0) break;
     float entry = floor(e.z * ${(1 / SIZE_STRIDE).toFixed(6)});
     float size = e.z - ${SIZE_STRIDE}.0 * entry;
-    vec2 dp = p - e.xy;
+    vec2 dp = (p - e.xy) * vec2(1.0, 1.0 / (1.0 + uStreak));
     float r2 = dot(dp, dp);
     float s2 = size * size;
     if (r2 > s2 * 40.0) continue;
@@ -812,22 +843,8 @@ function beams(t: number, out: Float32Array) {
   }
 }
 
-type Blob = {
-  color: [number, number, number];
-  opacity: number;
-  home: [number, number]; // resting centre, fractions of the viewport
-  wander: [number, number]; // how far it drifts from home, same units
-  reach: [number, number, number]; // ahead, behind, across (see shader)
-};
-
-// Warm blobs plus one shadow that drifts through the middle.
-const BLOBS: Blob[] = [
-  { color: [150, 70, 25], opacity: 0.1, home: [0.22, 0.75], wander: [0.12, 0.08], reach: [0.3, 0.16, 0.14] },
-  { color: [120, 40, 18], opacity: 0.09, home: [0.8, 0.82], wander: [0.1, 0.07], reach: [0.22, 0.34, 0.13] },
-  { color: [140, 110, 60], opacity: 0.06, home: [0.68, 0.28], wander: [0.14, 0.1], reach: [0.28, 0.18, 0.12] },
-  { color: [110, 80, 45], opacity: 0.05, home: [0.3, 0.35], wander: [0.12, 0.1], reach: [0.2, 0.3, 0.1] },
-  { color: [2, 1, 1], opacity: 0.35, home: [0.55, 0.6], wander: [0.18, 0.1], reach: [0.25, 0.18, 0.12] },
-];
+// The drifting smoke (BLOBS, in lib/descent.ts): warm drifts plus one shadow
+// through the middle; in a Delve each takes a colour of its stratum's.
 
 const TAU = Math.PI * 2;
 const rand = (lo: number, hi: number) => lo + Math.random() * (hi - lo);
@@ -870,9 +887,11 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   if (!gl) return null;
   const hp = gl.getShaderPrecisionFormat(gl.FRAGMENT_SHADER, gl.HIGH_FLOAT);
   if (!hp || hp.precision === 0) return null;
-  // WebGL2 guarantees 224 fragment uniform vectors, enough for 9 elements;
-  // most desktop GPUs offer 1024 or more, and get 16.
-  const maxElements = gl.getParameter(gl.MAX_FRAGMENT_UNIFORM_VECTORS) >= 400 ? 16 : 9;
+  // The main pass needs about FIXED_UNIFORMS fragment uniform vectors (every
+  // one counted unpacked, the soft light's included where it is worked out
+  // there) plus ELEMENT_UNIFORMS a UI element. WebGL2 guarantees 224, enough
+  // for 7 elements; most desktop GPUs offer 1024 or more, and get 16.
+  const maxElements = Math.max(4, Math.min(16, Math.floor((gl.getParameter(gl.MAX_FRAGMENT_UNIFORM_VECTORS) - FIXED_UNIFORMS) / ELEMENT_UNIFORMS)));
 
   // The soft light (see SMOOTH) gets a half-float target of its own wherever
   // the GPU can draw to one, which is nearly everywhere; elsewhere the main
@@ -953,6 +972,8 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   const uEnv = S('uEnv');
   const uEddy = S('uEddy');
   const uDark = S('uDark');
+  const uGlowCol = S('uGlowCol');
+  const uScene = S('uScene');
   const env = new Float32Array(12);
   const uBlobColor = S('uBlobColor');
   gl.useProgram(soft);
@@ -970,10 +991,11 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   const uMood = U('uMood');
   const uEmberHalo = U('uEmberHalo');
   const uEmberCore = U('uEmberCore');
-  const uEmberGain = U('uEmberGain');
+  const uEmberK = U('uEmberK');
   const uCity = U('uCity');
   // The dark closing in dims the embers too (closing() in the shader).
   const mDark = U('uDark');
+  const mScene = U('uScene');
   const mHome = U('uHome');
   const uElCount = U('uElCount');
   const uDialog = U('uDialog');
@@ -1094,7 +1116,8 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     gl!.uniform1f(sViewH, viewH);
     // Delve: the stratum's look (the surface's outside one): its light from
     // below, haze, lamp, smoke, and dark.
-    const look = currentDescent().look;
+    const scene = currentDescent();
+    const look = scene.look;
     gl!.uniform4f(uFloor, look.floor[0] / 255, look.floor[1] / 255, look.floor[2] / 255, look.floorK);
     gl!.uniform3f(uHaze, look.haze[0] / 255, look.haze[1] / 255, look.haze[2] / 255);
     gl!.uniform4f(uShade, look.shade[0], look.shade[1], look.shade[2], look.dark);
@@ -1103,18 +1126,19 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     for (let i = 0; i < ENV; i++) env[i] = look.env[i] < 0.002 ? 0 : look.env[i];
     gl!.uniform4fv(uEnv, env);
     gl!.uniform4fv(uEddy, embers.eddies);
-    const close = currentDescent().close;
+    // A plunge draws the dark in and lets it go again as the scene sinks.
+    const close = Math.min(1, scene.close + 0.12 * sinking.breath);
+    const sink = sinking.sink * viewH;
     gl!.uniform2f(uDark, close, pressure);
+    gl!.uniform3f(uGlowCol, look.glow[0] / 255, look.glow[1] / 255, look.glow[2] / 255);
+    gl!.uniform3f(uScene, scene.light, sink, scene.features);
     gl!.uniform2f(uGlow, 1 + 0.08 * glow, (1 - 0.4 * glow) * look.lamp);
     gl!.uniform2f(uBottom, (1 + 0.1 * bottom) * look.floorH, 1 + 0.3 * bottom);
     gl!.uniform2f(uTop, 1 + 0.08 * top, (1 + 0.35 * top) * look.hazeK);
-    // The two low blobs take the stratum's smoke, the two high ones its upper smoke.
+    // Each drift of smoke takes one of the stratum's colours (the shadow keeps its own).
     for (let i = 0; i < BLOBS.length; i++) {
-      const smoke = i < 2 ? look.smoke : look.smokeHi;
-      for (let c = 0; c < 3; c++) {
-        const v = BLOBS[i].color[c];
-        blobColor[i * 3 + c] = (i < 4 ? v + (smoke[c] - v) * look.smokeMix : v) / 255;
-      }
+      const smoke = smokeOf(look, i);
+      for (let c = 0; c < 3; c++) blobColor[i * 3 + c] = smoke[c] / 255;
     }
     gl!.uniform3fv(uBlobColor, blobColor);
     gl!.uniform1f(uBaseStop, 0.6 - 0.08 * base);
@@ -1168,13 +1192,19 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     gl!.uniform1f(uDialog, dialog);
     gl!.uniform4fv(uEmberHalo, embers.halo);
     gl!.uniform3fv(uEmberCore, embers.core);
-    gl!.uniform1f(uEmberGain, calm() ? 0.6 : 1);
+    gl!.uniform2f(uEmberK, calm() ? 0.6 : 1, embers.streak);
     gl!.uniform2f(uCity, env[8], home[2]);
     gl!.uniform2f(mDark, close, pressure);
+    gl!.uniform3f(mScene, scene.light, sink, scene.features);
     gl!.uniform4fv(mHome, home);
     gl!.activeTexture(gl!.TEXTURE2);
     gl!.bindTexture(gl!.TEXTURE_2D, emberTex);
-    gl!.texSubImage2D(gl!.TEXTURE_2D, 0, 0, 0, SLOTS, TILES, gl!.RGBA, gl!.FLOAT, embers.data);
+    // Only the slots in use, and the empty one that ends the fullest row: the
+    // shader reads no further in any row, and every row's own end is in them.
+    const cols = Math.min(SLOTS, embers.usedMax + 1);
+    gl!.pixelStorei(gl!.UNPACK_ROW_LENGTH, SLOTS);
+    gl!.texSubImage2D(gl!.TEXTURE_2D, 0, 0, 0, cols, TILES, gl!.RGBA, gl!.FLOAT, embers.data);
+    gl!.pixelStorei(gl!.UNPACK_ROW_LENGTH, 0);
     gl!.drawArrays(gl!.TRIANGLES, 0, 3);
   }
 
@@ -1255,6 +1285,15 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
       if (still) dirty = true;
     }
     embers.descend(currentDescent(), targetDescent());
+    // A card picked: the scene sinks a little further (plunge in descent.ts),
+    // the embers and glints carried up with the walls; never while holding still.
+    const sunk = sinking.sink;
+    if (stepPlunge(now, !still)) {
+      const px = (sinking.sink - sunk) * viewH;
+      if (Math.abs(px) < viewH) embers.rise(px, canvas.clientHeight);
+      dirty = true;
+    }
+    embers.streak = 3 * sinking.speed;
     // Arrived at a depth: the embers still in the old colour take the new one (after a rejoin, all of them).
     if (wasDescending && !descending) embers.recolor();
     wasDescending = descending;

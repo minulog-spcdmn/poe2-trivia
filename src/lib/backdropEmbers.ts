@@ -7,8 +7,10 @@
 // through `flare`. In Delve each stratum (lib/descent.ts) has embers of its
 // own: their colour, how many, how fast, large and restless they are,
 // whether they rise or sink, whether eddies pull them round or sparks burst
-// up from below, and what glints in the walls (`descend`). A new stratum's
-// colour spreads ember by ember, as each starts a new rise.
+// up from below, and what glints in the walls (`descend`). Through a
+// stratum a growing share of them burns in the next one's colour, each
+// taking it as it starts a new rise. Each pick of a card carries them, and
+// the glints with the walls, up past you as the scene sinks (`rise`).
 
 import { lookOf, SURFACE, type Descent, type Look } from './descent.ts';
 
@@ -24,7 +26,7 @@ export const EMBERS = 100;
 export const COLUMNS = 24;
 export const ROWS = 12;
 export const TILES = COLUMNS * ROWS;
-export const SLOTS = 12;
+export const SLOTS = 20;
 /**
  * Colours the embers burn in at once: four strata (the one the scene is
  * turning into, the one before, and room for the strata an ember from
@@ -131,6 +133,11 @@ export class Embers {
   private burstIn = 2;
   /** The two eddies' centres, (x, y) each as fractions of the screen; their pull is the look's `eddy`. */
   readonly eddies = new Float32Array(4);
+  /** How far each ember has been carried along its rise by plunges (a share of it), and the glints with the walls (px). */
+  private lift = new Float32Array(EMBERS);
+  private glintLift = 0;
+  /** How much taller than wide their glow is drawn: streaking up as the scene sinks (see rise). */
+  streak = 0;
   /** Ember clock: runs faster while stoked. */
   private t = r() * 100;
   private heat = 0;
@@ -138,7 +145,10 @@ export class Embers {
   private crowd = 0;
   private crowdTarget = 0;
   private flareLevel = 0;
-  private flareLeft = 0;
+  /** When the flare dies down (ms, performance.now()): by the clock, so one set while they sit still (effects off) is long gone when they move again. */
+  private flareUntil = 0;
+  /** The most slots any tile used in the last step (the backdrop uploads no more columns than that and the end marker). */
+  usedMax = SLOTS;
   /** (x, y, size + SIZE_STRIDE * palette entry, brightness) of every ember and then every glint. */
   private pos = new Float32Array((EMBERS + GLINTS + SPARKS) * 4);
   /** Embers placed in each tile so far (step's scratch). */
@@ -173,8 +183,27 @@ export class Embers {
    * It dies down by itself, so it never leaves them hot.
    */
   flare(level: number, seconds: number) {
-    this.flareLevel = this.flareLeft > 0 ? Math.max(this.flareLevel, level) : level;
-    this.flareLeft = Math.max(this.flareLeft, seconds);
+    const now = performance.now();
+    this.flareLevel = this.flareUntil > now ? Math.max(this.flareLevel, level) : level;
+    this.flareUntil = Math.max(this.flareUntil, now + seconds * 1000);
+  }
+
+  /**
+   * The scene sank `px` (a plunge, see descent.ts): the embers are carried up
+   * past it, the nearer (larger) faster, those sinking like dust too, and
+   * the glints in the walls go up with the walls, the far ones out in the
+   * open slower. `h` is the screen's height.
+   */
+  rise(px: number, h: number) {
+    const span = h * 1.08 + 32;
+    for (let i = 0; i < EMBERS; i++) {
+      const e = this.list[i];
+      const by = ((this.sink[i] ? -1 : 1) * px * (0.4 + 0.25 * e.size)) / span;
+      this.lift[i] = (((this.lift[i] + by) % 1) + 1) % 1;
+      // Not a new rise: it was only carried along.
+      this.lastU[i] = (((this.lastU[i] + by) % 1) + 1) % 1;
+    }
+    this.glintLift += px;
   }
 
   get level() {
@@ -232,11 +261,11 @@ export class Embers {
   step(dt: number, w: number, h: number, calm = false, snap = false) {
     const look = this.look;
     const ease = (rate: number) => (snap ? 1 : 1 - Math.exp(-dt * rate));
-    this.flareLeft = Math.max(0, this.flareLeft - dt);
+    const flaring = this.flareUntil > performance.now();
     this.agit += ((calm ? 0 : look.agit) - this.agit) * ease(1.5);
     this.pace += ((calm ? 1 : look.speed) - this.pace) * ease(1);
     this.scale += (look.size - this.scale) * ease(1);
-    const target = calm ? 0 : Math.max(this.heatTarget, this.flareLeft > 0 ? this.flareLevel : 0);
+    const target = calm ? 0 : Math.max(this.heatTarget, flaring ? this.flareLevel : 0);
     this.heat += (target - this.heat) * (1 - Math.exp(-dt * 1.5));
     // A swarm builds slowly but clears out within a second or so, so it never
     // lingers into the screen after a deathmatch.
@@ -288,7 +317,7 @@ export class Embers {
     const brightK = (1 + 0.8 * this.heat) * look.bright;
     for (let i = 0; i < EMBERS; i++) {
       const e = this.list[i];
-      const u = (t / e.period + e.phase) % 1;
+      const u = (t / e.period + e.phase + this.lift[i]) % 1;
       const fade = Math.min(1, u / 0.1) * (1 - Math.max(0, (u - 0.62) / 0.38));
       // The extra embers join a swarm one by one as it builds, and leave as it ebbs.
       const join = i < CALM_EMBERS ? 1 : i < extra ? Math.min(1, Math.max(0, (this.crowd - e.gate) / 0.3)) : 0;
@@ -335,9 +364,13 @@ export class Embers {
       // The ones out in the open drift slowly past, the larger (nearer) faster.
       const span = w * 1.08;
       pos[i * 4] = k < WALL_GLINTS ? g.x * w : ((((g.x * w - this.glintT * (1.2 + 2.6 * (g.size - 1.4))) % span) + span) % span) - w * 0.04;
-      pos[i * 4 + 1] = g.y * h;
+      // Carried up by plunges, the walls' with the walls, the far ones slower, coming round again below.
+      const tall = h * 1.1;
+      const y = ((((g.y * h - this.glintLift * (k < WALL_GLINTS ? 1 : 0.3)) % tall) + tall) % tall) - h * 0.05;
+      pos[i * 4 + 1] = y;
       pos[i * 4 + 2] = g.size + SIZE_STRIDE * GLINT_COLOR;
-      pos[i * 4 + 3] = amount > 0 ? show * Math.min(1, amount * 4) * (0.35 + 0.85 * tw * tw) : 0;
+      const edge = Math.min(1, Math.max(0, Math.min(y, h - y) / 30));
+      pos[i * 4 + 3] = amount > 0 ? show * edge * Math.min(1, amount * 4) * (0.35 + 0.85 * tw * tw) : 0;
     }
     // Sparks: now and then a burst of them flies up from below, slows and dies.
     if (!calm && look.burst > 0.02 && dt > 0) {
@@ -385,10 +418,11 @@ export class Embers {
       const b = pos[i * 4 + 3];
       if (b <= 0 || y < -40 || y > h + 40) continue;
       const reach = (z % SIZE_STRIDE) * 6.4; // where the shader stops drawing it
+      const tall = reach * (1 + this.streak);
       const c0 = Math.max(0, Math.floor((x - reach) / colW));
       const c1 = Math.min(COLUMNS - 1, Math.floor((x + reach) / colW));
-      const r0 = Math.max(0, Math.floor((y - reach) / rowH));
-      const r1 = Math.min(ROWS - 1, Math.floor((y + reach) / rowH));
+      const r0 = Math.max(0, Math.floor((y - tall) / rowH));
+      const r1 = Math.min(ROWS - 1, Math.floor((y + tall) / rowH));
       for (let row = r0; row <= r1; row++)
         for (let c = c0; c <= c1; c++) {
           const tile = row * COLUMNS + c;
@@ -401,6 +435,9 @@ export class Embers {
           used[tile]++;
         }
     }
+    let most = 0;
+    for (let t = 0; t < TILES; t++) if (used[t] > most) most = used[t];
+    this.usedMax = most;
   }
 
   /** Throws a burst of sparks up from somewhere along the floor. */

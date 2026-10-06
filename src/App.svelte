@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { accentAt, setDescent } from './lib/descent';
+  import { accentAt, plunge, setDescent } from './lib/descent';
   import { zoneAt } from './lib/zoneSigils';
   import { onMount, untrack } from 'svelte';
   import { fade, fly } from 'svelte/transition';
@@ -104,6 +104,14 @@
     const depth = gs?.delve && (screen === 'game' || screen === 'over') ? gs.round : 0;
     setDescent(depth);
     depthAmbience(depth);
+  });
+  // Delve: each pick of a card (a question beginning after the choice, for
+  // every pick in a group run too) sinks the scene a little further.
+  let lastPhase: string | undefined;
+  $effect(() => {
+    const phase = gs?.delve && screen === 'game' ? gs.phase : undefined;
+    if (phase === 'question' && lastPhase === 'choosing') plunge();
+    lastPhase = phase;
   });
 
   /** How long the outgoing screen takes to fade (the .screen transition below). */

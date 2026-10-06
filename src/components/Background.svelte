@@ -57,6 +57,8 @@
     {/each}
     <div class="dark" style:opacity={look.dark}></div>
     <div class="dark close" style:opacity={dsc.close}></div>
+    <!-- Deeper down the light only ever dims (descent.ts's light). -->
+    <div class="dim" style:opacity={Math.max(0, 1 - dsc.light)}></div>
     <div class="grain"></div>
     <div class="embers">
     {#each embers as e, i (i)}
@@ -183,6 +185,12 @@
   .env {
     position: absolute;
     inset: 0;
+  }
+  .dim {
+    position: absolute;
+    inset: 0;
+    background: #000;
+    transition: opacity 4s;
   }
   .env-lamps {
     background:
