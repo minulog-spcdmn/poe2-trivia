@@ -1,38 +1,166 @@
 <script lang="ts">
   import { cubicInOut, cubicOut } from 'svelte/easing';
+  import { scale } from 'svelte/transition';
+  import { untrack } from 'svelte';
   import { engine, session } from '../lib/session.svelte';
   import { categoryIcon, categoryIconTweak, categoryIcons } from '../lib/ui';
   import { fits, fitStyle, maskOf, measure } from '../lib/iconFit.svelte';
   import { activeRules, difficultyOf } from '../lib/game';
-  import { FIND_TEXT, deathmatchText, findNote, lockoutText } from '../lib/difficultyText';
-  import { findOffer, inventoryOf, type FindKind } from '../lib/delve';
+  import { FIND_TEXT, deathmatchText, findNote, lockoutText, namesOf, teamFindNote, teamUnused, unused } from '../lib/difficultyText';
+  import { expectedVoters, findOffers, findOn, holdersOf, inventoryOf, isGroupRun, isIdle, livesOf, standingIds, voteClosesAt, type FindKind } from '../lib/delve';
   import { sfx } from '../lib/sound';
   import { backdropShadow } from '../lib/backdropShadow';
-  import { cardHover, cardPicked, cardRevealed } from '../lib/fx/moments';
+  import { FIND_COLORS, cardHover, cardPicked, cardRevealed, raffleHop, voteCast } from '../lib/fx/moments';
   import { fxActive, type Handle, type Vec3 } from '../lib/fx/core';
   import { C, embers, emitter, flare, glints, outline, puffs, ring, shards, sparks } from '../lib/fx/effects';
   import { light } from '../lib/lights';
   import CardEngraving from './CardEngraving.svelte';
+  import Avatar from './Avatar.svelte';
+
+  let {
+    drawn = null,
+    ondrawn,
+  }: {
+    /** Delve together: the card the closed vote drew, while the draw plays out on the cards. */
+    drawn?: string | null;
+    /** Called once the draw has landed and held (Game.svelte then shows the question). */
+    ondrawn?: () => void;
+  } = $props();
 
   const s = $derived(session.state!);
   const active = $derived(s.players[s.turn]);
-  const mine = $derived(session.myTurn);
+  const me = $derived(session.myPlayerId);
+  /** Delve together: nobody has a turn; everyone standing votes for a card. */
+  const coop = $derived(!!s.delve && isGroupRun(s));
+  /** Delve together: this device's player can vote (standing, the vote still open). */
+  const canVote = $derived(coop && !drawn && s.phase === 'choosing' && !!me && livesOf(s, me) > 0);
+  const mine = $derived(coop ? canVote : session.myTurn);
   // The lockout in force (in Delve it grows with depth).
   const lockout = $derived(activeRules(s).lockout);
 
-  // Delve: the last seconds before a card is picked for you.
+  // ---- the vote (Delve together) ------------------------------------------
+  // Votes are public and can change until the vote closes: when everyone it
+  // waits for has voted, or VOTE_WINDOW_MS after the first vote. Nothing is
+  // drawn before a first vote, however long the team takes.
+
+  const votes = $derived(coop ? (s.delve?.votes ?? {}) : {});
+  const myVote = $derived(coop && me ? (votes[me] ?? null) : null);
+  const votersOf = (cat: string) => s.players.filter((p) => votes[p.id] === cat);
+  const nameOf = (id: string) => s.players.find((p) => p.id === id)?.name ?? '?';
+  /** The host's clock, ticking while the vote is open (its window, and the grace after a host's reload). */
   let hostNow = $state(session.hostNow());
   $effect(() => {
-    if (!s.delve?.pickBy) return;
+    if (!coop || s.phase !== 'choosing' || drawn) return;
     hostNow = session.hostNow();
-    const id = setInterval(() => (hostNow = session.hostNow()), 500);
+    const id = setInterval(() => (hostNow = session.hostNow()), 250);
     return () => clearInterval(id);
   });
-  const pickLeft = $derived(s.delve?.pickBy ? Math.max(0, Math.ceil((s.delve.pickBy - hostNow) / 1000)) : null);
-  /** Delve: the find among the cards on offer, if any. */
-  const find = $derived(findOffer(s));
+  /** Seconds until the vote closes by the clock, once the first vote has started it; null before. */
+  const closesIn = $derived.by(() => {
+    if (!coop || drawn || s.phase !== 'choosing') return null;
+    const at = voteClosesAt(s);
+    return at === null ? null : Math.max(0, Math.ceil((at - hostNow) / 1000));
+  });
+  /** Who the vote still waits for, and who it doesn't (idle: they let votes pass). */
+  const waitingFor = $derived(coop && !drawn ? expectedVoters(s, hostNow).filter((id) => !Object.hasOwn(votes, id)) : []);
+  const idle = $derived(coop && !drawn ? standingIds(s).filter((id) => isIdle(s, id) && !Object.hasOwn(votes, id)) : []);
+  const anyVote = $derived(Object.keys(votes).length > 0);
+  /** Delve together: whether anyone standing holds a flare or dynamite (they stay unused on a find's question). */
+  const itemsHeld = $derived(coop && (holdersOf(s, 'flares').length > 0 || holdersOf(s, 'dynamite').length > 0));
+
+  const cap = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
+  /** A card's votes in words, for screen readers. */
+  function voteWords(cat: string) {
+    const n = votersOf(cat).length;
+    const yours = myVote === cat ? ', yours among them' : '';
+    return n === 0 ? 'no votes' : `${n} ${n === 1 ? 'vote' : 'votes'}${yours}`;
+  }
+
+  function vote(category: string) {
+    const i = s.offered.indexOf(category);
+    if (!canVote || !faceUp(i) || myVote === category) return;
+    sfx('select');
+    const frame = cardEls[i]?.querySelector('.frame');
+    if (frame && fxActive()) outline(frame, { color: [2.2, 1.6, 0.7], width: 10, intensity: 0.6, life: 0.45, fadeIn: 0.04 });
+    session.dispatch({ type: 'vote', category });
+  }
+
+  /** Svelte action: a vote's mark lands on its card (not the ones already there as the screen opens). */
+  let pipsReady = false;
+  $effect(() => {
+    const t = setTimeout(() => (pipsReady = true), 50);
+    return () => clearTimeout(t);
+  });
+  function cast(node: HTMLElement) {
+    if (pipsReady) voteCast(node);
+  }
+
+  // ---- the draw -------------------------------------------------------------
+  // The vote closed: a light runs over the cards that got votes, slowing
+  // down, and lands on the one drawn (every vote a ticket), which flares up
+  // as the others burn away. About two seconds; reduced motion, a moment.
+
+  /** The card the draw's light is on, and whether it has landed. */
+  let lit = $state<number | null>(null);
+  let landed = $state(false);
+  const drawTimers: ReturnType<typeof setTimeout>[] = [];
+  $effect(() => () => drawTimers.forEach(clearTimeout));
+  $effect(() => {
+    if (!drawn) return;
+    untrack(() => draw(drawn));
+  });
+  function draw(category: string) {
+    const target = s.offered.indexOf(category);
+    const done = (ms: number) => drawTimers.push(setTimeout(() => ondrawn?.(), ms));
+    burning?.stop();
+    burning = null;
+    if (target < 0) return done(0);
+    const quiet = still || document.documentElement.hasAttribute('data-still');
+    const land = () => {
+      lit = target;
+      landed = true;
+      const card = cardEls[target];
+      const frame = card?.querySelector('.frame');
+      const others = cardEls.filter((c, j) => c && j !== target).map((c) => c.querySelector('.frame') ?? c);
+      const kind = kindOf(category);
+      if (frame && kind) findPicked(frame, card, others, kind);
+      else if (frame) cardPicked(frame, card, others, false);
+      sfx('pick');
+    };
+    // The cards in the draw: those with votes, in their order.
+    const tickets = s.offered.flatMap((c, i) => (votersOf(c).length ? [i] : []));
+    if (quiet || tickets.length < 2 || !tickets.includes(target)) {
+      land();
+      return done(quiet ? 700 : 1100);
+    }
+    // Twice round the cards in the draw, then on to the one drawn, each hop a little slower.
+    const from = tickets.indexOf(target);
+    const path = [...tickets, ...tickets, ...tickets.slice(0, from + 1)];
+    const SPAN = 1300;
+    const gaps = path.map((_, k) => 0.35 + 1.65 * (k / Math.max(1, path.length - 1)) ** 2);
+    const unit = SPAN / gaps.reduce((a, b) => a + b, 0);
+    let at = 0;
+    path.forEach((i, k) => {
+      const last = k === path.length - 1;
+      drawTimers.push(
+        setTimeout(() => {
+          if (last) return land();
+          lit = i;
+          const frame = cardEls[i]?.querySelector('.frame');
+          if (frame) raffleHop(frame);
+          sfx('hover');
+        }, at),
+      );
+      at += gaps[k] * unit;
+    });
+    done(at + 650);
+  }
+
+  /** Delve: the finds among the cards on offer (up to two, on different cards), in the cards' order. */
+  const finds = $derived(findOffers(s).toSorted((a, b) => s.offered.indexOf(a.category) - s.offered.indexOf(b.category)));
   /** What a card is: a find of some kind, or plain. */
-  const kindOf = (cat: string): FindKind | null => (find?.category === cat ? find.kind : null);
+  const kindOf = (cat: string): FindKind | null => findOn(s, cat);
+  const uid = $props.id();
 
   // ---- finds --------------------------------------------------------------
   // A find is the ordinary card, its plate engraved by the same hand with
@@ -41,11 +169,8 @@
   // blown apart; the ink tinted the find's colour.
 
   // Their effects: azurite rings like crystal, a flare and dynamite throw sparks.
-  const FX: Record<FindKind, { main: Vec3; pale: Vec3 }> = {
-    azurite: { main: C.portal, pale: C.portalPale },
-    flare: { main: [3.1, 0.38, 0.62], pale: [3.1, 1.55, 1.75] },
-    dynamite: { main: C.ember, pale: C.whiteHot },
-  };
+  // Their colours are the ones a find's reward flies to its item in (lib/fx/moments.ts FIND_COLORS).
+  const FX = FIND_COLORS;
   const dim = (c: Vec3, k: number): Vec3 => [c[0] * k, c[1] * k, c[2] * k];
   function findRevealed(frame: Element, kind: FindKind) {
     if (!fxActive()) return;
@@ -198,6 +323,7 @@
   $effect(() => () => burning?.stop());
 
   function pick(category: string) {
+    if (coop) return vote(category);
     const i = s.offered.indexOf(category);
     if (!mine || picked || !faceUp(i)) return;
     picked = category;
@@ -219,6 +345,14 @@
   <p class="prompt">
     {#if s.deathmatch}
       {#if mine}Sudden death: your category is drawn at random.{:else}<span class="muted">Sudden death for</span> {active.name}<span class="muted">…</span>{/if}
+    {:else if coop}
+      {#if drawn}
+        <span class="muted">Drawing from the votes…</span>
+      {:else if canVote}
+        {myVote ? 'Your vote is in' : 'Vote for a card'}
+      {:else}
+        <span class="muted">Your team is voting…</span>
+      {/if}
     {:else if mine}
       Choose your category
     {:else}
@@ -235,10 +369,14 @@
         class:dm={!!s.deathmatch}
         class:special={!!kindOf(cat)}
         data-find={kindOf(cat)}
-        aria-describedby={kindOf(cat) ? 'find-note' : undefined}
+        aria-describedby={kindOf(cat) && !s.deathmatch ? `${uid}-note-${kindOf(cat)}` : undefined}
         class:mine
-        class:chosen={picked === cat}
-        class:faded={picked && picked !== cat}
+        class:chosen={picked === cat || (landed && lit === i)}
+        class:faded={(picked && picked !== cat) || (landed && lit !== i)}
+        class:voted={coop && myVote === cat && !drawn}
+        class:lit={!landed && lit === i}
+        aria-label={coop ? `${cat}: ${voteWords(cat)}` : undefined}
+        aria-pressed={coop && canVote ? myVote === cat : undefined}
         disabled={!mine}
         onclick={() => pick(cat)}
         onpointerenter={(e) => enter(e, i)}
@@ -271,19 +409,60 @@
             >
           </span>
         </span>
+        {#if coop}
+          <!-- Who voted for it, your own mark ringed; the row keeps its height while empty. -->
+          {@const voters = votersOf(cat)}
+          {@const faces = voters.length > 5 ? voters.slice(0, 4) : voters}
+          <span class="votes" aria-hidden="true">
+            {#each faces as p (p.id)}
+              <span class="pip" class:me={p.id === me} title={p.name} use:cast in:scale={{ start: 0.3, duration: 300 }} out:scale={{ start: 0.3, duration: 200 }}
+                ><Avatar name={p.name} hue={p.hue} size={22} /></span
+              >
+            {/each}
+            {#if voters.length > faces.length}<span class="more">+{voters.length - faces.length}</span>{/if}
+          </span>
+        {/if}
       </button>
     {/each}
   </div>
 
-  {#if find && !s.deathmatch}
-    <p class="note find-note" data-find={find.kind} id="find-note">
-      {#if mine}<strong>{FIND_TEXT[find.kind].tag}.</strong> {findNote(find.kind, inventoryOf(s, active.id))}{:else}{FIND_TEXT[find.kind].others}{/if}
+  {#if coop && !drawn && s.phase === 'choosing'}
+    <!-- The vote: when it closes, and who it is still waiting for. -->
+    <p class="vote-status" aria-live="polite">
+      {#if closesIn !== null}
+        <span class="closes">Closes in <b>{closesIn}</b><span class="unit">s</span></span>
+      {/if}
+      {#if anyVote && waitingFor.length}
+        <span>Waiting for {namesOf(waitingFor, nameOf, me)}</span>
+      {:else if !anyVote}
+        <span class="muted">Each vote is a ticket in the draw; the cards wait for the first one.</span>
+      {/if}
+      {#if idle.length}
+        <span class="idle">{cap(namesOf(idle, nameOf, me))} {idle.length > 1 || idle[0] === me ? 'are' : 'is'} idle, not waited for</span>
+      {/if}
     </p>
+  {/if}
+
+  {#if finds.length && !s.deathmatch}
+    <!-- One short note per find, in its colour; what stays unused on them, once for both. -->
+    {@const two = finds.length > 1}
+    {@const team = coop && !!me && livesOf(s, me) > 0}
+    {@const held = team ? (itemsHeld ? teamUnused('a find') : '') : mine && !coop ? unused(inventoryOf(s, active.id), 'a find') : ''}
+    <div class="find-notes">
+      {#each finds as f (f.kind)}
+        <p class="note find-note" data-find={f.kind} id="{uid}-note-{f.kind}">
+          {#if team}<strong>{FIND_TEXT[f.kind].tag}.</strong> {teamFindNote(f.kind, itemsHeld && !two)}{:else if mine && !coop}<strong
+              >{FIND_TEXT[f.kind].tag}.</strong
+            > {findNote(f.kind, inventoryOf(s, active.id), !two)}{:else}{FIND_TEXT[f.kind].others}{/if}
+        </p>
+      {/each}
+      {#if two && held}<p class="note muted">{held.trim()}</p>{/if}
+    </div>
   {/if}
   {#if s.deathmatch}
     <p class="note muted">{mine ? 'Tap the card when you are ready.' : deathmatchText(difficultyOf(s.settings.difficulty))}</p>
-  {:else if mine && pickLeft !== null && pickLeft <= 10}
-    <p class="note muted">A card is chosen for you in {pickLeft}s.</p>
+  {:else if coop && canVote && lockout > 0}
+    <p class="note muted">A category the team plays stays locked for the next {lockout} depths.</p>
   {:else if mine && lockout > 0}
     <p class="note muted">A category you choose stays locked for {lockoutText(lockout)}.</p>
   {/if}
@@ -684,8 +863,14 @@
     font-size: 0.95rem;
   }
   /* Two notes under the cards sit closer than the cards sit to them. */
-  .find-note + .note {
+  .find-notes + .note {
     margin-top: -1rem;
+  }
+  .find-notes {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.35rem;
   }
 
   /* ---- finds ---------------------------------------------------------------
@@ -841,6 +1026,107 @@
     font-weight: 600;
   }
 
+  /* ---- the vote (Delve together) -------------------------------------------- */
+  /* Who voted for a card: their avatars under it, overlapping a little. */
+  .votes {
+    display: flex;
+    justify-content: center;
+    min-height: 26px;
+    margin-top: 12px;
+    pointer-events: none;
+  }
+  .pip {
+    display: block;
+    border-radius: 50%;
+    box-shadow: 0 0 0 2px #0c0a08;
+  }
+  .pip + .pip {
+    margin-left: -6px;
+  }
+  /* Your own vote, ringed in gold. */
+  .pip.me {
+    position: relative;
+    z-index: 1;
+    box-shadow:
+      0 0 0 2px #0c0a08,
+      0 0 0 3px var(--gold-hi),
+      0 0 10px rgba(241, 217, 155, 0.5);
+  }
+  .votes .more {
+    display: grid;
+    place-items: center;
+    min-width: 22px;
+    height: 22px;
+    margin-left: -4px;
+    padding: 1px 4px 0;
+    font-family: var(--font-cinzel);
+    font-weight: 700;
+    font-size: 0.68rem;
+    color: var(--gold-hi);
+    background: #1a130c;
+    border: 1px solid var(--gold-lo);
+    border-radius: 11px;
+  }
+  /* The card you voted for stands a little proud of the others, lit at its rim. */
+  .card.voted .frame {
+    transform: translateY(-8px);
+    border-color: var(--gold-hi);
+    --bs-ring: rgba(241, 217, 155, 0.55);
+    --bs1: 0px 44px;
+    --bs1-color: rgba(255, 170, 90, 0.38);
+  }
+  .card.voted .frame > :global(.engraving) {
+    opacity: 0.85;
+  }
+  /* The draw's light passing over a card. */
+  .card.lit .frame {
+    border-color: var(--gold-hi);
+    --bs-ring: rgba(241, 217, 155, 0.7);
+    --bs1: 0px 40px;
+    --bs1-color: rgba(255, 180, 100, 0.45);
+    transition-duration: 0.08s;
+  }
+  .card.lit:disabled .frame,
+  .card.chosen:disabled .frame {
+    filter: none;
+  }
+  .card.lit .title {
+    color: #fff1cf;
+  }
+  .vote-status {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.3rem 1.1rem;
+    margin: -0.4rem 0 0;
+    max-width: 34rem;
+    text-align: center;
+    font-style: italic;
+    font-size: 0.95rem;
+  }
+  .closes {
+    font-style: normal;
+    font-family: var(--font-cinzel);
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--gold-hi);
+    align-self: center;
+  }
+  .closes .unit {
+    text-transform: none;
+  }
+  .closes b {
+    margin-left: 0.25em;
+    display: inline-block;
+    min-width: 1ch;
+    font-size: 1rem;
+  }
+  .idle {
+    color: var(--muted);
+  }
+
   @media (max-width: 700px) {
     .cards {
       grid-template-columns: 1fr;
@@ -952,6 +1238,23 @@
       transform: rotateX(180deg);
     }
     .card.mine:not(:global(.down)):hover .frame {
+      transform: translateX(6px);
+    }
+    /* Rows: the votes hang off the row's lower right edge, and the rows part a little more for them. */
+    .card {
+      position: relative;
+    }
+    .votes {
+      position: absolute;
+      right: 14px;
+      bottom: -11px;
+      min-height: 0;
+      margin: 0;
+    }
+    .cards:has(.votes) {
+      gap: 1.25rem;
+    }
+    .card.voted .frame {
       transform: translateX(6px);
     }
   }

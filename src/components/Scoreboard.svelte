@@ -1,6 +1,7 @@
 <script lang="ts">
   import { sfx } from '../lib/sound';
   import { cubicOut } from 'svelte/easing';
+  import { fly } from 'svelte/transition';
   import { session } from '../lib/session.svelte';
   import { playerColor } from '../lib/ui';
   import Avatar from './Avatar.svelte';
@@ -13,11 +14,15 @@
   import {
     FILL_SPAN,
     FILL_START,
+    FIND_START,
+    GIFT_LANDS,
     SCORE_LANDS,
     ablaze,
     doused,
+    findGained,
     flareBurns,
     flareFound,
+    lifeGiven,
     lifeHeld,
     lifeLost,
     lostPoint,
@@ -29,10 +34,11 @@
   import { scoreRow, scoreRowOf } from '../lib/scoreRows';
   import { burnsBlue, heatOf, streakOf } from '../lib/fx/streaks';
   import { phone } from '../lib/layout';
-  import { fellAt, inventoryOf, livesOf, type Inventory as Carried } from '../lib/delve';
+  import { cavesIn, fellAt, inventoryOf, isGroupRun, livesOf, reviveProblem, type FindKind, type Inventory as Carried } from '../lib/delve';
   import { inventoryChanges } from '../lib/delveSession';
-  import { momentOf, type InventoryMoment } from '../lib/inventoryArt';
-  import type { GameState } from '../lib/game';
+  import { CASINGS, momentOf, type InventoryMoment } from '../lib/inventoryArt';
+  import { FILL_LEAD } from '../lib/soundDesign';
+  import type { GameState, Revive } from '../lib/game';
 
   /** Shown at the end of the row (the timer, on phones). */
   let { aside }: { aside?: Snippet } = $props();
@@ -45,6 +51,11 @@
   const spectators = $derived(s.spectators ?? []);
   /** Delve: lives instead of a score. */
   const run = $derived(s.delve ?? null);
+  /** Delve together: nobody has a turn; on phones your own entry is the one spelled out. */
+  const coop = $derived(!!run && isGroupRun(s));
+  const me = $derived(session.mode === 'local' ? null : session.myPlayerId);
+  /** Delve together: who answered the question in play (wrong, or it would be over). */
+  const struck = $derived(new Set(coop && s.phase === 'question' ? (s.question?.struck ?? []).map((x) => x.by) : []));
 
   /**
    * The phial shown in a player's entry: upright beside the avatar (phones,
@@ -62,6 +73,23 @@
 
   /** Seconds a lost life's chamber takes to pour out (Phial.svelte's pour), and its jet with it. */
   const POUR = 1.1;
+
+  /**
+   * Delve: when player `id` loses something on the question in play and it
+   * is a find that caves in (an Azurite Vein), the key it is heard by, so the
+   * cave-in sounds once however many lives and wards it takes; null otherwise.
+   */
+  function caveInOf(st: GameState, id: string): string | null {
+    const q = st.question;
+    return q?.find && cavesIn(q.find) ? `${q.askedAt}:${id}` : null;
+  }
+  let caveInLast = '';
+  /** The cave-in's sound, once per cave-in (`key` from caveInOf). */
+  function caveInHeard(key: string) {
+    if (caveInLast === key) return;
+    caveInLast = key;
+    sfx('caveIn');
+  }
   // Delve: a life lost makes the player's entry flinch, and the chamber of the
   // phial pours its light out, in step with the reveal's verdict, a moment
   // after the answer shows. Until then the life stays lit (`held`), and a
@@ -69,25 +97,34 @@
   let hit = $state<Record<string, number>>({});
   let held = $state<Record<string, number>>({});
   let livesSeen: Record<string, number> = {};
+  let lossesSeen: Record<string, number> = {};
   let runSeen = 0;
   $effect(() => {
     if (!run) return;
     if (run.startedAt !== runSeen) {
       runSeen = run.startedAt;
       livesSeen = {};
+      lossesSeen = {};
     }
     for (const p of s.players) {
       const now = livesOf(s, p.id);
       const was = livesSeen[p.id];
       livesSeen[p.id] = now;
+      const losses = run.losses[p.id]?.length ?? 0;
+      const lossesWere = lossesSeen[p.id];
+      lossesSeen[p.id] = losses;
       if (was === undefined || now >= was) continue;
+      // A life given to a teammate isn't lost: it flows to them (playRevive below).
+      if (lossesWere !== undefined && losses <= lossesWere) continue;
       const id = p.id;
       const mine = session.mode === 'local' ? true : id === session.myPlayerId;
       held[id] = was;
       // A cave-in can take two lives: they pour out one after the other, the
-      // top chamber first. When a ward broke first, its shatter leads.
+      // top chamber first. When a ward broke first, its shatter leads. It is
+      // heard once, as a cave-in, not as each life going.
       const r = s.reveal;
       const after = 450 + (r?.caveIn && r.lost?.wards ? 650 : 0);
+      const caved = caveInOf(s, id);
       for (let k = was - 1; k >= now; k--) {
         const left = k;
         setTimeout(
@@ -100,7 +137,10 @@
             const flow = li ? shownPhial(li) : null;
             const chamber = flow?.phial.querySelector(`.chamber[data-k="${left}"]`);
             if (li) lifeLost(li, chamber ?? li, left, mine, flow ?? undefined);
-            if (mine) sfx('lifeLost');
+            if (mine) {
+              if (caved) caveInHeard(caved);
+              else sfx('lifeLost');
+            }
             setTimeout(() => {
               if (hit[id] === left) delete hit[id];
             }, POUR * 1000);
@@ -119,6 +159,8 @@
   // the counted finds) and here in the effects layer.
   let invHeld = $state<Record<string, Carried>>({});
   let invMoment = $state<Record<string, InventoryMoment>>({});
+  /** A flare or dynamite on its way to a player's entry (findFlows): its place is kept for it. */
+  let expecting = $state<Record<string, 'flare' | 'dynamite'>>({});
   let invPrev: GameState | null = null;
   let momentKey = 0;
   const carried = (id: string) => invHeld[id] ?? inventoryOf(s, id);
@@ -138,15 +180,59 @@
     const byPlayer = new Map<string, ReturnType<typeof inventoryChanges>>();
     for (const c of inventoryChanges(was, next)) byPlayer.set(c.playerId, [...(byPlayer.get(c.playerId) ?? []), c]);
     for (const [id, changes] of byPlayer) {
-      const kind = momentOf(changes);
+      // At a reveal it says whether a ward was forged (a third ward mined outright also drops the shard held).
+      const kind = momentOf(changes, atReveal ? !!next.reveal?.forged : undefined);
       if (!kind) continue;
-      const delay = !atReveal ? 0 : kind === 'shatter' ? 450 : 700;
+      // Perishing drops everything; only a ward breaking on the way (a cave-in) is a moment.
+      if (kind !== 'shatter' && livesOf(next, id) === 0) continue;
+      // A find answered right: its item flows from the answer to its place
+      // (findFlows) and lands with the sparks.
+      const found = atReveal && FOUND.has(kind);
+      const delay = !atReveal ? 0 : kind === 'shatter' ? 450 : found ? (FIND_START + 0.1) * 1000 : 700;
       // A cave-in can break two wards at once.
       const broke = Math.max(1, inventoryOf(was, id).wards - inventoryOf(next, id).wards);
       if (delay) invHeld[id] = inventoryOf(was, id);
-      setTimeout(() => playMoment(id, kind, kind === 'shatter' ? broke : 1), delay);
+      const fed = found && untrack(() => findFlows(id, kind, inventoryOf(was, id).wards));
+      const caved = kind === 'shatter' ? caveInOf(next, id) : null;
+      setTimeout(() => playMoment(id, kind, kind === 'shatter' ? broke : 1, fed, caved), delay);
     }
   });
+
+  /** Moments of a find answered right, and the find each comes from. */
+  const FOUND = new Map<InventoryMoment['kind'], FindKind>([
+    ['ward', 'azurite'],
+    ['forge', 'azurite'],
+    ['shard', 'azurite'],
+    ['flare', 'flare'],
+    ['dynamite', 'dynamite'],
+  ]);
+
+  /**
+   * A find answered right: a stream of sparks in its card's colours flows
+   * from the right answer to where its item goes in player `id`'s entry
+   * (findGained in lib/fx/moments.ts), as a point flows into the bar in the
+   * other modes: a ward or shard to its chamber (the first without a ward,
+   * `wards` being how many they had), a flare or dynamite to its place
+   * beside the phial, kept for it meanwhile. Whoever got it hears it flow
+   * in. Says whether the sparks fly (with effects off, nothing does).
+   */
+  function findFlows(id: string, kind: InventoryMoment['kind'], wards: number): boolean {
+    const find = FOUND.get(kind);
+    if (!find || !fxActive()) return false;
+    const item = kind === 'flare' || kind === 'dynamite' ? kind : null;
+    if (item) expecting[id] = item;
+    void tick().then(() => {
+      const li = scoreRowOf(id);
+      // The right answer, as the reveal marks it (QuestionView.svelte).
+      const answer = document.querySelector('.question .option.right, .question .tile.right');
+      if (!li || !answer) return;
+      const { flow, counts } = shownVessel(li);
+      const slot = item ? counts?.querySelector(`[data-pip="${item}"]`) : flow?.phial.querySelector(`.chamber[data-k="${Math.min(wards, CASINGS.length - 1)}"]`);
+      if (slot) findGained(answer, slot, find);
+    });
+    if (session.mode === 'local' || id === session.myPlayerId) setTimeout(() => sfx('fill'), FIND_START * 1000 - FILL_LEAD);
+    return true;
+  }
 
   /** The phial showing in a player's entry, with what it carries, and the counted finds beside it. */
   function shownVessel(li: Element) {
@@ -155,8 +241,10 @@
     return { flow, vessel, counts: flow?.upright ? li.querySelector('.side-counts') : vessel };
   }
 
-  function playMoment(id: string, kind: InventoryMoment['kind'], n = 1) {
+  /** `fed`: a find's sparks flowed into it (findFlows), and were heard. `caved`: a cave-in's key (caveInOf), to be heard as one. */
+  function playMoment(id: string, kind: InventoryMoment['kind'], n = 1, fed = false, caved: string | null = null) {
     delete invHeld[id];
+    delete expecting[id];
     const key = ++momentKey;
     invMoment[id] = { kind, key, ...(n > 1 ? { n } : {}) };
     setTimeout(() => {
@@ -171,19 +259,22 @@
       // A ward's casing and a shard are on the chambers; a breaking ward bursts off its own.
       if (kind === 'ward' || kind === 'forge') {
         const el = pip('.casing.whole.fresh');
-        if (el) wardFormed(el, kind === 'forge');
-        if (mine) sfx('fill');
+        if (el) wardFormed(el, kind === 'forge', fed);
+        if (mine && !fed) sfx('fill');
       } else if (kind === 'shard') {
         const el = pip('.casing.shard');
         if (el) shardFound(el);
-        if (mine) sfx('select');
+        if (mine && !fed) sfx('select');
       } else if (kind === 'shatter') {
         vessel?.querySelectorAll('.casing.ghost').forEach((el, i) => setTimeout(() => wardShattered(el, li, mine && i === 0), i * 120));
-        if (mine) sfx('pick');
+        if (mine) {
+          if (caved) caveInHeard(caved);
+          else sfx('pick');
+        }
       } else if (kind === 'flare' || kind === 'dynamite') {
         const el = counts?.querySelector(`[data-pip="${kind}"]`);
         if (el && kind === 'flare') flareFound(el);
-        if (mine) sfx('select');
+        if (mine && !fed) sfx('select');
       } else if (kind === 'burn') {
         // The ring on screen (the last one: an old one may still be fading out).
         const timer = [...document.querySelectorAll('.timer')].filter((t) => t.getClientRects().length).at(-1) ?? null;
@@ -193,6 +284,68 @@
       }
       // A blast is heard from QuestionView, where the stick goes off.
     });
+  }
+
+  // Delve together: a teammate gives one of their lives to one who perished.
+  // The giver's chamber pours its light out and it streams across into the
+  // other's empty phial (lifeGiven in lib/fx/moments.ts), which lights as it
+  // lands. Until then each entry shows what it had (`held`).
+  let giving = $state<Record<string, number>>({});
+  let revivesSeen = 0;
+  let revivesRun = 0;
+  $effect(() => {
+    if (!run) return;
+    const list = run.revives ?? [];
+    if (run.startedAt !== revivesRun || list.length < revivesSeen) {
+      revivesRun = run.startedAt;
+      revivesSeen = list.length;
+      return;
+    }
+    const fresh = list.slice(revivesSeen);
+    revivesSeen = list.length;
+    for (const r of fresh) untrack(() => playRevive(r));
+  });
+  function playRevive(r: Revive) {
+    const k = livesOf(s, r.by);
+    held[r.by] = k + 1;
+    held[r.to] = 0;
+    setTimeout(() => {
+      delete held[r.by];
+      giving[r.by] = k;
+      const giver = scoreRowOf(r.by);
+      const taker = scoreRowOf(r.to);
+      const from = giver ? shownPhial(giver) : null;
+      const to = taker ? shownPhial(taker) : null;
+      const chamber = from?.phial.querySelector(`.chamber[data-k="${k}"]`) ?? giver;
+      if (giver && taker && chamber && to) lifeGiven(chamber, giver, to.phial, taker);
+      sfx('fill');
+      setTimeout(() => {
+        if (giving[r.by] === k) delete giving[r.by];
+      }, POUR * 1000);
+      setTimeout(() => {
+        delete held[r.to];
+        surge[r.to] = (untrack(() => surge[r.to]) ?? 0) + 1;
+        revived[r.to] = (untrack(() => revived[r.to]) ?? 0) + 1;
+        setTimeout(() => delete revived[r.to], 1200);
+      }, GIFT_LANDS * 1000);
+    }, 300);
+  }
+  /** Entries just brought back (a glow while the light settles in). */
+  let revived = $state<Record<string, number>>({});
+
+  // Delve together: give one of your lives to a teammate who perished
+  // (between questions, with two lives or more). Asked once more before it's given.
+  const canRevive = (id: string) => coop && !!me && reviveProblem(s, me, id) === null;
+  let asking = $state<string | null>(null);
+  const askingName = $derived(asking ? (s.players.find((p) => p.id === asking)?.name ?? null) : null);
+  // The question came, or they were brought back by someone else meanwhile: the offer goes.
+  $effect(() => {
+    if (asking && !canRevive(asking)) asking = null;
+  });
+  function revive() {
+    if (!asking || !canRevive(asking)) return;
+    session.dispatch({ type: 'revive', target: asking });
+    asking = null;
   }
 
   // Delve has no points: a question survived sends a wave of light through
@@ -383,8 +536,9 @@
 <div class="strip" class:stuck bind:this={strip}>
   <ol class="board" class:crowded={s.players.length > 6}>
     {#each s.players as p, i (p.id)}
-      {@const active = race ? s.phase === 'reveal' && s.reveal?.winnerId === p.id : i === s.turn && s.phase !== 'over'}
-      {@const out = race && s.phase !== 'over' && missed.has(p.id)}
+      {@const active = race ? s.phase === 'reveal' && s.reveal?.winnerId === p.id : !coop && i === s.turn && s.phase !== 'over'}
+      {@const wide = coop ? p.id === me : active}
+      {@const out = (race && s.phase !== 'over' && missed.has(p.id)) || struck.has(p.id)}
       {@const benched = !!s.deathmatch && s.phase !== 'over' && !s.deathmatch.alive.includes(p.id)}
       {@const duelist = !!s.deathmatch && s.phase !== 'over' && s.deathmatch.alive.includes(p.id)}
       {@const score = scoreOf(p.id, p.score)}
@@ -394,6 +548,8 @@
       {@const shownLives = held[p.id] ?? lives}
       {@const inv = run ? carried(p.id) : null}
       {@const moment = invMoment[p.id] ?? null}
+      {@const expect = expecting[p.id] ?? null}
+      {@const reviveOk = fell !== null && canRevive(p.id)}
       <li
         use:backdropShadow={{ off: stuck }}
         use:scoreRow={p.id}
@@ -401,7 +557,7 @@
         class:ablaze={fire > 0}
         style:--heat={fire}
         style:--blue={burnsBlue(fire, !!run) ? 1 : 0}
-        class:active class:out class:benched class:duelist class:fallen={fell !== null} class:hit={p.id in hit} class:warded={moment?.kind === 'shatter'} class:offline={!p.connected} animate:glide style:--c={playerColor(p.hue)}>
+        class:active class:wide class:revivable={reviveOk} class:revived={p.id in revived} class:out class:benched class:duelist class:fallen={fell !== null} class:hit={p.id in hit} class:warded={moment?.kind === 'shatter'} class:offline={!p.connected} animate:glide style:--c={playerColor(p.hue)}>
         <Avatar name={p.name} hue={p.hue} size={32} dim={!p.connected} />
         <div class="info">
           <span class="name">
@@ -410,7 +566,7 @@
           {#if run && fell !== null}
             <span class="fell-at">Perished at depth {fell}</span>
           {:else if run}
-            <Phial lives={shownLives} draining={hit[p.id] ?? -1} surge={surge[p.id] ?? 0} {inv} {moment} />
+            <Phial lives={shownLives} draining={hit[p.id] ?? giving[p.id] ?? -1} surge={surge[p.id] ?? 0} {inv} {moment} {expect} />
           {:else}
             <span class="bar" class:filling={filling[p.id]} style:--fill-span="{FILL_SPAN}s"
               ><span style:width="{Math.max(0, Math.min(100, (barOf(p.id, p.score) / target) * 100))}%"></span></span
@@ -419,10 +575,11 @@
         </div>
         {#if run}
           <!-- Phones only, on the entries shrunk to an avatar: the phial upright beside it. -->
-          <span class="phial-side"><Phial lives={shownLives} draining={hit[p.id] ?? -1} surge={surge[p.id] ?? 0} vertical {inv} {moment} /></span>
+          <!-- Hidden from screen readers: the phial under the name (also in the entry) says the same. -->
+          <span class="phial-side" aria-hidden="true"><Phial lives={shownLives} draining={hit[p.id] ?? giving[p.id] ?? -1} surge={surge[p.id] ?? 0} vertical {inv} {moment} /></span>
           <!-- And there, the flares and dynamite they carry, on the avatar's other corner. -->
-          {#if fell === null && inv && (inv.flares > 0 || inv.dynamite > 0 || moment?.kind === 'burn' || moment?.kind === 'blast')}
-            <span class="side-counts"><Inventory {inv} {moment} /></span>
+          {#if fell === null && inv && (inv.flares > 0 || inv.dynamite > 0 || moment?.kind === 'burn' || moment?.kind === 'blast' || expect)}
+            <span class="side-counts"><Inventory {inv} {moment} {expect} /></span>
           {/if}
         {:else}
           {#key score}
@@ -444,10 +601,30 @@
           </button>
         {/if}
         {#if out}<span class="x" title="Answered wrong">✕</span>{/if}
+        {#if reviveOk}
+          <!-- Delve together: give them one of your lives. -->
+          <button
+            class="revive"
+            class:open={asking === p.id}
+            onclick={() => (asking = asking === p.id ? null : p.id)}
+            title="Give {p.name} one of your lives"
+            aria-label="Give {p.name} one of your lives"
+            aria-expanded={asking === p.id}><span aria-hidden="true">+</span></button
+          >
+        {/if}
       </li>
     {/each}
   </ol>
   {@render aside?.()}
+  {#if asking && askingName && me}
+    <div class="revive-ask" role="group" aria-label="Give a life" transition:fly={{ y: -6, duration: 200 }}>
+      <span class="ask">Give {askingName} one of your lives?</span>
+      <span class="ask-actions">
+        <button class="btn small primary" onclick={revive}>Give a life</button>
+        <button class="btn small ghost" onclick={() => (asking = null)}>Not now</button>
+      </span>
+    </div>
+  {/if}
 </div>
 {#if spectators.length}
   <p class="watching">
@@ -634,9 +811,104 @@
   .info :global(.phial) {
     margin-top: 2px;
   }
+
+  /* Delve together: perished, but a teammate here can bring them back. The
+     entry stays grey; its + stays lit. */
+  li.fallen.revivable {
+    opacity: 1;
+    filter: none;
+  }
+  li.fallen.revivable > :not(.revive) {
+    opacity: 0.45;
+    filter: grayscale(0.85);
+  }
+  .revive {
+    position: absolute;
+    top: -8px;
+    right: -6px;
+    z-index: 2;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    border: 1px solid #c9a45c;
+    /* A chamber's light: palest at its heart, deepening to rose. */
+    background: radial-gradient(circle at 50% 55%, #ffe4cf 0%, #ff8a68 30%, #ec3a48 58%, #6e0820 100%);
+    box-shadow:
+      0 0 0 2px #0c0a08,
+      0 0 10px rgba(255, 110, 90, 0.55);
+    color: #fff6ea;
+    font-family: var(--font-cinzel);
+    font-weight: 700;
+    font-size: 0.95rem;
+    line-height: 1;
+    cursor: pointer;
+    animation: beckon 1.6s ease-in-out infinite;
+  }
+  .revive span {
+    translate: 0 -0.5px;
+    text-shadow: 0 0 3px rgba(80, 0, 10, 0.9);
+  }
+  .revive:hover,
+  .revive:focus-visible,
+  .revive.open {
+    border-color: var(--gold-hi);
+    box-shadow:
+      0 0 0 2px #0c0a08,
+      0 0 16px rgba(255, 140, 110, 0.8);
+  }
+  @keyframes beckon {
+    50% {
+      box-shadow:
+        0 0 0 2px #0c0a08,
+        0 0 16px rgba(255, 110, 90, 0.85);
+    }
+  }
+  :global(html[data-still]) .revive {
+    animation: none;
+  }
+  /* Just brought back: the entry glows rose for a moment. */
+  li.revived {
+    border-color: rgba(255, 130, 110, 0.75);
+    --bs1-color: rgba(255, 110, 90, 0.3);
+  }
+  /* Asked once more before a life is given. */
+  /* Laid over what is under the scoreboard, so nothing below moves. */
+  .strip {
+    position: relative;
+  }
+  .revive-ask {
+    position: absolute;
+    left: 50%;
+    top: calc(100% - 0.2rem);
+    translate: -50% 0;
+    z-index: 11;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem 0.9rem;
+    padding: 0.5rem 0.9rem;
+    width: max-content;
+    max-width: 100%;
+    border: 1px solid rgba(236, 58, 72, 0.45);
+    border-radius: 6px;
+    background: rgba(20, 10, 9, 0.92);
+    box-shadow: 0 0 22px rgba(236, 58, 72, 0.15);
+  }
+  .ask {
+    font-size: 1rem;
+  }
+  .ask-actions {
+    display: flex;
+    gap: 0.5rem;
+  }
   @media (prefers-reduced-motion: reduce) {
     li.hit,
-    li.warded {
+    li.warded,
+    .revive {
       animation: none;
     }
 
@@ -868,7 +1140,7 @@
       gap: 0.4rem;
       padding: 2px 0.6rem 2px 2px;
     }
-    li.active {
+    li.wide {
       flex: 0 1 auto;
     }
     li :global(.avatar) {
@@ -876,17 +1148,17 @@
       height: 26px;
     }
     /* The others are an avatar with their score on it. Their names stay for screen readers. */
-    li:not(.active) {
+    li:not(.wide) {
       padding: 2px;
     }
-    li:not(.active) .info {
+    li:not(.wide) .info {
       position: absolute;
       width: 1px;
       height: 1px;
       overflow: hidden;
       clip-path: inset(50%);
     }
-    li:not(.active) .score {
+    li:not(.wide) .score {
       position: absolute;
       right: -6px;
       bottom: -4px;
@@ -902,7 +1174,7 @@
       border-radius: 9px;
     }
     /* Delve: the phial stands upright beside the avatar, centred on it. */
-    li:not(.active) .phial-side {
+    li:not(.wide) .phial-side {
       display: block;
       position: absolute;
       right: -7px;
@@ -911,7 +1183,7 @@
       filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.9));
     }
     /* The flares and dynamite they carry: a small dark chip on the avatar's lower left corner. */
-    li:not(.active) .side-counts {
+    li:not(.wide) .side-counts {
       display: block;
       position: absolute;
       left: -6px;
@@ -923,10 +1195,10 @@
       --inv-h: 9px;
       line-height: 0;
     }
-    li:not(.active) .side-counts :global(.inventory) {
+    li:not(.wide) .side-counts :global(.inventory) {
       gap: 3px;
     }
-    li.active .info {
+    li.wide .info {
       min-width: 0;
     }
     /* The timer at the end of the row, smaller than beside the question. */
@@ -945,8 +1217,25 @@
     .score {
       font-size: 1.05rem;
     }
+    /* The offer to give a life hangs under the strip, wherever it is pinned. */
+    .revive-ask {
+      left: 1rem;
+      right: 1rem;
+      top: calc(100% + 6px);
+      translate: none;
+      width: auto;
+    }
+    li:not(.wide) .revive {
+      top: auto;
+      right: auto;
+      left: -7px;
+      bottom: -6px;
+      width: 18px;
+      height: 18px;
+      font-size: 0.8rem;
+    }
     /* Where the ⚡ sits on a lone avatar. */
-    li:not(.active) .off {
+    li:not(.wide) .off {
       left: 18px;
     }
   }

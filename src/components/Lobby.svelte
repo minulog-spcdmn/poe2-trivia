@@ -173,7 +173,11 @@
     session.dispatch({ type: 'start' });
   }
 
-  const canStart = $derived(s.players.length >= 1);
+  /** Delve on one device is a run alone: together, it's played online (the engine refuses it too). */
+  const delveCrowded = $derived(local && s.settings.mode === 'delve' && s.players.length > 1);
+  /** Delve together: a room of two or more online plays as a team. */
+  const together = $derived(!local && s.players.length > 1);
+  const canStart = $derived(s.players.length >= 1 && !delveCrowded);
   /** Spectators left over when the last game filled every seat. */
   const waiting = $derived(s.spectators ?? []);
   const race = $derived(s.settings.mode === 'race');
@@ -341,8 +345,13 @@
             <div class="about-text" in:fly={{ y: -6, duration: 260 }}>
               {#if peek}
                 <p>Race is online only: everyone answers on their own device. Host a room to race.</p>
+              {:else if delve && delveCrowded}
+                <p>On one device, Delve is a run alone. To delve together, host a room: everyone plays on their own device, as a team.</p>
               {:else if delve}
-                <p>Three lives, a depth deeper each round. No settings, so a depth is the same for all.</p>
+                <p>
+                  {together ? 'Three lives each, one team, a depth deeper each question.' : 'Three lives, a depth deeper each question.'} No settings, so a depth
+                  is the same for all.
+                </p>
                 {#if deepest}
                   <p class="deepest">{s.players.length < 2 ? 'Your deepest alone' : 'Your deepest with others'} <b>{deepest}</b></p>
                 {/if}
@@ -436,9 +445,17 @@
 
       <ul class="rules muted">
         {#if delve}
-          <li>Pick one of three categories; it stays locked for {lockoutText(delveLockout(1))}, longer deeper down.</li>
-          <li>A wrong answer, a time-out or a missed turn while away costs a life.</li>
-          <li>Together, the last one standing wins. Alone, see how deep you get.</li>
+          {#if together}
+            <li>The team votes for one of three cards; each vote is a ticket in the draw.</li>
+            <li>Everyone answers the same question; the first right answer clears the depth.</li>
+            <li>A wrong answer costs you a life and strikes that option for the team; so does running out of time.</li>
+            <li>Between questions, give one of your lives to bring back a teammate who perished.</li>
+            <li>The run ends when nobody is left standing; the team's depth is the result.</li>
+          {:else}
+            <li>Pick one of three categories; it stays locked for {lockoutText(delveLockout(1))}, longer deeper down.</li>
+            <li>A wrong answer or a time-out costs a life. See how deep you get.</li>
+            <li>Host a room to delve together as a team.</li>
+          {/if}
         {:else if race}
           <li>Everyone sees the same question at the same time.</li>
           <li>The first correct answer scores a point and ends the question.</li>
@@ -458,6 +475,9 @@
       <div class="start">
         {#if isHost}
           <button class="btn primary big" disabled={!canStart} onclick={start}>{delve ? 'Begin the descent' : 'Begin the hunt'}</button>
+          {#if delveCrowded}
+            <p class="muted crowded">Delve on one device is for one player: remove the others, or host a room.</p>
+          {/if}
         {:else}
           <p class="muted waiting"><span class="pulse"></span>Waiting for the host to start…</p>
         {/if}
@@ -1086,7 +1106,14 @@
 
   .start {
     display: flex;
-    justify-content: center;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.6rem;
+  }
+  .crowded {
+    margin: 0;
+    font-style: italic;
+    text-align: center;
   }
 
   @media (max-width: 760px) {

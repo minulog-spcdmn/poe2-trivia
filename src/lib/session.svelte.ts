@@ -39,10 +39,25 @@ import { toasts, type ToastKind, type ToastOptions } from './toasts.svelte';
 import { creatorArrival } from './herald';
 import { RUBY } from './palette';
 import { CREATOR_TITLE } from './site';
-import { DELVE_RULESET, LOOKALIKES_ASKED_FROM, blastClears, dynamiteOf, itemsWorkOn, livesOf } from './delve';
+import { DELVE_RULESET, FLARE_MS, LOOKALIKES_ASKED_FROM, blastClears, isGroupRun, livesOf } from './delve';
 import { loadLooks } from './looks';
 import { bestOf, loadRecords, recordLeft, recordRun, runEvent } from './delveRecord';
-import { DELVE_CLOCK_CAP_MS, DRAIN_POLL_MS, clockStart, delveNotices, drained, dynamiteIn, expireIn, flareIn, mayAutoReask, reaskDelay } from './delveSession';
+import {
+  DELVE_CLOCK_CAP_MS,
+  DRAIN_POLL_MS,
+  artFirst,
+  cleanArtWanted,
+  clockStart,
+  delveNotices,
+  drained,
+  drawHoldUntil,
+  dynamiteIn,
+  expireIn,
+  flareIn,
+  mayAutoReask,
+  reaskDelay,
+  type DelveNotice,
+} from './delveSession';
 import { readLegacy, readStored, removeLegacy, removeStored, writeStored } from './storage';
 
 export const engine = new Engine(itemData as Item[], { fakes: fakeNames });
@@ -103,6 +118,8 @@ const AUTO_SKIP_MS = 20000;
 const IDLE_SKIP_MS = 30000;
 /** Art not ready by then counts as failed, so the host can ask another question. */
 const MEDIA_TIMEOUT_MS = 15000;
+/** A host timer that fires more than this early (the system clock jumped) is set again for the time still left. */
+const EARLY_MS = 250;
 
 export type Mode = 'local' | 'host' | 'client';
 export type Status = 'idle' | 'connecting' | 'ready' | 'lost';
@@ -190,7 +207,7 @@ class Session {
   /** Reconnecting to the host has been given up. */
   gaveUp = $state(false);
   /**
-   * Delve: how this device's run measured up, once it fell (`id`: the run's
+   * Delve: how this device's run measured up, once it perished (`id`: the run's
    * startedAt). `best`: deeper than ever, alone or in a group as it was.
    */
   delveResult = $state<{ id: number; depth: number; previousBest: number | null; best: boolean } | null>(null);
@@ -221,6 +238,11 @@ class Session {
   private helloSecret: Promise<string> | null = null;
   private media: PreparedMedia | null = null;
   private mediaTimers: ReturnType<typeof setTimeout>[] = [];
+  /**
+   * Counts stopMedia: art still being made when it ran (a reset, a reload's
+   * second resume of the same question) is dropped, even for the same question.
+   */
+  private mediaGen = 0;
   /** Media messages already released for the current question (for late joiners). */
   private released: MediaMsg[] = [];
   private timer: ReturnType<typeof setTimeout> | null = null;
@@ -245,19 +267,25 @@ class Session {
   /** How long this device took to answer the current question (its askedAt), for the codex. */
   private answered: { qid: number; ms: number } | null = null;
   /**
-   * Delve: the art of this question goes to the player answering first, and to
-   * everyone else once their clock has started, so nobody shares the uplink with them.
+   * Delve: the art of this question goes first to those who answer it (the
+   * player alone, or everyone standing in co-op), and to everyone else
+   * (spectators, those who perished) once the clock has started, so nobody
+   * shares the uplink with them and nobody watching sees it early.
    */
-  private held: { qid: number; activeId: string } | null = null;
+  private held: { qid: number; ids: Set<string> } | null = null;
+  /** Delve together: the question the team's vote just drew, and the earliest its clock may start (drawHoldUntil). */
+  private drawHold: { qid: number; until: number } | null = null;
   /** Delve: the art failed this many times on this turn (turnCount), for the backoff. */
   private reaskFails = { turn: '', n: 0 };
+  /** Lab only: a co-op run played as its host would, without a room (see labCoop). */
+  private labRoomless = false;
   private expireTimer: ReturnType<typeof setTimeout> | null = null;
   private expireKey = '';
   private flareTimer: ReturnType<typeof setTimeout> | null = null;
   private flareKey = '';
   private dynamiteTimer: ReturnType<typeof setTimeout> | null = null;
   private dynamiteKey = '';
-  /** Delve: the plain art for when the answering player's dynamite goes off, made ahead, never sent before it does. */
+  /** Delve: the plain art for when a stick of dynamite goes off, made ahead, never sent before it does. */
   private clean: { qid: number; art: Promise<CleanMedia> } | null = null;
 
   get isHost() {
@@ -274,11 +302,16 @@ class Session {
     return this.state?.settings.mode === 'race';
   }
 
-  /** Online Delve: this device's player is out of lives and watches the rest of the run. */
-  get fallen() {
+  /** Online Delve: this device's player perished (out of lives) and watches the rest of the run, unless a teammate brings them back. */
+  get perished() {
     const s = this.state;
     const me = this.myPlayerId;
     return this.mode !== 'local' && !!s?.delve && !!me && s.players.some((p) => p.id === me) && livesOf(s, me) === 0;
+  }
+
+  /** The old name of `perished`, for screens not moved over yet. */
+  get fallen() {
+    return this.perished;
   }
 
   /** True when this device may act for the active player (or answer, in a race). */
@@ -326,16 +359,19 @@ class Session {
   // ---- hot-seat ---------------------------------------------------------
 
   startLocal(resume?: GameState) {
+    const delve = this.delveLink && !resume;
+    // Used up by this game, or moot for one picked up where it was.
+    this.delveLink = false;
     this.reset();
     this.mode = 'local';
     this.status = 'ready';
-    this.setState(resume ?? createGame(null, this.delveLink ? { ...DEFAULT_SETTINGS, mode: 'delve' } : undefined));
-    if (!resume) this.delveLink = false;
+    this.setState(resume ?? createGame(null, delve ? { ...DEFAULT_SETTINGS, mode: 'delve' } : undefined));
   }
 
   /**
    * Came in through a delver's shared link (?delve): the next game they open
-   * here, hot-seat or a room, starts on Delve.
+   * here, hot-seat or a room, starts on Delve. Used up by that game, and
+   * dropped when a game is resumed or a room joined instead.
    */
   delveLink = false;
 
@@ -351,7 +387,9 @@ class Session {
   resume() {
     const saved = readSaved();
     if (!saved) return;
-    if (saved.mode === 'local') this.startLocal(underRuleset(renameCategories(saved.state)));
+    // Picking up a game: a shared link's Delve was not for it, nor for the next one.
+    this.delveLink = false;
+    if (saved.mode === 'local') this.startLocal(soloHotSeat(underRuleset(renameCategories(saved.state))));
     else if (saved.mode === 'host') {
       this.reset();
       // Kept while the room reopens, so neither a refresh nor a failed try loses the game.
@@ -408,7 +446,8 @@ class Session {
         // A reveal counts down afresh, so the others can reconnect before it
         // moves on (moving on skips the seats still offline).
         if (s.reveal) s = { ...s, reveal: { ...s.reveal, at: Date.now() } };
-        // Delve: a guest's question is set aside, and everyone cut off gets a while to come back.
+        // Delve: a question someone cut off may have answered is set aside
+        // (and it costs nobody anything), and everyone cut off gets a while to come back.
         if (s.delve) s = engine.apply(s, { type: 'resumed' }, null);
         this.setState(s);
       } else {
@@ -741,6 +780,7 @@ class Session {
   private async startMedia(s: GameState) {
     const q = s.question!;
     this.stopMedia();
+    const gen = this.mediaGen;
     shown.clear();
     let media: PreparedMedia;
     try {
@@ -753,25 +793,25 @@ class Session {
       media = await Promise.race([prepareMedia(plain, q.blasted ? 'off' : this.grayscaleOf(s)), timeout]).finally(() => clearTimeout(timer));
     } catch (err) {
       console.warn('media', err);
-      if (this.state?.question?.askedAt === q.askedAt && this.state.phase === 'question') {
+      if (gen === this.mediaGen && this.state?.question?.askedAt === q.askedAt && this.state.phase === 'question') {
         this.artFailedFor = q.askedAt;
         if (mayAutoReask(this.state, q.askedAt)) this.reaskLater(this.state);
         else this.flash("Couldn't load the art for this question.", 'warn', { title: 'Art missing' });
       }
       return;
     }
-    if (this.state?.question?.askedAt !== q.askedAt || this.state.phase !== 'question') return;
+    // The question as it is now: the clock may have run on meanwhile, or
+    // (a host back from a reload) a stick of dynamite gone off.
+    const cur = this.state;
+    if (gen !== this.mediaGen || cur?.question?.askedAt !== q.askedAt || cur.phase !== 'question') return;
     this.media = media;
     const qid = q.askedAt;
-    // Delve: the clock starts once the art has reached the player answering.
-    const timing = !!s.delve && q.deadline === null;
-    const active = s.players[s.turn];
-    const guestTurn =
-      timing && this.mode === 'host' && !!active && active.id !== this.priv.myPlayerId && [...this.guests.values()].some((g) => g.playerId === active.id);
-    this.held = guestTurn ? { qid, activeId: active.id } : null;
-    // Dynamite will go off on this question if the player holds some (never
-    // on a find's): its plain art is made in a moment, once this art is on its way.
-    if (s.delve && active && !q.blasted && itemsWorkOn(q) && dynamiteOf(s, active.id) > 0 && blastClears(q, this.grayscaleOf(s))) {
+    // Delve: the clock starts once the art has reached those who answer.
+    const timing = !!cur.delve && cur.question.deadline === null;
+    this.held = timing && this.mode === 'host' ? { qid, ids: new Set(artFirst(cur)) } : null;
+    // A stick of dynamite may go off on this question (never on a find's):
+    // its plain art is made in a moment, once this art is on its way.
+    if (cleanArtWanted(cur, this.grayscaleOf(cur))) {
       const art = new Promise((r) => setTimeout(r, 500)).then(() => prepareClean(q));
       art.catch(() => {});
       this.clean = { qid, art };
@@ -781,27 +821,41 @@ class Session {
     // Delve: veiled "find the art" pictures; their patches burn in once the clock starts.
     media.tiles.forEach((t, tile) => this.release({ t: 'veil', qid, tile, ...t.veil }));
     if (media.veil) this.release({ t: 'veil', qid, ...media.veil });
+    if (cur.question.blasted && !q.blasted) {
+      // The dynamite went off while this art was being made (its blast found
+      // no art to clear then): the plain art follows the art at once, and
+      // nothing is left to burn in.
+      void this.blastMedia(cur);
+      return;
+    }
     // Delve: the art (or the pictures) burn in from when the clock starts
     // (startClock), not from when the question was asked; a question resumed
     // with its clock already running burns from that clock's start.
-    if (!timing && (media.veil || media.tiles.length)) this.burnVeil(qid, q.clockAt ?? q.askedAt);
-    if (guestTurn) this.waitForArrival(qid, active.id);
-    else if (timing) this.startClock(qid, Date.now());
+    if (!timing && (media.veil || media.tiles.length)) this.burnVeil(qid, cur.question.clockAt ?? q.askedAt);
+    if (timing) this.waitForArrival(qid);
   }
 
   /**
-   * Delve: starts the answering guest's clock once the host's queue to them is
-   * empty (the art is on the wire), at most a few seconds after it was released.
+   * Delve: starts the clock once the host's queue to everyone it waits for
+   * (the art's first recipients who are online: the player answering, or in
+   * co-op everyone standing) is empty, the art on the wire, and at most a few
+   * seconds after it was released, so nobody starts at a disadvantage. With
+   * nobody to wait for (the host alone, hot-seat), at once.
    */
-  private waitForArrival(qid: number, activeId: string) {
+  private waitForArrival(qid: number) {
     const releasedAt = Date.now();
     const poll = () => {
       if (!mayAutoReask(this.state, qid)) return;
-      const conns = [...this.guests].filter(([, g]) => g.playerId === activeId);
+      const ids = this.held?.qid === qid ? this.held.ids : new Set<string>();
+      const conns = [...this.guests].filter(([, g]) => !!g.playerId && ids.has(g.playerId));
       const now = Date.now();
       const done = conns.every(([c]) => drained(c as unknown as Parameters<typeof drained>[0]));
-      if (done || now - releasedAt >= DELVE_CLOCK_CAP_MS) {
-        this.startClock(qid, clockStart(done ? now : null, releasedAt, conns[0]?.[1].rtt ?? 0));
+      // Together, after a vote: not before its draw has played out on the cards.
+      const hold = this.drawHold?.qid === qid ? this.drawHold.until : 0;
+      if ((done || now - releasedAt >= DELVE_CLOCK_CAP_MS) && now >= hold - 500) {
+        // The slowest of them still needs half a round trip for the last bytes and the deadline.
+        const rtt = Math.max(0, ...conns.map(([, g]) => g.rtt));
+        this.startClock(qid, Math.max(hold, conns.length ? clockStart(done ? now : null, releasedAt, rtt) : now));
         return;
       }
       this.mediaTimers.push(setTimeout(poll, DRAIN_POLL_MS));
@@ -844,6 +898,8 @@ class Session {
   /**
    * Delve: a stick of dynamite went off. What was burning in stops, and
    * everyone gets the art plain (in colour, unmirrored, whole), only now.
+   * Should the plain art fail, the veil is finished instead, so no picture
+   * is left part-veiled.
    */
   private async blastMedia(s: GameState) {
     const q = s.question!;
@@ -852,37 +908,45 @@ class Session {
     for (const t of this.mediaTimers) clearTimeout(t);
     this.mediaTimers = [];
     if (!blastClears(q, this.grayscaleOf(s))) return;
+    // What is still to burn in, kept for the fallback (the reveal drops the media).
+    const rest = this.unreleasedPatches();
+    // A new start (or a reset) drops it; the reveal (stopMedia(true)) doesn't.
+    const gen = this.mediaGen;
     let clean: CleanMedia;
     try {
       clean = await (this.clean?.qid === qid ? this.clean.art : prepareClean(q));
     } catch (err) {
       console.warn('clean art', err);
+      if (gen === this.mediaGen) this.finishVeil(rest);
       return;
     }
     // Still this question (a reveal that came first still shows the decoys plain).
     const now = this.state;
-    if (now?.question?.askedAt !== qid || (now.phase !== 'question' && now.phase !== 'reveal')) return;
+    if (gen !== this.mediaGen || now?.question?.askedAt !== qid || (now.phase !== 'question' && now.phase !== 'reveal')) return;
     if (clean.art) this.release({ t: 'clean', qid, ...clean.art });
     clean.tiles.forEach((t, tile) => this.release({ t: 'clean', qid, tile, ...t }));
   }
 
-  /** Delve: the art held back from everyone but the player answering goes out to them now. */
+  /** Delve: the art held back from everyone but those answering goes out to them now. */
   private releaseHeld() {
     const h = this.held;
     if (!h) return;
     this.held = null;
     for (const [conn, g] of this.guests)
-      if (g.playerId && g.playerId !== h.activeId) for (const m of this.released) if (m.qid === h.qid) this.sendMedia(conn, g, m);
+      if (g.playerId && !h.ids.has(g.playerId)) for (const m of this.released) if (m.qid === h.qid) this.sendMedia(conn, g, m);
   }
 
   private mayGetMedia(g: Guest) {
-    return !this.held || g.playerId === this.held.activeId;
+    return !this.held || (!!g.playerId && this.held.ids.has(g.playerId));
   }
 
   /**
    * Delve: art that failed to load is asked again by itself, with a backoff,
-   * for as long as it keeps failing; nothing is lost while it does, as the
-   * clock only starts once the art is out.
+   * a few times (nothing is lost while it does, as the clock only starts once
+   * the art is out). Then it stops: the question waits, its clock not
+   * started, until the host asks another (Game's "Ask another question") or
+   * the browser is back online (artBack), so an offline device doesn't spin
+   * through questions forever and the depth still has to be answered.
    */
   private reaskLater(s: GameState) {
     const qid = s.question!.askedAt;
@@ -890,12 +954,25 @@ class Session {
     const turn = `${s.delve?.startedAt}:${s.turnCount}`;
     if (this.reaskFails.turn !== turn) this.reaskFails = { turn, n: 0 };
     const n = this.reaskFails.n++;
+    const wait = reaskDelay(n);
     if (n === 1) this.flash('The art for this question keeps failing to load; trying another.', 'warn', { title: 'Art missing' });
+    if (wait === null) {
+      this.flash("The art won't load. Check your connection, then ask another question; nothing is lost meanwhile.", 'warn', { title: 'Art missing' });
+      return;
+    }
     this.mediaTimers.push(
       setTimeout(() => {
         if (mayAutoReask(this.state, qid)) this.setState(engine.apply(this.state!, { type: 'reask' }, null));
-      }, reaskDelay(n)),
+      }, wait),
     );
+  }
+
+  /** The browser is back online: a Delve question waiting on art that failed is asked again. */
+  artBack() {
+    const s = this.state;
+    if (!this.artMissing || !s?.question || !mayAutoReask(s, s.question.askedAt)) return;
+    this.reaskFails = { turn: '', n: 0 };
+    this.setState(engine.apply(s, { type: 'reask' }, null));
   }
 
   /** Patches of the current veiled picture that haven't gone out yet, in order. */
@@ -910,15 +987,17 @@ class Session {
   }
 
   /**
-   * The answer is out, so the rest of a veiled picture goes out now, a few
-   * tens of ms apart: it burns in quickly, still spreading from what's
-   * there, and every device starts each patch's burn in a different frame.
+   * The rest of a veiled picture goes out now (the answer is out, or the
+   * plain art after a blast failed), a few tens of ms apart: it burns in
+   * quickly, still spreading from what's there, and every device starts each
+   * patch's burn in a different frame.
    */
   private finishVeil(rest: ReturnType<Session['unreleasedPatches']>) {
     const gap = Math.min(30, 300 / Math.max(1, rest.length));
     rest.forEach((patch, k) => {
       const go = () => {
-        if (this.state?.phase === 'reveal' && this.state.question?.askedAt === patch.qid) this.release({ t: 'patch', ...patch });
+        const s = this.state;
+        if ((s?.phase === 'reveal' || s?.phase === 'question') && s.question?.askedAt === patch.qid) this.release({ t: 'patch', ...patch });
       };
       if (k === 0) go();
       else this.mediaTimers.push(setTimeout(go, k * gap));
@@ -937,6 +1016,7 @@ class Session {
   }
 
   private stopMedia(keepReleased = false) {
+    if (!keepReleased) this.mediaGen++;
     for (const t of this.mediaTimers) clearTimeout(t);
     this.mediaTimers = [];
     this.media = null;
@@ -948,6 +1028,8 @@ class Session {
   // ---- joining ----------------------------------------------------------
 
   join(code: string, name: string) {
+    // The host's room has its own settings: a shared link's Delve is moot.
+    this.delveLink = false;
     this.reset();
     this.mode = 'client';
     this.status = 'connecting';
@@ -1136,7 +1218,9 @@ class Session {
         this.flash(err instanceof ActionError ? err.message : 'Something went wrong.', 'error');
       }
     };
-    const handicap = this.mode === 'host' && this.race && action.type === 'answer' ? this.hostHandicap() : 0;
+    // Co-op Delve is a race for the right answer too (the first clears the depth and takes the find).
+    const racing = this.race || (!!this.state.delve && isGroupRun(this.state));
+    const handicap = this.mode === 'host' && !this.labRoomless && racing && action.type === 'answer' ? this.hostHandicap() : 0;
     if (handicap > 0) setTimeout(run, handicap);
     else run();
   }
@@ -1194,6 +1278,32 @@ class Session {
     this.setState(next);
   }
 
+  /**
+   * Lab only: plays the co-op run on this device as its host would, without
+   * a room (no peer, no guests), seen by `viewer`: the screens act for them,
+   * and labAct for anyone. It is saved as a hot-seat game, so a reload never
+   * reaches for the matchmaking server; the lab calls this again after one.
+   */
+  labCoop(viewer: string) {
+    if (!this.state) return;
+    this.labRoomless = true;
+    this.mode = 'host';
+    this.status = 'ready';
+    this.myPlayerId = viewer;
+    this.priv = noPrivate(viewer);
+  }
+
+  /** Lab only: an action from a given player (null: the host's own timers), as the room would take it. An error's message, or null. */
+  labAct(action: Action, from: string | null): string | null {
+    if (!this.state) return 'No game.';
+    try {
+      this.setState(engine.apply(this.state, action, from));
+      return null;
+    } catch (err) {
+      return err instanceof ActionError ? err.message : String(err);
+    }
+  }
+
   /** The grayscale a question's art is prepared with: the rules' (the lab may force one). */
   private grayscaleOf(s: GameState): Grayscale {
     return this.labGrayscale ?? activeRules(s).grayscale;
@@ -1209,6 +1319,8 @@ class Session {
     this.state = next;
     if (this.isHost && next.delve && next.round >= LOOKS_FETCH_FROM) fetchLooks();
     if (next.phase === 'question' && next.question && next.question.askedAt !== prev?.question?.askedAt) {
+      const until = drawHoldUntil(prev, next);
+      this.drawHold = until === null ? null : { qid: next.question.askedAt, until };
       void this.startMedia(next);
     } else if (next.phase === 'question' && next.question?.blasted && prev?.question?.askedAt === next.question.askedAt && !prev.question.blasted) {
       // Sent after the state below, so the plain art never arrives before the blast does.
@@ -1250,13 +1362,13 @@ class Session {
   private save() {
     const s = this.state;
     if (!s) return;
-    if (this.mode === 'local') writeSaved({ mode: 'local', state: s });
+    if (this.mode === 'local' || this.labRoomless) writeSaved({ mode: 'local', state: s });
     else if (this.mode === 'host') writeSaved({ mode: 'host', code: this.code, state: s, priv: this.priv });
   }
 
   /** Lists the room publicly while the host has it set to public. */
   private syncBeacon(s: GameState) {
-    const want = this.mode === 'host' && !!s.settings.public;
+    const want = this.mode === 'host' && !this.labRoomless && !!s.settings.public;
     if (want && !this.beacon) {
       this.beacon = new Beacon(() => this.roomInfo());
       this.beacon.start();
@@ -1338,16 +1450,7 @@ class Session {
       });
     if (!prev) return;
     const me = this.myPlayerId;
-    for (const n of delveNotices(prev, next)) {
-      const p = next.players.find((p) => p.id === n.playerId);
-      if (!p) continue;
-      const who = { name: p.name, hue: p.hue };
-      if (n.kind === 'missed') {
-        sfx('wrong');
-        const lost = n.warded ? 'an Azurite Ward broke instead of a life' : 'one life lost';
-        this.flash(`Their time ran out while they were away; ${lost}.`, 'warn', { title: 'Turn missed', who });
-      } else this.flash('The host reloaded, so this question was set aside; no life lost.', 'info', { title: 'Question set aside', who });
-    }
+    for (const n of delveNotices(prev, next)) this.delveNotice(n, next);
     if ((prev.phase === 'lobby' || prev.phase === 'over') && (next.phase === 'choosing' || next.phase === 'question')) {
       sfx('start');
       return;
@@ -1382,6 +1485,38 @@ class Session {
     }
   }
 
+  /** Delve: one notice of a state change, in words (delveSession.ts delveNotices). What this device's own screen shows already, it isn't told. */
+  private delveNotice(n: DelveNotice, s: GameState) {
+    const player = (id: string) => s.players.find((p) => p.id === id);
+    const p = player(n.playerId);
+    const who = p ? { name: p.name, hue: p.hue } : undefined;
+    const me = this.mode === 'local' ? null : this.myPlayerId;
+    const mine = !!me && n.playerId === me;
+    switch (n.kind) {
+      case 'setAside':
+        this.flash(`The host reloaded; it cost ${n.playerId ? 'nothing' : 'nobody anything'}.`, 'info', { title: 'Question set aside', ...(who ? { who } : {}) });
+        break;
+      case 'struck':
+        // What it cost them, their phial shows.
+        if (who && !mine) this.flash('Struck for everyone.', 'warn', { title: 'Wrong pick', who });
+        break;
+      case 'perished':
+        // The depth is in the header.
+        if (who && !mine) this.flash(n.revivable ? 'A teammate can give them a life.' : 'The rest delve on.', 'warn', { title: 'Perished', who });
+        break;
+      case 'revived': {
+        const giver = player(n.by);
+        if (!who || !giver) break;
+        const line = n.by === me ? 'You gave them a life.' : mine ? `${giver.name} gave you a life.` : `${giver.name} gave them a life.`;
+        this.flash(line, 'info', { title: 'Brought back', who });
+        break;
+      }
+      case 'flare':
+        if (who) this.flash(`${FLARE_MS / 1000} more seconds for everyone.`, 'info', { title: 'A flare burns', who });
+        break;
+    }
+  }
+
   private scheduleTimers(s: GameState) {
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
@@ -1391,13 +1526,14 @@ class Session {
     this.scheduleFlare(s);
     if (s.phase === 'question' && s.question?.deadline) {
       const version = s.version;
-      this.timer = setTimeout(
+      // Answers sent in time may still be on their way.
+      this.armAt(
+        s.question.deadline + ANSWER_GRACE_MS,
         () => {
           if (this.state?.version !== version) return;
           this.setState(engine.apply(this.state, { type: 'answer', index: null }, null));
         },
-        // Answers sent in time may still be on their way.
-        Math.max(0, s.question.deadline - Date.now() + ANSWER_GRACE_MS),
+        (t) => (this.timer = t),
       );
     }
     this.scheduleAutoSkip(s);
@@ -1407,7 +1543,25 @@ class Session {
     this.scheduleDynamite(s);
   }
 
-  /** Delve: once half the answering player's clock has run out, a stick of their dynamite goes off (host or this device only). */
+  /**
+   * A host timer due at `at` (this device's clock). Should it fire more than
+   * EARLY_MS early (the system clock jumped back meanwhile), it is set again
+   * for the time still left instead of trying too soon (which the engine
+   * would refuse without changing anything, leaving nothing to try again).
+   */
+  private armAt(at: number, go: () => void, keep: (t: ReturnType<typeof setTimeout>) => void) {
+    const fire = () => {
+      const left = at - Date.now();
+      if (left > EARLY_MS) keep(setTimeout(fire, left));
+      else go();
+    };
+    keep(setTimeout(fire, Math.max(0, at - Date.now())));
+  }
+
+  /**
+   * Delve: once half the clock has run out, a stick of dynamite goes off: the
+   * player's own, or in co-op a random holder's (host or this device only).
+   */
   private scheduleDynamite(s: GameState) {
     const left = this.mode !== 'client' ? dynamiteIn(s, Date.now()) : null;
     const key = left === null ? '' : `${s.question?.askedAt}:${s.question?.clockAt}`;
@@ -1417,18 +1571,26 @@ class Session {
     this.dynamiteKey = key;
     if (left === null) return;
     const askedAt = s.question!.askedAt;
-    this.dynamiteTimer = setTimeout(() => {
-      const cur = this.state;
-      if (!cur || this.dynamiteKey !== key) return;
-      try {
-        this.setState(engine.apply(cur, { type: 'dynamite', askedAt }, null));
-      } catch {
-        /* the question closed anyway */
-      }
-    }, left);
+    this.armAt(
+      Date.now() + left,
+      () => {
+        const cur = this.state;
+        if (!cur || this.dynamiteKey !== key) return;
+        try {
+          this.setState(engine.apply(cur, { type: 'dynamite', askedAt }, null));
+        } catch {
+          /* the question closed anyway */
+        }
+      },
+      (t) => (this.dynamiteTimer = t),
+    );
   }
 
-  /** Delve: as the answering player's clock hits 0, one of their flares burns (host or this device only). */
+  /**
+   * Delve: as the clock hits 0, a flare burns: the player's own, or in co-op
+   * a random holder's, while someone here still has an answer to give (host
+   * or this device only).
+   */
   private scheduleFlare(s: GameState) {
     const left = this.mode !== 'client' ? flareIn(s, Date.now()) : null;
     const key = left === null ? '' : `${s.question?.askedAt}:${s.question?.deadline}`;
@@ -1438,35 +1600,51 @@ class Session {
     this.flareKey = key;
     if (left === null) return;
     const askedAt = s.question!.askedAt;
-    this.flareTimer = setTimeout(() => {
-      const cur = this.state;
-      if (!cur || this.flareKey !== key) return;
-      try {
-        this.setState(engine.apply(cur, { type: 'flare', askedAt }, null));
-      } catch {
-        /* the question closed anyway */
-      }
-    }, left);
+    this.armAt(
+      Date.now() + left,
+      () => {
+        const cur = this.state;
+        if (!cur || this.flareKey !== key) return;
+        try {
+          this.setState(engine.apply(cur, { type: 'flare', askedAt }, null));
+        } catch {
+          /* the question closed anyway */
+        }
+      },
+      (t) => (this.flareTimer = t),
+    );
   }
 
-  /** Delve: when the time to pick runs out, a card is picked (or a life lost, for a player who is away). */
+  /**
+   * Delve co-op: the vote closes VOTE_WINDOW_MS after its first vote (or once
+   * everyone it waits for has voted); the host then draws the card. Nothing
+   * runs before the first vote: the team may sit on the cards for as long as
+   * it likes.
+   */
   private scheduleExpire(s: GameState) {
-    const left = this.mode === 'host' ? expireIn(s, Date.now()) : null;
-    const key = left === null ? '' : `${s.turnCount}:${s.delve?.pickBy}`;
+    const left = this.isHost ? expireIn(s, Date.now()) : null;
+    const key = left === null ? '' : `${s.delve?.startedAt}:${s.turnCount}:${s.delve?.voteFrom}:${left === 0 ? 'now' : ''}`;
     if (key === this.expireKey) return;
     if (this.expireTimer) clearTimeout(this.expireTimer);
     this.expireTimer = null;
     this.expireKey = key;
     if (left === null) return;
-    this.expireTimer = setTimeout(() => {
-      const cur = this.state;
-      if (!cur || this.expireKey !== key) return;
-      try {
-        this.setState(engine.apply(cur, { type: 'expire' }, null));
-      } catch {
-        /* the turn moved on anyway */
-      }
-    }, left + 50);
+    this.armAt(
+      Date.now() + left + 50,
+      () => {
+        const cur = this.state;
+        if (!cur || this.expireKey !== key) return;
+        // Let go of the key first: should the engine find it too early after
+        // all (the clocks disagree), the state it returns sets the timer again.
+        this.expireKey = '';
+        try {
+          this.setState(engine.apply(cur, { type: 'expire' }, null));
+        } catch {
+          /* the vote closed anyway */
+        }
+      },
+      (t) => (this.expireTimer = t),
+    );
   }
 
   /**
@@ -1559,8 +1737,18 @@ class Session {
     if (mode === 'client') this.status = 'idle';
   }
 
-  private reset() {
+  /**
+   * Delve: the run this device is in goes into its records as left (unless
+   * it already perished there), as the page goes away: a tab closed mid-run
+   * never reaches reset. Recording it again (leaving, a reload that picks the
+   * run up and then ends it) replaces it (delveRecord.ts addRun).
+   */
+  recordLeaving() {
     if (this.state) recordLeft(this.state, this.myPlayerId, this.mode === 'local');
+  }
+
+  private reset() {
+    this.recordLeaving();
     // A new attempt (or leaving) makes the last one's errors moot.
     toasts.clearErrors();
     this.beacon?.stop();
@@ -1592,6 +1780,7 @@ class Session {
     this.dynamiteKey = '';
     this.reaskFails = { turn: '', n: 0 };
     this.artFailedFor = 0;
+    this.labRoomless = false;
     for (const c of this.guests.keys()) c.close();
     this.guests.clear();
     this.hostConn?.close();
@@ -1645,6 +1834,22 @@ function veiledSets(media: PreparedMedia): { tile: number | undefined; patches: 
   return media.tiles.map((t, tile) => ({ tile, patches: t.patches }));
 }
 
+/**
+ * Hot-seat Delve is a run alone (together it is co-op, played online): a
+ * group's hot-seat run saved by an older build goes back to its lobby, where
+ * the players can pick another game or delve alone.
+ */
+function soloHotSeat(s: GameState): GameState {
+  if (!s.delve || s.hostId !== null || !isGroupRun(s) || s.phase === 'lobby' || s.phase === 'over') return s;
+  try {
+    const lobby = engine.apply(s, { type: 'restart' }, null);
+    toasts.show('Delve together is now played online, in a room; on one device it is a run alone.', 'info', { title: 'Run not resumed' });
+    return lobby;
+  } catch {
+    return createGame(null);
+  }
+}
+
 /** A Delve run saved by a build with other rules plays on, but never counts as a best. */
 function underRuleset(s: GameState): GameState {
   return s.delve && s.delve.ruleset !== DELVE_RULESET && !s.delve.mixed ? { ...s, delve: { ...s.delve, mixed: true } } : s;
@@ -1669,3 +1874,10 @@ function writeSaved(saved: Saved | null) {
 }
 
 export const session = new Session();
+
+if (typeof window !== 'undefined') {
+  // A run abandoned by closing the tab (or going elsewhere) is still recorded.
+  window.addEventListener('pagehide', () => session.recordLeaving());
+  // Art that wouldn't load (offline) is tried again once the browser is back online.
+  window.addEventListener('online', () => session.artBack());
+}

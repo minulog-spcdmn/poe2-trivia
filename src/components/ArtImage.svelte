@@ -57,7 +57,8 @@
     filter: drop-shadow(0 12px 25px rgba(0, 0, 0, 0.8));
   }
   .flood {
-    animation: flood 0.8s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+    /* Only filled backwards: once it has flooded in, no clip is left to cut off its shadow. */
+    animation: flood 0.8s cubic-bezier(0.2, 0.7, 0.3, 1) backwards;
   }
   @keyframes flood {
     from {
@@ -68,7 +69,8 @@
       filter: saturate(1.5) brightness(1.5) drop-shadow(0 12px 25px rgba(0, 0, 0, 0.8));
     }
     to {
-      clip-path: circle(75% at 50% 50%);
+      /* Wide enough to take in the drop shadow too, so nothing jumps as the clip goes. */
+      clip-path: circle(150% at 50% 50%);
       filter: saturate(1) brightness(1) drop-shadow(0 12px 25px rgba(0, 0, 0, 0.8));
     }
   }

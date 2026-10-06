@@ -100,6 +100,11 @@ export function parseClientMsg(raw: unknown): ClientMsg | null {
         }
         case 'next':
           return { t: 'action', action: { type: 'next' } };
+        // Delve co-op: a vote for a card, and a life given to a teammate (the host checks both against the run).
+        case 'vote':
+          return isStr(a.category, 80) && a.category.length > 0 ? { t: 'action', action: { type: 'vote', category: a.category } } : null;
+        case 'revive':
+          return isStr(a.target, 64) && a.target.length > 0 ? { t: 'action', action: { type: 'revive', target: a.target } } : null;
         default:
           return null;
       }

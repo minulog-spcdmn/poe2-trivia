@@ -3,8 +3,12 @@
 // lockout longer. The rules at a depth are the same in every run, so "depth N"
 // means the same thing to everyone. Only types come from game.ts, so the engine
 // can import this module without a cycle.
+//
+// Alone, a run is turns of one player. Together (online only) it is co-op: the
+// team votes for a card, everyone standing answers the one question, and a
+// teammate with lives to spare can bring back one who perished.
 
-import type { DifficultyRules, GameState, Grayscale, Preset, Question, VeilSpeed } from './game.ts';
+import type { DifficultyRules, GameState, Grayscale, Player, Preset, Question, Revive, VeilSpeed } from './game.ts';
 
 export const DELVE_LIVES = 3;
 
@@ -18,13 +22,20 @@ export const DELVE_RULESET = 1;
 /** Ten categories, three on offer: a lockout of seven still leaves three to pick from. */
 export const DELVE_MAX_LOCKOUT = 7;
 
-/** Online group runs: how long a player has to pick a category before one is picked for them. */
-export const DELVE_PICK_MS = 20_000;
+/**
+ * Co-op: the first vote gives everyone else this long to vote too before the
+ * vote closes. Nothing is ever picked without a vote: until the first one the
+ * team can take a breather on the cards for as long as it likes.
+ */
+export const VOTE_WINDOW_MS = 6000;
 
-/** A player who comes back with less than this left to pick gets this much, once per turn. */
-export const DELVE_REJOIN_MS = 10_000;
+/** Co-op: a player who lets this many votes in a row pass is idle, and not waited for until they vote again. */
+export const DELVE_IDLE_ROUNDS = 3;
 
-/** After the host reloads, players who were cut off get this long to come back before their turn runs. */
+/** Co-op: lives a player needs to give one to a perished teammate (so giving never makes them perish). */
+export const REVIVE_FROM = 2;
+
+/** After the host reloads, players who were cut off get this long to come back before a vote closes without them. */
 export const DELVE_RESUME_GRACE_MS = 60_000;
 
 /** Depth as a whole number from 1 (anything odd counts as the surface). */
@@ -190,7 +201,8 @@ export function delveChangeAt(d: number): 'knobs' | 'lockout' | 'timer' | null {
  * a life) to a fast answer and a shard to a slow one (two shards forge a ward);
  * a Flare Cache a flare (it burns by itself as the clock hits 0, for more
  * time); a Dynamite Cache dynamite (it goes off by itself at half the clock,
- * blasting the art plain and half the wrong answers away, and holds the clock
+ * blasting the art plain and half the options away, every one of them wrong,
+ * and holds the clock
  * while it does). Flares and dynamite never go off on a find's own question.
  */
 export type FindKind = 'azurite' | 'flare' | 'dynamite';
@@ -200,7 +212,10 @@ export interface Inventory {
   wards: number;
   flares: number;
   dynamite: number;
-  /** Azurite shards toward the next ward (two forge one, so never more than one held). */
+  /**
+   * Azurite shards toward the next ward (two forge one, so never more than
+   * one held), and none at all with DELVE_MAX_WARDS wards (see capShards).
+   */
   shards: number;
 }
 export type ItemKind = keyof Inventory;
@@ -229,10 +244,11 @@ export const FIND_RAMP_TO = 50;
  * Where each find turns up, and how often: from depth `from` it is on an
  * offer `start` of the time, rising evenly to `cap` at FIND_RAMP_TO and
  * holding there. Fixed by depth, so a depth offers the same chances in every
- * run. One roll per offer against the finds' slices in turn, so an offer
- * holds at most one find, and a find whose item the player on turn can't
- * carry any more of is never rolled (its slice finds nothing), so it never
- * changes the others' chances.
+ * run. One roll per offer against the finds' slices in turn decides whether
+ * it holds a find, and a find whose item the player on turn (in co-op:
+ * nobody standing) can't carry any more of is never rolled (its slice finds
+ * nothing), so it never changes the others' chances. An offer that holds one
+ * rolls once more for a second find on another card (see SECOND_FIND).
  *
  * The Azurite Vein comes first and stays the rarer deep down: a ward takes a
  * whole loss, the strongest thing to carry. The Flare Cache comes deepest,
@@ -245,6 +261,28 @@ export const FINDS: { kind: FindKind; item: ItemKind; from: number; start: numbe
   { kind: 'flare', item: 'flares', from: 15, start: 0.04, cap: DYNAMITE_ON ? 0.13 : 0.18, max: DELVE_MAX_FLARES, deeper: 20, losses: 1 },
   { kind: 'dynamite', item: 'dynamite', from: 10, start: DYNAMITE_ON ? 0.04 : 0, cap: DYNAMITE_ON ? 0.09 : 0, max: DELVE_MAX_DYNAMITE, deeper: 15, losses: 1 },
 ];
+
+/**
+ * A second find beside the first: an offer that holds a find rolls once more,
+ * against the other kinds' slices at this share of their chance (a kind the
+ * takers can't carry finds nothing, as in the first roll), and a hit puts that
+ * find on another card. Never a third. Only an offer with a find rolls again,
+ * so as many offers hold a find as with one roll; the second roll's chances
+ * ramp with the depth's, so two finds side by side are rare early and grow
+ * less rare with depth: about 1 offer in 500 at depth 10, 1 in 100 at depth
+ * 20 and 1 in 28 from depth 50 (a ninth of those with a find), when the
+ * takers have room for everything (tests/delveFinds.test.ts simulates it).
+ */
+export const SECOND_FIND = 0.5;
+
+/** A find on one of the cards on offer. */
+export interface CardFind {
+  category: string;
+  kind: FindKind;
+}
+
+/** At most this many finds on an offer, each on its own card and of its own kind. */
+export const MAX_FINDS = 2;
 
 /** The find that yields an item. */
 export const findFor = (kind: FindKind) => FINDS.find((f) => f.kind === kind)!;
@@ -341,10 +379,12 @@ export const BLAST_PAUSE_MS = 1000;
 export const blastAt = (secs: number) => veinWindow(secs);
 
 /**
- * How many wrong answers dynamite blows away from a question of `options`:
- * half of the wrong ones, rounded down, never leaving fewer than two options.
+ * How many options dynamite blows away from a question of `options` (co-op:
+ * of those still in play, as if the struck were gone already): half of them,
+ * rounded down, every one of them wrong, never leaving fewer than two (the
+ * answer and one wrong). Four leave two, six three, eight four.
  */
-export const blastCount = (options: number) => Math.max(0, Math.min(Math.floor((options - 1) / 2), options - 2));
+export const blastCount = (options: number) => Math.max(0, Math.min(Math.floor(options / 2), options - 2));
 
 /**
  * Whether dynamite has anything to clear from a question's art: art burning
@@ -380,6 +420,17 @@ export const delveQuestionTimer = (d: number, q: { find?: FindKind }) => (q.find
 
 const CAPS: Inventory = { wards: DELVE_MAX_WARDS, flares: DELVE_MAX_FLARES, dynamite: DELVE_MAX_DYNAMITE, shards: SHARDS_PER_WARD - 1 };
 
+/**
+ * An inventory with no shard beside DELVE_MAX_WARDS wards: with every ward a
+ * player can hold, a shard has nothing left to forge, so none is kept. The
+ * engine applies it whenever wards reach the most (a fast Vein's ward, a
+ * forge), and inventoryOf whenever it reads one (an older or hand-made state).
+ */
+export function capShards(inv: Inventory): Inventory {
+  if (inv.wards >= DELVE_MAX_WARDS) inv.shards = 0;
+  return inv;
+}
+
 /** Whether a player holding `inv` can take one more of `item` (a shard only toward a ward they have room for). */
 export const hasRoom = (inv: Inventory, item: ItemKind) => (item === 'shards' ? inv.wards < DELVE_MAX_WARDS : inv[item] < CAPS[item]);
 
@@ -405,13 +456,27 @@ export function delveTier(d: number): Preset {
 /** The depth of the run in progress (the round), 0 outside Delve. */
 export const delveDepth = (s: GameState) => (s.delve ? s.round : 0);
 
-/** A run of two or more players (last one standing), not a solo one. */
+/** A co-op run: two or more players set out together (online only). One player is a solo run. */
 export const isGroupRun = (s: GameState) => (s.delve?.entrants.length ?? 0) >= 2;
 
-/** Lives a seated player has left; 0 for anyone without a seat, or outside Delve. */
+const seated = (s: GameState, id: string) => s.players.some((p) => p.id === id);
+
+/** Lives a player gave to bring teammates back, and how often one was given to them. */
+function gifts(s: GameState, id: string): { given: number; received: number } {
+  const all = s.delve?.revives ?? [];
+  return { given: all.filter((r) => r.by === id).length, received: all.filter((r) => r.to === id).length };
+}
+
+/**
+ * Lives a seated player has left; 0 for anyone without a seat, or outside
+ * Delve. Three, less each life lost (`losses`) and each given to a teammate,
+ * plus each a teammate gave them: `losses` stays the record of where lives
+ * went down there, and `revives` of the ones passed between players.
+ */
 export function livesOf(s: GameState, id: string): number {
-  if (!s.delve || !s.players.some((p) => p.id === id)) return 0;
-  return Math.max(0, DELVE_LIVES - (s.delve.losses[id]?.length ?? 0));
+  if (!s.delve || !seated(s, id)) return 0;
+  const { given, received } = gifts(s, id);
+  return Math.max(0, DELVE_LIVES - (s.delve.losses[id]?.length ?? 0) - given + received);
 }
 
 const EMPTY: Inventory = { wards: 0, flares: 0, dynamite: 0, shards: 0 };
@@ -421,13 +486,13 @@ const EMPTY: Inventory = { wards: 0, flares: 0, dynamite: 0, shards: 0 };
  * seat, or in older saves; odd counts read as something sane.
  */
 export function inventoryOf(s: GameState, id: string): Inventory {
-  const raw = s.delve && s.players.some((p) => p.id === id) ? s.delve.inventory?.[id] : undefined;
+  const raw = s.delve && seated(s, id) ? s.delve.inventory?.[id] : undefined;
   if (!raw) return { ...EMPTY };
   const clean = (k: ItemKind) => {
     const n = raw[k];
     return typeof n === 'number' && Number.isFinite(n) ? Math.max(0, Math.min(CAPS[k], Math.floor(n))) : 0;
   };
-  return { wards: clean('wards'), flares: clean('flares'), dynamite: clean('dynamite'), shards: clean('shards') };
+  return capShards({ wards: clean('wards'), flares: clean('flares'), dynamite: clean('dynamite'), shards: clean('shards') });
 }
 
 /** Azurite Wards a player holds: each takes a loss in place of a life. */
@@ -439,11 +504,37 @@ export const dynamiteOf = (s: GameState, id: string) => inventoryOf(s, id).dynam
 /** Azurite shards a player holds toward their next ward. */
 export const shardsOf = (s: GameState, id: string) => inventoryOf(s, id).shards;
 
-/** The find among the cards on offer to the player on turn, or null. */
-export function findOffer(s: GameState): { category: string; kind: FindKind } | null {
-  const f = s.delve?.find;
-  return s.phase === 'choosing' && f && s.offered.includes(f.category) ? f : null;
+const FIND_KINDS: readonly string[] = ['azurite', 'flare', 'dynamite'] satisfies FindKind[];
+
+/**
+ * The finds among the cards on offer, in the order they were rolled (none
+ * outside a vote or a pick): at most MAX_FINDS, each on its own card and of
+ * its own kind. Older saves hold a single `find` instead of `finds`.
+ */
+export function findOffers(s: GameState): CardFind[] {
+  const dm = s.delve;
+  if (!dm || s.phase !== 'choosing') return [];
+  const raw: unknown[] = Array.isArray(dm.finds) ? dm.finds : dm.find ? [dm.find] : [];
+  const out: CardFind[] = [];
+  for (const f of raw) {
+    if (!f || typeof f !== 'object') continue;
+    const { category, kind } = f as Partial<CardFind>;
+    if (typeof category !== 'string' || typeof kind !== 'string' || !FIND_KINDS.includes(kind) || !s.offered.includes(category)) continue;
+    if (out.some((o) => o.category === category || o.kind === kind)) continue;
+    out.push({ category, kind });
+    if (out.length >= MAX_FINDS) break;
+  }
+  return out;
 }
+
+/** The find on a card on offer, or null for an ordinary card. */
+export const findOn = (s: GameState, category: string): FindKind | null => findOffers(s).find((f) => f.category === category)?.kind ?? null;
+
+/**
+ * The first find among the cards on offer, or null.
+ * @deprecated An offer may hold two finds: use findOffers(s) or findOn(s, category).
+ */
+export const findOffer = (s: GameState): CardFind | null => findOffers(s)[0] ?? null;
 
 /**
  * Seconds the question in play started with: a find's or the depth's (a
@@ -458,30 +549,121 @@ export const veinWindowMs = (s: GameState) => (s.delve && s.question?.find === '
 export const blastAtMs = (s: GameState) => blastAt(questionTimer(s));
 
 /**
- * The depth where a player lost their last life, or null while they still
+ * The depth where a seated player lost their last life, or null while they
  * stand. A cave-in takes two lives at once, so the same depth can be in
- * `losses` twice, the fall among them.
+ * `losses` twice, the perish among them. Brought back by a teammate, they
+ * stand again (null) until they perish anew; perishesOf keeps every time.
  */
 export function fellAt(s: GameState, id: string): number | null {
-  return s.delve?.losses[id]?.[DELVE_LIVES - 1] ?? null;
+  const losses = s.delve?.losses[id];
+  return losses?.length && seated(s, id) && livesOf(s, id) === 0 ? losses.at(-1)! : null;
+}
+
+/** Every depth where a seated player perished, oldest first: before each revive, and now if they lie there still. */
+export function perishesOf(s: GameState, id: string): number[] {
+  if (!seated(s, id)) return [];
+  const before = (s.delve?.revives ?? []).filter((r) => r.to === id).map((r) => r.fell);
+  const now = fellAt(s, id);
+  return now === null ? before : [...before, now];
 }
 
 /** Seated players with lives left, in seat order. */
 export const standingIds = (s: GameState) => s.players.filter((p) => livesOf(s, p.id) > 0).map((p) => p.id);
 
+// ---- co-op ----------------------------------------------------------------
+
+/** Co-op: a player who let DELVE_IDLE_ROUNDS votes in a row pass, not waited for until they vote again. */
+export const isIdle = (s: GameState, id: string) => (s.delve?.missed?.[id] ?? 0) >= DELVE_IDLE_ROUNDS;
+
+/** A player the host's reload cut off who hasn't come back yet, while their grace lasts. */
+const inGrace = (s: GameState, p: Player, now: number) => !p.connected && !!s.delve?.excused.includes(p.id) && now < s.delve.graceUntil;
+
 /**
- * Who went deeper, positive when `a` did: someone still standing first, then
- * the deeper fall, then whoever lost their second-to-last life deeper, then
- * their first. Equal runs compare as 0.
+ * Co-op: who a vote waits for at `now` (host clock): standing players who
+ * aren't idle and are here, or were cut off by the host's reload and may
+ * still come back. In seat order.
+ */
+export function expectedVoters(s: GameState, now: number): string[] {
+  if (!s.delve) return [];
+  return s.players.filter((p) => livesOf(s, p.id) > 0 && !isIdle(s, p.id) && (p.connected || inGrace(s, p, now))).map((p) => p.id);
+}
+
+/** Co-op, voting: the vote is in at `now`, as someone voted and everyone it waits for has. */
+export function voteDone(s: GameState, now: number): boolean {
+  const votes = s.delve?.votes ?? {};
+  if (!isGroupRun(s) || s.phase !== 'choosing' || !Object.keys(votes).length) return false;
+  return expectedVoters(s, now).every((id) => Object.hasOwn(votes, id));
+}
+
+/**
+ * Co-op, voting: when the vote closes by the clock (host clock), or null
+ * while nobody has voted (it waits for as long as it takes) and outside co-op.
+ * VOTE_WINDOW_MS from the first vote, held to the end of a reload's grace
+ * while anyone it cut off is still away.
+ */
+export function voteClosesAt(s: GameState): number | null {
+  const dm = s.delve;
+  if (!dm || !isGroupRun(s) || s.phase !== 'choosing' || dm.voteFrom === null || dm.voteFrom === undefined) return null;
+  const away = s.players.some((p) => !p.connected && dm.excused.includes(p.id) && livesOf(s, p.id) > 0);
+  return Math.max(dm.voteFrom + VOTE_WINDOW_MS, away ? dm.graceUntil : 0);
+}
+
+/** Co-op: the players who answered the question in play (each wrong, or it would be over), first first. */
+export const answeredIds = (s: GameState) => (s.question?.struck ?? []).map((x) => x.by);
+
+/** Co-op: standing players yet to answer the question in play, in seat order. */
+export function waitingIds(s: GameState): string[] {
+  const done = new Set(answeredIds(s));
+  return standingIds(s).filter((id) => !done.has(id));
+}
+
+/** Standing players holding at least one of `item`, in seat order. */
+export const holdersOf = (s: GameState, item: ItemKind) => standingIds(s).filter((id) => inventoryOf(s, id)[item] > 0);
+
+/**
+ * Co-op: whether a flare or a stick of dynamite can go off on the question in
+ * play, from the pack of whoever standing holds one: its clock runs, it is no
+ * find's, none went off on it yet, and someone here still has an answer to
+ * give (nobody else gains from it). When it is due is the solo rule's.
+ */
+export function teamItemReady(s: GameState, item: 'flares' | 'dynamite'): boolean {
+  const q = s.question;
+  if (!isGroupRun(s) || s.phase !== 'question' || !q || q.deadline === null || !itemsWorkOn(q)) return false;
+  if (item === 'flares' ? q.flared : q.blasted || q.clockAt === undefined) return false;
+  const waiting = new Set(waitingIds(s));
+  return holdersOf(s, item).length > 0 && s.players.some((p) => p.connected && waiting.has(p.id));
+}
+
+/**
+ * Why `by` can't give one of their lives to bring `to` back, or null when
+ * they can: only together, between questions, from a standing player with
+ * REVIVE_FROM lives or more, for a teammate who perished.
+ */
+export function reviveProblem(s: GameState, by: string, to: string): string | null {
+  if (!s.delve || !isGroupRun(s)) return 'Only a run together has revives.';
+  if (s.phase !== 'choosing' && s.phase !== 'reveal') return 'Not during a question.';
+  if (!seated(s, by)) return 'You are not in this run.';
+  if (to === by) return 'Only a teammate can give you a life.';
+  if (!seated(s, to)) return 'They are not in this run.';
+  if (livesOf(s, to) > 0) return 'They are still standing.';
+  if (livesOf(s, by) < REVIVE_FROM) return `It takes ${REVIVE_FROM} lives to give one.`;
+  return null;
+}
+
+// ---- the team's result ----------------------------------------------------
+
+/**
+ * The order of the result: someone still standing first (more lives first),
+ * then whoever perished deeper, then whoever lost their earlier lives deeper.
+ * Positive when `a` goes first; equal runs compare as 0.
  */
 export function compareDelvers(s: GameState, a: string, b: string): number {
-  const standA = livesOf(s, a) > 0;
-  const standB = livesOf(s, b) > 0;
-  if (standA !== standB) return standA ? 1 : -1;
+  const [livesA, livesB] = [livesOf(s, a), livesOf(s, b)];
+  if (livesA > 0 !== livesB > 0) return livesA > 0 ? 1 : -1;
+  const first = livesA > 0 ? livesA - livesB : (fellAt(s, a) ?? 0) - (fellAt(s, b) ?? 0);
+  if (first !== 0) return first;
   const la = [...(s.delve?.losses[a] ?? [])].reverse();
   const lb = [...(s.delve?.losses[b] ?? [])].reverse();
-  // Standing players: fewer losses is better, then later ones.
-  if (standA && la.length !== lb.length) return lb.length - la.length;
   for (let i = 0; i < Math.max(la.length, lb.length); i++) {
     const d = (la[i] ?? Infinity) - (lb[i] ?? Infinity);
     if (d !== 0) return d;
@@ -491,22 +673,64 @@ export function compareDelvers(s: GameState, a: string, b: string): number {
 
 export interface DelveStanding {
   id: string;
-  /** Where they fell, or the current depth while they still stand. */
+  /** Where they last perished, or the current depth while they stand. */
   depth: number;
   lives: number;
+  /** Depths where they lost a life, oldest first (a life given to a teammate isn't one). */
   losses: number[];
-  /** 1 for the deepest; equal runs share a rank. */
+  /** Depths where they perished, oldest first: more than one once brought back. */
+  perished: number[];
+  /** Lives they gave to bring teammates back. */
+  given: number;
+  /** Times a teammate brought them back. */
+  revived: number;
+  /** The order of the result (compareDelvers), 1 first; equal runs share it. Not a win: the team shares one depth. */
   rank: number;
 }
 
-/** The seated players, deepest first. */
+/** The seated players as the result lists them (compareDelvers). */
 export function delveStandings(s: GameState): DelveStanding[] {
   const ids = s.players.map((p) => p.id).sort((a, b) => compareDelvers(s, b, a));
   const out: DelveStanding[] = [];
   ids.forEach((id, i) => {
     const prev = out[i - 1];
     const rank = prev && compareDelvers(s, prev.id, id) === 0 ? prev.rank : i + 1;
-    out.push({ id, depth: fellAt(s, id) ?? s.round, lives: livesOf(s, id), losses: [...(s.delve?.losses[id] ?? [])], rank });
+    const { given, received } = gifts(s, id);
+    out.push({
+      id,
+      depth: fellAt(s, id) ?? s.round,
+      lives: livesOf(s, id),
+      losses: [...(s.delve?.losses[id] ?? [])],
+      perished: perishesOf(s, id),
+      given,
+      revived: received,
+      rank,
+    });
   });
   return out;
+}
+
+/**
+ * The team's depth: the one in play while anyone stands, then the one where
+ * the last of them perished (0 outside Delve). Alone, the player's own.
+ */
+export function teamDepth(s: GameState): number {
+  if (!s.delve) return 0;
+  if (standingIds(s).length) return s.round;
+  const falls = s.players.map((p) => fellAt(s, p.id)).filter((d): d is number => d !== null);
+  return falls.length ? Math.max(...falls) : s.round;
+}
+
+/** A run's result, for the end screen and the records: one depth for the team, and what each player gave and lost. */
+export interface DelveTeam {
+  depth: number;
+  /** Nobody stands any more. */
+  perished: boolean;
+  players: DelveStanding[];
+  /** Every life given, oldest first. */
+  revives: Revive[];
+}
+
+export function delveTeam(s: GameState): DelveTeam {
+  return { depth: teamDepth(s), perished: !!s.delve && standingIds(s).length === 0, players: delveStandings(s), revives: [...(s.delve?.revives ?? [])] };
 }

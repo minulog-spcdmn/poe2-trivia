@@ -6,7 +6,7 @@
 // matches the audition page the design was tuned on.
 
 import { descent } from './descent.ts';
-import { AMBIENCE, DEPTH, FIRE, MIX, MOMENTS, RUMBLE, type Layer } from './soundDesign.ts';
+import { AMBIENCE, CAVE_IN, DEPTH, FIRE, MIX, MOMENTS, RUMBLE, type Layer } from './soundDesign.ts';
 import { readStored, writeStored } from './storage.ts';
 
 export type Sfx =
@@ -38,7 +38,9 @@ export type Sfx =
   /** Delve: a stick of dynamite's fuse hisses. */
   | 'fuse'
   /** Delve: the dynamite goes off. */
-  | 'blast';
+  | 'blast'
+  /** Delve: an Azurite Vein answered wrong caves in (two losses at once). */
+  | 'caveIn';
 
 let muted = (() => {
   return readStored('muted') === '1';
@@ -116,7 +118,9 @@ function audio(): Bus | null {
 
     bus = { ac, master, user, wet };
     const files = new Set(Object.values(MOMENTS).flatMap((m) => m.layers.map((l) => l.file)));
-    for (const file of files) void load(file).catch(() => {});
+    for (const file of files) if (!GENERATED[file]) void load(file).catch(() => {});
+    // The cave-in takes a moment to work out: not in the tap that starts the sound.
+    idle(() => void load(CAVE_IN.file).catch(() => {}));
   }
   // iOS also parks the context as 'interrupted' after a call or a trip to the lock screen.
   if (bus.ac.state !== 'running') void bus.ac.resume().catch(() => {});
@@ -127,10 +131,10 @@ function load(file: string) {
   let p = buffers.get(file);
   if (!p) {
     const ac = bus!.ac;
-    const decoded =
-      file === RUMBLE.file
-        ? Promise.resolve(rumble(ac))
-        : fetch(new URL(`${import.meta.env.BASE_URL}sfx/${file}.mp3`, document.baseURI))
+    const made = GENERATED[file];
+    const decoded = made
+      ? Promise.resolve(made(ac))
+      : fetch(new URL(`${import.meta.env.BASE_URL}sfx/${file}.mp3`, document.baseURI))
             .then((r) => r.arrayBuffer())
             .then((data) => ac.decodeAudioData(data));
     p = decoded.then((buf) => {
@@ -141,6 +145,15 @@ function load(file: string) {
   }
   return p;
 }
+
+/** Runs `f` when the page has a moment to spare. */
+const idle = (f: () => void) => ((globalThis as { requestIdleCallback?: (f: () => void) => void }).requestIdleCallback ?? ((g: () => void) => setTimeout(g, 200)))(f);
+
+/** Sounds worked out here rather than loaded, by the name the moments give them. */
+const GENERATED: Record<string, (ac: AudioContext) => AudioBuffer> = {
+  [RUMBLE.file]: (ac) => rumble(ac),
+  [CAVE_IN.file]: (ac) => caveIn(ac),
+};
 
 /** A dark stone-hall impulse response: stereo noise that decays and loses its highs as it goes. */
 function hall(ac: AudioContext, seconds: number) {
@@ -198,6 +211,92 @@ export function rumble(ac: Pick<BaseAudioContext, 'sampleRate' | 'createBuffer'>
     left[i] = (raw[i] * Math.sqrt(t) + (i < fade ? raw[len + i] * Math.sqrt(1 - t) : 0)) * scale;
   }
   for (let i = 0; i < len; i++) right[i] = left[(i + half) % len];
+  return buf;
+}
+
+/**
+ * An Azurite Vein caving in (CAVE_IN in soundDesign.ts), worked out like the
+ * rumble: about 1.3 s of stereo. A sharp crack as the rock gives, a deep
+ * rumble that swells in at once and dies away, a couple of heavy thumps of
+ * boulders landing, and a collapse of stones, each a short knock of filtered
+ * noise, bigger and lower first and then smaller, higher and sparser as it
+ * settles. Each side gets its own stones, so it sounds wide. Peaks at about
+ * -1 dB; CAVE_IN's gain sets its level in the mix.
+ */
+export function caveIn(ac: Pick<BaseAudioContext, 'sampleRate' | 'createBuffer'>) {
+  const sr = ac.sampleRate;
+  const seconds = CAVE_IN.seconds;
+  const len = Math.floor(sr * seconds);
+  const buf = ac.createBuffer(2, len, sr);
+  const ch = [buf.getChannelData(0), buf.getChannelData(1)];
+  const at = (t: number) => Math.floor(t * sr);
+  /** A knock of noise at `t0` (s), ringing at `hz` with decay `tau` (s), at `amp`, added to `d`. */
+  const knock = (d: Float32Array, t0: number, hz: number, tau: number, amp: number) => {
+    const w = (2 * Math.PI * Math.min(hz, sr * 0.45)) / sr;
+    // A two-pole resonator: rings at hz, wider the shorter it is.
+    const r = Math.exp(-1 / (tau * sr * 0.35));
+    const [c1, c2] = [2 * r * Math.cos(w), -r * r];
+    // Its peak gain at hz is about 1 / ((1 - r) * sqrt(1 - 2r cos 2w + r^2)): set it back to 1.
+    const norm = (1 - r) * Math.sqrt(1 - 2 * r * Math.cos(2 * w) + r * r);
+    let [y1, y2] = [0, 0];
+    const start = at(t0);
+    const end = Math.min(len, start + at(tau * 6));
+    for (let i = start; i < end; i++) {
+      const k = (i - start) / sr;
+      const x = (Math.random() * 2 - 1) * Math.exp(-k / tau) * Math.min(1, k / 0.0015);
+      const y = x + c1 * y1 + c2 * y2;
+      y2 = y1;
+      y1 = y;
+      d[i] += y * norm * amp;
+    }
+  };
+  /** A low thud at `t0`: a sine falling from `hz` that dies away over `tau`. */
+  const thud = (d: Float32Array, t0: number, hz: number, tau: number, amp: number) => {
+    let phase = 0;
+    const start = at(t0);
+    const end = Math.min(len, start + at(tau * 6));
+    for (let i = start; i < end; i++) {
+      const k = (i - start) / sr;
+      phase += (2 * Math.PI * hz * (0.75 + 0.25 * Math.exp(-k / 0.06))) / sr;
+      d[i] += Math.sin(phase) * Math.exp(-k / tau) * Math.min(1, k / 0.004) * amp;
+    }
+  };
+  // The rumble: noise kept to the low end (two lowpasses at 120 Hz, the
+  // subsonic taken out), swelling in at once and dying away. The same in
+  // both ears, as it fills the hall.
+  const lp = 1 - Math.exp((-2 * Math.PI * 120) / sr);
+  const hp = 1 - Math.exp((-2 * Math.PI * 35) / sr);
+  let [a, b, lo] = [0, 0, 0];
+  for (let i = 0; i < len; i++) {
+    const t = i / sr;
+    a += lp * (Math.random() * 2 - 1 - a);
+    b += lp * (a - b);
+    lo += hp * (b - lo);
+    const env = Math.min(1, t / 0.03) * Math.exp(-t / 0.45);
+    ch[0][i] += (b - lo) * env * CAVE_IN.rumble;
+    ch[1][i] += (b - lo) * env * CAVE_IN.rumble;
+  }
+  ch.forEach((d, side) => {
+    // The crack as the rock gives, and the heavy blocks coming down.
+    knock(d, 0.002 * side, 2600, 0.012, 0.9);
+    knock(d, 0.004, 900, 0.03, 0.7);
+    thud(d, 0.01, 62, 0.16, 0.9);
+    thud(d, 0.16 + 0.04 * side, 48, 0.2, 0.75);
+    // The collapse: stones, big and low first, smaller, higher and sparser as it settles.
+    let t = 0.03 + Math.random() * 0.02;
+    while (t < seconds - 0.12) {
+      const u = t / seconds;
+      const size = Math.pow(1 - u, 1.5) * (0.5 + Math.random() * 0.5);
+      knock(d, t, 300 + 2800 * (1 - size) * (0.6 + Math.random() * 0.8), 0.006 + 0.03 * size, (0.18 + 0.75 * size) * CAVE_IN.stones);
+      t += 0.012 + 0.09 * Math.pow(u, 1.2) * (0.4 + Math.random() * 1.2);
+    }
+  });
+  // To about -1 dB at the peak, fading out over the last moment.
+  let peak = 0;
+  for (const d of ch) for (let i = 0; i < len; i++) peak = Math.max(peak, Math.abs(d[i]));
+  const k = 0.89 / (peak || 1);
+  const tail = at(0.15);
+  for (const d of ch) for (let i = 0; i < len; i++) d[i] *= k * Math.min(1, (len - i) / tail);
   return buf;
 }
 
@@ -294,7 +393,6 @@ export function depthAmbience(d: number) {
   // The rumble takes a moment to work out: do it while the run starts, not as it comes in.
   if (d > 0 && bus && !buffers.has(RUMBLE.file)) {
     const b = bus;
-    const idle = (globalThis as { requestIdleCallback?: (f: () => void) => void }).requestIdleCallback ?? ((f: () => void) => setTimeout(f, 200));
     idle(() => bus === b && void load(RUMBLE.file).catch(() => {}));
   }
   updateAmbience();

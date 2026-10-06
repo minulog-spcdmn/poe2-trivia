@@ -363,7 +363,7 @@ test('a Delve reveal says what the question came from and whether a ward took it
   s = engine.apply(s, { type: 'start' }, null);
   // A find among the cards, and two wards to take its cave-in.
   s = structuredClone(s);
-  s.delve!.find = { category: s.offered[0], kind: 'azurite' };
+  s.delve!.finds = [{ category: s.offered[0], kind: 'azurite' }];
   s.delve!.inventory = { p0: { wards: 2, flares: 0, dynamite: 0, shards: 0 } };
   s = engine.apply(s, { type: 'pick', category: s.offered[0] }, null);
   s = engine.apply(s, { type: 'clock', askedAt: s.question!.askedAt }, null);

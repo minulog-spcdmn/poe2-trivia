@@ -289,6 +289,8 @@ export interface Casing {
   hatch: string;
   /** A pale line where the light catches the front face. */
   catch: string;
+  /** Where that line ends, toward the outer end: the crystal's idle glint twinkles there (Phial.svelte). */
+  twinkle: [number, number];
   /** The chamber's hollow, which the glaze and the front's edges are clipped to. */
   hollow: string;
   /** The front face's long edges, across the light. */
@@ -359,6 +361,7 @@ function casing(k: number): Casing {
     edges,
     hatch: shade,
     catch: line([inL + span * 0.1, 2.5], [inR - span * 0.35, 2.5]),
+    twinkle: [inR - span * 0.35, 2.5],
     hollow: poly(hollow),
     front: line([0, 3.5], [64, 3.5]) + line([0, 8.5], [64, 8.5]),
     from: L.tip ? L.tip.o[0] : L.fTop[0],
@@ -448,11 +451,14 @@ type Change = { item: keyof Inventory; change: 'gained' | 'used' };
  * The moment a player's changes make, or null: a ward shattering before
  * anything else, then a ward forged (a shard used as a ward is gained), a ward
  * or shard mined, a flare or dynamite found, a flare burning, dynamite lit.
+ * `forged`: whether the reveal says a ward was forged, when known. A third
+ * ward mined outright drops the shard held too (capShards in lib/delve.ts),
+ * which reads like a forge; told it wasn't, it is a ward mined.
  */
-export function momentOf(changes: Change[]): InventoryMoment['kind'] | null {
+export function momentOf(changes: Change[], forged?: boolean): InventoryMoment['kind'] | null {
   const has = (item: keyof Inventory, change: Change['change']) => changes.some((c) => c.item === item && c.change === change);
   if (has('wards', 'used')) return 'shatter';
-  if (has('wards', 'gained')) return has('shards', 'used') ? 'forge' : 'ward';
+  if (has('wards', 'gained')) return has('shards', 'used') && forged !== false ? 'forge' : 'ward';
   if (has('shards', 'gained')) return 'shard';
   if (has('flares', 'gained')) return 'flare';
   if (has('dynamite', 'gained')) return 'dynamite';

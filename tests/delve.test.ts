@@ -4,6 +4,10 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import {
   DELVE_LIVES,
+  DELVE_IDLE_ROUNDS,
+  DELVE_RESUME_GRACE_MS,
+  REVIVE_FROM,
+  VOTE_WINDOW_MS,
   FINDS,
   findChance,
   BLAST_PAUSE_MS,
@@ -11,6 +15,8 @@ import {
   SHARDS_PER_WARD,
   blastAt,
   blastCount,
+  MAX_FINDS,
+  SECOND_FIND,
   findRules,
   findTileVeil,
   findTimer,
@@ -198,26 +204,28 @@ test('there are always three categories left to offer at the longest lockout', (
 
 test('the ruleset is pinned to the curve and the protocol', () => {
   // Changing the curve changes this hash: bump DELVE_RULESET and PROTOCOL_VERSION with it, then update the pin.
-  // (Delve isn't released yet, so the new curve kept both and only moved the pin; so did dynamite going off by itself, look-alike pictures, and the flare burning at 0 and the blast holding the clock.)
+  // (Delve isn't released yet, so the new curve kept both and only moved the pin; so did dynamite going off by itself, look-alike pictures, the flare burning at 0 and the blast holding the clock, co-op, and dynamite taking half of all the options with two finds side by side.)
   const table: unknown[] = DEPTHS.map((d) => [delveRules(d), delveTimer(d), delveTileVeil(d)]);
   // The finds too: where and how often they turn up, what they ask and cost, and what their items do.
   const clocks = Array.from({ length: 10 }, (_, i) => i + 7);
-  table.push([FINDS, SHARDS_PER_WARD, FLARE_MS, BLAST_PAUSE_MS, clocks.map(blastAt), [2, 3, 4, 6, 8, 10].map(blastCount)]);
+  table.push([FINDS, SECOND_FIND, MAX_FINDS, SHARDS_PER_WARD, FLARE_MS, BLAST_PAUSE_MS, clocks.map(blastAt), [2, 3, 4, 6, 8, 10].map(blastCount)]);
   table.push(DEPTHS.slice(0, 100).map((d) => FINDS.map((f) => findChance(f.kind, d))));
   table.push(
     DEPTHS.slice(0, 100).map((d) => FINDS.map((f) => [findRules(f.kind, d), findTimer(f.kind, d), findTileVeil(f.kind, d), veinWindow(findTimer(f.kind, d))])),
   );
+  // Co-op: how long a vote stays open after the first vote, when a player counts as idle, and what a life given takes.
+  table.push(['coop', VOTE_WINDOW_MS, DELVE_IDLE_ROUNDS, REVIVE_FROM, DELVE_RESUME_GRACE_MS]);
   const hash = createHash('sha256').update(JSON.stringify(table)).digest('hex').slice(0, 16);
   assert.deepEqual([DELVE_RULESET, PROTOCOL_VERSION, hash], [1, 10, PINNED_HASH]);
 });
 
-const PINNED_HASH = '79f9e12dbee54a10';
+const PINNED_HASH = '2076528bb4815f28';
 
 function run(losses: Record<string, number[]>, round = 10, seats = Object.keys(losses)): GameState {
   const s = createGame('a');
   s.players = seats.map((id, hue) => ({ id, name: id, score: 0, recent: [], connected: true, hue }));
   s.round = round;
-  s.delve = { entrants: seats, losses, lastStanding: null, ruleset: 1, startedAt: 0, pickBy: null, pickExtended: false, excused: [], graceUntil: 0 };
+  s.delve = { entrants: seats, losses, ruleset: 1, startedAt: 0, excused: [], graceUntil: 0 };
   return s;
 }
 
@@ -235,7 +243,7 @@ test('lives count down from three, and only seated players have any', () => {
   assert.deepEqual(standingIds(s), ['b']);
 });
 
-test('standings: deeper falls first, then later earlier losses, equal runs share a rank', () => {
+test('the result: those standing first, then deeper perishes, then later earlier losses; equal runs share a place', () => {
   const s = run({ a: [1, 2, 5], b: [3, 4, 5], c: [1, 2, 9], d: [3, 4, 5], e: [] }, 9);
   assert.ok(compareDelvers(s, 'b', 'a') > 0);
   assert.equal(compareDelvers(s, 'b', 'd'), 0);

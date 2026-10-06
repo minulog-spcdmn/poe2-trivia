@@ -17,6 +17,9 @@ test('accepts well-formed guest messages', () => {
     action: { type: 'pick', category: 'Rings' },
   });
   assert.deepEqual(parseClientMsg({ t: 'pong', n: 4 }), { t: 'pong', n: 4 });
+  // Delve co-op: a vote for a card, and a life given to a teammate.
+  assert.deepEqual(parseClientMsg({ t: 'action', action: { type: 'vote', category: 'Rings' } }), { t: 'action', action: { type: 'vote', category: 'Rings' } });
+  assert.deepEqual(parseClientMsg({ t: 'action', action: { type: 'revive', target: 'p-1' } }), { t: 'action', action: { type: 'revive', target: 'p-1' } });
 });
 
 test('rejects anything a real client would never send', () => {
@@ -43,12 +46,25 @@ test('rejects anything a real client would never send', () => {
     { t: 'action', action: { type: 'answer', index: 1.5 } },
     { t: 'action', action: { type: 'answer', index: 99 } },
     { t: 'action', action: { type: 'pick', category: { toString: 1 } } },
+    { t: 'action', action: { type: 'vote' } },
+    { t: 'action', action: { type: 'vote', category: '' } },
+    { t: 'action', action: { type: 'vote', category: 3 } },
+    { t: 'action', action: { type: 'vote', category: 'x'.repeat(81) } },
+    { t: 'action', action: { type: 'revive' } },
+    { t: 'action', action: { type: 'revive', target: '' } },
+    { t: 'action', action: { type: 'revive', target: ['p1'] } },
+    { t: 'action', action: { type: 'revive', target: 'x'.repeat(65) } },
+    { t: 'action', action: { type: 'flare', askedAt: 1 } },
+    { t: 'action', action: { type: 'dynamite', askedAt: 1 } },
     { t: 'state', state: {} },
   ];
   for (const m of bad) assert.equal(parseClientMsg(m), null, JSON.stringify(m)?.slice(0, 80));
   // Extra fields are dropped, not passed through.
   const cleaned = parseClientMsg({ t: 'action', action: { type: 'next', evil: true }, extra: 1 });
   assert.deepEqual(cleaned, { t: 'action', action: { type: 'next' } });
+  // A vote can't name its voter, nor a revive its giver: the host takes those from the connection.
+  assert.deepEqual(parseClientMsg({ t: 'action', action: { type: 'vote', category: 'Rings', playerId: 'p0' } }), { t: 'action', action: { type: 'vote', category: 'Rings' } });
+  assert.deepEqual(parseClientMsg({ t: 'action', action: { type: 'revive', target: 'p1', by: 'p0' } }), { t: 'action', action: { type: 'revive', target: 'p1' } });
 });
 
 test('rate limit allows bursts but not floods', () => {

@@ -221,7 +221,7 @@ export const FINDS_INTRO = 'A harder question, for an item.';
 export const FIND_GIVES: Record<FindKind, string> = {
   azurite: `Answer fast for a ward: it saves a life.${cavesIn('azurite') ? ` A miss costs ${caveInText('azurite')}.` : ''}`,
   flare: `A flare: ${words(FLARE_MS / 1000)} more seconds when your time runs out.`,
-  dynamite: 'Dynamite: at half time, it clears the picture and half the wrong answers.',
+  dynamite: 'Dynamite: at half time, it clears the picture and half the answers, all of them wrong.',
 };
 
 /** A find's cave-in mark, in words for those who can't see it: "A wrong answer loses two lives". */
@@ -232,57 +232,190 @@ export const HARDER_LABEL = 'A harder question';
 
 /** What each item does once you have it, as the find's note says it. */
 const DOES: Record<'flare' | 'dynamite', string> = {
-  flare: `When your time runs out, it burns and gives you ${words(FLARE_MS / 1000)} more seconds.`,
-  dynamite: 'Halfway through your time, it clears the picture and blows away half the wrong answers.',
+  flare: `It burns when your time runs out: ${words(FLARE_MS / 1000)} more seconds.`,
+  dynamite: 'At half time, it clears the picture and half the answers, all of them wrong.',
 };
 
-/** "The question is a bit harder", and what a miss costs when it costs more than a life. */
-const risk = (kind: FindKind) =>
-  `The question is a bit harder${cavesIn(kind) ? `, and a wrong answer loses ${caveInText(kind)}` : ''}.`;
+/**
+ * What a miss costs, when it costs more than a life (" A miss costs two
+ * lives."). That the question is harder, its card's mark says.
+ */
+const risk = (kind: FindKind) => (cavesIn(kind) ? ` A miss costs ${caveInText(kind)}.` : '');
 
 /**
  * The finds: the card's name, the tagline on its card (what to do), and what
- * it is in a line for those watching. Plain words: what the item does, that
- * the question is harder, and what a miss costs; never the depth it asks.
+ * it is in a line for those watching. Plain words: what the item does and
+ * what a miss costs; never the depth it asks, nor that it is harder (its
+ * card's mark says so).
  */
 export const FIND_TEXT: Record<FindKind, { name: string; tag: string; others: string }> = {
   azurite: {
     name: 'Azurite Vein',
     tag: 'Answer fast for an Azurite Ward',
-    others: `An Azurite Vein: a harder question, for an Azurite Ward if answered fast or a shard if slower${cavesIn('azurite') ? `; a wrong answer loses ${caveInText('azurite')}` : ''}.`,
+    others: `An Azurite Vein: a ward if answered fast, a shard if slower.${risk('azurite')}`,
   },
   flare: {
     name: 'Flare Cache',
     tag: 'Answer right for a flare',
-    others: `A Flare Cache: a harder question, for a flare that gives ${words(FLARE_MS / 1000)} more seconds when the time runs out${cavesIn('flare') ? `; a wrong answer loses ${caveInText('flare')}` : ''}.`,
+    others: `A Flare Cache: a flare, for ${words(FLARE_MS / 1000)} more seconds when the time runs out.${risk('flare')}`,
   },
   dynamite: {
     name: 'Dynamite Cache',
     tag: 'Answer right for dynamite',
-    others: `A Dynamite Cache: a harder question, for dynamite that clears the picture and blows away half the wrong answers at half time${cavesIn('dynamite') ? `; a wrong answer loses ${caveInText('dynamite')}` : ''}.`,
+    others: `A Dynamite Cache: dynamite, to clear the picture and half the answers at half time.${risk('dynamite')}`,
   },
 };
 
-/** "Your flare stays unused on it": what the player holds that won't go off on a find's question. */
-function unused(inv: Inventory): string {
+/** "Your flare stays unused on it": what the player holds that won't go off on a find's question (`on`: "it", or "a find"). */
+export function unused(inv: Inventory, on = 'it'): string {
   const held = [inv.flares ? (inv.flares > 1 ? 'flares' : 'flare') : '', inv.dynamite ? 'dynamite' : ''].filter(Boolean);
   if (!held.length) return '';
   const one = held.length === 1 && held[0] !== 'flares';
-  return ` Your ${held.join(' and ')} ${one ? 'stays' : 'stay'} unused on it.`;
+  return ` Your ${held.join(' and ')} ${one ? 'stays' : 'stay'} unused on ${on}.`;
 }
+
+/** Together: flares and dynamite won't go off on a find's question (`on`: "it", or "a find"). */
+export const teamUnused = (on = 'it') => ` Flares and dynamite stay unused on ${on}.`;
 
 /**
  * A find's note, for the player choosing while holding `inv`, after its
- * tagline: what its item does, that the question is a bit harder, what a
- * miss costs when it is more than a life, and that what they carry won't go
- * off on it. A find is only offered to a player with room for its item.
+ * tagline: what its item does, what a miss costs when it is more than a
+ * life, and (`held`, unless two finds share it in a line of their own)
+ * that what they carry won't go off on it. Kept short: two finds can be on
+ * offer, each with its note. A find is only offered to a player with room
+ * for its item.
  */
-export function findNote(kind: FindKind, inv: Inventory): string {
-  const tail = `${risk(kind)}${unused(inv)}`;
-  if (!findReward(kind, inv, true)) return `You can carry no more. ${tail}`;
+export function findNote(kind: FindKind, inv: Inventory, held = true): string {
+  const tail = `${risk(kind)}${held ? unused(inv) : ''}`;
+  if (!findReward(kind, inv, true)) return `You can carry no more.${tail}`;
   if (kind === 'azurite') {
     const forge = inv.shards + 1 >= SHARDS_PER_WARD ? 'it makes a ward with yours' : `${words(SHARDS_PER_WARD)} make a ward`;
-    return `A ward takes your next lost life instead. Right in the second half of the time, you get a shard; ${forge}. ${tail}`;
+    return `A ward takes a lost life for you. Slower, a shard; ${forge}.${tail}`;
   }
-  return `${DOES[kind]} ${tail}`;
+  return `${DOES[kind]}${tail}`;
+}
+
+// ---- co-op ------------------------------------------------------------------
+
+/** What each item does for the team, as a find's note says it in a run together. */
+const DOES_TEAM: Record<FindKind, string> = {
+  azurite: 'a ward if fast, a shard if slower.',
+  flare: `${words(FLARE_MS / 1000)} more seconds for everyone when the time runs out.`,
+  dynamite: 'at half time, it clears the picture and half the answers, all of them wrong.',
+};
+
+/**
+ * A find's note in a run together, after its tagline: that the first right
+ * answer takes it and what it does, what a miss costs when it is more than a
+ * life, and, when anyone holds some, that flares and dynamite won't go off
+ * on it.
+ */
+export function teamFindNote(kind: FindKind, itemsHeld: boolean): string {
+  return `The first right answer takes it: ${DOES_TEAM[kind]}${risk(kind)}${itemsHeld ? teamUnused() : ''}`;
+}
+
+/** "you", "Ash", "you and Ash", "Ash, Brea and Cara": you first, the rest as given. */
+export function namesOf(ids: string[], nameOf: (id: string) => string, me: string | null): string {
+  const names = [...ids.filter((id) => id === me).map(() => 'you'), ...ids.filter((id) => id !== me).map(nameOf)];
+  return names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : (names[0] ?? '');
+}
+
+/** "your" or "Ash's". */
+const whose = (id: string, nameOf: (id: string) => string, me: string | null) => (id === me ? 'your' : `${nameOf(id)}'s`);
+
+/** A verb for a subject of `ids`: plural for you or for several ("you lose", "Ash loses", "Ash and Brea lose"). */
+const verb = (ids: string[], me: string | null, one: string, many: string) => (ids.length > 1 || ids[0] === me ? many : one);
+
+/** One loss a co-op question dealt (game.ts Hit). */
+export interface HitText {
+  playerId: string;
+  lives: number;
+  wards: number;
+  timedOut: boolean;
+}
+
+/**
+ * What a co-op reveal says, as sentences: who cleared it (or that nobody
+ * did), then what it cost whom, you first and the team by name: "The
+ * darkness took Ash and Brea." Only what the screen doesn't show already: a
+ * wrong pick's one life is the phial's to show, and the depth and lives left
+ * are on screen; a ward taking it, a cave-in's two and a perishing are said.
+ * `left`: each hit player's lives now.
+ */
+export function coopRevealText(r: {
+  depth: number;
+  winner: string | null;
+  timedOut: boolean;
+  caveIn: boolean;
+  hits: HitText[];
+  left: (id: string) => number;
+  nameOf: (id: string) => string;
+  me: string | null;
+}): string[] {
+  const { hits, nameOf, me } = r;
+  const list = (ids: string[]) => namesOf(ids, nameOf, me);
+  const out: string[] = [];
+  if (r.winner) out.push(`${cap(list([r.winner]))} cleared it.`);
+  else out.push(r.timedOut ? "Time's up; nobody found it." : 'Every answer was wrong.');
+  const wrong = hits.filter((h) => !h.timedOut).map((h) => h.playerId);
+  const late = hits.filter((h) => h.timedOut).map((h) => h.playerId);
+  if (wrong.length && (r.winner || r.timedOut) && !r.caveIn) out.push(`${cap(list(wrong))} picked wrong.`);
+  if (late.length) out.push(`The darkness took ${list(late)}.`);
+  if (r.caveIn && hits.length) out.push(`The vein caved in on ${list(hits.map((h) => h.playerId))}.`);
+  // What it did to each of them.
+  const perished = hits.filter((h) => h.lives > 0 && r.left(h.playerId) === 0).map((h) => h.playerId);
+  const warded = hits.filter((h) => h.lives === 0 && h.wards > 0);
+  const both = hits.filter((h) => h.lives > 0 && h.wards > 0 && r.left(h.playerId) > 0);
+  const lost = hits.filter((h) => h.lives > 0 && h.wards === 0 && r.left(h.playerId) > 0);
+  if (warded.length === 1) {
+    const h = warded[0];
+    const w = whose(h.playerId, nameOf, me);
+    out.push(h.wards > 1 ? `${cap(w)} two wards broke.` : `${cap(w)} ward shattered.`);
+  } else if (warded.length) out.push(`Wards shattered for ${list(warded.map((h) => h.playerId))}.`);
+  for (const h of both) out.push(`${cap(whose(h.playerId, nameOf, me))} ward broke, and a life with it.`);
+  // A single life lost is the phial's to show; two at once (a cave-in) are said.
+  const two = lost.filter((h) => h.lives > 1).map((h) => h.playerId);
+  if (two.length) out.push(`${cap(list(two))} ${verb(two, me, 'loses', 'lose')} two lives${two.length > 1 ? ' each' : ''}.`);
+  if (perished.length) out.push(`${cap(list(perished))} ${verb(perished, me, 'perishes', 'perish')}.`);
+  return out;
+}
+
+/**
+ * Co-op: your own wrong answer, while the team still answers. What it cost
+ * you only when your phial doesn't say it plainly: a ward taking it, a
+ * cave-in, perishing.
+ */
+export function coopMissText(hit: { lives: number; wards: number }, left: number, caveIn: boolean): string {
+  if (left === 0) return 'You perished; your team can still clear it.';
+  if (caveIn) return 'Wrong; the vein caved in.';
+  if (hit.lives === 0) return 'Wrong; your ward took it.';
+  return 'Wrong.';
+}
+
+/**
+ * Depths where lives went, for the end screen: a depth that took two (a
+ * cave-in) once, with how many: "3 (two lives) and 4".
+ */
+export function lossDepths(losses: number[]): string {
+  const groups: { depth: number; n: number }[] = [];
+  for (const d of losses) {
+    const last = groups.at(-1);
+    if (last?.depth === d) last.n++;
+    else groups.push({ depth: d, n: 1 });
+  }
+  const parts = groups.map((g) => (g.n > 1 ? `${g.depth} (${words(g.n)} lives)` : `${g.depth}`));
+  const joined = parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}` : (parts[0] ?? '');
+  return `${groups.length > 1 ? 'depths' : 'depth'} ${joined}`;
+}
+
+/** "once", "twice", "3 times". */
+const times = (n: number) => (n === 1 ? 'once' : n === 2 ? 'twice' : `${n} times`);
+
+/** Co-op end screen: what a delver lost, gave and was given, in a line. */
+export function delverText(row: { losses: number[]; given: number; revived: number }): string {
+  const n = row.losses.length;
+  const parts = [n ? `Lost ${n} ${n === 1 ? 'life' : 'lives'}` : 'No life lost'];
+  if (row.given) parts.push(`gave ${words(row.given)} ${row.given === 1 ? 'life' : 'lives'}`);
+  if (row.revived) parts.push(`brought back ${times(row.revived)}`);
+  return parts.join(', ');
 }

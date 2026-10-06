@@ -36,3 +36,19 @@ test("Delve's rumble sits near the ambience file's level, and loops without a se
     assert.ok(rms(d, 0, sr) > 0.4 * rms(d, sr, d.length), 'quiet at the loop point');
   }
 });
+
+test('a cave-in is short and heavy: loud at once, low, dying away, never clipping', async () => {
+  const { caveIn } = await import('../src/lib/sound.ts');
+  const sr = 16000;
+  const ac16 = { ...ac, sampleRate: sr };
+  const buf = caveIn(ac16);
+  for (const c of [0, 1]) {
+    const d = buf.getChannelData(c);
+    assert.ok(d.every((v) => Number.isFinite(v) && Math.abs(v) <= 0.9));
+    assert.ok(d.length <= sr * 1.5, 'over in about a second');
+    const head = rms(d, 0, Math.floor(sr * 0.25));
+    const tail = rms(d, Math.floor(sr * 0.9), d.length);
+    assert.ok(head > 0.08, `loud at once: ${head}`);
+    assert.ok(tail < head / 8, 'dies away');
+  }
+});

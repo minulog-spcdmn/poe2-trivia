@@ -1,17 +1,21 @@
-// The lab's controls: a Delve run on this device (hot-seat), set up and
-// played through the real engine and session, so the screen, sounds and
-// effects that follow are the game's own.
+// The lab's controls: a Delve run on this device, set up and played through
+// the real engine and session, so the screen, sounds and effects that follow
+// are the game's own. One player is a run alone (hot-seat); two to four make
+// a co-op run, played as its host would without a room (session.labCoop),
+// seen by one of them (`viewer`, the screen's player) while the lab acts for
+// any of them (`actor`): their votes, answers, revives and perishing.
 //
 // Two kinds of change:
-// - setup (players, lives, carried items, depth, whose turn): applied
-//   quietly. The run takes a new id (delve.startedAt), so the scoreboard and
-//   the reveal see a fresh run and play nothing for the change itself.
-// - events: real host actions (pick, answer, next, the clock, flare,
-//   dynamite) on the run as it stands, or the change the engine itself would
-//   make (an item gained, the next depth), so every moment plays as in a game.
+// - setup (players, lives, carried items, depth): applied quietly. The run
+//   takes a new id (delve.startedAt), so the scoreboard and the reveal see a
+//   fresh run and play nothing for the change itself.
+// - events: real actions (a vote, a pick, an answer, a revive, next, the
+//   clock, flare, dynamite) on the run as it stands, or the change the engine
+//   itself would make (an item gained, the next depth), so every moment
+//   plays as in a game.
 
 import { engine, session } from '../lib/session.svelte';
-import { createGame, DEFAULT_SETTINGS, type GameState, type Grayscale, type Question } from '../lib/game';
+import { createGame, DEFAULT_SETTINGS, type Action, type GameState, type Grayscale, type Question } from '../lib/game';
 import {
   DELVE_LIVES,
   DELVE_MAX_DYNAMITE,
@@ -20,11 +24,15 @@ import {
   SHARDS_PER_WARD,
   blastAtMs,
   clockLeft,
+  REVIVE_FROM,
   delveQuestionTimer,
-  delveStandings,
+  capShards,
+  findOffers,
   hasRoom,
   inventoryOf,
+  isGroupRun,
   livesOf,
+  standingIds,
   tileVeilSize,
   type FindKind,
   type Inventory,
@@ -57,8 +65,9 @@ export const opts = $state({
   veil: 'rules' as Force,
   /** Applies to every question while set, the player's own picks too (session.labGrayscale). */
   grayscale: 'rules' as 'rules' | Grayscale,
-  /** The find among the cards the lab deals. */
+  /** The find among the cards the lab deals (on the middle card), and a second one (on the first card). */
   cardFind: 'none' as FindChoice,
+  cardFind2: 'none' as FindChoice,
 });
 
 type Paused = { askedAt: number; left: number; span: number; held: Question['held'] };
@@ -68,6 +77,8 @@ export const lab = $state({
   busy: '',
   log: [] as { at: number; text: string }[],
   paused: null as Paused | null,
+  /** Co-op: the player the lab acts for (votes, answers, revives, perishes). */
+  actor: IDS[0],
 });
 
 export function note(text: string) {
@@ -82,6 +93,15 @@ const run = () => (session.state?.delve ? session.state : null);
 export function depthOf(): number {
   return run()?.round ?? 1;
 }
+
+/** The run in play is co-op (two players or more). */
+export const coop = () => {
+  const s = run();
+  return !!s && isGroupRun(s);
+};
+
+/** Co-op: the player the screen is (the host, as far as the run goes). */
+export const viewerId = () => session.myPlayerId ?? IDS[0];
 
 /** Milliseconds left on the open question's clock, null when none runs. */
 export function timeLeft(): number | null {
@@ -133,108 +153,141 @@ async function event(name: string, f: () => Promise<void> | void) {
 
 // ---- the run -------------------------------------------------------------
 
-/** Lost-life depths for `lives` left at `depth`, spread above it. */
-function lossesFor(lives: number, depth: number): number[] {
-  const n = Math.max(0, DELVE_LIVES - lives);
-  return Array.from({ length: n }, (_, i) => Math.max(1, depth - (n - 1 - i) * 3));
-}
-
 /**
- * Fields of a group run (the time to pick, the last one standing), read and
- * set only where the run has them: group Delve is being reworked, and the
- * lab's group controls are kept to what still applies.
+ * Sets a player's lives left at the run's depth: losses spread above it,
+ * as many as it takes with the lives they gave or were given (co-op revives).
  */
-const groupField = (s: GameState, key: string) => (s.delve as unknown as Record<string, unknown> | null)?.[key];
-function setGroupField(s: GameState, key: string, value: unknown) {
-  const d = s.delve as unknown as Record<string, unknown> | null;
-  if (d && key in d) d[key] = value;
+function setLivesIn(s: GameState, id: string, lives: number) {
+  const r = s.delve!.revives ?? [];
+  const given = r.filter((x) => x.by === id).length;
+  const received = r.filter((x) => x.to === id).length;
+  const n = Math.max(0, DELVE_LIVES - Math.max(0, Math.min(DELVE_LIVES, lives)) - given + received);
+  s.delve!.losses[id] = Array.from({ length: n }, (_, i) => Math.max(1, s.round - (n - 1 - i) * 3));
 }
-const clearPick = (s: GameState) => setGroupField(s, 'pickBy', null);
 
-/** Deals the player on turn three cards, with the lab's find among them. */
+/** Deals three cards (alone to the player, together to the team), with the lab's find among them. */
 function deal(s: GameState) {
+  const group = isGroupRun(s);
+  if (group) s.turn = Math.max(0, s.players.findIndex((p) => livesOf(s, p.id) > 0));
   const p = s.players[s.turn];
   s.phase = 'choosing';
   s.question = null;
   s.reveal = null;
   s.offered = p ? engine.offerCategories(s, p) : [];
   if (s.delve) {
-    clearPick(s);
-    s.delve.find = opts.cardFind !== 'none' && s.offered.length ? { category: s.offered[1] ?? s.offered[0], kind: opts.cardFind } : null;
+    if (group) {
+      s.delve.votes = {};
+      s.delve.voteFrom = null;
+    }
+    delete s.delve.snapshot;
+    // Two finds go on different cards and must differ in kind (findOffers drops a second of the same kind).
+    const first = opts.cardFind !== 'none' && s.offered.length ? [{ category: s.offered[1] ?? s.offered[0], kind: opts.cardFind }] : [];
+    const second =
+      opts.cardFind2 !== 'none' && opts.cardFind2 !== opts.cardFind && s.offered.length > 1 ? [{ category: s.offered[0], kind: opts.cardFind2 }] : [];
+    s.delve.finds = [...first, ...second];
+    delete s.delve.find;
   }
 }
 
-/** A fresh run of `n` players at `depth`, through the engine (join, start), carrying over what `from` had for the same seats. */
+/**
+ * A fresh run of `n` players at `depth`, through the engine (join, start),
+ * carrying over what `from` had for the same seats. Two or more are a co-op
+ * run, whose host is the screen's player.
+ */
 function freshRun(n: number, depth: number, from: GameState | null): GameState {
-  let s = createGame(null, { ...DEFAULT_SETTINGS, mode: 'delve' });
+  const viewer = n > 1 ? (from && IDS.indexOf(viewerId()) < n ? viewerId() : IDS[0]) : null;
+  let s = createGame(viewer, { ...DEFAULT_SETTINGS, mode: 'delve' });
   for (let i = 0; i < n; i++) s = engine.apply(s, { type: 'join', playerId: IDS[i], name: NAMES[i] }, null);
   s = engine.apply(s, { type: 'start' }, null);
   // Seats in the lab's order, not the engine's shuffle.
   s.players.sort((a, b) => IDS.indexOf(a.id) - IDS.indexOf(b.id));
   s.round = depth;
-  s.turn = Math.min(from?.turn ?? 0, n - 1);
+  s.turn = 0;
   if (from?.delve) {
     for (const p of s.players) {
       if (!from.players.some((o) => o.id === p.id)) continue;
-      s.delve!.losses[p.id] = lossesFor(livesOf(from, p.id), depth);
+      setLivesIn(s, p.id, livesOf(from, p.id));
       s.delve!.inventory![p.id] = inventoryOf(from, p.id);
     }
   }
+  if (IDS.indexOf(lab.actor) >= n) lab.actor = IDS[0];
   deal(s);
   return s;
 }
 
+/**
+ * Puts a run in place: alone as hot-seat, together as the roomless host of
+ * a co-op run. `fresh`: a new game on this device (anything shown before is
+ * dropped); otherwise as a quiet change of the run in play, when it can be.
+ */
+function place(s: GameState, fresh: boolean) {
+  const group = isGroupRun(s);
+  const roomless = session.mode === 'host';
+  if (fresh || !session.state || group !== roomless) {
+    session.startLocal(s);
+    if (group) session.labCoop(s.hostId!);
+  } else session.labSetState(s);
+  lab.paused = null;
+}
+
 /** Starts the lab's run (or keeps a Delve run already on this device, after a reload). */
 export function boot() {
-  if (run() && session.mode === 'local' && state()?.phase !== 'lobby') return;
+  const s = run();
+  if (s && session.mode === 'local' && s.phase !== 'lobby') {
+    // A co-op run saved as hot-seat: played on as its roomless host.
+    if (isGroupRun(s) && s.hostId) session.labCoop(s.hostId);
+    return;
+  }
   newRun(1, 1);
 }
 
 /** A new run on this device: `n` players at `depth`. */
 export function newRun(n: number, depth: number) {
-  const s = freshRun(n, depth, null);
-  session.startLocal(s);
-  lab.paused = null;
-  note(`New run: ${n} ${n === 1 ? 'player' : 'players'} at depth ${depth}.`);
+  place(freshRun(n, depth, null), true);
+  note(`New run: ${n === 1 ? 'alone' : `${n} players together`} at depth ${depth}.`);
 }
 
 export function setPlayers(n: number) {
   const prev = run();
   const s = freshRun(Math.max(1, Math.min(MAX_PLAYERS, n)), depthOf(), prev);
   s.version = (prev?.version ?? 0) + 1;
-  lab.paused = null;
-  if (session.mode === 'local' && prev) session.labSetState(s);
-  else session.startLocal(s);
+  place(s, false);
 }
 
 export function setDepth(d: number) {
   const depth = Math.max(1, Math.min(MAX_DEPTH, Math.round(d)));
   if (depth === depthOf()) return;
   put((s) => {
+    const lives = new Map(s.players.map((p) => [p.id, livesOf(s, p.id)]));
     s.round = depth;
     // Lives already lost stay lost, now from depths above this one.
-    for (const p of s.players) s.delve!.losses[p.id] = lossesFor(livesOf(s, p.id), depth);
+    for (const p of s.players) setLivesIn(s, p.id, lives.get(p.id)!);
   }, true);
 }
 
-export function setTurn(i: number) {
-  put((s) => {
-    s.turn = Math.max(0, Math.min(s.players.length - 1, i));
-    s.turnCount++;
-    deal(s);
-  }, true);
+/** Co-op: the screen becomes `id`'s (the run's host, so the screen moves the run on as the host's does). */
+export function setViewer(id: string) {
+  if (!coop() || id === viewerId()) return;
+  put((s) => (s.hostId = id));
+  session.labCoop(id);
+  note(`The screen is ${nameOf(id)}'s now.`);
 }
+
+/** Co-op: the player the lab acts for. */
+export function setActor(id: string) {
+  lab.actor = id;
+}
+
+const nameOf = (id: string) => run()?.players.find((p) => p.id === id)?.name ?? id;
 
 export function setLives(id: string, lives: number) {
-  put((s) => {
-    s.delve!.losses[id] = lossesFor(Math.max(0, Math.min(DELVE_LIVES, lives)), s.round);
-  }, true);
+  put((s) => setLivesIn(s, id, lives), true);
 }
 
 function invSet(s: GameState, id: string, change: (inv: Inventory) => void) {
   const inv = inventoryOf(s, id);
   change(inv);
-  (s.delve!.inventory ??= {})[id] = inv;
+  (s.delve!.inventory ??= {})[id] = capShards(inv);
 }
 
 export function setItem(id: string, item: ItemKind, n: number) {
@@ -260,10 +313,11 @@ export function ask(find: FindChoice = opts.questionFind) {
   if (!prev) return;
   const choosing = prev.phase === 'choosing';
   const kind = find === 'none' ? undefined : find;
-  const card = choosing && kind && prev.delve?.find?.kind === kind ? prev.delve.find.category : null;
+  const finds = findOffers(prev);
+  const card = (choosing && kind && finds.find((f) => f.kind === kind)?.category) || null;
   const category =
     card ??
-    (choosing ? prev.offered.filter((c) => c !== prev.delve?.find?.category)[0] : null) ??
+    (choosing ? prev.offered.filter((c) => !finds.some((f) => f.category === c))[0] : null) ??
     engine.categories[Math.floor(Math.random() * engine.categories.length)];
   let made: { s: GameState; q: Question } | null = null;
   for (let i = 0; i < 40 && !made; i++) {
@@ -282,7 +336,8 @@ export function ask(find: FindChoice = opts.questionFind) {
       seed: Math.floor(Math.random() * 2 ** 31),
     };
   const p = s.players[s.turn];
-  if (p) p.recent = [...p.recent, category].slice(-7);
+  if (isGroupRun(s)) s.recentCategories = [...s.recentCategories, category].slice(-7);
+  else if (p) p.recent = [...p.recent, category].slice(-7);
   s.question = q;
   s.used.push(q.itemId);
   s.phase = 'question';
@@ -298,9 +353,10 @@ async function running(want?: (q: Question) => boolean, find?: FindChoice): Prom
   // An ended run, or a player with no life left to play, starts over first.
   if (state()?.phase === 'over') backToRun();
   const r = run();
-  if (r && livesOf(r, r.players[r.turn]?.id ?? '') === 0) {
-    setLives(r.players[r.turn].id, DELVE_LIVES);
-    note('The player on turn had no lives left: given three.');
+  const id = activeId();
+  if (r && livesOf(r, id) === 0) {
+    setLives(id, DELVE_LIVES);
+    note(`${nameOf(id)} had no lives left: given three.`);
   }
   const s = state();
   if (s?.phase !== 'question' || !s.question || (want && !want(s.question))) ask(find);
@@ -312,21 +368,31 @@ async function running(want?: (q: Question) => boolean, find?: FindChoice): Prom
 const notFind = (q: Question) => !q.find;
 
 function wrongIndex(q: Question): number {
-  const blown = new Set(q.blownAway ?? []);
-  const wrong = q.options.flatMap((id, i) => (id !== q.itemId && !blown.has(i) ? [i] : []));
+  const off = new Set([...(q.blownAway ?? []), ...(q.struck ?? []).map((x) => x.index)]);
+  const wrong = q.options.flatMap((id, i) => (id !== q.itemId && !off.has(i) ? [i] : []));
   return wrong[Math.floor(Math.random() * wrong.length)] ?? q.options.findIndex((id) => id !== q.itemId);
 }
 
-function answer(q: Question, right: boolean) {
-  const index = right ? q.options.indexOf(q.itemId) : wrongIndex(q);
-  session.dispatch({ type: 'answer', index, askedAt: q.askedAt });
+/** An action as `id` would send it (co-op), or the player's own on this device (alone). */
+function act(action: Action, id = activeId()) {
+  if (!coop()) {
+    session.dispatch(action);
+    return;
+  }
+  const problem = session.labAct(action, id);
+  if (problem) throw new Error(`${nameOf(id)}: ${problem}`);
+}
+
+function answer(q: Question, right: boolean, id = activeId()) {
+  if (coop() && q.struck?.some((x) => x.by === id)) throw new Error(`${nameOf(id)} already answered this question`);
+  act({ type: 'answer', index: right ? q.options.indexOf(q.itemId) : wrongIndex(q), askedAt: q.askedAt }, id);
 }
 
 export const answerRight = () => event('Answer right', async () => answer(await running(), true));
 export const answerWrong = () => event('Answer wrong', async () => answer(await running(), false));
 
 export function next() {
-  if (state()?.phase === 'reveal') session.dispatch({ type: 'next' });
+  if (state()?.phase === 'reveal') act({ type: 'next' }, viewerId());
 }
 
 // ---- the clock -----------------------------------------------------------
@@ -401,8 +467,10 @@ export function resume() {
 
 // ---- events --------------------------------------------------------------
 
+/** Whom the events act for: alone the player, together the lab's actor. */
 const activeId = () => {
   const s = state();
+  if (s && coop()) return s.players.some((p) => p.id === lab.actor) ? lab.actor : (s.players[0]?.id ?? IDS[0]);
   return s?.players[s.turn]?.id ?? IDS[0];
 };
 
@@ -442,21 +510,28 @@ export const findRight = (kind: FindKind, slow = false) =>
 /** Time runs out with nothing in the pack: "The darkness took you". */
 export const timeOut = () =>
   event('Time out', async () => {
-    const id = activeId();
-    const inv = inventoryOf(run()!, id);
-    if (inv.flares || inv.dynamite) {
-      put((s) => invSet(s, id, (v) => ((v.flares = 0), (v.dynamite = 0))), true);
+    // Together anyone's flare or dynamite goes off for the team.
+    const s = run()!;
+    const ids = coop() ? standingIds(s) : [activeId()];
+    if (ids.some((id) => inventoryOf(s, id).flares || inventoryOf(s, id).dynamite)) {
+      put((n) => ids.forEach((id) => invSet(n, id, (v) => ((v.flares = 0), (v.dynamite = 0)))), true);
       note('Flares and dynamite emptied first, or they would go off.');
     }
     await running();
     setTimeLeft(1200);
   });
 
-/** A flare burns as the clock hits 0 (one is put in the pack if there is none). */
+/** Someone who can use it holds one: alone the player, together anyone standing. */
+function holds(id: string, item: 'flares' | 'dynamite') {
+  const s = run()!;
+  return (coop() ? standingIds(s) : [id]).some((o) => inventoryOf(s, o)[item] > 0);
+}
+
+/** A flare burns as the clock hits 0 (one is put in the pack if there is none; together, a random holder's burns). */
 export const flare = () =>
   event('Flare at 0', async () => {
     const id = activeId();
-    if (!inventoryOf(run()!, id).flares) put((s) => invSet(s, id, (v) => (v.flares = 1)), true);
+    if (!holds(id, 'flares')) put((s) => invSet(s, id, (v) => (v.flares = 1)), true);
     const q = await running((q) => notFind(q) && !q.flared, 'none');
     if (q.find || q.flared) throw new Error('a flare only burns once, and never on a find');
     setTimeLeft(1600);
@@ -466,7 +541,7 @@ export const flare = () =>
 export const dynamite = () =>
   event('Dynamite', async () => {
     const id = activeId();
-    if (!inventoryOf(run()!, id).dynamite) put((s) => invSet(s, id, (v) => (v.dynamite = 1)), true);
+    if (!holds(id, 'dynamite')) put((s) => invSet(s, id, (v) => (v.dynamite = 1)), true);
     const q = await running((q) => notFind(q) && !q.blasted, 'none');
     if (q.find || q.blasted) throw new Error('dynamite only goes off once, and never on a find');
     toHalf(1700);
@@ -487,23 +562,84 @@ export const caveIn = () =>
     answer(q, false);
   });
 
-/** The last life lost: "You perish" (Next then ends a run alone). */
+/** The last life lost on a wrong answer: "You perish" (Next then ends a run alone; together the rest play on). */
 export const lastLife = () =>
   event('Last life', async () => {
     const id = activeId();
+    const q = await running(notFind, 'none');
+    if (coop() && q.struck?.some((x) => x.by === id)) throw new Error(`${nameOf(id)} already answered this question`);
     put((s) => {
-      s.delve!.losses[id] = lossesFor(1, s.round);
+      setLivesIn(s, id, 1);
       invSet(s, id, (v) => (v.wards = 0));
     }, true);
-    answer(await running(notFind, 'none'), false);
+    answer(state()!.question!, false, id);
+  });
+
+// ---- co-op ---------------------------------------------------------------
+
+/** Co-op: the actor votes for card `i` (the cards are dealt first if none are). */
+export const voteFor = (i: number) =>
+  event('Vote', () => {
+    if (state()?.phase !== 'choosing') dealCards();
+    const s = state()!;
+    const card = s.offered[i];
+    if (!card) throw new Error('no such card on offer');
+    act({ type: 'vote', category: card });
+  });
+
+/** Co-op: everyone standing but the screen's player votes, each for a card at random (the screen's player votes on the cards). */
+export const othersVote = () =>
+  event('Others vote', () => {
+    if (state()?.phase !== 'choosing') dealCards();
+    const s = state()!;
+    const ids = standingIds(s).filter((id) => id !== viewerId() && !Object.hasOwn(s.delve?.votes ?? {}, id));
+    if (!ids.length) throw new Error('nobody else is left to vote');
+    for (const id of ids) {
+      const cur = state()!;
+      if (cur.phase !== 'choosing') break;
+      act({ type: 'vote', category: cur.offered[Math.floor(Math.random() * cur.offered.length)] }, id);
+    }
+  });
+
+/** Co-op: the actor gives one of their lives to the first teammate who perished (given enough lives first). */
+export const reviveTeammate = () =>
+  event('Revive', () => {
+    const s = run()!;
+    const id = activeId();
+    const target = s.players.find((p) => p.id !== id && livesOf(s, p.id) === 0)?.id;
+    if (!target) throw new Error('nobody has perished to bring back');
+    if (s.phase === 'question') throw new Error('not during a question: wait for the reveal or the cards');
+    if (livesOf(s, id) < REVIVE_FROM) {
+      setLives(id, DELVE_LIVES);
+      note(`${nameOf(id)} was given three lives to have one to give.`);
+    }
+    act({ type: 'revive', target });
+  });
+
+/** Co-op: everyone standing but the actor perishes on a wrong answer, one by one, so the actor is left standing alone. */
+export const othersPerish = () =>
+  event('Others perish', async () => {
+    if ((run()?.players.length ?? 1) < 2) setPlayers(2);
+    const id = activeId();
+    const q = await running((q) => notFind(q) && !q.struck?.length, 'none');
+    const others = standingIds(run()!).filter((o) => o !== id);
+    if (!others.length) throw new Error('nobody else is standing');
+    put((s) => {
+      for (const o of others) {
+        setLivesIn(s, o, 1);
+        invSet(s, o, (v) => (v.wards = 0));
+      }
+    }, true);
+    for (const o of others) {
+      answer(state()!.question!, false, o);
+      await sleep(500);
+      if (state()?.phase !== 'question' || state()?.question?.askedAt !== q.askedAt) break;
+    }
   });
 
 /** One depth deeper, built as the engine does it at the end of a round, so the mark for it plays. */
 function stepDown() {
   put((s) => {
-    // A group down to one: the last one standing, from the depth just finished.
-    const standing = s.players.filter((p) => livesOf(s, p.id) > 0);
-    if (standing.length === 1 && s.players.length > 1 && !groupField(s, 'lastStanding')) setGroupField(s, 'lastStanding', { id: standing[0].id, depth: s.round });
     s.round++;
     s.turn = Math.max(0, s.players.findIndex((p) => livesOf(s, p.id) > 0));
     s.turnCount++;
@@ -514,9 +650,9 @@ function stepDown() {
 /** At depth `d` with cards dealt (a fresh run id), seen by the game screen, then one deeper. */
 async function stepInto(d: number, before?: () => void) {
   put((s) => {
+    const lives = new Map(s.players.map((p) => [p.id, livesOf(s, p.id)]));
     s.round = Math.max(1, d - 1);
-    setGroupField(s, 'lastStanding', null);
-    for (const p of s.players) s.delve!.losses[p.id] = lossesFor(livesOf(s, p.id), s.round);
+    for (const p of s.players) setLivesIn(s, p.id, lives.get(p.id)!);
     s.turnCount++;
     deal(s);
   }, true);
@@ -546,23 +682,6 @@ export const deeperThanEver = () =>
     await stepInto(d, () => (session.bestAtStart = d - 1));
   });
 
-/** The last one standing: everyone else falls, and the round ends with them alone. */
-export const lastStanding = () =>
-  event('Last one standing', async () => {
-    if ((run()?.players.length ?? 1) < 2) setPlayers(2);
-    const id = activeId();
-    let d = depthOf() + 1;
-    if (milestoneAt(d)) d++;
-    await stepInto(d, () =>
-      put((s) => {
-        for (const p of s.players) if (p.id !== id) s.delve!.losses[p.id] = lossesFor(0, s.round);
-        if (livesOf(s, id) === 0) s.delve!.losses[id] = lossesFor(1, s.round);
-        s.turn = s.players.findIndex((p) => p.id === id);
-        deal(s);
-      }, true),
-    );
-  });
-
 /** One depth deeper the real way: a right answer, then Next. */
 export const descend = () =>
   event('Descend', async () => {
@@ -581,18 +700,37 @@ export function plunge(): boolean {
 
 // ---- end screens ---------------------------------------------------------
 
-/** The run ends: everyone perished, the deepest last (as the engine finishes a run). */
+/**
+ * The run ends: everyone perished, the first seat deepest (as the engine
+ * finishes a run: nobody wins). Together, the first seat once gave a life to
+ * bring back the second, so the end screen has a revive to tell.
+ */
 function finish(s: GameState) {
   const d = s.round;
+  const dm = s.delve!;
+  const ids = s.players.map((p) => p.id);
+  const lossesAt = (n: number, fell: number) => Array.from({ length: n }, (_, k) => Math.max(1, fell - (n - 1 - k) * 2));
+  dm.revives = [];
+  if (ids.length > 1) {
+    // The second seat perished, was brought back by the first, and perished again.
+    const second = lossesAt(DELVE_LIVES + 1, Math.max(1, d - 2));
+    dm.losses[ids[1]] = second;
+    const fell = second[DELVE_LIVES - 1];
+    dm.revives.push({ by: ids[0], to: ids[1], depth: fell, fell, at: Date.now() });
+    dm.losses[ids[0]] = lossesAt(DELVE_LIVES - 1, d);
+  }
   s.players.forEach((p, i) => {
-    const fell = Math.max(1, d - i * 2);
-    s.delve!.losses[p.id] = [Math.max(1, fell - 5), Math.max(1, fell - 2), fell];
+    if (ids.length > 1 && i < 2) return;
+    dm.losses[p.id] = lossesAt(DELVE_LIVES, Math.max(1, d - i * 2));
   });
-  const rows = delveStandings(s);
-  s.winners = s.players.length > 1 ? rows.filter((r) => r.rank === 1).map((r) => r.id) : [];
-  if (s.players.length > 1) setGroupField(s, 'lastStanding', { id: rows[0].id, depth: Math.max(1, d - 2) });
-  clearPick(s);
-  s.delve!.find = null;
+  s.winners = [];
+  if (isGroupRun(s)) {
+    dm.votes = {};
+    dm.voteFrom = null;
+  }
+  delete dm.snapshot;
+  dm.finds = [];
+  delete dm.find;
   s.phase = 'over';
   s.question = null;
   s.reveal = null;

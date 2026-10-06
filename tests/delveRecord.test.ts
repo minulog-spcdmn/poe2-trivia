@@ -35,7 +35,7 @@ function run(losses: Record<string, number[]>, over: Partial<GameState> = {}, se
   const s = createGame('a');
   s.players = seats.map((id, hue) => ({ id, name: id, score: 0, recent: [], connected: true, hue }));
   s.phase = 'choosing';
-  s.delve = { entrants: seats, losses, lastStanding: null, ruleset: 1, startedAt: 500, pickBy: null, pickExtended: false, excused: [], graceUntil: 0 };
+  s.delve = { entrants: seats, losses, ruleset: 1, startedAt: 500, excused: [], graceUntil: 0 };
   return { ...s, ...over };
 }
 

@@ -3,7 +3,7 @@
   import { MediaQuery } from 'svelte/reactivity';
   import { session } from '../lib/session.svelte';
   import { playerColor } from '../lib/ui';
-  import { DELVE_LIVES, inventoryOf, livesOf, questionTimer, type ItemKind } from '../lib/delve';
+  import { DELVE_LIVES, inventoryOf, isGroupRun, livesOf, questionTimer, type ItemKind } from '../lib/delve';
   import { accentAt } from '../lib/descent';
   import { zoneAt } from '../lib/zoneSigils';
   import { fxAvailable, fxUserOn, onFxChange, setFxOn } from '../lib/fx/core';
@@ -16,7 +16,22 @@
   const run = $derived(s?.delve ? s : null);
   const depth = $derived(run?.round ?? 1);
   const players = $derived(run?.players ?? []);
-  const active = $derived(run ? run.players[run.turn] : undefined);
+  const group = $derived(!!run && isGroupRun(run));
+  // Alone the player on turn; together whom the lab acts for.
+  const active = $derived(run ? (group ? run.players.find((p) => p.id === L.lab.actor) : run.players[run.turn]) : undefined);
+  const viewer = $derived(group ? session.myPlayerId : null);
+  /** Co-op: what a player has done about the cards or the question in play. */
+  function doing(id: string): string {
+    if (!run || !group) return '';
+    if (livesOf(run, id) === 0) return 'perished';
+    if (run.phase === 'choosing') {
+      const v = run.delve?.votes?.[id];
+      return v ? `voted ${v}` : 'not voted';
+    }
+    if (run.phase === 'question' && q) return q.struck?.some((x) => x.by === id) ? 'struck' : 'answering';
+    if (run.phase === 'reveal') return run.reveal?.winnerId === id ? 'cleared it' : '';
+    return '';
+  }
   const q = $derived(s?.phase === 'question' || s?.phase === 'reveal' ? s.question : null);
   const busy = $derived(L.lab.busy);
 
@@ -134,12 +149,20 @@
           {@render seg([1, 2, 3, 4], players.length, (n) => L.setPlayers(n), 'Players')}
           <button class="small" onclick={() => L.newRun(players.length || 1, depth)} disabled={!!busy}>New run</button>
         </div>
-        {#if players.length > 1}
+        {#if group}
           <div class="line">
-            <span class="lbl">Turn</span>
-            <div class="seg" role="group" aria-label="Whose turn">
-              {#each players as p, i (p.id)}
-                <button class:on={i === run?.turn} onclick={() => L.setTurn(i)} disabled={!!busy} style:--dot={playerColor(p.hue)}>{p.name}</button>
+            <span class="lbl">Screen</span>
+            <div class="seg" role="group" aria-label="Whose screen this is">
+              {#each players as p (p.id)}
+                <button class:on={p.id === viewer} onclick={() => L.setViewer(p.id)} disabled={!!busy} style:--dot={playerColor(p.hue)}>{p.name}</button>
+              {/each}
+            </div>
+          </div>
+          <div class="line">
+            <span class="lbl">Acts</span>
+            <div class="seg" role="group" aria-label="Whom the lab acts for">
+              {#each players as p (p.id)}
+                <button class:on={p.id === active?.id} onclick={() => L.setActor(p.id)} disabled={!!busy} style:--dot={playerColor(p.hue)}>{p.name}</button>
               {/each}
             </div>
           </div>
@@ -147,7 +170,9 @@
         {#each players as p (p.id)}
           {@const inv = run ? inventoryOf(run, p.id) : null}
           <div class="player" class:turn={p.id === active?.id}>
-            <div class="pname"><span class="dot" style:background={playerColor(p.hue)}></span>{p.name}</div>
+            <div class="pname">
+              <span class="dot" style:background={playerColor(p.hue)}></span>{p.name}{#if p.id === viewer}<em class="tag">screen</em>{/if}{#if doing(p.id)}<em class="tag">{doing(p.id)}</em>{/if}
+            </div>
             <div class="line">
               <span class="lbl">Lives</span>
               {@render seg([0, 1, 2, 3].slice(0, DELVE_LIVES + 1), run ? livesOf(run, p.id) : 0, (n) => L.setLives(p.id, n), 'Lives')}
@@ -164,7 +189,9 @@
             </div>
           </div>
         {/each}
-        <p class="hint">Changes here are set quietly: the run takes a new id, so nothing plays for them. Events below play.</p>
+        <p class="hint">
+          Changes here are set quietly: the run takes a new id, so nothing plays for them. Events below play.{#if group}{' '}Two players or more delve together: the screen is one of them (its own taps vote and answer for them), and the events act for the one chosen under Acts.{/if}
+        </p>
       </details>
 
       <details open>
@@ -199,6 +226,12 @@
             {#each FINDS as f (f.v)}<option value={f.v}>{f.label}</option>{/each}
           </select>
           <button class="small" onclick={L.dealCards} disabled={!!busy}>Deal cards</button>
+        </div>
+        <div class="line">
+          <span class="lbl">Second find</span>
+          <select bind:value={L.opts.cardFind2} aria-label="A second find among the cards">
+            {#each FINDS as f (f.v)}<option value={f.v} disabled={f.v !== 'none' && f.v === L.opts.cardFind}>{f.label}</option>{/each}
+          </select>
         </div>
         <div class="opts">
           <label
@@ -251,7 +284,7 @@
         <div class="grid">
           <button onclick={() => L.endSolo(false)} disabled={!!busy}>End: perished</button>
           <button onclick={() => L.endSolo(true)} disabled={!!busy}>End: deeper than ever</button>
-          <button onclick={L.endGroup} disabled={!!busy}>End: group</button>
+          <button onclick={L.endGroup} disabled={!!busy}>End: together</button>
           <button onclick={L.backToRun} disabled={!!busy || s?.phase !== 'over'}>Back to a run</button>
         </div>
       </details>
@@ -267,9 +300,23 @@
           <button onclick={L.caveIn} disabled={!!busy}>Vein cave-in</button>
           <button onclick={L.flare} disabled={!!busy}>Flare at 0</button>
           <button onclick={L.dynamite} disabled={!!busy}>Dynamite at half</button>
-          <button onclick={L.lastStanding} disabled={!!busy}>Last one standing</button>
           <button onclick={L.deeperThanEver} disabled={!!busy}>Deeper than ever</button>
         </div>
+        {#if group}
+          <span class="sub">Together, as {active?.name ?? 'the actor'}</span>
+          <div class="grid four">
+            {#each [0, 1, 2] as i (i)}
+              <button onclick={() => L.voteFor(i)} disabled={!!busy} title={s?.phase === 'choosing' ? s.offered[i] : undefined}>Vote {i + 1}</button>
+            {/each}
+            <button onclick={L.othersVote} disabled={!!busy}>Others vote</button>
+          </div>
+          <div class="grid">
+            <button onclick={L.reviveTeammate} disabled={!!busy}>Give a life</button>
+            <button onclick={L.lastLife} disabled={!!busy}>Perish</button>
+            <button onclick={L.othersPerish} disabled={!!busy}>Others perish</button>
+            <button onclick={L.timeOut} disabled={!!busy}>Time out (team)</button>
+          </div>
+        {/if}
         <span class="sub">Gain at once</span>
         <div class="grid four">
           <button onclick={() => L.gain('wards')} disabled={!!busy}>Ward</button>
@@ -616,6 +663,15 @@
     font-family: var(--font-display);
     font-size: 0.85rem;
     color: var(--gold-hi);
+  }
+  .pname .tag {
+    font-family: var(--font-body);
+    font-style: normal;
+    font-size: 0.75rem;
+    color: var(--muted);
+  }
+  .pname .tag:first-of-type {
+    margin-left: auto;
   }
   .dot {
     width: 9px;

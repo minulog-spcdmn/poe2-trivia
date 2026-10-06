@@ -1,6 +1,6 @@
 // Delve's dynamite: a stick goes off by itself once half the answering
-// player's clock has run out, laying the art bare and blowing half the wrong
-// answers away, and the clock holds while it does (see delve.ts blastAt,
+// player's clock has run out, laying the art bare and blowing half the
+// options away (every one of them wrong), and the clock holds while it does (see delve.ts blastAt,
 // blastCount, BLAST_PAUSE_MS, clockLeft and game.ts 'dynamite').
 
 import { test } from 'node:test';
@@ -17,6 +17,7 @@ import {
   clockLeft,
   dynamiteOf,
   findLosses,
+  findOn,
   flaresOf,
   itemsWorkOn,
   livesOf,
@@ -74,8 +75,8 @@ function delve(names: string[], opts: { host?: string | null; seed?: number; dep
     },
     /** Picks a card (the find planted on it, if `find`) and starts the clock. */
     ask(find?: FindKind) {
-      if (find) h.edit((c) => (c.delve!.find = { category: c.offered[0], kind: find }));
-      h.act({ type: 'pick', category: find ? s.offered[0] : s.offered.find((c) => c !== s.delve!.find?.category)! });
+      if (find) h.edit((c) => (c.delve!.finds = [{ category: c.offered[0], kind: find }]));
+      h.act({ type: 'pick', category: find ? s.offered[0] : s.offered.find((c) => !findOn(s, c))! });
       h.act({ type: 'clock', askedAt: s.question!.askedAt });
       return s.question!;
     },
@@ -105,12 +106,16 @@ test('dynamite goes off at half the clock, rounded up to a whole second: where t
   assert.deepEqual([blastAt(16), blastAt(13), blastAt(7)], [8000, 7000, 4000]);
 });
 
-test('it blows away half the wrong answers, rounded down, never leaving fewer than two', () => {
-  assert.deepEqual([2, 3, 4, 5, 6, 8, 10].map(blastCount), [0, 1, 1, 2, 2, 3, 4]);
+test('it blows away half the options, rounded down, all of them wrong, never leaving fewer than two', () => {
+  assert.deepEqual([2, 3, 4, 5, 6, 8, 10].map(blastCount), [0, 1, 2, 2, 3, 4, 5]);
+  // Four leave two (the answer and one wrong), six three, eight four.
+  assert.deepEqual([4, 6, 8].map((n) => n - blastCount(n)), [2, 3, 4]);
   for (let n = 2; n <= 16; n++) {
-    assert.equal(blastCount(n), Math.floor((n - 1) / 2));
+    assert.equal(blastCount(n), Math.min(Math.floor(n / 2), n - 2));
+    assert.ok(blastCount(n) <= n - 1, `${n} options: only wrong ones`);
     assert.ok(n - blastCount(n) >= 2, `${n} options`);
   }
+  for (const n of [0, 1]) assert.equal(blastCount(n), 0);
 });
 
 test('it has art to clear when the art burns in, is mirrored or has no colour', () => {
@@ -211,30 +216,24 @@ test('never after an answer, the time-out or the reveal, before the clock starts
   stale.act({ type: 'dynamite', askedAt: stale.s.question!.askedAt - 1 });
   assert.equal(stale.s.question!.blasted, undefined);
 
-  // Away: a guest whose connection dropped.
-  const away = delve(['Ash', 'Brea'], { depth: 30 });
-  const guest = away.s.players.find((p) => p.id !== 'p0')!.id;
-  while (away.active().id !== guest) {
-    away.ask();
-    away.act({ type: 'answer', index: right(away.s.question!), askedAt: away.s.question!.askedAt });
-    away.act({ type: 'next' });
-  }
-  away.give(guest, { dynamite: 1 });
-  away.ask();
-  away.act({ type: 'connection', playerId: guest, connected: false });
+  // Away: the player's connection dropped.
+  const away = holding({ dynamite: 1 }, { host: 'p0' });
+  const id = away.active().id;
+  away.act({ type: 'connection', playerId: id, connected: false });
   assert.equal(dynamiteIn(away.s, away.clock.now), null);
   away.clock.now = away.due();
   away.blast();
   assert.equal(away.s.question!.blasted, undefined);
-  assert.equal(dynamiteOf(away.s, guest), 1);
+  assert.equal(dynamiteOf(away.s, id), 1);
   // Back in time, it goes off.
-  away.act({ type: 'connection', playerId: guest, connected: true });
+  away.act({ type: 'connection', playerId: id, connected: true });
   away.blast();
   assert.equal(away.s.question!.blasted, true);
 });
 
 test("nobody but the host sets it off: a guest's or the host's own word is refused, and guests can't send one", () => {
   const h = delve(['Ash', 'Brea'], { depth: 30 });
+  // (Together, the trusted pick settles the vote.)
   const id = h.active().id;
   h.give(id, { dynamite: 1 });
   h.ask();
@@ -251,7 +250,7 @@ test("nobody but the host sets it off: a guest's or the host's own word is refus
 
 // ---- what it does --------------------------------------------------------------
 
-test('it blows away half the wrong answers: never the answer, made-up names first, two or more left', () => {
+test('it blows away half the options: never the answer, made-up names first, two or more left', () => {
   let fakesSeen = 0;
   for (let seed = 1; seed <= 60; seed++) {
     const depth = [12, 30, 60, 120][seed % 4];
@@ -262,7 +261,8 @@ test('it blows away half the wrong answers: never the answer, made-up names firs
     const q = h.s.question!;
     const gone = q.blownAway!;
     const wrong = q.options.filter((id) => id !== q.itemId);
-    assert.equal(gone.length, Math.floor(wrong.length / 2), `seed ${seed}`);
+    assert.equal(gone.length, Math.floor(q.options.length / 2), `seed ${seed}`);
+    assert.ok(gone.length < wrong.length, 'a wrong one stays beside the answer');
     assert.ok(q.options.length - gone.length >= 2);
     assert.ok(!gone.includes(right(q)), 'never the answer');
     assert.deepEqual([...gone].sort((a, b) => a - b), gone, 'in order');
@@ -280,7 +280,7 @@ test('it blows away half the wrong answers: never the answer, made-up names firs
 });
 
 test('which real decoys go is left to chance, so what stays says nothing about the answer', () => {
-  // Over many blasts of the same four-option question, each wrong option goes about as often.
+  // Over many blasts of the same four-option question (two of its three wrong ones go), each wrong option goes about as often.
   const counts = new Map<number, number>();
   let q: Question | null = null;
   for (let seed = 1; seed <= 300; seed++) {
@@ -294,7 +294,8 @@ test('which real decoys go is left to chance, so what stays says nothing about t
   }
   const wrong = q!.options.flatMap((id, i) => (id === q!.itemId ? [] : [i]));
   assert.equal(wrong.length, 3);
-  for (const i of wrong) assert.ok((counts.get(i) ?? 0) > 60, `option ${i}: ${counts.get(i)}`);
+  for (const i of wrong) assert.ok((counts.get(i) ?? 0) > 150, `option ${i}: ${counts.get(i)}`);
+  assert.equal([...counts.values()].reduce((a, b) => a + b, 0), 600, 'two a blast');
 });
 
 test('picking an answer it blew away is a wrong answer, like any other', () => {
@@ -309,7 +310,8 @@ test('picking an answer it blew away is a wrong answer, like any other', () => {
 });
 
 test('guests learn that it went off and what it blew away, never the answer, the items or the pictures behind it', () => {
-  const h = delve(['Ash', 'Brea'], { depth: 70 });
+  // Alone online, as anyone watching sees it (together: tests/delveCoop.test.ts).
+  const h = delve(['Ash'], { depth: 70 });
   const id = h.active().id;
   h.give(id, { dynamite: 1 });
   h.ask();

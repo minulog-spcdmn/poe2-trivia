@@ -18,6 +18,9 @@ test('changes make one moment: a shatter first, a forge over a plain ward, finds
   const u = (item: keyof Inventory) => ({ item, change: 'used' as const });
   assert.equal(momentOf([]), null);
   assert.equal(momentOf([u('wards')]), 'shatter');
+  // A third ward mined outright drops the shard held: no forge when the reveal says none was.
+  assert.equal(momentOf([{ item: 'wards', change: 'gained' }, u('shards')], false), 'ward');
+  assert.equal(momentOf([{ item: 'wards', change: 'gained' }, u('shards')], true), 'forge');
   assert.equal(momentOf([g('wards'), u('shards')]), 'forge');
   assert.equal(momentOf([g('wards')]), 'ward');
   assert.equal(momentOf([g('shards')]), 'shard');

@@ -9,9 +9,13 @@
   // phial into the effects layer (lifeLost in lib/fx/moments.ts) as it does.
   // Azurite Wards, which break before a life does, encase the chambers in
   // crystal from the base, one each (CASINGS in lib/inventoryArt.ts), and a
-  // shard toward the next ward is half a casing; a ward forming crystallises
-  // onto its chamber, and one breaking in place of a life bursts off it in two
-  // pieces, the outermost first. The flares and dynamite a player carries
+  // shard toward the next ward is half a casing. At rest the crystal is cold
+  // and alive in its own way, not the life's: its glaze breathes slowly, and
+  // now and then light runs along its lit band and twinkles at its end, each
+  // casing on a rhythm of its own. A ward forming crystallises onto its
+  // chamber; one breaking in place of a life shatters where it is, in a
+  // burst of blue (wardShattered in lib/fx/moments.ts throws the sparks all
+  // round it), the outermost first. The flares and dynamite a player carries
   // stand counted beside the phial lying down (Inventory.svelte); upright, the
   // scoreboard shows them by the avatar.
   import { DELVE_LIVES, type Inventory as Carried } from '../lib/delve';
@@ -25,6 +29,7 @@
     vertical = false,
     inv = null,
     moment = null,
+    expect = null,
   }: {
     lives: number;
     /** The chamber (0 to 2) of the life just lost, while it pours out; -1 otherwise. */
@@ -36,6 +41,8 @@
     inv?: Carried | null;
     /** What just happened to it, to play on it. */
     moment?: InventoryMoment | null;
+    /** A flare or dynamite on its way to it (Inventory.svelte keeps its place). */
+    expect?: 'flare' | 'dynamite' | null;
   } = $props();
 
   const CHAMBERS = Array.from({ length: DELVE_LIVES }, (_, k) => k);
@@ -55,7 +62,7 @@
 </script>
 
 <!-- One casing drawn in the phial's units, its glaze and front edges clipped to the chamber's hollow. -->
-{#snippet art(c: Casing, id: string)}
+{#snippet art(c: Casing, id: string, idle = false)}
   <defs>
     <linearGradient id="{id}-g" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#8cc4ff" stop-opacity="0.6" />
@@ -77,6 +84,11 @@
     <path class="hatch" d={c.hatch} />
     <path class="edges" d={c.edges} />
     <path class="catch" d={c.catch} />
+    {#if idle}
+      <!-- At rest: light runs along the crystal's lit band and twinkles where it ends. -->
+      <path class="glint" pathLength="100" d={c.catch} />
+      <path class="twinkle" d="M{c.twinkle[0] - 1.5} {c.twinkle[1]}h3M{c.twinkle[0]} {c.twinkle[1] - 1.5}v3" />
+    {/if}
     <path class="rim" d={c.rim} />
   </g>
   {#if c.crack}<path class="crack" d={c.crack} />{/if}
@@ -114,14 +126,16 @@
           data-k={c.k}
           style:--from={set.whole.from}
           style:--to={set.whole.to}
+          style:--k={c.k}
         >
           {#if c.kind === 'ghost'}
             {#each set.pieces as piece, i (i)}
               <svg class="piece p{i}" viewBox="0 0 64 12" aria-hidden="true">{@render art(piece, `${uid}-x${c.k}${i}`)}</svg>
             {/each}
+            <span class="burst"></span>
           {:else}
             {#key c.fresh ? moment?.key : 0}
-              <svg class="grow" viewBox="0 0 64 12" aria-hidden="true">{@render art(c.kind === 'whole' ? set.whole : set.shard, `${uid}-${c.kind}${c.k}`)}</svg>
+              <svg class="grow" viewBox="0 0 64 12" aria-hidden="true">{@render art(c.kind === 'whole' ? set.whole : set.shard, `${uid}-${c.kind}${c.k}`, true)}</svg>
               {#if c.fresh}<span class="flash"></span>{/if}
             {/key}
           {/if}
@@ -129,7 +143,7 @@
       {/each}
     </span>
   </span>
-  {#if inv && !vertical}<Inventory {inv} {moment} />{/if}
+  {#if inv && !vertical}<Inventory {inv} {moment} {expect} />{/if}
 </span>
 
 <style>
@@ -548,43 +562,121 @@
     }
   }
 
-  /* A ward breaking in place of a life: its casing cracks along the chamber
-     and the two halves burst off it, above and below, and fade (the effects
-     layer throws its splinters). The light inside is untouched. */
+  /* At rest: the crystal's own cold life (in step with nothing in the
+     chambers). Its glaze breathes slowly; a glint of light runs along its lit
+     band, base to tip, and twinkles where the band ends; then it rests.
+     Each casing keeps its own time (--k), so the light wanders from one to
+     another rather than beating together. Opacity, dash offset and transform
+     only. */
+  .grow .glaze {
+    animation: cold calc(4.2s + var(--k) * 0.9s) ease-in-out calc(var(--k) * -1.7s) infinite alternate;
+  }
+  @keyframes cold {
+    from {
+      opacity: 0.65;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  .glint {
+    fill: none;
+    stroke: #f4fbff;
+    stroke-width: 0.55;
+    stroke-linecap: round;
+    stroke-dasharray: 16 300;
+    stroke-dashoffset: 16;
+    filter: drop-shadow(0 0 0.6px rgba(160, 210, 255, 0.9));
+    animation: glint calc(5.2s + var(--k) * 1.3s) cubic-bezier(0.45, 0, 0.6, 1) calc(1.1s + var(--k) * 1.9s) infinite;
+  }
+  @keyframes glint {
+    0% {
+      stroke-dashoffset: 16;
+    }
+    16%,
+    100% {
+      stroke-dashoffset: -100;
+    }
+  }
+  .twinkle {
+    fill: none;
+    stroke: #f4fbff;
+    stroke-width: 0.35;
+    stroke-linecap: round;
+    transform-box: fill-box;
+    transform-origin: center;
+    opacity: 0;
+    animation: twinkle calc(5.2s + var(--k) * 1.3s) ease-out calc(1.1s + var(--k) * 1.9s) infinite;
+  }
+  @keyframes twinkle {
+    0%,
+    13% {
+      opacity: 0;
+      transform: scale(0.2) rotate(0deg);
+    }
+    17% {
+      opacity: 1;
+      transform: scale(1) rotate(25deg);
+    }
+    26%,
+    100% {
+      opacity: 0;
+      transform: scale(0.3) rotate(45deg);
+    }
+  }
+
+  /* A ward breaking in place of a life shatters where it is: the crystal
+     flares white-blue, swells a little and bursts into light round its
+     chamber (the effects layer throws blue sparks all round it). Nothing
+     flies off: the halves part only as far as the swell takes them. The
+     light inside is untouched. */
   .piece {
     transform-origin: calc(100% * (var(--from) + var(--to)) / 128) 50%;
-    animation: burst-a 0.85s cubic-bezier(0.3, 0, 0.7, 1) both;
+    animation: shatter 0.5s cubic-bezier(0.2, 0.7, 0.4, 1) both;
   }
-  .piece.p1 {
-    animation-name: burst-b;
-  }
-  @keyframes burst-a {
-    0%,
-    10% {
+  @keyframes shatter {
+    0% {
       opacity: 1;
       transform: none;
+      filter: brightness(1);
+    }
+    22% {
+      opacity: 1;
+      transform: scale(1.05, 1.12);
+      filter: brightness(2.4);
     }
     to {
       opacity: 0;
-      transform: translate(calc(var(--u) * -2), calc(var(--u) * -11)) rotate(-9deg);
+      transform: scale(1.18, 1.5);
+      filter: brightness(1.6);
     }
   }
-  @keyframes burst-b {
-    0%,
-    10% {
+  .burst {
+    position: absolute;
+    inset: -110% -22%;
+    pointer-events: none;
+    background: radial-gradient(closest-side, rgba(235, 246, 255, 0.95), rgba(110, 175, 255, 0.55) 45%, rgba(110, 175, 255, 0) 100%);
+    animation: burst 0.55s ease-out both;
+  }
+  @keyframes burst {
+    from {
+      opacity: 0;
+      transform: scale(0.5);
+    }
+    20% {
       opacity: 1;
-      transform: none;
     }
     to {
       opacity: 0;
-      transform: translate(calc(var(--u) * 2.5), calc(var(--u) * 12)) rotate(7deg);
+      transform: scale(1.25);
     }
   }
 
   @media (prefers-reduced-motion: reduce) {
     .grow,
     .flash,
-    .piece {
+    .piece,
+    .burst {
       animation: none;
     }
     .flash,
@@ -594,7 +686,10 @@
     .wisp,
     .wisp::before,
     .beat,
-    .surge {
+    .surge,
+    .grow .glaze,
+    .glint,
+    .twinkle {
       animation: none;
     }
     .surge,
@@ -605,8 +700,13 @@
   /* Effects off (the low-power mode): the light glows but holds still. */
   :global(html[data-still]) .wisp,
   :global(html[data-still]) .wisp::before,
-  :global(html[data-still]) .beat {
+  :global(html[data-still]) .beat,
+  :global(html[data-still]) .grow .glaze {
     animation-play-state: paused;
+  }
+  :global(html[data-still]) .glint,
+  :global(html[data-still]) .twinkle {
+    display: none;
   }
   :global(html[data-still]) .flash {
     display: none;

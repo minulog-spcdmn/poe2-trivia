@@ -11,19 +11,26 @@
   import { fxActive, fxUserOn } from '../lib/fx/core';
   import { victory } from '../lib/fx/moments';
   import { fallen } from '../lib/fx/delveEnd';
-  import { shareText } from '../lib/delveShare';
+  import { DELVE_LINK_PARAM, shareText } from '../lib/delveShare';
   import { portal } from '../lib/portal';
-  import { delveStandings, isGroupRun } from '../lib/delve';
-  import { BLUE_FROM } from '../lib/descent';
+  import { delveStandings, delveTeam, isGroupRun } from '../lib/delve';
+  import { BLUE_FROM, accentAt } from '../lib/descent';
+  import { zoneAt } from '../lib/zoneSigils';
+  import { delverText, lossDepths } from '../lib/difficultyText';
 
   const s = $derived(session.state!);
   const won = (id: string) => s.winners.includes(id);
+  /** Delve: the depth the run ended at (alone, the delver's; together, the team's). */
+  const endDepth = $derived(s.delve ? (isGroupRun(s) ? delveTeam(s).depth : (delveStandings(s)[0]?.depth ?? s.round)) : 0);
   // Delve: ranked by how deep each went, and alone there is no winner, only a depth.
   const run = $derived(s.delve ?? null);
   const solo = $derived(!!run && !isGroupRun(s));
   /** Alone: this run went deeper than ever (lib/delveRecord.ts). */
   const newBest = $derived(!!run && session.delveResult?.id === run.startedAt && session.delveResult.best);
   const delveRows = $derived(run ? delveStandings(s) : []);
+  /** Delve together: one result for the team (its depth, where the last of them perished), and each delver's part in it. */
+  const team = $derived(run && !solo ? delveTeam(s) : null);
+  const teamFaces = $derived(team ? s.players.slice(0, 4) : []);
   const depthOf = (id: string) => delveRows.find((r) => r.id === id)?.depth ?? 0;
   // Winners first among equal scores: a deathmatch can be won by the only duelist left, level on points.
   const standings = $derived(
@@ -44,14 +51,12 @@
     setTimeout(() => (leaving = false), 1500);
   }
   const iWon = $derived(session.mode !== 'local' && winner?.id === session.myPlayerId);
-  const sharers = $derived(s.winners.map((id) => s.players.find((p) => p.id === id)?.name).filter(Boolean) as string[]);
   // A descent has no victory: alone it ends where you fell, and a group's
   // deepest delver went furthest before falling (or stood last), nothing more.
   const headline = $derived.by(() => {
     if (!run) return iWon ? 'You are victorious!' : `${winner?.name} wins!`;
     if (solo) return `Depth ${winner ? depthOf(winner.id) : s.round}`;
-    if (sharers.length > 1) return `${sharers.slice(0, -1).join(', ')} and ${sharers.at(-1)} delved deepest`;
-    return iWon ? 'You delved deepest' : `${winner?.name} delved deepest`;
+    return `Depth ${team?.depth ?? s.round}`;
   });
   /** Alone, deeper than this browser has been before (not the very first run). */
   const deeper = $derived(solo && newBest && session.delveResult?.previousBest !== null);
@@ -62,9 +67,7 @@
         ? deeper
           ? 'Deeper than ever'
           : 'Perished'
-        : run.lastStanding && run.lastStanding.id === winner?.id
-          ? 'Last one standing'
-          : 'The descent ends',
+        : 'The descent ends',
   );
   /** Delve: what the depth means, and how a tie was settled. */
   const delveSub = $derived.by(() => {
@@ -72,35 +75,28 @@
     const row = delveRows.find((r) => r.id === winner.id);
     if (!row) return '';
     if (solo) {
-      // Measured against this browser's deepest run alone (lib/delveRecord.ts).
+      // Measured against this browser's deepest run alone (lib/delveRecord.ts). A new best, the kicker says.
       const r = session.delveResult?.id === run.startedAt ? session.delveResult : null;
-      const record = !r || run.mixed ? '' : r.best ? (r.previousBest === null ? ' Your first descent.' : ` Your deepest yet; the last best was ${r.previousBest}.`) : ` Your best is depth ${r.previousBest}.`;
-      return (row.losses.length ? `Lives lost at depths ${listOf(row.losses)}.` : '') + record;
+      const record = !r || run.mixed ? '' : r.best ? (r.previousBest === null ? ' Your first descent.' : ` The last best was ${r.previousBest}.`) : ` Your best is depth ${r.previousBest}.`;
+      return (row.losses.length ? `Lives lost at ${lossDepths(row.losses)}.` : '') + record;
     }
-    const parts = [`Perished at depth ${row.depth}`];
-    if (run.lastStanding?.id === winner.id) parts.push(`last one standing from depth ${run.lastStanding.depth}`);
-    const second = delveRows[1];
-    if (second && second.depth === row.depth && second.rank !== row.rank) {
-      // Settled by the earlier lives: the first loss (from the end) where the two differ.
-      const a = [...row.losses].reverse();
-      const b = [...second.losses].reverse();
-      const k = a.findIndex((d, i) => d !== b[i]);
-      if (k > 0) {
-        const name = s.players.find((p) => p.id === second.id)?.name ?? '?';
-        parts.push(`tied with ${name}, who lost their ${k === 1 ? 'second' : 'first'} life sooner (${b[k]}, against ${a[k]})`);
-      }
-    }
-    return parts.join('; ') + '.';
+    // Together: the team's depth is the result (the headline), nobody wins.
+    const given = team?.revives.length ?? 0;
+    const parts = [team?.perished ? 'Perished together' : '', given ? `${given === 1 ? 'one life' : `${given} lives`} passed between you` : ''].filter(Boolean);
+    const line = parts.join('; ');
+    return line ? `${line[0].toUpperCase()}${line.slice(1)}.` : '';
   });
-  const listOf = (xs: number[]) => (xs.length > 1 ? `${xs.slice(0, -1).join(', ')} and ${xs.at(-1)}` : `${xs[0]}`);
+  /** Delve together: the zone the team reached, in its colour. */
+  const zone = $derived(team ? { name: zoneAt(team.depth), accent: accentAt(team.depth) } : null);
 
   // Delve: dare someone to go deeper.
   let shared = $state(false);
   async function shareDepth() {
-    const me = session.myPlayerId;
-    const mine = solo ? winner : s.players.find((p) => p.id === me);
-    if (!mine) return;
-    const text = shareText(depthOf(mine.id));
+    if (!canShare) return;
+    // Alone, your depth; together, the team's.
+    const text = team
+      ? `We reached depth ${team.depth} in Delve together, can you beat us? ${new URL(SITE_URL).host}/?${DELVE_LINK_PARAM}`
+      : shareText(winner ? depthOf(winner.id) : s.round);
     try {
       if (matchMedia('(pointer: coarse)').matches && navigator.share) await navigator.share({ text });
       else {
@@ -112,7 +108,10 @@
       /* dismissed */
     }
   }
-  const canShare = $derived(!!run && (solo || (!!session.myPlayerId && s.players.some((p) => p.id === session.myPlayerId))));
+  // Only a delver shares a depth: on this device, the one who delved alone; online, a player of the run (never someone watching).
+  const canShare = $derived(
+    !!run && (session.mode === 'local' ? solo : !!session.myPlayerId && s.players.some((p) => p.id === session.myPlayerId)),
+  );
 
   let canvas: HTMLCanvasElement;
   let crown = $state<HTMLElement>();
@@ -228,16 +227,23 @@
 <div class="over" class:delve={!!run} class:deeper>
   <p class="kicker" in:fly={{ y: -10, duration: 600 }}>{kicker}</p>
   {#if winner}
-    <div class="crown" class:fallen={solo} bind:this={crown} in:scale={{ start: 0.4, duration: 900, delay: 200 }}>
+    <div class="crown" class:fallen={!!run} bind:this={crown} in:scale={{ start: 0.4, duration: 900, delay: 200 }}>
       <!-- Delve: the deeper the run went, the colder the circle. -->
       <ArcaneCircle
         size="212px"
-        color={run && depthOf(winner.id) >= BLUE_FROM
-          ? `color-mix(in srgb, #a9bfdc ${Math.round(Math.min(1, 0.15 + ((depthOf(winner.id) - BLUE_FROM) / 16) * 0.85) * 100)}%, #f1d99b)`
+        color={run && endDepth >= BLUE_FROM
+          ? `color-mix(in srgb, #a9bfdc ${Math.round(Math.min(1, 0.15 + ((endDepth - BLUE_FROM) / 16) * 0.85) * 100)}%, #f1d99b)`
           : `color-mix(in srgb, ${playerColor(winner.hue)}, #f1d99b 45%)`}
         strength={run ? (deeper ? 0.42 : 0.3) : iLost ? 0.35 : 0.6}
       />
-      <Avatar name={winner.name} hue={winner.hue} size={110} />
+      {#if team}
+        <!-- Together: the whole team in the circle, perished side by side. -->
+        <span class="team n{teamFaces.length}">
+          {#each teamFaces as p (p.id)}<Avatar name={p.name} hue={p.hue} size={teamFaces.length > 2 ? 54 : 64} />{/each}
+        </span>
+      {:else}
+        <Avatar name={winner.name} hue={winner.hue} size={110} />
+      {/if}
     </div>
     <h1 bind:this={title} in:fly={{ y: 20, duration: 700, delay: 500 }}>
       <span class="shade" aria-hidden="true">{headline}</span>
@@ -246,6 +252,7 @@
     <p class="sub muted" in:fly={{ y: 10, duration: 700, delay: 700 }}>
       {#if run}
         {delveSub}{#if run.mixed}{delveSub ? ' ' : ''}Finished under newer rules.{/if}
+        {#if zone}<span class="zone" style:--accent={zone.accent}>{zone.name}</span>{/if}
       {:else}
         {winner.score} {winner.score === 1 ? 'point' : 'points'} after {s.round} {s.settings.mode === 'race' ? (s.round === 1 ? 'question' : 'questions') : s.round === 1 ? 'round' : 'rounds'}
         {#if s.deathmatch}· won the deathmatch in round {s.deathmatch.round}{/if}
@@ -255,11 +262,23 @@
 
   <ol class="standings panel" bind:this={standingsEl} use:backdropShadow={{ fill: 'linear' }} in:fly={{ y: 30, duration: 700, delay: 900 }}>
     {#each standings as p, i (p.id)}
-      <li class:first={rank[i] === 1} in:fly={{ x: -20, duration: 400, delay: 1100 + i * 100 }}>
-        <span class="rank">{rank[i]}</span>
+      {@const row = team?.players.find((r) => r.id === p.id)}
+      <li class:first={!team && rank[i] === 1} class:delver={!!row} in:fly={{ x: -20, duration: 400, delay: 1100 + i * 100 }}>
+        {#if !team}<span class="rank">{rank[i]}</span>{/if}
         <Avatar name={p.name} hue={p.hue} size={30} />
+        {#if row}
+          <!-- Together: what each of them lost, gave and was given; their number is where they last perished. -->
+          <span class="name">
+            <PlayerName name={p.name} />{#if p.id === session.myPlayerId && session.mode !== 'local'}<em>&nbsp;(you)</em>{/if}
+            <span class="detail">{delverText(row)}</span>
+          </span>
+          <span class="pts depth" title={row.lives ? 'Still standing' : `Perished at depth ${row.depth}`}>{row.depth}</span>
+        {:else}
         <span class="name"><PlayerName name={p.name} /></span>
-        {#if run}
+        {/if}
+        {#if team}
+          <!-- Its depth is beside the name, above. -->
+        {:else if run}
           <span class="pts depth" title="Perished at depth {depthOf(p.id)}">{depthOf(p.id)}</span>
         {:else}
           <span class="pts">{p.score}</span>
@@ -277,7 +296,7 @@
     {/if}
     {#if canShare}
       <span class="share">
-        <button class="btn ghost" onclick={shareDepth} aria-label="Share your depth" title="Share your depth">
+        <button class="btn ghost" onclick={shareDepth} aria-label={team ? "Share the team's depth" : 'Share your depth'} title={team ? "Share the team's depth" : 'Share your depth'}>
           {#if shared}
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
           {:else}
@@ -417,6 +436,51 @@
   /* Alone, the fallen delver's portrait has lost its colour. */
   .crown.fallen :global(.avatar) {
     filter: grayscale(0.75) brightness(0.8) drop-shadow(0 0 22px rgba(169, 191, 220, 0.25));
+  }
+  /* Together: the team's faces in the circle, two side by side, three or four in a cluster. */
+  .team {
+    display: grid;
+    grid-template-columns: repeat(2, auto);
+    justify-content: center;
+    align-items: center;
+    gap: 4px;
+    width: 110px;
+    height: 110px;
+    place-content: center;
+  }
+  .team.n1 {
+    grid-template-columns: auto;
+  }
+  .team.n3 > :global(:first-child) {
+    grid-column: 1 / -1;
+    justify-self: center;
+  }
+  .crown.fallen .team :global(.avatar) {
+    filter: grayscale(0.75) brightness(0.8);
+  }
+  .zone {
+    display: block;
+    margin-top: 0.5rem;
+    font-family: var(--font-display);
+    font-style: normal;
+    font-size: 0.78rem;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--accent);
+    text-shadow: 0 0 12px color-mix(in srgb, var(--accent), transparent 60%);
+  }
+  .detail {
+    display: block;
+    font-size: 0.85rem;
+    font-style: italic;
+    color: var(--muted);
+  }
+  .standings li.delver .name em {
+    color: var(--muted);
+    font-size: 0.85em;
+  }
+  .standings li.delver .pts {
+    font-family: var(--font-cinzel);
   }
   .sub {
     margin: 0.4rem 0 1.8rem;

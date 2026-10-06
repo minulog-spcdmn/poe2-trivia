@@ -14,7 +14,7 @@
   import { deathmatchIntro, deathmatchMood, gameStart, turnBanner } from '../lib/fx/moments';
   import { portal } from '../lib/portal';
   import { phone } from '../lib/layout';
-  import { delveDepth, fellAt, isGroupRun, questionTimer } from '../lib/delve';
+  import { REVIVE_FROM, delveDepth, fellAt, isGroupRun, livesOf, questionTimer, reviveProblem, standingIds } from '../lib/delve';
   import { delveChange } from '../lib/difficultyText';
   import { accentAt, milestoneAt } from '../lib/descent';
   import { zoneAt } from '../lib/zoneSigils';
@@ -90,8 +90,9 @@
 
   // One colour for the banner's rules and glow and for its effects, which can't
   // read CSS variables (so the race colour is --unique-hi written out).
-  const bannerColor = $derived(dm ? '#e0553f' : race ? '#e08a44' : playerColor(active.hue));
-  const bannerBig = $derived(race || mine);
+  // Delve together has no player on turn: the banner takes the depth's colour.
+  const bannerColor = $derived(dm ? '#e0553f' : race ? '#e08a44' : run && group ? accentAt(depth) : playerColor(active.hue));
+  const bannerBig = $derived(race || mine || group);
 
   /**
    * Svelte action: the turn banner's entrance. Runs once per turn (the stage is
@@ -114,7 +115,7 @@
   const bannerTitle = $derived(
     race
       ? `Question ${s.turnCount + 1}`
-      : run && !group
+      : run
         ? `Depth ${depth}`
         : mine && !local
           ? 'Your turn'
@@ -124,36 +125,41 @@
   // Delve: the seconds the question started with (a find's, a blasted card's or
   // the depth's), never read off the deadline, which a burning flare moves on.
   const seconds = $derived(run ? questionTimer(s) : q?.deadline ? Math.round((q.deadline - (q.clockAt ?? q.askedAt)) / 1000) : 0);
-  // Delve: the line over the banner says what just got harder (and, together, how deep).
+  // Delve: the line over the banner says what just got harder.
   const change = $derived(run ? delveChange(depth) : null);
-  const kicker = $derived.by(() => {
-    if (!run) return '';
-    const parts: string[] = [];
-    if (run.lastStanding && group) parts.push('Last one standing');
-    if (group) parts.push(`Depth ${depth}`);
-    if (change) parts.push(change);
-    return parts.join(' • ');
-  });
+  const kicker = $derived(change ?? '');
   // Short timers only sound urgent near the end.
   const warnFrom = $derived(run ? Math.max(3, Math.min(5, Math.round(seconds * 0.35))) : 5);
 
-  // Delve: the countdown to a card being picked (or a life lost), on every device.
-  let hostNow = $state(session.hostNow());
-  $effect(() => {
-    if (!run?.pickBy || s.phase !== 'choosing') return;
-    hostNow = session.hostNow();
-    const id = setInterval(() => (hostNow = session.hostNow()), 500);
-    return () => clearInterval(id);
+  // Delve together: when the vote closes, its draw plays out on the cards
+  // (ChooseCategory) before the question shows. Only on a screen that saw the
+  // vote: one joining or refreshing into the question goes straight to it.
+  // Set before the DOM updates, so the cards stay up rather than being
+  // swapped for the question and back.
+  let raffle = $state<number | null>(null);
+  let phaseSeen = '';
+  let raffleTimer: ReturnType<typeof setTimeout> | null = null;
+  $effect.pre(() => {
+    const key = `${s.turnCount}:${s.phase}`;
+    const was = phaseSeen;
+    phaseSeen = key;
+    if (!run || !group || s.phase !== 'question' || !s.question) {
+      if (s.phase !== 'question') raffle = null;
+      return;
+    }
+    if (was === `${s.turnCount}:choosing` && untrack(() => raffle) === null) {
+      const qid = s.question.askedAt;
+      raffle = qid;
+      // Should the draw never say it is done, the question shows anyway.
+      if (raffleTimer) clearTimeout(raffleTimer);
+      raffleTimer = setTimeout(() => raffle === qid && (raffle = null), 4000);
+    }
   });
-  const pickLeft = $derived(run?.pickBy && s.phase === 'choosing' ? Math.max(0, Math.ceil((run.pickBy - hostNow) / 1000)) : 0);
-  const pickLine = $derived.by(() => {
-    if (!run?.pickBy || s.phase !== 'choosing' || !active) return '';
-    if (!active.connected && run.excused.includes(active.id) && hostNow < run.graceUntil)
-      return `Waiting for ${active.name} after the host's reload; ${pickLeft}s left.`;
-    if (!active.connected) return `${active.name} is disconnected; they lose a life in ${pickLeft}s.`;
-    if (!mine && pickLeft <= 10) return `A card is chosen for ${active.name} in ${pickLeft}s.`;
-    return '';
+  $effect(() => () => {
+    if (raffleTimer) clearTimeout(raffleTimer);
   });
+  const drawing = $derived(raffle !== null && raffle === s.question?.askedAt && s.phase === 'question');
+
   // Delve: a mark at the start of a depth worth it (a new zone, the last one
   // standing, a new best), engraved over the head of the stage for a few
   // seconds. Never on a rejoin or the first depth: only when the run is seen
@@ -162,7 +168,6 @@
   let card = $state<Card | null>(null);
   let cardTimer: ReturnType<typeof setTimeout> | null = null;
   let depthSeen = '';
-  let standingSeen = 0;
   /**
    * How the mark is drawn (lib/zoneMark): 'medallion' (two seals with the
    * name's plate slung between them), 'nameplate' (the cards' nameplate),
@@ -184,10 +189,7 @@
     if (key === depthSeen) return;
     const deeper = depthSeen.startsWith(`${run.startedAt}:`);
     depthSeen = key;
-    if (!deeper) {
-      standingSeen = run.lastStanding ? run.startedAt : 0;
-      return;
-    }
+    if (!deeper) return;
     untrack(() => {
       descended();
       // Tinted by the zone it opens (the depth's colour on the header), bearing its sigil and its ornament.
@@ -195,14 +197,10 @@
       const name = milestoneAt(depth);
       const sigil = zoneAt(depth);
       const best = session.bestAtStart;
-      const stand = run.lastStanding && standingSeen !== run.startedAt ? s.players.find((p) => p.id === run.lastStanding!.id) : null;
       const turn = s.turnCount;
       const change = delveChange(depth);
       let next: Card | null = null;
-      if (stand) {
-        standingSeen = run.startedAt;
-        next = { key, turn, title: 'Last one standing', sigil, accent, label: `Last one standing: ${stand.name} delves on alone.` };
-      } else if (name) next = { key, turn, title: name, sigil, accent, label: `Depth ${depth}: ${name}.${change ? ` ${change}.` : ''}` };
+      if (name) next = { key, turn, title: name, sigil, accent, label: `Depth ${depth}: ${name}.${change ? ` ${change}.` : ''}` };
       else if (!group && best !== null && depth === best + 1)
         next = { key, turn, title: 'Deeper than ever', sigil, accent, label: `Deeper than ever: depth ${depth}, past your best of ${best}.` };
       if (!next) return;
@@ -225,11 +223,20 @@
   /** Reduced motion, or the effects off: the mark isn't drawn, it simply fades in. */
   const quiet = () => matchMedia('(prefers-reduced-motion: reduce)').matches || document.documentElement.hasAttribute('data-still');
 
-  const myFall = $derived(session.fallen && session.myPlayerId ? fellAt(s, session.myPlayerId) : null);
+  /** Online Delve: where you perished, while the run goes on without you (someone still stands). */
+  const myFall = $derived(session.perished && session.myPlayerId && standingIds(s).length ? fellAt(s, session.myPlayerId) : null);
+  /** Delve together: a teammate who stands could still give you one of their lives. */
+  const canBeRevived = $derived(group && myFall !== null && s.players.some((p) => p.id !== session.myPlayerId && livesOf(s, p.id) >= REVIVE_FROM));
+  /** Delve together: teammates you could give one of your lives right now (between questions). */
+  const revivable = $derived.by(() => {
+    const me = session.myPlayerId;
+    if (!group || !me || session.mode === 'local') return [];
+    return s.players.filter((p) => reviveProblem(s, me, p.id) === null);
+  });
 </script>
 
 {#snippet timer()}
-  {#if q?.deadline || (run && q && s.phase === 'question')}
+  {#if !drawing && (q?.deadline || (run && q && s.phase === 'question'))}
     {#key q.askedAt}
       <TimerRing deadline={q.deadline} total={seconds} stopped={s.phase === 'reveal'} {warnFrom} />
     {/key}
@@ -288,8 +295,8 @@
           {/if}
         </div>
 
-        {#if s.phase === 'choosing'}
-          <ChooseCategory />
+        {#if s.phase === 'choosing' || drawing}
+          <ChooseCategory drawn={drawing ? (s.question?.category ?? null) : null} ondrawn={() => (raffle = null)} />
         {:else}
           <!-- A new question on the same turn (the host asked another) starts fresh. -->
           {#key s.question?.askedAt}
@@ -297,11 +304,16 @@
           {/key}
         {/if}
 
-        {#if pickLine}
-          <p class="delve-line muted" transition:fade>{pickLine}</p>
-        {/if}
         {#if myFall !== null}
-          <p class="delve-line muted">You perished at depth {myFall}; watching.</p>
+          <p class="delve-line muted">
+            You perished; watching.{#if canBeRevived}{' '}A teammate can give you a life between questions.{/if}
+          </p>
+        {:else if revivable.length && (s.phase === 'choosing' || s.phase === 'reveal')}
+          <p class="delve-line revive-hint" transition:fade>
+            {revivable.length === 1
+              ? `Tap + on ${revivable[0].name}'s entry to give them a life.`
+              : 'Tap + on an entry to give a life.'}
+          </p>
         {/if}
         {#if session.isHost && !local && !race && !run && !active.connected && s.phase !== 'reveal'}
           <div class="skip" transition:fade>
@@ -419,6 +431,9 @@
     text-align: center;
     font-size: 0.95rem;
     font-style: italic;
+  }
+  .revive-hint {
+    color: #f0b6a8;
   }
   .banner {
     display: flex;

@@ -42,6 +42,14 @@ export const DEPTH = { lp: 1300, rate: 0.82, gain: 5, send: 0.45 };
  */
 export const RUMBLE = { file: 'rumble', gain: -50, abyss: 7, lp: 140, breath: 0.4, period: 13 };
 
+/**
+ * Delve: an Azurite Vein caving in, generated too (lib/sound.ts caveIn): a
+ * crack, a deep rumble, heavy thumps and a collapse of stones settling, over
+ * `seconds`; `rumble` and `stones` set how loud each is against the other. Played by the
+ * caveIn moment below.
+ */
+export const CAVE_IN = { file: 'cave-in', seconds: 1.3, rumble: 6, stones: 4 };
+
 export const MOMENTS: Record<Sfx, Moment> = {
   hover: {
     soften: 5.5,
@@ -275,6 +283,20 @@ export const MOMENTS: Record<Sfx, Moment> = {
     layers: [
       { file: 'burn-fuse', gain: -27, rate: 1.2, delay: 0, hp: 380, lp: 14000, send: 0.25 },
       { file: 'burn-sparkler', gain: -35, rate: 1.35, delay: 90, hp: 900, lp: 15000, send: 0.2 },
+    ],
+  },
+  // An Azurite Vein caves in, for two losses at once (in place of a lost
+  // life's sound, twice): the generated collapse (CAVE_IN), with the gate
+  // slam slowed into the rock giving way, and a low thud under it. Heavy,
+  // but over in about a second; drier than the blast, as it is close.
+  caveIn: {
+    soften: 5,
+    varyPitch: 0.03,
+    varyGain: 0.5,
+    layers: [
+      { file: 'cave-in', gain: -15, rate: 1, delay: 0, hp: 25, lp: 7000, send: 0.4 },
+      { file: 'layer-sub-2', gain: -17, rate: 0.62, delay: 0, hp: 20, lp: 900, send: 0.4 },
+      { file: 'start-7', gain: -30, rate: 0.6, delay: 0, hp: 60, lp: 2400, send: 0.35 },
     ],
   },
   // …then the blast: a deep boom, the gate slam's crack and its echo off the

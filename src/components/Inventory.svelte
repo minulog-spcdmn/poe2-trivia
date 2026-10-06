@@ -3,29 +3,30 @@
   // a small engraving with its count: flares and dynamite. (Azurite Wards and
   // their shards are on the phial itself, encasing its chambers.) A `moment`
   // plays on them: a find landing, a flare burning, a stick of dynamite going
-  // off.
+  // off. A find on its way (`expect`: its sparks flying to it) has its place
+  // kept, unseen, so they have somewhere to land.
   import type { Inventory } from '../lib/delve';
   import type { InventoryMoment } from '../lib/inventoryArt';
   import ItemGlyph from './ItemGlyph.svelte';
 
-  let { inv, moment = null }: { inv: Inventory; moment?: InventoryMoment | null } = $props();
+  let { inv, moment = null, expect = null }: { inv: Inventory; moment?: InventoryMoment | null; expect?: 'flare' | 'dynamite' | null } = $props();
 
-  const counts = $derived(inv.flares > 0 || inv.dynamite > 0 || moment?.kind === 'burn' || moment?.kind === 'blast');
+  const counts = $derived(inv.flares > 0 || inv.dynamite > 0 || moment?.kind === 'burn' || moment?.kind === 'blast' || !!expect);
 </script>
 
 {#if counts}
   <span class="inventory" aria-hidden="true">
-    {#if inv.flares > 0 || moment?.kind === 'burn'}
-      <span class="count flare" class:fresh={moment?.kind === 'flare'} class:burning={moment?.kind === 'burn'} data-pip="flare">
+    {#if inv.flares > 0 || moment?.kind === 'burn' || expect === 'flare'}
+      <span class="count flare" class:fresh={moment?.kind === 'flare'} class:burning={moment?.kind === 'burn'} class:kept={expect === 'flare' && inv.flares === 0} data-pip="flare">
         {#key moment?.kind === 'flare' || moment?.kind === 'burn' ? moment.key : 0}
           <span class="grow"><ItemGlyph kind="flare" /></span>
         {/key}
         <b>{inv.flares}</b>
       </span>
     {/if}
-    {#if inv.dynamite > 0 || moment?.kind === 'blast'}
+    {#if inv.dynamite > 0 || moment?.kind === 'blast' || expect === 'dynamite'}
       <!-- A stick going off: it shudders, flares and is gone, the count already one down. -->
-      <span class="count dynamite" class:fresh={moment?.kind === 'dynamite'} class:lit={moment?.kind === 'blast'} data-pip="dynamite">
+      <span class="count dynamite" class:fresh={moment?.kind === 'dynamite'} class:lit={moment?.kind === 'blast'} class:kept={expect === 'dynamite' && inv.dynamite === 0} data-pip="dynamite">
         {#key moment?.kind === 'dynamite' || moment?.kind === 'blast' ? moment.key : 0}
           <span class="grow"><ItemGlyph kind="dynamite" /></span>
         {/key}
@@ -55,6 +56,10 @@
     display: inline-flex;
     align-items: center;
     gap: 1px;
+  }
+  /* Kept for a find on its way. */
+  .count.kept {
+    visibility: hidden;
   }
   .count b {
     font-family: var(--font-cinzel);

@@ -99,23 +99,23 @@ test('every depth that gets harder in Delve says how', async () => {
   assert.equal(delveChange(DELVE_LADDER.find((r) => r.text === 'Seven seconds')!.depth), 'Seven seconds');
 });
 
-test('the notes under a find say what its item does, that the question is harder and what a miss costs; never a depth', async () => {
+test('the notes under a find say what its item does and what a miss costs, briefly; never a depth, nor that it is harder (its card says so)', async () => {
   const { findNote, FIND_TEXT, caveInLabel } = await import('../src/lib/difficultyText.ts');
   const none = { wards: 0, flares: 0, dynamite: 0, shards: 0 };
   assert.equal(FIND_TEXT.azurite.tag, 'Answer fast for an Azurite Ward');
   assert.equal(
     findNote('azurite', none),
-    'A ward takes your next lost life instead. Right in the second half of the time, you get a shard; two make a ward. The question is a bit harder, and a wrong answer loses two lives.',
+    'A ward takes a lost life for you. Slower, a shard; two make a ward. A miss costs two lives.',
   );
-  assert.match(findNote('azurite', { ...none, shards: 1 }), /you get a shard; it makes a ward with yours\./);
-  assert.equal(findNote('azurite', { ...none, wards: 3 }), 'You can carry no more. The question is a bit harder, and a wrong answer loses two lives.');
+  assert.match(findNote('azurite', { ...none, shards: 1 }), /a shard; it makes a ward with yours\./);
+  assert.equal(findNote('azurite', { ...none, wards: 3 }), 'You can carry no more. A miss costs two lives.');
   assert.equal(FIND_TEXT.flare.tag, 'Answer right for a flare');
-  assert.equal(findNote('flare', none), 'When your time runs out, it burns and gives you five more seconds. The question is a bit harder.');
-  assert.equal(findNote('flare', { ...none, flares: 3 }), 'You can carry no more. The question is a bit harder. Your flares stay unused on it.');
+  assert.equal(findNote('flare', none), 'It burns when your time runs out: five more seconds.');
+  assert.equal(findNote('flare', { ...none, flares: 3 }), 'You can carry no more. Your flares stay unused on it.');
   assert.equal(FIND_TEXT.dynamite.tag, 'Answer right for dynamite');
   assert.equal(
     findNote('dynamite', none),
-    'Halfway through your time, it clears the picture and blows away half the wrong answers. The question is a bit harder.',
+    'At half time, it clears the picture and half the answers, all of them wrong.',
   );
   // What the player carries won't go off on a find's question, and the note says so.
   assert.match(findNote('dynamite', { ...none, flares: 1 }), / Your flare stays unused on it\.$/);
@@ -124,13 +124,10 @@ test('the notes under a find say what its item does, that the question is harder
   assert.match(findNote('dynamite', { wards: 3, flares: 3, dynamite: 3, shards: 0 }), /^You can carry no more\./);
   assert.equal(
     FIND_TEXT.azurite.others,
-    'An Azurite Vein: a harder question, for an Azurite Ward if answered fast or a shard if slower; a wrong answer loses two lives.',
+    'An Azurite Vein: a ward if answered fast, a shard if slower. A miss costs two lives.',
   );
-  assert.equal(FIND_TEXT.flare.others, 'A Flare Cache: a harder question, for a flare that gives five more seconds when the time runs out.');
-  assert.equal(
-    FIND_TEXT.dynamite.others,
-    'A Dynamite Cache: a harder question, for dynamite that clears the picture and blows away half the wrong answers at half time.',
-  );
+  assert.equal(FIND_TEXT.flare.others, 'A Flare Cache: a flare, for five more seconds when the time runs out.');
+  assert.equal(FIND_TEXT.dynamite.others, 'A Dynamite Cache: dynamite, to clear the picture and half the answers at half time.');
   assert.equal(caveInLabel('azurite'), 'A wrong answer loses two lives');
   // Plain words: no depths, no clocks in seconds (only the flare's five), no bullets in these body-font sentences.
   const all = [
@@ -177,6 +174,6 @@ test("the lobby's finds: where they start and what each gives, in a line", async
   assert.deepEqual(FIND_GIVES, {
     azurite: 'Answer fast for a ward: it saves a life. A miss costs two lives.',
     flare: 'A flare: five more seconds when your time runs out.',
-    dynamite: 'Dynamite: at half time, it clears the picture and half the wrong answers.',
+    dynamite: 'Dynamite: at half time, it clears the picture and half the answers, all of them wrong.',
   });
 });
