@@ -29,7 +29,11 @@ import {
   hallTurn,
   dealtDeeper,
   magmaCooling,
+  magmaCoolingOf,
+  magmaGoesOut,
   magmaHeat,
+  packEnv,
+  ENV_UNIFORM,
   MAGMA_DIM,
   measuredAt,
   lightAt,
@@ -44,6 +48,10 @@ import {
 } from '../src/lib/descent.ts';
 import { CALM_EMBERS, COLUMNS, EMBERS, Embers, GLINT_COLOR, GLINTS, PALETTE, ROWS, SIZE_STRIDE, SLOTS, TILES, WALL_GLINTS } from '../src/lib/backdropEmbers.ts';
 import { DELVE_BLUE_FROM } from '../src/lib/fx/streaks.ts';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { SHIPPED, setBackdrops } from '../src/lib/backdrops.ts';
+import { cloneData } from '../src/lib/backdropData.ts';
 
 /** Every number in a look, in a fixed order. */
 const numbers = (l: Look) => Object.values(l).flatMap((v) => (Array.isArray(v) ? v : [v]));
@@ -222,6 +230,67 @@ test('over the Magma Fissure\'s last depths the magma cools, and has cooled as t
   for (let k = STRATA.length + 1; k < 200; k++) {
     const goes = lookOf(k - 1).env[magma] > 0 && lookOf(k).env[magma] === 0;
     assert.equal(magmaCooling(k, 0.9), goes ? hallTurn(0.9) : 0, `stratum ${k}`);
+  }
+});
+
+test("the zone whose look has magma cools over its last depths, keyed off its look, and the shader's uEnv gets it", () => {
+  const magma = ENVIRONMENTS.indexOf('magma');
+  // Found by its look, not by its place: the zone whose magma goes out (in backdrops.json as it stands, the Magma Fissure).
+  const zone = STRATA.findIndex((_, k) => magmaGoesOut(k));
+  assert.ok(zone >= 0, 'a zone whose magma goes out');
+  assert.equal(STRATA[zone].name, 'Magma Fissure');
+  assert.ok(lookOf(zone).env[magma] > 0 && !(lookOf(zone + 1).env[magma] > 0));
+  const first = 10 * zone + 1;
+  const last = first + 9;
+  const env = new Float32Array(ENV_UNIFORM);
+  /** uEnv as the backdrop sends it at depth d, its magma clock at 42 s. */
+  const uEnv = (d: number) => Array.from(packEnv(env, descent(d), 42));
+  // Three vec4s, the shader's uEnv[3]: the environments, then the cooling in uEnv[2].z and the clock in uEnv[2].w, where the magma reads them.
+  assert.equal(ENV_UNIFORM, 12);
+  assert.equal(ENV, 10);
+  const shader = readFileSync(join(import.meta.dirname, '..', 'src', 'lib', 'backdrop.ts'), 'utf8');
+  assert.match(shader, /uniform vec4 uEnv\[3\];/);
+  assert.match(shader, /vec4 e0 = uEnv\[0\];[\s\S]*vec4 e2 = uEnv\[2\];/);
+  assert.match(shader, /if \(e0\.y > 0\.0\) \{\s*float e = e0\.y;\s*float cool = e2\.z;\s*float ft = e2\.w;/, 'the magma (environment 1, uEnv[0].y) reads its cooling and clock');
+  assert.equal(magma, 1);
+  assert.match(shader, /gl!\.uniform4fv\(uEnv, packEnv\(env, scene, /, 'the backdrop sends packEnv as it is');
+  // Hot through the zone's first depths.
+  for (let d = first; d < first + 3; d++) {
+    const u = uEnv(d);
+    assert.equal(u[ENV], 0, `cooling at ${d}`);
+    assert.equal(u[magma], lookOf(zone).env[magma], `the magma all there at ${d}`);
+    assert.equal(u[ENV + 1], 42);
+  }
+  // Then cooling depth by depth, from 0 to near 1 at its last, the magma still there as it does.
+  let prev = 0;
+  for (let d = first + 3; d <= last; d++) {
+    const u = uEnv(d);
+    const { stratum, turn } = strataAt(d);
+    assert.ok(Math.abs(u[ENV] - magmaCooling(stratum, turn)) < 1e-6, `uEnv[2].z at ${d}`);
+    assert.ok(u[ENV] > prev, `cooling at ${d}: ${u[ENV]} after ${prev}`);
+    assert.ok(u[magma] > 0.25, `the magma still shows at ${d} (${u[magma].toFixed(2)})`);
+    prev = u[ENV];
+  }
+  assert.ok(prev > 0.85, `cooled to ${prev.toFixed(2)} at depth ${last}`);
+  assert.ok(uEnv(last + 0.9)[ENV] > 0.98, 'all but cooled as the next zone arrives');
+  // And the magma, cooled, has gone as the next zone is announced.
+  assert.equal(uEnv(last + 1)[magma], 0);
+  assert.equal(uEnv(last + 1)[ENV], 0);
+  // A zone without magma never cools, whatever way its embers move (the Mines' rise the magma's way).
+  for (let k = 0; k < STRATA.length; k++) if (!magmaGoesOut(k)) assert.equal(magmaCoolingOf(k, k + 1, 0.9), 0, STRATA[k].name);
+  // Keyed off the looks: with the magma moved to another zone, that one cools and the Magma Fissure doesn't.
+  const draft = cloneData(SHIPPED);
+  draft.zones[zone].look.env[magma] = 0;
+  draft.zones[3].look.env[magma] = 0.7;
+  draft.zones[3].measured = false;
+  draft.zones[zone].measured = false;
+  setBackdrops(draft);
+  try {
+    assert.ok(!magmaGoesOut(zone) && magmaGoesOut(3));
+    assert.equal(packEnv(env, descent(10 * zone + 10), 0)[ENV], 0);
+    assert.ok(packEnv(env, descent(40), 0)[ENV] > 0.85);
+  } finally {
+    setBackdrops(SHIPPED);
   }
 });
 

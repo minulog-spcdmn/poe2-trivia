@@ -208,15 +208,16 @@
   }
   .env-frost {
     background:
-      radial-gradient(16% 60% at 0% 40%, rgba(150, 190, 235, 0.16), transparent),
-      radial-gradient(14% 50% at 100% 30%, rgba(150, 190, 235, 0.14), transparent),
-      radial-gradient(50% 10% at 50% 0%, rgba(150, 190, 235, 0.12), transparent);
+      radial-gradient(14% 60% at 0% 40%, rgba(150, 176, 208, 0.12), transparent),
+      radial-gradient(12% 50% at 100% 30%, rgba(150, 176, 208, 0.11), transparent),
+      radial-gradient(50% 9% at 50% 0%, rgba(150, 176, 208, 0.09), transparent),
+      radial-gradient(70% 16% at 40% 100%, rgba(116, 140, 172, 0.08), transparent);
   }
   .env-spores {
     background:
-      radial-gradient(9% 7% at 8% 86%, rgba(90, 230, 150, 0.18), transparent),
-      radial-gradient(7% 6% at 88% 78%, rgba(150, 255, 140, 0.15), transparent),
-      radial-gradient(6% 5% at 30% 97%, rgba(90, 230, 150, 0.14), transparent);
+      radial-gradient(16% 12% at 6% 88%, rgba(84, 140, 130, 0.12), transparent),
+      radial-gradient(14% 10% at 92% 80%, rgba(84, 140, 130, 0.1), transparent),
+      radial-gradient(22% 9% at 34% 100%, rgba(84, 140, 130, 0.08), transparent);
   }
   .env-shafts {
     background: repeating-linear-gradient(-70deg, transparent 0 9%, rgba(255, 200, 110, 0.06) 13%, transparent 18% 27%);

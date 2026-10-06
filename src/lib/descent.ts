@@ -31,6 +31,9 @@ import { endgameAt, endgameName, onBackdrops, zones } from './backdrops.ts';
 
 export { ENV, ENVIRONMENTS, HALL_FROM, hallTurn, type Look };
 
+/** The magma among the environments (it cools as it goes out; see magmaCooling). */
+export const MAGMA = ENVIRONMENTS.indexOf('magma');
+
 /** The usual scene (outside Delve). */
 export const SURFACE: Look = {
   shade: [1, 1, 1],
@@ -81,10 +84,13 @@ export const SURFACE: Look = {
  *   a little thicker.
  * - Magma Fissure: vermilion and crimson smoke, wine and sienna above, the
  *   glow of the fissures orange; heavy slow embers, garnet in the walls.
- * - Frozen Hollow: azure and teal smoke, periwinkle and slate above, a pale
- *   ice glow; frost creeping in from the walls, ice motes drifting down.
- * - Fungal Caverns: moss and teal-green smoke, olive above with a mauve
- *   shadow drifting through, a pale green glow; spore light pulsing low.
+ * - Frozen Hollow: slate-blue and teal smoke, periwinkle above, a pale ice
+ *   glow; rime feathering in from the walls and the ceiling, glinting here
+ *   and there, pale light filtering down, a cold mist rolling low over the
+ *   floor, snow drifting down.
+ * - Fungal Caverns: pale olive and bone smoke in a damp dark; faint teal
+ *   bioluminescence breathing low along the walls and the floor, mycelial
+ *   threads catching its glow, a spore haze, spores hanging in the air.
  * - Vaal Outpost: gold and amber smoke, sand and terracotta above, dusty
  *   shafts of light from above on carved stone, gold dust sifting down.
  * - Abyssal Depths: violet and indigo smoke, magenta-plum above, a lilac
@@ -235,13 +241,18 @@ const IS_EMBER = KEYS.map((key) => EMBER_KEYS.has(key));
 /**
  * Writes stratum `a` turning `t` of the way into `b` into `out`: the embers
  * follow `t` itself; the light, smoke and features follow hallTurn(t). An
- * environment the two share stays as it is.
+ * environment the two share stays as it is. A magma that goes out (`a` has
+ * it, `b` none) cools first, in step with the hall (magmaCooling), and
+ * narrows away only after (1 - h^3 of it still there): so it is seen
+ * dimming to dull red and coming to a stop as the next stratum arrives,
+ * rather than all but gone by the time it has cooled.
  */
 function turnInto(out: Look, a: Look, b: Look, t: number): Look {
   const h = hallTurn(t);
   for (let k = 0; k < KEYS.length; k++) mixField(out as unknown as Fields, a as unknown as Fields, b as unknown as Fields, KEYS[k], IS_EMBER[k] ? t : h);
   out.lightK = mixLight(a.lightK, b.lightK, h);
   for (let i = 0; i < ENV; i++) out.env[i] = Math.max(a.env[i] + (b.env[i] - a.env[i]) * h, Math.min(a.env[i], b.env[i]));
+  if (a.env[MAGMA] > 0 && !(b.env[MAGMA] > 0)) out.env[MAGMA] = a.env[MAGMA] * (1 - h * h * h);
   return out;
 }
 
@@ -298,8 +309,10 @@ export const ENV_STEPS = [0, 0.25, 0.5, 0.75, 1];
 export const ENV_ADD: number[][] = [
   [0, 0.00189, 0.0068, 0.0113, 0.01353],
   [0, 0.00438, 0.00757, 0.01098, 0.01532],
-  [0, 0.00004, 0.00011, 0.00019, 0.00027],
-  [0, 0.00356, 0.0074, 0.01162, 0.01692],
+  // (The frost and the spores, rebuilt since, are worked out from what the
+  // shader draws, averaged over a fine grid and a few moments, until measured.)
+  [0, 0.00029, 0.00177, 0.00385, 0.00493],
+  [0, 0.00025, 0.00096, 0.00232, 0.00379],
   [0, 0.00283, 0.00918, 0.01471, 0.01831],
   [0, 0.00035, 0.00127, 0.00281, 0.00498],
   [0, 0, 0, 0, 0],
@@ -315,8 +328,8 @@ export const ENV_ADD: number[][] = [
 export const ENV_HALL: number[][] = [
   [1, 0.981, 0.962, 0.946, 0.928],
   [1, 0.985, 0.969, 0.971, 1.007],
-  [1, 1.043, 1.114, 1.198, 1.281],
-  [1, 1.004, 1.004, 1.004, 1.004],
+  [1, 1.015, 1.08, 1.15, 1.178],
+  [1, 1.013, 1.069, 1.102, 1.092],
   [1, 1.002, 1.004, 1.006, 1.007],
   [1, 0.986, 0.949, 0.886, 0.799],
   [1, 1.017, 1.067, 1.084, 1.139],
@@ -458,21 +471,36 @@ function closingAt(x: number, y: number, close: number) {
   return 1 - Math.exp(-(ax * ax + ay * ay));
 }
 
-/** The magma among the environments (it cools as it goes out; see magmaCooling). */
-const MAGMA = ENVIRONMENTS.indexOf('magma');
+/** Whether a look has magma (any of it shows). */
+const hasMagma = (look: Look) => look.env[MAGMA] > 0;
 /**
- * How far the magma has cooled (0 to 1) with the scene turning `turn` of the
- * way into stratum `stratum` (see strataAt): only as it goes out (the
- * stratum before has magma, this one none: the Magma Fissure's last depths
- * toward the Frozen Hollow), in step with its hall (hallTurn), so it has
- * cooled and stopped flowing as the next arrives. The backdrop draws its
- * glow turning from orange to dull red and dark, and its flow slowing to a
- * stop (lib/backdrop.ts); the embers burning in it slow too
- * (lib/emberMotion.ts).
+ * Whether stratum `k`'s magma goes out as the scene turns out of it: its
+ * look has magma and the next one's none (the Magma Fissure handing over
+ * to the Frozen Hollow, or a stratum past the zones that does the same).
+ * Read from the looks themselves, so it follows whichever zone the data
+ * gives magma.
  */
-export function magmaCooling(stratum: number, turn: number): number {
-  return stratum >= 1 && lookOf(stratum - 1).env[MAGMA] > 0 && lookOf(stratum).env[MAGMA] === 0 ? hallTurn(turn) : 0;
+export const magmaGoesOut = (k: number) => k >= 0 && hasMagma(lookOf(k)) && !hasMagma(lookOf(k + 1));
+/**
+ * How far stratum `k`'s magma has cooled (0 to 1) with the scene turning
+ * `turn` of the way into stratum `stratum` (see strataAt): only a magma
+ * that goes out (magmaGoesOut), as the scene turns out of its stratum (k
+ * is stratum - 1: the Magma Fissure's last depths toward the Frozen
+ * Hollow), in step with its hall (hallTurn), so it has cooled and stopped
+ * flowing as the next arrives; and all the way once the scene is past it.
+ */
+export function magmaCoolingOf(k: number, stratum: number, turn: number): number {
+  if (k > stratum - 1 || !magmaGoesOut(k)) return 0;
+  return k < stratum - 1 ? 1 : hallTurn(turn);
 }
+/**
+ * How far the magma the scene shows has cooled (0 to 1) with it turning
+ * `turn` of the way into stratum `stratum`: the stratum before's
+ * (magmaCoolingOf). The backdrop draws its glow turning from orange to
+ * dull red and dark, and its flow slowing to a stop (lib/backdrop.ts, from
+ * packEnv); the embers burning in it slow too (lib/emberMotion.ts).
+ */
+export const magmaCooling = (stratum: number, turn: number): number => magmaCoolingOf(stratum - 1, stratum, turn);
 /** How much of its glow the magma loses, cooled all the way. */
 export const MAGMA_DIM = 0.8;
 /** How bright the magma's glow is (its luma, 1 hot), cooled `cool` of the way: the backdrop dims it so, and the estimate below with it. */
@@ -481,6 +509,24 @@ export const magmaHeat = (cool: number) => 1 - MAGMA_DIM * cool;
 function heatAt(d: number) {
   const { stratum, turn } = strataAt(d);
   return magmaHeat(magmaCooling(stratum, turn));
+}
+
+/** The floats in the backdrop's uEnv (three vec4s): the environments, then the magma's cooling and its flow's clock. */
+export const ENV_UNIFORM = ENV + 2;
+/** Less of an environment than this is drawn as none. */
+const ENV_TRACE = 0.002;
+/**
+ * Writes the backdrop's uEnv for `scene` into `out` (ENV_UNIFORM floats;
+ * lib/backdrop.ts sends it as is): how much of each environment shows,
+ * four to a vec4 (the magma in uEnv[0].y), then the magma's cooling
+ * (magmaCooling; uEnv[2].z, which dims it and turns it dull red) and its
+ * flow's clock, `magmaClock` (uEnv[2].w).
+ */
+export function packEnv(out: Float32Array, scene: Pick<Descent, 'look' | 'stratum' | 'turn'>, magmaClock: number): Float32Array {
+  for (let i = 0; i < ENV; i++) out[i] = scene.look.env[i] < ENV_TRACE ? 0 : scene.look.env[i];
+  out[ENV] = magmaCooling(scene.stratum, scene.turn);
+  out[ENV + 1] = magmaClock;
+  return out;
 }
 
 /** The colours a look mixes in, 0 to 1 (estimateLuminance's scratch): haze, floor, glow, the smoke's five drifts, mist. */

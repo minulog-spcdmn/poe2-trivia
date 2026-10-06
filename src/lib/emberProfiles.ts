@@ -128,13 +128,14 @@ export const ZONE_MOTION: ZoneMotion[] = [
   // shivering in it, flickering; as the magma cools over its last depths
   // they slow.
   zone(motion({ name: 'embers rising on the heat', rise: 1.5, accel: 1, driftSpread: 0.04, sway: 0.8, swayRate: 1.2, shimmer: 2.5, flicker: 0.4, flickerRate: 1.3, cool: 0.7 })),
-  // Frozen Hollow: snow falling slowly, tumbling side to side, glinting as
-  // it turns.
-  zone(motion({ name: 'snow falling', spawn: 'above', rise: -0.5, drift: 0.04, driftSpread: 0.05, sway: 1.3, swayRate: 1.6, flicker: 0.35, flickerRate: 0.7 })),
-  // Fungal Caverns, their caps pulsing: spores hanging in the air, turning
-  // in small lazy curls, rising only very slightly on a faint warm current;
-  // their glow pulses slowly.
-  zone(motion({ name: 'spores hanging', spawn: 'anywhere', life: [14, 24], rise: 0.12, driftSpread: 0.04, curl: 24, curlRate: 0.06, tilt: 0.25, depth: 0.5, flicker: 0.3, flickerRate: 0.15 })),
+  // Frozen Hollow, cold and still: snow drifting down slowly on a faint
+  // draught, swaying lazily side to side as it falls, catching the light
+  // now and then as a flake turns.
+  zone(motion({ name: 'snow falling', spawn: 'above', rise: -0.28, drift: 0.06, driftSpread: 0.04, sway: 0.9, swayRate: 0.55, flicker: 0.25, flickerRate: 0.3 })),
+  // Fungal Caverns, their bioluminescence breathing: spores hanging in the
+  // damp air, all but still, turning in small slow curls and rising only
+  // very slightly; their glow swells and fades as slowly as the colonies'.
+  zone(motion({ name: 'spores hanging', spawn: 'anywhere', life: [16, 28], rise: 0.05, driftSpread: 0.03, curl: 14, curlRate: 0.04, tilt: 0.3, depth: 0.5, flicker: 0.35, flickerRate: 0.08 })),
   // Vaal Outpost: dust motes caught in the dusty gold shafts, drifting
   // slowly sideways and gently settling, catching the light now and then.
   zone(motion({ name: 'motes settling', spawn: 'anywhere', life: [14, 22], rise: -0.1, drift: 0.16, driftSpread: 0.04, sway: 0.25, swayRate: 0.4, flicker: 0.3, flickerRate: 0.12 })),

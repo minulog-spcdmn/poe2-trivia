@@ -134,16 +134,16 @@
         "spread": 0,
         "burst": 0,
         "eddy": 0,
-        "env": [0, 0, 0.45, 0, 0, 0, 0, 0, 0, 0],
+        "env": [0, 0, 0.8, 0, 0, 0, 0, 0, 0, 0],
         "accent": [116, 143, 255],
-        "lightK": 0.826
+        "lightK": 0.647
       },
       "motion": {
-        "profile": "cold motes drifting",
-        "speed": 1.05,
-        "rise": -0.08,
-        "drift": 0.17,
-        "turbulence": 1.14,
+        "profile": "snow falling",
+        "speed": 1,
+        "rise": -0.28,
+        "drift": 0.06,
+        "turbulence": 1,
         "swirl": 0
       }
     },
@@ -169,8 +169,8 @@
         "shadowK": 1.38,
         "mist": [95, 99, 72],
         "mistK": 0.07,
-        "ember": [1, 0.99, 0.38],
-        "core": [1, 1, 0.87],
+        "ember": [0.8, 0.9, 0.62],
+        "core": [0.96, 1, 0.88],
         "coreMix": 0.66,
         "crowd": 0.36,
         "speed": 0.25,
@@ -183,17 +183,17 @@
         "spread": 0,
         "burst": 0,
         "eddy": 0.92,
-        "env": [0, 0, 0, 0.6, 0, 0, 0, 0.42, 0, 0],
+        "env": [0, 0, 0, 1, 0, 0, 0, 0.42, 0, 0],
         "accent": [255, 253, 144],
-        "lightK": 0.429
+        "lightK": 0.383
       },
       "motion": {
-        "profile": "drawn into the eddies",
-        "speed": 1.1,
-        "rise": 0,
-        "drift": 0.03,
-        "turbulence": 1.06,
-        "swirl": 0.99
+        "profile": "spores hanging",
+        "speed": 1,
+        "rise": 0.05,
+        "drift": 0,
+        "turbulence": 1,
+        "swirl": 0
       }
     },
     {

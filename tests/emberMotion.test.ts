@@ -153,6 +153,32 @@ test("the sparks the magma's bursts throw up only ever rise, as its embers do", 
   assert.ok(up > 100 && down === 0, `up ${up}, down ${down}`);
 });
 
+test("a burst's sparks burn in the colour of the zone it belongs to, through its handover too (the Magma Fissure's red, never the Frozen Hollow's blue)", () => {
+  // The zone with bursts handing over to one without (in backdrops.json as it stands, the Magma Fissure to the Frozen Hollow).
+  const k = STRATA.findIndex((_, i) => lookOf(i).burst > 0.1 && i + 1 < STRATA.length && lookOf(i + 1).burst === 0);
+  assert.equal(STRATA[k].name, 'Magma Fissure');
+  const at = (EMBERS + GLINTS) * 4;
+  const near = (a: ArrayLike<number>, b: readonly number[]) => b.every((v, c) => Math.abs(a[c] - v) < 1e-6);
+  // At its first depth, and all through its handover (the scene already turning into the next zone).
+  for (const d of [10 * k + 1, 10 * k + 5, 10 * k + 8, 10 * k + 10]) {
+    const e = new Embers();
+    e.descend(descent(d));
+    e.step(0, W, H);
+    let seen = 0;
+    for (let f = 0; f < 1500; f++) {
+      e.step(DT, W, H);
+      for (let j = 0; j < SPARKS; j++) {
+        if (e.pos[at + j * 4 + 3] <= 0) continue;
+        const entry = Math.floor(e.pos[at + j * 4 + 2] / SIZE_STRIDE);
+        const halo = e.halo.slice(entry * 4, entry * 4 + 3);
+        assert.ok(near(halo, lookOf(k).ember), `depth ${d}: a spark in ${Array.from(halo, (v) => v.toFixed(2))}, not its zone's ${lookOf(k).ember}`);
+        seen++;
+      }
+    }
+    assert.ok(seen > 100, `depth ${d}: ${seen} sparks seen`);
+  }
+});
+
 /** Steps `e` for `frames` frames, calling `see` with each visible ember's place before and after (none that started a new life or came round again). */
 function watch(e: Embers, frames: number, see: (i: number, x: number, y: number, dx: number, dy: number, size: number, grow: number) => void) {
   for (let f = 0; f < frames; f++) {

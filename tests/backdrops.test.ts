@@ -40,8 +40,19 @@ test('a zone the corrections were measured with has exactly the look it had hard
     assert.equal(STRATA[k].look, z.look, 'STRATA reads the file');
     if (z.measured) assert.deepEqual(z.look, SHIPPED_380E372.looks[k], `${z.name} is marked measured, but its look has changed: set measured to false (or, measured again, put its new look in tests/fixtures/shipped-backdrops.json)`);
   });
-  // The motion profiles moved into lib/emberProfiles.ts as they were.
-  assert.deepEqual(JSON.parse(JSON.stringify([SURFACE_MOTION, ...ZONE_MOTION])), SHIPPED_380E372.motions);
+  // The motion profiles moved into lib/emberProfiles.ts as they were, but
+  // for the snow's and the spores', retuned since with the Frozen Hollow
+  // and the Fungal Caverns rebuilt: the snow drifts down slower, the spores
+  // hang stiller.
+  type Z = { main: { name: string; rise: number } };
+  const RETUNED = ['snow falling', 'spores hanging'];
+  const now = JSON.parse(JSON.stringify([SURFACE_MOTION, ...ZONE_MOTION])) as Z[];
+  const was = SHIPPED_380E372.motions as Z[];
+  const kept = (list: Z[]) => list.filter((z) => !RETUNED.includes(z.main.name));
+  assert.deepEqual(kept(now), kept(was));
+  const rise = (list: Z[], name: string) => list.find((z) => z.main.name === name)!.main.rise;
+  assert.ok(rise(now, 'snow falling') < 0 && rise(now, 'snow falling') > rise(was, 'snow falling'), 'the snow falls, slower');
+  assert.ok(rise(now, 'spores hanging') > 0 && rise(now, 'spores hanging') < rise(was, 'spores hanging'), 'the spores rise, barely');
 });
 
 test('while the zones are as shipped, depths 0 to 91 come out exactly as at 380e372: looks, light, everything', (t) => {

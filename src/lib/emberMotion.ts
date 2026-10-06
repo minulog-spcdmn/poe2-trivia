@@ -6,7 +6,7 @@
 // Embers.born there).
 
 import { endgameAt, onBackdrops, zones } from './backdrops.ts';
-import { hallTurn } from './backdropData.ts';
+import { magmaCoolingOf } from './descent.ts';
 import { motionOf, SURFACE_MOTION, type EmberMotion, type ZoneMotion } from './emberProfiles.ts';
 
 export { PROFILES, SURFACE_MOTION, ZONE_MOTION, motionOf, profileOf, tweakOf, type EmberMotion, type Spawn, type ZoneMotion } from './emberProfiles.ts';
@@ -79,12 +79,11 @@ export function zoneMotionOf(k: number): ZoneMotion {
 
 /**
  * How far an ember burning in stratum `burn` has cooled (0 to 1) with the
- * scene (as shown) turning `turn` of the way into stratum `stratum`: as its
- * own zone goes out (the scene turning into the next), in step with its hall
- * (hallTurn in lib/descent.ts, as the magma cools in magmaCooling there),
- * and all the way once the scene is past it. Only a motion with `cool`
- * slows for it (the magma's).
+ * scene (as shown) turning `turn` of the way into stratum `stratum`: as
+ * far as its stratum's magma (magmaCoolingOf in lib/descent.ts), so only
+ * in a stratum whose look has magma that goes out (the Magma Fissure's),
+ * never in one that merely moves its embers the magma's way: in step with
+ * its hall as the scene turns out of it, and all the way once the scene is
+ * past it. Only a motion with `cool` slows for it (the magma's).
  */
-export function cooling(burn: number, stratum: number, turn: number): number {
-  return burn < stratum - 1 ? 1 : burn === stratum - 1 ? hallTurn(turn) : 0;
-}
+export const cooling = (burn: number, stratum: number, turn: number): number => magmaCoolingOf(burn, stratum, turn);

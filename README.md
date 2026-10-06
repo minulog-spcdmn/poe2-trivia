@@ -203,8 +203,10 @@ the same thing for everyone.
   and a place of its own: lamps guttering in the Mines (1 to 10), glowing
   cracks and heat shimmer in Magma Fissure (11; over its last depths the
   magma cools, its glow dimming to a dull dark red and its flow slowing to
-  a stop as Frozen Hollow arrives), frost creeping from the walls in Frozen
-  Hollow (21), pulsing caps in Fungal Caverns (31), dusty gold shafts in
+  a stop as Frozen Hollow arrives), rime feathering in from the walls, a
+  cold mist low over the floor and pale light from above in Frozen Hollow
+  (21), faint bioluminescence breathing in the damp, mycelial threads and a
+  spore haze in Fungal Caverns (31), dusty gold shafts in
   Vaal Outpost (41), coiling violet eddies in Abyssal Depths (51), stone
   trunks in drifting mist in Petrified Forest (61), billowing vapour in
   Sulphur Vents (71), far cold lights in Abyssal City (81) and white-hot
@@ -212,7 +214,7 @@ the same thing for everyone.
   neighbouring hues that mix as they drift, as on the start page), embers
   (their colour and how many, all moving one way of the zone's own: dust
   drifting down and a rare lamp spark in the Mines, embers rising fast on
-  the heat, snow falling, spores hanging in lazy curls, motes settling,
+  the heat, snow drifting down, spores hanging in slow curls, motes settling,
   motes spiralling into the eddies, stone dust falling, puffs rising in
   gusts, cold motes drifting, strong sparks flying up) and glints. Depth 1 is
   already the Mines; the surface is the start page. Past 100 the descent

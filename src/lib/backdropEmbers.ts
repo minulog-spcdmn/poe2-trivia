@@ -14,7 +14,7 @@
 // as it starts a new life. Each new depth carries them, and the glints with
 // the walls, up past you as the scene sinks (`rise`).
 
-import { lookOf, SURFACE, type Descent, type Look } from './descent.ts';
+import { hallTurn, lookOf, SURFACE, type Descent, type Look } from './descent.ts';
 import { backdropsVersion } from './backdrops.ts';
 import { cooling, MOTIONS, motionFor, type EmberMotion } from './emberMotion.ts';
 
@@ -172,6 +172,8 @@ export class Embers {
   private aimed = 0;
   /** Sparks: (x, y, vx, vy, age, life) each, and the seconds to the next burst. */
   private sparks = new Float32Array(SPARKS * 6);
+  /** The stratum each spark burns in: its burst's (see burstStratum), whose embers' colour it takes. */
+  private sparkBurn = new Int32Array(SPARKS);
   private burstIn = 2;
   /** The two eddies' centres, (x, y) each as fractions of the screen; the Abyssal Depths' embers are drawn into them. */
   readonly eddies = new Float32Array(4);
@@ -630,12 +632,14 @@ export class Embers {
       }
     }
     const sp = this.sparks;
-    const sparkEntry = SIZE_STRIDE * entryOf(this.aim.stratum);
     const drag = Math.exp(-dt * 1.5);
     const drift = -40 * Math.sqrt(h / 800) * (1 - drag);
     for (let j = 0; j < SPARKS; j++) {
       const o = j * 6;
       const i = EMBERS + GLINTS + j;
+      // (One whose stratum the palette no longer holds, after a jump, goes out.)
+      const burn = this.sparkBurn[j];
+      if (burn < this.aim.stratum - 2 || burn > this.aim.stratum + 1) sp[o + 4] = sp[o + 5];
       if (sp[o + 4] >= sp[o + 5]) {
         pos[i * 4 + 3] = 0;
         continue;
@@ -648,7 +652,7 @@ export class Embers {
       const left = 1 - sp[o + 4] / sp[o + 5];
       pos[i * 4] = sp[o];
       pos[i * 4 + 1] = sp[o + 1];
-      pos[i * 4 + 2] = (1.1 + 0.5 * (j % 3)) * this.scale + sparkEntry;
+      pos[i * 4 + 2] = (1.1 + 0.5 * (j % 3)) * this.scale + SIZE_STRIDE * entryOf(burn);
       pos[i * 4 + 3] = Math.max(0, left) ** 1.4 * 1.5 * (0.75 + 0.25 * Math.sin(t * 23 + j * 2.1)) * look.bright;
     }
     // Sort the embers into the tiles their glow reaches, so each pixel of
@@ -693,9 +697,27 @@ export class Embers {
     this.usedMax = most;
   }
 
+  /**
+   * The stratum a burst belongs to, in whose embers' colour its sparks burn
+   * (as an ember starting a new life takes its colour from the scene the
+   * backdrop heads for, see pick): the stratum it is turning out of or the
+   * one it turns into, each as often as its bursts make up the look's (a
+   * look's bursts come and go with its hall, hallTurn). Not simply the one
+   * it turns into: through the Magma Fissure that is already the Frozen
+   * Hollow, whose embers are blue.
+   */
+  private burstStratum(): number {
+    const { stratum, turn } = this.aim;
+    const h = hallTurn(turn);
+    const before = (1 - h) * lookOf(stratum - 1).burst;
+    const next = h * lookOf(stratum).burst;
+    return r() * (before + next) < next ? stratum : stratum - 1;
+  }
+
   /** Throws a burst of sparks up from somewhere along the floor. */
   private burst(w: number, h: number, level: number) {
     const sp = this.sparks;
+    const burn = this.burstStratum();
     const x = (0.06 + r() * 0.88) * w;
     const lift = Math.sqrt(h / 800);
     let n = Math.round(7 + 10 * level);
@@ -709,6 +731,7 @@ export class Embers {
       sp[o + 3] = -(300 + r() * 330) * lift;
       sp[o + 4] = 0;
       sp[o + 5] = 1.1 + r() * 1.3;
+      this.sparkBurn[j] = burn;
     }
   }
 }
