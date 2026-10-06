@@ -112,7 +112,10 @@
   $effect(() => {
     if (!gs?.delve || screen !== 'game' || gs.phase !== 'choosing') return;
     const now = { run: gs.delve.startedAt, depth: gs.round };
-    if (dealtDeeper(lastDealt, now)) plunge();
+    if (dealtDeeper(lastDealt, now)) {
+      plunge();
+      sfx('plunge');
+    }
     lastDealt = now;
   });
 

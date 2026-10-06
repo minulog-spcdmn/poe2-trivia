@@ -239,8 +239,8 @@
     if (!find || !fxActive()) return flow;
     const item = kind === 'flare' || kind === 'dynamite' ? kind : null;
     if (item) expecting[id] = item;
-    // The fill's ring, on its last layer, lands with the item (FIND_LANDS).
-    const ringAt = MOMENTS.fill.layers.reduce((at, l) => Math.max(at, l.delay), 0);
+    // The find's ring, on its last layer, lands with the item (FIND_LANDS).
+    const ringAt = MOMENTS.findReward.layers.reduce((at, l) => Math.max(at, l.delay), 0);
     const startAt = performance.now();
     void tick().then(() => {
       const li = scoreRowOf(id);
@@ -253,7 +253,7 @@
       findGained(answer, slot, find);
       flow.fed = true;
       if (session.mode === 'local' || id === session.myPlayerId)
-        later(() => sfx('fill'), Math.max(0, FIND_LANDS * 1000 - ringAt - (performance.now() - startAt)));
+        later(() => sfx('findReward'), Math.max(0, FIND_LANDS * 1000 - ringAt - (performance.now() - startAt)));
     });
     return flow;
   }
@@ -284,21 +284,21 @@
       if (kind === 'ward' || kind === 'forge') {
         const el = pip('.casing.whole.fresh');
         if (el) wardFormed(el, kind === 'forge', fed);
-        if (mine && !fed) sfx('fill');
+        if (mine && !fed) sfx('findReward');
       } else if (kind === 'shard') {
         const el = pip('.casing.shard');
         if (el) shardFound(el);
-        if (mine && !fed) sfx('select');
+        if (mine && !fed) sfx('findReward');
       } else if (kind === 'shatter') {
         vessel?.querySelectorAll('.casing.ghost').forEach((el, i) => setTimeout(() => wardShattered(el, li, mine && i === 0), i * 120));
         if (mine) {
           if (caved) caveInHeard(caved);
-          else sfx('pick');
+          else sfx('wardShatter');
         }
       } else if (kind === 'flare' || kind === 'dynamite') {
         const el = counts?.querySelector(`[data-pip="${kind}"]`);
         if (el && kind === 'flare') flareFound(el);
-        if (mine && !fed) sfx('select');
+        if (mine && !fed) sfx('findReward');
       } else if (kind === 'burn') {
         // The ring on screen (the last one: an old one may still be fading out).
         const timer = [...document.querySelectorAll('.timer')].filter((t) => t.getClientRects().length).at(-1) ?? null;
@@ -342,7 +342,7 @@
       const to = taker ? shownPhial(taker) : null;
       const chamber = from?.phial.querySelector(`.chamber[data-k="${k}"]`) ?? giver;
       if (giver && taker && chamber && to) lifeGiven(chamber, giver, to.phial, taker);
-      sfx('fill');
+      sfx('revive');
       later(() => {
         if (giving[r.by] === k) delete giving[r.by];
       }, POUR * 1000);

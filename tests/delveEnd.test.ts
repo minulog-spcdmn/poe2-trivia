@@ -13,13 +13,9 @@ test('every sound layer plays a file that exists (or one worked out in lib/sound
     for (const l of m.layers) assert.ok(made.has(l.file) || existsSync(join(sfx, `${l.file}.mp3`)), `${name}: ${l.file}`);
 });
 
-test('a fallen run sounds low and slow, from files other moments already load', () => {
-  const { fallen, victory, ...rest } = MOMENTS;
-  const others = new Set([victory, ...Object.values(rest)].flatMap((m) => m.layers.map((l) => l.file)));
-  for (const l of fallen.layers) {
-    assert.ok(others.has(l.file), `${l.file} adds a download`);
-    assert.ok(l.rate < 1, `${l.file} is slowed down`);
-  }
+test('a run that perished sounds low and slow, and is no victory', () => {
+  const { fallen, victory } = MOMENTS;
+  for (const l of fallen.layers) assert.ok(l.rate < 1, `${l.file} is slowed down`);
   assert.ok(!fallen.layers.some((l) => victory.layers.some((v) => v.file === l.file && v.rate === l.rate)), 'no part of the victory fanfare');
 });
 

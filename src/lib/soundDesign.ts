@@ -218,16 +218,16 @@ export const MOMENTS: Record<Sfx, Moment> = {
       { file: 'defeat-4', gain: -13, rate: 0.86, delay: 0, hp: 40, lp: 9000, send: 0.65 },
     ],
   },
-  // Delve. Built from files already loaded for other moments, so they add no bytes.
+  // Delve, as picked on the Delve sound page.
   stratum: {
     soften: 6,
     varyPitch: 0.02,
     varyGain: 1,
     layers: [
-      { file: 'defeat-5', gain: -27, rate: 0.6, delay: 0, hp: 40, lp: 3200, send: 0.85 },
-      { file: 'layer-sub-2', gain: -22, rate: 0.55, delay: 0, hp: 20, lp: 900, send: 0.6 },
+      { file: 'defeat-5', gain: -34, rate: 0.59, delay: 0, hp: 107, lp: 5917, send: 0.85 },
+      { file: 'layer-sub-2', gain: -18, rate: 0.55, delay: 0, hp: 20, lp: 900, send: 0.6 },
       { file: 'layer-air-4', gain: -31, rate: 0.8, delay: 60, hp: 200, lp: 4200, send: 0.8 },
-      { file: 'layer-metal-2', gain: -39, rate: 0.5, delay: 250, hp: 300, lp: 6000, send: 0.9 },
+      { file: 'deathmatch-1', gain: -29, rate: 0.4, delay: 0, hp: 20, lp: 5917, send: 1 },
     ],
   },
   lifeLost: {
@@ -240,18 +240,18 @@ export const MOMENTS: Record<Sfx, Moment> = {
       { file: 'burn-sparkler', gain: -36, rate: 1.1, delay: 60, hp: 900, lp: 11000, send: 0.35 },
     ],
   },
-  // The end of a descent, alone or in a group: no fanfare. The defeat toll
-  // slowed and lowered, a deep thud as the floor gives way, a breath falling
-  // away into the hall, and an ember crackling out once it has rung.
+  // The end of a descent, alone or together: no fanfare. A dark impact
+  // slowed and muffled, a deep thud as the floor gives way, a breath falling
+  // away into the hall, and a low gong ringing out under it.
   fallen: {
     soften: 5,
     varyPitch: 0.01,
     varyGain: 0.5,
     layers: [
-      { file: 'defeat-4', gain: -15, rate: 0.62, delay: 0, hp: 30, lp: 2600, send: 0.8 },
-      { file: 'layer-sub-2', gain: -21, rate: 0.5, delay: 0, hp: 20, lp: 600, send: 0.5 },
-      { file: 'layer-air-4', gain: -30, rate: 0.55, delay: 80, hp: 150, lp: 2400, send: 0.85 },
-      { file: 'burn-embers', gain: -39, rate: 0.75, delay: 1100, hp: 250, lp: 5000, send: 0.95 },
+      { file: 'defeat-2', gain: -23, rate: 0.62, delay: 0, hp: 30, lp: 300, send: 0.8 },
+      { file: 'layer-sub-2', gain: -24, rate: 0.5, delay: 355, hp: 20, lp: 600, send: 0.5 },
+      { file: 'layer-air-4', gain: -30, rate: 0.55, delay: 80, hp: 150, lp: 822, send: 0.85 },
+      { file: 'victory-6', gain: -32, rate: 0.7, delay: 0, hp: 20, lp: 20000, send: 0.8 },
     ],
   },
   // A road flare struck as the clock hits 0: the striker's scratch (a card
@@ -294,7 +294,7 @@ export const MOMENTS: Record<Sfx, Moment> = {
     varyPitch: 0.03,
     varyGain: 0.5,
     layers: [
-      { file: 'cave-in', gain: -15, rate: 1, delay: 0, hp: 25, lp: 7000, send: 0.4 },
+      { file: 'cave-in', gain: -15, rate: 1, delay: 0, hp: 25, lp: 300, send: 0.4 },
       { file: 'layer-sub-2', gain: -17, rate: 0.62, delay: 0, hp: 20, lp: 900, send: 0.4 },
       { file: 'start-7', gain: -30, rate: 0.6, delay: 0, hp: 60, lp: 2400, send: 0.35 },
     ],
@@ -313,6 +313,89 @@ export const MOMENTS: Record<Sfx, Moment> = {
       { file: 'click-5', gain: -31, rate: 0.75, delay: 170, hp: 400, lp: 9000, send: 0.5 },
       { file: 'click-5', gain: -34, rate: 0.95, delay: 260, hp: 500, lp: 9000, send: 0.55 },
       { file: 'burn-crackle', gain: -33, rate: 0.9, delay: 120, hp: 250, lp: 11000, send: 0.6 },
+    ],
+  },
+  // Each deeper depth, as its cards are dealt and the scene sinks: a slow breath
+  // falling away and a low thud.
+  plunge: {
+    soften: 5,
+    varyPitch: 0.03,
+    varyGain: 1,
+    layers: [
+      { file: 'layer-air-4', gain: -32, rate: 0.6, delay: 0, hp: 120, lp: 3000, send: 0.7 },
+      { file: 'layer-sub-3', gain: -30, rate: 0.7, delay: 120, hp: 20, lp: 700, send: 0.5 },
+    ],
+  },
+  // An Azurite Ward breaking in place of a life: a high bell struck and cut,
+  // a low thump, a ring of metal and a shimmer as the crystal bursts.
+  wardShatter: {
+    soften: 3,
+    varyPitch: 0.045,
+    varyGain: 1.5,
+    layers: [
+      { file: 'defeat-3', gain: -38, rate: 1.8, delay: 55, hp: 972, lp: 4055, send: 0.4 },
+      { file: 'layer-sub-5', gain: -29, rate: 0.85, delay: 0, hp: 20, lp: 1175, send: 0.5 },
+      { file: 'layer-metal-2', gain: -43, rate: 0.77, delay: 55, hp: 20, lp: 20000, send: 0.3 },
+      { file: 'reveal-4', gain: -44, rate: 1.8, delay: 0, hp: 200, lp: 6999, send: 0.45 },
+    ],
+  },
+  // A find answered right: the sparks whoosh from the answer and crackle
+  // toward the item's slot; the ring, on the last layer, lands with the item
+  // (Scoreboard times it to FIND_LANDS).
+  findReward: {
+    soften: 6,
+    varyPitch: 0.04,
+    varyGain: 0.5,
+    layers: [
+      { file: 'layer-air-3', gain: -33, rate: 1, delay: 0, hp: 600, lp: 9000, send: 0.5 },
+      { file: 'fill-sparks', gain: -30, rate: 1, delay: 450, hp: 1200, lp: 11000, send: 0.3 },
+      { file: 'layer-metal-2', gain: -33, rate: 2, delay: 1050, hp: 600, lp: 9000, send: 0.65 },
+    ],
+  },
+  // Delve together: a vote cast for a card. Light; it plays every depth.
+  vote: {
+    soften: 1.5,
+    varyPitch: 0.04,
+    varyGain: 1.5,
+    layers: [
+      { file: 'select-6', gain: -38, rate: 1.52, delay: 0, hp: 120, lp: 5011, send: 0.6 },
+      { file: 'click-1', gain: -23, rate: 0.65, delay: 0, hp: 1152, lp: 12083, send: 0.2 },
+    ],
+  },
+  // Delve together: the draw lands on the card everyone will play.
+  draw: {
+    soften: 6.5,
+    varyPitch: 0.045,
+    varyGain: 1.5,
+    layers: [
+      { file: 'pick-5', gain: -21, rate: 1, delay: 0, hp: 540, lp: 7000, send: 0.1 },
+      { file: 'layer-sub-2', gain: -42, rate: 0.81, delay: 0, hp: 20, lp: 1318, send: 0.5 },
+      { file: 'pick-4', gain: -32, rate: 1.34, delay: 0, hp: 140, lp: 2994, send: 0.7 },
+    ],
+  },
+  // Delve together: a teammate's wrong pick strikes an answer for everyone.
+  // Quiet, under your own sounds.
+  struck: {
+    soften: 3.5,
+    varyPitch: 0.025,
+    varyGain: 0.5,
+    layers: [
+      { file: 'wrong-3', gain: -40, rate: 0.86, delay: 0, hp: 40, lp: 9000, send: 0.05 },
+      { file: 'select-4', gain: -41, rate: 1, delay: 0, hp: 124, lp: 1235, send: 0.05 },
+      { file: 'layer-sub-5', gain: -38, rate: 1, delay: 0, hp: 87, lp: 20000, send: 0 },
+    ],
+  },
+  // Delve together: a life given to a teammate who perished, its light
+  // streaming across and lighting as it lands.
+  revive: {
+    soften: 6,
+    varyPitch: 0.04,
+    varyGain: 0.5,
+    layers: [
+      { file: 'burn-crackle', gain: -33, rate: 1, delay: 0, hp: 600, lp: 9000, send: 0.5 },
+      { file: 'fill-sparks', gain: -30, rate: 1, delay: 450, hp: 1200, lp: 11000, send: 0.3 },
+      { file: 'burn-fuse', gain: -33, rate: 2, delay: 1050, hp: 600, lp: 9000, send: 0.65 },
+      { file: 'correct-6', gain: -40, rate: 1.54, delay: 0, hp: 116, lp: 20000, send: 0.95 },
     ],
   },
 };

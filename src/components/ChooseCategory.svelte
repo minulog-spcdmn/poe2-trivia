@@ -79,7 +79,7 @@
   function vote(category: string) {
     const i = s.offered.indexOf(category);
     if (!canVote || !faceUp(i) || myVote === category) return;
-    sfx('select');
+    sfx('vote');
     const frame = cardEls[i]?.querySelector('.frame');
     if (frame && fxActive()) outline(frame, { color: [2.2, 1.6, 0.7], width: 10, intensity: 0.6, life: 0.45, fadeIn: 0.04 });
     session.dispatch({ type: 'vote', category });
@@ -125,7 +125,7 @@
       const kind = kindOf(category);
       if (frame && kind) findPicked(frame, card, others, kind);
       else if (frame) cardPicked(frame, card, others, false);
-      sfx('pick');
+      sfx('draw');
     };
     // The cards in the draw: those with votes, in their order.
     const tickets = s.offered.flatMap((c, i) => (votersOf(c).length ? [i] : []));

@@ -84,3 +84,15 @@ How they are layered and filtered is set in src/lib/soundDesign.ts.
                        by Qat, https://freesound.org/s/107589/
   yourTurn-3.mp3       Unsheathing sword, slow, dramatic
                        by mht23SD, https://freesound.org/s/707339/
+  correct-6.mp3        Chime
+                       by Psykoosiossi, https://freesound.org/s/398661/
+  defeat-2.mp3         BOOM IMPACT 2
+                       by XHALE303, https://freesound.org/s/535592/
+  defeat-3.mp3         Hit reverb (dark)
+                       by xkeril, https://freesound.org/s/701308/
+  layer-sub-3.mp3      LowThump_01
+                       by Faulkin, https://freesound.org/s/336494/
+  reveal-4.mp3         the portal
+                       by CeebFrack, https://freesound.org/s/132593/
+  victory-6.mp3        gong -10 sem
+                       by Logicogonist, https://freesound.org/s/519359/

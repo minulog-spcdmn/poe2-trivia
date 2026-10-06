@@ -39,6 +39,20 @@ export type Sfx =
   | 'fuse'
   /** Delve: the dynamite goes off. */
   | 'blast'
+  /** Delve: a deeper depth's cards are dealt and the scene sinks. */
+  | 'plunge'
+  /** Delve: an Azurite Ward takes a loss in place of a life. */
+  | 'wardShatter'
+  /** Delve: a find answered right; its sparks reach the item's slot. */
+  | 'findReward'
+  /** Delve together: a vote cast for a card. */
+  | 'vote'
+  /** Delve together: the draw lands on the card to play. */
+  | 'draw'
+  /** Delve together: a teammate's wrong pick strikes an answer for everyone. */
+  | 'struck'
+  /** Delve together: a life given to a teammate who perished. */
+  | 'revive'
   /** Delve: an Azurite Vein answered wrong caves in (two losses at once). */
   | 'caveIn';
 

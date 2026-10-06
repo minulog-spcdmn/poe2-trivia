@@ -1494,10 +1494,17 @@ class Session {
       }
       return;
     }
+    // Delve together: a teammate's wrong pick strikes an answer for everyone
+    // (your own is heard as you pick it, and in the phial).
+    if (next.delve && next.phase === 'question' && next.question && prev.question?.askedAt === next.question.askedAt) {
+      const before = prev.question.struck?.length ?? 0;
+      if ((next.question.struck ?? []).slice(before).some((x) => x.by !== me)) sfx('struck');
+    }
     if (prev.phase !== 'reveal' && next.phase === 'reveal' && next.reveal) {
       sfx(next.reveal.correct ? 'correct' : 'wrong');
     } else if (prev.phase !== next.phase && next.phase === 'choosing') {
-      sfx(next.players[next.turn]?.id === me || this.mode === 'local' ? 'yourTurn' : 'turn');
+      // Delve: a new depth's deal is heard as the descent (App.svelte plays 'plunge').
+      if (!next.delve) sfx(next.players[next.turn]?.id === me || this.mode === 'local' ? 'yourTurn' : 'turn');
     } else if (prev.phase === 'choosing' && next.phase === 'question') {
       sfx('reveal');
     } else if (prev.phase === 'lobby' && next.phase === 'lobby' && next.players.length > prev.players.length) {
