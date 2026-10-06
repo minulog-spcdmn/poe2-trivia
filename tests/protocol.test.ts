@@ -112,3 +112,10 @@ test('veiled "find the art" pictures say which option they belong to', () => {
   assert.equal(parseHostMsg({ ...patch, tile: -1 }), null);
   assert.equal(parseHostMsg({ ...patch, tile: '2' }), null);
 });
+
+test('version 11: the co-op vote and revive (hosts and guests on 10 lack them, so they do not mix)', () => {
+  assert.equal(PROTOCOL_VERSION, 11);
+  assert.match(versionProblem(10)!, /^Your game is out of date/);
+  assert.deepEqual(parseClientMsg({ t: 'action', action: { type: 'vote', category: 'Rings' } }), { t: 'action', action: { type: 'vote', category: 'Rings' } });
+  assert.deepEqual(parseClientMsg({ t: 'action', action: { type: 'revive', target: 'p2' } }), { t: 'action', action: { type: 'revive', target: 'p2' } });
+});

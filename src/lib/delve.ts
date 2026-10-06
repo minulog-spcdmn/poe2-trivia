@@ -387,6 +387,14 @@ export const blastAt = (secs: number) => veinWindow(secs);
 export const blastCount = (options: number) => Math.max(0, Math.min(Math.floor(options / 2), options - 2));
 
 /**
+ * How many options a stick of dynamite would blow away from a question now
+ * (blastCount of those still in play: co-op strikes take theirs out). Read
+ * off the labels, which a guest's copy keeps (its options are hidden). None
+ * left to blow away, no stick is spent on it.
+ */
+export const blastLeft = (q: Pick<Question, 'labels' | 'struck'>) => blastCount(q.labels.length - (q.struck?.length ?? 0));
+
+/**
  * Whether dynamite has anything to clear from a question's art: art burning
  * in, a picture mirrored, or art without colour (`grayscale`, the rules'),
  * so the host has plain art to send (on the host: the full question).
@@ -623,13 +631,14 @@ export const holdersOf = (s: GameState, item: ItemKind) => standingIds(s).filter
 /**
  * Co-op: whether a flare or a stick of dynamite can go off on the question in
  * play, from the pack of whoever standing holds one: its clock runs, it is no
- * find's, none went off on it yet, and someone here still has an answer to
- * give (nobody else gains from it). When it is due is the solo rule's.
+ * find's, none went off on it yet, someone here still has an answer to
+ * give (nobody else gains from it), and, for dynamite, something is left to
+ * blow away (blastLeft). When it is due is the solo rule's.
  */
 export function teamItemReady(s: GameState, item: 'flares' | 'dynamite'): boolean {
   const q = s.question;
   if (!isGroupRun(s) || s.phase !== 'question' || !q || q.deadline === null || !itemsWorkOn(q)) return false;
-  if (item === 'flares' ? q.flared : q.blasted || q.clockAt === undefined) return false;
+  if (item === 'flares' ? q.flared : q.blasted || q.clockAt === undefined || blastLeft(q) === 0) return false;
   const waiting = new Set(waitingIds(s));
   return holdersOf(s, item).length > 0 && s.players.some((p) => p.connected && waiting.has(p.id));
 }
@@ -646,6 +655,8 @@ export function reviveProblem(s: GameState, by: string, to: string): string | nu
   if (to === by) return 'Only a teammate can give you a life.';
   if (!seated(s, to)) return 'They are not in this run.';
   if (livesOf(s, to) > 0) return 'They are still standing.';
+  // A life given to someone away would be lost again at the next time-out.
+  if (!s.players.find((p) => p.id === to)?.connected) return 'They are away right now.';
   if (livesOf(s, by) < REVIVE_FROM) return `It takes ${REVIVE_FROM} lives to give one.`;
   return null;
 }
@@ -712,13 +723,15 @@ export function delveStandings(s: GameState): DelveStanding[] {
 
 /**
  * The team's depth: the one in play while anyone stands, then the one where
- * the last of them perished (0 outside Delve). Alone, the player's own.
+ * the last of them perished, or left the run still standing (`leftAt`), 0
+ * outside Delve. Alone, the player's own.
  */
 export function teamDepth(s: GameState): number {
   if (!s.delve) return 0;
   if (standingIds(s).length) return s.round;
   const falls = s.players.map((p) => fellAt(s, p.id)).filter((d): d is number => d !== null);
-  return falls.length ? Math.max(...falls) : s.round;
+  const left = s.delve.leftAt ?? 0;
+  return falls.length || left ? Math.max(left, ...falls) : s.round;
 }
 
 /** A run's result, for the end screen and the records: one depth for the team, and what each player gave and lost. */

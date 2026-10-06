@@ -230,8 +230,16 @@ function place(s: GameState, fresh: boolean) {
   lab.paused = null;
 }
 
-/** Starts the lab's run (or keeps a Delve run already on this device, after a reload). */
+let booted = false;
+
+/**
+ * Starts the lab's run (or keeps a Delve run already on this device, after a
+ * reload). Once per page: main.ts calls it before the app mounts; a second
+ * call does nothing, so it can't start a fresh run over the one in play.
+ */
 export function boot() {
+  if (booted) return;
+  booted = true;
   const s = run();
   if (s && session.mode === 'local' && s.phase !== 'lobby') {
     // A co-op run saved as hot-seat: played on as its roomless host.

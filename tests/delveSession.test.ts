@@ -9,15 +9,18 @@ import {
   clockStart,
   delveNotices,
   drained,
+  drawClockFrom,
   drawHoldUntil,
   expireIn,
+  finishAtReveal,
+  underRuleset,
   inventoryChanges,
   livesLost,
   mayAutoReask,
   reaskDelay,
   setAside,
 } from '../src/lib/delveSession.ts';
-import { VOTE_WINDOW_MS } from '../src/lib/delve.ts';
+import { DELVE_RULESET, VOTE_WINDOW_MS } from '../src/lib/delve.ts';
 import { createGame, type GameState, type Question } from '../src/lib/game.ts';
 
 function run(over: Partial<GameState> = {}): GameState {
@@ -216,4 +219,53 @@ test("together, a question the vote drew holds its clock until the draw has play
   const soloPrev = structuredClone(voting);
   soloPrev.delve!.entrants = ['a'];
   assert.equal(drawHoldUntil(soloPrev, solo), null);
+});
+
+test('a question asked again in place of the one the vote drew keeps its draw hold', () => {
+  const voting = run();
+  const asked = run({ phase: 'question', question: question(null) });
+  const until = drawHoldUntil(voting, asked)!;
+  const again = run({ phase: 'question', question: { ...question(null), askedAt: 200 } });
+  assert.equal(drawHoldUntil(asked, again, { qid: 100, until }), until, 'its art failed while the draw played');
+  assert.equal(drawHoldUntil(asked, again, null), null, 'nothing held, nothing kept');
+  assert.equal(drawHoldUntil(asked, again, { qid: 50, until }), null, 'a hold for another question');
+  assert.equal(drawHoldUntil(asked, { ...again, turnCount: 1 }, { qid: 100, until }), null, 'the next depth');
+});
+
+test("together, the clock after a draw waits half the slowest standing guest's round trip more, at most 500 ms", () => {
+  assert.equal(drawClockFrom(1000, 200), 1100);
+  assert.equal(drawClockFrom(1000, 5000), 1500);
+  assert.equal(drawClockFrom(1000, -20), 1000);
+});
+
+test("the reveal finishes a blasted question's veil unless its plain art went out", () => {
+  const q = { askedAt: 100, blasted: true };
+  assert.equal(finishAtReveal(q, 100), false, 'laid bare: nothing left to burn in');
+  assert.equal(finishAtReveal(q, 0), true, 'the plain art failed (or is still on its way)');
+  assert.equal(finishAtReveal(q, 50), true, 'plain art sent for another question');
+  assert.equal(finishAtReveal({ askedAt: 100 }, 0), true, 'no blast');
+  assert.equal(finishAtReveal(null, 0), true);
+});
+
+test('a run picked up under other rules is marked mixed, unless it was decided already', () => {
+  const old = (over: Partial<GameState> = {}) => {
+    const s = run(over);
+    s.delve!.ruleset = DELVE_RULESET - 1;
+    return s;
+  };
+  assert.equal(underRuleset(old()).delve!.mixed, true);
+  assert.equal(underRuleset(run()).delve!.mixed, undefined, 'the same rules');
+  assert.equal(underRuleset(old({ phase: 'over' })).delve!.mixed, undefined, 'over');
+  // Together, nobody standing: the end is a step away.
+  const fallen = old({ phase: 'reveal' });
+  fallen.delve!.losses = { a: [3, 3, 3], b: [2, 2, 2] };
+  assert.equal(underRuleset(fallen).delve!.mixed, undefined);
+  // Alone, the player perished.
+  const solo = old({ phase: 'reveal' });
+  solo.players = solo.players.slice(0, 1);
+  solo.delve!.entrants = ['a'];
+  solo.delve!.losses = { a: [4, 4, 4] };
+  assert.equal(underRuleset(solo).delve!.mixed, undefined);
+  solo.delve!.losses = { a: [4, 4] };
+  assert.equal(underRuleset(solo).delve!.mixed, true, 'still standing');
 });

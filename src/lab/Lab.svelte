@@ -50,7 +50,7 @@
   // ---- live readouts ----
   let now = $state(Date.now());
   onMount(() => {
-    L.boot();
+    // The run is booted once, by main.ts, before the app mounts.
     const id = setInterval(() => (now = Date.now()), 100);
     const off = onFxChange((on) => (fxOn = on));
     return () => {

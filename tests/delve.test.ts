@@ -204,7 +204,7 @@ test('there are always three categories left to offer at the longest lockout', (
 
 test('the ruleset is pinned to the curve and the protocol', () => {
   // Changing the curve changes this hash: bump DELVE_RULESET and PROTOCOL_VERSION with it, then update the pin.
-  // (Delve isn't released yet, so the new curve kept both and only moved the pin; so did dynamite going off by itself, look-alike pictures, the flare burning at 0 and the blast holding the clock, co-op, and dynamite taking half of all the options with two finds side by side.)
+  // (Delve isn't released yet, so the new curve kept both and only moved the pin; so did dynamite going off by itself, look-alike pictures, the flare burning at 0 and the blast holding the clock, co-op, dynamite taking half of all the options with two finds side by side, and pinning the lives.)
   const table: unknown[] = DEPTHS.map((d) => [delveRules(d), delveTimer(d), delveTileVeil(d)]);
   // The finds too: where and how often they turn up, what they ask and cost, and what their items do.
   const clocks = Array.from({ length: 10 }, (_, i) => i + 7);
@@ -215,11 +215,13 @@ test('the ruleset is pinned to the curve and the protocol', () => {
   );
   // Co-op: how long a vote stays open after the first vote, when a player counts as idle, and what a life given takes.
   table.push(['coop', VOTE_WINDOW_MS, DELVE_IDLE_ROUNDS, REVIVE_FROM, DELVE_RESUME_GRACE_MS]);
+  // The lives everyone sets out with.
+  table.push(['lives', DELVE_LIVES]);
   const hash = createHash('sha256').update(JSON.stringify(table)).digest('hex').slice(0, 16);
-  assert.deepEqual([DELVE_RULESET, PROTOCOL_VERSION, hash], [1, 10, PINNED_HASH]);
+  assert.deepEqual([DELVE_RULESET, PROTOCOL_VERSION, hash], [1, 11, PINNED_HASH]);
 });
 
-const PINNED_HASH = '2076528bb4815f28';
+const PINNED_HASH = '56ce8c1671fca1e6';
 
 function run(losses: Record<string, number[]>, round = 10, seats = Object.keys(losses)): GameState {
   const s = createGame('a');

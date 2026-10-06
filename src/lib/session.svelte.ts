@@ -39,7 +39,7 @@ import { toasts, type ToastKind, type ToastOptions } from './toasts.svelte';
 import { creatorArrival } from './herald';
 import { RUBY } from './palette';
 import { CREATOR_TITLE } from './site';
-import { DELVE_RULESET, FLARE_MS, LOOKALIKES_ASKED_FROM, blastClears, isGroupRun, livesOf } from './delve';
+import { FLARE_MS, LOOKALIKES_ASKED_FROM, blastClears, isGroupRun, livesOf } from './delve';
 import { loadLooks } from './looks';
 import { bestOf, loadRecords, recordLeft, recordRun, runEvent } from './delveRecord';
 import {
@@ -50,12 +50,19 @@ import {
   clockStart,
   delveNotices,
   drained,
+  drawClockFrom,
   drawHoldUntil,
   dynamiteIn,
   expireIn,
+  expireKey,
+  finishAtReveal,
   flareIn,
+  hostAnswerHold,
+  markAway,
   mayAutoReask,
+  racerIds,
   reaskDelay,
+  underRuleset,
   type DelveNotice,
 } from './delveSession';
 import { readLegacy, readStored, removeLegacy, removeStored, writeStored } from './storage';
@@ -287,6 +294,8 @@ class Session {
   private dynamiteKey = '';
   /** Delve: the plain art for when a stick of dynamite goes off, made ahead, never sent before it does. */
   private clean: { qid: number; art: Promise<CleanMedia> } | null = null;
+  /** Delve: the question (askedAt) whose plain art went out after its blast; a failed one's veil is finished at the reveal. */
+  private cleanSentFor = 0;
 
   get isHost() {
     return this.mode === 'local' || this.mode === 'host';
@@ -441,8 +450,13 @@ class Session {
         // lobby keeps their seats, and lets go of the ones still empty when
         // the game starts). Spectators rejoin as spectators when they reconnect.
         let s: GameState = { ...resumeState, spectators: [] };
-        for (const p of s.players)
-          if (p.id !== me) s = engine.apply(s, { type: 'connection', playerId: p.id, connected: false }, null);
+        // Delve: marked away as they are, with none of a drop's effects (a
+        // drop closes a vote that no longer waits for them, and 'resumed'
+        // would then set its question aside, losing every vote cast).
+        if (s.delve) s = markAway(s, me);
+        else
+          for (const p of s.players)
+            if (p.id !== me) s = engine.apply(s, { type: 'connection', playerId: p.id, connected: false }, null);
         // A reveal counts down afresh, so the others can reconnect before it
         // moves on (moving on skips the seats still offline).
         if (s.reveal) s = { ...s, reveal: { ...s.reveal, at: Date.now() } };
@@ -755,8 +769,8 @@ class Session {
 
   /** In a race the host's clicks skip the network; delay them by a typical guest's one-way trip. */
   private hostHandicap() {
-    // Only the people racing count, not spectators.
-    const racing = new Set(this.state?.players.map((p) => p.id));
+    // Only the people racing count: not spectators, nor (Delve together) those who perished.
+    const racing = new Set(this.state ? racerIds(this.state) : []);
     const rtts = [...this.guests.values()]
       .filter((g) => g.playerId && racing.has(g.playerId))
       .map((g) => g.rtt)
@@ -806,6 +820,8 @@ class Session {
     if (gen !== this.mediaGen || cur?.question?.askedAt !== q.askedAt || cur.phase !== 'question') return;
     this.media = media;
     const qid = q.askedAt;
+    // Made plain already: nothing of it is left to burn in.
+    if (q.blasted) this.cleanSentFor = qid;
     // Delve: the clock starts once the art has reached those who answer.
     const timing = !!cur.delve && cur.question.deadline === null;
     this.held = timing && this.mode === 'host' ? { qid, ids: new Set(artFirst(cur)) } : null;
@@ -850,11 +866,11 @@ class Session {
       const conns = [...this.guests].filter(([, g]) => !!g.playerId && ids.has(g.playerId));
       const now = Date.now();
       const done = conns.every(([c]) => drained(c as unknown as Parameters<typeof drained>[0]));
-      // Together, after a vote: not before its draw has played out on the cards.
-      const hold = this.drawHold?.qid === qid ? this.drawHold.until : 0;
+      // The slowest of them still needs half a round trip for the last bytes and the deadline.
+      const rtt = Math.max(0, ...conns.map(([, g]) => g.rtt));
+      // Together, after a vote: not before its draw has played out on the cards, theirs starting that half trip late.
+      const hold = this.drawHold?.qid === qid ? drawClockFrom(this.drawHold.until, rtt) : 0;
       if ((done || now - releasedAt >= DELVE_CLOCK_CAP_MS) && now >= hold - 500) {
-        // The slowest of them still needs half a round trip for the last bytes and the deadline.
-        const rtt = Math.max(0, ...conns.map(([, g]) => g.rtt));
         this.startClock(qid, Math.max(hold, conns.length ? clockStart(done ? now : null, releasedAt, rtt) : now));
         return;
       }
@@ -925,6 +941,7 @@ class Session {
     if (gen !== this.mediaGen || now?.question?.askedAt !== qid || (now.phase !== 'question' && now.phase !== 'reveal')) return;
     if (clean.art) this.release({ t: 'clean', qid, ...clean.art });
     clean.tiles.forEach((t, tile) => this.release({ t: 'clean', qid, tile, ...t }));
+    this.cleanSentFor = qid;
   }
 
   /** Delve: the art held back from everyone but those answering goes out to them now. */
@@ -1220,7 +1237,9 @@ class Session {
     };
     // Co-op Delve is a race for the right answer too (the first clears the depth and takes the find).
     const racing = this.race || (!!this.state.delve && isGroupRun(this.state));
-    const handicap = this.mode === 'host' && !this.labRoomless && racing && action.type === 'answer' ? this.hostHandicap() : 0;
+    // Never past the moment that judges it (delveSession.ts hostAnswerHold): held over 0, it would cost a flare.
+    const handicap =
+      this.mode === 'host' && !this.labRoomless && racing && action.type === 'answer' ? hostAnswerHold(this.state, Date.now(), this.hostHandicap()) : 0;
     if (handicap > 0) setTimeout(run, handicap);
     else run();
   }
@@ -1319,7 +1338,8 @@ class Session {
     this.state = next;
     if (this.isHost && next.delve && next.round >= LOOKS_FETCH_FROM) fetchLooks();
     if (next.phase === 'question' && next.question && next.question.askedAt !== prev?.question?.askedAt) {
-      const until = drawHoldUntil(prev, next);
+      // A question asked again in its place while the draw plays keeps its hold.
+      const until = drawHoldUntil(prev, next, this.drawHold);
       this.drawHold = until === null ? null : { qid: next.question.askedAt, until };
       void this.startMedia(next);
     } else if (next.phase === 'question' && next.question?.blasted && prev?.question?.askedAt === next.question.askedAt && !prev.question.blasted) {
@@ -1329,8 +1349,8 @@ class Session {
       // Only as the reveal begins: a later change during it (someone joining,
       // the room going public) would cancel the patches still on their way.
       if (prev?.phase !== 'reveal' || prev.question?.askedAt !== next.question?.askedAt) {
-        // Art dynamite laid bare has nothing left to burn in.
-        const rest = next.question?.blasted ? [] : this.unreleasedPatches();
+        // Art dynamite laid bare has nothing left to burn in; should its plain copy have failed, the veil is finished.
+        const rest = finishAtReveal(next.question, this.cleanSentFor) ? this.unreleasedPatches() : [];
         // Delve: a question that ended before its clock started still shows everyone its art.
         this.releaseHeld();
         // Keep what was sent, so someone arriving during the reveal still gets the pictures.
@@ -1623,7 +1643,8 @@ class Session {
    */
   private scheduleExpire(s: GameState) {
     const left = this.isHost ? expireIn(s, Date.now()) : null;
-    const key = left === null ? '' : `${s.delve?.startedAt}:${s.turnCount}:${s.delve?.voteFrom}:${left === 0 ? 'now' : ''}`;
+    // On the close time itself: it moves sooner when someone excused comes back.
+    const key = expireKey(s, left);
     if (key === this.expireKey) return;
     if (this.expireTimer) clearTimeout(this.expireTimer);
     this.expireTimer = null;
@@ -1780,6 +1801,8 @@ class Session {
     this.dynamiteKey = '';
     this.reaskFails = { turn: '', n: 0 };
     this.artFailedFor = 0;
+    this.cleanSentFor = 0;
+    this.drawHold = null;
     this.labRoomless = false;
     for (const c of this.guests.keys()) c.close();
     this.guests.clear();
@@ -1848,14 +1871,6 @@ function soloHotSeat(s: GameState): GameState {
   } catch {
     return createGame(null);
   }
-}
-
-/**
- * A Delve run saved by a build with other rules plays on, but never counts as
- * a best. A run already over stays as it ended (its record is final).
- */
-function underRuleset(s: GameState): GameState {
-  return s.delve && s.phase !== 'over' && s.delve.ruleset !== DELVE_RULESET && !s.delve.mixed ? { ...s, delve: { ...s.delve, mixed: true } } : s;
 }
 
 function readSaved(): Saved | null {

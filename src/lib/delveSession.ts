@@ -1,10 +1,12 @@
 // The session's Delve decisions, apart from PeerJS and Svelte so tests can reach them.
 
 import {
+  DELVE_RULESET,
   ITEM_KINDS,
   REVIVE_FROM,
   blastAtMs,
   blastClears,
+  blastLeft,
   dynamiteOf,
   fellAt,
   flaresOf,
@@ -15,11 +17,12 @@ import {
   livesOf,
   standingIds,
   teamItemReady,
+  veinWindowMs,
   voteClosesAt,
   voteDone,
   type ItemKind,
 } from './delve.ts';
-import type { GameState, Grayscale } from './game.ts';
+import type { GameState, Grayscale, Question } from './game.ts';
 
 /** The longest the host waits for the art to reach the player answering before their clock starts anyway. */
 export const DELVE_CLOCK_CAP_MS = 3000;
@@ -38,13 +41,26 @@ export const COOP_DRAW_MS = 2000;
 /**
  * Delve together: the earliest the clock of the question `next` asks may
  * start (host clock), when the team's vote just drew it: COOP_DRAW_MS after
- * it was asked. Null for any other question (alone, re-asked, resumed).
+ * it was asked. A question asked again in its place (its art failed) while
+ * the draw still plays keeps the hold it had (`held`, for the question it
+ * replaces). Null for any other question (alone, resumed, re-asked on a
+ * question that had none).
  */
-export function drawHoldUntil(prev: GameState | null, next: GameState): number | null {
+export function drawHoldUntil(prev: GameState | null, next: GameState, held: { qid: number; until: number } | null = null): number | null {
   const q = next.question;
-  if (!next.delve || !q || next.phase !== 'question' || !isGroupRun(next) || prev?.phase !== 'choosing') return null;
-  return q.askedAt + COOP_DRAW_MS;
+  if (!next.delve || !q || next.phase !== 'question' || !isGroupRun(next) || !prev?.delve) return null;
+  if (prev.phase === 'choosing') return q.askedAt + COOP_DRAW_MS;
+  const reasked =
+    prev.phase === 'question' &&
+    prev.delve.startedAt === next.delve.startedAt &&
+    prev.turnCount === next.turnCount &&
+    !!prev.question &&
+    held?.qid === prev.question.askedAt;
+  return reasked ? held.until : null;
 }
+
+/** Half a round trip (ms), as far as the host waits for one: never more than 500 ms. */
+export const halfTrip = (rtt: number) => Math.min(Math.max(0, rtt) / 2, 500);
 
 /**
  * When the answering player's clock starts (host clock): once the host's send
@@ -52,8 +68,16 @@ export function drawHoldUntil(prev: GameState | null, next: GameState): number |
  * last bytes and the state carrying the deadline still need to arrive.
  */
 export function clockStart(drainedAt: number | null, releasedAt: number, rtt: number): number {
-  return Math.min(drainedAt ?? Infinity, releasedAt + DELVE_CLOCK_CAP_MS) + Math.min(Math.max(0, rtt) / 2, 500);
+  return Math.min(drainedAt ?? Infinity, releasedAt + DELVE_CLOCK_CAP_MS) + halfTrip(rtt);
 }
+
+/**
+ * Delve together: the earliest the clock may start after the draw (host
+ * clock): the draw's end (`until`, drawHoldUntil), plus the half round trip
+ * the slowest standing guest's draw started late by, as the state that
+ * began it reached them that much after the host.
+ */
+export const drawClockFrom = (until: number, rtt: number) => until + halfTrip(rtt);
 
 /**
  * Art that failed to load is asked again by itself after these waits: at
@@ -83,6 +107,79 @@ export function expireIn(s: GameState, now: number): number | null {
   if (at === null) return null;
   // Everyone it waits for has voted (the engine closes it on the vote itself; this covers the rest).
   return voteDone(s, now) ? 0 : Math.max(0, at - now);
+}
+
+/**
+ * What the host's vote timer is armed for (expireIn's `left` at `now`): a
+ * new key sets it again. Keyed on the close time itself, so a vote that
+ * closes sooner (someone the reload cut off came back) is not left waiting
+ * for the end of the grace. '' when nothing runs.
+ */
+export function expireKey(s: GameState, left: number | null): string {
+  return left === null ? '' : `${s.delve?.startedAt}:${s.turnCount}:${voteClosesAt(s)}:${left === 0 ? 'now' : ''}`;
+}
+
+/**
+ * The host reopened its room after a reload: everyone but the host (`me`)
+ * is marked away, with nothing else changed. Unlike a drop reported as the
+ * 'connection' action, it closes no vote: the 'resumed' that follows
+ * excuses them for a while instead, so the votes cast stand.
+ */
+export function markAway(s: GameState, me: string): GameState {
+  return { ...s, players: s.players.map((p) => (p.id === me || !p.connected ? p : { ...p, connected: false })), version: s.version + 1 };
+}
+
+/**
+ * Who the host's own answers are held back for (a race for the right
+ * answer): everyone seated, or in a Delve run together everyone standing
+ * (those who perished answer nothing).
+ */
+export function racerIds(s: GameState): string[] {
+  return s.delve && isGroupRun(s) ? standingIds(s) : s.players.map((p) => p.id);
+}
+
+/** How far ahead of a moment that counts the host's held answer lands (ms), for timers that fire a little late. */
+export const HOST_HOLD_MARGIN_MS = 50;
+
+/**
+ * Delve together: how long the host's own answer at `now` is held back
+ * (host clock): `handicap`, a typical guest's one-way trip, but never past
+ * the moment that judges it, as the engine judges the host's answers by
+ * when they arrive with no allowance: before the clock hits 0 (where a
+ * flare would burn) and, on an Azurite Vein, before its fast window closes.
+ * Anywhere else, `handicap` as it is.
+ */
+export function hostAnswerHold(s: GameState, now: number, handicap: number): number {
+  const q = s.question;
+  if (handicap <= 0) return 0;
+  if (!s.delve || !isGroupRun(s) || s.phase !== 'question' || !q || q.deadline === null) return handicap;
+  let cap = q.deadline - now;
+  const fastEnd = q.clockAt === undefined ? null : q.clockAt + veinWindowMs(s);
+  if (fastEnd !== null && q.find === 'azurite' && now <= fastEnd) cap = Math.min(cap, fastEnd - now);
+  return Math.max(0, Math.min(handicap, cap - HOST_HOLD_MARGIN_MS));
+}
+
+/**
+ * Whether the reveal sends what is still to burn in of the art: unless
+ * dynamite laid the art bare and its plain copy actually went out
+ * (`cleanSentFor`, the question it went out for). Should the plain art have
+ * failed, the rest of the veil its fallback was sending may have been cut
+ * off by the reveal.
+ */
+export function finishAtReveal(q: Pick<Question, 'askedAt' | 'blasted'> | null, cleanSentFor: number): boolean {
+  return !q?.blasted || cleanSentFor !== q.askedAt;
+}
+
+/**
+ * A Delve run saved by a build with other rules plays on, but never counts
+ * as a best. A run already decided stays as it ended (its record is final):
+ * over, or with nobody standing (alone: the player perished; together: the
+ * last of them), the end only a step away.
+ */
+export function underRuleset(s: GameState): GameState {
+  if (!s.delve || s.phase === 'over' || s.delve.ruleset === DELVE_RULESET || s.delve.mixed) return s;
+  if (s.phase !== 'lobby' && !standingIds(s).length) return s;
+  return { ...s, delve: { ...s.delve, mixed: true } };
 }
 
 /**
@@ -240,6 +337,6 @@ export function dynamiteIn(s: GameState, now: number): number | null {
   if (!s.delve || s.phase !== 'question' || !q || q.deadline === null || q.clockAt === undefined || q.blasted || !itemsWorkOn(q)) return null;
   if (isGroupRun(s)) return teamItemReady(s, 'dynamite') ? Math.max(0, q.clockAt + blastAtMs(s) - now) : null;
   const p = s.players[s.turn];
-  if (!p?.connected || dynamiteOf(s, p.id) <= 0) return null;
+  if (!p?.connected || dynamiteOf(s, p.id) <= 0 || blastLeft(q) === 0) return null;
   return Math.max(0, q.clockAt + blastAtMs(s) - now);
 }

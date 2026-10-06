@@ -13,6 +13,7 @@ import {
   FLARE_MS,
   blastAtMs,
   blastCount,
+  blastLeft,
   delveLockout,
   delveQuestionTimer,
   delveRules,
@@ -348,6 +349,12 @@ export interface Delve {
   ruleset: number;
   /** Resumed by a build with another ruleset: plays on, but never counts as a best. */
   mixed?: boolean;
+  /**
+   * Co-op: the deepest depth a player left the run at (or was removed) while
+   * still standing, so the team's depth never drops below it once nobody
+   * stands (delve.ts teamDepth). Missing until someone does.
+   */
+  leftAt?: number;
   /** Host clock when the run started (the run's id in records). */
   startedAt: number;
   /** Standing players the host's reload cut off who haven't come back since. */
@@ -598,6 +605,11 @@ export interface Reveal {
   at?: number;
   /** Delve: the item this right answer to a find earned ('wards' for a shard that forged one). */
   gained?: ItemKind;
+  /**
+   * Delve co-op, with `gained`: who took the item. The winner, if they had
+   * room for it; otherwise the first standing teammate in seat order who had.
+   */
+  gainedBy?: string;
   /** Delve: the shard this answer earned forged a ward with the one held. */
   forged?: boolean;
   /** Delve: Azurite Wards took this answer's whole loss, so no life was lost. */
@@ -986,6 +998,8 @@ export class Engine {
         s.spectators = s.spectators.filter((o) => o.id !== action.playerId);
         const idx = s.players.findIndex((p) => p.id === action.playerId);
         if (idx < 0) break;
+        // Delve: whether they leave the run on their feet (read while they still have a seat).
+        const standing = !!s.delve && livesOf(s, action.playerId) > 0;
         s.players.splice(idx, 1);
         if (s.phase === 'lobby') fillSeats(s);
         if (s.phase === 'lobby' || s.phase === 'over') break;
@@ -1013,6 +1027,8 @@ export class Engine {
             // they gave or were given stay on the record (`revives`): a
             // teammate they brought back keeps the life.
             const dm = s.delve;
+            // The team got this deep with them: the run's depth never drops below it (delve.ts teamDepth).
+            if (standing) dm.leftAt = Math.max(dm.leftAt ?? 0, s.round);
             delete dm.losses[action.playerId];
             if (dm.inventory) delete dm.inventory[action.playerId];
             dm.excused = dm.excused.filter((id) => id !== action.playerId);
@@ -1135,7 +1151,8 @@ export class Engine {
       case 'revive': {
         if (from === null) throw new ActionError('Only a player can give a life.');
         const problem = reviveProblem(s, from, typeof action.target === 'string' ? action.target : '');
-        if (problem) throw new ActionError(problem);
+        // One that crossed the vote closing on its way (the question is on) is dropped quietly.
+        if (problem) throw new ActionError(problem, s.phase === 'question');
         const dm = s.delve!;
         (dm.revives ??= []).push({ by: from, to: action.target, depth: s.round, fell: fellAt(s, action.target) ?? s.round, at: this.now() });
         // Back with one life and nothing else (their pack was lost where they perished), counted in the next vote.
@@ -1396,6 +1413,8 @@ export class Engine {
         const coop = !!s.delve && isGroupRun(s);
         // Only on the clock, once a question and never a find's, before an answer or the time-out is in.
         if (!s.delve || s.phase !== 'question' || !q || q.askedAt !== action.askedAt || q.deadline === null || q.clockAt === undefined || q.blasted || !itemsWorkOn(q)) break;
+        // Nothing left to blow away: no stick is spent (delve.ts blastLeft).
+        if (blastLeft(q) === 0) break;
         // Alone: the player is here to use it. Together: someone holds one and someone here still has an answer to give.
         if (coop ? !teamItemReady(s, 'dynamite') : !active?.connected) break;
         const now = this.now();
@@ -1619,6 +1638,10 @@ export class Engine {
    * should that be later), for everyone answering. `onTime`: it burns as it
    * should have at 0, its extra time counted from then even if that is past
    * (a player's answer arrived well after 0 with the flare still unburnt).
+   * `flaredAt` is the deadline as it was before it moved, even for a flare
+   * its timer burnt a moment early: an answer given in time is judged by
+   * that 0 (its allowance for answers in flight counted from it), so it
+   * gets the flare back.
    */
   private burnFlare(s: GameState, holder: string, onTime = false) {
     const q = s.question!;
@@ -1626,7 +1649,7 @@ export class Engine {
     if (!this.spend(s, holder, 'flares')) return;
     q.flared = true;
     q.flaredBy = holder;
-    q.flaredAt = Math.min(now, q.deadline!);
+    q.flaredAt = q.deadline!;
     q.deadline = (onTime ? q.deadline! : Math.max(q.deadline!, now)) + FLARE_MS;
   }
 
@@ -1828,12 +1851,14 @@ export class Engine {
    * Co-op: the question is over, cleared by `winner`'s right answer or by
    * nobody (all wrong, or the time-out's `hits`). The winner earns the find's
    * item, if it is one, as alone (an Azurite Vein's fast window counted from
-   * the clock's start to their answer).
+   * the clock's start to their answer); with no room for it, a standing
+   * teammate who has room takes it (`gainedBy`).
    */
   private coopReveal(s: GameState, winner: { id: string; index: number } | null, timedOut: boolean, hits: Hit[]) {
     const q = s.question!;
     const struck = q.struck ?? [];
     let gained: ItemKind | undefined;
+    let gainedBy: string | undefined;
     let forged = false;
     if (winner) {
       const p = s.players.find((p) => p.id === winner.id);
@@ -1848,8 +1873,22 @@ export class Engine {
         delete q.flaredAt;
         delete q.flaredBy;
       }
-      const reward = q.find ? findReward(q.find, inventoryOf(s, winner.id), this.answeredFast(s, q, winner.id)) : null;
-      if (reward) [gained, forged] = this.gain(s, winner.id, reward);
+      // The find goes to the winner if they have room for it, or else to the
+      // first standing teammate in seat order who has: it was offered as
+      // anyone standing had room, so it never pays nothing.
+      if (q.find) {
+        const fast = this.answeredFast(s, q, winner.id);
+        const takers = [winner.id, ...standingIds(s).filter((id) => id !== winner.id)];
+        for (const id of takers) {
+          const reward = findReward(q.find, inventoryOf(s, id), fast);
+          if (!reward) continue;
+          [gained, forged] = this.gain(s, id, reward);
+          if (gained) {
+            gainedBy = id;
+            break;
+          }
+        }
+      }
     }
     const all: Hit[] = [...struck.map((x) => ({ playerId: x.by, lives: x.lives, wards: x.wards, timedOut: false })), ...hits];
     s.reveal = {
@@ -1860,7 +1899,7 @@ export class Engine {
       correct: !!winner,
       timedOut,
       winnerId: winner?.id ?? null,
-      ...(gained ? { gained } : {}),
+      ...(gained ? { gained, gainedBy } : {}),
       ...(forged ? { forged } : {}),
       ...(q.find && cavesIn(q.find) && all.length ? { caveIn: true } : {}),
       hits: all,
