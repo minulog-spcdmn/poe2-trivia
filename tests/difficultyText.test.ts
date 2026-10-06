@@ -73,32 +73,6 @@ test('every hint, and every reason that replaces one, fits on one line', () => {
   for (const t of texts) assert.ok(t.length <= 38, `${t} (${t.length})`);
 });
 
-test('every depth that gets harder in Delve says how', async () => {
-  const { delveChange, DELVE_LADDER, DELVE_STEP_TEXT } = await import('../src/lib/difficultyText.ts');
-  const { DELVE_STEPS, LOOKALIKES_FROM, MORE_FAKES_FROM, delveChangeAt, delveTimer } = await import('../src/lib/delve.ts');
-  for (const step of DELVE_STEPS.slice(1)) assert.ok(DELVE_STEP_TEXT[step.from], `no line for the step at ${step.from}`);
-  assert.ok(DELVE_STEP_TEXT[LOOKALIKES_FROM]);
-  assert.ok(DELVE_STEP_TEXT[MORE_FAKES_FROM]);
-  for (let d = 1; d <= 300; d++) assert.equal(delveChange(d) === null, delveChangeAt(d) === null, `depth ${d}`);
-  assert.deepEqual([3, 5, 7, 9, 11, 13, 58, 81, 85, 91, 101].map(delveChange), [
-    'A look-alike name',
-    'A made-up name',
-    'More look-alikes',
-    'Locked for 3 turns',
-    'Six options',
-    'Less time',
-    'Seven seconds',
-    'Always mirrored',
-    'Look-alike pictures',
-    'Locked for 7 turns',
-    'Now and then, four made-up names',
-  ]);
-  assert.equal(delveTimer(DELVE_LADDER[0].depth), 16);
-  for (const row of DELVE_LADDER.slice(1)) assert.notEqual(delveChange(row.depth), null, `nothing changes at ${row.depth}`);
-  assert.deepEqual(DELVE_LADDER.map((r) => r.depth), [...DELVE_LADDER.map((r) => r.depth)].sort((a, b) => a - b));
-  assert.equal(delveChange(DELVE_LADDER.find((r) => r.text === 'Seven seconds')!.depth), 'Seven seconds');
-});
-
 test('the notes under a find say what its item does and what a miss costs, briefly; never a depth, nor that it is harder (its card says so)', async () => {
   const { findNote, FIND_TEXT, caveInLabel } = await import('../src/lib/difficultyText.ts');
   const none = { wards: 0, flares: 0, dynamite: 0, shards: 0 };
@@ -142,27 +116,18 @@ test('the notes under a find say what its item does and what a miss costs, brief
   }
 });
 
-test("the lobby's descent says what the curve does at each of its depths", async () => {
+test("the lobby's descent says where it starts, then only that every depth is a little harder", async () => {
   const { DELVE_LADDER } = await import('../src/lib/difficultyText.ts');
-  const { DELVE_MIN_TIMER, delveLockout, delveRules, delveTimer } = await import('../src/lib/delve.ts');
-  const text = (depth: number) => DELVE_LADDER.find((r) => r.depth === depth)?.text;
-  // Four options and 16 s to start; look-alikes (from 3) and a made-up name come before six options.
-  assert.ok(delveRules(3).similarNames > 0 && !delveRules(2).similarNames);
-  assert.equal(text(1), 'Four options, 16 seconds');
+  const { delveLockout, delveRules, delveTimer } = await import('../src/lib/delve.ts');
+  assert.deepEqual(DELVE_LADDER[0], { depth: 1, text: 'Four options, 16 seconds' });
   assert.equal(delveRules(1).options, 4);
   assert.equal(delveTimer(1), 16);
-  assert.equal(delveRules(10).options, 4);
-  assert.ok(delveRules(10).similarNames > 0 && delveRules(10).fakes > 0);
-  assert.equal(text(11), 'Six options, eight from 31');
-  assert.deepEqual([delveRules(11).options, delveRules(30).options, delveRules(31).options], [6, 6, 8]);
-  assert.equal(text(15), 'Mirrored pictures');
-  assert.deepEqual([delveRules(14).mirror, delveRules(15).mirror > 0], [0, true]);
-  assert.equal(text(25), 'The art burns into view');
-  assert.deepEqual([delveRules(24).veil, !!delveRules(25).veil], [null, true]);
-  assert.equal(text(41), 'Grayscale pictures, all from 61');
-  assert.deepEqual([40, 41, 60, 61].map((d) => delveRules(d).grayscale), ['off', 'art', 'art', 'all']);
-  assert.equal(text(58), 'Seven seconds');
-  assert.deepEqual([delveTimer(57), delveTimer(58)], [DELVE_MIN_TIMER + 1, DELVE_MIN_TIMER]);
+  // What changes where is left for the player to feel: no other depth is named.
+  assert.deepEqual(DELVE_LADDER.slice(1).map((r) => r.depth), [null]);
+  assert.match(DELVE_LADDER[1].text, /every depth/);
+  // More options, less time, trickier names and pictures, as it says.
+  assert.ok(delveRules(31).options > delveRules(1).options && delveTimer(100) < delveTimer(1));
+  assert.ok(delveRules(100).similarNames > delveRules(1).similarNames && delveRules(100).mirror > delveRules(1).mirror);
   // The lobby's rules say a picked category stays locked for this many turns at the start.
   assert.equal(lockoutText(delveLockout(1)), 'your next 2 turns');
 });

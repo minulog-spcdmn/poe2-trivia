@@ -34,6 +34,7 @@ import {
   livesOf,
   standingIds,
   tileVeilSize,
+  veilSeconds,
   type FindKind,
   type Inventory,
   type ItemKind,
@@ -337,12 +338,10 @@ export function ask(find: FindChoice = opts.questionFind) {
   const { s, q } = made!;
   if (opts.mirrored !== 'rules') q.mirrored = q.mirrored?.map(() => opts.mirrored === 'on') ?? [opts.mirrored === 'on'];
   if (opts.veil === 'off') q.veil = null;
-  else if (opts.veil === 'on' && !q.veil)
-    q.veil = {
-      size: q.mode === 'art' ? tileVeilSize(5) : 5,
-      seconds: delveQuestionTimer(s.round, q) * 0.55,
-      seed: Math.floor(Math.random() * 2 ** 31),
-    };
+  else if (opts.veil === 'on' && !q.veil) {
+    const size = q.mode === 'art' ? tileVeilSize(5) : 5;
+    q.veil = { size, seconds: veilSeconds(delveQuestionTimer(s.round, q), 0.55, size, q.mode === 'art'), seed: Math.floor(Math.random() * 2 ** 31) };
+  }
   const p = s.players[s.turn];
   if (isGroupRun(s)) s.recentCategories = [...s.recentCategories, category].slice(-7);
   else if (p) p.recent = [...p.recent, category].slice(-7);

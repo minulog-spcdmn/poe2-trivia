@@ -15,7 +15,6 @@
   import { portal } from '../lib/portal';
   import { phone } from '../lib/layout';
   import { REVIVE_FROM, delveDepth, fellAt, isGroupRun, livesOf, questionTimer, reviveProblem, standingIds } from '../lib/delve';
-  import { delveChange } from '../lib/difficultyText';
   import { accentAt, milestoneAt } from '../lib/descent';
   import { zoneAt } from '../lib/zoneSigils';
   import { drawsRules, type Variant } from '../lib/zoneMark';
@@ -125,9 +124,6 @@
   // Delve: the seconds the question started with (a find's, a blasted card's or
   // the depth's), never read off the deadline, which a burning flare moves on.
   const seconds = $derived(run ? questionTimer(s) : q?.deadline ? Math.round((q.deadline - (q.clockAt ?? q.askedAt)) / 1000) : 0);
-  // Delve: the line over the banner says what just got harder.
-  const change = $derived(run ? delveChange(depth) : null);
-  const kicker = $derived(change ?? '');
   // Short timers only sound urgent near the end.
   const warnFrom = $derived(run ? Math.max(3, Math.min(5, Math.round(seconds * 0.35))) : 5);
 
@@ -202,9 +198,8 @@
       const sigil = zoneAt(depth);
       const best = session.bestAtStart;
       const turn = s.turnCount;
-      const change = delveChange(depth);
       let next: Card | null = null;
-      if (name) next = { key, turn, title: name, sigil, accent, label: `Depth ${depth}: ${name}.${change ? ` ${change}.` : ''}` };
+      if (name) next = { key, turn, title: name, sigil, accent, label: `Depth ${depth}: ${name}.` };
       else if (!group && best !== null && depth === best + 1)
         next = { key, turn, title: 'Deeper than ever', sigil, accent, label: `Deeper than ever: depth ${depth}, past your best of ${best}.` };
       if (!next) return;
@@ -280,8 +275,8 @@
         {/if}
         <div class="head">
           {#if run}
-            <!-- Kept even when empty, so the banner stays put from one depth to the next. -->
-            <p class="kicker" class:deep={depth >= 21} class:change={!!change} class:veiled={!!zone}>{kicker || '\u00a0'}</p>
+            <!-- An empty line over the banner, where a zone's mark is laid (ZoneMark measures it). -->
+            <p class="kicker" class:veiled={!!zone}>{'\u00a0'}</p>
           {/if}
           <div class="banner" class:dm={!!dm} class:veiled={!!zone && drawsRules(zoneVariant)} style:--c={bannerColor}>
             <span class="rule"></span>
@@ -421,14 +416,6 @@
     font-size: 0.72rem;
     letter-spacing: 0.12em;
     text-transform: uppercase;
-    color: var(--gold);
-  }
-  .kicker.change {
-    color: var(--gold-hi);
-    text-shadow: 0 0 12px rgba(241, 217, 155, 0.35);
-  }
-  .kicker.deep {
-    color: #b9cff0;
   }
   .delve-line {
     margin: 0.8rem 0 0;

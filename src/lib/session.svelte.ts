@@ -17,7 +17,7 @@ import {
   MAX_PLAYERS,
   MAX_SPECTATORS,
   publicView,
-  activeRules,
+  grayscaleFor,
   ANSWER_GRACE_MS,
   autoNextLeft,
   renameCategories,
@@ -1323,9 +1323,9 @@ class Session {
     }
   }
 
-  /** The grayscale a question's art is prepared with: the rules' (the lab may force one). */
+  /** The grayscale a question's art is prepared with: the rules', or as rolled for it in Delve (the lab may force one). */
   private grayscaleOf(s: GameState): Grayscale {
-    return this.labGrayscale ?? activeRules(s).grayscale;
+    return this.labGrayscale ?? grayscaleFor(s);
   }
 
   // ---- internals --------------------------------------------------------

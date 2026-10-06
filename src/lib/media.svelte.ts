@@ -5,7 +5,7 @@
 // questions only the patches of it that have been uncovered so far.
 
 import { itemImage } from './ui-paths';
-import { cutPatches, spreadOrder, veilPace, visibleBox } from './patches';
+import { FIRST_PATCH_MS, cutPatches, spreadOrder, veilPace, visibleBox } from './patches';
 import type { MediaMsg } from './protocol';
 import type { Grayscale, Question } from './game';
 
@@ -222,7 +222,7 @@ async function cutVeil(canvas: HTMLCanvasElement, size: number, seconds: number,
  */
 export function patchDelays(q: Question, count: number): number[] {
   const { gap } = veilPace(q.veil!.seconds * 1000, count);
-  return Array.from({ length: count }, (_, rank) => 400 + rank * gap);
+  return Array.from({ length: count }, (_, rank) => FIRST_PATCH_MS + rank * gap);
 }
 
 // ---- what this device shows -------------------------------------------

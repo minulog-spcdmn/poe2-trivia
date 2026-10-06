@@ -10,6 +10,7 @@ import {
   findOn,
   findRules,
   livesOf,
+  veilSeconds,
 } from '../src/lib/delve.ts';
 import { ActionError, Engine, activeRules, createGame, isFake, lastPicks, publicView, type Action, type GameState, type Item, type Question, type Settings } from '../src/lib/game.ts';
 
@@ -107,7 +108,7 @@ test('a run starts at depth 1 with three lives each and the whole item pool', ()
 });
 
 test('questions take their shape from the depth', () => {
-  for (const depth of [1, 13, 25, 61]) {
+  for (const depth of [1, 13, 25, 61, 100]) {
     const h = delve(['Ash']);
     h.s = { ...h.s, round: depth };
     h.pick();
@@ -117,7 +118,9 @@ test('questions take their shape from the depth', () => {
     const veil = delveRules(depth).veil;
     if (veil && q.mode === 'name') {
       assert.equal(q.veil!.size, veil.size);
-      assert.equal(q.veil!.seconds, delveTimer(depth) * veil.share);
+      assert.equal(q.veil!.seconds, veilSeconds(delveTimer(depth), veil.share, veil.size));
+      // On the shortest clocks it burns in faster than its share.
+      if (depth === 100) assert.ok(q.veil!.seconds < delveTimer(depth) * veil.share);
     } else assert.equal(q.veil, null);
     const madeUp = q.options.filter(isFake).length;
     assert.ok(madeUp <= delveRules(depth).fakes);
@@ -331,7 +334,7 @@ test('deep down, "find the art" pictures burn in too, more often the deeper', as
       if (q.veil) {
         veiled++;
         assert.equal(q.veil.size, tileVeilSize(delveRules(depth).veil!.size));
-        assert.equal(q.veil.seconds, delveTimer(depth) * delveRules(depth).veil!.share);
+        assert.equal(q.veil.seconds, veilSeconds(delveTimer(depth), delveRules(depth).veil!.share, q.veil.size, true));
       }
     }
     return veiled / art;
@@ -340,4 +343,26 @@ test('deep down, "find the art" pictures burn in too, more often the deeper', as
   assert.equal(share(200), 1);
   const mid = share(74);
   assert.ok(Math.abs(mid - delveTileVeil(74)) < 0.1, `about half at depth 74, got ${mid}`);
+});
+
+test('grayscale is rolled for each question, as often as the depth says, and the art is prepared that way', async () => {
+  const { grayscaleFor } = await import('../src/lib/game.ts');
+  const share = (depth: number) => {
+    let gray = 0;
+    const n = 300;
+    for (let seed = 1; seed <= n; seed++) {
+      const h = delve(['Ash'], { seed });
+      h.s = { ...h.s, round: depth };
+      h.pick();
+      const q = h.s.question!;
+      assert.equal(grayscaleFor(h.s), q.gray ? 'all' : 'off');
+      if (!delveRules(depth).grayChance) assert.equal(q.gray, undefined, `no roll at ${depth}`);
+      if (q.gray) gray++;
+    }
+    return gray / n;
+  };
+  assert.equal(share(40), 0);
+  const mid = share(65);
+  assert.ok(Math.abs(mid - delveRules(65).grayChance!) < 0.1, `about half at depth 65, got ${mid}`);
+  assert.equal(share(100), 1);
 });

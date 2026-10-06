@@ -42,13 +42,14 @@ import {
   questionTimer,
   shardsOf,
   tileVeilSize,
+  veilSeconds,
   veinWindow,
   veinWindowMs,
   wardsOf,
   type FindKind,
   type Inventory,
 } from '../src/lib/delve.ts';
-import { ANSWER_GRACE_MS, Engine, KNOB_STEPS, activeRules, createGame, isFake, publicView, type Action, type GameState, type Item, type Question, type Settings } from '../src/lib/game.ts';
+import { ANSWER_GRACE_MS, Engine, activeRules, createGame, isFake, publicView, type Action, type GameState, type Item, type Question, type Settings } from '../src/lib/game.ts';
 import { delveNotices, flareIn, inventoryChanges } from '../src/lib/delveSession.ts';
 import { veilPace } from '../src/lib/patches.ts';
 
@@ -138,10 +139,9 @@ function coop(depth = 20, seed = 11) {
 
 // ---- the rules -------------------------------------------------------------
 
-const KNOBS = ['options', 'similarNames', 'fakes', 'grayscale', 'mirror'] as const;
-const GRAY = KNOB_STEPS.grayscale as readonly string[];
-/** A knob's value as a number that only grows as the curve gets harder. */
-const level = (k: (typeof KNOBS)[number], v: unknown) => (k === 'grayscale' ? GRAY.indexOf(v as string) : (v as number));
+const KNOBS = ['options', 'similarNames', 'fakes', 'grayChance', 'mirror'] as const;
+/** A knob's value as a number that only grows as the curve gets harder (no grayscale chance is none). */
+const level = (_: (typeof KNOBS)[number], v: unknown) => (v as number | undefined) ?? 0;
 const LIVE = ['azurite', 'flare'] as const;
 const DEEPER: Record<FindKind, number> = { azurite: 15, flare: 20, dynamite: 15 };
 
@@ -194,14 +194,22 @@ test('a find is never easier than its depth, nearly always harder, and the harde
 });
 
 test("a find's clock is fair: never the shortest near the top, and never shorter than any depth's", () => {
-  // At the first finds, a vein gets 14 s, not the 7 of depth 58.
+  // At the first finds, a vein gets 14 s, not the 5 of depth 96.
   assert.equal(findTimer('azurite', FINDS_FROM), 14);
   assert.equal(findTimer('azurite', 8), 15 - 1);
   assert.equal(findTimer('azurite', 20), 12);
   assert.equal(findTimer('flare', 15), 12);
   assert.equal(findTimer('flare', 20), 11);
-  assert.equal(findTimer('azurite', 43), DELVE_MIN_TIMER);
-  assert.equal(findTimer('flare', 38), DELVE_MIN_TIMER);
+  assert.equal(findTimer('azurite', 43), 7);
+  assert.equal(findTimer('flare', 38), 7);
+  assert.equal(findTimer('azurite', 63), 6);
+  assert.equal(findTimer('flare', 58), 6);
+  // The shortest clock only past depth 75, where the depth's own is 6 s at the least.
+  assert.equal(findTimer('azurite', 80), DELVE_MIN_TIMER + 1);
+  assert.equal(findTimer('azurite', 81), DELVE_MIN_TIMER);
+  assert.equal(findTimer('flare', 75), DELVE_MIN_TIMER + 1);
+  assert.equal(findTimer('flare', 76), DELVE_MIN_TIMER);
+  for (const kind of LIVE) for (let d = 1; d <= 300; d++) if (findTimer(kind, d) === DELVE_MIN_TIMER) assert.ok(delveTimer(d) > DELVE_MIN_TIMER || d >= 96, `${kind} at ${d}`);
   for (const kind of LIVE) for (let d = 1; d <= 300; d++) assert.ok(findTimer(kind, d) >= DELVE_MIN_TIMER && findTimer(kind, d) <= 16);
 });
 
@@ -212,12 +220,12 @@ test('even a find has half its art in with over 3 s left, and an Azurite Vein ha
       const ms = secs * 1000;
       const veil = findRules(kind, d).veil;
       if (!veil) continue;
-      // The art of a name question (see tests/delve.test.ts for where these timings come from).
-      const whole = veilPace(ms * veil.share, veil.size ** 2);
+      // The art of a name question (see tests/delve.test.ts for where these timings come from), faster on a short clock.
+      const whole = veilPace(veilSeconds(secs, veil.share, veil.size) * 1000, veil.size ** 2);
       const halfArt = 400 + (veil.size ** 2 / 2) * whole.gap + whole.burn;
       // A "find the art" picture, the last of which starts up to half a step late.
       const count = tileVeilSize(veil.size) ** 2;
-      const tile = veilPace(ms * veil.share, count);
+      const tile = veilPace(veilSeconds(secs, veil.share, tileVeilSize(veil.size), true) * 1000, count);
       const halfTile = 400 + tile.gap / 2 + (count / 2) * tile.gap + tile.burn;
       for (const half of [halfArt, halfTile]) {
         assert.ok(ms - half >= 3000, `${kind} at ${d}: ${Math.round(ms - half)} ms left with half the art in`);
@@ -459,7 +467,7 @@ test('picking a find asks the question of its deeper depth, on its clock', () =>
       if (rules.mirror === 1) assert.ok(q.mirrored!.every(Boolean), 'every picture mirrored');
       if (q.veil) assert.equal(q.veil.size, tileVeilSize(rules.veil!.size), 'a "find the art" picture burns in, cut coarser');
     }
-    if (q.veil) assert.equal(q.veil.seconds, findTimer(kind, depth) * rules.veil!.share);
+    if (q.veil) assert.equal(q.veil.seconds, veilSeconds(findTimer(kind, depth), rules.veil!.share, q.veil.size, q.mode === 'art'));
     h.clockIn();
     assert.equal(h.s.question!.deadline! - h.s.question!.clockAt!, findTimer(kind, depth) * 1000);
     assert.equal(questionTimer(h.s), findTimer(kind, depth));

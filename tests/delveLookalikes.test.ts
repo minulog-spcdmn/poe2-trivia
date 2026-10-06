@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { LOOKALIKES_FROM, delveLookalikes } from '../src/lib/delve.ts';
+import { LOOKALIKES_FROM, LOOKALIKES_TO, delveLookalikes } from '../src/lib/delve.ts';
 import { Engine, createGame, isFake, type GameState, type Item, type Question, type Settings } from '../src/lib/game.ts';
 import { readLooks, type Looks } from '../src/lib/looks.ts';
 
@@ -62,7 +62,7 @@ function clustered(q: Question, offScreen = false): boolean {
   );
 }
 
-test('from depth 85 the roll comes up as often as the depth says, and every time from 134', () => {
+test('from depth 50 the roll comes up as often as the depth says, and every time from 120', () => {
   assert.ok(BIG.length >= 4);
   const share = (depth: number, n: number) => {
     const spy = spied();
@@ -76,12 +76,11 @@ test('from depth 85 the roll comes up as often as the depth says, and every time
     return rolled / n;
   };
   assert.equal(share(LOOKALIKES_FROM - 1, 300), 0);
-  assert.equal(share(60, 100), 0);
-  const at85 = share(LOOKALIKES_FROM, 3000);
-  assert.ok(Math.abs(at85 - 0.02) < 0.01, `${at85} at 85`);
-  const at100 = share(100, 3000);
-  assert.ok(Math.abs(at100 - delveLookalikes(100)) < 0.04, `${at100} at 100`);
-  assert.equal(share(134, 300), 1);
+  const first = share(LOOKALIKES_FROM, 3000);
+  assert.ok(Math.abs(first - delveLookalikes(LOOKALIKES_FROM)) < 0.01, `${first} at ${LOOKALIKES_FROM}`);
+  const at85 = share(85, 3000);
+  assert.ok(Math.abs(at85 - delveLookalikes(85)) < 0.04, `${at85} at 85`);
+  assert.equal(share(LOOKALIKES_TO, 300), 1);
   assert.equal(share(250, 100), 1);
 });
 
@@ -140,7 +139,7 @@ test('without the table, or for an item it lacks, look-alikes go by name and the
   }
 });
 
-test('the same seed and table ask the same questions; shallower than 85 the table changes nothing', () => {
+test('the same seed and table ask the same questions; shallower than 50 the table changes nothing', () => {
   const run = (depth: number, table: Looks | null) => {
     const engine = make(21, table);
     let s = fresh(engine);

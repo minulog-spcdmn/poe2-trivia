@@ -8,7 +8,8 @@
 // team votes for a card, everyone standing answers the one question, and a
 // teammate with lives to spare can bring back one who perished.
 
-import type { DifficultyRules, GameState, Grayscale, Player, Preset, Question, Revive, VeilSpeed } from './game.ts';
+import type { DifficultyRules, GameState, Grayscale, Player, Preset, Question, Revive } from './game.ts';
+import { halfBurnt } from './patches.ts';
 
 export const DELVE_LIVES = 3;
 
@@ -42,17 +43,19 @@ export const DELVE_RESUME_GRACE_MS = 60_000;
 const depthOf = (d: number) => (Number.isFinite(d) ? Math.max(1, Math.floor(d)) : 1);
 
 /**
- * The shortest a question gets. Long enough that, under the slowest veil, half
- * the art has burnt in with over 3 s still left to answer (at 6 s it would be 2.7).
+ * The shortest a question gets, from depth 96: very little, for the deepest
+ * delvers. The art burns in faster on so short a clock (veilSeconds), so
+ * half of it is still in with VEIL_LEFT_MS to answer.
  */
-export const DELVE_MIN_TIMER = 7;
+export const DELVE_MIN_TIMER = 5;
 
 /**
  * Depths where the clock loses a second: 16 s from the start, 15 from depth
- * 13… down to DELVE_MIN_TIMER from 58. Slow at first, where a lost second
- * hurts most, then quicker; never on a depth where something else changes.
+ * 13… 7 from 58, then 6 from 78 and DELVE_MIN_TIMER (5) from 96. Slow at
+ * first, where a lost second hurts most, then quicker; never on a depth where
+ * another step (options, made-up names, the lockout) comes.
  */
-const TIMER_FROM = [13, 19, 27, 34, 39, 44, 48, 53, 58];
+const TIMER_FROM = [13, 19, 27, 34, 39, 44, 48, 53, 58, 78, 96];
 
 /** Seconds per question: 16 at the top, one less at each of TIMER_FROM, never below DELVE_MIN_TIMER. */
 export const delveTimer = (d: number) => {
@@ -70,63 +73,78 @@ export function delveLockout(d: number): number {
 }
 
 /**
- * Delve's own knob values: look-alikes and mirroring also come in quarters
- * (0.25, 0.75), between the steps the Custom editor offers, so the curve can
- * change one thing a little at a time.
+ * How a smooth rise goes: 0 up to depth `from`, 1 from depth `to` on, and in
+ * between linear, or eased out with `ease` above 1 (quicker at first, gentler
+ * as it nears the top).
  */
-type DelveKnobs = Pick<DifficultyRules, 'options' | 'similarNames' | 'fakes' | 'artChance' | 'grayscale' | 'mirror'> & { veil: VeilSpeed };
-
-/** How each veil speed cuts and paces the art (the same as game.ts VEILS; tests/delve.test.ts checks). */
-const VEIL_PACE: Record<VeilSpeed, DifficultyRules['veil']> = {
-  off: null,
-  fast: { size: 5, share: 0.55 },
-  slow: { size: 7, share: 0.7 },
-  slowest: { size: 9, share: 0.8 },
-};
+function ramp(d: number, from: number, to: number, ease = 1): number {
+  const t = Math.min(1, Math.max(0, (depthOf(d) - from) / (to - from)));
+  return Math.round((1 - (1 - t) ** ease) * 10_000) / 10_000;
+}
 
 /**
- * The question knobs, each from the depth where it starts: one change at a
- * time, and never on a depth where the timer or the lockout changes, so each
- * step can be felt (and named) on its own. Four options for the first ten
- * depths, made harder by look-alike and made-up names meanwhile; six from 11,
- * eight from 31. Options stop at 8: at 10 only pairs of groups can share a
- * question, so most small groups (wands, quivers, relics…) could never be the
- * answer. From depth 25 the art burns into view, slower from 50 and slowest
- * from 75 (its clock only starts once the art is out); grayscale only comes
- * after that, so the first art to burn in is in colour. The last step is at
- * 81; past it only the tile veil, delveLookalikes (from 85) and
- * delveMoreFakes (from 101) keep rising.
+ * The knobs that rise a little at every depth instead of in steps, each from
+ * the depth before it first shows (`from`, where it is still at `lo`) to the
+ * depth where it tops out (`to`, at `hi`), so no single depth jumps. Spread
+ * over the whole run to 100, where all of them are at their hardest:
+ * - look-alike names, from depth 2, eased out (most of the rise by 40: they
+ *   are what the first depths have to get harder with);
+ * - "find the art" questions, from 4 in 10 to half from depth 32 to 90;
+ * - mirrored pictures, from depth 15, every picture from 85;
+ * - the unveil, from depth 25: its share of the clock from 30% to 80% and its
+ *   patches from about 4 × 4 to 9 × 9 by depth 90 (on the shortest clocks
+ *   it burns in faster still: veilSeconds);
+ * - grayscale, a chance per question from depth 41, all of them from 90:
+ *   after the unveil has started, so the first art to burn in is in colour.
  */
-export const DELVE_STEPS: (DelveKnobs & { from: number })[] = [
-  { from: 1, options: 4, similarNames: 0, fakes: 0, artChance: 0.4, grayscale: 'off', mirror: 0, veil: 'off' },
-  { from: 3, options: 4, similarNames: 0.25, fakes: 0, artChance: 0.4, grayscale: 'off', mirror: 0, veil: 'off' },
-  { from: 5, options: 4, similarNames: 0.25, fakes: 1, artChance: 0.4, grayscale: 'off', mirror: 0, veil: 'off' },
-  { from: 7, options: 4, similarNames: 0.5, fakes: 1, artChance: 0.4, grayscale: 'off', mirror: 0, veil: 'off' },
-  { from: 11, options: 6, similarNames: 0.5, fakes: 1, artChance: 0.4, grayscale: 'off', mirror: 0, veil: 'off' },
-  { from: 15, options: 6, similarNames: 0.5, fakes: 1, artChance: 0.4, grayscale: 'off', mirror: 0.25, veil: 'off' },
-  { from: 17, options: 6, similarNames: 0.5, fakes: 2, artChance: 0.4, grayscale: 'off', mirror: 0.25, veil: 'off' },
-  { from: 21, options: 6, similarNames: 0.75, fakes: 2, artChance: 0.4, grayscale: 'off', mirror: 0.25, veil: 'off' },
-  { from: 25, options: 6, similarNames: 0.75, fakes: 2, artChance: 0.4, grayscale: 'off', mirror: 0.25, veil: 'fast' },
-  { from: 29, options: 6, similarNames: 0.75, fakes: 2, artChance: 0.4, grayscale: 'off', mirror: 0.5, veil: 'fast' },
-  { from: 31, options: 8, similarNames: 0.75, fakes: 2, artChance: 0.4, grayscale: 'off', mirror: 0.5, veil: 'fast' },
-  { from: 41, options: 8, similarNames: 0.75, fakes: 2, artChance: 0.5, grayscale: 'art', mirror: 0.5, veil: 'fast' },
-  { from: 45, options: 8, similarNames: 0.75, fakes: 3, artChance: 0.5, grayscale: 'art', mirror: 0.5, veil: 'fast' },
-  { from: 50, options: 8, similarNames: 0.75, fakes: 3, artChance: 0.5, grayscale: 'art', mirror: 0.5, veil: 'slow' },
-  { from: 55, options: 8, similarNames: 1, fakes: 3, artChance: 0.5, grayscale: 'art', mirror: 0.5, veil: 'slow' },
-  { from: 61, options: 8, similarNames: 1, fakes: 3, artChance: 0.5, grayscale: 'all', mirror: 0.5, veil: 'slow' },
-  { from: 71, options: 8, similarNames: 1, fakes: 3, artChance: 0.5, grayscale: 'all', mirror: 0.75, veil: 'slow' },
-  { from: 75, options: 8, similarNames: 1, fakes: 3, artChance: 0.5, grayscale: 'all', mirror: 0.75, veil: 'slowest' },
-  { from: 81, options: 8, similarNames: 1, fakes: 3, artChance: 0.5, grayscale: 'all', mirror: 1, veil: 'slowest' },
+export const DELVE_CURVES = {
+  similarNames: { from: 1, to: 80, lo: 0, hi: 1, ease: 2 },
+  artChance: { from: 31, to: 90, lo: 0.4, hi: 0.5, ease: 1 },
+  mirror: { from: 14, to: 85, lo: 0, hi: 1, ease: 1 },
+  veilShare: { from: 24, to: 90, lo: 0.3, hi: 0.8, ease: 1 },
+  veilSize: { from: 24, to: 90, lo: 4, hi: 9, ease: 1 },
+  grayChance: { from: 40, to: 90, lo: 0, hi: 1, ease: 1 },
+} as const;
+
+/** Depth where the art starts to burn into view (the unveil). */
+export const VEIL_FROM = DELVE_CURVES.veilShare.from + 1;
+
+/** A smoothly rising knob at depth `d` (DELVE_CURVES). */
+export function delveCurve(knob: keyof typeof DELVE_CURVES, d: number): number {
+  const { from, to, lo, hi, ease } = DELVE_CURVES[knob];
+  return Math.round((lo + (hi - lo) * ramp(d, from, to, ease)) * 10_000) / 10_000;
+}
+
+/**
+ * The knobs that still come in steps, each from the depth where it starts:
+ * options (four for the first ten depths, six from 11, eight from 31; they
+ * stop at 8, since at 10 only pairs of groups can share a question, so most
+ * small groups like wands, quivers or relics could never be the answer) and
+ * made-up names. Never on a depth where another step, the timer or the
+ * lockout changes.
+ */
+export const OPTIONS_FROM: { from: number; options: number }[] = [
+  { from: 1, options: 4 },
+  { from: 11, options: 6 },
+  { from: 31, options: 8 },
+];
+export const FAKES_FROM: { from: number; fakes: number }[] = [
+  { from: 1, fakes: 0 },
+  { from: 5, fakes: 1 },
+  { from: 17, fakes: 2 },
+  { from: 45, fakes: 3 },
 ];
 
-/** The step of the curve a depth plays. */
-function stepOf(d: number) {
-  const depth = depthOf(d);
-  return DELVE_STEPS.findLast((step) => depth >= step.from)!;
+const stepAt = <T extends { from: number }>(steps: T[], d: number) => steps.findLast((step) => depthOf(d) >= step.from)!;
+
+/** How the art burns in at depth `d` (from VEIL_FROM), before any cap on a short clock (veilSeconds). */
+export function delveVeil(d: number): DifficultyRules['veil'] {
+  if (depthOf(d) < VEIL_FROM) return null;
+  return { size: delveCurve('veilSize', d), share: delveCurve('veilShare', d) };
 }
 
 /** Depth where "find the art" pictures may burn in too: one more percent of them every depth after it. */
-export const TILE_VEIL_FROM = 25;
+export const TILE_VEIL_FROM = VEIL_FROM;
 
 /** The share of "find the art" questions whose pictures burn into view, when the art does at all. */
 export function delveTileVeil(d: number): number {
@@ -137,12 +155,37 @@ export function delveTileVeil(d: number): number {
 /**
  * How finely a "find the art" picture is cut, for a veil cut `size` × `size`
  * over a whole item: much coarser, so up to eight pictures stay a few dozen
- * patches each to send and burn (3 × 3 fast, 4 × 4 slower).
+ * patches each to send and burn (3 × 3 for a 5 × 5 veil, never past 4 × 4).
  */
-export const tileVeilSize = (size: number) => Math.min(4, Math.ceil(size / 2));
+export const tileVeilSize = (size: number) => Math.min(4, (size + 1) / 2);
+
+/** Time left to answer, at the least, once half the art has burnt in (veilSeconds). */
+export const VEIL_LEFT_MS = 3000;
 
 /**
- * Endless, past the last step: from this depth a growing share of name
+ * Seconds a veil cut `size` × `size` takes to burn in on a clock of `secs`:
+ * its `share` of the clock, but never so long that half the art comes in
+ * with less than VEIL_LEFT_MS left (halfBurnt), so on a short clock deep
+ * down the art burns in faster instead. `tiles`: "find the art" pictures,
+ * the last of which starts up to half a step late. The engine sets a
+ * question's veil.seconds from it, and the host paces the patches by that.
+ */
+export function veilSeconds(secs: number, share: number, size: number, tiles = false): number {
+  const [count, late] = [size * size, tiles ? 0.5 : 0];
+  const fits = (ms: number) => halfBurnt(ms, count, late) <= secs * 1000 - VEIL_LEFT_MS;
+  if (fits(secs * share * 1000)) return secs * share;
+  // The longest whole number of ms that fits (halfBurnt only grows with the time).
+  let [lo, hi] = [0, Math.floor(secs * share * 1000)];
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (fits(mid)) lo = mid;
+    else hi = mid - 1;
+  }
+  return lo / 1000;
+}
+
+/**
+ * Endless, past depth 100: from this depth a growing share of name
  * questions gets a fourth made-up name (as many as eight options hold), two
  * percent more every depth, all of them by depth 150.
  */
@@ -158,39 +201,35 @@ export function delveMoreFakes(d: number): number {
  * From this depth a growing share of questions picks its look-alikes by their
  * art instead of their names: the wrong pictures of "find the art" look like
  * the answer's, and the wrong names of "name the item" belong to items drawn
- * like it. Two percent at 85, two percent more every depth, every question
- * from 134. A depth of its own: the timer has stopped by then, the last step
- * is at 81 and the last lockout at 91.
+ * like it. A little more of them every depth, every question from
+ * LOOKALIKES_TO.
  */
-export const LOOKALIKES_FROM = 85;
+export const LOOKALIKES_FROM = 50;
+/** The depth from which every question picks its look-alikes by their art. */
+export const LOOKALIKES_TO = 120;
 
 /** The share of a depth's questions whose look-alikes are picked by their art (src/lib/looks.ts). */
-export function delveLookalikes(d: number): number {
-  const depth = depthOf(d);
-  return depth < LOOKALIKES_FROM ? 0 : Math.min(1, Math.round((depth - LOOKALIKES_FROM + 1) * 2) / 100);
-}
+export const delveLookalikes = (d: number) => ramp(d, LOOKALIKES_FROM - 1, LOOKALIKES_TO);
 
 /** The rules of a depth. */
 export function delveRules(d: number): DifficultyRules {
-  const { from: _, veil, ...k } = stepOf(d);
   const more = delveMoreFakes(d);
   const looks = delveLookalikes(d);
-  return { ...k, veil: VEIL_PACE[veil], lockout: delveLockout(d), ...(looks ? { lookalikes: looks } : {}), ...(more ? { moreFakes: more } : {}) };
-}
-
-/**
- * What gets harder at this depth, if anything: new question rules (a step of
- * the curve, the first look-alike pictures, or the first fourth made-up
- * names), a longer lockout, or less time. Only one at a time
- * (tests/delve.test.ts checks).
- */
-export function delveChangeAt(d: number): 'knobs' | 'lockout' | 'timer' | null {
-  const depth = depthOf(d);
-  if (depth === 1) return null;
-  if (stepOf(depth) !== stepOf(depth - 1) || depth === LOOKALIKES_FROM || depth === MORE_FAKES_FROM) return 'knobs';
-  if (delveLockout(depth) !== delveLockout(depth - 1)) return 'lockout';
-  if (delveTimer(depth) !== delveTimer(depth - 1)) return 'timer';
-  return null;
+  const gray = delveCurve('grayChance', d);
+  return {
+    options: stepAt(OPTIONS_FROM, d).options,
+    similarNames: delveCurve('similarNames', d),
+    fakes: stepAt(FAKES_FROM, d).fakes,
+    artChance: delveCurve('artChance', d),
+    veil: delveVeil(d),
+    // Rolled for each question instead (grayChance).
+    grayscale: 'off',
+    mirror: delveCurve('mirror', d),
+    lockout: delveLockout(d),
+    ...(gray ? { grayChance: gray } : {}),
+    ...(looks ? { lookalikes: looks } : {}),
+    ...(more ? { moreFakes: more } : {}),
+  };
 }
 
 // ---- finds -----------------------------------------------------------------
@@ -338,7 +377,7 @@ export const findTileVeil = (kind: FindKind, d: number) => delveTileVeil(findDep
  * every question alike.
  */
 export function findRules(kind: FindKind, d: number): DifficultyRules {
-  return { ...delveRules(findDepth(kind, d)), artChance: stepOf(d).artChance, lockout: delveLockout(d) };
+  return { ...delveRules(findDepth(kind, d)), artChance: delveCurve('artChance', d), lockout: delveLockout(d) };
 }
 
 /**

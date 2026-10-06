@@ -27,15 +27,22 @@ import {
   delveLockout,
   delveRules,
   delveStandings,
-  delveChangeAt,
   delveTileVeil,
-  DELVE_STEPS,
+  DELVE_CURVES,
+  FAKES_FROM,
+  OPTIONS_FROM,
+  VEIL_FROM,
+  delveCurve,
+  LOOKALIKES_TO,
   MORE_FAKES_FROM,
   delveMoreFakes,
   LOOKALIKES_FROM,
   LOOKALIKES_ASKED_FROM,
   delveLookalikes,
   tileVeilSize,
+  veilSeconds,
+  VEIL_LEFT_MS,
+  DELVE_MIN_TIMER,
   delveTier,
   delveTimer,
   fellAt,
@@ -48,18 +55,17 @@ import { PROTOCOL_VERSION } from '../src/lib/protocol.ts';
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
 const DEPTHS = Array.from({ length: 200 }, (_, i) => i + 1);
 
-/** Delve's own steps between the Custom editor's: look-alikes and mirroring in quarters. */
-const QUARTERS = [0, 0.25, 0.5, 0.75, 1];
-
-test('every depth plays knob values that exist, or Delve\'s quarters, and the Custom steps stay as they were', () => {
+test('every depth plays sane knob values, and the Custom steps stay as they were', () => {
   for (const d of DEPTHS) {
     const r = delveRules(d);
     assert.ok((KNOB_STEPS.options as readonly number[]).includes(r.options), `options at ${d}`);
-    assert.ok(QUARTERS.includes(r.similarNames), `look-alikes at ${d}`);
     assert.ok((KNOB_STEPS.fakes as readonly number[]).includes(r.fakes), `fakes at ${d}`);
-    assert.ok((KNOB_STEPS.artChance as readonly number[]).includes(r.artChance), `art at ${d}`);
-    assert.ok((KNOB_STEPS.grayscale as readonly string[]).includes(r.grayscale), `grayscale at ${d}`);
-    assert.ok(QUARTERS.includes(r.mirror), `mirror at ${d}`);
+    for (const k of ['similarNames', 'artChance', 'mirror'] as const) assert.ok(r[k] >= 0 && r[k] <= 1, `${k} at ${d}`);
+    assert.ok(r.artChance >= 0.4 && r.artChance <= 0.5, `art at ${d}`);
+    // Grayscale is rolled for each question instead.
+    assert.equal(r.grayscale, 'off', `grayscale at ${d}`);
+    assert.ok(r.grayChance === undefined || (r.grayChance > 0 && r.grayChance <= 1), `grayscale chance at ${d}`);
+    if (r.veil) assert.ok(r.veil.size >= 4 && r.veil.size <= 9 && r.veil.share >= 0.3 && r.veil.share <= 0.8, `the veil at ${d}`);
     assert.ok(r.fakes <= maxFakes(r.options), `fakes fit at ${d}`);
     assert.ok(r.fakes + (r.moreFakes ? 1 : 0) <= maxFakes(r.options), `a fourth fake fits at ${d}`);
     assert.ok(r.options <= 8, `at most 8 options at ${d}`);
@@ -71,52 +77,80 @@ test('every depth plays knob values that exist, or Delve\'s quarters, and the Cu
   ]);
 });
 
-test('the approved curve: one change at a time', () => {
+test('the approved curve: steps for options, made-up names, the timer and the lockout, a smooth rise for the rest', () => {
+  assert.deepEqual(OPTIONS_FROM, [
+    { from: 1, options: 4 },
+    { from: 11, options: 6 },
+    { from: 31, options: 8 },
+  ]);
+  assert.deepEqual(FAKES_FROM, [
+    { from: 1, fakes: 0 },
+    { from: 5, fakes: 1 },
+    { from: 17, fakes: 2 },
+    { from: 45, fakes: 3 },
+  ]);
+  assert.deepEqual([1, 10, 11, 30, 31, 300].map((d) => delveRules(d).options), [4, 4, 6, 6, 8, 8]);
+  assert.deepEqual([4, 5, 16, 17, 44, 45, 300].map((d) => delveRules(d).fakes), [0, 1, 1, 2, 2, 3, 3]);
+  // The smooth knobs, at a few depths: [look-alike names, find the art, mirrored, veil share, veil size, grayscale].
   const row = (d: number) => {
     const r = delveRules(d);
-    return [r.options, r.similarNames, r.fakes, r.artChance, r.mirror, r.veil?.size ?? 0, r.grayscale];
+    return [r.similarNames, r.artChance, r.mirror, r.veil?.share ?? 0, r.veil?.size ?? 0, r.grayChance ?? 0].map((x) => Math.round(x * 100) / 100);
   };
-  assert.deepEqual(DELVE_STEPS.map((s) => s.from), [1, 3, 5, 7, 11, 15, 17, 21, 25, 29, 31, 41, 45, 50, 55, 61, 71, 75, 81]);
-  assert.deepEqual([1, 3, 5, 7, 11, 15, 17, 21, 25, 29, 31, 41, 45, 50, 55, 61, 71, 75, 81].map(row), [
-    [4, 0, 0, 0.4, 0, 0, 'off'],
-    [4, 0.25, 0, 0.4, 0, 0, 'off'],
-    [4, 0.25, 1, 0.4, 0, 0, 'off'],
-    [4, 0.5, 1, 0.4, 0, 0, 'off'],
-    [6, 0.5, 1, 0.4, 0, 0, 'off'],
-    [6, 0.5, 1, 0.4, 0.25, 0, 'off'],
-    [6, 0.5, 2, 0.4, 0.25, 0, 'off'],
-    [6, 0.75, 2, 0.4, 0.25, 0, 'off'],
-    [6, 0.75, 2, 0.4, 0.25, 5, 'off'],
-    [6, 0.75, 2, 0.4, 0.5, 5, 'off'],
-    [8, 0.75, 2, 0.4, 0.5, 5, 'off'],
-    [8, 0.75, 2, 0.5, 0.5, 5, 'art'],
-    [8, 0.75, 3, 0.5, 0.5, 5, 'art'],
-    [8, 0.75, 3, 0.5, 0.5, 7, 'art'],
-    [8, 1, 3, 0.5, 0.5, 7, 'art'],
-    [8, 1, 3, 0.5, 0.5, 7, 'all'],
-    [8, 1, 3, 0.5, 0.75, 7, 'all'],
-    [8, 1, 3, 0.5, 0.75, 9, 'all'],
-    [8, 1, 3, 0.5, 1, 9, 'all'],
+  assert.deepEqual([1, 10, 25, 50, 75, 90, 100].map(row), [
+    [0, 0.4, 0, 0, 0, 0],
+    [0.21, 0.4, 0, 0, 0, 0],
+    [0.52, 0.4, 0.15, 0.31, 4.08, 0],
+    [0.86, 0.43, 0.51, 0.5, 5.97, 0.2],
+    [1, 0.47, 0.86, 0.69, 7.86, 0.7],
+    [1, 0.5, 1, 0.8, 9, 1],
+    [1, 0.5, 1, 0.8, 9, 1],
   ]);
-  const timers = [1, 12, 13, 18, 19, 26, 27, 33, 34, 38, 39, 43, 44, 47, 48, 52, 53, 57, 58, 300].map(delveTimer);
-  assert.deepEqual(timers, [16, 16, 15, 15, 14, 14, 13, 13, 12, 12, 11, 11, 10, 10, 9, 9, 8, 8, 7, 7]);
+  const timers = [1, 12, 13, 18, 19, 26, 27, 33, 34, 38, 39, 43, 44, 47, 48, 52, 53, 57, 58, 77, 78, 95, 96, 300].map(delveTimer);
+  assert.deepEqual(timers, [16, 16, 15, 15, 14, 14, 13, 13, 12, 12, 11, 11, 10, 10, 9, 9, 8, 8, 7, 7, 6, 6, 5, 5]);
   const lockouts = [1, 8, 9, 22, 23, 36, 37, 65, 66, 90, 91, 300].map(delveLockout);
   assert.deepEqual(lockouts, [2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7]);
 });
 
 test('the curve only ever gets harder', () => {
-  const gray = (v: string) => (KNOB_STEPS.grayscale as readonly string[]).indexOf(v);
   for (const d of Array.from({ length: 299 }, (_, i) => i + 2)) {
     const [a, b] = [delveRules(d - 1), delveRules(d)];
     for (const k of ['options', 'similarNames', 'fakes', 'artChance', 'mirror'] as const) assert.ok(b[k] >= a[k], `${k} eases at ${d}`);
-    assert.ok(gray(b.grayscale) >= gray(a.grayscale), `grayscale eases at ${d}`);
-    assert.ok((b.veil?.size ?? 0) >= (a.veil?.size ?? 0), `the veil speeds up at ${d}`);
+    assert.ok((b.grayChance ?? 0) >= (a.grayChance ?? 0), `less grayscale at ${d}`);
+    assert.ok((b.veil?.size ?? 0) >= (a.veil?.size ?? 0), `the veil coarsens at ${d}`);
+    assert.ok((b.veil?.share ?? 0) >= (a.veil?.share ?? 0), `the veil speeds up at ${d}`);
     assert.ok((b.moreFakes ?? 0) >= (a.moreFakes ?? 0), `fewer fourth fakes at ${d}`);
     assert.ok((b.lookalikes ?? 0) >= (a.lookalikes ?? 0), `fewer look-alike pictures at ${d}`);
     assert.ok(delveTileVeil(d) >= delveTileVeil(d - 1), `fewer veiled pictures at ${d}`);
     assert.ok(delveTimer(d) <= delveTimer(d - 1), `timer grows at ${d}`);
     assert.ok(delveLockout(d) >= delveLockout(d - 1), `lockout shrinks at ${d}`);
   }
+});
+
+test('the smooth knobs rise a little at every depth, never in a jump, and top out by depth 90', () => {
+  // No depth moves a knob by more than 3% of its whole rise (the eased look-alikes rise fastest, at first).
+  const knobs = Object.keys(DELVE_CURVES) as (keyof typeof DELVE_CURVES)[];
+  for (const k of knobs) {
+    const { lo, hi, from, to } = DELVE_CURVES[k];
+    assert.ok(to <= 90, `${k} tops out by 90`);
+    assert.equal(delveCurve(k, from), lo);
+    assert.equal(delveCurve(k, to), hi);
+    assert.equal(delveCurve(k, 500), hi);
+    for (let d = 2; d <= 300; d++) {
+      const step = delveCurve(k, d) - delveCurve(k, d - 1);
+      assert.ok(step >= 0 && step <= 0.03 * (hi - lo), `${k} jumps by ${step} at ${d}`);
+    }
+  }
+  // The same for the shares that rise past the run: look-alike pictures, burning pictures, a fourth made-up name.
+  for (const f of [delveLookalikes, delveTileVeil, delveMoreFakes])
+    for (let d = 2; d <= 300; d++) assert.ok(f(d) - f(d - 1) <= 0.03, `${f.name} jumps at ${d}`);
+  // Each starts about where its step used to: look-alike names at 2 (where nothing else changes yet), mirroring at 15, the unveil at 25, more art at 32, grayscale at 41.
+  const first = (f: (d: number) => number) => DEPTHS.find((d) => f(d) > f(1))!;
+  assert.deepEqual(
+    [(d: number) => delveRules(d).similarNames, (d: number) => delveRules(d).mirror, (d: number) => delveRules(d).veil?.share ?? 0, (d: number) => delveRules(d).artChance, (d: number) => delveRules(d).grayChance ?? 0].map(first),
+    [2, 15, VEIL_FROM, 32, 41],
+  );
+  // The unveil comes in gently: fast and coarse at first, a third of the clock in big patches.
+  assert.ok(delveRules(VEIL_FROM).veil!.share < 0.32 && delveRules(VEIL_FROM).veil!.size < 4.1);
 });
 
 test('past depth 100 a growing share of name questions gets a fourth made-up name, all of them from 150', () => {
@@ -127,62 +161,52 @@ test('past depth 100 a growing share of name questions gets a fourth made-up nam
   assert.equal(maxFakes(8), 4);
 });
 
-test('from depth 85 a growing share of questions picks its look-alikes by their art, every question from 134', () => {
-  assert.equal(LOOKALIKES_FROM, 85);
-  assert.deepEqual([1, 81, 84, 85, 86, 100, 133, 134, 300].map(delveLookalikes), [0, 0, 0, 0.02, 0.04, 0.32, 0.98, 1, 1]);
-  assert.equal(delveRules(84).lookalikes, undefined, 'nothing to say before it starts');
-  assert.equal(delveRules(85).lookalikes, 0.02);
-  assert.equal(delveRules(134).lookalikes, 1);
-  // It only makes look-alikes pick differently, so it comes where every question already has them all.
-  assert.equal(delveRules(LOOKALIKES_FROM).similarNames, 1);
-  // Finds ask from up to twenty depths deeper, so a flare at 65 already gets it.
-  assert.equal(LOOKALIKES_ASKED_FROM, 65);
-  assert.equal(findRules('flare', 64).lookalikes, undefined);
-  assert.equal(findRules('flare', 65).lookalikes, 0.02);
-  assert.equal(findRules('azurite', 70).lookalikes, 0.02);
+test('from depth 50 a growing share of questions picks its look-alikes by their art, every question from 120', () => {
+  assert.deepEqual([LOOKALIKES_FROM, LOOKALIKES_TO], [50, 120]);
+  assert.deepEqual([1, 49, 50, 51, 85, 119, 120, 300].map(delveLookalikes), [0, 0, 0.0141, 0.0282, 0.507, 0.9859, 1, 1]);
+  assert.equal(delveRules(49).lookalikes, undefined, 'nothing to say before it starts');
+  assert.equal(delveRules(50).lookalikes, 0.0141);
+  assert.equal(delveRules(120).lookalikes, 1);
+  // It only makes look-alikes pick differently, so it comes once most of them are look-alikes.
+  assert.ok(delveRules(LOOKALIKES_FROM).similarNames > 0.8);
+  // Finds ask from up to twenty depths deeper, so a flare at 30 already gets it.
+  assert.equal(LOOKALIKES_ASKED_FROM, 30);
+  assert.equal(findRules('flare', 29).lookalikes, undefined);
+  assert.equal(findRules('flare', 30).lookalikes, 0.0141);
+  assert.equal(findRules('azurite', 35).lookalikes, 0.0141);
 });
 
 test('timer and lockout stay within bounds', () => {
   for (const d of DEPTHS) {
-    assert.ok(Number.isInteger(delveTimer(d)) && delveTimer(d) >= 7 && delveTimer(d) <= 16);
+    assert.ok(Number.isInteger(delveTimer(d)) && delveTimer(d) >= 5 && delveTimer(d) <= 16);
     assert.ok(delveLockout(d) >= 2 && delveLockout(d) <= DELVE_MAX_LOCKOUT);
   }
   assert.equal(delveTimer(1), 16);
   assert.equal(delveTimer(58), 7);
   assert.equal(delveTimer(57), 8);
-  assert.equal(delveTimer(1000), 7);
+  assert.equal(delveTimer(78), 6);
+  assert.equal(delveTimer(96), DELVE_MIN_TIMER);
+  assert.equal(delveTimer(95), DELVE_MIN_TIMER + 1);
+  assert.equal(DELVE_MIN_TIMER, 5);
+  assert.equal(delveTimer(1000), DELVE_MIN_TIMER);
   assert.equal(delveLockout(1), 2);
   assert.equal(delveLockout(91), DELVE_MAX_LOCKOUT);
   assert.equal(delveLockout(90), DELVE_MAX_LOCKOUT - 1);
 });
 
-test('something gets harder every few depths, one thing at a time', () => {
-  // Never more than three depths without a change until the timer stops at 58,
-  // then ever further apart: the last step at 81, the first look-alike
-  // pictures at 85, the last lockout at 91, the first fourth made-up names at 101.
-  const changes: number[] = [];
-  for (const d of DEPTHS.slice(1)) {
-    const change = delveChangeAt(d);
-    const strip = (x: number) => ({ ...delveRules(x), moreFakes: undefined, lookalikes: undefined });
-    const same = JSON.stringify([strip(d), delveTimer(d)]) === JSON.stringify([strip(d - 1), delveTimer(d - 1)]);
-    if (d !== MORE_FAKES_FROM && d !== LOOKALIKES_FROM) assert.equal(change === null, same, `delveChangeAt disagrees at ${d}`);
-    // One change per depth: knobs, timer and lockout never move together.
-    const moved = [JSON.stringify(strip(d)) !== JSON.stringify({ ...strip(d - 1), lockout: delveLockout(d) }), delveLockout(d) !== delveLockout(d - 1), delveTimer(d) !== delveTimer(d - 1)];
-    assert.ok(moved.filter(Boolean).length <= 1, `two changes at ${d}`);
-    if (change) changes.push(d);
+test('something gets harder at every depth to 150, and the steps never come together', () => {
+  const at = (d: number) => JSON.stringify([delveRules(d), delveTimer(d), delveTileVeil(d)]);
+  for (let d = 2; d <= 150; d++) assert.notEqual(at(d), at(d - 1), `nothing harder at ${d}`);
+  // Options, made-up names, the timer and the lockout each change on a depth of their own.
+  for (let d = 2; d <= 300; d++) {
+    const moved = [
+      delveRules(d).options !== delveRules(d - 1).options,
+      delveRules(d).fakes !== delveRules(d - 1).fakes,
+      delveTimer(d) !== delveTimer(d - 1),
+      delveLockout(d) !== delveLockout(d - 1),
+    ];
+    assert.ok(moved.filter(Boolean).length <= 1, `two steps at ${d}`);
   }
-  assert.deepEqual(changes, [3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31, 34, 37, 39, 41, 44, 45, 48, 50, 53, 55, 58, 61, 66, 71, 75, 81, 85, 91, 101]);
-  assert.equal(delveChangeAt(LOOKALIKES_FROM), 'knobs');
-  assert.deepEqual(
-    changes.filter((d) => d <= 58).map((d, i, all) => d - (all[i - 1] ?? 1)).filter((gap) => gap > 3),
-    [],
-  );
-  assert.equal(delveChangeAt(1), null);
-  assert.deepEqual(
-    DELVE_STEPS.map((s) => s.from),
-    [...DELVE_STEPS.map((s) => s.from)].sort((a, b) => a - b),
-  );
-  assert.equal(DELVE_STEPS[0].from, 1);
 });
 
 test('depths are filed under the preset they play like', () => {
@@ -204,15 +228,17 @@ test('there are always three categories left to offer at the longest lockout', (
 
 test('the ruleset is pinned to the curve and the protocol', () => {
   // Changing the curve changes this hash: bump DELVE_RULESET and PROTOCOL_VERSION with it, then update the pin.
-  // (Delve isn't released yet, so the new curve kept both and only moved the pin; so did dynamite going off by itself, look-alike pictures, the flare burning at 0 and the blast holding the clock, co-op, dynamite taking half of all the options with two finds side by side, and pinning the lives.)
+  // (Delve isn't released yet, so the new curve kept both and only moved the pin; so did dynamite going off by itself, look-alike pictures, the flare burning at 0 and the blast holding the clock, co-op, dynamite taking half of all the options with two finds side by side, pinning the lives, the clock going down to 5 s with the art burning in faster on it, and the smooth rise in place of the steps.)
   const table: unknown[] = DEPTHS.map((d) => [delveRules(d), delveTimer(d), delveTileVeil(d)]);
   // The finds too: where and how often they turn up, what they ask and cost, and what their items do.
-  const clocks = Array.from({ length: 10 }, (_, i) => i + 7);
+  const clocks = Array.from({ length: 12 }, (_, i) => i + 5);
   table.push([FINDS, SECOND_FIND, MAX_FINDS, SHARDS_PER_WARD, FLARE_MS, BLAST_PAUSE_MS, clocks.map(blastAt), [2, 3, 4, 6, 8, 10].map(blastCount)]);
   table.push(DEPTHS.slice(0, 100).map((d) => FINDS.map((f) => findChance(f.kind, d))));
   table.push(
     DEPTHS.slice(0, 100).map((d) => FINDS.map((f) => [findRules(f.kind, d), findTimer(f.kind, d), findTileVeil(f.kind, d), veinWindow(findTimer(f.kind, d))])),
   );
+  // How long the art takes to burn in on each clock, whole and as pictures (veilSeconds).
+  table.push(clocks.map((secs) => [0.55, 0.7, 0.8].flatMap((share) => [5, 7, 9].flatMap((size) => [veilSeconds(secs, share, size), veilSeconds(secs, share, tileVeilSize(size), true)]))));
   // Co-op: how long a vote stays open after the first vote, when a player counts as idle, and what a life given takes.
   table.push(['coop', VOTE_WINDOW_MS, DELVE_IDLE_ROUNDS, REVIVE_FROM, DELVE_RESUME_GRACE_MS]);
   // The lives everyone sets out with.
@@ -221,7 +247,7 @@ test('the ruleset is pinned to the curve and the protocol', () => {
   assert.deepEqual([DELVE_RULESET, PROTOCOL_VERSION, hash], [1, 11, PINNED_HASH]);
 });
 
-const PINNED_HASH = '56ce8c1671fca1e6';
+const PINNED_HASH = 'cf5c80b0b3127037';
 
 function run(losses: Record<string, number[]>, round = 10, seats = Object.keys(losses)): GameState {
   const s = createGame('a');
@@ -269,29 +295,36 @@ test('the result: those standing first, then deeper perishes, then later earlier
   assert.equal(delveStandings(run({ a: [1, 2, 1000] }, 1000))[0].depth, 1000);
 });
 
-test('the art burns into view from depth 25, a step slower every 25 depths, as the presets pace it', async () => {
+test('the art burns into view from depth 25, a little slower and finer every depth, to the slowest the presets pace by 90', async () => {
   const { rulesFor } = await import('../src/lib/game.ts');
-  const paced = (veil: 'off' | 'fast' | 'slow' | 'slowest') =>
-    rulesFor({ difficulty: 'custom', mode: 'turns', custom: { ...delveRules(1), veil, lockout: 2 } as never }).veil;
+  const slowest = rulesFor({ difficulty: 'custom', mode: 'turns', custom: { ...delveRules(1), veil: 'slowest', lockout: 2 } as never }).veil;
+  assert.equal(VEIL_FROM, 25);
   assert.equal(delveRules(24).veil, null);
-  assert.deepEqual(delveRules(25).veil, paced('fast'));
-  assert.deepEqual(delveRules(49).veil, paced('fast'));
-  assert.deepEqual(delveRules(50).veil, paced('slow'));
-  assert.deepEqual(delveRules(75).veil, paced('slowest'));
-  assert.deepEqual(delveRules(500).veil, paced('slowest'));
+  assert.ok(delveRules(25).veil);
+  assert.ok(delveRules(50).veil!.share < delveRules(51).veil!.share);
+  assert.deepEqual(delveRules(90).veil, slowest);
+  assert.deepEqual(delveRules(500).veil, slowest);
 });
 
-test('at every depth to 300, even under the slowest veil, half the art is in with over 3 s left', async () => {
+test('at every depth to 300, even under the slowest veil, half the art is in with 3 s left at least', async () => {
   const { veilPace } = await import('../src/lib/patches.ts');
   for (let d = 1; d <= 300; d++) {
-    if (!delveRules(d).veil) continue;
+    const veil = delveRules(d).veil;
+    if (!veil) continue;
     const ms = delveTimer(d) * 1000;
-    const veilMs = ms * delveRules(d).veil!.share;
+    const secs = veilSeconds(delveTimer(d), veil.share, veil.size);
+    const veilMs = secs * 1000;
+    // Its share of the clock where that leaves the time, faster only where it wouldn't: on the 6 s and 5 s clocks.
+    const capped = secs !== delveTimer(d) * veil.share;
+    if (capped) assert.ok(secs < delveTimer(d) * veil.share && delveTimer(d) < 7, `depth ${d}: faster on ${delveTimer(d)} s`);
+    if (d >= 96) assert.ok(capped, `depth ${d}: no faster on ${delveTimer(d)} s`);
     // The veil is cut into about size × size patches; the first starts 400 ms in (media.svelte.ts patchDelays).
-    const count = delveRules(d).veil!.size ** 2;
+    const count = veil.size ** 2;
     const { gap, burn } = veilPace(veilMs, count);
     const halfIn = 400 + (count / 2) * gap + burn;
     assert.ok(ms - halfIn >= 3000, `depth ${d}: ${Math.round(ms - halfIn)} ms left with half the art in`);
+    // And no faster than it takes: capped, half of it is in just as the 3 s begin.
+    if (capped) assert.ok(ms - halfIn < VEIL_LEFT_MS + 5, `depth ${d}: burns in faster than it needs to`);
   }
 });
 
@@ -307,19 +340,26 @@ test('"find the art" pictures burn in too from depth 25, one percent more of the
 
 test('the first art to burn in is in colour', () => {
   const first = DEPTHS.find((d) => delveRules(d).veil)!;
-  assert.equal(delveRules(first).grayscale, 'off');
-  assert.ok(DEPTHS.find((d) => delveRules(d).grayscale !== 'off')! > first);
+  assert.equal(delveRules(first).grayChance, undefined);
+  assert.ok(DEPTHS.find((d) => delveRules(d).grayChance)! > first);
 });
 
-test('at every depth to 300, a veiled picture also has half its patches in with over 3 s left', async () => {
+test('at every depth to 300, a veiled picture also has half its patches in with 3 s left at least', async () => {
   const { veilPace } = await import('../src/lib/patches.ts');
   for (let d = 1; d <= 300; d++) {
-    if (!delveRules(d).veil) continue;
+    const veil = delveRules(d).veil;
+    if (!veil) continue;
     const ms = delveTimer(d) * 1000;
-    const count = tileVeilSize(delveRules(d).veil!.size) ** 2;
-    const { gap, burn } = veilPace(ms * delveRules(d).veil!.share, count);
+    const size = tileVeilSize(veil.size);
+    const secs = veilSeconds(delveTimer(d), veil.share, size, true);
+    const veilMs = secs * 1000;
+    const capped = secs !== delveTimer(d) * veil.share;
+    assert.ok(!capped || secs < delveTimer(d) * veil.share, `depth ${d}: slower than its share`);
+    const count = size ** 2;
+    const { gap, burn } = veilPace(veilMs, count);
     // The last picture starts up to half a step late (session.svelte.ts burnVeil).
     const halfIn = 400 + gap / 2 + (count / 2) * gap + burn;
     assert.ok(ms - halfIn >= 3000, `depth ${d}: ${Math.round(ms - halfIn)} ms left with half a picture in`);
+    if (capped) assert.ok(ms - halfIn < VEIL_LEFT_MS + 5, `depth ${d}: burns in faster than it needs to`);
   }
 });

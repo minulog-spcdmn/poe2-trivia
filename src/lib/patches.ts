@@ -296,3 +296,17 @@ export function veilPace(ms: number, count: number): { gap: number; burn: number
   const burn = Math.max(Math.min(MIN_BURN, ms), (BURN_OVERLAP * ms) / (count - 1 + BURN_OVERLAP));
   return { gap: (ms - burn) / (count - 1), burn };
 }
+
+/** When a veil's first patch starts burning in, ms after its art goes out (media.svelte.ts patchDelays). */
+export const FIRST_PATCH_MS = 400;
+
+/**
+ * When half of a veil of `count` patches, coming in over `ms` (veilPace), has
+ * burnt in: ms after its art goes out. `late`: steps of the pace a picture
+ * starts behind the first (session.svelte.ts burnVeil staggers several
+ * pictures by up to half a step).
+ */
+export function halfBurnt(ms: number, count: number, late = 0): number {
+  const { gap, burn } = veilPace(ms, count);
+  return FIRST_PATCH_MS + (count / 2 + late) * gap + burn;
+}

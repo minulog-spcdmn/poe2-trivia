@@ -2538,7 +2538,7 @@
       min-height: 0;
       margin-top: 0.75rem;
     }
-    /* Delve's eight answers, on a clock down to seven seconds: two columns of
+    /* Delve's eight answers, on a clock down to five seconds: two columns of
        names (a long one takes two lines) and the pictures four to a row, so
        all of them are in view under the art. Their numbers shrink to small
        seals, so the answers can still be called out by number. */

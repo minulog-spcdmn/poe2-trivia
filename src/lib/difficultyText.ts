@@ -3,14 +3,10 @@
 // so a knob reads the same wherever it shows up.
 
 import {
-  DELVE_MIN_TIMER,
   FINDS_FROM,
   FLARE_MS,
   SHARDS_PER_WARD,
   cavesIn,
-  delveChangeAt,
-  delveLockout,
-  delveTimer,
   findLosses,
   findReward,
   type FindKind,
@@ -147,55 +143,13 @@ export const KNOB_TEXT: { [K in keyof Knobs]: KnobText<K> }[keyof Knobs][] = [
 ];
 
 /**
- * What each step of the Delve curve brings, by the depth where it starts
- * (delve.ts DELVE_STEPS), the first look-alikes picked by their art
- * (LOOKALIKES_FROM) and the first fourth made-up names (MORE_FAKES_FROM).
+ * How a descent gets harder, for the lobby: where it starts, then that it
+ * gets a little harder at every depth. What changes where is left for the
+ * player to feel (tests/difficultyText.test.ts checks the start).
  */
-export const DELVE_STEP_TEXT: Record<number, string> = {
-  3: 'A look-alike name',
-  5: 'A made-up name',
-  7: 'More look-alikes',
-  11: 'Six options',
-  15: 'Mirrored pictures',
-  17: 'Two made-up names',
-  21: 'Mostly look-alikes',
-  25: 'The art burns into view',
-  29: 'More mirrored pictures',
-  31: 'Eight options',
-  41: 'Find the art in grayscale',
-  45: 'Three made-up names',
-  50: 'The art burns in slower',
-  55: 'Only look-alikes',
-  61: 'All art in grayscale',
-  71: 'Mostly mirrored',
-  75: 'The art burns in slowest',
-  81: 'Always mirrored',
-  85: 'Look-alike pictures',
-  101: 'Now and then, four made-up names',
-};
-
-/** What gets harder at a Delve depth, in a few words, or null when nothing does. */
-export function delveChange(depth: number): string | null {
-  const change = delveChangeAt(depth);
-  if (change === 'knobs') return DELVE_STEP_TEXT[depth] ?? null;
-  if (change === 'lockout') return `Locked for ${delveLockout(depth)} turns`;
-  if (change === 'timer') return delveTimer(depth) === DELVE_MIN_TIMER ? 'Seven seconds' : 'Less time';
-  return null;
-}
-
-/**
- * The milestones of a descent, for the lobby: the steps a new player feels
- * most, each at the depth where it starts (tests/difficultyText.test.ts
- * checks them against the curve).
- */
-export const DELVE_LADDER: { depth: number; text: string }[] = [
+export const DELVE_LADDER: { depth: number | null; text: string }[] = [
   { depth: 1, text: 'Four options, 16 seconds' },
-  { depth: 3, text: 'Look-alike and made-up names' },
-  { depth: 11, text: 'Six options, eight from 31' },
-  { depth: 15, text: DELVE_STEP_TEXT[15] },
-  { depth: 25, text: DELVE_STEP_TEXT[25] },
-  { depth: 41, text: 'Grayscale pictures, all from 61' },
-  { depth: 58, text: 'Seven seconds' },
+  { depth: null, text: 'A little harder every depth: more options, less time, trickier names and pictures' },
 ];
 
 /** Small numbers in words, for the notes under the cards. */

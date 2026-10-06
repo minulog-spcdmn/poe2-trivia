@@ -36,6 +36,7 @@ import {
   teamItemReady,
   tileVeilSize,
   veinWindow,
+  veilSeconds,
   voteClosesAt,
   voteDone,
   waitingIds,
@@ -114,7 +115,8 @@ export const PRESETS: Record<Preset, Knobs> = {
 /**
  * How finely the art is cut (patches about as big as the tiles of a size ×
  * size grid over the picture), and the share of the timer it takes the whole
- * item to burn in.
+ * item to burn in: less on a clock too short to leave 3 s to answer once
+ * half the art is in (delve.ts veilSeconds).
  */
 const VEILS: Record<VeilSpeed, { size: number; share: number } | null> = {
   off: null,
@@ -128,12 +130,17 @@ const VEILS: Record<VeilSpeed, { size: number; share: number } | null> = {
  * the Custom editor's steps (look-alikes and mirroring in quarters).
  */
 export interface DifficultyRules extends Omit<Knobs, 'veil'> {
-  /** The art burns into view patch by patch; fraction of the timer it takes. */
+  /** The art burns into view patch by patch; fraction of the timer it takes (at most, see veilSeconds). */
   veil: { size: number; share: number } | null;
   /** Delve, past depth 100: the share of name questions with one more made-up name than `fakes`, as far as they fit. */
   moreFakes?: number;
-  /** Delve, from depth 85: the share of questions whose look-alikes are picked by their art instead of their names. */
+  /** Delve, from depth 50: the share of questions whose look-alikes are picked by their art instead of their names. */
   lookalikes?: number;
+  /**
+   * Delve: the chance that a question's art (all of it) is shown without
+   * colour, rolled for each question (Question.gray) in place of `grayscale`.
+   */
+  grayChance?: number;
 }
 
 /** Knobs from anywhere (an action, an old save): each one off the allowed steps takes its value in `fallback`. */
@@ -305,6 +312,15 @@ export function rulesFor(settings: Pick<Settings, 'difficulty'> & Partial<Settin
 export function activeRules(s: GameState): DifficultyRules {
   if (!s.delve) return rulesFor(s.settings, !!s.deathmatch);
   return delveQuestionRules(s.round, s.question ?? {});
+}
+
+/**
+ * Which of the question in play's art is shown without colour: in Delve as
+ * rolled for the question (Question.gray), otherwise the rules'.
+ */
+export function grayscaleFor(s: GameState): Grayscale {
+  const gray = s.question?.gray;
+  return gray === undefined ? activeRules(s).grayscale : gray ? 'all' : 'off';
 }
 
 /** The rules of a Delve question at depth `d`, for a find or not. */
@@ -537,6 +553,8 @@ export interface Question {
    * reveal (missing in games saved before it existed).
    */
   mirrored?: boolean[];
+  /** Delve: the art is shown without colour, as rolled against the rules' grayChance (see grayscaleFor). */
+  gray?: boolean;
   /** Host-clock timestamp when the question was asked. */
   askedAt: number;
   /** Host-clock timestamp when time runs out, null without timer (and in Delve until the clock starts). */
@@ -2318,8 +2336,10 @@ export class Engine {
     const otherGroup = unused.filter((it) => it.id !== answer.id && it.group !== answer.group && weightOf(it) === 1);
     const pool = sameGroup.length >= need ? sameGroup : [...sameGroup, ...otherGroup];
 
-    const simCount = Math.min(pool.length, Math.round(need * rules.similarNames));
-    // Delve, from depth 85: now and then the look-alikes are picked by their
+    // Delve's look-alikes rise a little every depth: a share between two counts rolls for the one more.
+    const sims = need * rules.similarNames;
+    const simCount = Math.min(pool.length, s.delve ? Math.floor(sims) + (sims % 1 > 0 && this.rng() < sims % 1 ? 1 : 0) : Math.round(sims));
+    // Delve, from depth 50: now and then the look-alikes are picked by their
     // art (for a picture question its wrong pictures, for a name question the
     // names of items drawn like it). Rolled whether or not the table has come
     // yet. When it comes up, picking by art rolls differently from picking by
@@ -2345,14 +2365,12 @@ export class Engine {
     const deadline = !s.delve && timer > 0 ? askedAt + timer * 1000 : null;
     // Delve: deep down, "find the art" pictures may burn in as well, each cut much coarser.
     const tiles = mode === 'art' && !!rules.veil && !!s.delve && this.rng() < (special.find ? findTileVeil(special.find, s.round) : delveTileVeil(s.round));
-    const delveSecs = delveQuestionTimer(s.round, special);
+    const secs = s.delve ? delveQuestionTimer(s.round, special) : timer > 0 ? timer : DEFAULT_SETTINGS.timer;
+    const size = rules.veil && (tiles ? tileVeilSize(rules.veil.size) : rules.veil.size);
+    // Its share of the clock, faster on a short one (veilSeconds).
     const veil: Veil | null =
-      rules.veil && (mode === 'name' || tiles)
-        ? {
-            size: tiles ? tileVeilSize(rules.veil.size) : rules.veil.size,
-            seconds: (s.delve ? delveSecs : timer > 0 ? timer : DEFAULT_SETTINGS.timer) * rules.veil.share,
-            seed: Math.floor(this.rng() * 2 ** 31),
-          }
+      rules.veil && size && (mode === 'name' || tiles)
+        ? { size, seconds: veilSeconds(secs, rules.veil.share, size, tiles), seed: Math.floor(this.rng() * 2 ** 31) }
         : null;
     const fakeNames = mode === 'name' ? this.mixInFakes(options, answer.id, fakes, new Set(s.used)) : new Map<string, string>();
     // Gem groups are attributes ("Intelligence"), not kinds of item.
@@ -2361,7 +2379,9 @@ export class Engine {
     const prompt = mode === 'art' ? answer.name : null;
     // Each picture flips on its own roll, so a flipped option says nothing about the answer.
     const mirrored = Array.from({ length: mode === 'art' ? options.length : 1 }, () => rules.mirror > 0 && this.rng() < rules.mirror);
-    return { category, groups, mode, itemId: answer.id, options, labels, prompt, veil, mirrored, askedAt, deadline, misses: [], ...special };
+    // Delve: the art in grayscale or not, rolled for each question.
+    const gray = rules.grayChance ? { gray: this.rng() < rules.grayChance } : {};
+    return { category, groups, mode, itemId: answer.id, options, labels, prompt, veil, mirrored, ...gray, askedAt, deadline, misses: [], ...special };
   }
 }
 

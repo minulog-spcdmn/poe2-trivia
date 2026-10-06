@@ -69,62 +69,68 @@ the same thing for everyone.
   - Perishing drops everything you carry, for good.
   - The run ends when nobody is left standing, and its depth (where the
     last of the team perished) is the team's.
-- Every few depths the rules get harder, one thing at a time: four options
-  for the first ten depths (with look-alike names from 3 and a made-up one
-  from 5), six from 11, eight from 31. Until depth 58 something gets harder
-  at least every three depths (a new rule, less time or a longer lockout,
-  never two at once), and nothing ever gets easier. The last new rule comes
-  at depth 85.
+- Every depth is a little harder than the one before, and nothing ever
+  gets easier. The player isn't told what changes where; they feel it. A
+  few things come in steps: four options for the first ten depths, six from
+  11, eight from 31; one made-up name from 5, two from 17, three from 45;
+  the timer and the lockout (below). No two steps share a depth. The rest
+  rises a little at every depth, never in a jump (no depth moves one by more
+  than 3% of its whole rise), and is at its hardest by depth 90
+  (`DELVE_CURVES` in `src/lib/delve.ts`):
+  - look-alike names, from depth 2 to all of them at 80, eased out (most of
+    the rise comes early, where little else changes);
+  - "find the art" questions, from 40% at 31 to half at 90;
+  - mirrored pictures, from depth 15 to every picture at 85;
+  - the unveil, from depth 25: its share of the clock from 30% to 80% and its
+    patches from about a 4 × 4 grid's to a 9 × 9 grid's by 90;
+  - grayscale, a chance rolled for each question (all its art without
+    colour, or none) from depth 41 to every question at 90, so the first art
+    to burn in is in colour.
 
-  | From depth | Options | Look-alikes | Made up | Find the art | Mirrored | Unveil | Grayscale |
-  |---|---|---|---|---|---|---|---|
-  | 1 | 4 | none | 0 | 40% | never | off | off |
-  | 3 | 4 | a quarter | 0 | 40% | never | off | off |
-  | 5 | 4 | a quarter | 1 | 40% | never | off | off |
-  | 7 | 4 | half | 1 | 40% | never | off | off |
-  | 11 | 6 | half | 1 | 40% | never | off | off |
-  | 15 | 6 | half | 1 | 40% | 25% | off | off |
-  | 17 | 6 | half | 2 | 40% | 25% | off | off |
-  | 21 | 6 | three quarters | 2 | 40% | 25% | off | off |
-  | 25 | 6 | three quarters | 2 | 40% | 25% | fast | off |
-  | 29 | 6 | three quarters | 2 | 40% | half | fast | off |
-  | 31 | 8 | three quarters | 2 | 40% | half | fast | off |
-  | 41 | 8 | three quarters | 2 | half | half | fast | find the art |
-  | 45 | 8 | three quarters | 3 | half | half | fast | find the art |
-  | 50 | 8 | three quarters | 3 | half | half | slow | find the art |
-  | 55 | 8 | all | 3 | half | half | slow | find the art |
-  | 61 | 8 | all | 3 | half | half | slow | all art |
-  | 71 | 8 | all | 3 | half | 75% | slow | all art |
-  | 75 | 8 | all | 3 | half | 75% | slowest | all art |
-  | 81 | 8 | all | 3 | half | always | slowest | all art |
-  | 85 | 8 | all, more and more by their art | 3 | half | always | slowest | all art |
+  Look-alike names are a share of the wrong options: a share between two
+  counts rolls for the one more, so they too rise question by question.
 
-  The quarters (look-alikes and mirroring) are Delve's own: the Custom
-  editor keeps its steps. The timer starts at 16 s and loses a second at
-  depths 13, 19, 27, 34, 39, 44, 48, 53 and 58, where it stops at 7 s: long
-  enough that, even under the slowest unveil, half the art is in with over
-  3 s left. The lockout is 2 turns from depth 1, then 3 from 9, 4 from 23,
-  5 from 37, 6 from 66 and 7 from 91.
+  | Depth | Options | Look-alike names | Made up | Find the art | Mirrored | Unveil (share, about a grid of) | Grayscale | Look-alike pictures |
+  |---|---|---|---|---|---|---|---|---|
+  | 1 | 4 | none | 0 | 40% | never | off | never | none |
+  | 10 | 4 | 21% | 1 | 40% | never | off | never | none |
+  | 20 | 6 | 42% | 2 | 40% | 8% | off | never | none |
+  | 25 | 6 | 52% | 2 | 40% | 15% | 31%, 4 × 4 | never | none |
+  | 40 | 8 | 74% | 2 | 42% | 37% | 42%, 5 × 5 | never | none |
+  | 50 | 8 | 86% | 3 | 43% | 51% | 50%, 6 × 6 | 20% | 1% |
+  | 60 | 8 | 94% | 3 | 45% | 65% | 57%, 7 × 7 | 40% | 15% |
+  | 70 | 8 | 98% | 3 | 47% | 79% | 65%, 8 × 8 | 60% | 30% |
+  | 80 | 8 | all | 3 | 48% | 93% | 72%, 8 × 8 | 80% | 44% |
+  | 90 | 8 | all | 3 | half | always | 80%, 9 × 9 | always | 58% |
+  | 100 | 8 | all | 3 | half | always | 80%, 9 × 9 | always | 72% |
 
-  The unveil comes before grayscale, so the first art to burn in is in
-  colour. It starts with the question's clock. From depth 25 it also takes
+  The timer starts at 16 s and loses a second at depths 13, 19, 27, 34, 39,
+  44, 48, 53 and 58 (7 s), then at 78 (6 s) and 96, where it stops at 5 s.
+  The unveil takes its share of the clock, but never so much that half the
+  art comes in with less than 3 s left: on the 6 s and 5 s clocks the art
+  burns in faster instead (`veilSeconds` in `src/lib/delve.ts`). The
+  lockout is 2 turns from depth 1, then 3 from 9, 4 from 23, 5 from 37, 6
+  from 66 and 7 from 91.
+
+  The unveil starts with the question's clock. From depth 25 it also takes
   "find the art" pictures: 1% of those questions at depth 25, one percent
   more every depth, all of them from depth 124. Each picture is cut much
-  coarser than a whole item (3 × 3 fast, 4 × 4 slower), so eight of them stay
-  a few dozen patches to send.
-- **Look-alike pictures.** From depth 85 a growing share of questions picks
-  its look-alikes by their art instead of their names (2% at 85, 2% more
-  every depth, every question from 134): the wrong pictures of "find the art"
-  look like the answer's, and the wrong names of "name the item" belong to
-  items drawn like it. The answer still sits anywhere in the cluster, so the
-  picture that fits the others best doesn't give it away. Only the host (or
-  the device, in hot-seat) fetches the look-alike table
+  coarser than a whole item (at most 4 × 4), so eight of them stay a few
+  dozen patches to send.
+- **Look-alike pictures.** From depth 50 a growing share of questions picks
+  its look-alikes by their art instead of their names (1.4% at 50, as much
+  more every depth, every question from 120): the wrong pictures of "find
+  the art" look like the answer's, and the wrong names of "name the item"
+  belong to items drawn like it. The answer still sits anywhere in the
+  cluster, so the picture that fits the others best doesn't give it away.
+  Only the host (or the device, in hot-seat) fetches the look-alike table
   (`src/data/looks.json`, its own chunk of about 27 KiB gzipped), once a run
-  reaches depth 55; until it arrives, look-alikes go by name.
+  reaches depth 20 (finds ask from up to 20 depths deeper); until it
+  arrives, look-alikes go by name.
 - **Endless.** Past depth 100 the rules hold, but from 101 a growing share
   of name questions gets a fourth made-up name (2% at 101, 2% more every
   depth, all of them from 150), "find the art" pictures keep burning in
-  more often until depth 124, and look-alike pictures take over until 134.
+  more often until depth 124, and look-alike pictures take over until 120.
 - **Finds.** From depth 5 one of the cards on offer is now and then a find:
   pick it and answer right for an item. Its question is a bit harder (that
   of 15 to 20 depths deeper, with its shorter clock); the card shows only
@@ -669,7 +675,7 @@ npm run looks
 
 It writes `src/data/looks.json`: for every item, the twelve items of its
 group whose art looks most like it, each with a score from 0 to 1 (silhouette,
-edges and colour, mirror-blind; see `scripts/looks.mjs`). From depth 85 in Delve,
+edges and colour, mirror-blind; see `scripts/looks.mjs`). From depth 50 in Delve,
 decoys are picked from it (`src/lib/looks.ts`). The output only changes when
 the art does; items added without rerunning it just have no look-alikes.
 

@@ -57,7 +57,7 @@ const VERSION = 2;
 export const RUN_LIMIT = 40;
 /**
  * The deepest depth the records take. No run gets near it (the clock bottoms
- * out at 7 s and the questions only get harder past 100); anything deeper is
+ * out at 5 s and the questions only get harder past 100); anything deeper is
  * read as damage and dropped, so no list or chart can be made endless.
  */
 export const MAX_DEPTH = 999;

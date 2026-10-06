@@ -99,11 +99,11 @@ function holding(inv: Partial<Inventory>, opts: { depth?: number; seed?: number;
 // ---- the rules ---------------------------------------------------------------
 
 test('dynamite goes off at half the clock, rounded up to a whole second: where the Azurite Vein\'s fast window closes', () => {
-  for (let secs = 7; secs <= 16; secs++) {
+  for (let secs = 5; secs <= 16; secs++) {
     assert.equal(blastAt(secs), veinWindow(secs));
     assert.ok(blastAt(secs) >= (secs * 1000) / 2 && blastAt(secs) < (secs * 1000) / 2 + 1000);
   }
-  assert.deepEqual([blastAt(16), blastAt(13), blastAt(7)], [8000, 7000, 4000]);
+  assert.deepEqual([blastAt(16), blastAt(13), blastAt(7), blastAt(6), blastAt(5)], [8000, 7000, 4000, 3000, 3000]);
 });
 
 test('it blows away half the options, rounded down, all of them wrong, never leaving fewer than two', () => {

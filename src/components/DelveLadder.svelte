@@ -1,16 +1,15 @@
 <script lang="ts">
   import { DELVE_LADDER } from '../lib/difficultyText';
 
-  /** From here the depths are cold and deep: their numbers turn to ice. */
-  const DEEP = 25;
 </script>
 
-<!-- How a descent gets harder, depth by depth: a thin engraved line down
-     through a diamond at each step, fading out below the last (it goes on). -->
+<!-- How a descent gets harder: a thin engraved line down through a diamond
+     at the start and one for the depths below, fading out (it goes on).
+     Those have no number, and are cold and deep: their line turns to ice. -->
 <ol class="ladder" aria-label="How Delve gets harder">
-  {#each DELVE_LADDER as row (row.depth)}
-    <li class:deep={row.depth >= DEEP}>
-      <span class="depth"><span class="visually-hidden">Depth </span>{row.depth}</span>
+  {#each DELVE_LADDER as row, i (i)}
+    <li class:deep={row.depth === null}>
+      <span class="depth">{#if row.depth !== null}<span class="visually-hidden">Depth </span>{row.depth}{/if}</span>
       <span class="mark" aria-hidden="true"></span>
       <span class="text">{row.text}</span>
     </li>
