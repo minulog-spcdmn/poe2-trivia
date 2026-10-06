@@ -91,9 +91,10 @@ rules, so "I reached depth 30" means the same thing for everyone.
   every depth, every question from 134): the wrong pictures of "find the art"
   look like the answer's, and the wrong names of "name the item" belong to
   items drawn like it. The answer still sits anywhere in the cluster, so the
-  picture that fits the others best doesn't give it away. The host only
-  fetches the look-alike table (`src/data/looks.json`, about 26 KiB gzipped)
-  once a run reaches depth 55; until it arrives, look-alikes go by name.
+  picture that fits the others best doesn't give it away. Only the host (or
+  the device, in hot-seat) fetches the look-alike table
+  (`src/data/looks.json`, its own chunk of about 27 KiB gzipped), once a run
+  reaches depth 55; until it arrives, look-alikes go by name.
 - **Endless.** Past depth 100 the rules hold, but from 101 a growing share
   of name questions gets a fourth made-up name (2% at 101, 2% more every
   depth, all of them from 150), "find the art" pictures keep burning in
@@ -101,16 +102,20 @@ rules, so "I reached depth 30" means the same thing for everyone.
 - **Finds.** From depth 5 one of the cards on offer is now and then a find:
   pick it and answer right for an item. Its question is a bit harder (that
   of 15 to 20 depths deeper, with its shorter clock); the card only says
-  "Harder", and the note under the cards says what the item does.
+  "Harder", and the note under the cards says what the item does. Each
+  find's chance rises evenly from its first depth to depth 50 and holds
+  there (the Vein 4% to 11%, the Dynamite Cache 4% to 9%, the Flare Cache
+  4% to 13%), so from 50 about one offer in three holds a find. An offer
+  holds at most one, and never one whose item you can't carry more of.
   - An **Azurite Vein** (from depth 5): a right answer within the first half
     of its clock mines an **Azurite Ward**, which takes your next lost life
     instead; a slower one a shard (two make a ward). A wrong answer or a
     time-out on a vein caves in: it costs two lives, a ward taking each loss
     first if you hold one (on your last life you simply fall).
   - A **Flare Cache** (from depth 15) gives a **flare**. When your clock hits
-    0 it burns by itself and gives you 5 s more (once a question). An answer
-    at any time before that keeps it; a guest's answer still on its way when
-    it burns gives it back.
+    0 it burns by itself, with a signal flare's hiss, and gives you 5 s more
+    (once a question). An answer at any time before that keeps it; a guest's
+    answer still on its way when it burns gives it back.
   - A **Dynamite Cache** (from depth 10) gives **dynamite**. Halfway through
     your clock (rounded up to a whole second) a stick goes off by itself
     (once a question): the art shows plain (in colour, unmirrored and whole)
@@ -132,24 +137,63 @@ rules, so "I reached depth 30" means the same thing for everyone.
   A player who is disconnected when that runs out loses a life. Nobody can
   skip a turn by hand. After the host reloads, players who were cut off
   get a minute to come back, and a guest's open question is set aside.
-- "Delve alone" on the start page starts a solo run straight away.
-- Your lives are a phial of three chambers of living ember beside your name.
-  A lost life bursts out of its chamber; the last one burns red and trembles.
-- The deeper the run, the deeper the scene: the hall darkens and closes in,
-  the glow from below turns blood red, the embers grow restless, azurite
-  glints in the walls from depth 13, and from depth 21 (where a streak's fire
-  first burns blue) the embers start burning blue, all of them by 50. The
-  ambience sinks with it, and a slow rumble rises under it.
-- Every ten depths the descent enters a new stratum, each named after a
-  Delve biome, with a scene of its own: Magma Fissure (11), Frozen Hollow
-  (21), Fungal Caverns (31), Vaal Outpost (41), Abyssal Depths (51),
-  Petrified Forest (61), Sulphur Vents (71), Abyssal City (81) and Primeval
-  Ruins (91), below the Mines of depths 1 to 10. Past 100 the biomes come
-  round again, never the same twice in a row. A card names each as you
-  reach it, and also marks the last one standing and a solo run going
-  deeper than ever.
-- Your deepest run alone and together are kept in this browser (start page,
-  end screen and Codex, with your last runs). A run resumed by a build with
+- A run alone starts from the lobby (hot-seat, or a room with one player).
+  Choosing Delve there shows its milestones and your deepest.
+- Your lives are an engraved phial of three chambers beside your name, each
+  a soft light beating like a heart (faster and weaker on the last life,
+  whose light sinks to a deeper red). A lost life flares and pours out of
+  the phial's end; a survived question sends a wave of light through it.
+  Azurite Wards are crystal casings on the chambers, one each from the base
+  (a shard is half a casing): a ward crystallises on as it is mined, and
+  cracks and falls off in two halves when it takes a loss. Flares and
+  dynamite stand as small counts beside the phial. The reveal says what
+  happened (a ward mined or forged, a shard, a find, a ward shattered with
+  no life lost, a cave-in; on a time-out "The darkness took you").
+- Every ten depths the descent enters a new zone, named after a Delve biome
+  and a place of its own: lamps guttering in the Mines (1 to 10), glowing
+  cracks and heat shimmer in Magma Fissure (11), frost creeping from the
+  walls in Frozen Hollow (21), pulsing caps in Fungal Caverns (31), dusty
+  gold shafts in Vaal Outpost (41), coiling violet eddies in Abyssal Depths
+  (51), stone trunks in drifting mist in Petrified Forest (61), billowing
+  vapour in Sulphur Vents (71), far cold lights in Abyssal City (81) and
+  white-hot fire in Primeval Ruins (91). Each has its own light, smoke,
+  embers (their colour, how many, rising or sinking) and glints. Past 100
+  the zones go on for ever, each pairing one deep zone's hall with
+  another's embers, named after its hall's biome and never the same twice
+  in a row.
+- A zone creeps in over the last three depths of the one before and has
+  settled two depths in. It hands over in stages: the old place leaves
+  first, the light dims, the colour turns while it's dim, and the new place
+  arrives its own way (cracks cool and narrow before frost creeps from the
+  walls, fog rolls in before the stone trunks, the city's lights come on one
+  by one), so colours never mix into mud.
+- The dark is one smooth fade from the edges, corners darkest. It closes in
+  a little with every depth of a zone, most as the zone gives way, opens out
+  as the next arrives, and is closer the deeper on the whole. As a
+  question's clock runs out it draws the light in and dims the scene (never
+  the panels or text), lifting at the reveal or when a flare burns. The
+  ambience sinks with the depth, over a slow rumble. Leaving a run, or
+  rejoining deep down, fades straight to the scene it's going to (the
+  surface, say) instead of passing through every zone.
+- A new zone is announced on a slim engraved ribbon on the line above the
+  banner: its name between two seals bearing the zone's sigil, an ornament
+  running out from each point that echoes the zone's backdrop, all in the
+  zone's colour. It draws itself in, holds about three and a half seconds
+  and fades; it never covers the cards or takes a tap. The same ribbon
+  marks the last one standing and, alone, the first depth past your best.
+  The header names the zone beside the depth, both in its colour (on a
+  second line on phones).
+- A run ends as a fall, not a victory. Alone, the end screen says "Fallen"
+  (or "Deeper than ever"), with your depth, where your lives went and your
+  best; together, the deepest "delved deepest". The warmth dies out of the
+  rune circle and ash settles, to a slowed toll and an ember crackling out.
+- The share button copies (on a phone, shares) "I reached depth N in Delve,
+  can you beat me? poe2.quest/?delve". Opening that link, someone who has
+  played here before (a name is saved) goes straight into a run alone;
+  anyone else finds Delve chosen in the lobby they open. A game being
+  resumed is never replaced.
+- Your deepest run alone and together are kept in this browser (lobby, end
+  screen and Codex, with your last runs). A run resumed by a build with
   other rules still shows, but never counts as a best.
 - On a phone, eight answers fit on the screen: names in two columns,
   pictures four to a row.
@@ -201,6 +245,25 @@ answers only count when one person plays alone. Undiscovered items show as
 dark silhouettes, and the codex can't be opened while in a room. It is kept in this
 browser's localStorage only (`src/lib/codex.ts`).
 
+The Codex has two tabs: **Collection** (the above) and **Delve**, built
+from the same parts. Delve shows your deepest in the rune circle with the
+zone it reached, beside your deepest the other way (alone or together),
+your runs, a typical depth (after 3 runs) and lives lost (and those wards
+saved); your last run in one row (where each life went and what took it);
+after 3 runs, what kills you (kinds of item, by lives lost), your deadliest
+items and where you fall (lives lost in each zone that 5 runs reached);
+finds and wards (veins and caches taken and what they gave, blasts, lives
+warded, flares burnt); the zones reached, each dated, with your deepest
+over time; and a run log (the latest ten, all on request; runs under other
+rules listed apart). Zones you haven't reached are never named, and
+"Begin the descent" starts a run alone. Only runs under the current rules
+count. A run you leave while still standing is recorded at the depth you
+left: listed, but never a best or a depth a run ended at (if it goes on
+after a rejoin, the fall replaces it). In hot-seat with several players,
+the group's run is recorded once, as deep as its deepest delver, as a run
+together and never a win. An item's page also shows its Delve answers. The
+runs are kept in this browser too (`src/lib/delveRecord.ts`).
+
 ## Multiplayer
 
 - **Online (peer-to-peer):** the host creates a room and shares the 6-character
@@ -234,8 +297,10 @@ browser's localStorage only (`src/lib/codex.ts`).
   See `src/lib/rooms.ts`.
 - **Hot-seat:** everyone plays on one device and passes it around.
 
-The host picks the mode (take turns or race), the difficulty, the target score and an optional time limit
-per question (off / 8 / 16 / 32 / 64 s).
+The host picks the mode (take turns, race or Delve: three buttons, each
+with an engraved emblem, and only the chosen mode's description below
+them), then, outside Delve, the difficulty, the target score and an
+optional time limit per question (off / 8 / 16 / 32 / 64 s).
 
 ## Fair play & safety
 
@@ -375,12 +440,21 @@ Everything is drawn in WebGL2 with float precision and dithered once at the
   (`src/lib/glint.ts`: one timer, transforms only, nothing under
   *prefers-reduced-motion*). Online, everyone else gets a notice when she
   walks into the room (`src/lib/herald.ts`).
-- **Delve's descent** (`src/lib/descent.ts`): the run's depth becomes a few
-  numbers (how deep, restless, red, blue, veined and abyssal the scene is)
-  that ease along at about two seconds a depth. The backdrop's shaders and
-  embers (`src/lib/backdropEmbers.ts`; a blue ember is a negative size), the
-  CSS fallback and the ambience (`depthAmbience` in `src/lib/sound.ts`)
-  follow them.
+- **Delve's descent** (`src/lib/descent.ts`): each zone is a look (the
+  hall's dark, the light from below, smoke, mist, embers, glints) and the
+  environments the backdrop draws for it (`ENVIRONMENTS`: lamps, magma,
+  frost, spores, shafts, void, mist, plumes, city, heat). The shown depth
+  eases along at about a second a depth, a zone hands over in stages
+  (`blendInto`), and a jump of more than three depths cross-fades straight
+  there. The backdrop's shaders and embers (`src/lib/backdropEmbers.ts`, a
+  small palette of zone colours, so a new colour spreads ember by ember),
+  the CSS fallback and the ambience (`depthAmbience` in `src/lib/sound.ts`)
+  follow it. The clock's dark (`src/lib/darkness.ts`) is set by the timer
+  ring and drawn by the backdrop, with a thin late shade at the screen's
+  edges (`Darkness.svelte`). The zone ribbon (`src/lib/zoneMark.ts`,
+  `zoneSigils.ts`, `zoneOrnaments.ts`) and the find cards
+  (`findEngraving.ts`) are engraved in the arcane style, and a run's end
+  has its own effect (`src/lib/fx/delveEnd.ts`).
 - **Dialogs** dim the page behind them (`src/lib/behindDialog.ts`). A dark,
   blurred layer over the page would band the backdrop and hide the dialog's
   own effects, so the backdrop darkens itself in its shader and the UI takes a
@@ -418,7 +492,7 @@ npm run looks
 
 It writes `src/data/looks.json`: for every item, the twelve items of its
 group whose art looks most like it, each with a score from 0 to 1 (silhouette,
-edges and colour, mirror-blind; see `scripts/looks.mjs`). Deep in Delve,
+edges and colour, mirror-blind; see `scripts/looks.mjs`). From depth 85 in Delve,
 decoys are picked from it (`src/lib/looks.ts`). The output only changes when
 the art does; items added without rerunning it just have no look-alikes.
 
