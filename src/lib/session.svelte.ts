@@ -272,7 +272,7 @@ class Session {
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
   /** How long this device took to answer the current question (its askedAt), for the codex. */
-  private answered: { qid: number; ms: number } | null = null;
+  private answered: { qid: number; ms: number; share?: number } | null = null;
   /**
    * Delve: the art of this question goes first to those who answer it (the
    * player alone, or everyone standing in co-op), and to everyone else
@@ -1143,9 +1143,7 @@ class Session {
         case 'state':
           this.syncClock(msg.now);
           if (!this.state || msg.state.version >= this.state.version || msg.state.version === 0) {
-            this.noteRun(this.state, msg.state);
-            this.onNewState(this.state, msg.state);
-            this.noteEncounter(this.state, msg.state);
+            this.noteChange(this.state, msg.state);
             this.state = msg.state;
           }
           this.status = 'ready';
@@ -1219,7 +1217,9 @@ class Session {
     if (!this.state) return;
     const q = this.state.question;
     if (action.type === 'answer' && action.index !== null && q && shown.qid === q.askedAt && this.answered?.qid !== q.askedAt) {
-      this.answered = { qid: q.askedAt, ms: performance.now() - shown.since };
+      // On a veiled picture, also how much of it had burnt in (for an achievement, lib/achievements.ts).
+      const share = q.veil && shown.veil?.count ? Object.keys(shown.patches).length / shown.veil.count : undefined;
+      this.answered = { qid: q.askedAt, ms: performance.now() - shown.since, ...(share !== undefined ? { share } : {}) };
     }
     if (this.mode === 'client') {
       this.hostConn?.send({ t: 'action', action });
@@ -1332,9 +1332,7 @@ class Session {
 
   private setState(next: GameState) {
     const prev = this.state;
-    this.noteRun(prev, next);
-    this.onNewState(prev, next);
-    this.noteEncounter(prev, next);
+    this.noteChange(prev, next);
     this.state = next;
     if (this.isHost && next.delve && next.round >= LOOKS_FETCH_FROM) fetchLooks();
     if (next.phase === 'question' && next.question && next.question.askedAt !== prev?.question?.askedAt) {
@@ -1432,8 +1430,17 @@ class Session {
     if (!run) return;
     const r = recordRun(run);
     if (!r) return;
+    this.noteAchievements();
     const was = this.delveResult?.id === run.id ? this.delveResult : null;
     this.delveResult = { id: run.id, depth: run.depth, previousBest: was ? was.previousBest : r.previousBest, best: was ? was.best : r.best };
+  }
+
+  /** What every device makes of a state change, host and guest alike: records, sounds and notices, achievements. */
+  private noteChange(prev: GameState | null, next: GameState) {
+    this.noteRun(prev, next);
+    this.onNewState(prev, next);
+    this.noteEncounter(prev, next);
+    this.noteMoments(prev, next);
   }
 
   /** A question just revealed goes into this browser's codex. */
@@ -1451,9 +1458,41 @@ class Session {
     void import('./codex')
       .then(({ encounterAt, recordEncounter }) => {
         const e = encounterAt(next, me, hotSeat, ms);
-        if (e) recordEncounter(e);
+        if (!e) return;
+        recordEncounter(e);
+        this.noteAchievements();
       })
       .catch((err) => console.warn('codex', err));
+  }
+
+  /**
+   * The moments a state change brings this device's player (lib/achievements.ts):
+   * a Delve run's (a depth reached, a ward on the last life, a team falling
+   * together) and a game against others' (followed as it goes, judged at its end).
+   */
+  private noteMoments(prev: GameState | null, next: GameState) {
+    if (!next.delve && next.phase === 'lobby' && prev?.phase === 'lobby') return;
+    const me = this.myPlayerId;
+    const hotSeat = this.mode === 'local';
+    const a = this.answered;
+    const veilShare = a?.share !== undefined ? { qid: a.qid, share: a.share } : undefined;
+    void Promise.all([import('./achievements'), import('./achievementToasts')])
+      .then(([{ noteState }, { announceAchievements }]) => {
+        announceAchievements(noteState(prev, next, me, hotSeat, veilShare), 'game');
+      })
+      .catch((err) => console.warn('achievements', err));
+  }
+
+  /**
+   * Brings the achievements up to date with what was just recorded in the
+   * codex or the Delve records, and announces any earned (lib/achievementToasts.ts).
+   */
+  private noteAchievements() {
+    void Promise.all([import('./achievements'), import('./achievementToasts')])
+      .then(([{ checkAchievements }, { announceAchievements }]) => {
+        announceAchievements(checkAchievements(engine.items), 'game');
+      })
+      .catch((err) => console.warn('achievements', err));
   }
 
   /** Side effects that every device plays: sounds, and the notice of the creator's arrival. */

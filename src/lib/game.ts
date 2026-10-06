@@ -355,6 +355,12 @@ export interface Delve {
    * stands (delve.ts teamDepth). Missing until someone does.
    */
   leftAt?: number;
+  /**
+   * Co-op: the deepest depth where a player who has since left had perished
+   * (their losses go with them), so who stood last and since when can still
+   * be told (lib/achievements.ts). Missing until someone does, and from older hosts.
+   */
+  fellLeft?: number;
   /** Host clock when the run started (the run's id in records). */
   startedAt: number;
   /** Standing players the host's reload cut off who haven't come back since. */
@@ -670,6 +676,11 @@ export interface GameState {
   artLean?: Record<string, number>;
   /** askedAt of the latest question (missing in games saved before it existed). */
   lastAskedAt?: number;
+  /**
+   * Host clock when the game started (missing in the lobby, and from older
+   * hosts): which game it is, and which answers in a codex log belong to it.
+   */
+  startedAt?: number;
   /** Bumped on every change so clients can ignore stale messages. */
   version: number;
 }
@@ -998,8 +1009,9 @@ export class Engine {
         s.spectators = s.spectators.filter((o) => o.id !== action.playerId);
         const idx = s.players.findIndex((p) => p.id === action.playerId);
         if (idx < 0) break;
-        // Delve: whether they leave the run on their feet (read while they still have a seat).
+        // Delve: whether they leave the run on their feet, or else where they fell (read while they still have a seat).
         const standing = !!s.delve && livesOf(s, action.playerId) > 0;
+        const fell = s.delve ? fellAt(s, action.playerId) : null;
         s.players.splice(idx, 1);
         if (s.phase === 'lobby') fillSeats(s);
         if (s.phase === 'lobby' || s.phase === 'over') break;
@@ -1029,6 +1041,7 @@ export class Engine {
             const dm = s.delve;
             // The team got this deep with them: the run's depth never drops below it (delve.ts teamDepth).
             if (standing) dm.leftAt = Math.max(dm.leftAt ?? 0, s.round);
+            else if (fell !== null) dm.fellLeft = Math.max(dm.fellLeft ?? 0, fell);
             delete dm.losses[action.playerId];
             if (dm.inventory) delete dm.inventory[action.playerId];
             dm.excused = dm.excused.filter((id) => id !== action.playerId);
@@ -1101,6 +1114,7 @@ export class Engine {
         s.recentCategories = [];
         s.artLean = {};
         s.delve = null;
+        s.startedAt = this.now();
         if (s.settings.mode === 'delve') {
           // Every run draws from the whole pool, so one run's depth means the same as another's.
           s.used = [];
@@ -1307,6 +1321,7 @@ export class Engine {
         fresh.lastAskedAt = s.lastAskedAt;
         fresh.used = s.used;
         Object.assign(s, fresh);
+        delete s.startedAt;
         if (action.play) return this.apply(s, { type: 'start' }, from);
         break;
       }

@@ -348,6 +348,40 @@ can't read are never written over: a newer build's are left alone, damaged
 ones kept aside. An item's page also shows its Delve answers. The runs are
 kept in this browser too (`src/lib/delveRecord.ts`).
 
+**Achievements:** the Codex's third tab. 24 of them, few and chosen: each
+marks a moment worth telling or a goal worth chasing. Four groups of six, laid
+out in even rows:
+- **Knowledge:** 25 and 100 right in a row on your own turns (races and runs
+  together neither add nor break a streak), 5 in a row each within 2
+  seconds, every item of a category both named and found, every item in the
+  game answered right, and a secret one.
+- **Versus** (online, against others, to 5 points or more, someone else
+  still there at the end): a deathmatch won on the answers, a win after a
+  rival led by 4, a win to 10 without a wrong answer, a race to 10 taking
+  every question against rivals who guessed, race questions taken before a
+  quarter of their veiled art burned in, and a secret one.
+- **Delve:** depths 50 and 100 alone, depth 40 without losing a life, 10
+  depths on the last life past depth 30, a ward shattering in place of the
+  last life, and a secret one.
+- **Together** (Delve with others): two lives given in one run, a depth
+  cleared after every teammate struck, the team's depth 30 with nobody ever
+  perishing, the last one standing going 10 depths clean, depth 75 standing,
+  and a secret one.
+
+Each is an engraved seal struck in copper, silver or gold by how hard it is,
+bearing an alchemical sign: the tiers of one idea share a sign, and no other
+two do. Where the codex or the Delve records keep what it needs, the page
+shows how far along you are, and games played before achievements existed
+count (that first time quietly: the start page gives one notice). Moments are
+earned as they happen, from the state every player's screen has: a depth
+reached, a ward on the last life, a team falling together. A game against
+others is followed as it goes (the biggest lead a rival had over you, rivals
+who guessed, veiled questions taken) and judged at its end; the host stamps
+each game with its start (`startedAt`), so its own answers can be told apart
+in the codex. A new achievement is announced with a notice bearing its seal,
+a moment after it is earned. Once earned it stays earned. Kept in this
+browser (`src/lib/achievements.ts`); erasing the codex erases them.
+
 ## Multiplayer
 
 - **Online (peer-to-peer):** the host creates a room and shares the 6-character
