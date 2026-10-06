@@ -4,6 +4,7 @@
 
 import {
   DELVE_MIN_TIMER,
+  FINDS_FROM,
   FLARE_MS,
   SHARDS_PER_WARD,
   cavesIn,
@@ -182,14 +183,19 @@ export function delveChange(depth: number): string | null {
   return null;
 }
 
-/** The milestones of a descent, for the lobby and the start page. */
+/**
+ * The milestones of a descent, for the lobby: the steps a new player feels
+ * most, each at the depth where it starts (tests/difficultyText.test.ts
+ * checks them against the curve).
+ */
 export const DELVE_LADDER: { depth: number; text: string }[] = [
   { depth: 1, text: 'Four options, 16 seconds' },
   { depth: 3, text: 'Look-alike and made-up names' },
-  { depth: 11, text: 'Six options, then eight from 31' },
-  { depth: 25, text: 'The art burns into view' },
+  { depth: 11, text: 'Six options, eight from 31' },
+  { depth: 15, text: DELVE_STEP_TEXT[15] },
+  { depth: 25, text: DELVE_STEP_TEXT[25] },
+  { depth: 41, text: 'Grayscale pictures, all from 61' },
   { depth: 58, text: 'Seven seconds' },
-  { depth: 61, text: 'All art in grayscale' },
 ];
 
 /** Small numbers in words, for the notes under the cards. */
@@ -206,6 +212,17 @@ export const ITEM_TEXT: Record<ItemKind, string> = {
 
 /** What a wrong answer to a find that caves in costs, in words ("two lives"). */
 const caveInText = (kind: FindKind) => `${words(findLosses(kind))} lives`;
+
+/** The finds for the lobby's rules: where they turn up, and what they are in a line. */
+export const FINDS_LABEL = `Finds • from depth ${FINDS_FROM}`;
+export const FINDS_INTRO = 'A harder question, for an item.';
+
+/** What each find gives, in a line for the lobby: what its item does, and what a miss costs when it is more than a life. */
+export const FIND_GIVES: Record<FindKind, string> = {
+  azurite: `Answer fast for a ward: it saves a life.${cavesIn('azurite') ? ` A miss costs ${caveInText('azurite')}.` : ''}`,
+  flare: `A flare: ${words(FLARE_MS / 1000)} more seconds when your time runs out.`,
+  dynamite: 'Dynamite: at half time, it clears the picture and half the wrong answers.',
+};
 
 /** A find's cave-in mark, in words for those who can't see it: "A wrong answer loses two lives". */
 export const caveInLabel = (kind: FindKind) => `A wrong answer loses ${caveInText(kind)}`;

@@ -144,3 +144,39 @@ test('the notes under a find say what its item does, that the question is harder
     assert.ok(!t.includes('•') && !t.includes(String.fromCharCode(0x2014)), t);
   }
 });
+
+test("the lobby's descent says what the curve does at each of its depths", async () => {
+  const { DELVE_LADDER } = await import('../src/lib/difficultyText.ts');
+  const { DELVE_MIN_TIMER, delveLockout, delveRules, delveTimer } = await import('../src/lib/delve.ts');
+  const text = (depth: number) => DELVE_LADDER.find((r) => r.depth === depth)?.text;
+  // Four options and 16 s to start; look-alikes (from 3) and a made-up name come before six options.
+  assert.ok(delveRules(3).similarNames > 0 && !delveRules(2).similarNames);
+  assert.equal(text(1), 'Four options, 16 seconds');
+  assert.equal(delveRules(1).options, 4);
+  assert.equal(delveTimer(1), 16);
+  assert.equal(delveRules(10).options, 4);
+  assert.ok(delveRules(10).similarNames > 0 && delveRules(10).fakes > 0);
+  assert.equal(text(11), 'Six options, eight from 31');
+  assert.deepEqual([delveRules(11).options, delveRules(30).options, delveRules(31).options], [6, 6, 8]);
+  assert.equal(text(15), 'Mirrored pictures');
+  assert.deepEqual([delveRules(14).mirror, delveRules(15).mirror > 0], [0, true]);
+  assert.equal(text(25), 'The art burns into view');
+  assert.deepEqual([delveRules(24).veil, !!delveRules(25).veil], [null, true]);
+  assert.equal(text(41), 'Grayscale pictures, all from 61');
+  assert.deepEqual([40, 41, 60, 61].map((d) => delveRules(d).grayscale), ['off', 'art', 'art', 'all']);
+  assert.equal(text(58), 'Seven seconds');
+  assert.deepEqual([delveTimer(57), delveTimer(58)], [DELVE_MIN_TIMER + 1, DELVE_MIN_TIMER]);
+  // The lobby's rules say a picked category stays locked for this many turns at the start.
+  assert.equal(lockoutText(delveLockout(1)), 'your next 2 turns');
+});
+
+test("the lobby's finds: where they start and what each gives, in a line", async () => {
+  const { FINDS_LABEL, FIND_GIVES } = await import('../src/lib/difficultyText.ts');
+  const { FINDS_FROM } = await import('../src/lib/delve.ts');
+  assert.equal(FINDS_LABEL, `Finds • from depth ${FINDS_FROM}`);
+  assert.deepEqual(FIND_GIVES, {
+    azurite: 'Answer fast for a ward: it saves a life. A miss costs two lives.',
+    flare: 'A flare: five more seconds when your time runs out.',
+    dynamite: 'Dynamite: at half time, it clears the picture and half the wrong answers.',
+  });
+});

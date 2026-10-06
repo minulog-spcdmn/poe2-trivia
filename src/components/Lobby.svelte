@@ -3,7 +3,8 @@
   import { fly, scale } from 'svelte/transition';
   import { session } from '../lib/session.svelte';
   import { MAX_PLAYERS, RACE_DEFAULT_TIMER, TIMER_STEPS, difficultyOf, rulesFor, type Difficulty, type GameMode } from '../lib/game';
-  import { DIFFICULTY_NAMES, describe, lockoutText } from '../lib/difficultyText';
+  import { DIFFICULTY_NAMES, FINDS_INTRO, FINDS_LABEL, FIND_GIVES, FIND_TEXT, describe, lockoutText } from '../lib/difficultyText';
+  import { FINDS, delveLockout } from '../lib/delve';
   import CustomDifficulty from './CustomDifficulty.svelte';
   import DelveLadder from './DelveLadder.svelte';
   import ModeIcon from './ModeIcon.svelte';
@@ -19,11 +20,15 @@
   import { measure } from '../lib/iconFit.svelte';
 
   const TARGETS = [5, 10, 15, 20];
-  const MODES: { id: GameMode; name: string }[] = [
+  const MODES: { id: GameMode; name: string; beta?: boolean }[] = [
     { id: 'turns', name: 'Take turns' },
     { id: 'race', name: 'Race' },
-    { id: 'delve', name: 'Delve' },
+    { id: 'delve', name: 'Delve', beta: true },
   ];
+  // The finds that turn up, in the order they first do.
+  const FIND_KINDS = FINDS.filter((f) => f.cap > 0)
+    .sort((a, b) => a.from - b.from)
+    .map((f) => f.kind);
   const DIFFS = (Object.entries(DIFFICULTY_NAMES) as [Difficulty, string][]).map(([id, name]) => ({ id, name }));
 
   const s = $derived(session.state!);
@@ -318,12 +323,14 @@
               aria-disabled={offline(m.id) || undefined}
               tabindex={on ? 0 : -1}
               data-mode={m.id}
+              aria-label={m.beta ? `${m.name}, beta` : undefined}
               disabled={!isHost}
               title={offline(m.id) ? 'Race needs every player on their own device' : undefined}
               onclick={(e) => pickMode(m.id, e.currentTarget)}
             >
               <ModeIcon mode={m.id} />
               <b>{m.name}</b>
+              {#if m.beta}<span class="beta" aria-hidden="true">Beta</span>{/if}
             </button>
           {/each}
         </div>
@@ -335,7 +342,7 @@
               {#if peek}
                 <p>Race is online only: everyone answers on their own device. Host a room to race.</p>
               {:else if delve}
-                <p>Three lives. Each round goes a depth deeper, and harder.</p>
+                <p>Three lives, a depth deeper each round. No settings, so a depth is the same for all.</p>
                 {#if deepest}
                   <p class="deepest">{s.players.length < 2 ? 'Your deepest alone' : 'Your deepest with others'} <b>{deepest}</b></p>
                 {/if}
@@ -350,10 +357,26 @@
       </div>
 
       {#if delve}
-        <div class="setting">
-          <span class="label">The descent</span>
-          <DelveLadder />
-          <p class="ladder-note muted">No settings: everyone delves by the same rules, so a depth means the same for all.</p>
+        <!-- Two columns once the panel is wide enough: the descent beside the finds. -->
+        <div class="setting delve-rules">
+          <div class="delve-cols">
+            <div>
+              <span class="label">The descent</span>
+              <DelveLadder />
+            </div>
+            <div>
+              <span class="label">{FINDS_LABEL}</span>
+              <p class="finds-intro muted">{FINDS_INTRO}</p>
+              <dl class="finds">
+                {#each FIND_KINDS as kind (kind)}
+                  <div>
+                    <dt>{FIND_TEXT[kind].name}</dt>
+                    <dd>{FIND_GIVES[kind]}</dd>
+                  </div>
+                {/each}
+              </dl>
+            </div>
+          </div>
         </div>
       {:else}
         <div class="setting">
@@ -413,10 +436,9 @@
 
       <ul class="rules muted">
         {#if delve}
-          <li>On your turn, choose one of three item categories.</li>
-          <li>Everyone has three lives; a wrong answer, running out of time or missing your turn while away costs one.</li>
-          <li>Each round takes you one depth deeper: less time, longer lockouts, harder questions.</li>
-          <li>The last one standing wins and delves on to their last life. Alone, see how deep you get.</li>
+          <li>Pick one of three categories; it stays locked for {lockoutText(delveLockout(1))}, longer deeper down.</li>
+          <li>A wrong answer, a time-out or a missed turn while away costs a life.</li>
+          <li>Together, the last one standing wins. Alone, see how deep you get.</li>
         {:else if race}
           <li>Everyone sees the same question at the same time.</li>
           <li>The first correct answer scores a point and ends the question.</li>
@@ -766,6 +788,7 @@
     gap: 0.5rem;
   }
   .mode {
+    position: relative;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -802,6 +825,23 @@
   }
   .mode.on b {
     text-shadow: 0 0 12px rgba(241, 217, 155, 0.45);
+  }
+  /* A small engraved tag in the corner, clear of the emblem, like the site's own Beta mark. */
+  .mode .beta {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    padding: 1px 2px 0 4px;
+    font-family: var(--font-cinzel);
+    font-weight: 700;
+    font-size: 0.5rem;
+    line-height: 1.4;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--unique-hi);
+    border: 1px solid rgba(224, 138, 68, 0.45);
+    border-radius: 2px;
+    pointer-events: none;
   }
   .mode:disabled {
     cursor: default;
@@ -879,10 +919,55 @@
     letter-spacing: 0.04em;
     color: var(--gold-hi);
   }
-  .ladder-note {
-    margin: 0.6rem 0 0;
-    font-size: 0.95rem;
+  /* Delve's rules: the descent and the finds side by side once there is room, stacked on phones. */
+  .delve-rules {
+    container-type: inline-size;
+  }
+  .delve-cols {
+    display: grid;
+    gap: 1rem 1.2rem;
+  }
+  @container (min-width: 400px) {
+    .delve-cols {
+      grid-template-columns: minmax(0, 1.12fr) minmax(0, 1fr);
+    }
+  }
+  .finds-intro {
+    margin: 0 0 0.45rem;
+    font-size: 0.93rem;
     font-style: italic;
+    line-height: 1.25;
+  }
+  .finds {
+    display: grid;
+    gap: 0.4rem;
+    margin: 0;
+  }
+  .finds dt {
+    font-family: var(--font-display);
+    font-size: 0.68rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--gold);
+  }
+  .finds dd {
+    margin: 0.05rem 0 0;
+    font-size: 0.93rem;
+    line-height: 1.25;
+    color: var(--muted);
+  }
+  /* Stacked on a phone, each find's name runs into its line. */
+  @container (max-width: 399.98px) {
+    .finds dt {
+      display: inline;
+      margin-right: 0.5em;
+    }
+    .finds dd {
+      display: inline;
+    }
+    .finds > div {
+      line-height: 1.25;
+    }
   }
   .blurbs {
     display: grid;
