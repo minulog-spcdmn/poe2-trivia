@@ -335,27 +335,39 @@ can't read are never written over: a newer build's are left alone, damaged
 ones kept aside. An item's page also shows its Delve answers. The runs are
 kept in this browser too (`src/lib/delveRecord.ts`).
 
-**Achievements:** the Codex's third tab. 41 of them in four groups
-(Collection, Knowledge, Versus and Delve), each an engraved seal struck in
-copper, silver or gold by how hard it is, with how far along you are on the
-ones still to earn. Three are secret: a blank seal until earned.
-- Most are read straight off the codex and the Delve records (items
-  discovered, a whole category discovered or named, right answers, streaks,
-  answer times, Eternal, made-up names, depths alone and together, runs,
-  lives given and brought back, wards, flares, dynamite), so games played
-  before achievements existed count too. That first time is quiet: the start
-  page gives one notice saying how many were earned.
-- Games against others (wins, races, deathmatches, wins on Eternal or
-  against four or more, wins without a wrong answer, races won from below
-  zero) are tallied as each game ends: online only, in a seat, with someone
-  else seated, as on one device the game can't tell its players apart. A win
-  without a wrong answer, or from below zero, is read from that game's own
-  answers in the codex log; the host stamps each game with its start for
-  that (`startedAt`).
-- A newly earned achievement is announced with a notice of its own, its seal
-  beside its name, a moment after the reveal or the end that earned it.
-- Once earned, an achievement stays earned. They are kept in this browser
-  (`src/lib/achievements.ts`), and erasing the codex erases them.
+**Achievements:** the Codex's third tab. 24 of them, few and chosen: each
+marks a moment worth telling or a goal worth chasing. Four groups of six, laid
+out in even rows:
+- **Knowledge:** 25 and 100 right in a row on your own turns (races and runs
+  together neither add nor break a streak), 5 in a row each within 2
+  seconds, every item of a category both named and found, every item in the
+  game answered right, and a secret one.
+- **Versus** (online, against others, to 5 points or more, someone else
+  still there at the end): a deathmatch won on the answers, a win after a
+  rival led by 4, a win to 10 without a wrong answer, a race to 10 taking
+  every question against rivals who guessed, race questions taken before a
+  quarter of their veiled art burned in, and a secret one.
+- **Delve:** depths 50 and 100 alone, depth 40 without losing a life, 10
+  depths on the last life past depth 30, a ward shattering in place of the
+  last life, and a secret one.
+- **Together** (Delve with others): two lives given in one run, a depth
+  cleared after every teammate struck, the team's depth 30 with nobody ever
+  perishing, the last one standing going 10 depths clean, depth 75 standing,
+  and a secret one.
+
+Each is an engraved seal struck in copper, silver or gold by how hard it is,
+bearing an alchemical sign: the tiers of one idea share a sign, and no other
+two do. Where the codex or the Delve records keep what it needs, the page
+shows how far along you are, and games played before achievements existed
+count (that first time quietly: the start page gives one notice). Moments are
+earned as they happen, from the state every player's screen has: a depth
+reached, a ward on the last life, a team falling together. A game against
+others is followed as it goes (the biggest lead a rival had over you, rivals
+who guessed, veiled questions taken) and judged at its end; the host stamps
+each game with its start (`startedAt`), so its own answers can be told apart
+in the codex. A new achievement is announced with a notice bearing its seal,
+a moment after it is earned. Once earned it stays earned. Kept in this
+browser (`src/lib/achievements.ts`); erasing the codex erases them.
 
 ## Multiplayer
 

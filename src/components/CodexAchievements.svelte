@@ -9,8 +9,10 @@
   import AchievementSeal, { METALS } from './AchievementSeal.svelte';
 
   // The Codex's third page: every achievement, earned or not, by group, each
-  // on its seal. The figures round the rune circle count them by metal. What
-  // each one needs, and how it is counted, is in lib/achievements.ts.
+  // on its seal, with how far along you are where that is kept (a moment has
+  // no bar: it is earned as it happens). The figures round the rune circle
+  // count them by metal. What each one needs, and how it is counted, is in
+  // lib/achievements.ts.
   let { codex, records, store, items }: { codex: Codex; records: DelveRecords; store: AchievementStore; items: Item[] } = $props();
 
   const still = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -19,7 +21,7 @@
   const date = (t: number) => new Date(t).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
   const fmt = (n: number) => n.toLocaleString();
 
-  const list = $derived(standings(summarize(codex, records, store.games, items), store));
+  const list = $derived(standings(summarize(codex, records, items), store));
   const earned = $derived(list.filter((r) => r.earned !== null));
   const groups = $derived(GROUPS.map((g) => ({ ...g, rows: list.filter((r) => r.achievement.group === g.key) })));
   /** Earned and all, by metal (gold first). */
@@ -107,18 +109,18 @@
           {@const won = r.earned !== null}
           {@const hidden = !won && !!a.secret}
           <li class="feat" class:won class:hidden>
-            <AchievementSeal sign={a.sign} tier={a.tier} earned={won} secret={!!a.secret} progress={p.have / p.need} size={52} />
+            <AchievementSeal sign={a.sign} tier={a.tier} earned={won} secret={!!a.secret} progress={p && !hidden ? p.have / p.need : 0} size={52} />
             <div class="body">
               <span class="title">{hidden ? 'Secret' : a.title}</span>
               <span class="text">{hidden ? 'Hidden until you earn it.' : a.text}</span>
               {#if won}
                 <span class="when">Earned {date(r.earned!)}</span>
-              {:else if !hidden && p.need > 1}
+              {:else if !hidden && p && p.need > 1}
                 <span class="advance">
                   <span class="meter" aria-hidden="true"><span class="fill" style:width="{Math.min(1, p.have / p.need) * 100}%"></span></span>
                   <span class="count">{p.note ? `${p.note} • ` : ''}{fmt(Math.min(p.have, p.need))} / {fmt(p.need)}</span>
                 </span>
-              {:else if !hidden && p.note}
+              {:else if !hidden && p?.note}
                 <span class="when">{p.note}</span>
               {/if}
             </div>

@@ -7,7 +7,7 @@
   // impression whose ring is cut as far as the progress has come, and a
   // secret one holds no sign.
 
-  import { MARKS, PLANETS } from '../lib/alchemy';
+  import { EYE, HEPTAGRAM, HEXAGRAM, HOUR, MARKS, PELICAN, PLANETS, PROJECTION, RINGS, STONE, SUBLIMATION, WAVES } from '../lib/alchemy';
   import { at, line, ring, wear, type Pt } from '../lib/arcane';
   import type { Sign } from '../lib/achievements';
 
@@ -16,24 +16,29 @@
   const INNER = 19.9;
   const CORE = 11.4;
 
-  /** Each sign's path and the scale that sets it about ±10 across. */
+  /** Each sign's path and the scale that sets it about ±10 across (the planets' grid is ±4, the marks' ±2). */
   const SIGNS: Record<Sign, { d: string; k: number }> = {
+    fire: { d: MARKS[0], k: 4.3 },
+    earth: { d: MARKS[3], k: 4.3 },
+    salt: { d: MARKS[4], k: 4.6 },
+    antimony: { d: MARKS[6], k: 4.2 },
+    cross: { d: MARKS[10], k: 4.6 },
     sol: { d: PLANETS[0], k: 2.3 },
     luna: { d: PLANETS[1], k: 2.2 },
     mercury: { d: PLANETS[2], k: 2.05 },
-    venus: { d: PLANETS[3], k: 2.1 },
     mars: { d: PLANETS[4], k: 2.15 },
     jupiter: { d: PLANETS[5], k: 2.15 },
     saturn: { d: PLANETS[6], k: 2.1 },
-    fire: { d: MARKS[0], k: 4.3 },
-    water: { d: MARKS[1], k: 4.3 },
-    air: { d: MARKS[2], k: 4.3 },
-    earth: { d: MARKS[3], k: 4.3 },
-    salt: { d: MARKS[4], k: 4.6 },
-    sulphur: { d: MARKS[5], k: 4.2 },
-    antimony: { d: MARKS[6], k: 4.2 },
-    arsenic: { d: MARKS[7], k: 4.4 },
-    cross: { d: MARKS[10], k: 4.6 },
+    hexagram: { d: HEXAGRAM, k: 2.1 },
+    heptagram: { d: HEPTAGRAM, k: 2.1 },
+    stone: { d: STONE, k: 2.1 },
+    eye: { d: EYE, k: 2.1 },
+    hourglass: { d: HOUR, k: 2.05 },
+    sublimation: { d: SUBLIMATION, k: 2.1 },
+    pelican: { d: PELICAN, k: 2.1 },
+    waves: { d: WAVES, k: 2.1 },
+    pisces: { d: PROJECTION, k: 2.1 },
+    rings: { d: RINGS, k: 2.1 },
   };
 
   /** The metals: copper, silver, gold. */

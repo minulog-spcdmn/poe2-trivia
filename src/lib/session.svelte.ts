@@ -42,7 +42,6 @@ import { CREATOR_TITLE } from './site';
 import { FLARE_MS, LOOKALIKES_ASKED_FROM, blastClears, isGroupRun, livesOf } from './delve';
 import { loadLooks } from './looks';
 import { bestOf, loadRecords, recordLeft, recordRun, runEvent } from './delveRecord';
-import type { GameResult } from './achievements';
 import {
   DELVE_CLOCK_CAP_MS,
   DRAIN_POLL_MS,
@@ -276,7 +275,7 @@ class Session {
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
   /** How long this device took to answer the current question (its askedAt), for the codex. */
-  private answered: { qid: number; ms: number } | null = null;
+  private answered: { qid: number; ms: number; share?: number } | null = null;
   /**
    * Delve: the art of this question goes first to those who answer it (the
    * player alone, or everyone standing in co-op), and to everyone else
@@ -1223,7 +1222,9 @@ class Session {
     if (!this.state) return;
     const q = this.state.question;
     if (action.type === 'answer' && action.index !== null && q && shown.qid === q.askedAt && this.answered?.qid !== q.askedAt) {
-      this.answered = { qid: q.askedAt, ms: performance.now() - shown.since };
+      // On a veiled picture, also how much of it had burnt in (for an achievement, lib/achievements.ts).
+      const share = q.veil && shown.veil?.count ? Object.keys(shown.patches).length / shown.veil.count : undefined;
+      this.answered = { qid: q.askedAt, ms: performance.now() - shown.since, ...(share !== undefined ? { share } : {}) };
     }
     if (this.mode === 'client') {
       this.hostConn?.send({ t: 'action', action });
@@ -1339,7 +1340,7 @@ class Session {
     this.noteRun(prev, next);
     this.onNewState(prev, next);
     this.noteEncounter(prev, next);
-    this.noteGameEnd(prev, next);
+    this.noteMoments(prev, next);
     this.state = next;
     if (this.isHost && next.delve && next.round >= LOOKS_FETCH_FROM) fetchLooks();
     if (next.phase === 'question' && next.question && next.question.askedAt !== prev?.question?.askedAt) {
@@ -1464,28 +1465,34 @@ class Session {
       .catch((err) => console.warn('codex', err));
   }
 
-  /** A game against others that just ended goes into this browser's achievements (lib/achievements.ts). */
-  private noteGameEnd(prev: GameState | null, next: GameState) {
-    if (next.phase !== 'over' || prev?.phase === 'over') return;
+  /**
+   * The moments a state change brings this device's player (lib/achievements.ts):
+   * a Delve run's (a depth reached, a ward on the last life, a team falling
+   * together) and a game against others' (followed as it goes, judged at its end).
+   */
+  private noteMoments(prev: GameState | null, next: GameState) {
+    if (!next.delve && next.phase === 'lobby' && prev?.phase === 'lobby') return;
     const me = this.myPlayerId;
     const hotSeat = this.mode === 'local';
-    void import('./achievements')
-      .then(({ gameEnded }) => {
-        const g = gameEnded(prev, next, me, hotSeat);
-        if (g) this.noteAchievements(g);
+    const a = this.answered;
+    const veilShare = a?.share !== undefined ? { qid: a.qid, share: a.share } : undefined;
+    void Promise.all([import('./achievements'), import('./achievementToasts')])
+      .then(([{ noteState }, { announceAchievements }]) => {
+        const check = noteState(prev, next, me, hotSeat, engine.items, veilShare);
+        if (check.earned.length) setTimeout(() => announceAchievements(check), ACHIEVEMENT_DELAY_MS);
       })
       .catch((err) => console.warn('achievements', err));
   }
 
   /**
-   * Brings the achievements up to date with what was just recorded (and a
-   * game that ended), and announces any earned once the moment has played:
+   * Brings the achievements up to date with what was just recorded in the
+   * codex or the Delve records, and announces any earned once the moment has played:
    * a notice arriving with the reveal's flare would be lost in it.
    */
-  private noteAchievements(game?: GameResult) {
+  private noteAchievements() {
     void Promise.all([import('./achievements'), import('./achievementToasts')])
       .then(([{ checkAchievements }, { announceAchievements }]) => {
-        const check = checkAchievements(engine.items, game);
+        const check = checkAchievements(engine.items);
         if (check.earned.length) setTimeout(() => announceAchievements(check), ACHIEVEMENT_DELAY_MS);
       })
       .catch((err) => console.warn('achievements', err));
