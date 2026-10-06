@@ -69,9 +69,6 @@ import { readLegacy, readStored, removeLegacy, removeStored, writeStored } from 
 
 export const engine = new Engine(itemData as Item[], { fakes: fakeNames });
 
-/** How long after the moment that earned it an achievement is announced. */
-const ACHIEVEMENT_DELAY_MS = 1400;
-
 /**
  * Delve: the depth from which whoever builds the questions fetches the
  * look-alike table, ten depths before any question can want it, so nobody
@@ -1146,9 +1143,7 @@ class Session {
         case 'state':
           this.syncClock(msg.now);
           if (!this.state || msg.state.version >= this.state.version || msg.state.version === 0) {
-            this.noteRun(this.state, msg.state);
-            this.onNewState(this.state, msg.state);
-            this.noteEncounter(this.state, msg.state);
+            this.noteChange(this.state, msg.state);
             this.state = msg.state;
           }
           this.status = 'ready';
@@ -1337,10 +1332,7 @@ class Session {
 
   private setState(next: GameState) {
     const prev = this.state;
-    this.noteRun(prev, next);
-    this.onNewState(prev, next);
-    this.noteEncounter(prev, next);
-    this.noteMoments(prev, next);
+    this.noteChange(prev, next);
     this.state = next;
     if (this.isHost && next.delve && next.round >= LOOKS_FETCH_FROM) fetchLooks();
     if (next.phase === 'question' && next.question && next.question.askedAt !== prev?.question?.askedAt) {
@@ -1443,6 +1435,14 @@ class Session {
     this.delveResult = { id: run.id, depth: run.depth, previousBest: was ? was.previousBest : r.previousBest, best: was ? was.best : r.best };
   }
 
+  /** What every device makes of a state change, host and guest alike: records, sounds and notices, achievements. */
+  private noteChange(prev: GameState | null, next: GameState) {
+    this.noteRun(prev, next);
+    this.onNewState(prev, next);
+    this.noteEncounter(prev, next);
+    this.noteMoments(prev, next);
+  }
+
   /** A question just revealed goes into this browser's codex. */
   private noteEncounter(prev: GameState | null, next: GameState) {
     // Not after a refresh into a reveal: it was likely counted before the
@@ -1478,22 +1478,19 @@ class Session {
     const veilShare = a?.share !== undefined ? { qid: a.qid, share: a.share } : undefined;
     void Promise.all([import('./achievements'), import('./achievementToasts')])
       .then(([{ noteState }, { announceAchievements }]) => {
-        const check = noteState(prev, next, me, hotSeat, engine.items, veilShare);
-        if (check.earned.length) setTimeout(() => announceAchievements(check), ACHIEVEMENT_DELAY_MS);
+        announceAchievements(noteState(prev, next, me, hotSeat, veilShare), 'game');
       })
       .catch((err) => console.warn('achievements', err));
   }
 
   /**
    * Brings the achievements up to date with what was just recorded in the
-   * codex or the Delve records, and announces any earned once the moment has played:
-   * a notice arriving with the reveal's flare would be lost in it.
+   * codex or the Delve records, and announces any earned (lib/achievementToasts.ts).
    */
   private noteAchievements() {
     void Promise.all([import('./achievements'), import('./achievementToasts')])
       .then(([{ checkAchievements }, { announceAchievements }]) => {
-        const check = checkAchievements(engine.items);
-        if (check.earned.length) setTimeout(() => announceAchievements(check), ACHIEVEMENT_DELAY_MS);
+        announceAchievements(checkAchievements(engine.items), 'game');
       })
       .catch((err) => console.warn('achievements', err));
   }

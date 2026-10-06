@@ -57,9 +57,14 @@
     discovered = engine.items.filter((it) => seen[it.id]).length;
   });
   // Achievements catch up with the codex here: the first time quietly (those
-  // earned in games from before them get one notice), and any missed since.
+  // earned in games from before them get one notice, here or owed from a game),
+  // and any missed since. Not once a game has taken over the screen.
   void Promise.all([import('../lib/achievements'), import('../lib/achievementToasts')])
-    .then(([{ checkAchievements }, { announceAchievements }]) => announceAchievements(checkAchievements(engine.items), true))
+    .then(([{ checkAchievements }, { announceAchievements, payOwed }]) => {
+      const here = !session.state;
+      announceAchievements(checkAchievements(engine.items), here ? 'start' : 'game');
+      if (here) payOwed();
+    })
     .catch((err) => console.warn('achievements', err));
   const showcase = shuffle(engine.items, Math.random).slice(0, 7);
 

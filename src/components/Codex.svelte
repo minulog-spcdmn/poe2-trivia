@@ -28,7 +28,7 @@
   let delve = $state.raw(loadRecords());
   // Brought up to date with the codex first (it is read the same way), so
   // the page never shows one done but not earned.
-  announceAchievements(checkAchievements(engine.items));
+  announceAchievements(checkAchievements(engine.items), 'codex');
   let achievements = $state.raw(loadAchievements());
   onMount(() => {
     // A game in another tab may add to it meanwhile.
@@ -614,13 +614,13 @@
     color: #b8ab95;
   }
 
-  /* ---- the two pages ---- */
+  /* ---- the three pages ---- */
   .tabs {
     display: flex;
     justify-content: center;
     gap: 0.4rem;
     margin: -0.4rem auto 0;
-    width: min(440px, 100%);
+    width: min(520px, 100%);
     border-bottom: 1px solid var(--line);
   }
   .tabs button {

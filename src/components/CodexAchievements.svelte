@@ -118,8 +118,9 @@
               {:else if !hidden && p && p.need > 1}
                 <span class="advance">
                   <span class="meter" aria-hidden="true"><span class="fill" style:width="{Math.min(1, p.have / p.need) * 100}%"></span></span>
-                  <span class="count">{p.note ? `${p.note} • ` : ''}{fmt(Math.min(p.have, p.need))} / {fmt(p.need)}</span>
+                  <span class="count">{fmt(Math.min(p.have, p.need))} / {fmt(p.need)}</span>
                 </span>
+                {#if p.note}<span class="note">{p.note}</span>{/if}
               {:else if !hidden && p?.note}
                 <span class="when">{p.note}</span>
               {/if}
@@ -378,6 +379,13 @@
     font-size: 0.75rem;
     color: var(--muted);
     white-space: nowrap;
+  }
+  /* Where the progress stands (the category nearest, the run now), on a line of its own so it can wrap. */
+  .note {
+    font-size: 0.82rem;
+    font-style: italic;
+    color: var(--muted);
+    overflow-wrap: anywhere;
   }
 
   @media (max-width: 900px) {

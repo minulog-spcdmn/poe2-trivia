@@ -14,11 +14,12 @@
 //   reaching a depth, a ward saving the last life, a team falling together.
 //   Everything they read is in the copy of the state a guest gets.
 // - Games against others online: a little tracker follows the game in play
-//   (trackVersus: the biggest lead a rival had over you, rivals who guessed,
-//   race questions taken from veiled art), kept in the stored list so a
-//   reload doesn't lose it, and at the end versusEnd says what it earned.
-//   Only online, in a seat, to 5 points or more, with someone else still
-//   there at the end; on one device the game can't tell its players apart.
+//   (trackVersus: the biggest lead a rival had over you, your own answers,
+//   rivals who guessed, race questions taken from veiled art), kept in the
+//   tab's session storage so a reload doesn't lose it and a game in another
+//   tab never touches it, and at the end versusEnd says what it earned. Only
+//   online, in a seat, to 5 points or more, with someone else still there at
+//   the end; on one device the game can't tell its players apart.
 //
 // They are kept on this device for this player alone, so they don't guard
 // against a player fooling themselves (leaving a room to save a streak, two
@@ -32,14 +33,14 @@ import { isTogether, loadRecords, type DelveRecords, type DelveRun } from './del
 import type { GameState, Item } from './game.ts';
 import { clearAside, makeRoom } from './keepAside.ts';
 import { isHeldName } from './names.ts';
-import { storeKey, tryReadStored, writeStored } from './storage.ts';
+import { readStored, removeStored, storeKey, tryReadStored, writeStored } from './storage.ts';
 
 /** The groups of the list, in the page's order. */
 export type AchievementGroup = 'knowledge' | 'versus' | 'delve' | 'together';
 
 export const GROUPS: { key: AchievementGroup; title: string; blurb: string }[] = [
   { key: 'knowledge', title: 'Knowledge', blurb: 'The items you know, from your own answers.' },
-  { key: 'versus', title: 'Versus', blurb: 'Games online against other players, to 5 points or more.' },
+  { key: 'versus', title: 'Versus', blurb: 'Games online against other players, to 5 points or more, with a rival still there at the end.' },
   { key: 'delve', title: 'Delve', blurb: 'Runs into the dark.' },
   { key: 'together', title: 'Together', blurb: 'Delve runs with others online, and the lives you share.' },
 ];
@@ -200,7 +201,7 @@ export const ACHIEVEMENTS: Achievement[] = [
 
   // ---- versus ----
   { id: 'deathmatch', group: 'versus', tier: 1, sign: 'mars', title: 'Sudden Death', text: 'Win a deathmatch, answering its last round right as a rival gets it wrong.' },
-  { id: 'tide-turner', group: 'versus', tier: 2, sign: 'waves', title: 'Tide Turner', text: `Win a game after a rival led you by ${COMEBACK} points or more.` },
+  { id: 'tide-turner', group: 'versus', tier: 2, sign: 'waves', title: 'Tide Turner', text: `Win a game after a rival led you by ${COMEBACK} points or more, with them still there at the end.` },
   { id: 'untarnished', group: 'versus', tier: 2, sign: 'sol', series: 'perfect', title: 'Untarnished', text: `Win a game to ${TARGET_HIGH} points or more without a wrong answer.` },
   {
     id: 'clean-sweep',
@@ -364,6 +365,16 @@ function tiedBest(delve: DelveRecords, run: DelveRun): boolean {
   return before?.depth === run.depth;
 }
 
+/**
+ * The deepest depth this player stood at in a run together: where they last
+ * perished, or for a run left on their feet (every fall answered by a life
+ * given back), the depth it was left at.
+ */
+function stoodAt(r: DelveRun): number {
+  const fell = r.perished?.at(-1) ?? 0;
+  return r.left && (r.perished?.length ?? 0) === (r.revived ?? 0) ? r.depth : fell;
+}
+
 /** Everything the kept achievements read. `items`: the game's item list now. */
 export function summarize(codex: Codex, delve: DelveRecords, items: Item[]): Summary {
   const { best, now, fast } = streaks(codex.log);
@@ -412,9 +423,7 @@ export function summarize(codex: Codex, delve: DelveRecords, items: Item[]): Sum
     savingGrace,
     grave: alone.some((r) => tiedBest(delve, r)),
     given: Math.max(0, ...together.map((r) => r.given ?? 0)),
-    // Where this player finally fell in a run that ended. A run left counts only if they never fell in it
-    // (one who fell may not have been brought back before leaving).
-    deepCompany: Math.max(0, ...together.map((r) => (r.left ? (r.perished?.length ? 0 : r.depth) : (r.perished?.at(-1) ?? 0)))),
+    deepCompany: Math.max(0, ...together.map(stoodAt)),
   };
 }
 
@@ -503,9 +512,11 @@ export function momentsIn(prev: GameState | null, next: GameState, me: string | 
     const fell = next.players.filter((p) => fellAt(next, p.id) === next.round).map((p) => p.id);
     if (r.winnerId === null && !standing.length && next.round >= FALL_DEPTH && (d.leftAt ?? 0) < next.round && fell.length >= FALL_MANY && fell.includes(self))
       out.push('fell-as-one');
-    // The last one standing, clean for LONE depths past the last fall (and past LONE_FROM).
-    if (whole && standing.length === 1 && standing[0] === self) {
-      const since = Math.max(LONE_FROM, ...others.map((p) => fellAt(next, p.id) ?? 0));
+    // The last one standing, clean for LONE depths past the last of the others to fall or leave (and past
+    // LONE_FROM). Who left is known only from a host that keeps where they fell (Delve.fellLeft).
+    const known = whole || d.leftAt !== undefined || d.fellLeft !== undefined;
+    if (known && standing.length === 1 && standing[0] === self) {
+      const since = Math.max(LONE_FROM, d.leftAt ?? 0, d.fellLeft ?? 0, ...others.map((p) => fellAt(next, p.id) ?? 0));
       if (next.round - since >= LONE && !losses.some((x) => x > since) && r.winnerId === self) out.push('lone-wolf');
     }
   }
@@ -518,8 +529,11 @@ export function momentsIn(prev: GameState | null, next: GameState, me: string | 
 export interface VersusTrack {
   /** Which game: its start on the host's clock. */
   game: number;
-  /** The largest lead each rival has had over this player (whose score counts from zero), by id. */
+  /** The largest lead each rival has had over this player, by id. */
   lead: Record<string, number>;
+  /** This player's own answers seen revealed, and whether any was wrong (or ran out of time). */
+  answered: number;
+  wrong: boolean;
   /** Race: rivals seen guessing (taking a question, or missing one). */
   guessed: string[];
   /** Race: questions this player took before a quarter of their veiled art had burned in. */
@@ -548,14 +562,14 @@ export function trackVersus(
   veilShare?: { qid: number; share: number },
 ): VersusTrack | null {
   if (!versusGame(next, me, hotSeat) || next.phase === 'lobby') return track && track.game === next.startedAt ? track : null;
-  let t: VersusTrack = track?.game === next.startedAt ? track : { game: next.startedAt, lead: {}, guessed: [], veiled: 0, last: 0 };
+  let t: VersusTrack = track?.game === next.startedAt ? track : { game: next.startedAt, lead: {}, answered: 0, wrong: false, guessed: [], veiled: 0, last: 0 };
   const race = next.settings.mode === 'race';
   const r = newReveal(prev, next);
-  const sample =
-    race ? !!r : prev?.startedAt === next.startedAt && prev.round < next.round && next.phase === 'choosing' && !next.deathmatch;
   const changed = () => (t === track ? (t = { ...t, lead: { ...t.lead }, guessed: [...t.guessed] }) : t);
+  // Leads: at each round's end in turns (the scores mid-round only say who went first), at each reveal in a race.
+  const sample = race ? !!r : prev?.startedAt === next.startedAt && prev.round < next.round && next.phase === 'choosing' && !next.deathmatch;
   if (sample) {
-    const mine = Math.max(0, next.players.find((p) => p.id === me)?.score ?? 0);
+    const mine = next.players.find((p) => p.id === me)?.score ?? 0;
     for (const p of next.players) {
       if (p.id === me) continue;
       const lead = p.score - mine;
@@ -563,32 +577,39 @@ export function trackVersus(
     }
   }
   const q = next.question;
-  if (race && r && q && q.askedAt !== t.last) {
+  if (r && q && q.askedAt !== t.last) {
     changed().last = q.askedAt;
-    for (const id of [r.winnerId, ...q.misses.map((m) => m.playerId)])
-      if (id && id !== me && !t.guessed.includes(id)) t.guessed.push(id);
-    const share = veilShare?.qid === q.askedAt ? veilShare.share : null;
-    if (r.winnerId === me && q.veil && share !== null && share > 0 && share < VEIL_SHARE && q.options.length >= VEIL_OPTIONS) t.veiled++;
+    // This player's own answer, as the codex counts it (lib/codex.ts encounterAt).
+    const missed = q.misses.some((m) => m.playerId === me);
+    const own = race ? r.winnerId === me || missed : next.players[next.turn]?.id === me;
+    if (own) {
+      t.answered++;
+      if (race ? missed : !r.correct) t.wrong = true;
+    }
+    if (race) {
+      for (const id of [r.winnerId, ...q.misses.map((m) => m.playerId)])
+        if (id && id !== me && !t.guessed.includes(id)) t.guessed.push(id);
+      const share = veilShare?.qid === q.askedAt ? veilShare.share : null;
+      if (r.winnerId === me && q.veil && share !== null && share < VEIL_SHARE && q.options.length >= VEIL_OPTIONS) t.veiled++;
+    }
   }
   return t;
 }
 
 /**
  * What the end of a game against others earns this device's player: online,
- * in a seat, to TARGET_MIN or more, with someone else still there. `log`:
- * the codex log, for this game's own answers.
+ * in a seat, to TARGET_MIN or more, with someone else still there. `track`:
+ * the game as this device followed it.
  */
-export function versusEnd(prev: GameState | null, next: GameState, me: string | null, hotSeat: boolean, track: VersusTrack | null, log: Answer[]): string[] {
+export function versusEnd(prev: GameState | null, next: GameState, me: string | null, hotSeat: boolean, track: VersusTrack | null): string[] {
   if (!prev || prev.phase === 'over' || next.phase !== 'over' || !versusGame(next, me, hotSeat)) return [];
   const s = next;
   if (s.settings.targetScore < TARGET_MIN || !s.winners.includes(me!)) return [];
-  const rivals = s.players.filter((p) => p.id !== me);
-  const there = rivals.filter((p) => p.connected);
+  const there = s.players.filter((p) => p.id !== me && p.connected);
   if (!there.length) return [];
   const t = track?.game === s.startedAt ? track : null;
   const race = s.settings.mode === 'race';
-  const mine = log.filter((a) => a.t >= s.startedAt && a.depth === undefined);
-  const flawless = mine.length > 0 && mine.every((a) => a.ok);
+  const flawless = !!t && t.answered > 0 && !t.wrong;
   const out: string[] = [];
   const dm = s.deathmatch;
   if (dm && dm.results[me!] === true && dm.eliminated.some((id) => dm.results[id] === false)) out.push('deathmatch');
@@ -606,8 +627,6 @@ export function versusEnd(prev: GameState | null, next: GameState, me: string | 
 export interface AchievementStore {
   /** When each was earned (this browser's clock), by id. Ids this build doesn't know (a newer one's) are kept. */
   earned: Record<string, number>;
-  /** The game against others in play (see trackVersus); missing outside one. */
-  versus?: VersusTrack;
 }
 
 export const emptyStore = (): AchievementStore => ({ earned: {} });
@@ -621,12 +640,20 @@ export const ACHIEVEMENTS_VERSION = 1;
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const whole = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? Math.floor(v) : 0);
 
-function parseTrack(v: unknown): VersusTrack | undefined {
-  if (!isObj(v) || typeof v.game !== 'number' || !Number.isFinite(v.game)) return undefined;
+/** A stored tracker, cleaned up; null when it's missing or malformed. */
+export function parseTrack(raw: string | null): VersusTrack | null {
+  let v: unknown;
+  try {
+    v = JSON.parse(raw ?? 'null');
+  } catch {
+    return null;
+  }
+  if (!isObj(v) || typeof v.game !== 'number' || !Number.isFinite(v.game)) return null;
   const lead: Record<string, number> = {};
   if (isObj(v.lead)) for (const [id, n] of Object.entries(v.lead)) if (id.length <= 64 && whole(n)) lead[id] = whole(n);
   const guessed = Array.isArray(v.guessed) ? v.guessed.filter((id): id is string => typeof id === 'string' && id.length <= 64).slice(0, 64) : [];
-  return { game: v.game, lead, guessed, veiled: whole(v.veiled), last: typeof v.last === 'number' && Number.isFinite(v.last) ? v.last : 0 };
+  const last = typeof v.last === 'number' && Number.isFinite(v.last) ? v.last : 0;
+  return { game: v.game, lead, answered: whole(v.answered), wrong: v.wrong === true, guessed, veiled: whole(v.veiled), last };
 }
 
 /** A stored list, cleaned up; null when it's missing, malformed or from another version. */
@@ -641,8 +668,6 @@ export function parseStore(raw: string | null): AchievementStore | null {
   if (!isObj(v) || v.v !== ACHIEVEMENTS_VERSION || !isObj(v.earned)) return null;
   const s = emptyStore();
   for (const [id, at] of Object.entries(v.earned)) if (id.length <= 64 && typeof at === 'number' && Number.isFinite(at)) s.earned[id] = at;
-  const track = parseTrack(v.versus);
-  if (track) s.versus = track;
   return s;
 }
 
@@ -678,9 +703,9 @@ function open(): { store: AchievementStore; first: boolean } | null {
 }
 
 /** Writes `store` with `ids` earned now (those it didn't have yet), and says which those were. */
-function earn(store: AchievementStore, first: boolean, ids: string[], force = false): Check {
+function earn(store: AchievementStore, first: boolean, ids: string[]): Check {
   const fresh = [...new Set(ids)].filter((id) => store.earned[id] === undefined && achievementById.has(id));
-  if (!fresh.length && !first && !force) return none();
+  if (!fresh.length && !first) return none();
   const now = Date.now();
   const next: AchievementStore = { ...store, earned: { ...store.earned } };
   for (const id of fresh) next.earned[id] = now;
@@ -700,38 +725,41 @@ export function checkAchievements(items: Item[], moments: string[] = []): Check 
 }
 
 /**
+ * The game against others this tab is in, as it has followed it: in this
+ * tab's session storage, so a reload keeps it and a game in another tab
+ * never touches it.
+ */
+const TRACK = 'achievements.versus';
+
+/**
  * A state change of a room or a run as this device saw it: follows a game
- * against others, and says what its moments earned (written already). Reads
- * the codex only when a game against others ends.
+ * against others, and says what its moments earned (written already). Never
+ * quiet: what the codex and the records would earn on a first check waits
+ * for the check after them (lib/session.svelte.ts), or the start page.
  */
 export function noteState(
   prev: GameState | null,
   next: GameState,
   me: string | null,
   hotSeat: boolean,
-  items: Item[],
   veilShare?: { qid: number; share: number },
 ): Check {
   const delve = momentsIn(prev, next, me, hotSeat);
-  const watching = versusGame(next, me, hotSeat);
-  if (!delve.length && !watching && !loadAchievements().versus) return none();
+  let ended: string[] = [];
+  if (versusGame(next, me, hotSeat) && next.phase !== 'lobby') {
+    const was = parseTrack(readStored(TRACK, 'session'));
+    const track = trackVersus(was, prev, next, me, hotSeat, veilShare);
+    ended = versusEnd(prev, next, me, hotSeat, track);
+    // Let go once its game is over.
+    if (next.phase === 'over') removeStored(TRACK, 'session');
+    else if (track && track !== was) writeStored(TRACK, JSON.stringify(track), 'session');
+  }
+  const ids = [...delve, ...ended];
+  if (!ids.length) return none();
   const o = open();
   if (!o) return none();
-  const { store, first } = o;
-  const track = trackVersus(store.versus ?? null, prev, next, me, hotSeat, veilShare);
-  const ended = next.phase === 'over' ? versusEnd(prev, next, me, hotSeat, track, loadCodex().log) : [];
-  const ids = [...delve, ...ended].filter((id) => store.earned[id] === undefined);
-  // The tracker is let go once its game is over (or another began).
-  const keep = track && next.phase !== 'over' ? track : undefined;
-  const moved = keep !== store.versus;
-  if (!ids.length && !moved) return none();
-  // A first check that only follows a game stays quiet about what the codex would earn: the start page tells that.
-  const base: AchievementStore = { ...store };
-  if (keep) base.versus = keep;
-  else delete base.versus;
-  const check = earn(base, first, ids, moved);
-  // What the codex and records earn waits for the check after them (lib/session.svelte.ts); a moment is never quiet.
-  return first ? { earned: check.earned, first: false } : check;
+  const check = earn(o.store, o.first, ids);
+  return { earned: check.earned, first: false };
 }
 
 /**
