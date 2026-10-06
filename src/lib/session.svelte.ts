@@ -42,6 +42,7 @@ import { CREATOR_TITLE } from './site';
 import { FLARE_MS, LOOKALIKES_ASKED_FROM, blastClears, isGroupRun, livesOf } from './delve';
 import { loadLooks } from './looks';
 import { bestOf, loadRecords, recordLeft, recordRun, runEvent } from './delveRecord';
+import type { GameResult } from './achievements';
 import {
   DELVE_CLOCK_CAP_MS,
   DRAIN_POLL_MS,
@@ -68,6 +69,9 @@ import {
 import { readLegacy, readStored, removeLegacy, removeStored, writeStored } from './storage';
 
 export const engine = new Engine(itemData as Item[], { fakes: fakeNames });
+
+/** How long after the moment that earned it an achievement is announced. */
+const ACHIEVEMENT_DELAY_MS = 1400;
 
 /**
  * Delve: the depth from which whoever builds the questions fetches the
@@ -1335,6 +1339,7 @@ class Session {
     this.noteRun(prev, next);
     this.onNewState(prev, next);
     this.noteEncounter(prev, next);
+    this.noteGameEnd(prev, next);
     this.state = next;
     if (this.isHost && next.delve && next.round >= LOOKS_FETCH_FROM) fetchLooks();
     if (next.phase === 'question' && next.question && next.question.askedAt !== prev?.question?.askedAt) {
@@ -1432,6 +1437,7 @@ class Session {
     if (!run) return;
     const r = recordRun(run);
     if (!r) return;
+    this.noteAchievements();
     const was = this.delveResult?.id === run.id ? this.delveResult : null;
     this.delveResult = { id: run.id, depth: run.depth, previousBest: was ? was.previousBest : r.previousBest, best: was ? was.best : r.best };
   }
@@ -1451,9 +1457,38 @@ class Session {
     void import('./codex')
       .then(({ encounterAt, recordEncounter }) => {
         const e = encounterAt(next, me, hotSeat, ms);
-        if (e) recordEncounter(e);
+        if (!e) return;
+        recordEncounter(e);
+        this.noteAchievements();
       })
       .catch((err) => console.warn('codex', err));
+  }
+
+  /** A game against others that just ended goes into this browser's achievements (lib/achievements.ts). */
+  private noteGameEnd(prev: GameState | null, next: GameState) {
+    if (next.phase !== 'over' || prev?.phase === 'over') return;
+    const me = this.myPlayerId;
+    const hotSeat = this.mode === 'local';
+    void import('./achievements')
+      .then(({ gameEnded }) => {
+        const g = gameEnded(prev, next, me, hotSeat);
+        if (g) this.noteAchievements(g);
+      })
+      .catch((err) => console.warn('achievements', err));
+  }
+
+  /**
+   * Brings the achievements up to date with what was just recorded (and a
+   * game that ended), and announces any earned once the moment has played:
+   * a notice arriving with the reveal's flare would be lost in it.
+   */
+  private noteAchievements(game?: GameResult) {
+    void Promise.all([import('./achievements'), import('./achievementToasts')])
+      .then(([{ checkAchievements }, { announceAchievements }]) => {
+        const check = checkAchievements(engine.items, game);
+        if (check.earned.length) setTimeout(() => announceAchievements(check), ACHIEVEMENT_DELAY_MS);
+      })
+      .catch((err) => console.warn('achievements', err));
   }
 
   /** Side effects that every device plays: sounds, and the notice of the creator's arrival. */

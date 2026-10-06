@@ -5,6 +5,8 @@
  * there too, but it comes from the session's status (see Toasts.svelte).
  */
 
+import type { Sign } from './achievements.ts';
+
 /** info: news about the room. warn: something went wrong for someone else. error: it went wrong for you. */
 export type ToastKind = 'info' | 'warn' | 'error';
 
@@ -21,6 +23,8 @@ export interface ToastOptions {
   sticky?: boolean;
   /** The creator's arrival (lib/herald.ts): gold and ruby, and the message follows her name ("has arrived"). */
   herald?: boolean;
+  /** An achievement earned (lib/achievementToasts.ts): its seal in place of the gem, in its metal. */
+  seal?: { sign: Sign; tier: 1 | 2 | 3 };
 }
 
 export interface Toast extends ToastOptions {

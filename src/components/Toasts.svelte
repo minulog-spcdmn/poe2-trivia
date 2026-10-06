@@ -9,6 +9,7 @@
   import { heraldNotice, twinkle } from '../lib/fx/moments';
   import Avatar from './Avatar.svelte';
   import PlayerName from './PlayerName.svelte';
+  import AchievementSeal from './AchievementSeal.svelte';
 
   /** Height of the app header, if one is showing: phones keep the stack below it, clear of its buttons. */
   let { headerHeight = 0 }: { headerHeight?: number } = $props();
@@ -83,6 +84,7 @@
       class="toast {t.kind}"
       class:held={t.held}
       class:herald={t.herald}
+      class:feat={!!t.seal}
       role="note"
       style:--life="{t.life}ms"
       use:sparkle={{ kind: t.kind, herald: t.herald }}
@@ -93,7 +95,9 @@
       onpointerleave={() => toasts.release(t.id)}
     >
       <span class="seal">
-        {#if t.who}
+        {#if t.seal}
+          <AchievementSeal sign={t.seal.sign} tier={t.seal.tier} earned size={36} />
+        {:else if t.who}
           <Avatar name={t.who.name} hue={t.who.hue ?? 0} size={28} dim={t.who.hue === undefined} />
           {#if t.kind !== 'info'}<span class="gem badge">{@render glyph(t.kind)}</span>{/if}
         {:else}
@@ -195,6 +199,17 @@
   }
   .toast.herald::after {
     opacity: 0.8;
+  }
+  /* An achievement earned: its seal, struck in its metal, glowing in old gold. */
+  .toast.feat {
+    --hi: #fbe6b0;
+    --c: #e6bb62;
+    --glow: rgba(230, 187, 98, 0.26);
+    border-color: #4f3d22;
+  }
+  .toast.feat .seal {
+    width: 36px;
+    height: 36px;
   }
   /* It arrives with a flare of its colour that settles into the panel. */
   @keyframes ignite {

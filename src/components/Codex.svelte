@@ -16,6 +16,9 @@
   import CodexFilter from './CodexFilter.svelte';
   import CodexDelve from './CodexDelve.svelte';
   import { DELVE_RECORD_KEY, loadRecords, resetRecords } from '../lib/delveRecord';
+  import { ACHIEVEMENTS, ACHIEVEMENTS_KEY, checkAchievements, loadAchievements, resetAchievements } from '../lib/achievements';
+  import { announceAchievements } from '../lib/achievementToasts';
+  import CodexAchievements from './CodexAchievements.svelte';
 
   /** Svelte's transitions run whatever the system says: with reduced motion, things just appear. */
   const still = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -23,11 +26,16 @@
 
   let codex = $state.raw(loadCodex());
   let delve = $state.raw(loadRecords());
+  // Brought up to date with the codex first (it is read the same way), so
+  // the page never shows one done but not earned.
+  announceAchievements(checkAchievements(engine.items));
+  let achievements = $state.raw(loadAchievements());
   onMount(() => {
     // A game in another tab may add to it meanwhile.
     const reload = (e: StorageEvent) => {
       if (e.key === CODEX_KEY || e.key === null) codex = loadCodex();
       if (e.key === DELVE_RECORD_KEY || e.key === null) delve = loadRecords();
+      if (e.key === ACHIEVEMENTS_KEY || e.key === null) achievements = loadAchievements();
     };
     addEventListener('storage', reload);
     return () => removeEventListener('storage', reload);
@@ -143,18 +151,22 @@
   function reset() {
     resetCodex();
     resetRecords();
+    resetAchievements();
     codex = loadCodex();
     delve = loadRecords();
+    achievements = loadAchievements();
     confirmReset = false;
   }
 
-  // ---- two pages: the collection, and Delve (CodexDelve) ----
+  // ---- three pages: the collection, Delve (CodexDelve) and achievements (CodexAchievements) ----
 
-  type Tab = 'items' | 'delve';
+  type Tab = 'items' | 'delve' | 'feats';
   const TABS: { key: Tab; label: string }[] = [
     { key: 'items', label: 'Collection' },
     { key: 'delve', label: 'Delve' },
+    { key: 'feats', label: 'Achievements' },
   ];
+  const earnedCount = $derived(ACHIEVEMENTS.filter((a) => achievements.earned[a.id] !== undefined).length);
   let tab = $state<Tab>('items');
   /** The tab's note: your best alone under the current rules (together, before a run alone). */
   const delveBest = $derived(delveSummary(delve, 'solo').deepest ?? delveSummary(delve, 'together').deepest);
@@ -229,7 +241,11 @@
     <p class="kicker">Your collection</p>
     <h1>Codex</h1>
     <p class="tagline">
-      {tab === 'delve' ? 'Every descent you have made, the depths you have named, and what they cost you.' : 'Every unique and lineage gem you have seen in a game, and how well you know it.'}
+      {tab === 'delve'
+        ? 'Every descent you have made, the depths you have named, and what they cost you.'
+        : tab === 'feats'
+          ? 'Feats of knowledge, victory and daring, and how close you are to the rest.'
+          : 'Every unique and lineage gem you have seen in a game, and how well you know it.'}
     </p>
   </header>
 
@@ -249,7 +265,7 @@
         >
           <span class="tab-in">
             <span class="tab-label">{t.label}</span>
-            {#if t.key === 'items'}<span class="tab-note">{stats.seen}/{stats.total}</span>{:else if delveBest}<span class="tab-note">{delveBest}</span>{/if}
+            {#if t.key === 'items'}<span class="tab-note">{stats.seen}/{stats.total}</span>{:else if t.key === 'feats'}<span class="tab-note">{earnedCount}/{ACHIEVEMENTS.length}</span>{:else if delveBest}<span class="tab-note">{delveBest}</span>{/if}
           </span>
         </button>
       {/each}
@@ -259,6 +275,8 @@
   <div class="page" id="codex-page" role={kept ? 'tabpanel' : undefined} aria-labelledby={kept ? `codex-tab-${tab}` : undefined}>
   {#if tab === 'delve' && kept}
     <CodexDelve {codex} records={delve} onopen={(it) => (open = it)} onbegin={beginDelve} />
+  {:else if tab === 'feats' && kept}
+    <CodexAchievements {codex} records={delve} store={achievements} items={engine.items} />
   {:else}
 
   <section class="summary" in:fly={calm({ y: 20, duration: 700, delay: 150 })}>
@@ -529,7 +547,7 @@
 
   {#if kept}
     <footer class="end">
-      <p>Your codex and your Delve runs live in this browser only; clearing the site's data erases them.</p>
+      <p>Your codex, your Delve runs and your achievements live in this browser only; clearing the site's data erases them.</p>
       <button class="btn danger small" onclick={() => (confirmReset = true)}>Erase codex</button>
     </footer>
   {/if}
@@ -547,7 +565,7 @@
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <div class="confirm panel" transition:fly={calm({ y: 20, duration: 250 })} onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" tabindex="-1">
       <h3>Erase your codex?</h3>
-      <p class="muted">Every item you have seen, every answer and every Delve run recorded in this browser is lost. This can't be undone.</p>
+      <p class="muted">Every item you have seen, every answer, every Delve run and every achievement recorded in this browser is lost. This can't be undone.</p>
       <div class="actions">
         <button class="btn ghost" onclick={() => (confirmReset = false)}>Keep it</button>
         <button class="btn danger" onclick={reset}>Erase</button>
@@ -1451,6 +1469,27 @@
     }
   }
   @media (max-width: 560px) {
+    /* Three tabs to a phone: each as wide as its label, its number under it. */
+    .tabs {
+      gap: 0;
+    }
+    .tabs button {
+      flex: auto;
+      padding-inline: 0.3rem;
+    }
+    .tab-in {
+      flex-direction: column;
+      align-items: center;
+      gap: 0.15rem;
+    }
+    .tab-label {
+      font-size: 0.74rem;
+      letter-spacing: 0.12em;
+      margin-right: -0.12em;
+    }
+    .tab-note {
+      font-size: 0.72rem;
+    }
     .summary {
       grid-template-columns: 1fr;
       row-gap: 1.75rem;

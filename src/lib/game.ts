@@ -670,6 +670,11 @@ export interface GameState {
   artLean?: Record<string, number>;
   /** askedAt of the latest question (missing in games saved before it existed). */
   lastAskedAt?: number;
+  /**
+   * Host clock when the game started (missing in the lobby, and from older
+   * hosts): which game it is, and which answers in a codex log belong to it.
+   */
+  startedAt?: number;
   /** Bumped on every change so clients can ignore stale messages. */
   version: number;
 }
@@ -1101,6 +1106,7 @@ export class Engine {
         s.recentCategories = [];
         s.artLean = {};
         s.delve = null;
+        s.startedAt = this.now();
         if (s.settings.mode === 'delve') {
           // Every run draws from the whole pool, so one run's depth means the same as another's.
           s.used = [];
@@ -1307,6 +1313,7 @@ export class Engine {
         fresh.lastAskedAt = s.lastAskedAt;
         fresh.used = s.used;
         Object.assign(s, fresh);
+        delete s.startedAt;
         if (action.play) return this.apply(s, { type: 'start' }, from);
         break;
       }
