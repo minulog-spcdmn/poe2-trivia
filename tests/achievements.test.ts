@@ -78,6 +78,28 @@ test('every achievement has its own id, a group that is listed, and something to
   assert.deepEqual(earnedIds(emptyCodex()), []);
 });
 
+test('the groups are the same size, so the page lays out evenly', { todo: 'the set is being redesigned' }, () => {
+  const sizes = GROUPS.map((g) => ACHIEVEMENTS.filter((a) => a.group === g.key).length);
+  assert.ok(sizes[0] > 0);
+  assert.deepEqual(sizes, sizes.map(() => sizes[0]), JSON.stringify(sizes));
+});
+
+test('a sign is shared only by the tiers of one series', { todo: 'the set is being redesigned' }, () => {
+  const seriesOf = new Map<string, string>();
+  for (const a of ACHIEVEMENTS) {
+    const series = (a as { series?: string }).series ?? a.id;
+    const was = seriesOf.get(a.sign);
+    assert.ok(was === undefined || was === series, `${a.sign} is used by ${was} and ${series}`);
+    seriesOf.set(a.sign, series);
+  }
+  // And a series climbs: its tiers never step down.
+  const bySeries = Map.groupBy(ACHIEVEMENTS, (a) => (a as { series?: string }).series ?? a.id);
+  for (const [series, list] of bySeries) {
+    assert.ok(list.length === 1 || list.every((a, i) => i === 0 || a.tier >= list[i - 1].tier), series);
+    assert.equal(new Set(list.map((a) => a.sign)).size, 1, `${series} keeps one sign`);
+  }
+});
+
 test('the collection counts the items of the game discovered, and the category nearest to done', () => {
   const rings = items.filter((it) => it.category === 'Rings');
   const s = sum(codexOf(rings.slice(0, 10).map((it) => [it.id, true])));

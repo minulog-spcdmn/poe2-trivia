@@ -250,12 +250,11 @@
     margin-bottom: 0.3rem;
   }
 
-  /* ---- the groups ---- */
+  /* ---- the groups: one panel each, the full width, their seals in even rows ---- */
   .groups {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
+    display: flex;
+    flex-direction: column;
     gap: 1.2rem;
-    align-items: start;
   }
   .panel {
     padding: 1.2rem 1.3rem 1.3rem;
@@ -288,13 +287,14 @@
     color: var(--muted);
   }
 
+  /* Three to a row; a group of six fills two rows, three on a tablet, six on a phone. */
   .feats {
     list-style: none;
     margin: 0;
     padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.55rem;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.6rem;
   }
   .feat {
     display: flex;
@@ -388,8 +388,8 @@
       grid-row: 1;
       justify-self: center;
     }
-    .groups {
-      grid-template-columns: 1fr;
+    .feats {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
     }
   }
   @media (max-width: 560px) {
@@ -412,6 +412,9 @@
     }
     .panel {
       padding: 1rem 0.9rem 1.1rem;
+    }
+    .feats {
+      grid-template-columns: minmax(0, 1fr);
     }
     .feat {
       gap: 0.65rem;
