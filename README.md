@@ -36,13 +36,39 @@ same time, in a random category (never one of the last 2, 3 or 4, by difficulty,
 - The host's own answers reach the game instantly, while guests' answers
   travel over the network, so the host has a small speed edge.
 
-**Delve** (online or on one device): no settings. Everyone plays the exact same
-rules, so "I reached depth 30" means the same thing for everyone.
-- On your turn, pick one of three categories and name the item, as in turns
-  mode. Each round takes everyone still standing one depth deeper.
-- Everyone has **three lives**. A wrong answer, running out of time, or
-  missing your turn while you're disconnected costs one (a miss on an
-  Azurite Vein two, see Finds).
+**Delve** (alone, online or on one device; or together, online): no
+settings. Everyone plays the exact same rules, so "I reached depth 30" means
+the same thing for everyone.
+- Pick one of three categories and name the item, as in turns mode. Each
+  question goes one depth deeper.
+- Everyone has **three lives**. A wrong answer or running out of time costs
+  one (a miss on an Azurite Vein two, see Finds).
+- **Alone** is a run of your own, online (a room with one player) or in
+  hot-seat. Hot-seat Delve is only ever alone.
+- **Together** (a room of two or more) is co-op: one team, one question at
+  a time.
+  - The team votes for a card. Each vote is a ticket in a raffle (two
+    votes for a card, twice its chance), and a vote can be changed until
+    the vote closes: once everyone it waits for has voted, or 6 s after the
+    first vote. Until that first vote the cards wait for as long as it
+    takes; nobody is ever picked for. A player who lets 3 votes in a row
+    pass is idle and isn't waited for until they vote again. A short draw
+    then plays on the cards (a light hopping over the voted ones and
+    landing on the card drawn), and only after it does the clock start.
+    The category lockout counts the team's picks.
+  - Everyone standing answers the same question at once, one pick each. A
+    wrong pick costs that player a life (two on an Azurite Vein) and
+    strikes the option for everyone, so two players can't pick the same
+    option. The first right answer clears the depth and takes the find, if
+    the card was one. A time-out costs everyone standing who hasn't
+    answered.
+  - Flares and dynamite go off from the pack of a random holder still
+    standing, and help everyone.
+  - Between questions, a player with 2 or more lives can give one to a
+    teammate who perished, who comes back with that life and nothing else.
+  - Perishing drops everything you carry, for good.
+  - The run ends when nobody is left standing, and its depth (where the
+    last of the team perished) is the team's.
 - Every few depths the rules get harder, one thing at a time: four options
   for the first ten depths (with look-alike names from 3 and a made-up one
   from 5), six from 11, eight from 31. Until depth 58 something gets harder
@@ -101,17 +127,27 @@ rules, so "I reached depth 30" means the same thing for everyone.
   more often until depth 124, and look-alike pictures take over until 134.
 - **Finds.** From depth 5 one of the cards on offer is now and then a find:
   pick it and answer right for an item. Its question is a bit harder (that
-  of 15 to 20 depths deeper, with its shorter clock); the card only says
-  "Harder", and the note under the cards says what the item does. Each
-  find's chance rises evenly from its first depth to depth 50 and holds
-  there (the Vein 4% to 11%, the Dynamite Cache 4% to 9%, the Flare Cache
-  4% to 13%), so from 50 about one offer in three holds a find. An offer
-  holds at most one, and never one whose item you can't carry more of.
+  of 15 to 20 depths deeper, with its shorter clock); the card shows only
+  the find's name, and the note under the cards says what the item does
+  and what a miss costs. Each find's chance rises evenly from its first
+  depth to depth 50 and holds there (the Vein 4% to 11%, the Dynamite
+  Cache 4% to 9%, the Flare Cache 4% to 13%), so from 50 about one offer
+  in three holds a find.
+  - An offer that holds a find rolls once more for a second, of another
+    kind and on another card, at half its chance; never a third. Two side
+    by side are rare early on (about 1 offer in 500 at depth 10, 1 in 100
+    at 20) and about 1 offer in 28 from depth 50.
+  - A find is never offered for an item nobody could carry more of: alone,
+    you; together, anyone standing.
+  - A right answer sends sparks in the find's colour from the answer to
+    the item's slot (its ward's chamber, or the flare's or dynamite's place
+    beside the phial).
   - An **Azurite Vein** (from depth 5): a right answer within the first half
     of its clock mines an **Azurite Ward**, which takes your next lost life
-    instead; a slower one a shard (two make a ward). A wrong answer or a
-    time-out on a vein caves in: it costs two lives, a ward taking each loss
-    first if you hold one (on your last life you simply fall).
+    instead; a slower one a shard (two make a ward; with three wards you
+    hold no shard). A wrong answer or a time-out on a vein caves in, with
+    a sound of its own: it costs two lives, a ward taking each loss first
+    if you hold one (on your last life you simply fall).
   - A **Flare Cache** (from depth 15) gives a **flare**. When your clock hits
     0 it burns by itself, with a signal flare's hiss, and gives you 5 s more
     (once a question). An answer at any time before that keeps it; a guest's
@@ -119,36 +155,50 @@ rules, so "I reached depth 30" means the same thing for everyone.
   - A **Dynamite Cache** (from depth 10) gives **dynamite**. Halfway through
     your clock (rounded up to a whole second) a stick goes off by itself
     (once a question): the art shows plain (in colour, unmirrored and whole)
-    and half the wrong answers are blown away, never leaving fewer than two.
-    The clock holds for the second the blast takes, so watching it costs
-    nothing.
+    and half of all the options are blown away, every one of them wrong (4
+    leave 2, 6 leave 3, 8 leave 4; together, half of those not struck
+    yet). Its fuse is lit shortly after the clock starts and burns round
+    the art, from its foot up the left side and along the top, down to the
+    blast at half time. The clock holds for the second the blast takes, so
+    watching it costs nothing.
   - Flares and dynamite never go off on a find's own question, which is
     played as it is. A miss on a Flare or Dynamite Cache costs one life as
     usual. You carry up to three of each item.
 - **Alone**, you delve until your third life is gone; the depth where it went
-  is your result. **Together**, the last one standing wins and keeps delving
-  to their own last life. If the last players fall at the same depth, whoever
-  lost their earlier lives deeper wins; identical runs share the win.
-- Each run starts with the whole item pool. A group uses it up faster than
-  one player, so a group's depths are a little easier than a solo depth.
-- The clock starts once the art has reached the player answering (the host
-  waits at most 3 s for it), and nobody sees the options before that.
-- Online, a player has 20 s to pick a category, or one is picked for them.
-  A player who is disconnected when that runs out loses a life. Nobody can
-  skip a turn by hand. After the host reloads, players who were cut off
-  get a minute to come back, and a guest's open question is set aside.
-- A run alone starts from the lobby (hot-seat, or a room with one player).
-  Choosing Delve there shows its milestones and your deepest.
+  is your result. **Together**, the run goes on while anyone stands, and
+  the depth where the last of the team perished is the team's result.
+- Each run starts with the whole item pool, and alone or together it asks
+  one question a depth.
+- The clock starts once the art has reached everyone answering (alone the
+  player, together everyone standing; the host waits at most 3 s for it)
+  and, together, once the draw has played out. Nobody sees the options
+  before that.
+- There's no time limit on picking a card: alone the cards wait for you,
+  together the vote decides. Nobody can skip a turn by hand. After the host
+  reloads, players who were cut off get a minute to come back (a vote waits
+  for them meanwhile), and a question one of them may have been answering
+  is set aside: the same cards come back, and it costs nobody anything.
+- A run starts from the lobby: alone in hot-seat or a room with one player,
+  together in a room of two or more. Choosing Delve there shows its
+  milestones, its rules (alone or together) and your deepest.
 - Your lives are an engraved phial of three chambers beside your name, each
   a soft light beating like a heart (faster and weaker on the last life,
-  whose light sinks to a deeper red). A lost life flares and pours out of
-  the phial's end; a survived question sends a wave of light through it.
-  Azurite Wards are crystal casings on the chambers, one each from the base
-  (a shard is half a casing): a ward crystallises on as it is mined, and
-  cracks and falls off in two halves when it takes a loss. Flares and
-  dynamite stand as small counts beside the phial. The reveal says what
-  happened (a ward mined or forged, a shard, a find, a ward shattered with
-  no life lost, a cave-in; on a time-out "The darkness took you").
+  whose light sinks to a deeper red), each moving its own way: a tide
+  swaying to and fro, a swirl of two wisps, and two glows kindling in turn.
+  A lost life flares and pours out of the phial's end; a survived question
+  sends a wave of light through it; a life given to a teammate streams
+  across into their phial.
+  - Azurite Wards are crystal casings on the chambers, one each from the
+    base (a shard is half a casing), shimmering at rest: a ward
+    crystallises on as it is mined, and bursts in blue sparks where it is
+    when it takes a loss.
+  - Flares and dynamite stand as small counts beside the phial.
+  - The reveal says what happened in a few words: "You mined an Azurite
+    Ward.", "Too slow for a ward; you mined a shard.", "Your ward
+    shattered.", "The vein caves in: two lives lost." or, on a time-out,
+    "The darkness took you." Together it says who cleared it ("Ash cleared
+    it.") and what it cost whom ("The darkness took Brea and Cara."),
+    leaving a single lost life to the phial.
 - Every ten depths the descent enters a new zone, named after a Delve biome
   and a place of its own: lamps guttering in the Mines (1 to 10), glowing
   cracks and heat shimmer in Magma Fissure (11), frost creeping from the
@@ -156,42 +206,54 @@ rules, so "I reached depth 30" means the same thing for everyone.
   gold shafts in Vaal Outpost (41), coiling violet eddies in Abyssal Depths
   (51), stone trunks in drifting mist in Petrified Forest (61), billowing
   vapour in Sulphur Vents (71), far cold lights in Abyssal City (81) and
-  white-hot fire in Primeval Ruins (91). Each has its own light, smoke,
-  embers (their colour, how many, rising or sinking) and glints. Past 100
-  the zones go on for ever, each pairing one deep zone's hall with
-  another's embers, named after its hall's biome and never the same twice
-  in a row.
-- A zone creeps in over the last three depths of the one before and has
-  settled two depths in. It hands over in stages: the old place leaves
-  first, the light dims, the colour turns while it's dim, and the new place
-  arrives its own way (cracks cool and narrow before frost creeps from the
-  walls, fog rolls in before the stone trunks, the city's lights come on one
-  by one), so colours never mix into mud.
-- The dark is one smooth fade from the edges, corners darkest. It closes in
-  a little with every depth of a zone, most as the zone gives way, opens out
-  as the next arrives, and is closer the deeper on the whole. As a
-  question's clock runs out it draws the light in and dims the scene (never
-  the panels or text), lifting at the reveal or when a flare burns. The
-  ambience sinks with the depth, over a slow rumble. Leaving a run, or
-  rejoining deep down, fades straight to the scene it's going to (the
-  surface, say) instead of passing through every zone.
+  white-hot fire in Primeval Ruins (91). Each has its own light, smoke (four
+  neighbouring hues that mix as they drift, as on the start page), embers
+  (their colour, how many, rising or sinking) and glints. Depth 1 is
+  already the Mines; the surface is the start page. Past 100 the zones go
+  on for ever, each pairing one deep zone's hall with another's embers,
+  named after its hall's biome and never the same twice in a row.
+- Each zone turns steadily into the next over its whole length, a little
+  with every depth, so the next is all there when its name is announced.
+  - Its embers take the next zone's colour one by one: a tenth of them at
+    its 2nd depth, nine tenths at its last.
+  - From its 4th depth the next zone's light, smoke and features creep in
+    while its own recede, each feature coming and going its own way (the
+    lamps kindle one by one, cracks heat up and cool, frost grows in from
+    the walls, fire rises from below).
+- The deeper, the darker, never the other way. The dark is one smooth fade
+  from the edges, corners darkest, and closes in a little with every depth.
+  The scene's light is set so its average brightness only ever falls with
+  depth, however bright a zone's fire or gold: it is estimated for each
+  depth from what the backdrop draws, with a measured correction table.
+- Each card pick sinks the scene a little further: for 1.3 s the walls,
+  smoke and dust drift up past you, the embers streak up, and the dark
+  draws in and lets go. It is skipped with reduced motion or effects off.
+- As a question's clock runs out the dark draws the light in and dims the
+  scene (never the panels or text), lifting at the reveal or when a flare
+  burns. The ambience sinks with the depth, over a slow rumble. Leaving a
+  run, or rejoining deep down, fades straight to the scene it's going to
+  (the surface, say) instead of passing through every zone.
 - A new zone is announced on a slim engraved ribbon on the line above the
   banner: its name between two seals bearing the zone's sigil, an ornament
   running out from each point that echoes the zone's backdrop, all in the
   zone's colour. It draws itself in, holds about three and a half seconds
-  and fades; it never covers the cards or takes a tap. The same ribbon
-  marks the last one standing and, alone, the first depth past your best.
-  The header names the zone beside the depth, both in its colour (on a
-  second line on phones).
+  and fades; it never covers the cards or takes a tap. Alone, the same
+  ribbon marks the first depth past your best. The header names the zone
+  beside the depth, both in its colour (on a second line on phones).
 - A run ends as a fall, not a victory. Alone, the end screen says "Perished"
   (or "Deeper than ever"), with your depth, where your lives went and your
-  best; together, the deepest "delved deepest". The warmth dies out of the
-  rune circle and ash settles, to a slowed toll and an ember crackling out.
+  best. Together it says "The descent ends", with the team's depth and the
+  zone it reached, the whole team in the rune circle, and each player's
+  lives lost, given and brought back ("Lost 2 lives, gave one life,
+  brought back once"). The warmth dies out of the rune circle and ash
+  settles, to a slowed toll and an ember crackling out.
 - The share button copies (on a phone, shares) "I reached depth N in Delve,
-  can you beat me? poe2.quest/?delve". Opening that link, someone who has
-  played here before (a name is saved) goes straight into a run alone;
-  anyone else finds Delve chosen in the lobby they open. A game being
-  resumed is never replaced.
+  can you beat me? poe2.quest/?delve"; together, any player of the run
+  shares the team's depth: "We reached depth N in Delve together, can you
+  beat us? poe2.quest/?delve". Someone watching has no share button.
+  Opening that link, someone who has played here before (a name is saved)
+  goes straight into a run alone; anyone else finds Delve chosen in the
+  lobby they open. A game being resumed is never replaced.
 - Your deepest run alone and together are kept in this browser (lobby, end
   screen and Codex, with your last runs). A run resumed by a build with
   other rules still shows, but never counts as a best.
@@ -271,8 +333,8 @@ runs are kept in this browser too (`src/lib/delveRecord.ts`).
   ([PeerJS](https://peerjs.com/)). The host's browser runs the game and
   everyone else sees the same state live. Only the free PeerJS cloud is used,
   to introduce the players to each other.
-  - Players who refresh or drop out rejoin automatically. The host can skip
-    the turn of a player who is disconnected. Opening the same room in a
+  - Players who refresh or drop out rejoin automatically. Outside Delve, the
+    host can skip the turn of a player who is disconnected. Opening the same room in a
     second tab moves your seat there, and the first tab lets it go.
   - If the host refreshes, the room reopens with the same code and players
     reconnect.
@@ -323,7 +385,8 @@ with that in mind. Guests, on the other hand, are treated as untrusted:
   different for every room (derived from the browser's secret and the room
   code), so a host never learns a token that works in someone else's room.
 - **Everything guests send is checked.** Every message is validated against
-  the few actions a guest may take: pick a category, answer, continue. Guests
+  the few actions a guest may take: pick a category, answer, continue, and
+  in Delve together vote for a card or give a teammate a life. Guests
   are rate-limited to about 10 messages per second, and the raw data they
   send is capped in size and volume, and checked for lengths that can't be
   real, before it is decoded (so it can't be used to fill the host's memory
@@ -347,26 +410,32 @@ with that in mind. Guests, on the other hand, are treated as untrusted:
 - **Race fairness.** The host's own answers are delayed by a typical guest's
   one-way network latency, measured with pings. Pings carry random numbers,
   so a guest can't answer them early to look closer than it is.
-- **Delve fairness.** A guest's clock starts once the host's queue to them
-  is empty (plus half a round trip), waiting at most 3 s, and the art goes
-  to the player answering before anyone else. A guest on a link slow enough
-  to need more than 3 s for the pictures loses the rest, and the host's own
-  art is instant, so the host still has a small edge. In Delve the host
-  can't skip anyone's turn; a missed turn only costs a life when the time to
-  pick runs out.
+- **Delve fairness.** The art goes first to every player standing who
+  answers (alone the player, together the whole team), before anyone
+  watching, and the clock starts once the host's queue to each of them is
+  empty (plus half the slowest round trip), waiting at most 3 s. Together,
+  the clock also waits for the draw on the cards to play out (about 2 s),
+  so it costs no answer time. A guest on a link slow enough to need more
+  than 3 s for the pictures loses the rest, and the host's own art is
+  instant. Together, where the first right answer clears the depth and
+  takes the find, the host's own answers are delayed as in a race. Nobody
+  can skip a turn in Delve, the host included.
 - **Host tools.** The host can:
   - lock the room so no one new can join or watch (people already in the
     room can still get back in, e.g. after a refresh)
   - ask another question in the same category if a question's art couldn't
-    be loaded
+    be loaded (in Delve, only before its clock starts; art that won't load
+    is asked again by itself up to 4 times, then the question waits, with
+    nothing lost, until the host asks another or the browser is back
+    online)
   - kick anyone, in the lobby or mid-game; the kicked player's token and
     connection are then blocked for the rest of the session. Kicking someone
     who is still in the room also bars their name (and look-alikes of it)
     for anyone new; removing an offline player doesn't
   - skip the turn of a player who is still connected but hasn't picked a
     category (or, without a timer, answered) for 30 seconds (not in Delve,
-    where a skipped turn would cost a life: there the 20 s to pick and the
-    question's clock decide)
+    which has no turns to skip: alone the cards wait for the player,
+    together the vote decides, and a question runs out by its clock)
   - hide the room code on screen for streaming
 - **Names.** Invisible and direction-flipping characters and "zalgo" text
   are removed. Names that pose as the host or look like another player's
@@ -441,12 +510,20 @@ Everything is drawn in WebGL2 with float precision and dithered once at the
   *prefers-reduced-motion*). Online, everyone else gets a notice when she
   walks into the room (`src/lib/herald.ts`).
 - **Delve's descent** (`src/lib/descent.ts`): each zone is a look (the
-  hall's dark, the light from below, smoke, mist, embers, glints) and the
-  environments the backdrop draws for it (`ENVIRONMENTS`: lamps, magma,
-  frost, spores, shafts, void, mist, plumes, city, heat). The shown depth
-  eases along at about a second a depth, a zone hands over in stages
-  (`blendInto`), and a jump of more than three depths cross-fades straight
-  there. The backdrop's shaders and embers (`src/lib/backdropEmbers.ts`, a
+  hall's dark, the light from below, smoke in four hues, mist, embers,
+  glints) and the environments the backdrop draws for it (`ENVIRONMENTS`:
+  lamps, magma, frost, spores, shafts, void, mist, plumes, city, heat).
+  Through a zone the scene turns steadily into the next (`strataAt`,
+  `turnInto`): the embers follow the turn itself, the light, smoke and
+  features follow it from the zone's 4th depth (`hallTurn`). The scene's
+  `light` is set so its average brightness follows a falling curve
+  (`luminanceAt`): `estimateLuminance` works out what the backdrop draws,
+  corrected per zone (`HALL_GAIN`) and per depth (`MEASURED`, measured from
+  the backdrop's own frames; measure again after changing what it draws).
+  The shown depth eases along at about a second a depth, and a jump of
+  more than three depths cross-fades straight there. `plunge()` (called by
+  `App.svelte` as a question follows the cards) sinks the scene, and the
+  backdrop steps it (`stepPlunge`). The backdrop's shaders and embers (`src/lib/backdropEmbers.ts`, a
   small palette of zone colours, so a new colour spreads ember by ember),
   the CSS fallback and the ambience (`depthAmbience` in `src/lib/sound.ts`)
   follow it. The clock's dark (`src/lib/darkness.ts`) is set by the timer
@@ -557,17 +634,25 @@ it apart from the live game:
 `lab.html` (`src/lab/`) is a page for trying Delve's moments by hand: the
 real game screen (the app itself, with its backdrop, effects, sounds and
 header) beside a panel that sets up and plays a run on this device. It sets
-the players (1 to 4), whose turn it is, each one's lives, wards, shard,
-flares and dynamite, and the depth (any of 1 to 150, or a zone); deals
-cards with a find among them; asks questions (name the item or find the
-art, a find's, mirrored, unveiled, in grayscale); plays events (a right or
-wrong answer, a time-out, a ward breaking, a cave-in, a flare at 0,
+the players (1 to 4), each one's lives, wards, shard, flares and dynamite,
+and the depth (any of 1 to 150, or a zone); deals cards with a find among
+them, and a second find if wanted; asks questions (name the item or find
+the art, a find's, mirrored, unveiled, in grayscale); plays events (a right
+or wrong answer, a time-out, a ward breaking, a cave-in, a flare at 0,
 dynamite at half the clock, items gained, a find answered right, the last
-life, the last one standing, deeper than ever, a new zone, the plunge);
-pauses and moves the clock; shows the end screens; and switches effects,
-sound and reduced motion. Events go through the engine and the session as
-a game's would; setup changes start the run afresh under a new id, so they
-play nothing themselves.
+life, deeper than ever, a new zone, the plunge); pauses and moves the
+clock; shows the end screens (perished, deeper than ever, together); and
+switches effects, sound and reduced motion. Events go through the engine
+and the session as a game's would; setup changes start the run afresh
+under a new id, so they play nothing themselves.
+
+With two players or more the run is co-op:
+
+- **Screen** picks whose screen the app is (its own taps vote and answer
+  for them), and **Acts** whom the events act for.
+- Co-op events: **Vote** for each of the three cards, **Others vote**,
+  **Give a life** to a teammate who perished, **Perish**, **Others
+  perish** and **Time out** for the team.
 
 - **Open it:** `npm run dev`, then `http://localhost:5173/lab.html`; on the
   beta, **poe2.quest/beta/lab.html**. The live build leaves it out (its

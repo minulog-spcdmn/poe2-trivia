@@ -121,7 +121,7 @@ float smin3(float a, float b, float c, float k) { return -k * log(exp(-a / k) + 
 // is: each arrives from where it comes from and recedes the same way (the
 // lamps kindle one by one, the cracks heat up and cool, the frost grows in
 // from the walls, the fire rises from below), so two in a turn never sit
-// on top of each other half-faded (see blendInto in lib/descent.ts).
+// on top of each other half-faded (see turnInto in lib/descent.ts).
 // p in CSS px, q = p / S, xy = fractions of the screen, tm the clock (s).
 vec3 environments(vec3 col, vec2 p, vec2 q, vec2 xy, float S, float W, float H, float tm, float dark) {
   vec4 e0 = uEnv[0];
