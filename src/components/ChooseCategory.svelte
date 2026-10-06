@@ -4,9 +4,8 @@
   import { categoryIcon, categoryIconTweak, categoryIcons } from '../lib/ui';
   import { fits, fitStyle, maskOf, measure } from '../lib/iconFit.svelte';
   import { activeRules, difficultyOf } from '../lib/game';
-  import { FIND_TEXT, HARDER_LABEL, caveInLabel, deathmatchText, findNote, lockoutText } from '../lib/difficultyText';
-  import { cavesIn, findOffer, inventoryOf, type FindKind } from '../lib/delve';
-  import { CAVE_IN_MARK } from '../lib/findEngraving';
+  import { FIND_TEXT, deathmatchText, findNote, lockoutText } from '../lib/difficultyText';
+  import { findOffer, inventoryOf, type FindKind } from '../lib/delve';
   import { sfx } from '../lib/sound';
   import { backdropShadow } from '../lib/backdropShadow';
   import { cardHover, cardPicked, cardRevealed } from '../lib/fx/moments';
@@ -216,22 +215,6 @@
   }
 </script>
 
-<!-- A find asks a harder question: said on a small engraved plate hung under its name (a row: under it), with the vein's cave-in mark. -->
-{#snippet harderPlate(kind: FindKind, where: 'tall' | 'row')}
-  <span class="harder-plate {where}" title={HARDER_LABEL}>
-    <span class="hp-word">Harder</span>
-    {#if cavesIn(kind)}
-      <svg class="cave-in" viewBox={CAVE_IN_MARK.box} role="img" aria-label={caveInLabel(kind)}>
-        <title>{caveInLabel(kind)}</title>
-        <g class="glow" aria-hidden="true"><path d={CAVE_IN_MARK.main} /></g>
-        <path class="main" d={CAVE_IN_MARK.main} />
-        <path class="shade" d={CAVE_IN_MARK.shade} />
-        <path class="shade" d={CAVE_IN_MARK.hatch} />
-      </svg>
-    {/if}
-  </span>
-{/snippet}
-
 <div class="choose">
   <p class="prompt">
     {#if s.deathmatch}
@@ -279,16 +262,12 @@
             {#if kindOf(cat)}
               {@const kind = kindOf(cat)!}
               <span class="find-tag">{FIND_TEXT[kind].name}</span>
-              {@render harderPlate(kind, 'tall')}
             {/if}
             <span class="icon">
               <span class="lit"><span class="glyph" class:fit={!!fits[categoryIcon(cat)]} style={fitStyle(categoryIcon(cat), categoryIconTweak(cat))} style:--src="url('{maskOf(categoryIcon(cat))}')"></span></span>
             </span>
             <span class="title"
-              >{#if kindOf(cat)}{@const kind = kindOf(cat)!}<span class="find-tag-row">{FIND_TEXT[kind].name}</span>{/if}{cat}{#if kindOf(cat)}{@render harderPlate(
-                    kindOf(cat)!,
-                    'row',
-                  )}{/if}</span
+              >{#if kindOf(cat)}{@const kind = kindOf(cat)!}<span class="find-tag-row">{FIND_TEXT[kind].name}</span>{/if}{cat}</span
             >
           </span>
         </span>
@@ -837,90 +816,6 @@
     right: -4px;
   }
 
-  /* "Harder" (a find asks a harder question), on a small plate hung from the
-     plaque over the keystone by two fine chains, lozenges at its ends like
-     the plaque's; for the vein, its cave-in engraved after it. */
-  .harder-plate {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.32em;
-    font-family: var(--font-display);
-    font-size: 0.56rem;
-    font-weight: 700;
-    letter-spacing: 0.16em;
-    text-transform: uppercase;
-    white-space: nowrap;
-    line-height: 1;
-    color: var(--f-hi);
-  }
-  .harder-plate.tall {
-    position: absolute;
-    top: 31px;
-    left: 50%;
-    translate: -50% 0;
-    padding: 3px 9px 3px 10px;
-    background: linear-gradient(#17110c, #090705);
-    border: 1px solid color-mix(in srgb, var(--gold) 55%, transparent);
-    box-shadow:
-      inset 0 0 0 1.5px #090705,
-      inset 0 0 0 2px color-mix(in srgb, var(--f) 40%, transparent),
-      0 0 10px color-mix(in srgb, var(--f-pulse) 70%, transparent);
-  }
-  /* The chains it hangs by, from the plaque above. */
-  .harder-plate.tall::before {
-    content: '';
-    position: absolute;
-    left: 22%;
-    right: 22%;
-    bottom: 100%;
-    height: 6px;
-    border-left: 1px solid color-mix(in srgb, var(--gold) 55%, transparent);
-    border-right: 1px solid color-mix(in srgb, var(--gold) 55%, transparent);
-  }
-  .harder-plate.tall::after {
-    content: '';
-    position: absolute;
-    top: 50%;
-    left: -3px;
-    right: -3px;
-    height: 4px;
-    translate: 0 -50%;
-    background:
-      linear-gradient(45deg, transparent 35%, color-mix(in srgb, var(--gold) 55%, transparent) 35% 65%, transparent 65%) 0 0 / 4px 4px no-repeat,
-      linear-gradient(45deg, transparent 35%, color-mix(in srgb, var(--gold) 55%, transparent) 35% 65%, transparent 65%) 100% 0 / 4px 4px no-repeat;
-    pointer-events: none;
-  }
-  .cave-in {
-    height: 1.25em;
-    width: calc(1.25em * 20 / 12);
-    margin-left: 0.2em;
-    overflow: visible;
-    color: var(--f);
-  }
-  .cave-in path {
-    fill: none;
-    stroke: currentColor;
-    vector-effect: non-scaling-stroke;
-    stroke-linecap: round;
-    stroke-linejoin: miter;
-    stroke-miterlimit: 12;
-  }
-  .cave-in .main {
-    stroke-width: 0.85px;
-  }
-  .cave-in .shade {
-    stroke-width: 0.4px;
-    opacity: 0.8;
-  }
-  .cave-in .glow path {
-    stroke-width: 2px;
-    opacity: 0.22;
-    filter: blur(0.6px);
-  }
-  .harder-plate.row {
-    display: none;
-  }
-
   /* A find's plate moves (see CardEngraving): face down, and while another card is chosen, it holds still. */
   .card:global(.down) :global(.engraving *),
   .card.faded :global(.engraving *) {
@@ -1044,22 +939,6 @@
     }
     .find-tag {
       display: none;
-    }
-    .harder-plate.tall {
-      display: none;
-    }
-    /* In a row, the plate sits under the name. */
-    .harder-plate.row {
-      display: flex;
-      width: fit-content;
-      margin-top: 5px;
-      padding: 3px 8px 3px 9px;
-      font-size: 0.56rem;
-      background: linear-gradient(#17110c, #090705);
-      border: 1px solid color-mix(in srgb, var(--gold) 55%, transparent);
-      box-shadow:
-        inset 0 0 0 1.5px #090705,
-        inset 0 0 0 2px color-mix(in srgb, var(--f) 40%, transparent);
     }
     .find-tag-row {
       display: block;
