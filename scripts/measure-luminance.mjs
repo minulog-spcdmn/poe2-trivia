@@ -17,7 +17,7 @@
 //     The average luma drawn at each depth, and its change from the one before
 //     (with --motion, the average of --frames frames).
 //   node scripts/measure-luminance.mjs calibrate --to 0
-//     What each environment adds and how it darkens the hall at e = 0.25,
+//     What each environment (ENVIRONMENTS) adds and how it darkens the hall at e = 0.25,
 //     0.5, 0.75 and 1 (ENV_ADD, ENV_HALL; --e and --env for others): paste
 //     them into lib/descent.ts, then
 //   node scripts/measure-luminance.mjs calibrate --skip-env
@@ -244,13 +244,15 @@ try {
     const to = Number(opt('to', 280));
     const E = String(opt('e', '0.25,0.5,0.75,1')).split(',').map(Number);
     const only = opt('env', null);
-    // Each environment at full features, no dark closed in, in its own stratum's hall.
+    // Each environment (a variant of a scene's layer) at full features, no
+    // dark closed in, in the hall of the stratum it first belongs to
+    // (ENV_HOME), settled there.
     const add = [];
     const hall = [];
-    const STRATA = opt('skip-env', false) ? 0 : await M(() => M.D.STRATA.length);
-    for (let i = 0; i < STRATA; i++) {
+    const ENV = opt('skip-env', false) ? 0 : await M(() => M.D.ENV);
+    for (let i = 0; i < ENV; i++) {
       if (only !== null && !ranges(only).includes(i)) continue;
-      await M((i) => M.depth(10 * i + 1), i);
+      await M((i) => M.depth(10 * M.D.ENV_HOME[i] + 1 + M.D.ARRIVE_AFTER), i);
       const base = { close: 0, features: 1 };
       const h0 = (await M((o) => M.set(o), { ...base, light: 1, env: [] })) - (await M((o) => M.set(o), { ...base, light: 0, env: [] }));
       const a = [0];
