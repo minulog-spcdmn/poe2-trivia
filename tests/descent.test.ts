@@ -28,6 +28,14 @@ import {
   estimateLuminance,
   hallTurn,
   measuredAt,
+  lightAt,
+  luminanceAt,
+  featuresAt,
+  ENV_ADD,
+  ENV_HALL,
+  ENV_STEPS,
+  LIGHT_STEP,
+  MEASURED,
   type Look,
 } from '../src/lib/descent.ts';
 import { CALM_EMBERS, COLUMNS, EMBERS, Embers, GLINT_COLOR, GLINTS, PALETTE, ROWS, SIZE_STRIDE, SLOTS, TILES, WALL_GLINTS } from '../src/lib/backdropEmbers.ts';
@@ -122,6 +130,11 @@ test('the look changes steadily: every depth a small step, none much bigger than
   const mean = steps.reduce((a, b) => a + b, 0) / steps.length;
   const max = Math.max(...steps);
   assert.ok(max < 1.8 * mean, `the largest step ${max.toFixed(3)} is ${(max / mean).toFixed(2)} times the usual ${mean.toFixed(3)}`);
+  // Nor does the light the hall is drawn at swing from one depth to the next.
+  for (let d = 2; d <= 600; d++) {
+    const step = Math.abs(Math.log(descent(d).light / descent(d - 1).light));
+    assert.ok(step <= LIGHT_STEP + 1e-9, `the light swings by ${step.toFixed(3)} from ${d - 1} to ${d}`);
+  }
   // Within a depth too: no jump between whole depths.
   let prev = descent(1).look;
   for (let d = 1.25; d <= 300; d += 0.25) {
@@ -175,31 +188,86 @@ test('one place turns into the next steadily: its features recede as the next on
   }
 });
 
+test("each environment's features come in steadily: what they add to the brightness grows with every step, never mostly at the end", () => {
+  assert.equal(ENV_ADD.length, ENV);
+  assert.equal(ENV_HALL.length, ENV);
+  for (let i = 0; i < ENV; i++) {
+    const add = ENV_ADD[i];
+    const hall = ENV_HALL[i];
+    assert.equal(add.length, ENV_STEPS.length);
+    assert.equal(add[0], 0);
+    assert.equal(hall[0], 1);
+    const total = add[add.length - 1];
+    for (let k = 1; k < add.length; k++) {
+      assert.ok(add[k] >= add[k - 1], `${ENVIRONMENTS[i]} dims as it comes in, at ${ENV_STEPS[k]}`);
+      // No quarter of the way brings in more than about half of it (a fire
+      // flaring up a depth before its stratum, as it did, brought in 80%).
+      assert.ok(add[k] - add[k - 1] <= 0.5 * total + 1e-4, `${ENVIRONMENTS[i]} comes in all at once at ${ENV_STEPS[k]}`);
+      assert.ok(Math.abs(hall[k] - hall[k - 1]) < 0.12, `${ENVIRONMENTS[i]} changes the hall all at once at ${ENV_STEPS[k]}`);
+    }
+  }
+});
+
 test("the deeper, the darker: the scene's average brightness never rises, however bright a stratum", () => {
   /**
-   * The average brightness as drawn (see estimateLuminance; light scales the
-   * hall, not its features or embers), as the frames measured come out from it.
+   * The average brightness drawn (light scales the hall, not its features or
+   * embers; MEASURED says how the frames drawn come out against the
+   * estimate). The light is eased so it never swings, so this comes apart
+   * from luminanceAt wherever the strata would have it change faster.
    */
   const lum = (d: number) => {
     const x = descent(d);
-    const e = estimateLuminance(x.look, x.close, x.features, x.gain);
-    return e.soft * measuredAt(d) * x.light + e.rest;
+    const e = estimateLuminance(x.look, x.close, x.features);
+    const [hall, rest] = measuredAt(d);
+    return e.hall * hall * x.light + e.rest * rest;
   };
+  assert.ok(MEASURED.length >= 280 && (MEASURED.length - 100) % 90 === 0, 'measured from the frames, to a whole round of the strata past 190');
+  // Depth by depth (held still, the scene shows only whole depths).
   let prev = lum(1);
-  for (let d = 1.25; d <= 600; d += 0.25) {
+  for (let d = 2; d <= 600; d++) {
     const now = lum(d);
-    assert.ok(now <= prev * 1.0005, `brighter at ${d}: ${now.toFixed(5)} after ${prev.toFixed(5)}`);
+    // (Where a stratum's features come in faster than the light may ease
+    // down, a trace brighter: under 1%, where a frame drawn varies by more.)
+    assert.ok(now <= prev * 1.008, `brighter at ${d}: ${now.toFixed(5)} after ${prev.toFixed(5)}`);
     prev = now;
   }
-  for (const d of [1e4 + 0.5, 1e6 + 3]) assert.ok(lum(d) <= lum(600) * 1.0005, `brighter at ${d}`);
-  // The hall is never drawn far from its own light to manage it, and falls steadily overall.
+  // And while a depth eases in, never more than a trace brighter than the depth it left.
+  for (let d = 1.25; d <= 600; d += 0.25) {
+    if (d % 1 === 0) continue;
+    const before = lum(Math.floor(d));
+    assert.ok(lum(d) <= before * 1.008, `brighter at ${d}: ${lum(d).toFixed(5)} after ${before.toFixed(5)}`);
+  }
+  for (const d of [1e4 + 0.5, 1e6 + 3]) assert.ok(lum(d) <= lum(600) * 1.008, `brighter at ${d}`);
+  // Never far from the curve it keeps to, and never brighter than it by much.
+  for (let d = 1; d <= 600; d += 0.5) {
+    const r = lum(d) / luminanceAt(d);
+    assert.ok(r > 0.85 && r < 1.02, `${(100 * r).toFixed(1)}% of the curve at ${d}`);
+  }
+  // The hall is never drawn far from its own light to manage it, nor held at the ends of its range.
   for (let d = 1; d <= 600; d += 0.5) {
     const { light } = descent(d);
-    assert.ok(light > LIGHT_MIN && light < LIGHT_MAX, `light ${light.toFixed(2)} at ${d}`);
+    assert.ok(light > LIGHT_MIN * 1.05 && light < LIGHT_MAX / 1.05, `light ${light.toFixed(2)} at ${d}`);
   }
-  assert.ok(lum(100) < 0.72 * lum(1) && lum(300) < 0.66 * lum(1));
+  assert.ok(lum(100) < 0.75 * lum(1) && lum(300) < 0.66 * lum(1));
   // (The start page's hall, like the Mines', comes out about 5% over the estimate.)
-  assert.ok(lum(1) <= 1.05 * (estimateLuminance(SURFACE, 0).soft + estimateLuminance(SURFACE, 0).rest), 'the first depth no brighter than the start page');
+  const surface = estimateLuminance(SURFACE, 0);
+  assert.ok(lum(1) <= 1.05 * (surface.hall + surface.rest), 'the first depth no brighter than the start page');
+});
+
+test("what the features add, which the light can't take back, changes a little with every depth", () => {
+  // Through a stratum the next one's features come in and its own go: what
+  // they add to the brightness (measured, ENV_ADD) never jumps from one
+  // depth to the next, so the light has the room to make way for it.
+  let prev = 0;
+  for (let d = 1; d <= 400; d++) {
+    const x = descent(d);
+    const rest = estimateLuminance(x.look, x.close, x.features).rest * measuredAt(d)[1];
+    if (d > 1) assert.ok(Math.abs(rest - prev) < 0.08 * luminanceAt(d), `the features jump by ${(rest - prev).toFixed(4)} at ${d}`);
+    prev = rest;
+  }
+  // And they burn a little less the deeper.
+  for (let d = 1; d < 400; d++) assert.ok(featuresAt(d + 1) <= featuresAt(d));
+  assert.equal(lightAt(0.5), 1);
 });
 
 test('each stratum through 100 is an environment of its own; past 100 they pair up, never the same twice in a row', () => {
@@ -492,4 +560,11 @@ test('each pick sinks the scene a little further, smoothly, and then it holds st
   assert.equal(stepPlunge(5000, false), false);
   assert.equal(stepPlunge(5016, true), false);
   assert.ok(Math.abs(sinking.sink - start - PLUNGE_SINK) < 1e-9);
+  // A run starting from the surface starts from the top again (so it never wraps round mid-run).
+  setDescent(0);
+  snapDescent();
+  setDescent(1);
+  assert.equal(sinking.sink, 0);
+  setDescent(0);
+  snapDescent();
 });

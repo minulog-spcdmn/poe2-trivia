@@ -13,7 +13,7 @@ import { SHADOWS_PER_ELEMENT, measureShadows, releaseAll } from './backdropShado
 import { DROPS_PER_MASK, MAX_MASKS, measureDrops, releaseAllDrops } from './backdropDropShadow';
 import { MAX_LIGHTS, packLights, stepHomeScene, stepMood } from './lights';
 import { fxActive, fxUserOn, onFxChange } from './fx/core';
-import { COLUMNS, PALETTE, ROWS, SIZE_STRIDE, SLOTS, TILES, embers } from './backdropEmbers';
+import { COLUMNS, GLINT_COLOR, PALETTE, ROWS, SIZE_STRIDE, SLOTS, TILES, embers } from './backdropEmbers';
 import { BLOBS, ENV, currentDescent, sinking, smokeOf, snapDescent, stepDescent, stepPlunge, targetDescent, type Blob } from './descent';
 import { pressureLevel } from './darkness';
 import { DIALOG_BLUR, DIALOG_DIM, openDialog } from './behindDialog';
@@ -69,11 +69,12 @@ uniform vec4 uEddy;
 uniform vec2 uDark;
 // The glow in the middle's colour (the surface's gold, a stratum's own).
 // And in one vector (uniform space is tight, see maxElements): how bright
-// the stratum's light is drawn (descent.ts's light: so the scene only ever
-// darkens deeper down); how far the scene has sunk (CSS px; each pick of a
-// card sinks it, see plunge in descent.ts): the walls' and the smoke's noise
-// is read that much further down, the nearer the more; and how bright the
-// stratum's features burn (descent.ts's features).
+// the stratum's light is drawn (descent.ts's light times the stratum's
+// own, lightK: so the scene only ever darkens deeper down); how far the
+// scene has sunk (CSS px; each pick of a card sinks it, see plunge in
+// descent.ts): the walls' and the smoke's noise is read that much further
+// down, the nearer the more; and how bright the stratum's features burn
+// (descent.ts's features).
 uniform vec3 uGlowCol;
 uniform vec3 uScene;
 #define uLight uScene.x
@@ -121,7 +122,12 @@ float smin3(float a, float b, float c, float k) { return -k * log(exp(-a / k) + 
 // is: each arrives from where it comes from and recedes the same way (the
 // lamps kindle one by one, the cracks heat up and cool, the frost grows in
 // from the walls, the fire rises from below), so two in a turn never sit
-// on top of each other half-faded (see turnInto in lib/descent.ts).
+// on top of each other half-faded (see turnInto in lib/descent.ts). And
+// what each adds to the scene's brightness grows steadily as it comes, never
+// all at the end, so the scene's light can make way for it evenly (ENV_ADD
+// in lib/descent.ts). What glows burns at its own brightness (lit); what a
+// feature lays over the hall in a colour of its own (frost, fog, fumes) is
+// lit by the hall's light (uLight), as the hall is.
 // p in CSS px, q = p / S, xy = fractions of the screen, tm the clock (s).
 vec3 environments(vec3 col, vec2 p, vec2 q, vec2 xy, float S, float W, float H, float tm, float dark) {
   vec4 e0 = uEnv[0];
@@ -172,7 +178,7 @@ vec3 environments(vec3 col, vec2 p, vec2 q, vec2 xy, float S, float W, float H, 
     float flow = 0.35 + 0.65 * vnoise(vec2(m.x * 1.2, m.y * 1.6 + tm * 0.4));
     float heat = crack * low * flow;
     col *= 1.0 - 1.6 * e * (1.0 - e) * c1 * c1;
-    col += lit * (rgb(255.0, 70.0, 14.0) * heat * 0.45 * e * e + rgb(255.0, 215.0, 140.0) * pow(heat, 3.0) * 0.45 * e * e * e
+    col += lit * (rgb(255.0, 70.0, 14.0) * heat * 0.45 * sqrt(e) + rgb(255.0, 215.0, 140.0) * pow(heat, 3.0) * 0.45 * e
       + rgb(150.0, 18.0, 4.0) * (smoothstep(0.2, 0.0, abs(n1 - 0.5)) * 0.1 + 0.25 * c1 * (1.0 - e)) * low * flow * sqrt(e));
   }
 
@@ -202,7 +208,7 @@ vec3 environments(vec3 col, vec2 p, vec2 q, vec2 xy, float S, float W, float H, 
     vec2 f = fract(g) - 0.3 - 0.4 * vec2(nhash(cell + 1.7), nhash(cell + 9.1));
     float tw = 0.5 + 0.5 * sin(tm * (0.8 + 1.5 * h) + h * 50.0);
     float glitter = step(0.72, h) * exp(-dot(f, f) / 0.012) * tw * tw * (0.3 + cr);
-    col = mix(col, rgb(96.0, 130.0, 170.0), lit * (rim * (0.08 + 0.07 * patches) + 0.25 * cr));
+    col = mix(col, rgb(96.0, 130.0, 170.0) * uLight, lit * (rim * (0.08 + 0.07 * patches) + 0.25 * cr));
     col += lit * rgb(215.0, 238.0, 255.0) * (rim + 0.2 * e) * glitter * 0.45;
   }
 
@@ -235,7 +241,7 @@ vec3 environments(vec3 col, vec2 p, vec2 q, vec2 xy, float S, float W, float H, 
   // gold dust sinking through them, and in them, faintly, worn carving.
   // As they come they reach further down; as they go they draw back up.
   if (e1.x > 0.0) {
-    float down = 1.4 * e1.x - 0.2;
+    float down = 1.2 * e1.x + 0.05;
     float s = (p.x - 0.4 * p.y) / S;
     float b = 0.7 * vnoise(vec2(s * 6.0, tm * 0.03)) + 0.3 * vnoise(vec2(s * 14.0 + 3.0, tm * 0.05));
     float shaft = pow(smoothstep(0.5, 0.82, b), 1.5);
@@ -291,10 +297,10 @@ vec3 environments(vec3 col, vec2 p, vec2 q, vec2 xy, float S, float W, float H, 
       float layer = fbm(vec2(q.x * k - tm * (0.012 + 0.016 * fi) * k, q.y * k * 2.6 + fi * 5.0));
       mist[i] = smoothstep(0.36, 0.76, layer) * gauss((xy.y - 0.25 - 0.28 * fi) / 0.26) * (0.6 + 0.2 * fi);
     }
-    vec3 fog = rgb(92.0, 102.0, 110.0);
+    vec3 fog = rgb(92.0, 102.0, 110.0) * uLight;
     float thin = e1.z * e1.z * 0.09 * (1.0 - 0.5 * dark);
     col = mix(col, fog, thin * (0.15 + 0.85 * min(1.0, mist[0])));
-    col = mix(col, rgb(10.0, 11.0, 12.0), smoothstep(0.45, 1.0, e1.z) * 0.85 * trunks);
+    col = mix(col, rgb(10.0, 11.0, 12.0) * uLight, smoothstep(0.45, 1.0, e1.z) * 0.85 * trunks);
     col = mix(col, fog, thin * min(1.0, mist[1] + mist[2]));
   }
 
@@ -302,15 +308,15 @@ vec3 environments(vec3 col, vec2 p, vec2 q, vec2 xy, float S, float W, float H, 
   // and thinning as they rise, lit from the vents. Coming, they rise from
   // the floor; going, they sink back into it.
   if (e1.w > 0.0) {
-    float top = 0.1 + 1.25 * e1.w;
+    float top = 0.35 + 0.9 * e1.w;
     float up = 1.0 - xy.y;
     float xc = (p.x - 0.5 * W) / S;
     float vents = smoothstep(0.5, 0.78, vnoise(vec2(xc * 3.0 / (0.6 + 1.0 * up) + 10.0, 2.0)));
     vec2 bq = vec2(xc * 4.5, q.y * 1.8 + tm * 0.16);
     float billow = fbm(bq + 0.6 * vec2(vnoise(bq * 1.3 + vec2(0.0, tm * 0.1)), 0.0));
     float plume = vents * smoothstep(0.35, 0.72, billow) * (1.0 - smoothstep(0.15, 1.25, up)) * (1.0 - smoothstep(top - 0.4, top, up + 0.15 * (billow - 0.5)));
-    float k = smoothstep(0.0, 0.4, e1.w);
-    col = mix(col, rgb(110.0, 124.0, 46.0), k * 0.1 * plume * (1.0 - 0.5 * dark));
+    float k = sqrt(e1.w);
+    col = mix(col, rgb(110.0, 124.0, 46.0) * uLight, k * 0.1 * plume * (1.0 - 0.5 * dark));
     col += k * lit * rgb(210.0, 235.0, 90.0) * plume * (0.3 + 0.7 * xy.y) * 0.05;
   }
 
@@ -326,15 +332,16 @@ vec3 environments(vec3 col, vec2 p, vec2 q, vec2 xy, float S, float W, float H, 
 
   // Primeval Ruins: white-hot fire welling up from below and licking up
   // the walls, the air over it shimmering in rising waves. Coming, it
-  // rises from the floor; going, it sinks back down.
+  // rises from the floor as it kindles; going, it sinks back down as it
+  // dies, its light growing and falling steadily with e either way.
   if (e2.y > 0.0) {
     float e = e2.y;
     vec2 hq = vec2(q.x * 3.0, q.y * 2.0 + tm * 0.5);
     float haze = fbm(hq + 0.6 * vec2(vnoise(hq * 1.7 + tm * 0.2), 0.0));
     float rise = xy.y + 0.28 * (haze - 0.5) + 0.22 * side * (0.5 + haze);
-    float hot = smoothstep(0.66, 1.3, rise + 0.9 * (e - 1.0));
-    float k = smoothstep(0.0, 0.3, e);
-    col += k * lit * (rgb(255.0, 96.0, 24.0) * hot * 0.22 + rgb(255.0, 240.0, 200.0) * pow(hot, 3.0) * 0.3);
+    float hot = smoothstep(0.66, 1.3, rise - 0.12 * (1.0 - e));
+    float k = sqrt(e);
+    col += k * lit * (rgb(255.0, 96.0, 24.0) * hot * 0.13 + rgb(255.0, 240.0, 200.0) * pow(hot, 3.0) * 0.2);
     col *= 1.0 + k * 0.8 * (vnoise(vec2(q.x * 13.0, q.y * 5.0 + tm * 1.8)) - 0.5) * hot;
   }
   return col;
@@ -522,7 +529,7 @@ uniform sampler2D uEmbers;
 uniform vec4 uEmberHalo[${PALETTE}];
 uniform vec3 uEmberCore[${PALETTE}];
 // Their overall gain, and how far they streak up in a plunge (their glow
-// drawn that much taller).
+// drawn that much taller; the glints' never).
 uniform vec2 uEmberK;
 #define uEmberGain uEmberK.x
 #define uStreak uEmberK.y
@@ -639,7 +646,8 @@ void main() {
     if (e.w <= 0.0) break;
     float entry = floor(e.z * ${(1 / SIZE_STRIDE).toFixed(6)});
     float size = e.z - ${SIZE_STRIDE}.0 * entry;
-    vec2 dp = (p - e.xy) * vec2(1.0, 1.0 / (1.0 + uStreak));
+    // (The glints in the walls go up with the walls, unstreaked.)
+    vec2 dp = (p - e.xy) * vec2(1.0, 1.0 / (1.0 + (entry == ${GLINT_COLOR}.0 ? 0.0 : uStreak)));
     float r2 = dot(dp, dp);
     float s2 = size * size;
     if (r2 > s2 * 40.0) continue;
@@ -1131,7 +1139,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     const sink = sinking.sink * viewH;
     gl!.uniform2f(uDark, close, pressure);
     gl!.uniform3f(uGlowCol, look.glow[0] / 255, look.glow[1] / 255, look.glow[2] / 255);
-    gl!.uniform3f(uScene, scene.light, sink, scene.features);
+    gl!.uniform3f(uScene, scene.light * look.lightK, sink, scene.features);
     gl!.uniform2f(uGlow, 1 + 0.08 * glow, (1 - 0.4 * glow) * look.lamp);
     gl!.uniform2f(uBottom, (1 + 0.1 * bottom) * look.floorH, 1 + 0.3 * bottom);
     gl!.uniform2f(uTop, 1 + 0.08 * top, (1 + 0.35 * top) * look.hazeK);
@@ -1195,7 +1203,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     gl!.uniform2f(uEmberK, calm() ? 0.6 : 1, embers.streak);
     gl!.uniform2f(uCity, env[8], home[2]);
     gl!.uniform2f(mDark, close, pressure);
-    gl!.uniform3f(mScene, scene.light, sink, scene.features);
+    gl!.uniform3f(mScene, scene.light * look.lightK, sink, scene.features);
     gl!.uniform4fv(mHome, home);
     gl!.activeTexture(gl!.TEXTURE2);
     gl!.bindTexture(gl!.TEXTURE_2D, emberTex);

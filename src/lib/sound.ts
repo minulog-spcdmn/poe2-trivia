@@ -119,8 +119,8 @@ function audio(): Bus | null {
     bus = { ac, master, user, wet };
     const files = new Set(Object.values(MOMENTS).flatMap((m) => m.layers.map((l) => l.file)));
     for (const file of files) if (!GENERATED[file]) void load(file).catch(() => {});
-    // The cave-in takes a moment to work out: not in the tap that starts the sound.
-    idle(() => void load(CAVE_IN.file).catch(() => {}));
+    // Already in a Delve: work out its sounds now (see depthAmbience).
+    if (depth > 0) prepareDelve(bus);
   }
   // iOS also parks the context as 'interrupted' after a call or a trip to the lock screen.
   if (bus.ac.state !== 'running') void bus.ac.resume().catch(() => {});
@@ -133,7 +133,7 @@ function load(file: string) {
     const ac = bus!.ac;
     const made = GENERATED[file];
     const decoded = made
-      ? Promise.resolve(made(ac))
+      ? Promise.resolve().then(() => made(ac))
       : fetch(new URL(`${import.meta.env.BASE_URL}sfx/${file}.mp3`, document.baseURI))
             .then((r) => r.arrayBuffer())
             .then((data) => ac.decodeAudioData(data));
@@ -149,11 +149,34 @@ function load(file: string) {
 /** Runs `f` when the page has a moment to spare. */
 const idle = (f: () => void) => ((globalThis as { requestIdleCallback?: (f: () => void) => void }).requestIdleCallback ?? ((g: () => void) => setTimeout(g, 200)))(f);
 
+/**
+ * The sample rate the cave-in is worked out at: its layer is lowpassed at 7
+ * kHz (CAVE_IN's moment), so 22.05 kHz loses nothing, and it is half the
+ * work of 44.1 kHz (the browser resamples it as it plays).
+ */
+export const CAVE_IN_RATE = 22050;
+
 /** Sounds worked out here rather than loaded, by the name the moments give them. */
-const GENERATED: Record<string, (ac: AudioContext) => AudioBuffer> = {
+const GENERATED: Record<string, (ac: AudioContext) => AudioBuffer | Promise<AudioBuffer>> = {
   [RUMBLE.file]: (ac) => rumble(ac),
-  [CAVE_IN.file]: (ac) => caveIn(ac),
+  [CAVE_IN.file]: (ac) => inIdleSteps(caveInSteps(ac)),
 };
+
+/** Runs `steps` a step per idle moment, so no one step holds up the page for long. */
+function inIdleSteps<T>(steps: Generator<void, T>): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const next = () => {
+      try {
+        const r = steps.next();
+        if (r.done) resolve(r.value);
+        else idle(next);
+      } catch (e) {
+        reject(e);
+      }
+    };
+    next();
+  });
+}
 
 /** A dark stone-hall impulse response: stereo noise that decays and loses its highs as it goes. */
 function hall(ac: AudioContext, seconds: number) {
@@ -221,10 +244,20 @@ export function rumble(ac: Pick<BaseAudioContext, 'sampleRate' | 'createBuffer'>
  * boulders landing, and a collapse of stones, each a short knock of filtered
  * noise, bigger and lower first and then smaller, higher and sparser as it
  * settles. Each side gets its own stones, so it sounds wide. Peaks at about
- * -1 dB; CAVE_IN's gain sets its level in the mix.
+ * -1 dB; CAVE_IN's gain sets its level in the mix. Worked out at no more
+ * than CAVE_IN_RATE, and only once a Delve starts (see prepareDelve).
  */
 export function caveIn(ac: Pick<BaseAudioContext, 'sampleRate' | 'createBuffer'>) {
-  const sr = ac.sampleRate;
+  const steps = caveInSteps(ac);
+  for (;;) {
+    const r = steps.next();
+    if (r.done) return r.value;
+  }
+}
+
+/** caveIn in three parts (the rumble, then each side's stones), so it can be worked out a part per idle moment. */
+function* caveInSteps(ac: Pick<BaseAudioContext, 'sampleRate' | 'createBuffer'>): Generator<void, AudioBuffer> {
+  const sr = Math.min(ac.sampleRate, CAVE_IN_RATE);
   const seconds = CAVE_IN.seconds;
   const len = Math.floor(sr * seconds);
   const buf = ac.createBuffer(2, len, sr);
@@ -276,7 +309,9 @@ export function caveIn(ac: Pick<BaseAudioContext, 'sampleRate' | 'createBuffer'>
     ch[0][i] += (b - lo) * env * CAVE_IN.rumble;
     ch[1][i] += (b - lo) * env * CAVE_IN.rumble;
   }
-  ch.forEach((d, side) => {
+  for (let side = 0; side < 2; side++) {
+    yield;
+    const d = ch[side];
     // The crack as the rock gives, and the heavy blocks coming down.
     knock(d, 0.002 * side, 2600, 0.012, 0.9);
     knock(d, 0.004, 900, 0.03, 0.7);
@@ -290,7 +325,7 @@ export function caveIn(ac: Pick<BaseAudioContext, 'sampleRate' | 'createBuffer'>
       knock(d, t, 300 + 2800 * (1 - size) * (0.6 + Math.random() * 0.8), 0.006 + 0.03 * size, (0.18 + 0.75 * size) * CAVE_IN.stones);
       t += 0.012 + 0.09 * Math.pow(u, 1.2) * (0.4 + Math.random() * 1.2);
     }
-  });
+  }
   // To about -1 dB at the peak, fading out over the last moment.
   let peak = 0;
   for (const d of ch) for (let i = 0; i < len; i++) peak = Math.max(peak, Math.abs(d[i]));
@@ -309,7 +344,10 @@ function filter(ac: AudioContext, type: BiquadFilterType, frequency: number, q =
   return f;
 }
 
-/** One layer: high-pass, low-pass and the "soften" dip around 3.2 kHz, then level and reverb send. */
+/**
+ * One layer: high-pass, low-pass and the "soften" dip around 3.2 kHz, then
+ * level and reverb send. Returns its source and level, to stop it early (see sfx).
+ */
 function playLayer(b: Bus, buf: AudioBuffer, l: Layer, soften: number, pitch: number, gainDb: number) {
   const { ac } = b;
   const src = ac.createBufferSource();
@@ -327,7 +365,11 @@ function playLayer(b: Bus, buf: AudioBuffer, l: Layer, soften: number, pitch: nu
   send.gain.value = l.send;
   g.connect(send).connect(b.wet);
   src.start(ac.currentTime + l.delay / 1000);
+  return { src, gain: g };
 }
+
+/** How long (s) a sound stopped early takes to fade out (see sfx). */
+const STOP_FADE = 0.05;
 
 /**
  * Sounds that can come in bursts, and how close together (ms) they may play:
@@ -337,25 +379,53 @@ function playLayer(b: Bus, buf: AudioBuffer, l: Layer, soften: number, pitch: nu
 const MIN_GAP: Partial<Record<Sfx, number>> = { hover: 70, burn: 120 };
 const lastPlayed = new Map<Sfx, number>();
 
-export function sfx(name: Sfx) {
-  if (muted) return;
+/**
+ * Plays a moment's sound. Returns a function that stops it early, fading it
+ * out over STOP_FADE (50 ms) and then stopping it: for a sound cut short,
+ * like a fuse's hiss when its dynamite goes off or is snuffed. Calling it
+ * after the sound has ended, or twice, does nothing. Returns undefined when
+ * nothing played (muted, out of sight, too soon after the last, or before
+ * the first click).
+ */
+export function sfx(name: Sfx): (() => void) | undefined {
+  // Out of sight (a co-op tab in the background) nothing plays: a sound
+  // would wake the audio context that rest() put to sleep, and keep it running.
+  if (muted || (typeof document !== 'undefined' && document.hidden)) return undefined;
   const gap = MIN_GAP[name];
   if (gap) {
     const now = performance.now();
-    if (now - (lastPlayed.get(name) ?? -Infinity) < gap) return;
+    if (now - (lastPlayed.get(name) ?? -Infinity) < gap) return undefined;
     lastPlayed.set(name, now);
   }
   const b = audio();
-  if (!b) return;
+  if (!b) return undefined;
   const m = MOMENTS[name];
   // One random nudge for the whole moment, so its layers stay together.
   const pitch = 1 + (Math.random() * 2 - 1) * m.varyPitch;
   const gainDb = (Math.random() * 2 - 1) * m.varyGain;
+  const layers: { src: AudioBufferSourceNode; gain: GainNode }[] = [];
   for (const l of m.layers) {
     // Only layers that have loaded: a late layer would land out of step.
     const buf = ready.get(l.file);
-    if (buf) playLayer(b, buf, l, m.soften, pitch, gainDb);
+    if (buf) layers.push(playLayer(b, buf, l, m.soften, pitch, gainDb));
   }
+  if (!layers.length) return undefined;
+  let stopped = false;
+  return () => {
+    if (stopped) return;
+    stopped = true;
+    const now = b.ac.currentTime;
+    for (const { src, gain } of layers) {
+      gain.gain.cancelScheduledValues(now);
+      gain.gain.setValueAtTime(gain.gain.value, now);
+      gain.gain.linearRampToValueAtTime(0, now + STOP_FADE);
+      try {
+        src.stop(now + STOP_FADE);
+      } catch {
+        // Already stopped (an older Safari throws on a second stop).
+      }
+    }
+  };
 }
 
 // ---------- ambience ----------
@@ -390,14 +460,22 @@ export function fireAmbience(on: boolean) {
 export function depthAmbience(d: number) {
   if (d === depth) return;
   depth = d;
-  // The rumble takes a moment to work out: do it while the run starts, not as it comes in.
-  if (d > 0 && bus && !buffers.has(RUMBLE.file)) {
-    const b = bus;
-    idle(() => bus === b && void load(RUMBLE.file).catch(() => {}));
-  }
+  if (d > 0 && bus) prepareDelve(bus);
   updateAmbience();
   if (!bus) return;
   for (const [l, p] of playing) shape(l, p, bus.ac.currentTime, DEPTH_EASE);
+}
+
+/**
+ * Delve's own sounds, the rumble and the cave-in, take a moment to work out:
+ * done when the page has one to spare as a run starts (or as sound starts
+ * during one), not in the tap that plays them, and not for a visitor who
+ * never delves. Each in its own idle moment, so neither holds up the page
+ * for long.
+ */
+function prepareDelve(b: Bus) {
+  for (const file of [RUMBLE.file, CAVE_IN.file])
+    if (!buffers.has(file)) idle(() => bus === b && void load(file).catch(() => {}));
 }
 
 /** The rumble comes in a few depths down. */

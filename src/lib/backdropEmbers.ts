@@ -136,7 +136,7 @@ export class Embers {
   /** How far each ember has been carried along its rise by plunges (a share of it), and the glints with the walls (px). */
   private lift = new Float32Array(EMBERS);
   private glintLift = 0;
-  /** How much taller than wide their glow is drawn: streaking up as the scene sinks (see rise). */
+  /** How much taller than wide their glow (and the sparks', not the glints') is drawn: streaking up as the scene sinks (see rise). */
   streak = 0;
   /** Ember clock: runs faster while stoked. */
   private t = r() * 100;
@@ -418,7 +418,8 @@ export class Embers {
       const b = pos[i * 4 + 3];
       if (b <= 0 || y < -40 || y > h + 40) continue;
       const reach = (z % SIZE_STRIDE) * 6.4; // where the shader stops drawing it
-      const tall = reach * (1 + this.streak);
+      // Glints go up with the walls, unstreaked (the shader draws them so too).
+      const tall = reach * (1 + (i >= EMBERS && i < EMBERS + GLINTS ? 0 : this.streak));
       const c0 = Math.max(0, Math.floor((x - reach) / colW));
       const c1 = Math.min(COLUMNS - 1, Math.floor((x + reach) / colW));
       const r0 = Math.max(0, Math.floor((y - tall) / rowH));

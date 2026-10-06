@@ -52,3 +52,21 @@ test('a cave-in is short and heavy: loud at once, low, dying away, never clippin
     assert.ok(tail < head / 8, 'dies away');
   }
 });
+
+test('a cave-in is worked out at no more than 22.05 kHz, whatever the context runs at (its layer is lowpassed at 7 kHz)', async () => {
+  const { caveIn, CAVE_IN_RATE } = await import('../src/lib/sound.ts');
+  const { CAVE_IN, MOMENTS } = await import('../src/lib/soundDesign.ts');
+  let rate = 0;
+  const ac48 = {
+    sampleRate: 48000,
+    createBuffer(channels: number, length: number, sampleRate: number) {
+      rate = sampleRate;
+      return ac.createBuffer(channels, length);
+    },
+  };
+  const buf = caveIn(ac48);
+  assert.equal(rate, CAVE_IN_RATE);
+  assert.equal(buf.length, Math.floor(CAVE_IN_RATE * CAVE_IN.seconds));
+  const lp = MOMENTS.caveIn.layers.find((l) => l.file === CAVE_IN.file)!.lp;
+  assert.ok(lp < CAVE_IN_RATE / 2, 'its lowpass under the Nyquist frequency');
+});

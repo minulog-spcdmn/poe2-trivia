@@ -57,8 +57,10 @@
     {/each}
     <div class="dark" style:opacity={look.dark}></div>
     <div class="dark close" style:opacity={dsc.close}></div>
-    <!-- Deeper down the light only ever dims (descent.ts's light). -->
-    <div class="dim" style:opacity={Math.max(0, 1 - dsc.light)}></div>
+    <!-- Deeper down the light only ever dims, a little with every depth
+         (descent.ts's dim: its `light` is the WebGL hall's, and swings with
+         what each stratum's features add). -->
+    <div class="dim" style:opacity={dsc.dim}></div>
     <div class="grain"></div>
     <div class="embers">
     {#each embers as e, i (i)}
