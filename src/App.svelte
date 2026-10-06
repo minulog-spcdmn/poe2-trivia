@@ -1,5 +1,6 @@
 <script lang="ts">
   import { accentAt, setDescent } from './lib/descent';
+  import { zoneAt } from './lib/zoneSigils';
   import { onMount, untrack } from 'svelte';
   import { fade, fly } from 'svelte/transition';
   import { session } from './lib/session.svelte';
@@ -186,6 +187,11 @@
             <span class="dot">•</span>
           {/if}
           <span class="depth" style:--accent={accentAt(gs.round)}>Depth <b>{gs.round}</b></span>
+          <!-- And the zone it's in, in its colour; a new one fades in as it's announced. -->
+          <span class="dot zone-dot">•</span>
+          {#key zoneAt(gs.round)}
+            <span class="zone" style:--accent={accentAt(gs.round)} in:fade={{ duration: 900, delay: 500 }}>{zoneAt(gs.round)}</span>
+          {/key}
         {:else if gs && screen === 'game'}
           {#if session.code && !session.hideCode}
             <span>Room <b>{session.code}</b></span>
@@ -453,6 +459,11 @@
       color 1.2s,
       text-shadow 1.2s;
   }
+  .zone {
+    color: color-mix(in srgb, var(--accent) 75%, var(--gold-hi));
+    white-space: nowrap;
+    transition: color 1.2s;
+  }
   .deathmatch {
     color: #ff7a5c;
     font-weight: 700;
@@ -653,6 +664,16 @@
       flex-wrap: wrap;
       font-size: 0.66rem;
       gap: 0.1rem 0.35rem;
+    }
+    /* Delve: the zone on a line of its own under the depth, a little smaller. */
+    .zone-dot {
+      display: none;
+    }
+    .zone {
+      flex-basis: 100%;
+      text-align: center;
+      font-size: 0.6rem;
+      line-height: 1.2;
     }
   }
 

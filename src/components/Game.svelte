@@ -1,5 +1,6 @@
 <script lang="ts">
   import { fade, fly, scale } from 'svelte/transition';
+  import { sineInOut } from 'svelte/easing';
   import { session } from '../lib/session.svelte';
   import { playerColor } from '../lib/ui';
   import Scoreboard from './Scoreboard.svelte';
@@ -13,9 +14,12 @@
   import { deathmatchIntro, deathmatchMood, gameStart, turnBanner } from '../lib/fx/moments';
   import { portal } from '../lib/portal';
   import { phone } from '../lib/layout';
-  import { delveDepth, delveTimer, fellAt, isGroupRun } from '../lib/delve';
+  import { delveDepth, fellAt, isGroupRun, questionTimer } from '../lib/delve';
   import { delveChange } from '../lib/difficultyText';
-  import { milestoneAt } from '../lib/descent';
+  import { accentAt, milestoneAt } from '../lib/descent';
+  import { zoneAt } from '../lib/zoneSigils';
+  import type { Variant } from '../lib/zoneMark';
+  import ZoneMark from './ZoneMark.svelte';
   import { descended, milestoneReached } from '../lib/fx/moments';
   import { untrack } from 'svelte';
 
@@ -89,9 +93,16 @@
   const bannerColor = $derived(dm ? '#e0553f' : race ? '#e08a44' : playerColor(active.hue));
   const bannerBig = $derived(race || mine);
 
-  /** Svelte action: the turn banner's entrance. Runs once per turn (the stage is keyed). */
+  /**
+   * Svelte action: the turn banner's entrance. Runs once per turn (the stage is
+   * keyed). Not under a zone's mark (it lands in the same moment): its light
+   * would only glare over the mark's own.
+   */
   function bannerFx(node: HTMLElement, o: { color: string; big: boolean }) {
-    turnBanner(node, o.color, o.big);
+    const t = setTimeout(() => {
+      if (!card) turnBanner(node, o.color, o.big);
+    });
+    return { destroy: () => clearTimeout(t) };
   }
 
   /** Svelte action: the deathmatch intro's title bursts in. */
@@ -110,8 +121,10 @@
           : `${active.name}'s turn`,
   );
 
+  // Delve: the seconds the question started with (a find's, a blasted card's or
+  // the depth's), never read off the deadline, which a burning flare moves on.
+  const seconds = $derived(run ? questionTimer(s) : q?.deadline ? Math.round((q.deadline - (q.clockAt ?? q.askedAt)) / 1000) : 0);
   // Delve: the line over the banner says what just got harder (and, together, how deep).
-  const seconds = $derived(q?.deadline ? Math.round((q.deadline - (q.clockAt ?? q.askedAt)) / 1000) : delveTimer(depth));
   const change = $derived(run ? delveChange(depth) : null);
   const kicker = $derived.by(() => {
     if (!run) return '';
@@ -141,13 +154,28 @@
     if (!mine && pickLeft <= 10) return `A card is chosen for ${active.name} in ${pickLeft}s.`;
     return '';
   });
-  // Delve: a card at the start of a depth worth marking. Never on a rejoin or
-  // the first depth: only when the run is seen going one deeper.
-  type Card = { key: string; kicker: string; title: string; line: string | null; cold: boolean };
+  // Delve: a mark at the start of a depth worth it (a new zone, the last one
+  // standing, a new best), engraved over the head of the stage for a few
+  // seconds. Never on a rejoin or the first depth: only when the run is seen
+  // going one deeper. It belongs to its turn: the next one clears it.
+  type Card = { key: string; turn: number; title: string; sigil: string; accent: string; label: string };
   let card = $state<Card | null>(null);
   let cardTimer: ReturnType<typeof setTimeout> | null = null;
   let depthSeen = '';
   let standingSeen = 0;
+  /**
+   * How the mark is drawn (lib/zoneMark): 'ribbon' (a slim ribbon on the
+   * kicker's line), 'banner' (the banner's rules rising into a cartouche) or
+   * 'seal' (seals stamped beside the heading).
+   */
+  const zoneVariant: Variant = 'ribbon';
+  /**
+   * It starts once the stage has faded in (0.35 s), comes in over about 0.6 s
+   * (the pen's sweep), is held 3.5 s, then goes out over 1.2 s.
+   */
+  const ZONE_DELAY = 0.35;
+  const ZONE_HOLD = 4450;
+  const ZONE_OUT = 1200;
   $effect(() => {
     if (!run || s.phase !== 'choosing') return;
     const key = `${run.startedAt}:${depth}`;
@@ -160,45 +188,40 @@
     }
     untrack(() => {
       descended();
-      const cold = depth >= 21;
+      // Tinted by the zone it opens (the depth's colour on the header), bearing its sigil and its ornament.
+      const accent = accentAt(depth);
       const name = milestoneAt(depth);
+      const sigil = zoneAt(depth);
       const best = session.bestAtStart;
       const stand = run.lastStanding && standingSeen !== run.startedAt ? s.players.find((p) => p.id === run.lastStanding!.id) : null;
+      const turn = s.turnCount;
+      const change = delveChange(depth);
       let next: Card | null = null;
       if (stand) {
         standingSeen = run.startedAt;
-        next = { key, kicker: 'Last one standing', title: stand.name, line: 'Delves on alone', cold };
-      } else if (name) next = { key, kicker: `Depth ${depth}`, title: name, line: delveChange(depth), cold };
+        next = { key, turn, title: 'Last one standing', sigil, accent, label: `Last one standing: ${stand.name} delves on alone.` };
+      } else if (name) next = { key, turn, title: name, sigil, accent, label: `Depth ${depth}: ${name}.${change ? ` ${change}.` : ''}` };
       else if (!group && best !== null && depth === best + 1)
-        next = { key, kicker: 'Deeper than ever', title: `Depth ${depth}`, line: `Past your best of ${best}`, cold };
+        next = { key, turn, title: 'Deeper than ever', sigil, accent, label: `Deeper than ever: depth ${depth}, past your best of ${best}.` };
       if (!next) return;
       card = next;
       sfx('stratum');
       if (cardTimer) clearTimeout(cardTimer);
-      cardTimer = setTimeout(() => card?.key === key && (card = null), 2400);
+      cardTimer = setTimeout(() => card?.key === key && (card = null), ZONE_HOLD);
     });
+  });
+  // The next turn takes the head (the stage is keyed), and the mark with it.
+  $effect(() => {
+    if (card && card.turn !== s.turnCount) card = null;
   });
   $effect(() => () => {
     if (cardTimer) clearTimeout(cardTimer);
   });
-  /** Svelte action: a milestone's plaque breaks into the scene, once it has unfolded. */
-  function cardFx(node: HTMLElement, c: Card) {
-    const t = setTimeout(() => milestoneReached(node, c.cold), 200);
-    return { destroy: () => clearTimeout(t) };
-  }
-  // The plaque lies over the kicker and banner (the head of the stage), never
-  // over the cards or the question below, so it is as tall as the head.
-  let headH = $state(0);
-  let plaqueW = $state(0);
-  let plaqueH = $state(0);
-  /** How far the plaque's pointed ends reach in, px. */
-  const point = $derived(Math.min(plaqueH * 0.42, 24));
-  /** The plaque's outline (`inset` px in from its edge), pointed at both ends. */
-  function plaquePath(w: number, h: number, inset: number) {
-    const p = point;
-    const k = inset * 1.1;
-    return `M${inset} ${h / 2}L${p + k * 0.4} ${inset}H${w - p - k * 0.4}L${w - inset} ${h / 2}L${w - p - k * 0.4} ${h - inset}H${p + k * 0.4}Z`;
-  }
+  const zone = $derived(card && card.turn === s.turnCount ? card : null);
+  /** The mark's light breaks into the scene once it has unfolded: off its upper edge, toned to its size. */
+  const zoneFx = (el: HTMLElement) => card && milestoneReached(el, card.accent);
+  /** Reduced motion, or the effects off: the mark isn't drawn, it simply fades in. */
+  const quiet = () => matchMedia('(prefers-reduced-motion: reduce)').matches || document.documentElement.hasAttribute('data-still');
 
   const myFall = $derived(session.fallen && session.myPlayerId ? fellAt(s, session.myPlayerId) : null);
 </script>
@@ -212,6 +235,7 @@
 {/snippet}
 
 <div class="game">
+  <p class="sr" aria-live="polite">{zone?.label ?? ''}</p>
   <Scoreboard aside={phone.current ? timer : undefined} />
 
   <!-- The outgoing and incoming turn share one grid cell while they cross-fade,
@@ -241,16 +265,25 @@
             </span>
           </div>
         {/if}
-        <div class="head" bind:clientHeight={headH}>
+        <div class="head">
           {#if run}
             <!-- Kept even when empty, so the banner stays put from one depth to the next. -->
-            <p class="kicker" class:deep={depth >= 21} class:change={!!change}>{kicker || '\u00a0'}</p>
+            <p class="kicker" class:deep={depth >= 21} class:change={!!change} class:veiled={!!zone}>{kicker || '\u00a0'}</p>
           {/if}
-          <div class="banner" class:dm={!!dm} style:--c={bannerColor}>
+          <div class="banner" class:dm={!!dm} class:veiled={!!zone && zoneVariant !== 'ribbon'} style:--c={bannerColor}>
             <span class="rule"></span>
             <h2 use:bannerFx={{ color: bannerColor, big: bannerBig }}>{bannerTitle}</h2>
             <span class="rule"></span>
           </div>
+          {#if zone}
+            <!-- Delve: a new zone's name, engraved over the head for a moment
+                 (drawn once the stage has faded in). -->
+            <div class="zone" in:fade={{ duration: quiet() ? 600 : 200, delay: quiet() ? 0 : ZONE_DELAY * 1000 }} out:fade={{ duration: ZONE_OUT, easing: sineInOut }}>
+              {#key zone.key}
+                <ZoneMark variant={zoneVariant} title={zone.title} sigil={zone.sigil} accent={zone.accent} delay={ZONE_DELAY} onfx={zoneFx} />
+              {/key}
+            </div>
+          {/if}
         </div>
 
         {#if s.phase === 'choosing'}
@@ -287,35 +320,6 @@
         {/if}
       </div>
     {/key}
-    {#if card}
-      {#key card.key}
-        <!-- Delve: a named depth, on an engraved plaque laid over the banner for a
-             moment. It covers nothing below it and never takes a tap. -->
-        <div
-          class="m-card"
-          class:cold={card.cold}
-          style:height="{headH}px"
-          style:--p="{point}px"
-          bind:clientWidth={plaqueW}
-          bind:clientHeight={plaqueH}
-          use:cardFx={card}
-          aria-live="polite"
-          out:fade={{ duration: 400 }}
-        >
-          <svg class="m-frame" width={plaqueW} height={plaqueH} aria-hidden="true">
-            {#if plaqueW && plaqueH}
-              <path class="m-rim" d={plaquePath(plaqueW, plaqueH, 0.75)} />
-              <path class="m-hair" d={plaquePath(plaqueW, plaqueH, 3.5)} />
-              <path class="m-gem" d="M{point * 0.62 - 2.6} {plaqueH / 2}l2.6 -2.6 2.6 2.6 -2.6 2.6Z" />
-              <path class="m-gem" d="M{plaqueW - point * 0.62 - 2.6} {plaqueH / 2}l2.6 -2.6 2.6 2.6 -2.6 2.6Z" />
-            {/if}
-          </svg>
-          <span class="m-sheen" aria-hidden="true"></span>
-          <p class="m-kicker">{card.kicker}{#if card.line}<span class="m-sep">•</span><span class="m-line">{card.line}</span>{/if}</p>
-          <p class="m-title">{card.title}</p>
-        </div>
-      {/key}
-    {/if}
   </div>
 </div>
 
@@ -359,158 +363,36 @@
     flex-direction: column;
     align-items: stretch;
   }
-  /* The kicker and banner. Holds their margins, so the plaque laid over it
-     (.m-card) reaches exactly down to what follows. */
+  /* The kicker and banner. Holds their margins, so the mark laid over it
+     (ZoneMark) has their box to measure and keeps within it. */
   .head {
     display: flow-root;
-  }
-  /* Delve: a named depth (or the last one standing, or deeper than ever), on
-     an opaque engraved plaque with pointed ends like the phials', laid over
-     the head of the stage. */
-  .m-card {
-    grid-area: 1 / 1;
-    align-self: start;
-    justify-self: center;
     position: relative;
+  }
+  .zone {
+    position: absolute;
+    inset: 0;
     z-index: 2;
     pointer-events: none;
-    box-sizing: border-box;
-    width: min(100%, 560px);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 0.15rem;
-    padding: 0 2rem;
-    text-align: center;
-    animation: m-unfold 0.45s var(--ease-out) both;
   }
-  .m-card::before {
-    content: '';
+  /* What the mark takes the place of gives way while it shows, and comes
+     back once it has mostly gone. */
+  .kicker,
+  .rule {
+    transition: opacity 0.6s 1s ease-out;
+  }
+  .veiled.kicker,
+  .veiled .rule {
+    opacity: 0;
+    transition: opacity 0.25s ease-out;
+  }
+  .sr {
     position: absolute;
-    inset: 0;
-    z-index: -1;
-    clip-path: polygon(0 50%, var(--p) 0, calc(100% - var(--p)) 0, 100% 50%, calc(100% - var(--p)) 100%, var(--p) 100%);
-    background:
-      radial-gradient(ellipse 60% 120% at 50% 0%, rgba(201, 164, 92, 0.16), rgba(201, 164, 92, 0) 70%),
-      linear-gradient(180deg, #17110b, #0b0806);
-    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.7);
-  }
-  .m-card.cold::before {
-    background:
-      radial-gradient(ellipse 60% 120% at 50% 0%, rgba(120, 160, 230, 0.16), rgba(120, 160, 230, 0) 70%),
-      linear-gradient(180deg, #0c1018, #06080d);
-  }
-  .m-frame {
-    position: absolute;
-    inset: 0;
-    overflow: visible;
-    filter: drop-shadow(0 0 4px rgba(0, 0, 0, 0.9));
-  }
-  .m-rim {
-    fill: none;
-    stroke: #c9a45c;
-    stroke-width: 1.5;
-    stroke-linejoin: miter;
-  }
-  .m-hair {
-    fill: none;
-    stroke: rgba(241, 217, 155, 0.4);
-    stroke-width: 0.6;
-  }
-  .m-gem {
-    fill: none;
-    stroke: #c9a45c;
-    stroke-width: 0.9;
-  }
-  .cold .m-rim,
-  .cold .m-gem {
-    stroke: #8fb4e8;
-  }
-  .cold .m-hair {
-    stroke: rgba(190, 214, 250, 0.4);
-  }
-  /* Light runs once across the plaque as it unfolds (clipped to it). */
-  .m-sheen {
-    position: absolute;
-    inset: 0;
+    width: 1px;
+    height: 1px;
     overflow: hidden;
-    clip-path: polygon(0 50%, var(--p) 0, calc(100% - var(--p)) 0, 100% 50%, calc(100% - var(--p)) 100%, var(--p) 100%);
-  }
-  .m-sheen::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: -40%;
-    width: 40%;
-    background: linear-gradient(100deg, rgba(255, 236, 190, 0), rgba(255, 236, 190, 0.22) 50%, rgba(255, 236, 190, 0));
-    animation: m-sheen 1.1s ease-in-out 0.25s both;
-  }
-  @keyframes m-unfold {
-    from {
-      opacity: 0;
-      transform: scaleX(0.4);
-    }
-  }
-  @keyframes m-sheen {
-    to {
-      transform: translateX(350%);
-    }
-  }
-  .m-kicker {
-    margin: 0;
-    font-family: var(--font-cinzel);
-    font-weight: 700;
-    font-size: 0.78rem;
-    line-height: 1.2;
-    letter-spacing: 0.24em;
-    text-transform: uppercase;
-    color: var(--gold);
+    clip-path: inset(50%);
     white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 100%;
-    animation: m-words 0.4s ease-out 0.15s both;
-  }
-  .m-sep {
-    margin: 0 0.6em 0 0.35em;
-  }
-  .m-line {
-    color: var(--gold-hi);
-  }
-  .m-title {
-    margin: 0;
-    font-family: var(--font-display);
-    font-weight: 900;
-    font-size: clamp(1.4rem, 4.2vw, 2.3rem);
-    line-height: 1.05;
-    color: var(--gold-hi);
-    text-shadow:
-      0 0 18px rgba(255, 170, 70, 0.35),
-      0 2px 6px rgba(0, 0, 0, 0.95);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 100%;
-    animation: m-words 0.45s ease-out 0.2s both;
-  }
-  @keyframes m-words {
-    from {
-      opacity: 0;
-    }
-  }
-  .cold .m-kicker {
-    color: #8fb4e8;
-  }
-  .cold .m-line {
-    color: #cfe0fb;
-  }
-  .cold .m-title {
-    color: #dce9ff;
-    text-shadow:
-      0 0 18px rgba(90, 150, 255, 0.4),
-      0 2px 6px rgba(0, 0, 0, 0.95);
   }
 
   .kicker {
@@ -724,17 +606,6 @@
     }
     .banner h2 {
       font-size: 1.45rem;
-    }
-    .m-card {
-      gap: 0.1rem;
-      padding: 0 1.6rem;
-    }
-    .m-kicker {
-      font-size: 0.62rem;
-      letter-spacing: 0.16em;
-    }
-    .m-title {
-      font-size: 1.3rem;
     }
     .skip {
       margin-top: 1rem;
