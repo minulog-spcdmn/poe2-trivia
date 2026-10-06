@@ -6,7 +6,7 @@
 // game's own backdrop through setBackdrops (lib/backdrops.ts, its hook).
 // Drafts keep in this page's own storage (lib/storage.ts, data-backdrop-tool).
 
-import { SHIPPED, setBackdrops, seedAt } from '../lib/backdrops';
+import { endgameAt, SHIPPED, setBackdrops, seedAt } from '../lib/backdrops';
 import { backdropsErrors, cloneData, formatBackdrops, withTones, type Backdrops, type GenSettings, type Group, type Look, type MotionTweak } from '../lib/backdropData';
 import { DEFAULT_SETTINGS, freshSeed, generate, hueOf, keepLocked, variationSeed, wrap } from '../lib/backdropGen';
 import { calibrateLight, setDescent } from '../lib/descent';
@@ -245,10 +245,12 @@ export function tryStratumSeed(seed: number | null) {
   apply();
 }
 
+/** Pins the seed the stratum shows: its own re-rolled one where it was re-rolled (lib/backdrops.ts, endgameAt), so it keeps the look it has. */
 export function pin() {
-  tool.draft.endgame.pinned[String(tool.stratum + 1)] = stratumSeed();
+  const seed = endgameAt(tool.stratum, stratumSeed()).seed;
+  tool.draft.endgame.pinned[String(tool.stratum + 1)] = seed;
   tool.trial = null;
-  note(`Stratum ${tool.stratum + 1} keeps seed ${stratumSeed()} now.`);
+  note(`Stratum ${tool.stratum + 1} keeps seed ${seed} now.`);
   apply();
 }
 

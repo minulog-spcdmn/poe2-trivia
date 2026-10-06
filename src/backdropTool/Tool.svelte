@@ -1,9 +1,10 @@
 <script lang="ts">
   import { MediaQuery } from 'svelte/reactivity';
   import { cloneData, ENV_TONES, ENVIRONMENTS, FIELDS, GROUPS, MOTION_RANGES, stopsOf, toneOf, type FieldSpec, type GenSettings, type Group, type Look, type MotionTweak, type RGB } from '../lib/backdropData';
-  import { endgameAt, SHIPPED } from '../lib/backdrops';
+  import { endgameAt, likenessAt, SHIPPED } from '../lib/backdrops';
   import { generate, hsv, seedOf, swatchOf, variationSeed } from '../lib/backdropGen';
   import { accentAt, brightnessAt, FX_SLOTS, luminanceAt, stratumName } from '../lib/descent';
+  import { UNLIKE } from '../lib/likeness';
   import { PROFILE_NAMES } from '../lib/emberProfiles';
   import { readStored, writeStored } from '../lib/storage';
   import * as T from './state.svelte';
@@ -119,6 +120,14 @@
     void shown;
     const seed = T.stratumSeed();
     return { name: stratumName(tool.stratum), gen: endgameAt(tool.stratum, seed), seed, pinned: T.pinnedSeed() };
+  });
+  /** How alike the stratum shown is to its nearest zone and its neighbours (lib/likeness.ts): similarity, 1 less the difference. */
+  const likeness = $derived.by(() => {
+    void shown;
+    const l = likenessAt(tool.stratum, stratum.seed);
+    const like = (d: number) => 1 - d;
+    const most = 1 - UNLIKE;
+    return { zone: zoneName(l.zone), zoneLike: like(l.difference), before: like(l.before), after: like(l.after), most, beforeName: tool.stratum === T.ZONES ? zoneName(T.ZONES - 1) : `stratum ${tool.stratum}` };
   });
   const stratumStrip = $derived.by(() => {
     void shown;
@@ -410,9 +419,16 @@
             {@render swatch(stratum.gen.look, '', true, () => T.showStratum(tool.stratum), 'Show it')}
             <p class="hint grow">
               Seed <i class="num">{stratum.seed}</i>,
-              {#if tool.trial !== null}being tried{:else if stratum.pinned !== undefined}pinned{:else}its own{/if}; hue <i class="num">{stratum.gen.hue}</i>; embers {stratum.gen.motion.profile}.
+              {#if tool.trial !== null}being tried{:else if stratum.pinned !== undefined}pinned{:else}its own{/if}{#if stratum.gen.rolled}, re-rolled <i class="num">{stratum.gen.rolled}</i> on to seed <i class="num">{stratum.gen.seed}</i> to stay unlike the zones and its neighbours{/if}; hue <i class="num">{stratum.gen.hue}</i>; embers {stratum.gen.motion.profile}.
             </p>
           </div>
+          <p class="hint">
+            Nearest zone: {likeness.zone} • similarity <i class="num">{likeness.zoneLike.toFixed(2)}</i>{#if likeness.zoneLike > likeness.most + 1e-9}<b class="warn"> • too like it</b>{/if}<br />
+            To {likeness.beforeName} <i class="num">{likeness.before.toFixed(2)}</i>{#if likeness.before > likeness.most + 1e-9}<b class="warn"> • too alike</b>{/if}
+            • to the next <i class="num">{likeness.after.toFixed(2)}</i>{#if likeness.after > likeness.most + 1e-9}<b class="warn"> • too alike</b>{/if}<br />
+            A generated stratum keeps to at most <i class="num">{likeness.most.toFixed(2)}</i>, re-rolling its seed where it must.
+            {#if (stratum.pinned !== undefined || tool.trial !== null) && Math.max(likeness.zoneLike, likeness.before, likeness.after) > likeness.most + 1e-9}<b class="warn">This seed is your choice, so it is kept as it is.</b>{/if}
+          </p>
           <div class="grid three">
             <button onclick={() => T.tryStratumSeed(Math.floor(Math.random() * 0x100000000) >>> 0)}>Try another</button>
             {#if stratum.pinned !== undefined && tool.trial === null}
@@ -426,7 +442,7 @@
           <div class="strip">
             {#each stratumStrip as v (v.seed)}{@render swatch(v.look, '', v.seed === tool.trial, () => T.tryStratumSeed(v.seed), `Seed ${v.seed}`)}{/each}
           </div>
-          <p class="hint">Every stratum past the zones is generated from its own seed, the same for everyone; its hue moves on from the one before's, so no two in a row look alike. Pin a seed to keep a stratum as it is.</p>
+          <p class="hint">Every stratum past the zones is generated from its own seed, the same for everyone; its hue moves on from the one before's, and it is steered clear of every zone and of its neighbours (re-rolled where it still comes out too alike), so none looks like a hand-made zone or the stratum before. Pin a seed to keep a stratum as it is: a pinned seed is never re-rolled.</p>
         </div>
         <details open>
           <summary>Endgame generator</summary>
