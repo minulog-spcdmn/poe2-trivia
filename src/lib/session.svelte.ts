@@ -42,6 +42,7 @@ import { DELVE_RULESET, LOOKALIKES_ASKED_FROM, blastClears, dynamiteOf, itemsWor
 import { loadLooks } from './looks';
 import { bestOf, loadRecords, recordLeft, recordRun, runEvent } from './delveRecord';
 import { DELVE_CLOCK_CAP_MS, DRAIN_POLL_MS, clockStart, delveNotices, drained, dynamiteIn, expireIn, flareIn, mayAutoReask, reaskDelay } from './delveSession';
+import { readLegacy, readStored, removeLegacy, removeStored, writeStored } from './storage';
 
 export const engine = new Engine(itemData as Item[], { fakes: fakeNames });
 
@@ -112,42 +113,23 @@ function randomToken(len: number, alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefgh
 
 const randomCode = () => randomToken(CODE_LENGTH, CODE_ALPHABET);
 
-function stored(key: string, fallback: () => string): string {
-  try {
-    const v = localStorage.getItem(key);
-    if (v) return v;
-    const fresh = fallback();
-    localStorage.setItem(key, fresh);
-    return fresh;
-  } catch {
-    return fallback();
-  }
+/** The stored value, or a fresh one from fallback that is stored for next time. */
+function stored(name: string, fallback: () => string): string {
+  const v = readStored(name);
+  if (v) return v;
+  const fresh = fallback();
+  writeStored(name, fresh);
+  return fresh;
 }
 
-function readLocal(key: string): string | null {
-  try {
-    return localStorage.getItem(key);
-  } catch {
-    return null;
-  }
-}
-
-function writeLocal(key: string, value: string) {
-  try {
-    localStorage.setItem(key, value);
-  } catch {
-    /* ignore */
-  }
-}
-
-export const savedName = () => readLocal('poe2trivia.name') ?? '';
-export const saveName = (name: string) => writeLocal('poe2trivia.name', name);
+export const savedName = () => readStored('name') ?? '';
+export const saveName = (name: string) => void writeStored('name', name);
 
 /**
  * This browser's secret. It proves "I'm the same player" when rejoining and
  * is only ever sent to the host, never shown to other players.
  */
-const mySecret = stored('poe2trivia.secret', () => randomToken(32));
+const mySecret = stored('secret', () => randomToken(32));
 /** This page load (tabs share the secret; the host tells them apart by this). */
 const myTab = randomToken(16);
 
@@ -976,7 +958,7 @@ class Session {
     }
     writeSaved({ mode: 'client', code: this.code, name });
     const room = this.code;
-    this.helloSecret = roomSecret(mySecret, room).catch(() => stored(`poe2trivia.secret.${room}`, () => randomToken(32)));
+    this.helloSecret = roomSecret(mySecret, room).catch(() => stored(`secret.${room}`, () => randomToken(32)));
     const peer = new Peer(PEER_OPTIONS);
     this.peer = peer;
     this.armConnectTimeout();
@@ -1633,7 +1615,7 @@ type Saved =
   | { mode: 'local'; state: GameState }
   | { mode: 'host'; code: string; state: GameState; priv: HostPrivate }
   | { mode: 'client'; code: string; name: string };
-const SAVE_KEY = 'poe2trivia.session.v4';
+const SAVE = 'session.v4';
 /**
  * Before guests' tokens became per-room. A hosted room saved then can't be
  * resumed (its guests' tokens no longer match), and a guest's saved room
@@ -1654,10 +1636,10 @@ function underRuleset(s: GameState): GameState {
 
 function readSaved(): Saved | null {
   try {
-    const raw = sessionStorage.getItem(SAVE_KEY);
+    const raw = readStored(SAVE, 'session');
     if (raw) return JSON.parse(raw) as Saved;
-    const old = sessionStorage.getItem(OLD_SAVE_KEY);
-    sessionStorage.removeItem(OLD_SAVE_KEY);
+    const old = readLegacy(OLD_SAVE_KEY, 'session');
+    removeLegacy(OLD_SAVE_KEY, 'session');
     const saved = old ? (JSON.parse(old) as Saved) : null;
     return saved?.mode === 'local' ? saved : null;
   } catch {
@@ -1666,12 +1648,8 @@ function readSaved(): Saved | null {
 }
 
 function writeSaved(saved: Saved | null) {
-  try {
-    if (saved) sessionStorage.setItem(SAVE_KEY, JSON.stringify(saved));
-    else sessionStorage.removeItem(SAVE_KEY);
-  } catch {
-    /* ignore */
-  }
+  if (saved) writeStored(SAVE, JSON.stringify(saved), 'session');
+  else removeStored(SAVE, 'session');
 }
 
 export const session = new Session();

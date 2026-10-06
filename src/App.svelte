@@ -16,6 +16,7 @@
   import Game from './components/Game.svelte';
   import GameOver from './components/GameOver.svelte';
   import { closeCodex, codexRoute } from './lib/codexRoute.svelte';
+  import { BETA } from './lib/channel';
 
   let muted = $state(isMuted());
   let volume = $state(getVolume());
@@ -169,7 +170,7 @@
             <svg class={cls} viewBox="20 0 400 391"><path d="M224 390Q255 331 301.0 283.5Q347 236 377 218L407 200L220 -1Q164 31 116.5 82.5Q69 134 50 169L31 204Z" fill="currentColor" /></svg>
           {/each}
         </span>
-        <span>PoE2.Quest</span>
+        <span>PoE2.Quest{#if BETA}{' '}<small class="beta">Beta</small>{/if}</span>
       </button>
       <div class="meta">
         {#if gs?.delve && (screen === 'game' || screen === 'over')}
@@ -387,6 +388,15 @@
   .brand:hover {
     color: var(--gold-hi);
     text-shadow: 0 0 16px rgba(241, 217, 155, 0.55);
+  }
+  /* Phones hide the name and this with it; the start page and the tab title still say Beta. */
+  .beta {
+    margin-left: 0.2em;
+    font-family: var(--font-cinzel);
+    font-size: 0.62rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--unique-hi);
   }
   .brand-mark {
     position: relative;

@@ -2,6 +2,7 @@
 // open starts the way they left the last one.
 
 import { DEFAULT_SETTINGS, cleanKnobs, difficultyOf, isDifficulty, snapTimer, type Difficulty, type GameMode, type Knobs, type Settings } from './game.ts';
+import { removeLegacy, storeKey, tryReadStored, writeStored } from './storage.ts';
 
 export interface RoomPrefs {
   targetScore: number;
@@ -17,7 +18,8 @@ export interface RoomPrefs {
 
 /** Bump when the stored shape changes: entries from another version are replaced with the defaults. */
 export const PREFS_VERSION = 1;
-export const PREFS_KEY = 'poe2trivia.roomPrefs';
+const PREFS = 'roomPrefs';
+export const PREFS_KEY = storeKey(PREFS);
 /** Where "hide the room code" was kept before the other settings were remembered too. */
 const LEGACY_HIDE_KEY = 'poe2trivia.hideCode';
 
@@ -79,12 +81,7 @@ export const serializePrefs = (p: RoomPrefs) =>
 
 /** Whether the entry could be stored. */
 function write(p: RoomPrefs): boolean {
-  try {
-    localStorage.setItem(PREFS_KEY, serializePrefs(p));
-    return true;
-  } catch {
-    return false;
-  }
+  return writeStored(PREFS, serializePrefs(p));
 }
 
 /**
@@ -93,23 +90,14 @@ function write(p: RoomPrefs): boolean {
  * suddenly show up on screen).
  */
 export function loadPrefs(): RoomPrefs {
-  let raw: string | null = null;
-  try {
-    raw = localStorage.getItem(PREFS_KEY);
-  } catch {
-    return { ...DEFAULT_PREFS };
-  }
+  const raw = tryReadStored(PREFS);
+  // Unreadable isn't missing: leave whatever is stored alone.
+  if (raw === undefined) return { ...DEFAULT_PREFS };
   const saved = parsePrefs(raw);
   if (saved) return saved;
   const fresh = { ...DEFAULT_PREFS };
   // The old key goes only once the new entry holds its value.
-  if (write(fresh)) {
-    try {
-      localStorage.removeItem(LEGACY_HIDE_KEY);
-    } catch {
-      /* ignore */
-    }
-  }
+  if (write(fresh)) removeLegacy(LEGACY_HIDE_KEY);
   return fresh;
 }
 

@@ -7,6 +7,7 @@
 
 import { descent } from './descent.ts';
 import { AMBIENCE, DEPTH, FIRE, MIX, MOMENTS, RUMBLE, type Layer } from './soundDesign.ts';
+import { readStored, writeStored } from './storage.ts';
 
 export type Sfx =
   | 'hover'
@@ -40,11 +41,7 @@ export type Sfx =
   | 'blast';
 
 let muted = (() => {
-  try {
-    return localStorage.getItem('poe2trivia.muted') === '1';
-  } catch {
-    return false;
-  }
+  return readStored('muted') === '1';
 })();
 
 export function isMuted() {
@@ -53,22 +50,14 @@ export function isMuted() {
 
 export function setMuted(value: boolean) {
   muted = value;
-  try {
-    localStorage.setItem('poe2trivia.muted', value ? '1' : '0');
-  } catch {
-    /* ignore */
-  }
+  writeStored('muted', value ? '1' : '0');
   updateAmbience();
 }
 
 /** The player's volume, 0 to 1, on top of the mix level (desktop slider). */
 let volume = (() => {
-  try {
-    const v = parseFloat(localStorage.getItem('poe2trivia.volume') ?? '');
-    return Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 1;
-  } catch {
-    return 1;
-  }
+  const v = parseFloat(readStored('volume') ?? '');
+  return Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 1;
 })();
 
 export function getVolume() {
@@ -77,11 +66,7 @@ export function getVolume() {
 
 export function setVolume(value: number) {
   volume = Math.min(1, Math.max(0, value));
-  try {
-    localStorage.setItem('poe2trivia.volume', String(volume));
-  } catch {
-    /* ignore */
-  }
+  writeStored('volume', String(volume));
   if (bus) bus.user.gain.setTargetAtTime(userGain(), bus.ac.currentTime, 0.03);
 }
 

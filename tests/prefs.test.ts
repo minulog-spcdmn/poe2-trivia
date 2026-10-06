@@ -71,11 +71,16 @@ test('first-time visitors get a hidden room code', () => {
   ls.getItem = () => {
     throw new Error('SecurityError');
   };
+  store.set(PREFS_KEY, 'kept');
+  store.set('poe2trivia.hideCode', '1');
   try {
     assert.equal(loadPrefs().hideCode, true);
   } finally {
     ls.getItem = getItem;
   }
+  // A read error isn't an empty entry: nothing stored is written over or removed.
+  assert.equal(store.get(PREFS_KEY), 'kept');
+  assert.equal(store.get('poe2trivia.hideCode'), '1');
 });
 
 test('keeps a room code hidden under the old setting', () => {

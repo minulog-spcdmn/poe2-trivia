@@ -14,6 +14,7 @@
   import { setHomeScene } from '../lib/lights';
   import { openCodex } from '../lib/codexRoute.svelte';
   import { DELVE_LINK_PARAM } from '../lib/delveShare';
+  import { BETA } from '../lib/channel';
 
   /** Keeps a room code's letters and digits, uppercased, up to its length. */
   const cleanCode = (v: string) => v.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, CODE_LENGTH);
@@ -173,6 +174,9 @@
         />
       {/each}
     </div>
+    {#if BETA}
+      <p class="beta" in:fade={{ duration: 600, delay: 100 }}>Beta</p>
+    {/if}
     <p class="kicker" in:fly={{ y: -10, duration: 600, delay: 100 }}>Unique Item Trivia</p>
     <h1 use:glinting in:fly={{ y: 20, duration: 800, delay: 200 }}>
       <span class="gold" use:backdropDropShadow><span class="line"></span>PoE2.Quest<span class="line"></span></span>
@@ -200,12 +204,13 @@
     <div class="modes">
       <section class="mode">
         <h2>Host a game</h2>
-        <p class="muted">Open a room and share the code with your party.</p>
+        <p class="muted">Open a room and share the code with your party, or play alone.</p>
         <button class="btn primary" onclick={host} disabled={connecting}>Create room</button>
       </section>
 
       <section class="mode">
         <h2>Join a game</h2>
+        <p class="muted">Enter the code your host shared to join their room.</p>
         <form onsubmit={join}>
           <input
             id="code"
@@ -386,6 +391,21 @@
     }
   }
 
+  /* Marks the beta build (poe2.quest/beta/) so testers know where they are. */
+  .beta {
+    position: relative;
+    display: inline-block;
+    margin: 0 0 0.8rem;
+    padding: 0.2rem 0.6rem 0.15rem 0.85rem;
+    border: 1px solid rgba(224, 138, 68, 0.5);
+    border-radius: 3px;
+    font-family: var(--font-cinzel);
+    font-weight: 700;
+    font-size: 0.7rem;
+    letter-spacing: 0.35em;
+    text-transform: uppercase;
+    color: var(--unique-hi);
+  }
   .kicker {
     position: relative;
     margin: 0 0 0.4rem;
@@ -525,6 +545,8 @@
     text-align: center;
     text-transform: uppercase;
     min-width: 0;
+    /* Stretched to the Join button's height, so this row matches Create room. */
+    padding-block: 0;
   }
 
   .or {

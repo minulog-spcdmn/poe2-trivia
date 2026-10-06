@@ -25,8 +25,11 @@
 
 import { DELVE_LIVES, DELVE_RULESET, delveStandings, fellAt, isGroupRun } from './delve.ts';
 import type { GameState } from './game.ts';
+import { readStored, removeStored, storeKey, writeStored } from './storage.ts';
 
-export const DELVE_RECORD_KEY = 'poe2trivia.delve';
+/** Where the records live (the beta keeps its own); the whole key, as storage events name it. */
+const DELVE_RECORD_NAME = 'delve';
+export const DELVE_RECORD_KEY = storeKey(DELVE_RECORD_NAME);
 const VERSION = 1;
 /** Runs kept in the list (bests and tallies are kept apart, however old). */
 export const RUN_LIMIT = 40;
@@ -379,21 +382,13 @@ export const serializeRecords = (r: DelveRecords) => JSON.stringify({ v: VERSION
 
 /** The stored records (empty when there are none or they can't be read). Read fresh: another tab may have added to them. */
 export function loadRecords(): DelveRecords {
-  try {
-    return parseRecords(localStorage.getItem(DELVE_RECORD_KEY)) ?? emptyRecords();
-  } catch {
-    return emptyRecords();
-  }
+  return parseRecords(readStored(DELVE_RECORD_NAME)) ?? emptyRecords();
 }
 
 /** Records a run; returns how it measured up (null when it couldn't be stored). */
 export function recordRun(run: DelveRun): { previousBest: number | null; best: boolean } | null {
   const { records, previousBest, best } = addRun(loadRecords(), run);
-  try {
-    localStorage.setItem(DELVE_RECORD_KEY, serializeRecords(records));
-  } catch {
-    return null;
-  }
+  if (!writeStored(DELVE_RECORD_NAME, serializeRecords(records))) return null;
   return { previousBest, best };
 }
 
@@ -408,9 +403,5 @@ export function recordLeft(s: GameState | null, me: string | null, hotSeat = fal
 }
 
 export function resetRecords() {
-  try {
-    localStorage.removeItem(DELVE_RECORD_KEY);
-  } catch {
-    /* nothing stored, or no storage */
-  }
+  removeStored(DELVE_RECORD_NAME);
 }

@@ -1,6 +1,8 @@
 // Player name hygiene: strip invisible / direction-flipping characters and
 // "zalgo" stacks, and catch names that impersonate the host or another player.
 
+import { readKey, writeKey } from './storage.ts';
+
 export const MAX_NAME = 20;
 export const MIN_NAME = 2;
 
@@ -57,6 +59,7 @@ const HELD_NAME = 'zoearcana';
 const HELD_KEY_HASH = '5ddd2ad1ad21e94175a14999359a9e8b2b508a70c769f49f71a6d94e5821a607';
 const HELD_SALT = 'poe2trivia.held-name';
 const HELD_ITERATIONS = 600_000;
+// A whole key, not a name under STORE: a device unlocked for the live game is unlocked for the beta too.
 const OWNER_KEY = 'poe2trivia.owner';
 
 /** Hex PBKDF2 hash of a key. Throws where Web Crypto is missing (plain http). */
@@ -76,11 +79,10 @@ export async function heldKeyHash(key: string): Promise<string> {
 export async function unlockHeldName(key: string, hash = HELD_KEY_HASH): Promise<boolean> {
   try {
     if ((await heldKeyHash(key)) !== hash) return false;
-    localStorage.setItem(OWNER_KEY, hash);
-    return true;
   } catch {
     return false;
   }
+  return writeKey(OWNER_KEY, hash);
 }
 
 /** Whether a name is the held one, in any spelling the name check treats as the same ("Zoe Arcana"). */
@@ -91,11 +93,7 @@ export function isHeldName(name: string): boolean {
 /** True when the name is held and this device is not unlocked. */
 export function nameHeld(name: string, hash = HELD_KEY_HASH): boolean {
   if (!isHeldName(name)) return false;
-  try {
-    return localStorage.getItem(OWNER_KEY) !== hash;
-  } catch {
-    return true;
-  }
+  return readKey(OWNER_KEY) !== hash;
 }
 
 /** True when a name is too short to be a name (counted in characters, after cleanup). */

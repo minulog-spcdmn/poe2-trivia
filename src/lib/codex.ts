@@ -22,6 +22,7 @@
 
 import { difficultyOf, isFake, type Difficulty, type GameState, type QuestionMode } from './game.ts';
 import { ITEM_KINDS, delveTier, type FindKind, type ItemKind } from './delve.ts';
+import { readStored, removeStored, storeKey, writeStored } from './storage.ts';
 
 export interface Tally {
   /** Answers given. */
@@ -163,7 +164,8 @@ export interface Encounter {
   };
 }
 
-export const CODEX_KEY = 'poe2trivia.codex';
+const CODEX = 'codex';
+export const CODEX_KEY = storeKey(CODEX);
 /** Bump when the stored shape changes incompatibly. */
 export const CODEX_VERSION = 1;
 export const LOG_LIMIT = 2000;
@@ -411,22 +413,14 @@ export const serializeCodex = (c: Codex) => JSON.stringify({ v: CODEX_VERSION, .
 
 /** The stored codex (empty when there is none, or it can't be read). Always read fresh: another tab may have added to it. */
 export function loadCodex(): Codex {
-  try {
-    return parseCodex(localStorage.getItem(CODEX_KEY)) ?? emptyCodex();
-  } catch {
-    return emptyCodex();
-  }
+  return parseCodex(readStored(CODEX)) ?? emptyCodex();
 }
 
 /** Whether it could be stored. When storage is full, the older half of the log goes first. */
 function write(c: Codex): boolean {
   for (let log = c.log; ; log = log.slice(Math.ceil(log.length / 2))) {
-    try {
-      localStorage.setItem(CODEX_KEY, serializeCodex({ ...c, log }));
-      return true;
-    } catch {
-      if (!log.length) return false;
-    }
+    if (writeStored(CODEX, serializeCodex({ ...c, log }))) return true;
+    if (!log.length) return false;
   }
 }
 
@@ -438,9 +432,5 @@ export function recordEncounter(e: Encounter) {
 }
 
 export function resetCodex() {
-  try {
-    localStorage.removeItem(CODEX_KEY);
-  } catch {
-    /* ignore */
-  }
+  removeStored(CODEX);
 }
