@@ -19,9 +19,9 @@
 // And the deeper, the darker, never the other way: the dark draws in from
 // the edges a little with every depth, and the scene's light is set (`light`,
 // see the luminance estimate below) so its average brightness only ever
-// falls, however bright a stratum's fire or gold. Each pick of a card sinks
-// the scene a little further (plunge). Pure, apart from the eased channel
-// and the plunge at the bottom that the backdrop reads.
+// falls, however bright a stratum's fire or gold. Each new depth sinks the
+// scene a little further as its cards are dealt (plunge). Pure, apart from
+// the eased channel and the plunge at the bottom that the backdrop reads.
 
 type RGB = [number, number, number];
 
@@ -701,6 +701,31 @@ function closingAt(x: number, y: number, close: number) {
   return 1 - Math.exp(-(ax * ax + ay * ay));
 }
 
+/** The magma among the environments (it cools as it goes out; see magmaCooling). */
+const MAGMA = ENVIRONMENTS.indexOf('magma');
+/**
+ * How far the magma has cooled (0 to 1) with the scene turning `turn` of the
+ * way into stratum `stratum` (see strataAt): only as it goes out (the
+ * stratum before has magma, this one none: the Magma Fissure's last depths
+ * toward the Frozen Hollow), in step with its hall (hallTurn), so it has
+ * cooled and stopped flowing as the next arrives. The backdrop draws its
+ * glow turning from orange to dull red and dark, and its flow slowing to a
+ * stop (lib/backdrop.ts); the embers burning in it slow too
+ * (lib/emberMotion.ts).
+ */
+export function magmaCooling(stratum: number, turn: number): number {
+  return stratum >= 1 && lookOf(stratum - 1).env[MAGMA] > 0 && lookOf(stratum).env[MAGMA] === 0 ? hallTurn(turn) : 0;
+}
+/** How much of its glow the magma loses, cooled all the way. */
+export const MAGMA_DIM = 0.8;
+/** How bright the magma's glow is (its luma, 1 hot), cooled `cool` of the way: the backdrop dims it so, and the estimate below with it. */
+export const magmaHeat = (cool: number) => 1 - MAGMA_DIM * cool;
+/** The magma's heat at depth `d` (see magmaCooling). */
+function heatAt(d: number) {
+  const { stratum, turn } = strataAt(d);
+  return magmaHeat(magmaCooling(stratum, turn));
+}
+
 /** The colours a look mixes in, 0 to 1 (estimateLuminance's scratch): haze, floor, glow, the smoke's five drifts, mist. */
 const MIXES = 9;
 const mixRGB = new Float64Array(MIXES * 3);
@@ -713,9 +738,11 @@ const blobK = new Float64Array(BLOBS.length);
  * it (its smooth light at rest, on a coarse grid, the noise at its average;
  * the environments' features by ENV_ADD and ENV_HALL), split into what
  * `light` scales (hall: the hall's own light) and what it doesn't (rest: the
- * features, burning at `features`, and the embers).
+ * features, burning at `features`, and the embers). `heat` is how bright the
+ * magma glows as it cools (magmaHeat; 1 hot): its features add that much of
+ * what they do hot.
  */
-export function estimateLuminance(look: Look, close: number, features = 1): { hall: number; rest: number } {
+export function estimateLuminance(look: Look, close: number, features = 1, heat = 1): { hall: number; rest: number } {
   const delve = look.dark > 0 || look.mistK > 0;
   const g = GRID;
   const nb = BLOBS.length;
@@ -762,7 +789,7 @@ export function estimateLuminance(look: Look, close: number, features = 1): { ha
   for (let i = 0; i < ENV; i++) {
     const e = look.env[i];
     if (e <= 0) continue;
-    env += envTable(ENV_ADD[i], e);
+    env += envTable(ENV_ADD[i], e) * (i === MAGMA ? heat : 1);
     hall *= envTable(ENV_HALL[i], e);
   }
   // The embers: how many burn (the calm ones and the crowd), how large and
@@ -854,7 +881,7 @@ function extendLights(to: number) {
     tableEnd = Math.min(LIGHT_TABLE, tableEnd + STRETCH);
     for (let d = from; d <= tableEnd; d++) {
       lookAt(look, d);
-      const e = estimateLuminance(look, closeness(d), featuresAt(d));
+      const e = estimateLuminance(look, closeness(d), featuresAt(d), heatAt(d));
       const [h, r] = measuredAt(d);
       tableHall[d] = e.hall * h;
       tableRest[d] = e.rest * r;
@@ -903,7 +930,7 @@ export function lightAt(d: number, look: Look = lookAt(blank(), d)): number {
   if (settled < j) extendLights(j);
   if (x === i) return tableLight[i];
   const level = tableLevel[i] + (tableLevel[j] - tableLevel[i]) * (x - i);
-  const e = estimateLuminance(look, closeness(d), featuresAt(d));
+  const e = estimateLuminance(look, closeness(d), featuresAt(d), heatAt(d));
   const [h, r] = measuredAt(d);
   return Math.min(LIGHT_MAX, Math.max(LIGHT_MIN, (level - e.rest * r) / (e.hall * h)));
 }
@@ -1082,15 +1109,16 @@ export const shownDepth = () => shown;
 // ---- the plunge -------------------------------------------------------------
 
 /**
- * Each pick of a card in a Delve sinks the scene a little further: over
- * PLUNGE_MS the walls, the smoke and the dust drift up past you (the
- * nearer, the faster) as if you sank PLUNGE_SINK of a screen, the embers
- * streak up, and the dark draws in and lets go again; then it all settles
- * where it came to. App.svelte calls plunge(); the backdrop steps it, and
+ * Each new depth of a Delve, as its cards are dealt, sinks the scene a
+ * little further: over PLUNGE_MS the walls, the smoke and the dust drift up
+ * past you (the nearer, the faster) as if you sank PLUNGE_SINK of a screen,
+ * the embers streak up, and the dark draws in and lets go again; it gathers
+ * speed quickly and comes to rest slowly, settling where it came to.
+ * App.svelte calls plunge() (see dealtDeeper); the backdrop steps it, and
  * skips it while it holds still (reduced motion, effects off).
  */
-export const PLUNGE_MS = 1300;
-export const PLUNGE_SINK = 0.35;
+export const PLUNGE_MS = 1900;
+export const PLUNGE_SINK = 0.6;
 /** How far the scene has sunk (screens, wrapping far down), how fast (screens a second) and how far the dark has drawn in (0 to 1). */
 export const sinking = { sink: 0, speed: 0, breath: 0 };
 let asked = false;
@@ -1106,14 +1134,37 @@ function resetSink() {
   plungeAt = -Infinity;
 }
 
-/** Sinks the scene a little further (a card was picked). */
+/** Sinks the scene a little further (a new depth's cards were dealt). */
 export function plunge() {
   asked = true;
 }
 
-/** easeInOutCubic and its slope. */
-const ease = (x: number) => (x < 0.5 ? 4 * x * x * x : 1 - (-2 * x + 2) ** 3 / 2);
-const easeSlope = (x: number) => (x < 0.5 ? 12 * x * x : 3 * (-2 * x + 2) ** 2);
+/** Where a run's cards were last dealt: which run (its start) and at what depth. */
+export type Dealt = { run: number; depth: number };
+/**
+ * Whether cards dealt at `now` are a new depth's, deeper in the same run
+ * than the cards dealt `before`: the moment to plunge. Not the first cards
+ * of a run (or the first seen after a reload), and not the same depth's
+ * cards dealt again (a question set aside by the host's reload).
+ */
+export function dealtDeeper(before: Dealt | undefined, now: Dealt): boolean {
+  return !!before && before.run === now.run && now.depth > before.depth;
+}
+
+/**
+ * How the plunge moves: gathering speed for the first PLUNGE_PEAK of it,
+ * then slowing to rest over the rest (two cubics meeting at their steepest,
+ * so it never jerks), and its slope.
+ */
+const PLUNGE_PEAK = 0.38;
+const ease = (x: number) => {
+  const m = PLUNGE_PEAK;
+  return x < m ? m * (x / m) ** 3 : m + (1 - m) * (1 - (1 - (x - m) / (1 - m)) ** 3);
+};
+const easeSlope = (x: number) => {
+  const m = PLUNGE_PEAK;
+  return x < m ? 3 * (x / m) ** 2 : 3 * (1 - (x - m) / (1 - m)) ** 2;
+};
 
 /**
  * Steps the plunge to `now` (ms): starts one asked for (unless `allowed` is
@@ -1131,7 +1182,7 @@ export function stepPlunge(now: number, allowed: boolean): boolean {
   // Holding still now: it ends at once where it was heading.
   const x = allowed ? Math.max(0, (now - plungeAt) / PLUNGE_MS) : 1;
   if (x >= 1) {
-    // (Wrapping round after hundreds of picks in one run, so the shader's
+    // (Wrapping round after hundreds of depths in one run, so the shader's
     // noise keeps its precision; each run starts from 0, see setDescent.)
     sinking.sink = (sinkFrom + PLUNGE_SINK) % 256;
     sinking.speed = 0;

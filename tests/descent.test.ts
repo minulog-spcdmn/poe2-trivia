@@ -27,6 +27,10 @@ import {
   stepPlunge,
   estimateLuminance,
   hallTurn,
+  dealtDeeper,
+  magmaCooling,
+  magmaHeat,
+  MAGMA_DIM,
   measuredAt,
   lightAt,
   luminanceAt,
@@ -188,6 +192,36 @@ test('one place turns into the next steadily: its features recede as the next on
   }
 });
 
+test('over the Magma Fissure\'s last depths the magma cools, and has cooled as the Frozen Hollow arrives; the light makes way for it', () => {
+  const at = (d: number) => {
+    const { stratum, turn } = strataAt(d);
+    return magmaCooling(stratum, turn);
+  };
+  // Hot through the fissure's first depths (and nowhere else to 100), cooling steadily from its fourth.
+  for (let d = 0; d <= 13.5; d += 0.25) assert.equal(at(d), 0, `cooling at ${d}`);
+  for (let d = 21; d <= 100; d += 0.25) assert.equal(at(d), 0, `cooling at ${d}`);
+  let last = 0;
+  for (let d = 13.75; d < 21; d += 0.25) {
+    assert.ok(at(d) > last && at(d) - last < 0.05, `cooling at ${d}: ${at(d)} after ${last}`);
+    last = at(d);
+  }
+  assert.ok(last > 0.95, 'all but cooled as the Frozen Hollow arrives');
+  // Cooling, it glows dimmer, as the backdrop draws it; the estimate has it so.
+  assert.equal(magmaHeat(0), 1);
+  assert.ok(Math.abs(magmaHeat(1) - (1 - MAGMA_DIM)) < 1e-12 && MAGMA_DIM > 0.5 && MAGMA_DIM < 1);
+  const x = descent(17);
+  const hot = estimateLuminance(x.look, x.close, x.features, 1);
+  const cooled = estimateLuminance(x.look, x.close, x.features, magmaHeat(at(17)));
+  assert.equal(cooled.hall, hot.hall);
+  assert.ok(cooled.rest < hot.rest, 'the cooling magma adds less');
+  // Past 100, a stratum whose magma goes out cools it the same way; one whose magma stays doesn't.
+  const magma = ENVIRONMENTS.indexOf('magma');
+  for (let k = STRATA.length + 1; k < 200; k++) {
+    const goes = lookOf(k - 1).env[magma] > 0 && lookOf(k).env[magma] === 0;
+    assert.equal(magmaCooling(k, 0.9), goes ? hallTurn(0.9) : 0, `stratum ${k}`);
+  }
+});
+
 test("each environment's features come in steadily: what they add to the brightness grows with every step, never mostly at the end", () => {
   assert.equal(ENV_ADD.length, ENV);
   assert.equal(ENV_HALL.length, ENV);
@@ -208,6 +242,9 @@ test("each environment's features come in steadily: what they add to the brightn
   }
 });
 
+/** How hot the magma glows in a scene (1, but as it cools: see magmaCooling). */
+const heat = (x: { stratum: number; turn: number }) => magmaHeat(magmaCooling(x.stratum, x.turn));
+
 test("the deeper, the darker: the scene's average brightness never rises, however bright a stratum", () => {
   /**
    * The average brightness drawn (light scales the hall, not its features or
@@ -217,7 +254,7 @@ test("the deeper, the darker: the scene's average brightness never rises, howeve
    */
   const lum = (d: number) => {
     const x = descent(d);
-    const e = estimateLuminance(x.look, x.close, x.features);
+    const e = estimateLuminance(x.look, x.close, x.features, heat(x));
     const [hall, rest] = measuredAt(d);
     return e.hall * hall * x.light + e.rest * rest;
   };
@@ -261,7 +298,7 @@ test("what the features add, which the light can't take back, changes a little w
   let prev = 0;
   for (let d = 1; d <= 400; d++) {
     const x = descent(d);
-    const rest = estimateLuminance(x.look, x.close, x.features).rest * measuredAt(d)[1];
+    const rest = estimateLuminance(x.look, x.close, x.features, heat(x)).rest * measuredAt(d)[1];
     if (d > 1) assert.ok(Math.abs(rest - prev) < 0.08 * luminanceAt(d), `the features jump by ${(rest - prev).toFixed(4)} at ${d}`);
     prev = rest;
   }
@@ -464,10 +501,10 @@ test('glints show as a stratum has them: in the side walls, or all over; fewer o
 });
 
 test('in the frozen stratum the motes drift down instead of rising', () => {
-  /** How many embers move down and up over a moment. */
+  /** How many embers burning in stratum k move down and up over a moment. */
   const moves = (k: number) => {
     const e = new Embers();
-    e.descend({ ...descent(0), look: lookOf(k) });
+    e.descend({ ...descent(0), look: lookOf(k) }, { stratum: k + 1, turn: 0 });
     e.step(0, 1200, 800, false, true);
     e.step(1, 1200, 800);
     const before = slots(e).filter(([, , , , entry]) => entry !== GLINT_COLOR);
@@ -482,7 +519,7 @@ test('in the frozen stratum the motes drift down instead of rising', () => {
     return { down, up };
   };
   assert.equal(STRATA[2].look.fall, 1);
-  const rising = moves(0);
+  const rising = moves(1);
   const sinking = moves(2);
   assert.ok(rising.up > 10 && rising.down === 0, `rising: ${JSON.stringify(rising)}`);
   assert.ok(sinking.down > 10 && sinking.up === 0, `sinking: ${JSON.stringify(sinking)}`);
@@ -539,7 +576,30 @@ test('while the depth eases in, embers take the colour of the depth it heads for
   assert.equal(blue(), 0, 'some turned back on a new rise');
 });
 
-test('each pick sinks the scene a little further, smoothly, and then it holds still; never while holding still', () => {
+test('a new depth sinks the scene as its cards are dealt: not the first of a run, nor the same depth dealt again', () => {
+  assert.equal(dealtDeeper(undefined, { run: 1, depth: 1 }), false, 'the first cards of a run');
+  assert.equal(dealtDeeper(undefined, { run: 1, depth: 7 }), false, 'the first seen after a reload');
+  assert.equal(dealtDeeper({ run: 1, depth: 1 }, { run: 1, depth: 2 }), true);
+  assert.equal(dealtDeeper({ run: 1, depth: 4 }, { run: 1, depth: 4 }), false, 'a question set aside');
+  assert.equal(dealtDeeper({ run: 1, depth: 30 }, { run: 2, depth: 1 }), false, 'a new run');
+  // A plunge lasts about two seconds and travels further than half a screen.
+  assert.ok(PLUNGE_MS >= 1800 && PLUNGE_MS <= 2000 && PLUNGE_SINK >= 0.5);
+});
+
+test('the plunge gathers speed quickly and comes to rest slowly', () => {
+  const start = sinking.sink;
+  plunge();
+  const speeds: number[] = [];
+  for (let t = 0; t <= PLUNGE_MS + 32; t += 16) {
+    stepPlunge(10_000 + t, true);
+    speeds.push(sinking.speed);
+  }
+  const peak = speeds.indexOf(Math.max(...speeds));
+  assert.ok(peak * 16 < 0.45 * PLUNGE_MS && peak * 16 > 0.3 * PLUNGE_MS, `fastest at ${peak * 16} ms`);
+  assert.ok(Math.abs(sinking.sink - start - PLUNGE_SINK) < 1e-9);
+});
+
+test('each new depth sinks the scene a little further, smoothly, and then it holds still; never while holding still', () => {
   const start = sinking.sink;
   assert.equal(stepPlunge(0, true), false, 'nothing to do');
   plunge();

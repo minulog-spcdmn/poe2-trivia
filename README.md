@@ -201,14 +201,20 @@ the same thing for everyone.
     leaving a single lost life to the phial.
 - Every ten depths the descent enters a new zone, named after a Delve biome
   and a place of its own: lamps guttering in the Mines (1 to 10), glowing
-  cracks and heat shimmer in Magma Fissure (11), frost creeping from the
-  walls in Frozen Hollow (21), pulsing caps in Fungal Caverns (31), dusty
-  gold shafts in Vaal Outpost (41), coiling violet eddies in Abyssal Depths
-  (51), stone trunks in drifting mist in Petrified Forest (61), billowing
-  vapour in Sulphur Vents (71), far cold lights in Abyssal City (81) and
-  white-hot fire in Primeval Ruins (91). Each has its own light, smoke (four
+  cracks and heat shimmer in Magma Fissure (11; over its last depths the
+  magma cools, its glow dimming to a dull dark red and its flow slowing to
+  a stop as Frozen Hollow arrives), frost creeping from the walls in Frozen
+  Hollow (21), pulsing caps in Fungal Caverns (31), dusty gold shafts in
+  Vaal Outpost (41), coiling violet eddies in Abyssal Depths (51), stone
+  trunks in drifting mist in Petrified Forest (61), billowing vapour in
+  Sulphur Vents (71), far cold lights in Abyssal City (81) and white-hot
+  fire in Primeval Ruins (91). Each has its own light, smoke (four
   neighbouring hues that mix as they drift, as on the start page), embers
-  (their colour, how many, rising or sinking) and glints. Depth 1 is
+  (their colour and how many, all moving one way of the zone's own: dust
+  drifting down and a rare lamp spark in the Mines, embers rising fast on
+  the heat, snow falling, spores hanging in lazy curls, motes settling,
+  motes spiralling into the eddies, stone dust falling, puffs rising in
+  gusts, cold motes drifting, strong sparks flying up) and glints. Depth 1 is
   already the Mines; the surface is the start page. Past 100 the zones go
   on for ever, each pairing one deep zone's hall with another's embers,
   named after its hall's biome and never the same twice in a row.
@@ -225,9 +231,11 @@ the same thing for everyone.
   The scene's light is set so its average brightness only ever falls with
   depth, however bright a zone's fire or gold: it is estimated for each
   depth from what the backdrop draws, with a measured correction table.
-- Each card pick sinks the scene a little further: for 1.3 s the walls,
-  smoke and dust drift up past you, the embers streak up, and the dark
-  draws in and lets go. It is skipped with reduced motion or effects off.
+- Each new depth sinks the scene a little further as its cards are dealt
+  (not a run's first depth, after a reload, or the same depth dealt again):
+  for 1.9 s the walls, smoke and dust drift up past you, quick to start and
+  slow to settle, the embers streak up, and the dark draws in and lets go.
+  It is skipped with reduced motion or effects off.
 - As a question's clock runs out the dark draws the light in and dims the
   scene (never the panels or text), lifting at the reveal or when a flare
   burns. The ambience sinks with the depth, over a slow rumble. Leaving a
@@ -535,9 +543,10 @@ Everything is drawn in WebGL2 with float precision and dithered once at the
   draws.
   The shown depth eases along at about a second a depth, and a jump of
   more than three depths cross-fades straight there. `plunge()` (called by
-  `App.svelte` as a question follows the cards) sinks the scene, and the
-  backdrop steps it (`stepPlunge`). The backdrop's shaders and embers (`src/lib/backdropEmbers.ts`, a
-  small palette of zone colours, so a new colour spreads ember by ember),
+  `App.svelte` when a deeper depth's cards are dealt, `dealtDeeper`) sinks
+  the scene, and the backdrop steps it (`stepPlunge`). The backdrop's shaders and embers (`src/lib/backdropEmbers.ts`, a
+  small palette of zone colours, so a new colour spreads ember by ember,
+  each taking its zone's way of moving from `src/lib/emberMotion.ts` with it),
   the CSS fallback and the ambience (`depthAmbience` in `src/lib/sound.ts`)
   follow it. The clock's dark (`src/lib/darkness.ts`) is set by the timer
   ring and drawn by the backdrop, with a thin late shade at the screen's

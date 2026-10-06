@@ -14,7 +14,7 @@ import { DROPS_PER_MASK, MAX_MASKS, measureDrops, releaseAllDrops } from './back
 import { MAX_LIGHTS, packLights, stepHomeScene, stepMood } from './lights';
 import { fxActive, fxUserOn, onFxChange } from './fx/core';
 import { COLUMNS, GLINT_COLOR, PALETTE, ROWS, SIZE_STRIDE, SLOTS, TILES, embers } from './backdropEmbers';
-import { BLOBS, ENV, currentDescent, sinking, smokeOf, snapDescent, stepDescent, stepPlunge, targetDescent, type Blob } from './descent';
+import { BLOBS, ENV, MAGMA_DIM, currentDescent, magmaCooling, sinking, smokeOf, snapDescent, stepDescent, stepPlunge, targetDescent, type Blob } from './descent';
 import { pressureLevel } from './darkness';
 import { DIALOG_BLUR, DIALOG_DIM, openDialog } from './behindDialog';
 
@@ -61,7 +61,8 @@ uniform vec3 uHaze;
 uniform vec4 uShade;
 uniform vec4 uMist;
 // How much of each stratum's environment shows (ENVIRONMENTS in
-// lib/descent.ts, four to a vec4); where the void's two eddies turn (x, y
+// lib/descent.ts, four to a vec4; the last two the magma's cooling and its
+// flow's clock, see environments()); where the void's two eddies turn (x, y
 // each, fractions of the screen; the embers swirl round the same); and the
 // dark closing in from the edges: (depth, the question's clock).
 uniform vec4 uEnv[3];
@@ -71,7 +72,7 @@ uniform vec2 uDark;
 // And in one vector (uniform space is tight, see maxElements): how bright
 // the stratum's light is drawn (descent.ts's light times the stratum's
 // own, lightK: so the scene only ever darkens deeper down); how far the
-// scene has sunk (CSS px; each pick of a card sinks it, see plunge in
+// scene has sunk (CSS px; each new depth sinks it, see plunge in
 // descent.ts): the walls' and the smoke's noise is read that much further
 // down, the nearer the more; and how bright the stratum's features burn
 // (descent.ts's features).
@@ -163,11 +164,23 @@ vec3 environments(vec3 col, vec2 p, vec2 q, vec2 xy, float S, float W, float H, 
   // middle: jagged, like a coastline, and never closed into a shape. As
   // they come they open and heat up; as they go they cool, the white heat
   // first, then the orange, leaving dull red seams that narrow and darken.
+  // Over the Magma Fissure's last depths the magma cools as well (e2.z,
+  // magmaCooling in lib/descent.ts): its glow dims and turns from orange
+  // toward a dull, dark red (its brightness, luma, falling as magmaHeat
+  // has it, which the scene's light makes way for), and its flow slows to a
+  // stop, on a clock of its own (e2.w) that runs slower as it cools.
   if (e0.y > 0.0) {
     float e = e0.y;
+    float cool = e2.z;
+    float ft = e2.w;
+    float hot = 1.0 - ${MAGMA_DIM.toFixed(3)} * cool;
+    vec3 orange = rgb(255.0, 70.0, 14.0);
+    vec3 glow = mix(orange, rgb(150.0, 22.0, 6.0), cool);
+    vec3 luma = vec3(0.2126, 0.7152, 0.0722);
+    glow *= hot * dot(orange, luma) / dot(glow, luma);
     vec2 m = vec2(q.x * 4.0, q.y * 2.0);
     m += 0.4 * vec2(vnoise(m * 0.7 + 4.0), vnoise(m * 0.7 - 2.0));
-    m.x += 0.04 * (vnoise(vec2(q.x * 9.0, q.y * 6.0 + tm * 1.4)) - 0.5);
+    m.x += 0.04 * (vnoise(vec2(q.x * 9.0, q.y * 6.0 + ft * 1.4)) - 0.5);
     float n1 = fbm(m);
     float n2 = fbm(m * 1.9 + 7.7);
     float open = 0.35 + 0.65 * e;
@@ -175,11 +188,11 @@ vec3 environments(vec3 col, vec2 p, vec2 q, vec2 xy, float S, float W, float H, 
     float c2 = clamp(1.0 - abs(n2 - 0.5) * 12.0 / open, 0.0, 1.0) * smoothstep(0.15, 0.0, abs(n1 - 0.5)) * e;
     float crack = c1 * c1 * c1 + 0.8 * c2 * c2 * c2;
     float low = 0.25 + 0.75 * smoothstep(0.1, 1.0, xy.y) + 0.3 * side;
-    float flow = 0.35 + 0.65 * vnoise(vec2(m.x * 1.2, m.y * 1.6 + tm * 0.4));
+    float flow = 0.35 + 0.65 * vnoise(vec2(m.x * 1.2, m.y * 1.6 + ft * 0.4));
     float heat = crack * low * flow;
     col *= 1.0 - 1.6 * e * (1.0 - e) * c1 * c1;
-    col += lit * (rgb(255.0, 70.0, 14.0) * heat * 0.45 * sqrt(e) + rgb(255.0, 215.0, 140.0) * pow(heat, 3.0) * 0.45 * e
-      + rgb(150.0, 18.0, 4.0) * (smoothstep(0.2, 0.0, abs(n1 - 0.5)) * 0.1 + 0.25 * c1 * (1.0 - e)) * low * flow * sqrt(e));
+    col += lit * (glow * heat * 0.45 * sqrt(e) + hot * rgb(255.0, 215.0, 140.0) * pow(heat, 3.0) * 0.45 * e
+      + hot * rgb(150.0, 18.0, 4.0) * (smoothstep(0.2, 0.0, abs(n1 - 0.5)) * 0.1 + 0.25 * c1 * (1.0 - e)) * low * flow * sqrt(e));
   }
 
   // Frozen Hollow: frost creeping in from the walls and the ceiling, a
@@ -983,6 +996,8 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   const uGlowCol = S('uGlowCol');
   const uScene = S('uScene');
   const env = new Float32Array(12);
+  /** The magma's flow's clock (s): it runs slower as the magma cools, and stops (see environments() in the shader). */
+  let magmaClock = 0;
   const uBlobColor = S('uBlobColor');
   gl.useProgram(soft);
   gl.uniform3fv(S('uBlobB'), BLOBS.flatMap((b) => b.reach));
@@ -1132,6 +1147,9 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     gl!.uniform4f(uMist, look.mist[0] / 255, look.mist[1] / 255, look.mist[2] / 255, look.mistK);
     // Its environment, and the dark closing in with the depth and the clock.
     for (let i = 0; i < ENV; i++) env[i] = look.env[i] < 0.002 ? 0 : look.env[i];
+    // And after them (e2.z and e2.w in the shader) the magma's cooling and its flow's clock.
+    env[ENV] = magmaCooling(scene.stratum, scene.turn);
+    env[ENV + 1] = still ? 0 : magmaClock;
     gl!.uniform4fv(uEnv, env);
     gl!.uniform4fv(uEddy, embers.eddies);
     // A plunge draws the dark in and lets it go again as the scene sinks.
@@ -1270,7 +1288,12 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     // (A frame's time can come before the last one's; it never runs backwards here.)
     const dt = Math.max(0, Math.min(0.1, (now - lastStep) / 1000));
     const still = calm();
-    if (!still) clock += 1000 * dt;
+    if (!still) {
+      clock += 1000 * dt;
+      // (The magma flows as fast as it is hot: slower as it cools, still once it has.)
+      const scene = currentDescent();
+      magmaClock += dt * (1 - magmaCooling(scene.stratum, scene.turn));
+    }
     lastStep = now;
     const nowS = now / 1000;
     const lights = packLights(lightA, lightC, nowS);
@@ -1293,7 +1316,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
       if (still) dirty = true;
     }
     embers.descend(currentDescent(), targetDescent());
-    // A card picked: the scene sinks a little further (plunge in descent.ts),
+    // A new depth dealt: the scene sinks a little further (plunge in descent.ts),
     // the embers and glints carried up with the walls; never while holding still.
     const sunk = sinking.sink;
     if (stepPlunge(now, !still)) {
@@ -1301,7 +1324,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
       if (Math.abs(px) < viewH) embers.rise(px, canvas.clientHeight);
       dirty = true;
     }
-    embers.streak = 3 * sinking.speed;
+    embers.streak = Math.min(1.6, 2 * sinking.speed);
     // Arrived at a depth: the embers still in the old colour take the new one (after a rejoin, all of them).
     if (wasDescending && !descending) embers.recolor();
     wasDescending = descending;
@@ -1414,3 +1437,6 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
 
   return stop;
 }
+
+/** The shaders' sources, for a compile and link check: the vertex shader, the soft light's, and the main pass with it split off and without. */
+export const backdropShaders = (maxElements: number) => ({ vert: VERT, smooth: SMOOTH_FRAG, split: frag(maxElements, true), whole: frag(maxElements, false) });
