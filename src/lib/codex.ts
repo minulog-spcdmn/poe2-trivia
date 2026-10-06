@@ -25,13 +25,23 @@
 // struck an option (or let the clock run out while standing), and what that
 // cost them is their own hit (the reveal's `hits`). Someone else clearing it
 // first only adds "seen".
+// Online, each Delve answer also notes whose it was (`who`): two tabs of one
+// browser in the same room play two players, and a run is told back from its
+// own player's answers.
+//
 // The fields Delve added are optional, so codexes written before them read as
-// they were and the version stays. A stored codex this build can't read is
-// never written over (lib/keepAside.ts).
+// they were and the version stays. They live under a name of their own
+// (`codex2`), though: a build from before them, still open in a tab after an
+// update, reads the codex without them and writes back what it read, so
+// under the old name (`codex`) every Delve field would go the first time it
+// recorded an answer. The old name is only ever read, as where the codex
+// starts from while the new one is still missing; nothing writes it again,
+// and those builds never touch the new one. A stored codex this build can't
+// read is never written over (lib/keepAside.ts).
 
 import { difficultyOf, isFake, type Difficulty, type GameState, type QuestionMode } from './game.ts';
 import { ITEM_KINDS, delveTier, isGroupRun, type FindKind, type ItemKind } from './delve.ts';
-import { makeRoom } from './keepAside.ts';
+import { clearAside, makeRoom } from './keepAside.ts';
 import { readStored, removeStored, storeKey, tryReadStored, writeStored } from './storage.ts';
 
 export interface Tally {
@@ -110,6 +120,8 @@ export interface Answer {
   blasted?: true;
   /** Delve: answered in a run together. */
   team?: true;
+  /** Delve online: the player who answered (two tabs of one browser in one room play two). */
+  who?: string;
 }
 
 /** Lives a logged answer cost: one a wrong Delve answer, none if wards took it, a cave-in's own count. */
@@ -169,6 +181,8 @@ export interface Encounter {
     flared?: true;
     /** A run together. */
     team?: true;
+    /** This device's player, online. */
+    who?: string;
   };
   /** Present when this device's player answered (or let their turn's time run out). */
   answer?: {
@@ -181,8 +195,10 @@ export interface Encounter {
   };
 }
 
-const CODEX = 'codex';
+const CODEX = 'codex2';
 export const CODEX_KEY = storeKey(CODEX);
+/** Where builds from before the Delve fields keep the codex: only read, to start the new one from. */
+const LEGACY = 'codex';
 /** Bump when the stored shape changes incompatibly. */
 export const CODEX_VERSION = 1;
 export const LOG_LIMIT = 2000;
@@ -216,6 +232,7 @@ export function encounterAt(s: GameState, me: string | null, hotSeat: boolean, m
       ...(r.caveIn && r.lost ? { lost: { lives: r.lost.lives, wards: r.lost.wards } } : {}),
       ...(r.gained ? { gained: r.gained } : {}),
       ...(q.flared ? { flared: true as const } : {}),
+      ...(me && !hotSeat ? { who: me } : {}),
     };
   let picked: number | null;
   let ok: boolean;
@@ -330,6 +347,7 @@ export function record(c: Codex, e: Encounter): Codex {
     ...(dv?.lost && !a.ok ? { lives: lives, wards: wardsBroke } : {}),
     ...(dv?.blasted ? { blasted: true as const } : {}),
     ...(dv?.team ? { team: true as const } : {}),
+    ...(dv?.who ? { who: dv.who } : {}),
   };
   next.log = [...c.log, log].slice(-LOG_LIMIT);
   return next;
@@ -345,6 +363,7 @@ function tally(v: unknown): Tally {
   const n = count(v.n);
   return { n, ok: Math.min(n, count(v.ok)) };
 }
+const isWho = (v: unknown): v is string => typeof v === 'string' && v.length > 0 && v.length <= 64;
 const isMode = (v: unknown): v is QuestionMode => v === 'name' || v === 'art';
 const isFind = (v: unknown): v is FindKind => v === 'azurite' || v === 'flare' || v === 'dynamite';
 /** Lives or wards one answer can take: a cave-in takes at most two. */
@@ -423,6 +442,7 @@ export function parseCodex(raw: string | null): Codex | null {
         ...(d && !a.ok && isLoss(a.lives) && isLoss(a.wards) ? { lives: a.lives as number, wards: a.wards as number } : {}),
         ...(d && a.blasted === true ? { blasted: true as const } : {}),
         ...(d && a.team === true ? { team: true as const } : {}),
+        ...(d && run !== null && isWho(a.who) ? { who: a.who } : {}),
       });
     }
   if (isObj(v.byDifficulty))
@@ -446,9 +466,12 @@ export const serializeCodex = (c: Codex) => JSON.stringify({ v: CODEX_VERSION, .
 
 // ---- storage ---------------------------------------------------------------
 
+/** What is stored: the codex, or while there is none yet, the one under the old name (null for neither). */
+const storedRaw = (raw: string | null) => raw ?? readStored(LEGACY);
+
 /** The stored codex (empty when there is none, or it can't be read; never written over for that). Always read fresh: another tab may have added to it. */
 export function loadCodex(): Codex {
-  return parseCodex(readStored(CODEX)) ?? emptyCodex();
+  return parseCodex(storedRaw(readStored(CODEX))) ?? emptyCodex();
 }
 
 /** Whether it could be stored. When storage is full, the older half of the log goes first. */
@@ -463,13 +486,23 @@ function write(c: Codex): boolean {
 export function recordEncounter(e: Encounter) {
   const raw = tryReadStored(CODEX);
   if (raw === undefined) return;
-  const stored = parseCodex(raw);
+  // The first time, it starts from the old name's (left as it is).
+  const stored = parseCodex(storedRaw(raw));
   if (raw && !stored && !makeRoom(CODEX, raw, CODEX_VERSION)) return;
   const prev = stored ?? emptyCodex();
   const next = record(prev, e);
   if (next !== prev) write(next);
 }
 
+/**
+ * Erases the codex, the old name's it started from and what was kept aside.
+ * An empty codex is left in its place, so an older build's, written again
+ * meanwhile under the old name, is never taken up.
+ */
 export function resetCodex() {
-  removeStored(CODEX);
+  for (const name of [CODEX, LEGACY]) {
+    removeStored(name);
+    clearAside(name);
+  }
+  writeStored(CODEX, serializeCodex(emptyCodex()));
 }

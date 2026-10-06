@@ -7,9 +7,18 @@
 // The stored shape only grows: fields added later are optional and, when
 // missing, filled in from what is there (records written before tallies
 // existed get them from their runs and bests). The version only changes for a
-// shape older builds would misread. Records this build can't read are never
-// written over (lib/keepAside.ts): a newer build's stay untouched, anything
-// else is kept aside before new records start.
+// shape older builds would misread: version 2 since runs "in a group" became
+// runs "together" (keys `:together`, where version 1 had `:group`). Records
+// this build can't read are never written over (lib/keepAside.ts): a newer
+// build's stay untouched, anything else is kept aside before new records
+// start.
+//
+// They live under a name of their own (`delve2`). Builds from before version
+// 2 read the records without a version check of their own and write back
+// what they read, so a tab of one still open would wipe them under the old
+// name (`delve`), and a version they don't know they would take for none at
+// all. The old name is only ever read, as where the records start from while
+// the new one is still missing; nothing writes it again.
 //
 // Whose run is it? Online, the player this browser seats: two tabs of one
 // browser in the same room keep a run each (`who`). On one device, its one
@@ -35,13 +44,15 @@
 
 import { DELVE_LIVES, DELVE_RULESET, delveStandings, fellAt, isGroupRun, standingIds, teamDepth } from './delve.ts';
 import type { GameState } from './game.ts';
-import { makeRoom } from './keepAside.ts';
+import { clearAside, makeRoom } from './keepAside.ts';
 import { readStored, removeStored, storeKey, tryReadStored, writeStored } from './storage.ts';
 
 /** Where the records live (the beta keeps its own); the whole key, as storage events name it. */
-const DELVE_RECORD_NAME = 'delve';
+const DELVE_RECORD_NAME = 'delve2';
 export const DELVE_RECORD_KEY = storeKey(DELVE_RECORD_NAME);
-const VERSION = 1;
+/** Where builds from before version 2 keep them: only read, to start from. */
+const LEGACY = 'delve';
+const VERSION = 2;
 /** Runs kept in the list (bests and tallies are kept apart, however old). */
 export const RUN_LIMIT = 40;
 /**
@@ -158,13 +169,18 @@ function selfIn(s: GameState, me: string | null, hotSeat: boolean): string | nul
   return me && s.players.some((p) => p.id === me) ? me : null;
 }
 
-/** lib/codex.ts keeps the codex under this name. */
-const CODEX_NAME = 'codex';
+/**
+ * lib/codex.ts keeps the codex under this name (or, before it first writes
+ * there, the old one). Read raw here, so the game's first download doesn't
+ * carry the codex.
+ */
+export const CODEX_NAMES = ['codex2', 'codex'] as const;
 
 /**
  * Wards that broke in `self`'s place in the run: those of the answers the
- * codex logged for it, and of the question just revealed (its answer may be
- * on its way to the codex still).
+ * codex logged for it (theirs: two tabs of one browser in one room play
+ * two), and of the question just revealed (its answer may be on its way to
+ * the codex still).
  */
 function wardsIn(s: GameState, self: string): number {
   const id = s.delve!.startedAt;
@@ -172,10 +188,11 @@ function wardsIn(s: GameState, self: string): number {
   const now = r ? s.question?.askedAt : undefined;
   let n = 0;
   try {
-    const v: unknown = JSON.parse(readStored(CODEX_NAME) ?? 'null');
+    const v: unknown = JSON.parse(readStored(CODEX_NAMES[0]) ?? readStored(CODEX_NAMES[1]) ?? 'null');
     const log = isObj(v) && Array.isArray(v.log) ? v.log : [];
     for (const a of log) {
       if (!isObj(a) || a.run !== id || a.depth === undefined || a.ok !== false || (now !== undefined && a.t === now)) continue;
+      if (a.who !== undefined && a.who !== self) continue;
       n += a.wards === 1 || a.wards === 2 ? a.wards : a.wards === undefined && a.warded === true ? 1 : 0;
     }
   } catch {
@@ -385,6 +402,9 @@ function parseLosses(v: unknown, depth: number, left: boolean, team: boolean): n
   return out.length === DELVE_LIVES && out.at(-1) !== depth ? undefined : out;
 }
 
+/** A group run from before co-op (one device's, or one with a winner): never released, dropped. */
+const preCoop = (v: Record<string, unknown>) => v.hot === true || (typeof v.players === 'number' && v.players > 1 && !Array.isArray(v.perished));
+
 function parseRun(v: unknown): DelveRun | null {
   if (!isObj(v)) return null;
   const id = int(v.id, 0, Number.MAX_SAFE_INTEGER);
@@ -394,8 +414,7 @@ function parseRun(v: unknown): DelveRun | null {
   const ruleset = int(v.ruleset, 1, 1e6);
   if (id === null || at === null || depth === null || players === null || ruleset === null) return null;
   const team = players > 1;
-  // A group run from before co-op (one device's, or one with a winner): never released, dropped.
-  if (v.hot === true || (team && !Array.isArray(v.perished))) return null;
+  if (preCoop(v)) return null;
   const left = v.left === true;
   const losses = parseLosses(v.losses, depth, left, team);
   const who = typeof v.who === 'string' && v.who.length > 0 && v.who.length <= 64 ? v.who : null;
@@ -477,7 +496,15 @@ function known(r: DelveRecords): DelveRun[] {
   return [...byKey.values()].sort((a, b) => a.at - b.at);
 }
 
-/** Stored records, cleaned up; null when missing, malformed or from another version. */
+/** Where the dropped group runs among these went: their steps of the frontier, as `${depth}:${at}`. */
+function droppedSteps(...lists: unknown[]): Set<string> {
+  const out = new Set<string>();
+  for (const v of lists.flatMap((l) => (Array.isArray(l) ? l : isObj(l) ? Object.values(l) : [])))
+    if (isObj(v) && preCoop(v)) out.add(`${v.depth}:${v.at}`);
+  return out;
+}
+
+/** Stored records, cleaned up; null when missing, malformed or from a version this build doesn't know (version 1 is read as it was). */
 export function parseRecords(raw: string | null): DelveRecords | null {
   if (!raw) return null;
   let v: unknown;
@@ -486,7 +513,7 @@ export function parseRecords(raw: string | null): DelveRecords | null {
   } catch {
     return null;
   }
-  if (!isObj(v) || v.v !== VERSION) return null;
+  if (!isObj(v) || (v.v !== 1 && v.v !== VERSION)) return null;
   const r = emptyRecords();
   if (Array.isArray(v.runs)) r.runs = v.runs.map(parseRun).filter((x): x is DelveRun => !!x).slice(-RUN_LIMIT);
   if (isObj(v.bests))
@@ -510,7 +537,11 @@ export function parseRecords(raw: string | null): DelveRecords | null {
   // Each stored step, and every known run (records written before these were
   // kept, or a run they missed): a new deepest wherever one went deeper.
   const runs = known(r);
-  r.frontier = frontierOf([...runs.map((run) => ({ depth: run.depth, at: run.at })), ...parseSteps(v.frontier)]);
+  // Not those of the group runs dropped: they were never released.
+  const dropped = droppedSteps(v.runs, v.bests);
+  const kept = new Set(runs.map((run) => `${run.depth}:${run.at}`));
+  const steps = parseSteps(v.frontier).filter((f) => !dropped.has(`${f.depth}:${f.at}`) || kept.has(`${f.depth}:${f.at}`));
+  r.frontier = frontierOf([...runs.map((run) => ({ depth: run.depth, at: run.at })), ...steps]);
   const stored = isObj(v.climbs) ? v.climbs : {};
   const keys = new Set([...Object.keys(r.bests), ...Object.keys(stored).filter((k) => KEY.test(k))]);
   for (const k of keys) {
@@ -525,9 +556,20 @@ export function parseRecords(raw: string | null): DelveRecords | null {
 
 export const serializeRecords = (r: DelveRecords) => JSON.stringify({ v: VERSION, ...r });
 
+/** What is stored: the records, or while there are none yet, those under the old name (null for neither). */
+const storedRaw = (raw: string | null) => raw ?? readStored(LEGACY);
+
 /** The stored records (empty when there are none or they can't be read; never written over for that). Read fresh: another tab may have added to them. */
 export function loadRecords(): DelveRecords {
-  return parseRecords(readStored(DELVE_RECORD_NAME)) ?? emptyRecords();
+  return parseRecords(storedRaw(readStored(DELVE_RECORD_NAME))) ?? emptyRecords();
+}
+
+/** Whether they could be stored. When storage is full, the oldest runs of the list go first (the bests, tallies and climbs stay). */
+function write(r: DelveRecords): boolean {
+  for (let runs = r.runs; ; runs = runs.slice(Math.ceil(runs.length / 2))) {
+    if (writeStored(DELVE_RECORD_NAME, serializeRecords({ ...r, runs }))) return true;
+    if (!runs.length) return false;
+  }
 }
 
 /**
@@ -538,11 +580,12 @@ export function loadRecords(): DelveRecords {
 export function recordRun(run: DelveRun): Measure | null {
   const raw = tryReadStored(DELVE_RECORD_NAME);
   if (raw === undefined) return null;
-  const stored = parseRecords(raw);
+  // The first time, they start from the old name's (left as they are).
+  const stored = parseRecords(storedRaw(raw));
   if (raw && !stored && !makeRoom(DELVE_RECORD_NAME, raw, VERSION)) return null;
   const was = stored ?? emptyRecords();
   const { records, previousBest, best } = addRun(was, run);
-  if (records !== was && !writeStored(DELVE_RECORD_NAME, serializeRecords(records))) return null;
+  if (records !== was && !write(records)) return null;
   return { previousBest, best };
 }
 
@@ -556,6 +599,15 @@ export function recordLeft(s: GameState | null, me: string | null, hotSeat = fal
   if (run) recordRun(run);
 }
 
+/**
+ * Erases the records, the old name's they started from and what was kept
+ * aside. Empty records are left in their place, so an older build's, written
+ * again meanwhile under the old name, are never taken up.
+ */
 export function resetRecords() {
-  removeStored(DELVE_RECORD_NAME);
+  for (const name of [DELVE_RECORD_NAME, LEGACY]) {
+    removeStored(name);
+    clearAside(name);
+  }
+  writeStored(DELVE_RECORD_NAME, serializeRecords(emptyRecords()));
 }

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { engine } from '../../lib/session.svelte';
   import type { Answer } from '../../lib/codex';
-  import { runLog, runStory, zoneOf, type RulesGroup } from '../../lib/codexStats';
+  import { answersFor, runLog, runStory, zoneOf, type RulesGroup } from '../../lib/codexStats';
   import { RUN_LIMIT, isTogether, runKey, type DelveRun } from '../../lib/delveRecord';
   import { itemImage } from '../../lib/ui';
   import { backdropShadow } from '../../lib/backdropShadow';
@@ -34,7 +34,7 @@
 </script>
 
 {#snippet row(r: DelveRun)}
-  {@const story = runStory(r, byRun.get(r.id) ?? [], engine.byId).lives}
+  {@const story = runStory(r, answersFor(byRun, r), engine.byId).lives}
   {@const lives = story.length > MAX_LIVES ? story.slice(0, MAX_LIVES - 1) : story}
   <tr class:left={r.left}>
     <td class="num depth">{r.depth}</td>

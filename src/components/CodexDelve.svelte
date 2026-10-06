@@ -8,6 +8,7 @@
     MIN_RUNS,
     ZONE_MIN_RUNS,
     answersByRun,
+    answersFor,
     answersOf,
     delveDeaths,
     delveSummary,
@@ -39,7 +40,9 @@
   // and every run in the Collection's table. Alone and together are never
   // summed: alone leads (together, before a run alone), and each figure says
   // which it counts. Under the current rules only (runs under others are only
-  // listed). Zones ahead are never named: they are a surprise.
+  // listed), but for what the codex keeps by item or in its log, not by run:
+  // what kills you, the deadliest items, finds and wards (their notes say
+  // so). Zones ahead are never named: they are a surprise.
   // codexStats.ts says what each number means.
   let { codex, records, onopen, onbegin }: { codex: Codex; records: DelveRecords; onopen: (item: Item) => void; onbegin: () => void } = $props();
 
@@ -66,10 +69,10 @@
   const teamed = $derived(together.runs > 0 || !!together.best);
 
   const others = $derived(otherRules(records));
-  /** Anything at all, under any rules. */
-  const anything = $derived(records.runs.length > 0 || records.frontier.length > 0 || Object.keys(records.bests).length > 0);
   /** Anything under the current rules. */
   const current = $derived(solo.runs + together.runs > 0 || !!solo.best || !!together.best);
+  /** Anything to show, under any rules (the run log lists the others'). */
+  const anything = $derived(current || others.length > 0);
   const allRuns = $derived(solo.runs + together.runs);
 
   const best = $derived(main.deepest);
@@ -80,7 +83,7 @@
   /** Alone and together, newest first. */
   const runs = $derived([...runsOf(records, 'solo'), ...runsOf(records, 'together')].sort((a, b) => b.at - a.at));
   const last = $derived(runs[0] ?? null);
-  const story = $derived(last ? runStory(last, byRun.get(last.id) ?? [], engine.byId) : null);
+  const story = $derived(last ? runStory(last, answersFor(byRun, last), engine.byId) : null);
   const lastOf = $derived(last && isTogether(last) ? together : solo);
 
   // ---- where you fall: the leading kind's runs, your own lives ----
@@ -105,7 +108,7 @@
   const teamRows = $derived.by(() => {
     const t = together;
     const out: Row[] = [];
-    if (alone && t.median !== null) out.push({ name: 'Usual depth', value: usual(t.median), note: [[0, 'half your runs together end deeper']] });
+    if (alone && t.median !== null) out.push({ name: 'Usual depth', value: usual(t.median), note: [[0, 'at least half your runs get this deep']] });
     if (alone) out.push({ name: 'Lives lost', value: fmt(t.lives), note: t.warded ? [[t.warded, `more saved by ${word(t.warded, 'a ward', 'wards')}`]] : [[0, 'your own, in every run together']] });
     out.push({
       name: 'Perished',
@@ -215,6 +218,7 @@
     <section class="panel" use:backdropShadow={{ fill: 'linear' }} aria-labelledby="find-h-{sc.label}">
       <header><h2 id="find-h-{sc.label}">Finds and wards</h2><span class="col-label">{sc.label}</span></header>
       {@render rowList(sc.rows)}
+      <p class="foot">From your latest answers, under any rules.</p>
     </section>
   {/each}
 {/snippet}
@@ -264,7 +268,7 @@
               <span class="medal-zone">{zoneOf(best).name}</span>
               <span class="medal-note">{kindWord}</span>
             {:else}
-              <span class="medal-note">{main.left ? 'no fall yet' : kindWord}</span>
+              <span class="medal-note">{main.left ? (alone ? 'no fall yet' : 'not perished yet') : kindWord}</span>
             {/if}
           </div>
         </div>
@@ -274,7 +278,7 @@
             <span class="stat-label">Usual depth</span>
             <span class="stat-value">{main.median === null ? '?' : usual(main.median)}</span>
             <span class="stat-note"
-              >{#if main.median === null}after <span class="n">{MIN_RUNS}</span> runs {kindWord}{:else}half your runs {kindWord} end deeper{/if}</span
+              >{#if main.median === null}once <span class="n">{MIN_RUNS}</span> runs {kindWord} have ended{:else}at least half your runs {kindWord} get this deep{/if}</span
             >
           </div>
           <div class="stat">
@@ -289,7 +293,7 @@
 
       {#if last && story}
         <div in:fly={rise(220)}>
-          <DelveLastRun run={last} {story} median={lastOf.median} best={lastOf.deepest} {onopen} />
+          <DelveLastRun run={last} {story} median={lastOf.median} best={lastOf.best} {onopen} />
         </div>
       {/if}
 
@@ -314,7 +318,7 @@
             {#if worstCat}
               <p class="foot">
                 <b>{worstCat.category}</b> cost you the most for each answer: <span class="n">{worstCat.lives}</span>
-                {word(worstCat.lives, 'life', 'lives')} in <span class="n">{worstCat.n}</span> answers. Your answers alone and together; a cave-in counts two.
+                {word(worstCat.lives, 'life', 'lives')} in <span class="n">{worstCat.n}</span> answers. Your answers alone and together, under any rules; a cave-in counts two.
               </p>
             {/if}
           {/if}
@@ -334,6 +338,7 @@
                 </li>
               {/each}
             </ul>
+            <p class="foot">Your answers alone and together, under any rules.</p>
           {:else}
             <p class="hint">Items that cost you lives, from {ITEM_MIN} answers each, show up here.</p>
           {/if}

@@ -130,17 +130,19 @@ export function codexStats(c: Codex, items: Item[], categories: string[], limit 
 //   (see delveRecord.ts). Both count as runs that got that deep.
 // - A best is the deepest end; a run left never is one. Together, the depth
 //   is the team's.
-// - The usual depth is the median depth runs ended at (half end deeper, half
-//   shallower), from MIN_RUNS ends.
+// - The usual depth is the median depth runs ended at (at least half end that
+//   deep or deeper, at least half that deep or shallower), from MIN_RUNS ends
+//   (runs left don't count toward it).
 // - Lives lost are this player's own, and the wards saved beside them are
 //   counted over the same runs (each run keeps the wards that broke in it).
 // - Where you fall: lives lost in a zone, and the runs that reached it.
 // - Together: the times you perished, the lives you gave a teammate, and the
 //   times one brought you back.
 // - What kills you: lives lost and answers, from every Delve answer (alone or
-//   together: the codex keeps answers by item, not by run), a cave-in two.
+//   together, under any rules: the codex keeps answers by item, not by run),
+//   a cave-in two.
 // - Finds and wards: from the answers the codex logged, alone and together
-//   apart.
+//   apart, under any rules (the log doesn't keep a run's rules).
 
 /** Most stats wait for this many runs: fewer say little. */
 export const MIN_RUNS = 3;
@@ -494,7 +496,7 @@ export function findStats(answers: Iterable<Answer>): FindStats {
 /** This player's logged Delve answers of one kind of run: alone, or together. */
 export const answersOf = (log: Answer[], kind: DelveKind) => log.filter((a) => a.depth !== undefined && !!a.team === (kind === 'together'));
 
-/** This player's Delve answers by run (its id), oldest first. */
+/** This player's Delve answers by run (its id), oldest first: a run's own with answersFor. */
 export function answersByRun(c: Codex): Map<number, Answer[]> {
   const out = new Map<number, Answer[]>();
   for (const a of c.log) {
@@ -504,6 +506,16 @@ export function answersByRun(c: Codex): Map<number, Answer[]> {
     else out.set(a.run, [a]);
   }
   return out;
+}
+
+/**
+ * A run's answers: online only its player's (two tabs of one browser in one
+ * room play two), and those that don't say whose (logged before the log kept
+ * it, or on one device).
+ */
+export function answersFor(byRun: Map<number, Answer[]>, run: DelveRun): Answer[] {
+  const all = byRun.get(run.id) ?? [];
+  return run.who ? all.filter((a) => a.who === undefined || a.who === run.who) : all;
 }
 
 export interface LifeLost {
@@ -528,7 +540,10 @@ export function runStory(run: DelveRun, answers: Answer[], byId: Map<string, Ite
     const n = answerLives(a);
     return Array.from({ length: n }, () => ({ depth: a.depth!, id: a.id, caveIn: n > 1, used: false }));
   });
-  const lives = (run.losses ?? (run.left ? [] : [run.depth])).map((depth) => {
+  // Without the losses (a run from before they were kept, or whose losses couldn't be read):
+  // alone a fall's last life, at its depth; together the times they perished (the team's depth isn't theirs).
+  const known = run.losses ?? (isTogether(run) ? (run.perished ?? []) : run.left ? [] : [run.depth]);
+  const lives = known.map((depth) => {
     const slot = slots.find((s) => !s.used && s.depth === depth);
     if (slot) slot.used = true;
     return { depth, zone: zoneOf(depth), item: (slot && byId.get(slot.id)) || null, caveIn: !!slot?.caveIn };

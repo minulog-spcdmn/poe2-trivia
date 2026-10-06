@@ -1,15 +1,16 @@
 <script lang="ts">
   import { DELVE_LIVES } from '../../lib/delve';
   import { zoneOf, type RunStory } from '../../lib/codexStats';
-  import { isTogether, type DelveRun } from '../../lib/delveRecord';
+  import { isTogether, runKey, type DelveRun } from '../../lib/delveRecord';
   import { itemImage } from '../../lib/ui';
   import type { Item } from '../../lib/game';
 
   // The latest run in one row: how deep, where, when and how it compares
-  // (with runs of its kind: `median` and `best` are alone's or together's),
-  // together your part in it, and a small picture of each item that cost you
-  // a life, its depth beneath.
-  let { run, story, median, best, onopen }: { run: DelveRun; story: RunStory; median: number | null; best: number | null; onopen: (item: Item) => void } =
+  // (with runs of its kind: `median` and `best` are alone's or together's;
+  // only the best run itself is "your deepest", one as deep is level with
+  // it), together your part in it, and a small picture of each item that cost
+  // you a life, its depth beneath.
+  let { run, story, median, best, onopen }: { run: DelveRun; story: RunStory; median: number | null; best: DelveRun | null; onopen: (item: Item) => void } =
     $props();
 
   const when = (t: number) => new Date(t).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
@@ -22,7 +23,8 @@
   const kept = $derived(run.left ? Math.max(0, DELVE_LIVES - (run.losses?.length ?? story.lives.length) - (run.given ?? 0) + (run.revived ?? 0)) : 0);
   const how = $derived(run.left ? 'left' : team ? 'perished together' : 'perished');
   const diff = $derived(median === null || run.left ? null : run.depth - median);
-  const isBest = $derived(!run.left && best === run.depth);
+  const isBest = $derived(!run.left && !!best && runKey(best) === runKey(run));
+  const level = $derived(!run.left && !isBest && best?.depth === run.depth);
   /** Finds it took, in a few words. */
   const found = $derived.by(() => {
     const f = story.finds.finds;
@@ -46,10 +48,12 @@
   <div class="text">
     <p class="lead">
       {who} • {how} in <span class="zname">{zone.name}</span>{#if run.left && kept}, <span class="n">{kept}</span>
-        {kept === 1 ? 'life' : 'lives'} to spare{/if}{#if isBest}{' • '}<span class="up">your deepest</span>{/if}
+        {kept === 1 ? 'life' : 'lives'} to spare{/if}{#if isBest}{' • '}<span class="up">your deepest</span>{:else if level}{' • '}<span class="up"
+          >level with your deepest</span
+        >{/if}
     </p>
     <p class="note">
-      <span class="n">{when(run.at)}</span>{#if diff !== null && median !== null && !isBest}{' • '}{#if diff > 0}<span class="n">{usual(diff)}</span> deeper than{:else if diff < 0}<span class="n">{usual(-diff)}</span> short of{:else}right at{/if}
+      <span class="n">{when(run.at)}</span>{#if diff !== null && median !== null && !isBest && !level}{' • '}{#if diff > 0}<span class="n">{usual(diff)}</span> deeper than{:else if diff < 0}<span class="n">{usual(-diff)}</span> short of{:else}right at{/if}
         your usual <span class="n">{usual(median)}</span>{/if}{#each found as [n, w] (w)}{' • '}<span class="n">{n}</span> {w}{/each}
     </p>
   </div>

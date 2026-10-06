@@ -26,12 +26,24 @@ import { createGame, type GameState, type Revive } from '../src/lib/game.ts';
 import { storeKey } from '../src/lib/storage.ts';
 
 const store = new Map<string, string>();
+/** Writes longer than this don't fit (storage nearly full); Infinity for room enough. */
+let room = Infinity;
 (globalThis as { localStorage?: unknown }).localStorage = {
   getItem: (k: string) => store.get(k) ?? null,
-  setItem: (k: string, v: string) => void store.set(k, String(v)),
+  setItem: (k: string, v: string) => {
+    if (v.length > room) throw new Error('QuotaExceededError');
+    store.set(k, String(v));
+  },
   removeItem: (k: string) => void store.delete(k),
+  key: (i: number) => [...store.keys()][i] ?? null,
+  get length() {
+    return store.size;
+  },
 };
-beforeEach(() => store.clear());
+beforeEach(() => {
+  store.clear();
+  room = Infinity;
+});
 
 function run(losses: Record<string, number[]>, over: Partial<GameState> = {}, seats = Object.keys(losses), revives: Revive[] = []): GameState {
   const s = createGame('a');
@@ -195,8 +207,10 @@ test('group runs from before co-op are dropped as the records are read, solo kep
     bests: { '1:solo': { ...r({ id: 5, at: 50, depth: 7 }), won: false }, '1:group': { ...r({ id: 6, at: 60, depth: 11, players: 2 }), won: true } },
     climbs: { '1:solo': [{ depth: 7, at: 50 }], '1:group': [{ depth: 11, at: 60 }] },
     tallies: { '1:solo': { wins: 0, ends: { 7: 1 }, lost: {} }, '1:group': { wins: 1, ends: { 11: 1 }, lost: {} } },
+    frontier: [{ depth: 7, at: 50 }, { depth: 11, at: 60 }, { depth: 13, at: 80 }, { depth: 20, at: 90 }],
   };
   const rec = parseRecords(JSON.stringify(old))!;
+  assert.deepEqual(rec.frontier, [{ depth: 7, at: 50 }, { depth: 20, at: 90 }], 'nor the group runs\' steps deeper');
   assert.deepEqual(rec.runs.map((x) => x.id), [5, 9]);
   assert.deepEqual(Object.keys(rec.bests), ['1:solo']);
   assert.deepEqual(Object.keys(rec.tallies), ['1:solo']);
@@ -293,7 +307,7 @@ test('recording goes through localStorage, and erasing clears it', () => {
 });
 
 test('records this build can\'t read are never written over: a newer build\'s are left alone, damaged ones kept aside', () => {
-  const newer = JSON.stringify({ v: 2, runs: [], shape: 'unknown' });
+  const newer = JSON.stringify({ v: 3, runs: [], shape: 'unknown' });
   store.set(DELVE_RECORD_KEY, newer);
   assert.deepEqual(loadRecords(), emptyRecords(), 'read as nothing');
   assert.equal(recordRun(r({ id: 1, depth: 14 })), null, 'not stored');
@@ -303,10 +317,70 @@ test('records this build can\'t read are never written over: a newer build\'s ar
   store.clear();
   store.set(DELVE_RECORD_KEY, '{"v":1,"runs":[');
   assert.deepEqual(recordRun(r({ id: 1, depth: 14 })), { previousBest: null, best: true });
-  const aside = [...store.keys()].filter((k) => k.startsWith(storeKey('delve.unread.')));
-  assert.equal(aside.length, 1);
+  const aside = [...store.keys()].filter((k) => k.includes('.unread'));
+  assert.deepEqual(aside, [`${DELVE_RECORD_KEY}.unread`]);
   assert.equal(store.get(aside[0]), '{"v":1,"runs":[', 'kept as it was');
   assert.equal(loadRecords().runs.length, 1);
+});
+
+// ---- where they are kept ------------------------------------------------------
+
+const LEGACY_KEY = storeKey('delve');
+/** Version 1, as builds before the rename kept it (`:together`, under the old name). */
+const v1 = (rec: ReturnType<typeof emptyRecords>) => JSON.stringify({ ...JSON.parse(serializeRecords(rec)), v: 1 });
+
+test('the records live under a new name, at version 2: started from the old name\'s version 1, which is never written again', () => {
+  assert.notEqual(DELVE_RECORD_KEY, LEGACY_KEY);
+  let rec = addRun(emptyRecords(), t({ id: 1, at: 1, depth: 20, losses: [3, 9, 20], perished: [9, 20], revived: 1 })).records;
+  rec = addRun(rec, r({ id: 2, at: 2, depth: 6, losses: [1, 2, 6] })).records;
+  const old = v1(rec);
+  store.set(LEGACY_KEY, old);
+  assert.deepEqual(loadRecords(), rec, 'version 1 read as it was');
+  recordRun(r({ id: 3, at: 3, depth: 8, losses: [1, 2, 8] }));
+  assert.equal(store.get(LEGACY_KEY), old, 'the old name left as it was');
+  assert.equal(JSON.parse(store.get(DELVE_RECORD_KEY)!).v, 2);
+  // A build from before (no version check of its own) still open in a tab records a run alone:
+  // it reads the old name, drops what it doesn't know (`:together`) and writes back there.
+  store.set(LEGACY_KEY, JSON.stringify({ v: 1, runs: [{ ...r({ id: 4, at: 4, depth: 5 }), won: false }], bests: {}, tallies: {} }));
+  const now = loadRecords();
+  assert.deepEqual([now.runs.map((x) => x.id), bestOf(now, false)?.depth, tallyOf(now, false).ends], [[1, 2, 3], 20, { 20: 1 }], 'nothing together lost');
+});
+
+test('version 2 under the new name, version 1 too; a newer one is left alone', () => {
+  const rec = addRun(emptyRecords(), t({ id: 1, at: 1, depth: 20, perished: [20] })).records;
+  assert.deepEqual(parseRecords(serializeRecords(rec)), rec);
+  assert.deepEqual(parseRecords(v1(rec)), rec);
+  const newer = JSON.stringify({ ...JSON.parse(serializeRecords(rec)), v: 3 });
+  assert.equal(parseRecords(newer), null);
+  store.set(DELVE_RECORD_KEY, newer);
+  assert.equal(recordRun(r({ id: 2, at: 2, depth: 4 })), null);
+  assert.equal(store.get(DELVE_RECORD_KEY), newer);
+  assert.equal([...store.keys()].some((k) => k.includes('.unread')), false, 'never kept aside: it is whole');
+});
+
+test('reset erases the records, the old name\'s and the copies kept aside, and never takes up the old name again', () => {
+  recordRun(r({ id: 1, at: 1, depth: 14 }));
+  store.set(LEGACY_KEY, v1(addRun(emptyRecords(), r({ id: 2, at: 2, depth: 9 })).records));
+  store.set(`${DELVE_RECORD_KEY}.unread`, 'x');
+  store.set(`${LEGACY_KEY}.unread.1700000000000`, 'y');
+  resetRecords();
+  assert.deepEqual([...store.keys()], [DELVE_RECORD_KEY]);
+  assert.deepEqual(loadRecords(), emptyRecords());
+  store.set(LEGACY_KEY, v1(addRun(emptyRecords(), r({ id: 3, at: 3, depth: 9 })).records));
+  assert.deepEqual(loadRecords(), emptyRecords(), 'an older tab writing the old name again changes nothing');
+});
+
+test('storage nearly full: the oldest runs of the list go first, the bests, tallies and climbs stay', () => {
+  for (let i = 1; i <= RUN_LIMIT; i++) recordRun(r({ id: i, at: i, depth: i === 7 ? 30 : 5, losses: [1, 2, i === 7 ? 30 : 5] }));
+  const full = store.get(DELVE_RECORD_KEY)!.length;
+  room = full - 1500;
+  assert.deepEqual(recordRun(r({ id: 99, at: 99, depth: 6, losses: [1, 2, 6] })), { previousBest: 30, best: false });
+  const rec = loadRecords();
+  assert.ok(rec.runs.length < RUN_LIMIT && rec.runs.length > 0, `${rec.runs.length} runs kept`);
+  assert.equal(rec.runs.at(-1)!.id, 99, 'the newest kept');
+  assert.deepEqual([bestOf(rec, true)!.id, climbOf(rec, true).at(-1)!.depth, tallyOf(rec, true).ends], [7, 30, { 5: RUN_LIMIT - 1, 6: 1, 30: 1 }]);
+  room = 10;
+  assert.equal(recordRun(r({ id: 100, at: 100, depth: 6 })), null, 'nothing fits at all: not stored, nothing thrown');
 });
 
 // ---- the fuller record: tallies, where lives went, the frontier ------------

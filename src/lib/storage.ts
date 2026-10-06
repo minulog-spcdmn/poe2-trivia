@@ -61,6 +61,24 @@ export function removeKey(key: string, where: Area = 'local') {
 export const readStored = (name: string, where: Area = 'local') => readKey(storeKey(name), where);
 export const writeStored = (name: string, value: string, where: Area = 'local') => writeKey(storeKey(name), value, where);
 export const removeStored = (name: string, where: Area = 'local') => removeKey(storeKey(name), where);
+/**
+ * Removes every entry of this build's whose name starts with `start` (only
+ * its own: the beta's and the lab's keys start differently).
+ */
+export function removeStoredStarting(start: string, where: Area = 'local') {
+  const from = storeKey(start);
+  try {
+    const s = area(where);
+    const keys: string[] = [];
+    for (let i = 0; i < s.length; i++) {
+      const k = s.key(i);
+      if (k !== null && k.startsWith(from)) keys.push(k);
+    }
+    for (const k of keys) s.removeItem(k);
+  } catch {
+    /* ignore */
+  }
+}
 /** For code that must not take a read error for an empty entry (and write over it). */
 export const tryReadStored = (name: string, where: Area = 'local') => tryReadKey(storeKey(name), where);
 
