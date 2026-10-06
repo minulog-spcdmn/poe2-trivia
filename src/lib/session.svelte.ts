@@ -1397,9 +1397,9 @@ class Session {
   }
 
   /**
-   * Delve: this device's run goes into its records as it falls (a guest may
-   * close the tab before the end), and again at the end when it won a group.
-   * Hot-seat runs count only alone.
+   * Delve: this device's run goes into its records: alone as it falls,
+   * together once nobody stands (a run left before that is kept as left, see
+   * recordLeaving). Hot-seat runs are always alone.
    */
   private noteRun(prev: GameState | null, next: GameState) {
     const d = next.delve;
@@ -1850,9 +1850,12 @@ function soloHotSeat(s: GameState): GameState {
   }
 }
 
-/** A Delve run saved by a build with other rules plays on, but never counts as a best. */
+/**
+ * A Delve run saved by a build with other rules plays on, but never counts as
+ * a best. A run already over stays as it ended (its record is final).
+ */
 function underRuleset(s: GameState): GameState {
-  return s.delve && s.delve.ruleset !== DELVE_RULESET && !s.delve.mixed ? { ...s, delve: { ...s.delve, mixed: true } } : s;
+  return s.delve && s.phase !== 'over' && s.delve.ruleset !== DELVE_RULESET && !s.delve.mixed ? { ...s, delve: { ...s.delve, mixed: true } } : s;
 }
 
 function readSaved(): Saved | null {

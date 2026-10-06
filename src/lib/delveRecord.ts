@@ -1,31 +1,42 @@
-// This browser's Delve runs: the deepest one alone and in a group (per
-// ruleset, so a changed curve never compares old depths with new ones), and
-// how each best grew; every counted run as a tally of where it ended and
-// where its lives went; how deep this browser has ever been; and the last
-// runs in full. Kept in localStorage, like the codex (lib/codex.ts).
+// This browser's Delve runs: the deepest one alone and together (per ruleset,
+// so a changed curve never compares old depths with new ones), and how each
+// best grew; every counted run as a tally of where it ended and where its
+// lives went; how deep this browser has ever been; and the last runs in full.
+// Kept in localStorage, like the codex (lib/codex.ts).
 //
 // The stored shape only grows: fields added later are optional and, when
 // missing, filled in from what is there (records written before tallies
 // existed get them from their runs and bests). The version only changes for a
-// shape older builds would misread, since a build that can't read the records
-// starts them over and would lose the bests.
+// shape older builds would misread. Records this build can't read are never
+// written over (lib/keepAside.ts): a newer build's stay untouched, anything
+// else is kept aside before new records start.
 //
 // Whose run is it? Online, the player this browser seats: two tabs of one
-// browser in the same room keep a run each (`who`). In hot-seat with one
-// player, theirs. In hot-seat with several, the device can't tell which of
-// them is its owner (the codex doesn't count their answers either), so the
-// group's run is recorded once, at its end, as deep as its deepest delver
-// (`hot`); it counts as a run together, never as a win.
+// browser in the same room keep a run each (`who`). On one device, its one
+// player (a run together is only played online).
 //
-// A run left while still standing (leaving, the host closing the room, a
-// dropped connection) is recorded as left at the depth it was on (`left`):
-// it shows in the list and counts as a run that got that deep, but never as
-// a best or a depth a run ended at. If the same run goes on and falls after
-// all (a rejoin), the fall replaces it.
+// Alone, a run is recorded as its player falls, at that depth. Together
+// (co-op) nobody wins: the run is the team's, recorded once it is over, at
+// the team's depth (where the last of them perished, delve.ts teamDepth),
+// with this player's own part in it (the lives they lost, where they
+// perished, the lives they gave and were given). A player who perishes and is
+// brought back is still in the run, so nothing is recorded as they perish.
+//
+// A run left before its end (leaving, the host closing the room, a dropped
+// connection, the tab closing) is recorded as left at the depth it was on
+// (`left`): it shows in the list and counts as a run that got that deep, but
+// never as a best or a depth a run ended at. It is provisional: if the same
+// run goes on and ends after all (a rejoin), the end replaces it. An end is
+// final: recording the same run again (a reload of the end screen, a save
+// resumed under newer rules) changes nothing.
+//
+// Group runs from before co-op (a "last one standing" winner) were never
+// released: they are dropped as the records are read.
 
-import { DELVE_LIVES, DELVE_RULESET, delveStandings, fellAt, isGroupRun } from './delve.ts';
+import { DELVE_LIVES, DELVE_RULESET, delveStandings, fellAt, isGroupRun, standingIds, teamDepth } from './delve.ts';
 import type { GameState } from './game.ts';
-import { readStored, removeStored, storeKey, writeStored } from './storage.ts';
+import { makeRoom } from './keepAside.ts';
+import { readStored, removeStored, storeKey, tryReadStored, writeStored } from './storage.ts';
 
 /** Where the records live (the beta keeps its own); the whole key, as storage events name it. */
 const DELVE_RECORD_NAME = 'delve';
@@ -45,37 +56,58 @@ export const MAX_COUNT = 100_000;
 export interface DelveRun {
   /** The run's start on the host's clock: one run, however often it is recorded (with `who`). */
   id: number;
-  /** When it was first recorded (this browser's clock). */
+  /** When it was recorded (this browser's clock); an end replacing a run left keeps its own. */
   at: number;
-  /** Where this player fell, or (left) the depth they were on. */
+  /**
+   * Alone: where this player fell, or (left) the depth they were on.
+   * Together: the team's depth, where the last of them perished, or (left)
+   * the depth the team was on.
+   */
   depth: number;
-  /** Players in the run (1 alone). */
+  /** Players who set out (1 alone, 2 or more together). */
   players: number;
-  /** Delved deepest of a group. */
-  won: boolean;
   ruleset: number;
   /** A run resumed by a build with other rules still shows, but never counts as a best. */
   mixed: boolean;
-  /** Depths where each life was lost, oldest first; for a fall the last is `depth`. Missing in runs recorded before it was kept. */
+  /**
+   * Depths where this player lost a life, oldest first. Alone: three at
+   * most, the last at `depth` for a fall. Together: any number (lives given
+   * back can be lost again). Missing in runs recorded before it was kept.
+   */
   losses?: number[];
-  /** The player it was (online): two players of one browser in one room keep a run each. Missing in older records and hot-seat. */
+  /** The player it was (online): two players of one browser in one room keep a run each. Missing on one device. */
   who?: string;
-  /** Ended without a fall: left (or the room closed) still standing at `depth`. */
+  /** Ended without its end: left (or the room closed) at `depth`. */
   left?: true;
-  /** Hot-seat with several players: the group's run, as deep as its deepest delver. */
-  hot?: true;
+  /** Together (always there): depths where this player perished, oldest first; all but the last were brought back. */
+  perished?: number[];
+  /** Together: lives this player gave to bring teammates back. */
+  given?: number;
+  /** Together: times a teammate brought this player back. */
+  revived?: number;
+  /** Azurite Wards that broke in this player's place, each a life saved. Missing where not known. */
+  wards?: number;
 }
 
 /** Every counted run of one kind (alone or together) under one ruleset. */
 export interface DelveTally {
-  /** Group runs this player won. */
-  wins: number;
-  /** Runs by the depth they fell at. */
+  /** Runs by the depth they ended at (together: the team's). */
   ends: Record<number, number>;
-  /** Lives lost before the last one, by depth (only runs that kept where); for runs left, every life they lost. */
+  /**
+   * This player's lives lost, by depth (only runs that kept where). Alone:
+   * those before the last, which is the run's end; for runs left, all of
+   * them. Together: all of them (the team's end isn't one of theirs).
+   */
   lost: Record<number, number>;
-  /** Runs left standing, by the depth they were on (missing in older records). */
+  /** Runs left before their end, by the depth they were on (missing for none). */
   left?: Record<number, number>;
+  /** Together: where this player perished, by depth (missing for none). */
+  perished?: Record<number, number>;
+  /** Together: lives this player gave, and times they were brought back (missing for none). */
+  given?: number;
+  revived?: number;
+  /** Wards that broke in place of a life, over the runs that kept them (missing for none). */
+  warded?: number;
 }
 
 /** A run that went deeper than any before it. */
@@ -86,55 +118,104 @@ export interface Frontier {
 
 export interface DelveRecords {
   runs: DelveRun[];
-  /** The deepest counted run, by `${ruleset}:solo` or `${ruleset}:group`. */
+  /** The deepest counted run, by `${ruleset}:solo` or `${ruleset}:together`. */
   bests: Record<string, DelveRun>;
   /** Each new best, oldest first, by the same keys: the last is the best. */
   climbs: Record<string, Frontier[]>;
   /** By the same keys as the bests. Mixed runs aren't counted, as they never count as bests. */
   tallies: Record<string, DelveTally>;
-  /** Each new deepest under any rules, alone or not, left or fallen, oldest first: the last is the deepest this browser has been. */
+  /** Each new deepest under any rules, alone or not, left or ended, oldest first: the last is the deepest this browser has been. */
   frontier: Frontier[];
 }
 
+/** How a run measured up against the best of its kind. */
+export interface Measure {
+  /** The best before it, or null when it was the first (or this run was already the best and nothing came before). */
+  previousBest: number | null;
+  /** It went deeper than every counted run of its kind before it. */
+  best: boolean;
+}
+
 export const emptyRecords = (): DelveRecords => ({ runs: [], bests: {}, climbs: {}, tallies: {}, frontier: [] });
-export const emptyTally = (): DelveTally => ({ wins: 0, ends: {}, lost: {} });
-export const bestKey = (ruleset: number, solo: boolean) => `${ruleset}:${solo ? 'solo' : 'group'}`;
-const keyOf = (run: DelveRun) => bestKey(run.ruleset, run.players < 2);
-/** One run of one player: the same run recorded again (its win, its fall after it was left) replaces it. */
+export const emptyTally = (): DelveTally => ({ ends: {}, lost: {} });
+export const bestKey = (ruleset: number, solo: boolean) => `${ruleset}:${solo ? 'solo' : 'together'}`;
+/** A run together: two or more set out. */
+export const isTogether = (run: DelveRun) => run.players > 1;
+const keyOf = (run: DelveRun) => bestKey(run.ruleset, !isTogether(run));
+/** One run of one player: the same run recorded again (its end after it was left) replaces it. */
 export const runKey = (run: DelveRun) => (run.who ? `${run.id}:${run.who}` : `${run.id}`);
-/** Whether a run can be a best and an end in the tallies: fallen, under rules it kept to. */
+/** Whether a run can be a best and an end in the tallies: ended, under rules it kept to. */
 export const counts = (run: DelveRun) => !run.mixed && !run.left;
 
 const clampDepth = (d: number) => Math.max(1, Math.min(MAX_DEPTH, Math.floor(d)));
 
-/** Whose run this device records: online its player; in hot-seat the one player, or the group as a whole (null for nobody). */
-function selfIn(s: GameState, me: string | null, hotSeat: boolean): string | 'group' | null {
-  const d = s.delve;
-  if (!d) return null;
-  if (hotSeat) return d.entrants.length > 1 ? 'group' : (s.players[0]?.id ?? null);
+// ---- from the game -----------------------------------------------------------
+
+/** Whose run this device records: online its player; on one device its one player (null for nobody). */
+function selfIn(s: GameState, me: string | null, hotSeat: boolean): string | null {
+  if (!s.delve) return null;
+  if (hotSeat) return s.players.length === 1 && !isGroupRun(s) ? s.players[0].id : null;
   return me && s.players.some((p) => p.id === me) ? me : null;
 }
 
-function base(s: GameState, depth: number, losses: number[], self: string | 'group'): DelveRun {
+/** lib/codex.ts keeps the codex under this name. */
+const CODEX_NAME = 'codex';
+
+/**
+ * Wards that broke in `self`'s place in the run: those of the answers the
+ * codex logged for it, and of the question just revealed (its answer may be
+ * on its way to the codex still).
+ */
+function wardsIn(s: GameState, self: string): number {
+  const id = s.delve!.startedAt;
+  const r = s.phase === 'reveal' ? s.reveal : null;
+  const now = r ? s.question?.askedAt : undefined;
+  let n = 0;
+  try {
+    const v: unknown = JSON.parse(readStored(CODEX_NAME) ?? 'null');
+    const log = isObj(v) && Array.isArray(v.log) ? v.log : [];
+    for (const a of log) {
+      if (!isObj(a) || a.run !== id || a.depth === undefined || a.ok !== false || (now !== undefined && a.t === now)) continue;
+      n += a.wards === 1 || a.wards === 2 ? a.wards : a.wards === undefined && a.warded === true ? 1 : 0;
+    }
+  } catch {
+    /* no codex to read */
+  }
+  if (r) n += isGroupRun(s) ? (r.hits?.find((h) => h.playerId === self)?.wards ?? 0) : r.correct ? 0 : (r.lost?.wards ?? (r.warded ? 1 : 0));
+  return Math.min(n, 2 * MAX_DEPTH);
+}
+
+function base(s: GameState, self: string, depth: number, hotSeat: boolean): DelveRun {
   const d = s.delve!;
+  const wards = wardsIn(s, self);
   return {
     id: d.startedAt,
     at: Date.now(),
     depth: clampDepth(depth),
     players: Math.max(1, d.entrants.length),
-    won: false,
     ruleset: d.ruleset,
     mixed: !!d.mixed,
-    losses: losses.map(clampDepth),
-    ...(self === 'group' ? { hot: true as const } : {}),
+    losses: (d.losses[self] ?? []).map(clampDepth),
+    ...(hotSeat ? {} : { who: self }),
+    ...(wards ? { wards } : {}),
+  };
+}
+
+/** The team's run as this player had it: at the team's depth, with what they lost, gave and were given. */
+function together(s: GameState, self: string, hotSeat: boolean): DelveRun {
+  const row = delveStandings(s).find((r) => r.id === self);
+  return {
+    ...base(s, self, teamDepth(s), hotSeat),
+    perished: (row?.perished ?? []).map(clampDepth),
+    ...(row?.given ? { given: row.given } : {}),
+    ...(row?.revived ? { revived: row.revived } : {}),
   };
 }
 
 /**
- * What the run in `next` adds to the records, if anything: this player's fall,
- * or (in a group) their win at the end. `me`: this device's player online;
- * `hotSeat`: the game is on this device alone (then its one player, or the
- * group's deepest once it is over).
+ * What the run in `next` adds to the records, if anything: alone, this
+ * player's fall; together, the run once it is over. `me`: this device's
+ * player online; `hotSeat`: the game is on this device alone (its one player).
  */
 export function runEvent(prev: GameState | null, next: GameState, me: string | null, hotSeat = false): DelveRun | null {
   const d = next.delve;
@@ -142,36 +223,37 @@ export function runEvent(prev: GameState | null, next: GameState, me: string | n
   const self = selfIn(next, me, hotSeat);
   if (!self) return null;
   const same = prev?.delve?.startedAt === d.startedAt;
-  if (self === 'group') {
+  if (isGroupRun(next)) {
     if (next.phase !== 'over' || (same && prev?.phase === 'over')) return null;
-    const top = delveStandings(next)[0];
-    return top ? base(next, fellAt(next, top.id) ?? next.round, top.losses, self) : null;
+    return together(next, self, hotSeat);
   }
   const depth = fellAt(next, self);
-  if (depth === null) return null;
-  const fellNow = !same || fellAt(prev!, self) === null;
-  const wonNow = next.phase === 'over' && prev?.phase !== 'over' && next.winners.includes(self);
-  if (!fellNow && !wonNow) return null;
-  return { ...base(next, depth, d.losses[self] ?? [], self), won: isGroupRun(next) && next.winners.includes(self), ...(hotSeat ? {} : { who: self }) };
+  if (depth === null || (same && fellAt(prev!, self) !== null)) return null;
+  return base(next, self, depth, hotSeat);
 }
 
 /**
- * The run this device is leaving while still standing in it (leaving, the
- * room closing, the connection dropping), or null: none underway, or this
- * player already fell (their fall is recorded).
+ * The run this device is leaving before its end (leaving, the room closing,
+ * the connection dropping, the tab closing), or null: none underway, or (alone)
+ * this player already fell, their fall recorded. Together it is recorded
+ * whether this player stands or lies perished (a teammate may still bring
+ * them back), at the team's depth; once nobody stands the run is over, and
+ * it is its end.
  */
 export function leftEvent(s: GameState | null, me: string | null, hotSeat = false): DelveRun | null {
   const d = s?.delve;
   if (!s || !d || s.phase === 'lobby' || s.phase === 'over' || s.round < 1) return null;
   const self = selfIn(s, me, hotSeat);
   if (!self) return null;
-  if (self === 'group') {
-    const top = delveStandings(s)[0];
-    return top && top.lives > 0 ? { ...base(s, s.round, top.losses, self), left: true } : null;
+  if (isGroupRun(s)) {
+    const run = together(s, self, hotSeat);
+    return standingIds(s).length ? { ...run, left: true } : run;
   }
   if (fellAt(s, self) !== null) return null;
-  return { ...base(s, s.round, d.losses[self] ?? [], self), left: true, ...(hotSeat ? {} : { who: self }) };
+  return { ...base(s, self, s.round, hotSeat), left: true };
 }
+
+// ---- adding up -----------------------------------------------------------------
 
 /** The tally with a run added (`by` 1) or taken back out (`by` -1). */
 function counted(t: DelveTally, run: DelveRun, by: 1 | -1): DelveTally {
@@ -180,34 +262,68 @@ function counted(t: DelveTally, run: DelveRun, by: 1 | -1): DelveTally {
     if (n > 0) m[depth] = n;
     else delete m[depth];
   };
-  const out: DelveTally = { wins: Math.max(0, t.wins + (run.won ? by : 0)), ends: { ...t.ends }, lost: { ...t.lost }, ...(t.left ? { left: { ...t.left } } : {}) };
-  if (run.left) bump((out.left ??= {}), run.depth);
-  else bump(out.ends, run.depth);
-  for (const d of (run.left ? run.losses : run.losses?.slice(0, -1)) ?? []) bump(out.lost, d);
-  if (out.left && !Object.keys(out.left).length) delete out.left;
-  return out;
+  const team = isTogether(run);
+  const ends = { ...t.ends };
+  const lost = { ...t.lost };
+  const left = { ...t.left };
+  const perished = { ...t.perished };
+  if (run.left) bump(left, run.depth);
+  else bump(ends, run.depth);
+  for (const d of (team || run.left ? run.losses : run.losses?.slice(0, -1)) ?? []) bump(lost, d);
+  if (team) for (const d of run.perished ?? []) bump(perished, d);
+  const sum = (was: number | undefined, n: number | undefined) => Math.max(0, Math.min(MAX_COUNT, (was ?? 0) + by * (n ?? 0)));
+  const given = sum(t.given, run.given);
+  const revived = sum(t.revived, run.revived);
+  const warded = sum(t.warded, run.wards);
+  return {
+    ends,
+    lost,
+    ...(Object.keys(left).length ? { left } : {}),
+    ...(Object.keys(perished).length ? { perished } : {}),
+    ...(given ? { given } : {}),
+    ...(revived ? { revived } : {}),
+    ...(warded ? { warded } : {}),
+  };
 }
 
-/** Adds (or updates, by runKey) a run. Returns the new records and the best it was measured against. */
-export function addRun(r: DelveRecords, next: DelveRun): { records: DelveRecords; previousBest: number | null; best: boolean } {
+/**
+ * How a run in the records measured up: a best if it is a step of its kind's
+ * climb, measured against the step before it; otherwise against the best.
+ * The same answer however often it is asked (a reload of the end screen).
+ */
+export function measure(r: DelveRecords, run: DelveRun): Measure {
+  const key = keyOf(run);
+  const steps = r.climbs[key] ?? [];
+  const i = counts(run) ? steps.findIndex((f) => f.at === run.at && f.depth === run.depth) : -1;
+  if (i >= 0) return { previousBest: steps[i - 1]?.depth ?? null, best: true };
+  const was = r.bests[key];
+  return { previousBest: was && runKey(was) !== runKey(run) ? was.depth : null, best: false };
+}
+
+/** The run already recorded under the same key, in the list or among the bests. */
+const recorded = (r: DelveRecords, id: string) => r.runs.find((o) => runKey(o) === id) ?? Object.values(r.bests).find((o) => runKey(o) === id) ?? null;
+
+/**
+ * Adds (or updates, by runKey) a run, and says how it measured up. A run
+ * ended is final: the same run again changes nothing (records returned
+ * as they were). A run left gives way to its end, or to a later leave.
+ */
+export function addRun(r: DelveRecords, next: DelveRun): Measure & { records: DelveRecords } {
   const id = runKey(next);
-  const before = r.runs.find((o) => runKey(o) === id);
-  // Its win at the end is the same run, recorded when it fell.
-  const run: DelveRun = before && !before.left ? { ...next, at: before.at } : next;
+  const before = recorded(r, id);
+  if (before && !before.left) return { records: r, ...measure(r, before) };
+  const run = next;
   const runs = [...r.runs.filter((o) => runKey(o) !== id), run].sort((a, b) => a.at - b.at).slice(-RUN_LIMIT);
   const key = keyOf(run);
   const was = r.bests[key];
-  const same = !!was && runKey(was) === id;
-  const previousBest = was && !same ? was.depth : null;
-  const best = counts(run) && (!was || same || run.depth > was.depth);
   const bests = { ...r.bests };
   const climbs = { ...r.climbs };
-  if (best) {
+  if (counts(run) && (!was || run.depth > was.depth)) {
     bests[key] = run;
     const steps = climbs[key] ?? [];
     if (run.depth > (steps.at(-1)?.depth ?? 0)) climbs[key] = [...steps, { depth: run.depth, at: run.at }];
   }
-  // The same run again replaces what it counted the first time.
+  // A run left again, or ended, replaces what it counted the first time.
   const tallies = { ...r.tallies };
   if (before && !before.mixed) {
     const k = keyOf(before);
@@ -216,20 +332,21 @@ export function addRun(r: DelveRecords, next: DelveRun): { records: DelveRecords
   if (!run.mixed) tallies[key] = counted(tallies[key] ?? emptyTally(), run, 1);
   const deepest = r.frontier.at(-1)?.depth ?? 0;
   const frontier = run.depth > deepest ? [...r.frontier, { depth: run.depth, at: run.at }] : r.frontier;
-  return { records: { runs, bests, climbs, tallies, frontier }, previousBest, best: best && (previousBest === null || run.depth > previousBest) };
+  const records = { runs, bests, climbs, tallies, frontier };
+  return { records, ...measure(records, run) };
 }
 
-/** The deepest counted run alone or in a group, under a ruleset (this one by default). */
+/** The deepest counted run alone or together, under a ruleset (this one by default). */
 export function bestOf(r: DelveRecords, solo: boolean, ruleset = DELVE_RULESET): DelveRun | null {
   return r.bests[bestKey(ruleset, solo)] ?? null;
 }
 
-/** Every counted run alone or in a group, under a ruleset (this one by default). */
+/** Every counted run alone or together, under a ruleset (this one by default). */
 export function tallyOf(r: DelveRecords, solo: boolean, ruleset = DELVE_RULESET): DelveTally {
   return r.tallies[bestKey(ruleset, solo)] ?? emptyTally();
 }
 
-/** Each new best alone or in a group under a ruleset (this one by default), oldest first. */
+/** Each new best alone or together under a ruleset (this one by default), oldest first. */
 export function climbOf(r: DelveRecords, solo: boolean, ruleset = DELVE_RULESET): Frontier[] {
   return r.climbs[bestKey(ruleset, solo)] ?? [];
 }
@@ -241,21 +358,30 @@ export const deepestEver = (r: DelveRecords) => r.frontier.at(-1)?.depth ?? 0;
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const int = (v: unknown, min: number, max: number) => (typeof v === 'number' && Number.isInteger(v) && v >= min && v <= max ? v : null);
-const KEY = /^\d+:(solo|group)$/;
+const KEY = /^\d+:(solo|together)$/;
 
-/**
- * Loss depths that can be true of a run at `depth`: up to three, in order,
- * none deeper; a run's third is where it fell, so a fall's is at `depth` and a
- * run left standing has fewer.
- */
-function parseLosses(v: unknown, depth: number, left: boolean): number[] | undefined {
-  if (!Array.isArray(v) || v.length > (left ? DELVE_LIVES - 1 : DELVE_LIVES) || (!v.length && !left)) return undefined;
+/** Depths in order, none deeper than `depth`, at most `max` of them; undefined if they can't be that. */
+function parseDepths(v: unknown, depth: number, max: number): number[] | undefined {
+  if (!Array.isArray(v) || v.length > max) return undefined;
   const out: number[] = [];
   for (const x of v) {
     const d = int(x, 1, depth);
     if (d === null || d < (out.at(-1) ?? 1)) return undefined;
     out.push(d);
   }
+  return out;
+}
+
+/**
+ * Loss depths that can be true of a run at `depth`. Alone: up to three, a
+ * run's third where it fell, so a fall's is at `depth` and a run left
+ * standing has fewer. Together: lives given back can be lost again, but a
+ * question takes two at most (a cave-in), so never more than two a depth.
+ */
+function parseLosses(v: unknown, depth: number, left: boolean, team: boolean): number[] | undefined {
+  if (team) return parseDepths(v, depth, 2 * depth);
+  const out = parseDepths(v, depth, left ? DELVE_LIVES - 1 : DELVE_LIVES);
+  if (!out || (!out.length && !left)) return undefined;
   return out.length === DELVE_LIVES && out.at(-1) !== depth ? undefined : out;
 }
 
@@ -267,21 +393,31 @@ function parseRun(v: unknown): DelveRun | null {
   const players = int(v.players, 1, 64);
   const ruleset = int(v.ruleset, 1, 1e6);
   if (id === null || at === null || depth === null || players === null || ruleset === null) return null;
+  const team = players > 1;
+  // A group run from before co-op (one device's, or one with a winner): never released, dropped.
+  if (v.hot === true || (team && !Array.isArray(v.perished))) return null;
   const left = v.left === true;
-  const losses = parseLosses(v.losses, depth, left);
+  const losses = parseLosses(v.losses, depth, left, team);
   const who = typeof v.who === 'string' && v.who.length > 0 && v.who.length <= 64 ? v.who : null;
+  // Each perish is a life lost.
+  const perished = team ? (parseDepths(v.perished, depth, losses?.length ?? 2 * depth) ?? []) : [];
+  const given = team ? (int(v.given, 1, MAX_COUNT) ?? 0) : 0;
+  const revived = team ? Math.min(perished.length, int(v.revived, 1, MAX_COUNT) ?? 0) : 0;
+  const wards = int(v.wards, 1, 2 * MAX_DEPTH);
   return {
     id,
     at,
     depth,
     players,
-    won: v.won === true && players > 1 && v.hot !== true,
     ruleset,
     mixed: v.mixed === true,
     ...(losses ? { losses } : {}),
     ...(who ? { who } : {}),
     ...(left ? { left: true as const } : {}),
-    ...(v.hot === true && players > 1 ? { hot: true as const } : {}),
+    ...(team ? { perished } : {}),
+    ...(given ? { given } : {}),
+    ...(revived ? { revived } : {}),
+    ...(wards ? { wards } : {}),
   };
 }
 
@@ -299,10 +435,19 @@ function parseCounts(v: unknown): Record<number, number> {
 
 function parseTally(v: unknown): DelveTally | null {
   if (!isObj(v)) return null;
-  const ends = parseCounts(v.ends);
   const left = parseCounts(v.left);
-  const runs = Object.values(ends).reduce((a, b) => a + b, 0);
-  return { wins: Math.min(runs, int(v.wins, 0, Number.MAX_SAFE_INTEGER) ?? 0), ends, lost: parseCounts(v.lost), ...(Object.keys(left).length ? { left } : {}) };
+  const perished = parseCounts(v.perished);
+  const total = (n: unknown) => Math.min(MAX_COUNT, int(n, 1, Number.MAX_SAFE_INTEGER) ?? 0);
+  const [given, revived, warded] = [total(v.given), total(v.revived), total(v.warded)];
+  return {
+    ends: parseCounts(v.ends),
+    lost: parseCounts(v.lost),
+    ...(Object.keys(left).length ? { left } : {}),
+    ...(Object.keys(perished).length ? { perished } : {}),
+    ...(given ? { given } : {}),
+    ...(revived ? { revived } : {}),
+    ...(warded ? { warded } : {}),
+  };
 }
 
 /** Steps that each go deeper, in time order: a frontier. */
@@ -380,22 +525,31 @@ export function parseRecords(raw: string | null): DelveRecords | null {
 
 export const serializeRecords = (r: DelveRecords) => JSON.stringify({ v: VERSION, ...r });
 
-/** The stored records (empty when there are none or they can't be read). Read fresh: another tab may have added to them. */
+/** The stored records (empty when there are none or they can't be read; never written over for that). Read fresh: another tab may have added to them. */
 export function loadRecords(): DelveRecords {
   return parseRecords(readStored(DELVE_RECORD_NAME)) ?? emptyRecords();
 }
 
-/** Records a run; returns how it measured up (null when it couldn't be stored). */
-export function recordRun(run: DelveRun): { previousBest: number | null; best: boolean } | null {
-  const { records, previousBest, best } = addRun(loadRecords(), run);
-  if (!writeStored(DELVE_RECORD_NAME, serializeRecords(records))) return null;
+/**
+ * Records a run; returns how it measured up (null when it couldn't be
+ * stored). Records a newer build wrote are left as they are; anything else
+ * unreadable is kept aside first (lib/keepAside.ts).
+ */
+export function recordRun(run: DelveRun): Measure | null {
+  const raw = tryReadStored(DELVE_RECORD_NAME);
+  if (raw === undefined) return null;
+  const stored = parseRecords(raw);
+  if (raw && !stored && !makeRoom(DELVE_RECORD_NAME, raw, VERSION)) return null;
+  const was = stored ?? emptyRecords();
+  const { records, previousBest, best } = addRun(was, run);
+  if (records !== was && !writeStored(DELVE_RECORD_NAME, serializeRecords(records))) return null;
   return { previousBest, best };
 }
 
 /**
- * Records the run this device is leaving while still standing in it, if any
- * (see leftEvent). For the session to call as it leaves a game, whatever the
- * way out: a later fall of the same run replaces it.
+ * Records the run this device is leaving before its end, if any (see
+ * leftEvent). For the session to call as it leaves a game, whatever the way
+ * out: the same run's end replaces it, and it never replaces an end.
  */
 export function recordLeft(s: GameState | null, me: string | null, hotSeat = false) {
   const run = leftEvent(s, me, hotSeat);

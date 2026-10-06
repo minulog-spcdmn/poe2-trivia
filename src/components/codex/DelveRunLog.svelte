@@ -1,16 +1,17 @@
 <script lang="ts">
   import { engine } from '../../lib/session.svelte';
   import type { Answer } from '../../lib/codex';
-  import { runStory, zoneOf, type RulesGroup } from '../../lib/codexStats';
-  import { RUN_LIMIT, runKey, type DelveRun } from '../../lib/delveRecord';
+  import { runLog, runStory, zoneOf, type RulesGroup } from '../../lib/codexStats';
+  import { RUN_LIMIT, isTogether, runKey, type DelveRun } from '../../lib/delveRecord';
   import { itemImage } from '../../lib/ui';
   import { backdropShadow } from '../../lib/backdropShadow';
   import type { Item } from '../../lib/game';
 
   // Every run kept in full, newest first, as the Collection's table: the
-  // latest SHORT, then all of them when asked. Runs under other rules (or
+  // latest SHORT rows, then all of them when asked. Runs under other rules (or
   // whose rules changed as they were resumed) follow, each group with its own
-  // bests, never compared with today's.
+  // bests, never compared with today's, and the short list's rows are shared
+  // with them. Together, a run's depth is the team's and its lives are yours.
   let {
     runs,
     others,
@@ -24,21 +25,23 @@
   let all = $state(false);
   const otherCount = $derived(others.reduce((n, g) => n + g.runs.length, 0));
   const listed = $derived(runs.length + otherCount);
-  const shown = $derived(all ? runs : runs.slice(0, SHORT));
-  /** Room left for runs under other rules before the short list is full. */
-  const room = $derived(all ? Infinity : Math.max(0, SHORT - shown.length));
+  /** The rows: in the short list SHORT runs at most, under these rules and others alike. */
+  const log = $derived(runLog(runs, others, all ? Infinity : SHORT));
 
-  const who = (r: DelveRun) => (r.hot ? `Hot-seat, ${r.players}` : r.players < 2 ? 'Alone' : `${r.players} players`);
+  const who = (r: DelveRun) => (isTogether(r) ? `${r.players} together` : 'Alone');
+  /** Lives a row shows: three at most, the last of more standing for the rest. */
+  const MAX_LIVES = 3;
 </script>
 
 {#snippet row(r: DelveRun)}
-  {@const lives = runStory(r, byRun.get(r.id) ?? [], engine.byId).lives}
+  {@const story = runStory(r, byRun.get(r.id) ?? [], engine.byId).lives}
+  {@const lives = story.length > MAX_LIVES ? story.slice(0, MAX_LIVES - 1) : story}
   <tr class:left={r.left}>
     <td class="num depth">{r.depth}</td>
     <td class="run">
       <span class="r-main"><span class="r-zone">{zoneOf(r.depth).name}</span></span>
       <small
-        >{who(r)}{#if r.won}{' • '}won{/if}{#if r.left}{' • '}left early{/if}<span class="narrow">{' • '}<span class="n">{date(r.at)}</span></span></small
+        >{who(r)}{#if r.left}{' • '}left early{/if}<span class="narrow">{' • '}<span class="n">{date(r.at)}</span></span></small
       >
     </td>
     <td class="lives">
@@ -57,6 +60,11 @@
               </span>
             {/if}
           {/each}
+          {#if story.length > lives.length}
+            <span class="mini none" title="{story.length - lives.length} more: depths {story.slice(lives.length).map((l) => l.depth).join(', ')}" role="img" aria-label="{story.length - lives.length} more lives lost"
+              >+{story.length - lives.length}</span
+            >
+          {/if}
         </span>
       {/if}
     </td>
@@ -83,31 +91,28 @@
           <th class="num wide">When</th>
         </tr>
       </thead>
-      {#if shown.length}
+      {#if log.shown.length}
         <tbody>
-          {#each shown as r (runKey(r))}{@render row(r)}{/each}
+          {#each log.shown as r (runKey(r))}{@render row(r)}{/each}
         </tbody>
       {/if}
-      {#each others as g (g.ruleset ?? 'mixed')}
-        {@const list = g.runs.slice(0, room)}
-        {#if list.length || all || !runs.length}
-          <tbody class="other">
-            <tr class="group">
-              <td colspan="4">
-                {#if g.ruleset === null}
-                  Rules changed mid-run<small>: resumed by a build with other rules, never counted</small>
-                {:else}
-                  Other rules<small
-                    >: never compared with today's{#if g.solo !== null}{' • '}deepest alone <span class="n">{g.solo}</span>{/if}{#if g.group !== null}{' • '}together <span
-                        class="n">{g.group}</span
-                      >{/if}</small
-                  >
-                {/if}
-              </td>
-            </tr>
-            {#each list as r (runKey(r))}{@render row(r)}{/each}
-          </tbody>
-        {/if}
+      {#each log.others as { group: g, runs: list } (g.ruleset ?? 'mixed')}
+        <tbody class="other">
+          <tr class="group">
+            <td colspan="4">
+              {#if g.ruleset === null}
+                Rules changed mid-run<small>: resumed by a build with other rules, never counted</small>
+              {:else}
+                Other rules<small
+                  >: never compared with today's{#if g.solo !== null}{' • '}deepest alone <span class="n">{g.solo}</span>{/if}{#if g.together !== null}{' • '}together <span
+                      class="n">{g.together}</span
+                    >{/if}</small
+                >
+              {/if}
+            </td>
+          </tr>
+          {#each list as r (runKey(r))}{@render row(r)}{/each}
+        </tbody>
       {/each}
     </table>
   </div>

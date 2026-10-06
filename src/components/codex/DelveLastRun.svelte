@@ -1,22 +1,26 @@
 <script lang="ts">
   import { DELVE_LIVES } from '../../lib/delve';
   import { zoneOf, type RunStory } from '../../lib/codexStats';
-  import type { DelveRun } from '../../lib/delveRecord';
+  import { isTogether, type DelveRun } from '../../lib/delveRecord';
   import { itemImage } from '../../lib/ui';
   import type { Item } from '../../lib/game';
 
-  // The latest run in one row: how deep, where, when and how it compares, and
-  // a small picture of each item that cost a life, its depth beneath.
+  // The latest run in one row: how deep, where, when and how it compares
+  // (with runs of its kind: `median` and `best` are alone's or together's),
+  // together your part in it, and a small picture of each item that cost you
+  // a life, its depth beneath.
   let { run, story, median, best, onopen }: { run: DelveRun; story: RunStory; median: number | null; best: number | null; onopen: (item: Item) => void } =
     $props();
 
   const when = (t: number) => new Date(t).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
-  const typical = (m: number) => (Number.isInteger(m) ? `${m}` : m.toFixed(1));
+  const usual = (m: number) => (Number.isInteger(m) ? `${m}` : m.toFixed(1));
 
-  const who = $derived(run.hot ? `Hot-seat, ${run.players} players` : run.players < 2 ? 'Alone' : `${run.players} players`);
+  const team = $derived(isTogether(run));
+  const who = $derived(team ? `${run.players} together` : 'Alone');
   const zone = $derived(zoneOf(run.depth));
-  /** Lives still in the phial when a run was left. */
-  const kept = $derived(run.left ? DELVE_LIVES - story.lives.length : 0);
+  /** Lives still in the phial when a run was left (together, give and take). */
+  const kept = $derived(run.left ? Math.max(0, DELVE_LIVES - (run.losses?.length ?? story.lives.length) - (run.given ?? 0) + (run.revived ?? 0)) : 0);
+  const how = $derived(run.left ? 'left' : team ? 'perished together' : 'perished');
   const diff = $derived(median === null || run.left ? null : run.depth - median);
   const isBest = $derived(!run.left && best === run.depth);
   /** Finds it took, in a few words. */
@@ -27,6 +31,9 @@
     if (f.flare.taken) out.push([f.flare.taken, f.flare.taken === 1 ? 'flare cache' : 'flare caches']);
     if (f.dynamite.taken) out.push([f.dynamite.taken, f.dynamite.taken === 1 ? 'dynamite cache' : 'dynamite caches']);
     if (story.finds.wardsBroke) out.push([story.finds.wardsBroke, story.finds.wardsBroke === 1 ? 'ward broke' : 'wards broke']);
+    // Together: your part in it.
+    if (run.revived) out.push([run.revived, run.revived === 1 ? 'time brought back' : 'times brought back']);
+    if (run.given) out.push([run.given, run.given === 1 ? 'life given' : 'lives given']);
     return out;
   });
 </script>
@@ -38,12 +45,12 @@
   </div>
   <div class="text">
     <p class="lead">
-      {who} • {run.left ? 'left' : 'perished'} in <span class="zname">{zone.name}</span>{#if run.left}, <span class="n">{kept}</span>
+      {who} • {how} in <span class="zname">{zone.name}</span>{#if run.left && kept}, <span class="n">{kept}</span>
         {kept === 1 ? 'life' : 'lives'} to spare{/if}{#if isBest}{' • '}<span class="up">your deepest</span>{/if}
     </p>
     <p class="note">
-      <span class="n">{when(run.at)}</span>{#if diff !== null && median !== null && !isBest}{' • '}{#if diff > 0}<span class="n">{typical(diff)}</span> deeper than{:else if diff < 0}<span class="n">{typical(-diff)}</span> short of{:else}right at{/if}
-        your typical <span class="n">{typical(median)}</span>{/if}{#each found as [n, w] (w)}{' • '}<span class="n">{n}</span> {w}{/each}
+      <span class="n">{when(run.at)}</span>{#if diff !== null && median !== null && !isBest}{' • '}{#if diff > 0}<span class="n">{usual(diff)}</span> deeper than{:else if diff < 0}<span class="n">{usual(-diff)}</span> short of{:else}right at{/if}
+        your usual <span class="n">{usual(median)}</span>{/if}{#each found as [n, w] (w)}{' • '}<span class="n">{n}</span> {w}{/each}
     </p>
   </div>
   {#if story.lives.length}
@@ -137,6 +144,7 @@
     margin: 0;
     padding: 0;
     display: flex;
+    flex-wrap: wrap;
     gap: 0.35rem;
   }
   .lost li {

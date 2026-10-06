@@ -148,7 +148,7 @@
     setMode(next);
     (e.currentTarget as HTMLElement).querySelector<HTMLElement>(`[data-mode="${next}"]`)?.focus();
   }
-  // The deepest this browser has delved, alone or with others (hot-seat runs count only alone).
+  // The deepest this browser has delved, alone or together (hot-seat is always alone).
   const records = loadRecords();
   const bestAlone = bestOf(records, true)?.depth ?? null;
   const bestTogether = bestOf(records, false)?.depth ?? null;

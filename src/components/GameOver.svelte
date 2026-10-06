@@ -11,7 +11,7 @@
   import { fxActive, fxUserOn } from '../lib/fx/core';
   import { victory } from '../lib/fx/moments';
   import { fallen } from '../lib/fx/delveEnd';
-  import { DELVE_LINK_PARAM, shareText } from '../lib/delveShare';
+  import { shareText } from '../lib/delveShare';
   import { portal } from '../lib/portal';
   import { delveStandings, delveTeam, isGroupRun } from '../lib/delve';
   import { BLUE_FROM, accentAt } from '../lib/descent';
@@ -25,7 +25,7 @@
   // Delve: ranked by how deep each went, and alone there is no winner, only a depth.
   const run = $derived(s.delve ?? null);
   const solo = $derived(!!run && !isGroupRun(s));
-  /** Alone: this run went deeper than ever (lib/delveRecord.ts). */
+  /** This run went deeper than every one before it of its kind, alone or together (lib/delveRecord.ts). */
   const newBest = $derived(!!run && session.delveResult?.id === run.startedAt && session.delveResult.best);
   const delveRows = $derived(run ? delveStandings(s) : []);
   /** Delve together: one result for the team (its depth, where the last of them perished), and each delver's part in it. */
@@ -58,33 +58,33 @@
     if (solo) return `Depth ${winner ? depthOf(winner.id) : s.round}`;
     return `Depth ${team?.depth ?? s.round}`;
   });
-  /** Alone, deeper than this browser has been before (not the very first run). */
-  const deeper = $derived(solo && newBest && session.delveResult?.previousBest !== null);
-  const kicker = $derived(
-    !run
-      ? 'Victory'
-      : solo
-        ? deeper
-          ? 'Deeper than ever'
-          : 'Perished'
-        : 'The descent ends',
-  );
+  /** Deeper than this browser has been before in a run of its kind (not the very first one). */
+  const deeper = $derived(newBest && session.delveResult?.previousBest !== null);
+  const kicker = $derived(!run ? 'Victory' : deeper ? 'Deeper than ever' : solo ? 'Perished' : 'The descent ends');
+  /**
+   * Delve: how the run measured up against this browser's records of its
+   * kind (lib/delveRecord.ts), alone or together; nothing for a run whose
+   * rules changed as it was resumed.
+   */
+  const record = $derived.by(() => {
+    const r = run && session.delveResult?.id === run.startedAt ? session.delveResult : null;
+    if (!r || run!.mixed) return '';
+    const kind = solo ? '' : ' together';
+    if (!r.best) return r.previousBest === null ? '' : ` Your best${kind} is depth ${r.previousBest}.`;
+    return r.previousBest === null ? ` Your first descent${kind}.` : ` The last best${kind} was ${r.previousBest}.`;
+  });
   /** Delve: what the depth means, and how a tie was settled. */
   const delveSub = $derived.by(() => {
     if (!run || !winner) return '';
     const row = delveRows.find((r) => r.id === winner.id);
     if (!row) return '';
-    if (solo) {
-      // Measured against this browser's deepest run alone (lib/delveRecord.ts). A new best, the kicker says.
-      const r = session.delveResult?.id === run.startedAt ? session.delveResult : null;
-      const record = !r || run.mixed ? '' : r.best ? (r.previousBest === null ? ' Your first descent.' : ` The last best was ${r.previousBest}.`) : ` Your best is depth ${r.previousBest}.`;
-      return (row.losses.length ? `Lives lost at ${lossDepths(row.losses)}.` : '') + record;
-    }
+    // A new best, the kicker says.
+    if (solo) return ((row.losses.length ? `Lives lost at ${lossDepths(row.losses)}.` : '') + record).trim();
     // Together: the team's depth is the result (the headline), nobody wins.
     const given = team?.revives.length ?? 0;
     const parts = [team?.perished ? 'Perished together' : '', given ? `${given === 1 ? 'one life' : `${given} lives`} passed between you` : ''].filter(Boolean);
     const line = parts.join('; ');
-    return line ? `${line[0].toUpperCase()}${line.slice(1)}.` : '';
+    return ((line ? `${line[0].toUpperCase()}${line.slice(1)}.` : '') + record).trim();
   });
   /** Delve together: the zone the team reached, in its colour. */
   const zone = $derived(team ? { name: zoneAt(team.depth), accent: accentAt(team.depth) } : null);
@@ -94,9 +94,7 @@
   async function shareDepth() {
     if (!canShare) return;
     // Alone, your depth; together, the team's.
-    const text = team
-      ? `We reached depth ${team.depth} in Delve together, can you beat us? ${new URL(SITE_URL).host}/?${DELVE_LINK_PARAM}`
-      : shareText(winner ? depthOf(winner.id) : s.round);
+    const text = team ? shareText(team.depth, true) : shareText(winner ? depthOf(winner.id) : s.round);
     try {
       if (matchMedia('(pointer: coarse)').matches && navigator.share) await navigator.share({ text });
       else {

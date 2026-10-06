@@ -8,12 +8,11 @@
     MIN_RUNS,
     ZONE_MIN_RUNS,
     answersByRun,
+    answersOf,
     delveDeaths,
     delveSummary,
     findStats,
-    livesLost,
     mergeClimbs,
-    mergeTallies,
     milestones,
     otherRules,
     runStory,
@@ -21,8 +20,10 @@
     zoneOf,
     zoneRisks,
     zonesReached,
+    type DelveKind,
+    type FindStats,
   } from '../lib/codexStats';
-  import { climbOf, tallyOf, type DelveRecords } from '../lib/delveRecord';
+  import { climbOf, isTogether, tallyOf, type DelveRecords } from '../lib/delveRecord';
   import { categoryIcon, itemImage } from '../lib/ui';
   import { backdropShadow } from '../lib/backdropShadow';
   import type { Item } from '../lib/game';
@@ -34,10 +35,11 @@
   // built from its parts: four figures around your deepest in the rune
   // circle (with no arc: depth has nothing to fill), your last run in a row,
   // one panel per topic (what kills you and the deadliest items, then where
-  // you fall, finds and wards, the zones you reached), and every run in the
-  // Collection's table. Alone comes first, together beside it; under the
-  // current rules only (runs under others are only listed). Zones ahead are
-  // never named: they are a surprise.
+  // you fall, your runs together, finds and wards, the zones you reached),
+  // and every run in the Collection's table. Alone and together are never
+  // summed: alone leads (together, before a run alone), and each figure says
+  // which it counts. Under the current rules only (runs under others are only
+  // listed). Zones ahead are never named: they are a surprise.
   // codexStats.ts says what each number means.
   let { codex, records, onopen, onbegin }: { codex: Codex; records: DelveRecords; onopen: (item: Item) => void; onbegin: () => void } = $props();
 
@@ -46,26 +48,29 @@
 
   const date = (t: number) => new Date(t).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
   const fmt = (n: number) => n.toLocaleString();
-  const typical = (m: number) => (Number.isInteger(m) ? `${m}` : m.toFixed(1));
+  const usual = (m: number) => (Number.isInteger(m) ? `${m}` : m.toFixed(1));
   const word = (n: number, one: string, many = `${one}s`) => (n === 1 ? one : many);
 
   // ---- alone first, together beside it ----
 
   const solo = $derived(delveSummary(records, 'solo'));
-  const group = $derived(delveSummary(records, 'group'));
+  const together = $derived(delveSummary(records, 'together'));
   /** Alone leads, unless there is only together. */
-  const alone = $derived(solo.runs > 0 || !!solo.best || !(group.runs > 0 || group.best));
-  const main = $derived(alone ? solo : group);
-  const other = $derived(alone ? group : solo);
+  const alone = $derived(solo.runs > 0 || !!solo.best || !(together.runs > 0 || together.best));
+  const kind: DelveKind = $derived(alone ? 'solo' : 'together');
+  const main = $derived(alone ? solo : together);
+  const other = $derived(alone ? together : solo);
   const kindWord = $derived(alone ? 'alone' : 'together');
   const otherWord = $derived(alone ? 'together' : 'alone');
+  /** Any run together under the current rules. */
+  const teamed = $derived(together.runs > 0 || !!together.best);
 
   const others = $derived(otherRules(records));
   /** Anything at all, under any rules. */
   const anything = $derived(records.runs.length > 0 || records.frontier.length > 0 || Object.keys(records.bests).length > 0);
   /** Anything under the current rules. */
-  const current = $derived(solo.runs + group.runs > 0 || !!solo.best || !!group.best);
-  const allRuns = $derived(solo.runs + group.runs);
+  const current = $derived(solo.runs + together.runs > 0 || !!solo.best || !!together.best);
+  const allRuns = $derived(solo.runs + together.runs);
 
   const best = $derived(main.deepest);
 
@@ -73,17 +78,15 @@
 
   const byRun = $derived(answersByRun(codex));
   /** Alone and together, newest first. */
-  const runs = $derived([...runsOf(records, 'solo'), ...runsOf(records, 'group')].sort((a, b) => b.at - a.at));
+  const runs = $derived([...runsOf(records, 'solo'), ...runsOf(records, 'together')].sort((a, b) => b.at - a.at));
   const last = $derived(runs[0] ?? null);
   const story = $derived(last ? runStory(last, byRun.get(last.id) ?? [], engine.byId) : null);
-  const lastMedian = $derived(last && last.players > 1 ? group.median : solo.median);
-  const lastBest = $derived(last && last.players > 1 ? group.deepest : solo.deepest);
+  const lastOf = $derived(last && isTogether(last) ? together : solo);
 
-  // ---- where you fall: alone and together as one, your lives either way ----
+  // ---- where you fall: the leading kind's runs, your own lives ----
 
   const ZONES_SHOWN = 10;
-  const both = $derived(mergeTallies(tallyOf(records, true), tallyOf(records, false)));
-  const risks = $derived(zoneRisks(both));
+  const risks = $derived(zoneRisks(tallyOf(records, alone), kind));
   const riskTop = $derived(Math.max(0.0001, ...risks.map((z) => z.rate)));
   const worstZone = $derived(risks.length > 1 ? risks.reduce((a, b) => (b.rate > a.rate ? b : a)) : null);
 
@@ -93,38 +96,47 @@
   const catTop = $derived(Math.max(0.0001, ...deaths.categories.map((c) => c.rate)));
   const worstCat = $derived(deaths.categories[0] ?? null);
 
-  // ---- finds and wards ----
+  // ---- rows of a name, a note and a figure: together, finds and wards ----
 
-  const finds = $derived(findStats(codex.log));
-  const vein = $derived(finds.finds.azurite);
-  const cache = $derived(finds.finds.flare);
-  const dynamite = $derived(finds.finds.dynamite);
-  type Find = { name: string; value: number; note: [number, string][] };
-  const findRows = $derived.by(() => {
-    const out: Find[] = [];
-    const missed = (t: typeof vein, how: string): [number, string][] => (t.taken - t.ok ? [[t.taken - t.ok, how]] : []);
-    if (vein.taken)
-      out.push({
-        name: 'Azurite Veins',
-        value: vein.taken,
-        note: [
-          ...(vein.gained.wards ? [[vein.gained.wards, word(vein.gained.wards, 'ward')] as [number, string]] : []),
-          ...(vein.gained.shards ? [[vein.gained.shards, word(vein.gained.shards, 'shard')] as [number, string]] : []),
-          ...missed(vein, 'caved in'),
-        ],
-      });
-    if (cache.taken) out.push({ name: 'Flare Caches', value: cache.taken, note: [...(cache.gained.flares ? [[cache.gained.flares, word(cache.gained.flares, 'flare')] as [number, string]] : []), ...missed(cache, 'missed')] });
-    if (dynamite.taken)
-      out.push({
-        name: 'Dynamite Caches',
-        value: dynamite.taken,
-        note: [...(dynamite.gained.dynamite ? [[dynamite.gained.dynamite, word(dynamite.gained.dynamite, 'stick')] as [number, string]] : []), ...missed(dynamite, 'missed')],
-      });
-    if (deaths.blasted) out.push({ name: 'Dynamite blasts', value: deaths.blasted, note: [[0, 'art laid bare, wrong answers blown away']] });
-    if (deaths.warded) out.push({ name: 'Lives warded', value: deaths.warded, note: [[0, 'a ward broke in its place']] });
-    if (finds.flaresBurnt) out.push({ name: 'Flares burnt', value: finds.flaresBurnt, note: [[5, 's more on the clock each']] });
+  /** A note's parts, joined by bullets: a number (none for 0) and its words. */
+  type Row = { name: string; value: string; note: [number, string][] };
+
+  /** Together: your part in the team's runs (what the summary leaves to alone, when alone leads). */
+  const teamRows = $derived.by(() => {
+    const t = together;
+    const out: Row[] = [];
+    if (alone && t.median !== null) out.push({ name: 'Usual depth', value: usual(t.median), note: [[0, 'half your runs together end deeper']] });
+    if (alone) out.push({ name: 'Lives lost', value: fmt(t.lives), note: t.warded ? [[t.warded, `more saved by ${word(t.warded, 'a ward', 'wards')}`]] : [[0, 'your own, in every run together']] });
+    out.push({
+      name: 'Perished',
+      value: fmt(t.perished),
+      note: t.revived ? [[t.revived, `${word(t.revived, 'time')} a teammate brought you back`]] : [[0, t.perished ? 'nobody brought you back' : 'not once yet']],
+    });
+    out.push({ name: 'Lives given', value: fmt(t.given), note: [[0, t.given ? 'each one brought a teammate back' : 'to bring back a teammate who perished']] });
     return out;
   });
+
+  /** One kind's finds, the wards that saved a life and the flares and dynamite that went off. */
+  function findRowsOf(f: FindStats): Row[] {
+    const out: Row[] = [];
+    const { azurite: vein, flare: cache, dynamite } = f.finds;
+    const missed = (t: typeof vein, how: string): [number, string][] => (t.taken - t.ok ? [[t.taken - t.ok, how]] : []);
+    const got = (n: number | undefined, one: string): [number, string][] => (n ? [[n, word(n, one)]] : []);
+    if (vein.taken) out.push({ name: 'Azurite Veins', value: fmt(vein.taken), note: [...got(vein.gained.wards, 'ward'), ...got(vein.gained.shards, 'shard'), ...missed(vein, 'caved in')] });
+    if (cache.taken) out.push({ name: 'Flare Caches', value: fmt(cache.taken), note: [...got(cache.gained.flares, 'flare'), ...missed(cache, 'missed')] });
+    if (dynamite.taken) out.push({ name: 'Dynamite Caches', value: fmt(dynamite.taken), note: [...got(dynamite.gained.dynamite, 'stick'), ...missed(dynamite, 'missed')] });
+    if (f.blasted) out.push({ name: 'Dynamite blasts', value: fmt(f.blasted), note: [[0, 'art laid bare, wrong answers blown away']] });
+    if (f.wardsBroke) out.push({ name: 'Lives warded', value: fmt(f.wardsBroke), note: [[0, 'a ward broke in its place']] });
+    if (f.flaresBurnt) out.push({ name: 'Flares burnt', value: fmt(f.flaresBurnt), note: [[5, 's more on the clock each']] });
+    return out;
+  }
+  /** Alone and together apart, from the answers the codex logged. */
+  const findScopes = $derived(
+    [
+      { label: 'Alone', rows: findRowsOf(findStats(answersOf(codex.log, 'solo'))) },
+      { label: 'Together', rows: findRowsOf(findStats(answersOf(codex.log, 'together'))) },
+    ].filter((sc) => sc.rows.length),
+  );
 
   // ---- zones reached, alone or together ----
 
@@ -182,24 +194,36 @@
         </section>
 {/snippet}
 
-{#snippet findList()}
-  <header><h2 id="find-h">Finds and wards</h2></header>
-          {#if findRows.length}
-            <ul class="list">
-              {#each findRows as f (f.name)}
-                <li>
-                  <span class="l-name"
-                    ><span>{f.name}</span><small
-                      >{#each f.note as [n, w], i (i)}{i ? ' • ' : ''}{#if n}<span class="n">{n}</span>{' '}{/if}{w}{/each}</small
-                    ></span
-                  >
-                  <b>{fmt(f.value)}</b>
-                </li>
-              {/each}
-            </ul>
-          {:else}
-            <p class="hint">The veins and caches you take, the wards that save a life and the flares you burn show up here.</p>
-          {/if}
+{#snippet rowList(list: Row[])}
+  <ul class="list">
+    {#each list as f (f.name)}
+      <li>
+        <span class="l-name"
+          ><span>{f.name}</span><small
+            >{#each f.note as [n, w], i (i)}{i ? ' • ' : ''}{#if n}<span class="n">{n}</span>{' '}{/if}{w}{/each}</small
+          ></span
+        >
+        <b>{f.value}</b>
+      </li>
+    {/each}
+  </ul>
+{/snippet}
+
+{#snippet findPanels()}
+  <!-- One panel for each kind of run, alone and together. -->
+  {#each findScopes as sc (sc.label)}
+    <section class="panel" use:backdropShadow={{ fill: 'linear' }} aria-labelledby="find-h-{sc.label}">
+      <header><h2 id="find-h-{sc.label}">Finds and wards</h2><span class="col-label">{sc.label}</span></header>
+      {@render rowList(sc.rows)}
+    </section>
+  {/each}
+{/snippet}
+
+{#snippet teamPanel()}
+  <section class="panel" use:backdropShadow={{ fill: 'linear' }} aria-labelledby="team-h">
+    <header><h2 id="team-h">Together</h2><span class="col-label">{fmt(together.runs)} {word(together.runs, 'run')}</span></header>
+    {@render rowList(teamRows)}
+  </section>
 {/snippet}
 
 <div class="delve-page">
@@ -220,13 +244,13 @@
             <span class="stat-label">Deepest {otherWord}</span>
             <span class="stat-value">{other.deepest ?? '?'}</span>
             <span class="stat-note"
-              >{#if other.runs}<span class="n">{fmt(other.runs)}</span> {word(other.runs, 'run')}{#if alone && other.wins}{' • '}<span class="n">{other.wins}</span> {word(other.wins, 'win')}{/if}{:else}no run {otherWord} yet{/if}</span
+              >{#if other.runs}<span class="n">{fmt(other.runs)}</span> {word(other.runs, 'run')} {otherWord}{:else}no run {otherWord} yet{/if}</span
             >
           </div>
           <div class="stat">
             <span class="stat-label">Runs</span>
             <span class="stat-value">{fmt(allRuns)}</span>
-            <span class="stat-note"><span class="n">{fmt(solo.runs)}</span> alone • <span class="n">{fmt(group.runs)}</span> together</span>
+            <span class="stat-note"><span class="n">{fmt(solo.runs)}</span> alone • <span class="n">{fmt(together.runs)}</span> together</span>
           </div>
         </div>
 
@@ -247,15 +271,17 @@
 
         <div class="side">
           <div class="stat">
-            <span class="stat-label">Typical depth</span>
-            <span class="stat-value">{main.median === null ? '?' : typical(main.median)}</span>
-            <span class="stat-note">{main.median === null ? `after ${MIN_RUNS} runs ${kindWord}` : `half your runs ${kindWord} end deeper`}</span>
+            <span class="stat-label">Usual depth</span>
+            <span class="stat-value">{main.median === null ? '?' : usual(main.median)}</span>
+            <span class="stat-note"
+              >{#if main.median === null}after <span class="n">{MIN_RUNS}</span> runs {kindWord}{:else}half your runs {kindWord} end deeper{/if}</span
+            >
           </div>
           <div class="stat">
             <span class="stat-label">Lives lost</span>
-            <span class="stat-value">{fmt(livesLost(both))}</span>
+            <span class="stat-value">{fmt(main.lives)}</span>
             <span class="stat-note"
-              >{#if deaths.warded}<span class="n">{fmt(deaths.warded)}</span> more saved by wards{:else}in all your runs{/if}</span
+              >{#if main.warded}{kindWord}, and <span class="n">{fmt(main.warded)}</span> more saved by {word(main.warded, 'a ward', 'wards')}{:else}in your runs {kindWord}{/if}</span
             >
           </div>
         </div>
@@ -263,7 +289,7 @@
 
       {#if last && story}
         <div in:fly={rise(220)}>
-          <DelveLastRun run={last} {story} median={lastMedian} best={lastBest} {onopen} />
+          <DelveLastRun run={last} {story} median={lastOf.median} best={lastOf.deepest} {onopen} />
         </div>
       {/if}
 
@@ -288,7 +314,7 @@
             {#if worstCat}
               <p class="foot">
                 <b>{worstCat.category}</b> cost you the most for each answer: <span class="n">{worstCat.lives}</span>
-                {word(worstCat.lives, 'life', 'lives')} in <span class="n">{worstCat.n}</span> answers. Alone and together; a cave-in counts two.
+                {word(worstCat.lives, 'life', 'lives')} in <span class="n">{worstCat.n}</span> answers. Your answers alone and together; a cave-in counts two.
               </p>
             {/if}
           {/if}
@@ -316,9 +342,9 @@
 
       <div class="insights" in:fly={rise(350)}>
         <section class="panel" use:backdropShadow={{ fill: 'linear' }} aria-labelledby="fall-h">
-          <header><h2 id="fall-h">Where you fall</h2><span class="col-label">Lives lost</span></header>
+          <header><h2 id="fall-h">Where you fall</h2><span class="col-label">Lives lost {kindWord}</span></header>
           {#if !risks.length}
-            <p class="hint">Once {ZONE_MIN_RUNS} runs reach a zone: the lives you lose there, out of the runs that got there.</p>
+            <p class="hint">Once {ZONE_MIN_RUNS} runs {kindWord} reach a zone: the lives you lose there, out of the runs that got there.</p>
           {:else}
             <ul class="bars">
               {#each risks.slice(0, ZONES_SHOWN) as z (z.k)}
@@ -332,14 +358,14 @@
             <p class="foot">
               {#if worstZone}Most lives go in <b>{worstZone.name}</b>: <span class="n">{worstZone.lives}</span> lost in the
                 <span class="n">{worstZone.reached}</span> {word(worstZone.reached, 'run')} that got there.{/if}
-              Alone and together; a zone shows once <span class="n">{ZONE_MIN_RUNS}</span> runs reach it{risks.length > ZONES_SHOWN ? `, the ${ZONES_SHOWN} highest here` : ''}.
+              Your runs {kindWord}; a zone shows once <span class="n">{ZONE_MIN_RUNS}</span> of them reach it{risks.length > ZONES_SHOWN ? `, the ${ZONES_SHOWN} highest here` : ''}.
             </p>
           {/if}
         </section>
 
-        {#if findRows.length}
-          <section class="panel" use:backdropShadow={{ fill: 'linear' }} aria-labelledby="find-h">{@render findList()}</section>
-        {/if}
+        {#if teamed}{@render teamPanel()}{/if}
+
+        {@render findPanels()}
 
         {@render zonesPanel()}
       </div>
@@ -349,9 +375,8 @@
           <span class="n">{MIN_RUNS - allRuns}</span> to go.
         </p>
         <div class="insights" in:fly={rise(350)}>
-          {#if findRows.length}
-            <section class="panel" use:backdropShadow={{ fill: 'linear' }} aria-labelledby="find-h">{@render findList()}</section>
-          {/if}
+          {#if teamed}{@render teamPanel()}{/if}
+          {@render findPanels()}
           {@render zonesPanel()}
         </div>
       {/if}

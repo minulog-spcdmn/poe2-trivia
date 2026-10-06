@@ -5,13 +5,13 @@ import type { Item } from '../src/lib/game.ts';
 import { emptyCodex, parseCodex, record, serializeCodex, type Codex, type Encounter } from '../src/lib/codex.ts';
 import {
   answersByRun,
+  answersOf,
   delveDeaths,
   delveSummary,
   findStats,
   livesLost,
   medianOfCounts,
   mergeClimbs,
-  mergeTallies,
   milestones,
   otherRules,
   runStory,
@@ -43,7 +43,9 @@ function codexOf(...es: Encounter[]): Codex {
 }
 
 const byId = new Map(items.map((it) => [it.id, it]));
-const run = (o: Partial<DelveRun>): DelveRun => ({ id: 1, at: 1, depth: 10, players: 1, won: false, ruleset: 1, mixed: false, ...o });
+const run = (o: Partial<DelveRun>): DelveRun => ({ id: 1, at: 1, depth: 10, players: 1, ruleset: 1, mixed: false, ...o });
+/** A run together, as this player had it. */
+const team = (o: Partial<DelveRun>): DelveRun => run({ players: 3, perished: [], ...o });
 
 test('Delve answers keep their depth: per item, per depth and in the log', () => {
   const x = codexOf(dv(1, a.id, 3, true), dv(2, a.id, 9, false), dv(3, a.id, 7, true), dv(4, a.id, 5, false), dv(5, b.id, 2, true, 200));
@@ -173,19 +175,36 @@ test('zones reached: dated by the climb, distinct biomes, one teaser', () => {
   assert.ok(deep.biomes <= 10);
 });
 
-test('the summary counts from tallies: falls and runs left, a median from MIN_RUNS falls, alone and together apart', () => {
+test('the summary counts from tallies: ends and runs left, a usual depth from MIN_RUNS ends, alone and together apart', () => {
   let rec = emptyRecords();
   rec = addRun(rec, run({ id: 1, at: 1, depth: 4, losses: [1, 2, 4] })).records;
-  rec = addRun(rec, run({ id: 2, at: 2, depth: 10, losses: [2, 10, 10] })).records;
+  rec = addRun(rec, run({ id: 2, at: 2, depth: 10, losses: [2, 10, 10], wards: 2 })).records;
   const two = delveSummary(rec, 'solo');
-  assert.deepEqual([two.runs, two.median], [2, null], 'no typical depth from two runs');
+  assert.deepEqual([two.runs, two.median], [2, null], 'no usual depth from two runs');
   rec = addRun(rec, run({ id: 3, at: 3, depth: 7, losses: [3, 5, 7] })).records;
   rec = addRun(rec, run({ id: 4, at: 4, depth: 30, losses: [5], left: true })).records;
-  rec = addRun(rec, run({ id: 5, at: 5, depth: 60, players: 3, won: true, losses: [3, 5, 60] })).records;
+  rec = addRun(rec, team({ id: 5, at: 5, depth: 60, losses: [3, 5, 20, 40, 41], perished: [20, 41], revived: 1, given: 2, wards: 1 })).records;
+  rec = addRun(rec, team({ id: 6, at: 6, depth: 25, losses: [25], given: 1, left: true })).records;
   const solo = delveSummary(rec, 'solo');
-  assert.deepEqual([solo.runs, solo.fell, solo.left, solo.median, solo.best?.depth], [4, 3, 1, 7, 10]);
-  const group = delveSummary(rec, 'group');
-  assert.deepEqual([group.runs, group.wins, group.median, group.best?.depth], [1, 1, null, 60]);
+  assert.deepEqual([solo.runs, solo.fell, solo.left, solo.median, solo.best?.depth, solo.lives, solo.warded], [4, 3, 1, 7, 10, 10, 2]);
+  const together = delveSummary(rec, 'together');
+  assert.deepEqual(
+    [together.runs, together.left, together.median, together.best?.depth, together.lives, together.warded, together.perished, together.given, together.revived],
+    [2, 1, null, 60, 6, 1, 2, 3, 1],
+  );
+  assert.equal('wins' in together, false, 'nobody wins');
+});
+
+test('lives lost and wards saved count over the same runs: those of one kind, under these rules', () => {
+  let rec = emptyRecords();
+  rec = addRun(rec, run({ id: 1, at: 1, depth: 9, losses: [2, 5, 9], wards: 1 })).records;
+  rec = addRun(rec, run({ id: 2, at: 2, depth: 6, losses: [4, 5, 6], wards: 3, mixed: true })).records;
+  rec = addRun(rec, run({ id: 3, at: 3, depth: 8, losses: [1, 2, 8], wards: 5, ruleset: 9 })).records;
+  rec = addRun(rec, team({ id: 4, at: 4, depth: 30, losses: [10], wards: 2 })).records;
+  const solo = delveSummary(rec, 'solo');
+  assert.deepEqual([solo.runs, solo.lives, solo.warded], [1, 3, 1]);
+  const together = delveSummary(rec, 'together');
+  assert.deepEqual([together.runs, together.lives, together.warded], [1, 1, 2]);
 });
 
 test('medians come from counts, so a huge tally costs nothing', () => {
@@ -193,7 +212,7 @@ test('medians come from counts, so a huge tally costs nothing', () => {
   assert.equal(medianOfCounts({ 7: 1, 8: 1 }), 7.5);
   assert.equal(medianOfCounts({ 3: 2, 9: 1 }), 3);
   assert.equal(medianOfCounts({ 1: 1, 5: 2, 100: 1 }), 5);
-  const raw = JSON.stringify({ v: 1, runs: [], bests: {}, tallies: { '1:solo': { wins: 0, ends: { 5: 3e15, 6: 2 }, lost: {} } }, frontier: [] });
+  const raw = JSON.stringify({ v: 1, runs: [], bests: {}, tallies: { '1:solo': { ends: { 5: 3e15, 6: 2 }, lost: {} } }, frontier: [] });
   const started = Date.now();
   const s = delveSummary(parseRecords(raw)!, 'solo');
   assert.ok(Date.now() - started < 200);
@@ -211,14 +230,14 @@ test('where you fall: lives lost in a zone per run that reached it, from ZONE_MI
     [1, 2, 33],
   ];
   runs.forEach((losses, i) => (rec = addRun(rec, run({ id: i + 1, at: i + 1, depth: losses[2], losses })).records));
-  const risks = zoneRisks(tallyOf(rec, true));
+  const risks = zoneRisks(tallyOf(rec, true), 'solo');
   assert.deepEqual(
     risks.map((z) => [z.depth, z.reached, z.lives]),
     [[1, 5, 10]],
     'zones only once five runs reach them',
   );
   assert.equal(risks[0].rate, 10 / 5);
-  const loose = zoneRisks(tallyOf(rec, true), 1);
+  const loose = zoneRisks(tallyOf(rec, true), 'solo', 1);
   assert.deepEqual(
     loose.map((z) => [z.depth, z.reached, z.lives]),
     [
@@ -231,7 +250,7 @@ test('where you fall: lives lost in a zone per run that reached it, from ZONE_MI
   // A run left standing got as deep as it was, and its lives count where they went.
   rec = addRun(rec, run({ id: 9, at: 9, depth: 14, losses: [12], left: true })).records;
   assert.deepEqual(
-    zoneRisks(tallyOf(rec, true), 1).map((z) => [z.depth, z.reached, z.lives]).slice(0, 2),
+    zoneRisks(tallyOf(rec, true), 'solo', 1).map((z) => [z.depth, z.reached, z.lives]).slice(0, 2),
     [
       [1, 6, 10],
       [11, 4, 4],
@@ -271,6 +290,7 @@ test('finds and wards from the log: veins and caches taken and how they ended, w
   assert.deepEqual(f.finds.flare, { taken: 2, ok: 1, gained: { flares: 1 }, lives: 0, wards: 1 });
   assert.equal(f.wardsBroke, 3);
   assert.equal(f.flaresBurnt, 1);
+  assert.equal(f.blasted, 0);
   // The new log fields round-trip, and nonsense in them is dropped.
   const { parseCodex: parse, serializeCodex: ser } = { parseCodex, serializeCodex };
   assert.deepEqual(parse(ser(x)), x);
@@ -282,11 +302,11 @@ test('runs under other rules or resumed across a change are grouped apart, with 
   let rec = emptyRecords();
   rec = addRun(rec, run({ id: 1, at: 1, depth: 12 })).records;
   rec = addRun(rec, run({ id: 2, at: 2, depth: 40, ruleset: 7 })).records;
-  rec = addRun(rec, run({ id: 3, at: 3, depth: 25, ruleset: 7, players: 2 })).records;
+  rec = addRun(rec, team({ id: 3, at: 3, depth: 25, ruleset: 7, players: 2 })).records;
   rec = addRun(rec, run({ id: 4, at: 4, depth: 60, mixed: true })).records;
   const groups = otherRules(rec, 1);
   assert.deepEqual(
-    groups.map((g) => [g.ruleset, g.runs.map((r) => r.id), g.solo, g.group]),
+    groups.map((g) => [g.ruleset, g.runs.map((r) => r.id), g.solo, g.together]),
     [
       [7, [3, 2], 40, 25],
       [null, [4], null, null],
@@ -375,19 +395,25 @@ test('a Delve reveal says what the question came from and whether a ward took it
   assert.equal(e.answer?.ok, false);
 });
 
-test('alone and together as one: tallies summed, climbs merged into one frontier, lives lost counted', () => {
+test('alone and together apart: lives lost and where you fall each count one kind, your own lives', () => {
   let rec = emptyRecords();
   rec = addRun(rec, run({ id: 1, at: 1, depth: 9, losses: [2, 5, 9] })).records;
-  rec = addRun(rec, run({ id: 2, at: 2, depth: 14, players: 3, won: true, losses: [3, 14, 14] })).records;
+  rec = addRun(rec, team({ id: 2, at: 2, depth: 14, losses: [3, 6, 8, 12], perished: [8, 12], revived: 1 })).records;
   rec = addRun(rec, run({ id: 3, at: 3, depth: 12, losses: [4, 12, 12] })).records;
   rec = addRun(rec, run({ id: 4, at: 4, depth: 6, losses: [6], left: true })).records;
-  const both = mergeTallies(tallyOf(rec, true), tallyOf(rec, false));
-  assert.deepEqual(both.ends, { 9: 1, 12: 1, 14: 1 });
-  assert.deepEqual(both.lost, { 2: 1, 5: 1, 3: 1, 14: 1, 4: 1, 12: 1, 6: 1 });
-  assert.deepEqual(both.left, { 6: 1 });
-  assert.equal(both.wins, 1);
-  assert.equal(livesLost(both), 10, 'three falls of three lives, and the one life of the run left');
-  assert.deepEqual(zoneRisks(both, 1)[0], { ...zone(0), reached: 4, lives: 6, rate: 6 / 4 });
+  const solo = tallyOf(rec, true);
+  const together = tallyOf(rec, false);
+  assert.equal(livesLost(solo, 'solo'), 7, 'two falls of three lives, and the one life of the run left');
+  assert.equal(livesLost(together, 'together'), 4, 'together the team\'s end is no life of yours: your four, brought back once');
+  assert.deepEqual(zoneRisks(solo, 'solo', 1)[0], { ...zone(0), reached: 3, lives: 5, rate: 5 / 3 });
+  // Together: the run reached the second zone, but your lives there were the 12 only.
+  assert.deepEqual(
+    zoneRisks(together, 'together', 1).map((z) => [z.depth, z.reached, z.lives]),
+    [
+      [1, 1, 3],
+      [11, 1, 1],
+    ],
+  );
 
   const climb = mergeClimbs(
     [
@@ -401,6 +427,25 @@ test('alone and together as one: tallies summed, climbs merged into one frontier
     [9, 14],
     'a step only where it went deeper than every one before it',
   );
+});
+
+test('finds and wards apart: the answers of runs alone, and of runs together', () => {
+  const together = (at: number, ok: boolean, more: Partial<NonNullable<Encounter['delve']>>): Encounter => ({ ...dv(at, a.id, 20, ok), delve: { depth: 20, run: 9, team: true, ...more } });
+  const x = codexOf(
+    { ...dv(1, a.id, 4, true), delve: { depth: 4, run: 1, find: 'flare', gained: 'flares', blasted: true } },
+    together(2, true, { find: 'azurite', gained: 'wards' }),
+    together(3, false, { lost: { lives: 0, wards: 1 }, blasted: true }),
+  );
+  assert.deepEqual(x.log.map((l) => [l.team ?? false, l.blasted ?? false]), [
+    [false, true],
+    [true, false],
+    [true, true],
+  ]);
+  const solo = findStats(answersOf(x.log, 'solo'));
+  const team_ = findStats(answersOf(x.log, 'together'));
+  assert.deepEqual([solo.finds.flare.taken, solo.finds.azurite.taken, solo.wardsBroke, solo.blasted], [1, 0, 0, 1]);
+  assert.deepEqual([team_.finds.flare.taken, team_.finds.azurite.taken, team_.wardsBroke, team_.blasted], [0, 1, 1, 1]);
+  assert.deepEqual(parseCodex(serializeCodex(x)), x, 'round trip');
 });
 
 test('milestones keep the first best and the latest few, with a gap between', () => {
@@ -417,4 +462,37 @@ test('what kills you also counts the wards that broke in a life\'s place and the
   assert.equal(d.warded, 2);
   assert.equal(d.blasted, 2);
   assert.equal(d.lives, 2, 'a warded answer costs no life');
+});
+
+test('the run log\'s short list holds ten runs at most, today\'s and the other rules\' together', async () => {
+  const { runLog } = await import('../src/lib/codexStats.ts');
+  let rec = emptyRecords();
+  for (let i = 1; i <= 4; i++) rec = addRun(rec, run({ id: i, at: i, depth: 5 })).records;
+  for (let i = 10; i <= 17; i++) rec = addRun(rec, run({ id: i, at: i, depth: 5, ruleset: 7 })).records;
+  for (let i = 20; i <= 26; i++) rec = addRun(rec, run({ id: i, at: i, depth: 5, mixed: true })).records;
+  // A ruleset with only a best left.
+  rec = { ...rec, bests: { ...rec.bests, '3:solo': run({ id: 99, at: 0, depth: 40, ruleset: 3 }) } };
+  const today = [...rec.runs].filter((r) => r.ruleset === 1 && !r.mixed).reverse();
+  const groups = otherRules(rec, 1);
+  const short = runLog(today, groups, 10);
+  const rows = short.shown.length + short.others.reduce((n, g) => n + g.runs.length, 0);
+  assert.equal(rows, 10);
+  assert.deepEqual(
+    short.others.map((g) => [g.group.ruleset, g.runs.length]),
+    [[7, 6]],
+    'the mixed runs and the best-only group wait for "show all"',
+  );
+  // With no run under today's rules, still ten.
+  const none = runLog([], groups, 10);
+  assert.deepEqual(none.others.map((g) => [g.group.ruleset, g.runs.length]), [
+    [7, 8],
+    [3, 0],
+    [null, 2],
+  ]);
+  const all = runLog(today, groups, Infinity);
+  assert.deepEqual(all.others.map((g) => [g.group.ruleset, g.runs.length]), [
+    [7, 8],
+    [3, 0],
+    [null, 7],
+  ]);
 });

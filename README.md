@@ -308,23 +308,32 @@ dark silhouettes, and the codex can't be opened while in a room. It is kept in t
 browser's localStorage only (`src/lib/codex.ts`).
 
 The Codex has two tabs: **Collection** (the above) and **Delve**, built
-from the same parts. Delve shows your deepest in the rune circle with the
-zone it reached, beside your deepest the other way (alone or together),
-your runs, a typical depth (after 3 runs) and lives lost (and those wards
-saved); your last run in one row (where each life went and what took it);
-after 3 runs, what kills you (kinds of item, by lives lost), your deadliest
-items and where you fall (lives lost in each zone that 5 runs reached);
-finds and wards (veins and caches taken and what they gave, blasts, lives
-warded, flares burnt); the zones reached, each dated, with your deepest
-over time; and a run log (the latest ten, all on request; runs under other
-rules listed apart). Zones you haven't reached are never named, and
-"Begin the descent" starts a run alone. Only runs under the current rules
-count. A run you leave while still standing is recorded at the depth you
-left: listed, but never a best or a depth a run ended at (if it goes on
-after a rejoin, the fall replaces it). In hot-seat with several players,
-the group's run is recorded once, as deep as its deepest delver, as a run
-together and never a win. An item's page also shows its Delve answers. The
-runs are kept in this browser too (`src/lib/delveRecord.ts`).
+from the same parts. Alone and together are kept apart and never summed:
+alone leads (together, before your first run alone). Delve shows your
+deepest alone in the rune circle with the zone it reached, beside your
+deepest together, your runs (alone and together), your usual depth (the
+median, after 3 runs) and the lives you lost, with the wards that saved one
+counted over the same runs; your last run in one row (where each life went
+and what took it, and together what you gave and were given); after 3
+runs, what kills you (kinds of item, by lives lost) and your deadliest
+items, from all your answers; where you fall (lives lost in each zone that
+5 runs reached); a Together panel (usual depth and lives lost together,
+times you perished and were brought back, lives you gave); finds and wards
+(veins and caches taken and what they gave, blasts, lives warded, flares
+burnt), one panel alone and one together; the zones reached, each dated,
+with your deepest over time; and a run log (the latest ten rows, all on
+request; runs under other rules listed apart). Zones you haven't reached
+are never named, and "Begin the descent" starts a run alone. Only runs
+under the current rules count, judged by the rules each run was played
+under. A run alone is recorded as you fall. A run together is the team's:
+recorded once it is over, at the team's depth, with your own part in it,
+so perishing and being brought back records nothing. A run you leave before
+its end is recorded at the depth it was on: listed, but never a best or a
+depth a run ended at; if it goes on after a rejoin, its end replaces it,
+and an end, once recorded, never changes. Records or a codex this build
+can't read are never written over: a newer build's are left alone, damaged
+ones kept aside. An item's page also shows its Delve answers. The runs are
+kept in this browser too (`src/lib/delveRecord.ts`).
 
 ## Multiplayer
 

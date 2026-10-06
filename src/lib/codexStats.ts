@@ -5,7 +5,7 @@
 import type { Difficulty, Item, QuestionMode } from './game.ts';
 import { RECENT, answerLives, answerWards, livesCost, type Answer, type Codex, type ItemEntry, type Tally } from './codex.ts';
 import { DELVE_RULESET, type FindKind, type ItemKind } from './delve.ts';
-import { MAX_DEPTH, bestKey, tallyOf as runsTally, type DelveRecords, type DelveRun, type DelveTally, type Frontier } from './delveRecord.ts';
+import { MAX_DEPTH, bestKey, isTogether, tallyOf as runsTally, type DelveRecords, type DelveRun, type DelveTally, type Frontier } from './delveRecord.ts';
 import { stratumName } from './descent.ts';
 
 /** Fewer answers than this don't make an item a nemesis. */
@@ -122,17 +122,25 @@ export function codexStats(c: Codex, items: Item[], categories: string[], limit 
 // ---- Delve -------------------------------------------------------------------
 //
 // What every number on the Delve page means. All of them are under the
-// current rules (DELVE_RULESET) and of one kind of run, alone or together;
-// runs under other rules, or resumed across a change of rules, are only
-// listed, apart, with their own bests.
-// - A run is counted once it ends: it fell (its third life went), or it was
-//   left standing (see delveRecord.ts). Both count as runs that got that deep.
-// - A best is the deepest fall; a run left never is one.
-// - The typical depth is the median depth runs fell at, from MIN_RUNS falls.
-// - Where you fall: lives lost in a zone, and the runs that reached it (alone
-//   and together as one, mergeTallies: they are your lives either way).
+// current rules (DELVE_RULESET) and of one kind of run, alone or together,
+// never the two summed; runs under other rules, or resumed across a change of
+// rules, are only listed, apart, with their own bests.
+// - A run is counted once it ends: alone it fell (its third life went),
+//   together the last of the team perished; or it was left before its end
+//   (see delveRecord.ts). Both count as runs that got that deep.
+// - A best is the deepest end; a run left never is one. Together, the depth
+//   is the team's.
+// - The usual depth is the median depth runs ended at (half end deeper, half
+//   shallower), from MIN_RUNS ends.
+// - Lives lost are this player's own, and the wards saved beside them are
+//   counted over the same runs (each run keeps the wards that broke in it).
+// - Where you fall: lives lost in a zone, and the runs that reached it.
+// - Together: the times you perished, the lives you gave a teammate, and the
+//   times one brought you back.
 // - What kills you: lives lost and answers, from every Delve answer (alone or
 //   together: the codex keeps answers by item, not by run), a cave-in two.
+// - Finds and wards: from the answers the codex logged, alone and together
+//   apart.
 
 /** Most stats wait for this many runs: fewer say little. */
 export const MIN_RUNS = 3;
@@ -145,7 +153,7 @@ export const CATEGORY_MIN = 5;
 /** Depths in a zone (a stratum of the descent). */
 export const ZONE_SIZE = 10;
 
-export type DelveKind = 'solo' | 'group';
+export type DelveKind = 'solo' | 'together';
 
 export interface Zone {
   /** The stratum: 0 for depths 1 to 10. */
@@ -207,17 +215,22 @@ export function medianOfCounts(m: Record<number, number>): number | null {
 const sumOf = (m: Record<number, number> | undefined) => Object.values(m ?? {}).reduce((a, b) => a + b, 0);
 
 export interface DelveSummary {
-  /** Runs counted: fallen and left. */
+  /** Runs counted: ended and left. */
   runs: number;
   fell: number;
   left: number;
-  /** Group runs won. */
-  wins: number;
-  /** The median depth runs fell at; null before MIN_RUNS falls. */
+  /** The usual depth: the median depth runs ended at; null before MIN_RUNS ends. */
   median: number | null;
   best: DelveRun | null;
-  /** The deepest fall: the best's, or (if the best was lost, records written by a broken build) the tally's. */
+  /** The deepest end: the best's, or (if the best was lost, records written by a broken build) the tally's. */
   deepest: number | null;
+  /** This player's lives lost in these runs, and the wards that broke in a life's place in the same runs. */
+  lives: number;
+  warded: number;
+  /** Together: times this player perished, lives they gave a teammate, and times one brought them back. */
+  perished: number;
+  given: number;
+  revived: number;
 }
 
 /** The counted runs of a kind under a ruleset (this one by default). */
@@ -230,31 +243,23 @@ export function delveSummary(r: DelveRecords, kind: DelveKind, ruleset = DELVE_R
     runs: fell + left,
     fell,
     left,
-    wins: t.wins,
     median: fell >= MIN_RUNS ? medianOfCounts(t.ends) : null,
     best,
     deepest: best?.depth ?? (fell ? Math.max(...Object.keys(t.ends).map(Number)) : null),
+    lives: livesLost(t, kind),
+    warded: t.warded ?? 0,
+    perished: sumOf(t.perished),
+    given: t.given ?? 0,
+    revived: t.revived ?? 0,
   };
 }
 
-/** Tallies as one: runs alone and together counted together. */
-export function mergeTallies(...ts: DelveTally[]): DelveTally {
-  const add = (into: Record<number, number>, m: Record<number, number> | undefined) => {
-    for (const [d, n] of Object.entries(m ?? {})) into[Number(d)] = (into[Number(d)] ?? 0) + n;
-  };
-  const out: DelveTally = { wins: 0, ends: {}, lost: {} };
-  const left: Record<number, number> = {};
-  for (const t of ts) {
-    out.wins += t.wins;
-    add(out.ends, t.ends);
-    add(out.lost, t.lost);
-    add(left, t.left);
-  }
-  return Object.keys(left).length ? { ...out, left } : out;
-}
-
-/** Lives a tally's runs lost: each fall's last, and every one before it (runs from before losses were kept count only their last). */
-export const livesLost = (t: DelveTally) => sumOf(t.ends) + sumOf(t.lost);
+/**
+ * This player's lives a tally's runs lost. Alone: each fall's last, and
+ * every one before it (runs from before losses were kept count only their
+ * last). Together: every one they lost (the team's end isn't theirs).
+ */
+export const livesLost = (t: DelveTally, kind: DelveKind) => (kind === 'solo' ? sumOf(t.ends) : 0) + sumOf(t.lost);
 
 /** Climbs as one: each step deeper than every one before it, from any of them, oldest first. */
 export function mergeClimbs(...cs: Frontier[][]): Frontier[] {
@@ -279,8 +284,8 @@ export interface ZoneRisk extends Zone {
   rate: number;
 }
 
-/** Lives lost in each zone per run that reached it, from the top, while at least `min` runs got there. */
-export function zoneRisks(t: DelveTally, min = ZONE_MIN_RUNS): ZoneRisk[] {
+/** This player's lives lost in each zone per run of a kind that reached it, from the top, while at least `min` runs got there. */
+export function zoneRisks(t: DelveTally, kind: DelveKind, min = ZONE_MIN_RUNS): ZoneRisk[] {
   const stopped = new Map<number, number>();
   const lives = new Map<number, number>();
   const into = (m: Map<number, number>, d: string, n: number) => {
@@ -289,7 +294,8 @@ export function zoneRisks(t: DelveTally, min = ZONE_MIN_RUNS): ZoneRisk[] {
   };
   for (const [d, n] of Object.entries(t.ends)) {
     into(stopped, d, n);
-    into(lives, d, n);
+    // Alone a run ends where its last life went; together, where the team's did.
+    if (kind === 'solo') into(lives, d, n);
   }
   for (const [d, n] of Object.entries(t.left ?? {})) into(stopped, d, n);
   for (const [d, n] of Object.entries(t.lost)) into(lives, d, n);
@@ -334,7 +340,7 @@ export function zonesReached(climb: Frontier[]): ZoneProgress {
 
 /** The listed runs of a kind under a ruleset (this one by default), its rules kept to, newest first. */
 export function runsOf(r: DelveRecords, kind: DelveKind, ruleset = DELVE_RULESET): DelveRun[] {
-  return r.runs.filter((x) => x.ruleset === ruleset && !x.mixed && x.players < 2 === (kind === 'solo')).reverse();
+  return r.runs.filter((x) => x.ruleset === ruleset && !x.mixed && isTogether(x) === (kind === 'together')).reverse();
 }
 
 export interface RulesGroup {
@@ -344,7 +350,7 @@ export interface RulesGroup {
   runs: DelveRun[];
   /** Its own bests, alone and together (none for runs whose rules changed). */
   solo: number | null;
-  group: number | null;
+  together: number | null;
 }
 
 /** The listed runs under other rules, each ruleset apart (newest first), then those whose rules changed mid-run. */
@@ -352,7 +358,7 @@ export function otherRules(r: DelveRecords, ruleset = DELVE_RULESET): RulesGroup
   const out = new Map<number | null, RulesGroup>();
   const group = (rs: number | null) => {
     let g = out.get(rs);
-    if (!g) out.set(rs, (g = { ruleset: rs, runs: [], solo: rs === null ? null : (r.bests[bestKey(rs, true)]?.depth ?? null), group: rs === null ? null : (r.bests[bestKey(rs, false)]?.depth ?? null) }));
+    if (!g) out.set(rs, (g = { ruleset: rs, runs: [], solo: rs === null ? null : (r.bests[bestKey(rs, true)]?.depth ?? null), together: rs === null ? null : (r.bests[bestKey(rs, false)]?.depth ?? null) }));
     return g;
   };
   for (const run of [...r.runs].reverse()) if (run.mixed || run.ruleset !== ruleset) group(run.mixed ? null : run.ruleset).runs.push(run);
@@ -362,6 +368,26 @@ export function otherRules(r: DelveRecords, ruleset = DELVE_RULESET): RulesGroup
     if (rs !== ruleset) group(rs);
   }
   return [...out.values()].sort((a, b) => (a.ruleset === null ? 1 : b.ruleset === null ? -1 : b.ruleset - a.ruleset));
+}
+
+/** The rows of the run log: the short list holds `short` runs at most, today's first, then the other rules' in order. */
+export interface RunLog {
+  shown: DelveRun[];
+  /** Each group under other rules with the runs it shows; one whose runs have all left the list (its bests only) while there is room. */
+  others: { group: RulesGroup; runs: DelveRun[] }[];
+}
+
+/** The run log's rows: every run (`short` Infinity), or the latest `short` of them, shared by today's and the other rules'. */
+export function runLog(runs: DelveRun[], others: RulesGroup[], short: number): RunLog {
+  const shown = runs.slice(0, short);
+  let room = short - shown.length;
+  const out: RunLog['others'] = [];
+  for (const group of others) {
+    const list = group.runs.slice(0, Math.max(0, room));
+    room -= list.length;
+    if (list.length || (!group.runs.length && room > 0)) out.push({ group, runs: list });
+  }
+  return { shown, others: out };
 }
 
 export interface DeathRate {
@@ -437,17 +463,20 @@ export interface FindStats {
   /** Azurite Wards that broke, each in place of a life. */
   wardsBroke: number;
   flaresBurnt: number;
+  /** Questions a stick of dynamite went off on (logged from when the log kept it). */
+  blasted: number;
 }
 
 const noFind = (): FindTally => ({ taken: 0, ok: 0, gained: {}, lives: 0, wards: 0 });
 
 /** Finds taken and how they ended, wards that saved a life and flares burnt, over these answers. */
 export function findStats(answers: Iterable<Answer>): FindStats {
-  const out: FindStats = { finds: { azurite: noFind(), flare: noFind(), dynamite: noFind() }, wardsBroke: 0, flaresBurnt: 0 };
+  const out: FindStats = { finds: { azurite: noFind(), flare: noFind(), dynamite: noFind() }, wardsBroke: 0, flaresBurnt: 0, blasted: 0 };
   for (const a of answers) {
     if (a.depth === undefined) continue;
     out.wardsBroke += answerWards(a);
     if (a.flared) out.flaresBurnt++;
+    if (a.blasted) out.blasted++;
     if (!a.find) continue;
     const f = out.finds[a.find];
     f.taken++;
@@ -461,6 +490,9 @@ export function findStats(answers: Iterable<Answer>): FindStats {
   }
   return out;
 }
+
+/** This player's logged Delve answers of one kind of run: alone, or together. */
+export const answersOf = (log: Answer[], kind: DelveKind) => log.filter((a) => a.depth !== undefined && !!a.team === (kind === 'together'));
 
 /** This player's Delve answers by run (its id), oldest first. */
 export function answersByRun(c: Codex): Map<number, Answer[]> {

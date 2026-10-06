@@ -16,13 +16,23 @@
 // wrong answer to an Azurite Vein caved in for two, the lives it cost.
 // The log also keeps, per Delve answer, the find it came from and what it
 // earned, a flare burnt on it, and on a cave-in the lives and wards it took,
-// so a run can be told back (codexStats.ts runStory).
+// so a run can be told back (codexStats.ts runStory), whether dynamite went off
+// on it, and whether it was given in a run together (`team`), so the pages
+// can tell alone and together apart.
+//
+// Together (co-op) everyone answers the same question: this player's answer
+// is right if theirs cleared the depth (the reveal's winner), wrong if they
+// struck an option (or let the clock run out while standing), and what that
+// cost them is their own hit (the reveal's `hits`). Someone else clearing it
+// first only adds "seen".
 // The fields Delve added are optional, so codexes written before them read as
-// they were and the version stays.
+// they were and the version stays. A stored codex this build can't read is
+// never written over (lib/keepAside.ts).
 
 import { difficultyOf, isFake, type Difficulty, type GameState, type QuestionMode } from './game.ts';
-import { ITEM_KINDS, delveTier, type FindKind, type ItemKind } from './delve.ts';
-import { readStored, removeStored, storeKey, writeStored } from './storage.ts';
+import { ITEM_KINDS, delveTier, isGroupRun, type FindKind, type ItemKind } from './delve.ts';
+import { makeRoom } from './keepAside.ts';
+import { readStored, removeStored, storeKey, tryReadStored, writeStored } from './storage.ts';
 
 export interface Tally {
   /** Answers given. */
@@ -93,9 +103,13 @@ export interface Answer {
   gained?: ItemKind;
   /** Delve: a flare burnt on this question. */
   flared?: true;
-  /** Delve, on a cave-in: lives it took and wards that broke in their place (otherwise see answerLives). */
+  /** Delve, on a cave-in or together: lives it took and wards that broke in their place (otherwise see answerLives). */
   lives?: number;
   wards?: number;
+  /** Delve: a stick of dynamite went off on this question. */
+  blasted?: true;
+  /** Delve: answered in a run together. */
+  team?: true;
 }
 
 /** Lives a logged answer cost: one a wrong Delve answer, none if wards took it, a cave-in's own count. */
@@ -139,7 +153,8 @@ export interface Encounter {
    * Present in Delve: the depth the question was asked at, and the run's start
    * (its id in the run list); the find it came from; whether dynamite went
    * off on it; whether wards took a wrong answer's whole loss; and on a
-   * cave-in (an Azurite Vein missed), the lives and wards it took.
+   * cave-in (an Azurite Vein missed), the lives and wards it took. Together,
+   * `lost` is always this player's own hit when they answered wrong.
    */
   delve?: {
     depth: number;
@@ -152,6 +167,8 @@ export interface Encounter {
     gained?: ItemKind;
     /** A flare burnt on the question. */
     flared?: true;
+    /** A run together. */
+    team?: true;
   };
   /** Present when this device's player answered (or let their turn's time run out). */
   answer?: {
@@ -202,7 +219,21 @@ export function encounterAt(s: GameState, me: string | null, hotSeat: boolean, m
     };
   let picked: number | null;
   let ok: boolean;
-  if (race) {
+  if (s.delve && isGroupRun(s)) {
+    // Together: right for whoever cleared it, wrong for whoever struck (or stood through the time-out).
+    e.delve!.team = true;
+    delete e.delve!.warded;
+    delete e.delve!.lost;
+    if (!me || hotSeat) return e;
+    const struck = q.struck?.find((x) => x.by === me);
+    const hit = r.hits?.find((h) => h.playerId === me);
+    if (r.winnerId === me) [picked, ok] = [r.correctIndex, true];
+    else if (struck || hit) [picked, ok] = [struck ? struck.index : null, false];
+    else return e;
+    const took = hit ?? struck;
+    if (!ok && took) e.delve!.lost = { lives: took.lives, wards: took.wards };
+    if (!ok) delete e.delve!.gained;
+  } else if (race) {
     if (!me) return e;
     const miss = q.misses.find((m) => m.playerId === me);
     if (r.winnerId === me) [picked, ok] = [r.correctIndex, true];
@@ -297,6 +328,8 @@ export function record(c: Codex, e: Encounter): Codex {
     ...(dv?.gained && a.ok ? { gained: dv.gained } : {}),
     ...(dv?.flared ? { flared: true as const } : {}),
     ...(dv?.lost && !a.ok ? { lives: lives, wards: wardsBroke } : {}),
+    ...(dv?.blasted ? { blasted: true as const } : {}),
+    ...(dv?.team ? { team: true as const } : {}),
   };
   next.log = [...c.log, log].slice(-LOG_LIMIT);
   return next;
@@ -388,6 +421,8 @@ export function parseCodex(raw: string | null): Codex | null {
         ...(d && a.ok && ITEM_KINDS.includes(a.gained as ItemKind) ? { gained: a.gained as ItemKind } : {}),
         ...(d && a.flared === true ? { flared: true as const } : {}),
         ...(d && !a.ok && isLoss(a.lives) && isLoss(a.wards) ? { lives: a.lives as number, wards: a.wards as number } : {}),
+        ...(d && a.blasted === true ? { blasted: true as const } : {}),
+        ...(d && a.team === true ? { team: true as const } : {}),
       });
     }
   if (isObj(v.byDifficulty))
@@ -411,7 +446,7 @@ export const serializeCodex = (c: Codex) => JSON.stringify({ v: CODEX_VERSION, .
 
 // ---- storage ---------------------------------------------------------------
 
-/** The stored codex (empty when there is none, or it can't be read). Always read fresh: another tab may have added to it. */
+/** The stored codex (empty when there is none, or it can't be read; never written over for that). Always read fresh: another tab may have added to it. */
 export function loadCodex(): Codex {
   return parseCodex(readStored(CODEX)) ?? emptyCodex();
 }
@@ -424,9 +459,13 @@ function write(c: Codex): boolean {
   }
 }
 
-/** Adds an encounter to the stored codex. */
+/** Adds an encounter to the stored codex: not over one a newer build wrote, and anything else unreadable kept aside first. */
 export function recordEncounter(e: Encounter) {
-  const prev = loadCodex();
+  const raw = tryReadStored(CODEX);
+  if (raw === undefined) return;
+  const stored = parseCodex(raw);
+  if (raw && !stored && !makeRoom(CODEX, raw, CODEX_VERSION)) return;
+  const prev = stored ?? emptyCodex();
   const next = record(prev, e);
   if (next !== prev) write(next);
 }

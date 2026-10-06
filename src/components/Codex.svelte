@@ -157,7 +157,7 @@
   ];
   let tab = $state<Tab>('items');
   /** The tab's note: your best alone under the current rules (together, before a run alone). */
-  const delveBest = $derived(delveSummary(delve, 'solo').deepest ?? delveSummary(delve, 'group').deepest);
+  const delveBest = $derived(delveSummary(delve, 'solo').deepest ?? delveSummary(delve, 'together').deepest);
   const delved = $derived(delve.runs.length > 0 || delve.frontier.length > 0 || Object.keys(delve.bests).length > 0);
 
   /**
