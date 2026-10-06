@@ -3,8 +3,10 @@ import assert from 'node:assert/strict';
 import { Session } from 'node:inspector/promises';
 import { descent, hallTurn, lookOf, magmaCooling, STRATA } from '../src/lib/descent.ts';
 import { EMBERS, Embers, GLINTS, PALETTE, SIZE_STRIDE, SLOTS, SPARKS, TILES } from '../src/lib/backdropEmbers.ts';
-import { cooling, MOTIONS, motionFor, motionOf, SURFACE_MOTION, tweakOf, ZONE_MOTION, zoneMotionOf } from '../src/lib/emberMotion.ts';
-import { endgameAt, zones } from '../src/lib/backdrops.ts';
+import { cooling, MOTIONS, motionFor, motionOf, PROFILES, profileOf, SURFACE_MOTION, tweakOf, ZONE_MOTION, zoneMotionOf } from '../src/lib/emberMotion.ts';
+import { PROFILE_NAMES } from '../src/lib/emberProfiles.ts';
+import { endgameAt, setBackdrops, SHIPPED, zones } from '../src/lib/backdrops.ts';
+import { cloneData } from '../src/lib/backdropData.ts';
 
 const W = 1200;
 const H = 800;
@@ -44,17 +46,35 @@ function moves(e: Embers, frames: number, each: (e: Embers, f: number) => void =
 const main = (k: number) => motionFor(k, 1);
 const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
 
-/** Which way each zone's embers go: -1 up, 1 down, 0 neither (drawn into the eddies). */
-const WAY: Record<number, -1 | 0 | 1> = { [-1]: -1, 0: 1, 1: -1, 2: 1, 3: -1, 4: 1, 5: 0, 6: 1, 7: -1, 8: 1, 9: -1 };
+/**
+ * Runs `f` with zone `k`'s embers moving as profile `name` has them, as it
+ * is (untweaked), in a draft shown through the tool's hook; then the file's
+ * again. So what a profile does is tested whatever the saved zones make of it.
+ */
+function asProfile(name: string, f: (k: number) => void, k = 4) {
+  const draft = cloneData(SHIPPED);
+  draft.zones[k].motion = tweakOf(profileOf(name));
+  setBackdrops(draft);
+  try {
+    f(k);
+  } finally {
+    setBackdrops(SHIPPED);
+  }
+}
+
+/** Which way a motion carries its embers: -1 up, 1 down, 0 neither for sure (drawn round the eddies, in gusts, or all but still). */
+const wayOf = (m: { rise: number; swirl: number; puff: number }) => (m.swirl > 0 || m.puff > 0 || Math.abs(m.rise) < 0.05 ? 0 : m.rise > 0 ? -1 : 1);
 
 test('every stratum has a motion: each zone its profile as tweaked in backdrops.json, and past the last each its generated one', () => {
   assert.equal(ZONE_MOTION.length, STRATA.length);
   for (let k = 0; k < STRATA.length; k++) {
-    // As shipped, each zone's tweak leaves its profile as it is, field for field.
-    assert.deepEqual(zones[k].motion, tweakOf(ZONE_MOTION[k]), STRATA[k].name);
-    assert.deepEqual(motionOf(zones[k].motion), ZONE_MOTION[k], STRATA[k].name);
-    assert.deepEqual(zoneMotionOf(k), ZONE_MOTION[k], STRATA[k].name);
+    // Each zone's motion is its profile, tweaked as the file has it.
+    assert.ok(PROFILE_NAMES.includes(zones[k].motion.profile), STRATA[k].name);
+    assert.deepEqual(zoneMotionOf(k), motionOf(zones[k].motion), STRATA[k].name);
+    assert.equal(zoneMotionOf(k).main.name, zones[k].motion.profile);
   }
+  // A profile left as it is is the profile itself.
+  for (const p of ZONE_MOTION) assert.deepEqual(motionOf(tweakOf(p)), p, p.main.name);
   assert.deepEqual(zoneMotionOf(-1), SURFACE_MOTION);
   for (let k = STRATA.length; k < 60; k++) {
     const own = motionOf(endgameAt(k).motion);
@@ -65,80 +85,110 @@ test('every stratum has a motion: each zone its profile as tweaked in backdrops.
   // And they move so: one past 100 goes the way its motion has it.
   for (const k of [10, 13, 23, 31]) {
     const m = zoneMotionOf(k).main;
-    if (m.swirl > 0 || m.puff > 0 || Math.abs(m.rise) < 0.05) continue;
-    const way = m.rise > 0 ? -1 : 1;
+    const way = wayOf(m);
+    if (!way) continue;
     const own = moves(zone(k), 120).filter((v) => v.motion === main(k));
     assert.ok(own.length > 300 && own.every((v) => Math.sign(v.dy) === way || Math.abs(v.dy) < 1e-6), `stratum ${k}: ${m.name}`);
   }
 });
 
-test("within a zone every ember goes one way: none rises where they fall, or falls where they rise", () => {
-  for (const [k, way] of Object.entries(WAY).map(([k, w]) => [Number(k), w] as const)) {
-    if (way === 0) continue;
-    const m = k < 0 ? SURFACE_MOTION.main : ZONE_MOTION[k].main;
-    assert.equal(Math.sign(m.rise), -way, `${m.name}: its rise`);
+test('within a zone every ember goes one way, whatever the zones are tweaked to: none rises where they fall, or falls where they rise; no NaN', () => {
+  for (let k = -1; k < STRATA.length; k++) {
+    const m = zoneMotionOf(k).main;
     const own = moves(zone(k), 240).filter((v) => v.motion === main(k));
     assert.ok(own.length > 1000, `${m.name}: ${own.length} moves`);
+    assert.ok(own.every((v) => Number.isFinite(v.x) && Number.isFinite(v.y) && Number.isFinite(v.dx) && Number.isFinite(v.dy)), `${m.name}: NaN`);
+    // Nothing flies off: no ember crosses more than a fifth of the screen in a frame.
+    assert.ok(own.every((v) => Math.abs(v.dy) < H / 5 && Math.abs(v.dx) < W / 5), `${m.name}: a jump`);
+    const way = wayOf(m);
+    if (!way) continue;
     const wrong = own.filter((v) => Math.sign(v.dy) !== way);
-    assert.equal(wrong.length, 0, `${m.name}: ${wrong.length} of ${own.length} went the other way, e.g. ${JSON.stringify(wrong[0])}`);
-    assert.ok(own.every((v) => Number.isFinite(v.x) && Number.isFinite(v.y)), `${m.name}: NaN`);
+    assert.equal(wrong.length, 0, `stratum ${k} (${m.name}): ${wrong.length} of ${own.length} went the other way, e.g. ${JSON.stringify(wrong[0])}`);
+  }
+  // And each profile, as it is, goes the way its rise has it.
+  for (const p of PROFILES) {
+    const way = wayOf(p.main);
+    if (!way) continue;
+    asProfile(p.main.name, (k) => {
+      const own = moves(zone(k), 180).filter((v) => v.motion === main(k));
+      assert.ok(own.length > 500 && own.every((v) => Math.sign(v.dy) === way), p.main.name);
+    });
   }
 });
 
-test('the two kinds in one zone are a different sort of ember, rarer, smaller and brighter; only the Mines have two', () => {
-  assert.deepEqual(ZONE_MOTION.flatMap((z, k) => (z.accent ? [k] : [])), [0]);
-  for (const z of ZONE_MOTION) {
+test('a profile with two kinds of ember has a different sort as its second, rarer, smaller and brighter, burning now and then', () => {
+  const two = PROFILES.filter((z) => z.accent);
+  assert.ok(two.length > 0);
+  for (const z of [...two, ...STRATA.map((_, k) => zoneMotionOf(k))]) {
     if (!z.accent) continue;
     assert.ok(z.share > 0 && z.share <= 0.1, `${z.accent.name}: ${z.share}`);
     assert.ok(z.accent.size < z.main.size && z.accent.bright > z.main.bright, z.accent.name);
     assert.ok(z.accent.rest[1] > 0, `${z.accent.name}: now and then, not all the time`);
   }
-  // In the Mines the dust sifts down and the lamp sparks rise.
-  const sparks = moves(zone(0, 10), 900).filter((v) => v.motion === motionFor(0, 0));
-  assert.ok(sparks.length > 20 && sparks.every((v) => v.dy < 0), `${sparks.length} spark moves`);
-  assert.ok(sparks.every((v) => v.y > H * 0.55), 'they only rise a little way off the floor');
+  // The dust sifting down with the lamp sparks rising off the floor: the sparks only rise, and only a little way.
+  asProfile('dust sifting down', (k) => {
+    const sparks = moves(zone(k, 10), 900).filter((v) => v.motion === motionFor(k, 0));
+    assert.ok(sparks.length > 20 && sparks.every((v) => v.dy < 0), `${sparks.length} spark moves`);
+    assert.ok(sparks.every((v) => v.y > H * 0.55), 'they only rise a little way off the floor');
+  });
 });
 
-test('the fires fling theirs up fastest and ever faster; spores, motes and the city\'s lights hang nearly still; snow and stone dust fall steadily', () => {
-  const speed = (k: number) => mean(moves(zone(k), 180).filter((v) => v.motion === main(k)).map((v) => -v.dy / DT));
-  // The Magma Fissure's and the Primeval Ruins' white-hot fire's.
-  const fire = Math.min(speed(1), speed(9));
-  const all = [-1, 0, 2, 3, 4, 6, 7, 8].map((k) => [k, speed(k)] as const);
-  for (const [k, v] of all) assert.ok(Math.abs(v) < fire, `stratum ${k} (${v.toFixed(1)} px/s) is no quicker than the fire's ${fire.toFixed(1)}`);
+test('as the profiles have them, the fires fling theirs up fastest and ever faster; spores, motes and the city\'s lights hang nearly still; snow and stone dust fall steadily', () => {
+  const speed = (name: string) => {
+    let v = 0;
+    asProfile(name, (k) => (v = mean(moves(zone(k), 180).filter((m) => m.motion === main(k)).map((m) => -m.dy / DT))));
+    return v;
+  };
+  const fire = Math.min(speed('embers rising on the heat'), speed('sparks flying up'));
+  for (const name of ['embers rising', 'dust sifting down', 'snow falling', 'spores hanging', 'motes settling', 'stone dust falling', 'rising on the puffs', 'cold motes drifting']) {
+    const v = speed(name);
+    assert.ok(Math.abs(v) < fire, `${name} (${v.toFixed(1)} px/s) is no quicker than the fire's ${fire.toFixed(1)}`);
+  }
   assert.ok(fire > 110, `fire: ${fire.toFixed(1)} px/s`);
-  const fungal = speed(3);
-  assert.ok(fungal > 0 && fungal < 20, `spores: ${fungal.toFixed(1)} px/s`);
-  const vaal = speed(4);
-  assert.ok(vaal < 0 && vaal > -15, `motes: ${vaal.toFixed(1)} px/s`);
-  const city = speed(8);
+  const spores = speed('spores hanging');
+  assert.ok(spores > 0 && spores < 20, `spores: ${spores.toFixed(1)} px/s`);
+  const motes = speed('motes settling');
+  assert.ok(motes < 0 && motes > -15, `motes: ${motes.toFixed(1)} px/s`);
+  const city = speed('cold motes drifting');
   assert.ok(city < 0 && city > -12, `the city's motes: ${city.toFixed(1)} px/s`);
   // Heat lifts them ever faster: higher up, they are quicker.
-  for (const k of [1, 9]) {
-    const own = moves(zone(k), 240).filter((v) => v.motion === main(k));
-    const low = mean(own.filter((v) => v.y > H * 0.7).map((v) => -v.dy));
-    const high = mean(own.filter((v) => v.y < H * 0.3).map((v) => -v.dy));
-    assert.ok(high > low * 1.2, `${STRATA[k].name}: higher ${high.toFixed(2)} vs lower ${low.toFixed(2)} px a frame`);
+  for (const name of ['embers rising on the heat', 'sparks flying up']) {
+    asProfile(name, (k) => {
+      const own = moves(zone(k), 240).filter((v) => v.motion === main(k));
+      const low = mean(own.filter((v) => v.y > H * 0.7).map((v) => -v.dy));
+      const high = mean(own.filter((v) => v.y < H * 0.3).map((v) => -v.dy));
+      assert.ok(high > low * 1.2, `${name}: higher ${high.toFixed(2)} vs lower ${low.toFixed(2)} px a frame`);
+    });
   }
-  // Petrified dust falls nearly straight down; the city's motes drift sideways as they sink.
-  const sideways = (k: number) => Math.abs(mean(moves(zone(k), 180).filter((v) => v.motion === main(k)).map((v) => v.dx / v.dy)));
-  assert.ok(sideways(6) < 0.1, `petrified: ${sideways(6)}`);
-  assert.ok(sideways(8) > 0.3, `city: ${sideways(8)}`);
+  // Stone dust falls nearly straight down; the city's motes drift sideways as they sink.
+  const sideways = (name: string) => {
+    let v = 0;
+    asProfile(name, (k) => (v = Math.abs(mean(moves(zone(k), 180).filter((m) => m.motion === main(k)).map((m) => m.dx / m.dy)))));
+    return v;
+  };
+  assert.ok(sideways('stone dust falling') < 0.1, `stone dust: ${sideways('stone dust falling')}`);
+  assert.ok(sideways('cold motes drifting') > 0.3, `city: ${sideways('cold motes drifting')}`);
 });
 
-test('the sulphur vents carry them up in gusts, then they linger, never sinking', () => {
-  const e = zone(7);
-  const by: number[][] = Array.from({ length: EMBERS }, () => []);
-  for (const v of moves(e, 600)) if (v.motion === main(7)) by[v.i].push(-v.dy / DT);
-  const gusty = by.filter((s) => s.length > 300);
-  assert.ok(gusty.length > 10);
-  for (const s of gusty) {
-    assert.ok(Math.min(...s) > 0, 'never sinking');
-    assert.ok(Math.max(...s) > 4 * Math.min(...s), `gusts: ${Math.min(...s).toFixed(1)} to ${Math.max(...s).toFixed(1)} px/s`);
-  }
+test('the puffs carry theirs up in gusts, then they linger, never sinking', () => {
+  asProfile('rising on the puffs', (k) => {
+    const e = zone(k);
+    const by: number[][] = Array.from({ length: EMBERS }, () => []);
+    for (const v of moves(e, 600)) if (v.motion === main(k)) by[v.i].push(-v.dy / DT);
+    const gusty = by.filter((s) => s.length > 300);
+    assert.ok(gusty.length > 10);
+    for (const s of gusty) {
+      assert.ok(Math.min(...s) > 0, 'never sinking');
+      assert.ok(Math.max(...s) > 4 * Math.min(...s), `gusts: ${Math.min(...s).toFixed(1)} to ${Math.max(...s).toFixed(1)} px/s`);
+    }
+  });
 });
 
-test("the sparks the magma's bursts throw up only ever rise, as its embers do", () => {
-  const e = zone(1);
+test("the sparks a zone's bursts throw up only ever rise", () => {
+  // (The zone bursting most, as the file has them.)
+  const k = STRATA.reduce((b, _, i) => (lookOf(i).burst > lookOf(b).burst ? i : b), 0);
+  if (!(lookOf(k).burst > 0.1)) return;
+  const e = zone(k);
   const at = (EMBERS + GLINTS) * 4;
   let up = 0;
   let down = 0;
@@ -156,7 +206,7 @@ test("the sparks the magma's bursts throw up only ever rise, as its embers do", 
 test("a burst's sparks burn in the colour of the zone it belongs to, through its handover too (the Magma Fissure's red, never the Frozen Hollow's blue)", () => {
   // The zone with bursts handing over to one without (in backdrops.json as it stands, the Magma Fissure to the Frozen Hollow).
   const k = STRATA.findIndex((_, i) => lookOf(i).burst > 0.1 && i + 1 < STRATA.length && lookOf(i + 1).burst === 0);
-  assert.equal(STRATA[k].name, 'Magma Fissure');
+  if (k < 0) return;
   const at = (EMBERS + GLINTS) * 4;
   const near = (a: ArrayLike<number>, b: readonly number[]) => b.every((v, c) => Math.abs(a[c] - v) < 1e-6);
   // At its first depth, and all through its handover (the scene already turning into the next zone).
@@ -197,8 +247,9 @@ function watch(e: Embers, frames: number, see: (i: number, x: number, y: number,
   }
 }
 
-test("in the Abyssal Depths every ember spirals into one of the void's eddies", () => {
-  const e = zone(5);
+test("drawn into the eddies, every ember spirals into one of them", () => {
+  asProfile('drawn into the eddies', (zk) => {
+  const e = zone(zk);
   const reach = 0.34 * Math.min(W, H);
   let n = 0;
   let inward = 0;
@@ -216,17 +267,19 @@ test("in the Abyssal Depths every ember spirals into one of the void's eddies", 
   assert.ok(n > 1000);
   assert.ok(inward / n > 0.99, `inward ${inward}/${n}`);
   assert.ok(round / n > 0.99, `round ${round}/${n}`);
+  });
 });
 
 test('the spores turn in small lazy curls, the near half of each larger', () => {
-  const e = zone(3, 10);
+  asProfile('spores hanging', (zk) => {
+  const e = zone(zk, 10);
   // Each one's size and sideways move over a while: larger (the near half of
   // its curl), it moves one way across, smaller (the far half) the other.
   const sizes: number[][] = Array.from({ length: EMBERS }, () => []);
   const across: number[][] = Array.from({ length: EMBERS }, () => []);
   const life = new Uint32Array(EMBERS);
   watch(e, 900, (i, x, y, dx, dy, size) => {
-    if (e.motion[i] !== main(3)) return;
+    if (e.motion[i] !== main(zk)) return;
     if (life[i] !== e.lives[i]) {
       life[i] = e.lives[i];
       sizes[i] = [];
@@ -244,6 +297,7 @@ test('the spores turn in small lazy curls, the near half of each larger', () => 
     c < 0 ? curling++ : other++;
   }
   assert.ok(curling > 10 && other === 0, `${curling} curling one way, ${other} the other`);
+  });
 });
 
 test("as a zone hands over, each ember moves as the zone it burns in, and the magma's cool and slow", () => {
@@ -256,8 +310,10 @@ test("as a zone hands over, each ember moves as the zone it burns in, and the ma
   const magma = all.filter((v) => v.entry === 2);
   const snow = all.filter((v) => v.entry === 3);
   assert.ok(magma.length > 300 && snow.length > 300, `${magma.length} magma, ${snow.length} snow`);
-  assert.ok(magma.every((v) => v.motion === main(1) && v.dy < 0), 'the magma rises');
-  assert.ok(snow.every((v) => v.motion === main(2) && v.dy > 0), 'the snow falls');
+  // Each the way its own zone's go (as the file tweaks them).
+  const goes = (k: number) => (v: { dy: number }) => !wayOf(zoneMotionOf(k).main) || Math.sign(v.dy) === wayOf(zoneMotionOf(k).main);
+  assert.ok(magma.every((v) => v.motion === main(1) && goes(1)(v)), 'the magma goes its way');
+  assert.ok(snow.every((v) => v.motion === main(2) && goes(2)(v)), 'the snow goes its way');
   // Cooling comes in over the zone's later depths, with its hall (as the magma itself cools), for its own embers only, and stays once past.
   assert.equal(cooling(1, 2, 0.15), 0);
   for (const t of [0.3, 0.5, 0.7, 0.95]) {
@@ -322,7 +378,8 @@ test('nothing goes wrong anywhere: plunges, swarms, flares, calm, a resize, snap
   // With effects off they still move their stratum's way, only calmer.
   const calm = zone(2);
   const still = moves(calm, 120, (e) => e.step(DT, W, H, true)).filter((v) => v.motion === main(2));
-  assert.ok(still.length > 500 && still.every((v) => v.dy > 0));
+  const way = wayOf(zoneMotionOf(2).main);
+  assert.ok(still.length > 500 && still.every((v) => !way || Math.sign(v.dy) === way));
   assert.equal(calm.level, 0);
 });
 

@@ -1,9 +1,9 @@
 <script lang="ts">
   import { MediaQuery } from 'svelte/reactivity';
-  import { ENVIRONMENTS, FIELDS, GROUPS, MOTION_RANGES, type FieldSpec, type GenSettings, type Group, type Look, type MotionTweak } from '../lib/backdropData';
+  import { cloneData, ENV_TONES, ENVIRONMENTS, FIELDS, GROUPS, MOTION_RANGES, stopsOf, toneOf, type FieldSpec, type GenSettings, type Group, type Look, type MotionTweak, type RGB } from '../lib/backdropData';
   import { endgameAt, SHIPPED } from '../lib/backdrops';
   import { generate, hsv, seedOf, swatchOf, variationSeed } from '../lib/backdropGen';
-  import { accentAt, brightnessAt, luminanceAt, stratumName } from '../lib/descent';
+  import { accentAt, brightnessAt, FX_SLOTS, luminanceAt, stratumName } from '../lib/descent';
   import { PROFILE_NAMES } from '../lib/emberProfiles';
   import { readStored, writeStored } from '../lib/storage';
   import * as T from './state.svelte';
@@ -17,6 +17,11 @@
     writeStored('open', open ? '1' : '0');
   });
   const DEV = import.meta.env.DEV;
+  // Docked open, the panel would hide the scene's right side (the frost on
+  // that wall, the lamps there): the scene ends where it begins instead.
+  $effect(() => {
+    document.documentElement.toggleAttribute('data-docked', wide.current && open);
+  });
 
   // ---- reading -------------------------------------------------------------------
   const zoneName = (k: number) => SHIPPED.zones[k].name;
@@ -55,6 +60,37 @@
     tool.work.look.env[i] = value;
     T.changed();
   }
+  /** Environment i's colours, the look's own from the first change on (three stops, its own colours to start from). */
+  function ownTone(i: number) {
+    const name = ENVIRONMENTS[i];
+    const tones = tool.work.look.tones;
+    const t = tones[name];
+    if (!t || t.colors.length < 3) tones[name] = { colors: cloneData(stopsOf(toneOf(tool.work.look, i))), vary: toneOf(tool.work.look, i).vary };
+    return tones[name]!;
+  }
+  function setStop(i: number, k: number, value: string) {
+    ownTone(i).colors[k] = fromHex(value, 1, 0) as RGB;
+    T.changed();
+  }
+  function setVary(i: number, value: number) {
+    ownTone(i).vary = value;
+    T.changed();
+  }
+  /** Back to the environment's own colours. */
+  function ownColours(i: number) {
+    delete tool.work.look.tones[ENVIRONMENTS[i]];
+    T.changed();
+  }
+  const isOwn = (i: number) => JSON.stringify(toneOf(look, i)) === JSON.stringify(ENV_TONES[ENVIRONMENTS[i]].tone);
+  /** The most details this zone and either neighbour show together through their handover (at most FX_SLOTS show). */
+  const crowd = $derived.by(() => {
+    const k = tool.zone;
+    const zones = tool.draft.zones;
+    const on = (env: number[]) => env.flatMap((v, i) => (v > 0 ? [i] : []));
+    const mine = on(look.env);
+    const both = (j: number) => (zones[j] ? new Set([...mine, ...on(zones[j].look.env)]).size : mine.length);
+    return Math.max(both(k - 1), both(k + 1));
+  });
   function setMotion(key: Exclude<keyof MotionTweak, 'profile'>, value: number) {
     tool.work.motion[key] = value;
     T.changed();
@@ -325,9 +361,23 @@
               {:else if g.id === 'details'}
                 {#each ENVIRONMENTS as name, i (name)}
                   {@render range(envLabel(name), look.env[i], 0, 1, 0.01, (v) => setEnv(i, v))}
+                  {#if look.env[i] > 0}
+                    {@const tone = toneOf(look, i)}
+                    <div class="tone">
+                      {#each stopsOf(tone) as c, k (k)}
+                        <label class="stop" title={ENV_TONES[name].labels[k]}>
+                          <input type="color" value={hex(c, 1)} oninput={(e) => setStop(i, k, (e.currentTarget as HTMLInputElement).value)} aria-label="{envLabel(name)}: {ENV_TONES[name].labels[k]}" />
+                          <span>{ENV_TONES[name].labels[k]}</span>
+                        </label>
+                      {/each}
+                      <button class="small" onclick={() => ownColours(i)} disabled={isOwn(i)} title="Back to this detail's own colours">Own</button>
+                    </div>
+                    {@render range('Variation', tone.vary, 0, 1, 0.01, (v) => setVary(i, v))}
+                  {/if}
               {/each}
                 <p class="hint">
-                  The details the backdrop already draws, each at its own strength. Mist past <i class="num">0.45</i> brings stone trunks in{#if look.env[MIST] >= 0.45}<b class="warn">: showing now</b>{/if}.
+                  The details the backdrop already draws, each at its own strength, in its colours: what each stop colours is named under it, and Variation is how far the colour wanders between them, across the screen and slowly over time. Mist past <i class="num">0.45</i> brings stone trunks in{#if look.env[MIST] >= 0.45}<b class="warn">: showing now</b>{/if}.
+                  At most <i class="num">{FX_SLOTS}</i> show at once, a handover between two zones included{#if crowd > FX_SLOTS}<b class="warn">: this zone and its neighbour show <i class="num">{crowd}</i>, so the faintest are left out as they hand over</b>{/if}.
                 </p>
               {:else}
                 {#each fieldsOf(g.id) as spec (spec.key)}
@@ -664,6 +714,40 @@
   }
   .field select {
     grid-column: 2 / 4;
+  }
+  .tone {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr) auto;
+    align-items: start;
+    gap: 0.4rem;
+    margin: 0.1rem 0 0 7.65em;
+  }
+  .stop {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    min-width: 0;
+    cursor: pointer;
+  }
+  .stop input[type='color'] {
+    width: 100%;
+    height: 1.3rem;
+    padding: 0;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    background: none;
+    cursor: pointer;
+  }
+  .stop span {
+    font-size: 0.7rem;
+    line-height: 1.1;
+    color: var(--muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  :global(html[data-docked] .bg) {
+    right: 360px;
   }
   .val {
     font-size: 0.78rem;

@@ -63,6 +63,11 @@ export interface Look {
   eddy: number;
   /** How much of each environment the backdrop draws (ENV of them, 0 to 1; see ENVIRONMENTS). */
   env: number[];
+  /**
+   * The colours each environment it draws is drawn in, by its name (see
+   * Tone); one it has none for takes its own (ENV_TONES' tone).
+   */
+  tones: Tones;
   /** The stratum's colour for text on the dark header (the depth). */
   accent: RGB;
   /**
@@ -84,6 +89,83 @@ export interface Look {
  */
 export const ENVIRONMENTS = ['lamps', 'magma', 'frost', 'spores', 'shafts', 'void', 'mist', 'plumes', 'city', 'heat'] as const;
 export const ENV = ENVIRONMENTS.length;
+export type EnvName = (typeof ENVIRONMENTS)[number];
+
+/**
+ * An environment's colour range: two or three stops (0-255), what each
+ * stands for its own (ENV_TONES' labels; for most, the hottest or brightest
+ * first), and how far its colour wanders between them (0 to 1), across the
+ * screen and slowly over time. With two, the middle stop lies half way.
+ */
+export interface Tone {
+  colors: RGB[];
+  vary: number;
+}
+export type Tones = Partial<Record<EnvName, Tone>>;
+
+/**
+ * What an environment's colours may be: its stops' names (the tool's),
+ * its own colours (what it is drawn in where a look gives none: the zones'
+ * colours before they had their own), how much each stop shows in what it
+ * draws (for its brightness, see toneLuma), and the range the generator
+ * keeps to (lib/backdropGen.ts, pickTone): how far it may turn the hue of
+ * its own colours (degrees, either way; `follow`, how much of the turn
+ * each stop takes), how far it may scale their saturation, and how much
+ * they may vary. All in one place, so a new effect's rules go here.
+ */
+export interface ToneRule {
+  labels: [string, string, string];
+  tone: Tone;
+  weight: [number, number, number];
+  turn: [number, number];
+  follow: [number, number, number];
+  sat: [number, number];
+  vary: [number, number];
+}
+
+export const ENV_TONES: Record<EnvName, ToneRule> = {
+  // Lamplight: whiter at a flame's heart, redder where its pool fades out.
+  lamps: { labels: ['Flame', 'Lamplight', 'Far glow'], tone: { colors: [[255, 196, 120], [255, 140, 50], [190, 78, 30]], vary: 0.3 }, weight: [0.25, 0.6, 0.15], turn: [-14, 12], follow: [1, 1, 1], sat: [0.85, 1.05], vary: [0.15, 0.4] },
+  // Magma: yellow-white in the hottest cores, orange, then crimson as it cools; reds and oranges only.
+  magma: { labels: ['White heat', 'Glow', 'Cooling red'], tone: { colors: [[255, 215, 140], [255, 70, 14], [150, 18, 4]], vary: 0.3 }, weight: [0.25, 0.6, 0.15], turn: [-14, 10], follow: [1, 1, 1], sat: [0.88, 1.04], vary: [0.2, 0.45] },
+  // Frost: white where the rime is thick, ice blue, deep blue at its thin front; white to blue only.
+  frost: { labels: ['Thick rime', 'Ice', 'Thin front'], tone: { colors: [[214, 228, 246], [150, 176, 208], [96, 134, 196]], vary: 0.3 }, weight: [0.35, 0.45, 0.2], turn: [-16, 20], follow: [1, 1, 1], sat: [0.6, 1.3], vary: [0.15, 0.45] },
+  // Bioluminescence: a cold glow, paler in some, a sickly fringe; teal, green or cyan.
+  spores: { labels: ['Glow', 'Pale', 'Fringe'], tone: { colors: [[84, 140, 130], [150, 196, 170], [112, 150, 92]], vary: 0.6 }, weight: [0.6, 0.25, 0.15], turn: [-60, 40], follow: [1, 1, 1], sat: [0.7, 1.3], vary: [0.3, 0.8] },
+  // Sunlight through dust: gold, cream where brightest, ochre in thick dust.
+  shafts: { labels: ['Gold', 'Brightest', 'Dusty ochre'], tone: { colors: [[255, 196, 104], [255, 232, 180], [196, 138, 64]], vary: 0.5 }, weight: [0.55, 0.3, 0.15], turn: [-12, 10], follow: [1, 1, 1], sat: [0.6, 1.1], vary: [0.2, 0.6] },
+  // The void: any colour at all; paler at the heart of an arm, deeper at its reach.
+  void: { labels: ['Bright core', 'Arms', 'Deep reach'], tone: { colors: [[225, 190, 255], [140, 60, 255], [64, 34, 168]], vary: 0.4 }, weight: [0.15, 0.65, 0.2], turn: [-180, 180], follow: [1, 1, 1], sat: [0.7, 1.1], vary: [0.3, 0.8] },
+  // Fog: a tinted grey of any hue, paler near, deeper and cooler far.
+  mist: { labels: ['Near fog', 'Fog', 'Far haze'], tone: { colors: [[124, 134, 140], [92, 102, 110], [64, 74, 86]], vary: 0.25 }, weight: [0.35, 0.45, 0.2], turn: [-180, 180], follow: [1, 1, 1], sat: [0.6, 2.2], vary: [0.1, 0.4] },
+  // Sulphur: lit yellow-green at the vents, dull fumes, greyer as they thin.
+  plumes: { labels: ['Vent glow', 'Fumes', 'Thinning'], tone: { colors: [[210, 235, 90], [110, 124, 46], [84, 96, 58]], vary: 0.3 }, weight: [0.3, 0.5, 0.2], turn: [-25, 25], follow: [1, 1, 1], sat: [0.75, 1.1], vary: [0.2, 0.5] },
+  // The far city: a few warm windows (they keep nearly their own hue), cold lights, the fog banks.
+  city: { labels: ['Warm windows', 'Cold lights', 'Fog'], tone: { colors: [[255, 217, 153], [140, 166, 255], [46, 60, 130]], vary: 0.3 }, weight: [0.05, 0.35, 0.6], turn: [-40, 50], follow: [0.25, 1, 1], sat: [0.7, 1.2], vary: [0.15, 0.5] },
+  // Fire: white-hot low down, flame orange, deep red at the tips; reds and oranges only.
+  heat: { labels: ['White heat', 'Flame', 'Deep red'], tone: { colors: [[255, 240, 200], [255, 96, 24], [170, 34, 12]], vary: 0.3 }, weight: [0.3, 0.55, 0.15], turn: [-12, 12], follow: [1, 1, 1], sat: [0.85, 1.05], vary: [0.2, 0.45] },
+};
+
+/** A tone's three stops (with two, the middle half way between). */
+export function stopsOf(tone: Tone): [RGB, RGB, RGB] {
+  const c = tone.colors;
+  if (c.length >= 3) return [c[0], c[1], c[2]];
+  const mid = c[0].map((v, k) => (v + c[1][k]) / 2) as RGB;
+  return [c[0], mid, c[1]];
+}
+
+/** The tone a look draws environment `i` in: its own, or the environment's. */
+export const toneOf = (look: Pick<Look, 'tones'>, i: number): Tone => look.tones?.[ENVIRONMENTS[i]] ?? ENV_TONES[ENVIRONMENTS[i]].tone;
+
+const lumaOf = (c: readonly number[]) => (0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]) / 255;
+/** How bright a tone of environment `i` comes out (luma, 0 to 1): its stops' as much as each shows in what it draws. */
+export function toneLuma(tone: Tone, i: number): number {
+  const w = ENV_TONES[ENVIRONMENTS[i]].weight;
+  const s = stopsOf(tone);
+  return w[0] * lumaOf(s[0]) + w[1] * lumaOf(s[1]) + w[2] * lumaOf(s[2]);
+}
+/** How bright environment `i` comes out in `tone`, against its own colours (1): what it adds to the scene's brightness scales so (lib/descent.ts). */
+export const toneGain = (tone: Tone, i: number) => toneLuma(tone, i) / toneLuma(ENV_TONES[ENVIRONMENTS[i]].tone, i);
 
 /** How far into a stratum's turn the next one's light, smoke and features begin to creep in (its fourth depth). */
 export const HALL_FROM = 0.25;
@@ -154,7 +236,7 @@ export interface Backdrops {
 }
 
 /** How each field of a look is kept: a colour 0-255, a colour 0-1, a tint (a multiplier about 1), a number, or the environments. */
-export type FieldKind = 'rgb255' | 'rgb1' | 'tint' | 'number' | 'env';
+export type FieldKind = 'rgb255' | 'rgb1' | 'tint' | 'number' | 'env' | 'tones';
 /** The groups the tool shows a look in, each locked or generated as one. */
 export type Group = 'light' | 'smoke' | 'haze' | 'embers' | 'glints' | 'details';
 
@@ -209,6 +291,7 @@ export const FIELDS: FieldSpec[] = [
   f('glints', 'glints', 'Amount', 'number'),
   f('spread', 'glints', 'Spread', 'number'),
   f('env', 'details', 'Details', 'env'),
+  f('tones', 'details', 'Colours', 'tones'),
   f('eddy', null, 'Eddies (legacy)', 'number'),
   f('lightK', null, 'Light', 'number', 0.1, 4),
 ];
@@ -237,6 +320,28 @@ export const MOTION_RANGES: Record<Exclude<keyof MotionTweak, 'profile'>, [numbe
 const isNum = (v: unknown, lo = -Infinity, hi = Infinity): v is number => typeof v === 'number' && Number.isFinite(v) && v >= lo && v <= hi;
 const isRGB = (v: unknown, hi: number) => Array.isArray(v) && v.length === 3 && v.every((c) => isNum(c, 0, hi));
 
+/** What is wrong with a look's tones. */
+function tonesErrors(v: unknown, at: string): string[] {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return [`${at}: an object of colour ranges by environment`];
+  const errors: string[] = [];
+  for (const [name, t] of Object.entries(v as Record<string, unknown>)) {
+    const w = `${at}.${name}`;
+    if (!(ENVIRONMENTS as readonly string[]).includes(name)) {
+      errors.push(`${w}: not an environment`);
+      continue;
+    }
+    const o = t as Record<string, unknown> | null;
+    if (!o || typeof o !== 'object') {
+      errors.push(`${w}: not an object`);
+      continue;
+    }
+    if (!Array.isArray(o.colors) || o.colors.length < 2 || o.colors.length > 3 || !o.colors.every((c) => isRGB(c, 255))) errors.push(`${w}.colors: two or three colours, three numbers from 0 to 255 each`);
+    if (!isNum(o.vary, 0, 1)) errors.push(`${w}.vary: a number from 0 to 1`);
+    for (const key of Object.keys(o)) if (key !== 'colors' && key !== 'vary') errors.push(`${w}.${key}: not a field of a colour range`);
+  }
+  return errors;
+}
+
 /** What is wrong with a look (nothing: an empty list). */
 export function lookErrors(look: unknown, where = 'look'): string[] {
   if (!look || typeof look !== 'object') return [`${where}: not an object`];
@@ -249,6 +354,7 @@ export function lookErrors(look: unknown, where = 'look'): string[] {
     else if (spec.kind === 'rgb1' && !isRGB(v, 1)) errors.push(`${at}: three numbers from 0 to 1`);
     else if (spec.kind === 'tint' && !isRGB(v, 2)) errors.push(`${at}: three numbers from 0 to 2`);
     else if (spec.kind === 'env' && !(Array.isArray(v) && v.length === ENV && v.every((e) => isNum(e, 0, 1)))) errors.push(`${at}: ${ENV} numbers from 0 to 1`);
+    else if (spec.kind === 'tones') errors.push(...tonesErrors(v, at));
     else if (spec.kind === 'number' && !isNum(v, 0, Math.max(spec.max, 5))) errors.push(`${at}: a number from 0 to ${Math.max(spec.max, 5)}`);
   }
   for (const key of Object.keys(o)) if (!FIELDS.some((s) => s.key === key)) errors.push(`${where}.${key}: not a field of a look`);
@@ -318,24 +424,57 @@ export function backdropsErrors(data: unknown, zoneNames: readonly string[], pro
 
 // ---- writing -----------------------------------------------------------------
 
+/**
+ * Gives every look in `data` (a backdrops file, or a draft kept from
+ * before environments had colours of their own) that has no tones the
+ * colours it was drawn in then: its environments' own (ENV_TONES). In place;
+ * returns `data`.
+ */
+export function withTones<T>(data: T): T {
+  const fix = (look: unknown) => {
+    if (!look || typeof look !== 'object' || 'tones' in look) return;
+    const l = look as Record<string, unknown>;
+    const env = Array.isArray(l.env) ? (l.env as unknown[]) : [];
+    const tones: Tones = {};
+    env.forEach((e, i) => {
+      if (typeof e === 'number' && e > 0 && i < ENV) tones[ENVIRONMENTS[i]] = cloneData(ENV_TONES[ENVIRONMENTS[i]].tone);
+    });
+    const next: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(l)) {
+      next[k] = v;
+      if (k === 'env') next.tones = tones;
+    }
+    if (!('tones' in next)) next.tones = tones;
+    for (const k of Object.keys(l)) delete l[k];
+    Object.assign(l, next);
+  };
+  const o = data as Record<string, unknown> | null;
+  if (o && typeof o === 'object' && Array.isArray(o.zones)) for (const z of o.zones) fix((z as Record<string, unknown> | null)?.look);
+  return data;
+}
+
 /** A deep copy (the data is plain JSON). */
 export const cloneData = <T>(x: T): T => JSON.parse(JSON.stringify(x)) as T;
 
 /**
  * The backdrops as the file keeps them: two spaces in, every list of numbers
- * (a colour, the environments) on one line, so a change shows as a change
+ * (a colour, the environments) and every colour range (an environment's
+ * colours and their variation) on one line, so a change shows as a change
  * of a line or two.
  */
 export function formatBackdrops(data: Backdrops): string {
+  const numbers = (v: unknown) => Array.isArray(v) && v.every((x) => typeof x === 'number');
   const out = (v: unknown, pad: string): string => {
     if (Array.isArray(v)) {
-      if (v.every((x) => typeof x === 'number')) return `[${v.join(', ')}]`;
+      if (numbers(v)) return `[${v.join(', ')}]`;
+      if (v.length && v.every(numbers)) return `[${v.map((x) => out(x, pad)).join(', ')}]`;
       if (!v.length) return '[]';
       return `[\n${v.map((x) => pad + '  ' + out(x, pad + '  ')).join(',\n')}\n${pad}]`;
     }
     if (v && typeof v === 'object') {
       const entries = Object.entries(v);
       if (!entries.length) return '{}';
+      if ('colors' in v) return `{ ${entries.map(([k, x]) => `${JSON.stringify(k)}: ${out(x, pad)}`).join(', ')} }`;
       return `{\n${entries.map(([k, x]) => `${pad}  ${JSON.stringify(k)}: ${out(x, pad + '  ')}`).join(',\n')}\n${pad}}`;
     }
     return JSON.stringify(v);

@@ -12,13 +12,17 @@
 // - Restrained detail: at most two of the environments, low to moderate,
 //   picked by the hue (frost in a blue hall, spores in a green one), never
 //   the stone trunks the petrified mist brings in when it is strong.
+// - Each detail in colours of its own kind (ENV_TONES' rules in
+//   lib/backdropData.ts: magma within the reds and oranges, frost from white
+//   to blue, a void any hue), turned toward the hall's hue as far as its
+//   kind allows (pickTone).
 // - Embers in the hue, moving as its mood has it, as a soft rule: warm
 //   palettes rise, cold ones fall, violet ones are drawn into the eddies.
 //
 // Pure and seeded: the same seed and settings always give the same backdrop
 // (the endgame's strata are the same for everyone, see lib/backdrops.ts).
 
-import { ENVIRONMENTS, type GenSettings, type Group, type Look, type MotionTweak, type RGB } from './backdropData.ts';
+import { ENV_TONES, ENVIRONMENTS, stopsOf, type EnvName, type GenSettings, type Group, type Look, type MotionTweak, type RGB, type Tone } from './backdropData.ts';
 import { profileOf, tweakOf } from './emberProfiles.ts';
 
 /** The settings the endgame starts from, and the tool's generator. */
@@ -251,6 +255,7 @@ export function generate(seed: number, settings: GenSettings, place?: number): G
     burst: 0,
     eddy: 0,
     env: ENVIRONMENTS.map(() => 0),
+    tones: {},
     accent: to255(accent),
     lightK: 1,
   };
@@ -272,6 +277,8 @@ export function generate(seed: number, settings: GenSettings, place?: number): G
     const most = ENV_MOOD[ENVIRONMENTS[i]].most;
     look.env[i] = r2(Math.min(most, 0.15 + (0.25 + 0.35 * amount) * r() + 0.1 * amount));
     weights[i] = 0;
+    // (Its colours from a stream of their own, so the rest of the look is what the seed always gave.)
+    look.tones[ENVIRONMENTS[i]] = pickTone(ENVIRONMENTS[i], h, rng(mix(seed, 0x70e5 + i)));
   }
 
   // The embers' way of moving, as the hue's mood has it.
@@ -295,6 +302,32 @@ export function generate(seed: number, settings: GenSettings, place?: number): G
   return { seed, hue: Math.round(h), look, motion };
 }
 
+/** The signed turn (degrees, -180 to 180) from hue `a` to hue `b`. */
+const turnTo = (a: number, b: number) => ((((b - a) % 360) + 540) % 360) - 180;
+
+/**
+ * Colours for environment `name` in a hall of hue `hue`, within its kind's
+ * rules (ENV_TONES in lib/backdropData.ts): its own colours turned toward
+ * the hall's hue as far as its rule allows, and half way to a turn of its
+ * own within that; their saturation scaled and their variation picked
+ * within the rule's ranges. Each stop keeps its own value, so a magma's
+ * white heat stays white hot and a frost's thick rime stays white.
+ */
+export function pickTone(name: EnvName, hue: number, r: () => number): Tone {
+  const rule = ENV_TONES[name];
+  const own = stopsOf(rule.tone);
+  const [lo, hi] = rule.turn;
+  const toward = Math.min(hi, Math.max(lo, turnTo(hueOf(own[1]).hue, hue)));
+  const turn = 0.5 * toward + 0.5 * lerp(lo, hi, r());
+  const sat = lerp(rule.sat[0], rule.sat[1], r());
+  const colors = own.map((c, k) => {
+    const { hue: h, sat: s } = hueOf(c);
+    const v = Math.max(...c) / 255;
+    return to255(hsv(h + turn * rule.follow[k], Math.min(1, s * sat), v));
+  });
+  return { colors, vary: r2(lerp(rule.vary[0], rule.vary[1], r())) };
+}
+
 /** The groups of a look's fields the tool locks (lib/backdropData.ts's FIELDS), each a list of keys. */
 export const GROUP_KEYS: Record<Group, (keyof Look)[]> = {
   light: ['shade', 'dark', 'floor', 'floorK', 'floorH', 'glow', 'lamp', 'accent'],
@@ -302,7 +335,7 @@ export const GROUP_KEYS: Record<Group, (keyof Look)[]> = {
   haze: ['haze', 'hazeK', 'mist', 'mistK'],
   embers: ['ember', 'core', 'coreMix', 'crowd', 'size', 'bright', 'agit', 'burst', 'speed', 'fall'],
   glints: ['glint', 'glints', 'spread'],
-  details: ['env', 'eddy'],
+  details: ['env', 'tones', 'eddy'],
 };
 
 /** `next`, but with the groups in `locked` (and the motion, if locked) kept from `current`. */

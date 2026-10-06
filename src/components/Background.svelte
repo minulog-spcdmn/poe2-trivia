@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { startBackdrop } from '../lib/backdrop';
-  import { ENVIRONMENTS, descent, lookOf, onDescent, type Descent } from '../lib/descent';
+  import { ENVIRONMENTS, descent, lookOf, onDescent, toneOf, type Descent } from '../lib/descent';
+  import { stopsOf } from '../lib/backdropData';
 
   // Ambient backdrop: warm glow, vignette and slowly rising embers. The WebGL
   // backdrop draws its own embers; these CSS ones are for the fallback.
@@ -21,6 +22,8 @@
   onMount(() => onDescent((d) => (dsc = d)));
   const look = $derived(dsc.look);
   const css = (c: readonly number[], a = 1) => `rgba(${c.map(Math.round).join(', ')}, ${a})`;
+  /** An environment's colour stop `k` as CSS channels (for rgba(var(--c1), a)). */
+  const stopOf = (i: number, k: number) => stopsOf(toneOf(look, i))[k].map(Math.round).join(', ');
   /** Ember colours (0-1) as CSS, the halo dimmed to `a`. */
   const glow = (c: readonly number[], a: number) => css(c.map((v) => v * 255), a);
   /** The first this many CSS embers burn in the stratum turning in, the rest in the one before. */
@@ -52,7 +55,7 @@
     <!-- Each stratum's environment, roughly (lib/backdrop.ts draws them properly). -->
     {#each ENVIRONMENTS as name, i (name)}
       {#if look.env[i] > 0}
-        <div class="env env-{name}" style:opacity={look.env[i]}></div>
+        <div class="env env-{name}" style:opacity={look.env[i]} style:--c0={stopOf(i, 0)} style:--c1={stopOf(i, 1)} style:--c2={stopOf(i, 2)}></div>
       {/if}
     {/each}
     <div class="dark" style:opacity={look.dark}></div>
@@ -196,59 +199,59 @@
   }
   .env-lamps {
     background:
-      radial-gradient(14% 18% at 6% 34%, rgba(255, 140, 50, 0.12), transparent),
-      radial-gradient(12% 16% at 93% 52%, rgba(255, 140, 50, 0.1), transparent),
-      radial-gradient(10% 14% at 10% 74%, rgba(255, 140, 50, 0.08), transparent);
+      radial-gradient(14% 18% at 6% 34%, rgba(var(--c1), 0.12), transparent),
+      radial-gradient(12% 16% at 93% 52%, rgba(var(--c1), 0.1), transparent),
+      radial-gradient(10% 14% at 10% 74%, rgba(var(--c1), 0.08), transparent);
   }
   .env-magma {
     background:
-      radial-gradient(30% 22% at 22% 104%, rgba(255, 80, 16, 0.22), transparent),
-      radial-gradient(26% 30% at 78% 102%, rgba(255, 60, 10, 0.18), transparent),
-      radial-gradient(8% 40% at 4% 90%, rgba(200, 30, 6, 0.14), transparent);
+      radial-gradient(30% 22% at 22% 104%, rgba(var(--c1), 0.22), transparent),
+      radial-gradient(26% 30% at 78% 102%, rgba(var(--c1), 0.18), transparent),
+      radial-gradient(8% 40% at 4% 90%, rgba(var(--c2), 0.14), transparent);
   }
   .env-frost {
     background:
-      radial-gradient(14% 60% at 0% 40%, rgba(150, 176, 208, 0.12), transparent),
-      radial-gradient(12% 50% at 100% 30%, rgba(150, 176, 208, 0.11), transparent),
-      radial-gradient(50% 9% at 50% 0%, rgba(150, 176, 208, 0.09), transparent),
-      radial-gradient(70% 16% at 40% 100%, rgba(116, 140, 172, 0.08), transparent);
+      radial-gradient(14% 60% at 0% 40%, rgba(var(--c1), 0.12), transparent),
+      radial-gradient(12% 50% at 100% 30%, rgba(var(--c1), 0.11), transparent),
+      radial-gradient(50% 9% at 50% 0%, rgba(var(--c1), 0.09), transparent),
+      radial-gradient(70% 16% at 40% 100%, rgba(var(--c2), 0.08), transparent);
   }
   .env-spores {
     background:
-      radial-gradient(16% 12% at 6% 88%, rgba(84, 140, 130, 0.12), transparent),
-      radial-gradient(14% 10% at 92% 80%, rgba(84, 140, 130, 0.1), transparent),
-      radial-gradient(22% 9% at 34% 100%, rgba(84, 140, 130, 0.08), transparent);
+      radial-gradient(16% 12% at 6% 88%, rgba(var(--c0), 0.12), transparent),
+      radial-gradient(14% 10% at 92% 80%, rgba(var(--c0), 0.1), transparent),
+      radial-gradient(22% 9% at 34% 100%, rgba(var(--c0), 0.08), transparent);
   }
   .env-shafts {
-    background: repeating-linear-gradient(-70deg, transparent 0 9%, rgba(255, 200, 110, 0.06) 13%, transparent 18% 27%);
+    background: repeating-linear-gradient(-70deg, transparent 0 9%, rgba(var(--c0), 0.06) 13%, transparent 18% 27%);
     mask-image: linear-gradient(to bottom, #000, transparent 85%);
   }
   .env-void {
     background:
-      radial-gradient(22% 26% at 17% 64%, rgba(140, 60, 255, 0.14), transparent),
-      radial-gradient(20% 24% at 82% 33%, rgba(140, 60, 255, 0.12), transparent);
+      radial-gradient(22% 26% at 17% 64%, rgba(var(--c1), 0.14), transparent),
+      radial-gradient(20% 24% at 82% 33%, rgba(var(--c1), 0.12), transparent);
   }
   .env-mist {
     background:
-      linear-gradient(to bottom, transparent 18%, rgba(140, 150, 156, 0.08) 30%, transparent 42%, rgba(140, 150, 156, 0.1) 58%, transparent 70%, rgba(140, 150, 156, 0.1) 86%, transparent);
+      linear-gradient(to bottom, transparent 18%, rgba(var(--c0), 0.08) 30%, transparent 42%, rgba(var(--c0), 0.1) 58%, transparent 70%, rgba(var(--c0), 0.1) 86%, transparent);
   }
   .env-plumes {
     background:
-      radial-gradient(9% 60% at 26% 100%, rgba(170, 190, 70, 0.14), transparent),
-      radial-gradient(11% 70% at 64% 100%, rgba(170, 190, 70, 0.12), transparent),
-      radial-gradient(7% 45% at 90% 100%, rgba(170, 190, 70, 0.1), transparent);
+      radial-gradient(9% 60% at 26% 100%, rgba(var(--c0), 0.14), transparent),
+      radial-gradient(11% 70% at 64% 100%, rgba(var(--c0), 0.12), transparent),
+      radial-gradient(7% 45% at 90% 100%, rgba(var(--c0), 0.1), transparent);
   }
   .env-city {
     background:
-      radial-gradient(circle, rgba(150, 170, 255, 0.5) 0.6px, transparent 1.4px) 0 0 / 53px 37px,
-      radial-gradient(circle, rgba(150, 170, 255, 0.3) 0.5px, transparent 1.2px) 17px 11px / 31px 43px,
+      radial-gradient(circle, rgba(var(--c1), 0.5) 0.6px, transparent 1.4px) 0 0 / 53px 37px,
+      radial-gradient(circle, rgba(var(--c1), 0.3) 0.5px, transparent 1.2px) 17px 11px / 31px 43px,
       rgba(0, 0, 0, 0.3);
     mask-image: linear-gradient(to bottom, transparent, #000 50%);
   }
   .env-heat {
     background:
-      radial-gradient(70% 34% at 50% 108%, rgba(255, 240, 200, 0.2), transparent),
-      radial-gradient(90% 50% at 40% 110%, rgba(255, 100, 24, 0.18), transparent);
+      radial-gradient(70% 34% at 50% 108%, rgba(var(--c0), 0.2), transparent),
+      radial-gradient(90% 50% at 40% 110%, rgba(var(--c1), 0.18), transparent);
   }
   /* The light about you drawing in with the depth (descent.ts's close): a
      soft falloff from each edge, eased like a Gaussian so it shows no line,

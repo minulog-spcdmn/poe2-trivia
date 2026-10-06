@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { backdropsErrors, cloneData, ENVIRONMENTS, formatBackdrops, lookErrors, type Backdrops, type Look } from '../src/lib/backdropData.ts';
+import { backdropsErrors, cloneData, ENV_TONES, ENVIRONMENTS, formatBackdrops, lookErrors, stopsOf, withTones, type Backdrops, type Look } from '../src/lib/backdropData.ts';
 import { DEFAULT_SETTINGS, generate, hsv, hueDistance, hueOf, keepLocked, seedOf, stratumSeed } from '../src/lib/backdropGen.ts';
 import { endgame, endgameAt, placeAt, SHIPPED, setBackdrops, seedAt, zones } from '../src/lib/backdrops.ts';
 import { brightnessAt, calibrateLight, descent, LIGHT_STEP, lookOf, luminanceAt, measuredAt, MEASURED, STRATA, stratumName } from '../src/lib/descent.ts';
@@ -22,6 +22,8 @@ const SHIPPED_380E372 = JSON.parse(readFileSync(join(import.meta.dirname, 'fixtu
   motions: unknown[];
   hashes: Record<string, string>;
 };
+// (Their environments were drawn in their own colours then: the colours they take as tones now.)
+withTones({ zones: SHIPPED_380E372.looks.map((look) => ({ look })) });
 const names = SHIPPED.zones.map((z) => z.name);
 const hash = (d: number) => createHash('sha256').update(JSON.stringify(descent(d))).digest('hex').slice(0, 16);
 const luma = (c: readonly number[]) => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
@@ -164,6 +166,7 @@ function withBackdrops(data: Backdrops, f: () => void) {
 
 test("the tool's hook shows a draft at once, and the file's again after; the game never calls it", () => {
   const before = [1, 15, 55.5, 91, 140, 230.25].map(hash);
+  const kept = measuredAt(11);
   const draft = cloneData(SHIPPED);
   const look = draft.zones[3].look;
   look.smoke = [10, 20, 30];
@@ -179,7 +182,7 @@ test("the tool's hook shows a draft at once, and the file's again after; the gam
     for (let k = 10; k < 30; k++) assert.ok(hueOf(endgameAt(k).look.smoke).sat < 0.15 || hueDistance(hueOf(endgameAt(k).look.smoke).hue, 210) <= 75, `stratum ${k} out of its range`);
     // The changed zone's measured corrections are dropped: none while it shows alone.
     assert.deepEqual(measuredAt(31), [1, 1]);
-    assert.deepEqual(measuredAt(21), [...MEASURED[20]]);
+    assert.deepEqual(measuredAt(11), kept, 'the zones not changed keep theirs');
     // The light is worked out again, as steadily.
     for (let d = 2; d <= 300; d++) assert.ok(Math.abs(Math.log(descent(d).light / descent(d - 1).light)) <= LIGHT_STEP + 1e-9, `the light swings at ${d}`);
   });
@@ -216,5 +219,36 @@ test('the check turns away what the game could not show', () => {
   assert.ok(bad((d) => (d.endgame.pinned['5'] = 1)).length);
   assert.ok(bad((d) => (d.endgame.seed = -1)).length);
   assert.ok(bad((d) => (d.endgame.settings.sat = [0.9, 0.1])).length);
+  assert.ok(bad((d) => ((d.zones[1].look.tones as Record<string, unknown>).lava = { colors: [[1, 2, 3], [4, 5, 6]], vary: 0.2 })).length);
+  assert.ok(bad((d) => (d.zones[1].look.tones.magma = { colors: [[1, 2, 3]], vary: 0.2 })).length);
+  assert.ok(bad((d) => (d.zones[1].look.tones.magma = { colors: [[1, 2, 3], [4, 5, 300]], vary: 0.2 })).length);
+  assert.ok(bad((d) => (d.zones[1].look.tones.magma = { colors: [[1, 2, 3], [4, 5, 6]], vary: 1.5 })).length);
+  assert.ok(bad((d) => delete (d.zones[1].look as Partial<Look>).tones).length);
+  assert.deepEqual(bad((d) => (d.zones[1].look.tones.frost = { colors: [[255, 255, 255], [20, 40, 200]], vary: 0 })), [], 'two stops will do');
   assert.deepEqual(hsv(0, 1, 1), [1, 0, 0]);
+});
+
+test("the generator picks each detail's colours within its kind's range: magma reds and oranges, frost white to blue, a void any hue", () => {
+  const hue = (c: readonly number[]) => hueOf(c).hue;
+  const voids = new Set<number>();
+  for (let seed = 0; seed < 600; seed++) {
+    const { look } = generate(seed, { ...DEFAULT_SETTINGS, detail: 1 });
+    look.env.forEach((e, i) => {
+      if (!(e > 0)) return;
+      const name = ENVIRONMENTS[i];
+      const tone = look.tones[name];
+      assert.ok(tone && tone.colors.length === 3, `seed ${seed}: ${name} has colours`);
+      const rule = ENV_TONES[name];
+      assert.ok(tone.vary >= rule.vary[0] - 1e-9 && tone.vary <= rule.vary[1] + 1e-9, `seed ${seed}: ${name} varies ${tone.vary}`);
+      // Its main stop's hue turned from its own no further than its rule allows.
+      const own = stopsOf(rule.tone);
+      assert.ok(hueDistance(hue(tone.colors[1]), hue(own[1])) <= Math.max(-rule.turn[0], rule.turn[1]) + 3, `seed ${seed}: ${name} turned too far`);
+      // Each stop as light as its own (white heat stays white hot).
+      tone.colors.forEach((c, k) => assert.ok(Math.abs(Math.max(...c) - Math.max(...own[k])) <= 1, `seed ${seed}: ${name} stop ${k}`));
+      if (name === 'magma' || name === 'heat') for (const c of tone.colors) assert.ok(hueDistance(hue(c), 15) <= 45, `seed ${seed}: ${name} out of the reds and oranges: ${c}`);
+      if (name === 'frost') for (const c of tone.colors) assert.ok(hueOf(c).sat < 0.12 || hueDistance(hue(c), 215) <= 35, `seed ${seed}: frost out of white to blue: ${c}`);
+      if (name === 'void') voids.add(Math.round(hue(tone.colors[1]) / 30));
+    });
+  }
+  assert.ok(voids.size >= 4, `the void in ${voids.size} hues`);
 });

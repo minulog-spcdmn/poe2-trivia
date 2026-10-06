@@ -26,10 +26,10 @@
 // Pure, apart from the eased channel and the plunge at the bottom that the
 // backdrop reads.
 
-import { ENV, ENVIRONMENTS, HALL_FROM, hallTurn, type Look } from './backdropData.ts';
+import { ENV, ENVIRONMENTS, HALL_FROM, hallTurn, toneGain, toneOf, type Look, type RGB, type Tone } from './backdropData.ts';
 import { endgameAt, endgameName, onBackdrops, zones } from './backdrops.ts';
 
-export { ENV, ENVIRONMENTS, HALL_FROM, hallTurn, type Look };
+export { ENV, ENVIRONMENTS, HALL_FROM, hallTurn, toneOf, type Look };
 
 /** The magma among the environments (it cools as it goes out; see magmaCooling). */
 export const MAGMA = ENVIRONMENTS.indexOf('magma');
@@ -68,6 +68,7 @@ export const SURFACE: Look = {
   burst: 0,
   eddy: 0,
   env: ENVIRONMENTS.map(() => 0),
+  tones: {},
   accent: [238, 206, 140],
   lightK: 1,
 };
@@ -85,7 +86,7 @@ export const SURFACE: Look = {
  * - Magma Fissure: vermilion and crimson smoke, wine and sienna above, the
  *   glow of the fissures orange; heavy slow embers, garnet in the walls.
  * - Frozen Hollow: slate-blue and teal smoke, periwinkle above, a pale ice
- *   glow; rime feathering in from the walls and the ceiling, glinting here
+ *   glow; rime feathering in from every side, the floor too, glinting here
  *   and there, pale light filtering down, a cold mist rolling low over the
  *   floor, snow drifting down.
  * - Fungal Caverns: pale olive and bone smoke in a damp dark; faint teal
@@ -192,18 +193,43 @@ function smoothstep(a: number, b: number, x: number) {
   return t * t * (3 - 2 * t);
 }
 
-/** Every key of a look, in one order (worked out once: looks are blended every frame a depth eases in). */
-const KEYS = Object.keys(SURFACE) as (keyof Look)[];
+/** Every key of a look but its tones (blended apart, see mixTones), in one order (worked out once: looks are blended every frame a depth eases in). */
+const KEYS = (Object.keys(SURFACE) as (keyof Look)[]).filter((key) => key !== 'tones');
 type Fields = Record<string, number | number[]>;
 
-/** A look to write into (see mixInto). */
+/** A look to write into (see mixInto): a tone of its own for every environment, three stops each. */
 function blank(): Look {
   const look = { ...SURFACE };
   for (const key of KEYS) {
     const v = look[key];
     if (Array.isArray(v)) (look as Record<string, unknown>)[key] = [...v];
   }
+  look.tones = Object.fromEntries(ENVIRONMENTS.map((name) => [name, { colors: [0, 1, 2].map(() => [0, 0, 0] as RGB), vary: 0 }]));
   return look;
+}
+
+/** Channel `c` of stop `k` of a tone (with two stops, the middle half way between), without allocating. */
+function stop(tone: Tone, k: number, c: number) {
+  const s = tone.colors;
+  if (s.length >= 3) return s[k][c];
+  return k === 0 ? s[0][c] : k === 2 ? s[1][c] : (s[0][c] + s[1][c]) / 2;
+}
+
+/**
+ * Writes the colours of `a`'s environments blended `t` of the way to `b`'s
+ * into `out` (a blank()): an environment both draw turns from the one's
+ * colours to the other's; one only one of them draws keeps that one's all
+ * the way, as it comes or goes.
+ */
+function mixTones(out: Look, a: Look, b: Look, t: number) {
+  for (let i = 0; i < ENV; i++) {
+    const ta = toneOf(a, i);
+    const tb = toneOf(b, i);
+    const w = a.env[i] > 0 && !(b.env[i] > 0) ? 0 : b.env[i] > 0 && !(a.env[i] > 0) ? 1 : t;
+    const o = out.tones[ENVIRONMENTS[i]]!;
+    for (let k = 0; k < 3; k++) for (let c = 0; c < 3; c++) o.colors[k][c] = stop(ta, k, c) + (stop(tb, k, c) - stop(ta, k, c)) * w;
+    o.vary = ta.vary + (tb.vary - ta.vary) * w;
+  }
 }
 
 /** Writes field `key` of `a` blended `t` of the way to `b` into `o`, without allocating. */
@@ -220,6 +246,7 @@ function mixField(o: Fields, a: Fields, b: Fields, key: string, t: number) {
 function mixInto(out: Look, a: Look, b: Look, t: number): Look {
   for (const key of KEYS) mixField(out as unknown as Fields, a as unknown as Fields, b as unknown as Fields, key, t);
   out.lightK = mixLight(a.lightK, b.lightK, t);
+  mixTones(out, a, b, t);
   return out;
 }
 
@@ -253,6 +280,7 @@ function turnInto(out: Look, a: Look, b: Look, t: number): Look {
   out.lightK = mixLight(a.lightK, b.lightK, h);
   for (let i = 0; i < ENV; i++) out.env[i] = Math.max(a.env[i] + (b.env[i] - a.env[i]) * h, Math.min(a.env[i], b.env[i]));
   if (a.env[MAGMA] > 0 && !(b.env[MAGMA] > 0)) out.env[MAGMA] = a.env[MAGMA] * (1 - h * h * h);
+  mixTones(out, a, b, h);
   return out;
 }
 
@@ -304,16 +332,21 @@ export const ENV_STEPS = [0, 0.25, 0.5, 0.75, 1];
  * What each environment's features add to the average brightness (luma, 0
  * to 1) as it comes in, at ENV_STEPS: drawn in its own stratum's hall at
  * light 0 (so nothing of the hall), with no dark closed in and its features
- * at full strength, less the same without it.
+ * at full strength, less the same without it; in its own colours
+ * (ENV_TONES' tone in lib/backdropData.ts). In other colours it adds as
+ * much more or less as their luma has it (toneGain), and so does what it
+ * lightens the hall by (ENV_HALL over 1).
  */
 export const ENV_ADD: number[][] = [
   [0, 0.00189, 0.0068, 0.0113, 0.01353],
   [0, 0.00438, 0.00757, 0.01098, 0.01532],
-  // (The frost and the spores, rebuilt since, are worked out from what the
-  // shader draws, averaged over a fine grid and a few moments, until measured.)
+  // (The frost is worked out from what the shader draws, averaged over a
+  // fine grid and a few moments, until measured; so are the spores and the
+  // shafts (shaders/newEffects.ts), worked out with stops of luma 0.5 and
+  // scaled to their own colours' luma.)
   [0, 0.00029, 0.00177, 0.00385, 0.00493],
-  [0, 0.00025, 0.00096, 0.00232, 0.00379],
-  [0, 0.00283, 0.00918, 0.01471, 0.01831],
+  [0, 0.00043, 0.0011, 0.00193, 0.00239],
+  [0, 0.00083, 0.00137, 0.00208, 0.00301],
   [0, 0.00035, 0.00127, 0.00281, 0.00498],
   [0, 0, 0, 0, 0],
   [0, 0.00264, 0.00535, 0.00745, 0.00888],
@@ -329,8 +362,8 @@ export const ENV_HALL: number[][] = [
   [1, 0.981, 0.962, 0.946, 0.928],
   [1, 0.985, 0.969, 0.971, 1.007],
   [1, 1.015, 1.08, 1.15, 1.178],
-  [1, 1.013, 1.069, 1.102, 1.092],
-  [1, 1.002, 1.004, 1.006, 1.007],
+  [1, 0.993, 0.986, 0.978, 0.971],
+  [1, 0.997, 0.995, 0.994, 0.993],
   [1, 0.986, 0.949, 0.886, 0.799],
   [1, 1.017, 1.067, 1.084, 1.139],
   [1, 1.052, 1.111, 1.161, 1.195],
@@ -496,36 +529,92 @@ export function magmaCoolingOf(k: number, stratum: number, turn: number): number
 /**
  * How far the magma the scene shows has cooled (0 to 1) with it turning
  * `turn` of the way into stratum `stratum`: the stratum before's
- * (magmaCoolingOf). The backdrop draws its glow turning from orange to
- * dull red and dark, and its flow slowing to a stop (lib/backdrop.ts, from
- * packEnv); the embers burning in it slow too (lib/emberMotion.ts).
+ * (magmaCoolingOf). The backdrop crusts its cracks over from their edges
+ * inward, what is still molten cooling from white heat through orange to
+ * dull red, and its flow slowing to a stop (env_magma in
+ * lib/shaders/effects.ts, from packFx); the embers burning in it slow too
+ * (lib/emberMotion.ts).
  */
 export const magmaCooling = (stratum: number, turn: number): number => magmaCoolingOf(stratum - 1, stratum, turn);
-/** How much of its glow the magma loses, cooled all the way. */
-export const MAGMA_DIM = 0.8;
-/** How bright the magma's glow is (its luma, 1 hot), cooled `cool` of the way: the backdrop dims it so, and the estimate below with it. */
-export const magmaHeat = (cool: number) => 1 - MAGMA_DIM * cool;
+/**
+ * How bright the magma's glow is (its luma, 1 hot), cooled `cool` of the
+ * way: no more than this. The backdrop crusts its cracks over from their
+ * edges inward (a share of about 1 - cool of them still molten), dims what
+ * is still molten by sqrt(1 - cool) and turns it from white heat through
+ * orange to dull red, whose luma is lower still; cooled, it is dark rock.
+ * So the estimate below, taking this much of what it adds hot, never has it
+ * dimmer than it is drawn.
+ */
+export const magmaHeat = (cool: number) => Math.pow(1 - Math.min(1, Math.max(0, cool)), 1.5);
 /** The magma's heat at depth `d` (see magmaCooling). */
 function heatAt(d: number) {
   const { stratum, turn } = strataAt(d);
   return magmaHeat(magmaCooling(stratum, turn));
 }
 
-/** The floats in the backdrop's uEnv (three vec4s): the environments, then the magma's cooling and its flow's clock. */
-export const ENV_UNIFORM = ENV + 2;
+/**
+ * The environments the backdrop draws at once, at most: a slot each, with
+ * its strength and colours (see packFx). Through a handover the two zones'
+ * show together, so this is what two neighbouring zones may use between
+ * them; should more show, the faintest are left out.
+ */
+export const FX_SLOTS = 8;
+/** The floats in the backdrop's uFx (three vec4s a slot, see packFx). */
+export const FX_UNIFORM = FX_SLOTS * 12;
+/** In uFxK's slot map: the environment shows in no slot. */
+export const NO_SLOT = 15;
 /** Less of an environment than this is drawn as none. */
 const ENV_TRACE = 0.002;
+const showing: number[] = [];
+
 /**
- * Writes the backdrop's uEnv for `scene` into `out` (ENV_UNIFORM floats;
- * lib/backdrop.ts sends it as is): how much of each environment shows,
- * four to a vec4 (the magma in uEnv[0].y), then the magma's cooling
- * (magmaCooling; uEnv[2].z, which dims it and turns it dull red) and its
- * flow's clock, `magmaClock` (uEnv[2].w).
+ * Writes the backdrop's uFx and uFxK for `scene` into `out` (FX_UNIFORM
+ * floats) and `k` (4; lib/backdrop.ts sends them as they are). A slot for
+ * every environment showing, from the first (the strongest FX_SLOTS,
+ * should more show), in the order of ENVIRONMENTS, each three vec4s: its
+ * first colour stop and its strength, its second and how far its colour
+ * varies, its third and its index in ENVIRONMENTS (colours 0 to 1); the
+ * slots after, strength 0. Then k: the magma's cooling (magmaCooling; it
+ * crusts the magma over and stops it) and its flow's clock, `magmaClock`;
+ * and which slot each environment is in (NO_SLOT, none), four bits each,
+ * the first five in k[2] and the rest in k[3].
  */
-export function packEnv(out: Float32Array, scene: Pick<Descent, 'look' | 'stratum' | 'turn'>, magmaClock: number): Float32Array {
-  for (let i = 0; i < ENV; i++) out[i] = scene.look.env[i] < ENV_TRACE ? 0 : scene.look.env[i];
-  out[ENV] = magmaCooling(scene.stratum, scene.turn);
-  out[ENV + 1] = magmaClock;
+export function packFx(out: Float32Array, k: Float32Array, scene: Pick<Descent, 'look' | 'stratum' | 'turn'>, magmaClock: number): Float32Array {
+  const env = scene.look.env;
+  showing.length = 0;
+  for (let i = 0; i < ENV; i++) if (env[i] >= ENV_TRACE) showing.push(i);
+  if (showing.length > FX_SLOTS) {
+    showing.sort((a, b) => env[b] - env[a] || a - b);
+    showing.length = FX_SLOTS;
+    showing.sort((a, b) => a - b);
+  }
+  out.fill(0);
+  let lo = 0;
+  let hi = 0;
+  for (let i = 0; i < ENV; i++) {
+    const s = showing.indexOf(i);
+    const slot = s < 0 ? NO_SLOT : s;
+    if (i < 5) lo += slot * 16 ** i;
+    else hi += slot * 16 ** (i - 5);
+    if (s < 0) continue;
+    const tone = toneOf(scene.look, i);
+    const o = s * 12;
+    for (let j = 0; j < 3; j++) for (let c = 0; c < 3; c++) out[o + 4 * j + c] = stop(tone, j, c) / 255;
+    out[o + 3] = env[i];
+    out[o + 7] = tone.vary;
+    out[o + 11] = i;
+  }
+  k[0] = magmaCooling(scene.stratum, scene.turn);
+  k[1] = magmaClock;
+  k[2] = lo;
+  k[3] = hi;
+  return out;
+}
+
+/** The three stops (0 to 1) `look` draws environment `name` in (the backdrop's far city lights and frost glints, drawn per pixel, take theirs from here). */
+export function stopsFor(look: Look, name: (typeof ENVIRONMENTS)[number], out: Float32Array): Float32Array {
+  const tone = toneOf(look, ENVIRONMENTS.indexOf(name));
+  for (let j = 0; j < 3; j++) for (let c = 0; c < 3; c++) out[3 * j + c] = stop(tone, j, c) / 255;
   return out;
 }
 
@@ -592,8 +681,11 @@ export function estimateLuminance(look: Look, close: number, features = 1, heat 
   for (let i = 0; i < ENV; i++) {
     const e = look.env[i];
     if (e <= 0) continue;
-    env += envTable(ENV_ADD[i], e) * (i === MAGMA ? heat : 1);
-    hall *= envTable(ENV_HALL[i], e);
+    // (In colours brighter or darker than its own, it adds and lightens the hall by as much more or less.)
+    const gain = toneGain(toneOf(look, i), i);
+    env += envTable(ENV_ADD[i], e) * gain * (i === MAGMA ? heat : 1);
+    const lift = envTable(ENV_HALL[i], e);
+    hall *= lift > 1 ? 1 + (lift - 1) * gain : lift;
   }
   // The embers: how many burn (the calm ones and the crowd), how large and
   // bright on average, each a hot core and a wide halo (the shader's).

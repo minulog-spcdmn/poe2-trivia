@@ -14,9 +14,13 @@ import { DROPS_PER_MASK, MAX_MASKS, measureDrops, releaseAllDrops } from './back
 import { MAX_LIGHTS, packLights, stepHomeScene, stepMood } from './lights';
 import { fxActive, fxUserOn, onFxChange } from './fx/core';
 import { COLUMNS, GLINT_COLOR, PALETTE, ROWS, SIZE_STRIDE, SLOTS, TILES, embers } from './backdropEmbers';
-import { BLOBS, ENV_UNIFORM, MAGMA_DIM, currentDescent, magmaCooling, packEnv, sinking, smokeOf, snapDescent, stepDescent, stepPlunge, targetDescent, type Blob } from './descent';
+import { BLOBS, ENVIRONMENTS, FX_SLOTS, FX_UNIFORM, NO_SLOT, currentDescent, magmaCooling, packFx, sinking, smokeOf, snapDescent, stepDescent, stepPlunge, stopsFor, targetDescent, toneOf, type Blob } from './descent';
+import { ENV_GLSL } from './shaders/effects';
+import { FX_NOISE_GLSL, SHAFTS_GLSL, SPORES_GLSL } from './shaders/newEffects';
 import { pressureLevel } from './darkness';
 import { DIALOG_BLUR, DIALOG_DIM, openDialog } from './behindDialog';
+
+const CITY = ENVIRONMENTS.indexOf('city');
 
 const VERT = `#version 300 es
 layout(location = 0) in vec2 aPos;
@@ -24,6 +28,26 @@ void main() { gl_Position = vec4(aPos, 0.0, 1.0); }
 `;
 
 export const BLOB_COUNT = 5;
+
+/** The effects shaders/newEffects.ts draws (vec3 fx_<name>(...), see shaders/effectApi.md); the rest are shaders/effects.ts's env_<name>. */
+const NEW_EFFECTS: readonly string[] = ['spores', 'shafts'];
+
+/**
+ * environments()'s body: each environment, in the order of ENVIRONMENTS,
+ * drawn from its slot if it has one. Each appears once, so the shader
+ * holds every effect's code once, never once a slot.
+ */
+const ENV_CALLS = ENVIRONMENTS.map((name, i) => {
+  const args = (qq: string) => `p, ${qq}, xy, S, W, H, tm, sink, uFx[3 * s].w, uFx[3 * s].rgb, uFx[3 * s + 1].rgb, uFx[3 * s + 2].rgb, uFx[3 * s + 1].w`;
+  const call = NEW_EFFECTS.includes(name)
+    ? `{
+    vec3 add = fx_${name}(${args('p / S')}, dim);
+    col = col * dim + gLit * add;
+  }`
+    : `col = env_${name}(col, ${args('q')});`;
+  return `  s = fxSlot(${i});
+  if (s < ${NO_SLOT}) ${call}`;
+}).join('\n');
 
 /**
  * The backdrop's soft light: the base gradient, its haze and glows, the
@@ -60,12 +84,16 @@ uniform vec4 uFloor;
 uniform vec3 uHaze;
 uniform vec4 uShade;
 uniform vec4 uMist;
-// How much of each stratum's environment shows (ENVIRONMENTS in
-// lib/descent.ts, four to a vec4; the last two the magma's cooling and its
-// flow's clock, see environments()); where the void's two eddies turn (x, y
-// each, fractions of the screen; the embers swirl round the same); and the
-// dark closing in from the edges: (depth, the question's clock).
-uniform vec4 uEnv[3];
+// The environments showing (ENVIRONMENTS in lib/descent.ts), a slot each
+// (packFx there; see shaders/effectApi.md): its first colour stop and
+// strength, its second and how far its colour varies, its third and which
+// environment it is. And the magma's cooling and its flow's clock, then
+// which slot each environment is in (four bits each, the first five in z,
+// the rest in w). Where the void's two eddies turn (x, y each, fractions of
+// the screen; the embers swirl round the same); and the dark closing in
+// from the edges: (depth, the question's clock).
+uniform vec4 uFx[${FX_SLOTS * 3}];
+uniform vec4 uFxK;
 uniform vec4 uEddy;
 uniform vec2 uDark;
 // The glow in the middle's colour (the surface's gold, a stratum's own).
@@ -116,336 +144,37 @@ float ridge(vec2 x) { return 1.0 - abs(2.0 * vnoise(x) - 1.0); }
 // from the corners.
 float smin3(float a, float b, float c, float k) { return -k * log(exp(-a / k) + exp(-b / k) + exp(-c / k)); }
 
-// Frozen Hollow's frost in one frame: u = (along the edge, in from it), in
-// detail units. Returns its stems (the noise's middle crossings, the noise
-// stretched along the edge so they run in from it), its barbs (finer, swept
-// forward off the stems at 55 degrees, one way on either side of a stem, so
-// they feather as rime does; only near a stem), the lobes where it has
-// reached further, and the stems' noise.
-vec4 rime(vec2 u) {
-  vec2 w = vec2(vnoise(u * 3.0 + 1.7), vnoise(u * 3.0 + 8.3)) - 0.5;
-  float lobe = vnoise(u * vec2(2.2, 1.1) + 0.6 * w + 4.0);
-  vec2 us = u + 0.3 * w;
-  float sn = vnoise(vec2(us.x * 16.0, us.y * 3.5));
-  float stem = 1.0 - abs(2.0 * sn - 1.0);
-  // Which side of the stem: where the noise climbs along the edge, the side above its middle is ahead.
-  float climb = vnoise(vec2(us.x * 16.0 + 0.06, us.y * 3.5)) - sn;
-  float ahead = smoothstep(-0.003, 0.003, (sn - 0.5) * climb);
-  vec2 ua = vec2(dot(us, vec2(0.574, -0.819)), dot(us, vec2(0.819, 0.574)));
-  vec2 ub = vec2(dot(us, vec2(0.574, 0.819)), dot(us, vec2(-0.819, 0.574)));
-  float ba = 1.0 - abs(2.0 * vnoise(vec2(ua.x * 26.0, ua.y * 6.0) + 2.0) - 1.0);
-  float bb = 1.0 - abs(2.0 * vnoise(vec2(ub.x * 26.0, ub.y * 6.0) + 6.0) - 1.0);
-  float barb = mix(bb, ba, ahead) * smoothstep(0.5, 0.9, stem);
-  return vec4(stem, barb, lobe, sn);
+${FX_NOISE_GLSL}
+${ENV_GLSL}
+${SPORES_GLSL}
+${SHAFTS_GLSL}
+
+// The slot environment i (its index in ENVIRONMENTS) is drawn from, or ${NO_SLOT}: none.
+int fxSlot(int i) {
+  int m = int(i < 5 ? uFxK.z : uFxK.w);
+  return (m >> (4 * (i < 5 ? i : i - 5))) & 15;
 }
 
-// Where Frozen Hollow's frost crystal is, and how much light it catches
-// (0 to 1): set by environments(), so main() can draw its glints there
-// (the soft light's target carries it in its alpha).
-float gFrost = 0.0;
-
-// Delve's environments, one to a stratum: what makes each a place rather
-// than a colour. All are noise, soft-edged and slowly moving, like the rest
-// of the backdrop; nothing in them is a shape that could be picked out.
-// How much of one shows (0 to 1) is how far it has come, not how faint it
-// is: each arrives from where it comes from and recedes the same way (the
-// lamps kindle one by one, the cracks heat up and cool, the frost grows in
-// from the walls, the fire rises from below), so two in a turn never sit
-// on top of each other half-faded (see turnInto in lib/descent.ts). And
-// what each adds to the scene's brightness grows steadily as it comes, never
-// all at the end, so the scene's light can make way for it evenly (ENV_ADD
-// in lib/descent.ts). What glows burns at its own brightness (lit); what a
-// feature lays over the hall in a colour of its own (frost, fog, fumes) is
-// lit by the hall's light (uLight), as the hall is.
-// p in CSS px, q = p / S, xy = fractions of the screen, tm the clock (s).
+// Delve's environments, one or a few to a stratum: what makes each a place
+// rather than a colour (shaders/effects.ts and shaders/newEffects.ts draw
+// them; shaders/effectApi.md is their interface). Each that shows is drawn
+// from its slot, with its strength and colours, in the fixed order of
+// ENVIRONMENTS, so the order they are laid over each other never changes
+// with which slots they are in. How much of one shows (0 to 1) is how far
+// it has come, not how faint it is: each arrives from where it comes from
+// and recedes the same way, so two in a turn never sit on top of each
+// other half-faded (see turnInto in lib/descent.ts).
+// p in CSS px, q = (p + (0, sink)) / S, xy = fractions of the screen, tm the clock (s).
 vec3 environments(vec3 col, vec2 p, vec2 q, vec2 xy, float S, float W, float H, float tm, float dark) {
-  vec4 e0 = uEnv[0];
-  vec4 e1 = uEnv[1];
-  vec4 e2 = uEnv[2];
-  float side = 1.0 - smoothstep(0.0, 0.3, min(xy.x, 1.0 - xy.x));
   // What glows still shows through the dark closing in, dimmed (and burns a
   // little less the deeper).
-  float lit = (1.0 - 0.8 * dark) * uFeatures;
-
-  // The Mines: lamps hung along the walls, each a warm pool that gutters,
-  // and the rock's seams running across, catching their light. They kindle
-  // one by one, and gutter out the same way.
-  if (e0.x > 0.0) {
-    vec2 wq = q + 0.25 * vec2(vnoise(q * 1.3 + 2.0), vnoise(q * 1.3 + 9.0));
-    float seam = pow(ridge(vec2(wq.x * 1.4, wq.y * 7.0)), 6.0);
-    float lamps = 0.0;
-    for (int i = 0; i < 4; i++) {
-      float fi = float(i);
-      vec2 at = vec2(i < 2 ? 0.05 + 0.06 * fi : 0.87 + 0.06 * (fi - 2.0), 0.3 + 0.45 * fract(fi * 0.618 + 0.1)) * vec2(W, H);
-      vec2 d = (p - at) / S;
-      float gutter = (0.7 + 0.3 * vnoise(vec2(tm * 2.6, fi * 7.0))) * smoothstep(0.2 * fi, 0.2 * fi + 0.4, e0.x);
-      lamps += gutter * gauss(length(d) / (0.16 * (0.7 + 0.6 * vnoise(d * 5.0 + fi * 3.1))));
-    }
-    lamps = min(1.2, lamps);
-    col *= 1.0 - e0.x * 0.45 * seam * (1.0 - min(1.0, lamps));
-    col += lit * (rgb(255.0, 140.0, 50.0) * lamps * (0.06 + 0.14 * seam) + e0.x * rgb(90.0, 50.0, 22.0) * seam * 0.04);
-  }
-
-  // Magma Fissure: cracks glowing through the rock, branching as they
-  // climb and brightest low down, the light pulsing up them and the heat
-  // shimmering over them. A crack is where a warped noise crosses its
-  // middle: jagged, like a coastline, and never closed into a shape. As
-  // they come they open and heat up; as they go they cool, the white heat
-  // first, then the orange, leaving dull red seams that narrow and darken.
-  // Over the Magma Fissure's last depths the magma cools as well (e2.z,
-  // magmaCooling in lib/descent.ts): its glow dims and turns from orange
-  // toward a dull, dark red (its brightness, luma, falling as magmaHeat
-  // has it, which the scene's light makes way for), and its flow slows to a
-  // stop, on a clock of its own (e2.w) that runs slower as it cools.
-  if (e0.y > 0.0) {
-    float e = e0.y;
-    float cool = e2.z;
-    float ft = e2.w;
-    float hot = 1.0 - ${MAGMA_DIM.toFixed(3)} * cool;
-    vec3 orange = rgb(255.0, 70.0, 14.0);
-    vec3 glow = mix(orange, rgb(150.0, 22.0, 6.0), cool);
-    vec3 luma = vec3(0.2126, 0.7152, 0.0722);
-    glow *= hot * dot(orange, luma) / dot(glow, luma);
-    vec2 m = vec2(q.x * 4.0, q.y * 2.0);
-    m += 0.4 * vec2(vnoise(m * 0.7 + 4.0), vnoise(m * 0.7 - 2.0));
-    m.x += 0.04 * (vnoise(vec2(q.x * 9.0, q.y * 6.0 + ft * 1.4)) - 0.5);
-    float n1 = fbm(m);
-    float n2 = fbm(m * 1.9 + 7.7);
-    float open = 0.35 + 0.65 * e;
-    float c1 = clamp(1.0 - abs(n1 - 0.5) * 9.0 / open, 0.0, 1.0);
-    float c2 = clamp(1.0 - abs(n2 - 0.5) * 12.0 / open, 0.0, 1.0) * smoothstep(0.15, 0.0, abs(n1 - 0.5)) * e;
-    float crack = c1 * c1 * c1 + 0.8 * c2 * c2 * c2;
-    float low = 0.25 + 0.75 * smoothstep(0.1, 1.0, xy.y) + 0.3 * side;
-    float flow = 0.35 + 0.65 * vnoise(vec2(m.x * 1.2, m.y * 1.6 + ft * 0.4));
-    float heat = crack * low * flow;
-    col *= 1.0 - 1.6 * e * (1.0 - e) * c1 * c1;
-    col += lit * (glow * heat * 0.45 * sqrt(e) + hot * rgb(255.0, 215.0, 140.0) * pow(heat, 3.0) * 0.45 * e
-      + hot * rgb(150.0, 18.0, 4.0) * (smoothstep(0.2, 0.0, abs(n1 - 0.5)) * 0.1 + 0.25 * c1 * (1.0 - e)) * low * flow * sqrt(e));
-  }
-
-  // Frozen Hollow: a cold, still hall. Rime has grown in from the walls and
-  // the ceiling, dense at the edge and thinning inward, its front fraying
-  // into feathers of ice (see rime()): stems running in from the edge and
-  // finer barbs swept forward off them, the fingers reaching furthest where
-  // the crystal does. Its crystal shows most toward the front, where the
-  // rime is thin, and catches the light in sheens that drift across it very
-  // slowly, most toward the ceiling; here and there a point of it glints
-  // for a few seconds and fades (main() draws those, too fine for this
-  // target, where gFrost says the crystal is). Pale light filters down from
-  // above in broad rays that wax and wane in place, and a cold mist rolls
-  // slowly low across the floor in two layers, the near one larger, softer
-  // and quicker, going up past you with the walls, the nearer the faster,
-  // as the scene sinks. The light and the mist come in with it, the mist
-  // rising from the floor; the frost only creeps in from the walls once the
-  // magma before it has well cooled (e2.z, its cooling, while it goes out),
-  // over dull rock, and withdraws to them as it goes.
-  if (e0.z > 0.0) {
-    float e = e0.z;
-    float come = smoothstep(0.1, 1.0, e);
-    // The light from above: rays from far overhead, too broad to pick out.
-    if (xy.y < 0.8) {
-      vec2 from = p - vec2(0.5 * W, -0.9 * H);
-      float a = atan(from.x, from.y);
-      float rays = 0.6 * vnoise(vec2(a * 6.0, tm * 0.012)) + 0.4 * vnoise(vec2(a * 14.0 + 4.0, tm * 0.019 + 2.0));
-      float fall = exp(-2.6 * xy.y) * (1.0 - smoothstep(0.3, 0.8, xy.y));
-      col += lit * come * rgb(150.0, 184.0, 226.0) * (0.25 + 0.75 * smoothstep(0.3, 0.8, rays)) * fall * 0.028;
-    }
-    // The mist over the floor: far, a thinner band a little higher, finer
-    // and slower; near, larger and softer, low down, quicker.
-    float ground = xy.y + 0.3 * (1.0 - come);
-    if (ground > 0.5) {
-      vec2 mf = vec2(p.x / S * 1.5 - tm * 0.005, (p.y + 0.35 * uSink) / S * 4.5);
-      mf.x += 0.9 * vnoise(mf * 0.5 + vec2(3.1, tm * 0.01));
-      float mfar = smoothstep(0.36, 0.78, fbm(mf)) * gauss((ground - 0.8) / 0.12);
-      vec2 mn = vec2(p.x / S * 0.8 - tm * 0.007, (p.y + 0.7 * uSink) / S * 2.4 + 5.0);
-      mn.x += 1.1 * vnoise(mn * 0.5 + vec2(tm * 0.012, 1.3));
-      float mnear = smoothstep(0.3, 0.85, 0.65 * vnoise(mn) + 0.35 * vnoise(mn * 2.1 + 3.7)) * smoothstep(0.76, 1.02, ground);
-      col = mix(col, rgb(116.0, 140.0, 172.0) * uLight, come * (0.04 * mfar + 0.07 * mnear) * (1.0 - 0.5 * dark));
-    }
-    // The frost: how far in from the walls and the ceiling (S), the corners
-    // rounded; how far its front has come; and the crystal, read along each
-    // wall and the ceiling (each its own frame, blended at the corners) in
-    // detail units, never finer than on a 700 px screen. The side walls'
-    // go up with the walls as the scene sinks.
-    float fe = max(0.0, smin3(p.x / S, (W - p.x) / S, 1.6 * p.y / S, 0.035));
-    float grow = smoothstep(0.3, 1.0, e) * (e2.z > 0.0 ? smoothstep(0.4, 1.0, e2.z) : 1.0);
-    if (grow > 0.0 && fe < 0.2 * grow) {
-      float D = max(S, 700.0);
-      float n = fe * S / D;
-      float top = smoothstep(-0.03, 0.03, min(p.x, W - p.x) / S - 1.6 * p.y / S);
-      vec4 c = top < 1.0 ? rime(vec2((p.y + uSink) / D + step(0.5 * W, p.x) * 31.0, n)) : vec4(0.0);
-      if (top > 0.0) c = mix(c, rime(vec2(p.x / D + 57.0, n)), top);
-      // Lobes where it has reached further, and fingers along the stems and their barbs.
-      float front = grow * (0.05 + 0.07 * c.z + 0.05 * c.x * c.x * c.x + 0.03 * c.y);
-      float cover = smoothstep(0.0, 0.018, front - fe);
-      float thick = clamp(1.0 - fe / max(front, 0.001), 0.0, 1.0);
-      float body = cover * (0.3 + 0.7 * thick);
-      float crystal = cover * max(0.8 * smoothstep(0.7, 0.97, c.x), smoothstep(0.6, 0.92, c.y)) * (1.0 - 0.6 * thick);
-      float sheen = smoothstep(0.25, 0.85, vnoise(vec2(p.x, p.y + uSink) / D * 1.4 + vec2(tm * 0.01, -tm * 0.007)));
-      float shine = (0.4 + 0.6 * sheen) * (1.15 - 0.4 * xy.y);
-      col = mix(col, rgb(150.0, 176.0, 208.0) * uLight, lit * (0.06 * body + 0.04 * crystal));
-      col += lit * rgb(196.0, 220.0, 250.0) * (0.02 * crystal + 0.004 * body) * shine;
-      gFrost = lit * cover * (0.2 + 0.8 * crystal) * shine;
-    }
-  }
-
-  // Fungal Caverns: a grim, damp dark where a faint bioluminescence
-  // breathes. Soft colonies of cold, sickly light lie low along the walls
-  // and the floor, never in the middle: the far ones smaller and dimmer,
-  // the near ones larger, softer and slower, each swelling and fading to a
-  // breath of its own (a slow sine whose phase wanders across the rock, so
-  // no two breathe in step and the swell drifts through a colony rather
-  // than switching it on), pale at the heart of the most swollen. Fine
-  // mycelial threads web the rock about them, barely there, but catching a
-  // little of their glow; a haze of spores hangs in the air, drifting
-  // slightly up and aside, taking on the glow where it is near; and the
-  // rock they grow on is a little darker with the damp. The colonies kindle
-  // from their hearts as it comes (the far first, the near after) and dim
-  // back into them as it goes; the threads and the haze come with them.
-  if (e0.w > 0.0) {
-    float e = e0.w;
-    float place = max(side * (0.5 + 0.5 * xy.y), smoothstep(0.45, 1.0, xy.y));
-    if (place > 0.0) {
-      float D = max(S, 700.0);
-      // A slow warp the colonies, the threads and the haze share.
-      vec2 w = vec2(vnoise(q * 1.6 + vec2(2.3, tm * 0.004)), vnoise(q * 1.6 + vec2(tm * 0.003, 6.1))) - 0.5;
-      vec2 cf = (p + vec2(0.0, 0.6 * uSink)) / S * 3.4 + 1.2 * w;
-      float nf = fbm(cf);
-      float bf = 0.5 + 0.5 * sin(tm * 0.36 + 8.2 * vnoise(cf * 0.35 + 9.0));
-      float far = smoothstep(0.6 + 0.25 * (1.0 - e) - 0.06 * bf, 0.88 + 0.12 * (1.0 - e), nf) * (0.3 + 0.7 * bf);
-      float en = smoothstep(0.3, 1.0, e);
-      vec2 cn = q * 1.7 + 0.8 * w + 17.0;
-      float nn = 0.65 * vnoise(cn) + 0.35 * vnoise(cn * 2.1 + 3.0);
-      float bn = 0.5 + 0.5 * sin(tm * 0.24 + 7.5 * vnoise(cn * 0.4 + 2.0));
-      float low = smoothstep(0.55, 1.0, xy.y + 0.25 * side) * en;
-      float nearC = smoothstep(0.6 + 0.3 * (1.0 - en) - 0.06 * bn, 0.98, nn) * (0.25 + 0.75 * bn) * low;
-      float glow = (far + nearC) * place;
-      float heart = (far * far + nearC * nearC) * place;
-      // Their light spilling a little way round them, onto the threads and the haze.
-      float aura = min(1.0, smoothstep(0.45, 0.9, nf) * (0.3 + 0.7 * bf) + smoothstep(0.5, 0.98, nn) * (0.25 + 0.75 * bn) * low) * place;
-      // The threads: the noise's middle crossings, warped, finer ones branching off near them.
-      vec2 mq = (p + vec2(0.0, uSink)) / D * 15.0 + 2.5 * w;
-      float m1 = 1.0 - abs(2.0 * vnoise(mq) - 1.0);
-      float m2 = 1.0 - abs(2.0 * vnoise(mq * 1.8 + 5.3) - 1.0);
-      float threads = (smoothstep(0.86, 0.98, m1) + 0.6 * smoothstep(0.88, 0.985, m2) * smoothstep(0.5, 0.85, m1)) * place * smoothstep(0.1, 0.6, e);
-      // The spore haze.
-      vec2 hq = (p + vec2(0.0, 0.4 * uSink)) / S * 2.0 + vec2(tm * 0.006, -tm * 0.009) + 0.8 * w;
-      float haze = smoothstep(0.3, 0.8, 0.6 * vnoise(hq) + 0.4 * vnoise(hq * 2.2 + 3.7)) * smoothstep(0.0, 0.6, place) * smoothstep(0.05, 0.8, e);
-      float thin = 1.0 - 0.5 * dark;
-      col *= 1.0 - 0.1 * e * place;
-      col = mix(col, rgb(116.0, 124.0, 104.0) * uLight, 0.07 * haze * thin);
-      col = mix(col, rgb(150.0, 150.0, 126.0) * uLight, 0.035 * threads * thin);
-      col += lit * (rgb(84.0, 140.0, 130.0) * (0.045 * glow + 0.025 * haze * aura) + rgb(170.0, 200.0, 178.0) * (0.022 * heart + 0.05 * threads * aura));
-    }
-  }
-
-  // Vaal Outpost: shafts of dusty gold light falling slantwise from above,
-  // gold dust sinking through them, and in them, faintly, worn carving.
-  // As they come they reach further down; as they go they draw back up.
-  if (e1.x > 0.0) {
-    float down = 1.2 * e1.x + 0.05;
-    float s = (p.x - 0.4 * p.y) / S;
-    float b = 0.7 * vnoise(vec2(s * 6.0, tm * 0.03)) + 0.3 * vnoise(vec2(s * 14.0 + 3.0, tm * 0.05));
-    float shaft = pow(smoothstep(0.5, 0.82, b), 1.5);
-    float fade = (0.15 + 0.85 * pow(max(0.0, 1.0 - xy.y), 1.3)) * (1.0 - smoothstep(down - 0.35, down + 0.05, xy.y));
-    float dust = 0.45 + 0.55 * fbm(vec2(q.x * 9.0, q.y * 9.0 - tm * 0.07));
-    float f = fract(6.0 * vnoise(q * 9.0 + 9.0) + 0.5 * vnoise(q * 30.0));
-    float carve = 0.86 + 0.14 * smoothstep(0.0, 0.5, f) * (1.0 - smoothstep(0.85, 1.0, f));
-    col += sqrt(e1.x) * lit * (rgb(255.0, 196.0, 104.0) * shaft * fade * dust * carve * 0.18 + rgb(110.0, 80.0, 30.0) * fade * carve * 0.03);
-  }
-
-  // Abyssal Depths: the void coiling round two slow eddies (the embers
-  // swirl round the same), torn violet tendrils with the dark between them.
-  // Each arm is the noise read round a circle about the eddy, turned by the
-  // log of the distance; toward the centre that circle shrinks with the
-  // square of the distance, so the arms draw together into a calm, dark eye
-  // instead of winding ever tighter into a point. The eddies open out from
-  // their centres as they come, and close in on them as they go.
-  if (e1.y > 0.0) {
-    float e = e1.y;
-    float v = 0.0;
-    float near = 0.0;
-    float size = 0.16 * (0.3 + 0.7 * e) * (0.3 + 0.7 * e);
-    for (int i = 0; i < 2; i++) {
-      vec2 c = (i == 0 ? uEddy.xy : uEddy.zw) * vec2(W, H);
-      vec2 d = (p - c) / S;
-      d += 0.12 * vec2(vnoise(q * 3.0 + float(i) * 7.0), vnoise(q * 3.0 + 4.0 + float(i) * 7.0)) - 0.06;
-      float r2 = dot(d, d);
-      float r = sqrt(r2);
-      float eye = r2 / (r2 + 0.007);
-      float a = (i == 0 ? 1.0 : -1.0) * atan(d.y, d.x) + 2.2 * log(r + 0.05) - tm * 0.1;
-      float arm = vnoise(vec2(cos(a), sin(a)) * 1.5 * eye + vec2(r * 4.0, float(i) * 5.0));
-      float torn = smoothstep(0.3, 0.7, fbm(q * 4.0 + vec2(tm * 0.03, float(i) * 3.0)));
-      float reach = exp(-r2 / size);
-      v += smoothstep(0.4, 0.8, arm) * torn * reach * eye;
-      near += reach;
-    }
-    col *= 1.0 - e * 0.35 * min(1.0, near) * (1.0 - min(1.0, v));
-    col += e * lit * (rgb(140.0, 60.0, 255.0) * v * 0.16 + rgb(225.0, 190.0, 255.0) * pow(v, 3.0) * 0.08);
-  }
-
-  // Petrified Forest: stone trunks standing in the fog, pale mist
-  // drifting past in layers, the far one behind the trunks and the nearer
-  // ones in front, faster. The fog rolls in first, and the trunks loom out
-  // of it after; going, they fade back into it.
-  if (e1.z > 0.0) {
-    float tx = q.x * 4.5 + 0.5 * vnoise(vec2(q.x * 2.0, q.y * 1.4));
-    float trunks = smoothstep(0.56, 0.78, vnoise(vec2(tx, 3.0))) * smoothstep(-0.3, 0.5, xy.y);
-    trunks = max(trunks, 0.6 * smoothstep(0.6, 0.82, vnoise(vec2(tx * 2.3 + 7.0, 5.0))) * smoothstep(-0.1, 0.6, xy.y));
-    float mist[3];
-    for (int i = 0; i < 3; i++) {
-      float fi = float(i);
-      float k = 1.5 + 0.9 * fi;
-      float layer = fbm(vec2(q.x * k - tm * (0.012 + 0.016 * fi) * k, q.y * k * 2.6 + fi * 5.0));
-      mist[i] = smoothstep(0.36, 0.76, layer) * gauss((xy.y - 0.25 - 0.28 * fi) / 0.26) * (0.6 + 0.2 * fi);
-    }
-    vec3 fog = rgb(92.0, 102.0, 110.0) * uLight;
-    float thin = e1.z * e1.z * 0.09 * (1.0 - 0.5 * dark);
-    col = mix(col, fog, thin * (0.15 + 0.85 * min(1.0, mist[0])));
-    col = mix(col, rgb(10.0, 11.0, 12.0) * uLight, smoothstep(0.45, 1.0, e1.z) * 0.85 * trunks);
-    col = mix(col, fog, thin * min(1.0, mist[1] + mist[2]));
-  }
-
-  // Sulphur Vents: fumes billowing up from below in columns, spreading
-  // and thinning as they rise, lit from the vents. Coming, they rise from
-  // the floor; going, they sink back into it.
-  if (e1.w > 0.0) {
-    float top = 0.35 + 0.9 * e1.w;
-    float up = 1.0 - xy.y;
-    float xc = (p.x - 0.5 * W) / S;
-    float vents = smoothstep(0.5, 0.78, vnoise(vec2(xc * 3.0 / (0.6 + 1.0 * up) + 10.0, 2.0)));
-    vec2 bq = vec2(xc * 4.5, q.y * 1.8 + tm * 0.16);
-    float billow = fbm(bq + 0.6 * vec2(vnoise(bq * 1.3 + vec2(0.0, tm * 0.1)), 0.0));
-    float plume = vents * smoothstep(0.35, 0.72, billow) * (1.0 - smoothstep(0.15, 1.25, up)) * (1.0 - smoothstep(top - 0.4, top, up + 0.15 * (billow - 0.5)));
-    float k = sqrt(e1.w);
-    col = mix(col, rgb(110.0, 124.0, 46.0) * uLight, k * 0.1 * plume * (1.0 - 0.5 * dark));
-    col += k * lit * rgb(210.0, 235.0, 90.0) * plume * (0.3 + 0.7 * xy.y) * 0.05;
-  }
-
-  // Abyssal City: all but black, fog banks drifting at two depths in front
-  // of the far lights (drawn per pixel, see main(), where they come on one
-  // by one as it comes, and go out one by one).
-  if (e2.x > 0.0) {
-    float fog = smoothstep(0.45, 0.8, fbm(vec2(q.x * 1.6 - tm * 0.01, q.y * 5.0))) * gauss((xy.y - 0.7) / 0.3);
-    fog += 0.6 * smoothstep(0.5, 0.85, fbm(vec2(q.x * 2.6 - tm * 0.025, q.y * 7.0 + 4.0))) * gauss((xy.y - 0.42) / 0.25);
-    col *= 1.0 - e2.x * 0.4;
-    col += e2.x * lit * rgb(46.0, 60.0, 130.0) * fog * 0.14;
-  }
-
-  // Primeval Ruins: white-hot fire welling up from below and licking up
-  // the walls, the air over it shimmering in rising waves. Coming, it
-  // rises from the floor as it kindles; going, it sinks back down as it
-  // dies, its light growing and falling steadily with e either way.
-  if (e2.y > 0.0) {
-    float e = e2.y;
-    vec2 hq = vec2(q.x * 3.0, q.y * 2.0 + tm * 0.5);
-    float haze = fbm(hq + 0.6 * vec2(vnoise(hq * 1.7 + tm * 0.2), 0.0));
-    float rise = xy.y + 0.28 * (haze - 0.5) + 0.22 * side * (0.5 + haze);
-    float hot = smoothstep(0.66, 1.3, rise - 0.12 * (1.0 - e));
-    float k = sqrt(e);
-    col += k * lit * (rgb(255.0, 96.0, 24.0) * hot * 0.13 + rgb(255.0, 240.0, 200.0) * pow(hot, 3.0) * 0.2);
-    col *= 1.0 + k * 0.8 * (vnoise(vec2(q.x * 13.0, q.y * 5.0 + tm * 1.8)) - 0.5) * hot;
-  }
+  gDark = dark;
+  gLit = (1.0 - 0.8 * dark) * uFeatures;
+  gSide = 1.0 - smoothstep(0.0, 0.3, min(xy.x, 1.0 - xy.x));
+  float sink = uSink / H;
+  int s;
+  float dim;
+${ENV_CALLS}
   return col;
 }
 
@@ -588,20 +317,26 @@ void main() {
 `;
 
 /**
- * The backdrop at every device pixel. With `split`, the soft light comes from
- * uSmooth (drawn by SMOOTH_FRAG); without, it's worked out here.
- */
-/**
  * Fragment uniform vectors the main pass uses apart from the UI elements'
- * (counted unpacked, with a little to spare), and each element's: its seven
- * rows and its shadows' two each. Recount when adding a uniform.
+ * (counted unpacked, samplers apart, with one to spare: 170 as linked with
+ * the soft light worked out here, the effects' slots, 3 * FX_SLOTS, among
+ * them), and each element's: its seven rows and its shadows' two each.
+ * Recount when adding a uniform (the active uniforms of the program
+ * frag(4, false) links to, less 4 elements' worth).
  */
-const FIXED_UNIFORMS = 146;
+const FIXED_UNIFORMS = 171;
 const ELEMENT_UNIFORMS = 7 + 2 * SHADOWS_PER_ELEMENT;
 
+/**
+ * The backdrop at every device pixel. With `split`, the soft light comes from
+ * uSmooth (drawn by SMOOTH_FRAG); without, it's worked out here (where the
+ * spores' and motes' finest points are drawn at a device pixel's size, not
+ * the soft light's texel's).
+ */
 const frag = (MAX_ELEMENTS: number, split: boolean) => `#version 300 es
 precision highp float;
 out vec4 fragColor;
+${split ? '' : '#define FX_POINT_PX 2.0'}
 
 uniform vec2 uRes;   // drawing buffer size, device pixels
 ${SMOOTH}
@@ -637,8 +372,15 @@ uniform vec3 uEmberCore[${PALETTE}];
 uniform vec2 uEmberK;
 #define uEmberGain uEmberK.x
 #define uStreak uEmberK.y
-// Abyssal City's far lights: how many show (0 to 1), and the clock (s).
-uniform vec2 uCity;
+// Abyssal City's far lights: their colour and how many show (0 to 1); the
+// warm windows' colour now and then among them, and the clock (s); the
+// city's fog colour, and how far the lights' colours vary toward it (its
+// colour stops c1, c0 and c2, see env_city).
+uniform vec4 uCityA;
+uniform vec4 uCityB;
+uniform vec4 uCityC;
+// The colour Frozen Hollow's frost glints in (its whitest stop, whiter).
+uniform vec3 uIce;
 uniform vec4 uShGeo[${MAX_ELEMENTS * SHADOWS_PER_ELEMENT}];
 uniform vec4 uShCol[${MAX_ELEMENTS * SHADOWS_PER_ELEMENT}];
 
@@ -724,22 +466,24 @@ void main() {
   // Abyssal City: far cold lights, like windows or stars, gathered in
   // clusters at two depths that drift past at two speeds. Each is a point a
   // pixel or two across, too fine for the soft light's own target.
-  if (uCity.x > 0.0) {
+  if (uCityA.w > 0.0) {
     for (int i = 0; i < 2; i++) {
       float cs = i == 0 ? 7.0 : 12.0;
-      vec2 pp = p + vec2(uCity.y * (i == 0 ? 1.0 : 2.6), uSink * (i == 0 ? 0.3 : 0.6));
+      vec2 pp = p + vec2(uCityB.w * (i == 0 ? 1.0 : 2.6), uSink * (i == 0 ? 0.3 : 0.6));
       vec2 cell = floor(pp / cs);
       float h = hash(cell + float(i) * 31.0);
       float cluster = vnoise(cell * (i == 0 ? 0.11 : 0.07) + float(i) * 9.0);
       if (h < 0.84 || cluster < 0.5) continue;
       vec2 at = (cell + 0.3 + 0.4 * vec2(hash(cell + 7.0), hash(cell + 13.0))) * cs;
       vec2 d = pp - at;
-      float tw = 0.65 + 0.35 * sin(uCity.y * (0.4 + 1.6 * h) + h * 60.0);
+      float tw = 0.65 + 0.35 * sin(uCityB.w * (0.4 + 1.6 * h) + h * 60.0);
       float lit = smoothstep(0.5, 0.7, cluster) * (i == 0 ? 0.7 : 1.2) * (0.3 + 0.7 * smoothstep(0.0, 0.6, p.y / uViewH));
       // One by one as the city comes (and goes).
-      float on = smoothstep(0.0, 0.12, 1.12 * uCity.x - (h - 0.84) / 0.16);
+      float on = smoothstep(0.0, 0.12, 1.12 * uCityA.w - (h - 0.84) / 0.16);
       float r2 = dot(d, d);
-      col += mix(vec3(0.55, 0.65, 1.0), vec3(1.0, 0.85, 0.6), step(0.975, h)) * (exp(-r2 / (i == 0 ? 0.6 : 1.1)) + 0.12 * exp(-r2 / 9.0)) * tw * lit * 0.8 * on * near;
+      // Each cold light a little deeper toward the fog's colour, or not (as far as the city's colours vary).
+      vec3 cold = mix(uCityA.rgb, mix(uCityA.rgb, 1.6 * uCityC.rgb, 0.5), uCityC.w * hash(cell + 19.0));
+      col += mix(cold, uCityB.rgb, step(0.975, h)) * (exp(-r2 / (i == 0 ? 0.6 : 1.1)) + 0.12 * exp(-r2 / 9.0)) * tw * lit * 0.8 * on * near;
     }
   }
 
@@ -762,7 +506,7 @@ void main() {
       s *= s;
       s *= s;
       s *= s;
-      col += rgb(226.0, 238.0, 255.0) * (exp(-r2 / 0.45) + 0.12 * exp(-r2 / 3.0)) * s * min(1.0, frost) * 0.32;
+      col += uIce * (exp(-r2 / 0.45) + 0.12 * exp(-r2 / 3.0)) * s * min(1.0, frost) * 0.32;
     }
   }
 
@@ -1025,7 +769,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   // The main pass needs about FIXED_UNIFORMS fragment uniform vectors (every
   // one counted unpacked, the soft light's included where it is worked out
   // there) plus ELEMENT_UNIFORMS a UI element. WebGL2 guarantees 224, enough
-  // for 7 elements; most desktop GPUs offer 1024 or more, and get 16.
+  // for 4 elements; most desktop GPUs offer 1024 or more, and get 16.
   const maxElements = Math.max(4, Math.min(16, Math.floor((gl.getParameter(gl.MAX_FRAGMENT_UNIFORM_VECTORS) - FIXED_UNIFORMS) / ELEMENT_UNIFORMS)));
 
   // The soft light (see SMOOTH) gets a half-float target of its own wherever
@@ -1104,13 +848,16 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   const uHaze = S('uHaze');
   const uShade = S('uShade');
   const uMist = S('uMist');
-  const uEnv = S('uEnv');
+  const uFx = S('uFx');
+  const uFxK = S('uFxK');
   const uEddy = S('uEddy');
   const uDark = S('uDark');
   const uGlowCol = S('uGlowCol');
   const uScene = S('uScene');
-  const env = new Float32Array(ENV_UNIFORM);
-  /** The magma's flow's clock (s): it runs slower as the magma cools, and stops (see environments() in the shader). */
+  const fx = new Float32Array(FX_UNIFORM);
+  const fxK = new Float32Array(4);
+  const stops = new Float32Array(9);
+  /** The magma's flow's clock (s): it runs slower as the magma cools, and stops (see env_magma in shaders/effects.ts). */
   let magmaClock = 0;
   const uBlobColor = S('uBlobColor');
   gl.useProgram(soft);
@@ -1129,7 +876,10 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   const uEmberHalo = U('uEmberHalo');
   const uEmberCore = U('uEmberCore');
   const uEmberK = U('uEmberK');
-  const uCity = U('uCity');
+  const uCityA = U('uCityA');
+  const uCityB = U('uCityB');
+  const uCityC = U('uCityC');
+  const uIce = U('uIce');
   // The dark closing in dims the embers too (closing() in the shader).
   const mDark = U('uDark');
   const mScene = U('uScene');
@@ -1259,9 +1009,11 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     gl!.uniform3f(uHaze, look.haze[0] / 255, look.haze[1] / 255, look.haze[2] / 255);
     gl!.uniform4f(uShade, look.shade[0], look.shade[1], look.shade[2], look.dark);
     gl!.uniform4f(uMist, look.mist[0] / 255, look.mist[1] / 255, look.mist[2] / 255, look.mistK);
-    // Its environment, and the dark closing in with the depth and the clock.
-    // And after them (e2.z and e2.w in the shader) the magma's cooling and its flow's clock.
-    gl!.uniform4fv(uEnv, packEnv(env, scene, still ? 0 : magmaClock));
+    // Its environments, a slot each with their strength and colours, and
+    // the magma's cooling and its flow's clock; and the dark closing in
+    // with the depth and the clock.
+    gl!.uniform4fv(uFx, packFx(fx, fxK, scene, still ? 0 : magmaClock));
+    gl!.uniform4fv(uFxK, fxK);
     gl!.uniform4fv(uEddy, embers.eddies);
     // A plunge draws the dark in and lets it go again as the scene sinks.
     const close = Math.min(1, scene.close + 0.12 * sinking.breath);
@@ -1330,7 +1082,14 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     gl!.uniform4fv(uEmberHalo, embers.halo);
     gl!.uniform3fv(uEmberCore, embers.core);
     gl!.uniform2f(uEmberK, calm() ? 0.6 : 1, embers.streak);
-    gl!.uniform2f(uCity, env[8], home[2]);
+    // The city's far lights and the frost's glints, drawn here, in their colours.
+    const city = scene.look.env[CITY];
+    stopsFor(look, 'city', stops);
+    gl!.uniform4f(uCityA, stops[3], stops[4], stops[5], city < 0.002 ? 0 : city);
+    gl!.uniform4f(uCityB, stops[0], stops[1], stops[2], home[2]);
+    gl!.uniform4f(uCityC, stops[6], stops[7], stops[8], toneOf(look, CITY).vary);
+    stopsFor(look, 'frost', stops);
+    gl!.uniform3f(uIce, stops[0] + 0.35 * (1 - stops[0]), stops[1] + 0.35 * (1 - stops[1]), stops[2] + 0.35 * (1 - stops[2]));
     gl!.uniform2f(mDark, close, pressure);
     gl!.uniform3f(mScene, scene.light * look.lightK, sink, scene.features);
     gl!.uniform4fv(mHome, home);

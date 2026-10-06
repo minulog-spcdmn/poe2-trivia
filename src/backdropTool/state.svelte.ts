@@ -7,7 +7,7 @@
 // Drafts keep in this page's own storage (lib/storage.ts, data-backdrop-tool).
 
 import { SHIPPED, setBackdrops, seedAt } from '../lib/backdrops';
-import { backdropsErrors, cloneData, formatBackdrops, type Backdrops, type GenSettings, type Group, type Look, type MotionTweak } from '../lib/backdropData';
+import { backdropsErrors, cloneData, formatBackdrops, withTones, type Backdrops, type GenSettings, type Group, type Look, type MotionTweak } from '../lib/backdropData';
 import { DEFAULT_SETTINGS, freshSeed, generate, hueOf, keepLocked, variationSeed, wrap } from '../lib/backdropGen';
 import { calibrateLight, setDescent } from '../lib/descent';
 import { PROFILE_NAMES, profileOf, tweakOf } from '../lib/emberProfiles';
@@ -43,7 +43,11 @@ interface Saved {
 function load(): Saved | null {
   try {
     const s = JSON.parse(readStored('draft') ?? 'null') as Saved | null;
-    if (!s || backdropsErrors(s.draft, NAMES, PROFILE_NAMES).length) return null;
+    if (!s) return null;
+    // (A draft kept from before the details had colours of their own keeps the ones it was drawn in.)
+    withTones(s.draft);
+    withTones({ zones: [{ look: s.work?.look }] });
+    if (backdropsErrors(s.draft, NAMES, PROFILE_NAMES).length) return null;
     return s;
   } catch {
     return null;
@@ -297,7 +301,7 @@ export function downloadJson() {
 
 export async function importJson(file: File) {
   try {
-    const data = JSON.parse(await file.text()) as Backdrops;
+    const data = withTones(JSON.parse(await file.text()) as Backdrops);
     const errors = backdropsErrors(data, NAMES, PROFILE_NAMES);
     if (errors.length) return note(`Not imported: ${errors.slice(0, 4).join('; ')}`);
     tool.draft = data;

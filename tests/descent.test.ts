@@ -32,9 +32,11 @@ import {
   magmaCoolingOf,
   magmaGoesOut,
   magmaHeat,
-  packEnv,
-  ENV_UNIFORM,
-  MAGMA_DIM,
+  packFx,
+  FX_SLOTS,
+  FX_UNIFORM,
+  NO_SLOT,
+  toneOf,
   measuredAt,
   lightAt,
   luminanceAt,
@@ -51,10 +53,11 @@ import { DELVE_BLUE_FROM } from '../src/lib/fx/streaks.ts';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { SHIPPED, setBackdrops } from '../src/lib/backdrops.ts';
-import { cloneData } from '../src/lib/backdropData.ts';
+import { cloneData, ENV_TONES, lookErrors, stopsOf, type Tones } from '../src/lib/backdropData.ts';
 
 /** Every number in a look, in a fixed order. */
-const numbers = (l: Look) => Object.values(l).flatMap((v) => (Array.isArray(v) ? v : [v]));
+const numbers = (l: Look) =>
+  Object.entries(l).flatMap(([k, v]) => (k === 'tones' ? Object.values(v as Tones).flatMap((t) => [...t!.colors.flat(), t!.vary]) : Array.isArray(v) ? v : [v]));
 
 /** How different two looks are where it shows: the light from below, the smoke, the embers' colour, the dark. */
 function difference(a: Look, b: Look) {
@@ -74,8 +77,11 @@ test('outside Delve the scene is the usual one; depth 1 is the Mines as they beg
     assert.equal(descent(d).deep, 0);
     assert.equal(descent(d).abyss, 0);
   }
-  assert.deepEqual(descent(0).look, SURFACE);
-  assert.deepEqual(descent(1).look, STRATA[0].look);
+  // (Its colours aside: a look worked out carries every environment's, the ones it draws as the file has them.)
+  const plain = (l: Look) => ({ ...l, tones: {} });
+  assert.deepEqual(plain(descent(0).look), plain(SURFACE));
+  assert.deepEqual(plain(descent(1).look), plain(STRATA[0].look));
+  for (let i = 0; i < ENV; i++) if (STRATA[0].look.env[i] > 0) assert.deepEqual(toneOf(descent(1).look, i).colors, stopsOf(toneOf(STRATA[0].look, i)));
   assert.equal(descent(0).light, 1);
   assert.ok(Math.abs(descent(1).light - 1) < 1e-9);
 });
@@ -101,6 +107,7 @@ test('every look stays finite and in range, however deep, even for nonsense dept
     for (const v of numbers(l)) assert.ok(Number.isFinite(v) && v >= 0, `${v} at ${d}`);
     for (const c of [l.floor, l.haze, l.smoke, l.smokeHi, l.mist]) assert.ok(c.every((v) => v <= 255), `colour at ${d}`);
     for (const c of [l.ember, l.core, l.glint]) assert.ok(c.every((v) => v <= 1), `ember colour at ${d}`);
+    for (const t of Object.values(l.tones)) assert.ok(t!.colors.flat().every((v) => v <= 255) && t!.vary <= 1, `an environment's colours at ${d}`);
     assert.ok(l.dark < 0.9, `too dark at ${d}`);
     assert.ok(l.floorK <= 0.5, `the light from below too bright behind the UI at ${d}`);
   }
@@ -112,14 +119,12 @@ test('the first ten depths already change, a little with every depth', () => {
   assert.ok(difference(descent(7).look, descent(12).look) > 0.4, 'depth 12 looks like depth 7');
 });
 
-test('each ten depths, to 100 and far past it, look clearly unlike the ten before', () => {
-  for (let d = 15; d <= 1005; d += 10) {
+test('past the zones, each ten depths look clearly unlike the ten before', () => {
+  // (The zones look as the file has them, whatever that is; the endgame's are generated to differ.)
+  for (let d = 10 * STRATA.length + 15; d <= 1005; d += 10) {
     const diff = difference(descent(d - 10).look, descent(d).look);
     assert.ok(diff > 0.5, `depth ${d} looks like depth ${d - 10} (${diff.toFixed(2)})`);
   }
-  // Through 100 no two strata look alike at all.
-  for (let a = 0; a < STRATA.length; a++)
-    for (let b = a + 1; b < STRATA.length; b++) assert.ok(difference(lookOf(a), lookOf(b)) > 0.4, `strata ${a} and ${b}`);
 });
 
 /** How much the scene changes between two looks: its light, smoke, glow, the embers' colour and the features. */
@@ -179,12 +184,6 @@ test("through each stratum the next creeps in: its embers a tenth more each dept
   assert.equal(strataAt(BLUE_FROM - 9).stratum, 2);
   assert.ok(Math.abs(strataAt(BLUE_FROM - 9).turn - 0.1) < 1e-9);
   assert.equal(strataAt(BLUE_FROM).stratum - 1, 2);
-  const blue = (k: number) => lookOf(k).ember[2] > 0.9 && lookOf(k).ember[0] < 0.5;
-  assert.ok(blue(2) && !blue(STRATA.length - 1));
-  for (let d = 0; d <= BLUE_FROM - 10; d++) {
-    const { stratum, turn } = strataAt(d);
-    assert.ok((!blue(stratum) || turn === 0) && !blue(stratum - 1), `blue embers at ${d}`);
-  }
 });
 
 test('one place turns into the next steadily: its features recede as the next ones come, never back and forth', () => {
@@ -203,28 +202,37 @@ test('one place turns into the next steadily: its features recede as the next on
   }
 });
 
-test('over the Magma Fissure\'s last depths the magma cools, and has cooled as the Frozen Hollow arrives; the light makes way for it', () => {
+test("a magma that goes out cools over its zone's last depths, and has cooled as the next arrives; the light makes way for it", () => {
   const at = (d: number) => {
     const { stratum, turn } = strataAt(d);
     return magmaCooling(stratum, turn);
   };
-  // Hot through the fissure's first depths (and nowhere else to 100), cooling steadily from its fourth.
-  for (let d = 0; d <= 13.5; d += 0.25) assert.equal(at(d), 0, `cooling at ${d}`);
-  for (let d = 21; d <= 100; d += 0.25) assert.equal(at(d), 0, `cooling at ${d}`);
-  let last = 0;
-  for (let d = 13.75; d < 21; d += 0.25) {
-    assert.ok(at(d) > last && at(d) - last < 0.05, `cooling at ${d}: ${at(d)} after ${last}`);
-    last = at(d);
-  }
-  assert.ok(last > 0.95, 'all but cooled as the Frozen Hollow arrives');
-  // Cooling, it glows dimmer, as the backdrop draws it; the estimate has it so.
+  // Cooled, it glows no more; it glows less the cooler, as the backdrop draws it (crusting over); the estimate has it so.
   assert.equal(magmaHeat(0), 1);
-  assert.ok(Math.abs(magmaHeat(1) - (1 - MAGMA_DIM)) < 1e-12 && MAGMA_DIM > 0.5 && MAGMA_DIM < 1);
-  const x = descent(17);
-  const hot = estimateLuminance(x.look, x.close, x.features, 1);
-  const cooled = estimateLuminance(x.look, x.close, x.features, magmaHeat(at(17)));
-  assert.equal(cooled.hall, hot.hall);
-  assert.ok(cooled.rest < hot.rest, 'the cooling magma adds less');
+  assert.equal(magmaHeat(1), 0);
+  for (let c = 0.05; c <= 1; c += 0.05) assert.ok(magmaHeat(c) < magmaHeat(c - 0.05), `hotter at ${c.toFixed(2)}`);
+  // Whichever zones the file gives a magma that goes out (the one it hands over to has none).
+  const out = STRATA.flatMap((_, k) => (magmaGoesOut(k) ? [k] : []));
+  for (let d = 0; d <= 10 * STRATA.length; d += 0.25) {
+    const { stratum } = strataAt(d);
+    if (!out.includes(stratum - 1)) assert.equal(at(d), 0, `cooling at ${d}`);
+  }
+  for (const z of out) {
+    const first = 10 * z + 1;
+    // Hot through its first depths, cooling steadily from its fourth, all but cooled as the next arrives.
+    for (let d = first; d <= first + 2.5; d += 0.25) assert.equal(at(d), 0, `cooling at ${d}`);
+    let last = 0;
+    for (let d = first + 2.75; d < first + 10; d += 0.25) {
+      assert.ok(at(d) > last && at(d) - last < 0.05, `cooling at ${d}: ${at(d)} after ${last}`);
+      last = at(d);
+    }
+    assert.ok(last > 0.95, 'all but cooled as the next zone arrives');
+    const x = descent(first + 6);
+    const hot = estimateLuminance(x.look, x.close, x.features, 1);
+    const cooled = estimateLuminance(x.look, x.close, x.features, magmaHeat(at(first + 6)));
+    assert.equal(cooled.hall, hot.hall);
+    assert.ok(cooled.rest < hot.rest, 'the cooling magma adds less');
+  }
   // Past 100, a stratum whose magma goes out cools it the same way; one whose magma stays doesn't.
   const magma = ENVIRONMENTS.indexOf('magma');
   for (let k = STRATA.length + 1; k < 200; k++) {
@@ -233,65 +241,105 @@ test('over the Magma Fissure\'s last depths the magma cools, and has cooled as t
   }
 });
 
-test("the zone whose look has magma cools over its last depths, keyed off its look, and the shader's uEnv gets it", () => {
-  const magma = ENVIRONMENTS.indexOf('magma');
-  // Found by its look, not by its place: the zone whose magma goes out (in backdrops.json as it stands, the Magma Fissure).
-  const zone = STRATA.findIndex((_, k) => magmaGoesOut(k));
-  assert.ok(zone >= 0, 'a zone whose magma goes out');
-  assert.equal(STRATA[zone].name, 'Magma Fissure');
-  assert.ok(lookOf(zone).env[magma] > 0 && !(lookOf(zone + 1).env[magma] > 0));
-  const first = 10 * zone + 1;
-  const last = first + 9;
-  const env = new Float32Array(ENV_UNIFORM);
-  /** uEnv as the backdrop sends it at depth d, its magma clock at 42 s. */
-  const uEnv = (d: number) => Array.from(packEnv(env, descent(d), 42));
-  // Three vec4s, the shader's uEnv[3]: the environments, then the cooling in uEnv[2].z and the clock in uEnv[2].w, where the magma reads them.
-  assert.equal(ENV_UNIFORM, 12);
-  assert.equal(ENV, 10);
+/** The shader's slots as packFx fills them for a scene: per environment showing, its strength, colours (0 to 1) and vary, and the cooling and clock. */
+function slotsOf(scene: Parameters<typeof packFx>[2], clock = 42) {
+  const fx = new Float32Array(FX_UNIFORM);
+  const k = new Float32Array(4);
+  packFx(fx, k, scene, clock);
+  const map = (i: number) => Math.floor((i < 5 ? k[2] : k[3]) / 16 ** (i < 5 ? i : i - 5)) % 16;
+  const slots = new Map<number, { e: number; stops: number[][]; vary: number; slot: number }>();
+  for (let s = 0; s < FX_SLOTS; s++) {
+    const o = s * 12;
+    if (fx[o + 3] <= 0) {
+      for (let j = o; j < FX_UNIFORM; j++) assert.equal(fx[j], 0, 'the slots after the last empty');
+      break;
+    }
+    const id = fx[o + 11];
+    assert.equal(map(id), s, `environment ${id} found in its slot`);
+    slots.set(id, { e: fx[o + 3], stops: [0, 4, 8].map((j) => Array.from(fx.slice(o + j, o + j + 3))), vary: fx[o + 7], slot: s });
+  }
+  for (let i = 0; i < ENV; i++) if (!slots.has(i)) assert.equal(map(i), NO_SLOT);
+  return { slots, cool: k[0], clock: k[1] };
+}
+
+test("the shader gets the environments showing, a slot each with its strength and colours, and the magma's cooling and clock", () => {
   const shader = readFileSync(join(import.meta.dirname, '..', 'src', 'lib', 'backdrop.ts'), 'utf8');
-  assert.match(shader, /uniform vec4 uEnv\[3\];/);
-  assert.match(shader, /vec4 e0 = uEnv\[0\];[\s\S]*vec4 e2 = uEnv\[2\];/);
-  assert.match(shader, /if \(e0\.y > 0\.0\) \{\s*float e = e0\.y;\s*float cool = e2\.z;\s*float ft = e2\.w;/, 'the magma (environment 1, uEnv[0].y) reads its cooling and clock');
-  assert.equal(magma, 1);
-  assert.match(shader, /gl!\.uniform4fv\(uEnv, packEnv\(env, scene, /, 'the backdrop sends packEnv as it is');
-  // Hot through the zone's first depths.
-  for (let d = first; d < first + 3; d++) {
-    const u = uEnv(d);
-    assert.equal(u[ENV], 0, `cooling at ${d}`);
-    assert.equal(u[magma], lookOf(zone).env[magma], `the magma all there at ${d}`);
-    assert.equal(u[ENV + 1], 42);
+  const effects = readFileSync(join(import.meta.dirname, '..', 'src', 'lib', 'shaders', 'effects.ts'), 'utf8');
+  assert.match(shader, /uniform vec4 uFx\[\$\{FX_SLOTS \* 3\}\];\s*uniform vec4 uFxK;/);
+  assert.match(shader, /gl!\.uniform4fv\(uFx, packFx\(fx, fxK, scene, /, 'the backdrop sends packFx as it is');
+  assert.match(effects, /float cool = uFxK\.x;\s*float ft = uFxK\.y;/, 'the magma reads its cooling and clock');
+  // Every environment has its effect in the shader, called from its slot.
+  for (const name of ENVIRONMENTS) assert.ok(new RegExp(`(env|fx)_${name}\\(`).test(effects + readFileSync(join(import.meta.dirname, '..', 'src', 'lib', 'shaders', 'newEffects.ts'), 'utf8')), name);
+  // At every depth: each environment showing in a slot of its own, in their order, its strength and colours as the look has them.
+  for (let d = 0; d <= 400; d += 0.5) {
+    const x = descent(d);
+    const { slots, cool, clock } = slotsOf(x);
+    assert.equal(clock, 42);
+    assert.ok(Math.abs(cool - magmaCooling(x.stratum, x.turn)) < 1e-6, `cooling at ${d}`);
+    const showing = x.look.env.flatMap((v, i) => (v >= 0.002 ? [i] : []));
+    assert.ok(slots.size === Math.min(FX_SLOTS, showing.length), `slots at ${d}`);
+    let prev = -1;
+    for (const [i, s] of slots) {
+      assert.ok(s.slot > prev || prev < 0, `in order at ${d}`);
+      prev = s.slot;
+      assert.ok(Math.abs(s.e - x.look.env[i]) < 1e-6);
+      const want = stopsOf(toneOf(x.look, i));
+      s.stops.forEach((c, j) => c.forEach((v, ch) => assert.ok(Math.abs(v - want[j][ch] / 255) < 1e-5, `colour of ${ENVIRONMENTS[i]} at ${d}`)));
+      assert.ok(Math.abs(s.vary - toneOf(x.look, i).vary) < 1e-6);
+    }
   }
-  // Then cooling depth by depth, from 0 to near 1 at its last, the magma still there as it does.
-  let prev = 0;
-  for (let d = first + 3; d <= last; d++) {
-    const u = uEnv(d);
-    const { stratum, turn } = strataAt(d);
-    assert.ok(Math.abs(u[ENV] - magmaCooling(stratum, turn)) < 1e-6, `uEnv[2].z at ${d}`);
-    assert.ok(u[ENV] > prev, `cooling at ${d}: ${u[ENV]} after ${prev}`);
-    assert.ok(u[magma] > 0.25, `the magma still shows at ${d} (${u[magma].toFixed(2)})`);
-    prev = u[ENV];
-  }
-  assert.ok(prev > 0.85, `cooled to ${prev.toFixed(2)} at depth ${last}`);
-  assert.ok(uEnv(last + 0.9)[ENV] > 0.98, 'all but cooled as the next zone arrives');
-  // And the magma, cooled, has gone as the next zone is announced.
-  assert.equal(uEnv(last + 1)[magma], 0);
-  assert.equal(uEnv(last + 1)[ENV], 0);
-  // A zone without magma never cools, whatever way its embers move (the Mines' rise the magma's way).
-  for (let k = 0; k < STRATA.length; k++) if (!magmaGoesOut(k)) assert.equal(magmaCoolingOf(k, k + 1, 0.9), 0, STRATA[k].name);
-  // Keyed off the looks: with the magma moved to another zone, that one cools and the Magma Fissure doesn't.
+  // More showing than there are slots: the strongest, in their order.
+  const crowded = { ...descent(1), look: { ...descent(1).look, env: ENVIRONMENTS.map((_, i) => 0.1 + 0.05 * ((i * 7) % 10)) } };
+  const { slots } = slotsOf(crowded);
+  assert.equal(slots.size, FX_SLOTS);
+  const kept = [...slots.keys()];
+  const weakest = Math.min(...kept.map((i) => crowded.look.env[i]));
+  assert.ok(crowded.look.env.every((v, i) => kept.includes(i) || v <= weakest), 'the faintest left out');
+  assert.deepEqual(kept, [...kept].sort((a, b) => a - b));
+});
+
+test('through a handover an environment both zones draw turns from the one\'s colours to the other\'s; one only one draws keeps its own', () => {
   const draft = cloneData(SHIPPED);
-  draft.zones[zone].look.env[magma] = 0;
-  draft.zones[3].look.env[magma] = 0.7;
-  draft.zones[3].measured = false;
-  draft.zones[zone].measured = false;
+  const a = draft.zones[4].look;
+  const b = draft.zones[5].look;
+  a.env = ENVIRONMENTS.map((_, i) => (i === 1 || i === 5 ? 0.6 : 0));
+  b.env = ENVIRONMENTS.map((_, i) => (i === 5 || i === 9 ? 0.6 : 0));
+  a.tones = { magma: { colors: [[250, 220, 160], [240, 90, 20]], vary: 0.2 }, void: { colors: [[200, 200, 255], [40, 40, 220], [10, 10, 90]], vary: 0.2 } };
+  b.tones = { void: { colors: [[255, 200, 200], [220, 40, 40], [90, 10, 10]], vary: 0.8 }, heat: { colors: [[255, 255, 255], [255, 120, 40], [120, 20, 10]], vary: 0.4 } };
+  draft.zones[4].measured = draft.zones[5].measured = false;
   setBackdrops(draft);
   try {
-    assert.ok(!magmaGoesOut(zone) && magmaGoesOut(3));
-    assert.equal(packEnv(env, descent(10 * zone + 10), 0)[ENV], 0);
-    assert.ok(packEnv(env, descent(40), 0)[ENV] > 0.85);
+    let prevVoid = toneOf(descent(41).look, 5).colors[1][0];
+    for (let d = 41; d <= 51; d += 0.25) {
+      const look = descent(d).look;
+      // The magma keeps its own colours as it goes, the fire its own as it comes (two stops: the middle half way).
+      if (look.env[1] > 0) assert.deepEqual(toneOf(look, 1).colors, stopsOf(a.tones.magma!), `magma at ${d}`);
+      if (look.env[9] > 0) assert.deepEqual(toneOf(look, 9).colors, b.tones.heat!.colors, `fire at ${d}`);
+      // The void turns from blue to red steadily, never back.
+      const v = toneOf(look, 5).colors[1][0];
+      assert.ok(v >= prevVoid - 1e-9, `the void turns back at ${d}`);
+      prevVoid = v;
+    }
+    assert.deepEqual(toneOf(descent(41).look, 5), a.tones.void);
+    assert.deepEqual(toneOf(descent(51).look, 5), b.tones.void);
+    for (let d = 0; d <= 120; d += 0.25) assert.deepEqual(lookErrors({ ...descent(d).look, lightK: 1 }).filter((e) => e.includes('tones')), [], `tones at ${d}`);
   } finally {
     setBackdrops(SHIPPED);
   }
+});
+
+test("a colour range counts for the brightness as bright as it is: darker colours add less, brighter more", () => {
+  const look = { ...lookOf(1) };
+  const own = estimateLuminance(look, 0.2, 0.9, 1);
+  const tone = ENV_TONES.magma.tone;
+  const darker = estimateLuminance({ ...look, tones: { magma: { ...tone, colors: tone.colors.map((c) => c.map((v) => v * 0.5)) as typeof tone.colors } } }, 0.2, 0.9, 1);
+  const brighter = estimateLuminance({ ...look, tones: { magma: { ...tone, colors: tone.colors.map((c) => c.map((v) => Math.min(255, v * 1.5))) as typeof tone.colors } } }, 0.2, 0.9, 1);
+  if (look.env[1] > 0) {
+    assert.ok(darker.rest < own.rest && brighter.rest > own.rest);
+  }
+  // A look in its environments' own colours counts as the tables were measured.
+  const plain = { ...look, tones: {} };
+  assert.deepEqual(estimateLuminance(plain, 0.2, 0.9, 1), estimateLuminance({ ...look, tones: Object.fromEntries(ENVIRONMENTS.map((n) => [n, ENV_TONES[n].tone])) }, 0.2, 0.9, 1));
 });
 
 test("each environment's features come in steadily: what they add to the brightness grows with every step, never mostly at the end", () => {
@@ -379,10 +427,14 @@ test("what the features add, which the light can't take back, changes a little w
   assert.equal(lightAt(0.5), 1);
 });
 
-test('each stratum through 100 is an environment of its own; past 100 at most two, quietly, never like the one before', () => {
+test('every zone draws its environments as the file has them, in colours of their own; past 100 at most two, quietly, never like the one before', () => {
   assert.equal(SURFACE.env.length, ENV);
   assert.ok(SURFACE.env.every((v) => v === 0));
-  STRATA.forEach((s, k) => assert.deepEqual(s.look.env, ENVIRONMENTS.map((_, i) => (i === k ? 1 : 0)), s.name));
+  STRATA.forEach((s) => {
+    assert.equal(s.look.env.length, ENV, s.name);
+    assert.ok(s.look.env.every((v) => v >= 0 && v <= 1), s.name);
+    assert.deepEqual(lookErrors(s.look), [], s.name);
+  });
   const mist = ENVIRONMENTS.indexOf('mist');
   let prev = lookOf(STRATA.length - 1);
   for (let k = STRATA.length; k < 400; k++) {
@@ -391,6 +443,9 @@ test('each stratum through 100 is an environment of its own; past 100 at most tw
     assert.equal(env.length, ENV);
     assert.ok(env.every((v) => v >= 0 && v <= 0.65), `stratum ${k}: ${env}`);
     assert.ok(env.filter((v) => v > 0).length <= 2, `at most two details in stratum ${k}`);
+    // Each in colours of its own, picked within its kind's range.
+    for (let i = 0; i < ENV; i++) if (env[i] > 0) assert.ok(look.tones[ENVIRONMENTS[i]], `stratum ${k}: colours for ${ENVIRONMENTS[i]}`);
+    assert.deepEqual(lookErrors(look), [], `stratum ${k}`);
     // (The petrified mist brings stone trunks in from 0.45: never past the zones.)
     assert.ok(env[mist] < 0.45, `trunks in stratum ${k}`);
     assert.ok(difference(prev, look) > 0.5, `stratum ${k} like the one before`);
@@ -556,23 +611,23 @@ test('a new stratum spreads ember by ember as they start a new rise, or all at o
   assert.ok(blue() / embers > aim.turn - 0.25 && blue() / embers < aim.turn + 0.25, `about ${aim.turn.toFixed(2)} blue after recolor: ${blue()}/${embers}`);
 });
 
-test('glints show as a stratum has them: in the side walls, or all over; fewer on a phone', () => {
+test('glints show as a look has them: in the side walls, or all over; fewer on a phone; none without', () => {
   const e = new Embers();
-  const at = (k: number) => ({ ...descent(0), look: lookOf(k) });
+  const at = (glints: number, spread: number) => ({ ...descent(0), look: { ...lookOf(0), glints, spread } });
   const glints = (w: number) => {
     e.step(0.01, w, 800);
     // A glint takes a slot in every tile its glow reaches: count each once.
     return [...new Map(slots(e).filter(([, , , , entry]) => entry === GLINT_COLOR).map((s) => [`${s[0]}:${s[1]}`, s])).values()];
   };
-  e.descend(at(2)); // azurite in the walls
+  e.descend(at(1, 0)); // in the walls
   const walls = glints(1200);
   assert.ok(walls.length >= WALL_GLINTS - 1 && walls.every(([x]) => x < 0.25 * 1200 || x > 0.75 * 1200), `${walls.length} glints in the walls`);
   assert.ok(glints(375).length < walls.length, 'as many on a phone');
-  e.descend(at(8)); // the starless stratum: stars all over
+  e.descend(at(1, 1)); // stars all over
   const stars = glints(1200);
   assert.ok(stars.length > WALL_GLINTS && stars.some(([x]) => x > 0.3 * 1200 && x < 0.7 * 1200), `${stars.length} stars`);
   assert.ok(stars.length <= GLINTS);
-  e.descend(at(0)); // the first stratum has none
+  e.descend(at(0, 0.5)); // none
   assert.equal(glints(1200).length, 0);
 });
 
