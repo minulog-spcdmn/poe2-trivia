@@ -200,68 +200,34 @@ the same thing for everyone.
     it.") and what it cost whom ("The darkness took Brea and Cara."),
     leaving a single lost life to the phial.
 - Every ten depths the descent enters a new zone, named after a Delve biome
-  and a place of its own, from the ordinary to the awe-inspiring:
-  - the Mines (1 to 10): a timbered shaft, lamps guttering along the walls,
-    the rock's seams catching their light;
-  - Magma Fissure (11): glowing cracks and heat shimmer, embers rising on the heat;
-    late on the magma cools, orange to dull red to a dark crust with embers
-    in it to black-grey rock, its flow slowing to a stop;
-  - Frozen Hollow (21): frost creeping from the walls over the cooled rock,
-    icicles hanging from the ledges, a cold mist;
-  - Fungal Caverns (31): damp and dark, mycelium webbing the rock, a muted,
-    sickly bioluminescence (grey-teal and bone), a haze of spores;
-  - Vaal Outpost (41): fitted stone walls, a ruined arcade either side,
-    dusty shafts of gold light;
-  - Abyssal Depths (51): violet void coiling round two eddies, tendrils
-    reaching in from the edges;
-  - Petrified Forest (61): colossal stone trunks with an opal sheen,
-    crystals glinting in their bark, pale light falling through a stone
-    canopy;
-  - Sulphur Vents (71): fumes billowing up in columns, a yellow haze;
-  - Abyssal City (81): broken towers and fallen spires black against a
-    rift torn open below, the abyss's corruption crawling over the stone in
-    violet-black veins, ash and debris drifting;
-  - Primeval Ruins (91): colossal fluted columns and a gate of the same
-    scale with a pale light beyond, inscriptions in ancient gold kindling
-    round the columns, in deep teal and gold.
-
-  Each zone's scene is built from layers (the back wall, far silhouettes,
-  the features between, the foreground and the air), one variant to each,
-  coloured by its palette. Each has its own light, smoke (four neighbouring
-  hues that mix as they drift, as on the start page), embers (their colour,
-  how many, and one way of moving that all of them share: dust sifting
-  down in the Mines, embers rising ever faster on the magma's heat and
-  slowing as it cools, snow tumbling down, spores hanging in lazy curls,
-  motes settling through the shafts, embers spiralling into the abyss's
-  eddies, stone dust falling straight, puffs carried up from the vents, ash
-  drifting off the ruins, motes of light circling as they rise) and
-  glints. Depth 1 is already the Mines; the surface is the start page.
-  Past 100 the zones go on for ever, each combining one deep zone's hall
-  and palette with another's far silhouettes, a third's air and a fourth's
-  embers, its colours turned slowly round the colour wheel (a little, and
-  a little less saturated), so deep runs feel otherworldly; each is named
-  after its hall's biome and never the same twice in a row.
-- Each zone turns steadily into the next, a little with every depth, and
-  the next is never there before its time.
-  - Its embers take the next zone's colour and way of moving one by one: a
-    tenth of them at its 2nd depth, nine tenths at its last.
-  - Through its later depths the zone dies down in its own way (the lamps
-    gutter, the magma cools, the bloom fades, the light dims, the dark
-    deepens). Only over its last two depths do the next zone's light, smoke
-    and scene come in, settling over that zone's first two, each layer
-    arriving its own way (cracks open and heat up, frost grows in from the
-    walls, silhouettes loom out of the dark).
+  and a place of its own: lamps guttering in the Mines (1 to 10), glowing
+  cracks and heat shimmer in Magma Fissure (11), frost creeping from the
+  walls in Frozen Hollow (21), pulsing caps in Fungal Caverns (31), dusty
+  gold shafts in Vaal Outpost (41), coiling violet eddies in Abyssal Depths
+  (51), stone trunks in drifting mist in Petrified Forest (61), billowing
+  vapour in Sulphur Vents (71), far cold lights in Abyssal City (81) and
+  white-hot fire in Primeval Ruins (91). Each has its own light, smoke (four
+  neighbouring hues that mix as they drift, as on the start page), embers
+  (their colour, how many, rising or sinking) and glints. Depth 1 is
+  already the Mines; the surface is the start page. Past 100 the zones go
+  on for ever, each pairing one deep zone's hall with another's embers,
+  named after its hall's biome and never the same twice in a row.
+- Each zone turns steadily into the next over its whole length, a little
+  with every depth, so the next is all there when its name is announced.
+  - Its embers take the next zone's colour one by one: a tenth of them at
+    its 2nd depth, nine tenths at its last.
+  - From its 4th depth the next zone's light, smoke and features creep in
+    while its own recede, each feature coming and going its own way (the
+    lamps kindle one by one, cracks heat up and cool, frost grows in from
+    the walls, fire rises from below).
 - The deeper, the darker, never the other way. The dark is one smooth fade
   from the edges, corners darkest, and closes in a little with every depth.
   The scene's light is set so its average brightness only ever falls with
   depth, however bright a zone's fire or gold: it is estimated for each
   depth from what the backdrop draws, with a measured correction table.
-- Each new depth sinks the scene further as its cards are dealt (not the
-  run's first, nor the same depth's cards dealt again after a question set
-  aside): for 1.9 s the walls, silhouettes, smoke and dust drift up past
-  you, the nearer the faster, gathering speed quickly and settling slowly,
-  the embers streak up, and the dark draws in and lets go. It is skipped
-  with reduced motion or effects off.
+- Each card pick sinks the scene a little further: for 1.3 s the walls,
+  smoke and dust drift up past you, the embers streak up, and the dark
+  draws in and lets go. It is skipped with reduced motion or effects off.
 - As a question's clock runs out the dark draws the light in and dims the
   scene (never the panels or text), lifting at the reveal or when a flare
   burns. The ambience sinks with the depth, over a slow rumble. Leaving a
@@ -554,35 +520,23 @@ Everything is drawn in WebGL2 with float precision and dithered once at the
   walks into the room (`src/lib/herald.ts`).
 - **Delve's descent** (`src/lib/descent.ts`): each zone is a look (the
   hall's dark, the light from below, smoke in four hues, mist, embers,
-  glints), a late look it dies down to, and a scene: one variant to each of
-  the backdrop's layers (`LAYERS`: wall, far, mid, fore, air;
-  `ENVIRONMENTS`: seams, mycelium, masonry; timbers, icicles, arches,
-  trunks, towers, colossi; lamps, magma, frost, bloom, void, crystals,
-  fumes, corruption, glyphs; outcrops, tendrils; shafts, spores, haze,
-  ash). The shader draws each variant from cheap noise and soft
-  silhouettes, coloured by the zone's palette uniforms where it has no
-  colours of its own, each layer carried up at its own pace in a plunge.
-  Past 100 `pairing` combines layers from four deep zones and `hueOf`
-  turns the palette (the shader turns the features' own colours as far,
-  `uFx.w`); everything comes round every 90 depths. The embers follow
-  `strataAt` (a tenth of the way to the next zone each depth); the rest
-  follows `hallAt`: dying down from the zone's look to its late one, then
-  the next arriving over the last 2.5 depths and the first 2.5 of its own
-  (`ARRIVE_BEFORE`, `ARRIVE_AFTER`). The scene's `light` is set so its
-  average brightness never rises with depth (`luminanceAt`, `lightAt`):
-  `estimateLuminance` works out what the backdrop draws from what each
-  environment adds and dims as it comes in (`ENV_ADD`, `ENV_HALL`),
-  corrected per depth (`MEASURED`), each zone's own light (`lightK`) is
-  worked out from the same estimate where it settles and where it has died
-  down (`settle`), and the light is solved a stretch of depths at a time,
-  moving at most 0.06 a depth. The tables are measured from the backdrop's
-  own frames with `scripts/measure-luminance.mjs`; for now `ENV_ADD` and
-  `ENV_HALL` are worked out by hand for the layered scenes and `MEASURED`
-  is empty, so measure them again (calibrate, then calibrate --skip-env).
+  glints) and the environments the backdrop draws for it (`ENVIRONMENTS`:
+  lamps, magma, frost, spores, shafts, void, mist, plumes, city, heat).
+  Through a zone the scene turns steadily into the next (`strataAt`,
+  `turnInto`): the embers follow the turn itself, the light, smoke and
+  features follow it from the zone's 4th depth (`hallTurn`). The scene's
+  `light` is set so its average brightness never rises with depth
+  (`luminanceAt`, `lightAt`): `estimateLuminance` works out what the
+  backdrop draws from what each environment adds and dims as it comes in
+  (`ENV_ADD`, `ENV_HALL`), corrected per depth (`MEASURED`), and the light
+  is solved a stretch of depths at a time, moving at most 0.06 a depth.
+  The tables are measured from the backdrop's own frames with
+  `scripts/measure-luminance.mjs`; measure again after changing what it
+  draws.
   The shown depth eases along at about a second a depth, and a jump of
   more than three depths cross-fades straight there. `plunge()` (called by
-  `App.svelte` when a new depth's cards are dealt, see `dealtDeeper`) sinks
-  the scene, and the backdrop steps it (`stepPlunge`). The backdrop's shaders and embers (`src/lib/backdropEmbers.ts`, a
+  `App.svelte` as a question follows the cards) sinks the scene, and the
+  backdrop steps it (`stepPlunge`). The backdrop's shaders and embers (`src/lib/backdropEmbers.ts`, a
   small palette of zone colours, so a new colour spreads ember by ember),
   the CSS fallback and the ambience (`depthAmbience` in `src/lib/sound.ts`)
   follow it. The clock's dark (`src/lib/darkness.ts`) is set by the timer

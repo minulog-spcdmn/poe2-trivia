@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { accentAt, dealtDeeper, plunge, setDescent, type Dealt } from './lib/descent';
+  import { accentAt, plunge, setDescent } from './lib/descent';
   import { zoneAt } from './lib/zoneSigils';
   import { onMount, untrack } from 'svelte';
   import { fade, fly } from 'svelte/transition';
@@ -105,15 +105,13 @@
     setDescent(depth);
     depthAmbience(depth);
   });
-  // Delve: each new depth sinks the scene a little further as its cards are
-  // dealt (not the run's first, nor the same depth's dealt again after a
-  // question set aside; see dealtDeeper).
-  let lastDealt: Dealt | undefined;
+  // Delve: each pick of a card (a question beginning after the choice, for
+  // every pick in a group run too) sinks the scene a little further.
+  let lastPhase: string | undefined;
   $effect(() => {
-    if (!gs?.delve || screen !== 'game' || gs.phase !== 'choosing') return;
-    const now = { run: gs.delve.startedAt, depth: gs.round };
-    if (dealtDeeper(lastDealt, now)) plunge();
-    lastDealt = now;
+    const phase = gs?.delve && screen === 'game' ? gs.phase : undefined;
+    if (phase === 'question' && lastPhase === 'choosing') plunge();
+    lastPhase = phase;
   });
 
   /** How long the outgoing screen takes to fade (the .screen transition below). */
