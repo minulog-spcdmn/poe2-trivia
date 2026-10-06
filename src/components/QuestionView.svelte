@@ -75,8 +75,8 @@
   const fallsNow = $derived(!!s.delve && !coop && !!reveal && !reveal.correct && fellAt(s, active.id) === s.round);
   /** Delve: you answering (online, or alone on this device), or someone else, by name. */
   const delveYou = $derived(!!s.delve && !coop && (active.id === me || session.mode === 'local'));
-  /** Delve: who a find's item went to (together: whoever cleared it), and whether that's you. */
-  const gainerId = $derived(coop ? (reveal?.winnerId ?? null) : active.id);
+  /** Delve: who a find's item went to (together: whoever cleared it, or a teammate with room for it), and whether that's you. */
+  const gainerId = $derived(coop ? (reveal?.gainedBy ?? reveal?.winnerId ?? null) : active.id);
   const gainYou = $derived(coop ? !!gainerId && gainerId === me : delveYou);
   const gainName = $derived(gainerId ? nameOf(gainerId) : '');
   /**
@@ -112,7 +112,7 @@
     }
     if (iWon) return { word: 'Correct', icon: 'check', tone: 'good' };
     if (race && winner) return session.spectating ? { word: 'Solved', icon: 'check', tone: 'neutral' } : { word: 'Too slow', icon: 'clock', tone: 'late' };
-    if (fallsNow) return { word: 'Fallen', icon: 'cross', tone: 'bad' };
+    if (fallsNow) return { word: 'Perished', icon: 'cross', tone: 'bad' };
     if (reveal.timedOut) return { word: "Time's up", icon: 'clock', tone: 'late' };
     return { word: race ? 'No one' : 'Wrong', icon: 'cross', tone: 'bad' };
   });
@@ -188,31 +188,53 @@
     return () => clearTimeout(timer);
   });
   let hissAt = 0;
+  /** When the fuse was lit here (its sound played), on performance.now(). */
+  let litAt = -Infinity;
+  /**
+   * The hiss playing, to cut it off at the blast or a snuff. sfx returns a
+   * stop handle once sound.ts gives one; until then this stays null.
+   */
+  let hissing: (() => void) | null = null;
+  const stopper = (h: unknown) => (typeof h === 'function' ? (h as () => void) : null);
+  function hush() {
+    hissing?.();
+    hissing = null;
+  }
   const blastTimers: ReturnType<typeof setTimeout>[] = [];
-  $effect(() => () => blastTimers.forEach(clearTimeout));
+  $effect(() => () => {
+    blastTimers.forEach(clearTimeout);
+    hush();
+  });
   function lightFuse(lit: number, at: number) {
     if (blast !== 'none') return;
     blast = 'fuse';
     cord = { lit, at };
-    sfx('fuse');
+    litAt = performance.now();
+    hissing = stopper(sfx('fuse'));
   }
   /** Its last moments: it hisses again as it nears the stick. */
   function hiss() {
     if (blast === 'hiss' || blast === 'blown') return;
     blast = 'hiss';
     hissAt = performance.now();
-    sfx('fuse');
+    // Lit just now (a screen that came in, or woke, in the last moments, or a
+    // blast not seen coming): its fizz is still playing, so not twice at once.
+    if (hissAt - litAt < 300) return;
+    hush();
+    hissing = stopper(sfx('fuse'));
   }
   /** It didn't go off after all (an answer came first, or the player left). */
   function snuff() {
     if (blast !== 'fuse' && blast !== 'hiss') return;
     cord = null;
     blast = 'none';
+    hush();
   }
   function goOff() {
     if (blast === 'blown') return;
     blast = 'blown';
     cord = null;
+    hush();
     sfx('blast');
     dynamiteBlast({ art: artEl, blown: [...blown].flatMap((i) => (optionEls[i] ? [optionEls[i]] : [])), mine });
   }
@@ -611,7 +633,13 @@
     session.dispatch({ type: 'next' });
   }
 
+  /** The question this view shows (Game.svelte keys it on askedAt). */
+  const shownAt = untrack(() => session.state?.question?.askedAt);
   function onKey(e: KeyboardEvent) {
+    // A view fading out (the next question or the cards came) hears keys no more,
+    // and must not read its deriveds, which have gone inert.
+    const now = session.state;
+    if (!now || (now.phase !== 'question' && now.phase !== 'reveal') || now.question?.askedAt !== shownAt) return;
     if (e.target instanceof HTMLInputElement) return;
     // Browser shortcuts (Ctrl/Cmd+1 switches tabs), held keys, and an open dialog aren't answers.
     if (e.ctrlKey || e.metaKey || e.altKey || e.repeat || document.querySelector('[aria-modal="true"]')) return;
@@ -710,6 +738,10 @@
             left: (id) => livesOf(s, id),
             nameOf,
             me,
+            gain:
+              reveal.correct && reveal.gained && gainerId
+                ? { kind: reveal.gained, by: gainerId, forged: !!reveal.forged, slow: q.find === 'azurite' && reveal.gained === 'shards' }
+                : undefined,
           })}
           {@const hits = reveal.hits ?? []}
           {#if gainLine}
@@ -725,8 +757,8 @@
               ><span class="piece l"><ItemGlyph kind="ward" piece="left" /></span><span class="piece r"><ItemGlyph kind="ward" piece="right" /></span></span
             >
           {/if}
+          <!-- Who cleared it, and what a find gave, in one sentence. -->
           {lines[0]}
-          {#if gainLine}{gainLine.text}{/if}
           {#if streak >= 2}<span class="streak" in:scale={{ start: 0.5, duration: 400, delay: 1100 }}>{streak} in a row</span>{/if}
           {#if lines.length > 1}<span class="losses">{lines.slice(1).join(' ')}</span>{/if}
         {:else if s.delve}
@@ -827,14 +859,12 @@
     <p class="spectate muted">Your team is answering…</p>
   {:else if coop}
     <p class="spectate muted">
-      The first right answer clears it; a wrong one costs a life.<span class="keys">
-        Press 1–{count === 10 ? '9 and 0' : count}.</span
-      >
+      The first right answer clears it; a wrong one costs a life.<span class="keys">{' '}Press 1–{count === 10 ? '9 and 0' : count}.</span>
     </p>
   {:else if race && myMiss}
     <p class="spectate out">Wrong: −1. You're out until the next question.</p>
   {:else if race}
-    <p class="spectate muted">First correct answer wins. Wrong costs a point!<span class="keys"> Press 1–{count === 10 ? '9 and 0' : count}.</span></p>
+    <p class="spectate muted">First correct answer wins. Wrong costs a point!<span class="keys">{' '}Press 1–{count === 10 ? '9 and 0' : count}.</span></p>
   {:else if !mine}
     <p class="spectate muted">{active.name} is deciding…</p>
   {:else}
@@ -949,7 +979,7 @@
             {@render who(i)}
           </button>
         {/each}
-        {#if cord && !reveal}<Fuse lit={cord.lit} at={cord.at} now={() => session.hostNow()} />{/if}
+        {#if cord && !reveal}<Fuse lit={cord.lit} at={cord.at} now={() => session.hostNow()} edge />{/if}
       </div>
     </div>
   {:else}

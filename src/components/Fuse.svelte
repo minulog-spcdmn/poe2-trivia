@@ -9,22 +9,31 @@
   // quiet, so the countdown can be read at a glance without pulling the eye.
   import { onMount } from 'svelte';
   import { FUSE_MS, dynamiteFuse } from '../lib/fx/moments';
-  import type { Handle } from '../lib/fx/core';
+  import { onFxChange, type Handle } from '../lib/fx/core';
   import ItemGlyph from './ItemGlyph.svelte';
 
-  /** `lit` and `at`: when the cord was lit and when it reaches the stick, on `now`'s clock (the host's). */
-  let { lit, at, now }: { lit: number; at: number; now: () => number } = $props();
+  /**
+   * `lit` and `at`: when the cord was lit and when it reaches the stick, on
+   * `now`'s clock (the host's). `edge`: over a grid of pictures (find the
+   * art), it hugs the grid's very edge and the stick lies left of the middle,
+   * clear of the pictures' number badges at their top left corners.
+   */
+  let { lit, at, now, edge = false }: { lit: number; at: number; now: () => number; edge?: boolean } = $props();
 
   /** How far in from the art's edge the cord runs (px). */
-  const INSET = 7;
+  const INSET = $derived(edge ? 2.5 : 7);
   let host = $state<HTMLElement>();
   let w = $state(0);
   let h = $state(0);
   const up = $derived(Math.max(0, h - 2 * INSET));
-  /** The cord ends at the stick's fuse, short of the middle where the stick lies. */
+  /** Half the stick's length: the cord ends at its fuse. */
   const STICK = 7;
-  const along = $derived(Math.max(0, w / 2 - STICK - INSET));
-  const path = $derived(`M${INSET} ${h - INSET}V${INSET}H${w / 2 - STICK}`);
+  /** Where the stick lies: the middle, or (`edge`) its far end just short of it, where the next column's badge begins. */
+  const stickX = $derived(edge ? w / 2 - STICK - 3 : w / 2 + 1);
+  const stickY = $derived(edge ? 3.5 : INSET);
+  const cordEnd = $derived(stickX - 1 - STICK);
+  const along = $derived(Math.max(0, cordEnd - INSET));
+  const path = $derived(`M${INSET} ${h - INSET}V${INSET}H${cordEnd}`);
 
   let cord = $state<SVGPathElement>();
   let spark = $state<HTMLElement>();
@@ -62,18 +71,26 @@
     };
     draw();
     // The sparks, in page coordinates.
-    const fx: Handle = dynamiteFuse(
-      () => {
-        if (!w || !h) return null;
-        const r = el.getBoundingClientRect();
-        const p = end(burnt());
-        return { x: r.left + p.x, y: r.top + p.y };
-      },
-      heat,
-    );
+    const spit = (): Handle =>
+      dynamiteFuse(
+        () => {
+          if (!w || !h) return null;
+          const r = el.getBoundingClientRect();
+          const p = end(burnt());
+          return { x: r.left + p.x, y: r.top + p.y };
+        },
+        heat,
+      );
+    let fx = spit();
+    // Effects turned off drop the sparks' task; turned back on mid-fuse, they start again.
+    const unlisten = onFxChange((on) => {
+      fx.stop();
+      if (on && now() < at) fx = spit();
+    });
     return () => {
       ro.disconnect();
       cancelAnimationFrame(frame);
+      unlisten();
       fx.stop();
     };
   });
@@ -86,7 +103,7 @@
       <path class="scorch" d={path} />
       <path class="cord" bind:this={cord} pathLength="1000" d={path} />
     </svg>
-    <span class="stick" style:left="{w / 2 + 1}px" style:top="{INSET}px"><ItemGlyph kind="dynamite" /></span>
+    <span class="stick" style:left="{stickX}px" style:top="{stickY}px"><ItemGlyph kind="dynamite" /></span>
     <span class="spark" bind:this={spark}></span>
   {/if}
 </div>

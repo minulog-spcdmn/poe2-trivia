@@ -74,9 +74,14 @@
       filter: saturate(1) brightness(1) drop-shadow(0 12px 25px rgba(0, 0, 0, 0.8));
     }
   }
-  /* Effects off: the plain art simply fades in. */
+  /* Effects off, or reduced motion: the plain art simply fades in. */
   :global(html[data-still]) .flood {
     animation: flood-still 0.3s ease-out both;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .flood {
+      animation: flood-still 0.3s ease-out both;
+    }
   }
   @keyframes flood-still {
     from {

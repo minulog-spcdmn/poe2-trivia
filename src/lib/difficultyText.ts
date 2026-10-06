@@ -351,19 +351,32 @@ export function coopRevealText(r: {
   left: (id: string) => number;
   nameOf: (id: string) => string;
   me: string | null;
+  /** What a find's right answer earned, and who got it (the winner, or a teammate with room for it). */
+  gain?: GainText;
 }): string[] {
   const { hits, nameOf, me } = r;
   const list = (ids: string[]) => namesOf(ids, nameOf, me);
   const out: string[] = [];
-  if (r.winner) out.push(`${cap(list([r.winner]))} cleared it.`);
+  if (r.winner) out.push(clearedText(r.winner, r.gain, nameOf, me));
   else out.push(r.timedOut ? "Time's up; nobody found it." : 'Every answer was wrong.');
   const wrong = hits.filter((h) => !h.timedOut).map((h) => h.playerId);
   const late = hits.filter((h) => h.timedOut).map((h) => h.playerId);
-  if (wrong.length && (r.winner || r.timedOut) && !r.caveIn) out.push(`${cap(list(wrong))} picked wrong.`);
-  if (late.length) out.push(`The darkness took ${list(late)}.`);
+  const perished = hits.filter((h) => h.lives > 0 && r.left(h.playerId) === 0).map((h) => h.playerId);
+  // Perishing is said with what caused it when it took exactly those players:
+  // "Ash picked wrong and perishes", "The darkness took Ash for good".
+  const same = (a: string[], b: string[]) => a.length === b.length && a.every((id) => b.includes(id));
+  let perishSaid = false;
+  if (wrong.length && (r.winner || r.timedOut) && !r.caveIn) {
+    perishSaid = same(wrong, perished);
+    out.push(`${cap(list(wrong))} picked wrong${perishSaid ? ` and ${verb(wrong, me, 'perishes', 'perish')}` : ''}.`);
+  }
+  if (late.length) {
+    const forGood = !perishSaid && same(late, perished);
+    perishSaid ||= forGood;
+    out.push(`The darkness took ${list(late)}${forGood ? ' for good' : ''}.`);
+  }
   if (r.caveIn && hits.length) out.push(`The vein caved in on ${list(hits.map((h) => h.playerId))}.`);
   // What it did to each of them.
-  const perished = hits.filter((h) => h.lives > 0 && r.left(h.playerId) === 0).map((h) => h.playerId);
   const warded = hits.filter((h) => h.lives === 0 && h.wards > 0);
   const both = hits.filter((h) => h.lives > 0 && h.wards > 0 && r.left(h.playerId) > 0);
   const lost = hits.filter((h) => h.lives > 0 && h.wards === 0 && r.left(h.playerId) > 0);
@@ -376,8 +389,49 @@ export function coopRevealText(r: {
   // A single life lost is the phial's to show; two at once (a cave-in) are said.
   const two = lost.filter((h) => h.lives > 1).map((h) => h.playerId);
   if (two.length) out.push(`${cap(list(two))} ${verb(two, me, 'loses', 'lose')} two lives${two.length > 1 ? ' each' : ''}.`);
-  if (perished.length) out.push(`${cap(list(perished))} ${verb(perished, me, 'perishes', 'perish')}.`);
+  if (perished.length && !perishSaid) out.push(`${cap(list(perished))} ${verb(perished, me, 'perishes', 'perish')}.`);
   return out;
+}
+
+/** A find's gain at a co-op reveal (see coopRevealText). */
+export interface GainText {
+  kind: ItemKind;
+  /** Who it went to. */
+  by: string;
+  /** Two shards forged a ward. */
+  forged?: boolean;
+  /** An Azurite Vein's answer too slow for a ward: a shard instead. */
+  slow?: boolean;
+}
+
+/**
+ * Who cleared a co-op depth, with what a find gave in the same sentence:
+ * "Ash cleared it and found a flare.", or, when it went to a teammate with
+ * room for it, "Brea cleared it; the flare went to Ash."
+ */
+function clearedText(winner: string, gain: GainText | undefined, nameOf: (id: string) => string, me: string | null): string {
+  const who = cap(namesOf([winner], nameOf, me));
+  if (!gain) return `${who} cleared it.`;
+  const { kind, by, forged, slow } = gain;
+  if (by === winner) {
+    const did =
+      kind === 'wards'
+        ? forged
+          ? 'forged an Azurite Ward from two shards'
+          : 'mined an Azurite Ward'
+        : kind === 'shards'
+          ? slow
+            ? 'mined a shard, too slow for a ward'
+            : 'found an azurite shard'
+          : kind === 'flares'
+            ? 'found a flare'
+            : 'found a stick of dynamite';
+    return `${who} cleared it and ${did}.`;
+  }
+  const to = namesOf([by], nameOf, me);
+  if (kind === 'wards' && forged) return `${who} cleared it; ${whose(by, nameOf, me)} two shards forged an Azurite Ward.`;
+  const noun = kind === 'wards' ? 'the ward' : kind === 'shards' ? 'the shard' : kind === 'flares' ? 'the flare' : 'the dynamite';
+  return `${who} cleared it; ${noun} went to ${to}.`;
 }
 
 /**
@@ -415,7 +469,7 @@ const times = (n: number) => (n === 1 ? 'once' : n === 2 ? 'twice' : `${n} times
 export function delverText(row: { losses: number[]; given: number; revived: number }): string {
   const n = row.losses.length;
   const parts = [n ? `Lost ${n} ${n === 1 ? 'life' : 'lives'}` : 'No life lost'];
-  if (row.given) parts.push(`gave ${words(row.given)} ${row.given === 1 ? 'life' : 'lives'}`);
+  if (row.given) parts.push(`gave ${row.given} ${row.given === 1 ? 'life' : 'lives'}`);
   if (row.revived) parts.push(`brought back ${times(row.revived)}`);
   return parts.join(', ');
 }

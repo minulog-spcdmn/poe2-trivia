@@ -220,6 +220,8 @@
   const dealAt = (i: number) => 0.15 + i * 0.07;
   const flipAt = (i: number) => 0.62 + i * 0.12;
   const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  /** Reduced motion, or effects off: the vote pips appear and go at once. */
+  const calm = () => still || document.documentElement.hasAttribute('data-still');
   /** Cards turn over their longer side: across when stacked as wide rows (narrow screens), else sideways. */
   const narrow = matchMedia('(max-width: 700px)');
   /** When the deal began; null when the cards appeared without one (as after a refresh). */
@@ -267,12 +269,14 @@
   /** Svelte action: the card's moment as it lands face up. */
   function revealed(node: HTMLElement, i: number) {
     if (still) return;
+    // Read now: the cards may be fading out by the time it lands, their deriveds gone inert.
+    const kind = kindOf(s.offered[i]);
+    const dm = !!s.deathmatch;
     const t = setTimeout(() => {
       const frame = node.querySelector('.frame') ?? node;
       if (dealtAt !== null) {
-        const kind = kindOf(s.offered[i]);
         if (kind) findRevealed(frame, kind);
-        else cardRevealed(frame, !!s.deathmatch);
+        else cardRevealed(frame, dm);
       }
       // The pointer may already rest on it, having come while it lay face down.
       if (waiting === i) ignite(i);
@@ -350,6 +354,8 @@
         <span class="muted">Drawing from the votes…</span>
       {:else if canVote}
         {myVote ? 'Your vote is in' : 'Vote for a card'}
+      {:else if session.spectating}
+        <span class="muted">The team is voting…</span>
       {:else}
         <span class="muted">Your team is voting…</span>
       {/if}
@@ -415,7 +421,7 @@
           {@const faces = voters.length > 5 ? voters.slice(0, 4) : voters}
           <span class="votes" aria-hidden="true">
             {#each faces as p (p.id)}
-              <span class="pip" class:me={p.id === me} title={p.name} use:cast in:scale={{ start: 0.3, duration: 300 }} out:scale={{ start: 0.3, duration: 200 }}
+              <span class="pip" class:me={p.id === me} title={p.name} use:cast in:scale={{ start: 0.3, duration: calm() ? 0 : 300 }} out:scale={{ start: 0.3, duration: calm() ? 0 : 200 }}
                 ><Avatar name={p.name} hue={p.hue} size={22} /></span
               >
             {/each}
@@ -428,18 +434,22 @@
 
   {#if coop && !drawn && s.phase === 'choosing'}
     <!-- The vote: when it closes, and who it is still waiting for. -->
-    <p class="vote-status" aria-live="polite">
+    <!-- Only who it waits for is announced; the countdown would be read out every second. -->
+    <p class="vote-status">
       {#if closesIn !== null}
-        <span class="closes">Closes in <b>{closesIn}</b><span class="unit">s</span></span>
+        <span class="closes" aria-hidden="true">Closes in <b>{closesIn}</b><span class="unit">s</span></span>
       {/if}
-      {#if anyVote && waitingFor.length}
-        <span>Waiting for {namesOf(waitingFor, nameOf, me)}</span>
-      {:else if !anyVote}
-        <span class="muted">Each vote is a ticket in the draw; the cards wait for the first one.</span>
-      {/if}
-      {#if idle.length}
-        <span class="idle">{cap(namesOf(idle, nameOf, me))} {idle.length > 1 || idle[0] === me ? 'are' : 'is'} idle, not waited for</span>
-      {/if}
+      <span class="live" aria-live="polite">
+        {#if closesIn !== null}<span class="sr">The vote's clock has started.</span>{/if}
+        {#if anyVote && waitingFor.length}
+          <span>Waiting for {namesOf(waitingFor, nameOf, me)}</span>
+        {:else if !anyVote}
+          <span class="muted">Each vote is a ticket in the draw; the cards wait for the first one.</span>
+        {/if}
+        {#if idle.length}
+          <span class="idle">{cap(namesOf(idle, nameOf, me))} {idle.length > 1 || idle[0] === me ? 'are' : 'is'} idle, not waited for</span>
+        {/if}
+      </span>
     </p>
   {/if}
 
@@ -861,6 +871,8 @@
     margin: 0;
     font-style: italic;
     font-size: 0.95rem;
+    /* Centred under the cards, also when it wraps on a phone. */
+    text-align: center;
   }
   /* Two notes under the cards sit closer than the cards sit to them. */
   .find-notes + .note {
@@ -1125,6 +1137,18 @@
   }
   .idle {
     color: var(--muted);
+  }
+  /* The live region lays its lines out in the row as if it weren't there. */
+  .live {
+    display: contents;
+  }
+  .sr {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 
   @media (max-width: 700px) {

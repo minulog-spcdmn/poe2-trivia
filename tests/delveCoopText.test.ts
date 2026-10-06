@@ -31,7 +31,7 @@ test('the time-out: the darkness takes those who never answered', () => {
   assert.equal(says({ timedOut: true, hits: [hit('a', 1, 0, true), hit('b', 1, 0, true)] }), "Time's up; nobody found it. The darkness took Ash and Brea.");
   assert.equal(
     says({ timedOut: true, hits: [hit('a'), hit('me', 1, 0, true)], left: { a: 2, me: 0 } }),
-    "Time's up; nobody found it. Ash picked wrong. The darkness took you. You perish.",
+    "Time's up; nobody found it. Ash picked wrong. The darkness took you for good.",
   );
 });
 
@@ -50,6 +50,23 @@ test('wards, cave-ins and the perished read plainly, and briefly', () => {
     assert.doesNotMatch(t, /left|depth|\d/, t);
 });
 
+test('a perishing is said with what caused it, once', () => {
+  assert.equal(says({ winner: 'b', hits: [hit('a')], left: { a: 0 } }), 'Brea cleared it. Ash picked wrong and perishes.');
+  assert.equal(says({ winner: 'b', hits: [hit('me'), hit('a')], left: { me: 0, a: 0 } }), 'Brea cleared it. You and Ash picked wrong and perish.');
+  // Only some of those who picked wrong perished: said apart.
+  assert.equal(says({ winner: 'b', hits: [hit('me'), hit('a')], left: { me: 2, a: 0 } }), 'Brea cleared it. You and Ash picked wrong. Ash perishes.');
+  assert.equal(says({ timedOut: true, hits: [hit('a', 1, 0, true)], left: { a: 0 } }), "Time's up; nobody found it. The darkness took Ash for good.");
+});
+
+test("a find's gain is said with who cleared it, or who it went to", () => {
+  assert.equal(says({ winner: 'a', gain: { kind: 'flares', by: 'a' } }), 'Ash cleared it and found a flare.');
+  assert.equal(says({ winner: 'me', gain: { kind: 'wards', by: 'me' } }), 'You cleared it and mined an Azurite Ward.');
+  assert.equal(says({ winner: 'a', gain: { kind: 'shards', by: 'a', slow: true } }), 'Ash cleared it and mined a shard, too slow for a ward.');
+  assert.equal(says({ winner: 'b', gain: { kind: 'flares', by: 'a' } }), 'Brea cleared it; the flare went to Ash.');
+  assert.equal(says({ winner: 'b', gain: { kind: 'dynamite', by: 'me' } }), 'Brea cleared it; the dynamite went to you.');
+  assert.equal(says({ winner: 'b', gain: { kind: 'wards', by: 'a', forged: true } }), "Brea cleared it; Ash's two shards forged an Azurite Ward.");
+});
+
 test('your own wrong answer, while the team answers on', () => {
   assert.equal(coopMissText({ lives: 1, wards: 0 }, 2, false), 'Wrong.');
   assert.equal(coopMissText({ lives: 0, wards: 1 }, 3, false), 'Wrong; your ward took it.');
@@ -66,6 +83,6 @@ test('the end screen: lives lost at a cave-in counted once, and what each delver
   assert.equal(lossDepths([3, 3, 4]), 'depths 3 (two lives) and 4');
   assert.equal(lossDepths([2, 7, 9]), 'depths 2, 7 and 9');
   assert.equal(lossDepths([5, 5]), 'depth 5 (two lives)');
-  assert.equal(delverText({ losses: [1, 4, 4, 9], given: 1, revived: 2 }), 'Lost 4 lives, gave one life, brought back twice');
-  assert.equal(delverText({ losses: [], given: 2, revived: 0 }), 'No life lost, gave two lives');
+  assert.equal(delverText({ losses: [1, 4, 4, 9], given: 1, revived: 2 }), 'Lost 4 lives, gave 1 life, brought back twice');
+  assert.equal(delverText({ losses: [], given: 2, revived: 0 }), 'No life lost, gave 2 lives');
 });

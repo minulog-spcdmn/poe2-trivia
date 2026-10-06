@@ -14,6 +14,7 @@
   import {
     FILL_SPAN,
     FILL_START,
+    FIND_LANDS,
     FIND_START,
     GIFT_LANDS,
     SCORE_LANDS,
@@ -37,7 +38,7 @@
   import { cavesIn, fellAt, inventoryOf, isGroupRun, livesOf, reviveProblem, type FindKind, type Inventory as Carried } from '../lib/delve';
   import { inventoryChanges } from '../lib/delveSession';
   import { CASINGS, momentOf, type InventoryMoment } from '../lib/inventoryArt';
-  import { FILL_LEAD } from '../lib/soundDesign';
+  import { MOMENTS } from '../lib/soundDesign';
   import type { GameState, Revive } from '../lib/game';
 
   /** Shown at the end of the row (the timer, on phones). */
@@ -83,11 +84,12 @@
     const q = st.question;
     return q?.find && cavesIn(q.find) ? `${q.askedAt}:${id}` : null;
   }
-  let caveInLast = '';
+  /** Cave-ins already heard: one per player per vein, however their losses interleave (several on one device). */
+  const cavesHeard = new Set<string>();
   /** The cave-in's sound, once per cave-in (`key` from caveInOf). */
   function caveInHeard(key: string) {
-    if (caveInLast === key) return;
-    caveInLast = key;
+    if (cavesHeard.has(key)) return;
+    cavesHeard.add(key);
     sfx('caveIn');
   }
   // Delve: a life lost makes the player's entry flinch, and the chamber of the
@@ -96,6 +98,19 @@
   // player who just fell keeps their phial until it has poured out.
   let hit = $state<Record<string, number>>({});
   let held = $state<Record<string, number>>({});
+  // The lives' and revives' timers, cleared when the board goes (they write its state and draw on its rows).
+  const pending = new Set<ReturnType<typeof setTimeout>>();
+  function later(fn: () => void, ms: number) {
+    const t = setTimeout(() => {
+      pending.delete(t);
+      fn();
+    }, ms);
+    pending.add(t);
+  }
+  $effect(() => () => {
+    pending.forEach(clearTimeout);
+    pending.clear();
+  });
   let livesSeen: Record<string, number> = {};
   let lossesSeen: Record<string, number> = {};
   let runSeen = 0;
@@ -127,7 +142,7 @@
       const caved = caveInOf(s, id);
       for (let k = was - 1; k >= now; k--) {
         const left = k;
-        setTimeout(
+        later(
           () => {
             if (left === now) delete held[id];
             else held[id] = left;
@@ -141,7 +156,7 @@
               if (caved) caveInHeard(caved);
               else sfx('lifeLost');
             }
-            setTimeout(() => {
+            later(() => {
               if (hit[id] === left) delete hit[id];
             }, POUR * 1000);
           },
@@ -192,9 +207,10 @@
       // A cave-in can break two wards at once.
       const broke = Math.max(1, inventoryOf(was, id).wards - inventoryOf(next, id).wards);
       if (delay) invHeld[id] = inventoryOf(was, id);
-      const fed = found && untrack(() => findFlows(id, kind, inventoryOf(was, id).wards));
+      // Whether the sparks really flew is known a tick later (findFlows), well before the item lands.
+      const flow = found ? untrack(() => findFlows(id, kind, inventoryOf(was, id).wards)) : null;
       const caved = kind === 'shatter' ? caveInOf(next, id) : null;
-      setTimeout(() => playMoment(id, kind, kind === 'shatter' ? broke : 1, fed, caved), delay);
+      later(() => playMoment(id, kind, kind === 'shatter' ? broke : 1, !!flow?.fed, caved), delay);
     }
   });
 
@@ -214,24 +230,32 @@
    * other modes: a ward or shard to its chamber (the first without a ward,
    * `wards` being how many they had), a flare or dynamite to its place
    * beside the phial, kept for it meanwhile. Whoever got it hears it flow
-   * in. Says whether the sparks fly (with effects off, nothing does).
+   * in. Its `fed` turns true, a tick later, once the sparks do fly (with
+   * effects off, or no answer or place to fly between, nothing does).
    */
-  function findFlows(id: string, kind: InventoryMoment['kind'], wards: number): boolean {
+  function findFlows(id: string, kind: InventoryMoment['kind'], wards: number): { fed: boolean } {
+    const flow = { fed: false };
     const find = FOUND.get(kind);
-    if (!find || !fxActive()) return false;
+    if (!find || !fxActive()) return flow;
     const item = kind === 'flare' || kind === 'dynamite' ? kind : null;
     if (item) expecting[id] = item;
+    // The fill's ring, on its last layer, lands with the item (FIND_LANDS).
+    const ringAt = MOMENTS.fill.layers.reduce((at, l) => Math.max(at, l.delay), 0);
+    const startAt = performance.now();
     void tick().then(() => {
       const li = scoreRowOf(id);
       // The right answer, as the reveal marks it (QuestionView.svelte).
       const answer = document.querySelector('.question .option.right, .question .tile.right');
       if (!li || !answer) return;
-      const { flow, counts } = shownVessel(li);
-      const slot = item ? counts?.querySelector(`[data-pip="${item}"]`) : flow?.phial.querySelector(`.chamber[data-k="${Math.min(wards, CASINGS.length - 1)}"]`);
-      if (slot) findGained(answer, slot, find);
+      const { flow: phial, counts } = shownVessel(li);
+      const slot = item ? counts?.querySelector(`[data-pip="${item}"]`) : phial?.phial.querySelector(`.chamber[data-k="${Math.min(wards, CASINGS.length - 1)}"]`);
+      if (!slot) return;
+      findGained(answer, slot, find);
+      flow.fed = true;
+      if (session.mode === 'local' || id === session.myPlayerId)
+        later(() => sfx('fill'), Math.max(0, FIND_LANDS * 1000 - ringAt - (performance.now() - startAt)));
     });
-    if (session.mode === 'local' || id === session.myPlayerId) setTimeout(() => sfx('fill'), FIND_START * 1000 - FILL_LEAD);
-    return true;
+    return flow;
   }
 
   /** The phial showing in a player's entry, with what it carries, and the counted finds beside it. */
@@ -309,7 +333,7 @@
     const k = livesOf(s, r.by);
     held[r.by] = k + 1;
     held[r.to] = 0;
-    setTimeout(() => {
+    later(() => {
       delete held[r.by];
       giving[r.by] = k;
       const giver = scoreRowOf(r.by);
@@ -319,14 +343,14 @@
       const chamber = from?.phial.querySelector(`.chamber[data-k="${k}"]`) ?? giver;
       if (giver && taker && chamber && to) lifeGiven(chamber, giver, to.phial, taker);
       sfx('fill');
-      setTimeout(() => {
+      later(() => {
         if (giving[r.by] === k) delete giving[r.by];
       }, POUR * 1000);
-      setTimeout(() => {
+      later(() => {
         delete held[r.to];
         surge[r.to] = (untrack(() => surge[r.to]) ?? 0) + 1;
         revived[r.to] = (untrack(() => revived[r.to]) ?? 0) + 1;
-        setTimeout(() => delete revived[r.to], 1200);
+        later(() => delete revived[r.to], 1200);
       }, GIFT_LANDS * 1000);
     }, 300);
   }
@@ -346,6 +370,17 @@
     if (!asking || !canRevive(asking)) return;
     session.dispatch({ type: 'revive', target: asking });
     asking = null;
+  }
+  /** Closes the offer and puts focus back on the + that opened it. */
+  function closeAsk() {
+    const id = asking;
+    asking = null;
+    if (!id) return;
+    void tick().then(() => (scoreRowOf(id)?.querySelector('.revive') as HTMLElement | null)?.focus());
+  }
+  /** Svelte action: the offer takes focus as it opens, on its first button. */
+  function takeFocus(node: HTMLElement) {
+    node.querySelector('button')?.focus();
   }
 
   // Delve has no points: a question survived sends a wave of light through
@@ -531,6 +566,9 @@
   });
 </script>
 
+<!-- While the offer to give a life is open, Escape closes it and hands focus back to its +. -->
+<svelte:window onkeydown={(e) => asking && e.key === 'Escape' && (e.preventDefault(), closeAsk())} />
+
 <!-- On phones the row sticks to the top of the screen; once it has, it takes a
      background of its own over the content scrolling under it. -->
 <div class="strip" class:stuck bind:this={strip}>
@@ -617,11 +655,18 @@
   </ol>
   {@render aside?.()}
   {#if asking && askingName && me}
-    <div class="revive-ask" role="group" aria-label="Give a life" transition:fly={{ y: -6, duration: 200 }}>
+    <!-- Focus moves in as it opens; Escape or Not now hands it back to the +. -->
+    <div
+      class="revive-ask"
+      role="group"
+      aria-label="Give a life"
+      use:takeFocus
+      transition:fly={{ y: -6, duration: 200 }}
+    >
       <span class="ask">Give {askingName} one of your lives?</span>
       <span class="ask-actions">
         <button class="btn small primary" onclick={revive}>Give a life</button>
-        <button class="btn small ghost" onclick={() => (asking = null)}>Not now</button>
+        <button class="btn small ghost" onclick={closeAsk}>Not now</button>
       </span>
     </div>
   {/if}
@@ -846,6 +891,13 @@
     line-height: 1;
     cursor: pointer;
     animation: beckon 1.6s ease-in-out infinite;
+  }
+  /* A touch target bigger than the badge (24px at least), invisible. */
+  .revive::before {
+    content: '';
+    position: absolute;
+    inset: -4px;
+    border-radius: 50%;
   }
   .revive span {
     translate: 0 -0.5px;
@@ -1233,6 +1285,13 @@
       width: 18px;
       height: 18px;
       font-size: 0.8rem;
+    }
+    li:not(.wide) .revive::before {
+      inset: -3px;
+    }
+    /* Room for the + on its left corner, clear of the entry before it (often your own). */
+    li.revivable:not(.wide) {
+      margin-left: 0.4rem;
     }
     /* Where the ⚡ sits on a lone avatar. */
     li:not(.wide) .off {

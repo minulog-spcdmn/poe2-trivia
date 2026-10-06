@@ -30,7 +30,9 @@
   const delveRows = $derived(run ? delveStandings(s) : []);
   /** Delve together: one result for the team (its depth, where the last of them perished), and each delver's part in it. */
   const team = $derived(run && !solo ? delveTeam(s) : null);
-  const teamFaces = $derived(team ? s.players.slice(0, 4) : []);
+  // Four faces fit the circle; a bigger team shows three and how many more.
+  const teamFaces = $derived(team ? (s.players.length > 4 ? s.players.slice(0, 3) : s.players) : []);
+  const teamMore = $derived(team ? s.players.length - teamFaces.length : 0);
   const depthOf = (id: string) => delveRows.find((r) => r.id === id)?.depth ?? 0;
   // Winners first among equal scores: a deathmatch can be won by the only duelist left, level on points.
   const standings = $derived(
@@ -60,7 +62,7 @@
   });
   /** Deeper than this browser has been before in a run of its kind (not the very first one). */
   const deeper = $derived(newBest && session.delveResult?.previousBest !== null);
-  const kicker = $derived(!run ? 'Victory' : deeper ? 'Deeper than ever' : solo ? 'Perished' : 'The descent ends');
+  const kicker = $derived(!run ? 'Victory' : deeper ? (solo ? 'Deeper than ever' : 'Deeper than ever together') : solo ? 'Perished' : 'The descent ends');
   /**
    * Delve: how the run measured up against this browser's records of its
    * kind (lib/delveRecord.ts), alone or together; nothing for a run whose
@@ -236,8 +238,9 @@
       />
       {#if team}
         <!-- Together: the whole team in the circle, perished side by side. -->
-        <span class="team n{teamFaces.length}">
+        <span class="team n{teamFaces.length + (teamMore ? 1 : 0)}">
           {#each teamFaces as p (p.id)}<Avatar name={p.name} hue={p.hue} size={teamFaces.length > 2 ? 54 : 64} />{/each}
+          {#if teamMore}<span class="more" title="{teamMore} more">+{teamMore}</span>{/if}
         </span>
       {:else}
         <Avatar name={winner.name} hue={winner.hue} size={110} />
@@ -268,7 +271,9 @@
           <!-- Together: what each of them lost, gave and was given; their number is where they last perished. -->
           <span class="name">
             <PlayerName name={p.name} />{#if p.id === session.myPlayerId && session.mode !== 'local'}<em>&nbsp;(you)</em>{/if}
-            <span class="detail">{delverText(row)}</span>
+            <span class="detail"
+              >{#each delverText(row).split(/(\d+)/) as part, j (j)}{#if j % 2}<span class="n">{part}</span>{:else}{part}{/if}{/each}</span
+            >
           </span>
           <span class="pts depth" title={row.lives ? 'Still standing' : `Perished at depth ${row.depth}`}>{row.depth}</span>
         {:else}
@@ -455,6 +460,26 @@
   }
   .crown.fallen .team :global(.avatar) {
     filter: grayscale(0.75) brightness(0.8);
+  }
+  /* The rest of a big team, as a count in the fourth place. */
+  .team .more {
+    display: grid;
+    place-items: center;
+    width: 54px;
+    height: 54px;
+    padding-top: 2px;
+    font-family: var(--font-cinzel);
+    font-weight: 700;
+    font-size: 1rem;
+    color: var(--gold-hi);
+    background: #1a130c;
+    border: 1px solid var(--gold-lo);
+    border-radius: 50%;
+  }
+  .detail .n {
+    font-family: var(--font-cinzel);
+    font-style: normal;
+    font-size: 0.92em;
   }
   .zone {
     display: block;

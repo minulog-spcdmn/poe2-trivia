@@ -345,15 +345,14 @@
             <div class="about-text" in:fly={{ y: -6, duration: 260 }}>
               {#if peek}
                 <p>Race is online only: everyone answers on their own device. Host a room to race.</p>
-              {:else if delve && delveCrowded}
-                <p>On one device, Delve is a run alone. To delve together, host a room: everyone plays on their own device, as a team.</p>
               {:else if delve}
+                <!-- Several on one device can't delve; the line under Begin says what to do instead. -->
                 <p>
                   {together ? 'Three lives each, one team, a depth deeper each question.' : 'Three lives, a depth deeper each question.'} No settings, so a depth
                   is the same for all.
                 </p>
                 {#if deepest}
-                  <p class="deepest">{s.players.length < 2 ? 'Your deepest alone' : 'Your deepest with others'} <b>{deepest}</b></p>
+                  <p class="deepest">{s.players.length < 2 ? 'Your deepest alone' : 'Your deepest together'} <b>{deepest}</b></p>
                 {/if}
               {:else if race}
                 <p>Everyone answers at once. Fastest correct answer +1, wrong answer −1.</p>
@@ -448,7 +447,7 @@
           {#if together}
             <li>The team votes for one of three cards; each vote is a ticket in the draw.</li>
             <li>Everyone answers the same question; the first right answer clears the depth.</li>
-            <li>A wrong answer costs you a life and strikes that option for the team; so does running out of time.</li>
+            <li>A wrong answer costs you a life and strikes that option for the team. When time runs out, everyone who hasn't answered loses a life.</li>
             <li>Between questions, give one of your lives to bring back a teammate who perished.</li>
             <li>The run ends when nobody is left standing; the team's depth is the result.</li>
           {:else}

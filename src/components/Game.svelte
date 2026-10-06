@@ -147,8 +147,12 @@
       if (s.phase !== 'question') raffle = null;
       return;
     }
-    if (was === `${s.turnCount}:choosing` && untrack(() => raffle) === null) {
-      const qid = s.question.askedAt;
+    // Back after a dropped connection with the question's clock already
+    // running: the draw would eat into it, so the question shows at once.
+    const asked = s.question;
+    const running = asked.deadline !== null && asked.clockAt !== undefined && session.hostNow() > asked.clockAt;
+    if (was === `${s.turnCount}:choosing` && !running && untrack(() => raffle) === null) {
+      const qid = asked.askedAt;
       raffle = qid;
       // Should the draw never say it is done, the question shows anyway.
       if (raffleTimer) clearTimeout(raffleTimer);
@@ -311,8 +315,8 @@
         {:else if revivable.length && (s.phase === 'choosing' || s.phase === 'reveal')}
           <p class="delve-line revive-hint" transition:fade>
             {revivable.length === 1
-              ? `Tap + on ${revivable[0].name}'s entry to give them a life.`
-              : 'Tap + on an entry to give a life.'}
+              ? `Use + on ${revivable[0].name}'s entry to give them a life.`
+              : 'Use + on an entry to give a life.'}
           </p>
         {/if}
         {#if session.isHost && !local && !race && !run && !active.connected && s.phase !== 'reveal'}

@@ -47,8 +47,13 @@
       return () => clearTimeout(t);
     }
   });
-  /** The time left at `now`: held still while dynamite's pause is on (see clockLeft). */
-  const leftAt = (end: number, now: number) => untrack(() => clockLeft({ deadline: end, held: q?.held }, now));
+  /**
+   * The time left at `now`: held still while dynamite's pause is on (see
+   * clockLeft). Read off the session's state, not `q`: a ring going out
+   * under the next question must not read its deriveds (derived_inert).
+   */
+  const leftAt = (end: number, now: number) =>
+    untrack(() => clockLeft({ deadline: end, held: session.state?.delve ? session.state.question?.held : undefined }, now));
   let lastTick = -1;
   let started = false;
 
@@ -80,18 +85,25 @@
       return;
     }
     started = true;
+    // Read once: the loop must not touch this component's deriveds, which go
+    // inert while the ring fades out under a new question.
+    const spanMs = span * 1000;
+    const warn = warnFrom;
+    const asked = untrack(() => session.state?.question?.askedAt);
     let raf = 0;
     const loop = () => {
+      // A new question took over (this ring is going out): stop.
+      if (untrack(() => session.state?.question?.askedAt) !== asked) return;
       const left = leftAt(end, session.hostNow());
       const secs = Math.ceil(left / 1000);
-      dark?.set(pressureOf(left, span * 1000, warnFrom));
+      dark?.set(pressureOf(left, spanMs, warn));
       // The ring is redrawn only once its end has moved a third of a pixel
       // (or the number changes): on a 20 s timer about 25 times a second
       // rather than every frame, and each redraw repaints its glow.
-      if (secs !== Math.ceil(remaining / 1000) || left === 0 || (Math.abs(remaining - left) * C) / (span * 1000) >= 1 / 3) {
+      if (secs !== Math.ceil(remaining / 1000) || left === 0 || (Math.abs(remaining - left) * C) / spanMs >= 1 / 3) {
         remaining = left;
       }
-      if (secs <= warnFrom && secs > 0 && secs !== lastTick) {
+      if (secs <= warn && secs > 0 && secs !== lastTick) {
         lastTick = secs;
         sfx('tick');
         if (el) timerTick(el, secs);

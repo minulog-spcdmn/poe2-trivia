@@ -685,6 +685,10 @@
     }
     .wisp,
     .wisp::before,
+    .c0 .wisp,
+    .c1 .wisp::before,
+    .c2 .wisp::before,
+    .c2 .wisp::after,
     .beat,
     .surge,
     .grow .glaze,
@@ -696,13 +700,27 @@
     .drain {
       display: none;
     }
+    /* The kindle's glows rest at 0 between breaths; hold them softly lit. */
+    .c2 .wisp::before,
+    .c2 .wisp::after {
+      opacity: 0.6;
+      transform: none;
+    }
   }
   /* Effects off (the low-power mode): the light glows but holds still. */
   :global(html[data-still]) .wisp,
   :global(html[data-still]) .wisp::before,
+  :global(html[data-still]) .c0 .wisp,
+  :global(html[data-still]) .c1 .wisp::before,
   :global(html[data-still]) .beat,
   :global(html[data-still]) .grow .glaze {
     animation-play-state: paused;
+  }
+  :global(html[data-still]) .c2 .wisp::before,
+  :global(html[data-still]) .c2 .wisp::after {
+    animation: none;
+    opacity: 0.6;
+    transform: none;
   }
   :global(html[data-still]) .glint,
   :global(html[data-still]) .twinkle {
