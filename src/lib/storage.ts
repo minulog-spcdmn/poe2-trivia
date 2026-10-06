@@ -13,6 +13,12 @@ export const LAB = typeof document !== 'undefined' && document.documentElement.h
  * with), apart from the game's and the lab's.
  */
 export const BACKDROP_TOOL = typeof document !== 'undefined' && document.documentElement.hasAttribute('data-backdrop-tool');
+/**
+ * The zone banner preview (zones.html, src/zonebanner: dev and beta builds
+ * only) runs the lab's game, marked `<html data-lab data-zones>`: its keys
+ * start apart from the lab's too, so its run never moves the lab's.
+ */
+export const ZONES_PREVIEW = typeof document !== 'undefined' && document.documentElement.hasAttribute('data-zones');
 
 /**
  * localStorage and sessionStorage, for the whole site (a test keeps every
@@ -25,7 +31,7 @@ export const BACKDROP_TOOL = typeof document !== 'undefined' && document.documen
  * start; the *Key versions take a whole key, for the few the beta must share
  * with the live game or leave alone.
  */
-export const STORE = (BETA ? 'poe2trivia.beta.' : 'poe2trivia.') + (LAB ? 'lab.' : '') + (BACKDROP_TOOL ? 'backdrops.' : '');
+export const STORE = (BETA ? 'poe2trivia.beta.' : 'poe2trivia.') + (LAB ? 'lab.' : '') + (ZONES_PREVIEW ? 'zones.' : '') + (BACKDROP_TOOL ? 'backdrops.' : '');
 
 export type Area = 'local' | 'session';
 
