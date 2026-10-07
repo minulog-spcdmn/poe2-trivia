@@ -595,6 +595,15 @@ export function delveTier(d: number): Preset {
 
 // ---- reading a run --------------------------------------------------------
 
+/**
+ * The depth a player sees for internal depth `d`: one less, so it counts the
+ * right answers. A run starts at 0 (Delve shows a start line there instead,
+ * delveStart.ts), each zone starts on a round number (10, 20, ... 100) and
+ * the first endless depth reads 100. Only what reaches a player goes through
+ * it: the engine, the protocol, the curves and the records keep their own.
+ */
+export const shownDepth = (d: number) => d - 1;
+
 /** The depth of the run in progress (the round), 0 outside Delve. */
 export const delveDepth = (s: GameState) => (s.delve ? s.round : 0);
 

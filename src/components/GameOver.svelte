@@ -13,7 +13,7 @@
   import { fallen } from '../lib/fx/delveEnd';
   import { shareText } from '../lib/delveShare';
   import { portal } from '../lib/portal';
-  import { delveStandings, delveTeam, isGroupRun } from '../lib/delve';
+  import { delveStandings, delveTeam, isGroupRun, shownDepth } from '../lib/delve';
   import { BLUE_FROM, accentAt } from '../lib/descent';
   import { zoneAt } from '../lib/zoneSigils';
   import { delverText, lossDepths } from '../lib/difficultyText';
@@ -57,8 +57,8 @@
   // deepest delver went furthest before falling (or stood last), nothing more.
   const headline = $derived.by(() => {
     if (!run) return iWon ? 'You are victorious!' : `${winner?.name} wins!`;
-    if (solo) return `Depth ${winner ? depthOf(winner.id) : s.round}`;
-    return `Depth ${team?.depth ?? s.round}`;
+    if (solo) return `Depth ${shownDepth(winner ? depthOf(winner.id) : s.round)}`;
+    return `Depth ${shownDepth(team?.depth ?? s.round)}`;
   });
   /** Deeper than this browser has been before in a run of its kind (not the very first one). */
   const deeper = $derived(newBest && session.delveResult?.previousBest !== null);
@@ -72,8 +72,8 @@
     const r = run && session.delveResult?.id === run.startedAt ? session.delveResult : null;
     if (!r || run!.mixed) return '';
     const kind = solo ? '' : ' together';
-    if (!r.best) return r.previousBest === null ? '' : ` Your best${kind} is depth ${r.previousBest}.`;
-    return r.previousBest === null ? ` Your first descent${kind}.` : ` The last best${kind} was ${r.previousBest}.`;
+    if (!r.best) return r.previousBest === null ? '' : ` Your best${kind} is depth ${shownDepth(r.previousBest)}.`;
+    return r.previousBest === null ? ` Your first descent${kind}.` : ` The last best${kind} was ${shownDepth(r.previousBest)}.`;
   });
   /** Delve: what the depth means, and how a tie was settled. */
   const delveSub = $derived.by(() => {
@@ -282,14 +282,14 @@
               >{#each delverText(row).split(/(\d+)/) as part, j (j)}{#if j % 2}<span class="n">{part}</span>{:else}{part}{/if}{/each}</span
             >
           </span>
-          <span class="pts depth" title={row.lives ? 'Still standing' : `Perished at depth ${row.depth}`}>{row.depth}</span>
+          <span class="pts depth" title={row.lives ? 'Still standing' : `Perished at depth ${shownDepth(row.depth)}`}>{shownDepth(row.depth)}</span>
         {:else}
         <span class="name"><PlayerName name={p.name} /></span>
         {/if}
         {#if team}
           <!-- Its depth is beside the name, above. -->
         {:else if run}
-          <span class="pts depth" title="Perished at depth {depthOf(p.id)}">{depthOf(p.id)}</span>
+          <span class="pts depth" title="Perished at depth {shownDepth(depthOf(p.id))}">{shownDepth(depthOf(p.id))}</span>
         {:else}
           <span class="pts">{p.score}</span>
         {/if}

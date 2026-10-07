@@ -25,6 +25,7 @@
     type FindStats,
   } from '../lib/codexStats';
   import { climbOf, isTogether, tallyOf, type DelveRecords } from '../lib/delveRecord';
+  import { shownDepth } from '../lib/delve';
   import { categoryIcon, itemImage } from '../lib/ui';
   import { backdropShadow } from '../lib/backdropShadow';
   import type { Item } from '../lib/game';
@@ -108,7 +109,7 @@
   const teamRows = $derived.by(() => {
     const t = together;
     const out: Row[] = [];
-    if (alone && t.median !== null) out.push({ name: 'Usual depth', value: usual(t.median), note: [[0, 'at least half your runs get this deep']] });
+    if (alone && t.median !== null) out.push({ name: 'Usual depth', value: usual(shownDepth(t.median)), note: [[0, 'at least half your runs get this deep']] });
     if (alone) out.push({ name: 'Lives lost', value: fmt(t.lives), note: t.warded ? [[t.warded, `more saved by ${word(t.warded, 'a ward', 'wards')}`]] : [[0, 'your own, in every run together']] });
     out.push({
       name: 'Perished',
@@ -175,14 +176,14 @@
                 <span class="climb-steps"
                   >{#each steps as s, i (i)}{#if i}<span class="arrow" aria-hidden="true"> → </span><span class="sr-only">, then </span>{/if}{#if s === null}<span
                         class="gap">…</span
-                      >{:else}<span class="n">{s}</span>{/if}{/each}</span
+                      >{:else}<span class="n">{shownDepth(s)}</span>{/if}{/each}</span
                 >
               </p>
             {/if}
             <ol class="list zones">
               {#each zoneRows as z (z.k)}
                 <li>
-                  <span class="z-depth n">{z.depth}</span>
+                  <span class="z-depth n">{shownDepth(z.depth)}</span>
                   <span class="l-name"><span>{z.name}</span></span>
                   <span class="z-when n">{date(z.at)}</span>
                 </li>
@@ -246,7 +247,7 @@
         <div class="side">
           <div class="stat">
             <span class="stat-label">Deepest {otherWord}</span>
-            <span class="stat-value">{other.deepest ?? '?'}</span>
+            <span class="stat-value">{other.deepest === null ? '?' : shownDepth(other.deepest)}</span>
             <span class="stat-note"
               >{#if other.runs}<span class="n">{fmt(other.runs)}</span> {word(other.runs, 'run')} {otherWord}{:else}no run {otherWord} yet{/if}</span
             >
@@ -263,7 +264,7 @@
           <svg class="disc" viewBox="-100 -100 200 200" aria-hidden="true"><circle r="80" /></svg>
           <div class="medal-text">
             <span class="medal-label">Deepest</span>
-            <span class="medal-value">{best ?? '?'}</span>
+            <span class="medal-value">{best === null ? '?' : shownDepth(best)}</span>
             {#if best}
               <span class="medal-zone">{zoneOf(best).name}</span>
               <span class="medal-note">{kindWord}</span>
@@ -276,7 +277,7 @@
         <div class="side">
           <div class="stat">
             <span class="stat-label">Usual depth</span>
-            <span class="stat-value">{main.median === null ? '?' : usual(main.median)}</span>
+            <span class="stat-value">{main.median === null ? '?' : usual(shownDepth(main.median))}</span>
             <span class="stat-note"
               >{#if main.median === null}once <span class="n">{MIN_RUNS}</span> runs {kindWord} have ended{:else}at least half your runs {kindWord} get this deep{/if}</span
             >
@@ -353,7 +354,7 @@
           {:else}
             <ul class="bars">
               {#each risks.slice(0, ZONES_SHOWN) as z (z.k)}
-                <li title="{z.name}, depths {z.depth} to {z.to}: {z.lives} {word(z.lives, 'life', 'lives')} lost in the {z.reached} {word(z.reached, 'run')} that got there">
+                <li title="{z.name}, depths {shownDepth(z.depth)} to {shownDepth(z.to)}: {z.lives} {word(z.lives, 'life', 'lives')} lost in the {z.reached} {word(z.reached, 'run')} that got there">
                   <span class="bar-name">{z.name}</span>
                   {@render meter(z.rate / riskTop)}
                   <span class="bar-value">{fmt(z.lives)} <small>in {fmt(z.reached)} {word(z.reached, 'run')}</small></span>

@@ -9,6 +9,7 @@ import {
   findFor,
   findLosses,
   findReward,
+  shownDepth,
   type FindKind,
   type Inventory,
   type ItemKind,
@@ -423,11 +424,12 @@ export function coopMissText(hit: { lives: number; wards: number; blown?: ItemKi
 
 /**
  * Depths where lives went, for the end screen: a depth that took two (a
- * cave-in) once, with how many: "3 (two lives) and 4".
+ * cave-in) once, with how many: "3 (two lives) and 4". `losses` are the
+ * run's own depths; the text counts them as players do (shownDepth).
  */
 export function lossDepths(losses: number[]): string {
   const groups: { depth: number; n: number }[] = [];
-  for (const d of losses) {
+  for (const d of losses.map(shownDepth)) {
     const last = groups.at(-1);
     if (last?.depth === d) last.n++;
     else groups.push({ depth: d, n: 1 });

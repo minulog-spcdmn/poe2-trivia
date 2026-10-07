@@ -109,9 +109,11 @@ test("a find's note for the team says what it does for all, and what stays unuse
 });
 
 test('the end screen: lives lost at a cave-in counted once, and what each delver gave', () => {
-  assert.equal(lossDepths([3, 3, 4]), 'depths 3 (two lives) and 4');
-  assert.equal(lossDepths([2, 7, 9]), 'depths 2, 7 and 9');
-  assert.equal(lossDepths([5, 5]), 'depth 5 (two lives)');
+  // Run depths, said as players count them (one less: shownDepth).
+  assert.equal(lossDepths([4, 4, 5]), 'depths 3 (two lives) and 4');
+  assert.equal(lossDepths([3, 8, 10]), 'depths 2, 7 and 9');
+  assert.equal(lossDepths([6, 6]), 'depth 5 (two lives)');
+  assert.equal(lossDepths([1, 11]), 'depths 0 and 10');
   assert.equal(delverText({ losses: [1, 4, 4, 9], given: 1, revived: 2 }), 'Lost 4 lives, gave 1 life, brought back twice');
   assert.equal(delverText({ losses: [], given: 2, revived: 0 }), 'No life lost, gave 2 lives');
 });

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { accentAt, dealtDeeper, plunge, setDescent, type Dealt } from './lib/descent';
   import { zoneAt } from './lib/zoneSigils';
+  import { shownDepth } from './lib/delve';
   import { onMount, untrack } from 'svelte';
   import { fade, fly } from 'svelte/transition';
   import { session } from './lib/session.svelte';
@@ -194,12 +195,17 @@
           {:else}
             <span>Delve</span>
           {/if}
-          <span class="dot">•</span>
           {#if session.spectating}
-            <span class="spectating" title="You joined mid-game. You'll play in the next game.">Spectating</span>
             <span class="dot">•</span>
+            <span class="spectating" title="You joined mid-game. You'll play in the next game.">Spectating</span>
           {/if}
-          <span class="depth" style:--accent={accentAt(gs.round)}>Depth <b>{gs.round}</b></span>
+          <!-- The depth as players count it (shownDepth). A run under way at 0
+               names none here: the banner below has its start line (Game.svelte),
+               too long for this line on a phone. -->
+          {#if screen !== 'game' || shownDepth(gs.round) > 0}
+            <span class="dot">•</span>
+            <span class="depth" style:--accent={accentAt(gs.round)} in:fade={{ duration: 600 }}>Depth <b>{shownDepth(gs.round)}</b></span>
+          {/if}
           <!-- And the zone it's in, in its colour; a new one fades in as it's announced. -->
           <span class="dot zone-dot">•</span>
           {#key zoneAt(gs.round)}

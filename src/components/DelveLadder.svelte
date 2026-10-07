@@ -1,6 +1,6 @@
 <script lang="ts">
   import { SOL_RAYS, HEPTAGRAM } from '../lib/alchemy';
-  import { DELVE_LIVES, FINDS_FROM } from '../lib/delve';
+  import { DELVE_LIVES, FINDS_FROM, shownDepth } from '../lib/delve';
   import { descentPlate, f, LINE, ZONES } from '../lib/descentPlate';
 
   // The descent, engraved (lib/descentPlate draws it): Sol over the mouth of
@@ -38,7 +38,7 @@
   const summary = $derived(
     [
       `The descent: ten zones of ten depths, then on for ever.`,
-      `${LIVES[0].toUpperCase() + LIVES.slice(1)} lives; finds turn up from depth ${FINDS_FROM}; the deeper, the less time and the trickier the questions.`,
+      `${LIVES[0].toUpperCase() + LIVES.slice(1)} lives; finds turn up from depth ${shownDepth(FINDS_FROM)}; the deeper, the less time and the trickier the questions.`,
       reached === 0
         ? 'All ten zones are uncharted.'
         : reached === ZONES.length
@@ -46,7 +46,7 @@
           : `Zones reached: ${ZONES.slice(0, reached)
               .map((z) => z.name)
               .join(', ')}; ${words(ZONES.length - reached)} more uncharted.`,
-      best ? `${label}: depth ${best}.` : '',
+      best ? `${label}: depth ${shownDepth(best)}.` : '',
     ]
       .filter(Boolean)
       .join(' '),

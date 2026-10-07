@@ -36,7 +36,7 @@
   import { scoreRow, scoreRowOf } from '../lib/scoreRows';
   import { burnsBlue, heatOf, streakOf } from '../lib/fx/streaks';
   import { phone } from '../lib/layout';
-  import { cavesIn, fellAt, inventoryOf, isGroupRun, livesOf, reviveProblem, type FindKind, type Inventory as Carried, type ItemKind } from '../lib/delve';
+  import { cavesIn, fellAt, inventoryOf, isGroupRun, livesOf, reviveProblem, shownDepth, type FindKind, type Inventory as Carried, type ItemKind } from '../lib/delve';
   import { inventoryChanges, itemsBlown } from '../lib/delveSession';
   import { CASINGS, WARD_BREAK, WARD_NEXT, momentOf, type InventoryMoment } from '../lib/inventoryArt';
   import { MOMENTS } from '../lib/soundDesign';
@@ -711,7 +711,7 @@
             <PlayerName name={p.name} />{#if session.mode !== 'local' && p.id === session.myPlayerId && s.players.length > 1}<em>&nbsp;(you)</em>{/if}
           </span>
           {#if run && fell !== null}
-            <span class="fell-at">Perished at depth {fell}</span>
+            <span class="fell-at">Perished at depth {shownDepth(fell)}</span>
           {:else if run}
             <Phial lives={shownLives} draining={hit[p.id] ?? giving[p.id] ?? -1} filling={inflow[p.id] ?? -1} surge={surge[p.id] ?? 0} {inv} {moment} {expect} guard={guard[p.id] ?? null} />
           {:else}

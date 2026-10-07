@@ -28,7 +28,7 @@
 // codex erases them too (resetAchievements).
 
 import { answerLives, answerWards, loadCodex, type Answer, type Codex } from './codex.ts';
-import { fellAt, isGroupRun, livesOf, standingIds } from './delve.ts';
+import { fellAt, isGroupRun, livesOf, shownDepth, standingIds } from './delve.ts';
 import { isTogether, loadRecords, type DelveRecords, type DelveRun } from './delveRecord.ts';
 import type { GameState, Item } from './game.ts';
 import { clearAside, makeRoom } from './keepAside.ts';
@@ -108,6 +108,7 @@ export interface Summary {
   known: Progress;
   /** Most falls for one made-up name. */
   fooled: number;
+  // The depths below are as players see them (shownDepth), as the texts name them.
   /** Deepest depth reached in a run alone (ended or left, under the rules it started with). */
   deepestAlone: number;
   /** Most depths survived in a row on the last life past THREAD_FROM, in a run alone. */
@@ -137,6 +138,9 @@ export const COMEBACK = 4;
 export const VEIL_TAKES = 3;
 export const VEIL_SHARE = 0.25;
 export const VEIL_OPTIONS = 6;
+// Every depth an achievement names is a depth as players see it (shownDepth,
+// one less than the run's own): its check compares shown depths, so "reach
+// depth 50" is earned where the header reads 50.
 /** By a Thread: depths survived in a row on the last life, past this depth. */
 export const THREAD = 10;
 export const THREAD_FROM = 30;
@@ -360,7 +364,7 @@ function runsOf(delve: DelveRecords): DelveRun[] {
 
 /** Whether a run alone fell at exactly the depth of its best before it (the best's climb, under its ruleset). */
 function tiedBest(delve: DelveRecords, run: DelveRun): boolean {
-  if (isTogether(run) || run.left || run.depth < DEPTH_GRAVE) return false;
+  if (isTogether(run) || run.left || shownDepth(run.depth) < DEPTH_GRAVE) return false;
   const before = (delve.climbs[`${run.ruleset}:solo`] ?? []).filter((c) => c.at < run.at).at(-1);
   return before?.depth === run.depth;
 }
@@ -392,15 +396,15 @@ export function summarize(codex: Codex, delve: DelveRecords, items: Item[]): Sum
   const alone = runs.filter((r) => !isTogether(r));
   const together = runs.filter(isTogether);
   // A run alone is recorded where it fell or was left; either way it got that deep.
-  const deepestAlone = Math.max(0, ...alone.map((r) => r.depth));
+  const deepestAlone = Math.max(0, ...alone.map((r) => shownDepth(r.depth)));
   let thread = 0;
   let untouched = 0;
   for (const r of alone) {
     if (!r.losses) continue;
     // The last depth survived: before the fall, or before the depth it was left on.
     const survived = r.depth - 1;
-    if (r.losses.length >= 2) thread = Math.max(thread, survived - Math.max(r.losses[1], THREAD_FROM));
-    untouched = Math.max(untouched, r.losses.length ? r.losses[0] : r.depth);
+    if (r.losses.length >= 2) thread = Math.max(thread, shownDepth(survived) - Math.max(shownDepth(r.losses[1]), THREAD_FROM));
+    untouched = Math.max(untouched, shownDepth(r.losses.length ? r.losses[0] : r.depth));
   }
   // A ward that broke on the last life: a wrong answer that cost none, in a run alone that had lost two before it.
   const byId = new Map(alone.map((r) => [`${r.id}:${r.who ?? ''}`, r]));
@@ -423,7 +427,7 @@ export function summarize(codex: Codex, delve: DelveRecords, items: Item[]): Sum
     savingGrace,
     grave: alone.some((r) => tiedBest(delve, r)),
     given: Math.max(0, ...together.map((r) => r.given ?? 0)),
-    deepCompany: Math.max(0, ...together.map(stoodAt)),
+    deepCompany: Math.max(0, ...together.map((r) => shownDepth(stoodAt(r)))),
   };
 }
 
@@ -473,11 +477,12 @@ export function momentsIn(prev: GameState | null, next: GameState, me: string | 
   const playing = next.phase === 'choosing' || next.phase === 'question';
 
   if (!isGroupRun(next)) {
-    if (next.round >= 50) out.push('depth-50');
-    if (next.round >= 100) out.push('depth-100');
+    const depth = shownDepth(next.round);
+    if (depth >= 50) out.push('depth-50');
+    if (depth >= 100) out.push('depth-100');
     // Standing at the depth with every life (a loss at it still reached it).
-    if ((losses.length ? losses[0] : next.round) >= UNTOUCHED) out.push('untouched');
-    if (r && lives === 1 && losses.length === 2 && next.round - Math.max(losses[1], THREAD_FROM) >= THREAD) out.push('by-a-thread');
+    if (shownDepth(losses.length ? losses[0] : next.round) >= UNTOUCHED) out.push('untouched');
+    if (r && lives === 1 && losses.length === 2 && depth - Math.max(shownDepth(losses[1]), THREAD_FROM) >= THREAD) out.push('by-a-thread');
     if (r && !r.correct && lives === 1) {
       const lost = r.lost ? r.lost.lives : r.warded ? 0 : 1;
       const broke = r.lost ? r.lost.wards : r.warded ? 1 : 0;
@@ -491,9 +496,10 @@ export function momentsIn(prev: GameState | null, next: GameState, me: string | 
   const standing = standingIds(next);
   const revives = d.revives ?? [];
   if (revives.filter((v) => v.by === self).length >= 2) out.push('selfless');
-  if (playing && next.round >= COMPANY_DEPTH && lives > 0) out.push('deep-company');
+  const depth = shownDepth(next.round);
+  if (playing && depth >= COMPANY_DEPTH && lives > 0) out.push('deep-company');
   const whole = d.entrants.every((id) => next.players.some((p) => p.id === id));
-  if (playing && next.round >= ALL_DEPTH && whole && !revives.length && standing.length === next.players.length) out.push('nobody-left');
+  if (playing && depth >= ALL_DEPTH && whole && !revives.length && standing.length === next.players.length) out.push('nobody-left');
   if (r) {
     const hit = r.hits?.find((h) => h.playerId === self);
     if (hit && hit.lives === 0 && hit.wards > 0 && lives === 1) out.push('saving-grace');
@@ -510,14 +516,14 @@ export function momentsIn(prev: GameState | null, next: GameState, me: string | 
       out.push('elimination');
     // The whole team at once, nobody walking away on their feet at this depth.
     const fell = next.players.filter((p) => fellAt(next, p.id) === next.round).map((p) => p.id);
-    if (r.winnerId === null && !standing.length && next.round >= FALL_DEPTH && (d.leftAt ?? 0) < next.round && fell.length >= FALL_MANY && fell.includes(self))
+    if (r.winnerId === null && !standing.length && depth >= FALL_DEPTH && (d.leftAt ?? 0) < next.round && fell.length >= FALL_MANY && fell.includes(self))
       out.push('fell-as-one');
     // The last one standing, clean for LONE depths past the last of the others to fall or leave (and past
     // LONE_FROM). Who left is known only from a host that keeps where they fell (Delve.fellLeft).
     const known = whole || d.leftAt !== undefined || d.fellLeft !== undefined;
     if (known && standing.length === 1 && standing[0] === self) {
-      const since = Math.max(LONE_FROM, d.leftAt ?? 0, d.fellLeft ?? 0, ...others.map((p) => fellAt(next, p.id) ?? 0));
-      if (next.round - since >= LONE && !losses.some((x) => x > since) && r.winnerId === self) out.push('lone-wolf');
+      const since = Math.max(LONE_FROM, ...[d.leftAt ?? 0, d.fellLeft ?? 0, ...others.map((p) => fellAt(next, p.id) ?? 0)].map(shownDepth));
+      if (depth - since >= LONE && !losses.some((x) => shownDepth(x) > since) && r.winnerId === self) out.push('lone-wolf');
     }
   }
   return out;

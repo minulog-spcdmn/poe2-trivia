@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { DELVE_LIVES } from '../../lib/delve';
+  import { DELVE_LIVES, shownDepth } from '../../lib/delve';
   import { zoneOf, type RunStory } from '../../lib/codexStats';
   import { isTogether, runKey, type DelveRun } from '../../lib/delveRecord';
   import { itemImage } from '../../lib/ui';
@@ -43,7 +43,7 @@
 <section class="last" aria-labelledby="last-h">
   <div class="depth">
     <span class="label" id="last-h">Last run</span>
-    <span class="value">{run.depth}</span>
+    <span class="value">{shownDepth(run.depth)}</span>
   </div>
   <div class="text">
     <p class="lead">
@@ -54,7 +54,7 @@
     </p>
     <p class="note">
       <span class="n">{when(run.at)}</span>{#if diff !== null && median !== null && !isBest && !level}{' • '}{#if diff > 0}<span class="n">{usual(diff)}</span> deeper than{:else if diff < 0}<span class="n">{usual(-diff)}</span> short of{:else}right at{/if}
-        your usual <span class="n">{usual(median)}</span>{/if}{#each found as [n, w] (w)}{' • '}<span class="n">{n}</span> {w}{/each}
+        your usual <span class="n">{usual(shownDepth(median))}</span>{/if}{#each found as [n, w] (w)}{' • '}<span class="n">{n}</span> {w}{/each}
     </p>
   </div>
   {#if story.lives.length}
@@ -63,13 +63,13 @@
         <li>
           {#if l.item}
             {@const it = l.item}
-            <button class="thumb" onclick={() => onopen(it)} title="Depth {l.depth}, {l.zone.name}: {it.name}{l.caveIn ? ' (a cave-in)' : ''}" aria-label="Life lost at depth {l.depth} to {it.name}{l.caveIn ? ', a cave-in' : ''}">
+            <button class="thumb" onclick={() => onopen(it)} title="Depth {shownDepth(l.depth)}, {l.zone.name}: {it.name}{l.caveIn ? ' (a cave-in)' : ''}" aria-label="Life lost at depth {shownDepth(l.depth)} to {it.name}{l.caveIn ? ', a cave-in' : ''}">
               <img src={itemImage(it.id)} alt="" loading="lazy" />
             </button>
           {:else}
-            <span class="thumb none" title="Depth {l.depth}: not logged" role="img" aria-label="Life lost at depth {l.depth}, item not logged">?</span>
+            <span class="thumb none" title="Depth {shownDepth(l.depth)}: not logged" role="img" aria-label="Life lost at depth {shownDepth(l.depth)}, item not logged">?</span>
           {/if}
-          <span class="at n" aria-hidden="true">{l.depth}</span>
+          <span class="at n" aria-hidden="true">{shownDepth(l.depth)}</span>
         </li>
       {/each}
     </ol>

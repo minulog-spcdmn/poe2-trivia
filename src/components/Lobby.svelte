@@ -4,7 +4,7 @@
   import { session } from '../lib/session.svelte';
   import { MAX_PLAYERS, RACE_DEFAULT_TIMER, TIMER_STEPS, difficultyOf, rulesFor, type Difficulty, type GameMode } from '../lib/game';
   import { DIFFICULTY_NAMES, FINDS_LABEL, FIND_RULES, FIND_TEXT, describe } from '../lib/difficultyText';
-  import { FINDS } from '../lib/delve';
+  import { FINDS, shownDepth } from '../lib/delve';
   import CustomDifficulty from './CustomDifficulty.svelte';
   import DelveLadder from './DelveLadder.svelte';
   import ItemGlyph from './ItemGlyph.svelte';
@@ -353,7 +353,7 @@
                 <!-- Several on one device can't delve; the line under Begin says what to do instead. -->
                 <p>{together ? 'How deep can your team go, on three lives each?' : 'How deep can you go on three lives?'} Same rules for everyone.</p>
                 {#if deepest}
-                  <p class="deepest">{deepestLabel} <b>{deepest}</b></p>
+                  <p class="deepest">{deepestLabel} <b>{shownDepth(deepest)}</b></p>
                 {/if}
               {:else if race}
                 <p>Same question for everyone at once; the fastest right answer scores. Online only.</p>

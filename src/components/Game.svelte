@@ -13,7 +13,8 @@
   import { deathmatchIntro, deathmatchMood, gameStart, turnBanner } from '../lib/fx/moments';
   import { portal } from '../lib/portal';
   import { phone } from '../lib/layout';
-  import { REVIVE_FROM, delveDepth, fellAt, isGroupRun, livesOf, questionTimer, reviveProblem, standingIds } from '../lib/delve';
+  import { REVIVE_FROM, delveDepth, fellAt, isGroupRun, livesOf, questionTimer, reviveProblem, shownDepth, standingIds } from '../lib/delve';
+  import { startLine } from '../lib/delveStart';
   import { accentAt, milestoneAt } from '../lib/descent';
   import { zoneAt } from '../lib/zoneSigils';
   import Threshold from './zonebanner/Threshold.svelte';
@@ -111,11 +112,17 @@
     return { destroy: () => clearTimeout(t) };
   }
 
+  // Delve: where the depth would read 0, the run's start line (dealt from a
+  // shuffled deck on this device, delveStart.ts); it gives way to "Depth 1" as the stage
+  // crosses to the next turn, as one depth gives way to the next.
+  const startsRun = $derived(!!run && shownDepth(depth) <= 0);
   const bannerTitle = $derived(
     race
       ? `Question ${s.turnCount + 1}`
       : run
-        ? `Depth ${depth}`
+        ? startsRun
+          ? startLine(run.startedAt)
+          : `Depth ${shownDepth(depth)}`
         : mine && !local
           ? 'Your turn'
           : `${active.name}'s turn`,
@@ -188,9 +195,9 @@
       const turn = s.turnCount;
       const still = quiet();
       let next: Card | null = null;
-      if (name) next = { key, turn, title: name, sigil, accent, label: `Depth ${depth}: ${name}.`, leaving: false, still };
+      if (name) next = { key, turn, title: name, sigil, accent, label: `Depth ${shownDepth(depth)}: ${name}.`, leaving: false, still };
       else if (!group && best !== null && depth === best + 1)
-        next = { key, turn, title: 'Deeper than ever', sigil, accent, label: `Deeper than ever: depth ${depth}, past your best of ${best}.`, leaving: false, still };
+        next = { key, turn, title: 'Deeper than ever', sigil, accent, label: `Deeper than ever: depth ${shownDepth(depth)}, past your best of ${shownDepth(best)}.`, leaving: false, still };
       if (!next) return;
       card = next;
       sfx('stratum');
@@ -269,7 +276,7 @@
           <!-- The gate's columns stand in for the rules while it shows. -->
           <div class="banner" class:dm={!!dm} class:veiled={!!zone && !zone.leaving} style:--c={bannerColor}>
             <span class="rule"></span>
-            <h2 use:bannerFx={{ color: bannerColor, big: bannerBig }}>{bannerTitle}</h2>
+            <h2 class:start={startsRun} use:bannerFx={{ color: bannerColor, big: bannerBig }}>{bannerTitle}</h2>
             <span class="rule"></span>
           </div>
           {#if zone}
@@ -448,6 +455,18 @@
     from {
       opacity: 0;
       letter-spacing: 0.4em;
+      filter: blur(6px);
+    }
+  }
+  /* A run's start line arrives as a depth does, its spacing opening less:
+     a line of words that wide would run off a phone's edge. */
+  .banner h2.start {
+    animation-name: arrive-line;
+  }
+  @keyframes arrive-line {
+    from {
+      opacity: 0;
+      letter-spacing: 0.06em;
       filter: blur(6px);
     }
   }

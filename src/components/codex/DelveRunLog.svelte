@@ -3,6 +3,7 @@
   import type { Answer } from '../../lib/codex';
   import { answersFor, runLog, runStory, zoneOf, type RulesGroup } from '../../lib/codexStats';
   import { RUN_LIMIT, isTogether, runKey, type DelveRun } from '../../lib/delveRecord';
+  import { shownDepth } from '../../lib/delve';
   import { itemImage } from '../../lib/ui';
   import { backdropShadow } from '../../lib/backdropShadow';
   import type { Item } from '../../lib/game';
@@ -37,7 +38,7 @@
   {@const story = runStory(r, answersFor(byRun, r), engine.byId).lives}
   {@const lives = story.length > MAX_LIVES ? story.slice(0, MAX_LIVES - 1) : story}
   <tr class:left={r.left}>
-    <td class="num depth">{r.depth}</td>
+    <td class="num depth">{shownDepth(r.depth)}</td>
     <td class="run">
       <span class="r-main"><span class="r-zone">{zoneOf(r.depth).name}</span></span>
       <small
@@ -50,18 +51,18 @@
           {#each lives as l, k (k)}
             {#if l.item}
               {@const it = l.item}
-              <button class="mini" onclick={() => onopen(it)} title="Depth {l.depth}: {it.name}" aria-label="Life lost at depth {l.depth} to {it.name}">
+              <button class="mini" onclick={() => onopen(it)} title="Depth {shownDepth(l.depth)}: {it.name}" aria-label="Life lost at depth {shownDepth(l.depth)} to {it.name}">
                 <img src={itemImage(it.id)} alt="" loading="lazy" />
-                <span class="at n" aria-hidden="true">{l.depth}</span>
+                <span class="at n" aria-hidden="true">{shownDepth(l.depth)}</span>
               </button>
             {:else}
-              <span class="mini none" title="Depth {l.depth}: not logged" role="img" aria-label="Life lost at depth {l.depth}, item not logged">
-                ?<span class="at n" aria-hidden="true">{l.depth}</span>
+              <span class="mini none" title="Depth {shownDepth(l.depth)}: not logged" role="img" aria-label="Life lost at depth {shownDepth(l.depth)}, item not logged">
+                ?<span class="at n" aria-hidden="true">{shownDepth(l.depth)}</span>
               </span>
             {/if}
           {/each}
           {#if story.length > lives.length}
-            <span class="mini none" title="{story.length - lives.length} more: depths {story.slice(lives.length).map((l) => l.depth).join(', ')}" role="img" aria-label="{story.length - lives.length} more lives lost"
+            <span class="mini none" title="{story.length - lives.length} more: depths {story.slice(lives.length).map((l) => shownDepth(l.depth)).join(', ')}" role="img" aria-label="{story.length - lives.length} more lives lost"
               >+{story.length - lives.length}</span
             >
           {/if}
@@ -104,8 +105,8 @@
                 Rules changed mid-run<small>: resumed by a build with other rules, never counted</small>
               {:else}
                 Other rules<small
-                  >: never compared with today's{#if g.solo !== null}{' • '}deepest alone <span class="n">{g.solo}</span>{/if}{#if g.together !== null}{' • '}together <span
-                      class="n">{g.together}</span
+                  >: never compared with today's{#if g.solo !== null}{' • '}deepest alone <span class="n">{shownDepth(g.solo)}</span>{/if}{#if g.together !== null}{' • '}together <span
+                      class="n">{shownDepth(g.together)}</span
                     >{/if}</small
                 >
               {/if}

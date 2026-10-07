@@ -6,6 +6,7 @@
   import { DIFFICULTY_NAMES } from '../lib/difficultyText';
   import { PROTOCOL_VERSION } from '../lib/protocol';
   import { backdropShadow } from '../lib/backdropShadow';
+  import { shownDepth } from '../lib/delve';
 
   let { onJoin, disabled = false }: { onJoin: (code: string) => void; disabled?: boolean } = $props();
 
@@ -128,7 +129,7 @@
             <span class="host">{r.host}'s room</span>
             <span class="meta">
               {#if r.mode === 'delve'}
-                Delve · {r.depth ? `depth ${r.depth}` : 'three lives'}{r.spectators ? ` · ${r.spectators} watching` : ''}
+                Delve · {r.depth ? (shownDepth(r.depth) <= 0 && r.phase !== 'over' ? 'entrance' : `depth ${shownDepth(r.depth)}`) : 'three lives'}{r.spectators ? ` · ${r.spectators} watching` : ''}
               {:else}
                 {r.mode === 'race' ? 'Race' : 'Turns'} · {DIFFICULTY_NAMES[r.difficulty]} · first to {r.target}{r.spectators ? ` · ${r.spectators} watching` : ''}
               {/if}

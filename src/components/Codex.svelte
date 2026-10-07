@@ -5,6 +5,7 @@
   import { nameHeld, nameTooShort } from '../lib/names';
   import { CODEX_KEY, RECENT, loadCodex, resetCodex, type Tally } from '../lib/codex';
   import { accuracy, codexStats, delveSummary, tallyOf } from '../lib/codexStats';
+  import { shownDepth } from '../lib/delve';
   import { categoryIcon, itemImage } from '../lib/ui';
   import { DIFFICULTY_NAMES } from '../lib/difficultyText';
   import { closeCodex, codexRoute } from '../lib/codexRoute.svelte';
@@ -265,7 +266,7 @@
         >
           <span class="tab-in">
             <span class="tab-label">{t.label}</span>
-            {#if t.key === 'items'}<span class="tab-note">{stats.seen}/{stats.total}</span>{:else if t.key === 'feats'}<span class="tab-note">{earnedCount}/{ACHIEVEMENTS.length}</span>{:else if delveBest}<span class="tab-note">{delveBest}</span>{/if}
+            {#if t.key === 'items'}<span class="tab-note">{stats.seen}/{stats.total}</span>{:else if t.key === 'feats'}<span class="tab-note">{earnedCount}/{ACHIEVEMENTS.length}</span>{:else if delveBest}<span class="tab-note">{shownDepth(delveBest)}</span>{/if}
           </span>
         </button>
       {/each}

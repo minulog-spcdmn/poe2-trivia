@@ -4,6 +4,7 @@
   import { engine } from '../lib/session.svelte';
   import { livesCost, type Codex, type Tally } from '../lib/codex';
   import { accuracy } from '../lib/codexStats';
+  import { shownDepth } from '../lib/delve';
   import { itemImage } from '../lib/ui';
   import { dialogBackdrop } from '../lib/behindDialog';
   import { artRevealed } from '../lib/fx/moments';
@@ -146,11 +147,11 @@
             {@const d = entry.delve}
             {@const lives = livesCost(d)}
             <li>
-              In Delve: <b>{d.n}</b> answered, <b>{d.ok}</b> right{#if d.deepest}, as deep as depth <b>{d.deepest}</b>{/if}
+              In Delve: <b>{d.n}</b> answered, <b>{d.ok}</b> right{#if d.deepest}, as deep as depth <b>{shownDepth(d.deepest)}</b>{/if}
             </li>
             {#if d.n > d.ok}
               <li>
-                {#if lives}Cost you a life <b>{times(lives)}</b>{#if d.lostAt}, deepest at depth <b>{d.lostAt}</b>{/if}{:else}Never cost you a life{/if}{#if d.warded}; it broke <b>{d.warded === 1 ? 'an Azurite Ward' : `${d.warded} Azurite Wards`}</b>{/if}
+                {#if lives}Cost you a life <b>{times(lives)}</b>{#if d.lostAt}, deepest at depth <b>{shownDepth(d.lostAt)}</b>{/if}{:else}Never cost you a life{/if}{#if d.warded}; it broke <b>{d.warded === 1 ? 'an Azurite Ward' : `${d.warded} Azurite Wards`}</b>{/if}
               </li>
             {/if}
             {#if d.finds || d.blasted}

@@ -25,6 +25,7 @@
 
 import { at, hatch, line, seeded, star8, type Hole as Disc } from './arcane.ts';
 import { MARKS } from './alchemy.ts';
+import { shownDepth } from './delve.ts';
 import { STRATA } from './descent.ts';
 import { sigilOf, type Sigil } from './zoneSigils.ts';
 
@@ -328,13 +329,13 @@ export function descentPlate(pw: number, ph: number, deepest: number | null, liv
 
   // ---- the notes, at about the depths they're about ----
   const NOTES: Note[] = [
-    { id: 'lives', num: '1', lines: [`${lives} lives`], y: surfaceY + 1 },
-    { id: 'finds', num: String(findsFrom), lines: ['finds appear'], y: y(findsFrom) + 2 },
+    { id: 'lives', num: String(shownDepth(1)), lines: [`${lives} lives`], y: surfaceY + 1 },
+    { id: 'finds', num: String(shownDepth(findsFrom)), lines: ['finds appear'], y: y(findsFrom) + 2 },
     { id: 'zones', word: 'every', num: '10', lines: ['a new zone'], y: TOP + 2 * band },
     { id: 'deeper', word: 'deeper', lines: ['less time,', 'trickier questions'], y: y(60) },
     { id: 'endless', num: '100+', lines: ['endless'], y: OY },
   ];
-  const notes = spread(best ? [...NOTES, { id: 'best', num: String(best), lines: [], y: star[1], best: true }] : NOTES);
+  const notes = spread(best ? [...NOTES, { id: 'best', num: String(shownDepth(best)), lines: [], y: star[1], best: true }] : NOTES);
   const pips: Pt[] = notes.filter((n) => !n.best).map((n) => [pipX, n.y]);
   const pipHoles: Hole[] = pips.map((p) => ({ c: p, r: 2.8 }));
   /** The notes' words (the glory above stops short of them). */

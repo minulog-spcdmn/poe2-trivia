@@ -165,10 +165,11 @@ test('runs alone: the deepest, the first life lost, and the last life', () => {
     solo({ id: 3, at: 3, depth: 30, left: true, losses: [] }),
   ]);
   const s = sum(emptyCodex(), r);
-  assert.equal(s.deepestAlone, 52);
-  // Run 1 lost its first life at 41: it stood at 41 with every life.
-  assert.equal(s.untouched, 41);
-  // Run 2 was on its last life from 33 and survived to 46: 13 depths past 33.
+  // Depths as players see them (shownDepth): one less than the records'.
+  assert.equal(s.deepestAlone, 51);
+  // Run 1 lost its first life at 41 (shown 40): it stood at 40 with every life.
+  assert.equal(s.untouched, 40);
+  // Run 2 was on its last life from 33 and survived to 46 (shown 32 and 45): 13 depths past 32.
   assert.equal(s.thread, 13);
   for (const id of ['depth-50', 'untouched', 'by-a-thread']) assert.ok(earnedFrom(s).includes(id), id);
   assert.ok(!earnedFrom(s).includes('depth-100'));
@@ -191,8 +192,11 @@ test('Familiar Grave: a fall at exactly the best before it', () => {
   const tie = recordsOf([solo({ id: 1, at: 1, depth: 24, losses: [5, 9, 24] }), solo({ id: 2, at: 2, depth: 24, losses: [3, 7, 24] })]);
   assert.equal(sum(emptyCodex(), tie).grave, true);
   store.clear();
-  const shallow = recordsOf([solo({ id: 1, at: 1, depth: 12, losses: [5, 9, 12] }), solo({ id: 2, at: 2, depth: 12, losses: [3, 7, 12] })]);
-  assert.equal(sum(emptyCodex(), shallow).grave, false, 'below 20');
+  const shallow = recordsOf([solo({ id: 1, at: 1, depth: 20, losses: [5, 9, 20] }), solo({ id: 2, at: 2, depth: 20, losses: [3, 7, 20] })]);
+  assert.equal(sum(emptyCodex(), shallow).grave, false, 'shown 19, below 20');
+  store.clear();
+  const at20 = recordsOf([solo({ id: 1, at: 1, depth: 21, losses: [5, 9, 21] }), solo({ id: 2, at: 2, depth: 21, losses: [3, 7, 21] })]);
+  assert.equal(sum(emptyCodex(), at20).grave, true, 'shown 20');
   store.clear();
   const better = recordsOf([solo({ id: 1, at: 1, depth: 24, losses: [5, 9, 24] }), solo({ id: 2, at: 2, depth: 26, losses: [3, 7, 26] })]);
   assert.equal(sum(emptyCodex(), better).grave, false);
@@ -202,14 +206,14 @@ test('runs together: lives given in one run, and the deepest depth stood at', ()
   const r = recordsOf([team({ id: 1, depth: 80, perished: [40, 78], given: 2 }), team({ id: 2, depth: 90, perished: [12], given: 1 })]);
   const s = sum(emptyCodex(), r);
   assert.equal(s.given, 2);
-  assert.equal(s.deepCompany, 78);
+  assert.equal(s.deepCompany, 77);
   for (const id of ['selfless', 'deep-company']) assert.ok(earnedFrom(s).includes(id), id);
   store.clear();
   // Left on their feet after being brought back: they stood at the depth it was left at.
-  assert.equal(sum(emptyCodex(), recordsOf([team({ depth: 80, left: true, perished: [60], revived: 1 })])).deepCompany, 80);
+  assert.equal(sum(emptyCodex(), recordsOf([team({ depth: 80, left: true, perished: [60], revived: 1 })])).deepCompany, 79);
   store.clear();
   // Left while down: they last stood where they fell.
-  assert.equal(sum(emptyCodex(), recordsOf([team({ depth: 80, left: true, perished: [60] })])).deepCompany, 60);
+  assert.equal(sum(emptyCodex(), recordsOf([team({ depth: 80, left: true, perished: [60] })])).deepCompany, 59);
 });
 
 // ---- moments in a run ------------------------------------------------------------
@@ -247,23 +251,29 @@ function delve(losses: Record<string, number[]>, o: Partial<GameState> & { reviv
 const was = (s: GameState) => ({ ...s, phase: 'question' as const, reveal: null });
 
 test('alone: depths reached, untouched, and on the last life', () => {
-  assert.deepEqual(momentsIn(null, delve({ a: [3] }, { round: 50 }), 'a', false), ['depth-50']);
-  assert.deepEqual(momentsIn(null, delve({ a: [3] }, { round: 49 }), 'a', false), []);
-  assert.deepEqual(momentsIn(null, delve({ a: [] }, { round: 40 }), 'a', false), ['untouched']);
-  assert.deepEqual(momentsIn(null, delve({ a: [40] }, { round: 41 }), 'a', false), ['untouched'], 'it reached 40 with every life');
-  assert.deepEqual(momentsIn(null, delve({ a: [39] }, { round: 41 }), 'a', false), []);
+  // Depth 50 as players see it (shownDepth) is round 51.
+  assert.deepEqual(momentsIn(null, delve({ a: [3] }, { round: 51 }), 'a', false), ['depth-50']);
+  assert.deepEqual(momentsIn(null, delve({ a: [3] }, { round: 50 }), 'a', false), []);
+  assert.deepEqual(momentsIn(null, delve({ a: [3] }, { round: 101 }), 'a', false), ['depth-50', 'depth-100']);
+  assert.deepEqual(momentsIn(null, delve({ a: [3] }, { round: 100 }), 'a', false), ['depth-50']);
+  assert.deepEqual(momentsIn(null, delve({ a: [] }, { round: 41 }), 'a', false), ['untouched']);
+  assert.deepEqual(momentsIn(null, delve({ a: [] }, { round: 40 }), 'a', false), []);
+  assert.deepEqual(momentsIn(null, delve({ a: [41] }, { round: 42 }), 'a', false), ['untouched'], 'it reached 40 with every life');
+  assert.deepEqual(momentsIn(null, delve({ a: [40] }, { round: 42 }), 'a', false), []);
   // On the last life since 31: survived depths 32 to 41.
   const thread = delve({ a: [5, 31] }, { round: 41, r: { correct: true } });
   assert.ok(momentsIn(was(thread), thread, 'a', false).includes('by-a-thread'));
   const short = delve({ a: [5, 31] }, { round: 40, r: { correct: true } });
   assert.ok(!momentsIn(was(short), short, 'a', false).includes('by-a-thread'));
-  // Early losses count from depth 30.
-  const early = delve({ a: [2, 3] }, { round: 40, r: { correct: true } });
+  // Early losses count from depth 30 as shown (round 31): ten past it is round 41.
+  const early = delve({ a: [2, 3] }, { round: 41, r: { correct: true } });
   assert.ok(momentsIn(was(early), early, 'a', false).includes('by-a-thread'));
+  const earlier = delve({ a: [2, 3] }, { round: 40, r: { correct: true } });
+  assert.ok(!momentsIn(was(earlier), earlier, 'a', false).includes('by-a-thread'));
   // On one device, its one player; a spectator or another seat, nothing.
-  assert.deepEqual(momentsIn(null, delve({ a: [] }, { round: 50 }), null, true), ['depth-50', 'untouched']);
-  assert.deepEqual(momentsIn(null, delve({ a: [] }, { round: 50 }), 'z', false), []);
-  assert.deepEqual(momentsIn(null, { ...delve({ a: [] }, { round: 50 }), delve: { ...delve({ a: [] }).delve!, mixed: true } }, 'a', false), []);
+  assert.deepEqual(momentsIn(null, delve({ a: [] }, { round: 51 }), null, true), ['depth-50', 'untouched']);
+  assert.deepEqual(momentsIn(null, delve({ a: [] }, { round: 51 }), 'z', false), []);
+  assert.deepEqual(momentsIn(null, { ...delve({ a: [] }, { round: 51 }), delve: { ...delve({ a: [] }).delve!, mixed: true } }, 'a', false), []);
 });
 
 test('alone: a ward that breaks in place of the last life', () => {
@@ -286,13 +296,15 @@ const rv = (by: string, to: string, fell: number): Revive => ({ by, to, fell, de
 test('together: lives given, the deep company, and nobody left behind', () => {
   assert.ok(momentsIn(null, delve({ a: [4], b: [1, 2, 3, 9], c: [] }, { round: 12, revives: [rv('a', 'b', 3), rv('a', 'b', 9)] }), 'a', false).includes('selfless'));
   assert.ok(!momentsIn(null, delve({ a: [4], b: [1, 2, 3] }, { round: 12, revives: [rv('a', 'b', 3)] }), 'a', false).includes('selfless'));
-  assert.ok(momentsIn(null, delve({ a: [10], b: [3, 30, 50] }, { round: 75 }), 'a', false).includes('deep-company'));
-  assert.ok(!momentsIn(null, delve({ a: [10, 30, 70], b: [] }, { round: 75 }), 'a', false).includes('deep-company'), 'not standing');
-  assert.ok(momentsIn(null, delve({ a: [10], b: [5, 20], c: [] }, { round: 30 }), 'a', false).includes('nobody-left'));
-  assert.ok(!momentsIn(null, delve({ a: [], b: [3, 5, 9], c: [] }, { round: 30 }), 'a', false).includes('nobody-left'), 'one lies perished');
-  assert.ok(!momentsIn(null, delve({ a: [], b: [3, 5, 9], c: [] }, { round: 30, revives: [rv('a', 'b', 9)] }), 'a', false).includes('nobody-left'), 'one was brought back');
+  assert.ok(momentsIn(null, delve({ a: [10], b: [3, 30, 50] }, { round: 76 }), 'a', false).includes('deep-company'));
+  assert.ok(!momentsIn(null, delve({ a: [10], b: [3, 30, 50] }, { round: 75 }), 'a', false).includes('deep-company'), 'shown 74');
+  assert.ok(!momentsIn(null, delve({ a: [10, 30, 70], b: [] }, { round: 76 }), 'a', false).includes('deep-company'), 'not standing');
+  assert.ok(momentsIn(null, delve({ a: [10], b: [5, 20], c: [] }, { round: 31 }), 'a', false).includes('nobody-left'));
+  assert.ok(!momentsIn(null, delve({ a: [10], b: [5, 20], c: [] }, { round: 30 }), 'a', false).includes('nobody-left'), 'shown 29');
+  assert.ok(!momentsIn(null, delve({ a: [], b: [3, 5, 9], c: [] }, { round: 31 }), 'a', false).includes('nobody-left'), 'one lies perished');
+  assert.ok(!momentsIn(null, delve({ a: [], b: [3, 5, 9], c: [] }, { round: 31, revives: [rv('a', 'b', 9)] }), 'a', false).includes('nobody-left'), 'one was brought back');
   // Someone who set out has left.
-  const gone = delve({ a: [], b: [] }, { round: 30 });
+  const gone = delve({ a: [], b: [] }, { round: 31 });
   assert.ok(!momentsIn(null, { ...gone, delve: { ...gone.delve!, entrants: ['a', 'b', 'c'] } }, 'a', false).includes('nobody-left'));
 });
 
@@ -313,11 +325,12 @@ test('together: the clear after every other teammate standing struck', () => {
 });
 
 test('together: falling as one, and the lone wolf', () => {
-  const wipe = delve({ a: [5, 9, 20], b: [7, 15, 20], c: [3, 18, 20] }, { round: 20, r: { winnerId: null, correct: false } });
+  // Depth 20 as shown is round 21.
+  const wipe = delve({ a: [5, 9, 21], b: [7, 15, 21], c: [3, 18, 21] }, { round: 21, r: { winnerId: null, correct: false } });
   assert.ok(momentsIn(was(wipe), wipe, 'a', false).includes('fell-as-one'));
-  const shallow = delve({ a: [5, 9, 19], b: [7, 15, 19], c: [3, 18, 19] }, { round: 19, r: { winnerId: null, correct: false } });
+  const shallow = delve({ a: [5, 9, 20], b: [7, 15, 20], c: [3, 18, 20] }, { round: 20, r: { winnerId: null, correct: false } });
   assert.ok(!momentsIn(was(shallow), shallow, 'a', false).includes('fell-as-one'));
-  const two = delve({ a: [5, 9, 20], b: [7, 15, 20], c: [3, 4, 6] }, { round: 20, r: { winnerId: null, correct: false } });
+  const two = delve({ a: [5, 9, 21], b: [7, 15, 21], c: [3, 4, 6] }, { round: 21, r: { winnerId: null, correct: false } });
   assert.ok(!momentsIn(was(two), two, 'a', false).includes('fell-as-one'), 'only two fell on it');
 
   // Teammates down at 25 and 31; clean past 31 to 41.
@@ -327,6 +340,11 @@ test('together: falling as one, and the lone wolf', () => {
   assert.ok(!momentsIn(was(soon), soon, 'a', false).includes('lone-wolf'));
   const hurt = delve({ a: [12, 35], b: [5, 9, 25], c: [6, 20, 31] }, { round: 41, r: { winnerId: 'a' } });
   assert.ok(!momentsIn(was(hurt), hurt, 'a', false).includes('lone-wolf'), 'a life lost on the way');
+  // Teammates down early: it counts from depth 30 as shown (round 31), so ten past it is round 41.
+  const lone = delve({ a: [], b: [5, 9, 10], c: [6, 7, 12] }, { round: 41, r: { winnerId: 'a' } });
+  assert.ok(momentsIn(was(lone), lone, 'a', false).includes('lone-wolf'));
+  const lonely = delve({ a: [], b: [5, 9, 10], c: [6, 7, 12] }, { round: 40, r: { winnerId: 'a' } });
+  assert.ok(!momentsIn(was(lonely), lonely, 'a', false).includes('lone-wolf'));
 });
 
 test('the lone wolf: teammates who left count from where they fell or left', () => {
@@ -542,7 +560,7 @@ test('an achievement once earned stays earned', () => {
 });
 
 test('moments are written as they happen, never quietly, and once', () => {
-  const at50 = delve({ a: [3] }, { round: 50 });
+  const at50 = delve({ a: [3] }, { round: 51 });
   const c = noteState(null, at50, 'a', false);
   assert.deepEqual([ids(c.earned), c.first], [['depth-50'], false]);
   assert.deepEqual(ids(noteState(null, at50, 'a', false).earned), []);

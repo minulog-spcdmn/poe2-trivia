@@ -41,6 +41,15 @@ settings. Everyone plays the exact same rules, so "I reached depth 30" means
 the same thing for everyone.
 - Pick one of three categories and name the item, as in turns mode. Each
   question goes one depth deeper.
+- The depth counts the questions cleared: a run sets out at depth 0, where
+  the banner shows a short line instead ("Your light is borrowed", "Solve
+  et coagula"; over fifty, dealt like a shuffled deck on each device so one
+  only comes back once all the others were seen, and kept for the run
+  through a reload, `src/lib/delveStart.ts`; the open rooms list says
+  "entrance"), and each zone starts on a round number
+  (10, 20, ... 100). Every depth in this section is one as players see it;
+  the code, and the dev tools further down (the lab, the backdrop tool),
+  count one higher (`shownDepth` in `src/lib/delve.ts`).
 - Everyone has **three lives**. A wrong answer or running out of time costs
   one (a miss on an Azurite Vein two, and one on a Dynamite Cache blows up
   something you carry too, see Finds).
@@ -74,21 +83,21 @@ the same thing for everyone.
 - Every depth is a little harder than the one before, and nothing ever
   gets easier. The player isn't told what changes where; they feel it. A
   few things come in steps: four options for the first ten depths, six from
-  11, eight from 31; one made-up name from 5, two from 17, three from 45;
+  10, eight from 30; one made-up name from 4, two from 16, three from 44;
   the timer and the lockout (below). No two steps share a depth. The rest
   rises a little at every depth, never in a jump (no depth moves one by more
-  than 3% of its whole rise), and is at its hardest by depth 90
+  than 3% of its whole rise), and is at its hardest by depth 89
   (`DELVE_CURVES` in `src/lib/delve.ts`):
-  - look-alike names, from depth 2 to all of them at 80, eased out (most of
+  - look-alike names, from depth 1 to all of them at 79, eased out (most of
     the rise comes early, where little else changes);
-  - "find the art" questions, none at depth 1, a percent more with every
-    depth to 60% at 60 (easy while the art is plain, hard once it burns in,
+  - "find the art" questions, none at depth 0, a percent more with every
+    depth to 60% at 59 (easy while the art is plain, hard once it burns in,
     mirrored, gray and among look-alikes);
-  - mirrored pictures, from depth 15 to every picture at 85;
-  - the unveil, from depth 25: its share of the clock from 30% to 80% and its
-    patches from about a 4 × 4 grid's to a 9 × 9 grid's by 90;
+  - mirrored pictures, from depth 14 to every picture at 84;
+  - the unveil, from depth 24: its share of the clock from 30% to 80% and its
+    patches from about a 4 × 4 grid's to a 9 × 9 grid's by 89;
   - grayscale, a chance rolled for each question (all its art without
-    colour, or none) from depth 41 to every question at 90, so the first art
+    colour, or none) from depth 40 to every question at 89, so the first art
     to burn in is in colour.
 
   Look-alike names are a share of the wrong options: a share between two
@@ -96,80 +105,80 @@ the same thing for everyone.
 
   | Depth | Options | Look-alike names | Made up | Find the art | Mirrored | Unveil (share, about a grid of) | Grayscale | Look-alike pictures |
   |---|---|---|---|---|---|---|---|---|
-  | 1 | 4 | none | 0 | none | never | off | never | none |
-  | 10 | 4 | 21% | 1 | 9% | never | off | never | none |
-  | 20 | 6 | 42% | 2 | 19% | 8% | off | never | none |
-  | 25 | 6 | 52% | 2 | 24% | 15% | 31%, 4 × 4 | never | none |
-  | 40 | 8 | 74% | 2 | 40% | 37% | 42%, 5 × 5 | never | none |
-  | 50 | 8 | 86% | 3 | 50% | 51% | 50%, 6 × 6 | 20% | 1% |
-  | 60 | 8 | 94% | 3 | 60% | 65% | 57%, 7 × 7 | 40% | 15% |
-  | 70 | 8 | 98% | 3 | 60% | 79% | 65%, 8 × 8 | 60% | 30% |
-  | 80 | 8 | all | 3 | 60% | 93% | 72%, 8 × 8 | 80% | 44% |
-  | 90 | 8 | all | 3 | 60% | always | 80%, 9 × 9 | always | 58% |
-  | 100 | 8 | all | 3 | 60% | always | 80%, 9 × 9 | always | 72% |
+  | 0 | 4 | none | 0 | none | never | off | never | none |
+  | 10 | 6 | 24% | 1 | 10% | never | off | never | none |
+  | 20 | 6 | 44% | 2 | 20% | 10% | off | never | none |
+  | 24 | 6 | 52% | 2 | 24% | 15% | 31%, 4 × 4 | never | none |
+  | 40 | 8 | 76% | 2 | 41% | 38% | 43%, 5 × 5 | 2% | none |
+  | 50 | 8 | 87% | 3 | 51% | 52% | 50%, 6 × 6 | 22% | 3% |
+  | 60 | 8 | 94% | 3 | 60% | 66% | 58%, 7 × 7 | 42% | 17% |
+  | 70 | 8 | 99% | 3 | 60% | 80% | 66%, 8 × 8 | 62% | 31% |
+  | 80 | 8 | all | 3 | 60% | 94% | 73%, 8 × 8 | 82% | 45% |
+  | 90 | 8 | all | 3 | 60% | always | 80%, 9 × 9 | always | 59% |
+  | 100 | 8 | all | 3 | 60% | always | 80%, 9 × 9 | always | 73% |
 
-  The timer starts at 16 s and loses a second at depths 13, 19, 27, 34, 39,
-  44, 48, 53 and 58 (7 s), then at 78 (6 s) and 96, where it stops at 5 s.
+  The timer starts at 16 s and loses a second at depths 12, 18, 26, 33, 38,
+  43, 47, 52 and 57 (7 s), then at 77 (6 s) and 95, where it stops at 5 s.
   The unveil takes its share of the clock, but never so much that half the
   art comes in with less than 3 s left: on the 6 s and 5 s clocks the art
   burns in faster instead (`veilSeconds` in `src/lib/delve.ts`). The
-  lockout is 2 turns from depth 1, then 3 from 9, 4 from 23, 5 from 37, 6
-  from 66 and 7 from 91.
+  lockout is 2 turns from depth 0, then 3 from 8, 4 from 22, 5 from 36, 6
+  from 65 and 7 from 90.
 
-  The unveil starts with the question's clock. From depth 25 it also takes
-  "find the art" pictures: 1% of those questions at depth 25, one percent
-  more every depth, all of them from depth 124. Each picture is cut much
+  The unveil starts with the question's clock. From depth 24 it also takes
+  "find the art" pictures: 1% of those questions at depth 24, one percent
+  more every depth, all of them from depth 123. Each picture is cut much
   coarser than a whole item (at most 4 × 4), so eight of them stay a few
   dozen patches to send.
-- **Look-alike pictures.** From depth 50 a growing share of questions picks
-  its look-alikes by their art instead of their names (1.4% at 50, as much
-  more every depth, every question from 120): the wrong pictures of "find
+- **Look-alike pictures.** From depth 49 a growing share of questions picks
+  its look-alikes by their art instead of their names (1.4% at 49, as much
+  more every depth, every question from 119): the wrong pictures of "find
   the art" look like the answer's, and the wrong names of "name the item"
   belong to items drawn like it. The answer still sits anywhere in the
   cluster, so the picture that fits the others best doesn't give it away.
   Only the host (or the device, in hot-seat) fetches the look-alike table
   (`src/data/looks.json`, its own chunk of about 27 KiB gzipped), once a run
-  reaches depth 20 (finds ask from up to 20 depths deeper); until it
+  reaches depth 19 (finds ask from up to 20 depths deeper); until it
   arrives, look-alikes go by name.
-- **Endless.** Past depth 100 the rules hold, but from 101 a growing share
-  of name questions gets a fourth made-up name (2% at 101, 2% more every
-  depth, all of them from 150), "find the art" pictures keep burning in
-  more often until depth 124, and look-alike pictures take over until 120.
-- **Finds.** From depth 5 one of the cards on offer is now and then a find:
+- **Endless.** From depth 100 the rules hold, but a growing share of name
+  questions gets a fourth made-up name (2% at 100, 2% more every depth, all
+  of them from 149), "find the art" pictures keep burning in more often
+  until depth 123, and look-alike pictures take over until 119.
+- **Finds.** From depth 4 one of the cards on offer is now and then a find:
   pick it and answer right for an item. Its question is a bit harder (that
   of 15 to 20 depths deeper, with its shorter clock), and each find has a
   risk of its own, so taking one is a choice to weigh: the Vein caves in,
   the Flare Cache gives less time, the Dynamite Cache blows up something
   you carry. The card shows only the find's name, and the note under the
   cards says what the item does and what the find risks. Each find's chance rises evenly from its first
-  depth to depth 50 and holds there (the Vein 4% to 11%, the Dynamite
-  Cache 4% to 9%, the Flare Cache 4% to 13%), so from 50 about one offer
-  in three holds a find. Past 100 they grow scarcer a little with every
-  depth, down to half their chance at 200 (the Vein to a third, as a ward
+  depth to depth 49 and holds there (the Vein 4% to 11%, the Dynamite
+  Cache 4% to 9%, the Flare Cache 4% to 13%), so from 49 about one offer
+  in three holds a find. From 100 they grow scarcer a little with every
+  depth, down to half their chance at 199 (the Vein to a third, as a ward
   takes a whole loss), and hold there: about one offer in seven.
   - An offer that holds a find rolls once more for a second, of another
     kind and on another card, at half its chance; never a third. Two side
-    by side are rare early on (about 1 offer in 500 at depth 10, 1 in 100
-    at 20) and about 1 offer in 28 from depth 50.
+    by side are rare early on (about 1 offer in 500 at depth 9, 1 in 100
+    at 19) and about 1 offer in 28 from depth 49.
   - A find is never offered for an item nobody could carry more of: alone,
     you; together, anyone standing.
   - A right answer sends sparks in the find's colour from the answer to
     the item's slot (its ward's chamber, or the flare's or dynamite's place
     beside the phial).
-  - An **Azurite Vein** (from depth 5): a right answer within the first half
+  - An **Azurite Vein** (from depth 4): a right answer within the first half
     of its clock mines an **Azurite Ward**, which takes your next lost life
     instead; a slower one a shard (two make a ward; with three wards you
     hold no shard). A wrong answer or a time-out on a vein caves in, with
     a sound of its own: it costs two lives, a ward taking each loss first
     if you hold one (on your last life you simply fall).
-  - A **Flare Cache** (from depth 15) gives a **flare**: time later for time
+  - A **Flare Cache** (from depth 14) gives a **flare**: time later for time
     now, as its own question has 3 s less on the clock than its deeper
     depth's (never under 3 s; on a clock that short no art burns in, as half
     of it could never be in with 3 s left). When your clock hits 0 a flare
     burns by itself, with a signal flare's hiss, and gives you 5 s more
     (once a question). An answer at any time before that keeps it; a guest's
     answer still on its way when it burns gives it back.
-  - A **Dynamite Cache** (from depth 10) gives **dynamite**. Halfway through
+  - A **Dynamite Cache** (from depth 9) gives **dynamite**. Halfway through
     your clock (rounded up to a whole second) a stick goes off by itself
     (once a question): the art shows plain (in colour, unmirrored and whole)
     and half of all the options are blown away, every one of them wrong (4
@@ -229,24 +238,24 @@ the same thing for everyone.
     it.") and what it cost whom ("The darkness took Brea and Cara."),
     leaving a single lost life to the phial.
 - Every ten depths the descent enters a new zone, named after a Delve biome
-  and a place of its own: lamps guttering in the Mines (1 to 10), glowing
-  cracks and heat shimmer in Magma Fissure (11; over its last depths the
+  and a place of its own: lamps guttering in the Mines (0 to 9), glowing
+  cracks and heat shimmer in Magma Fissure (10; over its last depths the
   magma cools, its glow dimming to a dull dark red and its flow slowing to
   a stop as Frozen Hollow arrives), rime feathering in from the walls, a
   cold mist low over the floor and pale light from above in Frozen Hollow
-  (21), faint bioluminescence breathing in the damp, mycelial threads and a
-  spore haze in Fungal Caverns (31), dusty gold shafts in
-  Vaal Outpost (41), coiling violet eddies in Abyssal Depths (51), stone
-  trunks in drifting mist in Petrified Forest (61), billowing vapour in
-  Sulphur Vents (71), far cold lights in Abyssal City (81) and white-hot
-  fire in Primeval Ruins (91). Each has its own light, smoke (four
+  (20), faint bioluminescence breathing in the damp, mycelial threads and a
+  spore haze in Fungal Caverns (30), dusty gold shafts in
+  Vaal Outpost (40), coiling violet eddies in Abyssal Depths (50), stone
+  trunks in drifting mist in Petrified Forest (60), billowing vapour in
+  Sulphur Vents (70), far cold lights in Abyssal City (80) and white-hot
+  fire in Primeval Ruins (90). Each has its own light, smoke (four
   neighbouring hues that mix as they drift, as on the start page), embers
   (their colour and how many, all moving one way of the zone's own: dust
   drifting down and a rare lamp spark in the Mines, embers rising fast on
   the heat, snow drifting down, spores hanging in slow curls, motes settling,
   motes spiralling into the eddies, stone dust falling, puffs rising in
-  gusts, cold motes drifting, strong sparks flying up) and glints. Depth 1 is
-  already the Mines; the surface is the start page. Past 100 the descent
+  gusts, cold motes drifting, strong sparks flying up) and glints. Depth 0 is
+  already the Mines; the surface is the start page. From 100 the descent
   goes on for ever, each new zone one of twelve archetypes, moods with a
   vibe of their own (a drowned temple: pale shafts and fog in cold teal
   light; an ember forge: fire and lamps in slate smoke; a void bloom, a
@@ -259,7 +268,7 @@ the same thing for everyone.
   the Primeval Ruins), generated from a
   seed of its own, the same for everyone, and named from its archetype's
   names ("The Drowned Nave", "Ashen Reliquary"), none twice in the first
-  fifty past 100, never the same twice in a row.
+  fifty from 100, never the same twice in a row.
 - Each zone hands over to the next gradually, over seven depths from its
   5th depth to the next zone's 2nd, on an eased curve: slow to begin,
   quickest toward the zone's end, slow to settle, never a straight ramp.
@@ -291,7 +300,7 @@ the same thing for everyone.
 - As a question's clock runs out the dark draws the light in and dims the
   scene (never the panels or text), lifting at the reveal or when a flare
   burns. The ambience, a hearth fire, sinks with the depth, over a slow
-  rumble. Each zone, and past depth 100 each kind of place, lays a bed of
+  rumble. Each zone, and from depth 100 each kind of place, lays a bed of
   its own under it and keeps as much of the fire as suits it; the beds
   cross-fade as the scene turns, in step with its light. Leaving a
   run, or rejoining deep down, fades straight to the scene it's going to
@@ -630,9 +639,10 @@ Everything is drawn in WebGL2 with float precision and dithered once at the
   The ten zones' looks, each with its embers' motion (a profile of
   `src/lib/emberProfiles.ts`, tweaked), live in `src/data/backdrops.json`
   (read by `src/lib/backdrops.ts`; the shapes and the check are in
-  `src/lib/backdropData.ts`), which the backdrop tool edits. Past depth 100
-  every stratum is generated (`src/lib/backdropGen.ts`, `generateStratum`,
-  pure and seeded): stratum k is an archetype of `src/lib/archetypes.ts`
+  `src/lib/backdropData.ts`), which the backdrop tool edits. Past the ten
+  zones (from depth 100 as players count it) every stratum is generated
+  (`src/lib/backdropGen.ts`, `generateStratum`, pure and seeded): stratum k
+  is an archetype of `src/lib/archetypes.ts`
   (its effects, palette schemes, embers, character and names), dealt out a
   round at a time by the endgame seed (`archetypeAt` in
   `src/lib/backdrops.ts`: every archetype once a round, none twice in a
@@ -727,7 +737,7 @@ npm run looks
 
 It writes `src/data/looks.json`: for every item, the twelve items of its
 group whose art looks most like it, each with a score from 0 to 1 (silhouette,
-edges and colour, mirror-blind; see `scripts/looks.mjs`). From depth 50 in Delve,
+edges and colour, mirror-blind; see `scripts/looks.mjs`). From depth 49 in Delve,
 decoys are picked from it (`src/lib/looks.ts`). The output only changes when
 the art does; items added without rerunning it just have no look-alikes.
 
