@@ -14,6 +14,32 @@
 
   /** A flare or stick a blast just destroyed: it stays to crumble, its count already one down. */
   const blown = $derived(moment?.kind === 'blown' ? moment.item : null);
+  /**
+   * Its tooltip in the browser's top layer (a popover), over everything,
+   * the effects layer's light included, placed under the count; only for a
+   * mouse. Where popovers aren't supported it shows in place on hover (CSS).
+   */
+  function tipOnHover(count: HTMLElement) {
+    const tip = count.querySelector<HTMLElement>('.tip');
+    if (!tip || typeof tip.showPopover !== 'function') return;
+    const show = (e: PointerEvent) => {
+      if (e.pointerType !== 'mouse') return;
+      const r = count.getBoundingClientRect();
+      tip.style.left = `${r.left + r.width / 2}px`;
+      tip.style.top = `${r.bottom + 7}px`;
+      if (!tip.matches(':popover-open')) tip.showPopover();
+    };
+    const hide = () => tip.matches(':popover-open') && tip.hidePopover();
+    count.addEventListener('pointerenter', show);
+    count.addEventListener('pointerleave', hide);
+    return {
+      destroy() {
+        count.removeEventListener('pointerenter', show);
+        count.removeEventListener('pointerleave', hide);
+        hide();
+      },
+    };
+  }
   const counts = $derived(inv.flares > 0 || inv.dynamite > 0 || moment?.kind === 'burn' || moment?.kind === 'blast' || blown === 'flares' || blown === 'dynamite' || !!expect);
 </script>
 
@@ -28,12 +54,13 @@
         class:left={inv.flares > 0}
         class:kept={expect === 'flare' && inv.flares === 0}
         data-pip="flare"
+        use:tipOnHover
       >
         {#key moment?.kind === 'flare' || moment?.kind === 'burn' || blown === 'flares' ? moment?.key : 0}
           <span class="grow"><ItemGlyph kind="flare" /></span>
         {/key}
         <b>{inv.flares}</b>
-        <span class="tip flare-tip">{ITEM_TIPS.flares}</span>
+        <span class="tip flare-tip" popover="manual"><strong>{ITEM_TIPS.flares.name}</strong>{ITEM_TIPS.flares.text}</span>
       </span>
     {/if}
     {#if inv.dynamite > 0 || moment?.kind === 'blast' || blown === 'dynamite' || expect === 'dynamite'}
@@ -46,12 +73,13 @@
         class:left={inv.dynamite > 0}
         class:kept={expect === 'dynamite' && inv.dynamite === 0}
         data-pip="dynamite"
+        use:tipOnHover
       >
         {#key moment?.kind === 'dynamite' || moment?.kind === 'blast' || blown === 'dynamite' ? moment?.key : 0}
           <span class="grow"><ItemGlyph kind="dynamite" /></span>
         {/key}
         <b>{inv.dynamite}</b>
-        <span class="tip dynamite-tip">{ITEM_TIPS.dynamite}</span>
+        <span class="tip dynamite-tip" popover="manual"><strong>{ITEM_TIPS.dynamite.name}</strong>{ITEM_TIPS.dynamite.text}</span>
       </span>
     {/if}
   </span>
@@ -87,16 +115,16 @@
     left: 50%;
     translate: -50% 0;
     width: max-content;
-    max-width: 15rem;
-    padding: 0.35em 0.6em 0.4em;
+    max-width: 16rem;
+    padding: 0.45em 0.7em 0.5em;
     font-family: var(--font-body);
-    font-size: 0.82rem;
+    font-size: 1rem;
     font-weight: 400;
     line-height: 1.3;
     text-align: left;
     white-space: normal;
     color: var(--text);
-    background: rgba(16, 12, 9, 0.96);
+    background: #100c09;
     border: 1px solid color-mix(in srgb, var(--tip) 55%, transparent);
     border-radius: 4px;
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
@@ -106,6 +134,17 @@
       opacity 0.15s,
       transform 0.15s var(--ease-out);
     pointer-events: none;
+  }
+  /* Its name first, in its colour, as the finds are named on the rules page. */
+  .tip strong {
+    display: block;
+    margin-bottom: 0.2em;
+    font-family: var(--font-display);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--tip);
   }
   .flare-tip {
     --tip: #f7a3b3;
@@ -117,6 +156,15 @@
     z-index: 5;
   }
   .count:hover .tip {
+    opacity: 1;
+    transform: none;
+  }
+  /* In the top layer: fixed under the count (tipOnHover sets left and top). */
+  .tip:popover-open {
+    position: fixed;
+    inset: auto;
+    margin: 0;
+    overflow: visible;
     opacity: 1;
     transform: none;
   }

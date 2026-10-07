@@ -115,6 +115,17 @@ body {
   color: var(--text);
   -webkit-font-smoothing: antialiased;
   overflow-x: hidden;
+  /* A game, not a document: taps and drags never select its text. What a
+     player types stays selectable, and anything meant to be copied says so
+     (user-select: text or all where it is set). */
+  -webkit-user-select: none;
+  user-select: none;
+}
+input,
+textarea,
+[contenteditable] {
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 #app {
