@@ -188,11 +188,11 @@ export default defineConfig(({ mode }) => {
           main: 'index.html',
           impressum: 'impressum.html',
           datenschutz: 'datenschutz.html',
-          // The effects lab (src/lab), the backdrop tool (src/backdropTool)
-          // and the zone gate's tuning page (src/zonebanner): the dev server
-          // serves them by itself; of the builds only the beta has them,
-          // never the live game.
-          ...(env.VITE_CHANNEL === 'beta' ? { lab: 'lab.html', backdrop: 'backdrop.html', zones: 'zones.html' } : {}),
+          // The effects lab (src/lab), the backdrop tool (src/backdropTool),
+          // the zone gate's tuning page (src/zonebanner) and the descent's
+          // example page (src/descentPreview): the dev server serves them by
+          // itself; of the builds only the beta has them, never the live game.
+          ...(env.VITE_CHANNEL === 'beta' ? { lab: 'lab.html', backdrop: 'backdrop.html', zones: 'zones.html', descent: 'descent.html' } : {}),
         },
       },
     },
