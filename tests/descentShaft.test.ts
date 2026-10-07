@@ -1,6 +1,13 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
+  DELVE_MIN_TIMER,
+  FINDS_FROM,
+  delveTimer,
+  shownDepth,
+} from "../src/lib/delve.ts";
+import {
+  depthLabel,
   LAST,
   NUM_RISE,
   OUT,
@@ -14,9 +21,27 @@ import {
   ZONES,
 } from "../src/lib/descentShaft.ts";
 
+/** The first depth on the shortest clock (internal), as the component finds it. */
+const FAST_FROM = Array.from({ length: 200 }, (_, i) => i + 1).find(
+  (d) => delveTimer(d) <= DELVE_MIN_TIMER,
+)!;
 const layouts = [184, 281, 329].map((w) =>
-  shaftLayout(w, w < 250 ? 218 : 216, "three", 5, 96, 16, 5),
+  shaftLayout(
+    w,
+    w < 250 ? 218 : 216,
+    "three",
+    FINDS_FROM,
+    FAST_FROM,
+    delveTimer(1),
+    DELVE_MIN_TIMER,
+  ),
 );
+/** A note's words as one string, its lines joined by a space. */
+const say = (L: (typeof layouts)[number], id: string) =>
+  L.notes
+    .find((n) => n.id === id)!
+    .lines.map((line) => line.map((r) => r.text).join(""))
+    .join(" ");
 
 describe("the descent shaft", () => {
   for (const L of layouts) {
@@ -74,7 +99,68 @@ describe("the descent shaft", () => {
         }
       }
     });
+
+    it(`says its depths as a player reads them (${L.w} px)`, () => {
+      assert.ok(
+        say(L, "finds").endsWith(` ${shownDepth(FINDS_FROM)}`),
+        say(L, "finds"),
+      );
+      assert.equal(shownDepth(FINDS_FROM), 4);
+      assert.ok(
+        say(L, "clock").includes(` ${shownDepth(FAST_FROM)};`),
+        say(L, "clock"),
+      );
+      assert.equal(shownDepth(FAST_FROM), 95);
+      assert.ok(say(L, "zones").includes("every 10"), say(L, "zones"));
+      assert.equal(say(L, "endless"), `endless from ${shownDepth(LAST + 1)}`);
+      assert.equal(shownDepth(LAST + 1), 100);
+      // The finds note still stands at the depth it speaks of (internal 5, in the first zone's band).
+      const finds = L.notes.find((n) => n.id === "finds")!;
+      assert.ok(Math.abs(finds.y - starAt(L, FINDS_FROM).p[1]) < 5);
+    });
+
+    it(`stops the surface short of the lives rather than underlining them (${L.w} px)`, () => {
+      const lives = L.notes.find((n) => n.id === "lives")!;
+      const [x0, x1] = [
+        lives.x - Math.max(...lives.lines.map(textWidth)),
+        lives.x,
+      ];
+      // On the line's level, not above it with the line running under: no piece of the surface spans the words.
+      assert.ok(Math.abs(lives.y - L.S) < 4);
+      for (const p of L.surface) {
+        const xs = [...p.d.matchAll(/[ML](-?[\d.]+) (-?[\d.]+)/g)].map((m) =>
+          Number(m[1]),
+        );
+        const [a, b] = [Math.min(...xs), Math.max(...xs)];
+        assert.ok(
+          b <= x0 + 0.01 || a >= x1 + 2,
+          `surface ${a}-${b} under the lives ${x0}-${x1}`,
+        );
+      }
+      // The ground still runs from the words to the mouth.
+      const starts = L.surface.map((p) => Number(/^M(-?[\d.]+)/.exec(p.d)![1]));
+      assert.ok(starts.some((x) => x > x1 && x < L.X));
+    });
   }
+
+  it("sets the star's depth as a player reads it: one less than the internal depth", () => {
+    assert.equal(depthLabel(null), null);
+    assert.equal(depthLabel(0), null);
+    // A run that ended at the first depth reads 0, its star in the first zone.
+    assert.equal(depthLabel(1), "0");
+    // Internal 10 and 11 read 9 and 10: the first zone's last depth, the second zone's first.
+    const L = layouts[1];
+    assert.equal(depthLabel(10), "9");
+    assert.equal(starAt(L, 10).zone, 0);
+    assert.equal(depthLabel(11), "10");
+    assert.equal(starAt(L, 11).zone, 1);
+    assert.equal(depthLabel(100), "99");
+    assert.equal(starAt(L, 100).zone, 9);
+    // Internal 101 reads 100, past the zones.
+    assert.equal(depthLabel(101), "100");
+    assert.equal(starAt(L, 101).at, "past");
+    assert.equal(depthLabel(999), "998");
+  });
 
   it("lights the ouroboros only past 100, more the deeper", () => {
     assert.equal(serpentLight(null), 0);

@@ -1,8 +1,8 @@
 <script lang="ts">
   import { onDestroy, untrack } from 'svelte';
   import { star8 } from '../../lib/arcane';
-  import { DELVE_LIVES, DELVE_MIN_TIMER, FINDS_FROM, delveTimer } from '../../lib/delve';
-  import { bestDepth, f, keyRows, labelSpot, layout, serpentLit, starPoint, station, zoneIndex, zonesReached, ZONES_END, type Box } from '../../lib/descentSpiral';
+  import { DELVE_LIVES, DELVE_MIN_TIMER, FINDS_FROM, delveTimer, shownDepth } from '../../lib/delve';
+  import { bestDepth, bestLabel, ENDLESS_FROM, f, keyRows, labelSpot, layout, serpentLit, starPoint, station, zoneIndex, zonesReached, ZONES_END, type Box } from '../../lib/descentSpiral';
 
   // The descent, engraved as a spiral (lib/descentSpiral draws it): a track
   // winding inward from Sol at the mouth, ten stretches for the ten zones,
@@ -23,6 +23,8 @@
   let w = $state(0);
   const L = $derived(w > 0 ? layout(w) : null);
   const best = $derived(bestDepth(deepest));
+  /** The number by the star as a player reads it (shownDepth): 0 for a run that ended at the first depth. */
+  const label = $derived(bestLabel(deepest));
   const reached = $derived(zonesReached(deepest));
   const here = $derived(zoneIndex(deepest));
   const rows = $derived(keyRows(deepest));
@@ -74,10 +76,10 @@
   const starAt = $derived(pos ?? [0, 0]);
   /** The number's width at its size (Cinzel's figures are about 0.68 em). */
   const NUM = 10.5;
-  const numW = $derived(best === null ? 0 : String(best).length * NUM * 0.7 + 1);
+  const numW = $derived(label === null ? 0 : label.length * NUM * 0.7 + 1);
   let lastSpot: number | null = null;
   const spot = $derived.by((): Box | null => {
-    if (!L || !pos || best === null) return null;
+    if (!L || !pos || label === null) return null;
     if (q > 1) {
       // Past the zones: under the serpent, below the star.
       const s = L.serpent;
@@ -97,15 +99,15 @@
 
   const summary = $derived(
     [
-      'The descent: a spiral of ten zones, ten depths each, then on without end past 100.',
+      `The descent: a spiral of ten zones, ten depths each, then on without end from ${ENDLESS_FROM}.`,
       reached === 0
         ? 'All ten zones are uncharted.'
         : `Zones reached: ${rows
             .filter((r) => r.reached)
             .map((r) => r.name)
             .join(', ')}${uncharted ? `; ${uncharted} more uncharted` : ''}.`,
-      best !== null ? `Your deepest: depth ${best}.` : 'No run yet.',
-      `A new zone every ten depths. ${LIVES} lives each; finds from depth ${FINDS_FROM}. ${delveTimer(1)} seconds to answer at the top, ${DELVE_MIN_TIMER} from depth ${SHORTEST}; the questions grow trickier.`,
+      label !== null ? `Your deepest: depth ${label}.` : 'No run yet.',
+      `A new zone every ten depths. ${LIVES} lives each; finds from depth ${shownDepth(FINDS_FROM)}. ${delveTimer(1)} seconds to answer at the top, ${DELVE_MIN_TIMER} from depth ${shownDepth(SHORTEST)}; the questions grow trickier.`,
     ].join(' '),
   );
 </script>
@@ -183,7 +185,7 @@
           {#each rows as r, k (k)}
             {@const y = (k + 1) * L.key.pitch - 3}
             <g class="row" class:on={r.reached} class:here={here === k} style:--c={r.color ?? 'transparent'} style:--d={sec(L.zones[k].at + 0.1)}>
-              <text class="from" x="17" y={f(y)}>{r.from}</text>
+              <text class="from" x="17" y={f(y)}>{r.shown}</text>
               {#if r.reached}<text class="name" x="23" y={f(y)}>{r.name}</text>{/if}
             </g>
           {/each}
@@ -193,7 +195,7 @@
             <text class="uncharted" x="27.5" y={f((bracket[0] + bracket[1]) / 2 + 3.6)}>uncharted</text>
           </g>
           <g class="past" class:on={beyond} style:--d={sec(L.trackDone + 0.2)}>
-            <text class="from" x="17" y={f(11 * L.key.pitch + 1)}>{ZONES_END + 1}</text>
+            <text class="from" x="17" y={f(11 * L.key.pitch + 1)}>{ENDLESS_FROM}</text>
             <text class="on-and-on" x="23" y={f(11 * L.key.pitch + 1)}>on, without end</text>
           </g>
         </g>
@@ -209,15 +211,15 @@
             <path class="star-ridge" d={star?.ridges} />
           </g>
         </g>
-        <text class="best" x={f(spot ? spot[0] + spot[2] / 2 : starAt[0])} y={f(spot ? spot[1] + spot[3] : starAt[1])}>{best ?? ''}</text>
+        <text class="best" x={f(spot ? spot[0] + spot[2] / 2 : starAt[0])} y={f(spot ? spot[1] + spot[3] : starAt[1])}>{label ?? ''}</text>
       </svg>
     </div>
 
     <ul class="notes">
       <li>A new zone every ten depths, named once you reach it.</li>
-      <li>{LIVES} lives each; finds from depth <span class="fig">{FINDS_FROM}</span>.</li>
+      <li>{LIVES} lives each; finds from depth <span class="fig">{shownDepth(FINDS_FROM)}</span>.</li>
       <li>
-        <span class="fig">{delveTimer(1)}</span>&#8239;s to answer at the top, <span class="fig">{DELVE_MIN_TIMER}</span>&#8239;s from depth <span class="fig">{SHORTEST}</span>; the questions grow
+        <span class="fig">{delveTimer(1)}</span>&#8239;s to answer at the top, <span class="fig">{DELVE_MIN_TIMER}</span>&#8239;s from depth <span class="fig">{shownDepth(SHORTEST)}</span>; the questions grow
         trickier.
       </li>
     </ul>

@@ -12,6 +12,7 @@
 // serpentLight), so a new deepest moves the star and nothing is drawn again.
 
 import { at, seeded, type Cut, type Pt } from "./arcane.ts";
+import { shownDepth } from "./delve.ts";
 import { STRATA } from "./descent.ts";
 
 export const f = (v: number) => v.toFixed(2);
@@ -42,6 +43,11 @@ export const bestOf = (deepest: number | null | undefined) =>
   deepest && Number.isFinite(deepest) && deepest >= 1
     ? Math.floor(deepest)
     : null;
+/** The number set over the star: the best run as a player reads it (shownDepth, so 0 at the first depth), or null (no run yet). */
+export const depthLabel = (deepest: number | null | undefined) => {
+  const best = bestOf(deepest);
+  return best === null ? null : String(shownDepth(best));
+};
 /** How many zones a best run of `deepest` has reached (a zone is reached at its first depth). */
 export const reachedOf = (deepest: number | null | undefined) => {
   const best = bestOf(deepest);
@@ -577,6 +583,14 @@ const NAME_W = 70;
 const TOP = 15;
 /** The notes' line height. */
 export const NOTE_LINE = 13;
+/**
+ * The lives' baseline, from the surface (up, negative): set at the line's level, the line stopping short of the
+ * words rather than running under them like an underline. Just above it, so that nothing reaches down toward
+ * the first zone's name set close under the surface, and no higher, so the drawing grows no taller.
+ */
+export const LIVES_DROP = -1.5;
+/** How far a line stops short of the words set in it. */
+const WORD_GAP = 4;
 
 /** A note: a line or a few, each a run of words (italic) and figures (Cinzel), its first baseline at `y`. */
 export type Run = { text: string; num?: boolean };
@@ -641,7 +655,10 @@ export function starAt(
   };
 }
 
-/** The drawing for a box `w` × `h` px. */
+/**
+ * The drawing for a box `w` × `h` px. `findsFrom` and `fastFrom` are internal depths (from 1): they place the
+ * notes; the notes say them as a player reads them (shownDepth), as they do the strata past the zones.
+ */
 export function shaftLayout(
   w: number,
   h: number,
@@ -697,14 +714,14 @@ export function shaftLayout(
     ? [
         {
           id: "lives",
-          y: S - 4,
+          y: S + LIVES_DROP,
           lines: [[n(`${lives} lives each`)]],
           by: "surface",
         },
         {
           id: "finds",
           y: yOf(findsFrom) + BASE,
-          lines: [[n("finds from depth "), num(String(findsFrom))]],
+          lines: [[n("finds from depth "), num(String(shownDepth(findsFrom)))]],
         },
         {
           id: "zones",
@@ -716,28 +733,32 @@ export function shaftLayout(
           y: S + band * 6 + BASE - 1,
           lines: [
             [...secs(startSecs, " to answer at first,")],
-            [...secs(endSecs, " from depth "), num(String(fastFrom)), n(";")],
+            [
+              ...secs(endSecs, " from depth "),
+              num(String(shownDepth(fastFrom))),
+              n(";"),
+            ],
             [n("trickier the deeper")],
           ],
         },
         {
           id: "endless",
           y: cy + BASE,
-          lines: [[n("endless past "), num(String(LAST))]],
+          lines: [[n("endless from "), num(String(shownDepth(LAST + 1)))]],
           by: "serpent",
         },
       ]
     : [
         {
           id: "lives",
-          y: S - 4,
+          y: S + LIVES_DROP,
           lines: [[n(`${lives} lives each`)]],
           by: "surface",
         },
         {
           id: "finds",
           y: yOf(findsFrom) + BASE,
-          lines: [[n("first finds at "), num(String(findsFrom))]],
+          lines: [[n("first finds at "), num(String(shownDepth(findsFrom)))]],
         },
         {
           id: "zones",
@@ -749,14 +770,21 @@ export function shaftLayout(
           y: S + band * 6 + BASE - 1,
           lines: [
             [...secs(startSecs, " at first,")],
-            [...secs(endSecs, " from "), num(String(fastFrom)), n(";")],
+            [
+              ...secs(endSecs, " from "),
+              num(String(shownDepth(fastFrom))),
+              n(";"),
+            ],
             [n("trickier deeper")],
           ],
         },
         {
           id: "endless",
           y: cy - NOTE_LINE / 2 + BASE,
-          lines: [[n("endless")], [n("past "), num(String(LAST))]],
+          lines: [
+            [n("endless")],
+            [n("from "), num(String(shownDepth(LAST + 1)))],
+          ],
           by: "serpent",
         },
       ];
@@ -792,16 +820,28 @@ export function shaftLayout(
         },
   );
 
-  // The surface, broken at the mouth.
+  // The surface, broken at the mouth, and left of it where the lives are set in it: it stops short of their words
+  // on either side rather than running under them (on beyond them only if long enough to read as ground, not a dash).
+  const livesNote = notes.find((n) => n.id === "lives");
+  const livesW = livesNote ? Math.max(...livesNote.lines.map(textWidth)) : 0;
+  const livesCut: Hole[] = livesNote
+    ? [{ box: [livesNote.x - livesW, S - 20, livesNote.x + WORD_GAP, S + 20] }]
+    : [];
+  // Where the cut ends along the left part (from the mouth out), and whether what is left beyond it is long enough to keep.
+  // (No gap is added left of them: the estimated width already runs a few px wide, measured 66 for 70.)
+  const stub = livesNote ? livesNote.x - livesW - 2 : Infinity;
+  const stubFrom = 1 - stub / (X - WALL - 1.4 - 2);
   const surface = [
     ...pieces(
       [
         [X - WALL - 1.4, S],
         [2, S],
       ],
-      [],
+      livesCut,
       wearSeed(3),
-    ).map((p) => ({ ...p, from: p.from / 2, to: p.to / 2 })),
+    )
+      .filter((p) => stub >= 20 || p.from < stubFrom - 1e-6)
+      .map((p) => ({ ...p, from: p.from / 2, to: p.to / 2 })),
     ...pieces(
       [
         [X + WALL + 1.4, S],

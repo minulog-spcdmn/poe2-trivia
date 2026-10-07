@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { keyRows, labelSpot, layout, serpentLit, starPoint, station, zoneIndex, zonesReached, ZONE_COUNT } from '../src/lib/descentSpiral.ts';
+import { shownDepth } from '../src/lib/delve.ts';
+import { bestLabel, ENDLESS_FROM, keyRows, labelSpot, layout, serpentLit, starPoint, station, zoneIndex, zonesReached, ZONE_COUNT, ZONES_END } from '../src/lib/descentSpiral.ts';
 
 const L = layout(281);
 const m = L.margin;
@@ -53,6 +54,35 @@ test('no zone is named or coloured before it is reached', () => {
     keyRows(null).map((r) => r.from),
     [1, 11, 21, 31, 41, 51, 61, 71, 81, 91],
   );
+});
+
+test('the key and the star say depths as a player reads them, one less than the internal depth', () => {
+  // The key's rows by each zone's first depth as shown, the endless row from 100.
+  assert.deepEqual(
+    keyRows(null).map((r) => r.shown),
+    [0, 10, 20, 30, 40, 50, 60, 70, 80, 90],
+  );
+  assert.ok(keyRows(37).every((r) => r.shown === shownDepth(r.from)));
+  assert.equal(ENDLESS_FROM, shownDepth(ZONES_END + 1));
+  assert.equal(ENDLESS_FROM, 100);
+  // The number by the star: none before a run, 0 for a run that ended at the first depth.
+  assert.equal(bestLabel(null), null);
+  assert.equal(bestLabel(0), null);
+  assert.equal(bestLabel(1), '0');
+  assert.equal(zoneIndex(1), 0);
+  // Internal 10 and 11 read 9 and 10: the first zone's last depth, the second zone's first.
+  assert.equal(bestLabel(10), '9');
+  assert.equal(zoneIndex(10), 0);
+  assert.equal(bestLabel(11), '10');
+  assert.equal(zoneIndex(11), 1);
+  assert.equal(keyRows(11)[1].shown, 10);
+  assert.equal(bestLabel(100), '99');
+  assert.equal(zoneIndex(100), 9);
+  // Internal 101 reads 100, beyond the zones, in the serpent.
+  assert.equal(bestLabel(101), '100');
+  assert.equal(zoneIndex(101), ZONE_COUNT);
+  assert.ok(station(101, m) > 1);
+  assert.equal(bestLabel(999), '998');
 });
 
 test('the star’s number never lands on a gate, Sol or the serpent, at any width', () => {

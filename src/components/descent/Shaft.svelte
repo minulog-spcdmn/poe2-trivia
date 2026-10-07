@@ -1,8 +1,9 @@
 <script lang="ts">
   import { star8 } from '../../lib/arcane';
-  import { DELVE_LIVES, DELVE_MIN_TIMER, FINDS_FROM, delveTimer } from '../../lib/delve';
+  import { DELVE_LIVES, DELVE_MIN_TIMER, FINDS_FROM, delveTimer, shownDepth } from '../../lib/delve';
   import {
     bestOf,
+    depthLabel,
     f,
     glory,
     LAST,
@@ -46,6 +47,8 @@
 
   const L = $derived(w > 0 && h > 0 ? shaftLayout(w, h, LIVES, FINDS_FROM, FAST_FROM, START, DELVE_MIN_TIMER) : null);
   const best = $derived(bestOf(deepest));
+  /** The depth over the star as a player reads it (shownDepth): 0 for a run that ended at the first depth. */
+  const label = $derived(depthLabel(deepest));
   const reached = $derived(reachedOf(deepest));
   const star = $derived(L ? starAt(L, deepest) : null);
   const lit = $derived(serpentLight(deepest));
@@ -53,8 +56,8 @@
   /** A reached zone's sigil, wide: its radius. */
   const SIGIL_R = 5.6;
   const GLORY = glory();
-  /** The depth over the star: in the shaft it has the lining's width (100 just fits); past 100 it is set under the shaft, where there is room. */
-  const depthSize = $derived(best === null ? 11 : best === LAST ? 10 : best < 1000 ? 11 : 10);
+  /** The depth over the star: in the shaft it has the lining's width (99 fits at full size); past the zones it is set under the shaft, where there is room. */
+  const depthSize = $derived(label === null || label.length < 4 ? 11 : 10);
 
   /** The zones not reached yet, under one bracket. */
   const uncharted = $derived.by(() => {
@@ -86,7 +89,7 @@
   const summary = $derived(
     [
       'The descent: ten zones of ten depths, then on without end.',
-      `${LIVES[0].toUpperCase() + LIVES.slice(1)} lives each; finds from depth ${FINDS_FROM}; ${START} seconds to answer at first, ${DELVE_MIN_TIMER} from depth ${FAST_FROM}, and trickier questions the deeper you go.`,
+      `${LIVES[0].toUpperCase() + LIVES.slice(1)} lives each; finds from depth ${shownDepth(FINDS_FROM)}; ${START} seconds to answer at first, ${DELVE_MIN_TIMER} from depth ${shownDepth(FAST_FROM)}, and trickier questions the deeper you go.`,
       reached === 0
         ? 'All ten zones are uncharted.'
         : reached === ZONES.length
@@ -94,7 +97,7 @@
           : `Zones reached: ${ZONES.slice(0, reached)
               .map((z) => z.name)
               .join(', ')}; ${words(ZONES.length - reached)} more uncharted.`,
-      best ? `Your deepest: depth ${best}${best > LAST ? ', past the zones' : ''}.` : 'No run yet.',
+      best ? `Your deepest: depth ${shownDepth(best)}${best > LAST ? ', past the zones' : ''}.` : 'No run yet.',
     ].join(' '),
   );
 </script>
@@ -214,8 +217,8 @@
           <path class="star-line" d={STAR.outline} />
           <path class="star-ridge" d={STAR.ridges} />
         </g>
-        {#if best}
-          <text class="depth" y={f(-NUM_RISE)} style:font-size="{depthSize}px" style:letter-spacing={best < 100 ? null : '0'} style:--d={late(STAR_AT + 0.25)}>{best}</text>
+        {#if label !== null}
+          <text class="depth" y={f(-NUM_RISE)} style:font-size="{depthSize}px" style:letter-spacing={label.length < 3 ? null : '0'} style:--d={late(STAR_AT + 0.25)}>{label}</text>
         {/if}
       </g>
     </svg>

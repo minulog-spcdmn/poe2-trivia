@@ -12,6 +12,7 @@
 // Angles run clockwise from the top (lib/arcane's `at`).
 
 import { at, seeded, type Pt } from './arcane.ts';
+import { shownDepth } from './delve.ts';
 import { STRATA } from './descent.ts';
 
 export const ZONE_COUNT = 10;
@@ -43,7 +44,10 @@ export function zoneIndex(d: number | null | undefined): number | null {
 }
 
 export type KeyRow = {
+  /** The zone's first depth (internal, from 1). */
   from: number;
+  /** That depth as the key prints it (shownDepth): 0, 10, 20 ... 90. */
+  shown: number;
   reached: boolean;
   name?: string;
   color?: string;
@@ -51,7 +55,17 @@ export type KeyRow = {
 /** The key's rows, one a zone with its first depth: named and coloured once reached, otherwise neither (uncharted). */
 export const keyRows = (d: number | null | undefined): KeyRow[] => {
   const n = zonesReached(d);
-  return SPIRAL_ZONES.map((z, k) => (k < n ? { from: z.from, reached: true, name: z.name, color: z.color } : { from: z.from, reached: false }));
+  return SPIRAL_ZONES.map((z, k) => {
+    const row = { from: z.from, shown: shownDepth(z.from) };
+    return k < n ? { ...row, reached: true, name: z.name, color: z.color } : { ...row, reached: false };
+  });
+};
+/** The key's last row, the strata past the zones, by their first depth as a player reads it (100). */
+export const ENDLESS_FROM = shownDepth(ZONES_END + 1);
+/** The number beside the star: the deepest as a player reads it (shownDepth, so 0 at the first depth), or null before a first run. */
+export const bestLabel = (d: number | null | undefined): string | null => {
+  const b = bestDepth(d);
+  return b === null ? null : String(shownDepth(b));
 };
 
 /**
