@@ -189,7 +189,7 @@ export default defineConfig(({ mode }) => {
           impressum: 'impressum.html',
           datenschutz: 'datenschutz.html',
           // The effects lab (src/lab), the backdrop tool (src/backdropTool)
-          // and the zone banner preview (src/zonebanner): the dev server
+          // and the zone gate's tuning page (src/zonebanner): the dev server
           // serves them by itself; of the builds only the beta has them,
           // never the live game.
           ...(env.VITE_CHANNEL === 'beta' ? { lab: 'lab.html', backdrop: 'backdrop.html', zones: 'zones.html' } : {}),

@@ -1,7 +1,8 @@
-// The threshold (Threshold.svelte): a waystone gate built over the depth
-// banner. Two columns stand where the banner's rules end, a lintel spans
-// them on the kicker's line with the zone's name lit along its face, and a
-// keystone set in the lintel's crown bears the zone's sigil; a sill runs
+// Delve's zone gate (Threshold.svelte): a waystone gate built over the depth
+// banner. Two columns stand close beside the heading, a lintel spans them
+// just above it (in the room the head keeps there) with the zone's name lit
+// along its face, and a keystone set in the lintel's crown bears the zone's
+// sigil; a sill runs
 // under the heading, so "Depth N" stands in the doorway. Engraved in the
 // alchemist's circle's manner (docs/arcane-style.md): exact geometry (the
 // lintel's joints and the keystone's flanks all radiate from one centre
@@ -35,15 +36,26 @@ export type ThresholdArt = {
   ground: { lintel: string; key: string; pillars: string };
   /** The doorway between the columns, under the lintel: the zone's light shows through it. */
   door: { x0: number; x1: number; y0: number; y1: number };
+  /** The top of the keystone: the gate's highest point. */
+  top: number;
 };
+
+/** When the gate starts building (s after its depth's cards are dealt: once the stage has faded in), and when it is told to leave. */
+export const DELAY = 0.35;
+export const HOLD = 4.1;
+/** How long it takes to leave (s): it is removed after this. With reduced motion or the effects off it only fades, in STILL_FADE. */
+export const EXIT = 1.05;
+export const STILL_FADE = 0.6;
 
 export function thresholdArt(head: Head, nameW: number, em: number): ThresholdArt {
   const n = head.narrow;
   const cx = (head.rl0 + head.rr1) / 2;
   const band = n ? 2.3 : 3.1;
-  const H = em * 0.98 + 2 * band;
-  // The lintel clears the heading's capitals, and lies on the kicker's line where it can.
-  const yb = Math.min(head.capTop - (n ? 2.5 : 5), head.ky + H / 2 + 3);
+  // Room round the name on the lintel's face: it never touches the lines.
+  const H = em * 1.22 + 2 * band;
+  // The lintel sits just clear of the heading's capitals; the head keeps the
+  // room above it for the lintel and keystone (Game.svelte's .kicker line).
+  const yb = head.capTop - (n ? 4 : 7);
   const yt = yb - H;
   const pw = n ? 9 : 15;
   const cap = n ? 1.8 : 2.6;
@@ -51,7 +63,7 @@ export function thresholdArt(head: Head, nameW: number, em: number): ThresholdAr
   const gx = head.size * (n ? 0.42 : 0.46);
   const pcs = [head.hx0 - gx - pw / 2, head.hx1 + gx + pw / 2];
   const over = n ? 4 : 7;
-  const half = Math.min(head.w / 2 - 5, Math.max(nameW / 2 + (n ? 18 : 30), (pcs[1] - pcs[0]) / 2 + pw / 2 + cap + over));
+  const half = Math.min(head.w / 2 - 5, Math.max(nameW / 2 + (n ? 22 : 38), (pcs[1] - pcs[0]) / 2 + pw / 2 + cap + over));
   const [x0, x1] = [cx - half, cx + half];
   // The cornice on top runs out past the lintel's ends.
   const co = n ? 2.5 : 4;
@@ -198,5 +210,6 @@ export function thresholdArt(head: Head, nameW: number, em: number): ThresholdAr
     sign: { c: [cx, (yt - kh + yt + band) / 2 + 0.3], s: (kh + band) * 0.74 },
     ground,
     door: { x0: pcs[0] + pw / 2, x1: pcs[1] - pw / 2, y0: yb, y1: ybase },
+    top: yt - kh,
   };
 }

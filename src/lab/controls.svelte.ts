@@ -684,7 +684,7 @@ export const deeperThanEver = () =>
   event('Deeper than ever', async () => {
     if ((run()?.players.length ?? 1) > 1) setPlayers(1);
     let d = depthOf() + 1;
-    // A zone's own name takes the mark on its first depth.
+    // A zone's own name takes the gate on its first depth.
     if (milestoneAt(d)) d++;
     await stepInto(d, () => (session.bestAtStart = d - 1));
   });

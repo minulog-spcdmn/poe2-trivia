@@ -1,11 +1,12 @@
 <script lang="ts">
-  // The zone banner preview (zones.html): pick a design and a zone, and the
-  // banner plays over the real game screen in the frame below, at a desktop's
-  // width or a phone's. The frame (zones.html?stage, ./stage.svelte.ts) runs
-  // the lab's Delve run; each play sets its depth quietly first, so the
-  // header, the scene and the colours are the zone's.
+  // The zone gate's tuning page (zones.html): pick a zone (or a long
+  // endgame-style name, or "Deeper than ever") and Delve's zone gate
+  // (components/zonebanner/Threshold) is built over the real game screen in
+  // the frame below, at a desktop's width or a phone's. The frame
+  // (zones.html?stage, ./stage.svelte.ts) runs the lab's Delve run; each play
+  // sets its depth quietly first, so the header, the scene and the colours
+  // are the zone's.
   import { onMount } from 'svelte';
-  import { CONCEPTS, type ConceptId } from '../components/zonebanner/concepts';
   import { accentAt, stratumName } from '../lib/descent';
   import { zoneAt } from '../lib/zoneSigils';
   import { readStored, writeStored } from '../lib/storage';
@@ -23,21 +24,18 @@
   ];
 
   const stored = (name: string, fallback: string) => readStored(`zones.${name}`) ?? fallback;
-  let concept = $state(stored('concept', 'chisel') as ConceptId);
   let zone = $state(stored('zone', 'z1'));
   let phone = $state(stored('phone', '0') === '1');
   let hold = $state(stored('hold', '0') === '1');
   let still = $state(false);
   const reduced = readStored('labReduceMotion') === '1';
   $effect(() => {
-    writeStored('zones.concept', concept);
     writeStored('zones.zone', zone);
     writeStored('zones.phone', phone ? '1' : '0');
     writeStored('zones.hold', hold ? '1' : '0');
   });
 
   const entry = $derived(ENTRIES.find((e) => e.key === zone) ?? ENTRIES[1]);
-  const about = $derived(CONCEPTS.find((c) => c.id === concept)!);
 
   let frame: HTMLIFrameElement;
   type Api = { play: (o: Play) => Promise<void>; leave: () => void; ready: boolean };
@@ -46,12 +44,12 @@
   async function replay() {
     for (let i = 0; !api()?.ready && i < 100; i++) await new Promise((r) => setTimeout(r, 100));
     const e = entry;
-    api()?.play({ concept, title: e.title, sigil: zoneAt(e.depth), accent: accentAt(e.depth), depth: e.depth, hold });
+    api()?.play({ title: e.title, sigil: zoneAt(e.depth), accent: accentAt(e.depth), depth: e.depth, hold });
   }
 
   // Any change plays it again.
   $effect(() => {
-    void [concept, zone, phone, hold];
+    void [zone, phone, hold];
     replay();
   });
 
@@ -69,8 +67,6 @@
     const key = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLSelectElement || e.metaKey || e.ctrlKey) return;
       if (e.key === 'r') replay();
-      const n = Number(e.key);
-      if (n >= 1 && n <= CONCEPTS.length) concept = CONCEPTS[n - 1].id;
     };
     addEventListener('keydown', key);
     return () => removeEventListener('keydown', key);
@@ -79,12 +75,7 @@
 
 <div class="preview">
   <header class="bar">
-    <h1>Zone banners</h1>
-    <div class="seg" role="group" aria-label="Design">
-      {#each CONCEPTS as c, i (c.id)}
-        <button class:on={c.id === concept} onclick={() => (concept = c.id)} title="{c.name} ({i + 1})">{c.name}</button>
-      {/each}
-    </div>
+    <h1>Zone gate</h1>
     <label class="zone">
       <span class="sr">Zone</span>
       <select bind:value={zone}>
@@ -97,7 +88,6 @@
     <label class="tog"><input type="checkbox" checked={still} onchange={(e) => setStill(e.currentTarget.checked)} /> Effects off</label>
     <label class="tog"><input type="checkbox" checked={reduced} onchange={(e) => setReduced(e.currentTarget.checked)} /> Reduced motion</label>
   </header>
-  <p class="about"><b>{about.name}</b>: {about.blurb}</p>
   <div class="stage" class:phone>
     <iframe bind:this={frame} src="./zones.html?stage" title="The game screen" onload={replay}></iframe>
   </div>
@@ -124,32 +114,6 @@
     letter-spacing: 0.08em;
     color: var(--gold-hi);
   }
-  .seg {
-    display: inline-flex;
-    border: 1px solid var(--gold-lo);
-    border-radius: 3px;
-    overflow: hidden;
-  }
-  .seg button {
-    padding: 0.3rem 0.8rem;
-    font: inherit;
-    font-family: var(--font-display);
-    font-size: 0.85rem;
-    color: var(--gold);
-    background: transparent;
-    border: 0;
-    cursor: pointer;
-  }
-  .seg button + button {
-    border-left: 1px solid var(--gold-lo);
-  }
-  .seg button.on {
-    color: #fff1cf;
-    background: linear-gradient(180deg, #3f301c, #251b10);
-  }
-  .seg button:hover:not(.on) {
-    color: var(--gold-hi);
-  }
   select {
     font: inherit;
     font-size: 0.95rem;
@@ -169,18 +133,6 @@
   }
   .tog input {
     accent-color: var(--gold);
-  }
-  .about {
-    margin: 0;
-    padding: 0.35rem 1rem 0.55rem;
-    font-size: 0.92rem;
-    font-style: italic;
-    color: var(--muted);
-    border-bottom: 1px solid rgba(201, 164, 92, 0.18);
-  }
-  .about b {
-    font-style: normal;
-    color: var(--gold);
   }
   .stage {
     flex: 1;

@@ -416,7 +416,7 @@ export function settingsErrors(s: unknown, where = 'settings'): string[] {
 /**
  * What is wrong with a whole backdrops file (nothing: an empty list).
  * `zoneNames`: the zones it must hold, in order (their names never change:
- * the zone ribbon, sigils and codex go by them).
+ * the zone gate's sigils and the codex go by them).
  */
 export function backdropsErrors(data: unknown, zoneNames: readonly string[], profiles: readonly string[]): string[] {
   if (!data || typeof data !== 'object') return ['not an object'];

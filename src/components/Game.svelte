@@ -1,6 +1,5 @@
 <script lang="ts">
   import { fade, fly, scale } from 'svelte/transition';
-  import { sineInOut } from 'svelte/easing';
   import { session } from '../lib/session.svelte';
   import { playerColor } from '../lib/ui';
   import Scoreboard from './Scoreboard.svelte';
@@ -17,8 +16,9 @@
   import { REVIVE_FROM, delveDepth, fellAt, isGroupRun, livesOf, questionTimer, reviveProblem, standingIds } from '../lib/delve';
   import { accentAt, milestoneAt } from '../lib/descent';
   import { zoneAt } from '../lib/zoneSigils';
-  import { drawsRules, type Variant } from '../lib/zoneMark';
-  import ZoneMark from './ZoneMark.svelte';
+  import Threshold from './zonebanner/Threshold.svelte';
+  import { quiet } from './zonebanner/head';
+  import { DELAY as ZONE_DELAY, EXIT as ZONE_EXIT, HOLD as ZONE_HOLD, STILL_FADE } from './zonebanner/thresholdArt';
   import { descended, milestoneReached } from '../lib/fx/moments';
   import { untrack } from 'svelte';
 
@@ -160,29 +160,17 @@
   });
   const drawing = $derived(raffle !== null && raffle === s.question?.askedAt && s.phase === 'question');
 
-  // Delve: a mark at the start of a depth worth it (a new zone, the last one
-  // standing, a new best), engraved over the head of the stage for a few
-  // seconds. Never on a rejoin or the first depth: only when the run is seen
-  // going one deeper. It belongs to its turn: the next one clears it.
-  type Card = { key: string; turn: number; title: string; sigil: string; accent: string; label: string };
+  // Delve: a gate at the start of a depth worth it (a new zone, a new best),
+  // built over the head of the stage for a few seconds (zonebanner/Threshold).
+  // Never on a rejoin or the first depth: only when the run is seen going one
+  // deeper. It belongs to its turn: the next one clears it.
+  type Card = { key: string; turn: number; title: string; sigil: string; accent: string; label: string; leaving: boolean; still: boolean };
   let card = $state<Card | null>(null);
-  let cardTimer: ReturnType<typeof setTimeout> | null = null;
+  let cardTimers: ReturnType<typeof setTimeout>[] = [];
   let depthSeen = '';
-  /**
-   * How the mark is drawn (lib/zoneMark): 'medallion' (two seals with the
-   * name's plate slung between them), 'nameplate' (the cards' nameplate),
-   * 'cartouche' (pointed ends), or the earlier 'ribbon', 'banner' (the
-   * banner's rules rising into a cartouche) and 'seal' (seals beside the
-   * heading).
-   */
-  const zoneVariant: Variant = 'medallion';
-  /**
-   * It starts once the stage has faded in (0.35 s), comes in over about 0.6 s
-   * (the pen's sweep), is held 3.5 s, then goes out over 1.2 s.
-   */
-  const ZONE_DELAY = 0.35;
-  const ZONE_HOLD = 4450;
-  const ZONE_OUT = 1200;
+  // It starts once the stage has faded in (ZONE_DELAY), is built in about
+  // 1.3 s, held, then told to leave at ZONE_HOLD and gone ZONE_EXIT later
+  // (with reduced motion or the effects off it only fades in and out).
   $effect(() => {
     if (!run || s.phase !== 'choosing') return;
     const key = `${run.startedAt}:${depth}`;
@@ -198,29 +186,29 @@
       const sigil = zoneAt(depth);
       const best = session.bestAtStart;
       const turn = s.turnCount;
+      const still = quiet();
       let next: Card | null = null;
-      if (name) next = { key, turn, title: name, sigil, accent, label: `Depth ${depth}: ${name}.` };
+      if (name) next = { key, turn, title: name, sigil, accent, label: `Depth ${depth}: ${name}.`, leaving: false, still };
       else if (!group && best !== null && depth === best + 1)
-        next = { key, turn, title: 'Deeper than ever', sigil, accent, label: `Deeper than ever: depth ${depth}, past your best of ${best}.` };
+        next = { key, turn, title: 'Deeper than ever', sigil, accent, label: `Deeper than ever: depth ${depth}, past your best of ${best}.`, leaving: false, still };
       if (!next) return;
       card = next;
       sfx('stratum');
-      if (cardTimer) clearTimeout(cardTimer);
-      cardTimer = setTimeout(() => card?.key === key && (card = null), ZONE_HOLD);
+      cardTimers.forEach(clearTimeout);
+      cardTimers = [
+        setTimeout(() => card?.key === key && (card.leaving = true), ZONE_HOLD * 1000),
+        setTimeout(() => card?.key === key && (card = null), (ZONE_HOLD + (still ? STILL_FADE : ZONE_EXIT)) * 1000 + 50),
+      ];
     });
   });
   // The next turn takes the head (the stage is keyed), and the mark with it.
   $effect(() => {
     if (card && card.turn !== s.turnCount) card = null;
   });
-  $effect(() => () => {
-    if (cardTimer) clearTimeout(cardTimer);
-  });
+  $effect(() => () => cardTimers.forEach(clearTimeout));
   const zone = $derived(card && card.turn === s.turnCount ? card : null);
-  /** The mark's light breaks into the scene once it has unfolded: off its upper edge, toned to its size. */
+  /** The gate's light breaks into the scene once its lintel is lit, off the lintel, toned to its size. */
   const zoneFx = (el: HTMLElement) => card && milestoneReached(el, card.accent);
-  /** Reduced motion, or the effects off: the mark isn't drawn, it simply fades in. */
-  const quiet = () => matchMedia('(prefers-reduced-motion: reduce)').matches || document.documentElement.hasAttribute('data-still');
 
   /** Online Delve: where you perished, while the run goes on without you (someone still stands). */
   const myFall = $derived(session.perished && session.myPlayerId && standingIds(s).length ? fellAt(s, session.myPlayerId) : null);
@@ -275,22 +263,29 @@
         {/if}
         <div class="head">
           {#if run}
-            <!-- An empty line over the banner, where a zone's mark is laid (ZoneMark measures it). -->
-            <p class="kicker" class:veiled={!!zone}>{'\u00a0'}</p>
+            <!-- An empty line over the banner, the room a zone's gate rises into (zonebanner/Threshold measures it). -->
+            <p class="kicker">{'\u00a0'}</p>
           {/if}
-          <div class="banner" class:dm={!!dm} class:veiled={!!zone && drawsRules(zoneVariant)} style:--c={bannerColor}>
+          <!-- The gate's columns stand in for the rules while it shows. -->
+          <div class="banner" class:dm={!!dm} class:veiled={!!zone && !zone.leaving} style:--c={bannerColor}>
             <span class="rule"></span>
             <h2 use:bannerFx={{ color: bannerColor, big: bannerBig }}>{bannerTitle}</h2>
             <span class="rule"></span>
           </div>
           {#if zone}
-            <!-- Delve: a new zone's name, engraved over the head for a moment
-                 (drawn once the stage has faded in). -->
-            <div class="zone" in:fade={{ duration: quiet() ? 600 : 200, delay: quiet() ? 0 : ZONE_DELAY * 1000 }} out:fade={{ duration: ZONE_OUT, easing: sineInOut }}>
-              {#key zone.key}
-                <ZoneMark variant={zoneVariant} title={zone.title} sigil={zone.sigil} accent={zone.accent} delay={ZONE_DELAY} onfx={zoneFx} />
-              {/key}
-            </div>
+            <!-- Delve: a new zone's name over the head for a moment, on a gate
+                 built once the stage has faded in. -->
+            {#key zone.key}
+              <Threshold
+                title={zone.title}
+                sigil={zone.sigil}
+                accent={zone.accent}
+                leaving={zone.leaving}
+                still={zone.still}
+                delay={zone.still ? 0 : ZONE_DELAY}
+                onfx={zoneFx}
+              />
+            {/key}
           {/if}
         </div>
 
@@ -376,25 +371,17 @@
     flex-direction: column;
     align-items: stretch;
   }
-  /* The kicker and banner. Holds their margins, so the mark laid over it
-     (ZoneMark) has their box to measure and keeps within it. */
+  /* The kicker and banner. Holds their margins, so the gate laid over it
+     (zonebanner/Threshold) has their box to measure and keeps within it. */
   .head {
     display: flow-root;
     position: relative;
   }
-  .zone {
-    position: absolute;
-    inset: 0;
-    z-index: 2;
-    pointer-events: none;
-  }
-  /* What the mark takes the place of gives way while it shows, and comes
-     back once it has mostly gone. */
-  .kicker,
+  /* The rules give way to the gate's columns while it shows, and come back
+     as it goes. */
   .rule {
-    transition: opacity 0.6s 1s ease-out;
+    transition: opacity 0.6s 0.75s ease-out;
   }
-  .veiled.kicker,
   .veiled .rule {
     opacity: 0;
     transition: opacity 0.25s ease-out;
@@ -408,8 +395,11 @@
     white-space: nowrap;
   }
 
+  /* Room above the banner, always there in a run (so nothing moves when a
+     gate shows): the gate's lintel and keystone rise into it, clear of the
+     player strip above. */
   .kicker {
-    margin: 0.4rem 0 -0.4rem;
+    margin: 1.4rem 0 -0.4rem;
     text-align: center;
     font-family: var(--font-cinzel);
     font-weight: 700;

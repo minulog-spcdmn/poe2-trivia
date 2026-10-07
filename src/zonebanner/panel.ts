@@ -1,4 +1,4 @@
-// The zone banner preview's panel (zones.html): see Preview.svelte.
+// The zone gate tuning page's panel (zones.html): see Preview.svelte.
 import { mount } from 'svelte';
 import '../app.css';
 import Preview from './Preview.svelte';

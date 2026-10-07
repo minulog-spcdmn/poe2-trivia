@@ -265,13 +265,18 @@ the same thing for everyone.
   burns. The ambience sinks with the depth, over a slow rumble. Leaving a
   run, or rejoining deep down, fades straight to the scene it's going to
   (the surface, say) instead of passing through every zone.
-- A new zone is announced on a slim engraved ribbon on the line above the
-  banner: its name between two seals bearing the zone's sigil, an ornament
-  running out from each point that echoes the zone's backdrop, all in the
-  zone's colour. It draws itself in, holds about three and a half seconds
-  and fades; it never covers the cards or takes a tap. Alone, the same
-  ribbon marks the first depth past your best. The header names the zone
-  beside the depth, both in its colour (on a second line on phones).
+- A new zone is announced by a gate built over the depth banner, so "Depth
+  N" stands in its doorway: engraved columns rise beside the heading, a
+  lintel is lowered onto them with the zone's name lit along its face, and
+  a keystone bearing the zone's sigil is set in its crown, all in the zone's
+  colour, the zone's light showing faintly through the doorway. It is built
+  in about a second, holds about four and leaves as you pass through it;
+  it never covers the cards or the player strip, or takes a tap, and the
+  head keeps room for it above the banner throughout a run, so nothing
+  moves when it comes or goes. With reduced motion or effects off it only
+  fades in and out. Alone, the same gate marks the first depth past your
+  best ("Deeper than ever"). The header names the zone beside the depth,
+  both in its colour (on a second line on phones).
 - A run ends as a fall, not a victory. Alone, the end screen says "Perished"
   (or "Deeper than ever"), with your depth, where your lives went and your
   best. Together it says "The descent ends", with the team's depth and the
@@ -636,8 +641,8 @@ Everything is drawn in WebGL2 with float precision and dithered once at the
   the CSS fallback and the ambience (`depthAmbience` in `src/lib/sound.ts`)
   follow it. The clock's dark (`src/lib/darkness.ts`) is set by the timer
   ring and drawn by the backdrop, with a thin late shade at the screen's
-  edges (`Darkness.svelte`). The zone ribbon (`src/lib/zoneMark.ts`,
-  `zoneSigils.ts`, `zoneOrnaments.ts`) and the find cards
+  edges (`Darkness.svelte`). The zone gate (`src/components/zonebanner/`,
+  with the zones' sigils in `src/lib/zoneSigils.ts`) and the find cards
   (`findEngraving.ts`) are engraved in the arcane style, and a run's end
   has its own effect (`src/lib/fx/delveEnd.ts`).
 - **Dialogs** dim the page behind them (`src/lib/behindDialog.ts`). A dark,
@@ -818,6 +823,26 @@ and how the embers move. Every change shows at once.
   build leaves it out, and its page is marked (`<html
   data-backdrop-tool>`), so `src/lib/storage.ts` starts its keys with
   `backdrops.` and its drafts and settings never reach the game's.
+
+### The zone gate's tuning page
+
+`zones.html` (`src/zonebanner/`) is a page for tuning Delve's zone gate
+(`src/components/zonebanner/Threshold.svelte`) in place: the real game
+screen (a Delve run of the lab's, in a frame) with the gate built over its
+head, timed as in a game.
+
+- **Zone:** any of the ten zones, two long endgame-style names (to check
+  the fit of a long name) or "Deeper than ever". Each play sets the run's
+  depth quietly first, so the header, the scene and the colours are the
+  zone's; **Replay** (or R) builds the gate again.
+- **Phone width** shows the screen at 375 px; **Hold** keeps the gate up;
+  **Effects off** and **Reduced motion** show it as those players see it
+  (it only fades in and out).
+- **Open it:** `npm run dev`, then `http://localhost:5173/zones.html`; on
+  the beta, **poe2.quest/beta/zones.html**. Like the lab, the live build
+  leaves it out, and its page is marked (`<html data-lab data-zones>`), so
+  `src/lib/storage.ts` starts its keys with `lab.zones.` and its run never
+  moves the lab's.
 
 ---
 

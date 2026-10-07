@@ -211,7 +211,7 @@
           {/each}
         </div>
         <div class="grid">
-          <button onclick={() => L.zoneEnter()} disabled={!!busy}>Replay zone mark</button>
+          <button onclick={() => L.zoneEnter()} disabled={!!busy}>Replay zone gate</button>
           <button onclick={L.nextZone} disabled={!!busy}>Enter next zone</button>
           <button onclick={() => did(L.plunge(), 'This build has no plunge yet.')}>Plunge</button>
           <button onclick={L.descend} disabled={!!busy}>Descend (right, Next)</button>

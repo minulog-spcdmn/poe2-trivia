@@ -1,7 +1,7 @@
-// Where the head of the stage lies (Game.svelte's .head: the kicker's line
-// over the depth banner, its heading between two rules), px from the head's
-// top left. The zone banners (src/components/zonebanner) are laid over it and
-// work their geometry out from this, so they keep to its box and never reach
+// Where the head of the stage lies (Game.svelte's .head: the empty kicker's
+// line over the depth banner, its heading between two rules), px from the
+// head's top left. The zone gate (./Threshold.svelte) is laid over it and
+// works its geometry out from this, so it keeps to its box and never reaches
 // the cards, the question or the player list.
 
 export type Head = {
@@ -85,6 +85,6 @@ export function watchHead(el: HTMLElement, set: (h: Head) => void, watch: (HTMLE
   };
 }
 
-/** Reduced motion or the effects off: the banner isn't drawn, it simply fades in and out. */
+/** Reduced motion or the effects off: the gate isn't drawn, it simply fades in and out. */
 export const quiet = () =>
   matchMedia('(prefers-reduced-motion: reduce)').matches || document.documentElement.hasAttribute('data-still');

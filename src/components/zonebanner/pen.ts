@@ -1,4 +1,4 @@
-// The zone banners' engraver (src/components/zonebanner): lines in px on the
+// The zone gate's engraver (./Threshold.svelte): lines in px on the
 // head of the stage, drawn as the alchemist's circle draws its own
 // (docs/arcane-style.md). A line is a polyline that the pen sweeps once,
 // fast at first and slowing at the end; it is broken where it meets a hole
