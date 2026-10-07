@@ -952,13 +952,18 @@
     display: grid;
     gap: 1rem 1.2rem;
   }
+  /* Stacked, the drawing gets room for its ten roundels; beside the finds it takes their height. */
   .descent-col {
     display: flex;
     flex-direction: column;
+    --descent-min: 17rem;
   }
   @container (min-width: 400px) {
     .delve-cols {
       grid-template-columns: 14.5rem minmax(0, 1fr);
+    }
+    .descent-col {
+      --descent-min: 14.5rem;
     }
   }
   .together-when {

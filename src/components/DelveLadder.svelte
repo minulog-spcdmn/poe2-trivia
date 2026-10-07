@@ -1,25 +1,30 @@
 <script lang="ts">
   import { STRATA } from '../lib/descent';
   import { DELVE_LIVES, FINDS_FROM } from '../lib/delve';
-  import { f, line, lerp, pt, ring, subtract, wear, type Cut, type Hole, type Pt } from '../lib/arcane';
+  import { at, f, line, lerp, pt, ring, star8, subtract, wear, type Cut, type Hole, type Pt } from '../lib/arcane';
+  import { sigilOf } from '../lib/zoneSigils';
 
-  // The descent, engraved: a cross-section of the earth, a shaft sunk from a
-  // headframe at the surface down through the ten zones, each a stratum of
-  // rock hatched the other way from the last. A zone you have reached has a
-  // gallery cut off the shaft with its name in it, its colour in the rock and
-  // a mark of its own beside the shaft (the Mines' ladder and timbering and
-  // an ammonite, a fissure glowing in the Magma Fissure, icicles in the
-  // Frozen Hollow, ...). A zone you haven't is dark rock, the zones still
-  // ahead marked only "uncharted", so the names stay a surprise. Past 100 the
-  // shaft runs on into the dark, a well without a bottom. A rope hangs from
-  // the wheel down to a lamp at your deepest (at the mouth before a first
-  // run), its light catching the rock around it.
-  // Beside the section, a few short notes say what lies ahead (three lives,
-  // finds, a new zone every ten, less time and trickier questions deeper
-  // down, no end), never exactly what gets harder.
-  // Drawn in the arcane style (docs/arcane-style.md): fine exact lines,
-  // one-sided hatching that stops short of what it meets, a little wear, a
-  // soft glow under the lines; it draws itself in from the surface down.
+  // The descent, as an alchemist would set it out on a plate: a measured
+  // scheme, not a picture. An axis falls from a small sun at the top (the
+  // surface) through ten roundels, one for each zone, strung on it like the
+  // spheres of a cosmology, and ends in an ouroboros: past 100 the descent
+  // has no end. The plate's right border is a graduated scale of the
+  // depths, a tick for each, every fifth longer, every tenth (where one zone
+  // gives way to the next) longest, with a dotted guide across to the axis;
+  // 1, 50 and 100 are numbered. A zone you have reached is inked: a double
+  // ring holding its sigil (the one on the zone gate's keystone,
+  // lib/zoneSigils), its name in small spaced capitals on a label line. A
+  // zone you haven't is still only set out in construction: a dotted circle
+  // round a pricked centre, a dotted line where its name will go, so the
+  // names stay a surprise. Your deepest is a small radiant mark on the scale
+  // (at its top before a first run), a dotted index line running from it to
+  // the roundel it lies in.
+  // In the margin beyond the scale, a few short notes say what lies ahead
+  // (three lives, finds, a new zone every ten, less time and trickier
+  // questions deeper down, no end), never exactly what gets harder.
+  // Drawn in the arcane style (docs/arcane-style.md): hairlines of exact
+  // geometry, lines stopping short of what they meet, a little wear, a soft
+  // glow under the inked lines; it inks itself in from the top down.
   // The plate is drawn in px at the size it's given: as wide as its column,
   // and as tall as the figure (which grows to the finds' height beside them,
   // and keeps its min-height when stacked), so it never leaves a gap.
@@ -28,393 +33,217 @@
   let w = $state(0);
   let h = $state(0);
 
-  /** The surface, the depths beyond the tenth zone, and the shaft's middle and walls. */
-  const TOP = 30;
-  const BEYOND = 30;
-  const HALF = 4;
-  /** Where the zones' names start, in the rock left of the shaft. */
-  const NAME_X = 6;
-  /** The notes run from NOTE_X to the plate's right edge; their pips sit just right of the section, which ends at E. */
+  /** The notes run from noteX to the plate's right edge; their pips sit just outside the scale. */
   const NOTE_W = 88;
   const noteX = $derived(w - NOTE_W);
   const pipX = $derived(noteX - 5);
-  const E = $derived(pipX - 5);
-  /** The shaft: far enough right for the names and their galleries, and on a wide plate further, to share the rock either side. */
-  const X = $derived(Math.max(104, Math.round(E - 48)));
+  /** The scale: the plate's right border. The frame's other sides, a hair in from the figure's edges. */
+  const SX = $derived(pipX - 5);
+  const FL = 0.5;
+  const FT = 0.5;
+  const FB = $derived(h - 0.5);
+  /** The frame's inner rule, IN inside the outer, its corners notched by an arc of radius NOTCH about the outer's. */
+  const IN = 1.8;
+  const NOTCH = 5;
+  /** Depth 0, the surface, and the room below depth 100 for the ouroboros. */
+  const TOP = 19;
+  const BEYOND = 34;
   const BOTTOM = $derived(h - BEYOND);
   const band = $derived((BOTTOM - TOP) / 10);
+  const step = $derived(band / 10);
+  /** The roundels' radius, and the axis: just clear of the scale's numbers, and on a wide plate nearer the middle. */
+  const R = $derived(Math.min(12, Math.max(6, band / 2 - 2.6)));
+  const AX = $derived(Math.min(SX - 20 - R, Math.max(100 + R, SX * 0.56)));
+  /** The ouroboros: its centre, and the middle of its body. */
+  const OY = $derived(BOTTOM + BEYOND / 2 - 0.5);
+  const OR = $derived(Math.min(BEYOND / 2 - 5, R + 2));
+  /** The small sun at the top, where the descent begins. */
+  const SUN_Y = (FT + TOP) / 2;
+  const SUN_R = 3;
 
-  /** Where depth `d` sits on the shaft; past 100, in the dark beyond. */
-  const y = (d: number) => (d > 100 ? BOTTOM + BEYOND * 0.45 : TOP + ((d - 0.5) * band) / 10);
+  /** Where depth `d` sits on the scale (the middle of its division); past 100, level with the ouroboros. */
+  const y = (d: number) => (d > 100 ? OY : TOP + (d - 0.5) * step);
+  /** The scale's division between depth `d` and the next. */
+  const T = (d: number) => TOP + d * step;
 
   const rgb = (c: readonly number[]) => `rgb(${c.join(' ')})`;
-  const ZONES = STRATA.slice(0, 10).map((z, k) => ({ name: z.name, color: rgb(z.look.accent), from: 10 * k + 1 }));
+  const ZONES = STRATA.slice(0, 10).map((z, k) => ({ name: z.name, color: rgb(z.look.accent), from: 10 * k + 1, sigil: sigilOf(z.name) }));
 
   const best = $derived(deepest && deepest > 0 ? Math.floor(deepest) : null);
-  /** A zone is reached once a run has been as deep as its first depth; only then is it named, coloured and marked. */
+  /** A zone is reached once a run has been as deep as its first depth; only then is it named, coloured and given its sigil. */
   const reached = $derived(ZONES.filter((z) => best !== null && best >= z.from).length);
-  /** The rope runs from the wheel to the lamp: at your deepest, or at the mouth. */
-  const lamp = $derived(y(best ?? 1));
-  const ROPE_END = 2.6;
-  /** How far (px) the lamp's light reaches into the rock. */
-  const LIGHT = 26;
+  /** Your deepest on the scale: at its depth, or at the top before a first run. */
+  const mark = $derived(best ? y(best) : TOP);
+  /** The mark's radius. */
+  const STAR = 4.8;
 
-  const poly = (ps: Pt[], close = false) => ps.map((p, i) => `${i ? 'L' : 'M'}${pt(p)}`).join('') + (close ? 'Z' : '');
+  /** When the pen, inking the axis from the top down, reaches `yy`. */
+  const pen = (yy: number) => 0.25 + (1.15 * (yy - TOP)) / Math.max(1, h - TOP);
 
-  /** A box (x0, y0, x1, y1) the rock's hatching stops short of. */
-  type Box = [number, number, number, number];
-  /** What hatching stops short of: boxes and circles. */
-  type Gaps = { boxes: Box[]; holes: Hole[] };
-  /** A box round the rect, `m` clear of it. */
-  const grow = ([x0, y0, x1, y1]: Box, m = 1.2): Box => [x0 - m, y0 - m, x1 + m, y1 + m];
-
-  /** Where the line from `p` to `q` runs inside the box, as a cut in [0, 1]. */
-  function inBox(p: Pt, q: Pt, [x0, y0, x1, y1]: Box): Cut | null {
-    const [dx, dy] = [q[0] - p[0], q[1] - p[1]];
-    let [t0, t1] = [0, 1];
-    for (const [a, b] of [
-      [-dx, p[0] - x0],
-      [dx, x1 - p[0]],
-      [-dy, p[1] - y0],
-      [dy, y1 - p[1]],
-    ]) {
-      if (a === 0) {
-        if (b < 0) return null;
-      } else if (a < 0) t0 = Math.max(t0, b / a);
-      else t1 = Math.min(t1, b / a);
-    }
-    return t0 < t1 ? [t0, t1] : null;
-  }
-
-  /**
-   * One-sided hatching across the rect, `gap` apart, falling to the left (or,
-   * `flip`, to the right), stopping `pad` short of its edges and short of
-   * every box and hole in `gaps`, as an engraver works round what's there.
-   */
-  function hatchRect(x0: number, y0: number, x1: number, y1: number, gap: number, flip: boolean, gaps: Gaps, pad = 0.6): string {
-    [x0, y0, x1, y1] = [x0 + pad, y0 + pad, x1 - pad, y1 - pad];
-    if (x1 - x0 < 1 || y1 - y0 < 1) return '';
-    const fx = (x: number) => (flip ? x0 + x1 - x : x);
-    const boxes = gaps.boxes.filter((b) => b[3] > y0 && b[1] < y1);
-    const holes = gaps.holes.filter((o) => o.c[1] + o.r > y0 && o.c[1] - o.r < y1);
-    const step = gap * Math.SQRT2;
+  /** Dots `gap` apart along the line from `p` to `q` (each a zero-length stroke, round-capped), none inside a hole. */
+  function dotted(p: Pt, q: Pt, gap: number, holes: Hole[] = []): string {
+    const len = Math.hypot(q[0] - p[0], q[1] - p[1]);
+    const n = Math.floor(len / gap);
+    const pad = (len - n * gap) / 2;
     let d = '';
-    for (let s = x0 + y0 + step / 2; s < x1 + y1; s += step) {
-      // The line x + y = s, clipped to the rect (and mirrored when flipped).
-      const a = Math.max(x0, s - y1);
-      const b = Math.min(x1, s - y0);
-      if (b - a < 0.3) continue;
-      const [p, q]: Pt[] = [
-        [fx(a), s - a],
-        [fx(b), s - b],
-      ];
-      d += line(p, q, { holes, cuts: boxes.map((x) => inBox(p, q, x)).filter((c): c is Cut => !!c) });
+    for (let i = 0; i <= n; i++) {
+      const c = lerp(p, q, (pad + i * gap) / len);
+      if (!holes.some((o) => Math.hypot(c[0] - o.c[0], c[1] - o.c[1]) < o.r)) d += `M${pt(c)}h0`;
     }
     return d;
   }
-
-  /** A straight line drawn as its pieces (between cuts and nicks), each timed by where it sits, so the pen sweeps once down the whole. */
-  type Piece = { d: string; delay: number; dur: number };
-  const pieces = (p: Pt, q: Pt, cuts: Cut[], d0: number, t: number): Piece[] =>
-    subtract(0, 1, cuts).map(([a, b]) => ({ d: `M${pt(lerp(p, q, a))}L${pt(lerp(p, q, b))}`, delay: d0 + t * a, dur: t * (b - a) }));
-
-  // The headframe: two legs up from the surface to a wheel, which they stop
-  // short of, braced across; a spoil heap beside it, hatched down its far
-  // side, and a winding house on the other.
-  const WHEEL: Pt = $derived([X, 11]);
-  const WHEEL_R = 4.6;
-  const headframe = (worn: boolean) => {
-    const wr = worn ? wear(7) : null;
-    const legs: [Pt, Pt][] = [
-      [[X - 10, TOP], WHEEL],
-      [[X + 10, TOP], WHEEL],
-    ];
-    const [l, r] = legs.map(([p, q]) => lerp(p, q, 0.42));
-    return legs.map(([p, q]) => line(p, q, { holes: [{ c: WHEEL, r: WHEEL_R + 1.3 }], wear: wr })).join('') + line(l, r);
+  /** Dots round a circle, about `gap` apart. */
+  const dottedRing = (c: Pt, r: number, gap: number) => {
+    const n = Math.max(8, Math.round((2 * Math.PI * r) / gap));
+    return Array.from({ length: n }, (_, i) => `M${pt(at(c, (i / n) * 360, r))}h0`).join('');
   };
-  const spokes = $derived(
-    Array.from({ length: 6 }, (_, k) => {
-      const a = (k / 6) * Math.PI * 2 + Math.PI / 6;
-      const p = (r: number) => `${f(WHEEL[0] + r * Math.cos(a))} ${f(WHEEL[1] + r * Math.sin(a))}`;
-      return `M${p(1.4)}L${p(WHEEL_R - 1.1)}`;
-    }).join(''),
-  );
-  const heap = $derived(
-    poly([
-      [X - 46, TOP],
-      [X - 31, TOP - 7.5],
-      [X - 15, TOP],
-    ]) +
-      Array.from({ length: 9 }, (_, i) => {
-        // Upright strokes down the heap's far side, from its crest to the foot, each stopping short of the slope.
-        const x = X - 31 + ((i + 1) * 16) / 10;
-        const top = TOP - 7.5 + (7.5 * (x - (X - 31))) / 16;
-        return `M${f(x)} ${f(top + 0.8)}V${f(TOP - 0.6)}`;
-      }).join(''),
-  );
-  const house = $derived.by(() => {
-    const x0 = X + 15;
-    const x1 = Math.min(X + 27, E - 2);
-    if (x1 - x0 < 9) return '';
-    const [m, eave, ridge] = [(x0 + x1) / 2, TOP - 5.5, TOP - 9.5];
-    return (
-      poly([
-        [x0, TOP],
-        [x0, eave],
-        [x1, eave],
-        [x1, TOP],
-      ]) +
-      poly([
-        [x0 - 1.2, eave + 0.1],
-        [m, ridge],
-        [x1 + 1.2, eave + 0.1],
-      ]) +
-      poly([
-        [m - 1.3, TOP],
-        [m - 1.3, TOP - 3.2],
-        [m + 1.3, TOP - 3.2],
-        [m + 1.3, TOP],
-      ])
-    );
-  });
 
-  // The zones' names, measured once their font is in, so each gallery is cut just long enough for its name.
-  let nameEls: (SVGTextElement | null)[] = $state([]);
-  let nameW: number[] = $state([]);
-  const nameWidth = (k: number) => nameW[k] || ZONES[k].name.length * 5.2;
-  $effect(() => {
-    const els = nameEls.slice(0, reached);
-    let live = true;
-    const measure = () => {
-      if (live) nameW = ZONES.map((_, k) => els[k]?.getComputedTextLength() || 0);
-    };
-    measure();
-    void document.fonts?.ready.then(measure);
-    document.fonts?.addEventListener('loadingdone', measure);
-    return () => {
-      live = false;
-      document.fonts?.removeEventListener('loadingdone', measure);
-    };
-  });
+  /** A straight line drawn as its pieces (between cuts and nicks), each timed by where it sits, so the pen sweeps once along the whole. */
+  type Piece = { d: string; delay: number; dur: number };
+  const pieces = (p: Pt, q: Pt, cuts: Cut[], when: (t: number) => number): Piece[] =>
+    subtract(0, 1, cuts).map(([a, b]) => ({ d: `M${pt(lerp(p, q, a))}L${pt(lerp(p, q, b))}`, delay: when(a), dur: Math.max(0.02, when(b) - when(a)) }));
 
-  /** How far the galleries run off the shaft at a few zones (px, where the name leaves room), and how far it sits below (or above) the name, as the miners found the seam. */
-  const REACH = [34, 0, 30, 0, 0, 26, 0, 0, 30, 0];
-  const SAG = [0, 1.6, -1.2, 2, 0.6, -1.6, 1.2, -0.6, 1.8, 0];
+  /** The numbered depths on the scale, and the box (left, right) each number takes, which lines stop short of. */
+  const NUMBERED = [1, 50, 100];
+  const NUM_RIGHT = 6.5;
+  const numBox = (d: number): [number, number] => [SX - NUM_RIGHT - (String(d).length * 3.9 + 1.4), SX - NUM_RIGHT + 1.2];
+  /** A horizontal line from x0 to x1 at yy, as cuts round any number it would run through. */
+  const numCuts = (x0: number, x1: number, yy: number): Cut[] =>
+    NUMBERED.filter((d) => Math.abs(y(d) - yy) < 3.4).map((d) => {
+      const [a, b] = numBox(d);
+      return [(a - x0) / (x1 - x0), (b - x0) / (x1 - x0)];
+    });
 
-  /** A zone's mark beside the shaft: its lines, a glow under some of them, and what the rock's hatching stops short of. */
-  type Mark = { d: string; glow?: string } & Gaps;
-
-  /** The zones' marks, each drawn in a box about 12 units square round `c`, `u` px to the unit. */
-  function mark(k: number, c: Pt, u: number, y0: number, y1: number, x0: number, x1: number): Mark {
-    const P = (x: number, yy: number): Pt => [c[0] + x * u, c[1] + yy * u];
-    const L = (...ps: [number, number][]) => poly(ps.map(([x, yy]) => P(x, yy)));
-    const circle = (x: number, yy: number, r: number) => ring(P(x, yy), r * u);
-    /** The box (x0, y0)-(x1, y1) in the mark's units, as a gap in the hatching. */
-    const B = (bx0: number, by0: number, bx1: number, by1: number): Box => grow([...P(bx0, by0), ...P(bx1, by1)]);
-    /** A circle at (x, yy) of radius r in the mark's units, as a gap in the hatching. */
-    const O = (x: number, yy: number, r: number): Hole => ({ c: P(x, yy), r: r * u + 1.2 });
-    const arcUp = (x: number, yy: number, r: number) => {
-      // A half circle over (x, yy), left to right.
-      const [a, b] = [P(x - r, yy), P(x + r, yy)];
-      return `M${pt(a)}A${f(r * u)} ${f(r * u)} 0 0 1 ${pt(b)}`;
-    };
-    switch (k) {
-      case 0: {
-        // The Mines: an ammonite in the rock, its whorls ribbed.
-        const R = (t: number) => 5.6 * Math.exp(-0.21 * t);
-        const at = (t: number, s = 1): Pt => P(R(t) * s * Math.cos(t), R(t) * s * Math.sin(t));
-        const spiral = poly(Array.from({ length: 72 }, (_, i) => at((i / 71) * 3 * Math.PI)));
-        const ribs = Array.from({ length: 13 }, (_, i) => {
-          const t = (i / 13) * 2.2 * Math.PI;
-          return `M${pt(at(t, 0.94))}L${pt(at(t + 2 * Math.PI, 1.08))}`;
-        }).join('');
-        return { d: spiral + ribs, boxes: [], holes: [O(0, 0, 6.05)] };
-      }
-      case 1: {
-        // Magma Fissure: a crack across the rock, glowing.
-        const n = Math.max(5, Math.round((x1 - x0) / 5));
-        const ys = [0, -2.2, 1.4, -0.8, 2.4, -1.6, 0.9, -2.4, 1.8, -0.6, 2, -1.2];
-        const ps: Pt[] = Array.from({ length: n + 1 }, (_, i) => [x0 + ((x1 - x0) * i) / n, c[1] + (ys[i % ys.length] * u) / 1.2]);
-        const branch = poly([ps[2], [ps[2][0] + 2.4 * u, ps[2][1] + 3.4 * u], [ps[2][0] + 3.4 * u, ps[2][1] + 4.6 * u]]);
-        const d = poly(ps) + branch;
-        // The hatching stops short of the crack along its length.
-        const along = [...ps.slice(1).map((q, i) => [ps[i], q]), [ps[2], [ps[2][0] + 2.4 * u, ps[2][1] + 3.4 * u]], [[ps[2][0] + 2.4 * u, ps[2][1] + 3.4 * u], [ps[2][0] + 3.4 * u, ps[2][1] + 4.6 * u]]] as Pt[][];
-        const boxes = along.map(([a, b]): Box => grow([Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[0], b[0]), Math.max(a[1], b[1])], 1.4));
-        return { d, glow: d, boxes, holes: [] };
-      }
-      case 2: {
-        // Frozen Hollow: icicles hanging from the stratum's roof.
-        const n = Math.max(3, Math.floor((x1 - x0) / 4.6));
-        const long = [0.82, 0.46, 0.66, 0.34, 0.74, 0.52, 0.4, 0.7];
-        const boxes: Box[] = [];
-        const d = Array.from({ length: n }, (_, i) => {
-          const x = x0 + ((x1 - x0) * (i + 0.5)) / n;
-          const top = y0 + 0.9;
-          const bottom = top + (y1 - y0 - 2) * long[i % long.length];
-          boxes.push(grow([x - 1.15, top, x + 1.15, bottom], 1));
-          return poly([[x - 1.15, top], [x, bottom], [x + 1.15, top]]) + `M${f(x)} ${f(top + 0.6)}V${f(top + (bottom - top) * 0.55)}`;
-        }).join('');
-        return { d, boxes, holes: [] };
-      }
-      case 3: {
-        // Fungal Caverns: an alcove with mushrooms growing in it.
-        const alcove = L([-6, 5], [-6, -0.5]) + `A${f(6 * u)} ${f(6 * u)} 0 0 1 ${pt(P(6, -0.5))}` + L([6, -0.5], [6, 5], [-6, 5]);
-        const shroom = (x: number, hh: number, r: number) => L([x, 5], [x, 5 - hh]) + arcUp(x, 5 - hh, r) + L([x - r, 5 - hh], [x + r, 5 - hh]);
-        const glow = shroom(-2.9, 3, 1.6) + shroom(0.7, 5.4, 2.4) + shroom(3.7, 2.2, 1.2);
-        return { d: alcove + glow, glow, boxes: [B(-6, -0.5, 6, 5)], holes: [O(0, -0.5, 6)] };
-      }
-      case 4: {
-        // Vaal Outpost: a stepped pyramid with a stair up its face.
-        const steps: [number, number][] = [[-6.5, 5.5]];
-        for (let i = 0; i < 4; i++) steps.push([-6.5 + i * 1.6, 5.5 - (i + 1) * 2.4], [-6.5 + (i + 1) * 1.6, 5.5 - (i + 1) * 2.4]);
-        const outline = [...steps, ...steps.slice(0, -1).map(([x, yy]): [number, number] => [-x, yy]).reverse()];
-        const stair = L([-1, 5.5], [-1, -4.1]) + L([1, 5.5], [1, -4.1]) + Array.from({ length: 7 }, (_, i) => L([-1, 4.3 - i * 1.25], [1, 4.3 - i * 1.25])).join('');
-        const d = L(...outline) + stair;
-        return { d, boxes: [0, 1, 2, 3].map((i) => B(-6.5 + i * 1.6, 5.5 - (i + 1) * 2.4, 6.5 - i * 1.6, 5.5 - i * 2.4)), holes: [] };
-      }
-      case 5: {
-        // Abyssal Depths: a vortex, its arcs broken, round a dark eye.
-        const swirl = [2, 3.5, 5]
-          .map((r, i) => {
-            const a0 = (i * 130 * Math.PI) / 180;
-            return poly(Array.from({ length: 25 }, (_, j) => {
-              const a = a0 + (j / 24) * ((250 * Math.PI) / 180);
-              const rr = r * (1 + 0.12 * (j / 24));
-              return P(rr * Math.cos(a), rr * Math.sin(a));
-            }));
-          })
-          .join('');
-        return { d: swirl + circle(0, 0, 0.7), boxes: [], holes: [O(0, 0, 5.6)] };
-      }
-      case 6: {
-        // Petrified Forest: a stone trunk, broken off, a branch stub and roots.
-        const trunk = L([-2.2, 6], [-1.7, -3.4], [1.7, -5.2], [2.2, 6]);
-        const bough = L([1.95, 0.4], [4.8, -3.2]) + L([2.05, 1.8], [5.3, -2.2]) + L([4.8, -3.2], [5.3, -2.2]);
-        const roots = L([-2.2, 6], [-4.4, 6]) + L([-2.1, 4.8], [-4, 6]) + L([2.2, 6], [4.6, 6]) + L([2.1, 4.8], [4.2, 6]);
-        const bark = L([-0.6, 5.2], [-0.4, 0.4]) + L([0.6, 3], [0.7, -2.6]);
-        return { d: trunk + bough + roots + bark, boxes: [B(-2.2, -5.2, 2.2, 6), B(2, -3.2, 5.3, 1.8), B(-4.6, 4.8, 4.6, 6)], holes: [] };
-      }
-      case 7: {
-        // Sulphur Vents: a vent in the rock with fumes rising out of it.
-        const vent = L([-3, 6], [-0.9, 3.6]) + L([3, 6], [0.9, 3.6]);
-        const fumes = circle(0.4, 1.4, 1) + circle(-0.9, -1.6, 1.4) + circle(0.9, -5, 1.8);
-        return { d: vent + fumes, glow: fumes, boxes: [B(-3, 3.6, 3, 6)], holes: [O(0.4, 1.4, 1), O(-0.9, -1.6, 1.4), O(0.9, -5, 1.8)] };
-      }
-      case 8: {
-        // Abyssal City: an arcade of three arches under a cornice.
-        const cols = [-6, -2, 2, 6].map((x) => L([x, 5.5], [x, 0])).join('');
-        const arches = [-4, 0, 4].map((x) => arcUp(x, 0, 2)).join('');
-        const d = L([-6.8, 5.5], [6.8, 5.5]) + cols + arches + L([-6.8, -3], [6.8, -3]) + L([-6, -4.2], [6, -4.2]);
-        return { d, boxes: [B(-6.8, -4.2, 6.8, 5.5)], holes: [] };
-      }
-      default: {
-        // Primeval Ruins: a broken column, fluted, a fallen drum beside it.
-        const shaft = L([-2.4, 4.4], [-2.4, -3.2], [-1, -4.6], [0.2, -3.4], [1.3, -5.4], [2.4, -4.4], [2.4, 4.4]);
-        const flutes = L([-0.8, 4.4], [-0.8, -3.6]) + L([0.8, 4.4], [0.8, -3.8]);
-        const base = L([-3.6, 4.4], [3.6, 4.4], [3.6, 6], [-3.6, 6], [-3.6, 4.4]);
-        const drum = circle(5, 4.2, 1.8) + circle(5, 4.2, 0.9);
-        return { d: shaft + flutes + base + drum, boxes: [B(-2.4, -5.4, 2.4, 4.4), B(-3.6, 4.4, 3.6, 6)], holes: [O(5, 4.2, 1.8)] };
-      }
+  /**
+   * The ouroboros past 100: a serpent round the axis's end, its body
+   * swelling from the tail to the neck, scaled down its outer side, its
+   * head at the upper left with the tail's tip in its open jaws.
+   * Angles run clockwise from the top; the body runs clockwise from the tail.
+   */
+  function ouroboros(c: Pt, rm: number) {
+    const TAIL = 312;
+    const NECK = 654;
+    const SNOUT = 322 + 360;
+    const hw = (a: number) => 0.22 + 1.3 * Math.pow((a - TAIL) / (NECK - TAIL), 0.8);
+    const n = 96;
+    const edge = (side: number) =>
+      'M' +
+      Array.from({ length: n + 1 }, (_, i) => {
+        const a = TAIL + ((NECK - TAIL) * i) / n;
+        return pt(at(c, a, rm + side * hw(a)));
+      }).join('L');
+    // The head: wider than the neck, tapering to the jaws, which open round the tail.
+    const P = (a: number, dr: number) => at(c, a, rm + dr);
+    const nw = hw(NECK);
+    const head =
+      `M${pt(P(NECK, nw))}Q${pt(P(NECK + 7, 2.9))} ${pt(P(NECK + 15, 2.3))}L${pt(P(SNOUT, 1.05))}` +
+      `M${pt(P(NECK, -nw))}Q${pt(P(NECK + 7, -2.9))} ${pt(P(NECK + 15, -2.3))}L${pt(P(SNOUT, -1.05))}` +
+      `M${pt(P(SNOUT, 1.05))}L${pt(P(NECK + 13, 0.2))}M${pt(P(SNOUT, -1.05))}L${pt(P(NECK + 13, -0.2))}`;
+    const eye = P(NECK + 9, 1.2);
+    // Scales: short strokes in from the outer edge, on the body's broader part.
+    let scales = '';
+    for (let a = TAIL + 40; a < NECK - 6; a += 10) {
+      const t = hw(a);
+      if (t > 0.55) scales += `M${pt(P(a, t - 0.25))}L${pt(P(a + 3, 0.05))}`;
     }
+    return { body: edge(1) + edge(-1) + head, scales, eye };
   }
 
   const plate = $derived.by(() => {
     if (!w || !h) return null;
-    const wr = (seed: number) => wear(seed);
-    // "Uncharted": the zones not reached yet, a quiet word in their dark rock, which stops short of it.
-    const uncharted = reached < 10 ? { x: (X - HALF) / 2, y: (TOP + reached * band + BOTTOM) / 2 } : null;
-    /** The gaps, and the shaft, which all the rock's hatching stops short of. */
-    const shaftGaps = (g: Gaps): Gaps => ({ boxes: [[X - HALF - 0.9, -1e3, X + HALF + 0.9, 1e4], ...g.boxes], holes: g.holes });
+    // The roundels: centred on their zone, holes the axis and guides stop short of.
     const zones = ZONES.map((z, k) => {
-      const y0 = TOP + k * band;
-      const y1 = y0 + band;
-      const yc = (y0 + y1) / 2;
+      const yc = TOP + (k + 0.5) * band;
       const known = k < reached;
-      // Its name, engraved in the rock at the left; and, where the name leaves room, a gallery cut off the shaft towards it, rounded at the end (the Mines' squared and timbered).
-      const gh = Math.min(7.5, band - 7);
-      const gy = yc + Math.min(1, (band - 7 - gh) / 4) * SAG[k];
-      const [roof, floor] = [gy - gh / 2, gy + gh / 2];
-      const mouth = X - HALF;
-      const room = mouth - (NAME_X + nameWidth(k) + 9);
-      const reach = Math.min(room, REACH[k]);
-      let gallery = '';
-      const gaps: Gaps = { boxes: [], holes: [] };
-      if (known) gaps.boxes.push(grow([NAME_X, yc - 4.2, NAME_X + nameWidth(k), yc + 4.2], 1.6));
-      if (known && reach >= 12) {
-        const r = gh / 2;
-        const xs = mouth - reach + (k === 0 ? 0 : r);
-        gaps.boxes.push(grow([xs, roof, mouth, floor]));
-        if (k === 0) {
-          gallery = poly([[mouth, floor], [xs, floor], [xs, roof], [mouth, roof]]);
-          for (let x = xs + 1.4; x < mouth - 3; x += 7) gallery += `M${f(x)} ${f(floor)}V${f(roof + 1.1)}M${f(x - 1.2)} ${f(roof + 1.1)}H${f(x + 1.2)}`;
-        } else {
-          gallery = `M${f(mouth)} ${f(floor)}H${f(xs)}A${f(r)} ${f(r)} 0 0 1 ${f(xs)} ${f(roof)}H${f(mouth)}`;
-          gaps.holes.push({ c: [xs, gy], r: r + 1.2 });
-        }
-      }
-      // Its mark, in the rock between the shaft and the section's edge.
-      const [mx0, mx1] = [X + HALF + 3, E - 3];
-      const u = Math.min(mx1 - mx0, band - 3.5, 15) / 13;
-      const m = known ? mark(k, [(mx0 + mx1) / 2, yc], u, y0, y1, mx0, mx1) : null;
-      if (m) gaps.boxes.push(...m.boxes), gaps.holes.push(...m.holes);
-      if (uncharted && uncharted.y > y0 - 8 && uncharted.y < y1 + 8) gaps.boxes.push([uncharted.x - 24, uncharted.y - 6.5, uncharted.x + 24, uncharted.y + 6.5]);
-      return {
-        ...z,
-        k,
-        y0,
-        y1,
-        yc,
-        known,
-        roof,
-        floor,
-        gallery,
-        mark: m,
-        hatch: hatchRect(0, y0, E, y1, known ? 2.1 : 2.6, k % 2 === 1, shaftGaps(gaps)),
-      };
+      return { ...z, k, yc, known, at: pen(yc - R) };
     });
-    // The shaft's walls, broken where a gallery opens off the left one, sunk on into the dark.
-    const len = h - TOP;
-    const mouths: Cut[] = zones.filter((z) => z.gallery).map((z) => [(z.roof - TOP) / len, (z.floor - TOP) / len]);
-    const nicks = (seed: number) => wr(seed)!(len);
-    const walls = (worn: boolean): Piece[] => [
-      ...pieces([X - HALF, TOP], [X - HALF, h], [...mouths, ...(worn ? nicks(11) : [])], 0.3, 1.1),
-      ...pieces([X + HALF, TOP], [X + HALF, h], worn ? nicks(13) : [], 0.3, 1.1),
-    ];
-    // The strata's seams and the section's edges, in hairline, stopping short of the shaft.
-    const seams = Array.from({ length: 10 }, (_, j) => {
-      const yy = TOP + (j + 1) * band;
-      return { d: line([0, yy], [X - HALF - 0.8, yy], { wear: wr(20 + j) }) + line([X + HALF + 0.8, yy], [E, yy], { wear: wr(40 + j) }), known: j < reached };
+    const holes: Hole[] = zones.map((z) => ({ c: [AX, z.yc], r: R + 1.4 }));
+    // The axis, from the sun to the ouroboros, broken at every roundel: inked as far as you've been, dotted on from there.
+    const axisTop = SUN_Y + SUN_R + 1.2;
+    const axisEnd = OY - OR - 3.4;
+    const inkTo = reached === 0 ? axisTop : reached === 10 && best! > 100 ? axisEnd : zones[reached - 1].yc;
+    const len = axisEnd - axisTop;
+    const cutsAt = (list: Hole[]): Cut[] => list.map((o) => [(o.c[1] - o.r - axisTop) / len, (o.c[1] + o.r - axisTop) / len]);
+    const inked = (worn: boolean): Piece[] =>
+      inkTo <= axisTop
+        ? []
+        : pieces([AX, axisTop], [AX, inkTo], [...cutsAt(holes), ...(worn ? wear(11)!(inkTo - axisTop) : [])], (t) => pen(axisTop + t * (inkTo - axisTop)));
+    const axisDots = dotted([AX, Math.max(axisTop, inkTo)], [AX, axisEnd], 2.2, holes);
+    // Inside the ouroboros the axis runs on, dotted, to a pricked centre.
+    const innerAxis = dotted([AX, OY - OR + 2.2], [AX, OY - 1.6], 2);
+    // The scale: the border's line, broken at your mark; a tick for every depth.
+    const ruler = (worn: boolean) =>
+      pieces([SX, FT], [SX, FB], [[(mark - STAR - 1 - FT) / (FB - FT), (mark + STAR + 1 - FT) / (FB - FT)], ...(worn ? wear(17)!(FB - FT) : [])], (t) => pen(FT + t * (FB - FT)));
+    // The scale's divisions, zone by zone (the last also closing the scale at 100): a tick for every depth, every fifth longer;
+    // every tenth, where one zone gives way to the next, longest, with a dotted guide across to the axis between the roundels.
+    const clear = (yy: number) => Math.abs(yy - mark) >= STAR + 0.8;
+    const tick = (yy: number, l: number) => (clear(yy) ? `M${f(SX)} ${f(yy)}H${f(SX - l)}` : '');
+    const ticks = Array.from({ length: 11 }, (_, k) => {
+      let minor = '';
+      if (k < 10) for (let d = 10 * k + 1; d < 10 * k + 10; d++) minor += tick(T(d), d % 5 === 0 ? 2.8 : 1.7);
+      const yy = T(10 * k);
+      const [x0, x1] = [AX + 1.6, SX - 6.4];
+      const guide =
+        k === 0 || k === 10 || x1 - x0 < 3
+          ? ''
+          : subtract(0, 1, numCuts(x0, x1, yy))
+              .map(([a, b]) => dotted([x0 + a * (x1 - x0), yy], [x0 + b * (x1 - x0), yy], 2.2))
+              .join('');
+      return { minor, major: tick(yy, 4.6), guide, at: pen(yy) };
     });
-    const edges = line([0, TOP], [0, h]) + line([E, TOP], [E, h]);
-    // The Mines' ladder down the shaft, its rungs stopping short of the rope.
-    let ladder = '';
-    if (reached > 0) {
-      const [l, r] = [X - 2.3, X + 2.3];
-      ladder = `M${f(l)} ${f(TOP + 0.8)}V${f(TOP + band)}M${f(r)} ${f(TOP + 0.8)}V${f(TOP + band)}`;
-      for (let yy = TOP + 2.2; yy < TOP + band - 0.5; yy += 2.6)
-        ladder += line([l, yy], [r, yy], { cuts: yy < lamp - ROPE_END ? [[0.5 - 0.9 / 4.6, 0.5 + 0.9 / 4.6]] : [] });
-    }
-    // The well past the tenth zone: rings down the shaft, ever closer, into the dark.
-    const well = Array.from({ length: 8 }, (_, i) => {
-      const yy = BOTTOM + BEYOND * (1 - Math.pow(0.68, i + 1));
-      const ropeHere = best !== null && best > 100 && yy < lamp - ROPE_END;
-      return line([X - HALF + 0.7, yy], [X + HALF - 0.7, yy], { cuts: ropeHere ? [[0.5 - 0.9 / 6.6, 0.5 + 0.9 / 6.6]] : [] });
-    }).join('');
-    const beyond = hatchRect(0, BOTTOM, E, h, 2.6, false, shaftGaps({ boxes: [], holes: [] }));
-    return {
-      zones,
-      walls,
-      seams,
-      edges,
-      ladder,
-      well,
-      uncharted,
-      surface: (worn: boolean) => line([0, TOP], [E, TOP], { cuts: [[(X - HALF - 0.8) / E, (X + HALF + 0.8) / E]], wear: worn ? wr(3) : null }),
-      beyond,
-      // The hatching within the lamp's reach, to be lit by it.
-      lit: [...zones.filter((z) => z.y1 > lamp - LIGHT && z.y0 < lamp + LIGHT).map((z) => z.hatch), lamp + LIGHT > BOTTOM ? beyond : ''].join(''),
+    // The surface: a hairline across the plate at depth 0, stopping short of the scale's "1".
+    const surface = (worn: boolean) =>
+      pieces([FL, TOP], [SX, TOP], [...numCuts(FL, SX, TOP + 2), ...(worn ? wear(5)!(SX - FL) : [])], (t) => 0.1 + 0.6 * t);
+    // The frame's other three sides, ruled twice. The pen runs once round the outer rule, from the scale's head to its foot.
+    const frame = (worn: boolean) => {
+      const sides: [Pt, Pt][] = [
+        [[SX, FT], [FL, FT]],
+        [[FL, FT], [FL, FB]],
+        [[FL, FB], [SX, FB]],
+      ];
+      const lens = sides.map(([p, q]) => Math.hypot(q[0] - p[0], q[1] - p[1]));
+      const total = lens.reduce((a, b) => a + b);
+      let run = 0;
+      return sides.flatMap(([p, q], i) => {
+        const [s0, l] = [run, lens[i]];
+        run += l;
+        return pieces(p, q, worn ? wear(3 + i)!(l) : [], (t) => (1.1 * (s0 + t * l)) / total);
+      });
     };
+    // The inner rule, its corners notched by a compass arc about the outer's.
+    const [ix, iy0, iy1] = [FL + IN, FT + IN, FB - IN];
+    const nx = Math.sqrt(NOTCH * NOTCH - IN * IN);
+    const rule = [
+      `M${f(SX)} ${f(iy0)}H${f(FL + nx)}`,
+      `A${NOTCH} ${NOTCH} 0 0 1 ${f(ix)} ${f(FT + nx)}`,
+      `V${f(FB - nx)}`,
+      `A${NOTCH} ${NOTCH} 0 0 1 ${f(FL + nx)} ${f(iy1)}`,
+      `H${f(SX)}`,
+    ].join('');
+    // Each zone's label line, from the frame to its roundel: inked under its name once reached, dotted until then.
+    const labels = zones.map((z) => {
+      const [x0, x1] = [FL + IN + 2.2, AX - R - 1.6];
+      return z.known ? `M${f(x1)} ${f(z.yc)}H${f(x0)}` : dotted([x0, z.yc], [x1, z.yc], 2.2);
+    });
+    // The sun: a glory of sixteen fine rays about its ring, long and short in turn, none on the axis below it.
+    const sunRays = Array.from({ length: 16 }, (_, k) => {
+      const a = (k + 0.5) * 22.5;
+      return line(at([AX, SUN_Y], a, SUN_R + 1.1), at([AX, SUN_Y], a, SUN_R + (k % 2 ? 2.2 : 3.4)));
+    }).join('');
+    // Your mark: an eight-pointed star on the scale, the scale stopping short of its points; and a dotted index line from it to the axis.
+    const star = star8([SX, mark], STAR);
+    const idxEnd = (() => {
+      if (best === null) return null;
+      if (best > 100) return AX + OR + 3.4;
+      const z = zones[Math.min(9, Math.floor((best - 1) / 10))];
+      const dy = Math.abs(mark - z.yc);
+      return dy < R + 1.4 ? AX + Math.sqrt((R + 1.4) ** 2 - dy * dy) : AX + 1.4;
+    })();
+    const index = idxEnd !== null && SX - STAR - 1.6 - idxEnd > 2 ? dotted([SX - STAR - 1.6, mark], [idxEnd, mark], 1.6) : '';
+    return { zones, inked, axisDots, innerAxis, rule, sunRays, ruler, ticks, surface, frame, labels, star, index };
   });
+
+  const ouro = $derived(ouroboros([AX, OY], OR));
 
   // The notes: a few words each at about the depth they're about, nudged
   // apart where they would touch (the deepest's number never moves).
@@ -428,7 +257,7 @@
   /** A note: its key (a word in italic, a depth in Cinzel), its few words (a line each), and the `y` it belongs at. */
   type Note = { id: string; word?: string; num?: string; lines: string[]; at: number; best?: boolean };
   const NOTES: Note[] = $derived([
-    { id: 'lives', num: '1', lines: [`${LIVES} lives`], at: TOP - 6 },
+    { id: 'lives', num: '1', lines: [`${LIVES} lives`], at: TOP - 8 },
     { id: 'finds', num: String(FINDS_FROM), lines: ['finds appear'], at: y(FINDS_FROM) },
     { id: 'zones', word: 'every', num: '10', lines: ['a new zone'], at: TOP + 2 * band },
     { id: 'deeper', word: 'deeper', lines: ['less time,', 'trickier questions'], at: y(60) },
@@ -452,21 +281,20 @@
     }
     return out;
   }
-  const notes = $derived(spread(best ? [...NOTES, { id: 'best', num: String(best), lines: [], at: lamp, best: true }] : NOTES));
+  const notes = $derived(spread(best ? [...NOTES, { id: 'best', num: String(best), lines: [], at: mark, best: true }] : NOTES));
 
-  const uid = $props.id();
   const words = (n: number) => ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'][n] ?? String(n);
   const summary = $derived(
     [
-      `The descent: ten zones of ten depths, then on for ever, each stratum new.`,
+      `The descent: ten zones of ten depths each, then on for ever.`,
       `${LIVES[0].toUpperCase() + LIVES.slice(1)} lives; finds turn up from depth ${FINDS_FROM}; the deeper, the less time and the trickier the questions.`,
       reached === 0
-        ? 'All ten zones are uncharted.'
+        ? 'No zone reached yet.'
         : reached === ZONES.length
           ? `Zones reached: all ten, ${ZONES.map((z) => z.name).join(', ')}.`
           : `Zones reached: ${ZONES.slice(0, reached)
               .map((z) => z.name)
-              .join(', ')}; ${words(ZONES.length - reached)} more uncharted.`,
+              .join(', ')}; ${words(ZONES.length - reached)} more to find.`,
       best ? `${label}: depth ${best}.` : '',
     ]
       .filter(Boolean)
@@ -474,93 +302,96 @@
   );
 </script>
 
-{#snippet frame(worn: boolean)}
+<!-- The inked lines, drawn twice: worn on top, whole and soft for the glow under them. -->
+{#snippet ink(worn: boolean)}
   {#if plate}
-    <path class="draw" d={headframe(worn)} pathLength="100" style:--d="0s" style:--t="0.45s" />
-    <path class="draw" d={ring(WHEEL, WHEEL_R, { wear: null })} pathLength="100" style:--d="0.2s" style:--t="0.5s" />
-    <path class="draw" d={plate.surface(worn)} pathLength="100" style:--d="0.1s" style:--t="0.4s" />
-    {#each plate.walls(worn) as p, i (i)}
-      <path class="draw piece wall" d={p.d} pathLength="100" style:--d="{p.delay.toFixed(3)}s" style:--t="{p.dur.toFixed(3)}s" />
+    {#each [plate.frame(worn), plate.surface(worn), plate.ruler(worn)] as list, k (k)}
+      {#each list as p, i (i)}
+        <path class={['draw piece', k < 2 && 'hair', k === 0 && 'frame']} d={p.d} pathLength="100" style:--d="{p.delay.toFixed(3)}s" style:--t="{p.dur.toFixed(3)}s" />
+      {/each}
     {/each}
+    <path class="draw ring" d={ring([AX, SUN_Y], SUN_R)} pathLength="100" style:--d="0.1s" style:--t="0.4s" />
+    {#each plate.inked(worn) as p, i (i)}
+      <path class="draw piece" d={p.d} pathLength="100" style:--d="{p.delay.toFixed(3)}s" style:--t="{p.dur.toFixed(3)}s" />
+    {/each}
+    {#each plate.zones as z (z.k)}
+      {#if z.known}
+        <path class="draw ring" d={ring([AX, z.yc], R)} pathLength="100" style:--d="{z.at.toFixed(2)}s" style:--t="0.45s" />
+      {/if}
+    {/each}
+    {#if best !== null && best > 100}
+      <path class="draw" d={ouro.body} pathLength="100" style:--d="1.3s" style:--t="0.8s" />
+    {/if}
   {/if}
 {/snippet}
 
 <figure class="descent" role="img" aria-label={summary} bind:clientWidth={w} bind:clientHeight={h}>
   {#if plate}
     <svg viewBox="0 0 {w} {h}" width={w} height={h} aria-hidden="true">
-      <defs>
-        <linearGradient id="{uid}-fade" x1="0" y1={BOTTOM} x2="0" y2={h} gradientUnits="userSpaceOnUse">
-          <stop offset="0" stop-color="#fff" />
-          <stop offset="1" stop-color="#fff" stop-opacity="0" />
-        </linearGradient>
-        <!-- Past the tenth zone everything fades into the dark. -->
-        <mask id="{uid}-dark" maskUnits="userSpaceOnUse" x="-10" y="-10" width={w + 20} height={h + 20}>
-          <rect x="-10" y="-10" width={w + 20} height={BOTTOM + 10} fill="#fff" />
-          <rect x="-10" y={BOTTOM} width={w + 20} height={BEYOND + 10} fill="url(#{uid}-fade)" />
-        </mask>
-        <!-- The lamp's light on the rock round it: the hatching near it drawn again in this, bright at the lamp and gone by its edge. -->
-        <radialGradient id="{uid}-light" cx={X} cy={lamp} r={LIGHT} gradientUnits="userSpaceOnUse">
-          <stop offset="0" style:stop-color="var(--gold-hi)" stop-opacity="1" />
-          <stop offset="0.4" style:stop-color="var(--gold-hi)" stop-opacity="0.35" />
-          <stop offset="1" style:stop-color="var(--gold-hi)" stop-opacity="0" />
-        </radialGradient>
-      </defs>
+      <g class="glow">{@render ink(false)}</g>
+      <g class="lines">{@render ink(true)}</g>
 
-      <!-- Above ground: the spoil heap and the winding house either side of the headframe. -->
-      <g class="above">
-        <path d={heap} />
-        <path d={house} />
-      </g>
+      <path class="draw rule" d={plate.rule} pathLength="100" style:--d="0.2s" style:--t="1.1s" />
 
-      <g mask="url(#{uid}-dark)">
-        <!-- The rock, stratum by stratum: tinted and hatched in a zone's colour once reached, dark until then. -->
-        {#each plate.zones as z (z.k)}
-          <path
-            class="band hatch"
-            class:known={z.known}
-            d={z.hatch}
-            style:--c={z.known ? z.color : null}
-            style:--dim={z.known ? null : (0.3 - (0.14 * (z.k - reached)) / Math.max(1, 9 - reached)).toFixed(3)}
-            style:--d="{(0.35 + z.k * 0.08).toFixed(2)}s"
-          />
-        {/each}
-        <path class="hatch beyond" d={plate.beyond} />
-        <path class="lit" d={plate.lit} style:stroke="url(#{uid}-light)" />
-        {#each plate.seams as s, j (j)}
-          <path class="seam" class:known={s.known} d={s.d} style:--d="{(0.4 + j * 0.08).toFixed(2)}s" />
-        {/each}
-        <path class="edge" d={plate.edges} />
-        <path class="well" d={plate.well} />
-        <g class="glow">{@render frame(false)}</g>
-        <g class="lines">{@render frame(true)}</g>
-      </g>
-      <path class="wheel" d={spokes} />
-      <circle class="wheel" cx={WHEEL[0]} cy={WHEEL[1]} r="0.8" />
+      <!-- The sun at the top, where the descent begins: a ring round a point, in a glory of fine rays. -->
+      <circle class="point" cx={AX} cy={SUN_Y} r="0.75" style:--d="0.3s" />
+      <path class="sun-rays" d={plate.sunRays} />
 
-      <!-- The zones reached: each a gallery with its name, and its mark beside the shaft. -->
+      <!-- The scale's ticks, zone by zone as the pen comes down, and its numbers. -->
+      {#each plate.ticks as t, k (k)}
+        <g style:--d="{t.at.toFixed(2)}s">
+          <path class="tick" d={t.minor} />
+          <path class="tick major" d={t.major} />
+          <path class="dots guide" d={t.guide} />
+        </g>
+      {/each}
+      {#each NUMBERED as d (d)}
+        {#if Math.abs(y(d) - mark) > 4}
+          <text class="scale-num" x={SX - NUM_RIGHT} y={y(d)} style:--d="{pen(y(d)).toFixed(2)}s">{d}</text>
+        {/if}
+      {/each}
+
+      <!-- The axis on from where you've been, still only dotted. -->
+      <path class="dots axis-dots" d={plate.axisDots} style:--d="0.9s" />
+
+      <!-- The zones: reached, a double ring round its sigil and its name on its line; not yet, a dotted circle round a pricked centre. -->
       {#each plate.zones as z (z.k)}
         {#if z.known}
-          <g class="zone" style:--c={z.color} style:--d="{(0.35 + z.k * 0.08).toFixed(2)}s">
-            <path class="gallery" d={z.gallery} />
-            <text class="name" x={NAME_X} y={z.yc} bind:this={nameEls[z.k]}>{z.name}</text>
-            {#if z.mark}
-              <g class="mark">
-                {#if z.mark.glow}<path class="mark-glow" d={z.mark.glow} />{/if}
-                <path d={z.mark.d} />
-              </g>
-            {/if}
+          <g class="zone" style:--c={z.color} style:--d="{z.at.toFixed(2)}s">
+            <path class="draw label" d={plate.labels[z.k]} pathLength="100" style:--d="{(z.at + 0.15).toFixed(2)}s" style:--t="0.5s" />
+            <circle class="inner" cx={AX} cy={z.yc} r={R - 1.25} />
+            <g class="sigil" transform="translate({f(AX)} {f(z.yc)}) scale({f((R - 2.7) / 10)})">
+              <path class="fine" d={z.sigil.fine} />
+              <path d={z.sigil.lines} />
+            </g>
+            <text class="name" x={AX - R - 5} y={z.yc - 1.9}>{z.name}</text>
+          </g>
+        {:else}
+          <g class="unknown" style:--dim={(0.75 - (0.35 * (z.k - reached)) / Math.max(1, 9 - reached)).toFixed(3)} style:--d="{z.at.toFixed(2)}s">
+            <path class="dots" d={dottedRing([AX, z.yc], R, 1.9)} />
+            <path class="dots" d={plate.labels[z.k]} />
+            <path class="dots centre" d="M{f(AX)} {f(z.yc)}h0" />
           </g>
         {/if}
       {/each}
-      {#if plate.ladder}<path class="ladder" d={plate.ladder} style:--c={ZONES[0].color} />{/if}
-      {#if plate.uncharted}
-        <text class="uncharted-word" x={plate.uncharted.x} y={plate.uncharted.y}>uncharted</text>
-      {/if}
 
-      <!-- What lies ahead, in a few words; and your deepest, lit. -->
+      <!-- Past 100: the ouroboros, inked once you've been past it, else set out in dots; the axis runs on inside it. -->
+      {#if best !== null && best > 100}
+        <path class="scales" d={ouro.scales} />
+        <circle class="eye" cx={ouro.eye[0]} cy={ouro.eye[1]} r="0.42" />
+      {:else}
+        <g class="unknown" style:--dim="0.4" style:--d="1.3s">
+          <path class="dots" d={dottedRing([AX, OY], OR + 1, 1.9)} />
+          <path class="dots" d={dottedRing([AX, OY], OR - 1, 1.9)} />
+        </g>
+      {/if}
+      <path class="dots inner-axis" d={plate.innerAxis} style:--d="1.5s" />
+      <path class="dots centre" d="M{f(AX)} {f(OY)}h0" style:--d="1.5s" />
+
+      <!-- What lies ahead, in a few words. -->
       {#each notes as n (n.id)}
         <g class="note" class:best={n.best} style:--d="{n.best ? 1.7 : (0.45 + (n.y / h) * 0.9).toFixed(2)}s">
-          <path class="pip" class:lit={n.best} d="M{f(pipX - 1.6)} {f(n.y)}l1.6 -1.6l1.6 1.6l-1.6 1.6z" />
+          {#if !n.best}<path class="pip" d="M{f(pipX - 1.6)} {f(n.y)}l1.6 -1.6l1.6 1.6l-1.6 1.6z" />{/if}
           <!-- The italic words ride RISE above the Cinzel depths' baseline, where they line up by eye. -->
           <text x={noteX} y={n.y - RISE}>
             {#if n.word}<tspan class="key">{n.word}</tspan>{/if}
@@ -573,11 +404,12 @@
         </g>
       {/each}
 
-      <!-- The rope down to the lamp at your deepest. -->
-      <path class="rope draw" d="M{X} {WHEEL[1] + WHEEL_R}V{f(lamp - ROPE_END)}" pathLength="100" style:--d="1.1s" style:--t="0.7s" />
-      <g class="lamp">
-        <circle class="halo" cx={X} cy={lamp} r="7" />
-        <path class="flame" d="M{X} {f(lamp - ROPE_END)}l2.2 2.6l-2.2 2.6l-2.2 -2.6z" />
+      <!-- Your deepest: a radiant mark on the scale, and a dotted index line from it to where it lies. -->
+      <path class="dots index" d={plate.index} />
+      <g class="mark">
+        <circle class="halo" cx={SX} cy={mark} r="5" />
+        <path class="star" d={plate.star.outline} />
+        <path class="ridges" d={plate.star.ridges} />
       </g>
     </svg>
   {/if}
@@ -588,7 +420,7 @@
   .descent {
     position: relative;
     flex: 1 1 auto;
-    min-height: 14.5rem;
+    min-height: var(--descent-min, 14.5rem);
     margin: 0;
     color: var(--gold);
   }
@@ -598,129 +430,147 @@
     display: block;
     overflow: visible;
   }
-  path {
+  path,
+  circle {
     fill: none;
     stroke: currentColor;
-    stroke-width: 0.7;
+    stroke-width: 0.5;
     stroke-linecap: butt;
+    stroke-linejoin: miter;
+    stroke-miterlimit: 12;
   }
-  .edge {
-    animation: carve 0.8s 0.3s var(--ease-out) both;
-    stroke-width: 0.35;
-    opacity: 0.45;
+  .frame {
+    opacity: 0.5;
   }
-  .seam {
-    animation: carve 0.5s var(--d) var(--ease-out) both;
-    stroke: var(--muted);
-    stroke-width: 0.35;
-    opacity: 0.4;
+  .hair {
+    stroke-width: 0.3;
+    opacity: 0.7;
   }
-  .seam.known {
-    stroke: currentColor;
-    opacity: 0.55;
+  /* A ring has no ends, but its dash for the drawing does. */
+  .ring {
+    stroke-linecap: round;
   }
-  .wall {
-    stroke-width: 0.8;
+  .rule {
+    stroke-width: 0.3;
+    opacity: 0.35;
+  }
+  .sun-rays {
+    stroke-width: 0.3;
+    animation: carve 0.5s 0.4s var(--ease-out) both;
   }
   .glow path {
-    stroke-width: 2.2;
-    opacity: 0.16;
+    stroke-width: 2;
+    opacity: 0.13;
   }
-  .wheel {
-    fill: none;
-    stroke: currentColor;
-    stroke-width: 0.45;
-    animation: carve 0.4s 0.55s var(--ease-out) both;
-  }
-  circle.wheel {
-    fill: currentColor;
-    stroke: none;
-  }
-  .above {
-    opacity: 0.7;
-    animation: carve 0.5s 0.25s var(--ease-out) both;
-  }
-  .above path {
-    stroke-width: 0.45;
-    stroke-linejoin: miter;
-  }
-
-  /* A stratum: reached, its colour as a faint tint and hatching in the rock; not yet, dark rock, its hatching dim and sparse. */
-  .band {
-    animation: carve 0.5s var(--d) var(--ease-out) both;
-  }
-  .hatch {
-    stroke: color-mix(in srgb, var(--c, var(--muted)) 70%, var(--muted));
-    stroke-width: 0.45;
-    stroke-linecap: round;
-    opacity: 0.6;
-  }
-  /* Uncharted, the rock dims the deeper it lies. */
-  .band:not(.known) {
-    opacity: var(--dim);
-  }
-  .beyond {
-    opacity: 0.22;
-  }
-  /* The lamp's light, catching the hatching round it. */
-  .lit {
-    stroke-width: 0.5;
-    stroke-linecap: round;
-    animation: carve 0.6s 1.8s var(--ease-out) both;
-  }
-  .well {
-    animation: carve 0.6s 1.2s var(--ease-out) both;
-    stroke-width: 0.4;
-    opacity: 0.6;
+  .glow .frame,
+  .glow .hair {
+    stroke-width: 1;
   }
   text {
     dominant-baseline: central;
   }
 
-  /* A zone reached: its gallery, its name in a pale wash of its colour, its mark. */
-  .zone {
-    animation: carve 0.5s var(--d) var(--ease-out) both;
+  /* The sun's point, and a construction's pricked centres. */
+  .point {
+    fill: currentColor;
+    stroke: none;
+    animation: carve 0.4s var(--d) var(--ease-out) both;
   }
-  .gallery {
-    stroke: color-mix(in srgb, var(--c) 30%, var(--gold));
-    stroke-width: 0.55;
-    stroke-linejoin: miter;
+
+  /* The scale: hairline ticks, the tenths stronger; its numbers small in Cinzel. */
+  .tick {
+    stroke-width: 0.36;
+    opacity: 0.9;
+    animation: carve 0.35s var(--d) var(--ease-out) both;
+  }
+  .tick.major {
+    stroke-width: 0.45;
+    opacity: 1;
+  }
+  .scale-num {
+    font-family: var(--font-cinzel);
+    font-size: 5.6px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-anchor: end;
+    fill: var(--gold-lo);
+    animation: carve 0.4s var(--d) var(--ease-out) both;
+  }
+
+  /* Construction not yet inked: dots, round-capped, faint. */
+  .dots {
+    stroke-width: 0.6;
+    stroke-linecap: round;
+    stroke: var(--muted);
+    animation: carve 0.6s var(--d, 1s) var(--ease-out) both;
+  }
+  .guide {
+    stroke: currentColor;
+    stroke-width: 0.45;
+    opacity: 0.4;
+  }
+  .axis-dots {
+    stroke: currentColor;
+    opacity: 0.55;
+  }
+  .inner-axis {
+    stroke: currentColor;
+    opacity: 0.45;
+  }
+  .dots.centre {
+    stroke-width: 0.95;
+  }
+  .unknown {
+    opacity: var(--dim);
+    animation: dim-in 0.6s var(--d) var(--ease-out) both;
+  }
+
+  /* A zone reached: its rings in gold, its sigil and name in a pale wash of its colour. */
+  .zone .inner {
+    stroke-linecap: round;
+    stroke-width: 0.3;
+    opacity: 0.75;
+    animation: carve 0.4s calc(var(--d) + 0.2s) var(--ease-out) both;
+  }
+  .label {
+    stroke-width: 0.3;
+    stroke: color-mix(in srgb, var(--c) 40%, var(--gold));
+    opacity: 0.7;
+  }
+  .sigil {
+    animation: carve 0.5s calc(var(--d) + 0.3s) var(--ease-out) both;
+  }
+  .sigil path {
+    stroke: color-mix(in srgb, var(--c) 60%, #e3d3b4);
+    stroke-width: 0.55px;
+    vector-effect: non-scaling-stroke;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .sigil .fine {
+    stroke-width: 0.38px;
   }
   .name {
     font-family: var(--font-display);
-    font-size: 7.8px;
-    letter-spacing: 0.1em;
+    font-size: 6.3px;
+    letter-spacing: 0.17em;
     text-transform: uppercase;
-    fill: color-mix(in srgb, var(--c) 55%, #e3d3b4);
+    text-anchor: end;
+    fill: color-mix(in srgb, var(--c) 55%, #d8c9a8);
+    animation: carve 0.5s calc(var(--d) + 0.35s) var(--ease-out) both;
   }
-  .mark {
-    animation: carve 0.6s calc(var(--d) + 0.35s) var(--ease-out) both;
-  }
-  .mark path {
-    stroke: color-mix(in srgb, var(--c) 70%, #e3d3b4);
-    stroke-width: 0.45;
-    stroke-linejoin: round;
+
+  /* The ouroboros, inked. */
+  .scales {
+    stroke-width: 0.25;
     stroke-linecap: round;
-  }
-  .mark .mark-glow {
-    stroke: var(--c);
-    stroke-width: 2;
-    opacity: 0.22;
-  }
-  .ladder {
-    stroke: color-mix(in srgb, var(--c) 45%, var(--gold));
-    stroke-width: 0.4;
-    opacity: 0.85;
-    animation: carve 0.5s 0.6s var(--ease-out) both;
-  }
-  .uncharted-word {
-    font-style: italic;
-    font-size: 10px;
-    letter-spacing: 0.03em;
-    text-anchor: middle;
-    fill: var(--muted);
     opacity: 0.8;
-    animation: carve 0.6s 1.1s var(--ease-out) both;
+    animation: carve 0.5s 1.8s var(--ease-out) both;
+  }
+  .eye {
+    fill: currentColor;
+    stroke: none;
+    animation: carve 0.5s 1.9s var(--ease-out) both;
   }
 
   /* The notes: a key in gold (depths in Cinzel), a few words in the body's italic. */
@@ -752,37 +602,40 @@
     fill: var(--bg);
     stroke: var(--gold);
     stroke-width: 0.6;
-    stroke-linejoin: miter;
-  }
-  .best .num,
-  .pip.lit {
-    fill: var(--gold-hi);
   }
   .best .num {
     font-size: 10px;
+    fill: var(--gold-hi);
   }
 
-  /* The rope and the lamp at your deepest: the brightest thing on the plate. */
-  .rope {
-    stroke-width: 0.5;
-    opacity: 0.85;
+  /* Your deepest: the brightest thing on the plate. */
+  .index {
+    stroke: var(--gold-hi);
+    stroke-width: 0.7;
+    opacity: 0.75;
+    animation-delay: 1.75s;
   }
-  .lamp {
-    animation: carve 0.5s 1.7s var(--ease-out) both;
+  .mark {
+    color: var(--gold-hi);
+    animation: carve 0.5s 1.65s var(--ease-out) both;
+  }
+  .star {
+    fill: var(--gold-hi);
+    stroke: #fff4d6;
+    stroke-width: 0.3;
+  }
+  .ridges {
+    stroke: #8a6a2e;
+    stroke-width: 0.25;
   }
   .halo {
     fill: var(--gold-hi);
-    opacity: 0.2;
+    stroke: none;
+    opacity: 0.18;
     filter: blur(2px);
     transform-box: fill-box;
     transform-origin: center;
     animation: breathe 5s 2.2s ease-in-out infinite alternate;
-  }
-  .flame {
-    fill: var(--gold-hi);
-    stroke: #fff4d6;
-    stroke-width: 0.4;
-    stroke-linejoin: miter;
   }
 
   .draw {
@@ -799,6 +652,11 @@
     }
   }
   @keyframes carve {
+    from {
+      opacity: 0;
+    }
+  }
+  @keyframes dim-in {
     from {
       opacity: 0;
     }
