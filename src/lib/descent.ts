@@ -1260,7 +1260,7 @@ export const shownDepth = () => shown;
  * skips it while it holds still (reduced motion, effects off).
  */
 export const PLUNGE_MS = 1900;
-export const PLUNGE_SINK = 0.6;
+export const PLUNGE_SINK = 0.8;
 /**
  * How far the scene has sunk (screens, wrapping far down), how fast (screens
  * a second) and how far the dark has drawn in (0 to 1); and how far it has
