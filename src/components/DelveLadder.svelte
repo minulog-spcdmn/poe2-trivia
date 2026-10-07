@@ -1,13 +1,18 @@
 <script lang="ts">
   import { STRATA } from '../lib/descent';
+  import { DELVE_LIVES, FINDS_FROM } from '../lib/delve';
   import { f, line, ring, wear, type Pt } from '../lib/arcane';
 
   // The descent, engraved: a slim shaft sunk from a headframe at the surface
-  // down through the ten zones, each a band of its own colour cut into the
-  // rock either side, the zone's name beside it. Depths 1, 50 and 100 are
-  // marked; past 100 the shaft runs on, fading, "and beyond". A rope hangs
+  // down through the ten zones, each a band cut into the rock either side.
+  // A zone you have reached shows its colour and its name; one you haven't is
+  // dull rock, and the zones still ahead are marked only "uncharted", so the
+  // names stay a surprise. Past 100 the shaft runs on, fading. A rope hangs
   // from the wheel down to a lamp at your deepest (at the mouth before a
-  // first run). It shows where a run goes, never what gets harder.
+  // first run).
+  // Beside the shaft, a few short notes say what lies ahead (three lives,
+  // finds, a new zone every ten, less time and trickier questions deeper
+  // down, no end), never exactly what gets harder.
   // Drawn in the arcane style (docs/arcane-style.md): fine exact lines,
   // one-sided hatching that stops short of what it meets, a little wear, a
   // soft glow under the lines; it draws itself in from the surface down.
@@ -15,22 +20,24 @@
 
   const W = 200;
   /** The shaft's middle, its walls either side, and the rock cut beside them. */
-  const X = 44;
+  const X = 92;
   const HALF = 4;
   const ROCK = 6;
-  const TOP = 26;
-  const BAND = 14;
+  const TOP = 30;
+  const BAND = 15;
   const BOTTOM = TOP + 10 * BAND;
-  const BEYOND = 24;
+  const BEYOND = 26;
   const H = BOTTOM + BEYOND;
-  const NAME_X = X + HALF + ROCK + 8;
-  const NUM_X = X - HALF - ROCK - 5;
+  /** Zone names end left of the rock; the notes start right of it, after a pip. */
+  const NAME_X = X - HALF - ROCK - 5;
+  const PIP_X = X + HALF + ROCK + 4;
+  const NOTE_X = PIP_X + 5;
 
   /** Where depth `d` sits on the shaft; past 100, in the depths beyond. */
   const y = (d: number) => (d > 100 ? BOTTOM + BEYOND * 0.45 : TOP + ((d - 0.5) * BAND) / 10);
 
   const rgb = (c: readonly number[]) => `rgb(${c.join(' ')})`;
-  const BANDS = STRATA.slice(0, 10).map((z, k) => ({ name: z.name, color: rgb(z.look.accent), y0: TOP + k * BAND }));
+  const BANDS = STRATA.slice(0, 10).map((z, k) => ({ name: z.name, color: rgb(z.look.accent), y0: TOP + k * BAND, from: 10 * k + 1 }));
 
   /** One-sided hatching across the rect, falling to the left, `gap` apart, stopping `pad` short of its edges. */
   function hatchRect(x0: number, y0: number, x1: number, y1: number, gap: number, pad = 0.6): string {
@@ -52,7 +59,7 @@
     hatchRect(X - HALF - ROCK, y0, X - HALF, y1, gap) + hatchRect(X + HALF, y0, X + HALF + ROCK, y1, gap);
 
   // The headframe: two legs up from the surface to a wheel, which they stop short of.
-  const WHEEL: Pt = [X, 9];
+  const WHEEL: Pt = [X, 11];
   const WHEEL_R = 4.6;
   const hole = { c: WHEEL, r: WHEEL_R + 1.3 };
   const legs = (worn: boolean) => {
@@ -79,16 +86,76 @@
     line([X - HALF - ROCK, BOTTOM], [X - HALF, BOTTOM]) +
     line([X + HALF, BOTTOM], [X + HALF + ROCK, BOTTOM]);
 
-  // Depth marks, and your deepest; a mark too close to it gives way.
-  const MARKS = [1, 50, 100];
-  const best = $derived(deepest && deepest > 0 ? deepest : null);
-  const marks = $derived(MARKS.filter((m) => best === null || Math.abs(y(m) - y(best)) > 9));
+  const best = $derived(deepest && deepest > 0 ? Math.floor(deepest) : null);
+  /** A zone is reached once a run has been as deep as its first depth; only then is it named and coloured. */
+  const reached = $derived(BANDS.filter((b) => best !== null && best >= b.from).length);
   /** The rope runs from the wheel to the lamp: at your deepest, or at the mouth. */
   const lamp = $derived(y(best ?? 1));
 
+  // "Uncharted": the zones not reached yet, bracketed together under one
+  // quiet word, the bracket's line stopping short of it.
+  const UNCHARTED_X = NAME_X - 19;
+  const uncharted = $derived.by(() => {
+    if (reached >= BANDS.length) return null;
+    const y0 = BANDS[reached].y0 + 1.5;
+    const y1 = BOTTOM - 1.5;
+    const mid = (y0 + y1) / 2;
+    const tick = (yy: number) => `M${f(UNCHARTED_X)} ${f(yy)}H${f(NAME_X + 2)}`;
+    const d = y1 - y0 > 26 ? tick(y0) + tick(y1) + `M${f(UNCHARTED_X)} ${f(y0)}V${f(mid - 7)}M${f(UNCHARTED_X)} ${f(mid + 7)}V${f(y1)}` : '';
+    return { d, y: mid };
+  });
+
+  // The notes: a few words each at about the depth they're about, nudged
+  // apart where they would touch (the deepest's number never moves).
+  const LINE = 10.5;
+  const GAP = 11.5;
+  const LIVES = ['no', 'one', 'two', 'three', 'four', 'five'][DELVE_LIVES] ?? String(DELVE_LIVES);
+  /** A note: its key (a word in italic, a depth in Cinzel), its few words (a line each), and the `y` it belongs at. */
+  type Note = { id: string; word?: string; num?: string; lines: string[]; at: number; best?: boolean };
+  const NOTES: Note[] = [
+    { id: 'lives', num: '1', lines: [`${LIVES} lives`], at: TOP - 6 },
+    { id: 'finds', num: String(FINDS_FROM), lines: ['finds appear'], at: y(FINDS_FROM) },
+    { id: 'zones', word: 'every', num: '10', lines: ['a new zone'], at: TOP + 2 * BAND },
+    { id: 'deeper', word: 'deeper', lines: ['less time,', 'trickier questions'], at: y(60) },
+    { id: 'endless', num: '100+', lines: ['endless'], at: BOTTOM + 3 },
+  ];
+  /** The notes and your deepest, top to bottom, each at its `y`, none closer than GAP to the next. */
+  function spread(notes: Note[]): (Note & { y: number })[] {
+    const out = notes.map((n) => ({ ...n, y: n.at })).sort((a, b) => a.y - b.y);
+    for (let pass = 0; pass < 80; pass++) {
+      let moved = false;
+      for (let i = 1; i < out.length; i++) {
+        const [a, b] = [out[i - 1], out[i]];
+        const over = a.y + Math.max(0, a.lines.length - 1) * LINE + GAP - b.y;
+        if (over < 0.01) continue;
+        moved = true;
+        if (a.best) b.y += over;
+        else if (b.best) a.y -= over;
+        else [a.y, b.y] = [a.y - over / 2, b.y + over / 2];
+      }
+      if (!moved) break;
+    }
+    return out;
+  }
+  const notes = $derived(spread(best ? [...NOTES, { id: 'best', num: String(best), lines: [], at: lamp, best: true }] : NOTES));
+
   const uid = $props.id();
+  const words = (n: number) => ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'][n] ?? String(n);
   const summary = $derived(
-    `The descent: ten zones, from ${BANDS[0].name} at depth 1 to ${BANDS[9].name} at depth 100, and on beyond.${best ? ` ${label}: depth ${best}.` : ''}`,
+    [
+      `The descent: ten zones of ten depths, then on for ever, each stratum new.`,
+      `${LIVES[0].toUpperCase() + LIVES.slice(1)} lives; finds turn up from depth ${FINDS_FROM}; the deeper, the less time and the trickier the questions.`,
+      reached === 0
+        ? 'All ten zones are uncharted.'
+        : reached === BANDS.length
+          ? `Zones reached: all ten, ${BANDS.map((b) => b.name).join(', ')}.`
+          : `Zones reached: ${BANDS.slice(0, reached)
+              .map((b) => b.name)
+              .join(', ')}; ${words(BANDS.length - reached)} more uncharted.`,
+      best ? `${label}: depth ${best}.` : '',
+    ]
+      .filter(Boolean)
+      .join(' '),
   );
 </script>
 
@@ -112,15 +179,24 @@
       </mask>
     </defs>
 
-    <!-- The zones: each a band of its colour in the rock, its name beside it. -->
-    {#each BANDS as b, k (b.name)}
-      <g class="band" style:--c={b.color} style:--d="{(0.35 + k * 0.08).toFixed(2)}s">
-        <rect class="tint" x={X - HALF - ROCK} y={b.y0} width={ROCK} height={BAND} />
-        <rect class="tint" x={X + HALF} y={b.y0} width={ROCK} height={BAND} />
+    <!-- The zones: each a band in the rock, coloured and named once reached, dull rock until then. -->
+    {#each BANDS as b, k (b.from)}
+      {@const known = k < reached}
+      <g class="band" class:known style:--c={known ? b.color : null} style:--d="{(0.35 + k * 0.08).toFixed(2)}s">
+        {#if known}
+          <rect class="tint" x={X - HALF - ROCK} y={b.y0} width={ROCK} height={BAND} />
+          <rect class="tint" x={X + HALF} y={b.y0} width={ROCK} height={BAND} />
+        {/if}
         <path class="hatch" d={rock(b.y0, b.y0 + BAND, 2.1)} />
-        <text class="zone" x={NAME_X} y={b.y0 + BAND / 2}>{b.name}</text>
+        {#if known}<text class="zone" x={NAME_X} y={b.y0 + BAND / 2}>{b.name}</text>{/if}
       </g>
     {/each}
+    {#if uncharted}
+      <g class="uncharted">
+        <path d={uncharted.d} />
+        <text x={UNCHARTED_X} y={uncharted.y}>uncharted</text>
+      </g>
+    {/if}
 
     <g mask="url(#{uid}-dark)">
       <path class="hatch beyond" d={rock(BOTTOM, H, 2.1)} />
@@ -130,12 +206,19 @@
     </g>
     <path class="wheel" d={SPOKES} />
     <circle class="wheel" cx={WHEEL[0]} cy={WHEEL[1]} r="0.8" />
-    <text class="beyond-text" x={NAME_X} y={BOTTOM + BEYOND * 0.45}>and beyond</text>
 
-    {#each marks as m (m)}
-      <g class="mark" style:--d="{(0.4 + (m / 100) * 0.9).toFixed(2)}s">
-        <text class="depth" x={NUM_X} y={y(m)}>{m}</text>
-        <path class="pip" d="M{NUM_X + 3.2} {f(y(m))}l1.6 -1.6l1.6 1.6l-1.6 1.6z" />
+    <!-- What lies ahead, in a few words; and your deepest, lit. -->
+    {#each notes as n (n.id)}
+      <g class="note" class:best={n.best} style:--d="{n.best ? 1.7 : (0.45 + (n.y / H) * 0.9).toFixed(2)}s">
+        <path class="pip" class:lit={n.best} d="M{PIP_X - 1.6} {f(n.y)}l1.6 -1.6l1.6 1.6l-1.6 1.6z" />
+        <text x={NOTE_X} y={n.y}>
+          {#if n.word}<tspan class="key">{n.word}</tspan>{/if}
+          {#if n.num}<tspan class="num">{n.word ? ' ' : ''}{n.num}</tspan>{/if}
+          {#if n.lines.length}<tspan class="dot">{' • '}</tspan><tspan class="say">{n.lines[0]}</tspan>{/if}
+        </text>
+        {#each n.lines.slice(1) as l, i (i)}
+          <text class="say" x={NOTE_X} y={n.y + (i + 1) * LINE}>{l}</text>
+        {/each}
       </g>
     {/each}
 
@@ -145,10 +228,6 @@
       <circle class="halo" cx={X} cy={lamp} r="7" />
       <path class="flame" d="M{X} {f(lamp - 2.6)}l2.2 2.6l-2.2 2.6l-2.2 -2.6z" />
     </g>
-    {#if best}
-      <text class="depth best" x={NUM_X} y={lamp}>{best}</text>
-      <path class="pip lit" d="M{NUM_X + 3.2} {f(lamp)}l1.6 -1.6l1.6 1.6l-1.6 1.6z" />
-    {/if}
   </svg>
 </figure>
 
@@ -191,7 +270,7 @@
     stroke: none;
   }
 
-  /* A zone: its colour as a faint tint and hatching in the rock, its name in a pale wash of it. */
+  /* A zone: reached, its colour as a faint tint and hatching in the rock, its name in a pale wash of it; not yet, dull rock. */
   .band {
     animation: carve 0.5s var(--d) var(--ease-out) both;
   }
@@ -205,6 +284,9 @@
     stroke-linecap: round;
     opacity: 0.8;
   }
+  .band:not(.known) .hatch {
+    opacity: 0.4;
+  }
   .beyond {
     opacity: 0.45;
   }
@@ -213,23 +295,51 @@
   }
   .zone {
     font-family: var(--font-display);
-    font-size: 8.4px;
-    letter-spacing: 0.12em;
+    font-size: 7.8px;
+    letter-spacing: 0.1em;
     text-transform: uppercase;
+    text-anchor: end;
     fill: color-mix(in srgb, var(--c) 55%, #e3d3b4);
   }
-  .beyond-text {
-    font-style: italic;
-    font-size: 11px;
-    fill: var(--muted);
-    animation: carve 0.6s 1.3s var(--ease-out) both;
+  .uncharted {
+    opacity: 0.75;
+    animation: carve 0.6s 1.1s var(--ease-out) both;
   }
-  .depth {
+  .uncharted path {
+    stroke: var(--muted);
+    stroke-width: 0.35;
+  }
+  .uncharted text {
+    font-style: italic;
+    font-size: 10px;
+    letter-spacing: 0.03em;
+    text-anchor: middle;
+    fill: var(--muted);
+  }
+
+  /* The notes: a key in gold (depths in Cinzel), a few words in the body's italic. */
+  .note {
+    animation: carve 0.4s var(--d) var(--ease-out) both;
+  }
+  .note text {
+    font-size: 10.5px;
+  }
+  .num {
     font-family: var(--font-cinzel);
     font-weight: 700;
     font-size: 9px;
-    text-anchor: end;
     fill: var(--gold);
+  }
+  .key {
+    font-style: italic;
+    fill: var(--gold);
+  }
+  .dot {
+    fill: var(--gold-lo);
+  }
+  .say {
+    font-style: italic;
+    fill: #cfc2a8;
   }
   .pip {
     fill: var(--bg);
@@ -237,8 +347,12 @@
     stroke-width: 0.6;
     stroke-linejoin: miter;
   }
-  .mark {
-    animation: carve 0.4s var(--d) var(--ease-out) both;
+  .best .num,
+  .pip.lit {
+    fill: var(--gold-hi);
+  }
+  .best .num {
+    font-size: 10px;
   }
 
   /* The rope and the lamp at your deepest: the brightest thing on the plate. */
@@ -259,11 +373,6 @@
     stroke: #fff4d6;
     stroke-width: 0.4;
     stroke-linejoin: miter;
-  }
-  .best,
-  .pip.lit {
-    fill: var(--gold-hi);
-    animation: carve 0.5s 1.7s var(--ease-out) both;
   }
 
   .draw {
