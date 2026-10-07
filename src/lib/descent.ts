@@ -1260,7 +1260,7 @@ export const shownDepth = () => shown;
  * skips it while it holds still (reduced motion, effects off).
  */
 export const PLUNGE_MS = 1900;
-export const PLUNGE_SINK = 0.8;
+export const PLUNGE_SINK = 1.1;
 /**
  * How far the scene has sunk (screens, wrapping far down), how fast (screens
  * a second) and how far the dark has drawn in (0 to 1); and how far it has
@@ -1359,7 +1359,7 @@ export function stepPlunge(now: number, allowed: boolean): boolean {
  * effects off).
  */
 export const SWING_MS = 1300;
-export const SWING_SHIFT = 0.45;
+export const SWING_SHIFT = 0.55;
 let swingAsked = 0;
 let slideFrom = 0;
 let slideBy = 0;
