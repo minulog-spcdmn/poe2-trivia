@@ -3,7 +3,7 @@
   // a small engraving with its count: flares and dynamite. (Azurite Wards and
   // their shards are on the phial itself, encasing its chambers.) A `moment`
   // plays on them: a find landing, a flare burning, a stick of dynamite going
-  // off. A find on its way (`expect`: its sparks flying to it) has its place
+  // off, one blown up by a Dynamite Cache missed (`blown`). A find on its way (`expect`: its sparks flying to it) has its place
   // kept, unseen, so they have somewhere to land.
   import type { Inventory } from '../lib/delve';
   import type { InventoryMoment } from '../lib/inventoryArt';
@@ -11,23 +11,41 @@
 
   let { inv, moment = null, expect = null }: { inv: Inventory; moment?: InventoryMoment | null; expect?: 'flare' | 'dynamite' | null } = $props();
 
-  const counts = $derived(inv.flares > 0 || inv.dynamite > 0 || moment?.kind === 'burn' || moment?.kind === 'blast' || !!expect);
+  /** A flare or stick a blast just destroyed: it stays to crumble, its count already one down. */
+  const blown = $derived(moment?.kind === 'blown' ? moment.item : null);
+  const counts = $derived(inv.flares > 0 || inv.dynamite > 0 || moment?.kind === 'burn' || moment?.kind === 'blast' || blown === 'flares' || blown === 'dynamite' || !!expect);
 </script>
 
 {#if counts}
   <span class="inventory" aria-hidden="true">
-    {#if inv.flares > 0 || moment?.kind === 'burn' || expect === 'flare'}
-      <span class="count flare" class:fresh={moment?.kind === 'flare'} class:burning={moment?.kind === 'burn'} class:kept={expect === 'flare' && inv.flares === 0} data-pip="flare">
-        {#key moment?.kind === 'flare' || moment?.kind === 'burn' ? moment.key : 0}
+    {#if inv.flares > 0 || moment?.kind === 'burn' || blown === 'flares' || expect === 'flare'}
+      <span
+        class="count flare"
+        class:fresh={moment?.kind === 'flare'}
+        class:burning={moment?.kind === 'burn'}
+        class:blown={blown === 'flares'}
+        class:left={inv.flares > 0}
+        class:kept={expect === 'flare' && inv.flares === 0}
+        data-pip="flare"
+      >
+        {#key moment?.kind === 'flare' || moment?.kind === 'burn' || blown === 'flares' ? moment?.key : 0}
           <span class="grow"><ItemGlyph kind="flare" /></span>
         {/key}
         <b>{inv.flares}</b>
       </span>
     {/if}
-    {#if inv.dynamite > 0 || moment?.kind === 'blast' || expect === 'dynamite'}
+    {#if inv.dynamite > 0 || moment?.kind === 'blast' || blown === 'dynamite' || expect === 'dynamite'}
       <!-- A stick going off: it shudders, flares and is gone, the count already one down. -->
-      <span class="count dynamite" class:fresh={moment?.kind === 'dynamite'} class:lit={moment?.kind === 'blast'} class:kept={expect === 'dynamite' && inv.dynamite === 0} data-pip="dynamite">
-        {#key moment?.kind === 'dynamite' || moment?.kind === 'blast' ? moment.key : 0}
+      <span
+        class="count dynamite"
+        class:fresh={moment?.kind === 'dynamite'}
+        class:lit={moment?.kind === 'blast'}
+        class:blown={blown === 'dynamite'}
+        class:left={inv.dynamite > 0}
+        class:kept={expect === 'dynamite' && inv.dynamite === 0}
+        data-pip="dynamite"
+      >
+        {#key moment?.kind === 'dynamite' || moment?.kind === 'blast' || blown === 'dynamite' ? moment?.key : 0}
           <span class="grow"><ItemGlyph kind="dynamite" /></span>
         {/key}
         <b>{inv.dynamite}</b>
@@ -120,6 +138,49 @@
   .count.lit b {
     animation: count-in 0.4s ease-out 0.7s both;
   }
+  /* A blast takes it (a Dynamite Cache missed): caught in a flash of fire, it
+     cracks, tips over and crumbles away as it falls; the count is one down
+     already. The effects layer throws the sparks, chips and smoke (itemBlown). */
+  .count.blown::after {
+    width: 26px;
+    height: 26px;
+    margin: -13px 0 0 -13px;
+    background: radial-gradient(closest-side, rgba(255, 246, 228, 1), rgba(255, 120, 50, 0.6) 40%, rgba(200, 40, 20, 0) 100%);
+    animation: glow 0.8s ease-out both;
+  }
+  .count.blown .grow {
+    animation: crumble 0.85s cubic-bezier(0.3, 0.2, 0.6, 1) both;
+  }
+  /* With more of it left, the one blown away crumbles and the next stands in its place. */
+  .count.blown.left .grow {
+    animation:
+      crumble 0.85s cubic-bezier(0.3, 0.2, 0.6, 1) backwards,
+      form 0.42s cubic-bezier(0.2, 0.9, 0.3, 1.25) 0.85s;
+  }
+  .count.blown b {
+    animation: count-in 0.4s ease-out 0.5s both;
+  }
+  @keyframes crumble {
+    0% {
+      opacity: 1;
+      transform: none;
+      filter: none;
+    }
+    16% {
+      opacity: 1;
+      transform: scale(1.3);
+      filter: brightness(2.4) sepia(0.6);
+    }
+    32% {
+      transform: rotate(-14deg) scale(1.05);
+      filter: brightness(1.2) sepia(0.5);
+    }
+    to {
+      opacity: 0;
+      transform: translateY(5px) rotate(24deg) scale(0.45, 0.3);
+      filter: brightness(0.4) sepia(0.8);
+    }
+  }
   @keyframes form {
     from {
       opacity: 0;
@@ -187,7 +248,9 @@
       display: none;
     }
     .count.lit .grow,
-    .count.lit b {
+    .count.lit b,
+    .count.blown .grow,
+    .count.blown b {
       animation: none !important;
     }
   }

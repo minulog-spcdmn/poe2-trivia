@@ -171,6 +171,9 @@ export const VEIL_LEFT_MS = 3000;
  * down the art burns in faster instead. `tiles`: "find the art" pictures,
  * the last of which starts up to half a step late. The engine sets a
  * question's veil.seconds from it, and the host paces the patches by that.
+ * 0 on a clock too short for even an instant veil to leave VEIL_LEFT_MS (a
+ * Flare Cache's shortest, FIND_MIN_TIMER): the engine then shows the art
+ * plain.
  */
 export function veilSeconds(secs: number, share: number, size: number, tiles = false): number {
   const [count, late] = [size * size, tiles ? 0.5 : 0];
@@ -307,10 +310,36 @@ export const FIND_FADE_TO = 200;
  * the others; together about one offer in seven. So the deep end wears a
  * run down instead of letting it restock for ever.
  */
-export const FINDS: { kind: FindKind; item: ItemKind; from: number; start: number; cap: number; late: number; max: number; deeper: number; losses: number }[] = [
-  { kind: 'azurite', item: 'wards', from: 5, start: 0.04, cap: DYNAMITE_ON ? 0.11 : 0.15, late: 1 / 3, max: DELVE_MAX_WARDS, deeper: 15, losses: 2 },
-  { kind: 'flare', item: 'flares', from: 15, start: 0.04, cap: DYNAMITE_ON ? 0.13 : 0.18, late: 0.5, max: DELVE_MAX_FLARES, deeper: 20, losses: 1 },
-  { kind: 'dynamite', item: 'dynamite', from: 10, start: DYNAMITE_ON ? 0.04 : 0, cap: DYNAMITE_ON ? 0.09 : 0, late: 0.5, max: DELVE_MAX_DYNAMITE, deeper: 15, losses: 1 },
+export const FINDS: {
+  kind: FindKind;
+  item: ItemKind;
+  from: number;
+  start: number;
+  cap: number;
+  late: number;
+  max: number;
+  deeper: number;
+  losses: number;
+  /** Seconds its question has less on the clock than its deeper depth's (never below FIND_MIN_TIMER). */
+  shorter: number;
+  /** Things a miss on it blows up from the player's pack (blastVictim), besides the life. */
+  blows: number;
+}[] = [
+  { kind: 'azurite', item: 'wards', from: 5, start: 0.04, cap: DYNAMITE_ON ? 0.11 : 0.15, late: 1 / 3, max: DELVE_MAX_WARDS, deeper: 15, losses: 2, shorter: 0, blows: 0 },
+  { kind: 'flare', item: 'flares', from: 15, start: 0.04, cap: DYNAMITE_ON ? 0.13 : 0.18, late: 0.5, max: DELVE_MAX_FLARES, deeper: 20, losses: 1, shorter: 3, blows: 0 },
+  {
+    kind: 'dynamite',
+    item: 'dynamite',
+    from: 10,
+    start: DYNAMITE_ON ? 0.04 : 0,
+    cap: DYNAMITE_ON ? 0.09 : 0,
+    late: 0.5,
+    max: DELVE_MAX_DYNAMITE,
+    deeper: 15,
+    losses: 1,
+    shorter: 0,
+    blows: 1,
+  },
 ];
 
 /**
@@ -359,26 +388,74 @@ export const LOOKALIKES_ASKED_FROM = LOOKALIKES_FROM - Math.max(...FINDS.filter(
 
 /**
  * A find's question is the question of `deeper` depths down (FINDS): hard,
- * but not the hardest there is until the curve runs out. The Flare Cache
- * asks from further down than the Azurite Vein, whose risk is the cave-in
- * instead (see findLosses).
+ * but not the hardest there is until the curve runs out (from about depth
+ * 80 on there is little deeper left to ask from, so each find's own risk
+ * carries the weight there: findLosses, findTimer, blowsUp). The Flare Cache
+ * asks from further down than the others.
  */
 export const findDepth = (kind: FindKind, d: number) => depthOf(d) + findFor(kind).deeper;
+
+/**
+ * Each find weighs its reward against a risk of its own:
+ * - an Azurite Vein caves in on a miss, for two losses (findLosses);
+ * - a Flare Cache gives less time to answer (findTimer, `shorter`): time
+ *   now for time later;
+ * - a Dynamite Cache is unstable: a miss costs the life and its blast
+ *   destroys one thing the player carries (blowsUp, blastVictim).
+ * A miss is a wrong answer or a time-out. No flare or dynamite goes off on
+ * a find's question (itemsWorkOn).
+ */
 
 /**
  * Losses a wrong answer (or a time-out) to a find costs: two for an Azurite
  * Vein, whose seam caves in; one for the rest. Each is taken by a ward first
  * if the player holds one, and a player falls on their last life whatever is
- * left, so on it a cave-in costs no more than any miss. No flare or
- * dynamite goes off on a find's question (itemsWorkOn).
+ * left, so on it a cave-in costs no more than any miss.
  */
 export const findLosses = (kind: FindKind) => findFor(kind).losses;
 
 /** Whether a wrong answer to this find caves in (costs more than one loss). */
 export const cavesIn = (kind: FindKind) => findLosses(kind) > 1;
 
-/** Seconds on the clock for a find's question: the deeper depth's. */
-export const findTimer = (kind: FindKind, d: number) => delveTimer(findDepth(kind, d));
+/**
+ * Whether a miss on this find also blows up something the player carries (a
+ * Dynamite Cache). It comes after the loss (a ward may take that first), and
+ * only to a player still standing: perishing drops the whole pack anyway.
+ */
+export const blowsUp = (kind: FindKind) => findFor(kind).blows > 0;
+
+/**
+ * What a Dynamite Cache's blast destroys of a pack `inv`, for a `roll` in
+ * [0, 1) (the engine's seeded roll, so every screen agrees): one thing,
+ * drawn at random, each ward, flare and stick of dynamite one chance, and a
+ * shard half of one, as it is half a ward. A ward drawn goes whole (a shard
+ * held beside it stays); a pack of a shard alone loses the shard. Null for
+ * an empty pack.
+ */
+export function blastVictim(inv: Inventory, roll: number): ItemKind | null {
+  const weight = (k: ItemKind) => Math.max(0, inv[k]) * (k === 'shards' ? 1 / SHARDS_PER_WARD : 1);
+  const held = ITEM_KINDS.filter((k) => weight(k) > 0);
+  let r = Math.min(Math.max(roll, 0), 0.999_999) * held.reduce((sum, k) => sum + weight(k), 0);
+  for (const k of held) {
+    if (r < weight(k)) return k;
+    r -= weight(k);
+  }
+  return held.at(-1) ?? null;
+}
+
+/**
+ * The shortest a find's question gets (a Flare Cache's, `shorter` than the
+ * shortest depth's): too short for any art to burn in fairly, so none does
+ * (veilSeconds).
+ */
+export const FIND_MIN_TIMER = 3;
+
+/** Seconds on the clock for a find's question: the deeper depth's, less its `shorter` (a Flare Cache's three), never below FIND_MIN_TIMER. */
+export const findTimer = (kind: FindKind, d: number) => {
+  const { shorter } = findFor(kind);
+  const secs = delveTimer(findDepth(kind, d));
+  return shorter ? Math.max(FIND_MIN_TIMER, secs - shorter) : secs;
+};
 
 /** The share of a find's "find the art" questions whose pictures burn into view: the deeper depth's. */
 export const findTileVeil = (kind: FindKind, d: number) => delveTileVeil(findDepth(kind, d));

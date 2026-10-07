@@ -20,6 +20,8 @@ import {
   delveTileVeil,
   delveTimer,
   cavesIn,
+  blastVictim,
+  blowsUp,
   fellAt,
   findChance,
   findLosses,
@@ -606,6 +608,8 @@ export interface Struck {
   at: number;
   lives: number;
   wards: number;
+  /** A Dynamite Cache's blast destroyed this of their pack (delve.ts blastVictim). */
+  blown?: ItemKind;
 }
 
 /** A loss a co-op question dealt one player: a wrong answer, or the time-out for one who never gave one. */
@@ -614,6 +618,8 @@ export interface Hit {
   lives: number;
   wards: number;
   timedOut: boolean;
+  /** A Dynamite Cache's blast destroyed this of their pack (delve.ts blastVictim). */
+  blown?: ItemKind;
 }
 
 export interface Reveal {
@@ -645,6 +651,12 @@ export interface Reveal {
   caveIn?: boolean;
   /** Delve, on a cave-in: lives it took (0 to 2) and wards that broke in their place (0 to 2). */
   lost?: { lives: number; wards: number };
+  /**
+   * Delve: a miss on a Dynamite Cache, whose blast destroyed this of the
+   * player's pack besides the loss (delve.ts blastVictim). Co-op: each
+   * player's is on their hit.
+   */
+  blown?: ItemKind;
   /**
    * Delve co-op: every loss this question dealt, in order: the wrong answers
    * (as struck), then the time-out for each player standing who never
@@ -1244,6 +1256,7 @@ export class Engine {
         let forged = false;
         let warded = false;
         let caveIn: Pick<Reveal, 'caveIn' | 'lost'> = {};
+        let blown: ItemKind | null = null;
         if (correct) {
           active.score += 1;
           // A right answer to a find earns its item (see delve.ts findReward): it is only offered to a player with room for it.
@@ -1258,6 +1271,8 @@ export class Engine {
           const lost = { lives: took.filter((t) => t === 'life').length, wards: took.filter((t) => t === 'ward').length };
           warded = lost.wards > 0 && lost.lives === 0;
           if (q.find && cavesIn(q.find)) caveIn = { caveIn: true, lost };
+          // A Dynamite Cache's blast takes one thing from their pack too.
+          blown = this.blowUp(s, active.id);
         }
         if (!timedOut && chosenId && isFake(chosenId)) s.used.push(chosenId);
         if (s.deathmatch) s.deathmatch.results[active.id] = correct;
@@ -1273,6 +1288,7 @@ export class Engine {
           ...(forged ? { forged } : {}),
           ...(warded ? { warded } : {}),
           ...caveIn,
+          ...(blown ? { blown } : {}),
         };
         s.phase = 'reveal';
         break;
@@ -1686,6 +1702,22 @@ export class Engine {
     q.deadline = (onTime ? q.deadline! : Math.max(q.deadline!, now)) + FLARE_MS;
   }
 
+  /**
+   * A miss on a Dynamite Cache (the question in play): after its loss, the
+   * blast destroys one thing `id` carries, drawn with the engine's roll
+   * (delve.ts blastVictim), and says what. Nothing on any other question,
+   * for a player who perished on it (their pack is gone already) or who
+   * carries nothing; no roll is used then.
+   */
+  private blowUp(s: GameState, id: string): ItemKind | null {
+    const q = s.question;
+    if (!s.delve || !q?.find || !blowsUp(q.find) || livesOf(s, id) <= 0) return null;
+    const inv = inventoryOf(s, id);
+    if (!blastVictim(inv, 0)) return null;
+    const item = blastVictim(inv, this.rng())!;
+    return this.spend(s, id, item) ? item : null;
+  }
+
   /** Uses up one of an item; false when the player has none. */
   private spend(s: GameState, id: string, item: ItemKind): boolean {
     const inv = inventoryOf(s, id);
@@ -1873,11 +1905,16 @@ export class Engine {
     this.coopCarryOn(s);
   }
 
-  /** Co-op: the losses one wrong answer (or the time-out) deals a player: two on an Azurite Vein, each a ward's first. */
-  private hit(s: GameState, id: string): { lives: number; wards: number } {
+  /**
+   * Co-op: the losses one wrong answer (or the time-out) deals a player: two
+   * on an Azurite Vein, each a ward's first; on a Dynamite Cache, also one
+   * thing from their own pack (blowUp). Only the player who missed pays.
+   */
+  private hit(s: GameState, id: string): { lives: number; wards: number; blown?: ItemKind } {
     const q = s.question!;
     const took = Array.from({ length: q.find ? findLosses(q.find) : 1 }, () => this.loseLife(s, id));
-    return { lives: took.filter((t) => t === 'life').length, wards: took.filter((t) => t === 'ward').length };
+    const blown = this.blowUp(s, id);
+    return { lives: took.filter((t) => t === 'life').length, wards: took.filter((t) => t === 'ward').length, ...(blown ? { blown } : {}) };
   }
 
   /**
@@ -1923,7 +1960,10 @@ export class Engine {
         }
       }
     }
-    const all: Hit[] = [...struck.map((x) => ({ playerId: x.by, lives: x.lives, wards: x.wards, timedOut: false })), ...hits];
+    const all: Hit[] = [
+      ...struck.map((x) => ({ playerId: x.by, lives: x.lives, wards: x.wards, timedOut: false, ...(x.blown ? { blown: x.blown } : {}) })),
+      ...hits,
+    ];
     s.reveal = {
       correctId: q.itemId,
       chosenId: winner ? q.itemId : null,
@@ -2367,11 +2407,11 @@ export class Engine {
     const tiles = mode === 'art' && !!rules.veil && !!s.delve && this.rng() < (special.find ? findTileVeil(special.find, s.round) : delveTileVeil(s.round));
     const secs = s.delve ? delveQuestionTimer(s.round, special) : timer > 0 ? timer : DEFAULT_SETTINGS.timer;
     const size = rules.veil && (tiles ? tileVeilSize(rules.veil.size) : rules.veil.size);
-    // Its share of the clock, faster on a short one (veilSeconds).
-    const veil: Veil | null =
-      rules.veil && size && (mode === 'name' || tiles)
-        ? { size, seconds: veilSeconds(secs, rules.veil.share, size, tiles), seed: Math.floor(this.rng() * 2 ** 31) }
-        : null;
+    // Its share of the clock, faster on a short one (veilSeconds); none on a
+    // clock too short for half the art to be in with VEIL_LEFT_MS to spare
+    // (a Flare Cache's shortest).
+    const veilSecs = rules.veil && size && (mode === 'name' || tiles) ? veilSeconds(secs, rules.veil.share, size, tiles) : 0;
+    const veil: Veil | null = veilSecs > 0 && size ? { size, seconds: veilSecs, seed: Math.floor(this.rng() * 2 ** 31) } : null;
     const fakeNames = mode === 'name' ? this.mixInFakes(options, answer.id, fakes, new Set(s.used)) : new Map<string, string>();
     // Gem groups are attributes ("Intelligence"), not kinds of item.
     const groups = answer.kind === 'gem' ? [] : this.groupsOf(options);

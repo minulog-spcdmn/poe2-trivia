@@ -234,8 +234,8 @@ export type DelveNotice =
   | { kind: 'setAside'; playerId: string }
   /** Co-op: `by` gave one of their lives to bring back `playerId`. */
   | { kind: 'revived'; playerId: string; by: string }
-  /** Co-op: a wrong pick struck its option for everyone, at the cost of `lives` and `wards` (the player still stands). */
-  | { kind: 'struck'; playerId: string; lives: number; wards: number }
+  /** Co-op: a wrong pick struck its option for everyone, at the cost of `lives` and `wards`, and on a Dynamite Cache what its blast destroyed (the player still stands). */
+  | { kind: 'struck'; playerId: string; lives: number; wards: number; blown?: ItemKind }
   /** Co-op: a player lost their last life, at `depth`; `revivable`: a teammate standing has lives to spare. */
   | { kind: 'perished'; playerId: string; depth: number; revivable: boolean }
   /** Co-op: a flare from `playerId`'s pack burnt for everyone. */
@@ -265,7 +265,7 @@ export function delveNotices(prev: GameState | null, next: GameState): DelveNoti
   const perished = new Set(next.players.filter((p) => livesOf(prev, p.id) > 0 && livesOf(next, p.id) === 0).map((p) => p.id));
   if (sameQ) {
     for (const x of (nq.struck ?? []).slice(pq.struck?.length ?? 0))
-      if (!perished.has(x.by)) out.push({ kind: 'struck', playerId: x.by, lives: x.lives, wards: x.wards });
+      if (!perished.has(x.by)) out.push({ kind: 'struck', playerId: x.by, lives: x.lives, wards: x.wards, ...(x.blown ? { blown: x.blown } : {}) });
     if (!pq.flared && nq.flared && nq.flaredBy) out.push({ kind: 'flare', playerId: nq.flaredBy });
   }
   for (const id of perished) {
@@ -307,6 +307,28 @@ export function inventoryChanges(prev: GameState | null, next: GameState): { pla
       after[item] === before[item] ? [] : [{ playerId: p.id, item, change: after[item] > before[item] ? ('gained' as const) : ('used' as const), left: after[item] }],
     );
   });
+}
+
+/**
+ * What Dynamite Caches' blasts destroyed in this change, per player, for the
+ * phial, sounds and effects: alone, at the reveal of a miss; together, with
+ * each wrong pick as it comes in, and the time-out's at the reveal. Nothing
+ * for a question set aside (what it took is given back). `prev` needs only
+ * its phase and its question's askedAt and struck.
+ */
+export function itemsBlown(prev: GameState | null, next: GameState): { playerId: string; item: ItemKind }[] {
+  if (!prev?.delve || !next.delve || prev.delve.startedAt !== next.delve.startedAt || setAside(prev, next)) return [];
+  const q = next.question;
+  if (!q) return [];
+  const reveals = prev.phase !== 'reveal' && next.phase === 'reveal' && !!next.reveal;
+  if (!isGroupRun(next)) {
+    const p = next.players[next.turn];
+    return reveals && next.reveal!.blown && p ? [{ playerId: p.id, item: next.reveal!.blown }] : [];
+  }
+  const seen = prev.question?.askedAt === q.askedAt ? (prev.question.struck?.length ?? 0) : 0;
+  const out = (q.struck ?? []).slice(seen).flatMap((x) => (x.blown ? [{ playerId: x.by, item: x.blown }] : []));
+  if (reveals) for (const h of next.reveal!.hits ?? []) if (h.timedOut && h.blown) out.push({ playerId: h.playerId, item: h.blown });
+  return out;
 }
 
 /**

@@ -23,6 +23,8 @@ import {
   veinWindow,
   DELVE_MAX_LOCKOUT,
   DELVE_RULESET,
+  FIND_MIN_TIMER,
+  blastVictim,
   compareDelvers,
   delveLockout,
   delveRules,
@@ -228,7 +230,7 @@ test('there are always three categories left to offer at the longest lockout', (
 
 test('the ruleset is pinned to the curve and the protocol', () => {
   // Changing the curve changes this hash: bump DELVE_RULESET and PROTOCOL_VERSION with it, then update the pin.
-  // (Delve isn't released yet, so the new curve kept both and only moved the pin; so did dynamite going off by itself, look-alike pictures, the flare burning at 0 and the blast holding the clock, co-op, dynamite taking half of all the options with two finds side by side, pinning the lives, the clock going down to 5 s with the art burning in faster on it, and the smooth rise in place of the steps.)
+  // (Delve isn't released yet, so the new curve kept both and only moved the pin; so did dynamite going off by itself, look-alike pictures, the flare burning at 0 and the blast holding the clock, co-op, dynamite taking half of all the options with two finds side by side, pinning the lives, the clock going down to 5 s with the art burning in faster on it, the smooth rise in place of the steps, and each find's own risk: the Flare Cache's shorter clock and the Dynamite Cache's blast.)
   const table: unknown[] = DEPTHS.map((d) => [delveRules(d), delveTimer(d), delveTileVeil(d)]);
   // The finds too: where and how often they turn up, what they ask and cost, and what their items do.
   const clocks = Array.from({ length: 12 }, (_, i) => i + 5);
@@ -237,8 +239,10 @@ test('the ruleset is pinned to the curve and the protocol', () => {
   table.push(
     DEPTHS.slice(0, 100).map((d) => FINDS.map((f) => [findRules(f.kind, d), findTimer(f.kind, d), findTileVeil(f.kind, d), veinWindow(findTimer(f.kind, d))])),
   );
+  // The shortest a find's clock gets, and what a Dynamite Cache's blast takes of a full pack at a few rolls.
+  table.push(['risk', FIND_MIN_TIMER, [0, 0.2, 0.4, 0.6, 0.8, 0.95].map((r) => blastVictim({ wards: 2, flares: 1, dynamite: 1, shards: 1 }, r))]);
   // How long the art takes to burn in on each clock, whole and as pictures (veilSeconds).
-  table.push(clocks.map((secs) => [0.55, 0.7, 0.8].flatMap((share) => [5, 7, 9].flatMap((size) => [veilSeconds(secs, share, size), veilSeconds(secs, share, tileVeilSize(size), true)]))));
+  table.push([3, 4, ...clocks].map((secs) => [0.55, 0.7, 0.8].flatMap((share) => [5, 7, 9].flatMap((size) => [veilSeconds(secs, share, size), veilSeconds(secs, share, tileVeilSize(size), true)]))));
   // Co-op: how long a vote stays open after the first vote, when a player counts as idle, and what a life given takes.
   table.push(['coop', VOTE_WINDOW_MS, DELVE_IDLE_ROUNDS, REVIVE_FROM, DELVE_RESUME_GRACE_MS]);
   // The lives everyone sets out with.
@@ -247,7 +251,7 @@ test('the ruleset is pinned to the curve and the protocol', () => {
   assert.deepEqual([DELVE_RULESET, PROTOCOL_VERSION, hash], [1, 11, PINNED_HASH]);
 });
 
-const PINNED_HASH = 'f8e67e61bdc50d8d';
+const PINNED_HASH = '3bac4df50070d8ea';
 
 function run(losses: Record<string, number[]>, round = 10, seats = Object.keys(losses)): GameState {
   const s = createGame('a');

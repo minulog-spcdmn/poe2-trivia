@@ -331,6 +331,11 @@
           <button onclick={() => L.findRight('flare')} disabled={!!busy}>Flare Cache</button>
           <button onclick={() => L.findRight('dynamite')} disabled={!!busy}>Dynamite Cache</button>
         </div>
+        <span class="sub">Find answered wrong</span>
+        <div class="grid">
+          <button onclick={() => L.findWrong('flare')} disabled={!!busy}>Flare Cache: a life</button>
+          <button onclick={() => L.findWrong('dynamite')} disabled={!!busy}>Dynamite Cache: blows up an item</button>
+        </div>
       </details>
 
       <details open>

@@ -34,7 +34,7 @@
   import { dock, narrow, phone } from '../lib/layout';
   import { portal } from '../lib/portal';
   import { fellAt, isGroupRun, livesOf, waitingIds } from '../lib/delve';
-  import { coopMissText, coopRevealText, namesOf } from '../lib/difficultyText';
+  import { blownText, coopMissText, coopRevealText, namesOf } from '../lib/difficultyText';
   import ItemGlyph from './ItemGlyph.svelte';
   import Fuse from './Fuse.svelte';
   import type { GlyphKind } from '../lib/inventoryArt';
@@ -821,6 +821,8 @@
               {who} {you ? 'lose' : 'loses'} a life.
             {/if}
           {/if}
+          <!-- A Dynamite Cache missed: what its blast destroyed of the pack (the phial shows it go). -->
+          {#if !reveal.correct && reveal.blown}{blownText(reveal.blown, you ? 'your' : `${active.name}'s`)}{/if}
         {:else if reveal.correct}
           <b class="good">+1</b> for {active.name}!
           {#if streak >= 2}<span class="streak" in:scale={{ start: 0.5, duration: 400, delay: 1100 }}>{streak} in a row</span>{/if}

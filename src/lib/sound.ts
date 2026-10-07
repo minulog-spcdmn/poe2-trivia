@@ -58,7 +58,9 @@ export type Sfx =
   /** Delve together: a life given to a teammate who perished. */
   | 'revive'
   /** Delve: an Azurite Vein answered wrong caves in (two losses at once). */
-  | 'caveIn';
+  | 'caveIn'
+  /** Delve: a Dynamite Cache answered wrong; its blast destroys something the player carries. */
+  | 'itemBlown';
 
 let muted = (() => {
   return readStored('muted') === '1';

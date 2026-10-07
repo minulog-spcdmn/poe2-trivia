@@ -51,8 +51,13 @@
   const CHAMBERS = Array.from({ length: DELVE_LIVES }, (_, k) => k);
   const uid = $props.id();
 
-  type Cased = { k: number; kind: 'whole' | 'shard' | 'ghost'; fresh: boolean };
-  /** The casings on the chambers: whole wards from the base, a shard after them, and wards just broken bursting off. */
+  type Cased = { k: number; kind: 'whole' | 'shard' | 'ghost'; fresh: boolean; blown?: 'wards' | 'shards' };
+  /**
+   * The casings on the chambers: whole wards from the base, a shard after
+   * them, and wards just broken bursting off; a ward or shard a blast
+   * destroyed (a Dynamite Cache missed) blows apart on the chamber after
+   * those left.
+   */
   const casings = $derived.by((): Cased[] => {
     const wards = inv?.wards ?? 0;
     const m = moment?.kind;
@@ -60,6 +65,8 @@
     for (let k = 0; k < Math.min(wards, CASINGS.length); k++) out.push({ k, kind: 'whole', fresh: (m === 'ward' || m === 'forge') && k === wards - 1 });
     if (inv?.shards && wards < CASINGS.length) out.push({ k: wards, kind: 'shard', fresh: m === 'shard' });
     if (m === 'shatter') for (let k = wards; k < Math.min(wards + (moment?.n ?? 1), CASINGS.length); k++) out.push({ k, kind: 'ghost', fresh: true });
+    const item = moment?.item;
+    if (m === 'blown' && (item === 'wards' || item === 'shards') && wards < CASINGS.length) out.push({ k: wards, kind: 'ghost', fresh: true, blown: item });
     return out;
   });
 </script>
@@ -126,6 +133,7 @@
         <span
           class="casing {c.kind}"
           class:fresh={c.fresh}
+          class:blown={!!c.blown}
           class:forged={c.fresh && moment?.kind === 'forge'}
           data-k={c.k}
           style:--from={set.whole.from}
@@ -133,7 +141,7 @@
           style:--k={c.k}
         >
           {#if c.kind === 'ghost'}
-            {#each set.pieces as piece, i (i)}
+            {#each c.blown === 'shards' ? [set.shard] : set.pieces as piece, i (i)}
               <svg class="piece p{i}" viewBox="0 0 64 12" aria-hidden="true">{@render art(piece, `${uid}-x${c.k}${i}`)}</svg>
             {/each}
             <span class="burst"></span>
@@ -718,6 +726,45 @@
       opacity: 0;
       transform: scale(1.25);
     }
+  }
+
+  /* A blast takes a ward or a shard (a Dynamite Cache missed): it flares
+     orange-white and its pieces are thrown apart and fall, tumbling, in a
+     burst of fire rather than the ward's own blue (the effects layer throws
+     the sparks, chips and smoke: itemBlown). */
+  .blown .piece {
+    animation: blown 0.7s cubic-bezier(0.2, 0.6, 0.5, 1) both;
+  }
+  .blown .piece.p0 {
+    --dx: -3px;
+    --dy: -4px;
+    --turn: -18deg;
+  }
+  .blown .piece.p1 {
+    --dx: 3px;
+    --dy: 3px;
+    --turn: 16deg;
+  }
+  @keyframes blown {
+    0% {
+      opacity: 1;
+      transform: none;
+      filter: brightness(1);
+    }
+    18% {
+      opacity: 1;
+      transform: scale(1.08, 1.15);
+      filter: brightness(2.6) sepia(0.8) saturate(3);
+    }
+    to {
+      opacity: 0;
+      transform: translate(var(--dx, 0), calc(var(--dy, -2px) + 6px)) rotate(var(--turn, 10deg)) scale(0.85);
+      filter: brightness(0.7) sepia(0.6);
+    }
+  }
+  .blown .burst {
+    background: radial-gradient(closest-side, rgba(255, 246, 228, 0.95), rgba(255, 140, 60, 0.6) 45%, rgba(200, 50, 20, 0) 100%);
+    animation-duration: 0.65s;
   }
 
   @media (prefers-reduced-motion: reduce) {

@@ -42,7 +42,8 @@ the same thing for everyone.
 - Pick one of three categories and name the item, as in turns mode. Each
   question goes one depth deeper.
 - Everyone has **three lives**. A wrong answer or running out of time costs
-  one (a miss on an Azurite Vein two, see Finds).
+  one (a miss on an Azurite Vein two, and one on a Dynamite Cache blows up
+  something you carry too, see Finds).
 - **Alone** is a run of your own, online (a room with one player) or in
   hot-seat. Hot-seat Delve is only ever alone.
 - **Together** (a room of two or more) is co-op: one team, one question at
@@ -57,7 +58,8 @@ the same thing for everyone.
     landing on the card drawn), and only after it does the clock start.
     The category lockout counts the team's picks.
   - Everyone standing answers the same question at once, one pick each. A
-    wrong pick costs that player a life (two on an Azurite Vein) and
+    wrong pick costs that player a life (two on an Azurite Vein; on a
+    Dynamite Cache, also something from their own pack) and
     strikes the option for everyone, so two players can't pick the same
     option. The first right answer clears the depth and takes the find, if
     the card was one. A time-out costs everyone standing who hasn't
@@ -135,9 +137,11 @@ the same thing for everyone.
   more often until depth 124, and look-alike pictures take over until 120.
 - **Finds.** From depth 5 one of the cards on offer is now and then a find:
   pick it and answer right for an item. Its question is a bit harder (that
-  of 15 to 20 depths deeper, with its shorter clock); the card shows only
-  the find's name, and the note under the cards says what the item does
-  and what a miss costs. Each find's chance rises evenly from its first
+  of 15 to 20 depths deeper, with its shorter clock), and each find has a
+  risk of its own, so taking one is a choice to weigh: the Vein caves in,
+  the Flare Cache gives less time, the Dynamite Cache blows up something
+  you carry. The card shows only the find's name, and the note under the
+  cards says what the item does and what the find risks. Each find's chance rises evenly from its first
   depth to depth 50 and holds there (the Vein 4% to 11%, the Dynamite
   Cache 4% to 9%, the Flare Cache 4% to 13%), so from 50 about one offer
   in three holds a find. Past 100 they grow scarcer a little with every
@@ -158,8 +162,11 @@ the same thing for everyone.
     hold no shard). A wrong answer or a time-out on a vein caves in, with
     a sound of its own: it costs two lives, a ward taking each loss first
     if you hold one (on your last life you simply fall).
-  - A **Flare Cache** (from depth 15) gives a **flare**. When your clock hits
-    0 it burns by itself, with a signal flare's hiss, and gives you 5 s more
+  - A **Flare Cache** (from depth 15) gives a **flare**: time later for time
+    now, as its own question has 3 s less on the clock than its deeper
+    depth's (never under 3 s; on a clock that short no art burns in, as half
+    of it could never be in with 3 s left). When your clock hits 0 a flare
+    burns by itself, with a signal flare's hiss, and gives you 5 s more
     (once a question). An answer at any time before that keeps it; a guest's
     answer still on its way when it burns gives it back.
   - A **Dynamite Cache** (from depth 10) gives **dynamite**. Halfway through
@@ -171,9 +178,19 @@ the same thing for everyone.
     the art, from its foot up the left side and along the top, down to the
     blast at half time. The clock holds for the second the blast takes, so
     watching it costs nothing.
+    The cache itself is unstable: a miss on it (a wrong answer or a
+    time-out) costs a life as usual, and then its blast destroys one thing
+    you carry, drawn at random with the run's seeded roll (each ward, flare
+    and stick one chance, a shard half of one, as it is half a ward; a ward
+    drawn goes whole). A ward that takes the life goes first, and the blast
+    draws from what is left. Carrying nothing, or perishing on the miss
+    (which drops the whole pack anyway), it takes nothing more. Together,
+    each player who misses loses one thing from their own pack, as their
+    pick strikes (or at the time-out). The lost item bursts on the phial or
+    beside it with a small blast of its own, a moment after the life, and
+    the reveal says what went ("The blast destroyed your flare.").
   - Flares and dynamite never go off on a find's own question, which is
-    played as it is. A miss on a Flare or Dynamite Cache costs one life as
-    usual. You carry up to three of each item.
+    played as it is. You carry up to three of each item.
 - **Alone**, you delve until your third life is gone; the depth where it went
   is your result. **Together**, the run goes on while anyone stands, and
   the depth where the last of the team perished is the team's result.
@@ -190,7 +207,8 @@ the same thing for everyone.
   is set aside: the same cards come back, and it costs nobody anything.
 - A run starts from the lobby: alone in hot-seat or a room with one player,
   together in a room of two or more. Choosing Delve there shows its
-  milestones, its rules (alone or together) and your deepest.
+  milestones, its rules in a few short lines (a run together's too, in a
+  room online) and your deepest.
 - Your lives are an engraved phial of three chambers beside your name, each
   a soft light beating like a heart (faster and weaker on the last life,
   whose light sinks to a deeper red), each moving its own way: a tide

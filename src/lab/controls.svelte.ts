@@ -340,7 +340,10 @@ export function ask(find: FindChoice = opts.questionFind) {
   if (opts.veil === 'off') q.veil = null;
   else if (opts.veil === 'on' && !q.veil) {
     const size = q.mode === 'art' ? tileVeilSize(5) : 5;
-    q.veil = { size, seconds: veilSeconds(delveQuestionTimer(s.round, q), 0.55, size, q.mode === 'art'), seed: Math.floor(Math.random() * 2 ** 31) };
+    // None on a clock too short for one to be fair (a Flare Cache's shortest, veilSeconds).
+    const seconds = veilSeconds(delveQuestionTimer(s.round, q), 0.55, size, q.mode === 'art');
+    if (seconds > 0) q.veil = { size, seconds, seed: Math.floor(Math.random() * 2 ** 31) };
+    else note('This clock is too short for the art to burn in fairly: shown plain.');
   }
   const p = s.players[s.turn];
   if (isGroupRun(s)) s.recentCategories = [...s.recentCategories, category].slice(-7);
@@ -512,6 +515,22 @@ export const findRight = (kind: FindKind, slow = false) =>
       await sleep(120);
     }
     answer(state()!.question!, true);
+  });
+
+/**
+ * A Flare or Dynamite Cache answered wrong. The Flare Cache's question runs on
+ * its shorter clock (three seconds less); the Dynamite Cache's blast takes one
+ * thing the player carries, a flare put in an empty pack first so it has
+ * something to take.
+ */
+export const findWrong = (kind: 'flare' | 'dynamite') =>
+  event(`${kind} answered wrong`, async () => {
+    const id = activeId();
+    const inv = inventoryOf(run()!, id);
+    if (kind === 'dynamite' && !(inv.wards || inv.shards || inv.flares || inv.dynamite)) put((s) => invSet(s, id, (v) => (v.flares = 1)), true);
+    const q = await running((q) => q.find === kind, kind);
+    if (q.find !== kind) throw new Error('could not ask that find');
+    answer(q, false);
   });
 
 /** Time runs out with nothing in the pack: "The darkness took you". */

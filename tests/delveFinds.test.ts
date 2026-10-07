@@ -10,11 +10,14 @@ import {
   DYNAMITE_ON,
   FINDS,
   FINDS_FROM,
+  FIND_MIN_TIMER,
   FIND_FADE_FROM,
   FIND_FADE_TO,
   FIND_RAMP_TO,
   FLARE_MS,
   SHARDS_PER_WARD,
+  blastVictim,
+  blowsUp,
   cavesIn,
   delveLockout,
   delveStandings,
@@ -52,7 +55,7 @@ import {
   type Inventory,
 } from '../src/lib/delve.ts';
 import { ANSWER_GRACE_MS, Engine, activeRules, createGame, isFake, publicView, type Action, type GameState, type Item, type Question, type Settings } from '../src/lib/game.ts';
-import { delveNotices, flareIn, inventoryChanges } from '../src/lib/delveSession.ts';
+import { delveNotices, flareIn, inventoryChanges, itemsBlown } from '../src/lib/delveSession.ts';
 import { veilPace } from '../src/lib/patches.ts';
 
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
@@ -161,7 +164,8 @@ test('an Azurite Vein asks the question of fifteen depths deeper, a Flare Cache 
       assert.deepEqual(r.veil, deep.veil, `veil at ${d}`);
       assert.equal(r.moreFakes, deep.moreFakes, `fourth fakes at ${d}`);
       assert.equal(r.lookalikes, deep.lookalikes, `look-alike pictures at ${d}`);
-      assert.equal(findTimer(kind, d), delveTimer(deeper));
+      // A Flare Cache's clock is three seconds shorter still (never under three): time now for time later.
+      assert.equal(findTimer(kind, d), kind === 'flare' ? Math.max(FIND_MIN_TIMER, delveTimer(deeper) - 3) : delveTimer(deeper));
       assert.equal(findTileVeil(kind, d), delveTileVeil(deeper));
       // Neither the art/name mix nor the lockout makes a question harder: they stay the depth's.
       assert.equal(r.artChance, delveRules(d).artChance);
@@ -190,38 +194,73 @@ test('a find is never easier than its depth, nearly always harder, and the harde
       // Harder wherever the curve has anything harder further down (the tile veil rises to 124, the fourth fakes to 150).
       if (d < 150) assert.ok(harder, `${kind}: nothing harder at ${d}`);
       const hardest =
-        KNOBS.every((k) => r[k] === deepest[k]) && JSON.stringify(r.veil) === JSON.stringify(deepest.veil) && r.moreFakes === 1 && findTimer(kind, d) === DELVE_MIN_TIMER;
+        KNOBS.every((k) => r[k] === deepest[k]) &&
+        JSON.stringify(r.veil) === JSON.stringify(deepest.veil) &&
+        r.moreFakes === 1 &&
+        findTimer(kind, d) === (kind === 'flare' ? FIND_MIN_TIMER : DELVE_MIN_TIMER);
       assert.equal(hardest, findDepth(kind, d) >= 150, `${kind}: the hardest question at ${d}`);
     }
 });
 
-test("a find's clock is fair: never the shortest near the top, and never shorter than any depth's", () => {
+test("a find's clock is fair: never the shortest near the top, and never shorter than any depth's, but a Flare Cache's", () => {
   // At the first finds, a vein gets 14 s, not the 5 of depth 96.
   assert.equal(findTimer('azurite', FINDS_FROM), 14);
   assert.equal(findTimer('azurite', 8), 15 - 1);
   assert.equal(findTimer('azurite', 20), 12);
-  assert.equal(findTimer('flare', 15), 12);
-  assert.equal(findTimer('flare', 20), 11);
+  assert.equal(findTimer('dynamite', 20), 12);
   assert.equal(findTimer('azurite', 43), 7);
-  assert.equal(findTimer('flare', 38), 7);
   assert.equal(findTimer('azurite', 63), 6);
-  assert.equal(findTimer('flare', 58), 6);
   // The shortest clock only past depth 75, where the depth's own is 6 s at the least.
   assert.equal(findTimer('azurite', 80), DELVE_MIN_TIMER + 1);
   assert.equal(findTimer('azurite', 81), DELVE_MIN_TIMER);
-  assert.equal(findTimer('flare', 75), DELVE_MIN_TIMER + 1);
-  assert.equal(findTimer('flare', 76), DELVE_MIN_TIMER);
-  for (const kind of LIVE) for (let d = 1; d <= 300; d++) if (findTimer(kind, d) === DELVE_MIN_TIMER) assert.ok(delveTimer(d) > DELVE_MIN_TIMER || d >= 96, `${kind} at ${d}`);
-  for (const kind of LIVE) for (let d = 1; d <= 300; d++) assert.ok(findTimer(kind, d) >= DELVE_MIN_TIMER && findTimer(kind, d) <= 16);
+  for (const kind of ['azurite', 'dynamite'] as const)
+    for (let d = 1; d <= 300; d++) {
+      if (findTimer(kind, d) === DELVE_MIN_TIMER) assert.ok(delveTimer(d) > DELVE_MIN_TIMER || d >= 96, `${kind} at ${d}`);
+      assert.ok(findTimer(kind, d) >= DELVE_MIN_TIMER && findTimer(kind, d) <= 16);
+    }
+});
+
+test('a Flare Cache trades time now for time later: three seconds less than its deeper depth, never under three', () => {
+  assert.equal(FIND_MIN_TIMER, 3);
+  assert.deepEqual(
+    FINDS.map((f) => [f.kind, f.shorter]),
+    [
+      ['azurite', 0],
+      ['flare', 3],
+      ['dynamite', 0],
+    ],
+  );
+  // Where it first turns up, 12 s less 3; then down with the curve.
+  assert.equal(findTimer('flare', 15), 9);
+  assert.equal(findTimer('flare', 20), 8);
+  assert.equal(findTimer('flare', 38), 4);
+  assert.equal(findTimer('flare', 57), 4);
+  // From depth 58 it asks from 78 down, 6 s there: three left, and never fewer (5 − 3 would be 2).
+  assert.equal(findTimer('flare', 58), FIND_MIN_TIMER);
+  assert.equal(findTimer('flare', 76), FIND_MIN_TIMER);
+  assert.equal(findTimer('flare', 500), FIND_MIN_TIMER);
+  for (let d = 1; d <= 300; d++) {
+    const deep = delveTimer(findDepth('flare', d));
+    assert.equal(findTimer('flare', d), Math.max(FIND_MIN_TIMER, deep - 3), `at ${d}`);
+    assert.ok(findTimer('flare', d) < delveTimer(d), `less time than the depth's own at ${d}`);
+  }
 });
 
 test('even a find has half its art in with over 3 s left, and an Azurite Vein half of it in before its window closes', () => {
-  for (const kind of LIVE)
+  for (const kind of [...LIVE, 'dynamite'] as const)
     for (let d = FINDS_FROM; d <= 300; d++) {
       const secs = findTimer(kind, d);
       const ms = secs * 1000;
       const veil = findRules(kind, d).veil;
       if (!veil) continue;
+      // A Flare Cache's three seconds are too few for any art to burn in fairly: it is shown plain (below).
+      if (secs === FIND_MIN_TIMER) {
+        assert.equal(kind, 'flare');
+        assert.equal(veilSeconds(secs, veil.share, veil.size), 0, `${kind} at ${d}`);
+        assert.equal(veilSeconds(secs, veil.share, tileVeilSize(veil.size), true), 0, `${kind} at ${d}`);
+        continue;
+      }
+      assert.ok(veilSeconds(secs, veil.share, veil.size) > 0 && veilSeconds(secs, veil.share, tileVeilSize(veil.size), true) > 0, `${kind} at ${d}`);
       // The art of a name question (see tests/delve.test.ts for where these timings come from), faster on a short clock.
       const whole = veilPace(veilSeconds(secs, veil.share, veil.size) * 1000, veil.size ** 2);
       const halfArt = 400 + (veil.size ** 2 / 2) * whole.gap + whole.burn;
@@ -506,7 +545,7 @@ test('the other cards beside a find ask questions of the depth', () => {
 });
 
 /** A run at depth 20 with a find picked and its clock started. */
-function found(kind: FindKind, opts: { host?: string | null; inv?: Partial<Inventory> } = { host: null }) {
+function found(kind: FindKind, opts: { host?: string | null; inv?: Partial<Inventory>; seed?: number } = { host: null }) {
   const h = delve(['Ash'], opts);
   at(h, 20);
   if (opts.inv) h.give(h.active().id, opts.inv);
@@ -615,7 +654,7 @@ test('a find planted for a player full of its item: a right answer stands, with 
   }
 });
 
-test('wrong or out of time on a Flare or Dynamite Cache costs a life like any other', () => {
+test('wrong or out of time on a Flare or Dynamite Cache with nothing carried costs a life like any other', () => {
   for (const kind of ['flare', 'dynamite'] as const) {
     const wrong = found(kind);
     const id = wrong.active().id;
@@ -631,6 +670,159 @@ test('wrong or out of time on a Flare or Dynamite Cache costs a life like any ot
     assert.equal(livesOf(late.s, id), DELVE_LIVES - 1);
     assert.deepEqual(inventoryOf(late.s, id), NONE);
   }
+});
+
+// ---- the Flare Cache's clock and the Dynamite Cache's blast ----------------
+
+test("a Flare Cache's question starts three seconds shorter, and at three seconds its art comes plain", () => {
+  let veiled = 0;
+  for (let seed = 1; seed <= 24; seed++) {
+    // Depth 40 asks from 60 down (7 s there, 4 here); depth 60 from 80 (6 s there, the floor of 3 here).
+    for (const depth of [40, 60]) {
+      const h = delve(['Ash'], { seed });
+      at(h, depth);
+      h.act({ type: 'pick', category: h.plant('flare') });
+      const q = h.s.question!;
+      const secs = findTimer('flare', depth);
+      assert.equal(secs, depth === 40 ? 4 : FIND_MIN_TIMER);
+      h.clockIn();
+      assert.equal(h.s.question!.deadline! - h.s.question!.clockAt!, secs * 1000);
+      assert.equal(questionTimer(h.s), secs);
+      if (depth === 60) assert.equal(q.veil, null, `seed ${seed}: no art burns in on three seconds`);
+      else if (q.veil) {
+        veiled++;
+        // Fair on the shortened clock: half the art in with three seconds left at the least.
+        const pace = veilPace(q.veil.seconds * 1000, q.veil.size ** 2);
+        const late = q.mode === 'art' ? pace.gap / 2 : 0;
+        assert.ok(secs * 1000 - (400 + late + (q.veil.size ** 2 / 2) * pace.gap + pace.burn) >= 3000, `seed ${seed}`);
+      }
+    }
+  }
+  assert.ok(veiled > 0, 'some art burns in on four seconds');
+});
+
+test("a Dynamite Cache's blast takes one thing a pack holds: each ward, flare and stick a chance, a shard half of one", () => {
+  assert.deepEqual(
+    FINDS.map((f) => [f.kind, blowsUp(f.kind)]),
+    [
+      ['azurite', false],
+      ['flare', false],
+      ['dynamite', true],
+    ],
+  );
+  assert.equal(blastVictim(NONE, 0.5), null);
+  assert.equal(blastVictim({ ...NONE, shards: 1 }, 0), 'shards');
+  assert.equal(blastVictim({ ...NONE, shards: 1 }, 0.99), 'shards');
+  assert.equal(blastVictim({ ...NONE, wards: 2 }, 0.7), 'wards');
+  // Two wards, a flare and a shard: 2 + 1 + 0.5 chances, in the order wards, flares, dynamite, shards.
+  const inv = { ...NONE, wards: 2, flares: 1, shards: 1 };
+  const share = (item: string) => {
+    let n = 0;
+    for (let i = 0; i < 3500; i++) if (blastVictim(inv, (i + 0.5) / 3500) === item) n++;
+    return n / 3500;
+  };
+  assert.ok(Math.abs(share('wards') - 2 / 3.5) < 0.001);
+  assert.ok(Math.abs(share('flares') - 1 / 3.5) < 0.001);
+  assert.ok(Math.abs(share('shards') - 0.5 / 3.5) < 0.001);
+  assert.equal(share('dynamite'), 0);
+  // Never something not held, whatever the roll.
+  for (const roll of [0, 0.25, 0.5, 0.999, 1, -1, NaN]) {
+    const v = blastVictim({ ...NONE, dynamite: 1 }, roll);
+    assert.equal(v, 'dynamite', String(roll));
+  }
+});
+
+/** What a pack holds in all, a shard counted as one thing. */
+const things = (inv: Inventory) => inv.wards + inv.flares + inv.dynamite + inv.shards;
+
+test('a miss on a Dynamite Cache costs a life and blows up exactly one thing carried, the same on every replay', () => {
+  const PACK: Inventory = { wards: 0, flares: 2, dynamite: 1, shards: 1 };
+  const seen = new Set<string>();
+  for (let seed = 1; seed <= 40; seed++) {
+    const run = () => {
+      const h = found('dynamite', { host: null, inv: PACK, seed });
+      const id = h.active().id;
+      h.answer(false);
+      return { h, id };
+    };
+    const { h, id } = run();
+    const blown = h.s.reveal!.blown!;
+    assert.ok(blown, `seed ${seed}`);
+    seen.add(blown);
+    assert.equal(livesOf(h.s, id), DELVE_LIVES - 1);
+    const inv = inventoryOf(h.s, id);
+    assert.equal(things(inv), things(PACK) - 1);
+    assert.equal(inv[blown], PACK[blown] - 1);
+    // Deterministic: the engine's seeded roll picks it, so a replay (or any screen) agrees.
+    assert.equal(run().h.s.reveal!.blown, blown);
+  }
+  assert.deepEqual([...seen].sort(), ['dynamite', 'flares', 'shards']);
+});
+
+test('a ward takes the life first, then the blast takes one thing from what is left', () => {
+  // One ward and nothing else: the ward takes the loss, nothing is left to blow up.
+  const bare = found('dynamite', { host: null, inv: { wards: 1 } });
+  const id = bare.active().id;
+  bare.answer(false);
+  assert.equal(livesOf(bare.s, id), DELVE_LIVES);
+  assert.equal(bare.s.reveal!.warded, true);
+  assert.equal(bare.s.reveal!.blown, undefined);
+  assert.deepEqual(inventoryOf(bare.s, id), NONE);
+  // Two wards: one takes the loss, the other is blown up.
+  const two = found('dynamite', { host: null, inv: { wards: 2 } });
+  two.answer(false);
+  assert.equal(livesOf(two.s, id), DELVE_LIVES);
+  assert.equal(two.s.reveal!.blown, 'wards');
+  assert.equal(wardsOf(two.s, id), 0);
+});
+
+test('a time-out on a Dynamite Cache is a miss: the blast takes something too', () => {
+  const h = found('dynamite', { host: null, inv: { dynamite: 2 } });
+  const id = h.active().id;
+  h.clock.now += findTimer('dynamite', 20) * 1000 + ANSWER_GRACE_MS + 1;
+  h.act({ type: 'answer', index: null, askedAt: h.s.question!.askedAt });
+  assert.equal(h.s.reveal!.timedOut, true);
+  assert.equal(h.s.reveal!.blown, 'dynamite');
+  assert.equal(dynamiteOf(h.s, id), 1);
+  assert.equal(livesOf(h.s, id), DELVE_LIVES - 1);
+});
+
+test('nothing is blown up for a player who carries nothing, who perishes on the miss, or who answers right', () => {
+  const empty = found('dynamite');
+  empty.answer(false);
+  assert.equal(empty.s.reveal!.blown, undefined);
+  // On the last life the whole pack goes with them; the blast adds nothing (and uses no roll).
+  const last = found('dynamite', { host: null, inv: { flares: 2, dynamite: 1 } });
+  const id = last.active().id;
+  last.edit((c) => (c.delve!.losses[id] = [5, 9]));
+  last.answer(false);
+  assert.equal(livesOf(last.s, id), 0);
+  assert.equal(last.s.reveal!.blown, undefined);
+  assert.deepEqual(inventoryOf(last.s, id), NONE);
+  const right = found('dynamite', { host: null, inv: { flares: 1 } });
+  right.answer(true);
+  assert.equal(right.s.reveal!.blown, undefined);
+  assert.deepEqual(inventoryOf(right.s, id), { ...NONE, flares: 1, dynamite: 1 });
+});
+
+test('only a Dynamite Cache blows anything up: a Flare Cache or an Azurite Vein missed leaves the pack (but the wards a cave-in breaks)', () => {
+  for (const kind of ['flare', 'azurite'] as const) {
+    const h = found(kind, { host: null, inv: { flares: 1, dynamite: 1, shards: 1 } });
+    const id = h.active().id;
+    h.answer(false);
+    assert.equal(h.s.reveal!.blown, undefined, kind);
+    assert.deepEqual(inventoryOf(h.s, id), { ...NONE, flares: 1, dynamite: 1, shards: 1 }, kind);
+  }
+});
+
+test('what a blast destroyed is reported once, for the phial, alone at the reveal', () => {
+  const h = found('dynamite', { host: null, inv: { flares: 1 } });
+  const id = h.active().id;
+  const before = h.s;
+  h.answer(false);
+  assert.deepEqual(itemsBlown(before, h.s), [{ playerId: id, item: 'flares' }]);
+  assert.deepEqual(itemsBlown(h.s, h.s), []);
+  assert.deepEqual(itemsBlown(null, h.s), []);
 });
 
 // ---- the cave-in -----------------------------------------------------------
@@ -977,7 +1169,9 @@ test("no flare burns on a find's own question: the time-out is taken and the fla
     h.clock.now = q.deadline! + ANSWER_GRACE_MS;
     h.act({ type: 'answer', index: null }, null);
     assert.equal(h.s.reveal!.timedOut, true, kind);
-    assert.equal(flaresOf(h.s, id), 2, kind);
+    // Kept, but a Dynamite Cache's blast takes what is carried: the one flare it found.
+    assert.equal(flaresOf(h.s, id), kind === 'dynamite' ? 1 : 2, kind);
+    assert.equal(h.s.reveal!.blown, kind === 'dynamite' ? 'flares' : undefined, kind);
     assert.equal(livesOf(h.s, id), DELVE_LIVES - findLosses(kind));
   }
   // The vein's fast window is just its own.

@@ -51,6 +51,7 @@ import {
   flareIn,
   hostAnswerHold,
   inventoryChanges,
+  itemsBlown,
   livesLost,
   markAway,
   racerIds,
@@ -471,6 +472,63 @@ test('an Azurite Vein: the first right pick mines the ward (fast) or a shard, an
   late.timeOut();
   assert.deepEqual([livesOf(late.s, 'p0'), livesOf(late.s, 'p1')], [1, 1]);
   assert.equal(late.s.reveal!.caveIn, true);
+});
+
+test('a Dynamite Cache: each wrong pick blows up one thing from the picker\'s own pack, as it strikes; the clearer and the rest keep theirs', () => {
+  const h = team(3, { depth: 20 });
+  const PACK = { wards: 1, flares: 1, dynamite: 1 };
+  for (const id of ['p0', 'p1', 'p2']) h.give(id, PACK);
+  const q = h.ask('dynamite');
+  const [w1] = wrongs(q);
+  const before = h.s;
+  h.pickAs('p1', w1);
+  // p1: the ward takes the life, then the blast takes one of the flare and the stick.
+  const struck = h.s.question!.struck![0];
+  assert.equal(struck.by, 'p1');
+  assert.ok(struck.blown === 'flares' || struck.blown === 'dynamite', String(struck.blown));
+  assert.deepEqual(inventoryOf(h.s, 'p1'), { ...NONE, ...PACK, wards: 0, [struck.blown!]: 0 });
+  assert.equal(livesOf(h.s, 'p1'), DELVE_LIVES);
+  for (const id of ['p0', 'p2']) assert.deepEqual(inventoryOf(h.s, id), { ...NONE, ...PACK }, `${id} keeps theirs`);
+  assert.deepEqual(itemsBlown(before, h.s), [{ playerId: 'p1', item: struck.blown }]);
+  assert.deepEqual(
+    delveNotices(before, h.s).map((n) => n.kind === 'struck' && n.blown),
+    [struck.blown],
+  );
+  h.pickAs('p0', right(q));
+  const r = h.s.reveal!;
+  assert.deepEqual(r.hits, [{ playerId: 'p1', lives: 0, wards: 1, timedOut: false, blown: struck.blown }]);
+  assert.deepEqual(inventoryOf(h.s, 'p0'), { ...NONE, ...PACK, dynamite: 2 }, 'the clearer finds a stick');
+  assert.deepEqual(inventoryOf(h.s, 'p2'), { ...NONE, ...PACK });
+
+  // The same seed blows up the same things on every replay.
+  const again = team(3, { depth: 20 });
+  for (const id of ['p0', 'p1', 'p2']) again.give(id, PACK);
+  again.ask('dynamite');
+  again.pickAs('p1', w1);
+  assert.equal(again.s.question!.struck![0].blown, struck.blown);
+});
+
+test('a Dynamite Cache timed out: each who never answered loses a life and one thing; one with nothing, or who perishes, only the life', () => {
+  const h = team(3, { depth: 20 });
+  h.give('p0', { shards: 1 });
+  h.give('p2', { flares: 2, dynamite: 1 });
+  h.lives({ p2: 1 });
+  const q = h.ask('dynamite');
+  h.pickAs('p1', wrongs(q)[0]);
+  assert.equal(h.s.question!.struck![0].blown, undefined, 'p1 carried nothing');
+  const before = h.s;
+  h.timeOut();
+  const r = h.s.reveal!;
+  assert.equal(r.timedOut, true);
+  assert.deepEqual(r.hits, [
+    { playerId: 'p1', lives: 1, wards: 0, timedOut: false },
+    { playerId: 'p0', lives: 1, wards: 0, timedOut: true, blown: 'shards' },
+    { playerId: 'p2', lives: 1, wards: 0, timedOut: true },
+  ]);
+  assert.deepEqual(inventoryOf(h.s, 'p0'), NONE);
+  assert.equal(livesOf(h.s, 'p2'), 0);
+  assert.deepEqual(inventoryOf(h.s, 'p2'), NONE, 'perishing drops the pack anyway');
+  assert.deepEqual(itemsBlown(before, h.s), [{ playerId: 'p0', item: 'shards' }]);
 });
 
 test("a find is offered while anyone standing has room for its item, and pays whoever clears it", () => {

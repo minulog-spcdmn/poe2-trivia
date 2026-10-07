@@ -425,6 +425,22 @@ export const MOMENTS: Record<Sfx, Moment> = {
       { file: 'layer-sub-3', gain: -30, rate: 0.7, delay: 120, hp: 20, lp: 700, send: 0.5 },
     ],
   },
+  // A Dynamite Cache missed: its blast takes something from the pack. The
+  // blast's own layers, lighter and closer (a smaller charge): the crack and
+  // its thud, a few chips landing and a short crackle, with the ward's high
+  // bell struck under it, as whatever it was breaks.
+  itemBlown: {
+    soften: 4.5,
+    varyPitch: 0.04,
+    varyGain: 1,
+    layers: [
+      { file: 'start-7', gain: -28, rate: 0.95, delay: 0, hp: 90, lp: 5000, send: 0.35 },
+      { file: 'layer-sub-5', gain: -27, rate: 0.9, delay: 0, hp: 20, lp: 700, send: 0.3 },
+      { file: 'click-5', gain: -33, rate: 0.85, delay: 110, hp: 400, lp: 9000, send: 0.4 },
+      { file: 'burn-crackle', gain: -36, rate: 1.05, delay: 80, hp: 300, lp: 11000, send: 0.45 },
+      { file: 'defeat-3', gain: -44, rate: 1.8, delay: 40, hp: 972, lp: 4055, send: 0.35 },
+    ],
+  },
   // An Azurite Ward breaking in place of a life: a high bell struck and cut,
   // a low thump, a ring of metal and a shimmer as the crystal bursts.
   wardShatter: {

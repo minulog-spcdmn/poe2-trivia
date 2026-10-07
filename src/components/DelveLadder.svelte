@@ -214,7 +214,7 @@
         <text x={NOTE_X} y={n.y}>
           {#if n.word}<tspan class="key">{n.word}</tspan>{/if}
           {#if n.num}<tspan class="num">{n.word ? ' ' : ''}{n.num}</tspan>{/if}
-          {#if n.lines.length}<tspan class="dot">{' • '}</tspan><tspan class="say">{n.lines[0]}</tspan>{/if}
+          {#if n.lines.length}<tspan class="dot" dy="0.1em">{' • '}</tspan><tspan class="say" dy="-0.1em">{n.lines[0]}</tspan>{/if}
         </text>
         {#each n.lines.slice(1) as l, i (i)}
           <text class="say" x={NOTE_X} y={n.y + (i + 1) * LINE}>{l}</text>
@@ -334,6 +334,7 @@
     font-style: italic;
     fill: var(--gold);
   }
+  /* The bullet sits high in the type's x-height; it is set 0.1em lower (dy), the words after back on the line. */
   .dot {
     fill: var(--gold-lo);
   }

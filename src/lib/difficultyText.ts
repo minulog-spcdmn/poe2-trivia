@@ -3,9 +3,10 @@
 // so a knob reads the same wherever it shows up.
 
 import {
-  FINDS_FROM,
   FLARE_MS,
+  blowsUp,
   cavesIn,
+  findFor,
   findLosses,
   findReward,
   type FindKind,
@@ -152,62 +153,62 @@ export const ITEM_TEXT: Record<ItemKind, string> = {
 /** What a wrong answer to a find that caves in costs, in words ("two lives"). */
 const caveInText = (kind: FindKind) => `${words(findLosses(kind))} lives`;
 
-/** A miss that costs more than a plain one, as a cave-in does, or null. */
-const caveIn = (kind: FindKind) => (cavesIn(kind) ? `a miss costs ${caveInText(kind)}` : null);
-
 /**
- * What a miss on each find costs beyond a plain miss (a life), in a few
- * words, or null when it is a plain miss. The one place a find's drawback
- * is said: the notes under the cards and the lobby's rules both read it, so
- * a new drawback is one edit here.
+ * What each find risks for its reward, in a few plain words, or null for
+ * none beyond a plain miss (a life): an Azurite Vein's cave-in, a Flare
+ * Cache's shorter clock (time now for time later), a Dynamite Cache's blast
+ * that takes something you carry. The one place a find's drawback is said:
+ * the notes under the cards, the team's, the lines for those watching and
+ * the lobby's rules all read it, so a new drawback is one edit here.
  */
-export const FIND_MISS: Record<FindKind, string | null> = {
-  azurite: caveIn('azurite'),
-  flare: caveIn('flare'),
-  dynamite: caveIn('dynamite'),
-};
+export const FIND_MISS: Record<FindKind, string | null> = Object.fromEntries(
+  (['azurite', 'flare', 'dynamite'] as const).map((kind) => [kind, riskOf(kind)]),
+) as Record<FindKind, string | null>;
 
-/** A plain miss, for the lobby's rules. */
-const PLAIN_MISS = 'a miss costs a life';
+function riskOf(kind: FindKind): string | null {
+  if (cavesIn(kind)) return `a miss costs ${caveInText(kind)}`;
+  const { shorter } = findFor(kind);
+  if (shorter) return `you get ${words(shorter)} seconds less to answer`;
+  if (blowsUp(kind)) return 'a miss also blows up an item you carry';
+  return null;
+}
 
-/** What each item does, in a few words (`team`: in a run together). */
+/** What each item does, in a few plain words (`team`: in a run together). */
 function does(kind: FindKind, team = false): string {
   switch (kind) {
     case 'azurite':
-      return 'it saves a life';
+      // After the tagline's "Answer in the first half for a ward".
+      return 'later, a shard; two make a ward';
     case 'flare':
-      return `${words(FLARE_MS / 1000)} more seconds${team ? ' for all' : ''} when time runs out`;
+      return `it adds ${words(FLARE_MS / 1000)} seconds${team ? ' for everyone' : ''} when ${team ? '' : 'your '}time runs out`;
     case 'dynamite':
-      return 'at half time, it blows away half the answers, all wrong';
+      return 'at half time, it blows away half the answers';
   }
 }
 
-/** A short line: what the item does, then the miss when it costs more ("It saves a life; a miss costs two lives."). */
-const noteLine = (lead: string, kind: FindKind) => `${cap(lead)}${FIND_MISS[kind] ? `; ${FIND_MISS[kind]}` : ''}.`;
+/** A short line: what the item does, then what the find risks ("Later, a shard; two make a ward. A miss costs two lives."). */
+const noteLine = (lead: string, kind: FindKind) => `${cap(lead)}.${FIND_MISS[kind] ? ` ${cap(FIND_MISS[kind])}.` : ''}`;
 
-/** The finds for the lobby's rules: where they turn up, and what they are in a line. */
-export const FINDS_LABEL = `Finds • from depth ${FINDS_FROM}`;
-export const FINDS_INTRO = 'A harder question that pays an item. You carry up to three of each.';
+/** The finds' heading in the lobby's rules (where they start, the descent beside it says). */
+export const FINDS_LABEL = 'Finds • harder questions';
 
 /**
- * Each find for the lobby's rules, by its parts: what a right answer gives,
- * how the item works, and what a miss costs (from FIND_MISS).
+ * Each find for the lobby's rules, in one short line for someone who has
+ * never played: what a right answer gives and what its item does, then what
+ * it risks (from FIND_MISS).
  */
-export const FIND_RULES: Record<FindKind, { gives: string; works: string; miss: string }> = {
+export const FIND_RULES: Record<FindKind, { gives: string; miss: string }> = {
   azurite: {
-    gives: 'Fast: a ward; slower: half of one.',
-    works: 'A ward takes a lost life for you.',
-    miss: `${cap(FIND_MISS.azurite ?? PLAIN_MISS)}.`,
+    gives: 'A ward takes a lost life for you. Answer in the first half for a ward; later, a shard: two shards make a ward.',
+    miss: `${cap(FIND_MISS.azurite ?? '')}.`,
   },
   flare: {
-    gives: 'A flare:',
-    works: `${words(FLARE_MS / 1000)} more seconds when your time runs out.`,
-    miss: `${cap(FIND_MISS.flare ?? PLAIN_MISS)}.`,
+    gives: `A flare adds ${words(FLARE_MS / 1000)} seconds when your time runs out.`,
+    miss: `${cap(FIND_MISS.flare ?? '')}.`,
   },
   dynamite: {
-    gives: 'Dynamite:',
-    works: 'at half time, it blows away half the answers, all wrong, and clears the art.',
-    miss: `${cap(FIND_MISS.dynamite ?? PLAIN_MISS)}.`,
+    gives: 'Dynamite blows away half the answers at half time.',
+    miss: `${cap(FIND_MISS.dynamite ?? '')}.`,
   },
 };
 
@@ -224,21 +225,26 @@ export const HARDER_LABEL = 'A harder question';
  * depth it asks, nor that it is harder (its card's mark says so).
  */
 export const FIND_TEXT: Record<FindKind, { name: string; tag: string; others: string }> = {
-  azurite: { name: 'Azurite Vein', tag: 'Answer fast for a ward', others: `A fast answer wins a ward. ${noteLine(does('azurite'), 'azurite')}` },
+  azurite: { name: 'Azurite Vein', tag: 'Answer in the first half for a ward', others: `An answer in the first half wins a ward. ${noteLine(does('azurite'), 'azurite')}` },
   flare: { name: 'Flare Cache', tag: 'Answer right for a flare', others: `A right answer wins a flare. ${noteLine(does('flare'), 'flare')}` },
   dynamite: { name: 'Dynamite Cache', tag: 'Answer right for dynamite', others: `A right answer wins dynamite. ${noteLine(does('dynamite'), 'dynamite')}` },
 };
 
-/** "Your flare stays unused on it": what the player holds that won't go off on a find's question (`on`: "it", or "a find"). */
+/** "Your flare can't be used on it": what the player holds that won't go off on a find's question (`on`: "it", or "a find"). */
 export function unused(inv: Inventory, on = 'it'): string {
   const held = [inv.flares ? (inv.flares > 1 ? 'flares' : 'flare') : '', inv.dynamite ? 'dynamite' : ''].filter(Boolean);
   if (!held.length) return '';
-  const one = held.length === 1 && held[0] !== 'flares';
-  return ` Your ${held.join(' and ')} ${one ? 'stays' : 'stay'} unused on ${on}.`;
+  return ` Your ${held.join(' and ')} can't be used on ${on}.`;
 }
 
 /** Together: flares and dynamite won't go off on a find's question (`on`: "it", or "a find"). */
-export const teamUnused = (on = 'it') => ` Flares and dynamite stay unused on ${on}.`;
+export const teamUnused = (on = 'it') => ` Flares and dynamite can't be used on ${on}.`;
+
+/** An item by its plain name, for what a blast destroyed ("your ward"). */
+const ITEM_NAME: Record<ItemKind, string> = { wards: 'ward', shards: 'shard', flares: 'flare', dynamite: 'dynamite' };
+
+/** What a Dynamite Cache's blast destroyed of a pack: "The blast destroyed your flare." (`whose`: "your", "Ash's"). */
+export const blownText = (item: ItemKind, whose: string) => `The blast destroyed ${whose} ${ITEM_NAME[item]}.`;
 
 /**
  * A find's note, after its tagline, for the player choosing while holding
@@ -282,6 +288,8 @@ export interface HitText {
   lives: number;
   wards: number;
   timedOut: boolean;
+  /** A Dynamite Cache's blast destroyed this of their pack. */
+  blown?: ItemKind;
 }
 
 /**
@@ -340,6 +348,12 @@ export function coopRevealText(r: {
   const two = lost.filter((h) => h.lives > 1).map((h) => h.playerId);
   if (two.length) out.push(`${cap(list(two))} ${verb(two, me, 'loses', 'lose')} two lives${two.length > 1 ? ' each' : ''}.`);
   if (perished.length && !perishSaid) out.push(`${cap(list(perished))} ${verb(perished, me, 'perishes', 'perish')}.`);
+  // What a Dynamite Cache's blast destroyed, each pack in turn: "The blast destroyed your flare and Ash's ward."
+  const blown = hits.filter((h) => h.blown && r.left(h.playerId) > 0);
+  if (blown.length) {
+    const parts = blown.map((h) => `${whose(h.playerId, nameOf, me)} ${ITEM_NAME[h.blown!]}`);
+    out.push(`The blast destroyed ${parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}` : parts[0]}.`);
+  }
   return out;
 }
 
@@ -387,13 +401,13 @@ function clearedText(winner: string, gain: GainText | undefined, nameOf: (id: st
 /**
  * Co-op: your own wrong answer, while the team still answers. What it cost
  * you only when your phial doesn't say it plainly: a ward taking it, a
- * cave-in, perishing.
+ * cave-in, perishing; and what a Dynamite Cache's blast destroyed.
  */
-export function coopMissText(hit: { lives: number; wards: number }, left: number, caveIn: boolean): string {
+export function coopMissText(hit: { lives: number; wards: number; blown?: ItemKind }, left: number, caveIn: boolean): string {
   if (left === 0) return 'You perished; your team can still clear it.';
   if (caveIn) return 'Wrong; the vein caved in.';
-  if (hit.lives === 0) return 'Wrong; your ward took it.';
-  return 'Wrong.';
+  const took = hit.lives === 0 ? 'Wrong; your ward took it.' : 'Wrong.';
+  return hit.blown ? `${took} ${blownText(hit.blown, 'your')}` : took;
 }
 
 /**

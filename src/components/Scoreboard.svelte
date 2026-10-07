@@ -31,12 +31,13 @@
     turnsBlue,
     wardFormed,
     wardShattered,
+    itemBlown,
   } from '../lib/fx/moments';
   import { scoreRow, scoreRowOf } from '../lib/scoreRows';
   import { burnsBlue, heatOf, streakOf } from '../lib/fx/streaks';
   import { phone } from '../lib/layout';
-  import { cavesIn, fellAt, inventoryOf, isGroupRun, livesOf, reviveProblem, type FindKind, type Inventory as Carried } from '../lib/delve';
-  import { inventoryChanges } from '../lib/delveSession';
+  import { cavesIn, fellAt, inventoryOf, isGroupRun, livesOf, reviveProblem, type FindKind, type Inventory as Carried, type ItemKind } from '../lib/delve';
+  import { inventoryChanges, itemsBlown } from '../lib/delveSession';
   import { CASINGS, momentOf, type InventoryMoment } from '../lib/inventoryArt';
   import { MOMENTS } from '../lib/soundDesign';
   import type { GameState, Revive } from '../lib/game';
@@ -177,14 +178,22 @@
   let invMoment = $state<Record<string, InventoryMoment>>({});
   /** A flare or dynamite on its way to a player's entry (findFlows): its place is kept for it. */
   let expecting = $state<Record<string, 'flare' | 'dynamite'>>({});
+  /** What a blast destroyed (a Dynamite Cache missed), still shown until it blows apart after the rest of the loss. */
+  let blownHeld = $state<Record<string, ItemKind>>({});
   let invPrev: GameState | null = null;
   let momentKey = 0;
-  const carried = (id: string) => invHeld[id] ?? inventoryOf(s, id);
-  /** What inventoryChanges reads of a state, copied: the next state may be the same object, changed. */
+  const carried = (id: string) => {
+    if (invHeld[id]) return invHeld[id];
+    const inv = inventoryOf(s, id);
+    const item = blownHeld[id];
+    return item ? { ...inv, [item]: inv[item] + 1 } : inv;
+  };
+  /** What inventoryChanges and itemsBlown read of a state, copied: the next state may be the same object, changed. */
   const invSnapshot = (st: GameState) =>
     ({
       phase: st.phase,
       players: st.players.map((p) => ({ id: p.id })),
+      question: st.question && { askedAt: st.question.askedAt, struck: [...(st.question.struck ?? [])] },
       delve: st.delve && { startedAt: st.delve.startedAt, inventory: Object.fromEntries(Object.entries(st.delve.inventory ?? {}).map(([id, inv]) => [id, { ...inv }])) },
     }) as unknown as GameState;
   $effect(() => {
@@ -195,7 +204,20 @@
     const atReveal = next.phase === 'reveal' && was.phase !== 'reveal';
     const byPlayer = new Map<string, ReturnType<typeof inventoryChanges>>();
     for (const c of inventoryChanges(was, next)) byPlayer.set(c.playerId, [...(byPlayer.get(c.playerId) ?? []), c]);
-    for (const [id, changes] of byPlayer) {
+    // A Dynamite Cache missed: what its blast destroyed is a moment of its
+    // own, once the loss has shown (a ward taking it, or a life pouring out).
+    const blownBy = new Map(itemsBlown(was, next).map((b) => [b.playerId, b.item]));
+    for (const [id, item] of blownBy) {
+      blownHeld[id] = item;
+      later(() => {
+        delete blownHeld[id];
+        playMoment(id, 'blown', 1, false, null, item);
+      }, BLOWN_AT);
+    }
+    for (const [id, all] of byPlayer) {
+      // What the blast took is left to its own moment (a second ward gone with a ward that took the loss stays a shatter).
+      const blownItem = blownBy.get(id);
+      const changes = blownItem ? all.filter((c) => c.item !== blownItem || inventoryOf(was, id)[c.item] - inventoryOf(next, id)[c.item] > 1) : all;
       // At a reveal it says whether a ward was forged (a third ward mined outright also drops the shard held).
       const kind = momentOf(changes, atReveal ? !!next.reveal?.forged : undefined);
       if (!kind) continue;
@@ -205,8 +227,8 @@
       // (findFlows) and lands with the sparks.
       const found = atReveal && FOUND.has(kind);
       const delay = !atReveal ? 0 : kind === 'shatter' ? 450 : found ? (FIND_START + 0.1) * 1000 : 700;
-      // A cave-in can break two wards at once.
-      const broke = Math.max(1, inventoryOf(was, id).wards - inventoryOf(next, id).wards);
+      // A cave-in can break two wards at once (one of them the blast's, it has its own moment).
+      const broke = Math.max(1, inventoryOf(was, id).wards - inventoryOf(next, id).wards - (blownItem === 'wards' ? 1 : 0));
       if (delay) invHeld[id] = inventoryOf(was, id);
       // Whether the sparks really flew is known a tick later (findFlows), well before the item lands.
       const flow = found ? untrack(() => findFlows(id, kind, inventoryOf(was, id).wards)) : null;
@@ -271,12 +293,23 @@
     return { flow, vessel, counts: flow?.upright ? li.querySelector('.side-counts') : vessel };
   }
 
-  /** `fed`: a find's sparks flowed into it (findFlows), and were heard. `caved`: a cave-in's key (caveInOf), to be heard as one. */
-  function playMoment(id: string, kind: InventoryMoment['kind'], n = 1, fed = false, caved: string | null = null) {
+  /**
+   * ms from a Dynamite Cache's miss until its blast takes something from the
+   * pack: after the loss has shown (a life starts pouring out, or a ward
+   * shatters, 450 ms in) and a beat more, as the cave-in's lives follow its wards.
+   */
+  const BLOWN_AT = 450 + 650;
+
+  /**
+   * `fed`: a find's sparks flowed into it (findFlows), and were heard.
+   * `caved`: a cave-in's key (caveInOf), to be heard as one. `item`: what a
+   * blast destroyed (`blown`).
+   */
+  function playMoment(id: string, kind: InventoryMoment['kind'], n = 1, fed = false, caved: string | null = null, item?: ItemKind) {
     delete invHeld[id];
     delete expecting[id];
     const key = ++momentKey;
-    invMoment[id] = { kind, key, ...(n > 1 ? { n } : {}) };
+    invMoment[id] = { kind, key, ...(n > 1 ? { n } : {}), ...(item ? { item } : {}) };
     setTimeout(() => {
       if (invMoment[id]?.key === key) delete invMoment[id];
     }, 1300);
@@ -311,6 +344,15 @@
         flareBurns(timer, li, counts?.querySelector('[data-pip="flare"]') ?? null);
         // Everyone hears it: the clock everyone watches just got longer.
         sfx('flare');
+      } else if (kind === 'blown' && item) {
+        // What it was: a ward's or shard's casing on the chambers (bursting
+        // off, Phial.svelte), a flare or stick beside the phial.
+        const el =
+          item === 'wards' || item === 'shards'
+            ? (vessel?.querySelector('.casing.ghost.blown') ?? null)
+            : (counts?.querySelector(`[data-pip="${item === 'flares' ? 'flare' : 'dynamite'}"]`) ?? null);
+        if (el) itemBlown(el, li, item, mine);
+        if (mine) sfx('itemBlown');
       }
       // A blast is heard from QuestionView, where the stick goes off.
     });

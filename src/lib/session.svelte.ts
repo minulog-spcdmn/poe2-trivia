@@ -40,6 +40,7 @@ import { creatorArrival } from './herald';
 import { RUBY } from './palette';
 import { CREATOR_TITLE } from './site';
 import { FLARE_MS, LOOKALIKES_ASKED_FROM, blastClears, isGroupRun, livesOf } from './delve';
+import { blownText } from './difficultyText';
 import { loadLooks } from './looks';
 import { bestOf, loadRecords, recordLeft, recordRun, runEvent } from './delveRecord';
 import {
@@ -1738,8 +1739,8 @@ class Session {
         this.flash(`The host reloaded; it cost ${n.playerId ? 'nothing' : 'nobody anything'}.`, 'info', { title: 'Question set aside', ...(who ? { who } : {}) });
         break;
       case 'struck':
-        // What it cost them, their phial shows.
-        if (who && !mine) this.flash('Struck for everyone.', 'warn', { title: 'Wrong pick', who });
+        // What it cost them, their phial shows; a blast's loss is said too.
+        if (who && !mine) this.flash(`That answer is out for everyone.${n.blown ? ` ${blownText(n.blown, 'their')}` : ''}`, 'warn', { title: 'Wrong pick', who });
         break;
       case 'perished':
         // The depth is in the header.

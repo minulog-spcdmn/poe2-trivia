@@ -774,6 +774,33 @@ export function wardShattered(pip: Element, pill: Element, mine: boolean) {
   if (mine) shakeView(0.15, 3);
 }
 
+/**
+ * Delve: a Dynamite Cache missed, and its blast destroys something the player
+ * carries (`pip`, its casing on the phial or its engraving beside it): a
+ * small blast of its own, as the stick's on the art but close and light. A
+ * white-hot pop and a ring of fire, sparks and chips of what it was (blue
+ * crystal for a ward or a shard, the item's own warm colours for a flare or
+ * dynamite) thrown out and falling, a wisp of smoke, and the entry (`pill`)
+ * flickering ember-red where the ward's breaking glows blue.
+ */
+export function itemBlown(pip: Element, pill: Element, item: 'wards' | 'shards' | 'flares' | 'dynamite', mine: boolean) {
+  if (!fxActive() || detached(pip)) return;
+  const at = rectOf(pip);
+  const b = boxOf(at);
+  const big = Math.max(b.w, b.h);
+  const crystal = item === 'wards' || item === 'shards';
+  const chips: Vec3[] = crystal ? [C.azuritePale, C.azurite, C.whiteHot] : item === 'flares' ? [[2.6, 1.2, 1.1], C.ember, C.gold] : [[2.4, 0.9, 0.6], C.ember, [0.55, 0.45, 0.38]];
+  flash(at, { radius: big * 0.8 + 10, color: C.whiteHot, intensity: 0.5, life: 0.3 });
+  ring(at, { radius: big * 0.9 + 14, from: 3, thickness: 4, life: 0.45, color: C.ember, breakup: 0.55, fill: 0.15, intensity: 0.75 });
+  sparks(at, { count: crystal ? 26 : 22, speed: [140, 480], life: [0.25, 0.6], gravity: 520, colors: [C.whiteHot, C.ember, C.gold] });
+  shards(at, { count: crystal ? 12 : 9, colors: chips, cool: k3(crystal ? C.azurite : C.ash, 0.35), speed: [80, 300], size: [1.4, 3.2] });
+  puffs(at, { count: 4, area: 'centre', color: [0.09, 0.07, 0.055], size: [8, 16], speed: [20, 90], life: [0.6, 1.1] });
+  after(0.1, () => embers(at, { count: 6, area: 'fill', colors: [C.ember, C.gold], rise: [30, 90], life: [0.5, 1.1] }));
+  light(at, { color: [1, 0.55, 0.25], radius: 150, intensity: 0.32, decay: 0.7 });
+  if (!detached(pill)) outline(pill, { color: k3(C.ember, 0.75), width: 8, life: 0.75, intensity: 0.45 });
+  if (mine) shakeView(0.2, 4);
+}
+
 /** Seconds from a reveal until a find's sparks start landing on its item, and how long they take to (see findGained). */
 export const FIND_START = 0.85;
 export const FIND_SPAN = 0.45;

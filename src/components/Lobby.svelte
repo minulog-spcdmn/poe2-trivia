@@ -3,8 +3,8 @@
   import { fly, scale } from 'svelte/transition';
   import { session } from '../lib/session.svelte';
   import { MAX_PLAYERS, RACE_DEFAULT_TIMER, TIMER_STEPS, difficultyOf, rulesFor, type Difficulty, type GameMode } from '../lib/game';
-  import { DIFFICULTY_NAMES, FINDS_INTRO, FINDS_LABEL, FIND_RULES, FIND_TEXT, describe } from '../lib/difficultyText';
-  import { FINDS, delveLockout } from '../lib/delve';
+  import { DIFFICULTY_NAMES, FINDS_LABEL, FIND_RULES, FIND_TEXT, describe } from '../lib/difficultyText';
+  import { FINDS } from '../lib/delve';
   import CustomDifficulty from './CustomDifficulty.svelte';
   import DelveLadder from './DelveLadder.svelte';
   import ItemGlyph from './ItemGlyph.svelte';
@@ -375,14 +375,13 @@
             </div>
             <div>
               <span class="label">{FINDS_LABEL}</span>
-              <p class="finds-intro muted">{FINDS_INTRO}</p>
-              <!-- Each find in its own colour, with its item as the game draws it. -->
+              <!-- Each find in its own colour, with its item as the game draws it, in a line: what it gives, then what it risks. -->
               <dl class="finds">
                 {#each FIND_KINDS as kind (kind)}
                   {@const r = FIND_RULES[kind]}
                   <div data-find={kind}>
                     <dt><span class="find-glyph"><ItemGlyph kind={FIND_GLYPH[kind]} /></span>{FIND_TEXT[kind].name}</dt>
-                    <dd>{r.gives} {r.works} <span class="miss">{r.miss}</span></dd>
+                    <dd>{r.gives} <span class="miss">{r.miss}</span></dd>
                   </div>
                 {/each}
               </dl>
@@ -447,13 +446,9 @@
 
       <ul class="rules muted">
         {#if delve}
-          <li>Pick a category and name the item; each right answer goes a depth deeper.</li>
-          <li>A wrong answer or a time-out costs a life.</li>
-          {#if together}
-            <li>A category played stays locked for the next <span class="num">{delveLockout(1)}</span> depths, longer deeper down.</li>
-          {:else}
-            <li>A category you pick stays locked for your next <span class="num">{delveLockout(1)}</span> turns, longer deeper down.</li>
-          {/if}
+          <!-- Kept to what can't be seen at a glance: the descent beside the finds draws the rest, and locked cards say so in play. -->
+          <li>Name the item; each right answer takes you a depth deeper.</li>
+          <li>A wrong answer or running out of time costs a life.</li>
         {:else if race}
           <li>Everyone answers the same question; the first right answer scores a point.</li>
           <li>A wrong answer costs a point and sits you out until the next question.</li>
@@ -467,20 +462,17 @@
         {/if}
       </ul>
 
-      {#if delve}
-        <!-- Co-op plays nothing like the rest, so it is always explained, alone too. -->
+      {#if delve && !local}
+        <!-- Co-op plays nothing like the rest: told in a team room, or one a second player can still join (on one device, Delve is for one). -->
         <div class="setting together">
           <span class="label">Together</span>
           {#if !together}
-            <p class="finds-intro muted">{local ? 'Online, in a room of two or more.' : 'Once a second exile joins this room.'}</p>
+            <p class="together-when muted">Once a second exile joins this room.</p>
           {/if}
           <ul class="rules coop">
-            <li>The team votes for a card; each vote is a ticket in the draw.</li>
-            <li>All answer the same question at once; the first right answer clears it and takes the find.</li>
-            <li>A wrong pick costs you a life and strikes that answer out for everyone.</li>
-            <li>Flares and dynamite go off for the whole team.</li>
-            <li>Out of lives, you perish and lose all you carry; a teammate with a life to spare can give you one.</li>
-            <li>The run ends when the whole team has perished.</li>
+            <li>Vote for a card; the draw picks one.</li>
+            <li>Everyone answers at once; a wrong pick crosses that answer out for all.</li>
+            <li>Out of lives? A teammate can give you one; the run ends when all have perished.</li>
           </ul>
         </div>
       {/if}
@@ -965,7 +957,7 @@
       grid-template-columns: 12.5rem minmax(0, 1fr);
     }
   }
-  .finds-intro {
+  .together-when {
     margin: 0 0 0.45rem;
     font-size: 0.93rem;
     font-style: italic;

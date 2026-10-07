@@ -434,14 +434,17 @@ export function vesselLabel(lives: number, inv: Inventory | null | undefined): s
 /**
  * What just happened to a player's things, for the scoreboard to show: a ward
  * mined, forged from two shards or shattered in place of a life, a shard or a
- * flare found, a flare burning, dynamite found or lit. `key` tells one moment
+ * flare found, a flare burning, dynamite found or lit, or something blown up
+ * by a Dynamite Cache missed (`blown`, which `item`). `key` tells one moment
  * from the next of the same kind.
  */
 export interface InventoryMoment {
-  kind: 'ward' | 'forge' | 'shatter' | 'shard' | 'flare' | 'burn' | 'dynamite' | 'blast';
+  kind: 'ward' | 'forge' | 'shatter' | 'shard' | 'flare' | 'burn' | 'dynamite' | 'blast' | 'blown';
   key: number;
   /** How many wards shatter at once (a cave-in breaks two); one if missing. */
   n?: number;
+  /** What a blast destroyed (`blown`). */
+  item?: keyof Inventory;
 }
 
 /** A change to one player's things (lib/delveSession.ts inventoryChanges). */

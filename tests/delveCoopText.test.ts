@@ -67,16 +67,29 @@ test("a find's gain is said with who cleared it, or who it went to", () => {
   assert.equal(says({ winner: 'b', gain: { kind: 'wards', by: 'a', forged: true } }), "Brea cleared it; Ash's two shards forged an Azurite Ward.");
 });
 
+test("a Dynamite Cache's blast says what it destroyed of each pack, after the losses", () => {
+  const blown = (playerId: string, item: 'wards' | 'shards' | 'flares' | 'dynamite', timedOut = false) => ({ ...hit(playerId, 1, 0, timedOut), blown: item });
+  assert.equal(says({ winner: 'b', hits: [blown('me', 'flares')], left: { me: 2 } }), 'Brea cleared it. You picked wrong. The blast destroyed your flare.');
+  assert.equal(
+    says({ timedOut: true, hits: [blown('a', 'shards'), blown('c', 'wards', true)] }),
+    "Time's up; nobody found it. Ash picked wrong. The darkness took Cara. The blast destroyed Ash's shard and Cara's ward.",
+  );
+  // Nothing for one who perished: their pack went with them.
+  assert.equal(says({ hits: [blown('a', 'dynamite')], left: { a: 0 } }), 'Every answer was wrong. Ash perishes.');
+});
+
 test('your own wrong answer, while the team answers on', () => {
   assert.equal(coopMissText({ lives: 1, wards: 0 }, 2, false), 'Wrong.');
+  assert.equal(coopMissText({ lives: 1, wards: 0, blown: 'flares' }, 2, false), 'Wrong. The blast destroyed your flare.');
+  assert.equal(coopMissText({ lives: 0, wards: 1, blown: 'dynamite' }, 3, false), 'Wrong; your ward took it. The blast destroyed your dynamite.');
   assert.equal(coopMissText({ lives: 0, wards: 1 }, 3, false), 'Wrong; your ward took it.');
   assert.equal(coopMissText({ lives: 2, wards: 0 }, 1, true), 'Wrong; the vein caved in.');
   assert.equal(coopMissText({ lives: 1, wards: 0 }, 0, false), 'You perished; your team can still clear it.');
 });
 
 test("a find's note for the team says what it does for all, and what stays unused", () => {
-  assert.equal(teamFindNote('flare', false), 'Five more seconds for all when time runs out.');
-  assert.match(teamFindNote('azurite', true), /; a miss costs two lives\. Flares and dynamite stay unused on it\.$/);
+  assert.equal(teamFindNote('flare', false), 'It adds five seconds for everyone when time runs out. You get three seconds less to answer.');
+  assert.match(teamFindNote('azurite', true), /\. A miss costs two lives\. Flares and dynamite can't be used on it\.$/);
 });
 
 test('the end screen: lives lost at a cave-in counted once, and what each delver gave', () => {
