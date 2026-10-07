@@ -425,7 +425,7 @@
         class:chosen={picked === cat || (landed && lit === i)}
         class:faded={(picked && picked !== cat) || (landed && lit !== i)}
         class:voted={coop && myVote === cat && !landed}
-        class:lit={!landed && lit === i}
+        class:passing={!landed && lit === i}
         aria-label={coop ? `${cat}: ${voteWords(cat)}` : undefined}
         aria-pressed={coop && canVote ? myVote === cat : undefined}
         disabled={!mine}
@@ -1196,7 +1196,7 @@
     --draw: var(--f-hi);
     --draw-glow: var(--f);
   }
-  .card.lit .glow {
+  .card.passing .glow {
     opacity: 1;
     transition-duration: 0.05s;
   }
