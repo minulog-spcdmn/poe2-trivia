@@ -45,8 +45,8 @@ const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 export const CODE_LENGTH = 6;
 export const CODE_PATTERN = /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/;
 
-/** Connections that haven't introduced themselves yet, room-wide and per peer. */
-const MAX_PENDING = 8;
+/** Connections that haven't introduced themselves yet, room-wide and per peer (a joiner races two attempts). */
+const MAX_PENDING = 16;
 const MAX_PENDING_PER_PEER = 2;
 /** A connection this new can't be pushed out by another one: its time to finish connecting and say hello. */
 const PENDING_GRACE_MS = 4000;
@@ -59,13 +59,30 @@ const MAX_BLOCKED = 200;
 const ROOM_BUSY = 'The room is busy right now. Trying again…';
 /** Client: after the host says "not now" (too many joins), try again this much later. */
 const BUSY_RETRY_MS = 5000;
-/** A connection must introduce itself within this time. */
+/** An open connection must introduce itself within this time. */
 const HELLO_TIMEOUT_MS = 6000;
+/**
+ * A connection gets this long to open in the first place. Through a relay
+ * (mobile data, strict routers) that can take several seconds, so it isn't
+ * held to the hello's clock; the joiner races a second attempt meanwhile.
+ */
+const OPEN_TIMEOUT_MS = 20000;
+/** Client: an attempt to reach the host that hasn't opened by then gets a second one racing it. */
+const NEXT_ATTEMPT_MS = 4000;
+/** Client: joining gives up if the room hasn't let us in by then. */
+const JOIN_GIVE_UP_MS = 30000;
+/**
+ * Client: "room not found" is only believed the second time (its host may
+ * have been reconnecting to the server). The server takes ~5 s to say it.
+ */
+const UNAVAILABLE_TRIES = 2;
+/** Client: pause before trying again after a failed attempt or a hiccup of the signalling server. */
+const RETRY_SOON_MS = 1500;
 const PING_EVERY_MS = 3000;
 /** Guests: no message from the host for this long means it's gone. */
 const HOST_SILENCE_MS = 15000;
-/** How long a guest's reconnect attempt may take to open before the next one replaces it. */
-const ATTEMPT_MS = 10000;
+/** How long a guest's reconnect attempt may take to open before the next one races it. */
+const ATTEMPT_MS = 6000;
 /** Errors from the signalling server that a later try can get past. */
 const NETWORK_ERRORS = new Set(['network', 'server-error', 'socket-error', 'socket-closed']);
 /** No pong for this long: the connection is dead. */
@@ -205,6 +222,14 @@ class Session {
   private retries = 0;
   /** When the current attempt to reach the host started (0 once it failed). */
   private attemptAt = 0;
+  /** Client: attempts to reach the host that haven't opened yet, newest last. */
+  private attempts: DataConnection[] = [];
+  /** Client, joining: the next attempt to reach the host. */
+  private nextAttempt: ReturnType<typeof setTimeout> | null = null;
+  /** Client, joining: a fresh peer after the signalling server turned the last one away. */
+  private peerTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Client, joining: how often the server said the room isn't there. */
+  private unavailable = 0;
   private hostWatch: ReturnType<typeof setInterval> | null = null;
   private beacon: Beacon | null = null;
   private skipTimer: ReturnType<typeof setTimeout> | null = null;
@@ -432,7 +457,12 @@ class Session {
       since: Date.now(),
     };
     this.guests.set(conn, guest);
-    const helloTimer = setTimeout(() => !guest.playerId && this.drop(conn), HELLO_TIMEOUT_MS);
+    // The hello's clock starts once the connection is open; until then, only a much longer limit.
+    let helloTimer = setTimeout(() => !guest.playerId && this.drop(conn), OPEN_TIMEOUT_MS);
+    conn.on('open', () => {
+      clearTimeout(helloTimer);
+      if (this.guests.has(conn)) helloTimer = setTimeout(() => !guest.playerId && this.drop(conn), HELLO_TIMEOUT_MS);
+    });
     this.guardFrames(conn);
     conn.on('data', (raw) => {
       if (!this.state || !this.guests.has(conn)) return;
@@ -520,8 +550,8 @@ class Session {
       this.send(conn, { t: 'busy', message: busy });
       setTimeout(() => conn.close(), 400);
     });
-    // One that never opens still has to go.
-    setTimeout(() => conn.close(), HELLO_TIMEOUT_MS);
+    // One that never opens still has to go (a slow one is given time to hear why).
+    setTimeout(() => conn.close(), OPEN_TIMEOUT_MS);
   }
 
   /**
@@ -762,34 +792,66 @@ class Session {
     writeSaved({ mode: 'client', code: this.code, name });
     const room = this.code;
     this.helloSecret = roomSecret(mySecret, room).catch(() => stored(`secret.${room}`, () => randomToken(32)));
+    this.armConnectTimeout();
+    this.startClientPeer();
+  }
+
+  /**
+   * Client: a peer of our own on the signalling server. One that couldn't get
+   * there at all is replaced after a moment, until joining gives up.
+   */
+  private startClientPeer() {
+    this.peer?.destroy();
+    this.dropAttempts();
     const peer = new Peer(PEER_OPTIONS);
     this.peer = peer;
-    this.armConnectTimeout();
     // 'open' fires again when the signalling server is reconnected: a live
     // link to the host doesn't need it, a lost one tries again right away.
     peer.on('open', () => this.peer === peer && this.status !== 'ready' && this.connectToHost());
     peer.on('error', (err) => {
       if (this.peer !== peer) return;
       if (err.type === 'peer-unavailable') {
-        if (this.status === 'connecting') this.fail(`Room ${this.code} doesn't exist (or the host left).`, 'Room not found');
+        // The host may only be reconnecting to the server: believe it the second time.
+        if (this.status !== 'connecting') return;
+        if (++this.unavailable >= UNAVAILABLE_TRIES) this.fail(`Room ${this.code} doesn't exist (or the host left).`, 'Room not found');
+        else this.attemptSoon(RETRY_SOON_MS);
         return;
       }
       console.warn('peer error', err);
-      if (this.status === 'connecting') this.fail(this.networkHint(err.type), 'No connection');
+      if (this.status !== 'connecting') return;
+      if (!NETWORK_ERRORS.has(err.type)) this.fail(this.networkHint(err.type), 'No connection');
+      // A peer that had reached the server reconnects on its own ('disconnected').
+      else if (peer.destroyed) {
+        if (this.peerTimer) clearTimeout(this.peerTimer);
+        this.peerTimer = setTimeout(() => this.peer === peer && this.status === 'connecting' && this.startClientPeer(), RETRY_SOON_MS);
+      }
     });
     peer.on('disconnected', () => {
       if (!peer.destroyed) setTimeout(() => !peer.destroyed && peer.reconnect(), 1500);
     });
   }
 
-  /** Joining gives up if the room hasn't answered by then. */
+  /** Joining gives up if the room hasn't let us in by then. */
   private armConnectTimeout() {
-    const peer = this.peer;
     if (this.connectTimer) clearTimeout(this.connectTimer);
     this.connectTimer = setTimeout(() => {
-      if (peer && this.peer === peer && this.status === 'connecting')
-        this.fail(`Couldn't reach room ${this.code}. Check the code, or try again.`, 'No answer');
-    }, 15000);
+      if (this.mode !== 'client' || this.status !== 'connecting') return;
+      if (this.peer?.open) this.fail(`Couldn't reach room ${this.code}. Check the code, or try again.`, 'No answer');
+      else this.fail(this.networkHint('timeout'), 'No connection');
+    }, JOIN_GIVE_UP_MS);
+  }
+
+  /**
+   * Joining: another attempt after `ms`, unless one has opened by then. It
+   * replaces whatever attempt was due, so a later reason to wait wins.
+   */
+  private attemptSoon(ms: number) {
+    const peer = this.peer;
+    if (this.nextAttempt) clearTimeout(this.nextAttempt);
+    this.nextAttempt = setTimeout(() => {
+      this.nextAttempt = null;
+      if (this.peer === peer && this.mode === 'client' && this.status === 'connecting' && !this.hostConn?.open) this.connectToHost();
+    }, ms);
   }
 
   /**
@@ -799,30 +861,58 @@ class Session {
    */
   private retryWhenBusy() {
     if (this.status !== 'connecting') return;
-    const peer = this.peer;
-    if (this.connectTimer) clearTimeout(this.connectTimer);
-    this.connectTimer = setTimeout(() => {
-      if (!peer || this.peer !== peer || peer.destroyed || this.status !== 'connecting') return;
-      this.armConnectTimeout();
-      this.connectToHost();
-    }, BUSY_RETRY_MS);
+    this.armConnectTimeout();
+    this.attemptSoon(BUSY_RETRY_MS);
   }
 
+  /** Closes the attempts to reach the host that haven't opened. */
+  private dropAttempts() {
+    for (const a of this.attempts) a.close();
+    this.attempts = [];
+  }
+
+  /**
+   * Starts an attempt to reach the host. The previous one keeps racing it
+   * (the host lets a peer have two): a slow relay may still get through
+   * first, and a fresh one gets past an offer or candidate that went missing.
+   */
   private connectToHost() {
     // Without the signalling server there is no connecting (PeerJS returns
     // nothing); its reconnect fires 'open', which tries again.
     if (!this.peer || this.peer.destroyed || this.peer.disconnected) return;
-    // Drop the previous attempt so a slow one can't come back alongside the new one.
-    const stale = this.hostConn;
     const conn = this.peer.connect(PEER_PREFIX + this.code, { reliable: true });
-    this.hostConn = conn;
+    if (!conn) return;
     this.attemptAt = Date.now();
-    stale?.close();
-    conn.on('open', async () => {
-      const secret = await this.helloSecret;
-      if (secret && this.hostConn === conn && conn.open)
-        conn.send({ t: 'hello', secret, name: this.joinName, v: PROTOCOL_VERSION, tab: myTab });
+    for (const old of this.attempts.splice(0, this.attempts.length - 1)) old.close();
+    this.attempts.push(conn);
+    // Joining: one that hasn't opened soon gets another racing it.
+    if (this.status === 'connecting') this.attemptSoon(NEXT_ATTEMPT_MS);
+    conn.on('error', () => {
+      // Its negotiation failed. With nothing else still trying, try again soon.
+      if (!this.attempts.includes(conn)) return;
+      this.attempts = this.attempts.filter((a) => a !== conn);
+      if (this.attempts.length) return;
+      this.attemptAt = 0;
+      if (this.status === 'connecting') this.attemptSoon(RETRY_SOON_MS);
     });
+    conn.on('open', () => this.adopt(conn));
+  }
+
+  /** The first attempt to open becomes the link to the host; the rest make way. */
+  private async adopt(conn: DataConnection) {
+    if (!this.attempts.includes(conn)) {
+      conn.close();
+      return;
+    }
+    for (const a of this.attempts) if (a !== conn) a.close();
+    this.attempts = [];
+    if (this.nextAttempt) clearTimeout(this.nextAttempt);
+    this.nextAttempt = null;
+    const stale = this.hostConn;
+    this.hostConn = conn;
+    stale?.close();
+    // Told to wait: that wait, not a quick retry, decides when to try again.
+    let busy = false;
     // A host that vanishes (crashed tab, lost Wi-Fi) often never fires 'close'.
     // It pings every few seconds, so silence means the connection is dead.
     let lastHeard = Date.now();
@@ -866,6 +956,7 @@ class Session {
           this.fail('You joined this game from another tab or window, so it continues there.', 'Moved to another tab');
           break;
         case 'busy':
+          busy = true;
           this.flash(msg.message, 'warn', { title: 'Room busy' });
           this.retryWhenBusy();
           break;
@@ -877,10 +968,15 @@ class Session {
       }
     });
     conn.on('close', () => {
+      if (this.hostConn !== conn) return;
       // A failed attempt makes way for the next one at once.
-      if (this.hostConn === conn) this.attemptAt = 0;
-      this.hostLost(conn);
+      this.attemptAt = 0;
+      if (this.status === 'connecting' && !busy) this.attemptSoon(RETRY_SOON_MS);
+      else this.hostLost(conn);
     });
+    const secret = await this.helloSecret;
+    if (secret && this.hostConn === conn && conn.open)
+      conn.send({ t: 'hello', secret, name: this.joinName, v: PROTOCOL_VERSION, tab: myTab });
   }
 
   private hostLost(conn: DataConnection) {
@@ -901,7 +997,7 @@ class Session {
         this.gaveUp = true;
         return;
       }
-      // An attempt still opening (ICE through a relay can take a while) isn't cut short.
+      // An attempt still opening keeps racing the next one, which isn't due yet.
       if (Date.now() - this.attemptAt >= ATTEMPT_MS) this.connectToHost();
       this.scheduleRetry();
     }, 3000);
@@ -1260,6 +1356,7 @@ class Session {
     this.guests.clear();
     this.hostConn?.close();
     this.hostConn = null;
+    this.dropAttempts();
     this.peer?.destroy();
     this.peer = null;
     this.mode = null;
@@ -1283,6 +1380,11 @@ class Session {
     this.helloSecret = null;
     if (this.retry) clearTimeout(this.retry);
     this.attemptAt = 0;
+    this.unavailable = 0;
+    if (this.nextAttempt) clearTimeout(this.nextAttempt);
+    this.nextAttempt = null;
+    if (this.peerTimer) clearTimeout(this.peerTimer);
+    this.peerTimer = null;
     if (this.connectTimer) clearTimeout(this.connectTimer);
     this.connectTimer = null;
     if (this.hostWatch) clearInterval(this.hostWatch);

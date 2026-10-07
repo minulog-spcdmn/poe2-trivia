@@ -107,6 +107,15 @@
 
   const connecting = $derived(session.status === 'connecting');
 
+  /** Joining takes a while (a slow network, a relay): say it's still going, so no one gives up early. */
+  let slow = $state(false);
+  $effect(() => {
+    slow = false;
+    if (!connecting) return;
+    const t = setTimeout(() => (slow = true), 5000);
+    return () => clearTimeout(t);
+  });
+
   /**
    * Svelte action: the title's light. The backdrop throws god rays from above
    * and a royal glow behind it (lib/lights.ts), and it glints now and then.
@@ -223,6 +232,9 @@
       <div class="connecting" transition:fade={{ duration: 200 }}>
         <span class="rune" use:portalOn></span>
         <span>{session.mode === 'host' ? 'Opening a portal…' : `Travelling to room ${session.code}…`}</span>
+        {#if slow}
+          <span class="slow" transition:fade={{ duration: 400 }}>Still on the way. Some networks take a little longer.</span>
+        {/if}
         <button class="btn ghost small" onclick={() => session.leave()}>Cancel</button>
       </div>
     {/if}
@@ -566,6 +578,15 @@
     font-family: var(--font-display);
     letter-spacing: 0.08em;
     color: var(--gold-hi);
+  }
+  .connecting .slow {
+    max-width: 22rem;
+    padding: 0 1rem;
+    text-align: center;
+    font-family: var(--font-body);
+    font-size: 0.95rem;
+    letter-spacing: 0;
+    color: var(--muted);
   }
   .rune {
     width: 54px;
