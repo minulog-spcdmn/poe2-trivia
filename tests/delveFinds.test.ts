@@ -10,6 +10,8 @@ import {
   DYNAMITE_ON,
   FINDS,
   FINDS_FROM,
+  FIND_FADE_FROM,
+  FIND_FADE_TO,
   FIND_RAMP_TO,
   FLARE_MS,
   SHARDS_PER_WARD,
@@ -268,7 +270,7 @@ test("a right answer to a find earns its own item, and nothing else when there's
 
 // ---- the offer -------------------------------------------------------------
 
-test('each find ramps from a low chance at its first depth to its cap at depth 50, fixed by depth; the Flare Cache comes deepest', () => {
+test('each find ramps from a low chance at its first depth to its cap at depth 50, fixed by depth, and grows scarcer past 100; the Flare Cache comes deepest', () => {
   assert.deepEqual(
     FINDS.map((f) => [f.kind, f.item, f.max]),
     [
@@ -287,22 +289,34 @@ test('each find ramps from a low chance at its first depth to its cap at depth 5
   assert.ok(Math.max(...live.map((f) => f.from)) === findFor('flare').from, 'the Flare Cache comes deepest');
   for (const f of live) {
     let prev = 0;
-    for (let d = 1; d <= 120; d++) {
+    for (let d = 1; d <= FIND_FADE_FROM; d++) {
       const c = findChance(f.kind, d);
       assert.ok(c >= prev, `${f.kind} never less likely deeper (${d})`);
       if (d >= f.from && d < FIND_RAMP_TO) assert.ok(c < f.cap, `${f.kind} below its cap at ${d}`);
       if (d >= FIND_RAMP_TO) assert.equal(c, f.cap, `${f.kind} at its cap from ${FIND_RAMP_TO}`);
       prev = c;
     }
-    assert.equal(findChance(f.kind, 50), findChance(f.kind, 300), 'held from there on');
+    // Past 100 a little scarcer with every depth, never in a jump, down to `late` of its cap at 200, held from there.
+    for (let d = FIND_FADE_FROM + 1; d <= FIND_FADE_TO; d++) {
+      const c = findChance(f.kind, d);
+      assert.ok(c < prev && prev - c <= 0.01 * f.cap, `${f.kind} at ${d}: ${prev} to ${c}`);
+      prev = c;
+    }
+    assert.ok(Math.abs(findChance(f.kind, FIND_FADE_TO) - f.cap * f.late) < 1e-4, `${f.kind} at ${FIND_FADE_TO}`);
+    assert.equal(findChance(f.kind, FIND_FADE_TO), findChance(f.kind, 300), 'held from there on');
   }
+  assert.deepEqual([FIND_FADE_FROM, FIND_FADE_TO], [100, 200]);
+  assert.deepEqual(FINDS.map((f) => [f.kind, f.late]), [['azurite', 1 / 3], ['flare', 0.5], ['dynamite', 0.5]]);
   // Rare at first, about one offer in three by depth 50.
   const total = (d: number) => FINDS.reduce((sum, f) => sum + findChance(f.kind, d), 0);
   assert.equal(total(4), 0);
   assert.ok(total(5) <= 0.05, `${total(5)} at 5`);
   assert.ok(total(15) >= 0.1 && total(15) <= 0.15, `${total(15)} at 15`);
   assert.ok(Math.abs(total(50) - 0.33) < 0.005, `${total(50)} at 50`);
-  assert.equal(total(200), total(50));
+  assert.equal(total(100), total(50));
+  // About one offer in seven from 200.
+  assert.ok(Math.abs(total(200) - 0.147) < 0.005, `${total(200)} at 200`);
+  assert.equal(total(300), total(200));
   // Odd depths read as the surface.
   for (const d of [NaN, -3, 0]) assert.equal(total(d), 0);
 });
@@ -330,7 +344,7 @@ test('the Dynamite Cache turns up from depth 10, 4% rising to 9% at 50, between 
       ['dynamite', 10, 0.04, 0.09],
     ],
   );
-  assert.deepEqual([9, 10, 30, 50, 120].map((d) => findChance('dynamite', d)), [0, 0.04, 0.065, 0.09, 0.09]);
+  assert.deepEqual([9, 10, 30, 50, 100, 200].map((d) => findChance('dynamite', d)), [0, 0.04, 0.065, 0.09, 0.09, 0.045]);
   // The rarest of the three at its cap, and rarer than the vein from the start of the flare's.
   for (let d = 15; d <= 200; d++) assert.ok(findChance('dynamite', d) < findChance('flare', d) || d < 50, `${d}`);
   assert.ok(findChance('dynamite', 50) < findChance('azurite', 50));
@@ -385,7 +399,9 @@ test('two finds side by side are rare early and grow less rare with depth, and a
   assert.ok(double(10) > 0.001 && double(10) < 0.003, `${double(10)} at 10`);
   assert.ok(double(20) > 0.007 && double(20) < 0.012, `${double(20)} at 20`);
   assert.ok(double(50) > 0.03 && double(50) < 0.04, `${double(50)} at 50`);
-  assert.equal(double(200), double(50));
+  assert.equal(double(100), double(50));
+  // Rarer again as the finds grow scarcer past 100.
+  assert.ok(double(200) < double(100) / 4, `${double(200)} at 200`);
   for (let d = 10; d < 50; d++) assert.ok(double(d + 1) >= double(d), `growing at ${d}`);
   // A ninth of the offers with a find hold two from depth 50, fewer above.
   assert.ok(double(50) / anyFind(50) < 0.12 && double(20) / anyFind(20) < 0.06);

@@ -140,7 +140,9 @@ the same thing for everyone.
   and what a miss costs. Each find's chance rises evenly from its first
   depth to depth 50 and holds there (the Vein 4% to 11%, the Dynamite
   Cache 4% to 9%, the Flare Cache 4% to 13%), so from 50 about one offer
-  in three holds a find.
+  in three holds a find. Past 100 they grow scarcer a little with every
+  depth, down to half their chance at 200 (the Vein to a third, as a ward
+  takes a whole loss), and hold there: about one offer in seven.
   - An offer that holds a find rolls once more for a second, of another
     kind and on another card, at half its chance; never a third. Two side
     by side are rare early on (about 1 offer in 500 at depth 10, 1 in 100

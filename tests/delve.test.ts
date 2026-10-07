@@ -247,7 +247,7 @@ test('the ruleset is pinned to the curve and the protocol', () => {
   assert.deepEqual([DELVE_RULESET, PROTOCOL_VERSION, hash], [1, 11, PINNED_HASH]);
 });
 
-const PINNED_HASH = 'ace6882240a19bd7';
+const PINNED_HASH = 'f8e67e61bdc50d8d';
 
 function run(losses: Record<string, number[]>, round = 10, seats = Object.keys(losses)): GameState {
   const s = createGame('a');

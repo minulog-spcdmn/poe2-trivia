@@ -278,8 +278,12 @@ export const SHARDS_PER_WARD = 2;
  */
 export const DYNAMITE_ON = true;
 
-/** The depth by which every find has reached its full chance, which it holds from there on. */
+/** The depth by which every find has reached its full chance, which it holds to FIND_FADE_FROM. */
 export const FIND_RAMP_TO = 50;
+/** Past this depth the finds grow scarcer with every depth (FINDS, `late`)... */
+export const FIND_FADE_FROM = 100;
+/** ...until this one, from where they hold. */
+export const FIND_FADE_TO = 200;
 
 /**
  * Where each find turns up, and how often: from depth `from` it is on an
@@ -296,11 +300,17 @@ export const FIND_RAMP_TO = 50;
  * where clocks run short and flares get burnt, and so ends up the more
  * common. The Dynamite Cache comes in between, from depth 10, and stays the
  * rarest. Together, one offer in three from depth 50.
+ *
+ * Past depth 100 they grow scarcer, a little with every depth, down to
+ * `late` of their cap at depth 200 (FIND_FADE_FROM to FIND_FADE_TO), and
+ * hold there: a third for the vein, whose ward takes a whole loss, half for
+ * the others; together about one offer in seven. So the deep end wears a
+ * run down instead of letting it restock for ever.
  */
-export const FINDS: { kind: FindKind; item: ItemKind; from: number; start: number; cap: number; max: number; deeper: number; losses: number }[] = [
-  { kind: 'azurite', item: 'wards', from: 5, start: 0.04, cap: DYNAMITE_ON ? 0.11 : 0.15, max: DELVE_MAX_WARDS, deeper: 15, losses: 2 },
-  { kind: 'flare', item: 'flares', from: 15, start: 0.04, cap: DYNAMITE_ON ? 0.13 : 0.18, max: DELVE_MAX_FLARES, deeper: 20, losses: 1 },
-  { kind: 'dynamite', item: 'dynamite', from: 10, start: DYNAMITE_ON ? 0.04 : 0, cap: DYNAMITE_ON ? 0.09 : 0, max: DELVE_MAX_DYNAMITE, deeper: 15, losses: 1 },
+export const FINDS: { kind: FindKind; item: ItemKind; from: number; start: number; cap: number; late: number; max: number; deeper: number; losses: number }[] = [
+  { kind: 'azurite', item: 'wards', from: 5, start: 0.04, cap: DYNAMITE_ON ? 0.11 : 0.15, late: 1 / 3, max: DELVE_MAX_WARDS, deeper: 15, losses: 2 },
+  { kind: 'flare', item: 'flares', from: 15, start: 0.04, cap: DYNAMITE_ON ? 0.13 : 0.18, late: 0.5, max: DELVE_MAX_FLARES, deeper: 20, losses: 1 },
+  { kind: 'dynamite', item: 'dynamite', from: 10, start: DYNAMITE_ON ? 0.04 : 0, cap: DYNAMITE_ON ? 0.09 : 0, late: 0.5, max: DELVE_MAX_DYNAMITE, deeper: 15, losses: 1 },
 ];
 
 /**
@@ -330,11 +340,12 @@ export const findFor = (kind: FindKind) => FINDS.find((f) => f.kind === kind)!;
 
 /** How likely an offer at depth `d` is to hold a find of `kind` (for a player with room for its item). */
 export function findChance(kind: FindKind, d: number): number {
-  const { from, start, cap } = findFor(kind);
+  const { from, start, cap, late } = findFor(kind);
   const depth = depthOf(d);
   if (depth < from || cap <= 0) return 0;
   const t = Math.min(1, (depth - from) / (FIND_RAMP_TO - from));
-  return Math.round((start + (cap - start) * t) * 10_000) / 10_000;
+  const fade = Math.min(1, Math.max(0, (depth - FIND_FADE_FROM) / (FIND_FADE_TO - FIND_FADE_FROM)));
+  return Math.round((start + (cap - start) * t) * (1 - (1 - late) * fade) * 10_000) / 10_000;
 }
 
 /** The shallowest depth with any find. */
