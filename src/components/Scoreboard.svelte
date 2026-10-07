@@ -154,9 +154,10 @@
             const flow = li ? shownPhial(li) : null;
             const chamber = flow?.phial.querySelector(`.chamber[data-k="${left}"]`);
             if (li) lifeLost(li, chamber ?? li, left, mine, flow ?? undefined);
+            // A cave-in rumbles once; each life it takes still sounds as it goes.
             if (mine) {
               if (caved) caveInHeard(caved);
-              else sfx('lifeLost');
+              sfx('lifeLost');
             }
             later(() => {
               if (hit[id] === left) delete hit[id];
@@ -351,9 +352,10 @@
           const at = barriers[i] ?? vessel ?? li;
           setTimeout(() => wardBlocked(at, casings[i] ?? null, li, mine), i * WARD_NEXT * 1000);
         }
+        // A cave-in rumbles once; each ward it breaks still shatters, in step with its barrier.
         if (mine) {
           if (caved) caveInHeard(caved);
-          else sfx('wardShatter');
+          for (let i = 0; i < n; i++) setTimeout(() => sfx('wardShatter'), i * WARD_NEXT * 1000);
         }
       } else if (kind === 'flare' || kind === 'dynamite') {
         const el = counts?.querySelector(`[data-pip="${kind}"]`);
