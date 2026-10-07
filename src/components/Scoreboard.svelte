@@ -43,6 +43,7 @@
 
   /** Shown at the end of the row (the timer, on phones). */
   let { aside }: { aside?: Snippet } = $props();
+  const uid = $props.id();
 
   const s = $derived(session.state!);
   const target = $derived(s.settings.targetScore);
@@ -225,13 +226,15 @@
 
   /**
    * A find answered right: a stream of sparks in its card's colours flows
-   * from the right answer to where its item goes in player `id`'s entry
-   * (findGained in lib/fx/moments.ts), as a point flows into the bar in the
-   * other modes: a ward or shard to its chamber (the first without a ward,
-   * `wards` being how many they had), a flare or dynamite to its place
-   * beside the phial, kept for it meanwhile. Whoever got it hears it flow
-   * in. Its `fed` turns true, a tick later, once the sparks do fly (with
-   * effects off, or no answer or place to fly between, nothing does).
+   * from the right answer to the very place its item appears in player
+   * `id`'s entry (findGained in lib/fx/moments.ts), as a point flows into
+   * the bar in the other modes: a ward to the casing it forms on (round the
+   * first chamber without a ward, `wards` being how many they had), a shard
+   * to that casing's base half, where it forms, a flare or dynamite to its
+   * engraving beside the phial (or the avatar), its place kept for it
+   * meanwhile. Whoever got it hears it flow in. Its `fed` turns true, a tick
+   * later, once the sparks do fly (with effects off, or no answer or place
+   * to fly between, nothing does).
    */
   function findFlows(id: string, kind: InventoryMoment['kind'], wards: number): { fed: boolean } {
     const flow = { fed: false };
@@ -248,9 +251,12 @@
       const answer = document.querySelector('.question .option.right, .question .tile.right');
       if (!li || !answer) return;
       const { flow: phial, counts } = shownVessel(li);
-      const slot = item ? counts?.querySelector(`[data-pip="${item}"]`) : phial?.phial.querySelector(`.chamber[data-k="${Math.min(wards, CASINGS.length - 1)}"]`);
+      // Its slot (followed as the entry moves), and within it the exact part the item takes.
+      const casing = phial?.phial.querySelector(`.slot[data-slot="${Math.min(wards, CASINGS.length - 1)}"]`);
+      const slot = item ? counts?.querySelector(`[data-pip="${item}"]`) : casing;
+      const aim = item ? slot?.querySelector('.grow') : kind === 'shard' ? casing?.querySelector('.half') : casing;
       if (!slot) return;
-      findGained(answer, slot, find);
+      findGained(answer, slot, find, aim ?? slot);
       flow.fed = true;
       if (session.mode === 'local' || id === session.myPlayerId)
         later(() => sfx('findReward'), Math.max(0, FIND_LANDS * 1000 - ringAt - (performance.now() - startAt)));
@@ -311,10 +317,13 @@
   }
 
   // Delve together: a teammate gives one of their lives to one who perished.
-  // The giver's chamber pours its light out and it streams across into the
-  // other's empty phial (lifeGiven in lib/fx/moments.ts), which lights as it
-  // lands. Until then each entry shows what it had (`held`).
+  // The giver's chamber that empties pours its light out and it streams
+  // across into the very chamber of the other's phial it fills (lifeGiven in
+  // lib/fx/moments.ts), which lights as it lands. Until then each entry
+  // shows what it had (`held`).
   let giving = $state<Record<string, number>>({});
+  /** The chamber a given life lights in its taker's phial, while its light flows in. */
+  let inflow = $state<Record<string, number>>({});
   let revivesSeen = 0;
   let revivesRun = 0;
   $effect(() => {
@@ -330,9 +339,11 @@
     for (const r of fresh) untrack(() => playRevive(r));
   });
   function playRevive(r: Revive) {
+    // The giver's chamber that empties (their top life), and the taker's that fills (the first, or the next).
     const k = livesOf(s, r.by);
+    const into = Math.max(0, livesOf(s, r.to) - 1);
     held[r.by] = k + 1;
-    held[r.to] = 0;
+    held[r.to] = into;
     later(() => {
       delete held[r.by];
       giving[r.by] = k;
@@ -341,16 +352,21 @@
       const from = giver ? shownPhial(giver) : null;
       const to = taker ? shownPhial(taker) : null;
       const chamber = from?.phial.querySelector(`.chamber[data-k="${k}"]`) ?? giver;
-      if (giver && taker && chamber && to) lifeGiven(chamber, giver, to.phial, taker);
+      const target = to?.phial.querySelector(`.chamber[data-k="${into}"]`) ?? to?.phial;
+      if (giver && taker && chamber && target) lifeGiven(chamber, giver, target, taker);
       sfx('revive');
       later(() => {
         if (giving[r.by] === k) delete giving[r.by];
       }, POUR * 1000);
       later(() => {
         delete held[r.to];
+        inflow[r.to] = into;
         surge[r.to] = (untrack(() => surge[r.to]) ?? 0) + 1;
         revived[r.to] = (untrack(() => revived[r.to]) ?? 0) + 1;
         later(() => delete revived[r.to], 1200);
+        later(() => {
+          if (inflow[r.to] === into) delete inflow[r.to];
+        }, 1000);
       }, GIFT_LANDS * 1000);
     }, 300);
   }
@@ -371,7 +387,7 @@
     session.dispatch({ type: 'revive', target: asking });
     asking = null;
   }
-  /** Closes the offer and puts focus back on the + that opened it. */
+  /** Closes the offer and puts focus back on the heart that opened it. */
   function closeAsk() {
     const id = asking;
     asking = null;
@@ -566,7 +582,33 @@
   });
 </script>
 
-<!-- While the offer to give a life is open, Escape closes it and hands focus back to its +. -->
+<!-- The revive's glyph: a heart of the phial's rose light, set in gold, a
+     cross of pale light in it, in a glory of fine rays (in a 24 unit box
+     round its centre). -->
+{#snippet heartOfLight(id: string)}
+  <svg viewBox="-12 -12 24 24">
+    <defs>
+      <radialGradient {id} cx="0.45" cy="0.42" r="0.62">
+        <stop offset="0" stop-color="#ffe4cf" />
+        <stop offset="0.3" stop-color="#ff8a68" />
+        <stop offset="0.62" stop-color="#ec3a48" />
+        <stop offset="1" stop-color="#6e0820" />
+      </radialGradient>
+    </defs>
+    <g class="rays">
+      {#each Array.from({ length: 16 }, (_, i) => i) as i (i)}
+        {@const a = (i / 16) * Math.PI * 2}
+        {@const r1 = i % 2 ? 10.1 : 11.3}
+        <path d="M{(Math.sin(a) * 8.6).toFixed(2)} {(-Math.cos(a) * 8.6).toFixed(2)}L{(Math.sin(a) * r1).toFixed(2)} {(-Math.cos(a) * r1).toFixed(2)}" />
+      {/each}
+    </g>
+    <path class="body" fill="url(#{id})" d="M0 6.6C0 6.6-6.9 2.2-6.9-2.5C-6.9-4.9-5.2-6.4-3.2-6.4C-1.8-6.4-0.6-5.6 0-4.4C0.6-5.6 1.8-6.4 3.2-6.4C5.2-6.4 6.9-4.9 6.9-2.5C6.9 2.2 0 6.6 0 6.6Z" />
+    <path class="hair" d="M0 4.9C0 4.9-5.3 1.5-5.3-2.3C-5.3-4-4.1-5-2.8-5C-1.6-5-0.6-4.2 0-3.1C0.6-4.2 1.6-5 2.8-5C4.1-5 5.3-4 5.3-2.3C5.3 1.5 0 4.9 0 4.9Z" />
+    <path class="cross" d="M0-3.6V1.8M-2.7-0.9H2.7" />
+  </svg>
+{/snippet}
+
+<!-- While the offer to give a life is open, Escape closes it and hands focus back to its heart. -->
 <svelte:window onkeydown={(e) => asking && e.key === 'Escape' && (e.preventDefault(), closeAsk())} />
 
 <!-- On phones the row sticks to the top of the screen; once it has, it takes a
@@ -604,7 +646,7 @@
           {#if run && fell !== null}
             <span class="fell-at">Perished at depth {fell}</span>
           {:else if run}
-            <Phial lives={shownLives} draining={hit[p.id] ?? giving[p.id] ?? -1} surge={surge[p.id] ?? 0} {inv} {moment} {expect} />
+            <Phial lives={shownLives} draining={hit[p.id] ?? giving[p.id] ?? -1} filling={inflow[p.id] ?? -1} surge={surge[p.id] ?? 0} {inv} {moment} {expect} />
           {:else}
             <span class="bar" class:filling={filling[p.id]} style:--fill-span="{FILL_SPAN}s"
               ><span style:width="{Math.max(0, Math.min(100, (barOf(p.id, p.score) / target) * 100))}%"></span></span
@@ -614,7 +656,7 @@
         {#if run}
           <!-- Phones only, on the entries shrunk to an avatar: the phial upright beside it. -->
           <!-- Hidden from screen readers: the phial under the name (also in the entry) says the same. -->
-          <span class="phial-side" aria-hidden="true"><Phial lives={shownLives} draining={hit[p.id] ?? giving[p.id] ?? -1} surge={surge[p.id] ?? 0} vertical {inv} {moment} /></span>
+          <span class="phial-side" aria-hidden="true"><Phial lives={shownLives} draining={hit[p.id] ?? giving[p.id] ?? -1} filling={inflow[p.id] ?? -1} surge={surge[p.id] ?? 0} vertical {inv} {moment} /></span>
           <!-- And there, the flares and dynamite they carry, on the avatar's other corner. -->
           {#if fell === null && inv && (inv.flares > 0 || inv.dynamite > 0 || moment?.kind === 'burn' || moment?.kind === 'blast' || expect)}
             <span class="side-counts"><Inventory {inv} {moment} {expect} /></span>
@@ -640,14 +682,15 @@
         {/if}
         {#if out}<span class="x" title="Answered wrong">✕</span>{/if}
         {#if reviveOk}
-          <!-- Delve together: give them one of your lives. -->
+          <!-- Delve together: revive them with one of your lives. A heart of
+               light in the entry, beating as the phial's lives do. -->
           <button
             class="revive"
             class:open={asking === p.id}
             onclick={() => (asking = asking === p.id ? null : p.id)}
-            title="Give {p.name} one of your lives"
-            aria-label="Give {p.name} one of your lives"
-            aria-expanded={asking === p.id}><span aria-hidden="true">+</span></button
+            aria-label="Revive {p.name}: give them one of your lives"
+            aria-expanded={asking === p.id}
+            ><span class="heart" aria-hidden="true">{@render heartOfLight(`${uid}-heart-${i}`)}</span><span class="tip" aria-hidden="true">Revive</span></button
           >
         {/if}
       </li>
@@ -655,7 +698,7 @@
   </ol>
   {@render aside?.()}
   {#if asking && askingName && me}
-    <!-- Focus moves in as it opens; Escape or Not now hands it back to the +. -->
+    <!-- Focus moves in as it opens; Escape or Not now hands it back to the heart. -->
     <div
       class="revive-ask"
       role="group"
@@ -858,7 +901,7 @@
   }
 
   /* Delve together: perished, but a teammate here can bring them back. The
-     entry stays grey; its + stays lit. */
+     entry stays grey; its heart stays lit. */
   li.fallen.revivable {
     opacity: 1;
     filter: none;
@@ -867,58 +910,158 @@
     opacity: 0.45;
     filter: grayscale(0.85);
   }
+  /* The revive: a heart of light at the end of the entry, inside it. It
+     beats in the phial's rhythm (Phial.svelte's .beat, lub-dub and rest),
+     a soft rose glow swelling behind it; only opacity and transform move. */
   .revive {
-    position: absolute;
-    top: -8px;
-    right: -6px;
-    z-index: 2;
-    width: 22px;
-    height: 22px;
+    position: relative;
+    flex: none;
+    width: 28px;
+    height: 28px;
+    margin: -4px -6px -4px -2px;
     padding: 0;
     display: grid;
     place-items: center;
+    border: 0;
     border-radius: 50%;
-    border: 1px solid #c9a45c;
-    /* A chamber's light: palest at its heart, deepening to rose. */
-    background: radial-gradient(circle at 50% 55%, #ffe4cf 0%, #ff8a68 30%, #ec3a48 58%, #6e0820 100%);
-    box-shadow:
-      0 0 0 2px #0c0a08,
-      0 0 10px rgba(255, 110, 90, 0.55);
-    color: #fff6ea;
-    font-family: var(--font-cinzel);
-    font-weight: 700;
-    font-size: 0.95rem;
-    line-height: 1;
+    background: none;
+    color: inherit;
     cursor: pointer;
-    animation: beckon 1.6s ease-in-out infinite;
   }
-  /* A touch target bigger than the badge (24px at least), invisible. */
-  .revive::before {
+  /* A touch target a little bigger than the heart, unseen. */
+  .revive::after {
     content: '';
     position: absolute;
     inset: -4px;
     border-radius: 50%;
   }
-  .revive span {
-    translate: 0 -0.5px;
-    text-shadow: 0 0 3px rgba(80, 0, 10, 0.9);
+  .revive::before {
+    content: '';
+    position: absolute;
+    inset: -3px;
+    border-radius: 50%;
+    background: radial-gradient(closest-side, rgba(255, 196, 168, 0.55), rgba(236, 58, 72, 0.28) 55%, rgba(236, 58, 72, 0) 100%);
+    opacity: 0.45;
+    animation: heartbeat 1.3s ease-out infinite;
+    pointer-events: none;
   }
-  .revive:hover,
-  .revive:focus-visible,
-  .revive.open {
-    border-color: var(--gold-hi);
-    box-shadow:
-      0 0 0 2px #0c0a08,
-      0 0 16px rgba(255, 140, 110, 0.8);
+  .heart {
+    position: relative;
+    display: block;
+    width: 100%;
+    height: 100%;
+    animation: heartbeat-glyph 1.3s ease-out infinite;
   }
-  @keyframes beckon {
-    50% {
-      box-shadow:
-        0 0 0 2px #0c0a08,
-        0 0 16px rgba(255, 110, 90, 0.85);
+  .heart svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    filter: drop-shadow(0 0 2px rgba(255, 110, 90, 0.65));
+  }
+  .heart .rays path {
+    stroke: #e9c983;
+    stroke-width: 0.6;
+    stroke-linecap: butt;
+    opacity: 0.7;
+  }
+  .heart .body {
+    stroke: #e9c983;
+    stroke-width: 0.9;
+    stroke-linejoin: miter;
+  }
+  .heart .hair {
+    fill: none;
+    stroke: rgba(255, 236, 214, 0.45);
+    stroke-width: 0.4;
+  }
+  .heart .cross {
+    fill: none;
+    stroke: #fff6ea;
+    stroke-width: 1.5;
+    stroke-linecap: butt;
+    filter: drop-shadow(0 0 1px rgba(110, 8, 32, 0.9));
+  }
+  @keyframes heartbeat {
+    0% {
+      opacity: 0.45;
+      transform: scale(0.86);
+    }
+    11% {
+      opacity: 1;
+      transform: scale(1.1);
+    }
+    24% {
+      opacity: 0.6;
+      transform: scale(0.94);
+    }
+    35% {
+      opacity: 0.9;
+      transform: scale(1.04);
+    }
+    62%,
+    100% {
+      opacity: 0.45;
+      transform: scale(0.86);
     }
   }
-  :global(html[data-still]) .revive {
+  @keyframes heartbeat-glyph {
+    0%,
+    62%,
+    100% {
+      transform: none;
+    }
+    11% {
+      transform: scale(1.08);
+    }
+    24% {
+      transform: scale(0.98);
+    }
+    35% {
+      transform: scale(1.04);
+    }
+  }
+  /* Its name, over it on hover or focus. */
+  .tip {
+    position: absolute;
+    left: 50%;
+    bottom: calc(100% + 6px);
+    translate: -50% 0;
+    padding: 2px 8px 3px;
+    font-family: var(--font-cinzel);
+    font-size: 0.66rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    color: #ffe4d8;
+    background: rgba(20, 10, 9, 0.94);
+    border: 1px solid rgba(236, 58, 72, 0.5);
+    border-radius: 4px;
+    box-shadow: 0 0 12px rgba(236, 58, 72, 0.25);
+    opacity: 0;
+    transform: translateY(3px);
+    transition:
+      opacity 0.15s,
+      transform 0.15s var(--ease-out);
+    pointer-events: none;
+  }
+  .revive:hover .tip,
+  .revive:focus-visible .tip {
+    opacity: 1;
+    transform: none;
+  }
+  .revive:hover::before,
+  .revive:focus-visible::before,
+  .revive.open::before {
+    background: radial-gradient(closest-side, rgba(255, 220, 196, 0.75), rgba(255, 110, 90, 0.4) 55%, rgba(236, 58, 72, 0) 100%);
+  }
+  .revive:focus-visible {
+    outline: 1px solid var(--gold-hi);
+    outline-offset: 1px;
+  }
+  :global(html[data-still]) .revive::before,
+  :global(html[data-still]) .heart {
     animation: none;
   }
   /* Just brought back: the entry glows rose for a moment. */
@@ -960,7 +1103,8 @@
   @media (prefers-reduced-motion: reduce) {
     li.hit,
     li.warded,
-    .revive {
+    .revive::before,
+    .heart {
       animation: none;
     }
 
@@ -1277,21 +1421,21 @@
       translate: none;
       width: auto;
     }
-    li:not(.wide) .revive {
-      top: auto;
-      right: auto;
-      left: -7px;
-      bottom: -6px;
-      width: 18px;
-      height: 18px;
-      font-size: 0.8rem;
-    }
-    li:not(.wide) .revive::before {
-      inset: -3px;
-    }
-    /* Room for the + on its left corner, clear of the entry before it (often your own). */
+    /* An entry shrunk to its avatar takes the heart in beside it, the heart
+       laid a little over the avatar's edge so the entry grows only a little;
+       with four or more such entries the row breaks in two rather than run
+       off the screen. */
     li.revivable:not(.wide) {
-      margin-left: 0.4rem;
+      gap: 0;
+      padding-right: 3px;
+    }
+    li:not(.wide) .revive {
+      width: 22px;
+      height: 22px;
+      margin: 0 0 0 -7px;
+    }
+    .board:has(> li.revivable:not(.wide) ~ li.revivable:not(.wide) ~ li.revivable:not(.wide) ~ li.revivable:not(.wide)) {
+      flex-wrap: wrap;
     }
     /* Where the ⚡ sits on a lone avatar. */
     li:not(.wide) .off {

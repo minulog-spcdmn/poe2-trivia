@@ -55,8 +55,13 @@ export type ParticleSpec = {
    * Fly to a target instead of drifting: the particle follows a quadratic
    * curve from (x, y) through control point (cx, cy) to (tx, ty), arriving
    * exactly as its life ends (velocity, gravity and drag are ignored).
+   * `from` and `to`, when set, are follow slots (ParticlePool.follow, see
+   * follow() in core.ts): the start and the target move as the elements
+   * they follow do, so it leaves from where its source is now and lands
+   * on its target wherever that has gone meanwhile (the page scrolled, the
+   * row it aims at moved).
    */
-  seek?: { cx: number; cy: number; tx: number; ty: number };
+  seek?: { cx: number; cy: number; tx: number; ty: number; from?: number; to?: number };
 };
 
 // Per-particle fields, in this order.
@@ -93,8 +98,13 @@ const F = {
   tx: 29,
   ty: 30,
   page: 31, // 1 for the page's light, 0 for an open dialog's (see BEHIND_DIALOG in renderer.ts)
+  from: 32, // a seeking particle's follow slots (0 for none): its start's, its target's
+  to: 33,
 } as const;
-const STRIDE = 32;
+const STRIDE = 34;
+
+/** How many moving elements seeking particles can follow at once (slots are reused in turn). */
+export const FOLLOW_SLOTS = 64;
 
 /** Floats per particle in the instance buffer: (x, y, vx, vy) (size, stretch, rot, shape) (r, g, b, page light). */
 export const INSTANCE_FLOATS = 12;
@@ -106,6 +116,21 @@ export class ParticlePool {
   fastest = 0;
   private d: Float32Array;
   readonly instances: Float32Array;
+  /**
+   * How far each followed element has moved since its slot was taken, as x,
+   * y pairs (slot n at 2n - 2); slot 0 means none. Kept up to date by
+   * follow() in core.ts, before every step.
+   */
+  readonly follows = new Float32Array(FOLLOW_SLOTS * 2);
+  private nextFollow = 0;
+
+  /** Takes the next follow slot (1 to FOLLOW_SLOTS), its offset reset. */
+  claimFollow(): number {
+    const n = (this.nextFollow % FOLLOW_SLOTS) + 1;
+    this.nextFollow = n;
+    this.follows[2 * n - 2] = this.follows[2 * n - 1] = 0;
+    return n;
+  }
 
   constructor(cap: number) {
     this.cap = cap;
@@ -162,6 +187,8 @@ export class ParticlePool {
       d[o + F.cy] = k.cy;
       d[o + F.tx] = k.tx;
       d[o + F.ty] = k.ty;
+      d[o + F.from] = k.from ?? 0;
+      d[o + F.to] = k.to ?? 0;
     }
   }
 
@@ -253,10 +280,24 @@ export class ParticlePool {
     const e = t * t * (3 - 2 * t);
     const de = (6 * t - 6 * t * t) / life;
     const u = 1 - e;
-    const x = u * u * d[o + F.sx] + 2 * u * e * d[o + F.cx] + e * e * d[o + F.tx];
-    const y = u * u * d[o + F.sy] + 2 * u * e * d[o + F.cy] + e * e * d[o + F.ty];
-    const vx = (2 * u * (d[o + F.cx] - d[o + F.sx]) + 2 * e * (d[o + F.tx] - d[o + F.cx])) * de;
-    const vy = (2 * u * (d[o + F.cy] - d[o + F.sy]) + 2 * e * (d[o + F.ty] - d[o + F.cy])) * de;
+    // Where its start and target are now, if they follow elements; the bow between them moves with both.
+    const fs = d[o + F.from];
+    const ft = d[o + F.to];
+    const f = this.follows;
+    const ax = fs ? f[2 * fs - 2] : 0;
+    const ay = fs ? f[2 * fs - 1] : 0;
+    const bx = ft ? f[2 * ft - 2] : 0;
+    const by = ft ? f[2 * ft - 1] : 0;
+    const sx = d[o + F.sx] + ax;
+    const sy = d[o + F.sy] + ay;
+    const cx = d[o + F.cx] + (ax + bx) / 2;
+    const cy = d[o + F.cy] + (ay + by) / 2;
+    const tx = d[o + F.tx] + bx;
+    const ty = d[o + F.ty] + by;
+    const x = u * u * sx + 2 * u * e * cx + e * e * tx;
+    const y = u * u * sy + 2 * u * e * cy + e * e * ty;
+    const vx = (2 * u * (cx - sx) + 2 * e * (tx - cx)) * de;
+    const vy = (2 * u * (cy - sy) + 2 * e * (ty - cy)) * de;
     d[o + F.x] = x;
     d[o + F.y] = y;
     const fadeIn = d[o + F.fadeIn];

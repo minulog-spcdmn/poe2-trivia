@@ -25,6 +25,7 @@
   let {
     lives,
     draining = -1,
+    filling = -1,
     surge = 0,
     vertical = false,
     inv = null,
@@ -34,6 +35,8 @@
     lives: number;
     /** The chamber (0 to 2) of the life just lost, while it pours out; -1 otherwise. */
     draining?: number;
+    /** The chamber (0 to 2) of a life just given to them, while its light flows in and settles; -1 otherwise. */
+    filling?: number;
     /** Changes each time a wave of light should run through the lit chambers (a question survived). */
     surge?: number;
     vertical?: boolean;
@@ -103,6 +106,7 @@
           {#if k < lives}
             <span class="wisp"></span>
             <span class="beat"></span>
+            {#if k === filling}<span class="inflow"></span>{/if}
             {#if surge}
               {#key surge}<span class="surge" style:animation-delay="{0.08 + k * 0.11}s"></span>{/key}
             {/if}
@@ -140,6 +144,10 @@
             {/key}
           {/if}
         </span>
+      {/each}
+      <!-- Where each chamber's casing goes, unseen, and a shard's half of it: what a find's sparks aim at (Scoreboard.svelte). -->
+      {#each CASINGS as set, k (k)}
+        <span class="slot" data-slot={k} style:--from={set.whole.from} style:--to={set.whole.to} aria-hidden="true"><span class="half"></span></span>
       {/each}
     </span>
   </span>
@@ -438,6 +446,46 @@
   }
 
 
+  /* A life given to them: its light flows in from the end of the chamber
+     and flares as it settles (the effects layer's stream lands on it). */
+  .inflow {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: radial-gradient(ellipse 70% 90% at 50% 55%, #fff4e0, rgba(255, 214, 170, 0.6) 70%, rgba(255, 190, 150, 0.3));
+    transform-origin: 100% 50%;
+    animation: inflow 0.9s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+  }
+  @keyframes inflow {
+    from {
+      opacity: 0.9;
+      transform: scaleX(0.05);
+    }
+    35% {
+      opacity: 1;
+      transform: none;
+    }
+    to {
+      opacity: 0;
+      transform: none;
+    }
+  }
+
+  /* Where each chamber's casing goes (as .casing below), the base half for a shard. Never seen. */
+  .slot {
+    position: absolute;
+    top: 0;
+    height: 100%;
+    left: calc(100% * var(--from) / 64);
+    width: calc(100% * (var(--to) - var(--from)) / 64);
+    visibility: hidden;
+    pointer-events: none;
+  }
+  .slot .half {
+    position: absolute;
+    inset: 0 50% 0 0;
+  }
+
   /* An Azurite Ward: a casing of crystal round a chamber (CASINGS in
      lib/inventoryArt.ts). Its box spans the chamber (--from to --to, in the
      phial's units), so the effects layer aims at the chamber; its drawing is
@@ -676,7 +724,8 @@
     .grow,
     .flash,
     .piece,
-    .burst {
+    .burst,
+    .inflow {
       animation: none;
     }
     .flash,
@@ -697,7 +746,8 @@
       animation: none;
     }
     .surge,
-    .drain {
+    .drain,
+    .inflow {
       display: none;
     }
     /* The kindle's glows rest at 0 between breaths; hold them softly lit. */

@@ -220,6 +220,34 @@ export function particle(p: ParticleSpec) {
   wake();
 }
 
+/**
+ * Has seeking particles follow `el` for `seconds` (ParticleSpec.seek's
+ * `from` and `to`): returns the slot to name, whose offset tracks how far
+ * the element has moved on screen since now, or 0 (nothing to follow, or
+ * effects off). An element that leaves the page stops where it was last.
+ */
+export function follow(el: Element, seconds: number): number {
+  if (!fxActive() || !pool || detached(el)) return 0;
+  const p = pool;
+  const slot = p.claimFollow();
+  const b0 = boxOf(el);
+  task((_, age) => {
+    if (detached(el)) return false;
+    const b = boxOf(el);
+    p.follows[2 * slot - 2] = b.x - b0.x;
+    p.follows[2 * slot - 1] = b.y - b0.y;
+    // A little past `seconds`, for the stragglers of a stream timed to land by then.
+    return age < seconds + 0.25;
+  });
+  return slot;
+}
+
+/** How far the element behind follow slot `slot` has moved (none for 0). */
+export function followOffset(slot: number): Point {
+  if (!pool || !slot) return { x: 0, y: 0 };
+  return { x: pool.follows[2 * slot - 2], y: pool.follows[2 * slot - 1] };
+}
+
 /** How many particles to spawn for a nominal `n`, scaled to the device. */
 export function budget(n: number) {
   const scale = coarse?.matches ? 0.45 : 1;

@@ -305,8 +305,8 @@
         {:else if revivable.length && (s.phase === 'choosing' || s.phase === 'reveal')}
           <p class="delve-line revive-hint" transition:fade>
             {revivable.length === 1
-              ? `Use + on ${revivable[0].name}'s entry to give them a life.`
-              : 'Use + on an entry to give a life.'}
+              ? `Use the heart on ${revivable[0].name}'s entry to revive them with one of your lives.`
+              : 'Use the heart on an entry to revive that teammate with one of your lives.'}
           </p>
         {/if}
         {#if session.isHost && !local && !race && !run && !active.connected && s.phase !== 'reveal'}

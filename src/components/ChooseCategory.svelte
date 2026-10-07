@@ -35,6 +35,13 @@
   /** Delve together: this device's player can vote (standing, the vote still open). */
   const canVote = $derived(coop && !drawn && s.phase === 'choosing' && !!me && livesOf(s, me) > 0);
   const mine = $derived(coop ? canVote : session.myTurn);
+  /**
+   * The cards are shown dimmed: to those who watch (alone, another's turn;
+   * together, those not standing). Not to a voter as the vote closes and
+   * the draw plays out: a filter changing on the cards then would have to
+   * redraw them every frame.
+   */
+  const dimmed = $derived(coop ? !me || livesOf(s, me) <= 0 : !mine);
   // The lockout in force (in Delve it grows with depth).
   const lockout = $derived(activeRules(s).lockout);
 
@@ -99,12 +106,23 @@
   // The vote closed: a light runs over the cards that got votes, slowing
   // down, and lands on the one drawn (every vote a ticket), which flares up
   // as the others burn away. About two seconds; reduced motion, a moment.
+  //
+  // The light is each card's own glow (.glow), only ever faded in and out:
+  // it comes up at once on the card it reaches and dies away more slowly
+  // behind it, so at speed it runs round the cards as a trail. The hops are
+  // timed off the frame clock (one loop of requestAnimationFrame), not a
+  // timer each, so they keep the beat they are given. Nothing in the draw or
+  // the landing animates more than opacity and transform.
 
   /** The card the draw's light is on, and whether it has landed. */
   let lit = $state<number | null>(null);
   let landed = $state(false);
   const drawTimers: ReturnType<typeof setTimeout>[] = [];
-  $effect(() => () => drawTimers.forEach(clearTimeout));
+  let drawFrame = 0;
+  $effect(() => () => {
+    drawTimers.forEach(clearTimeout);
+    cancelAnimationFrame(drawFrame);
+  });
   $effect(() => {
     if (!drawn) return;
     untrack(() => draw(drawn));
@@ -139,27 +157,53 @@
     const SPAN = 1300;
     const gaps = path.map((_, k) => 0.35 + 1.65 * (k / Math.max(1, path.length - 1)) ** 2);
     const unit = SPAN / gaps.reduce((a, b) => a + b, 0);
-    let at = 0;
-    path.forEach((i, k) => {
-      const last = k === path.length - 1;
-      drawTimers.push(
-        setTimeout(() => {
-          if (last) return land();
-          lit = i;
-          const frame = cardEls[i]?.querySelector('.frame');
-          if (frame) raffleHop(frame);
-          sfx('hover');
-        }, at),
-      );
-      at += gaps[k] * unit;
-    });
-    done(at + 650);
+    /** When each hop lands, in ms from the start. */
+    const at: number[] = [];
+    let t = 0;
+    for (const g of gaps) {
+      at.push(t);
+      t += g * unit;
+    }
+    let hop = -1;
+    const start = performance.now();
+    const step = (now: number) => {
+      const age = now - start;
+      // The hop due by this frame (a slow frame skips the light on to where it should be).
+      let k = hop;
+      while (k + 1 < path.length && at[k + 1] <= age) k++;
+      if (k !== hop) {
+        hop = k;
+        if (k === path.length - 1) return land();
+        const i = path[k];
+        lit = i;
+        const frame = cardEls[i]?.querySelector('.frame');
+        if (frame) raffleHop(frame);
+        sfx('hover');
+      }
+      drawFrame = requestAnimationFrame(step);
+    };
+    drawFrame = requestAnimationFrame(step);
+    done(t + 650);
   }
 
   /** Delve: the finds among the cards on offer (up to two, on different cards), in the cards' order. */
   const finds = $derived(findOffers(s).toSorted((a, b) => s.offered.indexOf(a.category) - s.offered.indexOf(b.category)));
+  /**
+   * The finds on the cards as they were dealt. Once a card is drawn (or
+   * picked) the run has moved on to its question, where the cards carry no
+   * finds any more (findOffers), but the cards are still up while the draw
+   * and the chosen card's moment play out: they keep the art they were
+   * dealt with rather than turning plain under it.
+   */
+  let dealtFinds: Record<string, FindKind> = {};
+  const findsShown = $derived.by(() => {
+    if (s.phase === 'choosing') dealtFinds = Object.fromEntries(s.offered.flatMap((c) => (findOn(s, c) ? [[c, findOn(s, c)!]] : [])));
+    // Come in after the cards closed (no deal seen): the question in play still says what its card was.
+    else if (s.question?.find && !Object.keys(dealtFinds).length) dealtFinds = { [s.question.category]: s.question.find };
+    return dealtFinds;
+  });
   /** What a card is: a find of some kind, or plain. */
-  const kindOf = (cat: string): FindKind | null => findOn(s, cat);
+  const kindOf = (cat: string): FindKind | null => findsShown[cat] ?? null;
   const uid = $props.id();
 
   // ---- finds --------------------------------------------------------------
@@ -366,7 +410,7 @@
     {/if}
   </p>
 
-  <div class="cards" class:single={s.offered.length === 1} style:--n={s.offered.length}>
+  <div class="cards" class:single={s.offered.length === 1} class:moving={!!drawn || !!picked} style:--n={s.offered.length}>
     {#each s.offered as cat, i (cat)}
       <button
         class="card"
@@ -377,9 +421,10 @@
         data-find={kindOf(cat)}
         aria-describedby={kindOf(cat) && !s.deathmatch ? `${uid}-note-${kindOf(cat)}` : undefined}
         class:mine
+        class:dim={dimmed}
         class:chosen={picked === cat || (landed && lit === i)}
         class:faded={(picked && picked !== cat) || (landed && lit !== i)}
-        class:voted={coop && myVote === cat && !drawn}
+        class:voted={coop && myVote === cat && !landed}
         class:lit={!landed && lit === i}
         aria-label={coop ? `${cat}: ${voteWords(cat)}` : undefined}
         aria-pressed={coop && canVote ? myVote === cat : undefined}
@@ -414,6 +459,10 @@
               >{#if kindOf(cat)}{@const kind = kindOf(cat)!}<span class="find-tag-row">{FIND_TEXT[kind].name}</span>{/if}{cat}</span
             >
           </span>
+          {#if coop}
+            <!-- The draw's light on this card (see the draw above). -->
+            <span class="glow" aria-hidden="true"></span>
+          {/if}
         </span>
         {#if coop}
           <!-- Who voted for it, your own mark ringed; the row keeps its height while empty. -->
@@ -844,12 +893,23 @@
   .card:focus-visible {
     outline: none;
   }
-  .card:disabled .frame,
-  .card:disabled .back {
+  .card.dim .frame,
+  .card.dim .back {
     filter: saturate(0.6) brightness(0.8);
   }
   .card.chosen .frame {
     transform: translateY(-14px) scale(1.08);
+    transition:
+      transform 0.55s cubic-bezier(0.2, 0.9, 0.3, 1.15),
+      --bs-shade 0.35s,
+      --bs-ring 0.35s,
+      --bs1 0.35s,
+      --bs1-color 0.35s,
+      --bs2 0.35s,
+      --bs2-color 0.35s,
+      border-color 0.35s,
+      opacity 0.4s,
+      filter 0.4s;
     border-color: var(--gold-hi);
     --bs-shade: transparent;
     --bs-ring: transparent;
@@ -861,10 +921,25 @@
   .card.dm.chosen .frame {
     border-color: #e88a74;
   }
+  /* The others give way: they sink back and fade (opacity and transform
+     only, as a filter would redraw the whole card every frame). */
   .card.faded .frame {
-    opacity: 0.2;
+    opacity: 0.16;
     transform: scale(0.92) translateY(8px);
-    filter: grayscale(0.8) brightness(0.6) blur(1px);
+    transition:
+      transform 0.5s var(--ease-out),
+      opacity 0.45s ease-out;
+  }
+  .card .votes {
+    transition: opacity 0.45s ease-out;
+  }
+  .card.faded .votes {
+    opacity: 0.35;
+  }
+  /* While the cards move (a pick, the draw), each is a layer of its own, so
+     moving and fading it never redraws its engraving. */
+  .cards.moving .frame {
+    will-change: transform, opacity;
   }
 
   .note {
@@ -1040,29 +1115,37 @@
 
   /* ---- the vote (Delve together) -------------------------------------------- */
   /* Who voted for a card: their avatars under it, overlapping a little. */
+  /* Centred on the row, each mark exactly its avatar's size: a mark
+     stretched to the row's height would carry its rings off centre. */
   .votes {
     display: flex;
     justify-content: center;
+    align-items: center;
     min-height: 26px;
     margin-top: 12px;
     pointer-events: none;
   }
   .pip {
+    position: relative;
     display: block;
+    flex: none;
+    width: 22px;
+    height: 22px;
     border-radius: 50%;
-    box-shadow: 0 0 0 2px #0c0a08;
   }
   .pip + .pip {
     margin-left: -6px;
   }
-  /* Your own vote, ringed in gold. */
+  /* Your own vote: the avatar's own ring in gold rather than your colour,
+     on top of the others; the same rings, so it sits in the row like them. */
   .pip.me {
-    position: relative;
     z-index: 1;
+  }
+  .pip.me :global(.avatar) {
     box-shadow:
       0 0 0 2px #0c0a08,
       0 0 0 3px var(--gold-hi),
-      0 0 10px rgba(241, 217, 155, 0.5);
+      0 4px 10px rgba(0, 0, 0, 0.5);
   }
   .votes .more {
     display: grid;
@@ -1090,20 +1173,52 @@
   .card.voted .frame > :global(.engraving) {
     opacity: 0.85;
   }
-  /* The draw's light passing over a card. */
-  .card.lit .frame {
-    border-color: var(--gold-hi);
-    --bs-ring: rgba(241, 217, 155, 0.7);
-    --bs1: 0px 40px;
-    --bs1-color: rgba(255, 180, 100, 0.45);
-    transition-duration: 0.08s;
+  /* The draw's light passing over a card: a rim of light and a glow round
+     it, drawn once and only faded. It comes up at once on the card it
+     reaches and dies away behind it, so at speed it trails round the cards;
+     on the card drawn it stays as the card rises, then gives way to the
+     card's own light. It moves with the card (the vote's lift, below). */
+  .glow {
+    position: absolute;
+    inset: 0;
+    border-radius: 8px;
+    pointer-events: none;
+    border: 1px solid var(--draw, var(--gold-hi));
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--draw, var(--gold-hi)) 45%, transparent),
+      0 0 22px 3px color-mix(in srgb, var(--draw-glow, rgb(255, 180, 100)) 50%, transparent),
+      inset 0 0 26px color-mix(in srgb, var(--draw-glow, rgb(255, 180, 100)) 26%, transparent);
+    opacity: 0;
+    transition: opacity 0.38s ease-out;
+    will-change: opacity;
   }
-  .card.lit:disabled .frame,
-  .card.chosen:disabled .frame {
+  .card.special .glow {
+    --draw: var(--f-hi);
+    --draw-glow: var(--f);
+  }
+  .card.lit .glow {
+    opacity: 1;
+    transition-duration: 0.05s;
+  }
+  .card.chosen .glow {
+    transform: translateY(-14px) scale(1.08);
+    transition: transform 0.55s cubic-bezier(0.2, 0.9, 0.3, 1.15);
+    animation: drawn-glow 1.1s ease-out both;
+  }
+  @keyframes drawn-glow {
+    from,
+    20% {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
+    }
+  }
+  .card.voted .glow {
+    transform: translateY(-8px);
+  }
+  .card.dim.chosen .frame {
     filter: none;
-  }
-  .card.lit .title {
-    color: #fff1cf;
   }
   .vote-status {
     display: flex;
@@ -1278,7 +1393,8 @@
     .cards:has(.votes) {
       gap: 1.25rem;
     }
-    .card.voted .frame {
+    .card.voted .frame,
+    .card.voted .glow {
       transform: translateX(6px);
     }
   }

@@ -25,7 +25,7 @@ import {
   sparks,
 } from './effects';
 import { Shape } from './particles';
-import { budget, particle, task } from './core';
+import { budget, follow, followOffset, particle, task } from './core';
 import { showAura } from './aura';
 import { light, pulseMood, setMood } from '../lights';
 import { CALM, embers as backdropEmbers } from '../backdropEmbers';
@@ -69,6 +69,12 @@ const unit = (c: Vec3): Vec3 => {
   const m = Math.max(c[0], c[1], c[2]) || 1;
   return [c[0] / m, c[1] / m, c[2] / m];
 };
+
+/** Point `a`, moved as far as the element behind follow slot `slot` has (see follow in core.ts). */
+function landed<T extends Point>(a: T, slot: number): T {
+  const o = followOffset(slot);
+  return { ...a, x: a.x + o.x, y: a.y + o.y };
+}
 
 // ---------- flow ----------
 
@@ -405,6 +411,9 @@ export function fillBar(answer: Element, bar: Element, from: number, to: number,
   if (!fxActive()) return;
   const src = boxOf(answer);
   const r = bar.getBoundingClientRect();
+  // The stream leaves the answer and lands on the bar where they are as it flies (the page may scroll meanwhile).
+  const from0 = follow(answer, FILL_START + FILL_SPAN);
+  const to0 = follow(bar, FILL_START + FILL_SPAN);
   const colors = good ? [C.gold, C.goldPale, C.ember] : [C.ember, C.gold];
   const n = budget(64);
   const arrivals: { t: number; x: number; y: number }[] = [];
@@ -438,7 +447,7 @@ export function fillBar(answer: Element, bar: Element, from: number, to: number,
       shape: mote ? Shape.Ember : Shape.Spark,
       stretch: 0.012,
       fadeIn: 0.25,
-      seek: { cx, cy, tx, ty },
+      seek: { cx, cy, tx, ty, from: from0, to: to0 },
     });
     arrivals.push({ t: arrive, x: tx, y: ty });
   }
@@ -447,7 +456,7 @@ export function fillBar(answer: Element, bar: Element, from: number, to: number,
   let k = 0;
   task((_, age) => {
     while (k < arrivals.length && arrivals[k].t <= age) {
-      const a = arrivals[k++];
+      const a = landed(arrivals[k++], to0);
       if (k % 3 === 0) particle({ x: a.x, y: a.y, life: 0.3, size: 3, sizeEnd: 7, color: k3(C.gold, 0.22), shape: Shape.Glow, fadeIn: 0.1 });
       sparks(a, { count: 2, speed: [40, 160], angle: -Math.PI / 2, spread: 2.6, life: [0.15, 0.35], size: [0.5, 0.9], gravity: 300 });
     }
@@ -604,16 +613,19 @@ export const GIFT_LANDS = 1.05;
 
 /**
  * Delve together: a player gives one of their lives to bring back a teammate
- * who perished. The light of the giver's chamber (`chamber`, in the entry
- * `giver`) leaves it as a stream of motes that bows across the scoreboard and
- * gathers into the teammate's empty phial (`phial`, in the entry `taker`),
- * landing at GIFT_LANDS: there it flares, a ring of life runs out and glints
- * settle, and their entry is rimmed in its rose light.
+ * who perished. The light of the giver's chamber that empties (`chamber`, in
+ * the entry `giver`) leaves it as a stream of motes that bows across the
+ * scoreboard and gathers into the very chamber of the teammate's phial it
+ * fills (`into`, in the entry `taker`), wherever the two are as it flies,
+ * landing at GIFT_LANDS: there the chamber flares, a ring of life runs out
+ * and glints settle, and their entry is rimmed in its rose light.
  */
-export function lifeGiven(chamber: Element, giver: Element, phial: Element, taker: Element) {
-  if (!fxActive() || detached(chamber) || detached(phial)) return;
+export function lifeGiven(chamber: Element, giver: Element, into: Element, taker: Element) {
+  if (!fxActive() || detached(chamber) || detached(into)) return;
   const src = boxOf(chamber);
-  const dst = boxOf(phial);
+  const dst = boxOf(into);
+  const from0 = follow(chamber, GIFT_LANDS);
+  const to0 = follow(into, GIFT_LANDS);
   flash(chamber, { radius: 14, color: C.life, intensity: 0.3, life: 0.45 });
   light(chamber, { color: [1, 0.4, 0.34], radius: 150, intensity: 0.22, decay: 0.8 });
   outline(giver, { color: k3(C.life, 0.75), width: 8, life: 0.9, intensity: 0.35 });
@@ -625,8 +637,8 @@ export function lifeGiven(chamber: Element, giver: Element, phial: Element, take
     const delay = Math.max(0.02, Math.min(arrive - 0.35, u * 0.45 + rand(0, 0.08)));
     const x = src.x + (Math.random() - 0.5) * src.w;
     const y = src.y + (Math.random() - 0.5) * src.h;
-    const tx = dst.x + (Math.random() - 0.5) * dst.w * 0.8;
-    const ty = dst.y + (Math.random() - 0.5) * dst.h * 0.8;
+    const tx = dst.x + (Math.random() - 0.5) * dst.w * 0.6;
+    const ty = dst.y + (Math.random() - 0.5) * dst.h * 0.6;
     // Bow each path up and out to one side, so the stream arcs over the row and gathers again.
     const dx = tx - x;
     const dy = ty - y;
@@ -647,16 +659,16 @@ export function lifeGiven(chamber: Element, giver: Element, phial: Element, take
       shape: mote ? Shape.Ember : Shape.Spark,
       stretch: 0.012,
       fadeIn: 0.2,
-      seek: { cx, cy, tx, ty },
+      seek: { cx, cy, tx, ty, from: from0, to: to0 },
     });
   }
   after(GIFT_LANDS, () => {
-    if (detached(phial)) return;
-    flash(phial, { radius: 24, color: C.lifePale, intensity: 0.42, life: 0.6 });
-    ring(phial, { radius: 44, from: 6, thickness: 4, life: 0.6, color: C.life, breakup: 0.4, fill: 0, intensity: 0.65 });
-    glints(phial, { count: 3, size: [4, 8], color: C.lifePale, delay: [0, 0.3] });
-    embers(phial, { count: 8, area: 'fill', colors: [C.life, C.lifePale], size: [0.7, 1.4], rise: [30, 90], scatter: 20, life: [0.6, 1.2] });
-    light(phial, { color: [1, 0.42, 0.36], radius: 190, intensity: 0.36, decay: 1 });
+    if (detached(into)) return;
+    flash(into, { radius: 18, color: C.lifePale, intensity: 0.42, life: 0.6 });
+    ring(into, { radius: 40, from: 5, thickness: 4, life: 0.6, color: C.life, breakup: 0.4, fill: 0, intensity: 0.65 });
+    glints(into, { count: 3, area: 'centre', size: [4, 8], color: C.lifePale, delay: [0, 0.3] });
+    embers(into, { count: 8, area: 'fill', colors: [C.life, C.lifePale], size: [0.7, 1.4], rise: [30, 90], scatter: 12, life: [0.6, 1.2] });
+    light(into, { color: [1, 0.42, 0.36], radius: 190, intensity: 0.36, decay: 1 });
     if (!detached(taker)) outline(taker, { color: C.life, width: 10, life: 1, intensity: 0.5 });
   });
 }
@@ -780,25 +792,29 @@ export const FIND_COLORS: Record<FindKind, { main: Vec3; pale: Vec3 }> = {
 
 /**
  * Delve: a find answered right. As a point flows into the scorer's bar
- * (fillBar), the reward flows from the answer (`answer`) to the item it
- * earned (`slot`: its ward's chamber, or where its flare or dynamite sits
- * beside the phial), in the find card's colours: a stream of sparks that
- * gathers on it between FIND_START and FIND_LANDS, each landing shedding a
- * spark, and a flash as the last lands.
+ * (fillBar), the reward flows from the answer (`answer`) to the very place
+ * its item appears (`slot`: the casing its ward or shard forms on, or the
+ * engraving its flare or dynamite stands as; `aim`, inside it, narrows that
+ * down where the slot is wider), in the find card's colours: a stream of
+ * sparks that gathers on it between FIND_START and FIND_LANDS, wherever it
+ * has moved meanwhile (on phones the page scrolls to the answer as it
+ * shows), each landing shedding a spark, and a flash as the last lands.
  */
-export function findGained(answer: Element, slot: Element, kind: FindKind) {
+export function findGained(answer: Element, slot: Element, kind: FindKind, aim: Element = slot) {
   if (!fxActive() || detached(answer) || detached(slot)) return;
   const { main, pale } = FIND_COLORS[kind];
   const src = boxOf(answer);
-  const dst = boxOf(slot);
+  const dst = boxOf(aim);
+  const from0 = follow(answer, FIND_LANDS);
+  const to0 = follow(slot, FIND_LANDS);
   const n = budget(48);
   const arrivals: { t: number; x: number; y: number }[] = [];
   for (let i = 0; i < n; i++) {
     const u = n > 1 ? i / (n - 1) : 1;
     const arrive = FIND_START + u * FIND_SPAN + rand(-0.03, 0.03);
     const delay = Math.max(0.08, arrive - rand(0.55, 0.85));
-    const tx = dst.x + (Math.random() - 0.5) * dst.w * 0.7;
-    const ty = dst.y + (Math.random() - 0.5) * dst.h * 0.7;
+    const tx = dst.x + (Math.random() - 0.5) * dst.w * 0.6;
+    const ty = dst.y + (Math.random() - 0.5) * dst.h * 0.6;
     const x = src.x + (Math.random() - 0.5) * src.w * 0.9;
     const y = src.y + (Math.random() - 0.5) * src.h * 0.7;
     // Bow each path out to one side (and a little up), so the stream fans out and gathers again.
@@ -821,7 +837,7 @@ export function findGained(answer: Element, slot: Element, kind: FindKind) {
       shape: mote ? Shape.Ember : Shape.Spark,
       stretch: 0.012,
       fadeIn: 0.25,
-      seek: { cx, cy, tx, ty },
+      seek: { cx, cy, tx, ty, from: from0, to: to0 },
     });
     arrivals.push({ t: arrive, x: tx, y: ty });
   }
@@ -829,7 +845,7 @@ export function findGained(answer: Element, slot: Element, kind: FindKind) {
   let k = 0;
   task((_, age) => {
     while (k < arrivals.length && arrivals[k].t <= age) {
-      const a = arrivals[k++];
+      const a = landed(arrivals[k++], to0);
       if (k % 3 === 0) particle({ x: a.x, y: a.y, life: 0.3, size: 3, sizeEnd: 7, color: k3(main, 0.22), shape: Shape.Glow, fadeIn: 0.1 });
       sparks(a, { count: 2, colors: [pale, main], cool: k3(main, 0.3), speed: [40, 160], angle: -Math.PI / 2, spread: 2.6, life: [0.15, 0.35], size: [0.5, 0.9], gravity: 300 });
     }
@@ -837,9 +853,10 @@ export function findGained(answer: Element, slot: Element, kind: FindKind) {
   });
   glints(answer, { count: 2, size: [4, 7], color: pale, delay: [0.05, 0.3] });
   after(FIND_LANDS, () => {
-    if (detached(slot)) return;
-    flash(slot, { radius: Math.max(dst.w, dst.h) * 0.6 + 10, color: main, intensity: 0.35, life: 0.5 });
-    glints(slot, { count: 2, area: 'centre', size: [5, 9], color: pale, life: [0.4, 0.7], delay: [0, 0.2] });
+    const at = detached(aim) ? slot : aim;
+    if (detached(at)) return;
+    flash(at, { radius: Math.max(dst.w, dst.h) * 0.6 + 10, color: main, intensity: 0.35, life: 0.5 });
+    glints(at, { count: 2, area: 'centre', size: [5, 9], color: pale, life: [0.4, 0.7], delay: [0, 0.2] });
   });
 }
 
