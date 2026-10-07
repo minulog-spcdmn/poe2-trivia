@@ -223,6 +223,10 @@
       <div class="connecting" transition:fade={{ duration: 200 }}>
         <span class="rune" use:portalOn></span>
         <span>{session.mode === 'host' ? 'Opening a portal…' : `Travelling to room ${session.code}…`}</span>
+        {#if session.mode === 'client'}
+          <!-- Joining takes a while on some networks: after a few seconds, say it's still going, so no one gives up early. -->
+          <span class="slow">Still on the way. Some networks take a little longer.</span>
+        {/if}
         <button class="btn ghost small" onclick={() => session.leave()}>Cancel</button>
       </div>
     {/if}
@@ -566,6 +570,22 @@
     font-family: var(--font-display);
     letter-spacing: 0.08em;
     color: var(--gold-hi);
+  }
+  .connecting .slow {
+    max-width: 22rem;
+    padding: 0 1rem;
+    text-align: center;
+    font-family: var(--font-body);
+    font-size: 0.95rem;
+    letter-spacing: 0;
+    color: var(--muted);
+    opacity: 0;
+    animation: fade-in 0.4s ease 5s forwards;
+  }
+  @keyframes fade-in {
+    to {
+      opacity: 1;
+    }
   }
   .rune {
     width: 54px;
