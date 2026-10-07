@@ -2,16 +2,27 @@
   // One of Delve's finds as a small engraving (lib/inventoryArt.ts): a gold
   // rim round faces tinted by what it is (azurite blue, a flare's ember, the
   // red of dynamite), edges and one-sided hatching cut into them, and a soft
-  // glow of its colour under the lines. Sized by `--h` (its height).
+  // glow of its colour under the lines. Sized by `--h` (its height), or,
+  // inside another SVG, placed by `place` (its top left and height there).
   import { GLYPHS, WARD_CRACK, type GlyphKind } from '../lib/inventoryArt';
 
   /** `piece`: only one side of a ward's crack (a shattering ward's pieces), its broken edge cut bright. */
-  let { kind, piece }: { kind: GlyphKind; piece?: 'left' | 'right' } = $props();
+  let { kind, piece, place }: { kind: GlyphKind; piece?: 'left' | 'right'; place?: { x: number; y: number; h: number } } = $props();
   const g = $derived(GLYPHS[kind]);
   const uid = $props.id();
 </script>
 
-<svg class="glyph {kind}" viewBox={g.box} style:--aspect={g.aspect} aria-hidden="true">
+<svg
+  class="glyph {kind}"
+  class:placed={!!place}
+  viewBox={g.box}
+  x={place?.x}
+  y={place?.y}
+  width={place ? place.h * g.aspect : undefined}
+  height={place?.h}
+  style:--aspect={g.aspect}
+  aria-hidden="true"
+>
   {#if piece}
     <clipPath id="{uid}-piece"><path d={WARD_CRACK[piece]} /></clipPath>
   {/if}
@@ -28,10 +39,12 @@
 </svg>
 
 <style>
-  .glyph {
+  .glyph:not(.placed) {
     display: block;
     height: var(--h, 12px);
     width: calc(var(--h, 12px) * var(--aspect));
+  }
+  .glyph {
     overflow: visible;
     /* Azurite: deep in shadow, bright where it faces you. */
     --dark: #0f2f70;

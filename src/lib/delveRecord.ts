@@ -42,7 +42,7 @@
 // Group runs from before co-op (a "last one standing" winner) were never
 // released: they are dropped as the records are read.
 
-import { DELVE_LIVES, DELVE_RULESET, delveStandings, fellAt, isGroupRun, standingIds, teamDepth } from './delve.ts';
+import { DELVE_LIVES, DELVE_RULESET, FINDS, delveStandings, fellAt, isGroupRun, standingIds, teamDepth, type FindKind } from './delve.ts';
 import type { GameState } from './game.ts';
 import { clearAside, makeRoom } from './keepAside.ts';
 import { readStored, removeStored, storeKey, tryReadStored, writeStored } from './storage.ts';
@@ -177,6 +177,24 @@ function selfIn(s: GameState, me: string | null, hotSeat: boolean): string | nul
  * carry the codex.
  */
 export const CODEX_NAMES = ['codex2', 'codex'] as const;
+
+/**
+ * The finds this player has met: each one they have been asked a question
+ * from at least once, alone or together, as the codex's log has it. Read
+ * raw, as wardsIn reads it (an answer logged before finds were kept, or
+ * damaged, counts for none).
+ */
+export function findsMet(): Set<FindKind> {
+  const out = new Set<FindKind>();
+  try {
+    const v: unknown = JSON.parse(readStored(CODEX_NAMES[0]) ?? readStored(CODEX_NAMES[1]) ?? 'null');
+    const log = isObj(v) && Array.isArray(v.log) ? v.log : [];
+    for (const a of log) if (isObj(a) && typeof a.depth === 'number' && FINDS.some((f) => f.kind === a.find)) out.add(a.find as FindKind);
+  } catch {
+    /* no codex to read */
+  }
+  return out;
+}
 
 /**
  * Wards that broke in `self`'s place in the run: those of the answers the

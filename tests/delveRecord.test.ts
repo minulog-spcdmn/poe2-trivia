@@ -11,6 +11,7 @@ import {
   recordLeft,
   bestOf,
   deepestEver,
+  findsMet,
   measure,
   emptyRecords,
   loadRecords,
@@ -321,6 +322,20 @@ test('records this build can\'t read are never written over: a newer build\'s ar
   assert.deepEqual(aside, [`${DELVE_RECORD_KEY}.unread`]);
   assert.equal(store.get(aside[0]), '{"v":1,"runs":[', 'kept as it was');
   assert.equal(loadRecords().runs.length, 1);
+});
+
+test('the finds met are those the codex logged a Delve question from, alone or together', () => {
+  assert.deepEqual([...findsMet()], [], 'no codex');
+  const log = [
+    { t: 1, id: 'a', mode: 'name', ok: true, depth: 12, run: 5, find: 'dynamite' },
+    { t: 2, id: 'b', mode: 'name', ok: false, depth: 33, run: 6, find: 'flare', team: true },
+    { t: 3, id: 'c', mode: 'name', ok: true, find: 'azurite' },
+    { t: 4, id: 'd', mode: 'name', ok: true, depth: 44, run: 6, find: 'nonsense' },
+  ];
+  store.set(storeKey('codex2'), JSON.stringify({ v: 1, items: {}, log }));
+  assert.deepEqual([...findsMet()].sort(), ['dynamite', 'flare'], 'a find needs a Delve depth, and a known kind');
+  store.set(storeKey('codex2'), '{"v":1,"log":[');
+  assert.deepEqual([...findsMet()], [], 'unreadable: none');
 });
 
 // ---- where they are kept ------------------------------------------------------

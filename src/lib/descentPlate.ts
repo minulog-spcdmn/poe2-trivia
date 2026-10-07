@@ -4,14 +4,18 @@
 // Sol stands over the mouth of a pit seen a little from above. The pit
 // narrows down through the ten zones, each a ring of terrace whose edge is
 // an ellipse (its near half firm, its far half a hairline passing behind
-// the seal above), to an ouroboros under its foot (past 100 the
-// descent has no end). Each terrace holds a seal on the pit's axis: a zone
-// you have reached is struck in its colour with its sigil (lib/zoneSigils)
-// and named in the margin, its terrace lit; one you haven't is a dull
-// impression, an empty hollow, its name still in a script nobody can read.
+// the seal above), to its floor. Below it, in clear air, lies the
+// ouroboros (lib/serpent): a serpent in a figure eight on its side biting
+// its tail, for no end past 100. Each terrace holds a seal on the pit's
+// axis: a zone you have reached is struck in its colour with its sigil
+// (lib/zoneSigils) and named in the margin, its terrace lit; one you
+// haven't is a dull impression, an empty hollow, and the zones not reached
+// yet are bracketed together in the margin under one word, "uncharted".
 // An eight-pointed star in a glory of rays marks your deepest on the pit's
-// right wall (at the mouth before a first run, in the ouroboros past 100).
-// The notes in the right margin say what lies ahead.
+// right wall (at the mouth before a first run, in the serpent's right loop
+// past 100). The notes in the right margin say what lies ahead. Each find
+// you have met has a callout in the left margin: a fine leader from the
+// wall where it first turns up to its item and that depth.
 //
 // Everything is exact geometry in plate units (px at scale 1): the pit's
 // sides are straight lines converging downward, every terrace an ellipse
@@ -24,8 +28,8 @@
 // from the surface down as one sweep of the pen.
 
 import { at, hatch, line, seeded, star8, type Hole as Disc } from './arcane.ts';
-import { MARKS } from './alchemy.ts';
-import { shownDepth } from './delve.ts';
+import { shownDepth, type FindKind } from './delve.ts';
+import { serpent, serpentSize } from './serpent.ts';
 import { STRATA } from './descent.ts';
 import { sigilOf, type Sigil } from './zoneSigils.ts';
 
@@ -41,11 +45,16 @@ type Hole = { c: Pt; r: number } | { box: [number, number, number, number] };
  * reached yet), zone (a reached zone's, in `color`). `lit` ones have a glow
  * under them: the same lines whole (unworn), drawn wide and soft.
  */
-export type Part = { tone: 'gold' | 'dull' | 'zone'; color?: string; lit: boolean; strokes: Stroke[]; glow: { d: string; kind: Kind }[] };
+/** dim: the serpent before you are past 100, a dark gold; find: a find's leader, in its colour (`color`). */
+export type Tone = 'gold' | 'dull' | 'zone' | 'dim' | 'find';
+export type Part = { tone: Tone; color?: string; lit: boolean; strokes: Stroke[]; glow: { d: string; kind: Kind }[] };
 /** Hatching (one path, drawn at once), in the tone of its zone or dull. */
-export type Shade = { d: string; tone: 'gold' | 'dull' | 'zone'; color?: string; delay: number; t: number };
+export type Shade = { d: string; tone: Tone; color?: string; delay: number; t: number };
 export type Seal = { k: number; c: Pt; r: number; known: boolean; name?: string; color?: string; sigil?: Sigil; delay: number; hollow?: string };
-export type Mark = { x: number; y: number; d: string; delay: number };
+/** A find you have met, by the depth it first turns up at: its items' icons from `x` (left), the depth from `numX`, on the line `y`. */
+export type Callout = { kinds: FindKind[]; num: string; x: number; numX: number; y: number; dot: Pt; delay: number };
+/** The zones not reached yet, under one word: the bracket's lines, and where the word sits. */
+export type Uncharted = { d: string; x: number; y: number; delay: number };
 export type Note = { id: string; word?: string; num?: string; lines: string[]; y: number; best?: boolean };
 export type Plate = {
   /** The plate's size in its own units; the drawing is shown at `scale` px per unit. */
@@ -57,9 +66,28 @@ export type Plate = {
   seals: Seal[];
   sol: { c: Pt; r: number };
   names: { x: number; y: number; text: string; color: string; delay: number }[];
-  marks: Mark[];
+  uncharted: Uncharted | null;
+  callouts: Callout[];
+  /** The star, drawn about its centre `c` (its outline, ridges, hatching and glory are about 0, 0, so the glory can turn). */
   star: { c: Pt; r: number; gloryR: number; outline: string; ridges: string; hatch: string; glory: string; delay: number };
-  ouro: { c: Pt; lit: boolean; scales: string; eye: Pt; inner: number; delay: number };
+  /**
+   * The serpent: lit past 100; its eye (a ring, a slit, a glint); the line
+   * down its back in pieces, each `from` along it, `len` long all told, for
+   * the sheen; the middle of its right loop and what fits there.
+   */
+  ouro: {
+    lit: boolean;
+    eye: { c: Pt; r: number; glint: Pt; angle: number };
+    sheen: { d: string; from: number }[];
+    sheenLen: number;
+    /** The sheen's reach either side of the back line (it lights the body's own lines as it passes), and those lines, whole. */
+    sheenW: number;
+    lines: string;
+    loop: Pt;
+    inner: number;
+    delay: number;
+    done: number;
+  };
   notes: Note[];
   noteX: number;
   /** Where the number by the star starts (clear of its glory). */
@@ -172,60 +200,6 @@ function hollow(c: Pt, r: number, gap: number): string {
   return d;
 }
 
-/**
- * The ouroboros about `c`: its body's middle `rm` from the centre, `wmax`
- * either side of it at its broadest, swelling from the tail; its head at
- * `headA` degrees (clockwise from the top) with the tail's tip in its
- * jaws. Measured along the body in degrees from the tail's tip.
- */
-function ouroboros(c: Pt, rm: number, wmax: number, headA: number, delay: number, worn: boolean) {
-  const NECK = 322;
-  const SNOUT = 364;
-  const A = (s: number) => headA - NECK + s;
-  const hw = (s: number) => {
-    const grow = 0.3 + (wmax - 0.3) * Math.sin((Math.min(1, s / 230) * Math.PI) / 2);
-    // A little narrower at the neck.
-    return grow * (s > 280 ? 1 - 0.18 * Math.sin(((s - 280) / (NECK - 280)) * (Math.PI / 2)) : 1);
-  };
-  const P = (s: number, dr: number): Pt => at(c, A(s), rm + dr);
-  const T = 0.85;
-  // The tail shows from where it leaves the jaws.
-  const TAIL = 9;
-  const edge = (side: number) => Array.from({ length: Math.ceil((NECK - TAIL) / 1.5) + 1 }, (_, i) => Math.min(NECK, TAIL + i * 1.5)).map((s) => P(s, side * hw(s)));
-  const wear = worn ? wearOf(71) : null;
-  const strokes = [...pen(edge(1), 'main', delay, T, { wear }), ...pen(edge(-1), 'thin', delay + 0.04, T, { wear })];
-  // The head: broader than the neck behind the eye, narrowing to the jaws, open round the tail.
-  const nw = hw(NECK);
-  const wide = nw * 1.5;
-  const jaw = (side: number): Pt[] => [P(NECK, side * nw), P(NECK + 9, side * wide), P(NECK + 26, side * wide * 0.86), P(SNOUT, side * 1.05)];
-  strokes.push(...pen(jaw(1), 'main', delay + T, 0.22), ...pen(jaw(-1), 'thin', delay + T, 0.22));
-  // The gape: each jaw's inner edge from its tip back to the corner of the mouth, the tail between them.
-  strokes.push(...pen([P(SNOUT, 1.05), P(NECK + 27, 0.35)], 'hair', delay + T + 0.16, 0.1), ...pen([P(SNOUT, -1.05), P(NECK + 27, -0.35)], 'hair', delay + T + 0.16, 0.1));
-  // Scales down the outer side only: short strokes from the edge in to the middle, slanting back.
-  let scales = '';
-  for (let s = TAIL + 18; s < NECK - 4; s += 6) {
-    const t = hw(s);
-    if (t > 0.9) scales += line(P(s, t - 0.3), P(s - 5, 0.1));
-  }
-  // The head shaded behind the eye, on the same side.
-  for (let s = NECK + 3; s < NECK + 9; s += 1.4) scales += line(P(s, nw + (wide - nw) * ((s - NECK) / 9) - 0.35), P(s, nw * 0.35));
-  return { strokes, scales, eye: P(NECK + 15, wide * 0.38), outer: rm + wmax };
-}
-
-/** The script nobody can read, where a zone's name will be: marks (lib/alchemy) in words of two to four, set right-aligned at `xr`. */
-function cipher(k: number, xr: number, y: number, delay: number): Mark[] {
-  const rnd = seeded(31 + k * 17);
-  const STEP = 4.1;
-  const out: { dx: number; d: string }[] = [];
-  let x = 0;
-  for (let w = 2 + Math.floor(rnd() * 2); w > 0; w--) {
-    for (let n = 2 + Math.floor(rnd() * 3); n > 0; n--, x += STEP) out.push({ dx: x, d: MARKS[Math.floor(rnd() * MARKS.length)] });
-    x += STEP * 0.7;
-  }
-  const width = out.at(-1)!.dx;
-  return out.map((m, i) => ({ x: xr - width + m.dx - 1.8, y, d: m.d, delay: delay + i * 0.03 }));
-}
-
 /** Notes: a line apart, and at least GAP apart from the next. */
 export const LINE = 10.5;
 const GAP = 11.5;
@@ -264,9 +238,17 @@ const NOTES_W = 88;
 
 /**
  * The plate for a box `pw` × `ph` px, for a best run `deepest` deep (null
- * before a first run); `lives` (in words) and `findsFrom` go into the notes.
+ * before a first run); `lives` (in words) and `findsFrom` go into the notes;
+ * `met` are the finds you have met, with the depth each first turns up at.
  */
-export function descentPlate(pw: number, ph: number, deepest: number | null, lives: string, findsFrom: number): Plate {
+export function descentPlate(
+  pw: number,
+  ph: number,
+  deepest: number | null,
+  lives: string,
+  findsFrom: number,
+  met: { kind: FindKind; from: number }[] = [],
+): Plate {
   const scale = Math.min(MAX_SCALE, Math.max(1, pw / DESIGN_W));
   const W = pw / scale;
   const H = ph / scale;
@@ -279,10 +261,12 @@ export function descentPlate(pw: number, ph: number, deepest: number | null, liv
   const SOL_Y = SOL_R + 8.5;
   /** The front of the mouth (depth 0 on the pit's axis) and of the deepest terrace (depth 100). */
   const TOP = SOL_Y + SOL_R + 6;
-  const OR = Math.min(14.5, Math.max(12.5, H * 0.05));
-  const OW = OR * 0.22;
-  const OY = H - OR - OW - 1.5;
-  const BOTTOM = OY - OR - OW - 6;
+  // The serpent at the foot, as large as the plate can spare (on a tall plate it takes a little from the terraces), in clear air below the pit.
+  const SH = Math.min(50, Math.max(35, H * 0.112));
+  const SW = SH * 0.088;
+  const sz = serpentSize(SH / 2, SW);
+  const OY = H - 1.5 - SH / 2;
+  const BOTTOM = OY - SH / 2 - 6.5;
   const band = (BOTTOM - TOP) / 10;
   /** Where depth `d` lies on the axis (the middle of its tenth of its zone). */
   const y = (d: number) => TOP + ((d - 0.5) * band) / 10;
@@ -307,15 +291,25 @@ export function descentPlate(pw: number, ph: number, deepest: number | null, liv
     });
   };
   const nameX = (yy: number) => side(yy, -1)[0] - ROCK - 3;
+  /** The left rock's outer edge at height `yy` (a point on the slanting line, not a terrace's front). */
+  const rockAt = (yy: number) => {
+    let t = yy;
+    for (let i = 0; i < 6; i++) t = yy + TILT * half(t);
+    return AX - half(t) - ROCK;
+  };
+  // The serpent reaches as far right as the notes allow; its crossing lies left of the pit's axis, its right loop under the floor.
+  const SX = Math.max(off + 3 + sz.halfW, pipX - 5 - sz.halfW);
+  const snake = serpent([SX, OY], sz.r, sz.d, SW);
+  const loopR = snake.loops[1];
 
   // ---- what lines stop short of ----
   const STAR_R = 4.4;
   /** The star's glory: inside the ouroboros, clear of the ring there. */
-  const GLORY = past ? OR - OR * 0.22 - 1.5 - 1.3 : 8.2;
+  const GLORY = past ? Math.min(8.2, snake.inner - 0.5) : 8.2;
   const surfaceY = TOP - TILT * halfTop;
   // On the right wall's rock at your deepest, clear of the seal there; at the mouth on the left before a first run; inside the ouroboros past 100.
   const star: Pt = past
-    ? [AX, OY]
+    ? loopR
     : best
       ? [Math.max(side(y(best), 1)[0] + ROCK / 2, AX + R + GLORY + 2.6), side(y(best), 1)[1]]
       : [side(TOP, -1)[0] - ROCK / 2, surfaceY];
@@ -324,8 +318,6 @@ export function descentPlate(pw: number, ph: number, deepest: number | null, liv
   const solHole: Hole = { c: sol, r: SOL_R + 1.4 };
   const sealC = (k: number): Pt => [AX, TOP + (k + 0.5) * band];
   const sealHoles: Hole[] = ZONES.map((_, k) => ({ c: sealC(k), r: R + 1.3 }));
-  const ouroOuter = OR + OW;
-  const ouroHole: Hole = { c: [AX, OY], r: ouroOuter + 1.6 };
 
   // ---- the notes, at about the depths they're about ----
   const NOTES: Note[] = [
@@ -341,12 +333,37 @@ export function descentPlate(pw: number, ph: number, deepest: number | null, liv
   /** The notes' words (the glory above stops short of them). */
   const noteBoxes: Hole[] = notes.map((n) => ({ box: [noteX - 1.5, n.y - 6.5, W, n.y + 6.5 + (n.lines.length - 1) * LINE] }));
 
+
   // ---- timing: the pen sweeps down the pit once ----
   const S0 = 0.4;
   const S = 1.25;
   const sweep = (yy: number) => S0 + ease((yy - TOP) / (OY - TOP)) * S;
   const OURO_AT = sweep(BOTTOM) + 0.05;
+  /** How long the pen takes round the serpent. */
+  const OURO_T = 1.1;
   const STAR_AT = 2.15;
+
+  // ---- the finds you have met, a callout each in the left margin ----
+  // From the wall where a find first turns up (for depth 10k + 1, the end of a terrace), its leader runs down to the line
+  // halfway between two zones' names and out along it to the find's items and that depth. Finds that turn up together share one.
+  const byFrom = new Map<number, FindKind[]>();
+  for (const m of [...met].sort((a, b) => a.from - b.from)) byFrom.set(m.from, [...(byFrom.get(m.from) ?? []), m.kind]);
+  const callouts: Callout[] = [...byFrom].map(([from, kinds]) => {
+    const yy = y(Math.min(100, from) - 0.5);
+    const wall = side(yy, -1);
+    const x = off + 3;
+    return {
+      kinds,
+      num: String(shownDepth(from)),
+      x,
+      numX: x + kinds.length * 6.6 + 1,
+      y: TOP + Math.min(9, Math.max(1, Math.round((yy - TOP) / band))) * band,
+      dot: [wall[0] - ROCK, wall[1]],
+      delay: sweep(yy) + 0.45,
+    };
+  });
+  /** The rock's edge stops short of each leader's station. */
+  const calloutHoles: Hole[] = callouts.map((c) => ({ c: c.dot, r: 1.8 }));
 
   /** Every line, worn (for the lines) or whole (for the glow under them). */
   const build = (worn: boolean) => {
@@ -384,20 +401,18 @@ export function descentPlate(pw: number, ph: number, deepest: number | null, liv
     surface.push(...pen(back, 'thin', 0.15, 0.4, { holes: [solHole, starHole] }));
     add('gold', surface);
 
-    // The pit's sides and the rock's outer edges beside them, from the mouth down past the deepest terrace to the ouroboros.
-    // Both run on below the zones until the side meets the ouroboros (stopping short of it).
+    // The pit's sides and the rock's outer edges beside them, from the mouth down to the floor's ends.
     const [p0, p1] = [side(TOP, 1), side(BOTTOM, 1)];
     const dir: Pt = [(p1[0] - p0[0]) / (p1[1] - p0[1]), 1];
-    let end = BOTTOM;
-    while (end < OY && Math.hypot(p0[0] + dir[0] * (end - p0[1]) - AX, end - OY) > ouroOuter + 1.6) end += 0.2;
+    const end = p1[1];
     const run = (s: number, out: number): [Pt, Pt] => [
       [AX + s * (p0[0] - AX + out), p0[1]],
       [AX + s * (p0[0] - AX + out + dir[0] * (end - p0[1])), end],
     ];
     const sides: Stroke[] = [];
     for (const s of [-1, 1]) {
-      sides.push(...pen(run(s, 0), 'main', S0, S, { holes: [starHole, ouroHole], wear: wear(s > 0 ? 11 : 13) }));
-      sides.push(...pen(run(s, ROCK), 'thin', S0 + 0.05, S, { holes: [starHole, ouroHole, ...pipHoles], wear: wear(s > 0 ? 19 : 23) }));
+      sides.push(...pen(run(s, 0), 'main', S0, S, { holes: [starHole], wear: wear(s > 0 ? 11 : 13) }));
+      sides.push(...pen(run(s, ROCK), 'thin', S0 + 0.05, S, { holes: [starHole, ...pipHoles, ...calloutHoles], wear: wear(s > 0 ? 19 : 23) }));
     }
     add('gold', sides);
 
@@ -432,10 +447,22 @@ export function descentPlate(pw: number, ph: number, deepest: number | null, liv
       else add('dull', rings, false);
     }
 
-    // The ouroboros, a ring inside it.
-    const o = ouroboros([AX, OY], OR, OW, 270, OURO_AT, worn);
-    add(past ? 'gold' : 'dull', [...o.strokes, ...pen(arcPts([AX, OY], OR - OW - 1.5), 'hair', OURO_AT + 0.4, 0.4)], past);
-    return { parts, ouro: o, rays: rays.join('') };
+    // The serpent, drawn round from its tail to its head; its edges worn.
+    add(
+      past ? 'gold' : 'dim',
+      snake.lines.flatMap((l, i) => pen(l.pts, l.kind, OURO_AT + l.at * OURO_T, Math.max(0.06, l.span * OURO_T), { wear: l.kind === 'main' ? wear(71 + i) : null })),
+      past,
+    );
+
+    // The finds' leaders: from the left wall where each first turns up, down to the line between the zones' names, and out to its label.
+    for (const c of callouts) {
+      const [x0, y0] = [c.dot[0] - 1.3, c.dot[1]];
+      const drop = c.y - y0;
+      const knee: Pt = [x0 - Math.max(2.5, Math.abs(drop) * 1.1), c.y];
+      const endX = c.numX + c.num.length * 5.4 + 2.2;
+      add('find', pen([[x0, y0], knee, [endX, c.y]], 'hair', c.delay, 0.45), false, `var(--find-${c.kinds[0]})`);
+    }
+    return { parts, rays: rays.join('') };
   };
   const worn = build(true);
   const whole = build(false);
@@ -463,12 +490,8 @@ export function descentPlate(pw: number, ph: number, deepest: number | null, liv
     }
     shades.push({ d, ...toneOf(k), delay: sweep(y0) + 0.1, t: 0.35 });
   }
-  // On down past the zones, in the dark.
-  {
-    const [p0, p1] = [side(BOTTOM, 1), side(OY - ouroOuter - 4, 1)];
-    const d = hatchPoly([p0, [p0[0] + ROCK, p0[1]], [p1[0] + ROCK, p1[1]], p1], -45, 1.2, [starDisc, ...pipDiscs, { c: [AX, OY], r: ouroOuter + 1.6 }]);
-    shades.push({ d, tone: 'dull', delay: sweep(BOTTOM) + 0.1, t: 0.3 });
-  }
+  // The serpent's scales and plates.
+  shades.push({ d: snake.scales.map((q) => 'M' + q.map((v) => `${f(v[0])} ${f(v[1])}`).join('L')).join(''), tone: past ? 'gold' : 'dim', delay: OURO_AT + OURO_T * 0.8, t: 0.5 });
   // Sol's pointed rays, each hatched down one side.
   shades.push({ d: worn.rays, tone: 'gold', delay: 0.6, t: 0.3 });
   // The ground under the surface, in short slanting strokes.
@@ -497,13 +520,34 @@ export function descentPlate(pw: number, ph: number, deepest: number | null, liv
     return { k, c, r: R, known, delay: sweep(c[1] - R), ...(known ? { name: z.name, color: z.color, sigil: z.sigil } : { hollow: hollow(c, R - 1.9, 0.85) }) };
   });
   const names = seals.filter((s) => s.known).map((s) => ({ x: nameX(s.c[1]), y: s.c[1], text: s.name!, color: s.color!, delay: s.delay + 0.3 }));
-  const marks = seals.filter((s) => !s.known).flatMap((s) => cipher(s.k, nameX(s.c[1]), s.c[1], s.delay + 0.25));
+
+  // ---- "uncharted": the zones not reached yet, bracketed together under one quiet word, the bracket's lines stopping short of it ----
+  let uncharted: Uncharted | null = null;
+  if (reached < ZONES.length) {
+    let y0 = TOP + reached * band + 1.5;
+    // Clear of a find's leader running out along the same line, and of the star when it stands at the mouth.
+    for (const c of callouts) if (Math.abs(c.y - y0) < 3) y0 = c.y + 3.5;
+    if (!best) y0 = Math.max(y0, star[1] + GLORY + 2.5);
+    const y1 = BOTTOM - 1.5;
+    const free = (y: number) => callouts.every((c) => Math.abs(c.y - y) > 8.5);
+    const mid0 = (y0 + y1) / 2;
+    const mid = [0, 0.5, -0.5, 1, -1, 1.5, -1.5].map((k) => mid0 + k * band).find((m) => m > y0 + 4 && m < y1 - 4 && free(m)) ?? mid0;
+    const x = rockAt(mid) - 3 - 21;
+    let d = '';
+    if (y1 - y0 > 26) {
+      const tick = (yy: number) => line([x, yy], [rockAt(yy) - 2, yy]);
+      const holes: Hole[] = [{ box: [x - 22, mid - 6.5, x + 22, mid + 6.5] }, ...callouts.map((c): Hole => ({ box: [x - 1, c.y - 2.4, x + 1, c.y + 2.4] }))];
+      d = tick(y0) + tick(y1) + pen([[x, y0], [x, y1]], 'hair', 0, 1, { holes }).map((s) => s.d).join('');
+    }
+    uncharted = { d, x, y: mid, delay: sweep(y0) + 0.35 };
+  }
 
   // ---- the star, in a glory of fine rays between its points, long and short in turn ----
-  const st = star8(star, STAR_R);
+  const O: Pt = [0, 0];
+  const st = star8(O, STAR_R);
   const glory = Array.from({ length: 16 }, (_, k) => {
     const a = k * 22.5 + 11.25;
-    return line(at(star, a, STAR_R * 0.62 + 1.4), at(star, a, k % 2 ? GLORY - 2 : GLORY));
+    return line(at(O, a, STAR_R * 0.62 + 1.4), at(O, a, k % 2 ? GLORY - 2 : GLORY));
   }).join('');
 
   return {
@@ -515,9 +559,21 @@ export function descentPlate(pw: number, ph: number, deepest: number | null, liv
     seals,
     sol: { c: sol, r: SOL_R },
     names,
-    marks,
+    uncharted,
+    callouts,
     star: { c: star, r: STAR_R, gloryR: GLORY, outline: st.outline, ridges: st.ridges, hatch: st.hatch, glory, delay: STAR_AT },
-    ouro: { c: [AX, OY], lit: past, scales: worn.ouro.scales, eye: worn.ouro.eye, inner: OR - OW - 1.5, delay: OURO_AT },
+    ouro: {
+      lit: past,
+      eye: { ...snake.eye, angle: snake.eyeAngle },
+      sheen: snake.sheen.map((q) => ({ d: 'M' + q.pts.map((v) => `${f(v[0])} ${f(v[1])}`).join('L'), from: q.from })),
+      sheenLen: snake.sheenLen,
+      sheenW: SW * 2.9,
+      lines: [...snake.lines.map((l) => l.pts), ...snake.scales].map((q) => 'M' + q.map((v) => `${f(v[0])} ${f(v[1])}`).join('L')).join(''),
+      loop: loopR,
+      inner: snake.inner,
+      delay: OURO_AT,
+      done: OURO_AT + OURO_T,
+    },
     notes,
     noteX,
     bestX: Math.max(noteX, star[0] + GLORY + 2.5),

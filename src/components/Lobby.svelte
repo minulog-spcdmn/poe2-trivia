@@ -9,7 +9,7 @@
   import DelveLadder from './DelveLadder.svelte';
   import ItemGlyph from './ItemGlyph.svelte';
   import ModeIcon from './ModeIcon.svelte';
-  import { bestOf, loadRecords } from '../lib/delveRecord';
+  import { bestOf, findsMet, loadRecords } from '../lib/delveRecord';
   import { MAX_NAME, isHeldName, nameHeld, nameTooShort } from '../lib/names';
   import { inviteUrl } from '../lib/site';
   import Avatar from './Avatar.svelte';
@@ -155,6 +155,8 @@
   const bestTogether = bestOf(records, false)?.depth ?? null;
   const deepest = $derived(s.players.length < 2 ? bestAlone : local ? null : bestTogether);
   const deepestLabel = $derived(s.players.length < 2 ? 'Your deepest alone' : 'Your deepest together');
+  // The finds this browser's player has met, alone or together: the drawing of the descent marks where each first turns up.
+  const met = [...findsMet()];
 
   function setLocked(v: boolean) {
     session.dispatch({ type: 'settings', settings: { locked: v } });
@@ -369,7 +371,7 @@
           <div class="delve-cols">
             <div class="descent-col">
               <span class="label">The descent</span>
-              <DelveLadder {deepest} label={deepestLabel} />
+              <DelveLadder {deepest} label={deepestLabel} {met} />
             </div>
             <div>
               <span class="label">{FINDS_LABEL}</span>
