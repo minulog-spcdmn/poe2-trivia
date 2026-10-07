@@ -1,3 +1,8 @@
+<script lang="ts" module>
+  /** The item tooltip open now, on any player's pill: closes it at once (one shows at a time). */
+  let closeOpenTip: (() => void) | null = null;
+</script>
+
 <script lang="ts">
   // Delve: the finds a player carries beside their phial (Phial.svelte), each
   // a small engraving with its count: flares and dynamite. (Azurite Wards and
@@ -40,21 +45,38 @@
       tip.style.top = `${r.bottom + TIP_GAP}px`;
       tip.style.setProperty('--arrow-x', `${mid - left}px`);
     };
+    /** Gone at once, no fade: another item's tooltip takes its place. */
+    const close = () => {
+      clearTimeout(timer);
+      tip.classList.remove('on');
+      if (open()) tip.hidePopover();
+      if (closeOpenTip === close) closeOpenTip = null;
+    };
     const show = (e: PointerEvent) => {
       if (e.pointerType !== 'mouse') return;
       clearTimeout(timer);
+      // Moving from one item to the next swaps the tooltip outright, so the
+      // old one never fades out under the new one; only the first fades in.
+      const swap = closeOpenTip !== null && closeOpenTip !== close;
+      if (swap) closeOpenTip!();
+      closeOpenTip = close;
       if (!open()) {
         tip.showPopover();
         place();
-        // A frame shown at 0 first, so the fade has somewhere to start from.
-        requestAnimationFrame(() => requestAnimationFrame(() => tip.classList.add('on')));
+        if (swap) {
+          tip.classList.add('instant', 'on');
+          requestAnimationFrame(() => tip.classList.remove('instant'));
+        } else {
+          // A frame shown at 0 first, so the fade has somewhere to start from.
+          requestAnimationFrame(() => requestAnimationFrame(() => tip.classList.add('on')));
+        }
       } else tip.classList.add('on');
     };
     const hide = () => {
       clearTimeout(timer);
       timer = setTimeout(() => {
         tip.classList.remove('on');
-        timer = setTimeout(() => open() && tip.hidePopover(), TIP_FADE_MS);
+        timer = setTimeout(close, TIP_FADE_MS);
       }, TIP_LINGER_MS);
     };
     // The tooltip is the count's child in the DOM (if not on the screen), so
@@ -63,10 +85,9 @@
     count.addEventListener('pointerleave', hide);
     return {
       destroy() {
-        clearTimeout(timer);
         count.removeEventListener('pointerenter', show);
         count.removeEventListener('pointerleave', hide);
-        if (open()) tip.hidePopover();
+        close();
       },
     };
   }
@@ -203,6 +224,9 @@
       opacity 0.16s ease,
       transform 0.16s var(--ease-out);
     pointer-events: auto;
+  }
+  .tip:popover-open:global(.instant) {
+    transition: none;
   }
   .tip:popover-open:global(.on) {
     opacity: 1;
