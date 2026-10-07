@@ -261,8 +261,8 @@ the same thing for everyone.
     when it takes a loss.
   - Flares and dynamite stand as small counts beside the phial.
   - The reveal says what happened in a few words: "You mined an Azurite
-    Ward.", "Too slow for a ward; you mined a shard.", "Your ward
-    shattered.", "The vein caves in: two lives lost." or, on a time-out,
+    Ward.", "Too slow for a ward, but you mined a shard.", "Your ward
+    took the hit.", "The vein caves in. You lose two lives." or, on a time-out,
     "The darkness took you." Together it says who cleared it ("Ash cleared
     it.") and what it cost whom ("The darkness took Brea and Cara."),
     leaving a single lost life to the phial.
@@ -350,12 +350,12 @@ the same thing for everyone.
   (or "Deeper than ever"), with your depth, where your lives went and your
   best. Together it says "The descent ends", with the team's depth and the
   zone it reached, the whole team in the rune circle, and each player's
-  lives lost, given and brought back ("Lost 2 lives, gave one life,
-  brought back once"). The warmth dies out of the rune circle and ash
+  lives lost, given and brought back ("Lost 2 lives, gave 1 life,
+  was brought back once"). The warmth dies out of the rune circle and ash
   settles, to a slowed toll and an ember crackling out.
-- The share button copies (on a phone, shares) "I reached depth N in Delve,
-  can you beat me? poe2.quest/?delve"; together, any player of the run
-  shares the team's depth: "We reached depth N in Delve together, can you
+- The share button copies (on a phone, shares) "I reached depth N in Delve.
+  Can you beat me? poe2.quest/?delve"; together, any player of the run
+  shares the team's depth: "We reached depth N in Delve together. Can you
   beat us? poe2.quest/?delve". Someone watching has no share button.
   Opening that link, someone who has played here before (a name is saved)
   goes straight into a run alone; anyone else finds Delve chosen in the

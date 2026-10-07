@@ -25,7 +25,7 @@
     type FindStats,
   } from '../lib/codexStats';
   import { climbOf, isTogether, tallyOf, type DelveRecords } from '../lib/delveRecord';
-  import { shownDepth } from '../lib/delve';
+  import { FLARE_MS, shownDepth } from '../lib/delve';
   import { categoryIcon, itemImage } from '../lib/ui';
   import { backdropShadow } from '../lib/backdropShadow';
   import type { Item } from '../lib/game';
@@ -135,7 +135,7 @@
     if (dynamite.taken) out.push({ name: 'Dynamite Caches', value: fmt(dynamite.taken), note: [...got(dynamite.gained.dynamite, 'stick'), ...missed(dynamite, 'missed')] });
     if (blasts) out.push({ name: 'Dynamite blasts', value: fmt(blasts), note: [[0, 'questions blasted away for new ones']] });
     if (f.wardsBroke) out.push({ name: 'Lives warded', value: fmt(f.wardsBroke), note: [[0, 'a ward broke in its place']] });
-    if (f.flaresBurnt) out.push({ name: 'Flares burnt', value: fmt(f.flaresBurnt), note: [[5, 's more on the clock each']] });
+    if (f.flaresBurnt) out.push({ name: 'Flares burnt', value: fmt(f.flaresBurnt), note: [[FLARE_MS / 1000, 's more on the clock each']] });
     return out;
   }
   /** Questions dynamite blasted away in the runs of one kind the list keeps. */
@@ -285,7 +285,7 @@
             <span class="stat-label">Usual depth</span>
             <span class="stat-value">{main.median === null ? '?' : usual(shownDepth(main.median))}</span>
             <span class="stat-note"
-              >{#if main.median === null}once <span class="n">{MIN_RUNS}</span> runs {kindWord} have ended{:else}at least half your runs {kindWord} get this deep{/if}</span
+              >{#if main.median === null}shown once <span class="n">{MIN_RUNS}</span> runs {kindWord} have ended{:else}at least half your runs {kindWord} get this deep{/if}</span
             >
           </div>
           <div class="stat">
@@ -311,7 +311,7 @@
           {#if !deaths.lives}
             <p class="hint">No answer has cost you a life yet.</p>
           {:else if !deaths.categories.length}
-            <p class="hint">Once you have answered {CATEGORY_MIN} of a kind: the kinds of item that cost you the most lives.</p>
+            <p class="hint">The kinds of item that cost you the most lives show up here once you have answered {CATEGORY_MIN} of a kind.</p>
           {:else}
             <ul class="bars cats">
               {#each deaths.categories as c (c.category)}
@@ -324,8 +324,8 @@
             </ul>
             {#if worstCat}
               <p class="foot">
-                <b>{worstCat.category}</b> cost you the most for each answer: <span class="n">{worstCat.lives}</span>
-                {word(worstCat.lives, 'life', 'lives')} in <span class="n">{worstCat.n}</span> answers. Your answers alone and together, under any rules; a cave-in counts two.
+                <b>{worstCat.category}</b> cost you the most lives per answer: <span class="n">{worstCat.lives}</span>
+                in <span class="n">{worstCat.n}</span> answers. This counts your answers alone and together, under any rules. A cave-in counts as two.
               </p>
             {/if}
           {/if}
@@ -356,7 +356,7 @@
         <section class="panel" use:backdropShadow={{ fill: 'linear' }} aria-labelledby="fall-h">
           <header><h2 id="fall-h">Where you fall</h2><span class="col-label">Lives lost {kindWord}</span></header>
           {#if !risks.length}
-            <p class="hint">Once {ZONE_MIN_RUNS} runs {kindWord} reach a zone: the lives you lose there, out of the runs that got there.</p>
+            <p class="hint">Once {ZONE_MIN_RUNS} runs {kindWord} reach a zone, the lives you lose there show up here.</p>
           {:else}
             <ul class="bars">
               {#each risks.slice(0, ZONES_SHOWN) as z (z.k)}
@@ -370,7 +370,7 @@
             <p class="foot">
               {#if worstZone}Most lives go in <b>{worstZone.name}</b>: <span class="n">{worstZone.lives}</span> lost in the
                 <span class="n">{worstZone.reached}</span> {word(worstZone.reached, 'run')} that got there.{/if}
-              Your runs {kindWord}; a zone shows once <span class="n">{ZONE_MIN_RUNS}</span> of them reach it{risks.length > ZONES_SHOWN ? `, the ${ZONES_SHOWN} highest here` : ''}.
+              From your runs {kindWord}. A zone shows once <span class="n">{ZONE_MIN_RUNS}</span> of them reach it{risks.length > ZONES_SHOWN ? `, and only the ${ZONES_SHOWN} highest are listed` : ''}.
             </p>
           {/if}
         </section>

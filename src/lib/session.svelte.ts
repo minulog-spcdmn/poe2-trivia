@@ -953,9 +953,9 @@ class Session {
     if (this.reaskFails.turn !== turn) this.reaskFails = { turn, n: 0 };
     const n = this.reaskFails.n++;
     const wait = reaskDelay(n);
-    if (n === 1) this.flash('The art for this question keeps failing to load; trying another.', 'warn', { title: 'Art missing' });
+    if (n === 1) this.flash("The art keeps failing to load, so we're trying another question.", 'warn', { title: 'Art missing' });
     if (wait === null) {
-      this.flash("The art won't load. Check your connection, then ask another question; nothing is lost meanwhile.", 'warn', { title: 'Art missing' });
+      this.flash("The art won't load. Check your connection, then ask for another question. Nothing is lost while you wait.", 'warn', { title: 'Art missing' });
       return;
     }
     this.mediaTimers.push(
@@ -1727,7 +1727,7 @@ class Session {
     const mine = !!me && n.playerId === me;
     switch (n.kind) {
       case 'setAside':
-        this.flash(`The host reloaded; it cost ${n.playerId ? 'nothing' : 'nobody anything'}.`, 'info', { title: 'Question set aside', ...(who ? { who } : {}) });
+        this.flash(`The host reloaded, so ${n.playerId ? 'it cost nothing' : 'nobody lost anything'}.`, 'info', { title: 'Question set aside', ...(who ? { who } : {}) });
         break;
       case 'struck':
         // What it cost them, their phial shows; a blast's loss is said too.
@@ -2097,7 +2097,7 @@ function soloHotSeat(s: GameState): GameState {
   if (!s.delve || s.hostId !== null || !isGroupRun(s) || s.phase === 'lobby' || s.phase === 'over') return s;
   try {
     const lobby = engine.apply(s, { type: 'restart' }, null);
-    toasts.show('Delve together is now played online, in a room; on one device it is a run alone.', 'info', { title: 'Run not resumed' });
+    toasts.show('Delve together is now played online in a room. On one device, Delve is for one player.', 'info', { title: 'Run not resumed' });
     return lobby;
   } catch {
     return createGame(null);

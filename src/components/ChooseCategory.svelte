@@ -75,7 +75,6 @@
   /** Delve together: whether anyone standing holds a flare or dynamite (they stay unused on a find's question). */
   const itemsHeld = $derived(coop && (holdersOf(s, 'flares').length > 0 || holdersOf(s, 'dynamite').length > 0));
 
-  const cap = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
   /** A card's votes in words, for screen readers. */
   function voteWords(cat: string) {
     const n = votersOf(cat).length;
@@ -493,10 +492,10 @@
         {#if anyVote && waitingFor.length}
           <span>Waiting for {namesOf(waitingFor, nameOf, me)}</span>
         {:else if !anyVote}
-          <span class="muted">Each vote is a ticket in the draw; the cards wait for the first one.</span>
+          <span class="muted">Each vote is a ticket in the draw. The clock starts at the first vote.</span>
         {/if}
         {#if idle.length}
-          <span class="idle">{cap(namesOf(idle, nameOf, me))} {idle.length > 1 || idle[0] === me ? 'are' : 'is'} idle, not waited for</span>
+          <span class="idle">Not waiting for {namesOf(idle, nameOf, me)} (idle)</span>
         {/if}
       </span>
     </p>

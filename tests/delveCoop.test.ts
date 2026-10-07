@@ -701,7 +701,7 @@ test('a standing player with two lives or more can bring back a perished teammat
   h.pickAs('p2', right(q));
   assert.equal(h.s.reveal!.winnerId, 'p2');
   // Alone there is nobody to revive.
-  assert.equal(reviveProblem(team(1).s, 'p0', 'p0'), 'Only a run together has revives.');
+  assert.equal(reviveProblem(team(1).s, 'p0', 'p0'), 'Lives can only be given in a run together.');
 });
 
 test('lives stay consistent through revives: lost, given and received, and a second perish', () => {

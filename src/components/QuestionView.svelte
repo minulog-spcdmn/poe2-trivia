@@ -87,7 +87,7 @@
     if (got === 'wards' && reveal?.forged) return { glyph: 'ward', text: `${gainYou ? 'Your' : `${gainName}'s`} two shards forged an Azurite Ward.` };
     if (got === 'wards') return { glyph: 'ward', text: `${who} mined an Azurite Ward.` };
     if (got === 'shards')
-      return { glyph: 'shard', text: q.find === 'azurite' ? `Too slow for a ward; ${gainYou ? 'you' : gainName} mined a shard.` : `${who} found an azurite shard.` };
+      return { glyph: 'shard', text: q.find === 'azurite' ? `Too slow for a ward, but ${gainYou ? 'you' : gainName} mined a shard.` : `${who} found an azurite shard.` };
     if (got === 'flares') return { glyph: 'flare', text: `${who} found a flare.` };
     return { glyph: 'dynamite', text: `${who} found a stick of dynamite.` };
   });
@@ -741,13 +741,13 @@
               >
             {/if}
             {#if reveal.timedOut}The darkness took {whom}.{/if}
-            The vein caves in{you ? '' : ` on ${active.name}`}:
+            The vein caves in{you ? '' : ` on ${active.name}`}.
             {#if reveal.lost.wards >= 2}
-              <span class="held">two wards took both hits.</span>
+              <span class="held">{wardText(you ? 'your' : `${active.name}'s`, 2)}</span>
             {:else if reveal.lost.wards === 1}
-              a ward and a life lost.
+              {who} {you ? 'lose' : 'loses'} a ward and a life.
             {:else}
-              two lives lost.
+              {who} {you ? 'lose' : 'loses'} two lives.
             {/if}
           {:else if reveal.warded}
             <!-- The ward that took the loss: a crystal splitting along its crack. -->
@@ -852,7 +852,7 @@
   {:else if race && myMiss}
     <p class="spectate out">Wrong: −1. You're out until the next question.</p>
   {:else if race}
-    <p class="spectate muted">First correct answer wins. Wrong costs a point!<span class="keys">{' '}Press 1–{count === 10 ? '9 and 0' : count}.</span></p>
+    <p class="spectate muted">First right answer wins. A wrong one costs a point!<span class="keys">{' '}Press 1–{count === 10 ? '9 and 0' : count}.</span></p>
   {:else if !mine}
     <p class="spectate muted">{active.name} is deciding…</p>
   {:else}
@@ -905,7 +905,7 @@
             bind:this={optionEls[i]}
             class:mine
             class:struck={struckAt.has(i)}
-            aria-label={struckAt.has(i) ? `Option ${i + 1}, struck by ${struckBy(i)}` : undefined}
+            aria-label={struckAt.has(i) ? `Option ${i + 1}, crossed out: ${struckBy(i)} picked it and it's wrong` : undefined}
             disabled={!mine || !!reveal || chosen !== null || waiting || struckAt.has(i)}
             onclick={() => answer(i)}
             onpointermove={glare}
@@ -1033,7 +1033,7 @@
             class:mine
             class:fake={fake(i)}
             class:struck={struckAt.has(i)}
-            title={fake(i) ? 'Not a real item' : struckAt.has(i) ? `Struck by ${struckBy(i)}: wrong` : undefined}
+            title={fake(i) ? 'Not a real item' : struckAt.has(i) ? `Wrong: ${struckBy(i)} picked it` : undefined}
             disabled={!mine || !!reveal || chosen !== null || waiting || struckAt.has(i)}
             onclick={() => answer(i)}
             onpointermove={glare}

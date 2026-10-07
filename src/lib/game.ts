@@ -1179,7 +1179,7 @@ export class Engine {
         if (s.players.length === 0) throw new ActionError('Add at least one player.');
         // Delve together is co-op, played online: on one device it's a run alone (the lobby says so too).
         if (s.settings.mode === 'delve' && s.hostId === null && s.players.length > 1)
-          throw new ActionError('Delve together is played online; on one device, Delve is a run alone.');
+          throw new ActionError('Delve together is played online. On one device, Delve is for one player.');
         s.players = shuffle(s.players, this.rng);
         for (const p of s.players) {
           p.score = 0;
@@ -1219,7 +1219,7 @@ export class Engine {
         // Co-op: the team votes (a trusted pick, the host's own tooling, settles the vote at once).
         const coop = !!s.delve && isGroupRun(s);
         if (coop && from !== null) throw new ActionError('Vote for a card instead.');
-        if (s.phase !== 'choosing') throw new ActionError('Not the time to pick a category.');
+        if (s.phase !== 'choosing') throw new ActionError("It's not time to pick a category.");
         if (!isActive) throw new ActionError("It's not your turn.");
         if (!s.offered.includes(action.category)) throw new ActionError('That category is not on offer.');
         if (coop) this.closeVote(s, action.category);
@@ -1232,7 +1232,7 @@ export class Engine {
         if (from === null || !s.players.some((p) => p.id === from)) throw new ActionError('You are not in this game.');
         // A vote that crossed its close on the way is dropped quietly.
         if (s.phase !== 'choosing') throw new ActionError('Too late!', true);
-        if (livesOf(s, from) <= 0) throw new ActionError('Only those still standing vote.');
+        if (livesOf(s, from) <= 0) throw new ActionError('Only players still standing can vote.');
         if (typeof action.category !== 'string' || !s.offered.includes(action.category)) throw new ActionError('That category is not on offer.');
         (dm.votes ??= {})[from] = action.category;
         dm.voteFrom ??= this.now();
@@ -1387,7 +1387,7 @@ export class Engine {
       }
       case 'skip': {
         // A skipped turn would cost a life, so nobody decides that by hand (the host's own id included).
-        if (s.delve) throw new ActionError('Delve has no skipping.');
+        if (s.delve) throw new ActionError("Turns can't be skipped in Delve.");
         if (!isHost) throw new ActionError('Only the host can skip a turn.');
         if (s.phase !== 'choosing' && s.phase !== 'question') throw new ActionError('Nothing to skip.');
         if (race) this.advanceRace(s);
@@ -1991,7 +1991,7 @@ export class Engine {
     // A flare still to burn at 0 (its timer came late): time hasn't run out yet.
     let flareDue = teamItemReady(s, 'flares') && now >= q.deadline;
     if (from === null) {
-      if (action.index !== null) throw new ActionError('Only players answer together.');
+      if (action.index !== null) throw new ActionError('Only players can answer.');
       if (flareDue) {
         this.burnFlare(s, this.anyHolder(s, 'flares'));
         return;
@@ -2011,7 +2011,7 @@ export class Engine {
       return;
     }
     if (!s.players.some((p) => p.id === from)) throw new ActionError('You are not in this game.');
-    if (livesOf(s, from) <= 0) throw new ActionError('Only those still standing answer.');
+    if (livesOf(s, from) <= 0) throw new ActionError('Only players still standing can answer.');
     const struck = (q.struck ??= []);
     if (struck.some((x) => x.by === from)) throw new ActionError('You already answered.', true);
     const index = validIndex(action.index, q.options.length);

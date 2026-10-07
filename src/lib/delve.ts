@@ -812,7 +812,7 @@ export function blastProblem(s: GameState, by: string | null): string | null {
   if (blastsLeft(s) === 0) return 'No more blasts at this depth.';
   if (isGroupRun(s)) {
     if (by !== null && !seated(s, by)) return 'You are not in this game.';
-    if (by !== null && livesOf(s, by) <= 0) return 'Only those still standing use it.';
+    if (by !== null && livesOf(s, by) <= 0) return 'Only players still standing can use it.';
     if (by !== null && q.struck?.some((x) => x.by === by)) return 'You already answered.';
     return holdersOf(s, 'dynamite').length ? null : 'Nobody has dynamite.';
   }
@@ -855,8 +855,8 @@ export function fuseLeft(q: Pick<Question, 'fuse'> | null | undefined, now: numb
  * REVIVE_FROM lives or more, for a teammate who perished.
  */
 export function reviveProblem(s: GameState, by: string, to: string): string | null {
-  if (!s.delve || !isGroupRun(s)) return 'Only a run together has revives.';
-  if (s.phase !== 'choosing' && s.phase !== 'reveal') return 'Not during a question.';
+  if (!s.delve || !isGroupRun(s)) return 'Lives can only be given in a run together.';
+  if (s.phase !== 'choosing' && s.phase !== 'reveal') return 'Wait until the question is over.';
   if (!seated(s, by)) return 'You are not in this run.';
   if (to === by) return 'Only a teammate can give you a life.';
   if (!seated(s, to)) return 'They are not in this run.';

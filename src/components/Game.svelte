@@ -371,7 +371,7 @@
 
         {#if myFall !== null}
           <p class="delve-line muted">
-            You perished; watching.{#if canBeRevived}{' '}A teammate can give you a life between questions.{/if}
+            You perished and are now watching.{#if canBeRevived}{' '}A teammate can give you a life between questions.{/if}
           </p>
         {:else if revivable.length && (s.phase === 'choosing' || s.phase === 'reveal')}
           <p class="delve-line revive-hint" transition:fade>

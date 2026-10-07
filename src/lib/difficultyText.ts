@@ -63,7 +63,7 @@ export function describe(settings: Pick<Settings, 'difficulty'> & Partial<Settin
   // race, so in take turns its description still says what race adds.
   const raceOnly = !custom && settings.mode !== 'race';
   const veil = raceOnly ? knobsOf({ ...settings, mode: 'race' }).veil : k.veil;
-  if (veil !== 'off' && art !== 'Always') lines.push(`${raceOnly ? 'In race, the' : 'The'} art to name burns in ${VEIL_PACE[veil]}.`);
+  if (veil !== 'off' && art !== 'Always') lines.push(`${raceOnly ? 'In race, the' : 'The'} art you name burns into view ${VEIL_PACE[veil]}.`);
 
   if (k.grayscale === 'all') lines.push('All art is in grayscale.');
 
@@ -182,8 +182,8 @@ function riskOf(kind: FindKind): string | null {
 function does(kind: FindKind, team = false): string {
   switch (kind) {
     case 'azurite':
-      // After the tagline's "Answer in the first half for a ward".
-      return 'later, a shard; two make a ward';
+      // After the tagline's "Answer within half the time for a ward".
+      return 'a later answer gets a shard (two make a ward)';
     case 'flare':
       return `it adds ${words(FLARE_MS / 1000)} seconds${team ? ' for everyone' : ''} when ${team ? '' : 'your '}time runs out`;
     case 'dynamite':
@@ -191,7 +191,7 @@ function does(kind: FindKind, team = false): string {
   }
 }
 
-/** A short line: what the item does, then what the find risks ("Later, a shard; two make a ward. A miss costs two lives."). */
+/** A short line: what the item does, then what the find risks ("A later answer gets a shard (two make a ward). A miss costs two lives."). */
 const noteLine = (lead: string, kind: FindKind) => `${cap(lead)}.${FIND_MISS[kind] ? ` ${cap(FIND_MISS[kind])}.` : ''}`;
 
 /** The finds' heading in the lobby's rules (where they start, the descent beside it says). */
@@ -204,7 +204,7 @@ export const FINDS_LABEL = 'Finds • harder questions';
  */
 export const FIND_RULES: Record<FindKind, { gives: string; miss: string }> = {
   azurite: {
-    gives: 'A ward takes a lost life for you. Answer in the first half for a ward; later, a shard: two shards make a ward.',
+    gives: 'A ward takes a lost life for you. Answer within half the time for a ward, or later for a shard. Two shards make a ward.',
     miss: `${cap(FIND_MISS.azurite ?? '')}.`,
   },
   flare: {
@@ -224,7 +224,7 @@ export const ITEM_TIPS = {
 } as const;
 
 /** Under the finds in the lobby's rules: why flares and dynamite never work on a find's question. */
-export const FINDS_UNSAFE = "Finds lie down dangerous routes, with thicker walls and a darkness nothing can hold back, so flares and dynamite don't work on them.";
+export const FINDS_UNSAFE = "Flares and dynamite don't work on finds. Their walls are too thick and their darkness too deep.";
 
 /** A find's cave-in mark, in words for those who can't see it: "A wrong answer loses two lives". */
 export const caveInLabel = (kind: FindKind) => `A wrong answer loses ${caveInText(kind)}`;
@@ -239,7 +239,7 @@ export const HARDER_LABEL = 'A harder question';
  * depth it asks, nor that it is harder (its card's mark says so).
  */
 export const FIND_TEXT: Record<FindKind, { name: string; tag: string; others: string }> = {
-  azurite: { name: 'Azurite Vein', tag: 'Answer in the first half for a ward', others: `An answer in the first half wins a ward. ${noteLine(does('azurite'), 'azurite')}` },
+  azurite: { name: 'Azurite Vein', tag: 'Answer within half the time for a ward', others: `An answer within half the time wins a ward. ${noteLine(does('azurite'), 'azurite')}` },
   flare: { name: 'Flare Cache', tag: 'Answer right for a flare', others: `A right answer wins a flare. ${noteLine(does('flare'), 'flare')}` },
   dynamite: { name: 'Dynamite Cache', tag: 'Answer right for dynamite', others: `A right answer wins dynamite. ${noteLine(does('dynamite'), 'dynamite')}` },
 };
@@ -428,9 +428,9 @@ function clearedText(winner: string, gain: GainText | undefined, nameOf: (id: st
  * cave-in, perishing; and what a Dynamite Cache's blast destroyed.
  */
 export function coopMissText(hit: { lives: number; wards: number; blown?: ItemKind }, left: number, caveIn: boolean): string {
-  if (left === 0) return 'You perished; your team can still clear it.';
-  if (caveIn) return 'Wrong; the vein caved in.';
-  const took = hit.lives === 0 ? 'Wrong; your ward took the hit.' : 'Wrong.';
+  if (left === 0) return 'You perished, but your team can still clear it.';
+  if (caveIn) return 'Wrong, and the vein caved in.';
+  const took = hit.lives === 0 ? 'Wrong, but your ward took the hit.' : 'Wrong.';
   return hit.blown ? `${took} ${blownText(hit.blown, 'your')}` : took;
 }
 
@@ -457,8 +457,8 @@ const times = (n: number) => (n === 1 ? 'once' : n === 2 ? 'twice' : `${n} times
 /** Co-op end screen: what a delver lost, gave and was given, in a line. */
 export function delverText(row: { losses: number[]; given: number; revived: number }): string {
   const n = row.losses.length;
-  const parts = [n ? `Lost ${n} ${n === 1 ? 'life' : 'lives'}` : 'No life lost'];
+  const parts = [n ? `Lost ${n} ${n === 1 ? 'life' : 'lives'}` : 'Lost no lives'];
   if (row.given) parts.push(`gave ${row.given} ${row.given === 1 ? 'life' : 'lives'}`);
-  if (row.revived) parts.push(`brought back ${times(row.revived)}`);
+  if (row.revived) parts.push(`was brought back ${times(row.revived)}`);
   return parts.join(', ');
 }

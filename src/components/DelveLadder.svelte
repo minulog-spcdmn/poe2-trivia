@@ -37,15 +37,15 @@
   const words = (n: number) => ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'][n] ?? String(n);
   const summary = $derived(
     [
-      `The descent: ten zones of ten depths, then on for ever.`,
-      `${LIVES[0].toUpperCase() + LIVES.slice(1)} lives; finds turn up from depth ${shownDepth(FINDS_FROM)}; the deeper, the less time and the trickier the questions.`,
+      `The descent: ten zones of ten depths, then it goes on forever.`,
+      `You have ${LIVES} lives. Finds turn up from depth ${shownDepth(FINDS_FROM)}. The deeper you go, the less time you get and the trickier the questions.`,
       reached === 0
         ? 'All ten zones are uncharted.'
         : reached === ZONES.length
           ? `Zones reached: all ten, ${ZONES.map((z) => z.name).join(', ')}.`
           : `Zones reached: ${ZONES.slice(0, reached)
               .map((z) => z.name)
-              .join(', ')}; ${words(ZONES.length - reached)} more uncharted.`,
+              .join(', ')}. ${ZONES.length - reached === 1 ? 'The last one is' : `The other ${words(ZONES.length - reached)} are`} uncharted.`,
       best ? `${label}: depth ${shownDepth(best)}.` : '',
     ]
       .filter(Boolean)

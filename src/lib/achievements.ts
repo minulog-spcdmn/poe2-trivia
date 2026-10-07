@@ -40,7 +40,7 @@ export type AchievementGroup = 'knowledge' | 'versus' | 'delve' | 'together';
 
 export const GROUPS: { key: AchievementGroup; title: string; blurb: string }[] = [
   { key: 'knowledge', title: 'Knowledge', blurb: 'The items you know, from your own answers.' },
-  { key: 'versus', title: 'Versus', blurb: 'Games online against other players, to 5 points or more, with a rival still there at the end.' },
+  { key: 'versus', title: 'Versus', blurb: 'Online games against other players, played to 5 points or more, with a rival still there at the end.' },
   { key: 'delve', title: 'Delve', blurb: 'Runs into the dark.' },
   { key: 'together', title: 'Together', blurb: 'Delve runs with others online, and the lives you share.' },
 ];
@@ -204,7 +204,7 @@ export const ACHIEVEMENTS: Achievement[] = [
   { id: 'fooled-twice', group: 'knowledge', tier: 1, sign: 'luna', secret: true, title: 'Fool Me Twice', text: 'Fall for the same made-up name a second time.', progress: (s) => count(s.fooled, 2) },
 
   // ---- versus ----
-  { id: 'deathmatch', group: 'versus', tier: 1, sign: 'mars', title: 'Sudden Death', text: 'Win a deathmatch, answering its last round right as a rival gets it wrong.' },
+  { id: 'deathmatch', group: 'versus', tier: 1, sign: 'mars', title: 'Sudden Death', text: 'Win a deathmatch by answering its last round right while a rival gets it wrong.' },
   { id: 'tide-turner', group: 'versus', tier: 2, sign: 'waves', title: 'Tide Turner', text: `Win a game after a rival led you by ${COMEBACK} points or more, with them still there at the end.` },
   { id: 'untarnished', group: 'versus', tier: 2, sign: 'sol', series: 'perfect', title: 'Untarnished', text: `Win a game to ${TARGET_HIGH} points or more without a wrong answer.` },
   {
@@ -223,7 +223,7 @@ export const ACHIEVEMENTS: Achievement[] = [
     tier: 3,
     sign: 'eye',
     title: 'Through the Veil',
-    text: `Win a race without a wrong guess, taking ${VEIL_TAKES} questions of ${VEIL_OPTIONS} or more options before a quarter of their art had burned in.`,
+    text: `Win a race without a wrong guess, taking ${VEIL_TAKES} questions with ${VEIL_OPTIONS} or more options before a quarter of their art has burned in.`,
   },
 
   // ---- delve ----
@@ -244,7 +244,7 @@ export const ACHIEVEMENTS: Achievement[] = [
     tier: 2,
     sign: 'hourglass',
     title: 'By a Thread',
-    text: `Survive ${THREAD} depths in a row on your last life, all past depth ${THREAD_FROM}, in a run alone.`,
+    text: `In a run alone, survive ${THREAD} depths in a row on your last life, all past depth ${THREAD_FROM}.`,
     progress: (s) => count(s.thread, THREAD),
   },
   { id: 'saving-grace', group: 'delve', tier: 1, sign: 'cross', title: 'Saving Grace', text: 'Have an Azurite Ward shatter in place of your last life.' },
@@ -255,18 +255,18 @@ export const ACHIEVEMENTS: Achievement[] = [
     sign: 'saturn',
     secret: true,
     title: 'Familiar Grave',
-    text: `Fall in a run alone at exactly the depth of your best, ${DEPTH_GRAVE} or deeper.`,
+    text: `In a run alone, perish at exactly your best depth, when that is ${DEPTH_GRAVE} or deeper.`,
   },
 
   // ---- together ----
-  { id: 'selfless', group: 'together', tier: 2, sign: 'pelican', title: 'Selfless', text: 'Give away two of your own lives to bring teammates back, in one run.', progress: (s) => count(s.given, 2) },
+  { id: 'selfless', group: 'together', tier: 2, sign: 'pelican', title: 'Selfless', text: 'Give away two of your own lives in one run to bring teammates back.', progress: (s) => count(s.given, 2) },
   {
     id: 'elimination',
     group: 'together',
     tier: 1,
     sign: 'sublimation',
     title: 'Process of Elimination',
-    text: `Clear a depth that every other teammate still standing, two or more, got wrong, with ${OPEN_OPTIONS} or more options still open.`,
+    text: `Clear a depth after every other teammate still standing (two or more) got it wrong, with ${OPEN_OPTIONS} or more options still open.`,
   },
   {
     id: 'fell-as-one',
@@ -275,7 +275,7 @@ export const ACHIEVEMENTS: Achievement[] = [
     sign: 'pisces',
     secret: true,
     title: 'Fell as One',
-    text: `Perish on the same question as every teammate still standing, ${FALL_MANY} or more of you, at depth ${FALL_DEPTH} or deeper.`,
+    text: `Perish on the same question as every teammate still standing (${FALL_MANY} or more of you), at depth ${FALL_DEPTH} or deeper.`,
   },
   {
     id: 'lone-wolf',
@@ -291,7 +291,7 @@ export const ACHIEVEMENTS: Achievement[] = [
     tier: 2,
     sign: 'rings',
     title: 'Nobody Left Behind',
-    text: `Reach depth ${ALL_DEPTH} in a run together with the whole team, none of you ever perishing.`,
+    text: `Reach depth ${ALL_DEPTH} in a run together without any of you ever perishing.`,
   },
   {
     id: 'deep-company',
@@ -299,7 +299,7 @@ export const ACHIEVEMENTS: Achievement[] = [
     tier: 3,
     sign: 'heptagram',
     title: 'Deep Company',
-    text: `Reach depth ${COMPANY_DEPTH} still standing, in a run together.`,
+    text: `Reach depth ${COMPANY_DEPTH} in a run together while still standing.`,
     progress: (s) => count(s.deepCompany, COMPANY_DEPTH),
   },
 ];

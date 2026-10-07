@@ -198,7 +198,7 @@ test('no deathmatch and no target: a run only ends when the lives do', () => {
 
 test('nobody skips a turn in Delve, the host included', () => {
   const h = delve(['Ash', 'Brea']);
-  for (const from of ['p0', 'p1', null]) assert.throws(() => h.act({ type: 'skip' }, from), /no skipping/);
+  for (const from of ['p0', 'p1', null]) assert.throws(() => h.act({ type: 'skip' }, from), /can't be skipped/);
 });
 
 test('nothing is ever picked for anyone: the cards wait for as long as it takes', () => {

@@ -468,12 +468,12 @@
         <div class="setting together">
           <span class="label">Together</span>
           {#if !together}
-            <p class="together-when muted">Once a second exile joins this room.</p>
+            <p class="together-when muted">Once a second exile joins this room:</p>
           {/if}
           <ul class="rules coop">
-            <li>Vote for a card; the draw picks one.</li>
-            <li>Everyone answers at once; a wrong pick crosses that answer out for all.</li>
-            <li>Out of lives? A teammate can give you one; the run ends when all have perished.</li>
+            <li>Vote for a card, then one is drawn from the votes.</li>
+            <li>Everyone answers at once. A wrong answer is crossed out for everyone.</li>
+            <li>Out of lives? A teammate can give you one. The run ends when everyone has perished.</li>
           </ul>
         </div>
       {/if}
@@ -482,7 +482,7 @@
         {#if isHost}
           <button class="btn primary big" disabled={!canStart} onclick={start}>{delve ? 'Begin the descent' : 'Begin the hunt'}</button>
           {#if delveCrowded}
-            <p class="muted crowded">Delve on one device is for one player: remove the others, or host a room.</p>
+            <p class="muted crowded">Delve on one device is for one player. Remove the others, or host a room.</p>
           {/if}
         {:else}
           <p class="muted waiting"><span class="pulse"></span>Waiting for the host to start…</p>

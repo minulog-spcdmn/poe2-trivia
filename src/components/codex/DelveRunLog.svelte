@@ -102,10 +102,10 @@
           <tr class="group">
             <td colspan="4">
               {#if g.ruleset === null}
-                Rules changed mid-run<small>: resumed by a build with other rules, never counted</small>
+                Rules changed mid-run<small>: resumed after an update, so never counted</small>
               {:else}
                 Other rules<small
-                  >: never compared with today's{#if g.solo !== null}{' • '}deepest alone <span class="n">{shownDepth(g.solo)}</span>{/if}{#if g.together !== null}{' • '}together <span
+                  >: kept apart from today's{#if g.solo !== null}{' • '}deepest alone <span class="n">{shownDepth(g.solo)}</span>{/if}{#if g.together !== null}{' • '}together <span
                       class="n">{shownDepth(g.together)}</span
                     >{/if}</small
                 >

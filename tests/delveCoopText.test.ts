@@ -97,10 +97,10 @@ test("a Dynamite Cache's blast says what it destroyed of each pack, after the lo
 test('your own wrong answer, while the team answers on', () => {
   assert.equal(coopMissText({ lives: 1, wards: 0 }, 2, false), 'Wrong.');
   assert.equal(coopMissText({ lives: 1, wards: 0, blown: 'flares' }, 2, false), 'Wrong. The blast destroyed your flare.');
-  assert.equal(coopMissText({ lives: 0, wards: 1, blown: 'dynamite' }, 3, false), 'Wrong; your ward took the hit. The blast destroyed your dynamite.');
-  assert.equal(coopMissText({ lives: 0, wards: 1 }, 3, false), 'Wrong; your ward took the hit.');
-  assert.equal(coopMissText({ lives: 2, wards: 0 }, 1, true), 'Wrong; the vein caved in.');
-  assert.equal(coopMissText({ lives: 1, wards: 0 }, 0, false), 'You perished; your team can still clear it.');
+  assert.equal(coopMissText({ lives: 0, wards: 1, blown: 'dynamite' }, 3, false), 'Wrong, but your ward took the hit. The blast destroyed your dynamite.');
+  assert.equal(coopMissText({ lives: 0, wards: 1 }, 3, false), 'Wrong, but your ward took the hit.');
+  assert.equal(coopMissText({ lives: 2, wards: 0 }, 1, true), 'Wrong, and the vein caved in.');
+  assert.equal(coopMissText({ lives: 1, wards: 0 }, 0, false), 'You perished, but your team can still clear it.');
 });
 
 test("a find's note for the team says what it does for all, and what stays unused", () => {
@@ -114,6 +114,6 @@ test('the end screen: lives lost at a cave-in counted once, and what each delver
   assert.equal(lossDepths([3, 8, 10]), 'depths 2, 7 and 9');
   assert.equal(lossDepths([6, 6]), 'depth 5 (two lives)');
   assert.equal(lossDepths([1, 11]), 'depths 0 and 10');
-  assert.equal(delverText({ losses: [1, 4, 4, 9], given: 1, revived: 2 }), 'Lost 4 lives, gave 1 life, brought back twice');
-  assert.equal(delverText({ losses: [], given: 2, revived: 0 }), 'No life lost, gave 2 lives');
+  assert.equal(delverText({ losses: [1, 4, 4, 9], given: 1, revived: 2 }), 'Lost 4 lives, gave 1 life, was brought back twice');
+  assert.equal(delverText({ losses: [], given: 2, revived: 0 }), 'Lost no lives, gave 2 lives');
 });

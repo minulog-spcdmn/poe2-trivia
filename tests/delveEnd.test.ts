@@ -20,13 +20,13 @@ test('a run that perished sounds low and slow, and is no victory', () => {
 });
 
 test('the shared depth is a dare, with the site', () => {
-  assert.equal(shareText(24), 'I reached depth 23 in Delve, can you beat me? poe2.quest/?delve');
-  assert.equal(shareText(41, true), 'We reached depth 40 in Delve together, can you beat us? poe2.quest/?delve');
+  assert.equal(shareText(24), 'I reached depth 23 in Delve. Can you beat me? poe2.quest/?delve');
+  assert.equal(shareText(41, true), 'We reached depth 40 in Delve together. Can you beat us? poe2.quest/?delve');
   // From the beta, the beta's link: the dare plays the same build.
-  assert.equal(shareText(24, false, 'https://poe2.quest/beta/'), 'I reached depth 23 in Delve, can you beat me? poe2.quest/beta/?delve');
+  assert.equal(shareText(24, false, 'https://poe2.quest/beta/'), 'I reached depth 23 in Delve. Can you beat me? poe2.quest/beta/?delve');
   // A zone's first depth reads round; the first endless depth reads 100; a run that fell at once, 0.
-  assert.equal(shareText(11), 'I reached depth 10 in Delve, can you beat me? poe2.quest/?delve');
-  assert.equal(shareText(101, true), 'We reached depth 100 in Delve together, can you beat us? poe2.quest/?delve');
-  assert.equal(shareText(1), 'I reached depth 0 in Delve, can you beat me? poe2.quest/?delve');
+  assert.equal(shareText(11), 'I reached depth 10 in Delve. Can you beat me? poe2.quest/?delve');
+  assert.equal(shareText(101, true), 'We reached depth 100 in Delve together. Can you beat us? poe2.quest/?delve');
+  assert.equal(shareText(1), 'I reached depth 0 in Delve. Can you beat me? poe2.quest/?delve');
   assert.equal(delveLink('https://poe2.quest/beta/'), 'poe2.quest/beta/?delve');
 });

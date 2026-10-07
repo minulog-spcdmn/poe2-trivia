@@ -17,5 +17,5 @@ export function delveLink(base = PLAY_URL) {
  */
 export const shareText = (depth: number, together = false, base = PLAY_URL) =>
   together
-    ? `We reached depth ${shownDepth(depth)} in Delve together, can you beat us? ${delveLink(base)}`
-    : `I reached depth ${shownDepth(depth)} in Delve, can you beat me? ${delveLink(base)}`;
+    ? `We reached depth ${shownDepth(depth)} in Delve together. Can you beat us? ${delveLink(base)}`
+    : `I reached depth ${shownDepth(depth)} in Delve. Can you beat me? ${delveLink(base)}`;

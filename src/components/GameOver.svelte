@@ -73,7 +73,7 @@
     if (!r || run!.mixed) return '';
     const kind = solo ? '' : ' together';
     if (!r.best) return r.previousBest === null ? '' : ` Your best${kind} is depth ${shownDepth(r.previousBest)}.`;
-    return r.previousBest === null ? ` Your first descent${kind}.` : ` The last best${kind} was ${shownDepth(r.previousBest)}.`;
+    return r.previousBest === null ? ` Your first descent${kind}.` : ` Your previous best${kind} was ${shownDepth(r.previousBest)}.`;
   });
   /** Delve: what the depth means, and how a tie was settled. */
   const delveSub = $derived.by(() => {
@@ -84,9 +84,8 @@
     if (solo) return ((row.losses.length ? `Lives lost at ${lossDepths(row.losses)}.` : '') + record).trim();
     // Together: the team's depth is the result (the headline), nobody wins.
     const given = team?.revives.length ?? 0;
-    const parts = [team?.perished ? 'Perished together' : '', given ? `${given === 1 ? 'one life' : `${given} lives`} passed between you` : ''].filter(Boolean);
-    const line = parts.join('; ');
-    return ((line ? `${line[0].toUpperCase()}${line.slice(1)}.` : '') + record).trim();
+    const parts = [team?.perished ? 'You perished together.' : '', given ? `${given === 1 ? 'One life was' : `${given} lives were`} passed between you.` : ''].filter(Boolean);
+    return (parts.join(' ') + record).trim();
   });
   /** Delve together: the zone the team reached, in its colour. */
   const zone = $derived(team ? { name: zoneAt(team.depth), accent: accentAt(team.depth) } : null);
