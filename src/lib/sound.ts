@@ -443,11 +443,9 @@ const lastPlayed = new Map<Sfx, number>();
  * like a fuse's hiss when its dynamite goes off or is snuffed. Calling it
  * after the sound has ended, or twice, does nothing. Returns undefined when
  * nothing played (muted, out of sight, too soon after the last, or before
- * the first click). `nudge` shifts this one playing: its pitch (a factor)
- * and its gain (dB), on top of the moment's own random nudge (the draw's
- * ticks fall in pitch as the light slows).
+ * the first click).
  */
-export function sfx(name: Sfx, nudge?: { pitch?: number; gain?: number }): (() => void) | undefined {
+export function sfx(name: Sfx): (() => void) | undefined {
   // Out of sight (a co-op tab in the background) nothing plays: a sound
   // would wake the audio context that rest() put to sleep, and keep it running.
   if (muted || (typeof document !== 'undefined' && document.hidden)) return undefined;
@@ -461,8 +459,8 @@ export function sfx(name: Sfx, nudge?: { pitch?: number; gain?: number }): (() =
   if (!b) return undefined;
   const m = MOMENTS[name];
   // One random nudge for the whole moment, so its layers stay together.
-  const pitch = (1 + (Math.random() * 2 - 1) * m.varyPitch) * (nudge?.pitch ?? 1);
-  const gainDb = (Math.random() * 2 - 1) * m.varyGain + (nudge?.gain ?? 0);
+  const pitch = 1 + (Math.random() * 2 - 1) * m.varyPitch;
+  const gainDb = (Math.random() * 2 - 1) * m.varyGain;
   const layers: { src: AudioBufferSourceNode; gain: GainNode }[] = [];
   for (const l of m.layers) {
     // Only layers that have loaded: a late layer would land out of step.

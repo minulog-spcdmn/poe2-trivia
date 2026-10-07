@@ -166,30 +166,13 @@ export function voteCast(pip: Element) {
   ring(pip, { radius: 22, from: 4, thickness: 2.5, life: 0.4, color: C.gold, breakup: 0.5, fill: 0, intensity: 0.5 });
 }
 
-/**
- * Delve together: the draw's light reaches a card (`frame`) on its way: a
- * quick light round its edge; `k` (0 to 1) how hard it comes down there.
- */
-export function raffleHop(frame: Element, k = 0.5) {
+/** Delve together: the draw passes over a card (`frame`) on its way: a quick light round its edge. */
+export function raffleHop(frame: Element) {
   if (!fxActive() || detached(frame)) return;
-  outline(frame, { color: k3(C.gold, 0.8), width: 10, intensity: 0.45 + 0.35 * k, life: 0.32 + 0.2 * k, fadeIn: 0.03 });
-  light(frame, { color: [1, 0.65, 0.3], radius: 200, intensity: 0.1 + 0.1 * k, decay: 0.35 });
+  outline(frame, { color: k3(C.gold, 0.8), width: 10, intensity: 0.7, life: 0.32, fadeIn: 0.03 });
+  light(frame, { color: [1, 0.65, 0.3], radius: 200, intensity: 0.16, decay: 0.35 });
 }
 
-/** Delve together: the draw's light in flight at `at` (viewport px), `speed` px/s: a fleck of light shed behind it. */
-export function raffleTrail(at: Point, speed: number) {
-  if (!fxActive() || speed < 150) return;
-  sparks(at, {
-    count: 1,
-    speed: [10, 60],
-    life: [0.18, 0.4 + Math.min(0.3, speed / 8000)],
-    size: [0.35, 0.75],
-    gravity: 30,
-    drag: 3,
-    stretch: 0.02,
-    colors: [C.whiteHot, C.goldPale, C.gold],
-  });
-}
 
 // ---------- questions ----------
 
