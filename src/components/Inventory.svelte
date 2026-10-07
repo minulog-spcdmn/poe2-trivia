@@ -16,27 +16,57 @@
   const blown = $derived(moment?.kind === 'blown' ? moment.item : null);
   /**
    * Its tooltip in the browser's top layer (a popover), over everything,
-   * the effects layer's light included, placed under the count; only for a
-   * mouse. Where popovers aren't supported it shows in place on hover (CSS).
+   * the effects layer's light included: under the count, its arrow on it,
+   * kept on the screen; only for a mouse. It fades in and out, and stays
+   * while the pointer is on the count or on the tooltip itself (the short
+   * wait before it goes lets the pointer cross the gap). Where popovers
+   * aren't supported it shows in place on hover (CSS).
    */
+  const TIP_GAP = 9;
+  const TIP_EDGE = 8;
+  const TIP_LINGER_MS = 140;
+  const TIP_FADE_MS = 160;
   function tipOnHover(count: HTMLElement) {
     const tip = count.querySelector<HTMLElement>('.tip');
     if (!tip || typeof tip.showPopover !== 'function') return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const open = () => tip.matches(':popover-open');
+    const place = () => {
+      const r = count.getBoundingClientRect();
+      const mid = r.left + r.width / 2;
+      const w = tip.offsetWidth;
+      const left = Math.max(TIP_EDGE, Math.min(mid - w / 2, innerWidth - w - TIP_EDGE));
+      tip.style.left = `${left}px`;
+      tip.style.top = `${r.bottom + TIP_GAP}px`;
+      tip.style.setProperty('--arrow-x', `${mid - left}px`);
+    };
     const show = (e: PointerEvent) => {
       if (e.pointerType !== 'mouse') return;
-      const r = count.getBoundingClientRect();
-      tip.style.left = `${r.left + r.width / 2}px`;
-      tip.style.top = `${r.bottom + 7}px`;
-      if (!tip.matches(':popover-open')) tip.showPopover();
+      clearTimeout(timer);
+      if (!open()) {
+        tip.showPopover();
+        place();
+        // A frame shown at 0 first, so the fade has somewhere to start from.
+        requestAnimationFrame(() => requestAnimationFrame(() => tip.classList.add('on')));
+      } else tip.classList.add('on');
     };
-    const hide = () => tip.matches(':popover-open') && tip.hidePopover();
+    const hide = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        tip.classList.remove('on');
+        timer = setTimeout(() => open() && tip.hidePopover(), TIP_FADE_MS);
+      }, TIP_LINGER_MS);
+    };
+    // The tooltip is the count's child in the DOM (if not on the screen), so
+    // entering it enters the count again and keeps it up.
     count.addEventListener('pointerenter', show);
     count.addEventListener('pointerleave', hide);
     return {
       destroy() {
+        clearTimeout(timer);
         count.removeEventListener('pointerenter', show);
         count.removeEventListener('pointerleave', hide);
-        hide();
+        if (open()) tip.hidePopover();
       },
     };
   }
@@ -111,7 +141,7 @@
   .tip {
     position: absolute;
     z-index: 5;
-    top: calc(100% + 7px);
+    top: calc(100% + 9px);
     left: 50%;
     translate: -50% 0;
     width: max-content;
@@ -159,14 +189,37 @@
     opacity: 1;
     transform: none;
   }
-  /* In the top layer: fixed under the count (tipOnHover sets left and top). */
+  /* In the top layer: fixed under the count (tipOnHover sets left, top and
+     the arrow's place), faded in once it is open and out before it closes. */
   .tip:popover-open {
     position: fixed;
     inset: auto;
     margin: 0;
     overflow: visible;
+    translate: none;
+    opacity: 0;
+    transform: translateY(-4px);
+    transition:
+      opacity 0.16s ease,
+      transform 0.16s var(--ease-out);
+    pointer-events: auto;
+  }
+  .tip:popover-open:global(.on) {
     opacity: 1;
     transform: none;
+  }
+  /* Its arrow, pointing up at the item. */
+  .tip::before {
+    content: '';
+    position: absolute;
+    top: -6px;
+    left: var(--arrow-x, 50%);
+    width: 10px;
+    height: 10px;
+    background: #100c09;
+    border-left: 1px solid color-mix(in srgb, var(--tip) 55%, transparent);
+    border-top: 1px solid color-mix(in srgb, var(--tip) 55%, transparent);
+    transform: translateX(-50%) rotate(45deg);
   }
   /* Kept for a find on its way. */
   .count.kept {
