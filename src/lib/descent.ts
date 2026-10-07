@@ -291,7 +291,10 @@ const IS_EMBER = KEYS.map((key) => EMBER_KEYS.has(key));
  * it, `b` none) cools first, in step with the hall (magmaCooling), and
  * narrows away only after (1 - h^3 of it still there): so it is seen
  * dimming to dull red and coming to a stop as the next stratum arrives,
- * rather than all but gone by the time it has cooled.
+ * rather than all but gone by the time it has cooled. A magma that comes
+ * in (`b` has it, `a` none) comes late (h^2 of it), its cracks opening from
+ * hairlines as it does (env_magma), so it grows in over the handover's
+ * second half instead of showing all at once at its start.
  */
 function turnInto(out: Look, a: Look, b: Look, t: number): Look {
   const h = hallTurn(t);
@@ -300,6 +303,7 @@ function turnInto(out: Look, a: Look, b: Look, t: number): Look {
   out.lightK = mixLight(a.lightK, b.lightK, h);
   for (let i = 0; i < ENV; i++) out.env[i] = Math.max(a.env[i] + (b.env[i] - a.env[i]) * h, Math.min(a.env[i], b.env[i]));
   if (a.env[MAGMA] > 0 && !(b.env[MAGMA] > 0)) out.env[MAGMA] = a.env[MAGMA] * (1 - h * h * h);
+  else if (b.env[MAGMA] > 0 && !(a.env[MAGMA] > 0)) out.env[MAGMA] = b.env[MAGMA] * h * h;
   mixTones(out, a, b, h);
   return out;
 }

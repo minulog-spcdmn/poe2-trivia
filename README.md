@@ -250,7 +250,7 @@ the same thing for everyone.
   - From its 5th depth the next zone's light, smoke and features creep in
     while its own recede (barely at its 6th, about half by its last, all
     there at the next zone's 4th), each feature coming and going its own
-    way (the lamps kindle one by one, cracks heat up and cool, frost grows
+    way (the lamps kindle one by one, magma cracks open from hairlines and cool, frost grows
     in from the walls, fire rises from below).
 - The deeper, the darker, never the other way. The dark is one smooth fade
   from the edges, corners darkest, and closes in a little with every depth.

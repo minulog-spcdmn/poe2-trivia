@@ -132,8 +132,12 @@ vec3 env_magma(vec3 col, vec2 p, vec2 q, vec2 xy, float S, float W, float H, flo
   float n2 = fbm(m * 1.9 + 7.7);
   // How thick the crack runs here: thick stretches and thin ones along it.
   float thick = smoothstep(0.2, 0.8, vnoise(m * 0.55 + 13.0));
+  // As it comes in (its first 0.3 of strength) the cracks open from
+  // hairlines and their glow rises from nothing, so it never pops in.
+  float rise = smoothstep(0.0, 0.3, e);
+  float se = sqrt(e) * rise;
   // Cooling, the molten core within each crack narrows, the thin stretches most.
-  float open = (0.35 + 0.65 * e) * (1.0 - 0.45 * cool * (1.0 - 0.5 * thick));
+  float open = max(0.001, (0.35 + 0.65 * e) * rise * (1.0 - 0.45 * cool * (1.0 - 0.5 * thick)));
   float d1 = abs(n1 - 0.5);
   float k1 = clamp(1.0 - d1 * 9.0 / open, 0.0, 1.0);
   float k2 = clamp(1.0 - abs(n2 - 0.5) * 12.0 / open, 0.0, 1.0) * smoothstep(0.15, 0.0, d1) * e;
@@ -159,14 +163,14 @@ vec3 env_magma(vec3 col, vec2 p, vec2 q, vec2 xy, float S, float W, float H, flo
   vec3 body = envTone(c0, c1, c2, 0.5 - 0.3 * heat + t);
   vec3 edge = envTone(c0, c1, c2, 1.0);
   col *= 1.0 - 1.6 * e * (1.0 - e) * k1 * k1;
-  col += gLit * glowK * (body * heat * 0.45 * sqrt(e) + white * pow(heat, 3.0) * 0.45 * e
-    + edge * (smoothstep(0.2, 0.0, d1) * 0.1 + 0.25 * k1 * (1.0 - e)) * low * flow * sqrt(e));
+  col += gLit * glowK * (body * heat * 0.45 * se + white * pow(heat, 3.0) * 0.45 * e * rise
+    + edge * (smoothstep(0.2, 0.0, d1) * 0.1 + 0.25 * k1 * (1.0 - e)) * low * flow * se);
   if (cool > 0.0) {
     // Where it has crusted over, the crack is dark rock, greyer than the
     // rock about it; while the crust is new it still glows a dull red, and
     // embers glint in it here and there, each slowly brightening and
     // fading, gone once it has set.
-    float seat = crust * smoothstep(0.0, 0.3, k1 + 0.8 * k2) * sqrt(e);
+    float seat = crust * smoothstep(0.0, 0.3, k1 + 0.8 * k2) * se;
     float grey = dot(col, vec3(0.2126, 0.7152, 0.0722));
     col = mix(col, grey * vec3(0.62, 0.6, 0.59), 0.75 * seat);
     float warm = smoothstep(0.0, 0.25, cool) * (1.0 - smoothstep(0.35, 0.8, cool));
