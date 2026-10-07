@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CASINGS, GLYPHS, WARD_CRACK, inventoryWords, momentOf, vesselLabel } from '../src/lib/inventoryArt.ts';
+import { BARRIER, CASINGS, GLYPHS, WARD_BREAK, WARD_CRACK, WARD_NEXT, inventoryWords, momentOf, vesselLabel } from '../src/lib/inventoryArt.ts';
 import type { Inventory } from '../src/lib/delve.ts';
 
 const inv = (o: Partial<Inventory> = {}): Inventory => ({ wards: 0, flares: 0, dynamite: 0, shards: 0, ...o });
@@ -65,4 +65,24 @@ test('a ward encases one chamber each, from the base, and breaks into two pieces
   // The pointed ends reach past the frame (0 to 64) by the casing's standoff, no further.
   assert.ok(CASINGS[0].whole.from < 0 && CASINGS[0].whole.from > -4);
   assert.ok(CASINGS[2].whole.to > 64 && CASINGS[2].whole.to < 68);
+});
+
+test("a ward's barrier encloses the phial and its casings, and breaks into facets thrown outward", () => {
+  const [x, y, w, h] = BARRIER.box;
+  // Round the whole phial (64 x 12) and its casings, which stand 2.2 off the frame.
+  assert.ok(x < -2 && x + w > 66 && y < -2 && y + h > 14);
+  const all = [BARRIER.glaze, BARRIER.seams, ...BARRIER.pieces.flatMap((p) => [p.d, p.lines, p.hatch])].join(' ');
+  assert.doesNotMatch(all, /NaN|Infinity|undefined/);
+  // Eight facets on each arc, and a lozenge at each apex.
+  assert.equal(BARRIER.pieces.length, 18);
+  for (const p of BARRIER.pieces) {
+    assert.match(p.d, /^M.*Z$/);
+    assert.ok(Number.isFinite(p.dx) && Number.isFinite(p.dy) && Number.isFinite(p.turn));
+    assert.ok(Math.hypot(p.dx, p.dy) > 5, 'each facet flies clear');
+  }
+  // The dark facets are hatched down one side; the lit ones are not.
+  assert.ok(BARRIER.pieces.some((p) => p.tone === 'dark' && p.hatch.length > 0));
+  assert.ok(BARRIER.pieces.filter((p) => p.tone === 'lit').length > 2);
+  // It breaks before a cave-in's second blow lands.
+  assert.ok(WARD_BREAK > 0 && WARD_BREAK < WARD_NEXT);
 });

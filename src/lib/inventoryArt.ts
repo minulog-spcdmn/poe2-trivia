@@ -5,7 +5,7 @@
 // (the left, away from the light), as docs/arcane-style.md asks. Each glyph is
 // drawn in its own box, in units of about a pixel at the scoreboard's size.
 
-import { arc, at, hatch, lerp, line, pt, type Pt } from './arcane.ts';
+import { arc, at, f, hatch, lerp, line, pt, type Pt } from './arcane.ts';
 import type { Inventory } from './delve.ts';
 
 /** A face of a glyph: its outline, and how it is lit (dark faces get hatched). */
@@ -408,6 +408,157 @@ export const CASINGS = [0, 1, 2].map((k) => {
     ] as [Casing, Casing],
   };
 });
+
+// ---- the barrier: a ward taking a loss -----------------------------------------
+
+/*
+ * When a ward takes what would have cost a life, its crystal throws a barrier
+ * round the whole phial (Phial.svelte), in the phial's 64 x 12 units: a
+ * vesica of two circular arcs, pointed beyond each end as the phial is, a
+ * band of crystal facets between an outer and an inner line. The facets are
+ * cut radially from each arc's centre, lit and dark in turn, the dark ones
+ * hatched down one side. A lozenge stands on the band at the top and bottom
+ * apex, and the band stops short of it; the blow lands on the bottom one,
+ * under the phial, so nothing flares over the player's name above it. Inside, a thin
+ * glaze, clear in the middle, so the lives stay seen through it. It catches
+ * the blow and breaks along its seams: each facet is a piece of its own,
+ * thrown outward from the phial's middle (`dx`, `dy`) and turned (`turn`).
+ */
+
+/** The phial's middle, the barrier's half width and height (to its tips and apexes), and the band's depth. */
+const AEGIS = { c: [32, 6] as Pt, half: 46, rise: 15, band: 2.6 };
+/** Facets on each arc (an even number, so a seam runs to each apex, under its lozenge). */
+const AEGIS_FACETS = 8;
+
+export interface BarrierPiece {
+  /** The facet's face, filled. */
+  d: string;
+  tone: 'lit' | 'dark';
+  /** Its outline (the glow is drawn under it). */
+  lines: string;
+  /** One-sided hatching (dark facets). */
+  hatch: string;
+  /** Where it is thrown, in units, and how far it turns, in degrees. */
+  dx: number;
+  dy: number;
+  turn: number;
+}
+
+export interface Barrier {
+  /** The SVG viewBox, in the phial's units. */
+  box: [number, number, number, number];
+  /** The glaze inside the band. */
+  glaze: string;
+  pieces: BarrierPiece[];
+  /** The seams between the facets, which light just before it breaks. */
+  seams: string;
+  /** Where the blow lands: the bottom apex, under the phial, clear of the name above it. */
+  impact: Pt;
+}
+
+export const BARRIER: Barrier = (() => {
+  const { c, half, rise, band } = AEGIS;
+  const R = (half * half + rise * rise) / (2 * rise);
+  const r = R - band;
+  // The arcs' centres: the top arc's lies below the phial, the bottom one's above.
+  const arcs = [
+    { o: [c[0], c[1] - rise + R] as Pt, mid: 0 },
+    { o: [c[0], c[1] + rise - R] as Pt, mid: 180 },
+  ];
+  const outerHalf = (Math.asin(half / R) * 180) / Math.PI;
+  const innerHalf = (Math.asin(Math.sqrt(r * r - (R - rise) ** 2) / r) * 180) / Math.PI;
+  const step = (2 * outerHalf) / AEGIS_FACETS;
+  /** The lozenge at an apex: its half width along the band (in degrees) and its half height across it. */
+  const NODE = { half: 2.6, tall: 2.2 };
+  const nodeDeg = (NODE.half / R) * (180 / Math.PI);
+  const turns = [-34, 22, -16, 28, -24, 14, -30, 20];
+  const pieces: BarrierPiece[] = [];
+  let seams = '';
+  const arcPath = (o: Pt, rr: number, a0: number, a1: number) => `A${f(rr)} ${f(rr)} 0 0 ${a1 > a0 ? 1 : 0} ${pt(at(o, a1, rr))}`;
+  for (const [ai, { o, mid }] of arcs.entries()) {
+    for (let i = 0; i < AEGIS_FACETS; i++) {
+      // Outer angles from tip to tip; the inner line ends sooner, where the inner arcs meet.
+      let a0 = mid - outerHalf + i * step;
+      let a1 = a0 + step;
+      const toInner = (a: number) => mid + ((a - mid) / outerHalf) * innerHalf;
+      // Short of the apex's lozenge.
+      if (Math.abs(a1 - mid) < 1e-6) a1 -= nodeDeg;
+      if (Math.abs(a0 - mid) < 1e-6) a0 += nodeDeg;
+      const [i0, i1] = [toInner(a0), toInner(a1)];
+      const O0 = at(o, a0, R);
+      const O1 = at(o, a1, R);
+      const I0 = at(o, i0, r);
+      const I1 = at(o, i1, r);
+      const face = `M${pt(O0)}${arcPath(o, R, a0, a1)}L${pt(I1)}${arcPath(o, r, i1, i0)}Z`;
+      // The outline: both arcs, and its ends (a seam, a lozenge's side, or at a tip the short stretch where the arcs close).
+      const lines = `M${pt(O0)}${arcPath(o, R, a0, a1)}M${pt(I0)}${arcPath(o, r, i0, i1)}` + line(O0, I0) + line(O1, I1);
+      // The seams between facets (not at a tip, nor beside a lozenge).
+      if (i < AEGIS_FACETS - 1 && Math.abs(a1 + nodeDeg - mid) > 1e-6) seams += line(O1, I1);
+      const dark = (i + ai) % 2 === 1;
+      // Hatched down the side toward the apex: lines across from the outer arc toward the inner one.
+      let shade = '';
+      if (dark) {
+        const n = 4;
+        for (let k = 1; k <= n; k++) {
+          const t = k / (n + 1);
+          const a = a0 + (a1 - a0) * t * 0.55;
+          const ia = i0 + (i1 - i0) * t * 0.55;
+          shade += line(at(o, a, R - 0.3), at(o, ia + (i1 - i0) * 0.12, r + 0.3));
+        }
+      }
+      // Thrown outward from the phial's middle, through the facet's middle.
+      const m = at(o, (a0 + a1) / 2, R - band / 2);
+      const [vx, vy] = [m[0] - c[0], m[1] - c[1]];
+      const len = Math.hypot(vx, vy) || 1;
+      const far = 9 + ((i * 7 + ai * 3) % 5);
+      // The flatter facets near the apex fly mostly up (or down); the end ones outward.
+      pieces.push({
+        d: face,
+        tone: dark ? 'dark' : 'lit',
+        lines,
+        hatch: shade,
+        dx: (vx / len) * far * 1.1,
+        dy: (vy / len) * far * 0.9 + (ai ? 3 : -2),
+        turn: turns[(i + ai * 3) % turns.length],
+      });
+    }
+  }
+  // The lozenges at the apexes, standing on the band.
+  for (const [ai, { o, mid }] of arcs.entries()) {
+    const m = at(o, mid, R - band / 2);
+    const out = ai ? 1 : -1;
+    const q: Pt[] = [
+      [m[0] - NODE.half, m[1]],
+      [m[0], m[1] + out * NODE.tall * 1.3],
+      [m[0] + NODE.half, m[1]],
+      [m[0], m[1] - out * NODE.tall],
+    ];
+    const d = 'M' + q.map(pt).join('L') + 'Z';
+    pieces.push({
+      d,
+      tone: 'lit',
+      lines: d + line(q[1], q[3]),
+      hatch: hatch(q[3], q[0], q[1], 0.7),
+      dx: 0,
+      dy: out * 13,
+      turn: ai ? 40 : -45,
+    });
+  }
+  const bottom = at(arcs[1].o, 180, R);
+  const glaze = `M${pt(at(arcs[0].o, -innerHalf, r))}${arcPath(arcs[0].o, r, -innerHalf, innerHalf)}${arcPath(arcs[1].o, r, 180 - innerHalf, 180 + innerHalf)}Z`;
+  const pad = 2;
+  return {
+    box: [c[0] - half - pad, c[1] - rise - pad, 2 * (half + pad), 2 * (rise + pad)],
+    glaze,
+    pieces,
+    seams,
+    impact: [bottom[0], bottom[1] + NODE.tall * 1.3 - 1.3],
+  };
+})();
+
+/** Seconds from a barrier catching a blow to its breaking, and between a cave-in's two (Phial.svelte, lib/fx/moments.ts). */
+export const WARD_BREAK = 0.22;
+export const WARD_NEXT = 0.34;
 
 // ---- words -------------------------------------------------------------------
 

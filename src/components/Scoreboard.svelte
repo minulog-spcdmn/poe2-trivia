@@ -29,8 +29,8 @@
     lostPoint,
     shardFound,
     turnsBlue,
+    wardBlocked,
     wardFormed,
-    wardShattered,
     itemBlown,
   } from '../lib/fx/moments';
   import { scoreRow, scoreRowOf } from '../lib/scoreRows';
@@ -38,7 +38,7 @@
   import { phone } from '../lib/layout';
   import { cavesIn, fellAt, inventoryOf, isGroupRun, livesOf, reviveProblem, type FindKind, type Inventory as Carried, type ItemKind } from '../lib/delve';
   import { inventoryChanges, itemsBlown } from '../lib/delveSession';
-  import { CASINGS, momentOf, type InventoryMoment } from '../lib/inventoryArt';
+  import { CASINGS, WARD_BREAK, WARD_NEXT, momentOf, type InventoryMoment } from '../lib/inventoryArt';
   import { MOMENTS } from '../lib/soundDesign';
   import type { GameState, Revive } from '../lib/game';
 
@@ -178,6 +178,13 @@
   let invMoment = $state<Record<string, InventoryMoment>>({});
   /** A flare or dynamite on its way to a player's entry (findFlows): its place is kept for it. */
   let expecting = $state<Record<string, 'flare' | 'dynamite'>>({});
+  /**
+   * A ward taking a loss (or a cave-in's two wards, its two in turn): the
+   * barrier its crystal throws round the phial (Phial.svelte's `guard`),
+   * kept apart from `invMoment`, which a blast's own moment may replace
+   * before the barrier's shards have flown.
+   */
+  let guard = $state<Record<string, { key: number; n: number; mine: boolean }>>({});
   /** What a blast destroyed (a Dynamite Cache missed), still shown until it blows apart after the rest of the loss. */
   let blownHeld = $state<Record<string, ItemKind>>({});
   let invPrev: GameState | null = null;
@@ -314,6 +321,14 @@
       if (invMoment[id]?.key === key) delete invMoment[id];
     }, 1300);
     const mine = session.mode === 'local' || id === session.myPlayerId;
+    if (kind === 'shatter') {
+      // The barrier catches each loss, breaks, and the lives behind it shine on.
+      guard[id] = { key, n, mine };
+      later(() => {
+        if (guard[id]?.key === key) delete guard[id];
+      }, ((n - 1) * WARD_NEXT + 1.1) * 1000);
+      later(() => (surge[id] = (untrack(() => surge[id]) ?? 0) + 1), ((n - 1) * WARD_NEXT + WARD_BREAK + 0.15) * 1000);
+    }
     void tick().then(() => {
       const li = scoreRowOf(id);
       if (!li) return;
@@ -329,7 +344,13 @@
         if (el) shardFound(el);
         if (mine && !fed) sfx('findReward');
       } else if (kind === 'shatter') {
-        vessel?.querySelectorAll('.casing.ghost').forEach((el, i) => setTimeout(() => wardShattered(el, li, mine && i === 0), i * 120));
+        // Each barrier catches its blow in turn, and its casing breaks with it.
+        const barriers = vessel?.querySelectorAll('.aegis') ?? [];
+        const casings = vessel?.querySelectorAll('.casing.ghost:not(.blown)') ?? [];
+        for (let i = 0; i < n; i++) {
+          const at = barriers[i] ?? vessel ?? li;
+          setTimeout(() => wardBlocked(at, casings[i] ?? null, li, mine), i * WARD_NEXT * 1000);
+        }
         if (mine) {
           if (caved) caveInHeard(caved);
           else sfx('wardShatter');
@@ -679,7 +700,7 @@
         class:ablaze={fire > 0}
         style:--heat={fire}
         style:--blue={burnsBlue(fire, !!run) ? 1 : 0}
-        class:active class:wide class:revivable={reviveOk} class:revived={p.id in revived} class:out class:benched class:duelist class:fallen={fell !== null} class:hit={p.id in hit} class:warded={moment?.kind === 'shatter'} class:offline={!p.connected} animate:glide style:--c={playerColor(p.hue)}>
+        class:active class:wide class:revivable={reviveOk} class:revived={p.id in revived} class:out class:benched class:duelist class:fallen={fell !== null} class:hit={p.id in hit} class:warded={p.id in guard} class:offline={!p.connected} animate:glide style:--c={playerColor(p.hue)}>
         <Avatar name={p.name} hue={p.hue} size={32} dim={!p.connected} />
         <div class="info">
           <span class="name">
@@ -688,7 +709,7 @@
           {#if run && fell !== null}
             <span class="fell-at">Perished at depth {fell}</span>
           {:else if run}
-            <Phial lives={shownLives} draining={hit[p.id] ?? giving[p.id] ?? -1} filling={inflow[p.id] ?? -1} surge={surge[p.id] ?? 0} {inv} {moment} {expect} />
+            <Phial lives={shownLives} draining={hit[p.id] ?? giving[p.id] ?? -1} filling={inflow[p.id] ?? -1} surge={surge[p.id] ?? 0} {inv} {moment} {expect} guard={guard[p.id] ?? null} />
           {:else}
             <span class="bar" class:filling={filling[p.id]} style:--fill-span="{FILL_SPAN}s"
               ><span style:width="{Math.max(0, Math.min(100, (barOf(p.id, p.score) / target) * 100))}%"></span></span
@@ -698,7 +719,7 @@
         {#if run}
           <!-- Phones only, on the entries shrunk to an avatar: the phial upright beside it. -->
           <!-- Hidden from screen readers: the phial under the name (also in the entry) says the same. -->
-          <span class="phial-side" aria-hidden="true"><Phial lives={shownLives} draining={hit[p.id] ?? giving[p.id] ?? -1} filling={inflow[p.id] ?? -1} surge={surge[p.id] ?? 0} vertical {inv} {moment} /></span>
+          <span class="phial-side" aria-hidden="true"><Phial lives={shownLives} draining={hit[p.id] ?? giving[p.id] ?? -1} filling={inflow[p.id] ?? -1} surge={surge[p.id] ?? 0} vertical {inv} {moment} guard={guard[p.id] ?? null} /></span>
           <!-- And there, the flares and dynamite they carry, on the avatar's other corner. -->
           {#if fell === null && inv && (inv.flares > 0 || inv.dynamite > 0 || moment?.kind === 'burn' || moment?.kind === 'blast' || expect)}
             <span class="side-counts"><Inventory {inv} {moment} {expect} /></span>
@@ -709,6 +730,10 @@
               >{score}</span
             >
           {/key}
+        {/if}
+        {#if guard[p.id]}
+          <!-- A ward taking a loss: the entry braces, rimmed in azurite light. -->
+          {#key guard[p.id].key}<span class="ward-rim" class:theirs={!guard[p.id].mine} aria-hidden="true"></span>{/key}
         {/if}
         {#if !p.connected}<span class="off" title="Disconnected">⚡</span>{/if}
         {#if canKick && p.id !== s.hostId}
@@ -928,10 +953,50 @@
       translate: -1px 0;
     }
   }
-  /* A ward shattered in place of a life: the entry jolts, rimmed in azurite. */
+  /* A ward taking a loss: rather than flinch, the entry braces (swells a
+     little as the barrier catches the blow, and settles), rimmed in azurite
+     light that flares and fades. */
   li.warded {
-    animation: flinch 0.5s var(--ease-out);
+    animation: brace 0.45s cubic-bezier(0.3, 0.7, 0.4, 1);
     border-color: rgba(110, 165, 240, 0.75);
+  }
+  @keyframes brace {
+    25% {
+      scale: 1.035;
+    }
+  }
+  /* The avatar stays above a ward's barrier too, whose tip reaches toward it. */
+  li > :global(.avatar) {
+    position: relative;
+    z-index: 1;
+  }
+  .ward-rim {
+    position: absolute;
+    inset: -1px;
+    border-radius: inherit;
+    border: 1px solid rgba(170, 214, 255, 0.95);
+    box-shadow:
+      0 0 14px rgba(70, 140, 255, 0.55),
+      inset 0 0 10px rgba(70, 140, 255, 0.3);
+    pointer-events: none;
+    opacity: 0;
+    animation: ward-rim 1s ease-out both;
+  }
+  .ward-rim.theirs {
+    box-shadow:
+      0 0 8px rgba(70, 140, 255, 0.45),
+      inset 0 0 6px rgba(70, 140, 255, 0.25);
+  }
+  @keyframes ward-rim {
+    12% {
+      opacity: 1;
+    }
+    45% {
+      opacity: 0.8;
+    }
+    to {
+      opacity: 0;
+    }
   }
   /* The upright phial only shows on phones, beside an entry shrunk to an avatar (below). */
   .phial-side,
@@ -1145,9 +1210,14 @@
   @media (prefers-reduced-motion: reduce) {
     li.hit,
     li.warded,
+    .ward-rim,
     .revive::before,
     .heart {
       animation: none;
+    }
+    /* Held while the ward takes the loss, without the flare. */
+    .ward-rim {
+      opacity: 0.85;
     }
 
   }
@@ -1205,6 +1275,9 @@
     gap: 0.25rem;
   }
   .name {
+    /* Above a ward's barrier round the phial below it (Phial.svelte), so the name stays readable. */
+    position: relative;
+    z-index: 1;
     font-size: 0.98rem;
     line-height: 1.1;
     white-space: nowrap;

@@ -34,7 +34,7 @@
   import { dock, narrow, phone } from '../lib/layout';
   import { portal } from '../lib/portal';
   import { fellAt, isGroupRun, livesOf, waitingIds } from '../lib/delve';
-  import { blownText, coopMissText, coopRevealText, namesOf } from '../lib/difficultyText';
+  import { blownText, coopMissText, coopRevealText, namesOf, wardText } from '../lib/difficultyText';
   import ItemGlyph from './ItemGlyph.svelte';
   import Fuse from './Fuse.svelte';
   import type { GlyphKind } from '../lib/inventoryArt';
@@ -561,7 +561,8 @@
     if (list.length > struckSeen) {
       for (const x of list.slice(struckSeen)) {
         const el = optionEls[x.index];
-        if (el) raceMiss(el, x.by === me);
+        // Your own, a ward took: it swells blue at the edges as it does (Scoreboard.svelte), not red.
+        if (el) raceMiss(el, x.by === me, x.lives === 0 && x.wards > 0);
       }
       struckSeen = list.length;
     }
@@ -599,6 +600,8 @@
         otherScored: race && !!winner && !iWon,
         timedOut: r.timedOut,
         fill,
+        // Your ward takes the loss: it swells blue at the edges as it does (Scoreboard.svelte), not red.
+        warded: coop ? (r.hits ?? []).some((h) => h.playerId === me && h.lives === 0 && h.wards > 0) : !!s.delve && !!r.warded,
       });
       // Your point streaming into the bar. Without effects the bar just jumps, and 'correct' says it all.
       if (iWon && pill && fill && fxActive()) setTimeout(() => sfx('fill'), FILL_START * 1000 - FILL_LEAD);
@@ -791,7 +794,7 @@
             {#if reveal.timedOut}The darkness took {whom}.{/if}
             The vein caves in{you ? '' : ` on ${active.name}`}:
             {#if reveal.lost.wards >= 2}
-              two wards broke.
+              <span class="held">two wards took both hits.</span>
             {:else if reveal.lost.wards === 1}
               a ward and a life lost.
             {:else}
@@ -803,7 +806,7 @@
               ><span class="piece l"><ItemGlyph kind="ward" piece="left" /></span><span class="piece r"><ItemGlyph kind="ward" piece="right" /></span></span
             >
             {#if reveal.timedOut}The darkness took {whom}.{/if}
-            {you ? 'Your' : `${active.name}'s`} ward shattered.
+            <span class="held">{wardText(you ? 'your' : `${active.name}'s`)}</span>
           {:else}
             <!-- The life that went: a chamber of the phial, its light pouring out of the tip. -->
             <span class="lost-vial" class:last={left <= 1} aria-hidden="true"
@@ -1406,6 +1409,11 @@
       opacity: 0;
       transform: scale(0.2);
     }
+  }
+  /* Delve: what a ward took in place of a life, in its cold light. */
+  .held {
+    color: #c4dcff;
+    text-shadow: 0 0 12px rgba(90, 150, 255, 0.45);
   }
   /* Delve: the ward that took a loss, splitting as the line comes in. */
   .lost-ward {

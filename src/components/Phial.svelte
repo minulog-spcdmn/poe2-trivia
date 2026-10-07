@@ -15,11 +15,14 @@
   // casing on a rhythm of its own. A ward forming crystallises onto its
   // chamber; one breaking in place of a life shatters where it is, in a
   // burst of blue (wardShattered in lib/fx/moments.ts throws the sparks all
-  // round it), the outermost first. The flares and dynamite a player carries
+  // round it), the outermost first. Before it breaks it throws a barrier of
+  // crystal round the whole phial (BARRIER in lib/inventoryArt.ts) that
+  // catches the blow, flashes, lights along its seams and bursts apart, the
+  // lives lit behind it all the while (`guard`). The flares and dynamite a player carries
   // stand counted beside the phial lying down (Inventory.svelte); upright, the
   // scoreboard shows them by the avatar.
   import { DELVE_LIVES, type Inventory as Carried } from '../lib/delve';
-  import { CASINGS, vesselLabel, type Casing, type InventoryMoment } from '../lib/inventoryArt';
+  import { BARRIER, CASINGS, WARD_BREAK, WARD_NEXT, vesselLabel, type Casing, type InventoryMoment } from '../lib/inventoryArt';
   import Inventory from './Inventory.svelte';
 
   let {
@@ -31,6 +34,7 @@
     inv = null,
     moment = null,
     expect = null,
+    guard = null,
   }: {
     lives: number;
     /** The chamber (0 to 2) of the life just lost, while it pours out; -1 otherwise. */
@@ -46,12 +50,19 @@
     moment?: InventoryMoment | null;
     /** A flare or dynamite on its way to it (Inventory.svelte keeps its place). */
     expect?: 'flare' | 'dynamite' | null;
+    /**
+     * A ward taking a loss (one barrier, or a cave-in's two in turn), and
+     * whether it is the viewer's own (a teammate's is smaller); `key` tells
+     * one from the next.
+     */
+    guard?: { key: number; n: number; mine: boolean } | null;
   } = $props();
 
   const CHAMBERS = Array.from({ length: DELVE_LIVES }, (_, k) => k);
   const uid = $props.id();
 
-  type Cased = { k: number; kind: 'whole' | 'shard' | 'ghost'; fresh: boolean; blown?: 'wards' | 'shards' };
+  /** `brk`: seconds until a ward taking a loss breaks (its barrier first catches the blow). */
+  type Cased = { k: number; kind: 'whole' | 'shard' | 'ghost'; fresh: boolean; blown?: 'wards' | 'shards'; brk?: number };
   /**
    * The casings on the chambers: whole wards from the base, a shard after
    * them, and wards just broken bursting off; a ward or shard a blast
@@ -64,7 +75,8 @@
     const out: Cased[] = [];
     for (let k = 0; k < Math.min(wards, CASINGS.length); k++) out.push({ k, kind: 'whole', fresh: (m === 'ward' || m === 'forge') && k === wards - 1 });
     if (inv?.shards && wards < CASINGS.length) out.push({ k: wards, kind: 'shard', fresh: m === 'shard' });
-    if (m === 'shatter') for (let k = wards; k < Math.min(wards + (moment?.n ?? 1), CASINGS.length); k++) out.push({ k, kind: 'ghost', fresh: true });
+    if (m === 'shatter')
+      for (let k = wards; k < Math.min(wards + (moment?.n ?? 1), CASINGS.length); k++) out.push({ k, kind: 'ghost', fresh: true, brk: (k - wards) * WARD_NEXT + WARD_BREAK });
     const item = moment?.item;
     if (m === 'blown' && (item === 'wards' || item === 'shards') && wards < CASINGS.length) out.push({ k: wards, kind: 'ghost', fresh: true, blown: item });
     return out;
@@ -139,6 +151,7 @@
           style:--from={set.whole.from}
           style:--to={set.whole.to}
           style:--k={c.k}
+          style:--brk={c.brk ? `${c.brk}s` : undefined}
         >
           {#if c.kind === 'ghost'}
             {#each c.blown === 'shards' ? [set.shard] : set.pieces as piece, i (i)}
@@ -153,6 +166,50 @@
           {/if}
         </span>
       {/each}
+      <!-- A ward taking a loss: its barrier round the whole phial (a cave-in's second a beat later). -->
+      {#if guard}
+        {#key guard.key}
+          {#each Array.from({ length: guard.n }, (_, i) => i) as i (i)}
+            <svg
+              class="aegis"
+              class:theirs={!guard.mine}
+              class:again={i > 0}
+              viewBox={BARRIER.box.join(' ')}
+              style:left="calc(100% * {BARRIER.box[0]} / 64)"
+              style:top="calc(100% * {BARRIER.box[1]} / 12)"
+              style:width="calc(100% * {BARRIER.box[2]} / 64)"
+              style:height="calc(100% * {BARRIER.box[3]} / 12)"
+              style:--d="{i * WARD_NEXT}s"
+              style:--hold="{WARD_BREAK}s"
+              style:--brk="{i * WARD_NEXT + WARD_BREAK}s"
+              aria-hidden="true"
+            >
+              <defs>
+                <linearGradient id="{uid}-ag{i}" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0" stop-color="#bfe0ff" stop-opacity="0.75" />
+                  <stop offset="0.3" stop-color="#6fb4ff" stop-opacity="0.12" />
+                  <stop offset="0.7" stop-color="#3f7fe0" stop-opacity="0.12" />
+                  <stop offset="1" stop-color="#3f7fe0" stop-opacity="0.6" />
+                </linearGradient>
+              </defs>
+              <path class="veil" d={BARRIER.glaze} fill="url(#{uid}-ag{i})" />
+              {#each BARRIER.pieces as p, j (j)}
+                <g class="facet" style:--dx="{p.dx}px" style:--dy="{p.dy}px" style:--turn="{p.turn}deg">
+                  <path class="face {p.tone}" d={p.d} />
+                  {#if p.hatch}<path class="hatch" d={p.hatch} />{/if}
+                  <path class="halo" d={p.lines} />
+                  <path class="cut" d={p.lines} />
+                </g>
+              {/each}
+              <path class="seams" d={BARRIER.seams} />
+              <path
+                class="impact"
+                d="M{BARRIER.impact[0] - 5} {BARRIER.impact[1]}L{BARRIER.impact[0] - 0.9} {BARRIER.impact[1] - 0.9}L{BARRIER.impact[0]} {BARRIER.impact[1] - 4}L{BARRIER.impact[0] + 0.9} {BARRIER.impact[1] - 0.9}L{BARRIER.impact[0] + 5} {BARRIER.impact[1]}L{BARRIER.impact[0] + 0.9} {BARRIER.impact[1] + 0.9}L{BARRIER.impact[0]} {BARRIER.impact[1] + 4}L{BARRIER.impact[0] - 0.9} {BARRIER.impact[1] + 0.9}Z"
+              />
+            </svg>
+          {/each}
+        {/key}
+      {/if}
       <!-- Where each chamber's casing goes, unseen, and a shard's half of it: what a find's sparks aim at (Scoreboard.svelte). -->
       {#each CASINGS as set, k (k)}
         <span class="slot" data-slot={k} style:--from={set.whole.from} style:--to={set.whole.to} aria-hidden="true"><span class="half"></span></span>
@@ -688,7 +745,7 @@
      light inside is untouched. */
   .piece {
     transform-origin: calc(100% * (var(--from) + var(--to)) / 128) 50%;
-    animation: shatter 0.5s cubic-bezier(0.2, 0.7, 0.4, 1) both;
+    animation: shatter 0.42s cubic-bezier(0.2, 0.7, 0.4, 1) var(--brk, 0s) both;
   }
   @keyframes shatter {
     0% {
@@ -712,7 +769,7 @@
     inset: -110% -22%;
     pointer-events: none;
     background: radial-gradient(closest-side, rgba(235, 246, 255, 0.95), rgba(110, 175, 255, 0.55) 45%, rgba(110, 175, 255, 0) 100%);
-    animation: burst 0.55s ease-out both;
+    animation: burst 0.55s ease-out var(--brk, 0s) both;
   }
   @keyframes burst {
     from {
@@ -733,7 +790,7 @@
      burst of fire rather than the ward's own blue (the effects layer throws
      the sparks, chips and smoke: itemBlown). */
   .blown .piece {
-    animation: blown 0.7s cubic-bezier(0.2, 0.6, 0.5, 1) both;
+    animation: blown 0.7s cubic-bezier(0.2, 0.6, 0.5, 1) var(--brk, 0s) both;
   }
   .blown .piece.p0 {
     --dx: -3px;
@@ -767,6 +824,166 @@
     animation-duration: 0.65s;
   }
 
+  /* A ward taking a loss throws a barrier of crystal round the whole phial
+     (BARRIER in lib/inventoryArt.ts): it snaps in from wide, a cold flash
+     runs through its glaze and a star of light marks where the blow lands;
+     its seams light, and at --brk it bursts, each facet thrown outward and
+     turned as it fades (the effects layer throws bigger shards further).
+     The lives behind it stay lit. A cave-in's second barrier comes a beat
+     later (--d); a teammate's is smaller. Transform and opacity only. */
+  .aegis {
+    --dark: #123a8a;
+    --mid: #2a63c4;
+    --lit: #7fbcff;
+    --shade: rgba(4, 12, 34, 0.85);
+    position: absolute;
+    pointer-events: none;
+    overflow: visible;
+    animation: aegis-in 0.2s cubic-bezier(0.2, 0.8, 0.3, 1.25) var(--d) both;
+  }
+  .aegis.theirs {
+    scale: 0.82;
+  }
+  .aegis.again {
+    scale: 1.1;
+  }
+  .aegis.theirs.again {
+    scale: 0.9;
+  }
+  @keyframes aegis-in {
+    from {
+      opacity: 0;
+      transform: scale(1.45, 1.7);
+    }
+    55% {
+      opacity: 1;
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  .aegis .veil {
+    opacity: 0;
+    animation: aegis-veil 0.5s ease-out var(--d) both;
+  }
+  @keyframes aegis-veil {
+    0% {
+      opacity: 0;
+    }
+    16% {
+      opacity: 1;
+    }
+    44% {
+      opacity: 0.7;
+    }
+    to {
+      opacity: 0;
+    }
+  }
+  .aegis .face {
+    stroke: none;
+  }
+  .aegis .face.lit {
+    fill: var(--lit);
+    fill-opacity: 0.8;
+  }
+  .aegis .face.dark {
+    fill: var(--dark);
+    fill-opacity: 0.85;
+  }
+  .aegis .hatch {
+    fill: none;
+    stroke: var(--shade);
+    stroke-width: 0.3;
+    stroke-linecap: round;
+  }
+  /* The soft light under the lines, never on them. */
+  .aegis .halo {
+    fill: none;
+    stroke: #4a8cff;
+    stroke-width: 2.2;
+    stroke-linejoin: round;
+    opacity: 0.4;
+    animation: aegis-halo 0.3s ease-out var(--d) both;
+  }
+  @keyframes aegis-halo {
+    20% {
+      opacity: 0.9;
+    }
+    to {
+      opacity: 0.4;
+    }
+  }
+  .aegis .cut {
+    fill: none;
+    stroke: #e4f2ff;
+    stroke-width: 0.5;
+    stroke-linejoin: miter;
+    stroke-miterlimit: 12;
+  }
+  .facet {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: aegis-break 0.52s cubic-bezier(0.12, 0.6, 0.35, 1) var(--brk) both;
+  }
+  @keyframes aegis-break {
+    0% {
+      opacity: 1;
+      transform: none;
+    }
+    20% {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
+      transform: translate(var(--dx), var(--dy)) rotate(var(--turn)) scale(0.7);
+    }
+  }
+  /* Just before it breaks, its seams light up white. */
+  .aegis .seams {
+    fill: none;
+    stroke: #f6fbff;
+    stroke-width: 0.7;
+    stroke-linecap: round;
+    opacity: 0;
+    animation: aegis-seams var(--hold) ease-in var(--d) both;
+  }
+  @keyframes aegis-seams {
+    0%,
+    40% {
+      opacity: 0;
+    }
+    92% {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
+    }
+  }
+  /* Where the blow lands: a star of light on the bottom apex, under the phial. */
+  .aegis .impact {
+    fill: #dcecff;
+    transform-box: fill-box;
+    transform-origin: center;
+    opacity: 0;
+    animation: aegis-impact 0.4s ease-out var(--d) both;
+  }
+  @keyframes aegis-impact {
+    0% {
+      opacity: 0;
+      transform: scale(0.2);
+    }
+    14% {
+      opacity: 0.9;
+      transform: scale(1.15);
+    }
+    to {
+      opacity: 0;
+      transform: scale(0.6) rotate(40deg);
+    }
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .grow,
     .flash,
@@ -777,6 +994,18 @@
     }
     .flash,
     .ghost {
+      display: none;
+    }
+    /* A ward taking a loss: its barrier simply stands round the phial while it does. */
+    .aegis,
+    .aegis .halo,
+    .facet {
+      animation: none;
+    }
+    .aegis.again,
+    .aegis .veil,
+    .aegis .seams,
+    .aegis .impact {
       display: none;
     }
     .wisp,
@@ -823,7 +1052,9 @@
   :global(html[data-still]) .twinkle {
     display: none;
   }
-  :global(html[data-still]) .flash {
+  :global(html[data-still]) .flash,
+  :global(html[data-still]) .aegis .veil,
+  :global(html[data-still]) .aegis .impact {
     display: none;
   }
 </style>

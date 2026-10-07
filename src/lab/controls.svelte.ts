@@ -581,6 +581,29 @@ export const wardBreaks = () =>
     answer(await running(notFind, 'none'), false);
   });
 
+/** An Azurite Vein's cave-in that two wards take, both its losses (two wards are put in the pack first). */
+export const wardsCaveIn = () =>
+  event('Two wards take a cave-in', async () => {
+    const id = activeId();
+    if (inventoryOf(run()!, id).wards < 2) put((s) => invSet(s, id, (v) => (v.wards = 2)), true);
+    const q = await running((q) => q.find === 'azurite', 'azurite');
+    answer(q, false, id);
+  });
+
+/**
+ * Co-op: a teammate's ward takes a loss, seen from the screen's player: the
+ * first other player standing (given a ward if they have none) answers wrong.
+ */
+export const teammateWard = () =>
+  event("Teammate's ward", async () => {
+    if ((run()?.players.length ?? 1) < 2) setPlayers(2);
+    const mate = standingIds(run()!).find((o) => o !== viewerId());
+    if (!mate) throw new Error('no teammate is standing');
+    if (!inventoryOf(run()!, mate).wards) put((n) => invSet(n, mate, (v) => (v.wards = 1)), true);
+    const q = await running(notFind, 'none');
+    answer(q, false, mate);
+  });
+
 /** A wrong answer on an Azurite Vein: it caves in for two losses. */
 export const caveIn = () =>
   event('Cave-in', async () => {

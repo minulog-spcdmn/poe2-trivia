@@ -31,6 +31,7 @@ import { light, pulseMood, setMood } from '../lights';
 import { CALM, embers as backdropEmbers } from '../backdropEmbers';
 import { burnsBlue } from './streaks';
 import type { FindKind } from '../delve';
+import { WARD_BREAK } from '../inventoryArt';
 
 const k3 = (c: Vec3, k: number): Vec3 => [c[0] * k, c[1] * k, c[2] * k];
 
@@ -314,6 +315,8 @@ export type RevealTargets = {
   otherScored?: boolean;
   /** The scorer's progress bar before and after the point, 0 to 1. */
   fill?: { from: number; to: number };
+  /** Delve: your ward takes what the miss would have cost (its own blue swell follows, wardBlocked), so no red one. */
+  warded?: boolean;
 };
 
 /** The answer is revealed. */
@@ -377,8 +380,10 @@ export function reveal(t: RevealTargets) {
         puffs(t.art, { count: 8, area: 'fill', color: [0.25, 0.04, 0.02], size: [20, 40] });
       }
     }
-    edgeGlow({ color: C.wrong, intensity: 0.05, width: 60, life: 0.7 });
-    pulseMood(0.16, [0.9, 0.3, 0.15]);
+    if (!t.warded) {
+      edgeGlow({ color: C.wrong, intensity: 0.05, width: 60, life: 0.7 });
+      pulseMood(0.16, [0.9, 0.3, 0.15]);
+    }
     shakeView(0.45, 6);
   }
 
@@ -708,11 +713,12 @@ export function shardFound(pip: Element) {
 
 /**
  * Delve: an Azurite Ward shatters in place of a life (`pip`: the casing
- * bursting on its chamber). It breaks where it is: a cold flash, and blue
- * sparks burst out all round its outline and die away close by, with
- * glittering splinters and a ring of light. Nothing is thrown off to one
- * side (a lost life's light jets out of the phial's end; a ward's doesn't
- * leave). The player's entry (`pill`) is rimmed in blue rather than red.
+ * bursting on its chamber), as its barrier breaks (wardBlocked). It breaks
+ * where it is: a cold flash, and blue sparks burst out all round its outline
+ * and die away close by, with splinters of crystal thrown out and falling,
+ * and a ring of light. Nothing jets off to one side (a lost life's light
+ * jets out of the phial's end; a ward's doesn't leave). The player's entry
+ * (`pill`) is rimmed in blue rather than red.
  */
 export function wardShattered(pip: Element, pill: Element, mine: boolean) {
   if (!fxActive() || detached(pip)) return;
@@ -722,7 +728,7 @@ export function wardShattered(pip: Element, pill: Element, mine: boolean) {
   // Round its outline, a little out from it.
   const rx = b.w / 2 + 1;
   const ry = b.h / 2 + 1;
-  flash(at, { radius: big * 0.75 + 6, color: C.azuritePale, intensity: 0.5, life: 0.35 });
+  flash(at, { radius: big * 0.6 + 4, color: C.azuritePale, intensity: 0.32, life: 0.3 });
   const n = budget(46);
   for (let i = 0; i < n; i++) {
     const a = ((i + Math.random() * 0.8) / n) * Math.PI * 2;
@@ -745,19 +751,19 @@ export function wardShattered(pip: Element, pill: Element, mine: boolean) {
       stretch: 0.03,
     });
   }
-  // Splinters of crystal glittering where it was, drifting down.
-  const m = budget(10);
+  // Splinters of crystal thrown out from where it was, glittering as they fall.
+  const m = budget(mine ? 12 : 8);
   for (let i = 0; i < m; i++) {
     const a = Math.random() * Math.PI * 2;
-    const v = rand(30, 120);
+    const v = rand(70, 210);
     particle({
       x: b.x + (Math.random() - 0.5) * b.w,
       y: b.y + (Math.random() - 0.5) * b.h,
       vx: Math.cos(a) * v,
-      vy: Math.sin(a) * v,
-      life: rand(0.5, 0.9),
-      size: rand(1.2, 2.2),
-      sizeEnd: 0.6,
+      vy: Math.sin(a) * v - 40,
+      life: rand(0.6, 1),
+      size: rand(1.8, 3),
+      sizeEnd: 0.8,
       color: i % 2 ? C.azuritePale : C.azurite,
       colorEnd: k3(C.azurite, 0.25),
       gravity: 160,
@@ -767,11 +773,84 @@ export function wardShattered(pip: Element, pill: Element, mine: boolean) {
       fadeIn: 0.02,
     });
   }
-  ring(at, { radius: big * 0.9 + 10, from: 3, thickness: 3, life: 0.45, color: C.azurite, breakup: 0.5, fill: 0, intensity: 0.7 });
+  ring(at, { radius: big * 0.9 + 10, from: 3, thickness: 3, life: 0.45, color: C.azurite, breakup: 0.5, fill: 0, intensity: 0.5 });
   glints(at, { count: 3, area: 'fill', size: [4, 8], color: C.azuritePale, life: [0.3, 0.6], delay: [0.04, 0.3] });
   light(at, { color: [0.4, 0.62, 1], radius: 130, intensity: 0.28, decay: 0.7 });
   if (!detached(pill)) outline(pill, { color: k3(C.azurite, 0.8), width: 8, life: 0.8, intensity: 0.45 });
-  if (mine) shakeView(0.15, 3);
+}
+
+/** The cold-blue swell at the screen's edges as your ward takes a loss: the red one of a wrong answer (reveal), in azurite. */
+function wardedEdge() {
+  edgeGlow({ color: C.azurite, intensity: 0.05, width: 70, life: 0.8 });
+  pulseMood(0.16, [0.3, 0.55, 1]);
+}
+
+/**
+ * Delve: a ward takes what would have cost a life. Its barrier (`barrier`,
+ * the vesica of crystal Phial.svelte throws round the phial) catches the
+ * blow: a cold flash where it lands (the bottom of the barrier, under the
+ * phial, so nothing flares over the name), sparks glancing off it either
+ * way, and the scene lit blue; your own sends
+ * a cold swell round the screen's edges and jars the view a little. At
+ * WARD_BREAK it breaks: big shards of crystal thrown outward all round it,
+ * further than the casing's splinters, and the casing
+ * (`pip`) shatters with it (wardShattered). A teammate's is smaller.
+ */
+export function wardBlocked(barrier: Element, pip: Element | null, pill: Element, mine: boolean) {
+  if (!fxActive() || detached(barrier)) return;
+  const at = rectOf(barrier);
+  const b = boxOf(at);
+  // The blow lands on the barrier's bottom apex, under the phial (clear of the name above it); upright (phones), turned a quarter, that is its right side.
+  const upright = at.height > at.width;
+  // The vesica inside the box (BARRIER: half width 46, rise 15, in a box of 96 x 34 units).
+  const [hx, hy] = upright ? [at.width * (15 / 34), at.height * (46 / 96)] : [at.width * (46 / 96), at.height * (15 / 34)];
+  const hit = upright ? { x: b.x + hx, y: b.y } : { x: b.x, y: b.y + hy + 1 };
+  const k = mine ? 1 : 0.65;
+  flash(hit, { radius: 12 * k + 4, color: C.azuritePale, intensity: 0.28, life: 0.28 });
+  flash(at, { radius: Math.max(hx, hy) * 0.9, color: C.azurite, intensity: 0.1 * k, life: 0.4 });
+  // Sparks glancing off the barrier, either way along it, away from the name.
+  for (const side of [-1, 1]) {
+    const angle = upright ? side * 0.32 : side < 0 ? Math.PI - 0.32 : 0.32;
+    sparks(hit, { count: Math.round(12 * k), angle, spread: 0.55, colors: [C.whiteHot, C.azuritePale, C.azurite], cool: k3(C.azurite, 0.3), speed: [220, 560], gravity: 260, drag: 2.2, life: [0.25, 0.55] });
+  }
+  glints(hit, { count: 1, area: 'centre', size: [5 * k + 3, 8 * k + 3], color: C.azuritePale, life: [0.25, 0.4], delay: [0, 0.03] });
+  light(at, { color: [0.4, 0.65, 1], radius: 200 * k + 60, intensity: 0.34 * k, hold: 0.15, decay: 0.8 });
+  if (mine) {
+    wardedEdge();
+    shakeView(0.15, 3);
+  }
+  after(WARD_BREAK, () => {
+    if (detached(barrier)) return;
+    const c = boxOf(rectOf(barrier));
+    // Big shards from all round the barrier, thrown outward along it.
+    const n = budget(mine ? 20 : 11);
+    for (let i = 0; i < n; i++) {
+      const t = ((i + Math.random() * 0.7) / n) * Math.PI * 2;
+      const [cos, sin] = [Math.cos(t), Math.sin(t)];
+      // Outward from a vesica of these half sizes, near enough by an ellipse's normal.
+      const nx = cos / hx;
+      const ny = sin / hy;
+      const nl = Math.hypot(nx, ny) || 1;
+      const v = rand(150, 330) * (mine ? 1 : 0.75);
+      particle({
+        x: c.x + cos * hx,
+        y: c.y + sin * hy,
+        vx: (nx / nl) * v + rand(-30, 30),
+        vy: (ny / nl) * v - rand(20, 90),
+        life: rand(0.65, 1.05),
+        size: rand(2.6, 4.4) * (mine ? 1 : 0.8),
+        sizeEnd: 1.1,
+        color: i % 3 === 0 ? C.whiteHot : i % 3 === 1 ? C.azuritePale : C.azurite,
+        colorEnd: k3(C.azurite, 0.28),
+        gravity: 420,
+        drag: 1.6,
+        shape: Shape.Shard,
+        spin: rand(-12, 12),
+        fadeIn: 0.02,
+      });
+    }
+    if (pip && !detached(pip)) wardShattered(pip, pill, mine);
+  });
 }
 
 /**
@@ -956,15 +1035,21 @@ export function milestoneReached(card: Element, accent: string) {
   light(card, { color: unit(tint), radius: Math.max(220, b.w * 0.6), intensity: 0.2, decay: 1.1 });
 }
 
-/** Someone guessed wrong in a race: a puff of red at the answer they picked. */
-export function raceMiss(option: Element, mine: boolean) {
+/**
+ * Someone guessed wrong in a race (or, Delve together, struck an option): a
+ * puff of red at the answer they picked. `warded`: your ward takes what it
+ * cost, and swells blue at the edges instead of red (wardBlocked).
+ */
+export function raceMiss(option: Element, mine: boolean, warded = false) {
   if (!fxActive()) return;
   sparks(option, { count: mine ? 24 : 10, area: 'edge', colors: [C.wrong, C.ember], gravity: 800, life: [0.3, 0.7] });
   if (mine) {
     shards(option, { count: 16 });
-    edgeGlow({ color: C.wrong, intensity: 0.05, life: 0.7 });
+    if (!warded) {
+      edgeGlow({ color: C.wrong, intensity: 0.05, life: 0.7 });
+      pulseMood(0.16, [0.9, 0.3, 0.15]);
+    }
     shakeView(0.4, 6);
-    pulseMood(0.16, [0.9, 0.3, 0.15]);
   }
 }
 

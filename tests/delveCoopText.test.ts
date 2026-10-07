@@ -4,7 +4,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { coopMissText, coopRevealText, delverText, lossDepths, namesOf, teamFindNote } from '../src/lib/difficultyText.ts';
+import { coopMissText, coopRevealText, delverText, lossDepths, namesOf, teamFindNote, wardText } from '../src/lib/difficultyText.ts';
 
 const NAMES: Record<string, string> = { a: 'Ash', b: 'Brea', c: 'Cara', me: 'Me' };
 const nameOf = (id: string) => NAMES[id];
@@ -35,14 +35,20 @@ test('the time-out: the darkness takes those who never answered', () => {
   );
 });
 
+test('a ward taking a loss reads as protection, alone as together', () => {
+  assert.equal(wardText('your'), 'Your ward took the hit.');
+  assert.equal(wardText("Ash's"), "Ash's ward took the hit.");
+  assert.equal(wardText('your', 2), 'Your two wards took both hits.');
+});
+
 test('wards, cave-ins and the perished read plainly, and briefly', () => {
-  assert.equal(says({ hits: [hit('a', 0, 1)] }), "Every answer was wrong. Ash's ward shattered.");
-  assert.equal(says({ hits: [hit('a', 0, 1), hit('me', 0, 1)] }), 'Every answer was wrong. Wards shattered for you and Ash.');
+  assert.equal(says({ hits: [hit('a', 0, 1)] }), "Every answer was wrong. Ash's ward took the hit.");
+  assert.equal(says({ hits: [hit('a', 0, 1), hit('me', 0, 1)] }), 'Every answer was wrong. Wards took the hits for you and Ash.');
   assert.equal(
     says({ caveIn: true, hits: [hit('a', 2), hit('b', 1, 1)], left: { a: 1, b: 2 } }),
     "Every answer was wrong. The vein caved in on Ash and Brea. Brea's ward broke, and a life with it. Ash loses two lives.",
   );
-  assert.equal(says({ caveIn: true, winner: 'b', hits: [hit('me', 0, 2)] }), 'Brea cleared it. The vein caved in on you. Your two wards broke.');
+  assert.equal(says({ caveIn: true, winner: 'b', hits: [hit('me', 0, 2)] }), 'Brea cleared it. The vein caved in on you. Your two wards took both hits.');
   assert.equal(says({ hits: [hit('a'), hit('b')], left: { a: 0, b: 0 } }), 'Every answer was wrong. Ash and Brea perish.');
   assert.equal(says({ hits: [hit('me')], left: { me: 0 } }), 'Every answer was wrong. You perish.');
   // Never what the screen already shows: lives left, the depth.
@@ -81,8 +87,8 @@ test("a Dynamite Cache's blast says what it destroyed of each pack, after the lo
 test('your own wrong answer, while the team answers on', () => {
   assert.equal(coopMissText({ lives: 1, wards: 0 }, 2, false), 'Wrong.');
   assert.equal(coopMissText({ lives: 1, wards: 0, blown: 'flares' }, 2, false), 'Wrong. The blast destroyed your flare.');
-  assert.equal(coopMissText({ lives: 0, wards: 1, blown: 'dynamite' }, 3, false), 'Wrong; your ward took it. The blast destroyed your dynamite.');
-  assert.equal(coopMissText({ lives: 0, wards: 1 }, 3, false), 'Wrong; your ward took it.');
+  assert.equal(coopMissText({ lives: 0, wards: 1, blown: 'dynamite' }, 3, false), 'Wrong; your ward took the hit. The blast destroyed your dynamite.');
+  assert.equal(coopMissText({ lives: 0, wards: 1 }, 3, false), 'Wrong; your ward took the hit.');
   assert.equal(coopMissText({ lives: 2, wards: 0 }, 1, true), 'Wrong; the vein caved in.');
   assert.equal(coopMissText({ lives: 1, wards: 0 }, 0, false), 'You perished; your team can still clear it.');
 });

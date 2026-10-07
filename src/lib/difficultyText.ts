@@ -282,6 +282,15 @@ const whose = (id: string, nameOf: (id: string) => string, me: string | null) =>
 /** A verb for a subject of `ids`: plural for you or for several ("you lose", "Ash loses", "Ash and Brea lose"). */
 const verb = (ids: string[], me: string | null, one: string, many: string) => (ids.length > 1 || ids[0] === me ? many : one);
 
+/**
+ * A ward (or a cave-in's two) taking what would have cost a life, said as
+ * protection: "Your ward took the hit.", "Ash's two wards took both hits."
+ * `whose`: "your", or a name's possessive.
+ */
+export function wardText(whose: string, wards = 1): string {
+  return wards > 1 ? `${cap(whose)} two wards took both hits.` : `${cap(whose)} ward took the hit.`;
+}
+
 /** One loss a co-op question dealt (game.ts Hit). */
 export interface HitText {
   playerId: string;
@@ -338,11 +347,8 @@ export function coopRevealText(r: {
   const warded = hits.filter((h) => h.lives === 0 && h.wards > 0);
   const both = hits.filter((h) => h.lives > 0 && h.wards > 0 && r.left(h.playerId) > 0);
   const lost = hits.filter((h) => h.lives > 0 && h.wards === 0 && r.left(h.playerId) > 0);
-  if (warded.length === 1) {
-    const h = warded[0];
-    const w = whose(h.playerId, nameOf, me);
-    out.push(h.wards > 1 ? `${cap(w)} two wards broke.` : `${cap(w)} ward shattered.`);
-  } else if (warded.length) out.push(`Wards shattered for ${list(warded.map((h) => h.playerId))}.`);
+  if (warded.length === 1) out.push(wardText(whose(warded[0].playerId, nameOf, me), warded[0].wards));
+  else if (warded.length) out.push(`Wards took the hits for ${list(warded.map((h) => h.playerId))}.`);
   for (const h of both) out.push(`${cap(whose(h.playerId, nameOf, me))} ward broke, and a life with it.`);
   // A single life lost is the phial's to show; two at once (a cave-in) are said.
   const two = lost.filter((h) => h.lives > 1).map((h) => h.playerId);
@@ -406,7 +412,7 @@ function clearedText(winner: string, gain: GainText | undefined, nameOf: (id: st
 export function coopMissText(hit: { lives: number; wards: number; blown?: ItemKind }, left: number, caveIn: boolean): string {
   if (left === 0) return 'You perished; your team can still clear it.';
   if (caveIn) return 'Wrong; the vein caved in.';
-  const took = hit.lives === 0 ? 'Wrong; your ward took it.' : 'Wrong.';
+  const took = hit.lives === 0 ? 'Wrong; your ward took the hit.' : 'Wrong.';
   return hit.blown ? `${took} ${blownText(hit.blown, 'your')}` : took;
 }
 

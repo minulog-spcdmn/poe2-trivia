@@ -298,6 +298,7 @@
           <button onclick={L.lastLife} disabled={!!busy}>Last life, perish</button>
           <button onclick={L.wardBreaks} disabled={!!busy}>Ward takes a loss</button>
           <button onclick={L.caveIn} disabled={!!busy}>Vein cave-in</button>
+          <button onclick={L.wardsCaveIn} disabled={!!busy}>Two wards take a cave-in</button>
           <button onclick={L.flare} disabled={!!busy}>Flare at 0</button>
           <button onclick={L.dynamite} disabled={!!busy}>Dynamite at half</button>
           <button onclick={L.deeperThanEver} disabled={!!busy}>Deeper than ever</button>
@@ -314,6 +315,7 @@
             <button onclick={L.reviveTeammate} disabled={!!busy}>Give a life</button>
             <button onclick={L.lastLife} disabled={!!busy}>Perish</button>
             <button onclick={L.othersPerish} disabled={!!busy}>Others perish</button>
+            <button onclick={L.teammateWard} disabled={!!busy}>Teammate's ward</button>
             <button onclick={L.timeOut} disabled={!!busy}>Time out (team)</button>
           </div>
         {/if}
