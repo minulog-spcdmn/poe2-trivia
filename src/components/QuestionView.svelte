@@ -159,12 +159,12 @@
   // ---- dynamite ----
   // Delve: while the question is open, a stick of dynamite (alone your own,
   // together anyone standing's) can blast it away for a new one at the same
-  // depth, twice a depth at most: its button (Skip) takes the place Next has
+  // depth, twice a depth at most: its button (Detonate) takes the place Next has
   // after an answer. Once this question has dynamite at hand its place is
   // kept until the question ends, the button only showing while it can be
   // used, so nothing moves as it comes and goes. As the clock hits 0 with no
   // flare to burn, the host lights its fuse (Question.fuse): the button's
-  // bar burns down with it, on the host's clock as Next's does, and Skip
+  // bar burns down with it, on the host's clock as Next's does, and Detonate
   // still sets it off at once meanwhile.
 
   /** Sticks of dynamite at hand: alone the player's, together everyone standing's. */
@@ -810,11 +810,11 @@
         disabled={!canBlast}
         aria-hidden={!canBlast}
         tabindex={canBlast ? undefined : -1}
-        aria-label="Skip: use dynamite to blast this question away and get a new one at this depth.{fuse !== null ? ' The fuse is already burning.' : ''}"
+        aria-label="Detonate: use dynamite to blast this question away and get a new one at this depth.{fuse !== null ? ' The fuse is already burning.' : ''}"
         onclick={blastThrough}
       >
         <span class="stick" aria-hidden="true"><ItemGlyph kind="dynamite" /></span>
-        Skip
+        Detonate
         {#if fuse !== null}
           <!-- The fuse lit at 0: it burns down as Next's bar does, and the dynamite goes off. -->
           <span class="auto fuse" style:transform="scaleX({fuse})"></span>
@@ -835,7 +835,7 @@
       {#if others.length}<span class="still">Still answering: {namesOf(others, nameOf, me)}.</span>{/if}
     </p>
   {:else if fuse !== null}
-    <!-- Delve: the clock hit 0 and a stick of dynamite's fuse is lit (its bar burns down on Skip). -->
+    <!-- Delve: the clock hit 0 and a stick of dynamite's fuse is lit (its bar burns down on Detonate). -->
     <p class="spectate blast-line" in:fade={{ duration: 200 }}>
       <span class="found-glyph" aria-hidden="true"><ItemGlyph kind="dynamite" /></span>Time's up, and {coop ? "the team's" : delveYou ? 'your' : `${active.name}'s`} dynamite fuse is lit.
     </p>
@@ -1441,7 +1441,7 @@
     text-align: left;
     font-size: inherit;
   }
-  /* Skip: an ordinary action (Next's body, shape and type), in dynamite's
+  /* Detonate: an ordinary action (Next's body, shape and type), in dynamite's
      tan, the colour its finds and the line it leaves are written in. */
   .btn.blast {
     color: #eebf96;

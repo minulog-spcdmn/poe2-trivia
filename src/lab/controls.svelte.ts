@@ -572,7 +572,7 @@ function withCards() {
  * one). A depth has two blasts at most: past them, the lab says so.
  */
 export const dynamite = () =>
-  event('Skip (dynamite)', async () => {
+  event('Detonate (dynamite)', async () => {
     const id = activeId();
     if (!holds(id, 'dynamite')) put((s) => invSet(s, id, (v) => (v.dynamite = 1)), true);
     withCards();

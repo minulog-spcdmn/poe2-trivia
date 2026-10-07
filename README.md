@@ -75,7 +75,7 @@ the same thing for everyone.
     answered.
   - Flares and dynamite go off from the pack of a random holder still
     standing, and help everyone. Anyone standing who hasn't answered may
-    press Skip (a teammate's wrong answer locks nobody else out:
+    press Detonate (a teammate's wrong answer locks nobody else out:
     it stays paid, and everyone standing, its player too, answers the new
     question). Its card is the one with the most votes that wasn't chosen,
     ties drawn by the host, then the others, drawn. The first right answer
@@ -179,7 +179,7 @@ the same thing for everyone.
     the item's slot (its ward's chamber, or the flare's or dynamite's place
     beside the phial).
   - A **Dynamite Cache** (from depth 10) gives **dynamite**. While a
-    question is open, a **Skip** button (dynamite's glyph, in its tan)
+    question is open, a **Detonate** button (dynamite's glyph, in its tan)
     stands where Next will after the answer (its place kept, so nothing moves as it comes and
     goes): pressed, a stick blasts the question away for a new one at the
     same depth, from a card on the depth's offer not asked yet. The depth
@@ -191,11 +191,11 @@ the same thing for everyone.
     depth (`DELVE_MAX_BLASTS`, the offer's other cards). As the clock hits
     0, a flare burns first; only with none to burn is a stick's fuse lit
     (while the depth has a blast left), in place of the time-out, which
-    then costs nothing: it hisses, and a bar burns down on Skip as Next's
+    then costs nothing: it hisses, and a bar burns down on Detonate as Next's
     does, for `DELVE_FUSE_MS` (1.8 s, set by the host on its clock, so
     every screen burns it together). The time is up meanwhile: no answer
     counts but one given before 0. Burnt down, the dynamite goes off by
-    itself; Skip sets it off at once. Instead of the plunge, the stage
+    itself; Detonate sets it off at once. Instead of the plunge, the stage
     swings sideways, toward where the new card lay on the offer from the
     blasted one (a card to its left swings left): the explosion bursts in
     from that side of the screen (a flash, a fireball and smoke billowing
@@ -234,7 +234,7 @@ the same thing for everyone.
     if you hold one (on your last life you simply fall).
   - Flares and dynamite never work on a find's own question: finds lie
     down dangerous routes, with thicker walls and a darkness nothing can
-    hold back, so there is no Skip button and nothing happens at 0. You carry up to three of each item.
+    hold back, so there is no Detonate button and nothing happens at 0. You carry up to three of each item.
 - **Alone**, you delve until your third life is gone; the depth where it went
   is your result. **Together**, the run goes on while anyone stands, and
   the depth where the last of the team perished is the team's result.
@@ -841,7 +841,7 @@ and the depth (any of 1 to 150, or a zone); deals cards with a find among
 them, and a second find if wanted; asks questions (name the item or find
 the art, a find's, mirrored, unveiled, in grayscale); plays events (a right
 or wrong answer, a time-out, a ward breaking, a cave-in, a flare at 0,
-a blast (Skip), dynamite at 0 (its fuse), items gained, a find answered right, the last
+a blast (Detonate), dynamite at 0 (its fuse), items gained, a find answered right, the last
 life, deeper than ever, a new zone, the plunge); pauses and moves the
 clock; shows the end screens (perished, deeper than ever, together); and
 switches effects, sound and reduced motion. Events go through the engine

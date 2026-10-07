@@ -531,7 +531,7 @@ export const DELVE_MAX_BLASTS = 2;
  * (Question.fuse, on the host's clock, so every screen burns it down
  * together); the time is up, so no answer counts any more (but one given
  * before 0, within the allowance for answers in flight), and when it has
- * burnt down the dynamite blasts the question away. Pressing Skip meanwhile
+ * burnt down the dynamite blasts the question away. Pressing Detonate meanwhile
  * blasts it at once.
  */
 export const DELVE_FUSE_MS = 1800;
