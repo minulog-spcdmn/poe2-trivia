@@ -379,7 +379,7 @@
         if (el) itemBlown(el, li, item, mine);
         if (mine) sfx('itemBlown');
       }
-      // A blast is heard from QuestionView, where the stick goes off.
+      // A blast is heard as the question it blasted away gives way (session.svelte.ts).
     });
   }
 

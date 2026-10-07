@@ -55,7 +55,11 @@ test('rejects anything a real client would never send', () => {
     { t: 'action', action: { type: 'revive', target: ['p1'] } },
     { t: 'action', action: { type: 'revive', target: 'x'.repeat(65) } },
     { t: 'action', action: { type: 'flare', askedAt: 1 } },
-    { t: 'action', action: { type: 'dynamite', askedAt: 1 } },
+    { t: 'action', action: { type: 'dynamite', askedAt: 1 } }, // gone: dynamite is a blast now
+    { t: 'action', action: { type: 'blast' } },
+    { t: 'action', action: { type: 'blast', askedAt: 'x' } },
+    { t: 'action', action: { type: 'blast', askedAt: -1 } },
+    { t: 'action', action: { type: 'blast', askedAt: 1.5 } },
     { t: 'state', state: {} },
   ];
   for (const m of bad) assert.equal(parseClientMsg(m), null, JSON.stringify(m)?.slice(0, 80));
@@ -113,11 +117,16 @@ test('veiled "find the art" pictures say which option they belong to', () => {
   assert.equal(parseHostMsg({ ...patch, tile: '2' }), null);
 });
 
-test('version 12: the frozen Delve rules (finds that blow up and shorten the clock); 11 had the co-op vote and revive', () => {
-  assert.equal(PROTOCOL_VERSION, 12);
+test('version 13: dynamite blasts a question away (the blast action); 12 had the frozen Delve rules, 11 the co-op vote and revive', () => {
+  assert.equal(PROTOCOL_VERSION, 13);
   // A guest on an older curve would time its own clock and fast window wrongly, so it does not mix.
+  assert.match(versionProblem(12)!, /^Your game is out of date/);
   assert.match(versionProblem(11)!, /^Your game is out of date/);
   assert.match(versionProblem(10)!, /^Your game is out of date/);
   assert.deepEqual(parseClientMsg({ t: 'action', action: { type: 'vote', category: 'Rings' } }), { t: 'action', action: { type: 'vote', category: 'Rings' } });
   assert.deepEqual(parseClientMsg({ t: 'action', action: { type: 'revive', target: 'p2' } }), { t: 'action', action: { type: 'revive', target: 'p2' } });
+  // A blast names only its question; who set it off the host takes from the connection.
+  assert.deepEqual(parseClientMsg({ t: 'action', action: { type: 'blast', askedAt: 42, by: 'p0' } }), { t: 'action', action: { type: 'blast', askedAt: 42 } });
+  // The plain art the dynamite before it laid bare is no message any more.
+  assert.equal(parseHostMsg({ t: 'clean', qid: 5, w: 120, h: 160, data: new ArrayBuffer(8) }), null);
 });

@@ -6,7 +6,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { DELVE_LIVES, DELVE_MAX_LOCKOUT, FLARE_MS, blastAtMs, delveLockout, dynamiteOf, findOn, flaresOf, inventoryOf, livesOf, wardsOf, type Inventory } from '../src/lib/delve.ts';
+import { DELVE_LIVES, DELVE_MAX_LOCKOUT, FLARE_MS, delveLockout, dynamiteOf, findOn, flaresOf, inventoryOf, livesOf, wardsOf, type Inventory } from '../src/lib/delve.ts';
 import { ANSWER_GRACE_MS, ActionError, Engine, createGame, type Action, type GameState, type Item, type Question, type Settings } from '../src/lib/game.ts';
 
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
@@ -158,17 +158,23 @@ test('alone: a question set aside after a reload gives back the flare and the dy
   const h = solo();
   h.give('p0', { flares: 1, dynamite: 1 });
   const q = h.ask();
-  h.clock.now = q.clockAt! + blastAtMs(h.s);
-  h.act({ type: 'dynamite', askedAt: q.askedAt });
-  assert.equal(h.s.question!.blasted, true);
+  const offer = [...h.s.offered];
+  h.act({ type: 'blast', askedAt: q.askedAt });
+  const b = h.s.question!;
+  assert.equal(b.blast?.was.at, q.askedAt);
+  h.act({ type: 'clock', askedAt: b.askedAt });
   h.clock.now = h.s.question!.deadline!;
-  h.act({ type: 'flare', askedAt: q.askedAt });
+  h.act({ type: 'flare', askedAt: b.askedAt });
   assert.equal(h.s.question!.flared, true);
   assert.deepEqual([flaresOf(h.s, 'p0'), dynamiteOf(h.s, 'p0')], [0, 0]);
   h.act({ type: 'connection', playerId: 'p0', connected: false });
   h.act({ type: 'resumed' });
   assert.equal(h.s.phase, 'choosing');
   assert.deepEqual([flaresOf(h.s, 'p0'), dynamiteOf(h.s, 'p0'), livesOf(h.s, 'p0')], [1, 1, DELVE_LIVES]);
+  // The same cards come back, none asked yet, and the blast is undone with it.
+  assert.deepEqual(h.s.offered, offer);
+  assert.equal(h.s.delve!.asked, undefined);
+  assert.equal(h.s.delve!.blasts, undefined);
 });
 
 test('together: a question set aside after a reload gives each item back to whoever spent it', () => {
@@ -176,11 +182,12 @@ test('together: a question set aside after a reload gives each item back to whoe
   h.give('p1', { dynamite: 1 });
   h.give('p2', { flares: 1 });
   const q = h.ask();
-  h.clock.now = q.clockAt! + blastAtMs(h.s);
-  h.act({ type: 'dynamite', askedAt: q.askedAt });
-  assert.equal(h.s.question!.blastedBy, 'p1');
+  h.act({ type: 'blast', askedAt: q.askedAt }, 'p0');
+  const b = h.s.question!;
+  assert.deepEqual([b.blast?.by, b.blast?.stick], ['p0', 'p1']);
+  h.act({ type: 'clock', askedAt: b.askedAt });
   h.clock.now = h.s.question!.deadline!;
-  h.act({ type: 'flare', askedAt: q.askedAt });
+  h.act({ type: 'flare', askedAt: b.askedAt });
   assert.equal(h.s.question!.flaredBy, 'p2');
   h.act({ type: 'connection', playerId: 'p2', connected: false });
   h.act({ type: 'resumed' });

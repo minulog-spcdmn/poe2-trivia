@@ -120,8 +120,12 @@
     return out;
   });
 
-  /** One kind's finds, the wards that saved a life and the flares and dynamite that went off. */
-  function findRowsOf(f: FindStats): Row[] {
+  /**
+   * One kind's finds, the wards that saved a life, and the flares and
+   * dynamite that went off: the questions dynamite blasted away are counted
+   * by run (the codex logs no answer to them), over the runs the list keeps.
+   */
+  function findRowsOf(f: FindStats, blasts: number): Row[] {
     const out: Row[] = [];
     const { azurite: vein, flare: cache, dynamite } = f.finds;
     const missed = (t: typeof vein, how: string): [number, string][] => (t.taken - t.ok ? [[t.taken - t.ok, how]] : []);
@@ -129,16 +133,18 @@
     if (vein.taken) out.push({ name: 'Azurite Veins', value: fmt(vein.taken), note: [...got(vein.gained.wards, 'ward'), ...got(vein.gained.shards, 'shard'), ...missed(vein, 'caved in')] });
     if (cache.taken) out.push({ name: 'Flare Caches', value: fmt(cache.taken), note: [...got(cache.gained.flares, 'flare'), ...missed(cache, 'missed')] });
     if (dynamite.taken) out.push({ name: 'Dynamite Caches', value: fmt(dynamite.taken), note: [...got(dynamite.gained.dynamite, 'stick'), ...missed(dynamite, 'missed')] });
-    if (f.blasted) out.push({ name: 'Dynamite blasts', value: fmt(f.blasted), note: [[0, 'art laid bare, wrong answers blown away']] });
+    if (blasts) out.push({ name: 'Dynamite blasts', value: fmt(blasts), note: [[0, 'questions blasted away for new ones']] });
     if (f.wardsBroke) out.push({ name: 'Lives warded', value: fmt(f.wardsBroke), note: [[0, 'a ward broke in its place']] });
     if (f.flaresBurnt) out.push({ name: 'Flares burnt', value: fmt(f.flaresBurnt), note: [[5, 's more on the clock each']] });
     return out;
   }
-  /** Alone and together apart, from the answers the codex logged. */
+  /** Questions dynamite blasted away in the runs of one kind the list keeps. */
+  const blastsIn = (kind: DelveKind) => runsOf(records, kind).reduce((n, r) => n + (r.blasts ?? 0), 0);
+  /** Alone and together apart, from the answers the codex logged (and the runs, for blasts). */
   const findScopes = $derived(
     [
-      { label: 'Alone', rows: findRowsOf(findStats(answersOf(codex.log, 'solo'))) },
-      { label: 'Together', rows: findRowsOf(findStats(answersOf(codex.log, 'together'))) },
+      { label: 'Alone', rows: findRowsOf(findStats(answersOf(codex.log, 'solo')), blastsIn('solo')) },
+      { label: 'Together', rows: findRowsOf(findStats(answersOf(codex.log, 'together')), blastsIn('together')) },
     ].filter((sc) => sc.rows.length),
   );
 

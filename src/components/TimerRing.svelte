@@ -33,8 +33,8 @@
   let remaining = $state(Infinity);
 
   // A flare burnt (the question is `flared`): the ring flares back up. Not
-  // on any move of the deadline, which dynamite's pause moves on too; and
-  // not on mounting a question already flared (a refresh or rejoin).
+  // on any move of the deadline, which a pause moves on too; and not on
+  // mounting a question already flared (a refresh or rejoin).
   let flaring = $state(false);
   let wasFlared: boolean | null = null;
   $effect(() => {
@@ -48,7 +48,7 @@
     }
   });
   /**
-   * The time left at `now`: held still while dynamite's pause is on (see
+   * The time left at `now`: held still while a pause is on (the lab's; see
    * clockLeft). Read off the session's state, not `q`: a ring going out
    * under the next question must not read its deriveds (derived_inert).
    */

@@ -16,27 +16,23 @@
   import { untrack, type Snippet } from 'svelte';
   import {
     FILL_START,
-    FUSE_MS,
     answerCharging,
     artRevealed,
-    dynamiteBlast,
     raceMiss,
     reveal as revealFx,
     veilComplete,
     veilHandoff,
     type VerdictTone,
   } from '../lib/fx/moments';
-  import { dynamiteIn } from '../lib/delveSession';
   import { FILL_LEAD } from '../lib/soundDesign';
   import { streakOf } from '../lib/fx/streaks';
   import { scoreRowOf } from '../lib/scoreRows';
   import { fxActive, type Handle } from '../lib/fx/core';
   import { dock, narrow, phone } from '../lib/layout';
   import { portal } from '../lib/portal';
-  import { fellAt, isGroupRun, livesOf, waitingIds } from '../lib/delve';
+  import { blastProblem, dynamiteOf, fellAt, holdersOf, isGroupRun, itemsWorkOn, livesOf, waitingIds } from '../lib/delve';
   import { blownText, coopMissText, coopRevealText, namesOf, wardText } from '../lib/difficultyText';
   import ItemGlyph from './ItemGlyph.svelte';
-  import Fuse from './Fuse.svelte';
   import type { GlyphKind } from '../lib/inventoryArt';
 
   /** The question's timer (Game.svelte has it in the scoreboard on phones instead). */
@@ -157,133 +153,64 @@
   // Size of the art shown during the question: keeps the reveal from jumping.
   const hint = $derived(media?.veil ?? media?.art ?? null);
 
-  // ---- dynamite ----
-  // Delve: a stick of the answering player's dynamite goes off at half the
-  // clock. Its fuse is lit soon after the clock starts and burns down round
-  // the art as a countdown to it (Fuse.svelte), hissing again in its last
-  // moments (FUSE_MS); it goes off when the host says it went off: the art
-  // floods with colour as the plain copy arrives (media.clean), and the
-  // answers it blew away are blasted off the board. Every screen burns it on
-  // the host's clock.
+  /** Your answer, on its way to the host. */
+  let chosen = $state<number | null>(null);
 
-  /** How long after the clock starts the fuse is lit (ms). */
-  const FUSE_LIT_MS = 400;
-  /** The options dynamite blew away (disabled at once; blasted on screen as it goes off). */
-  const blown = $derived(new Set(s.delve ? (q.blownAway ?? []) : []));
-  /**
-   * How far the blast has got on this screen: the fuse burning, its last
-   * hiss, gone off. A question already blasted when it shows is just plain.
-   */
-  let blast = $state<'none' | 'fuse' | 'hiss' | 'blown'>(untrack(() => (q.blasted ? 'blown' : 'none')));
-  /** The fuse while it burns: when it was lit and when it reaches the stick (host clock). */
-  let cord = $state<{ lit: number; at: number } | null>(null);
-  /** The plain art, once the blast has gone off here and it has arrived. */
-  const plain = $derived(blast === 'blown' ? (media?.clean ?? null) : null);
-  const plainTile = (i: number) => (blast === 'blown' ? media?.cleanTiles[i] : undefined);
-  /** The plain art has flooded in over what was shown, which can go. */
-  let floodDone = $state(untrack(() => !!q.blasted));
+  // ---- dynamite ----
+  // Delve: while the question is open, a stick of dynamite (alone your own,
+  // together anyone standing's) can blast it away for a new one at the same
+  // depth, twice a depth at most: its button takes the place Next has after
+  // an answer. Once this question has dynamite at hand its place is kept
+  // until the question ends, the button only showing while it can be used,
+  // so nothing moves as it comes and goes.
+
+  /** Sticks of dynamite at hand: alone the player's, together everyone standing's. */
+  const sticks = $derived(!s.delve ? 0 : coop ? holdersOf(s, 'dynamite').reduce((n, id) => n + dynamiteOf(s, id), 0) : dynamiteOf(s, active.id));
+  /** The clock has run out here (a flare burning moves it on): what happens now is the host's (a flare, the dynamite by itself, the time-out). */
+  let expired = $state(false);
   $effect(() => {
-    if (floodDone || (!plain && !Object.keys(media?.cleanTiles ?? {}).length) || blast !== 'blown') return;
-    const timer = setTimeout(() => (floodDone = true), 900);
+    const end = q.deadline;
+    if (end === null || reveal) return;
+    const left = end - session.hostNow();
+    expired = left <= 0;
+    if (left <= 0) return;
+    const timer = setTimeout(() => (expired = true), left);
     return () => clearTimeout(timer);
   });
-  let hissAt = 0;
-  /** When the fuse was lit here (its sound played), on performance.now(). */
-  let litAt = -Infinity;
-  /**
-   * The hiss playing, to cut it off at the blast or a snuff. sfx returns a
-   * stop handle once sound.ts gives one; until then this stays null.
-   */
-  let hissing: (() => void) | null = null;
-  const stopper = (h: unknown) => (typeof h === 'function' ? (h as () => void) : null);
-  function hush() {
-    hissing?.();
-    hissing = null;
-  }
-  const blastTimers: ReturnType<typeof setTimeout>[] = [];
-  $effect(() => () => {
-    blastTimers.forEach(clearTimeout);
-    hush();
-  });
-  function lightFuse(lit: number, at: number) {
-    if (blast !== 'none') return;
-    blast = 'fuse';
-    cord = { lit, at };
-    litAt = performance.now();
-    hissing = stopper(sfx('fuse'));
-  }
-  /** Its last moments: it hisses again as it nears the stick. */
-  function hiss() {
-    if (blast === 'hiss' || blast === 'blown') return;
-    blast = 'hiss';
-    hissAt = performance.now();
-    // Lit just now (a screen that came in, or woke, in the last moments, or a
-    // blast not seen coming): its fizz is still playing, so not twice at once.
-    if (hissAt - litAt < 300) return;
-    hush();
-    hissing = stopper(sfx('fuse'));
-  }
-  /** It didn't go off after all (an answer came first, or the player left). */
-  function snuff() {
-    if (blast !== 'fuse' && blast !== 'hiss') return;
-    cord = null;
-    blast = 'none';
-    hush();
-  }
-  function goOff() {
-    if (blast === 'blown') return;
-    blast = 'blown';
-    cord = null;
-    hush();
-    sfx('blast');
-    dynamiteBlast({ art: artEl, blown: [...blown].flatMap((i) => (optionEls[i] ? [optionEls[i]] : [])), mine });
-  }
-  // The fuse is lit as the clock gets going, and hisses ahead of half the clock, on every screen alike.
+  /** Whether this device can blast the question away now (delve.ts blastProblem; on one device, for the player). */
+  const canBlast = $derived(
+    !!s.delve && mine && !reveal && !waiting && !expired && chosen === null && blastProblem(s, session.mode === 'local' ? null : me) === null,
+  );
+  /** The button's place, kept from when dynamite is at hand on a question it works on until the question ends. */
+  const slotWanted = () => !!s.delve && !reveal && itemsWorkOn(q) && sticks > 0 && mine;
+  // Taken from the first frame when it applies already, so the row never pops in under the answers.
+  let blastSlot = $state(untrack(slotWanted));
   $effect(() => {
-    if (reveal || q.blasted) return;
-    const now = session.hostNow();
-    const left = dynamiteIn(s, now);
-    if (left === null) {
-      untrack(snuff);
-      return;
-    }
-    const at = now + left;
-    // Soon after the clock starts (at once, on a screen that comes in late),
-    // and never after its last hiss.
-    const lit = Math.min(at - FUSE_MS, (q.clockAt ?? now) + FUSE_LIT_MS);
-    // Burning already: it follows the clock (moved on by the host, or by the lab).
-    untrack(() => {
-      if (cord) cord = { lit: Math.min(lit, cord.lit), at };
-    });
-    const timers = [setTimeout(() => lightFuse(lit, at), Math.max(0, lit - now)), setTimeout(hiss, Math.max(0, left - FUSE_MS))];
-    return () => timers.forEach(clearTimeout);
+    if (!blastSlot && slotWanted()) blastSlot = true;
   });
-  // It went off: blow once the fuse has had its last hiss.
+  /** The row's height while it shows, kept for the phones' reveal, which docks Next and leaves the row's place empty. */
+  let blastRowH = $state(0);
+  let blastKeep = $state(0);
   $effect(() => {
-    if (!q.blasted) {
-      if (reveal) untrack(snuff);
-      return;
-    }
-    untrack(() => {
-      const was = blast;
-      if (was === 'blown') return;
-      // Not seen coming (no fuse lit here): a short one, burning down fast.
-      if (was === 'none') {
-        const now = session.hostNow();
-        lightFuse(now - 1, now + 360);
-      }
-      hiss();
-      const wait = was === 'hiss' ? Math.max(150, Math.min(FUSE_MS, hissAt + FUSE_MS - performance.now())) : 360;
-      blastTimers.push(setTimeout(goOff, wait));
-    });
+    if (blastRowH > 0) blastKeep = blastRowH;
   });
-  /** "Your dynamite went off" or someone else's, and how many answers it took. */
+  let blasting = false;
+  function blastThrough() {
+    if (!canBlast || blasting) return;
+    blasting = true;
+    // Its fuse is lit here at once; the blast is heard as the new question comes (session.svelte.ts).
+    sfx('fuse');
+    session.dispatch({ type: 'blast', askedAt: q.askedAt });
+    // Should the host turn it down (it crossed the end of the question), it can be pressed again.
+    setTimeout(() => (blasting = false), 1500);
+  }
+  /** The question dynamite blasted away for this one: whose it was, in a line. */
   const blastLine = $derived.by(() => {
-    if (!q.blasted || blast !== 'blown' || reveal) return null;
-    const by = coop ? (q.blastedBy ?? null) : active.id;
-    const whose = (coop ? by === me : delveYou) ? 'Your' : by ? `${nameOf(by)}'s` : 'The';
-    // What it cleared, the board shows.
-    return `${whose} dynamite went off.`;
+    const b = q.blast;
+    if (!s.delve || !b || reveal) return null;
+    const you = session.mode === 'local' || b.stick === me;
+    if (!b.by) return `Time ran out; ${you ? 'your' : `${nameOf(b.stick)}'s`} dynamite went off.`;
+    return `${b.by === me || session.mode === 'local' ? 'You' : nameOf(b.by)} blasted through.`;
   });
 
   // Veiled art: when the newest patch will have finished coming in (ms, page
@@ -385,7 +312,7 @@
     return () => clearTimeout(timer);
   });
   /** The full art replaces what was shown during the question. */
-  const showFull = $derived(!!reveal && !!item && (!media?.veil || !!plain || (veilDone && fullLoaded && (fitted || !full))));
+  const showFull = $derived(!!reveal && !!item && (!media?.veil || (veilDone && fullLoaded && (fitted || !full))));
 
   // A veiled picture that comes in whole before the reveal shimmers once.
   let wholeFor = 0;
@@ -415,7 +342,6 @@
    * the full art fades in.
    */
   function handoff(node: Element) {
-    // Under the plain art dynamite laid bare, it just goes.
     if (!reveal) return { duration: 0 };
     const veil = node.querySelector('.veil');
     if (veil) veilHandoff(veil);
@@ -457,8 +383,7 @@
 
   /** Revealed: was this picture (option index, or 0 for a name question's art) shown mirrored? */
   function mirrored(index: number) {
-    // Dynamite already showed it the right way round.
-    return !!reveal && !!q.mirrored?.[index] && !q.blasted;
+    return !!reveal && !!q.mirrored?.[index];
   }
 
   /** Race reveal: who lost a point, the first few by name so the line stays short. */
@@ -489,8 +414,6 @@
   function optionName(index: number) {
     return q.labels[index] ?? (q.options[index] ? engine.byId.get(q.options[index])?.name : undefined) ?? '';
   }
-
-  let chosen = $state<number | null>(null);
 
   // ---- effects ----
 
@@ -609,7 +532,7 @@
   });
 
   function answer(index: number) {
-    if (!mine || reveal || chosen !== null || waiting || blown.has(index) || struckAt.has(index)) return;
+    if (!mine || reveal || chosen !== null || waiting || struckAt.has(index)) return;
     // Time's up: the host only waits a moment longer for answers already on their way.
     if (q.deadline && session.hostNow() > q.deadline) return;
     chosen = index;
@@ -851,14 +774,40 @@
         {/if}
       </button>
     </div>
-  {:else if coop && myStruck && me}
+  {:else if blastSlot}
+    <!-- Delve: dynamite at hand. The button stands where Next will. -->
+    <div class="result blasting" bind:clientHeight={blastRowH}>
+      <div class="hint">{@render openHint()}</div>
+      <button
+        class="btn blast"
+        class:gone={!canBlast}
+        data-sfx="none"
+        disabled={!canBlast}
+        aria-hidden={!canBlast}
+        tabindex={canBlast ? undefined : -1}
+        aria-label="Blast through: dynamite blasts this question away for a new one at this depth{sticks > 1 ? `, ${sticks} sticks left` : ''}"
+        onclick={blastThrough}
+      >
+        <span class="stick" aria-hidden="true"><ItemGlyph kind="dynamite" /></span>
+        Blast through
+        {#if sticks > 1}<span class="count" aria-hidden="true">{sticks}</span>{/if}
+      </button>
+    </div>
+  {:else}
+    {@render openHint()}
+  {/if}
+{/snippet}
+
+<!-- What there is to know while the question is open, under the answers. -->
+{#snippet openHint()}
+  {#if coop && myStruck && me}
     {@const others = waitingIds(s).filter((id) => id !== me)}
     <p class="spectate out">
       {coopMissText(myStruck, livesOf(s, me), myStruck.lives + myStruck.wards > 1)}
       {#if others.length}<span class="still">Still answering: {namesOf(others, nameOf, me)}.</span>{/if}
     </p>
   {:else if blastLine}
-    <p class="spectate blast-line" in:fade={{ duration: 300 }}><span class="found-glyph" aria-hidden="true"><ItemGlyph kind="dynamite" /></span>{blastLine}</p>
+    <p class="spectate blast-line" in:fade={{ duration: 300, delay: 300 }}><span class="found-glyph" aria-hidden="true"><ItemGlyph kind="dynamite" /></span>{blastLine}</p>
   {:else if session.spectating}
     <p class="spectate muted">You're watching. You'll play in the next game.</p>
   {:else if coop && !mine}
@@ -916,19 +865,15 @@
           {@const src = known ? itemImage(q.options[i]) : waiting ? undefined : media?.options[i]}
           <!-- Delve: a veiled picture burns in patch by patch, until the reveal names it. -->
           {@const tv = !src && !waiting ? media?.tileVeils[i] : undefined}
-          <!-- Delve: dynamite laid it bare; it floods in over what was there, which then goes. -->
-          {@const bare = known ? undefined : plainTile(i)}
-          {@const gone = !!bare && floodDone}
           <button
             class="tile {st}"
             data-sfx="none"
             data-fx="hover"
             bind:this={optionEls[i]}
             class:mine
-            class:blasted={blast === 'blown' && blown.has(i)}
             class:struck={struckAt.has(i)}
-            aria-label={blown.has(i) ? `Option ${i + 1}, blasted away` : struckAt.has(i) ? `Option ${i + 1}, struck by ${struckBy(i)}` : undefined}
-            disabled={!mine || !!reveal || chosen !== null || waiting || blown.has(i) || struckAt.has(i)}
+            aria-label={struckAt.has(i) ? `Option ${i + 1}, struck by ${struckBy(i)}` : undefined}
+            disabled={!mine || !!reveal || chosen !== null || waiting || struckAt.has(i)}
             onclick={() => answer(i)}
             onpointermove={glare}
             in:scale={{ start: 0.85, duration: 450, delay: 250 + i * 80 }}
@@ -936,12 +881,12 @@
             <span class="sheen"></span>
             <span class="key">{(i + 1) % 10}</span>
             <span class="cue" aria-hidden="true"></span>
-            {#if (src || tv) && !gone || bare}
-              <span class="pic" class:crumbling={!!bare && !floodDone}>
-                {#if src && !gone}
+            {#if src || tv}
+              <span class="pic">
+                {#if src}
                   <!-- Named pictures switch to the original art, so a mirrored one turns round. -->
                   <ArtImage {src} alt="Option {i + 1}" scale={1.6} unflip={mirrored(i) && !!q.options[i]} />
-                {:else if tv && !gone}
+                {:else if tv}
                   {@const ps = tilePatches(i)}
                   <span class="art-slot">
                     <span class="art-fit veil" style:--w={tv.w} style:--h={tv.h} style:--s={1.6}>
@@ -967,9 +912,6 @@
                     </span>
                   </span>
                 {/if}
-                {#if bare}
-                  <span class="plain-slot"><ArtImage src={bare.url} w={bare.w} h={bare.h} alt="Option {i + 1}" scale={1.6} flood /></span>
-                {/if}
               </span>
             {:else}
               <span class="loading" aria-label="Loading"></span>
@@ -985,7 +927,6 @@
             {@render who(i)}
           </button>
         {/each}
-        {#if cord && !reveal}<Fuse lit={cord.lit} at={cord.at} now={() => session.hostNow()} edge />{/if}
       </div>
     </div>
   {:else}
@@ -1009,13 +950,11 @@
         </div>
         <div class="art" bind:this={artEl} use:backdropShadow={{ fill: 'stage' }}>
           <ArcaneCircle state={reveal ? (iWon ? 'good' : 'bad') : 'idle'} />
-          <div class="frame" class:crumbling={!!plain && !floodDone && !reveal} class:jolt={blast === 'blown' && !reveal}>
+          <div class="frame">
             {#if showFull && item}
               <ArtImage src={itemImage(item.id)} alt={item.name} w={full?.w ?? hint?.w} h={full?.h ?? hint?.h} float unflip={mirrored(0)} />
             {/if}
-            {#if plain && floodDone && !showFull}
-              <!-- Dynamite laid it bare: what was shown has gone. -->
-            {:else if media?.veil && !showFull}
+            {#if media?.veil && !showFull}
               {@const v = media.veil}
               <span class="art-slot veil-slot" style:transform={veilFit} out:handoff>
               <span class="art-fit veil" style:--w={v.w} style:--h={v.h} style:--s={1.8}>
@@ -1042,14 +981,10 @@
               </span>
             {:else if !showFull && media?.art && !waiting}
               <ArtImage src={media.art.url} alt="The item to identify" w={media.art.w} h={media.art.h} float />
-            {:else if !showFull && !plain}
+            {:else if !showFull}
               <span class="loading big" aria-label="Loading"></span>
             {/if}
-            {#if plain && !showFull}
-              <span class="plain-slot"><ArtImage src={plain.url} alt="The item to identify" w={plain.w} h={plain.h} float flood /></span>
-            {/if}
           </div>
-          {#if cord && !reveal}<Fuse lit={cord.lit} at={cord.at} now={() => session.hostNow()} />{/if}
         </div>
       </div>
 
@@ -1064,21 +999,16 @@
             use:backdropShadow={{ fill: 'linear' }}
             class:mine
             class:fake={fake(i)}
-            class:blasted={blast === 'blown' && blown.has(i)}
             class:struck={struckAt.has(i)}
-            title={fake(i) ? 'Not a real item' : blown.has(i) ? 'Blasted away' : struckAt.has(i) ? `Struck by ${struckBy(i)}: wrong` : undefined}
-            disabled={!mine || !!reveal || chosen !== null || waiting || blown.has(i) || struckAt.has(i)}
+            title={fake(i) ? 'Not a real item' : struckAt.has(i) ? `Struck by ${struckBy(i)}: wrong` : undefined}
+            disabled={!mine || !!reveal || chosen !== null || waiting || struckAt.has(i)}
             onclick={() => answer(i)}
             onpointermove={glare}
             in:fly={{ x: 40, duration: 450, delay: 300 + i * 90 }}
           >
             <span class="sheen"></span>
             <span class="key">{(i + 1) % 10}</span>
-            <span class="text" class:veiled={waiting}
-              >{#if blast === 'blown' && blown.has(i)}<!-- Blown off the board, and left as soot where it stood. --><span class="stack"
-                  ><span class="words">{label ?? optionName(i)}</span><span class="soot" aria-hidden="true">{label ?? optionName(i)}</span></span
-                >{:else}{waiting ? '\u00a0' : (label ?? optionName(i))}{/if}</span
-            >
+            <span class="text" class:veiled={waiting}>{waiting ? '\u00a0' : (label ?? optionName(i))}</span>
             <span class="cue" aria-hidden="true"></span>
             {@render who(i)}
             {#if st === 'right'}<span class="mark" in:scale={{ duration: 300 }}>✓</span>{/if}
@@ -1096,6 +1026,8 @@
       <div class="dock" use:portal use:dock={keepInView} in:fade={{ duration: 200 }} out:fade|global={{ duration: 180 }}>
         {@render footer()}
       </div>
+      <!-- The dynamite's row stood here: its height is kept, so nothing above moves (the page scrolled to its end would otherwise jump). -->
+      {#if blastSlot && blastKeep}<div style:height="{blastKeep}px" aria-hidden="true"></div>{/if}
     {:else}
       {@render footer()}
     {/if}
@@ -1461,124 +1393,58 @@
   }
 
   /* ---- Delve: dynamite ---- */
-  /* The plain art floods in (ArtImage flood) over what was shown, which
-     flares, swells and falls away under it. */
-  .plain-slot {
-    position: absolute;
-    inset: 0;
-    display: block;
-  }
-  .frame > .plain-slot {
-    z-index: 1;
-  }
-  .frame.jolt > :global(.art-slot) {
-    animation: jolt 0.6s ease-out;
-  }
-  @keyframes jolt {
-    12% {
-      filter: brightness(2.2) saturate(1.3);
-      scale: 1.04;
-    }
-  }
-  .crumbling > :global(.art-slot) {
-    animation: crumble 0.85s ease-in forwards;
-  }
-  @keyframes crumble {
-    15% {
-      filter: brightness(2.4) sepia(0.4);
-      scale: 1.04;
-    }
-    to {
-      opacity: 0;
-      filter: brightness(0.4) blur(3px);
-      scale: 1.1;
-    }
-  }
-  /* An answer blown away: its words are blown off the row, and only soot
-     is left where they stood; the row itself is scorched. */
-  .option.blasted {
-    border-color: #3a2a1f;
-    --bs-fill-a: rgba(24, 17, 12, 0.95);
-    --bs-fill-b: rgba(12, 9, 7, 0.95);
-    --bs1-color: transparent;
-    box-shadow:
-      inset 0 0 22px rgba(0, 0, 0, 0.75),
-      inset 0 0 0 1px rgba(150, 70, 30, 0.12);
-  }
-  .option.blasted .key {
-    opacity: 0.3;
-  }
-  .stack {
-    display: grid;
-  }
-  .stack > * {
-    grid-area: 1 / 1;
-  }
-  .stack .words {
-    animation: blow-off 0.6s cubic-bezier(0.2, 0.6, 0.4, 1) forwards;
-  }
-  @keyframes blow-off {
-    15% {
-      color: #fff1d8;
-      text-shadow: 0 0 12px rgba(255, 150, 60, 0.9);
-    }
-    to {
-      opacity: 0;
-      translate: 70px -16px;
-      rotate: 5deg;
-      filter: blur(3px);
-    }
-  }
-  .soot {
-    color: rgba(150, 120, 96, 0.42);
-    text-decoration: line-through;
-    text-decoration-thickness: 1px;
-    text-decoration-color: rgba(110, 80, 60, 0.6);
-    animation: soot-in 0.5s ease-out 0.35s backwards;
-  }
-  @keyframes soot-in {
-    from {
-      opacity: 0;
-    }
-  }
-  /* A picture blown away: it is thrown back, burnt black, a ghost of it left. */
-  .tile.blasted {
-    box-shadow:
-      inset 0 0 46px rgba(0, 0, 0, 0.85),
-      inset 0 0 0 1px rgba(150, 70, 30, 0.14);
-  }
-  .tile.blasted .pic {
-    animation: tile-blow 0.7s cubic-bezier(0.2, 0.6, 0.4, 1) forwards;
-  }
-  @keyframes tile-blow {
-    12% {
-      filter: brightness(2.2);
-      scale: 1.06;
-    }
-    to {
-      opacity: 0.16;
-      filter: grayscale(1) brightness(0.55);
-      scale: 0.84;
-      rotate: -4deg;
-    }
-  }
-  .tile.blasted .key {
-    opacity: 0.3;
-  }
   .blast-line {
     color: #eebf96;
   }
-  /* Effects off: the old art just fades. */
-  :global(html[data-still]) .crumbling > :global(.art-slot) {
-    animation: crumble-still 0.3s ease-out forwards;
+  /* Dynamite at hand: what there is to know, and the button where Next will
+     stand. The row keeps the footer's height, so the button coming and
+     going moves nothing; gone, it keeps its place unseen. */
+  .blasting .hint {
+    flex: 1;
+    min-width: 0;
   }
-  @keyframes crumble-still {
-    to {
-      opacity: 0;
-    }
+  /* The line as it reads without the button (not the result's larger type), set left as the result's is. */
+  .blasting .hint .spectate {
+    text-align: left;
+    font-size: inherit;
   }
-  :global(html[data-still]) .frame.jolt > :global(.art-slot) {
-    animation: none;
+  .btn.blast {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5em;
+    color: #ffe2c4;
+    border-color: rgba(230, 120, 60, 0.7);
+    background: linear-gradient(180deg, rgba(120, 40, 14, 0.85), rgba(60, 16, 6, 0.9));
+    box-shadow:
+      0 0 0 1px #000,
+      0 0 18px rgba(255, 110, 40, 0.25);
+    transition:
+      opacity 0.25s,
+      box-shadow 0.25s,
+      border-color 0.25s;
+  }
+  .btn.blast:hover {
+    border-color: rgba(255, 160, 90, 0.9);
+    box-shadow:
+      0 0 0 1px #000,
+      0 0 26px rgba(255, 120, 50, 0.45);
+  }
+  .btn.blast.gone {
+    visibility: hidden;
+    opacity: 0;
+  }
+  .btn.blast .stick {
+    display: inline-block;
+    --h: 1.05em;
+  }
+  .btn.blast .count {
+    font-family: var(--font-cinzel);
+    font-weight: 700;
+    font-size: 0.8em;
+    padding: 0.05em 0.45em 0;
+    color: #ffd6a8;
+    border: 1px solid rgba(255, 150, 70, 0.5);
+    border-radius: 999px;
   }
 
   /* Delve: the words come in once the clock runs. */
@@ -2485,6 +2351,11 @@
     }
     .dock .result p {
       font-size: 1rem;
+    }
+    /* Beside the dynamite's button, the line under the answers takes a little less room. */
+    .blasting .hint .spectate {
+      font-size: 0.95rem;
+      line-height: 1.25;
     }
     /* Tighter all round, so less scrolling from the art down to the answers.
        Answers stay 48px tall, a comfortable tap. */

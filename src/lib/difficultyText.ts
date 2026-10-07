@@ -3,6 +3,7 @@
 // so a knob reads the same wherever it shows up.
 
 import {
+  DELVE_MAX_BLASTS,
   FLARE_MS,
   blowsUp,
   cavesIn,
@@ -142,6 +143,8 @@ export const KNOB_TEXT: { [K in keyof Knobs]: KnobText<K> }[keyof Knobs][] = [
 /** Small numbers in words, for the notes under the cards. */
 const WORDS = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'];
 const words = (n: number) => WORDS[n] ?? String(n);
+/** How many times, in words: "once", "twice", "three times". */
+const timesWord = (n: number) => (n === 1 ? 'once' : n === 2 ? 'twice' : `${words(n)} times`);
 
 /** An item as a reward, with its article. */
 export const ITEM_TEXT: Record<ItemKind, string> = {
@@ -184,7 +187,7 @@ function does(kind: FindKind, team = false): string {
     case 'flare':
       return `it adds ${words(FLARE_MS / 1000)} seconds${team ? ' for everyone' : ''} when ${team ? '' : 'your '}time runs out`;
     case 'dynamite':
-      return 'at half time, it blows away half the answers';
+      return 'it blasts a question away for a new one';
   }
 }
 
@@ -209,10 +212,13 @@ export const FIND_RULES: Record<FindKind, { gives: string; miss: string }> = {
     miss: `${cap(FIND_MISS.flare ?? '')}.`,
   },
   dynamite: {
-    gives: 'Dynamite blows away half the answers at half time.',
+    gives: `Dynamite blasts a question away for a new one at the same depth, ${timesWord(DELVE_MAX_BLASTS)} a depth at most; at zero it goes off by itself, after any flare.`,
     miss: `${cap(FIND_MISS.dynamite ?? '')}.`,
   },
 };
+
+/** Under the finds in the lobby's rules: why flares and dynamite never work on a find's question. */
+export const FINDS_UNSAFE = "A find is a dangerous route: thicker walls, a darkness nothing keeps back. Flares and dynamite don't work there.";
 
 /** A find's cave-in mark, in words for those who can't see it: "A wrong answer loses two lives". */
 export const caveInLabel = (kind: FindKind) => `A wrong answer loses ${caveInText(kind)}`;

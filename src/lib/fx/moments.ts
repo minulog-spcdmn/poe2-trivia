@@ -1375,48 +1375,20 @@ export function titleGlints(title: Element): Handle {
 
 // ---------- dynamite ----------
 
-/** Delve: how long a stick of dynamite's fuse hisses before it goes off (ms); every screen lights it this far ahead. */
-export const FUSE_MS = 650;
-
-/**
- * Delve: a stick of dynamite's fuse burns, at `at()` (the burning end of the
- * cord the question draws, null while there is none). A trickle of sparks
- * and smoke while it burns down; `heat()` (0 to 1) brings it up to a fizzing
- * spit in the last moments before the blast. Runs until stopped.
- */
-export function dynamiteFuse(at: () => Point | null, heat: () => number): Handle {
-  if (!fxActive()) return { stop() {} };
-  let acc = 0;
-  return task((dt) => {
-    const p = at();
-    if (!p) return true;
-    const h = Math.min(1, Math.max(0, heat()));
-    acc += dt * (5 + 65 * h);
-    while (acc >= 1) {
-      acc--;
-      sparks(p, { count: 1, speed: [40 + 20 * h, 120 + 120 * h], gravity: 380, drag: 2.6, life: [0.1, 0.25 + 0.1 * h], size: [0.4, 0.7 + 0.3 * h], colors: [C.whiteHot, C.gold, C.ember] });
-    }
-    if (Math.random() < dt * (3 + 21 * h)) puffs(p, { count: 1, color: [0.07, 0.055, 0.045], size: [3, 6], speed: [8, 26], life: [0.4, 0.8], angle: -Math.PI / 2, spread: 0.8 });
-    if (h > 0 && Math.random() < dt * 30 * h) flash(p, { radius: 10, color: C.ember, intensity: 0.5, life: 0.12 });
-    return true;
-  });
-}
-
 export type BlastTargets = {
   /** The art stage (name questions) or the picture grid (art questions). */
   art: Element | null;
-  /** The answers (or pictures) blown away. */
+  /** Answers (or pictures) that burst too, one after another. */
   blown: Element[];
-  /** The player whose dynamite it is: their screen shakes harder. */
+  /** The player who set it off: their screen shakes harder. */
   mine: boolean;
 };
 
 /**
- * Delve: a stick of dynamite goes off at half the clock. A white-hot burst
- * at the heart of the art with a ring of fire and a shockwave running out,
- * the stone of the art breaking into falling chips and smoke, embers
- * drifting up; each answer it blows away bursts too, one after another.
- * The colour flooding back into the art is the component's (ArtImage flood).
+ * Delve: a stick of dynamite blasts the question away. A white-hot burst at
+ * the heart of the art with a ring of fire and a shockwave running out, the
+ * stone of the art breaking into falling chips and smoke, embers drifting
+ * up; each of `blown` bursts too, one after another.
  */
 export function dynamiteBlast(t: BlastTargets) {
   if (!fxActive()) return;

@@ -39,9 +39,9 @@ export type Sfx =
   | 'fallenFar'
   /** Delve: a flare strikes and burns as the clock hits 0, for more time. */
   | 'flare'
-  /** Delve: a stick of dynamite's fuse hisses. */
+  /** Delve: a stick of dynamite's fuse is lit (its button pressed). */
   | 'fuse'
-  /** Delve: the dynamite goes off. */
+  /** Delve: the dynamite goes off, blasting the question away. */
   | 'blast'
   /** Delve: a deeper depth's cards are dealt and the scene sinks. */
   | 'plunge'

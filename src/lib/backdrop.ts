@@ -14,7 +14,7 @@ import { DROPS_PER_MASK, MAX_MASKS, measureDrops, releaseAllDrops } from './back
 import { MAX_LIGHTS, packLights, stepHomeScene, stepMood } from './lights';
 import { fxActive, fxUserOn, onFxChange } from './fx/core';
 import { COLUMNS, GLINT_COLOR, PALETTE, ROWS, SIZE_STRIDE, SLOTS, TILES, embers } from './backdropEmbers';
-import { BLOBS, ENVIRONMENTS, FX_SLOTS, FX_UNIFORM, NO_SLOT, currentDescent, packFx, sinking, smokeOf, snapDescent, stepDescent, stepPlunge, stopsFor, targetDescent, toneOf, type Blob } from './descent';
+import { BLOBS, ENVIRONMENTS, FX_SLOTS, FX_UNIFORM, NO_SLOT, currentDescent, packFx, sinking, smokeOf, snapDescent, stepDescent, stepPlunge, stepSwing, stopsFor, targetDescent, toneOf, type Blob } from './descent';
 import { ENV_GLSL } from './shaders/effects';
 import { FX_NOISE_GLSL, SHAFTS_GLSL, SPORES_GLSL } from './shaders/newEffects';
 import { pressureLevel } from './darkness';
@@ -103,12 +103,15 @@ uniform vec2 uDark;
 // scene has sunk (CSS px; each new depth sinks it, see plunge in
 // descent.ts): the walls' and the smoke's noise is read that much further
 // down, the nearer the more; and how bright the stratum's features burn
-// (descent.ts's features).
+// (descent.ts's features); and how far it has swung sideways (CSS px;
+// dynamite blasting a question away swings it, see swing in descent.ts):
+// the walls and the smoke are read that much further along.
 uniform vec3 uGlowCol;
-uniform vec3 uScene;
+uniform vec4 uScene;
 #define uLight uScene.x
 #define uSink uScene.y
 #define uFeatures uScene.z
+#define uSlide uScene.w
 
 // The start page: (rays, title glow, time in s, title breath), and the
 // title's centre and half size (CSS px). See setHomeScene in lights.ts.
@@ -245,7 +248,7 @@ vec3 smoothLight(vec2 p) {
   // shape that could be picked out.
   if (uShade.a > 0.0 || uMist.a > 0.0) {
     float tm = uHome.z;
-    vec2 u = (p + vec2(0.0, 0.6 * uSink)) / S * 2.4;
+    vec2 u = (p + 0.6 * vec2(uSlide, uSink)) / S * 2.4;
     vec2 warp = vec2(vnoise(u * 0.6 + vec2(tm * 0.021, 3.1)), vnoise(u * 0.6 + vec2(7.3, -tm * 0.017)));
     vec2 v = u + 2.2 * warp + vec2(-tm * 0.013, tm * 0.009);
     float n = 0.5 * vnoise(v) + 0.3 * vnoise(v * 2.03 + 11.7) + 0.2 * vnoise(v * 4.1 - 5.3);
@@ -264,7 +267,7 @@ vec3 smoothLight(vec2 p) {
   // stratum's environment still shows through it, dimmed.
   float dark = closing(p);
   if (dark > 0.0) col *= 1.0 - 0.93 * dark;
-  if (uShade.a > 0.0 || uMist.a > 0.0) col = environments(col, p, (p + vec2(0.0, uSink)) / S, p / vec2(W, H), S, W, H, uHome.z, dark);
+  if (uShade.a > 0.0 || uMist.a > 0.0) col = environments(col, p, (p + vec2(uSlide, uSink)) / S, p / vec2(W, H), S, W, H, uHome.z, dark);
   // As the clock runs out the light about you dims as it draws in, the
   // stratum's glow and all.
   col *= 1.0 - 0.35 * uDark.y;
@@ -469,7 +472,7 @@ void main() {
   if (uCityA.w > 0.0) {
     for (int i = 0; i < 2; i++) {
       float cs = i == 0 ? 7.0 : 12.0;
-      vec2 pp = p + vec2(uCityB.w * (i == 0 ? 1.0 : 2.6), uSink * (i == 0 ? 0.3 : 0.6));
+      vec2 pp = p + vec2(uCityB.w * (i == 0 ? 1.0 : 2.6), 0.0) + vec2(uSlide, uSink) * (i == 0 ? 0.3 : 0.6);
       vec2 cell = floor(pp / cs);
       float h = hash(cell + float(i) * 31.0);
       // Most cells hold no light: test that before the cluster's noise.
@@ -497,7 +500,7 @@ void main() {
   // soft halo, well inside its cell, so nothing is cut off. They sit on the
   // walls, so they go up with them as the scene sinks.
   if (frost > 0.004) {
-    vec2 fp = p + vec2(0.0, uSink);
+    vec2 fp = p + vec2(uSlide, uSink);
     vec2 cell = floor(fp / 14.0);
     float h = hash(cell + 3.7);
     if (h > 0.93) {
@@ -1026,11 +1029,12 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     gl!.uniform4fv(uFxK, fxK);
     gl!.uniform4fv(uEddy, embers.eddies);
     // A plunge draws the dark in and lets it go again as the scene sinks.
-    const close = Math.min(1, scene.close + 0.12 * sinking.breath);
+    const close = Math.min(1, scene.close + 0.12 * Math.max(sinking.breath, sinking.slideBreath));
     const sink = sinking.sink * viewH;
+    const slide = sinking.slide * viewH;
     gl!.uniform2f(uDark, close, pressure);
     gl!.uniform3f(uGlowCol, look.glow[0] / 255, look.glow[1] / 255, look.glow[2] / 255);
-    gl!.uniform3f(uScene, scene.light * look.lightK, sink, scene.features);
+    gl!.uniform4f(uScene, scene.light * look.lightK, sink, scene.features, slide);
     gl!.uniform2f(uGlow, 1 + 0.08 * glow, (1 - 0.4 * glow) * look.lamp);
     gl!.uniform2f(uBottom, (1 + 0.1 * bottom) * look.floorH, 1 + 0.3 * bottom);
     gl!.uniform2f(uTop, 1 + 0.08 * top, (1 + 0.35 * top) * look.hazeK);
@@ -1112,7 +1116,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     stopsFor(look, 'frost', stops);
     gl!.uniform3f(uIce, stops[0] + 0.35 * (1 - stops[0]), stops[1] + 0.35 * (1 - stops[1]), stops[2] + 0.35 * (1 - stops[2]));
     gl!.uniform2f(mDark, close, pressure);
-    gl!.uniform3f(mScene, scene.light * look.lightK, sink, scene.features);
+    gl!.uniform4f(mScene, scene.light * look.lightK, sink, scene.features, slide);
     gl!.uniform4fv(mHome, home);
     gl!.activeTexture(gl!.TEXTURE2);
     gl!.bindTexture(gl!.TEXTURE_2D, emberTex);
@@ -1215,6 +1219,13 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
       dirty = true;
     }
     embers.streak = Math.min(1.6, 2 * sinking.speed);
+    // Dynamite blasted a question away: the scene swings sideways (swing in descent.ts), the embers carried with it.
+    const slid = sinking.slide;
+    if (stepSwing(now, !still)) {
+      const px = (sinking.slide - slid) * viewH;
+      if (Math.abs(px) < viewH) embers.slide(px, canvas.clientWidth);
+      dirty = true;
+    }
     // Arrived at a depth: the embers still in the old colour take the new one (after a rejoin, all of them).
     if (wasDescending && !descending) embers.recolor();
     wasDescending = descending;

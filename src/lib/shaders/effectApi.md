@@ -104,7 +104,9 @@ vec3 env_<name>(vec3 col, vec2 p, vec2 q, vec2 xy, float S, float W, float H,
                 vec3 c0, vec3 c1, vec3 c2, float vary)
 ```
 
-with `q` the walls' coordinates (`(p + (0, sink * H)) / S`), and the dark
+with `q` the walls' coordinates (`(p + (slide, sink * H)) / S`, `slide` how
+far dynamite has swung the scene sideways, CSS px; see swing in
+`lib/descent.ts`), and the dark
 closing in, the features' brightness and the side walls in `gDark`, `gLit`
 and `gSide`. For them `c0` is the hottest or brightest stop and `c2` the
 coolest or deepest; `envTone(c0, c1, c2, t)` reads along them (0 to 1) and

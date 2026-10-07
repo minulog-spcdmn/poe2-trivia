@@ -1,35 +1,40 @@
-// Delve's dynamite: a stick goes off by itself once half the answering
-// player's clock has run out, laying the art bare and blowing half the
-// options away (every one of them wrong), and the clock holds while it does (see delve.ts blastAt,
-// blastCount, BLAST_PAUSE_MS, clockLeft and game.ts 'dynamite').
+// Delve's dynamite: a stick blasts the question in play away for a new one at
+// the same depth, from a card on the depth's offer not asked yet, at most
+// twice a depth (as many as the offer's other cards). By hand while the
+// question is open (alone the player's own; together anyone standing who
+// hasn't answered, from a random holder's pack), or by itself as the clock
+// hits 0 with no flare to burn. Never on a find's question, and a blast's
+// question is never a find. See delve.ts (DELVE_MAX_BLASTS, blastsLeft,
+// blastProblem) and game.ts ('blast', Engine.blast).
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
-  BLAST_PAUSE_MS,
   DELVE_LIVES,
+  DELVE_MAX_BLASTS,
   FLARE_MS,
-  blastAt,
-  blastAtMs,
-  blastClears,
-  blastCount,
-  clockLeft,
+  askedCards,
+  blastProblem,
+  blastsLeft,
+  delveRules,
+  delveTimer,
   dynamiteOf,
-  findLosses,
   findOn,
   flaresOf,
-  itemsWorkOn,
   livesOf,
   questionTimer,
-  veinWindow,
+  teamItemReady,
+  unaskedCards,
+  waitingIds,
   type FindKind,
   type Inventory,
 } from '../src/lib/delve.ts';
-import { ANSWER_GRACE_MS, Engine, createGame, isFake, publicView, type Action, type GameState, type Item, type Question, type Settings } from '../src/lib/game.ts';
-import { dynamiteIn, flareIn, inventoryChanges } from '../src/lib/delveSession.ts';
-import { parseClientMsg, parseHostMsg } from '../src/lib/protocol.ts';
+import { ANSWER_GRACE_MS, ActionError, Engine, OFFER_COUNT, createGame, publicView, type Action, type GameState, type Item, type Question, type Settings } from '../src/lib/game.ts';
+import { COOP_DRAW_MS, blastedAway, drawHoldUntil, inventoryChanges } from '../src/lib/delveSession.ts';
 import { momentOf } from '../src/lib/inventoryArt.ts';
+import { blastedEncounter, emptyCodex, record } from '../src/lib/codex.ts';
+import { addRun, emptyRecords, leftEvent, parseRecords, serializeRecords } from '../src/lib/delveRecord.ts';
 
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
 const fakes: Record<string, string[]> = JSON.parse(readFileSync(new URL('../src/data/fakes.json', import.meta.url), 'utf8'));
@@ -37,6 +42,7 @@ const fakes: Record<string, string[]> = JSON.parse(readFileSync(new URL('../src/
 const NONE: Inventory = { wards: 0, flares: 0, dynamite: 0, shards: 0 };
 const SETTINGS: Settings = { targetScore: 10, timer: 16, difficulty: 'merciless', mode: 'delve', public: false, locked: false };
 const right = (q: Question) => q.options.indexOf(q.itemId);
+const wrongs = (q: Question) => q.options.flatMap((id, i) => (id === q.itemId ? [] : [i]));
 
 function seeded(seed: number) {
   seed = Math.imul(seed, 2654435761) >>> 0;
@@ -46,13 +52,13 @@ function seeded(seed: number) {
   };
 }
 
-/** A Delve run on a controllable clock; `host` null for hot-seat. Helpers act as the trusted host. */
-function delve(names: string[], opts: { host?: string | null; seed?: number; depth?: number } = {}) {
+/** A Delve run on a controllable clock; `host` null for hot-seat. Helpers act as the trusted host unless told otherwise. */
+function delve(n: number, opts: { host?: string | null; seed?: number; depth?: number } = {}) {
   const clock = { now: 1_000_000 };
   const engine = new Engine(items, { rng: seeded(opts.seed ?? 11), now: () => clock.now, fakes });
   const host = opts.host === undefined ? 'p0' : opts.host;
   let s: GameState = createGame(host, SETTINGS);
-  names.forEach((name, i) => (s = engine.apply(s, { type: 'join', playerId: `p${i}`, name }, host === null ? null : `p${i}`)));
+  for (let i = 0; i < n; i++) s = engine.apply(s, { type: 'join', playerId: `p${i}`, name: `P${i}` }, host === null ? null : `p${i}`);
   s = engine.apply(s, { type: 'start' }, host);
   const h = {
     engine,
@@ -64,7 +70,6 @@ function delve(names: string[], opts: { host?: string | null; seed?: number; dep
       s = engine.apply(s, a, from);
       return s;
     },
-    active: () => s.players[s.turn],
     edit(fn: (s: GameState) => void) {
       const c = structuredClone(s);
       fn(c);
@@ -73,387 +78,505 @@ function delve(names: string[], opts: { host?: string | null; seed?: number; dep
     give(id: string, inv: Partial<Inventory>) {
       h.edit((c) => ((c.delve!.inventory ??= {})[id] = { ...NONE, ...inv }));
     },
-    /** Picks a card (the find planted on it, if `find`) and starts the clock. */
-    ask(find?: FindKind) {
+    /** Picks a card (the find planted on it, if `find`; co-op: the host's own pick settles the vote) and starts the clock. */
+    ask(find?: FindKind, card?: string) {
       if (find) h.edit((c) => (c.delve!.finds = [{ category: c.offered[0], kind: find }]));
-      h.act({ type: 'pick', category: find ? s.offered[0] : s.offered.find((c) => !findOn(s, c))! });
+      h.act({ type: 'pick', category: card ?? (find ? s.offered[0] : s.offered.find((c) => !findOn(s, c))!) });
+      return h.clockOn();
+    },
+    /** The clock of the question in play starts (its art is out). */
+    clockOn() {
       h.act({ type: 'clock', askedAt: s.question!.askedAt });
       return s.question!;
     },
-    /** The host's clock at the moment the dynamite is due. */
-    due: () => s.question!.clockAt! + blastAtMs(s),
-    blast: (from: string | null = null) => h.act({ type: 'dynamite', askedAt: s.question!.askedAt }, from),
+    /** A blast set off by `by` (null: the host's own tooling, alone the player). */
+    blast(by: string | null = null) {
+      return h.act({ type: 'blast', askedAt: s.question!.askedAt }, by);
+    },
+    /** The host's time-out, as its timer fires at 0 and the allowance for answers in flight. */
+    timeOut() {
+      h.clock.now = s.question!.deadline! + ANSWER_GRACE_MS;
+      return h.act({ type: 'answer', index: null });
+    },
+    /** On to the next depth, after a reveal. */
+    next() {
+      h.act({ type: 'next' });
+    },
   };
   if (opts.depth) h.edit((c) => (c.round = opts.depth!));
   return h;
 }
 
-/** A question on the clock at `depth` for a player holding `inv`. */
-function holding(inv: Partial<Inventory>, opts: { depth?: number; seed?: number; host?: string | null; find?: FindKind } = {}) {
-  const h = delve(['Ash'], { host: opts.host === undefined ? null : opts.host, seed: opts.seed, depth: opts.depth ?? 30 });
-  h.give(h.active().id, inv);
+/** Alone (hot-seat), at `depth`, holding `inv`, a question on the clock. */
+function solo(inv: Partial<Inventory>, opts: { depth?: number; seed?: number; find?: FindKind; host?: string | null } = {}) {
+  const h = delve(1, { host: opts.host === undefined ? null : opts.host, seed: opts.seed, depth: opts.depth ?? 30 });
+  h.give('p0', inv);
   h.ask(opts.find);
   return h;
 }
 
-// ---- the rules ---------------------------------------------------------------
+function loudly(fn: () => void, msg: RegExp) {
+  assert.throws(fn, (e: unknown) => e instanceof ActionError && msg.test(e.message));
+}
+function silently(fn: () => void, msg: RegExp) {
+  assert.throws(fn, (e: unknown) => e instanceof ActionError && e.silent && msg.test(e.message));
+}
 
-test('dynamite goes off at half the clock, rounded up to a whole second: where the Azurite Vein\'s fast window closes', () => {
-  for (let secs = 5; secs <= 16; secs++) {
-    assert.equal(blastAt(secs), veinWindow(secs));
-    assert.ok(blastAt(secs) >= (secs * 1000) / 2 && blastAt(secs) < (secs * 1000) / 2 + 1000);
+// ---- the rules -----------------------------------------------------------------
+
+test("two blasts a depth at most, in step with the offer's other cards", () => {
+  assert.equal(DELVE_MAX_BLASTS, OFFER_COUNT - 1);
+  assert.equal(DELVE_MAX_BLASTS, 2);
+});
+
+// ---- by hand, alone ------------------------------------------------------------
+
+test('alone, a blast asks a new question at the same depth from a card not asked yet, on the full clock and the depth\'s rules', () => {
+  for (let seed = 1; seed <= 12; seed++) {
+    const h = solo({ dynamite: 2 }, { seed, depth: 40 });
+    const before = h.s;
+    const q = before.question!;
+    // Half the clock gone already: the new one starts over.
+    h.clock.now = q.clockAt! + 4000;
+    assert.equal(blastsLeft(h.s), 2);
+    assert.equal(blastProblem(h.s, null), null);
+    h.blast();
+    const b = h.s.question!;
+    assert.equal(h.s.phase, 'question');
+    assert.notEqual(b.askedAt, q.askedAt);
+    // The same depth and turn: no depth reached, no cards dealt.
+    assert.deepEqual([h.s.round, h.s.turnCount, h.s.offered], [before.round, before.turnCount, before.offered]);
+    assert.ok(unaskedCards(before).includes(b.category), 'a card on the offer not asked yet');
+    assert.notEqual(b.category, q.category);
+    assert.deepEqual(askedCards(h.s), [q.category, b.category]);
+    assert.equal(h.s.delve!.blasts, 1);
+    // A fresh question: no clock until its art is out, then the depth's whole clock.
+    assert.equal(b.deadline, null);
+    assert.equal(b.find, undefined);
+    assert.equal(b.options.length, delveRules(40).options);
+    // On one device, the player set it off.
+    assert.deepEqual(b.blast, { by: 'p0', stick: 'p0', side: before.offered.indexOf(b.category) < before.offered.indexOf(q.category) ? -1 : 1, was: { at: q.askedAt, itemId: q.itemId, mode: q.mode } });
+    h.clock.now += 300;
+    const c = h.clockOn();
+    assert.equal(c.deadline! - c.clockAt!, delveTimer(40) * 1000);
+    assert.equal(questionTimer(h.s), delveTimer(40));
+    // The stick is spent, nothing else: no life, no streak broken.
+    assert.deepEqual([dynamiteOf(h.s, 'p0'), livesOf(h.s, 'p0')], [1, DELVE_LIVES]);
+    // Its card is locked out like a pick; the blasted question's answer stays asked.
+    assert.deepEqual(h.s.players[0].recent.slice(-2), [q.category, b.category]);
+    assert.ok(h.s.used.includes(q.itemId) && h.s.used.includes(b.itemId));
+    // It is answered as any other, and the run goes one depth deeper.
+    h.act({ type: 'answer', index: right(b), askedAt: b.askedAt });
+    assert.equal(h.s.reveal!.correct, true);
+    h.next();
+    assert.equal(h.s.round, 41);
   }
-  assert.deepEqual([blastAt(16), blastAt(13), blastAt(7), blastAt(6), blastAt(5)], [8000, 7000, 4000, 3000, 3000]);
 });
 
-test('it blows away half the options, rounded down, all of them wrong, never leaving fewer than two', () => {
-  assert.deepEqual([2, 3, 4, 5, 6, 8, 10].map(blastCount), [0, 1, 2, 2, 3, 4, 5]);
-  // Four leave two (the answer and one wrong), six three, eight four.
-  assert.deepEqual([4, 6, 8].map((n) => n - blastCount(n)), [2, 3, 4]);
-  for (let n = 2; n <= 16; n++) {
-    assert.equal(blastCount(n), Math.min(Math.floor(n / 2), n - 2));
-    assert.ok(blastCount(n) <= n - 1, `${n} options: only wrong ones`);
-    assert.ok(n - blastCount(n) >= 2, `${n} options`);
+test('the side the stage swings to is where the new card lay on the offer, from the blasted one', () => {
+  const sides = new Set<number>();
+  for (let seed = 1; seed <= 30; seed++) {
+    const h = delve(1, { host: null, seed, depth: 20 });
+    h.give('p0', { dynamite: 1 });
+    const offer = [...h.s.offered];
+    // The middle card: a blast swings either way.
+    h.ask(undefined, offer[1]);
+    h.blast();
+    const b = h.s.question!.blast!;
+    assert.equal(b.side, offer.indexOf(h.s.question!.category) === 0 ? -1 : 1);
+    sides.add(b.side);
   }
-  for (const n of [0, 1]) assert.equal(blastCount(n), 0);
+  assert.deepEqual([...sides].sort(), [-1, 1]);
 });
 
-test('it has art to clear when the art burns in, is mirrored or has no colour', () => {
-  const q = { mode: 'name' as const, veil: null, mirrored: [false] };
-  assert.equal(blastClears(q, 'off'), false);
-  assert.equal(blastClears(q, 'art'), false, 'grayscale "art" only takes the pictures');
-  assert.equal(blastClears(q, 'all'), true);
-  assert.equal(blastClears({ ...q, mirrored: [true] }, 'off'), true);
-  assert.equal(blastClears({ ...q, veil: { size: 5, seconds: 5, seed: 1 } }, 'off'), true);
-  assert.equal(blastClears({ mode: 'art', veil: null, mirrored: [false, false, false, false] }, 'art'), true);
-  assert.equal(blastClears({ mode: 'art', veil: null, mirrored: [false, false, false, false] }, 'off'), false);
-});
-
-// ---- when it goes off ----------------------------------------------------------
-
-test('a stick goes off by itself at half the clock, once a question, and is used up', () => {
-  const h = holding({ dynamite: 2 });
-  const id = h.active().id;
-  const q = h.s.question!;
-  assert.equal(h.due(), q.clockAt! + blastAt(questionTimer(h.s)));
-  assert.equal(dynamiteIn(h.s, h.clock.now), h.due() - h.clock.now);
-  // Too early: nothing.
-  h.clock.now = h.due() - 300;
+test('at most two blasts a depth, never more than the cards left; the next depth has its two again', () => {
+  const h = solo({ dynamite: 3 }, { depth: 25 });
+  const first = h.s.question!.category;
   h.blast();
-  assert.equal(h.s.question!.blasted, undefined);
-  assert.equal(dynamiteOf(h.s, id), 2);
-  // At half the clock (a timer a little early still counts).
-  h.clock.now = h.due() - 200;
+  h.clockOn();
+  assert.equal(blastsLeft(h.s), 1);
+  h.blast();
+  h.clockOn();
+  assert.equal(blastsLeft(h.s), 0);
+  assert.equal(new Set(askedCards(h.s)).size, 3, 'every card on the offer, each once');
+  assert.equal(askedCards(h.s)[0], first);
+  assert.equal(h.s.delve!.blasts, 2);
+  assert.match(blastProblem(h.s, null)!, /No more blasts/);
+  silently(() => h.blast(), /No more blasts/);
+  assert.equal(dynamiteOf(h.s, 'p0'), 1, 'the third stick is kept');
+  // Nothing goes off by itself at 0 either: the time-out costs the life.
+  h.timeOut();
+  assert.equal(h.s.phase, 'reveal');
+  assert.equal(h.s.reveal!.timedOut, true);
+  assert.equal(livesOf(h.s, 'p0'), DELVE_LIVES - 1);
+  assert.equal(dynamiteOf(h.s, 'p0'), 1);
+  h.next();
+  h.ask();
+  assert.equal(blastsLeft(h.s), 2);
+  assert.equal(h.s.delve!.asked!.length, 1);
+  // An offer of two cards (a hand-made state) leaves one blast.
+  const two = solo({ dynamite: 2 });
+  two.edit((c) => (c.offered = [c.question!.category, c.offered.find((x) => x !== c.question!.category)!]));
+  assert.equal(blastsLeft(two.s), 1);
+});
+
+test("a blast's question is never a find, even from a find's card: dynamite is no way to fish for finds", () => {
+  for (let seed = 1; seed <= 10; seed++) {
+    const h = delve(1, { host: null, seed, depth: 40 });
+    h.give('p0', { dynamite: 2 });
+    const [picked, ...rest] = h.s.offered;
+    h.edit((c) => (c.delve!.finds = rest.map((category, i) => ({ category, kind: (['flare', 'dynamite'] as const)[i] }))));
+    h.ask(undefined, picked);
+    assert.equal(h.s.question!.find, undefined);
+    h.blast();
+    h.clockOn();
+    h.blast();
+    const b = h.s.question!;
+    assert.equal(b.find, undefined, `seed ${seed}`);
+    assert.equal(b.options.length, delveRules(40).options, "the depth's rules, not a deeper one's");
+    h.clockOn();
+    assert.equal(b.deadline, null);
+    assert.equal(h.s.question!.deadline! - h.s.question!.clockAt!, delveTimer(40) * 1000, "the depth's clock");
+  }
+});
+
+test("neither flares nor dynamite work on a find's question: no blast by hand, none at 0, and both are kept", () => {
+  for (const find of ['azurite', 'flare', 'dynamite'] as const) {
+    const h = solo({ dynamite: 2, flares: 1 }, { find, depth: 20 });
+    assert.equal(h.s.question!.find, find);
+    assert.match(blastProblem(h.s, null)!, /find/);
+    silently(() => h.blast(), /find/);
+    h.timeOut();
+    assert.equal(h.s.phase, 'reveal', find);
+    assert.equal(h.s.reveal!.timedOut, true);
+    assert.deepEqual([dynamiteOf(h.s, 'p0'), h.s.question!.flared], [2, undefined]);
+  }
+});
+
+test('never before the clock starts, after the answer or the time-out, without dynamite, or for anyone but the player', () => {
+  // Before the clock: the question can't be seen yet.
+  const h = delve(1, { host: null, depth: 20 });
+  h.give('p0', { dynamite: 1 });
+  h.act({ type: 'pick', category: h.s.offered[0] });
+  assert.equal(blastProblem(h.s, null), 'Not yet.');
+  silently(() => h.blast(), /Not yet/);
+  // After the answer: the question is gone.
+  const a = solo({ dynamite: 1 });
+  const q = a.s.question!;
+  a.act({ type: 'answer', index: right(q), askedAt: q.askedAt });
+  silently(() => a.act({ type: 'blast', askedAt: q.askedAt }), /late/);
+  assert.equal(dynamiteOf(a.s, 'p0'), 1);
+  // Past 0 and the allowance for answers in flight: the time-out deals with it.
+  const late = solo({ dynamite: 1 });
+  late.clock.now = late.s.question!.deadline! + ANSWER_GRACE_MS + 1;
+  silently(() => late.blast(), /late/);
+  // Without dynamite.
+  const none = solo({});
+  assert.match(blastProblem(none.s, null)!, /no dynamite/);
+  silently(() => none.blast(), /no dynamite/);
+  // Online alone, only the player sets it off, not someone watching.
+  const online = solo({ dynamite: 1 }, { host: 'p0' });
+  online.act({ type: 'join', playerId: 'w', name: 'Watcher' }, 'w');
+  silently(() => online.blast('w'), /not your turn/);
+  online.blast('p0');
+  assert.equal(online.s.question!.blast?.by, 'p0');
+});
+
+test('an answer to the question blasted away is dropped quietly: too late, and it costs nothing', () => {
+  const h = solo({ dynamite: 1 }, { host: 'p0' });
+  const q = h.s.question!;
+  h.blast('p0');
+  h.clockOn();
+  silently(() => h.act({ type: 'answer', index: wrongs(q)[0], askedAt: q.askedAt }, 'p0'), /late/);
+  assert.equal(livesOf(h.s, 'p0'), DELVE_LIVES);
+  assert.equal(h.s.phase, 'question');
+});
+
+// ---- by itself, at 0 -------------------------------------------------------------
+
+test('at 0 a flare burns first; only with none to burn does the dynamite go off by itself, and the time-out costs nothing', () => {
+  const h = solo({ dynamite: 1, flares: 1 });
+  const q = h.s.question!;
+  h.timeOut();
+  // The flare: the same question, 5 s more (from now, as its own timer came late here).
+  assert.equal(h.s.question!.askedAt, q.askedAt);
+  assert.equal(h.s.question!.flared, true);
+  assert.equal(h.s.question!.deadline, q.deadline! + ANSWER_GRACE_MS + FLARE_MS);
+  assert.equal(dynamiteOf(h.s, 'p0'), 1);
+  // Then the dynamite, in place of the time-out: a new question, nobody hit.
+  h.timeOut();
+  const b = h.s.question!;
+  assert.equal(h.s.phase, 'question');
+  assert.notEqual(b.askedAt, q.askedAt);
+  assert.deepEqual(b.blast!.by, undefined, 'it went off by itself');
+  assert.equal(b.blast!.stick, 'p0');
+  assert.deepEqual([dynamiteOf(h.s, 'p0'), flaresOf(h.s, 'p0'), livesOf(h.s, 'p0')], [0, 0, DELVE_LIVES]);
+  assert.equal(h.s.reveal, null);
+  // The new question on the full clock; with nothing left, its time-out costs the life.
+  const c = h.clockOn();
+  assert.equal(c.deadline! - c.clockAt!, delveTimer(h.s.round) * 1000);
+  h.timeOut();
+  assert.equal(h.s.reveal!.timedOut, true);
+  assert.equal(livesOf(h.s, 'p0'), DELVE_LIVES - 1);
+});
+
+test("a player's answer later than 0 and its allowance finds the dynamite gone off in place of the time-out", () => {
+  const h = solo({ dynamite: 1 }, { host: 'p0' });
+  const q = h.s.question!;
+  h.clock.now = q.deadline! + ANSWER_GRACE_MS + 50;
+  h.act({ type: 'answer', index: right(q), askedAt: q.askedAt }, 'p0');
+  assert.equal(h.s.phase, 'question');
+  assert.equal(h.s.question!.blast?.was.at, q.askedAt);
+  assert.equal(livesOf(h.s, 'p0'), DELVE_LIVES);
+  // Within the allowance it still counts, and the stick is kept.
+  const in_ = solo({ dynamite: 1 }, { host: 'p0' });
+  const q2 = in_.s.question!;
+  in_.clock.now = q2.deadline! + ANSWER_GRACE_MS - 10;
+  in_.act({ type: 'answer', index: right(q2), askedAt: q2.askedAt }, 'p0');
+  assert.equal(in_.s.reveal!.correct, true);
+  assert.equal(dynamiteOf(in_.s, 'p0'), 1);
+});
+
+test('alone and away, nothing goes off by itself: the time-out takes the life', () => {
+  const h = solo({ dynamite: 1 }, { host: 'p0' });
+  h.act({ type: 'connection', playerId: 'p0', connected: false });
+  h.timeOut();
+  assert.equal(h.s.reveal!.timedOut, true);
+  assert.equal(dynamiteOf(h.s, 'p0'), 1);
+});
+
+// ---- together --------------------------------------------------------------------
+
+test("together, anyone standing who hasn't answered sets it off, from a random holder's pack; a wrong answer stays paid and locks nobody else out", () => {
+  const spent = new Set<string>();
+  for (let seed = 1; seed <= 16; seed++) {
+    const h = delve(4, { seed, depth: 31 });
+    h.give('p0', { dynamite: 1 });
+    h.give('p3', { dynamite: 1 });
+    h.edit((c) => (c.delve!.losses.p3 = [1, 2, 3]));
+    const q = h.ask();
+    // p1 answers wrong: it costs them a life, and they're out of this question.
+    h.act({ type: 'answer', index: wrongs(q)[0], askedAt: q.askedAt }, 'p1');
+    assert.equal(livesOf(h.s, 'p1'), DELVE_LIVES - 1);
+    assert.match(blastProblem(h.s, 'p1')!, /already answered/);
+    silently(() => h.blast('p1'), /already answered/);
+    // One who perished holds nothing and sets nothing off.
+    assert.match(blastProblem(h.s, 'p3')!, /standing/);
+    // p2 holds none, and sets the team's off all the same.
+    assert.equal(blastProblem(h.s, 'p2'), null);
+    h.blast('p2');
+    const b = h.s.question!;
+    assert.equal(b.blast!.by, 'p2');
+    assert.equal(b.blast!.stick, 'p0', "the only standing holder's (p3 perished, their pack with them)");
+    spent.add(b.blast!.stick);
+    // Paid stays paid; everyone standing answers the new one, p1 too.
+    assert.equal(livesOf(h.s, 'p1'), DELVE_LIVES - 1);
+    assert.deepEqual(b.struck ?? [], []);
+    assert.deepEqual([...waitingIds(h.s)].sort(), ['p0', 'p1', 'p2']);
+    h.clockOn();
+    h.act({ type: 'answer', index: right(b), askedAt: b.askedAt }, 'p1');
+    assert.equal(h.s.reveal!.winnerId, 'p1');
+  }
+  assert.deepEqual([...spent], ['p0']);
+  // With two holders standing, either may pay for it (the host's roll).
+  const payers = new Set<string>();
+  for (let seed = 1; seed <= 20; seed++) {
+    const h = delve(3, { seed, depth: 20 });
+    h.give('p0', { dynamite: 1 });
+    h.give('p2', { dynamite: 1 });
+    h.ask();
+    h.blast('p1');
+    payers.add(h.s.question!.blast!.stick);
+    assert.equal(dynamiteOf(h.s, 'p0') + dynamiteOf(h.s, 'p2'), 1);
+  }
+  assert.deepEqual([...payers].sort(), ['p0', 'p2']);
+});
+
+test('together, the cards that got votes but lost come first (most votes first, ties drawn), then the rest, drawn', () => {
+  // Votes: A one (picked), B two, C one: B, then C.
+  for (let seed = 1; seed <= 8; seed++) {
+    const h = delve(4, { seed, depth: 20 });
+    h.give('p0', { dynamite: 2 });
+    const [A, B, C] = h.s.offered;
+    h.edit((c) => (c.delve!.votes = { p0: A, p1: B, p2: B, p3: C }));
+    h.ask(undefined, A);
+    h.blast('p0');
+    assert.equal(h.s.question!.category, B, `seed ${seed}`);
+    h.clockOn();
+    h.blast('p0');
+    assert.equal(h.s.question!.category, C);
+  }
+  // A card nobody voted for comes after one somebody did.
+  for (let seed = 1; seed <= 8; seed++) {
+    const h = delve(3, { seed, depth: 20 });
+    h.give('p0', { dynamite: 1 });
+    const [A, B, C] = h.s.offered;
+    h.edit((c) => (c.delve!.votes = { p0: A, p1: A, p2: C }));
+    h.ask(undefined, A);
+    h.blast('p1');
+    assert.equal(h.s.question!.category, C, `seed ${seed}`);
+    assert.notEqual(h.s.question!.category, B);
+  }
+  // A tie is drawn, by the host's roll.
+  const drawn = new Set<string>();
+  for (let seed = 1; seed <= 24; seed++) {
+    const h = delve(3, { seed, depth: 20 });
+    h.give('p0', { dynamite: 1 });
+    const [A, B, C] = h.s.offered;
+    h.edit((c) => (c.delve!.votes = { p0: A, p1: B, p2: C }));
+    h.ask(undefined, A);
+    h.blast('p0');
+    drawn.add(h.s.question!.category === B ? 'B' : 'C');
+  }
+  assert.deepEqual([...drawn].sort(), ['B', 'C']);
+  // Alone, one of the others, drawn.
+  const alone = new Set<string>();
+  for (let seed = 1; seed <= 24; seed++) {
+    const h = delve(1, { host: null, seed, depth: 20 });
+    h.give('p0', { dynamite: 1 });
+    const [A, B] = h.s.offered;
+    h.ask(undefined, A);
+    h.blast();
+    alone.add(h.s.question!.category === B ? 'B' : 'C');
+  }
+  assert.deepEqual([...alone].sort(), ['B', 'C']);
+});
+
+test('together, at 0 a flare burns first, then the dynamite goes off: nobody is hit by that time-out and the whole team gets the new question', () => {
+  const h = delve(3, { depth: 20 });
+  h.give('p1', { dynamite: 1 });
+  h.give('p2', { flares: 1 });
+  const q = h.ask();
+  h.act({ type: 'answer', index: wrongs(q)[0], askedAt: q.askedAt }, 'p0');
+  assert.equal(teamItemReady(h.s, 'dynamite'), true);
+  h.timeOut();
+  assert.equal(h.s.question!.flared, true, 'the flare first');
+  assert.equal(h.s.question!.askedAt, q.askedAt);
+  h.timeOut();
+  const b = h.s.question!;
+  assert.equal(h.s.phase, 'question');
+  assert.equal(b.blast!.was.at, q.askedAt);
+  assert.equal(b.blast!.by, undefined);
+  assert.equal(b.blast!.stick, 'p1');
+  assert.deepEqual(['p0', 'p1', 'p2'].map((id) => livesOf(h.s, id)), [DELVE_LIVES - 1, DELVE_LIVES, DELVE_LIVES], 'only the wrong answer was paid');
+  assert.deepEqual([...waitingIds(h.s)].sort(), ['p0', 'p1', 'p2']);
+  // With neither, the time-out hits those who never answered.
+  h.clockOn();
+  h.timeOut();
+  assert.equal(h.s.reveal!.timedOut, true);
+  assert.deepEqual(h.s.reveal!.hits!.map((x) => x.playerId).sort(), ['p0', 'p1', 'p2']);
+});
+
+test('a right answer and a blast crossing: whichever the host takes first wins, the other is dropped', () => {
+  // The right answer first: it clears the depth for everyone; the blast finds it over.
+  const a = delve(3, { depth: 20 });
+  a.give('p2', { dynamite: 1 });
+  const qa = a.ask();
+  a.act({ type: 'answer', index: right(qa), askedAt: qa.askedAt }, 'p1');
+  silently(() => a.act({ type: 'blast', askedAt: qa.askedAt }, 'p2'), /late/);
+  assert.equal(a.s.reveal!.winnerId, 'p1');
+  assert.equal(dynamiteOf(a.s, 'p2'), 1, 'no stick spent');
+  // The blast first: the right answer was for the question blasted away.
+  const b = delve(3, { depth: 20 });
+  b.give('p2', { dynamite: 1 });
+  const qb = b.ask();
+  b.act({ type: 'blast', askedAt: qb.askedAt }, 'p2');
+  silently(() => b.act({ type: 'answer', index: right(qb), askedAt: qb.askedAt }, 'p1'), /late/);
+  assert.equal(b.s.phase, 'question');
+  assert.equal(b.s.reveal, null);
+  assert.equal(b.s.players.find((p) => p.id === 'p1')!.score, 0);
+  // Two blasts at once: the second was for the question the first blasted away.
+  const c = delve(3, { depth: 20 });
+  c.give('p0', { dynamite: 2 });
+  const qc = c.ask();
+  c.act({ type: 'blast', askedAt: qc.askedAt }, 'p1');
+  silently(() => c.act({ type: 'blast', askedAt: qc.askedAt }, 'p2'), /late/);
+  assert.equal(dynamiteOf(c.s, 'p0'), 1);
+  assert.equal(c.s.delve!.blasts, 1);
+});
+
+test("guests send a blast for their question; the new question's blasted one is public, its own answer not", () => {
+  const h = delve(2, { depth: 20 });
+  h.give('p1', { dynamite: 1 });
+  const q = h.ask();
+  h.blast('p1');
+  const shown = publicView(h.s).question!;
+  assert.deepEqual(shown.blast!.was, { at: q.askedAt, itemId: q.itemId, mode: q.mode });
+  assert.equal(shown.itemId, '');
+  assert.deepEqual(shown.options, []);
+  // Someone not in the game sets nothing off.
+  h.clockOn();
+  loudly(() => h.act({ type: 'join', playerId: 'x', name: 'X' }, 'y'), /Not allowed/);
+  silently(() => h.act({ type: 'blast', askedAt: h.s.question!.askedAt }, 'nobody'), /not in this game/);
+});
+
+// ---- what every screen makes of it -------------------------------------------------
+
+test('every screen tells a blast from a question asked again, and sees the stick spent', () => {
+  const h = solo({ dynamite: 2 });
   const prev = h.s;
   h.blast();
-  assert.equal(h.s.question!.blasted, true);
-  assert.equal(dynamiteOf(h.s, id), 1);
-  assert.deepEqual(inventoryChanges(prev, h.s), [{ playerId: id, item: 'dynamite', change: 'used', left: 1 }]);
+  assert.deepEqual(blastedAway(prev, h.s), h.s.question!.blast);
+  assert.deepEqual(inventoryChanges(prev, h.s), [{ playerId: 'p0', item: 'dynamite', change: 'used', left: 1 }]);
   assert.equal(momentOf(inventoryChanges(prev, h.s)), 'blast');
-  // The clock holds while it goes off: the deadline moves on by as much.
-  assert.equal(h.s.question!.deadline, q.deadline! + BLAST_PAUSE_MS);
-  assert.deepEqual(h.s.question!.held, { from: h.clock.now, until: h.clock.now + BLAST_PAUSE_MS });
-  // Once a question.
-  assert.equal(dynamiteIn(h.s, h.clock.now), null);
-  const removed = h.s.question!.blownAway;
-  h.blast();
-  assert.equal(dynamiteOf(h.s, id), 1);
-  assert.deepEqual(h.s.question!.blownAway, removed);
-  // The next question can have its own.
-  h.act({ type: 'answer', index: right(h.s.question!), askedAt: q.askedAt });
-  h.act({ type: 'next' });
-  h.ask();
-  assert.equal(h.s.question!.blasted, undefined);
-  assert.notEqual(dynamiteIn(h.s, h.clock.now), null);
-  h.clock.now = h.due();
-  h.blast();
-  assert.equal(h.s.question!.blasted, true);
-  assert.equal(dynamiteOf(h.s, id), 0);
+  // Its art failed and it was asked again: the same blast, no new one.
+  const blasted = h.s;
+  h.act({ type: 'reask' });
+  assert.deepEqual(h.s.question!.blast, blasted.question!.blast);
+  assert.equal(blastedAway(blasted, h.s), null);
+  assert.equal(h.s.question!.find, undefined);
 });
 
-test('never after an answer, the time-out or the reveal, before the clock starts, without dynamite, or for someone away', () => {
-  // Answered first.
-  const answered = holding({ dynamite: 1 });
-  const askedAt = answered.s.question!.askedAt;
-  answered.clock.now = answered.due() - 400;
-  answered.act({ type: 'answer', index: right(answered.s.question!), askedAt });
-  assert.equal(answered.s.phase, 'reveal');
-  answered.clock.now += 400;
-  answered.act({ type: 'dynamite', askedAt });
-  assert.equal(answered.s.question!.blasted, undefined);
-  assert.equal(dynamiteOf(answered.s, answered.active().id), 1);
-  assert.equal(dynamiteIn(answered.s, answered.clock.now), null);
-
-  // Timed out (the host's timer answers null).
-  const late = holding({ dynamite: 1 });
-  late.clock.now = late.s.question!.deadline! + ANSWER_GRACE_MS + 1;
-  late.blast();
-  assert.equal(late.s.question!.blasted, undefined);
-  late.act({ type: 'answer', index: null }, null);
-  assert.equal(late.s.reveal!.timedOut, true);
-  late.act({ type: 'dynamite', askedAt: late.s.question!.askedAt });
-  assert.equal(dynamiteOf(late.s, late.active().id), 1);
-
-  // Before the clock starts.
-  const early = delve(['Ash'], { host: null, depth: 30 });
-  early.give(early.active().id, { dynamite: 1 });
-  early.act({ type: 'pick', category: early.s.offered[0] });
-  assert.equal(dynamiteIn(early.s, early.clock.now), null);
-  early.clock.now += 60_000;
-  early.blast();
-  assert.equal(early.s.question!.blasted, undefined);
-
-  // Without any.
-  const none = holding({});
-  assert.equal(dynamiteIn(none.s, none.clock.now), null);
-  none.clock.now = none.due();
-  none.blast();
-  assert.equal(none.s.question!.blasted, undefined);
-
-  // A stale question.
-  const stale = holding({ dynamite: 1 });
-  stale.clock.now = stale.due();
-  stale.act({ type: 'dynamite', askedAt: stale.s.question!.askedAt - 1 });
-  assert.equal(stale.s.question!.blasted, undefined);
-
-  // Away: the player's connection dropped.
-  const away = holding({ dynamite: 1 }, { host: 'p0' });
-  const id = away.active().id;
-  away.act({ type: 'connection', playerId: id, connected: false });
-  assert.equal(dynamiteIn(away.s, away.clock.now), null);
-  away.clock.now = away.due();
-  away.blast();
-  assert.equal(away.s.question!.blasted, undefined);
-  assert.equal(dynamiteOf(away.s, id), 1);
-  // Back in time, it goes off.
-  away.act({ type: 'connection', playerId: id, connected: true });
-  away.blast();
-  assert.equal(away.s.question!.blasted, true);
+test("together, a blast's question waits for no draw: the vote's hold stays with the question it drew", () => {
+  const h = delve(3, { depth: 20 });
+  h.give('p0', { dynamite: 1 });
+  const voting = h.s;
+  h.act({ type: 'pick', category: h.s.offered.find((c) => !findOn(h.s, c))! });
+  const asked = h.s;
+  const until = drawHoldUntil(voting, asked)!;
+  assert.equal(until, asked.question!.askedAt + COOP_DRAW_MS);
+  // Asked again in its place (its art failed): the hold stays.
+  h.act({ type: 'reask' });
+  assert.equal(drawHoldUntil(asked, h.s, { qid: asked.question!.askedAt, until }), until);
+  h.clockOn();
+  const running = h.s;
+  h.blast('p1');
+  assert.equal(drawHoldUntil(running, h.s, { qid: running.question!.askedAt, until }), null);
 });
 
-test("nobody but the host sets it off: a guest's or the host's own word is refused, and guests can't send one", () => {
-  const h = delve(['Ash', 'Brea'], { depth: 30 });
-  // (Together, the trusted pick settles the vote.)
-  const id = h.active().id;
-  h.give(id, { dynamite: 1 });
-  h.ask();
-  h.clock.now = h.due();
-  assert.throws(() => h.blast(id), /Not allowed/);
-  assert.throws(() => h.blast('p0'), /Not allowed/);
-  assert.equal(h.s.question!.blasted, undefined);
-  assert.equal(dynamiteOf(h.s, id), 1);
-  assert.equal(parseClientMsg({ t: 'action', action: { type: 'dynamite', askedAt: h.s.question!.askedAt } }), null);
-  // The old dynamite action, blasting a card open, is gone.
-  assert.equal(parseClientMsg({ t: 'action', action: { type: 'blast', category: 'Rings' } }), null);
-  assert.equal(h.engine.apply(h.s, { type: 'blast', category: 'Rings' } as never, null).question!.blasted, undefined);
-});
-
-// ---- what it does --------------------------------------------------------------
-
-test('it blows away half the options: never the answer, made-up names first, two or more left', () => {
-  let fakesSeen = 0;
-  for (let seed = 1; seed <= 60; seed++) {
-    const depth = [12, 30, 60, 120][seed % 4];
-    const h = holding({ dynamite: 1 }, { seed, depth });
-    const q0 = h.s.question!;
-    h.clock.now = h.due();
-    h.blast();
-    const q = h.s.question!;
-    const gone = q.blownAway!;
-    const wrong = q.options.filter((id) => id !== q.itemId);
-    assert.equal(gone.length, Math.floor(q.options.length / 2), `seed ${seed}`);
-    assert.ok(gone.length < wrong.length, 'a wrong one stays beside the answer');
-    assert.ok(q.options.length - gone.length >= 2);
-    assert.ok(!gone.includes(right(q)), 'never the answer');
-    assert.deepEqual([...gone].sort((a, b) => a - b), gone, 'in order');
-    assert.equal(new Set(gone).size, gone.length);
-    // The options themselves stay where they were.
-    assert.deepEqual(q.options, q0.options);
-    assert.deepEqual(q.labels, q0.labels);
-    // Made-up names go before any real decoy.
-    const fakeIdx = q.options.flatMap((id, i) => (isFake(id) ? [i] : []));
-    fakesSeen += fakeIdx.length;
-    const goneFakes = gone.filter((i) => fakeIdx.includes(i)).length;
-    assert.equal(goneFakes, Math.min(fakeIdx.length, gone.length), `seed ${seed}: fakes first`);
-  }
-  assert.ok(fakesSeen > 0, 'some questions had made-up names');
-});
-
-test('which real decoys go is left to chance, so what stays says nothing about the answer', () => {
-  // Over many blasts of the same four-option question (two of its three wrong ones go), each wrong option goes about as often.
-  const counts = new Map<number, number>();
-  let q: Question | null = null;
-  for (let seed = 1; seed <= 300; seed++) {
-    const h = holding({ dynamite: 1 }, { seed: 7, depth: 4 });
-    // Same question, a different roll for the blast.
-    (h.engine as unknown as { rng: () => number }).rng = seeded(seed);
-    q = h.s.question!;
-    h.clock.now = h.due();
-    h.blast();
-    for (const i of h.s.question!.blownAway!) counts.set(i, (counts.get(i) ?? 0) + 1);
-  }
-  const wrong = q!.options.flatMap((id, i) => (id === q!.itemId ? [] : [i]));
-  assert.equal(wrong.length, 3);
-  for (const i of wrong) assert.ok((counts.get(i) ?? 0) > 150, `option ${i}: ${counts.get(i)}`);
-  assert.equal([...counts.values()].reduce((a, b) => a + b, 0), 600, 'two a blast');
-});
-
-test('picking an answer it blew away is a wrong answer, like any other', () => {
-  const h = holding({ dynamite: 1 }, { depth: 30 });
-  const id = h.active().id;
-  h.clock.now = h.due();
-  h.blast();
+test("a blasted question's item counts as seen in the codex, never missed, and costs nothing", () => {
+  const h = solo({ dynamite: 1 }, { host: 'p0' });
   const q = h.s.question!;
-  h.act({ type: 'answer', index: q.blownAway![0], askedAt: q.askedAt });
-  assert.equal(h.s.reveal!.correct, false);
-  assert.equal(livesOf(h.s, id), DELVE_LIVES - 1);
+  h.blast('p0');
+  const e = blastedEncounter(h.s, h.s.question!.blast!, 'p0', false);
+  assert.equal(e.answer, undefined);
+  assert.deepEqual([e.at, e.itemId, e.mode], [q.askedAt, q.itemId, q.mode]);
+  const c = record(emptyCodex(), e);
+  assert.equal(c.items[q.itemId].seen, 1);
+  assert.deepEqual([c.items[q.itemId].name, c.items[q.itemId].art, c.items[q.itemId].delve], [{ n: 0, ok: 0 }, { n: 0, ok: 0 }, undefined]);
+  assert.deepEqual(c.log, []);
+  assert.equal(c.streak, 0);
+  // Seen once, however often it is told (a rejoin).
+  assert.equal(record(c, e), c);
 });
 
-test('guests learn that it went off and what it blew away, never the answer, the items or the pictures behind it', () => {
-  // Alone online, as anyone watching sees it (together: tests/delveCoop.test.ts).
-  const h = delve(['Ash'], { depth: 70 });
-  const id = h.active().id;
-  h.give(id, { dynamite: 1 });
-  h.ask();
-  let view = publicView(h.s).question!;
-  assert.equal(view.blasted, undefined);
-  assert.equal(view.blownAway, undefined);
-  h.clock.now = h.due();
-  h.blast();
-  const q = h.s.question!;
-  view = publicView(h.s).question!;
-  assert.equal(view.blasted, true);
-  assert.deepEqual(view.blownAway, q.blownAway);
-  assert.equal(view.itemId, '');
-  assert.deepEqual(view.options, []);
-  assert.deepEqual(view.mirrored, [], 'nor which pictures were mirrored');
-  assert.equal(JSON.stringify(publicView(h.s)).includes(q.itemId), false);
-  // At the reveal, what it blew away stays anonymous like any untouched decoy.
-  h.act({ type: 'answer', index: right(q), askedAt: q.askedAt });
-  const shown = publicView(h.s).question!;
-  for (const i of q.blownAway!) assert.equal(shown.options[i], '');
-  assert.equal(shown.options[right(q)], q.itemId);
-});
-
-test('a question where it went off is recorded as such, its art left as asked for the record', () => {
-  const h = holding({ dynamite: 1 }, { depth: 90, seed: 3 });
-  const before = h.s.question!;
-  h.clock.now = h.due();
-  h.blast();
-  const q = h.s.question!;
-  assert.equal(q.blasted, true);
-  // How it was asked stays on the record (the host sends the plain art; the screens show it).
-  assert.deepEqual(q.mirrored, before.mirrored);
-  assert.deepEqual(q.veil, before.veil);
-  assert.equal(blastClears(q, 'all'), true, 'at depth 90 there is always art to clear');
-});
-
-// ---- with flares and finds ----------------------------------------------------
-
-test('the clock holds for the blast: what is left stays put while it goes off, then runs on, and the time-out follows', () => {
-  const h = holding({ dynamite: 1 });
-  const q = h.s.question!;
-  h.clock.now = h.due();
-  const at = h.clock.now;
-  const left = q.deadline! - at;
-  assert.equal(clockLeft(q, at), left, 'before: as the deadline says');
-  h.blast();
-  const b = h.s.question!;
-  // A screen a little behind the host's clock still counts down to the blast.
-  assert.equal(clockLeft(b, at - 300), left + 300);
-  for (const t of [0, 1, 400, BLAST_PAUSE_MS - 1, BLAST_PAUSE_MS]) assert.equal(clockLeft(b, at + t), left, `${t} ms into the blast`);
-  assert.equal(clockLeft(b, at + BLAST_PAUSE_MS + 250), left - 250, 'then runs on');
-  assert.equal(clockLeft(b, b.deadline!), 0);
-  assert.equal(clockLeft(b, b.deadline! + 5000), 0);
-  assert.equal(clockLeft({ deadline: null }, at), Infinity, 'not started');
-  // Guests get the hold too.
-  assert.deepEqual(publicView(h.s).question!.held, b.held);
-  // An answer in the held second counts; one after the old deadline but before the new one too.
-  h.clock.now = q.deadline! + ANSWER_GRACE_MS + 100;
-  h.act({ type: 'answer', index: right(b), askedAt: b.askedAt }, 'p0');
-  assert.equal(h.s.reveal!.timedOut, false);
-  assert.equal(h.s.reveal!.correct, true);
-});
-
-test('with a flare too: the dynamite goes off at half the clock, the flare as it hits 0 after the hold, both used', () => {
-  const h = holding({ dynamite: 1, flares: 1 });
-  const id = h.active().id;
-  const q = h.s.question!;
-  // The dynamite is due first.
-  assert.ok(dynamiteIn(h.s, h.clock.now)! < flareIn(h.s, h.clock.now)!);
-  h.clock.now = h.due();
-  h.blast();
-  assert.equal(h.s.question!.blasted, true);
-  const end = q.deadline! + BLAST_PAUSE_MS;
-  assert.equal(h.s.question!.deadline, end, 'the blast holds the clock');
-  assert.equal(flareIn(h.s, h.clock.now), end - h.clock.now, 'the flare burns at the new 0');
-  // Not at the old 0.
-  h.clock.now = q.deadline!;
-  h.act({ type: 'flare', askedAt: q.askedAt });
-  assert.equal(h.s.question!.flared, undefined);
-  h.clock.now = end;
-  h.act({ type: 'flare', askedAt: q.askedAt });
-  assert.equal(h.s.question!.flared, true);
-  assert.equal(h.s.question!.deadline, end + FLARE_MS);
-  assert.deepEqual([dynamiteOf(h.s, id), flaresOf(h.s, id)], [0, 0]);
-  // The answer still counts in the flare's time.
-  h.clock.now = end + FLARE_MS - 10;
-  h.act({ type: 'answer', index: right(q), askedAt: q.askedAt }, null);
-  assert.equal(h.s.reveal!.correct, true);
-});
-
-test("a flare's extra time never moves the blast, nor does one burning first", () => {
-  const h = holding({ dynamite: 1, flares: 1 });
-  const due = h.due();
-  // Should a flare burn first (a deadline moved by hand), the blast still comes at half the question's own clock.
-  h.edit((c) => {
-    c.question!.flared = true;
-    c.question!.deadline! += FLARE_MS;
-  });
-  assert.equal(h.due(), due);
-  assert.equal(dynamiteIn(h.s, h.clock.now), due - h.clock.now);
-});
-
-test("no dynamite goes off on a find's own question: no fuse, no blast, no hold, and the stick is kept", () => {
-  for (const find of ['azurite', 'flare', 'dynamite'] as const) {
-    const c = holding({ dynamite: 2 }, { depth: 20, find });
-    const id = c.active().id;
-    const q = c.s.question!;
-    assert.equal(q.find, find);
-    assert.equal(itemsWorkOn(q), false);
-    assert.equal(dynamiteIn(c.s, c.clock.now), null, `${find}: no fuse on any screen`);
-    c.clock.now = c.due();
-    c.blast();
-    assert.equal(c.s.question!.blasted, undefined, find);
-    assert.equal(c.s.question!.held, undefined);
-    assert.equal(c.s.question!.deadline, q.deadline);
-    assert.equal(dynamiteOf(c.s, id), 2);
-    // Played as it is: a right answer earns the find's item, a miss costs what it costs.
-    c.act({ type: 'answer', index: right(q), askedAt: q.askedAt });
-    assert.equal(c.s.reveal!.correct, true);
-    assert.ok(c.s.reveal!.gained, `${find}: its reward`);
-  }
-  const miss = holding({ dynamite: 1 }, { depth: 20, find: 'azurite' });
-  miss.clock.now = miss.due();
-  miss.blast();
-  miss.act({ type: 'answer', index: miss.s.question!.options.findIndex((o) => o !== miss.s.question!.itemId), askedAt: miss.s.question!.askedAt });
-  assert.equal(livesOf(miss.s, miss.active().id), DELVE_LIVES - findLosses('azurite'));
-  assert.equal(dynamiteOf(miss.s, miss.active().id), 1);
-});
-
-// ---- the wire -------------------------------------------------------------------
-
-test('the plain art travels as its own message, checked like the others', () => {
-  const art = { t: 'clean', qid: 5, w: 120, h: 160, data: new ArrayBuffer(8) };
-  assert.ok(parseHostMsg(art));
-  assert.ok(parseHostMsg({ ...art, tile: 3 }));
-  assert.ok(parseHostMsg({ ...art, data: new Uint8Array(4) }), 'a view of the bytes is fine');
-  assert.equal(parseHostMsg({ ...art, tile: 17 }), null);
-  assert.equal(parseHostMsg({ ...art, tile: '1' }), null);
-  assert.equal(parseHostMsg({ ...art, data: 'x' }), null);
-  assert.equal(parseHostMsg({ ...art, w: 0 }), null);
-  assert.equal(parseHostMsg({ ...art, h: 5000 }), null);
-  assert.equal(parseHostMsg({ ...art, qid: -1 }), null);
-  // A guest never sends media.
-  assert.equal(parseClientMsg(art), null);
+test("a run's blasts go into its record, and records from before them still read", () => {
+  const h = solo({ dynamite: 2 }, { host: 'p0' });
+  h.blast('p0');
+  h.clockOn();
+  h.blast('p0');
+  const run = leftEvent(h.s, 'p0')!;
+  assert.equal(run.blasts, 2);
+  const back = parseRecords(serializeRecords(addRun(emptyRecords(), run).records))!;
+  assert.equal(back.runs[0].blasts, 2);
+  const old = { ...run };
+  delete old.blasts;
+  assert.equal(parseRecords(serializeRecords(addRun(emptyRecords(), old).records))!.runs[0].blasts, undefined);
+  // A save from before blasts (no list of asked cards) reads the question's own card as asked.
+  const older = solo({ dynamite: 1 });
+  older.edit((c) => delete c.delve!.asked);
+  assert.deepEqual(askedCards(older.s), [older.s.question!.category]);
+  assert.equal(blastsLeft(older.s), 2);
+  older.blast();
+  assert.equal(older.s.delve!.asked!.length, 2);
 });

@@ -275,6 +275,22 @@ export class Embers {
     this.glintLift += px;
   }
 
+  /**
+   * The scene swung `px` sideways (dynamite, see swing in descent.ts): the
+   * embers are carried the other way past it, the nearer (larger) faster,
+   * coming round again on the far side as they leave (in the same life).
+   * `w` is the screen's width.
+   */
+  slide(px: number, w: number) {
+    const wide = w + 2 * MARGIN;
+    for (let i = 0; i < EMBERS; i++) {
+      let x = this.bx[i] - px * (0.4 + 0.25 * this.list[i].size);
+      if (x < -MARGIN) x += wide;
+      else if (x > w + MARGIN) x -= wide;
+      this.bx[i] = x;
+    }
+  }
+
   get level() {
     return this.heat;
   }

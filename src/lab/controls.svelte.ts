@@ -10,7 +10,7 @@
 //   takes a new id (delve.startedAt), so the scoreboard and the reveal see a
 //   fresh run and play nothing for the change itself.
 // - events: real actions (a vote, a pick, an answer, a revive, next, the
-//   clock, flare, dynamite) on the run as it stands, or the change the engine
+//   clock, flare, a blast) on the run as it stands, or the change the engine
 //   itself would make (an item gained, the next depth), so every moment
 //   plays as in a game.
 
@@ -22,7 +22,6 @@ import {
   DELVE_MAX_FLARES,
   DELVE_MAX_WARDS,
   SHARDS_PER_WARD,
-  blastAtMs,
   clockLeft,
   REVIVE_FROM,
   delveQuestionTimer,
@@ -35,6 +34,7 @@ import {
   standingIds,
   tileVeilSize,
   veilSeconds,
+  veinWindowMs,
   type FindKind,
   type Inventory,
   type ItemKind,
@@ -378,7 +378,7 @@ async function running(want?: (q: Question) => boolean, find?: FindChoice): Prom
 const notFind = (q: Question) => !q.find;
 
 function wrongIndex(q: Question): number {
-  const off = new Set([...(q.blownAway ?? []), ...(q.struck ?? []).map((x) => x.index)]);
+  const off = new Set((q.struck ?? []).map((x) => x.index));
   const wrong = q.options.flatMap((id, i) => (id !== q.itemId && !off.has(i) ? [i] : []));
   return wrong[Math.floor(Math.random() * wrong.length)] ?? q.options.findIndex((id) => id !== q.itemId);
 }
@@ -438,13 +438,6 @@ export function setTimeLeft(ms: number) {
   if (!q || q.deadline === null || q.clockAt === undefined) return;
   const span = lab.paused?.askedAt === q.askedAt ? lab.paused.span : q.deadline - q.clockAt;
   setElapsed(span - ms);
-}
-
-/** Half the clock gone, less `before` ms: dynamite goes off at half (rounded up to a second). */
-export function toHalf(before = 0) {
-  const s = state();
-  if (!s?.question) return;
-  setElapsed(blastAtMs(s) - before);
 }
 
 export function pause() {
@@ -511,7 +504,8 @@ export const findRight = (kind: FindKind, slow = false) =>
     const q = await running((q) => q.find === kind, kind);
     if (q.find !== kind) throw new Error('could not ask that find');
     if (slow) {
-      setElapsed(blastAtMs(state()!) + 200);
+      // Just past its fast window (half the clock, rounded up to a second).
+      setElapsed(veinWindowMs(state()!) + 200);
       await sleep(120);
     }
     answer(state()!.question!, true);
@@ -563,14 +557,43 @@ export const flare = () =>
     setTimeLeft(1600);
   });
 
-/** Dynamite goes off at half the clock, with its pause (a stick is put in the pack if there is none). */
+/**
+ * A blast draws from the depth's other cards: a question asked without cards
+ * on offer (the lab's own, between depths) has none, so cards are dealt first.
+ */
+function withCards() {
+  const s = state();
+  if (!(s?.phase === 'choosing' || (s?.phase === 'question' && s.offered.length && !s.question?.find))) dealCards();
+}
+
+/**
+ * Dynamite blasts the question away for a new one at the same depth, set off
+ * by the actor (a stick is put in the pack if nobody who can use one holds
+ * one). A depth has two blasts at most: past them, the lab says so.
+ */
 export const dynamite = () =>
-  event('Dynamite', async () => {
+  event('Blast through', async () => {
     const id = activeId();
     if (!holds(id, 'dynamite')) put((s) => invSet(s, id, (v) => (v.dynamite = 1)), true);
-    const q = await running((q) => notFind(q) && !q.blasted, 'none');
-    if (q.find || q.blasted) throw new Error('dynamite only goes off once, and never on a find');
-    toHalf(1700);
+    withCards();
+    const q = await running(notFind, 'none');
+    act({ type: 'blast', askedAt: q.askedAt }, id);
+  });
+
+/**
+ * Dynamite goes off by itself as the clock hits 0, with no flare to burn
+ * (flares are emptied first, a stick put in the pack if none is held).
+ */
+export const dynamiteAtZero = () =>
+  event('Dynamite at 0', async () => {
+    const s = run()!;
+    const id = activeId();
+    const ids = coop() ? standingIds(s) : [id];
+    if (ids.some((o) => inventoryOf(s, o).flares)) put((n) => ids.forEach((o) => invSet(n, o, (v) => (v.flares = 0))), true);
+    if (!holds(id, 'dynamite')) put((n) => invSet(n, id, (v) => (v.dynamite = 1)), true);
+    withCards();
+    await running(notFind, 'none');
+    setTimeLeft(1200);
   });
 
 /** A wrong answer that a ward takes instead of a life. */

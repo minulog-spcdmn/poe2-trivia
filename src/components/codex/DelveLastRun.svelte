@@ -33,6 +33,7 @@
     if (f.flare.taken) out.push([f.flare.taken, f.flare.taken === 1 ? 'flare cache' : 'flare caches']);
     if (f.dynamite.taken) out.push([f.dynamite.taken, f.dynamite.taken === 1 ? 'dynamite cache' : 'dynamite caches']);
     if (story.finds.wardsBroke) out.push([story.finds.wardsBroke, story.finds.wardsBroke === 1 ? 'ward broke' : 'wards broke']);
+    if (run.blasts) out.push([run.blasts, run.blasts === 1 ? 'question blasted away' : 'questions blasted away']);
     // Together: your part in it.
     if (run.revived) out.push([run.revived, run.revived === 1 ? 'time brought back' : 'times brought back']);
     if (run.given) out.push([run.given, run.given === 1 ? 'life given' : 'lives given']);

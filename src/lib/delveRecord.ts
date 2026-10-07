@@ -98,6 +98,8 @@ export interface DelveRun {
   revived?: number;
   /** Azurite Wards that broke in this player's place, each a life saved. Missing where not known. */
   wards?: number;
+  /** Questions dynamite blasted away in the run (together, the team's). Missing for none, and in runs recorded before. */
+  blasts?: number;
 }
 
 /** Every counted run of one kind (alone or together) under one ruleset. */
@@ -205,6 +207,7 @@ function wardsIn(s: GameState, self: string): number {
 function base(s: GameState, self: string, depth: number, hotSeat: boolean): DelveRun {
   const d = s.delve!;
   const wards = wardsIn(s, self);
+  const blasts = Math.min(Math.max(0, Math.floor(d.blasts ?? 0)), 2 * MAX_DEPTH);
   return {
     id: d.startedAt,
     at: Date.now(),
@@ -215,6 +218,7 @@ function base(s: GameState, self: string, depth: number, hotSeat: boolean): Delv
     losses: (d.losses[self] ?? []).map(clampDepth),
     ...(hotSeat ? {} : { who: self }),
     ...(wards ? { wards } : {}),
+    ...(blasts ? { blasts } : {}),
   };
 }
 
@@ -423,6 +427,7 @@ function parseRun(v: unknown): DelveRun | null {
   const given = team ? (int(v.given, 1, MAX_COUNT) ?? 0) : 0;
   const revived = team ? Math.min(perished.length, int(v.revived, 1, MAX_COUNT) ?? 0) : 0;
   const wards = int(v.wards, 1, 2 * MAX_DEPTH);
+  const blasts = int(v.blasts, 1, 2 * MAX_DEPTH);
   return {
     id,
     at,
@@ -437,6 +442,7 @@ function parseRun(v: unknown): DelveRun | null {
     ...(given ? { given } : {}),
     ...(revived ? { revived } : {}),
     ...(wards ? { wards } : {}),
+    ...(blasts ? { blasts } : {}),
   };
 }
 

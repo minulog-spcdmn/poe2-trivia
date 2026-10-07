@@ -3,7 +3,7 @@
   import { fly, scale } from 'svelte/transition';
   import { session } from '../lib/session.svelte';
   import { MAX_PLAYERS, RACE_DEFAULT_TIMER, TIMER_STEPS, difficultyOf, rulesFor, type Difficulty, type GameMode } from '../lib/game';
-  import { DIFFICULTY_NAMES, FINDS_LABEL, FIND_RULES, FIND_TEXT, describe } from '../lib/difficultyText';
+  import { DIFFICULTY_NAMES, FINDS_LABEL, FINDS_UNSAFE, FIND_RULES, FIND_TEXT, describe } from '../lib/difficultyText';
   import { FINDS, shownDepth } from '../lib/delve';
   import CustomDifficulty from './CustomDifficulty.svelte';
   import DelveLadder from './DelveLadder.svelte';
@@ -385,6 +385,7 @@
                   </div>
                 {/each}
               </dl>
+              <p class="finds-unsafe">{FINDS_UNSAFE}</p>
             </div>
           </div>
         </div>
@@ -1012,6 +1013,14 @@
   }
   .finds .miss {
     color: color-mix(in srgb, var(--find) 45%, var(--muted));
+  }
+  /* Under the finds: why flares and dynamite never work on one. */
+  .finds-unsafe {
+    margin: 0.55rem 0 0;
+    font-size: 0.93rem;
+    font-style: italic;
+    line-height: 1.25;
+    color: var(--muted);
   }
   .together {
     margin: -0.4rem 0 1.4rem;

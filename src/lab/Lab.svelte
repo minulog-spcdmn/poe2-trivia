@@ -63,7 +63,7 @@
     void s;
     return L.timeLeft();
   });
-  const span = $derived(run && q ? questionTimer(run) * 1000 + (q.flared ? 5000 : 0) + (q.blasted ? 1000 : 0) : 0);
+  const span = $derived(run && q ? questionTimer(run) * 1000 + (q.flared ? 5000 : 0) : 0);
   const paused = $derived(!!q && L.lab.paused?.askedAt === q.askedAt);
   const secs = (ms: number | null) => (ms === null ? '•' : (Math.max(0, ms) / 1000).toFixed(1));
 
@@ -300,7 +300,8 @@
           <button onclick={L.caveIn} disabled={!!busy}>Vein cave-in</button>
           <button onclick={L.wardsCaveIn} disabled={!!busy}>Two wards take a cave-in</button>
           <button onclick={L.flare} disabled={!!busy}>Flare at 0</button>
-          <button onclick={L.dynamite} disabled={!!busy}>Dynamite at half</button>
+          <button onclick={L.dynamite} disabled={!!busy}>Blast through</button>
+          <button onclick={L.dynamiteAtZero} disabled={!!busy}>Dynamite at 0</button>
           <button onclick={L.deeperThanEver} disabled={!!busy}>Deeper than ever</button>
         </div>
         {#if group}
@@ -349,7 +350,6 @@
             <i class="num big">{secs(left)}</i>
           </div>
           <div class="grid">
-            <button onclick={() => L.toHalf(1500)}>Half time in 1.5 s</button>
             <button onclick={() => L.setTimeLeft(1000)}>1 s left</button>
             <button onclick={() => L.setTimeLeft(span)}>Full clock</button>
             <button onclick={() => L.setTimeLeft(3000)}>3 s left</button>

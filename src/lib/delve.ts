@@ -8,7 +8,7 @@
 // team votes for a card, everyone standing answers the one question, and a
 // teammate with lives to spare can bring back one who perished.
 
-import type { DifficultyRules, GameState, Grayscale, Player, Preset, Question, Revive } from './game.ts';
+import type { DifficultyRules, GameState, Player, Preset, Question, Revive } from './game.ts';
 import { halfBurnt } from './patches.ts';
 
 export const DELVE_LIVES = 3;
@@ -248,10 +248,10 @@ export function delveRules(d: number): DifficultyRules {
  * item. An Azurite Vein yields an Azurite Ward (a ward takes a loss in place of
  * a life) to a fast answer and a shard to a slow one (two shards forge a ward);
  * a Flare Cache a flare (it burns by itself as the clock hits 0, for more
- * time); a Dynamite Cache dynamite (it goes off by itself at half the clock,
- * blasting the art plain and half the options away, every one of them wrong,
- * and holds the clock
- * while it does). Flares and dynamite never go off on a find's own question.
+ * time); a Dynamite Cache dynamite (it blasts the question in play away for
+ * a new one at the same depth, at most DELVE_MAX_BLASTS times a depth: by
+ * hand, or by itself as the clock hits 0 with no flare to burn). Flares and
+ * dynamite never work on a find's own question.
  */
 export type FindKind = 'azurite' | 'flare' | 'dynamite';
 
@@ -498,56 +498,27 @@ export const AZURITE_FAST_MS = veinWindow(DELVE_MIN_TIMER);
 export const FLARE_MS = 5000;
 
 /**
- * How long the clock holds when a stick of dynamite goes off: about as long
- * as the blast takes on screen (QuestionView), so watching it costs no time.
- * The deadline moves on by as much (see clockLeft).
+ * Dynamite blasts the question in play away for a new one at the same depth,
+ * drawn from the cards on its offer not asked yet: at most this many times a
+ * depth, as many as the offer's other cards (game.ts OFFER_COUNT, less the
+ * one picked; tests/delveDynamite.test.ts keeps them in step). Only types
+ * come from game.ts, so the count is written out here.
  */
-export const BLAST_PAUSE_MS = 1000;
+export const DELVE_MAX_BLASTS = 2;
 
 /**
- * When a stick of dynamite goes off (ms from the clock's start, for a
- * question that started with `secs`): once half the clock has run out,
- * rounded up to a whole second like the Azurite Vein's fast window (it never
- * goes off on a vein, see itemsWorkOn).
- */
-export const blastAt = (secs: number) => veinWindow(secs);
-
-/**
- * How many options dynamite blows away from a question of `options` (co-op:
- * of those still in play, as if the struck were gone already): half of them,
- * rounded down, every one of them wrong, never leaving fewer than two (the
- * answer and one wrong). Four leave two, six three, eight four.
- */
-export const blastCount = (options: number) => Math.max(0, Math.min(Math.floor(options / 2), options - 2));
-
-/**
- * How many options a stick of dynamite would blow away from a question now
- * (blastCount of those still in play: co-op strikes take theirs out). Read
- * off the labels, which a guest's copy keeps (its options are hidden). None
- * left to blow away, no stick is spent on it.
- */
-export const blastLeft = (q: Pick<Question, 'labels' | 'struck'>) => blastCount(q.labels.length - (q.struck?.length ?? 0));
-
-/**
- * Whether dynamite has anything to clear from a question's art: art burning
- * in, a picture mirrored, or art without colour (`grayscale`, the rules'),
- * so the host has plain art to send (on the host: the full question).
- */
-export function blastClears(q: Pick<Question, 'mode' | 'veil' | 'mirrored'>, grayscale: Grayscale): boolean {
-  return !!q.veil || !!q.mirrored?.some(Boolean) || grayscale === 'all' || (grayscale === 'art' && q.mode === 'art');
-}
-
-/**
- * Whether flares and dynamite go off on a question: never on a find's own
- * (an Azurite Vein, a Flare or Dynamite Cache), whose risk is taken as it is.
+ * Whether flares and dynamite work on a question: never on a find's own (an
+ * Azurite Vein, a Flare or Dynamite Cache). A find is a dangerous route, its
+ * walls thicker and its darkness one nothing keeps back: its risk is taken
+ * as it is.
  */
 export const itemsWorkOn = (q: Pick<Question, 'find'>) => !q.find;
 
 /**
  * Milliseconds left on a question's clock at `now` (host clock), holding
- * still while dynamite's pause lasts (`held`, whose time the deadline was
- * moved on by), so a ring drawn from it holds instead of jumping. Infinity
- * while the clock hasn't started.
+ * still while a pause lasts (`held`, whose time the deadline was moved on
+ * by: the lab's pause, and older saves' dynamite), so a ring drawn from it
+ * holds instead of jumping. Infinity while the clock hasn't started.
  */
 export function clockLeft(q: Pick<Question, 'deadline' | 'held'>, now: number): number {
   if (q.deadline === null) return Infinity;
@@ -696,9 +667,6 @@ export const questionTimer = (s: GameState) => (s.delve && s.question ? delveQue
 /** An Azurite Vein's fast window for the question in play, in ms from its clock's start (0 for any other question). */
 export const veinWindowMs = (s: GameState) => (s.delve && s.question?.find === 'azurite' ? veinWindow(questionTimer(s)) : 0);
 
-/** When dynamite goes off on the question in play, in ms from its clock's start (blastAt). */
-export const blastAtMs = (s: GameState) => blastAt(questionTimer(s));
-
 /**
  * The depth where a seated player lost their last life, or null while they
  * stand. A cave-in takes two lives at once, so the same depth can be in
@@ -774,16 +742,71 @@ export const holdersOf = (s: GameState, item: ItemKind) => standingIds(s).filter
 /**
  * Co-op: whether a flare or a stick of dynamite can go off on the question in
  * play, from the pack of whoever standing holds one: its clock runs, it is no
- * find's, none went off on it yet, someone here still has an answer to
- * give (nobody else gains from it), and, for dynamite, something is left to
- * blow away (blastLeft). When it is due is the solo rule's.
+ * find's, someone here still has an answer to give (nobody else gains from
+ * it), and for a flare none burnt on it yet, for dynamite the depth has a
+ * blast left (blastsLeft). When it is due is the solo rule's.
  */
 export function teamItemReady(s: GameState, item: 'flares' | 'dynamite'): boolean {
   const q = s.question;
   if (!isGroupRun(s) || s.phase !== 'question' || !q || q.deadline === null || !itemsWorkOn(q)) return false;
-  if (item === 'flares' ? q.flared : q.blasted || q.clockAt === undefined || blastLeft(q) === 0) return false;
+  if (item === 'flares' ? q.flared : blastsLeft(s) === 0) return false;
   const waiting = new Set(waitingIds(s));
   return holdersOf(s, item).length > 0 && s.players.some((p) => p.connected && waiting.has(p.id));
+}
+
+// ---- dynamite -------------------------------------------------------------
+
+/**
+ * The cards on this depth's offer asked so far, while its question is in
+ * play or revealed: the one picked first, then each one a blast drew. Older
+ * saves keep no list: the question's own card then.
+ */
+export function askedCards(s: GameState): string[] {
+  const dm = s.delve;
+  if (!dm || (s.phase !== 'question' && s.phase !== 'reveal')) return [];
+  const asked = Array.isArray(dm.asked) ? dm.asked.filter((c, i, all) => typeof c === 'string' && s.offered.includes(c) && all.indexOf(c) === i) : [];
+  if (asked.length) return asked;
+  const c = s.question?.category;
+  return c && s.offered.includes(c) ? [c] : [];
+}
+
+/** The cards on this depth's offer not asked yet, in the offer's order: what a blast draws from. */
+export function unaskedCards(s: GameState): string[] {
+  const asked = askedCards(s);
+  return s.offered.filter((c) => !asked.includes(c));
+}
+
+/** Blasts the depth in play has left: DELVE_MAX_BLASTS less those made, never more than the cards not asked yet. */
+export function blastsLeft(s: GameState): number {
+  if (!s.delve || s.phase !== 'question' || !s.question) return 0;
+  const made = Math.max(0, askedCards(s).length - 1);
+  return Math.max(0, Math.min(DELVE_MAX_BLASTS - made, unaskedCards(s).length));
+}
+
+/**
+ * Why `by` can't blast the question in play away now, or null when they can
+ * (the button shows only then): its clock runs, it is no find's, the depth
+ * has a blast left, and the stick is at hand. Alone: the player answering,
+ * holding one. Together: anyone standing who hasn't answered it yet, while
+ * anyone standing holds one (it is spent from a holder's pack); a
+ * teammate's wrong answer locks nobody else out. `by` null: the host's own
+ * tooling, for the team. Whether the clock has run out is the engine's.
+ */
+export function blastProblem(s: GameState, by: string | null): string | null {
+  const q = s.question;
+  if (!s.delve || s.phase !== 'question' || !q) return 'There is no open question.';
+  if (q.deadline === null) return 'Not yet.';
+  if (!itemsWorkOn(q)) return "Dynamite can't be used on a find.";
+  if (blastsLeft(s) === 0) return 'No more blasts at this depth.';
+  if (isGroupRun(s)) {
+    if (by !== null && !seated(s, by)) return 'You are not in this game.';
+    if (by !== null && livesOf(s, by) <= 0) return 'Only those still standing use it.';
+    if (by !== null && q.struck?.some((x) => x.by === by)) return 'You already answered.';
+    return holdersOf(s, 'dynamite').length ? null : 'Nobody has dynamite.';
+  }
+  const active = s.players[s.turn];
+  if (!active || (by !== null && by !== active.id)) return "It's not your turn.";
+  return dynamiteOf(s, active.id) > 0 ? null : 'You have no dynamite.';
 }
 
 /**

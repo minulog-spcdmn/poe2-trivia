@@ -32,14 +32,14 @@ import { Beacon, type RoomInfo } from './rooms';
 import { parseClientMsg, parseHostMsg, PROTOCOL_VERSION, RateLimit, versionProblem, versionRefusal, type HostMsg, type MediaMsg } from './protocol';
 import { capped, FrameGuard, hookFrames, JoinGate, roomSecret } from './guard';
 import { cleanName, nameSkeleton } from './names';
-import { prepareClean, prepareMedia, shown, patchDelays, type CleanMedia, type PreparedMedia } from './media.svelte';
+import { prepareMedia, shown, patchDelays, type PreparedMedia } from './media.svelte';
 import { sfx } from './sound';
 import { prefsFrom, roomPrefs, roomSettings, savePrefs } from './prefs';
 import { toasts, type ToastKind, type ToastOptions } from './toasts.svelte';
 import { creatorArrival } from './herald';
 import { RUBY } from './palette';
 import { CREATOR_TITLE } from './site';
-import { FLARE_MS, LOOKALIKES_ASKED_FROM, blastClears, isGroupRun, livesOf, standingIds } from './delve';
+import { FLARE_MS, LOOKALIKES_ASKED_FROM, isGroupRun, livesOf, standingIds } from './delve';
 import { blownText } from './difficultyText';
 import { loadLooks } from './looks';
 import { bestOf, loadRecords, recordLeft, recordRun, runEvent } from './delveRecord';
@@ -47,16 +47,14 @@ import {
   DELVE_CLOCK_CAP_MS,
   DRAIN_POLL_MS,
   artFirst,
-  cleanArtWanted,
+  blastedAway,
   clockStart,
   delveNotices,
   drained,
   drawClockFrom,
   drawHoldUntil,
-  dynamiteIn,
   expireIn,
   expireKey,
-  finishAtReveal,
   flareIn,
   hostAnswerHold,
   markAway,
@@ -321,12 +319,6 @@ class Session {
   private expireKey = '';
   private flareTimer: ReturnType<typeof setTimeout> | null = null;
   private flareKey = '';
-  private dynamiteTimer: ReturnType<typeof setTimeout> | null = null;
-  private dynamiteKey = '';
-  /** Delve: the plain art for when a stick of dynamite goes off, made ahead, never sent before it does. */
-  private clean: { qid: number; art: Promise<CleanMedia> } | null = null;
-  /** Delve: the question (askedAt) whose plain art went out after its blast; a failed one's veil is finished at the reveal. */
-  private cleanSentFor = 0;
 
   get isHost() {
     return this.mode === 'local' || this.mode === 'host';
@@ -838,9 +830,7 @@ class Session {
       const timeout = new Promise<never>((_, reject) => {
         timer = setTimeout(() => reject(new Error('Preparing the art timed out')), MEDIA_TIMEOUT_MS);
       });
-      // Dynamite already went off (a host back from a reload): the art as it left it.
-      const plain = q.blasted ? { ...q, veil: null, mirrored: q.mirrored?.map(() => false) } : q;
-      media = await Promise.race([prepareMedia(plain, q.blasted ? 'off' : this.grayscaleOf(s)), timeout]).finally(() => clearTimeout(timer));
+      media = await Promise.race([prepareMedia(q, this.grayscaleOf(s)), timeout]).finally(() => clearTimeout(timer));
     } catch (err) {
       console.warn('media', err);
       if (gen === this.mediaGen && this.state?.question?.askedAt === q.askedAt && this.state.phase === 'question') {
@@ -850,36 +840,19 @@ class Session {
       }
       return;
     }
-    // The question as it is now: the clock may have run on meanwhile, or
-    // (a host back from a reload) a stick of dynamite gone off.
+    // The question as it is now: the clock may have run on meanwhile.
     const cur = this.state;
     if (gen !== this.mediaGen || cur?.question?.askedAt !== q.askedAt || cur.phase !== 'question') return;
     this.media = media;
     const qid = q.askedAt;
-    // Made plain already: nothing of it is left to burn in.
-    if (q.blasted) this.cleanSentFor = qid;
     // Delve: the clock starts once the art has reached those who answer.
     const timing = !!cur.delve && cur.question.deadline === null;
     this.held = timing && this.mode === 'host' ? { qid, ids: new Set(artFirst(cur)) } : null;
-    // A stick of dynamite may go off on this question (never on a find's):
-    // its plain art is made in a moment, once this art is on its way.
-    if (cleanArtWanted(cur, this.grayscaleOf(cur))) {
-      const art = new Promise((r) => setTimeout(r, 500)).then(() => prepareClean(q));
-      art.catch(() => {});
-      this.clean = { qid, art };
-    }
     if (media.art) this.release({ t: 'art', qid, ...media.art });
     media.options.forEach((data, index) => this.release({ t: 'option', qid, index, data }));
     // Delve: veiled "find the art" pictures; their patches burn in once the clock starts.
     media.tiles.forEach((t, tile) => this.release({ t: 'veil', qid, tile, ...t.veil }));
     if (media.veil) this.release({ t: 'veil', qid, ...media.veil });
-    if (cur.question.blasted && !q.blasted) {
-      // The dynamite went off while this art was being made (its blast found
-      // no art to clear then): the plain art follows the art at once, and
-      // nothing is left to burn in.
-      void this.blastMedia(cur);
-      return;
-    }
     // Delve: the art (or the pictures) burn in from when the clock starts
     // (startClock), not from when the question was asked; a question resumed
     // with its clock already running burns from that clock's start.
@@ -947,39 +920,6 @@ class Session {
     if (clockAt !== undefined) this.burnVeil(qid, clockAt);
   }
 
-  /**
-   * Delve: a stick of dynamite went off. What was burning in stops, and
-   * everyone gets the art plain (in colour, unmirrored, whole), only now.
-   * Should the plain art fail, the veil is finished instead, so no picture
-   * is left part-veiled.
-   */
-  private async blastMedia(s: GameState) {
-    const q = s.question!;
-    const qid = q.askedAt;
-    if (this.media?.qid !== qid) return;
-    for (const t of this.mediaTimers) clearTimeout(t);
-    this.mediaTimers = [];
-    if (!blastClears(q, this.grayscaleOf(s))) return;
-    // What is still to burn in, kept for the fallback (the reveal drops the media).
-    const rest = this.unreleasedPatches();
-    // A new start (or a reset) drops it; the reveal (stopMedia(true)) doesn't.
-    const gen = this.mediaGen;
-    let clean: CleanMedia;
-    try {
-      clean = await (this.clean?.qid === qid ? this.clean.art : prepareClean(q));
-    } catch (err) {
-      console.warn('clean art', err);
-      if (gen === this.mediaGen) this.finishVeil(rest);
-      return;
-    }
-    // Still this question (a reveal that came first still shows the decoys plain).
-    const now = this.state;
-    if (gen !== this.mediaGen || now?.question?.askedAt !== qid || (now.phase !== 'question' && now.phase !== 'reveal')) return;
-    if (clean.art) this.release({ t: 'clean', qid, ...clean.art });
-    clean.tiles.forEach((t, tile) => this.release({ t: 'clean', qid, tile, ...t }));
-    this.cleanSentFor = qid;
-  }
-
   /** Delve: the art held back from everyone but those answering goes out to them now. */
   private releaseHeld() {
     const h = this.held;
@@ -1040,8 +980,8 @@ class Session {
   }
 
   /**
-   * The rest of a veiled picture goes out now (the answer is out, or the
-   * plain art after a blast failed), a few tens of ms apart: it burns in
+   * The rest of a veiled picture goes out now (the answer is out), a few
+   * tens of ms apart: it burns in
    * quickly, still spreading from what's there, and every device starts each
    * patch's burn in a different frame.
    */
@@ -1074,7 +1014,6 @@ class Session {
     this.mediaTimers = [];
     this.media = null;
     this.held = null;
-    this.clean = null;
     if (!keepReleased) this.released = [];
   }
 
@@ -1412,10 +1351,13 @@ class Session {
       }
     };
     // Co-op Delve is a race for the right answer too (the first clears the depth and takes the find).
+    // So is a blast (the first of a right answer and a blast to reach the host wins), held back alike.
     const racing = this.race || (!!this.state.delve && isGroupRun(this.state));
     // Never past the moment that judges it (delveSession.ts hostAnswerHold): held over 0, it would cost a flare.
     const handicap =
-      this.mode === 'host' && !this.labRoomless && racing && action.type === 'answer' ? hostAnswerHold(this.state, Date.now(), this.hostHandicap()) : 0;
+      this.mode === 'host' && !this.labRoomless && racing && (action.type === 'answer' || action.type === 'blast')
+        ? hostAnswerHold(this.state, Date.now(), this.hostHandicap())
+        : 0;
     if (handicap > 0) setTimeout(run, handicap);
     else run();
   }
@@ -1516,15 +1458,11 @@ class Session {
       const until = drawHoldUntil(prev, next, this.drawHold);
       this.drawHold = until === null ? null : { qid: next.question.askedAt, until };
       void this.startMedia(next);
-    } else if (next.phase === 'question' && next.question?.blasted && prev?.question?.askedAt === next.question.askedAt && !prev.question.blasted) {
-      // Sent after the state below, so the plain art never arrives before the blast does.
-      void this.blastMedia(next);
     } else if (next.phase === 'reveal') {
       // Only as the reveal begins: a later change during it (someone joining,
       // the room going public) would cancel the patches still on their way.
       if (prev?.phase !== 'reveal' || prev.question?.askedAt !== next.question?.askedAt) {
-        // Art dynamite laid bare has nothing left to burn in; should its plain copy have failed, the veil is finished.
-        const rest = finishAtReveal(next.question, this.cleanSentFor) ? this.unreleasedPatches() : [];
+        const rest = this.unreleasedPatches();
         // Delve: a question that ended before its clock started still shows everyone its art.
         this.releaseHeld();
         // Keep what was sent, so someone arriving during the reveal still gets the pictures.
@@ -1619,16 +1557,26 @@ class Session {
     this.noteMoments(prev, next);
   }
 
-  /** A question just revealed goes into this browser's codex. */
+  /**
+   * A question just revealed goes into this browser's codex; so does one
+   * dynamite just blasted away, as seen (never missed).
+   */
   private noteEncounter(prev: GameState | null, next: GameState) {
+    const me = this.myPlayerId;
+    const hotSeat = this.mode === 'local';
+    const blast = blastedAway(prev, next);
+    if (blast) {
+      void import('./codex')
+        .then(({ blastedEncounter, recordEncounter }) => recordEncounter(blastedEncounter(next, blast, me, hotSeat)))
+        .catch((err) => console.warn('codex', err));
+      return;
+    }
     // Not after a refresh into a reveal: it was likely counted before the
     // refresh. The codex itself skips a question it already has (a rejoin).
     if (!prev || next.phase !== 'reveal') return;
     const qid = next.question?.askedAt;
     if (prev.phase === 'reveal' && prev.question?.askedAt === qid) return;
     const ms = this.answered?.qid === qid ? this.answered?.ms : undefined;
-    const me = this.myPlayerId;
-    const hotSeat = this.mode === 'local';
     // Its own chunk: the first download stays small.
     // After a redeploy the old chunk is gone; the encounter just goes unrecorded.
     void import('./codex')
@@ -1686,6 +1634,8 @@ class Session {
     if (!prev) return;
     const me = this.myPlayerId;
     for (const n of delveNotices(prev, next)) this.delveNotice(n, next);
+    // Delve: dynamite blasted the question away for a new one, heard on every screen.
+    if (blastedAway(prev, next)) sfx('blast');
     if ((prev.phase === 'lobby' || prev.phase === 'over') && (next.phase === 'choosing' || next.phase === 'question')) {
       sfx('start');
       return;
@@ -1789,7 +1739,6 @@ class Session {
     this.scheduleIdle(s);
     this.scheduleAutoNext(s);
     this.scheduleExpire(s);
-    this.scheduleDynamite(s);
   }
 
   /**
@@ -1805,34 +1754,6 @@ class Session {
       else go();
     };
     keep(setTimeout(fire, Math.max(0, at - Date.now())));
-  }
-
-  /**
-   * Delve: once half the clock has run out, a stick of dynamite goes off: the
-   * player's own, or in co-op a random holder's (host or this device only).
-   */
-  private scheduleDynamite(s: GameState) {
-    const left = this.mode !== 'client' ? dynamiteIn(s, Date.now()) : null;
-    const key = left === null ? '' : `${s.question?.askedAt}:${s.question?.clockAt}`;
-    if (key === this.dynamiteKey) return;
-    if (this.dynamiteTimer) clearTimeout(this.dynamiteTimer);
-    this.dynamiteTimer = null;
-    this.dynamiteKey = key;
-    if (left === null) return;
-    const askedAt = s.question!.askedAt;
-    this.armAt(
-      Date.now() + left,
-      () => {
-        const cur = this.state;
-        if (!cur || this.dynamiteKey !== key) return;
-        try {
-          this.setState(engine.apply(cur, { type: 'dynamite', askedAt }, null));
-        } catch {
-          /* the question closed anyway */
-        }
-      },
-      (t) => (this.dynamiteTimer = t),
-    );
   }
 
   /**
@@ -2025,12 +1946,8 @@ class Session {
     if (this.flareTimer) clearTimeout(this.flareTimer);
     this.flareTimer = null;
     this.flareKey = '';
-    if (this.dynamiteTimer) clearTimeout(this.dynamiteTimer);
-    this.dynamiteTimer = null;
-    this.dynamiteKey = '';
     this.reaskFails = { turn: '', n: 0 };
     this.artFailedFor = 0;
-    this.cleanSentFor = 0;
     this.drawHold = null;
     this.labRoomless = false;
     for (const c of this.guests.keys()) c.close();

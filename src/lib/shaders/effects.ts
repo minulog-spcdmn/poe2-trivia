@@ -18,8 +18,9 @@
 // from and recedes the same way, and what it adds to the scene's brightness
 // grows steadily as it comes (ENV_ADD in lib/descent.ts).
 //
-// p in CSS px, q = (p + (0, sink * H)) / S (the walls, which go up as the
-// scene sinks), xy = fractions of the screen, tm the clock (s), sink how
+// p in CSS px, q = (p + (slide, sink * H)) / S (the walls, which go up as the
+// scene sinks and along as dynamite swings it sideways, see swing in
+// lib/descent.ts), xy = fractions of the screen, tm the clock (s), sink how
 // far the scene has sunk (screens).
 
 export const ENV_GLSL = `

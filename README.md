@@ -74,7 +74,15 @@ the same thing for everyone.
     the card was one. A time-out costs everyone standing who hasn't
     answered.
   - Flares and dynamite go off from the pack of a random holder still
-    standing, and help everyone.
+    standing, and help everyone. Anyone standing who hasn't answered may
+    press Blast through (a teammate's wrong answer locks nobody else out:
+    it stays paid, and everyone standing, its player too, answers the new
+    question). Its card is the one with the most votes that wasn't chosen,
+    ties drawn by the host, then the others, drawn. The first right answer
+    still ends the question for everyone: a blast after it, or an answer to
+    a question blasted away, is dropped, whichever reached the host second.
+    Dynamite going off at 0 hits nobody: the whole team gets the new
+    question.
   - Between questions, a player with 2 or more lives can give one to a
     teammate who perished, who comes back with that life and nothing else.
   - Perishing drops everything you carry, for good.
@@ -178,15 +186,27 @@ the same thing for everyone.
     burns by itself, with a signal flare's hiss, and gives you 5 s more
     (once a question). An answer at any time before that keeps it; a guest's
     answer still on its way when it burns gives it back.
-  - A **Dynamite Cache** (from depth 9) gives **dynamite**. Halfway through
-    your clock (rounded up to a whole second) a stick goes off by itself
-    (once a question): the art shows plain (in colour, unmirrored and whole)
-    and half of all the options are blown away, every one of them wrong (4
-    leave 2, 6 leave 3, 8 leave 4; together, half of those not struck
-    yet). Its fuse is lit shortly after the clock starts and burns round
-    the art, from its foot up the left side and along the top, down to the
-    blast at half time. The clock holds for the second the blast takes, so
-    watching it costs nothing.
+  - A **Dynamite Cache** (from depth 9) gives **dynamite**. While a
+    question is open, a **Blast through** button stands where Next will
+    after the answer (its place kept, so nothing moves as it comes and
+    goes): pressed, a stick blasts the question away for a new one at the
+    same depth, from a card on the depth's offer not asked yet. The depth
+    doesn't change (no depth reached, no zone gate); the new question gets
+    the depth's full clock and rules (veil, pictures, grayscale, options,
+    made-up names) as a fresh question, a flare works on it as usual, and
+    it is never a find, even from a find's card (dynamite is no way to fish
+    for finds). Its card is locked out like a pick. At most two blasts a
+    depth (`DELVE_MAX_BLASTS`, the offer's other cards). As the clock hits
+    0, a flare burns first; only with none to burn does a stick go off by
+    itself (while the depth has a blast left), in place of the time-out,
+    which then costs nothing. Instead of the plunge, the stage swings
+    sideways, toward where the new card lay on the offer from the blasted
+    one (a card to its left swings left): the old question bursts and goes,
+    the new one comes in from that side, and the scene behind swings with
+    them (a cross-fade with reduced motion). The question blasted away
+    counts as seen in the Codex, never missed, and the run's record keeps
+    how many questions it blasted away (shown on the Codex's last run and
+    in its finds panel).
     The cache itself is unstable: a miss on it (a wrong answer or a
     time-out) costs a life as usual, and then its blast destroys one thing
     you carry, drawn at random by the host, whose state tells every screen
@@ -199,8 +219,9 @@ the same thing for everyone.
     pick strikes (or at the time-out). The lost item bursts on the phial or
     beside it with a small blast of its own, a moment after the life, and
     the reveal says what went ("The blast destroyed your flare.").
-  - Flares and dynamite never go off on a find's own question, which is
-    played as it is. You carry up to three of each item.
+  - Flares and dynamite never work on a find's own question: a find is a
+    dangerous route, with thicker walls and a darkness nothing keeps back
+    (no button, nothing at 0). You carry up to three of each item.
 - **Alone**, you delve until your third life is gone; the depth where it went
   is your result. **Together**, the run goes on while anyone stands, and
   the depth where the last of the team perished is the team's result.
@@ -396,8 +417,8 @@ runs, what kills you (kinds of item, by lives lost) and your deadliest
 items, from all your answers; where you fall (lives lost in each zone that
 5 runs reached); a Together panel (usual depth and lives lost together,
 times you perished and were brought back, lives you gave); finds and wards
-(veins and caches taken and what they gave, blasts, lives warded, flares
-burnt), one panel alone and one together; the zones reached, each dated,
+(veins and caches taken and what they gave, questions blasted away, lives
+warded, flares burnt), one panel alone and one together; the zones reached, each dated,
 with your deepest over time; and a run log (the latest ten rows, all on
 request; runs under other rules listed apart). Zones you haven't reached
 are never named, and "Begin the descent" starts a run alone. Only runs
@@ -807,7 +828,7 @@ and the depth (any of 1 to 150, or a zone); deals cards with a find among
 them, and a second find if wanted; asks questions (name the item or find
 the art, a find's, mirrored, unveiled, in grayscale); plays events (a right
 or wrong answer, a time-out, a ward breaking, a cave-in, a flare at 0,
-dynamite at half the clock, items gained, a find answered right, the last
+a blast through, dynamite at 0, items gained, a find answered right, the last
 life, deeper than ever, a new zone, the plunge); pauses and moves the
 clock; shows the end screens (perished, deeper than ever, together); and
 switches effects, sound and reduced motion. Events go through the engine

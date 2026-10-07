@@ -5,14 +5,13 @@ import {
   COOP_DRAW_MS,
   DELVE_CLOCK_CAP_MS,
   artFirst,
-  cleanArtWanted,
+  blastedAway,
   clockStart,
   delveNotices,
   drained,
   drawClockFrom,
   drawHoldUntil,
   expireIn,
-  finishAtReveal,
   underRuleset,
   inventoryChanges,
   livesLost,
@@ -141,24 +140,20 @@ test('the art goes first to whoever answers: the player alone, everyone standing
   assert.deepEqual(artFirst(run({ delve: null })), []);
 });
 
-test('plain art is made ahead only when a stick of dynamite could go off on the question', () => {
-  const veiled = { ...question(5000), veil: { size: 5, seconds: 8, seed: 1 } };
-  const s = run({ phase: 'question', question: veiled });
-  assert.equal(cleanArtWanted(s, 'off'), false, 'nobody holds dynamite');
-  s.delve!.inventory = { b: { wards: 0, flares: 0, dynamite: 1, shards: 0 } };
-  assert.equal(cleanArtWanted(s, 'off'), true, 'together: anyone standing who holds some');
-  assert.equal(cleanArtWanted({ ...s, question: { ...veiled, find: 'azurite' } }, 'off'), false, "never on a find's question");
-  assert.equal(cleanArtWanted({ ...s, question: { ...veiled, blasted: true } }, 'off'), false, 'it went off already');
-  assert.equal(cleanArtWanted({ ...s, question: question(5000) }, 'off'), false, 'nothing for a blast to clear');
-  assert.equal(cleanArtWanted({ ...s, question: question(5000) }, 'all'), true, 'grayscale art is cleared too');
-  const down = structuredClone(s);
-  down.delve!.losses = { b: [1, 2, 3] };
-  assert.equal(cleanArtWanted(down, 'off'), false, 'a holder who perished holds nothing that goes off');
-  const solo = structuredClone(s);
-  solo.delve!.entrants = ['a'];
-  assert.equal(cleanArtWanted(solo, 'off'), false, "alone, only the player's own dynamite");
-  solo.turn = 1;
-  assert.equal(cleanArtWanted(solo, 'off'), true);
+test('a blast is told apart from a question asked again: the new question names the one the change had in play', () => {
+  const prev = run({ phase: 'question', question: question(5000), turnCount: 3 });
+  const was = { at: 100, itemId: 'x', mode: 'name' as const };
+  const next = run({ phase: 'question', question: { ...question(null), askedAt: 200, blast: { by: 'a', stick: 'b', side: -1, was } }, turnCount: 3 });
+  assert.deepEqual(blastedAway(prev, next), next.question!.blast);
+  // Its art failed and it was asked again: the blast it keeps is no new one.
+  const again = { ...next, question: { ...next.question!, askedAt: 300 } };
+  assert.equal(blastedAway(next, again), null);
+  // Nor without one, from the cards, in another run, or once revealed.
+  assert.equal(blastedAway(prev, run({ phase: 'question', question: { ...question(null), askedAt: 200 } })), null);
+  assert.equal(blastedAway(run(), next), null);
+  assert.equal(blastedAway(prev, { ...next, delve: { ...next.delve!, startedAt: 6 } }), null);
+  assert.equal(blastedAway(prev, { ...next, phase: 'reveal' }), null);
+  assert.equal(blastedAway(null, next), null);
 });
 
 test('co-op notices: a wrong pick, a perish and a flare from a pack (dynamite the question says itself)', () => {
@@ -174,8 +169,6 @@ test('co-op notices: a wrong pick, a perish and a flare from a pack (dynamite th
   next.round = 7;
   next.question!.flared = true;
   next.question!.flaredBy = 'a';
-  next.question!.blasted = true;
-  next.question!.blastedBy = 'b';
   assert.deepEqual(delveNotices(prev, next), [
     { kind: 'struck', playerId: 'a', lives: 0, wards: 1 },
     { kind: 'flare', playerId: 'a' },
@@ -236,15 +229,6 @@ test("together, the clock after a draw waits half the slowest standing guest's r
   assert.equal(drawClockFrom(1000, 200), 1100);
   assert.equal(drawClockFrom(1000, 5000), 1500);
   assert.equal(drawClockFrom(1000, -20), 1000);
-});
-
-test("the reveal finishes a blasted question's veil unless its plain art went out", () => {
-  const q = { askedAt: 100, blasted: true };
-  assert.equal(finishAtReveal(q, 100), false, 'laid bare: nothing left to burn in');
-  assert.equal(finishAtReveal(q, 0), true, 'the plain art failed (or is still on its way)');
-  assert.equal(finishAtReveal(q, 50), true, 'plain art sent for another question');
-  assert.equal(finishAtReveal({ askedAt: 100 }, 0), true, 'no blast');
-  assert.equal(finishAtReveal(null, 0), true);
 });
 
 test('a run picked up under other rules is marked mixed, unless it was decided already', () => {

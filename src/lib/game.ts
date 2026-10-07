@@ -9,11 +9,9 @@ import {
   DELVE_RESUME_GRACE_MS,
   DELVE_RULESET,
   FINDS,
-  BLAST_PAUSE_MS,
   FLARE_MS,
-  blastAtMs,
-  blastCount,
-  blastLeft,
+  askedCards,
+  blastProblem,
   delveLockout,
   delveQuestionTimer,
   delveRules,
@@ -41,6 +39,7 @@ import {
   veilSeconds,
   voteClosesAt,
   voteDone,
+  unaskedCards,
   waitingIds,
   SECOND_FIND,
   SHARDS_PER_WARD,
@@ -421,6 +420,14 @@ export interface Delve {
    * the question in play was picked.
    */
   picksBefore?: string[];
+  /**
+   * The cards on this depth's offer asked so far (delve.ts askedCards): the
+   * one picked, then each one a blast drew. Set at the pick, gone between
+   * depths; missing in older saves.
+   */
+  asked?: string[];
+  /** Questions dynamite blasted away in this run (missing for none, and in older saves). */
+  blasts?: number;
 }
 
 /** Delve: everything a question can change, taken as its card is picked (see Delve.snapshot). */
@@ -569,18 +576,22 @@ export interface Question {
    */
   find?: FindKind;
   /**
-   * Delve: a stick of dynamite went off on this question, at half its clock
-   * (once a question): the art shown plain from then on (in colour,
-   * unmirrored and whole; the host sends a clean copy), and `blownAway`'s
-   * options blasted off the board.
+   * Delve: asked in place of a question dynamite blasted away, at the same
+   * depth (see Blast). Kept through a reask.
+   */
+  blast?: Blast;
+  /**
+   * Older saves only: dynamite went off on this question at half its clock
+   * (the dynamite before it blasted questions away), and the wrong options
+   * it blew away. Read only to give its stick back when the question is set
+   * aside.
    */
   blasted?: boolean;
-  /** Delve, once `blasted`: the wrong options it blew away, by index, in order. */
   blownAway?: number[];
   /**
-   * Delve, once `blasted`: the clock held still from `from` to `until` (host
-   * clock) while the blast went off, and the deadline moved on by as much
-   * (delve.ts BLAST_PAUSE_MS, clockLeft).
+   * The clock held still from `from` to `until` (host clock), the deadline
+   * moved on by as much (delve.ts clockLeft): the lab's pause, and older
+   * saves' dynamite.
    */
   held?: { from: number; until: number };
   /** Delve: a flare burnt on this question as its clock hit 0, and its deadline moved (once a question). */
@@ -597,8 +608,30 @@ export interface Question {
   struck?: Struck[];
   /** Delve co-op: whose flare burnt on this question (alone: the player's own). */
   flaredBy?: string;
-  /** Delve co-op: whose dynamite went off on this question (alone: the player's own). */
+  /** Older saves only (see `blasted`): whose dynamite went off on this question. */
   blastedBy?: string;
+}
+
+/**
+ * Delve: a question dynamite blasted away for a new one at the same depth,
+ * as the new one remembers it.
+ */
+export interface Blast {
+  /** Who set it off; missing when it went off by itself as the clock hit 0. */
+  by?: string;
+  /** Whose stick it was (co-op: a standing holder's, drawn; alone the player's). */
+  stick: string;
+  /**
+   * Where the new question's card lay on the offer from the blasted one's:
+   * -1 to its left, 1 to its right (the screens swing that way).
+   */
+  side: -1 | 1;
+  /**
+   * The question blasted away: when it was asked, its answer and its kind.
+   * Public, as it can't be answered any more: every screen counts its item
+   * as seen (never missed) in the codex.
+   */
+  was: { at: number; itemId: string; mode: QuestionMode };
 }
 
 /** A wrong answer in co-op Delve (see Question.struck). */
@@ -744,8 +777,12 @@ export type Action =
   | { type: 'resumed' }
   /** Host only (Delve): the clock is about to run out, so one of the answering player's flares burns (co-op: a random holder's). */
   | { type: 'flare'; askedAt: number }
-  /** Host only (Delve): half the clock has run out, so a stick of the answering player's dynamite goes off (co-op: a random holder's). */
-  | { type: 'dynamite'; askedAt: number };
+  /**
+   * Delve: a stick of dynamite blasts the question asked at `askedAt` away
+   * for a new one at the same depth (alone the player's own; co-op anyone
+   * standing who hasn't answered it, from a random holder's pack).
+   */
+  | { type: 'blast'; askedAt: number };
 
 export const OFFER_COUNT = 3;
 export const MAX_PLAYERS = 12;
@@ -1237,8 +1274,16 @@ export class Engine {
           this.burnFlare(s, active.id, true);
           flareDue = false;
         }
-        // An option dynamite blew away still counts if picked (a guest's click
-        // may have crossed the blast on its way): it is wrong either way.
+        // With no flare to burn, a stick of dynamite goes off by itself in
+        // place of the time-out, if the depth has a blast left: as the host's
+        // time-out comes (0 and the allowance for answers in flight), or as
+        // a player's answer later than that arrives first (it was for the
+        // question blasted away, and goes with it).
+        const late = q.deadline !== null && this.now() > q.deadline + ANSWER_GRACE_MS;
+        if (!flareDue && (from === null ? action.index === null : late) && this.blastDue(s, active)) {
+          this.blast(s, active.id, null);
+          break;
+        }
         const index = validIndex(action.index, q.options.length);
         const chosenId = index === null ? null : q.options[index];
         const timedOut =
@@ -1340,6 +1385,8 @@ export class Engine {
         this.tallyMode(s, voided.mode, -1);
         // Delve: nobody has answered yet (no clock), so the pick's snapshot still holds.
         s.question = this.makeQuestion(s, voided.category, voided);
+        // One a blast asked stays one (never a find's, see blast).
+        if (voided.blast) s.question.blast = voided.blast;
         s.used.push(s.question.itemId);
         break;
       }
@@ -1440,6 +1487,12 @@ export class Engine {
             if (flarer) this.gain(s, flarer, 'flares');
             if (blaster) this.gain(s, blaster, 'dynamite');
           }
+          // Its blasts are undone with it (the snapshot gave their sticks
+          // back): the same cards come back, none asked yet.
+          const blasted = askedCards(s).length - 1;
+          if (blasted > 0 && dm.blasts) dm.blasts = Math.max(0, dm.blasts - blasted);
+          if (dm.blasts === 0) delete dm.blasts;
+          delete dm.asked;
           delete dm.snapshot;
           delete dm.picksBefore;
           s.question = null;
@@ -1458,27 +1511,23 @@ export class Engine {
         this.burnFlare(s, coop ? this.anyHolder(s, 'flares') : active!.id);
         break;
       }
-      case 'dynamite': {
-        if (from !== null) throw new ActionError('Not allowed.');
+      case 'blast': {
         const q = s.question;
-        const coop = !!s.delve && isGroupRun(s);
-        // Only on the clock, once a question and never a find's, before an answer or the time-out is in.
-        if (!s.delve || s.phase !== 'question' || !q || q.askedAt !== action.askedAt || q.deadline === null || q.clockAt === undefined || q.blasted || !itemsWorkOn(q)) break;
-        // Nothing left to blow away: no stick is spent (delve.ts blastLeft).
-        if (blastLeft(q) === 0) break;
-        // Alone: the player is here to use it. Together: someone holds one and someone here still has an answer to give.
-        if (coop ? !teamItemReady(s, 'dynamite') : !active?.connected) break;
-        const now = this.now();
-        // Half the clock gone (a flare's extra time not counted).
-        if (now < q.clockAt + blastAtMs(s) - 250 || now > q.deadline + ANSWER_GRACE_MS) break;
-        const holder = coop ? this.anyHolder(s, 'dynamite') : active!.id;
-        if (!this.spend(s, holder, 'dynamite')) break;
-        q.blasted = true;
-        q.blastedBy = holder;
-        q.blownAway = this.blownAway(q);
-        // The clock holds while it goes off: the deadline moves on by as much.
-        q.held = { from: now, until: now + BLAST_PAUSE_MS };
-        q.deadline += BLAST_PAUSE_MS;
+        // One that crossed its question's end on the way (a right answer,
+        // the time-out, another blast: whichever the host took first) is
+        // dropped quietly.
+        if (!s.delve || s.phase !== 'question' || !q || action.askedAt !== q.askedAt) throw new ActionError('Too late!', true);
+        const coop = isGroupRun(s);
+        // Alone the player answering (on one device, whoever presses);
+        // together anyone standing who hasn't answered it, or (null) the
+        // host's own tooling for the team.
+        const by = from ?? (coop ? null : (active?.id ?? null));
+        const problem = blastProblem(s, by);
+        if (problem) throw new ActionError(problem, true);
+        // Past the allowance for answers in flight the time-out is due, and
+        // deals with it: a flare burns first, or the dynamite goes off by itself.
+        if (this.now() > q.deadline! + ANSWER_GRACE_MS) throw new ActionError('Too late!', true);
+        this.blast(s, coop ? this.anyHolder(s, 'dynamite') : active!.id, by);
         break;
       }
     }
@@ -1608,6 +1657,8 @@ export class Engine {
         ...(missedBefore ? { missed: missedBefore } : {}),
       };
       delete s.delve.picksBefore;
+      // The first card of this depth's asked (more come with blasts, see blast).
+      s.delve.asked = [category];
       // Co-op locks out the team's picks, alone the player's own.
       if (active) active.recent = lastPicks([...active.recent, category], DELVE_MAX_LOCKOUT);
       else s.recentCategories = lastPicks([...s.recentCategories, category], DELVE_MAX_LOCKOUT);
@@ -1657,19 +1708,46 @@ export class Engine {
   }
 
   /**
-   * The wrong options a stick of dynamite blows away (delve.ts blastCount):
-   * made-up names first, the trick of a name as the veil is the art's, then
-   * real decoys at random. The answer is never made up, and the rest go at
-   * random, so what is left says nothing more about which option is right.
-   * Co-op: half of those still in play (the answer and the wrong options not
-   * struck yet), as if the struck were gone already, every one of them wrong.
+   * Delve: a stick of `stick`'s dynamite blasts the question in play away
+   * for a new one at the same depth, set off by `by` (null: by itself, as
+   * the clock hit 0 with no flare to burn). Its card is drawn from those on
+   * the offer not asked yet: together, the cards that got votes first (most
+   * votes first, ties drawn), then the rest, drawn; alone, one of them,
+   * drawn. The new question is a fresh one, on the depth's full clock and
+   * rules (the clock starts once its art is out, as ever), and never a
+   * find's, even on a find's card: dynamite is no way to fish for finds. It
+   * locks its card out like a pick. What the blasted one cost stands (a
+   * teammate's wrong answer stays paid); answers to it still on their way
+   * are dropped, as its askedAt is gone. Nothing happens without a card left
+   * or a stick to spend (blastProblem has said so already).
    */
-  private blownAway(q: Question): number[] {
-    const struck = new Set((q.struck ?? []).map((x) => x.index));
-    const wrong = q.options.flatMap((id, i) => (id === q.itemId || struck.has(i) ? [] : [i]));
-    const fakes = shuffle(wrong.filter((i) => isFake(q.options[i])), this.rng);
-    const real = shuffle(wrong.filter((i) => !isFake(q.options[i])), this.rng);
-    return [...fakes, ...real].slice(0, blastCount(wrong.length + 1)).sort((a, b) => a - b);
+  private blast(s: GameState, stick: string, by: string | null) {
+    const dm = s.delve!;
+    const was = s.question!;
+    const cards = unaskedCards(s);
+    if (!cards.length || !this.spend(s, stick, 'dynamite')) return;
+    const votes = Object.values(dm.votes ?? {});
+    const backing = (c: string) => votes.filter((v) => v === c).length;
+    // Drawn, then (the sort is stable) those with the most votes to the front.
+    const category = shuffle(cards, this.rng).sort((a, b) => backing(b) - backing(a))[0];
+    dm.asked = [...askedCards(s), category];
+    dm.blasts = (dm.blasts ?? 0) + 1;
+    const active = isGroupRun(s) ? null : s.players[s.turn];
+    if (active) active.recent = lastPicks([...active.recent, category], DELVE_MAX_LOCKOUT);
+    else s.recentCategories = lastPicks([...s.recentCategories, category], DELVE_MAX_LOCKOUT);
+    const side = s.offered.indexOf(category) < s.offered.indexOf(was.category) ? -1 : 1;
+    s.question = this.makeQuestion(s, category);
+    s.question.blast = { ...(by ? { by } : {}), stick, side, was: { at: was.askedAt, itemId: was.itemId, mode: was.mode } };
+    s.used.push(s.question.itemId);
+  }
+
+  /**
+   * Delve alone: a stick of dynamite would go off by itself for the player
+   * answering as their clock hits 0 (after any flare): they are here, and
+   * may blast the question away (delve.ts blastProblem).
+   */
+  private blastDue(s: GameState, active: Player | undefined): active is Player {
+    return !!s.delve && !isGroupRun(s) && !!active?.connected && blastProblem(s, active.id) === null;
   }
 
   /**
@@ -1873,6 +1951,13 @@ export class Engine {
         this.burnFlare(s, this.anyHolder(s, 'flares'));
         return;
       }
+      // With no flare to burn, a stick of dynamite from anyone's pack goes
+      // off by itself, if the depth has a blast left: nobody is hit, and
+      // the whole team gets the new question.
+      if (teamItemReady(s, 'dynamite')) {
+        this.blast(s, this.anyHolder(s, 'dynamite'), null);
+        return;
+      }
       const hits = waitingIds(s).map((id) => ({ playerId: id, ...this.hit(s, id), timedOut: true }));
       this.coopReveal(s, null, true, hits);
       return;
@@ -1899,7 +1984,6 @@ export class Engine {
       this.coopReveal(s, { id: from, index }, false, []);
       return;
     }
-    // An option dynamite blew away still counts if picked (a click may have crossed the blast): wrong either way.
     const took = this.hit(s, from);
     struck.push({ index, by: from, at: now, ...took });
     const chosenId = q.options[index];
@@ -2014,6 +2098,7 @@ export class Engine {
     if (s.delve) {
       s.delve.finds = this.rollFinds(s, coop ? standingIds(s) : s.players[s.turn] ? [s.players[s.turn].id] : []);
       delete s.delve.find;
+      delete s.delve.asked;
     }
   }
 
@@ -2024,6 +2109,7 @@ export class Engine {
       if (s.delve.voteFrom !== undefined) s.delve.voteFrom = null;
       delete s.delve.snapshot;
       delete s.delve.picksBefore;
+      delete s.delve.asked;
     }
     s.phase = 'over';
     s.winners = winners;

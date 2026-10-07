@@ -11,13 +11,16 @@
 // Delve answers also note their depth and run: each item keeps how deep it
 // was answered and how often it cost a life, and the log links the lives a run
 // lost to the items that took them (the run list is in lib/delveRecord.ts).
-// Each also notes how many of its questions came from a find or had dynamite
-// go off on them, how many Azurite Wards broke in place of its lives, and, where a
-// wrong answer to an Azurite Vein caved in for two, the lives it cost.
+// Each also notes how many of its questions came from a find (or, logged by
+// builds before dynamite blasted questions away, had a stick go off on them
+// at half the clock), how many Azurite Wards broke in place of its lives, and, where a
+// wrong answer to an Azurite Vein caved in for two, the lives it cost. A
+// question dynamite blasts away counts as seen, never as an answer: it
+// costs nothing and is never missed.
 // The log also keeps, per Delve answer, the find it came from and what it
 // earned, a flare burnt on it, and on a cave-in the lives and wards it took,
 // so a run can be told back (codexStats.ts runStory), whether dynamite went off
-// on it, and whether it was given in a run together (`team`), so the pages
+// on it (older builds), and whether it was given in a run together (`team`), so the pages
 // can tell alone and together apart.
 //
 // Together (co-op) everyone answers the same question: this player's answer
@@ -39,7 +42,7 @@
 // and those builds never touch the new one. A stored codex this build can't
 // read is never written over (lib/keepAside.ts).
 
-import { difficultyOf, isFake, type Difficulty, type GameState, type QuestionMode } from './game.ts';
+import { difficultyOf, isFake, type Blast, type Difficulty, type GameState, type QuestionMode } from './game.ts';
 import { ITEM_KINDS, delveTier, isGroupRun, type FindKind, type ItemKind } from './delve.ts';
 import { clearAside, makeRoom } from './keepAside.ts';
 import { readStored, removeStored, storeKey, tryReadStored, writeStored } from './storage.ts';
@@ -77,7 +80,10 @@ export interface DelveItem extends Tally {
   lostAt: number;
   /** Of these answers: asked from a find (a deeper question, for an item). Missing for none. */
   finds?: number;
-  /** Questions on it where a stick of dynamite went off (at half the clock). Missing for none. */
+  /**
+   * Questions on it where a stick of dynamite went off at half the clock,
+   * logged by builds before dynamite blasted questions away. Missing for none.
+   */
   blasted?: number;
   /** Azurite Wards that broke on its wrong answers, in place of lives. Missing for none. */
   warded?: number;
@@ -116,7 +122,7 @@ export interface Answer {
   /** Delve, on a cave-in or together: lives it took and wards that broke in their place (otherwise see answerLives). */
   lives?: number;
   wards?: number;
-  /** Delve: a stick of dynamite went off on this question. */
+  /** Delve: a stick of dynamite went off on this question (logged by builds before dynamite blasted questions away). */
   blasted?: true;
   /** Delve: answered in a run together. */
   team?: true;
@@ -265,6 +271,32 @@ export function encounterAt(s: GameState, me: string | null, hotSeat: boolean, m
   const pickedLabel = picked === null ? null : (q.labels[picked] ?? null);
   e.answer = { ok, pickedId, pickedLabel, ...(ok && ms !== undefined ? { ms } : {}) };
   return e;
+}
+
+/**
+ * The encounter a question dynamite blasted away means for this device: its
+ * item seen, never answered (so never missed, and it costs nothing), filed
+ * under the run like any of its questions. `blast` is the new question's
+ * (game.ts Blast), which remembers the one blasted away.
+ */
+export function blastedEncounter(s: GameState, blast: Blast, me: string | null, hotSeat: boolean): Encounter {
+  return {
+    at: blast.was.at,
+    itemId: blast.was.itemId,
+    mode: blast.was.mode,
+    difficulty: delveTier(s.round),
+    race: false,
+    ...(s.delve
+      ? {
+          delve: {
+            depth: Math.max(1, s.round),
+            run: s.delve.startedAt,
+            ...(isGroupRun(s) ? { team: true as const } : {}),
+            ...(me && !hotSeat ? { who: me } : {}),
+          },
+        }
+      : {}),
+  };
 }
 
 const fresh = (at: number): ItemEntry => ({ seen: 1, first: at, last: at, name: noTally(), art: noTally(), mixed: {} });

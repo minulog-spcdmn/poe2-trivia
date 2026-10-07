@@ -1261,8 +1261,12 @@ export const shownDepth = () => shown;
  */
 export const PLUNGE_MS = 1900;
 export const PLUNGE_SINK = 0.6;
-/** How far the scene has sunk (screens, wrapping far down), how fast (screens a second) and how far the dark has drawn in (0 to 1). */
-export const sinking = { sink: 0, speed: 0, breath: 0 };
+/**
+ * How far the scene has sunk (screens, wrapping far down), how fast (screens
+ * a second) and how far the dark has drawn in (0 to 1); and how far it has
+ * swung sideways (screen heights, see swing) and the dark drawn in as it does.
+ */
+export const sinking = { sink: 0, speed: 0, breath: 0, slide: 0, slideBreath: 0 };
 let asked = false;
 let sinkFrom = 0;
 let plungeAt = -Infinity;
@@ -1272,8 +1276,12 @@ function resetSink() {
   sinking.sink = 0;
   sinking.speed = 0;
   sinking.breath = 0;
+  sinking.slide = 0;
+  sinking.slideBreath = 0;
   sinkFrom = 0;
   plungeAt = -Infinity;
+  swingAsked = 0;
+  swingAt = -Infinity;
 }
 
 /** Sinks the scene a little further (a new depth's cards were dealt). */
@@ -1335,5 +1343,58 @@ export function stepPlunge(now: number, allowed: boolean): boolean {
   sinking.sink = sinkFrom + PLUNGE_SINK * ease(x);
   sinking.speed = (PLUNGE_SINK * easeSlope(x) * 1000) / PLUNGE_MS;
   sinking.breath = Math.sin(Math.PI * x) ** 2;
+  return true;
+}
+
+// ---- the swing --------------------------------------------------------------
+
+/**
+ * Dynamite blasts a question away for another card's at the same depth: no
+ * depth deeper, so the scene swings sideways instead of sinking, toward the
+ * side that card lay on the offer (`side`: -1 left, 1 right). Over SWING_MS
+ * the walls, the smoke and the dust drift past the other way (the nearer,
+ * the faster) as far as SWING_SHIFT of a screen's height, with the plunge's
+ * ease, and the dark draws in and lets go again. Game.svelte calls swing();
+ * the backdrop steps it, and skips it while it holds still (reduced motion,
+ * effects off).
+ */
+export const SWING_MS = 1300;
+export const SWING_SHIFT = 0.45;
+let swingAsked = 0;
+let slideFrom = 0;
+let slideBy = 0;
+let swingAt = -Infinity;
+
+/** Swings the scene sideways, toward `side` (dynamite blasted a question away, see above). */
+export function swing(side: -1 | 1) {
+  swingAsked = side;
+}
+
+/**
+ * Steps the swing to `now` (ms): starts one asked for (unless `allowed` is
+ * false, when it is dropped) and moves `sinking.slide`. Returns whether it is
+ * moving. Moving left, the scene drifts right past you: the walls are read
+ * further left.
+ */
+export function stepSwing(now: number, allowed: boolean): boolean {
+  if (swingAsked) {
+    const side = swingAsked;
+    swingAsked = 0;
+    if (allowed) {
+      slideFrom = sinking.slide;
+      slideBy = side * SWING_SHIFT;
+      swingAt = now;
+    }
+  }
+  if (swingAt === -Infinity) return false;
+  const x = allowed ? Math.max(0, (now - swingAt) / SWING_MS) : 1;
+  if (x >= 1) {
+    sinking.slide = (slideFrom + slideBy) % 256;
+    sinking.slideBreath = 0;
+    swingAt = -Infinity;
+    return true;
+  }
+  sinking.slide = slideFrom + slideBy * ease(x);
+  sinking.slideBreath = Math.sin(Math.PI * x) ** 2;
   return true;
 }

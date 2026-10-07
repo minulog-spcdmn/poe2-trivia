@@ -79,7 +79,7 @@ test('the notes under a find: its tagline, then one short line of what its item 
   const line = (k: 'azurite' | 'flare' | 'dynamite', inv = none) => `${FIND_TEXT[k].tag}. ${findNote(k, inv)}`;
   assert.equal(line('azurite'), 'Answer in the first half for a ward. Later, a shard; two make a ward. A miss costs two lives.');
   assert.equal(line('flare'), 'Answer right for a flare. It adds five seconds when your time runs out. You get less time to answer.');
-  assert.equal(line('dynamite'), 'Answer right for dynamite. At half time, it blows away half the answers. A miss also blows up an item you carry.');
+  assert.equal(line('dynamite'), 'Answer right for dynamite. It blasts a question away for a new one. A miss also blows up an item you carry.');
   assert.equal(findNote('azurite', { ...none, wards: 3 }), 'You can carry no more. A miss costs two lives.');
   assert.equal(findNote('flare', { ...none, flares: 3 }), "You can carry no more. You get less time to answer. Your flares can't be used on it.");
   // What the player carries won't go off on a find's question, and the note says so.
@@ -105,7 +105,6 @@ test('the notes under a find: its tagline, then one short line of what its item 
   // The usual note (nothing held that stays unused) is one short line (two at most on a phone).
   for (const t of [...kinds.map((k) => line(k)), ...Object.values(FIND_TEXT).map((t) => t.others)]) assert.ok(t.length <= 115, `${t} (${t.length})`);
   // No jargon a newcomer wouldn't know: what "fast" is, or a struck answer.
-  // Nor what goes without saying: dynamite never blows the answer away.
   for (const t of all) assert.doesNotMatch(t, /\bfast\b|slower|struck|saves a life|all wrong/i, t);
 });
 
@@ -127,11 +126,17 @@ test("a find's risk is said from one table, so a new drawback is one edit; each 
 });
 
 test("the lobby's finds: each in a line for someone who never played, what it gives and what it risks", async () => {
-  const { FINDS_LABEL, FIND_RULES } = await import('../src/lib/difficultyText.ts');
+  const { FINDS_LABEL, FINDS_UNSAFE, FIND_RULES } = await import('../src/lib/difficultyText.ts');
   // Where they start, the descent drawn beside them says.
   assert.equal(FINDS_LABEL, 'Finds • harder questions');
   const said = (k: keyof typeof FIND_RULES) => Object.values(FIND_RULES[k]).join(' ');
   assert.equal(said('azurite'), 'A ward takes a lost life for you. Answer in the first half for a ward; later, a shard: two shards make a ward. A miss costs two lives.');
   assert.equal(said('flare'), 'A flare adds five seconds when your time runs out. You get less time to answer.');
-  assert.equal(said('dynamite'), 'Dynamite blows away half the answers at half time. A miss also blows up an item you carry.');
+  assert.equal(
+    said('dynamite'),
+    'Dynamite blasts a question away for a new one at the same depth, twice a depth at most; at zero it goes off by itself, after any flare. A miss also blows up an item you carry.',
+  );
+  // And under them, in a line, why flares and dynamite never work on a find.
+  assert.equal(FINDS_UNSAFE, "A find is a dangerous route: thicker walls, a darkness nothing keeps back. Flares and dynamite don't work there.");
+  for (const t of [...Object.values(FIND_RULES).flatMap((r) => Object.values(r)), FINDS_UNSAFE]) assert.ok(!t.includes(String.fromCharCode(0x2014)), t);
 });

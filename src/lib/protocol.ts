@@ -4,7 +4,7 @@
 
 import type { Action, GameState } from './game';
 
-export const PROTOCOL_VERSION = 12;
+export const PROTOCOL_VERSION = 13;
 
 /** What hosts before version 10 tell a guest on another version, whichever side is out of date. */
 export const LEGACY_VERSION_TEXT = 'Your game version is out of date. Please reload the page.';
@@ -46,13 +46,7 @@ export type MediaMsg =
   /** `tile`: a veiled "find the art" picture (Delve), by option; missing for the art of a name question. */
   | { t: 'veil'; qid: number; tile?: number; w: number; h: number; burn: number; count: number; box: [number, number, number, number] }
   | { t: 'patch'; qid: number; tile?: number; i: number; x: number; y: number; w: number; h: number; data: ArrayBuffer; edges: ArrayBuffer }
-  | { t: 'option'; qid: number; index: number; data: ArrayBuffer }
-  /**
-   * Delve: dynamite went off, so the art shows plain (in colour, unmirrored,
-   * whole) from now on; `tile`: a "find the art" picture, by option, missing
-   * for the art of a name question. Only sent once the blast is in the state.
-   */
-  | { t: 'clean'; qid: number; tile?: number; w: number; h: number; data: ArrayBuffer };
+  | { t: 'option'; qid: number; index: number; data: ArrayBuffer };
 
 /** A patch's edges: (x, y, patch) triples of 16-bit numbers, a few thousand at most. */
 const MAX_EDGE_BYTES = 6 * 16384;
@@ -105,6 +99,9 @@ export function parseClientMsg(raw: unknown): ClientMsg | null {
           return isStr(a.category, 80) && a.category.length > 0 ? { t: 'action', action: { type: 'vote', category: a.category } } : null;
         case 'revive':
           return isStr(a.target, 64) && a.target.length > 0 ? { t: 'action', action: { type: 'revive', target: a.target } } : null;
+        // Delve: a stick of dynamite blasts the question asked at `askedAt` away (the host checks it against the run).
+        case 'blast':
+          return isInt(a.askedAt, 0, Number.MAX_SAFE_INTEGER) ? { t: 'action', action: { type: 'blast', askedAt: a.askedAt } } : null;
         default:
           return null;
       }
@@ -154,8 +151,6 @@ export function parseHostMsg(raw: unknown): HostMsg | null {
         : null;
     case 'option':
       return qid && bin(raw.data) && isInt(raw.index, 0, 16) ? (raw as HostMsg) : null;
-    case 'clean':
-      return qid && tile && bin(raw.data) && isInt(raw.w, 1, 4096) && isInt(raw.h, 1, 4096) ? (raw as HostMsg) : null;
     default:
       return null;
   }

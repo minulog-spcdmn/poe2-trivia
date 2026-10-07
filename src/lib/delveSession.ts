@@ -4,13 +4,8 @@ import {
   DELVE_RULESET,
   ITEM_KINDS,
   REVIVE_FROM,
-  blastAtMs,
-  blastClears,
-  blastLeft,
-  dynamiteOf,
   fellAt,
   flaresOf,
-  holdersOf,
   inventoryOf,
   isGroupRun,
   itemsWorkOn,
@@ -22,7 +17,7 @@ import {
   voteDone,
   type ItemKind,
 } from './delve.ts';
-import type { GameState, Grayscale, Question } from './game.ts';
+import type { Blast, GameState } from './game.ts';
 
 /** The longest the host waits for the art to reach the player answering before their clock starts anyway. */
 export const DELVE_CLOCK_CAP_MS = 3000;
@@ -44,7 +39,7 @@ export const COOP_DRAW_MS = 2000;
  * it was asked. A question asked again in its place (its art failed) while
  * the draw still plays keeps the hold it had (`held`, for the question it
  * replaces). Null for any other question (alone, resumed, re-asked on a
- * question that had none).
+ * question that had none, or asked as dynamite blasted the last away).
  */
 export function drawHoldUntil(prev: GameState | null, next: GameState, held: { qid: number; until: number } | null = null): number | null {
   const q = next.question;
@@ -55,7 +50,9 @@ export function drawHoldUntil(prev: GameState | null, next: GameState, held: { q
     prev.delve.startedAt === next.delve.startedAt &&
     prev.turnCount === next.turnCount &&
     !!prev.question &&
-    held?.qid === prev.question.askedAt;
+    held?.qid === prev.question.askedAt &&
+    // Dynamite blasting it away is no re-ask: its new question has no draw to wait for.
+    q.blast?.was.at !== prev.question.askedAt;
   return reasked ? held.until : null;
 }
 
@@ -160,17 +157,6 @@ export function hostAnswerHold(s: GameState, now: number, handicap: number): num
 }
 
 /**
- * Whether the reveal sends what is still to burn in of the art: unless
- * dynamite laid the art bare and its plain copy actually went out
- * (`cleanSentFor`, the question it went out for). Should the plain art have
- * failed, the rest of the veil its fallback was sending may have been cut
- * off by the reveal.
- */
-export function finishAtReveal(q: Pick<Question, 'askedAt' | 'blasted'> | null, cleanSentFor: number): boolean {
-  return !q?.blasted || cleanSentFor !== q.askedAt;
-}
-
-/**
  * A Delve run saved by a build with other rules plays on, but never counts
  * as a best. A run already decided stays as it ended (its record is final):
  * over, or with nobody standing (alone: the player perished; together: the
@@ -195,17 +181,15 @@ export function artFirst(s: GameState): string[] {
 }
 
 /**
- * Delve: the question's plain art is worth making ahead, as a stick of
- * dynamite may go off on it: someone who could use one holds one (alone the
- * player, together anyone standing), it is no find's, none went off yet, and
- * the blast would clear something from its art (delve.ts blastClears).
+ * Delve: this change blasted the question in play away for a new one at the
+ * same depth (its Blast), or null: the new question names the one `prev`
+ * had in play. Not for a question asked again in its place (its art
+ * failed), which keeps the blast that asked it.
  */
-export function cleanArtWanted(s: GameState, grayscale: Grayscale): boolean {
-  const q = s.question;
-  if (!s.delve || !q || q.blasted || !itemsWorkOn(q) || !blastClears(q, grayscale)) return false;
-  if (isGroupRun(s)) return holdersOf(s, 'dynamite').length > 0;
-  const p = s.players[s.turn];
-  return !!p && dynamiteOf(s, p.id) > 0;
+export function blastedAway(prev: GameState | null, next: GameState): Blast | null {
+  const b = next.question?.blast;
+  if (!b || !prev?.delve || !next.delve || prev.delve.startedAt !== next.delve.startedAt || next.phase !== 'question') return null;
+  return prev.phase === 'question' && prev.question?.askedAt === b.was.at ? b : null;
 }
 
 /**
@@ -246,7 +230,8 @@ export type DelveNotice =
  * because the host reloaded; together, also a teammate's wrong pick, a
  * teammate perishing, a life given to bring someone back, and a flare
  * burning from someone's pack (alone, the player's own screen says all of
- * that; dynamite going off, the question says on every screen).
+ * that; dynamite blasting a question away, the new question says on every
+ * screen).
  */
 export function delveNotices(prev: GameState | null, next: GameState): DelveNotice[] {
   if (!prev?.delve || !next.delve || prev.delve.startedAt !== next.delve.startedAt) return [];
@@ -348,17 +333,3 @@ export function flareIn(s: GameState, now: number): number | null {
   return Math.max(0, q.deadline - now);
 }
 
-/**
- * Milliseconds until a stick of dynamite goes off (at half the clock,
- * delve.ts blastAt), or null when none will: the clock isn't running,
- * dynamite already went off on this question, it is a find's, or nobody can
- * use one (as for flareIn). Read on every screen too, for the fuse before it.
- */
-export function dynamiteIn(s: GameState, now: number): number | null {
-  const q = s.question;
-  if (!s.delve || s.phase !== 'question' || !q || q.deadline === null || q.clockAt === undefined || q.blasted || !itemsWorkOn(q)) return null;
-  if (isGroupRun(s)) return teamItemReady(s, 'dynamite') ? Math.max(0, q.clockAt + blastAtMs(s) - now) : null;
-  const p = s.players[s.turn];
-  if (!p?.connected || dynamiteOf(s, p.id) <= 0 || blastLeft(q) === 0) return null;
-  return Math.max(0, q.clockAt + blastAtMs(s) - now);
-}

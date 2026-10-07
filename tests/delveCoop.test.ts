@@ -8,15 +8,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
-  BLAST_PAUSE_MS,
   DELVE_IDLE_ROUNDS,
   DELVE_LIVES,
   DELVE_RESUME_GRACE_MS,
   FLARE_MS,
   REVIVE_FROM,
   VOTE_WINDOW_MS,
-  blastAtMs,
-  blastLeft,
   delveStandings,
   delveTeam,
   expectedVoters,
@@ -45,7 +42,6 @@ import { ANSWER_GRACE_MS, ActionError, Engine, createGame, publicView, type Acti
 import {
   HOST_HOLD_MARGIN_MS,
   delveNotices,
-  dynamiteIn,
   expireIn,
   expireKey,
   flareIn,
@@ -554,28 +550,6 @@ test("a find is offered while anyone standing has room for its item, and pays wh
   assert.equal(veins, 0);
 });
 
-test('dynamite counts from the options still in play, as if the struck were gone already, and leaves two or more', () => {
-  for (const [strikes, gone] of [
-    [0, 4],
-    [2, 3],
-    [3, 2],
-  ] as const) {
-    const h = team(4, { seed: 5, depth: 31 });
-    h.give('p0', { dynamite: 1 });
-    const q = h.ask();
-    assert.equal(q.options.length, 8);
-    for (let i = 0; i < strikes; i++) h.pickAs(`p${i + 1}`, wrongs(q)[i]);
-    h.clock.now = q.clockAt! + blastAtMs(h.s);
-    h.act({ type: 'dynamite', askedAt: q.askedAt });
-    const b = h.s.question!;
-    // Eight, six or five in play: half of them, rounded down, every one wrong.
-    assert.equal(b.blownAway!.length, gone, `${strikes} struck`);
-    assert.ok(!b.blownAway!.includes(right(q)));
-    assert.ok(wrongs(q).slice(0, strikes).every((i) => !b.blownAway!.includes(i)), 'never a struck one');
-    assert.ok(8 - strikes - gone >= 2, 'the answer and a wrong one stay');
-  }
-});
-
 test('perishing drops everything a player carries, for good', () => {
   const h = team(2);
   h.lives({ p1: 1 });
@@ -691,48 +665,6 @@ test("a guest's right answer on its way as the flare burnt gives it back; the ho
     assert.equal(h.s.question!.flared, kept ? undefined : true);
   }
 });
-
-test("dynamite goes off at half the clock from a random holder's pack: half the options still in play, all wrong, and the pause", () => {
-  const spent = new Set<string>();
-  for (let seed = 1; seed <= 20; seed++) {
-    const h = team(3, { seed, depth: 31 });
-    h.give('p0', { dynamite: 1 });
-    h.give('p2', { dynamite: 1 });
-    const q = h.ask();
-    assert.equal(q.options.length, 8);
-    h.pickAs('p1', wrongs(q)[0]);
-    const due = q.clockAt! + blastAtMs(h.s);
-    assert.equal(dynamiteIn(h.s, h.clock.now), due - h.clock.now);
-    h.clock.now = due;
-    h.act({ type: 'dynamite', askedAt: q.askedAt });
-    const b = h.s.question!;
-    assert.equal(b.blasted, true);
-    spent.add(b.blastedBy!);
-    assert.equal(dynamiteOf(h.s, 'p0') + dynamiteOf(h.s, 'p2'), 1);
-    // Seven wrong, one struck: seven still in play (the answer and six wrong), so three go.
-    assert.equal(b.blownAway!.length, 3);
-    assert.ok(!b.blownAway!.includes(wrongs(q)[0]), 'never the struck one');
-    assert.ok(!b.blownAway!.includes(right(q)), 'never the answer');
-    assert.equal(b.deadline, q.deadline! + BLAST_PAUSE_MS);
-    assert.deepEqual(b.held, { from: due, until: due + BLAST_PAUSE_MS });
-    // Picking one it blew away is still a wrong pick (a click may cross the blast).
-    h.pickAs('p2', b.blownAway![0]);
-    assert.equal(livesOf(h.s, 'p2'), DELVE_LIVES - 1);
-  }
-  assert.deepEqual([...spent].sort(), ['p0', 'p2']);
-  // Never on a find's question.
-  const f = team(2, { depth: 20 });
-  f.give('p1', { dynamite: 1, flares: 1 });
-  const fq = f.ask('flare');
-  assert.equal(dynamiteIn(f.s, f.clock.now), null);
-  assert.equal(flareIn(f.s, f.clock.now), null);
-  f.clock.now = fq.clockAt! + blastAtMs(f.s);
-  f.act({ type: 'dynamite', askedAt: fq.askedAt });
-  assert.equal(f.s.question!.blasted, undefined);
-  assert.equal(dynamiteOf(f.s, 'p1'), 1);
-});
-
-// ---- revives -----------------------------------------------------------------
 
 test('a standing player with two lives or more can bring back a perished teammate, between questions', () => {
   const h = team(3);
@@ -897,7 +829,6 @@ test('guests can only vote, answer and give their own lives: everything else is 
     { type: 'resumed' },
     { type: 'clock', askedAt: 1 },
     { type: 'flare', askedAt: 1 },
-    { type: 'dynamite', askedAt: 1 },
   ] as Action[]) {
     loudly(() => h.act(a, 'p1'), /Not allowed/);
     assert.equal(parseClientMsg({ t: 'action', action: a }), null, a.type);
@@ -967,60 +898,6 @@ test('the last one standing leaving (or removed) keeps the team depth where they
     c.delve!.losses.p0 = [15, 15, 15];
   });
   assert.equal(teamDepth(g.s), 15, 'perished deeper than anyone left');
-});
-
-test('dynamite never goes off with nothing left to blow away: the stick is kept and the clock runs on', () => {
-  const h = team(4, { seed: 5, depth: 3 });
-  h.give('p0', { dynamite: 1 });
-  const q = h.ask();
-  assert.equal(q.options.length, 4);
-  assert.equal(blastLeft(q), 2);
-  assert.equal(teamItemReady(h.s, 'dynamite'), true);
-  h.pickAs('p1', wrongs(q)[0]);
-  h.pickAs('p2', wrongs(q)[1]);
-  // Only the answer and one wrong are left in play.
-  assert.equal(blastLeft(h.s.question!), 0);
-  assert.equal(teamItemReady(h.s, 'dynamite'), false);
-  assert.equal(dynamiteIn(h.s, h.clock.now), null);
-  assert.equal(dynamiteIn(publicView(h.s), h.clock.now), null, "a guest's copy reads it off the labels");
-  h.clock.now = q.clockAt! + blastAtMs(h.s);
-  const deadline = h.s.question!.deadline;
-  h.act({ type: 'dynamite', askedAt: q.askedAt });
-  assert.deepEqual([h.s.question!.blasted, h.s.question!.held, h.s.question!.deadline], [undefined, undefined, deadline]);
-  assert.equal(dynamiteOf(h.s, 'p0'), 1);
-
-  // Six options: three struck leave one to blow away, four leave none.
-  const six = team(6, { seed: 5, depth: 12 });
-  six.give('p0', { dynamite: 2 });
-  const q6 = six.ask();
-  assert.equal(q6.options.length, 6);
-  for (let i = 0; i < 3; i++) six.pickAs(`p${i + 1}`, wrongs(q6)[i]);
-  assert.equal(blastLeft(six.s.question!), 1);
-  assert.equal(teamItemReady(six.s, 'dynamite'), true);
-  six.pickAs('p4', wrongs(q6)[3]);
-  assert.equal(blastLeft(six.s.question!), 0);
-  assert.equal(teamItemReady(six.s, 'dynamite'), false);
-  six.clock.now = q6.clockAt! + blastAtMs(six.s);
-  six.act({ type: 'dynamite', askedAt: q6.askedAt });
-  assert.equal(six.s.question!.blasted, undefined);
-  assert.equal(dynamiteOf(six.s, 'p0'), 2);
-
-  // Alone (a hand-made question down to two options): kept too.
-  const solo = team(1, { depth: 3 });
-  solo.give('p0', { dynamite: 1 });
-  const qs = solo.ask();
-  solo.edit((c) => {
-    const keep = [right(qs), wrongs(qs)[0]].sort((a, b) => a - b);
-    const cq = c.question!;
-    cq.options = keep.map((i) => cq.options[i]);
-    cq.labels = keep.map((i) => cq.labels[i]);
-    if (cq.mirrored) cq.mirrored = keep.map((i) => cq.mirrored![i]);
-  });
-  assert.equal(dynamiteIn(solo.s, solo.clock.now), null);
-  solo.clock.now = qs.clockAt! + blastAtMs(solo.s);
-  solo.act({ type: 'dynamite', askedAt: qs.askedAt });
-  assert.equal(solo.s.question!.blasted, undefined);
-  assert.equal(dynamiteOf(solo.s, 'p0'), 1);
 });
 
 test('a life is only given to a teammate who is here to take it', () => {

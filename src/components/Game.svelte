@@ -1,5 +1,6 @@
 <script lang="ts">
   import { fade, fly, scale } from 'svelte/transition';
+  import { cubicIn, cubicOut } from 'svelte/easing';
   import { session } from '../lib/session.svelte';
   import { playerColor } from '../lib/ui';
   import Scoreboard from './Scoreboard.svelte';
@@ -15,12 +16,12 @@
   import { phone } from '../lib/layout';
   import { REVIVE_FROM, delveDepth, fellAt, isGroupRun, livesOf, questionTimer, reviveProblem, shownDepth, standingIds } from '../lib/delve';
   import { startLine } from '../lib/delveStart';
-  import { accentAt, milestoneAt } from '../lib/descent';
+  import { accentAt, milestoneAt, swing } from '../lib/descent';
   import { zoneAt } from '../lib/zoneSigils';
   import Threshold from './zonebanner/Threshold.svelte';
   import { quiet } from './zonebanner/head';
   import { DELAY as ZONE_DELAY, EXIT as ZONE_EXIT, HOLD as ZONE_HOLD, STILL_FADE } from './zonebanner/thresholdArt';
-  import { descended, milestoneReached } from '../lib/fx/moments';
+  import { descended, dynamiteBlast, milestoneReached } from '../lib/fx/moments';
   import { untrack } from 'svelte';
 
   const s = $derived(session.state!);
@@ -128,8 +129,8 @@
           : `${active.name}'s turn`,
   );
 
-  // Delve: the seconds the question started with (a find's, a blasted card's or
-  // the depth's), never read off the deadline, which a burning flare moves on.
+  // Delve: the seconds the question started with (a find's or the depth's),
+  // never read off the deadline, which a burning flare moves on.
   const seconds = $derived(run ? questionTimer(s) : q?.deadline ? Math.round((q.deadline - (q.clockAt ?? q.askedAt)) / 1000) : 0);
   // Short timers only sound urgent near the end.
   const warnFrom = $derived(run ? Math.max(3, Math.min(5, Math.round(seconds * 0.35))) : 5);
@@ -217,6 +218,61 @@
   /** The gate's light breaks into the scene once its lintel is lit, off the lintel, toned to its size. */
   const zoneFx = (el: HTMLElement) => card && milestoneReached(el, card.accent);
 
+  // Delve: dynamite blasted the question away for a new one at the same
+  // depth. No depth deeper, so instead of the plunge the stage swings
+  // sideways, toward where the new question's card lay on the offer from the
+  // blasted one's (a card to its left swings left): the old question bursts
+  // and goes the other way, the new one comes in from that side, and the
+  // scene behind swings with them (descent.ts swing). Set before the DOM
+  // updates, so the old question is still there to burst and to go.
+  let swingSide = $state<-1 | 1 | null>(null);
+  let askedSeen = 0;
+  $effect.pre(() => {
+    const asked = s.question?.askedAt ?? 0;
+    const b = s.phase === 'question' ? s.question?.blast : undefined;
+    const was = askedSeen;
+    askedSeen = asked;
+    if (asked === was) return;
+    if (!run || !b || b.was.at !== was) {
+      swingSide = null;
+      return;
+    }
+    swingSide = b.side;
+    untrack(() => {
+      // A fresh question, as on a new turn: back up to its art (on phones the
+      // button was often pressed scrolled down, under the answers).
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      swing(b.side);
+      const art = document.querySelector('.questions .art, .questions .tiles');
+      dynamiteBlast({ art, blown: [], mine: !!b.by && b.by === session.myPlayerId });
+    });
+  });
+  /** Reduced motion, or the effects held still: a swing only cross-fades. */
+  const stillMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches || document.documentElement.hasAttribute('data-still');
+  /** Svelte transition: the blasted question goes, away from the side the new one comes from. */
+  function swingOut(_node: Element) {
+    const side = swingSide;
+    if (!side) return { duration: 0 };
+    if (stillMotion()) return { duration: 200, css: (t: number) => `opacity: ${t}` };
+    return {
+      duration: 520,
+      easing: cubicIn,
+      css: (t: number, u: number) => `transform: translateX(${-side * u * 55}%) rotate(${-side * u * 2.5}deg); opacity: ${t}; filter: blur(${u * 3}px)`,
+    };
+  }
+  /** Svelte transition: the new question comes in from the side its card lay on. */
+  function swingIn(_node: Element) {
+    const side = swingSide;
+    if (!side) return { duration: 0 };
+    if (stillMotion()) return { duration: 300, delay: 150, css: (t: number) => `opacity: ${t}` };
+    return {
+      duration: 700,
+      delay: 180,
+      easing: cubicOut,
+      css: (t: number, u: number) => `transform: translateX(${side * u * 45}%); opacity: ${t}`,
+    };
+  }
+
   /** Online Delve: where you perished, while the run goes on without you (someone still stands). */
   const myFall = $derived(session.perished && session.myPlayerId && standingIds(s).length ? fellAt(s, session.myPlayerId) : null);
   /** Delve together: a teammate who stands could still give you one of their lives. */
@@ -299,10 +355,16 @@
         {#if s.phase === 'choosing' || drawing}
           <ChooseCategory drawn={drawing ? (s.question?.category ?? null) : null} ondrawn={() => (raffle = null)} />
         {:else}
-          <!-- A new question on the same turn (the host asked another) starts fresh. -->
-          {#key s.question?.askedAt}
-            <QuestionView timer={phone.current ? undefined : timer} />
-          {/key}
+          <!-- A new question on the same turn (the host asked another, or dynamite
+               blasted the last away) starts fresh. Old and new share one grid
+               cell while they cross. -->
+          <div class="questions">
+            {#key s.question?.askedAt}
+              <div class="q-slot" in:swingIn out:swingOut>
+                <QuestionView timer={phone.current ? undefined : timer} />
+              </div>
+            {/key}
+          </div>
         {/if}
 
         {#if myFall !== null}
@@ -377,6 +439,15 @@
     display: flex;
     flex-direction: column;
     align-items: stretch;
+  }
+  /* The question and, while dynamite swings the stage, the one it blasted
+     away, in one cell (#app clips what swings past the screen's edge). */
+  .questions {
+    display: grid;
+  }
+  .q-slot {
+    grid-area: 1 / 1;
+    min-width: 0;
   }
   /* The kicker and banner. Holds their margins, so the gate laid over it
      (zonebanner/Threshold) has their box to measure and keeps within it. */
