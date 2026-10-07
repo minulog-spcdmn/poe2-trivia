@@ -1,7 +1,7 @@
 <script lang="ts">
   import { cubicInOut, cubicOut } from 'svelte/easing';
   import { scale } from 'svelte/transition';
-  import { untrack } from 'svelte';
+  import { flushSync, untrack } from 'svelte';
   import { engine, session } from '../lib/session.svelte';
   import { categoryIcon, categoryIconTweak, categoryIcons } from '../lib/ui';
   import { fits, fitStyle, maskOf, measure } from '../lib/iconFit.svelte';
@@ -10,7 +10,7 @@
   import { expectedVoters, findOffers, findOn, holdersOf, inventoryOf, isGroupRun, isIdle, livesOf, standingIds, voteClosesAt, type FindKind } from '../lib/delve';
   import { sfx } from '../lib/sound';
   import { backdropShadow } from '../lib/backdropShadow';
-  import { FIND_COLORS, cardHover, cardPicked, cardRevealed, raffleHop, voteCast } from '../lib/fx/moments';
+  import { FIND_COLORS, cardHover, cardPicked, cardRevealed, raffleHop, raffleTrail, voteCast } from '../lib/fx/moments';
   import { fxActive, type Handle, type Vec3 } from '../lib/fx/core';
   import { C, embers, emitter, flare, glints, outline, puffs, ring, shards, sparks } from '../lib/fx/effects';
   import { light } from '../lib/lights';
@@ -103,22 +103,31 @@
   }
 
   // ---- the draw -------------------------------------------------------------
-  // The vote closed: a light runs over the cards that got votes, slowing
-  // down, and lands on the one drawn (every vote a ticket), which flares up
-  // as the others burn away. About two seconds; reduced motion, a moment.
+  // The vote closed: a mote of light swings over the cards that got votes
+  // (every vote a ticket), slowing, and comes down on the one drawn, which
+  // flares up as the others burn away.
   //
-  // The light is each card's own glow (.glow), only ever faded in and out:
-  // it comes up at once on the card it reaches and dies away more slowly
-  // behind it, so at speed it runs round the cards as a trail. The hops are
-  // timed off the frame clock (one loop of requestAnimationFrame), not a
-  // timer each, so they keep the beat they are given. Nothing in the draw or
-  // the landing animates more than opacity and transform.
+  // The light swings end to end like a pendulum, arcing between the cards
+  // (over them in a row, beside them in a column) and skimming any card in
+  // between. The card under it rises and leans toward the viewer, the others
+  // sink back and dim. Its last swing nearly stops on a card beside the one
+  // drawn; then it creeps up the arc toward the drawn one, hangs at the top
+  // and drops onto it. The course depends only on which cards are in the draw
+  // and which was drawn, so every screen plays the same. About 1.3 s, then
+  // the landing; reduced motion, the landing alone.
+  //
+  // Everything is worked out from the frame clock (one loop of
+  // requestAnimationFrame) and the cards only move and fade (transform and
+  // opacity), each its own layer meanwhile (.moving below); the light is one
+  // small element of its own (.mote), moved the same way.
 
-  /** The card the draw's light is on, and whether it has landed. */
+  /** The card the draw landed on (an index into the cards), and whether it has. */
   let lit = $state<number | null>(null);
   let landed = $state(false);
   const drawTimers: ReturnType<typeof setTimeout>[] = [];
   let drawFrame = 0;
+  let cardsEl = $state<HTMLElement>();
+  let moteEl = $state<HTMLElement>();
   $effect(() => () => {
     drawTimers.forEach(clearTimeout);
     cancelAnimationFrame(drawFrame);
@@ -127,6 +136,69 @@
     if (!drawn) return;
     untrack(() => draw(drawn));
   });
+
+  /** The draw's beats (ms): the light kindling, its swings (the crest after them adds 580), and the landing held before the question. */
+  const KINDLE = 90;
+  const SWINGS = 650;
+  const LANDING = 780;
+  const sine = (t: number) => 0.5 - 0.5 * Math.cos(Math.PI * t);
+  const outCubic = (t: number) => 1 - (1 - t) ** 3;
+  const inQuad = (t: number) => t * t;
+  const linear = (t: number) => t;
+  const smooth = (t: number) => t * t * (3 - 2 * t);
+  const clamp01 = (t: number) => Math.max(0, Math.min(1, t));
+
+  /** One stretch of the light's course along the cards in the draw (0 to n - 1, the cards' order). */
+  type Leg = { t0: number; t1: number; x0: number; x1: number; ease: (t: number) => number };
+
+  /**
+   * The light's course over `n` cards (n ≥ 2) to come down on `target`:
+   * full swings end to end, each slower than the last, the last of them
+   * coming to rest on `near`, the card beside the target it nearly stops on;
+   * then the crest between them, which it creeps over and drops from.
+   */
+  function course(n: number, target: number): { legs: Leg[]; land: number } {
+    const last = n - 1;
+    const near = target === 0 ? 1 : target - 1;
+    // The cards each swing ends on.
+    let ends: number[];
+    if (near === 0 || near === last) {
+      const count = n === 2 ? 4 : 3;
+      ends = Array.from({ length: count }, (_, k) => ((count - 1 - k) % 2 === 0 ? near : last - near));
+    } else {
+      // Over the far end and back, then partway: to the card before the target, still on its way.
+      const far = target === 0 ? last : 0;
+      ends = [last - far, far, near];
+    }
+    const start = ends[0] === 0 ? last : 0;
+    // Each swing a little slower than the one before, a longer one longer still; fitted to SWINGS.
+    const pace = [1, 1.15, 1.4, 1.75].slice(-ends.length);
+    const weights = ends.map((to, k) => pace[k] * (0.7 + 0.3 * Math.abs(to - (k ? ends[k - 1] : start))));
+    const unit = SWINGS / weights.reduce((a, b) => a + b, 0);
+    const legs: Leg[] = [];
+    let t = KINDLE;
+    let x = start;
+    const leg = (to: number, ms: number, ease: Leg['ease']) => {
+      legs.push({ t0: t, t1: t + ms, x0: x, x1: to, ease });
+      t += ms;
+      x = to;
+    };
+    ends.forEach((to, k) => leg(to, weights[k] * unit, sine));
+    // The crest: a breath on `near`, then up the arc, slowing to a hang at its top, and down onto the target.
+    const dir = Math.sign(target - near);
+    leg(near, 60, linear);
+    leg(near + dir * 0.44, 200, outCubic);
+    leg(near + dir * 0.54, 150, linear);
+    leg(target, 170, inQuad);
+    return { legs, land: t };
+  }
+
+  /** Where the light is along the cards (0 to n - 1) at `age` ms. */
+  function along(legs: Leg[], age: number) {
+    const l = legs.find((g) => age < g.t1) ?? legs[legs.length - 1];
+    return l.x0 + (l.x1 - l.x0) * l.ease(clamp01((age - l.t0) / (l.t1 - l.t0)));
+  }
+
   function draw(category: string) {
     const target = s.offered.indexOf(category);
     const done = (ms: number) => drawTimers.push(setTimeout(() => ondrawn?.(), ms));
@@ -134,56 +206,153 @@
     burning = null;
     if (target < 0) return done(0);
     const quiet = still || document.documentElement.hasAttribute('data-still');
+    // The cards in the draw: those with votes, in their order.
+    const tickets = s.offered.flatMap((c, i) => (votersOf(c).length ? [i] : []));
+    const frames = cardEls.map((c) => c?.querySelector<HTMLElement>('.frame') ?? null);
+    const glows = cardEls.map((c) => c?.querySelector<HTMLElement>('.glow') ?? null);
+    let moved = false;
+    /** Hands the cards back to their classes (chosen, faded), which take them on from where they are. */
+    const release = () => {
+      for (const el of [...frames, ...glows]) for (const prop of ['transform', 'opacity', 'transition']) el?.style.removeProperty(prop);
+    };
     const land = () => {
+      cancelAnimationFrame(drawFrame);
       lit = target;
       landed = true;
+      // The cards' classes in place first, so they take the cards on from where the draw left them.
+      if (moved) {
+        flushSync();
+        release();
+      }
       const card = cardEls[target];
-      const frame = card?.querySelector('.frame');
+      const frame = frames[target];
       const others = cardEls.filter((c, j) => c && j !== target).map((c) => c.querySelector('.frame') ?? c);
       const kind = kindOf(category);
       if (frame && kind) findPicked(frame, card, others, kind);
       else if (frame) cardPicked(frame, card, others, false);
       sfx('draw');
     };
-    // The cards in the draw: those with votes, in their order.
-    const tickets = s.offered.flatMap((c, i) => (votersOf(c).length ? [i] : []));
-    if (quiet || tickets.length < 2 || !tickets.includes(target)) {
+    if (quiet || !tickets.includes(target) || !cardsEl || !moteEl) {
       land();
       return done(quiet ? 700 : 1100);
     }
-    // Twice round the cards in the draw, then on to the one drawn, each hop a little slower.
-    const from = tickets.indexOf(target);
-    const path = [...tickets, ...tickets, ...tickets.slice(0, from + 1)];
-    const SPAN = 1300;
-    const gaps = path.map((_, k) => 0.35 + 1.65 * (k / Math.max(1, path.length - 1)) ** 2);
-    const unit = SPAN / gaps.reduce((a, b) => a + b, 0);
-    /** When each hop lands, in ms from the start. */
-    const at: number[] = [];
-    let t = 0;
-    for (const g of gaps) {
-      at.push(t);
-      t += g * unit;
-    }
-    let hop = -1;
+    const mote = moteEl;
+    const tail = mote.querySelector<HTMLElement>('.tail');
+    const n = tickets.length;
+    const at = tickets.indexOf(target);
+    // Alone in the draw: the light just kindles on it and goes down into it.
+    const { legs, land: landAt } = n > 1 ? course(n, at) : { legs: [{ t0: 0, t1: 1, x0: 0, x1: 0, ease: linear }], land: 300 };
+
+    // Where the light rests on each card in the draw (on its emblem), in the cards' box.
+    const row = !narrow.matches;
+    const box = cardsEl.getBoundingClientRect();
+    const rest = tickets.map((i) => {
+      const r = (cardEls[i]?.querySelector('.turn') ?? cardEls[i]).getBoundingClientRect();
+      return row ? { x: r.left - box.left + r.width / 2, y: r.top - box.top + r.height * 0.44 } : { x: r.left - box.left + 62, y: r.top - box.top + r.height / 2 };
+    });
+    /** The light's point at `x` along the cards: it arcs between them (up in a row, out to the right in a column). */
+    const spot = (x: number) => {
+      const i = Math.min(n - 2, Math.max(0, Math.floor(x)));
+      if (n < 2) return { ...rest[0] };
+      const a = rest[i];
+      const b = rest[i + 1];
+      const f = x - i;
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const d = Math.hypot(dx, dy) || 1;
+      const h = Math.min(0.4 * d, row ? 105 : 110) * Math.sin(Math.PI * clamp01(f));
+      return { x: a.x + dx * f + (dy / d) * h, y: a.y + dy * f - (dx / d) * h };
+    };
+
+    // How far each card in the draw has risen toward the light (0 to 1), and each card's vote lift as the draw begins.
+    const rise = tickets.map(() => 0);
+    const vote = cardEls.map((c) => (c?.classList.contains('voted') ? 1 : 0));
+    for (const el of [...frames, ...glows]) el?.style.setProperty('transition', 'none');
+    moved = true;
+    mote.classList.remove('spent');
+
+    let prevX = along(legs, 0);
+    let prev = { ...spot(prevX), at: 0 };
+    let tailLen = 0;
+    let tailAngle = 0;
+    let ticks = 0;
+    const totalTicks = Math.max(1, legs.filter((g) => g.x1 !== g.x0 && Number.isInteger(g.x1)).length);
     const start = performance.now();
+    let last = start;
     const step = (now: number) => {
       const age = now - start;
-      // The hop due by this frame (a slow frame skips the light on to where it should be).
-      let k = hop;
-      while (k + 1 < path.length && at[k + 1] <= age) k++;
-      if (k !== hop) {
-        hop = k;
-        if (k === path.length - 1) return land();
-        const i = path[k];
-        lit = i;
-        const frame = cardEls[i]?.querySelector('.frame');
-        if (frame) raffleHop(frame);
-        sfx('hover');
+      const dt = Math.min(0.1, (now - last) / 1000);
+      last = now;
+      if (age >= landAt) {
+        const p = spot(at);
+        mote.style.transform = `translate(${p.x.toFixed(1)}px, ${(p.y - (row ? 16 : 0)).toFixed(1)}px)`;
+        mote.classList.add('spent');
+        return land();
       }
+      const x = along(legs, age);
+      // A card the light reaches or skims on its way: a tick, falling in pitch as it slows.
+      const lo = Math.min(prevX, x);
+      const hi = Math.max(prevX, x);
+      for (let k = 0; k < n; k++) {
+        const hit = x > prevX ? k > lo && k <= hi : x < prevX && k >= lo && k < hi;
+        if (!hit) continue;
+        const pace = Math.min(1, ticks / totalTicks);
+        ticks++;
+        const i = tickets[k];
+        if (frames[i]) raffleHop(frames[i]!, 1 - pace);
+        sfx('hover', { pitch: 1.12 - 0.24 * pace, gain: pace * 2 });
+      }
+      prevX = x;
+
+      // The cards: the one under the light rises quickly and settles slowly behind it.
+      const g = smooth(clamp01(age / 240));
+      const settle = clamp01(age / 260);
+      tickets.forEach((i, k) => {
+        const close = smooth(clamp01(1 - Math.abs(x - k) / 0.7));
+        const rate = close > rise[k] ? 26 : 7;
+        rise[k] += (close - rise[k]) * (1 - Math.exp(-rate * dt));
+      });
+      cardEls.forEach((_, i) => {
+        const f = frames[i];
+        if (!f) return;
+        const k = tickets.indexOf(i);
+        const L = k < 0 ? 0 : rise[k];
+        const v = vote[i] * (1 - settle);
+        // Out of the draw: back and dim at once; in it, sunk a little until the light comes.
+        const sink = k < 0 ? g * 1.8 : g * (1 - L);
+        const t = row
+          ? `perspective(900px) translateY(${(-16 * L + 5 * sink - 8 * v).toFixed(2)}px) rotateX(${(-7 * L).toFixed(2)}deg) scale(${(1 + 0.06 * L - 0.03 * sink).toFixed(4)})`
+          : `perspective(700px) translateX(${(6 * v).toFixed(2)}px) rotateX(${(-9 * L).toFixed(2)}deg) scale(${(1 + 0.045 * L - 0.025 * sink).toFixed(4)})`;
+        f.style.transform = t;
+        f.style.opacity = (1 - (k < 0 ? 0.35 : 0.3) * sink).toFixed(3);
+        const gl = glows[i];
+        if (gl) {
+          gl.style.transform = t;
+          gl.style.opacity = (0.9 * L).toFixed(3);
+        }
+      });
+
+      // The light, riding up with the card it rests on; its tail drawn out behind it by its speed.
+      const p = spot(x);
+      const fl = Math.floor(Math.min(n - 1, Math.max(0, x)));
+      const fr = x - fl;
+      if (row) p.y -= 16 * ((rise[fl] ?? 0) * (1 - fr) + (rise[fl + 1] ?? rise[fl] ?? 0) * fr);
+      const ms = Math.max(1, now - prev.at);
+      const vx = ((p.x - prev.x) / ms) * 1000;
+      const vy = ((p.y - prev.y) / ms) * 1000;
+      const speed = Math.hypot(vx, vy);
+      if (speed > 40) tailAngle = Math.atan2(vy, vx);
+      tailLen += (Math.min(110, speed * 0.045) - tailLen) * (1 - Math.exp(-20 * dt));
+      prev = { ...p, at: now };
+      const kindle = smooth(clamp01(age / KINDLE));
+      mote.style.opacity = kindle.toFixed(3);
+      mote.style.transform = `translate(${p.x.toFixed(1)}px, ${p.y.toFixed(1)}px) scale(${(0.4 + 0.6 * kindle).toFixed(3)})`;
+      if (tail) tail.style.transform = `rotate(${tailAngle.toFixed(3)}rad) scaleX(${(tailLen / 100).toFixed(3)})`;
+      raffleTrail({ x: box.left + p.x, y: box.top + p.y }, speed);
       drawFrame = requestAnimationFrame(step);
     };
     drawFrame = requestAnimationFrame(step);
-    done(t + 650);
+    done(landAt + LANDING);
   }
 
   /** Delve: the finds among the cards on offer (up to two, on different cards), in the cards' order. */
@@ -410,7 +579,7 @@
     {/if}
   </p>
 
-  <div class="cards" class:single={s.offered.length === 1} class:moving={!!drawn || !!picked} style:--n={s.offered.length}>
+  <div class="cards" class:single={s.offered.length === 1} class:moving={!!drawn || !!picked} style:--n={s.offered.length} bind:this={cardsEl}>
     {#each s.offered as cat, i (cat)}
       <button
         class="card"
@@ -425,7 +594,6 @@
         class:chosen={picked === cat || (landed && lit === i)}
         class:faded={(picked && picked !== cat) || (landed && lit !== i)}
         class:voted={coop && myVote === cat && !landed}
-        class:lit={!landed && lit === i}
         aria-label={coop ? `${cat}: ${voteWords(cat)}` : undefined}
         aria-pressed={coop && canVote ? myVote === cat : undefined}
         disabled={!mine}
@@ -479,6 +647,10 @@
         {/if}
       </button>
     {/each}
+    {#if coop}
+      <!-- The draw's light (see the draw above): a bright point in a soft halo, its tail drawn out by its speed, a ring as it lands. -->
+      <span class="mote" aria-hidden="true" bind:this={moteEl}><span class="tail"></span><span class="halo"></span><span class="core"></span><span class="burst"></span></span>
+    {/if}
   </div>
 
   {#if coop && !drawn && s.phase === 'choosing'}
@@ -1173,11 +1345,11 @@
   .card.voted .frame > :global(.engraving) {
     opacity: 0.85;
   }
-  /* The draw's light passing over a card: a rim of light and a glow round
-     it, drawn once and only faded. It comes up at once on the card it
-     reaches and dies away behind it, so at speed it trails round the cards;
-     on the card drawn it stays as the card rises, then gives way to the
-     card's own light. It moves with the card (the vote's lift, below). */
+  /* The draw's light on a card: a rim of light and a glow round it, drawn
+     once and only faded, as the card rises under the light (the draw sets
+     its opacity and moves it with the card). On the card drawn it stays as
+     the card rises, then gives way to the card's own light. It moves with
+     the card (the vote's lift, below). */
   .glow {
     position: absolute;
     inset: 0;
@@ -1189,16 +1361,11 @@
       0 0 22px 3px color-mix(in srgb, var(--draw-glow, rgb(255, 180, 100)) 50%, transparent),
       inset 0 0 26px color-mix(in srgb, var(--draw-glow, rgb(255, 180, 100)) 26%, transparent);
     opacity: 0;
-    transition: opacity 0.38s ease-out;
     will-change: opacity;
   }
   .card.special .glow {
     --draw: var(--f-hi);
     --draw-glow: var(--f);
-  }
-  .card.lit .glow {
-    opacity: 1;
-    transition-duration: 0.05s;
   }
   .card.chosen .glow {
     transform: translateY(-14px) scale(1.08);
@@ -1219,6 +1386,128 @@
   }
   .card.dim.chosen .frame {
     filter: none;
+  }
+  /* The light that runs over the cards in the draw. Placed and turned by the
+     draw (transform and opacity only); a fine point of white gold with a
+     four-rayed glint, a soft halo, and a tail behind it as long as it is
+     fast. As it comes down on the card drawn it opens into a ring and fades. */
+  .cards {
+    position: relative;
+  }
+  .mote {
+    position: absolute;
+    left: 0;
+    top: 0;
+    z-index: 3;
+    width: 0;
+    height: 0;
+    opacity: 0;
+    pointer-events: none;
+    will-change: transform, opacity;
+  }
+  .mote > span {
+    position: absolute;
+    border-radius: 50%;
+  }
+  .halo {
+    left: -60px;
+    top: -60px;
+    width: 120px;
+    height: 120px;
+    background: radial-gradient(circle, rgba(255, 226, 170, 0.5), rgba(255, 176, 96, 0.22) 22%, rgba(255, 150, 70, 0.07) 48%, transparent 70%);
+  }
+  .core {
+    left: -5px;
+    top: -5px;
+    width: 10px;
+    height: 10px;
+    background: radial-gradient(circle, #fff 0 35%, #ffe7b4 60%, rgba(255, 200, 120, 0) 100%);
+    box-shadow:
+      0 0 10px 3px rgba(255, 220, 160, 0.85),
+      0 0 26px 8px rgba(255, 160, 80, 0.35);
+  }
+  /* The glint's rays, long across and short up and down, hair-fine. */
+  .core::before,
+  .core::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    background: linear-gradient(90deg, transparent, rgba(255, 238, 200, 0.9), transparent);
+  }
+  .core::before {
+    width: 64px;
+    height: 1px;
+    margin: -0.5px 0 0 -32px;
+  }
+  .core::after {
+    width: 1px;
+    height: 34px;
+    margin: -17px 0 0 -0.5px;
+    background: linear-gradient(transparent, rgba(255, 238, 200, 0.8), transparent);
+  }
+  /* Drawn out to the left of the point and turned to trail it (scaleX: its length, 0 to 1.1 of 100px). */
+  .mote > .tail {
+    right: 0;
+    top: -1.5px;
+    width: 100px;
+    height: 4px;
+    margin-top: -0.5px;
+    border-radius: 2px;
+    transform-origin: 100% 50%;
+    transform: scaleX(0);
+    background: linear-gradient(to left, rgba(255, 240, 205, 0.9), rgba(255, 196, 120, 0.45) 25%, rgba(255, 150, 70, 0.12) 65%, transparent);
+    box-shadow: 0 0 6px rgba(255, 170, 90, 0.35);
+  }
+  .burst {
+    left: -40px;
+    top: -40px;
+    width: 80px;
+    height: 80px;
+    border: 1px solid rgba(255, 226, 170, 0.85);
+    box-shadow:
+      0 0 10px rgba(255, 180, 100, 0.45),
+      inset 0 0 10px rgba(255, 180, 100, 0.3);
+    opacity: 0;
+  }
+  .mote:global(.spent) .burst {
+    animation: mote-ring 0.7s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+  }
+  .mote:global(.spent) .halo {
+    animation: mote-flare 0.65s ease-out both;
+  }
+  .mote:global(.spent) .core,
+  .mote:global(.spent) .tail {
+    animation: mote-out 0.35s ease-in both;
+  }
+  @keyframes mote-ring {
+    from {
+      transform: scale(0.15);
+      opacity: 1;
+    }
+    to {
+      transform: scale(3.2);
+      opacity: 0;
+    }
+  }
+  @keyframes mote-flare {
+    from {
+      transform: scale(1);
+      opacity: 1;
+    }
+    25% {
+      transform: scale(1.9);
+      opacity: 1;
+    }
+    to {
+      transform: scale(2.4);
+      opacity: 0;
+    }
+  }
+  @keyframes mote-out {
+    to {
+      opacity: 0;
+    }
   }
   .vote-status {
     display: flex;
