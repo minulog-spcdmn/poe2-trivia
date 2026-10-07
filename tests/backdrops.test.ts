@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { backdropsErrors, cloneData, ENV_TONES, ENVIRONMENTS, formatBackdrops, lookErrors, stopsOf, withTones, type Backdrops, type Look } from '../src/lib/backdropData.ts';
 import { DEFAULT_SETTINGS, generate, generateStratum, hsv, hueDistance, hueOf, keepLocked, seedOf, stratumSeed } from '../src/lib/backdropGen.ts';
 import { archetypeAt, endgame, endgameAt, SHIPPED, setBackdrops, seedAt, VIVID, zones, zoneSignatures } from '../src/lib/backdrops.ts';
-import { brightnessAt, calibrateLight, descent, LIGHT_STEP, lookOf, luminanceAt, measuredAt, MEASURED, settledAt, STRATA, stratumName } from '../src/lib/descent.ts';
+import { brightnessAt, calibrateLight, descent, LIGHT_STEP, lightSwing, lookOf, luminanceAt, measuredAt, MEASURED, settledAt, STRATA, stratumName } from '../src/lib/descent.ts';
 import { PROFILE_NAMES, SURFACE_MOTION, ZONE_MOTION } from '../src/lib/emberProfiles.ts';
 import { zoneMotionOf } from '../src/lib/emberMotion.ts';
 
@@ -184,7 +184,7 @@ test("the tool's hook shows a draft at once, and the file's again after; the gam
     assert.deepEqual(measuredAt(settledAt(3)), [1, 1]);
     assert.deepEqual(measuredAt(11), kept, 'the zones not changed keep theirs');
     // The light is worked out again, as steadily.
-    for (let d = 2; d <= 300; d++) assert.ok(Math.abs(Math.log(descent(d).light / descent(d - 1).light)) <= LIGHT_STEP + 1e-9, `the light swings at ${d}`);
+    for (let d = 2; d <= 300; d++) assert.ok(lightSwing(descent(d - 1), descent(d)) <= LIGHT_STEP + 1e-9, `the light swings at ${d}`);
   });
   assert.deepEqual([1, 15, 55.5, 91, 140, 230.25].map(hash), before);
   assert.notEqual(endgameAt(12).seed, 777);

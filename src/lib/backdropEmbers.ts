@@ -141,6 +141,14 @@ export class Embers {
   readonly motion = new Uint8Array(EMBERS);
   private from = new Uint8Array(EMBERS);
   private mix = new Float32Array(EMBERS).fill(1);
+  /**
+   * How far each has cooled as it moves (see cooling), and how far it had as
+   * it took its new motion: the one it turns from keeps that, so the embers
+   * of a cooled magma never heat up again as they turn their new way (a
+   * jump, after which the scene, and so `cooling`, is the new depth's).
+   */
+  private cool = new Float32Array(EMBERS);
+  private fromCool = new Float32Array(EMBERS);
   /** Where each is (px) before its sway and curl, and how far through its life (0 to 1). */
   private bx = new Float32Array(EMBERS);
   private by = new Float32Array(EMBERS);
@@ -366,6 +374,7 @@ export class Embers {
     // Resting dark between lives: it just starts afresh, its new way.
     if (this.wait[i] > 0) return this.born(i, w, h, false);
     this.from[i] = snap ? id : this.motion[i];
+    this.fromCool[i] = this.cool[i];
     this.motion[i] = id;
     this.mix[i] = snap ? 1 : 0;
   }
@@ -535,6 +544,7 @@ export class Embers {
       const m = MOTIONS[this.motion[i]];
       const v0 = (span / e.period) * heatK;
       const cool = cooling(this.burn[i], stratum, turn);
+      this.cool[i] = cool;
       this.sample(m, i, e, w, h, v0, cool);
       if (this.mix[i] < 1) {
         // Turning from the motion it had to its new one (a recolor in mid-life).
@@ -547,7 +557,7 @@ export class Embers {
         const flicker = this.mflicker;
         const rate = this.mrate;
         const gone = this.mgone;
-        this.sample(MOTIONS[this.from[i]], i, e, w, h, v0, cool);
+        this.sample(MOTIONS[this.from[i]], i, e, w, h, v0, this.fromCool[i]);
         const k = this.mix[i] * this.mix[i] * (3 - 2 * this.mix[i]);
         this.mvx += (vx - this.mvx) * k;
         this.mvy += (vy - this.mvy) * k;

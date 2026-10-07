@@ -10,7 +10,7 @@
 // only ever has the file's.
 
 import shipped from '../data/backdrops.json' with { type: 'json' };
-import { cloneData, type Backdrops, type Endgame, type ZoneBackdrop } from './backdropData.ts';
+import { cloneData, ENVIRONMENTS, type Backdrops, type Endgame, type ZoneBackdrop } from './backdropData.ts';
 import { ARCHETYPES, composedNames } from './archetypes.ts';
 import { generateStratum, mix, rng, stratumSeed, type Generated, type Steer } from './backdropGen.ts';
 import { difference, nearest, signatureOf, UNLIKE, type Signature } from './likeness.ts';
@@ -76,19 +76,27 @@ function shuffle<T>(items: readonly T[], r: () => number): T[] {
 
 /** Whether two archetypes share an effect (then they never follow each other). */
 const shares = (a: number, b: number) => ARCHETYPES[a].fx.some((x) => ARCHETYPES[b].fx.some((y) => x.env === y.env));
+/** The effects the last zone draws, which the endgame's first stratum follows. */
+const lastZoneFx = (): string[] => ENVIRONMENTS.filter((_, i) => zones[zones.length - 1].look.env[i] > 0);
+/** What an archetype follows: another (-1, none), or the effects a zone draws. */
+type After = number | readonly string[];
+/** Whether archetype `a` may follow `after`: sharing no effect with it. */
+const follows = (after: After, a: number) =>
+  typeof after === 'number' ? !(after >= 0 && shares(after, a)) : !ARCHETYPES[a].fx.some((x) => after.includes(x.env));
 
 /**
  * Orders `items` (a seeded search, `r` its random numbers) so that no two
  * in a row share an effect (nor are the same), the first follows `after`
- * (an archetype, or -1) and the last goes before `before` without sharing
- * one either, and none of the first SPREAD is in `notFirst`. Where the
+ * (an archetype, -1 for none, or the effects the last zone draws) and the
+ * last goes before `before` without sharing one either, and none of the
+ * first SPREAD is in `notFirst`. Where the
  * round before leaves no such order, the same with fewer of the first kept
  * clear of it; failing even that, the seed's shuffle as it is (`strict`:
  * null instead, at the first failure).
  */
-function order(items: number[], r: () => number, after: number, before: number, notFirst: ReadonlySet<number>): number[];
-function order(items: number[], r: () => number, after: number, before: number, notFirst: ReadonlySet<number>, strict: true): number[] | null;
-function order(items: number[], r: () => number, after: number, before: number, notFirst: ReadonlySet<number>, strict = false): number[] | null {
+function order(items: number[], r: () => number, after: After, before: number, notFirst: ReadonlySet<number>): number[];
+function order(items: number[], r: () => number, after: After, before: number, notFirst: ReadonlySet<number>, strict: true): number[] | null;
+function order(items: number[], r: () => number, after: After, before: number, notFirst: ReadonlySet<number>, strict = false): number[] | null {
   const pool = shuffle(items, r);
   for (let spread = SPREAD; spread >= 0; spread--) {
     const out: number[] = [];
@@ -96,8 +104,7 @@ function order(items: number[], r: () => number, after: number, before: number, 
     const fits = (a: number) => {
       const at = out.length;
       if (at < spread && notFirst.has(a)) return false;
-      const prev = at ? out[at - 1] : after;
-      if (prev >= 0 && shares(prev, a)) return false;
+      if (!follows(at ? out[at - 1] : after, a)) return false;
       return !(at === pool.length - 1 && before >= 0 && shares(a, before));
     };
     const place = (): boolean => {
@@ -159,6 +166,9 @@ const rounds = new Map<number, number[]>();
  * last SPREAD (as far as any order allows). Its last SPREAD are dealt from its own seed alone
  * (tailOf), the rest ordered round them and the round before's; so every
  * round is worked out from two rounds' seeds, whichever is asked for first.
+ * The first round's first shares no effect with the last zone either (its
+ * features would otherwise go on through the turn into it unchanged), where
+ * any order of the round allows it.
  */
 function roundOf(b: number): number[] {
   let deal = rounds.get(b);
@@ -166,8 +176,9 @@ function roundOf(b: number): number[] {
   const tail = tailOf(b);
   const before = b > 0 ? tailOf(b - 1) : [];
   const rest = Array.from({ length: DECK }, (_, i) => i).filter((a) => !tail.includes(a));
-  const r = rng(mix(mix(endgame.seed, 0xdec4), b));
-  deal = [...order(rest, r, before.length ? before[before.length - 1] : -1, tail[0], new Set(before)), ...tail];
+  const r = () => rng(mix(mix(endgame.seed, 0xdec4), b));
+  const first = b === 0 ? order(rest, r(), lastZoneFx(), tail[0], new Set(), true) : null;
+  deal = [...(first ?? order(rest, r(), before.length ? before[before.length - 1] : -1, tail[0], new Set(before))), ...tail];
   if (rounds.size > 256) rounds.clear();
   rounds.set(b, deal);
   return deal;

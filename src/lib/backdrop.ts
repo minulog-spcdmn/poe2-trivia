@@ -14,7 +14,7 @@ import { DROPS_PER_MASK, MAX_MASKS, measureDrops, releaseAllDrops } from './back
 import { MAX_LIGHTS, packLights, stepHomeScene, stepMood } from './lights';
 import { fxActive, fxUserOn, onFxChange } from './fx/core';
 import { COLUMNS, GLINT_COLOR, PALETTE, ROWS, SIZE_STRIDE, SLOTS, TILES, embers } from './backdropEmbers';
-import { BLOBS, ENVIRONMENTS, FX_SLOTS, FX_UNIFORM, NO_SLOT, currentDescent, magmaCooling, packFx, sinking, smokeOf, snapDescent, stepDescent, stepPlunge, stopsFor, targetDescent, toneOf, type Blob } from './descent';
+import { BLOBS, ENVIRONMENTS, FX_SLOTS, FX_UNIFORM, NO_SLOT, currentDescent, packFx, sinking, smokeOf, snapDescent, stepDescent, stepPlunge, stopsFor, targetDescent, toneOf, type Blob } from './descent';
 import { ENV_GLSL } from './shaders/effects';
 import { FX_NOISE_GLSL, SHAFTS_GLSL, SPORES_GLSL } from './shaders/newEffects';
 import { pressureLevel } from './darkness';
@@ -1161,8 +1161,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     if (!still) {
       clock += 1000 * dt;
       // (The magma flows as fast as it is hot: slower as it cools, still once it has.)
-      const scene = currentDescent();
-      magmaClock += dt * (1 - magmaCooling(scene.stratum, scene.turn));
+      magmaClock += dt * (1 - currentDescent().cool);
     }
     lastStep = now;
     const nowS = now / 1000;

@@ -107,6 +107,9 @@ window.M = {
   /** Shows depth d, held still, and returns the scene drawn. */
   async depth(d) {
     motion.matches = true;
+    // (Its light worked out at once: a jump otherwise shows the scene before
+    // for a few frames while it is worked out, see waiting in lib/descent.ts.)
+    D.lightAt(d + 0.001);
     // (A scene changed by set() is worked out afresh: shown somewhere else first.)
     if (changed) { D.setDescent(d + 0.001); await redraw(); changed = false; }
     D.setDescent(d);
@@ -149,6 +152,7 @@ window.M = {
    * weighs on both alike. Returns each one's average luma.
    */
   async paired(a, b, n = 8) {
+    D.lightAt(Math.max(a, b));
     const sum = { [a]: 0, [b]: 0 };
     for (let i = 0; i < n; i++) {
       for (const d of i % 2 ? [b, a] : [a, b]) {
@@ -281,7 +285,8 @@ try {
       await M((d) => M.depth(d), d);
       const l1 = await M((o) => M.set(o), { light: 1 });
       const l0 = await M((o) => M.set(o), { light: 0 });
-      const est = await M((d) => { const x = M.D.descent(d); return M.D.estimateLuminance(x.look, x.close, x.features); }, d);
+      // (With the magma as hot as it is drawn: cooling, it adds less, which the estimate takes in itself.)
+      const est = await M((d) => { const x = M.D.descent(d); return M.D.estimateLuminance(x.look, x.close, x.features, M.D.magmaHeat(x.cool)); }, d);
       rows.push([(l1 - l0) / est.hall, l0 / est.rest]);
       console.error(d, l1.toFixed(5), l0.toFixed(5), ((l1 - l0) / est.hall).toFixed(3), (l0 / est.rest).toFixed(3));
     }

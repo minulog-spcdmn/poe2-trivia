@@ -51,6 +51,9 @@ import {
   ENV_STEPS,
   LIGHT_STEP,
   MEASURED,
+  ZONES_DARKEN_TO,
+  brighterAt,
+  lightSwing,
   type Look,
 } from '../src/lib/descent.ts';
 import { CALM_EMBERS, COLUMNS, EMBERS, Embers, GLINT_COLOR, GLINTS, PALETTE, ROWS, SIZE_STRIDE, SLOTS, TILES, WALL_GLINTS } from '../src/lib/backdropEmbers.ts';
@@ -166,8 +169,9 @@ test('the look changes steadily: every depth a small step, none much bigger than
   // to 1.7). A handover squeezed into four depths would come to 4.7.)
   assert.ok(max < 3.375 * mean, `the largest step ${max.toFixed(3)} is ${(max / mean).toFixed(2)} times the usual ${mean.toFixed(3)}`);
   // Nor does the light the hall is drawn at swing from one depth to the next.
+  // (Beyond what makes way for a stratum's own light, lightK, as it changes.)
   for (let d = 2; d <= 600; d++) {
-    const step = Math.abs(Math.log(descent(d).light / descent(d - 1).light));
+    const step = lightSwing(descent(d - 1), descent(d));
     assert.ok(step <= LIGHT_STEP + 1e-9, `the light swings by ${step.toFixed(3)} from ${d - 1} to ${d}`);
   }
   // Within a depth too: no jump between whole depths.
@@ -471,8 +475,10 @@ test("the deeper, the darker: through the zones the scene's average brightness n
   // arrival on (its look creeps in from the last zone's 7th depth, the
   // embers a depth before) the scene may grow brighter and more colourful,
   // to lift the excitement, but never by a jump.
-  const zonesEnd = 10 * STRATA.length - 3;
-  const rise = (d: number) => (d <= zonesEnd ? 1.008 : 1.08);
+  assert.equal(ZONES_DARKEN_TO, 10 * STRATA.length - 3);
+  const rise = brighterAt;
+  assert.equal(rise(ZONES_DARKEN_TO), 1.008);
+  assert.equal(rise(ZONES_DARKEN_TO + 1), 1.08);
   // Depth by depth (held still, the scene shows only whole depths).
   let prev = lum(1);
   for (let d = 2; d <= 600; d++) {
@@ -503,6 +509,41 @@ test("the deeper, the darker: through the zones the scene's average brightness n
   // (The start page's hall, like the Mines', comes out about 5% over the estimate.)
   const surface = estimateLuminance(SURFACE, 0);
   assert.ok(lum(1) <= 1.05 * (surface.hall + surface.rest), 'the first depth no brighter than the start page');
+});
+
+test("whatever the endgame's seed, the zones only darken and the endgame's strata brighten the scene by 8% a depth at most, its own light (lightK) and all", () => {
+  // The endgame's first stratum may be lit far brighter than the last zone
+  // (its lightK two or three times the Primeval Ruins'): the light makes way
+  // for it as it comes in, so what is drawn never jumps (as it did, by 10%
+  // from depth 100 to 101 for some seeds).
+  const lum = (d: number) => {
+    const x = descent(d);
+    const e = estimateLuminance(x.look, x.close, x.features, heat(x));
+    const [hall, rest] = measuredAt(d);
+    return e.hall * hall * x.light + e.rest * rest;
+  };
+  try {
+    for (const seed of [0, 3, 7, 10, 22, 25, 29, 34]) {
+      setBackdrops({ zones: SHIPPED.zones, endgame: { ...SHIPPED.endgame, seed } });
+      let prev = lum(1);
+      let before = descent(1);
+      for (let d = 2; d <= 260; d++) {
+        const now = lum(d);
+        assert.ok(now <= prev * brighterAt(d), `seed ${seed}: brighter at ${d}: ${now.toFixed(5)} after ${prev.toFixed(5)}`);
+        // (And while it eases in.)
+        for (const f of [0.25, 0.5, 0.75]) assert.ok(lum(d - 1 + f) <= prev * brighterAt(d), `seed ${seed}: brighter at ${d - 1 + f}`);
+        const r = now / luminanceAt(d);
+        assert.ok(r > 0.85 && r < 1.02, `seed ${seed}: ${(100 * r).toFixed(1)}% of the curve at ${d}`);
+        const x = descent(d);
+        assert.ok(lightSwing(before, x) <= LIGHT_STEP + 1e-9, `seed ${seed}: the light swings at ${d}`);
+        assert.ok(x.light > LIGHT_MIN * 1.05 && x.light < LIGHT_MAX / 1.05, `seed ${seed}: light ${x.light.toFixed(2)} at ${d}`);
+        before = x;
+        prev = now;
+      }
+    }
+  } finally {
+    setBackdrops(SHIPPED);
+  }
 });
 
 test("the measured corrections, with the zones' looks as measured, hold at every depth to where the last zone settles, and its own until the endgame's turn begins", () => {
@@ -679,6 +720,81 @@ test('leaving a run, or a rejoin deep down, cross-fades straight there instead o
     }
     assert.ok(t > 1 && t < 2.5, `${a} to ${b} took ${t.toFixed(2)} s`);
     assert.deepEqual(currentDescent().look, descent(b).look);
+  }
+  setDescent(0);
+  snapDescent();
+});
+
+test('a rejoin deep down never stalls a frame: its light is worked out a little a frame, the old scene shown meanwhile, then it fades in with the same light as ever', () => {
+  // (The light table worked out afresh.)
+  setBackdrops(SHIPPED);
+  setDescent(0);
+  snapDescent();
+  setDescent(3);
+  snapDescent();
+  const before = { ...currentDescent() };
+  // What only reads the rest (the ambience: how deep, the abyss) doesn't wait on the light.
+  const far = descent(1900);
+  assert.ok(Object.getOwnPropertyDescriptor(far, 'light')?.get, 'its light worked out only when read');
+  assert.ok(far.deep > 0.99 && far.abyss === 1);
+  setDescent(1900);
+  let waited = 0;
+  let longest = 0;
+  while (true) {
+    const t = performance.now();
+    stepDescent(1 / 60);
+    const x = currentDescent();
+    longest = Math.max(longest, performance.now() - t);
+    if (x.stratum !== before.stratum) break;
+    // Meanwhile the scene as it was.
+    assert.equal(x.light, before.light);
+    assert.equal(x.look.dark, before.look.dark);
+    waited++;
+    assert.ok(waited < 600, 'it never arrives');
+  }
+  assert.ok(waited > 3, `worked out over ${waited} frames`);
+  // (A frame's piece is a few milliseconds; far under what the whole took, a few hundred on a phone.)
+  assert.ok(longest < 60, `a frame took ${longest.toFixed(1)} ms`);
+  while (stepDescent(1 / 60));
+  const lightThere = currentDescent().light;
+  setBackdrops(SHIPPED);
+  assert.equal(lightThere, lightAt(1900), 'the same light as worked out at once');
+  assert.equal(far.light, lightAt(1900));
+  setDescent(0);
+  snapDescent();
+});
+
+test("a cooling magma left behind by a cross-fade stays as cooled as it was, never flaring up again as it fades", () => {
+  const fx = new Float32Array(FX_UNIFORM);
+  const k = new Float32Array(4);
+  const magma = ENVIRONMENTS.indexOf('magma');
+  for (const [a, b] of [
+    [19, 0],
+    [20, 64],
+    [0, 19],
+    [64, 19],
+  ]) {
+    setDescent(a);
+    snapDescent();
+    const was = currentDescent().cool;
+    const will = descent(b).cool;
+    assert.equal(was, descent(a).cool);
+    setDescent(b);
+    let last = descent(a).look.env[magma] > 0 ? was : NaN;
+    while (stepDescent(1 / 60)) {
+      const x = currentDescent();
+      packFx(fx, k, x, 0);
+      assert.equal(k[0], Math.fround(x.cool), 'the shader gets the scene\'s cooling');
+      // (No magma showing, its cooling shows nowhere.)
+      if (!(x.look.env[magma] > 0)) continue;
+      // Only the scenes' own coolings, eased from the one to the other as their magma fades.
+      assert.ok(x.cool >= Math.min(was, will) - 1e-9 && x.cool <= Math.max(was, will) + 1e-9, `${a} to ${b}: cooling ${x.cool}`);
+      if (!(descent(b).look.env[magma] > 0)) assert.ok(Math.abs(x.cool - was) < 1e-9, `${a} to ${b}: the magma fading out keeps its cooling`);
+      if (!(descent(a).look.env[magma] > 0)) assert.ok(Math.abs(x.cool - will) < 1e-9, `${a} to ${b}: the magma fading in has its own`);
+      assert.ok(!(Math.abs(x.cool - last) >= 0.05), `${a} to ${b}: the cooling jumps`);
+      last = x.cool;
+    }
+    assert.ok(Math.abs(currentDescent().cool - will) < 1e-9);
   }
   setDescent(0);
   snapDescent();

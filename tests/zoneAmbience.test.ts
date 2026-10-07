@@ -139,7 +139,7 @@ test('turning between two places with the same fire, the ambience stays level', 
     assert.ok(Math.abs(fire - db(beds[0].bed.fire)) < 1e-12, `depth ${d}: ${fire} for ${db(beds[0].bed.fire)}`);
     turns++;
   }
-  // Some do: the archetypes' turns at depth 129 among them, half way from a9 into a5 (both -13.5 dB).
-  assert.deepEqual(bedsAt(129).beds.map((b) => [b.place, b.bed.fire]), [['a9', -13.5], ['a5', -13.5]]);
+  // Some do: the archetypes' turns at depth 139 among them, half way from a9 into a10 (both -13.5 dB).
+  assert.deepEqual(bedsAt(139).beds.map((b) => [b.place, b.bed.fire]), [['a9', -13.5], ['a10', -13.5]]);
   assert.ok(turns > 0);
 });

@@ -342,6 +342,30 @@ test("as a zone hands over, each ember moves as the zone it burns in, and the ma
   assert.ok(slowed > 0.3 && slowed < 0.75, `cooled to ${slowed.toFixed(2)} of their speed`);
 });
 
+test("a cooled magma's embers stay cooled as a jump turns them their new way, never speeding up first", () => {
+  const e = new Embers();
+  // The Magma Fissure's embers, then near the end of its handover, all but cooled.
+  e.descend({ ...descent(16), look: lookOf(1) }, { stratum: 2, turn: 0.15 });
+  e.step(0, W, H);
+  for (let s = 0; s < 120; s++) e.step(DT, W, H);
+  e.descend({ ...descent(21.65), look: lookOf(1) }, { stratum: 2, turn: 0.15 });
+  for (let s = 0; s < 30; s++) e.step(DT, W, H);
+  const magma = new Set([...Array(EMBERS).keys()].filter((i) => e.motion[i] === main(1)));
+  const speeds = (frames: number) => {
+    const by = new Map<number, number[]>();
+    for (const v of moves(e, frames)) if (magma.has(v.i)) by.set(v.i, [...(by.get(v.i) ?? []), Math.hypot(v.dx, v.dy)]);
+    return new Map([...by].map(([i, s]) => [i, mean(s)]));
+  };
+  const before = speeds(6);
+  // Leaving the run: the scene fades to the surface, and every ember turns its way from the magma's.
+  e.descend(descent(0));
+  const after = speeds(6);
+  const both = [...after.keys()].filter((i) => before.has(i));
+  assert.ok(both.length > 10, `${both.length} embers`);
+  const sped = mean(both.map((i) => after.get(i)! / before.get(i)!));
+  assert.ok(sped < 1.3, `sped up to ${sped.toFixed(2)} of their speed`);
+});
+
 test('turning to a new motion in mid-life (a recolor), no ember jumps', () => {
   const e = zone(-1);
   // Straight from the surface to the Primeval Ruins (a rejoin): every ember turns to flying up.

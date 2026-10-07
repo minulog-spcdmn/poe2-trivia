@@ -115,13 +115,15 @@ test(`the endgame's strata, 101 to ${LAST}, are each clearly unlike every hand-m
 
 test('with the zones retuned (a draft where zones copy typical generated looks), the strata steer clear of the zones as they are now', () => {
   const draft = cloneData(SHIPPED);
-  // Fungal Caverns becomes stratum 16's look as it is now, Primeval Ruins stratum 40's.
+  // Fungal Caverns becomes stratum 37's look as it is now (a Starfall abyss,
+  // as stratum 16 was before the first stratum past the zones was dealt
+  // clear of the last zone's effects), Primeval Ruins stratum 40's.
   const copy = (zi: number, k: number) => {
     const g = endgameAt(k);
     draft.zones[zi] = { ...draft.zones[zi], look: { ...cloneData(g.look), lightK: 1 }, motion: cloneData(g.motion), measured: false };
     return g;
   };
-  const a = copy(3, 15);
+  const a = copy(3, 36);
   const b = copy(9, 39);
   withBackdrops(draft, () => {
     const sigs = zoneSigs();
@@ -133,7 +135,7 @@ test('with the zones retuned (a draft where zones copy typical generated looks),
       assert.ok(difference(sig, before) >= UNLIKE, `stratum ${k + 1} too like the one before`);
     }
     // The strata whose looks the zones took look otherwise now.
-    assert.notDeepEqual(endgameAt(15).look, a.look);
+    assert.notDeepEqual(endgameAt(36).look, a.look);
     assert.notDeepEqual(endgameAt(39).look, b.look);
   });
 });

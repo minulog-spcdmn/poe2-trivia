@@ -255,7 +255,8 @@ the same thing for everyone.
   witchfire grove), each with one or two effects clearly there but quiet,
   a palette in a colour scheme (a base hue with its neighbours and a
   contrasting accent), and embers of its own; dealt out so none comes
-  twice in a row and no two in a row share an effect, generated from a
+  twice in a row and no two in a row share an effect (nor the first with
+  the Primeval Ruins), generated from a
   seed of its own, the same for everyone, and named from its archetype's
   names ("The Drowned Nave", "Ashen Reliquary"), none twice in the first
   fifty past 100, never the same twice in a row.
@@ -278,8 +279,10 @@ the same thing for everyone.
 - The deeper, the darker, never the other way. The dark is one smooth fade
   from the edges, corners darkest, and closes in a little with every depth.
   The scene's light is set so its average brightness only ever falls with
-  depth, however bright a zone's fire or gold: it is estimated for each
-  depth from what the backdrop draws, with a measured correction table.
+  depth through the zones, however bright a zone's fire or gold; past them
+  it may lift a little as the endgame's places come in, never by more than
+  8% a depth. It is estimated for each depth from what the backdrop draws,
+  with a measured correction table.
 - Each new depth sinks the scene a little further as its cards are dealt
   (not a run's first depth, after a reload, or the same depth dealt again):
   for 1.9 s the walls, smoke and dust drift up past you, quick to start and
@@ -633,8 +636,9 @@ Everything is drawn in WebGL2 with float precision and dithered once at the
   (its effects, palette schemes, embers, character and names), dealt out a
   round at a time by the endgame seed (`archetypeAt` in
   `src/lib/backdrops.ts`: every archetype once a round, none twice in a
-  row, no two in a row sharing an effect, each round worked out from its
-  own seed and the one before's), made from its own seed (the file's
+  row, no two in a row sharing an effect, nor the first with the last
+  zone, each round worked out from its own seed and the one before's),
+  made from its own seed (the file's
   endgame seed mixed with k, or one pinned by hand) with the file's endgame
   settings, re-rolled where it comes out too like a zone or its neighbour
   (`src/lib/likeness.ts`), made once and cached. Its name is its
@@ -647,14 +651,22 @@ Everything is drawn in WebGL2 with float precision and dithered once at the
   light, smoke, features and their colours follow it eased from the
   zone's 6th depth (`hallTurn`, `HALL_FROM`), both on a smoothstep
   (`easeTurn`), and a magma that goes out cools with the hall
-  (`magmaCooling`), gone by the next zone's 2nd. A zone shows alone from
+  (`magmaCooling`), gone by the next zone's 2nd (through a cross-fade it
+  keeps each scene's own cooling, `Descent.cool`, so it never flares up
+  again as it fades). A zone shows alone from
   its 2nd depth (`settledAt`) to its 5th, where its own turn begins.
   The scene's `light` is set so its average brightness never rises with
-  depth (`luminanceAt`, `lightAt`): `estimateLuminance` works out what the
-  backdrop draws from what each environment adds and dims as it comes in
-  (`ENV_ADD`, `ENV_HALL`), corrected per depth (`MEASURED`, to depth 92),
-  and the light is solved a stretch of depths at a time, moving at most
-  0.09 a depth, to depth 2001 (past it the curve is kept to exactly). A
+  depth through the zones and, past them, by 8% a depth at most
+  (`luminanceAt`, `lightAt`, `brighterAt`): `estimateLuminance` works out
+  what the backdrop draws from what each environment adds and dims as it
+  comes in (`ENV_ADD`, `ENV_HALL`), corrected per depth (`MEASURED`, to
+  depth 92), and the light is solved a stretch of depths at a time, moving
+  at most 0.09 a depth (`light`, or the light drawn, `light` times the
+  stratum's own `lightK`, so a stratum lit brighter is made way for), to
+  depth 2001 (past it the curve is kept to exactly). It is worked out in
+  idle moments ahead of the scene (`warmLights`); a rejoin deep down shows
+  the scene as it was for the few frames it takes the rest, a few
+  milliseconds a frame, then fades in (`waiting`). A
   generated look's own light (`lightK`) is worked out from the estimate
   (`calibrateLight`), so it settles at a light of about 1 like the zones.
   The tables are measured from the backdrop's own frames with
@@ -823,8 +835,8 @@ and how the embers move. Every change shows at once.
   every 1.5 s) to judge the handovers and the embers' colour turning over.
 - **Brightness:** the scene's average brightness by depth (1 to 200), as
   the game estimates it with its solved light (no frame is drawn or read),
-  beside the curve it keeps to; any depth brighter than the one before is
-  marked.
+  beside the curve it keeps to; any depth brighter than the rule allows
+  (than the one before through the zones, by 8% past them) is marked.
 - **Zones:** pick one of the ten (the panel jumps to its 2nd depth, where
   it shows alone), then tweak its look: a colour picker for every colour,
   sliders for every strength (Light and dark, Smoke, Haze, Embers, Glints,

@@ -28,7 +28,8 @@
 // And the deeper, the darker, never the other way: the dark draws in from
 // the edges a little with every depth, and the scene's light is set (`light`,
 // see the luminance estimate below) so its average brightness only ever
-// falls, however bright a stratum's fire or gold, generated or not. Each new
+// falls, however bright a stratum's fire or gold, generated or not (past
+// the zones it may lift a little, never by a jump: brighterAt). Each new
 // depth sinks the scene a little further as its cards are dealt (plunge).
 // Pure, apart from the eased channel and the plunge at the bottom that the
 // backdrop reads.
@@ -204,6 +205,14 @@ export interface Descent {
   /** The stratum the scene is turning into (see strataAt), and how far. */
   stratum: number;
   turn: number;
+  /**
+   * How far the magma it shows has cooled, 0 to 1 (magmaCooling; the
+   * backdrop crusts it over, dims it and stops its flow, and the CSS one
+   * dims it by magmaHeat). Through a cross-fade each scene's, as much of
+   * each as there is of its magma: a cooled magma fading out stays cooled
+   * rather than flaring up to white heat as the scene it fades to has none.
+   */
+  cool: number;
   /** What the scene looks like: the stratum before and this one, blended. */
   look: Look;
 }
@@ -617,12 +626,12 @@ const showing: number[] = [];
  * should more show), in the order of ENVIRONMENTS, each three vec4s: its
  * first colour stop and its strength, its second and how far its colour
  * varies, its third and its index in ENVIRONMENTS (colours 0 to 1); the
- * slots after, strength 0. Then k: the magma's cooling (magmaCooling; it
- * crusts the magma over and stops it) and its flow's clock, `magmaClock`;
+ * slots after, strength 0. Then k: the magma's cooling (the scene's `cool`;
+ * it crusts the magma over and stops it) and its flow's clock, `magmaClock`;
  * and which slot each environment is in (NO_SLOT, none), four bits each,
  * the first five in k[2] and the rest in k[3].
  */
-export function packFx(out: Float32Array, k: Float32Array, scene: Pick<Descent, 'look' | 'stratum' | 'turn'>, magmaClock: number): Float32Array {
+export function packFx(out: Float32Array, k: Float32Array, scene: Pick<Descent, 'look' | 'cool'>, magmaClock: number): Float32Array {
   const env = scene.look.env;
   showing.length = 0;
   for (let i = 0; i < ENV; i++) if (env[i] >= ENV_TRACE) showing.push(i);
@@ -647,7 +656,7 @@ export function packFx(out: Float32Array, k: Float32Array, scene: Pick<Descent, 
     out[o + 7] = tone.vary;
     out[o + 11] = i;
   }
-  k[0] = magmaCooling(scene.stratum, scene.turn);
+  k[0] = scene.cool;
   k[1] = magmaClock;
   k[2] = lo;
   k[3] = hi;
@@ -761,17 +770,35 @@ const levelAt = (d: number) => LEVEL_FLOOR + (1 - LEVEL_FLOOR) * Math.exp(-Math.
 /** How bright the strata's features burn (fire, gold, fog, ...): a little less the deeper, down to FEATURES_FLOOR. */
 const FEATURES_FLOOR = 0.5;
 export const featuresAt = (d: number) => (d < 1 ? 1 : FEATURES_FLOOR + (1 - FEATURES_FLOOR) * Math.exp(-(d - 1) / 60));
+/**
+ * The last depth the zones keep to darkening: the last zone's 7th, until
+ * which the endgame's first stratum has barely begun to creep in.
+ */
+export const ZONES_DARKEN_TO = 10 * STRATA.length - 3;
+/**
+ * How much brighter than the depth before the scene may come out at depth
+ * `d` (as a factor): through the zones (to ZONES_DARKEN_TO) not visibly, a
+ * trace at most (0.8%, under what a frame drawn varies by; the light keeps
+ * to LIGHT_SLACK); past them, where the endgame's strata may lift the
+ * excitement, by 8% at most, never by a jump.
+ */
+export const brighterAt = (d: number) => (d <= ZONES_DARKEN_TO ? 1.008 : 1.08);
 /** The range `light` keeps to, so no stratum is drawn far from its own brightness. */
 export const LIGHT_MIN = 0.2;
 export const LIGHT_MAX = 1.8;
 /**
- * How far `light` may change from one depth to the next (in log terms: 0.09
- * is about 9%), so the hall never swings ahead of a new stratum: where the
- * estimate would have it change faster, it is lowered a little early or
+ * How far the light may change from one depth to the next (in log terms:
+ * 0.09 is about 9%), so the hall never swings ahead of a new stratum: where
+ * the estimate would have it change faster, it is lowered a little early or
  * held a little longer (see extendLights), never raised, and the scene
- * comes out a little darker meanwhile. (Half as much again as when the
- * hall turned over nine depths: over six, at its steepest it turns half as
- * far again a depth, and the light has to keep pace with it.)
+ * comes out a little darker meanwhile. Either `light` or the light drawn
+ * (uLight, `light` times the look's lightK) may move this far: where a
+ * stratum's own light rises (lightK, from the last zone's 0.15 to an
+ * endgame stratum's 0.4, say), `light` may fall as fast as it does, so what
+ * is drawn keeps pace with it, rather than the scene growing brighter by
+ * the difference. (Half as much again as when the hall turned over nine
+ * depths: over six, at its steepest it turns half as far again a depth, and
+ * the light has to keep pace with it.)
  */
 export const LIGHT_STEP = 0.09;
 /**
@@ -793,8 +820,9 @@ const LIGHT_SLACK = 0.004;
  * table wherever the strata leave it the room).
  */
 export const LIGHT_TABLE = 1 + 200 * 10;
-/** Per whole depth: the hall and the rest the estimate comes to (measured corrections and all), the light, and the brightness with it. */
+/** Per whole depth: the hall and the rest the estimate comes to (measured corrections and all), the look's own light (lightK), the light, and the brightness with it. */
 const tableHall = new Float64Array(LIGHT_TABLE + 1);
+const tableK = new Float64Array(LIGHT_TABLE + 1);
 const tableRest = new Float64Array(LIGHT_TABLE + 1);
 const tableLight = new Float64Array(LIGHT_TABLE + 1);
 const tableLevel = new Float64Array(LIGHT_TABLE + 1);
@@ -828,6 +856,7 @@ function extendLights(to: number) {
       const [h, r] = measuredAt(d);
       tableHall[d] = e.hall * h;
       tableRest[d] = e.rest * r;
+      tableK[d] = look.lightK;
       tableLight[d] = Math.min(LIGHT_MAX, Math.max(LIGHT_MIN, (luminanceAt(d) - tableRest[d]) / tableHall[d]));
     }
     // Lowered where it must be, leaving what is settled as it is.
@@ -839,14 +868,16 @@ function extendLights(to: number) {
         // falls as fast as it may, no faster: lowering it further back
         // wouldn't help.)
         const keep = ((tableLight[d - 1] * tableHall[d - 1] + tableRest[d - 1]) * (1 + LIGHT_SLACK) - tableRest[d]) / tableHall[d];
-        const most = Math.max(LIGHT_MIN, Math.min(tableLight[d - 1] * up, Math.max(tableLight[d - 1] / up, keep)));
+        // (As far as `light` may move, or as far as it may to keep the light drawn moving no further: see LIGHT_STEP.)
+        const k = tableK[d - 1] / tableK[d];
+        const most = Math.max(LIGHT_MIN, Math.min(tableLight[d - 1] * up * Math.max(1, k), Math.max((tableLight[d - 1] / up) * Math.min(1, k), keep)));
         if (tableLight[d] > most + 1e-12) {
           tableLight[d] = most;
           moved = true;
         }
       }
       for (let d = tableEnd - 1; d >= first - 1 && d > settled; d--) {
-        const most = Math.max(LIGHT_MIN, tableLight[d + 1] * up);
+        const most = Math.max(LIGHT_MIN, tableLight[d + 1] * up * Math.max(1, tableK[d + 1] / tableK[d]));
         if (tableLight[d] > most + 1e-12) {
           tableLight[d] = most;
           moved = true;
@@ -857,6 +888,60 @@ function extendLights(to: number) {
     settled = tableEnd === LIGHT_TABLE ? LIGHT_TABLE : tableEnd - AHEAD;
     for (let d = was + 1; d <= settled; d++) tableLevel[d] = tableLight[d] * tableHall[d] + tableRest[d];
   }
+}
+
+/** Whether the light at depth `d` is worked out, so lightAt answers at once. */
+const lit = (d: number) => !(d >= 1) || d >= LIGHT_TABLE || settled >= Math.floor(d) + 1;
+
+/** The strata looked up so far, in order, to work the table out (see workLights). */
+let looked = 0;
+const clock = () => (typeof performance === 'undefined' ? Date.now() : performance.now());
+
+/**
+ * Works the light table out toward depth `to` for about `ms` (at least one
+ * step): first the looks of the strata the next stretch reads (generated
+ * past the zones, a millisecond or so each), one at a time, then the
+ * stretch itself (a few milliseconds). Returns whether it is worked out
+ * that far. The same table as lightAt works out at once (extendLights),
+ * only in pieces: a rejoin deep down (depth 2000 takes a hundred
+ * milliseconds or more at once) never holds up a frame for long.
+ */
+function workLights(to: number, ms: number): boolean {
+  const end = clock() + ms;
+  const goal = Math.min(to, LIGHT_TABLE);
+  while (settled < goal) {
+    const need = strataAt(Math.min(LIGHT_TABLE, tableEnd + STRETCH) + 1).stratum + 1;
+    if (looked <= need) lookOf(looked++);
+    else extendLights(settled + 1);
+    if (clock() >= end) break;
+  }
+  return settled >= goal;
+}
+
+/** How deep the light is being worked out in idle moments (see warmLights), and whether it is under way. */
+let warmTo = 0;
+let warming = false;
+type Idle = { timeRemaining(): number };
+const whenIdle = (f: (deadline?: Idle) => void) => {
+  const ric = (globalThis as { requestIdleCallback?: (f: (deadline: Idle) => void, o: { timeout: number }) => void }).requestIdleCallback;
+  if (ric) ric(f, { timeout: 250 });
+  else setTimeout(f, 16);
+};
+/**
+ * Works the light out to depth `to` in idle moments, a few milliseconds at
+ * a time, ahead of the scene getting there (a run starting, a rejoin deep
+ * down): so it is there by the time a frame needs it.
+ */
+function warmLights(to: number) {
+  warmTo = Math.max(warmTo, Math.min(LIGHT_TABLE, Math.ceil(to)));
+  if (warming || settled >= warmTo) return;
+  warming = true;
+  const step = (deadline?: Idle) => {
+    const ms = deadline ? Math.max(2, deadline.timeRemaining() - 2) : 4;
+    if (workLights(warmTo, ms)) warming = false;
+    else whenIdle(step);
+  };
+  whenIdle(step);
 }
 
 /**
@@ -878,6 +963,17 @@ export function lightAt(d: number, look: Look = lookAt(blank(), d)): number {
   const e = estimateLuminance(look, closeness(d), featuresAt(d), heatAt(d));
   const [h, r] = measuredAt(d);
   return Math.min(LIGHT_MAX, Math.max(LIGHT_MIN, (level - e.rest * r) / (e.hall * h)));
+}
+
+/**
+ * How far the light moves from one scene to the next (`a`'s depth to
+ * `b`'s, in log terms) beyond what makes way for the strata's own light
+ * (lightK) as it changes: what LIGHT_STEP bounds a depth (see there).
+ */
+export function lightSwing(a: Pick<Descent, 'light' | 'look'>, b: Pick<Descent, 'light' | 'look'>): number {
+  const moved = Math.log(b.light / a.light);
+  const own = Math.log(a.look.lightK / b.look.lightK);
+  return moved > Math.max(0, own) ? moved - Math.max(0, own) : moved < Math.min(0, own) ? Math.min(0, own) - moved : 0;
 }
 
 /**
@@ -919,8 +1015,11 @@ function lookAt(out: Look, d: number): Look {
   return look;
 }
 
-/** Writes the scene at a depth into `out` (its look is written over, never shared). */
-function fill(out: Descent, depth: number): Descent {
+/**
+ * Writes the scene at a depth into `out` (its look is written over, never
+ * shared). `light` false leaves its light as it is (the caller sees to it).
+ */
+function fill(out: Descent, depth: number, light = true): Descent {
   const d = Number.isFinite(depth) ? Math.max(0, depth) : 0;
   const { stratum, turn } = strataAt(d);
   lookAt(out.look, d);
@@ -928,18 +1027,34 @@ function fill(out: Descent, depth: number): Descent {
   out.abyss = smoothstep(ABYSS_FROM, ABYSS_FULL, d);
   out.close = closeness(d);
   out.features = featuresAt(d);
-  out.light = lightAt(d, out.look);
+  if (light) out.light = lightAt(d, out.look);
   out.dim = d < 1 ? 0 : 1 - levelAt(d);
   out.stratum = stratum;
   out.turn = turn;
+  out.cool = magmaCooling(stratum, turn);
   return out;
 }
 
-const fresh = (): Descent => ({ deep: 0, abyss: 0, close: 0, light: 1, features: 1, dim: 0, stratum: 0, turn: 0, look: blank() });
+const fresh = (): Descent => ({ deep: 0, abyss: 0, close: 0, light: 1, features: 1, dim: 0, stratum: 0, turn: 0, cool: 0, look: blank() });
 
-/** The scene at a depth (0 outside Delve: the usual scene). Fractional depths ease between whole ones. */
+/**
+ * The scene at a depth (0 outside Delve: the usual scene). Fractional depths
+ * ease between whole ones. Where its light isn't worked out yet (deep down,
+ * the first time), it is worked out only when read: what reads only the
+ * rest (the ambience, the CSS backdrop) never waits on it.
+ */
 export function descent(depth: number): Descent {
-  return fill(fresh(), depth);
+  const d = Number.isFinite(depth) ? Math.max(0, depth) : 0;
+  if (lit(d)) return fill(fresh(), d);
+  const out = fill(fresh(), d, false);
+  let light: number | undefined;
+  Object.defineProperty(out, 'light', {
+    get: () => (light ??= lightAt(d)),
+    set: (v: number) => void (light = v),
+    enumerable: true,
+    configurable: true,
+  });
+  return out;
 }
 
 // ---- the named depths -------------------------------------------------------
@@ -992,6 +1107,8 @@ export function setDescent(depth: number) {
     shown = d;
   }
   target = d;
+  // (Its light worked out ahead, in idle moments, and as far again past it.)
+  warmLights(d + STRETCH);
   for (const f of listeners) f(descent(d));
 }
 
@@ -1009,6 +1126,7 @@ export function onDescent(f: (d: Descent) => void): () => void {
  */
 export function stepDescent(dt: number): boolean {
   if (fading) {
+    if (waiting()) return true;
     fadeT += dt / FADE;
     if (fadeT >= 1) fading = false;
   }
@@ -1022,9 +1140,28 @@ export function stepDescent(dt: number): boolean {
 /** Jumps straight to the target (the backdrop holding still). Returns whether that changed anything. */
 export function snapDescent(): boolean {
   if (shown === target && !fading) return false;
+  if (fading && waiting()) {
+    shown = target;
+    return true;
+  }
   shown = target;
   fading = false;
   return true;
+}
+
+/**
+ * A jump deep down (a rejoin) waits to fade in until the light there is
+ * worked out: a few milliseconds of it a frame (FRAME_MS, see workLights),
+ * the rest in idle moments (warmLights), meanwhile showing the scene as it
+ * was. Nothing of the new depth shows until its light is there, so it
+ * fades in as it would have at once, its light the same, a moment later.
+ * Returns whether it is still waiting.
+ */
+const FRAME_MS = 3;
+function waiting(): boolean {
+  const to = Math.floor(Math.max(shown, target)) + 1;
+  if (lit(shown) && lit(target)) return false;
+  return !workLights(to, FRAME_MS);
 }
 
 function copyInto(out: Descent, d: Descent) {
@@ -1036,6 +1173,7 @@ function copyInto(out: Descent, d: Descent) {
   out.dim = d.dim;
   out.stratum = d.stratum;
   out.turn = d.turn;
+  out.cool = d.cool;
   mixInto(out.look, d.look, d.look, 0);
 }
 
@@ -1057,6 +1195,8 @@ onBackdrops(() => {
   depthOne = NaN;
   tableEnd = 0;
   settled = 0;
+  looked = 0;
+  warmTo = 0;
   shownAt = NaN;
   fadeAt = NaN;
   targetAt = NaN;
@@ -1064,6 +1204,8 @@ onBackdrops(() => {
 
 /** The scene as shown right now. */
 export function currentDescent(): Descent {
+  // (A jump deep down shows the scene as it was until its light is worked out: see waiting.)
+  if (fading && !(lit(shown) && lit(target))) return from;
   if (shownAt !== shown) fill(shownNow, (shownAt = shown));
   if (!fading) return shownNow;
   if (fadeAt === fadeT && fadeShownAt === shown) return fadeNow;
@@ -1080,12 +1222,26 @@ export function currentDescent(): Descent {
   fadeNow.stratum = shownNow.stratum;
   fadeNow.turn = shownNow.turn;
   mixInto(fadeNow.look, from.look, shownNow.look, t);
+  // The magma's cooling: each scene's, as much as each shows of it (its
+  // strength fades from the one to the other with the rest of the look).
+  const a = from.look.env[MAGMA] * (1 - t);
+  const b = shownNow.look.env[MAGMA] * t;
+  fadeNow.cool = a + b > 0 ? (a * from.cool + b * shownNow.cool) / (a + b) : mix(from.cool, shownNow.cool);
   return fadeNow;
 }
 
-/** The scene the shown one is heading for. */
+/**
+ * The scene the shown one is heading for. (Until its light is worked out,
+ * a jump deep down waiting on it, its light is the deepest worked out so
+ * far: nothing draws it meanwhile.)
+ */
 export function targetDescent(): Descent {
-  if (targetAt !== target) fill(targetNow, (targetAt = target));
+  if (targetAt === target) return targetNow;
+  if (lit(target)) fill(targetNow, (targetAt = target));
+  else {
+    fill(targetNow, target, false);
+    targetNow.light = settled >= 1 ? tableLight[settled] : 1;
+  }
   return targetNow;
 }
 

@@ -108,6 +108,34 @@ test('the archetypes are dealt out: never the same twice in a row, nor sharing a
   for (const k of [1e5, 1e8 + 3]) assert.notEqual(archetypeAt(k), archetypeAt(k + 1));
 });
 
+test("whatever the endgame's seed, the first stratum past the zones shares no effect with the last zone, and the deal keeps its rules", () => {
+  const lastZone = SHIPPED.zones[FIRST - 1].look.env;
+  const zoneFx = ENVIRONMENTS.filter((_, i) => lastZone[i] > 0);
+  const D = ARCHETYPES.length;
+  try {
+    for (let seed = 0; seed < 200; seed++) {
+      const data = cloneData(SHIPPED);
+      data.endgame.seed = seed;
+      setBackdrops(data);
+      // (Asked for from the far end of the round first: the same deal whichever comes first.)
+      const late = archetypeAt(FIRST + D + 3);
+      const a = archetypeAt(FIRST);
+      assert.ok(!ARCHETYPES[a].fx.some((x) => zoneFx.includes(x.env)), `seed ${seed}: ${ARCHETYPES[a].kind} after the last zone`);
+      assert.ok(endgameAt(FIRST).look.env.every((e, i) => !(e > 0 && lastZone[i] > 0)), `seed ${seed}: the first stratum draws an effect the last zone does`);
+      const round = Array.from({ length: D }, (_, i) => archetypeAt(FIRST + i));
+      assert.equal(new Set(round).size, D, `seed ${seed}: every archetype once in the first round`);
+      for (let k = FIRST + 1; k < FIRST + 2 * D; k++) {
+        const [x, y] = [archetypeAt(k - 1), archetypeAt(k)];
+        assert.ok(!ARCHETYPES[y].fx.some((f) => ARCHETYPES[x].fx.some((g) => g.env === f.env)), `seed ${seed}: stratum ${k + 1} shares an effect with the one before`);
+      }
+      setBackdrops(data);
+      assert.equal(archetypeAt(FIRST + D + 3), late, `seed ${seed}: the same deal whichever comes first`);
+    }
+  } finally {
+    setBackdrops(SHIPPED);
+  }
+});
+
 test("the endgame's names: their own, never a zone's, none twice in the first fifty past 100, never twice in a row, short enough", () => {
   const all = ARCHETYPES.flatMap((a) => [...a.names, ...composedNames(a)]);
   assert.equal(new Set(all).size, all.length, 'no two archetypes share a name');

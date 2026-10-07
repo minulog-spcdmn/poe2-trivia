@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { startBackdrop } from '../lib/backdrop';
-  import { ENVIRONMENTS, descent, emberTurn, lookOf, onDescent, toneOf, type Descent } from '../lib/descent';
+  import { ENVIRONMENTS, MAGMA, descent, emberTurn, lookOf, magmaHeat, onDescent, toneOf, type Descent } from '../lib/descent';
   import { stopsOf } from '../lib/backdropData';
 
   // Ambient backdrop: warm glow, vignette and slowly rising embers. The WebGL
@@ -18,7 +18,9 @@
   // the CSS layers below are the fallback when WebGL is unavailable.
   let canvas: HTMLCanvasElement;
   // Delve: the CSS backdrop follows the stratum too (the WebGL one reads it itself).
-  let dsc = $state<Descent>(descent(0));
+  // (Raw: each change is a new scene, never changed in place; and its light,
+  // which this never reads, may be worked out only when read; see descent.)
+  let dsc = $state.raw<Descent>(descent(0));
   onMount(() => onDescent((d) => (dsc = d)));
   const look = $derived(dsc.look);
   const css = (c: readonly number[], a = 1) => `rgba(${c.map(Math.round).join(', ')}, ${a})`;
@@ -52,10 +54,11 @@
     <div class="glow"></div>
     <div class="floor" style:--floor={css(look.floor, look.floorK)} style:--floor-h={look.floorH}></div>
     <div class="mist" style:--mist={css(look.mist, 1)} style:opacity={look.mistK * 3}></div>
-    <!-- Each stratum's environment, roughly (lib/backdrop.ts draws them properly). -->
+    <!-- Each stratum's environment, roughly (lib/backdrop.ts draws them properly);
+         the magma dims as it cools, as much as magmaHeat has it. -->
     {#each ENVIRONMENTS as name, i (name)}
       {#if look.env[i] > 0}
-        <div class="env env-{name}" style:opacity={look.env[i]} style:--c0={stopOf(i, 0)} style:--c1={stopOf(i, 1)} style:--c2={stopOf(i, 2)}></div>
+        <div class="env env-{name}" style:opacity={look.env[i] * (i === MAGMA ? magmaHeat(dsc.cool) : 1)} style:--c0={stopOf(i, 0)} style:--c1={stopOf(i, 1)} style:--c2={stopOf(i, 2)}></div>
       {/if}
     {/each}
     <div class="dark" style:opacity={look.dark}></div>

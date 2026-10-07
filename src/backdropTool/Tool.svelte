@@ -3,7 +3,7 @@
   import { cloneData, ENV_TONES, ENVIRONMENTS, FIELDS, GROUPS, MOTION_RANGES, stopsOf, toneOf, type FieldSpec, type GenSettings, type Group, type Look, type MotionTweak, type RGB } from '../lib/backdropData';
   import { endgameAt, likenessAt, SHIPPED } from '../lib/backdrops';
   import { generate, hsv, seedOf, swatchOf, variationSeed } from '../lib/backdropGen';
-  import { accentAt, brightnessAt, FX_SLOTS, luminanceAt, stratumName } from '../lib/descent';
+  import { accentAt, brighterAt, brightnessAt, FX_SLOTS, luminanceAt, stratumName } from '../lib/descent';
   import { UNLIKE } from '../lib/likeness';
   import { PROFILE_NAMES } from '../lib/emberProfiles';
   import { readStored, writeStored } from '../lib/storage';
@@ -193,7 +193,7 @@
       for (let d = 1; d <= CURVE; d++) {
         drawn.push(brightnessAt(d));
         target.push(luminanceAt(d));
-        if (d > 1 && drawn[d - 1] > drawn[d - 2] * 1.008) rises.push(d);
+        if (d > 1 && drawn[d - 1] > drawn[d - 2] * brighterAt(d)) rises.push(d);
       }
       curve = { drawn, target, rises };
     }, 150);
@@ -300,7 +300,7 @@
         <div class="axis"><i class="num">1</i><i class="num">100</i><i class="num">200</i></div>
         <p class="hint">
           The scene's average brightness by depth as the game estimates it (lib/descent.ts; nothing is drawn or read back): solid with its solved light, dashed the curve it keeps to.
-          {#if curve.rises.length}<b class="warn">Brighter than the depth before at <i class="num">{curve.rises.slice(0, 6).join(', ')}</i>.</b>{/if}
+          {#if curve.rises.length}<b class="warn">Brighter than the depth before (through the zones) or by more than 8% (past them) at <i class="num">{curve.rises.slice(0, 6).join(', ')}</i>.</b>{/if}
           The measured corrections hold only for the zones as shipped{#if dropped.some((x) => x)}; dropped here for {dropped.flatMap((x, k) => (x ? [zoneName(k)] : [])).join(', ')}{/if}.
         </p>
       </details>
