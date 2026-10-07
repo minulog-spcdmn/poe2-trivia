@@ -229,7 +229,7 @@ test('there are always three categories left to offer at the longest lockout', (
 
 test('the ruleset is pinned to the curve and the protocol', () => {
   // Changing the curve changes this hash: bump DELVE_RULESET and PROTOCOL_VERSION with it, then update the pin.
-  // (Ruleset 1 is frozen as the rules Delve opens with, at protocol 12; dynamite blasting a question away for a new one, in place of going off at half the clock, kept it at 1 at protocol 13, as Delve isn't public yet, and so did its fuse burning at 0 before it goes off by itself, at protocol 14. Before that, while Delve was unreleased, every change kept the ruleset and only moved the pin; so did dynamite going off by itself, look-alike pictures, the flare burning at 0 and the blast holding the clock, co-op, dynamite taking half of all the options with two finds side by side, pinning the lives, the clock going down to 5 s with the art burning in faster on it, the smooth rise in place of the steps, and each find's own risk: the Flare Cache's shorter clock and the Dynamite Cache's blast.)
+  // (Ruleset 1 is frozen as the rules Delve opens with, at protocol 12; dynamite blasting a question away for a new one, in place of going off at half the clock, kept it at 1 at protocol 13, as Delve isn't public yet, and so did its fuse burning at 0 before it goes off by itself, at protocol 14. The finds starting later, one at a time (the Dynamite Cache from shown depth 10, the Flare Cache from 30, the Azurite Vein from 40, each reaching its cap 20 depths on), kept it at 1 at protocol 14 too. Before that, while Delve was unreleased, every change kept the ruleset and only moved the pin; so did dynamite going off by itself, look-alike pictures, the flare burning at 0 and the blast holding the clock, co-op, dynamite taking half of all the options with two finds side by side, pinning the lives, the clock going down to 5 s with the art burning in faster on it, the smooth rise in place of the steps, and each find's own risk: the Flare Cache's shorter clock and the Dynamite Cache's blast.)
   const table: unknown[] = DEPTHS.map((d) => [delveRules(d), delveTimer(d), delveTileVeil(d)]);
   // The finds too: where and how often they turn up, what they ask and cost, and what their items do.
   const clocks = Array.from({ length: 12 }, (_, i) => i + 5);
@@ -250,7 +250,7 @@ test('the ruleset is pinned to the curve and the protocol', () => {
   assert.deepEqual([DELVE_RULESET, PROTOCOL_VERSION, hash], [1, 14, PINNED_HASH]);
 });
 
-const PINNED_HASH = '857c72f9a4f590c6';
+const PINNED_HASH = '1bba097b0e8d5144';
 
 function run(losses: Record<string, number[]>, round = 10, seats = Object.keys(losses)): GameState {
   const s = createGame('a');

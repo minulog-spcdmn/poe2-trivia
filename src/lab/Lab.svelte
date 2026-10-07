@@ -95,9 +95,9 @@
 
   const FINDS = [
     { v: 'none', label: 'None' },
-    { v: 'azurite', label: 'Azurite Vein' },
-    { v: 'flare', label: 'Flare Cache' },
     { v: 'dynamite', label: 'Dynamite Cache' },
+    { v: 'flare', label: 'Flare Cache' },
+    { v: 'azurite', label: 'Azurite Vein' },
   ] as const;
 
   const phaseName = $derived(

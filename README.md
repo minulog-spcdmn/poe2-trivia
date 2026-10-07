@@ -152,41 +152,33 @@ the same thing for everyone.
   questions gets a fourth made-up name (2% at 100, 2% more every depth, all
   of them from 149), "find the art" pictures keep burning in more often
   until depth 123, and look-alike pictures take over until 119.
-- **Finds.** From depth 4 one of the cards on offer is now and then a find:
+- **Finds.** From depth 10 one of the cards on offer is now and then a find:
   pick it and answer right for an item. Its question is a bit harder (that
   of 15 to 20 depths deeper, with its shorter clock), and each find has a
-  risk of its own, so taking one is a choice to weigh: the Vein caves in,
-  the Flare Cache gives less time, the Dynamite Cache blows up something
-  you carry. The card shows only the find's name, and the note under the
-  cards says what the item does and what the find risks. Each find's chance rises evenly from its first
-  depth to depth 49 and holds there (the Vein 4% to 11%, the Dynamite
-  Cache 4% to 9%, the Flare Cache 4% to 13%), so from 49 about one offer
-  in three holds a find. From 100 they grow scarcer a little with every
-  depth, down to half their chance at 199 (the Vein to a third, as a ward
+  risk of its own, so taking one is a choice to weigh: the Dynamite Cache
+  blows up something you carry, the Flare Cache gives less time, the Vein
+  caves in. The card shows only the find's name, and the note under the
+  cards says what the item does and what the find risks. The finds turn
+  up one at a time, the strongest last: the Dynamite Cache from depth 10,
+  the Flare Cache from 30 and the Azurite Vein from 40. Each find's chance
+  rises evenly over the 20 depths after its first and then holds (the
+  Dynamite Cache from 8% to 9% by depth 30, the Flare Cache from 4% to 13%
+  by 50, the Vein from 4% to 11% by 60). From 10 to 29 the Dynamite Cache
+  is the only find, so it starts higher than the others to keep finds
+  turning up early. From 60 about one offer in three holds a find. From
+  100 they grow scarcer a little with every depth, down to half their chance at 199 (the Vein to a third, as a ward
   takes a whole loss), and hold there: about one offer in seven.
   - An offer that holds a find rolls once more for a second, of another
     kind and on another card, at half its chance; never a third. Two side
-    by side are rare early on (about 1 offer in 500 at depth 9, 1 in 100
-    at 19) and about 1 offer in 28 from depth 49.
+    by side are rare early on: never above depth 30, where the Flare Cache
+    joins the dynamite, then about 1 offer in 280 at 30 and 1 in 70 at 40,
+    and about 1 offer in 28 from depth 60.
   - A find is never offered for an item nobody could carry more of: alone,
     you; together, anyone standing.
   - A right answer sends sparks in the find's colour from the answer to
     the item's slot (its ward's chamber, or the flare's or dynamite's place
     beside the phial).
-  - An **Azurite Vein** (from depth 4): a right answer within the first half
-    of its clock mines an **Azurite Ward**, which takes your next lost life
-    instead; a slower one a shard (two make a ward; with three wards you
-    hold no shard). A wrong answer or a time-out on a vein caves in, with
-    a sound of its own: it costs two lives, a ward taking each loss first
-    if you hold one (on your last life you simply fall).
-  - A **Flare Cache** (from depth 14) gives a **flare**: time later for time
-    now, as its own question has 3 s less on the clock than its deeper
-    depth's (never under 3 s; on a clock that short no art burns in, as half
-    of it could never be in with 3 s left). When your clock hits 0 a flare
-    burns by itself, with a signal flare's hiss, and gives you 5 s more
-    (once a question). An answer at any time before that keeps it; a guest's
-    answer still on its way when it burns gives it back.
-  - A **Dynamite Cache** (from depth 9) gives **dynamite**. While a
+  - A **Dynamite Cache** (from depth 10) gives **dynamite**. While a
     question is open, a **Skip** button (dynamite's glyph, in its tan)
     stands where Next will after the answer (its place kept, so nothing moves as it comes and
     goes): pressed, a stick blasts the question away for a new one at the
@@ -227,6 +219,19 @@ the same thing for everyone.
     pick strikes (or at the time-out). The lost item bursts on the phial or
     beside it with a small blast of its own, a moment after the life, and
     the reveal says what went ("The blast destroyed your flare.").
+  - A **Flare Cache** (from depth 30) gives a **flare**: time later for time
+    now, as its own question has 3 s less on the clock than its deeper
+    depth's (never under 3 s; on a clock that short no art burns in, as half
+    of it could never be in with 3 s left). When your clock hits 0 a flare
+    burns by itself, with a signal flare's hiss, and gives you 5 s more
+    (once a question). An answer at any time before that keeps it; a guest's
+    answer still on its way when it burns gives it back.
+  - An **Azurite Vein** (from depth 40): a right answer within the first half
+    of its clock mines an **Azurite Ward**, which takes your next lost life
+    instead; a slower one a shard (two make a ward; with three wards you
+    hold no shard). A wrong answer or a time-out on a vein caves in, with
+    a sound of its own: it costs two lives, a ward taking each loss first
+    if you hold one (on your last life you simply fall).
   - Flares and dynamite never work on a find's own question: finds lie
     down dangerous routes, with thicker walls and a darkness nothing can
     hold back, so there is no Skip button and nothing happens at 0. You carry up to three of each item.

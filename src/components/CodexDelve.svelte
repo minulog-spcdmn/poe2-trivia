@@ -121,8 +121,9 @@
   });
 
   /**
-   * One kind's finds, the wards that saved a life, and the flares and
-   * dynamite that went off: the questions dynamite blasted away are counted
+   * One kind's finds, in the order they first turn up in a run (dynamite,
+   * flares, then veins), and the dynamite and flares that went off and the
+   * wards that saved a life: the questions dynamite blasted away are counted
    * by run (the codex logs no answer to them), over the runs the list keeps.
    */
   function findRowsOf(f: FindStats, blasts: number): Row[] {
@@ -130,12 +131,12 @@
     const { azurite: vein, flare: cache, dynamite } = f.finds;
     const missed = (t: typeof vein, how: string): [number, string][] => (t.taken - t.ok ? [[t.taken - t.ok, how]] : []);
     const got = (n: number | undefined, one: string): [number, string][] => (n ? [[n, word(n, one)]] : []);
-    if (vein.taken) out.push({ name: 'Azurite Veins', value: fmt(vein.taken), note: [...got(vein.gained.wards, 'ward'), ...got(vein.gained.shards, 'shard'), ...missed(vein, 'caved in')] });
-    if (cache.taken) out.push({ name: 'Flare Caches', value: fmt(cache.taken), note: [...got(cache.gained.flares, 'flare'), ...missed(cache, 'missed')] });
     if (dynamite.taken) out.push({ name: 'Dynamite Caches', value: fmt(dynamite.taken), note: [...got(dynamite.gained.dynamite, 'stick'), ...missed(dynamite, 'missed')] });
+    if (cache.taken) out.push({ name: 'Flare Caches', value: fmt(cache.taken), note: [...got(cache.gained.flares, 'flare'), ...missed(cache, 'missed')] });
+    if (vein.taken) out.push({ name: 'Azurite Veins', value: fmt(vein.taken), note: [...got(vein.gained.wards, 'ward'), ...got(vein.gained.shards, 'shard'), ...missed(vein, 'caved in')] });
     if (blasts) out.push({ name: 'Dynamite blasts', value: fmt(blasts), note: [[0, 'questions blasted away for new ones']] });
-    if (f.wardsBroke) out.push({ name: 'Lives warded', value: fmt(f.wardsBroke), note: [[0, 'a ward broke in its place']] });
     if (f.flaresBurnt) out.push({ name: 'Flares burnt', value: fmt(f.flaresBurnt), note: [[FLARE_MS / 1000, 's more on the clock each']] });
+    if (f.wardsBroke) out.push({ name: 'Lives warded', value: fmt(f.wardsBroke), note: [[0, 'a ward broke in its place']] });
     return out;
   }
   /** Questions dynamite blasted away in the runs of one kind the list keeps. */

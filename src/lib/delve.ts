@@ -286,28 +286,38 @@ export const SHARDS_PER_WARD = 2;
  */
 export const DYNAMITE_ON = true;
 
-/** The depth by which every find has reached its full chance, which it holds to FIND_FADE_FROM. */
-export const FIND_RAMP_TO = 50;
-/** Past this depth the finds grow scarcer with every depth (FINDS, `late`)... */
+/**
+ * Depths a find's chance takes to climb from its `start` at its own first
+ * depth to its `cap` (FINDS), which it holds to FIND_FADE_FROM: the Dynamite
+ * Cache is at its cap from depth 31 (shown 30), the Flare Cache from 51
+ * (shown 50), the Azurite Vein from 61 (shown 60).
+ */
+export const FIND_RAMP = 20;
+/** Past this depth (shown 99) the finds grow scarcer with every depth (FINDS, `late`)... */
 export const FIND_FADE_FROM = 100;
-/** ...until this one, from where they hold. */
+/** ...until this one (shown 199), from where they hold. */
 export const FIND_FADE_TO = 200;
 
 /**
  * Where each find turns up, and how often: from depth `from` it is on an
- * offer `start` of the time, rising evenly to `cap` at FIND_RAMP_TO and
- * holding there. Fixed by depth, so a depth offers the same chances in every
- * run. One roll per offer against the finds' slices in turn decides whether
- * it holds a find, and a find whose item the player on turn (in co-op:
- * nobody standing) can't carry any more of is never rolled (its slice finds
- * nothing), so it never changes the others' chances. An offer that holds one
- * rolls once more for a second find on another card (see SECOND_FIND).
+ * offer `start` of the time, rising evenly to `cap` over the next FIND_RAMP
+ * depths and holding there. Fixed by depth, so a depth offers the same
+ * chances in every run. One roll per offer against the finds' slices in
+ * turn (in this array's order) decides whether it holds a find, and a find
+ * whose item the player on turn (in co-op: nobody standing) can't carry any
+ * more of is never rolled (its slice finds nothing), so it never changes the
+ * others' chances. An offer that holds one rolls once more for a second find
+ * on another card (see SECOND_FIND). Players see them in the order they
+ * first turn up (FINDS_IN_ORDER).
  *
- * The Azurite Vein comes first and stays the rarer deep down: a ward takes a
- * whole loss, the strongest thing to carry. The Flare Cache comes deepest,
- * where clocks run short and flares get burnt, and so ends up the more
- * common. The Dynamite Cache comes in between, from depth 10, and stays the
- * rarest. Together, one offer in three from depth 50.
+ * They come one at a time, the strongest last. The Dynamite Cache comes
+ * first, from depth 11 (shown 10), and is the only find until the Flare
+ * Cache comes, so it starts at 8% to keep finds turning up early; it climbs
+ * only to 9%, the rarest at its cap. The Flare Cache follows from depth 31 (shown 30), where
+ * clocks run short and flares get burnt, and ends up the most common. The
+ * Azurite Vein comes last, from depth 41 (shown 40): a ward takes a whole
+ * loss, the strongest thing to carry. Together, one offer in three from
+ * depth 61 (shown 60), once the vein has reached its cap.
  *
  * Past depth 100 they grow scarcer, a little with every depth, down to
  * `late` of their cap at depth 200 (FIND_FADE_FROM to FIND_FADE_TO), and
@@ -330,13 +340,16 @@ export const FINDS: {
   /** Things a miss on it blows up from the player's pack (blastVictim), besides the life. */
   blows: number;
 }[] = [
-  { kind: 'azurite', item: 'wards', from: 5, start: 0.04, cap: DYNAMITE_ON ? 0.11 : 0.15, late: 1 / 3, max: DELVE_MAX_WARDS, deeper: 15, losses: 2, shorter: 0, blows: 0 },
-  { kind: 'flare', item: 'flares', from: 15, start: 0.04, cap: DYNAMITE_ON ? 0.13 : 0.18, late: 0.5, max: DELVE_MAX_FLARES, deeper: 20, losses: 1, shorter: 3, blows: 0 },
+  // From depth 41 (shown 40).
+  { kind: 'azurite', item: 'wards', from: 41, start: 0.04, cap: DYNAMITE_ON ? 0.11 : 0.15, late: 1 / 3, max: DELVE_MAX_WARDS, deeper: 15, losses: 2, shorter: 0, blows: 0 },
+  // From depth 31 (shown 30).
+  { kind: 'flare', item: 'flares', from: 31, start: 0.04, cap: DYNAMITE_ON ? 0.13 : 0.18, late: 0.5, max: DELVE_MAX_FLARES, deeper: 20, losses: 1, shorter: 3, blows: 0 },
   {
     kind: 'dynamite',
     item: 'dynamite',
-    from: 10,
-    start: DYNAMITE_ON ? 0.04 : 0,
+    // From depth 11 (shown 10).
+    from: 11,
+    start: DYNAMITE_ON ? 0.08 : 0,
     cap: DYNAMITE_ON ? 0.09 : 0,
     late: 0.5,
     max: DELVE_MAX_DYNAMITE,
@@ -347,6 +360,9 @@ export const FINDS: {
   },
 ];
 
+/** The finds that turn up, in the order they first do (by `from`): how players see them listed. */
+export const FINDS_IN_ORDER = FINDS.filter((f) => f.cap > 0).sort((a, b) => a.from - b.from);
+
 /**
  * A second find beside the first: an offer that holds a find rolls once more,
  * against the other kinds' slices at this share of their chance (a kind the
@@ -354,9 +370,11 @@ export const FINDS: {
  * find on another card. Never a third. Only an offer with a find rolls again,
  * so as many offers hold a find as with one roll; the second roll's chances
  * ramp with the depth's, so two finds side by side are rare early and grow
- * less rare with depth: about 1 offer in 500 at depth 10, 1 in 100 at depth
- * 20 and 1 in 28 from depth 50 (a ninth of those with a find), when the
- * takers have room for everything (tests/delveFinds.test.ts simulates it).
+ * less rare with depth. With the Dynamite Cache alone above depth 31 (shown
+ * 30) there are never two; then about 1 offer in 280 at depth 31, 1 in 70 at
+ * depth 41 (shown 40), as the vein joins, and 1 in 28 from depth 61 (shown
+ * 60; a ninth of those with a find), when the takers have room for
+ * everything (tests/delveFinds.test.ts simulates it).
  */
 export const SECOND_FIND = 0.5;
 
@@ -377,13 +395,13 @@ export function findChance(kind: FindKind, d: number): number {
   const { from, start, cap, late } = findFor(kind);
   const depth = depthOf(d);
   if (depth < from || cap <= 0) return 0;
-  const t = Math.min(1, (depth - from) / (FIND_RAMP_TO - from));
-  const fade = Math.min(1, Math.max(0, (depth - FIND_FADE_FROM) / (FIND_FADE_TO - FIND_FADE_FROM)));
+  const t = FIND_RAMP > 0 ? Math.min(1, (depth - from) / FIND_RAMP) : 1;
+  const fade = FIND_FADE_TO > FIND_FADE_FROM ? Math.min(1, Math.max(0, (depth - FIND_FADE_FROM) / (FIND_FADE_TO - FIND_FADE_FROM))) : depth > FIND_FADE_FROM ? 1 : 0;
   return Math.round((start + (cap - start) * t) * (1 - (1 - late) * fade) * 10_000) / 10_000;
 }
 
-/** The shallowest depth with any find. */
-export const FINDS_FROM = Math.min(...FINDS.filter((f) => f.cap > 0).map((f) => f.from));
+/** The shallowest depth with any find: the Dynamite Cache's, 11 (shown 10). */
+export const FINDS_FROM = FINDS_IN_ORDER[0]?.from ?? Infinity;
 
 /**
  * The shallowest depth whose questions may pick look-alikes by their art: a

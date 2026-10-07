@@ -4,7 +4,7 @@
   import { session } from '../lib/session.svelte';
   import { MAX_PLAYERS, RACE_DEFAULT_TIMER, TIMER_STEPS, difficultyOf, rulesFor, type Difficulty, type GameMode } from '../lib/game';
   import { DIFFICULTY_NAMES, FINDS_LABEL, FINDS_UNSAFE, FIND_RULES, FIND_TEXT, describe } from '../lib/difficultyText';
-  import { FINDS, shownDepth } from '../lib/delve';
+  import { FINDS_IN_ORDER, shownDepth } from '../lib/delve';
   import CustomDifficulty from './CustomDifficulty.svelte';
   import DelveLadder from './DelveLadder.svelte';
   import ItemGlyph from './ItemGlyph.svelte';
@@ -27,9 +27,7 @@
     { id: 'delve', name: 'Delve', beta: true },
   ];
   // The finds that turn up, in the order they first do.
-  const FIND_KINDS = FINDS.filter((f) => f.cap > 0)
-    .sort((a, b) => a.from - b.from)
-    .map((f) => f.kind);
+  const FIND_KINDS = FINDS_IN_ORDER.map((f) => f.kind);
   /** Each find's item, as the game draws it. */
   const FIND_GLYPH = { azurite: 'ward', flare: 'flare', dynamite: 'dynamite' } as const;
   const DIFFS = (Object.entries(DIFFICULTY_NAMES) as [Difficulty, string][]).map(([id, name]) => ({ id, name }));
