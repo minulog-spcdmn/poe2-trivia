@@ -297,6 +297,20 @@ export function veilPace(ms: number, count: number): { gap: number; burn: number
   return { gap: (ms - burn) / (count - 1), burn };
 }
 
+/**
+ * How a veil cut `size` × `size` comes in over `ms` once cut into `count`
+ * patches: at the pace of `size` × `size` of them at the least. The clock is
+ * sized for that many (delve.ts veilSeconds), but cutPatches makes fewer
+ * where the item covers little of its picture; paced by their own count,
+ * their gaps would grow and half the art would come in later. At the
+ * nominal pace, fewer patches only bring it in sooner (and burn out before
+ * `ms`). The host paces the patches by this (media.svelte.ts patchDelays)
+ * and sends each picture's burn with it, so guests follow the same pace.
+ */
+export function veilPaceFor(ms: number, size: number, count: number): { gap: number; burn: number } {
+  return veilPace(ms, Math.max(count, size * size));
+}
+
 /** When a veil's first patch starts burning in, ms after its art goes out (media.svelte.ts patchDelays). */
 export const FIRST_PATCH_MS = 400;
 

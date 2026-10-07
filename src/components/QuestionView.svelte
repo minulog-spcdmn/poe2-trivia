@@ -738,7 +738,8 @@
             timedOut: reveal.timedOut,
             caveIn: !!reveal.caveIn,
             hits: reveal.hits ?? [],
-            left: (id) => livesOf(s, id),
+            // Null for one who has left since (their wrong pick still struck): nothing is said of them.
+            left: (id) => (s.players.some((p) => p.id === id) ? livesOf(s, id) : null),
             nameOf,
             me,
             gain:
@@ -746,7 +747,7 @@
                 ? { kind: reveal.gained, by: gainerId, forged: !!reveal.forged, slow: q.find === 'azurite' && reveal.gained === 'shards' }
                 : undefined,
           })}
-          {@const hits = reveal.hits ?? []}
+          {@const hits = (reveal.hits ?? []).filter((h) => s.players.some((p) => p.id === h.playerId))}
           {#if gainLine}
             <span class="found-glyph" aria-hidden="true"><ItemGlyph kind={gainLine.glyph} /></span>
           {:else if hits.some((h) => h.lives > 0)}

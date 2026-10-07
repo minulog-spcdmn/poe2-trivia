@@ -170,7 +170,9 @@ export const VEIL_LEFT_MS = 3000;
  * with less than VEIL_LEFT_MS left (halfBurnt), so on a short clock deep
  * down the art burns in faster instead. `tiles`: "find the art" pictures,
  * the last of which starts up to half a step late. The engine sets a
- * question's veil.seconds from it, and the host paces the patches by that.
+ * question's veil.seconds from it, and the host paces the patches by that,
+ * at the pace of `size` × `size` of them however few the picture is cut
+ * into (patches.ts veilPaceFor), so this holds for every real count.
  * 0 on a clock too short for even an instant veil to leave VEIL_LEFT_MS (a
  * Flare Cache's shortest, FIND_MIN_TIMER): the engine then shows the art
  * plain.
@@ -426,9 +428,10 @@ export const blowsUp = (kind: FindKind) => findFor(kind).blows > 0;
 
 /**
  * What a Dynamite Cache's blast destroys of a pack `inv`, for a `roll` in
- * [0, 1) (the engine's seeded roll, so every screen agrees): one thing,
- * drawn at random, each ward, flare and stick of dynamite one chance, and a
- * shard half of one, as it is half a ward. A ward drawn goes whole (a shard
+ * [0, 1) (the engine's roll: the host draws it and sends the outcome in
+ * the state, so every screen shows the same loss): one thing, drawn at
+ * random, each ward, flare and stick of dynamite one chance, and a shard
+ * half of one, as it is half a ward. A ward drawn goes whole (a shard
  * held beside it stays); a pack of a shard alone loses the shard. Null for
  * an empty pack.
  */

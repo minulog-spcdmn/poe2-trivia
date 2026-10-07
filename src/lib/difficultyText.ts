@@ -168,7 +168,8 @@ export const FIND_MISS: Record<FindKind, string | null> = Object.fromEntries(
 function riskOf(kind: FindKind): string | null {
   if (cavesIn(kind)) return `a miss costs ${caveInText(kind)}`;
   const { shorter } = findFor(kind);
-  if (shorter) return `you get ${words(shorter)} seconds less to answer`;
+  // Not how much less: the cut is smaller deep down, where the clock can't go under FIND_MIN_TIMER.
+  if (shorter) return 'you get less time to answer';
   if (blowsUp(kind)) return 'a miss also blows up an item you carry';
   return null;
 }
@@ -307,7 +308,9 @@ export interface HitText {
  * darkness took Ash and Brea." Only what the screen doesn't show already: a
  * wrong pick's one life is the phial's to show, and the depth and lives left
  * are on screen; a ward taking it, a cave-in's two and a perishing are said.
- * `left`: each hit player's lives now.
+ * `left`: each hit player's lives now, or null for one who has left the
+ * room since (a wrong pick struck, then gone): nothing is said of them, as
+ * they neither perished nor have a name to say.
  */
 export function coopRevealText(r: {
   depth: number;
@@ -315,20 +318,22 @@ export function coopRevealText(r: {
   timedOut: boolean;
   caveIn: boolean;
   hits: HitText[];
-  left: (id: string) => number;
+  left: (id: string) => number | null;
   nameOf: (id: string) => string;
   me: string | null;
   /** What a find's right answer earned, and who got it (the winner, or a teammate with room for it). */
   gain?: GainText;
 }): string[] {
-  const { hits, nameOf, me } = r;
+  const { nameOf, me } = r;
+  const hits = r.hits.filter((h) => r.left(h.playerId) !== null);
+  const left = (id: string) => r.left(id) ?? 0;
   const list = (ids: string[]) => namesOf(ids, nameOf, me);
   const out: string[] = [];
   if (r.winner) out.push(clearedText(r.winner, r.gain, nameOf, me));
   else out.push(r.timedOut ? "Time's up; nobody found it." : 'Every answer was wrong.');
   const wrong = hits.filter((h) => !h.timedOut).map((h) => h.playerId);
   const late = hits.filter((h) => h.timedOut).map((h) => h.playerId);
-  const perished = hits.filter((h) => h.lives > 0 && r.left(h.playerId) === 0).map((h) => h.playerId);
+  const perished = hits.filter((h) => h.lives > 0 && left(h.playerId) === 0).map((h) => h.playerId);
   // Perishing is said with what caused it when it took exactly those players:
   // "Ash picked wrong and perishes", "The darkness took Ash for good".
   const same = (a: string[], b: string[]) => a.length === b.length && a.every((id) => b.includes(id));
@@ -345,8 +350,8 @@ export function coopRevealText(r: {
   if (r.caveIn && hits.length) out.push(`The vein caved in on ${list(hits.map((h) => h.playerId))}.`);
   // What it did to each of them.
   const warded = hits.filter((h) => h.lives === 0 && h.wards > 0);
-  const both = hits.filter((h) => h.lives > 0 && h.wards > 0 && r.left(h.playerId) > 0);
-  const lost = hits.filter((h) => h.lives > 0 && h.wards === 0 && r.left(h.playerId) > 0);
+  const both = hits.filter((h) => h.lives > 0 && h.wards > 0 && left(h.playerId) > 0);
+  const lost = hits.filter((h) => h.lives > 0 && h.wards === 0 && left(h.playerId) > 0);
   if (warded.length === 1) out.push(wardText(whose(warded[0].playerId, nameOf, me), warded[0].wards));
   else if (warded.length) out.push(`Wards took the hits for ${list(warded.map((h) => h.playerId))}.`);
   for (const h of both) out.push(`${cap(whose(h.playerId, nameOf, me))} ward broke, and a life with it.`);
@@ -355,7 +360,7 @@ export function coopRevealText(r: {
   if (two.length) out.push(`${cap(list(two))} ${verb(two, me, 'loses', 'lose')} two lives${two.length > 1 ? ' each' : ''}.`);
   if (perished.length && !perishSaid) out.push(`${cap(list(perished))} ${verb(perished, me, 'perishes', 'perish')}.`);
   // What a Dynamite Cache's blast destroyed, each pack in turn: "The blast destroyed your flare and Ash's ward."
-  const blown = hits.filter((h) => h.blown && r.left(h.playerId) > 0);
+  const blown = hits.filter((h) => h.blown && left(h.playerId) > 0);
   if (blown.length) {
     const parts = blown.map((h) => `${whose(h.playerId, nameOf, me)} ${ITEM_NAME[h.blown!]}`);
     out.push(`The blast destroyed ${parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}` : parts[0]}.`);

@@ -180,11 +180,12 @@ the same thing for everyone.
     watching it costs nothing.
     The cache itself is unstable: a miss on it (a wrong answer or a
     time-out) costs a life as usual, and then its blast destroys one thing
-    you carry, drawn at random with the run's seeded roll (each ward, flare
-    and stick one chance, a shard half of one, as it is half a ward; a ward
-    drawn goes whole). A ward that takes the life goes first, and the blast
-    draws from what is left. Carrying nothing, or perishing on the miss
-    (which drops the whole pack anyway), it takes nothing more. Together,
+    you carry, drawn at random by the host, whose state tells every screen
+    what went (each ward, flare and stick one chance, a shard half of one,
+    as it is half a ward; a ward drawn goes whole). A ward that takes the
+    life goes first, and the blast draws from what is left. Carrying
+    nothing, or perishing on the miss (which drops the whole pack anyway),
+    it takes nothing more. Together,
     each player who misses loses one thing from their own pack, as their
     pick strikes (or at the time-out). The lost item bursts on the phial or
     beside it with a small blast of its own, a moment after the life, and

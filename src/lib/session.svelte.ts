@@ -39,7 +39,7 @@ import { toasts, type ToastKind, type ToastOptions } from './toasts.svelte';
 import { creatorArrival } from './herald';
 import { RUBY } from './palette';
 import { CREATOR_TITLE } from './site';
-import { FLARE_MS, LOOKALIKES_ASKED_FROM, blastClears, isGroupRun, livesOf } from './delve';
+import { FLARE_MS, LOOKALIKES_ASKED_FROM, blastClears, isGroupRun, livesOf, standingIds } from './delve';
 import { blownText } from './difficultyText';
 import { loadLooks } from './looks';
 import { bestOf, loadRecords, recordLeft, recordRun, runEvent } from './delveRecord';
@@ -1742,13 +1742,17 @@ class Session {
         // What it cost them, their phial shows; a blast's loss is said too.
         if (who && !mine) this.flash(`That answer is out for everyone.${n.blown ? ` ${blownText(n.blown, 'their')}` : ''}`, 'warn', { title: 'Wrong pick', who });
         break;
-      case 'perished':
+      case 'perished': {
+        // Nobody left standing: the run ends next (the notice comes with the
+        // reveal, the end after it), and the end has its own toll (onNewState).
+        const wiped = !standingIds(s).length;
         // The depth is in the header.
-        if (who && !mine) this.flash(n.revivable ? 'A teammate can give them a life.' : 'The rest delve on.', 'warn', { title: 'Perished', who });
-        // The run's end has its own toll (onNewState); before it, your own
-        // perishing goes out as it would, a teammate's from far off.
-        if (s.phase !== 'over') sfx(mine ? 'fallen' : 'fallenFar');
+        const line = wiped ? 'The team has fallen.' : n.revivable ? 'A teammate can give them a life.' : 'The rest delve on.';
+        if (who && !mine) this.flash(line, 'warn', { title: 'Perished', who });
+        // Before the end, your own perishing goes out as it would, a teammate's from far off.
+        if (!wiped && s.phase !== 'over') sfx(mine ? 'fallen' : 'fallenFar');
         break;
+      }
       case 'revived': {
         const giver = player(n.by);
         if (!who || !giver) break;

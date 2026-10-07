@@ -332,6 +332,32 @@ test('at every depth to 300, even under the slowest veil, half the art is in wit
   }
 });
 
+test('however few patches a picture is cut into, half of it is in with 3 s left: whole art and pictures, clocks of 3 to 16 s', async () => {
+  const { FIRST_PATCH_MS, veilPaceFor } = await import('../src/lib/patches.ts');
+  let checked = 0;
+  for (let secs = 3; secs <= 16; secs += 0.5)
+    for (const share of [0.55, 0.7, 0.8])
+      for (let whole = 4; whole <= 9; whole += 0.25)
+        for (const tiles of [false, true]) {
+          const size = tiles ? tileVeilSize(whole) : whole;
+          const ms = veilSeconds(secs, share, size, tiles) * 1000;
+          if (!ms) continue;
+          // cutPatches makes about size × size patches over a whole picture (never more than that, rounded), fewer over a small item.
+          for (let count = 1; count <= Math.round(size * size); count++) {
+            const { gap, burn } = veilPaceFor(ms, size, count);
+            // The last picture starts up to half a step late (session.svelte.ts burnVeil).
+            const late = tiles ? gap / 2 : 0;
+            const halfIn = FIRST_PATCH_MS + late + (count / 2) * gap + burn;
+            const at = `${count} of ${size} × ${size} patches, ${tiles ? 'pictures' : 'whole'}, ${secs} s at ${share}`;
+            assert.ok(secs * 1000 - halfIn >= VEIL_LEFT_MS - 1e-6, `${at}: ${Math.round(secs * 1000 - halfIn)} ms left with half in`);
+            // Never later than the veil's time either: fewer patches burn out sooner.
+            assert.ok((count - 1) * gap + burn <= ms + 1e-6, `${at}: done after ${ms} ms`);
+            checked++;
+          }
+        }
+  assert.ok(checked > 10_000, `${checked} checked`);
+});
+
 test('"find the art" pictures burn in too from depth 25, one percent more of them each depth', () => {
   assert.equal(delveTileVeil(24), 0);
   assert.equal(delveTileVeil(25), 0.01);

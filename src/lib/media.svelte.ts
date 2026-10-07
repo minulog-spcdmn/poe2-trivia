@@ -5,7 +5,7 @@
 // questions only the patches of it that have been uncovered so far.
 
 import { itemImage } from './ui-paths';
-import { FIRST_PATCH_MS, cutPatches, spreadOrder, veilPace, visibleBox } from './patches';
+import { FIRST_PATCH_MS, cutPatches, spreadOrder, veilPaceFor, visibleBox } from './patches';
 import type { MediaMsg } from './protocol';
 import type { Grayscale, Question } from './game';
 
@@ -197,7 +197,7 @@ async function cutVeil(canvas: HTMLCanvasElement, size: number, seconds: number,
   const veil = {
     w: W,
     h: H,
-    burn: Math.round(veilPace(seconds * 1000, cut.length).burn),
+    burn: Math.round(veilPaceFor(seconds * 1000, size, cut.length).burn),
     count: cut.length,
     box: visibleBox(pixels, W, H),
   };
@@ -218,10 +218,11 @@ async function cutVeil(canvas: HTMLCanvasElement, size: number, seconds: number,
 /**
  * When (ms after the question was asked) each of `count` patches appears, by
  * rank: at an even pace, so the reveal burns through the item steadily, the
- * last patch done burning in `seconds` after the first started (veilPace).
+ * last patch done burning in `seconds` after the first started, or sooner
+ * when the picture was cut into fewer patches than its size (veilPaceFor).
  */
 export function patchDelays(q: Question, count: number): number[] {
-  const { gap } = veilPace(q.veil!.seconds * 1000, count);
+  const { gap } = veilPaceFor(q.veil!.seconds * 1000, q.veil!.size, count);
   return Array.from({ length: count }, (_, rank) => FIRST_PATCH_MS + rank * gap);
 }
 

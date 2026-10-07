@@ -10,9 +10,10 @@ const NAMES: Record<string, string> = { a: 'Ash', b: 'Brea', c: 'Cara', me: 'Me'
 const nameOf = (id: string) => NAMES[id];
 const hit = (playerId: string, lives = 1, wards = 0, timedOut = false) => ({ playerId, lives, wards, timedOut });
 
-function says(o: Partial<Parameters<typeof coopRevealText>[0]> & { left?: Record<string, number> }) {
+// `left`: lives now by player, 2 when not given, null for one who has left the room.
+function says(o: Partial<Parameters<typeof coopRevealText>[0]> & { left?: Record<string, number | null> }) {
   const left = o.left ?? {};
-  return coopRevealText({ depth: 12, winner: null, timedOut: false, caveIn: false, hits: [], nameOf, me: 'me', ...o, left: (id) => left[id] ?? 2 }).join(' ');
+  return coopRevealText({ depth: 12, winner: null, timedOut: false, caveIn: false, hits: [], nameOf, me: 'me', ...o, left: (id) => (id in left ? left[id] : 2) }).join(' ');
 }
 
 test('names read you first, then the team as given', () => {
@@ -64,6 +65,15 @@ test('a perishing is said with what caused it, once', () => {
   assert.equal(says({ timedOut: true, hits: [hit('a', 1, 0, true)], left: { a: 0 } }), "Time's up; nobody found it. The darkness took Ash for good.");
 });
 
+test('one who picked wrong and then left the room is neither named nor said to perish', () => {
+  // Their seat is gone, so their lives read 0 and their name '?': nothing is said of them.
+  assert.equal(says({ winner: 'b', hits: [hit('x')], left: { x: null } }), 'Brea cleared it.');
+  assert.equal(says({ winner: 'b', hits: [hit('a'), hit('x')], left: { a: 0, x: null } }), 'Brea cleared it. Ash picked wrong and perishes.');
+  assert.equal(says({ timedOut: true, hits: [hit('x'), hit('me', 1, 0, true)], left: { x: null, me: 1 } }), "Time's up; nobody found it. The darkness took you.");
+  assert.equal(says({ caveIn: true, hits: [hit('x', 2), hit('a', 2)], left: { x: null, a: 1 } }), 'Every answer was wrong. The vein caved in on Ash. Ash loses two lives.');
+  assert.equal(says({ hits: [{ ...hit('x'), blown: 'flares' }], left: { x: null } }), 'Every answer was wrong.');
+});
+
 test("a find's gain is said with who cleared it, or who it went to", () => {
   assert.equal(says({ winner: 'a', gain: { kind: 'flares', by: 'a' } }), 'Ash cleared it and found a flare.');
   assert.equal(says({ winner: 'me', gain: { kind: 'wards', by: 'me' } }), 'You cleared it and mined an Azurite Ward.');
@@ -94,7 +104,7 @@ test('your own wrong answer, while the team answers on', () => {
 });
 
 test("a find's note for the team says what it does for all, and what stays unused", () => {
-  assert.equal(teamFindNote('flare', false), 'It adds five seconds for everyone when time runs out. You get three seconds less to answer.');
+  assert.equal(teamFindNote('flare', false), 'It adds five seconds for everyone when time runs out. You get less time to answer.');
   assert.match(teamFindNote('azurite', true), /\. A miss costs two lives\. Flares and dynamite can't be used on it\.$/);
 });
 

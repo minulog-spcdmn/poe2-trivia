@@ -519,7 +519,7 @@ export const findRight = (kind: FindKind, slow = false) =>
 
 /**
  * A Flare or Dynamite Cache answered wrong. The Flare Cache's question runs on
- * its shorter clock (three seconds less); the Dynamite Cache's blast takes one
+ * its shorter clock (less time); the Dynamite Cache's blast takes one
  * thing the player carries, a flare put in an empty pack first so it has
  * something to take.
  */
