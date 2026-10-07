@@ -958,14 +958,10 @@
   .descent-col {
     display: flex;
     flex-direction: column;
-    --descent-min: min(calc(100cqw * 1.17), 24rem);
   }
   @container (min-width: 400px) {
     .delve-cols {
-      grid-template-columns: 14rem minmax(0, 1fr);
-    }
-    .descent-col {
-      --descent-min: 15.5rem;
+      grid-template-columns: 12.5rem minmax(0, 1fr);
     }
   }
   .together-when {
