@@ -1,12 +1,14 @@
 // Sound effects: layered CC0 recordings (see public/sfx/CREDITS.txt), each
 // layer filtered on its own, all sharing one stone-hall reverb, over a quiet
 // ambience loop (a roaring fire over it during a deathmatch, and in Delve
-// darker and lower the deeper the run, over a rumble). What plays
-// for each moment lives in soundDesign.ts; this file is the mixer, and
-// matches the audition page the design was tuned on.
+// darker and lower the deeper the run, over a rumble, with a bed of its own
+// for each place, cross-fading as the scene turns). What plays for each
+// moment lives in soundDesign.ts; this file is the mixer, and matches the
+// audition page and the ambience mix board the design was tuned on.
 
-import { descent } from './descent.ts';
-import { AMBIENCE, CAVE_IN, DEPTH, FIRE, MIX, MOMENTS, RUMBLE, type Layer } from './soundDesign.ts';
+import { archetypeAt } from './backdrops.ts';
+import { descent, hallTurn, STRATA, strataAt } from './descent.ts';
+import { AMBIENCE, ARCHETYPE_AMBIENCE, CAVE_IN, DEPTH, FIRE, MIX, MOMENTS, RUMBLE, ZONE_AMBIENCE, type Bed, type Layer } from './soundDesign.ts';
 import { readStored, writeStored } from './storage.ts';
 
 export type Sfx =
@@ -151,10 +153,17 @@ function load(file: string) {
       : fetch(new URL(`${import.meta.env.BASE_URL}sfx/${file}.mp3`, document.baseURI))
             .then((r) => r.arrayBuffer())
             .then((data) => ac.decodeAudioData(data));
-    p = decoded.then((buf) => {
-      ready.set(file, buf);
-      return buf;
-    });
+    p = decoded.then(
+      (buf) => {
+        ready.set(file, buf);
+        return buf;
+      },
+      (e: unknown) => {
+        // Not kept: asked for again (a Delve bed, the next depth), it tries again.
+        if (buffers.get(file) === p) buffers.delete(file);
+        throw e;
+      },
+    );
     buffers.set(file, p);
   }
   return p;
@@ -444,8 +453,13 @@ export function sfx(name: Sfx): (() => void) | undefined {
 
 // ---------- ambience ----------
 
-type Loop = typeof AMBIENCE;
+/** A looping sound: AMBIENCE, FIRE, RUMBLE or a layer of a Delve place's bed (which has a rate and a send of its own). */
+type Loop = { file: string; gain: number; lp: number; rate?: number; send?: number };
 type Playing = { src: AudioBufferSourceNode; gain: GainNode; lp: BiquadFilterNode; send: GainNode; stop: () => void };
+
+/** Delve's depth (0 outside it), and how fast (s) the sound follows it: about the backdrop's two seconds a depth. */
+let depth = 0;
+const DEPTH_EASE = 1.5;
 
 /**
  * How fast (time constants in s) each loop fades in and out: the fire swells
@@ -457,12 +471,78 @@ const FADES = new Map<Loop, { up: number; down: number }>([
   [FIRE, { up: 1.5, down: 1 }],
   [RUMBLE, { up: 3, down: 1.5 }],
 ]);
+/**
+ * A Delve bed's layers come and go with the depth, as the scene turns (a
+ * layer that loads late fades in the same way); muted or out of sight they
+ * go as quickly as AMBIENCE.
+ */
+const BED_FADE = { up: DEPTH_EASE, down: DEPTH_EASE };
 const playing = new Map<Loop, Playing>();
 const starting = new Set<Loop>();
 let fire = false;
-/** Delve's depth (0 outside it), and how fast (s) the sound follows it: about the backdrop's two seconds a depth. */
-let depth = 0;
-const DEPTH_EASE = 1.5;
+
+// ---------- Delve's beds ----------
+
+/** Delve: the places whose beds sound at a depth, how much each (0 to 1), and how much of AMBIENCE stays lit. */
+export type Beds = { beds: { place: string; bed: Bed; weight: number }[]; fire: number };
+
+/**
+ * Delve: the place stratum `k` is, by the mix board's names: a zone's for
+ * the first ten ('z0', The Mines, to 'z9'), past them its archetype's ('a0'
+ * to 'a11', ARCHETYPES' index; see archetypeAt).
+ */
+export function placeAt(k: number): string {
+  return k < STRATA.length ? `z${Math.max(0, k)}` : `a${archetypeAt(k)}`;
+}
+
+/** A place's bed (see placeAt): ZONE_AMBIENCE's or ARCHETYPE_AMBIENCE's. */
+export function bedOf(place: string): Bed {
+  return (place[0] === 'z' ? ZONE_AMBIENCE : ARCHETYPE_AMBIENCE)[Number(place.slice(1))];
+}
+
+/**
+ * Delve: whose beds sound at depth `d` and how much, as the mix board has
+ * them. The place the scene is turning from (strataAt) and the one it is
+ * turning into, on the curve of the backdrop's hall (hallTurn), equal power:
+ * cos and sin of its quarter turn, so their squares always add up to 1. A
+ * settled depth is one place alone. `fire` is how much of AMBIENCE's level
+ * stays lit: each place's share of its bed's fire (0 where none has any).
+ * Outside Delve (depth 0) there are no beds and AMBIENCE is lit in full.
+ */
+export function bedsAt(d: number): Beds {
+  if (!(d >= 1)) return { beds: [], fire: 1 };
+  const { stratum, turn } = strataAt(d);
+  const w = (hallTurn(turn) * Math.PI) / 2;
+  const sounding = [
+    { k: stratum - 1, weight: Math.cos(w) },
+    { k: stratum, weight: Math.sin(w) },
+  ]
+    .filter((p) => p.weight > 0.001)
+    .map(({ k, weight }) => {
+      const place = placeAt(k);
+      return { place, bed: bedOf(place), weight };
+    });
+  const lit = sounding.reduce((sum, { bed, weight }) => sum + (bed.fire === null ? 0 : weight * db(bed.fire)), 0);
+  return { beds: sounding, fire: lit };
+}
+
+/** The beds' layers sounding at the current depth, with how much (see bedsAt), and how much of AMBIENCE stays lit there. */
+let beds = new Map<Loop, number>();
+let hearth = 1;
+
+/**
+ * Delve's beds are fetched only as a run nears them (they are about 360 KB
+ * each): those sounding now as they are wanted (updateLoop; one that loads
+ * late joins then, fading in), and the next place's when the page has a
+ * moment to spare, from the first depth of the zone before it. Its turn into
+ * the next begins at the 4th, and is heard from the 6th.
+ */
+function prefetchBeds(b: Bus) {
+  const next = bedOf(placeAt(Math.floor((depth - 1) / 10) + 1));
+  for (const { file } of next.layers) if (!buffers.has(file)) idle(() => bus === b && void load(file).catch(() => {}));
+}
+
+// ---------- the loops ----------
 
 /** Stokes the ambience into a roaring fire for as long as a deathmatch lasts. */
 export function fireAmbience(on: boolean) {
@@ -470,10 +550,17 @@ export function fireAmbience(on: boolean) {
   updateAmbience();
 }
 
-/** Delve: the ambience darkens and lowers with the depth of the run, over a rumble (0: the usual ambience). */
+/**
+ * Delve: the ambience darkens and lowers with the depth of the run, over a
+ * rumble, and each place's bed cross-fades into the next as the scene turns
+ * (0: the usual ambience, no beds).
+ */
 export function depthAmbience(d: number) {
   if (d === depth) return;
   depth = d;
+  const now = bedsAt(d);
+  beds = new Map(now.beds.flatMap(({ bed, weight }) => bed.layers.map((l): [Loop, number] => [l, weight])));
+  hearth = now.fire;
   if (d > 0 && bus) prepareDelve(bus);
   updateAmbience();
   if (!bus) return;
@@ -495,23 +582,28 @@ function prepareDelve(b: Bus) {
 /** The rumble comes in a few depths down. */
 const rumbles = () => descent(depth).deep > 0.12;
 
-/** Each loop plays while sound is on and the tab is visible (the fire only during a deathmatch, the rumble only deep in Delve). */
-const wanted = (l: Loop) =>
-  !muted && document.visibilityState === 'visible' && (l !== FIRE || fire) && (l !== RUMBLE || rumbles());
+/** Sound is on and the tab is visible. */
+const audible = () => !muted && document.visibilityState === 'visible';
+
+/** Each loop plays while audible (the fire only during a deathmatch, the rumble only deep in Delve, a bed only while its place sounds). */
+const wanted = (l: Loop) => audible() && (l !== FIRE || fire) && (l !== RUMBLE || rumbles()) && (FADES.has(l) || beds.has(l));
 
 /** A loop's level, cutoff, speed and reverb send at the current depth. */
 function target(l: Loop) {
-  const { deep, abyss } = descent(depth);
-  if (l === AMBIENCE)
+  if (l === AMBIENCE) {
+    const { deep } = descent(depth);
     return {
-      gain: db(l.gain + DEPTH.gain * deep),
+      // In Delve, as much as its places keep lit.
+      gain: hearth * db(l.gain + DEPTH.gain * deep),
       // Down in octaves, so the highs go evenly rather than all at the end.
       lp: l.lp * Math.pow(DEPTH.lp / l.lp, deep),
       rate: 1 + (DEPTH.rate - 1) * deep,
       send: DEPTH.send * deep,
     };
-  if (l === RUMBLE) return { gain: db(l.gain + RUMBLE.abyss * abyss), lp: l.lp, rate: 1, send: 0.3 };
-  return { gain: db(l.gain), lp: l.lp, rate: 1, send: 0 };
+  }
+  if (l === RUMBLE) return { gain: db(l.gain + RUMBLE.abyss * descent(depth).abyss), lp: l.lp, rate: 1, send: 0.3 };
+  // The fire, or a bed's layer as much as its place sounds.
+  return { gain: (l === FIRE ? 1 : (beds.get(l) ?? 0)) * db(l.gain), lp: l.lp, rate: l.rate ?? 1, send: l.send ?? 0 };
 }
 
 /** Moves a playing loop toward its target (`tc`: time constant in s). */
@@ -525,8 +617,9 @@ function shape(l: Loop, p: Playing, at: number, tc: number) {
 
 /** Starts the loops that should play and fades out the ones that shouldn't. */
 function updateAmbience() {
-  for (const l of FADES.keys()) updateLoop(l);
+  for (const l of new Set([...FADES.keys(), ...playing.keys(), ...beds.keys()])) updateLoop(l);
   if (!wanted(AMBIENCE)) rest();
+  else if (bus && depth > 0) prefetchBeds(bus);
 }
 
 /**
@@ -544,13 +637,15 @@ function rest() {
 }
 
 function updateLoop(l: Loop) {
-  const fade = FADES.get(l)!;
+  const fade = FADES.get(l) ?? BED_FADE;
   if (!wanted(l)) {
     const p = playing.get(l);
     if (!p || !bus) return;
     playing.delete(l);
-    p.gain.gain.setTargetAtTime(0, bus.ac.currentTime, fade.down);
-    setTimeout(p.stop, fade.down * 7000);
+    // A bed left behind fades with the depth; muted or hidden it goes before the context sleeps (rest).
+    const down = FADES.has(l) || audible() ? fade.down : FADES.get(AMBIENCE)!.down;
+    p.gain.gain.setTargetAtTime(0, bus.ac.currentTime, down);
+    setTimeout(p.stop, down * 7000);
     return;
   }
   if (playing.has(l) || starting.has(l)) return;
@@ -593,7 +688,8 @@ function updateLoop(l: Loop) {
       gain.gain.cancelScheduledValues(ac.currentTime);
       gain.gain.setValueAtTime(0, ac.currentTime);
       gain.gain.setTargetAtTime(target(l).gain, ac.currentTime, fade.up);
-      src.start(0, l === RUMBLE ? Math.random() * buf.duration : 0);
+      // The rumble and the beds start anywhere in their loop, so no two runs sound alike.
+      src.start(0, l === AMBIENCE || l === FIRE ? 0 : Math.random() * buf.duration);
       playing.set(l, p);
     })
     .catch(() => {

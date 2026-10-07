@@ -264,7 +264,10 @@ the same thing for everyone.
   It is skipped with reduced motion or effects off.
 - As a question's clock runs out the dark draws the light in and dims the
   scene (never the panels or text), lifting at the reveal or when a flare
-  burns. The ambience sinks with the depth, over a slow rumble. Leaving a
+  burns. The ambience, a hearth fire, sinks with the depth, over a slow
+  rumble. Each zone, and past depth 100 each kind of place, lays a bed of
+  its own under it and keeps as much of the fire as suits it; the beds
+  cross-fade as the scene turns, in step with its light. Leaving a
   run, or rejoining deep down, fades straight to the scene it's going to
   (the surface, say) instead of passing through every zone.
 - A new zone is announced by a gate built over the depth banner, so "Depth
@@ -555,8 +558,11 @@ npm run build      # production build in dist/
 
 Stack: Svelte 5, TypeScript, Vite, PeerJS. Sound effects are layered CC0
 recordings from [Freesound](https://freesound.org) plus a quiet ambience loop
-(about 670 KB in `public/sfx`, see `CREDITS.txt` there), filtered and mixed in
-WebAudio with a generated reverb. `src/lib/soundDesign.ts` sets the layers.
+(about 1.1 MB in `public/sfx`, see `CREDITS.txt` there), filtered and mixed in
+WebAudio with a generated reverb. Delve's beds (about 360 KB each) are only
+fetched as a run nears them: the next place's while the page is idle, from
+the first depth of the zone before it. `src/lib/soundDesign.ts` sets the
+layers and the beds, as tuned on the ambience mix board.
 
 ### Visual effects
 

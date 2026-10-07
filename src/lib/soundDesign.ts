@@ -18,8 +18,11 @@ export const MIX = { volume: 4, warmth: 1 };
  */
 export const FILL_LEAD = 450;
 
-/** A quiet loop under the whole game; lp is a low-pass cutoff (Hz). */
-export const AMBIENCE = { file: 'amb-6', gain: -44, lp: 5011 };
+/**
+ * A quiet loop under the whole game, a hearth fire; lp is a low-pass cutoff
+ * (Hz). In Delve each place keeps as much of it as its bed's `fire` says.
+ */
+export const AMBIENCE = { file: 'amb-game-4', gain: -40, lp: 5011 };
 
 /**
  * A roaring fire that swells up over AMBIENCE for as long as a deathmatch
@@ -41,6 +44,85 @@ export const DEPTH = { lp: 1300, rate: 0.82, gain: 5, send: 0.45 };
  * swell (0 to 1) and `period` how long (s).
  */
 export const RUMBLE = { file: 'rumble', gain: -50, abyss: 7, lp: 140, breath: 0.4, period: 13 };
+
+/**
+ * Delve: one layer of a place's ambience bed, a loop played under the game.
+ * Its level (dB), low-pass cutoff (Hz), playback rate and reverb send.
+ */
+export type BedLayer = { file: string; gain: number; lp: number; rate: number; send: number };
+
+/**
+ * Delve: a place's ambience bed. `fire` is how much of AMBIENCE (dB, over
+ * its gain and DEPTH's) stays lit there, null for none; `layers` play under
+ * it. As the scene turns from one place into the next their beds cross-fade
+ * with its hall (equal power, see bedsAt in lib/sound.ts). As picked on the
+ * ambience mix board, which mixes them just as the game does, then leveled
+ * by loudness (LUFS, each place's whole mix at the depth it settles): moved
+ * toward the lobby's loudness all the way at depth 1, half way by depth 100
+ * and past it, so the deeper places may keep more of their own character.
+ */
+export type Bed = { fire: number | null; layers: BedLayer[] };
+
+/** Delve: each zone's bed, in the zones' order (depths 1 to 10, 11 to 20, ... 91 to 100). */
+export const ZONE_AMBIENCE: readonly Bed[] = [
+  // The Mines
+  { fire: -1.6, layers: [{ file: 'amb-mines-3', gain: -44.6, lp: 2837, rate: 0.98, send: 0.75 }] },
+  // Magma Fissure
+  { fire: -8.7, layers: [{ file: 'amb-magma-3', gain: -40.7, lp: 2252, rate: 0.83, send: 0.2 }] },
+  // Frozen Hollow
+  { fire: null, layers: [{ file: 'amb-frozen-1', gain: -40.6, lp: 9000, rate: 1, send: 0.85 }] },
+  // Fungal Caverns
+  { fire: -11.6, layers: [{ file: 'amb-fungal-1', gain: -41.6, lp: 9000, rate: 1, send: 0.2 }] },
+  // Vaal Outpost
+  { fire: -6.1, layers: [{ file: 'amb-vaal-1', gain: -44.1, lp: 3022, rate: 1, send: 0.8 }] },
+  // Abyssal Depths
+  { fire: null, layers: [{ file: 'amb-abyss-1', gain: -41.9, lp: 9000, rate: 1, send: 0.7 }] },
+  // Petrified Forest
+  { fire: -38.2, layers: [{ file: 'amb-petrified-1', gain: -39.2, lp: 5556, rate: 0.9, send: 0.35 }] },
+  // Sulphur Vents
+  { fire: -5.8, layers: [{ file: 'amb-sulphur-1', gain: -48.8, lp: 20000, rate: 1.05, send: 0.9 }] },
+  // Abyssal City
+  { fire: null, layers: [{ file: 'amb-city-1', gain: -41, lp: 9000, rate: 1, send: 0.2 }] },
+  // Primeval Ruins
+  {
+    fire: -4.5,
+    layers: [
+      { file: 'amb-primeval-2', gain: -44.5, lp: 20000, rate: 0.74, send: 1 },
+      { file: 'amb-primeval-1', gain: -40.5, lp: 300, rate: 0.94, send: 0.75 },
+    ],
+  },
+];
+
+/**
+ * Delve: each endgame archetype's bed past depth 100, in ARCHETYPES' order
+ * (lib/archetypes.ts). Every stratum of an archetype sounds the same.
+ */
+export const ARCHETYPE_AMBIENCE: readonly Bed[] = [
+  // Drowned temple
+  { fire: -13.2, layers: [{ file: 'amb-fungal-4', gain: -43.2, lp: 9000, rate: 1, send: 0.2 }] },
+  // Ember forge
+  { fire: -5.9, layers: [{ file: 'amb-magma-4', gain: -45.9, lp: 9000, rate: 1, send: 0.2 }] },
+  // Void bloom
+  { fire: -13.6, layers: [{ file: 'amb-endgame-3', gain: -43.6, lp: 9000, rate: 1, send: 0.2 }] },
+  // Frozen abyss
+  { fire: null, layers: [{ file: 'amb-frozen-2', gain: -40.3, lp: 2837, rate: 1, send: 1 }] },
+  // Sulphur marsh
+  { fire: -13.2, layers: [{ file: 'amb-sulphur-2', gain: -43.2, lp: 9000, rate: 1, send: 0.2 }] },
+  // Lantern necropolis
+  { fire: -13.5, layers: [{ file: 'amb-endgame-2', gain: -43.5, lp: 9000, rate: 1, send: 0.2 }] },
+  // Sunken garden
+  { fire: -12.1, layers: [{ file: 'amb-fungal-4', gain: -44.1, lp: 4228, rate: 1, send: 0.45 }] },
+  // Blood eclipse
+  { fire: -13.6, layers: [{ file: 'amb-endgame-6', gain: -43.6, lp: 9000, rate: 1, send: 0.2 }] },
+  // Glacial pyre
+  { fire: -5.5, layers: [{ file: 'amb-frozen-2', gain: -45.5, lp: 9000, rate: 1, send: 0.2 }] },
+  // Ashen reliquary
+  { fire: -13.5, layers: [{ file: 'amb-vaal-3', gain: -43.5, lp: 9000, rate: 1, send: 0.2 }] },
+  // Starfall abyss
+  { fire: -13.5, layers: [{ file: 'amb-endgame-1', gain: -43.5, lp: 9000, rate: 1, send: 0.2 }] },
+  // Witchfire grove
+  { fire: -4.9, layers: [{ file: 'amb-endgame-5', gain: -49.9, lp: 9000, rate: 1, send: 0.2 }] },
+];
 
 /**
  * Delve: an Azurite Vein caving in, generated too (lib/sound.ts caveIn): a

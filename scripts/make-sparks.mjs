@@ -1,13 +1,20 @@
 // Builds public/sfx/fill-sparks.mp3, the sparks of a point landing on the
-// scoreboard bar: single crackles cut out of the fire ambience (amb-6), pitched
-// up and scattered across 0.6 s (FILL_SPAN), over a faint sizzle from the same
-// fire. Needs ffmpeg. Run: node scripts/make-sparks.mjs
+// scoreboard bar: single crackles cut out of a fire recording, pitched up and
+// scattered across 0.6 s (FILL_SPAN), over a faint sizzle from the same fire.
+// The fire was the game's old ambience, amb-6.mp3 (felix.blume's "Wood fire
+// crackling near flames", see public/sfx/CREDITS.txt), no longer shipped:
+// it is still in the history (git log -- public/sfx/amb-6.mp3).
+// Needs ffmpeg. Run: node scripts/make-sparks.mjs path/to/amb-6.mp3
 import { execFileSync } from 'node:child_process';
 
 const RATE = 44100;
 const SPAN = 0.6;
 const GRAINS = 18;
-const src = 'public/sfx/amb-6.mp3';
+const src = process.argv[2];
+if (!src) {
+  console.error('Usage: node scripts/make-sparks.mjs path/to/amb-6.mp3');
+  process.exit(1);
+}
 const out = 'public/sfx/fill-sparks.mp3';
 
 const decode = (af) => {
