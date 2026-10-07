@@ -12,6 +12,9 @@ import { readStored, writeStored } from './storage.ts';
 
 /** The lines a run can start with. */
 export const START_LINES: readonly string[] = [
+  // Classics from Wraeclast.
+  'Still sane, exile?',
+  'Stay in the light',
   // The light and the dark.
   'Your light is borrowed',
   'The lamp hungers, exile',
