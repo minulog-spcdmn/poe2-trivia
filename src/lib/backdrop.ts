@@ -472,8 +472,10 @@ void main() {
       vec2 pp = p + vec2(uCityB.w * (i == 0 ? 1.0 : 2.6), uSink * (i == 0 ? 0.3 : 0.6));
       vec2 cell = floor(pp / cs);
       float h = hash(cell + float(i) * 31.0);
+      // Most cells hold no light: test that before the cluster's noise.
+      if (h < 0.84) continue;
       float cluster = vnoise(cell * (i == 0 ? 0.11 : 0.07) + float(i) * 9.0);
-      if (h < 0.84 || cluster < 0.5) continue;
+      if (cluster < 0.5) continue;
       vec2 at = (cell + 0.3 + 0.4 * vec2(hash(cell + 7.0), hash(cell + 13.0))) * cs;
       vec2 d = pp - at;
       float tw = 0.65 + 0.35 * sin(uCityB.w * (0.4 + 1.6 * h) + h * 60.0);
@@ -925,6 +927,14 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   );
   const shadowArrays = [...Object.values(el), ...Object.values(mk)];
   const prev = new Float32Array(shadowArrays.reduce((n, arr) => n + arr.length, 0));
+  // What each of those was last sent to the GPU as, bit for bit (a uniform
+  // keeps its value in the program until it is set again): draw() sends only
+  // the arrays that changed. NaN bits to begin with, so the first draw sends all.
+  const sent = [
+    ...Object.entries(el).map(([k, arr]) => ({ loc: elLoc[k as keyof typeof el], arr })),
+    ...Object.entries(mk).map(([k, arr]) => ({ loc: mkLoc[k], arr })),
+  ].map(({ loc, arr }) => ({ loc, arr, bits: new Uint32Array(arr.buffer, arr.byteOffset, arr.length), last: new Uint32Array(arr.length).fill(0x7fc00001) }));
+  let sentCount = -1;
   const lightA = new Float32Array(MAX_LIGHTS * 4);
   const lightC = new Float32Array(MAX_LIGHTS * 4);
   const mood = new Float32Array(4);
@@ -1070,11 +1080,22 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     // Deep down the stratum's uneven dark takes over from the vignette, so
     // its ellipse never shows.
     gl!.uniform2f(uVignette, 1 - 0.06 * vignette, (1 + 0.07 * vignette) * (1 - 0.6 * look.dark));
-    for (const [k, arr] of Object.entries(el)) gl!.uniform4fv(elLoc[k as keyof typeof el], arr);
+    // The UI's shadows and fills: only the arrays whose bits changed since they were last sent.
+    for (const { loc, arr, bits, last } of sent) {
+      let same = true;
+      for (let i = 0; i < bits.length; i++) {
+        if (bits[i] !== last[i]) {
+          same = false;
+          break;
+        }
+      }
+      if (same) continue;
+      gl!.uniform4fv(loc, arr);
+      last.set(bits);
+    }
     let count = 0;
     for (let i = 0; i < maxElements; i++) if (el.b[i * 4 + 3] > 0) count = i + 1;
-    gl!.uniform1i(uElCount, count);
-    for (const [k, arr] of Object.entries(mk)) gl!.uniform4fv(mkLoc[k], arr);
+    if (count !== sentCount) gl!.uniform1i(uElCount, (sentCount = count));
     gl!.uniform4fv(uLightA, lightA);
     gl!.uniform4fv(uLightC, lightC);
     gl!.uniform4fv(uMood, mood);

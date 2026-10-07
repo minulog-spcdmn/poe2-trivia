@@ -199,6 +199,13 @@
         ctx.restore();
       }
       if (t < 200 || parts.length) raf = requestAnimationFrame(tick);
+      else {
+        // Over and cleared: let the full-screen bitmap go. The canvas keeps
+        // its CSS size, and w and h stay, so resize() only makes a new one
+        // if the canvas really changes size.
+        canvas.width = 0;
+        canvas.height = 0;
+      }
     };
     raf = requestAnimationFrame(tick);
     return () => {

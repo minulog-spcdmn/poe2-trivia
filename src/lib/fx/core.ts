@@ -486,6 +486,13 @@ function frame(nowMs: number) {
 }
 
 let frameNo = 0;
+/**
+ * The followed elements' own opacities, read once per simulate() pass: shapes
+ * on the same element or on siblings share their ancestors' reads. Nothing in
+ * the pass writes an opacity (the shapes' update callbacks only read the DOM;
+ * a callback that changed an element's opacity would have to clear this).
+ */
+const opacities = new Map<Element, number>();
 
 /** Counts the frames effects are updated in, so values measured once per frame can be shared. */
 export function currentFrame() {
@@ -512,6 +519,7 @@ function simulate(dt: number, nowMs: number, render: boolean): boolean {
   // Soft shapes are written first; thin-line shapes (sigils, orbits) last, and the
   // renderer draws those at full resolution so their strokes stay crisp.
   const visible: [LiveShape, number][] = [];
+  opacities.clear();
   shapes = shapes.filter((s) => {
     s.age += dt;
     if (s.age < 0) return true;
@@ -525,7 +533,7 @@ function simulate(dt: number, nowMs: number, render: boolean): boolean {
       // where it was.
       if (s.at.isConnected) {
         s.box = boxOf(s.at);
-        if (s.followOpacity) s.opacity = opacityOf(s.at);
+        if (s.followOpacity) s.opacity = opacityOf(s.at, opacities);
       } else if (!s.stopped) {
         s.stopped = true;
         s.fade = s.fadeTotal = 0.2;
@@ -536,6 +544,8 @@ function simulate(dt: number, nowMs: number, render: boolean): boolean {
     if (s.f.k > 0) visible.push([s, t]);
     return true;
   });
+  // (Let go of the elements: they may leave the page before the next pass.)
+  opacities.clear();
   let nShapes = 0;
   let nCrisp = 0;
   let shapesCalm = true;

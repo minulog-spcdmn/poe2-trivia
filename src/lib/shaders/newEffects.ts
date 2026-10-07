@@ -96,7 +96,13 @@ vec3 fx_sporeLayer(vec2 p, vec2 pp, vec2 turn, float cell, float seed, vec2 size
     // pulse's phase), g (its path's rates, when it kindles, its path's
     // phase), e (its size, its colour, its pulse's rate, a second phase).
     vec4 h = fx_hash4(c + seed);
+    // Too far away even at its path's furthest (|path| is at most sqrt(2)),
+    // so it would fail dc > 0.68 below: skip it before the path's sines.
+    if (length(c + 0.5 + 0.36 * (h.yz - 0.5) - u) > 0.68 + 1.4143 * wander + 0.05) continue;
     vec4 g = fract(h.wxzy * 11.13 + h.zwyx * 3.71);
+    // Not yet kindled: w below would be +0.
+    float kindled = smoothstep(0.0, 0.2, 1.2 * arrive - g.z);
+    if (kindled <= 0.0) continue;
     vec4 e = fract(g.yzwx * 7.31 + h.yzwx * 2.17);
     // Its lazy path: two slow sines across and two down, each one to four
     // minutes round, at a rate and a phase of its own.
@@ -108,7 +114,7 @@ vec3 fx_sporeLayer(vec2 p, vec2 pp, vec2 turn, float cell, float seed, vec2 size
     // Where it is on the screen, for how thick the spores are there: they
     // thin out smoothly as one drifts toward the middle, and fade there.
     vec2 at = (p + cell * vec2(d.x * turn.x - d.y * turn.y, d.x * turn.y + d.y * turn.x)) / vec2(W, H);
-    float w = smoothstep(h.x, h.x + 0.15, 0.85 * fx_sporeBed(at)) * smoothstep(0.0, 0.2, 1.2 * arrive - g.z);
+    float w = smoothstep(h.x, h.x + 0.15, 0.85 * fx_sporeBed(at)) * kindled;
     if (w <= 0.0) continue;
     // The disc: a little brighter toward its edge, a faint bright rim just
     // inside it, then a soft fall to nothing by 1.08 radii, and a halo of
@@ -154,18 +160,21 @@ vec3 fx_spores(vec2 p, vec2 q, vec2 xy, float S, float W, float H, float tm, flo
                                   0.12, clamp(strength / 0.6, 0.0, 1.0), tm, W, H, c0, c1, c2, 0.75 * vary);
   }
   // Middle: smaller, softer discs.
+  // A depth not yet kindled (arrive 0) adds nothing: it is skipped.
   float cm = 0.13 * S;
-  if (calm < 0.68 * cm) {
+  float am = clamp((strength - 0.2) / 0.6, 0.0, 1.0);
+  if (calm < 0.68 * cm && am > 0.0) {
     vec2 pp = p + vec2(0.0, 0.6 * sinkPx) + 0.6 * sway - vec2(0.0013, -0.004) * S * tm;
     light += 0.085 * fx_sporeLayer(p, pp, vec2(0.66, -0.751), cm, 53.0, vec2(0.12, 0.22), 5.0, vec4(0.4, 0.72, 0.16, 0.14), 0.12,
-                                   0.14, clamp((strength - 0.2) / 0.6, 0.0, 1.0), tm, W, H, c0, c1, c2, vary);
+                                   0.14, am, tm, W, H, c0, c1, c2, vary);
   }
   // Near: large, faint, out of focus, the rim brighter.
   float cn = 0.3 * S;
-  if (calm < 0.68 * cn) {
+  float an = clamp((strength - 0.4) / 0.6, 0.0, 1.0);
+  if (calm < 0.68 * cn && an > 0.0) {
     vec2 pp = p + vec2(0.0, sinkPx) + sway - vec2(0.0027, -0.0059) * S * tm;
     light += 0.055 * fx_sporeLayer(p, pp, vec2(0.852, 0.523), cn, 17.0, vec2(0.17, 0.27), 12.0, vec4(0.66, 0.8, 0.35, 0.1), 0.3,
-                                   0.14, clamp((strength - 0.4) / 0.6, 0.0, 1.0), tm, W, H, c0, c1, c2, vary);
+                                   0.14, an, tm, W, H, c0, c1, c2, vary);
   }
   // The glow of the unseen spores, low and along the walls, thickening and
   // thinning as the air moves.

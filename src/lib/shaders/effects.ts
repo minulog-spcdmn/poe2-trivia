@@ -88,8 +88,11 @@ vec3 env_lamps(vec3 col, vec2 p, vec2 q, vec2 xy, float S, float W, float H, flo
   for (int i = 0; i < 4; i++) {
     float fi = float(i);
     vec2 at = vec2(i < 2 ? 0.05 + 0.06 * fi : 0.87 + 0.06 * (fi - 2.0), 0.3 + 0.45 * fract(fi * 0.618 + 0.1)) * vec2(W, H);
+    // A lamp not yet kindled adds nothing (its gutter is +0): skip it.
+    float on = smoothstep(0.2 * fi, 0.2 * fi + 0.4, e);
+    if (on <= 0.0) continue;
     vec2 d = (p - at) / S;
-    float gutter = (0.7 + 0.3 * vnoise(vec2(tm * 2.6, fi * 7.0))) * smoothstep(0.2 * fi, 0.2 * fi + 0.4, e);
+    float gutter = (0.7 + 0.3 * vnoise(vec2(tm * 2.6, fi * 7.0))) * on;
     float r = length(d);
     lamps += gutter * gauss(r / (0.16 * (0.7 + 0.6 * vnoise(d * 5.0 + fi * 3.1))));
     heart += gutter * gauss(r / 0.05);
@@ -129,7 +132,6 @@ vec3 env_magma(vec3 col, vec2 p, vec2 q, vec2 xy, float S, float W, float H, flo
   m += 0.4 * vec2(vnoise(m * 0.7 + 4.0), vnoise(m * 0.7 - 2.0));
   m.x += 0.04 * (vnoise(vec2(q.x * 9.0, q.y * 6.0 + ft * 1.4)) - 0.5);
   float n1 = fbm(m);
-  float n2 = fbm(m * 1.9 + 7.7);
   // How thick the crack runs here: thick stretches and thin ones along it.
   float thick = smoothstep(0.2, 0.8, vnoise(m * 0.55 + 13.0));
   // As it comes in (its first 0.3 of strength) the cracks open from
@@ -140,7 +142,11 @@ vec3 env_magma(vec3 col, vec2 p, vec2 q, vec2 xy, float S, float W, float H, flo
   float open = max(0.001, (0.35 + 0.65 * e) * rise * (1.0 - 0.45 * cool * (1.0 - 0.5 * thick)));
   float d1 = abs(n1 - 0.5);
   float k1 = clamp(1.0 - d1 * 9.0 / open, 0.0, 1.0);
-  float k2 = clamp(1.0 - abs(n2 - 0.5) * 12.0 / open, 0.0, 1.0) * smoothstep(0.15, 0.0, d1) * e;
+  // The second crack only shows near the first: its noise is skipped where
+  // its weight is +0 (k2 would be +0 anyway).
+  float near2 = smoothstep(0.15, 0.0, d1);
+  float k2 = 0.0;
+  if (near2 > 0.0) k2 = clamp(1.0 - abs(fbm(m * 1.9 + 7.7) - 0.5) * 12.0 / open, 0.0, 1.0) * near2 * e;
   float crack = k1 * k1 * k1 + 0.8 * k2 * k2 * k2;
   float low = 0.25 + 0.75 * smoothstep(0.1, 1.0, xy.y) + 0.3 * gSide;
   float flow = 0.35 + 0.65 * vnoise(vec2(m.x * 1.2, m.y * 1.6 + ft * 0.4));
@@ -155,7 +161,9 @@ vec3 env_magma(vec3 col, vec2 p, vec2 q, vec2 xy, float S, float W, float H, flo
   // How hot what is still molten burns: along the stops from white heat,
   // further toward the red (and past it, dark) the cooler; and its light,
   // dimmed with the cooling, as magmaHeat has it.
-  float w = vary * envDrift(q, ft, 2.0);
+  // Without variation (vary 0) the drift adds nothing: skip its noise.
+  float w = 0.0;
+  if (vary != 0.0) w = vary * envDrift(q, ft, 2.0);
   float t = 1.05 * cool + w;
   float dull = 1.0 - smoothstep(1.0, 1.5, t + 0.25);
   float glowK = sqrt(max(0.0, 1.0 - cool)) * molten * dull;
@@ -295,9 +303,13 @@ vec3 env_void(vec3 col, vec2 p, vec2 q, vec2 xy, float S, float W, float H, floa
     float eye = r2 / (r2 + 0.007);
     float a = (i == 0 ? 1.0 : -1.0) * atan(d.y, d.x) + 2.2 * log(r + 0.05) - tm * 0.1;
     float arm = vnoise(vec2(cos(a), sin(a)) * 1.5 * eye + vec2(r * 4.0, float(i) * 5.0));
-    float torn = smoothstep(0.3, 0.7, fbm(q * 4.0 + vec2(tm * 0.03, float(i) * 3.0)));
+    float sa = smoothstep(0.4, 0.8, arm);
     float reach = exp(-r2 / size);
-    v += smoothstep(0.4, 0.8, arm) * torn * reach * eye;
+    // Off the arm (sa +0) the eddy adds +0 to v: its tearing is skipped.
+    if (sa > 0.0) {
+      float torn = smoothstep(0.3, 0.7, fbm(q * 4.0 + vec2(tm * 0.03, float(i) * 3.0)));
+      v += sa * torn * reach * eye;
+    }
     near += reach;
   }
   float w = vary * envDrift(q, tm, 5.0);
@@ -314,9 +326,6 @@ vec3 env_void(vec3 col, vec2 p, vec2 q, vec2 xy, float S, float W, float H, floa
 // trunks loom out of it after; going, they fade back into it.
 vec3 env_mist(vec3 col, vec2 p, vec2 q, vec2 xy, float S, float W, float H, float tm, float sink, float e,
               vec3 c0, vec3 c1, vec3 c2, float vary) {
-  float tx = q.x * 4.5 + 0.5 * vnoise(vec2(q.x * 2.0, q.y * 1.4));
-  float trunks = smoothstep(0.56, 0.78, vnoise(vec2(tx, 3.0))) * smoothstep(-0.3, 0.5, xy.y);
-  trunks = max(trunks, 0.6 * smoothstep(0.6, 0.82, vnoise(vec2(tx * 2.3 + 7.0, 5.0))) * smoothstep(-0.1, 0.6, xy.y));
   float mist[3];
   for (int i = 0; i < 3; i++) {
     float fi = float(i);
@@ -329,7 +338,14 @@ vec3 env_mist(vec3 col, vec2 p, vec2 q, vec2 xy, float S, float W, float H, floa
   vec3 nearer = envTone(c0, c1, c2, 0.3 + w) * uLight;
   float thin = e * e * 0.09 * (1.0 - 0.5 * gDark);
   col = mix(col, far, thin * (0.15 + 0.85 * min(1.0, mist[0])));
-  col = mix(col, envTone(c0, c1, c2, 0.5 + 0.5 * w) * 0.11 * uLight, smoothstep(0.45, 1.0, e) * 0.85 * trunks);
+  // The trunks only loom out of the fog past 0.45 of its strength; below
+  // that their mix is by +0, so they are skipped.
+  if (smoothstep(0.45, 1.0, e) > 0.0) {
+    float tx = q.x * 4.5 + 0.5 * vnoise(vec2(q.x * 2.0, q.y * 1.4));
+    float trunks = smoothstep(0.56, 0.78, vnoise(vec2(tx, 3.0))) * smoothstep(-0.3, 0.5, xy.y);
+    trunks = max(trunks, 0.6 * smoothstep(0.6, 0.82, vnoise(vec2(tx * 2.3 + 7.0, 5.0))) * smoothstep(-0.1, 0.6, xy.y));
+    col = mix(col, envTone(c0, c1, c2, 0.5 + 0.5 * w) * 0.11 * uLight, smoothstep(0.45, 1.0, e) * 0.85 * trunks);
+  }
   return mix(col, nearer, thin * min(1.0, mist[1] + mist[2]));
 }
 
@@ -342,8 +358,12 @@ vec3 env_plumes(vec3 col, vec2 p, vec2 q, vec2 xy, float S, float W, float H, fl
                 vec3 c0, vec3 c1, vec3 c2, float vary) {
   float top = 0.35 + 0.9 * e;
   float up = 1.0 - xy.y;
+  // Above the plumes' reach (billow lowers it by 0.075 at most) and away
+  // from the vents the plume is +0, which leaves col as it is.
+  if (up - 0.08 > top) return col;
   float xc = (p.x - 0.5 * W) / S;
   float vents = smoothstep(0.5, 0.78, vnoise(vec2(xc * 3.0 / (0.6 + 1.0 * up) + 10.0, 2.0)));
+  if (vents <= 0.0) return col;
   vec2 bq = vec2(xc * 4.5, q.y * 1.8 + tm * 0.16);
   float billow = fbm(bq + 0.6 * vec2(vnoise(bq * 1.3 + vec2(0.0, tm * 0.1)), 0.0));
   float plume = vents * smoothstep(0.35, 0.72, billow) * (1.0 - smoothstep(0.15, 1.25, up)) * (1.0 - smoothstep(top - 0.4, top, up + 0.15 * (billow - 0.5)));
@@ -375,10 +395,14 @@ vec3 env_city(vec3 col, vec2 p, vec2 q, vec2 xy, float S, float W, float H, floa
 // as it dies, its light growing and falling steadily with it either way.
 vec3 env_heat(vec3 col, vec2 p, vec2 q, vec2 xy, float S, float W, float H, float tm, float sink, float e,
               vec3 c0, vec3 c1, vec3 c2, float vary) {
+  // Where no fire can reach (rise is at most y + 0.14 + 0.33 * gSide) and
+  // where it is cold (hot +0), col comes back as it is.
+  if (xy.y + 0.14 + 0.33 * gSide - 0.12 * (1.0 - e) < 0.65) return col;
   vec2 hq = vec2(q.x * 3.0, q.y * 2.0 + tm * 0.5);
   float haze = fbm(hq + 0.6 * vec2(vnoise(hq * 1.7 + tm * 0.2), 0.0));
   float rise = xy.y + 0.28 * (haze - 0.5) + 0.22 * gSide * (0.5 + haze);
   float hot = smoothstep(0.66, 1.3, rise - 0.12 * (1.0 - e));
+  if (hot <= 0.0) return col;
   float k = sqrt(e);
   float w = vary * envDrift(q, tm, 9.0);
   vec3 flame = envTone(c0, c1, c2, 0.95 - 0.55 * hot + w);

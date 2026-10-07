@@ -5,6 +5,7 @@ import type { AtRule, Node, Rule } from 'postcss';
 import { defineConfig, loadEnv, type Plugin } from 'vite';
 import { backdropsErrors, formatBackdrops, type Backdrops } from './src/lib/backdropData.ts';
 import { PROFILE_NAMES } from './src/lib/emberProfiles.ts';
+import { glslMinify } from './glslMinify.ts';
 
 /**
  * Content Security Policy for the production build: the page may only run its
@@ -179,7 +180,7 @@ export default defineConfig(({ mode }) => {
   return {
     // Relative base so the build works on any GitHub Pages sub-path.
     base: './',
-    plugins: [svelte(), csp(env), betaPages(env), preloadFonts(), backdropSave()],
+    plugins: [svelte(), glslMinify(), csp(env), betaPages(env), preloadFonts(), backdropSave()],
     css: { postcss: { plugins: [hoverOnlyWhereHoverable] } },
     build: {
       rollupOptions: {
