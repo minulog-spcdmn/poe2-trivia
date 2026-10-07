@@ -314,7 +314,7 @@ export function inventoryChanges(prev: GameState | null, next: GameState): { pla
  * phial, sounds and effects: alone, at the reveal of a miss; together, with
  * each wrong pick as it comes in, and the time-out's at the reveal. Nothing
  * for a question set aside (what it took is given back). `prev` needs only
- * its phase and its question's askedAt and struck.
+ * its phase, its turnCount and its question's askedAt and struck.
  */
 export function itemsBlown(prev: GameState | null, next: GameState): { playerId: string; item: ItemKind }[] {
   if (!prev?.delve || !next.delve || prev.delve.startedAt !== next.delve.startedAt || setAside(prev, next)) return [];

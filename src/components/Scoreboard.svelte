@@ -200,6 +200,8 @@
   const invSnapshot = (st: GameState) =>
     ({
       phase: st.phase,
+      // setAside (lib/delveSession.ts) tells a set-aside question by its turn.
+      turnCount: st.turnCount,
       players: st.players.map((p) => ({ id: p.id })),
       question: st.question && { askedAt: st.question.askedAt, struck: [...(st.question.struck ?? [])] },
       delve: st.delve && { startedAt: st.delve.startedAt, inventory: Object.fromEntries(Object.entries(st.delve.inventory ?? {}).map(([id, inv]) => [id, { ...inv }])) },
@@ -723,7 +725,7 @@
           <!-- Hidden from screen readers: the phial under the name (also in the entry) says the same. -->
           <span class="phial-side" aria-hidden="true"><Phial lives={shownLives} draining={hit[p.id] ?? giving[p.id] ?? -1} filling={inflow[p.id] ?? -1} surge={surge[p.id] ?? 0} vertical {inv} {moment} guard={guard[p.id] ?? null} /></span>
           <!-- And there, the flares and dynamite they carry, on the avatar's other corner. -->
-          {#if fell === null && inv && (inv.flares > 0 || inv.dynamite > 0 || moment?.kind === 'burn' || moment?.kind === 'blast' || expect)}
+          {#if fell === null && inv && (inv.flares > 0 || inv.dynamite > 0 || moment?.kind === 'burn' || moment?.kind === 'blast' || (moment?.kind === 'blown' && (moment.item === 'flares' || moment.item === 'dynamite')) || expect)}
             <span class="side-counts"><Inventory {inv} {moment} {expect} /></span>
           {/if}
         {:else}
@@ -967,8 +969,9 @@
       scale: 1.035;
     }
   }
-  /* The avatar stays above a ward's barrier too, whose tip reaches toward it. */
-  li > :global(.avatar) {
+  /* While a ward's barrier shows, the avatar stays above it, whose tip reaches
+     toward it; only then, so at rest the badges on its corners stay on top. */
+  li.warded > :global(.avatar) {
     position: relative;
     z-index: 1;
   }
