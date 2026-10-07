@@ -108,6 +108,10 @@
   // The notes: a few words each at about the depth they're about, nudged
   // apart where they would touch (the deepest's number never moves).
   const LINE = 10.5;
+  /** How far (px) the italic words of a note sit above its depths' baseline: EB Garamond's italic reads low beside Cinzel's lining figures. */
+  const RISE = 0.75;
+  /** How far (px) a note's bullet drops, onto the middle of its words. */
+  const DOT_DROP = 1.05;
   const GAP = 11.5;
   const LIVES = ['no', 'one', 'two', 'three', 'four', 'five'][DELVE_LIVES] ?? String(DELVE_LIVES);
   /** A note: its key (a word in italic, a depth in Cinzel), its few words (a line each), and the `y` it belongs at. */
@@ -211,13 +215,14 @@
     {#each notes as n (n.id)}
       <g class="note" class:best={n.best} style:--d="{n.best ? 1.7 : (0.45 + (n.y / H) * 0.9).toFixed(2)}s">
         <path class="pip" class:lit={n.best} d="M{PIP_X - 1.6} {f(n.y)}l1.6 -1.6l1.6 1.6l-1.6 1.6z" />
-        <text x={NOTE_X} y={n.y}>
+        <!-- The italic words ride RISE above the Cinzel depths' baseline, where they line up by eye. -->
+        <text x={NOTE_X} y={n.y - RISE}>
           {#if n.word}<tspan class="key">{n.word}</tspan>{/if}
-          {#if n.num}<tspan class="num">{n.word ? ' ' : ''}{n.num}</tspan>{/if}
-          {#if n.lines.length}<tspan class="dot" dy="0.1em">{' • '}</tspan><tspan class="say" dy="-0.1em">{n.lines[0]}</tspan>{/if}
+          {#if n.num}<tspan class="num" dy={RISE}>{n.word ? ' ' : ''}{n.num}</tspan>{/if}
+          {#if n.lines.length}<tspan class="dot" dy={(n.num ? -RISE : 0) + DOT_DROP}>{' • '}</tspan><tspan class="say" dy={-DOT_DROP}>{n.lines[0]}</tspan>{/if}
         </text>
         {#each n.lines.slice(1) as l, i (i)}
-          <text class="say" x={NOTE_X} y={n.y + (i + 1) * LINE}>{l}</text>
+          <text class="say" x={NOTE_X} y={n.y - RISE + (i + 1) * LINE}>{l}</text>
         {/each}
       </g>
     {/each}
@@ -334,7 +339,7 @@
     font-style: italic;
     fill: var(--gold);
   }
-  /* The bullet sits high in the type's x-height; it is set 0.1em lower (dy), the words after back on the line. */
+  /* The bullet sits high in the type's x-height: it is set DOT_DROP lower (dy), the words after back on the line. */
   .dot {
     fill: var(--gold-lo);
   }
