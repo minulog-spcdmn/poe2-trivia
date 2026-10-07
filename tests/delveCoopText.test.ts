@@ -74,9 +74,9 @@ test('your own wrong answer, while the team answers on', () => {
   assert.equal(coopMissText({ lives: 1, wards: 0 }, 0, false), 'You perished; your team can still clear it.');
 });
 
-test("a find's note for the team says who takes it, and what stays unused", () => {
-  assert.equal(teamFindNote('flare', false), 'The first right answer takes it: five more seconds for everyone when the time runs out.');
-  assert.match(teamFindNote('azurite', true), /A miss costs two lives\. Flares and dynamite stay unused on it\.$/);
+test("a find's note for the team says what it does for all, and what stays unused", () => {
+  assert.equal(teamFindNote('flare', false), 'Five more seconds for all when time runs out.');
+  assert.match(teamFindNote('azurite', true), /; a miss costs two lives\. Flares and dynamite stay unused on it\.$/);
 });
 
 test('the end screen: lives lost at a cave-in counted once, and what each delver gave', () => {

@@ -3,10 +3,11 @@
   import { fly, scale } from 'svelte/transition';
   import { session } from '../lib/session.svelte';
   import { MAX_PLAYERS, RACE_DEFAULT_TIMER, TIMER_STEPS, difficultyOf, rulesFor, type Difficulty, type GameMode } from '../lib/game';
-  import { DIFFICULTY_NAMES, FINDS_INTRO, FINDS_LABEL, FIND_GIVES, FIND_TEXT, describe, lockoutText } from '../lib/difficultyText';
+  import { DIFFICULTY_NAMES, FINDS_INTRO, FINDS_LABEL, FIND_RULES, FIND_TEXT, describe } from '../lib/difficultyText';
   import { FINDS, delveLockout } from '../lib/delve';
   import CustomDifficulty from './CustomDifficulty.svelte';
   import DelveLadder from './DelveLadder.svelte';
+  import ItemGlyph from './ItemGlyph.svelte';
   import ModeIcon from './ModeIcon.svelte';
   import { bestOf, loadRecords } from '../lib/delveRecord';
   import { MAX_NAME, isHeldName, nameHeld, nameTooShort } from '../lib/names';
@@ -29,6 +30,8 @@
   const FIND_KINDS = FINDS.filter((f) => f.cap > 0)
     .sort((a, b) => a.from - b.from)
     .map((f) => f.kind);
+  /** Each find's item, as the game draws it. */
+  const FIND_GLYPH = { azurite: 'ward', flare: 'flare', dynamite: 'dynamite' } as const;
   const DIFFS = (Object.entries(DIFFICULTY_NAMES) as [Difficulty, string][]).map(([id, name]) => ({ id, name }));
 
   const s = $derived(session.state!);
@@ -153,6 +156,7 @@
   const bestAlone = bestOf(records, true)?.depth ?? null;
   const bestTogether = bestOf(records, false)?.depth ?? null;
   const deepest = $derived(s.players.length < 2 ? bestAlone : local ? null : bestTogether);
+  const deepestLabel = $derived(s.players.length < 2 ? 'Your deepest alone' : 'Your deepest together');
 
   function setLocked(v: boolean) {
     session.dispatch({ type: 'settings', settings: { locked: v } });
@@ -347,17 +351,14 @@
                 <p>Race is online only: everyone answers on their own device. Host a room to race.</p>
               {:else if delve}
                 <!-- Several on one device can't delve; the line under Begin says what to do instead. -->
-                <p>
-                  {together ? 'Three lives each, one team, a depth deeper each question.' : 'Three lives, a depth deeper each question.'} No settings, so a depth
-                  is the same for all.
-                </p>
+                <p>{together ? 'How deep can your team go, on three lives each?' : 'How deep can you go on three lives?'} Same rules for everyone.</p>
                 {#if deepest}
-                  <p class="deepest">{s.players.length < 2 ? 'Your deepest alone' : 'Your deepest together'} <b>{deepest}</b></p>
+                  <p class="deepest">{deepestLabel} <b>{deepest}</b></p>
                 {/if}
               {:else if race}
-                <p>Everyone answers at once. Fastest correct answer +1, wrong answer −1.</p>
+                <p>Same question for everyone at once; the fastest right answer scores. Online only.</p>
               {:else}
-                <p>Pick a category, answer alone. Wrong answers score nothing.</p>
+                <p>Take turns picking a category and naming the item. Online or on one device.</p>
               {/if}
             </div>
           {/key}
@@ -370,16 +371,18 @@
           <div class="delve-cols">
             <div>
               <span class="label">The descent</span>
-              <DelveLadder />
+              <DelveLadder {deepest} label={deepestLabel} />
             </div>
             <div>
               <span class="label">{FINDS_LABEL}</span>
               <p class="finds-intro muted">{FINDS_INTRO}</p>
+              <!-- Each find in its own colour, with its item as the game draws it. -->
               <dl class="finds">
                 {#each FIND_KINDS as kind (kind)}
-                  <div>
-                    <dt>{FIND_TEXT[kind].name}</dt>
-                    <dd>{FIND_GIVES[kind]}</dd>
+                  {@const r = FIND_RULES[kind]}
+                  <div data-find={kind}>
+                    <dt><span class="find-glyph"><ItemGlyph kind={FIND_GLYPH[kind]} /></span>{FIND_TEXT[kind].name}</dt>
+                    <dd>{r.gives} {r.works} <span class="miss">{r.miss}</span></dd>
                   </div>
                 {/each}
               </dl>
@@ -444,32 +447,43 @@
 
       <ul class="rules muted">
         {#if delve}
+          <li>Pick a category and name the item; each right answer goes a depth deeper.</li>
+          <li>A wrong answer or a time-out costs a life.</li>
           {#if together}
-            <li>The team votes for one of three cards; each vote is a ticket in the draw.</li>
-            <li>Everyone answers the same question; the first right answer clears the depth.</li>
-            <li>A wrong answer costs you a life and strikes that option for the team. When time runs out, everyone who hasn't answered loses a life.</li>
-            <li>Between questions, give one of your lives to bring back a teammate who perished.</li>
-            <li>The run ends when nobody is left standing; the team's depth is the result.</li>
+            <li>A category played stays locked for the next <span class="num">{delveLockout(1)}</span> depths, longer deeper down.</li>
           {:else}
-            <li>Pick one of three categories; it stays locked for {lockoutText(delveLockout(1))}, longer deeper down.</li>
-            <li>A wrong answer or a time-out costs a life. See how deep you get.</li>
-            <li>Host a room to delve together as a team.</li>
+            <li>A category you pick stays locked for your next <span class="num">{delveLockout(1)}</span> turns, longer deeper down.</li>
           {/if}
         {:else if race}
-          <li>Everyone sees the same question at the same time.</li>
-          <li>The first correct answer scores a point and ends the question.</li>
-          <li>A wrong answer costs a point and locks you out until the next question.</li>
-          <li>First to {s.settings.targetScore} wins.</li>
+          <li>Everyone answers the same question; the first right answer scores a point.</li>
+          <li>A wrong answer costs a point and sits you out until the next question.</li>
+          <li>First to <span class="num">{s.settings.targetScore}</span> wins.</li>
         {:else}
-          <li>On your turn, choose one of three item categories.</li>
-          {#if lockout > 0}
-            <li>A category you pick is locked for {lockoutText(lockout)}.</li>
-          {/if}
-          <li>Name the unique or lineage gem from its art; one answer is true.</li>
-          <li>Correct answers score a point. First to {s.settings.targetScore} wins, once the round is finished.</li>
-          <li>Tied at the top? The tied players settle it in a sudden-death deathmatch.</li>
+          <li>On your turn, pick one of three categories and name the item.</li>
+          <li>
+            A right answer scores a point{#if lockout > 0}; the category stays locked for your next <span class="num">{lockout}</span> turns{/if}.
+          </li>
+          <li>First to <span class="num">{s.settings.targetScore}</span> wins once the round is over; a tie goes to sudden death.</li>
         {/if}
       </ul>
+
+      {#if delve}
+        <!-- Co-op plays nothing like the rest, so it is always explained, alone too. -->
+        <div class="setting together">
+          <span class="label">Together</span>
+          {#if !together}
+            <p class="finds-intro muted">{local ? 'Online, in a room of two or more.' : 'Once a second exile joins this room.'}</p>
+          {/if}
+          <ul class="rules coop">
+            <li>The team votes for a card; each vote is a ticket in the draw.</li>
+            <li>All answer the same question at once; the first right answer clears it and takes the find.</li>
+            <li>A wrong pick costs you a life and strikes that answer out for everyone.</li>
+            <li>Flares and dynamite go off for the whole team.</li>
+            <li>Out of lives, you perish and lose all you carry; a teammate with a life to spare can give you one.</li>
+            <li>The run ends when the whole team has perished.</li>
+          </ul>
+        </div>
+      {/if}
 
       <div class="start">
         {#if isHost}
@@ -938,7 +952,7 @@
     letter-spacing: 0.04em;
     color: var(--gold-hi);
   }
-  /* Delve's rules: the descent and the finds side by side once there is room, stacked on phones. */
+  /* Delve's rules: the descent (as wide as it is drawn) and the finds side by side once there is room, stacked on phones. */
   .delve-rules {
     container-type: inline-size;
   }
@@ -948,7 +962,7 @@
   }
   @container (min-width: 400px) {
     .delve-cols {
-      grid-template-columns: minmax(0, 1.12fr) minmax(0, 1fr);
+      grid-template-columns: 12.5rem minmax(0, 1fr);
     }
   }
   .finds-intro {
@@ -959,34 +973,61 @@
   }
   .finds {
     display: grid;
-    gap: 0.4rem;
+    gap: 0.5rem;
     margin: 0;
   }
+  /* Each find in its colour (as its note under the cards), with its item beside its name. */
+  .finds [data-find='azurite'] {
+    --find: #a9cdf5;
+  }
+  .finds [data-find='flare'] {
+    --find: #f7a3b3;
+  }
+  .finds [data-find='dynamite'] {
+    --find: #eebf96;
+  }
   .finds dt {
+    display: flex;
+    align-items: center;
+    gap: 0.45em;
     font-family: var(--font-display);
-    font-size: 0.68rem;
+    font-size: 0.7rem;
     letter-spacing: 0.14em;
     text-transform: uppercase;
-    color: var(--gold);
+    color: var(--find);
+  }
+  .find-glyph {
+    --h: 13px;
+    display: inline-flex;
+    justify-content: center;
+    width: 14px;
   }
   .finds dd {
-    margin: 0.05rem 0 0;
+    margin: 0.1rem 0 0;
     font-size: 0.93rem;
     line-height: 1.25;
     color: var(--muted);
   }
-  /* Stacked on a phone, each find's name runs into its line. */
-  @container (max-width: 399.98px) {
-    .finds dt {
-      display: inline;
-      margin-right: 0.5em;
-    }
-    .finds dd {
-      display: inline;
-    }
-    .finds > div {
-      line-height: 1.25;
-    }
+  .finds .miss {
+    color: color-mix(in srgb, var(--find) 45%, var(--muted));
+  }
+  .together {
+    margin: -0.4rem 0 1.4rem;
+  }
+  /* Kept compact: a handful of short lines. */
+  .rules.coop {
+    margin: 0;
+    font-size: 0.93rem;
+    line-height: 1.3;
+  }
+  .rules.coop li {
+    margin: 0.2rem 0;
+  }
+  /* Numbers among the words are set in Cinzel, as everywhere in the game. */
+  .num {
+    font-family: var(--font-cinzel);
+    font-weight: 700;
+    font-size: 0.86em;
   }
   .blurbs {
     display: grid;

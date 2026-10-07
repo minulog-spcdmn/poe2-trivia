@@ -5,7 +5,6 @@
 import {
   FINDS_FROM,
   FLARE_MS,
-  SHARDS_PER_WARD,
   cavesIn,
   findLosses,
   findReward,
@@ -34,40 +33,36 @@ function often(v: number): Often {
 
 const VEIL_WORD: Record<VeilSpeed, string> = { off: 'Off', fast: 'Fast', slow: 'Slow', slowest: 'Slowest' };
 const VEIL_PACE: Record<Exclude<VeilSpeed, 'off'>, string> = { fast: 'bit by bit', slow: 'slowly', slowest: 'very slowly' };
-const ART_SHARE: Record<Exclude<Often, 'Never'>, string> = {
-  Some: 'Some questions ask',
-  Half: 'Half the questions ask',
-  Always: 'Every question asks',
-};
+const ART_SHARE: Record<Exclude<Often, 'Never'>, string> = { Some: 'Some questions', Half: 'Half the questions', Always: 'Every question' };
 const MIRROR_SHARE: Record<Exclude<Often, 'Never'>, string> = { Some: 'Some art is', Half: 'Half the art is', Always: 'All art is' };
 
-/** The difficulty a room plays, in a few sentences. */
+/**
+ * The difficulty a room plays, in a few short sentences for the lobby: only
+ * what changes how a question looks, so the host can tell the steps apart.
+ */
 export function describe(settings: Pick<Settings, 'difficulty'> & Partial<Settings>): string {
   const k = knobsOf(settings);
   const custom = settings.difficulty === 'custom';
   const lines: string[] = [];
 
   const count = cap(NUMBER[k.options]);
-  if (k.similarNames === 0) {
-    // Small groups (five crossbows) can't fill a big question on their own,
-    // and once a group runs low the engine mixes groups at any size.
-    lines.push(`${count} options of the same kind where the category allows (all rings, all bows…)${k.fakes ? `, ${NUMBER[k.fakes]} of them made up` : ''}.`);
-  } else {
-    const alike = k.similarNames === 1 ? 'all' : 'half of them';
-    lines.push(`${count} options, ${alike} with look-alike names${k.fakes ? ` and ${NUMBER[k.fakes]} made up` : ''}.`);
-  }
+  const fakes = k.fakes ? `, ${NUMBER[k.fakes]} made up` : '';
+  // Small groups (five crossbows) can't fill a big question on their own,
+  // and once a group runs low the engine mixes groups at any size.
+  if (k.similarNames === 0) lines.push(`${count} options, of one kind where possible (all rings, all bows…)${fakes}.`);
+  else lines.push(`${count} options, ${k.similarNames === 1 ? 'all' : 'half'} with look-alike names${fakes}.`);
 
   const art = often(k.artChance);
-  if (art !== 'Never') lines.push(`${ART_SHARE[art]} you to find the art for a name.`);
+  const gray = k.grayscale === 'art' && art !== 'Never';
+  if (art !== 'Never') lines.push(`${ART_SHARE[art]} show a name; you pick its art${gray ? ', in grayscale' : ''}.`);
 
   // Only the art of name questions burns into view. A preset only does it in
   // race, so in take turns its description still says what race adds.
   const raceOnly = !custom && settings.mode !== 'race';
   const veil = raceOnly ? knobsOf({ ...settings, mode: 'race' }).veil : k.veil;
-  if (veil !== 'off' && art !== 'Always') lines.push(`${raceOnly ? 'In race, the' : 'The'} art burns into view ${VEIL_PACE[veil]}.`);
+  if (veil !== 'off' && art !== 'Always') lines.push(`${raceOnly ? 'In race, the' : 'The'} art to name burns in ${VEIL_PACE[veil]}.`);
 
-  if (k.grayscale === 'all') lines.push('All art is shown without colour.');
-  else if (k.grayscale === 'art' && art !== 'Never') lines.push('"Find the art" pictures are shown without colour.');
+  if (k.grayscale === 'all') lines.push('All art is in grayscale.');
 
   const mirror = often(k.mirror);
   if (mirror !== 'Never') lines.push(`${MIRROR_SHARE[mirror]} mirrored.`);
@@ -142,16 +137,6 @@ export const KNOB_TEXT: { [K in keyof Knobs]: KnobText<K> }[keyof Knobs][] = [
   { key: 'lockout', name: 'Category lockout', hint: 'Turns until a picked category returns', label: (v) => (v ? String(v) : 'None') },
 ];
 
-/**
- * How a descent gets harder, for the lobby: where it starts, then that it
- * gets a little harder at every depth. What changes where is left for the
- * player to feel (tests/difficultyText.test.ts checks the start).
- */
-export const DELVE_LADDER: { depth: number | null; text: string }[] = [
-  { depth: 1, text: 'Four options, 16 seconds' },
-  { depth: null, text: 'A little harder every depth: more options, less time, trickier names and pictures' },
-];
-
 /** Small numbers in words, for the notes under the cards. */
 const WORDS = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'];
 const words = (n: number) => WORDS[n] ?? String(n);
@@ -167,15 +152,63 @@ export const ITEM_TEXT: Record<ItemKind, string> = {
 /** What a wrong answer to a find that caves in costs, in words ("two lives"). */
 const caveInText = (kind: FindKind) => `${words(findLosses(kind))} lives`;
 
+/** A miss that costs more than a plain one, as a cave-in does, or null. */
+const caveIn = (kind: FindKind) => (cavesIn(kind) ? `a miss costs ${caveInText(kind)}` : null);
+
+/**
+ * What a miss on each find costs beyond a plain miss (a life), in a few
+ * words, or null when it is a plain miss. The one place a find's drawback
+ * is said: the notes under the cards and the lobby's rules both read it, so
+ * a new drawback is one edit here.
+ */
+export const FIND_MISS: Record<FindKind, string | null> = {
+  azurite: caveIn('azurite'),
+  flare: caveIn('flare'),
+  dynamite: caveIn('dynamite'),
+};
+
+/** A plain miss, for the lobby's rules. */
+const PLAIN_MISS = 'a miss costs a life';
+
+/** What each item does, in a few words (`team`: in a run together). */
+function does(kind: FindKind, team = false): string {
+  switch (kind) {
+    case 'azurite':
+      return 'it saves a life';
+    case 'flare':
+      return `${words(FLARE_MS / 1000)} more seconds${team ? ' for all' : ''} when time runs out`;
+    case 'dynamite':
+      return 'at half time, it blows away half the answers, all wrong';
+  }
+}
+
+/** A short line: what the item does, then the miss when it costs more ("It saves a life; a miss costs two lives."). */
+const noteLine = (lead: string, kind: FindKind) => `${cap(lead)}${FIND_MISS[kind] ? `; ${FIND_MISS[kind]}` : ''}.`;
+
 /** The finds for the lobby's rules: where they turn up, and what they are in a line. */
 export const FINDS_LABEL = `Finds • from depth ${FINDS_FROM}`;
-export const FINDS_INTRO = 'A harder question, for an item.';
+export const FINDS_INTRO = 'A harder question that pays an item. You carry up to three of each.';
 
-/** What each find gives, in a line for the lobby: what its item does, and what a miss costs when it is more than a life. */
-export const FIND_GIVES: Record<FindKind, string> = {
-  azurite: `Answer fast for a ward: it saves a life.${cavesIn('azurite') ? ` A miss costs ${caveInText('azurite')}.` : ''}`,
-  flare: `A flare: ${words(FLARE_MS / 1000)} more seconds when your time runs out.`,
-  dynamite: 'Dynamite: at half time, it clears the picture and half the answers, all of them wrong.',
+/**
+ * Each find for the lobby's rules, by its parts: what a right answer gives,
+ * how the item works, and what a miss costs (from FIND_MISS).
+ */
+export const FIND_RULES: Record<FindKind, { gives: string; works: string; miss: string }> = {
+  azurite: {
+    gives: 'Fast: a ward; slower: half of one.',
+    works: 'A ward takes a lost life for you.',
+    miss: `${cap(FIND_MISS.azurite ?? PLAIN_MISS)}.`,
+  },
+  flare: {
+    gives: 'A flare:',
+    works: `${words(FLARE_MS / 1000)} more seconds when your time runs out.`,
+    miss: `${cap(FIND_MISS.flare ?? PLAIN_MISS)}.`,
+  },
+  dynamite: {
+    gives: 'Dynamite:',
+    works: 'at half time, it blows away half the answers, all wrong, and clears the art.',
+    miss: `${cap(FIND_MISS.dynamite ?? PLAIN_MISS)}.`,
+  },
 };
 
 /** A find's cave-in mark, in words for those who can't see it: "A wrong answer loses two lives". */
@@ -184,40 +217,16 @@ export const caveInLabel = (kind: FindKind) => `A wrong answer loses ${caveInTex
 /** The mark that takes the place of a find's depth on its card, in words. */
 export const HARDER_LABEL = 'A harder question';
 
-/** What each item does once you have it, as the find's note says it. */
-const DOES: Record<'flare' | 'dynamite', string> = {
-  flare: `It burns when your time runs out: ${words(FLARE_MS / 1000)} more seconds.`,
-  dynamite: 'At half time, it clears the picture and half the answers, all of them wrong.',
-};
-
 /**
- * What a miss costs, when it costs more than a life (" A miss costs two
- * lives."). That the question is harder, its card's mark says.
- */
-const risk = (kind: FindKind) => (cavesIn(kind) ? ` A miss costs ${caveInText(kind)}.` : '');
-
-/**
- * The finds: the card's name, the tagline on its card (what to do), and what
- * it is in a line for those watching. Plain words: what the item does and
- * what a miss costs; never the depth it asks, nor that it is harder (its
- * card's mark says so).
+ * The finds: the card's name, the tagline under the cards (what to do, in
+ * bold, before the note), and what it is in a line for those watching.
+ * Read in a second: what the item does and what a miss costs; never the
+ * depth it asks, nor that it is harder (its card's mark says so).
  */
 export const FIND_TEXT: Record<FindKind, { name: string; tag: string; others: string }> = {
-  azurite: {
-    name: 'Azurite Vein',
-    tag: 'Answer fast for an Azurite Ward',
-    others: `An Azurite Vein: a ward if answered fast, a shard if slower.${risk('azurite')}`,
-  },
-  flare: {
-    name: 'Flare Cache',
-    tag: 'Answer right for a flare',
-    others: `A Flare Cache: a flare, for ${words(FLARE_MS / 1000)} more seconds when the time runs out.${risk('flare')}`,
-  },
-  dynamite: {
-    name: 'Dynamite Cache',
-    tag: 'Answer right for dynamite',
-    others: `A Dynamite Cache: dynamite, to clear the picture and half the answers at half time.${risk('dynamite')}`,
-  },
+  azurite: { name: 'Azurite Vein', tag: 'Answer fast for a ward', others: `A fast answer wins a ward. ${noteLine(does('azurite'), 'azurite')}` },
+  flare: { name: 'Flare Cache', tag: 'Answer right for a flare', others: `A right answer wins a flare. ${noteLine(does('flare'), 'flare')}` },
+  dynamite: { name: 'Dynamite Cache', tag: 'Answer right for dynamite', others: `A right answer wins dynamite. ${noteLine(does('dynamite'), 'dynamite')}` },
 };
 
 /** "Your flare stays unused on it": what the player holds that won't go off on a find's question (`on`: "it", or "a find"). */
@@ -232,40 +241,27 @@ export function unused(inv: Inventory, on = 'it'): string {
 export const teamUnused = (on = 'it') => ` Flares and dynamite stay unused on ${on}.`;
 
 /**
- * A find's note, for the player choosing while holding `inv`, after its
- * tagline: what its item does, what a miss costs when it is more than a
- * life, and (`held`, unless two finds share it in a line of their own)
- * that what they carry won't go off on it. Kept short: two finds can be on
- * offer, each with its note. A find is only offered to a player with room
- * for its item.
+ * A find's note, after its tagline, for the player choosing while holding
+ * `inv`: what its item does and what a miss costs when it is more than a
+ * life, in one short line ("It saves a life; a miss costs two lives."),
+ * then (`held`, unless two finds share it in a line of their own) that what
+ * they carry won't go off on it. A find is only offered to a player with
+ * room for its item.
  */
 export function findNote(kind: FindKind, inv: Inventory, held = true): string {
-  const tail = `${risk(kind)}${held ? unused(inv) : ''}`;
-  if (!findReward(kind, inv, true)) return `You can carry no more.${tail}`;
-  if (kind === 'azurite') {
-    const forge = inv.shards + 1 >= SHARDS_PER_WARD ? 'it makes a ward with yours' : `${words(SHARDS_PER_WARD)} make a ward`;
-    return `A ward takes a lost life for you. Slower, a shard; ${forge}.${tail}`;
-  }
-  return `${DOES[kind]}${tail}`;
+  const lead = findReward(kind, inv, true) ? does(kind) : 'you can carry no more';
+  return `${noteLine(lead, kind)}${held ? unused(inv) : ''}`;
 }
 
 // ---- co-op ------------------------------------------------------------------
 
-/** What each item does for the team, as a find's note says it in a run together. */
-const DOES_TEAM: Record<FindKind, string> = {
-  azurite: 'a ward if fast, a shard if slower.',
-  flare: `${words(FLARE_MS / 1000)} more seconds for everyone when the time runs out.`,
-  dynamite: 'at half time, it clears the picture and half the answers, all of them wrong.',
-};
-
 /**
- * A find's note in a run together, after its tagline: that the first right
- * answer takes it and what it does, what a miss costs when it is more than a
- * life, and, when anyone holds some, that flares and dynamite won't go off
- * on it.
+ * A find's note in a run together, after its tagline: what its item does
+ * for the team and what a miss costs when it is more than a life, and,
+ * when anyone holds some, that flares and dynamite won't go off on it.
  */
 export function teamFindNote(kind: FindKind, itemsHeld: boolean): string {
-  return `The first right answer takes it: ${DOES_TEAM[kind]}${risk(kind)}${itemsHeld ? teamUnused() : ''}`;
+  return `${noteLine(does(kind, true), kind)}${itemsHeld ? teamUnused() : ''}`;
 }
 
 /** "you", "Ash", "you and Ash", "Ash, Brea and Cara": you first, the rest as given. */
