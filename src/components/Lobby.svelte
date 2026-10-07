@@ -369,7 +369,7 @@
         <!-- Two columns once the panel is wide enough: the descent beside the finds. -->
         <div class="setting delve-rules">
           <div class="delve-cols">
-            <div class="descent-col">
+            <div>
               <span class="label">The descent</span>
               <DelveLadder {deepest} label={deepestLabel} />
             </div>
@@ -944,7 +944,7 @@
     letter-spacing: 0.04em;
     color: var(--gold-hi);
   }
-  /* Delve's rules: the descent and the finds side by side once there is room, stacked on phones. Beside the finds the drawing grows to their height (it lays itself out to fit), so neither column leaves a gap. */
+  /* Delve's rules: the descent (as wide as it is drawn) and the finds side by side once there is room, stacked on phones. */
   .delve-rules {
     container-type: inline-size;
   }
@@ -952,18 +952,9 @@
     display: grid;
     gap: 1rem 1.2rem;
   }
-  /* Stacked, the drawing gets room for its ten roundels; beside the finds it takes their height. */
-  .descent-col {
-    display: flex;
-    flex-direction: column;
-    --descent-min: 17rem;
-  }
   @container (min-width: 400px) {
     .delve-cols {
-      grid-template-columns: 14.5rem minmax(0, 1fr);
-    }
-    .descent-col {
-      --descent-min: 14.5rem;
+      grid-template-columns: 12.5rem minmax(0, 1fr);
     }
   }
   .together-when {
