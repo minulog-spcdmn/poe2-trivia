@@ -117,11 +117,29 @@ test("the ambience is each place's fire, by its share", () => {
   const { beds, fire } = bedsAt(settledAt(1) + 6);
   assert.deepEqual(beds.map((b) => b.place), ['z1', 'z2']);
   assert.ok(Math.abs(fire - beds[0].weight * db(ZONE_AMBIENCE[1].fire!)) < 1e-12);
-  // And everywhere, the places' shares added up.
+  // And everywhere, the places' shares added up in power, as the beds are; settled, exactly the place's fire.
   for (let d = 1; d <= 300; d++) {
     const at = bedsAt(d);
-    const sum = at.beds.reduce((s, b) => s + (b.bed.fire === null ? 0 : b.weight * db(b.bed.fire)), 0);
-    assert.ok(Math.abs(at.fire - sum) < 1e-12, `depth ${d}`);
+    const fires = at.beds.map((b) => (b.bed.fire === null ? 0 : db(b.bed.fire)));
+    const power = at.beds.reduce((s, b, i) => s + (b.weight * fires[i]) ** 2, 0);
+    assert.ok(Math.abs(at.fire - Math.sqrt(power)) < 1e-12, `depth ${d}`);
+    if (at.beds.length === 1) assert.equal(at.fire, fires[0], `depth ${d}`);
+    // Never louder than the louder of the two, nor quieter than the quieter.
+    assert.ok(at.fire <= Math.max(...fires) + 1e-12 && at.fire >= Math.min(...fires) - 1e-12, `depth ${d}`);
     for (const b of at.beds) assert.equal(b.bed, bedOf(b.place));
   }
+});
+
+test('turning between two places with the same fire, the ambience stays level', () => {
+  // The fire is one sound: its two shares, added up as they are, would swell it by 3 dB half way.
+  let turns = 0;
+  for (let d = 1; d <= 3000; d++) {
+    const { beds, fire } = bedsAt(d);
+    if (beds.length !== 2 || beds[0].bed.fire === null || beds[0].bed.fire !== beds[1].bed.fire) continue;
+    assert.ok(Math.abs(fire - db(beds[0].bed.fire)) < 1e-12, `depth ${d}: ${fire} for ${db(beds[0].bed.fire)}`);
+    turns++;
+  }
+  // Some do: the archetypes' turns at depth 129 among them, half way from a9 into a5 (both -13.5 dB).
+  assert.deepEqual(bedsAt(129).beds.map((b) => [b.place, b.bed.fire]), [['a9', -13.5], ['a5', -13.5]]);
+  assert.ok(turns > 0);
 });

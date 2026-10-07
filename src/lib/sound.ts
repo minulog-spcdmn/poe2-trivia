@@ -97,9 +97,12 @@ const userGain = () => volume * volume;
 
 type Bus = { ac: AudioContext; master: AudioNode; user: GainNode; wet: AudioNode };
 let bus: Bus | null = null;
+/** Loaded or loading. Delve's beds are let go of once they fall silent (see evict); every other sound is kept. */
 const buffers = new Map<string, Promise<AudioBuffer>>();
 /** Decoded and ready to play right now. */
 const ready = new Map<string, AudioBuffer>();
+/** The files the moments play (see sfx). */
+const MOMENT_FILES = new Set(Object.values(MOMENTS).flatMap((m) => m.layers.map((l) => l.file)));
 
 const db = (d: number) => Math.pow(10, d / 20);
 
@@ -137,8 +140,7 @@ function audio(): Bus | null {
     wet.connect(reverb).connect(master);
 
     bus = { ac, master, user, wet };
-    const files = new Set(Object.values(MOMENTS).flatMap((m) => m.layers.map((l) => l.file)));
-    for (const file of files) if (!GENERATED[file]) void load(file).catch(() => {});
+    for (const file of MOMENT_FILES) if (!GENERATED[file]) void load(file).catch(() => {});
     // Already in a Delve: work out its sounds now (see depthAmbience).
     if (depth > 0) prepareDelve(bus);
   }
@@ -147,28 +149,57 @@ function audio(): Bus | null {
   return bus;
 }
 
+/**
+ * Files that failed to load: when last, and how long (ms) to wait before
+ * trying again. Every tap and key press asks for the ambience (see
+ * installUiSounds), so offline a failed file would be fetched again and again;
+ * instead the wait starts at RETRY_FIRST and doubles each time, up to RETRY_MAX.
+ */
+const failed = new Map<string, { at: number; wait: number }>();
+const RETRY_FIRST = 10_000;
+const RETRY_MAX = 120_000;
+
+/** A file that failed to load a moment ago, and isn't to be tried again yet. */
+function backingOff(file: string) {
+  const f = failed.get(file);
+  return !!f && performance.now() - f.at < f.wait;
+}
+
+/** A file to load ahead of need: neither held nor loading, and not failed a moment ago. */
+const toFetch = (file: string) => !buffers.has(file) && !backingOff(file);
+
 function load(file: string) {
   let p = buffers.get(file);
   if (!p) {
+    if (backingOff(file)) return Promise.reject(new Error(`${file}: failed a moment ago`));
     const ac = bus!.ac;
     const made = GENERATED[file];
     const decoded = made
       ? Promise.resolve().then(() => made(ac))
       : fetch(new URL(`${import.meta.env.BASE_URL}sfx/${file}.mp3`, document.baseURI))
-            .then((r) => r.arrayBuffer())
+            .then((r) => {
+              if (!r.ok) throw new Error(`${file}: HTTP ${r.status}`);
+              return r.arrayBuffer();
+            })
             .then((data) => ac.decodeAudioData(data));
-    p = decoded.then(
+    const loading: Promise<AudioBuffer> = decoded.then(
       (buf) => {
-        ready.set(file, buf);
+        failed.delete(file);
+        // Let go of while it loaded (see evict): whoever asked gets it, but it isn't held.
+        if (buffers.get(file) === loading) ready.set(file, buf);
         return buf;
       },
       (e: unknown) => {
-        // Not kept: asked for again (a Delve bed, the next depth), it tries again.
-        if (buffers.get(file) === p) buffers.delete(file);
+        // Not kept: asked for again (a Delve bed, the next depth), it tries again once its wait is over.
+        if (buffers.get(file) === loading) {
+          buffers.delete(file);
+          const wait = failed.has(file) ? Math.min(RETRY_MAX, failed.get(file)!.wait * 2) : RETRY_FIRST;
+          failed.set(file, { at: performance.now(), wait });
+        }
         throw e;
       },
     );
-    buffers.set(file, p);
+    buffers.set(file, (p = loading));
   }
   return p;
 }
@@ -436,6 +467,9 @@ export function sfx(name: Sfx): (() => void) | undefined {
     const buf = ready.get(l.file);
     if (buf) layers.push(playLayer(b, buf, l, m.soften, pitch, gainDb));
   }
+  // One that failed to load as sound started (offline for a moment) is tried
+  // again for next time, once its wait is over (see load).
+  for (const l of m.layers) if (!ready.has(l.file)) void load(l.file).catch(() => {});
   if (!layers.length) return undefined;
   let stopped = false;
   return () => {
@@ -510,8 +544,11 @@ export function bedOf(place: string): Bed {
  * turning into, on the curve of the backdrop's hall (hallTurn), equal power:
  * cos and sin of its quarter turn, so their squares always add up to 1. A
  * settled depth is one place alone. `fire` is how much of AMBIENCE's level
- * stays lit: each place's share of its bed's fire (0 where none has any).
- * Outside Delve (depth 0) there are no beds and AMBIENCE is lit in full.
+ * stays lit: each place's share of its bed's fire (0 where none has any),
+ * added up in power, as the beds are: the shares are of one fire, so added
+ * up as they are they would swell it by up to 3 dB half way through a turn
+ * between two places with the same fire, which this keeps level. Outside
+ * Delve (depth 0) there are no beds and AMBIENCE is lit in full.
  */
 export function bedsAt(d: number): Beds {
   if (!(d >= 1)) return { beds: [], fire: 1 };
@@ -526,7 +563,8 @@ export function bedsAt(d: number): Beds {
       const place = placeAt(k);
       return { place, bed: bedOf(place), weight };
     });
-  const lit = sounding.reduce((sum, { bed, weight }) => sum + (bed.fire === null ? 0 : weight * db(bed.fire)), 0);
+  // hypot of one share is that share exactly, so a settled depth keeps its place's fire as it is.
+  const lit = Math.hypot(...sounding.map(({ bed, weight }) => (bed.fire === null ? 0 : weight * db(bed.fire))));
   return { beds: sounding, fire: lit };
 }
 
@@ -542,8 +580,33 @@ let hearth = 1;
  * the next begins at the 5th, and is heard from the 7th.
  */
 function prefetchBeds(b: Bus) {
-  const next = bedOf(placeAt(Math.floor((depth - 1) / 10) + 1));
-  for (const { file } of next.layers) if (!buffers.has(file)) idle(() => bus === b && void load(file).catch(() => {}));
+  for (const { file } of nextBed().layers) if (toFetch(file)) idle(() => bus === b && void load(file).catch(() => {}));
+}
+
+/** Delve: the next place's bed, fetched ahead (see prefetchBeds). */
+const nextBed = () => bedOf(placeAt(Math.floor((depth - 1) / 10) + 1));
+
+/** Never let go of (see evict): every sound but Delve's beds. */
+const KEPT = new Set([AMBIENCE.file, FIRE.file, RUMBLE.file, CAVE_IN.file, ...MOMENT_FILES]);
+
+/**
+ * Lets go of the beds no longer wanted, once one falls silent: decoded, each
+ * is several MB, and a long run passes through a couple of dozen. Kept are
+ * those sounding or about to (at this depth, or loading to), still fading
+ * out, and the next place's; asked for again later, a bed is fetched from
+ * the browser's cache. One let go of while it loads is handed to whoever
+ * asked for it but not held (see load).
+ */
+function evict() {
+  const held = new Set(KEPT);
+  for (const l of [...playing.keys(), ...starting, ...beds.keys()]) held.add(l.file);
+  for (const { file } of fading.values()) held.add(file);
+  if (depth > 0) for (const { file } of nextBed().layers) held.add(file);
+  for (const file of buffers.keys()) {
+    if (held.has(file)) continue;
+    buffers.delete(file);
+    ready.delete(file);
+  }
 }
 
 // ---------- the loops ----------
@@ -579,8 +642,7 @@ export function depthAmbience(d: number) {
  * for long.
  */
 function prepareDelve(b: Bus) {
-  for (const file of [RUMBLE.file, CAVE_IN.file])
-    if (!buffers.has(file)) idle(() => bus === b && void load(file).catch(() => {}));
+  for (const file of [RUMBLE.file, CAVE_IN.file]) if (toFetch(file)) idle(() => bus === b && void load(file).catch(() => {}));
 }
 
 /** The rumble comes in a few depths down. */
@@ -622,8 +684,25 @@ function shape(l: Loop, p: Playing, at: number, tc: number) {
 /** Starts the loops that should play and fades out the ones that shouldn't. */
 function updateAmbience() {
   for (const l of new Set([...FADES.keys(), ...playing.keys(), ...beds.keys()])) updateLoop(l);
+  if (!audible()) hurry();
   if (!wanted(AMBIENCE)) rest();
   else if (bus && depth > 0) prefetchBeds(bus);
+}
+
+/** Muted or out of sight, the loops fade as quickly as AMBIENCE does, so all are silent before the context sleeps (rest). */
+const QUICK = FADES.get(AMBIENCE)!.down;
+
+/** Loops fading out until they stop, by the file each plays, and whether they fade quickly (see hurry). */
+const fading = new Map<Playing, { file: string; quick: boolean }>();
+
+/** Muted or out of sight: the loops already fading slowly (a deathmatch's fire, a bed left behind) go quickly too. */
+function hurry() {
+  if (!bus) return;
+  for (const [p, f] of fading) {
+    if (f.quick) continue;
+    f.quick = true;
+    p.gain.gain.setTargetAtTime(0, bus.ac.currentTime, QUICK);
+  }
 }
 
 /**
@@ -646,10 +725,18 @@ function updateLoop(l: Loop) {
     const p = playing.get(l);
     if (!p || !bus) return;
     playing.delete(l);
-    // A bed left behind fades with the depth; muted or hidden it goes before the context sleeps (rest).
-    const down = FADES.has(l) || audible() ? fade.down : FADES.get(AMBIENCE)!.down;
+    // The fire dies down, the rumble sinks and a bed left behind fades with the
+    // depth; muted or hidden each goes before the context sleeps (rest), which
+    // would cut a slower fade short.
+    const quick = !audible();
+    const down = quick ? QUICK : fade.down;
     p.gain.gain.setTargetAtTime(0, bus.ac.currentTime, down);
-    setTimeout(p.stop, down * 7000);
+    fading.set(p, { file: l.file, quick });
+    setTimeout(() => {
+      p.stop();
+      fading.delete(p);
+      if (!FADES.has(l)) evict();
+    }, down * 7000);
     return;
   }
   if (playing.has(l) || starting.has(l)) return;
@@ -659,7 +746,12 @@ function updateLoop(l: Loop) {
   load(l.file)
     .then((buf) => {
       starting.delete(l);
-      if (playing.has(l) || !wanted(l)) return;
+      if (playing.has(l)) return;
+      if (!wanted(l)) {
+        // A bed whose place went by while it loaded (see evict).
+        if (!FADES.has(l)) evict();
+        return;
+      }
       const { ac } = b;
       const src = ac.createBufferSource();
       src.buffer = buf;
