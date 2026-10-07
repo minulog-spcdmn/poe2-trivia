@@ -132,6 +132,32 @@ export const ARCHETYPE_AMBIENCE: readonly Bed[] = [
  */
 export const CAVE_IN = { file: 'cave-in', seconds: 1.3, rumble: 6, stones: 4 };
 
+/** Delve: the run is over; no victory, just the last ember going out. */
+const FALLEN: Moment = {
+  soften: 5,
+  varyPitch: 0.01,
+  varyGain: 0.5,
+  layers: [
+    { file: 'defeat-2', gain: -23, rate: 0.62, delay: 0, hp: 30, lp: 300, send: 0.8 },
+    { file: 'layer-sub-2', gain: -24, rate: 0.5, delay: 355, hp: 20, lp: 600, send: 0.5 },
+    { file: 'layer-air-4', gain: -30, rate: 0.55, delay: 80, hp: 150, lp: 822, send: 0.85 },
+    { file: 'victory-6', gain: -32, rate: 0.7, delay: 0, hp: 20, lp: 20000, send: 0.8 },
+  ],
+};
+
+/**
+ * A moment heard from far off: quieter, its highs gone, further into the
+ * hall and a beat late. Delve together: a teammate perishing is your own
+ * perishing heard from down the shaft.
+ */
+function distant(m: Moment): Moment {
+  return {
+    ...m,
+    soften: m.soften + 2,
+    layers: m.layers.map((l) => ({ ...l, gain: l.gain - 9, lp: Math.min(l.lp, 1200), send: Math.min(1, l.send + 0.2), delay: l.delay + 90 })),
+  };
+}
+
 export const MOMENTS: Record<Sfx, Moment> = {
   hover: {
     soften: 5.5,
@@ -325,17 +351,8 @@ export const MOMENTS: Record<Sfx, Moment> = {
   // The end of a descent, alone or together: no fanfare. A dark impact
   // slowed and muffled, a deep thud as the floor gives way, a breath falling
   // away into the hall, and a low gong ringing out under it.
-  fallen: {
-    soften: 5,
-    varyPitch: 0.01,
-    varyGain: 0.5,
-    layers: [
-      { file: 'defeat-2', gain: -23, rate: 0.62, delay: 0, hp: 30, lp: 300, send: 0.8 },
-      { file: 'layer-sub-2', gain: -24, rate: 0.5, delay: 355, hp: 20, lp: 600, send: 0.5 },
-      { file: 'layer-air-4', gain: -30, rate: 0.55, delay: 80, hp: 150, lp: 822, send: 0.85 },
-      { file: 'victory-6', gain: -32, rate: 0.7, delay: 0, hp: 20, lp: 20000, send: 0.8 },
-    ],
-  },
+  fallen: FALLEN,
+  fallenFar: distant(FALLEN),
   // A road flare struck as the clock hits 0: the striker's scratch (a card
   // dealt, high and bright), a dry pop as the head catches, a quick burst of
   // fire as it flares up, then a loud hiss that sputters on (the sparkler's

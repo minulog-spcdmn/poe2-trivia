@@ -1569,6 +1569,9 @@ class Session {
       case 'perished':
         // The depth is in the header.
         if (who && !mine) this.flash(n.revivable ? 'A teammate can give them a life.' : 'The rest delve on.', 'warn', { title: 'Perished', who });
+        // The run's end has its own toll (onNewState); before it, your own
+        // perishing goes out as it would, a teammate's from far off.
+        if (s.phase !== 'over') sfx(mine ? 'fallen' : 'fallenFar');
         break;
       case 'revived': {
         const giver = player(n.by);

@@ -35,6 +35,8 @@ export type Sfx =
   | 'lifeLost'
   /** Delve: the run is over; no victory, just the last ember going out. */
   | 'fallen'
+  /** Delve together: a teammate perishes; the same, heard from far off. */
+  | 'fallenFar'
   /** Delve: a flare strikes and burns as the clock hits 0, for more time. */
   | 'flare'
   /** Delve: a stick of dynamite's fuse hisses. */
