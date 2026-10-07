@@ -178,23 +178,31 @@ export function easeTurn(x: number): number {
   return t * t * (3 - 2 * t);
 }
 /**
- * How far into a stratum's turn (lib/descent.ts, strataAt: from the zone's
- * 4th depth to the next one's) the next one's light, smoke and features
- * begin to creep in: a tenth of the way, at the zone's 5th depth.
+ * How many depths a stratum's turn into the next takes (lib/descent.ts,
+ * strataAt): seven, from the zone's 5th depth to the next one's 2nd, so the
+ * next zone has all but arrived as it is announced at its first depth and
+ * shows alone once its first question is answered.
  */
-export const HALL_FROM = 0.1;
+export const TURN_DEPTHS = 7;
+/**
+ * How far into a stratum's turn the next one's light, smoke and features
+ * begin to creep in: one depth in (a seventh of the way), at the zone's 6th
+ * depth, a depth after the embers.
+ */
+export const HALL_FROM = 1 / TURN_DEPTHS;
 /**
  * How far the next stratum's light, smoke and features have come at `turn`:
- * eased (easeTurn) from HALL_FROM to the end of the turn, nine depths in
- * all: barely there at the zone's 6th depth, half way at its last, about
- * three quarters as the next is announced, and all there at its 4th.
+ * eased (easeTurn) from HALL_FROM to the end of the turn, six depths in
+ * all: barely there at the zone's 7th depth (under a tenth), half way at
+ * its 9th, nine tenths as the next is announced, and all there at its 2nd.
  */
 export const hallTurn = (turn: number) => easeTurn((turn - HALL_FROM) / (1 - HALL_FROM));
 /**
  * How many of the embers burn in the next stratum at `turn` (0 to 1): eased
- * over the whole turn, ten depths: a tenth at the zone's 6th depth, half at
- * its 9th, nine tenths at the next zone's 2nd. A little ahead of the hall,
- * as the embers drift up from what lies below.
+ * over the whole turn, seven depths: one in twenty at the zone's 6th depth,
+ * two in five at its 8th, three in five at its 9th, nineteen in twenty as the
+ * next zone is announced. A depth ahead of the hall, as the embers drift up
+ * from what lies below.
  */
 export const emberTurn = (turn: number) => easeTurn(turn);
 

@@ -19,7 +19,7 @@ type Work = { look: Look; motion: MotionTweak };
 export const ZONES = SHIPPED.zones.length;
 /** How deep the depth slider goes. */
 export const MAX_DEPTH = 250;
-/** Where the zone looks alone, settled: its 4th depth, once the handover into it is done (its first for the Mines). */
+/** Where the zone looks alone, settled: its 2nd depth, once the handover into it is done (its first for the Mines). */
 export const depthOfStratum = settledAt;
 const NAMES = SHIPPED.zones.map((z) => z.name);
 

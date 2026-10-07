@@ -240,18 +240,22 @@ the same thing for everyone.
   seed of its own, the same for everyone, and named from its archetype's
   names ("The Drowned Nave", "Ashen Reliquary"), none twice in the first
   fifty past 100, never the same twice in a row.
-- Each zone hands over to the next gradually, from its 4th depth to the
-  next zone's 4th, on an eased curve: slow to begin, quickest toward the
-  zone's end, slow to settle, never a straight ramp. The next zone's name
-  is still announced at its first depth, about three quarters of the way
-  through the handover.
-  - Its embers take the next zone's colour one by one: a tenth of them at
-    its 6th depth, half at its 9th, nine tenths at the next zone's 2nd.
-  - From its 5th depth the next zone's light, smoke and features creep in
-    while its own recede (barely at its 6th, about half by its last, all
-    there at the next zone's 4th), each feature coming and going its own
-    way (the lamps kindle one by one, magma cracks open from hairlines and cool, frost grows
-    in from the walls, fire rises from below).
+- Each zone hands over to the next gradually, over seven depths from its
+  5th depth to the next zone's 2nd, on an eased curve: slow to begin,
+  quickest toward the zone's end, slow to settle, never a straight ramp.
+  The next zone's name is still announced at its first depth, nearly all
+  of the way through the handover, which is done once that depth's
+  question is answered: from its 2nd depth to its 5th the new zone shows
+  alone.
+  - Its embers take the next zone's colour one by one: one in twenty of
+    them at its 6th depth, three in five at its 9th, nineteen in twenty at
+    the next zone's 1st.
+  - From its 6th depth the next zone's light, smoke and features creep in
+    while its own recede (barely at its 7th, half way at its 9th, nine
+    tenths at the next zone's 1st, all there at its 2nd), each feature
+    coming and going its own way (the lamps kindle one by one, magma cracks
+    open from hairlines and cool, frost grows in from the walls, fire rises
+    from below).
 - The deeper, the darker, never the other way. The dark is one smooth fade
   from the edges, corners darkest, and closes in a little with every depth.
   The scene's light is set so its average brightness only ever falls with
@@ -618,18 +622,20 @@ Everything is drawn in WebGL2 with float precision and dithered once at the
   archetype's next (`endgameName`): the curated ones first, then epithets
   and places composed; its sigil and ornament its archetype's zone's
   (`emblemOf`).
-  From a zone's 4th depth to the next one's the scene turns into the next
-  (`strataAt`, `turnInto`; `TURN_FROM`): the embers follow the turn eased
-  (`emberTurn`), the light, smoke, features and their colours follow it
-  eased from the zone's 5th depth (`hallTurn`, `HALL_FROM`), both on a
-  smoothstep (`easeTurn`), and a magma that goes out cools with the hall
-  (`magmaCooling`). A zone shows alone at its 4th depth (`settledAt`).
+  From a zone's 5th depth to the next one's 2nd, seven depths, the scene
+  turns into the next (`strataAt`, `turnInto`; `TURN_FROM`,
+  `TURN_DEPTHS`): the embers follow the turn eased (`emberTurn`), the
+  light, smoke, features and their colours follow it eased from the
+  zone's 6th depth (`hallTurn`, `HALL_FROM`), both on a smoothstep
+  (`easeTurn`), and a magma that goes out cools with the hall
+  (`magmaCooling`), gone by the next zone's 2nd. A zone shows alone from
+  its 2nd depth (`settledAt`) to its 5th, where its own turn begins.
   The scene's `light` is set so its average brightness never rises with
   depth (`luminanceAt`, `lightAt`): `estimateLuminance` works out what the
   backdrop draws from what each environment adds and dims as it comes in
-  (`ENV_ADD`, `ENV_HALL`), corrected per depth (`MEASURED`, to depth 94),
+  (`ENV_ADD`, `ENV_HALL`), corrected per depth (`MEASURED`, to depth 92),
   and the light is solved a stretch of depths at a time, moving at most
-  0.06 a depth, to depth 2001 (past it the curve is kept to exactly). A
+  0.09 a depth, to depth 2001 (past it the curve is kept to exactly). A
   generated look's own light (`lightK`) is worked out from the estimate
   (`calibrateLight`), so it settles at a light of about 1 like the zones.
   The tables are measured from the backdrop's own frames with
@@ -800,7 +806,7 @@ and how the embers move. Every change shows at once.
   the game estimates it with its solved light (no frame is drawn or read),
   beside the curve it keeps to; any depth brighter than the one before is
   marked.
-- **Zones:** pick one of the ten (the panel jumps to its 4th depth, where
+- **Zones:** pick one of the ten (the panel jumps to its 2nd depth, where
   it shows alone), then tweak its look: a colour picker for every colour,
   sliders for every strength (Light and dark, Smoke, Haze, Embers, Glints,
   Details), and the embers' motion (a profile and its speed, rise or fall, drift, turbulence

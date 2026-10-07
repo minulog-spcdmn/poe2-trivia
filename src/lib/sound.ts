@@ -535,7 +535,7 @@ let hearth = 1;
  * each): those sounding now as they are wanted (updateLoop; one that loads
  * late joins then, fading in), and the next place's when the page has a
  * moment to spare, from the first depth of the zone before it. Its turn into
- * the next begins at the 4th, and is heard from the 6th.
+ * the next begins at the 5th, and is heard from the 7th.
  */
 function prefetchBeds(b: Bus) {
   const next = bedOf(placeAt(Math.floor((depth - 1) / 10) + 1));

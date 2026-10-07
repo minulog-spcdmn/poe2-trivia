@@ -209,8 +209,8 @@ test("a burst's sparks burn in the colour of the zone it belongs to, through its
   if (k < 0) return;
   const at = (EMBERS + GLINTS) * 4;
   const near = (a: ArrayLike<number>, b: readonly number[]) => b.every((v, c) => Math.abs(a[c] - v) < 1e-6);
-  // At its first depth (still turning in), settled, and all through its handover to the next zone (from its 5th depth to the next one's 4th).
-  for (const d of [10 * k + 1, 10 * k + 4, 10 * k + 8, 10 * k + 11, 10 * k + 13]) {
+  // At its first depth (still turning in), settled, and all through its handover to the next zone (from its 5th depth to the next one's 2nd).
+  for (const d of [10 * k + 1, 10 * k + 2, 10 * k + 8, 10 * k + 10, 10 * k + 11]) {
     const e = new Embers();
     e.descend(descent(d));
     e.step(0, W, H);
@@ -303,7 +303,7 @@ test('the spores turn in small lazy curls, the near half of each larger', () => 
 test("as a zone hands over, each ember moves as the zone it burns in, and the magma's cool and slow", () => {
   // Half way through the Magma Fissure: half the embers are the Frozen Hollow's already.
   const e = new Embers();
-  e.descend({ ...descent(15), look: lookOf(1) }, { stratum: 2, turn: 0.5 });
+  e.descend({ ...descent(18.5), look: lookOf(1) }, { stratum: 2, turn: 0.5 });
   e.step(0, W, H);
   for (let s = 0; s < 240; s++) e.step(DT, W, H);
   const all = moves(e, 240);
@@ -324,7 +324,7 @@ test("as a zone hands over, each ember moves as the zone it burns in, and the ma
   assert.equal(cooling(2, 2, 0.9), 0, 'the next zone is not cooling');
   // The same magma embers, the zone still warm and then near its end.
   const cooled = new Embers();
-  const warm = { ...descent(12), look: lookOf(1) };
+  const warm = { ...descent(16), look: lookOf(1) };
   cooled.descend(warm, { stratum: 2, turn: 0.15 });
   cooled.step(0, W, H);
   for (let s = 0; s < 120; s++) cooled.step(DT, W, H);
@@ -334,7 +334,7 @@ test("as a zone hands over, each ember moves as the zone it burns in, and the ma
     return new Map([...by].map(([i, s]) => [i, mean(s)]));
   };
   const before = speeds();
-  cooled.descend({ ...descent(20.9), look: lookOf(1) }, { stratum: 2, turn: 0.95 });
+  cooled.descend({ ...descent(21.65), look: lookOf(1) }, { stratum: 2, turn: 0.95 });
   const after = speeds();
   const both = [...after.keys()].filter((i) => before.has(i));
   assert.ok(both.length > 10, `${both.length} embers`);

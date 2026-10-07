@@ -79,16 +79,17 @@ test('outside Delve no beds play and the ambience is lit in full', () => {
 
 test('a settled depth is one place alone; a turn cross-fades two at equal power', () => {
   // Through the Mines' first depths, the Mines alone.
-  for (const d of [1, 2, 3, 4, 5]) assert.deepEqual(bedsAt(d).beds.map((b) => [b.place, b.weight]), [['z0', 1]]);
+  for (const d of [1, 2, 3, 4, 5, 6]) assert.deepEqual(bedsAt(d).beds.map((b) => [b.place, b.weight]), [['z0', 1]]);
   for (let k = 0; k < 40; k++) {
     const { beds } = bedsAt(settledAt(k));
     assert.equal(beds.length, 1, `stratum ${k}`);
     assert.equal(beds[0].place, placeAt(k));
     assert.ok(Math.abs(beds[0].weight - 1) < 1e-9);
-    // Its turn into the next: both places, the next rising as the old one falls.
-    // (The Mines' turn begins at depth 4, the others' where they settle.)
+    // Alone until its hall begins to turn, at its 6th depth (its turn begins at its 5th, with the embers).
+    for (let d = settledAt(k); d <= 10 * k + 6; d++) assert.deepEqual(bedsAt(d).beds.map((b) => b.place), [placeAt(k)], `depth ${d}`);
+    // Its turn into the next: both places from its 7th depth, the next rising as the old one falls.
     let before = 0;
-    for (let d = Math.max(4, settledAt(k)) + 2; d < settledAt(k + 1); d++) {
+    for (let d = 10 * k + 7; d < settledAt(k + 1); d++) {
       const turning = bedsAt(d).beds;
       assert.deepEqual(turning.map((b) => b.place), [placeAt(k), placeAt(k + 1)], `depth ${d}`);
       assert.ok(Math.abs(turning[0].weight ** 2 + turning[1].weight ** 2 - 1) < 1e-9, `depth ${d}`);
@@ -96,13 +97,15 @@ test('a settled depth is one place alone; a turn cross-fades two at equal power'
       before = turning[1].weight;
     }
   }
-  // Half way through the hall's turn (the Mines' turn is 0.55 of the way at depth 9.5), each at 1/√2.
-  const half = bedsAt(9.5).beds;
+  // Half way through the hall's turn (the Mines' turn is 4/7 of the way at depth 9), each at 1/√2.
+  const half = bedsAt(9).beds;
   assert.deepEqual(half.map((b) => b.place), ['z0', 'z1']);
   for (const b of half) assert.ok(Math.abs(b.weight - Math.SQRT1_2) < 1e-9);
-  // As the next is announced (depth 11) the Magma Fissure is about three quarters of the hall.
+  // As the next is announced (depth 11) the Magma Fissure is nearly all of it, nine tenths of the hall;
+  // once its first question is answered (depth 12), all of it.
   const [mines, magma] = bedsAt(11).beds;
-  assert.ok(magma.weight > mines.weight && magma.weight ** 2 > 0.8 && magma.weight ** 2 < 0.9, `${magma.weight}`);
+  assert.ok(magma.weight > mines.weight && magma.weight ** 2 > 0.98 && magma.weight ** 2 < 0.99, `${magma.weight}`);
+  assert.deepEqual(bedsAt(12).beds.map((b) => [b.place, b.weight]), [['z1', 1]]);
 });
 
 test("the ambience is each place's fire, by its share", () => {
