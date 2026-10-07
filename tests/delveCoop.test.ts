@@ -365,9 +365,10 @@ test('everyone standing answers the one question: a wrong pick strikes its optio
   assert.equal(h.s.players.find((p) => p.id === 'p2')!.streak, 1);
   // A pick on its way as it closed is dropped quietly.
   silently(() => h.pickAs('p0', w2), /late/);
-  // One depth deeper, for everyone at once.
-  silently(() => h.act({ type: 'next' }, 'p1'), /host/);
-  h.next();
+  // One depth deeper, for everyone at once: anyone in the team may move it
+  // on, the first press counts and the next finds nothing to continue.
+  h.act({ type: 'next' }, 'p1');
+  silently(() => h.next(), /continue/);
   assert.equal(h.s.round, 2);
   assert.equal(h.s.phase, 'choosing');
   assert.deepEqual(h.s.delve!.votes, {});
@@ -917,7 +918,9 @@ test('guests can only vote, answer and give their own lives: everything else is 
   h.act({ type: 'answer', index: right(h.s.question!), askedAt: h.s.question!.askedAt, playerId: 'p0', gained: 'wards' } as never, 'p1');
   assert.equal(h.s.reveal!.winnerId, 'p1');
   assert.equal(h.s.reveal!.gained, undefined);
-  silently(() => h.act({ type: 'next' }, 'p2'));
+  // Any teammate moves the run on.
+  h.act({ type: 'next' }, 'p2');
+  assert.equal(h.s.phase, 'choosing');
 });
 
 test('on one device a run together is refused; online, one player still delves alone in turns', () => {

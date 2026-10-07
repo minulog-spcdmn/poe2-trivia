@@ -66,7 +66,7 @@
   const item = $derived(q.itemId ? engine.byId.get(q.itemId) : undefined);
   const race = $derived(s.settings.mode === 'race');
   // Everyone sees the Next button; only the host (and in turns mode, whoever answered) can press it.
-  const canNext = $derived(!!reveal && (race || coop ? session.isHost : mine || session.isHost));
+  const canNext = $derived(!!reveal && (race ? session.isHost : coop ? session.isHost || session.state!.players.some((p) => p.id === session.myPlayerId) : mine || session.isHost));
   const myMiss = $derived(race && me ? q.misses.find((m) => m.playerId === me) : undefined);
   const winner = $derived(reveal?.winnerId ? s.players.find((p) => p.id === reveal.winnerId) : undefined);
   /** Turns and race: you (or whoever answered) got it. Delve together: the team cleared the depth. */
@@ -838,7 +838,7 @@
         class:primary={canNext}
         data-sfx="none"
         disabled={!canNext}
-        title={canNext ? undefined : race ? 'The host moves the race on' : coop ? 'The host moves the run on' : `${active.name} or the host moves on`}
+        title={canNext ? undefined : race ? 'The host moves the race on' : coop ? 'The team moves the run on' : `${active.name} or the host moves on`}
         onclick={next}
       >
         {race ? 'Next question' : coop ? 'Next depth' : 'Next turn'}

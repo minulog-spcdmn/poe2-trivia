@@ -1300,8 +1300,10 @@ export class Engine {
           if (!isHost) throw new ActionError('The host moves the race on.');
           this.advanceRace(s);
         } else if (s.delve && isGroupRun(s)) {
-          // The run moves on for everyone at once (by itself, online).
-          if (!isHost) throw new ActionError('The host moves the run on.', true);
+          // The run moves on for everyone at once (by itself, online), and
+          // anyone in it may move it on sooner: the first press counts, the
+          // rest find nothing to continue.
+          if (!isHost && !s.players.some((p) => p.id === from)) throw new ActionError('Only the team moves the run on.', true);
           this.advance(s);
         } else {
           if (!isActive && !isHost) throw new ActionError("It's not your turn.");
