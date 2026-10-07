@@ -1678,8 +1678,7 @@ class Session {
     // Delve: dynamite blasted the question away for a new one, heard on every screen.
     if (blastedAway(prev, next)) sfx('blast');
     if ((prev.phase === 'lobby' || prev.phase === 'over') && (next.phase === 'choosing' || next.phase === 'question')) {
-      // A Delve run opens with its first zone's gate, and the gate's sound (Game.svelte).
-      if (!next.delve) sfx('start');
+      sfx('start');
       return;
     }
     if (next.phase === 'over' && prev.phase !== 'over') {

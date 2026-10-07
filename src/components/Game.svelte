@@ -204,7 +204,8 @@
         next = { key, turn, title: 'Deeper than ever', sigil, accent, label: `Deeper than ever: depth ${shownDepth(depth)}, past your best of ${shownDepth(best)}.`, leaving: false, still };
       if (!next) return;
       card = next;
-      sfx('stratum');
+      // A run's opening gate keeps the game's start sound (session.svelte.ts) to itself.
+      if (!opening) sfx('stratum');
       cardTimers.forEach(clearTimeout);
       cardTimers = [
         setTimeout(() => card?.key === key && (card.leaving = true), ZONE_HOLD * 1000),
