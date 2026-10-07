@@ -761,7 +761,7 @@
             onclick={() => (asking = asking === p.id ? null : p.id)}
             aria-label="Revive {p.name}: give them one of your lives"
             aria-expanded={asking === p.id}
-            ><span class="heart" aria-hidden="true">{@render heartOfLight(`${uid}-heart-${i}`)}</span><span class="tip" aria-hidden="true">Revive</span></button
+            ><span class="heart" aria-hidden="true">{@render heartOfLight(`${uid}-heart-${i}`)}</span></button
           >
         {/if}
       </li>
@@ -1018,7 +1018,8 @@
     opacity: 1;
     filter: none;
   }
-  li.fallen.revivable > :not(.revive) {
+  /* (Not the remove button, which keeps its own showing: on hover only.) */
+  li.fallen.revivable > :not(.revive, .kick) {
     opacity: 0.45;
     filter: grayscale(0.85);
   }
@@ -1132,36 +1133,6 @@
     35% {
       transform: scale(1.04);
     }
-  }
-  /* Its name, over it on hover or focus. */
-  .tip {
-    position: absolute;
-    left: 50%;
-    bottom: calc(100% + 6px);
-    translate: -50% 0;
-    padding: 2px 8px 3px;
-    font-family: var(--font-cinzel);
-    font-size: 0.66rem;
-    font-weight: 700;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    white-space: nowrap;
-    color: #ffe4d8;
-    background: rgba(20, 10, 9, 0.94);
-    border: 1px solid rgba(236, 58, 72, 0.5);
-    border-radius: 4px;
-    box-shadow: 0 0 12px rgba(236, 58, 72, 0.25);
-    opacity: 0;
-    transform: translateY(3px);
-    transition:
-      opacity 0.15s,
-      transform 0.15s var(--ease-out);
-    pointer-events: none;
-  }
-  .revive:hover .tip,
-  .revive:focus-visible .tip {
-    opacity: 1;
-    transform: none;
   }
   .revive:hover::before,
   .revive:focus-visible::before,

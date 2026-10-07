@@ -217,6 +217,12 @@ export const FIND_RULES: Record<FindKind, { gives: string; miss: string }> = {
   },
 };
 
+/** Over a flare or a stick of dynamite in a player's pack, on hover: how it works. */
+export const ITEM_TIPS = {
+  flares: `A flare: when your time runs out, it burns for ${words(FLARE_MS / 1000)} more seconds. Not on finds.`,
+  dynamite: `Dynamite: Skip blasts a question away for a new one at the same depth, ${timesWord(DELVE_MAX_BLASTS)} a depth at most. At zero it goes off by itself, after any flare. Not on finds.`,
+} as const;
+
 /** Under the finds in the lobby's rules: why flares and dynamite never work on a find's question. */
 export const FINDS_UNSAFE = "A find is a dangerous route: thicker walls, a darkness nothing keeps back. Flares and dynamite don't work there.";
 

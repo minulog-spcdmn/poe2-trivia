@@ -6,6 +6,7 @@
   // off, one blown up by a Dynamite Cache missed (`blown`). A find on its way (`expect`: its sparks flying to it) has its place
   // kept, unseen, so they have somewhere to land.
   import type { Inventory } from '../lib/delve';
+  import { ITEM_TIPS } from '../lib/difficultyText';
   import type { InventoryMoment } from '../lib/inventoryArt';
   import ItemGlyph from './ItemGlyph.svelte';
 
@@ -32,6 +33,7 @@
           <span class="grow"><ItemGlyph kind="flare" /></span>
         {/key}
         <b>{inv.flares}</b>
+        <span class="tip flare-tip">{ITEM_TIPS.flares}</span>
       </span>
     {/if}
     {#if inv.dynamite > 0 || moment?.kind === 'blast' || blown === 'dynamite' || expect === 'dynamite'}
@@ -49,6 +51,7 @@
           <span class="grow"><ItemGlyph kind="dynamite" /></span>
         {/key}
         <b>{inv.dynamite}</b>
+        <span class="tip dynamite-tip">{ITEM_TIPS.dynamite}</span>
       </span>
     {/if}
   </span>
@@ -74,6 +77,48 @@
     display: inline-flex;
     align-items: center;
     gap: 1px;
+  }
+  /* How it works, under it on hover (a pointer's; the counts are hidden
+     from screen readers, whose players read the rules in the lobby). */
+  .tip {
+    position: absolute;
+    z-index: 5;
+    top: calc(100% + 7px);
+    left: 50%;
+    translate: -50% 0;
+    width: max-content;
+    max-width: 15rem;
+    padding: 0.35em 0.6em 0.4em;
+    font-family: var(--font-body);
+    font-size: 0.82rem;
+    font-weight: 400;
+    line-height: 1.3;
+    text-align: left;
+    white-space: normal;
+    color: var(--text);
+    background: rgba(16, 12, 9, 0.96);
+    border: 1px solid color-mix(in srgb, var(--tip) 55%, transparent);
+    border-radius: 4px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
+    opacity: 0;
+    transform: translateY(-3px);
+    transition:
+      opacity 0.15s,
+      transform 0.15s var(--ease-out);
+    pointer-events: none;
+  }
+  .flare-tip {
+    --tip: #f7a3b3;
+  }
+  .dynamite-tip {
+    --tip: #eebf96;
+  }
+  .count:hover {
+    z-index: 5;
+  }
+  .count:hover .tip {
+    opacity: 1;
+    transform: none;
   }
   /* Kept for a find on its way. */
   .count.kept {
