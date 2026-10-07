@@ -10,7 +10,7 @@ export type Layer = { file: string; gain: number; rate: number; delay: number; h
 export type Moment = { layers: Layer[]; soften: number; varyPitch: number; varyGain: number };
 
 /** Whole mix: master volume (dB) and 'warmth', a high-shelf cut (dB) above 5 kHz. */
-export const MIX = { volume: 4, warmth: 1 };
+export const MIX = { volume: 7, warmth: 1 };
 
 /**
  * How far (ms) into the 'fill' moment its first spark lands on the bar: the
