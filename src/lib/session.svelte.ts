@@ -18,6 +18,7 @@ import {
   MAX_SPECTATORS,
   publicView,
   grayscaleFor,
+  ANSWER_GRACE_MS,
   autoNextLeft,
   renameCategories,
   DEFAULT_SETTINGS,
@@ -38,7 +39,7 @@ import { toasts, type ToastKind, type ToastOptions } from './toasts.svelte';
 import { creatorArrival } from './herald';
 import { RUBY } from './palette';
 import { CREATOR_TITLE } from './site';
-import { FLARE_MS, LOOKALIKES_ASKED_FROM, isGroupRun, livesOf, standingIds } from './delve';
+import { DELVE_FUSE_MS, FLARE_MS, LOOKALIKES_ASKED_FROM, clockLeft, fuseDue, fuseLeft, isGroupRun, livesOf, standingIds } from './delve';
 import { blownText } from './difficultyText';
 import { loadLooks } from './looks';
 import { bestOf, loadRecords, recordLeft, recordRun, runEvent } from './delveRecord';
@@ -55,10 +56,8 @@ import {
   expireIn,
   expireKey,
   flareIn,
-  fuseIn,
   hostAnswerHold,
   markAway,
-  timeOutAt,
   mayAutoReask,
   racerIds,
   reaskDelay,
@@ -121,8 +120,10 @@ const JOIN_GIVE_UP_MS = 30000;
 const JOIN_GIVE_UP_CAP_MS = 60000;
 /** Client: the server says an attempt's room isn't there within this time (it holds an offer ~5 s). */
 const EXPIRE_MS = 7000;
-/** Delve: how often a lit fuse's hiss is played again while it burns (the sound lasts about a second). */
-const FUSE_HISS_EVERY_MS = 780;
+/** Delve: how long past 0 and the time-out a fuse's sound holds before it fades by itself, should the blast be slow to come. */
+const FUSE_TAIL_MS = 600;
+/** Delve: how long the fuse sounds after Detonate is pressed, at most, should the blast be slow to come back. */
+const DETONATE_FUSE_MS = 1500;
 /** Client: pause before trying again after a failed attempt or a hiccup of the signalling server. */
 const RETRY_SOON_MS = 1500;
 const PING_EVERY_MS = 3000;
@@ -322,8 +323,6 @@ class Session {
   private expireKey = '';
   private flareTimer: ReturnType<typeof setTimeout> | null = null;
   private flareKey = '';
-  private fuseTimer: ReturnType<typeof setTimeout> | null = null;
-  private fuseKey = '';
 
   get isHost() {
     return this.mode === 'local' || this.mode === 'host';
@@ -1624,38 +1623,74 @@ class Session {
       .catch((err) => console.warn('achievements', err));
   }
 
-  /** Delve: the fuse hissing, for the question (askedAt) whose fuse it is; stopped as it goes off. */
-  private hiss: { qid: number; stops: (() => void)[]; timer: ReturnType<typeof setTimeout> | null } | null = null;
+  /** Delve: the fuse waiting to burn, for the question and the 0 it burns down to (`key`). */
+  private hiss: { key: string; timer: ReturnType<typeof setTimeout> | null } | null = null;
+  /** Delve: the fuse's sound, for the question it burns on (askedAt); one at a time. */
+  private fuseSound: { qid: number; stop: (() => void) | undefined } | null = null;
 
   /**
-   * Delve: a stick of dynamite's fuse, lit as the clock hit 0 (Question.fuse),
-   * hisses for as long as it burns: the fuse sound again and again, each
-   * taking over before the last dies away, until the dynamite goes off (or
-   * the question ends some other way), when it is cut off.
+   * Delve: the fuse's sound starts for question `qid`, held for `holdMs` at
+   * most (cut sooner as the question ends); nothing when it sounds for that
+   * question already, so it is never heard twice over.
+   */
+  private soundFuse(qid: number, holdMs: number) {
+    if (this.fuseSound?.qid === qid) return;
+    this.cutFuse();
+    this.fuseSound = { qid, stop: sfx('fuse', { holdMs }) };
+  }
+
+  /** Delve: the fuse's sound is cut, with a short fade (the dynamite went off, or the question ended). */
+  private cutFuse() {
+    this.fuseSound?.stop?.();
+    this.fuseSound = null;
+  }
+
+  /**
+   * Delve: Detonate pressed on question `askedAt`: its fuse is heard at once
+   * (unless it burns already) until the blast comes back from the host.
+   */
+  detonating(askedAt: number) {
+    this.soundFuse(askedAt, DETONATE_FUSE_MS);
+  }
+
+  /**
+   * Delve: when a stick of dynamite will go off by itself as the clock hits
+   * 0 (delve.ts fuseDue), its fuse burns over the clock's last
+   * DELVE_FUSE_MS (fuseLeft) to warn of the blast: one sound, started as it
+   * is lit and held to 0 and the blast, cut as the question ends (blasted
+   * away, answered, or set off by hand). Every screen times it from the
+   * deadline on the host's clock.
    */
   private hissFuse(s: GameState) {
     const q = s.phase === 'question' ? s.question : null;
-    const fuse = q?.fuse;
-    const burning = !!fuse && this.hostNow() < fuse.ends;
-    if (burning && this.hiss?.qid === q!.askedAt) return;
-    if (this.hiss) {
-      if (this.hiss.timer) clearTimeout(this.hiss.timer);
-      for (const stop of this.hiss.stops) stop();
-      this.hiss = null;
-    }
-    if (!burning) return;
-    const h: NonNullable<Session['hiss']> = { qid: q!.askedAt, stops: [], timer: null };
+    // The question it burnt on is over (or another took its place): the sound goes with it.
+    if (this.fuseSound && this.fuseSound.qid !== q?.askedAt) this.cutFuse();
+    const key = q && fuseDue(s) ? `${q.askedAt}:${q.deadline}` : '';
+    if (key === (this.hiss?.key ?? '')) return;
+    if (this.hiss?.timer) clearTimeout(this.hiss.timer);
+    this.hiss = null;
+    // No dynamite to go off at this 0 any more, or a 0 moved (a flare, the lab's clock): the fuse burns afresh.
+    if (this.fuseSound) this.cutFuse();
+    if (!key) return;
+    const h: NonNullable<Session['hiss']> = { key, timer: null };
     this.hiss = h;
-    const play = () => {
+    // At first from the state just in (this.state may not hold it yet), later from the latest.
+    const light = (cur: GameState | null = this.state) => {
       h.timer = null;
-      if (this.hiss !== h) return;
-      const stop = sfx('fuse');
-      if (stop) h.stops.push(stop);
-      // Again while there is time left for it to be heard (the fuse sound runs about a second).
-      const left = fuse!.ends - this.hostNow();
-      if (left > FUSE_HISS_EVERY_MS + 250) h.timer = setTimeout(play, FUSE_HISS_EVERY_MS);
+      if (this.hiss !== h || !cur?.question) return;
+      const now = this.hostNow();
+      const fuse = fuseLeft(cur, now);
+      // Not burning yet (or the clock held still meanwhile): back as it starts.
+      if (fuse === null) {
+        h.timer = setTimeout(() => light(), Math.max(16, clockLeft(cur.question, now) - DELVE_FUSE_MS));
+        return;
+      }
+      // Burnt down already (a screen that came in late): the blast is due, nothing to hear.
+      if (fuse <= 0) return;
+      // Held to 0 and the host's time-out after it, when the blast cuts it.
+      this.soundFuse(cur.question.askedAt, fuse * DELVE_FUSE_MS + ANSWER_GRACE_MS + FUSE_TAIL_MS);
     };
-    play();
+    light(s);
   }
 
   /** Side effects that every device plays: sounds, and the notice of the creator's arrival. */
@@ -1670,7 +1705,7 @@ class Session {
         who: { name: arrival.name, hue: arrival.hue ?? RUBY },
         herald: true,
       });
-    // Delve: a lit fuse hisses on every screen until its dynamite goes off.
+    // Delve: dynamite's fuse hisses on every screen over the clock's last seconds, until it goes off.
     this.hissFuse(next);
     if (!prev) return;
     const me = this.myPlayerId;
@@ -1764,15 +1799,14 @@ class Session {
     // (which comes ANSWER_GRACE_MS later) so it is applied first; should the
     // time-out still get there first, the engine burns the flare instead.
     this.scheduleFlare(s);
-    // Delve: with no flare to burn, a stick of dynamite's fuse is lit as the
-    // clock hits 0 instead; the time-out then waits for it to burn down.
-    this.scheduleFuse(s);
-    const timeOut = timeOutAt(s);
-    if (timeOut !== null) {
+    // Delve: with no flare to burn, a stick of dynamite goes off by itself
+    // in place of the time-out (its fuse has hissed over the clock's last
+    // seconds already).
+    if (s.phase === 'question' && s.question?.deadline) {
       const version = s.version;
       // Answers sent in time may still be on their way.
       this.armAt(
-        timeOut,
+        s.question.deadline + ANSWER_GRACE_MS,
         () => {
           if (this.state?.version !== version) return;
           this.setState(engine.apply(this.state, { type: 'answer', index: null }, null));
@@ -1827,35 +1861,6 @@ class Session {
         }
       },
       (t) => (this.flareTimer = t),
-    );
-  }
-
-  /**
-   * Delve: as the clock hits 0 with no flare to burn, the host lights a
-   * stick of dynamite's fuse (delveSession.ts fuseIn); every screen burns it
-   * down from the state (host or this device only).
-   */
-  private scheduleFuse(s: GameState) {
-    const left = this.mode !== 'client' ? fuseIn(s, Date.now()) : null;
-    const key = left === null ? '' : `${s.question?.askedAt}:${s.question?.deadline}`;
-    if (key === this.fuseKey) return;
-    if (this.fuseTimer) clearTimeout(this.fuseTimer);
-    this.fuseTimer = null;
-    this.fuseKey = key;
-    if (left === null) return;
-    const askedAt = s.question!.askedAt;
-    this.armAt(
-      Date.now() + left,
-      () => {
-        const cur = this.state;
-        if (!cur || this.fuseKey !== key) return;
-        try {
-          this.setState(engine.apply(cur, { type: 'fuse', askedAt }, null));
-        } catch {
-          /* the question closed anyway */
-        }
-      },
-      (t) => (this.fuseTimer = t),
     );
   }
 
@@ -2020,9 +2025,6 @@ class Session {
     if (this.flareTimer) clearTimeout(this.flareTimer);
     this.flareTimer = null;
     this.flareKey = '';
-    if (this.fuseTimer) clearTimeout(this.fuseTimer);
-    this.fuseTimer = null;
-    this.fuseKey = '';
     this.reaskFails = { turn: '', n: 0 };
     this.artFailedFor = 0;
     this.drawHold = null;

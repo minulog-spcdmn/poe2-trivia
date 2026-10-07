@@ -6,7 +6,6 @@ import {
   REVIVE_FROM,
   fellAt,
   flaresOf,
-  fuseDue,
   inventoryOf,
   isGroupRun,
   itemsWorkOn,
@@ -18,7 +17,7 @@ import {
   voteDone,
   type ItemKind,
 } from './delve.ts';
-import { ANSWER_GRACE_MS, type Blast, type GameState } from './game.ts';
+import type { Blast, GameState } from './game.ts';
 
 /** The longest the host waits for the art to reach the player answering before their clock starts anyway. */
 export const DELVE_CLOCK_CAP_MS = 3000;
@@ -333,27 +332,3 @@ export function flareIn(s: GameState, now: number): number | null {
   if (!p?.connected || flaresOf(s, p.id) <= 0) return null;
   return Math.max(0, q.deadline - now);
 }
-
-/**
- * Milliseconds until the host lights a stick of dynamite's fuse (as the
- * clock hits 0, with no flare to burn first: delve.ts fuseDue), or null when
- * none will be: one is lit already, or the dynamite wouldn't go off.
- */
-export function fuseIn(s: GameState, now: number): number | null {
-  const q = s.question;
-  if (!q || q.deadline === null || q.fuse || !fuseDue(s)) return null;
-  return Math.max(0, q.deadline - now);
-}
-
-/**
- * When the host takes the time-out of the question in play (host clock):
- * at 0 and the allowance for answers in flight, or once a lit fuse has
- * burnt down, whichever is later (the dynamite goes off then). Null with no
- * clock running.
- */
-export function timeOutAt(s: GameState): number | null {
-  const q = s.phase === 'question' ? s.question : null;
-  if (!q?.deadline) return null;
-  return Math.max(q.deadline + ANSWER_GRACE_MS, q.fuse?.ends ?? 0);
-}
-

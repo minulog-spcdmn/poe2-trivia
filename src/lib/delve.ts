@@ -250,9 +250,9 @@ export function delveRules(d: number): DifficultyRules {
  * a Flare Cache a flare (it burns by itself as the clock hits 0, for more
  * time); a Dynamite Cache dynamite (it blasts the question in play away for
  * a new one at the same depth, at most DELVE_MAX_BLASTS times a depth: by
- * hand, or by itself once its fuse, lit as the clock hits 0 with no flare
- * to burn, has burnt down). Flares and
- * dynamite never work on a find's own question.
+ * hand, or by itself as the clock hits 0 with no flare to burn, its fuse
+ * hissing over the last seconds before). Flares and dynamite never work on
+ * a find's own question.
  */
 export type FindKind = 'azurite' | 'flare' | 'dynamite';
 
@@ -527,12 +527,12 @@ export const DELVE_MAX_BLASTS = 2;
 
 /**
  * How long a stick of dynamite's fuse burns before it goes off by itself
- * (ms). As the clock hits 0 with no flare to burn, the host lights it
- * (Question.fuse, on the host's clock, so every screen burns it down
- * together); the time is up, so no answer counts any more (but one given
- * before 0, within the allowance for answers in flight), and when it has
- * burnt down the dynamite blasts the question away. Pressing Detonate meanwhile
- * blasts it at once.
+ * (ms): when it will go off as the clock hits 0 (fuseDue), its fuse hisses
+ * over the clock's last DELVE_FUSE_MS and a bar burns down on Detonate
+ * (fuseLeft), to warn of the blast. Every screen works it out from the
+ * question's deadline on the host's clock; nothing is lit in the state. The
+ * question stays open meanwhile: an answer counts as at any time, and
+ * Detonate blasts at once. At 0 it goes off with the time-out.
  */
 export const DELVE_FUSE_MS = 1800;
 
@@ -841,8 +841,10 @@ export function blastProblem(s: GameState, by: string | null): string | null {
 
 /**
  * Whether a stick of dynamite would go off by itself on the question in
- * play as its clock hits 0, its fuse lit first (DELVE_FUSE_MS): there is no
- * flare to burn before it, and dynamite can blast it away. Alone: the
+ * play as its clock hits 0 (its fuse hissing over the last DELVE_FUSE_MS
+ * before: fuseLeft): there is no flare to burn at that 0 first (once a
+ * flare has burnt, the 0 it moved to is the one meant), and dynamite can
+ * blast it away. Alone: the
  * player answering is here, has burnt their flare or holds none, and may
  * blast it (blastProblem). Together: no flare is ready (teamItemReady), and
  * dynamite is, for someone here still to answer. Never on a find's.
@@ -857,14 +859,19 @@ export function fuseDue(s: GameState): boolean {
 }
 
 /**
- * How far a lit fuse has burnt down at `now` (host clock): 1 as it is lit,
- * 0 as the dynamite goes off. Null with no fuse lit.
+ * How much of a stick of dynamite's fuse is left at `now` (host clock): it
+ * burns over the clock's last DELVE_FUSE_MS before a 0 where the dynamite
+ * will go off (fuseDue), from 1 to 0 as the clock hits 0, and stays at 0
+ * until the time-out blasts the question away. Null while there is more
+ * time than that on the clock, or when nothing would go off at this 0 (a
+ * flare burns first, no stick at hand, no blast left at this depth, a
+ * find's question, or none open). It holds while the clock holds
+ * (clockLeft).
  */
-export function fuseLeft(q: Pick<Question, 'fuse'> | null | undefined, now: number): number | null {
-  const f = q?.fuse;
-  if (!f) return null;
-  const span = Math.max(1, f.ends - f.lit);
-  return Math.min(1, Math.max(0, (f.ends - now) / span));
+export function fuseLeft(s: GameState, now: number): number | null {
+  if (!fuseDue(s)) return null;
+  const left = clockLeft(s.question!, now);
+  return left > DELVE_FUSE_MS ? null : left / DELVE_FUSE_MS;
 }
 
 /**

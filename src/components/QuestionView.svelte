@@ -30,7 +30,7 @@
   import { fxActive, type Handle } from '../lib/fx/core';
   import { dock, narrow, phone } from '../lib/layout';
   import { portal } from '../lib/portal';
-  import { blastProblem, dynamiteOf, fellAt, fuseLeft, holdersOf, isGroupRun, itemsWorkOn, livesOf, waitingIds } from '../lib/delve';
+  import { DELVE_FUSE_MS, blastProblem, clockLeft, dynamiteOf, fellAt, fuseDue, fuseLeft, holdersOf, isGroupRun, itemsWorkOn, livesOf, waitingIds } from '../lib/delve';
   import { blownText, coopMissText, coopRevealText, namesOf, wardText } from '../lib/difficultyText';
   import ItemGlyph from './ItemGlyph.svelte';
   import type { GlyphKind } from '../lib/inventoryArt';
@@ -162,10 +162,11 @@
   // depth, twice a depth at most: its button (Detonate) takes the place Next has
   // after an answer. Once this question has dynamite at hand its place is
   // kept until the question ends, the button only showing while it can be
-  // used, so nothing moves as it comes and goes. As the clock hits 0 with no
-  // flare to burn, the host lights its fuse (Question.fuse): the button's
-  // bar burns down with it, on the host's clock as Next's does, and Detonate
-  // still sets it off at once meanwhile.
+  // used, so nothing moves as it comes and goes. When it will go off by
+  // itself as the clock hits 0 (no flare to burn first), its fuse burns over
+  // the clock's last seconds (delve.ts fuseLeft): the button's bar burns
+  // down to 0 with it, on the host's clock as Next's does, and the question
+  // can still be answered, or Detonate pressed, meanwhile.
 
   /** Sticks of dynamite at hand: alone the player's, together everyone standing's. */
   const sticks = $derived(!s.delve ? 0 : coop ? holdersOf(s, 'dynamite').reduce((n, id) => n + dynamiteOf(s, id), 0) : dynamiteOf(s, active.id));
@@ -180,29 +181,40 @@
     const timer = setTimeout(() => (expired = true), left);
     return () => clearTimeout(timer);
   });
-  /** The fuse burning down, 1 to 0 (delve.ts fuseLeft), on the host's clock; null with none lit. */
+  /**
+   * The fuse burning down over the clock's last seconds, 1 to 0 at 0
+   * (delve.ts fuseLeft), on the host's clock; null before it starts, or
+   * when no dynamite will go off at this 0.
+   */
   let fuse = $state<number | null>(null);
   $effect(() => {
-    const lit = reveal ? null : (q.fuse ?? null);
-    if (!lit) {
+    const st = s;
+    if (reveal || !fuseDue(st)) {
       fuse = null;
       return;
     }
     let frame = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const tick = () => {
-      fuse = fuseLeft({ fuse: lit }, session.hostNow());
-      if (fuse! > 0) frame = requestAnimationFrame(tick);
+      const now = session.hostNow();
+      fuse = fuseLeft(st, now);
+      // Not burning yet: back as it starts.
+      if (fuse === null) timer = setTimeout(tick, Math.max(16, clockLeft(st.question!, now) - DELVE_FUSE_MS));
+      else if (fuse > 0) frame = requestAnimationFrame(tick);
     };
     untrack(tick);
-    return () => cancelAnimationFrame(frame);
+    return () => {
+      cancelAnimationFrame(frame);
+      clearTimeout(timer);
+    };
   });
-  /** Whether this device can blast the question away now (delve.ts blastProblem; on one device, for the player): while its clock runs, or its fuse burns. */
+  /** Whether this device can blast the question away now (delve.ts blastProblem; on one device, for the player): while its clock runs, its fuse to the end. */
   const canBlast = $derived(
     !!s.delve &&
       mine &&
       !reveal &&
       !waiting &&
-      (!expired || !!q.fuse) &&
+      (!expired || fuse !== null) &&
       chosen === null &&
       blastProblem(s, session.mode === 'local' ? null : me) === null,
   );
@@ -223,8 +235,8 @@
   function blastThrough() {
     if (!canBlast || blasting) return;
     blasting = true;
-    // Its fuse is lit here at once (unless it burns already); the blast is heard as the new question comes (session.svelte.ts).
-    if (!q.fuse) sfx('fuse');
+    // Its fuse is heard here at once (unless it is burning already: never twice); the blast is heard as the new question comes (session.svelte.ts).
+    session.detonating(q.askedAt);
     session.dispatch({ type: 'blast', askedAt: q.askedAt });
     // Should the host turn it down (it crossed the end of the question), it can be pressed again.
     setTimeout(() => (blasting = false), 1500);
@@ -816,7 +828,7 @@
         <span class="stick" aria-hidden="true"><ItemGlyph kind="dynamite" /></span>
         Detonate
         {#if fuse !== null}
-          <!-- The fuse lit at 0: it burns down as Next's bar does, and the dynamite goes off. -->
+          <!-- The fuse over the clock's last seconds: it burns down to 0 as Next's bar does, and the dynamite goes off. -->
           <span class="auto fuse" style:transform="scaleX({fuse})"></span>
         {/if}
       </button>
@@ -835,9 +847,9 @@
       {#if others.length}<span class="still">Still answering: {namesOf(others, nameOf, me)}.</span>{/if}
     </p>
   {:else if fuse !== null}
-    <!-- Delve: the clock hit 0 and a stick of dynamite's fuse is lit (its bar burns down on Detonate). -->
+    <!-- Delve: the clock's last seconds, with dynamite to go off at 0 (its bar burns down on Detonate). -->
     <p class="spectate blast-line" in:fade={{ duration: 200 }}>
-      <span class="found-glyph" aria-hidden="true"><ItemGlyph kind="dynamite" /></span>Time's up, and {coop ? "the team's" : delveYou ? 'your' : `${active.name}'s`} dynamite fuse is lit.
+      <span class="found-glyph" aria-hidden="true"><ItemGlyph kind="dynamite" /></span>The fuse on {coop ? "the team's" : delveYou ? 'your' : `${active.name}'s`} dynamite is burning.
     </p>
   {:else if blastLine}
     <p class="spectate blast-line" in:fade={{ duration: 300, delay: 300 }}><span class="found-glyph" aria-hidden="true"><ItemGlyph kind="dynamite" /></span>{blastLine}</p>

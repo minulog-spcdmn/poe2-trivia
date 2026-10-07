@@ -117,9 +117,11 @@ test('veiled "find the art" pictures say which option they belong to', () => {
   assert.equal(parseHostMsg({ ...patch, tile: '2' }), null);
 });
 
-test('version 14: dynamite burns a fuse at 0 (Question.fuse); 13 blasted a question away (the blast action), 12 had the frozen Delve rules, 11 the co-op vote and revive', () => {
-  assert.equal(PROTOCOL_VERSION, 14);
-  // A guest before the fuse would show no fuse burning, and its Skip would be turned down as too late.
+test('version 15: dynamite goes off right at 0, its fuse burning over the last seconds before (worked out on every screen); 14 lit it at 0 (Question.fuse), 13 blasted a question away (the blast action), 12 had the frozen Delve rules, 11 the co-op vote and revive', () => {
+  assert.equal(PROTOCOL_VERSION, 15);
+  // A guest on 14 would wait for a fuse the host never lights, and burn none before 0.
+  assert.match(versionProblem(14)!, /^Your game is out of date/);
+  // A guest before the fuse would show no fuse burning.
   assert.match(versionProblem(13)!, /^Your game is out of date/);
   // A guest on an older curve would time its own clock and fast window wrongly, so it does not mix.
   assert.match(versionProblem(12)!, /^Your game is out of date/);
@@ -129,7 +131,7 @@ test('version 14: dynamite burns a fuse at 0 (Question.fuse); 13 blasted a quest
   assert.deepEqual(parseClientMsg({ t: 'action', action: { type: 'revive', target: 'p2' } }), { t: 'action', action: { type: 'revive', target: 'p2' } });
   // A blast names only its question; who set it off the host takes from the connection.
   assert.deepEqual(parseClientMsg({ t: 'action', action: { type: 'blast', askedAt: 42, by: 'p0' } }), { t: 'action', action: { type: 'blast', askedAt: 42 } });
-  // Only the host lights a fuse: a guest can't send one.
+  // No fuse is lit by anyone (14's host-only 'fuse' action is gone): it is no message.
   assert.equal(parseClientMsg({ t: 'action', action: { type: 'fuse', askedAt: 42 } }), null);
   // The plain art the dynamite before it laid bare is no message any more.
   assert.equal(parseHostMsg({ t: 'clean', qid: 5, w: 120, h: 160, data: new ArrayBuffer(8) }), null);

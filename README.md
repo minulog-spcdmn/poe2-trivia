@@ -189,13 +189,17 @@ the same thing for everyone.
     it is never a find, even from a find's card (dynamite is no way to fish
     for finds). Its card is locked out like a pick. At most two blasts a
     depth (`DELVE_MAX_BLASTS`, the offer's other cards). As the clock hits
-    0, a flare burns first; only with none to burn is a stick's fuse lit
-    (while the depth has a blast left), in place of the time-out, which
-    then costs nothing: it hisses, and a bar burns down on Detonate as Next's
-    does, for `DELVE_FUSE_MS` (1.8 s, set by the host on its clock, so
-    every screen burns it together). The time is up meanwhile: no answer
-    counts but one given before 0. Burnt down, the dynamite goes off by
-    itself; Detonate sets it off at once. Instead of the plunge, the stage
+    0, a flare burns first; only with none to burn does a stick go off by
+    itself (while the depth has a blast left), right at 0, in place of the
+    time-out, which then costs nothing. Its fuse warns of it: over the
+    clock's last `DELVE_FUSE_MS` (1.8 s) before that 0 it hisses, and a bar
+    burns down on Detonate as Next's does, reaching its end at 0 (every
+    screen times it from the deadline on the host's clock, so nothing is
+    lit in the state). The question is still open meanwhile: a right
+    answer clears it and the stick is kept, a wrong one costs its life as
+    usual, and Detonate sets it off at once. With a flare to burn at that 0
+    there is no fuse before it; should the dynamite go off at the 0 the
+    flare moves the clock to, the fuse burns before that one. Instead of the plunge, the stage
     swings sideways, toward where the new card lay on the offer from the
     blasted one (a card to its left swings left): the explosion bursts in
     from that side of the screen (a flash, a fireball and smoke billowing

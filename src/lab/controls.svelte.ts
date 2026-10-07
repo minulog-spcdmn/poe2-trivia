@@ -17,6 +17,7 @@
 import { engine, session } from '../lib/session.svelte';
 import { createGame, DEFAULT_SETTINGS, type Action, type GameState, type Grayscale, type Question } from '../lib/game';
 import {
+  DELVE_FUSE_MS,
   DELVE_LIVES,
   DELVE_MAX_DYNAMITE,
   DELVE_MAX_FLARES,
@@ -581,9 +582,10 @@ export const dynamite = () =>
   });
 
 /**
- * Dynamite's fuse is lit as the clock hits 0, with no flare to burn, and
- * goes off by itself as it burns down (flares are emptied first, a stick
- * put in the pack if none is held).
+ * Dynamite goes off by itself as the clock hits 0, with no flare to burn,
+ * its fuse hissing and burning down on Detonate over the clock's last
+ * DELVE_FUSE_MS (flares are emptied first, a stick put in the pack if none
+ * is held; the clock is set a little before the fuse starts).
  */
 export const dynamiteAtZero = () =>
   event('Dynamite at 0', async () => {
@@ -594,7 +596,7 @@ export const dynamiteAtZero = () =>
     if (!holds(id, 'dynamite')) put((n) => invSet(n, id, (v) => (v.dynamite = 1)), true);
     withCards();
     await running(notFind, 'none');
-    setTimeLeft(1200);
+    setTimeLeft(DELVE_FUSE_MS + 700);
   });
 
 /** A wrong answer that a ward takes instead of a life. */

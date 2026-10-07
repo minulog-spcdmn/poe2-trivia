@@ -39,7 +39,11 @@ export type Sfx =
   | 'fallenFar'
   /** Delve: a flare strikes and burns as the clock hits 0, for more time. */
   | 'flare'
-  /** Delve: a stick of dynamite's fuse is lit (its button pressed). */
+  /**
+   * Delve: a stick of dynamite's fuse burning, once and held (sfx's
+   * `holdMs`) over the clock's last seconds before it goes off, or as
+   * Detonate is pressed; cut as it goes off.
+   */
   | 'fuse'
   /** Delve: the dynamite goes off, blasting the question away. */
   | 'blast'
@@ -405,12 +409,21 @@ function filter(ac: AudioContext, type: BiquadFilterType, frequency: number, q =
 /**
  * One layer: high-pass, low-pass and the "soften" dip around 3.2 kHz, then
  * level and reverb send. Returns its source and level, to stop it early (see sfx).
+ * `hold` (s): the layer lasts that long from the moment's start, looped
+ * should its recording run out sooner, and then fades out.
  */
-function playLayer(b: Bus, buf: AudioBuffer, l: Layer, soften: number, pitch: number, gainDb: number) {
+function playLayer(b: Bus, buf: AudioBuffer, l: Layer, soften: number, pitch: number, gainDb: number, hold?: number) {
   const { ac } = b;
   const src = ac.createBufferSource();
   src.buffer = buf;
   src.playbackRate.value = l.rate * pitch;
+  const start = ac.currentTime + l.delay / 1000;
+  if (hold !== undefined && buf.duration / src.playbackRate.value < hold - l.delay / 1000) {
+    // Too short to last: it loops, round its middle (the onset and the tail left out).
+    src.loop = true;
+    src.loopStart = Math.min(buf.duration * 0.15, 0.2);
+    src.loopEnd = Math.max(src.loopStart + 0.05, buf.duration - Math.min(buf.duration * 0.1, 0.1));
+  }
   const g = ac.createGain();
   g.gain.value = db(l.gain + gainDb);
   src
@@ -422,7 +435,13 @@ function playLayer(b: Bus, buf: AudioBuffer, l: Layer, soften: number, pitch: nu
   const send = ac.createGain();
   send.gain.value = l.send;
   g.connect(send).connect(b.wet);
-  src.start(ac.currentTime + l.delay / 1000);
+  src.start(start);
+  if (hold !== undefined) {
+    const end = Math.max(start, ac.currentTime + hold);
+    g.gain.setValueAtTime(g.gain.value, end);
+    g.gain.linearRampToValueAtTime(0, end + STOP_FADE);
+    src.stop(end + STOP_FADE);
+  }
   return { src, gain: g };
 }
 
@@ -440,12 +459,14 @@ const lastPlayed = new Map<Sfx, number>();
 /**
  * Plays a moment's sound. Returns a function that stops it early, fading it
  * out over STOP_FADE (50 ms) and then stopping it: for a sound cut short,
- * like a fuse's hiss when its dynamite goes off or is snuffed. Calling it
- * after the sound has ended, or twice, does nothing. Returns undefined when
- * nothing played (muted, out of sight, too soon after the last, or before
- * the first click).
+ * like a fuse's when its dynamite goes off. Calling it after the sound has
+ * ended, or twice, does nothing. Returns undefined when nothing played
+ * (muted, out of sight, too soon after the last, or before the first
+ * click). `holdMs`: the sound lasts that long and then fades out, each
+ * layer looped should its recording be shorter (a fuse burning for as long
+ * as it has left).
  */
-export function sfx(name: Sfx): (() => void) | undefined {
+export function sfx(name: Sfx, opts: { holdMs?: number } = {}): (() => void) | undefined {
   // Out of sight (a co-op tab in the background) nothing plays: a sound
   // would wake the audio context that rest() put to sleep, and keep it running.
   if (muted || (typeof document !== 'undefined' && document.hidden)) return undefined;
@@ -465,7 +486,7 @@ export function sfx(name: Sfx): (() => void) | undefined {
   for (const l of m.layers) {
     // Only layers that have loaded: a late layer would land out of step.
     const buf = ready.get(l.file);
-    if (buf) layers.push(playLayer(b, buf, l, m.soften, pitch, gainDb));
+    if (buf) layers.push(playLayer(b, buf, l, m.soften, pitch, gainDb, opts.holdMs === undefined ? undefined : Math.max(0, opts.holdMs) / 1000));
   }
   // One that failed to load as sound started (offline for a moment) is tried
   // again for next time, once its wait is over (see load).

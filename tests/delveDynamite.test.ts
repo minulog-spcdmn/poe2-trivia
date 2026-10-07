@@ -3,11 +3,12 @@
 // twice a depth (as many as the offer's other cards). By hand while the
 // question is open (alone the player's own; together anyone standing who
 // hasn't answered, from a random holder's pack), or by itself as the clock
-// hits 0 with no flare to burn: its fuse is lit then, and it goes off as the
-// fuse burns down (DELVE_FUSE_MS), unless Skip sets it off sooner. Never on a
-// find's question, and a blast's question is never a find. See delve.ts
-// (DELVE_MAX_BLASTS, DELVE_FUSE_MS, blastsLeft, blastProblem, fuseDue) and
-// game.ts ('blast', 'fuse', Engine.blast).
+// hits 0 with no flare to burn, right at 0 (the host's time-out). Its fuse
+// warns of that over the clock's last DELVE_FUSE_MS, worked out on every
+// screen from the deadline (fuseLeft): the question stays open meanwhile.
+// Never on a find's question, and a blast's question is never a find. See
+// delve.ts (DELVE_MAX_BLASTS, DELVE_FUSE_MS, blastsLeft, blastProblem,
+// fuseDue, fuseLeft) and game.ts ('blast', Engine.blast).
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -103,15 +104,10 @@ function delve(n: number, opts: { host?: string | null; seed?: number; depth?: n
       h.clock.now = s.question!.deadline! + ANSWER_GRACE_MS;
       return h.act({ type: 'answer', index: null });
     },
-    /** The host lights the fuse as the clock hits 0 (its 'fuse' timer). */
-    light() {
-      h.clock.now = s.question!.deadline!;
-      return h.act({ type: 'fuse', askedAt: s.question!.askedAt });
-    },
-    /** The host's time-out, set for when the lit fuse has burnt down. */
-    fuseOut() {
-      h.clock.now = s.question!.fuse!.ends;
-      return h.act({ type: 'answer', index: null });
+    /** The clock set to `ms` before the question's 0 (host clock). */
+    before0(ms: number) {
+      h.clock.now = s.question!.deadline! - ms;
+      return h.clock.now;
     },
     /** On to the next depth, after a reveal. */
     next() {
@@ -309,23 +305,25 @@ test('an answer to the question blasted away is dropped quietly: too late, and i
 
 // ---- by itself, at 0 -------------------------------------------------------------
 
-test('at 0 a flare burns first; only with none to burn does the dynamite go off by itself, and the time-out costs nothing', () => {
+test('at 0 a flare burns first; only with none to burn does the dynamite go off by itself, right at 0, and the time-out costs nothing', () => {
   const h = solo({ dynamite: 1, flares: 1 });
   const q = h.s.question!;
+  // A flare to burn at this 0: no fuse before it.
+  h.before0(DELVE_FUSE_MS / 2);
+  assert.equal(fuseLeft(h.s, h.clock.now), null);
   h.timeOut();
   // The flare: the same question, 5 s more (from now, as its own timer came late here).
   assert.equal(h.s.question!.askedAt, q.askedAt);
   assert.equal(h.s.question!.flared, true);
   assert.equal(h.s.question!.deadline, q.deadline! + ANSWER_GRACE_MS + FLARE_MS);
   assert.equal(dynamiteOf(h.s, 'p0'), 1);
-  // Then, in place of the time-out, the dynamite's fuse is lit (its own
-  // timer came late here: from now, so it burns its whole length)…
+  // The dynamite will go off at the new 0: its fuse burns over the last seconds before it.
+  h.before0(DELVE_FUSE_MS + 1);
+  assert.equal(fuseLeft(h.s, h.clock.now), null);
+  h.before0(DELVE_FUSE_MS);
+  assert.equal(fuseLeft(h.s, h.clock.now), 1);
+  // Then, in place of the time-out, the dynamite goes off at once: a new question, nobody hit.
   h.timeOut();
-  assert.equal(h.s.question!.askedAt, q.askedAt);
-  assert.deepEqual(h.s.question!.fuse, { lit: h.clock.now, ends: h.clock.now + DELVE_FUSE_MS });
-  assert.equal(dynamiteOf(h.s, 'p0'), 1, 'nothing spent while it burns');
-  // …and as it burns down, it goes off: a new question, nobody hit.
-  h.fuseOut();
   const b = h.s.question!;
   assert.equal(h.s.phase, 'question');
   assert.notEqual(b.askedAt, q.askedAt);
@@ -333,28 +331,26 @@ test('at 0 a flare burns first; only with none to burn does the dynamite go off 
   assert.equal(b.blast!.stick, 'p0');
   assert.deepEqual([dynamiteOf(h.s, 'p0'), flaresOf(h.s, 'p0'), livesOf(h.s, 'p0')], [0, 0, DELVE_LIVES]);
   assert.equal(h.s.reveal, null);
-  assert.equal(b.fuse, undefined);
-  // The new question on the full clock; with nothing left, its time-out costs the life.
+  // The new question on the full clock; with nothing left, no fuse, and its time-out costs the life.
   const c = h.clockOn();
   assert.equal(fuseDue(h.s), false);
+  assert.equal(fuseLeft(h.s, h.before0(100)), null);
   assert.equal(c.deadline! - c.clockAt!, delveTimer(h.s.round) * 1000);
   h.timeOut();
   assert.equal(h.s.reveal!.timedOut, true);
   assert.equal(livesOf(h.s, 'p0'), DELVE_LIVES - 1);
 });
 
-test("a player's answer later than 0 and its allowance finds the fuse lit in place of the time-out, and counts for nothing", () => {
+test("a player's answer later than 0 and its allowance finds the dynamite gone off in place of the time-out", () => {
   const h = solo({ dynamite: 1 }, { host: 'p0' });
   const q = h.s.question!;
   h.clock.now = q.deadline! + ANSWER_GRACE_MS + 50;
   h.act({ type: 'answer', index: right(q), askedAt: q.askedAt }, 'p0');
   assert.equal(h.s.phase, 'question');
-  assert.equal(h.s.question!.askedAt, q.askedAt);
-  assert.equal(h.s.question!.fuse!.lit, h.clock.now);
-  assert.equal(h.s.players[0].score, 0);
-  h.fuseOut();
   assert.equal(h.s.question!.blast?.was.at, q.askedAt);
+  assert.equal(h.s.players[0].score, 0);
   assert.equal(livesOf(h.s, 'p0'), DELVE_LIVES);
+  assert.equal(dynamiteOf(h.s, 'p0'), 0);
   // Within the allowance it still counts, and the stick is kept.
   const in_ = solo({ dynamite: 1 }, { host: 'p0' });
   const q2 = in_.s.question!;
@@ -366,190 +362,219 @@ test("a player's answer later than 0 and its allowance finds the fuse lit in pla
 
 // ---- the fuse -------------------------------------------------------------------
 
-test('at 0 the fuse is lit only when the dynamite would go off: a flare first, never on a find, never past two blasts, never without a stick', () => {
-  // With dynamite and nothing before it: lit at 0, on the host's clock, for DELVE_FUSE_MS.
+test("the fuse burns only over the last DELVE_FUSE_MS before a 0 where the dynamite will go off, from the deadline alone", () => {
+  // With dynamite and nothing before it: from 1 at DELVE_FUSE_MS before 0 down to 0 at 0, and 0 until the time-out.
   const h = solo({ dynamite: 1 });
   assert.equal(fuseDue(h.s), true);
-  // Not much before 0 (a timer a moment early still counts).
-  h.clock.now = h.s.question!.deadline! - 1000;
-  h.act({ type: 'fuse', askedAt: h.s.question!.askedAt });
-  assert.equal(h.s.question!.fuse, undefined);
-  h.light();
   const q = h.s.question!;
-  assert.deepEqual(q.fuse, { lit: q.deadline, ends: q.deadline! + DELVE_FUSE_MS });
-  assert.equal(fuseLeft(q, q.deadline!), 1);
-  assert.equal(fuseLeft(q, q.deadline! + DELVE_FUSE_MS / 2), 0.5);
-  assert.equal(fuseLeft(q, q.deadline! + DELVE_FUSE_MS + 9), 0);
-  // Lit once: a second 'fuse' changes nothing.
-  h.act({ type: 'fuse', askedAt: q.askedAt });
-  assert.deepEqual(h.s.question!.fuse, q.fuse);
-  // Only the host lights it.
-  loudly(() => h.act({ type: 'fuse', askedAt: q.askedAt }, 'p0'), /Not allowed/);
-  // A flare to burn: it burns first, and no fuse is lit.
+  assert.equal(fuseLeft(h.s, q.clockAt!), null, 'not as the clock starts');
+  assert.equal(fuseLeft(h.s, q.deadline! - DELVE_FUSE_MS - 1), null);
+  assert.equal(fuseLeft(h.s, q.deadline! - DELVE_FUSE_MS), 1);
+  assert.equal(fuseLeft(h.s, q.deadline! - DELVE_FUSE_MS / 2), 0.5);
+  assert.equal(fuseLeft(h.s, q.deadline!), 0);
+  assert.equal(fuseLeft(h.s, q.deadline! + ANSWER_GRACE_MS), 0);
+  // Nothing in the state lights it: the host sets no fuse, the question is as it was.
+  h.before0(DELVE_FUSE_MS / 2);
+  assert.equal('fuse' in h.s.question!, false);
+  // Protocol 14's host-only 'fuse' lights nothing now.
+  h.act({ type: 'fuse', askedAt: q.askedAt } as unknown as Action);
+  assert.equal('fuse' in h.s.question!, false);
+  // A flare to burn at that 0: it burns first, and no fuse before it.
   const f = solo({ dynamite: 1, flares: 1 });
   assert.equal(fuseDue(f.s), false);
-  f.light();
-  assert.equal(f.s.question!.fuse, undefined);
-  // Without a stick, or on a find: nothing to light.
+  assert.equal(fuseLeft(f.s, f.before0(500)), null);
+  // Without a stick, or on a find: nothing goes off, no fuse.
   const none = solo({ flares: 0 });
-  none.light();
-  assert.equal(none.s.question!.fuse, undefined);
+  assert.equal(fuseLeft(none.s, none.before0(500)), null);
   none.timeOut();
   assert.equal(none.s.reveal!.timedOut, true);
   for (const find of ['azurite', 'flare', 'dynamite'] as const) {
     const g = solo({ dynamite: 1 }, { find, depth: 20 });
     assert.equal(fuseDue(g.s), false, find);
-    g.light();
-    assert.equal(g.s.question!.fuse, undefined, find);
+    assert.equal(fuseLeft(g.s, g.before0(500)), null, find);
     g.timeOut();
     assert.equal(g.s.reveal!.timedOut, true, find);
     // (A Dynamite Cache missed blows something of the pack up: maybe that stick.)
     if (find !== 'dynamite') assert.equal(dynamiteOf(g.s, 'p0'), 1, find);
   }
-  // Two blasts made at this depth: no third, by hand or by its fuse.
-  const two = solo({ dynamite: 2 });
+  // Two blasts made at this depth: no third, by hand or at 0, and no fuse.
+  const two = solo({ dynamite: 3 });
   two.blast();
   two.clockOn();
+  assert.equal(fuseLeft(two.s, two.before0(500)), 500 / DELVE_FUSE_MS, 'one blast left: it burns');
   two.blast();
   two.clockOn();
   assert.equal(blastsLeft(two.s), 0);
   assert.equal(fuseDue(two.s), false);
-  two.light();
-  assert.equal(two.s.question!.fuse, undefined);
+  assert.equal(fuseLeft(two.s, two.before0(500)), null);
   two.timeOut();
   assert.equal(two.s.reveal!.timedOut, true);
-  assert.equal(dynamiteOf(two.s, 'p0'), 0);
+  assert.equal(dynamiteOf(two.s, 'p0'), 1);
+  // Alone and away: nothing goes off, no fuse.
+  const away = solo({ dynamite: 1 }, { host: 'p0' });
+  away.act({ type: 'connection', playerId: 'p0', connected: false });
+  assert.equal(fuseLeft(away.s, away.before0(500)), null);
+  // Together: the team's stick, with nobody's flare to burn first.
+  const t = delve(3, { depth: 20 });
+  t.give('p2', { dynamite: 1 });
+  t.ask();
+  assert.equal(fuseLeft(t.s, t.before0(DELVE_FUSE_MS)), 1);
+  t.give('p1', { flares: 1 });
+  assert.equal(fuseLeft(t.s, t.before0(DELVE_FUSE_MS)), null, "a teammate's flare burns first");
 });
 
-test('the fuse burns down and the dynamite goes off: the time-out waits for it, and nothing is spent before', () => {
+test('the dynamite goes off at 0 with no delay: with the time-out, at 0 and the allowance for answers in flight', () => {
   const h = solo({ dynamite: 2 }, { host: 'p0' });
   const q = h.s.question!;
-  h.light();
-  // The time-out at 0 and the allowance finds it burning: nothing yet.
-  h.timeOut();
+  // Through the fuse, nothing happens by itself: the host's only timer is the time-out.
+  h.before0(DELVE_FUSE_MS / 2);
   assert.equal(h.s.question!.askedAt, q.askedAt);
-  assert.equal(h.s.phase, 'question');
   assert.equal(dynamiteOf(h.s, 'p0'), 2);
-  // A moment before its end, still nothing.
-  h.clock.now = q.deadline! + DELVE_FUSE_MS - 1;
-  h.act({ type: 'answer', index: null });
-  assert.equal(h.s.question!.askedAt, q.askedAt);
-  // At its end it goes off, by itself: one stick, one blast.
-  h.fuseOut();
+  // At 0 and the allowance (no DELVE_FUSE_MS later), it goes off by itself: one stick, one blast.
+  h.timeOut();
+  assert.equal(h.clock.now, q.deadline! + ANSWER_GRACE_MS);
   const b = h.s.question!;
   assert.equal(b.blast!.was.at, q.askedAt);
   assert.equal(b.blast!.by, undefined);
   assert.equal(dynamiteOf(h.s, 'p0'), 1);
   assert.equal(h.s.delve!.blasts, 1);
   assert.equal(livesOf(h.s, 'p0'), DELVE_LIVES);
-  // Once gone off, a time-out for the old question finds nothing to do.
+  assert.equal(h.s.reveal, null);
+  // An answer to the old question after that is dropped quietly.
   silently(() => h.act({ type: 'answer', index: right(q), askedAt: q.askedAt }, 'p0'), /late/);
+  // Together the same: nobody is hit as it goes off, whoever hadn't answered.
+  const t = delve(3, { depth: 20 });
+  t.give('p0', { dynamite: 1 });
+  const qt = t.ask();
+  t.before0(DELVE_FUSE_MS / 3);
+  t.timeOut();
+  assert.equal(t.clock.now, qt.deadline! + ANSWER_GRACE_MS);
+  assert.equal(t.s.question!.blast!.was.at, qt.askedAt);
+  assert.equal(t.s.question!.blast!.by, undefined);
+  assert.deepEqual(['p0', 'p1', 'p2'].map((id) => livesOf(t.s, id)), [DELVE_LIVES, DELVE_LIVES, DELVE_LIVES]);
+  assert.equal(t.s.reveal, null);
 });
 
-test('Skip pressed while the fuse burns blasts at once; the fuse is gone with the question', () => {
+test('the question is still answerable while the fuse burns: a right answer wins and spends no stick, a wrong one costs its life', () => {
+  // Alone, online and on one device: right during the fuse.
+  for (const host of ['p0', null] as const) {
+    const h = solo({ dynamite: 1 }, { host });
+    const q = h.s.question!;
+    h.before0(DELVE_FUSE_MS / 2);
+    assert.equal(fuseLeft(h.s, h.clock.now), 0.5);
+    h.act({ type: 'answer', index: right(q), askedAt: q.askedAt }, host);
+    assert.equal(h.s.reveal!.correct, true);
+    assert.equal(h.s.players[0].score, 1);
+    assert.equal(dynamiteOf(h.s, 'p0'), 1, 'the stick is kept');
+    assert.equal(h.s.delve!.blasts, undefined);
+    // The fuse stops with the question.
+    assert.equal(fuseLeft(h.s, h.clock.now), null);
+  }
+  // Wrong during the fuse: its life, as on any question; the stick stays.
+  const w = solo({ dynamite: 1 }, { host: 'p0' });
+  const qw = w.s.question!;
+  w.before0(300);
+  w.act({ type: 'answer', index: wrongs(qw)[0], askedAt: qw.askedAt }, 'p0');
+  assert.equal(w.s.reveal!.correct, false);
+  assert.equal(livesOf(w.s, 'p0'), DELVE_LIVES - 1);
+  assert.equal(dynamiteOf(w.s, 'p0'), 1);
+  assert.equal(fuseLeft(w.s, w.clock.now), null);
+  // A guest's right answer given just before 0, arriving within the allowance, still wins.
+  const g = solo({ dynamite: 1 }, { host: 'p0' });
+  const qg = g.s.question!;
+  g.clock.now = qg.deadline! + ANSWER_GRACE_MS - 10;
+  g.act({ type: 'answer', index: right(qg), askedAt: qg.askedAt }, 'p0');
+  assert.equal(g.s.reveal!.correct, true);
+  assert.equal(dynamiteOf(g.s, 'p0'), 1);
+  // Together: a wrong answer during the fuse is paid and the fuse burns on for the rest; a right one clears the depth.
+  const t = delve(3, { depth: 20 });
+  t.give('p2', { dynamite: 1 });
+  const qt = t.ask();
+  t.before0(DELVE_FUSE_MS * 0.75);
+  t.act({ type: 'answer', index: wrongs(qt)[0], askedAt: qt.askedAt }, 'p1');
+  assert.equal(livesOf(t.s, 'p1'), DELVE_LIVES - 1);
+  assert.equal(fuseLeft(t.s, t.clock.now), 0.75);
+  t.before0(DELVE_FUSE_MS / 4);
+  t.act({ type: 'answer', index: right(qt), askedAt: qt.askedAt }, 'p0');
+  assert.equal(t.s.reveal!.winnerId, 'p0');
+  assert.equal(dynamiteOf(t.s, 'p2'), 1, 'no stick spent');
+  assert.equal(fuseLeft(t.s, t.clock.now), null);
+});
+
+test('Detonate pressed while the fuse burns blasts at once', () => {
   // Alone, online and on one device.
   for (const host of ['p0', null] as const) {
     const h = solo({ dynamite: 1 }, { host });
-    h.light();
     const q = h.s.question!;
-    h.clock.now = q.fuse!.lit + 700;
+    h.before0(700);
     assert.equal(blastProblem(h.s, host), null);
     h.blast(host);
     const b = h.s.question!;
     assert.equal(b.blast!.was.at, q.askedAt);
     assert.equal(b.blast!.by, 'p0');
-    assert.equal(b.fuse, undefined);
     assert.equal(dynamiteOf(h.s, 'p0'), 0);
-    // The new question's clock has not started: no time-out, no second blast.
+    // The new question's clock has not started: no fuse, no time-out, no second blast.
     assert.equal(h.s.question!.deadline, null);
     assert.equal(fuseDue(h.s), false);
+    assert.equal(fuseLeft(h.s, h.clock.now), null);
   }
   // Together, anyone standing who hasn't answered.
   const t = delve(3, { depth: 20 });
   t.give('p2', { dynamite: 1 });
   t.ask();
-  t.light();
-  t.clock.now = t.s.question!.fuse!.lit + 1200;
+  t.before0(400);
   t.blast('p1');
   assert.equal(t.s.question!.blast!.by, 'p1');
   assert.equal(dynamiteOf(t.s, 'p2'), 0);
 });
 
-test('no answer counts while the fuse burns, but one given before 0 (a guest\'s within the allowance for answers in flight)', () => {
-  // Alone online: a guest's right answer that crossed 0 on its way still counts, and keeps the stick.
-  const a = solo({ dynamite: 1 }, { host: 'p0' });
-  const qa = a.s.question!;
-  a.light();
-  a.clock.now = qa.deadline! + ANSWER_GRACE_MS - 10;
-  a.act({ type: 'answer', index: right(qa), askedAt: qa.askedAt }, 'p0');
-  assert.equal(a.s.reveal!.correct, true);
-  assert.equal(dynamiteOf(a.s, 'p0'), 1);
-  // Later than that it is dropped, right or wrong, and the fuse burns on.
-  const b = solo({ dynamite: 1 }, { host: 'p0' });
-  const qb = b.s.question!;
-  b.light();
-  b.clock.now = qb.deadline! + ANSWER_GRACE_MS + 10;
-  silently(() => b.act({ type: 'answer', index: right(qb), askedAt: qb.askedAt }, 'p0'), /late/);
-  silently(() => b.act({ type: 'answer', index: wrongs(qb)[0], askedAt: qb.askedAt }, 'p0'), /late/);
-  assert.deepEqual([b.s.phase, b.s.players[0].score, livesOf(b.s, 'p0')], ['question', 0, DELVE_LIVES]);
-  b.fuseOut();
-  assert.equal(b.s.question!.blast!.was.at, qb.askedAt);
-  // On one device an answer is never in flight: past 0 it is dropped.
-  const c = solo({ dynamite: 1 });
-  const qc = c.s.question!;
-  c.light();
-  c.clock.now = qc.deadline! + 100;
-  silently(() => c.act({ type: 'answer', index: wrongs(qc)[0], askedAt: qc.askedAt }), /late/);
-  assert.equal(livesOf(c.s, 'p0'), DELVE_LIVES);
-  // Together: past the allowance nobody's answer counts; nobody is hit as it goes off.
-  const t = delve(3, { depth: 20 });
-  t.give('p0', { dynamite: 1 });
-  const qt = t.ask();
-  t.light();
-  t.clock.now = qt.deadline! + ANSWER_GRACE_MS + 10;
-  silently(() => t.act({ type: 'answer', index: right(qt), askedAt: qt.askedAt }, 'p1'), /late/);
-  silently(() => t.act({ type: 'answer', index: wrongs(qt)[0], askedAt: qt.askedAt }, 'p2'), /late/);
-  t.fuseOut();
-  assert.equal(t.s.question!.blast!.was.at, qt.askedAt);
-  assert.deepEqual(['p0', 'p1', 'p2'].map((id) => livesOf(t.s, id)), [DELVE_LIVES, DELVE_LIVES, DELVE_LIVES]);
-  assert.equal(t.s.players.find((p) => p.id === 'p1')!.score, 0);
-});
-
-test('guests see the fuse: it is public, on the host\'s clock', () => {
+test("guests work out the same fuse from what they see, on the host's clock", () => {
   const h = delve(2, { depth: 20 });
   h.give('p1', { dynamite: 1 });
   h.ask();
-  h.light();
-  const seen = publicView(h.s).question!;
-  assert.deepEqual(seen.fuse, h.s.question!.fuse);
+  const seen = publicView(h.s);
+  for (const ms of [DELVE_FUSE_MS + 50, DELVE_FUSE_MS, 900, 0]) {
+    const now = h.before0(ms);
+    assert.equal(fuseLeft(seen, now), fuseLeft(h.s, now), String(ms));
+  }
+  assert.equal(fuseLeft(seen, h.before0(900)), 0.5);
 });
 
 test('a host reload while the fuse burns neither loses the stick nor spends it twice', () => {
-  // On one device, the run picks up where it was: the fuse still burns, and goes off once.
+  // On one device, the run picks up where it was: the fuse still burns, and it goes off once, at the time-out.
   const h = solo({ dynamite: 2 });
-  h.light();
   const q = h.s.question!;
+  h.before0(DELVE_FUSE_MS / 2);
   const saved: GameState = JSON.parse(JSON.stringify(h.s));
   h.edit((c) => Object.assign(c, saved));
   h.act({ type: 'resumed' });
   assert.equal(h.s.question!.askedAt, q.askedAt);
-  assert.deepEqual(h.s.question!.fuse, q.fuse);
-  // Its time-out, set again for the fuse's end (or at once, should that be past).
-  h.clock.now = q.fuse!.ends + 4000;
+  assert.equal(fuseLeft(h.s, h.clock.now), 0.5);
+  assert.equal(dynamiteOf(h.s, 'p0'), 2, 'nothing spent before 0');
+  h.clock.now = q.deadline! + ANSWER_GRACE_MS + 4000;
   h.act({ type: 'answer', index: null });
   assert.equal(h.s.question!.blast!.was.at, q.askedAt);
   h.act({ type: 'answer', index: null });
   assert.equal(dynamiteOf(h.s, 'p0'), 1, 'one stick for one blast');
   assert.equal(h.s.delve!.blasts, 1);
-  // Together, with someone cut off: the question is set aside with its fuse; the stick stays in the pack.
+  // A save from protocol 14 with a fuse lit on its question still loads, and goes off once at its time-out.
+  const old = solo({ dynamite: 1 });
+  const qo = old.s.question!;
+  old.edit((c) => Object.assign(c.question!, { fuse: { lit: qo.deadline, ends: qo.deadline! + DELVE_FUSE_MS } }));
+  old.act({ type: 'resumed' });
+  old.timeOut();
+  assert.equal(old.s.question!.blast!.was.at, qo.askedAt);
+  assert.equal(dynamiteOf(old.s, 'p0'), 0);
+  // Together, with someone cut off: the question is set aside mid-fuse; the stick stays in the pack.
   const t = delve(3, { depth: 20 });
   t.give('p1', { dynamite: 1 });
   t.ask();
-  t.light();
+  t.before0(DELVE_FUSE_MS / 2);
   t.act({ type: 'connection', playerId: 'p2', connected: false });
   t.act({ type: 'resumed' });
   assert.equal(t.s.phase, 'choosing');
   assert.equal(t.s.question, null);
+  assert.equal(fuseLeft(t.s, t.clock.now), null);
   assert.equal(dynamiteOf(t.s, 'p1'), 1);
   assert.equal(t.s.delve!.blasts, undefined);
 });
@@ -666,17 +691,13 @@ test('together, at 0 a flare burns first, then the dynamite goes off: nobody is 
   const q = h.ask();
   h.act({ type: 'answer', index: wrongs(q)[0], askedAt: q.askedAt }, 'p0');
   assert.equal(teamItemReady(h.s, 'dynamite'), true);
+  assert.equal(fuseLeft(h.s, h.before0(500)), null, 'the flare burns at this 0: no fuse before it');
   h.timeOut();
   assert.equal(h.s.question!.flared, true, 'the flare first');
   assert.equal(h.s.question!.askedAt, q.askedAt);
-  assert.equal(h.s.question!.fuse, undefined);
-  // Then the fuse is lit at 0 (the host's timer), and goes off as it burns down.
-  h.light();
-  assert.deepEqual(h.s.question!.fuse, { lit: h.s.question!.deadline, ends: h.s.question!.deadline! + DELVE_FUSE_MS });
+  // Then the fuse burns before the 0 the flare moved the clock to, and the dynamite goes off right then.
+  assert.equal(fuseLeft(h.s, h.before0(DELVE_FUSE_MS)), 1);
   h.timeOut();
-  assert.equal(h.s.question!.askedAt, q.askedAt, 'the time-out finds it still burning, and waits');
-  assert.equal(h.s.reveal, null);
-  h.fuseOut();
   const b = h.s.question!;
   assert.equal(h.s.phase, 'question');
   assert.equal(b.blast!.was.at, q.askedAt);
@@ -684,8 +705,9 @@ test('together, at 0 a flare burns first, then the dynamite goes off: nobody is 
   assert.equal(b.blast!.stick, 'p1');
   assert.deepEqual(['p0', 'p1', 'p2'].map((id) => livesOf(h.s, id)), [DELVE_LIVES - 1, DELVE_LIVES, DELVE_LIVES], 'only the wrong answer was paid');
   assert.deepEqual([...waitingIds(h.s)].sort(), ['p0', 'p1', 'p2']);
-  // With neither, the time-out hits those who never answered.
+  // With neither, no fuse, and the time-out hits those who never answered.
   h.clockOn();
+  assert.equal(fuseLeft(h.s, h.before0(500)), null);
   h.timeOut();
   assert.equal(h.s.reveal!.timedOut, true);
   assert.deepEqual(h.s.reveal!.hits!.map((x) => x.playerId).sort(), ['p0', 'p1', 'p2']);
