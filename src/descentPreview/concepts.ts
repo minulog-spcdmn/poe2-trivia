@@ -17,6 +17,6 @@ export interface Concept {
 }
 
 export const CONCEPTS: Concept[] = [
-  { key: 'shaft', name: 'Shaft', component: Shaft, placement: 'beside', column: 14 },
-  { key: 'spiral', name: 'Spiral', component: Spiral, placement: 'beside', column: 14 },
+  { key: 'shaft', name: 'Shaft', component: Shaft, placement: 'beside', column: 11.5 },
+  { key: 'spiral', name: 'Spiral', component: Spiral, placement: 'above' },
 ];
