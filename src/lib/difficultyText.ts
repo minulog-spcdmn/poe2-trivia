@@ -224,7 +224,7 @@ export const ITEM_TIPS = {
 } as const;
 
 /** Under the finds in the lobby's rules: why flares and dynamite never work on a find's question. */
-export const FINDS_UNSAFE = "Flares and dynamite don't work on finds. Their walls are too thick and their darkness too deep.";
+export const FINDS_UNSAFE = "Flares and dynamite don't work on finds. The rock there is too thick to blast, and the dark swallows a flare's light.";
 
 /** A find's cave-in mark, in words for those who can't see it: "A wrong answer loses two lives". */
 export const caveInLabel = (kind: FindKind) => `A wrong answer loses ${caveInText(kind)}`;

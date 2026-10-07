@@ -137,6 +137,6 @@ test("the lobby's finds: each in a line for someone who never played, what it gi
     'Dynamite lets you skip a question and get a new one at the same depth, up to twice per depth. If time runs out and you have no flare, its fuse is lit and it goes off on its own. A miss also blows up an item you carry.',
   );
   // And under them, in a line, why flares and dynamite never work on a find.
-  assert.equal(FINDS_UNSAFE, "Flares and dynamite don't work on finds. Their walls are too thick and their darkness too deep.");
+  assert.equal(FINDS_UNSAFE, "Flares and dynamite don't work on finds. The rock there is too thick to blast, and the dark swallows a flare's light.");
   for (const t of [...Object.values(FIND_RULES).flatMap((r) => Object.values(r)), FINDS_UNSAFE]) assert.ok(!t.includes(String.fromCharCode(0x2014)), t);
 });
