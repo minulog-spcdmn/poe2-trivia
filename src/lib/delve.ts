@@ -89,7 +89,9 @@ function ramp(d: number, from: number, to: number, ease = 1): number {
  * over the whole run to 100, where all of them are at their hardest:
  * - look-alike names, from depth 2, eased out (most of the rise by 40: they
  *   are what the first depths have to get harder with);
- * - "find the art" questions, from 4 in 10 to half from depth 32 to 90;
+ * - "find the art" questions, none at depth 1, a percent more with every
+ *   depth to 6 in 10 at 60 (they are easy while the art is plain, and grow
+ *   hard as the unveil, mirroring, grayscale and look-alikes come in);
  * - mirrored pictures, from depth 15, every picture from 85;
  * - the unveil, from depth 25: its share of the clock from 30% to 80% and its
  *   patches from about 4 × 4 to 9 × 9 by depth 90 (on the shortest clocks
@@ -99,7 +101,7 @@ function ramp(d: number, from: number, to: number, ease = 1): number {
  */
 export const DELVE_CURVES = {
   similarNames: { from: 1, to: 80, lo: 0, hi: 1, ease: 2 },
-  artChance: { from: 31, to: 90, lo: 0.4, hi: 0.5, ease: 1 },
+  artChance: { from: 1, to: 60, lo: 0, hi: 0.6, ease: 1 },
   mirror: { from: 14, to: 85, lo: 0, hi: 1, ease: 1 },
   veilShare: { from: 24, to: 90, lo: 0.3, hi: 0.8, ease: 1 },
   veilSize: { from: 24, to: 90, lo: 4, hi: 9, ease: 1 },

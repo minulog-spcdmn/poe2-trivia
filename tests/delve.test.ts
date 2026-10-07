@@ -61,7 +61,7 @@ test('every depth plays sane knob values, and the Custom steps stay as they were
     assert.ok((KNOB_STEPS.options as readonly number[]).includes(r.options), `options at ${d}`);
     assert.ok((KNOB_STEPS.fakes as readonly number[]).includes(r.fakes), `fakes at ${d}`);
     for (const k of ['similarNames', 'artChance', 'mirror'] as const) assert.ok(r[k] >= 0 && r[k] <= 1, `${k} at ${d}`);
-    assert.ok(r.artChance >= 0.4 && r.artChance <= 0.5, `art at ${d}`);
+    assert.ok(r.artChance >= 0 && r.artChance <= 0.6, `art at ${d}`);
     // Grayscale is rolled for each question instead.
     assert.equal(r.grayscale, 'off', `grayscale at ${d}`);
     assert.ok(r.grayChance === undefined || (r.grayChance > 0 && r.grayChance <= 1), `grayscale chance at ${d}`);
@@ -97,13 +97,13 @@ test('the approved curve: steps for options, made-up names, the timer and the lo
     return [r.similarNames, r.artChance, r.mirror, r.veil?.share ?? 0, r.veil?.size ?? 0, r.grayChance ?? 0].map((x) => Math.round(x * 100) / 100);
   };
   assert.deepEqual([1, 10, 25, 50, 75, 90, 100].map(row), [
-    [0, 0.4, 0, 0, 0, 0],
-    [0.21, 0.4, 0, 0, 0, 0],
-    [0.52, 0.4, 0.15, 0.31, 4.08, 0],
-    [0.86, 0.43, 0.51, 0.5, 5.97, 0.2],
-    [1, 0.47, 0.86, 0.69, 7.86, 0.7],
-    [1, 0.5, 1, 0.8, 9, 1],
-    [1, 0.5, 1, 0.8, 9, 1],
+    [0, 0, 0, 0, 0, 0],
+    [0.21, 0.09, 0, 0, 0, 0],
+    [0.52, 0.24, 0.15, 0.31, 4.08, 0],
+    [0.86, 0.5, 0.51, 0.5, 5.97, 0.2],
+    [1, 0.6, 0.86, 0.69, 7.86, 0.7],
+    [1, 0.6, 1, 0.8, 9, 1],
+    [1, 0.6, 1, 0.8, 9, 1],
   ]);
   const timers = [1, 12, 13, 18, 19, 26, 27, 33, 34, 38, 39, 43, 44, 47, 48, 52, 53, 57, 58, 77, 78, 95, 96, 300].map(delveTimer);
   assert.deepEqual(timers, [16, 16, 15, 15, 14, 14, 13, 13, 12, 12, 11, 11, 10, 10, 9, 9, 8, 8, 7, 7, 6, 6, 5, 5]);
@@ -143,11 +143,11 @@ test('the smooth knobs rise a little at every depth, never in a jump, and top ou
   // The same for the shares that rise past the run: look-alike pictures, burning pictures, a fourth made-up name.
   for (const f of [delveLookalikes, delveTileVeil, delveMoreFakes])
     for (let d = 2; d <= 300; d++) assert.ok(f(d) - f(d - 1) <= 0.03, `${f.name} jumps at ${d}`);
-  // Each starts about where its step used to: look-alike names at 2 (where nothing else changes yet), mirroring at 15, the unveil at 25, more art at 32, grayscale at 41.
+  // Each starts about where its step used to: look-alike names at 2 (where nothing else changes yet), mirroring at 15, the unveil at 25, grayscale at 41; "find the art" from 2, none at depth 1.
   const first = (f: (d: number) => number) => DEPTHS.find((d) => f(d) > f(1))!;
   assert.deepEqual(
     [(d: number) => delveRules(d).similarNames, (d: number) => delveRules(d).mirror, (d: number) => delveRules(d).veil?.share ?? 0, (d: number) => delveRules(d).artChance, (d: number) => delveRules(d).grayChance ?? 0].map(first),
-    [2, 15, VEIL_FROM, 32, 41],
+    [2, 15, VEIL_FROM, 2, 41],
   );
   // The unveil comes in gently: fast and coarse at first, a third of the clock in big patches.
   assert.ok(delveRules(VEIL_FROM).veil!.share < 0.32 && delveRules(VEIL_FROM).veil!.size < 4.1);
@@ -247,7 +247,7 @@ test('the ruleset is pinned to the curve and the protocol', () => {
   assert.deepEqual([DELVE_RULESET, PROTOCOL_VERSION, hash], [1, 11, PINNED_HASH]);
 });
 
-const PINNED_HASH = 'cf5c80b0b3127037';
+const PINNED_HASH = 'ace6882240a19bd7';
 
 function run(losses: Record<string, number[]>, round = 10, seats = Object.keys(losses)): GameState {
   const s = createGame('a');

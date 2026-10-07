@@ -79,7 +79,9 @@ the same thing for everyone.
   (`DELVE_CURVES` in `src/lib/delve.ts`):
   - look-alike names, from depth 2 to all of them at 80, eased out (most of
     the rise comes early, where little else changes);
-  - "find the art" questions, from 40% at 31 to half at 90;
+  - "find the art" questions, none at depth 1, a percent more with every
+    depth to 60% at 60 (easy while the art is plain, hard once it burns in,
+    mirrored, gray and among look-alikes);
   - mirrored pictures, from depth 15 to every picture at 85;
   - the unveil, from depth 25: its share of the clock from 30% to 80% and its
     patches from about a 4 × 4 grid's to a 9 × 9 grid's by 90;
@@ -92,17 +94,17 @@ the same thing for everyone.
 
   | Depth | Options | Look-alike names | Made up | Find the art | Mirrored | Unveil (share, about a grid of) | Grayscale | Look-alike pictures |
   |---|---|---|---|---|---|---|---|---|
-  | 1 | 4 | none | 0 | 40% | never | off | never | none |
-  | 10 | 4 | 21% | 1 | 40% | never | off | never | none |
-  | 20 | 6 | 42% | 2 | 40% | 8% | off | never | none |
-  | 25 | 6 | 52% | 2 | 40% | 15% | 31%, 4 × 4 | never | none |
-  | 40 | 8 | 74% | 2 | 42% | 37% | 42%, 5 × 5 | never | none |
-  | 50 | 8 | 86% | 3 | 43% | 51% | 50%, 6 × 6 | 20% | 1% |
-  | 60 | 8 | 94% | 3 | 45% | 65% | 57%, 7 × 7 | 40% | 15% |
-  | 70 | 8 | 98% | 3 | 47% | 79% | 65%, 8 × 8 | 60% | 30% |
-  | 80 | 8 | all | 3 | 48% | 93% | 72%, 8 × 8 | 80% | 44% |
-  | 90 | 8 | all | 3 | half | always | 80%, 9 × 9 | always | 58% |
-  | 100 | 8 | all | 3 | half | always | 80%, 9 × 9 | always | 72% |
+  | 1 | 4 | none | 0 | none | never | off | never | none |
+  | 10 | 4 | 21% | 1 | 9% | never | off | never | none |
+  | 20 | 6 | 42% | 2 | 19% | 8% | off | never | none |
+  | 25 | 6 | 52% | 2 | 24% | 15% | 31%, 4 × 4 | never | none |
+  | 40 | 8 | 74% | 2 | 40% | 37% | 42%, 5 × 5 | never | none |
+  | 50 | 8 | 86% | 3 | 50% | 51% | 50%, 6 × 6 | 20% | 1% |
+  | 60 | 8 | 94% | 3 | 60% | 65% | 57%, 7 × 7 | 40% | 15% |
+  | 70 | 8 | 98% | 3 | 60% | 79% | 65%, 8 × 8 | 60% | 30% |
+  | 80 | 8 | all | 3 | 60% | 93% | 72%, 8 × 8 | 80% | 44% |
+  | 90 | 8 | all | 3 | 60% | always | 80%, 9 × 9 | always | 58% |
+  | 100 | 8 | all | 3 | 60% | always | 80%, 9 × 9 | always | 72% |
 
   The timer starts at 16 s and loses a second at depths 13, 19, 27, 34, 39,
   44, 48, 53 and 58 (7 s), then at 78 (6 s) and 96, where it stops at 5 s.
