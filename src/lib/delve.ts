@@ -16,7 +16,9 @@ export const DELVE_LIVES = 3;
 /**
  * Bumped whenever the curve below changes, together with PROTOCOL_VERSION:
  * guests read parts of the curve from their own copy, and records made under
- * one ruleset aren't compared with another.
+ * one ruleset aren't compared with another. While Delve was unreleased its
+ * changes stayed at 1 (the beta keeps records of its own); 1 is now the
+ * rules Delve opens with, frozen: every change to them from here bumps it.
  */
 export const DELVE_RULESET = 1;
 

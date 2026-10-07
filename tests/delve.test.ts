@@ -230,7 +230,7 @@ test('there are always three categories left to offer at the longest lockout', (
 
 test('the ruleset is pinned to the curve and the protocol', () => {
   // Changing the curve changes this hash: bump DELVE_RULESET and PROTOCOL_VERSION with it, then update the pin.
-  // (Delve isn't released yet, so the new curve kept both and only moved the pin; so did dynamite going off by itself, look-alike pictures, the flare burning at 0 and the blast holding the clock, co-op, dynamite taking half of all the options with two finds side by side, pinning the lives, the clock going down to 5 s with the art burning in faster on it, the smooth rise in place of the steps, and each find's own risk: the Flare Cache's shorter clock and the Dynamite Cache's blast.)
+  // (Ruleset 1 is frozen as the rules Delve opens with, at protocol 12. Before that, while Delve was unreleased, every change kept the ruleset and only moved the pin; so did dynamite going off by itself, look-alike pictures, the flare burning at 0 and the blast holding the clock, co-op, dynamite taking half of all the options with two finds side by side, pinning the lives, the clock going down to 5 s with the art burning in faster on it, the smooth rise in place of the steps, and each find's own risk: the Flare Cache's shorter clock and the Dynamite Cache's blast.)
   const table: unknown[] = DEPTHS.map((d) => [delveRules(d), delveTimer(d), delveTileVeil(d)]);
   // The finds too: where and how often they turn up, what they ask and cost, and what their items do.
   const clocks = Array.from({ length: 12 }, (_, i) => i + 5);
@@ -248,7 +248,7 @@ test('the ruleset is pinned to the curve and the protocol', () => {
   // The lives everyone sets out with.
   table.push(['lives', DELVE_LIVES]);
   const hash = createHash('sha256').update(JSON.stringify(table)).digest('hex').slice(0, 16);
-  assert.deepEqual([DELVE_RULESET, PROTOCOL_VERSION, hash], [1, 11, PINNED_HASH]);
+  assert.deepEqual([DELVE_RULESET, PROTOCOL_VERSION, hash], [1, 12, PINNED_HASH]);
 });
 
 const PINNED_HASH = '3bac4df50070d8ea';

@@ -113,8 +113,10 @@ test('veiled "find the art" pictures say which option they belong to', () => {
   assert.equal(parseHostMsg({ ...patch, tile: '2' }), null);
 });
 
-test('version 11: the co-op vote and revive (hosts and guests on 10 lack them, so they do not mix)', () => {
-  assert.equal(PROTOCOL_VERSION, 11);
+test('version 12: the frozen Delve rules (finds that blow up and shorten the clock); 11 had the co-op vote and revive', () => {
+  assert.equal(PROTOCOL_VERSION, 12);
+  // A guest on an older curve would time its own clock and fast window wrongly, so it does not mix.
+  assert.match(versionProblem(11)!, /^Your game is out of date/);
   assert.match(versionProblem(10)!, /^Your game is out of date/);
   assert.deepEqual(parseClientMsg({ t: 'action', action: { type: 'vote', category: 'Rings' } }), { t: 'action', action: { type: 'vote', category: 'Rings' } });
   assert.deepEqual(parseClientMsg({ t: 'action', action: { type: 'revive', target: 'p2' } }), { t: 'action', action: { type: 'revive', target: 'p2' } });
