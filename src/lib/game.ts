@@ -9,6 +9,7 @@ import {
   DELVE_RESUME_GRACE_MS,
   DELVE_RULESET,
   FINDS,
+  DELVE_FUSE_MS,
   FLARE_MS,
   askedCards,
   blastProblem,
@@ -26,6 +27,7 @@ import {
   findReward,
   findRules,
   findTileVeil,
+  fuseDue,
   hasRoom,
   holdersOf,
   inventoryOf,
@@ -594,6 +596,14 @@ export interface Question {
    * saves' dynamite.
    */
   held?: { from: number; until: number };
+  /**
+   * Delve: a stick of dynamite's fuse, lit as the clock hit 0 with no flare
+   * to burn (delve.ts fuseDue): lit at `lit`, it goes off at `ends` (host
+   * clock, DELVE_FUSE_MS later) and blasts the question away, unless
+   * someone sets it off sooner. While it burns the time is up: no answer
+   * counts but one given before 0.
+   */
+  fuse?: { lit: number; ends: number };
   /** Delve: a flare burnt on this question as its clock hit 0, and its deadline moved (once a question). */
   flared?: boolean;
   /** Delve, once `flared`: when it burnt (host clock). */
@@ -777,6 +787,8 @@ export type Action =
   | { type: 'resumed' }
   /** Host only (Delve): the clock is about to run out, so one of the answering player's flares burns (co-op: a random holder's). */
   | { type: 'flare'; askedAt: number }
+  /** Host only (Delve): the clock hits 0 with no flare to burn, so a stick of dynamite's fuse is lit (delve.ts fuseDue). */
+  | { type: 'fuse'; askedAt: number }
   /**
    * Delve: a stick of dynamite blasts the question asked at `askedAt` away
    * for a new one at the same depth (alone the player's own; co-op anyone
@@ -1275,14 +1287,31 @@ export class Engine {
           flareDue = false;
         }
         // With no flare to burn, a stick of dynamite goes off by itself in
-        // place of the time-out, if the depth has a blast left: as the host's
-        // time-out comes (0 and the allowance for answers in flight), or as
-        // a player's answer later than that arrives first (it was for the
-        // question blasted away, and goes with it).
-        const late = q.deadline !== null && this.now() > q.deadline + ANSWER_GRACE_MS;
-        if (!flareDue && (from === null ? action.index === null : late) && this.blastDue(s, active)) {
-          this.blast(s, active.id, null);
-          break;
+        // place of the time-out, if the depth has a blast left: its fuse is
+        // lit at 0 (the host's 'fuse', or whatever comes first once 0 and the
+        // allowance for answers in flight are past: the time-out, or a
+        // player's answer, dropped with the question) and it goes off as it
+        // burns down (the host's time-out, set for then).
+        const timeOut = from === null && action.index === null;
+        const late = from !== null && q.deadline !== null && this.now() > q.deadline + ANSWER_GRACE_MS;
+        if (!flareDue && (timeOut || late || q.fuse) && fuseDue(s)) {
+          const now = this.now();
+          if (!q.fuse) {
+            this.lightFuse(q);
+            break;
+          }
+          if (now >= q.fuse.ends) {
+            this.blast(s, active.id, null);
+            break;
+          }
+          // Burning: the time is up. Only an answer given before 0 still
+          // counts (a guest's within the allowance for answers in flight).
+          const inTime = action.index !== null && now <= q.fuse.lit + (from === null ? 0 : ANSWER_GRACE_MS);
+          if (!inTime) {
+            // A time-out timer early (the clock jumped): it goes off on time.
+            if (timeOut) break;
+            throw new ActionError('Too late!', true);
+          }
         }
         const index = validIndex(action.index, q.options.length);
         const chosenId = index === null ? null : q.options[index];
@@ -1511,6 +1540,17 @@ export class Engine {
         this.burnFlare(s, coop ? this.anyHolder(s, 'flares') : active!.id);
         break;
       }
+      case 'fuse': {
+        if (from !== null) throw new ActionError('Not allowed.');
+        const q = s.question;
+        // As the clock hits 0 (a timer a moment early still counts) with no
+        // flare to burn first, once a question, before the time-out is in.
+        if (!q || q.askedAt !== action.askedAt || q.fuse || !fuseDue(s)) break;
+        const now = this.now();
+        if (now < q.deadline! - 250 || now > q.deadline! + ANSWER_GRACE_MS) break;
+        this.lightFuse(q);
+        break;
+      }
       case 'blast': {
         const q = s.question;
         // One that crossed its question's end on the way (a right answer,
@@ -1525,8 +1565,9 @@ export class Engine {
         const problem = blastProblem(s, by);
         if (problem) throw new ActionError(problem, true);
         // Past the allowance for answers in flight the time-out is due, and
-        // deals with it: a flare burns first, or the dynamite goes off by itself.
-        if (this.now() > q.deadline! + ANSWER_GRACE_MS) throw new ActionError('Too late!', true);
+        // deals with it: a flare burns first, or the dynamite's fuse is lit.
+        // While that fuse burns, Skip sets it off at once.
+        if (!q.fuse && this.now() > q.deadline! + ANSWER_GRACE_MS) throw new ActionError('Too late!', true);
         this.blast(s, coop ? this.anyHolder(s, 'dynamite') : active!.id, by);
         break;
       }
@@ -1742,12 +1783,14 @@ export class Engine {
   }
 
   /**
-   * Delve alone: a stick of dynamite would go off by itself for the player
-   * answering as their clock hits 0 (after any flare): they are here, and
-   * may blast the question away (delve.ts blastProblem).
+   * Delve: a stick of dynamite's fuse is lit on `q` as its clock hits 0 (or
+   * now, should that be later, so every screen sees it burn its whole
+   * length), to go off DELVE_FUSE_MS later (delve.ts fuseDue). Nothing is
+   * spent until it goes off.
    */
-  private blastDue(s: GameState, active: Player | undefined): active is Player {
-    return !!s.delve && !isGroupRun(s) && !!active?.connected && blastProblem(s, active.id) === null;
+  private lightFuse(q: Question) {
+    const lit = Math.max(this.now(), q.deadline ?? 0);
+    q.fuse = { lit, ends: lit + DELVE_FUSE_MS };
   }
 
   /**
@@ -1779,6 +1822,8 @@ export class Engine {
     q.flared = true;
     q.flaredBy = holder;
     q.flaredAt = q.deadline!;
+    // A fuse lit with no flare to burn (one came back meanwhile) is put out.
+    delete q.fuse;
     q.deadline = (onTime ? q.deadline! : Math.max(q.deadline!, now)) + FLARE_MS;
   }
 
@@ -1952,10 +1997,13 @@ export class Engine {
         return;
       }
       // With no flare to burn, a stick of dynamite from anyone's pack goes
-      // off by itself, if the depth has a blast left: nobody is hit, and
-      // the whole team gets the new question.
-      if (teamItemReady(s, 'dynamite')) {
-        this.blast(s, this.anyHolder(s, 'dynamite'), null);
+      // off by itself, if the depth has a blast left: its fuse is lit (should
+      // the host's 'fuse' not have come first), and as it burns down it goes
+      // off. Nobody is hit, and the whole team gets the new question.
+      if (fuseDue(s)) {
+        if (!q.fuse) this.lightFuse(q);
+        else if (now >= q.fuse.ends) this.blast(s, this.anyHolder(s, 'dynamite'), null);
+        // Else a time-out timer early (the clock jumped): it goes off on time.
         return;
       }
       const hits = waitingIds(s).map((id) => ({ playerId: id, ...this.hit(s, id), timedOut: true }));

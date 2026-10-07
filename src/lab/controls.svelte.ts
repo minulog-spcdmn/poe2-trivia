@@ -572,7 +572,7 @@ function withCards() {
  * one). A depth has two blasts at most: past them, the lab says so.
  */
 export const dynamite = () =>
-  event('Blast through', async () => {
+  event('Skip (dynamite)', async () => {
     const id = activeId();
     if (!holds(id, 'dynamite')) put((s) => invSet(s, id, (v) => (v.dynamite = 1)), true);
     withCards();
@@ -581,8 +581,9 @@ export const dynamite = () =>
   });
 
 /**
- * Dynamite goes off by itself as the clock hits 0, with no flare to burn
- * (flares are emptied first, a stick put in the pack if none is held).
+ * Dynamite's fuse is lit as the clock hits 0, with no flare to burn, and
+ * goes off by itself as it burns down (flares are emptied first, a stick
+ * put in the pack if none is held).
  */
 export const dynamiteAtZero = () =>
   event('Dynamite at 0', async () => {

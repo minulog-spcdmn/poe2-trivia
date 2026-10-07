@@ -300,7 +300,7 @@
           <button onclick={L.caveIn} disabled={!!busy}>Vein cave-in</button>
           <button onclick={L.wardsCaveIn} disabled={!!busy}>Two wards take a cave-in</button>
           <button onclick={L.flare} disabled={!!busy}>Flare at 0</button>
-          <button onclick={L.dynamite} disabled={!!busy}>Blast through</button>
+          <button onclick={L.dynamite} disabled={!!busy}>Skip (dynamite)</button>
           <button onclick={L.dynamiteAtZero} disabled={!!busy}>Dynamite at 0</button>
           <button onclick={L.deeperThanEver} disabled={!!busy}>Deeper than ever</button>
         </div>

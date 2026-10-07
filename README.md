@@ -75,7 +75,7 @@ the same thing for everyone.
     answered.
   - Flares and dynamite go off from the pack of a random holder still
     standing, and help everyone. Anyone standing who hasn't answered may
-    press Blast through (a teammate's wrong answer locks nobody else out:
+    press Skip (a teammate's wrong answer locks nobody else out:
     it stays paid, and everyone standing, its player too, answers the new
     question). Its card is the one with the most votes that wasn't chosen,
     ties drawn by the host, then the others, drawn. The first right answer
@@ -187,8 +187,8 @@ the same thing for everyone.
     (once a question). An answer at any time before that keeps it; a guest's
     answer still on its way when it burns gives it back.
   - A **Dynamite Cache** (from depth 9) gives **dynamite**. While a
-    question is open, a **Blast through** button stands where Next will
-    after the answer (its place kept, so nothing moves as it comes and
+    question is open, a **Skip** button (dynamite's glyph, in its tan)
+    stands where Next will after the answer (its place kept, so nothing moves as it comes and
     goes): pressed, a stick blasts the question away for a new one at the
     same depth, from a card on the depth's offer not asked yet. The depth
     doesn't change (no depth reached, no zone gate); the new question gets
@@ -197,13 +197,21 @@ the same thing for everyone.
     it is never a find, even from a find's card (dynamite is no way to fish
     for finds). Its card is locked out like a pick. At most two blasts a
     depth (`DELVE_MAX_BLASTS`, the offer's other cards). As the clock hits
-    0, a flare burns first; only with none to burn does a stick go off by
-    itself (while the depth has a blast left), in place of the time-out,
-    which then costs nothing. Instead of the plunge, the stage swings
-    sideways, toward where the new card lay on the offer from the blasted
-    one (a card to its left swings left): the old question bursts and goes,
-    the new one comes in from that side, and the scene behind swings with
-    them (a cross-fade with reduced motion). The question blasted away
+    0, a flare burns first; only with none to burn is a stick's fuse lit
+    (while the depth has a blast left), in place of the time-out, which
+    then costs nothing: it hisses, and a bar burns down on Skip as Next's
+    does, for `DELVE_FUSE_MS` (1.8 s, set by the host on its clock, so
+    every screen burns it together). The time is up meanwhile: no answer
+    counts but one given before 0. Burnt down, the dynamite goes off by
+    itself; Skip sets it off at once. Instead of the plunge, the stage
+    swings sideways, toward where the new card lay on the offer from the
+    blasted one (a card to its left swings left): the explosion bursts in
+    from that side of the screen (a flash, a fireball and smoke billowing
+    in, sparks and rock flying across, a shockwave), the shockwave breaks
+    the old question into shards and flings them to the far side as the
+    screen shakes and the scene behind swings, and the new question comes
+    in from the side the blast came from, through the clearing smoke (a
+    cross-fade with reduced motion or the effects off). The question blasted away
     counts as seen in the Codex, never missed, and the run's record keeps
     how many questions it blasted away (shown on the Codex's last run and
     in its finds panel).
@@ -219,9 +227,9 @@ the same thing for everyone.
     pick strikes (or at the time-out). The lost item bursts on the phial or
     beside it with a small blast of its own, a moment after the life, and
     the reveal says what went ("The blast destroyed your flare.").
-  - Flares and dynamite never work on a find's own question: a find is a
-    dangerous route, with thicker walls and a darkness nothing keeps back
-    (no button, nothing at 0). You carry up to three of each item.
+  - Flares and dynamite never work on a find's own question: finds lie
+    down dangerous routes, with thicker walls and a darkness nothing can
+    hold back, so there is no Skip button and nothing happens at 0. You carry up to three of each item.
 - **Alone**, you delve until your third life is gone; the depth where it went
   is your result. **Together**, the run goes on while anyone stands, and
   the depth where the last of the team perished is the team's result.
@@ -828,7 +836,7 @@ and the depth (any of 1 to 150, or a zone); deals cards with a find among
 them, and a second find if wanted; asks questions (name the item or find
 the art, a find's, mirrored, unveiled, in grayscale); plays events (a right
 or wrong answer, a time-out, a ward breaking, a cave-in, a flare at 0,
-a blast through, dynamite at 0, items gained, a find answered right, the last
+a blast (Skip), dynamite at 0 (its fuse), items gained, a find answered right, the last
 life, deeper than ever, a new zone, the plunge); pauses and moves the
 clock; shows the end screens (perished, deeper than ever, together); and
 switches effects, sound and reduced motion. Events go through the engine

@@ -212,19 +212,19 @@ export const FIND_RULES: Record<FindKind, { gives: string; miss: string }> = {
     miss: `${cap(FIND_MISS.flare ?? '')}.`,
   },
   dynamite: {
-    gives: `Dynamite blasts a question away for a new one at the same depth, ${timesWord(DELVE_MAX_BLASTS)} a depth at most; at zero it goes off by itself, after any flare.`,
+    gives: `Dynamite lets you skip a question and get a new one at the same depth, up to ${timesWord(DELVE_MAX_BLASTS)} per depth. If time runs out and you have no flare, its fuse is lit and it goes off on its own.`,
     miss: `${cap(FIND_MISS.dynamite ?? '')}.`,
   },
 };
 
 /** Over a flare or a stick of dynamite in a player's pack, on hover: how it works. */
 export const ITEM_TIPS = {
-  flares: `A flare: when your time runs out, it burns for ${words(FLARE_MS / 1000)} more seconds. Not on finds.`,
-  dynamite: `Dynamite: Skip blasts a question away for a new one at the same depth, ${timesWord(DELVE_MAX_BLASTS)} a depth at most. At zero it goes off by itself, after any flare. Not on finds.`,
+  flares: `When your time runs out, a flare burns and gives you ${words(FLARE_MS / 1000)} more seconds. It doesn't work on finds.`,
+  dynamite: `Press Skip to blast the question away and get a new one at the same depth, up to ${timesWord(DELVE_MAX_BLASTS)} per depth. If time runs out and you have no flare, its fuse is lit and it goes off on its own. It doesn't work on finds.`,
 } as const;
 
 /** Under the finds in the lobby's rules: why flares and dynamite never work on a find's question. */
-export const FINDS_UNSAFE = "A find is a dangerous route: thicker walls, a darkness nothing keeps back. Flares and dynamite don't work there.";
+export const FINDS_UNSAFE = "Finds lie down dangerous routes, with thicker walls and a darkness nothing can hold back, so flares and dynamite don't work on them.";
 
 /** A find's cave-in mark, in words for those who can't see it: "A wrong answer loses two lives". */
 export const caveInLabel = (kind: FindKind) => `A wrong answer loses ${caveInText(kind)}`;

@@ -30,7 +30,7 @@
   import { fxActive, type Handle } from '../lib/fx/core';
   import { dock, narrow, phone } from '../lib/layout';
   import { portal } from '../lib/portal';
-  import { blastProblem, dynamiteOf, fellAt, holdersOf, isGroupRun, itemsWorkOn, livesOf, waitingIds } from '../lib/delve';
+  import { blastProblem, dynamiteOf, fellAt, fuseLeft, holdersOf, isGroupRun, itemsWorkOn, livesOf, waitingIds } from '../lib/delve';
   import { blownText, coopMissText, coopRevealText, namesOf, wardText } from '../lib/difficultyText';
   import ItemGlyph from './ItemGlyph.svelte';
   import type { GlyphKind } from '../lib/inventoryArt';
@@ -159,10 +159,13 @@
   // ---- dynamite ----
   // Delve: while the question is open, a stick of dynamite (alone your own,
   // together anyone standing's) can blast it away for a new one at the same
-  // depth, twice a depth at most: its button takes the place Next has after
-  // an answer. Once this question has dynamite at hand its place is kept
-  // until the question ends, the button only showing while it can be used,
-  // so nothing moves as it comes and goes.
+  // depth, twice a depth at most: its button (Skip) takes the place Next has
+  // after an answer. Once this question has dynamite at hand its place is
+  // kept until the question ends, the button only showing while it can be
+  // used, so nothing moves as it comes and goes. As the clock hits 0 with no
+  // flare to burn, the host lights its fuse (Question.fuse): the button's
+  // bar burns down with it, on the host's clock as Next's does, and Skip
+  // still sets it off at once meanwhile.
 
   /** Sticks of dynamite at hand: alone the player's, together everyone standing's. */
   const sticks = $derived(!s.delve ? 0 : coop ? holdersOf(s, 'dynamite').reduce((n, id) => n + dynamiteOf(s, id), 0) : dynamiteOf(s, active.id));
@@ -177,9 +180,31 @@
     const timer = setTimeout(() => (expired = true), left);
     return () => clearTimeout(timer);
   });
-  /** Whether this device can blast the question away now (delve.ts blastProblem; on one device, for the player). */
+  /** The fuse burning down, 1 to 0 (delve.ts fuseLeft), on the host's clock; null with none lit. */
+  let fuse = $state<number | null>(null);
+  $effect(() => {
+    const lit = reveal ? null : (q.fuse ?? null);
+    if (!lit) {
+      fuse = null;
+      return;
+    }
+    let frame = 0;
+    const tick = () => {
+      fuse = fuseLeft({ fuse: lit }, session.hostNow());
+      if (fuse! > 0) frame = requestAnimationFrame(tick);
+    };
+    untrack(tick);
+    return () => cancelAnimationFrame(frame);
+  });
+  /** Whether this device can blast the question away now (delve.ts blastProblem; on one device, for the player): while its clock runs, or its fuse burns. */
   const canBlast = $derived(
-    !!s.delve && mine && !reveal && !waiting && !expired && chosen === null && blastProblem(s, session.mode === 'local' ? null : me) === null,
+    !!s.delve &&
+      mine &&
+      !reveal &&
+      !waiting &&
+      (!expired || !!q.fuse) &&
+      chosen === null &&
+      blastProblem(s, session.mode === 'local' ? null : me) === null,
   );
   /** The button's place, kept from when dynamite is at hand on a question it works on until the question ends. */
   const slotWanted = () => !!s.delve && !reveal && itemsWorkOn(q) && sticks > 0 && mine;
@@ -198,8 +223,8 @@
   function blastThrough() {
     if (!canBlast || blasting) return;
     blasting = true;
-    // Its fuse is lit here at once; the blast is heard as the new question comes (session.svelte.ts).
-    sfx('fuse');
+    // Its fuse is lit here at once (unless it burns already); the blast is heard as the new question comes (session.svelte.ts).
+    if (!q.fuse) sfx('fuse');
     session.dispatch({ type: 'blast', askedAt: q.askedAt });
     // Should the host turn it down (it crossed the end of the question), it can be pressed again.
     setTimeout(() => (blasting = false), 1500);
@@ -209,8 +234,8 @@
     const b = q.blast;
     if (!s.delve || !b || reveal) return null;
     const you = session.mode === 'local' || b.stick === me;
-    if (!b.by) return `Time ran out; ${you ? 'your' : `${nameOf(b.stick)}'s`} dynamite went off.`;
-    return `${b.by === me || session.mode === 'local' ? 'You' : nameOf(b.by)} blasted through.`;
+    if (!b.by) return `Time ran out, so ${you ? 'your' : `${nameOf(b.stick)}'s`} dynamite went off and blasted the last question away.`;
+    return `${b.by === me || session.mode === 'local' ? 'You' : nameOf(b.by)} blasted the last question away.`;
   });
 
   // Veiled art: when the newest patch will have finished coming in (ms, page
@@ -785,12 +810,15 @@
         disabled={!canBlast}
         aria-hidden={!canBlast}
         tabindex={canBlast ? undefined : -1}
-        aria-label="Blast through: dynamite blasts this question away for a new one at this depth{sticks > 1 ? `, ${sticks} sticks left` : ''}"
+        aria-label="Skip: use dynamite to blast this question away and get a new one at this depth.{fuse !== null ? ' The fuse is already burning.' : ''}"
         onclick={blastThrough}
       >
         <span class="stick" aria-hidden="true"><ItemGlyph kind="dynamite" /></span>
-        Blast through
-        {#if sticks > 1}<span class="count" aria-hidden="true">{sticks}</span>{/if}
+        Skip
+        {#if fuse !== null}
+          <!-- The fuse lit at 0: it burns down as Next's bar does, and the dynamite goes off. -->
+          <span class="auto fuse" style:transform="scaleX({fuse})"></span>
+        {/if}
       </button>
     </div>
   {:else}
@@ -805,6 +833,11 @@
     <p class="spectate out">
       {coopMissText(myStruck, livesOf(s, me), myStruck.lives + myStruck.wards > 1)}
       {#if others.length}<span class="still">Still answering: {namesOf(others, nameOf, me)}.</span>{/if}
+    </p>
+  {:else if fuse !== null}
+    <!-- Delve: the clock hit 0 and a stick of dynamite's fuse is lit (its bar burns down on Skip). -->
+    <p class="spectate blast-line" in:fade={{ duration: 200 }}>
+      <span class="found-glyph" aria-hidden="true"><ItemGlyph kind="dynamite" /></span>Time's up, and {coop ? "the team's" : delveYou ? 'your' : `${active.name}'s`} dynamite fuse is lit.
     </p>
   {:else if blastLine}
     <p class="spectate blast-line" in:fade={{ duration: 300, delay: 300 }}><span class="found-glyph" aria-hidden="true"><ItemGlyph kind="dynamite" /></span>{blastLine}</p>
@@ -1408,26 +1441,38 @@
     text-align: left;
     font-size: inherit;
   }
+  /* Skip: an ordinary action (Next's body, shape and type), in dynamite's
+     tan, the colour its finds and the line it leaves are written in. */
   .btn.blast {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5em;
-    color: #ffe2c4;
-    border-color: rgba(230, 120, 60, 0.7);
-    background: linear-gradient(180deg, rgba(120, 40, 14, 0.85), rgba(60, 16, 6, 0.9));
+    color: #eebf96;
+    border-color: rgba(238, 191, 150, 0.5);
     box-shadow:
-      0 0 0 1px #000,
-      0 0 18px rgba(255, 110, 40, 0.25);
+      inset 0 1px 0 rgba(255, 226, 196, 0.16),
+      inset 0 0 0 1px rgba(0, 0, 0, 0.35),
+      inset 0 -10px 16px -8px rgba(0, 0, 0, 0.55),
+      0 0 14px rgba(238, 191, 150, 0.12),
+      0 2px 10px rgba(0, 0, 0, 0.5);
     transition:
       opacity 0.25s,
+      transform 0.18s var(--ease-out),
       box-shadow 0.25s,
-      border-color 0.25s;
+      border-color 0.25s,
+      color 0.25s,
+      text-shadow 0.25s;
   }
-  .btn.blast:hover {
-    border-color: rgba(255, 160, 90, 0.9);
+  .btn.blast:hover:not(:disabled) {
+    color: #fbe3cc;
+    border-color: rgba(246, 214, 186, 0.85);
+    text-shadow:
+      0 1px 2px rgba(0, 0, 0, 0.7),
+      0 0 12px rgba(238, 191, 150, 0.5);
     box-shadow:
-      0 0 0 1px #000,
-      0 0 26px rgba(255, 120, 50, 0.45);
+      inset 0 1px 0 rgba(255, 232, 210, 0.24),
+      inset 0 0 0 1px rgba(0, 0, 0, 0.35),
+      inset 0 -10px 16px -8px rgba(0, 0, 0, 0.45),
+      0 0 0 1px rgba(238, 191, 150, 0.14),
+      0 0 20px rgba(238, 191, 150, 0.28),
+      0 2px 10px rgba(0, 0, 0, 0.5);
   }
   .btn.blast.gone {
     visibility: hidden;
@@ -1437,14 +1482,10 @@
     display: inline-block;
     --h: 1.05em;
   }
-  .btn.blast .count {
-    font-family: var(--font-cinzel);
-    font-weight: 700;
-    font-size: 0.8em;
-    padding: 0.05em 0.45em 0;
-    color: #ffd6a8;
-    border: 1px solid rgba(255, 150, 70, 0.5);
-    border-radius: 999px;
+  /* The fuse burning down: Next's bar, in the same tan. */
+  .btn.blast .fuse {
+    background: #f4d2b2;
+    box-shadow: 0 0 6px rgba(238, 191, 150, 0.6);
   }
 
   /* Delve: the words come in once the clock runs. */

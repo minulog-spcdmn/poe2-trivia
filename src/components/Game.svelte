@@ -1,6 +1,6 @@
 <script lang="ts">
   import { fade, fly, scale } from 'svelte/transition';
-  import { cubicIn, cubicOut } from 'svelte/easing';
+  import { cubicOut } from 'svelte/easing';
   import { session } from '../lib/session.svelte';
   import { playerColor } from '../lib/ui';
   import Scoreboard from './Scoreboard.svelte';
@@ -21,7 +21,8 @@
   import Threshold from './zonebanner/Threshold.svelte';
   import { quiet } from './zonebanner/head';
   import { DELAY as ZONE_DELAY, EXIT as ZONE_EXIT, HOLD as ZONE_HOLD, STILL_FADE } from './zonebanner/thresholdArt';
-  import { descended, dynamiteBlast, milestoneReached } from '../lib/fx/moments';
+  import { descended, milestoneReached } from '../lib/fx/moments';
+  import { BLAST_IMPACT_MS, BLAST_IN_DELAY_MS, BLAST_IN_MS, blastAway } from '../lib/blastAway';
   import { untrack } from 'svelte';
 
   const s = $derived(session.state!);
@@ -223,10 +224,12 @@
   // Delve: dynamite blasted the question away for a new one at the same
   // depth. No depth deeper, so instead of the plunge the stage swings
   // sideways, toward where the new question's card lay on the offer from the
-  // blasted one's (a card to its left swings left): the old question bursts
-  // and goes the other way, the new one comes in from that side, and the
-  // scene behind swings with them (descent.ts swing). Set before the DOM
-  // updates, so the old question is still there to burst and to go.
+  // blasted one's (a card to its left swings left): the explosion bursts in
+  // from that side of the screen, blows the old question apart and flings it
+  // the other way (lib/blastAway.ts), the scene behind swings as its
+  // shockwave hits (descent.ts swing), and the new question comes in from
+  // the side the blast came from, through the smoke. Set before the DOM
+  // updates, so the old question is still there to blow apart.
   let swingSide = $state<-1 | 1 | null>(null);
   let askedSeen = 0;
   $effect.pre(() => {
@@ -241,37 +244,33 @@
     }
     swingSide = b.side;
     untrack(() => {
+      const still = stillMotion();
+      // Blown apart as it still shows (the DOM is the old question's until this flush ends).
+      const old = document.querySelector<HTMLElement>('.questions .q-slot');
+      if (!still && old) blastAway({ node: old, side: b.side, mine: !!b.by && (b.by === session.myPlayerId || session.mode === 'local') });
       // A fresh question, as on a new turn: back up to its art (on phones the
       // button was often pressed scrolled down, under the answers).
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-      swing(b.side);
-      const art = document.querySelector('.questions .art, .questions .tiles');
-      dynamiteBlast({ art, blown: [], mine: !!b.by && b.by === session.myPlayerId });
+      if (window.scrollY > 0) window.scrollTo({ top: 0, behavior: 'smooth' });
+      setTimeout(() => swing(b.side), still ? 0 : BLAST_IMPACT_MS);
     });
   });
-  /** Reduced motion, or the effects held still: a swing only cross-fades. */
+  /** Reduced motion, or the effects held still: a blast only cross-fades. */
   const stillMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches || document.documentElement.hasAttribute('data-still');
-  /** Svelte transition: the blasted question goes, away from the side the new one comes from. */
+  /** Svelte transition: the blasted question goes at once (its shards fly in an overlay of their own, see above), or cross-fades. */
   function swingOut(_node: Element) {
-    const side = swingSide;
-    if (!side) return { duration: 0 };
-    if (stillMotion()) return { duration: 200, css: (t: number) => `opacity: ${t}` };
-    return {
-      duration: 520,
-      easing: cubicIn,
-      css: (t: number, u: number) => `transform: translateX(${-side * u * 55}%) rotate(${-side * u * 2.5}deg); opacity: ${t}; filter: blur(${u * 3}px)`,
-    };
+    if (!swingSide || !stillMotion()) return { duration: 0 };
+    return { duration: 200, css: (t: number) => `opacity: ${t}` };
   }
-  /** Svelte transition: the new question comes in from the side its card lay on. */
+  /** Svelte transition: the new question comes in from the side the blast came from, as the smoke clears. */
   function swingIn(_node: Element) {
     const side = swingSide;
     if (!side) return { duration: 0 };
     if (stillMotion()) return { duration: 300, delay: 150, css: (t: number) => `opacity: ${t}` };
     return {
-      duration: 700,
-      delay: 180,
+      duration: BLAST_IN_MS,
+      delay: BLAST_IN_DELAY_MS,
       easing: cubicOut,
-      css: (t: number, u: number) => `transform: translateX(${side * u * 45}%); opacity: ${t}`,
+      css: (t: number, u: number) => `transform: translateX(${(side * u * 70).toFixed(2)}vw) rotate(${(side * u * 2).toFixed(2)}deg); opacity: ${Math.min(1, t * 1.8).toFixed(3)}`,
     };
   }
 
@@ -442,8 +441,8 @@
     flex-direction: column;
     align-items: stretch;
   }
-  /* The question and, while dynamite swings the stage, the one it blasted
-     away, in one cell (#app clips what swings past the screen's edge). */
+  /* The question and, as it cross-fades with reduced motion, the one dynamite
+     blasted away, in one cell (#app clips what comes in past the screen's edge). */
   .questions {
     display: grid;
   }

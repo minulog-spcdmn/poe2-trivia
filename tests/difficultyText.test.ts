@@ -134,9 +134,9 @@ test("the lobby's finds: each in a line for someone who never played, what it gi
   assert.equal(said('flare'), 'A flare adds five seconds when your time runs out. You get less time to answer.');
   assert.equal(
     said('dynamite'),
-    'Dynamite blasts a question away for a new one at the same depth, twice a depth at most; at zero it goes off by itself, after any flare. A miss also blows up an item you carry.',
+    'Dynamite lets you skip a question and get a new one at the same depth, up to twice per depth. If time runs out and you have no flare, its fuse is lit and it goes off on its own. A miss also blows up an item you carry.',
   );
   // And under them, in a line, why flares and dynamite never work on a find.
-  assert.equal(FINDS_UNSAFE, "A find is a dangerous route: thicker walls, a darkness nothing keeps back. Flares and dynamite don't work there.");
+  assert.equal(FINDS_UNSAFE, "Finds lie down dangerous routes, with thicker walls and a darkness nothing can hold back, so flares and dynamite don't work on them.");
   for (const t of [...Object.values(FIND_RULES).flatMap((r) => Object.values(r)), FINDS_UNSAFE]) assert.ok(!t.includes(String.fromCharCode(0x2014)), t);
 });
