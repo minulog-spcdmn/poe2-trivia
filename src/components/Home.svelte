@@ -111,7 +111,7 @@
   let slow = $state(false);
   $effect(() => {
     slow = false;
-    if (!connecting) return;
+    if (!connecting || session.mode !== 'client') return;
     const t = setTimeout(() => (slow = true), 5000);
     return () => clearTimeout(t);
   });
