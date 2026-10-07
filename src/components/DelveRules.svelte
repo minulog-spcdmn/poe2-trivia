@@ -6,12 +6,13 @@
 
   // Delve's rules block: the descent (DelveLadder) and the finds, one
   // diagram. Side by side once the card is wide enough, the plate is a
-  // narrow column as tall as the finds beside it, and a fine leader runs
-  // from the rock where each find you have met first turns up to its
-  // heading. On a phone the finds' text would be squeezed beside it, so the
-  // plate stands above them, and each find's item stands beside the pit.
-  // The lobby passes this browser's records; the descent page
-  // (descent.html) drives them directly.
+  // column as tall as the finds beside it, and a fine line runs from the
+  // wall where each find you have met first turns up to its heading. On a
+  // phone or a tablet the finds' text would be squeezed beside it, so the
+  // plate takes the card's whole width at a height of its own, with each
+  // find's item and name on its right (tied to the pit the same way), and
+  // the finds' rules follow under it. The lobby passes this browser's
+  // records; the descent page (descent.html) drives them directly.
   let { deepest = null, label = 'Your deepest', met = [] }: { deepest?: number | null; label?: string; met?: FindKind[] } = $props();
 
   // The finds that turn up, in the order they first do.
@@ -21,15 +22,18 @@
 
   let caption: HTMLElement | null = $state(null);
   let finds: HTMLElement | null = $state(null);
+  /** Stacked (the finds under the plate), and the height the plate asks for then. */
+  let stacked = $state(true);
+  let natural = $state(0);
 </script>
 
 <!-- Two columns once the card is wide enough: the descent beside the finds. -->
 <div class="setting delve-rules">
   <div class="delve-cols">
-    <div class="descent-col">
+    <div class="descent-col" style:min-height={stacked && natural ? `${natural}px` : null}>
       <span class="label" bind:this={caption}>The descent</span>
       {#if caption && finds}
-        <DelveLadder {deepest} {label} {met} {caption} {finds} />
+        <DelveLadder {deepest} {label} {met} {caption} {finds} bind:stacked bind:natural />
       {/if}
     </div>
     <div class="finds-col" bind:this={finds}>
@@ -53,25 +57,26 @@
   .setting {
     margin-bottom: 1.2rem;
   }
-  /* Side by side from a 400 px card: the descent a narrow column, as tall as the finds beside it (the plate fills it, its caption
-     included, and its leaders run across the gap to the headings). Stacked on phones, the descent above at a height of its own. */
+  /* Side by side from a 400 px card: the descent a column as tall as the finds beside it (the plate fills it, its caption included,
+     and its lines run across the gap to the headings). Stacked on phones and tablets: the descent the card's whole width, at the
+     height it asks for, the finds' rules under it. */
   .delve-rules {
     container-type: inline-size;
   }
   .delve-cols {
     display: grid;
-    gap: 1rem 0.75rem;
+    gap: 0.9rem 1.25rem;
   }
   .descent-col {
     position: relative;
-    min-height: 18.5rem;
+    min-height: 24rem;
   }
   .descent-col .label {
     width: fit-content;
   }
   @container (min-width: 400px) {
     .delve-cols {
-      grid-template-columns: 9.5rem minmax(0, 1fr);
+      grid-template-columns: 11rem minmax(0, 1fr);
     }
     .descent-col {
       min-height: 15rem;
