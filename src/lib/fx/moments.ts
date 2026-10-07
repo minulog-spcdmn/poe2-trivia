@@ -976,30 +976,6 @@ export function flareFound(icon: Element) {
 }
 
 /**
- * Delve: a flare burns as the clock runs out, for more time. A hot flash
- * round the timer (`timer`) with a ring of fire running out of it and sparks
- * off its edge; the player's entry (`pill`) flares up at its rim, and its
- * flare (`icon`) flashes as it is used.
- */
-export function flareBurns(timer: Element | null, pill: Element | null, icon: Element | null) {
-  if (!fxActive()) return;
-  if (timer && !detached(timer)) {
-    const b = boxOf(timer);
-    const r = Math.max(b.w, b.h) / 2;
-    flash(timer, { radius: r * 2.2, color: C.ember, intensity: 0.32, life: 0.7 });
-    ring(timer, { radius: r * 2.8, from: r * 0.9, thickness: 6, life: 0.75, color: C.ember, breakup: 0.5, fill: 0, intensity: 0.8 });
-    ring(timer, { radius: r * 1.9, from: r * 0.9, thickness: 3, life: 0.5, color: C.whiteHot, breakup: 0.3, fill: 0, intensity: 0.5, delay: 0.08 });
-    sparks(timer, { count: 26, area: 'edge', colors: [C.ember, C.whiteHot, C.gold], speed: [120, 420], gravity: -60, drag: 2, life: [0.3, 0.7] });
-    light(timer, { color: [1, 0.55, 0.2], radius: 180, intensity: 0.25, hold: 0.15, decay: 0.9 });
-  }
-  if (pill && !detached(pill)) {
-    outline(pill, { color: C.ember, width: 10, life: 0.9, intensity: 0.55 });
-    embers(pill, { count: 10, area: 'edge', colors: [C.ember, C.gold], rise: [30, 90], life: [0.5, 1] });
-  }
-  if (icon && !detached(icon)) flash(icon, { radius: 16, color: C.whiteHot, intensity: 0.35, life: 0.4 });
-}
-
-/**
  * Delve: one depth deeper. The backdrop's embers flare up for a moment, and
  * any still in the old colour take the new one (lib/backdropEmbers.ts).
  */

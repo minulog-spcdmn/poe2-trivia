@@ -21,7 +21,6 @@
     ablaze,
     doused,
     findGained,
-    flareBurns,
     flareFound,
     lifeGiven,
     lifeHeld,
@@ -34,6 +33,7 @@
     itemBlown,
   } from '../lib/fx/moments';
   import { scoreRow, scoreRowOf } from '../lib/scoreRows';
+  import { flareStrike } from '../lib/flareBurn';
   import { burnsBlue, heatOf, streakOf } from '../lib/fx/streaks';
   import { phone } from '../lib/layout';
   import { cavesIn, fellAt, inventoryOf, isGroupRun, livesOf, reviveProblem, shownDepth, type FindKind, type Inventory as Carried, type ItemKind } from '../lib/delve';
@@ -364,9 +364,11 @@
         if (el && kind === 'flare') flareFound(el);
         if (mine && !fed) sfx('findReward');
       } else if (kind === 'burn') {
-        // The ring on screen (the last one: an old one may still be fading out).
+        // The ring on screen (the last one: an old one may still be fading
+        // out). The flare flares here and its light streaks to it; the ring
+        // burns on (TimerRing.svelte).
         const timer = [...document.querySelectorAll('.timer')].filter((t) => t.getClientRects().length).at(-1) ?? null;
-        flareBurns(timer, li, counts?.querySelector('[data-pip="flare"]') ?? null);
+        flareStrike({ timer, pill: li, icon: counts?.querySelector('[data-pip="flare"]') ?? null });
         // Everyone hears it: the clock everyone watches just got longer.
         sfx('flare');
       } else if (kind === 'blown' && item) {

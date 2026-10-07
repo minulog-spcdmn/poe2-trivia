@@ -3,7 +3,8 @@
   import { session } from '../lib/session.svelte';
   import { sfx } from '../lib/sound';
   import { timerTick } from '../lib/fx/moments';
-  import { clockLeft, questionTimer, veinWindowMs } from '../lib/delve';
+  import { FLARE_MS, clockLeft, questionTimer, veinWindowMs } from '../lib/delve';
+  import { FLARE_IGNITE_MS, flareBurning, onFlareLands, type FlareBurn } from '../lib/flareBurn';
   import { claimPressure, pressureOf, type Pressure } from '../lib/darkness';
 
   /**
@@ -32,20 +33,58 @@
 
   let remaining = $state(Infinity);
 
-  // A flare burnt (the question is `flared`): the ring flares back up. Not
-  // on any move of the deadline, which a pause moves on too; and not on
-  // mounting a question already flared (a refresh or rejoin).
+  // A flare burnt (the question is `flared`): its streak flies from the
+  // player's entry to the clock (lib/flareBurn.ts flareStrike, played by
+  // Scoreboard.svelte), which stays at 0 until it lands (`holdUntil`); then
+  // the ring flares back up and burns while the added seconds run (`lit`).
+  // Not on any move of the deadline, which a pause moves on too. Mounting a
+  // question already flared (a refresh or rejoin) only lights it, while its
+  // clock still runs.
   let flaring = $state(false);
+  let lit = $state(false);
+  let holdUntil = 0;
   let wasFlared: boolean | null = null;
+  // Its own derived, so that only the flare itself (not every new state) runs the effect again.
+  const flared = $derived(!!q?.flared);
   $effect(() => {
-    const now = !!q?.flared;
+    const now = flared;
     const was = wasFlared;
     wasFlared = now;
-    if (now && was === false) {
-      flaring = true;
-      const t = setTimeout(() => (flaring = false), 1600);
-      return () => clearTimeout(t);
+    if (!now) lit = false;
+    else if (was === false) {
+      // Lit as the streak lands, or soon after it should have (none flew: the entry is not on screen).
+      let t: ReturnType<typeof setTimeout> | undefined;
+      const ignite = () => {
+        stopWaiting();
+        clearTimeout(t);
+        holdUntil = 0;
+        flaring = lit = true;
+        t = setTimeout(() => (flaring = false), 1600);
+      };
+      const stopWaiting = onFlareLands(ignite);
+      holdUntil = Infinity;
+      t = setTimeout(ignite, FLARE_IGNITE_MS + 250);
+      return () => {
+        stopWaiting();
+        clearTimeout(t);
+        holdUntil = 0;
+      };
+    } else if (was === null) {
+      const end = untrack(() => (stopped ? null : deadline));
+      if (end !== null && leftAt(end, session.hostNow()) > 0) lit = true;
     }
+  });
+  // The ring burning (lib/flareBurn.ts), its light dying down with the added
+  // seconds (the clock's loop sets it); it goes out as the question ends.
+  let burn: FlareBurn | null = null;
+  $effect(() => {
+    if (!lit || stopped || !el) return;
+    const b = flareBurning(el);
+    burn = b;
+    return () => {
+      b.stop();
+      if (burn === b) burn = null;
+    };
   });
   /**
    * The time left at `now`: held still while a pause is on (the lab's; see
@@ -94,7 +133,13 @@
     const loop = () => {
       // A new question took over (this ring is going out): stop.
       if (untrack(() => session.state?.question?.askedAt) !== asked) return;
+      // A flare's streak on its way: the clock stays out until it lands.
+      if (performance.now() < holdUntil) {
+        raf = requestAnimationFrame(loop);
+        return;
+      }
       const left = leftAt(end, session.hostNow());
+      burn?.set(left / FLARE_MS, left / spanMs);
       const secs = Math.ceil(left / 1000);
       dark?.set(pressureOf(left, spanMs, warn));
       // The ring is redrawn only once its end has moved a third of a pixel
@@ -140,6 +185,7 @@
   class:azurite
   class:fast
   class:flaring
+  class:burning={lit && !stopped}
   role="timer"
   aria-label={fast ? `${secs} seconds left, ${Math.ceil((remaining - fastEnd) / 1000)} to earn a ward` : `${secs} seconds left`}
 >
@@ -217,16 +263,16 @@
     color: #d4e9ff;
     text-shadow: 0 0 10px rgba(80, 150, 255, 0.8);
   }
-  /* A flare: the ring fills back up in a burst of hot red light. */
+  /* A flare: the ring fills back up in a burst of its red light. */
   .flaring .fill {
-    stroke: #ffb38a;
-    filter: drop-shadow(0 0 8px rgba(255, 110, 60, 0.95));
+    stroke: #ffd3dc;
+    filter: drop-shadow(0 0 8px rgba(236, 62, 92, 0.95));
     transition:
       stroke-dashoffset 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.2),
       stroke 0.3s;
   }
   .flaring span {
-    color: #ffe2cf;
+    color: #fff0f3;
     animation: flare-up 0.8s ease-out;
   }
   .flaring::after {
@@ -234,14 +280,14 @@
     position: absolute;
     inset: -10px;
     border-radius: 50%;
-    background: radial-gradient(circle, rgba(255, 140, 80, 0.55), transparent 65%);
+    background: radial-gradient(circle, rgba(247, 163, 179, 0.6), transparent 65%);
     animation: flare-burst 1.4s ease-out forwards;
     pointer-events: none;
   }
   @keyframes flare-up {
     30% {
       transform: scale(1.45);
-      text-shadow: 0 0 14px rgba(255, 120, 60, 0.95);
+      text-shadow: 0 0 14px rgba(236, 62, 92, 0.95);
     }
   }
   @keyframes flare-burst {
@@ -253,6 +299,21 @@
       opacity: 0;
       transform: scale(1.5);
     }
+  }
+  /* Burning on a flare's added seconds (its glow, tip and sparks are
+     lib/flareBurn.ts's): the ring in the flare's red, the number pale over it. */
+  .burning .track {
+    stroke: rgba(247, 163, 179, 0.16);
+  }
+  .burning .fill {
+    stroke: #f7a3b3;
+    filter: drop-shadow(0 0 5px rgba(236, 62, 92, 0.95));
+  }
+  .burning span {
+    color: #fff0f3;
+    text-shadow:
+      0 0 8px rgba(236, 62, 92, 0.9),
+      0 1px 2px rgba(0, 0, 0, 0.9);
   }
   .stopped {
     opacity: 0.4;
