@@ -80,27 +80,34 @@
             <span class="size">{w.name}, card {w.px} px</span>
             <div class="panel card">
               <div class="setting delve-rules" style:width="{w.px}px">
-                <div class="delve-cols" class:band={c.placement === 'above'} style:--col="{c.column ?? 14}rem">
-                  <div class="descent-col">
-                    <span class="label">The descent</span>
-                    {#key replay}
-                      <c.component {deepest} />
-                    {/key}
+                {#if c.placement === 'whole'}
+                  <span class="label">The descent</span>
+                  {#key replay}
+                    <c.component {deepest} />
+                  {/key}
+                {:else}
+                  <div class="delve-cols" class:band={c.placement === 'above'} style:--col="{c.column ?? 14}rem">
+                    <div class="descent-col">
+                      <span class="label">The descent</span>
+                      {#key replay}
+                        <c.component {deepest} />
+                      {/key}
+                    </div>
+                    <div>
+                      <span class="label">{FINDS_LABEL}</span>
+                      <dl class="finds">
+                        {#each FIND_KINDS as kind (kind)}
+                          {@const r = FIND_RULES[kind]}
+                          <div data-find={kind}>
+                            <dt><span class="find-glyph"><ItemGlyph kind={FIND_GLYPH[kind]} /></span>{FIND_TEXT[kind].name}</dt>
+                            <dd>{r.gives} <span class="miss">{r.miss}</span></dd>
+                          </div>
+                        {/each}
+                      </dl>
+                      <p class="finds-unsafe">{FINDS_UNSAFE}</p>
+                    </div>
                   </div>
-                  <div>
-                    <span class="label">{FINDS_LABEL}</span>
-                    <dl class="finds">
-                      {#each FIND_KINDS as kind (kind)}
-                        {@const r = FIND_RULES[kind]}
-                        <div data-find={kind}>
-                          <dt><span class="find-glyph"><ItemGlyph kind={FIND_GLYPH[kind]} /></span>{FIND_TEXT[kind].name}</dt>
-                          <dd>{r.gives} <span class="miss">{r.miss}</span></dd>
-                        </div>
-                      {/each}
-                    </dl>
-                    <p class="finds-unsafe">{FINDS_UNSAFE}</p>
-                  </div>
-                </div>
+                {/if}
               </div>
               <ul class="rules muted">
                 <li>Name the item; each right answer takes you a depth deeper.</li>
