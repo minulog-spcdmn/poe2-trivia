@@ -3,11 +3,10 @@
   import { fly, scale } from 'svelte/transition';
   import { session } from '../lib/session.svelte';
   import { MAX_PLAYERS, RACE_DEFAULT_TIMER, TIMER_STEPS, difficultyOf, rulesFor, type Difficulty, type GameMode } from '../lib/game';
-  import { DIFFICULTY_NAMES, FINDS_LABEL, FINDS_UNSAFE, FIND_RULES, FIND_TEXT, describe } from '../lib/difficultyText';
-  import { FINDS_IN_ORDER, shownDepth } from '../lib/delve';
+  import { DIFFICULTY_NAMES, describe } from '../lib/difficultyText';
+  import { shownDepth } from '../lib/delve';
   import CustomDifficulty from './CustomDifficulty.svelte';
-  import DelveLadder from './DelveLadder.svelte';
-  import ItemGlyph from './ItemGlyph.svelte';
+  import DelveRules from './DelveRules.svelte';
   import ModeIcon from './ModeIcon.svelte';
   import { bestOf, findsMet, loadRecords } from '../lib/delveRecord';
   import { MAX_NAME, isHeldName, nameHeld, nameTooShort } from '../lib/names';
@@ -26,10 +25,6 @@
     { id: 'race', name: 'Race' },
     { id: 'delve', name: 'Delve', beta: true },
   ];
-  // The finds that turn up, in the order they first do.
-  const FIND_KINDS = FINDS_IN_ORDER.map((f) => f.kind);
-  /** Each find's item, as the game draws it. */
-  const FIND_GLYPH = { azurite: 'ward', flare: 'flare', dynamite: 'dynamite' } as const;
   const DIFFS = (Object.entries(DIFFICULTY_NAMES) as [Difficulty, string][]).map(([id, name]) => ({ id, name }));
 
   const s = $derived(session.state!);
@@ -366,29 +361,7 @@
       </div>
 
       {#if delve}
-        <!-- Two columns once the panel is wide enough: the descent beside the finds. -->
-        <div class="setting delve-rules">
-          <div class="delve-cols">
-            <div class="descent-col">
-              <span class="label">The descent</span>
-              <DelveLadder {deepest} label={deepestLabel} {met} />
-            </div>
-            <div>
-              <span class="label">{FINDS_LABEL}</span>
-              <!-- Each find in its own colour, with its item as the game draws it, in a line: what it gives, then what it risks. -->
-              <dl class="finds">
-                {#each FIND_KINDS as kind (kind)}
-                  {@const r = FIND_RULES[kind]}
-                  <div data-find={kind}>
-                    <dt><span class="find-glyph"><ItemGlyph kind={FIND_GLYPH[kind]} /></span>{FIND_TEXT[kind].name}</dt>
-                    <dd>{r.gives} <span class="miss">{r.miss}</span></dd>
-                  </div>
-                {/each}
-              </dl>
-              <p class="finds-unsafe">{FINDS_UNSAFE}</p>
-            </div>
-          </div>
-        </div>
+        <DelveRules {deepest} label={deepestLabel} {met} />
       {:else}
         <div class="setting">
           <span class="label">Points to win</span>
@@ -945,82 +918,11 @@
     letter-spacing: 0.04em;
     color: var(--gold-hi);
   }
-  /* Delve's rules: the descent and the finds side by side once there is room, stacked on phones. Beside the finds the drawing takes
-     their height (it lays itself out to fit, and the finds keep the height they have at 12.5rem up to this width); stacked, its
-     height follows its width. */
-  .delve-rules {
-    container-type: inline-size;
-  }
-  .delve-cols {
-    display: grid;
-    gap: 1rem 1.2rem;
-  }
-  .descent-col {
-    display: flex;
-    flex-direction: column;
-    --descent-min: min(calc(100cqw * 1.17), 24rem);
-  }
-  @container (min-width: 400px) {
-    .delve-cols {
-      grid-template-columns: 14rem minmax(0, 1fr);
-    }
-    .descent-col {
-      --descent-min: 15.5rem;
-    }
-  }
   .together-when {
     margin: 0 0 0.45rem;
     font-size: 0.93rem;
     font-style: italic;
     line-height: 1.25;
-  }
-  .finds {
-    display: grid;
-    gap: 0.5rem;
-    margin: 0;
-  }
-  /* Each find in its colour (as its note under the cards), with its item beside its name. */
-  .finds [data-find='azurite'] {
-    --find: #a9cdf5;
-  }
-  .finds [data-find='flare'] {
-    --find: #f7a3b3;
-  }
-  .finds [data-find='dynamite'] {
-    --find: #eebf96;
-  }
-  .finds dt {
-    display: flex;
-    align-items: center;
-    gap: 0.45em;
-    font-family: var(--font-display);
-    font-size: 0.7rem;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    color: var(--find);
-  }
-  .find-glyph {
-    --h: 13px;
-    display: inline-flex;
-    justify-content: center;
-    width: 14px;
-  }
-  .finds dd {
-    margin: 0.1rem 0 0;
-    font-size: 0.93rem;
-    line-height: 1.25;
-    color: var(--muted);
-  }
-  .finds .miss {
-    color: color-mix(in srgb, var(--find) 45%, var(--muted));
-  }
-  /* Under the finds: why flares and dynamite never work on one. */
-  .finds-unsafe {
-    margin: 0.55rem 0 0;
-    font-size: 0.93rem;
-    font-style: italic;
-    line-height: 1.25;
-    color: var(--muted);
   }
   .together {
     margin: -0.4rem 0 1.4rem;

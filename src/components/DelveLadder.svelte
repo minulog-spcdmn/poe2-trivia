@@ -1,71 +1,116 @@
 <script lang="ts">
-  import { SOL_RAYS, HEPTAGRAM } from '../lib/alchemy';
-  import { DELVE_LIVES, FINDS_FROM, FINDS_IN_ORDER, shownDepth, type FindKind } from '../lib/delve';
-  import { descentPlate, f, LINE, ZONES } from '../lib/descentPlate';
+  import { onMount } from 'svelte';
+  import { OUROBOROS, SOL_RAYS } from '../lib/alchemy';
+  import { FINDS_FROM, FINDS_IN_ORDER, shownDepth, type FindKind } from '../lib/delve';
+  import { descentPlate, f, ZONES, type Box, type Target } from '../lib/descentPlate';
   import ItemGlyph from './ItemGlyph.svelte';
 
   // The descent, engraved (lib/descentPlate draws it): Sol over the mouth of
-  // a pit that narrows down through the ten zones, a terrace each, to its
-  // floor, and below it the ouroboros, a serpent in a figure eight on its
-  // side biting its tail, for no end past 100. A zone you have reached
-  // holds its sigil in a seal struck in its colour, and is named in the
-  // margin; one you haven't is a dull, empty impression, and those are
-  // bracketed together under the one word "uncharted", so nothing is
-  // spoiled. A star in a glory of rays marks your deepest (at the mouth
-  // before a first run), its number beside it among the notes, which say
-  // what lies ahead. Each find you have met (`met`) gets a callout in the
-  // left margin: a fine leader in its colour from the wall where it first
-  // turns up to its item and that depth; one you haven't met shows nothing.
+  // a pit that narrows down through the ten zones, a terrace each, and past
+  // them carries on forever, its walls breaking up and fading into the dark
+  // round a last seal holding the ouroboros. A zone you have reached holds
+  // its sigil in a seal struck in its colour, and is named in the margin;
+  // one you haven't is a dull, empty impression, and those are bracketed
+  // together under the one word "uncharted", so nothing is spoiled. A star
+  // in a glory of rays marks your deepest (beside the mouth before a first
+  // run). Each find you have met (`met`) is tied to its heading in the finds
+  // list (`finds`, beside the plate) by a fine leader in its colour from the
+  // rock where it first turns up; when the list is stacked under the plate,
+  // the find's item stands there instead. One you haven't met shows nothing.
   // In the arcane style (docs/arcane-style.md): fine exact lines that stop
   // short of every seal, sign and word, one-sided hatching, a little wear, a
   // soft glow under the lit lines. It draws itself in from the surface down
-  // as one sweep of the pen; the seals are stamped in as it passes them, the
-  // serpent is drawn round from its tail to its head, and the star lights
-  // last. Then a few things stay alive, on a layer of their own and only in
-  // opacity, transforms and a dash's offset: the glows breathe, a sheen runs
-  // down the serpent's back from tail to head, its eye glints now and then,
-  // the star's glory turns slowly and the star twinkles. Still (reduced
-  // motion, or data-still) none of that loops.
-  // The plate is laid out for the box it is given: as tall as the finds
-  // beside it, or (stacked on a phone) as its min-height.
-  let { deepest = null, label = 'Your deepest', met = [] }: { deepest?: number | null; label?: string; met?: FindKind[] } = $props();
+  // as one sweep of the pen, the seals stamped in as it passes them, the
+  // leaders run out last, then the star lights. After that only the glows
+  // breathe, the star's glory turns slowly and the star twinkles, all on
+  // their own layers; still (reduced motion, or data-still) nothing loops.
+  // The plate fills its box: the whole column, its caption (`caption`) at
+  // the top beside Sol.
+  let {
+    deepest = null,
+    label = 'Your deepest',
+    met = [],
+    caption = null,
+    finds = null,
+  }: { deepest?: number | null; label?: string; met?: FindKind[]; caption?: HTMLElement | null; finds?: HTMLElement | null } = $props();
 
+  let fig: HTMLElement | undefined = $state();
   let w = $state(0);
   let h = $state(0);
+  /** Where the caption and the finds' headings are, in the plate's px (measured; see measure()). */
+  let cap = $state<Box | null>(null);
+  let targets = $state<Target[] | null>(null);
 
-  const LIVES = ['no', 'one', 'two', 'three', 'four', 'five'][DELVE_LIVES] ?? String(DELVE_LIVES);
   /** The finds you have met, with the depth each first turns up at. */
   const metFinds = $derived(FINDS_IN_ORDER.filter((x) => met.includes(x.kind)).map((x) => ({ kind: x.kind, from: x.from })));
-  const plate = $derived(w > 0 && h > 0 ? descentPlate(w, h, deepest, LIVES, FINDS_FROM, metFinds) : null);
+  const plate = $derived(w > 0 && h > 0 ? descentPlate(w, h, deepest, metFinds, { caption: cap, targets }) : null);
   /** Each find's item, as the game draws it. */
   const GLYPH = { azurite: 'ward', flare: 'flare', dynamite: 'dynamite' } as const;
   const FIND_NAME = { azurite: 'Azurite Veins', flare: 'Flare Caches', dynamite: 'Dynamite Caches' } as const;
-
-  // The sheen down the serpent's back: a short bright dash running from the tail to the head at SHEEN_SPEED, then a rest
-  // while it would run on past the head (the dash pattern repeats every SHEEN_EVERY of the back line's length).
-  const SHEEN_SPEED = 30;
-  const SHEEN_EVERY = 1.7;
-  /** The dash, in three lengths, brightest in the middle, so its light comes and goes softly. */
-  const SHEEN_DASHES: [number, string][] = [
-    [34, '#3a3a3a'],
-    [22, '#7a7a7a'],
-    [11, '#e2e2e2'],
-  ];
-  const uid = $props.id();
   const best = $derived(deepest && deepest > 0 ? Math.floor(deepest) : null);
   const reached = $derived(ZONES.filter((z) => best !== null && best >= z.from).length);
-
-  /** How far (px) the italic words of a note sit above its depths' baseline: EB Garamond's italic reads low beside Cinzel's lining figures. */
-  const RISE = 0.75;
-  /** How far (px) a note's bullet drops, onto the middle of its words. */
-  const DOT_DROP = 1.05;
   const sec = (s: number) => `${s.toFixed(3)}s`;
+
+  /**
+   * Where the caption and each find's item in the headings are, relative to
+   * the plate. The headings are only targets when they stand beside it (to
+   * its right); stacked under it, the plate shows the items by the pit.
+   */
+  function measure() {
+    if (!fig) return;
+    const r = fig.getBoundingClientRect();
+    const rel = (e: Element): Box => {
+      const b = e.getBoundingClientRect();
+      return [b.left - r.left, b.top - r.top, b.right - r.left, b.bottom - r.top].map((v) => Math.round(v * 4) / 4) as Box;
+    };
+    let c: Box | null = null;
+    if (caption) {
+      // The caption's words, not its whole line.
+      const range = document.createRange();
+      range.selectNodeContents(caption);
+      const b = range.getBoundingClientRect();
+      if (b.width > 0) c = rel({ getBoundingClientRect: () => b } as Element);
+    }
+    const ts: Target[] = [];
+    for (const { kind } of FINDS_IN_ORDER) {
+      const g = finds?.querySelector(`[data-find="${kind}"] .find-glyph svg`) ?? finds?.querySelector(`[data-find="${kind}"] .find-glyph`);
+      if (!g) continue;
+      const b = rel(g);
+      ts.push({ kind, x: b[0], y: (b[1] + b[3]) / 2 });
+    }
+    const beside = ts.length > 0 && ts.every((t) => t.x > r.width * 0.6);
+    const next = beside ? ts : null;
+    if (JSON.stringify(c) !== JSON.stringify(cap)) cap = c;
+    if (JSON.stringify(next) !== JSON.stringify(targets)) targets = next;
+  }
+
+  onMount(() => {
+    let frame = 0;
+    const soon = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(measure);
+    };
+    const ro = new ResizeObserver(soon);
+    for (const e of [fig, caption, finds, finds?.parentElement, fig?.parentElement]) if (e) ro.observe(e);
+    finds?.querySelectorAll('dt').forEach((e) => ro.observe(e));
+    addEventListener('resize', soon);
+    document.fonts?.ready.then(soon);
+    document.fonts?.addEventListener('loadingdone', soon);
+    measure();
+    return () => {
+      cancelAnimationFrame(frame);
+      ro.disconnect();
+      removeEventListener('resize', soon);
+      document.fonts?.removeEventListener('loadingdone', soon);
+    };
+  });
 
   const words = (n: number) => ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'][n] ?? String(n);
   const summary = $derived(
     [
       `The descent: ten zones of ten depths, then it goes on forever.`,
-      `You have ${LIVES} lives. Finds turn up from depth ${shownDepth(FINDS_FROM)}. The deeper you go, the less time you get and the trickier the questions.`,
+      // Not said elsewhere on the page (the lives are, in the mode's description above).
+      `Finds turn up from depth ${shownDepth(FINDS_FROM)}. The deeper you go, the less time you get and the trickier the questions.`,
       reached === 0
         ? 'All ten zones are uncharted.'
         : reached === ZONES.length
@@ -81,7 +126,7 @@
   );
 </script>
 
-<figure class="descent" role="img" aria-label={summary} bind:clientWidth={w} bind:clientHeight={h}>
+<figure class="descent" role="img" aria-label={summary} bind:this={fig} bind:clientWidth={w} bind:clientHeight={h}>
   {#if plate}
     {@const p = plate}
     <!-- The glow: the lit lines again, whole, wide and soft, under the plate. It breathes. -->
@@ -93,17 +138,17 @@
         {#if s.known}<circle class="light" cx={s.c[0]} cy={s.c[1]} r={s.r} style:--c={s.color} />{/if}
       {/each}
       <circle class="light sun" cx={p.sol.c[0]} cy={p.sol.c[1]} r={p.sol.r} />
-      {#if p.ouro.lit}<circle class="light sun" cx={p.ouro.loop[0]} cy={p.ouro.loop[1]} r={p.ouro.inner * 0.8} />{/if}
+      {#if p.endless.lit}<circle class="light sun" cx={p.endless.c[0]} cy={p.endless.c[1]} r={p.endless.r} />{/if}
     </svg>
 
     <svg class="plate" viewBox="0 0 {f(p.w)} {f(p.h)}" aria-hidden="true">
       {#each p.shades as s, i (i)}
-        <path class="shade draw {s.tone}" d={s.d} style:--c={s.color} style:--d={sec(s.delay)} style:--t={sec(s.t)} pathLength="100" />
+        <path class="shade draw {s.tone}" d={s.d} style:--c={s.color} style:--d={sec(s.delay)} style:--t={sec(s.t)} style:--o={s.o} pathLength="100" />
       {/each}
       {#each p.parts as part, i (i)}
         <g class={part.tone} style:--c={part.color}>
           {#each part.strokes as s, j (j)}
-            <path d={s.d} class="draw {s.kind}" style:--d={sec(s.delay)} style:--t={sec(s.t)} pathLength="100" />
+            <path d={s.d} class="draw {s.kind}" style:--d={sec(s.delay)} style:--t={sec(s.t)} style:opacity={s.o} pathLength="100" />
           {/each}
         </g>
       {/each}
@@ -131,6 +176,15 @@
           {/if}
         </g>
       {/each}
+      <!-- The last seal, on the stretch that never ends: the ouroboros, the serpent biting its tail. -->
+      <g class="stamp" style:--d={sec(p.endless.delay)}>
+        <path
+          class="sign ouro"
+          class:lit={p.endless.lit}
+          d={OUROBOROS}
+          transform="translate({f(p.endless.c[0])} {f(p.endless.c[1])}) scale({f((p.endless.r - 2.2) / 4.1)})"
+        />
+      </g>
       {#each p.names as n (n.text)}
         <text class="name" x={f(n.x)} y={f(n.y)} style:--c={n.color} style:--d={sec(n.delay)}>{n.text}</text>
       {/each}
@@ -142,74 +196,17 @@
         </g>
       {/if}
 
-      <!-- The finds you have met: a station on the rock where each first turns up, and at the leader's end its item and that depth. -->
-      {#each p.callouts as c (c.num)}
-        <g class="callout" style:--c="var(--find-{c.kinds[0]})" style:--d={sec(c.delay + 0.3)}>
-          <circle class="station" cx={f(c.dot[0])} cy={f(c.dot[1])} r="0.95" />
-          {#each c.kinds as k, i (k)}
-            <ItemGlyph kind={GLYPH[k]} place={{ x: c.x + i * 6.6, y: c.y - 4.6, h: 9.2 }} />
-          {/each}
-          <text class="callout-num" x={f(c.numX)} y={f(c.y)}>{c.num}</text>
+      <!-- The finds you have met: a station on the rock where each first turns up (and its item beside it, stacked). -->
+      {#each p.stations as s (s.kind)}
+        <g class="station" style:--c="var(--find-{s.kind})" style:--d={sec(s.delay)}>
+          <circle cx={f(s.c[0])} cy={f(s.c[1])} r="0.95" />
+          {#if s.item}<ItemGlyph kind={GLYPH[s.kind]} place={s.item} />{/if}
         </g>
       {/each}
-
-      <!-- The serpent's eye: a ring and a slit, turned with the head; and the {7/2} star of the seven metals in its right loop until your star is there. -->
-      <g class="ouro" class:lit={p.ouro.lit} style:--d={sec(p.ouro.done - 0.2)}>
-        <circle class="eye" cx={f(p.ouro.eye.c[0])} cy={f(p.ouro.eye.c[1])} r={f(p.ouro.eye.r)} />
-        <ellipse
-          class="pupil"
-          rx={f(p.ouro.eye.r * 0.3)}
-          ry={f(p.ouro.eye.r * 0.78)}
-          transform="translate({f(p.ouro.eye.c[0])} {f(p.ouro.eye.c[1])}) rotate({f(p.ouro.eye.angle)})"
-        />
-        {#if !p.ouro.lit}
-          <path class="sign inner" d={HEPTAGRAM} transform="translate({f(p.ouro.loop[0])} {f(p.ouro.loop[1])}) scale({f((p.ouro.inner * 0.62) / 4.2)})" />
-        {/if}
-      </g>
-
-      <!-- What lies ahead, in a few words; and your deepest, beside the star. -->
-      {#each p.notes as n (n.id)}
-        <g class="note" class:best={n.best} style:--d={sec(n.best ? p.star.delay + 0.2 : 0.45 + (n.y / p.h) * 0.9)}>
-          <!-- The italic words ride RISE above the Cinzel depths' baseline, where they line up by eye. -->
-          <text x={f(n.best ? p.bestX : p.noteX)} y={f(n.y - RISE)}>
-            {#if n.word}<tspan class="key">{n.word}</tspan>{/if}
-            {#if n.num}<tspan class="num" dy={RISE}>{n.word ? ' ' : ''}{n.num}</tspan>{/if}
-            {#if n.lines.length}<tspan class="dot" dy={(n.num ? -RISE : 0) + DOT_DROP}>{' • '}</tspan><tspan class="say" dy={-DOT_DROP}>{n.lines[0]}</tspan>{/if}
-          </text>
-          {#each n.lines.slice(1) as l, i (i)}
-            <text class="say" x={f(p.noteX)} y={f(n.y - RISE + (i + 1) * LINE)}>{l}</text>
-          {/each}
-        </g>
-      {/each}
-      {#each p.pips as q, i (i)}
-        <path class="pip" d="M{f(q[0] - 1.7)} {f(q[1])}l1.7 -1.7l1.7 1.7l-1.7 1.7z" style:--d={sec(0.45 + (q[1] / p.h) * 0.9)} />
-      {/each}
-
     </svg>
 
-    <!-- What stays alive, on a layer of its own: the sheen down the serpent's back, its eye's glint, and your star. -->
-    {@const every = p.ouro.sheenLen * SHEEN_EVERY}
-    <svg class="live" viewBox="0 0 {f(p.w)} {f(p.h)}" aria-hidden="true" style:--sheen-t={sec(every / SHEEN_SPEED)} style:--sheen-d={sec(p.ouro.done + 0.6)}>
-      <!-- The sheen: the serpent's own lines again, in a pale light, seen only where a soft dash running down its back lets them through. -->
-      <mask id="{uid}-sheen" maskUnits="userSpaceOnUse" x="0" y="0" width={f(p.w)} height={f(p.h)}>
-        {#each p.ouro.sheen as s, i (i)}
-          {#each SHEEN_DASHES as [len, tone] (len)}
-            <path
-              class="sheen"
-              d={s.d}
-              style:stroke={tone}
-              stroke-width={f(p.ouro.sheenW)}
-              style:--o0={f(s.from + (SHEEN_DASHES[0][0] - len) / 2)}
-              style:--o1={f(s.from + (SHEEN_DASHES[0][0] - len) / 2 - every)}
-              style:--dash="{len} {f(every - len)}"
-            />
-          {/each}
-        {/each}
-      </mask>
-      <g class="sheen-lit" class:lit={p.ouro.lit} mask="url(#{uid}-sheen)"><path d={p.ouro.lines} /></g>
-      <circle class="glint" cx={f(p.ouro.eye.glint[0])} cy={f(p.ouro.eye.glint[1])} r={f(Math.max(0.32, p.ouro.eye.r * 0.26))} style:--d={sec(p.ouro.done + 1.4)} />
-
-      <!-- Your deepest: an eight-pointed star, hatched down one side of each point, in a glory of fine rays that slowly turns. -->
+    <!-- Your deepest, on a layer of its own: an eight-pointed star, hatched down one side of each point, in a glory of fine rays that slowly turns. -->
+    <svg class="live" viewBox="0 0 {f(p.w)} {f(p.h)}" aria-hidden="true">
       <g class="star" transform="translate({f(p.star.c[0])} {f(p.star.c[1])})" style:--d={sec(p.star.delay)}>
         <circle class="halo" r="7.5" />
         <g class="turn">
@@ -228,24 +225,25 @@
           style:--d={sec(p.star.delay + 1.6)}
         />
       </g>
+      {#if p.star.num}
+        <text class="best" x={f(p.star.num.x)} y={f(p.star.num.y)} style:--d={sec(p.star.delay + 0.25)}>{p.star.num.text}</text>
+      {/if}
     </svg>
   {/if}
 </figure>
 
 <style>
-  /* As wide as its column, as tall as it is let grow (beside the finds) or its min-height; the plate is drawn to fit, outside the flow. */
+  /* The plate fills the box it is given (the whole column, outside the flow); its leaders run on past its right edge. */
   .descent {
-    position: relative;
-    flex: 1 1 auto;
-    min-height: var(--descent-min, 15.5rem);
+    position: absolute;
+    inset: 0;
     margin: 0;
     color: var(--gold);
     --dull: #6f6453;
-    /* The serpent before you are past 100: a dark gold, an impression not yet lit, but clear. */
-    --dim: color-mix(in srgb, var(--gold) 62%, #3a3128);
     --find-dynamite: #eebf96;
     --find-flare: #f7a3b3;
     --find-azurite: #a9cdf5;
+    pointer-events: none;
   }
   svg {
     position: absolute;
@@ -273,12 +271,8 @@
   path.zone {
     stroke: color-mix(in srgb, var(--c) 55%, #d9a45a);
   }
-  .dim path,
-  path.dim {
-    stroke: var(--dim);
-  }
   .find path {
-    stroke: color-mix(in srgb, var(--c) 70%, transparent);
+    stroke: color-mix(in srgb, var(--c) 78%, transparent);
   }
   .main {
     stroke-width: 0.8;
@@ -288,6 +282,9 @@
   }
   .hair {
     stroke-width: 0.42;
+  }
+  .find .hair {
+    stroke-width: 0.5;
   }
 
   /* The glow: the same lines, wide and faint, under them, breathing; a soft light in each reached seal and in Sol. */
@@ -316,12 +313,12 @@
     opacity: 0.4;
   }
 
-  /* Shading: in a reached zone's colour, dull below, gold on the ground. */
+  /* Shading: in a reached zone's colour, dull below, gold on the ground; faded on the endless stretch. */
   .shade {
     stroke-width: 0.36;
     stroke-linecap: round;
     stroke: var(--dull);
-    opacity: 0.75;
+    opacity: calc(0.75 * var(--o, 1));
   }
   .shade.zone {
     stroke: color-mix(in srgb, var(--c) 45%, #b08a4c);
@@ -329,11 +326,7 @@
   }
   .shade.gold {
     stroke: var(--gold);
-    opacity: 0.7;
-  }
-  .shade.dim {
-    stroke: var(--dim);
-    opacity: 0.85;
+    opacity: calc(0.7 * var(--o, 1));
   }
 
   /* Signs, drawn at a scale, keep a fine line. */
@@ -368,6 +361,14 @@
     stroke-width: 0.32;
     stroke-linecap: round;
   }
+  /* The ouroboros: a dull impression until you are past 100, then struck in pale gold. */
+  .ouro {
+    stroke: color-mix(in srgb, var(--dull) 80%, #a08a66);
+    stroke-width: 0.6px;
+  }
+  .ouro.lit {
+    stroke: var(--gold-hi);
+  }
 
   text {
     dominant-baseline: central;
@@ -400,137 +401,29 @@
     fill: var(--muted);
   }
 
-  /* A find's callout: a station ring on the rock, its item, and the depth in its colour. */
-  .callout {
+  /* A find's station: a small ring on the rock in its colour, where its leader (or its item) starts. */
+  .station {
     animation: carve 0.4s var(--d) var(--ease-out) both;
   }
-  .station {
+  .station circle {
     fill: var(--bg);
     stroke: var(--c);
     stroke-width: 0.5;
   }
-  .callout-num {
+
+  /* Your deepest beside the star, in Cinzel's figures. */
+  .best {
     font-family: var(--font-cinzel);
     font-weight: 700;
-    font-size: 8.5px;
-    fill: var(--c);
-  }
-
-  /* The serpent's eye, ringed, its pupil a slit; the {7/2} star in its loop until your star is there. */
-  .ouro {
-    animation: carve 0.5s var(--d) var(--ease-out) both;
-  }
-  .eye {
-    stroke: var(--dim);
-    stroke-width: 0.4;
-  }
-  .pupil {
-    fill: var(--dim);
-    stroke: none;
-  }
-  .inner {
-    stroke: var(--dim);
-    opacity: 0.8;
-  }
-  .ouro.lit .eye {
-    stroke: var(--gold);
-  }
-  .ouro.lit .pupil {
-    fill: var(--gold-hi);
-  }
-
-  /* The live layer is composited on its own, so what moves on it never repaints the plate under it. */
-  .live {
-    will-change: transform;
-    pointer-events: none;
-  }
-  /* The sheen: a soft dash running down the back line in the mask, letting through a pale copy of the serpent's lines. Hidden until it runs. */
-  .sheen {
-    fill: none;
-    stroke-linecap: round;
-    stroke-dasharray: var(--dash);
-    opacity: 0;
-    animation: sheen var(--sheen-t) var(--sheen-d) linear infinite;
-  }
-  @keyframes sheen {
-    from {
-      stroke-dashoffset: var(--o0);
-      opacity: 1;
-    }
-    to {
-      stroke-dashoffset: var(--o1);
-      opacity: 1;
-    }
-  }
-  .sheen-lit path {
-    stroke: #f6e2b2;
-    stroke-width: 0.6;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-  }
-  .sheen-lit.lit path {
-    stroke: #fff4d4;
-  }
-  /* The eye's glint: a point of light, brightening for a moment every few seconds. */
-  .glint {
-    fill: #fff3d6;
-    stroke: none;
-    opacity: 0.35;
-    transform-box: fill-box;
-    transform-origin: center;
-    animation:
-      carve 0.4s var(--d) var(--ease-out) both,
-      glint 7s calc(var(--d) + 2s) ease-in-out infinite;
-  }
-  @keyframes glint {
-    0%,
-    86%,
-    100% {
-      opacity: 0.35;
-      transform: scale(1);
-    }
-    91% {
-      opacity: 1;
-      transform: scale(1.7);
-    }
-  }
-
-  /* The notes: a key in gold (depths in Cinzel), a few words in the body's italic. */
-  .note {
-    animation: carve 0.4s var(--d) var(--ease-out) both;
-  }
-  .note text {
-    font-size: 10.5px;
-  }
-  .num {
-    font-family: var(--font-cinzel);
-    font-weight: 700;
-    font-size: 9px;
-    fill: var(--gold);
-  }
-  .key {
-    font-style: italic;
-    fill: var(--gold);
-  }
-  /* The bullet sits high in the type's x-height: it is set DOT_DROP lower (dy), the words after back on the line. */
-  .dot {
-    fill: var(--gold-lo);
-  }
-  .say {
-    font-style: italic;
-    fill: #cfc2a8;
-  }
-  .best .num {
     font-size: 10px;
     fill: var(--gold-hi);
-  }
-  .pip {
-    fill: var(--bg);
-    stroke: var(--gold);
-    stroke-width: 0.6;
-    animation: carve 0.4s var(--d) var(--ease-out) both;
+    animation: carve 0.5s var(--d) var(--ease-out) both;
   }
 
+  /* The star's layer is composited on its own, so what turns on it never repaints the plate under it. */
+  .live {
+    will-change: transform;
+  }
   /* The star: the brightest thing on the plate, its halo breathing. */
   .halo {
     stroke: none;
@@ -640,32 +533,29 @@
       opacity: 0.1;
     }
   }
-  /* Still: nothing loops. */
-  :global(html[data-still]) .descent :is(.sheen, .twinkle, .sheen-lit) {
-    animation: none;
-    opacity: 0;
-  }
-  :global(html[data-still]) .descent :is(.turn, .glint, .halo, .glow) {
-    animation: none;
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .sheen,
-    .sheen-lit,
-    .twinkle {
-      animation: none;
-      opacity: 0;
-    }
-    .turn,
-    .glint {
-      animation: none;
-    }
-  }
   @keyframes breathe-halo {
     from {
       opacity: 0.22;
     }
     to {
       opacity: 0.08;
+    }
+  }
+  /* Still: nothing loops. */
+  :global(html[data-still]) .descent .twinkle {
+    animation: none;
+    opacity: 0;
+  }
+  :global(html[data-still]) .descent :is(.turn, .halo, .glow) {
+    animation: none;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .twinkle {
+      animation: none;
+      opacity: 0;
+    }
+    .turn {
+      animation: none;
     }
   }
 </style>

@@ -196,3 +196,40 @@ export const RINGS = (() => {
   const head = 360 - meet;
   return arcPath(-off, 0, r, foot + gap, foot - gap + 360) + arcPath(off, 0, r, head + gap - 360, head - gap);
 })();
+
+/**
+ * The ouroboros, the serpent that bites its tail, for what never ends: one
+ * outline round a circle (radius 2.9), from the fine tail up the left and
+ * over the top into a broad head that closes on the tail's tip, with an eye
+ * and the line of the mouth. It runs clockwise, its head at the top.
+ */
+export const OUROBOROS = (() => {
+  const r = 2.9;
+  /** The body's half-width from the neck (`-28`°) back round to the tail (`-347.5`°, just past the snout). */
+  const NECK = -28;
+  const TAIL = -347.5;
+  const body = (a: number) => 0.7 - 0.5 * ((NECK - a) / (NECK - TAIL)) ** 1.6;
+  /** The head's half-width, `t` from the neck (0) to the snout (1): broad, then rounded off. */
+  const SNOUT = 10;
+  const head = (t: number) =>
+    (0.7 + 0.45 * Math.sin((Math.PI / 2) * Math.min(1, t / 0.6))) * (t <= 0.62 ? 1 : Math.sqrt(Math.max(0, 1 - ((t - 0.62) / 0.38) ** 2)));
+  const steps = (a0: number, a1: number, n: number) => Array.from({ length: n + 1 }, (_, i) => a0 + ((a1 - a0) * i) / n);
+  const outer = [
+    ...steps(TAIL, NECK, 64).map((a) => at(a, r + body(a))),
+    ...steps(0, 1, 16)
+      .slice(1)
+      .map((t) => at(NECK + (SNOUT - NECK) * t, r + head(t))),
+  ];
+  const inner = [
+    ...steps(1, 0, 16)
+      .slice(1)
+      .map((t) => at(NECK + (SNOUT - NECK) * t, r - head(t))),
+    ...steps(NECK, TAIL, 64)
+      .slice(1)
+      .map((a) => at(a, r - body(a))),
+  ];
+  const outline = `M${[...outer, ...inner].map(pt).join('L')}Z`;
+  const mouth = `M${pt(at(SNOUT - 1, r))}L${pt(at(NECK + (SNOUT - NECK) * 0.6, r - 0.12))}`;
+  const eye = at(NECK + (SNOUT - NECK) * 0.5, r + 0.42);
+  return outline + mouth + circle(eye[0], eye[1], 0.26);
+})();

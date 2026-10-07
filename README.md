@@ -933,6 +933,23 @@ head, timed as in a game.
   `src/lib/storage.ts` starts its keys with `lab.zones.` and its run never
   moves the lab's.
 
+### The descent's test page
+
+`descent.html` (`src/descentPreview/`) shows Delve's rules block
+(`src/components/DelveRules.svelte`: the descent drawn beside the finds,
+with the leaders from the pit to the finds' headings) in a rules card at a
+phone's (281 px), a tablet's (329 px) and a desktop's (450 px) width side
+by side.
+
+- **Deepest:** a slider from 0 to 300 and a box for any depth (0 is no run
+  yet); the hint says the depth as players see it.
+- **Finds met:** which of the three finds the player has met (only those
+  get a leader, or their item beside the pit on a phone).
+- **Replay entrance** draws the blocks in again; **Walk down** goes a depth
+  deeper every 180 ms.
+- **Open it:** `npm run dev`, then `http://localhost:5173/descent.html`; on
+  the beta, **poe2.quest/beta/descent.html**. The live build leaves it out.
+
 ---
 
 Fan project. Not affiliated with Grinding Gear Games. Item data and art from
