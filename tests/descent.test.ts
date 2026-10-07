@@ -975,7 +975,7 @@ test('each new depth sinks the scene a little further, smoothly, and then it hol
   let moving = 0;
   for (let t = 0; t <= PLUNGE_MS + 100; t += 16) {
     if (stepPlunge(t, true)) moving++;
-    assert.ok(sinking.sink >= last - 1e-9 && sinking.sink - last < 0.02, `a jump at ${t} ms`);
+    assert.ok(sinking.sink >= last - 1e-9 && sinking.sink - last < PLUNGE_SINK / 30, `a jump at ${t} ms`);
     assert.ok(sinking.breath >= 0 && sinking.breath <= 1);
     last = sinking.sink;
   }
