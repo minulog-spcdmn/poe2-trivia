@@ -16,7 +16,7 @@
   import { phone } from '../lib/layout';
   import { REVIVE_FROM, delveDepth, fellAt, isGroupRun, livesOf, questionTimer, reviveProblem, shownDepth, standingIds } from '../lib/delve';
   import { startLine } from '../lib/delveStart';
-  import { accentAt, milestoneAt, swing } from '../lib/descent';
+  import { accentAt, milestoneAt, stratumName, swing } from '../lib/descent';
   import { zoneAt } from '../lib/zoneSigils';
   import Threshold from './zonebanner/Threshold.svelte';
   import { quiet } from './zonebanner/head';
@@ -170,8 +170,8 @@
 
   // Delve: a gate at the start of a depth worth it (a new zone, a new best),
   // built over the head of the stage for a few seconds (zonebanner/Threshold).
-  // Never on a rejoin or the first depth: only when the run is seen going one
-  // deeper. It belongs to its turn: the next one clears it.
+  // Only when the run is seen going one deeper, and at its very start, where
+  // the first zone's gate opens it. It belongs to its turn: the next one clears it.
   type Card = { key: string; turn: number; title: string; sigil: string; accent: string; label: string; leaving: boolean; still: boolean };
   let card = $state<Card | null>(null);
   let cardTimers: ReturnType<typeof setTimeout>[] = [];
@@ -185,12 +185,14 @@
     if (key === depthSeen) return;
     const deeper = depthSeen.startsWith(`${run.startedAt}:`);
     depthSeen = key;
-    if (!deeper) return;
+    // The run's first depth: the first zone's gate, as each new zone gets one.
+    const opening = !deeper && depth === 1;
+    if (!deeper && !opening) return;
     untrack(() => {
-      descended();
+      if (deeper) descended();
       // Tinted by the zone it opens (the depth's colour on the header), bearing its sigil and its ornament.
       const accent = accentAt(depth);
-      const name = milestoneAt(depth);
+      const name = opening ? stratumName(0) : milestoneAt(depth);
       const sigil = zoneAt(depth);
       const best = session.bestAtStart;
       const turn = s.turnCount;
