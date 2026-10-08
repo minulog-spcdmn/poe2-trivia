@@ -534,6 +534,18 @@ export function snapTimer(v: number) {
 /** Race questions need an end, so "no timer" falls back to this. */
 export const RACE_DEFAULT_TIMER = 16;
 
+/**
+ * Seconds on the clock of a question asked in `s` (`q`: a Delve find's has
+ * its own): a Delve depth's, else the room's timer, or the default one
+ * without. A veiled question's art is sized for it (veilSeconds), and the
+ * host paces each picture's patches by it too (media.svelte.ts prepareMedia).
+ */
+export function questionClock(s: GameState, q: Pick<Question, 'find'>): number {
+  if (s.delve) return delveQuestionTimer(s.round, q);
+  const timer = s.settings.mode === 'race' ? s.settings.timer || RACE_DEFAULT_TIMER : s.settings.timer;
+  return timer > 0 ? timer : DEFAULT_SETTINGS.timer;
+}
+
 export interface Question {
   category: string;
   /**
@@ -2490,7 +2502,7 @@ export class Engine {
     const deadline = !s.delve && timer > 0 ? askedAt + timer * 1000 : null;
     // Delve: deep down, "find the art" pictures may burn in as well, each cut much coarser.
     const tiles = mode === 'art' && !!rules.veil && !!s.delve && this.rng() < (special.find ? findTileVeil(special.find, s.round) : delveTileVeil(s.round));
-    const secs = s.delve ? delveQuestionTimer(s.round, special) : timer > 0 ? timer : DEFAULT_SETTINGS.timer;
+    const secs = questionClock(s, special);
     const size = rules.veil && (tiles ? tileVeilSize(rules.veil.size) : rules.veil.size);
     // Its share of the clock, faster on a short one (veilSeconds); none on a
     // clock too short for half the art to be in with VEIL_LEFT_MS to spare

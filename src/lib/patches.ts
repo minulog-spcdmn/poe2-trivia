@@ -298,17 +298,42 @@ export function veilPace(ms: number, count: number): { gap: number; burn: number
 }
 
 /**
- * How a veil cut `size` × `size` comes in over `ms` once cut into `count`
- * patches: at the pace of `size` × `size` of them at the least. The clock is
- * sized for that many (delve.ts veilSeconds), but cutPatches makes fewer
- * where the item covers little of its picture; paced by their own count,
- * their gaps would grow and half the art would come in later. At the
- * nominal pace, fewer patches only bring it in sooner (and burn out before
- * `ms`). The host paces the patches by this (media.svelte.ts patchDelays)
- * and sends each picture's burn with it, so guests follow the same pace.
+ * How long a veil of `count` patches takes to burn in: `ms` (its share of the
+ * clock), unless half of it would then come in after `halfBy` (ms after its
+ * art goes out, halfBurnt), when it is the longest whole number of ms that
+ * still has half of it in by then (0 if none does). `late` as for halfBurnt.
+ * delve.ts veilSeconds sizes a question's veil by it for `size` × `size`
+ * patches; the host sizes each picture's own by it once cut (veilPaceFor).
  */
-export function veilPaceFor(ms: number, size: number, count: number): { gap: number; burn: number } {
-  return veilPace(ms, Math.max(count, size * size));
+export function veilSpan(ms: number, count: number, halfBy: number, late = 0): number {
+  const fits = (t: number) => halfBurnt(t, count, late) <= halfBy;
+  if (fits(ms)) return ms;
+  // The longest whole number of ms that fits (halfBurnt only grows with the time).
+  let [lo, hi] = [0, Math.floor(ms)];
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (fits(mid)) lo = mid;
+    else hi = mid - 1;
+  }
+  return lo;
+}
+
+/**
+ * How a veil of `ms` comes in once its picture is cut into `count` patches.
+ * `ms` is sized for a whole picture's worth of them (delve.ts veilSeconds),
+ * but cutPatches makes fewer where the item covers little of its picture.
+ * Paced by their own count over `ms`, half of them could come in later than
+ * planned; paced as a whole picture's worth, they would all be in far too
+ * soon. So they come in over their own span (veilSpan): all of `ms` where
+ * half of them is still in by `halfBy`, else just long enough for half of
+ * them to be in right then. Either way the last one is done at the end of
+ * that span (`ms` in the result). The host paces the patches by this
+ * (media.svelte.ts cutVeil) and sends each picture's burn with it, so guests
+ * follow the same pace.
+ */
+export function veilPaceFor(ms: number, count: number, halfBy: number, late = 0): { ms: number; gap: number; burn: number } {
+  const span = veilSpan(ms, Math.max(1, count), halfBy, late);
+  return { ms: span, ...veilPace(span, count) };
 }
 
 /** When a veil's first patch starts burning in, ms after its art goes out (media.svelte.ts patchDelays). */

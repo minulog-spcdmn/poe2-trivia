@@ -33,6 +33,7 @@ import {
   FAKES_FROM,
   OPTIONS_FROM,
   VEIL_FROM,
+  veilLate,
   delveCurve,
   LOOKALIKES_TO,
   MORE_FAKES_FROM,
@@ -331,8 +332,8 @@ test('at every depth to 300, even under the slowest veil, half the art is in wit
   }
 });
 
-test('however few patches a picture is cut into, half of it is in with 3 s left: whole art and pictures, clocks of 3 to 16 s', async () => {
-  const { FIRST_PATCH_MS, veilPaceFor } = await import('../src/lib/patches.ts');
+test('however few patches a picture is cut into, half of it is in with 3 s left, no sooner than it needs, and the last at the end of its span: whole art and pictures, clocks of 3 to 16 s', async () => {
+  const { FIRST_PATCH_MS, halfBurnt, veilPaceFor, veilSpan } = await import('../src/lib/patches.ts');
   let checked = 0;
   for (let secs = 3; secs <= 16; secs += 0.5)
     for (const share of [0.55, 0.7, 0.8])
@@ -341,20 +342,73 @@ test('however few patches a picture is cut into, half of it is in with 3 s left:
           const size = tiles ? tileVeilSize(whole) : whole;
           const ms = veilSeconds(secs, share, size, tiles) * 1000;
           if (!ms) continue;
+          const halfBy = secs * 1000 - VEIL_LEFT_MS;
           // cutPatches makes about size × size patches over a whole picture (never more than that, rounded), fewer over a small item.
           for (let count = 1; count <= Math.round(size * size); count++) {
-            const { gap, burn } = veilPaceFor(ms, size, count);
+            const pace = veilPaceFor(ms, count, halfBy, veilLate(tiles));
+            const { gap, burn } = pace;
             // The last picture starts up to half a step late (session.svelte.ts burnVeil).
             const late = tiles ? gap / 2 : 0;
             const halfIn = FIRST_PATCH_MS + late + (count / 2) * gap + burn;
             const at = `${count} of ${size} × ${size} patches, ${tiles ? 'pictures' : 'whole'}, ${secs} s at ${share}`;
             assert.ok(secs * 1000 - halfIn >= VEIL_LEFT_MS - 1e-6, `${at}: ${Math.round(secs * 1000 - halfIn)} ms left with half in`);
-            // Never later than the veil's time either: fewer patches burn out sooner.
-            assert.ok((count - 1) * gap + burn <= ms + 1e-6, `${at}: done after ${ms} ms`);
+            // The veil's own time where that leaves 3 s, else just as the 3 s begin.
+            assert.ok(pace.ms <= ms, `${at}: ${pace.ms} ms, over the veil's ${ms}`);
+            // (A whole number of ms: one more would leave less than 3 s.)
+            if (pace.ms < ms) assert.ok(halfBurnt(pace.ms + 1, count, veilLate(tiles)) > halfBy, `${at}: half in ${Math.round(secs * 1000 - halfIn - VEIL_LEFT_MS)} ms sooner than it needs`);
+            // As veilSeconds would have sized it for this many patches (or for size × size, a patch or so fewer).
+            assert.equal(pace.ms, Math.min(ms, veilSpan(secs * share * 1000, count, halfBy, veilLate(tiles))), at);
+            // The last patch is done at the end of that span, not sooner.
+            if (count > 1) assert.ok(Math.abs((count - 1) * gap + burn - pace.ms) < 1e-6, `${at}: done ${(count - 1) * gap + burn} ms in, not ${pace.ms}`);
             checked++;
           }
         }
   assert.ok(checked > 10_000, `${checked} checked`);
+});
+
+test('at shown depths 24, 39, 59, 89 and 99, a picture of 4 patches or a whole one has half of them in with 3 s left, no sooner, and the last on time', async () => {
+  const { FIRST_PATCH_MS, veilPace, veilPaceFor } = await import('../src/lib/patches.ts');
+  // Shown depths are one less than the run's (depth 90 is shown as 89, a 6 s clock).
+  for (const d of [25, 40, 60, 90, 100]) {
+    const veil = delveRules(d).veil!;
+    const secs = delveTimer(d);
+    for (const tiles of [false, true]) {
+      const size = tiles ? tileVeilSize(veil.size) : veil.size;
+      const ms = veilSeconds(secs, veil.share, size, tiles) * 1000;
+      const late = veilLate(tiles);
+      // When half of a veil of `count` patches would be in, ms after the clock starts, its own span unchanged.
+      const model = (span: number, count: number) => {
+        const { gap, burn } = veilPace(span, count);
+        return FIRST_PATCH_MS + (count / 2 + late) * gap + burn;
+      };
+      for (let count = 4; count <= Math.round(size * size); count++) {
+        const at = `depth ${d}, ${count} of ${size} × ${size} patches, ${tiles ? 'pictures' : 'whole'}`;
+        const pace = veilPaceFor(ms, count, secs * 1000 - VEIL_LEFT_MS, late);
+        const halfIn = FIRST_PATCH_MS + (count / 2 + late) * pace.gap + pace.burn;
+        const left = secs * 1000 - halfIn;
+        assert.ok(left >= VEIL_LEFT_MS - 1e-6, `${at}: ${Math.round(left)} ms left with half in`);
+        // As late as allowed: exactly 3 s left when the veil's time would leave less, its whole time otherwise.
+        if (model(ms, count) > secs * 1000 - VEIL_LEFT_MS) assert.ok(model(pace.ms + 1, count) > secs * 1000 - VEIL_LEFT_MS && left < VEIL_LEFT_MS + 2, `${at}: ${Math.round(left)} ms left with half in`);
+        else assert.equal(pace.ms, ms, at);
+        // The last patch is done at the end of its span: 400 ms plus the span after the clock starts.
+        assert.ok(Math.abs((count - 1) * pace.gap + pace.burn - pace.ms) < 1e-6, at);
+        // No sooner than half of a whole picture's worth would be in (veilSeconds): fewer patches no longer rush in.
+        // (To the ms both are fitted to.)
+        if (count <= size * size) assert.ok(halfIn > model(ms, size * size) - 1, `${at}: half in ${Math.round(model(ms, size * size) - halfIn)} ms early`);
+      }
+    }
+  }
+  // The playtest: shown depth 89, a 6 s clock, an item cut into 22 to 52 of its 81 patches. Its last patch was in with
+  // about 3 to 4 s still left; now half of it is in with 3 s left and the last one after that.
+  const veil = delveRules(90).veil!;
+  const ms = veilSeconds(6, veil.share, veil.size) * 1000;
+  for (const count of [22, 40, 52]) {
+    const { gap, burn } = veilPaceFor(ms, count, 6000 - VEIL_LEFT_MS);
+    const halfLeft = 6000 - (FIRST_PATCH_MS + (count / 2) * gap + burn);
+    const allLeft = 6000 - (FIRST_PATCH_MS + (count - 1) * gap + burn);
+    assert.ok(halfLeft >= VEIL_LEFT_MS - 1e-6 && halfLeft < VEIL_LEFT_MS + 1, `${count} patches: ${halfLeft} ms left with half in`);
+    assert.ok(allLeft < 2000, `${count} patches: all in with ${Math.round(allLeft)} ms left`);
+  }
 });
 
 test('"find the art" pictures burn in too from depth 25, one percent more of them each depth', () => {

@@ -7,7 +7,8 @@
 import { itemImage } from './ui-paths';
 import { FIRST_PATCH_MS, cutPatches, spreadOrder, veilPaceFor, visibleBox } from './patches';
 import type { MediaMsg } from './protocol';
-import type { Grayscale, Question } from './game';
+import type { Grayscale, Question, Veil } from './game';
+import { VEIL_LEFT_MS, veilLate } from './delve';
 
 export interface Patch {
   i: number;
@@ -41,10 +42,12 @@ export interface PreparedMedia {
   /** Veiled questions: the art cut into patches, in the order they uncover. */
   veil: VeilArt | null;
   patches: Patch[];
+  /** Veiled questions: ms between one patch starting to burn in and the next (veilPaceFor). Host only. */
+  gap: number;
   /** Art questions: one picture per option. */
   options: ArrayBuffer[];
-  /** Veiled art questions (Delve): each option's picture cut into patches instead. */
-  tiles: { veil: VeilArt; patches: Patch[] }[];
+  /** Veiled art questions (Delve): each option's picture cut into patches instead, with its own gap. */
+  tiles: CutVeil[];
 }
 
 const imageCache = new Map<string, Promise<HTMLImageElement>>();
@@ -142,13 +145,17 @@ function encode(canvas: HTMLCanvasElement, lossless = false): Promise<ArrayBuffe
   );
 }
 
-/** Host side: builds the art for a question (full question, with the answer). */
-export async function prepareMedia(q: Question, grayscale: Grayscale): Promise<PreparedMedia> {
-  const out: PreparedMedia = { qid: q.askedAt, art: null, veil: null, patches: [], options: [], tiles: [] };
+/**
+ * Host side: builds the art for a question (full question, with the answer).
+ * `secs`: the question's clock (game.ts questionClock), which each veiled
+ * picture's pace is fitted to once it is cut (cutVeil).
+ */
+export async function prepareMedia(q: Question, grayscale: Grayscale, secs: number): Promise<PreparedMedia> {
+  const out: PreparedMedia = { qid: q.askedAt, art: null, veil: null, patches: [], gap: 0, options: [], tiles: [] };
   if (q.mode === 'art') {
     const canvases = await Promise.all(q.options.map((id, i) => alteredCanvas(id, grayscale !== 'off', !!q.mirrored?.[i])));
     // Each picture cut on its own seed, so no two burn in alike.
-    if (q.veil) out.tiles = await Promise.all(canvases.map((c, i) => cutVeil(c, q.veil!.size, q.veil!.seconds, q.veil!.seed + i)));
+    if (q.veil) out.tiles = await Promise.all(canvases.map((c, i) => cutVeil(c, { ...q.veil!, seed: q.veil!.seed + i }, secs, true)));
     else out.options = await Promise.all(canvases.map((c) => encode(c)));
     return out;
   }
@@ -158,25 +165,40 @@ export async function prepareMedia(q: Question, grayscale: Grayscale): Promise<P
     out.art = { w: W, h: H, data: await encode(canvas) };
     return out;
   }
-  const cut = await cutVeil(canvas, q.veil.size, q.veil.seconds, q.veil.seed);
+  const cut = await cutVeil(canvas, q.veil, secs, false);
   out.veil = cut.veil;
   out.patches = cut.patches;
+  out.gap = cut.gap;
   return out;
 }
 
-/** A picture cut into `size` × `size`-ish patches, in the order they uncover, burning in over `seconds`. */
-async function cutVeil(canvas: HTMLCanvasElement, size: number, seconds: number, seed: number): Promise<{ veil: VeilArt; patches: Patch[] }> {
+/** A veiled picture as cut: what guests get told of it, its patches in the order they uncover, and the gap between them (host only). */
+export interface CutVeil {
+  veil: VeilArt;
+  patches: Patch[];
+  gap: number;
+}
+
+/**
+ * A picture cut into `size` × `size`-ish patches, in the order they uncover,
+ * paced for the patches it really has (veilPaceFor): over the veil's
+ * `seconds`, or less where half of them would otherwise come in with less
+ * than VEIL_LEFT_MS left on a clock of `secs`. `tiles`: one of a "find the
+ * art" question's pictures, which may start up to half a step late.
+ */
+async function cutVeil(canvas: HTMLCanvasElement, v: Veil, secs: number, tiles: boolean): Promise<CutVeil> {
   const { width: W, height: H } = canvas;
   const pixels = canvas.getContext('2d')!.getImageData(0, 0, W, H).data;
-  const cut = cutPatches(pixels, W, H, size, seed);
+  const cut = cutPatches(pixels, W, H, v.size, v.seed);
+  const pace = veilPaceFor(v.seconds * 1000, cut.length, secs * 1000 - VEIL_LEFT_MS, veilLate(tiles));
   const veil = {
     w: W,
     h: H,
-    burn: Math.round(veilPaceFor(seconds * 1000, size, cut.length).burn),
+    burn: Math.round(pace.burn),
     count: cut.length,
     box: visibleBox(pixels, W, H),
   };
-  const order = spreadOrder(cut, seed);
+  const order = spreadOrder(cut, v.seed);
   const patches = await Promise.all(
     order.map(async (i) => {
       const { x, y, w, h, pixels, edges } = cut[i];
@@ -187,17 +209,16 @@ async function cutVeil(canvas: HTMLCanvasElement, size: number, seconds: number,
       return { i, x, y, w, h, data: await encode(piece, true), edges: edges.buffer as ArrayBuffer };
     }),
   );
-  return { veil, patches };
+  return { veil, patches, gap: pace.gap };
 }
 
 /**
- * When (ms after the question was asked) each of `count` patches appears, by
- * rank: at an even pace, so the reveal burns through the item steadily, the
- * last patch done burning in `seconds` after the first started, or sooner
- * when the picture was cut into fewer patches than its size (veilPaceFor).
+ * When (ms after the art starts burning in: session.svelte.ts burnVeil) each
+ * of `count` patches appears, by rank, `gap` apart (cutVeil): at an even
+ * pace, so the reveal burns through the item steadily, the last patch done
+ * burning in at the end of the picture's span (veilPaceFor).
  */
-export function patchDelays(q: Question, count: number): number[] {
-  const { gap } = veilPaceFor(q.veil!.seconds * 1000, q.veil!.size, count);
+export function patchDelays(gap: number, count: number): number[] {
   return Array.from({ length: count }, (_, rank) => FIRST_PATCH_MS + rank * gap);
 }
 

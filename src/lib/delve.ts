@@ -9,7 +9,7 @@
 // teammate with lives to spare can bring back one who perished.
 
 import type { DifficultyRules, GameState, Player, Preset, Question, Revive } from './game.ts';
-import { halfBurnt } from './patches.ts';
+import { veilSpan } from './patches.ts';
 
 export const DELVE_LIVES = 3;
 
@@ -172,26 +172,24 @@ export const VEIL_LEFT_MS = 3000;
  * with less than VEIL_LEFT_MS left (halfBurnt), so on a short clock deep
  * down the art burns in faster instead. `tiles`: "find the art" pictures,
  * the last of which starts up to half a step late. The engine sets a
- * question's veil.seconds from it, and the host paces the patches by that,
- * at the pace of `size` × `size` of them however few the picture is cut
- * into (patches.ts veilPaceFor), so this holds for every real count.
+ * question's veil.seconds from it. A picture cut into fewer patches (a small
+ * item) takes the same time, or less where half of it would otherwise come
+ * in with less than VEIL_LEFT_MS left: the host works that out for each
+ * picture once cut (patches.ts veilPaceFor, on the clock game.ts
+ * questionClock gives) and paces its patches by it, so this holds for every
+ * real count.
  * 0 on a clock too short for even an instant veil to leave VEIL_LEFT_MS
  * (shorter than any question's, FIND_MIN_TIMER being the least): the engine
  * then shows the art plain.
  */
 export function veilSeconds(secs: number, share: number, size: number, tiles = false): number {
-  const [count, late] = [size * size, tiles ? 0.5 : 0];
-  const fits = (ms: number) => halfBurnt(ms, count, late) <= secs * 1000 - VEIL_LEFT_MS;
-  if (fits(secs * share * 1000)) return secs * share;
-  // The longest whole number of ms that fits (halfBurnt only grows with the time).
-  let [lo, hi] = [0, Math.floor(secs * share * 1000)];
-  while (lo < hi) {
-    const mid = Math.ceil((lo + hi) / 2);
-    if (fits(mid)) lo = mid;
-    else hi = mid - 1;
-  }
-  return lo / 1000;
+  const ms = secs * share * 1000;
+  const span = veilSpan(ms, size * size, secs * 1000 - VEIL_LEFT_MS, veilLate(tiles));
+  return span === ms ? secs * share : span / 1000;
 }
+
+/** Steps of the pace the last of a question's pictures starts behind the first (halfBurnt's `late`). */
+export const veilLate = (tiles: boolean) => (tiles ? 0.5 : 0);
 
 /**
  * Endless, past depth 100: from this depth a growing share of name

@@ -22,6 +22,7 @@ import {
   autoNextLeft,
   renameCategories,
   DEFAULT_SETTINGS,
+  questionClock,
   type Action,
   type GameState,
   type Grayscale,
@@ -834,7 +835,7 @@ class Session {
       const timeout = new Promise<never>((_, reject) => {
         timer = setTimeout(() => reject(new Error('Preparing the art timed out')), MEDIA_TIMEOUT_MS);
       });
-      media = await Promise.race([prepareMedia(q, this.grayscaleOf(s)), timeout]).finally(() => clearTimeout(timer));
+      media = await Promise.race([prepareMedia(q, this.grayscaleOf(s), questionClock(s, q)), timeout]).finally(() => clearTimeout(timer));
     } catch (err) {
       console.warn('media', err);
       if (gen === this.mediaGen && this.state?.question?.askedAt === q.askedAt && this.state.phase === 'question') {
@@ -898,8 +899,8 @@ class Session {
     const q = this.state?.question;
     if (!media || media.qid !== qid || !q?.veil) return;
     const sets = veiledSets(media);
-    sets.forEach(({ tile, patches }, k) => {
-      const delays = patchDelays(q, patches.length);
+    sets.forEach(({ tile, patches, gap }, k) => {
+      const delays = patchDelays(gap, patches.length);
       // Several pictures take turns within half a step, so their patches don't all flare at once
       // (and the last one is no more than half a step behind: tests/delve.test.ts).
       const offset = patches.length > 1 ? ((delays[1] - delays[0]) * k) / sets.length / 2 : 0;
@@ -2114,9 +2115,9 @@ const SAVE = 'session.v4';
 const OLD_SAVE_KEY = 'poe2trivia.session.v3';
 
 /** The veiled pictures of a question: the art of a name question, or each "find the art" picture (`tile`). */
-function veiledSets(media: PreparedMedia): { tile: number | undefined; patches: PreparedMedia['patches'] }[] {
-  if (media.veil) return [{ tile: undefined, patches: media.patches }];
-  return media.tiles.map((t, tile) => ({ tile, patches: t.patches }));
+function veiledSets(media: PreparedMedia): { tile: number | undefined; patches: PreparedMedia['patches']; gap: number }[] {
+  if (media.veil) return [{ tile: undefined, patches: media.patches, gap: media.gap }];
+  return media.tiles.map((t, tile) => ({ tile, patches: t.patches, gap: t.gap }));
 }
 
 /**
