@@ -171,9 +171,9 @@ export const FIND_MISS: Record<FindKind, string | null> = Object.fromEntries(
 
 function riskOf(kind: FindKind): string | null {
   if (cavesIn(kind)) return `a miss costs ${caveInText(kind)}`;
-  const { shorter } = findFor(kind);
+  const { clock } = findFor(kind);
   // Not how much less: the cut is smaller deep down, where the clock can't go under FIND_MIN_TIMER.
-  if (shorter) return 'you get less time to answer';
+  if (clock < 1) return 'you get less time to answer';
   if (blowsUp(kind)) return 'a miss also blows up an item you carry';
   return null;
 }

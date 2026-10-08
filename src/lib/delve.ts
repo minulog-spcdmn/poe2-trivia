@@ -336,15 +336,15 @@ export const FINDS: {
   max: number;
   deeper: number;
   losses: number;
-  /** Seconds its question has less on the clock than its deeper depth's (never below FIND_MIN_TIMER). */
-  shorter: number;
+  /** The share of its deeper depth's clock its question gets, in whole seconds (never below FIND_MIN_TIMER). */
+  clock: number;
   /** Things a miss on it blows up from the player's pack (blastVictim), besides the life. */
   blows: number;
 }[] = [
   // From depth 41 (shown 40).
-  { kind: 'azurite', item: 'wards', from: 41, start: 0.04, cap: DYNAMITE_ON ? 0.11 : 0.15, late: 1 / 3, max: DELVE_MAX_WARDS, deeper: 15, losses: 2, shorter: 0, blows: 0 },
+  { kind: 'azurite', item: 'wards', from: 41, start: 0.04, cap: DYNAMITE_ON ? 0.11 : 0.15, late: 1 / 3, max: DELVE_MAX_WARDS, deeper: 15, losses: 2, clock: 1, blows: 0 },
   // From depth 26 (shown 25).
-  { kind: 'flare', item: 'flares', from: 26, start: 0.04, cap: DYNAMITE_ON ? 0.13 : 0.18, late: 0.5, max: DELVE_MAX_FLARES, deeper: 20, losses: 1, shorter: 2, blows: 0 },
+  { kind: 'flare', item: 'flares', from: 26, start: 0.04, cap: DYNAMITE_ON ? 0.13 : 0.18, late: 0.5, max: DELVE_MAX_FLARES, deeper: 20, losses: 1, clock: 2 / 3, blows: 0 },
   {
     kind: 'dynamite',
     item: 'dynamite',
@@ -356,7 +356,7 @@ export const FINDS: {
     max: DELVE_MAX_DYNAMITE,
     deeper: 15,
     losses: 1,
-    shorter: 0,
+    clock: 1,
     blows: 1,
   },
 ];
@@ -422,7 +422,7 @@ export const findDepth = (kind: FindKind, d: number) => depthOf(d) + findFor(kin
 /**
  * Each find weighs its reward against a risk of its own:
  * - an Azurite Vein caves in on a miss, for two losses (findLosses);
- * - a Flare Cache gives less time to answer (findTimer, `shorter`): time
+ * - a Flare Cache gives less time to answer (findTimer, `clock`): time
  *   now for time later;
  * - a Dynamite Cache is unstable: a miss costs the life and its blast
  *   destroys one thing the player carries (blowsUp, blastVictim).
@@ -469,17 +469,17 @@ export function blastVictim(inv: Inventory, roll: number): ItemKind | null {
 }
 
 /**
- * The shortest a find's question gets (a Flare Cache's, `shorter` than the
+ * The shortest a find's question gets (a Flare Cache's, a share of the
  * shortest depth's): still long enough for its art to burn in, fast, with
  * over 3 s left once half of it is in (veilSeconds).
  */
 export const FIND_MIN_TIMER = 4;
 
-/** Seconds on the clock for a find's question: the deeper depth's, less its `shorter` (a Flare Cache's two), never below FIND_MIN_TIMER. */
+/** Seconds on the clock for a find's question: its `clock` share of the deeper depth's (a Flare Cache's two thirds), rounded, never below FIND_MIN_TIMER. */
 export const findTimer = (kind: FindKind, d: number) => {
-  const { shorter } = findFor(kind);
+  const { clock } = findFor(kind);
   const secs = delveTimer(findDepth(kind, d));
-  return shorter ? Math.max(FIND_MIN_TIMER, secs - shorter) : secs;
+  return clock < 1 ? Math.max(FIND_MIN_TIMER, Math.round(secs * clock)) : secs;
 };
 
 /** The share of a find's "find the art" questions whose pictures burn into view: the deeper depth's. */

@@ -224,8 +224,8 @@ the same thing for everyone.
     beside it with a small blast of its own, a moment after the life, and
     the reveal says what went ("The blast destroyed your flare.").
   - A **Flare Cache** (from depth 25) gives a **flare**: time later for time
-    now, as its own question has 2 s less on the clock than its deeper
-    depth's (never under 4 s, where its art still burns in, fast, with over
+    now, as its own question gets two thirds of its deeper depth's clock,
+    rounded (never under 4 s, where its art still burns in, fast, with over
     3 s left once half of it is in). When your clock hits 0 a flare burns by
     itself, with a signal flare's hiss, and gives you 6 s more
     (once a question). An answer at any time before that keeps it; a guest's
