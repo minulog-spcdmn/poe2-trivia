@@ -43,6 +43,7 @@ import { DELVE_FUSE_MS, FLARE_MS, LOOKALIKES_ASKED_FROM, clockLeft, fuseDue, fus
 import { blownText } from './difficultyText';
 import { loadLooks } from './looks';
 import { bestOf, loadRecords, recordLeft, recordRun, runEvent } from './delveRecord';
+import { noteLeaving } from './versus';
 import {
   DELVE_CLOCK_CAP_MS,
   DRAIN_POLL_MS,
@@ -1391,6 +1392,7 @@ class Session {
   }
 
   leave() {
+    this.walkAway();
     if (this.mode === 'host') {
       // Tell everyone right away instead of leaving them to reconnect to nothing.
       for (const [conn, g] of this.guests) if (g.playerId) this.send(conn, { t: 'closed' });
@@ -2018,6 +2020,18 @@ class Session {
     if (this.state) recordLeft(this.state, this.myPlayerId, this.mode === 'local');
   }
 
+  /**
+   * This player walks away (leaves the room, or the page goes): a game against
+   * others they leave while losing still counts against a run of wins
+   * (lib/versus.ts). Not on being removed or the room closing (fail), and
+   * not while cut off from the host, when the game may be gone already:
+   * none of those is walking away.
+   */
+  walkAway() {
+    if (this.mode === 'client' && this.status !== 'ready') return;
+    noteLeaving(this.state, this.myPlayerId, this.mode === 'local');
+  }
+
   private reset() {
     this.recordLeaving();
     // A new attempt (or leaving) makes the last one's errors moot.
@@ -2148,8 +2162,11 @@ function writeSaved(saved: Saved | null) {
 export const session = new Session();
 
 if (typeof window !== 'undefined') {
-  // A run abandoned by closing the tab (or going elsewhere) is still recorded.
-  window.addEventListener('pagehide', () => session.recordLeaving());
+  // A run abandoned by closing the tab (or going elsewhere) is still recorded, and so is a game against others left losing.
+  window.addEventListener('pagehide', () => {
+    session.recordLeaving();
+    session.walkAway();
+  });
   // Art that wouldn't load (offline) is tried again once the browser is back online.
   window.addEventListener('online', () => session.artBack());
 }

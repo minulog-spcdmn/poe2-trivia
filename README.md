@@ -493,11 +493,12 @@ as it goes (the biggest lead a rival had over you and you over them, rivals
 who guessed, veiled questions taken) and judged once at its end, also when
 that end first comes in after a reload; the host stamps each game with its
 start (`startedAt`), so its own answers can be told apart in the codex; wins
-in a row are kept beside the list, and a game walked away from while behind or
-level counts as lost once the next one starts. A new achievement is announced
-with a notice bearing its seal, a moment after it is earned. Once earned it
-stays earned. Kept in this browser (`src/lib/achievements.ts`); erasing the
-codex erases them.
+in a row are kept beside the list, and a game walked away from while losing
+(leaving it, or closing the page, behind a rival still there) counts as lost
+once another one starts; a reload back into it, being removed or the room
+closing never does. A new achievement is announced with a notice bearing its
+seal, a moment after it is earned. Once earned it stays earned. Kept in this
+browser (`src/lib/achievements.ts`); erasing the codex erases them.
 
 ## Multiplayer
 

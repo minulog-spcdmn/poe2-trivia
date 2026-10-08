@@ -43,8 +43,8 @@ export function passingLight(every: number, sweep: number, { travel = false } = 
   const sparks = new Set<Element>();
   let timer: ReturnType<typeof setTimeout> | undefined;
   /**
-   * Where each slit or spark is, fixed as it joins: the nearest container
-   * marked `data-lit` (a seal, whose slit and spark share it), else its
+   * Where each slit or spark is, fixed as it joins: the place its caller
+   * names (a seal names itself for its slit and spark alike), else its
    * parent (a slit waits outside it, often clipped away, between passes).
    * What is on screen is watched there, once a place however many live in
    * it, and a travelling light is timed from there, so a seal's slit and
@@ -104,8 +104,7 @@ export function passingLight(every: number, sweep: number, { travel = false } = 
   }
 
   /** Lit by this light while it's on the page. */
-  function join(set: Set<Element>, el: Element) {
-    const place = el.closest('[data-lit]') ?? el.parentElement ?? el;
+  function join(set: Set<Element>, el: Element, place: Element = el.parentElement ?? el) {
     set.add(el);
     places.set(el, place);
     const n = lodgers.get(place) ?? 0;
@@ -132,10 +131,10 @@ export function passingLight(every: number, sweep: number, { travel = false } = 
   }
 
   return {
-    /** Svelte action: the light passes over this slit (its first child is the copy). */
-    glint: (slit: Element) => join(slits, slit),
-    /** Svelte action: the light kindles this spark as it leaves. */
-    spark: (spark: Element) => join(sparks, spark),
+    /** Svelte action: the light passes over this slit (its first child is the copy), watched and timed at `place`. */
+    glint: (slit: Element, place?: Element) => join(slits, slit, place),
+    /** Svelte action: the light kindles this spark as it leaves, watched and timed at `place`. */
+    spark: (spark: Element, place?: Element) => join(sparks, spark, place),
   };
 }
 

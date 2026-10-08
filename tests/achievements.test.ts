@@ -17,8 +17,6 @@ import {
   momentsIn,
   nextWins,
   noteState,
-  playing,
-  release,
   parseStore,
   parseWins,
   parseTrack,
@@ -32,6 +30,7 @@ import {
   type VersusTrack,
 } from '../src/lib/achievements.ts';
 import { storeKey } from '../src/lib/storage.ts';
+import { leftGame, losing, noteLeaving } from '../src/lib/versus.ts';
 
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
 const fakes: Record<string, string[]> = JSON.parse(readFileSync(new URL('../src/data/fakes.json', import.meta.url), 'utf8'));
@@ -793,45 +792,51 @@ test('a game whose end first comes in after a reload is judged, once', () => {
   assert.deepEqual(storedWins(), { now: 0, best: 4, last: storedWins().last });
 });
 
-test('a game walked away from while behind breaks the wins in a row; while ahead it counts neither way', () => {
-  const w = { now: 3, best: 3, last: 1 };
-  assert.deepEqual(playing(w, 2, true), { ...w, open: { game: 2, behind: true } });
-  assert.equal(playing(playing(w, 2, true), 2, true).open?.game, 2, 'the same game goes on (a reload)');
-  // Another game comes along with the last never seen to end.
-  assert.deepEqual(playing(playing(w, 2, true), 3, false), { now: 0, best: 3, last: 2, open: { game: 3, behind: false } });
-  assert.deepEqual(playing(playing(w, 2, false), 3, false), { ...w, open: { game: 3, behind: false } });
-  // An end seen lets it go, counted or not.
-  assert.deepEqual(nextWins(playing(w, 2, true), 'won', 2), { now: 4, best: 4, last: 2 });
-  assert.deepEqual(release(playing(w, 2, true), 2), w);
-  assert.deepEqual(parseWins(serializeWins(playing(w, 2, true))), playing(w, 2, true));
+/** Ash (p0) and Bram (p1) part way through a game to 5, at these scores. */
+function midGame(ash: number, bram: number, o: { gone?: boolean; target?: number } = {}) {
+  const { s } = setup(['Ash', 'Bram'], { target: o.target });
+  return { ...s, players: s.players.map((p) => ({ ...p, score: p.id === 'p0' ? ash : bram, connected: p.id === 'p0' || !o.gone })) };
+}
+
+test('only walking away while losing marks a game: behind a rival still there, or out of its deathmatch', () => {
+  assert.equal(losing(midGame(1, 3), 'p0', false), true);
+  assert.equal(losing(midGame(2, 2), 'p0', false), false, 'level is not losing');
+  assert.equal(losing(midGame(3, 1), 'p0', false), false);
+  assert.equal(losing(midGame(1, 3, { gone: true }), 'p0', false), false, 'the rival quit');
+  assert.equal(losing(midGame(1, 3, { target: 4 }), 'p0', false), false, "a game that doesn't count");
+  assert.equal(losing(midGame(1, 3), 'p0', true), false, 'one device');
+  assert.equal(losing({ ...midGame(1, 3), phase: 'over' }, 'p0', false), false, 'ended');
+  const dm = { alive: ['p1'], entrants: ['p0', 'p1'], round: 2, results: {}, eliminated: ['p0'], startedAt: 3 };
+  assert.equal(losing({ ...midGame(5, 5), deathmatch: dm }, 'p0', false), true, 'out of the deathmatch');
+  noteLeaving(midGame(2, 2), 'p0', false);
+  assert.equal(leftGame(), null);
+  noteLeaving(null, 'p0', false);
+  assert.equal(leftGame(), null);
 });
 
-test('through the game: leaving while losing, then playing on, starts the wins in a row over', () => {
+test('a game walked away from while losing: coming back to it lets it go; the next game counts it as lost first', () => {
   store.set(WINS_AT, serializeWins({ now: 4, best: 4, last: 1 }));
-  // Ash falls behind in a game, then the tab goes (no end seen).
-  const { engine, s } = setup(['Ash', 'Bram']);
-  let st = s;
-  let prev: GameState | null = null;
-  const step = (next: GameState) => {
-    noteState(prev, publicView(next), 'p0', false, { items });
-    prev = publicView(next);
-    st = next;
-  };
-  step(st);
-  for (let n = 0; n < 6; n++) {
-    const who = st.players[st.turn].id;
-    step(engine.apply(st, { type: 'pick', category: st.offered[0] }, who));
-    step(engine.apply(st, { type: 'answer', index: who === 'p1' ? right(st.question!) : wrongIdx(st.question!) }, who));
-    step(engine.apply(st, { type: 'next' }, 'p0'));
-  }
-  assert.equal(storedWins().open?.behind, true);
-  assert.equal(storedWins().now, 4, 'not yet: it may still be going on');
-  // A new game: the one left behind is lost, and this one wins only the first of a new run.
+  const left = midGame(1, 3);
+  noteLeaving(left, 'p0', false);
+  assert.equal(leftGame(), left.startedAt);
+  // Back in the same game (a reload): the mark goes, the run stands.
+  noteState(null, publicView(left), 'p0', false, { items });
+  assert.equal(leftGame(), null);
+  assert.equal(storedWins().now, 4);
+
+  // Left again, and the next game is another: that one is lost, this one wins the first of a new run.
+  noteLeaving(left, 'p0', false);
   tab.clear();
   const { earned } = followed(true, false, 50000);
   assert.ok(!earned.includes('undefeated'), JSON.stringify(earned));
   assert.equal(storedWins().now, 1);
-  assert.equal(storedWins().open, undefined);
+  assert.equal(leftGame(), null);
+});
+
+test('erasing lets a mark go too', () => {
+  noteLeaving(midGame(1, 3), 'p0', false);
+  resetAchievements();
+  assert.equal(leftGame(), null);
 });
 
 test("a newer build's wins in a row are never written over", () => {

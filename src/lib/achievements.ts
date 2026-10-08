@@ -40,8 +40,10 @@ import { clearAside, makeRoom, newerThan } from './keepAside.ts';
 import type { Tier } from './metals.ts';
 import { isHeldName } from './names.ts';
 import { readStored, removeStored, storeKey, tryReadStored, writeStored } from './storage.ts';
+import { TARGET_MIN, clearLeft, settleLeft, versusGame } from './versus.ts';
 
 export type { Tier } from './metals.ts';
+export { TARGET_MIN } from './versus.ts';
 
 /** The groups of the list, in the page's order. */
 export type AchievementGroup = 'knowledge' | 'versus' | 'delve' | 'together';
@@ -161,8 +163,7 @@ export const PRIMA = 25;
 export const REVENGE = 3;
 /** Undefeated: games against others won in a row. */
 export const WIN_RUN = 5;
-/** Wins count to this target or more; Untarnished and Clean Sweep to TARGET_HIGH. */
-export const TARGET_MIN = 5;
+/** Untarnished and Clean Sweep: to this target or more (wins count to TARGET_MIN, lib/versus.ts). */
 export const TARGET_HIGH = 10;
 /** Tide Turner: how far a rival led you; Hubris: how far you led the winner. */
 export const COMEBACK = 4;
@@ -698,10 +699,6 @@ export interface VersusTrack {
   last: number;
 }
 
-/** A game against others: online, this player seated, someone else seated, not Delve. */
-function versusGame(s: GameState, me: string | null, hotSeat: boolean): s is GameState & { startedAt: number } {
-  return !hotSeat && !!me && !s.delve && !!s.startedAt && s.players.length >= 2 && s.players.some((p) => p.id === me);
-}
 
 /**
  * Whether a game is seen from its first question: it stands at it, nothing
@@ -870,13 +867,6 @@ export interface WinRun {
   now: number;
   best: number;
   last: number;
-  /**
-   * The counted game in play, not yet seen to end, and whether this player
-   * was behind (or level with) a rival as last seen. Walked away from while
-   * behind, it counts as lost once another game comes along; while ahead
-   * (a rival who quit), it counts neither way. Missing between games.
-   */
-  open?: { game: number; behind: boolean };
 }
 
 export const emptyWins = (): WinRun => ({ now: 0, best: 0, last: 0 });
@@ -896,10 +886,7 @@ export function parseWins(raw: string | null): WinRun {
   }
   if (!isObj(v) || v.v !== WINS_VERSION) return emptyWins();
   const now = whole(v.now);
-  const w: WinRun = { now, best: Math.max(now, whole(v.best)), last: typeof v.last === 'number' && Number.isFinite(v.last) ? v.last : 0 };
-  const o = v.open;
-  if (isObj(o) && typeof o.game === 'number' && Number.isFinite(o.game) && typeof o.behind === 'boolean') w.open = { game: o.game, behind: o.behind };
-  return w;
+  return { now, best: Math.max(now, whole(v.best)), last: typeof v.last === 'number' && Number.isFinite(v.last) ? v.last : 0 };
 }
 
 /**
@@ -908,27 +895,9 @@ export function parseWins(raw: string | null): WinRun {
  * sides (see the top), and only the first to see its end counts it.
  */
 export function nextWins(w: WinRun, outcome: Outcome, game: number): WinRun {
-  if (game === w.last) return release(w, game);
+  if (game === w.last) return w;
   const now = outcome === 'won' ? w.now + 1 : 0;
-  return release({ ...w, now, best: Math.max(w.best, now), last: game }, game);
-}
-
-/** The run with `game` no longer in play (it ended, counted or not). */
-export function release(w: WinRun, game: number): WinRun {
-  if (w.open?.game !== game) return w;
-  const { open: _, ...rest } = w;
-  return rest;
-}
-
-/**
- * The run as a counted game `game` is in play, this player `behind` (or
- * level) as it stands. A game left in play before it, never seen to end, is
- * settled first: lost if they were behind when last seen, else let go.
- */
-export function playing(w: WinRun, game: number, behind: boolean): WinRun {
-  const was = w.open;
-  if (was && was.game !== game) w = was.behind ? nextWins(w, 'lost', was.game) : release(w, was.game);
-  return w.open?.game === game && w.open.behind === behind ? w : { ...w, open: { game, behind } };
+  return { now, best: Math.max(w.best, now), last: game };
 }
 
 // ---- storage -------------------------------------------------------------------
@@ -1054,6 +1023,8 @@ export function noteState(
     return o;
   };
   if (versusGame(next, me, hotSeat) && next.phase !== 'lobby') {
+    // A game walked away from while losing, seen once a game: in another, it counts as lost first.
+    settleLeft(next.startedAt, (left) => changeWins((w) => nextWins(w, 'lost', left)));
     const was = parseTrack(readStored(TRACK, 'session'));
     const track = trackVersus(was, prev, next, me, hotSeat, veilShare);
     if (next.phase === 'over') {
@@ -1066,20 +1037,11 @@ export function noteState(
         ended.push(...end.earned);
         if (end.outcome) list();
         const game = next.startedAt;
-        const wins = changeWins((w) => (end.outcome ? nextWins(w, end.outcome, game) : release(w, game)));
-        if (end.outcome && wins && wins.now >= WIN_RUN) ended.push('undefeated');
+        const wins = end.outcome && changeWins((w) => nextWins(w, end.outcome!, game));
+        if (wins && wins.now >= WIN_RUN) ended.push('undefeated');
       }
       removeStored(TRACK, 'session');
-    } else {
-      if (track && track !== was) writeStored(TRACK, JSON.stringify(track), 'session');
-      // A counted game in play: kept in the wins, so leaving it while behind still breaks the run.
-      const mine = next.players.find((p) => p.id === me)?.score ?? 0;
-      const rivals = next.players.filter((p) => p.id !== me && p.connected);
-      if (next.settings.targetScore >= TARGET_MIN && rivals.length) {
-        const behind = rivals.some((p) => p.score >= mine);
-        changeWins((w) => playing(w, next.startedAt, behind));
-      }
-    }
+    } else if (track && track !== was) writeStored(TRACK, JSON.stringify(track), 'session');
   }
   const ids = [...delve, ...ended];
   const opened = ids.length ? list() : null;
@@ -1097,5 +1059,6 @@ export function resetAchievements() {
   if (!raw || !newerThan(raw, ACHIEVEMENTS_VERSION)) writeStored(NAME, serializeStore(emptyStore()));
   const wins = tryReadStored(WINS);
   if (wins && !newerThan(wins, WINS_VERSION)) removeStored(WINS);
+  clearLeft();
   clearAside(NAME);
 }
