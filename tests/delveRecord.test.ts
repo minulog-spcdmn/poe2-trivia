@@ -7,6 +7,7 @@ import {
   RUN_LIMIT,
   addRun,
   climbOf,
+  lastOf,
   leftEvent,
   recordLeft,
   bestOf,
@@ -25,6 +26,7 @@ import {
 } from '../src/lib/delveRecord.ts';
 import { createGame, type GameState, type Revive } from '../src/lib/game.ts';
 import { storeKey } from '../src/lib/storage.ts';
+import { DELVE_RULESET } from '../src/lib/delve.ts';
 
 const store = new Map<string, string>();
 /** Writes longer than this don't fit (storage nearly full); Infinity for room enough. */
@@ -566,4 +568,14 @@ test('depths and counts no run could reach are dropped or capped, so nothing is 
   assert.equal(deepestEver(rec), MAX_DEPTH);
   // A run from the game deeper than that is held at it.
   assert.equal(runEvent(run({ a: [2, 5] }), run({ a: [2, 5, 5000] }), 'a')!.depth, MAX_DEPTH);
+});
+
+test('the last run of a kind: the latest that ended under its rules, alone or together', () => {
+  const run = (id: number, depth: number, more: Partial<DelveRun> = {}): DelveRun => ({ id, at: id * 10, depth, players: 1, ruleset: DELVE_RULESET, mixed: false, ...more });
+  let rec = emptyRecords();
+  assert.equal(lastOf(rec, true), null);
+  for (const r of [run(1, 30), run(2, 12), run(3, 40, { players: 2 }), run(4, 25, { left: true }), run(5, 9, { mixed: true })]) rec = addRun(rec, r).records;
+  assert.equal(lastOf(rec, true)!.depth, 12, 'a run left or under mixed rules is not a last run');
+  assert.equal(lastOf(rec, false)!.depth, 40);
+  assert.equal(bestOf(rec, true)!.depth, 30);
 });

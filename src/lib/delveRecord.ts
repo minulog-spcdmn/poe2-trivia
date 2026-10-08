@@ -380,6 +380,11 @@ export function bestOf(r: DelveRecords, solo: boolean, ruleset = DELVE_RULESET):
   return r.bests[bestKey(ruleset, solo)] ?? null;
 }
 
+/** The last counted run alone or together, under a ruleset (this one by default): the latest recorded that ended under its rules. */
+export function lastOf(r: DelveRecords, solo: boolean, ruleset = DELVE_RULESET): DelveRun | null {
+  return r.runs.findLast((run) => counts(run) && keyOf(run) === bestKey(ruleset, solo)) ?? null;
+}
+
 /** Every counted run alone or together, under a ruleset (this one by default). */
 export function tallyOf(r: DelveRecords, solo: boolean, ruleset = DELVE_RULESET): DelveTally {
   return r.tallies[bestKey(ruleset, solo)] ?? emptyTally();

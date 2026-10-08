@@ -12,8 +12,14 @@
   // plate takes the card's whole width at a height of its own, with each
   // find's item and name on its right (tied to the pit the same way), and
   // the finds' rules follow under it. The lobby passes this browser's
-  // records; the descent page (descent.html) drives them directly.
-  let { deepest = null, label = 'Your deepest', met = [] }: { deepest?: number | null; label?: string; met?: FindKind[] } = $props();
+  // records (the deepest, the last run, the finds met); the descent page
+  // (descent.html) drives them directly.
+  let {
+    deepest = null,
+    last = null,
+    label = 'Your deepest',
+    met = [],
+  }: { deepest?: number | null; last?: number | null; label?: string; met?: FindKind[] } = $props();
 
   // The finds that turn up, in the order they first do.
   const FIND_KINDS = FINDS_IN_ORDER.map((f) => f.kind);
@@ -33,7 +39,7 @@
     <div class="descent-col" style:min-height={stacked && natural ? `${natural}px` : null}>
       <span class="label" bind:this={caption}>The descent</span>
       {#if caption && finds}
-        <DelveLadder {deepest} {label} {met} {caption} {finds} bind:stacked bind:natural />
+        <DelveLadder {deepest} {last} {label} {met} {caption} {finds} bind:stacked bind:natural />
       {/if}
     </div>
     <div class="finds-col" bind:this={finds}>
@@ -69,7 +75,7 @@
   }
   .descent-col {
     position: relative;
-    min-height: 24rem;
+    min-height: 12rem;
   }
   .descent-col .label {
     width: fit-content;

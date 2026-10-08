@@ -8,7 +8,7 @@
   import CustomDifficulty from './CustomDifficulty.svelte';
   import DelveRules from './DelveRules.svelte';
   import ModeIcon from './ModeIcon.svelte';
-  import { bestOf, findsMet, loadRecords } from '../lib/delveRecord';
+  import { bestOf, findsMet, lastOf, loadRecords } from '../lib/delveRecord';
   import { MAX_NAME, isHeldName, nameHeld, nameTooShort } from '../lib/names';
   import { inviteUrl } from '../lib/site';
   import Avatar from './Avatar.svelte';
@@ -149,6 +149,10 @@
   const bestAlone = bestOf(records, true)?.depth ?? null;
   const bestTogether = bestOf(records, false)?.depth ?? null;
   const deepest = $derived(s.players.length < 2 ? bestAlone : local ? null : bestTogether);
+  // The last run of the same kind: the descent marks it with a red star.
+  const lastAlone = lastOf(records, true)?.depth ?? null;
+  const lastTogether = lastOf(records, false)?.depth ?? null;
+  const lastRun = $derived(s.players.length < 2 ? lastAlone : local ? null : lastTogether);
   const deepestLabel = $derived(s.players.length < 2 ? 'Your deepest alone' : 'Your deepest together');
   // The finds this browser's player has met, alone or together: the drawing of the descent marks where each first turns up.
   const met = [...findsMet()];
@@ -361,7 +365,7 @@
       </div>
 
       {#if delve}
-        <DelveRules {deepest} label={deepestLabel} {met} />
+        <DelveRules {deepest} last={lastRun} label={deepestLabel} {met} />
       {:else}
         <div class="setting">
           <span class="label">Points to win</span>
