@@ -32,7 +32,10 @@
   /** The first this many CSS embers burn in the stratum turning in, the rest in the one before (as many as emberTurn has it). */
   const turned = $derived(Math.round(embers.length * emberTurn(dsc.turn)));
   const emberLooks = $derived([lookOf(dsc.stratum - 1), lookOf(dsc.stratum)]);
-  let webgl = $state(false);
+  // WebGL until it fails: the CSS layers mount only then (as the backdrop
+  // starts, before the page is first painted, or when its context is lost
+  // later), never just to be torn down again as it starts.
+  let webgl = $state(true);
   let failed = $state(false);
 
   onMount(() => {
@@ -40,9 +43,13 @@
       webgl = false;
       failed = true;
     };
-    const stop = startBackdrop(canvas, fail);
-    if (stop) webgl = true;
-    else fail();
+    let stop: (() => void) | null = null;
+    try {
+      stop = startBackdrop(canvas, fail);
+    } catch (e) {
+      console.warn(e);
+    }
+    if (!stop) fail();
     return () => stop?.();
   });
 </script>

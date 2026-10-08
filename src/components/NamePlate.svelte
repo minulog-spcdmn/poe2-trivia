@@ -187,15 +187,21 @@
     });
     return pieces.filter((q) => q.length > 1).map(poly).join('');
   };
-  const WEAVE = STRANDS.flatMap((s) => [1, -1].map((side) => strapEdge(s, side))).join('');
+  let weaveTile: string | undefined;
   /**
    * One tile of the weave, as a CSS background: it repeats over the whole
    * plate whatever its height, in every browser (an SVG pattern fill fell
-   * short of the plate's top and bottom on some phones).
+   * short of the plate's top and bottom on some phones). Worked out when a
+   * plate first shows, not as the page loads: it takes a while (tens of ms),
+   * and the start page has no plate.
    */
-  const WEAVE_TILE = `url("data:image/svg+xml,${encodeURIComponent(
-    `<svg xmlns='http://www.w3.org/2000/svg' width='${BAY}' height='${ROW}' viewBox='0 0 ${BAY} ${ROW}'><path d='${WEAVE}' fill='none' stroke='#c47a44' stroke-width='0.55'/></svg>`,
-  )}")`;
+  const weave = () => {
+    if (weaveTile) return weaveTile;
+    const d = STRANDS.flatMap((s) => [1, -1].map((side) => strapEdge(s, side))).join('');
+    return (weaveTile = `url("data:image/svg+xml,${encodeURIComponent(
+      `<svg xmlns='http://www.w3.org/2000/svg' width='${BAY}' height='${ROW}' viewBox='0 0 ${BAY} ${ROW}'><path d='${d}' fill='none' stroke='#c47a44' stroke-width='0.55'/></svg>`,
+    )}")`);
+  };
 </script>
 
 <script lang="ts">
@@ -264,7 +270,7 @@
 {/snippet}
 
 <span class="plate" class:lit aria-hidden="true">
-  <span class="field" style:background-image={WEAVE_TILE} style:--tile="{BAY}px {ROW}px"></span>
+  <span class="field" style:background-image={weave()} style:--tile="{BAY}px {ROW}px"></span>
   <!-- The lines twice, as on the circle: a soft, wide copy for the glow, and the lines. -->
   <svg class="art glow" width="100%" height="100%">{@render plate()}</svg>
   <svg class="art" width="100%" height="100%">

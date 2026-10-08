@@ -4,7 +4,8 @@
 // asked for first; effects asked for meanwhile wait for it and play. And
 // shaders are built without the page waiting on them (buildPrograms in
 // lib/fx/gl.ts, which the backdrop's Delve programs use too): how a compile
-// went is never asked right after it starts.
+// went is never asked right after it starts, and the programs are read one
+// at a time, each in a step of its own.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { registerHooks } from 'node:module';
@@ -66,7 +67,7 @@ const COMPLETION = 0x91b1;
  */
 function fakeGl(parallel: boolean) {
   const log: string[] = [];
-  const state = { done: false, lost: false, deleted: { programs: 0, shaders: 0 } };
+  const state = { done: false, lost: false, deleted: { programs: 0, shaders: 0 }, fails: new Set<number>() };
   let n = 0;
   const gl: object = new Proxy(
     {},
@@ -81,7 +82,10 @@ function fakeGl(parallel: boolean) {
           };
         if (prop === 'canvas') return { width: 0, height: 0 };
         if (prop === 'getExtension')
-          return (name: string) => (name === 'KHR_parallel_shader_compile' ? (parallel ? { COMPLETION_STATUS_KHR: COMPLETION } : null) : { loseContext() {} });
+          return (name: string) => {
+            if (name.startsWith('EXT_')) log.push(`ext ${name}`);
+            return name === 'KHR_parallel_shader_compile' ? (parallel ? { COMPLETION_STATUS_KHR: COMPLETION } : null) : { loseContext() {} };
+          };
         if (prop === 'createProgram') return () => ({ id: ++n });
         if (prop === 'linkProgram') return (p: { id: number }) => log.push(`link ${p.id}`);
         if (prop === 'deleteProgram') return () => state.deleted.programs++;
@@ -89,8 +93,10 @@ function fakeGl(parallel: boolean) {
         if (prop === 'getProgramParameter')
           return (p: { id: number }, what: number) => {
             log.push(`${what === LINK_STATUS ? 'status' : 'done?'} ${p.id}`);
-            return what === LINK_STATUS ? true : state.done;
+            return what === LINK_STATUS ? !state.fails.has(p.id) : state.done;
           };
+        if (prop === 'getShaderParameter') return () => log.push('compiled?');
+        if (prop === 'getShaderInfoLog' || prop === 'getProgramInfoLog') return () => (log.push('log'), 'why');
         if (prop === 'drawArraysInstanced' || prop === 'drawArrays') return () => log.push('draw');
         if (typeof prop === 'string' && /^[A-Z0-9_]+$/.test(prop)) return 1;
         return () => ({});
@@ -116,7 +122,14 @@ g.ResizeObserver = class {
 
 const fx = await import('../src/lib/fx/core.ts');
 const { ShapeType } = await import('../src/lib/fx/renderer.ts');
-const { buildPrograms, setGpuCatchUp } = await import('../src/lib/fx/gl.ts');
+const { buildPrograms, buildProgramsNow, setGpuCatchUp } = await import('../src/lib/fx/gl.ts');
+
+/** The effects' six programs read, a frame apart (without the backdrop: see buildPrograms). */
+const readSix = () => {
+  for (let i = 0; i < 6; i++) frame();
+};
+/** The frame after the context, in which whether it can draw to floats is asked: the shaders start in the next. */
+const askFloat = () => frame();
 
 /** The overlay's canvas; counts the contexts asked of it (and, with `refuse`, gives none). */
 function overlay(parallel = true, refuse = false) {
@@ -159,7 +172,11 @@ test('the renderer is made once two frames have gone by and the page is idle, no
   assert.equal(o.c.asked, 0, 'nor the second: it waits for an idle moment');
   idle();
   assert.equal(o.c.asked, 1, 'made when idle');
-  // Its shaders start in the next frame, and are read once done.
+  // Whether it can draw to floats is asked in the next frame, in a step of
+  // its own; its shaders start in the one after, and are read once done.
+  assert.ok(!o.ctx.log.some((l) => l.startsWith('ext')), 'not with the context');
+  frame();
+  assert.ok(o.ctx.log.includes('ext EXT_color_buffer_float'));
   assert.ok(!o.ctx.log.some((l) => l.startsWith('link')));
   frame();
   assert.equal(o.ctx.log.filter((l) => l.startsWith('link')).length, 6);
@@ -168,7 +185,12 @@ test('the renderer is made once two frames have gone by and the page is idle, no
   assert.ok(!o.ctx.log.some((l) => l.startsWith('status')), 'not asked how a link went while compiling');
   o.ctx.state.done = true;
   frame();
-  assert.equal(o.ctx.log.filter((l) => l.startsWith('status')).length, 6);
+  const read = () => o.ctx.log.filter((l) => l.startsWith('status')).length;
+  assert.equal(read(), 1, 'read one at a time');
+  for (let i = 2; i <= 6; i++) {
+    frame();
+    assert.equal(read(), i, 'a frame apart');
+  }
   assert.ok(fx.fxAvailable());
   stop();
 });
@@ -181,9 +203,10 @@ test('an effect asked for before then starts the renderer at once, waits for it,
   assert.equal(o.c.asked, 1, 'the renderer started at once');
   assert.equal(fx.fxStats().shapes, 1);
   assert.ok(!fx.fxStats().running, 'nothing drawn before the renderer is ready');
+  askFloat();
   frame();
   o.ctx.state.done = true;
-  frame();
+  readSix();
   assert.ok(fx.fxStats().running, 'playing once it is');
   frame();
   assert.ok(o.ctx.log.includes('draw'), 'and drawn');
@@ -210,14 +233,24 @@ test('with the backdrop running, the context is asked for only once the GPU has 
   assert.ok(fx.fxActive());
   held.shift()!();
   assert.equal(o.c.asked, 1, 'once it has caught up');
-  // Its shaders are read only after the GPU has caught up again.
+  // So is whether it can draw to floats, a frame later.
+  frame();
+  assert.equal(held.length, 1);
+  assert.ok(!o.ctx.log.some((l) => l.startsWith('ext')));
+  held.shift()!();
+  assert.ok(o.ctx.log.includes('ext EXT_color_buffer_float'));
+  // Its shaders are read only after the GPU has caught up again, one at a
+  // time, each once it has caught up again (the backdrop holding on).
   frame();
   o.ctx.state.done = true;
   frame();
   assert.ok(!o.ctx.log.some((l) => l.startsWith('status')));
-  assert.equal(held.length, 1);
-  held.shift()!();
-  assert.equal(o.ctx.log.filter((l) => l.startsWith('status')).length, 6);
+  for (let i = 1; i <= 6; i++) {
+    assert.equal(held.length, 1);
+    held.shift()!();
+    assert.equal(o.ctx.log.filter((l) => l.startsWith('status')).length, i);
+  }
+  assert.equal(held.length, 0);
   assert.ok(fx.fxStats().running, 'and the effect plays');
   setGpuCatchUp(null);
   s.stop(0);
@@ -250,9 +283,10 @@ test('what was asked for meanwhile goes on from where it would be by now; what r
     el.isConnected = false;
     // A cold cache: its shaders take seconds.
     t += 2000;
+    askFloat();
     frame();
     o.ctx.state.done = true;
-    frame();
+    readSix();
     assert.equal(fx.fxStats().shapes, 1, 'only the endless one still in use');
     assert.equal(fx.fxStats().particles, 1, 'only the one still alive by now');
     assert.ok(!fx.shaking(), 'a shake asked for 2 s ago is over');
@@ -271,6 +305,7 @@ test('a context lost before its shaders are built turns effects off, and says so
   glow();
   assert.equal(o.c.asked, 1);
   o.ctx.state.lost = true;
+  askFloat();
   frame();
   idle();
   assert.ok(!fx.fxActive() && !fx.fxAvailable());
@@ -361,23 +396,70 @@ test('a build cancelled deletes its programs and their shaders', () => {
   assert.deepEqual(state.deleted, { programs: 1, shaders: 2 });
 });
 
-test('with KHR_parallel_shader_compile every program starts at once, and is read only once the driver says all are done', () => {
+test('with KHR_parallel_shader_compile every program starts at once, and is read only once the driver says all are done, one a step', () => {
   const { log, got } = steps(true, 3);
   assert.equal(got?.length, 3);
   assert.equal(log[0], '', 'nothing before the first frame');
   assert.equal(log[1], 'link 1 link 2 link 3');
   // Polled once a frame (never waiting) until done; read then.
-  for (const s of log.slice(2, -1)) assert.match(s, /^(done\? \d ?)+$/);
-  assert.match(log.at(-1)!, /status 1 status 2 status 3$/);
+  for (const s of log.slice(2, -3)) assert.match(s, /^(done\? \d ?)+$/);
+  assert.match(log.at(-3)!, /^(done\? \d )+status 1$/);
+  assert.deepEqual(log.slice(-2), ['status 2', 'status 3']);
 });
 
-test('without it, they start in an idle moment and are read a step later', () => {
+test('without it, they start in an idle moment and are read a step later, one a step', () => {
   const { log, got } = steps(false, 3);
   assert.equal(got?.length, 3);
   assert.deepEqual(
     log.filter((s) => s),
-    ['link 1 link 2 link 3', 'status 1 status 2 status 3'],
+    ['link 1 link 2 link 3', 'status 1', 'status 2', 'status 3'],
   );
+});
+
+test('a program that failed to link ends the build: the rest are not read, all are deleted, and a warning says why', () => {
+  const { gl, log, state } = fakeGl(false);
+  state.fails.add(2);
+  const warn = console.warn;
+  const warned: unknown[][] = [];
+  console.warn = (...a: unknown[]) => warned.push(a);
+  try {
+    let got: WebGLProgram[] | null | undefined;
+    buildPrograms(gl, ['a', 'b', 'c'].map((label) => ({ vs: 'v', fs: 'f', label })), (p) => (got = p));
+    for (let i = 0; i < 6 && got === undefined; i++) {
+      frame();
+      idle();
+    }
+    assert.equal(got, null);
+    assert.deepEqual(log.filter((l) => l.startsWith('status')), ['status 1', 'status 2']);
+    // (Each with its shaders: those of the one read already were let go then, and are again.)
+    assert.equal(state.deleted.programs, 3);
+    assert.ok(state.deleted.shaders >= 6);
+    assert.equal(warned.length, 1);
+    assert.match(String(warned[0][0]), /^b failed/);
+  } finally {
+    console.warn = warn;
+  }
+});
+
+test("built at once (the backdrop's first programs), every program starts before any is read, and only whether each linked is asked", () => {
+  const { gl, log } = fakeGl(true);
+  const got = buildProgramsNow(gl, ['a', 'b'].map((label) => ({ vs: 'v', fs: 'f', label })));
+  assert.equal(got?.length, 2);
+  assert.deepEqual(log, ['link 1', 'link 2', 'status 1', 'status 2']);
+});
+
+test('built at once, a failure gives null, with its logs, and deletes them all', () => {
+  const { gl, log, state } = fakeGl(true);
+  state.fails.add(1);
+  const warn = console.warn;
+  console.warn = () => {};
+  try {
+    assert.equal(buildProgramsNow(gl, ['a', 'b'].map((label) => ({ vs: 'v', fs: 'f', label }))), null);
+  } finally {
+    console.warn = warn;
+  }
+  assert.ok(log.includes('log'), 'why, read only now');
+  assert.deepEqual(state.deleted, { programs: 2, shaders: 4 });
 });
 
 test("one at a time (the backdrop's large Delve programs), one starts in each idle moment, and none is read in the step that started one", () => {
@@ -386,5 +468,5 @@ test("one at a time (the backdrop's large Delve programs), one starts in each id
   const linked = log.filter((s) => s.includes('link'));
   assert.deepEqual(linked, ['link 1', 'link 2', 'link 3'], 'one a step');
   for (const s of log) assert.ok(!(s.includes('link') && s.includes('status')), `read right after a link: ${s}`);
-  assert.equal(log.at(-1), 'status 1 status 2 status 3');
+  assert.deepEqual(log.slice(-3), ['status 1', 'status 2', 'status 3']);
 });

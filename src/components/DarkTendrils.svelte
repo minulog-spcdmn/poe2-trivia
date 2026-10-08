@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { CLOCK_PEAK, OVERSHOOT, onPressure, pressing, pressureLevel } from '../lib/darkness';
+  import { whenIdle } from '../lib/fx/gl';
 
   // Delve, on the CSS backdrop (Background.svelte, without WebGL): the dark
   // of a question's clock running down (lib/darkness.ts), as the WebGL
@@ -150,29 +151,40 @@
         el.style.setProperty('--reach', on ? reachOf(p).toFixed(3) : '0');
         dim.style.opacity = on ? (0.3 * p).toFixed(3) : '0';
         lift.style.opacity = p < -0.001 ? Math.min(1, -p / OVERSHOOT).toFixed(3) : '0';
+        if (on) draw();
       }
       if (pressing() || shown > 0) raf = requestAnimationFrame(frame);
     }
     const wake = () => {
       if (!raf) raf = requestAnimationFrame(frame);
     };
-    const off = onPressure(wake);
-    wake();
-    // The arms' drawing, made once (nothing shows it before the clock runs).
+    // The arms' drawing, made once (nothing shows it before the clock runs):
+    // in an idle moment, or as the dark first comes in if that's sooner, not
+    // as the backdrop mounts.
     let url: string | null = null;
     let gone = false;
-    tentacle()
-      .then((u) => {
-        if (gone) {
-          if (u) URL.revokeObjectURL(u);
-          return;
-        }
-        url = u;
-        if (u) el.style.setProperty('--tentacle', `url("${u}")`);
-      })
-      .catch(() => {});
+    let drawn = false;
+    const stopIdle = whenIdle(draw, 2000);
+    function draw() {
+      if (drawn) return;
+      drawn = true;
+      stopIdle();
+      tentacle()
+        .then((u) => {
+          if (gone) {
+            if (u) URL.revokeObjectURL(u);
+            return;
+          }
+          url = u;
+          if (u) el.style.setProperty('--tentacle', `url("${u}")`);
+        })
+        .catch(() => {});
+    }
+    const off = onPressure(wake);
+    wake();
     return () => {
       gone = true;
+      stopIdle();
       off();
       cancelAnimationFrame(raf);
       if (url) URL.revokeObjectURL(url);

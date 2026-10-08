@@ -63,6 +63,65 @@ export function whenGpuCaughtUp(f: () => void): () => void {
   return () => {};
 }
 
+/** A program started (see begin): compiling and linking, nothing asked yet of how it went. */
+type Started = { prog: WebGLProgram; shaders: WebGLShader[] };
+
+/** Starts compiling and linking a program, asking nothing of how it went (see linked). */
+function begin(gl: WebGL2RenderingContext, { vs, fs }: ProgramSource): Started {
+  const prog = gl.createProgram()!;
+  const shaders = ([
+    [gl.VERTEX_SHADER, vs],
+    [gl.FRAGMENT_SHADER, fs],
+  ] as const).map(([type, src]) => {
+    const s = gl.createShader(type)!;
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    gl.attachShader(prog, s);
+    return s;
+  });
+  gl.linkProgram(prog);
+  return { prog, shaders };
+}
+
+/**
+ * Whether a started program linked: only that is asked (a failed compile
+ * fails the link), and its shaders' logs only if it didn't, in a warning
+ * that says why. Linked, its shaders are let go (deleted with it, which
+ * keeps them while it lives).
+ */
+function linked(gl: WebGL2RenderingContext, { prog, shaders }: Started, label: string): boolean {
+  if (gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+    for (const s of shaders) gl.deleteShader(s);
+    return true;
+  }
+  const logs = shaders.map((s) => gl.getShaderInfoLog(s)).filter(Boolean);
+  console.warn(`${label} failed to compile or link.`, ...logs, gl.getProgramInfoLog(prog));
+  return false;
+}
+
+/** Deletes started programs, and their shaders (one deleted already is let be). */
+function drop(gl: WebGL2RenderingContext, started: readonly Started[]) {
+  for (const { prog, shaders } of started) {
+    gl.deleteProgram(prog);
+    for (const s of shaders) gl.deleteShader(s);
+  }
+}
+
+/**
+ * Compiles and links `sources` at once, for what's drawn at once (the
+ * backdrop's first frame): every program is started before any is asked
+ * about, so with KHR_parallel_shader_compile the driver builds them side by
+ * side, and then only whether each linked is asked (see linked). The
+ * programs, in order, or null if one failed (a warning says why).
+ */
+export function buildProgramsNow(gl: WebGL2RenderingContext, sources: readonly ProgramSource[]): WebGLProgram[] | null {
+  gl.getExtension('KHR_parallel_shader_compile');
+  const started = sources.map((src) => begin(gl, src));
+  if (started.every((p, i) => linked(gl, p, sources[i].label))) return started.map((p) => p.prog);
+  drop(gl, started);
+  return null;
+}
+
 /**
  * Compiles and links `sources` without blocking the page, then calls `done`
  * with the programs, in order, or null if one failed (a warning says why)
@@ -78,78 +137,55 @@ export function whenGpuCaughtUp(f: () => void): () => void {
  * `oneAtATime`, one in each, so the GPU process gets them one at a time
  * with frames painted between), and are read a frame after the last has
  * started. Either way they're read once the GPU has caught up
- * (whenGpuCaughtUp), so even that doesn't wait behind a frame. Nothing
- * starts before the next frame.
+ * (whenGpuCaughtUp), so even that doesn't wait behind a frame; and one at a
+ * time, each in a step of its own (a software GPU can still take tens of ms
+ * over each read): with the backdrop running it holds its frames until the
+ * last is read, else they're a frame apart. Nothing starts before the next
+ * frame.
  */
 export function buildPrograms(gl: WebGL2RenderingContext, sources: readonly ProgramSource[], done: (progs: WebGLProgram[] | null) => void, oneAtATime = false): Build {
   const ext = gl.getExtension('KHR_parallel_shader_compile');
-  const progs: WebGLProgram[] = [];
-  /** Each program's two shaders. */
-  const shaders: WebGLShader[][] = [];
+  const started: Started[] = [];
+  /** How many have been read (and linked). */
+  let read = 0;
   let raf = 0;
   let stopIdle: (() => void) | null = null;
   let stopCatchUp: (() => void) | null = null;
   let over = false;
 
-  const begin = ({ vs, fs }: ProgramSource) => {
-    const prog = gl.createProgram()!;
-    const pair = ([
-      [gl.VERTEX_SHADER, vs],
-      [gl.FRAGMENT_SHADER, fs],
-    ] as const).map(([type, src]) => {
-      const s = gl.createShader(type)!;
-      gl.shaderSource(s, src);
-      gl.compileShader(s);
-      gl.attachShader(prog, s);
-      return s;
-    });
-    gl.linkProgram(prog);
-    progs.push(prog);
-    shaders.push(pair);
-  };
   const stop = () => {
     over = true;
     cancelAnimationFrame(raf);
     stopIdle?.();
     stopCatchUp?.();
   };
-  /** Deletes every program started, and its shaders (one deleted already is let be). */
-  const drop = () => {
-    progs.forEach((prog, i) => {
-      gl.deleteProgram(prog);
-      for (const s of shaders[i]) gl.deleteShader(s);
-    });
+  /** Reads the next program: false if it failed, or the context was lost. */
+  const readOne = () => {
+    if (gl.isContextLost()) return false;
+    const i = read++;
+    return linked(gl, started[i], sources[i].label);
   };
-  /** How each program went: all of them, or null. */
-  const read = (): WebGLProgram[] | null => {
-    if (gl.isContextLost()) return null;
-    let ok = true;
-    progs.forEach((prog, i) => {
-      if (gl.getProgramParameter(prog, gl.LINK_STATUS)) {
-        // (Deleted with the program, which keeps them while it lives.)
-        for (const s of shaders[i]) gl.deleteShader(s);
-        return;
-      }
-      ok = false;
-      const logs = shaders[i].map((s) => gl.getShaderInfoLog(s)).filter(Boolean);
-      console.warn(`${sources[i].label} failed to compile or link.`, ...logs, gl.getProgramInfoLog(prog));
-    });
-    if (ok) return progs;
-    drop();
-    return null;
+  /** The end: `done` hears of the programs, or of null (and they're deleted). */
+  const end = (ok: boolean) => {
+    stop();
+    if (ok) return done(started.map((p) => p.prog));
+    drop(gl, started);
+    done(null);
   };
   const finish = () => {
     stop();
     // (A lost context makes no shaders: nothing more is started on it. And
     // whatever goes wrong, `done` hears of it.)
-    let got: WebGLProgram[] | null = null;
+    let ok = false;
     try {
-      while (!gl.isContextLost() && progs.length < sources.length) begin(sources[progs.length]);
-      got = read();
+      while (!gl.isContextLost() && started.length < sources.length) started.push(begin(gl, sources[started.length]));
+      ok = started.length === sources.length;
+      while (ok && read < started.length) ok = readOne();
     } catch (e) {
       console.warn(e);
+      ok = false;
     }
-    done(got);
+    end(ok);
   };
   const nextFrame = (f: () => void) => {
     raf = requestAnimationFrame(() => {
@@ -157,28 +193,42 @@ export function buildPrograms(gl: WebGL2RenderingContext, sources: readonly Prog
       f();
     });
   };
-  /** All started and compiled: read once the GPU has caught up. */
+  /** All started and compiled: the next read once the GPU has caught up, and the one after in a step of its own. */
   const readWhenCaughtUp = () => {
-    let now = false;
+    let inCall = true;
+    let ran = false;
     const cancel = whenGpuCaughtUp(() => {
-      now = true;
+      ran = true;
       stopCatchUp = null;
-      if (!over) finish();
+      if (over) return;
+      if (gl.isContextLost()) return finish();
+      let ok = false;
+      try {
+        ok = readOne();
+      } catch (e) {
+        console.warn(e);
+      }
+      if (!ok || read === started.length) return end(ok);
+      // (Held by the backdrop, it's asked again at once, so the backdrop
+      // holds on; else the next is read a frame later.)
+      if (inCall) nextFrame(readWhenCaughtUp);
+      else readWhenCaughtUp();
     });
-    if (!now) stopCatchUp = cancel;
+    inCall = false;
+    if (!ran) stopCatchUp = cancel;
   };
   const step = () => {
     stopIdle = null;
     if (gl.isContextLost()) return finish();
     if (ext) {
-      if (!progs.length) sources.forEach(begin);
-      else if (progs.every((p) => gl.getProgramParameter(p, ext.COMPLETION_STATUS_KHR))) return readWhenCaughtUp();
+      if (!started.length) for (const src of sources) started.push(begin(gl, src));
+      else if (started.every((p) => gl.getProgramParameter(p.prog, ext.COMPLETION_STATUS_KHR))) return readWhenCaughtUp();
       nextFrame(step);
       return;
     }
-    if (progs.length === sources.length) return readWhenCaughtUp();
-    if (oneAtATime) begin(sources[progs.length]);
-    else sources.forEach(begin);
+    if (started.length === sources.length) return readWhenCaughtUp();
+    if (oneAtATime) started.push(begin(gl, sources[started.length]));
+    else for (const src of sources) started.push(begin(gl, src));
     nextFrame(() => (stopIdle = whenIdle(step)));
   };
   nextFrame(ext ? step : () => (stopIdle = whenIdle(step)));
@@ -187,7 +237,7 @@ export function buildPrograms(gl: WebGL2RenderingContext, sources: readonly Prog
     cancel() {
       if (over) return;
       stop();
-      drop();
+      drop(gl, started);
     },
     now() {
       if (!over) finish();

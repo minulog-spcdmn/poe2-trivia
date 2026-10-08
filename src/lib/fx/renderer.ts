@@ -9,7 +9,7 @@
 // stay exactly zero: the overlay never tints or noises the page when idle.
 
 import { INSTANCE_FLOATS } from './particles';
-import { NOISE, buildPrograms, dropTarget, target, wrapProgram, type Build, type Program, type Target } from './gl';
+import { NOISE, buildPrograms, dropTarget, target, whenGpuCaughtUp, wrapProgram, type Build, type Program, type Target } from './gl';
 import { DIALOG_DIM } from '../behindDialog';
 
 /** Floats per shape instance: five vec4s (see ShapeType). */
@@ -915,17 +915,55 @@ export class FxRenderer {
         ['copy', FULL_VS, COPY_FS],
       ] as const
     ).map(([name, vs, fs]) => ({ vs, fs, label: `FX program "${name}"` }));
-    return buildPrograms(gl, sources, (progs) => {
-      let r: FxRenderer | null = null;
-      try {
-        if (progs) r = new FxRenderer(gl, opts, progs.map((p) => wrapProgram(gl, p)));
-      } catch (e) {
-        console.warn(e);
-        for (const p of progs ?? []) gl.deleteProgram(p);
-      }
-      if (!r) console.warn('FX renderer unavailable; effects are off.');
-      ready(r);
+    // Whether it can draw to half floats: asked in a step of its own, a
+    // frame after the context and once the GPU has caught up
+    // (whenGpuCaughtUp), before the shaders start. (It waits on the GPU
+    // process, and on a software GPU takes a while even then: asked with
+    // the context, it made that step longer; asked as the shaders were
+    // read, it waited behind them too.)
+    let float = false;
+    let build: Build | null = null;
+    const begin = () => {
+      float = !!gl.getExtension('EXT_color_buffer_float') || !!gl.getExtension('EXT_color_buffer_half_float');
+      build = buildPrograms(gl, sources, (progs) => {
+        let r: FxRenderer | null = null;
+        try {
+          if (progs) r = new FxRenderer(gl, opts, progs.map((p) => wrapProgram(gl, p)), float);
+        } catch (e) {
+          console.warn(e);
+          for (const p of progs ?? []) gl.deleteProgram(p);
+        }
+        if (!r) console.warn('FX renderer unavailable; effects are off.');
+        ready(r);
+      });
+    };
+    let stopCatchUp: (() => void) | null = null;
+    let raf = requestAnimationFrame(() => {
+      raf = 0;
+      let ran = false;
+      const cancel = whenGpuCaughtUp(() => {
+        ran = true;
+        stopCatchUp = null;
+        begin();
+      });
+      if (!ran) stopCatchUp = cancel;
     });
+    const wait = () => {
+      cancelAnimationFrame(raf);
+      stopCatchUp?.();
+      stopCatchUp = null;
+    };
+    return {
+      cancel() {
+        wait();
+        build?.cancel();
+      },
+      now() {
+        wait();
+        if (!build) begin();
+        build!.now();
+      },
+    };
   }
 
   /** Makes the renderer at once, waiting for its shaders to compile (for tests). */
@@ -935,9 +973,8 @@ export class FxRenderer {
     return made;
   }
 
-  private constructor(gl: WebGL2RenderingContext, opts: RendererOptions, programs: Program[]) {
+  private constructor(gl: WebGL2RenderingContext, opts: RendererOptions, programs: Program[], float: boolean) {
     this.gl = gl;
-    const float = !!gl.getExtension('EXT_color_buffer_float') || !!gl.getExtension('EXT_color_buffer_half_float');
     this.hdrFloat = float;
     this.internal = float ? gl.RGBA16F : gl.RGBA8;
     this.texType = float ? gl.HALF_FLOAT : gl.UNSIGNED_BYTE;

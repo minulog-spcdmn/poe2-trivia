@@ -19,7 +19,7 @@ import { ENV_GLSL } from './shaders/effects';
 import { FX_NOISE_GLSL, SHAFTS_GLSL, SPORES_GLSL } from './shaders/newEffects';
 import { CLOCK_PEAK, pressureLevel } from './darkness';
 import { DIALOG_BLUR, DIALOG_DIM, openDialog } from './behindDialog';
-import { buildPrograms, refuseWebgl2, setGpuCatchUp, type Build, type ProgramSource } from './fx/gl';
+import { buildPrograms, buildProgramsNow, refuseWebgl2, setGpuCatchUp, type Build, type ProgramSource } from './fx/gl';
 
 const CITY = ENVIRONMENTS.indexOf('city');
 
@@ -929,6 +929,20 @@ export function wantDelveBackdrop() {
 export const delveBackdropReady = () => delveReadyNow;
 
 /**
+ * Sets up the GPU side of 2D canvases, which the first one drawn to does
+ * (the backdrop's drop shadows draw to them: backdropDropShadow.ts),
+ * waiting on the GPU process: called before the backdrop gives the GPU its
+ * shaders to build and its first frame to draw, it's quick; the first drop
+ * shadow, a frame or so later, would wait behind all that (on a software
+ * GPU, the best part of a second).
+ */
+function warm2d() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 256;
+  c.getContext('2d')?.fillRect(0, 0, 1, 1);
+}
+
+/**
  * Starts rendering the backdrop into `canvas`, with the lean programs (its
  * first frame drawn at once); Delve's follow in the background once Delve is
  * on its way (wantDelveBackdrop). Returns a cleanup function, or null when
@@ -952,6 +966,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   }
   const hp = gl.getShaderPrecisionFormat(gl.FRAGMENT_SHADER, gl.HIGH_FLOAT);
   if (!hp || hp.precision === 0) return null;
+  warm2d();
   // The main pass needs about FIXED_UNIFORMS fragment uniform vectors (every
   // one counted unpacked, the soft light's included where it is worked out
   // there) plus ELEMENT_UNIFORMS a UI element. WebGL2 guarantees 224, enough
@@ -985,32 +1000,18 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   let smoothW = 1;
   let smoothH = 1;
 
-  const compile = (type: number, src: string) => {
-    const s = gl.createShader(type)!;
-    gl.shaderSource(s, src);
-    gl.compileShader(s);
-    if (gl.getShaderParameter(s, gl.COMPILE_STATUS)) return s;
-    console.warn('Backdrop shader failed to compile; using the CSS backdrop.', gl.getShaderInfoLog(s));
-    return null;
-  };
-  const link = (fragSrc: string) => {
-    const vs = compile(gl.VERTEX_SHADER, VERT);
-    const fs = compile(gl.FRAGMENT_SHADER, fragSrc);
-    if (!vs || !fs) return null;
-    const p = gl.createProgram()!;
-    gl.attachShader(p, vs);
-    gl.attachShader(p, fs);
-    gl.linkProgram(p);
-    if (gl.getProgramParameter(p, gl.LINK_STATUS)) return p;
-    console.warn('Backdrop program failed to link; using the CSS backdrop.', gl.getProgramInfoLog(p));
-    return null;
-  };
   // The lean programs, without Delve's parts: built here, at once, so the
-  // first frame is drawn now. Delve's are built later, in the background
-  // (see buildDelve).
-  const leanProg = link(frag(maxElements, !!smoothTex, false));
-  const leanSmooth = smoothTex ? link(smoothFrag(false)) : null;
-  if (!leanProg || (smoothTex && !leanSmooth)) return null;
+  // first frame is drawn now (both started before either is asked about:
+  // buildProgramsNow). Delve's are built later, in the background (see
+  // buildDelve).
+  const leanSources: ProgramSource[] = [{ vs: VERT, fs: frag(maxElements, !!smoothTex, false), label: "The backdrop's program" }];
+  if (smoothTex) leanSources.push({ vs: VERT, fs: smoothFrag(false), label: "The backdrop's soft light program" });
+  const leanProgs = buildProgramsNow(gl, leanSources);
+  if (!leanProgs) {
+    console.warn('The backdrop goes to the CSS one.');
+    return null;
+  }
+  const [leanProg, leanSmooth = null] = leanProgs;
 
   // One triangle covering the viewport.
   gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
@@ -1687,7 +1688,8 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   delveWaiters.add(buildDelve);
   if (delveWanted) buildDelve();
 
-  // Paint the first frame now so the swap from the CSS backdrop is seamless.
+  // Paint the first frame now, before the page is first painted (the CSS
+  // backdrop isn't there behind it: see Background.svelte).
   canvas.width = Math.max(1, Math.round(canvas.clientWidth * devicePixelRatio * scale()));
   canvas.height = Math.max(1, Math.round(canvas.clientHeight * devicePixelRatio * scale()));
   embers.step(0, canvas.clientWidth, canvas.clientHeight);
