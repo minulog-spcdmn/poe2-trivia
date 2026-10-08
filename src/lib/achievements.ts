@@ -85,9 +85,9 @@ export type Sign =
 /** How hard an achievement is: the seal's metal, lead (the very easy ones), copper, silver or gold. */
 export type Tier = 0 | 1 | 2 | 3;
 
-/** Each tier's metal: its name, and the colour its seal is struck in (lead a dull slate, so it never reads as silver). */
+/** Each tier's metal: its name, and the colour its seal is struck in (lead the dull dark grey of tarnished lead, well below silver). */
 export const METALS: Record<Tier, { name: string; color: string }> = {
-  0: { name: 'Lead', color: '#647289' },
+  0: { name: 'Lead', color: '#707172' },
   1: { name: 'Copper', color: '#cf9366' },
   2: { name: 'Silver', color: '#cdd2d6' },
   3: { name: 'Gold', color: '#e6bb62' },
