@@ -1,11 +1,13 @@
 // The glint that crosses the creator's gold-foil name now and then (see
 // PlayerName.svelte), and the sheen on the achievements' seals
 // (AchievementSeal.svelte). It is a soft band of light: a slit, masked to a
-// narrow slanted stripe, holding a pale copy of what it crosses. The slit
-// slides across while the copy inside it slides back by the same amount, so
-// the light moves and the copy stays put. Both are transform animations,
-// which the browser runs on the compositor: the copy is painted once as a
-// sweep begins, and nothing is repainted while it moves.
+// narrow slanted stripe, holding a pale copy of what it crosses. Only the
+// stripe moves (the mask slides across its slit), and the copy stays exactly
+// over what it copies: had the copy moved as well (the slit sliding one way,
+// the copy back the other), the two would round to slightly different pixels
+// on a phone frame by frame, and the lines would jitter as the light passed.
+// The slit is slanted (skewed), and its copy skewed back to match, both held
+// still. Only what the light crosses repaints, and only while it does.
 //
 // A light (passingLight) sweeps everything it lights together, on the beat of
 // the page clock, so they catch the same light; between sweeps nothing
@@ -19,8 +21,15 @@ import { motion } from './motion.svelte';
 export const GLINT_EVERY = 9000;
 export const GLINT_SWEEP = 1400;
 
-const SLIT = [{ transform: 'translateX(-100%) skewX(-20deg)' }, { transform: 'translateX(100%) skewX(-20deg)' }];
-const COPY = [{ transform: 'skewX(20deg) translateX(100%)' }, { transform: 'skewX(20deg) translateX(-100%)' }];
+/**
+ * The stripe's mask, three slits wide with the stripe in its middle, slides
+ * from off the left (the stripe's middle half a slit before it) to off the
+ * right (half a slit past it), as the slit itself used to.
+ */
+const SLIT = [
+  { maskPosition: '100% 0', webkitMaskPosition: '100% 0' },
+  { maskPosition: '0% 0', webkitMaskPosition: '0% 0' },
+];
 const SPARK = [
   { opacity: 0, transform: 'translate(-50%, -50%) scale(0.2) rotate(0deg)' },
   { opacity: 1, transform: 'translate(-50%, -50%) scale(1) rotate(45deg)', offset: 0.35 },
@@ -65,7 +74,6 @@ export function passingLight(every: number, sweep: number, { travel = false } = 
         })
       : null;
   const onScreen = (el: Element) => !watch || shown.has(placeOf(el));
-  // Both halves share one timing, so the copy's slide cancels the slit's exactly.
   const timing: KeyframeAnimationOptions = { duration: sweep, easing: 'cubic-bezier(0.45, 0, 0.4, 1)' };
 
   /** A travelling light's delay at each place, read once a pass. */
@@ -94,10 +102,7 @@ export function passingLight(every: number, sweep: number, { travel = false } = 
       };
       const lit = [...slits].filter(onScreen).map((slit) => [slit, delayOf(slit)] as const);
       const kindled = [...sparks].filter(onScreen).map((spark) => [spark, delayOf(spark)] as const);
-      for (const [slit, delay] of lit) {
-        slit.animate(SLIT, { ...timing, delay, fill: 'backwards' });
-        slit.firstElementChild?.animate(COPY, { ...timing, delay, fill: 'backwards' });
-      }
+      for (const [slit, delay] of lit) slit.animate(SLIT, { ...timing, delay, fill: 'backwards' });
       for (const [spark, delay] of kindled) spark.animate(SPARK, { duration: SPARK_MS, delay: delay + sweep * SPARK_AT, easing: 'ease-out' });
     }
     schedule();

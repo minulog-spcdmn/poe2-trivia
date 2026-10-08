@@ -226,11 +226,13 @@
   }
 
   /*
-   * The passing light: at rest the slit waits off to the left of the seal,
-   * its copy of the lines shifted back over them (lib/glint.ts slides both).
-   * The band is the metal's width either side of the slit's middle.
+   * The passing light: the slit's mask is three seals wide with the band in
+   * its middle, the metal's width either side (a third of it, of the mask),
+   * and at rest it waits off to the left of the seal; lib/glint.ts slides
+   * the mask across. The slit is slanted, and its copy of the lines slanted
+   * back over them, both held still.
    */
-  /* The light keeps to the seal: the slit waits outside it, and would otherwise widen the page as it passes. */
+  /* The light keeps to the seal: the slanted slit reaches past its corners. */
   .light {
     position: absolute;
     inset: 0;
@@ -241,15 +243,21 @@
   .slit {
     position: absolute;
     inset: 0;
-    -webkit-mask-image: linear-gradient(90deg, transparent calc(50% - var(--band)), #000 50%, transparent calc(50% + var(--band)));
-    mask-image: linear-gradient(90deg, transparent calc(50% - var(--band)), #000 50%, transparent calc(50% + var(--band)));
-    transform: translateX(-100%) skewX(-20deg);
+    -webkit-mask-image: linear-gradient(90deg, transparent calc(50% - var(--band) / 3), #000 50%, transparent calc(50% + var(--band) / 3));
+    mask-image: linear-gradient(90deg, transparent calc(50% - var(--band) / 3), #000 50%, transparent calc(50% + var(--band) / 3));
+    -webkit-mask-size: 300% 100%;
+    mask-size: 300% 100%;
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+    -webkit-mask-position: 100% 0;
+    mask-position: 100% 0;
+    transform: skewX(-20deg);
   }
   .slit svg {
     color: var(--gleam);
     opacity: var(--strength);
     filter: drop-shadow(0 0 1px var(--gleam));
-    transform: skewX(20deg) translateX(100%);
+    transform: skewX(20deg);
   }
   /* Gold's spark: a small four-pointed star on the rim, unseen until the light kindles it. */
   .spark {
