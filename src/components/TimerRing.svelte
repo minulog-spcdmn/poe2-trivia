@@ -162,7 +162,7 @@
         lastSecs = secs;
         if (crossed && secs <= warn && secs > 0) {
           sfx('tick');
-          if (el) timerTick(el, secs);
+          if (el) timerTick(el, secs, !delve);
         }
       }
       if (left > 0) raf = requestAnimationFrame(loop);
