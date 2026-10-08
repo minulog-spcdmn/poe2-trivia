@@ -11,6 +11,7 @@
   import { closeCodex, codexRoute } from '../lib/codexRoute.svelte';
   import { backdropShadow } from '../lib/backdropShadow';
   import { dialogBackdrop } from '../lib/behindDialog';
+  import { motion } from '../lib/motion.svelte';
   import type { Difficulty, Item } from '../lib/game';
   import ArcaneCircle from './ArcaneCircle.svelte';
   import CodexItem from './CodexItem.svelte';
@@ -21,9 +22,8 @@
   import { announceAchievements } from '../lib/achievementToasts';
   import CodexAchievements from './CodexAchievements.svelte';
 
-  /** Svelte's transitions run whatever the system says: with reduced motion, things just appear. */
-  const still = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const calm = <T extends { duration?: number; delay?: number }>(p: T): T => (still ? { ...p, duration: 0, delay: 0 } : p);
+  /** Svelte's transitions run whatever the system says: held still (reduced motion, or the effects off), things just appear. */
+  const calm = <T extends { duration?: number; delay?: number }>(p: T): T => (motion.still ? { ...p, duration: 0, delay: 0 } : p);
 
   let codex = $state.raw(loadCodex());
   let delve = $state.raw(loadRecords());

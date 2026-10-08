@@ -131,6 +131,7 @@
 
 <span
   class="seal"
+  data-lit
   class:earned
   style:--size="{size}px"
   style:--metal={METALS[tier].color}

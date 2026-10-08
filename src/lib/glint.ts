@@ -43,12 +43,16 @@ export function passingLight(every: number, sweep: number, { travel = false } = 
   const sparks = new Set<Element>();
   let timer: ReturnType<typeof setTimeout> | undefined;
   /**
-   * Where each slit or spark is: its container (a slit waits outside it,
-   * often clipped away, between passes). What is on screen is watched there,
-   * and a travelling light is timed from there, so a seal's slit and spark
-   * keep in step.
+   * Where each slit or spark is, fixed as it joins: the nearest container
+   * marked `data-lit` (a seal, whose slit and spark share it), else its
+   * parent (a slit waits outside it, often clipped away, between passes).
+   * What is on screen is watched there, once a place however many live in
+   * it, and a travelling light is timed from there, so a seal's slit and
+   * spark keep in step.
    */
-  const placeOf = (el: Element) => el.parentElement ?? el;
+  const places = new Map<Element, Element>();
+  const lodgers = new Map<Element, number>();
+  const placeOf = (el: Element) => places.get(el) ?? el;
   /** The places on screen now: a pass lights only what is in them (all, where nothing can tell). */
   const shown = new Set<Element>();
   const watch =
@@ -64,9 +68,10 @@ export function passingLight(every: number, sweep: number, { travel = false } = 
   // Both halves share one timing, so the copy's slide cancels the slit's exactly.
   const timing: KeyframeAnimationOptions = { duration: sweep, easing: 'cubic-bezier(0.45, 0, 0.4, 1)' };
 
-  const delayOf = (el: Element) => {
+  /** A travelling light's delay at each place, read once a pass. */
+  const delayAt = (place: Element) => {
     if (!travel) return 0;
-    const r = placeOf(el).getBoundingClientRect();
+    const r = place.getBoundingClientRect();
     return Math.min(TRAVEL_MAX, Math.max(0, (r.left + r.top) * TRAVEL));
   };
 
@@ -80,7 +85,13 @@ export function passingLight(every: number, sweep: number, { travel = false } = 
 
   function pass() {
     if (!document.hidden && !motion.still) {
-      // Every position is read before any animation starts, so the page is laid out once a pass, not once a seal.
+      // Every position is read, once a place, before any animation starts, so the page is laid out once a pass.
+      const delays = new Map<Element, number>();
+      const delayOf = (el: Element) => {
+        const place = placeOf(el);
+        if (!delays.has(place)) delays.set(place, delayAt(place));
+        return delays.get(place)!;
+      };
       const lit = [...slits].filter(onScreen).map((slit) => [slit, delayOf(slit)] as const);
       const kindled = [...sparks].filter(onScreen).map((spark) => [spark, delayOf(spark)] as const);
       for (const [slit, delay] of lit) {
@@ -94,15 +105,22 @@ export function passingLight(every: number, sweep: number, { travel = false } = 
 
   /** Lit by this light while it's on the page. */
   function join(set: Set<Element>, el: Element) {
+    const place = el.closest('[data-lit]') ?? el.parentElement ?? el;
     set.add(el);
-    watch?.observe(placeOf(el));
+    places.set(el, place);
+    const n = lodgers.get(place) ?? 0;
+    lodgers.set(place, n + 1);
+    if (!n) watch?.observe(place);
     if (!timer) schedule();
     return {
       destroy() {
-        const place = placeOf(el);
+        // The place it joined at (by now it may be detached from it).
         set.delete(el);
-        // A place another slit or spark still lives in stays watched.
-        if (![...slits, ...sparks].some((s) => placeOf(s) === place)) {
+        places.delete(el);
+        const left = (lodgers.get(place) ?? 1) - 1;
+        if (left) lodgers.set(place, left);
+        else {
+          lodgers.delete(place);
           shown.delete(place);
           watch?.unobserve(place);
         }

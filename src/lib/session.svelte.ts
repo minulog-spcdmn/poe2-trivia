@@ -1602,6 +1602,8 @@ class Session {
     if (!next.delve && next.phase === 'lobby' && prev?.phase === 'lobby') return;
     const me = this.myPlayerId;
     const hotSeat = this.mode === 'local';
+    // Only a run of Delve, or a game against others this device is seated in, earns anything.
+    if (!next.delve && (hotSeat || !me || !next.players.some((p) => p.id === me))) return;
     const a = this.answered;
     const veilShare = a?.share !== undefined ? { qid: a.qid, share: a.share } : undefined;
     void Promise.all([import('./achievements'), import('./achievementToasts')])
@@ -1629,7 +1631,11 @@ class Session {
       .then(([{ checkAchievements }, { announceAchievements }]) =>
         idle(() => {
           this.achievementsDue = false;
-          announceAchievements(checkAchievements(engine.items), 'game');
+          try {
+            announceAchievements(checkAchievements(engine.items), 'game');
+          } catch (err) {
+            console.warn('achievements', err);
+          }
         }),
       )
       .catch((err) => {

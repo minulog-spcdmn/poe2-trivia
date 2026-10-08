@@ -17,7 +17,9 @@
   // lib/achievements.ts.
   let { codex, records, store, wins, items }: { codex: Codex; records: DelveRecords; store: AchievementStore; wins: WinRun; items: Item[] } = $props();
 
-  const rise = (delay: number) => ({ y: 20, duration: motion.reduced ? 0 : 700, delay: motion.reduced ? 0 : delay });
+  const rise = (delay: number) => ({ y: 20, duration: motion.still ? 0 : 700, delay: motion.still ? 0 : delay });
+  /** How far along, 0 to 1 (nothing to do counts as nothing done). */
+  const shareOf = (p: { have: number; need: number }) => (p.need > 0 ? Math.min(1, p.have / p.need) : 0);
 
   const date = (t: number) => new Date(t).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
   const fmt = (n: number) => n.toLocaleString();
@@ -94,7 +96,7 @@
           {@const won = r.earned !== null}
           {@const hidden = !won && !!a.secret}
           <li class="feat" class:won class:hidden>
-            <AchievementSeal sign={a.sign} tier={a.tier} earned={won} secret={!!a.secret} progress={p && !hidden ? p.have / p.need : 0} size={52} />
+            <AchievementSeal sign={a.sign} tier={a.tier} earned={won} secret={!!a.secret} progress={p && !hidden ? shareOf(p) : 0} size={52} />
             <div class="body">
               <span class="title">{hidden ? 'Secret' : a.title}</span>
               <span class="text">{hidden ? 'Hidden until you earn it.' : a.text}</span>
@@ -102,7 +104,7 @@
                 <span class="when">Earned {date(r.earned!)}</span>
               {:else if !hidden && p && p.need > 1}
                 <span class="advance">
-                  <span class="meter" aria-hidden="true"><span class="fill" style:width="{Math.min(1, p.have / p.need) * 100}%"></span></span>
+                  <span class="meter" aria-hidden="true"><span class="fill" style:width="{shareOf(p) * 100}%"></span></span>
                   <span class="count">{fmt(Math.min(p.have, p.need))} / {fmt(p.need)}</span>
                 </span>
                 {#if p.note}<span class="note">{p.note}</span>{/if}

@@ -17,6 +17,8 @@ import {
   momentsIn,
   nextWins,
   noteState,
+  playing,
+  release,
   parseStore,
   parseWins,
   parseTrack,
@@ -243,6 +245,13 @@ test('Familiar Grave: a fall at exactly the best before it', () => {
   assert.equal(sum(emptyCodex(), better).grave, false);
 });
 
+test('Familiar Grave: a run left and then ended at the same depth never ties itself', () => {
+  // Left at 22 (never a best, so no step of the climb), then rejoined and fallen there.
+  recordsOf([solo({ id: 1, at: 1, depth: 22, left: true, losses: [5, 9] })]);
+  const r = recordsOf([solo({ id: 1, at: 2, depth: 22, losses: [5, 9, 22] })]);
+  assert.equal(sum(emptyCodex(), r).grave, false);
+});
+
 test('runs together: lives given in one run, and the deepest depth stood at', () => {
   const r = recordsOf([team({ id: 1, depth: 80, perished: [40, 78], given: 2 }), team({ id: 2, depth: 90, perished: [12], given: 1 })]);
   const s = sum(emptyCodex(), r);
@@ -467,8 +476,8 @@ test('a fallen teammate leaving the run is kept as where they fell', () => {
 
 // ---- games against others ---------------------------------------------------------
 
-function setup(names: string[], o: { mode?: GameMode; target?: number; difficulty?: 'cruel' | 'merciless' | 'eternal' } = {}) {
-  let clock = 1000;
+function setup(names: string[], o: { mode?: GameMode; target?: number; difficulty?: 'cruel' | 'merciless' | 'eternal'; start?: number } = {}) {
+  let clock = o.start ?? 1000;
   const engine = new Engine(items, { rng: seeded(3), fakes, now: () => (clock += 10) });
   let s: GameState = createGame('p0', { targetScore: o.target ?? 5, timer: 0, difficulty: o.difficulty ?? 'cruel', mode: o.mode ?? 'turns', public: false, locked: false });
   names.forEach((name, i) => (s = engine.apply(s, { type: 'join', playerId: `p${i}`, name }, `p${i}`)));
@@ -664,8 +673,8 @@ test('Hubris: a loss after leading the winner by 4 at a round end', () => {
  * `wins` says whether Ash answers right and Bram wrong, or the other way
  * round; `reload`: the tab reloads just before the end comes in.
  */
-function followed(wins: boolean, reload = false) {
-  const { engine, s } = setup(['Ash', 'Bram']);
+function followed(wins: boolean, reload = false, start?: number) {
+  const { engine, s } = setup(['Ash', 'Bram'], { start });
   let st = s;
   let prev: GameState | null = null;
   const earned: string[] = [];
@@ -782,6 +791,47 @@ test('a game whose end first comes in after a reload is judged, once', () => {
   store.set(WINS_AT, serializeWins({ now: 4, best: 4, last: 1 }));
   followed(false, true);
   assert.deepEqual(storedWins(), { now: 0, best: 4, last: storedWins().last });
+});
+
+test('a game walked away from while behind breaks the wins in a row; while ahead it counts neither way', () => {
+  const w = { now: 3, best: 3, last: 1 };
+  assert.deepEqual(playing(w, 2, true), { ...w, open: { game: 2, behind: true } });
+  assert.equal(playing(playing(w, 2, true), 2, true).open?.game, 2, 'the same game goes on (a reload)');
+  // Another game comes along with the last never seen to end.
+  assert.deepEqual(playing(playing(w, 2, true), 3, false), { now: 0, best: 3, last: 2, open: { game: 3, behind: false } });
+  assert.deepEqual(playing(playing(w, 2, false), 3, false), { ...w, open: { game: 3, behind: false } });
+  // An end seen lets it go, counted or not.
+  assert.deepEqual(nextWins(playing(w, 2, true), 'won', 2), { now: 4, best: 4, last: 2 });
+  assert.deepEqual(release(playing(w, 2, true), 2), w);
+  assert.deepEqual(parseWins(serializeWins(playing(w, 2, true))), playing(w, 2, true));
+});
+
+test('through the game: leaving while losing, then playing on, starts the wins in a row over', () => {
+  store.set(WINS_AT, serializeWins({ now: 4, best: 4, last: 1 }));
+  // Ash falls behind in a game, then the tab goes (no end seen).
+  const { engine, s } = setup(['Ash', 'Bram']);
+  let st = s;
+  let prev: GameState | null = null;
+  const step = (next: GameState) => {
+    noteState(prev, publicView(next), 'p0', false, { items });
+    prev = publicView(next);
+    st = next;
+  };
+  step(st);
+  for (let n = 0; n < 6; n++) {
+    const who = st.players[st.turn].id;
+    step(engine.apply(st, { type: 'pick', category: st.offered[0] }, who));
+    step(engine.apply(st, { type: 'answer', index: who === 'p1' ? right(st.question!) : wrongIdx(st.question!) }, who));
+    step(engine.apply(st, { type: 'next' }, 'p0'));
+  }
+  assert.equal(storedWins().open?.behind, true);
+  assert.equal(storedWins().now, 4, 'not yet: it may still be going on');
+  // A new game: the one left behind is lost, and this one wins only the first of a new run.
+  tab.clear();
+  const { earned } = followed(true, false, 50000);
+  assert.ok(!earned.includes('undefeated'), JSON.stringify(earned));
+  assert.equal(storedWins().now, 1);
+  assert.equal(storedWins().open, undefined);
 });
 
 test("a newer build's wins in a row are never written over", () => {
