@@ -1,8 +1,9 @@
 <script lang="ts" module>
   // An achievement's seal, engraved in the style of the rune circle
   // (docs/arcane-style.md): a worn double ring holding an alchemical sign,
-  // struck in the metal of its tier (copper, silver, gold). Harder ones carry
-  // a glory of fine rays round the sign, the hardest a third ring inside it.
+  // struck in the metal of its tier (iron, copper, silver, gold). Iron, for
+  // the very easy ones, has the outer ring alone. Harder ones carry a glory
+  // of fine rays round the sign, the hardest a third ring inside it.
   // Earned, the lines sit on a soft glow; not yet, the seal is a dull
   // impression whose ring is cut as far as the progress has come, and a
   // secret one holds no sign.
@@ -28,7 +29,7 @@
     WAVES,
   } from '../lib/alchemy';
   import { at, line, ring, wear, type Pt } from '../lib/arcane';
-  import type { Sign } from '../lib/achievements';
+  import type { Sign, Tier } from '../lib/achievements';
 
   const C: Pt = [0, 0];
   const OUTER = 21.6;
@@ -68,20 +69,20 @@
     retort: { d: RETORT, k: 2.1 },
   };
 
-  /** The metals: copper, silver, gold. */
-  export const METALS = { 1: '#cf9366', 2: '#cdd2d6', 3: '#e6bb62' } as const;
+  /** The metals: iron, copper, silver, gold. */
+  export const METALS = { 0: '#a29a91', 1: '#cf9366', 2: '#cdd2d6', 3: '#e6bb62' } as const;
 
   /** A glory of `n` fine rays between the core and the inner ring, long and short in turn. */
   const glory = (n: number) =>
     Array.from({ length: n }, (_, k) => line(at(C, (k * 360) / n, CORE + 1.3), at(C, (k * 360) / n, k % 2 ? INNER - 3.4 : INNER - 1.5))).join('');
 
   // Every seal of a tier is cut the same: the wear comes from a fixed seed.
-  const drawn = ([1, 2, 3] as const).map((tier) => ({
+  const drawn = ([0, 1, 2, 3] as const).map((tier) => ({
     outer: ring(C, OUTER, { wear: wear(97 + tier * 31) }),
-    rays: tier === 1 ? '' : glory(tier === 2 ? 16 : 32),
+    rays: tier < 2 ? '' : glory(tier === 2 ? 16 : 32),
   }));
   const OUTER_WHOLE = ring(C, OUTER);
-  const RAYS_WHOLE = ['', glory(16), glory(32)];
+  const RAYS_WHOLE = ['', '', glory(16), glory(32)];
 </script>
 
 <script lang="ts">
@@ -94,7 +95,7 @@
     size = 56,
   }: {
     sign: Sign;
-    tier: 1 | 2 | 3;
+    tier: Tier;
     earned?: boolean;
     /** Not yet earned: how far along, 0 to 1 (its share of the ring cut bright). */
     progress?: number;
@@ -104,15 +105,15 @@
   } = $props();
 
   const s = $derived(SIGNS[sign]);
-  const lines = $derived(drawn[tier - 1]);
+  const lines = $derived(drawn[tier]);
   const shown = $derived(earned || !secret);
   const share = $derived(Math.max(0, Math.min(1, progress)));
 </script>
 
 {#snippet engraving(whole: boolean)}
   <path d={whole ? OUTER_WHOLE : lines.outer} class="main" />
-  <circle r={INNER} class="hair" />
-  {#if tier > 1}<path d={whole ? RAYS_WHOLE[tier - 1] : lines.rays} class="hair" />{/if}
+  {#if tier > 0}<circle r={INNER} class="hair" />{/if}
+  {#if tier > 1}<path d={whole ? RAYS_WHOLE[tier] : lines.rays} class="hair" />{/if}
   {#if tier > 2}<circle r={CORE} class="thin" />{/if}
   {#if shown}<path d={s.d} class="sign" transform="scale({s.k})" style:--k={s.k} />{/if}
 {/snippet}

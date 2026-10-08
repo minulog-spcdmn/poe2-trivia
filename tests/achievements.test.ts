@@ -160,12 +160,24 @@ test('Prima Materia counts the different items answered right', () => {
   assert.ok(!earnedFrom(sum(codexOf(Array.from({ length: 25 }, () => ({}))))).includes('prima-materia'));
 });
 
-test('Lead into Lead: five wrong in a row on your own turns, races and runs together left out', () => {
-  const wrong = (n: number) => Array.from({ length: n }, () => ({ ok: false }));
-  assert.equal(sum(codexOf([...wrong(3), {}, ...wrong(4)])).wrongRun, 4);
-  assert.equal(sum(codexOf([...wrong(3), { race: true }, { team: true, ok: false }, ...wrong(2)])).wrongRun, 5);
-  assert.ok(earnedFrom(sum(codexOf(wrong(5)))).includes('lead-into-lead'));
-  assert.ok(!earnedFrom(sum(codexOf([...wrong(4), {}]))).includes('lead-into-lead'));
+test('Sweet Revenge: an item answered right after three wrong answers to it in a row', () => {
+  const [a, b] = [items[0].id, items[1].id];
+  // Other items' answers in between don't break it; races count too.
+  const revenge = sum(codexOf([{ id: a, ok: false }, { id: b }, { id: a, ok: false, race: true }, { id: a, ok: false }, { id: b, ok: false }, { id: a }]));
+  assert.equal(revenge.revenge, true);
+  assert.ok(earnedFrom(revenge).includes('sweet-revenge'));
+  // A right answer to it in between starts the count over.
+  assert.equal(sum(codexOf([{ id: a, ok: false }, { id: a, ok: false }, { id: a }, { id: a, ok: false }, { id: a }])).revenge, false);
+  // Three wrong answers to three items are no revenge.
+  assert.equal(sum(codexOf([{ id: a, ok: false }, { id: b, ok: false }, { id: items[2].id, ok: false }, { id: a }])).revenge, false);
+});
+
+test('each group opens with one very easy achievement in iron', () => {
+  for (const g of GROUPS) {
+    const list = ACHIEVEMENTS.filter((a) => a.group === g.key);
+    assert.equal(list[0].tier, 0, g.key);
+    assert.equal(list.filter((a) => a.tier === 0).length, 1, g.key);
+  }
 });
 
 test('Quicksilver: twenty quick right answers in a row, the tier above Mercurial', () => {

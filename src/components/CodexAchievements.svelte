@@ -11,7 +11,7 @@
   // The Codex's third page: every achievement, earned or not, by group, each
   // on its seal, with how far along you are where that is kept (a moment has
   // no bar: it is earned as it happens). The figures round the rune circle
-  // count them by metal. What each one needs, and how it is counted, is in
+  // count them by metal, gold to iron. What each one needs, and how it is counted, is in
   // lib/achievements.ts.
   let { codex, records, store, wins, items }: { codex: Codex; records: DelveRecords; store: AchievementStore; wins: WinRun; items: Item[] } = $props();
 
@@ -26,19 +26,12 @@
   const groups = $derived(GROUPS.map((g) => ({ ...g, rows: list.filter((r) => r.achievement.group === g.key) })));
   /** Earned and all, by metal (gold first). */
   const metals = $derived(
-    ([3, 2, 1] as const).map((tier) => ({
+    ([3, 2, 1, 0] as const).map((tier) => ({
       tier,
-      name: tier === 3 ? 'Gold' : tier === 2 ? 'Silver' : 'Copper',
+      name: ['Iron', 'Copper', 'Silver', 'Gold'][tier],
       have: earned.filter((r) => r.achievement.tier === tier).length,
       of: ACHIEVEMENTS.filter((a) => a.tier === tier).length,
     })),
-  );
-  /** The last earned; of several earned at once, the hardest. */
-  const latest = $derived(
-    earned.reduce<(typeof earned)[number] | null>(
-      (a, b) => (!a || b.earned! > a.earned! || (b.earned === a.earned && b.achievement.tier > a.achievement.tier) ? b : a),
-      null,
-    ),
   );
   /** The earned share as an arc around the medallion (its circle's circumference is 100). */
   const share = $derived(earned.length / ACHIEVEMENTS.length);
@@ -80,16 +73,7 @@
 
   <div class="side">
     {@render metal(metals[2])}
-    <div class="stat">
-      <span class="stat-label">Latest</span>
-      {#if latest}
-        <span class="stat-title">{latest.achievement.title}</span>
-        <span class="stat-note">{date(latest.earned!)}</span>
-      {:else}
-        <span class="stat-value">?</span>
-        <span class="stat-note">none earned yet</span>
-      {/if}
-    </div>
+    {@render metal(metals[3])}
   </div>
 </section>
 
@@ -181,16 +165,6 @@
   }
   .stat-value small {
     font-size: 1.1rem;
-  }
-  /* The latest one's name, where the others have a number. */
-  .stat-title {
-    font-family: var(--font-display);
-    font-size: 1.05rem;
-    line-height: 1.2;
-    margin-bottom: 0.3rem;
-    max-width: 9rem;
-    color: var(--gold-hi);
-    filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.8));
   }
   .stat-note {
     font-size: 0.92rem;

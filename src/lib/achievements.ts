@@ -3,11 +3,11 @@
 //
 // Few and chosen: each marks a moment worth telling or a goal worth chasing.
 // Four groups of nine (Knowledge, Versus, Delve, Together), so the Codex page
-// lays out evenly. Each group opens with an easy one, so a new player soon
-// finds there are achievements at all, and holds one to laugh at and one
-// that takes real mastery. Tiers are the seal's metal (copper, silver, gold),
-// and a series (one idea at rising tiers) shares a sign; no other
-// achievements do.
+// lays out evenly. Each group opens with a very easy one in iron, so a new
+// player soon finds there are achievements at all, and holds one to laugh at
+// and one that takes real mastery. Tiers are the seal's metal (iron, copper,
+// silver, gold), and a series (one idea at rising tiers) shares a sign; no
+// other achievements do.
 //
 // Where they come from:
 // - What the codex (lib/codex.ts) and the Delve records (lib/delveRecord.ts)
@@ -81,6 +81,9 @@ export type Sign =
   | 'gemini'
   | 'scorpio';
 
+/** How hard an achievement is: the seal's metal, iron (the very easy ones), copper, silver or gold. */
+export type Tier = 0 | 1 | 2 | 3;
+
 export interface Progress {
   /** How far along (may run past `need`). */
   have: number;
@@ -96,8 +99,8 @@ export interface Achievement {
   title: string;
   /** What earns it. */
   text: string;
-  /** How hard it is: the seal's metal, copper, silver or gold. */
-  tier: 1 | 2 | 3;
+  /** How hard it is (see Tier). */
+  tier: Tier;
   sign: Sign;
   /** The idea its tiers share (they share the sign too); missing for one of a kind. */
   series?: string;
@@ -114,8 +117,8 @@ export interface Summary {
   streakNow: number;
   /** Most of those in a row each within FAST_MS. */
   fast: number;
-  /** Most of those wrong in a row (a time-out is wrong). */
-  wrongRun: number;
+  /** An item answered right after REVENGE wrong answers to it in a row (any of this player's answers). */
+  revenge: boolean;
   /** The category nearest to every item answered both ways. */
   twofold: Progress;
   /** Items of the game answered right at least once. */
@@ -152,8 +155,8 @@ const count = (have: number, need: number, note?: string): Progress => ({ have, 
 export const FAST_MS = 2000;
 /** Prima Materia: different items answered right. */
 export const PRIMA = 25;
-/** Lead into Lead: wrong answers in a row. */
-export const LEADEN = 5;
+/** Sweet Revenge: wrong answers to one item in a row, before the right one. */
+export const REVENGE = 3;
 /** Undefeated: games against others won in a row. */
 export const WIN_RUN = 5;
 /** Wins count to this target or more; Untarnished and Clean Sweep to TARGET_HIGH. */
@@ -196,7 +199,7 @@ export const ACHIEVEMENTS: Achievement[] = [
   {
     id: 'prima-materia',
     group: 'knowledge',
-    tier: 1,
+    tier: 0,
     sign: 'stone',
     series: 'known',
     title: 'Prima Materia',
@@ -254,18 +257,10 @@ export const ACHIEVEMENTS: Achievement[] = [
   },
   { id: 'great-work', group: 'knowledge', tier: 3, sign: 'stone', series: 'known', title: 'The Great Work', text: 'Answer every item in the game right at least once.', progress: (s) => s.known },
   { id: 'fooled-twice', group: 'knowledge', tier: 1, sign: 'luna', secret: true, title: 'Fool Me Twice', text: 'Fall for the same made-up name a second time.', progress: (s) => count(s.fooled, 2) },
-  {
-    id: 'lead-into-lead',
-    group: 'knowledge',
-    tier: 1,
-    sign: 'retort',
-    title: 'Lead into Lead',
-    text: `Answer ${LEADEN} questions wrong in a row on your own turns.`,
-    progress: (s) => count(s.wrongRun, LEADEN),
-  },
+  { id: 'sweet-revenge', group: 'knowledge', tier: 1, sign: 'retort', title: 'Sweet Revenge', text: `Answer an item right after getting it wrong ${REVENGE} times in a row.` },
 
   // ---- versus ----
-  { id: 'first-victory', group: 'versus', tier: 1, sign: 'aries', title: 'First Victory', text: 'Win a game against other players.' },
+  { id: 'first-victory', group: 'versus', tier: 0, sign: 'aries', title: 'First Victory', text: 'Win a game against other players.' },
   { id: 'deathmatch', group: 'versus', tier: 1, sign: 'mars', title: 'Sudden Death', text: 'Win a deathmatch by answering its last round right while a rival gets it wrong.' },
   { id: 'tide-turner', group: 'versus', tier: 2, sign: 'waves', title: 'Tide Turner', text: `Win a game after a rival led you by ${COMEBACK} points or more, with them still there at the end.` },
   { id: 'untarnished', group: 'versus', tier: 2, sign: 'sol', series: 'perfect', title: 'Untarnished', text: `Win a game to ${TARGET_HIGH} points or more without a wrong answer.` },
@@ -299,7 +294,7 @@ export const ACHIEVEMENTS: Achievement[] = [
   { id: 'hubris', group: 'versus', tier: 1, sign: 'venus', title: 'Hubris', text: `Lose a game after leading the winner by ${COMEBACK} points or more.` },
 
   // ---- delve ----
-  { id: 'depth-10', group: 'delve', tier: 1, sign: 'earth', series: 'depth', title: 'Into the Fissure', text: 'Reach depth 10 in a run alone.', progress: (s) => count(s.deepestAlone, 10) },
+  { id: 'depth-10', group: 'delve', tier: 0, sign: 'earth', series: 'depth', title: 'Into the Fissure', text: 'Reach depth 10 in a run alone.', progress: (s) => count(s.deepestAlone, 10) },
   { id: 'depth-50', group: 'delve', tier: 2, sign: 'earth', series: 'depth', title: 'Delve Master', text: 'Reach depth 50 in a run alone.', progress: (s) => count(s.deepestAlone, 50) },
   { id: 'depth-100', group: 'delve', tier: 3, sign: 'earth', series: 'depth', title: 'Endless Delver', text: 'Reach depth 100 in a run alone.', progress: (s) => count(s.deepestAlone, 100) },
   {
@@ -344,7 +339,7 @@ export const ACHIEVEMENTS: Achievement[] = [
   {
     id: 'roped-together',
     group: 'together',
-    tier: 1,
+    tier: 0,
     sign: 'gemini',
     title: 'Roped Together',
     text: `Reach depth ${ROPED_DEPTH} in a run together.`,
@@ -431,18 +426,24 @@ function streaks(log: Answer[]) {
   let best = 0;
   let quick = 0;
   let fast = 0;
-  let wrong = 0;
-  let wrongRun = 0;
   for (const a of log) {
     if (a.race || a.team) continue;
     run = a.ok ? run + 1 : 0;
     best = Math.max(best, run);
     quick = a.ok && a.ms !== undefined && a.ms <= FAST_MS ? quick + 1 : 0;
     fast = Math.max(fast, quick);
-    wrong = a.ok ? 0 : wrong + 1;
-    wrongRun = Math.max(wrongRun, wrong);
   }
-  return { best, now: run, fast, wrongRun };
+  return { best, now: run, fast };
+}
+
+/** Whether an item was ever answered right after REVENGE or more wrong answers to it in a row: all this player's answers, races and runs together too. */
+function revenged(log: Answer[]): boolean {
+  const misses = new Map<string, number>();
+  for (const a of log) {
+    if (a.ok && (misses.get(a.id) ?? 0) >= REVENGE) return true;
+    misses.set(a.id, a.ok ? 0 : (misses.get(a.id) ?? 0) + 1);
+  }
+  return false;
 }
 
 /** The category whose share of `done` items is highest (fewest missing on a tie), as progress. */
@@ -495,7 +496,7 @@ function stoodAt(r: DelveRun): number {
 
 /** Everything the kept achievements read. `items`: the game's item list now; `wins`: the games against others won in a row. */
 export function summarize(codex: Codex, delve: DelveRecords, items: Item[], wins: WinRun = emptyWins()): Summary {
-  const { best, now, fast, wrongRun } = streaks(codex.log);
+  const { best, now, fast } = streaks(codex.log);
   const right = (id: string) => {
     const e = codex.items[id];
     return !!e && e.name.ok + e.art.ok > 0;
@@ -532,7 +533,7 @@ export function summarize(codex: Codex, delve: DelveRecords, items: Item[], wins
     streak: best,
     streakNow: now,
     fast,
-    wrongRun,
+    revenge: revenged(codex.log),
     twofold: nearest(items, (it) => both(it.id)),
     known: count(known, items.length),
     fooled: Math.max(0, ...Object.values(codex.fooled).map((f) => f.n)),
@@ -553,6 +554,7 @@ export function summarize(codex: Codex, delve: DelveRecords, items: Item[], wins
 /** The ones the summary earns: those whose progress is done, and the moments the records keep. */
 export function earnedFrom(s: Summary): string[] {
   const ids = ACHIEVEMENTS.filter((a) => a.progress && isDone(a.progress(s))).map((a) => a.id);
+  if (s.revenge) ids.push('sweet-revenge');
   if (s.savingGrace) ids.push('saving-grace');
   if (s.grave) ids.push('familiar-grave');
   return ids;

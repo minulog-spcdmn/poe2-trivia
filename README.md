@@ -452,14 +452,15 @@ kept in this browser too (`src/lib/delveRecord.ts`).
 
 **Achievements:** the Codex's third tab. 36 of them, few and chosen: each
 marks a moment worth telling or a goal worth chasing. Four groups of nine, laid
-out in even rows. Each group has an easy one, so a new player soon finds out
-there are achievements at all, one to laugh at, and one that takes real
-mastery:
+out in even rows. Each group opens with a very easy one, so a new player soon
+finds out there are achievements at all, and has one to laugh at and one that
+takes real mastery:
 - **Knowledge:** 25 different items answered right, 25 and 100 right in a
   row on your own turns (races and runs together neither add nor break a
   streak), 5 and 20 in a row each within 2 seconds, every item of a category
-  both named and found, every item in the game answered right, 5 wrong in a
-  row (Lead into Lead), and a secret one.
+  both named and found, every item in the game answered right, an item
+  answered right after getting it wrong 3 times in a row (Sweet Revenge),
+  and a secret one.
 - **Versus** (online, against others, to 5 points or more, someone else
   still there at the end): a first win, a deathmatch won on the answers, a
   win after a rival led by 4, a win to 10 without a wrong answer, a race to
@@ -477,9 +478,9 @@ mastery:
   clean, depth 75 standing, being brought back three times in one run (Dead
   Weight), and a secret one.
 
-Each is an engraved seal struck in copper, silver or gold by how hard it is,
-bearing an alchemical sign: the tiers of one idea share a sign, and no other
-two do. Where the codex or the Delve records keep what it needs, the page
+Each is an engraved seal struck in iron (the very easy ones), copper, silver
+or gold by how hard it is, bearing an alchemical sign: the tiers of one idea
+share a sign, and no other two do. The top of the page counts them by metal. Where the codex or the Delve records keep what it needs, the page
 shows how far along you are, and games played before achievements existed
 count (that first time quietly: the start page gives one notice). Moments are
 earned as they happen, from the state every player's screen has: a depth
