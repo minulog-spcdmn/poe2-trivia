@@ -17,7 +17,7 @@ import { COLUMNS, GLINT_COLOR, PALETTE, ROWS, SIZE_STRIDE, SLOTS, TILES, embers 
 import { BLOBS, ENVIRONMENTS, FX_SLOTS, FX_UNIFORM, NO_SLOT, currentDescent, packFx, sinking, smokeOf, snapDescent, stepDescent, stepPlunge, stepSwing, stopsFor, targetDescent, toneOf, type Blob, type Look } from './descent';
 import { ENV_GLSL } from './shaders/effects';
 import { FX_NOISE_GLSL, SHAFTS_GLSL, SPORES_GLSL } from './shaders/newEffects';
-import { pressureLevel } from './darkness';
+import { CLOCK_PEAK, pressureLevel } from './darkness';
 import { DIALOG_BLUR, DIALOG_DIM, openDialog } from './behindDialog';
 import { buildPrograms, setGpuCatchUp, type Build, type ProgramSource } from './fx/gl';
 
@@ -74,7 +74,12 @@ uniform vec2 uDark;
 `;
 
 /** Delve's noise, its environments, and the dark closing in. */
-const DELVE_SMOOTH_FUNCTIONS = `// Value noise for Delve's smoke and dark: smooth, with no direction or
+const DELVE_SMOOTH_FUNCTIONS = `// The dark of the clock run out (uDark.y; CLOCK_PEAK in lib/darkness.ts).
+// Past it is a miss swallowing the scene, and the dark keeps that much of
+// the screen in hand to surge into.
+const float CLOCK_PEAK = ${CLOCK_PEAK.toFixed(2)};
+
+// Value noise for Delve's smoke and dark: smooth, with no direction or
 // shape of its own. (Hash without sine, Dave Hoskins.)
 float nhash(vec2 p) {
   vec3 p3 = fract(vec3(p.xyx) * 0.1031);
@@ -142,7 +147,8 @@ float closing(vec2 p) {
   vec2 size = vec2(uSize.x, uViewH);
   float tm = uHome.z;
   float flicker = (0.012 + 0.02 * uDark.y) * (0.6 * sin(tm * 1.7) + 0.4 * sin(tm * 2.9 + 1.0));
-  float reach = max(0.1, 1.0 - 0.6 * uDark.x - 0.4 * uDark.y + flicker);
+  float surge = max(uDark.y - CLOCK_PEAK, 0.0);
+  float reach = max(0.06, 1.0 - 0.6 * uDark.x - 0.32 * min(uDark.y, CLOCK_PEAK) - 0.75 * surge + flicker);
   vec2 x = max(abs(p - 0.5 * size) / (0.5 * size) - reach, 0.0) / (0.3 + 0.25 * reach);
   return 1.0 - exp(-dot(x, x));
 }
@@ -199,16 +205,19 @@ float tendrils(vec2 p) {
   vec2 w = vec2(vnoise(u + vec2(tm * 0.06, 0.0)), vnoise(u + vec2(5.2, -tm * 0.05))) - 0.5;
   d = normalize(d + 0.45 * w);
   // How far the arm here reaches (in half screens), longer as the clock
-  // runs out, and further still as a miss swallows the scene; but never
-  // quite to the middle, where the arms would meet in a star: they reach
+  // runs out, but short of the middle even then, and much further as a miss
+  // swallows the scene (past CLOCK_PEAK). While the clock runs they never
+  // quite reach the middle, where the arms would meet in a star: they reach
   // for the light there, and the dark itself (closing(), the dimming and
-  // the smoke) does the rest.
+  // the smoke) does the rest; a miss takes that too.
   float f = smoothstep(0.3, 0.85, vnoise(d * 2.6 + vec2(17.0 + tm * 0.02, -tm * 0.015)));
-  float len = 1.1 * (1.0 - exp(-(uDark.y * (0.07 + 0.8 * f) + 0.01) / 1.1));
+  float surge = max(uDark.y - CLOCK_PEAK, 0.0);
+  float len = 0.95 * (1.0 - exp(-(min(uDark.y, CLOCK_PEAK) * (0.07 + 0.8 * f) + 0.01) / 0.95)) + surge * (0.55 + 0.35 * f);
+  float heart = mix(0.6, 1.2, smoothstep(0.0, 0.55, surge));
   float x = inward / len;
   // A little of the smoke's own texture in it, and faint while the clock has long to run.
   float smoke = 0.8 + 0.2 * vnoise(u * 2.1 - vec2(tm * 0.03, 0.0));
-  float t = exp(-1.4 * x * x) * smoke * min(1.0, 3.0 * uDark.y) * (1.0 - smoothstep(0.6, 0.95, inward));
+  float t = exp(-1.4 * x * x) * smoke * min(1.0, 3.0 * uDark.y) * (1.0 - smoothstep(heart, heart + 0.35, inward));
   // Its rim: a narrow band where it thins out, patchy, and only once it has
   // left the edge it grows from.
   float band = t - 0.4;
@@ -268,7 +277,7 @@ const DELVE_DARK = `  // The light about you drawing in (see closing()). What gl
   if (uDark.y > 0.0) {
     float q = min(uDark.y, 2.0);
     // (As a miss swallows the scene, a veil of it over the middle too.)
-    float body = max(clamp(dark, 0.0, 1.0) * smoothstep(0.0, 0.7, q), 0.5 * smoothstep(1.5, 2.0, q));
+    float body = max(clamp(dark, 0.0, 1.0) * smoothstep(0.0, 0.7, q), 0.6 * smoothstep(1.5, 2.0, q));
     col = mix(col, darkSmoke(p, S, uHome.z, q), 0.85 * body);
     col += rgb(50.0, 80.0, 190.0) * (0.22 * gRim * arms * min(1.0, q));
   }

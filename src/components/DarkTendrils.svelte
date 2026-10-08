@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { OVERSHOOT, onPressure, pressing, pressureLevel } from '../lib/darkness';
+  import { CLOCK_PEAK, OVERSHOOT, onPressure, pressing, pressureLevel } from '../lib/darkness';
 
   // Delve, on the CSS backdrop (Background.svelte, without WebGL): the dark
   // of a question's clock running down (lib/darkness.ts), as the WebGL
@@ -20,6 +20,14 @@
   // clock in steps of a twentieth.
 
   type Side = 'top' | 'right' | 'bottom' | 'left';
+  /**
+   * How far the arms reach (--reach) for the dark `p` (pressureLevel): to
+   * about 1 as the clock runs out (CLOCK_PEAK), and on to about 1.8 as a
+   * miss swallows the scene (SWALLOW), so the surge has room to show.
+   */
+  const reachOf = (p: number) =>
+    p <= 1 ? 0.85 * p : p <= CLOCK_PEAK ? 0.85 + 0.45 * (p - 1) : 0.85 + 0.45 * (CLOCK_PEAK - 1) + 1.3 * (p - CLOCK_PEAK);
+
   /** Along its side (%), how far it can reach (half screens, at the dark's fullest), which way it curls, its sway (s, and how far into it). */
   const ARMS: { side: Side; at: number; reach: number; flip: boolean; dur: number; delay: number }[] = [
     { side: 'top', at: 14, reach: 0.62, flip: false, dur: 9.5, delay: -2 },
@@ -137,8 +145,9 @@
         el.style.visibility = on ? 'visible' : 'hidden';
         // Faint while the clock has long to run (as the WebGL backdrop's).
         el.style.opacity = on ? Math.min(1, 3 * p).toFixed(3) : '0';
-        // (Reaching further over the clock's last seconds, and further still as a miss swallows the scene.)
-        el.style.setProperty('--reach', on ? (p <= 1 ? p : 1 + 0.6 * (p - 1)).toFixed(3) : '0');
+        // (Reaching further over the clock's last seconds, but leaving room
+        // for a miss, which swallows the scene, to surge much further.)
+        el.style.setProperty('--reach', on ? reachOf(p).toFixed(3) : '0');
         dim.style.opacity = on ? (0.3 * p).toFixed(3) : '0';
         lift.style.opacity = p < -0.001 ? Math.min(1, -p / OVERSHOOT).toFixed(3) : '0';
       }
