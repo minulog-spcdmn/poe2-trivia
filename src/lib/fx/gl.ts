@@ -137,10 +137,11 @@ export function buildProgramsNow(gl: WebGL2RenderingContext, sources: readonly P
  * `oneAtATime`, one in each, so the GPU process gets them one at a time
  * with frames painted between), and are read a frame after the last has
  * started. Either way they're read once the GPU has caught up
- * (whenGpuCaughtUp), so even that doesn't wait behind a frame; and one at a
- * time, each in a step of its own (a software GPU can still take tens of ms
- * over each read): with the backdrop running it holds its frames until the
- * last is read, else they're a frame apart. Nothing starts before the next
+ * (whenGpuCaughtUp), so even that doesn't wait behind a frame. Polled done
+ * (with the extension), they're all read in that one step, at no cost;
+ * without it one at a time, each in a step of its own (a software GPU can
+ * still take tens of ms over each read): with the backdrop running it holds
+ * its frames until the last is read, else they're a frame apart. Nothing starts before the next
  * frame.
  */
 export function buildPrograms(gl: WebGL2RenderingContext, sources: readonly ProgramSource[], done: (progs: WebGLProgram[] | null) => void, oneAtATime = false): Build {
@@ -205,6 +206,8 @@ export function buildPrograms(gl: WebGL2RenderingContext, sources: readonly Prog
       let ok = false;
       try {
         ok = readOne();
+        // (Compiled side by side and polled done, the rest read at no cost: all in this step.)
+        while (ext && ok && read < started.length) ok = readOne();
       } catch (e) {
         console.warn(e);
       }

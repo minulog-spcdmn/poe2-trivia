@@ -186,11 +186,7 @@ test('the renderer is made once two frames have gone by and the page is idle, no
   o.ctx.state.done = true;
   frame();
   const read = () => o.ctx.log.filter((l) => l.startsWith('status')).length;
-  assert.equal(read(), 1, 'read one at a time');
-  for (let i = 2; i <= 6; i++) {
-    frame();
-    assert.equal(read(), i, 'a frame apart');
-  }
+  assert.equal(read(), 6, 'polled done, all read in one step');
   assert.ok(fx.fxAvailable());
   stop();
 });
@@ -239,17 +235,15 @@ test('with the backdrop running, the context is asked for only once the GPU has 
   assert.ok(!o.ctx.log.some((l) => l.startsWith('ext')));
   held.shift()!();
   assert.ok(o.ctx.log.includes('ext EXT_color_buffer_float'));
-  // Its shaders are read only after the GPU has caught up again, one at a
-  // time, each once it has caught up again (the backdrop holding on).
+  // Its shaders are read only after the GPU has caught up again: polled
+  // done, all of them in that one step.
   frame();
   o.ctx.state.done = true;
   frame();
   assert.ok(!o.ctx.log.some((l) => l.startsWith('status')));
-  for (let i = 1; i <= 6; i++) {
-    assert.equal(held.length, 1);
-    held.shift()!();
-    assert.equal(o.ctx.log.filter((l) => l.startsWith('status')).length, i);
-  }
+  assert.equal(held.length, 1);
+  held.shift()!();
+  assert.equal(o.ctx.log.filter((l) => l.startsWith('status')).length, 6);
   assert.equal(held.length, 0);
   assert.ok(fx.fxStats().running, 'and the effect plays');
   setGpuCatchUp(null);
@@ -396,15 +390,14 @@ test('a build cancelled deletes its programs and their shaders', () => {
   assert.deepEqual(state.deleted, { programs: 1, shaders: 2 });
 });
 
-test('with KHR_parallel_shader_compile every program starts at once, and is read only once the driver says all are done, one a step', () => {
+test('with KHR_parallel_shader_compile every program starts at once, and is read only once the driver says all are done, all in that step', () => {
   const { log, got } = steps(true, 3);
   assert.equal(got?.length, 3);
   assert.equal(log[0], '', 'nothing before the first frame');
   assert.equal(log[1], 'link 1 link 2 link 3');
   // Polled once a frame (never waiting) until done; read then.
-  for (const s of log.slice(2, -3)) assert.match(s, /^(done\? \d ?)+$/);
-  assert.match(log.at(-3)!, /^(done\? \d )+status 1$/);
-  assert.deepEqual(log.slice(-2), ['status 2', 'status 3']);
+  for (const s of log.slice(2, -1)) assert.match(s, /^(done\? \d ?)+$/);
+  assert.match(log.at(-1)!, /^(done\? \d )+status 1 status 2 status 3$/);
 });
 
 test('without it, they start in an idle moment and are read a step later, one a step', () => {

@@ -1502,7 +1502,6 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
       }
     }
   }
-  setGpuCatchUp(holdFor);
   function frame(now: number) {
     raf = requestAnimationFrame(frame);
     if (catchingUp.size) {
@@ -1689,13 +1688,22 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   if (delveWanted) buildDelve();
 
   // Paint the first frame now, before the page is first painted (the CSS
-  // backdrop isn't there behind it: see Background.svelte).
-  canvas.width = Math.max(1, Math.round(canvas.clientWidth * devicePixelRatio * scale()));
-  canvas.height = Math.max(1, Math.round(canvas.clientHeight * devicePixelRatio * scale()));
-  embers.step(0, canvas.clientWidth, canvas.clientHeight);
-  measureView();
-  measure();
-  draw();
+  // backdrop isn't there behind it: see Background.svelte). Should that
+  // throw, everything set up so far is taken down again before the caller
+  // hears of it and turns to the CSS backdrop.
+  try {
+    canvas.width = Math.max(1, Math.round(canvas.clientWidth * devicePixelRatio * scale()));
+    canvas.height = Math.max(1, Math.round(canvas.clientHeight * devicePixelRatio * scale()));
+    embers.step(0, canvas.clientWidth, canvas.clientHeight);
+    measureView();
+    measure();
+    draw();
+  } catch (e) {
+    stop();
+    throw e;
+  }
+  // Only now, with frames to come, does anything wait on them.
+  setGpuCatchUp(holdFor);
   raf = requestAnimationFrame(frame);
 
   return stop;
