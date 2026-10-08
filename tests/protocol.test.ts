@@ -117,8 +117,10 @@ test('veiled "find the art" pictures say which option they belong to', () => {
   assert.equal(parseHostMsg({ ...patch, tile: '2' }), null);
 });
 
-test('version 15: dynamite goes off right at 0, its fuse burning over the last seconds before (worked out on every screen); 14 lit it at 0 (Question.fuse), 13 blasted a question away (the blast action), 12 had the frozen Delve rules, 11 the co-op vote and revive', () => {
-  assert.equal(PROTOCOL_VERSION, 15);
+test('version 16: a flare gives six seconds and a Flare Cache two fewer, never under four (worked out on every screen); 15 set dynamite off right at 0, its fuse burning over the last seconds before; 14 lit it at 0 (Question.fuse), 13 blasted a question away (the blast action), 12 had the frozen Delve rules, 11 the co-op vote and revive', () => {
+  assert.equal(PROTOCOL_VERSION, 16);
+  // A guest on 15 would run its own clock five seconds on after a flare, and a Flare Cache's a second short.
+  assert.match(versionProblem(15)!, /^Your game is out of date/);
   // A guest on 14 would wait for a fuse the host never lights, and burn none before 0.
   assert.match(versionProblem(14)!, /^Your game is out of date/);
   // A guest before the fuse would show no fuse burning.

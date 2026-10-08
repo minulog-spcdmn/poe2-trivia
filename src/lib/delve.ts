@@ -175,9 +175,9 @@ export const VEIL_LEFT_MS = 3000;
  * question's veil.seconds from it, and the host paces the patches by that,
  * at the pace of `size` × `size` of them however few the picture is cut
  * into (patches.ts veilPaceFor), so this holds for every real count.
- * 0 on a clock too short for even an instant veil to leave VEIL_LEFT_MS (a
- * Flare Cache's shortest, FIND_MIN_TIMER): the engine then shows the art
- * plain.
+ * 0 on a clock too short for even an instant veil to leave VEIL_LEFT_MS
+ * (shorter than any question's, FIND_MIN_TIMER being the least): the engine
+ * then shows the art plain.
  */
 export function veilSeconds(secs: number, share: number, size: number, tiles = false): number {
   const [count, late] = [size * size, tiles ? 0.5 : 0];
@@ -344,7 +344,7 @@ export const FINDS: {
   // From depth 41 (shown 40).
   { kind: 'azurite', item: 'wards', from: 41, start: 0.04, cap: DYNAMITE_ON ? 0.11 : 0.15, late: 1 / 3, max: DELVE_MAX_WARDS, deeper: 15, losses: 2, shorter: 0, blows: 0 },
   // From depth 26 (shown 25).
-  { kind: 'flare', item: 'flares', from: 26, start: 0.04, cap: DYNAMITE_ON ? 0.13 : 0.18, late: 0.5, max: DELVE_MAX_FLARES, deeper: 20, losses: 1, shorter: 3, blows: 0 },
+  { kind: 'flare', item: 'flares', from: 26, start: 0.04, cap: DYNAMITE_ON ? 0.13 : 0.18, late: 0.5, max: DELVE_MAX_FLARES, deeper: 20, losses: 1, shorter: 2, blows: 0 },
   {
     kind: 'dynamite',
     item: 'dynamite',
@@ -470,12 +470,12 @@ export function blastVictim(inv: Inventory, roll: number): ItemKind | null {
 
 /**
  * The shortest a find's question gets (a Flare Cache's, `shorter` than the
- * shortest depth's): too short for any art to burn in fairly, so none does
- * (veilSeconds).
+ * shortest depth's): still long enough for its art to burn in, fast, with
+ * over 3 s left once half of it is in (veilSeconds).
  */
-export const FIND_MIN_TIMER = 3;
+export const FIND_MIN_TIMER = 4;
 
-/** Seconds on the clock for a find's question: the deeper depth's, less its `shorter` (a Flare Cache's three), never below FIND_MIN_TIMER. */
+/** Seconds on the clock for a find's question: the deeper depth's, less its `shorter` (a Flare Cache's two), never below FIND_MIN_TIMER. */
 export const findTimer = (kind: FindKind, d: number) => {
   const { shorter } = findFor(kind);
   const secs = delveTimer(findDepth(kind, d));
@@ -515,7 +515,7 @@ export const AZURITE_FAST_MS = veinWindow(DELVE_MIN_TIMER);
  * answering player's clock hits 0 (before the time-out is taken), so an
  * answer at any time before that keeps it.
  */
-export const FLARE_MS = 5000;
+export const FLARE_MS = 6000;
 
 /**
  * Dynamite blasts the question in play away for a new one at the same depth,

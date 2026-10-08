@@ -3,7 +3,7 @@
   import { MediaQuery } from 'svelte/reactivity';
   import { session } from '../lib/session.svelte';
   import { playerColor } from '../lib/ui';
-  import { DELVE_LIVES, inventoryOf, isGroupRun, livesOf, questionTimer, type ItemKind } from '../lib/delve';
+  import { DELVE_LIVES, FLARE_MS, inventoryOf, isGroupRun, livesOf, questionTimer, type ItemKind } from '../lib/delve';
   import { accentAt } from '../lib/descent';
   import { zoneAt } from '../lib/zoneSigils';
   import { fxAvailable, fxUserOn, onFxChange, setFxOn } from '../lib/fx/core';
@@ -63,7 +63,7 @@
     void s;
     return L.timeLeft();
   });
-  const span = $derived(run && q ? questionTimer(run) * 1000 + (q.flared ? 5000 : 0) : 0);
+  const span = $derived(run && q ? questionTimer(run) * 1000 + (q.flared ? FLARE_MS : 0) : 0);
   const paused = $derived(!!q && L.lab.paused?.askedAt === q.askedAt);
   const secs = (ms: number | null) => (ms === null ? '•' : (Math.max(0, ms) / 1000).toFixed(1));
 

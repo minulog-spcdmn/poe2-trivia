@@ -444,7 +444,7 @@ export function perishedText(ids: string[], nameOf: (id: string) => string, me: 
   return others.length ? `${cap(namesOf(others, nameOf, me))} perished.` : '';
 }
 
-/** Co-op: a flare burning from someone's pack as the clock hits 0: "Ash's flare gives everyone five more seconds." */
+/** Co-op: a flare burning from someone's pack as the clock hits 0: "Ash's flare gives everyone six more seconds." */
 export const flareText = (by: string, nameOf: (id: string) => string, me: string | null) =>
   `${cap(whose(by, nameOf, me))} flare gives everyone ${words(FLARE_MS / 1000)} more seconds.`;
 

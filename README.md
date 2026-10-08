@@ -224,10 +224,10 @@ the same thing for everyone.
     beside it with a small blast of its own, a moment after the life, and
     the reveal says what went ("The blast destroyed your flare.").
   - A **Flare Cache** (from depth 25) gives a **flare**: time later for time
-    now, as its own question has 3 s less on the clock than its deeper
-    depth's (never under 3 s; on a clock that short no art burns in, as half
-    of it could never be in with 3 s left). When your clock hits 0 a flare
-    burns by itself, with a signal flare's hiss, and gives you 5 s more
+    now, as its own question has 2 s less on the clock than its deeper
+    depth's (never under 4 s, where its art still burns in, fast, with over
+    3 s left once half of it is in). When your clock hits 0 a flare burns by
+    itself, with a signal flare's hiss, and gives you 6 s more
     (once a question). An answer at any time before that keeps it; a guest's
     answer still on its way when it burns gives it back.
   - An **Azurite Vein** (from depth 40): a right answer within the first half

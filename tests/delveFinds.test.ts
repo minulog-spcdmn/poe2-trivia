@@ -166,8 +166,8 @@ test('an Azurite Vein asks the question of fifteen depths deeper, a Flare Cache 
       assert.deepEqual(r.veil, deep.veil, `veil at ${d}`);
       assert.equal(r.moreFakes, deep.moreFakes, `fourth fakes at ${d}`);
       assert.equal(r.lookalikes, deep.lookalikes, `look-alike pictures at ${d}`);
-      // A Flare Cache's clock is three seconds shorter still (never under three): time now for time later.
-      assert.equal(findTimer(kind, d), kind === 'flare' ? Math.max(FIND_MIN_TIMER, delveTimer(deeper) - 3) : delveTimer(deeper));
+      // A Flare Cache's clock is two seconds shorter still (never under four): time now for time later.
+      assert.equal(findTimer(kind, d), kind === 'flare' ? Math.max(FIND_MIN_TIMER, delveTimer(deeper) - 2) : delveTimer(deeper));
       assert.equal(findTileVeil(kind, d), delveTileVeil(deeper));
       // Neither the art/name mix nor the lockout makes a question harder: they stay the depth's.
       assert.equal(r.artChance, delveRules(d).artChance);
@@ -223,29 +223,29 @@ test("a find's clock is fair: never the shortest near the top, and never shorter
     }
 });
 
-test('a Flare Cache trades time now for time later: three seconds less than its deeper depth, never under three', () => {
-  assert.equal(FIND_MIN_TIMER, 3);
+test('a Flare Cache trades time now for time later: two seconds less than its deeper depth, never under four', () => {
+  assert.equal(FIND_MIN_TIMER, 4);
   assert.deepEqual(
     FINDS.map((f) => [f.kind, f.shorter]),
     [
       ['azurite', 0],
-      ['flare', 3],
+      ['flare', 2],
       ['dynamite', 0],
     ],
   );
-  // Where it first turns up (depth 26, shown 25), 10 s less 3; then down with the curve.
-  assert.equal(findTimer('flare', findFor('flare').from), 7);
-  assert.equal(findTimer('flare', 15), 9);
-  assert.equal(findTimer('flare', 20), 8);
-  assert.equal(findTimer('flare', 38), 4);
-  assert.equal(findTimer('flare', 57), 4);
-  // From depth 58 it asks from 78 down, 6 s there: three left, and never fewer (5 − 3 would be 2).
+  // Where it first turns up (depth 26, shown 25), 10 s less 2; then down with the curve.
+  assert.equal(findTimer('flare', findFor('flare').from), 8);
+  assert.equal(findTimer('flare', 15), 10);
+  assert.equal(findTimer('flare', 20), 9);
+  assert.equal(findTimer('flare', 38), 5);
+  assert.equal(findTimer('flare', 57), 5);
+  // From depth 58 it asks from 78 down, 6 s there: four left, and never fewer (5 − 2 would be 3).
   assert.equal(findTimer('flare', 58), FIND_MIN_TIMER);
   assert.equal(findTimer('flare', 76), FIND_MIN_TIMER);
   assert.equal(findTimer('flare', 500), FIND_MIN_TIMER);
   for (let d = 1; d <= 300; d++) {
     const deep = delveTimer(findDepth('flare', d));
-    assert.equal(findTimer('flare', d), Math.max(FIND_MIN_TIMER, deep - 3), `at ${d}`);
+    assert.equal(findTimer('flare', d), Math.max(FIND_MIN_TIMER, deep - 2), `at ${d}`);
     assert.ok(findTimer('flare', d) < delveTimer(d), `less time than the depth's own at ${d}`);
   }
 });
@@ -257,13 +257,6 @@ test('even a find has half its art in with over 3 s left, and an Azurite Vein ha
       const ms = secs * 1000;
       const veil = findRules(kind, d).veil;
       if (!veil) continue;
-      // A Flare Cache's three seconds are too few for any art to burn in fairly: it is shown plain (below).
-      if (secs === FIND_MIN_TIMER) {
-        assert.equal(kind, 'flare');
-        assert.equal(veilSeconds(secs, veil.share, veil.size), 0, `${kind} at ${d}`);
-        assert.equal(veilSeconds(secs, veil.share, tileVeilSize(veil.size), true), 0, `${kind} at ${d}`);
-        continue;
-      }
       assert.ok(veilSeconds(secs, veil.share, veil.size) > 0 && veilSeconds(secs, veil.share, tileVeilSize(veil.size), true) > 0, `${kind} at ${d}`);
       // The art of a name question (see tests/delve.test.ts for where these timings come from), faster on a short clock.
       const whole = veilPace(veilSeconds(secs, veil.share, veil.size) * 1000, veil.size ** 2);
@@ -741,22 +734,21 @@ test('wrong or out of time on a Flare or Dynamite Cache with nothing carried cos
 
 // ---- the Flare Cache's clock and the Dynamite Cache's blast ----------------
 
-test("a Flare Cache's question starts three seconds shorter, and at three seconds its art comes plain", () => {
+test("a Flare Cache's question starts two seconds shorter, and even on its floor of four its art burns in fairly", () => {
   let veiled = 0;
   for (let seed = 1; seed <= 24; seed++) {
-    // Depth 40 asks from 60 down (7 s there, 4 here); depth 60 from 80 (6 s there, the floor of 3 here).
+    // Depth 40 asks from 60 down (7 s there, 5 here); depth 60 from 80 (6 s there, the floor of 4 here).
     for (const depth of [40, 60]) {
       const h = delve(['Ash'], { seed });
       at(h, depth);
       h.act({ type: 'pick', category: h.plant('flare') });
       const q = h.s.question!;
       const secs = findTimer('flare', depth);
-      assert.equal(secs, depth === 40 ? 4 : FIND_MIN_TIMER);
+      assert.equal(secs, depth === 40 ? 5 : FIND_MIN_TIMER);
       h.clockIn();
       assert.equal(h.s.question!.deadline! - h.s.question!.clockAt!, secs * 1000);
       assert.equal(questionTimer(h.s), secs);
-      if (depth === 60) assert.equal(q.veil, null, `seed ${seed}: no art burns in on three seconds`);
-      else if (q.veil) {
+      if (q.veil) {
         veiled++;
         // Fair on the shortened clock: half the art in with three seconds left at the least.
         const pace = veilPace(q.veil.seconds * 1000, q.veil.size ** 2);
@@ -765,7 +757,7 @@ test("a Flare Cache's question starts three seconds shorter, and at three second
       }
     }
   }
-  assert.ok(veiled > 0, 'some art burns in on four seconds');
+  assert.ok(veiled > 0, 'some art burns in on the shorter clocks');
 });
 
 test("a Dynamite Cache's blast takes one thing a pack holds: each ward, flare and stick a chance, a shard half of one", () => {

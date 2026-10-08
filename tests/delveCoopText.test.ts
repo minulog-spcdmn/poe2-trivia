@@ -109,16 +109,16 @@ test('what befalls the team in play: teammates perishing, a flare burning, a lif
   assert.equal(perishedText(['a', 'b'], nameOf, 'me'), 'Ash and Brea perished.');
   assert.equal(perishedText(['me', 'a'], nameOf, 'me'), 'Ash perished.', 'your own the miss line says');
   assert.equal(perishedText(['me'], nameOf, 'me'), '');
-  assert.equal(FLARE_MS, 5000, 'the flare line counts five');
-  assert.equal(flareText('a', nameOf, 'me'), "Ash's flare gives everyone five more seconds.");
-  assert.equal(flareText('me', nameOf, 'me'), 'Your flare gives everyone five more seconds.');
+  assert.equal(FLARE_MS, 6000, 'the flare line counts six');
+  assert.equal(flareText('a', nameOf, 'me'), "Ash's flare gives everyone six more seconds.");
+  assert.equal(flareText('me', nameOf, 'me'), 'Your flare gives everyone six more seconds.');
   assert.equal(revivedText('a', 'b', nameOf, 'me'), 'Ash brought Brea back.');
   assert.equal(revivedText('me', 'a', nameOf, 'me'), 'You brought Ash back.');
   assert.equal(revivedText('a', 'me', nameOf, 'me'), 'Ash brought you back.');
 });
 
 test("a find's note for the team says what it does for all, and what stays unused", () => {
-  assert.equal(teamFindNote('flare', false), 'It adds five seconds for everyone when time runs out. You get less time to answer.');
+  assert.equal(teamFindNote('flare', false), 'It adds six seconds for everyone when time runs out. You get less time to answer.');
   assert.match(teamFindNote('azurite', true), /\. A miss costs two lives\. Flares and dynamite can't be used on it\.$/);
 });
 
