@@ -19,7 +19,7 @@
   // by the mouth before a first run; past 100 a star sits in the ouroboros,
   // its depth beside the seal); when they would overlap, one star stands for
   // both, drifting between gold and red, the last run's depth over it and
-  // yours under it. A small legend at the plate's left edge says which is
+  // yours under it. A small legend left of the ouroboros says which is
   // which. Each find you
   // have met (`met`) is tied to its heading by a fine gold line from the wall
   // where it first turns up, that depth written in the middle of it: to its
@@ -238,14 +238,9 @@
         {/each}
       </mask>
       <mask id="{uid}-coil" maskUnits="userSpaceOnUse" x="-60" y="-60" width="120" height="120">
-        <circle
-          class="reveal"
-          r={f(sp.rs)}
-          stroke-width={f(2 * (sp.rs - 6))}
-          pathLength="100"
-          transform="rotate({f(sp.snout - 90)}) scale(1 -1)"
-          style:--d={sec(p.endless.delay)}
-        />
+        <!-- The body draws in from the tail's tip clockwise round to the neck; once round, the mask is whole (no seam where the sweep closed). -->
+        <circle class="reveal" r={f(sp.rs)} stroke-width={f(3.4 * sp.w)} pathLength="100" transform="rotate({f(sp.tail - 90)})" style:--d={sec(p.endless.delay)} />
+        <circle class="reveal-done" r={f(sp.rs + 2 * sp.w)} style:--d={sec(p.endless.delay)} />
       </mask>
       <clipPath id="{uid}-mouth">
         <path d={sp.mouth} />
@@ -305,24 +300,32 @@
         <g transform="translate({f(p.endless.c[0])} {f(p.endless.c[1])})">
           <g class="coil-in" style:--d={sec(p.endless.delay)}>
             <g class="coil" style:--d={sec(p.endless.delay)}>
-              <g class="serpent" class:lit={p.endless.lit} mask="url(#{uid}-coil)">
+              <g class="serpent" class:lit={p.endless.lit} style:--d={sec(p.endless.delay)}>
                 {#snippet band()}
                   <path class="sp-fill" d={sp.bodyFill} />
                   <path class="sp-scales" d={sp.scales} />
                   <path class="sp-belly" d={sp.belly} />
                   <path class="sp-body" d={sp.body} />
                 {/snippet}
-                {@render band()}
-                <path class="sp-fill" d={sp.headFill} />
-                <!-- The mouth's dark, and the tail running on into it. -->
-                <path class="sp-mouth" d={sp.mouth} />
-                <g clip-path="url(#{uid}-mouth)">{@render band()}</g>
-                <path class="sp-head" d={sp.head} />
-                <path class="sp-detail" d={sp.details} />
-                <path class="sp-teeth" d={sp.teeth} />
-                <path class="sp-tongue" d={sp.tongue} />
-                <circle class="sp-eye" cx={f(sp.eye.c[0])} cy={f(sp.eye.c[1])} r={f(sp.eye.r)} />
-                <path class="sp-pupil" d={sp.pupil} />
+                <!-- The body, drawn in by one front from the tail's tip round to the neck, a nib of light riding it. -->
+                <g mask="url(#{uid}-coil)">{@render band()}</g>
+                <g transform="rotate({f(sp.tail)})">
+                  <g class="sweep-nib"><circle class="sweep-dot" cy={f(-sp.rs)} r="1.6" /></g>
+                </g>
+                <!-- Then the head: the mouth's dark with the tail running on into it, the fangs sunk in it, the tongue flicking out. -->
+                <g class="sp-headin">
+                  <path class="sp-fill" d={sp.headFill} />
+                  <path class="sp-mouth" d={sp.mouth} />
+                  <g clip-path="url(#{uid}-mouth)">{@render band()}</g>
+                  <path class="sp-hscales" d={sp.headScales} />
+                  <path class="sp-head" d={sp.head} />
+                  <path class="sp-detail" d={sp.details} />
+                  <path class="sp-teeth" d={sp.teeth} />
+                  <circle class="sp-eye" cx={f(sp.eye.c[0])} cy={f(sp.eye.c[1])} r={f(sp.eye.r)} />
+                  <path class="sp-pupil" d={sp.pupil} />
+                  <path class="sp-tongue" d={sp.tongue} pathLength="100" />
+                  <path class="sp-tongue sp-fork" d={sp.fork} />
+                </g>
               </g>
             </g>
           </g>
@@ -342,7 +345,7 @@
         {/if}
       </g>
 
-      <!-- Which star is which, at the plate's left edge. -->
+      <!-- Which star is which, left of the ouroboros, half its radius from it. -->
       <g class="legend" style:--d={sec(p.legend.delay)}>
         {#each p.legend.rows as r (r.kind)}
           <g class="key {r.kind}">
@@ -484,6 +487,8 @@
     --red: #b4432f;
     --red-hi: #cf5e45;
     --red-num: #dc8a73;
+    /* The ouroboros' draw-in, from its tail's tip round to its neck. */
+    --s: 1s;
     pointer-events: none;
   }
   svg {
@@ -775,6 +780,9 @@
   .sp-scales {
     stroke-width: 0.32;
   }
+  .sp-hscales {
+    stroke-width: 0.28;
+  }
   .sp-belly {
     stroke-width: 0.45;
   }
@@ -791,21 +799,74 @@
   .serpent .sp-pupil {
     stroke-width: 0.9;
   }
+  /* The draw-in: one front sweeps the body from the tail's tip clockwise round to the neck, eased, a nib of light riding it; when
+     it is round, the mask turns whole. Then the head comes, the fangs, and the tongue flicks out. */
+  .serpent {
+    --h: calc(var(--d) + var(--s) - 0.08s);
+  }
   .reveal {
     fill: none;
     stroke: #fff;
     stroke-dasharray: 100;
-    animation: draw 0.8s var(--d) cubic-bezier(0.3, 0.1, 0.35, 1) both;
+    animation: draw var(--s) var(--d) cubic-bezier(0.42, 0.05, 0.35, 1) both;
+  }
+  .reveal-done {
+    fill: #fff;
+    stroke: none;
+    opacity: 0;
+    animation: whole 0.01s calc(var(--d) + var(--s)) both;
+  }
+  @keyframes whole {
+    to {
+      opacity: 1;
+    }
+  }
+  .sweep-nib {
+    animation: sweep var(--s) var(--d) cubic-bezier(0.42, 0.05, 0.35, 1) both;
+  }
+  .serpent .sweep-dot {
+    stroke: none;
+    fill: #fff3d6;
+    opacity: 0;
+    filter: drop-shadow(0 0 1.5px #f1d99b);
+    animation: nib-light var(--s) var(--d) linear both;
+  }
+  @keyframes sweep {
+    to {
+      rotate: 360deg;
+    }
+  }
+  .sp-headin {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: head-in 0.4s var(--h) var(--ease-out) both;
+  }
+  @keyframes head-in {
+    from {
+      opacity: 0;
+      transform: scale(0.88);
+    }
+  }
+  .serpent .sp-teeth {
+    animation: carve 0.3s calc(var(--h) + 0.18s) var(--ease-out) both;
+  }
+  .serpent .sp-tongue {
+    stroke-dasharray: 100;
+    animation: draw 0.4s calc(var(--h) + 0.3s) ease-out both;
+  }
+  .serpent .sp-fork {
+    stroke-dasharray: none;
+    animation: carve 0.15s calc(var(--h) + 0.68s) ease-out both;
   }
   .coil-in {
-    animation: coil-in 0.9s var(--d) var(--ease-out) both;
+    animation: coil-in 1.1s var(--d) var(--ease-out) both;
   }
   .coil {
-    animation: coil 50s calc(var(--d) + 0.9s) linear infinite;
+    animation: coil 50s calc(var(--d) + 1.1s) linear infinite;
   }
   @keyframes coil-in {
     from {
-      transform: rotate(-80deg) scale(0.92);
+      transform: rotate(-30deg) scale(0.94);
     }
   }
   @keyframes coil {
@@ -1270,11 +1331,20 @@
     .nib,
     .land,
     .land-flare,
+    .sweep-nib,
+    .sweep-dot,
+    .reveal,
+    .reveal-done,
+    .sp-headin,
+    .serpent :is(.sp-teeth, .sp-tongue, .sp-fork),
     .both-star :is(.star-line, .star-ridge, .star-hatch, .star-ground, .glory, .halo) {
       animation: none;
     }
     .ink {
       display: none;
+    }
+    .reveal-done {
+      opacity: 1;
     }
     .twinkle {
       animation: none;
