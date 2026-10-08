@@ -11,10 +11,13 @@ import Tool from './Tool.svelte';
 import { BETA } from '../lib/channel';
 import { BACKDROP_TOOL } from '../lib/storage';
 import { boot } from './state.svelte';
+import { wantDelveBackdrop } from '../lib/backdrop';
 
 if (!(import.meta.env.DEV || BETA) || !BACKDROP_TOOL) throw new Error('The backdrop tool only runs on the dev server and the beta, from backdrop.html.');
 
-// The draft kept from last time is shown from the first frame.
+// The draft kept from last time is shown from the first frame (Delve's
+// backdrop programs built from the start, without blocking it).
+wantDelveBackdrop();
 boot();
 
 const stage = document.getElementById('app')!;

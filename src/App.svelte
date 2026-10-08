@@ -9,6 +9,7 @@
   import { fxAvailable, fxUserOn, onFxChange, setFxOn, shakeTarget } from './lib/fx/core';
   import { IMPRINT_URL, PRIVACY_URL } from './lib/site';
   import { dialogBackdrop } from './lib/behindDialog';
+  import { wantDelveBackdrop } from './lib/backdrop';
   import Background from './components/Background.svelte';
   import Darkness from './components/Darkness.svelte';
   import FxLayer from './components/FxLayer.svelte';
@@ -105,6 +106,12 @@
     const depth = gs?.delve && (screen === 'game' || screen === 'over') ? gs.round : 0;
     setDescent(depth);
     depthAmbience(depth);
+  });
+  // Delve on its way (chosen in the lobby, a Delve room joined, a run picked
+  // up, or one begun from a shared link): the backdrop builds its Delve
+  // programs now, in the background, so they're ready when the run starts.
+  $effect(() => {
+    if (gs && (gs.settings.mode === 'delve' || gs.delve)) wantDelveBackdrop();
   });
   // Delve: each new depth sinks the scene a little further as its cards are
   // dealt (not the run's first, nor the same depth's dealt again after a

@@ -9,7 +9,7 @@
 // stay exactly zero: the overlay never tints or noises the page when idle.
 
 import { INSTANCE_FLOATS } from './particles';
-import { NOISE, dropTarget, program, target, type Program, type Target } from './gl';
+import { NOISE, buildPrograms, dropTarget, target, wrapProgram, type Build, type Program, type Target } from './gl';
 import { DIALOG_DIM } from '../behindDialog';
 
 /** Floats per shape instance: five vec4s (see ShapeType). */
@@ -888,7 +888,13 @@ export class FxRenderer {
   /** Whether the 2D canvas can blur (older Safari can't): asked once, before the first `filter` is set. */
   private coverBlur: boolean | null = null;
 
-  static create(canvas: HTMLCanvasElement, opts: RendererOptions): FxRenderer | null {
+  /**
+   * Begins making the renderer on `canvas`: its context at once, its shaders
+   * compiled in the background, without blocking the page (buildPrograms in
+   * gl.ts). `ready` gets the renderer, or null if a shader failed. Returns
+   * the build (to cancel it, or finish it at once), or null without WebGL2.
+   */
+  static start(canvas: HTMLCanvasElement, opts: RendererOptions, ready: (r: FxRenderer | null) => void): Build | null {
     const gl = canvas.getContext('webgl2', {
       alpha: true,
       premultipliedAlpha: true,
@@ -899,28 +905,43 @@ export class FxRenderer {
       powerPreference: 'default',
     });
     if (!gl) return null;
-    try {
-      return new FxRenderer(gl, opts);
-    } catch (e) {
-      console.warn('FX renderer unavailable; effects are off.', e);
-      return null;
-    }
+    const sources = (
+      [
+        ['particles', PARTICLE_VS, PARTICLE_FS],
+        ['shapes', SHAPE_VS, SHAPE_FS],
+        ['bloom-down', FULL_VS, DOWN_FS],
+        ['bloom-up', FULL_VS, UP_FS],
+        ['composite', FULL_VS, COMPOSITE_FS],
+        ['copy', FULL_VS, COPY_FS],
+      ] as const
+    ).map(([name, vs, fs]) => ({ vs, fs, label: `FX program "${name}"` }));
+    return buildPrograms(gl, sources, (progs) => {
+      let r: FxRenderer | null = null;
+      try {
+        if (progs) r = new FxRenderer(gl, opts, progs.map((p) => wrapProgram(gl, p)));
+      } catch (e) {
+        console.warn(e);
+      }
+      if (!r) console.warn('FX renderer unavailable; effects are off.');
+      ready(r);
+    });
   }
 
-  private constructor(gl: WebGL2RenderingContext, opts: RendererOptions) {
+  /** Makes the renderer at once, waiting for its shaders to compile (for tests). */
+  static create(canvas: HTMLCanvasElement, opts: RendererOptions): FxRenderer | null {
+    let made: FxRenderer | null = null;
+    FxRenderer.start(canvas, opts, (r) => (made = r))?.now();
+    return made;
+  }
+
+  private constructor(gl: WebGL2RenderingContext, opts: RendererOptions, programs: Program[]) {
     this.gl = gl;
     const float = !!gl.getExtension('EXT_color_buffer_float') || !!gl.getExtension('EXT_color_buffer_half_float');
     this.hdrFloat = float;
     this.internal = float ? gl.RGBA16F : gl.RGBA8;
     this.texType = float ? gl.HALF_FLOAT : gl.UNSIGNED_BYTE;
 
-    const p = program(gl, PARTICLE_VS, PARTICLE_FS, 'particles');
-    const s = program(gl, SHAPE_VS, SHAPE_FS, 'shapes');
-    const d = program(gl, FULL_VS, DOWN_FS, 'bloom-down');
-    const u = program(gl, FULL_VS, UP_FS, 'bloom-up');
-    const c = program(gl, FULL_VS, COMPOSITE_FS, 'composite');
-    const k = program(gl, FULL_VS, COPY_FS, 'copy');
-    if (!p || !s || !d || !u || !c || !k) throw new Error('shader');
+    const [p, s, d, u, c, k] = programs;
     this.copyProg = k;
     this.particleProg = p;
     this.shapeProg = s;

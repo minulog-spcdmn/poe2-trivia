@@ -5,8 +5,13 @@
 // Effects are off when the user turned them off, when the system asks for
 // reduced motion, or when WebGL2 isn't available; every call below is then a
 // cheap no-op, so callers never need to check.
+//
+// The renderer isn't made as the page loads: its context and shaders would
+// hold up the first paint (see startFx). Effects asked for before it's ready
+// wait for it, and play once it is.
 
 import { BEHIND_PICTURE, BEHIND_UI, FxRenderer, SHAPE_FLOATS, ShapeType, pictureReady, type DialogLight, type Silhouette } from './renderer';
+import { whenGpuCaughtUp, whenIdle, type Build } from './gl';
 import { ParticlePool, type ParticleSpec } from './particles';
 import { opacityOf } from '../opacity';
 import { dialogBox, openDialog } from '../behindDialog';
@@ -114,6 +119,16 @@ const coarse = typeof matchMedia === 'function' ? matchMedia('(pointer: coarse)'
 let canvas: HTMLCanvasElement | null = null;
 let renderer: FxRenderer | null = null;
 let pool: ParticlePool | null = null;
+/**
+ * The renderer on its way (see startFx): waiting for the page to have
+ * painted, or for the GPU to catch up (`waiting` cancels either; `forPaint`
+ * says which), or its shaders compiling (`building`). Meanwhile effects
+ * count as on, and wait for it.
+ */
+let waiting: (() => void) | null = null;
+let forPaint = false;
+let building: Build | null = null;
+const coming = () => !!(waiting || building);
 const MAX_SHAPES = 96;
 const shapeData = new Float32Array(MAX_SHAPES * SHAPE_FLOATS);
 let shapes: LiveShape[] = [];
@@ -153,7 +168,7 @@ const CALM_SPEED = 200;
 
 /** Are effects being drawn right now? */
 export function fxActive() {
-  return !!renderer && userOn && !reduce?.matches;
+  return (!!renderer || coming()) && userOn && !reduce?.matches;
 }
 
 /** The user's setting (effects may still be off for reduced motion or missing WebGL2). */
@@ -162,7 +177,7 @@ export function fxUserOn() {
 }
 
 export function fxAvailable() {
-  return !!renderer && !reduce?.matches;
+  return (!!renderer || coming()) && !reduce?.matches;
 }
 
 export function setFxOn(on: boolean) {
@@ -464,7 +479,9 @@ function show(on: boolean) {
 let manualClock: number | null = null;
 
 function wake() {
-  if (!raf && renderer && manualClock === null) {
+  // Not made yet: made now, and then everything asked for so far plays.
+  if (!renderer) hurry();
+  else if (!raf && manualClock === null) {
     last = performance.now();
     raf = requestAnimationFrame(frame);
   }
@@ -678,6 +695,11 @@ function dialogNow(): DialogLight {
  * show an exact moment however slow the machine renders.
  */
 export function fxStep(seconds: number, fps = 60) {
+  // (The renderer finished at once, if it's on its way.)
+  if (!renderer) {
+    if (waiting && canvas) build(canvas);
+    building?.now();
+  }
   if (manualClock === null) {
     cancelAnimationFrame(raf);
     raf = 0;
@@ -718,6 +740,11 @@ function resize() {
 }
 
 function teardown() {
+  waiting?.();
+  waiting = null;
+  forPaint = false;
+  building?.cancel();
+  building = null;
   cancelAnimationFrame(raf);
   raf = 0;
   ro?.disconnect();
@@ -735,13 +762,74 @@ function teardown() {
   for (const l of listeners) l(userOn);
 }
 
-/** Creates the renderer and particle pool on `c` and follows its size. Returns whether WebGL2 works. */
-function setup(c: HTMLCanvasElement): boolean {
-  renderer = FxRenderer.create(c, { maxParticles: 5000, maxShapes: MAX_SHAPES });
-  if (!renderer) return false;
+/**
+ * Gets the overlay on `c` ready to take effects: the particle pool now, the
+ * renderer once the page has painted and is idle (or at once, when an effect
+ * is asked for before then: see hurry). The first paint waits for neither
+ * its context nor its shaders: on a first visit (a cold shader cache) those
+ * held it up by seconds, behind the backdrop's own (lib/backdrop.ts).
+ */
+function prepare(c: HTMLCanvasElement) {
   pool = new ParticlePool(coarse?.matches ? 2000 : 5000);
   quality = coarse?.matches ? 1 : 0;
   probe = null;
+  waiting?.();
+  // Two frames: the first has been painted (and the backdrop's first frame
+  // with it, which comes before it); then an idle moment.
+  let raf2 = 0;
+  let stopIdle: (() => void) | null = null;
+  const raf1 = requestAnimationFrame(() => {
+    raf2 = requestAnimationFrame(() => (stopIdle = whenIdle(() => soon(c), 1000)));
+  });
+  forPaint = true;
+  waiting = () => {
+    cancelAnimationFrame(raf1);
+    cancelAnimationFrame(raf2);
+    stopIdle?.();
+  };
+}
+
+/** The renderer is wanted now (an effect was asked for): it's made as soon as it can be, if it wasn't on its way already. */
+function hurry() {
+  if (waiting && forPaint && canvas) soon(canvas);
+}
+
+/**
+ * Makes the renderer on `c` once the GPU has caught up with the backdrop
+ * (whenGpuCaughtUp): a new context waits on the GPU process, and would
+ * otherwise wait behind a backdrop frame.
+ */
+function soon(c: HTMLCanvasElement) {
+  waiting?.();
+  waiting = null;
+  forPaint = false;
+  let ran = false;
+  const cancel = whenGpuCaughtUp(() => {
+    ran = true;
+    build(c);
+  });
+  if (!ran) waiting = cancel;
+}
+
+/** Starts making the renderer on `c`, its shaders compiling without blocking the page (FxRenderer.start). */
+function build(c: HTMLCanvasElement) {
+  waiting?.();
+  waiting = null;
+  forPaint = false;
+  if (renderer || building) return;
+  building = FxRenderer.start(c, { maxParticles: 5000, maxShapes: MAX_SHAPES }, (r) => {
+    building = null;
+    if (r) setup(c, r);
+    else teardown();
+  });
+  // No WebGL2: effects are off (and whatever waited is dropped).
+  if (!building) teardown();
+}
+
+/** Takes the renderer made on `c` and follows its size; whatever waited for it plays. */
+function setup(c: HTMLCanvasElement, r: FxRenderer) {
+  renderer = r;
+  pool ??= new ParticlePool(coarse?.matches ? 2000 : 5000);
   ro?.disconnect();
   ro = new ResizeObserver(([entry]) => {
     const box = entry.devicePixelContentBoxSize?.[0];
@@ -759,13 +847,13 @@ function setup(c: HTMLCanvasElement): boolean {
   shown = true;
   show(false);
   for (const l of listeners) l(userOn);
-  return true;
+  // (resize() woke the loop: anything asked for meanwhile plays from now.)
 }
 
 /** Starts the overlay on `c`. Returns a cleanup function. */
 export function startFx(c: HTMLCanvasElement): () => void {
   canvas = c;
-  if (!setup(c)) return () => {};
+  prepare(c);
   const onMotion = () => {
     if (!fxActive()) clearAll();
     for (const l of listeners) l(userOn);
@@ -780,7 +868,10 @@ export function startFx(c: HTMLCanvasElement): () => void {
     teardown();
   };
   const onRestored = () => {
-    if (!renderer) setup(c);
+    if (!renderer && !coming()) {
+      prepare(c);
+      soon(c);
+    }
   };
   c.addEventListener('webglcontextlost', onLost);
   c.addEventListener('webglcontextrestored', onRestored);

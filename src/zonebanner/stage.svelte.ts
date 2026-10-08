@@ -12,6 +12,7 @@ import { quiet } from '../components/zonebanner/head';
 import { DELAY, EXIT, HOLD, STILL_FADE } from '../components/zonebanner/thresholdArt';
 import { installUiFx } from '../lib/fx/ui';
 import { session } from '../lib/session.svelte';
+import { wantDelveBackdrop } from '../lib/backdrop';
 import * as L from '../lab/controls.svelte';
 
 installUiFx();
@@ -21,6 +22,8 @@ const quietToasts = document.createElement('style');
 quietToasts.textContent = '.toasts { display: none !important; } html { scrollbar-width: none; }';
 document.head.append(quietToasts);
 session.resume();
+// Delve's zone gate, over Delve's backdrop: its programs built from the start (in the background).
+wantDelveBackdrop();
 L.boot();
 mount(App, { target: document.getElementById('app')! });
 

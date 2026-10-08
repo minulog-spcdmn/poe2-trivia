@@ -16,6 +16,7 @@ import { session } from '../lib/session.svelte';
 import { BETA } from '../lib/channel';
 import { LAB } from '../lib/storage';
 import * as lab from './controls.svelte';
+import { wantDelveBackdrop } from '../lib/backdrop';
 
 if (!(import.meta.env.DEV || BETA) || !LAB) throw new Error('The lab only runs on the dev server and the beta, from lab.html.');
 
@@ -29,6 +30,8 @@ Object.assign(window, { __fx: fxCore, __e: fxEffects, __m: fxMoments, __s: sessi
 // page (whose open-room scan would reach for the matchmaking server).
 session.resume();
 lab.boot();
+// The lab plays Delve: its backdrop programs are built from the start (in the background).
+wantDelveBackdrop();
 
 mount(App, { target: document.getElementById('app')! });
 mount(Lab, { target: document.getElementById('lab')! });

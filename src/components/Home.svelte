@@ -14,6 +14,7 @@
   import { setHomeScene } from '../lib/lights';
   import { openCodex } from '../lib/codexRoute.svelte';
   import { DELVE_LINK_PARAM } from '../lib/delveShare';
+  import { wantDelveBackdrop } from '../lib/backdrop';
   import { BETA } from '../lib/channel';
 
   /** Keeps a room code's letters and digits, uppercased, up to its length. */
@@ -40,6 +41,8 @@
     url.searchParams.delete(DELVE_LINK_PARAM);
     history.replaceState(history.state, '', url);
     session.delveLink = true;
+    // Either way Delve is on its way: the backdrop gets its Delve programs ready.
+    wantDelveBackdrop();
     const known = savedName().trim();
     if (known && !nameTooShort(known) && !nameHeld(known))
       setTimeout(() => {

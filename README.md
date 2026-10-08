@@ -676,6 +676,22 @@ Everything is drawn in WebGL2 with float precision and dithered once at the
   every control gets. Soft shapes render at about one texel per CSS pixel and
   the whole layer at most 1.5 per CSS pixel; the canvas hides itself while
   nothing is alive.
+- **Loading**: the first paint waits on as few shaders as possible, since on
+  a first visit (a cold shader cache) compiling them held it up by seconds.
+  The backdrop's first frame is drawn by lean programs without Delve's parts
+  (its strata's smoke and dark, the environments, the dark closing in, the
+  far city lights, the frost's glints), which draw the start page and the
+  other modes exactly as the whole would. Delve's programs are built in the
+  background once Delve is on its way (`wantDelveBackdrop`: Delve picked in a
+  lobby, a Delve room joined, a run picked up or begun from a `?delve` link,
+  the lab, the zone gate page and the backdrop tool), with
+  `buildPrograms` in `src/lib/fx/gl.ts` (`KHR_parallel_shader_compile`
+  polled once a frame, or one program per idle moment without it), and are
+  drawn once each, small, so the GPU has them ready. Should a Delve scene
+  show before then, the lean programs stand in and Delve's parts come in over
+  a moment once they're ready. The effects layer's renderer is made at the
+  first idle moment after the first paint, or as soon as an effect is asked
+  for; effects asked for before it's ready wait for it.
 - **The creator** (zoe_arcana, a name only an unlocked device can take; a
   deterrent, not proof) is marked out. Gold motes circle her avatar on a
   tilted orbit, passing behind it on the far side, in a ruby glow with

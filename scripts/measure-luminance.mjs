@@ -83,9 +83,13 @@ HTMLCanvasElement.prototype.getContext = function (type, attrs) {
   return c;
 };
 const D = await import('/src/lib/descent.ts');
-const { startBackdrop } = await import('/src/lib/backdrop.ts');
+const { startBackdrop, wantDelveBackdrop, delveBackdropReady } = await import('/src/lib/backdrop.ts');
+// Delve's programs (built in the background) before anything is measured.
+wantDelveBackdrop();
 startBackdrop(document.getElementById('c'), () => console.log('context lost'));
 const frame = () => new Promise((r) => requestAnimationFrame(() => r()));
+for (let i = 0; i < 2000 && !delveBackdropReady(); i++) await frame();
+if (!delveBackdropReady()) throw new Error("Delve's backdrop programs never got ready");
 async function drawn() {
   const n = draws;
   for (let i = 0; i < 400 && draws === n; i++) await frame();

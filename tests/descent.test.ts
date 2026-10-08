@@ -356,7 +356,8 @@ test("the shader gets the environments showing, a slot each with its strength an
   const shader = readFileSync(join(import.meta.dirname, '..', 'src', 'lib', 'backdrop.ts'), 'utf8');
   const effects = readFileSync(join(import.meta.dirname, '..', 'src', 'lib', 'shaders', 'effects.ts'), 'utf8');
   assert.match(shader, /uniform vec4 uFx\[\$\{FX_SLOTS \* 3\}\];\s*uniform vec4 uFxK;/);
-  assert.match(shader, /gl!\.uniform4fv\(uFx, packFx\(fx, fxK, scene, /, 'the backdrop sends packFx as it is');
+  // (Its strengths scaled only while Delve's parts come in after the lean programs stood in for them: see delveIn there.)
+  assert.match(shader, /packFx\(fx, fxK, scene, still \? 0 : magmaClock\);\s*if \(k < 1\) for \(let i = 0; i < FX_SLOTS; i\+\+\) fx\[i \* 12 \+ 3\] \*= k;\s*gl!\.uniform4fv\(uFx, fx\);/, 'the backdrop sends packFx as it is');
   assert.match(effects, /float cool = uFxK\.x;\s*float ft = uFxK\.y;/, 'the magma reads its cooling and clock');
   // Every environment has its effect in the shader, called from its slot.
   for (const name of ENVIRONMENTS) assert.ok(new RegExp(`(env|fx)_${name}\\(`).test(effects + readFileSync(join(import.meta.dirname, '..', 'src', 'lib', 'shaders', 'newEffects.ts'), 'utf8')), name);
