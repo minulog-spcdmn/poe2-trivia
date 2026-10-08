@@ -242,9 +242,6 @@
         <circle class="reveal" r={f(sp.rs)} stroke-width={f(3.4 * sp.w)} stroke-dasharray="0 101" pathLength="100" transform="rotate({f(sp.tail - 90)})" style:--d={sec(p.endless.delay)} />
         <circle class="reveal-done" r={f(sp.rs + 2 * sp.w)} style:--d={sec(p.endless.delay)} />
       </mask>
-      <clipPath id="{uid}-mouth">
-        <path d={sp.mouth} />
-      </clipPath>
       <clipPath id="{uid}-sky">
         <path d={p.sol.horizon} />
       </clipPath>
@@ -357,24 +354,18 @@
                 <g class="sweep-nib"><circle class="sweep-dot" cy={f(-sp.rs)} r="1.6" /></g>
               </g>
               <!-- Then the head: the mouth's dark with the tail running on into it, the fangs sunk in it, the tongue flicking out. -->
+              <!-- Then the head, as the user drew it: its tint, the mouth's dark, the eye, the fang, the tongue, scales, its lines and nostrils. -->
               <g class="sp-headin">
-                <path class="sp-fill" d={sp.headFill} />
-                <path class="sp-mouth" d={sp.mouth} />
-                <path class="sp-roof" d={sp.roof} />
-                <g clip-path="url(#{uid}-mouth)">{@render band()}</g>
+                <path class="sp-fill" d={sp.tint} />
+                <path class="sp-mouth" d={sp.dark} />
+                <path class="sp-lens" d={sp.eye} />
+                <path class="sp-teeth" d={sp.fang} />
+                <path class="sp-tfill" d={sp.tongue} />
                 <path class="sp-hscales" d={sp.headScales} />
-                <path class="sp-head" d={sp.head} />
-                <path class="sp-detail" d={sp.details} />
-                <path class="sp-teeth" d={sp.teeth} />
-                <!-- The eye: an almond with a slit pupil and a glint, under the overhanging brow plate. -->
-                <path class="sp-lens" d={sp.eye.lens} />
-                <path class="sp-slit" d={sp.eye.slit} />
-                <circle class="sp-glint" cx={f(sp.eye.glint[0])} cy={f(sp.eye.glint[1])} r={f(sp.eye.glintR)} />
-                <path class="sp-brow" d={sp.brow} />
-                <!-- The tongue, a ribbon out of the mouth: its fill, its two edges drawing out from the root, then the fork. -->
-                <path class="sp-tfill" d={sp.tongueFill} />
-                <path class="sp-tongue" d={sp.tongue} pathLength="100" />
-                <path class="sp-tongue sp-fork" d={sp.fork} />
+                <path class="sp-inner" d={sp.inner} />
+                <path class="sp-tline" d={sp.tongueLines} />
+                <path class="sp-head" d={sp.lines} />
+                <path class="sp-nostril" d={sp.nostrils} />
               </g>
             </g>
           </svg>
@@ -782,11 +773,11 @@
     fill: color-mix(in srgb, var(--sp) 11%, var(--bg));
     stroke: none;
   }
-  .serpent .sp-roof {
-    fill: color-mix(in srgb, var(--sp) 18%, var(--bg));
+  /* The mouth's dark, deeper than the ring's ground, so the cavity under the tail reads as an opening. */
+  .serpent .sp-nostril {
+    fill: var(--sp);
     stroke: none;
   }
-  /* The mouth's dark, deeper than the ring's ground, so the cavity under the tail reads as an opening. */
   .serpent .sp-mouth {
     fill: #000;
     stroke: none;
@@ -796,10 +787,13 @@
     stroke-width: 1;
   }
   .sp-head {
-    stroke-width: 0.8;
+    stroke-width: 0.7;
   }
-  .sp-detail {
-    stroke-width: 0.45;
+  .sp-inner {
+    stroke-width: 0.42;
+  }
+  .sp-tline {
+    stroke-width: 0.3;
   }
   .sp-scales {
     stroke-width: 0.6;
@@ -816,28 +810,13 @@
     fill: #fff3d6;
     stroke-width: 0.3;
   }
-  .serpent .sp-tongue {
-    stroke-width: 0.45;
-  }
   .serpent .sp-tfill {
-    fill: color-mix(in srgb, var(--red) 75%, var(--bg));
+    fill: var(--red-hi);
     stroke: none;
   }
   .serpent .sp-lens {
     fill: color-mix(in srgb, var(--sp) 60%, var(--bg));
     stroke-width: 0.45;
-  }
-  .serpent .sp-slit {
-    fill: var(--bg);
-    stroke: none;
-  }
-  .serpent .sp-glint {
-    fill: #fff3d6;
-    stroke: none;
-  }
-  .serpent .sp-brow {
-    fill: color-mix(in srgb, var(--sp) 11%, var(--bg));
-    stroke-width: 0.55;
   }
   /* The draw-in: one front sweeps the body from the tail's tip clockwise round to the neck, eased, a nib of light riding it; when
      it is round, the mask turns whole. Then the head comes, the fangs, and the tongue flicks out. */
@@ -898,16 +877,8 @@
   .serpent .sp-teeth {
     animation: carve 0.3s calc(var(--h) + 0.18s) var(--ease-out) both;
   }
-  .serpent .sp-tongue {
-    stroke-dasharray: 100;
-    animation: draw 0.4s calc(var(--h) + 0.3s) ease-out both;
-  }
   .serpent .sp-tfill {
-    animation: carve 0.3s calc(var(--h) + 0.5s) ease-out both;
-  }
-  .serpent .sp-fork {
-    stroke-dasharray: none;
-    animation: carve 0.15s calc(var(--h) + 0.68s) ease-out both;
+    animation: carve 0.3s calc(var(--h) + 0.3s) ease-out both;
   }
   .ouro {
     position: absolute;
@@ -1395,7 +1366,7 @@
     .reveal,
     .reveal-done,
     .sp-headin,
-    .serpent :is(.sp-teeth, .sp-tongue, .sp-fork, .sp-tfill),
+    .serpent :is(.sp-teeth, .sp-tfill),
     .both-star :is(.star-line, .star-ridge, .star-hatch, .star-ground, .glory, .halo) {
       animation: none;
     }

@@ -110,7 +110,7 @@ test('one star for both when the last run is the best, or would overlap it: the 
   for (const p of [...plates(45, 20), ...plates(216, 30), ...plates(null, null)]) {
     const right = p.legend.x + 58;
     const gap = p.endless.c[0] - p.endless.r - right;
-    assert.ok(gap >= 24 && gap <= p.endless.r * 1.15, `the legend about a seal's radius from it (${gap.toFixed(1)})`);
+    assert.ok(gap >= 20 && gap <= 32, `the legend about 30 px from the seal, less on a narrow plate (${gap.toFixed(1)})`);
     assert.ok(p.legend.x >= 0, 'on the plate');
   }
   for (const p of plates(45, null)) {
