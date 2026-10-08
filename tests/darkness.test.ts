@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { claimPressure, pressing, pressureLevel, pressureOf, setPressure } from '../src/lib/darkness.ts';
+import { claimPressure, flarePressure, pressing, pressureLevel, pressureOf, setPressure } from '../src/lib/darkness.ts';
 
 test("the dark comes in with a question's clock: faint while there is time, closing in over the last seconds", () => {
   const span = 20000;
@@ -52,4 +52,17 @@ test('it eases in and lifts by itself, and only the latest ring drives it', () =
   assert.equal(pressing(), false);
   b.set(0.5);
   assert.equal(pressing(), false, 'a released ring moves nothing');
+});
+
+test("a flare's light holds the dark back as it catches, and it seeps back in as the flare burns down", () => {
+  let last = -1;
+  for (let left = 1; left >= 0; left -= 0.01) {
+    const p = flarePressure(left);
+    assert.ok(p >= last && p > 0 && p <= 1, `${p} with ${left} left`);
+    last = p;
+  }
+  assert.ok(flarePressure(1) <= 0.15, 'pushed far back as it catches');
+  assert.ok(flarePressure(0.5) < 0.4, 'still held back half way');
+  assert.equal(flarePressure(0), 1);
+  assert.equal(flarePressure(-1), 1);
 });

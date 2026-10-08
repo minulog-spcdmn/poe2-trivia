@@ -10,20 +10,20 @@
 // - The burning (flareBurning, from the clock: TimerRing.svelte). While the
 //   added seconds run, the clock burns like a road flare: a red glow round
 //   its ring flickering, its tip (the end of the ring, burning down) a hot
-//   spot sputtering sparks. And the player has lit a flare: its light blooms
-//   out from the middle of the screen, flickering like a live flame, and the
-//   dark seeps back in from the edges as the seconds run out, the light
-//   shrinking before it (behind the question and its answers, and over them
-//   only a faint wash that leaves them as readable as ever). It all dies
-//   down with the seconds, and goes out as the question ends.
+//   spot sputtering sparks. And the player has lit a flare: it burns in the
+//   middle of the screen, behind the question (the effects overlay's
+//   flareLit, hidden by the UI in front of it: see uiCovers), and the dark
+//   (lib/darkness.ts) seeps back in from the edges as its seconds run out.
+//   It all dies down with the seconds, and goes out as the question ends.
 //
-// Only transform and opacity move, a handful of pieces each painted once;
-// the clock's box is measured once (and again on a resize). Holding still
-// (reduced motion, or the effects off) it is a calm glow: no streak, no
-// sparks, no flicker, the light in the middle dimming where it is.
+// Only transform and opacity move here, a handful of pieces each painted
+// once; the clock's box is measured once (and again on a resize). Holding
+// still (reduced motion, or the effects off) it is a calm glow: no streak,
+// no sparks, no flicker, a still light behind the UI in the middle dimming
+// where it is.
 
-import { fxActive, type Point } from './fx/core';
-import { flareBurning as fxBurning, flareStruck, type Ring } from './fx/flare';
+import { fxActive, type CoverBox, type Point } from './fx/core';
+import { flareBurning as fxBurning, flareLit, flareStruck, type Ring } from './fx/flare';
 
 /** ms from the strike until its streak reaches the clock and sets it alight (TimerRing.svelte holds the clock at 0 till then). */
 export const FLARE_IGNITE_MS = 430;
@@ -129,23 +129,74 @@ function flicker(n: number, lo: number): Keyframe[] {
   return frames;
 }
 
+/** Elements whose box covers what's behind them, wherever they show it. */
+const SOLID = new Set(['img', 'svg', 'canvas', 'video', 'button', 'input', 'select', 'textarea']);
+
 /**
- * A live flame's light, in `n` steps: its brightness and size wavering, now
- * and then sputtering low; and with it, the edge of the dark round it
- * (pushed out as it flares, drawn in as it dips).
+ * What of the UI (App.svelte's shell) paints: an element with a background,
+ * a border or a fill the backdrop paints for it (lib/backdropShadow.ts), a
+ * picture or a control, as its box; and text, as the box of the text itself
+ * (a heading's words, not the whole width of its line). Light from behind
+ * the UI hides behind these. Hidden or faint elements, decorations laid
+ * over the page (hidden from screen readers, never taking a click: the
+ * zone's gate above the question, say), and a container as big as most of
+ * the screen, aren't taken whole. `alpha` is how visible `root` is, its
+ * ancestors' opacity included.
  */
-function flame(n: number): [Keyframe[], Keyframe[]] {
-  const glow: Keyframe[] = [];
-  const edge: Keyframe[] = [];
-  for (let i = 0; i < n; i++) {
-    const dip = Math.random() < 0.12;
-    const f = dip ? rand(0.15, 0.35) : rand(0.55, 1);
-    glow.push({ opacity: (0.6 + 0.4 * f).toFixed(3), transform: `scale(${(0.95 + 0.07 * f).toFixed(3)})` });
-    edge.push({ transform: `scale(${(0.975 + 0.04 * f).toFixed(3)})` });
+function painted(root: Element | null, out: (Element | Text)[] = [], alpha = 1): (Element | Text)[] {
+  if (!root) return out;
+  const most = innerWidth * innerHeight * 0.6;
+  for (const node of root.childNodes) {
+    if (node instanceof Text) {
+      if (node.data.trim()) out.push(node);
+      continue;
+    }
+    // (Not the clock, which burns with the flare.)
+    if (!(node instanceof Element) || node.getAttribute('role') === 'timer') continue;
+    const cs = getComputedStyle(node);
+    const a = alpha * parseFloat(cs.opacity);
+    if (cs.display === 'none' || cs.visibility === 'hidden' || !(a > 0.3)) continue;
+    if (node.getAttribute('aria-hidden') === 'true' && cs.pointerEvents === 'none') continue;
+    const r = node.getBoundingClientRect();
+    if (!r.width || !r.height) continue;
+    const solid =
+      SOLID.has(node.tagName.toLowerCase()) ||
+      node.hasAttribute('data-bs-fill') ||
+      !/rgba\(.*, 0\)|transparent/.test(cs.backgroundColor) ||
+      cs.backgroundImage !== 'none' ||
+      parseFloat(cs.borderTopWidth) + parseFloat(cs.borderBottomWidth) + parseFloat(cs.borderLeftWidth) + parseFloat(cs.borderRightWidth) > 0;
+    if (solid && r.width * r.height < most) out.push(node);
+    else painted(node, out, a);
   }
-  glow.push({ ...glow[0] });
-  edge.push({ ...edge[0] });
-  return [glow, edge];
+  return out;
+}
+
+/**
+ * The UI in front of the flare, as boxes on screen, for light from behind
+ * it to hide behind (see cover in lib/fx/core.ts). Asked every frame it's
+ * drawn: the boxes are measured each time (the page scrolls), what paints
+ * found again only every few hundred ms (the page changes far less often).
+ */
+function uiCovers(): () => CoverBox[] {
+  let items: (Element | Text)[] = [];
+  let found = -Infinity;
+  const range = document.createRange();
+  return () => {
+    const now = performance.now();
+    if (now - found > 300) {
+      items = painted(document.querySelector('.shell'));
+      found = now;
+    }
+    const boxes: CoverBox[] = [];
+    for (const it of items) {
+      if (!it.isConnected) continue;
+      if (it instanceof Text) {
+        range.selectNodeContents(it);
+        boxes.push({ box: range.getBoundingClientRect(), soft: true });
+      } else boxes.push({ box: it.getBoundingClientRect() });
+    }
+    return boxes;
+  };
 }
 
 /** A box on screen, if it is on the page and has one. */
@@ -398,11 +449,12 @@ export function flareBurning(timer: HTMLElement): FlareBurn {
   const resized = () => {
     size = timer.offsetWidth || size;
     box = null;
-    W = innerWidth;
-    H = innerHeight;
-    lightUp();
+    clip();
   };
-  const scrolled = () => (box = null);
+  const scrolled = () => {
+    box = null;
+    clip();
+  };
   addEventListener('resize', resized);
   addEventListener('scroll', scrolled, { passive: true, capture: true });
 
@@ -439,86 +491,49 @@ export function flareBurning(timer: HTMLElement): FlareBurn {
     background: `radial-gradient(circle closest-side, rgba(${HOT}, 1) 0%, rgba(${HOT}, 0.9) 18%, rgba(${PINK}, 0.75) 38%, rgba(${RED}, 0.3) 66%, rgba(${RED}, 0) 100%)`,
   });
 
-  // ---- the screen: the flare's light, in the middle ----
-  // As the flare catches its light blooms out from the middle of the
-  // screen, warm and flickering like a live flame, and as the seconds run
-  // out the dark seeps back in from the edges, the light shrinking before
-  // it. Behind the UI, over the backdrop, the light and the dark; over the
-  // UI only a faint wash of the light, which leaves the question and its
-  // answers as readable as ever (on a phone, where the panels fill the
-  // screen, it is what shows of the light). Each piece is a small soft
-  // light scaled up to the screen (nothing in it to lose), moved and faded
-  // by the compositor.
-  const layer = (z: string) => {
-    const el = document.createElement('div');
-    el.className = 'flare-light';
-    el.setAttribute('aria-hidden', 'true');
-    el.dataset.behindDialog = 'dim';
-    Object.assign(el.style, { position: 'fixed', inset: '0', zIndex: z, pointerEvents: 'none', overflow: 'hidden', contain: 'strict', opacity: '0', willChange: 'opacity' });
-    return el;
-  };
-  // After the backdrop (Background.svelte) and under the UI (App.svelte's shell, 1).
-  const scene = layer('0');
-  // Over the UI, as the dark at its edges is (Darkness.svelte), under toasts and dialogs.
-  const veil = layer('11');
-  /** The pieces' size before they are scaled up to the screen. */
-  const S = 240;
-  /** A piece centred on the middle of the screen, scaled about it. */
-  const centred = (parent: HTMLElement) => piece(parent, { left: '50%', top: '50%', width: '0', height: '0' });
-  /** A square of soft light or dark, `S` px, centred on its parent. */
-  const soft = (parent: HTMLElement, background: string) =>
-    piece(parent, { left: px(-S / 2), top: px(-S / 2), width: px(S), height: px(S), borderRadius: '50%', background });
-  // The light: hot and pale in the middle, the flare's red as it spreads.
-  const poolAt = centred(scene);
-  const poolLit = piece(poolAt, { width: '0', height: '0' });
-  const pool = soft(
-    poolLit,
-    `radial-gradient(circle closest-side, rgba(${HOT}, 0.42) 0%, rgba(${PINK}, 0.32) 14%, rgba(${PINK}, 0.18) 30%, rgba(${RED}, 0.1) 50%, rgba(${RED}, 0.035) 72%, rgba(${RED}, 0) 92%)`,
-  );
-  // The dark round it: clear in the middle, deepening out to the edges (and
-  // past its circle, to the corners). Stretched to the screen's shape.
-  const DARK = '4, 3, 2';
-  const darkAt = centred(scene);
-  const darkFlick = piece(darkAt, { width: '0', height: '0' });
-  const dark = soft(
-    darkFlick,
-    `radial-gradient(circle closest-side, rgba(${DARK}, 0) 40%, rgba(${DARK}, 0.22) 50%, rgba(${DARK}, 0.55) 62%, rgba(${DARK}, 0.8) 80%, rgba(${DARK}, 0.88) 100%)`,
-  );
-  dark.style.borderRadius = '0';
-  // The wash over the UI: the same light, faint.
-  const washAt = centred(veil);
-  const washLit = piece(washAt, { width: '0', height: '0' });
-  const wash = soft(
-    washLit,
-    `radial-gradient(circle closest-side, rgba(${HOT}, 0.19) 0%, rgba(${PINK}, 0.14) 16%, rgba(${PINK}, 0.075) 38%, rgba(${RED}, 0.03) 62%, rgba(${RED}, 0) 88%)`,
-  );
-  document.body.append(scene, veil);
-  // The screen's size, for the pieces' scale (and again on a resize).
-  let W = innerWidth;
-  let H = innerHeight;
-  /**
-   * The light shrinks and dims as the seconds run out, and the dark closes
-   * in round it: from past the corners (the screen all lit) to a pool of
-   * light about the middle. Holding still, nothing moves: the light dims
-   * and the dark deepens where they are, each easing to it.
-   */
-  const lightUp = () => {
-    const k = Math.max(W, H) / S;
-    if (calm) {
-      poolAt.style.transform = washAt.style.transform = `scale(${(1.1 * k).toFixed(3)})`;
-      poolAt.style.opacity = washAt.style.opacity = (0.3 + 0.45 * level).toFixed(3);
-      darkAt.style.transform = `scale(${((2 * W) / S).toFixed(3)}, ${((2 * H) / S).toFixed(3)})`;
-      darkAt.style.opacity = (0.75 * (1 - level)).toFixed(3);
-    } else {
-      poolAt.style.transform = `scale(${(k * (0.6 + 0.65 * level)).toFixed(3)})`;
-      poolAt.style.opacity = (0.55 + 0.45 * level).toFixed(3);
-      washAt.style.transform = `scale(${(k * (0.45 + 0.75 * level)).toFixed(3)})`;
-      washAt.style.opacity = (0.45 + 0.55 * level).toFixed(3);
-      const d = 0.68 + 1.12 * level;
-      darkAt.style.transform = `scale(${((2 * W * d) / S).toFixed(3)}, ${((2 * H * d) / S).toFixed(3)})`;
-    }
-  };
-  if (calm) poolAt.style.transition = washAt.style.transition = darkAt.style.transition = 'opacity 0.8s ease';
+  // ---- the screen: the flare the player lit, in the middle, behind the UI ----
+  // With the effects on, the effects overlay burns it (lib/fx/flare.ts
+  // flareLit): its fire, sparks, smoke and the light it throws, all hidden
+  // by the UI in front of it. Holding still (or without the overlay), a
+  // calm glow in its place, kept off the UI the same way: a layer behind it
+  // with the UI's boxes cut out of it (in case the backdrop paints a panel's
+  // fill, which this would otherwise lie over).
+  const fx = !calm && fxActive();
+  const glowLayer = fx ? null : document.createElement('div');
+  const uiBoxes = uiCovers();
+  if (glowLayer) {
+    glowLayer.className = 'flare-light';
+    glowLayer.setAttribute('aria-hidden', 'true');
+    glowLayer.dataset.behindDialog = 'dim';
+    Object.assign(glowLayer.style, {
+      position: 'fixed',
+      inset: '0',
+      // After the backdrop (Background.svelte) and under the UI (App.svelte's shell, 1).
+      zIndex: '0',
+      pointerEvents: 'none',
+      opacity: '0',
+      transition: 'opacity 0.8s ease',
+      background: `radial-gradient(circle max(30vmax, 260px) at 50% 50%, rgba(${HOT}, 0.3), rgba(${PINK}, 0.2) 18%, rgba(${RED}, 0.12) 45%, rgba(${RED}, 0.04) 75%, rgba(${RED}, 0))`,
+    });
+    document.body.append(glowLayer);
+    // (Its starting opacity laid down, so set() below fades it in.)
+    void glowLayer.offsetWidth;
+  }
+  /** Cuts the UI's boxes out of the calm glow (again as the page scrolls or resizes). */
+  let clipping = 0;
+  function clip() {
+    if (!glowLayer || clipping) return;
+    clipping = requestAnimationFrame(() => {
+      clipping = 0;
+      let d = `M0 0H${innerWidth}V${innerHeight}H0Z`;
+      // (Only boxes: text sits over this, and only a fill the backdrop paints for a panel would lie under it.)
+      for (const { box: r, soft } of uiBoxes()) if (!soft) d += `M${r.left.toFixed(1)} ${r.top.toFixed(1)}h${r.width.toFixed(1)}v${r.height.toFixed(1)}h${(-r.width).toFixed(1)}Z`;
+      glowLayer.style.clipPath = `path(evenodd, '${d}')`;
+    });
+  }
+  clip();
+  const centre = () => ({ x: innerWidth / 2, y: innerHeight / 2 });
+  const burning = fx ? flareLit({ at: centre, level: () => level, covers: uiBoxes }) : null;
 
   // ---- lit ----
   const fadeIn = (el: HTMLElement, to: number, ms: number) => {
@@ -527,38 +542,9 @@ export function flareBurning(timer: HTMLElement): FlareBurn {
   };
   fadeIn(under, 1, 260);
   fadeIn(over, 1, 200);
-  fadeIn(scene, 1, calm ? 600 : 160);
-  fadeIn(veil, 1, calm ? 600 : 160);
   if (!calm) {
     // A road flare's light: never quite steady, now and then sputtering low.
     anim(halo, flicker(18, 0.6), { duration: 1500, iterations: Infinity, easing: 'linear' });
-    // In the middle of the screen it blooms out as the flare catches, a
-    // white-hot flash at its heart; then it flickers as a flame does, the
-    // edge of the dark breathing with it.
-    for (const el of [poolLit, washLit])
-      anim(
-        el,
-        [
-          { transform: 'scale(0.06)', opacity: 0 },
-          { transform: 'scale(1.18)', opacity: 1, offset: 0.32 },
-          { transform: 'scale(1)', opacity: 1 },
-        ],
-        { duration: 1100, easing: 'cubic-bezier(0.2, 0.7, 0.3, 1)' },
-      );
-    const heart = soft(centred(veil), `radial-gradient(circle closest-side, rgba(${HOT}, 0.28) 0%, rgba(${PINK}, 0.16) 30%, rgba(${RED}, 0.05) 60%, rgba(${RED}, 0) 100%)`);
-    anim(
-      heart,
-      [
-        { transform: 'scale(0.2)', opacity: 0 },
-        { transform: 'scale(1.6)', opacity: 1, offset: 0.2 },
-        { transform: 'scale(3.2)', opacity: 0 },
-      ],
-      { duration: 900, easing: 'ease-out' },
-    ).onfinish = () => heart.parentElement?.remove();
-    const [glowFrames, edgeFrames] = flame(20);
-    anim(pool, glowFrames, { duration: 1800, iterations: Infinity, easing: 'linear' });
-    anim(wash, glowFrames, { duration: 1800, iterations: Infinity, easing: 'linear' });
-    anim(darkFlick, edgeFrames, { duration: 1800, iterations: Infinity, easing: 'linear' });
     anim(
       tip,
       [
@@ -633,7 +619,7 @@ export function flareBurning(timer: HTMLElement): FlareBurn {
       shownLevel = level;
       under.style.opacity = (0.35 + 0.65 * level).toFixed(3);
       over.style.opacity = (0.5 + 0.5 * level).toFixed(3);
-      lightUp();
+      if (glowLayer) glowLayer.style.opacity = (0.3 + 0.7 * level).toFixed(3);
     }
     if (Math.abs(head - shownHead) > 0.0008) {
       shownHead = head;
@@ -648,11 +634,15 @@ export function flareBurning(timer: HTMLElement): FlareBurn {
       if (stopped) return;
       stopped = true;
       fire?.stop();
+      burning?.stop();
+      cancelAnimationFrame(clipping);
       timers.forEach(clearTimeout);
       timers.clear();
       removeEventListener('resize', resized);
       removeEventListener('scroll', scrolled, { capture: true });
-      for (const el of [under, over, scene, veil]) {
+      for (const el of [under, over, glowLayer]) {
+        if (!el) continue;
+        el.style.transition = '';
         const from = Number(el.style.opacity || 0);
         const out = el.animate([{ opacity: from }, { opacity: 0 }], { duration: calm ? 200 : 450, easing: 'ease-out', fill: 'forwards' });
         out.onfinish = () => el.remove();

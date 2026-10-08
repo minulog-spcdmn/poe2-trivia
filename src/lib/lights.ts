@@ -19,6 +19,8 @@ type Light = {
   hold: number;
   decay: number;
   born: number;
+  /** A held light (see holdLight): its strength, set from outside, and whether it was let go. */
+  held?: { k: number; done: boolean };
 };
 
 let lights: Light[] = [];
@@ -46,15 +48,58 @@ export function light(at: Anchor, spec: LightSpec) {
   }
   // Full: take the place of whichever light gives the least right now, so a
   // big glow still fading isn't cut off (a visible dip) by a small new one.
-  let weakest = 0;
+  // (Never a held one.)
+  let weakest = -1;
   lights.forEach((x, i) => {
-    if (strength(x, now) * x.radius < strength(lights[weakest], now) * lights[weakest].radius) weakest = i;
+    if (x.held) return;
+    if (weakest < 0 || strength(x, now) * x.radius < strength(lights[weakest], now) * lights[weakest].radius) weakest = i;
   });
-  lights[weakest] = l;
+  if (weakest >= 0) lights[weakest] = l;
+}
+
+export type HeldLight = {
+  /** Its strength now, about 0 to 1 (and how far it reaches, CSS px). */
+  set(intensity: number, radius?: number): void;
+  /** It goes out. */
+  release(): void;
+};
+
+/**
+ * A light behind `at` that stays lit until released, its strength set from
+ * outside every frame (a flame's, wavering). It keeps its place among the
+ * lights: a burst can't take it.
+ */
+export function holdLight(at: Anchor, color: Vec3, radius: number): HeldLight {
+  if (!fxActive() || detached(at)) return { set() {}, release() {} };
+  const b = boxOf(at);
+  const l: Light = { at, x: b.x, y: b.y, color, radius, intensity: 1, attack: 0, hold: Infinity, decay: 0, born: performance.now() / 1000, held: { k: 0, done: false } };
+  // Room for it: the weakest light that isn't held makes way.
+  if (lights.length >= MAX_LIGHTS) {
+    const now = performance.now() / 1000;
+    let weakest = -1;
+    lights.forEach((x, i) => {
+      if (x.held) return;
+      if (weakest < 0 || strength(x, now) * x.radius < strength(lights[weakest], now) * lights[weakest].radius) weakest = i;
+    });
+    if (weakest < 0) return { set() {}, release() {} };
+    lights.splice(weakest, 1);
+  }
+  lights.push(l);
+  return {
+    set(intensity, r) {
+      l.held!.k = Math.max(0, intensity);
+      if (r !== undefined) l.radius = r;
+    },
+    release() {
+      l.held!.done = true;
+    },
+  };
 }
 
 /** A light's strength at `now` (s): up over the attack, held, then easing out over the decay. */
 function strength(l: Light, now: number): number {
+  // (A held light goes dark with the effects: what sets it stops with them.)
+  if (l.held) return fxActive() ? l.held.k : 0;
   const t = now - l.born;
   let k: number;
   if (t < l.attack) k = t / l.attack;
@@ -73,7 +118,7 @@ function strength(l: Light, now: number): number {
 export function packLights(a: Float32Array, c: Float32Array, nowS: number): boolean {
   a.fill(0);
   c.fill(0);
-  lights = lights.filter((l) => nowS - l.born < l.attack + l.hold + l.decay);
+  lights = lights.filter((l) => (l.held ? !l.held.done : nowS - l.born < l.attack + l.hold + l.decay));
   lights.forEach((l, i) => {
     if (l.at instanceof Element && l.at.isConnected) {
       const b = boxOf(l.at);

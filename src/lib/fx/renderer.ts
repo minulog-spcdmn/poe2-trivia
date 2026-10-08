@@ -21,7 +21,8 @@ export const SHAPE_FLOATS = 24;
  *   s1: type, progress 0-1, age (s), seed
  *   s2: r, g, b (HDR, envelope applied), flags: 1 for the page's light (see
  *       BEHIND_DIALOG), plus BEHIND_PICTURE when it shines from behind the
- *       picture in uSil (see Silhouette)
+ *       picture in uSil (see Silhouette), plus BEHIND_UI when it shines from
+ *       behind the UI (see COVER)
  *   s3, s4, s5: per-type parameters (documented in the shader)
  */
 export const ShapeType = {
@@ -36,11 +37,16 @@ export const ShapeType = {
   QuadGlow: 8,
   Orbit: 9,
   Fire: 10,
+  Burn: 11,
 } as const;
 export type ShapeType = (typeof ShapeType)[keyof typeof ShapeType];
 
 /** Shape flag (s2.w): it shines from behind the picture in uSil (see Silhouette). */
 export const BEHIND_PICTURE = 2;
+/** Shape flag (s2.w): it shines from behind the UI, which hides it (see COVER). */
+export const BEHIND_UI = 4;
+/** Particle flag (its page light, iC.w): it shines from behind the UI (see COVER). */
+export const PARTICLE_BEHIND_UI = 2;
 
 /** How far the fire's tallest tongue reaches, in flame heights: the shader stops there and effects.ts sizes the quad to it. */
 export const FIRE_REACH = 1.8;
@@ -62,6 +68,19 @@ float dialogSdf(vec2 p) {
 // How much of the page's light at p (CSS px) the dialog hides.
 float hiddenAt(vec2 p) {
   return uHide > 0.0 ? uHide * clamp(0.5 - dialogSdf(p), 0.0, 1.0) : 0.0;
+}`;
+
+// Light from behind the UI (a flare burning behind the question): the boxes
+// of the UI in front of it, as a soft mask (see setCover), hide it. It lights
+// the backdrop round them and their edges, never the UI itself; and while
+// they're set, the bloom stays off them too.
+const COVER = `
+uniform sampler2D uCover;
+uniform float uCoverOn;   // 1 while the UI's boxes are set, else 0
+uniform vec2 uCoverView;  // the view the mask spans, CSS px
+// How much of the UI covers p (CSS px), 0-1.
+float coverAt(vec2 p) {
+  return uCoverOn > 0.0 ? texture(uCover, p / uCoverView).a : 0.0;
 }`;
 
 const PARTICLE_VS = `#version 300 es
@@ -128,6 +147,7 @@ flat in vec3 vCol;
 flat in vec4 vP;
 out vec4 o;
 ${BEHIND_DIALOG}
+${COVER}
 void main() {
   float shape = vP.x;
   float w = vP.y;
@@ -177,7 +197,9 @@ void main() {
     float star = exp(-a.y * a.y * 120.0) * exp(-a.x * 1.1) + exp(-a.x * a.x * 120.0) * exp(-a.y * 1.1);
     v += facing * star * 1.3;
   }
-  o = vec4(vCol * v * (1.0 - vP.w * hiddenAt(vWorld)), 0.0);
+  float page = mod(vP.w, 2.0);
+  float behindUi = step(${PARTICLE_BEHIND_UI}.0, vP.w);
+  o = vec4(vCol * v * (1.0 - page * hiddenAt(vWorld)) * (1.0 - behindUi * coverAt(vWorld)), 0.0);
 }`;
 
 const SHAPE_VS = `#version 300 es
@@ -195,6 +217,7 @@ flat out vec4 vA;
 flat out vec3 vC;
 flat out float vBehind; // page light (see BEHIND_DIALOG)
 flat out float vPicture; // behind the picture (see Silhouette)
+flat out float vUi; // behind the UI (see COVER)
 flat out vec4 vQ;
 flat out vec4 vR;
 flat out vec4 vS;
@@ -205,7 +228,8 @@ void main() {
   vA = s1;
   vC = s2.rgb;
   vBehind = mod(s2.w, ${BEHIND_PICTURE}.0);
-  vPicture = step(${BEHIND_PICTURE}.0, s2.w);
+  vPicture = step(${BEHIND_PICTURE}.0, mod(s2.w, ${BEHIND_UI}.0));
+  vUi = step(${BEHIND_UI}.0, s2.w);
   vQ = s3;
   vR = s4;
   vS = s5;
@@ -223,6 +247,7 @@ flat in vec4 vA;
 flat in vec3 vC;
 flat in float vBehind;
 flat in float vPicture;
+flat in float vUi;
 flat in vec4 vQ;
 flat in vec4 vR;
 flat in vec4 vS;
@@ -257,6 +282,7 @@ float silhouetteNear(vec2 p) {
 }
 ${NOISE}
 ${BEHIND_DIALOG}
+${COVER}
 vec2 rot2(vec2 p, float a) { float c = cos(a), s = sin(a); return vec2(c * p.x - s * p.y, s * p.x + c * p.y); }
 // Equilateral triangle SDF (Inigo Quilez), r = circumradius-ish size.
 float sdTri(vec2 p, float r) {
@@ -550,6 +576,58 @@ void main() {
     vec3 haloCol = mix(vec3(0.5, 0.1, 0.02), vec3(0.04, 0.12, 0.5), vR.x);
     col = v > 0.0 ? col + vC * haloCol * halo : vC * haloCol;
     v = v > 0.0 ? 1.0 : halo;
+  } else if (type == 11) {
+    // A road flare burning: a white-hot heart in a flame of magenta and
+    // crimson, licking upward and swaying, torn by turbulence that scrolls
+    // up through it. q: heart radius, flame height, heat (how hard it burns
+    // this moment, about 0-1.6), guttering (0-1: it shrinks and reddens).
+    // The colour is in vC's red channel as a strength.
+    float R = max(vQ.x, 1.0);
+    float Hh = max(vQ.y, 1.0);
+    float heat = vQ.z;
+    float gut = vQ.w;
+    float k = vC.r;
+    vec2 p = vP;
+    // How high this pixel is up the flame (0 at the heart, 1 at its reach).
+    float up = clamp(-p.y / Hh, 0.0, 1.5);
+    // The whole flame sways, more toward its tip.
+    float sway = (fbm(vec2(time * 1.3 + seed, up * 1.5 - time * 0.7)) - 0.5) * Hh * 0.5 * up;
+    vec2 fp = vec2(p.x - sway, p.y);
+    float width = R * (1.5 + 0.5 * heat) * mix(1.0, 0.25, smoothstep(0.0, 1.0, up));
+    // Turbulence scrolling upward, domain-warped so the tongues split and lick.
+    vec2 np = vec2(fp.x / (R * 2.2), fp.y / (R * 3.0)) + vec2(seed, time * 3.4);
+    vec2 warp = vec2(fbm(np * 0.6 + vec2(time * 0.8, seed)), fbm(np * 0.6 + vec2(seed + 3.3, time * 1.1)));
+    float n = fbm(np + (warp - 0.5) * 1.6);
+    float body;
+    if (fp.y < 0.0) {
+      float nx = fp.x / width;
+      float reach = (0.45 + 0.55 * min(heat, 1.3)) * (1.0 - 0.6 * gut);
+      float ny = up / max(reach, 0.05);
+      float tongue = ny - (n - 0.45) * 1.1;
+      body = exp(-nx * nx * 1.6) * clamp(1.0 - tongue, 0.0, 1.0);
+    } else {
+      // Below the heart: a short rounded base, where the flare's stick is.
+      vec2 b = vec2(fp.x / width, fp.y / (R * 1.3));
+      body = exp(-dot(b, b) * 1.8) * (0.75 + 0.5 * n);
+    }
+    body = clamp(body, 0.0, 1.0);
+    float r2 = dot(p, p) / (R * R);
+    float heart = exp(-r2 * 1.4);
+    // Fine flicker inside the body, so it never reads as a flat fill.
+    float flick = 0.75 + 0.5 * vnoise(vec2(fp.x / R, fp.y / R * 0.6 + time * 9.0) + seed);
+    float T = body * flick;
+    vec3 crimson = vec3(1.6, 0.1, 0.22);
+    vec3 magenta = vec3(2.6, 0.45, 1.5);
+    vec3 pinkHot = vec3(3.2, 1.6, 2.3);
+    vec3 c = mix(crimson, magenta, smoothstep(0.15, 0.6, T * (1.0 - 0.5 * gut)));
+    c = mix(c, pinkHot, smoothstep(0.6, 1.0, T) * (1.0 - gut));
+    col = c * T * T * 1.4 * k;
+    // The heart burns white, past what the tone map can hold.
+    hot = heart * (2.2 + 1.6 * heat) * (1.0 - 0.6 * gut);
+    col += magenta * heart * 0.6 * k;
+    // A haze of its light round it.
+    col += crimson * exp(-sqrt(r2) / 3.5) * 0.18 * k;
+    v = 1.0;
   } else {
     // Sigil: an arcane circle that draws itself. q: radius, line width,
     // drawn 0-1, spin (rad/s).
@@ -596,7 +674,7 @@ void main() {
     v *= win;
     hot *= win;
   }
-  o = vec4((col * v + vec3(1.0, 0.95, 0.85) * hot * max(max(col.r, col.g), col.b)) * (1.0 - vBehind * hiddenAt(vWorld)), 0.0);
+  o = vec4((col * v + vec3(1.0, 0.95, 0.85) * hot * max(max(col.r, col.g), col.b)) * (1.0 - vBehind * hiddenAt(vWorld)) * (1.0 - vUi * coverAt(vWorld)), 0.0);
 }`;
 
 const FULL_VS = `#version 300 es
@@ -673,6 +751,7 @@ uniform vec2 uView;    // CSS px
 uniform float uDim;    // how far an open dialog dims the page, 0-1
 out vec4 o;
 ${BEHIND_DIALOG}
+${COVER}
 float hash(vec2 p) {
   vec3 p3 = fract(vec3(p.xyx) * 0.1031);
   p3 += dot(p3, p3.yzx + 33.33);
@@ -680,7 +759,7 @@ float hash(vec2 p) {
 }
 void main() {
   vec3 hdr = texture(uHdr, vUv).rgb;
-  if (uHasBloom > 0.5) hdr += texture(uBloom, vUv).rgb * uBloomAmt;
+  if (uHasBloom > 0.5) hdr += texture(uBloom, vUv).rgb * uBloomAmt * (1.0 - coverAt(vec2(vUv.x, 1.0 - vUv.y) * uView));
   // Per-channel exponential tone map: linear for faint light, saturating
   // smoothly, so orange sparks burn through yellow toward white.
   vec3 c = 1.0 - exp(-max(hdr, 0.0) * uExposure);
@@ -761,6 +840,12 @@ export class FxRenderer {
   private silFit: [number, number] = [1, 1];
   /** A picture that couldn't be read (another origin, say): not tried again every frame. */
   private silFailed = '';
+  /** The UI's boxes light from behind it hides behind (see COVER): their mask, what it was drawn from, and whether it's set. */
+  private coverTex: WebGLTexture | null = null;
+  private coverCanvas: HTMLCanvasElement | null = null;
+  private coverKey = '';
+  private coverOn = false;
+  private coverView: [number, number] = [1, 1];
 
   static create(canvas: HTMLCanvasElement, opts: RendererOptions): FxRenderer | null {
     const gl = canvas.getContext('webgl2', {
@@ -911,6 +996,7 @@ export class FxRenderer {
       const p = this.shapeProg;
       gl.uniform2f(p.u('uView'), view[0], view[1]);
       behindDialog(p, true);
+      cover(p);
       // Always on its own unit: left on unit 0, the sampler could point at
       // the target being drawn into, which WebGL refuses to draw.
       gl.uniform1i(p.u('uSil'), 2);
@@ -923,6 +1009,17 @@ export class FxRenderer {
       gl.uniform2f(p.u('uSilFit'), this.silFit[0], this.silFit[1]);
       gl.activeTexture(gl.TEXTURE0);
     };
+    // The UI's boxes, on unit 3 (see COVER).
+    const cover = (p: Program) => {
+      gl.uniform1i(p.u('uCover'), 3);
+      gl.uniform1f(p.u('uCoverOn'), this.coverOn ? 1 : 0);
+      gl.uniform2f(p.u('uCoverView'), this.coverView[0], this.coverView[1]);
+    };
+    if (this.coverOn) {
+      gl.activeTexture(gl.TEXTURE3);
+      gl.bindTexture(gl.TEXTURE_2D, this.coverTex);
+      gl.activeTexture(gl.TEXTURE0);
+    }
     // Without a dialog box, nothing is hidden and everything is dimmed.
     const b = dialog.box;
     const behindDialog = (p: Program, hide: boolean) => {
@@ -1004,6 +1101,7 @@ export class FxRenderer {
       gl.uniform2f(this.particleProg.u('uView'), view[0], view[1]);
       gl.uniform1f(this.particleProg.u('uMinPx'), 0.85 / dpr);
       behindDialog(this.particleProg, true);
+      cover(this.particleProg);
       gl.bindBuffer(gl.ARRAY_BUFFER, this.particleBuf);
       gl.bufferSubData(gl.ARRAY_BUFFER, 0, particles, 0, nParticles * INSTANCE_FLOATS);
       gl.bindVertexArray(this.particleVao);
@@ -1063,6 +1161,7 @@ export class FxRenderer {
     gl.uniform2f(this.compProg.u('uView'), view[0], view[1]);
     gl.uniform1f(this.compProg.u('uDim'), dialog.amount);
     behindDialog(this.compProg, false);
+    cover(this.compProg);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     gl.disable(gl.SCISSOR_TEST);
     gl.activeTexture(gl.TEXTURE0);
@@ -1119,6 +1218,60 @@ export class FxRenderer {
     return [left, bottom, right, top];
   }
 
+  /**
+   * Sets the UI's boxes that light from behind it hides behind (see COVER):
+   * `boxes` as (left, top, width, height, soft) in CSS px, in a view `view`
+   * CSS px across; null for none. Drawn as a mask at a quarter of the view's
+   * size (the light needs no more), and again only when they move. A box's
+   * edge is softened by a few px, so the light fades out over it (its rim
+   * light); a soft one's (text) far more, and not all the way, so no box shows round it.
+   */
+  setCover(boxes: number[] | null, view: [number, number]) {
+    if (!boxes || !boxes.length) {
+      this.coverOn = false;
+      return;
+    }
+    const key = `${view[0]}x${view[1]}:${boxes.map(Math.round).join(',')}`;
+    this.coverOn = true;
+    if (key === this.coverKey) return;
+    this.coverKey = key;
+    this.coverView = view;
+    const K = 4;
+    const c = (this.coverCanvas ??= document.createElement('canvas'));
+    const w = Math.max(1, Math.ceil(view[0] / K));
+    const h = Math.max(1, Math.ceil(view[1] / K));
+    if (c.width !== w || c.height !== h) {
+      c.width = w;
+      c.height = h;
+    }
+    const ctx = c.getContext('2d');
+    if (!ctx) {
+      this.coverOn = false;
+      return;
+    }
+    ctx.clearRect(0, 0, w, h);
+    for (const soft of [0, 1]) {
+      // (Text only mostly: a full shadow round a line of it would show as a dark plate.)
+      ctx.fillStyle = soft ? 'rgba(255, 255, 255, 0.7)' : '#fff';
+      ctx.filter = soft ? 'blur(4px)' : 'blur(1px)';
+      const pad = soft ? 2 : 0;
+      for (let i = 0; i + 4 < boxes.length; i += 5) {
+        if (boxes[i + 4] !== soft) continue;
+        ctx.fillRect(boxes[i] / K - pad, boxes[i + 1] / K - pad, boxes[i + 2] / K + 2 * pad, boxes[i + 3] / K + 2 * pad);
+      }
+    }
+    const gl = this.gl;
+    this.coverTex ??= gl.createTexture();
+    gl.activeTexture(gl.TEXTURE3);
+    gl.bindTexture(gl.TEXTURE_2D, this.coverTex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, c);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.activeTexture(gl.TEXTURE0);
+  }
+
   /** Makes the silhouette's picture the silhouette texture, unless it is already. Returns whether it's ready (loaded, and readable). */
   private loadSilhouette({ pic, key }: Silhouette): boolean {
     if (key === this.silKey) return true;
@@ -1168,6 +1321,7 @@ export class FxRenderer {
   destroy() {
     const gl = this.gl;
     if (this.silTex) gl.deleteTexture(this.silTex);
+    if (this.coverTex) gl.deleteTexture(this.coverTex);
     dropTarget(gl, this.hdr);
     dropTarget(gl, this.shapesT);
     for (const m of this.mips) dropTarget(gl, m);

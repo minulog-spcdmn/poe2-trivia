@@ -6,7 +6,7 @@
 // reduced motion, or when WebGL2 isn't available; every call below is then a
 // cheap no-op, so callers never need to check.
 
-import { BEHIND_PICTURE, FxRenderer, SHAPE_FLOATS, ShapeType, pictureReady, type DialogLight, type Silhouette } from './renderer';
+import { BEHIND_PICTURE, BEHIND_UI, FxRenderer, SHAPE_FLOATS, ShapeType, pictureReady, type DialogLight, type Silhouette } from './renderer';
 import { ParticlePool, type ParticleSpec } from './particles';
 import { opacityOf } from '../opacity';
 import { dialogBox, openDialog } from '../behindDialog';
@@ -73,6 +73,8 @@ export type ShapeSpec = {
   followOpacity?: boolean;
   /** Changes slowly enough to be drawn at 30fps on phones (see `calm` below). */
   calm?: boolean;
+  /** It shines from behind the UI: the boxes cover() names hide it (see COVER in renderer.ts). */
+  behind?: boolean;
 };
 
 type LiveShape = ShapeSpec & {
@@ -179,6 +181,7 @@ function clearAll() {
   pool?.clear();
   shapes = [];
   tasks = [];
+  covers.clear();
   shake.trauma = 0;
   applyShake(0, 0);
   renderer?.clear();
@@ -317,6 +320,48 @@ export function task(fn: Task): Handle {
   };
 }
 
+// ---------- the UI in front ----------
+
+/**
+ * Where the UI is, for light from behind it: boxes on screen (viewport CSS
+ * px). A `soft` one (text, say) hides it with a wide soft edge rather than
+ * a box's.
+ */
+export type CoverBox = { box: DOMRect; soft?: boolean };
+export type CoverSource = () => Iterable<CoverBox>;
+const covers = new Set<CoverSource>();
+const coverBoxes: number[] = [];
+
+/**
+ * While the handle is up, light from behind the UI (shapes and particles
+ * marked `behind`) hides behind the boxes `source` gives, asked every frame
+ * it's drawn: it lights the backdrop round them and their edges, never them.
+ */
+export function cover(source: CoverSource): Handle {
+  if (!fxActive()) return NOOP;
+  covers.add(source);
+  wake();
+  return {
+    stop() {
+      covers.delete(source);
+    },
+  };
+}
+
+/** The boxes of every cover now, packed for the renderer (null for none). */
+function coverNow(): number[] | null {
+  if (!covers.size) return null;
+  coverBoxes.length = 0;
+  for (const src of covers) {
+    try {
+      for (const { box: r, soft } of src()) if (r.width > 0 && r.height > 0) coverBoxes.push(r.left, r.top, r.width, r.height, soft ? 1 : 0);
+    } catch (e) {
+      console.warn('FX cover failed', e);
+    }
+  }
+  return coverBoxes;
+}
+
 /** Runs `fn` after `seconds` (effect time; skipped entirely while effects are off). */
 export function after(seconds: number, fn: () => void) {
   task((_, age) => {
@@ -418,7 +463,7 @@ function writeShape(i: number, s: LiveShape, t: number) {
   shapeData[o + 8] = c[0] * k;
   shapeData[o + 9] = c[1] * k;
   shapeData[o + 10] = c[2] * k;
-  shapeData[o + 11] = s.page ? 1 : 0;
+  shapeData[o + 11] = (s.page ? 1 : 0) + (s.behind ? BEHIND_UI : 0);
   for (let j = 0; j < 12; j++) shapeData[o + 12 + j] = f.q[j] ?? 0;
 }
 
@@ -580,6 +625,7 @@ function simulate(dt: number, nowMs: number, render: boolean): boolean {
   const busy = nParticles > 0 || nShapes > 0 || tasks.length > 0 || shake.trauma > 0 || shapes.length > 0 || pool.count > 0;
   if (!render) return busy;
   if (nParticles > 0 || nShapes > 0) {
+    renderer.setCover(coverNow(), [viewW, viewH]);
     renderer.draw([viewW, viewH], dpr, pool.instances, nParticles, shapeData, nShapes, nCrisp, dialogNow(), silhouette);
     show(true);
   } else {

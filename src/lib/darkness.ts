@@ -81,3 +81,13 @@ export function pressureOf(left: number, span: number, warn = 5): number {
   const late = Math.min(1, Math.max(0, 1 - left / (warn * 1000 + 2000)));
   return 0.45 * gone ** 1.6 + 0.55 * late ** 1.5;
 }
+
+/**
+ * How dark it is while a flare burns, with `left` (0 to 1) of its time to
+ * go: its light pushes the dark far back as it catches, and the dark seeps
+ * back in from the edges as it burns down, closing in as it gutters out.
+ */
+export function flarePressure(left: number): number {
+  const gone = Math.min(1, Math.max(0, 1 - left));
+  return 0.1 + 0.9 * gone ** 1.8;
+}

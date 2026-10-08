@@ -272,7 +272,10 @@ export function implode(at: Anchor, o: { count?: number; radius?: number; color?
 // ---------- shapes ----------
 
 /** An expanding shockwave ring. */
-export function ring(at: Anchor, o: { radius?: number; from?: number; thickness?: number; life?: number; color?: Vec3; breakup?: number; fill?: number; delay?: number; intensity?: number } = {}) {
+export function ring(
+  at: Anchor,
+  o: { radius?: number; from?: number; thickness?: number; life?: number; color?: Vec3; breakup?: number; fill?: number; delay?: number; intensity?: number; behind?: boolean } = {},
+) {
   const R = o.radius ?? 120;
   const R0 = o.from ?? 0;
   const th = o.thickness ?? 10;
@@ -281,6 +284,7 @@ export function ring(at: Anchor, o: { radius?: number; from?: number; thickness?
     at,
     life: o.life ?? 0.6,
     delay: o.delay,
+    behind: o.behind,
     color: o.color ?? C.gold,
     update(f, t) {
       const e = easeOut(t);
@@ -695,14 +699,15 @@ export function fire(el: Element, o: { height?: number; intensity?: number; blue
   });
 }
 
-/** A soft radial flash of light over `at`. */
-export function flash(at: Anchor, o: { radius?: number; color?: Vec3; life?: number; intensity?: number; delay?: number } = {}) {
+/** A soft radial flash of light over `at` (or, `behind`, from behind the UI: see cover in core.ts). */
+export function flash(at: Anchor, o: { radius?: number; color?: Vec3; life?: number; intensity?: number; delay?: number; behind?: boolean } = {}) {
   const R = o.radius ?? 300;
   return shape({
     type: ShapeType.Flash,
     at,
     life: o.life ?? 0.4,
     delay: o.delay,
+    behind: o.behind,
     color: o.color ?? C.gold,
     update(f, t) {
       f.hw = f.hh = R * 2.2;

@@ -5,7 +5,7 @@
   import { timerTick } from '../lib/fx/moments';
   import { FLARE_MS, clockLeft, questionTimer, veinWindowMs } from '../lib/delve';
   import { FLARE_IGNITE_MS, flareBurning, onFlareLands, type FlareBurn } from '../lib/flareBurn';
-  import { claimPressure, pressureOf, type Pressure } from '../lib/darkness';
+  import { claimPressure, flarePressure, pressureOf, type Pressure } from '../lib/darkness';
 
   /**
    * `deadline` null: the clock hasn't started yet (Delve waits for the art), so
@@ -149,7 +149,8 @@
       const left = leftAt(end, session.hostNow());
       burn?.set(left / FLARE_MS, left / spanMs);
       const secs = Math.ceil(left / 1000);
-      dark?.set(pressureOf(left, spanMs, warn));
+      // While a flare burns, its light holds the dark back (lib/darkness.ts).
+      dark?.set(burn ? flarePressure(left / FLARE_MS) : pressureOf(left, spanMs, warn));
       // The ring is redrawn only once its end has moved a third of a pixel
       // (or the number changes): on a 20 s timer about 25 times a second
       // rather than every frame, and each redraw repaints its glow.

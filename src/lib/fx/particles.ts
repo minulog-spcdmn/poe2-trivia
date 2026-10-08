@@ -62,6 +62,8 @@ export type ParticleSpec = {
    * row it aims at moved).
    */
   seek?: { cx: number; cy: number; tx: number; ty: number; from?: number; to?: number };
+  /** It shines from behind the UI: the boxes cover() names hide it (see COVER in renderer.ts). */
+  behind?: boolean;
 };
 
 // Per-particle fields, in this order.
@@ -97,7 +99,7 @@ const F = {
   cy: 28,
   tx: 29,
   ty: 30,
-  page: 31, // 1 for the page's light, 0 for an open dialog's (see BEHIND_DIALOG in renderer.ts)
+  page: 31, // 1 for the page's light, 0 for an open dialog's (see BEHIND_DIALOG in renderer.ts), plus 2 from behind the UI (see COVER)
   from: 32, // a seeking particle's follow slots (0 for none): its start's, its target's
   to: 33,
 } as const;
@@ -106,7 +108,7 @@ const STRIDE = 34;
 /** How many moving elements seeking particles can follow at once (slots are reused in turn). */
 export const FOLLOW_SLOTS = 64;
 
-/** Floats per particle in the instance buffer: (x, y, vx, vy) (size, stretch, rot, shape) (r, g, b, page light). */
+/** Floats per particle in the instance buffer: (x, y, vx, vy) (size, stretch, rot, shape) (r, g, b, page light and behind the UI). */
 export const INSTANCE_FLOATS = 12;
 
 export class ParticlePool {
@@ -177,7 +179,7 @@ export class ParticlePool {
     d[o + F.fadeIn] = p.fadeIn ?? 0.04;
     d[o + F.turb] = p.turbulence ?? 0;
     d[o + F.seed] = Math.random() * 1000;
-    d[o + F.page] = page ? 1 : 0;
+    d[o + F.page] = (page ? 1 : 0) + (p.behind ? 2 : 0);
     const k = p.seek;
     d[o + F.seek] = k ? 1 : 0;
     if (k) {
