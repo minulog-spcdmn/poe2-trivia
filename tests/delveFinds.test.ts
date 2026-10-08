@@ -233,8 +233,8 @@ test('a Flare Cache trades time now for time later: three seconds less than its 
       ['dynamite', 0],
     ],
   );
-  // Where it first turns up (depth 31, shown 30), 9 s less 3; then down with the curve.
-  assert.equal(findTimer('flare', findFor('flare').from), 6);
+  // Where it first turns up (depth 26, shown 25), 10 s less 3; then down with the curve.
+  assert.equal(findTimer('flare', findFor('flare').from), 7);
   assert.equal(findTimer('flare', 15), 9);
   assert.equal(findTimer('flare', 20), 8);
   assert.equal(findTimer('flare', 38), 4);
@@ -325,19 +325,19 @@ test('each find ramps from its start at its own first depth to its cap 20 depths
   assert.deepEqual([DELVE_MAX_WARDS, DELVE_MAX_FLARES, DELVE_MAX_DYNAMITE, SHARDS_PER_WARD], [3, 3, 3, 2]);
   assert.equal(FIND_RAMP, 20);
   assert.equal(FINDS_FROM, 11);
-  // In the order they first turn up, at the depths players see: dynamite from 10, flares from 30, veins from 40.
+  // In the order they first turn up, at the depths players see: dynamite from 10, flares from 25, veins from 40.
   assert.deepEqual(
     FINDS_IN_ORDER.map((f) => [f.kind, shownDepth(f.from)]),
     [
       ['dynamite', 10],
-      ['flare', 30],
+      ['flare', 25],
       ['azurite', 40],
     ],
   );
   assert.equal(shownDepth(FINDS_FROM), 10);
   // Where each starts, and how.
   assert.deepEqual([findChance('dynamite', 10), findChance('dynamite', 11)], [0, 0.08]);
-  assert.deepEqual([findChance('flare', 30), findChance('flare', 31)], [0, 0.04]);
+  assert.deepEqual([findChance('flare', 25), findChance('flare', 26)], [0, 0.04]);
   assert.deepEqual([findChance('azurite', 40), findChance('azurite', 41)], [0, 0.04]);
   const live = FINDS.filter((f) => f.cap > 0);
   assert.ok(Math.max(...live.map((f) => f.from)) === findFor('azurite').from, 'the Azurite Vein comes last');
@@ -366,8 +366,8 @@ test('each find ramps from its start at its own first depth to its cap 20 depths
   const total = (d: number) => FINDS.reduce((sum, f) => sum + findChance(f.kind, d), 0);
   assert.equal(total(10), 0);
   assert.equal(total(11), 0.08);
-  assert.ok(total(30) < 0.1, `${total(30)} at 30`);
-  assert.ok(Math.abs(total(31) - 0.13) < 1e-9, `${total(31)} at 31`);
+  assert.ok(total(25) < 0.1, `${total(25)} at 25`);
+  assert.ok(Math.abs(total(26) - 0.1275) < 1e-9, `${total(26)} at 26`);
   assert.ok(total(60) < total(61));
   assert.ok(Math.abs(total(61) - 0.33) < 0.005, `${total(61)} at 61`);
   assert.equal(total(100), total(61));
@@ -385,12 +385,12 @@ test('no find turns up above its first depth; each is at its start chance there 
     assert.ok(findChance(f.kind, f.from + FIND_RAMP - 1) < f.cap, `${f.kind} just short of its cap`);
     assert.equal(findChance(f.kind, f.from + FIND_RAMP), f.cap, `${f.kind} at its cap ${FIND_RAMP} depths on`);
   }
-  // As players see it: dynamite full by 30, flares by 50, veins by 60.
+  // As players see it: dynamite full by 30, flares by 45, veins by 60.
   assert.deepEqual(
     FINDS_IN_ORDER.map((f) => [f.kind, shownDepth(f.from + FIND_RAMP)]),
     [
       ['dynamite', 30],
-      ['flare', 50],
+      ['flare', 45],
       ['azurite', 60],
     ],
   );
@@ -404,8 +404,8 @@ test("a find's chance is always a number between 0 and 1, at any depth and for o
     }
 });
 
-test('from depth 10 to 29 as shown, the Dynamite Cache is the only find', () => {
-  for (let shown = 10; shown <= 29; shown++) {
+test('from depth 10 to 24 as shown, the Dynamite Cache is the only find', () => {
+  for (let shown = 10; shown <= 24; shown++) {
     const d = shown + 1;
     assert.ok(findChance('dynamite', d) >= 0.08, `dynamite at ${shown}`);
     assert.equal(findChance('flare', d), 0, `no flare at ${shown}`);
@@ -417,7 +417,7 @@ test('from depth 10 to 29 as shown, the Dynamite Cache is the only find', () => 
   const s = structuredClone(h.s);
   let caches = 0;
   for (let i = 0; i < 3000; i++) {
-    s.round = 11 + (i % 20);
+    s.round = 11 + (i % 15);
     roll(s, false);
     const finds = findOffers(s);
     assert.ok(finds.length <= 1 && finds.every((f) => f.kind === 'dynamite'), `at depth ${s.round}`);
@@ -445,14 +445,14 @@ test('the Dynamite Cache comes first, from depth 10 as shown, 8% rising to 9% by
     FINDS.map((f) => [f.kind, f.from, f.start, f.cap]),
     [
       ['azurite', 41, 0.04, 0.11],
-      ['flare', 31, 0.04, 0.13],
+      ['flare', 26, 0.04, 0.13],
       ['dynamite', 11, 0.08, 0.09],
     ],
   );
   // Internal depths (shown one less): none at 10, 8% at 11, 8.5% at 21, 9% from 31, half of that from 200.
   assert.deepEqual([10, 11, 21, 31, 100, 200].map((d) => findChance('dynamite', d)), [0, 0.08, 0.085, 0.09, 0.09, 0.045]);
   // Rarer than the flare once that is at its cap, and than the vein once that is at its.
-  for (let d = 51; d <= 200; d++) assert.ok(findChance('dynamite', d) < findChance('flare', d), `${d}`);
+  for (let d = 46; d <= 200; d++) assert.ok(findChance('dynamite', d) < findChance('flare', d), `${d}`);
   assert.ok(findChance('dynamite', 61) < findChance('azurite', 61));
   // Rolled as often as its chance, for a player with room for it.
   const h = delve(['Ash'], { seed: 9 });
@@ -499,23 +499,23 @@ test('one roll per offer and one more beside a find: at most two, on different c
 });
 
 test('two finds side by side are rare early and grow less rare with depth, and as many offers hold a find as with one roll', () => {
-  // The rates, as SECOND_FIND says: none above depth 31 (shown 30), about 1 offer in 280 at 31, 1 in 70 at 41, 1 in 28 from 61.
+  // The rates, as SECOND_FIND says: none above depth 26 (shown 25), about 1 offer in 290 at 26, 1 in 57 at 41, 1 in 28 from 61.
   assert.equal(SECOND_FIND, 0.5);
-  for (let d = 1; d <= 30; d++) assert.equal(double(d), 0, `only dynamite at ${d}: nothing to go beside it`);
-  assert.ok(double(31) > 0.002 && double(31) < 0.005, `${double(31)} at 31`);
-  assert.ok(double(41) > 0.012 && double(41) < 0.018, `${double(41)} at 41`);
+  for (let d = 1; d <= 25; d++) assert.equal(double(d), 0, `only dynamite at ${d}: nothing to go beside it`);
+  assert.ok(double(26) > 0.002 && double(26) < 0.005, `${double(26)} at 26`);
+  assert.ok(double(41) > 0.015 && double(41) < 0.02, `${double(41)} at 41`);
   assert.ok(double(61) > 0.03 && double(61) < 0.04, `${double(61)} at 61`);
   assert.equal(double(100), double(61));
   // Rarer again as the finds grow scarcer past 100.
   assert.ok(double(200) < double(100) / 4, `${double(200)} at 200`);
-  for (let d = 30; d < 61; d++) assert.ok(double(d + 1) >= double(d), `growing at ${d}`);
+  for (let d = 25; d < 61; d++) assert.ok(double(d + 1) >= double(d), `growing at ${d}`);
   // A ninth of the offers with a find hold two from depth 61, fewer above.
   assert.ok(double(61) / anyFind(61) < 0.12 && double(41) / anyFind(41) < 0.08);
   // Simulated: offers rolled by the engine at each depth, for a player with room for everything.
   const h = delve(['Ash'], { seed: 21 });
   const roll = (h.engine as unknown as { beginTurn(s: GameState, first: boolean): void }).beginTurn.bind(h.engine);
   const N = 20_000;
-  for (const d of [31, 41, 61]) {
+  for (const d of [26, 41, 61]) {
     let one = 0;
     let two = 0;
     const s = structuredClone(h.s);

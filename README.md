@@ -160,18 +160,18 @@ the same thing for everyone.
   caves in. The card shows only the find's name, and the note under the
   cards says what the item does and what the find risks. The finds turn
   up one at a time, the strongest last: the Dynamite Cache from depth 10,
-  the Flare Cache from 30 and the Azurite Vein from 40. Each find's chance
+  the Flare Cache from 25 and the Azurite Vein from 40. Each find's chance
   rises evenly over the 20 depths after its first and then holds (the
   Dynamite Cache from 8% to 9% by depth 30, the Flare Cache from 4% to 13%
-  by 50, the Vein from 4% to 11% by 60). From 10 to 29 the Dynamite Cache
+  by 45, the Vein from 4% to 11% by 60). From 10 to 24 the Dynamite Cache
   is the only find, so it starts higher than the others to keep finds
   turning up early. From 60 about one offer in three holds a find. From
   100 they grow scarcer a little with every depth, down to half their chance at 199 (the Vein to a third, as a ward
   takes a whole loss), and hold there: about one offer in seven.
   - An offer that holds a find rolls once more for a second, of another
     kind and on another card, at half its chance; never a third. Two side
-    by side are rare early on: never above depth 30, where the Flare Cache
-    joins the dynamite, then about 1 offer in 280 at 30 and 1 in 70 at 40,
+    by side are rare early on: never above depth 25, where the Flare Cache
+    joins the dynamite, then about 1 offer in 290 at 25 and 1 in 57 at 40,
     and about 1 offer in 28 from depth 60.
   - A find is never offered for an item nobody could carry more of: alone,
     you; together, anyone standing.
@@ -223,7 +223,7 @@ the same thing for everyone.
     pick strikes (or at the time-out). The lost item bursts on the phial or
     beside it with a small blast of its own, a moment after the life, and
     the reveal says what went ("The blast destroyed your flare.").
-  - A **Flare Cache** (from depth 30) gives a **flare**: time later for time
+  - A **Flare Cache** (from depth 25) gives a **flare**: time later for time
     now, as its own question has 3 s less on the clock than its deeper
     depth's (never under 3 s; on a clock that short no art burns in, as half
     of it could never be in with 3 s left). When your clock hits 0 a flare
