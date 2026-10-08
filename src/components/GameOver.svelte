@@ -8,7 +8,7 @@
   import ArcaneCircle from './ArcaneCircle.svelte';
   import { CREATOR, DONATE_URL, SITE_URL } from '../lib/site';
   import { backdropShadow } from '../lib/backdropShadow';
-  import { fxActive, fxUserOn } from '../lib/fx/core';
+  import { fxActive, fxUserOn, onFxChange } from '../lib/fx/core';
   import { victory } from '../lib/fx/moments';
   import { fallen } from '../lib/fx/delveEnd';
   import { shareText } from '../lib/delveShare';
@@ -131,9 +131,22 @@
     return () => h.stop();
   });
 
-  // Without the effects layer (no WebGL2), simpler gold sparks on a 2D canvas.
+  // Without the effects layer (no WebGL2), simpler gold sparks on a 2D canvas;
+  // also once it turns out not to come, should it still be on its way now.
   onMount(() => {
-    if (matchMedia('(prefers-reduced-motion: reduce)').matches || fxActive() || !fxUserOn() || iLost || run) return;
+    let stop: (() => void) | null = null;
+    const start = () => {
+      if (stop || matchMedia('(prefers-reduced-motion: reduce)').matches || fxActive() || !fxUserOn() || iLost || run) return;
+      stop = sparks();
+    };
+    start();
+    const off = onFxChange(start);
+    return () => {
+      off();
+      stop?.();
+    };
+  });
+  function sparks() {
     const ctx = canvas.getContext('2d')!;
     const dpr = Math.min(2, devicePixelRatio);
     // Sized from the canvas, which keeps its height while a phone's toolbars
@@ -211,7 +224,7 @@
       cancelAnimationFrame(raf);
       ro.disconnect();
     };
-  });
+  }
 
   let rank = $derived.by(() => {
     if (run) return delveRows.map((r) => r.rank);

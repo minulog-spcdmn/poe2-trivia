@@ -19,7 +19,7 @@ import { ENV_GLSL } from './shaders/effects';
 import { FX_NOISE_GLSL, SHAFTS_GLSL, SPORES_GLSL } from './shaders/newEffects';
 import { CLOCK_PEAK, pressureLevel } from './darkness';
 import { DIALOG_BLUR, DIALOG_DIM, openDialog } from './behindDialog';
-import { buildPrograms, setGpuCatchUp, type Build, type ProgramSource } from './fx/gl';
+import { buildPrograms, refuseWebgl2, setGpuCatchUp, type Build, type ProgramSource } from './fx/gl';
 
 const CITY = ENVIRONMENTS.indexOf('city');
 
@@ -516,7 +516,7 @@ void main() {
  * the soft light worked out here, the effects' slots, 3 * FX_SLOTS, among
  * them), and each element's: its seven rows and its shadows' two each.
  * Recount when adding a uniform (the active uniforms of the program
- * frag(4, false) links to, less 4 elements' worth).
+ * frag(4, false, true) links to, less 4 elements' worth).
  */
 const FIXED_UNIFORMS = 171;
 const ELEMENT_UNIFORMS = 7 + 2 * SHADOWS_PER_ELEMENT;
@@ -945,7 +945,11 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     premultipliedAlpha: false,
     powerPreference: 'low-power',
   });
-  if (!gl) return null;
+  if (!gl) {
+    // (The effects' overlay won't get one either: see prepare in fx/core.ts.)
+    refuseWebgl2();
+    return null;
+  }
   const hp = gl.getShaderPrecisionFormat(gl.FRAGMENT_SHADER, gl.HIGH_FLOAT);
   if (!hp || hp.precision === 0) return null;
   // The main pass needs about FIXED_UNIFORMS fragment uniform vectors (every
@@ -1154,7 +1158,9 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   // has made all it needs of them before they're used (warm); then ready.
   // Until then, a Delve scene is drawn by the lean programs without
   // Delve's parts, which come in over a moment once they're ready
-  // (delveIn). If they fail to build, the lean ones go on standing in.
+  // (delveIn). If they fail to build, the CSS backdrop takes over, as on a
+  // lost context, once a Delve scene shows (the lean ones can't draw its
+  // dark): the start page keeps this one.
   let building: Build | null = null;
   let warming: Variant | null = null;
   let warmed = 0;
@@ -1171,8 +1177,10 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     building = buildPrograms(gl!, sources, (progs) => {
       building = null;
       if (!progs) {
+        // (A lost context goes to the CSS backdrop by itself: see lost.)
+        if (gl!.isContextLost()) return;
         delveFailed = true;
-        console.warn("Delve's backdrop keeps to the usual one.");
+        console.warn("Delve's backdrop goes to the CSS one once Delve shows.");
         return;
       }
       warming = smoothTex ? variant(progs[1], progs[0]) : variant(progs[0], null);
@@ -1270,6 +1278,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     // Which programs draw it: Delve's while any of Delve's parts show, once
     // they're ready; else the lean ones (the same picture without them).
     const deep = delveScene(look, close, pressure, city);
+    if (deep && delveFailed) return lost();
     if (deep) wantDelveBackdrop();
     if (warming) warm(warming);
     const v = deep && delve ? delve : lean;
@@ -1279,8 +1288,11 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
       delveIn = reduceMotion.matches ? 1 : 0;
     }
     // Delve's parts coming in, after the lean programs stood in for them:
-    // each of them scaled from none (the lean picture) to all of it.
+    // each of them scaled from none (the lean picture) to all of it. (The
+    // lean programs have none to scale; but the vignette, which gives way
+    // to the stratum's dark, keeps all of itself while that isn't drawn.)
     const k = v === lean ? 1 : delveIn;
+    const dark = v === lean ? 0 : delveIn * look.dark;
     const { soft, prog, smoothProg, sRes, sSize, sViewH, uTop, uBottom, uGlow, uBaseStop, uBlobA, uBlobRot, uBeams, uHome, uTitle, uFloor, uHaze, uShade, uMist, uFx, uFxK, uEddy, uDark, uGlowCol, uScene, uBlobColor } = v;
     const { uRes, uSize, uViewH, uVignette, uLightA, uLightC, uMood, uEmberHalo, uEmberCore, uEmberK, uCityA, uCityB, uCityC, uIce, mDark, mScene, mHome, uElCount, uDialog, uSharpSize, uBlurSize } = v;
 
@@ -1353,7 +1365,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     gl!.uniform2f(uRes, canvas.width, canvas.height);
     // Deep down the stratum's uneven dark takes over from the vignette, so
     // its ellipse never shows.
-    gl!.uniform2f(uVignette, 1 - 0.06 * vignette, (1 + 0.07 * vignette) * (1 - 0.6 * look.dark));
+    gl!.uniform2f(uVignette, 1 - 0.06 * vignette, (1 + 0.07 * vignette) * (1 - 0.6 * dark));
     gl!.uniform2f(uSharpSize, atlasSize[0], atlasSize[1]);
     gl!.uniform2f(uBlurSize, atlasSize[2], atlasSize[3]);
     // The UI's shadows and fills: only the arrays whose bits changed since they were last sent.
@@ -1455,18 +1467,32 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   // the fence after the last frame drawn before they asked: nothing new is
   // drawn (the last frame stays up) until the GPU has passed it, which is
   // asked without waiting, once a frame. Then they run, and the GPU has
-  // nothing to finish first.
-  const catchingUp = new Set<() => void>();
+  // nothing to finish first. One that asks once the fence is in waits for
+  // the next (`later`): what it asked of the GPU just before (a program
+  // to link) may come after this one.
+  let catchingUp = new Set<() => void>();
+  let later = new Set<() => void>();
   let fence: WebGLSync | null = null;
   const holdFor = (f: () => void) => {
-    catchingUp.add(f);
-    return () => catchingUp.delete(f);
+    (fence ? later : catchingUp).add(f);
+    return () => {
+      if (!catchingUp.delete(f)) later.delete(f);
+      // (None left for this fence: it's let go, so the next to ask gets a fresh one.)
+      if (fence && !catchingUp.size) nextFence();
+    };
   };
-  function caughtUp() {
+  /** Drops the fence; those that came after it wait for the next. Returns those it held. */
+  function nextFence() {
     if (fence) gl!.deleteSync(fence);
     fence = null;
-    const now = [...catchingUp];
-    catchingUp.clear();
+    const held = catchingUp;
+    catchingUp = later;
+    later = new Set();
+    return held;
+  }
+  /** The fence has passed: what it held runs (with `everyone`, as the backdrop stops, what waits for the next too). */
+  function caughtUp(everyone = false) {
+    const now = [...nextFence(), ...(everyone ? nextFence() : [])];
     for (const f of now) {
       try {
         f();
@@ -1622,15 +1648,21 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
 
   function stop() {
     cancelAnimationFrame(raf);
-    // Whatever waited on the GPU goes ahead without the backdrop.
-    setGpuCatchUp(null);
-    caughtUp();
+    // (Delve's build first: it would otherwise go ahead below, and finish.)
     delveWaiters.delete(buildDelve);
     building?.cancel();
     building = null;
+    for (const v of [warming, delve]) {
+      if (!v) continue;
+      gl!.deleteProgram(v.prog);
+      if (v.smoothProg) gl!.deleteProgram(v.smoothProg);
+    }
     warming = null;
     delve = null;
     delveReadyNow = false;
+    // Whatever waited on the GPU goes ahead without the backdrop.
+    setGpuCatchUp(null);
+    caughtUp(true);
     ro.disconnect();
     viewRo.disconnect();
     viewProbe.remove();

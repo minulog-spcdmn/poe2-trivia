@@ -32,6 +32,13 @@ export function whenIdle(f: () => void, timeout = 500): () => void {
   return () => clearTimeout(id);
 }
 
+/** Whether the page was refused a WebGL2 context (the backdrop's, asked first): the effects then don't count on one either. */
+let refused = false;
+export const webgl2Refused = () => refused;
+export function refuseWebgl2() {
+  refused = true;
+}
+
 /** How the GPU is made to catch up before a call that waits on it (see whenGpuCaughtUp): set by the backdrop while it runs. */
 let catchUp: ((f: () => void) => () => void) | null = null;
 
@@ -106,6 +113,13 @@ export function buildPrograms(gl: WebGL2RenderingContext, sources: readonly Prog
     stopIdle?.();
     stopCatchUp?.();
   };
+  /** Deletes every program started, and its shaders (one deleted already is let be). */
+  const drop = () => {
+    progs.forEach((prog, i) => {
+      gl.deleteProgram(prog);
+      for (const s of shaders[i]) gl.deleteShader(s);
+    });
+  };
   /** How each program went: all of them, or null. */
   const read = (): WebGLProgram[] | null => {
     if (gl.isContextLost()) return null;
@@ -121,13 +135,21 @@ export function buildPrograms(gl: WebGL2RenderingContext, sources: readonly Prog
       console.warn(`${sources[i].label} failed to compile or link.`, ...logs, gl.getProgramInfoLog(prog));
     });
     if (ok) return progs;
-    for (const prog of progs) gl.deleteProgram(prog);
+    drop();
     return null;
   };
   const finish = () => {
     stop();
-    while (progs.length < sources.length) begin(sources[progs.length]);
-    done(read());
+    // (A lost context makes no shaders: nothing more is started on it. And
+    // whatever goes wrong, `done` hears of it.)
+    let got: WebGLProgram[] | null = null;
+    try {
+      while (!gl.isContextLost() && progs.length < sources.length) begin(sources[progs.length]);
+      got = read();
+    } catch (e) {
+      console.warn(e);
+    }
+    done(got);
   };
   const nextFrame = (f: () => void) => {
     raf = requestAnimationFrame(() => {
@@ -165,7 +187,7 @@ export function buildPrograms(gl: WebGL2RenderingContext, sources: readonly Prog
     cancel() {
       if (over) return;
       stop();
-      for (const prog of progs) gl.deleteProgram(prog);
+      drop();
     },
     now() {
       if (!over) finish();

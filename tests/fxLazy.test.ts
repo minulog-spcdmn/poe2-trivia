@@ -59,22 +59,33 @@ const idle = () => {
 const LINK_STATUS = 0x8b82;
 const COMPLETION = 0x91b1;
 
-/** A WebGL2 context that accepts everything and logs the calls that matter here; `parallel` offers KHR_parallel_shader_compile. */
+/**
+ * A WebGL2 context that accepts everything and logs the calls that matter
+ * here; `parallel` offers KHR_parallel_shader_compile. Once `lost`, it makes
+ * no shaders (and, as a browser does, throws on the null in their place).
+ */
 function fakeGl(parallel: boolean) {
   const log: string[] = [];
-  const state = { done: false };
+  const state = { done: false, lost: false, deleted: { programs: 0, shaders: 0 } };
   let n = 0;
   const gl: object = new Proxy(
     {},
     {
       get(_, prop) {
         if (prop === 'LINK_STATUS') return LINK_STATUS;
-        if (prop === 'isContextLost') return () => false;
+        if (prop === 'isContextLost') return () => state.lost;
+        if (prop === 'createShader') return () => (state.lost ? null : {});
+        if (prop === 'shaderSource')
+          return (s: object | null) => {
+            if (!s) throw new TypeError('not a WebGLShader');
+          };
         if (prop === 'canvas') return { width: 0, height: 0 };
         if (prop === 'getExtension')
           return (name: string) => (name === 'KHR_parallel_shader_compile' ? (parallel ? { COMPLETION_STATUS_KHR: COMPLETION } : null) : { loseContext() {} });
         if (prop === 'createProgram') return () => ({ id: ++n });
         if (prop === 'linkProgram') return (p: { id: number }) => log.push(`link ${p.id}`);
+        if (prop === 'deleteProgram') return () => state.deleted.programs++;
+        if (prop === 'deleteShader') return () => state.deleted.shaders++;
         if (prop === 'getProgramParameter')
           return (p: { id: number }, what: number) => {
             log.push(`${what === LINK_STATUS ? 'status' : 'done?'} ${p.id}`);
@@ -96,6 +107,7 @@ g.document = {
 };
 g.localStorage = { getItem: () => null, setItem() {}, removeItem() {} };
 g.Element = class {};
+g.WebGL2RenderingContext = class {};
 g.devicePixelRatio = 1;
 g.ResizeObserver = class {
   observe() {}
@@ -106,8 +118,8 @@ const fx = await import('../src/lib/fx/core.ts');
 const { ShapeType } = await import('../src/lib/fx/renderer.ts');
 const { buildPrograms, setGpuCatchUp } = await import('../src/lib/fx/gl.ts');
 
-/** The overlay's canvas; counts the contexts asked of it. */
-function overlay(parallel = true) {
+/** The overlay's canvas; counts the contexts asked of it (and, with `refuse`, gives none). */
+function overlay(parallel = true, refuse = false) {
   const ctx = fakeGl(parallel);
   const c = {
     asked: 0,
@@ -116,7 +128,7 @@ function overlay(parallel = true) {
     style: {} as Record<string, string>,
     getContext() {
       c.asked++;
-      return ctx.gl;
+      return refuse ? null : ctx.gl;
     },
     addEventListener() {},
     removeEventListener() {},
@@ -185,7 +197,10 @@ test('with the backdrop running, the context is asked for only once the GPU has 
   const held: (() => void)[] = [];
   setGpuCatchUp((f) => {
     held.push(f);
-    return () => held.splice(held.indexOf(f), 1);
+    return () => {
+      const i = held.indexOf(f);
+      if (i >= 0) held.splice(i, 1);
+    };
   });
   const o = overlay();
   const stop = fx.startFx(o.canvas);
@@ -215,6 +230,96 @@ test('without the effects layer mounted, nothing is made and effects are off', (
   assert.ok(!fx.isLive(glow()));
 });
 
+test('what was asked for meanwhile goes on from where it would be by now; what ran its course, was stopped or lost its element is dropped', () => {
+  const real = performance.now;
+  let t = real.call(performance);
+  performance.now = () => t;
+  try {
+    const o = overlay();
+    const stop = fx.startFx(o.canvas);
+    const kept = glow();
+    glow().stop();
+    const el = Object.assign(new (g.Element as new () => object)(), { isConnected: true, getBoundingClientRect: () => ({ left: 0, top: 0, width: 10, height: 10 }) });
+    fx.shape({ type: ShapeType.Flash, at: el as Element, life: Infinity, color: [1, 1, 1], update() {} });
+    fx.shape({ type: ShapeType.Flash, at: { x: 0, y: 0 }, life: 1, color: [1, 1, 1], update() {} });
+    fx.particle({ x: 0, y: 0, life: 1, size: 2, color: [1, 1, 1] });
+    fx.particle({ x: 0, y: 0, life: 5, size: 2, color: [1, 1, 1] });
+    fx.shakeView(1);
+    assert.equal(fx.fxStats().shapes, 4);
+    assert.equal(fx.fxStats().particles, 2);
+    el.isConnected = false;
+    // A cold cache: its shaders take seconds.
+    t += 2000;
+    frame();
+    o.ctx.state.done = true;
+    frame();
+    assert.equal(fx.fxStats().shapes, 1, 'only the endless one still in use');
+    assert.equal(fx.fxStats().particles, 1, 'only the one still alive by now');
+    assert.ok(!fx.shaking(), 'a shake asked for 2 s ago is over');
+    kept.stop(0);
+    stop();
+  } finally {
+    performance.now = real;
+  }
+});
+
+test('a context lost before its shaders are built turns effects off, and says so', () => {
+  const o = overlay(false);
+  const stop = fx.startFx(o.canvas);
+  const heard: boolean[] = [];
+  const off = fx.onFxChange(() => heard.push(fx.fxActive()));
+  glow();
+  assert.equal(o.c.asked, 1);
+  o.ctx.state.lost = true;
+  frame();
+  idle();
+  assert.ok(!fx.fxActive() && !fx.fxAvailable());
+  assert.deepEqual(heard, [false]);
+  assert.equal(fx.fxStats().shapes, 0);
+  off();
+  stop();
+});
+
+test('refused a context, effects turn off, and say so', () => {
+  const o = overlay(true, true);
+  const stop = fx.startFx(o.canvas);
+  const heard: boolean[] = [];
+  const off = fx.onFxChange(() => heard.push(fx.fxActive()));
+  glow();
+  assert.equal(o.c.asked, 1);
+  assert.ok(!fx.fxActive() && !fx.fxAvailable());
+  assert.deepEqual(heard, [false]);
+  off();
+  stop();
+});
+
+test('without WebGL2 nothing is on its way: effects are off from the start', () => {
+  const had = g.WebGL2RenderingContext;
+  delete g.WebGL2RenderingContext;
+  try {
+    const o = overlay();
+    const stop = fx.startFx(o.canvas);
+    assert.ok(!fx.fxActive() && !fx.fxAvailable());
+    stop();
+  } finally {
+    g.WebGL2RenderingContext = had;
+  }
+});
+
+test('with effects switched off, the renderer waits until they are on (and the switch stays there)', () => {
+  fx.setFxOn(false);
+  const o = overlay();
+  const stop = fx.startFx(o.canvas);
+  frame();
+  frame();
+  idle();
+  assert.equal(o.c.asked, 0, 'not made while off');
+  assert.ok(fx.fxAvailable());
+  fx.setFxOn(true);
+  assert.equal(o.c.asked, 1, 'made once on');
+  stop();
+});
+
 /** Runs a build to its end, a frame and an idle moment at a time; the log marks each step. */
 function steps(parallel: boolean, n: number, oneAtATime = false) {
   const { gl, log, state } = fakeGl(parallel);
@@ -233,6 +338,28 @@ function steps(parallel: boolean, n: number, oneAtATime = false) {
   }
   return { log: log.join(' ').split('|').map((s) => s.trim()), got };
 }
+
+test('a build finished on a lost context gives null, and starts nothing more on it', () => {
+  const { gl, log, state } = fakeGl(false);
+  let got: WebGLProgram[] | null | undefined;
+  const b = buildPrograms(gl, ['a', 'b', 'c'].map((label) => ({ vs: 'v', fs: 'f', label })), (p) => (got = p), true);
+  frame();
+  idle();
+  assert.equal(log.filter((l) => l.startsWith('link')).length, 1);
+  state.lost = true;
+  b.now();
+  assert.equal(got, null);
+  assert.equal(log.filter((l) => l.startsWith('link')).length, 1);
+});
+
+test('a build cancelled deletes its programs and their shaders', () => {
+  const { gl, state } = fakeGl(false);
+  const b = buildPrograms(gl, ['a', 'b'].map((label) => ({ vs: 'v', fs: 'f', label })), () => assert.fail('never done'), true);
+  frame();
+  idle();
+  b.cancel();
+  assert.deepEqual(state.deleted, { programs: 1, shaders: 2 });
+});
 
 test('with KHR_parallel_shader_compile every program starts at once, and is read only once the driver says all are done', () => {
   const { log, got } = steps(true, 3);

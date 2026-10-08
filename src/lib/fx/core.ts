@@ -11,7 +11,7 @@
 // wait for it, and play once it is.
 
 import { BEHIND_PICTURE, BEHIND_UI, FxRenderer, SHAPE_FLOATS, ShapeType, pictureReady, type DialogLight, type Silhouette } from './renderer';
-import { whenGpuCaughtUp, whenIdle, type Build } from './gl';
+import { webgl2Refused, whenGpuCaughtUp, whenIdle, type Build } from './gl';
 import { ParticlePool, type ParticleSpec } from './particles';
 import { opacityOf } from '../opacity';
 import { dialogBox, openDialog } from '../behindDialog';
@@ -121,14 +121,19 @@ let renderer: FxRenderer | null = null;
 let pool: ParticlePool | null = null;
 /**
  * The renderer on its way (see startFx): waiting for the page to have
- * painted, or for the GPU to catch up (`waiting` cancels either; `forPaint`
- * says which), or its shaders compiling (`building`). Meanwhile effects
- * count as on, and wait for it.
+ * painted (and, while effects are off, for them to be on), or for the GPU
+ * to catch up (`waiting` cancels either; `forPaint` says which), or its
+ * shaders compiling (`building`). Meanwhile effects count as on, and wait
+ * for it.
  */
 let waiting: (() => void) | null = null;
 let forPaint = false;
 let building: Build | null = null;
 const coming = () => !!(waiting || building);
+/** When the first effect that waits for the renderer was asked for (performance.now()), or null. */
+let queuedAt: number | null = null;
+/** When the view was last shaken while waiting for it. */
+let shakenAt = 0;
 const MAX_SHAPES = 96;
 const shapeData = new Float32Array(MAX_SHAPES * SHAPE_FLOATS);
 let shapes: LiveShape[] = [];
@@ -184,6 +189,8 @@ export function setFxOn(on: boolean) {
   userOn = on;
   writeStored('fx', on ? '1' : '0');
   if (!fxActive()) clearAll();
+  // (Not made while they were off: made now.)
+  else hurry();
   for (const l of listeners) l(on);
 }
 
@@ -196,6 +203,7 @@ function clearAll() {
   pool?.clear();
   shapes = [];
   tasks = [];
+  queuedAt = null;
   covers.clear();
   shake.trauma = 0;
   applyShake(0, 0);
@@ -232,9 +240,23 @@ function onPage(a: Anchor): boolean {
   return x < r.left || x > r.right || y < r.top || y > r.bottom;
 }
 
+/**
+ * While the renderer is on its way, seconds since the first effect asked for
+ * meanwhile (0 for that one, and once it's made). What's asked for is held
+ * back by that much: setup() moves everything on by the whole wait, so each
+ * effect goes on from where it would be by then.
+ */
+function waited(): number {
+  if (renderer) return 0;
+  const t = performance.now();
+  queuedAt ??= t;
+  return (t - queuedAt) / 1000;
+}
+
 export function particle(p: ParticleSpec) {
   if (!fxActive()) return;
-  pool!.spawn(p, onPage(p));
+  const late = waited();
+  pool!.spawn(late ? { ...p, delay: (p.delay ?? 0) + late } : p, onPage(p));
   wake();
 }
 
@@ -302,7 +324,7 @@ export function shape(spec: ShapeSpec): Handle {
   }
   const s: LiveShape = {
     ...spec,
-    age: -(spec.delay ?? 0),
+    age: -(spec.delay ?? 0) - waited(),
     seed: Math.random() * 100,
     box: boxOf(spec.at),
     fade: 0,
@@ -325,7 +347,7 @@ export function shape(spec: ShapeSpec): Handle {
 
 export function task(fn: Task): Handle {
   if (!fxActive()) return NOOP;
-  const t = { fn, age: 0 };
+  const t = { fn, age: -waited() };
   tasks.push(t);
   wake();
   return {
@@ -436,6 +458,7 @@ export function shakeView(amount: number, px = 7) {
   const was = shake.trauma;
   shake.trauma = Math.min(1, was + amount);
   shake.amp = was > 0.05 ? Math.max(shake.amp, px) : px;
+  if (!renderer) shakenAt = performance.now();
   wake();
 }
 
@@ -753,6 +776,7 @@ function teardown() {
   pool = null;
   shapes = [];
   tasks = [];
+  queuedAt = null;
   // (What would have stopped a cover may be among the tasks just dropped, or
   // never start while the renderer is gone: left up, it would be asked every
   // frame from now on.)
@@ -762,24 +786,36 @@ function teardown() {
   for (const l of listeners) l(userOn);
 }
 
+/** Whether effects would be drawn, once the renderer is made. */
+const wanted = () => userOn && !reduce?.matches;
+
 /**
  * Gets the overlay on `c` ready to take effects: the particle pool now, the
  * renderer once the page has painted and is idle (or at once, when an effect
- * is asked for before then: see hurry). The first paint waits for neither
- * its context nor its shaders: on a first visit (a cold shader cache) those
- * held it up by seconds, behind the backdrop's own (lib/backdrop.ts).
+ * is asked for before then: see hurry), or, while effects are off, once
+ * they're on. The first paint waits for neither its context nor its
+ * shaders: on a first visit (a cold shader cache) those held it up by
+ * seconds, behind the backdrop's own (lib/backdrop.ts). Without WebGL2 (or
+ * where the backdrop was refused a context) nothing is on its way, and
+ * effects are off from the start.
  */
 function prepare(c: HTMLCanvasElement) {
   pool = new ParticlePool(coarse?.matches ? 2000 : 5000);
   quality = coarse?.matches ? 1 : 0;
   probe = null;
   waiting?.();
+  waiting = null;
+  if (typeof WebGL2RenderingContext === 'undefined' || webgl2Refused()) return;
   // Two frames: the first has been painted (and the backdrop's first frame
-  // with it, which comes before it); then an idle moment.
+  // with it, which comes before it); then an idle moment (and, while
+  // effects are off, until they're on: see hurry).
   let raf2 = 0;
   let stopIdle: (() => void) | null = null;
+  const idle = () => {
+    if (wanted()) soon(c);
+  };
   const raf1 = requestAnimationFrame(() => {
-    raf2 = requestAnimationFrame(() => (stopIdle = whenIdle(() => soon(c), 1000)));
+    raf2 = requestAnimationFrame(() => (stopIdle = whenIdle(idle, 1000)));
   });
   forPaint = true;
   waiting = () => {
@@ -789,9 +825,9 @@ function prepare(c: HTMLCanvasElement) {
   };
 }
 
-/** The renderer is wanted now (an effect was asked for): it's made as soon as it can be, if it wasn't on its way already. */
+/** The renderer is wanted now (an effect was asked for, or effects came on): it's made as soon as it can be, if it wasn't on its way already. */
 function hurry() {
-  if (waiting && forPaint && canvas) soon(canvas);
+  if (waiting && forPaint && canvas && wanted()) soon(canvas);
 }
 
 /**
@@ -843,6 +879,20 @@ function setup(c: HTMLCanvasElement, r: FxRenderer) {
   } catch {
     ro.observe(c);
   }
+  // What was asked for meanwhile goes on from where it would be by now
+  // (see waited): what has run its course is dropped, and so is what was
+  // stopped, or whose element left the page, before it ever showed.
+  if (queuedAt !== null) {
+    const late = (performance.now() - queuedAt) / 1000;
+    queuedAt = null;
+    shapes = shapes.filter((s) => {
+      s.age += late;
+      return !s.stopped && !detached(s.at) && !(s.age >= s.life);
+    });
+    for (const t of tasks) t.age += late;
+    for (let left = late; left > 0 && pool.count; left -= 1 / 15) pool.step(Math.min(left, 1 / 15));
+    shake.trauma = Math.max(0, shake.trauma - 1.6 * (performance.now() - shakenAt) / 1000);
+  }
   resize();
   shown = true;
   show(false);
@@ -856,6 +906,7 @@ export function startFx(c: HTMLCanvasElement): () => void {
   prepare(c);
   const onMotion = () => {
     if (!fxActive()) clearAll();
+    else hurry();
     for (const l of listeners) l(userOn);
   };
   reduce?.addEventListener('change', onMotion);
@@ -870,7 +921,7 @@ export function startFx(c: HTMLCanvasElement): () => void {
   const onRestored = () => {
     if (!renderer && !coming()) {
       prepare(c);
-      soon(c);
+      hurry();
     }
   };
   c.addEventListener('webglcontextlost', onLost);
@@ -880,6 +931,9 @@ export function startFx(c: HTMLCanvasElement): () => void {
     c.removeEventListener('webglcontextlost', onLost);
     c.removeEventListener('webglcontextrestored', onRestored);
     renderer?.destroy();
+    // (Its context is made before its shaders are: let go too, mid-build.)
+    const half = !renderer && !!building;
     teardown();
+    if (half) c.getContext('webgl2')?.getExtension('WEBGL_lose_context')?.loseContext();
   };
 }

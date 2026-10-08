@@ -921,6 +921,7 @@ export class FxRenderer {
         if (progs) r = new FxRenderer(gl, opts, progs.map((p) => wrapProgram(gl, p)));
       } catch (e) {
         console.warn(e);
+        for (const p of progs ?? []) gl.deleteProgram(p);
       }
       if (!r) console.warn('FX renderer unavailable; effects are off.');
       ready(r);

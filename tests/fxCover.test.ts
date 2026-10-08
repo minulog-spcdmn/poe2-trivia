@@ -74,6 +74,7 @@ g.document = {
 };
 g.localStorage = { getItem: () => null, setItem() {}, removeItem() {} };
 g.Element = class {};
+g.WebGL2RenderingContext = class {};
 g.devicePixelRatio = 1;
 g.requestAnimationFrame = () => 1;
 g.cancelAnimationFrame = () => {};
