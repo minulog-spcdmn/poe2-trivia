@@ -233,3 +233,106 @@ export const OUROBOROS = (() => {
   const eye = at(NECK + (SNOUT - NECK) * 0.5, r + 0.42);
   return outline + mouth + circle(eye[0], eye[1], 0.26);
 })();
+
+// Four more of Ripley's twelve gates, the zodiac's processes (Aquarius and
+// Pisces above), and the retort.
+
+/** A circular arc from `p` to `q` of radius `r`: `large` over half the circle, `cw` clockwise on screen. */
+const arcTo = (p: Pt, q: Pt, r: number, large: boolean, cw: boolean) => `M${pt(p)}A${f(r)} ${f(r)} 0 ${large ? 1 : 0} ${cw ? 1 : 0} ${pt(q)}`;
+
+/** Aries, calcination, the first gate: a stem whose head parts into two horns, each curling down. */
+export const ARIES = (() => {
+  const [r, top, foot] = [1.9, -1.4, 3.4];
+  const tip = (s: 1 | -1): Pt => [s * (r - r * Math.sin(rad(150))), top - r * Math.cos(rad(150))];
+  return `M0 ${f(foot)}V${f(top)}` + arcTo([0, top], tip(-1), r, true, false) + arcTo([0, top], tip(1), r, true, true);
+})();
+
+/** Gemini, fixation: the twins, two pillars between a lintel and a sill that bow in toward them. */
+export const GEMINI = (() => {
+  const [w, y, sag, x] = [3.6, 4, 1, 1.5];
+  const r = (w * w + sag * sag) / (2 * sag);
+  // Where the pillars meet the bowed lintel (and, mirrored, the sill).
+  const meet = y - sag - r + Math.sqrt(r * r - x * x);
+  return (
+    arcTo([-w, -y], [w, -y], r, false, false) +
+    arcTo([-w, y], [w, y], r, false, true) +
+    `M${f(-x)} ${f(-meet)}V${f(meet)}M${f(x)} ${f(-meet)}V${f(meet)}`
+  );
+})();
+
+/**
+ * Cancer, solution: two small rounds, each trailing a sweep round the
+ * centre, over the top and under the foot, turned half about it from each other.
+ */
+export const CANCER = (() => {
+  const [R, r, a0, a1, lift] = [3.1, 1.05, -84, 72, 0.95];
+  // The round sits inside its sweep's start, touching it. The upper sweep turns about a point `lift`
+  // above the sign's centre and the lower one about a point as far below, so the two stand apart.
+  const half = (turn: 0 | 180) => {
+    const o: Pt = [0, turn ? lift : -lift];
+    const c = at(a0 + turn, R - r);
+    return circle(o[0] + c[0], o[1] + c[1], r) + arcPath(o[0], o[1], R, a0 + turn, a1 + turn);
+  };
+  return half(0) + half(180);
+})();
+
+/**
+ * Scorpio, separation, the sign of death and what rises from it: an m whose
+ * last leg runs on down and out into an arrow.
+ */
+export const SCORPIO = (() => {
+  const [r, top, foot] = [1.05, -1.7, 2.5];
+  const legs = [-3.5, -1.4, 0.7];
+  let d = `M${f(legs[0])} ${f(foot)}V${f(top)}`;
+  for (let i = 0; i < 2; i++) d += `A${f(r)} ${f(r)} 0 0 1 ${f(legs[i + 1])} ${f(top)}`;
+  d += `M${f(legs[1])} ${f(top)}V${f(foot)}`;
+  // The last leg turns at its foot into the sting, up and out to the right.
+  const turn = 1.0;
+  const bend = 1.5;
+  const base: Pt = [legs[2] + turn, bend + turn];
+  const tip: Pt = [4.1, 0.6];
+  d += `M${f(legs[2])} ${f(top)}V${f(bend)}A${f(turn)} ${f(turn)} 0 0 0 ${pt(base)}L${pt(tip)}`;
+  const a = Math.atan2(tip[1] - base[1], tip[0] - base[0]);
+  const barb = (s: 1 | -1): Pt => [tip[0] - 1.3 * Math.cos(a + s * 0.55), tip[1] - 1.3 * Math.sin(a + s * 0.55)];
+  return d + `M${pt(barb(1))}L${pt(tip)}L${pt(barb(-1))}`;
+})();
+
+/** Where the circles about `a` (radius `ra`) and `b` (radius `rb`) meet: the two points. */
+function meeting(a: Pt, ra: number, b: Pt, rb: number): [Pt, Pt] {
+  const d = Math.hypot(b[0] - a[0], b[1] - a[1]);
+  const x = (d * d + ra * ra - rb * rb) / (2 * d);
+  const h = Math.sqrt(Math.max(0, ra * ra - x * x));
+  const [ux, uy] = [(b[0] - a[0]) / d, (b[1] - a[1]) / d];
+  const m: Pt = [a[0] + ux * x, a[1] + uy * x];
+  return [
+    [m[0] - uy * h, m[1] + ux * h],
+    [m[0] + uy * h, m[1] - ux * h],
+  ];
+}
+
+/** Clockwise from the top, in degrees, of `p` about `c`. */
+const angleOf = (c: Pt, p: Pt) => (Math.atan2(p[0] - c[0], -(p[1] - c[1])) * 180) / Math.PI;
+
+/**
+ * The retort: a round belly whose neck rises from its shoulder, bends over
+ * round one centre and runs on, straight and narrowing, into a long spout
+ * down to the right.
+ */
+export const RETORT = (() => {
+  const [c, R] = [[-1.8, 0.85] as Pt, 2.3];
+  const [o, mid, half] = [[-0.4, -1.55] as Pt, 1.35, 0.42];
+  const [end, run, taper] = [36, 3.9, 0.2];
+  const dir: Pt = [Math.cos(rad(end)), Math.sin(rad(end))];
+  const wall = (rr: number, narrow: number) => {
+    // Of the two places it leaves the belly, the one further back round the bend.
+    const from = meeting(o, rr, c, R).sort((p, q) => angleOf(o, p) - angleOf(o, q))[0];
+    const turn = at(end, rr).map((v, i) => v + o[i]) as Pt;
+    const sweep = end - angleOf(o, from);
+    const mouth: Pt = [turn[0] + dir[0] * run - Math.sin(rad(end)) * narrow, turn[1] + dir[1] * run + Math.cos(rad(end)) * narrow];
+    return { from, d: `M${pt(from)}A${f(rr)} ${f(rr)} 0 ${sweep > 180 ? 1 : 0} 1 ${pt(turn)}L${pt(mouth)}` };
+  };
+  const outer = wall(mid + half, taper);
+  const inner = wall(mid - half, -taper);
+  const belly = arcPath(c[0], c[1], R, angleOf(c, inner.from), angleOf(c, outer.from) + 360);
+  return belly + outer.d + inner.d;
+})();

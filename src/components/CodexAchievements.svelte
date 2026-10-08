@@ -3,7 +3,7 @@
   import type { Codex } from '../lib/codex';
   import type { DelveRecords } from '../lib/delveRecord';
   import type { Item } from '../lib/game';
-  import { ACHIEVEMENTS, GROUPS, standings, summarize, type AchievementStore } from '../lib/achievements';
+  import { ACHIEVEMENTS, GROUPS, standings, summarize, type AchievementStore, type WinRun } from '../lib/achievements';
   import { backdropShadow } from '../lib/backdropShadow';
   import ArcaneCircle from './ArcaneCircle.svelte';
   import AchievementSeal, { METALS } from './AchievementSeal.svelte';
@@ -13,7 +13,7 @@
   // no bar: it is earned as it happens). The figures round the rune circle
   // count them by metal. What each one needs, and how it is counted, is in
   // lib/achievements.ts.
-  let { codex, records, store, items }: { codex: Codex; records: DelveRecords; store: AchievementStore; items: Item[] } = $props();
+  let { codex, records, store, wins, items }: { codex: Codex; records: DelveRecords; store: AchievementStore; wins: WinRun; items: Item[] } = $props();
 
   const still = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
   const rise = (delay: number) => ({ y: 20, duration: still ? 0 : 700, delay: still ? 0 : delay });
@@ -21,7 +21,7 @@
   const date = (t: number) => new Date(t).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
   const fmt = (n: number) => n.toLocaleString();
 
-  const list = $derived(standings(summarize(codex, records, items), store));
+  const list = $derived(standings(summarize(codex, records, items, wins), store));
   const earned = $derived(list.filter((r) => r.earned !== null));
   const groups = $derived(GROUPS.map((g) => ({ ...g, rows: list.filter((r) => r.achievement.group === g.key) })));
   /** Earned and all, by metal (gold first). */
@@ -290,7 +290,7 @@
     color: var(--muted);
   }
 
-  /* Three to a row; a group of six fills two rows, three on a tablet, six on a phone. */
+  /* Three to a row; a group of nine fills three rows, on a phone nine. On a tablet, two to a row, the ninth centred under them. */
   .feats {
     list-style: none;
     margin: 0;
@@ -401,6 +401,11 @@
     .feats {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
+    .feat:last-child:nth-child(odd) {
+      grid-column: 1 / -1;
+      justify-self: center;
+      width: calc(50% - 0.3rem);
+    }
   }
   @media (max-width: 560px) {
     .summary {
@@ -425,6 +430,10 @@
     }
     .feats {
       grid-template-columns: minmax(0, 1fr);
+    }
+    .feat:last-child:nth-child(odd) {
+      justify-self: stretch;
+      width: auto;
     }
     .feat {
       gap: 0.65rem;

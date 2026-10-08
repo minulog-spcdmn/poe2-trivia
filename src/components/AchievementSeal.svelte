@@ -7,7 +7,26 @@
   // impression whose ring is cut as far as the progress has come, and a
   // secret one holds no sign.
 
-  import { EYE, HEPTAGRAM, HEXAGRAM, HOUR, MARKS, PELICAN, PLANETS, PROJECTION, RINGS, STONE, SUBLIMATION, WAVES } from '../lib/alchemy';
+  import {
+    ARIES,
+    CANCER,
+    EYE,
+    GEMINI,
+    HEPTAGRAM,
+    HEXAGRAM,
+    HOUR,
+    MARKS,
+    OUROBOROS,
+    PELICAN,
+    PLANETS,
+    PROJECTION,
+    RETORT,
+    RINGS,
+    SCORPIO,
+    STONE,
+    SUBLIMATION,
+    WAVES,
+  } from '../lib/alchemy';
   import { at, line, ring, wear, type Pt } from '../lib/arcane';
   import type { Sign } from '../lib/achievements';
 
@@ -23,9 +42,11 @@
     salt: { d: MARKS[4], k: 4.6 },
     antimony: { d: MARKS[6], k: 4.2 },
     cross: { d: MARKS[10], k: 4.6 },
+    sulphur: { d: MARKS[5], k: 4.3 },
     sol: { d: PLANETS[0], k: 2.3 },
     luna: { d: PLANETS[1], k: 2.2 },
     mercury: { d: PLANETS[2], k: 2.05 },
+    venus: { d: PLANETS[3], k: 2.05 },
     mars: { d: PLANETS[4], k: 2.15 },
     jupiter: { d: PLANETS[5], k: 2.15 },
     saturn: { d: PLANETS[6], k: 2.1 },
@@ -39,6 +60,12 @@
     waves: { d: WAVES, k: 2.1 },
     pisces: { d: PROJECTION, k: 2.1 },
     rings: { d: RINGS, k: 2.1 },
+    ouroboros: { d: OUROBOROS, k: 2.1 },
+    aries: { d: ARIES, k: 2.1 },
+    gemini: { d: GEMINI, k: 2.1 },
+    cancer: { d: CANCER, k: 2.1 },
+    scorpio: { d: SCORPIO, k: 2.1 },
+    retort: { d: RETORT, k: 2.1 },
   };
 
   /** The metals: copper, silver, gold. */
