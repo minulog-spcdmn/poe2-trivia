@@ -191,7 +191,7 @@
         {#if gs?.delve && (screen === 'game' || screen === 'over')}
           <!-- Delve: no target, just how deep. -->
           {#if session.code && !session.hideCode}
-            <span>Room <b>{session.code}</b></span>
+            <span>Room <b class="code">{session.code}</b></span>
           {:else}
             <span>Delve</span>
           {/if}
@@ -213,7 +213,7 @@
           {/key}
         {:else if gs && screen === 'game'}
           {#if session.code && !session.hideCode}
-            <span>Room <b>{session.code}</b></span>
+            <span>Room <b class="code">{session.code}</b></span>
             <span class="dot">•</span>
           {/if}
           {#if session.spectating}
@@ -233,7 +233,7 @@
           <span>Hot-seat</span>
         {:else if session.code && screen !== 'lobby'}
           <!-- The lobby shows the code in big letters. -->
-          <span>Room <b>{session.hideCode ? '••••••' : session.code}</b></span>
+          <span>Room <b class:code={!session.hideCode}>{session.hideCode ? '••••••' : session.code}</b></span>
         {/if}
       </div>
       <div class="tools">
@@ -360,6 +360,13 @@
 {/if}
 
 <style>
+  /* The room code stays selectable (the rest of the game isn't): a tap or
+     double-click takes the whole code, to share it. */
+  .code {
+    -webkit-user-select: all;
+    user-select: all;
+    cursor: text;
+  }
   .shell {
     position: relative;
     z-index: 1;
