@@ -71,7 +71,7 @@
   } = $props();
   const uid = $props.id();
   /** The ouroboros' artwork, once its chunk is in. */
-  let art = $state<{ OURO_ART: string; OURO_BACKING: string } | null>(null);
+  let art = $state<typeof import('../lib/ouroborosArt') | null>(null);
   ouroArt.then((m) => (art = m));
   /** The legend's words. */
   const KEY = { best: 'your best', last: 'last run' } as const;
@@ -281,7 +281,6 @@
         {#each p.seals as s (s.k)}
           {#if s.known}<circle class="light" cx={s.c[0]} cy={s.c[1]} r={s.r} style:--c={s.color} />{/if}
         {/each}
-        {#if p.endless.lit}<circle class="light sun" cx={p.endless.c[0]} cy={p.endless.c[1]} r={p.endless.r} />{/if}
       </g>
     </svg>
 
@@ -357,14 +356,25 @@
       style:height="{f(2 * ou.reach + 4)}px"
     >
       <div class="coil-in" style:--d={sec(p.endless.delay)}>
-        <div class="coil" style:--d={sec(p.endless.delay)}>
+        <div class="coil" class:turning={p.endless.lit} style:--d={sec(p.endless.delay)}>
           <svg viewBox="{f(-ou.reach - 2)} {f(-ou.reach - 2)} {f(2 * ou.reach + 4)} {f(2 * ou.reach + 4)}" aria-hidden="true">
             <g class="serpent" class:lit={p.endless.lit}>
               {#if art}
                 <g mask="url(#{uid}-coil)">
+                  <!-- In the artwork's own 1200 box: the body's band with a few clear scales, then the head over it (its light, its
+                       darks), and the tongue. -->
                   <g transform="scale({ou.scale.toFixed(5)}) translate({-ou.cx} {-ou.cy})">
-                    <path class="sp-back" d={art.OURO_BACKING} />
-                    <path class="sp-art" d={art.OURO_ART} />
+                    <clipPath id="{uid}-band"><path d={art.OURO_BODY} /></clipPath>
+                    <clipPath id="{uid}-head"><path d={art.OURO_HEAD_CLIP} /></clipPath>
+                    <path class="sp-light" d={art.OURO_BODY} />
+                    <path class="sp-ink sp-scales" d={art.OURO_SCALES} clip-path="url(#{uid}-band)" />
+                    <path class="sp-ink sp-edge" d={art.OURO_EDGES} />
+                    <g clip-path="url(#{uid}-head)">
+                      <path class="sp-light" d={art.OURO_HEAD} />
+                      <path class="sp-dark" d={art.OURO_INK} />
+                      <path class="sp-ink sp-edge" d={art.OURO_HEAD} />
+                    </g>
+                    <path class="sp-tongue" d={art.OURO_TONGUE} />
                   </g>
                 </g>
               {/if}
@@ -763,22 +773,43 @@
     }
   }
 
-  /* The ouroboros: the user's artwork, a dull impression until you are past 100, then struck in pale gold, on its ground. It draws
-     in from its tail, then turns on, head first, once in 50 s. */
+  /* The ouroboros: the user's artwork, light on the dark plate (the white of the woodcut in gold, its ink in the ground), a dull
+     impression until you are past 100, then struck in pale gold. It draws in from its tail; past 100 it turns on, head first, once
+     in 50 s, and until then it lies still. */
   .serpent {
     --sp: color-mix(in srgb, var(--dull) 55%, #b09a78);
   }
   .serpent.lit {
     --sp: var(--gold-hi);
   }
-  .serpent .sp-back {
-    fill: var(--bg);
-    stroke: none;
-  }
-  .serpent .sp-art {
+  .serpent .sp-light {
     fill: var(--sp);
     fill-rule: evenodd;
     stroke: none;
+  }
+  .serpent .sp-dark {
+    fill: var(--bg);
+    fill-rule: evenodd;
+    stroke: none;
+  }
+  .serpent .sp-ink {
+    fill: none;
+    stroke: var(--bg);
+    vector-effect: non-scaling-stroke;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .serpent .sp-scales {
+    stroke-width: 0.6px;
+  }
+  .serpent .sp-edge {
+    stroke-width: 1px;
+  }
+  .serpent .sp-tongue {
+    fill: var(--red-hi);
+    stroke: var(--red-hi);
+    stroke-width: 0.5px;
+    vector-effect: non-scaling-stroke;
   }
   /* The draw-in: one front sweeps the snake from its tail clockwise round the ring to its head, eased, a nib of light riding it;
      when it is round, the mask turns whole. */
@@ -839,7 +870,7 @@
   .coil-in {
     animation: coil-in 1.1s var(--d) var(--ease-out) both;
   }
-  .coil {
+  .coil.turning {
     animation: coil 50s calc(var(--d) + 1.1s) linear infinite;
   }
   @keyframes coil-in {
@@ -1299,7 +1330,7 @@
     }
     .travel,
     .cutout,
-    .coil,
+    .coil.turning,
     .coil-in,
     .turn,
     .sun-rays,

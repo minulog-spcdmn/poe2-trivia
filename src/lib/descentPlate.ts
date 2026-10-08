@@ -471,11 +471,11 @@ const LW = 13;
 const TAPER = 7;
 /** A zone's name stands this far from the left wall. */
 const NAME_GAP = 5.5;
-/** The stars and their glories; smaller inside the ouroboros. */
+/** The stars and their glories; larger inside the ouroboros, which they have to themselves. */
 const STAR_R = 4.4;
 const GLORY = 7.4;
-const STAR_R_IN = 4.2;
-const GLORY_IN = 7;
+const STAR_R_IN = 6;
+const GLORY_IN = 9.6;
 /** A star's depth (Cinzel's bold figures at 13 px): about this wide a figure, this tall; two stacked this far apart. */
 const BEST_W = 7.6;
 const BEST_H = 9.8;
@@ -1106,18 +1106,8 @@ export function descentPlate(W: number, H: number, deepest: number | null, met: 
         }),
       );
     }
-    const ringAt = sweep(endC[1] - endR);
-    add(
-      past ? 'gold' : 'dull',
-      [
-        ...deep,
-        ...pen(arcPts(endC, endR), 'thin', ringAt, 0.45, {
-          wear: wear(60),
-          holes: common,
-        }),
-      ],
-      past,
-    );
+    // No ring round the last seal: the ouroboros stands on its own at the foot of the pit.
+    add(past ? 'gold' : 'dull', deep, past);
 
     // The seals: a worn double ring, struck in the zone's colour once reached, a dull impression until then.
     for (let k = 0; k < 10; k++) {
