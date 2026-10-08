@@ -87,7 +87,7 @@ export type Tier = 0 | 1 | 2 | 3;
 
 /** Each tier's metal: its name, and the colour its seal is struck in (lead a dull slate, so it never reads as silver). */
 export const METALS: Record<Tier, { name: string; color: string }> = {
-  0: { name: 'Lead', color: '#7d8ba0' },
+  0: { name: 'Lead', color: '#647289' },
   1: { name: 'Copper', color: '#cf9366' },
   2: { name: 'Silver', color: '#cdd2d6' },
   3: { name: 'Gold', color: '#e6bb62' },
