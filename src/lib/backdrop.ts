@@ -142,42 +142,90 @@ float closing(vec2 p) {
   vec2 size = vec2(uSize.x, uViewH);
   float tm = uHome.z;
   float flicker = (0.012 + 0.02 * uDark.y) * (0.6 * sin(tm * 1.7) + 0.4 * sin(tm * 2.9 + 1.0));
-  float reach = max(0.15, 1.0 - 0.6 * uDark.x - 0.4 * uDark.y + flicker);
+  float reach = max(0.1, 1.0 - 0.6 * uDark.x - 0.4 * uDark.y + flicker);
   vec2 x = max(abs(p - 0.5 * size) / (0.5 * size) - reach, 0.0) / (0.3 + 0.25 * reach);
   return 1.0 - exp(-dot(x, x));
 }
 
-// The question's clock running down (uDark.y): soft fingers of the dark
+// The smoke turned about slow eddies, so an arm of the dark passing one
+// curls round it in a hook or a swirl. One eddy to a cell of a grid (about a
+// quarter of the screen), at a jittered place, turning one way or the other;
+// its turn fades to nothing well inside its cell, so no seam shows. On the
+// backdrop's clock it breathes a little (still, holding still).
+vec2 eddy(vec2 p, float S, float tm) {
+  float L = 0.24 * S;
+  vec2 cell = floor(p / L);
+  float h = nhash(cell + 19.7);
+  vec2 o = (cell + 0.5 + 0.3 * (vec2(nhash(cell + 3.1), nhash(cell + 8.3)) - 0.5)) * L;
+  vec2 r = p - o;
+  float k = 1.0 - smoothstep(0.0, 0.35 * L, length(r));
+  float turn = (h < 0.5 ? -1.0 : 1.0) * (2.2 + 1.4 * h) * k * k * (0.85 + 0.15 * sin(tm * 0.4 + 6.283 * h));
+  float cs = cos(turn);
+  float sn = sin(turn);
+  return o + mat2(cs, sn, -sn, cs) * r;
+}
+
+// The question's clock running down (uDark.y): curling arms of smoke
 // reaching in from every side, longer as it runs out, 0 to 1 where it is
 // dark. How far each reaches varies along the edge with slow noise read
-// round a circle (so it has no seam), and curls as it comes in; drifting
-// smoke bends them, so they writhe slowly, on the backdrop's clock (still,
-// holding still). Across each, the dark falls off as a Gaussian from the
-// edge, so no finger has an edge of its own.
+// round a circle (so it has no seam); each curls one way or the other the
+// further in it reaches, hooking at its tip, and turns round the eddies it
+// passes (eddy()); drifting smoke bends them, so they writhe slowly, on the
+// backdrop's clock (still, holding still). Across each, the dark falls off
+// as a Gaussian from the edge, so no arm has an edge of its own. Where an
+// arm thins out (its rim) gRim is set, toward 1, for a faint blue light
+// caught on it, the more toward the light in the middle.
+float gRim;
 float tendrils(vec2 p) {
+  gRim = 0.0;
   if (uDark.y <= 0.0) return 0.0;
   vec2 size = vec2(uSize.x, uViewH);
   float S = sqrt(size.x * size.y);
   float tm = uHome.z;
+  p = eddy(p, S, tm);
   vec2 c = (p - 0.5 * size) / (0.5 * size);
   // How far in from the nearest edge: 0 there, about 1 in the middle (a
   // smooth max, so no crease runs in from the corners).
   vec2 a = abs(c);
   float inward = max(0.0, 1.0 - 0.12 * log(exp(a.x / 0.12) + exp(a.y / 0.12)));
-  // Which way from the middle, curling the further in, and bent by the smoke.
+  // Which way from the middle, curling the further in: a little with the
+  // smoke, and each arm hard one way or the other toward its tip (its own
+  // way, read off the same slow noise round the edge as its length).
   vec2 d = normalize(c * size / S + 1e-4);
-  float twist = (vnoise(d * 1.7 + vec2(tm * 0.045, 3.0)) - 0.5) * 1.4 * inward;
+  float hook = vnoise(d * 2.6 + vec2(41.0 + tm * 0.02, 7.0)) - 0.5;
+  float twist = (vnoise(d * 1.7 + vec2(tm * 0.045, 3.0)) - 0.5) * 1.4 * inward + 6.0 * hook * inward * inward;
   d = mat2(cos(twist), sin(twist), -sin(twist), cos(twist)) * d;
   vec2 u = p / S * 3.0;
   vec2 w = vec2(vnoise(u + vec2(tm * 0.06, 0.0)), vnoise(u + vec2(5.2, -tm * 0.05))) - 0.5;
   d = normalize(d + 0.45 * w);
-  // How far the finger here reaches (in half screens), longer as the clock runs out.
+  // How far the arm here reaches (in half screens), longer as the clock
+  // runs out, and further still as a miss swallows the scene; but never
+  // quite to the middle, where the arms would meet in a star: they reach
+  // for the light there, and the dark itself (closing(), the dimming and
+  // the smoke) does the rest.
   float f = smoothstep(0.3, 0.85, vnoise(d * 2.6 + vec2(17.0 + tm * 0.02, -tm * 0.015)));
-  float len = uDark.y * (0.05 + 0.75 * f) + 0.01;
+  float len = 1.1 * (1.0 - exp(-(uDark.y * (0.07 + 0.8 * f) + 0.01) / 1.1));
   float x = inward / len;
   // A little of the smoke's own texture in it, and faint while the clock has long to run.
   float smoke = 0.8 + 0.2 * vnoise(u * 2.1 - vec2(tm * 0.03, 0.0));
-  return exp(-1.4 * x * x) * smoke * min(1.0, 3.0 * uDark.y);
+  float t = exp(-1.4 * x * x) * smoke * min(1.0, 3.0 * uDark.y) * (1.0 - smoothstep(0.6, 0.95, inward));
+  // Its rim: a narrow band where it thins out, patchy, and only once it has
+  // left the edge it grows from.
+  float band = t - 0.4;
+  gRim = exp(-band * band / 0.012) * smoothstep(0.04, 0.3, inward) * (0.45 + 0.55 * vnoise(u * 1.3 + vec2(-tm * 0.04, 2.0)));
+  return t;
+}
+
+// The dark of the clock is smoke, not black: deep indigo, with violet and
+// a brighter blue billowing through it slowly, at p (CSS px), as dark as
+// q (uDark.y) has it.
+vec3 darkSmoke(vec2 p, float S, float tm, float q) {
+  vec2 u = p / S * 1.6 + vec2(tm * 0.03, -tm * 0.02);
+  float n = 0.65 * vnoise(u) + 0.35 * vnoise(u * 2.3 + 4.7);
+  float v = vnoise(u * 0.7 + vec2(9.1, -tm * 0.015));
+  vec3 deep = mix(rgb(3.0, 3.0, 11.0), rgb(8.0, 4.0, 15.0), v);
+  vec3 billow = mix(rgb(12.0, 14.0, 44.0), rgb(22.0, 12.0, 46.0), v);
+  return mix(deep, billow, smoothstep(0.45, 0.8, n)) * (1.0 - 0.25 * max(0.0, q - 1.0));
 }
 
 `;
@@ -206,12 +254,24 @@ const DELVE_SMOKE = `  // Delve: smoke of the stratum's colour, and a dark that 
 const DELVE_DARK = `  // The light about you drawing in (see closing()). What glows in the
   // stratum's environment still shows through it, dimmed.
   float dark = closing(p);
-  dark = 1.0 - (1.0 - dark) * (1.0 - 0.9 * tendrils(p));
+  float arms = tendrils(p);
+  dark = 1.0 - (1.0 - dark) * (1.0 - 0.9 * arms);
   if (dark > 0.0) col *= 1.0 - 0.93 * dark;
   if (uShade.a > 0.0 || uMist.a > 0.0) col = environments(col, p, (p + vec2(uSlide, uSink)) / S, p / vec2(W, H), S, W, H, uHome.z, dark);
   // As the clock runs out the light about you dims as it draws in, the
-  // stratum's glow and all.
-  col *= 1.0 - 0.35 * uDark.y;
+  // stratum's glow and all (and a right answer's light, a little under 0,
+  // lifts it a touch). Never past black, however far it is pushed.
+  col *= max(0.0, 1.0 - 0.35 * uDark.y);
+  // The clock's dark is smoke rather than black: where it has come in, deep
+  // indigo and violet billow through it, and the arms' curling rims catch
+  // a faint blue light.
+  if (uDark.y > 0.0) {
+    float q = min(uDark.y, 2.0);
+    // (As a miss swallows the scene, a veil of it over the middle too.)
+    float body = max(clamp(dark, 0.0, 1.0) * smoothstep(0.0, 0.7, q), 0.5 * smoothstep(1.5, 2.0, q));
+    col = mix(col, darkSmoke(p, S, uHome.z, q), 0.85 * body);
+    col += rgb(50.0, 80.0, 190.0) * (0.22 * gRim * arms * min(1.0, q));
+  }
 
 `;
 
