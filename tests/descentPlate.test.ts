@@ -84,7 +84,7 @@ test('the stars stand in the left wall, between its lines, the depth under them;
   }
 });
 
-test('one star for both when the last run is the best, or would overlap it: the last run\'s depth stacked over yours', () => {
+test('one star for both when the last run is the best, or would overlap it: the last run\'s depth over the star, yours under it', () => {
   for (const [best, last] of [
     [45, 45],
     [45, 44],
@@ -97,13 +97,20 @@ test('one star for both when the last run is the best, or would overlap it: the 
       assert.equal(p.star.lastNum?.text, String(shownDepth(last)));
       assert.ok(p.star.lastNum!.y < p.star.num!.y - 9, "the last run's over yours");
       assert.ok(!overlap(numBox(p.star.num!), numBox({ ...p.star.lastNum!, anchor: p.star.num!.anchor })), 'apart');
-      if (best > 100) assert.ok(p.star.num!.x > p.endless.c[0] + p.endless.r, 'beside the seal');
-      else assert.ok(p.star.lastNum!.y > p.star.c[1] + p.star.gloryR, 'under the star');
+      if (best > 100) assert.ok(p.star.num!.x > p.endless.c[0] + p.endless.r, 'beside the seal, the last run\'s over yours');
+      else {
+        assert.ok(p.star.lastNum!.y < p.star.c[1] - p.star.gloryR, "the last run's over the star");
+        assert.ok(p.star.num!.y > p.star.c[1] + p.star.gloryR, 'yours under it');
+      }
       assert.deepEqual(
         p.legend.rows.map((r) => r.kind),
         ['best', 'last'],
       );
     }
+  for (const p of [...plates(45, 20), ...plates(216, 30), ...plates(null, null)]) {
+    const right = p.legend.x + 60;
+    assert.ok(p.endless.c[0] - p.endless.r - right >= p.endless.r * 0.75, 'the legend well clear of the ouroboros');
+  }
   for (const p of plates(45, null)) {
     assert.ok(!p.star.both && p.star.lastNum === null);
     assert.deepEqual(

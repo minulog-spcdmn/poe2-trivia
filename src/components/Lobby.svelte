@@ -4,7 +4,6 @@
   import { session } from '../lib/session.svelte';
   import { MAX_PLAYERS, RACE_DEFAULT_TIMER, TIMER_STEPS, difficultyOf, rulesFor, type Difficulty, type GameMode } from '../lib/game';
   import { DIFFICULTY_NAMES, describe } from '../lib/difficultyText';
-  import { shownDepth } from '../lib/delve';
   import CustomDifficulty from './CustomDifficulty.svelte';
   import DelveRules from './DelveRules.svelte';
   import ModeIcon from './ModeIcon.svelte';
@@ -351,9 +350,6 @@
               {:else if delve}
                 <!-- Several on one device can't delve; the line under Begin says what to do instead. -->
                 <p>{together ? 'How deep can your team go, on three lives each?' : 'How deep can you go on three lives?'} Same rules for everyone.</p>
-                {#if deepest}
-                  <p class="deepest">{deepestLabel} <b>{shownDepth(deepest)}</b></p>
-                {/if}
               {:else if race}
                 <p>Same question for everyone at once; the fastest right answer scores. Online only.</p>
               {:else}
@@ -656,7 +652,7 @@
 
   .cols {
     display: grid;
-    grid-template-columns: 1fr 1.15fr;
+    grid-template-columns: 1fr 1.33fr;
     gap: 1.2rem;
     align-items: start;
   }
@@ -905,22 +901,6 @@
     font-style: italic;
     line-height: 1.35;
     color: #e3d3b4;
-  }
-  .about p.deepest {
-    margin-top: 0.3rem;
-    font-style: normal;
-    font-family: var(--font-display);
-    font-size: 0.72rem;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    color: var(--muted);
-  }
-  .deepest b {
-    margin-left: 0.4em;
-    font-family: var(--font-cinzel);
-    font-size: 1rem;
-    letter-spacing: 0.04em;
-    color: var(--gold-hi);
   }
   .together-when {
     margin: 0 0 0.45rem;

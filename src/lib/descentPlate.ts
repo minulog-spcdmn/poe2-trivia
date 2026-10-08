@@ -12,8 +12,8 @@
 //
 // Past the tenth zone the pit never ends: its walls carry on, breaking into
 // shorter and shorter dashes as they fade into the dark round a last, larger
-// seal holding the ouroboros, an engraved serpent biting its tail, which
-// turns. No floor is ever drawn. The zones not reached yet are held in a
+// seal holding the ouroboros, after an old woodcut: a thick scaled serpent
+// closing into a ring, its jaws open wide over its own tail, which turns. No floor is ever drawn. The zones not reached yet are held in a
 // fine brace beside the wall, its beak on the word "uncharted", and the
 // wall's outer line runs broken beside them.
 //
@@ -23,8 +23,8 @@
 // under it, their cutouts breaking the wall's lines round them. Past 100 a
 // star sits inside the ouroboros, its depth beside the seal. When the two
 // would overlap they are one star, its colour drifting between gold and
-// red, the two depths stacked under it (the last run's over your best). A
-// legend left of the ouroboros says which star is which.
+// red, the last run's depth over it and yours under it. A legend at the
+// plate's left edge, level with the ouroboros, says which star is which.
 //
 // Each find you have met is tied to its heading (`beside`: the finds list
 // to the right of the plate) or to its callout (stacked on a phone or a
@@ -50,8 +50,10 @@
 // it), each terrace opening out from its middle and each seal stamped as
 // the pen passes; the finds' lines reach out from the wall to their
 // headings one after another, shallowest first; the ouroboros coils in;
-// then the gold star comes down the wall from the mouth to your deepest and
-// the red one appears where your last run ended.
+// then the gold star comes down the wall from the mouth to your deepest,
+// gathering speed and slowing to settle there (longer the farther it goes),
+// a glint ringing out as it lands, and the red one appears where your last
+// run ended.
 
 import { at, hatch, line, seeded, star8 } from './arcane.ts';
 import { FINDS_IN_ORDER, shownDepth, type FindKind } from './delve.ts';
@@ -152,17 +154,27 @@ export type Mark = {
  * across its belly, the line along its side, its scales, its head (outline,
  * brow, lips, jaw and fang), the shading under its jaw, its eye.
  */
+/**
+ * The ouroboros about 0, 0 (the component turns it): its body's band (a fill
+ * and its two edges), its belly line and belly scales, the scales of its
+ * back, the head's fill, the mouth's dark (the tail is drawn again inside
+ * it), the head's outline and lines, its fangs, its tongue, its eye.
+ */
 export type Serpent = {
-  /** The ring it lies on, its half-width at the neck, and the angle of its snout (clockwise from the top), where it coils in from. */
   rs: number;
   w: number;
+  /** Where the coil-in starts (clockwise from the top): just past the snout. */
   snout: number;
+  bodyFill: string;
   body: string;
   belly: string;
   scales: string;
+  headFill: string;
+  mouth: string;
   head: string;
   details: string;
-  shade: string;
+  teeth: string;
+  tongue: string;
   eye: { c: Pt; r: number };
   pupil: string;
 };
@@ -199,7 +211,7 @@ export type Star = {
   } | null;
   lastNum: { text: string; x: number; y: number } | null;
 };
-/** The legend left of the ouroboros: a row for each star drawn, its small star at `x`, its words after it. */
+/** The legend at the plate's left edge, level with the ouroboros: a row for each kind of star, its small star at `x`, its words after it. */
 export type Legend = {
   x: number;
   rows: { kind: 'best' | 'last'; y: number }[];
@@ -408,157 +420,184 @@ function hollow(c: Pt, r: number, gap: number): string {
 }
 
 /**
- * The ouroboros, engraved about 0, 0: a serpent on the circle `rs`, its body
- * `w` either side of it, narrow at the neck so the head stands out, fuller
- * along its first stretch and tapering to a point at its tail. Its head
- * lies at the top facing anticlockwise, rigid (its centre line leaves the
- * ring at the neck for the chord to the snout): a broad crown over the jaw's
- * hinge, a brow over the eye, the snout running down round, the jaws open
- * on the tip of its tail, which runs in between them (following the head)
- * under a fang. A line runs along its inner side with the broad plates of
- * its belly across below it; its back carries a fine net of scales. The
- * underside of the jaw is shaded in arcs, each shorter than the last.
- * Everything about the head is laid out from its centre line (`u` from the
- * neck toward the snout, `v` out from it), so it bends with it.
+ * The ouroboros about 0, 0, after an old woodcut: a thick serpent of almost
+ * even width closing into a ring of radius `rs`, `w` either side of it. Its
+ * back is covered in rows of overlapping rounded scales set half a scale
+ * apart, their free edges toward the tail; a strong belly line runs along
+ * its inner side over a row of broad belly scales. Its head, rigid, rises
+ * at the top facing clockwise (laid out on the chord from the nape to the
+ * gape, `X` along it, `Y` out from the ring), its jaws open wide over its
+ * own tail, which comes in as thick as ever and runs into the dark of the
+ * mouth; fangs over it, a forked tongue hanging down into the ring.
  */
 function serpent(rs: number, w: number): Serpent {
   const O: Pt = [0, 0];
   const deg = (u: number) => (u / rs) * (180 / Math.PI);
-  /** The neck, clockwise from the top; the head runs anticlockwise from it. */
-  const A0 = 30;
-  const LH = 3.6 * w;
-  // The head is rigid: its centre line bends off the ring at the neck toward the chord to the snout.
-  const P0 = at(O, A0, rs);
-  const P1 = at(O, A0 - deg(LH), rs);
-  const C = (u: number): Pt => lerp(at(O, A0 - deg(u), rs), lerp(P0, P1, u / LH), 0.6 * smooth(u / (0.5 * LH)));
-  /** A point `u` from the neck toward the snout, `v` out from the head's centre line. */
-  const Hd = (u: number, v: number): Pt => {
-    const [p, q] = [C(u - 0.01), C(u + 0.01)];
-    const L = dist(p, q);
-    let nn: Pt = [-(q[1] - p[1]) / L, (q[0] - p[0]) / L];
-    const c = C(u);
-    if (nn[0] * c[0] + nn[1] * c[1] < 0) nn = [-nn[0], -nn[1]];
-    return [c[0] + nn[0] * v, c[1] + nn[1] * v];
-  };
-  // The body, at angle `a` clockwise from the neck: on the ring, except where the tail runs into the mouth, where it follows the head.
-  const B = (a: number, v: number): Pt => {
-    const u = ((A0 - a + 720) % 360) * (rs * Math.PI) / 180;
-    const k = u < 0.2 * w || u > LH + 1.6 * w ? 0 : u <= LH ? 1 : 1 - smooth((u - LH) / (1.6 * w));
-    const ring = at(O, a, rs + v);
-    return k ? lerp(ring, Hd(Math.min(u, LH), v), k) : ring;
-  };
+  /** The gape and the nape, on the ring. */
+  const AG = deg(0.9 * w);
+  const AN = AG - deg(3 * w);
+  const G = at(O, AG, rs);
+  const N = at(O, AN, rs);
+  const chord = Math.hypot(G[0] - N[0], G[1] - N[1]);
+  // Along the ring at the gape, turned a little up toward the chord, so the tail runs straight into the mouth.
+  const tg: Pt = [Math.cos((AG * Math.PI) / 180), Math.sin((AG * Math.PI) / 180)];
+  const cd: Pt = [(G[0] - N[0]) / chord, (G[1] - N[1]) / chord];
+  const mix: Pt = [tg[0] * 0.8 + cd[0] * 0.2, tg[1] * 0.8 + cd[1] * 0.2];
+  const ex: Pt = [mix[0] / Math.hypot(...mix), mix[1] / Math.hypot(...mix)];
+  const ey: Pt = [ex[1], -ex[0]];
+  /** The head's frame, in units of `w`: X from the gape toward the snout, Y out from the ring. */
+  const H = (X: number, Y: number): Pt => [G[0] + w * (X * ex[0] + Y * ey[0]), G[1] + w * (X * ex[1] + Y * ey[1])];
+  const k = (chord / w) / 3;
 
-  // The body's half-width: narrow at the neck (the head stands out from it), fuller along the first stretch, tapering to a point.
-  const TIP_U = 1.75 * w;
-  const TIP = 360 + A0 - deg(TIP_U);
-  const span = TIP - A0;
-  const bw = (a: number) => {
-    const t = (a - A0) / span;
-    if (t < 0.16) return w * (0.84 + 0.2 * Math.sin((t / 0.16) * (Math.PI / 2)));
-    const s = (t - 0.16) / 0.84;
-    return w * (1.04 - 0.99 * s ** 1.3);
-  };
-
-  // ---- the head's outline: from the nape over the crown to the snout, back along the upper lip, out along the lower, under the jaw ----
-  const topV = (u: number) => {
-    if (u < 1.0 * w) return w * (0.84 + 0.5 * Math.sin(((u / w) * Math.PI) / 2));
-    if (u < 2.4 * w) return w * (1.34 - 0.06 * ((u - w) / (1.4 * w)));
-    const t = Math.min(1, (u - 2.4 * w) / (LH - 0.14 * w - 2.4 * w));
-    return w * (0.52 + 0.76 * Math.cos((t * Math.PI) / 2) ** 0.8);
-  };
-  const CORNER = 1.3 * w;
-  const upLip = (u: number) => w * (0.02 + 0.36 * Math.max(0, (u - CORNER) / (LH - CORNER)) ** 0.85);
-  const CHIN = LH - 0.36 * w;
-  const loLip = (u: number) => -w * (0.02 + 0.38 * Math.max(0, (u - CORNER) / (CHIN - CORNER)) ** 0.85);
-  const underV = (u: number) => {
-    if (u < 0.95 * w) return -w * (0.84 + 0.4 * Math.sin(((u / (0.95 * w)) * Math.PI) / 2));
-    const t = (u - 0.95 * w) / (CHIN - 0.95 * w);
-    return -w * (0.62 + 0.62 * Math.cos((t * Math.PI) / 2) ** 1.1);
-  };
-  const NOSE = LH - 0.14 * w;
-  const crown = steps(0, NOSE, 48).map((u) => Hd(u, topV(u)));
-  const nose = steps(1, 8, 7).map((k) => {
-    const th = (k / 8) * (Math.PI / 2);
-    return Hd(NOSE + 0.14 * w * Math.sin(th), upLip(LH) + (topV(NOSE) - upLip(LH)) * Math.cos(th));
-  });
-  const upper = steps(LH, CORNER, 20).map((u) => Hd(u, upLip(u)));
-  const lower = steps(CORNER, CHIN, 18).map((u) => Hd(u, loLip(u)));
-  const chin = steps(1, 8, 7).map((k) => {
-    const th = (k / 8) * (Math.PI / 2);
-    return Hd(CHIN + 0.12 * w * Math.sin(th), loLip(CHIN) + (underV(CHIN) - loLip(CHIN)) * (1 - Math.cos(th)));
-  });
-  const under = steps(CHIN, 0, 40).map((u) => Hd(u, underV(u)));
-  const headPts = [...crown, ...nose, ...upper, ...lower, ...chin, ...under];
-  const upperJaw = [...crown, ...nose, ...upper, Hd(CORNER, 0), Hd(0, 0)];
-  const lowerJaw = [Hd(0, 0), Hd(CORNER, 0), ...lower, ...chin, ...under];
-  // A fang from the upper jaw, down onto the tail.
-  const FU = LH - 0.6 * w;
-  const fang: Pt[] = [Hd(FU - 0.14 * w, upLip(FU - 0.14 * w)), Hd(FU + 0.03 * w, upLip(FU) - 0.42 * w), Hd(FU + 0.1 * w, upLip(FU + 0.1 * w))];
-  const clips: Hole[] = [upperJaw, lowerJaw, fang].map((poly) => ({ poly }));
-
-  // ---- the body's edges, round the tail's tip ----
-  const n = Math.ceil(span / 0.8);
-  const as = steps(A0, TIP, n);
-  const outer = as.map((a) => B(a, bw(a)));
-  const inner = as.map((a) => B(a, -bw(a)));
-  const tip = [B(TIP + deg(0.1 * w), 0.03 * w), B(TIP + deg(0.13 * w), 0), B(TIP + deg(0.1 * w), -0.03 * w)];
-  const body = cut([...outer, ...tip, ...inner.reverse()], clips);
-
-  // ---- the belly: a line along the inner side, the broad plates across between it and the edge ----
-  const SIDE = -0.36;
-  const sideA = steps(A0 + 0.5, TIP - deg(1.6 * w), n);
-  let belly = cut(
-    sideA.map((a) => B(a, SIDE * bw(a))),
-    clips,
-  );
-  for (let a = A0 + deg(0.3 * w); a < TIP && bw(a) > 0.3 * w; a += deg(Math.max(1.0, 0.4 * bw(a)))) belly += cut([B(a, -bw(a) + 0.22), B(a, SIDE * bw(a) - 0.04)], clips);
-
-  // ---- the back: a fine net of scales, two sets of straight slanting strokes from the side line out to the edge ----
+  // ---- the body: from the neck anticlockwise all the way round, in under the head as far as the gape ----
+  const span = 360 - (AG - AN);
+  const A = (t: number) => AN - t * span;
+  const bw = (t: number) => w * (t < 0.2 ? 1 + 0.04 * Math.sin((t / 0.2) * (Math.PI / 2)) : 1.04 - 0.14 * smooth((t - 0.2) / 0.75));
+  const B = (t: number, v: number): Pt => at(O, A(t), rs + v);
+  const n = Math.ceil(span / 1.5);
+  const ts = steps(0, 1, n);
+  const outer = ts.map((t) => B(t, bw(t)));
+  const inner = ts.map((t) => B(t, -bw(t)));
+  const bodyFill = path([...outer, ...[...inner].reverse()]) + 'Z';
+  const body = path(outer) + path(inner);
+  const BELLY = -0.42;
+  let belly = path(ts.map((t) => B(t, BELLY * bw(t))));
+  const L = (span * Math.PI * rs) / 180;
+  const scale = (s0: number, v0: number, v1: number, d: number) =>
+    path(
+      steps(-90, 90, 8).map((th) => {
+        const r = (th * Math.PI) / 180;
+        const t = Math.min(1, Math.max(0, (s0 + d * Math.cos(r)) / L));
+        return B(t, ((v0 + v1) / 2 + ((v1 - v0) / 2) * Math.sin(r)) * bw(t));
+      }),
+    );
+  const ROWS = 4;
+  const pitch = 0.52 * w;
   let scales = '';
-  const V0 = SIDE + 0.12;
-  for (const dir of [1, -1])
-    for (let a = A0 + deg(0.25 * w); a < TIP && bw(a) > 0.34 * w; a += deg(Math.max(1.0, 0.5 * bw(a)))) {
-      const b = bw(a);
-      const a1 = a + dir * deg(0.6 * (0.9 - V0) * b);
-      if (a1 < A0 + deg(0.15 * w)) continue;
-      scales += cut([B(a, V0 * b), B(a1, 0.9 * bw(a1))], clips);
+  for (let row = 0; row < ROWS; row++) {
+    const v0 = BELLY + ((1 - BELLY) * row) / ROWS;
+    const v1 = BELLY + ((1 - BELLY) * (row + 1)) / ROWS;
+    for (let s = (row % 2) * pitch * 0.5; s < L; s += pitch) scales += scale(s, v0 + 0.03, v1 - 0.03, pitch * 0.62);
+  }
+  for (let s = 0.2 * w; s < L; s += 0.5 * w) belly += scale(s, -0.96, BELLY - 0.04, 0.22 * w);
+
+  // ---- the head ----
+  const NX = -3 * k;
+  const pts = (xy: number[][]) => xy.map(([x, y]) => H(x, y));
+  // Smooth runs through key points (Catmull-Rom), so the outline reads as one cut line.
+  const spline = (key: number[][], per = 6): number[][] => {
+    const out: number[][] = [];
+    for (let i = 0; i < key.length - 1; i++) {
+      const [p0, p1, p2, p3] = [key[Math.max(0, i - 1)], key[i], key[i + 1], key[Math.min(key.length - 1, i + 2)]];
+      for (let j = 0; j < per; j++) {
+        const t = j / per;
+        const t2 = t * t;
+        const t3 = t2 * t;
+        out.push([0, 1].map((c) => 0.5 * (2 * p1[c] + (-p0[c] + p2[c]) * t + (2 * p0[c] - 5 * p1[c] + 4 * p2[c] - p3[c]) * t2 + (-p0[c] + 3 * p1[c] - 3 * p2[c] + p3[c]) * t3)));
+      }
     }
+    out.push(key.at(-1)!);
+    return out;
+  };
+  // The nape meets the body's edges exactly: their ends, in the head's frame.
+  const local = (p: Pt): number[] => {
+    const d: Pt = [(p[0] - G[0]) / w, (p[1] - G[1]) / w];
+    return [d[0] * ex[0] + d[1] * ex[1], d[0] * ey[0] + d[1] * ey[1]];
+  };
+  const [nTop, nBot] = [local(outer[0]), local(inner[0])];
+  const top = spline([
+    nTop,
+    [nTop[0] + 0.6, nTop[1] + 0.32],
+    [-1.6, 1.62],
+    [-0.75, 1.86],
+    [0.25, 1.98],
+    [0.95, 2.02],
+    [1.3, 1.9],
+    [1.42, 1.66],
+  ]);
+  const upLip = spline([
+    [1.42, 1.66],
+    [1.12, 1.6],
+    [0.62, 1.2],
+    [0.18, 0.55],
+    [-0.15, 0.04],
+  ]);
+  const loLip = spline([
+    [-0.15, -0.04],
+    [0.25, -0.62],
+    [0.72, -1.28],
+    [1.08, -1.72],
+  ]);
+  const under = spline([
+    [1.08, -1.72],
+    [1.0, -1.95],
+    [0.4, -1.98],
+    [-0.6, -1.78],
+    [-1.6, -1.42],
+    nBot,
+  ]);
+  const outline = [...top, ...upLip.slice(1), ...loLip.slice(1), ...under.slice(1)];
+  const headFill = path(pts(outline)) + 'Z';
+  const head = path(pts(outline));
+  const mouth = path(pts([...upLip, ...loLip.slice(1)])) + 'Z';
 
   // ---- the head's lines ----
   let details = '';
-  // The mouth's corner, running back and down as the jaw's hinge.
-  details += cut(steps(CORNER, 0.45 * w, 8).map((u) => Hd(u, -0.02 * w - 0.55 * w * ((CORNER - u) / (CORNER - 0.45 * w)) ** 1.6)));
-  // The eye under a brow.
-  const EU = 2.25 * w;
-  const EV = 0.72 * w;
-  const ER = 0.34 * w;
-  details += cut(steps(EU - 0.5 * w, EU + 0.5 * w, 12).map((u) => Hd(u, EV + ER + 0.14 * w + 0.08 * w * Math.sin(((u - (EU - 0.5 * w)) / w) * Math.PI))));
-  // The lip: a line over the upper lip, and under the lower.
-  details += cut(steps(CORNER + 0.3 * w, LH - 0.3 * w, 10).map((u) => Hd(u, upLip(u) + 0.2 * w)));
-  details += cut(steps(CORNER + 0.3 * w, CHIN - 0.15 * w, 10).map((u) => Hd(u, loLip(u) - 0.2 * w)));
-  // The nostril.
-  details += path([Hd(LH - 0.38 * w, 0.44 * w), Hd(LH - 0.25 * w, 0.4 * w)]);
-  details += path(fang);
+  // The jaw's hinge, from the gape back and down; a line along the upper jaw over the lip.
+  details += path(pts(spline([[-0.15, 0.0], [-0.55, -0.4], [-0.85, -1.0], [-0.95, -1.5]])));
+  details += path(pts(spline([[-0.45, 0.62], [0.2, 1.3], [0.75, 1.68], [1.1, 1.82]])));
+  // The eye under a heavy brow, set back over the hinge.
+  const E = [-0.95, 1.2];
+  const ER = 0.3;
+  details += path(pts(spline([[-1.55, 1.38], [-1.0, 1.6], [-0.4, 1.55]])));
+  // Plates on the crown, and scales along the jaw's underside.
+  for (const [x0, x1, yt] of [
+    [-0.3, 0.3, 1.9],
+    [0.3, 0.9, 1.96],
+  ])
+    details += path(pts(steps(-90, 90, 6).map((th) => {
+      const r = (th * Math.PI) / 180;
+      return [(x0 + x1) / 2 + ((x1 - x0) / 2) * Math.sin(r), yt - 0.08 - 0.22 * Math.cos(r)];
+    })));
+  for (let x = -1.7; x < 0.7; x += 0.42) details += path(pts([[x, -1.5 - (x + 1.7) * 0.18], [x + 0.14, -1.2 - (x + 1.7) * 0.2]]));
+  details += path(pts([[1.05, 1.98], [1.18, 1.9]]));
+  // Fangs: down from the front of the upper jaw, up from the lower, a smaller one behind each.
+  const fang = (x: number, y: number, dy: number, h: number) => path(pts([[x - 0.1 * h, y], [x + 0.04 * h, y + dy * h], [x + 0.12 * h, y + 0.04 * dy]])) + 'Z';
+  const teeth = fang(1.02, 1.68, -1, 0.55) + fang(0.62, 1.2, -1, 0.3) + fang(0.86, -1.5, 1, 0.5) + fang(0.5, -1.0, 1, 0.28);
 
-  // ---- shading: arcs along the underside of the jaw, each shorter than the last; the nape in short strokes ----
-  let shade = '';
-  for (let j = 1; j <= 3; j++) {
-    const [u0, u1] = [0.35 * w + 0.25 * w * j, CHIN - 0.3 * w - 0.45 * w * j];
-    if (u1 > u0) shade += cut(steps(u0, u1, 14).map((u) => Hd(u, underV(u) + 0.2 * w * j)));
-  }
+  // ---- the tongue: along the floor of the mouth, out over the chin, forked, hanging down into the ring ----
+  const tipY = local(at(O, AG + deg(1.4 * w), 8.6))[1];
+  const tongueSpine = spline(
+    [
+      [0.1, -0.5],
+      [0.7, -1.1],
+      [1.2, -1.62],
+      [1.42, -2.05],
+      [1.3, (-2.05 + tipY) / 2],
+      [1.42, tipY],
+    ],
+    8,
+  );
+  const end = tongueSpine.at(-1)!;
+  let tongue = path(pts(tongueSpine));
+  tongue += path(pts([end, [end[0] - 0.2, end[1] - 0.38]])) + path(pts([end, [end[0] + 0.22, end[1] - 0.36]]));
 
   return {
+    rs,
+    w,
+    snout: AG + deg(3.4 * w),
+    bodyFill,
     body,
     belly,
     scales,
-    head: path(headPts),
+    headFill,
+    mouth,
+    head,
     details,
-    shade,
-    eye: { c: Hd(EU, EV), r: ER },
-    pupil: path([Hd(EU, EV - 0.2 * w), Hd(EU, EV + 0.2 * w)]),
-    rs,
-    w,
-    snout: A0 - deg(LH),
+    teeth,
+    tongue,
+    eye: { c: H(E[0], E[1]), r: ER * w },
+    pupil: path(pts([[E[0], E[1] - 0.2], [E[0], E[1] + 0.2]])),
   };
 }
 
@@ -643,7 +682,7 @@ const ROOM_BESIDE = 36;
 const ROOM_STACKED = 34;
 const ROOM_NONE = 12;
 /** The last seal's radius: the ouroboros must read as a serpent at a glance, and hold a star. */
-const END_R = 30;
+const END_R = 32;
 /** "uncharted" as set (EB Garamond italic, 12.5 px), with its brace (the brace's curl, its gap from the wall). */
 const UNCH_WORD = 50;
 const BRACE = 3;
@@ -654,8 +693,8 @@ const SOL_R = 8.5;
 /** The legend's small stars and its words (12 px): the star's radius, the words' height, a row's height. */
 export const KEY_R = 3.4;
 const KEY_ROW = 14;
-/** The legend stands this far left of the ouroboros' seal. */
-const KEY_GAP = 15;
+/** The legend stands at the plate's left edge, at the ouroboros' height, at least this far from its seal (about the seal's radius). */
+const KEY_GAP = 30;
 
 /** A callout's shape before the page has measured it: its item over its name in two lines. */
 const CALLOUT_GUESS = (W: number): CalloutShape => ({
@@ -697,7 +736,7 @@ export function descentPlate(W: number, H: number, deepest: number | null, met: 
   const SOL_Y = SOL_R + 12;
   const capAX = caption && caption[3] > SOL_Y - SOL_R - 12 ? caption[2] + SOL_R + 15 : 0;
   let halfTop = clamp((wall - room - 1 - need - ROCK) / 2, 19, stacked ? 56 : 34);
-  let AX = Math.max(1 + need + halfTop, capAX, keyW + KEY_GAP + END_R + 2);
+  let AX = Math.max(1 + need + halfTop, capAX, keyW + KEY_GAP + END_R + 3);
   const spare = wall - room - ROCK - halfTop - AX;
   // Room to spare goes to the margin, and half of it to the lines when there are any; too little narrows the pit.
   if (spare > 0) AX += found.length ? spare / 2 : spare;
@@ -769,7 +808,7 @@ export function descentPlate(W: number, H: number, deepest: number | null, met: 
   // ---- the stars: in the left wall at their depth, by the mouth before a first run, in the ouroboros past 100 ----
   const laneAt = (y: number): Pt => [edgeAt(y, -1, LW / 2), y];
   const home = laneAt(surfaceY);
-  const legendX = endC[0] - endR - KEY_GAP - keyW;
+  const legendX = 3;
   const keyBox = (rows: number): Box => [legendX - 2, endC[1] - (rows * KEY_ROW) / 2 - 3, legendX + keyW + 2, endC[1] + (rows * KEY_ROW) / 2 + 3];
   const nameBoxes: Box[] = ZONES.slice(0, reached).map((_, k) => {
     const y = sealC(k)[1];
@@ -786,7 +825,12 @@ export function descentPlate(W: number, H: number, deepest: number | null, met: 
             inSnake: false,
             text: String(shownDepth(d)),
           };
-  /** Where a star's depths can go (one, or two stacked): under it (or over it, if under won't fit); beside the seal when it is in the ouroboros. */
+  /**
+   * Where a star's depths can go: under it (or over it, if under won't fit);
+   * beside the seal when it is in the ouroboros. Two (the one star for both):
+   * the last run's over the star and yours under it (or both stacked under
+   * it, if that won't fit); beside the seal, the last run's over yours.
+   */
   const numOpts = (s: Spot, texts: string[]): { boxes: Box[]; cost: number }[] => {
     if (!texts.length) return [{ boxes: [], cost: 0 }];
     const n = texts.length;
@@ -798,10 +842,10 @@ export function descentPlate(W: number, H: number, deepest: number | null, met: 
     if (s.inSnake) return [{ boxes: texts.map((_, i) => boxAt(i, endC[0] + endR + 3, endC[1] - BEST_H / 2 + (i - (n - 1) / 2) * STACK, 'start')), cost: 0 }];
     const [x, y] = s.c;
     const g = GLORY + 0.8;
-    return [
-      { boxes: texts.map((_, i) => boxAt(i, x, y + g + i * STACK, 'middle')), cost: 0 },
-      { boxes: texts.map((_, i) => boxAt(i, x, y - g - BEST_H - (n - 1 - i) * STACK, 'middle')), cost: 5 },
-    ];
+    const under = { boxes: texts.map((_, i) => boxAt(i, x, y + g + i * STACK, 'middle')), cost: 0 };
+    const over = { boxes: texts.map((_, i) => boxAt(i, x, y - g - BEST_H - (n - 1 - i) * STACK, 'middle')), cost: 5 };
+    if (n === 2) return [{ boxes: [boxAt(0, x, y - g - BEST_H, 'middle'), boxAt(1, x, y + g, 'middle')], cost: 0 }, { ...under, cost: 50 }, { ...over, cost: 55 }];
+    return [under, over];
   };
   const discOf = (s: Spot) => ({
     c: s.c,
@@ -1372,7 +1416,13 @@ export function descentPlate(W: number, H: number, deepest: number | null, met: 
       const a = k * 22.5 + 11.25;
       return line(at(O, a, r * 0.62 + 1.4), at(O, a, k % 2 ? g - 2 : g));
     }).join('');
-  const travelOf = (s: Spot) => (best ? clamp(0.45 + (0.25 * (s.c[1] - home[1])) / (H - home[1]), 0.45, 0.7) + (s.inSnake ? 0.2 : 0) : 0);
+  /** The gold star's descent: longer the farther it goes (down the wall, and on into the ouroboros), within bounds. */
+  const travelOf = (s: Spot) => {
+    if (!best) return 0;
+    const foot = laneAt(side(BOTTOM, -1)[1]);
+    const d = s.inSnake ? dist(home, foot) + dist(foot, s.c) : dist(home, s.c);
+    return clamp(0.85 + d / 260, 0.95, 2.1);
+  };
   const starOf = (s: Spot, nums: Box[], delay: number, moves: boolean, two: boolean): Star => {
     const [r, g] = s.inSnake ? [STAR_R_IN, GLORY_IN] : [STAR_R, GLORY];
     const st = star8(O, r);
@@ -1433,7 +1483,7 @@ export function descentPlate(W: number, H: number, deepest: number | null, met: 
       r: endR,
       lit: past,
       delay: COIL_AT,
-      serpent: serpent(endR * 0.63, endR * 0.178),
+      serpent: serpent(endR * 0.656, endR * 0.125),
     },
     legend,
     star,

@@ -18,8 +18,9 @@
   // one your last run (`last`), each with its depth under it (the gold one
   // by the mouth before a first run; past 100 a star sits in the ouroboros,
   // its depth beside the seal); when they would overlap, one star stands for
-  // both, drifting between gold and red, the two depths stacked under it. A
-  // small legend left of the ouroboros says which is which. Each find you
+  // both, drifting between gold and red, the last run's depth over it and
+  // yours under it. A small legend at the plate's left edge says which is
+  // which. Each find you
   // have met (`met`) is tied to its heading by a fine gold line from the wall
   // where it first turns up, that depth written in the middle of it: to its
   // heading in the finds list (`finds`) when that stands beside the plate,
@@ -33,8 +34,9 @@
   // line glowing hot and cooling), terraces opening and seals stamped as the
   // pen passes; the finds' lines reach out to their headings, shallowest
   // first; the ouroboros coils in; then the gold star comes down the wall
-  // from the mouth to your deepest (its cutout, a mask over the plate,
-  // travels with it), the red one appears and the depths with them. After
+  // from the mouth to your deepest, gathering speed and settling (its cutout,
+  // a mask over the plate, travels with it), a glint rings out as it lands,
+  // the red one appears and the depths with them. After
   // that the glows breathe, Sol's rays turn slowly, the stars' glories and
   // the ouroboros turn and the gold star twinkles, each on its own layer;
   // with reduced motion everything simply stands in its place, and still
@@ -239,12 +241,15 @@
         <circle
           class="reveal"
           r={f(sp.rs)}
-          stroke-width={f(3.6 * sp.w)}
+          stroke-width={f(2 * (sp.rs - 6))}
           pathLength="100"
-          transform="rotate({f(sp.snout - 100)})"
+          transform="rotate({f(sp.snout - 90)}) scale(1 -1)"
           style:--d={sec(p.endless.delay)}
         />
       </mask>
+      <clipPath id="{uid}-mouth">
+        <path d={sp.mouth} />
+      </clipPath>
       <clipPath id="{uid}-sky">
         <path d={p.sol.horizon} />
       </clipPath>
@@ -301,12 +306,21 @@
           <g class="coil-in" style:--d={sec(p.endless.delay)}>
             <g class="coil" style:--d={sec(p.endless.delay)}>
               <g class="serpent" class:lit={p.endless.lit} mask="url(#{uid}-coil)">
-                <path class="sp-shade" d={sp.shade} />
-                <path class="sp-belly" d={sp.belly} />
-                <path class="sp-scales" d={sp.scales} />
-                <path class="sp-body" d={sp.body} />
+                {#snippet band()}
+                  <path class="sp-fill" d={sp.bodyFill} />
+                  <path class="sp-scales" d={sp.scales} />
+                  <path class="sp-belly" d={sp.belly} />
+                  <path class="sp-body" d={sp.body} />
+                {/snippet}
+                {@render band()}
+                <path class="sp-fill" d={sp.headFill} />
+                <!-- The mouth's dark, and the tail running on into it. -->
+                <path class="sp-mouth" d={sp.mouth} />
+                <g clip-path="url(#{uid}-mouth)">{@render band()}</g>
                 <path class="sp-head" d={sp.head} />
                 <path class="sp-detail" d={sp.details} />
+                <path class="sp-teeth" d={sp.teeth} />
+                <path class="sp-tongue" d={sp.tongue} />
                 <circle class="sp-eye" cx={f(sp.eye.c[0])} cy={f(sp.eye.c[1])} r={f(sp.eye.r)} />
                 <path class="sp-pupil" d={sp.pupil} />
               </g>
@@ -328,7 +342,7 @@
         {/if}
       </g>
 
-      <!-- Which star is which, left of the ouroboros. -->
+      <!-- Which star is which, at the plate's left edge. -->
       <g class="legend" style:--d={sec(p.legend.delay)}>
         {#each p.legend.rows as r (r.kind)}
           <g class="key {r.kind}">
@@ -416,6 +430,10 @@
                 <path class="star-line" d={s.outline} />
                 <path class="star-ridge" d={s.ridges} />
               </g>
+              {#if s.travel > 0}
+                <circle class="land-flare" r={f(s.gloryR)} style:--l={sec(s.delay + 0.25 + s.travel - 0.05)} />
+                <circle class="land" r={f(s.gloryR)} style:--l={sec(s.delay + 0.25 + s.travel - 0.05)} />
+              {/if}
               {#if i}
                 <!-- A glint crossing the star now and then, turned between its points. -->
                 <path
@@ -724,32 +742,48 @@
     }
   }
 
-  /* The ouroboros: a dull impression until you are past 100, then struck in pale gold. It coils in head first, then turns on, head
+  /* The ouroboros, after an old woodcut: a bold outline round a band faintly tinted, so its scales read against the dark of its
+     mouth. A dull impression until you are past 100, then struck in pale gold. It coils in head first, then turns on, head
      first, once in 50 s. */
+  .serpent {
+    --sp: color-mix(in srgb, var(--dull) 55%, #b09a78);
+  }
+  .serpent.lit {
+    --sp: var(--gold-hi);
+  }
   .serpent path,
   .serpent circle {
-    stroke: color-mix(in srgb, var(--dull) 55%, #b09a78);
+    stroke: var(--sp);
     stroke-linecap: round;
     stroke-linejoin: round;
   }
-  .serpent.lit path,
-  .serpent.lit circle {
-    stroke: var(--gold-hi);
+  .serpent .sp-fill {
+    fill: color-mix(in srgb, var(--sp) 11%, var(--bg));
+    stroke: none;
+  }
+  .serpent .sp-mouth {
+    fill: var(--bg);
+    stroke: none;
   }
   .sp-body,
   .sp-head {
-    stroke-width: 0.8;
+    stroke-width: 0.95;
   }
   .sp-detail {
-    stroke-width: 0.42;
+    stroke-width: 0.4;
   }
-  .sp-scales,
+  .sp-scales {
+    stroke-width: 0.32;
+  }
   .sp-belly {
-    stroke-width: 0.3;
+    stroke-width: 0.45;
   }
-  .sp-shade {
-    stroke-width: 0.28;
-    opacity: 0.85;
+  .serpent .sp-teeth {
+    fill: var(--sp);
+    stroke-width: 0.2;
+  }
+  .sp-tongue {
+    stroke-width: 0.6;
   }
   .serpent .sp-eye {
     stroke-width: 0.45;
@@ -771,12 +805,12 @@
   }
   @keyframes coil-in {
     from {
-      transform: rotate(80deg) scale(0.92);
+      transform: rotate(-80deg) scale(0.92);
     }
   }
   @keyframes coil {
     to {
-      rotate: -360deg;
+      rotate: 360deg;
     }
   }
 
@@ -869,26 +903,43 @@
   .live {
     will-change: transform;
   }
-  /* The gold star comes down the wall from the mouth once the plate has inked itself in, slowing as it lands (past 100 it turns
-     into the ouroboros at the foot of the pit); its cutout comes with it. */
+  /* The gold star comes down the wall from the mouth once the plate has inked itself in: it gathers speed, slows and settles at
+     its depth, dipping a hair past it and back (past 100 it runs down to the foot of the pit and turns into the ouroboros); its
+     cutout comes with it, and a glint of light rings out as it lands. */
   .travel {
-    animation: travel var(--t) var(--go) cubic-bezier(0.5, 0, 0.2, 1) both;
+    animation: travel var(--t) var(--go) linear both;
   }
   .travel.into {
     animation-name: travel-into;
-    animation-timing-function: cubic-bezier(0.45, 0, 0.3, 1);
   }
   @keyframes travel {
     from {
       transform: translate(var(--fx), var(--fy));
+      animation-timing-function: cubic-bezier(0.6, 0, 0.3, 1);
+    }
+    88% {
+      transform: translate(0, 1.4px);
+      animation-timing-function: cubic-bezier(0.4, 0, 0.5, 1);
+    }
+    to {
+      transform: translate(0, 0);
     }
   }
   @keyframes travel-into {
     from {
       transform: translate(var(--fx), var(--fy));
+      animation-timing-function: cubic-bezier(0.6, 0, 0.8, 0.6);
     }
-    72% {
+    62% {
       transform: translate(var(--mx), var(--my));
+      animation-timing-function: cubic-bezier(0.2, 0.45, 0.3, 1);
+    }
+    92% {
+      transform: translate(0, 1px);
+      animation-timing-function: ease-in-out;
+    }
+    to {
+      transform: translate(0, 0);
     }
   }
   .cutout {
@@ -899,12 +950,51 @@
   .cutout.travel {
     animation:
       carve 0.5s var(--d) var(--ease-out) both,
-      travel var(--t) var(--go) cubic-bezier(0.5, 0, 0.2, 1) both;
+      travel var(--t) var(--go) linear both;
   }
   .cutout.travel.into {
     animation:
       carve 0.5s var(--d) var(--ease-out) both,
-      travel-into var(--t) var(--go) cubic-bezier(0.45, 0, 0.3, 1) both;
+      travel-into var(--t) var(--go) linear both;
+  }
+  /* The glint as the gold star lands: a ring of light running out from it, and a brief flare. */
+  .land {
+    fill: none;
+    stroke: #fff3d6;
+    stroke-width: 0.6;
+    opacity: 0;
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: land 0.9s var(--l) ease-out both;
+  }
+  .land-flare {
+    stroke: none;
+    fill: #fff3d6;
+    opacity: 0;
+    filter: blur(2px);
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: land-flare 0.7s var(--l) ease-out both;
+  }
+  @keyframes land {
+    from {
+      opacity: 0.8;
+      transform: scale(0.4);
+    }
+    to {
+      opacity: 0;
+      transform: scale(2.2);
+    }
+  }
+  @keyframes land-flare {
+    from {
+      opacity: 0.55;
+      transform: scale(0.6);
+    }
+    to {
+      opacity: 0;
+      transform: scale(1.4);
+    }
   }
 
   /* The star: the brightest thing on the plate, its halo breathing. */
@@ -1178,6 +1268,8 @@
     .sun-halo,
     .nib-path,
     .nib,
+    .land,
+    .land-flare,
     .both-star :is(.star-line, .star-ridge, .star-hatch, .star-ground, .glory, .halo) {
       animation: none;
     }

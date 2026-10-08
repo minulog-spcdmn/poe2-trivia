@@ -11,11 +11,11 @@
   import { FINDS_IN_ORDER, shownDepth, type FindKind } from '../lib/delve';
   import { FIND_TEXT } from '../lib/difficultyText';
 
-  /** The rules card's content width at each size, as the lobby lays it out. */
+  /** The rules card's content width at each size, as the lobby lays it out (measured at 375, 820 and 1440 px wide windows). */
   const WIDTHS = [
     { key: 'phone', name: 'Phone', px: 281 },
-    { key: 'tablet', name: 'Tablet', px: 329 },
-    { key: 'desktop', name: 'Desktop', px: 450 },
+    { key: 'tablet', name: 'Tablet', px: 383 },
+    { key: 'desktop', name: 'Desktop', px: 483 },
   ];
   const GLYPH = { azurite: 'ward', flare: 'flare', dynamite: 'dynamite' } as const;
   const MAX = 300;
