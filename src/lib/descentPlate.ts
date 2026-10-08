@@ -1,35 +1,39 @@
 // The descent plate on Delve's rules page (DelveLadder.svelte): the pit the
 // players go down, engraved as the alchemist's circle is (docs/arcane-style.md).
 //
-// Sol stands over the mouth of a pit seen a little from above. The pit
+// Sol stands over the mouth of a pit seen a little from above, its rays
+// turning slowly, those below the ground hidden by it. The pit
 // narrows down through the ten zones, each a ring of terrace whose edge is
 // an ellipse (its near half firm, its far half a hairline passing behind
 // the seal above). Each terrace holds a seal on the pit's axis: a zone you
 // have reached is struck in its colour with its sigil (lib/zoneSigils) and
 // named in the margin, its terrace lit; one you haven't is a dull
-// impression, an empty hollow, and the zones not reached yet are bracketed
-// together in the margin under one word, "uncharted".
+// impression, an empty hollow.
 //
 // Past the tenth zone the pit never ends: its walls carry on, breaking into
 // shorter and shorter dashes as they fade into the dark round a last, larger
 // seal holding the ouroboros, an engraved serpent biting its tail, which
-// turns slowly. No floor is ever drawn.
+// turns. No floor is ever drawn. The zones not reached yet are held in a
+// fine brace beside the wall, its beak on the word "uncharted", and the
+// wall's outer line runs broken beside them.
 //
-// Two eight-pointed stars in a glory of rays stand in a lane on the pit's
-// left, between the zones' names and the rock: a gold one at your deepest
-// (at the mouth before a first run) and a red one at your last run, each
-// with its depth under it. Past 100 a star sits inside the ouroboros, its
-// depth beside the seal. When the two would overlap, only the gold one is
-// drawn. A small legend left of the ouroboros says which star is which.
+// The pit's left wall is a wide band between two lines, and the stars stand
+// in it like beads in a gauge: a gold one at your deepest (at the mouth
+// before a first run) and a red one at your last run, each with its depth
+// under it, their cutouts breaking the wall's lines round them. Past 100 a
+// star sits inside the ouroboros, its depth beside the seal. When the two
+// would overlap they are one star, its colour drifting between gold and
+// red, the two depths stacked under it (the last run's over your best). A
+// legend left of the ouroboros says which star is which.
 //
 // Each find you have met is tied to its heading (`beside`: the finds list
 // to the right of the plate) or to its callout (stacked on a phone or a
 // tablet: the plate stands the finds' items and names on its own right) by
-// a gold line: from the heading a short level stub, one straight slant,
-// then a short level handle into the right wall at the depth where it first
-// turns up, that depth written by it. The lines, their depths, the stars
-// and their depths are fitted together (fitLeaders()) so that none of them
-// crosses another.
+// a gold line: out of the right wall level at the depth where it first
+// turns up, one straight slant, then a short level stub into the heading,
+// that depth written in the middle of the slant (the line broken round it).
+// The lines, their depths, the stars and their depths are fitted together
+// (fitLeaders()) so that none of them crosses another.
 //
 // Everything is exact geometry in px: the pit's sides are straight lines
 // converging downward, every terrace an ellipse whose depth is a fifth of
@@ -38,12 +42,18 @@
 // cutouts are masks in the component, so they move with a star); the rock
 // beside the pit and the terraces' faces are shaded in one-sided hatching
 // (the light falls from the upper left, as on the cards); main lines carry
-// a few nicks of wear. Each stroke comes with its timing, so the plate draws
-// itself in from the surface down as one sweep of the pen; then the gold
-// star comes down the lane from the mouth to your deepest and the red one
-// appears where your last run ended.
+// a few nicks of wear.
+//
+// Each stroke comes with its timing, so the plate engraves itself in a
+// sequence (about 2 s): Sol kindles over the mouth; the walls are inked
+// down the shaft (a bright nib at the head of each, the line cooling behind
+// it), each terrace opening out from its middle and each seal stamped as
+// the pen passes; the finds' lines reach out from the wall to their
+// headings one after another, shallowest first; the ouroboros coils in;
+// then the gold star comes down the wall from the mouth to your deepest and
+// the red one appears where your last run ended.
 
-import { at, hatch, line, seeded, star8, type Hole as Disc } from './arcane.ts';
+import { at, hatch, line, seeded, star8 } from './arcane.ts';
 import { FINDS_IN_ORDER, shownDepth, type FindKind } from './delve.ts';
 import { STRATA } from './descent.ts';
 import { sigilOf, type Sigil } from './zoneSigils.ts';
@@ -97,8 +107,19 @@ export type Seal = {
   delay: number;
   hollow?: string;
 };
-/** The zones not reached yet, under one word: the bracket's lines, and where the word sits. */
-export type Uncharted = { d: string; x: number; y: number; delay: number };
+/**
+ * The zones not reached yet, held in a brace beside the wall: its two halves
+ * (each from the beak out to a terminal, so they draw outward), the ball at
+ * each terminal, and where the word stands (its right end, by the beak).
+ */
+export type Uncharted = {
+  upper: string;
+  lower: string;
+  balls: Pt[];
+  x: number;
+  y: number;
+  delay: number;
+};
 /** A find's heading beside the plate, where its line ends: the left of its item and the middle of its line, in the plate's px. */
 export type Target = { kind: FindKind; x: number; y: number };
 /** A callout as the page sets it (stacked): its left and size, and its item's and its name's boxes inside it (from its top left). */
@@ -132,6 +153,10 @@ export type Mark = {
  * brow, lips, jaw and fang), the shading under its jaw, its eye.
  */
 export type Serpent = {
+  /** The ring it lies on, its half-width at the neck, and the angle of its snout (clockwise from the top), where it coils in from. */
+  rs: number;
+  w: number;
+  snout: number;
   body: string;
   belly: string;
   scales: string;
@@ -146,7 +171,10 @@ export type Serpent = {
  * are about 0, 0, so the glory can turn), its depth by it. The gold one comes
  * down from the mouth (`from`, relative to `c`, by way of `mid` when it goes
  * into the ouroboros) in `travel` s, starting at `delay`; the red one appears
- * at `delay`. `cut` is the radius its cutout clears round it.
+ * at `delay`. `cut` is the radius its cutout clears round it. `both`: the
+ * last run is at your best (or would overlap it), so this one star stands
+ * for both, its colour drifting between them, the last run's depth
+ * (`lastNum`) over yours.
  */
 export type Star = {
   c: Pt;
@@ -158,6 +186,7 @@ export type Star = {
   glory: string;
   cut: number;
   inSnake: boolean;
+  both: boolean;
   delay: number;
   from: Pt;
   mid: Pt | null;
@@ -168,6 +197,7 @@ export type Star = {
     y: number;
     anchor: 'middle' | 'start';
   } | null;
+  lastNum: { text: string; x: number; y: number } | null;
 };
 /** The legend left of the ouroboros: a row for each star drawn, its small star at `x`, its words after it. */
 export type Legend = {
@@ -183,7 +213,22 @@ export type Plate = {
   parts: Part[];
   shades: Shade[];
   seals: Seal[];
-  sol: { c: Pt; r: number };
+  /**
+   * Sol over the mouth, on a layer of its own: its rings, its rays (pointed,
+   * hatched down one side, and fine between them) all round it about 0, 0,
+   * so they can turn, hidden below the ground (`horizon`: a clipping path
+   * about `c` round what lies over the surface and the mouth's far rim).
+   */
+  sol: { c: Pt; r: number; rays: string; hatch: string; fine: string; horizon: string };
+  /**
+   * The walls as they are inked down, from the mouth to the tenth zone's
+   * floor: each line whole (a short hot stretch of it runs down with the
+   * pen), and the nibs at the head of the pen on the pit's sides.
+   */
+  ink: { d: string; delay: number; t: number }[];
+  nibs: { from: Pt; to: Pt; delay: number; t: number }[];
+  /** The left wall (the stars' band): its inner and outer lines' x at the mouth (`y0`) and at the tenth zone's floor (`y1`). */
+  wallL: { y0: number; y1: number; inner: [number, number]; outer: [number, number] };
   names: { x: number; y: number; text: string; color: string; delay: number }[];
   uncharted: Uncharted | null;
   stations: Station[];
@@ -228,6 +273,7 @@ const grow = (b: Box, d: number): Box => [b[0] - d, b[1] - d, b[2] + d, b[3] + d
 /** The pen's pace: fast at first, slowing at the end (the circle's stroke()). */
 const ease = (u: number) => 1 - Math.sqrt(1 - Math.min(1, Math.max(0, u)));
 const path = (pts: Pt[]) => 'M' + pts.map((q) => `${f(q[0])} ${f(q[1])}`).join('L');
+const smooth = (t: number) => (t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t));
 const steps = (a0: number, a1: number, n: number) => Array.from({ length: n + 1 }, (_, i) => a0 + ((a1 - a0) * i) / n);
 
 /** The plate's wear: nicks of 0.5 to 0.9 px every 110 or so, from a fixed seed, as cuts in [0, 1] of a line `len` long. */
@@ -363,130 +409,156 @@ function hollow(c: Pt, r: number, gap: number): string {
 
 /**
  * The ouroboros, engraved about 0, 0: a serpent on the circle `rs`, its body
- * `w` either side of it at the neck, swelling a little and then tapering to
- * its tail. Its head lies along the ring at the top, facing anticlockwise:
- * broad at the jaw's hinge, a ridge of brow over the eye, the snout running
- * out round, the jaws open on the tip of its tail, which runs in between
- * them under a fang. Its back carries two rows of scales, their free edges
- * toward the tail; a line runs along its side, and below it the broad
- * plates cross its belly (the inner edge). The throat is shaded in short
- * strokes. Everything about the head is laid out along the ring (`u` from
- * the neck toward the snout, `v` out from the ring), so it bends with it.
+ * `w` either side of it, narrow at the neck so the head stands out, fuller
+ * along its first stretch and tapering to a point at its tail. Its head
+ * lies at the top facing anticlockwise, rigid (its centre line leaves the
+ * ring at the neck for the chord to the snout): a broad crown over the jaw's
+ * hinge, a brow over the eye, the snout running down round, the jaws open
+ * on the tip of its tail, which runs in between them (following the head)
+ * under a fang. A line runs along its inner side with the broad plates of
+ * its belly across below it; its back carries a fine net of scales. The
+ * underside of the jaw is shaded in arcs, each shorter than the last.
+ * Everything about the head is laid out from its centre line (`u` from the
+ * neck toward the snout, `v` out from it), so it bends with it.
  */
 function serpent(rs: number, w: number): Serpent {
   const O: Pt = [0, 0];
-  const deg = (u: number, r = rs) => (u / r) * (180 / Math.PI);
-  /** The neck, at this angle clockwise from the top; the head runs anticlockwise from it, the body clockwise round to its tail. */
-  const A0 = 22;
-  const LH = 3.2 * w;
-  const Hd = (u: number, v: number): Pt => at(O, A0 - deg(u, rs + v), rs + v);
-  const B = (a: number, v: number): Pt => at(O, a, rs + v);
-  // The tail's tip, inside the mouth past the corner of the jaws.
-  const TIP = 360 + A0 - deg(1.4 * w);
+  const deg = (u: number) => (u / rs) * (180 / Math.PI);
+  /** The neck, clockwise from the top; the head runs anticlockwise from it. */
+  const A0 = 30;
+  const LH = 3.6 * w;
+  // The head is rigid: its centre line bends off the ring at the neck toward the chord to the snout.
+  const P0 = at(O, A0, rs);
+  const P1 = at(O, A0 - deg(LH), rs);
+  const C = (u: number): Pt => lerp(at(O, A0 - deg(u), rs), lerp(P0, P1, u / LH), 0.6 * smooth(u / (0.5 * LH)));
+  /** A point `u` from the neck toward the snout, `v` out from the head's centre line. */
+  const Hd = (u: number, v: number): Pt => {
+    const [p, q] = [C(u - 0.01), C(u + 0.01)];
+    const L = dist(p, q);
+    let nn: Pt = [-(q[1] - p[1]) / L, (q[0] - p[0]) / L];
+    const c = C(u);
+    if (nn[0] * c[0] + nn[1] * c[1] < 0) nn = [-nn[0], -nn[1]];
+    return [c[0] + nn[0] * v, c[1] + nn[1] * v];
+  };
+  // The body, at angle `a` clockwise from the neck: on the ring, except where the tail runs into the mouth, where it follows the head.
+  const B = (a: number, v: number): Pt => {
+    const u = ((A0 - a + 720) % 360) * (rs * Math.PI) / 180;
+    const k = u < 0.2 * w || u > LH + 1.6 * w ? 0 : u <= LH ? 1 : 1 - smooth((u - LH) / (1.6 * w));
+    const ring = at(O, a, rs + v);
+    return k ? lerp(ring, Hd(Math.min(u, LH), v), k) : ring;
+  };
+
+  // The body's half-width: narrow at the neck (the head stands out from it), fuller along the first stretch, tapering to a point.
+  const TIP_U = 1.75 * w;
+  const TIP = 360 + A0 - deg(TIP_U);
   const span = TIP - A0;
   const bw = (a: number) => {
     const t = (a - A0) / span;
-    return w * (t < 0.25 ? 1 + 0.07 * Math.sin(((t / 0.25) * Math.PI) / 2) : 1.07 - 0.88 * ((t - 0.25) / 0.75) ** 1.5);
+    if (t < 0.16) return w * (0.84 + 0.2 * Math.sin((t / 0.16) * (Math.PI / 2)));
+    const s = (t - 0.16) / 0.84;
+    return w * (1.04 - 0.99 * s ** 1.3);
   };
 
-  // The head: the crown swelling to the hinge, level over the brow, then running down to the snout; the upper lip back to the
-  // corner of the mouth; the lower lip out to the chin; the chin's underside back past the swollen throat to the neck.
-  const crownV = (u: number) =>
-    u <= 0.9 * w
-      ? w * (1 + 0.5 * Math.sin(((u / (0.9 * w)) * Math.PI) / 2))
-      : u <= 2 * w
-        ? w * (1.5 - (0.12 * (u - 0.9 * w)) / w)
-        : w * (0.5 + 0.87 * Math.max(0, Math.cos(((u - 2 * w) / (LH - 2 * w)) * (Math.PI / 2))) ** 0.8);
-  const upperV = (u: number) => w * (0.03 + 0.22 * Math.max(0, (u - w) / (LH - w)) ** 0.8);
-  const CHIN = LH - 0.42 * w;
-  const lowerV = (u: number) => -w * (0.03 + 0.25 * Math.max(0, (u - w) / (CHIN - w)) ** 0.9);
-  const underV = (u: number) => (u >= 0.8 * w ? -w * (0.52 + 0.76 * Math.sin(((CHIN - u) / (CHIN - 0.8 * w)) * (Math.PI / 2))) : -w * (1 + 0.28 * Math.sin(((u / (0.8 * w)) * Math.PI) / 2)));
-  const crown = steps(0, LH, 40).map((u) => Hd(u, crownV(u)));
-  const snout = [Hd(LH + 0.1 * w, 0.32 * w), Hd(LH + 0.06 * w, 0.22 * w)];
-  const upper = steps(LH - 0.02 * w, w, 16).map((u) => Hd(u, upperV(u)));
-  const lower = steps(w, CHIN, 12).map((u) => Hd(u, lowerV(u)));
-  const chin = [Hd(CHIN + 0.08 * w, -0.38 * w)];
-  const under = steps(CHIN - 0.04 * w, 0, 30).map((u) => Hd(u, underV(u)));
-  const headPts = [...crown, ...snout, ...upper, ...lower, ...chin, ...under];
-  // A fang from the upper jaw, down over the tail.
-  const FU = LH - 0.62 * w;
-  const fang: Pt[] = [Hd(FU - 0.12 * w, upperV(FU - 0.12 * w)), Hd(FU + 0.02 * w, -0.16 * w), Hd(FU + 0.12 * w, upperV(FU + 0.12 * w))];
-  const head: Hole = { poly: headPts };
-  const holes: Hole[] = [head, { poly: fang }];
+  // ---- the head's outline: from the nape over the crown to the snout, back along the upper lip, out along the lower, under the jaw ----
+  const topV = (u: number) => {
+    if (u < 1.0 * w) return w * (0.84 + 0.5 * Math.sin(((u / w) * Math.PI) / 2));
+    if (u < 2.4 * w) return w * (1.34 - 0.06 * ((u - w) / (1.4 * w)));
+    const t = Math.min(1, (u - 2.4 * w) / (LH - 0.14 * w - 2.4 * w));
+    return w * (0.52 + 0.76 * Math.cos((t * Math.PI) / 2) ** 0.8);
+  };
+  const CORNER = 1.3 * w;
+  const upLip = (u: number) => w * (0.02 + 0.36 * Math.max(0, (u - CORNER) / (LH - CORNER)) ** 0.85);
+  const CHIN = LH - 0.36 * w;
+  const loLip = (u: number) => -w * (0.02 + 0.38 * Math.max(0, (u - CORNER) / (CHIN - CORNER)) ** 0.85);
+  const underV = (u: number) => {
+    if (u < 0.95 * w) return -w * (0.84 + 0.4 * Math.sin(((u / (0.95 * w)) * Math.PI) / 2));
+    const t = (u - 0.95 * w) / (CHIN - 0.95 * w);
+    return -w * (0.62 + 0.62 * Math.cos((t * Math.PI) / 2) ** 1.1);
+  };
+  const NOSE = LH - 0.14 * w;
+  const crown = steps(0, NOSE, 48).map((u) => Hd(u, topV(u)));
+  const nose = steps(1, 8, 7).map((k) => {
+    const th = (k / 8) * (Math.PI / 2);
+    return Hd(NOSE + 0.14 * w * Math.sin(th), upLip(LH) + (topV(NOSE) - upLip(LH)) * Math.cos(th));
+  });
+  const upper = steps(LH, CORNER, 20).map((u) => Hd(u, upLip(u)));
+  const lower = steps(CORNER, CHIN, 18).map((u) => Hd(u, loLip(u)));
+  const chin = steps(1, 8, 7).map((k) => {
+    const th = (k / 8) * (Math.PI / 2);
+    return Hd(CHIN + 0.12 * w * Math.sin(th), loLip(CHIN) + (underV(CHIN) - loLip(CHIN)) * (1 - Math.cos(th)));
+  });
+  const under = steps(CHIN, 0, 40).map((u) => Hd(u, underV(u)));
+  const headPts = [...crown, ...nose, ...upper, ...lower, ...chin, ...under];
+  const upperJaw = [...crown, ...nose, ...upper, Hd(CORNER, 0), Hd(0, 0)];
+  const lowerJaw = [Hd(0, 0), Hd(CORNER, 0), ...lower, ...chin, ...under];
+  // A fang from the upper jaw, down onto the tail.
+  const FU = LH - 0.6 * w;
+  const fang: Pt[] = [Hd(FU - 0.14 * w, upLip(FU - 0.14 * w)), Hd(FU + 0.03 * w, upLip(FU) - 0.42 * w), Hd(FU + 0.1 * w, upLip(FU + 0.1 * w))];
+  const clips: Hole[] = [upperJaw, lowerJaw, fang].map((poly) => ({ poly }));
 
-  // The body: its two edges, round the tail's tip, broken where the head lies over the tail.
-  const n = Math.ceil(span / 1.2);
+  // ---- the body's edges, round the tail's tip ----
+  const n = Math.ceil(span / 0.8);
   const as = steps(A0, TIP, n);
   const outer = as.map((a) => B(a, bw(a)));
   const inner = as.map((a) => B(a, -bw(a)));
-  const tip = [B(TIP + deg(0.12 * w), 0.06 * w), B(TIP + deg(0.16 * w), 0), B(TIP + deg(0.12 * w), -0.06 * w)];
-  const body = cut([...outer, ...tip, ...inner.reverse()], holes);
+  const tip = [B(TIP + deg(0.1 * w), 0.03 * w), B(TIP + deg(0.13 * w), 0), B(TIP + deg(0.1 * w), -0.03 * w)];
+  const body = cut([...outer, ...tip, ...inner.reverse()], clips);
 
-  // Along the arc: positions every `gap(a)` px from the neck to where the body is too thin for them.
-  const along = (from: number, gap: (a: number) => number, stop: (a: number) => boolean) => {
-    const out: number[] = [];
-    for (let a = A0 + from; a < TIP && !stop(a); a += deg(gap(a))) out.push(a);
-    return out;
-  };
-  // The side: a line along the body a third of the way in from the belly; under it, the belly's plates straight across.
-  const SIDE = -0.3;
-  const side = cut(
-    steps(A0 + 0.5, TIP - deg(0.9 * w), n).map((a) => B(a, SIDE * bw(a))),
-    holes,
+  // ---- the belly: a line along the inner side, the broad plates across between it and the edge ----
+  const SIDE = -0.36;
+  const sideA = steps(A0 + 0.5, TIP - deg(1.6 * w), n);
+  let belly = cut(
+    sideA.map((a) => B(a, SIDE * bw(a))),
+    clips,
   );
-  let belly = side;
-  for (const a of along(
-    1.2,
-    (a) => Math.max(0.95, 0.42 * bw(a)),
-    (a) => bw(a) < 0.75,
-  ))
-    belly += cut([B(a, -bw(a) + 0.28), B(a, SIDE * bw(a) - 0.12)], holes);
-  // The back: two rows of scales, each a little arc whose free edge bulges toward the tail; the rows set half a scale apart.
-  let scales = '';
-  const rows = [
-    [SIDE, 0.36],
-    [0.36, 1],
-  ] as const;
-  rows.forEach(([v0, v1], row) => {
-    const sp = (a: number) => Math.max(0.9, 0.62 * (v1 - v0) * bw(a) * 1.25);
-    for (const a0 of along(1.4 + row * 0.5 * deg(0.6 * w), sp, (a) => bw(a) < 0.95)) {
-      const b = bw(a0);
-      const [lo, hi] = [v0 * b + (row ? 0.06 : 0.12), v1 * b - (row ? 0.3 : 0.06)];
-      if (hi - lo < 0.5) continue;
-      const [vc, hh, ds] = [(lo + hi) / 2, (hi - lo) / 2, sp(a0) * 0.62];
-      const arc = steps(-90, 90, 8).map((th) => {
-        const t = (th * Math.PI) / 180;
-        const v = vc + hh * Math.sin(t);
-        return B(a0 + deg(ds * Math.cos(t), rs + v), v);
-      });
-      scales += cut(arc, holes);
-    }
-  });
+  for (let a = A0 + deg(0.3 * w); a < TIP && bw(a) > 0.3 * w; a += deg(Math.max(1.0, 0.4 * bw(a)))) belly += cut([B(a, -bw(a) + 0.22), B(a, SIDE * bw(a) - 0.04)], clips);
 
-  // The head's lines: the brow over the eye, the line of the upper lip, the jaw's line back from the corner of the mouth, the
-  // scales of the lower lip, a nostril, the fang.
-  const browV = (u: number) => w * (0.98 + 0.13 * Math.sin(((u - 0.95 * w) / (1.3 * w)) * Math.PI));
-  let details = cut(steps(0.95 * w, 2.25 * w, 14).map((u) => Hd(u, browV(u))));
-  details += cut(steps(1.25 * w, LH - 0.18 * w, 10).map((u) => Hd(u, upperV(u) + 0.24 * w)));
-  details += cut(steps(w, 0.3 * w, 8).map((u) => Hd(u, -0.05 * w - 0.5 * w * Math.max(0, (w - u) / (0.7 * w)) ** 1.4)));
-  for (let u = 1.25 * w; u < CHIN - 0.15 * w; u += 0.38 * w) details += cut([Hd(u, lowerV(u) - 0.05 * w), Hd(u - 0.1 * w, lowerV(u) - 0.28 * w)]);
-  details += cut([Hd(LH - 0.28 * w, 0.52 * w), Hd(LH - 0.16 * w, 0.46 * w)]);
-  // Over the brow, the crown in shadow: short strokes from the brow up toward the crown's edge.
+  // ---- the back: a fine net of scales, two sets of straight slanting strokes from the side line out to the edge ----
+  let scales = '';
+  const V0 = SIDE + 0.12;
+  for (const dir of [1, -1])
+    for (let a = A0 + deg(0.25 * w); a < TIP && bw(a) > 0.34 * w; a += deg(Math.max(1.0, 0.5 * bw(a)))) {
+      const b = bw(a);
+      const a1 = a + dir * deg(0.6 * (0.9 - V0) * b);
+      if (a1 < A0 + deg(0.15 * w)) continue;
+      scales += cut([B(a, V0 * b), B(a1, 0.9 * bw(a1))], clips);
+    }
+
+  // ---- the head's lines ----
+  let details = '';
+  // The mouth's corner, running back and down as the jaw's hinge.
+  details += cut(steps(CORNER, 0.45 * w, 8).map((u) => Hd(u, -0.02 * w - 0.55 * w * ((CORNER - u) / (CORNER - 0.45 * w)) ** 1.6)));
+  // The eye under a brow.
+  const EU = 2.25 * w;
+  const EV = 0.72 * w;
+  const ER = 0.34 * w;
+  details += cut(steps(EU - 0.5 * w, EU + 0.5 * w, 12).map((u) => Hd(u, EV + ER + 0.14 * w + 0.08 * w * Math.sin(((u - (EU - 0.5 * w)) / w) * Math.PI))));
+  // The lip: a line over the upper lip, and under the lower.
+  details += cut(steps(CORNER + 0.3 * w, LH - 0.3 * w, 10).map((u) => Hd(u, upLip(u) + 0.2 * w)));
+  details += cut(steps(CORNER + 0.3 * w, CHIN - 0.15 * w, 10).map((u) => Hd(u, loLip(u) - 0.2 * w)));
+  // The nostril.
+  details += path([Hd(LH - 0.38 * w, 0.44 * w), Hd(LH - 0.25 * w, 0.4 * w)]);
+  details += path(fang);
+
+  // ---- shading: arcs along the underside of the jaw, each shorter than the last; the nape in short strokes ----
   let shade = '';
-  for (let u = 1.05 * w; u < 2.15 * w; u += 0.22 * w) shade += cut([Hd(u, browV(u) + 0.14 * w), Hd(u, Math.min(crownV(u) - 0.16 * w, browV(u) + 0.3 * w))]);
-  // The throat: strokes in from its underside.
-  for (let u = 0.25 * w; u < CHIN - 0.4 * w; u += 0.2 * w) shade += cut([Hd(u, underV(u) + 0.14 * w), Hd(u, underV(u) * 0.62)]);
-  const eyeC = Hd(1.55 * w, 0.62 * w);
-  const pupil = path([Hd(1.55 * w, 0.5 * w), Hd(1.55 * w, 0.74 * w)]);
+  for (let j = 1; j <= 3; j++) {
+    const [u0, u1] = [0.35 * w + 0.25 * w * j, CHIN - 0.3 * w - 0.45 * w * j];
+    if (u1 > u0) shade += cut(steps(u0, u1, 14).map((u) => Hd(u, underV(u) + 0.2 * w * j)));
+  }
+
   return {
     body,
     belly,
     scales,
-    head: path(headPts) + path(fang),
+    head: path(headPts),
     details,
     shade,
-    eye: { c: eyeC, r: 0.32 * w },
-    pupil,
+    eye: { c: Hd(EU, EV), r: ER },
+    pupil: path([Hd(EU, EV - 0.2 * w), Hd(EU, EV + 0.2 * w)]),
+    rs,
+    w,
+    snout: A0 - deg(LH),
   };
 }
 
@@ -544,23 +616,22 @@ export const ZONES = STRATA.slice(0, 10).map((z, k) => ({
 
 /** The terraces' depth: each is the front of an ellipse this much as deep as it is wide. */
 const TILT = 0.2;
-/** The rock shaded beside the pit's sides. */
+/** The rock shaded beside the pit's right side; the left wall, a band the stars stand in. */
 const ROCK = 6;
+const LW = 13;
 /** How much narrower the pit is at the tenth zone's floor than at its mouth (each side). */
 const TAPER = 7;
-/** A zone's name stands this far from the stars' lane. */
-const NAME_GAP = 4;
+/** A zone's name stands this far from the left wall. */
+const NAME_GAP = 5.5;
 /** The stars and their glories; smaller inside the ouroboros. */
-const STAR_R = 4.6;
-const GLORY = 8.5;
+const STAR_R = 4.4;
+const GLORY = 7.4;
 const STAR_R_IN = 4.2;
 const GLORY_IN = 7;
-/** A star's depth (Cinzel's bold figures at 13 px): about this wide a figure, this tall. */
+/** A star's depth (Cinzel's bold figures at 13 px): about this wide a figure, this tall; two stacked this far apart. */
 const BEST_W = 7.6;
 const BEST_H = 9.8;
-/** The lane on the pit's left the stars stand in: its stars' centres this far left of the rock (a two-figure depth under one clears it). */
-const LANE_IN = Math.max(GLORY - 2.5, BEST_W + 1.6);
-const LANE = LANE_IN + GLORY + 0.8;
+const STACK = 12;
 /** A depth on a find's line (Cinzel's bold figures at 11 px). */
 const MARK_W = 7;
 const MARK_H = 8.2;
@@ -568,18 +639,23 @@ const MARK_H = 8.2;
 const HANDLE = 5;
 /** The seals' largest radius, and the room the lines need between the pit and the finds (less when no line is drawn). */
 const R_MAX = 14;
-const ROOM_BESIDE = 38;
+const ROOM_BESIDE = 36;
 const ROOM_STACKED = 34;
 const ROOM_NONE = 12;
-/** The last seal's radius: the ouroboros must read as a serpent, and hold a star. */
-const END_R = 21;
-/** "uncharted" as set (EB Garamond italic, 12.5 px), with its bracket's arms. */
-const UNCH_W = 54;
+/** The last seal's radius: the ouroboros must read as a serpent at a glance, and hold a star. */
+const END_R = 30;
+/** "uncharted" as set (EB Garamond italic, 12.5 px), with its brace (the brace's curl, its gap from the wall). */
+const UNCH_WORD = 50;
+const BRACE = 3;
+const BRACE_GAP = 3.2;
+const UNCH_W = UNCH_WORD + 3 + 2 * BRACE + BRACE_GAP;
 /** Sol. */
 const SOL_R = 8.5;
 /** The legend's small stars and its words (12 px): the star's radius, the words' height, a row's height. */
 export const KEY_R = 3.4;
 const KEY_ROW = 14;
+/** The legend stands this far left of the ouroboros' seal. */
+const KEY_GAP = 15;
 
 /** A callout's shape before the page has measured it: its item over its name in two lines. */
 const CALLOUT_GUESS = (W: number): CalloutShape => ({
@@ -610,21 +686,20 @@ export function descentPlate(W: number, H: number, deepest: number | null, met: 
   const shapes = Object.fromEntries(FINDS_IN_ORDER.map((x) => [x.kind, layout.callouts?.[x.kind] ?? CALLOUT_GUESS(W)])) as Record<FindKind, CalloutShape>;
   const found = [...met].sort((a, b) => a.from - b.from);
 
-  // ---- across: the zones' names | the stars' lane | the pit | the lines | the finds (beside) or the callouts (stacked) ----
+  // ---- across: the zones' names | the left wall (the stars' band) | the pit | the rock | the lines | the finds (beside) or the callouts (stacked) ----
   const nameW = (k: number) => layout.nameW?.[k] ?? ZONES[k].name.length * 5.9 + 1;
   const keyW = (layout.legendW ? Math.max(layout.legendW.best, lastD ? layout.legendW.last : 0) : lastD ? 44 : 46) + 2 * KEY_R + 5;
   const slant = (k: number) => (TAPER * (k + 0.5)) / 10;
-  // The pit's half-width at the mouth plus what stands left of it: the names shown, or the bracket of the zones not reached.
-  const need = Math.max(30, ...ZONES.slice(0, reached).map((_, k) => nameW(k) + NAME_GAP + LANE + ROCK - slant(k)), reached < 10 ? UNCH_W + 5 + ROCK - slant((reached + 9) / 2) : 0);
+  // The pit's half-width at the mouth plus what stands left of it: the names shown, or the brace of the zones not reached.
+  const need = Math.max(30, ...ZONES.slice(0, reached).map((_, k) => nameW(k) + NAME_GAP + LW - slant(k)), reached < 10 ? UNCH_W + LW - slant((reached + 9) / 2) : 0);
   const wall = beside ? beside.wall : Math.min(...FINDS_IN_ORDER.map((x) => shapes[x.kind].x));
   const room = found.length ? (stacked ? ROOM_STACKED : ROOM_BESIDE) : ROOM_NONE;
-  const SOL_Y = SOL_R + 9;
-  const capAX = caption && caption[3] > SOL_Y - SOL_R - 12 ? caption[2] + SOL_R + 14 : 0;
-  let halfTop = clamp((wall - room - 1 - need - ROCK) / 2, 19, stacked ? 56 : 28);
-  let AX = Math.max(1 + need + halfTop, capAX, keyW + END_R + 7);
+  const SOL_Y = SOL_R + 12;
+  const capAX = caption && caption[3] > SOL_Y - SOL_R - 12 ? caption[2] + SOL_R + 15 : 0;
+  let halfTop = clamp((wall - room - 1 - need - ROCK) / 2, 19, stacked ? 56 : 34);
+  let AX = Math.max(1 + need + halfTop, capAX, keyW + KEY_GAP + END_R + 2);
   const spare = wall - room - ROCK - halfTop - AX;
-  // Room to spare goes to the margin (where the bracket of the zones not reached spreads into it), and half of it to the lines when
-  // there are any; too little narrows the pit.
+  // Room to spare goes to the margin, and half of it to the lines when there are any; too little narrows the pit.
   if (spare > 0) AX += found.length ? spare / 2 : spare;
   else halfTop = Math.max(19, halfTop + spare);
   const halfBot = halfTop - TAPER;
@@ -651,13 +726,15 @@ export function descentPlate(W: number, H: number, deepest: number | null, met: 
     });
   };
   const sealC = (k: number): Pt => [AX, TOP + (k + 0.5) * band];
-  /** The rock's outer edge on side `s` at height `yy` (a point on the slanting line, not a terrace's front). */
-  const rockAt = (yy: number, s = -1) => {
+  /** The x of the line `out` beyond the pit's side `s` at height `yy` (a point on the slanting line, not a terrace's front). */
+  const edgeAt = (yy: number, s: number, out: number) => {
     let t = yy;
     for (let i = 0; i < 6; i++) t = yy + TILT * half(t);
-    return AX + s * (half(t) + ROCK);
+    return AX + s * (half(t) + out);
   };
-  const nameX = (yy: number) => rockAt(yy) - LANE - NAME_GAP;
+  /** The wall's outer edge on side `s`: the stars' band on the left, the rock on the right. */
+  const rockAt = (yy: number, s = -1) => edgeAt(yy, s, s < 0 ? LW : ROCK);
+  const nameX = (yy: number) => rockAt(yy) - NAME_GAP;
   /** The height of shown depth `s` on the walls. */
   const depthY = (s: number) => side(TOP + (Math.min(100, s) * band) / 10, 1)[1];
   /** Shown depth `s` on the right wall, just outside the rock. */
@@ -673,18 +750,31 @@ export function descentPlate(W: number, H: number, deepest: number | null, met: 
   const solBox: Box = [sol[0] - SOL_R - 12, 0, sol[0] + SOL_R + 12, sol[1] + SOL_R + 3];
   const sealHoles: Hole[] = ZONES.map((_, k) => ({ c: sealC(k), r: R + 1.3 }));
 
-  // ---- timing: the pen sweeps down the pit once, then the gold star comes down and the red one appears ----
-  const S0 = 0.4;
-  const S = 1.35;
-  const sweep = (yy: number) => S0 + ease((yy - TOP) / (H - TOP)) * S;
-  const STAR_AT = 1.85;
-
-  // ---- the stars: in the lane at their depth, by the mouth before a first run, in the ouroboros past 100 ----
+  // ---- timing: the walls are inked down the shaft, then the finds' lines reach out, the ouroboros coils in, the stars come ----
   const surfaceY = TOP - TILT * halfTop;
-  const laneAt = (y: number): Pt => [rockAt(y) - LANE_IN, y];
+  const [wTop, wBot] = [side(TOP, 1)[1], side(BOTTOM, 1)[1]];
+  /** The walls' pen: it sets off down the shaft at INK and reaches the tenth zone's floor INK_T later, then runs on into the dark. */
+  const INK = 0.32;
+  const INK_T = 0.82;
+  const DEEP_T = 0.4;
+  const sweep = (yy: number) => (yy <= wBot ? INK + ease((yy - wTop) / (wBot - wTop)) * INK_T : INK + INK_T + DEEP_T * clamp((yy - wBot) / (H - wBot), 0, 1));
+  /** The finds' lines reach out one after another, shallowest first. */
+  const LINES_AT = 1.02;
+  const LINE_STEP = 0.17;
+  const LINE_T = 0.5;
+  /** The ouroboros coils in, then the gold star sets off from the mouth. */
+  const COIL_AT = Math.max(1.18, sweep(BOTTOM + 6) + 0.02);
+  const STAR_AT = 1.3;
+
+  // ---- the stars: in the left wall at their depth, by the mouth before a first run, in the ouroboros past 100 ----
+  const laneAt = (y: number): Pt => [edgeAt(y, -1, LW / 2), y];
   const home = laneAt(surfaceY);
-  const legendX = endC[0] - endR - 6 - keyW;
-  const keyBox = (rows: number): Box => [legendX - 2, endC[1] - (rows * KEY_ROW) / 2 - 3, endC[0] - endR - 3, endC[1] + (rows * KEY_ROW) / 2 + 3];
+  const legendX = endC[0] - endR - KEY_GAP - keyW;
+  const keyBox = (rows: number): Box => [legendX - 2, endC[1] - (rows * KEY_ROW) / 2 - 3, legendX + keyW + 2, endC[1] + (rows * KEY_ROW) / 2 + 3];
+  const nameBoxes: Box[] = ZONES.slice(0, reached).map((_, k) => {
+    const y = sealC(k)[1];
+    return [nameX(y) - nameW(k), y - 6, nameX(y), y + 6];
+  });
   type Spot = { c: Pt; inSnake: boolean; text: string };
   const spot = (d: number | null): Spot =>
     d === null
@@ -696,72 +786,68 @@ export function descentPlate(W: number, H: number, deepest: number | null, met: 
             inSnake: false,
             text: String(shownDepth(d)),
           };
-  /** Where a star's depth can go: under it (or above it, if under won't fit); beside the seal when the star is in the ouroboros. */
-  const numBoxes = (s: Spot): { box: Box; cost: number }[] => {
-    if (!s.text) return [{ box: [0, 0, 0, 0], cost: 0 }];
-    const w = s.text.length * BEST_W;
-    if (s.inSnake)
-      return [
-        {
-          box: [endC[0] + endR + 3, endC[1] - BEST_H / 2, endC[0] + endR + 3 + w, endC[1] + BEST_H / 2],
-          cost: 0,
-        },
-      ];
+  /** Where a star's depths can go (one, or two stacked): under it (or over it, if under won't fit); beside the seal when it is in the ouroboros. */
+  const numOpts = (s: Spot, texts: string[]): { boxes: Box[]; cost: number }[] => {
+    if (!texts.length) return [{ boxes: [], cost: 0 }];
+    const n = texts.length;
+    const boxAt = (i: number, x: number, top: number, anchor: 'middle' | 'start'): Box => {
+      const w = texts[i].length * BEST_W;
+      const x0 = anchor === 'start' ? x : x - w / 2;
+      return [x0, top, x0 + w, top + BEST_H];
+    };
+    if (s.inSnake) return [{ boxes: texts.map((_, i) => boxAt(i, endC[0] + endR + 3, endC[1] - BEST_H / 2 + (i - (n - 1) / 2) * STACK, 'start')), cost: 0 }];
     const [x, y] = s.c;
+    const g = GLORY + 0.8;
     return [
-      {
-        box: [x - w / 2, y + GLORY + 0.8, x + w / 2, y + GLORY + 0.8 + BEST_H],
-        cost: 0,
-      },
-      {
-        box: [x - w / 2, y - GLORY - 0.8 - BEST_H, x + w / 2, y - GLORY - 0.8],
-        cost: 5,
-      },
+      { boxes: texts.map((_, i) => boxAt(i, x, y + g + i * STACK, 'middle')), cost: 0 },
+      { boxes: texts.map((_, i) => boxAt(i, x, y - g - BEST_H - (n - 1 - i) * STACK, 'middle')), cost: 5 },
     ];
   };
   const discOf = (s: Spot) => ({
     c: s.c,
     r: (s.inSnake ? GLORY_IN : GLORY) + 1,
   });
-  /** What a star's depth must keep clear of: Sol, the caption, the ouroboros' seal (from the lane), the legend. */
+  /** What a star's depth must keep clear of: the top edge, Sol, the caption, the zones' names, the ouroboros' seal (from the wall), the legend. */
   const numBad = (b: Box, s: Spot, rows: number) =>
-    (s.text && b[1] < 0) ||
+    b[1] < 0 ||
     boxBox(b, solBox, 1) ||
     (caption ? boxBox(b, caption, 2) : false) ||
+    nameBoxes.some((n) => boxBox(b, n, 1)) ||
     (!s.inSnake && boxDisc(b, endC, endR + 1.5)) ||
     boxBox(b, keyBox(rows), 4) ||
     (beside ? b[2] > beside.wall - 2 : b[2] > W);
   const gold = spot(best);
-  const red = lastD !== null && (best === null || shownDepth(lastD) !== shownDepth(best)) ? spot(lastD) : null;
-  type Pick = { gold: Box; red: Box | null; cost: number };
-  let pick: Pick = { gold: numBoxes(gold)[0].box, red: null, cost: 1e9 };
-  for (const g of numBoxes(gold)) {
-    const gc = g.cost + (gold.text && numBad(g.box, gold, red ? 2 : 1) ? 100 : 0);
-    if (gc < pick.cost) pick = { gold: g.box, red: null, cost: gc + 1000 };
-    if (!red) continue;
-    for (const r of numBoxes(red)) {
-      // Both stars and both depths clear of each other; past 100 there is room for only one star.
-      const clash =
-        (red.inSnake && gold.inSnake) ||
-        dist(red.c, gold.c) < GLORY * 2 + 2 ||
-        (gold.text && (boxDisc(g.box, red.c, discOf(red).r + 1) || boxBox(g.box, r.box, 2))) ||
-        boxDisc(r.box, gold.c, discOf(gold).r + 1) ||
-        numBad(r.box, red, 2);
-      if (clash) continue;
-      const c = gc + r.cost;
-      if (c < pick.cost) pick = { gold: g.box, red: r.box, cost: c };
+  const red = lastD !== null ? spot(lastD) : null;
+  const rows0 = red ? 2 : 1;
+  const bad = (bs: Box[], s: Spot) => bs.some((b) => numBad(b, s, rows0));
+  // Two stars, when they stand apart and both their depths find a place clear of everything.
+  type Pick = { gold: Box[]; red: Box[] | null; cost: number };
+  let pick: Pick | null = null;
+  const apart = red !== null && (best === null || (shownDepth(lastD!) !== shownDepth(best) && !(red.inSnake && gold.inSnake) && dist(red.c, gold.c) >= GLORY * 2 + 2));
+  if (red && apart)
+    for (const g of numOpts(gold, gold.text ? [gold.text] : []))
+      for (const r of numOpts(red, [red.text])) {
+        const clash =
+          g.boxes.some((b) => boxDisc(b, red.c, discOf(red).r + 1) || r.boxes.some((rb) => boxBox(b, rb, 2))) || r.boxes.some((b) => boxDisc(b, gold.c, discOf(gold).r + 1)) || bad(r.boxes, red);
+        if (clash) continue;
+        const c = g.cost + r.cost + (bad(g.boxes, gold) ? 100 : 0);
+        if (!pick || c < pick.cost) pick = { gold: g.boxes, red: r.boxes, cost: c };
+      }
+  // Otherwise one star for both, the last run's depth over yours.
+  const both = red !== null && best !== null && !pick;
+  if (!pick)
+    for (const g of numOpts(gold, both ? [red!.text, gold.text] : gold.text ? [gold.text] : [])) {
+      const c = g.cost + (bad(g.boxes, gold) ? 100 : 0);
+      if (!pick || c < pick.cost) pick = { gold: g.boxes, red: null, cost: c };
     }
-  }
-  const showRed = red !== null && pick.red !== null;
-  const keyRows = showRed ? 2 : 1;
-  const goldNum = gold.text ? pick.gold : null;
-  const redNum = showRed ? pick.red : null;
-  const numBoxesShown = [goldNum, redNum].filter((b): b is Box => !!b);
+  const showRed = red !== null && pick!.red !== null;
+  const keyRows = showRed || both ? 2 : 1;
+  const numBoxesShown = [...pick!.gold, ...(pick!.red ?? [])];
   const numHoles: Hole[] = numBoxesShown.map((b) => ({ box: grow(b, 1.5) }));
   const legend: Legend = {
     x: legendX,
-    rows: [{ kind: 'best' as const }, ...(showRed ? [{ kind: 'last' as const }] : [])].map((r, i) => ({ ...r, y: endC[1] + (i - (keyRows - 1) / 2) * KEY_ROW })),
-    delay: sweep(endC[1]) + 0.3,
+    rows: [{ kind: 'best' as const }, ...(keyRows > 1 ? [{ kind: 'last' as const }] : [])].map((r, i) => ({ ...r, y: endC[1] + (i - (keyRows - 1) / 2) * KEY_ROW })),
+    delay: COIL_AT + 0.55,
   };
   const keyHole: Hole = { box: keyBox(keyRows) };
 
@@ -776,6 +862,8 @@ export function descentPlate(W: number, H: number, deepest: number | null, met: 
       path: Pt[];
       box: Box;
       mark: Pt;
+      /** How far along the line its depth stands. */
+      along: number;
       cost: number;
     };
     /** The boxes nothing may cross: Sol, the stars' depths, the legend, and the callouts (each kind's item and name) or, beside, the finds' text. */
@@ -813,7 +901,7 @@ export function descentPlate(W: number, H: number, deepest: number | null, met: 
       });
     } else layouts.push({ tops: {} as Record<FindKind, number>, cost: 0 });
 
-    /** Every way to draw find `m`'s line to its heading at `E`: the stub's length, where its depth sits. */
+    /** Every way to draw find `m`'s line to its heading at `E`: the stub's length, where on the slant its depth sits. */
     const optsFor = (m: { kind: FindKind; from: number }, E: Pt, blocks: { box: Box; kind?: FindKind; icon?: boolean }[]): Opt[] => {
       const W0 = onWall(shownDepth(m.from));
       const Wd: Pt = [W0[0] + 1.3, W0[1]];
@@ -829,25 +917,52 @@ export function descentPlate(W: number, H: number, deepest: number | null, met: 
           [Sx, Hd],
           [Hd, Wd],
         ];
-        const marks: { box: Box; cost: number }[] = [];
-        // Over the handle (or under it), on the side the slant leaves from: the line runs the other way.
-        const up = Sx[1] >= Hd[1] - 1;
-        for (const dx of [0.6, 3])
-          marks.push({
-            box: up ? [Wd[0] + dx, Wd[1] - 1.8 - mh, Wd[0] + dx + mw, Wd[1] - 1.8] : [Wd[0] + dx, Wd[1] + 1.8, Wd[0] + dx + mw, Wd[1] + 1.8 + mh],
-            cost: dx,
-          });
-        // Or on the slant, a little way out, the line stopping short of it either side.
-        const u: Pt = [(Sx[0] - Hd[0]) / dist(Hd, Sx), (Sx[1] - Hd[1]) / dist(Hd, Sx)];
         const L = dist(Hd, Sx);
-        let t0 = 0;
-        for (let t = 3; t < L - 3; t += 0.5) {
-          const c = [Hd[0] + u[0] * t, Hd[1] + u[1] * t];
-          const b: Box = [c[0] - mw / 2, c[1] - mh / 2, c[0] + mw / 2, c[1] + mh / 2];
-          if (b[0] < Math.max(edgeX(b[1]), edgeX(b[3]), Wd[0]) + 2.6) continue;
-          if (t + mw / 2 > L - 2) break;
-          if (!t0) t0 = t;
-          if (t === t0 || t === t0 + 7 || t === t0 + 14) marks.push({ box: b, cost: 4 + t0 * 0.08 + (t - t0) * 0.3 });
+        const u: Pt = [(Sx[0] - Hd[0]) / L, (Sx[1] - Hd[1]) / L];
+        // In the middle of the slant (or a little either side of it), the line breaking round it and showing on both sides.
+        const exit = Math.min((mw / 2 + 1.6) / Math.max(1e-6, Math.abs(u[0])), (mh / 2 + 1.6) / Math.max(1e-6, Math.abs(u[1])));
+        const marks: { box: Box; along: number; cost: number }[] = [];
+        for (const [dt, cost] of [
+          [0, 0],
+          [-4, 1.5],
+          [4, 1.5],
+          [-8, 3.5],
+          [8, 3.5],
+        ]) {
+          const t = L / 2 + dt;
+          if (t - exit < 3 || L - t - exit < 3) continue;
+          const c: Pt = [Hd[0] + u[0] * t, Hd[1] + u[1] * t];
+          marks.push({ box: [c[0] - mw / 2, c[1] - mh / 2, c[0] + mw / 2, c[1] + mh / 2], along: HANDLE + t, cost });
+        }
+        // Too short a slant (a line running nearly level): in the middle of the whole line.
+        if (!marks.length) {
+          const ps = [Wd, Hd, Sx, E];
+          const lens = ps.slice(1).map((p, i) => dist(ps[i], p));
+          const total = lens.reduce((a, b) => a + b, 0);
+          for (const [dt, cost] of [
+            [0, 6],
+            [-3, 7],
+            [3, 7],
+          ]) {
+            let d = total / 2 + dt;
+            let i = 0;
+            while (i < lens.length - 1 && d > lens[i]) d -= lens[i++];
+            const v: Pt = [(ps[i + 1][0] - ps[i][0]) / lens[i], (ps[i + 1][1] - ps[i][1]) / lens[i]];
+            const ex = Math.min((mw / 2 + 1.6) / Math.max(1e-6, Math.abs(v[0])), (mh / 2 + 1.6) / Math.max(1e-6, Math.abs(v[1])));
+            if (total / 2 + dt - ex < 3 || total / 2 - dt - ex < 3) continue;
+            const c: Pt = [ps[i][0] + v[0] * d, ps[i][1] + v[1] * d];
+            marks.push({ box: [c[0] - mw / 2, c[1] - mh / 2, c[0] + mw / 2, c[1] + mh / 2], along: total / 2 + dt, cost });
+          }
+        }
+        // Too short a line: over the handle (or under it), on the side the slant leaves from.
+        if (!marks.length) {
+          const up = Sx[1] >= Hd[1] - 1;
+          for (const dx of [0.6, 3])
+            marks.push({
+              box: up ? [Wd[0] + dx, Wd[1] - 1.8 - mh, Wd[0] + dx + mw, Wd[1] - 1.8] : [Wd[0] + dx, Wd[1] + 1.8, Wd[0] + dx + mw, Wd[1] + 1.8 + mh],
+              along: 0,
+              cost: 30 + dx,
+            });
         }
         for (const mk of marks) {
           let bad = 0;
@@ -863,6 +978,7 @@ export function descentPlate(W: number, H: number, deepest: number | null, met: 
             path: [Wd, Hd, Sx, E],
             box: mk.box,
             mark: [(mk.box[0] + mk.box[2]) / 2, (mk.box[1] + mk.box[3]) / 2],
+            along: mk.along,
             cost: 1000 * bad + mk.cost + Math.abs(stub - 9) * 0.15,
           });
         }
@@ -911,14 +1027,17 @@ export function descentPlate(W: number, H: number, deepest: number | null, met: 
         if (!won || cost < won.cost) won = { cost, opts: chosen, tops: lay.tops };
       };
       choose(0, []);
-      if (won && (won as Choice).cost < 1000 && lay.cost === 0) break;
+      if (won && (won as Choice).cost < 20 && lay.cost === 0) break;
     }
     const c = won as Choice | null;
     return { opts: c?.opts ?? [], tops: c?.tops ?? null };
   }
 
+  // The lines in depth order, each reaching out from the wall in its turn; its depth comes as the pen passes it.
+  const order = [...fit.opts].sort((a, b) => a.W[1] - b.W[1]);
+  const lineAt = (o: { kind: FindKind }) => LINES_AT + LINE_STEP * order.findIndex((x) => x.kind === o.kind);
+  const lineLen = (ps: Pt[]) => ps.slice(1).reduce((a, p, i) => a + dist(ps[i], p), 0);
   const markHoles: Hole[] = fit.opts.map((o) => ({ box: grow(o.box, 1.5) }));
-  const lineAt = (o: { W: Pt }) => sweep(o.W[1]) + 0.45;
   const stations: Station[] = fit.opts.map((o) => ({
     kind: o.kind,
     c: o.W,
@@ -931,71 +1050,86 @@ export function descentPlate(W: number, H: number, deepest: number | null, met: 
       text: String(shownDepth(m.from)),
       x: o.mark[0],
       y: o.mark[1],
-      delay: lineAt(o) + 0.4,
+      delay: lineAt(o) + ease(o.along / lineLen(o.path)) * LINE_T + 0.02,
     };
   });
   const callouts: Callout[] | null =
     stacked && fit.tops
-      ? FINDS_IN_ORDER.map((x, i) => ({
-          kind: x.kind,
-          top: fit.tops![x.kind],
-          met: found.some((m) => m.kind === x.kind),
-          delay: 1.1 + 0.12 * i,
-        }))
+      ? FINDS_IN_ORDER.map((x, i) => {
+          const o = fit.opts.find((q) => q.kind === x.kind);
+          return {
+            kind: x.kind,
+            top: fit.tops![x.kind],
+            met: found.some((m) => m.kind === x.kind),
+            delay: o ? lineAt(o) + LINE_T * 0.8 : LINES_AT + 0.25 + 0.1 * i,
+          };
+        })
       : null;
+
+  // ---- the zones not reached yet: a brace beside the wall, its beak on the word ----
+  let uncharted: Uncharted | null = null;
+  /** Where the uncharted stretch starts on the left wall (its outer line runs broken from there). */
+  const unchY = reached < 10 ? side(TOP + reached * band, -1)[1] : null;
+  if (unchY !== null) {
+    let y0 = unchY + 2.5;
+    const y1 = side(BOTTOM, -1)[1] - 1;
+    const spine = (yy: number) => edgeAt(yy, -1, LW + BRACE_GAP + BRACE);
+    // The brace keeps clear of a star's depth over its top.
+    const left = spine((y0 + y1) / 2) - BRACE - 3.5 - UNCH_WORD;
+    const below = Math.max(y0, ...numBoxesShown.filter((b) => b[3] > y0 - 2.5 && b[1] < y0 + 16 && b[0] < spine(y0) + BRACE + 2 && b[2] > left).map((b) => b[3] + 2.5));
+    if (below > y0 && y1 - below > 30) y0 = below;
+    const ym = (y0 + y1) / 2;
+    const r = BRACE;
+    /** A quarter of a circle about (cx from the spine, cy), from angle a0 to a1 (degrees, as on screen: 0 to the right, 90 down). */
+    const arc = (cx: number, cy: number, a0: number, a1: number): Pt[] =>
+      steps(a0, a1, 8).map((a) => {
+        const yy = cy + r * Math.sin((a * Math.PI) / 180);
+        return [spine(yy) + cx + r * Math.cos((a * Math.PI) / 180), yy];
+      });
+    const halfBrace = (s: number) => {
+      // From the beak out along the spine to the terminal, which curls toward the wall: s -1 up, 1 down.
+      const yEnd = s < 0 ? y0 : y1;
+      return path([...arc(-r, ym + s * r, s < 0 ? 90 : 270, s < 0 ? 0 : 360), ...arc(r, yEnd - s * r, 180, s < 0 ? 270 : 90)]);
+    };
+    if (y1 - y0 > 24) {
+      uncharted = {
+        upper: halfBrace(-1),
+        lower: halfBrace(1),
+        balls: [
+          [spine(y0) + r, y0],
+          [spine(y1) + r, y1],
+        ],
+        x: spine(ym) - r - 3.5,
+        y: ym,
+        delay: sweep(y0) + 0.2,
+      };
+    }
+  }
 
   /** Every line, worn (for the lines) or whole (for the glow under them). */
   const build = (worn: boolean) => {
     const wear = (seed: number) => (worn ? wearOf(seed) : null);
     const parts: Omit<Part, 'glow'>[] = [];
-    const rays: string[] = [];
     const add = (tone: Part['tone'], strokes: Stroke[], lit = true, color?: string) => parts.push({ tone, strokes, lit, color });
     const common: Hole[] = [...numHoles, ...markHoles, keyHole];
-
-    // Sol over the mouth: a double ring in a glory over the surface, seven pointed rays (hatched down one side) and fine rays between, long and short in turn.
-    const glory: Stroke[] = [];
-    const gHoles: Hole[] = [
-      ...numHoles,
-      ...(caption
-        ? [
-            {
-              box: [caption[0] - 2, caption[1] - 2, caption[2] + 2, caption[3] + 1] as Box,
-            },
-          ]
-        : []),
-    ];
-    const at0 = (a: number) => 0.35 + (Math.abs(a) / 90) * 0.3;
-    for (let i = 0; i < 7; i++) {
-      const a = -90 + i * 30;
-      const [l, r, tip] = [at(sol, a - 4.2, SOL_R + 1.6), at(sol, a + 4.2, SOL_R + 1.6), at(sol, a, SOL_R + (i % 2 ? 8.5 : 11))];
-      glory.push(...pen([l, tip], 'thin', at0(a), 0.3, { holes: gHoles }), ...pen([r, tip], 'thin', at0(a), 0.3, { holes: gHoles }));
-      rays.push(
-        hatch(at(sol, a, SOL_R + 1.6), l, tip, 0.62, {
-          holes: gHoles.filter((g): g is Disc => 'c' in g),
-        }),
-      );
-    }
-    for (const a of [-100, ...Array.from({ length: 12 }, (_, i) => -80 + Math.floor(i / 2) * 30 + (i % 2) * 10), 100])
-      glory.push(...pen([at(sol, a, SOL_R + 1.8), at(sol, a, SOL_R + (Math.abs(a) === 100 ? 4.2 : 5.6))], 'hair', at0(a) + 0.05, 0.22, { holes: gHoles }));
-    add('gold', [...pen(arcPts(sol, SOL_R), 'main', 0.05, 0.45, { wear: wear(5) }), ...pen(arcPts(sol, SOL_R - 1.3), 'hair', 0.1, 0.45), ...glory]);
 
     // The surface, level out from the mouth to the column's edge on the left, a short way on the right; a hairline under it on the left.
     const [ml, mr] = [side(TOP, -1), side(TOP, 1)];
     const surface = [
-      ...pen([ml, [1, surfaceY]], 'main', 0.2, 0.5, {
+      ...pen([ml, [1, surfaceY]], 'main', 0.18, 0.5, {
         holes: common,
         wear: wear(3),
       }),
-      ...pen([mr, [mr[0] + ROCK + 2.5, surfaceY]], 'main', 0.2, 0.2, {
+      ...pen([mr, [mr[0] + ROCK + 2.5, surfaceY]], 'main', 0.18, 0.2, {
         holes: common,
       }),
       ...pen(
         [
-          [ml[0] - ROCK - 1.2, surfaceY + 2.4],
+          [ml[0] - LW - 1.2, surfaceY + 2.4],
           [3, surfaceY + 2.4],
         ],
         'hair',
-        0.28,
+        0.26,
         0.45,
         { holes: common },
       ),
@@ -1005,11 +1139,12 @@ export function descentPlate(W: number, H: number, deepest: number | null, met: 
       const phi = Math.PI + (Math.PI * i) / 40;
       return [AX + halfTop * Math.cos(phi), surfaceY + TILT * halfTop * Math.sin(phi)] as Pt;
     });
-    surface.push(...pen(back, 'thin', 0.15, 0.4, { holes: [solHole] }));
+    surface.push(...pen(back.slice(0, 21).reverse(), 'thin', 0.12, 0.3, { holes: [solHole] }), ...pen(back.slice(20), 'thin', 0.12, 0.3, { holes: [solHole] }));
     add('gold', surface);
 
-    // The pit's sides and the rock's outer edges beside them, from the mouth down to the tenth zone's floor, then on into the dark in
-    // shorter and shorter dashes, each fainter than the last, broken round the last seal.
+    // The pit's sides and the walls' outer edges beside them, inked down from the mouth to the tenth zone's floor (the left wall's
+    // outer line broken beside the zones not reached), then on into the dark in shorter and shorter dashes, each fainter than the
+    // last, broken round the last seal.
     const [p0, p1] = [side(TOP, 1), side(BOTTOM, 1)];
     const dir: Pt = [(p1[0] - p0[0]) / (p1[1] - p0[1]), 1];
     const run = (s: number, out: number, y0: number, y1: number): [Pt, Pt] => [
@@ -1018,31 +1153,40 @@ export function descentPlate(W: number, H: number, deepest: number | null, met: 
     ];
     const sides: Stroke[] = [];
     const deep: Stroke[] = [];
-    const fadeT = (H - p1[1]) / (H - TOP);
     const stationHoles: Hole[] = stations.map((s) => ({ c: s.c, r: 1.9 }));
+    /** The uncharted stretch of a line from the mouth down, as cuts: short dashes from `from` (a fraction of the line) on. */
+    const broken =
+      (from: number, base: Wear): Wear =>
+      (len) => {
+        const out = base ? base(len) : [];
+        for (let d = from * len + 2.2; d < len; d += 3.7) out.push([d / len, (d + 1.5) / len]);
+        return out;
+      };
     for (const s of [-1, 1]) {
+      const out = s < 0 ? LW : ROCK;
       sides.push(
-        ...pen(run(s, 0, p0[1], p1[1]), 'main', S0, S * (1 - fadeT), {
+        ...pen(run(s, 0, p0[1], p1[1]), 'main', INK, INK_T, {
           holes: common,
           wear: wear(s > 0 ? 11 : 13),
         }),
       );
+      const outerWear = wear(s > 0 ? 19 : 23);
       sides.push(
-        ...pen(run(s, ROCK, p0[1], p1[1]), 'thin', S0 + 0.05, S * (1 - fadeT), {
+        ...pen(run(s, out, p0[1], p1[1]), 'thin', INK + 0.05, INK_T, {
           holes: [...common, ...stationHoles],
-          wear: wear(s > 0 ? 19 : 23),
+          wear: s < 0 && unchY !== null ? broken((unchY - p0[1]) / (p1[1] - p0[1]), outerWear) : outerWear,
         }),
       );
-      for (const [out, kind] of [
+      for (const [o, kind] of [
         [0, 'main'],
-        [ROCK, 'thin'],
+        [out, 'thin'],
       ] as const)
         deep.push(
           ...dashes(
-            ...run(s, out, p1[1], H - 0.5),
+            ...run(s, o, p1[1], H - 0.5),
             kind,
             sweep(p1[1]),
-            0.5,
+            DEEP_T,
             (i) => 7 * 0.72 ** i + 0.6,
             (i) => 1.3 + 0.55 * i,
             (i) => 0.9 * 0.8 ** i,
@@ -1052,16 +1196,21 @@ export function descentPlate(W: number, H: number, deepest: number | null, met: 
     }
     add('gold', sides);
 
-    // The terraces' fronts, lit as far as you have been, and the seams across the rock at their ends.
+    // The terraces' fronts, each opening out from its middle as the pen passes, lit as far as you have been, and the seams across
+    // the walls at their ends.
     for (let k = 0; k <= 10; k++) {
       const yy = TOP + k * band;
       const lit = k <= reached;
-      const strokes = pen(front(yy), k % 10 ? 'thin' : 'main', k ? sweep(yy) : 0.2, 0.3, { holes: [...common, ...sealHoles, endHole], wear: k ? null : wear(7) });
+      const fr = front(yy);
+      const at0 = k ? sweep(yy) : 0.2;
+      const opts = { holes: [...common, ...sealHoles, endHole] };
+      const kind = k % 10 ? 'thin' : 'main';
+      const strokes = [...pen(fr.slice(0, 21).reverse(), kind, at0, 0.28, { ...opts, wear: k ? null : wear(7) }), ...pen(fr.slice(20), kind, at0, 0.28, { ...opts, wear: k ? null : wear(8) })];
       for (const s of [-1, 1]) {
         const p = side(yy, s);
         if (k > 0)
           strokes.push(
-            ...pen([p, [p[0] + s * ROCK, p[1]]], 'hair', sweep(yy), 0.06, {
+            ...pen([p, [p[0] + s * (s < 0 ? LW : ROCK), p[1]]], 'hair', sweep(yy), 0.08, {
               holes: [...common, ...stationHoles],
             }),
           );
@@ -1093,15 +1242,16 @@ export function descentPlate(W: number, H: number, deepest: number | null, met: 
         }),
       );
     }
+    const ringAt = sweep(endC[1] - endR);
     add(
       past ? 'gold' : 'dull',
       [
         ...deep,
-        ...pen(arcPts(endC, endR), 'thin', sweep(endC[1] - endR), 0.4, {
+        ...pen(arcPts(endC, endR), 'thin', ringAt, 0.45, {
           wear: wear(60),
           holes: common,
         }),
-        ...pen(arcPts(endC, endR - 1.3), 'hair', sweep(endC[1] - endR) + 0.05, 0.4, { holes: common }),
+        ...pen(arcPts(endC, endR - 1.3), 'hair', ringAt + 0.05, 0.45, { holes: common }),
       ],
       past,
     );
@@ -1125,9 +1275,9 @@ export function descentPlate(W: number, H: number, deepest: number | null, met: 
     // The finds' lines, in gold: out of the wall level, slanting out to the stub, and level to the heading's item.
     for (const o of fit.opts) {
       const holes: Hole[] = [{ box: grow(o.box, 1.6) }, ...numHoles, solHole];
-      add('lead', pen(o.path, 'hair', lineAt(o), 0.55, { holes }), false);
+      add('lead', pen(o.path, 'hair', lineAt(o), LINE_T, { holes }), false);
     }
-    return { parts, rays: rays.join('') };
+    return { parts };
   };
   const worn = build(true);
   const whole = build(false);
@@ -1148,7 +1298,7 @@ export function descentPlate(W: number, H: number, deepest: number | null, met: 
     let d = hatchPoly([p0, [p0[0] + ROCK, p0[1]], [p1[0] + ROCK, p1[1]], p1], -45, 1.2, shadeHoles);
     // The terrace's face under its front, shaded on the right of the seal: arcs under the front, each shorter than the last.
     for (let j = 1; j <= 4; j++) d += cut(front(y0, j * 0.85, 0.52 + 0.04 * j, 0.99 - 0.07 * j), [...shadeHoles, ...sealHoles]);
-    shades.push({ d, ...toneOf(k), delay: sweep(y0) + 0.1, t: 0.35 });
+    shades.push({ d, ...toneOf(k), delay: sweep(y0) + 0.08, t: 0.35 });
   }
   // The rock on the endless stretch, shaded on as it fades.
   for (let j = 0; j + 1 < strata.length; j++) {
@@ -1156,20 +1306,18 @@ export function descentPlate(W: number, H: number, deepest: number | null, met: 
     shades.push({
       d: hatchPoly([p0, [p0[0] + ROCK, p0[1]], [p1[0] + ROCK, p1[1]], p1], -45, 1.2, [...shadeHoles, endHole]),
       tone: past ? 'gold' : 'dull',
-      delay: sweep(strata[j]) + 0.1,
+      delay: sweep(strata[j]) + 0.08,
       t: 0.3,
       o: Math.max(0.1, 0.8 ** j),
     });
   }
-  // Sol's pointed rays, each hatched down one side.
-  shades.push({ d: worn.rays, tone: 'gold', delay: 0.6, t: 0.3 });
   // The ground under the surface, in short slanting strokes.
   shades.push({
     d: hatchPoly(
       [
         [3, surfaceY],
-        [side(TOP, -1)[0] - ROCK - 1.2, surfaceY],
-        [side(TOP, -1)[0] - ROCK - 1.2, surfaceY + 2.4],
+        [side(TOP, -1)[0] - LW - 1.2, surfaceY],
+        [side(TOP, -1)[0] - LW - 1.2, surfaceY + 2.4],
         [3, surfaceY + 2.4],
       ],
       -60,
@@ -1178,9 +1326,22 @@ export function descentPlate(W: number, H: number, deepest: number | null, met: 
       0.3,
     ),
     tone: 'gold',
-    delay: 0.4,
+    delay: 0.35,
     t: 0.4,
   });
+
+  // ---- Sol: twelve pointed rays all round it, long and short in turn, each hatched down one side, and fine rays between ----
+  const O: Pt = [0, 0];
+  let solRays = '';
+  let solHatch = '';
+  let solFine = '';
+  for (let i = 0; i < 12; i++) {
+    const a = i * 30;
+    const [l, r, tip] = [at(O, a - 4.4, SOL_R + 1.6), at(O, a + 4.4, SOL_R + 1.6), at(O, a, SOL_R + (i % 2 ? 7.5 : 10.5))];
+    solRays += path([l, tip, r]);
+    solHatch += hatch(at(O, a, SOL_R + 1.6), l, tip, 0.62);
+    solFine += line(at(O, a + 15, SOL_R + 1.8), at(O, a + 15, SOL_R + 5.2));
+  }
 
   // ---- seals and names ----
   const seals: Seal[] = ZONES.map((z, k) => {
@@ -1202,61 +1363,23 @@ export function descentPlate(W: number, H: number, deepest: number | null, met: 
       y: s.c[1],
       text: s.name!,
       color: s.color!,
-      delay: s.delay + 0.3,
+      delay: s.delay + 0.2,
     }));
 
-  // ---- "uncharted": the zones not reached yet, bracketed together under one quiet word, the bracket's lines stopping short of it ----
-  let uncharted: Uncharted | null = null;
-  if (reached < ZONES.length) {
-    let y0 = side(TOP + reached * band, -1)[1] + 2;
-    const y1 = side(BOTTOM, -1)[1] - 3;
-    // The word keeps clear of a star's depth over the bracket's top.
-    const below = Math.max(y0, ...numBoxesShown.filter((b) => b[3] > y0 - 4 && b[1] < y0 + 12).map((b) => b[3] + 3));
-    if (below > y0 && y1 - below > 30) y0 = below;
-    const mid0 = (y0 + y1) / 2;
-    // The bracket stands in the middle of the margin left of the lane (the names' column), the word on it.
-    const edge = Math.min(
-      rockAt(mid0) - LANE - NAME_GAP - Math.max(0, ...names.map((n) => layout.nameW?.[ZONES.findIndex((z) => z.name === n.text)] ?? n.text.length * 5.9)),
-      rockAt(mid0) - 5 - UNCH_W,
-    );
-    const x = clamp((1 + edge) / 2 + UNCH_W / 2, UNCH_W / 2 + 1, rockAt(mid0) - 5 - UNCH_W / 2);
-    let d = '';
-    if (y1 - y0 > 30) {
-      const tick = (yy: number) =>
-        cut(
-          [
-            [x, yy],
-            [rockAt(yy) - 2.5, yy],
-          ],
-          numHoles,
-        );
-      d =
-        tick(y0) +
-        tick(y1) +
-        cut(
-          [
-            [x, y0],
-            [x, y1],
-          ],
-          [{ box: [x - 30, mid0 - 8.5, x + 30, mid0 + 8.5] }, ...numHoles],
-        );
-    }
-    uncharted = { d, x, y: mid0, delay: sweep(y0) + 0.35 };
-  }
-
   // ---- the stars, each in a glory of fine rays between its points, long and short in turn ----
-  const O: Pt = [0, 0];
   const glory = (r: number, g: number) =>
     Array.from({ length: 16 }, (_, k) => {
       const a = k * 22.5 + 11.25;
       return line(at(O, a, r * 0.62 + 1.4), at(O, a, k % 2 ? g - 2 : g));
     }).join('');
-  const travelOf = (s: Spot) => (best ? clamp(0.8 + (0.4 * (s.c[1] - home[1])) / (H - home[1]), 0.8, 1.2) + (s.inSnake ? 0.25 : 0) : 0);
-  const starOf = (s: Spot, num: Box | null, delay: number, moves: boolean): Star => {
+  const travelOf = (s: Spot) => (best ? clamp(0.45 + (0.25 * (s.c[1] - home[1])) / (H - home[1]), 0.45, 0.7) + (s.inSnake ? 0.2 : 0) : 0);
+  const starOf = (s: Spot, nums: Box[], delay: number, moves: boolean, two: boolean): Star => {
     const [r, g] = s.inSnake ? [STAR_R_IN, GLORY_IN] : [STAR_R, GLORY];
     const st = star8(O, r);
-    // Into the ouroboros: down the lane to the foot of the pit, then in.
+    // Into the ouroboros: down the wall to the foot of the pit, then in.
     const foot = laneAt(side(BOTTOM, -1)[1]);
+    const numAt = (b: Box) => ({ x: s.inSnake ? b[0] : (b[0] + b[2]) / 2, y: (b[1] + b[3]) / 2 });
+    const own = nums.at(-1);
     return {
       c: s.c,
       r,
@@ -1267,24 +1390,20 @@ export function descentPlate(W: number, H: number, deepest: number | null, met: 
       glory: glory(r, g),
       cut: g + 1,
       inSnake: s.inSnake,
+      both: two,
       delay,
       from: moves ? [home[0] - s.c[0], home[1] - s.c[1]] : [0, 0],
       mid: moves && s.inSnake ? [foot[0] - s.c[0], foot[1] - s.c[1]] : null,
       travel: moves ? travelOf(s) : 0,
-      num: num
-        ? {
-            text: s.text,
-            x: s.inSnake ? num[0] : (num[0] + num[2]) / 2,
-            y: (num[1] + num[3]) / 2,
-            anchor: s.inSnake ? 'start' : 'middle',
-          }
-        : null,
+      num: own && s.text ? { text: s.text, ...numAt(own), anchor: s.inSnake ? 'start' : 'middle' } : null,
+      lastNum: two ? { text: red!.text, ...numAt(nums[0]) } : null,
     };
   };
-  const star = starOf(gold, goldNum, best ? STAR_AT : 2, !!best);
+  const star = starOf(gold, pick!.gold, best ? STAR_AT : 1.6, !!best, both);
   const landed = star.delay + 0.25 + star.travel;
-  const last = showRed ? starOf(red!, redNum, landed + 0.1, false) : null;
+  const last = showRed ? starOf(red!, pick!.red!, landed + 0.05, false, false) : null;
 
+  const [l0, l1] = [side(TOP, -1), side(BOTTOM, -1)];
   return {
     w: W,
     h: H,
@@ -1292,7 +1411,18 @@ export function descentPlate(W: number, H: number, deepest: number | null, met: 
     parts,
     shades,
     seals,
-    sol: { c: sol, r: SOL_R },
+    sol: { c: sol, r: SOL_R, rays: solRays, hatch: solHatch, fine: solFine, horizon: solClip() },
+    ink: [-1, 1].flatMap((s) =>
+      [0, s < 0 ? LW : ROCK].map((out) => {
+        const [a, b] = [side(TOP, s), side(BOTTOM, s)];
+        return { d: path([a, b].map((q): Pt => [q[0] + s * out, q[1]])), delay: INK + (out ? 0.05 : 0), t: INK_T };
+      }),
+    ),
+    nibs: [-1, 1].map((s) => {
+      const [a, b] = [side(TOP, s), side(BOTTOM, s)];
+      return { from: a, to: b, delay: INK, t: INK_T };
+    }),
+    wallL: { y0: l0[1], y1: l1[1], inner: [l0[0], l1[0]], outer: [l0[0] - LW, l1[0] - LW] },
     names,
     uncharted,
     stations,
@@ -1302,11 +1432,26 @@ export function descentPlate(W: number, H: number, deepest: number | null, met: 
       c: endC,
       r: endR,
       lit: past,
-      delay: sweep(endC[1]) + 0.2,
-      serpent: serpent((endR - 1.9) / 1.375, ((endR - 1.9) / 1.375) * 0.25),
+      delay: COIL_AT,
+      serpent: serpent(endR * 0.63, endR * 0.178),
     },
     legend,
     star,
     last,
   };
+
+  /** Sol's rays show only over the ground: above the surface and the mouth's far rim (relative to Sol), as a clipping path. */
+  function solClip(): string {
+    const pts: Pt[] = [
+      [-200, -200],
+      [200, -200],
+      [200, surfaceY - 0.8],
+    ];
+    for (let i = 0; i <= 40; i++) {
+      const phi = (Math.PI * i) / 40;
+      pts.push([AX + halfTop * Math.cos(phi), surfaceY - TILT * halfTop * Math.sin(phi) - 0.8]);
+    }
+    pts.push([-200, surfaceY - 0.8]);
+    return path(pts.map(([x, y], i) => (i < 3 || i === pts.length - 1 ? [x, y - SOL_Y] : [x - AX, y - SOL_Y]))) + 'Z';
+  }
 }

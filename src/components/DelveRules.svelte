@@ -88,6 +88,12 @@
       min-height: 15rem;
     }
   }
+  /* A wider card gives the descent a little more width, so the pit can widen. */
+  @container (min-width: 440px) {
+    .delve-cols {
+      grid-template-columns: 12.25rem minmax(0, 1fr);
+    }
+  }
   .finds {
     display: grid;
     gap: 0.5rem;

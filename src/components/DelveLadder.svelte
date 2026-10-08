@@ -10,31 +10,35 @@
   // The descent, engraved (lib/descentPlate draws it): Sol over the mouth of
   // a pit that narrows down through the ten zones, a terrace each, and past
   // them carries on forever, its walls breaking up and fading into the dark
-  // round a last seal holding the ouroboros, which turns slowly. A zone you
-  // have reached holds its sigil in a seal struck in its colour, and is
-  // named in the margin; one you haven't is a dull, empty impression, and
-  // those are bracketed together under the one word "uncharted", so nothing
-  // is spoiled. In a lane left of the pit a gold star marks your deepest and
-  // a red one your last run (`last`), each with its depth under it (the gold
-  // one by the mouth before a first run; past 100 a star sits in the
-  // ouroboros, its depth beside the seal); a small legend left of the
-  // ouroboros says which is which. Each find you have met (`met`) is tied to
-  // its heading by a fine gold line from the wall where it first turns up,
-  // that depth written by it: to its heading in the finds list (`finds`)
-  // when that stands beside the plate, or, when the list is stacked under it
-  // (phones and tablets), to the find's callout, its item and name, which
-  // the plate stands on its own right. One you haven't met is a dim callout
-  // with no line.
+  // round a last seal holding the ouroboros, which turns. A zone you have
+  // reached holds its sigil in a seal struck in its colour, and is named in
+  // the margin; one you haven't is a dull, empty impression, and those are
+  // held together in a brace under the one word "uncharted", so nothing is
+  // spoiled. In the pit's left wall a gold star marks your deepest and a red
+  // one your last run (`last`), each with its depth under it (the gold one
+  // by the mouth before a first run; past 100 a star sits in the ouroboros,
+  // its depth beside the seal); when they would overlap, one star stands for
+  // both, drifting between gold and red, the two depths stacked under it. A
+  // small legend left of the ouroboros says which is which. Each find you
+  // have met (`met`) is tied to its heading by a fine gold line from the wall
+  // where it first turns up, that depth written in the middle of it: to its
+  // heading in the finds list (`finds`) when that stands beside the plate,
+  // or, when the list is stacked under it (phones and tablets), to the
+  // find's callout, its item and name, which the plate stands on its own
+  // right. One you haven't met is a dim callout with no line.
   // In the arcane style (docs/arcane-style.md): fine exact lines that stop
   // short of every seal, sign and word, one-sided hatching, a little wear, a
-  // soft glow under the lit lines. It draws itself in from the surface down
-  // as one sweep of the pen, the seals stamped in as it passes them, the
-  // lines run out, then the gold star comes down the lane from the mouth to
-  // your deepest (its cutout, a mask over the plate, travels with it), the
-  // red one appears and the depths with them. After that only the glows
-  // breathe, the stars' glories and the ouroboros turn slowly and the gold
-  // star twinkles, all on their own layers; still (reduced motion, or
-  // data-still) the stars just appear in their places and nothing loops.
+  // soft glow under the lit lines. It engraves itself in about 2 s: Sol
+  // kindles, the walls are inked down the shaft behind two bright nibs (each
+  // line glowing hot and cooling), terraces opening and seals stamped as the
+  // pen passes; the finds' lines reach out to their headings, shallowest
+  // first; the ouroboros coils in; then the gold star comes down the wall
+  // from the mouth to your deepest (its cutout, a mask over the plate,
+  // travels with it), the red one appears and the depths with them. After
+  // that the glows breathe, Sol's rays turn slowly, the stars' glories and
+  // the ouroboros turn and the gold star twinkles, each on its own layer;
+  // with reduced motion everything simply stands in its place, and still
+  // (data-still) nothing loops.
   // The plate fills its box: the whole column, its caption (`caption`) at
   // the top beside Sol. Stacked, the column takes the height the plate asks
   // for (`natural`).
@@ -205,7 +209,9 @@
 <figure class="descent" role="img" aria-label={summary} bind:this={fig} bind:clientWidth={w} bind:clientHeight={h}>
   {#if plate}
     {@const p = plate}
-    <!-- The stars' cutouts: the plate and its glow are masked round each star, the gold one's cutout travelling down with it. -->
+    {@const sp = p.endless.serpent}
+    <!-- The stars' cutouts: the plate and its glow are masked round each star, the gold one's cutout travelling down with it.
+         The ouroboros' reveal: a band round its ring that sweeps on from its snout, so it coils in head first. -->
     <svg class="defs" aria-hidden="true">
       <mask id="{uid}-cut" maskUnits="userSpaceOnUse" x="-200" y="-200" width={f(p.w + 400)} height={f(p.h + 400)}>
         <rect x="-200" y="-200" width={f(p.w + 400)} height={f(p.h + 400)} fill="#fff" />
@@ -229,6 +235,24 @@
           {/if}
         {/each}
       </mask>
+      <mask id="{uid}-coil" maskUnits="userSpaceOnUse" x="-60" y="-60" width="120" height="120">
+        <circle
+          class="reveal"
+          r={f(sp.rs)}
+          stroke-width={f(3.6 * sp.w)}
+          pathLength="100"
+          transform="rotate({f(sp.snout - 100)})"
+          style:--d={sec(p.endless.delay)}
+        />
+      </mask>
+      <clipPath id="{uid}-sky">
+        <path d={p.sol.horizon} />
+      </clipPath>
+      <radialGradient id="{uid}-sun">
+        <stop offset="0" stop-color="#f1d99b" stop-opacity="0.75" />
+        <stop offset="0.45" stop-color="#d9a45a" stop-opacity="0.3" />
+        <stop offset="1" stop-color="#d9a45a" stop-opacity="0" />
+      </radialGradient>
     </svg>
 
     <!-- The glow: the lit lines again, whole, wide and soft, under the plate. It breathes. -->
@@ -240,7 +264,6 @@
         {#each p.seals as s (s.k)}
           {#if s.known}<circle class="light" cx={s.c[0]} cy={s.c[1]} r={s.r} style:--c={s.color} />{/if}
         {/each}
-        <circle class="light sun" cx={p.sol.c[0]} cy={p.sol.c[1]} r={p.sol.r} />
         {#if p.endless.lit}<circle class="light sun" cx={p.endless.c[0]} cy={p.endless.c[1]} r={p.endless.r} />{/if}
       </g>
     </svg>
@@ -258,15 +281,6 @@
           </g>
         {/each}
 
-        <!-- Sol over the mouth: a disc with a point at its heart and twelve rays, long and short in turn (lib/alchemy). -->
-        <g class="stamp" style:--d="0.05s">
-          <g class="sign sol" transform="translate({f(p.sol.c[0])} {f(p.sol.c[1])}) scale({f((p.sol.r - 1.3) / 11.4)})">
-            <circle r="5" />
-            <circle r="1.1" class="point" />
-            <path d={SOL_RAYS} />
-          </g>
-        </g>
-
         <!-- The seals: a reached zone's sigil, struck in its colour; an empty hollow for one not reached. -->
         {#each p.seals as s (s.k)}
           <g class="stamp" style:--d={sec(s.delay)}>
@@ -281,19 +295,20 @@
             {/if}
           </g>
         {/each}
-        <!-- The last seal, on the stretch that never ends: the ouroboros, an engraved serpent biting its tail, turning slowly. -->
+        <!-- The last seal, on the stretch that never ends: the ouroboros, an engraved serpent biting its tail. It coils in head first
+             (turning into place as its reveal sweeps round), then turns on, head first. -->
         <g transform="translate({f(p.endless.c[0])} {f(p.endless.c[1])})">
-          <g class="stamp" style:--d={sec(p.endless.delay)}>
-            <g class="coil">
-              <g class="serpent" class:lit={p.endless.lit}>
-                <path class="sp-shade" d={p.endless.serpent.shade} />
-                <path class="sp-belly" d={p.endless.serpent.belly} />
-                <path class="sp-scales" d={p.endless.serpent.scales} />
-                <path class="sp-body" d={p.endless.serpent.body} />
-                <path class="sp-head" d={p.endless.serpent.head} />
-                <path class="sp-detail" d={p.endless.serpent.details} />
-                <circle class="sp-eye" cx={f(p.endless.serpent.eye.c[0])} cy={f(p.endless.serpent.eye.c[1])} r={f(p.endless.serpent.eye.r)} />
-                <path class="sp-pupil" d={p.endless.serpent.pupil} />
+          <g class="coil-in" style:--d={sec(p.endless.delay)}>
+            <g class="coil" style:--d={sec(p.endless.delay)}>
+              <g class="serpent" class:lit={p.endless.lit} mask="url(#{uid}-coil)">
+                <path class="sp-shade" d={sp.shade} />
+                <path class="sp-belly" d={sp.belly} />
+                <path class="sp-scales" d={sp.scales} />
+                <path class="sp-body" d={sp.body} />
+                <path class="sp-head" d={sp.head} />
+                <path class="sp-detail" d={sp.details} />
+                <circle class="sp-eye" cx={f(sp.eye.c[0])} cy={f(sp.eye.c[1])} r={f(sp.eye.r)} />
+                <path class="sp-pupil" d={sp.pupil} />
               </g>
             </g>
           </g>
@@ -301,11 +316,14 @@
         {#each p.names as n (n.text)}
           <text class="name" x={f(n.x)} y={f(n.y)} style:--c={n.color} style:--d={sec(n.delay)}>{n.text}</text>
         {/each}
-        <!-- The zones not reached yet, bracketed under one word. -->
+        <!-- The zones not reached yet, held in a brace beside the wall, its beak on the word. -->
         {#if p.uncharted}
-          <g class="uncharted" style:--d={sec(p.uncharted.delay)}>
-            {#if p.uncharted.d}<path d={p.uncharted.d} />{/if}
-            <text class="word" x={f(p.uncharted.x)} y={f(p.uncharted.y)}>uncharted</text>
+          {@const u = p.uncharted}
+          <g class="uncharted" style:--d={sec(u.delay)}>
+            <path class="brace draw" d={u.upper} pathLength="100" />
+            <path class="brace draw" d={u.lower} pathLength="100" />
+            {#each u.balls as b, i (i)}<circle class="ball" cx={f(b[0])} cy={f(b[1])} r="0.75" />{/each}
+            <text class="word" x={f(u.x)} y={f(u.y)}>uncharted</text>
           </g>
         {/if}
       </g>
@@ -320,7 +338,7 @@
         {/each}
       </g>
 
-      <!-- The finds you have met: a station on the wall where each first turns up, and that depth by its line. -->
+      <!-- The finds you have met: a station on the wall where each first turns up, and that depth in the middle of its line. -->
       {#each p.stations as s (s.kind)}
         <circle class="station" cx={f(s.c[0])} cy={f(s.c[1])} r="1.1" style:--d={sec(s.delay)} />
       {/each}
@@ -329,12 +347,53 @@
       {/each}
     </svg>
 
+    <!-- Sol over the mouth, on a layer of its own: a soft light breathing behind it, its rays turning slowly (those below the ground
+         hidden), the sign at its heart turning the other way. -->
+    <svg class="sun" viewBox="0 0 {f(p.w)} {f(p.h)}" aria-hidden="true">
+      <g transform="translate({f(p.sol.c[0])} {f(p.sol.c[1])})">
+        <circle class="sun-halo" r={f(p.sol.r * 2.6)} style:fill="url(#{uid}-sun)" />
+        <g clip-path="url(#{uid}-sky)">
+          <g class="sun-rays">
+            <path class="ray-hatch" d={p.sol.hatch} />
+            <path class="ray" d={p.sol.rays} />
+            <path class="ray-fine draw" d={p.sol.fine} pathLength="100" />
+          </g>
+        </g>
+        <circle class="sun-ground" r={f(p.sol.r)} />
+        <circle class="sun-ring draw" r={f(p.sol.r)} pathLength="100" />
+        <circle class="sun-ring hair draw" r={f(p.sol.r - 1.3)} pathLength="100" />
+        <g class="sun-sign">
+          <g class="sign sol" transform="scale({f((p.sol.r - 1.3) / 11.4)})">
+            <circle r="5" />
+            <circle r="1.1" class="point" />
+            <path d={SOL_RAYS} />
+          </g>
+        </g>
+      </g>
+    </svg>
+
+    <!-- The ink: while the walls are inked down the shaft, a short hot stretch of each line runs down with the pen, a nib at its head
+         on the pit's sides. Hidden once the pen is through. -->
+    <svg class="ink" viewBox="0 0 {f(p.w)} {f(p.h)}" aria-hidden="true">
+      {#each p.ink as k, i (i)}
+        <path d={k.d} class="hot" pathLength="100" style:--d={sec(k.delay)} style:--t={sec(k.t)} />
+      {/each}
+      {#each p.nibs as n, i (i)}
+        <g transform="translate({f(n.from[0])} {f(n.from[1])})">
+          <g class="nib-path" style:--dx="{f(n.to[0] - n.from[0])}px" style:--dy="{f(n.to[1] - n.from[1])}px" style:--d={sec(n.delay)} style:--t={sec(n.t)}>
+            <circle class="nib" r="1.5" style:--d={sec(n.delay)} style:--t={sec(n.t)} />
+          </g>
+        </g>
+      {/each}
+    </svg>
+
     <!-- The stars, on a layer of their own: eight-pointed, hatched down one side of each point, in a glory of fine rays that slowly turns.
-         The gold one (your deepest) comes down from the mouth; the red one (your last run) appears as it lands. -->
+         The gold one (your deepest) comes down from the mouth; the red one (your last run) appears as it lands. One for both drifts
+         between the two colours. -->
     <svg class="live" viewBox="0 0 {f(p.w)} {f(p.h)}" aria-hidden="true">
       {#each [p.last, p.star] as s, i (i)}
         {#if s}
-          <g class={i ? 'gold-star' : 'red-star'} transform="translate({f(s.c[0])} {f(s.c[1])})">
+          <g class={s.both ? 'both-star' : i ? 'gold-star' : 'red-star'} style:--b={sec(s.delay + 0.25 + s.travel)} transform="translate({f(s.c[0])} {f(s.c[1])})">
             <g
               class="star"
               class:travel={s.travel > 0}
@@ -367,6 +426,9 @@
               {/if}
             </g>
           </g>
+          {#if s.lastNum}
+            <text class="depth red-num" x={f(s.lastNum.x)} y={f(s.lastNum.y)} text-anchor={s.num?.anchor ?? 'middle'} style:--d={sec(s.delay + 0.25 + s.travel)}>{s.lastNum.text}</text>
+          {/if}
           {#if s.num}
             <text class="depth {i ? 'gold-num' : 'red-num'}" x={f(s.num.x)} y={f(s.num.y)} text-anchor={s.num.anchor} style:--d={sec(s.delay + 0.25 + s.travel)}>{s.num.text}</text>
           {/if}
@@ -454,13 +516,13 @@
     height: 0;
   }
 
-  /* The glow: the same lines, wide and faint, under them, breathing; a soft light in each reached seal and in Sol. */
+  /* The glow: the same lines, wide and faint, under them, breathing; a soft light in each reached seal. */
   .glow {
     opacity: 0.28;
     filter: blur(0.5px);
     animation:
-      glow-in 1.2s 0.9s ease-out both,
-      breathe 6s 2.1s ease-in-out infinite alternate;
+      glow-in 1.1s 0.8s ease-out both,
+      breathe 6s 1.9s ease-in-out infinite alternate;
   }
   .glow path {
     stroke-width: 2.2;
@@ -528,10 +590,145 @@
     stroke-width: 0.32;
     stroke-linecap: round;
   }
-  /* The ouroboros: a dull impression until you are past 100, then struck in pale gold. It turns slowly, head first, once in 75 s. */
+
+  /* Sol: a soft light breathing behind it; its rays turning slowly, once in 90 s, the sign at its heart the other way. It kindles
+     first: the light blooms, the rings draw, the rays spread out from it. */
+  .sun-halo {
+    stroke: none;
+    transform-box: fill-box;
+    transform-origin: center;
+    animation:
+      bloom 0.9s 0s var(--ease-out) both,
+      sun-breathe 5.5s 0.9s ease-in-out infinite alternate;
+  }
+  .sun-rays {
+    animation:
+      rays-in 0.6s 0.15s var(--ease-out) both,
+      turn 90s 0.75s linear infinite;
+  }
+  .ray {
+    stroke: var(--gold-hi);
+    stroke-width: 0.45;
+  }
+  .ray-hatch {
+    stroke: var(--gold);
+    stroke-width: 0.3;
+    stroke-linecap: round;
+  }
+  .ray-fine {
+    stroke: var(--gold);
+    stroke-width: 0.35;
+    --d: 0.4s;
+    --t: 0.35s;
+  }
+  .sun-ground {
+    fill: var(--bg);
+    stroke: none;
+    opacity: 0.85;
+  }
+  .sun-ring {
+    stroke: var(--gold-hi);
+    stroke-width: 0.6;
+    stroke-linecap: round;
+    --d: 0.05s;
+    --t: 0.4s;
+  }
+  .sun-ring.hair {
+    stroke-width: 0.4;
+    --d: 0.12s;
+  }
+  .sun-sign {
+    animation:
+      carve 0.4s 0.3s var(--ease-out) both,
+      turn 60s 0.7s linear infinite reverse;
+  }
+  @keyframes bloom {
+    from {
+      opacity: 0;
+      transform: scale(0.2);
+    }
+    45% {
+      opacity: 1;
+      transform: scale(1.15);
+    }
+  }
+  @keyframes sun-breathe {
+    from {
+      opacity: 1;
+      transform: scale(1);
+    }
+    to {
+      opacity: 0.55;
+      transform: scale(0.88);
+    }
+  }
+  @keyframes rays-in {
+    from {
+      opacity: 0;
+      transform: scale(0.55);
+    }
+  }
+
+  /* The ink: a short hot stretch running down each wall with the pen, the nibs at its head. Hidden once the pen is through. */
+  .ink {
+    animation: gone 0s 2.6s both;
+  }
+  .hot {
+    stroke: #fff1c9;
+    stroke-width: 1.2;
+    stroke-linecap: round;
+    stroke-dasharray: 16 200;
+    filter: blur(0.5px);
+    animation:
+      comet var(--t) var(--d) cubic-bezier(0.333, 0.667, 0.667, 1) both,
+      nib-light var(--t) var(--d) linear both;
+  }
+  .nib-path {
+    animation: nib var(--t) var(--d) cubic-bezier(0.333, 0.667, 0.667, 1) both;
+  }
+  .nib {
+    stroke: none;
+    fill: #fff3d6;
+    filter: drop-shadow(0 0 1.5px #f1d99b);
+    animation: nib-light var(--t) var(--d) linear both;
+  }
+  /* The hot stretch's head runs with the pen, from the mouth (before it, the stretch is off the line's start) to the floor. */
+  @keyframes comet {
+    from {
+      stroke-dashoffset: 16;
+    }
+    to {
+      stroke-dashoffset: -84;
+    }
+  }
+  @keyframes nib {
+    to {
+      transform: translate(var(--dx), var(--dy));
+    }
+  }
+  @keyframes nib-light {
+    from {
+      opacity: 0;
+    }
+    8%,
+    85% {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
+    }
+  }
+  @keyframes gone {
+    to {
+      visibility: hidden;
+    }
+  }
+
+  /* The ouroboros: a dull impression until you are past 100, then struck in pale gold. It coils in head first, then turns on, head
+     first, once in 50 s. */
   .serpent path,
   .serpent circle {
-    stroke: color-mix(in srgb, var(--dull) 70%, #a89070);
+    stroke: color-mix(in srgb, var(--dull) 55%, #b09a78);
     stroke-linecap: round;
     stroke-linejoin: round;
   }
@@ -541,27 +738,41 @@
   }
   .sp-body,
   .sp-head {
-    stroke-width: 0.75;
+    stroke-width: 0.8;
   }
   .sp-detail {
-    stroke-width: 0.4;
+    stroke-width: 0.42;
   }
   .sp-scales,
   .sp-belly {
     stroke-width: 0.3;
   }
   .sp-shade {
-    stroke-width: 0.26;
+    stroke-width: 0.28;
     opacity: 0.85;
   }
   .serpent .sp-eye {
-    stroke-width: 0.42;
+    stroke-width: 0.45;
   }
   .serpent .sp-pupil {
-    stroke-width: 0.6;
+    stroke-width: 0.9;
+  }
+  .reveal {
+    fill: none;
+    stroke: #fff;
+    stroke-dasharray: 100;
+    animation: draw 0.8s var(--d) cubic-bezier(0.3, 0.1, 0.35, 1) both;
+  }
+  .coil-in {
+    animation: coil-in 0.9s var(--d) var(--ease-out) both;
   }
   .coil {
-    animation: coil 75s linear infinite;
+    animation: coil 50s calc(var(--d) + 0.9s) linear infinite;
+  }
+  @keyframes coil-in {
+    from {
+      transform: rotate(80deg) scale(0.92);
+    }
   }
   @keyframes coil {
     to {
@@ -583,21 +794,29 @@
     animation: carve 0.5s var(--d) var(--ease-out) both;
   }
 
-  /* "Uncharted": a quiet word in the margin; the bracket a hairline. */
+  /* "Uncharted": a quiet word at the beak of a fine brace beside the wall, the brace drawing out from its beak to its terminals. */
   .uncharted {
-    opacity: 0.85;
-    animation: carve 0.6s var(--d) var(--ease-out) both;
+    opacity: 0.9;
   }
-  .uncharted path {
+  .brace {
     stroke: var(--muted);
-    stroke-width: 0.4;
+    stroke-width: 0.5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    --t: 0.45s;
+  }
+  .ball {
+    stroke: none;
+    fill: var(--muted);
+    animation: carve 0.3s calc(var(--d) + 0.35s) var(--ease-out) both;
   }
   .word {
     font-style: italic;
     font-size: 12.5px;
     letter-spacing: 0.02em;
-    text-anchor: middle;
+    text-anchor: end;
     fill: var(--muted);
+    animation: carve 0.5s calc(var(--d) + 0.1s) var(--ease-out) both;
   }
 
   /* The legend: each star small, and what it marks in plain words. */
@@ -617,11 +836,13 @@
     stroke: var(--red-hi);
   }
 
-  /* A find's station: a small ring on the wall in its colour, where its line starts; the depth it first turns up at on the line. */
+  /* A find's station: a small ring on the wall where its line starts; the depth it first turns up at in the middle of the line. */
   .station {
     stroke: var(--gold);
     stroke-width: 0.6;
-    animation: carve 0.4s var(--d) var(--ease-out) both;
+    animation: stamp-in 0.35s var(--d) var(--ease-out) both;
+    transform-box: fill-box;
+    transform-origin: center;
   }
   .mark {
     font-family: var(--font-cinzel);
@@ -629,7 +850,7 @@
     font-size: 11px;
     text-anchor: middle;
     fill: color-mix(in srgb, var(--c) 85%, #fff);
-    animation: carve 0.4s var(--d) var(--ease-out) both;
+    animation: carve 0.3s var(--d) var(--ease-out) both;
   }
 
   /* A star's depth, in Cinzel's figures; it appears as the gold star lands. */
@@ -648,7 +869,7 @@
   .live {
     will-change: transform;
   }
-  /* The gold star comes down the lane from the mouth once the plate has inked itself in, slowing as it lands (past 100 it turns
+  /* The gold star comes down the wall from the mouth once the plate has inked itself in, slowing as it lands (past 100 it turns
      into the ouroboros at the foot of the pit); its cutout comes with it. */
   .travel {
     animation: travel var(--t) var(--go) cubic-bezier(0.5, 0, 0.2, 1) both;
@@ -756,6 +977,66 @@
   .red-star .halo {
     fill: var(--red);
   }
+  /* One star for both: gold in a red glory and halo when still; otherwise the whole star drifts slowly from gold to red and
+     back, once in 7 s each way, from when it lands. */
+  .both-star .glory {
+    stroke: var(--red-hi);
+  }
+  .both-star .halo {
+    fill: var(--red);
+  }
+  .both-star .star-ground {
+    fill: color-mix(in srgb, var(--gold) 16%, var(--bg));
+  }
+  .both-star :is(.star-line, .star-ridge, .star-hatch) {
+    animation: blend-stroke 7s var(--b) ease-in-out infinite alternate;
+  }
+  .both-star .glory {
+    animation:
+      draw var(--t) var(--d) linear both,
+      blend-glory 7s var(--b) ease-in-out infinite alternate;
+  }
+  .both-star .star-ground {
+    animation: blend-fill 7s var(--b) ease-in-out infinite alternate;
+  }
+  .both-star .halo {
+    animation:
+      carve 0.6s var(--d) var(--ease-out) both,
+      breathe-halo 6s calc(var(--d) + 0.6s) ease-in-out infinite alternate,
+      blend-halo 7s var(--b) ease-in-out infinite alternate;
+  }
+  @keyframes blend-halo {
+    from {
+      fill: var(--gold-hi);
+    }
+    to {
+      fill: var(--red);
+    }
+  }
+  @keyframes blend-stroke {
+    from {
+      stroke: var(--gold-hi);
+    }
+    to {
+      stroke: var(--red-hi);
+    }
+  }
+  @keyframes blend-glory {
+    from {
+      stroke: var(--gold-hi);
+    }
+    to {
+      stroke: var(--red-hi);
+    }
+  }
+  @keyframes blend-fill {
+    from {
+      fill: color-mix(in srgb, var(--gold) 16%, var(--bg));
+    }
+    to {
+      fill: color-mix(in srgb, var(--red) 30%, var(--bg));
+    }
+  }
 
   /* Lines draw themselves (each piece in its turn: see lib/descentPlate's pen()); seals and the star are stamped in. */
   .draw {
@@ -784,6 +1065,12 @@
     from {
       opacity: 0;
       transform: scale(1.6);
+    }
+  }
+  @keyframes stamp-in {
+    from {
+      opacity: 0;
+      transform: scale(2.4);
     }
   }
   @keyframes glow-in {
@@ -867,23 +1154,39 @@
     animation: none;
     opacity: 0;
   }
-  :global(html[data-still]) .descent :is(.turn, .halo, .glow, .coil) {
+  :global(html[data-still]) .descent :is(.turn, .halo, .glow, .coil, .sun-rays, .sun-sign, .sun-halo) {
     animation: none;
   }
+  :global(html[data-still]) .descent .both-star :is(.star-line, .star-ridge, .star-hatch, .star-ground) {
+    animation: none;
+  }
+  :global(html[data-still]) .descent .both-star :is(.glory, .halo) {
+    animation: none;
+  }
+  /* Reduced motion: no entrance (everything stands in its place at once) and nothing loops. */
   @media (prefers-reduced-motion: reduce) {
+    .descent :global(*) {
+      animation-delay: 0s !important;
+    }
     .travel,
-    .cutout {
+    .cutout,
+    .coil,
+    .coil-in,
+    .turn,
+    .sun-rays,
+    .sun-sign,
+    .sun-halo,
+    .nib-path,
+    .nib,
+    .both-star :is(.star-line, .star-ridge, .star-hatch, .star-ground, .glory, .halo) {
       animation: none;
     }
-    .coil {
-      animation: none;
+    .ink {
+      display: none;
     }
     .twinkle {
       animation: none;
       opacity: 0;
-    }
-    .turn {
-      animation: none;
     }
   }
 </style>

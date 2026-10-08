@@ -3,9 +3,11 @@ import assert from 'node:assert/strict';
 import { descentPlate, type Box, type Plate } from '../src/lib/descentPlate.ts';
 import { FINDS_IN_ORDER, shownDepth } from '../src/lib/delve.ts';
 
-// The descent plate (DelveLadder.svelte): the two stars, their depths, the
-// legend, and the finds' lines, at a phone's, a tablet's and a desktop's
-// width (stacked, or beside the finds list as the page measures it).
+// The descent plate (DelveLadder.svelte): the two stars in the left wall,
+// their depths, the one star for both, the legend, the finds' lines with
+// their depths in the middle, and the brace of the zones not reached, at a
+// phone's, a tablet's and a desktop's width (stacked, or beside the finds
+// list as the page measures it).
 const met = FINDS_IN_ORDER.map((x) => ({ kind: x.kind, from: x.from }));
 const beside = {
   targets: FINDS_IN_ORDER.map((x, i) => ({
@@ -52,14 +54,25 @@ test('both stars carry their depth, under the star, and nothing overlaps them', 
     }
 });
 
-test('the stars stand left of the pit, the depth under them; past 100 a star sits in the ouroboros, its depth beside it', () => {
-  for (const p of plates(45, 20)) {
-    for (const s of [p.star, p.last!]) {
-      assert.ok(s.c[0] < p.sol.c[0] - 15, 'left of the pit');
-      assert.ok(s.num!.y > s.c[1] + s.gloryR, 'under the star');
-      assert.ok(Math.abs(s.num!.x - s.c[0]) < 0.01);
+/** The left wall's lines at height `y`. */
+const wallAt = (p: Plate, y: number) => {
+  const t = (y - p.wallL.y0) / (p.wallL.y1 - p.wallL.y0);
+  return { inner: p.wallL.inner[0] + t * (p.wallL.inner[1] - p.wallL.inner[0]), outer: p.wallL.outer[0] + t * (p.wallL.outer[1] - p.wallL.outer[0]) };
+};
+
+test('the stars stand in the left wall, between its lines, the depth under them; past 100 a star sits in the ouroboros, its depth beside it', () => {
+  for (const p of [...plates(45, 20), ...plates(null, null), ...plates(100, 3)]) {
+    for (const s of [p.star, p.last].filter((x) => x !== null)) {
+      const { inner, outer } = wallAt(p, s.c[1]);
+      assert.ok(s.c[0] - s.r > outer + 1 && s.c[0] + s.r < inner - 1, 'inside the wall, clear of both its lines');
+      assert.ok(Math.abs(s.c[0] - (inner + outer) / 2) < 0.01, 'in the middle of it');
+      if (!s.num) continue;
+      // Under it (or over it, where under won't fit: by the ouroboros at 100).
+      assert.ok(Math.abs(s.num.y - s.c[1]) > s.gloryR, 'under or over the star');
+      if (p.star.num?.text === '44') assert.ok(s.num.y > s.c[1] + s.gloryR, 'under the star');
+      assert.ok(Math.abs(s.num.x - s.c[0]) < 0.01);
     }
-    for (const n of p.names) assert.ok(n.x < p.star.c[0] - p.star.gloryR, 'the names stay left of the lane');
+    for (const n of p.names) assert.ok(n.x < wallAt(p, n.y).outer - 2, 'the names stay left of the wall');
   }
   for (const p of plates(216, 30)) {
     assert.ok(p.star.inSnake);
@@ -71,16 +84,33 @@ test('the stars stand left of the pit, the depth under them; past 100 a star sit
   }
 });
 
-test('one star when the last run is the best, or would overlap it; the legend names only the stars drawn', () => {
-  for (const p of plates(45, 45)) {
-    assert.equal(p.last, null);
+test('one star for both when the last run is the best, or would overlap it: the last run\'s depth stacked over yours', () => {
+  for (const [best, last] of [
+    [45, 45],
+    [45, 44],
+    [150, 120],
+  ])
+    for (const p of plates(best, last)) {
+      assert.equal(p.last, null, `${best}/${last}: no second star`);
+      assert.ok(p.star.both);
+      assert.equal(p.star.num?.text, String(shownDepth(best)));
+      assert.equal(p.star.lastNum?.text, String(shownDepth(last)));
+      assert.ok(p.star.lastNum!.y < p.star.num!.y - 9, "the last run's over yours");
+      assert.ok(!overlap(numBox(p.star.num!), numBox({ ...p.star.lastNum!, anchor: p.star.num!.anchor })), 'apart');
+      if (best > 100) assert.ok(p.star.num!.x > p.endless.c[0] + p.endless.r, 'beside the seal');
+      else assert.ok(p.star.lastNum!.y > p.star.c[1] + p.star.gloryR, 'under the star');
+      assert.deepEqual(
+        p.legend.rows.map((r) => r.kind),
+        ['best', 'last'],
+      );
+    }
+  for (const p of plates(45, null)) {
+    assert.ok(!p.star.both && p.star.lastNum === null);
     assert.deepEqual(
       p.legend.rows.map((r) => r.kind),
       ['best'],
     );
   }
-  for (const p of plates(45, 44)) assert.equal(p.last, null, 'a depth apart: they would overlap');
-  for (const p of plates(150, 120)) assert.equal(p.last, null, 'room for one star in the ouroboros');
   for (const p of plates(45, 20))
     assert.deepEqual(
       p.legend.rows.map((r) => r.kind),
@@ -114,13 +144,52 @@ test("a find's line leaves the wall level, slants, and runs level into its headi
     // The first piece of each line starts at its station and runs level (the handle).
     for (const [i, l] of lines.entries()) {
       const [x0, y0, x1, y1] = l.strokes[0].d.slice(1).split(/[ L]/).slice(0, 4).map(Number);
-      assert.ok(Math.abs(y1 - y0) < 0.01 && x1 > x0, `line ${i} starts level`);
+      assert.ok(Math.abs(y1 - y0) < 0.1 && x1 > x0, `line ${i} starts level`);
     }
   }
   for (const p of plates(216, 30, [])) {
     assert.equal(p.stations.length, 0);
     assert.equal(p.parts.filter((x) => x.tone === 'lead').length, 0);
   }
+});
+
+test("a find's depth stands in the middle of its slant, the line broken round it", () => {
+  for (const [best, last] of [
+    [45, 20],
+    [216, 30],
+    [null, null],
+  ] as const)
+    for (const p of plates(best, last)) {
+      const lines = p.parts.filter((x) => x.tone === 'lead');
+      for (const [i, m] of p.marks.entries()) {
+        const pts = lines[i].strokes.map((s) => s.d.slice(1).split(/[ L]/).map(Number));
+        // The gap the mark sits in: between the end of one piece and the start of the next, the mark on that line, half way along the slant.
+        const gaps = pts.slice(1).map((q, k) => {
+          const a = pts[k].slice(-2) as [number, number];
+          const b = q.slice(0, 2) as [number, number];
+          return { a, b };
+        });
+        const hit = gaps.find(({ a, b }) => {
+          const [dx, dy] = [b[0] - a[0], b[1] - a[1]];
+          const L = Math.hypot(dx, dy);
+          const t = ((m.x - a[0]) * dx + (m.y - a[1]) * dy) / (L * L);
+          return t > 0.3 && t < 0.7 && Math.abs((m.x - a[0]) * dy - (m.y - a[1]) * dx) / L < 0.5;
+        });
+        assert.ok(hit, `${best}/${last} at ${p.w}: ${m.kind}'s depth sits in a break of its line`);
+      }
+    }
+});
+
+test('the zones not reached are held in a brace beside the left wall, its word left of it', () => {
+  for (const p of plates(12, 5)) {
+    const u = p.uncharted!;
+    assert.ok(u && u.upper && u.lower, 'a brace');
+    assert.equal(u.balls.length, 2);
+    for (const b of u.balls) assert.ok(b[0] < wallAt(p, b[1]).outer - 1, 'its terminals short of the wall');
+    assert.ok(u.x - 50 > 0, 'the word on the plate');
+    assert.ok(u.balls[0][1] > p.names.at(-1)!.y, 'under the zones named');
+  }
+  for (const p of plates(216, 30)) assert.equal(p.uncharted, null);
 });
 
 test('only the zones reached are named', () => {

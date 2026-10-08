@@ -2,9 +2,9 @@
   // The descent's test page: Delve's rules block (components/DelveRules) in
   // a rules card as the lobby shows it, at a phone's, a tablet's and a
   // desktop's card width side by side, driven by the deepest depth, the last
-  // run's depth and the finds met. Replay mounts the blocks again (their
-  // entrance); Walk down goes a depth deeper every 180 ms. The address can
-  // set them too: descent.html?best=46&last=20&met=flare,azurite.
+  // run's depth and the finds met, or by a preset. Replay mounts the blocks
+  // again (their entrance); Walk down goes a depth deeper every 180 ms. The
+  // address can set them too: descent.html?best=46&last=20&met=flare,azurite.
   import { onDestroy } from 'svelte';
   import DelveRules from '../components/DelveRules.svelte';
   import ItemGlyph from '../components/ItemGlyph.svelte';
@@ -38,6 +38,25 @@
   let replay = $state(0);
   let walking: ReturnType<typeof setInterval> | null = $state(null);
 
+  /** Records worth seeing (depths as the records keep them: shown one less). */
+  const ALL = FINDS_IN_ORDER.map((f) => f.kind);
+  const PRESETS: { name: string; best: number; last: number; met: FindKind[] }[] = [
+    { name: 'No runs', best: 0, last: 0, met: [] },
+    { name: 'A best', best: 38, last: 0, met: ['dynamite'] },
+    { name: 'Best + last run', best: 46, last: 21, met: ALL },
+    { name: 'Last run at the best', best: 46, last: 46, met: ALL },
+    { name: 'All ten zones', best: 96, last: 62, met: ALL },
+    { name: 'Past 100', best: 216, last: 0, met: ALL },
+    { name: 'Past 100 + last run', best: 216, last: 31, met: ALL },
+    { name: 'Both past 100', best: 216, last: 150, met: ALL },
+  ];
+  function preset(x: (typeof PRESETS)[number]) {
+    stop();
+    depth = x.best;
+    lastDepth = x.last;
+    met = [...x.met];
+    replay++;
+  }
   const toggle = (kind: FindKind) => (met = met.includes(kind) ? met.filter((k) => k !== kind) : [...met, kind]);
   function walk() {
     if (walking) return stop();
@@ -79,6 +98,12 @@
       <span class="sep"></span>
       <button onclick={() => replay++}>Replay entrance</button>
       <button class:on={!!walking} onclick={walk}>{walking ? 'Stop' : 'Walk down'}</button>
+    </div>
+    <div class="row">
+      <span class="what">Presets</span>
+      {#each PRESETS as x (x.name)}
+        <button class:on={depth === x.best && lastDepth === x.last && met.length === x.met.length} onclick={() => preset(x)}>{x.name}</button>
+      {/each}
     </div>
   </header>
 
