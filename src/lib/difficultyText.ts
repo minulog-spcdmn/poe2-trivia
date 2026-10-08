@@ -212,7 +212,7 @@ export const FIND_RULES: Record<FindKind, { gives: string; miss: string }> = {
     miss: `${cap(FIND_MISS.flare ?? '')}.`,
   },
   dynamite: {
-    gives: `Dynamite lets you skip a question and get a new one at the same depth, up to ${timesWord(DELVE_MAX_BLASTS)} per depth. If time runs out, it goes off on its own, and you'll hear its fuse hiss just before.`,
+    gives: `Dynamite lets you skip a question and get a new one at the same depth, up to ${timesWord(DELVE_MAX_BLASTS)} per depth. If time runs out, it goes off on its own.`,
     miss: `${cap(FIND_MISS.dynamite ?? '')}.`,
   },
 };

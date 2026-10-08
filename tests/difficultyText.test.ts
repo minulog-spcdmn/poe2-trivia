@@ -134,7 +134,7 @@ test("the lobby's finds: each in a line for someone who never played, what it gi
   assert.equal(said('flare'), 'A flare adds six seconds when your time runs out. If you also carry dynamite, the flare burns first. You get less time to answer.');
   assert.equal(
     said('dynamite'),
-    "Dynamite lets you skip a question and get a new one at the same depth, up to twice per depth. If time runs out, it goes off on its own, and you'll hear its fuse hiss just before. A miss also blows up an item you carry.",
+    "Dynamite lets you skip a question and get a new one at the same depth, up to twice per depth. If time runs out, it goes off on its own. A miss also blows up an item you carry.",
   );
   // And under them, in a line, why flares and dynamite never work on a find.
   assert.equal(FINDS_UNSAFE, "Flares and dynamite don't work on finds. The rock there is too thick to blast, and the dark swallows a flare's light.");
