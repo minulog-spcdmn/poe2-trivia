@@ -23,11 +23,14 @@ const plates = (best: number | null, last: number | null, finds = met): Plate[] 
   descentPlate(176, 380, best, finds, { beside }, last),
 ];
 /** A star's depth as set (Cinzel at 13 px, about 7.6 px a figure). */
-const numBox = (n: { text: string; x: number; y: number; anchor: string }): Box => {
-  const w = n.text.length * 7.6;
+const numBox = (n: { text: string; x: number; y: number; anchor: string; size?: number }): Box => {
+  const k = n.size ?? 1;
+  const w = n.text.length * 7.6 * k;
   const x0 = n.anchor === 'start' ? n.x : n.x - w / 2;
-  return [x0, n.y - 4.9, x0 + w, n.y + 4.9];
+  return [x0, n.y - 4.9 * k, x0 + w, n.y + 4.9 * k];
 };
+/** Whether a depth's box lies inside the ouroboros' ring, clear of its heads' jaws at any turn. */
+const inRing = (p: Plate, b: Box) => [b[0], b[2]].every((x) => [b[1], b[3]].every((y) => Math.hypot(x - p.endless.c[0], y - p.endless.c[1]) < p.endless.ouro.inner));
 const overlap = (a: Box, b: Box) => a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3];
 
 test('both stars carry their depth, under the star, and nothing overlaps them', () => {
@@ -79,8 +82,9 @@ test('the stars stand in the left wall, between its lines, the depth under them;
     assert.deepEqual(p.star.c, p.endless.c);
     assert.ok(p.star.cut < p.endless.ouro.inner, "inside the ring, clear of the snakes' jaws");
     assert.ok(p.endless.ouro.hole > p.endless.ouro.inner && p.endless.ouro.reach > p.endless.ouro.hole, 'a ring, the heads over it');
-    assert.equal(p.star.num!.anchor, 'start');
-    assert.ok(p.star.num!.x > p.endless.c[0] + p.endless.ouro.reach, "beside the seal, clear of the heads as it turns");
+    assert.ok(p.star.num!.y > p.star.c[1] + p.star.gloryR, 'under the star');
+    assert.ok(inRing(p, numBox(p.star.num!)), 'inside the ring, clear of the heads at any turn');
+    assert.ok(p.star.num!.size >= 0.75, 'still readable');
     assert.ok(p.star.mid, 'it comes down the lane and then into the ouroboros');
   }
 });
@@ -98,11 +102,9 @@ test('one star for both when the last run is the best, or would overlap it: the 
       assert.equal(p.star.lastNum?.text, String(shownDepth(last)));
       assert.ok(p.star.lastNum!.y < p.star.num!.y - 9, "the last run's over yours");
       assert.ok(!overlap(numBox(p.star.num!), numBox({ ...p.star.lastNum!, anchor: p.star.num!.anchor })), 'apart');
-      if (best > 100) assert.ok(p.star.num!.x > p.endless.c[0] + p.endless.ouro.reach, 'beside the seal, the last run\'s over yours');
-      else {
-        assert.ok(p.star.lastNum!.y < p.star.c[1] - p.star.gloryR, "the last run's over the star");
-        assert.ok(p.star.num!.y > p.star.c[1] + p.star.gloryR, 'yours under it');
-      }
+      if (best > 100) assert.ok(inRing(p, numBox(p.star.num!)) && inRing(p, numBox({ ...p.star.lastNum!, anchor: 'middle' })), 'both inside the ring');
+      assert.ok(p.star.lastNum!.y < p.star.c[1] - p.star.gloryR, "the last run's over the star");
+      assert.ok(p.star.num!.y > p.star.c[1] + p.star.gloryR, 'yours under it');
       assert.deepEqual(
         p.legend.rows.map((r) => r.kind),
         ['last', 'best'],
@@ -218,4 +220,57 @@ test('every path is a number throughout', () => {
     [216, 30],
   ] as const)
     for (const p of plates(best, last)) assert.ok(!JSON.stringify(p).includes('NaN'), `${best}/${last} at ${p.w}`);
+});
+
+test('the ouroboros is the same size in every state on a given width (it depends on nothing but the width)', () => {
+  const states: [number | null, number | null, typeof met][] = [
+    [null, null, []],
+    [37, null, [met[0]]],
+    [45, 20, met],
+    [45, 45, met],
+    [95, 61, met],
+    [216, null, met],
+    [216, null, []],
+    [216, 150, met],
+  ];
+  for (const [w, layout] of [
+    [281, {}],
+    [383, {}],
+    [176, { beside }],
+    [196, { beside: { ...beside, wall: 216 } }],
+  ] as const) {
+    const sizes = new Set(states.map(([b, l, f]) => descentPlate(w, 420, b, f, layout, l).endless.ouro.scale.toFixed(6)));
+    assert.equal(sizes.size, 1, `one size at ${w} px`);
+  }
+});
+
+test('the plate does not move as finds are met: only their lines and depths come and go', () => {
+  const geometry = (p: Plate) =>
+    JSON.stringify({
+      sol: p.sol.c,
+      wall: p.wallL,
+      seals: p.seals.map((s) => [s.c, s.r]),
+      names: p.names.map((n) => [n.x, n.y]),
+      endless: [p.endless.c, p.endless.r, p.endless.ouro.scale],
+      legend: p.legend,
+      callouts: p.callouts?.map((c) => [c.kind, c.top]) ?? null,
+      star: [p.star.c, p.star.num],
+      last: p.last ? [p.last.c, p.last.num] : null,
+      h: p.natural,
+    });
+  for (const [best, last] of [
+    [null, null],
+    [45, 20],
+    [216, 30],
+  ] as const)
+    for (const [w, layout] of [
+      [281, {}],
+      [383, {}],
+      [176, { beside }],
+    ] as const) {
+      const g = [[], [met[0]], met].map((f) => geometry(descentPlate(w, 420, best, f, layout, last)));
+      assert.equal(new Set(g).size, 1, `${best}/${last} at ${w} px: the same whatever finds are met`);
+      const lines = [[], [met[0]], met].map((f) => descentPlate(w, 420, best, f, layout, last).parts.filter((x) => x.tone === 'lead').length);
+      assert.deepEqual(lines, [0, 1, met.length], 'only the lines of the finds met are drawn');
+    }
 });

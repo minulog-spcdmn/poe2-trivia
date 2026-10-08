@@ -18,7 +18,7 @@
   // spoiled. In the pit's left wall a gold star marks your deepest and a red
   // one your last run (`last`), each with its depth under it (the gold one
   // by the mouth before a first run; past 100 a star sits in the ouroboros,
-  // its depth beside the seal); when they would overlap, one star stands for
+  // its depth under it inside the ring); when they would overlap, one star stands for
   // both, drifting between gold and red, the last run's depth over it and
   // yours under it. A small legend left of the ouroboros says which is
   // which. Each find you
@@ -65,11 +65,6 @@
     stacked?: boolean;
   } = $props();
   const uid = $props.id();
-  /**
-   * How the ouroboros is drawn: light bodies with dark lines (filled), or gold lines on the dark ground (outline). The test page
-   * can switch it (html[data-ouro]) to compare.
-   */
-  const OURO_VARIANT = 'filled' as 'filled' | 'outline';
   /** The legend's words. */
   const KEY = { best: 'your best', last: 'last run' } as const;
 
@@ -355,29 +350,34 @@
       <div class="coil-in" style:--d={sec(p.endless.delay)}>
         <div class="coil" class:turning={p.endless.lit} style:--d={sec(p.endless.delay)}>
           <svg viewBox="{f(-ou.reach - 2)} {f(-ou.reach - 2)} {f(2 * ou.reach + 4)} {f(2 * ou.reach + 4)}" aria-hidden="true">
-            <g class="serpent" class:lit={p.endless.lit} class:outline={OURO_VARIANT === 'outline'} style:--d={sec(p.endless.delay)}>
-              {#each [0, 180] as turn, i (i)}
-                <g mask="url(#{uid}-coil-{i})">
-                  <g transform="scale({ou.scale.toFixed(5)}) rotate({turn})">
-                    <path class="sp-light" d={art.BODY_FILL + art.HEAD_FILL} />
-                    <path class="sp-ink sp-edges" d={art.BODY_EDGES} style:--w={art.LINE} />
-                    <path class="sp-ink sp-divider" d={art.BODY_DIVIDER} style:--w={art.DIVIDER} />
-                    <path class="sp-ink sp-rim" d={art.HEAD_FILL} />
-                    <path class="sp-dark" d={art.HEAD_INK} />
-                  </g>
-                </g>
-                <!-- A nib of light riding each sweep's front. -->
-                <g transform="rotate({f(ou.from + turn)})">
-                  <g class="sweep-nib">
-                    <circle class="sweep-dot" cy={f(-ou.mid)} r="1.6" />
-                  </g>
-                </g>
-              {/each}
-              <!-- Then their eyes and nostrils. -->
-              <g class="sp-eyes">
+            <!-- Drawn as gold lines on the dark until you are past 100 (it lies still), then struck in gold, filled (and it turns). The
+                 drawing is mirrored, so the snakes look clockwise, the way the ring turns: head first. (The test page can force either
+                 look: html[data-ouro].) -->
+            <g class="serpent" class:lit={p.endless.lit} class:outline={!p.endless.lit} style:--d={sec(p.endless.delay)}>
+              <g transform="scale(-1 1)">
                 {#each [0, 180] as turn, i (i)}
-                  <path class="sp-dark" d={art.HEAD_EYE} transform="scale({ou.scale.toFixed(5)}) rotate({turn})" />
+                  <g mask="url(#{uid}-coil-{i})">
+                    <g transform="scale({ou.scale.toFixed(5)}) rotate({turn})">
+                      <path class="sp-light" d={art.BODY_FILL + art.HEAD_FILL} />
+                      <path class="sp-ink sp-edges" d={art.BODY_EDGES} style:--w={art.LINE} />
+                      <path class="sp-ink sp-divider" d={art.BODY_DIVIDER} style:--w={art.DIVIDER} />
+                      <path class="sp-ink sp-rim" d={art.HEAD_RIM} />
+                      <path class="sp-dark" d={art.HEAD_INK} />
+                    </g>
+                  </g>
+                  <!-- A nib of light riding each sweep's front. -->
+                  <g transform="rotate({f(ou.from + turn)})">
+                    <g class="sweep-nib">
+                      <circle class="sweep-dot" cy={f(-ou.mid)} r="1.6" />
+                    </g>
+                  </g>
                 {/each}
+                <!-- Then their eyes and nostrils. -->
+                <g class="sp-eyes">
+                  {#each [0, 180] as turn, i (i)}
+                    <path class="sp-dark" d={art.HEAD_EYE} transform="scale({ou.scale.toFixed(5)}) rotate({turn})" />
+                  {/each}
+                </g>
               </g>
             </g>
           </svg>
@@ -469,10 +469,10 @@
             </g>
           </g>
           {#if s.lastNum}
-            <text class="depth red-num" x={f(s.lastNum.x)} y={f(s.lastNum.y)} text-anchor={s.num?.anchor ?? 'middle'} style:--d={sec(s.delay + 0.25 + s.travel)}>{s.lastNum.text}</text>
+            <text class="depth red-num" x={f(s.lastNum.x)} y={f(s.lastNum.y)} text-anchor="middle" style:font-size={s.lastNum.size < 1 ? `${f(13 * s.lastNum.size)}px` : null} style:--d={sec(s.delay + 0.25 + s.travel)}>{s.lastNum.text}</text>
           {/if}
           {#if s.num}
-            <text class="depth {i ? 'gold-num' : 'red-num'}" x={f(s.num.x)} y={f(s.num.y)} text-anchor={s.num.anchor} style:--d={sec(s.delay + 0.25 + s.travel)}>{s.num.text}</text>
+            <text class="depth {i ? 'gold-num' : 'red-num'}" x={f(s.num.x)} y={f(s.num.y)} text-anchor={s.num.anchor} style:font-size={s.num.size < 1 ? `${f(13 * s.num.size)}px` : null} style:--d={sec(s.delay + 0.25 + s.travel)}>{s.num.text}</text>
           {/if}
         {/if}
       {/each}
@@ -805,10 +805,11 @@
     stroke: var(--k);
     stroke-width: var(--w);
   }
-  /* Gold lines on the dark read thinner than dark lines on gold: in outline, every line a little heavier. */
+  /* Gold lines on the dark read thinner than dark lines on gold: in outline, every line a little heavier, by the same amount as the
+     traced head's lines (their fill's edge stroked), so the joins stay even. */
   .serpent.outline .sp-ink,
   :global(html[data-ouro='outline']) .serpent .sp-ink {
-    stroke-width: calc(var(--w) * 1.35);
+    stroke-width: calc(var(--w) + 1.8);
   }
   .serpent.outline .sp-dark,
   :global(html[data-ouro='outline']) .serpent .sp-dark {

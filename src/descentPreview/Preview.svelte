@@ -36,7 +36,7 @@
       : FINDS_IN_ORDER.map((f) => f.kind),
   );
   let replay = $state(0);
-  /** How the ouroboros is drawn, to compare (descent.html?ouro=outline); the component's own choice when unset. */
+  /** How the ouroboros is drawn, to compare (descent.html?ouro=outline); unset, it follows the state (outline below 100, filled past it). */
   let ouro = $state<'' | 'filled' | 'outline'>((['filled', 'outline'] as const).find((v) => v === query.get('ouro')) ?? '');
   $effect(() => {
     if (ouro) document.documentElement.dataset.ouro = ouro;
@@ -113,7 +113,7 @@
     </div>
     <div class="row">
       <span class="what">Ouroboros</span>
-      {#each [['', 'Default'], ['filled', 'Filled'], ['outline', 'Outline']] as [v, name] (v)}
+      {#each [['', 'By state'], ['filled', 'Filled'], ['outline', 'Outline']] as [v, name] (v)}
         <button class:on={ouro === v} onclick={() => (ouro = v as typeof ouro)}>{name}</button>
       {/each}
     </div>

@@ -23,7 +23,7 @@
 // in it like beads in a gauge: a gold one at your deepest (at the mouth
 // before a first run) and a red one at your last run, each with its depth
 // under it, their cutouts breaking the wall's lines round them. Past 100 a
-// star sits inside the ouroboros, its depth beside the seal. When the two
+// star sits inside the ouroboros, its depth under it inside the ring. When the two
 // would overlap they are one star, its colour drifting between gold and
 // red, the last run's depth over it and yours under it. A legend level
 // with the ouroboros, half its radius from it, says which star is which.
@@ -154,9 +154,10 @@ export type Mark = {
 /**
  * The ouroboros on the last seal (lib/ouroborosArt: two snakes, each biting
  * the other's tail, in its drawing's px about the ring's centre), drawn at
- * `scale` on the seal's centre. Each snake draws in from where its body
- * meets the other's head (`from`, degrees clockwise from the top) round
- * anticlockwise to its own head; the second is the first turned half round.
+ * `scale` on the seal's centre (and mirrored, so the snakes look clockwise,
+ * the way it turns). Each snake draws in from where its body meets the
+ * other's head (`from`, degrees clockwise from the top, in the drawing) round
+ * to its own head; the second is the first turned half round.
  * `inner` and `reach` are how near the centre (the heads' jaws) and how far
  * from it (the heads' crowns) it goes, `hole` the radius of the ring's hole
  * and `mid` the middle of its body, in px.
@@ -192,10 +193,12 @@ export type Star = {
     x: number;
     y: number;
     anchor: 'middle' | 'start';
+    /** Its size, as a share of the usual (less only where it must fit inside the ouroboros' ring). */
+    size: number;
   } | null;
-  lastNum: { text: string; x: number; y: number } | null;
+  lastNum: { text: string; x: number; y: number; size: number } | null;
 };
-/** The legend left of the ouroboros, half the seal's radius from it: a row for each kind of star, its small star at `x`, its words after it. */
+/** The legend left of the ouroboros, about 30 px from it: a row for each kind of star, its small star at `x`, its words after it. */
 export type Legend = {
   x: number;
   rows: { kind: 'best' | 'last'; y: number }[];
@@ -485,12 +488,11 @@ const MARK_W = 7;
 const MARK_H = 8.2;
 /** A find's line runs level this far out of the wall before it slants. */
 const HANDLE = 5;
-/** The seals' largest radius, and the room the lines need between the pit and the finds (less when no line is drawn). */
+/** The seals' largest radius, and the room the lines need between the pit and the finds (kept whether any is drawn or not). */
 const R_MAX = 14;
 const ROOM_BESIDE = 36;
 const ROOM_STACKED = 34;
-const ROOM_NONE = 12;
-/** The last seal's radius: the ouroboros must read as a serpent at a glance, and hold a star; a little smaller on a narrow plate, so a star's depth still fits beside it. */
+/** The last seal's radius (the ouroboros' body's outer edge): it must read at a glance and hold a star and its depths; set by the plate's width alone. */
 const END_R = 38;
 const END_R_MIN = 32;
 /** "uncharted" as set (EB Garamond italic, 12.5 px), with its brace (the brace's curl, its gap from the wall). */
@@ -535,6 +537,10 @@ export function descentPlate(W: number, H: number, deepest: number | null, met: 
   const past = best !== null && best > 100;
   const shapes = Object.fromEntries(FINDS_IN_ORDER.map((x) => [x.kind, layout.callouts?.[x.kind] ?? CALLOUT_GUESS(W)])) as Record<FindKind, CalloutShape>;
   const found = [...met].sort((a, b) => a.from - b.from);
+  // The plate is laid out as if every find were met (their lines and depths fitted in), so nothing moves as finds are met; only
+  // the lines of the finds met are drawn.
+  const allFinds = FINDS_IN_ORDER.map((x) => ({ kind: x.kind, from: x.from }));
+  const isMet = (k: FindKind) => found.some((m) => m.kind === k);
 
   // ---- across: the zones' names | the left wall (the stars' band) | the pit | the rock | the lines | the finds (beside) or the callouts (stacked) ----
   const nameW = (k: number) => layout.nameW?.[k] ?? ZONES[k].name.length * 5.9 + 1;
@@ -543,7 +549,7 @@ export function descentPlate(W: number, H: number, deepest: number | null, met: 
   // The pit's half-width at the mouth plus what stands left of it: the names shown, or the brace of the zones not reached.
   const need = Math.max(30, ...ZONES.slice(0, reached).map((_, k) => nameW(k) + NAME_GAP + LW - slant(k)), reached < 10 ? UNCH_W + LW - slant((reached + 9) / 2) : 0);
   const wall = beside ? beside.wall : Math.min(...FINDS_IN_ORDER.map((x) => shapes[x.kind].x));
-  const room = found.length ? (stacked ? ROOM_STACKED : ROOM_BESIDE) : ROOM_NONE;
+  const room = stacked ? ROOM_STACKED : ROOM_BESIDE;
   const SOL_Y = SOL_R + 12;
   const capAX = caption && caption[3] > SOL_Y - SOL_R - 12 ? caption[2] + SOL_R + 15 : 0;
   let halfTop = clamp((wall - room - 1 - need - ROCK) / 2, 19, stacked ? 56 : 34);
@@ -551,13 +557,12 @@ export function descentPlate(W: number, H: number, deepest: number | null, met: 
   let AX = Math.max(1 + need + halfTop, capAX, keyW + KEY_GAP_MIN + endR0 + 3);
   const spare = wall - room - ROCK - halfTop - AX;
   // Room to spare goes to the margin, and half of it to the lines when there are any; too little narrows the pit.
-  if (spare > 0) AX += found.length ? spare / 2 : spare;
+  if (spare > 0) AX += spare / 2;
   else halfTop = Math.max(19, halfTop + spare);
   const halfBot = halfTop - TAPER;
-  // The last seal: smaller where a three-figure depth would not fit beside the ouroboros' reach (its head goes over the seal).
+  // The last seal (the ouroboros): the depths past 100 go inside its ring, so nothing beside it limits its size.
   const reachOf = (r: number) => ((r - 1.4) * OURO.reach) / OURO.outer;
-  const numRoom = (beside ? beside.wall - 2 : W) - AX - 2 - 3 * BEST_W;
-  const endR = Math.max(30, Math.min(endR0, Math.floor(1.4 + (numRoom * OURO.outer) / OURO.reach)));
+  const endR = endR0;
 
   // ---- down: Sol over the mouth, the ten zones, the endless stretch ----
   const TOP = SOL_Y + SOL_R + 6;
@@ -646,10 +651,11 @@ export function descentPlate(W: number, H: number, deepest: number | null, met: 
             text: String(shownDepth(d)),
           };
   /**
-   * Where a star's depths can go: under it (or over it, if under won't fit);
-   * beside the seal when it is in the ouroboros. Two (the one star for both):
-   * the last run's over the star and yours under it (or both stacked under
-   * it, if that won't fit); beside the seal, the last run's over yours.
+   * Where a star's depths can go: under it (or over it, if under won't fit).
+   * Two (the one star for both): the last run's over the star and yours
+   * under it (or both stacked under it, if that won't fit). In the
+   * ouroboros they stay inside its ring, clear of the heads at any turn,
+   * set a little smaller if they must (`snakeSize`).
    */
   const numOpts = (s: Spot, texts: string[]): { boxes: Box[]; cost: number }[] => {
     if (!texts.length) return [{ boxes: [], cost: 0 }];
@@ -659,7 +665,16 @@ export function descentPlate(W: number, H: number, deepest: number | null, met: 
       const x0 = anchor === 'start' ? x : x - w / 2;
       return [x0, top, x0 + w, top + BEST_H];
     };
-    if (s.inSnake) return [{ boxes: texts.map((_, i) => boxAt(i, endC[0] + endReach + 2, endC[1] - BEST_H / 2 + (i - (n - 1) / 2) * STACK, 'start')), cost: 0 }];
+    if (s.inSnake) {
+      const [x, y] = endC;
+      const k = snakeSize(texts);
+      const g = GLORY_IN + 0.6;
+      const box = (i: number, top: number): Box => {
+        const w = texts[i].length * BEST_W * k;
+        return [x - w / 2, top, x + w / 2, top + BEST_H * k];
+      };
+      return [{ boxes: n === 2 ? [box(0, y - g - BEST_H * k), box(1, y + g)] : [box(0, y + g)], cost: 0 }];
+    }
     const [x, y] = s.c;
     const g = GLORY + 0.8;
     const under = { boxes: texts.map((_, i) => boxAt(i, x, y + g + i * STACK, 'middle')), cost: 0 };
@@ -667,6 +682,14 @@ export function descentPlate(W: number, H: number, deepest: number | null, met: 
     if (n === 2) return [{ boxes: [boxAt(0, x, y - g - BEST_H, 'middle'), boxAt(1, x, y + g, 'middle')], cost: 0 }, { ...under, cost: 50 }, { ...over, cost: 55 }];
     return [under, over];
   };
+  /** The size the depths in the ouroboros are set at: as large as fits inside its ring (the heads' jaws, at any turn), at most the usual. */
+  function snakeSize(texts: string[]) {
+    const room = OURO.inner * ouroScale - 1.2;
+    const w = Math.max(...texts.map((t) => t.length)) * BEST_W;
+    let k = 1;
+    while (k > 0.6 && Math.hypot((w * k) / 2, GLORY_IN + 0.6 + BEST_H * k) > room) k -= 0.02;
+    return k;
+  }
   const discOf = (s: Spot) => ({
     c: s.c,
     r: (s.inSnake ? GLORY_IN : GLORY) + 1,
@@ -868,7 +891,7 @@ export function descentPlate(W: number, H: number, deepest: number | null, met: 
           Es[x.kind] = [s.x + s.icon[0] - 2.5, top + (s.icon[1] + s.icon[3]) / 2];
         }
       else for (const t of beside!.targets) Es[t.kind] = [t.x - 2.6, t.y];
-      const ms = found.filter((m) => Es[m.kind]);
+      const ms = allFinds.filter((m) => Es[m.kind]);
       const per = ms.map((m) => optsFor(m, Es[m.kind]!, blocks));
       if (per.some((p) => p.length === 0)) continue;
       // Every pairing of the options, kept clear of each other.
@@ -894,7 +917,7 @@ export function descentPlate(W: number, H: number, deepest: number | null, met: 
       if (won && (won as Choice).cost < 20 && lay.cost === 0) break;
     }
     const c = won as Choice | null;
-    return { opts: c?.opts ?? [], tops: c?.tops ?? null };
+    return { opts: (c?.opts ?? []).filter((o) => isMet(o.kind)), tops: c?.tops ?? null };
   }
 
   // The lines in depth order, each reaching out from the wall in its turn; its depth comes as the pen passes it.
@@ -908,7 +931,7 @@ export function descentPlate(W: number, H: number, deepest: number | null, met: 
     delay: lineAt(o),
   }));
   const marks: Mark[] = fit.opts.map((o) => {
-    const m = found.find((x) => x.kind === o.kind)!;
+    const m = allFinds.find((x) => x.kind === o.kind)!;
     return {
       kind: o.kind,
       text: String(shownDepth(m.from)),
@@ -1237,7 +1260,8 @@ export function descentPlate(W: number, H: number, deepest: number | null, met: 
     const st = star8(O, r);
     // Into the ouroboros: down the wall to the foot of the pit, then in.
     const foot = laneAt(side(BOTTOM, -1)[1]);
-    const numAt = (b: Box) => ({ x: s.inSnake ? b[0] : (b[0] + b[2]) / 2, y: (b[1] + b[3]) / 2 });
+    const size = s.inSnake ? snakeSize(two ? [red!.text, s.text] : [s.text]) : 1;
+    const numAt = (b: Box) => ({ x: (b[0] + b[2]) / 2, y: (b[1] + b[3]) / 2, size });
     const own = nums.at(-1);
     return {
       c: s.c,
@@ -1254,7 +1278,7 @@ export function descentPlate(W: number, H: number, deepest: number | null, met: 
       from: moves ? [home[0] - s.c[0], home[1] - s.c[1]] : [0, 0],
       mid: moves && s.inSnake ? [foot[0] - s.c[0], foot[1] - s.c[1]] : null,
       travel: moves ? travelOf(s) : 0,
-      num: own && s.text ? { text: s.text, ...numAt(own), anchor: s.inSnake ? 'start' : 'middle' } : null,
+      num: own && s.text ? { text: s.text, ...numAt(own), anchor: 'middle' } : null,
       lastNum: two ? { text: red!.text, ...numAt(nums[0]) } : null,
     };
   };
