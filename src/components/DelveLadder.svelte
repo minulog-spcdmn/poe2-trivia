@@ -239,7 +239,7 @@
       </mask>
       <mask id="{uid}-coil" maskUnits="userSpaceOnUse" x="-60" y="-60" width="120" height="120">
         <!-- The body draws in from the tail's tip clockwise round to the neck; once round, the mask is whole (no seam where the sweep closed). -->
-        <circle class="reveal" r={f(sp.rs)} stroke-width={f(3.4 * sp.w)} pathLength="100" transform="rotate({f(sp.tail - 90)})" style:--d={sec(p.endless.delay)} />
+        <circle class="reveal" r={f(sp.rs)} stroke-width={f(3.4 * sp.w)} stroke-dasharray="0 101" pathLength="100" transform="rotate({f(sp.tail - 90)})" style:--d={sec(p.endless.delay)} />
         <circle class="reveal-done" r={f(sp.rs + 2 * sp.w)} style:--d={sec(p.endless.delay)} />
       </mask>
       <clipPath id="{uid}-mouth">
@@ -360,6 +360,7 @@
               <g class="sp-headin">
                 <path class="sp-fill" d={sp.headFill} />
                 <path class="sp-mouth" d={sp.mouth} />
+                <path class="sp-roof" d={sp.roof} />
                 <g clip-path="url(#{uid}-mouth)">{@render band()}</g>
                 <path class="sp-hscales" d={sp.headScales} />
                 <path class="sp-head" d={sp.head} />
@@ -781,6 +782,10 @@
     fill: color-mix(in srgb, var(--sp) 11%, var(--bg));
     stroke: none;
   }
+  .serpent .sp-roof {
+    fill: color-mix(in srgb, var(--sp) 18%, var(--bg));
+    stroke: none;
+  }
   .serpent .sp-mouth {
     fill: var(--bg);
     stroke: none;
@@ -838,11 +843,19 @@
   .serpent {
     --h: calc(var(--d) + var(--s) - 0.08s);
   }
+  /* Nothing of it shows until the sweep starts: the dash grows from nothing (its initial state, inline, is nothing too). */
   .reveal {
     fill: none;
     stroke: #fff;
-    stroke-dasharray: 100;
-    animation: draw var(--s) var(--d) cubic-bezier(0.42, 0.05, 0.35, 1) both;
+    animation: reveal var(--s) var(--d) cubic-bezier(0.42, 0.05, 0.35, 1) both;
+  }
+  @keyframes reveal {
+    from {
+      stroke-dasharray: 0 101;
+    }
+    to {
+      stroke-dasharray: 101 0;
+    }
   }
   .reveal-done {
     fill: #fff;

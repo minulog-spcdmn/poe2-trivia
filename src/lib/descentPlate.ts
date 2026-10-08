@@ -166,6 +166,8 @@ export type Serpent = {
   scales: string;
   headFill: string;
   mouth: string;
+  /** The roof of the mouth, over the tail and under the lip. */
+  roof: string;
   /** The head's outline: its top and snout, the mouth's rim, the lower jaw and throat. */
   head: string;
   headScales: string;
@@ -441,10 +443,10 @@ function hollow(c: Pt, r: number, gap: number): string {
 function serpent(rs: number, w: number): Serpent {
   const O: Pt = [0, 0];
   const deg = (u: number) => (u / rs) * (180 / Math.PI);
-  /** The gape (the head's origin), the nape, and the tail's tip, under the cheek. */
-  const AG = deg(0.9 * w);
+  /** The middle of the mouth (the head's origin), the nape, and the tail's tip, hidden in the corner of the mouth. */
+  const AG = deg(0.55 * w);
   const AN = AG - deg(3 * w);
-  const AE = AG - deg(0.85 * w);
+  const AE = AG - deg(2.5 * w);
   const G = at(O, AG, rs);
   const ex: Pt = [Math.cos((AG * Math.PI) / 180), Math.sin((AG * Math.PI) / 180)];
   const ey: Pt = [ex[1], -ex[0]];
@@ -506,81 +508,105 @@ function serpent(rs: number, w: number): Serpent {
     return [d[0] * ex[0] + d[1] * ex[1], d[0] * ey[0] + d[1] * ey[1]];
   };
   const [nTop, nBot] = [local(outer[0]), local(inner[0])];
-  // The crown: from the nape up the back of the skull to the brow ridge, over the far brow, along the snout's ridge to its tip.
-  const top = facets([nTop, [nTop[0] + 0.55, nTop[1] + 0.5], [-1.85, 1.34], [-1.3, 1.74], [-0.95, 2.0], [-0.6, 1.9], [-0.25, 2.14], [0.25, 2.46], [0.6, 2.76], [0.94, 2.66], [1.1, 1.98], [0.96, 1.34]]);
-  // The mouth, gaping toward us under the snout: a tall dark opening, the upper lip clamped along the top of the tail, the corner
-  // of the mouth at its back, the lower jaw's inner rim round its foot; open at the front, where the tail runs out.
-  const innerRim = [[0.95, -1.0], [0.68, -1.3], [0.64, -2.25], [0.5, -2.62], [0.15, -2.74], [-0.2, -2.68], [-0.4, -2.36]];
-  const mouthKey = [[0.96, 1.34], [0.6, 1.36], [0.1, 1.34], [-0.36, 1.28], [-0.5, 0.8], [-0.52, -0.4], [-0.48, -1.7], ...[...innerRim].reverse()];
-  const mouthLine = spline(mouthKey, 4);
-  // The lower jaw hanging down, seen from the front and side: its outer edge round the mouth's foot, then the throat to the nape.
-  const outerKey = [[0.95, -1.0], [1.04, -1.3], [1.02, -2.35], [0.82, -2.92], [0.15, -3.1], [-0.38, -3.0], [-0.8, -2.72]];
-  const jaw = spline([...outerKey, [-1.35, -2.4], [-1.95, -1.98], nBot], 5);
-  const outline = [...top, ...jaw];
-  const headFill = path(pts(outline)) + 'Z';
-  const mouth = path(pts(mouthLine)) + 'Z';
-  const head = path(pts(top)) + path(pts(mouthLine)) + path(pts(jaw));
-  const silhouette = pts(outline);
-  const inHead = (x: number, y: number) => {
-    const p = H(x, y);
+  /** Below the tail, the head is drawn a little shallower than the woodcut, so the chin stays clear of the star in the ring. */
+  const lo = (y: number) => (y > -1 ? y : -1 + (y + 1) * 0.82);
+  const at2 = (k: number[][]) => k.map(([x, y]) => [x, lo(y)]);
+  const inPolyXY = (poly: number[][], x: number, y: number) => {
     let inside = false;
-    for (let i = 0, j = silhouette.length - 1; i < silhouette.length; j = i++) {
-      const [a, b] = [silhouette[i], silhouette[j]];
-      if (a[1] > p[1] !== b[1] > p[1] && p[0] < ((b[0] - a[0]) * (p[1] - a[1])) / (b[1] - a[1]) + a[0]) inside = !inside;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const [a, b] = [poly[i], poly[j]];
+      if (a[1] > y !== b[1] > y && x < ((b[0] - a[0]) * (y - a[1])) / (b[1] - a[1]) + a[0]) inside = !inside;
     }
     return inside;
   };
+  // The head points up and to the right: its top sweeps up from the neck to the snout's tip, then the snout's front drops to the
+  // tail's top edge, where the tail runs out of the mouth.
+  const top = [...spline([nTop, [-2.39, 0.97], [-1.48, 1.25], [-0.57, 1.99], [0.45, 2.48], [1.2, 2.56]], 4), ...facets([[1.2, 2.56], [1.58, 2.36], [1.73, 1.93], [1.82, 0.97]]).slice(1)];
+  // The gape: the upper lip, a long straight slant from under the snout down to the corner of the mouth, low on the left.
+  const B0 = [0.9, 2.14];
+  const C = [-2.44, -0.57];
+  const lipLine = steps(0, 1, 12).map((t) => [B0[0] + (C[0] - B0[0]) * t, B0[1] + (C[1] - B0[1]) * t]);
+  // From the corner, the lower jaw's inner line down the left of the dark cavity under the tail, across its floor and up its
+  // right side (near upright) to the tail's underside.
+  const lower = spline(at2([C, [-1.4, -0.75], [-1.05, -1.2], [-0.95, -1.9], [-0.4, -2.55], [0.3, -2.75], [1.15, -2.7], [1.17, -1.6], [1.14, -0.97]]), 4);
+  // The upper jaw's inner face under the snout, back up to the lip's start.
+  const front = [[1.82, 0.97], [1.53, 0.97], [1.08, 1.36], B0];
+  const mouthPts = [...lipLine, ...lower.slice(1), ...front];
+  const mouth = path(pts(mouthPts)) + 'Z';
+  // The roof of the mouth, over the tail, under the lip: in the head's tint, not dark (the dark is the cavity under the tail).
+  const roof = path(pts([...lipLine, [C[0] + 0.2, 0], [1.6, 0], ...front])) + 'Z';
+  // The lower jaw's outer edge from the tail's underside down round the chin and back up to the throat, then the neck to the nape.
+  const jaw = spline(at2([[1.14, -0.97], [1.36, -1.1], [1.38, -2.6], [1.3, -3.3], [0.6, -3.48], [-0.25, -3.3], [-0.9, -2.75], [-1.7, -2.05], [-2.4, -1.6]]).concat([nBot]), 4);
+  const headFill = path(pts([...top, [1.14, -0.97], ...jaw])) + 'Z';
+  const head = path(pts(top)) + path(pts([...front].reverse())) + path(pts([...lipLine, ...lower.slice(1)])) + path(pts(jaw));
+  const inHeadXY = (x: number, y: number) => inPolyXY([...top, [1.14, -0.97], ...jaw], x, y) && !inPolyXY(mouthPts, x, y);
 
-  // ---- the eye: an almond under the overhanging brow plate, a slit pupil, a glint ----
-  const E = [-1.06, 1.24];
-  const lensPts = (h0: number, h1: number, sx = 0.4) => [
-    ...steps(0, 1, 8).map((t) => [E[0] - sx + 2 * sx * t, E[1] + 0.05 * (2 * t - 1) + h0 * Math.sin(t * Math.PI)]),
-    ...steps(1, 0, 8).map((t) => [E[0] - sx + 2 * sx * t, E[1] + 0.05 * (2 * t - 1) - h1 * Math.sin(t * Math.PI)]).slice(1),
-  ];
-  const lens = path(pts(lensPts(0.24, 0.19))) + 'Z';
-  // The slit: a narrow upright lens.
-  const slit = path(pts(steps(0, 1, 16).map((t) => [E[0] + 0.06 * Math.sin(t * Math.PI * 2), E[1] + 0.2 * Math.cos(t * Math.PI * 2)]))) + 'Z';
-  // The brow plate, overhanging: its lower edge cuts across the top of the eye.
-  const brow = path(pts(facets([[-1.6, 1.3], [-1.4, 1.64], [-0.96, 1.76], [-0.52, 1.56], [-0.56, 1.42], [-0.95, 1.43], [-1.34, 1.4], [-1.6, 1.3]]))) + 'Z';
-  const near = (x: number, y: number, r: number) => Math.hypot(x - E[0], y - (E[1] + 0.12)) < r;
+  // ---- the eye: a slanted almond behind the snout, under a brow line; a slit pupil and a glint ----
+  const E = [-0.51, 1.42];
+  const tilt = 0.42;
+  const eyeAt = (u: number, v: number) => [E[0] + u * Math.cos(tilt) - v * Math.sin(tilt), E[1] + u * Math.sin(tilt) + v * Math.cos(tilt)];
+  const lens =
+    path(
+      pts([
+        ...steps(0, 1, 10).map((t) => eyeAt(-0.4 + 0.8 * t, 0.19 * Math.sin(t * Math.PI))),
+        ...steps(1, 0, 10)
+          .map((t) => eyeAt(-0.4 + 0.8 * t, -0.14 * Math.sin(t * Math.PI)))
+          .slice(1),
+      ]),
+    ) + 'Z';
+  const slit = path(pts(steps(0, 1, 16).map((t) => [E[0] + 0.05 * Math.sin(t * Math.PI * 2), E[1] + 0.17 * Math.cos(t * Math.PI * 2)]))) + 'Z';
+  const brow = path(pts([eyeAt(-0.5, 0.2), eyeAt(-0.1, 0.36), eyeAt(0.4, 0.34), eyeAt(0.52, 0.24), eyeAt(0.1, 0.25), eyeAt(-0.45, 0.13)])) + 'Z';
+  const near = (x: number, y: number, r: number) => Math.hypot(x - E[0], y - E[1]) < r;
+
+  // ---- the head's lines: the ridge along the upper jaw over the lip, two nostrils at the snout's tip, a notch at its front, the
+  // jaw's hinge from the corner, the crease down to the chin, the palate's ridges ----
   let details = '';
-  // The far brow's plate on the crown; the jaw's hinge behind the corner of the mouth; the ridge down the snout; a nostril.
-  details += path(pts(spline([[-0.42, 1.86], [-0.18, 1.98], [0.1, 2.02]], 4)));
-  details += path(pts(spline([[-0.66, 0.85], [-0.95, 0.15], [-1.28, -0.6], [-1.5, -1.3]], 4)));
-  details += path(pts(facets([[-0.55, 1.55], [0.2, 1.92], [0.8, 2.3]])));
-  details += path(pts([[0.86, 1.78], [0.98, 1.66]]));
+  details += path(pts([[0.45, 2.05], [-2.05, -0.34]]));
+  const dot = (x: number, y: number) => path(pts(steps(0, 1, 8).map((t) => [x + 0.05 * Math.cos(t * Math.PI * 2), y + 0.05 * Math.sin(t * Math.PI * 2)]))) + 'Z';
+  details += dot(0.62, 2.36) + dot(1.22, 2.38);
+  details += path(pts([[1.36, 2.18], [1.62, 2.22]]));
+  details += path(pts(spline(at2([C, [-2.75, -1.1], [-2.6, -1.5]]), 4)));
+  details += path(pts(spline(at2([[-0.68, -2.27], [-0.35, -2.85], [-0.11, -3.25]]), 4)));
+  for (const t of [0.25, 0.45, 0.65]) {
+    const p = [B0[0] + (C[0] - B0[0]) * t, B0[1] + (C[1] - B0[1]) * t];
+    details += path(pts([[p[0] + 0.12, p[1] - 0.2], [p[0] + 0.45, p[1] - 0.22]]));
+  }
 
-  // ---- the head's scales: plates on the snout and crown, larger on the cheek, lip scales along each jaw ----
+  // ---- the head's scales: plates on the crown and snout over the lip's ridge, larger ones on the cheek and lower jaw, lip
+  // scales along the lip and the lower jaw's rim ----
   let headScales = '';
-  const plate = (x: number, y: number, p: number) =>
+  const plate = (x: number, y: number, q: number) =>
     path(
       pts(
         steps(-90, 90, 6).map((th) => {
           const r = (th * Math.PI) / 180;
-          return [x - 0.42 * p + 0.46 * p * Math.cos(r), y + 0.46 * p * Math.sin(r)];
+          return [x - 0.42 * q + 0.46 * q * Math.cos(r), y + 0.46 * q * Math.sin(r)];
         }),
       ),
     );
-  const field = (x0: number, x1: number, y0: number, y1: number, p: number, keep: (x: number, y: number) => boolean) => {
+  const field = (x0: number, x1: number, y0: number, y1: number, q: number, keep: (x: number, y: number) => boolean) => {
     let row = 0;
-    for (let y = y0; y <= y1; y += p * 0.86, row++)
-      for (let x = x0 + (row % 2) * p * 0.5; x <= x1; x += p) if (inHead(x - 0.3 * p, y) && inHead(x + 0.3 * p, y) && keep(x, y)) headScales += plate(x, y, p);
+    for (let y = y0; y <= y1; y += q * 0.86, row++)
+      for (let x = x0 + (row % 2) * q * 0.5; x <= x1; x += q) if (inHeadXY(x - 0.32 * q, y) && inHeadXY(x + 0.32 * q, y) && inHeadXY(x, y + 0.3 * q) && inHeadXY(x, y - 0.3 * q) && keep(x, y)) headScales += plate(x, y, q);
   };
-  // Crown and snout, above the brow and the snout's ridge; the cheek and neck, behind the mouth's corner and the hinge.
-  field(-2.3, 0.95, 1.1, 2.75, 0.44, (x, y) => (x < -0.55 ? y > 1.25 : y > 1.66 + (x + 0.55) * 0.33) && !near(x, y, 0.62));
-  field(-2.7, -0.75, -2.2, 1.05, 0.56, (x, y) => !near(x, y, 0.6) && x < -0.78 && !(Math.abs(y - (0.15 - (x + 0.95) * 2.1)) < 0.2 && x > -1.6));
-  // Lip scales: along the upper jaw over the lip, and across the lower jaw between its rim and its outer edge.
-  for (let x = -0.3; x < 0.9; x += 0.3) {
-    const y = 1.06 + Math.max(0, x - 0.1) * 0.17;
-    headScales += path(pts([[x, y + 0.08], [x + 0.04, y + 0.38]]));
+  const ridge = (x: number) => 2.05 + (x - 0.45) * 0.956;
+  field(-2.8, 1.5, 0.2, 2.6, 0.42, (x, y) => y > ridge(x) + 0.14 && !near(x, y, 0.52));
+  field(-2.8, 1.4, -3.2, 0.4, 0.52, (x, y) => y < ridge(x) - 0.3);
+  for (let t = 0.08; t < 0.95; t += 0.09) {
+    const p = [B0[0] + (C[0] - B0[0]) * t, B0[1] + (C[1] - B0[1]) * t];
+    headScales += path(pts([[p[0] - 0.06, p[1] + 0.08], [p[0] - 0.2, p[1] + 0.3]]));
   }
-  const [rimL, outL] = [spline(innerRim, 6), spline(outerKey, 6)];
-  for (let i = 4; i < Math.min(rimL.length, outL.length) - 2; i += 4) headScales += path(pts([rimL[i], outL[i]]));
+  for (let i = 3; i < lower.length - 3; i += 3) {
+    const [x, y] = lower[i];
+    const [nx, ny] = [lower[i + 1][1] - lower[i - 1][1], -(lower[i + 1][0] - lower[i - 1][0])];
+    const l = Math.hypot(nx, ny) || 1;
+    headScales += path(pts([[x - (nx / l) * 0.06, y - (ny / l) * 0.06], [x - (nx / l) * 0.28, y - (ny / l) * 0.28]]));
+  }
 
-  // ---- the fangs, curving back into the mouth as a viper's do: two long ones down from the upper jaw, sunk into the tail; two
-  // shorter ones up from the lower jaw ----
-  const fang = (root: number[], tip: number[], bow: number, wide: number) => {
-    const [dx, dy] = [tip[0] - root[0], tip[1] - root[1]];
+  // ---- the teeth, curving back into the mouth as a viper's do: one big fang down from the upper jaw near the snout, in front
+  // of the tail; a small tooth up from the cavity's floor ----
+  const fang = (root: number[], tipP: number[], bow: number, wide: number) => {
+    const [dx, dy] = [tipP[0] - root[0], tipP[1] - root[1]];
     const len = Math.hypot(dx, dy);
     // The bulge faces forward (toward the snout), so the tip hooks back.
     let [nx, ny] = [-dy / len, dx / len];
@@ -593,36 +619,36 @@ function serpent(rs: number, w: number): Serpent {
       });
     return path(pts([...side(1), ...side(-1).reverse()])) + 'Z';
   };
-  const teeth = fang([0.64, 1.36], [0.4, 0.05], 0.13, 0.12) + fang([0.24, 1.33], [0.08, 0.42], 0.12, 0.09) + fang([0.46, -2.64], [0.34, -1.82], 0.12, 0.1) + fang([0.08, -2.72], [0, -2.18], 0.12, 0.07);
+  const teeth = fang([0.72, 1.78], [0.6, 0.22], 0.12, 0.17) + fang([0.36, lo(-2.73)], [0.3, lo(-1.85)], 0.12, 0.09);
 
-  // ---- the tongue: a ribbon from the floor of the mouth, out over the lower jaw, hanging down in a gentle S, forked ----
+  // ---- the tongue: a ribbon out of the cavity's floor by the chin, hanging down and to the right in an S, forked ----
   const spine = spline(
     [
-      [-0.15, -2.3],
-      [0.3, -2.5],
-      [0.8, -2.72],
-      [1.18, -2.98],
-      [1.32, -3.3],
-      [1.4, -3.6],
-      [1.62, -3.86],
+      [0.7, -2.2],
+      [1.05, -2.55],
+      [1.55, -2.9],
+      [1.95, -3.25],
+      [2.28, -3.65],
+      [2.2, -4.0],
+      [2.36, -4.3],
     ],
     6,
   );
   const ribbon = (sgn: number) =>
-    spine.map((p, i) => {
-      const q = spine[Math.min(spine.length - 1, i + 1)];
+    spine.map((q, i) => {
+      const nq = spine[Math.min(spine.length - 1, i + 1)];
       const o = spine[Math.max(0, i - 1)];
-      const [dx, dy] = [q[0] - o[0], q[1] - o[1]];
+      const [dx, dy] = [nq[0] - o[0], nq[1] - o[1]];
       const l = Math.hypot(dx, dy) || 1;
       const hw = 0.17 - 0.05 * (i / (spine.length - 1));
-      return [p[0] - (dy / l) * hw * sgn, p[1] + (dx / l) * hw * sgn];
+      return [q[0] - (dy / l) * hw * sgn, q[1] + (dx / l) * hw * sgn];
     });
   const [e1, e2] = [ribbon(1), ribbon(-1)];
   const end = spine.at(-1)!;
   const prev = spine.at(-3)!;
   const da = Math.atan2(end[1] - prev[1], end[0] - prev[0]);
-  const tip = (turn: number): number[] => [end[0] + 0.36 * Math.cos(da + turn), end[1] + 0.36 * Math.sin(da + turn)];
-  const [t1, t2] = [tip(0.42), tip(-0.42)];
+  const tip = (turn: number): number[] => [end[0] + 0.38 * Math.cos(da + turn), end[1] + 0.38 * Math.sin(da + turn)];
+  const [t1, t2] = [tip(0.45), tip(-0.45)];
   const crotch = [end[0] + 0.06 * Math.cos(da), end[1] + 0.06 * Math.sin(da)];
   const tongue = path(pts([...e1, t1])) + path(pts([...e2, t2]));
   const tongueFill = path(pts([...e1, t1, crotch, t2, ...[...e2].reverse()])) + 'Z';
@@ -638,6 +664,7 @@ function serpent(rs: number, w: number): Serpent {
     scales,
     headFill,
     mouth,
+    roof,
     head,
     headScales,
     details,
@@ -645,7 +672,7 @@ function serpent(rs: number, w: number): Serpent {
     tongue,
     tongueFill,
     fork,
-    eye: { lens, slit, glint: H(E[0] + 0.13, E[1] + 0.06), glintR: 0.06 * w },
+    eye: { lens, slit, glint: H(E[0] + 0.12, E[1] + 0.08), glintR: 0.06 * w },
     brow,
   };
 }
@@ -731,7 +758,7 @@ const ROOM_BESIDE = 36;
 const ROOM_STACKED = 34;
 const ROOM_NONE = 12;
 /** The last seal's radius: the ouroboros must read as a serpent at a glance, and hold a star. */
-const END_R = 32;
+const END_R = 34;
 /** "uncharted" as set (EB Garamond italic, 12.5 px), with its brace (the brace's curl, its gap from the wall). */
 const UNCH_WORD = 50;
 const BRACE = 3;
@@ -1535,7 +1562,7 @@ export function descentPlate(W: number, H: number, deepest: number | null, met: 
       r: endR,
       lit: past,
       delay: COIL_AT,
-      serpent: serpent(endR * 0.656, endR * 0.125),
+      serpent: serpent(endR * 0.62, endR * 0.125),
     },
     legend,
     star,
