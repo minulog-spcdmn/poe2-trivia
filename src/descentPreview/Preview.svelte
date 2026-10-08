@@ -36,6 +36,12 @@
       : FINDS_IN_ORDER.map((f) => f.kind),
   );
   let replay = $state(0);
+  /** How the ouroboros is drawn, to compare (descent.html?ouro=outline); the component's own choice when unset. */
+  let ouro = $state<'' | 'filled' | 'outline'>((['filled', 'outline'] as const).find((v) => v === query.get('ouro')) ?? '');
+  $effect(() => {
+    if (ouro) document.documentElement.dataset.ouro = ouro;
+    else delete document.documentElement.dataset.ouro;
+  });
   let walking: ReturnType<typeof setInterval> | null = $state(null);
 
   /** Records worth seeing (depths as the records keep them: shown one less). */
@@ -103,6 +109,12 @@
       <span class="what">Presets</span>
       {#each PRESETS as x (x.name)}
         <button class:on={depth === x.best && lastDepth === x.last && met.length === x.met.length} onclick={() => preset(x)}>{x.name}</button>
+      {/each}
+    </div>
+    <div class="row">
+      <span class="what">Ouroboros</span>
+      {#each [['', 'Default'], ['filled', 'Filled'], ['outline', 'Outline']] as [v, name] (v)}
+        <button class:on={ouro === v} onclick={() => (ouro = v as typeof ouro)}>{name}</button>
       {/each}
     </div>
   </header>

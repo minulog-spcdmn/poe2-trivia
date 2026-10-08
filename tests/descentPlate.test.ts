@@ -77,10 +77,10 @@ test('the stars stand in the left wall, between its lines, the depth under them;
   for (const p of plates(216, 30)) {
     assert.ok(p.star.inSnake);
     assert.deepEqual(p.star.c, p.endless.c);
-    assert.ok(p.star.cut < p.endless.ouro.inner, "inside the ring, clear of the snake's tongue");
-    assert.ok(p.endless.ouro.reach > p.endless.r, 'its head goes over the seal');
+    assert.ok(p.star.cut < p.endless.ouro.inner, "inside the ring, clear of the snakes' jaws");
+    assert.ok(p.endless.ouro.hole > p.endless.ouro.inner && p.endless.ouro.reach > p.endless.ouro.hole, 'a ring, the heads over it');
     assert.equal(p.star.num!.anchor, 'start');
-    assert.ok(p.star.num!.x > p.endless.c[0] + p.endless.ouro.reach, "beside the seal, clear of the snake's head as it turns");
+    assert.ok(p.star.num!.x > p.endless.c[0] + p.endless.ouro.reach, "beside the seal, clear of the heads as it turns");
     assert.ok(p.star.mid, 'it comes down the lane and then into the ouroboros');
   }
 });

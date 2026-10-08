@@ -152,15 +152,16 @@ export type Mark = {
   delay: number;
 };
 /**
- * The ouroboros on the last seal: the user's artwork (lib/ouroborosArt, in
- * its 1200 box) drawn at `scale` about its ring's centre (`cx`, `cy` in the
- * artwork), which sits on the seal's centre. `tail` is where its tail comes
- * out from under its jaws (clockwise from the top): the draw-in sweeps round
- * from there and ends with the head. `inner` and `reach` are how near the
- * centre (the tongue's tip) and how far from it (the head) it goes, `hole`
- * the radius of the ring's hole and `mid` the middle of its body, in px.
+ * The ouroboros on the last seal (lib/ouroborosArt: two snakes, each biting
+ * the other's tail, in its drawing's px about the ring's centre), drawn at
+ * `scale` on the seal's centre. Each snake draws in from where its body
+ * meets the other's head (`from`, degrees clockwise from the top) round
+ * anticlockwise to its own head; the second is the first turned half round.
+ * `inner` and `reach` are how near the centre (the heads' jaws) and how far
+ * from it (the heads' crowns) it goes, `hole` the radius of the ring's hole
+ * and `mid` the middle of its body, in px.
  */
-export type Ouro = { scale: number; cx: number; cy: number; tail: number; inner: number; hole: number; mid: number; reach: number };
+export type Ouro = { scale: number; from: number; inner: number; hole: number; mid: number; reach: number };
 /**
  * A star, drawn about its centre `c` (its outline, ridges, hatching and glory
  * are about 0, 0, so the glory can turn), its depth by it. The gold one comes
@@ -402,13 +403,12 @@ function hollow(c: Pt, r: number, gap: number): string {
 }
 
 /**
- * The ouroboros artwork's ring, measured in its 1200 box (a circle fitted to
- * its hole): its centre, the hole's radius, the outer edge of its body, how
- * far its head reaches from the centre, and how near its tongue's tip comes;
- * and where its tail comes out from under the jaws (degrees clockwise from
- * the top).
+ * The ouroboros' ring, measured in its drawing's px (lib/ouroborosArt): the
+ * hole's radius and the body's outer edge (each to the outside of its
+ * outline), how far the heads reach and how near the centre their jaws come;
+ * and where each snake's body meets the other's head (clockwise from the top).
  */
-const OURO = { cx: 582.3, cy: 625.6, hole: 342.8, outer: 422, reach: 509.9, tongue: 154.1, tail: 28 };
+const OURO = { hole: 197.8, outer: 243.7, reach: 248.9, inner: 169.4, from: 156 };
 
 // ---- collisions: segments, boxes and discs ----
 type Seg = [Pt, Pt];
@@ -1292,7 +1292,7 @@ export function descentPlate(W: number, H: number, deepest: number | null, met: 
       r: endR,
       lit: past,
       delay: COIL_AT,
-      ouro: { scale: ouroScale, cx: OURO.cx, cy: OURO.cy, tail: OURO.tail, inner: OURO.tongue * ouroScale, hole: OURO.hole * ouroScale, mid: ((OURO.hole + OURO.outer) / 2) * ouroScale, reach: endReach },
+      ouro: { scale: ouroScale, from: OURO.from, inner: OURO.inner * ouroScale, hole: OURO.hole * ouroScale, mid: ((OURO.hole + OURO.outer) / 2) * ouroScale, reach: endReach },
     },
     legend,
     star,
