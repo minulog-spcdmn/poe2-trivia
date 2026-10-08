@@ -39,7 +39,7 @@
 
 {#snippet metal(m: (typeof metals)[number])}
   <div class="stat">
-    <span class="stat-label" style:color={METALS[m.tier].color}>{m.name}</span>
+    <span class="stat-label" style:color={METALS[m.tier].label ?? METALS[m.tier].color}>{m.name}</span>
     <span class="stat-value">{m.have}<small> / {m.of}</small></span>
     <span class="stat-note">{m.have === m.of ? 'every one earned' : `${m.of - m.have} still to earn`}</span>
   </div>

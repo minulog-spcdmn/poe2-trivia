@@ -1606,21 +1606,36 @@ class Session {
     const veilShare = a?.share !== undefined ? { qid: a.qid, share: a.share } : undefined;
     void Promise.all([import('./achievements'), import('./achievementToasts')])
       .then(([{ noteState }, { announceAchievements }]) => {
-        announceAchievements(noteState(prev, next, me, hotSeat, veilShare), 'game');
+        announceAchievements(noteState(prev, next, me, hotSeat, { items: engine.items, veilShare }), 'game');
       })
       .catch((err) => console.warn('achievements', err));
   }
 
+  /** A check of the achievements is waiting for an idle moment (noteAchievements). */
+  private achievementsDue = false;
+
   /**
    * Brings the achievements up to date with what was just recorded in the
    * codex or the Delve records, and announces any earned (lib/achievementToasts.ts).
+   * It reads and sums up the whole codex, so it waits for an idle moment
+   * rather than running as a reveal begins (its notice waits a moment
+   * anyway), and several asked for before it runs make one check.
    */
   private noteAchievements() {
+    if (this.achievementsDue) return;
+    this.achievementsDue = true;
+    const idle = (run: () => void) => (typeof requestIdleCallback === 'function' ? requestIdleCallback(run, { timeout: 1000 }) : setTimeout(run, 300));
     void Promise.all([import('./achievements'), import('./achievementToasts')])
-      .then(([{ checkAchievements }, { announceAchievements }]) => {
-        announceAchievements(checkAchievements(engine.items), 'game');
-      })
-      .catch((err) => console.warn('achievements', err));
+      .then(([{ checkAchievements }, { announceAchievements }]) =>
+        idle(() => {
+          this.achievementsDue = false;
+          announceAchievements(checkAchievements(engine.items), 'game');
+        }),
+      )
+      .catch((err) => {
+        this.achievementsDue = false;
+        console.warn('achievements', err);
+      });
   }
 
   /** Delve: the fuse waiting to burn, for the question and the 0 it burns down to (`key`). */

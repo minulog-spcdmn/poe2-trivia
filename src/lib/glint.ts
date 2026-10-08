@@ -18,6 +18,8 @@ export const GLINT_EVERY = 9000;
 export const GLINT_SWEEP = 1400;
 
 const reduced = matchMedia('(prefers-reduced-motion: reduce)');
+/** Held still: reduced motion, or the effects switched off in the app (html[data-still]). */
+export const still = () => reduced.matches || document.documentElement.hasAttribute('data-still');
 
 const SLIT = [{ transform: 'translateX(-100%) skewX(-20deg)' }, { transform: 'translateX(100%) skewX(-20deg)' }];
 const COPY = [{ transform: 'skewX(20deg) translateX(100%)' }, { transform: 'skewX(20deg) translateX(-100%)' }];
@@ -60,13 +62,15 @@ export function passingLight(every: number, sweep: number, { travel = false } = 
   }
 
   function pass() {
-    if (!document.hidden && !reduced.matches) {
-      for (const slit of slits) {
-        const delay = delayOf(slit);
+    if (!document.hidden && !still()) {
+      // Every position is read before any animation starts, so the page is laid out once a pass, not once a seal.
+      const lit = [...slits].map((slit) => [slit, delayOf(slit)] as const);
+      const kindled = [...sparks].map((spark) => [spark, delayOf(spark)] as const);
+      for (const [slit, delay] of lit) {
         slit.animate(SLIT, { ...timing, delay, fill: 'backwards' });
         slit.firstElementChild?.animate(COPY, { ...timing, delay, fill: 'backwards' });
       }
-      for (const spark of sparks) spark.animate(SPARK, { duration: SPARK_MS, delay: delayOf(spark) + sweep * SPARK_AT, easing: 'ease-out' });
+      for (const [spark, delay] of kindled) spark.animate(SPARK, { duration: SPARK_MS, delay: delay + sweep * SPARK_AT, easing: 'ease-out' });
     }
     schedule();
   }

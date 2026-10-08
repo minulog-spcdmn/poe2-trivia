@@ -101,6 +101,8 @@ export type Tier = 0 | 1 | 2 | 3;
 export interface Metal {
   name: string;
   color: string;
+  /** Its name's colour on the page, where the seal's own would be too dark to read. */
+  label?: string;
   sheen?: { color: string; opacity: number };
   light: { every: number; sweep: number; band: number; gleam: string; strength: number; spark?: true };
 }
@@ -109,6 +111,7 @@ export const METALS: Record<Tier, Metal> = {
   0: {
     name: 'Lead',
     color: '#6e7073',
+    label: '#a2a7ac',
     sheen: { color: '#a2a7ac', opacity: 0.38 },
     light: { every: 13000, sweep: 2400, band: 26, gleam: '#d9dde1', strength: 0.35 },
   },
@@ -718,6 +721,11 @@ export interface VersusTrack {
   lead: Record<string, number>;
   /** The largest lead this player has had over each rival, by id (missing in trackers from before it). */
   ahead: Record<string, number>;
+  /**
+   * Followed from the game's first question: only then does `wrong` speak for
+   * the whole game (a tab opened mid-game never saw the answers before it).
+   */
+  whole: boolean;
   /** This player's own answers seen revealed, and whether any was wrong (or ran out of time). */
   answered: number;
   wrong: boolean;
@@ -732,6 +740,16 @@ export interface VersusTrack {
 /** A game against others: online, this player seated, someone else seated, not Delve. */
 function versusGame(s: GameState, me: string | null, hotSeat: boolean): s is GameState & { startedAt: number } {
   return !hotSeat && !!me && !s.delve && !!s.startedAt && s.players.length >= 2 && s.players.some((p) => p.id === me);
+}
+
+/**
+ * Whether a game is seen from its first question: its start came in with this
+ * change (the state before was the lobby, or another game), or it stands at
+ * its first question with nothing answered yet.
+ */
+function seenFromStart(prev: GameState | null, next: GameState & { startedAt: number }): boolean {
+  if (prev && prev.startedAt !== next.startedAt) return true;
+  return next.turnCount === 0 && !next.reveal && next.players.every((p) => p.score === 0) && !next.question?.misses.length;
 }
 
 /**
@@ -750,7 +768,9 @@ export function trackVersus(
 ): VersusTrack | null {
   if (!versusGame(next, me, hotSeat) || next.phase === 'lobby') return track && track.game === next.startedAt ? track : null;
   let t: VersusTrack =
-    track?.game === next.startedAt ? track : { game: next.startedAt, lead: {}, ahead: {}, answered: 0, wrong: false, guessed: [], veiled: 0, last: 0 };
+    track?.game === next.startedAt
+      ? track
+      : { game: next.startedAt, whole: seenFromStart(prev, next), lead: {}, ahead: {}, answered: 0, wrong: false, guessed: [], veiled: 0, last: 0 };
   const race = next.settings.mode === 'race';
   const r = newReveal(prev, next);
   const changed = () => (t === track ? (t = { ...t, lead: { ...t.lead }, ahead: { ...t.ahead }, guessed: [...t.guessed] }) : t);
@@ -807,7 +827,7 @@ export function versusEnd(s: GameState, me: string | null, hotSeat: boolean, tra
   if (outcome === 'lost') return { outcome, earned: t && s.winners.some((id) => (t.ahead[id] ?? 0) >= COMEBACK) ? ['hubris'] : [] };
   const there = s.players.filter((p) => p.id !== me && p.connected);
   const race = s.settings.mode === 'race';
-  const flawless = !!t && t.answered > 0 && !t.wrong;
+  const flawless = !!t && t.whole && t.answered > 0 && !t.wrong;
   const out: string[] = ['first-victory'];
   const dm = s.deathmatch;
   if (dm && dm.results[me!] === true && dm.eliminated.some((id) => dm.results[id] === false)) out.push('deathmatch');
@@ -860,7 +880,7 @@ export function parseTrack(raw: string | null): VersusTrack | null {
   };
   const guessed = Array.isArray(v.guessed) ? v.guessed.filter((id): id is string => typeof id === 'string' && id.length <= 64).slice(0, 64) : [];
   const last = typeof v.last === 'number' && Number.isFinite(v.last) ? v.last : 0;
-  return { game: v.game, lead: leads(v.lead), ahead: leads(v.ahead), answered: whole(v.answered), wrong: v.wrong === true, guessed, veiled: whole(v.veiled), last };
+  return { game: v.game, whole: v.whole === true, lead: leads(v.lead), ahead: leads(v.ahead), answered: whole(v.answered), wrong: v.wrong === true, guessed, veiled: whole(v.veiled), last };
 }
 
 /** A stored list, cleaned up; null when it's missing, malformed or from another version. */
@@ -960,9 +980,20 @@ const none = (): Check => ({ earned: [], first: false });
 function open(): { store: AchievementStore; first: boolean } | null {
   const raw = tryReadStored(NAME);
   if (raw === undefined) return null;
-  const stored = parseStore(raw);
+  const stored = parsed(raw);
   if (raw && !stored && !makeRoom(NAME, raw, ACHIEVEMENTS_VERSION)) return null;
   return { store: stored ?? emptyStore(), first: !stored };
+}
+
+/**
+ * The last list read, so a run that keeps re-earning what it already has
+ * (every state change past depth 10 earns depth 10 again) parses it once,
+ * not on every change.
+ */
+let lastRead: { raw: string | null; store: AchievementStore | null } | null = null;
+function parsed(raw: string | null): AchievementStore | null {
+  if (lastRead?.raw !== raw) lastRead = { raw, store: parseStore(raw) };
+  return lastRead.store;
 }
 
 /** Writes `store` with `ids` earned now (those it didn't have yet), and says which those were. */
@@ -972,7 +1003,9 @@ function earn(store: AchievementStore, first: boolean, ids: string[]): Check {
   const now = Date.now();
   const next: AchievementStore = { ...store, earned: { ...store.earned } };
   for (const id of fresh) next.earned[id] = now;
-  if (!writeStored(NAME, serializeStore(next))) return none();
+  const raw = serializeStore(next);
+  if (!writeStored(NAME, raw)) return none();
+  lastRead = { raw, store: next };
   return { earned: fresh.map((id) => achievementById.get(id)!), first };
 }
 
@@ -996,16 +1029,16 @@ const TRACK = 'achievements.versus';
 
 /**
  * A state change of a room or a run as this device saw it: follows a game
- * against others, and says what its moments earned (written already). Never
- * quiet: what the codex and the records would earn on a first check waits
- * for the check after them (lib/session.svelte.ts), or the start page.
+ * against others, and says what its moments earned (written already).
+ * Announced, unless there is no list yet: then the first check is made here,
+ * quietly, with them (see checkAchievements).
  */
 export function noteState(
   prev: GameState | null,
   next: GameState,
   me: string | null,
   hotSeat: boolean,
-  veilShare?: { qid: number; share: number },
+  { items = [], veilShare }: { items?: Item[]; veilShare?: { qid: number; share: number } } = {},
 ): Check {
   const delve = momentsIn(prev, next, me, hotSeat);
   const ended: string[] = [];
@@ -1028,8 +1061,11 @@ export function noteState(
   if (!ids.length) return none();
   const o = open();
   if (!o) return none();
-  const check = earn(o.store, o.first, ids);
-  return { earned: check.earned, first: false };
+  // No list yet: these join the quiet first catch-up with the codex and the
+  // records (`items`, the game's), which the start page tells, rather than
+  // starting the list loudly and leaving the catch-up to be announced as new.
+  if (o.first) return checkAchievements(items, ids);
+  return earn(o.store, false, ids);
 }
 
 /**
@@ -1037,7 +1073,10 @@ export function noteState(
  * next one earned is announced (the first check after none at all is quiet).
  */
 export function resetAchievements() {
-  writeStored(NAME, serializeStore(emptyStore()));
-  removeStored(WINS);
+  // A newer build's are never written over, erased or not.
+  const raw = tryReadStored(NAME);
+  if (!raw || !newerThan(raw, ACHIEVEMENTS_VERSION)) writeStored(NAME, serializeStore(emptyStore()));
+  const wins = tryReadStored(WINS);
+  if (wins && !newerThan(wins, WINS_VERSION)) removeStored(WINS);
   clearAside(NAME);
 }

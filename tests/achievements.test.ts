@@ -712,6 +712,36 @@ test('Undefeated: wins in a row are kept apart from the list, a loss starts them
   assert.equal(store.get(WINS_AT), undefined);
 });
 
+test('a game followed only from part way through never counts as without a wrong answer', () => {
+  // Ash misses the first question, then their tab is opened anew (no tracker, nothing before it) and they answer the rest right.
+  const { engine, s } = setup(['Ash', 'Bram'], { target: 10 });
+  let st = s;
+  for (let missed = false; !missed; ) {
+    const who = st.players[st.turn].id;
+    st = engine.apply(st, { type: 'pick', category: st.offered[0] }, who);
+    st = engine.apply(st, { type: 'answer', index: wrongIdx(st.question!) }, who);
+    st = engine.apply(st, { type: 'next' }, 'p0');
+    missed = who === 'p0';
+  }
+  let prev: GameState | null = null;
+  const earned: string[] = [];
+  const step = (next: GameState) => {
+    earned.push(...ids(noteState(prev, publicView(next), 'p0', false).earned));
+    prev = publicView(next);
+    st = next;
+  };
+  step(st);
+  for (let n = 0; n < 80 && st.phase !== 'over'; n++) {
+    const who = st.players[st.turn].id;
+    step(engine.apply(st, { type: 'pick', category: st.offered[0] }, who));
+    step(engine.apply(st, { type: 'answer', index: who === 'p0' ? right(st.question!) : wrongIdx(st.question!) }, who));
+    if (st.phase === 'reveal') step(engine.apply(st, { type: 'next' }, 'p0'));
+  }
+  assert.deepEqual(st.winners, ['p0']);
+  assert.ok(earned.includes('first-victory'));
+  assert.ok(!earned.includes('untarnished'), JSON.stringify(earned));
+});
+
 test('a game whose end first comes in after a reload is judged, once', () => {
   store.set(WINS_AT, serializeWins({ now: 4, best: 4, last: 1 }));
   const won = followed(true, true);
@@ -761,12 +791,22 @@ test('an achievement once earned stays earned', () => {
   assert.ok(loadAchievements().earned['streak-25']);
 });
 
-test('moments are written as they happen, never quietly, and once', () => {
+test('moments are written as they happen, announced, and once', () => {
+  resetAchievements();
   const at50 = delve({ a: [3] }, { round: 51 });
   const c = noteState(null, at50, 'a', false);
   assert.deepEqual([ids(c.earned), c.first], [['depth-10', 'depth-50'], false]);
   assert.deepEqual(ids(noteState(null, at50, 'a', false).earned), []);
   assert.ok(loadAchievements().earned['depth-50']);
+});
+
+test('a moment before there is any list joins the quiet first catch-up', () => {
+  // A player with past games reloads straight into a run: the codex's achievements and the moment come as one quiet check.
+  codexWith(codexOf(Array.from({ length: 25 }, () => ({}))));
+  const c = noteState(null, delve({ a: [3] }, { round: 11 }), 'a', false, { items });
+  assert.deepEqual([ids(c.earned).sort(), c.first], [['depth-10', 'streak-25'], true]);
+  // Nothing from the past is left to be announced as new afterwards.
+  assert.deepEqual(checkAchievements(items), { earned: [], first: false });
 });
 
 test('the game in play is followed across reloads and let go at its end', () => {
@@ -803,6 +843,16 @@ test('erasing leaves an empty list, so the next achievement is announced', () =>
   assert.equal(after.first, false);
 });
 
+test("erasing leaves a newer build's list and wins alone", () => {
+  const list = JSON.stringify({ v: ACHIEVEMENTS_VERSION + 1, earned: { 'streak-25': 1 } });
+  const wins = JSON.stringify({ v: WINS_VERSION + 1, now: 3 });
+  store.set(ACHIEVEMENTS_KEY, list);
+  store.set(WINS_AT, wins);
+  resetAchievements();
+  assert.equal(store.get(ACHIEVEMENTS_KEY), list);
+  assert.equal(store.get(WINS_AT), wins);
+});
+
 test('a list a newer build wrote is never written over; a damaged one is kept aside', () => {
   const newer = JSON.stringify({ v: ACHIEVEMENTS_VERSION + 1, earned: { 'streak-25': 1 }, shape: 'new' });
   store.set(ACHIEVEMENTS_KEY, newer);
@@ -825,7 +875,7 @@ test('a stored list is cleaned up as it is read', () => {
   assert.deepEqual(s.earned, { untarnished: 10, 'from-a-newer-build': 20 });
   assert.deepEqual(parseStore(serializeStore(s)), s);
   const t = parseTrack(JSON.stringify({ game: 5, lead: { p1: 4, p2: -1, p3: 'x' }, answered: 3.5, wrong: 1, guessed: ['p1', 7], veiled: 2.5, last: 9 }));
-  assert.deepEqual(t, { game: 5, lead: { p1: 4 }, ahead: {}, answered: 3, wrong: false, guessed: ['p1'], veiled: 2, last: 9 });
+  assert.deepEqual(t, { game: 5, whole: false, lead: { p1: 4 }, ahead: {}, answered: 3, wrong: false, guessed: ['p1'], veiled: 2, last: 9 });
   assert.deepEqual(parseTrack(JSON.stringify({ game: 5, ahead: { p1: 4, p2: 'x' } }))?.ahead, { p1: 4 });
   assert.equal(parseTrack(JSON.stringify({ game: 'x' })), null);
   assert.equal(parseTrack('{broken'), null);

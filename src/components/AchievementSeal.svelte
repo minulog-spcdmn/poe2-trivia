@@ -33,6 +33,9 @@
   } from '../lib/alchemy';
   import { at, line, ring, wear, type Pt } from '../lib/arcane';
   import { passingLight } from '../lib/glint';
+
+  /** Reduced motion: no light ever passes, so no copy of the lines is kept for it. */
+  const moving = typeof matchMedia !== 'function' || !matchMedia('(prefers-reduced-motion: reduce)').matches;
   import { METALS, TIERS, type Sign, type Tier } from '../lib/achievements';
 
   const C: Pt = [0, 0];
@@ -148,7 +151,7 @@
       <circle r={OUTER} class="done" pathLength="100" stroke-dasharray="{share * 100} 100" transform="rotate(-90)" />
     {/if}
   </svg>
-  {#if earned}
+  {#if earned && moving}
     {#key tier}
       <span class="slit" use:sheen={tier}><svg viewBox="-24 -24 48 48">{@render engraving(true)}</svg></span>
       {#if METALS[tier].light.spark}
@@ -255,11 +258,10 @@
     stroke: none;
     filter: drop-shadow(0 0 2px rgba(255, 214, 140, 0.9));
   }
-  @media (prefers-reduced-motion: reduce) {
-    .slit,
-    .spark {
-      display: none;
-    }
+  /* Effects off in the app: no light passes (lib/glint.ts skips it too). */
+  :global(html[data-still]) .slit,
+  :global(html[data-still]) .spark {
+    display: none;
   }
 
   /* The glow: the same lines, wide and faint, under them. */
