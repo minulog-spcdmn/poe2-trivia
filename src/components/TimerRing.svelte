@@ -93,7 +93,15 @@
    */
   const leftAt = (end: number, now: number) =>
     untrack(() => clockLeft({ deadline: end, held: session.state?.delve ? session.state.question?.held : undefined }, now));
-  let lastTick = -1;
+  /**
+   * The last whole second the clock was seen on (null until it is first
+   * seen): the urgent tick sounds only as the clock crosses into a new
+   * second, so it keeps its beat. A clock seen first part way through a
+   * second (a mount mid-question, or a flare's added seconds as its streak
+   * lands) waits for the next whole second instead of ticking at once and
+   * then again a moment later.
+   */
+  let lastSecs: number | null = null;
   let started = false;
 
   // Delve: while the clock runs, the light shrinks with it (lib/darkness.ts).
@@ -148,10 +156,13 @@
       if (secs !== Math.ceil(remaining / 1000) || left === 0 || (Math.abs(remaining - left) * C) / spanMs >= 1 / 3) {
         remaining = left;
       }
-      if (secs <= warn && secs > 0 && secs !== lastTick) {
-        lastTick = secs;
-        sfx('tick');
-        if (el) timerTick(el, secs);
+      if (secs !== lastSecs) {
+        const crossed = lastSecs !== null && secs < lastSecs;
+        lastSecs = secs;
+        if (crossed && secs <= warn && secs > 0) {
+          sfx('tick');
+          if (el) timerTick(el, secs);
+        }
       }
       if (left > 0) raf = requestAnimationFrame(loop);
     };
