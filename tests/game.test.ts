@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { PALETTE } from '../src/lib/palette.ts';
-import { Engine, ActionError, AUTO_NEXT_MS, autoNextLeft, createGame, KNOB_STEPS, PRESETS, cleanKnobs, knobsOf, isDifficulty, isFake, rulesFor, RARE_GROUPS, nameSimilarity, publicView, questionTopic, singular, renameCategories, MAX_PLAYERS, type Difficulty, type Preset, type GameState, type Item, type Question } from '../src/lib/game.ts';
+import { Engine, ActionError, AUTO_NEXT_MS, autoNextLeft, createGame, KNOB_STEPS, PRESETS, cleanKnobs, knobsOf, isDifficulty, isFake, rulesFor, RARE_GROUPS, RARE_MAX_OPTIONS, maxFakes, nameSimilarity, publicView, questionTopic, singular, renameCategories, MAX_PLAYERS, type Difficulty, type Preset, type GameState, type Item, type Question } from '../src/lib/game.ts';
 
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
 const fakes: Record<string, string[]> = JSON.parse(readFileSync(new URL('../src/data/fakes.json', import.meta.url), 'utf8'));
@@ -310,6 +310,27 @@ test('ten options: a small group shares the question as five beside five of anot
   // Wands and sceptres (eight each) are too few to fill ten alone, and four groups too few for five pairs.
   assert.deepEqual([...answered].sort(), ['One-Handed Maces', 'Sceptres', 'Spears', 'Wands']);
   assert.ok(fives > 50, `${fives} questions of two groups of five`);
+});
+
+test('ten options: a tablet, too few to fill ten and never mixed, is asked with eight', () => {
+  const custom = { ...PRESETS.eternal, options: 10, fakes: 3, artChance: 0.5 };
+  const engine = new Engine(items, { rng: seeded(11), fakes });
+  const s = createGame(null, { targetScore: 5, timer: 0, difficulty: 'custom', custom, mode: 'turns', public: false, locked: false });
+  let tablets = 0;
+  for (let i = 0; i < 600; i++) {
+    const q = engine.makeQuestion(s, 'Flasks, Charms, Jewels, Relics & Tablets');
+    const groupOf = (id: string) => engine.byId.get(isFake(id) ? id.split(':')[1] : id)!.group;
+    if (groupOf(q.itemId) === 'Tablets') {
+      tablets++;
+      assert.equal(q.options.length, RARE_MAX_OPTIONS);
+      assert.ok(q.options.every((id) => groupOf(id) === 'Tablets'), 'tablets never mix');
+      assert.ok(q.options.filter(isFake).length <= maxFakes(RARE_MAX_OPTIONS));
+    } else {
+      assert.equal(q.options.length, 10);
+      assert.ok(!q.options.some((id) => groupOf(id) === 'Tablets'), 'no tablet among other groups');
+    }
+  }
+  assert.ok(tablets > 10, `${tablets} tablet questions`);
 });
 
 test('the topic counts a made-up name under the item it copies', () => {

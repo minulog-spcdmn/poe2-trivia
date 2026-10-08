@@ -92,7 +92,8 @@ the same thing for everyone.
   gets easier. The player isn't told what changes where; they feel it. A
   few things come in steps: four options for the first ten depths, six from
   10, eight from 30, ten from 69 (where a small kind like wands or relics
-  can still be the answer as five of its own beside five of another); one
+  can still be the answer as five of its own beside five of another, and a
+  tablet, of which there are only nine, is asked with eight); one
   made-up name from 4, two from 16, three from 44;
   the timer and the lockout (below). No two steps share a depth. The rest
   rises a little at every depth, never in a jump (no depth moves one by more

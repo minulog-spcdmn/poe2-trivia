@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { LOOKALIKES_FROM, LOOKALIKES_TO, delveLookalikes } from '../src/lib/delve.ts';
-import { Engine, createGame, isFake, type GameState, type Item, type Question, type Settings } from '../src/lib/game.ts';
+import { Engine, RARE_GROUPS, RARE_MAX_OPTIONS, createGame, isFake, type GameState, type Item, type Question, type Settings } from '../src/lib/game.ts';
 import { readLooks, type Looks } from '../src/lib/looks.ts';
 
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
@@ -135,7 +135,8 @@ test('without the table, or for an item it lacks, look-alikes go by name and the
     // Once handed the table, the next questions change, but only their picks.
     const r = ask(late, 140, category);
     if (i < 60) assert.deepEqual(r, q);
-    else assert.equal(r.options.length, q.options.length);
+    // (Ten options, but eight for a tablet: RARE_MAX_OPTIONS.)
+    else assert.equal(r.options.length, late.byId.get(r.itemId)!.group in RARE_GROUPS ? RARE_MAX_OPTIONS : 10);
   }
 });
 

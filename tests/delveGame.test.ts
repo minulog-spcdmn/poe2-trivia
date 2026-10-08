@@ -12,7 +12,7 @@ import {
   livesOf,
   veilSeconds,
 } from '../src/lib/delve.ts';
-import { ActionError, Engine, activeRules, createGame, isFake, lastPicks, publicView, type Action, type GameState, type Item, type Question, type Settings } from '../src/lib/game.ts';
+import { ActionError, Engine, RARE_GROUPS, RARE_MAX_OPTIONS, activeRules, createGame, isFake, lastPicks, publicView, type Action, type GameState, type Item, type Question, type Settings } from '../src/lib/game.ts';
 
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
 const fakes: Record<string, string[]> = JSON.parse(readFileSync(new URL('../src/data/fakes.json', import.meta.url), 'utf8'));
@@ -243,7 +243,10 @@ test('three different categories every turn, locked out as long as the depth say
     // A find's card asks under its deeper depth's rules.
     const find = findOn(h.s, offered[i % 3]);
     h.act({ type: 'pick', category: offered[i % 3] });
-    assert.equal(h.s.question!.options.length, (find ? findRules(find, h.s.round) : delveRules(h.s.round)).options);
+    // (A tablet, too few to fill ten, is asked with fewer: RARE_MAX_OPTIONS.)
+    const asked = (find ? findRules(find, h.s.round) : delveRules(h.s.round)).options;
+    const tablet = h.engine.byId.get(h.s.question!.itemId)!.group in RARE_GROUPS;
+    assert.equal(h.s.question!.options.length, tablet ? Math.min(asked, RARE_MAX_OPTIONS) : asked);
     h.clockIn();
     h.act({ type: 'answer', index: right(h.s.question!), askedAt: h.s.question!.askedAt });
     h.act({ type: 'next' });

@@ -124,7 +124,9 @@ export function delveCurve(knob: keyof typeof DELVE_CURVES, d: number): number {
  * The knobs that still come in steps, each from the depth where it starts:
  * options (four for the first ten depths, six from 11, eight from 31, ten
  * from 70, where a small group like wands, quivers or relics can still be
- * the answer as five of its own beside five of another) and made-up names.
+ * the answer as five of its own beside five of another, and a tablet, too
+ * few to fill ten and never mixed, is asked with eight: game.ts
+ * RARE_MAX_OPTIONS) and made-up names.
  * Never on a depth where another step, the timer or the lockout changes.
  */
 export const OPTIONS_FROM: { from: number; options: number }[] = [

@@ -193,6 +193,16 @@ export const RARE_GROUPS: Record<string, number> = { Tablets: 0.25 };
 const weightOf = (it: Item) => RARE_GROUPS[it.group] ?? 1;
 
 /**
+ * The most options a question about a rare group's item shows. Rare groups
+ * never mix with others, and there are only nine tablets, so where the rules
+ * ask for ten (Delve from depth 70) a tablet is asked with eight instead.
+ */
+export const RARE_MAX_OPTIONS = 8;
+
+/** How many options a question with `it` as its answer shows, where the rules ask for `options`. */
+const optionsFor = (it: Item, options: number) => (weightOf(it) === 1 ? options : Math.min(options, RARE_MAX_OPTIONS));
+
+/**
  * How hard the art/name roll leans toward whichever has come up less than its
  * share: each question it runs behind adds this much to its chance.
  */
@@ -2429,7 +2439,6 @@ export class Engine {
     const special: Pick<Question, 'find'> = s.delve && kind.find ? { find: kind.find } : {};
     const rules = s.delve ? delveQuestionRules(s.round, special) : activeRules(s);
     const inCat = this.byCategory.get(category) ?? [];
-    const need = rules.options - 1;
     let mode = this.rollMode(s);
     let fakes = mode === 'name' && this.fakes.size ? rules.fakes : 0;
     // Delve, past depth 100: now and then one more made-up name, as far as they fit.
@@ -2463,7 +2472,7 @@ export class Engine {
       const others = (group: string) => [...left].flatMap(([g, n]) => (g === group || Object.hasOwn(RARE_GROUPS, g) ? [] : [n]));
       return unused.filter((it) => {
         const siblings = left.get(it.group)! - 1;
-        return siblings >= need || (weightOf(it) === 1 && evenSizes(rules.options, siblings, others(it.group), fakes).length > 0);
+        return siblings >= optionsFor(it, rules.options) - 1 || (weightOf(it) === 1 && evenSizes(rules.options, siblings, others(it.group), fakes).length > 0);
       });
     };
     let unused = this.unusedIn(s, category);
@@ -2476,6 +2485,10 @@ export class Engine {
       candidates = answerable(unused);
     }
     const answer = this.weightedPick(candidates.length ? candidates : unused.length ? unused : inCat);
+    // Fewer for a rare group's item (RARE_MAX_OPTIONS), and its made-up names to match.
+    const count = optionsFor(answer, rules.options);
+    const need = count - 1;
+    fakes = Math.min(fakes, maxFakes(count));
 
     const sameGroup = unused.filter((it) => it.id !== answer.id && it.group === answer.group);
     // Decoys come from the answer's own group (all rings, all bows…): a flask
@@ -2495,7 +2508,7 @@ export class Engine {
     // not (the same seed only asks the same question if it was there both
     // times or neither).
     const byArt = !!rules.lookalikes && this.rng() < rules.lookalikes;
-    const decoys = this.lookalikes(answer, pool, simCount, rules.options, byArt);
+    const decoys = this.lookalikes(answer, pool, simCount, count, byArt);
     // Rest at random, preferring the same group, then the category, then anything.
     for (const source of [pool, unused, inCat, this.items]) {
       if (decoys.length >= need) break;
