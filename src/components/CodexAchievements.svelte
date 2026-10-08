@@ -3,42 +3,38 @@
   import type { Codex } from '../lib/codex';
   import type { DelveRecords } from '../lib/delveRecord';
   import type { Item } from '../lib/game';
-  import { ACHIEVEMENTS, GROUPS, standings, summarize, type AchievementStore } from '../lib/achievements';
+  import { ACHIEVEMENTS, GROUPS, standings, summarize, type AchievementStore, type WinRun } from '../lib/achievements';
+  import { METALS, TIERS } from '../lib/metals';
+  import { motion } from '../lib/motion.svelte';
   import { backdropShadow } from '../lib/backdropShadow';
   import ArcaneCircle from './ArcaneCircle.svelte';
-  import AchievementSeal, { METALS } from './AchievementSeal.svelte';
+  import AchievementSeal from './AchievementSeal.svelte';
 
   // The Codex's third page: every achievement, earned or not, by group, each
   // on its seal, with how far along you are where that is kept (a moment has
   // no bar: it is earned as it happens). The figures round the rune circle
-  // count them by metal. What each one needs, and how it is counted, is in
+  // count them by metal, gold to lead. What each one needs, and how it is counted, is in
   // lib/achievements.ts.
-  let { codex, records, store, items }: { codex: Codex; records: DelveRecords; store: AchievementStore; items: Item[] } = $props();
+  let { codex, records, store, wins, items }: { codex: Codex; records: DelveRecords; store: AchievementStore; wins: WinRun; items: Item[] } = $props();
 
-  const still = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const rise = (delay: number) => ({ y: 20, duration: still ? 0 : 700, delay: still ? 0 : delay });
+  const rise = (delay: number) => ({ y: 20, duration: motion.still ? 0 : 700, delay: motion.still ? 0 : delay });
+  /** How far along, 0 to 1 (nothing to do counts as nothing done). */
+  const shareOf = (p: { have: number; need: number }) => (p.need > 0 ? Math.min(1, p.have / p.need) : 0);
 
   const date = (t: number) => new Date(t).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
   const fmt = (n: number) => n.toLocaleString();
 
-  const list = $derived(standings(summarize(codex, records, items), store));
+  const list = $derived(standings(summarize(codex, records, items, wins), store));
   const earned = $derived(list.filter((r) => r.earned !== null));
   const groups = $derived(GROUPS.map((g) => ({ ...g, rows: list.filter((r) => r.achievement.group === g.key) })));
   /** Earned and all, by metal (gold first). */
   const metals = $derived(
-    ([3, 2, 1] as const).map((tier) => ({
+    [...TIERS].reverse().map((tier) => ({
       tier,
-      name: tier === 3 ? 'Gold' : tier === 2 ? 'Silver' : 'Copper',
+      name: METALS[tier].name,
       have: earned.filter((r) => r.achievement.tier === tier).length,
       of: ACHIEVEMENTS.filter((a) => a.tier === tier).length,
     })),
-  );
-  /** The last earned; of several earned at once, the hardest. */
-  const latest = $derived(
-    earned.reduce<(typeof earned)[number] | null>(
-      (a, b) => (!a || b.earned! > a.earned! || (b.earned === a.earned && b.achievement.tier > a.achievement.tier) ? b : a),
-      null,
-    ),
   );
   /** The earned share as an arc around the medallion (its circle's circumference is 100). */
   const share = $derived(earned.length / ACHIEVEMENTS.length);
@@ -46,7 +42,7 @@
 
 {#snippet metal(m: (typeof metals)[number])}
   <div class="stat">
-    <span class="stat-label" style:color={METALS[m.tier]}>{m.name}</span>
+    <span class="stat-label" style:color={METALS[m.tier].label ?? METALS[m.tier].color}>{m.name}</span>
     <span class="stat-value">{m.have}<small> / {m.of}</small></span>
     <span class="stat-note">{m.have === m.of ? 'every one earned' : `${m.of - m.have} still to earn`}</span>
   </div>
@@ -80,16 +76,7 @@
 
   <div class="side">
     {@render metal(metals[2])}
-    <div class="stat">
-      <span class="stat-label">Latest</span>
-      {#if latest}
-        <span class="stat-title">{latest.achievement.title}</span>
-        <span class="stat-note">{date(latest.earned!)}</span>
-      {:else}
-        <span class="stat-value">?</span>
-        <span class="stat-note">none earned yet</span>
-      {/if}
-    </div>
+    {@render metal(metals[3])}
   </div>
 </section>
 
@@ -109,7 +96,7 @@
           {@const won = r.earned !== null}
           {@const hidden = !won && !!a.secret}
           <li class="feat" class:won class:hidden>
-            <AchievementSeal sign={a.sign} tier={a.tier} earned={won} secret={!!a.secret} progress={p && !hidden ? p.have / p.need : 0} size={52} />
+            <AchievementSeal sign={a.sign} tier={a.tier} earned={won} secret={!!a.secret} progress={p && !hidden ? shareOf(p) : 0} size={52} />
             <div class="body">
               <span class="title">{hidden ? 'Secret' : a.title}</span>
               <span class="text">{hidden ? 'Hidden until you earn it.' : a.text}</span>
@@ -117,7 +104,7 @@
                 <span class="when">Earned {date(r.earned!)}</span>
               {:else if !hidden && p && p.need > 1}
                 <span class="advance">
-                  <span class="meter" aria-hidden="true"><span class="fill" style:width="{Math.min(1, p.have / p.need) * 100}%"></span></span>
+                  <span class="meter" aria-hidden="true"><span class="fill" style:width="{shareOf(p) * 100}%"></span></span>
                   <span class="count">{fmt(Math.min(p.have, p.need))} / {fmt(p.need)}</span>
                 </span>
                 {#if p.note}<span class="note">{p.note}</span>{/if}
@@ -181,16 +168,6 @@
   }
   .stat-value small {
     font-size: 1.1rem;
-  }
-  /* The latest one's name, where the others have a number. */
-  .stat-title {
-    font-family: var(--font-display);
-    font-size: 1.05rem;
-    line-height: 1.2;
-    margin-bottom: 0.3rem;
-    max-width: 9rem;
-    color: var(--gold-hi);
-    filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.8));
   }
   .stat-note {
     font-size: 0.92rem;
@@ -290,7 +267,7 @@
     color: var(--muted);
   }
 
-  /* Three to a row; a group of six fills two rows, three on a tablet, six on a phone. */
+  /* Three to a row; a group of nine fills three rows, on a phone nine. On a tablet, two to a row, the ninth centred under them. */
   .feats {
     list-style: none;
     margin: 0;
@@ -401,6 +378,11 @@
     .feats {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
+    .feat:last-child:nth-child(odd) {
+      grid-column: 1 / -1;
+      justify-self: center;
+      width: calc(50% - 0.3rem);
+    }
   }
   @media (max-width: 560px) {
     .summary {
@@ -425,6 +407,10 @@
     }
     .feats {
       grid-template-columns: minmax(0, 1fr);
+    }
+    .feat:last-child:nth-child(odd) {
+      justify-self: stretch;
+      width: auto;
     }
     .feat {
       gap: 0.65rem;

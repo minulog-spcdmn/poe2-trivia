@@ -15,17 +15,23 @@ import {
   isDone,
   loadAchievements,
   momentsIn,
+  forfeit,
+  nextWins,
   noteState,
   parseStore,
+  parseWins,
   parseTrack,
   resetAchievements,
   serializeStore,
   summarize,
   trackVersus,
+  serializeWins,
   versusEnd,
+  WINS_VERSION,
   type VersusTrack,
 } from '../src/lib/achievements.ts';
 import { storeKey } from '../src/lib/storage.ts';
+import { forgiveLeaving, leftGame, losing, noteLeaving } from '../src/lib/versus.ts';
 
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
 const fakes: Record<string, string[]> = JSON.parse(readFileSync(new URL('../src/data/fakes.json', import.meta.url), 'utf8'));
@@ -148,6 +154,43 @@ test('Fool Me Twice is a secret, earned by the same made-up name twice', () => {
   assert.ok(earnedFrom(sum(codexOf([], { fooled: { 'Fake Name': { of: items[0].id, n: 2, last: 3 } } }))).includes('fooled-twice'));
 });
 
+test('Prima Materia counts the different items answered right', () => {
+  const c = emptyCodex();
+  for (const it of items.slice(0, 24)) c.items[it.id] = { seen: 1, first: 1, last: 1, name: { n: 1, ok: 1 }, art: { n: 0, ok: 0 }, mixed: {} };
+  assert.ok(!earnedFrom(sum(c)).includes('prima-materia'));
+  c.items[items[24].id] = { seen: 1, first: 1, last: 1, name: { n: 0, ok: 0 }, art: { n: 1, ok: 1 }, mixed: {} };
+  assert.ok(earnedFrom(sum(c)).includes('prima-materia'));
+  // The same item right 25 times is one item.
+  assert.ok(!earnedFrom(sum(codexOf(Array.from({ length: 25 }, () => ({}))))).includes('prima-materia'));
+});
+
+test('Sweet Revenge: an item answered right after three wrong answers to it in a row', () => {
+  const [a, b] = [items[0].id, items[1].id];
+  // Other items' answers in between don't break it; races count too.
+  const revenge = sum(codexOf([{ id: a, ok: false }, { id: b }, { id: a, ok: false, race: true }, { id: a, ok: false }, { id: b, ok: false }, { id: a }]));
+  assert.equal(revenge.revenge, true);
+  assert.ok(earnedFrom(revenge).includes('sweet-revenge'));
+  // A right answer to it in between starts the count over.
+  assert.equal(sum(codexOf([{ id: a, ok: false }, { id: a, ok: false }, { id: a }, { id: a, ok: false }, { id: a }])).revenge, false);
+  // Three wrong answers to three items are no revenge.
+  assert.equal(sum(codexOf([{ id: a, ok: false }, { id: b, ok: false }, { id: items[2].id, ok: false }, { id: a }])).revenge, false);
+});
+
+test('each group opens with one very easy achievement in lead', () => {
+  for (const g of GROUPS) {
+    const list = ACHIEVEMENTS.filter((a) => a.group === g.key);
+    assert.equal(list[0].tier, 0, g.key);
+    assert.equal(list.filter((a) => a.tier === 0).length, 1, g.key);
+  }
+});
+
+test('Quicksilver: twenty quick right answers in a row, the tier above Mercurial', () => {
+  const quick = (n: number) => Array.from({ length: n }, () => ({ ms: 1800 }));
+  assert.ok(!earnedFrom(sum(codexOf(quick(19)))).includes('quicksilver'));
+  assert.ok(earnedFrom(sum(codexOf(quick(20)))).includes('quicksilver'));
+  assert.ok(!earnedFrom(sum(codexOf([...quick(10), { ms: 2100 }, ...quick(10)]))).includes('quicksilver'));
+});
+
 // ---- from the Delve records ------------------------------------------------------
 
 const solo = (o: Partial<DelveRun>): DelveRun => ({ id: 1, at: 1, depth: 10, players: 1, ruleset: 1, mixed: false, ...o });
@@ -202,6 +245,13 @@ test('Familiar Grave: a fall at exactly the best before it', () => {
   assert.equal(sum(emptyCodex(), better).grave, false);
 });
 
+test('Familiar Grave: a run left and then ended at the same depth never ties itself', () => {
+  // Left at 22 (never a best, so no step of the climb), then rejoined and fallen there.
+  recordsOf([solo({ id: 1, at: 1, depth: 22, left: true, losses: [5, 9] })]);
+  const r = recordsOf([solo({ id: 1, at: 2, depth: 22, losses: [5, 9, 22] })]);
+  assert.equal(sum(emptyCodex(), r).grave, false);
+});
+
 test('runs together: lives given in one run, and the deepest depth stood at', () => {
   const r = recordsOf([team({ id: 1, depth: 80, perished: [40, 78], given: 2 }), team({ id: 2, depth: 90, perished: [12], given: 1 })]);
   const s = sum(emptyCodex(), r);
@@ -214,6 +264,19 @@ test('runs together: lives given in one run, and the deepest depth stood at', ()
   store.clear();
   // Left while down: they last stood where they fell.
   assert.equal(sum(emptyCodex(), recordsOf([team({ depth: 80, left: true, perished: [60] })])).deepCompany, 59);
+});
+
+test('runs together: the team\'s depth and times brought back', () => {
+  const r = recordsOf([team({ id: 1, depth: 11, perished: [4, 8, 11], revived: 3 }), team({ id: 2, depth: 9, perished: [9], revived: 1 })]);
+  const s = sum(emptyCodex(), r);
+  // The team's depth counts for Roped Together, even with this player down before it.
+  assert.equal(s.deepTeam, 10);
+  assert.equal(s.revived, 3);
+  for (const id of ['roped-together', 'dead-weight']) assert.ok(earnedFrom(s).includes(id), id);
+  store.clear();
+  const short = sum(emptyCodex(), recordsOf([team({ id: 1, depth: 10, perished: [10], revived: 2 })]));
+  assert.ok(!earnedFrom(short).includes('roped-together'), 'shown 9');
+  assert.ok(!earnedFrom(short).includes('dead-weight'));
 });
 
 // ---- moments in a run ------------------------------------------------------------
@@ -252,14 +315,16 @@ const was = (s: GameState) => ({ ...s, phase: 'question' as const, reveal: null 
 
 test('alone: depths reached, untouched, and on the last life', () => {
   // Depth 50 as players see it (shownDepth) is round 51.
-  assert.deepEqual(momentsIn(null, delve({ a: [3] }, { round: 51 }), 'a', false), ['depth-50']);
-  assert.deepEqual(momentsIn(null, delve({ a: [3] }, { round: 50 }), 'a', false), []);
-  assert.deepEqual(momentsIn(null, delve({ a: [3] }, { round: 101 }), 'a', false), ['depth-50', 'depth-100']);
-  assert.deepEqual(momentsIn(null, delve({ a: [3] }, { round: 100 }), 'a', false), ['depth-50']);
-  assert.deepEqual(momentsIn(null, delve({ a: [] }, { round: 41 }), 'a', false), ['untouched']);
-  assert.deepEqual(momentsIn(null, delve({ a: [] }, { round: 40 }), 'a', false), []);
-  assert.deepEqual(momentsIn(null, delve({ a: [41] }, { round: 42 }), 'a', false), ['untouched'], 'it reached 40 with every life');
-  assert.deepEqual(momentsIn(null, delve({ a: [40] }, { round: 42 }), 'a', false), []);
+  assert.deepEqual(momentsIn(null, delve({ a: [3] }, { round: 11 }), 'a', false), ['depth-10']);
+  assert.deepEqual(momentsIn(null, delve({ a: [3] }, { round: 10 }), 'a', false), []);
+  assert.deepEqual(momentsIn(null, delve({ a: [3] }, { round: 51 }), 'a', false), ['depth-10', 'depth-50']);
+  assert.deepEqual(momentsIn(null, delve({ a: [3] }, { round: 50 }), 'a', false), ['depth-10']);
+  assert.deepEqual(momentsIn(null, delve({ a: [3] }, { round: 101 }), 'a', false), ['depth-10', 'depth-50', 'depth-100']);
+  assert.deepEqual(momentsIn(null, delve({ a: [3] }, { round: 100 }), 'a', false), ['depth-10', 'depth-50']);
+  assert.deepEqual(momentsIn(null, delve({ a: [] }, { round: 41 }), 'a', false), ['depth-10', 'untouched']);
+  assert.deepEqual(momentsIn(null, delve({ a: [] }, { round: 40 }), 'a', false), ['depth-10']);
+  assert.deepEqual(momentsIn(null, delve({ a: [41] }, { round: 42 }), 'a', false), ['depth-10', 'untouched'], 'it reached 40 with every life');
+  assert.deepEqual(momentsIn(null, delve({ a: [40] }, { round: 42 }), 'a', false), ['depth-10']);
   // On the last life since 31: survived depths 32 to 41.
   const thread = delve({ a: [5, 31] }, { round: 41, r: { correct: true } });
   assert.ok(momentsIn(was(thread), thread, 'a', false).includes('by-a-thread'));
@@ -271,7 +336,7 @@ test('alone: depths reached, untouched, and on the last life', () => {
   const earlier = delve({ a: [2, 3] }, { round: 40, r: { correct: true } });
   assert.ok(!momentsIn(was(earlier), earlier, 'a', false).includes('by-a-thread'));
   // On one device, its one player; a spectator or another seat, nothing.
-  assert.deepEqual(momentsIn(null, delve({ a: [] }, { round: 51 }), null, true), ['depth-50', 'untouched']);
+  assert.deepEqual(momentsIn(null, delve({ a: [] }, { round: 51 }), null, true), ['depth-10', 'depth-50', 'untouched']);
   assert.deepEqual(momentsIn(null, delve({ a: [] }, { round: 51 }), 'z', false), []);
   assert.deepEqual(momentsIn(null, { ...delve({ a: [] }, { round: 51 }), delve: { ...delve({ a: [] }).delve!, mixed: true } }, 'a', false), []);
 });
@@ -347,6 +412,41 @@ test('together: falling as one, and the lone wolf', () => {
   assert.ok(!momentsIn(was(lonely), lonely, 'a', false).includes('lone-wolf'));
 });
 
+test('a pack full of everything, alone only', () => {
+  const full = { wards: 3, flares: 3, dynamite: 3, shards: 0 };
+  const laden = (o: Partial<typeof full>, losses: Record<string, number[]> = { a: [] }) => {
+    const s = delve(losses, { round: 70 });
+    return { ...s, delve: { ...s.delve!, inventory: Object.fromEntries(Object.keys(losses).map((id) => [id, { ...full, ...o }])) } };
+  };
+  assert.ok(momentsIn(null, laden({}), 'a', false).includes('fully-laden'));
+  assert.ok(!momentsIn(null, laden({ flares: 2 }), 'a', false).includes('fully-laden'));
+  assert.ok(!momentsIn(null, laden({ wards: 2, shards: 1 }), 'a', false).includes('fully-laden'));
+  assert.ok(!momentsIn(null, laden({}, { a: [], b: [] }), 'a', false).includes('fully-laden'), 'together');
+});
+
+test('Chain Reaction: a cache blast that takes your own dynamite, alone or together', () => {
+  const alone = delve({ a: [12] }, { round: 12, r: { correct: false, blown: 'dynamite' } });
+  assert.ok(momentsIn(was(alone), alone, 'a', false).includes('chain-reaction'));
+  const flare = delve({ a: [12] }, { round: 12, r: { correct: false, blown: 'flares' } });
+  assert.ok(!momentsIn(was(flare), flare, 'a', false).includes('chain-reaction'));
+  const hit = (playerId: string, blown?: 'dynamite') => ({ playerId, lives: 1, wards: 0, timedOut: false, ...(blown ? { blown } : {}) });
+  const team = delve({ a: [12], b: [12] }, { round: 12, r: { correct: false, hits: [hit('a'), hit('b', 'dynamite')] } });
+  assert.ok(momentsIn(was(team), team, 'b', false).includes('chain-reaction'));
+  assert.ok(!momentsIn(was(team), team, 'a', false).includes('chain-reaction'), "a teammate's");
+});
+
+test('together: roped to depth 10, the unbroken circle, and dead weight', () => {
+  assert.ok(momentsIn(null, delve({ a: [], b: [1, 2, 3] }, { round: 11 }), 'b', false).includes('roped-together'), 'down, but in the run');
+  assert.ok(!momentsIn(null, delve({ a: [], b: [] }, { round: 10 }), 'a', false).includes('roped-together'));
+  assert.ok(momentsIn(null, delve({ a: [10], b: [5, 20], c: [] }, { round: 61 }), 'a', false).includes('unbroken-circle'));
+  assert.ok(!momentsIn(null, delve({ a: [10], b: [5, 20], c: [] }, { round: 60 }), 'a', false).includes('unbroken-circle'), 'shown 59');
+  assert.ok(!momentsIn(null, delve({ a: [], b: [3, 5, 9], c: [] }, { round: 61, revives: [rv('a', 'b', 9)] }), 'a', false).includes('unbroken-circle'));
+  const thrice = [rv('a', 'b', 3), rv('c', 'b', 6), rv('a', 'b', 9)];
+  assert.ok(momentsIn(null, delve({ a: [1], b: [1, 2, 3, 6, 9], c: [] }, { round: 12, revives: thrice }), 'b', false).includes('dead-weight'));
+  assert.ok(!momentsIn(null, delve({ a: [1], b: [1, 2, 3, 6, 9], c: [] }, { round: 12, revives: thrice }), 'a', false).includes('dead-weight'));
+  assert.ok(!momentsIn(null, delve({ a: [1], b: [1, 2, 3, 6], c: [] }, { round: 12, revives: thrice.slice(0, 2) }), 'b', false).includes('dead-weight'));
+});
+
 test('the lone wolf: teammates who left count from where they fell or left', () => {
   /** a and c seated, b gone: where b went is in `fellLeft` or `leftAt`. */
   const without = (round: number, over: { fellLeft?: number; leftAt?: number }) => {
@@ -376,8 +476,8 @@ test('a fallen teammate leaving the run is kept as where they fell', () => {
 
 // ---- games against others ---------------------------------------------------------
 
-function setup(names: string[], o: { mode?: GameMode; target?: number; difficulty?: 'cruel' | 'merciless' | 'eternal' } = {}) {
-  let clock = 1000;
+function setup(names: string[], o: { mode?: GameMode; target?: number; difficulty?: 'cruel' | 'merciless' | 'eternal'; start?: number } = {}) {
+  let clock = o.start ?? 1000;
   const engine = new Engine(items, { rng: seeded(3), fakes, now: () => (clock += 10) });
   let s: GameState = createGame('p0', { targetScore: o.target ?? 5, timer: 0, difficulty: o.difficulty ?? 'cruel', mode: o.mode ?? 'turns', public: false, locked: false });
   names.forEach((name, i) => (s = engine.apply(s, { type: 'join', playerId: `p${i}`, name }, `p${i}`)));
@@ -397,7 +497,8 @@ function play(engine: Engine, s: GameState, me: string, answer: (who: string, q:
     track = trackVersus(track, prev, view, me, false, share !== undefined && next.question ? { qid: next.question.askedAt, share } : undefined);
     const e = encounterAt(view, me, false, 1000);
     if (e && (prev?.phase !== 'reveal' || prev.question?.askedAt !== next.question?.askedAt)) recordEncounter(e);
-    const earned = versusEnd(prev, view, me, false, track);
+    // Judged as the end comes in.
+    const earned = view.phase === 'over' && prev?.phase !== 'over' ? versusEnd(view, me, false, track).earned : [];
     prev = view;
     return earned;
   };
@@ -456,9 +557,9 @@ test('the loser, a game to 4, a spectator or one device earns nothing', () => {
   r = play(g.engine, g.s, 'p0', (who, q) => (who === 'p0' ? right(q) : wrongIdx(q)));
   assert.deepEqual(r.earned, []);
   const over = r.s;
-  const before = { ...over, phase: 'reveal' as const };
-  assert.deepEqual(versusEnd(before, over, 'zz', false, null, []), []);
-  assert.deepEqual(versusEnd(before, over, 'p0', true, null, []), []);
+  assert.deepEqual(versusEnd(over, 'zz', false, null), { outcome: null, earned: [] });
+  assert.deepEqual(versusEnd(over, 'p0', true, null), { outcome: null, earned: [] });
+  assert.deepEqual(versusEnd({ ...over, phase: 'reveal' }, 'p0', false, null), { outcome: null, earned: [] }, 'not over yet');
 });
 
 test('Tide Turner: a win after a rival led by 4 at a round end', () => {
@@ -537,6 +638,259 @@ test('Usurper: a win over the creator, never as the creator', () => {
   assert.ok(!play(her.engine, her.s, 'p1', (who, q) => (who === 'p1' ? right(q) : wrongIdx(q))).earned.includes('usurper'));
 });
 
+test('First Victory: any win against others that counts', () => {
+  const g = setup(['Ash', 'Bram']);
+  const won = play(g.engine, g.s, 'p0', (who, q) => (who === 'p0' ? right(q) : wrongIdx(q)));
+  assert.ok(won.earned.includes('first-victory'));
+  store.clear();
+  const lost = setup(['Ash', 'Bram']);
+  assert.ok(!play(lost.engine, lost.s, 'p1', (who, q) => (who === 'p0' ? right(q) : wrongIdx(q))).earned.includes('first-victory'));
+});
+
+test('Hubris: a loss after leading the winner by 4 at a round end', () => {
+  // Ash takes the first four rounds while Bram misses them, then misses every round after while Bram takes them.
+  const play2 = (lead: number) => {
+    store.clear();
+    tab.clear();
+    const { engine, s } = setup(['Ash', 'Bram']);
+    let rounds = 0;
+    return play(engine, s, 'p0', (who, q, st) => {
+      if (who === st.players[0].id) rounds++;
+      const early = rounds <= lead;
+      return (who === 'p0') === early ? right(q) : wrongIdx(q);
+    });
+  };
+  const fell = play2(4);
+  assert.deepEqual(fell.s.winners, ['p1']);
+  assert.deepEqual(fell.earned, ['hubris']);
+  const close = play2(3);
+  assert.deepEqual(close.s.winners, ['p1']);
+  assert.deepEqual(close.earned, [], 'only ever 3 ahead');
+});
+
+/**
+ * A game Ash (p0) plays to its end as their tab follows it through noteState:
+ * `wins` says whether Ash answers right and Bram wrong, or the other way
+ * round; `reload`: the tab reloads just before the end comes in.
+ */
+function followed(wins: boolean, reload = false, start?: number) {
+  const { engine, s } = setup(['Ash', 'Bram'], { start });
+  let st = s;
+  let prev: GameState | null = null;
+  const earned: string[] = [];
+  const step = (next: GameState) => {
+    const view = publicView(next);
+    earned.push(...ids(noteState(reload && next.phase === 'over' && prev?.phase !== 'over' ? null : prev, view, 'p0', false, { items }).earned));
+    prev = view;
+    st = next;
+  };
+  step(st);
+  for (let n = 0; n < 50 && st.phase !== 'over'; n++) {
+    const who = st.players[st.turn].id;
+    step(engine.apply(st, { type: 'pick', category: st.offered[0] }, who));
+    step(engine.apply(st, { type: 'answer', index: (who === 'p0') === wins ? right(st.question!) : wrongIdx(st.question!) }, who));
+    if (st.phase === 'reveal') step(engine.apply(st, { type: 'next' }, 'p0'));
+  }
+  assert.equal(st.phase, 'over');
+  return { earned, again: () => step(st) };
+}
+
+const WINS_AT = storeKey('achievements.wins');
+const storedWins = () => parseWins(store.get(WINS_AT) ?? null);
+
+test('Undefeated: wins in a row are kept apart from the list, a loss starts them over', () => {
+  let w = parseWins(null);
+  for (let g = 1; g <= 3; g++) w = nextWins(w, 'won', g);
+  assert.deepEqual(w, { now: 3, best: 3, last: 3 });
+  assert.deepEqual(nextWins(w, 'won', 3), w, 'one game counts once');
+  w = nextWins(w, 'lost', 4);
+  assert.deepEqual(w, { now: 0, best: 3, last: 4 });
+  assert.deepEqual(parseWins(serializeWins(w)), w);
+  assert.deepEqual(parseWins(JSON.stringify({ v: WINS_VERSION, now: 2.5, best: 1, last: 'x' })), { now: 2, best: 2, last: 0 });
+  assert.deepEqual(parseWins('{broken'), { now: 0, best: 0, last: 0 });
+
+  // The fifth win in a row, followed through noteState as a game is.
+  store.set(WINS_AT, serializeWins({ now: 4, best: 4, last: 1 }));
+  const { earned } = followed(true);
+  assert.ok(earned.includes('undefeated'), JSON.stringify(earned));
+  assert.ok(earned.includes('first-victory'));
+  assert.equal(storedWins().now, 5);
+  // Shown on the page from the kept run, and erased with the rest.
+  assert.ok(earnedFrom(summarize(emptyCodex(), emptyRecords(), items, { now: 5, best: 5, last: 1 })).includes('undefeated'));
+  resetAchievements();
+  assert.equal(store.get(WINS_AT), undefined);
+});
+
+test('a game followed only from part way through never counts as without a wrong answer', () => {
+  // Ash misses the first question, then their tab is opened anew (no tracker, nothing before it) and they answer the rest right.
+  const { engine, s } = setup(['Ash', 'Bram'], { target: 10 });
+  let st = s;
+  for (let missed = false; !missed; ) {
+    const who = st.players[st.turn].id;
+    st = engine.apply(st, { type: 'pick', category: st.offered[0] }, who);
+    st = engine.apply(st, { type: 'answer', index: wrongIdx(st.question!) }, who);
+    st = engine.apply(st, { type: 'next' }, 'p0');
+    missed = who === 'p0';
+  }
+  let prev: GameState | null = null;
+  const earned: string[] = [];
+  const step = (next: GameState) => {
+    earned.push(...ids(noteState(prev, publicView(next), 'p0', false, { items }).earned));
+    prev = publicView(next);
+    st = next;
+  };
+  step(st);
+  for (let n = 0; n < 80 && st.phase !== 'over'; n++) {
+    const who = st.players[st.turn].id;
+    step(engine.apply(st, { type: 'pick', category: st.offered[0] }, who));
+    step(engine.apply(st, { type: 'answer', index: who === 'p0' ? right(st.question!) : wrongIdx(st.question!) }, who));
+    if (st.phase === 'reveal') step(engine.apply(st, { type: 'next' }, 'p0'));
+  }
+  assert.deepEqual(st.winners, ['p0']);
+  assert.ok(earned.includes('first-victory'));
+  assert.ok(!earned.includes('untarnished'), JSON.stringify(earned));
+});
+
+test('with session storage blocked, a game is still judged as its end comes in', () => {
+  const session = (globalThis as { sessionStorage?: unknown }).sessionStorage;
+  (globalThis as { sessionStorage?: unknown }).sessionStorage = {
+    getItem: () => null,
+    setItem: () => {
+      throw new Error('blocked');
+    },
+    removeItem: () => {},
+    key: () => null,
+    length: 0,
+  };
+  try {
+    store.set(WINS_AT, serializeWins({ now: 4, best: 4, last: 1 }));
+    const { earned, again } = followed(true);
+    assert.ok(earned.includes('first-victory'), JSON.stringify(earned));
+    assert.ok(earned.includes('undefeated'));
+    again();
+    assert.equal(earned.filter((id) => id === 'first-victory').length, 1, 'once');
+    assert.equal(storedWins().now, 5);
+  } finally {
+    (globalThis as { sessionStorage?: unknown }).sessionStorage = session;
+  }
+});
+
+test('a game whose end first comes in after a reload is judged, once', () => {
+  store.set(WINS_AT, serializeWins({ now: 4, best: 4, last: 1 }));
+  const won = followed(true, true);
+  assert.ok(won.earned.includes('undefeated'), JSON.stringify(won.earned));
+  assert.equal(storedWins().now, 5);
+  // Seen over again (a spectator joining, a rejoin): nothing more.
+  won.again();
+  assert.equal(won.earned.filter((id) => id === 'first-victory').length, 1);
+  assert.equal(storedWins().now, 5);
+
+  // A loss seen only after a reload still starts the run over.
+  store.clear();
+  tab.clear();
+  store.set(WINS_AT, serializeWins({ now: 4, best: 4, last: 1 }));
+  followed(false, true);
+  assert.deepEqual(storedWins(), { now: 0, best: 4, last: storedWins().last });
+});
+
+/** Ash (p0) and Bram (p1) part way through a game to 5, at these scores. */
+function midGame(ash: number, bram: number, o: { gone?: boolean; target?: number } = {}) {
+  const { s } = setup(['Ash', 'Bram'], { target: o.target });
+  return { ...s, players: s.players.map((p) => ({ ...p, score: p.id === 'p0' ? ash : bram, connected: p.id === 'p0' || !o.gone })) };
+}
+
+test('only walking away while losing marks a game: behind a rival still there, or out of its deathmatch', () => {
+  assert.equal(losing(midGame(1, 3), 'p0', false), true);
+  assert.equal(losing(midGame(2, 2), 'p0', false), false, 'level is not losing');
+  assert.equal(losing(midGame(3, 1), 'p0', false), false);
+  assert.equal(losing(midGame(1, 3, { gone: true }), 'p0', false), false, 'the rival quit');
+  assert.equal(losing(midGame(1, 3, { target: 4 }), 'p0', false), false, "a game that doesn't count");
+  assert.equal(losing(midGame(1, 3), 'p0', true), false, 'one device');
+  assert.equal(losing({ ...midGame(1, 3), phase: 'over' }, 'p0', false), false, 'ended');
+  const dm = { alive: ['p1'], entrants: ['p0', 'p1'], round: 2, results: {}, eliminated: ['p0'], startedAt: 3 };
+  assert.equal(losing({ ...midGame(5, 5), deathmatch: dm }, 'p0', false), true, 'out of the deathmatch');
+  noteLeaving(midGame(2, 2), 'p0', false, 'ROOM');
+  assert.equal(leftGame(), null);
+  noteLeaving(null, 'p0', false, 'ROOM');
+  assert.equal(leftGame(), null);
+});
+
+test('a game walked away from while losing: coming back to it lets it go; the next game counts it as lost first', () => {
+  store.set(WINS_AT, serializeWins({ now: 4, best: 4, last: 1 }));
+  const left = midGame(1, 3);
+  noteLeaving(left, 'p0', false, 'ROOM');
+  assert.deepEqual(leftGame(), { game: left.startedAt, room: 'ROOM' });
+  // Back in the same game (a reload): the mark goes, the run stands.
+  noteState(null, publicView(left), 'p0', false, { items });
+  assert.equal(leftGame(), null);
+  assert.equal(storedWins().now, 4);
+
+  // Left again, and the next game is another: that one is lost, this one wins the first of a new run.
+  noteLeaving(left, 'p0', false, 'ROOM');
+  tab.clear();
+  const { earned } = followed(true, false, 50000);
+  assert.ok(!earned.includes('undefeated'), JSON.stringify(earned));
+  assert.equal(storedWins().now, 1);
+  assert.equal(leftGame(), null);
+});
+
+test('erasing lets a mark go too', () => {
+  noteLeaving(midGame(1, 3), 'p0', false, 'ROOM');
+  resetAchievements();
+  assert.equal(leftGame(), null);
+});
+
+test("a mark goes when its room can't be got back into, or another tab is still in its game", () => {
+  const left = midGame(1, 3);
+  noteLeaving(left, 'p0', false, 'ROOM');
+  forgiveLeaving({ room: 'OTHER' });
+  assert.notEqual(leftGame(), null, 'another room failing changes nothing');
+  forgiveLeaving({ room: 'ROOM' });
+  assert.equal(leftGame(), null, 'the room closed during the reload');
+  noteLeaving(left, 'p0', false, 'ROOM');
+  forgiveLeaving({ game: left.startedAt });
+  assert.equal(leftGame(), null, 'still seated in it in another tab');
+});
+
+test('offline, walking away marks nothing: the game may be gone already', () => {
+  const nav = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  Object.defineProperty(globalThis, 'navigator', { value: { onLine: false }, configurable: true });
+  try {
+    noteLeaving(midGame(1, 3), 'p0', false, 'ROOM');
+    assert.equal(leftGame(), null);
+  } finally {
+    if (nav) Object.defineProperty(globalThis, 'navigator', nav);
+    else delete (globalThis as { navigator?: unknown }).navigator;
+  }
+});
+
+test('a forfeit ends the run without moving the last game counted, and never undoes one counted after all', () => {
+  const w = { now: 3, best: 3, last: 9 };
+  assert.deepEqual(forfeit(w, 5), { now: 0, best: 3, last: 9 });
+  assert.equal(forfeit(w, 9), w, 'that game was played to its end in another tab, and counted');
+  // A game counted later is still recognised when its end is seen again.
+  assert.deepEqual(nextWins(forfeit(w, 5), 'won', 9), forfeit(w, 5));
+});
+
+test("a mark stays when the loss can't be written, for the next game to count", () => {
+  noteLeaving(midGame(1, 3), 'p0', false, 'ROOM');
+  const newer = JSON.stringify({ v: WINS_VERSION + 1, now: 4 });
+  store.set(WINS_AT, newer);
+  tab.clear();
+  followed(true, false, 50000);
+  assert.notEqual(leftGame(), null);
+  assert.equal(store.get(WINS_AT), newer);
+});
+
+test("a newer build's wins in a row are never written over", () => {
+  const newer = JSON.stringify({ v: WINS_VERSION + 1, now: 4, best: 7, shape: 'new' });
+  store.set(WINS_AT, newer);
+  const { earned } = followed(true);
+  assert.ok(earned.includes('first-victory'));
+  assert.ok(!earned.includes('undefeated'));
+  assert.equal(store.get(WINS_AT), newer);
+});
+
 // ---- storage ------------------------------------------------------------------------
 
 const codexWith = (c: Codex) => store.set(storeKey('codex2'), JSON.stringify({ v: 1, ...c }));
@@ -559,12 +913,46 @@ test('an achievement once earned stays earned', () => {
   assert.ok(loadAchievements().earned['streak-25']);
 });
 
-test('moments are written as they happen, never quietly, and once', () => {
+test('moments are written as they happen, announced, and once', () => {
+  resetAchievements();
   const at50 = delve({ a: [3] }, { round: 51 });
-  const c = noteState(null, at50, 'a', false);
-  assert.deepEqual([ids(c.earned), c.first], [['depth-50'], false]);
-  assert.deepEqual(ids(noteState(null, at50, 'a', false).earned), []);
+  const c = noteState(null, at50, 'a', false, { items });
+  assert.deepEqual([ids(c.earned), c.first], [['depth-10', 'depth-50'], false]);
+  assert.deepEqual(ids(noteState(null, at50, 'a', false, { items }).earned), []);
   assert.ok(loadAchievements().earned['depth-50']);
+});
+
+test('a moment before there is any list: the past caught up quietly first, the moment announced', () => {
+  // A player with past games reloads straight into a run that reaches depth 10.
+  codexWith(codexOf(Array.from({ length: 25 }, () => ({}))));
+  const c = noteState(null, delve({ a: [3] }, { round: 11 }), 'a', false, { items });
+  assert.deepEqual([ids(c.earned), c.first, ids(c.past ?? [])], [['depth-10'], false, ['streak-25']]);
+  // Nothing from the past is left to be announced as new afterwards.
+  assert.deepEqual(checkAchievements(items), { earned: [], first: false });
+});
+
+test('Sweet Revenge reaches across modes and rooms: misses in races, the right answer in a later Delve run', () => {
+  const id = items[0].id;
+  // A seat's id (`who`) is only good for one room, and only Delve notes it: it never splits an item's misses.
+  const log = [{ id, ok: false, race: true }, { id, ok: false }, { id, ok: false, depth: 12, run: 1, who: 'p3' }, { id, depth: 30, run: 2, who: 'p1' }];
+  assert.equal(sum(codexOf(log)).revenge, true);
+});
+
+test("a tab that lost its connection in the lobby doesn't vouch for a game it rejoins part way", () => {
+  const { engine, s } = setup(['Ash', 'Bram'], { target: 10 });
+  const lobby = { ...s, phase: 'lobby' as const, startedAt: undefined };
+  // Ash's first turn has passed (missed) while the tab was away.
+  let st = s;
+  for (let missed = false; !missed; ) {
+    const who = st.players[st.turn].id;
+    st = engine.apply(st, { type: 'pick', category: st.offered[0] }, who);
+    st = engine.apply(st, { type: 'answer', index: wrongIdx(st.question!) }, who);
+    st = engine.apply(st, { type: 'next' }, 'p0');
+    missed = who === 'p0';
+  }
+  const t = trackVersus(null, lobby, publicView(st), 'p0', false);
+  assert.equal(t?.whole, false);
+  assert.equal(trackVersus(null, lobby, publicView(s), 'p0', false)?.whole, true, 'seen at its first question');
 });
 
 test('the game in play is followed across reloads and let go at its end', () => {
@@ -572,14 +960,14 @@ test('the game in play is followed across reloads and let go at its end', () => 
   let st = s;
   let prev: GameState | null = null;
   const step = (next: GameState) => {
-    noteState(prev, publicView(next), 'p0', false);
+    noteState(prev, publicView(next), 'p0', false, { items });
     prev = publicView(next);
     st = next;
   };
   step(st);
   assert.equal(parseTrack(tab.get(storeKey('achievements.versus')) ?? null)?.game, s.startedAt);
   // A state of another game (another tab's, on one device) leaves it alone.
-  noteState(null, createGame(null), null, true);
+  noteState(null, createGame(null), null, true, { items });
   assert.equal(parseTrack(tab.get(storeKey('achievements.versus')) ?? null)?.game, s.startedAt);
   for (let n = 0; n < 50 && st.phase !== 'over'; n++) {
     const who = st.players[st.turn].id;
@@ -601,12 +989,22 @@ test('erasing leaves an empty list, so the next achievement is announced', () =>
   assert.equal(after.first, false);
 });
 
+test("erasing leaves a newer build's list and wins alone", () => {
+  const list = JSON.stringify({ v: ACHIEVEMENTS_VERSION + 1, earned: { 'streak-25': 1 } });
+  const wins = JSON.stringify({ v: WINS_VERSION + 1, now: 3 });
+  store.set(ACHIEVEMENTS_KEY, list);
+  store.set(WINS_AT, wins);
+  resetAchievements();
+  assert.equal(store.get(ACHIEVEMENTS_KEY), list);
+  assert.equal(store.get(WINS_AT), wins);
+});
+
 test('a list a newer build wrote is never written over; a damaged one is kept aside', () => {
   const newer = JSON.stringify({ v: ACHIEVEMENTS_VERSION + 1, earned: { 'streak-25': 1 }, shape: 'new' });
   store.set(ACHIEVEMENTS_KEY, newer);
   codexWith(codexOf(Array.from({ length: 25 }, () => ({}))));
   assert.deepEqual(checkAchievements(items), { earned: [], first: false });
-  assert.deepEqual(noteState(null, delve({ a: [] }, { round: 50 }), 'a', false), { earned: [], first: false });
+  assert.deepEqual(noteState(null, delve({ a: [] }, { round: 50 }), 'a', false, { items }), { earned: [], first: false });
   assert.equal(store.get(ACHIEVEMENTS_KEY), newer);
 
   store.set(ACHIEVEMENTS_KEY, '{broken');
@@ -623,7 +1021,8 @@ test('a stored list is cleaned up as it is read', () => {
   assert.deepEqual(s.earned, { untarnished: 10, 'from-a-newer-build': 20 });
   assert.deepEqual(parseStore(serializeStore(s)), s);
   const t = parseTrack(JSON.stringify({ game: 5, lead: { p1: 4, p2: -1, p3: 'x' }, answered: 3.5, wrong: 1, guessed: ['p1', 7], veiled: 2.5, last: 9 }));
-  assert.deepEqual(t, { game: 5, lead: { p1: 4 }, answered: 3, wrong: false, guessed: ['p1'], veiled: 2, last: 9 });
+  assert.deepEqual(t, { game: 5, whole: false, lead: { p1: 4 }, ahead: {}, answered: 3, wrong: false, guessed: ['p1'], veiled: 2, last: 9 });
+  assert.deepEqual(parseTrack(JSON.stringify({ game: 5, ahead: { p1: 4, p2: 'x' } }))?.ahead, { p1: 4 });
   assert.equal(parseTrack(JSON.stringify({ game: 'x' })), null);
   assert.equal(parseTrack('{broken'), null);
 });

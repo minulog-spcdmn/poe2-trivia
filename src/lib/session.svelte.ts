@@ -42,6 +42,7 @@ import { CREATOR_TITLE } from './site';
 import { DELVE_FUSE_MS, LOOKALIKES_ASKED_FROM, clockLeft, fuseDue, fuseLeft, isGroupRun, livesOf, standingIds } from './delve';
 import { loadLooks } from './looks';
 import { bestOf, loadRecords, recordLeft, recordRun, runEvent } from './delveRecord';
+import { LEFT_KEY, forgiveLeaving, noteLeaving } from './versus';
 import {
   DELVE_CLOCK_CAP_MS,
   DRAIN_POLL_MS,
@@ -1390,6 +1391,7 @@ class Session {
   }
 
   leave() {
+    this.walkAway();
     if (this.mode === 'host') {
       // Tell everyone right away instead of leaving them to reconnect to nothing.
       for (const [conn, g] of this.guests) if (g.playerId) this.send(conn, { t: 'closed' });
@@ -1601,25 +1603,46 @@ class Session {
     if (!next.delve && next.phase === 'lobby' && prev?.phase === 'lobby') return;
     const me = this.myPlayerId;
     const hotSeat = this.mode === 'local';
+    // Only a run of Delve, or a game against others this device is seated in, earns anything.
+    if (!next.delve && (hotSeat || !me || !next.players.some((p) => p.id === me))) return;
     const a = this.answered;
     const veilShare = a?.share !== undefined ? { qid: a.qid, share: a.share } : undefined;
     void Promise.all([import('./achievements'), import('./achievementToasts')])
       .then(([{ noteState }, { announceAchievements }]) => {
-        announceAchievements(noteState(prev, next, me, hotSeat, veilShare), 'game');
+        announceAchievements(noteState(prev, next, me, hotSeat, { items: engine.items, veilShare }), 'game');
       })
       .catch((err) => console.warn('achievements', err));
   }
 
+  /** A check of the achievements is waiting for an idle moment (noteAchievements). */
+  private achievementsDue = false;
+
   /**
    * Brings the achievements up to date with what was just recorded in the
    * codex or the Delve records, and announces any earned (lib/achievementToasts.ts).
+   * It reads and sums up the whole codex, so it waits for an idle moment
+   * rather than running as a reveal begins (its notice waits a moment
+   * anyway), and several asked for before it runs make one check.
    */
   private noteAchievements() {
+    if (this.achievementsDue) return;
+    this.achievementsDue = true;
+    const idle = (run: () => void) => (typeof requestIdleCallback === 'function' ? requestIdleCallback(run, { timeout: 1000 }) : setTimeout(run, 300));
     void Promise.all([import('./achievements'), import('./achievementToasts')])
-      .then(([{ checkAchievements }, { announceAchievements }]) => {
-        announceAchievements(checkAchievements(engine.items), 'game');
-      })
-      .catch((err) => console.warn('achievements', err));
+      .then(([{ checkAchievements }, { announceAchievements }]) =>
+        idle(() => {
+          this.achievementsDue = false;
+          try {
+            announceAchievements(checkAchievements(engine.items), 'game');
+          } catch (err) {
+            console.warn('achievements', err);
+          }
+        }),
+      )
+      .catch((err) => {
+        this.achievementsDue = false;
+        console.warn('achievements', err);
+      });
   }
 
   /** Delve: the fuse waiting to burn, for the question and the 0 it burns down to (`key`). */
@@ -1965,6 +1988,9 @@ class Session {
 
   private fail(message: string, title?: string, keepSaved = false) {
     const mode = this.mode;
+    // A game walked away from in this room by a reload that couldn't get back into it (it closed, or never
+    // reopened) wasn't walked away from.
+    forgiveLeaving({ room: this.code });
     const saved = keepSaved ? readSaved() : null;
     this.reset();
     if (saved) writeSaved(saved);
@@ -1980,6 +2006,24 @@ class Session {
    */
   recordLeaving() {
     if (this.state) recordLeft(this.state, this.myPlayerId, this.mode === 'local');
+  }
+
+  /**
+   * This player walks away (leaves the room, or the page goes): a game against
+   * others they leave while losing still counts against a run of wins
+   * (lib/versus.ts). Not on being removed or the room closing (fail), and
+   * not while cut off from the host, when the game may be gone already:
+   * none of those is walking away.
+   */
+  walkAway() {
+    if (this.mode === 'client' && this.status !== 'ready') return;
+    noteLeaving(this.state, this.myPlayerId, this.mode === 'local', this.code);
+  }
+
+  /** Another tab marked a game as walked away from: if this tab is still seated in it, nobody walked away. */
+  stillHere() {
+    const s = this.state;
+    if (s?.startedAt && s.phase !== 'over' && s.players.some((p) => p.id === this.myPlayerId)) forgiveLeaving({ game: s.startedAt });
   }
 
   private reset() {
@@ -2112,8 +2156,14 @@ function writeSaved(saved: Saved | null) {
 export const session = new Session();
 
 if (typeof window !== 'undefined') {
-  // A run abandoned by closing the tab (or going elsewhere) is still recorded.
-  window.addEventListener('pagehide', () => session.recordLeaving());
+  // A run abandoned by closing the tab (or going elsewhere) is still recorded, and so is a game against others left losing.
+  window.addEventListener('pagehide', () => {
+    session.recordLeaving();
+    session.walkAway();
+  });
+  window.addEventListener('storage', (e) => {
+    if (e.key === LEFT_KEY && e.newValue) session.stillHere();
+  });
   // Art that wouldn't load (offline) is tried again once the browser is back online.
   window.addEventListener('online', () => session.artBack());
 }

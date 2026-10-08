@@ -21,6 +21,22 @@ export const lerp = (p: Pt, q: Pt, t: number): Pt => [p[0] + (q[0] - p[0]) * t, 
 /** The point at `a` degrees clockwise from the top, `r` from `c`. */
 export const at = (c: Pt, a: number, r: number): Pt => [c[0] + r * Math.sin(rad(a)), c[1] - r * Math.cos(rad(a))];
 
+/** Where `p` lies about `c`: degrees clockwise from the top, in (-180, 180]. */
+export const angleOf = (c: Pt, p: Pt) => (Math.atan2(p[0] - c[0], -(p[1] - c[1])) * 180) / Math.PI;
+
+/** Where the circles about `a` (radius `ra`) and `b` (radius `rb`) meet: the two points (one twice where they only touch). */
+export function meeting(a: Pt, ra: number, b: Pt, rb: number): [Pt, Pt] {
+  const d = Math.hypot(b[0] - a[0], b[1] - a[1]);
+  const x = (d * d + ra * ra - rb * rb) / (2 * d);
+  const h = Math.sqrt(Math.max(0, ra * ra - x * x));
+  const [ux, uy] = [(b[0] - a[0]) / d, (b[1] - a[1]) / d];
+  const m: Pt = [a[0] + ux * x, a[1] + uy * x];
+  return [
+    [m[0] - uy * h, m[1] + ux * h],
+    [m[0] + uy * h, m[1] - ux * h],
+  ];
+}
+
 /** A generator of numbers in [0, 1) from a fixed seed, so every copy of a piece comes out the same. */
 export const seeded = (seed: number) => () => (seed = (seed * 16807) % 2147483647) / 2147483647;
 

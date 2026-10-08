@@ -11,19 +11,19 @@
   import { closeCodex, codexRoute } from '../lib/codexRoute.svelte';
   import { backdropShadow } from '../lib/backdropShadow';
   import { dialogBackdrop } from '../lib/behindDialog';
+  import { motion } from '../lib/motion.svelte';
   import type { Difficulty, Item } from '../lib/game';
   import ArcaneCircle from './ArcaneCircle.svelte';
   import CodexItem from './CodexItem.svelte';
   import CodexFilter from './CodexFilter.svelte';
   import CodexDelve from './CodexDelve.svelte';
   import { DELVE_RECORD_KEY, loadRecords, resetRecords } from '../lib/delveRecord';
-  import { ACHIEVEMENTS, ACHIEVEMENTS_KEY, checkAchievements, loadAchievements, resetAchievements } from '../lib/achievements';
+  import { ACHIEVEMENTS, ACHIEVEMENTS_KEY, WINS_KEY, checkAchievements, loadAchievements, loadWins, resetAchievements } from '../lib/achievements';
   import { announceAchievements } from '../lib/achievementToasts';
   import CodexAchievements from './CodexAchievements.svelte';
 
-  /** Svelte's transitions run whatever the system says: with reduced motion, things just appear. */
-  const still = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const calm = <T extends { duration?: number; delay?: number }>(p: T): T => (still ? { ...p, duration: 0, delay: 0 } : p);
+  /** Svelte's transitions run whatever the system says: held still (reduced motion, or the effects off), things just appear. */
+  const calm = <T extends { duration?: number; delay?: number }>(p: T): T => (motion.still ? { ...p, duration: 0, delay: 0 } : p);
 
   let codex = $state.raw(loadCodex());
   let delve = $state.raw(loadRecords());
@@ -31,12 +31,14 @@
   // the page never shows one done but not earned.
   announceAchievements(checkAchievements(engine.items), 'codex');
   let achievements = $state.raw(loadAchievements());
+  let wins = $state.raw(loadWins());
   onMount(() => {
     // A game in another tab may add to it meanwhile.
     const reload = (e: StorageEvent) => {
       if (e.key === CODEX_KEY || e.key === null) codex = loadCodex();
       if (e.key === DELVE_RECORD_KEY || e.key === null) delve = loadRecords();
       if (e.key === ACHIEVEMENTS_KEY || e.key === null) achievements = loadAchievements();
+      if (e.key === WINS_KEY || e.key === null) wins = loadWins();
     };
     addEventListener('storage', reload);
     return () => removeEventListener('storage', reload);
@@ -156,6 +158,7 @@
     codex = loadCodex();
     delve = loadRecords();
     achievements = loadAchievements();
+    wins = loadWins();
     confirmReset = false;
   }
 
@@ -277,7 +280,7 @@
   {#if tab === 'delve' && kept}
     <CodexDelve {codex} records={delve} onopen={(it) => (open = it)} onbegin={beginDelve} />
   {:else if tab === 'feats' && kept}
-    <CodexAchievements {codex} records={delve} store={achievements} items={engine.items} />
+    <CodexAchievements {codex} records={delve} store={achievements} {wins} items={engine.items} />
   {:else}
 
   <section class="summary" in:fly={calm({ y: 20, duration: 700, delay: 150 })}>
