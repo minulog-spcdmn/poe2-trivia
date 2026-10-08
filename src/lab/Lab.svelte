@@ -11,8 +11,45 @@
   import { readStored, writeStored } from '../lib/storage';
   import { reduceMotion, setReduceMotion } from './motion';
   import * as L from './controls.svelte';
+  import { toasts, type ToastKind, type ToastOptions } from '../lib/toasts.svelte';
+  import { ACHIEVEMENTS } from '../lib/achievements';
+  import { RUBY } from '../lib/palette';
+  import { CREATOR, CREATOR_TITLE } from '../lib/site';
 
   const s = $derived(session.state);
+
+  /** Toasts to check: the game's own notices, as it words them, with a player of the run for the names and colours. */
+  const someone = () => {
+    const p = players.find((o) => o.id !== session.myPlayerId) ?? players[0];
+    return { name: p?.name ?? 'Ezomyte', hue: p?.hue ?? 0 };
+  };
+  const tier = (t: 1 | 2 | 3) => ACHIEVEMENTS.find((a) => a.tier === t) ?? ACHIEVEMENTS[0];
+  const TOASTS: { label: string; show: () => void }[] = [
+    { label: 'Player joined', show: () => toast(someone().name, 'info', { title: 'Player joined', who: someone() }) },
+    { label: 'Spectator joined', show: () => toast('Brea', 'info', { title: 'Spectator joined', who: { name: 'Brea' } }) },
+    { label: 'Player removed', show: () => toast(someone().name, 'info', { title: 'Player removed', who: someone() }) },
+    { label: 'Disconnected', show: () => toast(someone().name, 'warn', { title: 'Player disconnected', who: someone() }) },
+    { label: 'Turn skipped', show: () => toast(someone().name, 'warn', { title: 'Turn skipped', who: someone() }) },
+    { label: 'Art missing', show: () => toast("Couldn't load the art for this question.", 'warn', { title: 'Art missing' }) },
+    { label: 'Room busy', show: () => toast('The host is setting up a game. Try again in a moment.', 'warn', { title: 'Room busy' }) },
+    { label: 'Refused (error)', show: () => toast("It's not your turn.", 'error') },
+    { label: 'Game ended (sticky)', show: () => toast('The host closed the room.', 'error', { title: 'Game over', sticky: true }) },
+    { label: 'Question set aside', show: () => toast('The host reloaded, so it cost nothing.', 'info', { title: 'Question set aside', who: someone() }) },
+    { label: 'Creator arrives', show: () => toast('has arrived', 'info', { title: CREATOR_TITLE, who: { name: CREATOR, hue: RUBY }, herald: true }) },
+    ...([1, 2, 3] as const).map((t) => ({
+      label: `Achievement (tier ${t})`,
+      show: () => toast(tier(t).title, 'info', { title: 'Achievement earned', seal: { sign: tier(t).sign, tier: t } }),
+    })),
+    { label: 'Several achievements', show: () => toast(ACHIEVEMENTS.slice(0, 3).map((a) => a.title).join(' • '), 'info', { title: '3 achievements earned', seal: { sign: tier(3).sign, tier: 3 } }) },
+  ];
+  // As the game does: the same notice again restarts the one already up instead of stacking a copy.
+  const toast = (message: string, kind: ToastKind, opts: ToastOptions = {}) => toasts.show(message, kind, opts);
+  function toastBurst() {
+    for (const i of [0, 3, 5, 11]) TOASTS[i].show();
+  }
+  function clearToasts() {
+    for (const t of [...toasts.list]) toasts.dismiss(t.id);
+  }
   const run = $derived(s?.delve ? s : null);
   const depth = $derived(run?.round ?? 1);
   const players = $derived(run?.players ?? []);
@@ -358,6 +395,16 @@
           <p class="hint">{q && s?.phase === 'question' ? 'Waiting for the art; the clock starts once it is in.' : 'No question on the clock.'}</p>
         {/if}
         <p class="hint">The game runs on the wall clock, so there is no slow motion; pause and jump instead. While paused, answers still count (a Vein's as fast).</p>
+      </details>
+
+      <details>
+        <summary>Toasts</summary>
+        <div class="grid">
+          {#each TOASTS as t (t.label)}<button onclick={t.show}>{t.label}</button>{/each}
+          <button onclick={toastBurst}>Four at once</button>
+          <button onclick={clearToasts}>Clear all</button>
+        </div>
+        <p class="hint">The notices the game shows in the stack, as it words them. Hover one to hold it. In play, gameplay news shows under the question instead.</p>
       </details>
 
       <details open>
