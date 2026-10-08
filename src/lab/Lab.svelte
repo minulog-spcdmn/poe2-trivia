@@ -13,6 +13,7 @@
   import * as L from './controls.svelte';
   import { toasts, type ToastKind, type ToastOptions } from '../lib/toasts.svelte';
   import { ACHIEVEMENTS } from '../lib/achievements';
+  import { METALS, TIERS, type Tier } from '../lib/metals';
   import { RUBY } from '../lib/palette';
   import { CREATOR, CREATOR_TITLE } from '../lib/site';
 
@@ -23,7 +24,7 @@
     const p = players.find((o) => o.id !== session.myPlayerId) ?? players[0];
     return { name: p?.name ?? 'Ezomyte', hue: p?.hue ?? 0 };
   };
-  const tier = (t: 1 | 2 | 3) => ACHIEVEMENTS.find((a) => a.tier === t) ?? ACHIEVEMENTS[0];
+  const tier = (t: Tier) => ACHIEVEMENTS.find((a) => a.tier === t) ?? ACHIEVEMENTS[0];
   const TOASTS: { label: string; show: () => void }[] = [
     { label: 'Player joined', show: () => toast(someone().name, 'info', { title: 'Player joined', who: someone() }) },
     { label: 'Spectator joined', show: () => toast('Brea', 'info', { title: 'Spectator joined', who: { name: 'Brea' } }) },
@@ -36,8 +37,8 @@
     { label: 'Game ended (sticky)', show: () => toast('The host closed the room.', 'error', { title: 'Game over', sticky: true }) },
     { label: 'Question set aside', show: () => toast('The host reloaded, so it cost nothing.', 'info', { title: 'Question set aside', who: someone() }) },
     { label: 'Creator arrives', show: () => toast('has arrived', 'info', { title: CREATOR_TITLE, who: { name: CREATOR, hue: RUBY }, herald: true }) },
-    ...([1, 2, 3] as const).map((t) => ({
-      label: `Achievement (tier ${t})`,
+    ...TIERS.map((t) => ({
+      label: `Achievement (${METALS[t].name.toLowerCase()})`,
       show: () => toast(tier(t).title, 'info', { title: 'Achievement earned', seal: { sign: tier(t).sign, tier: t } }),
     })),
     { label: 'Several achievements', show: () => toast(ACHIEVEMENTS.slice(0, 3).map((a) => a.title).join(' • '), 'info', { title: '3 achievements earned', seal: { sign: tier(3).sign, tier: 3 } }) },
