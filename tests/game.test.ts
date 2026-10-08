@@ -285,6 +285,33 @@ test('a question that mixes groups shows each as often as the others', () => {
   }
 });
 
+test('ten options: a small group shares the question as five beside five of another, made-up names in both', () => {
+  const custom = { ...PRESETS.eternal, options: 10, fakes: 3, artChance: 0 };
+  const engine = new Engine(items, { rng: seeded(5), fakes });
+  const s = createGame(null, { targetScore: 5, timer: 0, difficulty: 'custom', custom, mode: 'turns', public: false, locked: false });
+  const answered = new Set<string>();
+  let fives = 0;
+  for (let i = 0; i < 400; i++) {
+    const q = engine.makeQuestion(s, 'One-Handed Weapons');
+    const counts = new Map<string, number>();
+    for (const id of q.options) {
+      const group = engine.byId.get(isFake(id) ? id.split(':')[1] : id)!.group;
+      counts.set(group, (counts.get(group) ?? 0) + 1);
+    }
+    assert.equal(new Set(counts.values()).size, 1, `${[...counts]}`);
+    answered.add(engine.byId.get(q.itemId)!.group);
+    if (counts.size === 2) {
+      fives++;
+      // Two groups of five hold four made-up names: all three fit.
+      assert.equal(q.options.filter(isFake).length, 3);
+      assert.deepEqual(q.groups, [...counts.keys()].sort());
+    }
+  }
+  // Wands and sceptres (eight each) are too few to fill ten alone, and four groups too few for five pairs.
+  assert.deepEqual([...answered].sort(), ['One-Handed Maces', 'Sceptres', 'Spears', 'Wands']);
+  assert.ok(fives > 50, `${fives} questions of two groups of five`);
+});
+
 test('the topic counts a made-up name under the item it copies', () => {
   const engine = new Engine(items, { rng: seeded(7), fakes });
   const s = createGame(null, { targetScore: 5, timer: 0, difficulty: 'eternal', mode: 'turns', public: false, locked: false });

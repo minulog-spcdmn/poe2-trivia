@@ -91,7 +91,9 @@ the same thing for everyone.
 - Every depth is a little harder than the one before, and nothing ever
   gets easier. The player isn't told what changes where; they feel it. A
   few things come in steps: four options for the first ten depths, six from
-  10, eight from 30; one made-up name from 4, two from 16, three from 44;
+  10, eight from 30, ten from 69 (where a small kind like wands or relics
+  can still be the answer as five of its own beside five of another); one
+  made-up name from 4, two from 16, three from 44;
   the timer and the lockout (below). No two steps share a depth. The rest
   rises a little at every depth, never in a jump (no depth moves one by more
   than 3% of its whole rise), and is at its hardest by depth 89
@@ -120,10 +122,10 @@ the same thing for everyone.
   | 40 | 8 | 76% | 2 | 41% | 38% | 43%, 5 × 5 | 2% | none |
   | 50 | 8 | 87% | 3 | 51% | 52% | 50%, 6 × 6 | 22% | 3% |
   | 60 | 8 | 94% | 3 | 60% | 66% | 58%, 7 × 7 | 42% | 17% |
-  | 70 | 8 | 99% | 3 | 60% | 80% | 66%, 8 × 8 | 62% | 31% |
-  | 80 | 8 | all | 3 | 60% | 94% | 73%, 8 × 8 | 82% | 45% |
-  | 90 | 8 | all | 3 | 60% | always | 80%, 9 × 9 | always | 59% |
-  | 100 | 8 | all | 3 | 60% | always | 80%, 9 × 9 | always | 73% |
+  | 70 | 10 | 99% | 3 | 60% | 80% | 66%, 8 × 8 | 62% | 31% |
+  | 80 | 10 | all | 3 | 60% | 94% | 73%, 8 × 8 | 82% | 45% |
+  | 90 | 10 | all | 3 | 60% | always | 80%, 9 × 9 | always | 59% |
+  | 100 | 10 | all | 3 | 60% | always | 80%, 9 × 9 | always | 73% |
 
   The timer starts at 16 s and loses a second at depths 12, 18, 26, 33, 38,
   43, 47, 52 and 57 (7 s), then at 77 (6 s) and 95, where it stops at 5 s.
@@ -136,8 +138,8 @@ the same thing for everyone.
   The unveil starts with the question's clock. From depth 24 it also takes
   "find the art" pictures: 1% of those questions at depth 24, one percent
   more every depth, all of them from depth 123. Each picture is cut much
-  coarser than a whole item (at most 4 × 4), so eight of them stay a few
-  dozen patches to send.
+  coarser than a whole item (at most 4 × 4), so ten of them stay a few
+  dozen patches each to send.
 - **Look-alike pictures.** From depth 49 a growing share of questions picks
   its look-alikes by their art instead of their names (1.4% at 49, as much
   more every depth, every question from 119): the wrong pictures of "find
@@ -374,8 +376,8 @@ the same thing for everyone.
 - Your deepest run alone and together are kept in this browser (lobby, end
   screen and Codex, with your last runs). A run resumed by a build with
   other rules still shows, but never counts as a best.
-- On a phone, eight answers fit on the screen: names in two columns,
-  pictures four to a row.
+- On a phone, eight or ten answers fit on the screen: names in two
+  columns, pictures four to a row (ten: five to a row).
 
 **Difficulty** (the host chooses):
 
@@ -807,7 +809,7 @@ After the art changes, rebuild the look-alike table (needs ffmpeg):
 npm run looks
 ```
 
-It writes `src/data/looks.json`: for every item, the twelve items of its
+It writes `src/data/looks.json`: for every item, the fourteen items of its
 group whose art looks most like it, each with a score from 0 to 1 (silhouette,
 edges and colour, mirror-blind; see `scripts/looks.mjs`). From depth 49 in Delve,
 decoys are picked from it (`src/lib/looks.ts`). The output only changes when

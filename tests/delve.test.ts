@@ -72,7 +72,7 @@ test('every depth plays sane knob values, and the Custom steps stay as they were
     if (r.veil) assert.ok(r.veil.size >= 4 && r.veil.size <= 9 && r.veil.share >= 0.3 && r.veil.share <= 0.8, `the veil at ${d}`);
     assert.ok(r.fakes <= maxFakes(r.options), `fakes fit at ${d}`);
     assert.ok(r.fakes + (r.moreFakes ? 1 : 0) <= maxFakes(r.options), `a fourth fake fits at ${d}`);
-    assert.ok(r.options <= 8, `at most 8 options at ${d}`);
+    assert.ok(r.options <= 10, `at most 10 options at ${d}`);
   }
   assert.deepEqual([KNOB_STEPS.similarNames, KNOB_STEPS.mirror, KNOB_STEPS.fakes], [
     [0, 0.5, 1],
@@ -86,6 +86,7 @@ test('the approved curve: steps for options, made-up names, the timer and the lo
     { from: 1, options: 4 },
     { from: 11, options: 6 },
     { from: 31, options: 8 },
+    { from: 70, options: 10 },
   ]);
   assert.deepEqual(FAKES_FROM, [
     { from: 1, fakes: 0 },
@@ -93,7 +94,7 @@ test('the approved curve: steps for options, made-up names, the timer and the lo
     { from: 17, fakes: 2 },
     { from: 45, fakes: 3 },
   ]);
-  assert.deepEqual([1, 10, 11, 30, 31, 300].map((d) => delveRules(d).options), [4, 4, 6, 6, 8, 8]);
+  assert.deepEqual([1, 10, 11, 30, 31, 69, 70, 300].map((d) => delveRules(d).options), [4, 4, 6, 6, 8, 8, 10, 10]);
   assert.deepEqual([4, 5, 16, 17, 44, 45, 300].map((d) => delveRules(d).fakes), [0, 1, 1, 2, 2, 3, 3]);
   // The smooth knobs, at a few depths: [look-alike names, find the art, mirrored, veil share, veil size, grayscale].
   const row = (d: number) => {
@@ -253,7 +254,7 @@ test('the ruleset is pinned to the curve and the protocol', () => {
   assert.deepEqual([DELVE_RULESET, PROTOCOL_VERSION, hash], [1, 17, PINNED_HASH]);
 });
 
-const PINNED_HASH = '69b1fd9c9107197b';
+const PINNED_HASH = 'f02382ccfa6646ee';
 
 function run(losses: Record<string, number[]>, round = 10, seats = Object.keys(losses)): GameState {
   const s = createGame('a');
@@ -463,7 +464,7 @@ test('"find the art" pictures burn in too from depth 25, one percent more of the
   assert.equal(delveTileVeil(74), 0.5);
   assert.equal(delveTileVeil(124), 1);
   assert.equal(delveTileVeil(500), 1);
-  // Cut coarser than a whole item: at most 4 × 4 per picture, so eight pictures stay 128 patches.
+  // Cut coarser than a whole item: at most 4 × 4 per picture, so ten pictures stay 160 patches.
   assert.deepEqual([5, 7, 9].map(tileVeilSize), [3, 4, 4]);
 });
 

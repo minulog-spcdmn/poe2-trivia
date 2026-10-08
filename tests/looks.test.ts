@@ -13,7 +13,7 @@ const id = (name: string) => byName.get(name)!.id;
 const names = (looks: readonly { id: string }[]) => looks.map((l) => byId.get(l.id)!.name);
 
 /** Kept per item by scripts/looks.mjs. */
-const KEEP = 12;
+const KEEP = 14;
 
 test('every item has its closest look-alikes from its own group, and nothing else', () => {
   assert.equal(raw.v, 1);

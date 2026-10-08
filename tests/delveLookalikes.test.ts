@@ -103,7 +103,7 @@ test('rolled, the wrong pictures and the wrong names are drawn like the answer, 
     if (p.mode === 'art') (art++, clustered(p) && artByName++);
   }
   assert.ok(modes.art > 100 && modes.name > 100, JSON.stringify(modes));
-  // By name, eight pictures seldom happen to form such a cluster.
+  // By name, ten pictures seldom happen to form such a cluster.
   assert.ok(artByName / art < 0.5, `${artByName} of ${art} clustered by name`);
 });
 
@@ -158,7 +158,7 @@ test('the same seed and table ask the same questions; shallower than 50 the tabl
 });
 
 test('look-alikes by art keep to the rules of the pool: groups evened out, made-up names, the answer anywhere', () => {
-  // A worn pool: few unseen sceptres left, so they share the question with other groups.
+  // A worn pool: few unseen sceptres left, so groups share the question (at 140, ten options: two groups of five or five pairs).
   const engine = make(13, looks);
   const sceptres = items.filter((it) => it.group === 'Sceptres');
   const counts = new Map<number, number>();
@@ -179,5 +179,5 @@ test('look-alikes by art keep to the rules of the pool: groups evened out, made-
     const at = q.options.indexOf(q.itemId);
     counts.set(at, (counts.get(at) ?? 0) + 1);
   }
-  assert.equal(counts.size, 8, 'the answer turns up in every place');
+  assert.equal(counts.size, 10, 'the answer turns up in every place');
 });

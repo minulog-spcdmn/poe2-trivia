@@ -17,8 +17,11 @@ const IMG_DIR = path.join(ROOT, 'public', 'items');
 const ITEMS_FILE = path.join(ROOT, 'src', 'data', 'items.json');
 const OUT_FILE = path.join(ROOT, 'src', 'data', 'looks.json');
 
-/** Look-alikes kept per item: eight options need seven decoys, plus some to spare so picks still vary. */
-const KEEP = 12;
+/**
+ * Look-alikes kept per item: ten options need nine decoys, plus some to
+ * spare so picks still vary (as many as game.ts lookalikes looks through).
+ */
+const KEEP = 14;
 /**
  * How much each likeness counts. Shape and edges come first: deep in Delve,
  * where look-alike pictures switch on, all art is grayscale and mirrored, so

@@ -938,11 +938,12 @@ export function shuffle<T>(arr: T[], rng: Rng): T[] {
 
 /**
  * Sizes every group on screen could share in a question that mixes groups
- * (two rings and two belts, four of each…), when the answer's group has
- * `siblings` unseen items besides it and the other groups have `others`.
+ * (two rings and two belts, four of each, five boots and five gloves…),
+ * when the answer's group has `siblings` unseen items besides it and the
+ * other groups have `others`.
  */
 function evenSizes(options: number, siblings: number, others: number[], fakes = 0): number[] {
-  return [2, 3, 4].filter(
+  return [2, 3, 4, 5].filter(
     (m) => options % m === 0 && m < options && m - 1 <= siblings && others.filter((n) => n >= m).length >= options / m - 1 && fitsFakes(options, m, fakes),
   );
 }
@@ -950,7 +951,8 @@ function evenSizes(options: number, siblings: number, others: number[], fakes = 
 /**
  * Whether groups of `m` leave room for `fakes` made-up names: each copies a
  * real name of its own group, so a group holds m / 2 of them, rounded down
- * (two groups of three hold two, three pairs hold three).
+ * (two groups of three hold two, three pairs hold three, two groups of five
+ * four).
  */
 function fitsFakes(options: number, m: number, fakes: number): boolean {
   return (options / m) * Math.floor(m / 2) >= fakes;

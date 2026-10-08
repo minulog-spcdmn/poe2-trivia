@@ -122,16 +122,16 @@ export function delveCurve(knob: keyof typeof DELVE_CURVES, d: number): number {
 
 /**
  * The knobs that still come in steps, each from the depth where it starts:
- * options (four for the first ten depths, six from 11, eight from 31; they
- * stop at 8, since at 10 only pairs of groups can share a question, so most
- * small groups like wands, quivers or relics could never be the answer) and
- * made-up names. Never on a depth where another step, the timer or the
- * lockout changes.
+ * options (four for the first ten depths, six from 11, eight from 31, ten
+ * from 70, where a small group like wands, quivers or relics can still be
+ * the answer as five of its own beside five of another) and made-up names.
+ * Never on a depth where another step, the timer or the lockout changes.
  */
 export const OPTIONS_FROM: { from: number; options: number }[] = [
   { from: 1, options: 4 },
   { from: 11, options: 6 },
   { from: 31, options: 8 },
+  { from: 70, options: 10 },
 ];
 export const FAKES_FROM: { from: number; fakes: number }[] = [
   { from: 1, fakes: 0 },
@@ -159,7 +159,7 @@ export function delveTileVeil(d: number): number {
 
 /**
  * How finely a "find the art" picture is cut, for a veil cut `size` × `size`
- * over a whole item: much coarser, so up to eight pictures stay a few dozen
+ * over a whole item: much coarser, so up to ten pictures stay a few dozen
  * patches each to send and burn (3 × 3 for a 5 × 5 veil, never past 4 × 4).
  */
 export const tileVeilSize = (size: number) => Math.min(4, (size + 1) / 2);
@@ -211,8 +211,9 @@ export const veilPlan = (secs: number, share: number, tiles: boolean): VeilPlan 
 
 /**
  * Endless, past depth 100: from this depth a growing share of name
- * questions gets a fourth made-up name (as many as eight options hold), two
- * percent more every depth, all of them by depth 150.
+ * questions gets a fourth made-up name, two percent more every depth, all
+ * of them by depth 150. Ten options have room for it, even split into two
+ * groups of five (two made-up names each).
  */
 export const MORE_FAKES_FROM = 101;
 

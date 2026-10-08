@@ -1427,7 +1427,7 @@ test('past depth 100, name questions now and then show a fourth made-up name; fr
   const at100 = count(100);
   assert.ok(at100.every((n) => n <= 3), 'never four before 101');
   const at150 = count(150);
-  assert.ok(at150.every((n) => n <= 4), 'never more than eight options hold');
+  assert.ok(at150.every((n) => n <= 4), 'never more than four');
   const four = at150.filter((n) => n === 4).length;
   assert.ok(four >= at150.length * 0.8, `${four} of ${at150.length} name questions with four at 150`);
 });

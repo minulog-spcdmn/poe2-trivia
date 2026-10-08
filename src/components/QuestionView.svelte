@@ -1004,7 +1004,7 @@
       </div>
     </div>
   {:else}
-    <div class="stage" class:snug>
+    <div class="stage" class:snug class:ten={count === 10}>
       <div class="tooltip" use:backdropShadow={{ fill: 'linear' }} class:good={reveal && iWon} class:bad={reveal && !iWon}>
         <div class="head">
           <!-- The gems stay dark until the item is identified. -->
@@ -1062,7 +1062,7 @@
         </div>
       </div>
 
-      <div class="options" class:compact={count > 6} class:dense={count > 8} class:snug>
+      <div class="options" class:compact={count > 6} class:dense={count > 8} class:ten={count === 10} class:snug>
         {#each q.labels as label, i (i)}
           {@const st = optionState(i)}
           <button
@@ -2510,9 +2510,9 @@
       min-height: 0;
       margin-top: 0.75rem;
     }
-    /* Delve's eight answers, on a clock down to five seconds: two columns of
-       names (a long one takes two lines) and the pictures four to a row, so
-       all of them are in view under the art. Their numbers shrink to small
+    /* Delve's eight or ten answers, on a clock down to five seconds: two
+       columns of names (a long one takes two lines) and the pictures four
+       or five to a row, so all of them are in view under the art. Their numbers shrink to small
        seals, so the answers can still be called out by number. */
     /* The task line beside the category, two lines if need be, never under it. */
     .topline.snug {
@@ -2523,8 +2523,10 @@
       font-size: 0.85rem;
       line-height: 1.1;
     }
+    /* The art gives way first on a short screen: at 375 × 667 the eighth
+       answer still ends above the bottom edge, under the depth's plaque. */
     .stage.snug .art {
-      height: clamp(150px, 23svh, 230px);
+      height: clamp(140px, 30svh - 60px, 230px);
     }
     .options.snug {
       grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -2569,6 +2571,30 @@
       top: 4px;
       right: 6px;
       font-size: 1.05rem;
+    }
+    /* Ten answers, from depth 70: a row more of names, so the art, the rows
+       and the gaps give a little each (the rows still 44px, a fair tap), and
+       the pictures five to a row in two rows. */
+    .stage.snug.ten .art {
+      height: clamp(120px, 30svh - 80px, 230px);
+    }
+    .options.snug.ten {
+      gap: 0.3rem;
+    }
+    .snug.ten .option {
+      min-height: 44px;
+      padding-top: 0.25rem;
+      padding-bottom: 0.25rem;
+    }
+    .snug.ten .text {
+      font-size: 0.94rem;
+    }
+    .tiles.snug.ten {
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+    }
+    .tiles.snug.ten .tile {
+      height: 150px;
+      padding: 0.5rem 0.15rem;
     }
   }
 </style>

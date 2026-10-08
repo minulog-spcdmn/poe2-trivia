@@ -70,7 +70,7 @@ let loading: Promise<Looks> | null = null;
 
 /**
  * The table from src/data/looks.json, fetched once (its own chunk, about
- * 26 KiB gzipped). A failed fetch (offline) is forgotten, so a later call
+ * 30 KiB gzipped). A failed fetch (offline) is forgotten, so a later call
  * tries again.
  */
 export function loadLooks(): Promise<Looks> {
