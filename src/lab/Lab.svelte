@@ -45,7 +45,7 @@
   // As the game does: the same notice again restarts the one already up instead of stacking a copy.
   const toast = (message: string, kind: ToastKind, opts: ToastOptions = {}) => toasts.show(message, kind, opts);
   function toastBurst() {
-    for (const i of [0, 3, 5, 11]) TOASTS[i].show();
+    for (const i of [0, 3, 5, 9, 10, 13]) TOASTS[i].show();
   }
   function clearToasts() {
     for (const t of [...toasts.list]) toasts.dismiss(t.id);
@@ -401,7 +401,7 @@
         <summary>Toasts</summary>
         <div class="grid">
           {#each TOASTS as t (t.label)}<button onclick={t.show}>{t.label}</button>{/each}
-          <button onclick={toastBurst}>Four at once</button>
+          <button onclick={toastBurst}>Six at once</button>
           <button onclick={clearToasts}>Clear all</button>
         </div>
         <p class="hint">The notices the game shows in the stack, as it words them. Hover one to hold it. In play, gameplay news shows under the question instead.</p>

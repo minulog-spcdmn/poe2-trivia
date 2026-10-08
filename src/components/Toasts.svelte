@@ -27,7 +27,7 @@
   // Phones show fewer at once, so a burst of news can't cover the game. The
   // lost connection takes one of the places.
   $effect(() => {
-    const max = (narrow ? 2 : 4) - (lost ? 1 : 0);
+    const max = (narrow ? 2 : 6) - (lost ? 1 : 0);
     untrack(() => toasts.setMax(max));
   });
 
