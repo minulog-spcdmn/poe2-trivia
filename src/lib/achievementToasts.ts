@@ -28,6 +28,7 @@ export type Where = 'start' | 'codex' | 'game';
  * on the start page.
  */
 export function announceAchievements(check: Check, where: Where) {
+  if (check.past?.length) announceAchievements({ earned: check.past, first: true }, where);
   const list = check.earned;
   if (!list.length) return;
   if (check.first) {

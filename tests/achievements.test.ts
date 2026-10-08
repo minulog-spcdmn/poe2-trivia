@@ -800,13 +800,37 @@ test('moments are written as they happen, announced, and once', () => {
   assert.ok(loadAchievements().earned['depth-50']);
 });
 
-test('a moment before there is any list joins the quiet first catch-up', () => {
-  // A player with past games reloads straight into a run: the codex's achievements and the moment come as one quiet check.
+test('a moment before there is any list: the past caught up quietly first, the moment announced', () => {
+  // A player with past games reloads straight into a run that reaches depth 10.
   codexWith(codexOf(Array.from({ length: 25 }, () => ({}))));
   const c = noteState(null, delve({ a: [3] }, { round: 11 }), 'a', false, { items });
-  assert.deepEqual([ids(c.earned).sort(), c.first], [['depth-10', 'streak-25'], true]);
+  assert.deepEqual([ids(c.earned), c.first, ids(c.past ?? [])], [['depth-10'], false, ['streak-25']]);
   // Nothing from the past is left to be announced as new afterwards.
   assert.deepEqual(checkAchievements(items), { earned: [], first: false });
+});
+
+test("Sweet Revenge counts each player's own misses (two tabs of one browser play two)", () => {
+  const id = items[0].id;
+  const miss = (who: string) => ({ id, ok: false, who });
+  assert.equal(sum(codexOf([miss('a'), miss('a'), miss('a'), { id, who: 'b' }])).revenge, false);
+  assert.equal(sum(codexOf([miss('a'), miss('b'), miss('a'), miss('a'), { id, who: 'a' }])).revenge, true);
+});
+
+test("a tab that lost its connection in the lobby doesn't vouch for a game it rejoins part way", () => {
+  const { engine, s } = setup(['Ash', 'Bram'], { target: 10 });
+  const lobby = { ...s, phase: 'lobby' as const, startedAt: undefined };
+  // Ash's first turn has passed (missed) while the tab was away.
+  let st = s;
+  for (let missed = false; !missed; ) {
+    const who = st.players[st.turn].id;
+    st = engine.apply(st, { type: 'pick', category: st.offered[0] }, who);
+    st = engine.apply(st, { type: 'answer', index: wrongIdx(st.question!) }, who);
+    st = engine.apply(st, { type: 'next' }, 'p0');
+    missed = who === 'p0';
+  }
+  const t = trackVersus(null, lobby, publicView(st), 'p0', false);
+  assert.equal(t?.whole, false);
+  assert.equal(trackVersus(null, lobby, publicView(s), 'p0', false)?.whole, true, 'seen at its first question');
 });
 
 test('the game in play is followed across reloads and let go at its end', () => {

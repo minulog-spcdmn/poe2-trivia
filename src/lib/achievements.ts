@@ -6,7 +6,7 @@
 // lays out evenly. Each group opens with a very easy one in lead, so a new
 // player soon finds there are achievements at all, and holds one to laugh at
 // and one that takes real mastery. Tiers are the seal's metal, the
-// alchemist's way from lead through copper and silver to gold (METALS), and
+// alchemist's way from lead through copper and silver to gold (lib/metals.ts), and
 // a series (one idea at rising tiers) shares a sign; no other achievements do.
 //
 // Where they come from:
@@ -37,8 +37,11 @@ import { DELVE_MAX_DYNAMITE, DELVE_MAX_FLARES, DELVE_MAX_WARDS, fellAt, inventor
 import { isTogether, loadRecords, type DelveRecords, type DelveRun } from './delveRecord.ts';
 import type { GameState, Item } from './game.ts';
 import { clearAside, makeRoom, newerThan } from './keepAside.ts';
+import type { Tier } from './metals.ts';
 import { isHeldName } from './names.ts';
 import { readStored, removeStored, storeKey, tryReadStored, writeStored } from './storage.ts';
+
+export type { Tier } from './metals.ts';
 
 /** The groups of the list, in the page's order. */
 export type AchievementGroup = 'knowledge' | 'versus' | 'delve' | 'together';
@@ -82,56 +85,6 @@ export type Sign =
   | 'gemini'
   | 'scorpio';
 
-/** How hard an achievement is: the seal's metal, lead (the very easy ones), copper, silver or gold. */
-export type Tier = 0 | 1 | 2 | 3;
-
-/**
- * Each tier's metal: its name, the colour its seal is struck in, and, where
- * the glow under the lines differs from the plain one, its sheen. Lead and
- * silver sit far apart: lead a dark, dull grey whose soft paler lustre keeps
- * it metal rather than stone, silver near white with a bright white lustre.
- * Gold is pale gold over a deep amber glow, like gilding.
- *
- * `light`: how light passes over an earned seal of the metal (lib/glint.ts),
- * every `every` ms, taking `sweep` to cross, a band `band`% either side of
- * its middle, in `gleam` at `strength`; gold's leaves a spark on the rim.
- * Dull lead gleams seldom, slowly and faintly; silver flashes quick, narrow
- * and white.
- */
-export interface Metal {
-  name: string;
-  color: string;
-  /** Its name's colour on the page, where the seal's own would be too dark to read. */
-  label?: string;
-  sheen?: { color: string; opacity: number };
-  light: { every: number; sweep: number; band: number; gleam: string; strength: number; spark?: true };
-}
-
-export const METALS: Record<Tier, Metal> = {
-  0: {
-    name: 'Lead',
-    color: '#6e7073',
-    label: '#a2a7ac',
-    sheen: { color: '#a2a7ac', opacity: 0.38 },
-    light: { every: 13000, sweep: 2400, band: 26, gleam: '#d9dde1', strength: 0.35 },
-  },
-  1: { name: 'Copper', color: '#cf9366', light: { every: 11000, sweep: 1700, band: 18, gleam: '#ffd9b8', strength: 0.6 } },
-  2: {
-    name: 'Silver',
-    color: '#eef1f4',
-    sheen: { color: '#ffffff', opacity: 0.38 },
-    light: { every: 8000, sweep: 1000, band: 10, gleam: '#ffffff', strength: 0.95 },
-  },
-  3: {
-    name: 'Gold',
-    color: '#f6d688',
-    sheen: { color: '#e8962e', opacity: 0.5 },
-    light: { every: 7000, sweep: 1400, band: 15, gleam: '#fff4cf', strength: 1, spark: true },
-  },
-};
-
-/** The tiers, easiest first. */
-export const TIERS: Tier[] = [0, 1, 2, 3];
 
 export interface Progress {
   /** How far along (may run past `need`). */
@@ -223,6 +176,8 @@ export const VEIL_OPTIONS = 6;
 /** By a Thread: depths survived in a row on the last life, past this depth. */
 export const THREAD = 10;
 export const THREAD_FROM = 30;
+/** Into the Fissure: the depth to reach alone (the Magma Fissure's first). */
+export const FISSURE_DEPTH = 10;
 /** Untouched: the depth to reach without losing a life. */
 export const UNTOUCHED = 40;
 /** Familiar Grave: the shallowest best it counts at. */
@@ -343,7 +298,7 @@ export const ACHIEVEMENTS: Achievement[] = [
   { id: 'hubris', group: 'versus', tier: 1, sign: 'venus', title: 'Hubris', text: `Lose a game after leading the winner by ${COMEBACK} points or more.` },
 
   // ---- delve ----
-  { id: 'depth-10', group: 'delve', tier: 0, sign: 'earth', series: 'depth', title: 'Into the Fissure', text: 'Reach depth 10 in a run alone.', progress: (s) => count(s.deepestAlone, 10) },
+  { id: 'depth-10', group: 'delve', tier: 0, sign: 'earth', series: 'depth', title: 'Into the Fissure', text: `Reach depth ${FISSURE_DEPTH} in a run alone.`, progress: (s) => count(s.deepestAlone, FISSURE_DEPTH) },
   { id: 'depth-50', group: 'delve', tier: 2, sign: 'earth', series: 'depth', title: 'Delve Master', text: 'Reach depth 50 in a run alone.', progress: (s) => count(s.deepestAlone, 50) },
   { id: 'depth-100', group: 'delve', tier: 3, sign: 'earth', series: 'depth', title: 'Endless Delver', text: 'Reach depth 100 in a run alone.', progress: (s) => count(s.deepestAlone, 100) },
   {
@@ -485,12 +440,17 @@ function streaks(log: Answer[]) {
   return { best, now: run, fast };
 }
 
-/** Whether an item was ever answered right after REVENGE or more wrong answers to it in a row: all this player's answers, races and runs together too. */
+/**
+ * Whether an item was ever answered right after REVENGE or more wrong answers
+ * to it in a row: all this player's answers, races and runs together too, by
+ * the player who gave them (two tabs of one browser in one room play two).
+ */
 function revenged(log: Answer[]): boolean {
   const misses = new Map<string, number>();
   for (const a of log) {
-    if (a.ok && (misses.get(a.id) ?? 0) >= REVENGE) return true;
-    misses.set(a.id, a.ok ? 0 : (misses.get(a.id) ?? 0) + 1);
+    const key = `${a.who ?? ''}:${a.id}`;
+    if (a.ok && (misses.get(key) ?? 0) >= REVENGE) return true;
+    misses.set(key, a.ok ? 0 : (misses.get(key) ?? 0) + 1);
   }
   return false;
 }
@@ -652,7 +612,7 @@ export function momentsIn(prev: GameState | null, next: GameState, me: string | 
 
   if (!isGroupRun(next)) {
     const depth = shownDepth(next.round);
-    if (depth >= 10) out.push('depth-10');
+    if (depth >= FISSURE_DEPTH) out.push('depth-10');
     if (depth >= 50) out.push('depth-50');
     if (depth >= 100) out.push('depth-100');
     // Standing at the depth with every life (a loss at it still reached it).
@@ -743,12 +703,11 @@ function versusGame(s: GameState, me: string | null, hotSeat: boolean): s is Gam
 }
 
 /**
- * Whether a game is seen from its first question: its start came in with this
- * change (the state before was the lobby, or another game), or it stands at
- * its first question with nothing answered yet.
+ * Whether a game is seen from its first question: it stands at it, nothing
+ * answered yet. Seeing its start come in isn't enough: a tab that lost its
+ * connection in the lobby may first see the game questions later.
  */
-function seenFromStart(prev: GameState | null, next: GameState & { startedAt: number }): boolean {
-  if (prev && prev.startedAt !== next.startedAt) return true;
+function seenFromStart(next: GameState): boolean {
   return next.turnCount === 0 && !next.reveal && next.players.every((p) => p.score === 0) && !next.question?.misses.length;
 }
 
@@ -770,7 +729,7 @@ export function trackVersus(
   let t: VersusTrack =
     track?.game === next.startedAt
       ? track
-      : { game: next.startedAt, whole: seenFromStart(prev, next), lead: {}, ahead: {}, answered: 0, wrong: false, guessed: [], veiled: 0, last: 0 };
+      : { game: next.startedAt, whole: seenFromStart(next), lead: {}, ahead: {}, answered: 0, wrong: false, guessed: [], veiled: 0, last: 0 };
   const race = next.settings.mode === 'race';
   const r = newReveal(prev, next);
   const changed = () => (t === track ? (t = { ...t, lead: { ...t.lead }, ahead: { ...t.ahead }, guessed: [...t.guessed] }) : t);
@@ -968,6 +927,8 @@ export interface Check {
   earned: Achievement[];
   /** There was no list before it: what it earned was earned before, in games from before achievements. */
   first: boolean;
+  /** Earned quietly alongside `earned`, in games from before achievements (a first check a moment came with). */
+  past?: Achievement[];
 }
 
 const none = (): Check => ({ earned: [], first: false });
@@ -1029,9 +990,8 @@ const TRACK = 'achievements.versus';
 
 /**
  * A state change of a room or a run as this device saw it: follows a game
- * against others, and says what its moments earned (written already).
- * Announced, unless there is no list yet: then the first check is made here,
- * quietly, with them (see checkAchievements).
+ * against others, and says what its moments earned (written already). With
+ * no list yet, the quiet first check is made here first (`past`).
  */
 export function noteState(
   prev: GameState | null,
@@ -1042,6 +1002,14 @@ export function noteState(
 ): Check {
   const delve = momentsIn(prev, next, me, hotSeat);
   const ended: string[] = [];
+  // With no list yet, the quiet first catch-up with the codex and the records
+  // (`items`, the game's) comes before this change writes anything, so what
+  // past games earned is told by the start page, never announced as new, and
+  // what this change earns is announced as it happens.
+  let past: Achievement[] = [];
+  const catchUp = () => {
+    if (open()?.first) past = checkAchievements(items).earned;
+  };
   if (versusGame(next, me, hotSeat) && next.phase !== 'lobby') {
     const was = parseTrack(readStored(TRACK, 'session'));
     const track = trackVersus(was, prev, next, me, hotSeat, veilShare);
@@ -1051,6 +1019,7 @@ export function noteState(
       if (was?.game === next.startedAt) {
         const end = versusEnd(next, me, hotSeat, track);
         ended.push(...end.earned);
+        if (end.outcome) catchUp();
         const wins = end.outcome && countGame(end.outcome, next.startedAt);
         if (wins && wins.now >= WIN_RUN) ended.push('undefeated');
       }
@@ -1058,14 +1027,10 @@ export function noteState(
     } else if (track && track !== was) writeStored(TRACK, JSON.stringify(track), 'session');
   }
   const ids = [...delve, ...ended];
-  if (!ids.length) return none();
-  const o = open();
-  if (!o) return none();
-  // No list yet: these join the quiet first catch-up with the codex and the
-  // records (`items`, the game's), which the start page tells, rather than
-  // starting the list loudly and leaving the catch-up to be announced as new.
-  if (o.first) return checkAchievements(items, ids);
-  return earn(o.store, false, ids);
+  if (ids.length) catchUp();
+  const o = ids.length ? open() : null;
+  const check = o ? earn(o.store, false, ids) : none();
+  return past.length ? { ...check, past } : check;
 }
 
 /**

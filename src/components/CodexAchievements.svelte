@@ -3,7 +3,9 @@
   import type { Codex } from '../lib/codex';
   import type { DelveRecords } from '../lib/delveRecord';
   import type { Item } from '../lib/game';
-  import { ACHIEVEMENTS, GROUPS, METALS, TIERS, standings, summarize, type AchievementStore, type WinRun } from '../lib/achievements';
+  import { ACHIEVEMENTS, GROUPS, standings, summarize, type AchievementStore, type WinRun } from '../lib/achievements';
+  import { METALS, TIERS } from '../lib/metals';
+  import { motion } from '../lib/motion.svelte';
   import { backdropShadow } from '../lib/backdropShadow';
   import ArcaneCircle from './ArcaneCircle.svelte';
   import AchievementSeal from './AchievementSeal.svelte';
@@ -15,8 +17,7 @@
   // lib/achievements.ts.
   let { codex, records, store, wins, items }: { codex: Codex; records: DelveRecords; store: AchievementStore; wins: WinRun; items: Item[] } = $props();
 
-  const still = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const rise = (delay: number) => ({ y: 20, duration: still ? 0 : 700, delay: still ? 0 : delay });
+  const rise = (delay: number) => ({ y: 20, duration: motion.reduced ? 0 : 700, delay: motion.reduced ? 0 : delay });
 
   const date = (t: number) => new Date(t).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
   const fmt = (n: number) => n.toLocaleString();

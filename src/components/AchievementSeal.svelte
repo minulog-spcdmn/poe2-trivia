@@ -1,7 +1,7 @@
 <script lang="ts" module>
   // An achievement's seal, engraved in the style of the rune circle
   // (docs/arcane-style.md): a worn double ring holding an alchemical sign,
-  // struck in the metal of its tier (lib/achievements.ts METALS: lead,
+  // struck in the metal of its tier (lib/metals.ts METALS: lead,
   // copper, silver, gold). Lead, for the very easy ones, has the outer ring alone. Harder ones carry a glory
   // of fine rays round the sign, the hardest a third ring inside it.
   // Earned, the lines sit on a soft glow, and now and then light passes over
@@ -33,10 +33,9 @@
   } from '../lib/alchemy';
   import { at, line, ring, wear, type Pt } from '../lib/arcane';
   import { passingLight } from '../lib/glint';
-
-  /** Reduced motion: no light ever passes, so no copy of the lines is kept for it. */
-  const moving = typeof matchMedia !== 'function' || !matchMedia('(prefers-reduced-motion: reduce)').matches;
-  import { METALS, TIERS, type Sign, type Tier } from '../lib/achievements';
+  import { motion } from '../lib/motion.svelte';
+  import type { Sign } from '../lib/achievements';
+  import { METALS, TIERS, type Tier } from '../lib/metals';
 
   const C: Pt = [0, 0];
   const OUTER = 21.6;
@@ -151,9 +150,10 @@
       <circle r={OUTER} class="done" pathLength="100" stroke-dasharray="{share * 100} 100" transform="rotate(-90)" />
     {/if}
   </svg>
-  {#if earned && moving}
+  <!-- Held still, no light ever passes, so no copy of the lines is kept for it. -->
+  {#if earned && !motion.still}
     {#key tier}
-      <span class="slit" use:sheen={tier}><svg viewBox="-24 -24 48 48">{@render engraving(true)}</svg></span>
+      <span class="light"><span class="slit" use:sheen={tier}><svg viewBox="-24 -24 48 48">{@render engraving(true)}</svg></span></span>
       {#if METALS[tier].light.spark}
         <svg class="spark" use:spark={tier} viewBox="-1 -1 2 2" style:left={SPARK_AT[0]} style:top={SPARK_AT[1]}>
           <path d="M0 -1L0.16 -0.16L1 0L0.16 0.16L0 1L-0.16 0.16L-1 0L-0.16 -0.16Z" />
@@ -230,10 +230,17 @@
    * its copy of the lines shifted back over them (lib/glint.ts slides both).
    * The band is the metal's width either side of the slit's middle.
    */
+  /* The light keeps to the seal: the slit waits outside it, and would otherwise widen the page as it passes. */
+  .light {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    border-radius: 50%;
+    pointer-events: none;
+  }
   .slit {
     position: absolute;
     inset: 0;
-    pointer-events: none;
     -webkit-mask-image: linear-gradient(90deg, transparent calc(50% - var(--band)), #000 50%, transparent calc(50% + var(--band)));
     mask-image: linear-gradient(90deg, transparent calc(50% - var(--band)), #000 50%, transparent calc(50% + var(--band)));
     transform: translateX(-100%) skewX(-20deg);
@@ -257,11 +264,6 @@
     fill: #fffaf0;
     stroke: none;
     filter: drop-shadow(0 0 2px rgba(255, 214, 140, 0.9));
-  }
-  /* Effects off in the app: no light passes (lib/glint.ts skips it too). */
-  :global(html[data-still]) .slit,
-  :global(html[data-still]) .spark {
-    display: none;
   }
 
   /* The glow: the same lines, wide and faint, under them. */

@@ -9,17 +9,15 @@
 //
 // A light (passingLight) sweeps everything it lights together, on the beat of
 // the page clock, so they catch the same light; between sweeps nothing
-// animates. A light that travels reaches things further down and to the
+// animates, and a sweep lights only what is on screen. A light that travels reaches things further down and to the
 // right a moment later, as if it passed over the page. A light can also kindle
 // sparks as it leaves: a small star that flares and fades.
+
+import { motion } from './motion.svelte';
 
 /** How often the light on the creator's name passes, and how long it takes to cross (ms). */
 export const GLINT_EVERY = 9000;
 export const GLINT_SWEEP = 1400;
-
-const reduced = matchMedia('(prefers-reduced-motion: reduce)');
-/** Held still: reduced motion, or the effects switched off in the app (html[data-still]). */
-export const still = () => reduced.matches || document.documentElement.hasAttribute('data-still');
 
 const SLIT = [{ transform: 'translateX(-100%) skewX(-20deg)' }, { transform: 'translateX(100%) skewX(-20deg)' }];
 const COPY = [{ transform: 'skewX(20deg) translateX(100%)' }, { transform: 'skewX(20deg) translateX(-100%)' }];
@@ -44,6 +42,23 @@ export function passingLight(every: number, sweep: number, { travel = false } = 
   const slits = new Set<Element>();
   const sparks = new Set<Element>();
   let timer: ReturnType<typeof setTimeout> | undefined;
+  /**
+   * What is on screen now: a pass lights only these (all, where nothing can
+   * tell). A slit is watched by its container, as it waits outside it, often
+   * clipped away, between passes.
+   */
+  const shown = new Set<Element>();
+  const placeOf = (el: Element) => (slits.has(el) ? (el.parentElement ?? el) : el);
+  const watch =
+    typeof IntersectionObserver === 'function'
+      ? new IntersectionObserver((entries) => {
+          for (const e of entries) {
+            if (e.isIntersecting) shown.add(e.target);
+            else shown.delete(e.target);
+          }
+        })
+      : null;
+  const onScreen = (el: Element) => !watch || shown.has(placeOf(el));
   // Both halves share one timing, so the copy's slide cancels the slit's exactly.
   const timing: KeyframeAnimationOptions = { duration: sweep, easing: 'cubic-bezier(0.45, 0, 0.4, 1)' };
 
@@ -62,10 +77,10 @@ export function passingLight(every: number, sweep: number, { travel = false } = 
   }
 
   function pass() {
-    if (!document.hidden && !still()) {
+    if (!document.hidden && !motion.still) {
       // Every position is read before any animation starts, so the page is laid out once a pass, not once a seal.
-      const lit = [...slits].map((slit) => [slit, delayOf(slit)] as const);
-      const kindled = [...sparks].map((spark) => [spark, delayOf(spark)] as const);
+      const lit = [...slits].filter(onScreen).map((slit) => [slit, delayOf(slit)] as const);
+      const kindled = [...sparks].filter(onScreen).map((spark) => [spark, delayOf(spark)] as const);
       for (const [slit, delay] of lit) {
         slit.animate(SLIT, { ...timing, delay, fill: 'backwards' });
         slit.firstElementChild?.animate(COPY, { ...timing, delay, fill: 'backwards' });
@@ -78,10 +93,17 @@ export function passingLight(every: number, sweep: number, { travel = false } = 
   /** Lit by this light while it's on the page. */
   function join(set: Set<Element>, el: Element) {
     set.add(el);
+    watch?.observe(placeOf(el));
     if (!timer) schedule();
     return {
       destroy() {
+        const place = placeOf(el);
         set.delete(el);
+        // A container another slit still lives in stays watched.
+        if (![...slits].some((s) => placeOf(s) === place)) {
+          shown.delete(place);
+          watch?.unobserve(place);
+        }
         if (slits.size || sparks.size || !timer) return;
         clearTimeout(timer);
         timer = undefined;
