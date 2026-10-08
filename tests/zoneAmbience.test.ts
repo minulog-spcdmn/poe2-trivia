@@ -42,7 +42,7 @@ test('every zone and every archetype has a bed of one or two layers', () => {
     assert.ok(bed.fire === null || (bed.fire > OFF && bed.fire <= 6), `fire ${bed.fire}`);
     assert.ok(bed.layers.length >= 1 && bed.layers.length <= 2);
     for (const l of bed.layers) {
-      assert.match(l.file, /^amb-[a-z]+-\d$/);
+      assert.match(l.file, /^amb-[a-z]+-[a-z\d]+$/);
       assert.ok(l.gain < -20 && l.gain >= -70, `${l.file} gain ${l.gain}`);
       assert.ok(l.lp >= 20 && l.lp <= 20000, `${l.file} lp ${l.lp}`);
       assert.ok(l.rate >= 0.5 && l.rate <= 1.5, `${l.file} rate ${l.rate}`);
@@ -109,7 +109,7 @@ test('a settled depth is one place alone; a turn cross-fades two at equal power'
 });
 
 test("the ambience is each place's fire, by its share", () => {
-  // The Mines keep nearly all of it; Frozen Hollow puts it out.
+  // The Mines keep all of it; Frozen Hollow puts it out.
   assert.ok(Math.abs(bedsAt(1).fire - db(ZONE_AMBIENCE[0].fire!)) < 1e-12);
   assert.equal(ZONE_AMBIENCE[2].fire, null);
   assert.equal(bedsAt(settledAt(2)).fire, 0);

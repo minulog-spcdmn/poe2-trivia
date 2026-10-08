@@ -155,14 +155,14 @@
       ]
     },
     "z0": {
-      "fire": -1.6,
+      "fire": 0,
       "layers": [
         {
-          "file": "amb-mines-3",
-          "gain": -44.6,
-          "lp": 2837,
-          "rate": 0.98,
-          "send": 0.75
+          "file": "amb-mines-drone",
+          "gain": -51,
+          "lp": 1200,
+          "rate": 1,
+          "send": 0.4
         }
       ]
     },

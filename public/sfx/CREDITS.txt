@@ -39,8 +39,8 @@ How they are layered and filtered is set in src/lib/soundDesign.ts.
                        by ilmari_freesound, https://freesound.org/s/663183/
   amb-magma-4.mp3      Lava Loop 4 (Ember forge)
                        by Fission9, https://freesound.org/s/474852/
-  amb-mines-3.mp3      Cave Ambience (The Mines)
-                       by pointlessperson1, https://freesound.org/s/740041/
+  amb-mines-drone.mp3  Dark Dungeon Ambience (The Mines)
+                       by Kinoton, https://freesound.org/s/516566/
   amb-petrified-1.mp3  FUMO.WAV (Petrified Forest)
                        by lollosound, https://freesound.org/s/386995/
   amb-primeval-1.mp3   Dark Ambience - Lonely Caverns (Primeval Ruins)

@@ -65,8 +65,9 @@ export type Bed = { fire: number | null; layers: BedLayer[] };
 
 /** Delve: each zone's bed, in the zones' order (depths 1 to 10, 11 to 20, ... 91 to 100). */
 export const ZONE_AMBIENCE: readonly Bed[] = [
-  // The Mines
-  { fire: -1.6, layers: [{ file: 'amb-mines-3', gain: -44.6, lp: 2837, rate: 0.98, send: 0.75 }] },
+  // The Mines: the lobby's fire as it is, a deep drone about 11 LU under it,
+  // so the whole mix is barely (0.3 LU) louder than the lobby's at depth 1.
+  { fire: 0, layers: [{ file: 'amb-mines-drone', gain: -51, lp: 1200, rate: 1, send: 0.4 }] },
   // Magma Fissure
   { fire: -8.7, layers: [{ file: 'amb-magma-3', gain: -40.7, lp: 2252, rate: 0.83, send: 0.2 }] },
   // Frozen Hollow
