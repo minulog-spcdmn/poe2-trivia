@@ -3,9 +3,11 @@
 // faint at first and closing in over the last seconds, and opens out again
 // when the question ends or a flare buys more time. Only a look: it changes
 // nothing in the game. The ring that shows the clock
-// (components/TimerRing.svelte) drives it; the backdrop (lib/backdrop.ts)
-// draws it behind the UI, and components/Darkness.svelte a soft shade along
-// the very edges of the screen over it.
+// (components/TimerRing.svelte) drives it; the backdrop (lib/backdrop.ts,
+// or without WebGL components/DarkTendrils.svelte) draws it behind the UI,
+// soft fingers of dark reaching in from every side, and
+// components/Darkness.svelte a soft shade along the very edges of the
+// screen over it.
 
 /** How far the clock has run down, 0 to 1, as last set. */
 let target = 0;
@@ -35,7 +37,9 @@ export function onPressure(f: () => void): () => void {
  */
 export function pressureLevel(now = performance.now()): number {
   if (at < 0) at = now;
-  const dt = Math.max(0, now - at) / 1000;
+  // (At most a tenth of a second at a time: a loop waking from sleep, or a
+  // tab coming back, eases from where it was rather than jumping.)
+  const dt = Math.min(0.1, Math.max(0, now - at) / 1000);
   at = now;
   if (level !== target) {
     level += (target - level) * (1 - Math.exp(-dt / (target > level ? 0.25 : 0.55)));
@@ -80,6 +84,20 @@ export function pressureOf(left: number, span: number, warn = 5): number {
   const gone = Math.min(1, Math.max(0, 1 - left / span));
   const late = Math.min(1, Math.max(0, 1 - left / (warn * 1000 + 2000)));
   return 0.45 * gone ** 1.6 + 0.55 * late ** 1.5;
+}
+
+/** ms the dark takes to draw back as a flare catches (see flareEase). */
+export const FLARE_RECEDE_MS = 450;
+
+/**
+ * The dark as a flare catches, `since` ms after its light blooms: it holds
+ * where it was (`held`), then draws back to `to`, the flare's own
+ * (flarePressure), eased in and out, so it never jumps.
+ */
+export function flareEase(held: number, to: number, since: number): number {
+  const k = Math.max(0, since / FLARE_RECEDE_MS);
+  if (k >= 1) return to;
+  return held + (to - held) * k * k * (3 - 2 * k);
 }
 
 /**

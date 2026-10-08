@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { claimPressure, flarePressure, pressing, pressureLevel, pressureOf, setPressure } from '../src/lib/darkness.ts';
+import { FLARE_RECEDE_MS, claimPressure, flareEase, flarePressure, pressing, pressureLevel, pressureOf, setPressure } from '../src/lib/darkness.ts';
 
 test("the dark comes in with a question's clock: faint while there is time, closing in over the last seconds", () => {
   const span = 20000;
@@ -65,4 +65,30 @@ test("a flare's light holds the dark back as it catches, and it seeps back in as
   assert.ok(flarePressure(0.5) < 0.4, 'still held back half way');
   assert.equal(flarePressure(0), 1);
   assert.equal(flarePressure(-1), 1);
+});
+
+test('as a flare catches the dark holds, then draws back smoothly, never in a jump', () => {
+  const held = 1;
+  const to = flarePressure(1);
+  assert.equal(flareEase(held, to, 0), held, 'held as its light blooms');
+  assert.equal(flareEase(held, to, FLARE_RECEDE_MS), to);
+  assert.equal(flareEase(held, to, 10 * FLARE_RECEDE_MS), to);
+  let last = held;
+  for (let ms = 0; ms <= FLARE_RECEDE_MS; ms += 16) {
+    const p = flareEase(held, to, ms);
+    assert.ok(p <= last && last - p < 0.06, `${p} at ${ms} ms`);
+    last = p;
+  }
+});
+
+test('a loop waking after a long sleep eases from where the dark was', () => {
+  const a = claimPressure();
+  let now = 100000;
+  pressureLevel(now);
+  a.set(1);
+  // (Nothing drew it for a long while.)
+  now += 60000;
+  assert.ok(pressureLevel(now) < 0.5, 'no jump');
+  a.release();
+  for (let i = 0; i < 400; i++) pressureLevel((now += 16));
 });

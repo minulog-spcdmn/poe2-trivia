@@ -3,6 +3,7 @@
   import { startBackdrop } from '../lib/backdrop';
   import { ENVIRONMENTS, MAGMA, descent, emberTurn, lookOf, magmaHeat, onDescent, toneOf, type Descent } from '../lib/descent';
   import { stopsOf } from '../lib/backdropData';
+  import DarkTendrils from './DarkTendrils.svelte';
 
   // Ambient backdrop: warm glow, vignette and slowly rising embers. The WebGL
   // backdrop draws its own embers; these CSS ones are for the fallback.
@@ -67,6 +68,8 @@
          (descent.ts's dim: its `light` is the WebGL hall's, and swings with
          what each stratum's features add). -->
     <div class="dim" style:opacity={dsc.dim}></div>
+    <!-- And a question's clock running down: the dark reaching in (lib/darkness.ts). -->
+    <DarkTendrils />
     <div class="grain"></div>
     <div class="embers">
     {#each embers as e, i (i)}

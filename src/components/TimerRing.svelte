@@ -5,7 +5,7 @@
   import { timerTick } from '../lib/fx/moments';
   import { FLARE_MS, clockLeft, questionTimer, veinWindowMs } from '../lib/delve';
   import { FLARE_IGNITE_MS, flareBurning, onFlareLands, type FlareBurn } from '../lib/flareBurn';
-  import { claimPressure, flarePressure, pressureOf, type Pressure } from '../lib/darkness';
+  import { claimPressure, flareEase, flarePressure, pressureOf, type Pressure } from '../lib/darkness';
 
   /**
    * `deadline` null: the clock hasn't started yet (Delve waits for the art), so
@@ -43,6 +43,16 @@
   let flaring = $state(false);
   let lit = $state(false);
   let holdUntil = 0;
+  /**
+   * The dark (lib/darkness.ts) while a flare burns: when its light bloomed
+   * (performance.now(); -Infinity for one already burning when the ring
+   * mounted, null for none), and how dark it was then. Until it blooms the
+   * dark holds where the clock left it; then it draws back (flareEase).
+   */
+  let litAt: number | null = null;
+  let heldDark = 0;
+  /** The dark as last set. */
+  let shownDark = 0;
   let wasFlared: boolean | null = null;
   // Its own derived, so that only the flare itself (not every new state) runs the effect again.
   const flared = $derived(!!q?.flared);
@@ -50,14 +60,19 @@
     const now = flared;
     const was = wasFlared;
     wasFlared = now;
-    if (!now) lit = false;
-    else if (was === false) {
+    if (!now) {
+      lit = false;
+      litAt = null;
+    } else if (was === false) {
       // Lit as the streak lands, or soon after it should have (none flew: the entry is not on screen).
       let t: ReturnType<typeof setTimeout> | undefined;
       const ignite = () => {
         stopWaiting();
         clearTimeout(t);
         holdUntil = 0;
+        // The dark draws back from here, in step with its light.
+        litAt = performance.now();
+        heldDark = shownDark;
         flaring = lit = true;
         t = setTimeout(() => (flaring = false), 1600);
       };
@@ -71,7 +86,10 @@
       };
     } else if (was === null) {
       const end = untrack(() => (stopped ? null : deadline));
-      if (end !== null && leftAt(end, session.hostNow()) > 0) lit = true;
+      if (end !== null && leftAt(end, session.hostNow()) > 0) {
+        lit = true;
+        litAt = -Infinity;
+      }
     }
   });
   // The ring burning (lib/flareBurn.ts), its light dying down with the added
@@ -106,11 +124,15 @@
 
   // Delve: while the clock runs, the light shrinks with it (lib/darkness.ts).
   // The ring of the question on screen drives it (a new one takes over from
-  // one still fading out), and lets it lift when the clock stops.
+  // one still fading out), and lets it lift when the clock stops. Not again
+  // as the deadline moves (a flare, a pause): letting go would lift the dark
+  // at once, before the flare's light has caught (the loop below holds it
+  // while its streak flies).
   const delve = $derived(!!st?.delve);
+  const clocked = $derived(deadline !== null);
   let dark: Pressure | null = null;
   $effect(() => {
-    if (!delve || deadline === null || stopped) return;
+    if (!delve || !clocked || stopped) return;
     const own = claimPressure();
     dark = own;
     return () => {
@@ -149,8 +171,11 @@
       const left = leftAt(end, session.hostNow());
       burn?.set(left / FLARE_MS, left / spanMs);
       const secs = Math.ceil(left / 1000);
-      // While a flare burns, its light holds the dark back (lib/darkness.ts).
-      dark?.set(burn ? flarePressure(left / FLARE_MS) : pressureOf(left, spanMs, warn));
+      // While a flare burns, its light holds the dark back (lib/darkness.ts):
+      // from when it blooms, drawing back from where the clock had it.
+      shownDark =
+        litAt === null ? pressureOf(left, spanMs, warn) : flareEase(heldDark, flarePressure(left / FLARE_MS), performance.now() - litAt);
+      dark?.set(shownDark);
       // The ring is redrawn only once its end has moved a third of a pixel
       // (or the number changes): on a 20 s timer about 25 times a second
       // rather than every frame, and each redraw repaints its glow.

@@ -194,9 +194,42 @@ float closing(vec2 p) {
   vec2 size = vec2(uSize.x, uViewH);
   float tm = uHome.z;
   float flicker = (0.012 + 0.02 * uDark.y) * (0.6 * sin(tm * 1.7) + 0.4 * sin(tm * 2.9 + 1.0));
-  float reach = max(0.15, 1.0 - 0.6 * uDark.x - 0.7 * uDark.y + flicker);
+  float reach = max(0.15, 1.0 - 0.6 * uDark.x - 0.4 * uDark.y + flicker);
   vec2 x = max(abs(p - 0.5 * size) / (0.5 * size) - reach, 0.0) / (0.3 + 0.25 * reach);
   return 1.0 - exp(-dot(x, x));
+}
+
+// The question's clock running down (uDark.y): soft fingers of the dark
+// reaching in from every side, longer as it runs out, 0 to 1 where it is
+// dark. How far each reaches varies along the edge with slow noise read
+// round a circle (so it has no seam), and curls as it comes in; drifting
+// smoke bends them, so they writhe slowly, on the backdrop's clock (still,
+// holding still). Across each, the dark falls off as a Gaussian from the
+// edge, so no finger has an edge of its own.
+float tendrils(vec2 p) {
+  if (uDark.y <= 0.0) return 0.0;
+  vec2 size = vec2(uSize.x, uViewH);
+  float S = sqrt(size.x * size.y);
+  float tm = uHome.z;
+  vec2 c = (p - 0.5 * size) / (0.5 * size);
+  // How far in from the nearest edge: 0 there, about 1 in the middle (a
+  // smooth max, so no crease runs in from the corners).
+  vec2 a = abs(c);
+  float inward = max(0.0, 1.0 - 0.12 * log(exp(a.x / 0.12) + exp(a.y / 0.12)));
+  // Which way from the middle, curling the further in, and bent by the smoke.
+  vec2 d = normalize(c * size / S + 1e-4);
+  float twist = (vnoise(d * 1.7 + vec2(tm * 0.045, 3.0)) - 0.5) * 1.4 * inward;
+  d = mat2(cos(twist), sin(twist), -sin(twist), cos(twist)) * d;
+  vec2 u = p / S * 3.0;
+  vec2 w = vec2(vnoise(u + vec2(tm * 0.06, 0.0)), vnoise(u + vec2(5.2, -tm * 0.05))) - 0.5;
+  d = normalize(d + 0.45 * w);
+  // How far the finger here reaches (in half screens), longer as the clock runs out.
+  float f = smoothstep(0.3, 0.85, vnoise(d * 2.6 + vec2(17.0 + tm * 0.02, -tm * 0.015)));
+  float len = uDark.y * (0.05 + 0.75 * f) + 0.01;
+  float x = inward / len;
+  // A little of the smoke's own texture in it, and faint while the clock has long to run.
+  float smoke = 0.8 + 0.2 * vnoise(u * 2.1 - vec2(tm * 0.03, 0.0));
+  return exp(-1.4 * x * x) * smoke * min(1.0, 3.0 * uDark.y);
 }
 
 // The soft light at p (CSS px, top-left origin).
@@ -266,6 +299,7 @@ vec3 smoothLight(vec2 p) {
   // The light about you drawing in (see closing()). What glows in the
   // stratum's environment still shows through it, dimmed.
   float dark = closing(p);
+  dark = 1.0 - (1.0 - dark) * (1.0 - 0.9 * tendrils(p));
   if (dark > 0.0) col *= 1.0 - 0.93 * dark;
   if (uShade.a > 0.0 || uMist.a > 0.0) col = environments(col, p, (p + vec2(uSlide, uSink)) / S, p / vec2(W, H), S, W, H, uHome.z, dark);
   // As the clock runs out the light about you dims as it draws in, the
