@@ -14,6 +14,7 @@ import { FIND_COLORS } from './moments';
 import { Shape } from './particles';
 import { ShapeType } from './renderer';
 import { holdLight, light, pulseMood } from '../lights';
+import { cornerPx } from '../corner';
 
 const RED = FIND_COLORS.flare.main;
 const PALE = FIND_COLORS.flare.pale;
@@ -86,8 +87,10 @@ const CRIMSON: Vec3 = [2.6, 0.2, 0.36];
 const CINDER: Vec3 = [0.5, 0.03, 0.08];
 
 export type FlareLit = {
-  /** Where it burns: the middle of the screen, behind the UI (viewport px). */
+  /** Where it burns, behind the UI (viewport px): the middle of the item box, followed as it moves. */
   at: () => Point;
+  /** The element it burns behind (the item box), if any: its outline is backlit, and the backdrop's light follows it. */
+  light?: () => Element | null;
   /** How much of the flare is left, 0 to 1. */
   level: () => number;
   /** The UI in front of it, which hides it (see cover in core.ts). */
@@ -95,8 +98,8 @@ export type FlareLit = {
 };
 
 /**
- * The flare the player lit, burning in the middle of the screen behind the
- * question: it catches with a white flash, a burst of sparks and a ring of
+ * The flare the player lit, burning behind the question, in the middle of
+ * the item box (the panel with the item's picture): it catches with a white flash, a burst of sparks and a ring of
  * light, then burns as a road flare does. A white-hot heart in a flame of
  * magenta and crimson, never steady: it wavers, and now and then sputters
  * low. It spits sparks that arc out and fall, drops burning slag, and sends
@@ -197,8 +200,43 @@ export function flareLit(o: FlareLit): Handle {
   // screen (a phone), where the question's picture hides all the middle.
   const narrow = Math.min(1.5, Math.max(1, big / small / 1.6));
   const far = glow(big * 0.3 * Math.sqrt(narrow), CRIMSON, 0.085 * narrow);
+  // The box it burns behind, backlit: its light welling up round the box's
+  // outline, licking upward like fire (hidden over the box itself, but for its rim).
+  let corner = '0';
+  let cornerOf: Element | null = null;
+  const backlit = shape({
+    type: ShapeType.RectGlow,
+    at: { x: 0, y: 0 },
+    life: Infinity,
+    behind: true,
+    color: MAGENTA,
+    update(f, _t, _age, b) {
+      const el = o.light?.();
+      const r = el?.isConnected ? el.getBoundingClientRect() : null;
+      if (!el || !r || !r.width) {
+        f.k = 0;
+        return;
+      }
+      if (el !== cornerOf) {
+        cornerOf = el;
+        corner = getComputedStyle(el).borderTopLeftRadius;
+      }
+      const wd = Math.max(20, Math.min(r.width, r.height) * 0.12);
+      b.x = r.left + r.width / 2;
+      b.y = r.top + r.height / 2;
+      f.hw = r.width / 2 + wd * 5;
+      f.hh = r.height / 2 + wd * 5;
+      f.k = 0.19 * heat * (1 - 0.5 * gut);
+      f.q[0] = r.width / 2;
+      f.q[1] = r.height / 2;
+      f.q[2] = Math.min(cornerPx(corner, r.width, r.height), r.width / 2, r.height / 2);
+      f.q[3] = wd;
+      f.q[4] = 0.6;
+      f.q[5] = 0;
+    },
+  });
   // The backdrop's own light, behind everything, wavering with it.
-  const lit = holdLight(where(), [1, 0.26, 0.48], big * 0.55);
+  const lit = holdLight(o.light?.() ?? where(), [1, 0.26, 0.48], big * 0.55);
   const lightUp = task(() => {
     lit.set(0.85 * heat * (1 - 0.5 * gut));
     return true;
@@ -303,7 +341,7 @@ export function flareLit(o: FlareLit): Handle {
       spit.stop();
       lightUp.stop();
       lit.release();
-      for (const s of [flame, near, far]) s.stop(0.45);
+      for (const s of [flame, near, far, backlit]) s.stop(0.45);
       // Sparks and smoke still in the air keep the UI in front of them till they're gone.
       after(1.6, () => covered.stop());
     },

@@ -324,10 +324,12 @@ export function task(fn: Task): Handle {
 
 /**
  * Where the UI is, for light from behind it: boxes on screen (viewport CSS
- * px). A `soft` one (text, say) hides it with a wide soft edge rather than
- * a box's.
+ * px), with their corners' radii (top left, top right, bottom right, bottom
+ * left, px) so a rounded one hides it in its own shape (a pill as a
+ * capsule). A `soft` one (text, say) hides it with a wide soft edge rather
+ * than a box's.
  */
-export type CoverBox = { box: DOMRect; soft?: boolean };
+export type CoverBox = { box: DOMRect; soft?: boolean; radii?: readonly number[] };
 export type CoverSource = () => Iterable<CoverBox>;
 const covers = new Set<CoverSource>();
 const coverBoxes: number[] = [];
@@ -354,7 +356,11 @@ function coverNow(): number[] | null {
   coverBoxes.length = 0;
   for (const src of covers) {
     try {
-      for (const { box: r, soft } of src()) if (r.width > 0 && r.height > 0) coverBoxes.push(r.left, r.top, r.width, r.height, soft ? 1 : 0);
+      for (const { box: r, soft, radii } of src()) {
+        if (!(r.width > 0 && r.height > 0)) continue;
+        coverBoxes.push(r.left, r.top, r.width, r.height, soft ? 1 : 0);
+        for (let i = 0; i < 4; i++) coverBoxes.push(radii?.[i] ?? 0);
+      }
     } catch (e) {
       console.warn('FX cover failed', e);
     }

@@ -10,10 +10,11 @@
 // - The burning (flareBurning, from the clock: TimerRing.svelte). While the
 //   added seconds run, the clock burns like a road flare: a red glow round
 //   its ring flickering, its tip (the end of the ring, burning down) a hot
-//   spot sputtering sparks. And the player has lit a flare: it burns in the
-//   middle of the screen, behind the question (the effects overlay's
-//   flareLit, hidden by the UI in front of it: see uiCovers), and the dark
-//   (lib/darkness.ts) seeps back in from the edges as its seconds run out.
+//   spot sputtering sparks. And the player has lit a flare: it burns behind
+//   the middle of the item box, the panel with the question's picture (the
+//   effects overlay's flareLit, hidden by the UI in front of it: see
+//   uiCovers), and the dark (lib/darkness.ts) seeps back in from the edges
+//   as its seconds run out.
 //   It all dies down with the seconds, and goes out as the question ends.
 //
 // Only transform and opacity move here, a handful of pieces each painted
@@ -22,7 +23,8 @@
 // no sparks, no flicker, a still light behind the UI in the middle dimming
 // where it is.
 
-import { fxActive, type CoverBox, type Point } from './fx/core';
+import { currentFrame, fxActive, type CoverBox, type Point } from './fx/core';
+import { cornerPx } from './corner';
 import { flareBurning as fxBurning, flareLit, flareStruck, type Ring } from './fx/flare';
 
 /** ms from the strike until its streak reaches the clock and sets it alight (TimerRing.svelte holds the clock at 0 till then). */
@@ -133,9 +135,10 @@ function flicker(n: number, lo: number): Keyframe[] {
 const SOLID = new Set(['img', 'svg', 'canvas', 'video', 'button', 'input', 'select', 'textarea']);
 
 /**
- * What of the UI (App.svelte's shell) paints: an element with a background,
- * a border or a fill the backdrop paints for it (lib/backdropShadow.ts), a
- * picture or a control, as its box; and text, as the box of the text itself
+ * What of the UI (App.svelte's shell, or the toasts over it) paints: an
+ * element with a background, a border or a fill the backdrop paints for it
+ * (lib/backdropShadow.ts), a picture or a control, as its box (with its
+ * corners, so a pill stays a pill); and text, as the box of the text itself
  * (a heading's words, not the whole width of its line). Light from behind
  * the UI hides behind these. Hidden or faint elements, decorations laid
  * over the page (hidden from screen readers, never taking a click: the
@@ -143,12 +146,13 @@ const SOLID = new Set(['img', 'svg', 'canvas', 'video', 'button', 'input', 'sele
  * the screen, aren't taken whole. `alpha` is how visible `root` is, its
  * ancestors' opacity included.
  */
-function painted(root: Element | null, out: (Element | Text)[] = [], alpha = 1): (Element | Text)[] {
+type Painted = { node: Element | Text; corners?: string[] };
+function painted(root: Element | null, out: Painted[] = [], alpha = 1): Painted[] {
   if (!root) return out;
   const most = innerWidth * innerHeight * 0.6;
   for (const node of root.childNodes) {
     if (node instanceof Text) {
-      if (node.data.trim()) out.push(node);
+      if (node.data.trim()) out.push({ node });
       continue;
     }
     // (Not the clock, which burns with the flare.)
@@ -165,7 +169,9 @@ function painted(root: Element | null, out: (Element | Text)[] = [], alpha = 1):
       !/rgba\(.*, 0\)|transparent/.test(cs.backgroundColor) ||
       cs.backgroundImage !== 'none' ||
       parseFloat(cs.borderTopWidth) + parseFloat(cs.borderBottomWidth) + parseFloat(cs.borderLeftWidth) + parseFloat(cs.borderRightWidth) > 0;
-    if (solid && r.width * r.height < most) out.push(node);
+    // (Its corners as computed, so it hides the light in its own shape.)
+    if (solid && r.width * r.height < most)
+      out.push({ node, corners: [cs.borderTopLeftRadius, cs.borderTopRightRadius, cs.borderBottomRightRadius, cs.borderBottomLeftRadius] });
     else painted(node, out, a);
   }
   return out;
@@ -178,25 +184,56 @@ function painted(root: Element | null, out: (Element | Text)[] = [], alpha = 1):
  * found again only every few hundred ms (the page changes far less often).
  */
 function uiCovers(): () => CoverBox[] {
-  let items: (Element | Text)[] = [];
+  let items: Painted[] = [];
   let found = -Infinity;
   const range = document.createRange();
   return () => {
     const now = performance.now();
     if (now - found > 300) {
-      items = painted(document.querySelector('.shell'));
+      // The page, and the toasts over it.
+      items = painted(document.querySelector('.toasts'), painted(document.querySelector('.shell')));
       found = now;
     }
     const boxes: CoverBox[] = [];
-    for (const it of items) {
-      if (!it.isConnected) continue;
-      if (it instanceof Text) {
-        range.selectNodeContents(it);
+    for (const { node, corners } of items) {
+      if (!node.isConnected) continue;
+      if (node instanceof Text) {
+        range.selectNodeContents(node);
         boxes.push({ box: range.getBoundingClientRect(), soft: true });
-      } else boxes.push({ box: it.getBoundingClientRect() });
+      } else {
+        const box = node.getBoundingClientRect();
+        // A corner can round at most half the box (999px makes a pill a capsule).
+        const radii = corners?.map((c) => Math.min(cornerPx(c, box.width, box.height), box.width / 2, box.height / 2));
+        boxes.push({ box, radii });
+      }
     }
     return boxes;
   };
+}
+
+/**
+ * The item box: the panel that holds the question's picture (the item to
+ * name, or the pictures to pick from), on the question the clock belongs to
+ * if it's in one (a phone pins the clock above it), else the last on the
+ * page (the one coming in, if two cross).
+ */
+function itemBox(timer: Element): Element | null {
+  const own = timer.closest('.question')?.querySelector('.tooltip');
+  if (own) return own;
+  const all = [...document.querySelectorAll('.shell .question .tooltip')].filter((el) => boxOf(el));
+  return all[all.length - 1] ?? null;
+}
+
+/** An SVG path round `b`, its corners rounded by `radii` (top left, top right, bottom right, bottom left). */
+function roundedPath(b: DOMRect, radii: readonly number[] = []) {
+  const [tl = 0, tr = 0, br = 0, bl = 0] = radii;
+  const n = (v: number) => v.toFixed(1);
+  const { left: x, top: y, right: r, bottom: btm } = b;
+  const arc = (rad: number, ex: number, ey: number) => (rad > 0 ? `A${n(rad)} ${n(rad)} 0 0 1 ${n(ex)} ${n(ey)}` : `L${n(ex)} ${n(ey)}`);
+  return (
+    `M${n(x + tl)} ${n(y)}H${n(r - tr)}${arc(tr, r, y + tr)}V${n(btm - br)}${arc(br, r - br, btm)}` +
+    `H${n(x + bl)}${arc(bl, x, btm - bl)}V${n(y + tl)}${arc(tl, x + tl, y)}Z`
+  );
 }
 
 /** A box on screen, if it is on the page and has one. */
@@ -513,27 +550,42 @@ export function flareBurning(timer: HTMLElement): FlareBurn {
       pointerEvents: 'none',
       opacity: '0',
       transition: 'opacity 0.8s ease',
-      background: `radial-gradient(circle max(30vmax, 260px) at 50% 50%, rgba(${HOT}, 0.3), rgba(${PINK}, 0.2) 18%, rgba(${RED}, 0.12) 45%, rgba(${RED}, 0.04) 75%, rgba(${RED}, 0))`,
+      background: `radial-gradient(circle max(30vmax, 260px) at var(--x, 50%) var(--y, 50%), rgba(${HOT}, 0.3), rgba(${PINK}, 0.2) 18%, rgba(${RED}, 0.12) 45%, rgba(${RED}, 0.04) 75%, rgba(${RED}, 0))`,
     });
     document.body.append(glowLayer);
     // (Its starting opacity laid down, so set() below fades it in.)
     void glowLayer.offsetWidth;
   }
-  /** Cuts the UI's boxes out of the calm glow (again as the page scrolls or resizes). */
+  // Where it burns: the middle of the item box (followed as the page moves),
+  // or of the screen without one. Measured once a frame at most.
+  let at: Point = { x: innerWidth / 2, y: innerHeight / 2 };
+  let atFrame = -1;
+  const centre = (): Point => {
+    const f = currentFrame();
+    if (f !== atFrame || !fx) {
+      atFrame = f;
+      const b = boxOf(itemBox(timer));
+      at = b ? { x: b.left + b.width / 2, y: b.top + b.height / 2 } : { x: innerWidth / 2, y: innerHeight / 2 };
+    }
+    return at;
+  };
+  /** Cuts the UI's boxes out of the calm glow, and centres it (again as the page scrolls or resizes). */
   let clipping = 0;
   function clip() {
     if (!glowLayer || clipping) return;
     clipping = requestAnimationFrame(() => {
       clipping = 0;
+      const c = centre();
+      glowLayer.style.setProperty('--x', `${c.x.toFixed(1)}px`);
+      glowLayer.style.setProperty('--y', `${c.y.toFixed(1)}px`);
       let d = `M0 0H${innerWidth}V${innerHeight}H0Z`;
       // (Only boxes: text sits over this, and only a fill the backdrop paints for a panel would lie under it.)
-      for (const { box: r, soft } of uiBoxes()) if (!soft) d += `M${r.left.toFixed(1)} ${r.top.toFixed(1)}h${r.width.toFixed(1)}v${r.height.toFixed(1)}h${(-r.width).toFixed(1)}Z`;
+      for (const { box, soft, radii } of uiBoxes()) if (!soft) d += roundedPath(box, radii);
       glowLayer.style.clipPath = `path(evenodd, '${d}')`;
     });
   }
   clip();
-  const centre = () => ({ x: innerWidth / 2, y: innerHeight / 2 });
-  const burning = fx ? flareLit({ at: centre, level: () => level, covers: uiBoxes }) : null;
+  const burning = fx ? flareLit({ at: centre, light: () => itemBox(timer), level: () => level, covers: uiBoxes }) : null;
 
   // ---- lit ----
   const fadeIn = (el: HTMLElement, to: number, ms: number) => {
@@ -619,7 +671,11 @@ export function flareBurning(timer: HTMLElement): FlareBurn {
       shownLevel = level;
       under.style.opacity = (0.35 + 0.65 * level).toFixed(3);
       over.style.opacity = (0.5 + 0.5 * level).toFixed(3);
-      if (glowLayer) glowLayer.style.opacity = (0.3 + 0.7 * level).toFixed(3);
+      if (glowLayer) {
+        glowLayer.style.opacity = (0.3 + 0.7 * level).toFixed(3);
+        // (And its cut-outs again: the page may have changed under it.)
+        clip();
+      }
     }
     if (Math.abs(head - shownHead) > 0.0008) {
       shownHead = head;

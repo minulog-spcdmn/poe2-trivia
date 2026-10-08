@@ -1220,8 +1220,9 @@ export class FxRenderer {
 
   /**
    * Sets the UI's boxes that light from behind it hides behind (see COVER):
-   * `boxes` as (left, top, width, height, soft) in CSS px, in a view `view`
-   * CSS px across; null for none. Drawn as a mask at a quarter of the view's
+   * `boxes` as (left, top, width, height, soft, and the four corners' radii)
+   * in CSS px, in a view `view` CSS px across; null for none. Each is drawn
+   * in its own shape, its corners rounded. Drawn as a mask at a quarter of the view's
    * size (the light needs no more), and again only when they move. A box's
    * edge is softened by a few px, so the light fades out over it (its rim
    * light); a soft one's (text) far more, and not all the way, so no box shows round it.
@@ -1255,9 +1256,18 @@ export class FxRenderer {
       ctx.fillStyle = soft ? 'rgba(255, 255, 255, 0.7)' : '#fff';
       ctx.filter = soft ? 'blur(4px)' : 'blur(1px)';
       const pad = soft ? 2 : 0;
-      for (let i = 0; i + 4 < boxes.length; i += 5) {
+      for (let i = 0; i + 8 < boxes.length; i += 9) {
         if (boxes[i + 4] !== soft) continue;
-        ctx.fillRect(boxes[i] / K - pad, boxes[i + 1] / K - pad, boxes[i + 2] / K + 2 * pad, boxes[i + 3] / K + 2 * pad);
+        const x = boxes[i] / K - pad;
+        const y = boxes[i + 1] / K - pad;
+        const w = boxes[i + 2] / K + 2 * pad;
+        const h = boxes[i + 3] / K + 2 * pad;
+        const radii = [boxes[i + 5], boxes[i + 6], boxes[i + 7], boxes[i + 8]].map((r) => Math.min(r / K + pad, w / 2, h / 2));
+        if (radii.some((r) => r > 0) && typeof ctx.roundRect === 'function') {
+          ctx.beginPath();
+          ctx.roundRect(x, y, w, h, radii);
+          ctx.fill();
+        } else ctx.fillRect(x, y, w, h);
       }
     }
     const gl = this.gl;
