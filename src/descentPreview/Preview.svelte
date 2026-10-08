@@ -116,10 +116,6 @@
             {#key replay}
               <DelveRules {deepest} {last} label="Your deepest alone" {met} />
             {/key}
-            <ul class="rules muted">
-              <li>Name the item; each right answer takes you a depth deeper.</li>
-              <li>A wrong answer or running out of time costs a life.</li>
-            </ul>
           </div>
         </div>
       </div>
@@ -227,11 +223,5 @@
   }
   .card {
     padding: 1.4rem;
-  }
-  .rules {
-    margin: 0;
-    padding-left: 1.2rem;
-    font-size: 0.93rem;
-    line-height: 1.3;
   }
 </style>

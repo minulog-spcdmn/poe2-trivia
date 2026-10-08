@@ -128,7 +128,7 @@
   .finds dd {
     margin: 0.1rem 0 0;
     font-size: 0.93rem;
-    line-height: 1.25;
+    line-height: 1.1;
     color: var(--muted);
   }
   .finds .miss {
@@ -139,7 +139,7 @@
     margin: 0.55rem 0 0;
     font-size: 0.93rem;
     font-style: italic;
-    line-height: 1.25;
+    line-height: 1.1;
     color: var(--muted);
   }
 </style>

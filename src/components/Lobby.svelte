@@ -349,7 +349,7 @@
                 <p>Race is online only: everyone answers on their own device. Host a room to race.</p>
               {:else if delve}
                 <!-- Several on one device can't delve; the line under Begin says what to do instead. -->
-                <p>{together ? 'How deep can your team go, on three lives each?' : 'How deep can you go on three lives?'} Same rules for everyone.</p>
+                <p>{together ? 'How deep can your team go, on three lives each?' : 'How deep can you go on three lives?'} Questions increase in difficulty.</p>
               {:else if race}
                 <p>Same question for everyone at once; the fastest right answer scores. Online only.</p>
               {:else}
@@ -418,12 +418,10 @@
         </div>
       {/if}
 
+      <!-- Delve has none: the descent and its finds tell it. -->
+      {#if !delve}
       <ul class="rules muted">
-        {#if delve}
-          <!-- Kept to what can't be seen at a glance: the descent beside the finds draws the rest, and locked cards say so in play. -->
-          <li>Name the item; each right answer takes you a depth deeper.</li>
-          <li>A wrong answer or running out of time costs a life.</li>
-        {:else if race}
+        {#if race}
           <li>Everyone answers the same question; the first right answer scores a point.</li>
           <li>A wrong answer costs a point and sits you out until the next question.</li>
           <li>First to <span class="num">{s.settings.targetScore}</span> wins.</li>
@@ -435,18 +433,19 @@
           <li>First to <span class="num">{s.settings.targetScore}</span> wins once the round is over; a tie goes to sudden death.</li>
         {/if}
       </ul>
+      {/if}
 
       {#if delve && !local}
         <!-- Co-op plays nothing like the rest: told in a team room, or one a second player can still join (on one device, Delve is for one). -->
         <div class="setting together">
-          <span class="label">Together</span>
+          <span class="label">Play co-op together</span>
           {#if !together}
             <p class="together-when muted">Once a second exile joins this room:</p>
           {/if}
           <ul class="rules coop">
             <li>Vote for a card, then one is drawn from the votes.</li>
             <li>Everyone answers at once. A wrong answer is crossed out for everyone.</li>
-            <li>Out of lives? A teammate can give you one. The run ends when everyone has perished.</li>
+            <li>Teammates can sacrifice their life force to revive you.</li>
           </ul>
         </div>
       {/if}
