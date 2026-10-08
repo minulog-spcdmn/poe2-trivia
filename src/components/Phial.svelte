@@ -229,8 +229,9 @@
   .vessel.vertical {
     display: block;
   }
+  /* --phial-w: how long the phial lies (the scoreboard's pill takes a shorter one on phones). */
   .phial {
-    --w: 54px;
+    --w: var(--phial-w, 54px);
     /* One unit of the 64 × 12 drawing. */
     --u: calc(var(--w) / 64);
     position: relative;

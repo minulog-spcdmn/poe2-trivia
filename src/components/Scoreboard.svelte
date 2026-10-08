@@ -1462,11 +1462,15 @@
       border: 1px solid color-mix(in srgb, var(--c), black 30%);
       border-radius: 9px;
     }
-    /* Delve: the phial stands upright beside the avatar, centred on it. */
+    /* Delve: the phial stands upright beside the avatar, centred on it, close
+       to its own avatar, with more room after it before the next player's. */
+    li:not(.wide):has(> .phial-side) {
+      margin-right: 0.65rem;
+    }
     li:not(.wide) .phial-side {
       display: block;
       position: absolute;
-      right: -7px;
+      right: -5px;
       top: 50%;
       translate: 0 -50%;
       filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.9));
@@ -1489,6 +1493,20 @@
     }
     li.wide .info {
       min-width: 0;
+    }
+    /* Delve: a slimmer phial (and finds beside it) under the name, so the
+       pill stands no taller than the avatars beside it. */
+    li.wide .info:has(:global(.phial)) {
+      gap: 2px;
+      --phial-w: 46px;
+      --inv-h: 9px;
+    }
+    li.wide .info :global(.phial) {
+      margin-top: 0;
+    }
+    /* The count's digits stand a little taller than the phial: they may reach past its line rather than heighten it. */
+    li.wide .info :global(.vessel) {
+      height: 9px;
     }
     /* The timer at the end of the row, smaller than beside the question. */
     .strip :global(.timer) {
