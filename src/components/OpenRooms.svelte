@@ -4,7 +4,9 @@
   import { fly, fade } from 'svelte/transition';
   import { scanRooms, type RoomInfo } from '../lib/rooms';
   import { DIFFICULTY_NAMES } from '../lib/difficultyText';
+  import { PROTOCOL_VERSION } from '../lib/protocol';
   import { backdropShadow } from '../lib/backdropShadow';
+  import { shownDepth } from '../lib/delve';
 
   let { onJoin, disabled = false }: { onJoin: (code: string) => void; disabled?: boolean } = $props();
 
@@ -118,16 +120,25 @@
   {#if rooms.length}
     <ul>
       {#each rooms as r (r.code)}
+        <!-- A room on another version can't be joined from here: say which side has to reload. -->
+        {@const behind = (r.v ?? 0) < PROTOCOL_VERSION}
+        {@const ahead = (r.v ?? 0) > PROTOCOL_VERSION}
         {@const open = r.phase === 'lobby' && r.players < r.maxPlayers}
         <li animate:flip={{ duration: 300 }} in:fly={{ y: 8, duration: 300 }} out:fade={{ duration: 150 }}>
           <div class="info">
             <span class="host">{r.host}'s room</span>
             <span class="meta">
-              {r.mode === 'race' ? 'Race' : 'Turns'} · {DIFFICULTY_NAMES[r.difficulty]} · first to {r.target}{r.spectators ? ` · ${r.spectators} watching` : ''}
+              {#if r.mode === 'delve'}
+                Delve · {r.depth ? (shownDepth(r.depth) <= 0 && r.phase !== 'over' ? 'entrance' : `depth ${shownDepth(r.depth)}`) : 'three lives'}{r.spectators ? ` · ${r.spectators} watching` : ''}
+              {:else}
+                {r.mode === 'race' ? 'Race' : 'Turns'} · {DIFFICULTY_NAMES[r.difficulty]} · first to {r.target}{r.spectators ? ` · ${r.spectators} watching` : ''}
+              {/if}
             </span>
           </div>
           <span class="count" title="Players">{r.players}/{r.maxPlayers}</span>
-          {#if open}
+          {#if behind || ahead}
+            <span class="status" title={behind ? 'The host is on an older version of the game' : 'Reload this page to join'}>{behind ? 'Older version' : 'Reload to join'}</span>
+          {:else if open}
             <button class="btn small" {disabled} onclick={() => onJoin(r.code)}>Join</button>
           {:else if r.phase !== 'locked' && r.phase !== 'lobby' && r.spectators < r.maxSpectators}
             <button class="btn small ghost" {disabled} onclick={() => onJoin(r.code)} title="Watch this game and play in the next one">Watch</button>

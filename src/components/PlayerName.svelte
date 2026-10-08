@@ -32,8 +32,10 @@
     color: transparent;
     filter: drop-shadow(0 0 5px rgba(240, 190, 100, 0.28));
   }
-  /* At rest the slit waits off to the left of the name, its copy shifted
-     back over the letters (lib/glint.ts slides both). */
+  /* The slit's mask is three names wide with the band in its middle, and at
+     rest it waits off to the left of the name; lib/glint.ts slides the mask
+     across. The slit is slanted, and its copy slanted back over the letters,
+     both held still. */
   .glint {
     position: absolute;
     inset: 0;
@@ -42,16 +44,22 @@
     pointer-events: none;
     -webkit-user-select: none;
     user-select: none;
-    -webkit-mask-image: linear-gradient(90deg, transparent 34%, #000 50%, transparent 66%);
-    mask-image: linear-gradient(90deg, transparent 34%, #000 50%, transparent 66%);
-    transform: translateX(-100%) skewX(-20deg);
+    -webkit-mask-image: linear-gradient(90deg, transparent calc(50% - 16% / 3), #000 50%, transparent calc(50% + 16% / 3));
+    mask-image: linear-gradient(90deg, transparent calc(50% - 16% / 3), #000 50%, transparent calc(50% + 16% / 3));
+    -webkit-mask-size: 300% 100%;
+    mask-size: 300% 100%;
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+    -webkit-mask-position: 100% 0;
+    mask-position: 100% 0;
+    transform: skewX(-20deg);
   }
   .glint > span {
     flex: none;
     white-space: nowrap;
     color: #fffaf0;
     text-shadow: 0 0 5px rgba(255, 236, 190, 0.85);
-    transform: skewX(20deg) translateX(100%);
+    transform: skewX(20deg);
   }
   /* Read out after the name, never shown (the tooltip says it on hover), and
      left out when the name is copied. */

@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { fade, fly, scale } from 'svelte/transition';
+  import { fade, fly, scale, slide } from 'svelte/transition';
+  import { cubicOut } from 'svelte/easing';
   import { session } from '../lib/session.svelte';
   import { playerColor } from '../lib/ui';
   import Scoreboard from './Scoreboard.svelte';
@@ -13,6 +14,17 @@
   import { deathmatchIntro, deathmatchMood, gameStart, turnBanner } from '../lib/fx/moments';
   import { portal } from '../lib/portal';
   import { phone } from '../lib/layout';
+  import { REVIVE_FROM, delveDepth, fellAt, isGroupRun, livesOf, questionTimer, reviveProblem, shownDepth, standingIds } from '../lib/delve';
+  import { startLine } from '../lib/delveStart';
+  import { revivedText } from '../lib/difficultyText';
+  import { accentAt, milestoneAt, stratumName, swing } from '../lib/descent';
+  import { zoneAt } from '../lib/zoneSigils';
+  import Threshold from './zonebanner/Threshold.svelte';
+  import { quiet } from './zonebanner/head';
+  import { DELAY as ZONE_DELAY, EXIT as ZONE_EXIT, HOLD as ZONE_HOLD, STILL_FADE } from './zonebanner/thresholdArt';
+  import { descended, milestoneReached } from '../lib/fx/moments';
+  import { BLAST_IMPACT_MS, BLAST_IN_DELAY_MS, BLAST_IN_MS, blastAway } from '../lib/blastAway';
+  import { untrack } from 'svelte';
 
   const s = $derived(session.state!);
   const active = $derived(s.players[s.turn]);
@@ -21,6 +33,9 @@
 
 
   const race = $derived(s.settings.mode === 'race');
+  const run = $derived(s.delve ?? null);
+  const depth = $derived(delveDepth(s));
+  const group = $derived(isGroupRun(s));
   // The question's timer: in the scoreboard pinned to the top on phones, in
   // view while they scroll down to the answers, and beside the question's
   // topic otherwise. Only ever one, so its ticks never double.
@@ -78,12 +93,20 @@
 
   // One colour for the banner's rules and glow and for its effects, which can't
   // read CSS variables (so the race colour is --unique-hi written out).
-  const bannerColor = $derived(dm ? '#e0553f' : race ? '#e08a44' : playerColor(active.hue));
-  const bannerBig = $derived(race || mine);
+  // Delve together has no player on turn: the banner takes the depth's colour.
+  const bannerColor = $derived(dm ? '#e0553f' : race ? '#e08a44' : run && group ? accentAt(depth) : playerColor(active.hue));
+  const bannerBig = $derived(race || mine || group);
 
-  /** Svelte action: the turn banner's entrance. Runs once per turn (the stage is keyed). */
+  /**
+   * Svelte action: the turn banner's entrance. Runs once per turn (the stage is
+   * keyed). Not under a zone's mark (it lands in the same moment): its light
+   * would only glare over the mark's own.
+   */
   function bannerFx(node: HTMLElement, o: { color: string; big: boolean }) {
-    turnBanner(node, o.color, o.big);
+    const t = setTimeout(() => {
+      if (!card) turnBanner(node, o.color, o.big);
+    });
+    return { destroy: () => clearTimeout(t) };
   }
 
   /** Svelte action: the deathmatch intro's title bursts in. */
@@ -92,20 +115,211 @@
     return { destroy: () => clearTimeout(t) };
   }
 
+  // Delve: where the depth would read 0, the run's start line (dealt from a
+  // shuffled deck on this device, delveStart.ts); it gives way to "Depth 1" as the stage
+  // crosses to the next turn, as one depth gives way to the next.
+  const startsRun = $derived(!!run && shownDepth(depth) <= 0);
   const bannerTitle = $derived(
-    race ? `Question ${s.turnCount + 1}` : mine && !local ? 'Your turn' : `${active.name}'s turn`,
+    race
+      ? `Question ${s.turnCount + 1}`
+      : run
+        ? startsRun
+          ? startLine(run.startedAt)
+          : `Depth ${shownDepth(depth)}`
+        : mine && !local
+          ? 'Your turn'
+          : `${active.name}'s turn`,
+  );
+
+  // Delve: the seconds the question started with (a find's or the depth's),
+  // never read off the deadline, which a burning flare moves on.
+  const seconds = $derived(run ? questionTimer(s) : q?.deadline ? Math.round((q.deadline - (q.clockAt ?? q.askedAt)) / 1000) : 0);
+  // Short timers only sound urgent near the end.
+  const warnFrom = $derived(run ? Math.max(3, Math.min(5, Math.round(seconds * 0.35))) : 5);
+
+  // Delve together: when the vote closes, its draw plays out on the cards
+  // (ChooseCategory) before the question shows. Only on a screen that saw the
+  // vote: one joining or refreshing into the question goes straight to it.
+  // Set before the DOM updates, so the cards stay up rather than being
+  // swapped for the question and back.
+  let raffle = $state<number | null>(null);
+  let phaseSeen = '';
+  let raffleTimer: ReturnType<typeof setTimeout> | null = null;
+  $effect.pre(() => {
+    const key = `${s.turnCount}:${s.phase}`;
+    const was = phaseSeen;
+    phaseSeen = key;
+    if (!run || !group || s.phase !== 'question' || !s.question) {
+      if (s.phase !== 'question') raffle = null;
+      return;
+    }
+    // Back after a dropped connection with the question's clock already
+    // running: the draw would eat into it, so the question shows at once.
+    const asked = s.question;
+    const running = asked.deadline !== null && asked.clockAt !== undefined && session.hostNow() > asked.clockAt;
+    if (was === `${s.turnCount}:choosing` && !running && untrack(() => raffle) === null) {
+      const qid = asked.askedAt;
+      raffle = qid;
+      // Should the draw never say it is done, the question shows anyway.
+      if (raffleTimer) clearTimeout(raffleTimer);
+      raffleTimer = setTimeout(() => raffle === qid && (raffle = null), 4000);
+    }
+  });
+  $effect(() => () => {
+    if (raffleTimer) clearTimeout(raffleTimer);
+  });
+  const drawing = $derived(raffle !== null && raffle === s.question?.askedAt && s.phase === 'question');
+
+  // Delve: a gate at the start of a depth worth it (a new zone, a new best),
+  // built over the head of the stage for a few seconds (zonebanner/Threshold).
+  // Only when the run is seen going one deeper, and at its very start, where
+  // the first zone's gate opens it: a start this device saw (session.runStarted),
+  // not a reload or a rejoin during the first choice. It belongs to its turn: the next one clears it.
+  type Card = { key: string; turn: number; title: string; sigil: string; accent: string; label: string; leaving: boolean; still: boolean };
+  let card = $state<Card | null>(null);
+  let cardTimers: ReturnType<typeof setTimeout>[] = [];
+  let depthSeen = '';
+  // It starts once the stage has faded in (ZONE_DELAY), is built in about
+  // 1.3 s, held, then told to leave at ZONE_HOLD and gone ZONE_EXIT later
+  // (with reduced motion or the effects off it only fades in and out).
+  $effect(() => {
+    if (!run || s.phase !== 'choosing') return;
+    const key = `${run.startedAt}:${depth}`;
+    if (key === depthSeen) return;
+    const deeper = depthSeen.startsWith(`${run.startedAt}:`);
+    depthSeen = key;
+    // The run's first depth: the first zone's gate, as each new zone gets one.
+    const opening = !deeper && depth === 1 && session.runStarted === run.startedAt;
+    if (!deeper && !opening) return;
+    untrack(() => {
+      if (deeper) descended();
+      // Tinted by the zone it opens (the depth's colour on the header), bearing its sigil and its ornament.
+      const accent = accentAt(depth);
+      const name = opening ? stratumName(0) : milestoneAt(depth);
+      const sigil = zoneAt(depth);
+      const best = session.bestAtStart;
+      const turn = s.turnCount;
+      const still = quiet();
+      let next: Card | null = null;
+      if (name) next = { key, turn, title: name, sigil, accent, label: `Depth ${shownDepth(depth)}: ${name}.`, leaving: false, still };
+      else if (!group && best !== null && depth === best + 1)
+        next = { key, turn, title: 'Deeper than ever', sigil, accent, label: `Deeper than ever: depth ${shownDepth(depth)}, past your best of ${shownDepth(best)}.`, leaving: false, still };
+      if (!next) return;
+      card = next;
+      // A run's opening gate keeps the game's start sound (session.svelte.ts) to itself.
+      if (!opening) sfx('stratum');
+      cardTimers.forEach(clearTimeout);
+      cardTimers = [
+        setTimeout(() => card?.key === key && (card.leaving = true), ZONE_HOLD * 1000),
+        setTimeout(() => card?.key === key && (card = null), (ZONE_HOLD + (still ? STILL_FADE : ZONE_EXIT)) * 1000 + 50),
+      ];
+    });
+  });
+  // The next turn takes the head (the stage is keyed), and the mark with it.
+  $effect(() => {
+    if (card && card.turn !== s.turnCount) card = null;
+  });
+  $effect(() => () => cardTimers.forEach(clearTimeout));
+  const zone = $derived(card && card.turn === s.turnCount ? card : null);
+  /** The gate's light breaks into the scene once its lintel is lit, off the lintel, toned to its size. */
+  const zoneFx = (el: HTMLElement) => card && milestoneReached(el, card.accent);
+
+  // Delve: dynamite blasted the question away for a new one at the same
+  // depth. No depth deeper, so instead of the plunge the stage swings
+  // sideways, toward where the new question's card lay on the offer from the
+  // blasted one's (a card to its left swings left): the explosion bursts in
+  // from that side of the screen, blows the old question apart and flings it
+  // the other way (lib/blastAway.ts), the scene behind swings as its
+  // shockwave hits (descent.ts swing), and the new question comes in from
+  // the side the blast came from, through the smoke. Set before the DOM
+  // updates, so the old question is still there to blow apart.
+  let swingSide = $state<-1 | 1 | null>(null);
+  let askedSeen = 0;
+  $effect.pre(() => {
+    const asked = s.question?.askedAt ?? 0;
+    const b = s.phase === 'question' ? s.question?.blast : undefined;
+    const was = askedSeen;
+    askedSeen = asked;
+    if (asked === was) return;
+    if (!run || !b || b.was.at !== was) {
+      swingSide = null;
+      return;
+    }
+    swingSide = b.side;
+    untrack(() => {
+      const still = stillMotion();
+      // Blown apart as it still shows (the DOM is the old question's until this flush ends).
+      const old = document.querySelector<HTMLElement>('.questions .q-slot');
+      if (!still && old) blastAway({ node: old, side: b.side, mine: !!b.by && (b.by === session.myPlayerId || session.mode === 'local') });
+      // A fresh question, as on a new turn: back up to its art (on phones the
+      // button was often pressed scrolled down, under the answers).
+      if (window.scrollY > 0) window.scrollTo({ top: 0, behavior: 'smooth' });
+      setTimeout(() => swing(b.side), still ? 0 : BLAST_IMPACT_MS);
+    });
+  });
+  /** Reduced motion, or the effects held still: a blast only cross-fades. */
+  const stillMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches || document.documentElement.hasAttribute('data-still');
+  /** Svelte transition: the blasted question goes at once (its shards fly in an overlay of their own, see above), or cross-fades. */
+  function swingOut(_node: Element) {
+    if (!swingSide || !stillMotion()) return { duration: 0 };
+    return { duration: 200, css: (t: number) => `opacity: ${t}` };
+  }
+  /** Svelte transition: the new question comes in from the side the blast came from, as the smoke clears. */
+  function swingIn(_node: Element) {
+    const side = swingSide;
+    if (!side) return { duration: 0 };
+    if (stillMotion()) return { duration: 300, delay: 150, css: (t: number) => `opacity: ${t}` };
+    return {
+      duration: BLAST_IN_MS,
+      delay: BLAST_IN_DELAY_MS,
+      easing: cubicOut,
+      css: (t: number, u: number) => `transform: translateX(${(side * u * 70).toFixed(2)}vw) rotate(${(side * u * 2).toFixed(2)}deg); opacity: ${Math.min(1, t * 1.8).toFixed(3)}`,
+    };
+  }
+
+  /** Online Delve: where you perished, while the run goes on without you (someone still stands). */
+  const myFall = $derived(session.perished && session.myPlayerId && standingIds(s).length ? fellAt(s, session.myPlayerId) : null);
+  /** Delve together: a teammate who stands could still give you one of their lives. */
+  const canBeRevived = $derived(group && myFall !== null && s.players.some((p) => p.id !== session.myPlayerId && livesOf(s, p.id) >= REVIVE_FROM));
+  /** Delve together: teammates you could give one of your lives right now (between questions). */
+  const revivable = $derived.by(() => {
+    const me = session.myPlayerId;
+    if (!group || !me || session.mode === 'local') return [];
+    return s.players.filter((p) => reviveProblem(s, me, p.id) === null);
+  });
+  /**
+   * Delve together: the lives given to bring teammates back since the last
+   * question closed, said under the stage until the next one is asked (the
+   * latest two): their entries' hearts play as it happens, the line keeps
+   * who gave it to whom. `revivesBefore`: how many the run had before.
+   */
+  const revives = $derived(s.delve?.revives ?? []);
+  let revivesBefore = $state(untrack(() => ({ run: s.delve?.startedAt ?? 0, n: revives.length })));
+  $effect(() => {
+    const at = { run: s.delve?.startedAt ?? 0, n: revives.length };
+    const was = untrack(() => revivesBefore);
+    if (s.phase === 'question' || at.run !== was.run || at.n < was.n) revivesBefore = at;
+  });
+  const revivedLines = $derived(
+    group && (s.phase === 'choosing' || s.phase === 'reveal') && s.delve?.startedAt === revivesBefore.run
+      ? revives
+          .slice(revivesBefore.n)
+          .slice(-2)
+          .map((r) => ({ key: `${r.at}:${r.to}`, text: revivedText(r.by, r.to, (id) => nameOf(id)?.name ?? '?', session.myPlayerId) }))
+      : [],
   );
 </script>
 
 {#snippet timer()}
-  {#if q?.deadline}
+  {#if !drawing && (q?.deadline || (run && q && s.phase === 'question'))}
     {#key q.askedAt}
-      <TimerRing deadline={q.deadline} total={Math.round((q.deadline - q.askedAt) / 1000)} stopped={s.phase === 'reveal'} />
+      <TimerRing deadline={q.deadline} total={seconds} stopped={s.phase === 'reveal'} {warnFrom} />
     {/key}
   {/if}
 {/snippet}
 
 <div class="game">
+  <p class="sr" aria-live="polite">{zone?.label ?? ''}</p>
   <Scoreboard aside={phone.current ? timer : undefined} />
 
   <!-- The outgoing and incoming turn share one grid cell while they cross-fade,
@@ -135,22 +349,69 @@
             </span>
           </div>
         {/if}
-        <div class="banner" class:dm={!!dm} style:--c={bannerColor}>
-          <span class="rule"></span>
-          <h2 use:bannerFx={{ color: bannerColor, big: bannerBig }}>{bannerTitle}</h2>
-          <span class="rule"></span>
+        <div class="head">
+          {#if run}
+            <!-- An empty line over the banner, the room a zone's gate rises into (zonebanner/Threshold measures it). -->
+            <p class="kicker">{'\u00a0'}</p>
+          {/if}
+          <!-- The gate's columns stand in for the rules while it shows. -->
+          <div class="banner" class:dm={!!dm} class:veiled={!!zone && !zone.leaving} style:--c={bannerColor}>
+            <span class="rule"></span>
+            <h2 class:start={startsRun} use:bannerFx={{ color: bannerColor, big: bannerBig }}>{bannerTitle}</h2>
+            <span class="rule"></span>
+          </div>
+          {#if zone}
+            <!-- Delve: a new zone's name over the head for a moment, on a gate
+                 built once the stage has faded in. -->
+            {#key zone.key}
+              <Threshold
+                title={zone.title}
+                sigil={zone.sigil}
+                accent={zone.accent}
+                leaving={zone.leaving}
+                still={zone.still}
+                delay={zone.still ? 0 : ZONE_DELAY}
+                onfx={zoneFx}
+              />
+            {/key}
+          {/if}
         </div>
 
-        {#if s.phase === 'choosing'}
-          <ChooseCategory />
+        {#if s.phase === 'choosing' || drawing}
+          <ChooseCategory drawn={drawing ? (s.question?.category ?? null) : null} ondrawn={() => (raffle = null)} />
         {:else}
-          <!-- A new question on the same turn (the host asked another) starts fresh. -->
-          {#key s.question?.askedAt}
-            <QuestionView timer={phone.current ? undefined : timer} />
-          {/key}
+          <!-- A new question on the same turn (the host asked another, or dynamite
+               blasted the last away) starts fresh. Old and new share one grid
+               cell while they cross. -->
+          <div class="questions">
+            {#key s.question?.askedAt}
+              <div class="q-slot" in:swingIn out:swingOut>
+                <QuestionView timer={phone.current ? undefined : timer} />
+              </div>
+            {/key}
+          </div>
         {/if}
 
-        {#if session.isHost && !local && !race && !active.connected && s.phase !== 'reveal'}
+        {#if group}
+          <!-- Who brought whom back, read out as it happens. -->
+          <div class="revived" aria-live="polite">
+            {#each revivedLines as line (line.key)}
+              <p class="delve-line revive-hint" transition:slide={{ duration: 250 }}>{line.text}</p>
+            {/each}
+          </div>
+        {/if}
+        {#if myFall !== null}
+          <p class="delve-line muted">
+            You perished and are now watching.{#if canBeRevived}{' '}A teammate can give you a life between questions.{/if}
+          </p>
+        {:else if revivable.length && (s.phase === 'choosing' || s.phase === 'reveal')}
+          <p class="delve-line revive-hint" transition:fade>
+            {revivable.length === 1
+              ? `Use the heart on ${revivable[0].name}'s entry to revive them with one of your lives.`
+              : 'Use the heart on an entry to revive that teammate with one of your lives.'}
+          </p>
+        {/if}
+        {#if session.isHost && !local && !race && !run && !active.connected && s.phase !== 'reveal'}
           <div class="skip" transition:fade>
             <span class="muted">{active.name} is disconnected{skipIn ? `; skipping in ${skipIn}s` : ''}.</span>
             <button class="btn small" onclick={() => skipTurn(session.skipAt)}>Skip their turn</button>
@@ -212,6 +473,64 @@
     flex-direction: column;
     align-items: stretch;
   }
+  /* The question and, as it cross-fades with reduced motion, the one dynamite
+     blasted away, in one cell (#app clips what comes in past the screen's edge). */
+  .questions {
+    display: grid;
+  }
+  .q-slot {
+    grid-area: 1 / 1;
+    min-width: 0;
+  }
+  /* The kicker and banner. Holds their margins, so the gate laid over it
+     (zonebanner/Threshold) has their box to measure and keeps within it. */
+  .head {
+    display: flow-root;
+    position: relative;
+  }
+  /* The rules give way to the gate's columns while it shows, and come back
+     as it goes. */
+  .rule {
+    transition: opacity 0.6s 0.75s ease-out;
+  }
+  .veiled .rule {
+    opacity: 0;
+    transition: opacity 0.25s ease-out;
+  }
+  .sr {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  /* Room above the banner, always there in a run (so nothing moves when a
+     gate shows): the gate's lintel and keystone rise into it, clear of the
+     player strip above. */
+  .kicker {
+    margin: 1.4rem 0 -0.4rem;
+    text-align: center;
+    font-family: var(--font-cinzel);
+    font-weight: 700;
+    font-size: 0.72rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+  .delve-line {
+    margin: 0.8rem 0 0;
+    text-align: center;
+    font-size: 0.95rem;
+    font-style: italic;
+  }
+  .revive-hint {
+    color: #f0b6a8;
+  }
+  /* Two revives at once read as a pair. */
+  .revived .delve-line + .delve-line {
+    margin-top: 0.3rem;
+  }
   .banner {
     display: flex;
     align-items: center;
@@ -244,6 +563,18 @@
     from {
       opacity: 0;
       letter-spacing: 0.4em;
+      filter: blur(6px);
+    }
+  }
+  /* A run's start line arrives as a depth does, its spacing opening less:
+     a line of words that wide would run off a phone's edge. */
+  .banner h2.start {
+    animation-name: arrive-line;
+  }
+  @keyframes arrive-line {
+    from {
+      opacity: 0;
+      letter-spacing: 0.06em;
       filter: blur(6px);
     }
   }

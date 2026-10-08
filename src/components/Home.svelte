@@ -13,6 +13,8 @@
   import type { Handle } from '../lib/fx/core';
   import { setHomeScene } from '../lib/lights';
   import { openCodex } from '../lib/codexRoute.svelte';
+  import { DELVE_LINK_PARAM } from '../lib/delveShare';
+  import { wantDelveBackdrop } from '../lib/backdrop';
   import { BETA } from '../lib/channel';
 
   /** Keeps a room code's letters and digits, uppercased, up to its length. */
@@ -29,6 +31,24 @@
   }
 
   let name = $state(savedName());
+
+  // A delver's shared link (?delve): someone who has played here before (a
+  // name is saved) goes straight into a run alone; anyone else finds Delve
+  // chosen in the lobby they open. Not over a game that's being resumed:
+  // App resumes it on mount, after this, so look once that's had its turn.
+  if (params.has(DELVE_LINK_PARAM)) {
+    const url = new URL(location.href);
+    url.searchParams.delete(DELVE_LINK_PARAM);
+    history.replaceState(history.state, '', url);
+    session.delveLink = true;
+    // Either way Delve is on its way: the backdrop gets its Delve programs ready.
+    wantDelveBackdrop();
+    const known = savedName().trim();
+    if (known && !nameTooShort(known) && !nameHeld(known))
+      setTimeout(() => {
+        if (session.status === 'idle' && !session.state) session.startDelve(known);
+      });
+  }
   let code = $state(invite);
   let nameError = $state(false);
 
@@ -39,6 +59,16 @@
     const seen = loadCodex().items;
     discovered = engine.items.filter((it) => seen[it.id]).length;
   });
+  // Achievements catch up with the codex here: the first time quietly (those
+  // earned in games from before them get one notice, here or owed from a game),
+  // and any missed since. Not once a game has taken over the screen.
+  void Promise.all([import('../lib/achievements'), import('../lib/achievementToasts')])
+    .then(([{ checkAchievements }, { announceAchievements, payOwed }]) => {
+      const here = !session.state;
+      announceAchievements(checkAchievements(engine.items), here ? 'start' : 'game');
+      if (here) payOwed();
+    })
+    .catch((err) => console.warn('achievements', err));
   const showcase = shuffle(engine.items, Math.random).slice(0, 7);
 
   function needName() {
@@ -215,9 +245,7 @@
     </div>
 
     <div class="or"><span>or</span></div>
-    <button class="btn ghost wide" onclick={local} disabled={connecting}>
-      Play hot-seat on this device
-    </button>
+    <button class="btn ghost wide" onclick={local} disabled={connecting}>Play hot-seat on this device</button>
 
     {#if connecting}
       <div class="connecting" transition:fade={{ duration: 200 }}>

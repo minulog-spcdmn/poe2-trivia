@@ -4,20 +4,65 @@ All recordings are from Freesound (https://freesound.org) and released under
 Creative Commons Zero (CC0 1.0): https://creativecommons.org/publicdomain/zero/1.0/
 
 They were trimmed, mixed down to mono, loudness-matched and converted to MP3;
-the ambience loops are excerpts (30 and 12 seconds) crossfaded into
-seamless loops.
+the ambience loops are excerpts (30 seconds, the deathmatch's fire 12)
+crossfaded into seamless loops; where each plays is in brackets.
 How they are layered and filtered is set in src/lib/soundDesign.ts.
 
-  amb-6.mp3            Wood fire crackling near flames
-                       by felix.blume, https://freesound.org/s/779876/
+  amb-game-4.mp3       Hearth Fire (the game ambience)
+                       by SilverIllusionist, https://freesound.org/s/766540/
   amb-fire.mp3         Burning Fire (the deathmatch's fire loop)
                        by Vurca, https://freesound.org/s/189212/
+  amb-abyss-1.mp3      Dystopian Winds (Abyssal Depths)
+                       by Alien_I_Trust, https://freesound.org/s/785818/
+  amb-city-1.mp3       scifi_ruined_environment (Abyssal City)
+                       by Kostrava, https://freesound.org/s/530743/
+  amb-endgame-1.mp3    Space Ambience.wav (Starfall abyss)
+                       by Sonicfreak, https://freesound.org/s/174450/
+  amb-endgame-2.mp3    Eerie Whistling Loop (Lantern necropolis)
+                       by kkenny101, https://freesound.org/s/869911/
+  amb-endgame-3.mp3    Bells in deep space1.wav (Void bloom)
+                       by Jim-Bretherick, https://freesound.org/s/614097/
+  amb-endgame-5.mp3    Atonal Drone 09 (Witchfire grove)
+                       by Skjor1, https://freesound.org/s/321767/
+  amb-endgame-6.mp3    Ambiant drone like an alien cave (Blood eclipse)
+                       by xkeril, https://freesound.org/s/612799/
+  amb-frozen-1.mp3     Wind__Artic__Cold.wav (Frozen Hollow)
+                       by cobratronik, https://freesound.org/s/117136/
+  amb-frozen-2.mp3     Font d'urle Cave (Frozen abyss, Glacial pyre)
+                       by Sacha.Julien, https://freesound.org/s/725340/
+  amb-fungal-1.mp3     Water Cave (Fungal Caverns)
+                       by Klangkobold, https://freesound.org/s/443061/
+  amb-fungal-4.mp3     Many drops of water in a big cave (Karstic system Ojo
+                       Guareña, Burgos, Spain) (Drowned temple, Sunken garden)
+                       by nomadas, https://freesound.org/s/609161/
+  amb-magma-3.mp3      2022-12-06-alien-lava-pit.wav (Magma Fissure)
+                       by ilmari_freesound, https://freesound.org/s/663183/
+  amb-magma-4.mp3      Lava Loop 4 (Ember forge)
+                       by Fission9, https://freesound.org/s/474852/
+  amb-mines-drone.mp3  Dark Dungeon Ambience (The Mines)
+                       by Kinoton, https://freesound.org/s/516566/
+  amb-petrified-1.mp3  FUMO.WAV (Petrified Forest)
+                       by lollosound, https://freesound.org/s/386995/
+  amb-primeval-1.mp3   Dark Ambience - Lonely Caverns (Primeval Ruins)
+                       by Dredile, https://freesound.org/s/241946/
+  amb-primeval-2.mp3   Ancient Resonance Sacred Drone by Mantice (Primeval Ruins)
+                       by bassimat, https://freesound.org/s/854857/
+  amb-sulphur-1.mp3    GEYSER_SOLDEMANANA_BOLIVIA.wav (Sulphur Vents)
+                       by keng-wai-chane-chick-te, https://freesound.org/s/441152/
+  amb-sulphur-2.mp3    2017-02-11 Dumaguete Mtn 0700am.mp3 (Sulphur marsh)
+                       by LXX.70, https://freesound.org/s/646426/
+  amb-vaal-1.mp3       02 Mainz Cathedral western crypt.wav (Vaal Outpost)
+                       by blaukreuz, https://freesound.org/s/131107/
+  amb-vaal-3.mp3       swirling winter wind gusty grains sand.flac (Ashen reliquary)
+                       by kyles, https://freesound.org/s/454213/
   burn-crackle.mp3     Fire, crackle, sparkler, handheld, burning, fuse
                        by Oldome, https://freesound.org/s/855773/
   burn-embers.mp3      fire crackling loop.wav
                        by soundofsong, https://freesound.org/s/650574/
   burn-fuse.mp3        sparkler_fuse_nm.wav
                        by Alex_hears_things, https://freesound.org/s/316682/
+  fuse-burn.mp3        Match Sizzle 01 (the dynamite's fuse)
+                       by squareal, https://freesound.org/s/237402/
   burn-sparkler.mp3    oneSparkler.flac
                        by RytmenPinnen, https://freesound.org/s/102264/
   click-1.mp3          Perc_Chair_lo
@@ -38,8 +83,9 @@ How they are layered and filtered is set in src/lib/soundDesign.ts.
                        by igroglaz, https://freesound.org/s/633208/
   defeat-5.mp3         Old Church Bell
                        by dsp9000, https://freesound.org/s/76405/
-  fill-sparks.mp3      single crackles cut from amb-6.mp3 and pitched up
-                       (scripts/make-sparks.mjs)
+  fill-sparks.mp3      single crackles cut from Wood fire crackling near flames
+                       by felix.blume, https://freesound.org/s/779876/,
+                       and pitched up (scripts/make-sparks.mjs)
   hover-1.mp3          Jacket/Cloth Rustle 7
                        by brandondelehoy, https://freesound.org/s/494793/
   hover-2.mp3          Jacket/Cloth Rustle 4
@@ -84,3 +130,15 @@ How they are layered and filtered is set in src/lib/soundDesign.ts.
                        by Qat, https://freesound.org/s/107589/
   yourTurn-3.mp3       Unsheathing sword, slow, dramatic
                        by mht23SD, https://freesound.org/s/707339/
+  correct-6.mp3        Chime
+                       by Psykoosiossi, https://freesound.org/s/398661/
+  defeat-2.mp3         BOOM IMPACT 2
+                       by XHALE303, https://freesound.org/s/535592/
+  defeat-3.mp3         Hit reverb (dark)
+                       by xkeril, https://freesound.org/s/701308/
+  layer-sub-3.mp3      LowThump_01
+                       by Faulkin, https://freesound.org/s/336494/
+  reveal-4.mp3         the portal
+                       by CeebFrack, https://freesound.org/s/132593/
+  victory-6.mp3        gong -10 sem
+                       by Logicogonist, https://freesound.org/s/519359/

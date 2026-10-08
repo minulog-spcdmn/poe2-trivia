@@ -8,50 +8,9 @@
 
 import Peer, { type DataConnection } from 'peerjs';
 import { PEER_OPTIONS, PEER_PREFIX } from './peer';
-import { isDifficulty, type Difficulty, type GameMode, type Phase } from './game';
-import { cleanName } from './names';
 
-export interface RoomInfo {
-  code: string;
-  host: string;
-  players: number;
-  maxPlayers: number;
-  spectators: number;
-  maxSpectators: number;
-  mode: GameMode;
-  difficulty: Difficulty;
-  target: number;
-  phase: Phase | 'locked';
-}
-
-const PHASES = ['lobby', 'locked', 'choosing', 'question', 'reveal', 'over'];
-const CODE = /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/;
-
-/** Listings come from strangers: accept only well-formed ones. */
-export function parseRoomInfo(raw: unknown): RoomInfo | null {
-  if (typeof raw !== 'object' || raw === null) return null;
-  const r = raw as Record<string, unknown>;
-  const int = (v: unknown, min: number, max: number) => typeof v === 'number' && Number.isInteger(v) && v >= min && v <= max;
-  const host = cleanName(r.host);
-  if (typeof r.code !== 'string' || !CODE.test(r.code) || !host) return null;
-  if (!int(r.players, 0, 64) || !int(r.maxPlayers, 1, 64) || !int(r.target, 1, 50)) return null;
-  if (!int(r.spectators, 0, 64) || !int(r.maxSpectators, 0, 64)) return null;
-  if (r.mode !== 'turns' && r.mode !== 'race') return null;
-  if (!isDifficulty(r.difficulty)) return null;
-  if (typeof r.phase !== 'string' || !PHASES.includes(r.phase)) return null;
-  return {
-    code: r.code,
-    host,
-    players: r.players as number,
-    maxPlayers: r.maxPlayers as number,
-    spectators: r.spectators as number,
-    maxSpectators: r.maxSpectators as number,
-    mode: r.mode,
-    difficulty: r.difficulty as Difficulty,
-    target: r.target as number,
-    phase: r.phase as RoomInfo['phase'],
-  };
-}
+export { parseRoomInfo, wireRoomInfo, type RoomInfo } from './roomInfo';
+import { parseRoomInfo, wireRoomInfo, type RoomInfo } from './roomInfo';
 
 const BATCH = 10;
 /** Slots up to this are scanned at full speed; later batches wait a little. */
@@ -264,7 +223,7 @@ export class Beacon {
       // Probes only need to listen; anything they send is ignored.
       conn.on('open', () => {
         const room = this.info();
-        if (room) conn.send({ t: 'info', room });
+        if (room) conn.send({ t: 'info', room: wireRoomInfo(room) });
         setTimeout(() => conn.close(), 2000);
       });
     });

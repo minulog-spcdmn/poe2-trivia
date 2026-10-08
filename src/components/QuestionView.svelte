@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { fly, fade, scale } from 'svelte/transition';
+  import { fly, fade, scale, slide } from 'svelte/transition';
   import { session, engine } from '../lib/session.svelte';
   import { AUTO_NEXT_MS, autoNextLeft, isFake, questionTopic } from '../lib/game';
   import { shown } from '../lib/media.svelte';
@@ -14,13 +14,26 @@
   import ArcaneCircle from './ArcaneCircle.svelte';
   import NamePlate from './NamePlate.svelte';
   import { untrack, type Snippet } from 'svelte';
-  import { FILL_START, answerCharging, artRevealed, raceMiss, reveal as revealFx, veilComplete, veilHandoff, type VerdictTone } from '../lib/fx/moments';
+  import {
+    FILL_START,
+    answerCharging,
+    artRevealed,
+    raceMiss,
+    reveal as revealFx,
+    veilComplete,
+    veilHandoff,
+    type VerdictTone,
+  } from '../lib/fx/moments';
   import { FILL_LEAD } from '../lib/soundDesign';
   import { streakOf } from '../lib/fx/streaks';
   import { scoreRowOf } from '../lib/scoreRows';
   import { fxActive, type Handle } from '../lib/fx/core';
   import { dock, narrow, phone } from '../lib/layout';
   import { portal } from '../lib/portal';
+  import { DELVE_FUSE_MS, blastProblem, clockLeft, dynamiteOf, fellAt, fuseDue, fuseLeft, holdersOf, isGroupRun, itemsWorkOn, livesOf, waitingIds } from '../lib/delve';
+  import { blownText, coopMissText, coopRevealText, flareText, namesOf, perishedText, wardText } from '../lib/difficultyText';
+  import ItemGlyph from './ItemGlyph.svelte';
+  import type { GlyphKind } from '../lib/inventoryArt';
 
   /** The question's timer (Game.svelte has it in the scoreboard on phones instead). */
   let { timer }: { timer?: Snippet } = $props();
@@ -29,16 +42,73 @@
   const q = $derived(s.question!);
   const reveal = $derived(s.phase === 'reveal' ? s.reveal : null);
   const active = $derived(s.players[s.turn]);
-  const mine = $derived(session.myTurn);
   const me = $derived(session.myPlayerId);
+  /**
+   * Delve together: nobody has a turn. Everyone standing answers the one
+   * question, once each; a wrong pick strikes its option for everyone, and
+   * the first right one clears the depth.
+   */
+  const coop = $derived(!!s.delve && isGroupRun(s));
+  const struckList = $derived(coop ? (q.struck ?? []) : []);
+  const struckAt = $derived(new Map(struckList.map((x) => [x.index, x])));
+  /** Delve together: your own wrong pick on this question, if any. */
+  const myStruck = $derived(coop && me ? struckList.find((x) => x.by === me) : undefined);
+  /** Whether this device answers: your turn, or (Delve together) you stand and haven't answered yet. */
+  const mine = $derived(
+    coop ? !reveal && !!me && s.players.some((p) => p.id === me) && livesOf(s, me) > 0 && !myStruck : session.myTurn,
+  );
+  const nameOf = (id: string) => s.players.find((p) => p.id === id)?.name ?? '?';
+  /**
+   * Delve together, while the question is open: teammates its wrong picks
+   * left with no lives (their entries grey, easy to miss mid-question), and
+   * a flare burning from someone's pack, said under the answers. A wrong
+   * pick says itself (its answer crossed out under the picker's face), and
+   * what it cost is told at the reveal.
+   */
+  const perishedLine = $derived(
+    coop && !reveal
+      ? perishedText(
+          struckList.filter((x) => s.players.some((p) => p.id === x.by) && livesOf(s, x.by) === 0).map((x) => x.by),
+          nameOf,
+          me,
+        )
+      : '',
+  );
+  const flareLine = $derived(coop && !reveal && q.flared && q.flaredBy ? flareText(q.flaredBy, nameOf, me) : '');
   // Guests only learn the answer (and the items behind the options) at the reveal.
   const item = $derived(q.itemId ? engine.byId.get(q.itemId) : undefined);
   const race = $derived(s.settings.mode === 'race');
   // Everyone sees the Next button; only the host (and in turns mode, whoever answered) can press it.
-  const canNext = $derived(!!reveal && (race ? session.isHost : mine || session.isHost));
+  const canNext = $derived(!!reveal && (race ? session.isHost : coop ? session.isHost || session.state!.players.some((p) => p.id === session.myPlayerId) : mine || session.isHost));
   const myMiss = $derived(race && me ? q.misses.find((m) => m.playerId === me) : undefined);
   const winner = $derived(reveal?.winnerId ? s.players.find((p) => p.id === reveal.winnerId) : undefined);
-  const iWon = $derived(race ? !!me && reveal?.winnerId === me : !!reveal?.correct);
+  /** Turns and race: you (or whoever answered) got it. Delve together: the team cleared the depth. */
+  const iWon = $derived(race ? !!me && reveal?.winnerId === me : coop ? !!reveal?.winnerId : !!reveal?.correct);
+  /** Delve alone: the player answering just lost their last life. */
+  const fallsNow = $derived(!!s.delve && !coop && !!reveal && !reveal.correct && fellAt(s, active.id) === s.round);
+  /** Delve: you answering (online, or alone on this device), or someone else, by name. */
+  const delveYou = $derived(!!s.delve && !coop && (active.id === me || session.mode === 'local'));
+  /** Delve: who a find's item went to (together: whoever cleared it, or a teammate with room for it), and whether that's you. */
+  const gainerId = $derived(coop ? (reveal?.gainedBy ?? reveal?.winnerId ?? null) : active.id);
+  const gainYou = $derived(coop ? !!gainerId && gainerId === me : delveYou);
+  const gainName = $derived(gainerId ? nameOf(gainerId) : '');
+  /**
+   * Delve: what a right answer to a find earned, in words, and its engraving:
+   * a ward mined, a shard (too slow for a ward, from an Azurite Vein) or a
+   * ward forged from two, a flare or dynamite found.
+   */
+  const gainLine = $derived.by((): { glyph: GlyphKind; text: string } | null => {
+    const got = reveal?.correct ? reveal.gained : undefined;
+    if (!s.delve || !got) return null;
+    const who = gainYou ? 'You' : gainName;
+    if (got === 'wards' && reveal?.forged) return { glyph: 'ward', text: `${gainYou ? 'Your' : `${gainName}'s`} two shards forged an Azurite Ward.` };
+    if (got === 'wards') return { glyph: 'ward', text: `${who} mined an Azurite Ward.` };
+    if (got === 'shards')
+      return { glyph: 'shard', text: q.find === 'azurite' ? `Too slow for a ward, but ${gainYou ? 'you' : gainName} mined a shard.` : `${who} found an azurite shard.` };
+    if (got === 'flares') return { glyph: 'flare', text: `${who} found a flare.` };
+    return { glyph: 'dynamite', text: `${who} found a stick of dynamite.` };
+  });
+
   // Narrow screens have no room beside the timer: the verdict goes on the
   // task line, beside or under the category (lib/layout.ts).
   /**
@@ -47,8 +117,15 @@
    */
   const verdict = $derived.by((): { word: string; icon: 'check' | 'cross' | 'clock'; tone: VerdictTone } | null => {
     if (!reveal) return null;
+    if (coop) {
+      // The team's verdict: cleared (by you: Correct), out of time, or every answer wrong.
+      if (reveal.winnerId) return { word: reveal.winnerId === me ? 'Correct' : 'Cleared', icon: 'check', tone: 'good' };
+      if (reveal.timedOut) return { word: "Time's up", icon: 'clock', tone: 'late' };
+      return { word: 'Wrong', icon: 'cross', tone: 'bad' };
+    }
     if (iWon) return { word: 'Correct', icon: 'check', tone: 'good' };
     if (race && winner) return session.spectating ? { word: 'Solved', icon: 'check', tone: 'neutral' } : { word: 'Too slow', icon: 'clock', tone: 'late' };
+    if (fallsNow) return { word: 'Perished', icon: 'cross', tone: 'bad' };
     if (reveal.timedOut) return { word: "Time's up", icon: 'clock', tone: 'late' };
     return { word: race ? 'No one' : 'Wrong', icon: 'cross', tone: 'bad' };
   });
@@ -71,13 +148,124 @@
     return () => cancelAnimationFrame(frame);
   });
   const count = $derived(q.labels.length);
+  // Delve: from eight answers on, phones lay them out tighter (see .snug), so
+  // a short clock isn't spent scrolling down to them.
+  const snug = $derived(!!s.delve && count > 6);
   // Pictures the host has sent for this question.
   const media = $derived(shown.qid === q.askedAt ? shown : null);
+  /** "Find the art" pictures in so far: whole, or (veiled, in Delve) ready to burn in. */
+  const tilesIn = $derived(Array.from({ length: count }, (_, i) => i).filter((i) => media?.options[i] || media?.tileVeils[i]).length);
+  /** A veiled picture's patches so far. */
+  const tilePatches = (i: number) => Object.values(media?.tilePatches[i] ?? {});
+  /**
+   * Delve: nothing to see or answer until the clock runs and every picture is
+   * in, so the timer only counts time the player could actually use.
+   */
+  const waiting = $derived(
+    !!s.delve && !reveal && (q.deadline === null || (q.mode === 'art' ? tilesIn < count : !(media?.art || media?.veil))),
+  );
 
   /** Veiled art: the patches that have appeared so far. */
   const patches = $derived(Object.values(media?.patches ?? {}));
   // Size of the art shown during the question: keeps the reveal from jumping.
   const hint = $derived(media?.veil ?? media?.art ?? null);
+
+  /** Your answer, on its way to the host. */
+  let chosen = $state<number | null>(null);
+
+  // ---- dynamite ----
+  // Delve: while the question is open, a stick of dynamite (alone your own,
+  // together anyone standing's) can blast it away for a new one at the same
+  // depth, twice a depth at most: its button (Detonate) takes the place Next has
+  // after an answer. Once this question has dynamite at hand its place is
+  // kept until the question ends, the button only showing while it can be
+  // used, so nothing moves as it comes and goes. When it will go off by
+  // itself as the clock hits 0 (no flare to burn first), its fuse burns over
+  // the clock's last seconds (delve.ts fuseLeft): the button's bar burns
+  // down to 0 with it, on the host's clock as Next's does, and the question
+  // can still be answered, or Detonate pressed, meanwhile.
+
+  /** Sticks of dynamite at hand: alone the player's, together everyone standing's. */
+  const sticks = $derived(!s.delve ? 0 : coop ? holdersOf(s, 'dynamite').reduce((n, id) => n + dynamiteOf(s, id), 0) : dynamiteOf(s, active.id));
+  /** The clock has run out here (a flare burning moves it on): what happens now is the host's (a flare, the dynamite by itself, the time-out). */
+  let expired = $state(false);
+  $effect(() => {
+    const end = q.deadline;
+    if (end === null || reveal) return;
+    const left = end - session.hostNow();
+    expired = left <= 0;
+    if (left <= 0) return;
+    const timer = setTimeout(() => (expired = true), left);
+    return () => clearTimeout(timer);
+  });
+  /**
+   * The fuse burning down over the clock's last seconds, 1 to 0 at 0
+   * (delve.ts fuseLeft), on the host's clock; null before it starts, or
+   * when no dynamite will go off at this 0.
+   */
+  let fuse = $state<number | null>(null);
+  $effect(() => {
+    const st = s;
+    if (reveal || !fuseDue(st)) {
+      fuse = null;
+      return;
+    }
+    let frame = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const tick = () => {
+      const now = session.hostNow();
+      fuse = fuseLeft(st, now);
+      // Not burning yet: back as it starts.
+      if (fuse === null) timer = setTimeout(tick, Math.max(16, clockLeft(st.question!, now) - DELVE_FUSE_MS));
+      else if (fuse > 0) frame = requestAnimationFrame(tick);
+    };
+    untrack(tick);
+    return () => {
+      cancelAnimationFrame(frame);
+      clearTimeout(timer);
+    };
+  });
+  /** Whether this device can blast the question away now (delve.ts blastProblem; on one device, for the player): while its clock runs, its fuse to the end. */
+  const canBlast = $derived(
+    !!s.delve &&
+      mine &&
+      !reveal &&
+      !waiting &&
+      (!expired || fuse !== null) &&
+      chosen === null &&
+      blastProblem(s, session.mode === 'local' ? null : me) === null,
+  );
+  /** The button's place, kept from when dynamite is at hand on a question it works on until the question ends. */
+  const slotWanted = () => !!s.delve && !reveal && itemsWorkOn(q) && sticks > 0 && mine;
+  // Taken from the first frame when it applies already, so the row never pops in under the answers.
+  let blastSlot = $state(untrack(slotWanted));
+  $effect(() => {
+    if (!blastSlot && slotWanted()) blastSlot = true;
+  });
+  /** The row's height while it shows, kept for the phones' reveal, which docks Next and leaves the row's place empty. */
+  let blastRowH = $state(0);
+  let blastKeep = $state(0);
+  $effect(() => {
+    if (blastRowH > 0) blastKeep = blastRowH;
+  });
+  let blasting = false;
+  function blastThrough() {
+    if (!canBlast || blasting) return;
+    blasting = true;
+    // Its fuse is heard here at once (unless it is burning already: never twice); the blast is heard as the new question comes (session.svelte.ts).
+    session.detonating(q.askedAt);
+    session.dispatch({ type: 'blast', askedAt: q.askedAt });
+    // Should the host turn it down (it crossed the end of the question), it can be pressed again.
+    setTimeout(() => (blasting = false), 1500);
+  }
+  /** The question dynamite blasted away for this one: whose it was, in a line. */
+  const blastLine = $derived.by(() => {
+    const b = q.blast;
+    if (!s.delve || !b || reveal) return null;
+    const you = session.mode === 'local' || b.stick === me;
+    if (!b.by) return `Time ran out, so ${you ? 'your' : `${nameOf(b.stick)}'s`} dynamite went off and blasted the last question away.`;
+    return `${b.by === me || session.mode === 'local' ? 'You' : nameOf(b.by)} blasted the last question away.`;
+  });
 
   // Veiled art: when the newest patch will have finished coming in (ms, page
   // clock). At the reveal the rest of the picture comes in quickly first, and
@@ -208,9 +396,10 @@
    * the full art fades in.
    */
   function handoff(node: Element) {
+    if (!reveal) return { duration: 0 };
     const veil = node.querySelector('.veil');
     if (veil) veilHandoff(veil);
-    const quick = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const quick = matchMedia('(prefers-reduced-motion: reduce)').matches || document.documentElement.hasAttribute('data-still');
     return {
       duration: quick ? 250 : 400,
       css: (t: number, u: number) =>
@@ -222,6 +411,11 @@
 
   /** Race mode: who guessed which option wrong (and, once revealed, who won). */
   function markers(index: number) {
+    if (coop) {
+      // Who struck it; at the reveal, who cleared the depth on the right one.
+      const ids = [struckAt.get(index)?.by, index === reveal?.correctIndex ? reveal?.winnerId : null].filter((id): id is string => !!id);
+      return ids.map((pid) => s.players.find((p) => p.id === pid)).filter((p) => !!p);
+    }
     if (!race) return [];
     const ids = q.misses.filter((m) => m.index === index).map((m) => m.playerId);
     if (reveal?.winnerId && index === reveal.correctIndex) ids.unshift(reveal.winnerId);
@@ -237,6 +431,7 @@
     if (!reveal) return false;
     if (index === reveal.correctIndex) return true;
     if (race) return myMiss?.index === index;
+    if (coop) return struckAt.has(index);
     return index === reveal.chosenIndex;
   }
 
@@ -254,28 +449,32 @@
    * unmarked, like untouched decoys.
    */
   function fake(index: number) {
-    const picked = race ? q.misses.some((m) => m.index === index) : index === reveal?.chosenIndex;
+    const picked = race ? q.misses.some((m) => m.index === index) : coop ? struckAt.has(index) : index === reveal?.chosenIndex;
     return !!reveal && picked && !!q.options[index] && isFake(q.options[index]);
   }
 
   /** The made-up name the player whose turn it was (or, in a race, you) fell for. */
   const fellFor = $derived.by(() => {
-    const index = race ? myMiss?.index : reveal?.chosenIndex;
+    const index = race ? myMiss?.index : coop ? struckList.find((x) => fake(x.index))?.index : reveal?.chosenIndex;
     return index != null && fake(index) ? optionName(index) : null;
   });
+
+  /** Delve together: who struck an option ("you" or a name). */
+  const struckBy = (index: number) => {
+    const by = struckAt.get(index)?.by;
+    return by ? (by === me ? 'you' : nameOf(by)) : '';
+  };
 
   function optionName(index: number) {
     return q.labels[index] ?? (q.options[index] ? engine.byId.get(q.options[index])?.name : undefined) ?? '';
   }
-
-  let chosen = $state<number | null>(null);
 
   // ---- effects ----
 
   /** Answer buttons (or picture tiles), by option index. */
   let optionEls = $state<HTMLElement[]>([]);
   /** At the reveal on phones, the answer to keep clear of the docked bar: the one picked, else the right one. */
-  const keepInView = $derived(reveal ? optionEls[(race ? myMiss?.index : reveal.chosenIndex) ?? reveal.correctIndex] : null);
+  const keepInView = $derived(reveal ? optionEls[(race ? myMiss?.index : coop ? null : reveal.chosenIndex) ?? reveal.correctIndex] : null);
   /** The art stage (name questions) or the picture grid (art questions). */
   let artEl = $state<HTMLElement | null>(null);
   let verdictEl = $state<HTMLElement | null>(null);
@@ -286,7 +485,7 @@
   // The art arrives: light it up (once per question).
   let artShown = false;
   $effect(() => {
-    const ready = q.mode === 'art' ? Object.keys(media?.options ?? {}).length > 0 : !!(media?.art || media?.veil);
+    const ready = q.mode === 'art' ? tilesIn > 0 : !!(media?.art || media?.veil);
     if (!ready || artShown || !artEl) return;
     artShown = true;
     artRevealed(artEl);
@@ -298,10 +497,20 @@
     return materialize(node, params);
   }
 
+  /** The same for a veiled "find the art" picture: several burn at once, so the sound only now and then. */
+  let tileBurnAt = 0;
+  function appearTile(node: HTMLCanvasElement, params: BurnParams) {
+    if (!params.quick && performance.now() - tileBurnAt > 260) {
+      tileBurnAt = performance.now();
+      sfx('burn');
+    }
+    return materialize(node, params);
+  }
+
   // The charge-up ends when the answer is revealed, bounced, or (race) comes
   // back as a miss.
   $effect(() => {
-    if (reveal || chosen === null || myMiss) {
+    if (reveal || chosen === null || myMiss || myStruck) {
       charge?.stop();
       charge = null;
     }
@@ -320,6 +529,23 @@
     missesSeen = misses.length;
   });
 
+  // Delve together: a puff of red on each option struck as it is (yours jars
+  // the view). Your pick is settled once it is struck, or once another's
+  // strike of the same option got there first (yours is then dropped).
+  let struckSeen = untrack(() => (q.struck ?? []).length);
+  $effect(() => {
+    const list = struckList;
+    if (list.length > struckSeen) {
+      for (const x of list.slice(struckSeen)) {
+        const el = optionEls[x.index];
+        // Your own, a ward took: it swells blue at the edges as it does (Scoreboard.svelte), not red.
+        if (el) raceMiss(el, x.by === me, x.lives === 0 && x.wards > 0);
+      }
+      struckSeen = list.length;
+    }
+    if (chosen !== null && (myStruck || struckAt.has(chosen))) chosen = null;
+  });
+
   // The reveal: choreographed once, after the DOM shows it.
   let revealed = false;
   $effect(() => {
@@ -327,28 +553,32 @@
     if (!r || revealed) return;
     revealed = true;
     untrack(() => {
-      const scorer = race ? (r.winnerId ?? null) : r.correct ? active.id : null;
+      const scorer = race || coop ? (r.winnerId ?? null) : r.correct ? active.id : null;
       // The host has already counted this answer into the scorer's streak.
       streak = scorer ? streakOf(s.players.find((p) => p.id === scorer)) : 0;
       const pill = scorer ? scoreRowOf(scorer) : null;
       // The scorer's bar, before and after this point (the state already counts it).
-      const now = scorer ? s.players.find((p) => p.id === scorer)?.score : undefined;
+      // Delve has no score to fill.
+      const now = scorer && !s.delve ? s.players.find((p) => p.id === scorer)?.score : undefined;
       const target = s.settings.targetScore;
       const frac = (v: number) => Math.min(1, Math.max(0, v / target));
       const fill = now === undefined ? undefined : { from: frac(now - 1), to: frac(now) };
       revealFx({
         answer: optionEls[r.correctIndex],
-        chosen: !race && !r.correct && r.chosenIndex != null ? optionEls[r.chosenIndex] : null,
+        chosen: !race && !coop && !r.correct && r.chosenIndex != null ? optionEls[r.chosenIndex] : null,
         art: artEl,
         tiles: q.mode === 'art',
         verdict: verdictEl,
         verdictTone: verdict?.tone,
-        pill,
+        // Delve has no points to land (the scoreboard's phial answers a question survived).
+        pill: s.delve ? null : pill,
         streak,
         good: iWon,
         otherScored: race && !!winner && !iWon,
         timedOut: r.timedOut,
         fill,
+        // Your ward takes the loss: it swells blue at the edges as it does (Scoreboard.svelte), not red.
+        warded: coop ? (r.hits ?? []).some((h) => h.playerId === me && h.lives === 0 && h.wards > 0) : !!s.delve && !!r.warded,
       });
       // Your point streaming into the bar. Without effects the bar just jumps, and 'correct' says it all.
       if (iWon && pill && fill && fxActive()) setTimeout(() => sfx('fill'), FILL_START * 1000 - FILL_LEAD);
@@ -356,7 +586,7 @@
   });
 
   function answer(index: number) {
-    if (!mine || reveal || chosen !== null) return;
+    if (!mine || reveal || chosen !== null || waiting || struckAt.has(index)) return;
     // Time's up: the host only waits a moment longer for answers already on their way.
     if (q.deadline && session.hostNow() > q.deadline) return;
     chosen = index;
@@ -383,13 +613,19 @@
     session.dispatch({ type: 'next' });
   }
 
+  /** The question this view shows (Game.svelte keys it on askedAt). */
+  const shownAt = untrack(() => session.state?.question?.askedAt);
   function onKey(e: KeyboardEvent) {
+    // A view fading out (the next question or the cards came) hears keys no more,
+    // and must not read its deriveds, which have gone inert.
+    const now = session.state;
+    if (!now || (now.phase !== 'question' && now.phase !== 'reveal') || now.question?.askedAt !== shownAt) return;
     if (e.target instanceof HTMLInputElement) return;
     // Browser shortcuts (Ctrl/Cmd+1 switches tabs), held keys, and an open dialog aren't answers.
     if (e.ctrlKey || e.metaKey || e.altKey || e.repeat || document.querySelector('[aria-modal="true"]')) return;
     // 0 is the tenth option, the key after 9.
     const n = e.key === '0' ? 10 : Number(e.key);
-    if (!reveal && n >= 1 && n <= count) answer(n - 1);
+    if (!reveal && !waiting && n >= 1 && n <= count) answer(n - 1);
     else if (reveal && canNext && (e.key === 'Enter' || e.key === ' ')) {
       e.preventDefault();
       next();
@@ -397,6 +633,12 @@
   }
 
   function optionState(index: number) {
+    if (coop) {
+      if (reveal && index === reveal.correctIndex) return 'right';
+      if (struckAt.has(index)) return 'wrong';
+      if (reveal) return 'dim';
+      return chosen === index ? 'pending' : '';
+    }
     if (myMiss?.index === index) return 'wrong';
     if (!reveal) return chosen === index ? 'pending' : '';
     if (index === reveal.correctIndex) return 'right';
@@ -465,6 +707,103 @@
           {#if q.misses.length}
             <span class="minus" title={losers.join(', ')}>−1 {losersShort}</span>
           {/if}
+        {:else if coop}
+          <!-- The team's result: who cleared it (and what a find gave them), then what it cost whom. -->
+          {@const lines = coopRevealText({
+            depth: s.round,
+            winner: reveal.winnerId,
+            timedOut: reveal.timedOut,
+            caveIn: !!reveal.caveIn,
+            hits: reveal.hits ?? [],
+            // Null for one who has left since (their wrong pick still struck): nothing is said of them.
+            left: (id) => (s.players.some((p) => p.id === id) ? livesOf(s, id) : null),
+            nameOf,
+            me,
+            gain:
+              reveal.correct && reveal.gained && gainerId
+                ? { kind: reveal.gained, by: gainerId, forged: !!reveal.forged, slow: q.find === 'azurite' && reveal.gained === 'shards' }
+                : undefined,
+          })}
+          {@const hits = (reveal.hits ?? []).filter((h) => s.players.some((p) => p.id === h.playerId))}
+          {#if gainLine}
+            <span class="found-glyph" aria-hidden="true"><ItemGlyph kind={gainLine.glyph} /></span>
+          {:else if hits.some((h) => h.lives > 0)}
+            <span class="lost-vial" class:last={hits.some((h) => h.lives > 0 && livesOf(s, h.playerId) <= 1)} aria-hidden="true"
+              ><span class="glass"><span class="essence"></span></span><svg viewBox="0 0 24 10"
+                ><path class="rim" d="M0.6 0.6H18.6L23.3 5 18.6 9.4H0.6Z" /><path class="hair" d="M2.2 2H17.9L21.4 5 17.9 8H2.2Z" /></svg
+              ></span
+            >
+          {:else if hits.some((h) => h.wards > 0)}
+            <span class="lost-ward" aria-hidden="true"
+              ><span class="piece l"><ItemGlyph kind="ward" piece="left" /></span><span class="piece r"><ItemGlyph kind="ward" piece="right" /></span></span
+            >
+          {/if}
+          <!-- Who cleared it, and what a find gave, in one sentence. -->
+          {lines[0]}
+          {#if streak >= 2}<span class="streak" in:scale={{ start: 0.5, duration: 400, delay: 1100 }}>{streak} in a row</span>{/if}
+          {#if lines.length > 1}<span class="losses">{lines.slice(1).join(' ')}</span>{/if}
+        {:else if s.delve}
+          {@const you = delveYou}
+          {@const who = you ? 'You' : active.name}
+          {@const whom = you ? 'you' : active.name}
+          {@const left = livesOf(s, active.id)}
+          {#if reveal.correct}
+            {#if gainLine}
+              <!-- What the find earned, beside its engraving. -->
+              <span class="found-glyph" aria-hidden="true"><ItemGlyph kind={gainLine.glyph} /></span>{gainLine.text}
+            {:else}
+              {who} {you ? 'delve' : 'delves'} on.
+            {/if}
+            {#if streak >= 2}<span class="streak" in:scale={{ start: 0.5, duration: 400, delay: 1100 }}>{streak} in a row</span>{/if}
+          {:else if reveal.caveIn && reveal.lost && !fallsNow}
+            <!-- An Azurite Vein caved in for two losses: the wards that broke, and the lives that went. -->
+            {#if reveal.lost.wards}
+              <span class="lost-ward" aria-hidden="true"
+                ><span class="piece l"><ItemGlyph kind="ward" piece="left" /></span><span class="piece r"><ItemGlyph kind="ward" piece="right" /></span></span
+              >
+            {/if}
+            {#if reveal.lost.lives}
+              <span class="lost-vial" class:last={left <= 1} aria-hidden="true"
+                ><span class="glass"><span class="essence"></span></span><svg viewBox="0 0 24 10"
+                  ><path class="rim" d="M0.6 0.6H18.6L23.3 5 18.6 9.4H0.6Z" /><path class="hair" d="M2.2 2H17.9L21.4 5 17.9 8H2.2Z" /></svg
+                ></span
+              >
+            {/if}
+            {#if reveal.timedOut}The darkness took {whom}.{/if}
+            The vein caves in{you ? '' : ` on ${active.name}`}.
+            {#if reveal.lost.wards >= 2}
+              <span class="held">{wardText(you ? 'your' : `${active.name}'s`, 2)}</span>
+            {:else if reveal.lost.wards === 1}
+              {who} {you ? 'lose' : 'loses'} a ward and a life.
+            {:else}
+              {who} {you ? 'lose' : 'loses'} two lives.
+            {/if}
+          {:else if reveal.warded}
+            <!-- The ward that took the loss: a crystal splitting along its crack. -->
+            <span class="lost-ward" aria-hidden="true"
+              ><span class="piece l"><ItemGlyph kind="ward" piece="left" /></span><span class="piece r"><ItemGlyph kind="ward" piece="right" /></span></span
+            >
+            {#if reveal.timedOut}The darkness took {whom}.{/if}
+            <span class="held">{wardText(you ? 'your' : `${active.name}'s`)}</span>
+          {:else}
+            <!-- The life that went: a chamber of the phial, its light pouring out of the tip. -->
+            <span class="lost-vial" class:last={left <= 1} aria-hidden="true"
+              ><span class="glass"><span class="essence"></span></span><svg viewBox="0 0 24 10"
+                ><path class="rim" d="M0.6 0.6H18.6L23.3 5 18.6 9.4H0.6Z" /><path class="hair" d="M2.2 2H17.9L21.4 5 17.9 8H2.2Z" /></svg
+              ></span
+            >
+            {#if fallsNow && reveal.timedOut}
+              The darkness took {whom} for good.
+            {:else if fallsNow}
+              {who} {you ? 'perish' : 'perishes'}.
+            {:else if reveal.timedOut}
+              The darkness took {whom}.
+            {:else}
+              {who} {you ? 'lose' : 'loses'} a life.
+            {/if}
+          {/if}
+          <!-- A Dynamite Cache missed: what its blast destroyed of the pack (the phial shows it go). -->
+          {#if !reveal.correct && reveal.blown}{blownText(reveal.blown, you ? 'your' : `${active.name}'s`)}{/if}
         {:else if reveal.correct}
           <b class="good">+1</b> for {active.name}!
           {#if streak >= 2}<span class="streak" in:scale={{ start: 0.5, duration: 400, delay: 1100 }}>{streak} in a row</span>{/if}
@@ -480,30 +819,90 @@
         class:primary={canNext}
         data-sfx="none"
         disabled={!canNext}
-        title={canNext ? undefined : race ? 'The host moves the race on' : `${active.name} or the host moves on`}
+        title={canNext ? undefined : race ? 'The host moves the race on' : coop ? 'The team moves the run on' : `${active.name} or the host moves on`}
         onclick={next}
       >
-        {race ? 'Next question' : 'Next turn'}
+        {race ? 'Next question' : coop ? 'Next depth' : 'Next turn'}
         {#if session.mode !== 'local'}
           <span class="auto" style:transform="scaleX({autoLeft})"></span>
         {/if}
       </button>
     </div>
-  {:else if session.spectating}
-    <p class="spectate muted">You're watching. You'll play in the next game.</p>
-  {:else if race && myMiss}
-    <p class="spectate out">Wrong: −1. You're out until the next question.</p>
-  {:else if race}
-    <p class="spectate muted">First correct answer wins. Wrong costs a point!<span class="keys"> Press 1–{count === 10 ? '9 and 0' : count}.</span></p>
-  {:else if !mine}
-    <p class="spectate muted">{active.name} is deciding…</p>
+  {:else if blastSlot}
+    <!-- Delve: dynamite at hand. The button stands where Next will. -->
+    <div class="result blasting" bind:clientHeight={blastRowH}>
+      <div class="hint">{@render openHint()}</div>
+      <button
+        class="btn blast"
+        class:gone={!canBlast}
+        data-sfx="none"
+        disabled={!canBlast}
+        aria-hidden={!canBlast}
+        tabindex={canBlast ? undefined : -1}
+        aria-label="Detonate: use dynamite to blast this question away and get a new one at this depth.{fuse !== null ? ' The fuse is already burning.' : ''}"
+        onclick={blastThrough}
+      >
+        <span class="stick" aria-hidden="true"><ItemGlyph kind="dynamite" /></span>
+        Detonate
+        {#if fuse !== null}
+          <!-- The fuse over the clock's last seconds: it burns down to 0 as Next's bar does, and the dynamite goes off. -->
+          <span class="auto fuse" style:transform="scaleX({fuse})"></span>
+        {/if}
+      </button>
+    </div>
   {:else}
-    <p class="spectate muted keys">Tip: press 1–{count === 10 ? '9 and 0' : count} to answer.</p>
+    {@render openHint()}
   {/if}
 {/snippet}
 
+<!-- What there is to know while the question is open, under the answers. -->
+{#snippet openHint()}
+  <!-- One block, so the footer's grid centres its lines together. -->
+  <div>
+    {#if coop}
+      <!-- What befell the team on this question, over the line below: read out as it comes. -->
+      <div class="news" aria-live="polite">
+        {#if perishedLine}<p class="spectate out" transition:slide={{ duration: 250 }}>{perishedLine}</p>{/if}
+        {#if flareLine}
+          <p class="spectate flare-line" transition:slide={{ duration: 250 }}><span class="found-glyph" aria-hidden="true"><ItemGlyph kind="flare" /></span>{flareLine}</p>
+        {/if}
+      </div>
+    {/if}
+    {#if coop && myStruck && me}
+      {@const others = waitingIds(s).filter((id) => id !== me)}
+      <p class="spectate out">
+        {coopMissText(myStruck, livesOf(s, me), myStruck.lives + myStruck.wards > 1)}
+        {#if others.length}<span class="still">Still answering: {namesOf(others, nameOf, me)}.</span>{/if}
+      </p>
+    {:else if fuse !== null}
+      <!-- Delve: the clock's last seconds, with dynamite to go off at 0 (its bar burns down on Detonate). -->
+      <p class="spectate blast-line" in:fade={{ duration: 200 }}>
+        <span class="found-glyph" aria-hidden="true"><ItemGlyph kind="dynamite" /></span>The fuse on {coop ? "the team's" : delveYou ? 'your' : `${active.name}'s`} dynamite is burning.
+      </p>
+    {:else if blastLine}
+      <p class="spectate blast-line" in:fade={{ duration: 300, delay: 300 }}><span class="found-glyph" aria-hidden="true"><ItemGlyph kind="dynamite" /></span>{blastLine}</p>
+    {:else if session.spectating}
+      <p class="spectate muted">You're watching. You'll play in the next game.</p>
+    {:else if coop && !mine}
+      <p class="spectate muted">Your team is answering…</p>
+    {:else if coop}
+      <p class="spectate muted">
+        The first right answer clears it; a wrong one costs a life.<span class="keys">{' '}Press 1–{count === 10 ? '9 and 0' : count}.</span>
+      </p>
+    {:else if race && myMiss}
+      <p class="spectate out">Wrong: −1. You're out until the next question.</p>
+    {:else if race}
+      <p class="spectate muted">First right answer wins. A wrong one costs a point!<span class="keys">{' '}Press 1–{count === 10 ? '9 and 0' : count}.</span></p>
+    {:else if !mine}
+      <p class="spectate muted">{active.name} is deciding…</p>
+    {:else}
+      <p class="spectate muted keys">Tip: press 1–{count === 10 ? '9 and 0' : count} to answer.</p>
+    {/if}
+  </div>
+{/snippet}
+
 <div class="question">
-  <div class="topline">
+  <div class="topline" class:snug>
     <span class="chip">{questionTopic(q)}</span>
     <span class="task">
       <span class="task-text" class:answered={narrow.current && !!verdict}>{q.mode === 'art' ? 'Pick the art that matches the name' : 'Name this item'}</span>
@@ -518,13 +917,14 @@
     {/if}
   </div>
 
+  <!-- Delve: until the clock runs (waiting), the question keeps its shape but shows nothing to read. -->
   {#if q.mode === 'art'}
     <!-- Name given, pick the matching art. -->
     <div class="tooltip wide" use:backdropShadow={{ fill: 'linear' }} class:good={reveal && iWon} class:bad={reveal && !iWon}>
       <div class="head">
         <NamePlate />
         <div class="head-text">
-          <span class="iname">{q.prompt}</span>
+          <span class="iname" class:veiled={waiting}>{waiting || !q.prompt ? '\u00a0' : q.prompt}</span>
           {#if reveal && item}
             <span class="ibase" in:fade>{item.base}</span>
           {:else}
@@ -532,17 +932,22 @@
           {/if}
         </div>
       </div>
-      <div class="tiles" bind:this={artEl} class:many={count > 4} class:six={count === 6} class:ten={count === 10}>
+      <div class="tiles" bind:this={artEl} class:many={count > 4} class:six={count === 6} class:ten={count === 10} class:snug>
         {#each q.labels as _, i (i)}
           {@const st = optionState(i)}
-          {@const src = reveal && q.options[i] ? itemImage(q.options[i]) : media?.options[i]}
+          {@const known = !!reveal && !!q.options[i]}
+          {@const src = known ? itemImage(q.options[i]) : waiting ? undefined : media?.options[i]}
+          <!-- Delve: a veiled picture burns in patch by patch, until the reveal names it. -->
+          {@const tv = !src && !waiting ? media?.tileVeils[i] : undefined}
           <button
             class="tile {st}"
             data-sfx="none"
             data-fx="hover"
             bind:this={optionEls[i]}
             class:mine
-            disabled={!mine || !!reveal || chosen !== null}
+            class:struck={struckAt.has(i)}
+            aria-label={struckAt.has(i) ? `Option ${i + 1}, crossed out: ${struckBy(i)} picked it and it's wrong` : undefined}
+            disabled={!mine || !!reveal || chosen !== null || waiting || struckAt.has(i)}
             onclick={() => answer(i)}
             onpointermove={glare}
             in:scale={{ start: 0.85, duration: 450, delay: 250 + i * 80 }}
@@ -550,9 +955,38 @@
             <span class="sheen"></span>
             <span class="key">{(i + 1) % 10}</span>
             <span class="cue" aria-hidden="true"></span>
-            {#if src}
-              <!-- Named pictures switch to the original art, so a mirrored one turns round. -->
-              <span class="pic"><ArtImage {src} alt="Option {i + 1}" scale={1.6} unflip={mirrored(i) && !!q.options[i]} /></span>
+            {#if src || tv}
+              <span class="pic">
+                {#if src}
+                  <!-- Named pictures switch to the original art, so a mirrored one turns round. -->
+                  <ArtImage {src} alt="Option {i + 1}" scale={1.6} unflip={mirrored(i) && !!q.options[i]} />
+                {:else if tv}
+                  {@const ps = tilePatches(i)}
+                  <span class="art-slot">
+                    <span class="art-fit veil" style:--w={tv.w} style:--h={tv.h} style:--s={1.6}>
+                      {#each ps as p (p.i)}
+                        <canvas
+                          class="patch"
+                          data-shape
+                          aria-hidden="true"
+                          style:left="{(p.x / tv.w) * 100}%"
+                          style:top="{(p.y / tv.h) * 100}%"
+                          style:width="{(p.w / tv.w) * 100}%"
+                          style:height="{(p.h / tv.h) * 100}%"
+                          use:appearTile={{
+                            url: p.url,
+                            edges: p.edges,
+                            before: ps.filter((o) => o.i !== p.i).map((o) => o.i),
+                            burn: tv.burn,
+                            quick: !!reveal,
+                          }}
+                        ></canvas>
+                      {/each}
+                      <canvas class="frontier" aria-hidden="true" use:frontier={{ w: tv.w, h: tv.h, burn: tv.burn, quick: !!reveal, patches: ps }}></canvas>
+                    </span>
+                  </span>
+                {/if}
+              </span>
             {:else}
               <span class="loading" aria-label="Loading"></span>
             {/if}
@@ -570,7 +1004,7 @@
       </div>
     </div>
   {:else}
-    <div class="stage">
+    <div class="stage" class:snug class:ten={count === 10}>
       <div class="tooltip" use:backdropShadow={{ fill: 'linear' }} class:good={reveal && iWon} class:bad={reveal && !iWon}>
         <div class="head">
           <!-- The gems stay dark until the item is identified. -->
@@ -619,7 +1053,7 @@
                 <canvas class="frontier" aria-hidden="true" use:frontier={{ w: v.w, h: v.h, burn: v.burn, quick: !!reveal, patches }}></canvas>
               </span>
               </span>
-            {:else if !showFull && media?.art}
+            {:else if !showFull && media?.art && !waiting}
               <ArtImage src={media.art.url} alt="The item to identify" w={media.art.w} h={media.art.h} float />
             {:else if !showFull}
               <span class="loading big" aria-label="Loading"></span>
@@ -628,7 +1062,7 @@
         </div>
       </div>
 
-      <div class="options" class:compact={count > 6} class:dense={count > 8}>
+      <div class="options" class:compact={count > 6} class:dense={count > 8} class:ten={count === 10} class:snug>
         {#each q.labels as label, i (i)}
           {@const st = optionState(i)}
           <button
@@ -639,15 +1073,16 @@
             use:backdropShadow={{ fill: 'linear' }}
             class:mine
             class:fake={fake(i)}
-            title={fake(i) ? 'Not a real item' : undefined}
-            disabled={!mine || !!reveal || chosen !== null}
+            class:struck={struckAt.has(i)}
+            title={fake(i) ? 'Not a real item' : struckAt.has(i) ? `Wrong: ${struckBy(i)} picked it` : undefined}
+            disabled={!mine || !!reveal || chosen !== null || waiting || struckAt.has(i)}
             onclick={() => answer(i)}
             onpointermove={glare}
             in:fly={{ x: 40, duration: 450, delay: 300 + i * 90 }}
           >
             <span class="sheen"></span>
             <span class="key">{(i + 1) % 10}</span>
-            <span class="text">{label ?? optionName(i)}</span>
+            <span class="text" class:veiled={waiting}>{waiting ? '\u00a0' : (label ?? optionName(i))}</span>
             <span class="cue" aria-hidden="true"></span>
             {@render who(i)}
             {#if st === 'right'}<span class="mark" in:scale={{ duration: 300 }}>✓</span>{/if}
@@ -665,6 +1100,8 @@
       <div class="dock" use:portal use:dock={keepInView} in:fade={{ duration: 200 }} out:fade|global={{ duration: 180 }}>
         {@render footer()}
       </div>
+      <!-- The dynamite's row stood here: its height is kept, so nothing above moves (the page scrolled to its end would otherwise jump). -->
+      {#if blastSlot && blastKeep}<div style:height="{blastKeep}px" aria-hidden="true"></div>{/if}
     {:else}
       {@render footer()}
     {/if}
@@ -893,6 +1330,220 @@
   .loading.big {
     width: 44px;
     height: 44px;
+  }
+  /* Delve: one chamber of the scoreboard's phial (Phial.svelte), standing on
+     the line's baseline, whose light pours out of its tip as the line comes in. */
+  .lost-vial {
+    position: relative;
+    display: inline-block;
+    vertical-align: baseline;
+    width: 1.5em;
+    height: 0.625em;
+    margin-right: 0.4em;
+  }
+  .lost-vial svg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+  }
+  .lost-vial .rim {
+    fill: none;
+    stroke: #c9a45c;
+    stroke-width: 1.1;
+  }
+  .lost-vial .hair {
+    fill: none;
+    stroke: rgba(241, 217, 155, 0.35);
+    stroke-width: 0.45;
+  }
+  /* The hollow inside the rim (in units of the 24 × 10 drawing): dark glass, hatched along the bottom. */
+  .lost-vial .glass {
+    position: absolute;
+    left: calc(100% * 1.2 / 24);
+    top: 12%;
+    width: calc(100% * 21.4 / 24);
+    height: 76%;
+    overflow: hidden;
+    clip-path: polygon(0 0, 81% 0, 100% 50%, 81% 100%, 0 100%);
+    background:
+      repeating-linear-gradient(135deg, rgba(201, 164, 92, 0.22) 0 0.5px, transparent 0.5px 2.2px) 0 100% / 100% 45% no-repeat,
+      linear-gradient(180deg, #0b0806, #150d08);
+  }
+  .lost-vial .essence {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: -45%;
+    width: 145%;
+    background:
+      linear-gradient(180deg, rgba(255, 226, 214, 0.45) 0, rgba(255, 226, 214, 0) 24%),
+      radial-gradient(ellipse 60% 120% at 62% 58%, #ffe4cf 0%, #ff8a68 20%, #ec3a48 46%, #9c0f2c 74%, #3c0410 100%);
+    -webkit-mask-image: linear-gradient(90deg, transparent, #000 31%);
+    mask-image: linear-gradient(90deg, transparent, #000 31%);
+    animation: vial-pour 1s cubic-bezier(0.55, 0, 0.8, 0.45) 0.7s both;
+  }
+  .lost-vial.last .essence {
+    background:
+      linear-gradient(180deg, rgba(255, 200, 190, 0.35) 0, rgba(255, 200, 190, 0) 24%),
+      radial-gradient(ellipse 60% 120% at 62% 58%, #ffb49c 0%, #f25a52 20%, #c81e38 46%, #6e0820 74%, #2a030c 100%);
+  }
+  @keyframes vial-pour {
+    to {
+      transform: translateX(100%);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .lost-vial .essence {
+      display: none;
+    }
+  }
+
+  /* Delve: what a find earned, its engraving standing on the line's baseline. */
+  .found-glyph {
+    display: inline-block;
+    vertical-align: -0.12em;
+    margin-right: 0.4em;
+    --h: 0.95em;
+  }
+  .found-glyph :global(.glyph) {
+    animation: found-in 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.25) 0.6s both;
+    transform-origin: 50% 100%;
+  }
+  @keyframes found-in {
+    from {
+      opacity: 0;
+      transform: scale(0.2);
+    }
+  }
+  /* Delve: what a ward took in place of a life, in its cold light. */
+  .held {
+    color: #c4dcff;
+    text-shadow: 0 0 12px rgba(90, 150, 255, 0.45);
+  }
+  /* Delve: the ward that took a loss, splitting as the line comes in. */
+  .lost-ward {
+    position: relative;
+    display: inline-block;
+    vertical-align: -0.12em;
+    width: 0.65em;
+    height: 0.95em;
+    margin-right: 0.45em;
+    --h: 0.95em;
+  }
+  .lost-ward .piece {
+    position: absolute;
+    left: 0;
+    top: 0;
+    transform-origin: 50% 90%;
+  }
+  .lost-ward .l {
+    animation: ward-split-l 0.6s cubic-bezier(0.3, 0, 0.6, 1) 0.7s both;
+  }
+  .lost-ward .r {
+    animation: ward-split-r 0.6s cubic-bezier(0.3, 0, 0.6, 1) 0.7s both;
+  }
+  @keyframes ward-split-l {
+    to {
+      opacity: 0.55;
+      transform: translate(-0.12em, 0.05em) rotate(-14deg);
+    }
+  }
+  @keyframes ward-split-r {
+    to {
+      opacity: 0.55;
+      transform: translate(0.12em, 0.06em) rotate(11deg);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .found-glyph :global(.glyph) {
+      animation: none;
+    }
+    .lost-ward .piece {
+      animation-duration: 0s;
+      animation-delay: 0s;
+    }
+  }
+
+  /* ---- Delve: dynamite ---- */
+  .blast-line {
+    color: #eebf96;
+  }
+  /* Delve together: what befell the team, a line each over the usual one. */
+  .news > p {
+    padding-bottom: 0.35rem;
+  }
+  /* A flare's line, in the warm light of its count in the phial. */
+  .flare-line {
+    color: #f6cf98;
+  }
+  /* Dynamite at hand: what there is to know, and the button where Next will
+     stand. The row keeps the footer's height, so the button coming and
+     going moves nothing; gone, it keeps its place unseen. */
+  .blasting .hint {
+    flex: 1;
+    min-width: 0;
+  }
+  /* The line as it reads without the button (not the result's larger type), set left as the result's is. */
+  .blasting .hint .spectate {
+    text-align: left;
+    font-size: inherit;
+  }
+  /* Detonate: an ordinary action (Next's body, shape and type), in dynamite's
+     tan, the colour its finds and the line it leaves are written in. */
+  .btn.blast {
+    color: #eebf96;
+    border-color: rgba(238, 191, 150, 0.5);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 226, 196, 0.16),
+      inset 0 0 0 1px rgba(0, 0, 0, 0.35),
+      inset 0 -10px 16px -8px rgba(0, 0, 0, 0.55),
+      0 0 14px rgba(238, 191, 150, 0.12),
+      0 2px 10px rgba(0, 0, 0, 0.5);
+    transition:
+      opacity 0.25s,
+      transform 0.18s var(--ease-out),
+      box-shadow 0.25s,
+      border-color 0.25s,
+      color 0.25s,
+      text-shadow 0.25s;
+  }
+  .btn.blast:hover:not(:disabled) {
+    color: #fbe3cc;
+    border-color: rgba(246, 214, 186, 0.85);
+    text-shadow:
+      0 1px 2px rgba(0, 0, 0, 0.7),
+      0 0 12px rgba(238, 191, 150, 0.5);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 232, 210, 0.24),
+      inset 0 0 0 1px rgba(0, 0, 0, 0.35),
+      inset 0 -10px 16px -8px rgba(0, 0, 0, 0.45),
+      0 0 0 1px rgba(238, 191, 150, 0.14),
+      0 0 20px rgba(238, 191, 150, 0.28),
+      0 2px 10px rgba(0, 0, 0, 0.5);
+  }
+  .btn.blast.gone {
+    visibility: hidden;
+    opacity: 0;
+  }
+  .btn.blast .stick {
+    display: inline-block;
+    --h: 1.05em;
+  }
+  /* The fuse burning down: Next's bar, in the same tan. */
+  .btn.blast .fuse {
+    background: #f4d2b2;
+    box-shadow: 0 0 6px rgba(238, 191, 150, 0.6);
+  }
+
+  /* Delve: the words come in once the clock runs. */
+  .text,
+  .iname {
+    transition: opacity 0.2s;
+  }
+  .veiled {
+    opacity: 0;
   }
   @keyframes spin {
     to {
@@ -1127,6 +1778,9 @@
       transparent
     );
     transform: skewX(-18deg);
+    /* Parked off the left end, it would still lean into a tall picture's
+       top-left corner (the skew), so it only shows while it sweeps. */
+    opacity: 0;
   }
   .sheen::after {
     content: '';
@@ -1221,9 +1875,11 @@
   @keyframes sweep {
     from {
       translate: 0 0;
+      opacity: 1;
     }
     to {
       translate: 560% 0;
+      opacity: 1;
     }
   }
   @keyframes key-ripple {
@@ -1420,6 +2076,7 @@
     height: 200px;
   }
   .pic {
+    position: relative;
     display: block;
     flex: 1;
     width: 92%;
@@ -1626,6 +2283,29 @@
     font-size: 0.9rem;
     color: #ff9c86;
   }
+  /* Delve together: what the result cost the team, on a line of its own. */
+  .losses {
+    display: block;
+    margin-top: 0.2rem;
+    font-size: 0.95rem;
+    font-style: italic;
+    color: #e2b8a8;
+  }
+  .still {
+    display: block;
+    color: var(--muted);
+  }
+  /* Struck by a teammate's wrong pick: out of play for everyone, its striker
+     beside the ✕. Unlike an answer dynamite blew away (scorched, its words
+     gone to soot), it keeps its words, in red. */
+  .option.struck:not(.right) .text {
+    text-decoration: line-through;
+    text-decoration-thickness: 1px;
+    text-decoration-color: rgba(234, 179, 163, 0.55);
+  }
+  .tile.struck:not(.right) .pic {
+    filter: saturate(0.4) brightness(0.65);
+  }
   .spectate.out {
     color: #ff9c86;
     font-style: italic;
@@ -1762,6 +2442,11 @@
     .dock .result p {
       font-size: 1rem;
     }
+    /* Beside the dynamite's button, the line under the answers takes a little less room. */
+    .blasting .hint .spectate {
+      font-size: 0.95rem;
+      line-height: 1.25;
+    }
     /* Tighter all round, so less scrolling from the art down to the answers.
        Answers stay 48px tall, a comfortable tap. */
     .topline {
@@ -1824,6 +2509,92 @@
     .footer {
       min-height: 0;
       margin-top: 0.75rem;
+    }
+    /* Delve's eight or ten answers, on a clock down to five seconds: two
+       columns of names (a long one takes two lines) and the pictures four
+       or five to a row, so all of them are in view under the art. Their numbers shrink to small
+       seals, so the answers can still be called out by number. */
+    /* The task line beside the category, two lines if need be, never under it. */
+    .topline.snug {
+      flex-wrap: nowrap;
+    }
+    .topline.snug .task {
+      flex: 1 1 0;
+      font-size: 0.85rem;
+      line-height: 1.1;
+    }
+    /* The art gives way first on a short screen: at 375 × 667 the eighth
+       answer still ends above the bottom edge, under the depth's plaque. */
+    .stage.snug .art {
+      height: clamp(140px, 30svh - 60px, 230px);
+    }
+    .options.snug {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 0.4rem;
+    }
+    .snug .option {
+      min-height: 50px;
+      gap: 0.4rem;
+      padding: 0.4rem 1.4rem 0.4rem 0.4rem;
+    }
+    .snug .key {
+      width: 20px;
+      height: 20px;
+      padding-top: 1px;
+      font-size: 0.66rem;
+    }
+    .snug .text {
+      font-size: 0.98rem;
+      line-height: 1.12;
+      letter-spacing: 0.01em;
+      overflow-wrap: anywhere;
+    }
+    .snug .option .mark {
+      right: 0.5rem;
+      font-size: 1.1rem;
+    }
+    .snug .cue {
+      right: 0.6rem;
+    }
+    .tiles.snug {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+    .tiles.snug .tile {
+      height: 136px;
+      padding: 0.5rem 0.25rem;
+    }
+    .tiles.snug .tile .key {
+      top: 4px;
+      left: 4px;
+    }
+    .tiles.snug .tile .mark {
+      top: 4px;
+      right: 6px;
+      font-size: 1.05rem;
+    }
+    /* Ten answers, from depth 70: a row more of names, so the art, the rows
+       and the gaps give a little each (the rows still 44px, a fair tap), and
+       the pictures five to a row in two rows. */
+    .stage.snug.ten .art {
+      height: clamp(120px, 30svh - 80px, 230px);
+    }
+    .options.snug.ten {
+      gap: 0.3rem;
+    }
+    .snug.ten .option {
+      min-height: 44px;
+      padding-top: 0.25rem;
+      padding-bottom: 0.25rem;
+    }
+    .snug.ten .text {
+      font-size: 0.94rem;
+    }
+    .tiles.snug.ten {
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+    }
+    .tiles.snug.ten .tile {
+      height: 150px;
+      padding: 0.5rem 0.15rem;
     }
   }
 </style>

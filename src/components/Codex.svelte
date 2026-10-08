@@ -1,24 +1,44 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
   import { fade, fly } from 'svelte/transition';
-  import { engine } from '../lib/session.svelte';
+  import { engine, savedName, session } from '../lib/session.svelte';
+  import { nameHeld, nameTooShort } from '../lib/names';
   import { CODEX_KEY, RECENT, loadCodex, resetCodex, type Tally } from '../lib/codex';
-  import { accuracy, codexStats, tallyOf } from '../lib/codexStats';
+  import { accuracy, codexStats, delveSummary, tallyOf } from '../lib/codexStats';
+  import { shownDepth } from '../lib/delve';
   import { categoryIcon, itemImage } from '../lib/ui';
   import { DIFFICULTY_NAMES } from '../lib/difficultyText';
-  import { closeCodex } from '../lib/codexRoute.svelte';
+  import { closeCodex, codexRoute } from '../lib/codexRoute.svelte';
   import { backdropShadow } from '../lib/backdropShadow';
   import { dialogBackdrop } from '../lib/behindDialog';
+  import { motion } from '../lib/motion.svelte';
   import type { Difficulty, Item } from '../lib/game';
   import ArcaneCircle from './ArcaneCircle.svelte';
   import CodexItem from './CodexItem.svelte';
   import CodexFilter from './CodexFilter.svelte';
+  import CodexDelve from './CodexDelve.svelte';
+  import { DELVE_RECORD_KEY, loadRecords, resetRecords } from '../lib/delveRecord';
+  import { ACHIEVEMENTS, ACHIEVEMENTS_KEY, WINS_KEY, checkAchievements, loadAchievements, loadWins, resetAchievements } from '../lib/achievements';
+  import { announceAchievements } from '../lib/achievementToasts';
+  import CodexAchievements from './CodexAchievements.svelte';
+
+  /** Svelte's transitions run whatever the system says: held still (reduced motion, or the effects off), things just appear. */
+  const calm = <T extends { duration?: number; delay?: number }>(p: T): T => (motion.still ? { ...p, duration: 0, delay: 0 } : p);
 
   let codex = $state.raw(loadCodex());
+  let delve = $state.raw(loadRecords());
+  // Brought up to date with the codex first (it is read the same way), so
+  // the page never shows one done but not earned.
+  announceAchievements(checkAchievements(engine.items), 'codex');
+  let achievements = $state.raw(loadAchievements());
+  let wins = $state.raw(loadWins());
   onMount(() => {
     // A game in another tab may add to it meanwhile.
     const reload = (e: StorageEvent) => {
       if (e.key === CODEX_KEY || e.key === null) codex = loadCodex();
+      if (e.key === DELVE_RECORD_KEY || e.key === null) delve = loadRecords();
+      if (e.key === ACHIEVEMENTS_KEY || e.key === null) achievements = loadAchievements();
+      if (e.key === WINS_KEY || e.key === null) wins = loadWins();
     };
     addEventListener('storage', reload);
     return () => removeEventListener('storage', reload);
@@ -133,8 +153,64 @@
   let confirmReset = $state(false);
   function reset() {
     resetCodex();
+    resetRecords();
+    resetAchievements();
     codex = loadCodex();
+    delve = loadRecords();
+    achievements = loadAchievements();
+    wins = loadWins();
     confirmReset = false;
+  }
+
+  // ---- three pages: the collection, Delve (CodexDelve) and achievements (CodexAchievements) ----
+
+  type Tab = 'items' | 'delve' | 'feats';
+  const TABS: { key: Tab; label: string }[] = [
+    { key: 'items', label: 'Collection' },
+    { key: 'delve', label: 'Delve' },
+    { key: 'feats', label: 'Achievements' },
+  ];
+  const earnedCount = $derived(ACHIEVEMENTS.filter((a) => achievements.earned[a.id] !== undefined).length);
+  let tab = $state<Tab>('items');
+  /** The tab's note: your best alone under the current rules (together, before a run alone). */
+  const delveBest = $derived(delveSummary(delve, 'solo').deepest ?? delveSummary(delve, 'together').deepest);
+  const delved = $derived(delve.runs.length > 0 || delve.frontier.length > 0 || Object.keys(delve.bests).length > 0);
+
+  /**
+   * "Begin the descent": a run alone straight away under the name this
+   * browser plays as; without one, the start page with Delve chosen for the
+   * game it opens.
+   */
+  function beginDelve() {
+    const name = savedName().trim();
+    const known = !!name && !nameTooShort(name) && !nameHeld(name);
+    if (!known) session.delveLink = true;
+    closeCodex();
+    if (!known) return;
+    // Once the codex is closed: a game starting under it would close it a second time (App), going back twice.
+    const go = () => {
+      if (codexRoute.open) return;
+      removeEventListener('popstate', go);
+      if (!session.state) session.startDelve(name);
+    };
+    if (codexRoute.open) addEventListener('popstate', go);
+    else go();
+  }
+  /** Anything to show (or erase): the tabs and the footer only come with it. */
+  const kept = $derived(stats.seen > 0 || delved);
+  const tabs = new Map<Tab, HTMLButtonElement>();
+  const tabRef = (key: Tab) => (el: HTMLButtonElement) => {
+    tabs.set(key, el);
+    return () => tabs.delete(key);
+  };
+  /** Arrow keys move between the tabs, as a tab list does. */
+  function tabKey(e: KeyboardEvent) {
+    const step = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
+    if (!step) return;
+    e.preventDefault();
+    const i = TABS.findIndex((t) => t.key === tab);
+    tab = TABS[(i + step + TABS.length) % TABS.length].key;
+    tabs.get(tab)?.focus();
   }
 </script>
 
@@ -165,13 +241,49 @@
 {/snippet}
 
 <div class="codex">
-  <header class="hero" in:fly={{ y: -10, duration: 600 }}>
+  <header class="hero" in:fly={calm({ y: -10, duration: 600 })}>
     <p class="kicker">Your collection</p>
     <h1>Codex</h1>
-    <p class="tagline">Every unique and lineage gem you have seen in a game, and how well you know it.</p>
+    <p class="tagline">
+      {tab === 'delve'
+        ? 'Every descent you have made, the depths you have named, and what they cost you.'
+        : tab === 'feats'
+          ? 'Feats of knowledge, victory and daring, and how close you are to the rest.'
+          : 'Every unique and lineage gem you have seen in a game, and how well you know it.'}
+    </p>
   </header>
 
-  <section class="summary" in:fly={{ y: 20, duration: 700, delay: 150 }}>
+  {#if kept}
+    <div class="tabs" role="tablist" aria-label="Codex pages" in:fly={calm({ y: -6, duration: 500, delay: 100 })}>
+      {#each TABS as t (t.key)}
+        <button
+          {@attach tabRef(t.key)}
+          role="tab"
+          id="codex-tab-{t.key}"
+          class:on={tab === t.key}
+          aria-selected={tab === t.key}
+          aria-controls="codex-page"
+          tabindex={tab === t.key ? 0 : -1}
+          onclick={() => (tab = t.key)}
+          onkeydown={tabKey}
+        >
+          <span class="tab-in">
+            <span class="tab-label">{t.label}</span>
+            {#if t.key === 'items'}<span class="tab-note">{stats.seen}/{stats.total}</span>{:else if t.key === 'feats'}<span class="tab-note">{earnedCount}/{ACHIEVEMENTS.length}</span>{:else if delveBest}<span class="tab-note">{shownDepth(delveBest)}</span>{/if}
+          </span>
+        </button>
+      {/each}
+    </div>
+  {/if}
+
+  <div class="page" id="codex-page" role={kept ? 'tabpanel' : undefined} aria-labelledby={kept ? `codex-tab-${tab}` : undefined}>
+  {#if tab === 'delve' && kept}
+    <CodexDelve {codex} records={delve} onopen={(it) => (open = it)} onbegin={beginDelve} />
+  {:else if tab === 'feats' && kept}
+    <CodexAchievements {codex} records={delve} store={achievements} {wins} items={engine.items} />
+  {:else}
+
+  <section class="summary" in:fly={calm({ y: 20, duration: 700, delay: 150 })}>
     {#if stats.seen}
       <div class="side">
         <div class="stat">
@@ -224,7 +336,7 @@
   </section>
 
   {#if !stats.seen}
-    <div class="empty" in:fly={{ y: 20, duration: 700, delay: 300 }}>
+    <div class="empty" in:fly={calm({ y: 20, duration: 700, delay: 300 })}>
       <p>Your codex is still blank.</p>
       <p class="muted">
         Every item revealed in your games is written into it, with how often you named it right. It is kept in this browser only.
@@ -232,7 +344,7 @@
       <button class="btn primary" onclick={closeCodex}>Begin the hunt</button>
     </div>
   {:else}
-    <div class="split" in:fly={{ y: 20, duration: 700, delay: 250 }}>
+    <div class="split" in:fly={calm({ y: 20, duration: 700, delay: 250 })}>
       <section class="panel" use:backdropShadow={{ fill: 'linear' }}>
         <header><h2>By question</h2></header>
         {@render bars([
@@ -265,7 +377,7 @@
       </section>
     </div>
 
-    <div class="insights" in:fly={{ y: 20, duration: 700, delay: 350 }}>
+    <div class="insights" in:fly={calm({ y: 20, duration: 700, delay: 350 })}>
       <section class="panel" use:backdropShadow={{ fill: 'linear' }}>
         <header><h2>Nemeses</h2></header>
         {#if stats.nemeses.length}
@@ -433,8 +545,13 @@
       {/if}
     </section>
 
+  {/if}
+  {/if}
+  </div>
+
+  {#if kept}
     <footer class="end">
-      <p>Your codex lives in this browser only; clearing the site's data erases it.</p>
+      <p>Your codex, your Delve runs and your achievements live in this browser only; clearing the site's data erases them.</p>
       <button class="btn danger small" onclick={() => (confirmReset = true)}>Erase codex</button>
     </footer>
   {/if}
@@ -450,9 +567,9 @@
     role="presentation"
   >
     <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <div class="confirm panel" transition:fly={{ y: 20, duration: 250 }} onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" tabindex="-1">
+    <div class="confirm panel" transition:fly={calm({ y: 20, duration: 250 })} onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" tabindex="-1">
       <h3>Erase your codex?</h3>
-      <p class="muted">Every item you have seen and every answer recorded in this browser is lost. This can't be undone.</p>
+      <p class="muted">Every item you have seen, every answer, every Delve run and every achievement recorded in this browser is lost. This can't be undone.</p>
       <div class="actions">
         <button class="btn ghost" onclick={() => (confirmReset = false)}>Keep it</button>
         <button class="btn danger" onclick={reset}>Erase</button>
@@ -499,6 +616,86 @@
     margin: 0.6rem 0 0;
     font-style: italic;
     color: #b8ab95;
+  }
+
+  /* ---- the three pages ---- */
+  .tabs {
+    display: flex;
+    justify-content: center;
+    gap: 0.4rem;
+    margin: -0.4rem auto 0;
+    width: min(520px, 100%);
+    border-bottom: 1px solid var(--line);
+  }
+  .tabs button {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+    padding: 0.55rem 0.8rem 0.6rem;
+    background: none;
+    border: 0;
+    cursor: pointer;
+    color: var(--muted);
+    transition: color 0.25s;
+  }
+  .tab-label {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 0.86rem;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+  }
+  /* The label and its number are one unit: centred together, and the underline spans both. */
+  .tab-in {
+    position: relative;
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.5rem;
+  }
+  .tab-label {
+    /* No trailing letter spacing: the unit ends where its letters do. */
+    margin-right: -0.22em;
+  }
+  .tab-note {
+    font-family: var(--font-cinzel);
+    font-size: 0.78rem;
+    color: var(--gold-lo);
+    transition: color 0.25s;
+  }
+  .tab-in::after {
+    content: '';
+    position: absolute;
+    left: -0.7rem;
+    right: -0.7rem;
+    /* Down through the button's padding onto the tabs' line. */
+    bottom: calc(-0.6rem - 1px);
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--unique-hi), #fbe6b0, var(--unique-hi), transparent);
+    box-shadow: 0 0 10px rgba(224, 138, 68, 0.6);
+    opacity: 0;
+    scale: 0.4 1;
+    transition:
+      opacity 0.3s,
+      scale 0.4s var(--ease-out);
+  }
+  .tabs button:hover {
+    color: var(--gold-hi);
+  }
+  .tabs button.on {
+    color: var(--gold-hi);
+    text-shadow: 0 0 12px rgba(224, 138, 68, 0.35);
+  }
+  .tabs button.on .tab-note {
+    color: var(--gold);
+  }
+  .tabs button.on .tab-in::after {
+    opacity: 1;
+    scale: 1 1;
+  }
+  .page {
+    display: flex;
+    flex-direction: column;
+    gap: 1.4rem;
   }
 
   /* ---- summary: the medallion between four figures ---- */
@@ -1276,6 +1473,27 @@
     }
   }
   @media (max-width: 560px) {
+    /* Three tabs to a phone: each as wide as its label, its number under it. */
+    .tabs {
+      gap: 0;
+    }
+    .tabs button {
+      flex: auto;
+      padding-inline: 0.3rem;
+    }
+    .tab-in {
+      flex-direction: column;
+      align-items: center;
+      gap: 0.15rem;
+    }
+    .tab-label {
+      font-size: 0.74rem;
+      letter-spacing: 0.12em;
+      margin-right: -0.12em;
+    }
+    .tab-note {
+      font-size: 0.72rem;
+    }
     .summary {
       grid-template-columns: 1fr;
       row-gap: 1.75rem;

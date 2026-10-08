@@ -1,12 +1,17 @@
 <script lang="ts">
+  import { accentAt, dealtDeeper, plunge, setDescent, type Dealt } from './lib/descent';
+  import { zoneAt } from './lib/zoneSigils';
+  import { shownDepth } from './lib/delve';
   import { onMount, untrack } from 'svelte';
   import { fade, fly } from 'svelte/transition';
   import { session } from './lib/session.svelte';
-  import { getVolume, isMuted, setMuted, setVolume, sfx } from './lib/sound';
+  import { depthAmbience, getVolume, isMuted, setMuted, setVolume, sfx } from './lib/sound';
   import { fxAvailable, fxUserOn, onFxChange, setFxOn, shakeTarget } from './lib/fx/core';
   import { IMPRINT_URL, PRIVACY_URL } from './lib/site';
   import { dialogBackdrop } from './lib/behindDialog';
+  import { wantDelveBackdrop } from './lib/backdrop';
   import Background from './components/Background.svelte';
+  import Darkness from './components/Darkness.svelte';
   import FxLayer from './components/FxLayer.svelte';
   import Toasts from './components/Toasts.svelte';
   import Home from './components/Home.svelte';
@@ -21,6 +26,10 @@
   const silent = $derived(muted || volume === 0);
   let confirmLeave = $state(false);
   let fxOn = $state(fxUserOn());
+  // CSS animations that only decorate (the Delve phial's fire) hold still with the effects off.
+  $effect(() => {
+    document.documentElement.toggleAttribute('data-still', !fxOn);
+  });
   let fxCan = $state(fxAvailable());
   let headerHeight = $state(0);
   let shell: HTMLElement;
@@ -90,6 +99,34 @@
   });
   const codex = $derived(screen === 'codex');
 
+  // Delve: the scene descends with the run, and holds its depth on the end screen
+  // (a screenshot shows how deep it went); everywhere else it is the surface.
+  // The ambience follows it down.
+  $effect(() => {
+    const depth = gs?.delve && (screen === 'game' || screen === 'over') ? gs.round : 0;
+    setDescent(depth);
+    depthAmbience(depth);
+  });
+  // Delve on its way (chosen in the lobby, a Delve room joined, a run picked
+  // up, or one begun from a shared link): the backdrop builds its Delve
+  // programs now, in the background, so they're ready when the run starts.
+  $effect(() => {
+    if (gs && (gs.settings.mode === 'delve' || gs.delve)) wantDelveBackdrop();
+  });
+  // Delve: each new depth sinks the scene a little further as its cards are
+  // dealt (not the run's first, nor the same depth's dealt again after a
+  // question set aside; see dealtDeeper).
+  let lastDealt: Dealt | undefined;
+  $effect(() => {
+    if (!gs?.delve || screen !== 'game' || gs.phase !== 'choosing') return;
+    const now = { run: gs.delve.startedAt, depth: gs.round };
+    if (dealtDeeper(lastDealt, now)) {
+      plunge();
+      sfx('plunge');
+    }
+    lastDealt = now;
+  });
+
   /** How long the outgoing screen takes to fade (the .screen transition below). */
   const SCREEN_OUT_MS = 150;
   /**
@@ -143,6 +180,8 @@
 </script>
 
 <Background />
+<!-- Delve: the light shrinking at the screen's edges as a question's clock runs down. -->
+<Darkness active={!!gs?.delve && screen === 'game'} />
 
 <div class="shell" data-behind-dialog bind:this={shell}>
   {#if headerOn}
@@ -156,9 +195,32 @@
         <span>PoE2.Quest{#if BETA}{' '}<small class="beta">Beta</small>{/if}</span>
       </button>
       <div class="meta">
-        {#if gs && screen === 'game'}
+        {#if gs?.delve && (screen === 'game' || screen === 'over')}
+          <!-- Delve: no target, just how deep. -->
           {#if session.code && !session.hideCode}
-            <span>Room <b>{session.code}</b></span>
+            <span>Room <b class="code">{session.code}</b></span>
+          {:else}
+            <span>Delve</span>
+          {/if}
+          {#if session.spectating}
+            <span class="dot">•</span>
+            <span class="spectating" title="You joined mid-game. You'll play in the next game.">Spectating</span>
+          {/if}
+          <!-- The depth as players count it (shownDepth). A run under way at 0
+               names none here: the banner below has its start line (Game.svelte),
+               too long for this line on a phone. -->
+          {#if screen !== 'game' || shownDepth(gs.round) > 0}
+            <span class="dot">•</span>
+            <span class="depth" style:--accent={accentAt(gs.round)} in:fade={{ duration: 600 }}>Depth <b>{shownDepth(gs.round)}</b></span>
+          {/if}
+          <!-- And the zone it's in, in its colour; a new one fades in as it's announced. -->
+          <span class="dot zone-dot">•</span>
+          {#key zoneAt(gs.round)}
+            <span class="zone" style:--accent={accentAt(gs.round)} in:fade={{ duration: 900, delay: 500 }}>{zoneAt(gs.round)}</span>
+          {/key}
+        {:else if gs && screen === 'game'}
+          {#if session.code && !session.hideCode}
+            <span>Room <b class="code">{session.code}</b></span>
             <span class="dot">•</span>
           {/if}
           {#if session.spectating}
@@ -178,7 +240,7 @@
           <span>Hot-seat</span>
         {:else if session.code && screen !== 'lobby'}
           <!-- The lobby shows the code in big letters. -->
-          <span>Room <b>{session.hideCode ? '••••••' : session.code}</b></span>
+          <span>Room <b class:code={!session.hideCode}>{session.hideCode ? '••••••' : session.code}</b></span>
         {/if}
       </div>
       <div class="tools">
@@ -305,6 +367,13 @@
 {/if}
 
 <style>
+  /* The room code stays selectable (the rest of the game isn't): a tap or
+     double-click takes the whole code, to share it. */
+  .code {
+    -webkit-user-select: all;
+    user-select: all;
+    cursor: text;
+  }
   .shell {
     position: relative;
     z-index: 1;
@@ -414,6 +483,19 @@
   }
   .spectating {
     color: var(--gold-hi);
+  }
+  /* The depth takes its stratum's colour (descent.ts), as the scene turns into it. */
+  .depth b {
+    color: var(--accent);
+    text-shadow: 0 0 10px color-mix(in srgb, var(--accent) 35%, transparent);
+    transition:
+      color 1.2s,
+      text-shadow 1.2s;
+  }
+  .zone {
+    color: color-mix(in srgb, var(--accent) 75%, var(--gold-hi));
+    white-space: nowrap;
+    transition: color 1.2s;
   }
   .deathmatch {
     color: #ff7a5c;
@@ -615,6 +697,16 @@
       flex-wrap: wrap;
       font-size: 0.66rem;
       gap: 0.1rem 0.35rem;
+    }
+    /* Delve: the zone on a line of its own under the depth, a little smaller. */
+    .zone-dot {
+      display: none;
+    }
+    .zone {
+      flex-basis: 100%;
+      text-align: center;
+      font-size: 0.6rem;
+      line-height: 1.2;
     }
   }
 

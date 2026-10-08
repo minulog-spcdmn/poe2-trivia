@@ -119,6 +119,25 @@ test('the frame hook fits the installed PeerJS: checks come before decoding, chu
   assert.deepEqual(conn._chunkedData, {});
 });
 
+test("PeerJS's binary connections report their send queue, which Delve's clock waits on", () => {
+  const Peer = (peerjs as unknown as { Peer: typeof peerjs }).Peer;
+  const peer = new Peer('queue-test', { host: '127.0.0.1', port: 1, secure: false });
+  peer.on('error', () => {});
+  const Binary = (peer as unknown as { _serializers: Record<string, { prototype: object }> })._serializers.binary;
+  peer.destroy();
+  // A getter on the prototype chain (BufferedConnection), and the channel PeerJS keeps on each connection.
+  let proto: object | null = Binary.prototype;
+  let getter: PropertyDescriptor | undefined;
+  while (proto && !getter) {
+    getter = Object.getOwnPropertyDescriptor(proto, 'bufferSize');
+    proto = Object.getPrototypeOf(proto);
+  }
+  assert.equal(typeof getter?.get, 'function');
+  const conn = Object.create(Binary.prototype) as { _bufferSize: number; bufferSize: number };
+  conn._bufferSize = 2;
+  assert.equal(conn.bufferSize, 2);
+});
+
 test('join gate lets a full lobby in at once, then throttles newcomers', () => {
   const c = clock();
   const gate = new JoinGate(c.now);

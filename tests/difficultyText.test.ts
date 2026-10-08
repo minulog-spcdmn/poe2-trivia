@@ -6,28 +6,28 @@ import { KNOB_STEPS, PRESETS, type Knobs } from '../src/lib/game.ts';
 test('presets are described the same way in both modes, but their unveil only in race', () => {
   assert.equal(
     describe({ difficulty: 'cruel', mode: 'turns' }),
-    'Four options of the same kind where the category allows (all rings, all bows…). Some questions ask you to find the art for a name.',
+    'Four options, of one kind where possible (all rings, all bows…). Some questions show a name; you pick its art.',
   );
   assert.equal(
     describe({ difficulty: 'merciless', mode: 'turns' }),
-    'Six options, half of them with look-alike names and one made up. Some questions ask you to find the art for a name. In race, the art burns into view bit by bit.',
+    'Six options, half with look-alike names, one made up. Some questions show a name; you pick its art. In race, the art you name burns into view bit by bit.',
   );
   assert.equal(
     describe({ difficulty: 'eternal', mode: 'race' }),
-    'Eight options, all with look-alike names and two made up. Half the questions ask you to find the art for a name. The art burns into view slowly. "Find the art" pictures are shown without colour. Some art is mirrored.',
+    'Eight options, all with look-alike names, two made up. Half the questions show a name; you pick its art, in grayscale. The art you name burns into view slowly. Some art is mirrored.',
   );
-  assert.match(describe({ difficulty: 'eternal', mode: 'turns' }), /In race, the art burns into view slowly\./);
+  assert.match(describe({ difficulty: 'eternal', mode: 'turns' }), /In race, the art you name burns into view slowly\./);
 });
 
 test('a custom unveil applies in both modes, and only what can happen is described', () => {
   const custom: Knobs = { ...PRESETS.cruel, veil: 'slowest', fakes: 1, mirror: 1, grayscale: 'all' };
   assert.equal(
     describe({ difficulty: 'custom', custom, mode: 'turns' }),
-    'Four options of the same kind where the category allows (all rings, all bows…), one of them made up. Some questions ask you to find the art for a name. The art burns into view very slowly. All art is shown without colour. All art is mirrored.',
+    'Four options, of one kind where possible (all rings, all bows…), one made up. Some questions show a name; you pick its art. The art you name burns into view very slowly. All art is in grayscale. All art is mirrored.',
   );
   // No "name the art" questions, so nothing to unveil; no "find the art" ones, so no grayscale pictures to mention.
-  assert.doesNotMatch(describe({ difficulty: 'custom', custom: { ...custom, artChance: 1 } }), /burns into view/);
-  assert.doesNotMatch(describe({ difficulty: 'custom', custom: { ...PRESETS.eternal, artChance: 0 } }), /colour/);
+  assert.doesNotMatch(describe({ difficulty: 'custom', custom: { ...custom, artChance: 1 } }), /burns in/);
+  assert.doesNotMatch(describe({ difficulty: 'custom', custom: { ...PRESETS.eternal, artChance: 0 } }), /grayscale/);
 });
 
 test('every step of every knob has a label, and none repeats within a knob', () => {
@@ -40,8 +40,8 @@ test('every step of every knob has a label, and none repeats within a knob', () 
 });
 
 test('questions without look-alikes, whatever their size, only promise one kind where the category allows it', () => {
-  assert.match(describe({ difficulty: 'custom', custom: { ...PRESETS.cruel, options: 10 } }), /^Ten options of the same kind where the category allows \(/);
-  assert.match(describe({ difficulty: 'cruel' }), /^Four options of the same kind where the category allows \(/);
+  assert.match(describe({ difficulty: 'custom', custom: { ...PRESETS.cruel, options: 10 } }), /^Ten options, of one kind where possible \(/);
+  assert.match(describe({ difficulty: 'cruel' }), /^Four options, of one kind where possible \(/);
 });
 
 test('deathmatch and lockout wording, and a name for every difficulty', () => {
@@ -71,4 +71,72 @@ test('every hint, and every reason that replaces one, fits on one line', () => {
     return [t.hint, ...reasons.filter((r): r is string => !!r)];
   });
   for (const t of texts) assert.ok(t.length <= 38, `${t} (${t.length})`);
+});
+
+test('the notes under a find: its tagline, then one short line of what its item does and what it risks, for someone who never played; never a depth, nor that it is harder', async () => {
+  const { findNote, teamFindNote, FIND_TEXT, caveInLabel } = await import('../src/lib/difficultyText.ts');
+  const none = { wards: 0, flares: 0, dynamite: 0, shards: 0 };
+  const line = (k: 'azurite' | 'flare' | 'dynamite', inv = none) => `${FIND_TEXT[k].tag}. ${findNote(k, inv)}`;
+  assert.equal(line('azurite'), 'Answer within half the time for a ward. A later answer gets a shard (two make a ward). A miss costs two lives.');
+  assert.equal(line('flare'), 'Answer right for a flare. It adds six seconds when your time runs out. You get less time to answer.');
+  assert.equal(line('dynamite'), 'Answer right for dynamite. It blasts a question away for a new one. A miss also blows up an item you carry.');
+  assert.equal(findNote('azurite', { ...none, wards: 3 }), 'You can carry no more. A miss costs two lives.');
+  assert.equal(findNote('flare', { ...none, flares: 3 }), "You can carry no more. You get less time to answer. Your flares can't be used on it.");
+  // What the player carries won't go off on a find's question, and the note says so.
+  assert.match(findNote('dynamite', { ...none, flares: 1 }), / Your flare can't be used on it\.$/);
+  assert.match(findNote('flare', { ...none, dynamite: 2 }), / Your dynamite can't be used on it\.$/);
+  assert.match(findNote('azurite', { ...none, flares: 2, dynamite: 1 }), / Your flares and dynamite can't be used on it\.$/);
+  assert.match(findNote('dynamite', { wards: 3, flares: 3, dynamite: 3, shards: 0 }), /^You can carry no more\./);
+  assert.equal(teamFindNote('flare', false), 'It adds six seconds for everyone when time runs out. You get less time to answer.');
+  assert.equal(FIND_TEXT.azurite.others, 'An answer within half the time wins a ward. A later answer gets a shard (two make a ward). A miss costs two lives.');
+  assert.equal(FIND_TEXT.flare.others, 'A right answer wins a flare. It adds six seconds when your time runs out. You get less time to answer.');
+  assert.equal(caveInLabel('azurite'), 'A wrong answer loses two lives');
+  // Plain words, read in a second: no depths, no digits, no bullets in these body-font lines, and short.
+  const kinds = ['azurite', 'flare', 'dynamite'] as const;
+  const all = [
+    ...Object.values(FIND_TEXT).map((t) => t.others),
+    ...kinds.flatMap((k) => [none, { wards: 3, flares: 3, dynamite: 3, shards: 0 }].map((inv) => line(k, inv))),
+    ...kinds.map((k) => `${FIND_TEXT[k].tag}. ${teamFindNote(k, false)}`),
+  ];
+  for (const t of all) {
+    assert.doesNotMatch(t, /depth|\d/i, t);
+    assert.ok(!t.includes('•') && !t.includes(String.fromCharCode(0x2014)), t);
+  }
+  // The usual note (nothing held that stays unused) is one short line (two at most on a phone).
+  for (const t of [...kinds.map((k) => line(k)), ...Object.values(FIND_TEXT).map((t) => t.others)]) assert.ok(t.length <= 115, `${t} (${t.length})`);
+  // No jargon a newcomer wouldn't know: what "fast" is, or a struck answer.
+  for (const t of all) assert.doesNotMatch(t, /\bfast\b|slower|struck|saves a life|all wrong/i, t);
+});
+
+test("a find's risk is said from one table, so a new drawback is one edit; each find has its own", async () => {
+  const { FIND_MISS, FIND_RULES, findNote, teamFindNote, FIND_TEXT } = await import('../src/lib/difficultyText.ts');
+  const none = { wards: 0, flares: 0, dynamite: 0, shards: 0 };
+  for (const k of ['azurite', 'flare', 'dynamite'] as const) {
+    const miss = FIND_MISS[k];
+    assert.ok(miss, k);
+    // Every text that says what a find risks says this.
+    for (const t of [findNote(k, none), teamFindNote(k, false), FIND_TEXT[k].others, FIND_RULES[k].miss.toLowerCase()]) assert.ok(t.toLowerCase().includes(miss), `${k}: ${t}`);
+  }
+  assert.deepEqual(FIND_MISS, {
+    azurite: 'a miss costs two lives',
+    flare: 'you get less time to answer',
+    dynamite: 'a miss also blows up an item you carry',
+  });
+  assert.equal(new Set(Object.values(FIND_MISS)).size, 3, 'no two alike');
+});
+
+test("the lobby's finds: each in a line for someone who never played, what it gives and what it risks", async () => {
+  const { FINDS_LABEL, FINDS_UNSAFE, FIND_RULES } = await import('../src/lib/difficultyText.ts');
+  // Where they start, the descent drawn beside them says.
+  assert.equal(FINDS_LABEL, 'Finds • harder questions');
+  const said = (k: keyof typeof FIND_RULES) => Object.values(FIND_RULES[k]).join(' ');
+  assert.equal(said('azurite'), 'A ward takes a lost life for you. Answer within half the time for a ward, or later for a shard. Two shards make a ward. A miss costs two lives.');
+  assert.equal(said('flare'), 'A flare adds six seconds when your time runs out. If you also carry dynamite, the flare burns first. You get less time to answer.');
+  assert.equal(
+    said('dynamite'),
+    "Dynamite lets you skip a question and get a new one at the same depth, up to twice per depth. If time runs out, it goes off on its own. A miss also blows up an item you carry.",
+  );
+  // And under them, in a line, why flares and dynamite never work on a find.
+  assert.equal(FINDS_UNSAFE, "Flares and dynamite don't work on finds. The rock there is too thick to blast, and the dark swallows a flare's light.");
+  for (const t of [...Object.values(FIND_RULES).flatMap((r) => Object.values(r)), FINDS_UNSAFE]) assert.ok(!t.includes(String.fromCharCode(0x2014)), t);
 });

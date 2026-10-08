@@ -25,11 +25,13 @@ import {
   sparks,
 } from './effects';
 import { Shape } from './particles';
-import { budget, particle, task } from './core';
+import { budget, follow, followOffset, particle, task } from './core';
 import { showAura } from './aura';
 import { light, pulseMood, setMood } from '../lights';
 import { CALM, embers as backdropEmbers } from '../backdropEmbers';
 import { burnsBlue } from './streaks';
+import type { FindKind } from '../delve';
+import { WARD_BREAK } from '../inventoryArt';
 
 const k3 = (c: Vec3, k: number): Vec3 => [c[0] * k, c[1] * k, c[2] * k];
 
@@ -68,6 +70,12 @@ const unit = (c: Vec3): Vec3 => {
   const m = Math.max(c[0], c[1], c[2]) || 1;
   return [c[0] / m, c[1] / m, c[2] / m];
 };
+
+/** Point `a`, moved as far as the element behind follow slot `slot` has (see follow in core.ts). */
+function landed<T extends Point>(a: T, slot: number): T {
+  const o = followOffset(slot);
+  return { ...a, x: a.x + o.x, y: a.y + o.y };
+}
 
 // ---------- flow ----------
 
@@ -148,6 +156,23 @@ export function cardPicked(card: Element, base: Element, others: Element[], dm: 
     puffs(o, { count: 6, area: 'fill', color: [0.14, 0.09, 0.05] });
   }
 }
+
+// ---------- the vote (Delve together) ----------
+
+/** Delve together: a vote lands on a card (`pip`, the voter's mark on it): a small glint. */
+export function voteCast(pip: Element) {
+  if (!fxActive() || detached(pip)) return;
+  glints(pip, { count: 1, area: 'centre', size: [5, 9], color: C.goldPale, life: [0.35, 0.6] });
+  ring(pip, { radius: 22, from: 4, thickness: 2.5, life: 0.4, color: C.gold, breakup: 0.5, fill: 0, intensity: 0.5 });
+}
+
+/** Delve together: the draw passes over a card (`frame`) on its way: a quick light round its edge. */
+export function raffleHop(frame: Element) {
+  if (!fxActive() || detached(frame)) return;
+  outline(frame, { color: k3(C.gold, 0.8), width: 10, intensity: 0.7, life: 0.32, fadeIn: 0.03 });
+  light(frame, { color: [1, 0.65, 0.3], radius: 200, intensity: 0.16, decay: 0.35 });
+}
+
 
 // ---------- questions ----------
 
@@ -290,6 +315,8 @@ export type RevealTargets = {
   otherScored?: boolean;
   /** The scorer's progress bar before and after the point, 0 to 1. */
   fill?: { from: number; to: number };
+  /** Delve: your ward takes what the miss would have cost (its own blue swell follows, wardBlocked), so no red one. */
+  warded?: boolean;
 };
 
 /** The answer is revealed. */
@@ -353,8 +380,10 @@ export function reveal(t: RevealTargets) {
         puffs(t.art, { count: 8, area: 'fill', color: [0.25, 0.04, 0.02], size: [20, 40] });
       }
     }
-    edgeGlow({ color: C.wrong, intensity: 0.05, width: 60, life: 0.7 });
-    pulseMood(0.16, [0.9, 0.3, 0.15]);
+    if (!t.warded) {
+      edgeGlow({ color: C.wrong, intensity: 0.05, width: 60, life: 0.7 });
+      pulseMood(0.16, [0.9, 0.3, 0.15]);
+    }
     shakeView(0.45, 6);
   }
 
@@ -387,6 +416,9 @@ export function fillBar(answer: Element, bar: Element, from: number, to: number,
   if (!fxActive()) return;
   const src = boxOf(answer);
   const r = bar.getBoundingClientRect();
+  // The stream leaves the answer and lands on the bar where they are as it flies (the page may scroll meanwhile).
+  const from0 = follow(answer, FILL_START + FILL_SPAN);
+  const to0 = follow(bar, FILL_START + FILL_SPAN);
   const colors = good ? [C.gold, C.goldPale, C.ember] : [C.ember, C.gold];
   const n = budget(64);
   const arrivals: { t: number; x: number; y: number }[] = [];
@@ -420,7 +452,7 @@ export function fillBar(answer: Element, bar: Element, from: number, to: number,
       shape: mote ? Shape.Ember : Shape.Spark,
       stretch: 0.012,
       fadeIn: 0.25,
-      seek: { cx, cy, tx, ty },
+      seek: { cx, cy, tx, ty, from: from0, to: to0 },
     });
     arrivals.push({ t: arrive, x: tx, y: ty });
   }
@@ -429,7 +461,7 @@ export function fillBar(answer: Element, bar: Element, from: number, to: number,
   let k = 0;
   task((_, age) => {
     while (k < arrivals.length && arrivals[k].t <= age) {
-      const a = arrivals[k++];
+      const a = landed(arrivals[k++], to0);
       if (k % 3 === 0) particle({ x: a.x, y: a.y, life: 0.3, size: 3, sizeEnd: 7, color: k3(C.gold, 0.22), shape: Shape.Glow, fadeIn: 0.1 });
       sparks(a, { count: 2, speed: [40, 160], angle: -Math.PI / 2, spread: 2.6, life: [0.15, 0.35], size: [0.5, 0.9], gravity: 300 });
     }
@@ -457,10 +489,9 @@ export function scored(pill: Element, streak = 1) {
  * and a blaze by ten.
  * Returns a handle to put it out.
  */
-export function ablaze(row: Element, heat: number): Handle {
+export function ablaze(row: Element, heat: number, blue = burnsBlue(heat)): Handle {
   if (!fxActive() || heat <= 0) return { stop() {} };
   // At the very top of a streak the fire burns blue.
-  const blue = burnsBlue(heat);
   const flames = fire(row, { height: 6 + 66 * heat, intensity: 0.45 + 1.0 * heat, blue: blue ? 1 : 0 });
   // No room for the flames (or the entry is gone): no sparks off nothing either.
   if (!isLive(flames)) return flames;
@@ -502,24 +533,513 @@ export function lostPoint(pill: Element) {
   sparks(pill, { count: 10, colors: [C.wrong], angle: Math.PI / 2, spread: 2.4, gravity: 700, life: [0.3, 0.6] });
 }
 
-/** Someone guessed wrong in a race: a puff of red at the answer they picked. */
-export function raceMiss(option: Element, mine: boolean) {
+/** Where a phial jets its light out: the phial and whether it stands upright (then up, else toward its right end). */
+export type PhialFlow = { phial: Element; upright: boolean };
+
+/**
+ * Delve: a player loses a life. The light of the phial's chamber that
+ * empties (`chamber`) pours out of the end of the phial (`flow`) in a jet
+ * along its axis, strongest at first and weakening as the chamber drains;
+ * the jet's sparks slow and its motes and mist drift apart and rise. The
+ * player's entry glows red at the edge. `left`: lives still left (the last
+ * one's jet is longer, and your own jars the view a little). Without a
+ * phial (`flow` missing) the light rises from `chamber`.
+ */
+export function lifeLost(pill: Element, chamber: Element, left: number, mine: boolean, flow?: PhialFlow) {
+  if (!fxActive()) return;
+  const last = left === 0;
+  const dir = flow && !flow.upright ? { x: 1, y: 0 } : { x: 0, y: -1 };
+  const across = { x: -dir.y, y: dir.x };
+  /** The phial's open end (or the chamber's middle), where it is now. */
+  const tip = (): Point & { half: number } => {
+    if (!flow || detached(flow.phial)) {
+      const b = boxOf(chamber);
+      return { x: b.x, y: b.y, half: 2 };
+    }
+    const r = flow.phial.getBoundingClientRect();
+    return flow.upright
+      ? { x: r.left + r.width / 2, y: r.top + 1, half: r.width * 0.3 }
+      : { x: r.right - 1, y: r.top + r.height / 2, half: r.height * 0.3 };
+  };
+  const span = last ? 0.9 : 0.75;
+  const rate = budget(last ? 230 : 170);
+  const pale = C.lifePale;
+  const warm = k3(C.life, 1.1);
+  flash(chamber, { radius: 12, color: C.life, intensity: 0.22, life: 0.3 });
+  const t0 = tip();
+  flash(t0, { radius: 10, color: C.life, intensity: 0.2, life: span });
+  light(t0, { color: [1, 0.36, 0.3], radius: 150, intensity: 0.25, hold: span * 0.5, decay: 0.8 });
+  let acc = 0;
+  task((dt, age) => {
+    if (age > span) return false;
+    if (detached(chamber)) return false;
+    // The jet weakens as the chamber empties.
+    const k = Math.pow(1 - age / span, 0.6);
+    acc += rate * dt * (0.35 + 0.65 * k);
+    const t = tip();
+    const c = boxOf(chamber);
+    for (; acc >= 1; acc--) {
+      // Most of it leaves by the open end; some is seen streaming through the glass toward it.
+      const inside = Math.random() < 0.25;
+      const at = inside
+        ? { x: c.x + (Math.random() - 0.5) * c.w, y: c.y + (Math.random() - 0.5) * c.h }
+        : { x: t.x + across.x * rand(-t.half, t.half), y: t.y + across.y * rand(-t.half, t.half) };
+      // A narrow cone, fanning out a little as the jet tires.
+      const a = rand(-1, 1) * (0.14 + 0.2 * (1 - k));
+      const vx = dir.x * Math.cos(a) - dir.y * Math.sin(a);
+      const vy = dir.y * Math.cos(a) + dir.x * Math.sin(a);
+      const v = rand(220, 640) * (0.45 + 0.55 * k) * (last ? 1.15 : 1);
+      const roll = Math.random();
+      if (roll < 0.42) {
+        particle({ x: at.x, y: at.y, vx: vx * v, vy: vy * v, life: rand(0.3, 0.65), size: rand(0.6, 1.2), color: Math.random() < 0.5 ? pale : warm, colorEnd: k3(C.life, 0.3), gravity: -40, drag: 3, shape: Shape.Spark, stretch: 0.03, turbulence: 90 });
+      } else if (roll < 0.8) {
+        particle({ x: at.x, y: at.y, vx: vx * v * 0.75, vy: vy * v * 0.75, life: rand(0.6, 1.3), size: rand(0.9, 1.9), sizeEnd: 0.3, color: Math.random() < 0.35 ? pale : warm, colorEnd: k3(C.life, 0.25), gravity: -55, drag: 2.6, shape: Shape.Ember, flicker: 0.4, turbulence: 170 });
+      } else {
+        // Mist: soft light that spreads and fades as the jet disperses.
+        particle({ x: at.x, y: at.y, vx: vx * v * 0.5, vy: vy * v * 0.5, life: rand(0.5, 0.9), size: rand(3, 5), sizeEnd: rand(9, 14), color: k3(C.life, 0.45), colorEnd: k3(C.life, 0.06), gravity: -30, drag: 2.4, shape: Shape.Glow, fadeIn: 0.15, turbulence: 60 });
+      }
+    }
+    return true;
+  });
+  outline(pill, { color: C.wrong, width: 8, life: 0.9, intensity: 0.4 });
+  if (mine && last) shakeView(0.3, 4);
+}
+
+/** Delve: a question survived. The phial (`phial`) catches the light for a moment as a wave runs through it. */
+export function lifeHeld(phial: Element) {
+  if (!fxActive()) return;
+  glints(phial, { count: 2, size: [3, 6], color: C.lifePale, delay: [0.1, 0.5] });
+  embers(phial, { count: 5, area: 'fill', colors: [C.life, C.lifePale], size: [0.7, 1.4], rise: [30, 80], scatter: 20, life: [0.6, 1.1] });
+  light(phial, { color: [1, 0.42, 0.36], radius: 110, intensity: 0.22, decay: 0.8 });
+}
+
+/** Seconds from a life being given until its light lands in the teammate's phial (lifeGiven). */
+export const GIFT_LANDS = 1.05;
+
+/**
+ * Delve together: a player gives one of their lives to bring back a teammate
+ * who perished. The light of the giver's chamber that empties (`chamber`, in
+ * the entry `giver`) leaves it as a stream of motes that bows across the
+ * scoreboard and gathers into the very chamber of the teammate's phial it
+ * fills (`into`, in the entry `taker`), wherever the two are as it flies,
+ * landing at GIFT_LANDS: there the chamber flares, a ring of life runs out
+ * and glints settle, and their entry is rimmed in its rose light.
+ */
+export function lifeGiven(chamber: Element, giver: Element, into: Element, taker: Element) {
+  if (!fxActive() || detached(chamber) || detached(into)) return;
+  const src = boxOf(chamber);
+  const dst = boxOf(into);
+  const from0 = follow(chamber, GIFT_LANDS);
+  const to0 = follow(into, GIFT_LANDS);
+  flash(chamber, { radius: 14, color: C.life, intensity: 0.3, life: 0.45 });
+  light(chamber, { color: [1, 0.4, 0.34], radius: 150, intensity: 0.22, decay: 0.8 });
+  outline(giver, { color: k3(C.life, 0.75), width: 8, life: 0.9, intensity: 0.35 });
+  const n = budget(80);
+  for (let i = 0; i < n; i++) {
+    const u = n > 1 ? i / (n - 1) : 1;
+    // The motes leave over the first half and arrive bunched at the end.
+    const arrive = GIFT_LANDS * (0.72 + 0.28 * u) + rand(-0.04, 0.04);
+    const delay = Math.max(0.02, Math.min(arrive - 0.35, u * 0.45 + rand(0, 0.08)));
+    const x = src.x + (Math.random() - 0.5) * src.w;
+    const y = src.y + (Math.random() - 0.5) * src.h;
+    const tx = dst.x + (Math.random() - 0.5) * dst.w * 0.6;
+    const ty = dst.y + (Math.random() - 0.5) * dst.h * 0.6;
+    // Bow each path up and out to one side, so the stream arcs over the row and gathers again.
+    const dx = tx - x;
+    const dy = ty - y;
+    const len = Math.hypot(dx, dy) || 1;
+    const side = rand(-0.25, 0.25);
+    const cx = (x + tx) / 2 + (-dy / len) * len * side;
+    const cy = (y + ty) / 2 + (dx / len) * len * side - Math.max(40, len * 0.35);
+    const mote = i % 3 !== 0;
+    particle({
+      x,
+      y,
+      life: arrive - delay,
+      delay,
+      size: mote ? rand(1.3, 2.3) : rand(0.8, 1.2),
+      sizeEnd: mote ? 1 : 0.6,
+      color: mote ? k3(C.life, 0.6) : C.lifePale,
+      colorEnd: C.lifePale,
+      shape: mote ? Shape.Ember : Shape.Spark,
+      stretch: 0.012,
+      fadeIn: 0.2,
+      seek: { cx, cy, tx, ty, from: from0, to: to0 },
+    });
+  }
+  after(GIFT_LANDS, () => {
+    if (detached(into)) return;
+    flash(into, { radius: 18, color: C.lifePale, intensity: 0.42, life: 0.6 });
+    ring(into, { radius: 40, from: 5, thickness: 4, life: 0.6, color: C.life, breakup: 0.4, fill: 0, intensity: 0.65 });
+    glints(into, { count: 3, area: 'centre', size: [4, 8], color: C.lifePale, delay: [0, 0.3] });
+    embers(into, { count: 8, area: 'fill', colors: [C.life, C.lifePale], size: [0.7, 1.4], rise: [30, 90], scatter: 12, life: [0.6, 1.2] });
+    light(into, { color: [1, 0.42, 0.36], radius: 190, intensity: 0.36, decay: 1 });
+    if (!detached(taker)) outline(taker, { color: C.life, width: 10, life: 1, intensity: 0.5 });
+  });
+}
+
+// ---------- Delve's finds ----------
+
+/** Where an element is now, so an effect stays where it was after the element goes. */
+const rectOf = (el: Element) => el.getBoundingClientRect();
+
+/**
+ * Delve: an Azurite Ward crystallises onto a chamber of the phial (`pip`, its
+ * casing): blue light gathers into it, and as it settles it flashes and
+ * glints. `forged` from two shards: more light, and a ring of it running out.
+ * `fed`: a find's sparks already gathered into it (findGained), so the light
+ * doesn't gather again.
+ */
+export function wardFormed(pip: Element, forged: boolean, fed = false) {
+  if (!fxActive() || detached(pip)) return;
+  if (!fed) implode(pip, { count: forged ? 22 : 14, radius: forged ? 48 : 34, color: C.azurite, life: forged ? 0.55 : 0.45 });
+  after(forged ? 0.5 : 0.4, () => {
+    if (detached(pip)) return;
+    flash(pip, { radius: forged ? 26 : 16, color: C.azurite, intensity: forged ? 0.42 : 0.3, life: 0.55 });
+    glints(pip, { count: forged ? 3 : 2, area: 'centre', size: [6, 11], color: C.azuritePale, life: [0.5, 0.85], delay: [0, 0.25] });
+    sparks(pip, { count: forged ? 12 : 6, colors: [C.azuritePale, C.azurite], cool: k3(C.azurite, 0.3), speed: [60, 200], gravity: -40, drag: 3, life: [0.25, 0.55] });
+    if (forged) ring(pip, { radius: 42, from: 6, thickness: 4, life: 0.6, color: C.azurite, breakup: 0.45, fill: 0, intensity: 0.6 });
+    light(pip, { color: [0.4, 0.65, 1], radius: forged ? 160 : 110, intensity: forged ? 0.3 : 0.2, decay: 0.9 });
+  });
+}
+
+/** Delve: an azurite shard toward the next ward lands on its chamber (`pip`, the half casing). */
+export function shardFound(pip: Element) {
+  if (!fxActive() || detached(pip)) return;
+  flash(pip, { radius: 12, color: C.azurite, intensity: 0.22, life: 0.4 });
+  sparks(pip, { count: 8, colors: [C.azuritePale, C.azurite], cool: k3(C.azurite, 0.3), speed: [40, 150], gravity: 160, life: [0.25, 0.5] });
+  glints(pip, { count: 1, area: 'centre', size: [5, 8], color: C.azuritePale, delay: [0.15, 0.25] });
+}
+
+/**
+ * Delve: an Azurite Ward shatters in place of a life (`pip`: the casing
+ * bursting on its chamber), as its barrier breaks (wardBlocked). It breaks
+ * where it is: a cold flash, and blue sparks burst out all round its outline
+ * and die away close by, with splinters of crystal thrown out and falling,
+ * and a ring of light. Nothing jets off to one side (a lost life's light
+ * jets out of the phial's end; a ward's doesn't leave). The player's entry
+ * (`pill`) is rimmed in blue rather than red.
+ */
+export function wardShattered(pip: Element, pill: Element, mine: boolean) {
+  if (!fxActive() || detached(pip)) return;
+  const at = rectOf(pip);
+  const b = boxOf(at);
+  const big = Math.max(b.w, b.h);
+  // Round its outline, a little out from it.
+  const rx = b.w / 2 + 1;
+  const ry = b.h / 2 + 1;
+  flash(at, { radius: big * 0.6 + 4, color: C.azuritePale, intensity: 0.32, life: 0.3 });
+  const n = budget(46);
+  for (let i = 0; i < n; i++) {
+    const a = ((i + Math.random() * 0.8) / n) * Math.PI * 2;
+    const [cos, sin] = [Math.cos(a), Math.sin(a)];
+    const v = rand(110, 340);
+    const pale = i % 3 !== 0;
+    particle({
+      x: b.x + cos * rx,
+      y: b.y + sin * ry,
+      vx: cos * v,
+      vy: sin * v,
+      life: rand(0.22, 0.55),
+      size: rand(0.6, 1.3),
+      color: pale ? C.azuritePale : i % 2 ? C.azurite : C.whiteHot,
+      colorEnd: k3(C.azurite, 0.3),
+      // They burst and stop: a halo of blue, not a spray.
+      drag: 5,
+      gravity: 40,
+      shape: Shape.Spark,
+      stretch: 0.03,
+    });
+  }
+  // Splinters of crystal thrown out from where it was, glittering as they fall.
+  const m = budget(mine ? 12 : 8);
+  for (let i = 0; i < m; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const v = rand(70, 210);
+    particle({
+      x: b.x + (Math.random() - 0.5) * b.w,
+      y: b.y + (Math.random() - 0.5) * b.h,
+      vx: Math.cos(a) * v,
+      vy: Math.sin(a) * v - 40,
+      life: rand(0.6, 1),
+      size: rand(1.8, 3),
+      sizeEnd: 0.8,
+      color: i % 2 ? C.azuritePale : C.azurite,
+      colorEnd: k3(C.azurite, 0.25),
+      gravity: 160,
+      drag: 3,
+      shape: Shape.Shard,
+      spin: rand(-14, 14),
+      fadeIn: 0.02,
+    });
+  }
+  ring(at, { radius: big * 0.9 + 10, from: 3, thickness: 3, life: 0.45, color: C.azurite, breakup: 0.5, fill: 0, intensity: 0.5 });
+  glints(at, { count: 3, area: 'fill', size: [4, 8], color: C.azuritePale, life: [0.3, 0.6], delay: [0.04, 0.3] });
+  light(at, { color: [0.4, 0.62, 1], radius: 130, intensity: 0.28, decay: 0.7 });
+  if (!detached(pill)) outline(pill, { color: k3(C.azurite, 0.8), width: 8, life: 0.8, intensity: 0.45 });
+}
+
+/** The cold-blue swell at the screen's edges as your ward takes a loss: the red one of a wrong answer (reveal), in azurite. */
+function wardedEdge() {
+  edgeGlow({ color: C.azurite, intensity: 0.05, width: 70, life: 0.8 });
+  pulseMood(0.16, [0.3, 0.55, 1]);
+}
+
+/**
+ * Delve: a ward takes what would have cost a life. Its barrier (`barrier`,
+ * the vesica of crystal Phial.svelte throws round the phial) catches the
+ * blow: a cold flash where it lands (the bottom of the barrier, under the
+ * phial, so nothing flares over the name), sparks glancing off it either
+ * way, and the scene lit blue; your own sends
+ * a cold swell round the screen's edges and jars the view a little. At
+ * WARD_BREAK it breaks: big shards of crystal thrown outward all round it,
+ * further than the casing's splinters, and the casing
+ * (`pip`) shatters with it (wardShattered). A teammate's is smaller.
+ */
+export function wardBlocked(barrier: Element, pip: Element | null, pill: Element, mine: boolean) {
+  if (!fxActive() || detached(barrier)) return;
+  const at = rectOf(barrier);
+  const b = boxOf(at);
+  // The blow lands on the barrier's bottom apex, under the phial (clear of the name above it); upright (phones), turned a quarter, that is its right side.
+  const upright = at.height > at.width;
+  // The vesica inside the box (BARRIER: half width 46, rise 15, in a box of 96 x 34 units).
+  const [hx, hy] = upright ? [at.width * (15 / 34), at.height * (46 / 96)] : [at.width * (46 / 96), at.height * (15 / 34)];
+  const hit = upright ? { x: b.x + hx, y: b.y } : { x: b.x, y: b.y + hy + 1 };
+  const k = mine ? 1 : 0.65;
+  flash(hit, { radius: 12 * k + 4, color: C.azuritePale, intensity: 0.28, life: 0.28 });
+  flash(at, { radius: Math.max(hx, hy) * 0.9, color: C.azurite, intensity: 0.1 * k, life: 0.4 });
+  // Sparks glancing off the barrier, either way along it, away from the name.
+  for (const side of [-1, 1]) {
+    const angle = upright ? side * 0.32 : side < 0 ? Math.PI - 0.32 : 0.32;
+    sparks(hit, { count: Math.round(12 * k), angle, spread: 0.55, colors: [C.whiteHot, C.azuritePale, C.azurite], cool: k3(C.azurite, 0.3), speed: [220, 560], gravity: 260, drag: 2.2, life: [0.25, 0.55] });
+  }
+  glints(hit, { count: 1, area: 'centre', size: [5 * k + 3, 8 * k + 3], color: C.azuritePale, life: [0.25, 0.4], delay: [0, 0.03] });
+  light(at, { color: [0.4, 0.65, 1], radius: 200 * k + 60, intensity: 0.34 * k, hold: 0.15, decay: 0.8 });
+  if (mine) {
+    wardedEdge();
+    shakeView(0.15, 3);
+  }
+  after(WARD_BREAK, () => {
+    if (detached(barrier)) return;
+    const c = boxOf(rectOf(barrier));
+    // Big shards from all round the barrier, thrown outward along it.
+    const n = budget(mine ? 20 : 11);
+    for (let i = 0; i < n; i++) {
+      const t = ((i + Math.random() * 0.7) / n) * Math.PI * 2;
+      const [cos, sin] = [Math.cos(t), Math.sin(t)];
+      // Outward from a vesica of these half sizes, near enough by an ellipse's normal.
+      const nx = cos / hx;
+      const ny = sin / hy;
+      const nl = Math.hypot(nx, ny) || 1;
+      const v = rand(150, 330) * (mine ? 1 : 0.75);
+      particle({
+        x: c.x + cos * hx,
+        y: c.y + sin * hy,
+        vx: (nx / nl) * v + rand(-30, 30),
+        vy: (ny / nl) * v - rand(20, 90),
+        life: rand(0.65, 1.05),
+        size: rand(2.6, 4.4) * (mine ? 1 : 0.8),
+        sizeEnd: 1.1,
+        color: i % 3 === 0 ? C.whiteHot : i % 3 === 1 ? C.azuritePale : C.azurite,
+        colorEnd: k3(C.azurite, 0.28),
+        gravity: 420,
+        drag: 1.6,
+        shape: Shape.Shard,
+        spin: rand(-12, 12),
+        fadeIn: 0.02,
+      });
+    }
+    if (pip && !detached(pip)) wardShattered(pip, pill, mine);
+  });
+}
+
+/**
+ * Delve: a Dynamite Cache missed, and its blast destroys something the player
+ * carries (`pip`, its casing on the phial or its engraving beside it): a
+ * small blast of its own, as the stick's on the art but close and light. A
+ * white-hot pop and a ring of fire, sparks and chips of what it was (blue
+ * crystal for a ward or a shard, the item's own warm colours for a flare or
+ * dynamite) thrown out and falling, a wisp of smoke, and the entry (`pill`)
+ * flickering ember-red where the ward's breaking glows blue.
+ */
+export function itemBlown(pip: Element, pill: Element, item: 'wards' | 'shards' | 'flares' | 'dynamite', mine: boolean) {
+  if (!fxActive() || detached(pip)) return;
+  const at = rectOf(pip);
+  const b = boxOf(at);
+  const big = Math.max(b.w, b.h);
+  const crystal = item === 'wards' || item === 'shards';
+  const chips: Vec3[] = crystal ? [C.azuritePale, C.azurite, C.whiteHot] : item === 'flares' ? [[2.6, 1.2, 1.1], C.ember, C.gold] : [[2.4, 0.9, 0.6], C.ember, [0.55, 0.45, 0.38]];
+  flash(at, { radius: big * 0.8 + 10, color: C.whiteHot, intensity: 0.5, life: 0.3 });
+  ring(at, { radius: big * 0.9 + 14, from: 3, thickness: 4, life: 0.45, color: C.ember, breakup: 0.55, fill: 0.15, intensity: 0.75 });
+  sparks(at, { count: crystal ? 26 : 22, speed: [140, 480], life: [0.25, 0.6], gravity: 520, colors: [C.whiteHot, C.ember, C.gold] });
+  shards(at, { count: crystal ? 12 : 9, colors: chips, cool: k3(crystal ? C.azurite : C.ash, 0.35), speed: [80, 300], size: [1.4, 3.2] });
+  puffs(at, { count: 4, area: 'centre', color: [0.09, 0.07, 0.055], size: [8, 16], speed: [20, 90], life: [0.6, 1.1] });
+  after(0.1, () => embers(at, { count: 6, area: 'fill', colors: [C.ember, C.gold], rise: [30, 90], life: [0.5, 1.1] }));
+  light(at, { color: [1, 0.55, 0.25], radius: 150, intensity: 0.32, decay: 0.7 });
+  if (!detached(pill)) outline(pill, { color: k3(C.ember, 0.75), width: 8, life: 0.75, intensity: 0.45 });
+  if (mine) shakeView(0.2, 4);
+}
+
+/** Seconds from a reveal until a find's sparks start landing on its item, and how long they take to (see findGained). */
+export const FIND_START = 0.85;
+export const FIND_SPAN = 0.45;
+/** Seconds from a reveal until a find's item has landed. */
+export const FIND_LANDS = FIND_START + FIND_SPAN;
+
+/**
+ * The finds' colours, as their cards have them (ChooseCategory.svelte):
+ * azurite blue, a signal flare's crimson, dynamite's ember.
+ */
+export const FIND_COLORS: Record<FindKind, { main: Vec3; pale: Vec3 }> = {
+  azurite: { main: C.portal, pale: C.portalPale },
+  flare: { main: [3.1, 0.38, 0.62], pale: [3.1, 1.55, 1.75] },
+  dynamite: { main: C.ember, pale: C.whiteHot },
+};
+
+/**
+ * Delve: a find answered right. As a point flows into the scorer's bar
+ * (fillBar), the reward flows from the answer (`answer`) to the very place
+ * its item appears (`slot`: the casing its ward or shard forms on, or the
+ * engraving its flare or dynamite stands as; `aim`, inside it, narrows that
+ * down where the slot is wider), in the find card's colours: a stream of
+ * sparks that gathers on it between FIND_START and FIND_LANDS, wherever it
+ * has moved meanwhile (on phones the page scrolls to the answer as it
+ * shows), each landing shedding a spark, and a flash as the last lands.
+ */
+export function findGained(answer: Element, slot: Element, kind: FindKind, aim: Element = slot) {
+  if (!fxActive() || detached(answer) || detached(slot)) return;
+  const { main, pale } = FIND_COLORS[kind];
+  const src = boxOf(answer);
+  const dst = boxOf(aim);
+  const from0 = follow(answer, FIND_LANDS);
+  const to0 = follow(slot, FIND_LANDS);
+  const n = budget(48);
+  const arrivals: { t: number; x: number; y: number }[] = [];
+  for (let i = 0; i < n; i++) {
+    const u = n > 1 ? i / (n - 1) : 1;
+    const arrive = FIND_START + u * FIND_SPAN + rand(-0.03, 0.03);
+    const delay = Math.max(0.08, arrive - rand(0.55, 0.85));
+    const tx = dst.x + (Math.random() - 0.5) * dst.w * 0.6;
+    const ty = dst.y + (Math.random() - 0.5) * dst.h * 0.6;
+    const x = src.x + (Math.random() - 0.5) * src.w * 0.9;
+    const y = src.y + (Math.random() - 0.5) * src.h * 0.7;
+    // Bow each path out to one side (and a little up), so the stream fans out and gathers again.
+    const dx = tx - x;
+    const dy = ty - y;
+    const len = Math.hypot(dx, dy) || 1;
+    const side = rand(-0.4, 0.4);
+    const cx = (x + tx) / 2 + (-dy / len) * len * side;
+    const cy = (y + ty) / 2 + (dx / len) * len * side - len * 0.12;
+    const mote = i % 3 !== 0;
+    particle({
+      x,
+      y,
+      life: arrive - delay,
+      delay,
+      size: mote ? rand(1.4, 2.4) : rand(0.8, 1.3),
+      sizeEnd: mote ? 1.1 : 0.7,
+      color: mote ? k3(main, 0.55) : pale,
+      colorEnd: pale,
+      shape: mote ? Shape.Ember : Shape.Spark,
+      stretch: 0.012,
+      fadeIn: 0.25,
+      seek: { cx, cy, tx, ty, from: from0, to: to0 },
+    });
+    arrivals.push({ t: arrive, x: tx, y: ty });
+  }
+  arrivals.sort((a, b) => a.t - b.t);
+  let k = 0;
+  task((_, age) => {
+    while (k < arrivals.length && arrivals[k].t <= age) {
+      const a = landed(arrivals[k++], to0);
+      if (k % 3 === 0) particle({ x: a.x, y: a.y, life: 0.3, size: 3, sizeEnd: 7, color: k3(main, 0.22), shape: Shape.Glow, fadeIn: 0.1 });
+      sparks(a, { count: 2, colors: [pale, main], cool: k3(main, 0.3), speed: [40, 160], angle: -Math.PI / 2, spread: 2.6, life: [0.15, 0.35], size: [0.5, 0.9], gravity: 300 });
+    }
+    return k < arrivals.length;
+  });
+  glints(answer, { count: 2, size: [4, 7], color: pale, delay: [0.05, 0.3] });
+  after(FIND_LANDS, () => {
+    const at = detached(aim) ? slot : aim;
+    if (detached(at)) return;
+    flash(at, { radius: Math.max(dst.w, dst.h) * 0.6 + 10, color: main, intensity: 0.35, life: 0.5 });
+    glints(at, { count: 2, area: 'centre', size: [5, 9], color: pale, life: [0.4, 0.7], delay: [0, 0.2] });
+  });
+}
+
+/** Delve: a flare found (`icon`, its engraving in the player's entry): it catches and settles. */
+export function flareFound(icon: Element) {
+  if (!fxActive() || detached(icon)) return;
+  flash(icon, { radius: 16, color: C.ember, intensity: 0.3, life: 0.45 });
+  sparks(icon, { count: 10, colors: [C.ember, C.whiteHot, C.gold], speed: [60, 200], gravity: -30, drag: 3, life: [0.25, 0.5] });
+  embers(icon, { count: 6, area: 'fill', colors: [C.ember, C.gold], rise: [30, 80], scatter: 15, life: [0.5, 1] });
+  glints(icon, { count: 1, area: 'centre', size: [6, 10], color: C.goldPale, delay: [0.1, 0.2] });
+}
+
+/**
+ * Delve: one depth deeper. The backdrop's embers flare up for a moment, and
+ * any still in the old colour take the new one (lib/backdropEmbers.ts).
+ */
+export function descended() {
+  backdropEmbers.flare(0.35, 1.2);
+}
+
+/**
+ * Delve: a named depth reached; its plaque (`card`) lies over the banner.
+ * Light streaks along it, sparks fly off its pointed ends, embers rise off
+ * its top edge and it lights the stage; the backdrop's embers flare and all
+ * take the depth's colour. `accent`: the stratum's colour (a CSS colour,
+ * lib/descent.ts accentAt), which tints all of it.
+ */
+export function milestoneReached(card: Element, accent: string) {
+  backdropEmbers.flare(0.85, 2.4);
+  backdropEmbers.recolor();
+  if (!fxActive() || detached(card)) return;
+  const tint = hdr(accent, 1);
+  const main = k3(tint, 2.7);
+  // Its pale: the colour run most of the way to white, as light at its hottest.
+  const pale: Vec3 = [1.6 + tint[0] * 1.2, 1.6 + tint[1] * 1.2, 1.6 + tint[2] * 1.2];
+  const b = boxOf(card);
+  flare(card, { size: 12, streak: b.w * 0.6, life: 0.8, color: pale, intensity: 0.3 });
+  glints(card, { count: 4, area: 'edge', size: [4, 8], color: pale, delay: [0.1, 0.7] });
+  for (const side of [-1, 1]) {
+    const end = { x: b.x + (side * b.w) / 2, y: b.y };
+    sparks(end, { count: 16, angle: side > 0 ? 0 : Math.PI, spread: 0.7, colors: [main, pale], speed: [120, 420], gravity: -30, drag: 2.4, life: [0.4, 0.9] });
+    flash(end, { radius: 30, color: main, intensity: 0.3, life: 0.5 });
+  }
+  const top = new DOMRect(b.x - b.w * 0.4, b.y - b.h / 2, b.w * 0.8, 2);
+  embers(top, { count: 18, area: 'fill', colors: [main, pale], rise: [50, 150], scatter: 30, life: [0.8, 1.6] });
+  light(card, { color: unit(tint), radius: Math.max(220, b.w * 0.6), intensity: 0.2, decay: 1.1 });
+}
+
+/**
+ * Someone guessed wrong in a race (or, Delve together, struck an option): a
+ * puff of red at the answer they picked. `warded`: your ward takes what it
+ * cost, and swells blue at the edges instead of red (wardBlocked).
+ */
+export function raceMiss(option: Element, mine: boolean, warded = false) {
   if (!fxActive()) return;
   sparks(option, { count: mine ? 24 : 10, area: 'edge', colors: [C.wrong, C.ember], gravity: 800, life: [0.3, 0.7] });
   if (mine) {
     shards(option, { count: 16 });
-    edgeGlow({ color: C.wrong, intensity: 0.05, life: 0.7 });
+    if (!warded) {
+      edgeGlow({ color: C.wrong, intensity: 0.05, life: 0.7 });
+      pulseMood(0.16, [0.9, 0.3, 0.15]);
+    }
     shakeView(0.4, 6);
-    pulseMood(0.16, [0.9, 0.3, 0.15]);
   }
 }
 
-/** The last seconds of the clock. */
-export function timerTick(timer: Element, secs: number) {
+/**
+ * The last seconds of the clock. `screen`: the crimson pulse over the scene
+ * and the red glow at the screen's edges too; Delve leaves them out, as its
+ * darkness closing in already tells the clock running down.
+ */
+export function timerTick(timer: Element, secs: number, screen = true) {
   if (!fxActive()) return;
   const urgency = (6 - secs) / 5;
   ring(timer, { radius: 50 + urgency * 30, from: 26, thickness: 4 + urgency * 3, life: 0.6, color: C.crimson, breakup: 0.3, fill: 0 });
   sparks(timer, { count: 6 + Math.round(urgency * 10), area: 'edge', colors: [C.crimson, C.ember], speed: [80, 260], gravity: 200, life: [0.25, 0.5] });
+  if (!screen) return;
   pulseMood(0.25 + urgency * 0.35);
   if (secs <= 2) edgeGlow({ color: C.crimson, intensity: 0.08 + urgency * 0.06, width: 60, life: 0.7 });
 }
@@ -832,4 +1352,50 @@ export function titleGlints(title: Element): Handle {
   };
   next();
   return { stop: () => clearTimeout(timer) };
+}
+
+// ---------- dynamite ----------
+
+export type BlastTargets = {
+  /** The art stage (name questions) or the picture grid (art questions). */
+  art: Element | null;
+  /** Answers (or pictures) that burst too, one after another. */
+  blown: Element[];
+  /** The player who set it off: their screen shakes harder. */
+  mine: boolean;
+};
+
+/**
+ * Delve: a stick of dynamite blasts the question away. A white-hot burst at
+ * the heart of the art with a ring of fire and a shockwave running out, the
+ * stone of the art breaking into falling chips and smoke, embers drifting
+ * up; each of `blown` bursts too, one after another.
+ */
+export function dynamiteBlast(t: BlastTargets) {
+  if (!fxActive()) return;
+  if (t.art && !detached(t.art)) {
+    const b = boxOf(t.art);
+    const r = Math.max(b.w, b.h);
+    flash(t.art, { radius: r * 0.7, color: C.whiteHot, intensity: 0.55, life: 0.45 });
+    flare(t.art, { size: 46, streak: b.w * 1.1, life: 0.55, color: C.whiteHot, intensity: 0.8 });
+    ring(t.art, { radius: r * 0.95, from: 10, thickness: 14, life: 0.7, color: C.ember, breakup: 0.55, fill: 0.25, intensity: 0.9 });
+    ring(t.art, { radius: r * 0.6, from: 6, thickness: 5, life: 0.4, color: C.whiteHot, breakup: 0.3, fill: 0, intensity: 0.6, delay: 0.04 });
+    sparks(t.art, { count: 70, speed: [220, 900], life: [0.3, 0.9], gravity: 600, colors: [C.whiteHot, C.gold, C.ember] });
+    shards(t.art, { count: 26, area: 'fill', colors: [[0.9, 0.72, 0.55], [0.55, 0.45, 0.38], C.ember], cool: k3(C.ash, 0.4), speed: [140, 520], size: [2, 5] });
+    puffs(t.art, { count: 12, area: 'centre', color: [0.1, 0.075, 0.06], size: [16, 34], speed: [60, 240], life: [0.8, 1.6] });
+    after(0.12, () => embers(t.art!, { count: 20, area: 'fill', colors: [C.ember, C.gold], rise: [40, 140], life: [0.8, 1.8] }));
+    after(0.3, () => glints(t.art!, { count: 5, size: [4, 9], color: C.goldPale, delay: [0, 0.4] }));
+    light(t.art, { color: [1, 0.62, 0.3], radius: 460, intensity: 0.6, hold: 0.08, decay: 1.1 });
+  }
+  t.blown.forEach((el, i) => {
+    after(0.05 + i * 0.07, () => {
+      if (detached(el)) return;
+      flash(el, { radius: 40, color: C.ember, intensity: 0.4, life: 0.3 });
+      sparks(el, { count: 18, area: 'fill', speed: [120, 460], life: [0.25, 0.6], gravity: 500, colors: [C.whiteHot, C.ember, C.gold] });
+      shards(el, { count: 10, colors: [[0.85, 0.68, 0.5], [0.5, 0.4, 0.33], C.ember], cool: k3(C.ash, 0.4), speed: [100, 380], size: [1.6, 3.6] });
+      puffs(el, { count: 5, area: 'fill', color: [0.09, 0.07, 0.055], size: [10, 22], speed: [30, 120], life: [0.6, 1.2] });
+    });
+  });
+  pulseMood(0.22, [1, 0.5, 0.2]);
+  shakeView(t.mine ? 0.6 : 0.4, t.mine ? 10 : 7);
 }

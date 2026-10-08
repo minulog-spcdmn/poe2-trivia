@@ -3,8 +3,11 @@
   import { fly, scale } from 'svelte/transition';
   import { session } from '../lib/session.svelte';
   import { MAX_PLAYERS, RACE_DEFAULT_TIMER, TIMER_STEPS, difficultyOf, rulesFor, type Difficulty, type GameMode } from '../lib/game';
-  import { DIFFICULTY_NAMES, describe, lockoutText } from '../lib/difficultyText';
+  import { DIFFICULTY_NAMES, describe } from '../lib/difficultyText';
   import CustomDifficulty from './CustomDifficulty.svelte';
+  import DelveRules from './DelveRules.svelte';
+  import ModeIcon from './ModeIcon.svelte';
+  import { bestOf, findsMet, lastOf, loadRecords } from '../lib/delveRecord';
   import { MAX_NAME, isHeldName, nameHeld, nameTooShort } from '../lib/names';
   import { inviteUrl } from '../lib/site';
   import Avatar from './Avatar.svelte';
@@ -16,6 +19,11 @@
   import { measure } from '../lib/iconFit.svelte';
 
   const TARGETS = [5, 10, 15, 20];
+  const MODES: { id: GameMode; name: string; beta?: boolean }[] = [
+    { id: 'turns', name: 'Take turns' },
+    { id: 'race', name: 'Race' },
+    { id: 'delve', name: 'Delve', beta: true },
+  ];
   const DIFFS = (Object.entries(DIFFICULTY_NAMES) as [Difficulty, string][]).map(([id, name]) => ({ id, name }));
 
   const s = $derived(session.state!);
@@ -108,6 +116,46 @@
   function setMode(mode: GameMode) {
     session.dispatch({ type: 'settings', settings: mode === 'race' && s.settings.timer === 0 ? { mode, timer: RACE_DEFAULT_TIMER } : { mode } });
   }
+  /** Hot-seat: Race can't be played here, so tapping it only says why (for a few seconds, in the mode's description). */
+  let peek = $state(false);
+  let peekTimer: ReturnType<typeof setTimeout> | undefined;
+  onMount(() => () => clearTimeout(peekTimer));
+  const offline = (m: GameMode) => m === 'race' && local;
+  function pickMode(m: GameMode, node: HTMLElement) {
+    if (offline(m)) {
+      refuse(node);
+      peek = true;
+      clearTimeout(peekTimer);
+      peekTimer = setTimeout(() => (peek = false), 3500);
+      return;
+    }
+    peek = false;
+    if (m !== s.settings.mode) setMode(m);
+  }
+  /** The modes are a radio group: the arrow keys move the choice along it (skipping Race in hot-seat). */
+  function modeKeys(e: KeyboardEvent) {
+    const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+    if (!step || !isHost) return;
+    e.preventDefault();
+    const open = MODES.filter((m) => !offline(m.id));
+    const i = open.findIndex((m) => m.id === s.settings.mode);
+    const next = open[(i + step + open.length) % open.length].id;
+    setMode(next);
+    (e.currentTarget as HTMLElement).querySelector<HTMLElement>(`[data-mode="${next}"]`)?.focus();
+  }
+  // The deepest this browser has delved, alone or together (hot-seat is always alone).
+  const records = loadRecords();
+  const bestAlone = bestOf(records, true)?.depth ?? null;
+  const bestTogether = bestOf(records, false)?.depth ?? null;
+  const deepest = $derived(s.players.length < 2 ? bestAlone : local ? null : bestTogether);
+  // The last run of the same kind: the descent marks it with a red star.
+  const lastAlone = lastOf(records, true)?.depth ?? null;
+  const lastTogether = lastOf(records, false)?.depth ?? null;
+  const lastRun = $derived(s.players.length < 2 ? lastAlone : local ? null : lastTogether);
+  const deepestLabel = $derived(s.players.length < 2 ? 'Your deepest alone' : 'Your deepest together');
+  // The finds this browser's player has met, alone or together: the drawing of the descent marks where each first turns up.
+  const met = [...findsMet()];
+
   function setLocked(v: boolean) {
     session.dispatch({ type: 'settings', settings: { locked: v } });
   }
@@ -127,10 +175,15 @@
     session.dispatch({ type: 'start' });
   }
 
-  const canStart = $derived(s.players.length >= 1);
+  /** Delve on one device is a run alone: together, it's played online (the engine refuses it too). */
+  const delveCrowded = $derived(local && s.settings.mode === 'delve' && s.players.length > 1);
+  /** Delve together: a room of two or more online plays as a team. */
+  const together = $derived(!local && s.players.length > 1);
+  const canStart = $derived(s.players.length >= 1 && !delveCrowded);
   /** Spectators left over when the last game filled every seat. */
   const waiting = $derived(s.spectators ?? []);
   const race = $derived(s.settings.mode === 'race');
+  const delve = $derived(s.settings.mode === 'delve');
   const difficulty = $derived(difficultyOf(s.settings.difficulty));
   const lockout = $derived(rulesFor(s.settings).lockout);
 </script>
@@ -263,101 +316,146 @@
       <header><h2>Rules</h2></header>
 
       <div class="setting">
-        <span class="label">Mode</span>
-        <div class="modes">
-          <button class="mode-card" class:on={!race} disabled={!isHost} onclick={() => setMode('turns')}>
-            <b>Take turns</b>
-            <span>Pick a category, answer alone. Wrong answers score nothing.</span>
-          </button>
-          <button
-            class="mode-card"
-            class:on={race}
-            disabled={!isHost || local}
-            onclick={() => setMode('race')}
-            title={local ? 'Race needs every player on their own device' : undefined}
-          >
-            <b>Race</b>
-            <span>
-              {#if local}Online only: everyone needs their own device.{:else}Everyone answers at once. Fastest correct answer +1, wrong answer −1.{/if}
-            </span>
-          </button>
-        </div>
-      </div>
-
-      <div class="setting">
-        <span class="label">Points to win</span>
-        <div class="seg">
-          {#each TARGETS as t (t)}
-            <button class:on={s.settings.targetScore === t} disabled={!isHost} onclick={() => setTarget(t)}>{t}</button>
-          {/each}
-          <span class="stepper">
-            <button disabled={!isHost || s.settings.targetScore <= 1} onclick={() => setTarget(s.settings.targetScore - 1)} aria-label="Fewer points">−</button>
-            <b>{s.settings.targetScore}</b>
-            <button disabled={!isHost || s.settings.targetScore >= 50} onclick={() => setTarget(s.settings.targetScore + 1)} aria-label="More points">+</button>
-          </span>
-        </div>
-      </div>
-
-      <div class="setting">
-        <span class="label">Difficulty</span>
-        <div class="seg">
-          {#each DIFFS as d (d.id)}
-            {@const edit = d.id === 'custom' && difficulty === 'custom' && isHost}
+        <span class="label" id="mode-label">Mode</span>
+        <div class="modes" role="radiogroup" aria-labelledby="mode-label" aria-describedby="mode-blurb" tabindex={-1} onkeydown={modeKeys}>
+          {#each MODES as m (m.id)}
+            {@const on = s.settings.mode === m.id}
             <button
-              class:on={difficulty === d.id}
-              class:edit
+              class="mode"
+              class:on
+              class:off={offline(m.id)}
+              role="radio"
+              aria-checked={on}
+              aria-disabled={offline(m.id) || undefined}
+              tabindex={on ? 0 : -1}
+              data-mode={m.id}
+              aria-label={m.beta ? `${m.name}, beta` : undefined}
               disabled={!isHost}
-              onclick={() => setDifficulty(d.id)}
-              title={edit ? 'Edit the custom difficulty' : undefined}
+              title={offline(m.id) ? 'Race needs every player on their own device' : undefined}
+              onclick={(e) => pickMode(m.id, e.currentTarget)}
             >
-              {d.name}
-              {#if edit}
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4zM13.5 6.5l4 4" /></svg>
+              <ModeIcon mode={m.id} />
+              <b>{m.name}</b>
+              {#if m.beta}<span class="beta" aria-hidden="true">Beta</span>{/if}
+            </button>
+          {/each}
+        </div>
+        <!-- The chosen mode's description, under a notch that points up at it. -->
+        <div class="about" id="mode-blurb" style:--at={peek ? 1 : MODES.findIndex((m) => m.id === s.settings.mode)} class:peek>
+          <span class="about-frame" aria-hidden="true"></span>
+          {#key peek ? 'peek' : s.settings.mode}
+            <div class="about-text" in:fly={{ y: -6, duration: 260 }}>
+              {#if peek}
+                <p>Race is online only: everyone answers on their own device. Host a room to race.</p>
+              {:else if delve}
+                <!-- Several on one device can't delve; the line under Begin says what to do instead. -->
+                <p>{together ? 'How deep can your team go, on three lives each?' : 'How deep can you go on three lives?'} Questions increase in difficulty.</p>
+              {:else if race}
+                <p>Same question for everyone at once; the fastest right answer scores. Online only.</p>
+              {:else}
+                <p>Take turns picking a category and naming the item. Online or on one device.</p>
               {/if}
-            </button>
-          {/each}
-        </div>
-        <!-- Every description sits in the same cell, so switching never changes the panel's height. -->
-        <div class="blurbs">
-          {#each DIFFS as d (d.id)}
-            <p class="blurb muted" class:shown={difficulty === d.id} aria-hidden={difficulty !== d.id}>
-              {describe({ ...s.settings, difficulty: d.id })}
-            </p>
-          {/each}
+            </div>
+          {/key}
         </div>
       </div>
 
-      <div class="setting">
-        <span class="label">Time per question</span>
-        <div class="seg">
-          {#each TIMER_STEPS as t (t)}
-            <button class:on={s.settings.timer === t} disabled={!isHost || (race && t === 0)} onclick={() => setTimer(t)}>
-              {t === 0 ? 'Off' : `${t}s`}
-            </button>
-          {/each}
+      {#if delve}
+        <DelveRules {deepest} last={lastRun} label={deepestLabel} {met} />
+      {:else}
+        <div class="setting">
+          <span class="label">Points to win</span>
+          <div class="seg">
+            {#each TARGETS as t (t)}
+              <button class:on={s.settings.targetScore === t} disabled={!isHost} onclick={() => setTarget(t)}>{t}</button>
+            {/each}
+            <span class="stepper">
+              <button disabled={!isHost || s.settings.targetScore <= 1} onclick={() => setTarget(s.settings.targetScore - 1)} aria-label="Fewer points">−</button>
+              <b>{s.settings.targetScore}</b>
+              <button disabled={!isHost || s.settings.targetScore >= 50} onclick={() => setTarget(s.settings.targetScore + 1)} aria-label="More points">+</button>
+            </span>
+          </div>
         </div>
-      </div>
 
+        <div class="setting">
+          <span class="label">Difficulty</span>
+          <div class="seg">
+            {#each DIFFS as d (d.id)}
+              {@const edit = d.id === 'custom' && difficulty === 'custom' && isHost}
+              <button
+                class:on={difficulty === d.id}
+                class:edit
+                disabled={!isHost}
+                onclick={() => setDifficulty(d.id)}
+                title={edit ? 'Edit the custom difficulty' : undefined}
+              >
+                {d.name}
+                {#if edit}
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4zM13.5 6.5l4 4" /></svg>
+                {/if}
+              </button>
+            {/each}
+          </div>
+          <!-- Every description sits in the same cell, so switching never changes the panel's height. -->
+          <div class="blurbs">
+            {#each DIFFS as d (d.id)}
+              <p class="blurb muted" class:shown={difficulty === d.id} aria-hidden={difficulty !== d.id}>
+                {describe({ ...s.settings, difficulty: d.id })}
+              </p>
+            {/each}
+          </div>
+        </div>
+
+        <div class="setting">
+          <span class="label">Time per question</span>
+          <div class="seg">
+            {#each TIMER_STEPS as t (t)}
+              <button class:on={s.settings.timer === t} disabled={!isHost || (race && t === 0)} onclick={() => setTimer(t)}>
+                {t === 0 ? 'Off' : `${t}s`}
+              </button>
+            {/each}
+          </div>
+        </div>
+      {/if}
+
+      <!-- Delve has none: the descent and its finds tell it. -->
+      {#if !delve}
       <ul class="rules muted">
         {#if race}
-          <li>Everyone sees the same question at the same time.</li>
-          <li>The first correct answer scores a point and ends the question.</li>
-          <li>A wrong answer costs a point and locks you out until the next question.</li>
-          <li>First to {s.settings.targetScore} wins.</li>
+          <li>Everyone answers the same question; the first right answer scores a point.</li>
+          <li>A wrong answer costs a point and sits you out until the next question.</li>
+          <li>First to <span class="num">{s.settings.targetScore}</span> wins.</li>
         {:else}
-          <li>On your turn, choose one of three item categories.</li>
-          {#if lockout > 0}
-            <li>A category you pick is locked for {lockoutText(lockout)}.</li>
-          {/if}
-          <li>Name the unique or lineage gem from its art; one answer is true.</li>
-          <li>Correct answers score a point. First to {s.settings.targetScore} wins, once the round is finished.</li>
-          <li>Tied at the top? The tied players settle it in a sudden-death deathmatch.</li>
+          <li>On your turn, pick one of three categories and name the item.</li>
+          <li>
+            A right answer scores a point{#if lockout > 0}; the category stays locked for your next <span class="num">{lockout}</span> turns{/if}.
+          </li>
+          <li>First to <span class="num">{s.settings.targetScore}</span> wins once the round is over; a tie goes to sudden death.</li>
         {/if}
       </ul>
+      {/if}
+
+      {#if delve && !local}
+        <!-- Co-op plays nothing like the rest: told in a team room, or one a second player can still join (on one device, Delve is for one). -->
+        <div class="setting together">
+          <span class="label">Play co-op together</span>
+          {#if !together}
+            <p class="together-when muted">Once a second exile joins this room:</p>
+          {/if}
+          <ul class="rules coop">
+            <li>Vote for a card, then one is drawn from the votes.</li>
+            <li>Everyone answers at once. A wrong answer is crossed out for everyone.</li>
+            <li>Teammates can sacrifice their life force to revive you.</li>
+          </ul>
+        </div>
+      {/if}
 
       <div class="start">
         {#if isHost}
-          <button class="btn primary big" disabled={!canStart} onclick={start}>Begin the hunt</button>
+          <button class="btn primary big" disabled={!canStart} onclick={start}>{delve ? 'Begin the descent' : 'Begin the hunt'}</button>
+          {#if delveCrowded}
+            <p class="muted crowded">Delve on one device is for one player. Remove the others, or host a room.</p>
+          {/if}
         {:else}
           <p class="muted waiting"><span class="pulse"></span>Waiting for the host to start…</p>
         {/if}
@@ -366,7 +464,7 @@
   </div>
 </div>
 
-{#if editing && isHost && difficulty === 'custom'}
+{#if editing && isHost && difficulty === 'custom' && !delve}
   <CustomDifficulty onclose={() => (editing = false)} />
 {/if}
 
@@ -553,7 +651,7 @@
 
   .cols {
     display: grid;
-    grid-template-columns: 1fr 1.15fr;
+    grid-template-columns: 1fr 1.33fr;
     gap: 1.2rem;
     align-items: start;
   }
@@ -684,36 +782,38 @@
   }
   .modes {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(3, 1fr);
     gap: 0.5rem;
   }
-  .mode-card {
+  .mode {
+    position: relative;
     display: flex;
     flex-direction: column;
-    gap: 0.2rem;
-    padding: 0.7rem 0.85rem;
-    text-align: left;
+    align-items: center;
+    gap: 0.35rem;
+    min-width: 0;
+    padding: 0.7rem 0.4rem 0.6rem;
+    color: var(--gold);
     background: rgba(0, 0, 0, 0.35);
     border: 1px solid var(--line);
     border-radius: 4px;
     cursor: pointer;
     transition: all 0.2s;
   }
-  .mode-card b {
+  .mode b {
     font-family: var(--font-display);
     font-size: 0.9rem;
     letter-spacing: 0.06em;
+    white-space: nowrap;
     color: var(--gold-hi);
   }
-  .mode-card span {
-    font-size: 0.9rem;
-    line-height: 1.3;
-    color: var(--muted);
-  }
-  .mode-card:hover:not(:disabled) {
+  .mode:hover:not(:disabled) {
     border-color: var(--gold-lo);
+    --glow: 0.26;
   }
-  .mode-card.on {
+  .mode.on {
+    color: var(--gold-hi);
+    --glow: 0.34;
     background: linear-gradient(180deg, rgba(122, 79, 29, 0.55), rgba(69, 42, 14, 0.55));
     border-color: var(--gold);
     box-shadow:
@@ -721,17 +821,109 @@
       inset 0 0 18px rgba(255, 150, 60, 0.12),
       0 0 18px rgba(201, 164, 92, 0.25);
   }
-  .mode-card.on b {
+  .mode.on b {
     text-shadow: 0 0 12px rgba(241, 217, 155, 0.45);
   }
-  .mode-card.on span {
-    color: #e3d3b4;
+  /* A small engraved tag in the corner, clear of the emblem, like the site's own Beta mark. */
+  .mode .beta {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    padding: 1px 2px 0 4px;
+    font-family: var(--font-cinzel);
+    font-weight: 700;
+    font-size: 0.5rem;
+    line-height: 1.4;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--unique-hi);
+    border: 1px solid rgba(224, 138, 68, 0.45);
+    border-radius: 2px;
+    pointer-events: none;
   }
-  .mode-card:disabled {
+  .mode:disabled {
     cursor: default;
   }
-  .mode-card:disabled:not(.on) {
+  .mode:disabled:not(.on),
+  .mode.off {
     opacity: 0.5;
+  }
+  .mode.off {
+    cursor: not-allowed;
+  }
+  .mode:focus-visible {
+    outline: 1px solid var(--gold-hi);
+    outline-offset: 2px;
+  }
+  /* The chosen mode's description, notched under its button. The box and its
+     notch are drawn solid in one layer that is faded as a whole, so they merge
+     into one shape: the notch can reach into the box's border (no hairline gap
+     where they meet) without the overlap showing darker. */
+  .about {
+    --notch: 7px;
+    position: relative;
+    margin-top: calc(0.5rem + var(--notch));
+    padding: 0.55rem 0.8rem 0.6rem;
+  }
+  .about-frame {
+    --line: #c9a45c;
+    position: absolute;
+    inset: 0;
+    opacity: 0.32;
+    background: rgba(0, 0, 0, 0.94);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    pointer-events: none;
+  }
+  .about-frame::before {
+    content: '';
+    position: absolute;
+    /* One pixel into the border, so the two always touch. */
+    top: calc(-1 * var(--notch));
+    /* Under the middle of the chosen button: three columns, two gaps of 0.5rem. */
+    left: calc((100% - 1rem) / 6 + var(--at, 0) * ((100% - 1rem) / 3 + 0.5rem) - var(--notch) - 1px);
+    width: calc(2 * var(--notch));
+    height: var(--notch);
+    background: var(--line);
+    clip-path: polygon(50% 0, 100% 100%, 0 100%);
+    transition: left 0.45s cubic-bezier(0.44, 0.09, 0.38, 1.04);
+  }
+  .about.peek .about-frame {
+    --line: #e0553f;
+  }
+  .about-text {
+    position: relative;
+  }
+  .about p {
+    margin: 0;
+    font-size: 0.95rem;
+    font-style: italic;
+    line-height: 1.35;
+    color: #e3d3b4;
+  }
+  .together-when {
+    margin: 0 0 0.45rem;
+    font-size: 0.93rem;
+    font-style: italic;
+    line-height: 1.25;
+  }
+  .together {
+    margin: -0.4rem 0 1.4rem;
+  }
+  /* Kept compact: a handful of short lines. */
+  .rules.coop {
+    margin: 0;
+    font-size: 0.93rem;
+    line-height: 1.3;
+  }
+  .rules.coop li {
+    margin: 0.2rem 0;
+  }
+  /* Numbers among the words are set in Cinzel, as everywhere in the game. */
+  .num {
+    font-family: var(--font-cinzel);
+    font-weight: 700;
+    font-size: 0.86em;
   }
   .blurbs {
     display: grid;
@@ -794,7 +986,7 @@
   }
   .seg > button:active:not(:disabled),
   .stepper button:active:not(:disabled),
-  .mode-card:active:not(:disabled) {
+  .mode:active:not(:disabled, .off) {
     transform: scale(0.96);
   }
   .seg button:disabled {
@@ -850,7 +1042,14 @@
 
   .start {
     display: flex;
-    justify-content: center;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.6rem;
+  }
+  .crowded {
+    margin: 0;
+    font-style: italic;
+    text-align: center;
   }
 
   @media (max-width: 760px) {

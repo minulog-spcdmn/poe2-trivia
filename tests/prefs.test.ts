@@ -169,3 +169,15 @@ test('a timer saved by an older build snaps to the nearest step', () => {
   for (const [old, now] of [[10, 8], [15, 16], [20, 16], [30, 32], [45, 32], [120, 64], [0, 0]])
     assert.equal(parsePrefs(serializePrefs({ ...custom, timer: old }))?.timer, now, String(old));
 });
+
+test('a Delve room is stored as turns with a flag, so older tabs still read it', () => {
+  const delve: RoomPrefs = { ...custom, mode: 'delve' };
+  const raw = JSON.parse(serializePrefs(delve));
+  assert.equal(raw.mode, 'turns');
+  assert.equal(raw.delveOn, true);
+  assert.deepEqual(parsePrefs(serializePrefs(delve)), delve);
+  // A build from before Delve: same checks, no flag.
+  assert.equal(parsePrefs(JSON.stringify({ ...raw, delveOn: undefined }))?.mode, 'turns');
+  const kept = prefsFrom({ targetScore: 15, timer: 32, difficulty: 'eternal', mode: 'delve', public: false, locked: false } as Settings);
+  assert.deepEqual([kept.mode, kept.targetScore, kept.timer, kept.difficulty], ['delve', 15, 32, 'eternal']);
+});

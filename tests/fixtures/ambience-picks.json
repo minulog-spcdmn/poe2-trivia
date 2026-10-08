@@ -1,0 +1,290 @@
+{
+  "fire": {
+    "file": "amb-fire",
+    "gain": -30,
+    "lp": 3750
+  },
+  "game": {
+    "file": "amb-game-4",
+    "gain": -40,
+    "lp": 5011
+  },
+  "places": {
+    "a0": {
+      "fire": -13.2,
+      "layers": [
+        {
+          "file": "amb-fungal-4",
+          "gain": -43.2,
+          "lp": 9000,
+          "rate": 1,
+          "send": 0.2
+        }
+      ]
+    },
+    "a1": {
+      "fire": -5.9,
+      "layers": [
+        {
+          "file": "amb-magma-4",
+          "gain": -45.9,
+          "lp": 9000,
+          "rate": 1,
+          "send": 0.2
+        }
+      ]
+    },
+    "a10": {
+      "fire": -13.5,
+      "layers": [
+        {
+          "file": "amb-endgame-1",
+          "gain": -43.5,
+          "lp": 9000,
+          "rate": 1,
+          "send": 0.2
+        }
+      ]
+    },
+    "a11": {
+      "fire": -4.9,
+      "layers": [
+        {
+          "file": "amb-endgame-5",
+          "gain": -49.9,
+          "lp": 9000,
+          "rate": 1,
+          "send": 0.2
+        }
+      ]
+    },
+    "a2": {
+      "fire": -13.6,
+      "layers": [
+        {
+          "file": "amb-endgame-3",
+          "gain": -43.6,
+          "lp": 9000,
+          "rate": 1,
+          "send": 0.2
+        }
+      ]
+    },
+    "a3": {
+      "fire": -40,
+      "layers": [
+        {
+          "file": "amb-frozen-2",
+          "gain": -40.3,
+          "lp": 2837,
+          "rate": 1,
+          "send": 1
+        }
+      ]
+    },
+    "a4": {
+      "fire": -13.2,
+      "layers": [
+        {
+          "file": "amb-sulphur-2",
+          "gain": -43.2,
+          "lp": 9000,
+          "rate": 1,
+          "send": 0.2
+        }
+      ]
+    },
+    "a5": {
+      "fire": -13.5,
+      "layers": [
+        {
+          "file": "amb-endgame-2",
+          "gain": -43.5,
+          "lp": 9000,
+          "rate": 1,
+          "send": 0.2
+        }
+      ]
+    },
+    "a6": {
+      "fire": -12.1,
+      "layers": [
+        {
+          "file": "amb-fungal-4",
+          "gain": -44.1,
+          "lp": 4228,
+          "rate": 1,
+          "send": 0.45
+        }
+      ]
+    },
+    "a7": {
+      "fire": -13.6,
+      "layers": [
+        {
+          "file": "amb-endgame-6",
+          "gain": -43.6,
+          "lp": 9000,
+          "rate": 1,
+          "send": 0.2
+        }
+      ]
+    },
+    "a8": {
+      "fire": -5.5,
+      "layers": [
+        {
+          "file": "amb-frozen-2",
+          "gain": -45.5,
+          "lp": 9000,
+          "rate": 1,
+          "send": 0.2
+        }
+      ]
+    },
+    "a9": {
+      "fire": -13.5,
+      "layers": [
+        {
+          "file": "amb-vaal-3",
+          "gain": -43.5,
+          "lp": 9000,
+          "rate": 1,
+          "send": 0.2
+        }
+      ]
+    },
+    "z0": {
+      "fire": 0,
+      "layers": [
+        {
+          "file": "amb-mines-drone",
+          "gain": -51,
+          "lp": 1200,
+          "rate": 1,
+          "send": 0.4
+        }
+      ]
+    },
+    "z1": {
+      "fire": -8.7,
+      "layers": [
+        {
+          "file": "amb-magma-3",
+          "gain": -40.7,
+          "lp": 2252,
+          "rate": 0.83,
+          "send": 0.2
+        }
+      ]
+    },
+    "z2": {
+      "fire": -40,
+      "layers": [
+        {
+          "file": "amb-frozen-1",
+          "gain": -40.6,
+          "lp": 9000,
+          "rate": 1,
+          "send": 0.85
+        }
+      ]
+    },
+    "z3": {
+      "fire": -11.6,
+      "layers": [
+        {
+          "file": "amb-fungal-1",
+          "gain": -41.6,
+          "lp": 9000,
+          "rate": 1,
+          "send": 0.2
+        }
+      ]
+    },
+    "z4": {
+      "fire": -6.1,
+      "layers": [
+        {
+          "file": "amb-vaal-1",
+          "gain": -44.1,
+          "lp": 3022,
+          "rate": 1,
+          "send": 0.8
+        }
+      ]
+    },
+    "z5": {
+      "fire": -40,
+      "layers": [
+        {
+          "file": "amb-abyss-1",
+          "gain": -41.9,
+          "lp": 9000,
+          "rate": 1,
+          "send": 0.7
+        }
+      ]
+    },
+    "z6": {
+      "fire": -38.2,
+      "layers": [
+        {
+          "file": "amb-petrified-1",
+          "gain": -39.2,
+          "lp": 5556,
+          "rate": 0.9,
+          "send": 0.35
+        }
+      ]
+    },
+    "z7": {
+      "fire": -5.8,
+      "layers": [
+        {
+          "file": "amb-sulphur-1",
+          "gain": -48.8,
+          "lp": 20000,
+          "rate": 1.05,
+          "send": 0.9
+        }
+      ]
+    },
+    "z8": {
+      "fire": -40,
+      "layers": [
+        {
+          "file": "amb-city-1",
+          "gain": -41.0,
+          "lp": 9000,
+          "rate": 1,
+          "send": 0.2
+        }
+      ]
+    },
+    "z9": {
+      "fire": -4.5,
+      "layers": [
+        {
+          "file": "amb-primeval-2",
+          "gain": -44.5,
+          "lp": 20000,
+          "rate": 0.74,
+          "send": 1
+        },
+        {
+          "file": "amb-primeval-1",
+          "gain": -40.5,
+          "lp": 300,
+          "rate": 0.94,
+          "send": 0.75
+        }
+      ]
+    }
+  },
+  "rumble": {
+    "abyss": 7,
+    "gain": -50
+  },
+  "v": 1
+}

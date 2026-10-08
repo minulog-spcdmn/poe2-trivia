@@ -59,7 +59,8 @@ export function parsePrefs(raw: string | null): RoomPrefs | null {
     difficulty: o.customOn === true && o.custom !== undefined ? 'custom' : o.difficulty,
     // Added later: knobs another build allowed are snapped to this one's, and the rest is kept.
     ...(o.custom === undefined ? {} : { custom: cleanKnobs(o.custom) }),
-    mode: o.mode,
+    // Delve is a flag next to turns, so tabs from before it still read the entry.
+    mode: o.delveOn === true ? 'delve' : o.mode,
     public: o.public,
     hideCode: o.hideCode,
   };
@@ -75,6 +76,7 @@ export const serializePrefs = (p: RoomPrefs) =>
     v: PREFS_VERSION,
     ...p,
     ...(p.difficulty === 'custom' ? { difficulty: DEFAULT_SETTINGS.difficulty, customOn: true } : {}),
+    ...(p.mode === 'delve' ? { mode: 'turns', delveOn: true } : {}),
   });
 
 /** Whether the entry could be stored. */
@@ -140,6 +142,6 @@ export const prefsFrom = (s: Settings): Partial<RoomPrefs> => ({
   // Only once the room has one, so a room that never used it keeps the saved one.
   ...(s.custom ? { custom: cleanKnobs(s.custom) } : {}),
   // Rooms from before race mode existed played in turns.
-  mode: s.mode === 'race' ? 'race' : 'turns',
+  mode: s.mode === 'race' || s.mode === 'delve' ? s.mode : 'turns',
   public: !!s.public,
 });

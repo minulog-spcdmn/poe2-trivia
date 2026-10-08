@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json",
     "fetch-data": "node scripts/fetch-data.mjs",
+    "looks": "node scripts/looks.mjs",
     "test": "node --experimental-strip-types --no-warnings --test tests/*.test.ts"
   },
   "devDependencies": {

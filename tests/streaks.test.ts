@@ -19,3 +19,14 @@ test('the fire turns blue at seven in a row, within a game to ten', () => {
   assert.equal(burnsBlue(heatOf(10)), true);
   assert.equal(burnsBlue(heatOf(30)), true);
 });
+
+test('in Delve the fire grows over a long run, and only burns blue deep down', async () => {
+  const { DELVE_ABLAZE_FULL, DELVE_BLUE_FROM } = await import('../src/lib/fx/streaks.ts');
+  assert.equal(heatOf(ABLAZE_FROM, true) > 0, true, 'it still lights at three in a row');
+  assert.ok(heatOf(ABLAZE_FULL, true) < 0.5, 'far from full at ten');
+  assert.equal(heatOf(DELVE_ABLAZE_FULL, true), 1);
+  assert.equal(burnsBlue(heatOf(DELVE_BLUE_FROM - 1, true), true), false);
+  assert.equal(burnsBlue(heatOf(DELVE_BLUE_FROM, true), true), true);
+  assert.equal(burnsBlue(heatOf(BLUE_FROM, true), true), false, 'not blue at seven');
+  // A streak can't be longer than the depth: blue fire never comes before depth 21.
+});

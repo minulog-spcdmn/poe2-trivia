@@ -5,6 +5,8 @@
  * there too, but it comes from the session's status (see Toasts.svelte).
  */
 
+import type { Sign, Tier } from './achievements.ts';
+
 /** info: news about the room. warn: something went wrong for someone else. error: it went wrong for you. */
 export type ToastKind = 'info' | 'warn' | 'error';
 
@@ -21,6 +23,8 @@ export interface ToastOptions {
   sticky?: boolean;
   /** The creator's arrival (lib/herald.ts): gold and ruby, and the message follows her name ("has arrived"). */
   herald?: boolean;
+  /** An achievement earned (lib/achievementToasts.ts): its seal in place of the gem, in its metal. */
+  seal?: { sign: Sign; tier: Tier };
 }
 
 export interface Toast extends ToastOptions {
@@ -34,7 +38,7 @@ export interface Toast extends ToastOptions {
 }
 
 /** How long each kind stays up; errors stay longer, as they often explain why you're back on the start page. */
-const LIFETIME: Record<ToastKind, number> = { info: 4500, warn: 6000, error: 9000 };
+const LIFETIME: Record<ToastKind, number> = { info: 5600, warn: 7500, error: 11250 };
 
 interface Timer {
   handle: ReturnType<typeof setTimeout> | null;
@@ -46,7 +50,7 @@ interface Timer {
 class Toasts {
   list = $state<Toast[]>([]);
   /** The oldest toasts give way beyond this many. */
-  private max = 4;
+  private max = 6;
   private next = 1;
   private timers = new Map<number, Timer>();
 

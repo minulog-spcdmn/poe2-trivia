@@ -2,8 +2,9 @@
   import { onMount } from 'svelte';
   import { fade, fly } from 'svelte/transition';
   import { engine } from '../lib/session.svelte';
-  import type { Codex, Tally } from '../lib/codex';
+  import { livesCost, type Codex, type Tally } from '../lib/codex';
   import { accuracy } from '../lib/codexStats';
+  import { shownDepth } from '../lib/delve';
   import { itemImage } from '../lib/ui';
   import { dialogBackdrop } from '../lib/behindDialog';
   import { artRevealed } from '../lib/fx/moments';
@@ -14,6 +15,10 @@
 
   // One item of the codex, as a tooltip like the one the game reveals it in.
   let { item, codex, onclose, onopen }: { item: Item; codex: Codex; onclose: () => void; onopen: (item: Item) => void } = $props();
+
+  /** Svelte's transitions run whatever the system says: with reduced motion, things just appear. */
+  const still = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const calm = <T extends { duration?: number; delay?: number }>(p: T): T => (still ? { ...p, duration: 0, delay: 0 } : p);
 
   const entry = $derived(codex.items[item.id]);
   /** What it is, as one item: "Wand", "Ring". A gem's group is only its attribute, so gems say "Lineage Gem". */
@@ -97,7 +102,7 @@
   <div
     class="tooltip"
     bind:this={box}
-    transition:fly={{ y: 20, duration: 250 }}
+    transition:fly={calm({ y: 20, duration: 250 })}
     onclick={(e) => e.stopPropagation()}
     {onkeydown}
     role="dialog"
@@ -138,6 +143,23 @@
           </li>
           <li>Named from its art: {#if entry.name.n}<b>{score(entry.name)}</b>{:else}<i>never asked</i>{/if}</li>
           <li>Found from its name: {#if entry.art.n}<b>{score(entry.art)}</b>{:else}<i>never asked</i>{/if}</li>
+          {#if entry.delve}
+            {@const d = entry.delve}
+            {@const lives = livesCost(d)}
+            <li>
+              In Delve: <b>{d.n}</b> answered, <b>{d.ok}</b> right{#if d.deepest}, as deep as depth <b>{shownDepth(d.deepest)}</b>{/if}
+            </li>
+            {#if d.n > d.ok}
+              <li>
+                {#if lives}Cost you a life <b>{times(lives)}</b>{#if d.lostAt}, deepest at depth <b>{shownDepth(d.lostAt)}</b>{/if}{:else}Never cost you a life{/if}{#if d.warded}; it broke <b>{d.warded === 1 ? 'an Azurite Ward' : `${d.warded} Azurite Wards`}</b>{/if}
+              </li>
+            {/if}
+            {#if d.finds || d.blasted}
+              <li>
+                {#if d.finds}Asked from a find <b>{times(d.finds)}</b>{/if}{#if d.blasted}{d.finds ? '; dynamite' : 'Dynamite'} went off on it <b>{times(d.blasted)}</b>{/if}
+              </li>
+            {/if}
+          {/if}
         </ul>
       {/if}
       {@render related('You took it for', tookItFor)}

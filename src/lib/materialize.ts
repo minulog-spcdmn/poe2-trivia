@@ -8,7 +8,7 @@
 // the way it moves. Transparent pixels are never touched, so the magic keeps
 // to the item's own shape.
 
-import { valueNoise } from './patches';
+import { BURN_COOL, BURN_LINE, BURN_RIM, valueNoise } from './patches';
 import { fxDensity, veilIgnites, veilSpark } from './fx/moments';
 
 /** How long the rest of the picture takes to come in once the answer is out, per patch (ms). */
@@ -16,12 +16,13 @@ export const FINALE_MS = 400;
 
 /**
  * As fractions of the burn: the mist ahead of the front, the twinkling ahead
- * of that, how long each grain glints, and how long its light takes to cool.
+ * of that, how long each grain glints, and how long its light takes to cool
+ * (in patches.ts, where the host paces the veil by them: burntShare).
  */
-const RIM = 0.1;
+const RIM = BURN_RIM;
 const AHEAD = 0.14;
-const LINE = 0.06;
-const COOL = 0.45;
+const LINE = BURN_LINE;
+const COOL = BURN_COOL;
 /** How ragged the front is, in art pixels either way. */
 const ROUGH = 5;
 /** How far single grains stray from the front, in art pixels either way: the fizzle. */

@@ -5,8 +5,13 @@
 // Effects are off when the user turned them off, when the system asks for
 // reduced motion, or when WebGL2 isn't available; every call below is then a
 // cheap no-op, so callers never need to check.
+//
+// The renderer isn't made as the page loads: its context and shaders would
+// hold up the first paint (see startFx). Effects asked for before it's ready
+// wait for it, and play once it is.
 
-import { BEHIND_PICTURE, FxRenderer, SHAPE_FLOATS, ShapeType, pictureReady, type DialogLight, type Silhouette } from './renderer';
+import { BEHIND_PICTURE, BEHIND_UI, FxRenderer, SHAPE_FLOATS, ShapeType, pictureReady, type DialogLight, type Silhouette } from './renderer';
+import { webgl2Refused, whenGpuCaughtUp, whenIdle, type Build } from './gl';
 import { ParticlePool, type ParticleSpec } from './particles';
 import { opacityOf } from '../opacity';
 import { dialogBox, openDialog } from '../behindDialog';
@@ -73,6 +78,8 @@ export type ShapeSpec = {
   followOpacity?: boolean;
   /** Changes slowly enough to be drawn at 30fps on phones (see `calm` below). */
   calm?: boolean;
+  /** It shines from behind the UI: the boxes cover() names hide it (see COVER in renderer.ts). */
+  behind?: boolean;
 };
 
 type LiveShape = ShapeSpec & {
@@ -112,6 +119,21 @@ const coarse = typeof matchMedia === 'function' ? matchMedia('(pointer: coarse)'
 let canvas: HTMLCanvasElement | null = null;
 let renderer: FxRenderer | null = null;
 let pool: ParticlePool | null = null;
+/**
+ * The renderer on its way (see startFx): waiting for the page to have
+ * painted (and, while effects are off, for them to be on), or for the GPU
+ * to catch up (`waiting` cancels either; `forPaint` says which), or its
+ * shaders compiling (`building`). Meanwhile effects count as on, and wait
+ * for it.
+ */
+let waiting: (() => void) | null = null;
+let forPaint = false;
+let building: Build | null = null;
+const coming = () => !!(waiting || building);
+/** When the first effect that waits for the renderer was asked for (performance.now()), or null. */
+let queuedAt: number | null = null;
+/** When the view was last shaken while waiting for it. */
+let shakenAt = 0;
 const MAX_SHAPES = 96;
 const shapeData = new Float32Array(MAX_SHAPES * SHAPE_FLOATS);
 let shapes: LiveShape[] = [];
@@ -151,7 +173,7 @@ const CALM_SPEED = 200;
 
 /** Are effects being drawn right now? */
 export function fxActive() {
-  return !!renderer && userOn && !reduce?.matches;
+  return (!!renderer || coming()) && userOn && !reduce?.matches;
 }
 
 /** The user's setting (effects may still be off for reduced motion or missing WebGL2). */
@@ -160,13 +182,15 @@ export function fxUserOn() {
 }
 
 export function fxAvailable() {
-  return !!renderer && !reduce?.matches;
+  return (!!renderer || coming()) && !reduce?.matches;
 }
 
 export function setFxOn(on: boolean) {
   userOn = on;
   writeStored('fx', on ? '1' : '0');
   if (!fxActive()) clearAll();
+  // (Not made while they were off: made now.)
+  else hurry();
   for (const l of listeners) l(on);
 }
 
@@ -179,6 +203,8 @@ function clearAll() {
   pool?.clear();
   shapes = [];
   tasks = [];
+  queuedAt = null;
+  covers.clear();
   shake.trauma = 0;
   applyShake(0, 0);
   renderer?.clear();
@@ -214,10 +240,52 @@ function onPage(a: Anchor): boolean {
   return x < r.left || x > r.right || y < r.top || y > r.bottom;
 }
 
+/**
+ * While the renderer is on its way, seconds since the first effect asked for
+ * meanwhile (0 for that one, and once it's made). What's asked for is held
+ * back by that much: setup() moves everything on by the whole wait, so each
+ * effect goes on from where it would be by then.
+ */
+function waited(): number {
+  if (renderer) return 0;
+  const t = performance.now();
+  queuedAt ??= t;
+  return (t - queuedAt) / 1000;
+}
+
 export function particle(p: ParticleSpec) {
   if (!fxActive()) return;
-  pool!.spawn(p, onPage(p));
+  const late = waited();
+  pool!.spawn(late ? { ...p, delay: (p.delay ?? 0) + late } : p, onPage(p));
   wake();
+}
+
+/**
+ * Has seeking particles follow `el` for `seconds` (ParticleSpec.seek's
+ * `from` and `to`): returns the slot to name, whose offset tracks how far
+ * the element has moved on screen since now, or 0 (nothing to follow, or
+ * effects off). An element that leaves the page stops where it was last.
+ */
+export function follow(el: Element, seconds: number): number {
+  if (!fxActive() || !pool || detached(el)) return 0;
+  const p = pool;
+  const slot = p.claimFollow();
+  const b0 = boxOf(el);
+  task((_, age) => {
+    if (detached(el)) return false;
+    const b = boxOf(el);
+    p.follows[2 * slot - 2] = b.x - b0.x;
+    p.follows[2 * slot - 1] = b.y - b0.y;
+    // A little past `seconds`, for the stragglers of a stream timed to land by then.
+    return age < seconds + 0.25;
+  });
+  return slot;
+}
+
+/** How far the element behind follow slot `slot` has moved (none for 0). */
+export function followOffset(slot: number): Point {
+  if (!pool || !slot) return { x: 0, y: 0 };
+  return { x: pool.follows[2 * slot - 2], y: pool.follows[2 * slot - 1] };
 }
 
 /** How many particles to spawn for a nominal `n`, scaled to the device. */
@@ -256,7 +324,7 @@ export function shape(spec: ShapeSpec): Handle {
   }
   const s: LiveShape = {
     ...spec,
-    age: -(spec.delay ?? 0),
+    age: -(spec.delay ?? 0) - waited(),
     seed: Math.random() * 100,
     box: boxOf(spec.at),
     fade: 0,
@@ -279,7 +347,7 @@ export function shape(spec: ShapeSpec): Handle {
 
 export function task(fn: Task): Handle {
   if (!fxActive()) return NOOP;
-  const t = { fn, age: 0 };
+  const t = { fn, age: -waited() };
   tasks.push(t);
   wake();
   return {
@@ -287,6 +355,75 @@ export function task(fn: Task): Handle {
       tasks = tasks.filter((x) => x !== t);
     },
   };
+}
+
+// ---------- the UI in front ----------
+
+/**
+ * Where the UI is, for light from behind it: boxes on screen (viewport CSS
+ * px), with their corners' radii (top left, top right, bottom right, bottom
+ * left, px) so a rounded one hides it in its own shape (a pill as a
+ * capsule). A `soft` one (text, say) hides it with a wide soft edge rather
+ * than a box's.
+ */
+export type CoverBox = { box: DOMRect; soft?: boolean; radii?: readonly number[] };
+export type CoverSource = () => Iterable<CoverBox>;
+const covers = new Set<CoverSource>();
+const coverBoxes: number[] = [];
+
+/**
+ * While the handle is up, light from behind the UI (shapes and particles
+ * marked `behind`) hides behind the boxes `source` gives, asked every frame
+ * it's drawn (but while the view shakes: see setCovers): it lights the
+ * backdrop round them and their edges, never them. The handle can be stopped
+ * at any time, even after the effects went off or lost their context (which
+ * drop every cover).
+ */
+export function cover(source: CoverSource): Handle {
+  if (!fxActive()) return NOOP;
+  covers.add(source);
+  wake();
+  return {
+    stop() {
+      covers.delete(source);
+    },
+  };
+}
+
+/** The boxes of every cover now, packed for the renderer (null for none). */
+function coverNow(): number[] | null {
+  if (!covers.size) return null;
+  coverBoxes.length = 0;
+  for (const src of covers) {
+    try {
+      for (const { box: r, soft, radii } of src()) {
+        if (!(r.width > 0 && r.height > 0)) continue;
+        coverBoxes.push(r.left, r.top, r.width, r.height, soft ? 1 : 0);
+        for (let i = 0; i < 4; i++) coverBoxes.push(radii?.[i] ?? 0);
+      }
+    } catch (e) {
+      console.warn('FX cover failed', e);
+    }
+  }
+  return coverBoxes;
+}
+
+/** How far the view was shaken when the covers' boxes were last measured. */
+let coverShake = { x: 0, y: 0 };
+
+/**
+ * Hands the renderer the covers' boxes. While the view shakes, the UI moves
+ * only by the shake's offset, so the mask measured before it is moved with
+ * it: measuring the UI again would force a layout every frame (right after
+ * the shake's own write) and draw and upload the mask again each time.
+ */
+function setCovers(r: FxRenderer) {
+  if (covers.size && shake.trauma > 0 && r.hasCover) {
+    r.shiftCover(shake.x - coverShake.x, shake.y - coverShake.y);
+    return;
+  }
+  coverShake = { x: shake.x, y: shake.y };
+  r.setCover(coverNow(), [viewW, viewH]);
 }
 
 /** Runs `fn` after `seconds` (effect time; skipped entirely while effects are off). */
@@ -300,7 +437,8 @@ export function after(seconds: number, fn: () => void) {
 
 // ---------- camera shake ----------
 
-const shake = { trauma: 0, amp: 0, targets: [] as { el: HTMLElement; k: number }[] };
+/** x, y: the offset the view is moved by now (a target's own is k times it). */
+const shake = { trauma: 0, amp: 0, x: 0, y: 0, targets: [] as { el: HTMLElement; k: number }[] };
 
 /** Registers an element that moves with camera shake, `k` times as far. */
 export function shakeTarget(el: HTMLElement, k = 1) {
@@ -320,6 +458,7 @@ export function shakeView(amount: number, px = 7) {
   const was = shake.trauma;
   shake.trauma = Math.min(1, was + amount);
   shake.amp = was > 0.05 ? Math.max(shake.amp, px) : px;
+  if (!renderer) shakenAt = performance.now();
   wake();
 }
 
@@ -329,6 +468,8 @@ export function shaking() {
 }
 
 function applyShake(x: number, y: number) {
+  shake.x = x;
+  shake.y = y;
   for (const t of shake.targets) {
     t.el.style.translate = x || y ? `${(x * t.k).toFixed(2)}px ${(y * t.k).toFixed(2)}px` : '';
   }
@@ -361,7 +502,9 @@ function show(on: boolean) {
 let manualClock: number | null = null;
 
 function wake() {
-  if (!raf && renderer && manualClock === null) {
+  // Not made yet: made now, and then everything asked for so far plays.
+  if (!renderer) hurry();
+  else if (!raf && manualClock === null) {
     last = performance.now();
     raf = requestAnimationFrame(frame);
   }
@@ -390,7 +533,7 @@ function writeShape(i: number, s: LiveShape, t: number) {
   shapeData[o + 8] = c[0] * k;
   shapeData[o + 9] = c[1] * k;
   shapeData[o + 10] = c[2] * k;
-  shapeData[o + 11] = s.page ? 1 : 0;
+  shapeData[o + 11] = (s.page ? 1 : 0) + (s.behind ? BEHIND_UI : 0);
   for (let j = 0; j < 12; j++) shapeData[o + 12 + j] = f.q[j] ?? 0;
 }
 
@@ -458,6 +601,13 @@ function frame(nowMs: number) {
 }
 
 let frameNo = 0;
+/**
+ * The followed elements' own opacities, read once per simulate() pass: shapes
+ * on the same element or on siblings share their ancestors' reads. Nothing in
+ * the pass writes an opacity (the shapes' update callbacks only read the DOM;
+ * a callback that changed an element's opacity would have to clear this).
+ */
+const opacities = new Map<Element, number>();
 
 /** Counts the frames effects are updated in, so values measured once per frame can be shared. */
 export function currentFrame() {
@@ -484,6 +634,7 @@ function simulate(dt: number, nowMs: number, render: boolean): boolean {
   // Soft shapes are written first; thin-line shapes (sigils, orbits) last, and the
   // renderer draws those at full resolution so their strokes stay crisp.
   const visible: [LiveShape, number][] = [];
+  opacities.clear();
   shapes = shapes.filter((s) => {
     s.age += dt;
     if (s.age < 0) return true;
@@ -497,7 +648,7 @@ function simulate(dt: number, nowMs: number, render: boolean): boolean {
       // where it was.
       if (s.at.isConnected) {
         s.box = boxOf(s.at);
-        if (s.followOpacity) s.opacity = opacityOf(s.at);
+        if (s.followOpacity) s.opacity = opacityOf(s.at, opacities);
       } else if (!s.stopped) {
         s.stopped = true;
         s.fade = s.fadeTotal = 0.2;
@@ -508,6 +659,8 @@ function simulate(dt: number, nowMs: number, render: boolean): boolean {
     if (s.f.k > 0) visible.push([s, t]);
     return true;
   });
+  // (Let go of the elements: they may leave the page before the next pass.)
+  opacities.clear();
   let nShapes = 0;
   let nCrisp = 0;
   let shapesCalm = true;
@@ -542,6 +695,7 @@ function simulate(dt: number, nowMs: number, render: boolean): boolean {
   const busy = nParticles > 0 || nShapes > 0 || tasks.length > 0 || shake.trauma > 0 || shapes.length > 0 || pool.count > 0;
   if (!render) return busy;
   if (nParticles > 0 || nShapes > 0) {
+    setCovers(renderer);
     renderer.draw([viewW, viewH], dpr, pool.instances, nParticles, shapeData, nShapes, nCrisp, dialogNow(), silhouette);
     show(true);
   } else {
@@ -564,6 +718,11 @@ function dialogNow(): DialogLight {
  * show an exact moment however slow the machine renders.
  */
 export function fxStep(seconds: number, fps = 60) {
+  // (The renderer finished at once, if it's on its way.)
+  if (!renderer) {
+    if (waiting && canvas) build(canvas);
+    building?.now();
+  }
   if (manualClock === null) {
     cancelAnimationFrame(raf);
     raf = 0;
@@ -604,6 +763,11 @@ function resize() {
 }
 
 function teardown() {
+  waiting?.();
+  waiting = null;
+  forPaint = false;
+  building?.cancel();
+  building = null;
   cancelAnimationFrame(raf);
   raf = 0;
   ro?.disconnect();
@@ -612,18 +776,96 @@ function teardown() {
   pool = null;
   shapes = [];
   tasks = [];
+  queuedAt = null;
+  // (What would have stopped a cover may be among the tasks just dropped, or
+  // never start while the renderer is gone: left up, it would be asked every
+  // frame from now on.)
+  covers.clear();
   shake.trauma = 0;
   applyShake(0, 0);
   for (const l of listeners) l(userOn);
 }
 
-/** Creates the renderer and particle pool on `c` and follows its size. Returns whether WebGL2 works. */
-function setup(c: HTMLCanvasElement): boolean {
-  renderer = FxRenderer.create(c, { maxParticles: 5000, maxShapes: MAX_SHAPES });
-  if (!renderer) return false;
+/** Whether effects would be drawn, once the renderer is made. */
+const wanted = () => userOn && !reduce?.matches;
+
+/**
+ * Gets the overlay on `c` ready to take effects: the particle pool now, the
+ * renderer once the page has painted and is idle (or at once, when an effect
+ * is asked for before then: see hurry), or, while effects are off, once
+ * they're on. The first paint waits for neither its context nor its
+ * shaders: on a first visit (a cold shader cache) those held it up by
+ * seconds, behind the backdrop's own (lib/backdrop.ts). Without WebGL2 (or
+ * where the backdrop was refused a context) nothing is on its way, and
+ * effects are off from the start.
+ */
+function prepare(c: HTMLCanvasElement) {
   pool = new ParticlePool(coarse?.matches ? 2000 : 5000);
   quality = coarse?.matches ? 1 : 0;
   probe = null;
+  waiting?.();
+  waiting = null;
+  if (typeof WebGL2RenderingContext === 'undefined' || webgl2Refused()) return;
+  // Two frames: the first has been painted (and the backdrop's first frame
+  // with it, which comes before it); then an idle moment (and, while
+  // effects are off, until they're on: see hurry).
+  let raf2 = 0;
+  let stopIdle: (() => void) | null = null;
+  const idle = () => {
+    if (wanted()) soon(c);
+  };
+  const raf1 = requestAnimationFrame(() => {
+    raf2 = requestAnimationFrame(() => (stopIdle = whenIdle(idle, 1000)));
+  });
+  forPaint = true;
+  waiting = () => {
+    cancelAnimationFrame(raf1);
+    cancelAnimationFrame(raf2);
+    stopIdle?.();
+  };
+}
+
+/** The renderer is wanted now (an effect was asked for, or effects came on): it's made as soon as it can be, if it wasn't on its way already. */
+function hurry() {
+  if (waiting && forPaint && canvas && wanted()) soon(canvas);
+}
+
+/**
+ * Makes the renderer on `c` once the GPU has caught up with the backdrop
+ * (whenGpuCaughtUp): a new context waits on the GPU process, and would
+ * otherwise wait behind a backdrop frame.
+ */
+function soon(c: HTMLCanvasElement) {
+  waiting?.();
+  waiting = null;
+  forPaint = false;
+  let ran = false;
+  const cancel = whenGpuCaughtUp(() => {
+    ran = true;
+    build(c);
+  });
+  if (!ran) waiting = cancel;
+}
+
+/** Starts making the renderer on `c`, its shaders compiling without blocking the page (FxRenderer.start). */
+function build(c: HTMLCanvasElement) {
+  waiting?.();
+  waiting = null;
+  forPaint = false;
+  if (renderer || building) return;
+  building = FxRenderer.start(c, { maxParticles: 5000, maxShapes: MAX_SHAPES }, (r) => {
+    building = null;
+    if (r) setup(c, r);
+    else teardown();
+  });
+  // No WebGL2: effects are off (and whatever waited is dropped).
+  if (!building) teardown();
+}
+
+/** Takes the renderer made on `c` and follows its size; whatever waited for it plays. */
+function setup(c: HTMLCanvasElement, r: FxRenderer) {
+  renderer = r;
+  pool ??= new ParticlePool(coarse?.matches ? 2000 : 5000);
   ro?.disconnect();
   ro = new ResizeObserver(([entry]) => {
     const box = entry.devicePixelContentBoxSize?.[0];
@@ -637,19 +879,34 @@ function setup(c: HTMLCanvasElement): boolean {
   } catch {
     ro.observe(c);
   }
+  // What was asked for meanwhile goes on from where it would be by now
+  // (see waited): what has run its course is dropped, and so is what was
+  // stopped, or whose element left the page, before it ever showed.
+  if (queuedAt !== null) {
+    const late = (performance.now() - queuedAt) / 1000;
+    queuedAt = null;
+    shapes = shapes.filter((s) => {
+      s.age += late;
+      return !s.stopped && !detached(s.at) && !(s.age >= s.life);
+    });
+    for (const t of tasks) t.age += late;
+    for (let left = late; left > 0 && pool.count; left -= 1 / 15) pool.step(Math.min(left, 1 / 15));
+    shake.trauma = Math.max(0, shake.trauma - 1.6 * (performance.now() - shakenAt) / 1000);
+  }
   resize();
   shown = true;
   show(false);
   for (const l of listeners) l(userOn);
-  return true;
+  // (resize() woke the loop: anything asked for meanwhile plays from now.)
 }
 
 /** Starts the overlay on `c`. Returns a cleanup function. */
 export function startFx(c: HTMLCanvasElement): () => void {
   canvas = c;
-  if (!setup(c)) return () => {};
+  prepare(c);
   const onMotion = () => {
     if (!fxActive()) clearAll();
+    else hurry();
     for (const l of listeners) l(userOn);
   };
   reduce?.addEventListener('change', onMotion);
@@ -662,7 +919,10 @@ export function startFx(c: HTMLCanvasElement): () => void {
     teardown();
   };
   const onRestored = () => {
-    if (!renderer) setup(c);
+    if (!renderer && !coming()) {
+      prepare(c);
+      hurry();
+    }
   };
   c.addEventListener('webglcontextlost', onLost);
   c.addEventListener('webglcontextrestored', onRestored);
@@ -671,6 +931,9 @@ export function startFx(c: HTMLCanvasElement): () => void {
     c.removeEventListener('webglcontextlost', onLost);
     c.removeEventListener('webglcontextrestored', onRestored);
     renderer?.destroy();
+    // (Its context is made before its shaders are: let go too, mid-build.)
+    const half = !renderer && !!building;
     teardown();
+    if (half) c.getContext('webgl2')?.getExtension('WEBGL_lose_context')?.loseContext();
   };
 }

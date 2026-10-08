@@ -18,6 +18,7 @@ import {
   type Encounter,
 } from '../src/lib/codex.ts';
 import { codexStats, median } from '../src/lib/codexStats.ts';
+import { storeKey } from '../src/lib/storage.ts';
 
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
 const fakes: Record<string, string[]> = JSON.parse(readFileSync(new URL('../src/data/fakes.json', import.meta.url), 'utf8'));
@@ -25,17 +26,24 @@ const categories = [...new Set(items.map((it) => it.category))].sort();
 
 const store = new Map<string, string>();
 let full = false;
+/** A key no write to fits (storage too full for it). */
+let refuse: string | null = null;
 (globalThis as { localStorage?: unknown }).localStorage = {
   getItem: (k: string) => store.get(k) ?? null,
   setItem: (k: string, v: string) => {
-    if (full && v.length > 2000) throw new Error('QuotaExceededError');
+    if ((full && v.length > 2000) || k === refuse) throw new Error('QuotaExceededError');
     store.set(k, String(v));
   },
   removeItem: (k: string) => void store.delete(k),
+  key: (i: number) => [...store.keys()][i] ?? null,
+  get length() {
+    return store.size;
+  },
 };
 beforeEach(() => {
   store.clear();
   full = false;
+  refuse = null;
 });
 
 const right = (q: Question) => q.options.indexOf(q.itemId);
@@ -269,7 +277,8 @@ test('storage: records, reloads, resets, and makes room when full', () => {
 
   full = false;
   resetCodex();
-  assert.equal(store.has(CODEX_KEY), false);
+  assert.deepEqual(loadCodex(), emptyCodex());
+  assert.equal(store.get(CODEX_KEY), serializeCodex(emptyCodex()), 'an empty codex in its place');
 });
 
 test('median', () => {
@@ -327,4 +336,149 @@ test('stats: completion, categories, nemeses and confusions', () => {
     ],
   );
   assert.equal(RECENT, 100);
+});
+
+test('Delve answers are filed under the preset their depth plays like', () => {
+  let { engine, s } = setup(['Ash'], 'delve');
+  s = { ...s, round: 31 };
+  s = engine.apply(s, { type: 'pick', category: s.offered[0] }, 'p0');
+  s = engine.apply(s, { type: 'clock', askedAt: s.question!.askedAt }, null);
+  s = engine.apply(s, { type: 'answer', index: right(s.question!), askedAt: s.question!.askedAt }, 'p0');
+  const e = encounterAt(s, 'p0', false)!;
+  assert.equal(e.difficulty, 'eternal', 'not the room\'s leftover Cruel');
+  assert.equal(e.answer!.ok, true);
+  assert.deepEqual(e.delve, { depth: 31, run: s.delve!.startedAt, who: 'p0' }, 'its depth and run, and whose it was, for the Delve page');
+});
+
+// ---- Delve together ----------------------------------------------------------
+
+/** A co-op Delve run online of p0 (the host), p1 and p2, its first question asked and its clock running. */
+function coop() {
+  const engine = new Engine(items, { rng: seeded(3), now: () => 1_000_000, fakes });
+  let s: GameState = createGame('p0', { targetScore: 10, timer: 16, difficulty: 'merciless', mode: 'delve', public: false, locked: false });
+  for (const id of ['p0', 'p1', 'p2']) s = engine.apply(s, { type: 'join', playerId: id, name: `Delver ${id}` }, id);
+  s = engine.apply(s, { type: 'start' }, 'p0');
+  s = structuredClone(s);
+  s.delve!.finds = [];
+  s = engine.apply(s, { type: 'pick', category: s.offered[0] }, null);
+  s = engine.apply(s, { type: 'clock', askedAt: s.question!.askedAt }, null);
+  return { engine, s };
+}
+
+test('Delve together: right for whoever cleared it, wrong for whoever struck, seen for the rest', () => {
+  let { engine, s } = coop();
+  const q = s.question!;
+  s = engine.apply(s, { type: 'answer', index: wrongIdx(q), askedAt: q.askedAt }, 'p1');
+  s = engine.apply(s, { type: 'answer', index: right(q), askedAt: q.askedAt }, 'p2');
+  assert.equal(s.phase, 'reveal');
+  const view = publicView(s);
+  const won = encounterAt(view, 'p2', false, 800)!;
+  assert.deepEqual([won.answer!.ok, won.answer!.ms, won.delve!.team, won.delve!.lost], [true, 800, true, undefined]);
+  const struck = encounterAt(view, 'p1', false)!;
+  assert.deepEqual([struck.answer!.ok, struck.answer!.pickedId, struck.delve!.lost], [false, q.options[wrongIdx(q)], { lives: 1, wards: 0 }]);
+  assert.equal(encounterAt(view, 'p0', false)!.answer, undefined, 'cleared by a teammate first: only seen');
+  // Into the codex: the miss costs p1 a life, logged as an answer together.
+  const c = record(emptyCodex(), struck);
+  assert.deepEqual([c.log[0].team, c.log[0].lives, c.items[q.itemId].delve!.n], [true, 1, 1]);
+  assert.deepEqual(parseCodex(serializeCodex(c)), c);
+  // The turn order means nothing together: the first standing is not the one answering.
+  assert.equal(encounterAt(view, null, true)!.answer, undefined);
+});
+
+test('Delve together: a ward that takes a struck answer\'s loss, and the time-out for whoever never answered', () => {
+  let { engine, s } = coop();
+  s = structuredClone(s);
+  s.delve!.inventory = { p1: { wards: 1, flares: 0, dynamite: 0, shards: 0 } };
+  const q = s.question!;
+  s = engine.apply(s, { type: 'answer', index: wrongIdx(q), askedAt: q.askedAt }, 'p1');
+  const later = new Engine(items, { rng: seeded(3), now: () => q.deadline! + 1000, fakes });
+  s = later.apply(s, { type: 'answer', index: null }, null);
+  assert.equal(s.phase, 'reveal');
+  const p1 = encounterAt(s, 'p1', false)!;
+  assert.deepEqual([p1.answer!.ok, p1.delve!.lost], [false, { lives: 0, wards: 1 }]);
+  assert.equal(record(emptyCodex(), p1).log[0].warded, true, 'a ward took it whole: no life');
+  const p0 = encounterAt(s, 'p0', false)!;
+  assert.deepEqual([p0.answer!.ok, p0.answer!.pickedId, p0.delve!.lost], [false, null, { lives: 1, wards: 0 }]);
+});
+
+test('a stored codex this build can\'t read is never written over', () => {
+  const newer = JSON.stringify({ v: 9, items: {} });
+  store.set(CODEX_KEY, newer);
+  recordEncounter(enc(1, a.id, ok()));
+  assert.equal(store.get(CODEX_KEY), newer, 'a newer build\'s, left alone');
+  store.set(CODEX_KEY, 'garbage');
+  recordEncounter(enc(1, a.id, ok()));
+  assert.equal(loadCodex().items[a.id].seen, 1);
+  assert.deepEqual(
+    [...store.entries()].filter(([k]) => k.startsWith(`${CODEX_KEY}.unread`)).map(([, v]) => v),
+    ['garbage'],
+    'kept aside',
+  );
+});
+
+// ---- where it is kept ---------------------------------------------------------
+
+const LEGACY_KEY = storeKey('codex');
+const delveEnc = (at: number, id: string, okay: boolean, more: Partial<NonNullable<Encounter['delve']>> = {}): Encounter => ({
+  ...enc(at, id, okay ? ok() : { ok: false, pickedId: null, pickedLabel: null }),
+  delve: { depth: 4, run: 99, ...more },
+});
+
+test('the codex lives under a new name: started from the old one, which is never written again', () => {
+  assert.notEqual(CODEX_KEY, LEGACY_KEY);
+  // What a build from before the Delve fields kept.
+  const old = serializeCodex(record(emptyCodex(), enc(1, a.id, ok())));
+  store.set(LEGACY_KEY, old);
+  assert.equal(loadCodex().items[a.id].seen, 1, 'read from the old name while the new one is missing');
+  recordEncounter(delveEnc(2, b.id, false));
+  assert.equal(store.get(LEGACY_KEY), old, 'the old name left as it was');
+  const now = loadCodex();
+  assert.deepEqual([now.items[a.id].seen, now.items[b.id].delve?.n, now.byDepth[4]], [1, 1, { n: 1, ok: 0 }], 'the old codex, and the Delve answer, under the new name');
+  // An older build still open in a tab records an answer: it reads and writes the old name only.
+  store.set(LEGACY_KEY, serializeCodex(record(emptyCodex(), enc(3, a.id, ok()))));
+  recordEncounter(delveEnc(4, a.id, true));
+  const after = loadCodex();
+  assert.deepEqual([after.items[b.id].delve?.n, after.log.map((l) => l.depth)], [1, [undefined, 4, 4]], 'the Delve fields all still there');
+});
+
+test('an unreadable codex under the old name is left alone, and the new one starts empty', () => {
+  store.set(LEGACY_KEY, 'garbage');
+  assert.deepEqual(loadCodex(), emptyCodex());
+  recordEncounter(enc(1, a.id, ok()));
+  assert.equal(store.get(LEGACY_KEY), 'garbage');
+  assert.equal(loadCodex().items[a.id].seen, 1);
+  assert.equal([...store.keys()].some((k) => k.includes('.unread')), false, 'nothing to keep aside: it was never in the way');
+});
+
+test('one copy kept aside however often storage is too full to write', () => {
+  store.set(CODEX_KEY, '{"v":1,"items":'); // damaged
+  refuse = CODEX_KEY;
+  for (let i = 0; i < 5; i++) recordEncounter(enc(1000 + i, items[200 + i].id, ok()));
+  refuse = null;
+  assert.equal(store.get(CODEX_KEY), '{"v":1,"items":', 'nothing recorded');
+  assert.deepEqual([...store.keys()].filter((k) => k.includes('.unread')), [`${CODEX_KEY}.unread`], 'one copy, not one a try');
+  // A copy already kept is never written over by a later unreadable one.
+  store.set(CODEX_KEY, 'other garbage');
+  recordEncounter(enc(2000, a.id, ok()));
+  assert.equal(store.get(`${CODEX_KEY}.unread`), '{"v":1,"items":');
+  assert.equal(loadCodex().items[a.id].seen, 1, 'and the codex goes on');
+});
+
+test('reset erases the codex, the old name\'s and the copies kept aside, and never takes up the old name again', () => {
+  store.set(LEGACY_KEY, serializeCodex(record(emptyCodex(), enc(1, a.id, ok()))));
+  store.set(`${CODEX_KEY}.unread`, 'x');
+  store.set(`${LEGACY_KEY}.unread.1700000000000`, 'y'); // as builds before the slot kept them
+  store.set(storeKey('codex.unreadable-not-ours'), 'z');
+  store.set('poe2trivia.beta.codex.unread', 'the beta\'s');
+  resetCodex();
+  assert.deepEqual([...store.keys()].sort(), [CODEX_KEY, storeKey('codex.unreadable-not-ours'), 'poe2trivia.beta.codex.unread'].sort());
+  store.set(LEGACY_KEY, serializeCodex(record(emptyCodex(), enc(2, a.id, ok()))));
+  assert.deepEqual(loadCodex(), emptyCodex(), 'an older tab writing the old name again changes nothing');
+});
+
+test('two players of one browser in one room: each Delve answer says whose it was', () => {
+  let x = record(emptyCodex(), delveEnc(1, a.id, false, { who: 'p0' }));
+  x = record(x, delveEnc(2, b.id, false, { who: 'p1' }));
+  x = record(x, delveEnc(3, c.id, false));
+  assert.deepEqual(parseCodex(serializeCodex(x))!.log.map((l) => l.who), ['p0', 'p1', undefined]);
 });
