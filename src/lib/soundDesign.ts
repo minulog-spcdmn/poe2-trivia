@@ -374,16 +374,14 @@ export const MOMENTS: Record<Sfx, Moment> = {
       { file: 'burn-fuse', gain: -24, rate: 1, delay: 700, hp: 2500, lp: 13000, send: 0.35 },
     ],
   },
-  // A stick of dynamite: its fuse fizzing for a breath (the sparkler's fuse,
-  // quicker and brighter, with a spit of sparkler over it)…
+  // A stick of dynamite: its fuse burning down over the clock's last
+  // seconds, a black-powder fuse sizzling and spitting (held for the fuse,
+  // then cut as it goes off)…
   fuse: {
     soften: 4,
-    varyPitch: 0.04,
+    varyPitch: 0.03,
     varyGain: 1,
-    layers: [
-      { file: 'burn-fuse', gain: -27, rate: 1.2, delay: 0, hp: 380, lp: 14000, send: 0.25 },
-      { file: 'burn-sparkler', gain: -35, rate: 1.35, delay: 90, hp: 900, lp: 15000, send: 0.2 },
-    ],
+    layers: [{ file: 'fuse-burn', gain: -27, rate: 1, delay: 0, hp: 700, lp: 15000, send: 0.25 }],
   },
   // An Azurite Vein caves in, for two losses at once (in place of a lost
   // life's sound, twice): the generated collapse (CAVE_IN), with the gate

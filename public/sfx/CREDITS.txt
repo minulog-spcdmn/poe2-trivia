@@ -61,6 +61,8 @@ How they are layered and filtered is set in src/lib/soundDesign.ts.
                        by soundofsong, https://freesound.org/s/650574/
   burn-fuse.mp3        sparkler_fuse_nm.wav
                        by Alex_hears_things, https://freesound.org/s/316682/
+  fuse-burn.mp3        Match Sizzle 01 (the dynamite's fuse)
+                       by squareal, https://freesound.org/s/237402/
   burn-sparkler.mp3    oneSparkler.flac
                        by RytmenPinnen, https://freesound.org/s/102264/
   click-1.mp3          Perc_Chair_lo
