@@ -786,8 +786,9 @@
     fill: color-mix(in srgb, var(--sp) 18%, var(--bg));
     stroke: none;
   }
+  /* The mouth's dark, deeper than the ring's ground, so the cavity under the tail reads as an opening. */
   .serpent .sp-mouth {
-    fill: var(--bg);
+    fill: #000;
     stroke: none;
   }
   /* Line weights that stay crisp at 1x while it turns (nothing much under half a pixel). */
