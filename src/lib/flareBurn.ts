@@ -10,14 +10,17 @@
 // - The burning (flareBurning, from the clock: TimerRing.svelte). While the
 //   added seconds run, the clock burns like a road flare: a red glow round
 //   its ring flickering, its tip (the end of the ring, burning down) a hot
-//   spot sputtering sparks, and a faint red light flickering at the very
-//   edges of the screen, never reaching the question or its answers. It all
-//   dies down as the seconds run out, and goes out as the question ends.
+//   spot sputtering sparks. And the player has lit a flare: its light blooms
+//   out from the middle of the screen, flickering like a live flame, and the
+//   dark seeps back in from the edges as the seconds run out, the light
+//   shrinking before it (behind the question and its answers, and over them
+//   only a faint wash that leaves them as readable as ever). It all dies
+//   down with the seconds, and goes out as the question ends.
 //
 // Only transform and opacity move, a handful of pieces each painted once;
 // the clock's box is measured once (and again on a resize). Holding still
 // (reduced motion, or the effects off) it is a calm glow: no streak, no
-// sparks, no flicker.
+// sparks, no flicker, the light in the middle dimming where it is.
 
 import { fxActive, type Point } from './fx/core';
 import { flareBurning as fxBurning, flareStruck, type Ring } from './fx/flare';
@@ -124,6 +127,25 @@ function flicker(n: number, lo: number): Keyframe[] {
   }
   frames.push({ ...frames[0] });
   return frames;
+}
+
+/**
+ * A live flame's light, in `n` steps: its brightness and size wavering, now
+ * and then sputtering low; and with it, the edge of the dark round it
+ * (pushed out as it flares, drawn in as it dips).
+ */
+function flame(n: number): [Keyframe[], Keyframe[]] {
+  const glow: Keyframe[] = [];
+  const edge: Keyframe[] = [];
+  for (let i = 0; i < n; i++) {
+    const dip = Math.random() < 0.12;
+    const f = dip ? rand(0.15, 0.35) : rand(0.55, 1);
+    glow.push({ opacity: (0.6 + 0.4 * f).toFixed(3), transform: `scale(${(0.95 + 0.07 * f).toFixed(3)})` });
+    edge.push({ transform: `scale(${(0.975 + 0.04 * f).toFixed(3)})` });
+  }
+  glow.push({ ...glow[0] });
+  edge.push({ ...edge[0] });
+  return [glow, edge];
 }
 
 /** A box on screen, if it is on the page and has one. */
@@ -376,6 +398,9 @@ export function flareBurning(timer: HTMLElement): FlareBurn {
   const resized = () => {
     size = timer.offsetWidth || size;
     box = null;
+    W = innerWidth;
+    H = innerHeight;
+    lightUp();
   };
   const scrolled = () => (box = null);
   addEventListener('resize', resized);
@@ -414,21 +439,86 @@ export function flareBurning(timer: HTMLElement): FlareBurn {
     background: `radial-gradient(circle closest-side, rgba(${HOT}, 1) 0%, rgba(${HOT}, 0.9) 18%, rgba(${PINK}, 0.75) 38%, rgba(${RED}, 0.3) 66%, rgba(${RED}, 0) 100%)`,
   });
 
-  // ---- at the edges of the screen: its light, faintly ----
-  // Over the UI as the dark of the clock is (Darkness.svelte), and as shallow:
-  // a few px of red light along the edges, never reaching the question.
-  const edge = document.createElement('div');
-  edge.className = 'flare-edge';
-  edge.setAttribute('aria-hidden', 'true');
-  edge.dataset.behindDialog = 'dim';
-  Object.assign(edge.style, { position: 'fixed', inset: '0', zIndex: '11', pointerEvents: 'none', opacity: '0', willChange: 'opacity', contain: 'strict' });
-  const light = piece(edge, {
-    inset: '0',
-    width: '100%',
-    height: '100%',
-    boxShadow: `inset 0 0 clamp(18px, 5vmin, 48px) 0 rgba(${RED}, 0.75), inset 0 0 clamp(5px, 1.4vmin, 12px) 0 rgba(${PINK}, 0.55)`,
-  });
-  document.body.append(edge);
+  // ---- the screen: the flare's light, in the middle ----
+  // As the flare catches its light blooms out from the middle of the
+  // screen, warm and flickering like a live flame, and as the seconds run
+  // out the dark seeps back in from the edges, the light shrinking before
+  // it. Behind the UI, over the backdrop, the light and the dark; over the
+  // UI only a faint wash of the light, which leaves the question and its
+  // answers as readable as ever (on a phone, where the panels fill the
+  // screen, it is what shows of the light). Each piece is a small soft
+  // light scaled up to the screen (nothing in it to lose), moved and faded
+  // by the compositor.
+  const layer = (z: string) => {
+    const el = document.createElement('div');
+    el.className = 'flare-light';
+    el.setAttribute('aria-hidden', 'true');
+    el.dataset.behindDialog = 'dim';
+    Object.assign(el.style, { position: 'fixed', inset: '0', zIndex: z, pointerEvents: 'none', overflow: 'hidden', contain: 'strict', opacity: '0', willChange: 'opacity' });
+    return el;
+  };
+  // After the backdrop (Background.svelte) and under the UI (App.svelte's shell, 1).
+  const scene = layer('0');
+  // Over the UI, as the dark at its edges is (Darkness.svelte), under toasts and dialogs.
+  const veil = layer('11');
+  /** The pieces' size before they are scaled up to the screen. */
+  const S = 240;
+  /** A piece centred on the middle of the screen, scaled about it. */
+  const centred = (parent: HTMLElement) => piece(parent, { left: '50%', top: '50%', width: '0', height: '0' });
+  /** A square of soft light or dark, `S` px, centred on its parent. */
+  const soft = (parent: HTMLElement, background: string) =>
+    piece(parent, { left: px(-S / 2), top: px(-S / 2), width: px(S), height: px(S), borderRadius: '50%', background });
+  // The light: hot and pale in the middle, the flare's red as it spreads.
+  const poolAt = centred(scene);
+  const poolLit = piece(poolAt, { width: '0', height: '0' });
+  const pool = soft(
+    poolLit,
+    `radial-gradient(circle closest-side, rgba(${HOT}, 0.42) 0%, rgba(${PINK}, 0.32) 14%, rgba(${PINK}, 0.18) 30%, rgba(${RED}, 0.1) 50%, rgba(${RED}, 0.035) 72%, rgba(${RED}, 0) 92%)`,
+  );
+  // The dark round it: clear in the middle, deepening out to the edges (and
+  // past its circle, to the corners). Stretched to the screen's shape.
+  const DARK = '4, 3, 2';
+  const darkAt = centred(scene);
+  const darkFlick = piece(darkAt, { width: '0', height: '0' });
+  const dark = soft(
+    darkFlick,
+    `radial-gradient(circle closest-side, rgba(${DARK}, 0) 40%, rgba(${DARK}, 0.22) 50%, rgba(${DARK}, 0.55) 62%, rgba(${DARK}, 0.8) 80%, rgba(${DARK}, 0.88) 100%)`,
+  );
+  dark.style.borderRadius = '0';
+  // The wash over the UI: the same light, faint.
+  const washAt = centred(veil);
+  const washLit = piece(washAt, { width: '0', height: '0' });
+  const wash = soft(
+    washLit,
+    `radial-gradient(circle closest-side, rgba(${HOT}, 0.19) 0%, rgba(${PINK}, 0.14) 16%, rgba(${PINK}, 0.075) 38%, rgba(${RED}, 0.03) 62%, rgba(${RED}, 0) 88%)`,
+  );
+  document.body.append(scene, veil);
+  // The screen's size, for the pieces' scale (and again on a resize).
+  let W = innerWidth;
+  let H = innerHeight;
+  /**
+   * The light shrinks and dims as the seconds run out, and the dark closes
+   * in round it: from past the corners (the screen all lit) to a pool of
+   * light about the middle. Holding still, nothing moves: the light dims
+   * and the dark deepens where they are, each easing to it.
+   */
+  const lightUp = () => {
+    const k = Math.max(W, H) / S;
+    if (calm) {
+      poolAt.style.transform = washAt.style.transform = `scale(${(1.1 * k).toFixed(3)})`;
+      poolAt.style.opacity = washAt.style.opacity = (0.3 + 0.45 * level).toFixed(3);
+      darkAt.style.transform = `scale(${((2 * W) / S).toFixed(3)}, ${((2 * H) / S).toFixed(3)})`;
+      darkAt.style.opacity = (0.75 * (1 - level)).toFixed(3);
+    } else {
+      poolAt.style.transform = `scale(${(k * (0.6 + 0.65 * level)).toFixed(3)})`;
+      poolAt.style.opacity = (0.55 + 0.45 * level).toFixed(3);
+      washAt.style.transform = `scale(${(k * (0.45 + 0.75 * level)).toFixed(3)})`;
+      washAt.style.opacity = (0.45 + 0.55 * level).toFixed(3);
+      const d = 0.68 + 1.12 * level;
+      darkAt.style.transform = `scale(${((2 * W * d) / S).toFixed(3)}, ${((2 * H * d) / S).toFixed(3)})`;
+    }
+  };
+  if (calm) poolAt.style.transition = washAt.style.transition = darkAt.style.transition = 'opacity 0.8s ease';
 
   // ---- lit ----
   const fadeIn = (el: HTMLElement, to: number, ms: number) => {
@@ -437,11 +527,38 @@ export function flareBurning(timer: HTMLElement): FlareBurn {
   };
   fadeIn(under, 1, 260);
   fadeIn(over, 1, 200);
-  fadeIn(edge, 1, 500);
+  fadeIn(scene, 1, calm ? 600 : 160);
+  fadeIn(veil, 1, calm ? 600 : 160);
   if (!calm) {
     // A road flare's light: never quite steady, now and then sputtering low.
     anim(halo, flicker(18, 0.6), { duration: 1500, iterations: Infinity, easing: 'linear' });
-    anim(light, flicker(14, 0.45), { duration: 1700, iterations: Infinity, easing: 'linear' });
+    // In the middle of the screen it blooms out as the flare catches, a
+    // white-hot flash at its heart; then it flickers as a flame does, the
+    // edge of the dark breathing with it.
+    for (const el of [poolLit, washLit])
+      anim(
+        el,
+        [
+          { transform: 'scale(0.06)', opacity: 0 },
+          { transform: 'scale(1.18)', opacity: 1, offset: 0.32 },
+          { transform: 'scale(1)', opacity: 1 },
+        ],
+        { duration: 1100, easing: 'cubic-bezier(0.2, 0.7, 0.3, 1)' },
+      );
+    const heart = soft(centred(veil), `radial-gradient(circle closest-side, rgba(${HOT}, 0.28) 0%, rgba(${PINK}, 0.16) 30%, rgba(${RED}, 0.05) 60%, rgba(${RED}, 0) 100%)`);
+    anim(
+      heart,
+      [
+        { transform: 'scale(0.2)', opacity: 0 },
+        { transform: 'scale(1.6)', opacity: 1, offset: 0.2 },
+        { transform: 'scale(3.2)', opacity: 0 },
+      ],
+      { duration: 900, easing: 'ease-out' },
+    ).onfinish = () => heart.parentElement?.remove();
+    const [glowFrames, edgeFrames] = flame(20);
+    anim(pool, glowFrames, { duration: 1800, iterations: Infinity, easing: 'linear' });
+    anim(wash, glowFrames, { duration: 1800, iterations: Infinity, easing: 'linear' });
+    anim(darkFlick, edgeFrames, { duration: 1800, iterations: Infinity, easing: 'linear' });
     anim(
       tip,
       [
@@ -512,11 +629,11 @@ export function flareBurning(timer: HTMLElement): FlareBurn {
     level = Math.min(1, Math.max(0, l));
     head = Math.min(1, Math.max(0, h));
     // Its light dies down with the seconds left (in steps, holding still).
-    if (Math.abs(level - shownLevel) > (calm ? 0.1 : 0.015)) {
+    if (Math.abs(level - shownLevel) > (calm ? 0.1 : 0.004)) {
       shownLevel = level;
       under.style.opacity = (0.35 + 0.65 * level).toFixed(3);
       over.style.opacity = (0.5 + 0.5 * level).toFixed(3);
-      edge.style.opacity = (calm ? 0.6 * level : level ** 0.8).toFixed(3);
+      lightUp();
     }
     if (Math.abs(head - shownHead) > 0.0008) {
       shownHead = head;
@@ -535,7 +652,7 @@ export function flareBurning(timer: HTMLElement): FlareBurn {
       timers.clear();
       removeEventListener('resize', resized);
       removeEventListener('scroll', scrolled, { capture: true });
-      for (const el of [under, over, edge]) {
+      for (const el of [under, over, scene, veil]) {
         const from = Number(el.style.opacity || 0);
         const out = el.animate([{ opacity: from }, { opacity: 0 }], { duration: calm ? 200 : 450, easing: 'ease-out', fill: 'forwards' });
         out.onfinish = () => el.remove();

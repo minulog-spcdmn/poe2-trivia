@@ -2,7 +2,8 @@
 // question. The effects overlay's part of it: the fire and light. The page's
 // own part (lib/flareBurn.ts), which calls these, carries the moment by
 // itself: the flare flaring in the player's entry, the streak to the clock,
-// the clock burning while the added seconds run, the red light at the edges.
+// the clock burning while the added seconds run, the flare's light in the
+// middle of the screen with the dark seeping back in round it.
 //
 // Everything here is placed at points the page measured (never an element,
 // which the overlay would measure again every frame), in a road flare's
