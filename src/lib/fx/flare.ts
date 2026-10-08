@@ -8,10 +8,10 @@
 // which the overlay would measure again every frame), in a road flare's
 // red: the Flare Cache's crimson and its pink-white heart.
 
-import { after, budget, cover, particle, shape, task, type CoverSource, type Handle, type Point, type Vec3 } from './core';
+import { after, budget, cover, isLive, particle, shape, task, type CoverSource, type Handle, type Point, type Vec3 } from './core';
 import { C, emitter, flash, rand, ring, sparks } from './effects';
 import { FIND_COLORS } from './moments';
-import { Shape } from './particles';
+import { Shape, type ParticleSpec } from './particles';
 import { ShapeType } from './renderer';
 import { holdLight, light, pulseMood } from '../lights';
 import { cornerPx } from '../corner';
@@ -110,16 +110,32 @@ export type FlareLit = {
  * The UI hides all of it, but for its edges. Stop the handle when it goes out.
  */
 export function flareLit(o: FlareLit): Handle {
-  const W = innerWidth;
-  const H = innerHeight;
-  const big = Math.max(W, H);
-  const small = Math.min(W, H);
-  // The flame's heart and height, for the screen.
-  const R = Math.max(7, Math.min(13, small * 0.013));
-  const tall = R * 9;
+  // Its size, for the screen: measured again as the screen turns or resizes.
+  let big = 0;
+  let small = 0;
+  /** The flame's heart and height. */
+  let R = 0;
+  let tall = 0;
+  /** How much farther its light reaches on a tall, narrow screen (a phone; see far below). */
+  let narrow = 1;
+  const measure = () => {
+    big = Math.max(innerWidth, innerHeight);
+    small = Math.max(1, Math.min(innerWidth, innerHeight));
+    R = Math.max(7, Math.min(13, small * 0.013));
+    tall = R * 9;
+    narrow = Math.min(1.5, Math.max(1, big / small / 1.6));
+  };
+  measure();
+  addEventListener('resize', measure);
   const where = () => o.at();
 
   const covered = cover(o.covers);
+  /** Seconds until no spark, slag or smoke it has thrown can still be alive (they hide behind the UI too). */
+  let airborne = 0;
+  const emit = (p: ParticleSpec) => {
+    particle(p);
+    airborne = Math.max(airborne, p.life);
+  };
 
   // ---- how hard it burns, moment to moment ----
   // A road flare's light jumps about: it settles on a new strength every
@@ -151,6 +167,7 @@ export function flareLit(o: FlareLit): Handle {
     }
     if (dip > 0) dip -= dt;
     catching = Math.max(0, catching - dt * 2.2);
+    airborne -= dt;
     const target = base * (dip > 0 ? dipTo : want) + catching * catching * 0.9;
     heat += (target - heat) * (1 - Math.exp(-dt * 30));
     return true;
@@ -177,7 +194,7 @@ export function flareLit(o: FlareLit): Handle {
     },
   });
   // Its glow, close about it, and the light it throws far round it.
-  const glow = (radius: number, color: Vec3, k: number) =>
+  const glow = (radius: () => number, color: Vec3, k: () => number) =>
     shape({
       type: ShapeType.Flash,
       at: { x: 0, y: 0 },
@@ -188,18 +205,17 @@ export function flareLit(o: FlareLit): Handle {
         const p = where();
         b.x = p.x;
         b.y = p.y;
-        const r = radius * (0.8 + 0.2 * Math.min(heat, 1.2)) * (1 - 0.3 * gut);
+        const r = radius() * (0.8 + 0.2 * Math.min(heat, 1.2)) * (1 - 0.3 * gut);
         f.hw = f.hh = r * 2.2;
         f.q[0] = r;
-        f.k = k * heat * (1 - 0.4 * gut);
+        f.k = k() * heat * (1 - 0.4 * gut);
       },
     });
-  const near = glow(R * 7, MAGENTA, 0.45);
+  const near = glow(() => R * 7, MAGENTA, () => 0.45);
   // Far enough to reach past the panels in front of it, lighting the
   // backdrop round them and leaving them backlit; stronger on a tall, narrow
   // screen (a phone), where the question's picture hides all the middle.
-  const narrow = Math.min(1.5, Math.max(1, big / small / 1.6));
-  const far = glow(big * 0.3 * Math.sqrt(narrow), CRIMSON, 0.085 * narrow);
+  const far = glow(() => big * 0.3 * Math.sqrt(narrow), CRIMSON, () => 0.085 * narrow);
   // The box it burns behind, backlit: its light welling up round the box's
   // outline, licking upward like fire (hidden over the box itself, but for its rim).
   let corner = '0';
@@ -238,7 +254,7 @@ export function flareLit(o: FlareLit): Handle {
   // The backdrop's own light, behind everything, wavering with it.
   const lit = holdLight(o.light?.() ?? where(), [1, 0.26, 0.48], big * 0.55);
   const lightUp = task(() => {
-    lit.set(0.85 * heat * (1 - 0.5 * gut));
+    lit.set(0.85 * heat * (1 - 0.5 * gut), big * 0.55);
     return true;
   });
 
@@ -248,6 +264,8 @@ export function flareLit(o: FlareLit): Handle {
   ring(at0, { radius: small * 0.45, from: R * 2, thickness: 10, life: 0.75, color: MAGENTA, breakup: 0.55, fill: 0.1, intensity: 0.6, behind: true });
   burst(at0, 46, [260, 760]);
   pulseMood(0.1, GLOW);
+  // (The ring's life: it hides behind the UI too.)
+  airborne = Math.max(airborne, 0.75);
 
   // ---- what it spits and sheds ----
   /** Sparks spat out of the flame, mostly up and out, arcing over and falling. */
@@ -258,7 +276,7 @@ export function flareLit(o: FlareLit): Handle {
       const a = wide ? rand(-Math.PI, Math.PI) : -Math.PI / 2 + rand(-1.35, 1.35);
       const v = rand(speed[0], speed[1]);
       const c = Math.random() < 0.35 ? HEART : Math.random() < 0.6 ? MAGENTA : CRIMSON;
-      particle({
+      emit({
         x: p.x + rand(-R, R) * 0.5,
         y: p.y - rand(0, R),
         vx: Math.cos(a) * v,
@@ -291,7 +309,7 @@ export function flareLit(o: FlareLit): Handle {
     slagAcc += dt * 3 * (1 - 0.5 * gut);
     if (slagAcc >= 1) {
       slagAcc--;
-      particle({
+      emit({
         x: p.x + rand(-R, R) * 0.4,
         y: p.y + R * 0.8,
         vx: rand(-30, 30),
@@ -315,7 +333,7 @@ export function flareLit(o: FlareLit): Handle {
     if (smokeAcc >= 1) {
       smokeAcc--;
       const lit = 0.6 + 0.6 * h;
-      particle({
+      emit({
         x: p.x + rand(-R, R),
         y: p.y - tall * rand(0.4, 0.8),
         vx: rand(-16, 16),
@@ -341,9 +359,19 @@ export function flareLit(o: FlareLit): Handle {
       spit.stop();
       lightUp.stop();
       lit.release();
+      removeEventListener('resize', measure);
       for (const s of [flame, near, far, backlit]) s.stop(0.45);
-      // Sparks and smoke still in the air keep the UI in front of them till they're gone.
-      after(1.6, () => covered.stop());
+      // Sparks and smoke still in the air (and its shapes, fading) keep the UI
+      // in front of them till they're gone. (Without the effects running, there
+      // is nothing left to hide: it goes at once.)
+      airborne = Math.max(airborne, 0.45);
+      const linger = task((dt) => {
+        airborne -= dt;
+        if (airborne > -0.1) return true;
+        covered.stop();
+        return false;
+      });
+      if (!isLive(linger)) covered.stop();
     },
   };
 }

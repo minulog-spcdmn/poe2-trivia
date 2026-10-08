@@ -337,7 +337,10 @@ const coverBoxes: number[] = [];
 /**
  * While the handle is up, light from behind the UI (shapes and particles
  * marked `behind`) hides behind the boxes `source` gives, asked every frame
- * it's drawn: it lights the backdrop round them and their edges, never them.
+ * it's drawn (but while the view shakes: see setCovers): it lights the
+ * backdrop round them and their edges, never them. The handle can be stopped
+ * at any time, even after the effects went off or lost their context (which
+ * drop every cover).
  */
 export function cover(source: CoverSource): Handle {
   if (!fxActive()) return NOOP;
@@ -368,6 +371,24 @@ function coverNow(): number[] | null {
   return coverBoxes;
 }
 
+/** How far the view was shaken when the covers' boxes were last measured. */
+let coverShake = { x: 0, y: 0 };
+
+/**
+ * Hands the renderer the covers' boxes. While the view shakes, the UI moves
+ * only by the shake's offset, so the mask measured before it is moved with
+ * it: measuring the UI again would force a layout every frame (right after
+ * the shake's own write) and draw and upload the mask again each time.
+ */
+function setCovers(r: FxRenderer) {
+  if (covers.size && shake.trauma > 0 && r.hasCover) {
+    r.shiftCover(shake.x - coverShake.x, shake.y - coverShake.y);
+    return;
+  }
+  coverShake = { x: shake.x, y: shake.y };
+  r.setCover(coverNow(), [viewW, viewH]);
+}
+
 /** Runs `fn` after `seconds` (effect time; skipped entirely while effects are off). */
 export function after(seconds: number, fn: () => void) {
   task((_, age) => {
@@ -379,7 +400,8 @@ export function after(seconds: number, fn: () => void) {
 
 // ---------- camera shake ----------
 
-const shake = { trauma: 0, amp: 0, targets: [] as { el: HTMLElement; k: number }[] };
+/** x, y: the offset the view is moved by now (a target's own is k times it). */
+const shake = { trauma: 0, amp: 0, x: 0, y: 0, targets: [] as { el: HTMLElement; k: number }[] };
 
 /** Registers an element that moves with camera shake, `k` times as far. */
 export function shakeTarget(el: HTMLElement, k = 1) {
@@ -408,6 +430,8 @@ export function shaking() {
 }
 
 function applyShake(x: number, y: number) {
+  shake.x = x;
+  shake.y = y;
   for (const t of shake.targets) {
     t.el.style.translate = x || y ? `${(x * t.k).toFixed(2)}px ${(y * t.k).toFixed(2)}px` : '';
   }
@@ -631,7 +655,7 @@ function simulate(dt: number, nowMs: number, render: boolean): boolean {
   const busy = nParticles > 0 || nShapes > 0 || tasks.length > 0 || shake.trauma > 0 || shapes.length > 0 || pool.count > 0;
   if (!render) return busy;
   if (nParticles > 0 || nShapes > 0) {
-    renderer.setCover(coverNow(), [viewW, viewH]);
+    setCovers(renderer);
     renderer.draw([viewW, viewH], dpr, pool.instances, nParticles, shapeData, nShapes, nCrisp, dialogNow(), silhouette);
     show(true);
   } else {
@@ -702,6 +726,10 @@ function teardown() {
   pool = null;
   shapes = [];
   tasks = [];
+  // (What would have stopped a cover may be among the tasks just dropped, or
+  // never start while the renderer is gone: left up, it would be asked every
+  // frame from now on.)
+  covers.clear();
   shake.trauma = 0;
   applyShake(0, 0);
   for (const l of listeners) l(userOn);

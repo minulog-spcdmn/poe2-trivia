@@ -73,14 +73,22 @@ float hiddenAt(vec2 p) {
 // Light from behind the UI (a flare burning behind the question): the boxes
 // of the UI in front of it, as a soft mask (see setCover), hide it. It lights
 // the backdrop round them and their edges, never the UI itself; and while
-// they're set, the bloom stays off them too.
+// they're set, its bloom stays off them too. For that the HDR target and the
+// bloom chain carry, in alpha, how much of each pixel's light (its luminance)
+// is from behind the UI: the composite hides only that share of the bloom
+// over the boxes, so the bloom of everything else is untouched.
 const COVER = `
 uniform sampler2D uCover;
 uniform float uCoverOn;   // 1 while the UI's boxes are set, else 0
 uniform vec2 uCoverView;  // the view the mask spans, CSS px
+uniform vec2 uCoverShift; // how far the UI has moved since the mask was drawn (a shake), CSS px
 // How much of the UI covers p (CSS px), 0-1.
 float coverAt(vec2 p) {
-  return uCoverOn > 0.0 ? texture(uCover, p / uCoverView).a : 0.0;
+  return uCoverOn > 0.0 ? texture(uCover, (p - uCoverShift) / uCoverView).a : 0.0;
+}
+// Light's luminance: what alpha carries of the light from behind the UI.
+float coverLum(vec3 c) {
+  return dot(c, vec3(0.2126, 0.7152, 0.0722));
 }`;
 
 const PARTICLE_VS = `#version 300 es
@@ -199,7 +207,8 @@ void main() {
   }
   float page = mod(vP.w, 2.0);
   float behindUi = step(${PARTICLE_BEHIND_UI}.0, vP.w);
-  o = vec4(vCol * v * (1.0 - page * hiddenAt(vWorld)) * (1.0 - behindUi * coverAt(vWorld)), 0.0);
+  vec3 lit = vCol * v * (1.0 - page * hiddenAt(vWorld)) * (1.0 - behindUi * coverAt(vWorld));
+  o = vec4(lit, behindUi * coverLum(lit));
 }`;
 
 const SHAPE_VS = `#version 300 es
@@ -674,7 +683,8 @@ void main() {
     v *= win;
     hot *= win;
   }
-  o = vec4((col * v + vec3(1.0, 0.95, 0.85) * hot * max(max(col.r, col.g), col.b)) * (1.0 - vBehind * hiddenAt(vWorld)) * (1.0 - vUi * coverAt(vWorld)), 0.0);
+  vec3 lit = (col * v + vec3(1.0, 0.95, 0.85) * hot * max(max(col.r, col.g), col.b)) * (1.0 - vBehind * hiddenAt(vWorld)) * (1.0 - vUi * coverAt(vWorld));
+  o = vec4(lit, vUi * coverLum(lit));
 }`;
 
 const FULL_VS = `#version 300 es
@@ -687,7 +697,8 @@ void main() {
 
 // Call of Duty: Advanced Warfare style 13-tap downsample. The first level
 // weights each block by 1 / (1 + luma) (Karis average) so single hot pixels
-// can't flicker the whole bloom.
+// can't flicker the whole bloom. Alpha (the share from behind the UI, see
+// COVER) is carried with the same weights.
 const DOWN_FS = `#version 300 es
 precision highp float;
 in vec2 vUv;
@@ -695,21 +706,21 @@ uniform sampler2D uSrc;
 uniform vec2 uTexel;
 uniform float uKaris;
 out vec4 o;
-vec3 s(vec2 off) { return texture(uSrc, vUv + off * uTexel).rgb; }
-float w(vec3 c) { return mix(1.0, 1.0 / (1.0 + dot(c, vec3(0.2126, 0.7152, 0.0722))), uKaris); }
+vec4 s(vec2 off) { return texture(uSrc, vUv + off * uTexel); }
+float w(vec4 c) { return mix(1.0, 1.0 / (1.0 + dot(c.rgb, vec3(0.2126, 0.7152, 0.0722))), uKaris); }
 void main() {
-  vec3 a = s(vec2(-2, -2)), b = s(vec2(0, -2)), c = s(vec2(2, -2));
-  vec3 d = s(vec2(-1, -1)), e = s(vec2(1, -1));
-  vec3 f = s(vec2(-2, 0)), g = s(vec2(0, 0)), h = s(vec2(2, 0));
-  vec3 i = s(vec2(-1, 1)), j = s(vec2(1, 1));
-  vec3 k = s(vec2(-2, 2)), l = s(vec2(0, 2)), m = s(vec2(2, 2));
-  vec3 g0 = (d + e + i + j) * 0.25;
-  vec3 g1 = (a + b + f + g) * 0.25;
-  vec3 g2 = (b + c + g + h) * 0.25;
-  vec3 g3 = (f + g + k + l) * 0.25;
-  vec3 g4 = (g + h + l + m) * 0.25;
+  vec4 a = s(vec2(-2, -2)), b = s(vec2(0, -2)), c = s(vec2(2, -2));
+  vec4 d = s(vec2(-1, -1)), e = s(vec2(1, -1));
+  vec4 f = s(vec2(-2, 0)), g = s(vec2(0, 0)), h = s(vec2(2, 0));
+  vec4 i = s(vec2(-1, 1)), j = s(vec2(1, 1));
+  vec4 k = s(vec2(-2, 2)), l = s(vec2(0, 2)), m = s(vec2(2, 2));
+  vec4 g0 = (d + e + i + j) * 0.25;
+  vec4 g1 = (a + b + f + g) * 0.25;
+  vec4 g2 = (b + c + g + h) * 0.25;
+  vec4 g3 = (f + g + k + l) * 0.25;
+  vec4 g4 = (g + h + l + m) * 0.25;
   float w0 = w(g0) * 0.5, w1 = w(g1) * 0.125, w2 = w(g2) * 0.125, w3 = w(g3) * 0.125, w4 = w(g4) * 0.125;
-  o = vec4((g0 * w0 + g1 * w1 + g2 * w2 + g3 * w3 + g4 * w4) / (w0 + w1 + w2 + w3 + w4), 1.0);
+  o = (g0 * w0 + g1 * w1 + g2 * w2 + g3 * w3 + g4 * w4) / (w0 + w1 + w2 + w3 + w4);
 }`;
 
 const UP_FS = `#version 300 es
@@ -721,22 +732,23 @@ uniform float uRadius;
 out vec4 o;
 void main() {
   vec2 t = uTexel * uRadius;
-  vec3 c = texture(uSrc, vUv).rgb * 4.0;
-  c += (texture(uSrc, vUv + vec2(-t.x, 0.0)).rgb + texture(uSrc, vUv + vec2(t.x, 0.0)).rgb
-      + texture(uSrc, vUv + vec2(0.0, -t.y)).rgb + texture(uSrc, vUv + vec2(0.0, t.y)).rgb) * 2.0;
-  c += texture(uSrc, vUv - t).rgb + texture(uSrc, vUv + t).rgb
-     + texture(uSrc, vUv + vec2(-t.x, t.y)).rgb + texture(uSrc, vUv + vec2(t.x, -t.y)).rgb;
-  o = vec4(c / 16.0, 1.0);
+  vec4 c = texture(uSrc, vUv) * 4.0;
+  c += (texture(uSrc, vUv + vec2(-t.x, 0.0)) + texture(uSrc, vUv + vec2(t.x, 0.0))
+      + texture(uSrc, vUv + vec2(0.0, -t.y)) + texture(uSrc, vUv + vec2(0.0, t.y))) * 2.0;
+  c += texture(uSrc, vUv - t) + texture(uSrc, vUv + t)
+     + texture(uSrc, vUv + vec2(-t.x, t.y)) + texture(uSrc, vUv + vec2(t.x, -t.y));
+  o = c / 16.0;
 }`;
 
-// Copies the shapes (drawn at lower resolution) into the HDR target.
+// Copies the shapes (drawn at lower resolution) into the HDR target, with
+// their share from behind the UI (see COVER).
 const COPY_FS = `#version 300 es
 precision highp float;
 in vec2 vUv;
 uniform sampler2D uSrc;
 out vec4 o;
 void main() {
-  o = vec4(texture(uSrc, vUv).rgb, 0.0);
+  o = texture(uSrc, vUv);
 }`;
 
 const COMPOSITE_FS = `#version 300 es
@@ -759,7 +771,12 @@ float hash(vec2 p) {
 }
 void main() {
   vec3 hdr = texture(uHdr, vUv).rgb;
-  if (uHasBloom > 0.5) hdr += texture(uBloom, vUv).rgb * uBloomAmt * (1.0 - coverAt(vec2(vUv.x, 1.0 - vUv.y) * uView));
+  if (uHasBloom > 0.5) {
+    vec4 b = texture(uBloom, vUv);
+    // Over the UI's boxes, only the share of the bloom from behind the UI is hidden (see COVER).
+    float behind = clamp(b.a / max(coverLum(b.rgb), 1e-4), 0.0, 1.0);
+    hdr += b.rgb * uBloomAmt * (1.0 - behind * coverAt(vec2(vUv.x, 1.0 - vUv.y) * uView));
+  }
   // Per-channel exponential tone map: linear for faint light, saturating
   // smoothly, so orange sparks burn through yellow toward white.
   vec3 c = 1.0 - exp(-max(hdr, 0.0) * uExposure);
@@ -806,6 +823,27 @@ const SIL_BLUR = 2.5;
  */
 const BLOOM_REACH = 12;
 
+/** CSS px per texel of the UI's mask (see setCover). */
+const COVER_GRID = 4;
+/** A soft cover's layers where the canvas can't blur (older Safari): padding (mask px) and alpha, about 0.6 where all four lie. */
+const SOFT_LAYERS: [number, number][] = [
+  [0.5, 0.2],
+  [0, 0.2],
+  [-0.5, 0.2],
+  [-1, 0.2],
+];
+
+/**
+ * What the UI's mask is drawn from (see setCover), as a key that changes only
+ * when it would: the view, and each box's place, size and corners to the
+ * mask's own grid (its soft flag as it is).
+ */
+export function coverKey(boxes: readonly number[], view: readonly [number, number]): string {
+  let key = `${view[0]}x${view[1]}:`;
+  for (let i = 0; i < boxes.length; i++) key += (i % 9 === 4 ? boxes[i] : Math.round(boxes[i] / COVER_GRID)) + ',';
+  return key;
+}
+
 /** An open dialog (lib/behindDialog.ts): how far it dims the page, and its box and corner radius in CSS px. */
 export type DialogLight = { amount: number; box: DOMRect | null; radius: number };
 const NO_DIALOG: DialogLight = { amount: 0, box: null, radius: 0 };
@@ -846,6 +884,9 @@ export class FxRenderer {
   private coverKey = '';
   private coverOn = false;
   private coverView: [number, number] = [1, 1];
+  private coverShift: [number, number] = [0, 0];
+  /** Whether the 2D canvas can blur (older Safari can't): asked once, before the first `filter` is set. */
+  private coverBlur: boolean | null = null;
 
   static create(canvas: HTMLCanvasElement, opts: RendererOptions): FxRenderer | null {
     const gl = canvas.getContext('webgl2', {
@@ -1014,6 +1055,7 @@ export class FxRenderer {
       gl.uniform1i(p.u('uCover'), 3);
       gl.uniform1f(p.u('uCoverOn'), this.coverOn ? 1 : 0);
       gl.uniform2f(p.u('uCoverView'), this.coverView[0], this.coverView[1]);
+      gl.uniform2f(p.u('uCoverShift'), this.coverShift[0], this.coverShift[1]);
     };
     if (this.coverOn) {
       gl.activeTexture(gl.TEXTURE3);
@@ -1223,21 +1265,23 @@ export class FxRenderer {
    * `boxes` as (left, top, width, height, soft, and the four corners' radii)
    * in CSS px, in a view `view` CSS px across; null for none. Each is drawn
    * in its own shape, its corners rounded. Drawn as a mask at a quarter of the view's
-   * size (the light needs no more), and again only when they move. A box's
+   * size (the light needs no more), and again only when they move a texel
+   * of it or more (see coverKey). A box's
    * edge is softened by a few px, so the light fades out over it (its rim
    * light); a soft one's (text) far more, and not all the way, so no box shows round it.
    */
   setCover(boxes: number[] | null, view: [number, number]) {
+    this.coverShift = [0, 0];
     if (!boxes || !boxes.length) {
       this.coverOn = false;
       return;
     }
-    const key = `${view[0]}x${view[1]}:${boxes.map(Math.round).join(',')}`;
+    const K = COVER_GRID;
+    const key = coverKey(boxes, view);
     this.coverOn = true;
     if (key === this.coverKey) return;
     this.coverKey = key;
     this.coverView = view;
-    const K = 4;
     const c = (this.coverCanvas ??= document.createElement('canvas'));
     const w = Math.max(1, Math.ceil(view[0] / K));
     const h = Math.max(1, Math.ceil(view[1] / K));
@@ -1248,26 +1292,38 @@ export class FxRenderer {
     const ctx = c.getContext('2d');
     if (!ctx) {
       this.coverOn = false;
+      this.coverKey = '';
       return;
     }
+    // (A canvas without `filter` has no such property until it's set.)
+    this.coverBlur ??= typeof ctx.filter === 'string';
     ctx.clearRect(0, 0, w, h);
     for (const soft of [0, 1]) {
-      // (Text only mostly: a full shadow round a line of it would show as a dark plate.)
-      ctx.fillStyle = soft ? 'rgba(255, 255, 255, 0.7)' : '#fff';
-      ctx.filter = soft ? 'blur(4px)' : 'blur(1px)';
-      const pad = soft ? 2 : 0;
-      for (let i = 0; i + 8 < boxes.length; i += 9) {
-        if (boxes[i + 4] !== soft) continue;
-        const x = boxes[i] / K - pad;
-        const y = boxes[i + 1] / K - pad;
-        const w = boxes[i + 2] / K + 2 * pad;
-        const h = boxes[i + 3] / K + 2 * pad;
-        const radii = [boxes[i + 5], boxes[i + 6], boxes[i + 7], boxes[i + 8]].map((r) => Math.min(r / K + pad, w / 2, h / 2));
-        if (radii.some((r) => r > 0) && typeof ctx.roundRect === 'function') {
-          ctx.beginPath();
-          ctx.roundRect(x, y, w, h, radii);
-          ctx.fill();
-        } else ctx.fillRect(x, y, w, h);
+      // Each layer: its padding (mask px) and alpha. Text is hidden only
+      // mostly: a full shadow round a line of it would show as a dark plate.
+      // Without a blur, a soft edge is built of faint layers stepping in
+      // from a narrower padding, which come to about the same in the middle.
+      let layers: [number, number][];
+      if (this.coverBlur) {
+        ctx.filter = soft ? 'blur(4px)' : 'blur(1px)';
+        layers = [[soft ? 2 : 0, soft ? 0.7 : 1]];
+      } else layers = soft ? SOFT_LAYERS : [[0, 1]];
+      for (const [pad, alpha] of layers) {
+        ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
+        for (let i = 0; i + 8 < boxes.length; i += 9) {
+          if (boxes[i + 4] !== soft) continue;
+          const x = boxes[i] / K - pad;
+          const y = boxes[i + 1] / K - pad;
+          const w = boxes[i + 2] / K + 2 * pad;
+          const h = boxes[i + 3] / K + 2 * pad;
+          if (!(w > 0 && h > 0)) continue;
+          const radii = [boxes[i + 5], boxes[i + 6], boxes[i + 7], boxes[i + 8]].map((r) => Math.max(0, Math.min(r / K + pad, w / 2, h / 2)));
+          if (radii.some((r) => r > 0) && typeof ctx.roundRect === 'function') {
+            ctx.beginPath();
+            ctx.roundRect(x, y, w, h, radii);
+            ctx.fill();
+          } else ctx.fillRect(x, y, w, h);
+        }
       }
     }
     const gl = this.gl;
@@ -1280,6 +1336,16 @@ export class FxRenderer {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     gl.activeTexture(gl.TEXTURE0);
+  }
+
+  /** Whether the UI's mask is set (see setCover). */
+  get hasCover() {
+    return this.coverOn;
+  }
+
+  /** Moves the mask setCover drew by (dx, dy) CSS px, the UI having moved that far since (a shake), rather than drawing it again. */
+  shiftCover(dx: number, dy: number) {
+    this.coverShift = [dx, dy];
   }
 
   /** Makes the silhouette's picture the silhouette texture, unless it is already. Returns whether it's ready (loaded, and readable). */

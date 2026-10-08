@@ -177,6 +177,17 @@ function painted(root: Element | null, out: Painted[] = [], alpha = 1): Painted[
   return out;
 }
 
+/** An element's corners in px, as last worked out: again only when its size or its computed corners change. */
+const cornerMemo = new WeakMap<Element, { w: number; h: number; corners: string[]; radii: number[] }>();
+function radiiOf(node: Element, corners: string[], box: DOMRect): number[] {
+  const m = cornerMemo.get(node);
+  if (m && m.w === box.width && m.h === box.height && m.corners.every((c, i) => c === corners[i])) return m.radii;
+  // A corner can round at most half the box (999px makes a pill a capsule).
+  const radii = corners.map((c) => Math.min(cornerPx(c, box.width, box.height), box.width / 2, box.height / 2));
+  cornerMemo.set(node, { w: box.width, h: box.height, corners, radii });
+  return radii;
+}
+
 /**
  * The UI in front of the flare, as boxes on screen, for light from behind
  * it to hide behind (see cover in lib/fx/core.ts). Asked every frame it's
@@ -202,9 +213,7 @@ function uiCovers(): () => CoverBox[] {
         boxes.push({ box: range.getBoundingClientRect(), soft: true });
       } else {
         const box = node.getBoundingClientRect();
-        // A corner can round at most half the box (999px makes a pill a capsule).
-        const radii = corners?.map((c) => Math.min(cornerPx(c, box.width, box.height), box.width / 2, box.height / 2));
-        boxes.push({ box, radii });
+        boxes.push({ box, radii: corners && radiiOf(node, corners, box) });
       }
     }
     return boxes;
@@ -569,7 +578,12 @@ export function flareBurning(timer: HTMLElement): FlareBurn {
     }
     return at;
   };
-  /** Cuts the UI's boxes out of the calm glow, and centres it (again as the page scrolls or resizes). */
+  /**
+   * Cuts the UI's boxes out of the calm glow, and centres it: again as the
+   * page scrolls or resizes, and every so often (the page may change under
+   * it). Never as often as its light changes: each time, the whole screen
+   * is painted again.
+   */
   let clipping = 0;
   function clip() {
     if (!glowLayer || clipping) return;
@@ -585,6 +599,7 @@ export function flareBurning(timer: HTMLElement): FlareBurn {
     });
   }
   clip();
+  const reclip = glowLayer ? setInterval(clip, 400) : 0;
   const burning = fx ? flareLit({ at: centre, light: () => itemBox(timer), level: () => level, covers: uiBoxes }) : null;
 
   // ---- lit ----
@@ -661,6 +676,7 @@ export function flareBurning(timer: HTMLElement): FlareBurn {
       : null;
 
   let shownLevel = -1;
+  let glowLevel = -1;
   let shownHead = -1;
   const set = (l: number, h: number) => {
     if (stopped) return;
@@ -671,11 +687,12 @@ export function flareBurning(timer: HTMLElement): FlareBurn {
       shownLevel = level;
       under.style.opacity = (0.35 + 0.65 * level).toFixed(3);
       over.style.opacity = (0.5 + 0.5 * level).toFixed(3);
-      if (glowLayer) {
-        glowLayer.style.opacity = (0.3 + 0.7 * level).toFixed(3);
-        // (And its cut-outs again: the page may have changed under it.)
-        clip();
-      }
+    }
+    // The calm glow covers the whole screen, which each change paints again:
+    // in coarse steps (its transition smooths them).
+    if (glowLayer && Math.abs(level - glowLevel) > 0.05) {
+      glowLevel = level;
+      glowLayer.style.opacity = (0.3 + 0.7 * level).toFixed(3);
     }
     if (Math.abs(head - shownHead) > 0.0008) {
       shownHead = head;
@@ -692,6 +709,7 @@ export function flareBurning(timer: HTMLElement): FlareBurn {
       fire?.stop();
       burning?.stop();
       cancelAnimationFrame(clipping);
+      clearInterval(reclip);
       timers.forEach(clearTimeout);
       timers.clear();
       removeEventListener('resize', resized);
