@@ -581,10 +581,14 @@ void main() {
     if (m.x < 0.0 || m.y < 0.0 || m.x > mc.z || m.y > mc.w) continue;
     vec4 md = uMkD[i];
     float q = uMkE[i].x;
-    float content = texture(uSharp, (md.xy + m) / uSharpSize).a;
+    // textureLod, not texture: the atlases have no mipmaps, so it samples
+    // the same, but without the implicit derivatives, which a loop that
+    // continues per pixel can't have; on Windows (ANGLE to HLSL) they force
+    // the compiler to unroll the loop, which slows the first compile.
+    float content = textureLod(uSharp, (md.xy + m) / uSharpSize, 0.0).a;
     vec4 off = uMkOff[i];
-    vec4 t1 = texture(uBlur, (md.zw + (m - off.xy) * q) / uBlurSize);
-    vec4 t2 = texture(uBlur, (md.zw + (m - off.zw) * q) / uBlurSize);
+    vec4 t1 = textureLod(uBlur, (md.zw + (m - off.xy) * q) / uBlurSize, 0.0);
+    vec4 t2 = textureLod(uBlur, (md.zw + (m - off.zw) * q) / uBlurSize, 0.0);
     vec4 c1 = uMkCol[i * ${DROPS_PER_MASK}];
     vec4 c2 = uMkCol[i * ${DROPS_PER_MASK} + 1];
     // CSS paints the last shadow in the list first.
