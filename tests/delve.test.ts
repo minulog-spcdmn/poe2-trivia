@@ -34,6 +34,8 @@ import {
   OPTIONS_FROM,
   VEIL_FROM,
   veilLate,
+  veilPlan,
+  VEIL_TAIL_MS,
   delveCurve,
   LOOKALIKES_TO,
   MORE_FAKES_FROM,
@@ -332,82 +334,126 @@ test('at every depth to 300, even under the slowest veil, half the art is in wit
   }
 });
 
-test('however few patches a picture is cut into, half of it is in with 3 s left, no sooner than it needs, and the last at the end of its span: whole art and pictures, clocks of 3 to 16 s', async () => {
-  const { FIRST_PATCH_MS, halfBurnt, veilPaceFor, veilSpan } = await import('../src/lib/patches.ts');
-  let checked = 0;
+/** Patch areas for a picture cut into `n` (in reveal order): all alike, smoothly uneven, or at random from `seed`. */
+async function areaProfiles(n: number, seed: number): Promise<Record<string, number[]>> {
+  const { seededRandom } = await import('../src/lib/patches.ts');
+  const rand = seededRandom(seed);
+  return {
+    even: Array(n).fill(100),
+    uneven: Array.from({ length: n }, (_, r) => 100 + 60 * Math.sin((6 * Math.PI * r) / n)),
+    random: Array.from({ length: n }, () => 20 + 200 * rand()),
+  };
+}
+
+test('however a picture is cut, half of its area is in with 3 s left, exactly then where its share would allow more, and the rest lands about 1 s before the end: whole art and pictures, clocks of 3 to 16 s', async () => {
+  const { FIRST_PATCH_MS, areaTime, veilPace, veilSchedule } = await import('../src/lib/patches.ts');
+  let [checked, capped, tails] = [0, 0, 0];
   for (let secs = 3; secs <= 16; secs += 0.5)
-    for (const share of [0.55, 0.7, 0.8])
-      for (let whole = 4; whole <= 9; whole += 0.25)
+    for (const share of [0.3, 0.55, 0.8])
+      for (let whole = 4; whole <= 9; whole += 0.5)
         for (const tiles of [false, true]) {
           const size = tiles ? tileVeilSize(whole) : whole;
-          const ms = veilSeconds(secs, share, size, tiles) * 1000;
-          if (!ms) continue;
-          const halfBy = secs * 1000 - VEIL_LEFT_MS;
+          // A clock too short for any veil shows the art plain (veilSeconds).
+          if (!veilSeconds(secs, share, size, tiles)) continue;
+          const plan = veilPlan(secs, share, tiles);
+          const late = veilLate(tiles);
           // cutPatches makes about size × size patches over a whole picture (never more than that, rounded), fewer over a small item.
-          for (let count = 1; count <= Math.round(size * size); count++) {
-            const pace = veilPaceFor(ms, count, halfBy, veilLate(tiles));
-            const { gap, burn } = pace;
-            // The last picture starts up to half a step late (session.svelte.ts burnVeil).
-            const late = tiles ? gap / 2 : 0;
-            const halfIn = FIRST_PATCH_MS + late + (count / 2) * gap + burn;
-            const at = `${count} of ${size} × ${size} patches, ${tiles ? 'pictures' : 'whole'}, ${secs} s at ${share}`;
-            assert.ok(secs * 1000 - halfIn >= VEIL_LEFT_MS - 1e-6, `${at}: ${Math.round(secs * 1000 - halfIn)} ms left with half in`);
-            // The veil's own time where that leaves 3 s, else just as the 3 s begin.
-            assert.ok(pace.ms <= ms, `${at}: ${pace.ms} ms, over the veil's ${ms}`);
-            // (A whole number of ms: one more would leave less than 3 s.)
-            if (pace.ms < ms) assert.ok(halfBurnt(pace.ms + 1, count, veilLate(tiles)) > halfBy, `${at}: half in ${Math.round(secs * 1000 - halfIn - VEIL_LEFT_MS)} ms sooner than it needs`);
-            // As veilSeconds would have sized it for this many patches (or for size × size, a patch or so fewer).
-            assert.equal(pace.ms, Math.min(ms, veilSpan(secs * share * 1000, count, halfBy, veilLate(tiles))), at);
-            // The last patch is done at the end of that span, not sooner.
-            if (count > 1) assert.ok(Math.abs((count - 1) * gap + burn - pace.ms) < 1e-6, `${at}: done ${(count - 1) * gap + burn} ms in, not ${pace.ms}`);
-            checked++;
-          }
+          for (let count = 1; count <= Math.round(size * size); count++)
+            for (const [kind, areas] of Object.entries(await areaProfiles(count, count * 31 + secs))) {
+              const at = `${kind} ${count} of ${size} × ${size}, ${tiles ? 'pictures' : 'whole'}, ${secs} s at ${share}`;
+              const s = veilSchedule(areas, plan);
+              const end = s.delays.at(-1)! + s.burn;
+              // The half as the patches really go out, the last picture half a step late (session.svelte.ts burnVeil).
+              const half = areaTime(s.delays, s.burn, areas) + late * s.gap;
+              assert.ok(Math.abs(half - s.half) < 1e-3, `${at}: half at ${half}, not ${s.half}`);
+              assert.ok(secs * 1000 - half >= VEIL_LEFT_MS - 1e-3, `${at}: ${Math.round(secs * 1000 - half)} ms left with half in`);
+              // Where the whole share would bring half in later, it comes in just as the 3 s begin (to the ms its pace is fitted to).
+              const { gap, burn } = veilPace(plan.ms, count);
+              const steady = Array.from({ length: count }, (_, r) => FIRST_PATCH_MS + r * gap);
+              if (areaTime(steady, burn, areas) + late * gap > plan.halfBy + 1e-6 && plan.ms - late * gap > 0) {
+                // (Unless the last picture, starting late, would otherwise run past the share: then it is paced to end with it.)
+                const span = count > 1 ? (count - 1) * s.gap + s.burn : s.burn;
+                const lateBound = Math.abs(span + late * s.gap - plan.ms) < 2;
+                assert.ok(secs * 1000 - half < VEIL_LEFT_MS + 3 || lateBound, `${at}: half in with ${Math.round(secs * 1000 - half)} ms left, sooner than it needs`);
+                capped++;
+              }
+              // The last picture's last patch: at the share's end or about 1 s before the clock's, whichever is sooner.
+              const lastEnd = end + late * s.gap;
+              const due = Math.min(FIRST_PATCH_MS + plan.ms, secs * 1000 - VEIL_TAIL_MS);
+              // And right then, whenever some patches are still to start once half is in, unless (a few big
+              // ones) they can't come in that soon without starting before the half and moving it.
+              const ownHalf = s.half - late * s.gap;
+              const rest = s.delays.findIndex((d) => d >= ownHalf - 1e-6);
+              if (rest > 0) {
+                const forced = Math.abs(s.delays[rest] - ownHalf) < 1e-6;
+                assert.ok(Math.abs(lastEnd - due) < 1e-3 || (forced && lastEnd > due), `${at}: last in at ${Math.round(lastEnd)}, not ${due}`);
+                if (!forced) tails++;
+              }
+              // The patches go out in order, none before the first.
+              assert.ok(s.delays.every((d, r) => d >= FIRST_PATCH_MS && (r === 0 || d >= s.delays[r - 1])), at);
+              checked++;
+            }
         }
-  assert.ok(checked > 10_000, `${checked} checked`);
+  assert.ok(checked > 20_000 && capped > 2_000 && tails > 10_000, `${checked} checked, ${capped} capped, ${tails} tails`);
 });
 
-test('at shown depths 24, 39, 59, 89 and 99, a picture of 4 patches or a whole one has half of them in with 3 s left, no sooner, and the last on time', async () => {
-  const { FIRST_PATCH_MS, veilPace, veilPaceFor } = await import('../src/lib/patches.ts');
+test('at shown depths 24 to 199, deeper never leaves more time once half the art is in, nor once all of it is', async () => {
+  const { veilSchedule } = await import('../src/lib/patches.ts');
+  for (const tiles of [false, true])
+    for (const fill of [0.2, 0.35, 0.5, 0.65, 0.8, 1])
+      for (const kind of ['even', 'uneven']) {
+        let prev: { d: number; half: number; end: number } | null = null;
+        for (let d = VEIL_FROM; d <= 200; d++) {
+          const veil = delveRules(d).veil!;
+          const secs = delveTimer(d);
+          const size = tiles ? tileVeilSize(veil.size) : veil.size;
+          // The same item at every depth: it fills `fill` of its picture, cut finer deeper down.
+          const count = Math.max(1, Math.round(size * size * fill));
+          const areas = (await areaProfiles(count, 1))[kind];
+          const s = veilSchedule(areas, veilPlan(secs, veil.share, tiles));
+          // Time left once half of it is in and once all of it is, the last picture half a step late.
+          const half = secs * 1000 - s.half;
+          const end = secs * 1000 - (s.delays.at(-1)! + s.burn + veilLate(tiles) * s.gap);
+          const at = `${tiles ? 'pictures' : 'whole'} ${kind} at ${fill}, depth ${d} (${count} patches, ${secs} s)`;
+          // All alike, the half comes no later deeper down; uneven, which patches hold the half shifts with the count.
+          if (prev && kind === 'even') assert.ok(half <= prev.half + 0.5, `${at}: ${Math.round(half)} ms left with half in, ${Math.round(prev.half)} at ${prev.d}`);
+          if (prev) assert.ok(end <= prev.end + 0.5, `${at}: ${Math.round(end)} ms left with all in, ${Math.round(prev.end)} at ${prev.d}`);
+          prev = { d, half, end };
+        }
+        // Deepest, on the 5 s clock: half in with 3 s left, the last patch with 1 s left.
+        assert.ok(Math.abs(prev!.half - VEIL_LEFT_MS) < 3 && Math.abs(prev!.end - VEIL_TAIL_MS) < 1e-3, `${tiles} ${fill} ${kind}: ${JSON.stringify(prev)}`);
+      }
+});
+
+test('at shown depths 24, 39, 59, 89 and 99, a picture of 4 patches or a whole one has half its area in with 3 s left at least, the rest after', async () => {
+  const { veilSchedule } = await import('../src/lib/patches.ts');
   // Shown depths are one less than the run's (depth 90 is shown as 89, a 6 s clock).
   for (const d of [25, 40, 60, 90, 100]) {
     const veil = delveRules(d).veil!;
     const secs = delveTimer(d);
     for (const tiles of [false, true]) {
       const size = tiles ? tileVeilSize(veil.size) : veil.size;
-      const ms = veilSeconds(secs, veil.share, size, tiles) * 1000;
-      const late = veilLate(tiles);
-      // When half of a veil of `count` patches would be in, ms after the clock starts, its own span unchanged.
-      const model = (span: number, count: number) => {
-        const { gap, burn } = veilPace(span, count);
-        return FIRST_PATCH_MS + (count / 2 + late) * gap + burn;
-      };
-      for (let count = 4; count <= Math.round(size * size); count++) {
-        const at = `depth ${d}, ${count} of ${size} × ${size} patches, ${tiles ? 'pictures' : 'whole'}`;
-        const pace = veilPaceFor(ms, count, secs * 1000 - VEIL_LEFT_MS, late);
-        const halfIn = FIRST_PATCH_MS + (count / 2 + late) * pace.gap + pace.burn;
-        const left = secs * 1000 - halfIn;
-        assert.ok(left >= VEIL_LEFT_MS - 1e-6, `${at}: ${Math.round(left)} ms left with half in`);
-        // As late as allowed: exactly 3 s left when the veil's time would leave less, its whole time otherwise.
-        if (model(ms, count) > secs * 1000 - VEIL_LEFT_MS) assert.ok(model(pace.ms + 1, count) > secs * 1000 - VEIL_LEFT_MS && left < VEIL_LEFT_MS + 2, `${at}: ${Math.round(left)} ms left with half in`);
-        else assert.equal(pace.ms, ms, at);
-        // The last patch is done at the end of its span: 400 ms plus the span after the clock starts.
-        assert.ok(Math.abs((count - 1) * pace.gap + pace.burn - pace.ms) < 1e-6, at);
-        // No sooner than half of a whole picture's worth would be in (veilSeconds): fewer patches no longer rush in.
-        // (To the ms both are fitted to.)
-        if (count <= size * size) assert.ok(halfIn > model(ms, size * size) - 1, `${at}: half in ${Math.round(model(ms, size * size) - halfIn)} ms early`);
-      }
+      for (let count = 4; count <= Math.round(size * size); count++)
+        for (const [kind, areas] of Object.entries(await areaProfiles(count, d))) {
+          const at = `depth ${d}, ${kind} ${count} of ${size} × ${size}, ${tiles ? 'pictures' : 'whole'}`;
+          const s = veilSchedule(areas, veilPlan(secs, veil.share, tiles));
+          const left = secs * 1000 - s.half;
+          const lastLeft = secs * 1000 - (s.delays.at(-1)! + s.burn + veilLate(tiles) * s.gap);
+          assert.ok(left >= VEIL_LEFT_MS - 1e-3, `${at}: ${Math.round(left)} ms left with half in`);
+          // From the 6 s clock down, the last patch lands 1 s before the end; on the longer clocks, at the end of the share.
+          if (secs <= 6) assert.ok(Math.abs(lastLeft - VEIL_TAIL_MS) < 1e-3, `${at}: ${Math.round(lastLeft)} ms left with all in`);
+          else assert.ok(Math.abs(lastLeft - (secs * 1000 * (1 - veil.share) - 400)) < 1e-3, `${at}: ${Math.round(lastLeft)} ms left with all in`);
+          // The 5 s clocks: half the art just as the last 3 s begin.
+          if (secs === 5) assert.ok(left < VEIL_LEFT_MS + 3, `${at}: ${Math.round(left)} ms left with half in`);
+        }
     }
   }
-  // The playtest: shown depth 89, a 6 s clock, an item cut into 22 to 52 of its 81 patches. Its last patch was in with
-  // about 3 to 4 s still left; now half of it is in with 3 s left and the last one after that.
+  // The playtest: shown depth 89, a 6 s clock, an item cut into 22 to 52 of its 81 patches had it all in with about
+  // 3 to 4 s still left. Now its last patch lands with 1 s left, as it does on the 5 s clocks below.
   const veil = delveRules(90).veil!;
-  const ms = veilSeconds(6, veil.share, veil.size) * 1000;
   for (const count of [22, 40, 52]) {
-    const { gap, burn } = veilPaceFor(ms, count, 6000 - VEIL_LEFT_MS);
-    const halfLeft = 6000 - (FIRST_PATCH_MS + (count / 2) * gap + burn);
-    const allLeft = 6000 - (FIRST_PATCH_MS + (count - 1) * gap + burn);
-    assert.ok(halfLeft >= VEIL_LEFT_MS - 1e-6 && halfLeft < VEIL_LEFT_MS + 1, `${count} patches: ${halfLeft} ms left with half in`);
-    assert.ok(allLeft < 2000, `${count} patches: all in with ${Math.round(allLeft)} ms left`);
+    const s = veilSchedule(Array(count).fill(100), veilPlan(6, veil.share, false));
+    assert.ok(6000 - s.half >= VEIL_LEFT_MS && Math.abs(6000 - s.delays.at(-1)! - s.burn - VEIL_TAIL_MS) < 1e-3, `${count} patches`);
   }
 });
 

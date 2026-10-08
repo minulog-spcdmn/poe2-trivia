@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cutPatches, spreadOrder, veilPace, visibleBox } from '../src/lib/patches.ts';
+import { areaTime, burntShare, cutPatches, spreadOrder, veilPace, visibleBox } from '../src/lib/patches.ts';
 
 /** A W × H picture: an opaque ellipse with a soft edge on a transparent background. */
 function ellipse(W: number, H: number): Uint8ClampedArray {
@@ -136,4 +136,34 @@ test('a veil burns in over its time, however many patches it has', () => {
       assert.ok(count === 1 || burn > gap);
     }
   assert.deepEqual(veilPace(16500, 1), { gap: 0, burn: 16500 });
+});
+
+test("each patch knows its area: its own pixels, together all of the item's", () => {
+  const W = 90;
+  const H = 120;
+  const art = ellipse(W, H);
+  const patches = cutPatches(art, W, H, 5, 1234);
+  let lit = 0;
+  for (let g = 0; g < W * H; g++) if (art[g * 4 + 3] > 8) lit++;
+  assert.equal(patches.reduce((sum, p) => sum + p.area, 0), lit);
+  // Each holds no more than it shows (its ring of neighbours' pixels aside).
+  for (const p of patches) {
+    let shown = 0;
+    for (let i = 3; i < p.pixels.length; i += 4) if (p.pixels[i]) shown++;
+    assert.ok(p.area > 0 && p.area <= shown);
+  }
+});
+
+test("a patch's area comes into view as its front sweeps across, from 6% to 68% of its burn", () => {
+  assert.equal(burntShare(0), 0);
+  assert.equal(burntShare(0.06), 0);
+  assert.ok(Math.abs(burntShare(0.4) - 0.544) < 1e-9);
+  assert.equal(burntShare(0.7), 1);
+  assert.equal(burntShare(1), 1);
+  // Half of one patch is in when its front is halfway: at (0.5 + 0.1) / 1.61 of its burn.
+  assert.ok(Math.abs(areaTime([400], 1000, [10]) - (400 + (0.6 / 1.61) * 1000)) < 1e-3);
+  // A big patch counts for more: half of 3 + 1 is in once the big one is two thirds in.
+  assert.ok(Math.abs(areaTime([0, 1000], 1000, [3, 1]) - ((2 / 3 + 0.1) / 1.61) * 1000) < 1e-3);
+  // No burn: in at once.
+  assert.equal(areaTime([400, 500], 0, [1, 1]), 400);
 });

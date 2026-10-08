@@ -9,7 +9,7 @@
 // teammate with lives to spare can bring back one who perished.
 
 import type { DifficultyRules, GameState, Player, Preset, Question, Revive } from './game.ts';
-import { veilSpan } from './patches.ts';
+import { veilSpan, type VeilPlan } from './patches.ts';
 
 export const DELVE_LIVES = 3;
 
@@ -17,8 +17,9 @@ export const DELVE_LIVES = 3;
  * Bumped whenever the curve below changes, together with PROTOCOL_VERSION:
  * guests read parts of the curve from their own copy, and records made under
  * one ruleset aren't compared with another. While Delve was unreleased its
- * changes stayed at 1 (the beta keeps records of its own); 1 is now the
- * rules Delve opens with, frozen: every change to them from here bumps it.
+ * changes stayed at 1 (the beta keeps records of its own); 1 is the rules
+ * Delve opens with, frozen from its public release: every change to them
+ * after that bumps it.
  */
 export const DELVE_RULESET = 1;
 
@@ -172,12 +173,10 @@ export const VEIL_LEFT_MS = 3000;
  * with less than VEIL_LEFT_MS left (halfBurnt), so on a short clock deep
  * down the art burns in faster instead. `tiles`: "find the art" pictures,
  * the last of which starts up to half a step late. The engine sets a
- * question's veil.seconds from it. A picture cut into fewer patches (a small
- * item) takes the same time, or less where half of it would otherwise come
- * in with less than VEIL_LEFT_MS left: the host works that out for each
- * picture once cut (patches.ts veilPaceFor, on the clock game.ts
- * questionClock gives) and paces its patches by it, so this holds for every
- * real count.
+ * question's veil.seconds from it. The host then paces each picture by the
+ * patches it really has and their areas, so that half of its area is in by
+ * VEIL_LEFT_MS before the end there too (veilPlan, patches.ts
+ * veilSchedule, on the clock game.ts questionClock gives).
  * 0 on a clock too short for even an instant veil to leave VEIL_LEFT_MS
  * (shorter than any question's, FIND_MIN_TIMER being the least): the engine
  * then shows the art plain.
@@ -190,6 +189,25 @@ export function veilSeconds(secs: number, share: number, size: number, tiles = f
 
 /** Steps of the pace the last of a question's pictures starts behind the first (halfBurnt's `late`). */
 export const veilLate = (tiles: boolean) => (tiles ? 0.5 : 0);
+
+/**
+ * About how long is left on the clock once the last of the art has burnt in,
+ * where its share of the clock would leave less: half of it comes in by
+ * VEIL_LEFT_MS before the end, and the rest more slowly after (veilSchedule).
+ */
+export const VEIL_TAIL_MS = 1000;
+
+/**
+ * What a veiled picture is paced for on a clock of `secs` with the veil's
+ * `share` of it (patches.ts veilSchedule), as the host does it once the
+ * picture is cut. `tiles`: one of a "find the art" question's pictures.
+ */
+export const veilPlan = (secs: number, share: number, tiles: boolean): VeilPlan => ({
+  ms: secs * share * 1000,
+  halfBy: secs * 1000 - VEIL_LEFT_MS,
+  endBy: secs * 1000 - VEIL_TAIL_MS,
+  late: veilLate(tiles),
+});
 
 /**
  * Endless, past depth 100: from this depth a growing share of name

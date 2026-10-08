@@ -23,6 +23,7 @@ import {
   renameCategories,
   DEFAULT_SETTINGS,
   questionClock,
+  activeRules,
   type Action,
   type GameState,
   type Grayscale,
@@ -33,7 +34,7 @@ import { Beacon, type RoomInfo } from './rooms';
 import { parseClientMsg, parseHostMsg, PROTOCOL_VERSION, RateLimit, versionProblem, versionRefusal, type HostMsg, type MediaMsg } from './protocol';
 import { capped, FrameGuard, hookFrames, JoinGate, roomSecret } from './guard';
 import { cleanName, nameSkeleton } from './names';
-import { prepareMedia, shown, patchDelays, type PreparedMedia } from './media.svelte';
+import { prepareMedia, shown, type PreparedMedia } from './media.svelte';
 import { sfx } from './sound';
 import { prefsFrom, roomPrefs, roomSettings, savePrefs } from './prefs';
 import { toasts, type ToastKind, type ToastOptions } from './toasts.svelte';
@@ -844,7 +845,7 @@ class Session {
       const timeout = new Promise<never>((_, reject) => {
         timer = setTimeout(() => reject(new Error('Preparing the art timed out')), MEDIA_TIMEOUT_MS);
       });
-      media = await Promise.race([prepareMedia(q, this.grayscaleOf(s), questionClock(s, q)), timeout]).finally(() => clearTimeout(timer));
+      media = await Promise.race([prepareMedia(q, this.grayscaleOf(s), veilClock(s)), timeout]).finally(() => clearTimeout(timer));
     } catch (err) {
       console.warn('media', err);
       if (gen === this.mediaGen && this.state?.question?.askedAt === q.askedAt && this.state.phase === 'question') {
@@ -908,11 +909,10 @@ class Session {
     const q = this.state?.question;
     if (!media || media.qid !== qid || !q?.veil) return;
     const sets = veiledSets(media);
-    sets.forEach(({ tile, patches, gap }, k) => {
-      const delays = patchDelays(gap, patches.length);
-      // Several pictures take turns within half a step, so their patches don't all flare at once
-      // (and the last one is no more than half a step behind: tests/delve.test.ts).
-      const offset = patches.length > 1 ? ((delays[1] - delays[0]) * k) / sets.length / 2 : 0;
+    sets.forEach(({ tile, patches, delays, gap }, k) => {
+      // Several pictures take turns within half a step of their pace up to the half, so their patches don't
+      // all flare at once (and the last one is no more than half a step behind: patches.ts veilSchedule).
+      const offset = (gap * k) / sets.length / 2;
       patches.forEach((patch, rank) => {
         const due = from + delays[rank] + offset - Date.now();
         const go = () => {
@@ -2135,9 +2135,21 @@ const SAVE = 'session.v4';
 const OLD_SAVE_KEY = 'poe2trivia.session.v3';
 
 /** The veiled pictures of a question: the art of a name question, or each "find the art" picture (`tile`). */
-function veiledSets(media: PreparedMedia): { tile: number | undefined; patches: PreparedMedia['patches']; gap: number }[] {
-  if (media.veil) return [{ tile: undefined, patches: media.patches, gap: media.gap }];
-  return media.tiles.map((t, tile) => ({ tile, patches: t.patches, gap: t.gap }));
+function veiledSets(media: PreparedMedia): { tile: number | undefined; patches: PreparedMedia['patches']; delays: number[]; gap: number }[] {
+  if (media.veil) return [{ tile: undefined, patches: media.patches, delays: media.delays, gap: media.gap }];
+  return media.tiles.map((t, tile) => ({ tile, patches: t.patches, delays: t.delays, gap: t.gap }));
+}
+
+/**
+ * The clock the question in play's veil is paced on: its seconds, and the
+ * veil's share of them by the rules (by its own time where the rules have no
+ * veil, as for the lab's).
+ */
+function veilClock(s: GameState): { secs: number; share: number } {
+  const q = s.question!;
+  const secs = questionClock(s, q);
+  const own = q.veil ? q.veil.seconds / secs : 0;
+  return { secs, share: Math.max(own, activeRules(s).veil?.share ?? 0) };
 }
 
 /**
