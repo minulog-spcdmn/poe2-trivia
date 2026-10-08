@@ -131,10 +131,16 @@ export function passingLight(every: number, sweep: number, { travel = false } = 
   }
 
   return {
-    /** Svelte action: the light passes over this slit (its first child is the copy), watched and timed at `place`. */
-    glint: (slit: Element, place?: Element) => join(slits, slit, place),
-    /** Svelte action: the light kindles this spark as it leaves, watched and timed at `place`. */
-    spark: (spark: Element, place?: Element) => join(sparks, spark, place),
+    /** Svelte action: the light passes over this slit (its first child is the copy), watched and timed at its parent. */
+    glint: (slit: Element) => join(slits, slit),
+    /** Svelte action: the light kindles this spark as it leaves, watched and timed at its parent. */
+    spark: (spark: Element) => join(sparks, spark),
+    /**
+     * Not actions: the same, watched and timed at `place`, for a caller whose
+     * slit and spark share one (a seal). Each returns what an action does.
+     */
+    glintAt: (slit: Element, place: Element) => join(slits, slit, place),
+    sparkAt: (spark: Element, place: Element) => join(sparks, spark, place),
   };
 }
 

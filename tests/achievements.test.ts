@@ -15,6 +15,7 @@ import {
   isDone,
   loadAchievements,
   momentsIn,
+  forfeit,
   nextWins,
   noteState,
   parseStore,
@@ -30,7 +31,7 @@ import {
   type VersusTrack,
 } from '../src/lib/achievements.ts';
 import { storeKey } from '../src/lib/storage.ts';
-import { leftGame, losing, noteLeaving } from '../src/lib/versus.ts';
+import { forgiveLeaving, leftGame, losing, noteLeaving } from '../src/lib/versus.ts';
 
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
 const fakes: Record<string, string[]> = JSON.parse(readFileSync(new URL('../src/data/fakes.json', import.meta.url), 'utf8'));
@@ -808,24 +809,24 @@ test('only walking away while losing marks a game: behind a rival still there, o
   assert.equal(losing({ ...midGame(1, 3), phase: 'over' }, 'p0', false), false, 'ended');
   const dm = { alive: ['p1'], entrants: ['p0', 'p1'], round: 2, results: {}, eliminated: ['p0'], startedAt: 3 };
   assert.equal(losing({ ...midGame(5, 5), deathmatch: dm }, 'p0', false), true, 'out of the deathmatch');
-  noteLeaving(midGame(2, 2), 'p0', false);
+  noteLeaving(midGame(2, 2), 'p0', false, 'ROOM');
   assert.equal(leftGame(), null);
-  noteLeaving(null, 'p0', false);
+  noteLeaving(null, 'p0', false, 'ROOM');
   assert.equal(leftGame(), null);
 });
 
 test('a game walked away from while losing: coming back to it lets it go; the next game counts it as lost first', () => {
   store.set(WINS_AT, serializeWins({ now: 4, best: 4, last: 1 }));
   const left = midGame(1, 3);
-  noteLeaving(left, 'p0', false);
-  assert.equal(leftGame(), left.startedAt);
+  noteLeaving(left, 'p0', false, 'ROOM');
+  assert.deepEqual(leftGame(), { game: left.startedAt, room: 'ROOM' });
   // Back in the same game (a reload): the mark goes, the run stands.
   noteState(null, publicView(left), 'p0', false, { items });
   assert.equal(leftGame(), null);
   assert.equal(storedWins().now, 4);
 
   // Left again, and the next game is another: that one is lost, this one wins the first of a new run.
-  noteLeaving(left, 'p0', false);
+  noteLeaving(left, 'p0', false, 'ROOM');
   tab.clear();
   const { earned } = followed(true, false, 50000);
   assert.ok(!earned.includes('undefeated'), JSON.stringify(earned));
@@ -834,9 +835,51 @@ test('a game walked away from while losing: coming back to it lets it go; the ne
 });
 
 test('erasing lets a mark go too', () => {
-  noteLeaving(midGame(1, 3), 'p0', false);
+  noteLeaving(midGame(1, 3), 'p0', false, 'ROOM');
   resetAchievements();
   assert.equal(leftGame(), null);
+});
+
+test("a mark goes when its room can't be got back into, or another tab is still in its game", () => {
+  const left = midGame(1, 3);
+  noteLeaving(left, 'p0', false, 'ROOM');
+  forgiveLeaving({ room: 'OTHER' });
+  assert.notEqual(leftGame(), null, 'another room failing changes nothing');
+  forgiveLeaving({ room: 'ROOM' });
+  assert.equal(leftGame(), null, 'the room closed during the reload');
+  noteLeaving(left, 'p0', false, 'ROOM');
+  forgiveLeaving({ game: left.startedAt });
+  assert.equal(leftGame(), null, 'still seated in it in another tab');
+});
+
+test('offline, walking away marks nothing: the game may be gone already', () => {
+  const nav = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  Object.defineProperty(globalThis, 'navigator', { value: { onLine: false }, configurable: true });
+  try {
+    noteLeaving(midGame(1, 3), 'p0', false, 'ROOM');
+    assert.equal(leftGame(), null);
+  } finally {
+    if (nav) Object.defineProperty(globalThis, 'navigator', nav);
+    else delete (globalThis as { navigator?: unknown }).navigator;
+  }
+});
+
+test('a forfeit ends the run without moving the last game counted, and never undoes one counted after all', () => {
+  const w = { now: 3, best: 3, last: 9 };
+  assert.deepEqual(forfeit(w, 5), { now: 0, best: 3, last: 9 });
+  assert.equal(forfeit(w, 9), w, 'that game was played to its end in another tab, and counted');
+  // A game counted later is still recognised when its end is seen again.
+  assert.deepEqual(nextWins(forfeit(w, 5), 'won', 9), forfeit(w, 5));
+});
+
+test("a mark stays when the loss can't be written, for the next game to count", () => {
+  noteLeaving(midGame(1, 3), 'p0', false, 'ROOM');
+  const newer = JSON.stringify({ v: WINS_VERSION + 1, now: 4 });
+  store.set(WINS_AT, newer);
+  tab.clear();
+  followed(true, false, 50000);
+  assert.notEqual(leftGame(), null);
+  assert.equal(store.get(WINS_AT), newer);
 });
 
 test("a newer build's wins in a row are never written over", () => {

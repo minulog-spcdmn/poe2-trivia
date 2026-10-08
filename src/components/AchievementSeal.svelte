@@ -89,8 +89,8 @@
   // One light per metal, so every seal of a metal catches the same light, each metal on its own beat.
   const LIGHTS = TIERS.map((tier) => passingLight(METALS[tier].light.every, METALS[tier].light.sweep, { travel: true }));
   /** Svelte actions: the light of `tier`'s metal passes over this slit, or kindles this spark, both watched and timed at their seal. */
-  const sheen = (slit: Element, tier: Tier) => LIGHTS[tier].glint(slit, slit.closest('.seal') ?? undefined);
-  const spark = (el: Element, tier: Tier) => LIGHTS[tier].spark(el, el.closest('.seal') ?? undefined);
+  const sheen = (slit: Element, tier: Tier) => LIGHTS[tier].glintAt(slit, slit.closest('.seal') ?? slit);
+  const spark = (el: Element, tier: Tier) => LIGHTS[tier].sparkAt(el, el.closest('.seal') ?? el);
   /** Where gold's spark kindles: on the outer ring, up and to the right, as a share of the seal. */
   const SPARK_AT = at(C, 45, OUTER).map((v) => `${50 + (v / 48) * 100}%`);
   const RAYS_WHOLE = ['', '', glory(16), glory(32)];

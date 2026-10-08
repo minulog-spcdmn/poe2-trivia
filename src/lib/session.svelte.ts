@@ -43,7 +43,7 @@ import { DELVE_FUSE_MS, FLARE_MS, LOOKALIKES_ASKED_FROM, clockLeft, fuseDue, fus
 import { blownText } from './difficultyText';
 import { loadLooks } from './looks';
 import { bestOf, loadRecords, recordLeft, recordRun, runEvent } from './delveRecord';
-import { noteLeaving } from './versus';
+import { LEFT_KEY, forgiveLeaving, noteLeaving } from './versus';
 import {
   DELVE_CLOCK_CAP_MS,
   DRAIN_POLL_MS,
@@ -2003,6 +2003,9 @@ class Session {
 
   private fail(message: string, title?: string, keepSaved = false) {
     const mode = this.mode;
+    // A game walked away from in this room by a reload that couldn't get back into it (it closed, or never
+    // reopened) wasn't walked away from.
+    forgiveLeaving({ room: this.code });
     const saved = keepSaved ? readSaved() : null;
     this.reset();
     if (saved) writeSaved(saved);
@@ -2029,7 +2032,13 @@ class Session {
    */
   walkAway() {
     if (this.mode === 'client' && this.status !== 'ready') return;
-    noteLeaving(this.state, this.myPlayerId, this.mode === 'local');
+    noteLeaving(this.state, this.myPlayerId, this.mode === 'local', this.code);
+  }
+
+  /** Another tab marked a game as walked away from: if this tab is still seated in it, nobody walked away. */
+  stillHere() {
+    const s = this.state;
+    if (s?.startedAt && s.phase !== 'over' && s.players.some((p) => p.id === this.myPlayerId)) forgiveLeaving({ game: s.startedAt });
   }
 
   private reset() {
@@ -2166,6 +2175,9 @@ if (typeof window !== 'undefined') {
   window.addEventListener('pagehide', () => {
     session.recordLeaving();
     session.walkAway();
+  });
+  window.addEventListener('storage', (e) => {
+    if (e.key === LEFT_KEY && e.newValue) session.stillHere();
   });
   // Art that wouldn't load (offline) is tried again once the browser is back online.
   window.addEventListener('online', () => session.artBack());

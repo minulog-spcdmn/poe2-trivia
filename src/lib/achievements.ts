@@ -900,6 +900,15 @@ export function nextWins(w: WinRun, outcome: Outcome, game: number): WinRun {
   return { now, best: Math.max(w.best, now), last: game };
 }
 
+/**
+ * The run after game `game` was walked away from while losing: it ends there.
+ * Unless that game was counted after all (another tab played it to its end),
+ * and without moving `last`, as games after it may be counted already.
+ */
+export function forfeit(w: WinRun, game: number): WinRun {
+  return game === w.last || !w.now ? w : { ...w, now: 0 };
+}
+
 // ---- storage -------------------------------------------------------------------
 
 /** The stored list (empty when there is none, or it can't be read). Always read fresh: another tab may have added to it. */
@@ -1023,8 +1032,9 @@ export function noteState(
     return o;
   };
   if (versusGame(next, me, hotSeat) && next.phase !== 'lobby') {
-    // A game walked away from while losing, seen once a game: in another, it counts as lost first.
-    settleLeft(next.startedAt, (left) => changeWins((w) => nextWins(w, 'lost', left)));
+    // A game walked away from while losing, looked at as a game comes in (a reload or rejoin comes with no
+    // state before it): back in it, the mark goes; in another, that one counts as lost first.
+    if (prev?.startedAt !== next.startedAt) settleLeft(next.startedAt, (left) => changeWins((w) => forfeit(w, left)) !== null);
     const was = parseTrack(readStored(TRACK, 'session'));
     const track = trackVersus(was, prev, next, me, hotSeat, veilShare);
     if (next.phase === 'over') {
