@@ -43,12 +43,14 @@ export function passingLight(every: number, sweep: number, { travel = false } = 
   const sparks = new Set<Element>();
   let timer: ReturnType<typeof setTimeout> | undefined;
   /**
-   * What is on screen now: a pass lights only these (all, where nothing can
-   * tell). A slit is watched by its container, as it waits outside it, often
-   * clipped away, between passes.
+   * Where each slit or spark is: its container (a slit waits outside it,
+   * often clipped away, between passes). What is on screen is watched there,
+   * and a travelling light is timed from there, so a seal's slit and spark
+   * keep in step.
    */
+  const placeOf = (el: Element) => el.parentElement ?? el;
+  /** The places on screen now: a pass lights only what is in them (all, where nothing can tell). */
   const shown = new Set<Element>();
-  const placeOf = (el: Element) => (slits.has(el) ? (el.parentElement ?? el) : el);
   const watch =
     typeof IntersectionObserver === 'function'
       ? new IntersectionObserver((entries) => {
@@ -64,7 +66,7 @@ export function passingLight(every: number, sweep: number, { travel = false } = 
 
   const delayOf = (el: Element) => {
     if (!travel) return 0;
-    const r = el.getBoundingClientRect();
+    const r = placeOf(el).getBoundingClientRect();
     return Math.min(TRAVEL_MAX, Math.max(0, (r.left + r.top) * TRAVEL));
   };
 
@@ -99,8 +101,8 @@ export function passingLight(every: number, sweep: number, { travel = false } = 
       destroy() {
         const place = placeOf(el);
         set.delete(el);
-        // A container another slit still lives in stays watched.
-        if (![...slits].some((s) => placeOf(s) === place)) {
+        // A place another slit or spark still lives in stays watched.
+        if (![...slits, ...sparks].some((s) => placeOf(s) === place)) {
           shown.delete(place);
           watch?.unobserve(place);
         }

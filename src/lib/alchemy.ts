@@ -2,6 +2,8 @@
 // (ArcaneCircle), the plate behind the item's name (NamePlate) and the
 // achievements' seals (AchievementSeal).
 
+import { angleOf, at as atAbout, meeting } from './arcane.ts';
+
 type Pt = [number, number];
 const f = (v: number) => v.toFixed(2);
 const pt = (p: Pt) => `${f(p[0])} ${f(p[1])}`;
@@ -116,6 +118,9 @@ function arcPath(cx: number, cy: number, r: number, a0: number, a1: number): str
   const q = at(a1, r);
   return `M${f(cx + p[0])} ${f(cy + p[1])}A${f(r)} ${f(r)} 0 ${a1 - a0 > 180 ? 1 : 0} 1 ${f(cx + q[0])} ${f(cy + q[1])}`;
 }
+
+/** Degrees clockwise from `a0` round to `a1`, in [0, 360). */
+const clockwise = (a0: number, a1: number) => (((a1 - a0) % 360) + 360) % 360;
 
 const triangle = (r: number, up: boolean): Pt[] => [0, 120, 240].map((a) => at(up ? a : a + 180, r));
 
@@ -270,8 +275,8 @@ export const CANCER = (() => {
   // above the sign's centre and the lower one about a point as far below, so the two stand apart.
   const half = (turn: 0 | 180) => {
     const o: Pt = [0, turn ? lift : -lift];
-    const c = at(a0 + turn, R - r);
-    return circle(o[0] + c[0], o[1] + c[1], r) + arcPath(o[0], o[1], R, a0 + turn, a1 + turn);
+    const c = atAbout(o, a0 + turn, R - r);
+    return circle(c[0], c[1], r) + arcPath(o[0], o[1], R, a0 + turn, a1 + turn);
   };
   return half(0) + half(180);
 })();
@@ -297,22 +302,6 @@ export const SCORPIO = (() => {
   return d + `M${pt(barb(1))}L${pt(tip)}L${pt(barb(-1))}`;
 })();
 
-/** Where the circles about `a` (radius `ra`) and `b` (radius `rb`) meet: the two points. */
-function meeting(a: Pt, ra: number, b: Pt, rb: number): [Pt, Pt] {
-  const d = Math.hypot(b[0] - a[0], b[1] - a[1]);
-  const x = (d * d + ra * ra - rb * rb) / (2 * d);
-  const h = Math.sqrt(Math.max(0, ra * ra - x * x));
-  const [ux, uy] = [(b[0] - a[0]) / d, (b[1] - a[1]) / d];
-  const m: Pt = [a[0] + ux * x, a[1] + uy * x];
-  return [
-    [m[0] - uy * h, m[1] + ux * h],
-    [m[0] + uy * h, m[1] - ux * h],
-  ];
-}
-
-/** Clockwise from the top, in degrees, of `p` about `c`. */
-const angleOf = (c: Pt, p: Pt) => (Math.atan2(p[0] - c[0], -(p[1] - c[1])) * 180) / Math.PI;
-
 /**
  * The retort: a round belly whose neck rises from its shoulder, bends over
  * round one centre and runs on, straight and narrowing, into a long spout
@@ -324,15 +313,19 @@ export const RETORT = (() => {
   const [end, run, taper] = [36, 3.9, 0.2];
   const dir: Pt = [Math.cos(rad(end)), Math.sin(rad(end))];
   const wall = (rr: number, narrow: number) => {
-    // Of the two places it leaves the belly, the one further back round the bend.
-    const from = meeting(o, rr, c, R).sort((p, q) => angleOf(o, p) - angleOf(o, q))[0];
-    const turn = at(end, rr).map((v, i) => v + o[i]) as Pt;
-    const sweep = end - angleOf(o, from);
+    // Of the two places it leaves the belly, the one the wall bends round from
+    // to the spout the short way: the other lies past the spout, round the far side.
+    const [from, sweep] = meeting(o, rr, c, R)
+      .map((p) => [p, clockwise(angleOf(o, p), end)] as const)
+      .reduce((a, b) => (b[1] < a[1] ? b : a));
+    const turn = atAbout(o, end, rr);
     const mouth: Pt = [turn[0] + dir[0] * run - Math.sin(rad(end)) * narrow, turn[1] + dir[1] * run + Math.cos(rad(end)) * narrow];
     return { from, d: `M${pt(from)}A${f(rr)} ${f(rr)} 0 ${sweep > 180 ? 1 : 0} 1 ${pt(turn)}L${pt(mouth)}` };
   };
   const outer = wall(mid + half, taper);
   const inner = wall(mid - half, -taper);
-  const belly = arcPath(c[0], c[1], R, angleOf(c, inner.from), angleOf(c, outer.from) + 360);
+  // The belly runs clockwise from where the inner wall leaves it, round the foot, to where the outer one does.
+  const a0 = angleOf(c, inner.from);
+  const belly = arcPath(c[0], c[1], R, a0, a0 + clockwise(a0, angleOf(c, outer.from)));
   return belly + outer.d + inner.d;
 })();

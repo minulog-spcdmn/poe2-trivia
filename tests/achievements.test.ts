@@ -671,7 +671,7 @@ function followed(wins: boolean, reload = false) {
   const earned: string[] = [];
   const step = (next: GameState) => {
     const view = publicView(next);
-    earned.push(...ids(noteState(reload && next.phase === 'over' && prev?.phase !== 'over' ? null : prev, view, 'p0', false).earned));
+    earned.push(...ids(noteState(reload && next.phase === 'over' && prev?.phase !== 'over' ? null : prev, view, 'p0', false, { items }).earned));
     prev = view;
     st = next;
   };
@@ -726,7 +726,7 @@ test('a game followed only from part way through never counts as without a wrong
   let prev: GameState | null = null;
   const earned: string[] = [];
   const step = (next: GameState) => {
-    earned.push(...ids(noteState(prev, publicView(next), 'p0', false).earned));
+    earned.push(...ids(noteState(prev, publicView(next), 'p0', false, { items }).earned));
     prev = publicView(next);
     st = next;
   };
@@ -740,6 +740,30 @@ test('a game followed only from part way through never counts as without a wrong
   assert.deepEqual(st.winners, ['p0']);
   assert.ok(earned.includes('first-victory'));
   assert.ok(!earned.includes('untarnished'), JSON.stringify(earned));
+});
+
+test('with session storage blocked, a game is still judged as its end comes in', () => {
+  const session = (globalThis as { sessionStorage?: unknown }).sessionStorage;
+  (globalThis as { sessionStorage?: unknown }).sessionStorage = {
+    getItem: () => null,
+    setItem: () => {
+      throw new Error('blocked');
+    },
+    removeItem: () => {},
+    key: () => null,
+    length: 0,
+  };
+  try {
+    store.set(WINS_AT, serializeWins({ now: 4, best: 4, last: 1 }));
+    const { earned, again } = followed(true);
+    assert.ok(earned.includes('first-victory'), JSON.stringify(earned));
+    assert.ok(earned.includes('undefeated'));
+    again();
+    assert.equal(earned.filter((id) => id === 'first-victory').length, 1, 'once');
+    assert.equal(storedWins().now, 5);
+  } finally {
+    (globalThis as { sessionStorage?: unknown }).sessionStorage = session;
+  }
 });
 
 test('a game whose end first comes in after a reload is judged, once', () => {
@@ -794,9 +818,9 @@ test('an achievement once earned stays earned', () => {
 test('moments are written as they happen, announced, and once', () => {
   resetAchievements();
   const at50 = delve({ a: [3] }, { round: 51 });
-  const c = noteState(null, at50, 'a', false);
+  const c = noteState(null, at50, 'a', false, { items });
   assert.deepEqual([ids(c.earned), c.first], [['depth-10', 'depth-50'], false]);
-  assert.deepEqual(ids(noteState(null, at50, 'a', false).earned), []);
+  assert.deepEqual(ids(noteState(null, at50, 'a', false, { items }).earned), []);
   assert.ok(loadAchievements().earned['depth-50']);
 });
 
@@ -809,11 +833,11 @@ test('a moment before there is any list: the past caught up quietly first, the m
   assert.deepEqual(checkAchievements(items), { earned: [], first: false });
 });
 
-test("Sweet Revenge counts each player's own misses (two tabs of one browser play two)", () => {
+test('Sweet Revenge reaches across modes and rooms: misses in races, the right answer in a later Delve run', () => {
   const id = items[0].id;
-  const miss = (who: string) => ({ id, ok: false, who });
-  assert.equal(sum(codexOf([miss('a'), miss('a'), miss('a'), { id, who: 'b' }])).revenge, false);
-  assert.equal(sum(codexOf([miss('a'), miss('b'), miss('a'), miss('a'), { id, who: 'a' }])).revenge, true);
+  // A seat's id (`who`) is only good for one room, and only Delve notes it: it never splits an item's misses.
+  const log = [{ id, ok: false, race: true }, { id, ok: false }, { id, ok: false, depth: 12, run: 1, who: 'p3' }, { id, depth: 30, run: 2, who: 'p1' }];
+  assert.equal(sum(codexOf(log)).revenge, true);
 });
 
 test("a tab that lost its connection in the lobby doesn't vouch for a game it rejoins part way", () => {
@@ -838,14 +862,14 @@ test('the game in play is followed across reloads and let go at its end', () => 
   let st = s;
   let prev: GameState | null = null;
   const step = (next: GameState) => {
-    noteState(prev, publicView(next), 'p0', false);
+    noteState(prev, publicView(next), 'p0', false, { items });
     prev = publicView(next);
     st = next;
   };
   step(st);
   assert.equal(parseTrack(tab.get(storeKey('achievements.versus')) ?? null)?.game, s.startedAt);
   // A state of another game (another tab's, on one device) leaves it alone.
-  noteState(null, createGame(null), null, true);
+  noteState(null, createGame(null), null, true, { items });
   assert.equal(parseTrack(tab.get(storeKey('achievements.versus')) ?? null)?.game, s.startedAt);
   for (let n = 0; n < 50 && st.phase !== 'over'; n++) {
     const who = st.players[st.turn].id;
@@ -882,7 +906,7 @@ test('a list a newer build wrote is never written over; a damaged one is kept as
   store.set(ACHIEVEMENTS_KEY, newer);
   codexWith(codexOf(Array.from({ length: 25 }, () => ({}))));
   assert.deepEqual(checkAchievements(items), { earned: [], first: false });
-  assert.deepEqual(noteState(null, delve({ a: [] }, { round: 50 }), 'a', false), { earned: [], first: false });
+  assert.deepEqual(noteState(null, delve({ a: [] }, { round: 50 }), 'a', false, { items }), { earned: [], first: false });
   assert.equal(store.get(ACHIEVEMENTS_KEY), newer);
 
   store.set(ACHIEVEMENTS_KEY, '{broken');

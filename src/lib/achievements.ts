@@ -442,15 +442,15 @@ function streaks(log: Answer[]) {
 
 /**
  * Whether an item was ever answered right after REVENGE or more wrong answers
- * to it in a row: all this player's answers, races and runs together too, by
- * the player who gave them (two tabs of one browser in one room play two).
+ * to it in a row: all this player's answers, in every mode and room. Like
+ * everything here they are this browser's player's (see the top): `who` can't
+ * tell players apart, as it is a seat in one room, and only Delve notes it.
  */
 function revenged(log: Answer[]): boolean {
   const misses = new Map<string, number>();
   for (const a of log) {
-    const key = `${a.who ?? ''}:${a.id}`;
-    if (a.ok && (misses.get(key) ?? 0) >= REVENGE) return true;
-    misses.set(key, a.ok ? 0 : (misses.get(key) ?? 0) + 1);
+    if (a.ok && (misses.get(a.id) ?? 0) >= REVENGE) return true;
+    misses.set(a.id, a.ok ? 0 : (misses.get(a.id) ?? 0) + 1);
   }
   return false;
 }
@@ -890,7 +890,11 @@ export function parseWins(raw: string | null): WinRun {
   return { now, best: Math.max(now, whole(v.best)), last: typeof v.last === 'number' && Number.isFinite(v.last) ? v.last : 0 };
 }
 
-/** The run after a game that `outcome` went, started at `game`. */
+/**
+ * The run after a game that `outcome` went, started at `game`. A game counts
+ * once on this browser: two tabs seated in one game are one player on both
+ * sides (see the top), and only the first to see its end counts it.
+ */
 export function nextWins(w: WinRun, outcome: Outcome, game: number): WinRun {
   if (game === w.last) return w;
   const now = outcome === 'won' ? w.now + 1 : 0;
@@ -998,7 +1002,7 @@ export function noteState(
   next: GameState,
   me: string | null,
   hotSeat: boolean,
-  { items = [], veilShare }: { items?: Item[]; veilShare?: { qid: number; share: number } } = {},
+  { items, veilShare }: { items: Item[]; veilShare?: { qid: number; share: number } },
 ): Check {
   const delve = momentsIn(prev, next, me, hotSeat);
   const ended: string[] = [];
@@ -1007,19 +1011,29 @@ export function noteState(
   // past games earned is told by the start page, never announced as new, and
   // what this change earns is announced as it happens.
   let past: Achievement[] = [];
-  const catchUp = () => {
-    if (open()?.first) past = checkAchievements(items).earned;
+  let o: ReturnType<typeof open> | undefined;
+  /** The list, opened once a change, and only when there is something to write. */
+  const list = () => {
+    if (o !== undefined) return o;
+    o = open();
+    if (o?.first) {
+      past = checkAchievements(items).earned;
+      o = open();
+    }
+    return o;
   };
   if (versusGame(next, me, hotSeat) && next.phase !== 'lobby') {
     const was = parseTrack(readStored(TRACK, 'session'));
     const track = trackVersus(was, prev, next, me, hotSeat, veilShare);
     if (next.phase === 'over') {
       // Judged once: the first time the game this tab followed is seen over, its tracker still
-      // kept (after a reload in its last moments too), which is then let go.
-      if (was?.game === next.startedAt) {
+      // kept (after a reload in its last moments too), which is then let go; or, with no tracker
+      // kept (session storage blocked), as its end comes in.
+      const ending = !!prev && prev.phase !== 'over' && prev.startedAt === next.startedAt;
+      if (was?.game === next.startedAt || ending) {
         const end = versusEnd(next, me, hotSeat, track);
         ended.push(...end.earned);
-        if (end.outcome) catchUp();
+        if (end.outcome) list();
         const wins = end.outcome && countGame(end.outcome, next.startedAt);
         if (wins && wins.now >= WIN_RUN) ended.push('undefeated');
       }
@@ -1027,9 +1041,8 @@ export function noteState(
     } else if (track && track !== was) writeStored(TRACK, JSON.stringify(track), 'session');
   }
   const ids = [...delve, ...ended];
-  if (ids.length) catchUp();
-  const o = ids.length ? open() : null;
-  const check = o ? earn(o.store, false, ids) : none();
+  const opened = ids.length ? list() : null;
+  const check = opened ? earn(opened.store, false, ids) : none();
   return past.length ? { ...check, past } : check;
 }
 
