@@ -4,7 +4,10 @@
   // struck in the metal of its tier (lib/achievements.ts METALS: lead,
   // copper, silver, gold). Lead, for the very easy ones, has the outer ring alone. Harder ones carry a glory
   // of fine rays round the sign, the hardest a third ring inside it.
-  // Earned, the lines sit on a soft glow; not yet, the seal is a dull
+  // Earned, the lines sit on a soft glow, and now and then light passes over
+  // them in the metal's own way (lib/glint.ts; METALS says how): a slow
+  // faint gleam on lead, a quick white flash on silver, a warm sweep on gold
+  // that leaves a spark on its rim. Not yet, the seal is a dull
   // impression whose ring is cut as far as the progress has come, and a
   // secret one holds no sign.
 
@@ -29,6 +32,7 @@
     WAVES,
   } from '../lib/alchemy';
   import { at, line, ring, wear, type Pt } from '../lib/arcane';
+  import { passingLight } from '../lib/glint';
   import { METALS, TIERS, type Sign, type Tier } from '../lib/achievements';
 
   const C: Pt = [0, 0];
@@ -79,6 +83,14 @@
     rays: tier < 2 ? '' : glory(tier === 2 ? 16 : 32),
   }));
   const OUTER_WHOLE = ring(C, OUTER);
+
+  // One light per metal, so every seal of a metal catches the same light, each metal on its own beat.
+  const LIGHTS = TIERS.map((tier) => passingLight(METALS[tier].light.every, METALS[tier].light.sweep, { travel: true }));
+  /** Svelte actions: the light of `tier`'s metal passes over this slit, or kindles this spark. */
+  const sheen = (slit: Element, tier: Tier) => LIGHTS[tier].glint(slit);
+  const spark = (el: Element, tier: Tier) => LIGHTS[tier].spark(el);
+  /** Where gold's spark kindles: on the outer ring, up and to the right, as a share of the seal. */
+  const SPARK_AT = at(C, 45, OUTER).map((v) => `${50 + (v / 48) * 100}%`);
   const RAYS_WHOLE = ['', '', glory(16), glory(32)];
 </script>
 
@@ -122,6 +134,9 @@
   style:--metal={METALS[tier].color}
   style:--sheen={METALS[tier].sheen?.color}
   style:--shine={METALS[tier].sheen?.opacity}
+  style:--gleam={METALS[tier].light.gleam}
+  style:--strength={METALS[tier].light.strength}
+  style:--band="{METALS[tier].light.band}%"
   aria-hidden="true"
 >
   {#if earned}
@@ -133,6 +148,16 @@
       <circle r={OUTER} class="done" pathLength="100" stroke-dasharray="{share * 100} 100" transform="rotate(-90)" />
     {/if}
   </svg>
+  {#if earned}
+    {#key tier}
+      <span class="slit" use:sheen={tier}><svg viewBox="-24 -24 48 48">{@render engraving(true)}</svg></span>
+      {#if METALS[tier].light.spark}
+        <svg class="spark" use:spark={tier} viewBox="-1 -1 2 2" style:left={SPARK_AT[0]} style:top={SPARK_AT[1]}>
+          <path d="M0 -1L0.16 -0.16L1 0L0.16 0.16L0 1L-0.16 0.16L-1 0L-0.16 -0.16Z" />
+        </svg>
+      {/if}
+    {/key}
+  {/if}
 </span>
 
 <style>
@@ -195,6 +220,46 @@
     stroke: #b08a4c;
     stroke-width: 1.1;
     stroke-linecap: butt;
+  }
+
+  /*
+   * The passing light: at rest the slit waits off to the left of the seal,
+   * its copy of the lines shifted back over them (lib/glint.ts slides both).
+   * The band is the metal's width either side of the slit's middle.
+   */
+  .slit {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    -webkit-mask-image: linear-gradient(90deg, transparent calc(50% - var(--band)), #000 50%, transparent calc(50% + var(--band)));
+    mask-image: linear-gradient(90deg, transparent calc(50% - var(--band)), #000 50%, transparent calc(50% + var(--band)));
+    transform: translateX(-100%) skewX(-20deg);
+  }
+  .slit svg {
+    color: var(--gleam);
+    opacity: var(--strength);
+    filter: drop-shadow(0 0 1px var(--gleam));
+    transform: skewX(20deg) translateX(100%);
+  }
+  /* Gold's spark: a small four-pointed star on the rim, unseen until the light kindles it. */
+  .spark {
+    position: absolute;
+    width: 34%;
+    height: 34%;
+    inset: auto;
+    overflow: visible;
+    opacity: 0;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    fill: #fffaf0;
+    stroke: none;
+    filter: drop-shadow(0 0 2px rgba(255, 214, 140, 0.9));
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .slit,
+    .spark {
+      display: none;
+    }
   }
 
   /* The glow: the same lines, wide and faint, under them. */
