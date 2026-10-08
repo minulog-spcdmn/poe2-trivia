@@ -12,6 +12,8 @@ import {
   drawClockFrom,
   drawHoldUntil,
   expireIn,
+  fuseHeard,
+  runSeenStarting,
   underRuleset,
   inventoryChanges,
   livesLost,
@@ -244,4 +246,25 @@ test('a run picked up under other rules is marked mixed, unless it was decided a
   assert.equal(underRuleset(solo).delve!.mixed, undefined);
   solo.delve!.losses = { a: [4, 4] };
   assert.equal(underRuleset(solo).delve!.mixed, true, 'still standing');
+});
+
+test("the fuse sounds again once a Detonate's sound the host turned down has ended", () => {
+  const detonate = { qid: 100, until: 1500 };
+  assert.equal(fuseHeard(detonate, 100, 1000), true, 'still sounding: never heard twice over');
+  // Over: the clock's own fuse, or a second press, sounds afresh.
+  assert.equal(fuseHeard(detonate, 100, 1500), false);
+  assert.equal(fuseHeard(detonate, 200, 1000), false, 'another question');
+  assert.equal(fuseHeard(null, 100, 1000), false);
+});
+
+test('a run only opens with its gate on a screen that saw it start, never after a reload or a rejoin', () => {
+  const lobby = run({ phase: 'lobby' });
+  const choosing = run();
+  assert.equal(runSeenStarting(lobby, choosing), 5);
+  assert.equal(runSeenStarting(run({ phase: 'over' }), run({ phase: 'question', question: question(null) })), 5, 'again after a run ended');
+  // Came in on it under way: no state before, or one already choosing.
+  assert.equal(runSeenStarting(null, choosing), null);
+  assert.equal(runSeenStarting(choosing, run({ turnCount: 1 })), null);
+  // Not a Delve run.
+  assert.equal(runSeenStarting(createGame('a'), { ...createGame('a'), phase: 'choosing' }), null);
 });

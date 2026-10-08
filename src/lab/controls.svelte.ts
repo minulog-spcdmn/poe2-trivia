@@ -253,7 +253,10 @@ export function boot() {
 
 /** A new run on this device: `n` players at `depth`. */
 export function newRun(n: number, depth: number) {
-  place(freshRun(n, depth, null), true);
+  const s = freshRun(n, depth, null);
+  place(s, true);
+  // Seen starting, as a run from the lobby is: at depth 1 it opens with the first zone's gate (Game.svelte).
+  session.runStarted = s.delve!.startedAt;
   note(`New run: ${n === 1 ? 'alone' : `${n} players together`} at depth ${depth}.`);
 }
 

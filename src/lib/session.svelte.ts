@@ -57,11 +57,13 @@ import {
   expireIn,
   expireKey,
   flareIn,
+  fuseHeard,
   hostAnswerHold,
   markAway,
   mayAutoReask,
   racerIds,
   reaskDelay,
+  runSeenStarting,
   underRuleset,
   type DelveNotice,
 } from './delveSession';
@@ -239,6 +241,13 @@ class Session {
   delveResult = $state<{ id: number; depth: number; previousBest: number | null; best: boolean } | null>(null);
   /** Delve: the deepest this device had gone (alone or in a group, as this run is) when the run began. */
   bestAtStart = $state<number | null>(null);
+  /**
+   * Delve: the run (its startedAt) this device saw start, from the lobby or
+   * after a game ended (delveSession.ts runSeenStarting); null after a reload
+   * or a rejoin, which come in on a run already under way. Its opening gate
+   * (Game.svelte) is only for a start seen. Set before the state it comes with.
+   */
+  runStarted: number | null = null;
   /** Host: when the disconnected active player's turn will be skipped (0 = not pending). */
   skipAt = $state(0);
   /**
@@ -1565,7 +1574,8 @@ class Session {
 
   /**
    * A question just revealed goes into this browser's codex; so does one
-   * dynamite just blasted away, as seen (never missed).
+   * dynamite just blasted away, as seen (together, as a miss for a player
+   * who struck an option on it first: codex.ts blastedEncounter).
    */
   private noteEncounter(prev: GameState | null, next: GameState) {
     const me = this.myPlayerId;
@@ -1648,18 +1658,19 @@ class Session {
 
   /** Delve: the fuse waiting to burn, for the question and the 0 it burns down to (`key`). */
   private hiss: { key: string; timer: ReturnType<typeof setTimeout> | null } | null = null;
-  /** Delve: the fuse's sound, for the question it burns on (askedAt); one at a time. */
-  private fuseSound: { qid: number; stop: (() => void) | undefined } | null = null;
+  /** Delve: the fuse's sound, for the question it burns on (askedAt), and when it ends by itself (Date.now()); one at a time. */
+  private fuseSound: { qid: number; stop: (() => void) | undefined; until: number } | null = null;
 
   /**
    * Delve: the fuse's sound starts for question `qid`, held for `holdMs` at
-   * most (cut sooner as the question ends); nothing when it sounds for that
+   * most (cut sooner as the question ends); nothing while it sounds for that
    * question already, so it is never heard twice over.
    */
   private soundFuse(qid: number, holdMs: number) {
-    if (this.fuseSound?.qid === qid) return;
+    const now = Date.now();
+    if (fuseHeard(this.fuseSound, qid, now)) return;
     this.cutFuse();
-    this.fuseSound = { qid, stop: sfx('fuse', { holdMs }) };
+    this.fuseSound = { qid, stop: sfx('fuse', { holdMs }), until: now + holdMs };
   }
 
   /** Delve: the fuse's sound is cut, with a short fade (the dynamite went off, or the question ended). */
@@ -1711,6 +1722,8 @@ class Session {
       // Burnt down already (a screen that came in late): the blast is due, nothing to hear.
       if (fuse <= 0) return;
       // Held to 0 and the host's time-out after it, when the blast cuts it.
+      // A Detonate's shorter sound still on (the host may turn it down) gives way to it.
+      this.cutFuse();
       this.soundFuse(cur.question.askedAt, fuse * DELVE_FUSE_MS + ANSWER_GRACE_MS + FUSE_TAIL_MS);
     };
     light(s);
@@ -1735,6 +1748,8 @@ class Session {
     for (const n of delveNotices(prev, next)) this.delveNotice(n, next);
     // Delve: dynamite blasted the question away for a new one, heard on every screen.
     if (blastedAway(prev, next)) sfx('blast');
+    const started = runSeenStarting(prev, next);
+    if (started !== null) this.runStarted = started;
     if ((prev.phase === 'lobby' || prev.phase === 'over') && (next.phase === 'choosing' || next.phase === 'question')) {
       sfx('start');
       return;
@@ -2055,6 +2070,11 @@ class Session {
     if (this.flareTimer) clearTimeout(this.flareTimer);
     this.flareTimer = null;
     this.flareKey = '';
+    // The fuse goes quiet with the game (left, removed, or the room closed).
+    if (this.hiss?.timer) clearTimeout(this.hiss.timer);
+    this.hiss = null;
+    this.cutFuse();
+    this.runStarted = null;
     this.reaskFails = { turn: '', n: 0 };
     this.artFailedFor = 0;
     this.drawHold = null;

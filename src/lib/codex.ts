@@ -15,8 +15,10 @@
 // builds before dynamite blasted questions away, had a stick go off on them
 // at half the clock), how many Azurite Wards broke in place of its lives, and, where a
 // wrong answer to an Azurite Vein caved in for two, the lives it cost. A
-// question dynamite blasts away counts as seen, never as an answer: it
-// costs nothing and is never missed.
+// question dynamite blasts away counts as seen: blasting it costs nothing
+// and misses nothing. Only a wrong answer given to it before (together, a
+// teammate may blast a question someone already struck) counts, as a miss
+// at what it cost them.
 // The log also keeps, per Delve answer, the find it came from and what it
 // earned, a flare burnt on it, and on a cave-in the lives and wards it took,
 // so a run can be told back (codexStats.ts runStory), whether dynamite went off
@@ -275,11 +277,15 @@ export function encounterAt(s: GameState, me: string | null, hotSeat: boolean, m
 
 /**
  * The encounter a question dynamite blasted away means for this device: its
- * item seen, never answered (so never missed, and it costs nothing), filed
- * under the run like any of its questions. `blast` is the new question's
- * (game.ts Blast), which remembers the one blasted away.
+ * item seen, filed under the run like any of its questions. Blasting it
+ * answers nothing and costs nothing; but together, where this device's
+ * player struck an option on it before a teammate blasted it, that wrong
+ * answer stands, at what it cost them (its pick unknown: its options went
+ * with it). `blast` is the new question's (game.ts Blast), which remembers
+ * the one blasted away.
  */
 export function blastedEncounter(s: GameState, blast: Blast, me: string | null, hotSeat: boolean): Encounter {
+  const struck = me && !hotSeat ? blast.was.struck?.find((x) => x.by === me) : undefined;
   return {
     at: blast.was.at,
     itemId: blast.was.itemId,
@@ -291,11 +297,13 @@ export function blastedEncounter(s: GameState, blast: Blast, me: string | null, 
           delve: {
             depth: Math.max(1, s.round),
             run: s.delve.startedAt,
+            ...(struck ? { lost: { lives: struck.lives, wards: struck.wards } } : {}),
             ...(isGroupRun(s) ? { team: true as const } : {}),
             ...(me && !hotSeat ? { who: me } : {}),
           },
         }
       : {}),
+    ...(struck ? { answer: { ok: false, pickedId: null, pickedLabel: null } } : {}),
   };
 }
 

@@ -192,6 +192,27 @@ export function blastedAway(prev: GameState | null, next: GameState): Blast | nu
 }
 
 /**
+ * Delve: the fuse's sound started for question `qid` (`sound`, which ends at
+ * `until`, Date.now() time) is still heard at `now`. One that has ended is
+ * as good as none: after a Detonate the host turned down, the fuse can sound
+ * again for that question (a second press, or the clock's last seconds).
+ */
+export function fuseHeard(sound: { qid: number; until: number } | null, qid: number, now: number): boolean {
+  return !!sound && sound.qid === qid && now < sound.until;
+}
+
+/**
+ * This change starts a game (from the lobby, or again after one ended): the
+ * Delve run's start (its id) when it is one, or null. A screen that comes in
+ * later (a reload, a rejoin) never sees it, so it plays nothing a start does.
+ */
+export function runSeenStarting(prev: GameState | null, next: GameState): number | null {
+  if (!prev || !next.delve) return null;
+  const started = (prev.phase === 'lobby' || prev.phase === 'over') && (next.phase === 'choosing' || next.phase === 'question');
+  return started ? next.delve.startedAt : null;
+}
+
+/**
  * The question in play was set aside by the host's reload (back to the same
  * cards, on the same turn): the engine put back what it cost, which is no
  * news to anyone.

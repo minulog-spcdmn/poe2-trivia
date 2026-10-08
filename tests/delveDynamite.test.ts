@@ -806,6 +806,49 @@ test("a blasted question's item counts as seen in the codex, never missed, and c
   assert.equal(record(c, e), c);
 });
 
+test('together, a wrong answer given before a teammate blasts the question away is logged as a miss, at what it cost', () => {
+  const h = delve(3, { depth: 31 });
+  h.give('p0', { dynamite: 1 });
+  h.give('p1', { wards: 1 });
+  const q = h.ask();
+  // p1's wrong answer breaks their ward, p2's costs a life; then p0 sets the dynamite off.
+  const [i1, i2] = wrongs(q);
+  h.act({ type: 'answer', index: i1, askedAt: q.askedAt }, 'p1');
+  h.act({ type: 'answer', index: i2, askedAt: q.askedAt }, 'p2');
+  assert.deepEqual([livesOf(h.s, 'p1'), livesOf(h.s, 'p2')], [DELVE_LIVES, DELVE_LIVES - 1]);
+  h.blast('p0');
+  const blast = h.s.question!.blast!;
+  const struck = [
+    { by: 'p1', index: i1, lives: 0, wards: 1 },
+    { by: 'p2', index: i2, lives: 1, wards: 0 },
+  ];
+  assert.deepEqual(blast.was.struck, struck);
+  // Public: every screen logs its own (no answer to the new question in it).
+  assert.deepEqual(publicView(h.s).question!.blast!.was.struck, struck);
+  const depth = h.s.round;
+  // p1: a miss a ward took.
+  const e1 = blastedEncounter(h.s, blast, 'p1', false);
+  assert.deepEqual(e1.answer, { ok: false, pickedId: null, pickedLabel: null });
+  assert.deepEqual(e1.delve!.lost, { lives: 0, wards: 1 });
+  const c1 = record(emptyCodex(), e1);
+  assert.deepEqual(c1.items[q.itemId].delve, { n: 1, ok: 0, deepest: 0, lostAt: 0, warded: 1 });
+  assert.deepEqual(c1.log, [{ t: q.askedAt, id: q.itemId, mode: q.mode, ok: false, difficulty: e1.difficulty, race: false, depth, run: h.s.delve!.startedAt, warded: true, lives: 0, wards: 1, team: true, who: 'p1' }]);
+  assert.equal(c1.streak, 0);
+  // p2: a miss that cost a life.
+  const c2 = record(emptyCodex(), blastedEncounter(h.s, blast, 'p2', false));
+  assert.deepEqual(c2.items[q.itemId].delve, { n: 1, ok: 0, deepest: 0, lostAt: depth });
+  assert.deepEqual([c2.log[0].lives, c2.log[0].wards], [1, 0]);
+  // p0 never answered it, and hot-seat can't tell its players apart: seen only.
+  for (const e of [blastedEncounter(h.s, blast, 'p0', false), blastedEncounter(h.s, blast, 'p1', true)]) {
+    assert.equal(e.answer, undefined);
+    assert.equal(e.delve!.lost, undefined);
+    assert.deepEqual(record(emptyCodex(), e).log, []);
+  }
+  // Asked again in its place (its art failed), the blast keeps what it remembers.
+  h.act({ type: 'reask' });
+  assert.deepEqual(h.s.question!.blast!.was.struck, struck);
+});
+
 test("a run's blasts go into its record, and records from before them still read", () => {
   const h = solo({ dynamite: 2 }, { host: 'p0' });
   h.blast('p0');

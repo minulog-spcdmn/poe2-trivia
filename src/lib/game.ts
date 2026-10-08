@@ -640,11 +640,13 @@ export interface Blast {
    */
   side: -1 | 1;
   /**
-   * The question blasted away: when it was asked, its answer and its kind.
-   * Public, as it can't be answered any more: every screen counts its item
-   * as seen (never missed) in the codex.
+   * The question blasted away: when it was asked, its answer and its kind,
+   * and (co-op) the wrong answers given to it first, with what each cost,
+   * as they stand paid. Public, as it can't be answered any more: every
+   * screen counts its item as seen in the codex, and a player who struck an
+   * option on it as having missed it, at that cost.
    */
-  was: { at: number; itemId: string; mode: QuestionMode };
+  was: { at: number; itemId: string; mode: QuestionMode; struck?: Pick<Struck, 'by' | 'index' | 'lives' | 'wards'>[] };
 }
 
 /** A wrong answer in co-op Delve (see Question.struck). */
@@ -1753,8 +1755,15 @@ export class Engine {
     if (active) active.recent = lastPicks([...active.recent, category], DELVE_MAX_LOCKOUT);
     else s.recentCategories = lastPicks([...s.recentCategories, category], DELVE_MAX_LOCKOUT);
     const side = s.offered.indexOf(category) < s.offered.indexOf(was.category) ? -1 : 1;
+    // The wrong answers it took stay paid, so every screen logs them (codex.ts blastedEncounter).
+    const struck = (was.struck ?? []).map(({ by, index, lives, wards }) => ({ by, index, lives, wards }));
     s.question = this.makeQuestion(s, category);
-    s.question.blast = { ...(by ? { by } : {}), stick, side, was: { at: was.askedAt, itemId: was.itemId, mode: was.mode } };
+    s.question.blast = {
+      ...(by ? { by } : {}),
+      stick,
+      side,
+      was: { at: was.askedAt, itemId: was.itemId, mode: was.mode, ...(struck.length ? { struck } : {}) },
+    };
     s.used.push(s.question.itemId);
   }
 

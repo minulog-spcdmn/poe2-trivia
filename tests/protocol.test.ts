@@ -117,8 +117,14 @@ test('veiled "find the art" pictures say which option they belong to', () => {
   assert.equal(parseHostMsg({ ...patch, tile: '2' }), null);
 });
 
-test('version 16: a flare gives six seconds and a Flare Cache two thirds of the clock, never under four (worked out on every screen); 15 set dynamite off right at 0, its fuse burning over the last seconds before; 14 lit it at 0 (Question.fuse), 13 blasted a question away (the blast action), 12 had the frozen Delve rules, 11 the co-op vote and revive', () => {
-  assert.equal(PROTOCOL_VERSION, 16);
+test('version 17: a blasted question remembers the wrong answers given to it, so every screen logs what they cost (Blast.was.struck); 16 gave a flare six seconds and a Flare Cache two thirds of the clock, never under four (worked out on every screen); 15 set dynamite off right at 0, its fuse burning over the last seconds before; 14 lit it at 0 (Question.fuse), 13 blasted a question away (the blast action), 12 had the frozen Delve rules, 11 the co-op vote and revive', () => {
+  assert.equal(PROTOCOL_VERSION, 17);
+  // A guest on 16 would log a wrong answer a teammate's dynamite then blasted away as never given.
+  assert.match(versionProblem(16)!, /^Your game is out of date/);
+  // The state passes as the host sent it, a blast's struck answers and all.
+  const was = { at: 1, itemId: 'x', mode: 'name', struck: [{ by: 'p1', index: 2, lives: 1, wards: 0 }] };
+  const state = { players: [], settings: {}, question: { blast: { stick: 'p0', side: 1, was } } };
+  assert.deepEqual(parseHostMsg({ t: 'state', state, now: 5 }), { t: 'state', state, now: 5 });
   // A guest on 15 would run its own clock five seconds on after a flare, and a Flare Cache's a second short.
   assert.match(versionProblem(15)!, /^Your game is out of date/);
   // A guest on 14 would wait for a fuse the host never lights, and burn none before 0.

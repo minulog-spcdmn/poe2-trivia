@@ -173,7 +173,8 @@
   // Delve: a gate at the start of a depth worth it (a new zone, a new best),
   // built over the head of the stage for a few seconds (zonebanner/Threshold).
   // Only when the run is seen going one deeper, and at its very start, where
-  // the first zone's gate opens it. It belongs to its turn: the next one clears it.
+  // the first zone's gate opens it: a start this device saw (session.runStarted),
+  // not a reload or a rejoin during the first choice. It belongs to its turn: the next one clears it.
   type Card = { key: string; turn: number; title: string; sigil: string; accent: string; label: string; leaving: boolean; still: boolean };
   let card = $state<Card | null>(null);
   let cardTimers: ReturnType<typeof setTimeout>[] = [];
@@ -188,7 +189,7 @@
     const deeper = depthSeen.startsWith(`${run.startedAt}:`);
     depthSeen = key;
     // The run's first depth: the first zone's gate, as each new zone gets one.
-    const opening = !deeper && depth === 1;
+    const opening = !deeper && depth === 1 && session.runStarted === run.startedAt;
     if (!deeper && !opening) return;
     untrack(() => {
       if (deeper) descended();

@@ -208,7 +208,9 @@ the same thing for everyone.
     screen shakes and the scene behind swings, and the new question comes
     in from the side the blast came from, through the clearing smoke (a
     cross-fade with reduced motion or the effects off). The question blasted away
-    counts as seen in the Codex, never missed, and the run's record keeps
+    counts as seen in the Codex; blasting it misses nothing, but together a
+    wrong answer someone gave it before a teammate blasted it stays logged
+    as their miss, at the life or ward it cost. The run's record keeps
     how many questions it blasted away (shown on the Codex's last run and
     in its finds panel).
     The cache itself is unstable: a miss on it (a wrong answer or a
