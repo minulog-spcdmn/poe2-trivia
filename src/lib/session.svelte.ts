@@ -39,8 +39,7 @@ import { toasts, type ToastKind, type ToastOptions } from './toasts.svelte';
 import { creatorArrival } from './herald';
 import { RUBY } from './palette';
 import { CREATOR_TITLE } from './site';
-import { DELVE_FUSE_MS, FLARE_MS, LOOKALIKES_ASKED_FROM, clockLeft, fuseDue, fuseLeft, isGroupRun, livesOf, standingIds } from './delve';
-import { blownText } from './difficultyText';
+import { DELVE_FUSE_MS, LOOKALIKES_ASKED_FROM, clockLeft, fuseDue, fuseLeft, isGroupRun, livesOf, standingIds } from './delve';
 import { loadLooks } from './looks';
 import { bestOf, loadRecords, recordLeft, recordRun, runEvent } from './delveRecord';
 import {
@@ -1753,42 +1752,28 @@ class Session {
     }
   }
 
-  /** Delve: one notice of a state change, in words (delveSession.ts delveNotices). What this device's own screen shows already, it isn't told. */
+  /**
+   * Delve: one notice of a state change (delveSession.ts delveNotices). A
+   * question set aside goes out as a toast, room news like a player leaving;
+   * what befalls the team in play is said on the game screen itself
+   * (QuestionView's lines under the answers, Game's under the stage).
+   */
   private delveNotice(n: DelveNotice, s: GameState) {
-    const player = (id: string) => s.players.find((p) => p.id === id);
-    const p = player(n.playerId);
-    const who = p ? { name: p.name, hue: p.hue } : undefined;
-    const me = this.mode === 'local' ? null : this.myPlayerId;
-    const mine = !!me && n.playerId === me;
     switch (n.kind) {
-      case 'setAside':
+      case 'setAside': {
+        const p = s.players.find((o) => o.id === n.playerId);
+        const who = p ? { name: p.name, hue: p.hue } : undefined;
         this.flash(`The host reloaded, so ${n.playerId ? 'it cost nothing' : 'nobody lost anything'}.`, 'info', { title: 'Question set aside', ...(who ? { who } : {}) });
         break;
-      case 'struck':
-        // What it cost them, their phial shows; a blast's loss is said too.
-        if (who && !mine) this.flash(`That answer is out for everyone.${n.blown ? ` ${blownText(n.blown, 'their')}` : ''}`, 'warn', { title: 'Wrong pick', who });
-        break;
+      }
       case 'perished': {
-        // Nobody left standing: the run ends next (the notice comes with the
-        // reveal, the end after it), and the end has its own toll (onNewState).
-        const wiped = !standingIds(s).length;
-        // The depth is in the header.
-        const line = wiped ? 'The team has fallen.' : n.revivable ? 'A teammate can give them a life.' : 'The rest delve on.';
-        if (who && !mine) this.flash(line, 'warn', { title: 'Perished', who });
-        // Before the end, your own perishing goes out as it would, a teammate's from far off.
-        if (!wiped && s.phase !== 'over') sfx(mine ? 'fallen' : 'fallenFar');
+        // Nobody left standing: the run ends next, and the end has its own
+        // toll (onNewState). Before it, your own perishing is heard as it
+        // would be, a teammate's from far off.
+        const mine = this.mode !== 'local' && !!this.myPlayerId && n.playerId === this.myPlayerId;
+        if (standingIds(s).length && s.phase !== 'over') sfx(mine ? 'fallen' : 'fallenFar');
         break;
       }
-      case 'revived': {
-        const giver = player(n.by);
-        if (!who || !giver) break;
-        const line = n.by === me ? 'You gave them a life.' : mine ? `${giver.name} gave you a life.` : `${giver.name} gave them a life.`;
-        this.flash(line, 'info', { title: 'Brought back', who });
-        break;
-      }
-      case 'flare':
-        if (who) this.flash(`${FLARE_MS / 1000} more seconds for everyone.`, 'info', { title: 'A flare burns', who });
-        break;
     }
   }
 

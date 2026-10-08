@@ -435,6 +435,24 @@ export function coopMissText(hit: { lives: number; wards: number; blown?: ItemKi
 }
 
 /**
+ * Co-op, while the question is open: teammates who perished on it, said
+ * under the answers as their entries grey ("Ash perished.", "Ash and Brea
+ * perished."). Your own is said by coopMissText; empty when nobody else did.
+ */
+export function perishedText(ids: string[], nameOf: (id: string) => string, me: string | null): string {
+  const others = ids.filter((id) => id !== me);
+  return others.length ? `${cap(namesOf(others, nameOf, me))} perished.` : '';
+}
+
+/** Co-op: a flare burning from someone's pack as the clock hits 0: "Ash's flare gives everyone five more seconds." */
+export const flareText = (by: string, nameOf: (id: string) => string, me: string | null) =>
+  `${cap(whose(by, nameOf, me))} flare gives everyone ${words(FLARE_MS / 1000)} more seconds.`;
+
+/** Co-op: a life given to bring a teammate back: "Ash brought Brea back.", "You brought Ash back.", "Ash brought you back." */
+export const revivedText = (by: string, to: string, nameOf: (id: string) => string, me: string | null) =>
+  `${cap(namesOf([by], nameOf, me))} brought ${namesOf([to], nameOf, me)} back.`;
+
+/**
  * Depths where lives went, for the end screen: a depth that took two (a
  * cave-in) once, with how many: "3 (two lives) and 4". `losses` are the
  * run's own depths; the text counts them as players do (shownDepth).

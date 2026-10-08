@@ -4,7 +4,8 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { coopMissText, coopRevealText, delverText, lossDepths, namesOf, teamFindNote, wardText } from '../src/lib/difficultyText.ts';
+import { FLARE_MS } from '../src/lib/delve.ts';
+import { coopMissText, coopRevealText, delverText, flareText, lossDepths, namesOf, perishedText, revivedText, teamFindNote, wardText } from '../src/lib/difficultyText.ts';
 
 const NAMES: Record<string, string> = { a: 'Ash', b: 'Brea', c: 'Cara', me: 'Me' };
 const nameOf = (id: string) => NAMES[id];
@@ -101,6 +102,19 @@ test('your own wrong answer, while the team answers on', () => {
   assert.equal(coopMissText({ lives: 0, wards: 1 }, 3, false), 'Wrong, but your ward took the hit.');
   assert.equal(coopMissText({ lives: 2, wards: 0 }, 1, true), 'Wrong, and the vein caved in.');
   assert.equal(coopMissText({ lives: 1, wards: 0 }, 0, false), 'You perished, but your team can still clear it.');
+});
+
+test('what befalls the team in play: teammates perishing, a flare burning, a life given', () => {
+  assert.equal(perishedText(['a'], nameOf, 'me'), 'Ash perished.');
+  assert.equal(perishedText(['a', 'b'], nameOf, 'me'), 'Ash and Brea perished.');
+  assert.equal(perishedText(['me', 'a'], nameOf, 'me'), 'Ash perished.', 'your own the miss line says');
+  assert.equal(perishedText(['me'], nameOf, 'me'), '');
+  assert.equal(FLARE_MS, 5000, 'the flare line counts five');
+  assert.equal(flareText('a', nameOf, 'me'), "Ash's flare gives everyone five more seconds.");
+  assert.equal(flareText('me', nameOf, 'me'), 'Your flare gives everyone five more seconds.');
+  assert.equal(revivedText('a', 'b', nameOf, 'me'), 'Ash brought Brea back.');
+  assert.equal(revivedText('me', 'a', nameOf, 'me'), 'You brought Ash back.');
+  assert.equal(revivedText('a', 'me', nameOf, 'me'), 'Ash brought you back.');
 });
 
 test("a find's note for the team says what it does for all, and what stays unused", () => {

@@ -95,7 +95,7 @@ test('a send queue is empty only when PeerJS and the channel both are', () => {
   assert.equal(drained({}), true);
 });
 
-test('notices: a question set aside by a reload, and a life given to bring someone back', () => {
+test('notices: a question set aside by a reload (a life given, the board and the game screen say)', () => {
   const prev = run();
   const lost = run();
   lost.delve!.losses = { b: [3] };
@@ -105,12 +105,12 @@ test('notices: a question set aside by a reload, and a life given to bring someo
   caved.delve!.losses = { b: [3, 3] };
   assert.deepEqual(livesLost(prev, caved), [{ playerId: 'b', left: 1, lost: 2 }], 'a cave-in takes two at once');
 
-  // A revive: the giver's life is given, not lost; the one brought back gets a notice.
+  // A revive: the giver's life is given, not lost; the screen says who brought whom back, no notice.
   const down = run();
   down.delve!.losses = { b: [1, 2, 3] };
   const back = structuredClone(down);
   back.delve!.revives = [{ by: 'a', to: 'b', depth: 3, fell: 3, at: 9 }];
-  assert.deepEqual(delveNotices(down, back), [{ kind: 'revived', playerId: 'b', by: 'a' }]);
+  assert.deepEqual(delveNotices(down, back), []);
   assert.deepEqual(livesLost(down, back), []);
 
   const asking = run({ phase: 'question', question: question(null), turnCount: 4 });
@@ -156,7 +156,7 @@ test('a blast is told apart from a question asked again: the new question names 
   assert.equal(blastedAway(null, next), null);
 });
 
-test('co-op notices: a wrong pick, a perish and a flare from a pack (dynamite the question says itself)', () => {
+test('co-op notices: only a perish (a wrong pick and a flare the question says itself, and dynamite)', () => {
   const q = question(5000);
   const prev = run({ phase: 'question', question: q });
   prev.delve!.losses = { b: [1, 2] };
@@ -169,19 +169,11 @@ test('co-op notices: a wrong pick, a perish and a flare from a pack (dynamite th
   next.round = 7;
   next.question!.flared = true;
   next.question!.flaredBy = 'a';
-  assert.deepEqual(delveNotices(prev, next), [
-    { kind: 'struck', playerId: 'a', lives: 0, wards: 1 },
-    { kind: 'flare', playerId: 'a' },
-    { kind: 'perished', playerId: 'b', depth: 7, revivable: true },
-  ]);
+  assert.deepEqual(delveNotices(prev, next), [{ kind: 'perished', playerId: 'b', depth: 7 }]);
   // Alone the player's own screen says all of it.
   const [soloPrev, soloNext] = [structuredClone(prev), structuredClone(next)];
   soloPrev.delve!.entrants = soloNext.delve!.entrants = ['a'];
   assert.deepEqual(delveNotices(soloPrev, soloNext), []);
-  // A teammate with one life left can't give it: nobody can bring them back.
-  const low = structuredClone(next);
-  low.delve!.losses.a = [3, 5];
-  assert.deepEqual(delveNotices(prev, low).at(-1), { kind: 'perished', playerId: 'b', depth: 7, revivable: false });
 });
 
 test('a question set aside is quiet: what it cost comes back without a word but the notice', () => {

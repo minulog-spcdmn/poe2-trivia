@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { fade, fly, scale } from 'svelte/transition';
+  import { fade, fly, scale, slide } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
   import { session } from '../lib/session.svelte';
   import { playerColor } from '../lib/ui';
@@ -16,6 +16,7 @@
   import { phone } from '../lib/layout';
   import { REVIVE_FROM, delveDepth, fellAt, isGroupRun, livesOf, questionTimer, reviveProblem, shownDepth, standingIds } from '../lib/delve';
   import { startLine } from '../lib/delveStart';
+  import { revivedText } from '../lib/difficultyText';
   import { accentAt, milestoneAt, stratumName, swing } from '../lib/descent';
   import { zoneAt } from '../lib/zoneSigils';
   import Threshold from './zonebanner/Threshold.svelte';
@@ -285,6 +286,27 @@
     if (!group || !me || session.mode === 'local') return [];
     return s.players.filter((p) => reviveProblem(s, me, p.id) === null);
   });
+  /**
+   * Delve together: the lives given to bring teammates back since the last
+   * question closed, said under the stage until the next one is asked (the
+   * latest two): their entries' hearts play as it happens, the line keeps
+   * who gave it to whom. `revivesBefore`: how many the run had before.
+   */
+  const revives = $derived(s.delve?.revives ?? []);
+  let revivesBefore = $state(untrack(() => ({ run: s.delve?.startedAt ?? 0, n: revives.length })));
+  $effect(() => {
+    const at = { run: s.delve?.startedAt ?? 0, n: revives.length };
+    const was = untrack(() => revivesBefore);
+    if (s.phase === 'question' || at.run !== was.run || at.n < was.n) revivesBefore = at;
+  });
+  const revivedLines = $derived(
+    group && (s.phase === 'choosing' || s.phase === 'reveal') && s.delve?.startedAt === revivesBefore.run
+      ? revives
+          .slice(revivesBefore.n)
+          .slice(-2)
+          .map((r) => ({ key: `${r.at}:${r.to}`, text: revivedText(r.by, r.to, (id) => nameOf(id)?.name ?? '?', session.myPlayerId) }))
+      : [],
+  );
 </script>
 
 {#snippet timer()}
@@ -369,6 +391,14 @@
           </div>
         {/if}
 
+        {#if group}
+          <!-- Who brought whom back, read out as it happens. -->
+          <div class="revived" aria-live="polite">
+            {#each revivedLines as line (line.key)}
+              <p class="delve-line revive-hint" transition:slide={{ duration: 250 }}>{line.text}</p>
+            {/each}
+          </div>
+        {/if}
         {#if myFall !== null}
           <p class="delve-line muted">
             You perished and are now watching.{#if canBeRevived}{' '}A teammate can give you a life between questions.{/if}
@@ -495,6 +525,10 @@
   }
   .revive-hint {
     color: #f0b6a8;
+  }
+  /* Two revives at once read as a pair. */
+  .revived .delve-line + .delve-line {
+    margin-top: 0.3rem;
   }
   .banner {
     display: flex;

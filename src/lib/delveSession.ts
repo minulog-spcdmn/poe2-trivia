@@ -3,7 +3,6 @@
 import {
   DELVE_RULESET,
   ITEM_KINDS,
-  REVIVE_FROM,
   fellAt,
   flaresOf,
   inventoryOf,
@@ -216,22 +215,14 @@ export function drained(conn: { bufferSize?: number; dataChannel?: { bufferedAmo
 export type DelveNotice =
   /** The host reloaded and the question was set aside; whose it was ('' for a co-op run's, the team's). */
   | { kind: 'setAside'; playerId: string }
-  /** Co-op: `by` gave one of their lives to bring back `playerId`. */
-  | { kind: 'revived'; playerId: string; by: string }
-  /** Co-op: a wrong pick struck its option for everyone, at the cost of `lives` and `wards`, and on a Dynamite Cache what its blast destroyed (the player still stands). */
-  | { kind: 'struck'; playerId: string; lives: number; wards: number; blown?: ItemKind }
-  /** Co-op: a player lost their last life, at `depth`; `revivable`: a teammate standing has lives to spare. */
-  | { kind: 'perished'; playerId: string; depth: number; revivable: boolean }
-  /** Co-op: a flare from `playerId`'s pack burnt for everyone. */
-  | { kind: 'flare'; playerId: string };
+  /** Co-op: a player lost their last life, at `depth`. */
+  | { kind: 'perished'; playerId: string; depth: number };
 
 /**
- * What a state change tells everyone in words: a question was set aside
- * because the host reloaded; together, also a teammate's wrong pick, a
- * teammate perishing, a life given to bring someone back, and a flare
- * burning from someone's pack (alone, the player's own screen says all of
- * that; dynamite blasting a question away, the new question says on every
- * screen).
+ * What a state change tells every screen beyond what it draws: a question
+ * was set aside because the host reloaded (a toast), and together, a player
+ * perishing (heard). A teammate's wrong pick, a revive and a flare burning
+ * the game screen says itself; alone, the player's own screen says all of it.
  */
 export function delveNotices(prev: GameState | null, next: GameState): DelveNotice[] {
   if (!prev?.delve || !next.delve || prev.delve.startedAt !== next.delve.startedAt) return [];
@@ -245,19 +236,8 @@ export function delveNotices(prev: GameState | null, next: GameState): DelveNoti
     return out;
   }
   if (!group) return out;
-  const [pq, nq] = [prev.question, next.question];
-  const sameQ = !!pq && !!nq && pq.askedAt === nq.askedAt;
-  const perished = new Set(next.players.filter((p) => livesOf(prev, p.id) > 0 && livesOf(next, p.id) === 0).map((p) => p.id));
-  if (sameQ) {
-    for (const x of (nq.struck ?? []).slice(pq.struck?.length ?? 0))
-      if (!perished.has(x.by)) out.push({ kind: 'struck', playerId: x.by, lives: x.lives, wards: x.wards, ...(x.blown ? { blown: x.blown } : {}) });
-    if (!pq.flared && nq.flared && nq.flaredBy) out.push({ kind: 'flare', playerId: nq.flaredBy });
-  }
-  for (const id of perished) {
-    const revivable = standingIds(next).some((o) => livesOf(next, o) >= REVIVE_FROM);
-    out.push({ kind: 'perished', playerId: id, depth: fellAt(next, id) ?? next.round, revivable });
-  }
-  for (const r of (next.delve.revives ?? []).slice(prev.delve.revives?.length ?? 0)) out.push({ kind: 'revived', playerId: r.to, by: r.by });
+  for (const p of next.players)
+    if (livesOf(prev, p.id) > 0 && livesOf(next, p.id) === 0) out.push({ kind: 'perished', playerId: p.id, depth: fellAt(next, p.id) ?? next.round });
   return out;
 }
 

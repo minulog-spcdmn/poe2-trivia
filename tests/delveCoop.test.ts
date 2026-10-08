@@ -487,10 +487,6 @@ test('a Dynamite Cache: each wrong pick blows up one thing from the picker\'s ow
   assert.equal(livesOf(h.s, 'p1'), DELVE_LIVES);
   for (const id of ['p0', 'p2']) assert.deepEqual(inventoryOf(h.s, id), { ...NONE, ...PACK }, `${id} keeps theirs`);
   assert.deepEqual(itemsBlown(before, h.s), [{ playerId: 'p1', item: struck.blown }]);
-  assert.deepEqual(
-    delveNotices(before, h.s).map((n) => n.kind === 'struck' && n.blown),
-    [struck.blown],
-  );
   h.pickAs('p0', right(q));
   const r = h.s.reveal!;
   assert.deepEqual(r.hits, [{ playerId: 'p1', lives: 0, wards: 1, timedOut: false, blown: struck.blown }]);
@@ -683,7 +679,7 @@ test('a standing player with two lives or more can bring back a perished teammat
   assert.deepEqual(h.s.delve!.revives, [{ by: 'p0', to: 'p1', depth: 1, fell: 1, at: h.clock.now }]);
   assert.equal(fellAt(h.s, 'p1'), null);
   assert.deepEqual(perishesOf(h.s, 'p1'), [1], 'where they perished is kept');
-  assert.deepEqual(delveNotices(before, h.s), [{ kind: 'revived', playerId: 'p1', by: 'p0' }]);
+  assert.deepEqual(delveNotices(before, h.s), [], 'the board and the game screen say it, no toast');
   assert.deepEqual(livesLost(before, h.s), [], 'a life given is not a life lost');
   assert.deepEqual(h.s.delve!.losses.p0 ?? [], [], 'nor is it in the losses');
   // Back in the vote at once.

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { fly, fade, scale } from 'svelte/transition';
+  import { fly, fade, scale, slide } from 'svelte/transition';
   import { session, engine } from '../lib/session.svelte';
   import { AUTO_NEXT_MS, autoNextLeft, isFake, questionTopic } from '../lib/game';
   import { shown } from '../lib/media.svelte';
@@ -31,7 +31,7 @@
   import { dock, narrow, phone } from '../lib/layout';
   import { portal } from '../lib/portal';
   import { DELVE_FUSE_MS, blastProblem, clockLeft, dynamiteOf, fellAt, fuseDue, fuseLeft, holdersOf, isGroupRun, itemsWorkOn, livesOf, waitingIds } from '../lib/delve';
-  import { blownText, coopMissText, coopRevealText, namesOf, wardText } from '../lib/difficultyText';
+  import { blownText, coopMissText, coopRevealText, flareText, namesOf, perishedText, wardText } from '../lib/difficultyText';
   import ItemGlyph from './ItemGlyph.svelte';
   import type { GlyphKind } from '../lib/inventoryArt';
 
@@ -58,6 +58,23 @@
     coop ? !reveal && !!me && s.players.some((p) => p.id === me) && livesOf(s, me) > 0 && !myStruck : session.myTurn,
   );
   const nameOf = (id: string) => s.players.find((p) => p.id === id)?.name ?? '?';
+  /**
+   * Delve together, while the question is open: teammates its wrong picks
+   * left with no lives (their entries grey, easy to miss mid-question), and
+   * a flare burning from someone's pack, said under the answers. A wrong
+   * pick says itself (its answer crossed out under the picker's face), and
+   * what it cost is told at the reveal.
+   */
+  const perishedLine = $derived(
+    coop && !reveal
+      ? perishedText(
+          struckList.filter((x) => s.players.some((p) => p.id === x.by) && livesOf(s, x.by) === 0).map((x) => x.by),
+          nameOf,
+          me,
+        )
+      : '',
+  );
+  const flareLine = $derived(coop && !reveal && q.flared && q.flaredBy ? flareText(q.flaredBy, nameOf, me) : '');
   // Guests only learn the answer (and the items behind the options) at the reveal.
   const item = $derived(q.itemId ? engine.byId.get(q.itemId) : undefined);
   const race = $derived(s.settings.mode === 'race');
@@ -840,36 +857,48 @@
 
 <!-- What there is to know while the question is open, under the answers. -->
 {#snippet openHint()}
-  {#if coop && myStruck && me}
-    {@const others = waitingIds(s).filter((id) => id !== me)}
-    <p class="spectate out">
-      {coopMissText(myStruck, livesOf(s, me), myStruck.lives + myStruck.wards > 1)}
-      {#if others.length}<span class="still">Still answering: {namesOf(others, nameOf, me)}.</span>{/if}
-    </p>
-  {:else if fuse !== null}
-    <!-- Delve: the clock's last seconds, with dynamite to go off at 0 (its bar burns down on Detonate). -->
-    <p class="spectate blast-line" in:fade={{ duration: 200 }}>
-      <span class="found-glyph" aria-hidden="true"><ItemGlyph kind="dynamite" /></span>The fuse on {coop ? "the team's" : delveYou ? 'your' : `${active.name}'s`} dynamite is burning.
-    </p>
-  {:else if blastLine}
-    <p class="spectate blast-line" in:fade={{ duration: 300, delay: 300 }}><span class="found-glyph" aria-hidden="true"><ItemGlyph kind="dynamite" /></span>{blastLine}</p>
-  {:else if session.spectating}
-    <p class="spectate muted">You're watching. You'll play in the next game.</p>
-  {:else if coop && !mine}
-    <p class="spectate muted">Your team is answering…</p>
-  {:else if coop}
-    <p class="spectate muted">
-      The first right answer clears it; a wrong one costs a life.<span class="keys">{' '}Press 1–{count === 10 ? '9 and 0' : count}.</span>
-    </p>
-  {:else if race && myMiss}
-    <p class="spectate out">Wrong: −1. You're out until the next question.</p>
-  {:else if race}
-    <p class="spectate muted">First right answer wins. A wrong one costs a point!<span class="keys">{' '}Press 1–{count === 10 ? '9 and 0' : count}.</span></p>
-  {:else if !mine}
-    <p class="spectate muted">{active.name} is deciding…</p>
-  {:else}
-    <p class="spectate muted keys">Tip: press 1–{count === 10 ? '9 and 0' : count} to answer.</p>
-  {/if}
+  <!-- One block, so the footer's grid centres its lines together. -->
+  <div>
+    {#if coop}
+      <!-- What befell the team on this question, over the line below: read out as it comes. -->
+      <div class="news" aria-live="polite">
+        {#if perishedLine}<p class="spectate out" transition:slide={{ duration: 250 }}>{perishedLine}</p>{/if}
+        {#if flareLine}
+          <p class="spectate flare-line" transition:slide={{ duration: 250 }}><span class="found-glyph" aria-hidden="true"><ItemGlyph kind="flare" /></span>{flareLine}</p>
+        {/if}
+      </div>
+    {/if}
+    {#if coop && myStruck && me}
+      {@const others = waitingIds(s).filter((id) => id !== me)}
+      <p class="spectate out">
+        {coopMissText(myStruck, livesOf(s, me), myStruck.lives + myStruck.wards > 1)}
+        {#if others.length}<span class="still">Still answering: {namesOf(others, nameOf, me)}.</span>{/if}
+      </p>
+    {:else if fuse !== null}
+      <!-- Delve: the clock's last seconds, with dynamite to go off at 0 (its bar burns down on Detonate). -->
+      <p class="spectate blast-line" in:fade={{ duration: 200 }}>
+        <span class="found-glyph" aria-hidden="true"><ItemGlyph kind="dynamite" /></span>The fuse on {coop ? "the team's" : delveYou ? 'your' : `${active.name}'s`} dynamite is burning.
+      </p>
+    {:else if blastLine}
+      <p class="spectate blast-line" in:fade={{ duration: 300, delay: 300 }}><span class="found-glyph" aria-hidden="true"><ItemGlyph kind="dynamite" /></span>{blastLine}</p>
+    {:else if session.spectating}
+      <p class="spectate muted">You're watching. You'll play in the next game.</p>
+    {:else if coop && !mine}
+      <p class="spectate muted">Your team is answering…</p>
+    {:else if coop}
+      <p class="spectate muted">
+        The first right answer clears it; a wrong one costs a life.<span class="keys">{' '}Press 1–{count === 10 ? '9 and 0' : count}.</span>
+      </p>
+    {:else if race && myMiss}
+      <p class="spectate out">Wrong: −1. You're out until the next question.</p>
+    {:else if race}
+      <p class="spectate muted">First right answer wins. A wrong one costs a point!<span class="keys">{' '}Press 1–{count === 10 ? '9 and 0' : count}.</span></p>
+    {:else if !mine}
+      <p class="spectate muted">{active.name} is deciding…</p>
+    {:else}
+      <p class="spectate muted keys">Tip: press 1–{count === 10 ? '9 and 0' : count} to answer.</p>
+    {/if}
+  </div>
 {/snippet}
 
 <div class="question">
@@ -1440,6 +1469,14 @@
   /* ---- Delve: dynamite ---- */
   .blast-line {
     color: #eebf96;
+  }
+  /* Delve together: what befell the team, a line each over the usual one. */
+  .news > p {
+    padding-bottom: 0.35rem;
+  }
+  /* A flare's line, in the warm light of its count in the phial. */
+  .flare-line {
+    color: #f6cf98;
   }
   /* Dynamite at hand: what there is to know, and the button where Next will
      stand. The row keeps the footer's height, so the button coming and
