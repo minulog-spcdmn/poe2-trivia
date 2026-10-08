@@ -17,6 +17,7 @@ import {
   type ItemKind,
 } from './delve.ts';
 import type { Blast, GameState } from './game.ts';
+import type { DarkOutcome } from './darkness.ts';
 
 /** The longest the host waits for the art to reach the player answering before their clock starts anyway. */
 export const DELVE_CLOCK_CAP_MS = 3000;
@@ -332,4 +333,33 @@ export function flareIn(s: GameState, now: number): number | null {
   const p = s.players[s.turn];
   if (!p?.connected || flaresOf(s, p.id) <= 0) return null;
   return Math.max(0, q.deadline - now);
+}
+
+/**
+ * Delve: how the question `s` reveals ended for the player on this device
+ * (`me`; null for none, as hot-seat), as the dark closing in with its clock
+ * settles (darkness.ts resolveDark), or null for no reveal. Alone, the
+ * answer's own outcome. Together, your own: your right answer, or a loss
+ * you took (your wrong pick, or the time-out while you stood); with no
+ * answer of yours (a teammate's came first, or you watch or lie perished),
+ * the team's. A ward that took the whole loss rescues; the last life lost,
+ * or the whole team fallen, holds the dark until the reveal is over.
+ */
+export function darkOutcome(s: GameState, me: string | null): DarkOutcome | null {
+  const r = s.phase === 'reveal' ? s.reveal : null;
+  if (!s.delve || !r) return null;
+  if (isGroupRun(s)) {
+    if (me && r.winnerId === me) return 'right';
+    const hit = me ? r.hits?.find((h) => h.playerId === me) : undefined;
+    if (me && hit) {
+      if (hit.lives > 0 && livesOf(s, me) === 0) return 'perish';
+      return hit.lives === 0 && hit.wards > 0 ? 'ward' : 'miss';
+    }
+    if (r.winnerId) return 'right';
+    return standingIds(s).length ? 'miss' : 'perish';
+  }
+  if (r.correct) return 'right';
+  const id = s.players[s.turn]?.id;
+  if (id && fellAt(s, id) === s.round) return 'perish';
+  return r.warded ? 'ward' : 'miss';
 }

@@ -1,11 +1,13 @@
 <script lang="ts">
-  import { untrack } from 'svelte';
+  import { onDestroy, untrack } from 'svelte';
   import { session } from '../lib/session.svelte';
   import { sfx } from '../lib/sound';
   import { timerTick } from '../lib/fx/moments';
   import { FLARE_MS, clockLeft, questionTimer, veinWindowMs } from '../lib/delve';
   import { FLARE_IGNITE_MS, flareBurning, onFlareLands, type FlareBurn } from '../lib/flareBurn';
-  import { claimPressure, flareEase, flarePressure, pressureOf, type Pressure } from '../lib/darkness';
+  import { claimPressure, endHold, flareEase, flarePressure, pressureOf, resolveDark, type Pressure } from '../lib/darkness';
+  import { darkOutcome } from '../lib/delveSession';
+  import { motion } from '../lib/motion.svelte';
 
   /**
    * `deadline` null: the clock hasn't started yet (Delve waits for the art), so
@@ -140,6 +142,27 @@
       if (dark === own) dark = null;
     };
   });
+
+  // The question ends at its reveal (in step with the answer marked right or
+  // wrong, its sound and effects): the dark settles as it went for this
+  // device's player (lib/darkness.ts resolveDark), gentler held still. Only
+  // for a clock this ring ran: one mounted at the reveal (a refresh, a
+  // rejoin) has no dark to settle. A perish's dark holds until the reveal is
+  // over: the run's end screen, or the next depth dealt (this ring going).
+  let wasStopped = untrack(() => stopped);
+  $effect(() => {
+    const now = stopped;
+    if (now && !wasStopped && started && delve) {
+      untrack(() => {
+        // (Hot-seat: nobody in particular holds this device; the team's, as a spectator's.)
+        const me = session.mode === 'local' ? null : session.myPlayerId;
+        const outcome = session.state ? darkOutcome(session.state, me) : null;
+        if (outcome) resolveDark(outcome, motion.still);
+      });
+    }
+    wasStopped = now;
+  });
+  onDestroy(() => endHold());
 
   $effect(() => {
     if (deadline === null) {
