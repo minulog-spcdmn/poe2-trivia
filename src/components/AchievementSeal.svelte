@@ -1,8 +1,8 @@
 <script lang="ts" module>
   // An achievement's seal, engraved in the style of the rune circle
   // (docs/arcane-style.md): a worn double ring holding an alchemical sign,
-  // struck in the metal of its tier (iron, copper, silver, gold). Iron, for
-  // the very easy ones, has the outer ring alone. Harder ones carry a glory
+  // struck in the metal of its tier (lib/achievements.ts METALS: lead,
+  // copper, silver, gold). Lead, for the very easy ones, has the outer ring alone. Harder ones carry a glory
   // of fine rays round the sign, the hardest a third ring inside it.
   // Earned, the lines sit on a soft glow; not yet, the seal is a dull
   // impression whose ring is cut as far as the progress has come, and a
@@ -29,7 +29,7 @@
     WAVES,
   } from '../lib/alchemy';
   import { at, line, ring, wear, type Pt } from '../lib/arcane';
-  import type { Sign, Tier } from '../lib/achievements';
+  import { METALS, TIERS, type Sign, type Tier } from '../lib/achievements';
 
   const C: Pt = [0, 0];
   const OUTER = 21.6;
@@ -69,15 +69,12 @@
     retort: { d: RETORT, k: 2.1 },
   };
 
-  /** The metals: iron, copper, silver, gold. */
-  export const METALS = { 0: '#a29a91', 1: '#cf9366', 2: '#cdd2d6', 3: '#e6bb62' } as const;
-
   /** A glory of `n` fine rays between the core and the inner ring, long and short in turn. */
   const glory = (n: number) =>
     Array.from({ length: n }, (_, k) => line(at(C, (k * 360) / n, CORE + 1.3), at(C, (k * 360) / n, k % 2 ? INNER - 3.4 : INNER - 1.5))).join('');
 
   // Every seal of a tier is cut the same: the wear comes from a fixed seed.
-  const drawn = ([0, 1, 2, 3] as const).map((tier) => ({
+  const drawn = TIERS.map((tier) => ({
     outer: ring(C, OUTER, { wear: wear(97 + tier * 31) }),
     rays: tier < 2 ? '' : glory(tier === 2 ? 16 : 32),
   }));
@@ -118,7 +115,7 @@
   {#if shown}<path d={s.d} class="sign" transform="scale({s.k})" style:--k={s.k} />{/if}
 {/snippet}
 
-<span class="seal" class:earned style:--size="{size}px" style:--metal={METALS[tier]} aria-hidden="true">
+<span class="seal" class:earned style:--size="{size}px" style:--metal={METALS[tier].color} aria-hidden="true">
   {#if earned}
     <svg class="glow" viewBox="-24 -24 48 48">{@render engraving(true)}</svg>
   {/if}

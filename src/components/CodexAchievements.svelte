@@ -3,15 +3,15 @@
   import type { Codex } from '../lib/codex';
   import type { DelveRecords } from '../lib/delveRecord';
   import type { Item } from '../lib/game';
-  import { ACHIEVEMENTS, GROUPS, standings, summarize, type AchievementStore, type WinRun } from '../lib/achievements';
+  import { ACHIEVEMENTS, GROUPS, METALS, TIERS, standings, summarize, type AchievementStore, type WinRun } from '../lib/achievements';
   import { backdropShadow } from '../lib/backdropShadow';
   import ArcaneCircle from './ArcaneCircle.svelte';
-  import AchievementSeal, { METALS } from './AchievementSeal.svelte';
+  import AchievementSeal from './AchievementSeal.svelte';
 
   // The Codex's third page: every achievement, earned or not, by group, each
   // on its seal, with how far along you are where that is kept (a moment has
   // no bar: it is earned as it happens). The figures round the rune circle
-  // count them by metal, gold to iron. What each one needs, and how it is counted, is in
+  // count them by metal, gold to lead. What each one needs, and how it is counted, is in
   // lib/achievements.ts.
   let { codex, records, store, wins, items }: { codex: Codex; records: DelveRecords; store: AchievementStore; wins: WinRun; items: Item[] } = $props();
 
@@ -26,9 +26,9 @@
   const groups = $derived(GROUPS.map((g) => ({ ...g, rows: list.filter((r) => r.achievement.group === g.key) })));
   /** Earned and all, by metal (gold first). */
   const metals = $derived(
-    ([3, 2, 1, 0] as const).map((tier) => ({
+    [...TIERS].reverse().map((tier) => ({
       tier,
-      name: ['Iron', 'Copper', 'Silver', 'Gold'][tier],
+      name: METALS[tier].name,
       have: earned.filter((r) => r.achievement.tier === tier).length,
       of: ACHIEVEMENTS.filter((a) => a.tier === tier).length,
     })),
@@ -39,7 +39,7 @@
 
 {#snippet metal(m: (typeof metals)[number])}
   <div class="stat">
-    <span class="stat-label" style:color={METALS[m.tier]}>{m.name}</span>
+    <span class="stat-label" style:color={METALS[m.tier].color}>{m.name}</span>
     <span class="stat-value">{m.have}<small> / {m.of}</small></span>
     <span class="stat-note">{m.have === m.of ? 'every one earned' : `${m.of - m.have} still to earn`}</span>
   </div>

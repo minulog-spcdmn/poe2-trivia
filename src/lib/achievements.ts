@@ -3,11 +3,11 @@
 //
 // Few and chosen: each marks a moment worth telling or a goal worth chasing.
 // Four groups of nine (Knowledge, Versus, Delve, Together), so the Codex page
-// lays out evenly. Each group opens with a very easy one in iron, so a new
+// lays out evenly. Each group opens with a very easy one in lead, so a new
 // player soon finds there are achievements at all, and holds one to laugh at
-// and one that takes real mastery. Tiers are the seal's metal (iron, copper,
-// silver, gold), and a series (one idea at rising tiers) shares a sign; no
-// other achievements do.
+// and one that takes real mastery. Tiers are the seal's metal, the
+// alchemist's way from lead through copper and silver to gold (METALS), and
+// a series (one idea at rising tiers) shares a sign; no other achievements do.
 //
 // Where they come from:
 // - What the codex (lib/codex.ts) and the Delve records (lib/delveRecord.ts)
@@ -20,7 +20,8 @@
 //   (trackVersus: the biggest lead a rival had over you, your own answers,
 //   rivals who guessed, race questions taken from veiled art), kept in the
 //   tab's session storage so a reload doesn't lose it and a game in another
-//   tab never touches it, and at the end versusEnd says what it earned. Only
+//   tab never touches it, and at its end (seen once, a reload in its last
+//   moments too) versusEnd says how it went and what it earned. Only
 //   online, in a seat, to 5 points or more, with someone else still there at
 //   the end; on one device the game can't tell its players apart. The wins
 //   in a row such games make are kept beside the list (loadWins).
@@ -35,7 +36,7 @@ import { answerLives, answerWards, loadCodex, type Answer, type Codex } from './
 import { DELVE_MAX_DYNAMITE, DELVE_MAX_FLARES, DELVE_MAX_WARDS, fellAt, inventoryOf, isGroupRun, livesOf, shownDepth, standingIds } from './delve.ts';
 import { isTogether, loadRecords, type DelveRecords, type DelveRun } from './delveRecord.ts';
 import type { GameState, Item } from './game.ts';
-import { clearAside, makeRoom } from './keepAside.ts';
+import { clearAside, makeRoom, newerThan } from './keepAside.ts';
 import { isHeldName } from './names.ts';
 import { readStored, removeStored, storeKey, tryReadStored, writeStored } from './storage.ts';
 
@@ -81,8 +82,19 @@ export type Sign =
   | 'gemini'
   | 'scorpio';
 
-/** How hard an achievement is: the seal's metal, iron (the very easy ones), copper, silver or gold. */
+/** How hard an achievement is: the seal's metal, lead (the very easy ones), copper, silver or gold. */
 export type Tier = 0 | 1 | 2 | 3;
+
+/** Each tier's metal: its name, and the colour its seal is struck in (lead a dull slate, so it never reads as silver). */
+export const METALS: Record<Tier, { name: string; color: string }> = {
+  0: { name: 'Lead', color: '#7d8ba0' },
+  1: { name: 'Copper', color: '#cf9366' },
+  2: { name: 'Silver', color: '#cdd2d6' },
+  3: { name: 'Gold', color: '#e6bb62' },
+};
+
+/** The tiers, easiest first. */
+export const TIERS: Tier[] = [0, 1, 2, 3];
 
 export interface Progress {
   /** How far along (may run past `need`). */
@@ -739,28 +751,26 @@ export function trackVersus(
   return t;
 }
 
-/**
- * How a game against others that just ended went for this device's player:
- * won or lost, when it counts (online, in a seat, to TARGET_MIN or more,
- * with someone else still there); null otherwise.
- */
-export function versusOutcome(prev: GameState | null, next: GameState, me: string | null, hotSeat: boolean): 'won' | 'lost' | null {
-  if (!prev || prev.phase === 'over' || next.phase !== 'over' || !versusGame(next, me, hotSeat)) return null;
-  if (next.settings.targetScore < TARGET_MIN || !next.players.some((p) => p.id !== me && p.connected)) return null;
-  return next.winners.includes(me!) ? 'won' : 'lost';
+/** How a game against others went, won or lost, from the state it ended on; null for a game that doesn't count (see versusGame) or isn't over. */
+export function versusOutcome(s: GameState, me: string | null, hotSeat: boolean): Outcome | null {
+  if (s.phase !== 'over' || !versusGame(s, me, hotSeat)) return null;
+  if (s.settings.targetScore < TARGET_MIN || !s.players.some((p) => p.id !== me && p.connected)) return null;
+  return s.winners.includes(me!) ? 'won' : 'lost';
 }
 
+export type Outcome = 'won' | 'lost';
+
 /**
- * What the end of a game against others earns this device's player (see
- * versusOutcome for which count). `track`: the game as this device followed it.
+ * How a game against others that ended on `s` went for this device's player,
+ * and what that earned (see versusOutcome for which games count). `track`:
+ * the game as this device followed it.
  */
-export function versusEnd(prev: GameState | null, next: GameState, me: string | null, hotSeat: boolean, track: VersusTrack | null): string[] {
-  const outcome = versusOutcome(prev, next, me, hotSeat);
-  if (!outcome) return [];
-  const s = next;
+export function versusEnd(s: GameState, me: string | null, hotSeat: boolean, track: VersusTrack | null): { outcome: Outcome | null; earned: string[] } {
+  const outcome = versusOutcome(s, me, hotSeat);
+  if (!outcome) return { outcome, earned: [] };
   const t = track?.game === s.startedAt ? track : null;
   // Lost after leading the winner.
-  if (outcome === 'lost') return t && s.winners.some((id) => (t.ahead[id] ?? 0) >= COMEBACK) ? ['hubris'] : [];
+  if (outcome === 'lost') return { outcome, earned: t && s.winners.some((id) => (t.ahead[id] ?? 0) >= COMEBACK) ? ['hubris'] : [] };
   const there = s.players.filter((p) => p.id !== me && p.connected);
   const race = s.settings.mode === 'race';
   const flawless = !!t && t.answered > 0 && !t.wrong;
@@ -773,7 +783,7 @@ export function versusEnd(prev: GameState | null, next: GameState, me: string | 
   if (race && s.settings.targetScore >= TARGET_HIGH && score === s.round && t && there.every((p) => t.guessed.includes(p.id))) out.push('clean-sweep');
   if (there.some((p) => isHeldName(p.name) && !s.winners.includes(p.id))) out.push('usurper');
   if (race && flawless && (t?.veiled ?? 0) >= VEIL_TAKES) out.push('through-the-veil');
-  return out;
+  return { outcome, earned: out };
 }
 
 // ---- reading a stored list --------------------------------------------------------
@@ -839,6 +849,7 @@ export const serializeStore = (s: AchievementStore) => JSON.stringify({ v: ACHIE
 /**
  * Games against others won in a row (only those versusOutcome counts): now,
  * at best, and the last one counted (its start), so none counts twice.
+ * Stored apart from the list, at a version of its own (WINS_VERSION).
  */
 export interface WinRun {
   now: number;
@@ -848,7 +859,12 @@ export interface WinRun {
 
 export const emptyWins = (): WinRun => ({ now: 0, best: 0, last: 0 });
 
-/** A stored run of wins, cleaned up; empty when it's missing or malformed. */
+/** Bump when the stored wins' shape changes incompatibly. */
+export const WINS_VERSION = 1;
+
+export const serializeWins = (w: WinRun) => JSON.stringify({ v: WINS_VERSION, ...w });
+
+/** A stored run of wins, cleaned up; empty when it's missing, malformed or from another version. */
 export function parseWins(raw: string | null): WinRun {
   let v: unknown;
   try {
@@ -856,13 +872,13 @@ export function parseWins(raw: string | null): WinRun {
   } catch {
     return emptyWins();
   }
-  if (!isObj(v) || v.v !== ACHIEVEMENTS_VERSION) return emptyWins();
+  if (!isObj(v) || v.v !== WINS_VERSION) return emptyWins();
   const now = whole(v.now);
   return { now, best: Math.max(now, whole(v.best)), last: typeof v.last === 'number' && Number.isFinite(v.last) ? v.last : 0 };
 }
 
 /** The run after a game that `outcome` went, started at `game`. */
-export function nextWins(w: WinRun, outcome: 'won' | 'lost', game: number): WinRun {
+export function nextWins(w: WinRun, outcome: Outcome, game: number): WinRun {
   if (game === w.last) return w;
   const now = outcome === 'won' ? w.now + 1 : 0;
   return { now, best: Math.max(w.best, now), last: game };
@@ -878,6 +894,19 @@ export function loadAchievements(): AchievementStore {
 /** The games against others won in a row, as stored. */
 export function loadWins(): WinRun {
   return parseWins(tryReadStored(WINS) ?? null);
+}
+
+/**
+ * Counts a game against others that ended `outcome` into the wins in a row,
+ * and says where they stand now; null when they can't be written: storage
+ * blocked, or a newer build's wins, which are never written over. Anything
+ * else unreadable starts over.
+ */
+function countGame(outcome: Outcome, game: number): WinRun | null {
+  const raw = tryReadStored(WINS);
+  if (raw === undefined || (raw !== null && newerThan(raw, WINS_VERSION))) return null;
+  const wins = nextWins(parseWins(raw), outcome, game);
+  return writeStored(WINS, serializeWins(wins)) ? wins : null;
 }
 
 export interface Check {
@@ -945,20 +974,21 @@ export function noteState(
   veilShare?: { qid: number; share: number },
 ): Check {
   const delve = momentsIn(prev, next, me, hotSeat);
-  let ended: string[] = [];
+  const ended: string[] = [];
   if (versusGame(next, me, hotSeat) && next.phase !== 'lobby') {
     const was = parseTrack(readStored(TRACK, 'session'));
     const track = trackVersus(was, prev, next, me, hotSeat, veilShare);
-    ended = versusEnd(prev, next, me, hotSeat, track);
-    const outcome = versusOutcome(prev, next, me, hotSeat);
-    if (outcome) {
-      const wins = nextWins(loadWins(), outcome, next.startedAt);
-      writeStored(WINS, JSON.stringify({ v: ACHIEVEMENTS_VERSION, ...wins }));
-      if (wins.now >= WIN_RUN) ended.push('undefeated');
-    }
-    // Let go once its game is over.
-    if (next.phase === 'over') removeStored(TRACK, 'session');
-    else if (track && track !== was) writeStored(TRACK, JSON.stringify(track), 'session');
+    if (next.phase === 'over') {
+      // Judged once: the first time the game this tab followed is seen over, its tracker still
+      // kept (after a reload in its last moments too), which is then let go.
+      if (was?.game === next.startedAt) {
+        const end = versusEnd(next, me, hotSeat, track);
+        ended.push(...end.earned);
+        const wins = end.outcome && countGame(end.outcome, next.startedAt);
+        if (wins && wins.now >= WIN_RUN) ended.push('undefeated');
+      }
+      removeStored(TRACK, 'session');
+    } else if (track && track !== was) writeStored(TRACK, JSON.stringify(track), 'session');
   }
   const ids = [...delve, ...ended];
   if (!ids.length) return none();

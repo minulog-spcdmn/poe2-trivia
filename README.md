@@ -478,19 +478,21 @@ takes real mastery:
   clean, depth 75 standing, being brought back three times in one run (Dead
   Weight), and a secret one.
 
-Each is an engraved seal struck in iron (the very easy ones), copper, silver
-or gold by how hard it is, bearing an alchemical sign: the tiers of one idea
-share a sign, and no other two do. The top of the page counts them by metal. Where the codex or the Delve records keep what it needs, the page
-shows how far along you are, and games played before achievements existed
-count (that first time quietly: the start page gives one notice). Moments are
-earned as they happen, from the state every player's screen has: a depth
-reached, a ward on the last life, a team falling together. A game against
-others is followed as it goes (the biggest lead a rival had over you and you
-over them, rivals who guessed, veiled questions taken) and judged at its end;
-the host stamps each game with its start (`startedAt`), so its own answers
-can be told apart in the codex; wins in a row are kept beside the list. A new
-achievement is announced with a notice bearing its seal, a moment after it is
-earned. Once earned it stays earned. Kept in this browser
+Each is an engraved seal struck in a metal by how hard it is, the alchemist's
+way from lead (the very easy ones) through copper and silver to gold, and
+bearing an alchemical sign: the tiers of one idea share a sign, and no other
+two do. The top of the page counts them by metal. Where the codex or the Delve
+records keep what it needs, the page shows how far along you are, and games
+played before achievements existed count (that first time quietly: the start
+page gives one notice). Moments are earned as they happen, from the state
+every player's screen has: a depth reached, a ward on the last life, a team
+falling together. A game against others is followed as it goes (the biggest
+lead a rival had over you and you over them, rivals who guessed, veiled
+questions taken) and judged once at its end, also when that end first comes in
+after a reload; the host stamps each game with its start (`startedAt`), so its
+own answers can be told apart in the codex; wins in a row are kept beside the
+list. A new achievement is announced with a notice bearing its seal, a moment
+after it is earned. Once earned it stays earned. Kept in this browser
 (`src/lib/achievements.ts`); erasing the codex erases them.
 
 ## Multiplayer

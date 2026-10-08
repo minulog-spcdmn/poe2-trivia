@@ -252,7 +252,7 @@ export const GEMINI = (() => {
   const [w, y, sag, x] = [3.6, 4, 1, 1.5];
   const r = (w * w + sag * sag) / (2 * sag);
   // Where the pillars meet the bowed lintel (and, mirrored, the sill).
-  const meet = y - sag - r + Math.sqrt(r * r - x * x);
+  const meet = y - sag + r - Math.sqrt(r * r - x * x);
   return (
     arcTo([-w, -y], [w, -y], r, false, false) +
     arcTo([-w, y], [w, y], r, false, true) +

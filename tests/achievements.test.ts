@@ -24,7 +24,9 @@ import {
   serializeStore,
   summarize,
   trackVersus,
+  serializeWins,
   versusEnd,
+  WINS_VERSION,
   type VersusTrack,
 } from '../src/lib/achievements.ts';
 import { storeKey } from '../src/lib/storage.ts';
@@ -172,7 +174,7 @@ test('Sweet Revenge: an item answered right after three wrong answers to it in a
   assert.equal(sum(codexOf([{ id: a, ok: false }, { id: b, ok: false }, { id: items[2].id, ok: false }, { id: a }])).revenge, false);
 });
 
-test('each group opens with one very easy achievement in iron', () => {
+test('each group opens with one very easy achievement in lead', () => {
   for (const g of GROUPS) {
     const list = ACHIEVEMENTS.filter((a) => a.group === g.key);
     assert.equal(list[0].tier, 0, g.key);
@@ -486,7 +488,8 @@ function play(engine: Engine, s: GameState, me: string, answer: (who: string, q:
     track = trackVersus(track, prev, view, me, false, share !== undefined && next.question ? { qid: next.question.askedAt, share } : undefined);
     const e = encounterAt(view, me, false, 1000);
     if (e && (prev?.phase !== 'reveal' || prev.question?.askedAt !== next.question?.askedAt)) recordEncounter(e);
-    const earned = versusEnd(prev, view, me, false, track);
+    // Judged as the end comes in.
+    const earned = view.phase === 'over' && prev?.phase !== 'over' ? versusEnd(view, me, false, track).earned : [];
     prev = view;
     return earned;
   };
@@ -545,9 +548,9 @@ test('the loser, a game to 4, a spectator or one device earns nothing', () => {
   r = play(g.engine, g.s, 'p0', (who, q) => (who === 'p0' ? right(q) : wrongIdx(q)));
   assert.deepEqual(r.earned, []);
   const over = r.s;
-  const before = { ...over, phase: 'reveal' as const };
-  assert.deepEqual(versusEnd(before, over, 'zz', false, null, []), []);
-  assert.deepEqual(versusEnd(before, over, 'p0', true, null, []), []);
+  assert.deepEqual(versusEnd(over, 'zz', false, null), { outcome: null, earned: [] });
+  assert.deepEqual(versusEnd(over, 'p0', true, null), { outcome: null, earned: [] });
+  assert.deepEqual(versusEnd({ ...over, phase: 'reveal' }, 'p0', false, null), { outcome: null, earned: [] }, 'not over yet');
 });
 
 test('Tide Turner: a win after a rival led by 4 at a round end', () => {
@@ -656,6 +659,36 @@ test('Hubris: a loss after leading the winner by 4 at a round end', () => {
   assert.deepEqual(close.earned, [], 'only ever 3 ahead');
 });
 
+/**
+ * A game Ash (p0) plays to its end as their tab follows it through noteState:
+ * `wins` says whether Ash answers right and Bram wrong, or the other way
+ * round; `reload`: the tab reloads just before the end comes in.
+ */
+function followed(wins: boolean, reload = false) {
+  const { engine, s } = setup(['Ash', 'Bram']);
+  let st = s;
+  let prev: GameState | null = null;
+  const earned: string[] = [];
+  const step = (next: GameState) => {
+    const view = publicView(next);
+    earned.push(...ids(noteState(reload && next.phase === 'over' && prev?.phase !== 'over' ? null : prev, view, 'p0', false).earned));
+    prev = view;
+    st = next;
+  };
+  step(st);
+  for (let n = 0; n < 50 && st.phase !== 'over'; n++) {
+    const who = st.players[st.turn].id;
+    step(engine.apply(st, { type: 'pick', category: st.offered[0] }, who));
+    step(engine.apply(st, { type: 'answer', index: (who === 'p0') === wins ? right(st.question!) : wrongIdx(st.question!) }, who));
+    if (st.phase === 'reveal') step(engine.apply(st, { type: 'next' }, 'p0'));
+  }
+  assert.equal(st.phase, 'over');
+  return { earned, again: () => step(st) };
+}
+
+const WINS_AT = storeKey('achievements.wins');
+const storedWins = () => parseWins(store.get(WINS_AT) ?? null);
+
 test('Undefeated: wins in a row are kept apart from the list, a loss starts them over', () => {
   let w = parseWins(null);
   for (let g = 1; g <= 3; g++) w = nextWins(w, 'won', g);
@@ -663,34 +696,47 @@ test('Undefeated: wins in a row are kept apart from the list, a loss starts them
   assert.deepEqual(nextWins(w, 'won', 3), w, 'one game counts once');
   w = nextWins(w, 'lost', 4);
   assert.deepEqual(w, { now: 0, best: 3, last: 4 });
-  assert.deepEqual(parseWins(JSON.stringify({ v: ACHIEVEMENTS_VERSION, now: 2.5, best: 1, last: 'x' })), { now: 2, best: 2, last: 0 });
+  assert.deepEqual(parseWins(serializeWins(w)), w);
+  assert.deepEqual(parseWins(JSON.stringify({ v: WINS_VERSION, now: 2.5, best: 1, last: 'x' })), { now: 2, best: 2, last: 0 });
   assert.deepEqual(parseWins('{broken'), { now: 0, best: 0, last: 0 });
 
   // The fifth win in a row, followed through noteState as a game is.
-  store.set(storeKey('achievements.wins'), JSON.stringify({ v: ACHIEVEMENTS_VERSION, now: 4, best: 4, last: 1 }));
-  const { engine, s } = setup(['Ash', 'Bram']);
-  let st = s;
-  let prev: GameState | null = null;
-  let earned: string[] = [];
-  const step = (next: GameState) => {
-    earned.push(...ids(noteState(prev, publicView(next), 'p0', false).earned));
-    prev = publicView(next);
-    st = next;
-  };
-  step(st);
-  for (let n = 0; n < 50 && st.phase !== 'over'; n++) {
-    const who = st.players[st.turn].id;
-    step(engine.apply(st, { type: 'pick', category: st.offered[0] }, who));
-    step(engine.apply(st, { type: 'answer', index: who === 'p0' ? right(st.question!) : wrongIdx(st.question!) }, who));
-    if (st.phase === 'reveal') step(engine.apply(st, { type: 'next' }, 'p0'));
-  }
+  store.set(WINS_AT, serializeWins({ now: 4, best: 4, last: 1 }));
+  const { earned } = followed(true);
   assert.ok(earned.includes('undefeated'), JSON.stringify(earned));
   assert.ok(earned.includes('first-victory'));
-  assert.equal(JSON.parse(store.get(storeKey('achievements.wins'))!).now, 5);
+  assert.equal(storedWins().now, 5);
   // Shown on the page from the kept run, and erased with the rest.
   assert.ok(earnedFrom(summarize(emptyCodex(), emptyRecords(), items, { now: 5, best: 5, last: 1 })).includes('undefeated'));
   resetAchievements();
-  assert.equal(store.get(storeKey('achievements.wins')), undefined);
+  assert.equal(store.get(WINS_AT), undefined);
+});
+
+test('a game whose end first comes in after a reload is judged, once', () => {
+  store.set(WINS_AT, serializeWins({ now: 4, best: 4, last: 1 }));
+  const won = followed(true, true);
+  assert.ok(won.earned.includes('undefeated'), JSON.stringify(won.earned));
+  assert.equal(storedWins().now, 5);
+  // Seen over again (a spectator joining, a rejoin): nothing more.
+  won.again();
+  assert.equal(won.earned.filter((id) => id === 'first-victory').length, 1);
+  assert.equal(storedWins().now, 5);
+
+  // A loss seen only after a reload still starts the run over.
+  store.clear();
+  tab.clear();
+  store.set(WINS_AT, serializeWins({ now: 4, best: 4, last: 1 }));
+  followed(false, true);
+  assert.deepEqual(storedWins(), { now: 0, best: 4, last: storedWins().last });
+});
+
+test("a newer build's wins in a row are never written over", () => {
+  const newer = JSON.stringify({ v: WINS_VERSION + 1, now: 4, best: 7, shape: 'new' });
+  store.set(WINS_AT, newer);
+  const { earned } = followed(true);
+  assert.ok(earned.includes('first-victory'));
+  assert.ok(!earned.includes('undefeated'));
+  assert.equal(store.get(WINS_AT), newer);
 });
 
 // ---- storage ------------------------------------------------------------------------
