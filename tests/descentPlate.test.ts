@@ -77,9 +77,10 @@ test('the stars stand in the left wall, between its lines, the depth under them;
   for (const p of plates(216, 30)) {
     assert.ok(p.star.inSnake);
     assert.deepEqual(p.star.c, p.endless.c);
-    assert.ok(p.star.cut < p.endless.r * 0.5, 'clear of the serpent');
+    assert.ok(p.star.cut < p.endless.ouro.inner, "inside the ring, clear of the snake's tongue");
+    assert.ok(p.endless.ouro.reach > p.endless.r, 'its head goes over the seal');
     assert.equal(p.star.num!.anchor, 'start');
-    assert.ok(p.star.num!.x > p.endless.c[0] + p.endless.r, 'beside the seal');
+    assert.ok(p.star.num!.x > p.endless.c[0] + p.endless.ouro.reach, "beside the seal, clear of the snake's head as it turns");
     assert.ok(p.star.mid, 'it comes down the lane and then into the ouroboros');
   }
 });
@@ -97,7 +98,7 @@ test('one star for both when the last run is the best, or would overlap it: the 
       assert.equal(p.star.lastNum?.text, String(shownDepth(last)));
       assert.ok(p.star.lastNum!.y < p.star.num!.y - 9, "the last run's over yours");
       assert.ok(!overlap(numBox(p.star.num!), numBox({ ...p.star.lastNum!, anchor: p.star.num!.anchor })), 'apart');
-      if (best > 100) assert.ok(p.star.num!.x > p.endless.c[0] + p.endless.r, 'beside the seal, the last run\'s over yours');
+      if (best > 100) assert.ok(p.star.num!.x > p.endless.c[0] + p.endless.ouro.reach, 'beside the seal, the last run\'s over yours');
       else {
         assert.ok(p.star.lastNum!.y < p.star.c[1] - p.star.gloryR, "the last run's over the star");
         assert.ok(p.star.num!.y > p.star.c[1] + p.star.gloryR, 'yours under it');

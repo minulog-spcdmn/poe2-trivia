@@ -1,3 +1,9 @@
+<script module lang="ts">
+  // The ouroboros' artwork is large, so it comes in its own chunk, fetched as soon as this module loads (long before the plate
+  // draws the snake in).
+  const ouroArt = import('../lib/ouroborosArt');
+</script>
+
 <script lang="ts">
   import { onMount } from 'svelte';
   import { SOL_RAYS } from '../lib/alchemy';
@@ -64,6 +70,9 @@
     stacked?: boolean;
   } = $props();
   const uid = $props.id();
+  /** The ouroboros' artwork, once its chunk is in. */
+  let art = $state<{ OURO_ART: string; OURO_BACKING: string } | null>(null);
+  ouroArt.then((m) => (art = m));
   /** The legend's words. */
   const KEY = { best: 'your best', last: 'last run' } as const;
 
@@ -211,7 +220,7 @@
 <figure class="descent" role="img" aria-label={summary} bind:this={fig} bind:clientWidth={w} bind:clientHeight={h}>
   {#if plate}
     {@const p = plate}
-    {@const sp = p.endless.serpent}
+    {@const ou = p.endless.ouro}
     <!-- The stars' cutouts: the plate and its glow are masked round each star, the gold one's cutout travelling down with it.
          The ouroboros' reveal: a band round its ring that sweeps on from its snout, so it coils in head first. -->
     <svg class="defs" aria-hidden="true">
@@ -237,10 +246,21 @@
           {/if}
         {/each}
       </mask>
-      <mask id="{uid}-coil" maskUnits="userSpaceOnUse" x="-60" y="-60" width="120" height="120">
-        <!-- The body draws in from the tail's tip clockwise round to the neck; once round, the mask is whole (no seam where the sweep closed). -->
-        <circle class="reveal" r={f(sp.rs)} stroke-width={f(3.4 * sp.w)} stroke-dasharray="0 101" pathLength="100" transform="rotate({f(sp.tail - 90)})" style:--d={sec(p.endless.delay)} />
-        <circle class="reveal-done" r={f(sp.rs + 2 * sp.w)} style:--d={sec(p.endless.delay)} />
+      <mask id="{uid}-coil" maskUnits="userSpaceOnUse" x="-80" y="-80" width="160" height="160">
+        <!-- The snake draws in from its tail clockwise round the ring, its head last; it starts empty (inline, before any style), and
+             once round the mask is whole, so no seam is left where the sweep closed. -->
+        <circle
+          class="reveal"
+          r={f((ou.hole - 1 + ou.reach + 2) / 2)}
+          stroke-width={f(ou.reach - ou.hole + 3)}
+          stroke-dasharray="0 101"
+          pathLength="100"
+          transform="rotate({f(ou.tail - 90)})"
+          style:--d={sec(p.endless.delay)}
+        />
+        <!-- Inside the ring there is only the tongue: it comes with the head, at the end. -->
+        <circle class="reveal-in" r={f(ou.hole - 0.5)} style:--d={sec(p.endless.delay)} />
+        <circle class="reveal-done" r={f(ou.reach + 2)} style:--d={sec(p.endless.delay)} />
       </mask>
       <clipPath id="{uid}-sky">
         <path d={p.sol.horizon} />
@@ -326,46 +346,33 @@
       {/each}
     </svg>
 
-    <!-- Sol over the mouth, on a layer of its own: a soft light breathing behind it, its rays turning slowly (those below the ground
-         hidden), the sign at its heart turning the other way. -->
-    <!-- The last seal, on the stretch that never ends: the ouroboros, an engraved serpent biting its tail, on a layer of its own (an
-         HTML box the browser composites and turns as a whole, so its fine lines never shimmer as it turns). It draws in from its tail
-         round to its head, settling into place, then turns on, head first. -->
+    <!-- The last seal, on the stretch that never ends: the ouroboros (the user's artwork), on a layer of its own (an HTML box the
+         browser composites and turns as a whole, so its fine work never shimmers as it turns). It draws in from its tail round to its
+         head, settling into place, then turns on, head first. Its ground goes under it, so nothing shows through its scales. -->
     <div
       class="ouro"
-      style:left="{f(p.endless.c[0] - p.endless.r)}px"
-      style:top="{f(p.endless.c[1] - p.endless.r)}px"
-      style:width="{f(2 * p.endless.r)}px"
-      style:height="{f(2 * p.endless.r)}px"
+      style:left="{f(p.endless.c[0] - ou.reach - 2)}px"
+      style:top="{f(p.endless.c[1] - ou.reach - 2)}px"
+      style:width="{f(2 * ou.reach + 4)}px"
+      style:height="{f(2 * ou.reach + 4)}px"
     >
       <div class="coil-in" style:--d={sec(p.endless.delay)}>
         <div class="coil" style:--d={sec(p.endless.delay)}>
-          <svg viewBox="{f(-p.endless.r)} {f(-p.endless.r)} {f(2 * p.endless.r)} {f(2 * p.endless.r)}" aria-hidden="true">
-            <g class="serpent" class:lit={p.endless.lit} style:--d={sec(p.endless.delay)}>
-              {#snippet band()}
-                <path class="sp-fill" d={sp.bodyFill} />
-                <path class="sp-scales" d={sp.scales} />
-                <path class="sp-belly" d={sp.belly} />
-                <path class="sp-body" d={sp.body} />
-              {/snippet}
-              <!-- The body, drawn in by one front from the tail's tip round to the neck, a nib of light riding it. -->
-              <g mask="url(#{uid}-coil)">{@render band()}</g>
-              <g transform="rotate({f(sp.tail)})">
-                <g class="sweep-nib"><circle class="sweep-dot" cy={f(-sp.rs)} r="1.6" /></g>
-              </g>
-              <!-- Then the head: the mouth's dark with the tail running on into it, the fangs sunk in it, the tongue flicking out. -->
-              <!-- Then the head, as the user drew it: its tint, the mouth's dark, the eye, the fang, the tongue, scales, its lines and nostrils. -->
-              <g class="sp-headin">
-                <path class="sp-fill" d={sp.tint} />
-                <path class="sp-mouth" d={sp.dark} />
-                <path class="sp-lens" d={sp.eye} />
-                <path class="sp-teeth" d={sp.fang} />
-                <path class="sp-tfill" d={sp.tongue} />
-                <path class="sp-hscales" d={sp.headScales} />
-                <path class="sp-inner" d={sp.inner} />
-                <path class="sp-tline" d={sp.tongueLines} />
-                <path class="sp-head" d={sp.lines} />
-                <path class="sp-nostril" d={sp.nostrils} />
+          <svg viewBox="{f(-ou.reach - 2)} {f(-ou.reach - 2)} {f(2 * ou.reach + 4)} {f(2 * ou.reach + 4)}" aria-hidden="true">
+            <g class="serpent" class:lit={p.endless.lit}>
+              {#if art}
+                <g mask="url(#{uid}-coil)">
+                  <g transform="scale({ou.scale.toFixed(5)}) translate({-ou.cx} {-ou.cy})">
+                    <path class="sp-back" d={art.OURO_BACKING} />
+                    <path class="sp-art" d={art.OURO_ART} />
+                  </g>
+                </g>
+              {/if}
+              <!-- A nib of light riding the sweep's front. -->
+              <g transform="rotate({f(ou.tail)})">
+                <g class="sweep-nib" style:--d={sec(p.endless.delay)}>
+                  <circle class="sweep-dot" cy={f(-ou.mid)} r="1.6" style:--d={sec(p.endless.delay)} />
+                </g>
               </g>
             </g>
           </svg>
@@ -373,6 +380,8 @@
       </div>
     </div>
 
+    <!-- Sol over the mouth, on a layer of its own: a soft light breathing behind it, its rays turning slowly (those below the ground
+         hidden), the sign at its heart turning the other way. -->
     <svg class="sun" viewBox="0 0 {f(p.w)} {f(p.h)}" aria-hidden="true">
       <g transform="translate({f(p.sol.c[0])} {f(p.sol.c[1])})">
         <circle class="sun-halo" r={f(p.sol.r * 2.6)} style:fill="url(#{uid}-sun)" />
@@ -494,8 +503,8 @@
     --red: #b4432f;
     --red-hi: #cf5e45;
     --red-num: #dc8a73;
-    /* The ouroboros' draw-in, from its tail's tip round to its neck. */
-    --s: 1s;
+    /* The ouroboros' draw-in, from its tail round to its head. */
+    --s: 1.2s;
     pointer-events: none;
   }
   svg {
@@ -754,75 +763,25 @@
     }
   }
 
-  /* The ouroboros, after an old woodcut: a bold outline round a band faintly tinted, so its scales read against the dark of its
-     mouth. A dull impression until you are past 100, then struck in pale gold. It coils in head first, then turns on, head
-     first, once in 50 s. */
+  /* The ouroboros: the user's artwork, a dull impression until you are past 100, then struck in pale gold, on its ground. It draws
+     in from its tail, then turns on, head first, once in 50 s. */
   .serpent {
     --sp: color-mix(in srgb, var(--dull) 55%, #b09a78);
   }
   .serpent.lit {
     --sp: var(--gold-hi);
   }
-  .serpent path,
-  .serpent circle {
-    stroke: var(--sp);
-    stroke-linecap: round;
-    stroke-linejoin: round;
-  }
-  .serpent .sp-fill {
-    fill: color-mix(in srgb, var(--sp) 11%, var(--bg));
+  .serpent .sp-back {
+    fill: var(--bg);
     stroke: none;
   }
-  /* The mouth's dark, deeper than the ring's ground, so the cavity under the tail reads as an opening. */
-  .serpent .sp-nostril {
+  .serpent .sp-art {
     fill: var(--sp);
+    fill-rule: evenodd;
     stroke: none;
   }
-  .serpent .sp-mouth {
-    fill: #000;
-    stroke: none;
-  }
-  /* Line weights that stay crisp at 1x while it turns (nothing much under half a pixel). */
-  .sp-body {
-    stroke-width: 1;
-  }
-  .sp-head {
-    stroke-width: 0.7;
-  }
-  .sp-inner {
-    stroke-width: 0.42;
-  }
-  .sp-tline {
-    stroke-width: 0.3;
-  }
-  .sp-scales {
-    stroke-width: 0.6;
-    opacity: 0.8;
-  }
-  .sp-hscales {
-    stroke-width: 0.5;
-    opacity: 0.85;
-  }
-  .sp-belly {
-    stroke-width: 0.6;
-  }
-  .serpent .sp-teeth {
-    fill: #fff3d6;
-    stroke-width: 0.3;
-  }
-  .serpent .sp-tfill {
-    fill: var(--red-hi);
-    stroke: none;
-  }
-  .serpent .sp-lens {
-    fill: color-mix(in srgb, var(--sp) 60%, var(--bg));
-    stroke-width: 0.45;
-  }
-  /* The draw-in: one front sweeps the body from the tail's tip clockwise round to the neck, eased, a nib of light riding it; when
-     it is round, the mask turns whole. Then the head comes, the fangs, and the tongue flicks out. */
-  .serpent {
-    --h: calc(var(--d) + var(--s) - 0.08s);
-  }
+  /* The draw-in: one front sweeps the snake from its tail clockwise round the ring to its head, eased, a nib of light riding it;
+     when it is round, the mask turns whole. */
   /* Nothing of it shows until the sweep starts: the dash grows from nothing (its initial state, inline, is nothing too). */
   .reveal {
     fill: none;
@@ -836,6 +795,12 @@
     to {
       stroke-dasharray: 101 0;
     }
+  }
+  .reveal-in {
+    fill: #fff;
+    stroke: none;
+    opacity: 0;
+    animation: whole 0.35s calc(var(--d) + var(--s) * 0.8) ease-out both;
   }
   .reveal-done {
     fill: #fff;
@@ -862,23 +827,6 @@
     to {
       rotate: 360deg;
     }
-  }
-  .sp-headin {
-    transform-box: fill-box;
-    transform-origin: center;
-    animation: head-in 0.4s var(--h) var(--ease-out) both;
-  }
-  @keyframes head-in {
-    from {
-      opacity: 0;
-      transform: scale(0.88);
-    }
-  }
-  .serpent .sp-teeth {
-    animation: carve 0.3s calc(var(--h) + 0.18s) var(--ease-out) both;
-  }
-  .serpent .sp-tfill {
-    animation: carve 0.3s calc(var(--h) + 0.3s) ease-out both;
   }
   .ouro {
     position: absolute;
@@ -1364,15 +1312,15 @@
     .sweep-nib,
     .sweep-dot,
     .reveal,
+    .reveal-in,
     .reveal-done,
-    .sp-headin,
-    .serpent :is(.sp-teeth, .sp-tfill),
     .both-star :is(.star-line, .star-ridge, .star-hatch, .star-ground, .glory, .halo) {
       animation: none;
     }
     .ink {
       display: none;
     }
+    .reveal-in,
     .reveal-done {
       opacity: 1;
     }
