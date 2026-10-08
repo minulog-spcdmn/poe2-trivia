@@ -115,7 +115,15 @@
   {#if shown}<path d={s.d} class="sign" transform="scale({s.k})" style:--k={s.k} />{/if}
 {/snippet}
 
-<span class="seal" class:earned style:--size="{size}px" style:--metal={METALS[tier].color} aria-hidden="true">
+<span
+  class="seal"
+  class:earned
+  style:--size="{size}px"
+  style:--metal={METALS[tier].color}
+  style:--sheen={METALS[tier].sheen?.color}
+  style:--shine={METALS[tier].sheen?.opacity}
+  aria-hidden="true"
+>
   {#if earned}
     <svg class="glow" viewBox="-24 -24 48 48">{@render engraving(true)}</svg>
   {/if}
@@ -191,7 +199,8 @@
 
   /* The glow: the same lines, wide and faint, under them. */
   .glow {
-    opacity: 0.22;
+    color: var(--sheen, var(--metal));
+    opacity: var(--shine, 0.22);
     filter: blur(0.6px);
   }
   .glow * {
