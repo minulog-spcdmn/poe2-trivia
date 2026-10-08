@@ -104,13 +104,14 @@ test('one star for both when the last run is the best, or would overlap it: the 
       }
       assert.deepEqual(
         p.legend.rows.map((r) => r.kind),
-        ['best', 'last'],
+        ['last', 'best'],
       );
     }
   for (const p of [...plates(45, 20), ...plates(216, 30), ...plates(null, null)]) {
     const right = p.legend.x + 58;
     const gap = p.endless.c[0] - p.endless.r - right;
-    assert.ok(gap >= p.endless.r * 0.35 && gap <= p.endless.r * 0.8, `the legend about half the seal's radius from it (${gap.toFixed(1)})`);
+    assert.ok(gap >= 24 && gap <= p.endless.r * 1.15, `the legend about a seal's radius from it (${gap.toFixed(1)})`);
+    assert.ok(p.legend.x >= 0, 'on the plate');
   }
   for (const p of plates(45, null)) {
     assert.ok(!p.star.both && p.star.lastNum === null);
@@ -122,7 +123,7 @@ test('one star for both when the last run is the best, or would overlap it: the 
   for (const p of plates(45, 20))
     assert.deepEqual(
       p.legend.rows.map((r) => r.kind),
-      ['best', 'last'],
+      ['last', 'best'],
     );
   for (const p of plates(null, null)) {
     assert.equal(p.star.num, null, 'before a first run the star waits by the mouth, with no depth');

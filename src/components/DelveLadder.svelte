@@ -295,41 +295,6 @@
             {/if}
           </g>
         {/each}
-        <!-- The last seal, on the stretch that never ends: the ouroboros, an engraved serpent biting its tail. It coils in head first
-             (turning into place as its reveal sweeps round), then turns on, head first. -->
-        <g transform="translate({f(p.endless.c[0])} {f(p.endless.c[1])})">
-          <g class="coil-in" style:--d={sec(p.endless.delay)}>
-            <g class="coil" style:--d={sec(p.endless.delay)}>
-              <g class="serpent" class:lit={p.endless.lit} style:--d={sec(p.endless.delay)}>
-                {#snippet band()}
-                  <path class="sp-fill" d={sp.bodyFill} />
-                  <path class="sp-scales" d={sp.scales} />
-                  <path class="sp-belly" d={sp.belly} />
-                  <path class="sp-body" d={sp.body} />
-                {/snippet}
-                <!-- The body, drawn in by one front from the tail's tip round to the neck, a nib of light riding it. -->
-                <g mask="url(#{uid}-coil)">{@render band()}</g>
-                <g transform="rotate({f(sp.tail)})">
-                  <g class="sweep-nib"><circle class="sweep-dot" cy={f(-sp.rs)} r="1.6" /></g>
-                </g>
-                <!-- Then the head: the mouth's dark with the tail running on into it, the fangs sunk in it, the tongue flicking out. -->
-                <g class="sp-headin">
-                  <path class="sp-fill" d={sp.headFill} />
-                  <path class="sp-mouth" d={sp.mouth} />
-                  <g clip-path="url(#{uid}-mouth)">{@render band()}</g>
-                  <path class="sp-hscales" d={sp.headScales} />
-                  <path class="sp-head" d={sp.head} />
-                  <path class="sp-detail" d={sp.details} />
-                  <path class="sp-teeth" d={sp.teeth} />
-                  <circle class="sp-eye" cx={f(sp.eye.c[0])} cy={f(sp.eye.c[1])} r={f(sp.eye.r)} />
-                  <path class="sp-pupil" d={sp.pupil} />
-                  <path class="sp-tongue" d={sp.tongue} pathLength="100" />
-                  <path class="sp-tongue sp-fork" d={sp.fork} />
-                </g>
-              </g>
-            </g>
-          </g>
-        </g>
         {#each p.names as n (n.text)}
           <text class="name" x={f(n.x)} y={f(n.y)} style:--c={n.color} style:--d={sec(n.delay)}>{n.text}</text>
         {/each}
@@ -366,6 +331,56 @@
 
     <!-- Sol over the mouth, on a layer of its own: a soft light breathing behind it, its rays turning slowly (those below the ground
          hidden), the sign at its heart turning the other way. -->
+    <!-- The last seal, on the stretch that never ends: the ouroboros, an engraved serpent biting its tail, on a layer of its own (an
+         HTML box the browser composites and turns as a whole, so its fine lines never shimmer as it turns). It draws in from its tail
+         round to its head, settling into place, then turns on, head first. -->
+    <div
+      class="ouro"
+      style:left="{f(p.endless.c[0] - p.endless.r)}px"
+      style:top="{f(p.endless.c[1] - p.endless.r)}px"
+      style:width="{f(2 * p.endless.r)}px"
+      style:height="{f(2 * p.endless.r)}px"
+    >
+      <div class="coil-in" style:--d={sec(p.endless.delay)}>
+        <div class="coil" style:--d={sec(p.endless.delay)}>
+          <svg viewBox="{f(-p.endless.r)} {f(-p.endless.r)} {f(2 * p.endless.r)} {f(2 * p.endless.r)}" aria-hidden="true">
+            <g class="serpent" class:lit={p.endless.lit} style:--d={sec(p.endless.delay)}>
+              {#snippet band()}
+                <path class="sp-fill" d={sp.bodyFill} />
+                <path class="sp-scales" d={sp.scales} />
+                <path class="sp-belly" d={sp.belly} />
+                <path class="sp-body" d={sp.body} />
+              {/snippet}
+              <!-- The body, drawn in by one front from the tail's tip round to the neck, a nib of light riding it. -->
+              <g mask="url(#{uid}-coil)">{@render band()}</g>
+              <g transform="rotate({f(sp.tail)})">
+                <g class="sweep-nib"><circle class="sweep-dot" cy={f(-sp.rs)} r="1.6" /></g>
+              </g>
+              <!-- Then the head: the mouth's dark with the tail running on into it, the fangs sunk in it, the tongue flicking out. -->
+              <g class="sp-headin">
+                <path class="sp-fill" d={sp.headFill} />
+                <path class="sp-mouth" d={sp.mouth} />
+                <g clip-path="url(#{uid}-mouth)">{@render band()}</g>
+                <path class="sp-hscales" d={sp.headScales} />
+                <path class="sp-head" d={sp.head} />
+                <path class="sp-detail" d={sp.details} />
+                <path class="sp-teeth" d={sp.teeth} />
+                <!-- The eye: an almond with a slit pupil and a glint, under the overhanging brow plate. -->
+                <path class="sp-lens" d={sp.eye.lens} />
+                <path class="sp-slit" d={sp.eye.slit} />
+                <circle class="sp-glint" cx={f(sp.eye.glint[0])} cy={f(sp.eye.glint[1])} r={f(sp.eye.glintR)} />
+                <path class="sp-brow" d={sp.brow} />
+                <!-- The tongue, a ribbon out of the mouth: its fill, its two edges drawing out from the root, then the fork. -->
+                <path class="sp-tfill" d={sp.tongueFill} />
+                <path class="sp-tongue" d={sp.tongue} pathLength="100" />
+                <path class="sp-tongue sp-fork" d={sp.fork} />
+              </g>
+            </g>
+          </svg>
+        </div>
+      </div>
+    </div>
+
     <svg class="sun" viewBox="0 0 {f(p.w)} {f(p.h)}" aria-hidden="true">
       <g transform="translate({f(p.sol.c[0])} {f(p.sol.c[1])})">
         <circle class="sun-halo" r={f(p.sol.r * 2.6)} style:fill="url(#{uid}-sun)" />
@@ -770,34 +785,53 @@
     fill: var(--bg);
     stroke: none;
   }
-  .sp-body,
+  /* Line weights that stay crisp at 1x while it turns (nothing much under half a pixel). */
+  .sp-body {
+    stroke-width: 1;
+  }
   .sp-head {
-    stroke-width: 0.95;
+    stroke-width: 0.8;
   }
   .sp-detail {
-    stroke-width: 0.4;
+    stroke-width: 0.45;
   }
   .sp-scales {
-    stroke-width: 0.32;
+    stroke-width: 0.6;
+    opacity: 0.8;
   }
   .sp-hscales {
-    stroke-width: 0.28;
+    stroke-width: 0.5;
+    opacity: 0.85;
   }
   .sp-belly {
-    stroke-width: 0.45;
-  }
-  .serpent .sp-teeth {
-    fill: var(--sp);
-    stroke-width: 0.2;
-  }
-  .sp-tongue {
     stroke-width: 0.6;
   }
-  .serpent .sp-eye {
+  .serpent .sp-teeth {
+    fill: #fff3d6;
+    stroke-width: 0.3;
+  }
+  .serpent .sp-tongue {
     stroke-width: 0.45;
   }
-  .serpent .sp-pupil {
-    stroke-width: 0.9;
+  .serpent .sp-tfill {
+    fill: color-mix(in srgb, var(--red) 75%, var(--bg));
+    stroke: none;
+  }
+  .serpent .sp-lens {
+    fill: color-mix(in srgb, var(--sp) 60%, var(--bg));
+    stroke-width: 0.45;
+  }
+  .serpent .sp-slit {
+    fill: var(--bg);
+    stroke: none;
+  }
+  .serpent .sp-glint {
+    fill: #fff3d6;
+    stroke: none;
+  }
+  .serpent .sp-brow {
+    fill: color-mix(in srgb, var(--sp) 11%, var(--bg));
+    stroke-width: 0.55;
   }
   /* The draw-in: one front sweeps the body from the tail's tip clockwise round to the neck, eased, a nib of light riding it; when
      it is round, the mask turns whole. Then the head comes, the fangs, and the tongue flicks out. */
@@ -854,9 +888,20 @@
     stroke-dasharray: 100;
     animation: draw 0.4s calc(var(--h) + 0.3s) ease-out both;
   }
+  .serpent .sp-tfill {
+    animation: carve 0.3s calc(var(--h) + 0.5s) ease-out both;
+  }
   .serpent .sp-fork {
     stroke-dasharray: none;
     animation: carve 0.15s calc(var(--h) + 0.68s) ease-out both;
+  }
+  .ouro {
+    position: absolute;
+  }
+  .ouro > div,
+  .ouro .coil {
+    position: absolute;
+    inset: 0;
   }
   .coil-in {
     animation: coil-in 1.1s var(--d) var(--ease-out) both;
@@ -1336,7 +1381,7 @@
     .reveal,
     .reveal-done,
     .sp-headin,
-    .serpent :is(.sp-teeth, .sp-tongue, .sp-fork),
+    .serpent :is(.sp-teeth, .sp-tongue, .sp-fork, .sp-tfill),
     .both-star :is(.star-line, .star-ridge, .star-hatch, .star-ground, .glory, .halo) {
       animation: none;
     }
