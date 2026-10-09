@@ -173,9 +173,11 @@
 
   /** Your answer, on its way to the host. */
   let chosen = $state<number | null>(null);
-  // One the host turned down as too quick may be given again at once.
+  // One the host turned down as too quick may be given again at once. Only a
+  // turn-down sets it off (shownAt, below, isn't reactive): every state that
+  // comes in brings a new question, and an answer given again stays on its way.
   $effect(() => {
-    if (session.turnedDown?.askedAt === q.askedAt) chosen = null;
+    if (session.turnedDown?.askedAt === shownAt) chosen = null;
   });
 
   // ---- dynamite ----

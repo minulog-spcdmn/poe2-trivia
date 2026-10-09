@@ -793,8 +793,8 @@ class Session {
   /** An answer (to the question asked at `askedAt`) that arrives before a human could have seen the question. */
   private tooFast(guest: Guest, askedAt: number | undefined) {
     const q = this.state?.question;
-    // One for a question gone by is the engine's to drop ("Too late!").
-    if (!q || (askedAt !== undefined && askedAt !== q.askedAt)) return false;
+    // One for a question gone by, or come in as it was revealed, is the engine's to drop ("Too late!").
+    if (!q || this.state!.phase !== 'question' || (askedAt !== undefined && askedAt !== q.askedAt)) return false;
     // No art went out at all: don't hold answers back waiting for it.
     if (this.artFailedFor === q.askedAt) return false;
     if (!guest.mediaAt || guest.mediaAt.qid !== q.askedAt) return true;
