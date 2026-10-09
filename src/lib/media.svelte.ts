@@ -4,7 +4,7 @@
 // so it doesn't match the original file byte for byte), and for veiled
 // questions only the patches of it that have been uncovered so far.
 
-import { itemImage } from './ui-paths';
+import { ART_SCALE, itemImage } from './ui-paths';
 import { cutPatches, spreadOrder, veilSchedule, visibleBox, type VeilPlan } from './patches';
 import type { MediaMsg } from './protocol';
 import type { Grayscale, Question, Veil } from './game';
@@ -94,23 +94,28 @@ function loadImage(src: string): Promise<HTMLImageElement> {
 
 const rand = (min: number, max: number) => min + Math.random() * (max - min);
 
-/** Draws the item onto a canvas with small random changes (and flipped left to right if `mirror`). */
+/**
+ * Draws the item onto a canvas with small random changes (and flipped left to
+ * right if `mirror`). Like the art file, the canvas has ART_SCALE pixels per
+ * art pixel, and its size is a whole number of art pixels.
+ */
 async function alteredCanvas(itemId: string, grayscale: boolean, mirror = false): Promise<HTMLCanvasElement> {
   const img = await loadImage(itemImage(itemId));
+  const S = ART_SCALE;
   const scale = rand(0.9, 1.0);
-  const w = Math.round(img.naturalWidth * scale);
-  const h = Math.round(img.naturalHeight * scale);
+  const w = Math.round((img.naturalWidth / S) * scale);
+  const h = Math.round((img.naturalHeight / S) * scale);
   const pad = Math.round(rand(2, 8));
   const canvas = document.createElement('canvas');
-  canvas.width = w + pad * 2;
-  canvas.height = h + pad * 2;
+  canvas.width = (w + pad * 2) * S;
+  canvas.height = (h + pad * 2) * S;
   const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
   ctx.imageSmoothingQuality = 'high';
-  ctx.translate(canvas.width / 2 + rand(-1.5, 1.5), canvas.height / 2 + rand(-1.5, 1.5));
+  ctx.translate(canvas.width / 2 + rand(-1.5, 1.5) * S, canvas.height / 2 + rand(-1.5, 1.5) * S);
   ctx.rotate(rand(-0.6, 0.6) * (Math.PI / 180));
   if (mirror) ctx.scale(-1, 1);
   ctx.filter = `brightness(${rand(0.97, 1.03)}) saturate(${rand(0.96, 1.04)})`;
-  ctx.drawImage(img, -w / 2, -h / 2, w, h);
+  ctx.drawImage(img, (-w / 2) * S, (-h / 2) * S, w * S, h * S);
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.filter = 'none';
 
@@ -163,9 +168,8 @@ export async function prepareMedia(q: Question, grayscale: Grayscale, clock: { s
     return out;
   }
   const canvas = await alteredCanvas(q.itemId, grayscale === 'all', !!q.mirrored?.[0]);
-  const { width: W, height: H } = canvas;
   if (!q.veil) {
-    out.art = { w: W, h: H, data: await encode(canvas) };
+    out.art = { w: canvas.width / ART_SCALE, h: canvas.height / ART_SCALE, data: await encode(canvas) };
     return out;
   }
   const cut = await cutVeil(canvas, q.veil, veilPlan(clock.secs, clock.share, false));
@@ -194,11 +198,25 @@ export interface CutVeil {
  * A picture cut into `size` × `size`-ish patches, in the order they uncover,
  * paced for the patches it really has and their areas (veilSchedule, as
  * `plan` has it): half of the item in by VEIL_LEFT_MS before the clock ends
- * at the latest, the rest after.
+ * at the latest, the rest after. The patches are cut in art pixels (a copy
+ * of the picture scaled down to them), so their shapes, seams and areas are
+ * what they always were; each patch's own picture is then taken from the
+ * full-resolution canvas, ART_SCALE × ART_SCALE pixels for each of its own.
  */
 async function cutVeil(canvas: HTMLCanvasElement, v: Veil, plan: VeilPlan): Promise<CutVeil> {
-  const { width: W, height: H } = canvas;
-  const pixels = canvas.getContext('2d')!.getImageData(0, 0, W, H).data;
+  const S = ART_SCALE;
+  const W = Math.round(canvas.width / S);
+  const H = Math.round(canvas.height / S);
+  const small = document.createElement('canvas');
+  small.width = W;
+  small.height = H;
+  const sg = small.getContext('2d', { willReadFrequently: true })!;
+  sg.imageSmoothingQuality = 'high';
+  sg.drawImage(canvas, 0, 0, W, H);
+  const pixels = sg.getImageData(0, 0, W, H).data;
+  // One 32-bit word per pixel, so each one copies without a subarray.
+  const fine = new Uint32Array(canvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height).data.buffer);
+  const FW = canvas.width;
   const cut = cutPatches(pixels, W, H, v.size, v.seed);
   const order = spreadOrder(cut, v.seed);
   const areas = order.map((i) => cut[i].area);
@@ -212,11 +230,22 @@ async function cutVeil(canvas: HTMLCanvasElement, v: Veil, plan: VeilPlan): Prom
   };
   const patches = await Promise.all(
     order.map(async (i) => {
-      const { x, y, w, h, pixels, edges } = cut[i];
+      const { x, y, w, h, pixels: own, edges } = cut[i];
+      // The patch's pixels at full resolution: wherever it has an art pixel.
+      const pw = w * S;
+      const ph = h * S;
+      const big = new Uint32Array(pw * ph);
+      for (let by = 0; by < ph; by++) {
+        const ay = (by / S) | 0;
+        const row = (y * S + by) * FW + x * S;
+        for (let bx = 0; bx < pw; bx++) {
+          if (own[(ay * w + ((bx / S) | 0)) * 4 + 3]) big[by * pw + bx] = fine[row + bx];
+        }
+      }
       const piece = document.createElement('canvas');
-      piece.width = w;
-      piece.height = h;
-      piece.getContext('2d')!.putImageData(new ImageData(pixels as Uint8ClampedArray<ArrayBuffer>, w, h), 0, 0);
+      piece.width = pw;
+      piece.height = ph;
+      piece.getContext('2d')!.putImageData(new ImageData(new Uint8ClampedArray(big.buffer), pw, ph), 0, 0);
       return { i, x, y, w, h, data: await encode(piece, true), edges: edges.buffer as ArrayBuffer };
     }),
   );

@@ -2,7 +2,8 @@
 // Ranks every item's art against the rest of its group (the pool a question
 // draws its options from) and writes each item's closest look-alikes to
 // src/data/looks.json, for questions whose wrong pictures look like the right
-// one. Needs ffmpeg (to decode the WebP art). Deterministic: the same art and
+// one. Reads the original art (art-source/items/), not the upscaled copies.
+// Needs ffmpeg (to decode the WebP art). Deterministic: the same art and
 // ffmpeg give the same file.
 //
 // Usage: npm run looks (after npm run fetch-data)
@@ -13,7 +14,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const IMG_DIR = path.join(ROOT, 'public', 'items');
+const IMG_DIR = path.join(ROOT, 'art-source', 'items');
 const ITEMS_FILE = path.join(ROOT, 'src', 'data', 'items.json');
 const OUT_FILE = path.join(ROOT, 'src', 'data', 'looks.json');
 

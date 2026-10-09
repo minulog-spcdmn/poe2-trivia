@@ -7,6 +7,7 @@
   import { frontier } from '../lib/frontier';
   import { visibleBox } from '../lib/patches';
   import { itemImage } from '../lib/ui';
+  import { ART_SCALE } from '../lib/ui-paths';
   import { sfx } from '../lib/sound';
   import Avatar from './Avatar.svelte';
   import ArtImage from './ArtImage.svelte';
@@ -320,11 +321,13 @@
     img.src = itemImage(item.id);
     img.decode().then(() => {
       if (!live) return;
+      // Measured in art pixels, as the host measures the veiled copy.
       const c = document.createElement('canvas');
-      c.width = img.naturalWidth;
-      c.height = img.naturalHeight;
+      c.width = Math.round(img.naturalWidth / ART_SCALE);
+      c.height = Math.round(img.naturalHeight / ART_SCALE);
       const g = c.getContext('2d', { willReadFrequently: true })!;
-      g.drawImage(img, 0, 0);
+      g.imageSmoothingQuality = 'high';
+      g.drawImage(img, 0, 0, c.width, c.height);
       full = { w: c.width, h: c.height, box: visibleBox(g.getImageData(0, 0, c.width, c.height).data, c.width, c.height) };
       done();
     }, done);

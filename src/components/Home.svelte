@@ -4,7 +4,7 @@
   import { toasts } from '../lib/toasts.svelte';
   import { engine, session, savedName, saveName, CODE_LENGTH } from '../lib/session.svelte';
   import { shuffle } from '../lib/game';
-  import { itemImage } from '../lib/ui';
+  import { itemSrcset, itemThumb } from '../lib/ui';
   import OpenRooms from './OpenRooms.svelte';
   import { CREATOR, DONATE_URL, IMPRINT_URL, PRIVACY_URL } from '../lib/site';
   import { backdropShadow } from '../lib/backdropShadow';
@@ -179,7 +179,8 @@
       {#each showcase as it, i (it.id)}
         <img
           use:backdropDropShadow
-          src={itemImage(it.id)}
+          src={itemThumb(it.id, 128)}
+          srcset={itemSrcset(it.id)}
           alt=""
           style:--i={i}
           style:--x="{(i - 3) * 15}vw"
