@@ -8,11 +8,12 @@ import { ART_SCALE } from '../src/lib/ui-paths.ts';
 const ROOT = join(import.meta.dirname, '..');
 const items: Item[] = JSON.parse(readFileSync(join(ROOT, 'src', 'data', 'items.json'), 'utf8'));
 
-/** A WebP file's width and height, from its header. */
+/** A WebP file's width and height, from its header (and the file is whole, as long as its header says). */
 function webpSize(file: string): [number, number] {
   const b = readFileSync(file);
   assert.equal(b.toString('latin1', 0, 4), 'RIFF', file);
   assert.equal(b.toString('latin1', 8, 12), 'WEBP', file);
+  assert.equal(b.readUInt32LE(4) + 8, b.length, `${file} is cut short`);
   const kind = b.toString('latin1', 12, 16);
   if (kind === 'VP8X') return [b.readUIntLE(24, 3) + 1, b.readUIntLE(27, 3) + 1];
   if (kind === 'VP8 ') return [b.readUInt16LE(26) & 0x3fff, b.readUInt16LE(28) & 0x3fff];
