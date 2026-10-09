@@ -489,6 +489,26 @@ export interface Player {
    * from older hosts). Turns: their own questions; race: questions they won.
    */
   streak?: number;
+  /** Turns: how this game went for them, for the end screen's honours (honours.ts). Missing until it counts something. */
+  tally?: Tally;
+}
+
+/**
+ * A player's game in numbers (turns only, not Delve), counted by the host
+ * so every screen hands out the same honours. Reset as a game starts.
+ */
+export interface Tally {
+  /** Questions they answered or let run out. */
+  asked: number;
+  right: number;
+  /** Their longest run of right answers. */
+  best: number;
+  /** Made-up items they picked as real. */
+  fooled: number;
+  /** The most points they trailed the leader by at the end of a round. */
+  behind: number;
+  /** The turn (turnCount) of their first right answer. */
+  first?: number;
 }
 
 /**
@@ -1022,6 +1042,26 @@ function countStreaks(s: GameState, r: Reveal) {
   if (answered) answered.streak = r.correct ? (answered.streak ?? 0) + 1 : 0;
 }
 
+const tallyOf = (p: Player): Tally => (p.tally ??= { asked: 0, right: 0, best: 0, fooled: 0, behind: 0 });
+
+/**
+ * Counts a turns reveal into the answerer's tally (after countStreaks, so
+ * their run already includes it): a question asked, maybe one right (the
+ * first marks its turn), and a made-up item believed in.
+ */
+function countTally(s: GameState, r: Reveal) {
+  const p = s.players[s.turn];
+  if (!p) return;
+  const t = tallyOf(p);
+  t.asked++;
+  if (r.correct) {
+    t.right++;
+    t.first ??= s.turnCount;
+  }
+  t.best = Math.max(t.best, p.streak ?? 0);
+  if (!r.timedOut && r.chosenId && isFake(r.chosenId)) t.fooled++;
+}
+
 export class Engine {
   readonly items: Item[];
   readonly byId: Map<string, Item>;
@@ -1232,6 +1272,7 @@ export class Engine {
           p.score = 0;
           p.recent = [];
           p.streak = 0;
+          delete p.tally;
         }
         s.round = 1;
         s.turnCount = 0;
@@ -1457,6 +1498,7 @@ export class Engine {
         const fresh = createGame(s.hostId, s.settings);
         // Players who left during the game don't come back as ghosts in the lobby.
         fresh.players = s.players.filter((p) => p.connected).map((p) => ({ ...p, score: 0, recent: [], streak: 0 }));
+        for (const p of fresh.players) delete p.tally;
         // Renames during the game take effect on colours now.
         const claims = fresh.players.filter((p) => reservedHue(p) !== undefined);
         for (const p of [...claims, ...fresh.players.filter((p) => !claims.includes(p))]) settleHue(fresh, p);
@@ -1611,6 +1653,7 @@ export class Engine {
     if (s.reveal && !prev.reveal) {
       s.reveal.at = this.now();
       countStreaks(s, s.reveal);
+      if (s.settings.mode !== 'race' && !s.delve) countTally(s, s.reveal);
       // Answered: what the question cost stands, and its snapshot goes.
       if (s.delve) {
         delete s.delve.snapshot;
@@ -2274,6 +2317,8 @@ export class Engine {
     }
     if (wrapped) {
       const best = Math.max(...s.players.map((p) => p.score));
+      // How far behind everyone is as the round ends (a comeback is won from there).
+      for (const p of s.players) tallyOf(p).behind = Math.max(tallyOf(p).behind, best - p.score);
       if (best >= s.settings.targetScore) {
         const leaders = s.players.filter((p) => p.score === best);
         if (leaders.length === 1) {

@@ -35,6 +35,17 @@ turn. It's a mark only; the rules don't change. A shared win counts for each
 winner and leaves the Crown where it was. Delve isn't counted, and the night
 ends with the room, or once everyone has left (`src/lib/series.ts`).
 
+**Honours:** a turns game played by two or more ends with honours stamped
+onto the standings, one per player at most: Last One Standing (won the
+deathmatch), The Comeback (won after trailing by 3 or more at the end of a
+round), Ablaze (the longest run of right answers, 3 or more), Keen Eye (the
+best share right, from 3 asked and three in four right), First Blood (the
+game's first point), So Close (a point short of the winner, or level) and
+Wild Imagination (fell for 2 or more made-up items). Each goes, in that
+order, to the best player for it who has none yet (equals: the first
+seated). The host counts what they're judged on, so every screen agrees;
+race and Delve have none (`src/lib/honours.ts`).
+
 Items aren't repeated within a game until a category runs out, and earlier answers never come back as wrong answers (so they can't be ruled out from memory). Precursor tablets come up about a quarter as often as other items; a tablet question only offers tablets (once too few unseen tablets are left for that, they sit out until the category starts over), and tablets don't appear in other questions.
 
 **Race mode** (online only): no turns. Everyone sees the same question at the

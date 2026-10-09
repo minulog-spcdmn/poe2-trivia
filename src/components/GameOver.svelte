@@ -10,7 +10,8 @@
   import { CREATOR, DONATE_URL, SITE_URL } from '../lib/site';
   import { backdropShadow } from '../lib/backdropShadow';
   import { fxActive, fxUserOn, onFxChange } from '../lib/fx/core';
-  import { CROWN_LANDS, crownPassed, twinkle, victory } from '../lib/fx/moments';
+  import { CROWN_LANDS, crownPassed, glyphLanded, twinkle, victory } from '../lib/fx/moments';
+  import { honours, type Honour } from '../lib/honours';
   import { sfx } from '../lib/sound';
   import { MAX_PLAYERS } from '../lib/game';
   import { REMATCH_MS, crownChange, crownLine, crownedId, ledgerLine, nightWins, rematchCount } from '../lib/series';
@@ -230,6 +231,40 @@
     };
   });
 
+  // Honours (lib/honours.ts): a line from this game for nearly everyone,
+  // stamped onto the standings one by one, top to bottom, once the
+  // victory's main beats are over and the Crown has landed. Each lands with
+  // a small slam and a light tick; under reduced motion they are simply there.
+  // Judged once, as the game ended (nothing that happens on this screen changes them).
+  const hon: Map<string, Honour> = untrack(() => (run ? new Map() : honours(s)));
+  const HONOURS_AT = 3000;
+  const HONOUR_EVERY = 350;
+  /** How long a stamp takes to come down (the slam is as it lands). */
+  const STAMP_LANDS = 170;
+  let stamped = $state(new Set<string>());
+  onMount(() => {
+    const order = standings.filter((p) => hon.has(p.id)).map((p) => p.id);
+    if (!order.length) return;
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      stamped = new Set(order);
+      return;
+    }
+    const start = change ? Math.max(HONOURS_AT, CROWN_DELAY + CROWN_LANDS * 1000 + 450) : HONOURS_AT;
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    order.forEach((id, i) => {
+      const at = start + i * HONOUR_EVERY;
+      timers.push(setTimeout(() => (stamped = new Set([...stamped, id])), at));
+      timers.push(
+        setTimeout(() => {
+          const chip = standingsEl?.querySelector(`li[data-id="${CSS.escape(id)}"] .honour`);
+          if (chip) glyphLanded(chip);
+          sfx('draw');
+        }, at + STAMP_LANDS),
+      );
+    });
+    return () => timers.forEach(clearTimeout);
+  });
+
   // Without the effects layer (no WebGL2), simpler gold sparks on a 2D canvas;
   // also once it turns out not to come, should it still be on its way now.
   onMount(() => {
@@ -405,16 +440,19 @@
           </span>
           <span class="pts depth" title={row.lives ? 'Still standing' : `Perished at depth ${shownDepth(row.depth)}`}>{shownDepth(row.depth)}</span>
         {:else}
+        {@const honour = hon.get(p.id)}
         <span class="name"
-          ><PlayerName name={p.name} />{#if ready.has(p.id)}<span
-              class="ready"
-              role="img"
-              aria-label="Ready for another"
-              title="Ready for another"
-              use:readied
-              in:scale={{ start: 0.2, duration: 380 }}
-              ><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg></span
-            >{/if}</span
+          ><span class="line"
+            ><PlayerName name={p.name} />{#if honour}<span class="honour" class:stamped={stamped.has(p.id)}>{honour.title}</span>{/if}{#if ready.has(p.id)}<span
+                class="ready"
+                role="img"
+                aria-label="Ready for another"
+                title="Ready for another"
+                use:readied
+                in:scale={{ start: 0.2, duration: 380 }}
+                ><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg></span
+              >{/if}</span
+          >{#if honour}<span class="detail earned" class:stamped={stamped.has(p.id)}>{honour.detail}</span>{/if}</span
         >
         {/if}
         {#if team}
@@ -798,8 +836,6 @@
     place-items: center;
     width: 1.15rem;
     height: 1.15rem;
-    margin-left: 0.4rem;
-    vertical-align: -0.12em;
     color: var(--gold-hi);
     filter: drop-shadow(0 0 5px rgba(241, 217, 155, 0.45));
   }
@@ -860,6 +896,57 @@
       opacity: 0;
       scale: 1.7;
     }
+  }
+  /* The name, then its honour and the check of a player ready for another:
+     what doesn't fit goes on under the name, flush with it. */
+  .name .line {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    column-gap: 0.45rem;
+  }
+  /* Honours: a chip stamped on beside the name, and what earned it on a line
+     under it. Both hold their place from the start, so nothing moves as they
+     land: the chip comes down hard and settles, its line fades in after it. */
+  .honour {
+    padding: 0.25em 0.55em 0.2em;
+    font-family: var(--font-display);
+    font-size: 0.6rem;
+    line-height: 1.2;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    color: var(--gold-hi);
+    background: rgba(201, 164, 92, 0.12);
+    border: 1px solid rgba(201, 164, 92, 0.55);
+    border-radius: 2px;
+    box-shadow: 0 0 10px rgba(241, 217, 155, 0.12);
+    opacity: 0;
+  }
+  .honour.stamped {
+    opacity: 1;
+    animation: stamp 0.26s ease-in both;
+  }
+  @keyframes stamp {
+    0% {
+      opacity: 0;
+      scale: 2.3;
+    }
+    65% {
+      opacity: 1;
+      scale: 0.92;
+    }
+    100% {
+      scale: 1;
+    }
+  }
+  .detail.earned {
+    font-variant-numeric: lining-nums;
+    opacity: 0;
+    transition: opacity 0.5s 0.15s;
+  }
+  .detail.earned.stamped {
+    opacity: 1;
   }
   /* Games won tonight: a small crown and the count, beside the points. */
   .wins {
