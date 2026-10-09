@@ -28,3 +28,9 @@ dist-ssr
 
 # The room bot's build and browser profile (scripts/room-bot.mjs)
 .bot/
+
+# Python environment and model for scripts/upscale-art.py
+.venv-art/
+
+# Python bytecode
+__pycache__/

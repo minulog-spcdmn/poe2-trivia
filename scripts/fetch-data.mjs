@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 // Scrapes unique items and lineage support gems from poe2db.tw and downloads
-// their art into public/items/. Writes the item index to src/data/items.json.
+// their art into art-source/items/. Writes the item index to
+// src/data/items.json. The site shows upscaled copies of the art: run
+// scripts/upscale-art.py afterwards for any new items (it says how), and
+// npm run looks.
 //
 // Usage: npm run fetch-data
 // Behind a proxy on Node 22+: NODE_USE_ENV_PROXY=1 npm run fetch-data
@@ -12,7 +15,10 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SOURCE = 'https://poe2db.tw/us/Unique_item';
-const IMG_DIR = path.join(ROOT, 'public', 'items');
+const IMG_DIR = path.join(ROOT, 'art-source', 'items');
+const SITE_DIR = path.join(ROOT, 'public', 'items');
+/** The smaller copies' folders under SITE_DIR (THUMBS in scripts/upscale-art.py, ITEM_THUMBS in src/lib/ui-paths.ts). */
+const THUMBS = [256, 128];
 const DATA_FILE = path.join(ROOT, 'src', 'data', 'items.json');
 
 // Map the art folder (below Art/2DItems/) to a fine-grained group and a broad
@@ -161,8 +167,16 @@ async function main() {
     }),
   );
 
-  const keep = new Set(quiz.map((it) => `${it.id}.webp`));
-  for (const f of await readdir(IMG_DIR)) if (!keep.has(f)) await unlink(path.join(IMG_DIR, f));
+  // The site's copies: AVIF, full size and in each THUMBS folder (scripts/upscale-art.py).
+  const keepArt = new Set(quiz.map((it) => `${it.id}.webp`));
+  const keepSite = new Set(quiz.map((it) => `${it.id}.avif`));
+  const siteDirs = [SITE_DIR, ...THUMBS.map((t) => path.join(SITE_DIR, String(t)))];
+  for (const dir of siteDirs) await mkdir(dir, { recursive: true });
+  for (const f of await readdir(IMG_DIR)) if (!keepArt.has(f)) await unlink(path.join(IMG_DIR, f));
+  for (const dir of siteDirs)
+    for (const f of await readdir(dir, { withFileTypes: true })) if (f.isFile() && !keepSite.has(f.name)) await unlink(path.join(dir, f.name));
+  const missing = [];
+  for (const it of quiz) if (!(await Promise.all(siteDirs.map((d) => exists(path.join(d, `${it.id}.avif`))))).every(Boolean)) missing.push(it.id);
 
   quiz.sort((a, b) => a.name.localeCompare(b.name));
   await mkdir(path.dirname(DATA_FILE), { recursive: true });
@@ -173,6 +187,7 @@ async function main() {
   for (const it of quiz) perCat[it.category] = (perCat[it.category] ?? 0) + 1;
   console.log(`${quiz.length} items (${downloaded} new images)`);
   console.table(perCat);
+  if (missing.length) console.warn(`${missing.length} items have no upscaled art yet: run scripts/upscale-art.py (see its header).`);
 }
 
 main().catch((err) => {

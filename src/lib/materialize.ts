@@ -10,6 +10,7 @@
 
 import { BURN_COOL, BURN_LINE, BURN_RIM, valueNoise } from './patches';
 import { fxDensity, veilIgnites, veilSpark } from './fx/moments';
+import { ART_SCALE } from './ui-paths';
 
 /** How long the rest of the picture takes to come in once the answer is out, per patch (ms). */
 export const FINALE_MS = 400;
@@ -89,7 +90,7 @@ export interface BurnParams {
 
 /**
  * Svelte action for a veiled patch's <canvas>, sized and placed by CSS: draws
- * the patch (at screen resolution, capped at twice the art's) and burns it in.
+ * the patch (at screen resolution, capped at the picture's own) and burns it in.
  */
 export function materialize(canvas: HTMLCanvasElement, params: BurnParams) {
   let W = 0;
@@ -298,10 +299,13 @@ export function materialize(canvas: HTMLCanvasElement, params: BurnParams) {
   img.src = params.url;
   const begin = () => {
     if (stopped) return;
-    // Screen resolution, but no more than twice the art's own: the picture
-    // has no finer detail, and every pixel costs work on each frame.
-    W = Math.max(1, Math.round(Math.min(canvas.clientWidth * (window.devicePixelRatio || 1), img.naturalWidth * 2)));
-    H = Math.max(1, Math.round((W * img.naturalHeight) / img.naturalWidth));
+    // Screen resolution, but no more than the picture's own: it has no finer
+    // detail, and every pixel costs work on each frame. Its size in art pixels
+    // places the burn.
+    const aw = img.naturalWidth / ART_SCALE;
+    const ah = img.naturalHeight / ART_SCALE;
+    W = Math.max(1, Math.round(Math.min(canvas.clientWidth * (window.devicePixelRatio || 1), img.naturalWidth)));
+    H = Math.max(1, Math.round((W * ah) / aw));
     canvas.width = W;
     canvas.height = H;
     ctx.drawImage(img, 0, 0, W, H);
@@ -311,7 +315,7 @@ export function materialize(canvas: HTMLCanvasElement, params: BurnParams) {
     }
     burning++;
     counted = true;
-    burn(W / img.naturalWidth, H / img.naturalHeight);
+    burn(W / aw, H / ah);
   };
   img.decode().then(begin, () => {});
 
