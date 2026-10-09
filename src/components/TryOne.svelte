@@ -219,6 +219,8 @@
   .frame > :global(.art-slot) { position: absolute; inset: 0; }
 
   /* ---- the answers, as in the game ---- */
+  /* TODO: the answer rows, the verdict chip below and glare() are copied from QuestionView.svelte.
+     Move them into a shared component the next time either look changes, so the two can't drift. */
   .options { margin-top: 0.9rem; display: grid; grid-template-columns: 1fr 1fr; grid-auto-rows: 1fr; gap: 0.6rem; }
   .option {
     position: relative; isolation: isolate; display: flex; align-items: center; gap: 0.8rem; width: 100%;

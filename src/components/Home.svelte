@@ -428,6 +428,8 @@
   .join .btn { min-width: 6rem; }
 
   /* The open rooms, as a part of joining rather than a panel of their own. */
+  /* TODO: these overrides lean on OpenRooms' internal class names; give OpenRooms a plain variant
+     (no panel, no backdropShadow) and drop them. */
   .listing { width: min(100%, 380px); margin-top: 1.1rem; }
   .listing :global(.rooms.panel) {
     --bs-fill-a: transparent; --bs-fill-b: transparent; --bs1-color: transparent; --bs2-color: transparent;
