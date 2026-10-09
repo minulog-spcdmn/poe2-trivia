@@ -25,6 +25,7 @@
   import { descended, milestoneReached } from '../lib/fx/moments';
   import { BLAST_IMPACT_MS, BLAST_IN_DELAY_MS, BLAST_IN_MS, blastAway } from '../lib/blastAway';
   import { untrack } from 'svelte';
+  import { motion } from '../lib/motion.svelte';
 
   const s = $derived(session.state!);
   const active = $derived(s.players[s.turn]);
@@ -247,7 +248,7 @@
     }
     swingSide = b.side;
     untrack(() => {
-      const still = stillMotion();
+      const still = motion.still;
       // Blown apart as it still shows (the DOM is the old question's until this flush ends).
       const old = document.querySelector<HTMLElement>('.questions .q-slot');
       if (!still && old) blastAway({ node: old, side: b.side, mine: !!b.by && (b.by === session.myPlayerId || session.mode === 'local') });
@@ -257,18 +258,17 @@
       setTimeout(() => swing(b.side), still ? 0 : BLAST_IMPACT_MS);
     });
   });
-  /** Reduced motion, or the effects held still: a blast only cross-fades. */
-  const stillMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches || document.documentElement.hasAttribute('data-still');
   /** Svelte transition: the blasted question goes at once (its shards fly in an overlay of their own, see above), or cross-fades. */
   function swingOut(_node: Element) {
-    if (!swingSide || !stillMotion()) return { duration: 0 };
+    // Reduced motion, or the effects held still: a blast only cross-fades.
+    if (!swingSide || !motion.still) return { duration: 0 };
     return { duration: 200, css: (t: number) => `opacity: ${t}` };
   }
   /** Svelte transition: the new question comes in from the side the blast came from, as the smoke clears. */
   function swingIn(_node: Element) {
     const side = swingSide;
     if (!side) return { duration: 0 };
-    if (stillMotion()) return { duration: 300, delay: 150, css: (t: number) => `opacity: ${t}` };
+    if (motion.still) return { duration: 300, delay: 150, css: (t: number) => `opacity: ${t}` };
     return {
       duration: BLAST_IN_MS,
       delay: BLAST_IN_DELAY_MS,

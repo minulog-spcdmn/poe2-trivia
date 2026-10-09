@@ -26,6 +26,7 @@
 import { currentFrame, fxActive, type CoverBox, type Point } from './fx/core';
 import { cornerPx } from './corner';
 import { flareBurning as fxBurning, flareLit, flareStruck, type Ring } from './fx/flare';
+import { motion } from './motion.svelte';
 
 /** ms from the strike until its streak reaches the clock and sets it alight (TimerRing.svelte holds the clock at 0 till then). */
 export const FLARE_IGNITE_MS = 430;
@@ -54,7 +55,7 @@ const RED = '236, 62, 92';
 const PINK = '247, 163, 179';
 const HOT = '255, 240, 243';
 
-const still = () => matchMedia('(prefers-reduced-motion: reduce)').matches || document.documentElement.hasAttribute('data-still');
+const still = () => motion.still;
 const rand = (lo: number, hi: number) => lo + Math.random() * (hi - lo);
 const px = (n: number) => `${n.toFixed(1)}px`;
 const deg = (a: number) => `${((a * 180) / Math.PI).toFixed(1)}deg`;

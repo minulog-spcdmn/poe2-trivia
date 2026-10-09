@@ -524,12 +524,6 @@ export function findRules(kind: FindKind, d: number): DifficultyRules {
 export const veinWindow = (secs: number) => Math.ceil(secs / 2) * 1000;
 
 /**
- * The shortest fast window there is (at the shortest clock).
- * @deprecated The window follows the question's clock: use veinWindowMs(s).
- */
-export const AZURITE_FAST_MS = veinWindow(DELVE_MIN_TIMER);
-
-/**
  * How much longer a burning flare keeps the clock running. It burns as the
  * answering player's clock hits 0 (before the time-out is taken), so an
  * answer at any time before that keeps it.

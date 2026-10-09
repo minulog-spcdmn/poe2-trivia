@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { motion } from '../lib/motion.svelte';
   import { CLOCK_PEAK, onPressure, pressing, pressureLevel } from '../lib/darkness';
 
   // Delve: the dark of a question's clock running down (lib/darkness.ts).
@@ -19,8 +20,7 @@
   let wake = () => {};
 
   onMount(() => {
-    const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
-    const still = () => reduceMotion.matches || document.documentElement.hasAttribute('data-still');
+    const still = () => motion.still;
     let raf = 0;
     let shown = -1;
 

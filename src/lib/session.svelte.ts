@@ -356,11 +356,6 @@ class Session {
     return this.mode !== 'local' && !!s?.delve && !!me && s.players.some((p) => p.id === me) && livesOf(s, me) === 0;
   }
 
-  /** The old name of `perished`, for screens not moved over yet. */
-  get fallen() {
-    return this.perished;
-  }
-
   /** True when this device may act for the active player (or answer, in a race). */
   get myTurn() {
     const s = this.state;
@@ -443,6 +438,9 @@ class Session {
       writeSaved(saved);
       this.mode = 'host';
       this.status = 'connecting';
+      // The room being reopened, as a guest's join names its own: should it
+      // fail to reopen, fail() lets go of a game walked away from in it.
+      this.code = saved.code;
       this.loadPrivate(saved.priv);
       this.openRoom(saved.code, 0, underRuleset(renameCategories(saved.state)));
     } else if (saved.mode === 'client') this.join(saved.code, saved.name);
@@ -1018,7 +1016,13 @@ class Session {
   }
 
   private sendMedia(conn: DataConnection, g: Guest, m: MediaMsg) {
-    if (m.t !== 'veil' && (!g.mediaAt || g.mediaAt.qid !== m.qid)) g.mediaAt = { qid: m.qid, at: Date.now() };
+    // A veil alone shows nothing to answer from, so it isn't the art reaching
+    // them (tooFast). In Delve it is: answers open with the clock, which starts
+    // once the veil is out, while its first patch only burns in a moment later;
+    // a quick answer would otherwise be dropped without a word, its player
+    // unable to answer again.
+    const reached = m.t !== 'veil' || !!this.state?.delve;
+    if (reached && (!g.mediaAt || g.mediaAt.qid !== m.qid)) g.mediaAt = { qid: m.qid, at: Date.now() };
     this.send(conn, m);
   }
 
@@ -1348,7 +1352,11 @@ class Session {
     if (action.type === 'answer' && action.index !== null && q && shown.qid === q.askedAt && this.answered?.qid !== q.askedAt) {
       // On a veiled picture, also how much of it had burnt in (for an achievement, lib/achievements.ts).
       const share = q.veil && shown.veil?.count ? Object.keys(shown.patches).length / shown.veil.count : undefined;
-      this.answered = { qid: q.askedAt, ms: performance.now() - shown.since, ...(share !== undefined ? { share } : {}) };
+      // Delve shows nothing to answer from until its clock starts, and its art
+      // may come well before that (during a team's draw): timed from the clock.
+      const since = performance.now() - shown.since;
+      const ms = q.clockAt !== undefined ? Math.min(since, Math.max(0, this.hostNow() - q.clockAt)) : since;
+      this.answered = { qid: q.askedAt, ms, ...(share !== undefined ? { share } : {}) };
     }
     if (this.mode === 'client') {
       this.hostConn?.send({ t: 'action', action });

@@ -14,6 +14,7 @@
   import ArcaneCircle from './ArcaneCircle.svelte';
   import NamePlate from './NamePlate.svelte';
   import { untrack, type Snippet } from 'svelte';
+  import { motion } from '../lib/motion.svelte';
   import {
     FILL_START,
     answerCharging,
@@ -399,7 +400,7 @@
     if (!reveal) return { duration: 0 };
     const veil = node.querySelector('.veil');
     if (veil) veilHandoff(veil);
-    const quick = matchMedia('(prefers-reduced-motion: reduce)').matches || document.documentElement.hasAttribute('data-still');
+    const quick = motion.still;
     return {
       duration: quick ? 250 : 400,
       css: (t: number, u: number) =>

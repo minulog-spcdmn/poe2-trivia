@@ -2,6 +2,7 @@
   import { cubicInOut, cubicOut } from 'svelte/easing';
   import { scale } from 'svelte/transition';
   import { untrack } from 'svelte';
+  import { motion } from '../lib/motion.svelte';
   import { engine, session } from '../lib/session.svelte';
   import { categoryIcon, categoryIconTweak, categoryIcons } from '../lib/ui';
   import { fits, fitStyle, maskOf, measure } from '../lib/iconFit.svelte';
@@ -132,7 +133,7 @@
     burning?.stop();
     burning = null;
     if (target < 0) return done(0);
-    const quiet = still || document.documentElement.hasAttribute('data-still');
+    const quiet = motion.still;
     const land = () => {
       lit = target;
       landed = true;
@@ -264,7 +265,7 @@
   const flipAt = (i: number) => 0.62 + i * 0.12;
   const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
   /** Reduced motion, or effects off: the vote pips appear and go at once. */
-  const calm = () => still || document.documentElement.hasAttribute('data-still');
+  const calm = () => motion.still;
   /** Cards turn over their longer side: across when stacked as wide rows (narrow screens), else sideways. */
   const narrow = matchMedia('(max-width: 700px)');
   /** When the deal began; null when the cards appeared without one (as after a refresh). */
