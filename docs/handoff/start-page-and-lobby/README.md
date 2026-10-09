@@ -257,14 +257,18 @@ Desktop shots are 1440 wide at 1x.
 
 ### Footer band
 
+Balanced on both sides: who made it on the left, how to support it on the
+right, every legal line together in the middle.
+
 - A rule with a centre diamond.
-- Left: "MADE BY zoe_arcana" + pill "♥ SUPPORT THE PROJECT"; its note
-  "Optional tips help pay for the domain and development. Everything stays
-  free." as a tooltip.
-- Middle, fine print: "Unofficial fan project. Path of Exile is a trademark
-  of Grinding Gear Games, who do not endorse this site. Item data and art
-  from poe2db.tw."
-- Right: "Impressum · Datenschutz / Privacy" (existing links).
+- Left: "MADE BY zoe_arcana".
+- Right: pill "♥ SUPPORT THE PROJECT"; its note "Optional tips help pay for
+  the domain and development. Everything stays free." as a tooltip.
+- Middle, centred: fine print "Unofficial fan project. Path of Exile is a
+  trademark of Grinding Gear Games, who do not endorse this site. Item data
+  and art from poe2db.tw.", and under it "Impressum · Datenschutz /
+  Privacy" (existing links).
+- Grid `1fr auto 1fr`, so the middle stays centred under the diamond.
 
 ### Invite link screen (`?room=CODE`)
 
