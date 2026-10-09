@@ -28,6 +28,8 @@ const OVERTIME_MS = 30 * 60000;
 const MAKE_WAY_CHECKS = 2;
 /** An empty lobby stays open at least this long before it makes way. */
 const MIN_OPEN_MS = 60000;
+/** How long a host waits for more after someone comes or goes (ms, from..to), by the others in the lobby: longest with just one. */
+const waitForMore = (others: number): [number, number] => (others <= 1 ? [20000, 45000] : others === 2 ? [12000, 30000] : [8000, 20000]);
 /** The chance a host fiddles with the rules once someone has joined its lobby. */
 const FIDDLE_CHANCE = 0.3;
 /** Chance that a host nobody joined tries other rules once, instead of leaving. */
@@ -147,11 +149,11 @@ export class Host {
     dropSave();
   }
 
-  /** A new room list (this room left out): whether another one to join is up, for making way. */
-  see(others: RoomInfo[]) {
+  /** A new room list (this room left out; `ours`: our other rooms' codes): whether another one looking for players is up, for making way. */
+  see(others: RoomInfo[], ours: ReadonlySet<string>) {
     // Several of our rooms waiting empty: the higher ones make way, never a lower one for them.
     const rivals = others.filter((r) => !this.above.has(r.code));
-    this.wayChecks = makesWay(rivals) ? this.wayChecks + 1 : 0;
+    this.wayChecks = makesWay(rivals, ours) ? this.wayChecks + 1 : 0;
   }
 
   /** The room another one made way for: someone else's lobby to join, people's before ours. */
@@ -252,7 +254,7 @@ export class Host {
     if (key !== this.lobbyKey) {
       this.lobbyKey = key;
       // Waits a little for more to come, as a person would (each arrival or departure starts it over).
-      this.startAt = now + between(10000, 25000);
+      this.startAt = now + between(...waitForMore(humans.length));
       if (key) log(`waiting for more: ${humans.length} in the lobby`);
     }
     // Company at last: now and then the host fiddles with the rules before it starts, as people do.

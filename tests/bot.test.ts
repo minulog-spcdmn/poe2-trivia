@@ -271,6 +271,23 @@ test('an empty lobby makes way for any other room to join', () => {
   assert.ok(!makesWay([]));
 });
 
+test("a crowded lobby of our own makes room for another, someone else's never does", () => {
+  const ours = new Set(['OURS22']);
+  const our = (players: number) => ({ ...room('lobby', players), code: 'OURS22' });
+  // Host and one guest: still looking for players, so no new room and an empty one makes way.
+  assert.ok(!wanted(2, [our(2)], ours));
+  assert.ok(makesWay([our(2)], ours));
+  // Host and two or more: busy, so another room opens and an empty one stays.
+  assert.ok(wanted(2, [our(3)], ours));
+  assert.ok(wanted(4, [our(5), room('question')], ours));
+  assert.ok(!makesWay([our(3)], ours));
+  // Someone else's lobby, however busy: never.
+  assert.ok(!wanted(2, [room('lobby', 6)], ours));
+  assert.ok(makesWay([room('lobby', 6)], ours));
+  // Room 1 still only when nothing is listed.
+  assert.ok(!wanted(1, [our(3)], ours));
+});
+
 test('rooms running at once never share a name', () => {
   for (const rooms of [1, 2, 3, 4]) {
     const shares = Array.from({ length: rooms }, (_, i) => namesFor(i + 1, rooms));

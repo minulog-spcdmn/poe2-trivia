@@ -45,8 +45,8 @@ const HAND_OVER_MS = 2000;
 const FRESH_LIST_MS = 30000;
 /** The seat empty this long (ms, from..to) before someone comes on to join a room. */
 const REST: [number, number] = [2 * 60000, 6 * 60000];
-/** Someone looking who won't open a room gives up looking this soon (ms, from..to). */
-const GIVE_UP: [number, number] = [30000, 90000];
+/** Someone looking who won't open a room gives up looking this soon (ms, from..to): someone keener may open one meanwhile. */
+const GIVE_UP: [number, number] = [2 * 60000, 5 * 60000];
 /** One done hosting who stays on to play somewhere else has this long (ms, from..to). */
 const ONE_MORE: [number, number] = [15 * 60000, 40 * 60000];
 /** Someone switching from looking to hosting hosts at least this long. */
@@ -278,10 +278,10 @@ export class Seat {
     const others = rooms.filter((r) => r.code !== mine && !this.closed.has(r.code));
     this.others = others;
     this.seen = { rooms: others.length, at };
-    this.host?.see(others);
+    this.host?.see(others, this.ours);
     this.guest?.see(others, now);
     const role = this.host ? null : nextRole(this.team.map((t) => t.role), this.maxRooms);
-    this.wanted = role && wanted(role, others) ? { role, checks: this.wanted?.role === role ? this.wanted.checks + 1 : 1 } : null;
+    this.wanted = role && wanted(role, others, this.ours) ? { role, checks: this.wanted?.role === role ? this.wanted.checks + 1 : 1 } : null;
   }
 
   /** The room this seat would open now, if the lists called for it often enough. */
@@ -426,7 +426,7 @@ export class Seat {
     this.remember(name, afterHosting(this.mind(name), (now - (host.since || now)) / MIN, now));
     // A list older than that may have missed a room opened meanwhile: then the next one decides.
     const fresh = !!this.seen && now - this.seen.at < FRESH_LIST_MS;
-    this.handOver = exit !== 'made way' && fresh && wanted(host.role, this.others);
+    this.handOver = exit !== 'made way' && fresh && wanted(host.role, this.others, this.ours);
     this.wanted = this.handOver ? { role: host.role, checks: wantedChecks(host.role) } : null;
     this.opener = null;
     this.backAt = now + HAND_OVER_MS;
