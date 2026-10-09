@@ -251,16 +251,18 @@ test('a room can be joined only in its lobby, with a seat free', () => {
   assert.ok(!joinable({ ...room('lobby'), v: undefined }));
 });
 
-test('the first room opens only when no room is listed', () => {
-  assert.ok(wanted('first', []));
-  assert.ok(!wanted('first', [room('question')]));
-  assert.ok(!wanted('first', [room('lobby')]));
+test('room 1 opens only when no room is listed', () => {
+  assert.ok(wanted(1, []));
+  assert.ok(!wanted(1, [room('question')]));
+  assert.ok(!wanted(1, [room('lobby')]));
 });
 
-test('the second room opens only while every room listed is mid-game', () => {
-  assert.ok(wanted('second', []));
-  assert.ok(wanted('second', [room('question'), room('reveal'), room('locked'), room('lobby', 12)]));
-  assert.ok(!wanted('second', [room('question'), room('lobby')]));
+test('every room after opens only while every room listed is mid-game', () => {
+  assert.ok(wanted(2, []));
+  assert.ok(wanted(2, [room('question'), room('reveal'), room('locked'), room('lobby', 12)]));
+  assert.ok(!wanted(2, [room('question'), room('lobby')]));
+  // And the fifth, the same way.
+  assert.ok(wanted(5, [room('question'), room('reveal'), room('choosing')]));
 });
 
 test('an empty lobby makes way for any other room to join', () => {
@@ -546,11 +548,14 @@ test('a room appeals by its rules, its company and its host, and they settle for
   assert.ok(settlesFor(60) >= 0.3);
 });
 
-test('a seat opens the first room, else the second, within the rooms allowed', () => {
-  assert.equal(nextRole([], 1), 'first');
-  assert.equal(nextRole(['first'], 1), null);
-  assert.equal(nextRole(['first'], 2), 'second');
-  assert.equal(nextRole(['second'], 2), 'first');
-  assert.equal(nextRole(['first', 'second'], 2), null);
+test('a seat opens the lowest numbered room free, as many as it takes, or up to a limit', () => {
+  assert.equal(nextRole([]), 1);
+  assert.equal(nextRole([1]), 2);
+  assert.equal(nextRole([2]), 1);
+  assert.equal(nextRole([1, 2, 3, 5]), 4);
+  assert.equal(nextRole([1, 2, 3, 4, 5, 6, 7, 8]), 9);
+  assert.equal(nextRole([1], 1), null);
+  assert.equal(nextRole([1], 2), 2);
+  assert.equal(nextRole([1, 2], 2), null);
   assert.equal(nextRole([], 0), null);
 });

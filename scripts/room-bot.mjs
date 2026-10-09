@@ -6,23 +6,22 @@
 // is hosting and the room's save, so it comes back as the same player in
 // the same room.
 //
-//   npm run bot -- [--bots 4] [--rooms 2] [--mode turns,race,delve] [--per-room N] [--headed] [--no-build]
+//   npm run bot -- [--bots 4] [--rooms N] [--mode turns,race,delve] [--per-room N] [--headed] [--no-build]
 //   (or node scripts/room-bot.mjs --bots 4; from PowerShell npm run bot bots=4 rooms=2 delve,
 //   or npm run bot 2, work too)
 //
 // --bots: how many seats, so how many players on at once (1 by default).
 // Each one who comes on decides for themselves whether to host or to join,
 // and which room, as people do (src/bot/seat.ts, src/bot/choice.ts).
-// --rooms: how many rooms they keep open at most (1 by default, 2 at most,
-// 0 to only join people). A room opens only when the open-room list has no
-// room at all; with --rooms 2, a second one also opens while every room
-// listed is mid-game (src/bot/wanted.ts).
+// A room opens when the open-room list has no room at all, and another one
+// whenever every room listed is mid-game, as many as it takes
+// (src/bot/wanted.ts). --rooms N: at most N of them open at once (no limit
+// by default; 0 to only join people).
 // --mode: the game modes the hosts may pick, each by their own taste (all
 // three by default); --mode delve makes every room a Delve room.
 // --per-room N: at most N of them in one room (any number by default);
 // they arrive in a room 5 to 20 s apart.
-// --joiners N (or --join, for 1): N seats on top of the rooms (the same as
-// --bots rooms+N).
+// --joiners N (or --join, for 1): N seats more (--bots 1+N, or --rooms+N).
 //
 // Chromium: Playwright's own (npx playwright-core install chromium), or any
 // Chromium or Chrome named by BOT_CHROMIUM.
@@ -33,7 +32,6 @@ import { join } from 'node:path';
 import { build, preview } from 'vite';
 import { chromium } from 'playwright-core';
 
-const MAX_ROOMS = 2;
 const STATUS_EVERY_MS = 60000;
 const REOPEN_AFTER_MS = 5000;
 /** A page that fails to open this many times in a row ends the process (for its supervisor to restart). */
@@ -69,7 +67,7 @@ const numberOf = (name) =>
   args[name] ?? (/^\d+$/.test(env[`npm_config_${name.replace(/-/g, '_')}`] ?? '') ? env[`npm_config_${name.replace(/-/g, '_')}`] : undefined) ?? words.find((w) => w.startsWith(`${name}=`))?.slice(name.length + 1);
 const opts = {
   bots: numberOf('bots'),
-  rooms: numberOf('rooms') ?? positionals.find((p) => /^\d+$/.test(p)) ?? '1',
+  rooms: numberOf('rooms') ?? positionals.find((p) => /^\d+$/.test(p)),
   mode: args.mode ?? (words.filter((w) => MODES.includes(w)).join(',') || 'turns,race,delve'),
   join: args.join ?? (words.includes('join') || env.npm_config_join === 'true'),
   joiners: numberOf('joiners'),
@@ -87,13 +85,14 @@ if (perRoom !== Infinity && (!Number.isInteger(perRoom) || perRoom < 1)) {
   console.error('--per-room takes a number of players (1 or more).');
   process.exit(2);
 }
-const rooms = Number(opts.rooms);
-if (!Number.isInteger(rooms) || rooms < 0 || rooms > MAX_ROOMS) {
-  console.error(`--rooms takes 0 to ${MAX_ROOMS}.`);
+/** The most rooms open at once (Infinity: as many as are wanted). */
+const rooms = opts.rooms === undefined ? Infinity : Number(opts.rooms);
+if (rooms !== Infinity && (!Number.isInteger(rooms) || rooms < 0)) {
+  console.error('--rooms takes a number of rooms (0 or more).');
   process.exit(2);
 }
 /** Seats in all: --bots, or one a room and the --joiners. */
-const bots = Number(opts.bots ?? Math.max(1, rooms + joiners));
+const bots = Number(opts.bots ?? Math.max(1, (rooms === Infinity ? 1 : rooms) + joiners));
 if (!Number.isInteger(bots) || bots < 1) {
   console.error('--bots takes a number of seats (1 or more).');
   process.exit(2);
@@ -129,7 +128,7 @@ let stopping = false;
  */
 const claims = new Map();
 const ARRIVALS_APART_MS = [5000, 20000];
-/** Our rooms, first and second (src/bot/wanted.ts): which seat hosts each, so no two open the same one. */
+/** Our rooms, by number (src/bot/wanted.ts): which seat hosts each, so no two open the same one. */
 const roles = new Map();
 
 /**
@@ -140,7 +139,7 @@ const roles = new Map();
  */
 async function runSeat(slot) {
   const say = bots > 1 ? (...args) => log(`[${slot}]`, ...args) : log;
-  const url = `${base}bot.html?slot=${slot}&of=${bots}&rooms=${rooms}&modes=${modes.join(',')}${slot > 1 ? '&scout=0' : ''}`;
+  const url = `${base}bot.html?slot=${slot}&of=${bots}${rooms === Infinity ? '' : `&rooms=${rooms}`}&modes=${modes.join(',')}${slot > 1 ? '&scout=0' : ''}`;
   const context = await chromium.launchPersistentContext(join(root, '.bot', `profile-${slot}`), {
     headless: !opts.headed,
     executablePath: process.env.BOT_CHROMIUM || undefined,
@@ -193,7 +192,7 @@ async function runSeat(slot) {
         if (c && !c.slots.size && Date.now() >= c.next) claims.delete(code);
       });
       await p.exposeFunction('__claimRole', (role) => {
-        if ((role !== 'first' && role !== 'second') || (role === 'second' && rooms < 2) || rooms < 1) return false;
+        if (!Number.isInteger(role) || role < 1 || role > rooms) return false;
         const holder = roles.get(role);
         if (holder !== undefined && holder !== slot) return false;
         for (const [r, s] of roles) if (s === slot) roles.delete(r);
@@ -202,6 +201,9 @@ async function runSeat(slot) {
       });
       await p.exposeFunction('__releaseRole', (role) => {
         if (roles.get(role) === slot) roles.delete(role);
+      });
+      await p.exposeFunction('__releaseOthers', (role) => {
+        for (const [r, s] of roles) if (s === slot && r !== role) roles.delete(r);
       });
       const reopen = (why) => {
         // Only for the page in use (not one let go of above), and once.
@@ -241,7 +243,7 @@ async function runSeat(slot) {
   return seat;
 }
 
-log(`${bots === 1 ? '1 seat' : `${bots} seats`}, ${rooms ? `up to ${rooms === 1 ? '1 room' : `${rooms} rooms`} at once, hosting ${modes.join(', ')}` : 'joining only'}${perRoom < bots ? `, up to ${perRoom} in a room` : ''}`);
+log(`${bots === 1 ? '1 seat' : `${bots} seats`}, ${rooms === Infinity ? `as many rooms as wanted, hosting ${modes.join(', ')}` : rooms ? `up to ${rooms === 1 ? '1 room' : `${rooms} rooms`} at once, hosting ${modes.join(', ')}` : 'joining only'}${perRoom < bots ? `, up to ${perRoom} in a room` : ''}`);
 const all = [];
 for (let slot = 1; slot <= bots; slot++) all.push(await runSeat(slot));
 

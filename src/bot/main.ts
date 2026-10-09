@@ -12,13 +12,13 @@ if (!(import.meta.env.DEV || import.meta.env.VITE_BOT === '1') || !BOT) throw ne
 
 // Several seats at once (scripts/room-bot.mjs --bots): this one is ?slot= of ?of=,
 // each with its own share of the cast. ?rooms=: how many rooms the bot keeps
-// open at most (--rooms, 0 to only join); ?modes=: the game modes its hosts
+// open at most (--rooms, 0 to only join; no limit without it); ?modes=: the game modes its hosts
 // may pick (--mode), all of them by default; ?scout=0: a seat that is handed
 // the room list (the runner's first seat checks it for all).
 const q = new URLSearchParams(location.search);
 const slot = Number(q.get('slot') ?? 1);
 const names = namesFor(slot, Number(q.get('of') ?? 1));
-const rooms = Math.max(0, Math.min(2, Number(q.get('rooms') ?? 1) || 0));
+const rooms = q.has('rooms') ? Math.max(0, Number(q.get('rooms')) || 0) : Infinity;
 const bot = new Seat(names, modesFrom(q.get('modes')), rooms, q.get('scout') !== '0');
 bot.start();
 

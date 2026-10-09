@@ -15,9 +15,10 @@
 // likelier the less they feel like hosting by then.
 //
 // When a host goes and their room is still wanted, the next one hands over
-// at once. The runner (scripts/room-bot.mjs) keeps the seats from opening
-// more rooms than it allows (--rooms), says which rooms are our own, and
-// hands every seat the room list one of them checks for all.
+// at once. The runner (scripts/room-bot.mjs) keeps two seats from opening
+// the same room (and from opening more than --rooms, if it is given), says
+// which rooms are our own, and hands every seat the room list one of them
+// checks for all.
 
 import { engine, session } from '../lib/session.svelte';
 import { scanRooms, type RoomInfo } from '../lib/rooms';
@@ -37,7 +38,7 @@ const SCOUT_EVERY: [number, number] = [10000, 18000];
  * room waits one more, so the first one's room shows in the list before it
  * would open as well.
  */
-const WANTED_CHECKS: Record<Role, number> = { first: 1, second: 2 };
+const wantedChecks = (role: Role) => (role === 1 ? 1 : 2);
 /** A host leaving a room that is still wanted hands over: the next one opens a room this soon after. */
 const HAND_OVER_MS = 2000;
 /** A list checked this recently is trusted for a hand-over; an older one waits for a fresh check. */
@@ -53,9 +54,15 @@ const MIN_HOSTING_MS = 20 * 60000;
 const MIN = 60000;
 
 /** The runner's say over which seat opens which room (scripts/room-bot.mjs), when it gives one. */
-const { __claimRole: claimRole, __releaseRole: releaseRole } = window as unknown as {
+const {
+  __claimRole: claimRole,
+  __releaseRole: releaseRole,
+  __releaseOthers: releaseOthers,
+} = window as unknown as {
   __claimRole?: (role: Role) => Promise<boolean>;
   __releaseRole?: (role: Role) => Promise<void>;
+  /** Lets go of any room this seat holds but `role` (0: all of them). */
+  __releaseOthers?: (role: Role) => Promise<void>;
 };
 
 /**
@@ -71,7 +78,7 @@ interface Saved {
 function load(): Saved {
   try {
     const s = JSON.parse(readStored('seat') ?? '') as Saved;
-    if (Array.isArray(s.recent) && (!s.host || (typeof s.host.name === 'string' && typeof s.host.until === 'number' && (s.host.role === 'first' || s.host.role === 'second')))) return s;
+    if (Array.isArray(s.recent) && (!s.host || (typeof s.host.name === 'string' && typeof s.host.until === 'number' && Number.isInteger(s.host.role) && s.host.role >= 1))) return s;
   } catch {
     /* none yet */
   }
@@ -121,8 +128,8 @@ export class Seat {
   /**
    * `names`: whom it draws its players from (a share of its own, so nobody
    * is at two seats at once); `modes`: the game modes its hosts may pick
-   * (--mode); `maxRooms`: how many rooms the bot keeps open at most (--rooms,
-   * 0: it only joins); `checks`: whether it checks the room list itself
+   * (--mode); `maxRooms`: how many rooms the bot keeps open at most (--rooms:
+   * no limit by default, 0: it only joins); `checks`: whether it checks the room list itself
    * (the seat that does for all, or one on its own), else it is handed it.
    */
   constructor(
@@ -142,9 +149,9 @@ export class Seat {
   /** A host on before a reload (or a crash) takes their room back, if theirs is still to have. */
   private async resume() {
     const h = this.saved.host;
-    const back = h && this.names.includes(h.name) && nextRole([], this.maxRooms) && (h.role === 'first' || this.maxRooms >= 2) ? h : null;
-    // Rooms this seat held before, and won't now, go back to the runner.
-    for (const role of ['first', 'second'] as const) if (role !== back?.role) void releaseRole?.(role);
+    const back = h && this.names.includes(h.name) && h.role <= this.maxRooms ? h : null;
+    // Any room this seat held before, and won't now, goes back to the runner.
+    void releaseOthers?.(back?.role ?? 0);
     if (!back) {
       if (h) this.keep(undefined);
       // Nobody on: no room to get back, whatever a copy left behind says.
@@ -161,7 +168,7 @@ export class Seat {
     }
     const { name, ...stint } = back;
     this.host = new Host(identityOf(name, engine.categories, this.modes, engine.items), stint, (s) => this.keep({ name, ...s }), this.modes);
-    this.host.sibling = this.siblingOf(back.role);
+    this.host.above = this.above(back.role);
     this.host.resume();
   }
 
@@ -186,7 +193,7 @@ export class Seat {
   setTeam(team: TeamRoom[]) {
     this.team = team;
     this.ours = new Set(team.map((t) => t.code).filter(Boolean));
-    if (this.host) this.host.sibling = this.siblingOf(this.host.role);
+    if (this.host) this.host.above = this.above(this.host.role);
   }
 
   /** The runner: the room list as this seat last saw it (the one checking for all). */
@@ -211,9 +218,9 @@ export class Seat {
     };
   }
 
-  /** The other bot room's code, for the one opening `role`. */
-  private siblingOf(role: Role) {
-    return this.team.find((t) => t.role !== role)?.code ?? '';
+  /** Our rooms numbered higher than `role` (their codes): it never makes way for them. */
+  private above(role: Role) {
+    return new Set(this.team.filter((t) => t.role > role && t.code).map((t) => t.code));
   }
 
   private keep(host: Saved['host']) {
@@ -279,7 +286,7 @@ export class Seat {
 
   /** The room this seat would open now, if the lists called for it often enough. */
   private wantedRole(): Role | null {
-    return this.wanted && this.wanted.checks >= WANTED_CHECKS[this.wanted.role] ? this.wanted.role : null;
+    return this.wanted && this.wanted.checks >= wantedChecks(this.wanted.role) ? this.wanted.role : null;
   }
 
   private tick() {
@@ -370,7 +377,7 @@ export class Seat {
     this.keep({ name: who.name, ...stint });
     this.wanted = null;
     this.host = new Host(who, stint, (s) => this.keep({ name: who.name, ...s }), this.modes);
-    this.host.sibling = this.siblingOf(role);
+    this.host.above = this.above(role);
     this.host.open();
   }
 
@@ -420,7 +427,7 @@ export class Seat {
     // A list older than that may have missed a room opened meanwhile: then the next one decides.
     const fresh = !!this.seen && now - this.seen.at < FRESH_LIST_MS;
     this.handOver = exit !== 'made way' && fresh && wanted(host.role, this.others);
-    this.wanted = this.handOver ? { role: host.role, checks: WANTED_CHECKS[host.role] } : null;
+    this.wanted = this.handOver ? { role: host.role, checks: wantedChecks(host.role) } : null;
     this.opener = null;
     this.backAt = now + HAND_OVER_MS;
     this.restUntil = now + between(...REST);

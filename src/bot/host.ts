@@ -82,8 +82,8 @@ const rulesText = (c: RoomPrefs) => (c.mode === 'delve' ? 'delve' : `${c.mode}, 
 const useRules = (c: RoomPrefs) => session.dispatch({ type: 'settings', settings: { mode: c.mode, difficulty: c.difficulty, targetScore: c.target, timer: c.timer } });
 
 export class Host {
-  /** The other bot room's code (the runner says): the first never makes way for it. */
-  sibling = '';
+  /** Our rooms numbered higher than this one (their codes; the runner says): it never makes way for them. */
+  above: ReadonlySet<string> = new Set();
   private readonly player: Player;
   private lobbyKey = '';
   private startAt = 0;
@@ -149,8 +149,8 @@ export class Host {
 
   /** A new room list (this room left out): whether another one to join is up, for making way. */
   see(others: RoomInfo[]) {
-    // Both bot rooms waiting empty: only the second makes way, never the first for it.
-    const rivals = this.stint.role === 'first' ? others.filter((r) => r.code !== this.sibling) : others;
+    // Several of our rooms waiting empty: the higher ones make way, never a lower one for them.
+    const rivals = others.filter((r) => !this.above.has(r.code));
     this.wayChecks = makesWay(rivals) ? this.wayChecks + 1 : 0;
   }
 
