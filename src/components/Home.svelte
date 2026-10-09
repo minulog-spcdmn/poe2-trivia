@@ -255,8 +255,19 @@
 
   /** The cursor follows the mouse (touch has none). */
   function hover(e: PointerEvent, i: number) {
-    if (e.pointerType === 'mouse' && !connecting) cursor = i;
+    if (e.pointerType !== 'mouse') return;
+    hovered = true;
+    if (!connecting) cursor = i;
   }
+  /** The mouse is over an entry. */
+  let hovered = $state(false);
+  /** An entry has the keyboard's focus (not a click's). */
+  let keyFocus = $state(false);
+  function focusIn(e: FocusEvent) {
+    keyFocus = (e.target as HTMLElement).matches('.pick:focus-visible');
+  }
+  /** The cursor shows while an entry is pointed at or chosen; otherwise it fades away. */
+  const lit = $derived(!renaming && (hovered || keyFocus || !!open || connecting));
 
   // ---- the invite link's screen ----
 
@@ -337,13 +348,24 @@
         {/if}
       </div>
 
-      <nav class="menu" class:renaming aria-label="Start">
+      <nav class="menu" class:renaming class:lit aria-label="Start" onfocusin={focusIn} onfocusout={() => (keyFocus = false)}>
+        <!-- One cursor for the menu: it slides to the entry under the mouse (or the
+             keyboard's), and fades away slowly once nothing is pointed at. -->
+        <span class="diamond" aria-hidden="true" style:translate="0 {cursor * 108}px"></span>
         {#each ENTRIES as e, i (e)}
           {@const isOpen = open === e && !connecting}
           {@const isBusy = connecting && (busy ?? (session.mode === 'host' ? 'create' : 'join')) === e}
-          <div class="entry" class:cur={cursor === i} class:dimmed={connecting && !isBusy} inert={connecting && !isBusy} in:fly={{ y: 12, duration: 500, delay: 450 + i * 70 }}>
-            <span class="diamond" aria-hidden="true"></span>
-            <button class="pick" bind:this={entryEls[i]} onclick={() => choose(e)} onpointerenter={(ev) => hover(ev, i)} onfocus={() => (cursor = i)} aria-expanded={e === 'create' || e === 'join' ? isOpen : undefined}>
+          <div
+            class="entry"
+            role="presentation"
+            class:cur={cursor === i}
+            class:dimmed={connecting && !isBusy}
+            inert={connecting && !isBusy}
+            onpointerenter={(ev) => hover(ev, i)}
+            onpointerleave={(ev) => ev.pointerType === 'mouse' && (hovered = false)}
+            in:fly={{ y: 12, duration: 500, delay: 450 + i * 70 }}
+          >
+            <button class="pick" bind:this={entryEls[i]} onclick={() => choose(e)} onfocus={() => (cursor = i)} aria-expanded={e === 'create' || e === 'join' ? isOpen : undefined}>
               {MENU[e]}
             </button>
             {#if isBusy}
@@ -422,9 +444,15 @@
      Today's unique. */
   .home {
     --pad-x: clamp(16px, 8.4vw, 120px);
+    /* Wide screens keep the 1440 px layout, centred. */
+    width: 100%;
+    max-width: 1440px;
+    margin: 0 auto;
     min-height: 100dvh;
     display: grid;
     grid-template-columns: minmax(0, 452px) minmax(0, 510px);
+    /* The last row takes what's left, so the footer sits at the bottom of a short page. */
+    grid-template-rows: auto auto 1fr;
     grid-template-areas:
       'intro today'
       'rooms rooms'
@@ -450,6 +478,7 @@
   }
   footer {
     grid-area: foot;
+    align-self: end;
     margin-top: 32px;
   }
 
@@ -601,6 +630,7 @@
 
   /* ---- the menu ---- */
   .menu {
+    position: relative;
     display: flex;
     flex-direction: column;
   }
@@ -624,8 +654,8 @@
     text-align: left;
     color: #d9c08a;
     transition:
-      color 0.2s,
-      text-shadow 0.25s;
+      color 1.2s ease,
+      text-shadow 1.2s ease;
   }
   .pick:focus-visible {
     outline-offset: 4px;
@@ -666,8 +696,9 @@
       inset 0 2px 6px rgba(0, 0, 0, 0.55),
       0 0 0 3px rgba(224, 85, 63, 0.14);
   }
-  /* The cursor: a glowing diamond beside the entry, its title lit. A pointer
-     that can hover has one; touch never shows it. */
+  /* The cursor: a glowing diamond beside the entry, its title lit. It slides
+     from entry to entry and fades out slowly when nothing is pointed at. A
+     pointer that can hover has one; touch never shows it. */
   .diamond {
     position: absolute;
     left: -26px;
@@ -680,22 +711,28 @@
       0 0 8px rgba(224, 138, 68, 0.9),
       0 0 18px rgba(224, 138, 68, 0.45);
     opacity: 0;
-    scale: 0.5;
+    scale: 0.6;
+    pointer-events: none;
     transition:
-      opacity 0.2s,
-      scale 0.25s var(--ease-out);
+      opacity 1.2s ease,
+      scale 1.2s ease,
+      translate 0.35s var(--ease-out);
   }
   @media (hover: hover) {
-    .cur .diamond {
+    .lit .diamond {
       opacity: 1;
       scale: 1;
+      transition:
+        opacity 0.2s,
+        scale 0.25s var(--ease-out),
+        translate 0.35s var(--ease-out);
     }
-    .cur .pick {
+    .lit .cur .pick {
       color: #fff1cf;
       text-shadow: 0 0 18px rgba(241, 217, 155, 0.35);
-    }
-    .renaming .diamond {
-      opacity: 0;
+      transition:
+        color 0.2s,
+        text-shadow 0.25s;
     }
   }
   .dimmed {
@@ -872,6 +909,7 @@
   @media (max-width: 1080px) {
     .home {
       grid-template-columns: minmax(0, 560px);
+      grid-template-rows: auto auto auto 1fr;
       grid-template-areas:
         'intro'
         'today'
