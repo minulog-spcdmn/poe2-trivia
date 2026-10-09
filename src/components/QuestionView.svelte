@@ -31,7 +31,7 @@
   import { fxActive, type Handle } from '../lib/fx/core';
   import { dock, narrow, phone } from '../lib/layout';
   import { portal } from '../lib/portal';
-  import { DELVE_FUSE_MS, blastProblem, clockLeft, dynamiteOf, fellAt, fuseDue, fuseLeft, holdersOf, isGroupRun, itemsWorkOn, livesOf, waitingIds } from '../lib/delve';
+  import { DELVE_FUSE_MS, blastProblem, blasterIds, clockLeft, dynamiteOf, fellAt, fuseDue, fuseLeft, isGroupRun, itemsWorkOn, livesOf, waitingIds } from '../lib/delve';
   import { blownText, coopMissText, coopRevealText, flareText, namesOf, perishedText, wardText } from '../lib/difficultyText';
   import ItemGlyph from './ItemGlyph.svelte';
   import type { GlyphKind } from '../lib/inventoryArt';
@@ -181,19 +181,19 @@
   });
 
   // ---- dynamite ----
-  // Delve: while the question is open, a stick of dynamite (alone your own,
-  // together anyone standing's) can blast it away for a new one at the same
-  // depth, twice a depth at most: its button (Detonate) takes the place Next has
-  // after an answer. Once this question has dynamite at hand its place is
-  // kept until the question ends, the button only showing while it can be
+  // Delve: while the question is open, a stick of dynamite (your own;
+  // together while you still have an answer to give) can blast it away for a
+  // new one at the same depth, twice a depth at most: its button (Detonate)
+  // takes the place Next has after an answer. Once this question has dynamite
+  // at hand its place is kept until the question ends, the button only showing while it can be
   // used, so nothing moves as it comes and goes. When it will go off by
   // itself as the clock hits 0 (no flare to burn first), its fuse burns over
   // the clock's last seconds (delve.ts fuseLeft): the button's bar burns
   // down to 0 with it, on the host's clock as Next's does, and the question
   // can still be answered, or Detonate pressed, meanwhile.
 
-  /** Sticks of dynamite at hand: alone the player's, together everyone standing's. */
-  const sticks = $derived(!s.delve ? 0 : coop ? holdersOf(s, 'dynamite').reduce((n, id) => n + dynamiteOf(s, id), 0) : dynamiteOf(s, active.id));
+  /** Sticks of dynamite at hand: alone the player's, together your own (only who holds one sets it off). */
+  const sticks = $derived(!s.delve ? 0 : coop ? (me ? dynamiteOf(s, me) : 0) : dynamiteOf(s, active.id));
   /** The clock has run out here (a flare burning moves it on): what happens now is the host's (a flare, the dynamite by itself, the time-out). */
   let expired = $state(false);
   $effect(() => {
@@ -231,6 +231,13 @@
       cancelAnimationFrame(frame);
       clearTimeout(timer);
     };
+  });
+  /** Whose dynamite the fuse burns on: together, a teammate's when only they are still to answer with one, else the team's. */
+  const fuseOwner = $derived.by(() => {
+    if (!coop) return delveYou ? 'your' : `${active.name}'s`;
+    const ids = blasterIds(s, true);
+    if (ids.length !== 1) return "the team's";
+    return ids[0] === me ? 'your' : `${nameOf(ids[0])}'s`;
   });
   /** Whether this device can blast the question away now (delve.ts blastProblem; on one device, for the player): while its clock runs, its fuse to the end. */
   const canBlast = $derived(
@@ -888,7 +895,7 @@
     {:else if fuse !== null}
       <!-- Delve: the clock's last seconds, with dynamite to go off at 0 (its bar burns down on Detonate). -->
       <p class="spectate blast-line" in:fade={{ duration: 200 }}>
-        <span class="found-glyph" aria-hidden="true"><ItemGlyph kind="dynamite" /></span>The fuse on {coop ? "the team's" : delveYou ? 'your' : `${active.name}'s`} dynamite is burning.
+        <span class="found-glyph" aria-hidden="true"><ItemGlyph kind="dynamite" /></span>The fuse on {fuseOwner} dynamite is burning.
       </p>
     {:else if blastLine}
       <p class="spectate blast-line" in:fade={{ duration: 300, delay: 300 }}><span class="found-glyph" aria-hidden="true"><ItemGlyph kind="dynamite" /></span>{blastLine}</p>
