@@ -15,6 +15,7 @@ import {
   recordGame,
   rivalLines,
   rivalTag,
+  resetRivals,
   saveRivals,
   serializeRivals,
   type Rivals,
@@ -282,6 +283,23 @@ test('parseRivals reads junk as an empty store; saveRivals leaves a newer versio
   assert.deepEqual(loadRivals(), emptyRivals());
   blocked = false;
   assert.equal(store.size, 0);
+});
+
+test('erasing the codex erases the rivals and what was kept aside, never a newer build', () => {
+  const g = played(['Ash', 'Bea'], 0);
+  assert.ok(saveRivals((x) => recordGame(x, g, 'p0', 1)));
+  store.set(storeKey('rivals.unread'), 'nope');
+  resetRivals();
+  assert.equal(store.get(KEY), undefined);
+  assert.equal(store.get(storeKey('rivals.unread')), undefined);
+  assert.deepEqual(loadRivals(), emptyRivals());
+  const newer = JSON.stringify({ v: 2, vs: {} });
+  store.set(KEY, newer);
+  resetRivals();
+  assert.equal(store.get(KEY), newer);
+  // Blocked storage: nothing thrown.
+  blocked = true;
+  resetRivals();
 });
 
 test('rivalTag, rivalLines and pairLines read as they should', () => {

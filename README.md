@@ -27,13 +27,15 @@ is hosted as a static site on GitHub Pages. No server needed.
 **The night:** a room keeps the score of its turns and race games (with two
 or more players, online or on one device) through Play again and Change
 settings. The end screen says who won the first game and then who leads the
-night, the standings count each player's games won from the second game on,
-and so does the lobby. The winner of the last game wears the **Crown**: it
-passes to them on the end screen in a stream of gold from whoever wore it,
-and in the next game it sits on their avatar and before their name on their
-turn. It's a mark only; the rules don't change. A shared win counts for each
-winner and leaves the Crown where it was. Delve isn't counted, and the night
-ends with the room, or once everyone has left (`src/lib/series.ts`).
+night; from the second game on, each row of its standings counts that
+player's games won tonight, and the lobby shows them after every game. The
+winner of the last game wears the **Crown**: it passes to them on the end
+screen in a stream of gold from whoever wore it (the heading reads "The crown
+falls", or "The crown holds" when its wearer won again), and in the next game
+it sits on their avatar and before their name on their turn (not in a
+deathmatch). It's a mark only; the rules don't change. A shared win counts
+for each winner and leaves the Crown where it was. Delve isn't counted, and
+the night ends with the room, or once everyone has left (`src/lib/series.ts`).
 
 **Honours:** a turns game played by two or more ends with honours stamped
 onto the standings, one per player at most: Last One Standing (won the
@@ -43,8 +45,10 @@ best share right, from 3 asked and three in four right), First Blood (the
 game's first point), So Close (a point short of the winner, or level) and
 Wild Imagination (fell for 2 or more made-up items). Each goes, in that
 order, to the best player for it who has none yet (equals: the first
-seated). The host counts what they're judged on, so every screen agrees;
-race and Delve have none (`src/lib/honours.ts`).
+seated). They are stamped in one by one, top to bottom, once the Crown has
+landed (all at once under reduced motion). The host counts what they're
+judged on, so every screen agrees; race and Delve have none
+(`src/lib/honours.ts`).
 
 **Rivals:** your browser remembers who you played. Online, after each turns
 or race game you were seated in, your record against every other player
@@ -58,7 +62,7 @@ beats every other seat, and the lobby and the end screen read "Ash leads Bea
 3-2 on this device." Rivals are known by the look of their name, kept in
 this browser only (60 at most; the longest unplayed go first), and a game
 counts once, however often its end screen opens again; spectators and Delve
-count nothing (`src/lib/rivals.ts`).
+count nothing. Erasing the codex erases them too (`src/lib/rivals.ts`).
 
 Items aren't repeated within a game until a category runs out, and earlier answers never come back as wrong answers (so they can't be ruled out from memory). Precursor tablets come up about a quarter as often as other items; a tablet question only offers tablets (once too few unseen tablets are left for that, they sit out until the category starts over), and tablets don't appear in other questions.
 
@@ -566,7 +570,9 @@ browser (`src/lib/achievements.ts`); erasing the codex erases them.
     guest is ready, every screen counts down from 10 and the next game
     starts by itself as Play again would, unless someone says **Not yet** or
     the host starts it sooner (**Play now**) or goes back to the lobby. A
-    guest who drops out is no longer waited for (`src/lib/series.ts`).
+    guest who drops out is no longer waited for, and one who comes back not
+    ready stops the count. Spectators don't vote; they read "You'll play in
+    the next game." (`src/lib/series.ts`).
   - **Summons:** the invite link names the host (`?room=K7Q2PX&from=Ash`).
     On a phone, sharing it says "Ash summons you to a hunt on PoE2.Quest.
     Name the unique before the timer burns out." (from a guest: "Bob invites
@@ -575,9 +581,10 @@ browser (`src/lib/achievements.ts`); erasing the codex erases them.
     box reads "Ash summons you" with the code filled in, and its button
     reads "Join as Bea" once a name is in the field (a saved one fills it),
     so someone who has played here before joins in one tap. If the room is
-    gone, they read "Ash's room isn't open right now." A name in the link
-    that wouldn't pass as a player's name is ignored, and the link reads as
-    a plain invite (`src/lib/invite.ts`).
+    gone, they read "Ash's room isn't open right now." (or, when it doesn't
+    answer, as a tab just closed may not for a while, "Couldn't reach Ash's
+    room."). A name in the link that wouldn't pass as a player's name is
+    ignored, and the link reads as a plain invite (`src/lib/invite.ts`).
   - **Bring a challenger:** at the end of a turns or race game, every player
     seated (and hot-seat, with two or more) can share the result ("I just
     won 10 to 8 at PoE2.Quest. Take a seat for the rematch: …"; from the
@@ -625,8 +632,9 @@ with that in mind. Guests, on the other hand, are treated as untrusted:
   different for every room (derived from the browser's secret and the room
   code), so a host never learns a token that works in someone else's room.
 - **Everything guests send is checked.** Every message is validated against
-  the few actions a guest may take: pick a category, answer, continue, and
-  in Delve together vote for a card or give a teammate a life. Guests
+  the few actions a guest may take: pick a category, answer, continue, say
+  they're ready for another game (or not yet) once one is over, and in
+  Delve together vote for a card or give a teammate a life. Guests
   are rate-limited to about 10 messages per second, and the raw data they
   send is capped in size and volume, and checked for lengths that can't be
   real, before it is decoded (so it can't be used to fill the host's memory

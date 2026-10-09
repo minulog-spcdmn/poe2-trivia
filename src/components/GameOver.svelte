@@ -1037,14 +1037,17 @@
   .wins .n {
     padding-top: 1px;
   }
+  /* Centred as one line of text, the crown inline before it: a long name
+     wraps the line under the crown, not away from it. */
   .crowned {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.45rem;
     margin: 1rem 0 0;
+    text-align: center;
     font-style: italic;
     color: var(--gold);
+  }
+  .crowned :global(.crown-mark) {
+    margin-right: 0.45rem;
+    vertical-align: -0.12em;
   }
   /* Everyone's in: the count over a gold line that drains to the next game. */
   .countdown {

@@ -20,9 +20,9 @@
 // aside first (keepAside.ts).
 
 import type { GameState } from './game.ts';
-import { makeRoom } from './keepAside.ts';
+import { clearAside, makeRoom, newerThan } from './keepAside.ts';
 import { cleanName, nameSkeleton } from './names.ts';
-import { readStored, tryReadStored, writeStored } from './storage.ts';
+import { readStored, removeStored, tryReadStored, writeStored } from './storage.ts';
 import { versusGame } from './versus.ts';
 
 const NAME = 'rivals';
@@ -163,6 +163,13 @@ export function saveRivals(change: (r: Rivals) => Rivals | null): Rivals | null 
   if (!next) return was;
   const out = capped(next);
   return writeStored(NAME, serializeRivals(out)) ? out : null;
+}
+
+/** Erased with the codex (the Codex's Erase): the records and what was kept aside; a newer build's are never touched. */
+export function resetRivals() {
+  const raw = tryReadStored(NAME);
+  if (raw && !newerThan(raw, VERSION)) removeStored(NAME);
+  clearAside(NAME);
 }
 
 /**

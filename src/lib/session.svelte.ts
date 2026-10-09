@@ -1115,7 +1115,11 @@ class Session {
     const wait = Math.min(JOIN_GIVE_UP_MS, this.joinedAt + JOIN_GIVE_UP_CAP_MS - Date.now());
     this.connectTimer = setTimeout(() => {
       if (this.mode !== 'client' || this.status !== 'connecting') return;
-      if (this.peer?.open) this.fail(`Couldn't reach room ${this.code}. Check the code, or try again.`, 'No answer');
+      // Summoned by name, there was no code to check: say whose room it was
+      // (its tab may have just closed, before the server let its name go).
+      const from = this.inviteFrom;
+      if (this.peer?.open && from) this.fail(`Couldn't reach ${from}'s room. Try again in a moment, or ask ${from} if it's still open.`, 'No answer');
+      else if (this.peer?.open) this.fail(`Couldn't reach room ${this.code}. Check the code, or try again.`, 'No answer');
       else this.fail(this.networkHint('timeout'), 'No connection');
     }, wait);
   }
