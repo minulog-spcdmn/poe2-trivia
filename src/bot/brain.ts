@@ -12,10 +12,12 @@
 // finds, uses dynamite, and always gives a teammate who perished a life).
 // Each has a build they played (items they know cold and name in a flash),
 // is more or less trigger-happy, and keeps their nerve as the clock ticks
-// down, or doesn't.
+// down, or doesn't; a run of misses tilts some and steadies others, an item
+// seen at an earlier reveal sticks, and in a team some follow the votes.
+// All of it mild: these are players, not caricatures.
 // Pure functions of their inputs and a random source, so tests can pin them.
 
-import { nameSimilarity, type DifficultyRules } from '../lib/game.ts';
+import { nameSimilarity, type DifficultyRules, type GameState } from '../lib/game.ts';
 
 export type Rng = () => number;
 
@@ -37,6 +39,10 @@ export interface Persona {
   nerve: number;
   /** Items it knows cold, from builds it played (identities.ts buildOf): named in a flash. */
   favourites: string[];
+  /** After a run of misses: below 0 it tilts (hastier, sloppier), above 0 it steadies (slower, more careful). */
+  temper: number;
+  /** Delve together: the chance it goes with the team's votes once there are some. */
+  herd: number;
 }
 
 /** What the bot sees of a question when it decides. */
@@ -55,6 +61,10 @@ export interface Ask {
   mode: 'turns' | 'race' | 'delve';
   /** It is one of the player's own favourites (a build's). */
   favourite?: boolean;
+  /** It saw this item revealed earlier on (the reveal stuck). */
+  remembered?: boolean;
+  /** How far a run of misses has got to it, 0 (none) to 1 (three or more in a row). */
+  tilt?: number;
 }
 
 /** Chance of knowing an item shown plainly, before the persona. */
@@ -93,6 +103,8 @@ export function makePersona(categories: string[], rng: Rng): Persona {
     haste: rng() ** 1.5,
     nerve: between(rng, 0.1, 1),
     favourites: [],
+    temper: between(rng, -1, 1),
+    herd: between(rng, 0.1, 0.5),
   };
 }
 
@@ -112,12 +124,22 @@ export function hardness(ask: Ask): number {
   );
 }
 
+/**
+ * A run of misses on its mood: below 0 (a temper) it costs care, above 0 it
+ * buys a little, each in proportion to how far the run has got (Ask.tilt).
+ */
+const tilted = (p: Persona, ask: Ask) => (ask.tilt ?? 0) * p.temper;
+
 /** How likely the bot is to know this answer. */
 export function knowChance(p: Persona, ask: Ask): number {
   // A favourite it knows cold, whatever the question piles on (bar a little).
   if (ask.favourite) return clamp(0.995 - hardness(ask) * 0.15 - 0.02 * p.haste, 0.9, 0.995);
   // A race is a scramble: less time to be sure before someone else is. Haste costs a little care.
-  return clamp(RECOGNISE + p.skill + (p.affinity[ask.category] ?? 0) - hardness(ask) - (ask.mode === 'race' ? 0.03 : 0) - 0.04 * p.haste, 0.3, 0.99);
+  const t = tilted(p, ask);
+  let c = clamp(RECOGNISE + p.skill + (p.affinity[ask.category] ?? 0) - hardness(ask) - (ask.mode === 'race' ? 0.03 : 0) - 0.04 * p.haste + (t < 0 ? 0.03 * t : 0.01 * t), 0.3, 0.99);
+  // Seen revealed earlier on: it mostly stuck.
+  if (ask.remembered) c += (0.99 - c) * 0.4;
+  return c;
 }
 
 /**
@@ -145,7 +167,9 @@ export function answerDelay(p: Persona, ask: Ask, knows: boolean, rng: Rng): num
     if (ask.mode === 'race' && rng() < 0.6 * (1 - 0.7 * p.haste)) return null;
     if (ask.mode === 'turns' && ask.clock && rng() < 0.05 * (1 - p.haste)) return null;
   }
-  let s = (MEDIAN_S + HARD_S * hardness(ask)) * Math.exp(0.4 * gauss(rng)) * p.pace * (1 - 0.3 * p.haste);
+  // Tilted, quicker; steadied, slower.
+  const t = tilted(p, ask);
+  let s = (MEDIAN_S + HARD_S * hardness(ask)) * Math.exp(0.4 * gauss(rng)) * p.pace * (1 - 0.3 * p.haste) * (t < 0 ? 1 + 0.15 * t : 1 + 0.2 * t);
   if (ask.veil) s *= 1.3;
   if (!knows) s *= 1.6;
   // A favourite is named in a flash (the art burning in or not).
@@ -229,6 +253,39 @@ export function wrongPick(names: string[], correct: number, ruledOut: number[], 
   });
   return weights.some((w) => w > 0) ? weighted(weights, rng) : null;
 }
+
+/**
+ * Delve together: the card it votes for, given its own choice and the
+ * team's votes so far: now and then (as far as it goes with the herd) the
+ * one most voted for instead.
+ */
+export function withTheHerd(p: Persona, own: string, votes: string[], rng: Rng): string {
+  if (!votes.length || rng() >= p.herd) return own;
+  const counts = new Map<string, number>();
+  for (const v of votes) counts.set(v, (counts.get(v) ?? 0) + 1);
+  return [...counts].sort((a, b) => b[1] - a[1])[0][0];
+}
+
+/** How a game went for it: won, lost badly (last, and well behind), or neither. */
+export type Mood = 'won' | 'lost' | 'even';
+
+/**
+ * How a game went for player `me`: won, lost badly (last, and at least
+ * two points and two fifths of the target behind the leader), or neither.
+ * A Delve run has no winner: neither.
+ */
+export function moodOf(s: GameState, me: string): Mood {
+  if (s.delve || !s.players.some((p) => p.id === me)) return 'even';
+  if (s.winners.includes(me)) return 'won';
+  const scores = s.players.map((p) => p.score);
+  const mine = s.players.find((p) => p.id === me)!.score;
+  const behind = Math.max(...scores) - mine;
+  return mine === Math.min(...scores) && behind >= Math.max(2, s.settings.targetScore * 0.4) ? 'lost' : 'even';
+}
+
+/** Whether it stays on after a game: one more after a win now and then, early off after a heavy loss now and then. */
+export const staysOn = (mood: Mood, rng: Rng): 'longer' | 'leave' | 'as planned' =>
+  mood === 'won' && rng() < 0.4 ? 'longer' : mood === 'lost' && rng() < 0.5 ? 'leave' : 'as planned';
 
 /** The category the bot picks: mostly the ones it knows best. */
 export function pickCategory(p: Persona, offered: string[], rng: Rng): string {

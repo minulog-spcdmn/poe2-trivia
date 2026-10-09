@@ -4,25 +4,27 @@
 // a game or a few there as any guest would (player.ts, with the eyes of
 // sight.ts: a guest never gets the answers), then leaves and rests before
 // it looks again. Never one of our own bot rooms, never more than one room,
-// never back to a room it was in lately.
+// never back to a room it was in lately. Several may run at once, each in a
+// room of its own (the runner tells each where the others are).
 
 import { engine, session } from '../lib/session.svelte';
 import { scanRooms, type RoomInfo } from '../lib/rooms';
 import { nameSkeleton } from '../lib/names';
 import { identityOf, nextName, type Identity } from './identities';
+import { staysOn } from './brain';
 import { joinable } from './wanted';
-import { Player } from './player';
+import { moodOf, Player } from './player';
 import { lastReading, sight } from './sight';
 
 const TICK_MS = 250;
 /** The open-room list is checked this often (ms, from..to). */
-const SCOUT_EVERY: [number, number] = [25000, 45000];
+const SCOUT_EVERY: [number, number] = [15000, 25000];
 /** A host alone in their lobby this long (ms, from..to, rolled for each room) gets company. */
-const WAIT_ALONE: [number, number] = [60000, 180000];
+const WAIT_ALONE: [number, number] = [15000, 45000];
 /** Games played in a room before leaving (from..to). */
 const GAMES: [number, number] = [1, 3];
 /** Rest between rooms (ms, from..to). */
-const REST: [number, number] = [5 * 60000, 20 * 60000];
+const REST: [number, number] = [3 * 60000, 10 * 60000];
 /** A room left isn't joined again for this long. */
 const AGAIN_AFTER_MS = 60 * 60000;
 /** Joining that hasn't got in by then is given up. */
@@ -31,6 +33,12 @@ const JOIN_GIVE_UP_MS = 45000;
 const LOBBY_PATIENCE: [number, number] = [5 * 60000, 9 * 60000];
 
 const log = (...args: unknown[]) => console.log('[bot]', ...args);
+
+/** The runner's say over which guest takes which room (scripts/room-bot.mjs), when it gives one. */
+const { __claimRoom: claimRoom, __releaseRoom: releaseRoom } = window as unknown as {
+  __claimRoom?: (code: string) => Promise<boolean>;
+  __releaseRoom?: (code: string) => Promise<void>;
+};
 const between = (lo: number, hi: number) => Math.round(lo + Math.random() * (hi - lo));
 
 type Doing = 'resting' | 'looking' | 'joining' | 'playing';
@@ -46,7 +54,7 @@ export class Joiner {
   private alone = new Map<string, { since: number; wait: number }>();
   /** Rooms we were in, and when we left. */
   private visited = new Map<string, number>();
-  /** Our own bot rooms (the runner says): never joined. */
+  /** Our own bot rooms, and the rooms our other guests are in (the runner says): never joined. */
   private ours = new Set<string>();
   private gamesLeft = 0;
   private lastPhase = '';
@@ -71,7 +79,7 @@ export class Joiner {
     if (session.mode) session.leave();
   }
 
-  /** The runner: our own bot rooms' codes. */
+  /** The runner: our own bot rooms' codes, and those our other guests are in. */
   setOurs(codes: string[]) {
     this.ours = new Set(codes.filter(Boolean));
   }
@@ -83,6 +91,7 @@ export class Joiner {
       doing: this.doing,
       as: this.who?.name ?? null,
       room: this.room ? `${this.room.code} (${this.room.host}'s)` : null,
+      code: this.room?.code ?? '',
       until: this.doing === 'resting' ? new Date(this.until).toTimeString().slice(0, 5) : null,
       phase: s?.phase ?? null,
       players: s?.players.map((p) => `${p.name}${p.connected ? '' : ' (away)'}: ${p.score}`) ?? [],
@@ -114,10 +123,17 @@ export class Joiner {
     const due = lonely.filter((r) => now - this.alone.get(r.code)!.since >= this.alone.get(r.code)!.wait);
     if (!due.length) return;
     due.sort((a, b) => this.alone.get(a.code)!.since - this.alone.get(b.code)!.since);
-    this.join(due[0], now);
+    void this.join(due[0], now);
   }
 
-  private join(room: RoomInfo, now: number) {
+  private async join(room: RoomInfo, now: number) {
+    // Several guests at once: the runner gives a room to the first to ask, so two never join the same one.
+    this.doing = 'joining';
+    if (claimRoom && !(await claimRoom(room.code))) {
+      this.ours.add(room.code);
+      this.doing = 'looking';
+      return;
+    }
     // Not a name that clashes with the host's.
     let name = nextName(this.recent, Math.random, this.names);
     for (let i = 0; i < 5 && nameSkeleton(name) === nameSkeleton(room.host); i++) name = nextName([...this.recent, name], Math.random, this.names);
@@ -127,8 +143,7 @@ export class Joiner {
     this.room = room;
     this.alone.delete(room.code);
     this.gamesLeft = between(...GAMES);
-    this.doing = 'joining';
-    this.until = now + JOIN_GIVE_UP_MS;
+    this.until = Date.now() + JOIN_GIVE_UP_MS;
     this.lastPhase = '';
     this.lobbySince = 0;
     this.overAt = 0;
@@ -139,7 +154,10 @@ export class Joiner {
   /** Leaves the room (or finds itself out of it) and rests. */
   private leave(now: number, why: string) {
     log(`${this.who?.name} leaves ${this.room?.code} (${why})`);
-    if (this.room) this.visited.set(this.room.code, now);
+    if (this.room) {
+      this.visited.set(this.room.code, now);
+      void releaseRoom?.(this.room.code);
+    }
     if (session.mode) session.leave();
     this.player = null;
     this.room = null;
@@ -187,7 +205,18 @@ export class Joiner {
     const seen = lastReading;
     if (phase === 'reveal' && s.reveal && seen && seen.qid === s.question?.askedAt)
       log(`eyes saw option ${seen.index + 1} (by ${seen.margin.toFixed(2)}), it was ${s.reveal.correctIndex + 1}`);
-    if (phase === 'over') this.gamesLeft--;
+    if (phase === 'over') {
+      this.gamesLeft--;
+      // A win now and then makes it one more; a heavy loss now and then, that's it.
+      const after = staysOn(moodOf(s, session.myPlayerId!), Math.random);
+      if (after === 'longer') {
+        this.gamesLeft++;
+        log('won, plays one more');
+      } else if (after === 'leave' && this.gamesLeft > 0) {
+        this.gamesLeft = 0;
+        log('lost heavily, leaves after this one');
+      }
+    }
     this.lastPhase = phase;
   }
 }

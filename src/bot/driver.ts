@@ -13,7 +13,7 @@ import { engine, SAVE, session } from '../lib/session.svelte';
 import { readStored, removeStored, writeStored } from '../lib/storage';
 import { identityOf, lonelyLength, nextName, otherPrefs, shiftLength, type Identity, type Mode, type RoomPrefs } from './identities';
 import { joinable, makesWay, wanted, type Role } from './wanted';
-import { hostEyes, Player } from './player';
+import { hostEyes, moodOf, Player } from './player';
 
 const TICK_MS = 200;
 /** Everyone else gone mid-game this long (they may only be reloading): back to the lobby. */
@@ -40,6 +40,9 @@ const HAND_OVER_MS = 2000;
 const MAKE_WAY_CHECKS = 2;
 /** An empty lobby stays open at least this long before it makes way. */
 const MIN_OPEN_MS = 60000;
+/** After a game: the chance a host who won stays on 10 to 25 minutes longer, and one who lost heavily leaves. */
+const HOST_STAYS_AFTER_WIN = 0.4;
+const HOST_LEAVES_AFTER_LOSS = 0.15;
 /** Chance that a host nobody joined tries other rules once, instead of leaving. */
 const RETRY_CHANCE = 0.35;
 
@@ -120,6 +123,8 @@ export class Bot {
   private lonelyFor = 0;
   /** The one on has already tried other rules once. */
   private retried = false;
+  /** Lost heavily, and leaves once the scores have been up a while. */
+  private sulking = false;
 
   /**
    * `names`: whom this room draws its hosts from (its share when two rooms
@@ -238,6 +243,7 @@ export class Bot {
     this.save();
     this.configured = false;
     this.retried = false;
+    this.sulking = false;
     this.lonelySince = 0;
     this.wayChecks = 0;
     this.notReadySince = now;
@@ -287,7 +293,7 @@ export class Bot {
     if (s.phase === 'lobby' && !anyone && this.lonely(now)) return;
     if (s.phase !== 'lobby' || anyone) this.lonelySince = 0;
     if (s.phase === 'lobby') this.lobby(s, humans.map((p) => p.id), now);
-    else if (s.phase === 'over') this.over(now, anyone, timeUp);
+    else if (s.phase === 'over') this.over(s, now, anyone, timeUp);
     else this.inGame(now, humans.length > 0);
     // As things stand after the host's own moves just now (a start, a restart).
     if (session.state) this.player?.play(session.state);
@@ -348,10 +354,26 @@ export class Bot {
     }
   }
 
-  private over(now: number, anyone: boolean, timeUp: boolean) {
-    this.overAt ||= now + between(8000, 20000);
+  /**
+   * After a game: a host who won now and then stays on a while longer; one
+   * who lost heavily now and then calls it a day (handing over, if a room is
+   * still wanted). Then, once the scores have been up a while, again or back
+   * to the lobby.
+   */
+  private over(s: GameState, now: number, anyone: boolean, timeUp: boolean) {
+    if (!this.overAt) {
+      this.overAt = now + between(8000, 20000);
+      const mood = moodOf(s, session.myPlayerId!);
+      this.sulking = mood === 'lost' && Math.random() < HOST_LEAVES_AFTER_LOSS;
+      if (mood === 'won' && Math.random() < HOST_STAYS_AFTER_WIN) {
+        this.shift = { ...this.shift, until: Math.max(this.shift.until, now) + between(10, 25) * 60000 };
+        this.save();
+        log(`won, stays on until ${time(this.shift.until)}`);
+      }
+    }
     if (now < this.overAt) return;
     this.overAt = 0;
+    if (this.sulking) return this.end(now, 'lost heavily, calls it a day');
     if (timeUp) return this.end(now, 'after the game');
     log(anyone ? 'playing again' : 'nobody left, back to the lobby');
     session.dispatch({ type: 'restart', play: anyone });

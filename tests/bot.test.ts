@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { answerDelay, blasts, chooseAnswer, chooseCard, findAppetite, guessChance, panic, urgentSeconds, knowChance, makePersona, pickCategory, weighted, wrongPick, type Ask, type Persona } from '../src/bot/brain.ts';
-import { rulesFor, type Item, type Preset } from '../src/lib/game.ts';
+import { answerDelay, blasts, chooseAnswer, chooseCard, findAppetite, guessChance, moodOf, panic, staysOn, urgentSeconds, withTheHerd, knowChance, makePersona, pickCategory, weighted, wrongPick, type Ask, type Persona } from '../src/bot/brain.ts';
+import { createGame, rulesFor, type GameState, type Item, type Preset } from '../src/lib/game.ts';
 import { readFileSync } from 'node:fs';
 import { MODES, NAMES, buildOf, identityOf, lonelyLength, modesFrom, namesFor, nextName, otherPrefs, rollPrefs, shiftLength } from '../src/bot/identities.ts';
 import { joinable, makesWay, wanted } from '../src/bot/wanted.ts';
@@ -16,7 +16,7 @@ function seeded(seed: number) {
   };
 }
 
-const plain: Persona = { skill: 0, pace: 1, affinity: { Rings: 0.02, Flasks: -0.05 }, finds: 0.8, boldness: 0.5, haste: 0, nerve: 1, favourites: [] };
+const plain: Persona = { skill: 0, pace: 1, affinity: { Rings: 0.02, Flasks: -0.05 }, finds: 0.8, boldness: 0.5, haste: 0, nerve: 1, favourites: [], temper: 0, herd: 0.3 };
 const plainRules = rulesFor({ difficulty: 'cruel' });
 const ask = (over: Partial<Ask> = {}): Ask => ({ rules: plainRules, category: 'Rings', veil: 0, gray: false, mirrored: false, clock: 32, mode: 'turns', ...over });
 /** A question as a preset room asks it (a deathmatch's with `harder`). */
@@ -32,6 +32,7 @@ test('a persona rolls every category, within bounds', () => {
   assert.ok(p.skill >= -0.06 && p.skill <= 0.015);
   assert.ok(p.pace >= 0.75 && p.pace <= 1.35);
   for (const k of ['finds', 'boldness', 'haste', 'nerve'] as const) assert.ok(p[k] >= 0 && p[k] <= 1, k);
+  assert.ok(p.temper >= -1 && p.temper <= 1 && p.herd >= 0.1 && p.herd <= 0.5);
 });
 
 test('items shown plainly are nearly always known, even by the weakest', () => {
@@ -335,4 +336,51 @@ test('a build: much of one weapon kind and a handful of others, the same for the
   assert.ok(a.filter((id) => byId.get(id)!.group === weapon.group).length >= 1);
   assert.notDeepEqual(a, identityOf('Velka', ['A'], undefined, items).persona.favourites);
   assert.deepEqual(buildOf([], seeded(1)), []);
+});
+
+test('a run of misses tilts the hot-tempered and steadies the calm, mildly', () => {
+  const rng = seeded(67);
+  const a = preset('merciless');
+  const hot = { ...plain, temper: -1 };
+  const cool = { ...plain, temper: 1 };
+  // No run of misses: temper makes no difference.
+  assert.equal(knowChance(hot, a), knowChance(cool, a));
+  const tilted = { ...a, tilt: 1 };
+  assert.ok(knowChance(hot, tilted) < knowChance(hot, a) && knowChance(hot, a) - knowChance(hot, tilted) <= 0.03 + 1e-9);
+  assert.ok(knowChance(cool, tilted) > knowChance(cool, a));
+  assert.ok(mean(() => answerDelay(hot, tilted, true, rng)) < mean(() => answerDelay(hot, a, true, rng)));
+  assert.ok(mean(() => answerDelay(cool, tilted, true, rng)) > mean(() => answerDelay(cool, a, true, rng)));
+});
+
+test('an item seen revealed earlier mostly sticks', () => {
+  const a = preset('eternal');
+  const before = knowChance(plain, a);
+  const after = knowChance(plain, { ...a, remembered: true });
+  assert.ok(after > before && after < 0.99 && Math.abs(after - (before + (0.99 - before) * 0.4)) < 1e-9);
+});
+
+test('in a team, some votes follow the herd', () => {
+  const rng = seeded(71);
+  assert.equal(withTheHerd(plain, 'Rings', [], rng), 'Rings');
+  let followed = 0;
+  for (let i = 0; i < 2000; i++) if (withTheHerd({ ...plain, herd: 0.4 }, 'Rings', ['Helmets', 'Helmets', 'Flasks'], rng) === 'Helmets') followed++;
+  assert.ok(Math.abs(followed / 2000 - 0.4) < 0.04, `${followed}`);
+});
+
+test('winners now and then stay longer, heavy losers now and then leave', () => {
+  const s: GameState = { ...createGame('a'), phase: 'over', winners: ['a'] };
+  s.settings = { ...s.settings, targetScore: 5 };
+  s.players = [
+    { id: 'a', name: 'A', score: 5, recent: [], connected: true, hue: 0 },
+    { id: 'b', name: 'B', score: 3, recent: [], connected: true, hue: 1 },
+    { id: 'c', name: 'C', score: 1, recent: [], connected: true, hue: 2 },
+  ];
+  assert.equal(moodOf(s, 'a'), 'won');
+  assert.equal(moodOf(s, 'b'), 'even');
+  assert.equal(moodOf(s, 'c'), 'lost');
+  assert.equal(moodOf({ ...s, delve: {} as GameState['delve'] }, 'c'), 'even');
+  const rng = seeded(73);
+  const rate = (mood: 'won' | 'lost' | 'even', what: string) => mean(() => (staysOn(mood, rng) === what ? 1 : 0));
+  assert.ok(Math.abs(rate('won', 'longer') - 0.4) < 0.04 && Math.abs(rate('lost', 'leave') - 0.5) < 0.04);
+  assert.equal(rate('even', 'as planned'), 1);
 });

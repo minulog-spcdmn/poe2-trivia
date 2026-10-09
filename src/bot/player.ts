@@ -8,7 +8,8 @@
 import { engine, session } from '../lib/session.svelte';
 import { activeRules, grayscaleFor, type GameState, type Question } from '../lib/game';
 import { blastProblem, findLosses, fuseDue, inventoryOf, isGroupRun, livesOf, reviveProblem, shownDepth, standingIds, teamItemReady } from '../lib/delve';
-import { answerDelay, blasts, chooseAnswer, chooseCard, findAppetite, knowChance, panic, pickDelay, type Ask, type Persona } from './brain';
+import { answerDelay, blasts, chooseAnswer, chooseCard, findAppetite, knowChance, panic, pickDelay, withTheHerd, type Ask, type Persona } from './brain';
+export { moodOf } from './brain';
 
 /** How the bot finds the right option: its index, or null when it can't tell. */
 export type Eyes = (s: GameState, q: Question) => Promise<number | null>;
@@ -48,6 +49,12 @@ export class Player {
   private decided = new Set<string>();
   /** The game they are for (its startedAt): a new game starts them afresh. */
   private game = 0;
+  /** Items it has seen revealed while it was on (they stick, mostly). */
+  private revealed = new Set<string>();
+  /** Its own misses in a row (wrong or out of time), this game. */
+  private misses = 0;
+  /** The question whose reveal it has taken in. */
+  private takenIn = 0;
 
   constructor(
     readonly persona: Persona,
@@ -64,8 +71,10 @@ export class Player {
   play(s: GameState) {
     if ((s.startedAt ?? 0) !== this.game) {
       this.game = s.startedAt ?? 0;
+      this.misses = 0;
       this.reset();
     }
+    if (s.phase === 'reveal') this.takeIn(s);
     if (s.phase !== 'lobby' && s.phase !== 'over' && s.players.some((p) => p.id === session.myPlayerId)) {
       if (s.delve) this.delve(s);
       else if (s.settings.mode === 'race') this.race(s);
@@ -77,6 +86,23 @@ export class Player {
         this.plans.delete(key);
         void p.run();
       }
+  }
+
+  /** A reveal: the item sticks, and its own answer goes on its run of misses (or ends it). */
+  private takeIn(s: GameState) {
+    const q = s.question;
+    const r = s.reveal;
+    if (!q || !r || this.takenIn === q.askedAt) return;
+    this.takenIn = q.askedAt;
+    if (r.correctId) this.revealed.add(r.correctId);
+    const me = session.myPlayerId!;
+    let mine: boolean | null = null;
+    if (r.winnerId === me) mine = true;
+    else if (s.delve && isGroupRun(s)) mine = q.struck?.some((x) => x.by === me) || r.hits?.some((h) => h.playerId === me) ? false : null;
+    else if (s.settings.mode === 'race' && !s.delve) mine = q.misses.some((m) => m.playerId === me) ? false : null;
+    else if (s.players[s.turn]?.id === me) mine = r.correct;
+    if (mine === true) this.misses = 0;
+    else if (mine === false) this.misses++;
   }
 
   private turns(s: GameState) {
@@ -140,7 +166,12 @@ export class Player {
         const cur = session.state;
         if (cur?.phase !== 'choosing' || cur.turnCount !== s.turnCount || cur.round !== s.round) return;
         if (type === 'vote' && cur.delve?.votes?.[me]) return;
-        const category = chooseCard(this.persona, offered, finds, Math.random);
+        let category = chooseCard(this.persona, offered, finds, Math.random);
+        // Together: the team's votes so far may sway it.
+        if (type === 'vote') {
+          const theirs = Object.entries(cur.delve?.votes ?? {}).flatMap(([id, c]) => (id !== me && offered.includes(c) ? [c] : []));
+          category = withTheHerd(this.persona, category, theirs, Math.random);
+        }
         log(type === 'pick' ? 'picks' : 'votes for', category);
         session.dispatch(type === 'pick' ? { type: 'pick', category } : { type: 'vote', category });
       },
@@ -241,6 +272,9 @@ export class Player {
       clock: q.deadline ? (q.deadline - start) / 1000 : 0,
       mode: s.delve ? 'delve' : s.settings.mode === 'race' ? 'race' : 'turns',
       favourite: !!item && this.persona.favourites.includes(item),
+      remembered: !!item && this.revealed.has(item),
+      // Two misses in a row start to tell, three or more fully.
+      tilt: Math.min(1, Math.max(0, (this.misses - 1) / 2)),
     };
     const knows = Math.random() < knowChance(this.persona, ask);
     const delay = answerDelay(this.persona, ask, knows, Math.random);
@@ -262,7 +296,14 @@ export class Player {
       return;
     }
     const panicked = panic(this.persona, ask, delay, Math.random);
-    const how = [ask.favourite && 'one of its own', panicked && (panicked.fumble ? 'panics and fumbles' : 'panics')].filter(Boolean).join(', ');
+    const how = [
+      ask.favourite && 'one of its own',
+      ask.remembered && 'seen it before',
+      ask.tilt && (this.persona.temper < 0 ? 'tilted' : 'steadied'),
+      panicked && (panicked.fumble ? 'panics and fumbles' : 'panics'),
+    ]
+      .filter(Boolean)
+      .join(', ');
     this.plans.set(key, {
       // Picked up after a reload: not all at once.
       at: Math.max(now + 200, start + (panicked ? panicked.at : delay)),
