@@ -7,7 +7,8 @@
 // keeps failing (storage full) finds its copy already there and never piles
 // up more, and the first copy kept is never written over (a later unreadable
 // entry, with the slot taken, is let go rather than stopping the records for
-// good). Reset clears it. Used by the codex and the Delve records.
+// good). Reset clears it. Used by the codex, the Delve records and the quick
+// hunts.
 
 import { removeStored, removeStoredStarting, tryReadStored, writeStored } from './storage.ts';
 

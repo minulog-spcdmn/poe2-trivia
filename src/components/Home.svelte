@@ -136,11 +136,15 @@
     join();
   }
 
-  /** Enter in the name field: join if a room code has been entered (or is still missing letters), otherwise the main button's quick hunt. */
+  /**
+   * Enter in the name field: join if a room code has been entered (or is
+   * still missing letters), otherwise the main button's quick hunt, for a
+   * name typed (a blank one is refused, as ever: a stray Enter starts nothing).
+   */
   function enterName(e: KeyboardEvent) {
     if (e.key !== 'Enter' || e.isComposing || connecting) return;
     if (code) join();
-    else playNow();
+    else if (needName()) playNow();
   }
 
   /**
@@ -247,25 +251,8 @@
       onkeydown={enterName}
     />
 
-    <section class="play-now">
-      <button class="btn big wide" class:primary={!invite} class:ghost={!!invite} onclick={playNow} disabled={connecting}>Play now</button>
-      {#if newcomer}
-        <p class="muted">A quick solo hunt to {QUICK_TARGET}. No setup.</p>
-      {:else}
-        <div class="quick">
-          <p class="quick-line">
-            Quick hunt to {QUICK_TARGET}{#if quickBest}<span class="best">{` • Best: ${quickBest.right} of ${quickBest.asked}`}</span>{/if}
-          </p>
-          <div class="seg" role="radiogroup" aria-label="Quick hunt difficulty">
-            {#each QUICK_PRESETS as d (d)}
-              <button role="radio" aria-checked={quick === d} class:on={quick === d} disabled={connecting} onclick={() => pickQuick(d)}>
-                {DIFFICULTY_NAMES[d]}
-              </button>
-            {/each}
-          </div>
-        </div>
-      {/if}
-    </section>
+    <!-- An invite's room comes first: then the quick hunt waits under the ways to play together. -->
+    {#if !invite}{@render playNowBlock()}{/if}
 
     <div class="modes">
       <section class="mode">
@@ -274,7 +261,7 @@
         <button class="btn" onclick={host} disabled={connecting}>Create room</button>
       </section>
 
-      <section class="mode">
+      <section class="mode" class:first={!!invite}>
         <h2>Join a game</h2>
         <p class="muted">Enter the code your host shared to join their room.</p>
         <form onsubmit={join}>
@@ -296,6 +283,8 @@
         </form>
       </section>
     </div>
+
+    {#if invite}{@render playNowBlock()}{/if}
 
     <div class="or"><span>or</span></div>
     <button class="btn ghost wide" onclick={local} disabled={connecting}>Play hot-seat on this device</button>
@@ -337,6 +326,28 @@
     </nav>
   </footer>
 </div>
+
+{#snippet playNowBlock()}
+  <section class="play-now" class:after={!!invite}>
+    <button class="btn big wide" class:primary={!invite} class:ghost={!!invite} onclick={playNow} disabled={connecting}>Play now</button>
+    {#if newcomer}
+      <p class="muted">A quick solo hunt to {QUICK_TARGET}. No setup.</p>
+    {:else}
+      <div class="quick">
+        <p class="quick-line">
+          Quick hunt to {QUICK_TARGET}{#if quickBest}<span class="best">{` • Best: ${quickBest.right} of ${quickBest.asked}`}</span>{/if}
+        </p>
+        <div class="seg" role="radiogroup" aria-label="Quick hunt difficulty">
+          {#each QUICK_PRESETS as d (d)}
+            <button role="radio" aria-checked={quick === d} class:on={quick === d} disabled={connecting} onclick={() => pickQuick(d)}>
+              {DIFFICULTY_NAMES[d]}
+            </button>
+          {/each}
+        </div>
+      </div>
+    {/if}
+  </section>
+{/snippet}
 
 <style>
   .codex-entry {
@@ -565,7 +576,8 @@
     padding: 1.8rem;
   }
 
-  /* Play now: a quick hunt in one tap, before the ways to play together. */
+  /* Play now: a quick hunt in one tap, before the ways to play together
+     (with an invite, after them). */
   .play-now {
     display: flex;
     flex-direction: column;
@@ -573,6 +585,9 @@
     gap: 0.55rem;
     margin-top: 1rem;
     text-align: center;
+  }
+  .play-now.after {
+    margin-top: 1.2rem;
   }
   .play-now > p {
     margin: 0;
@@ -640,6 +655,10 @@
     grid-template-columns: 1fr 1fr;
     gap: 1rem;
     margin-top: 1.2rem;
+  }
+  /* With an invite, its room's Join comes first, right under the name. */
+  .mode.first {
+    order: -1;
   }
   .mode {
     display: flex;

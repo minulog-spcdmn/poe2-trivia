@@ -427,11 +427,12 @@ answers only count when one person plays alone. Undiscovered items show as
 dark silhouettes, and the codex can't be opened while in a room. It is kept in this
 browser's localStorage only (`src/lib/codex.ts`). In a turns game, the
 reveal of an item new to your codex ends its result line with a chip
-("New • 7 / 501": how many items the codex holds now), on every screen; in
-a browser's first game, each player's first right answer adds "Your first
-unique, identified." (online, on that player's own screen) and lights up the
-name plate with a gong. While the codex is blank, its "Begin the hunt"
-starts a quick hunt (see Play now).
+("New • 7 / 501": what the codex held as the game began, and every answer
+revealed since), on every screen; in a browser's first game, each player's
+first right answer adds "Your first unique, identified." ("lineage gem" for
+a gem; online, on that player's own screen) and lights up the name plate
+with a gong. While the codex is blank, its "Begin the hunt" starts a quick
+hunt (see Play now).
 
 The Codex has two tabs: **Collection** (the above) and **Delve**, built
 from the same parts. Alone and together are kept apart and never summed:
@@ -533,7 +534,7 @@ browser (`src/lib/achievements.ts`); erasing the codex erases them.
   - After a game, the host can **Play again** (same settings, starts right
     away, spectators included) or **Change settings** (back to the lobby). A
     game alone in hot-seat offers **Hunt again** and **Play a friend**
-    instead (see The hunt recap).
+    instead, with Change settings under them (see The hunt recap).
   - Very strict networks (some corporate or mobile networks) can block
     WebRTC. In that case, use hot-seat.
 - **Open rooms:** a host can set their room to **Public**, which lists it
@@ -555,8 +556,11 @@ browser (`src/lib/achievements.ts`); erasing the codex erases them.
   shows the best hunt on the chosen one: the fewest questions it took to
   reach 5. Any game alone in hot-seat to 5 on one of those counts as a quick
   hunt; this browser keeps how many it finished and its bests
-  (`src/lib/hunt.ts`). Enter in the name field plays now too, unless a room
-  code is typed. With an invite link, Join is the main button instead.
+  (`src/lib/hunt.ts`); erasing the codex erases them too. Enter in the name
+  field plays now too (a blank name is refused, as for the other buttons),
+  unless a room code is typed. With an invite link, Join is the main button
+  instead: Join a game comes first and Play now waits under both ways to
+  play together.
 - **Initiates:** a player whose browser has never played (nothing in its
   codex, no quick hunt recorded) joins as an Initiate: a guest's hello says
   so (`fresh`), a host is one in their own room, and in hot-seat everyone
@@ -569,26 +573,33 @@ browser (`src/lib/achievements.ts`); erasing the codex erases them.
   first hunt" on their own screen and alone in hot-seat, "Bea's first hunt"
   for the others), a note counts the gentle questions down, the others are
   told why it looks easy, and the turn after the last one says the real hunt
-  begins (on the Initiate's own screen, and in hot-seat). The lobby tags
-  Initiates while they have gentle questions left, and before their first
-  game, while the target is above 5, the host can make it first to 5 in one
-  tap. Deathmatches, races and Delve
-  ignore it; what is left of it carries over to the next game, and these
-  answers go into the codex under Cruel.
+  begins (on the Initiate's own screen, and alone in hot-seat; with several
+  exiles the banner keeps the name and the note under the cards says it).
+  In turns, the lobby tags Initiates while they have gentle questions left
+  (not when the whole party is new), and before their first game, while
+  the target is above 5, the host can make it first to 5 in one tap.
+  Deathmatches, races and Delve ignore it; what is left of it carries over
+  to the next game, and these answers go into the codex under Cruel. The
+  host remembers who joined as an Initiate, so a reconnect or the host's
+  own refresh keeps it, also for a newcomer who watched a game first (a
+  seat the lobby let go comes back with all 3).
 - **The hunt recap:** the end screen of a turns game shows what this device
   learned (online, for a player in a seat): every item revealed as a strip
   of art (gold rim: named right; red: missed; online, others' turns plain;
   a "New" tag on items new to the codex), up to 3 of your misses to
   remember, what the codex gained ("+3 to your Codex" over a bar from the
-  count before the game to the count now) and one seal: the one the game
-  earned, else First Victory while it is still to earn, else the one nearest
-  done. In hot-seat a link opens the Codex. A game alone in hot-seat ends
+  count before the game to the count now: one for each "New" tag) and the
+  seals: every one the game earned, else the next to chase, First Victory
+  while it is still to earn (not after a hot-seat game with several
+  players, which counts for none), else the one nearest done. In hot-seat
+  a link opens the Codex. A game alone in hot-seat ends
   its own way: "First hunt complete", "Best hunt yet" (fewer questions to 5
   than before on its difficulty) or "Hunt complete", how many it named
   right of how many asked and its best run, and no standings; right under
   that, **Hunt again** (the same rules, no item from the last game) and
   **Play a friend** (an online room with the same target, difficulty and
-  timer, hosted under your name). The tally is kept per tab (session
+  timer, hosted under your name), and Change settings (back to the lobby).
+  The tally is kept per tab (session
   storage), so a reload keeps the recap.
 
 The host picks the mode (take turns, race or Delve: three buttons, each

@@ -71,7 +71,7 @@ import {
   type DelveNotice,
 } from './delveSession';
 import { readLegacy, readStored, removeLegacy, removeStored, writeStored } from './storage';
-import { QUICK_TARGET, QUICK_TIMER, initiateFlag, isNewcomer, newReveal, parseTally, recordHunt, tallyHunt, type HuntResult, type HuntTally } from './hunt';
+import { QUICK_TARGET, QUICK_TIMER, initiateFlag, initiatesKept, isNewcomer, newReveal, parseTally, recordHunt, tallyHunt, type HuntResult, type HuntTally } from './hunt';
 
 export const engine = new Engine(itemData as Item[], { fakes: fakeNames });
 
@@ -213,6 +213,13 @@ interface HostPrivate {
    * kicks, so a pile of these can't push a kick off the (capped) list.
    */
   blockedPeers: string[];
+  /**
+   * Players who joined as Initiates (game.ts Player.grace) and haven't used
+   * up their grace yet, seated or watching (lib/hunt.ts initiatesKept): when
+   * they join again (a reconnect, after this host's refresh), they still are
+   * one, though their browser may no longer say so.
+   */
+  initiates?: string[];
 }
 
 const noPrivate = (myPlayerId = ''): HostPrivate => ({
@@ -222,6 +229,7 @@ const noPrivate = (myPlayerId = ''): HostPrivate => ({
   bannedPeers: [],
   bannedNames: [],
   blockedPeers: [],
+  initiates: [],
 });
 
 class Session {
@@ -254,8 +262,9 @@ class Session {
   /**
    * The Codex ticker: the latest turns reveal this device saw begin (`qid`:
    * its askedAt), whether its item was new to this browser's codex, and how
-   * many of the game's items the codex holds with it. Null until the codex
-   * has been read for the game.
+   * many of the game's items it holds with it (what it held as the game
+   * began, and every answer revealed since). Null until the codex has been
+   * read for the game.
    */
   discovery = $state<{ qid: number; fresh: boolean; count: number } | null>(null);
   /**
@@ -537,6 +546,7 @@ class Session {
       // Saved by a build that didn't have these yet: start them empty.
       bannedNames: [...(p.bannedNames ?? [])],
       blockedPeers: [...(p.blockedPeers ?? [])],
+      initiates: [...(p.initiates ?? [])],
     };
     this.secretToPlayer = new Map(p.secrets);
     this.myPlayerId = p.myPlayerId;
@@ -793,7 +803,11 @@ class Session {
     this.drop(conn);
   }
 
-  /** `fresh`: the guest's browser has never played, so they join as an Initiate (a seat they still hold keeps its own grace). */
+  /**
+   * `fresh`: the guest's browser has never played, so they join as an
+   * Initiate; so does someone this room already knows as one (HostPrivate
+   * initiates). A seat they still hold keeps its own grace.
+   */
   private handleHello(conn: DataConnection, guest: Guest, secret: string, name: string, v: number, fresh = false) {
     const outdated = versionProblem(v);
     if (outdated) throw new ActionError(outdated);
@@ -811,11 +825,12 @@ class Session {
       return;
     }
     const playerId = known ?? randomToken(12);
+    const initiate = fresh || (!!known && !!this.priv.initiates?.includes(known));
     let next: GameState;
     try {
       if (!known && this.priv.bannedNames.includes(nameSkeleton(cleanName(name))))
         throw new ActionError('Someone with a name like that was removed from this room. Pick another name.');
-      next = engine.apply(this.state!, { type: 'join', playerId, name, returning: !!known, ...(fresh ? { initiate: true } : {}) }, playerId);
+      next = engine.apply(this.state!, { type: 'join', playerId, name, returning: !!known, ...(initiate ? { initiate: true } : {}) }, playerId);
     } catch (err) {
       this.joins.rejected(secret, !!known);
       throw err;
@@ -1564,6 +1579,10 @@ class Session {
     if (this.mode === 'host') {
       // The next room this browser opens starts with these settings.
       savePrefs(prefsFrom(next.settings));
+      // Saved with the room just below.
+      const initiates = this.priv.initiates ?? [];
+      const kept = initiatesKept(initiates, next);
+      if (kept !== initiates) this.priv.initiates = [...kept];
       const msg: HostMsg = { t: 'state', state: publicView(next), now: Date.now() };
       for (const [conn, g] of this.guests) if (g.playerId) this.send(conn, msg);
     }
@@ -1706,17 +1725,13 @@ class Session {
     if (!seen) return;
     const known = this.knownItems;
     // An item this build doesn't have (a host on another one) isn't counted.
+    // Only the answers count, one New chip each, so the count goes up as the
+    // chips do (and the recap's "+n" is the chips seen): the art of a wrong
+    // "find the art" pick, which the codex counts as seen too, shows from
+    // the next game on.
     if (known && engine.byId.has(seen.id)) {
       const fresh = !known.has(seen.id);
       known.add(seen.id);
-      // A wrong "find the art" pick, where the codex records the answer
-      // (codex.ts encounterAt: alone on this device, or online your own),
-      // names the art picked too, and the codex counts that item as seen.
-      const q = next.question;
-      const r = next.reveal;
-      const recorded = this.mode === 'local' ? next.players.length === 1 : seen.by === this.myPlayerId;
-      const picked = !seen.ok && recorded && q?.mode === 'art' && r?.chosenIndex != null ? q.options[r.chosenIndex] : undefined;
-      if (picked && engine.byId.has(picked)) known.add(picked);
       this.discovery = { qid: seen.at, fresh, count: known.size };
     }
     const own = this.mode === 'local' || seen.by === this.myPlayerId;

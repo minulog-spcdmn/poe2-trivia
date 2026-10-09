@@ -86,7 +86,9 @@
         Im Online-Spiel werden Ihr gewählter Spielname, Ihre Antworten und Punkte an den Host übertragen und von dort an
         die Mitspielenden im Raum. Der Host erhält außerdem eine zufällige Gerätekennung (siehe Abschnitt 6), mit der Sie
         nach einem Verbindungsabbruch wieder Ihren Platz einnehmen können; sie wird den übrigen Mitspielenden nicht
-        gezeigt. Diese Daten liegen nur in den Browsern der Beteiligten und werden nicht auf einem Server gespeichert.
+        gezeigt. Hat Ihr Browser noch nie gespielt, teilt er das dem Host beim Beitritt mit; dann sehen alle im Raum bei
+        Ihrem Namen den Hinweis „Initiate“, bis Ihre ersten drei leichteren Fragen gespielt sind. Diese Daten liegen nur
+        in den Browsern der Beteiligten und werden nicht auf einem Server gespeichert.
       </p>
       <p>
         Wenn ein Host seinen Raum „öffentlich“ stellt, sind in der Liste offener Räume der Name des Hosts, die Spielerzahl
@@ -98,8 +100,10 @@
         Das Spiel speichert ausschließlich auf Ihrem Gerät: Ihren zuletzt verwendeten Spielnamen, eine zufällig erzeugte
         Gerätekennung (zum Wiedereintritt in ein laufendes Spiel), die Einstellungen „Ton aus“ und „Raumcode verbergen“,
         Ihren Codex (welche Gegenstände Ihnen in Spielen begegnet sind, wie oft Sie sie richtig erkannt haben und wie
-        schnell; er wird nie übertragen und lässt sich auf der Codex-Seite löschen) sowie im Session Storage den laufenden
-        Spielstand, damit ein Neuladen der Seite das Spiel nicht beendet. Diese
+        schnell; er wird nie übertragen und lässt sich auf der Codex-Seite löschen), die Bilanz Ihrer schnellen Jagden
+        (Anzahl, beste Ergebnisse und zuletzt gewählter Schwierigkeitsgrad; sie wird mit dem Codex gelöscht) sowie im
+        Session Storage den laufenden Spielstand, damit ein Neuladen der Seite das Spiel nicht beendet, und die im
+        laufenden Spiel aufgedeckten Gegenstände für den Rückblick am Spielende. Diese
         Angaben sind für die von Ihnen gewünschten Funktionen unbedingt erforderlich (§ 25 Abs. 2 Nr. 2 TDDDG); es werden
         keine Cookies gesetzt. Sie können die Daten jederzeit über die Einstellungen Ihres Browsers löschen.
       </p>
@@ -163,14 +167,16 @@
           </li>
           <li>
             <strong>In the game:</strong> your chosen name, answers and scores go to the host and the other players in your
-            room. A random device token lets you rejoin after a disconnect, and only the host sees it. Public rooms show the
-            host's name and settings in the room list.
+            room. A random device token lets you rejoin after a disconnect, and only the host sees it. A browser that has
+            never played tells the host so when it joins, and the room then sees an “Initiate” tag by your name until your
+            first three gentle questions are played. Public rooms show the host's name and settings in the room list.
           </li>
           <li>
             <strong>Your browser</strong> stores your name, the device token, your sound and hide-code settings, and your
             codex (the items you have seen in games and how well you answered; it is never sent anywhere and can be erased on the
-            codex page), plus the running game in session storage. These are strictly necessary for the features you use, and you can clear
-            them at any time.
+            codex page), your quick hunts (how many, your best ones and the difficulty last chosen; erased with the codex),
+            plus the running game and the items revealed in it (for the recap at its end) in session storage. These are
+            strictly necessary for the features you use, and you can clear them at any time.
           </li>
           <li>
             <strong>PayPal:</strong> a plain link; nothing is sent to PayPal unless you click it. If you donate, I receive

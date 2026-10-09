@@ -367,9 +367,10 @@
 
   <div class="actions" class:hunt={soloHunt} in:fly={{ y: 20, duration: 600, delay: soloHunt ? 900 : 1300 }}>
     {#if soloHunt}
-      <!-- Play again with the same rules (the items already asked stay out), or the same hunt against a friend. -->
+      <!-- Play again with the same rules (the items already asked stay out), or the same hunt against a friend; or back to the lobby, to set the next one up. -->
       <button class="btn primary big" disabled={leaving} onclick={() => again(true)}>Hunt again</button>
       <button class="btn ghost" disabled={leaving} onclick={playFriend}>Play a friend</button>
+      <p class="more"><button class="link" disabled={leaving} onclick={() => again(false)}>Change settings</button></p>
     {:else if session.isHost}
       <button class="btn primary big" disabled={leaving} onclick={() => again(true)}>Play again</button>
       <button class="btn ghost" disabled={leaving} onclick={() => again(false)}>{#if run}<span><span class="roomy">Back to</span> lobby</span>{:else}Change settings{/if}</button>
@@ -394,7 +395,8 @@
     {/if}
   </div>
   {#if showRecap}
-    <HuntRecap me={session.mode === 'local' ? null : session.myPlayerId} />
+    <!-- A hot-seat game with several players counts toward no seal, so it names none. -->
+    <HuntRecap me={session.mode === 'local' ? null : session.myPlayerId} seals={session.mode !== 'local' || s.players.length === 1} />
   {/if}
   {#if spectators.length}
     <p class="joining muted" in:fly={{ y: 10, duration: 600, delay: 1400 }}>
@@ -716,5 +718,30 @@
   /* A hunt alone: right under its line, with no standings between. */
   .actions.hunt {
     margin-top: 0;
+  }
+  /* ...and under its two buttons, the way back to the lobby, quieter. */
+  .actions .more {
+    flex-basis: 100%;
+    margin-top: -0.3rem;
+    text-align: center;
+  }
+  .link {
+    padding: 0.2rem 0.4rem;
+    font-family: var(--font-body);
+    font-size: 0.98rem;
+    font-style: italic;
+    color: var(--gold);
+    background: none;
+    border: 0;
+    border-bottom: 1px dotted var(--gold-lo);
+    border-radius: 0;
+    cursor: pointer;
+  }
+  .link:hover:not(:disabled) {
+    color: var(--gold-hi);
+  }
+  .link:disabled {
+    opacity: 0.5;
+    cursor: default;
   }
 </style>

@@ -2,7 +2,6 @@ import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
-  CODEX_NAMES,
   HUNTS,
   HUNTS_VERSION,
   QUICK_DEFAULT,
@@ -11,6 +10,7 @@ import {
   addHunt,
   emptyHunts,
   initiateFlag,
+  initiatesKept,
   isNewcomer,
   loadHunts,
   newReveal,
@@ -19,13 +19,13 @@ import {
   tallyHunt,
   type HuntTally,
   recordHunt,
+  resetHunts,
   serializeHunts,
   setQuickDifficulty,
   type HuntRun,
   type Hunts,
   type RevealSeen,
 } from '../src/lib/hunt.ts';
-import { CODEX_KEY } from '../src/lib/codex.ts';
 import { storeKey } from '../src/lib/storage.ts';
 import { Engine, createGame, publicView, type GameState, type Item, type Settings } from '../src/lib/game.ts';
 
@@ -52,11 +52,6 @@ beforeEach(() => {
 
 const HUNTS_KEY = storeKey(HUNTS);
 const run = (o: Partial<HuntRun> = {}): HuntRun => ({ difficulty: 'cruel', right: 5, asked: 7, game: 1, at: 100, ...o });
-
-test('the codex names kept here are the codex\'s own', () => {
-  assert.equal(storeKey(CODEX_NAMES[0]), CODEX_KEY);
-  assert.deepEqual(CODEX_NAMES, ['codex2', 'codex']);
-});
 
 test('hunts are read back as they were written; anything odd is dropped', () => {
   const h: Hunts = { games: 3, best: { cruel: { right: 5, asked: 6 }, eternal: { right: 5, asked: 11 } }, last: 'eternal', lastAt: 1700, game: 42 };
@@ -187,6 +182,40 @@ test('recordHunt never writes over a newer build\'s record, and keeps an unreada
   assert.deepEqual(aside, [`${HUNTS_KEY}.unread`]);
   assert.equal(store.get(aside[0]), '{"v":1,"games":', 'kept as it was');
   assert.deepEqual(loadHunts().best.cruel, { right: 5, asked: 9 });
+});
+
+test('resetHunts forgets every hunt, and what was kept aside (the Codex\'s erase)', () => {
+  recordHunt(run());
+  store.set(`${HUNTS_KEY}.unread`, '{"v":1,"games":');
+  store.set(storeKey('name'), 'Ash');
+  assert.equal(isNewcomer(), false);
+  resetHunts();
+  assert.deepEqual([...store.keys()], [storeKey('name')], 'only the hunts are gone');
+  assert.deepEqual(loadHunts(), emptyHunts());
+  assert.equal(isNewcomer(), true, 'a new browser again, once the codex is erased too');
+  blocked = true;
+  assert.doesNotThrow(() => resetHunts());
+});
+
+test('initiatesKept: a host remembers Initiates seated with grace and watching, and forgets them once graduated', () => {
+  const s = (players: { id: string; grace?: number }[], spectators: { id: string; initiate?: true }[] = []) =>
+    ({ players: players.map((p) => ({ ...p, name: p.id, score: 0, recent: [], connected: true, hue: 0 })), spectators: spectators.map((o) => ({ ...o, name: o.id })) }) as unknown as GameState;
+  const none: string[] = [];
+  assert.equal(initiatesKept(none, s([{ id: 'host' }, { id: 'vet' }])), none, 'nothing to remember: the same array');
+  const a = initiatesKept(none, s([{ id: 'host' }, { id: 'bea', grace: 3 }], [{ id: 'cyd', initiate: true }, { id: 'dan' }]));
+  assert.deepEqual(a, ['bea', 'cyd']);
+  // Bea dropped from the lobby, Cyd's link blipped (the host lets go of both): still remembered.
+  const b = initiatesKept(a, s([{ id: 'host' }]));
+  assert.equal(b, a, 'unchanged');
+  // Back, and Bea spends her grace: 2 and 1 keep her; 0 (graduated) forgets her.
+  assert.equal(initiatesKept(b, s([{ id: 'bea', grace: 1 }])), b);
+  assert.deepEqual(initiatesKept(b, s([{ id: 'bea', grace: 0 }], [{ id: 'cyd', initiate: true }])), ['cyd']);
+  assert.deepEqual(initiatesKept(b, s([{ id: 'bea' }, { id: 'cyd', grace: 3 }])), ['cyd']);
+  // A long-lived room keeps the latest ones.
+  const many = Array.from({ length: 400 }, (_, i) => `p${i}`);
+  const more = initiatesKept(many, s([{ id: 'new', grace: 3 }]));
+  assert.equal(more.length, 400);
+  assert.deepEqual([more[0], more.at(-1)], ['p1', 'new']);
 });
 
 test('a quick hunt starts from a hot-seat lobby in one go, and its questions are its turns', () => {

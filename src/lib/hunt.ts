@@ -8,9 +8,10 @@
 // the answers follows (Session.discovery), and the tally of a turns game's
 // reveals that its end screen recaps (tallyHunt, HuntRecap.svelte).
 
+import { CODEX_NAMES } from './delveRecord.ts';
 import type { GameState, Preset } from './game.ts';
-import { makeRoom } from './keepAside.ts';
-import { tryReadStored, writeStored } from './storage.ts';
+import { clearAside, makeRoom } from './keepAside.ts';
+import { removeStored, tryReadStored, writeStored } from './storage.ts';
 
 /** A quick hunt is to this many points... */
 export const QUICK_TARGET = 5;
@@ -20,13 +21,6 @@ export const QUICK_TIMER = 16;
 export const QUICK_DEFAULT: Preset = 'cruel';
 /** The difficulties Play now offers, in order. */
 export const QUICK_PRESETS: readonly Preset[] = ['cruel', 'merciless', 'eternal'];
-
-/**
- * Where the codex is stored (codex.ts: its name, and the one builds before it
- * used). codex.ts is a chunk of its own, loaded later, so the names are kept
- * here too; a test pins them to codex.ts's.
- */
-export const CODEX_NAMES = ['codex2', 'codex'];
 
 export const HUNTS = 'hunts';
 /** Bump when the stored shape changes incompatibly. */
@@ -150,6 +144,12 @@ export function recordHunt(run: HuntRun): HuntMeasure | null {
   return m;
 }
 
+/** Forgets every hunt (the Codex's erase, which takes every record with it). */
+export function resetHunts() {
+  removeStored(HUNTS);
+  clearAside(HUNTS);
+}
+
 /** Remembers the difficulty chosen for Play now. */
 export function setQuickDifficulty(d: Preset) {
   const h = writable();
@@ -157,7 +157,8 @@ export function setQuickDifficulty(d: Preset) {
 }
 
 /**
- * Whether this browser has never played: nothing in its codex and no hunt
+ * Whether this browser has never played: nothing in its codex (its names are
+ * delveRecord.ts's, read raw so the codex's chunk stays unloaded) and no hunt
  * recorded. Storage that can't be read never counts as new.
  */
 export function isNewcomer(): boolean {
@@ -170,6 +171,29 @@ export function isNewcomer(): boolean {
  */
 export function initiateFlag(): { initiate?: true } {
   return isNewcomer() ? { initiate: true } : {};
+}
+
+/** At most this many Initiates are remembered by a room's host (initiatesKept). */
+export const INITIATES_MAX = 400;
+
+/**
+ * The players a room's host remembers as Initiates (Session's HostPrivate),
+ * after a state change: everyone seated with gentle questions left, and
+ * everyone watching who joined as one, so the next join of theirs (a
+ * reconnect, after the host's own refresh, a lobby that let their seat go)
+ * seats them as an Initiate again, whatever their browser says by then (it
+ * stops being new with the first reveal it records). Once seated with none
+ * left, they're forgotten. Unchanged: the same array.
+ */
+export function initiatesKept(kept: readonly string[], s: GameState): readonly string[] {
+  const out = new Set(kept);
+  for (const p of s.players)
+    if ((p.grace ?? 0) > 0) out.add(p.id);
+    else out.delete(p.id);
+  for (const o of s.spectators ?? []) if (o.initiate) out.add(o.id);
+  if (out.size === kept.length && kept.every((id) => out.has(id))) return kept;
+  // The oldest ones first, the same order as kept.
+  return [...out].slice(-INITIATES_MAX);
 }
 
 /** A turns reveal as it begins: its question (askedAt), the item, whether the player answering got it, and who that was. */

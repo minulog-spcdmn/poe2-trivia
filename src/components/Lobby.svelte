@@ -2,7 +2,7 @@
   import { flip } from 'svelte/animate';
   import { fly, scale, slide } from 'svelte/transition';
   import { session } from '../lib/session.svelte';
-  import { INITIATE_GRACE, MAX_PLAYERS, RACE_DEFAULT_TIMER, TIMER_STEPS, difficultyOf, rulesFor, type Difficulty, type GameMode } from '../lib/game';
+  import { INITIATE_GRACE, MAX_PLAYERS, RACE_DEFAULT_TIMER, TIMER_STEPS, difficultyOf, rulesFor, type Difficulty, type GameMode, type Player } from '../lib/game';
   import { DIFFICULTY_NAMES, describe, namesOf } from '../lib/difficultyText';
   import CustomDifficulty from './CustomDifficulty.svelte';
   import DelveRules from './DelveRules.svelte';
@@ -195,12 +195,28 @@
   const initiates = $derived(s.players.filter((p) => p.grace === INITIATE_GRACE && p.connected));
   const shortFirstGame = $derived(isHost && s.phase === 'lobby' && !race && !delve && s.settings.targetScore > 5 && initiates.length > 0);
   const initiateNames = $derived(
-    namesOf(
-      initiates.map((p) => p.id),
-      (id) => s.players.find((p) => p.id === id)?.name ?? '?',
-      local ? null : session.myPlayerId,
-    ),
+    initiates.length > 1 && initiates.length === s.players.length
+      ? 'everyone'
+      : namesOf(
+          initiates.map((p) => p.id),
+          (id) => s.players.find((p) => p.id === id)?.name ?? '?',
+          local ? null : session.myPlayerId,
+        ),
   );
+  /**
+   * The Initiate tag, where gentle questions come (turns; races and Delve
+   * ignore the grace), and only when it tells someone apart: a party that is
+   * all Initiates (a first game in hot-seat) needs none.
+   */
+  const tagInitiates = $derived(!race && !delve && !s.players.every((p) => (p.grace ?? 0) > 0));
+  /** The Initiate tag's title: the gentle questions left. */
+  function initiateTitle(p: Player) {
+    const whose = !local && p.id === session.myPlayerId ? 'your' : 'their';
+    const left = p.grace ?? 0;
+    if (left >= INITIATE_GRACE) return `First game here: ${whose} first ${left} questions are gentle.`;
+    const Whose = whose === 'your' ? 'Your' : 'Their';
+    return left === 1 ? `${Whose} next question is gentle.` : `${Whose} next ${left} questions are gentle.`;
+  }
 </script>
 
 <div class="lobby">
@@ -286,7 +302,7 @@
             <Avatar name={p.name} hue={p.hue} />
             <span class="name"><PlayerName name={p.name} /></span>
             {#if p.id === s.hostId}<span class="tag">Host</span>{/if}
-            {#if (p.grace ?? 0) > 0}<span class="tag initiate" title="First game here: their first 3 questions are gentle.">Initiate</span>{/if}
+            {#if tagInitiates && (p.grace ?? 0) > 0}<span class="tag initiate" title={initiateTitle(p)}>Initiate</span>{/if}
             {#if !p.connected}<span class="tag" title="Reconnecting. Their seat is let go if they're not back when the game starts.">Offline</span>{/if}
             {#if !local && p.id === session.myPlayerId}<span class="tag you">You</span>{/if}
             {#if isHost && p.id !== s.hostId}
@@ -676,6 +692,10 @@
     gap: 1.2rem;
     align-items: start;
   }
+  /* A long name in the party is cut short in its row; it never widens the columns past the screen. */
+  .cols > * {
+    min-width: 0;
+  }
   .panel {
     padding: 1.4rem;
   }
@@ -721,12 +741,15 @@
   }
   .name {
     flex: 1;
+    /* A long name gives way (cut short), never the tags or the panel. */
+    min-width: 0;
     font-size: 1.1rem;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
   .tag {
+    flex: none;
     font-family: var(--font-display);
     font-size: 0.62rem;
     letter-spacing: 0.15em;
@@ -751,9 +774,11 @@
   .first-game .btn {
     width: 100%;
     white-space: normal;
+    overflow-wrap: anywhere;
     line-height: 1.4;
   }
   .remove {
+    flex: none;
     width: 26px;
     height: 26px;
     border-radius: 50%;

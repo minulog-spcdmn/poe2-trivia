@@ -2,10 +2,10 @@
   // The end of a turns game, for this device's player: what they learned.
   // Every item revealed in the game as a strip of art (rimmed in gold when
   // they named it, in red when they missed it), the ones to remember, what the
-  // Codex gained, and the seal the game earned or the next one to chase. From
+  // Codex gained, and every seal the game earned or the next one to chase. From
   // the game as this device saw it (Session.huntTally, lib/hunt.ts), so a
   // reload keeps it. Its beats come once the end screen has settled and the
-  // Codex bar is in view: the stream of sparks into the bar, then the seal.
+  // Codex bar is in view: the stream of sparks into the bar, then the seals.
   import { onMount, tick } from 'svelte';
   import { fly } from 'svelte/transition';
   import { session, engine } from '../lib/session.svelte';
@@ -19,15 +19,22 @@
   import type { SealRow } from '../lib/achievements';
   import AchievementSeal from './AchievementSeal.svelte';
 
-  /** Whose answers are this device's (online, its seat); null in hot-seat, where every answer was given here. */
-  let { me }: { me: string | null } = $props();
+  /**
+   * `me`: whose answers are this device's (online, its seat); null in
+   * hot-seat, where every answer was given here. `seals`: whether the seals
+   * have a line (not after a hot-seat game with several players: such a game
+   * counts toward none, its answers being nobody's own, codex.ts).
+   */
+  let { me, seals: withSeals = true }: { me: string | null; seals?: boolean } = $props();
 
   /** After this long the last reveal's codex entry and achievement check have landed: the Codex and the seals are read then. */
   const READ_AFTER = 1500;
   /** The Codex bar's beat never comes before this (the screen's own entrance plays first). */
   const BEAT_FROM = 1600;
-  /** The seal comes this long after the bar's count lands. */
+  /** The seals come this long after the bar's count lands... */
   const SEAL_AFTER = 250;
+  /** ...each one earned this long after the one before. */
+  const SEAL_STEP = 300;
   const OLD_GOLD = '#d9a45a';
   /** The strip flies in one picture after another, at most this many steps apart. */
   const STAGGER_MAX = 24;
@@ -47,26 +54,31 @@
   const total = engine.items.length;
 
   /** How many of the game's items the Codex holds now (null until read, or if it can't be). */
-  let after = $state<number | null>(null);
+  let codexNow = $state<number | null>(null);
   /** And as the game began (Session kept it with the tally; else worked out from the chips). */
-  const before = $derived(after === null ? 0 : Math.min(after, tally?.known ?? Math.max(0, after - chips)));
-  /** What the Codex gained: the New chips, and the art of a wrong "find the art" pick, which it counts as seen too. */
-  const added = $derived(after === null ? chips : after - before);
+  const before = $derived(codexNow === null ? 0 : Math.min(codexNow, tally?.known ?? Math.max(0, codexNow - chips)));
+  /**
+   * The count after the game, as the reveals' chips counted it (Session's
+   * ticker): the art of a wrong "find the art" pick, which the codex counts
+   * as seen too, shows from the next game on.
+   */
+  const after = $derived(codexNow === null ? null : Math.min(total, before + chips));
+  /** What the Codex gained: one item for each New chip. */
+  const added = $derived(chips);
   /** The bar shows the count now (it filled, or jumped). */
   let filled = $state(false);
   /** It fills smoothly (with the effects; without, it jumps). */
   let smooth = $state(false);
   const share = $derived(after === null ? 0 : (filled ? after : before) / total);
 
-  /** The seal named (undefined while it is read; null: none to name). */
-  let seal = $state<SealRow | null | undefined>(undefined);
-  const sealWon = $derived(!!seal && seal.earned !== null);
+  /** The seals named: every one the game earned, or the next to chase (undefined while they are read). */
+  let seals = $state<SealRow[] | undefined>(undefined);
   let sealIn = $state(false);
-  const sealShare = $derived(seal?.progress && seal.progress.need > 0 ? Math.min(1, seal.progress.have / seal.progress.need) : 0);
+  const shareOf = (r: SealRow) => (r.progress && r.progress.need > 0 ? Math.min(1, r.progress.have / r.progress.need) : 0);
 
   let stripEl = $state<HTMLElement>();
   let barEl = $state<HTMLElement>();
-  let sealEl = $state<HTMLElement>();
+  const sealEls: HTMLElement[] = $state([]);
 
   function toCodex() {
     session.leave();
@@ -85,7 +97,7 @@
       void import('../lib/codex')
         .then(({ loadCodex }) => {
           const items = loadCodex().items;
-          after = engine.items.filter((it) => items[it.id]).length;
+          codexNow = engine.items.filter((it) => items[it.id]).length;
         })
         .catch((err) => console.warn('codex', err))
         .finally(() => {
@@ -93,10 +105,10 @@
           begin();
         });
       void import('../lib/achievements')
-        .then(({ nextSeal, sealRows }) => (seal = nextSeal(sealRows(engine.items), session.earnedAtStart)))
+        .then(({ recapSeals, sealRows }) => (seals = withSeals ? recapSeals(sealRows(engine.items), session.earnedAtStart) : []))
         .catch((err) => {
           console.warn('achievements', err);
-          seal = null;
+          seals = [];
         });
     });
     later(BEAT_FROM, () => {
@@ -114,7 +126,7 @@
     );
     if (barEl) io.observe(barEl);
 
-    /** The beat: the stream of sparks from the strip into the Codex bar, the count landing, then the seal. */
+    /** The beat: the stream of sparks from the strip into the Codex bar, the count landing, then the seals. */
     function begin() {
       if (begun || !read || !settled || !inView) return;
       begun = true;
@@ -132,9 +144,16 @@
 
     async function showSeal() {
       sealIn = true;
-      if (!seal || seal.earned === null) return;
+      const won = (seals ?? []).flatMap((r, i) => (r.earned !== null ? [i] : []));
+      if (!won.length) return;
       await tick();
-      if (sealEl?.isConnected && fxActive()) milestoneReached(sealEl, OLD_GOLD);
+      // Each seal earned flares in turn, under one chime.
+      won.forEach((i, n) =>
+        later(n * SEAL_STEP, () => {
+          const el = sealEls[i];
+          if (el?.isConnected && fxActive()) milestoneReached(el, OLD_GOLD);
+        }),
+      );
       sfx('findReward');
     }
 
@@ -189,25 +208,31 @@
     </span>
   </div>
 
-  {#if seal !== null}
-    <div class="seal-line" class:won={sealWon} class:in={sealIn && !!seal}>
-      {#if seal}
-        {@const a = seal.achievement}
-        {@const p = seal.progress}
-        <span class="seal-at" bind:this={sealEl}>
-          <AchievementSeal sign={a.sign} tier={a.tier} earned={sealWon} progress={sealShare} size={48} />
-        </span>
-        <span class="body">
-          <span class="title"><span class="lead">{sealWon ? 'Seal earned:' : 'Next seal:'}</span> {a.title}</span>
-          <span class="text">{a.text}</span>
-          {#if !sealWon && p && p.need > 1}
-            <span class="advance">
-              <span class="meter"><span class="meter-fill" style:width="{sealShare * 100}%"></span></span>
-              <span class="n">{Math.min(p.have, p.need)} / {p.need}</span>
-            </span>
-          {/if}
-        </span>
-      {/if}
+  {#if withSeals && seals === undefined}
+    <!-- Its room, while the seals are read. -->
+    <div class="seal-line" aria-hidden="true"></div>
+  {:else if seals?.length}
+    <div class="seals">
+      {#each seals as r, i (r.achievement.id)}
+        {@const a = r.achievement}
+        {@const p = r.progress}
+        {@const won = r.earned !== null}
+        <div class="seal-line" class:won class:in={sealIn} style:--n={i}>
+          <span class="seal-at" bind:this={sealEls[i]}>
+            <AchievementSeal sign={a.sign} tier={a.tier} earned={won} progress={shareOf(r)} size={48} />
+          </span>
+          <span class="body">
+            <span class="title"><span class="lead">{won ? 'Seal earned:' : 'Next seal:'}</span> {a.title}</span>
+            <span class="text">{a.text}</span>
+            {#if !won && p && p.need > 1}
+              <span class="advance">
+                <span class="meter"><span class="meter-fill" style:width="{shareOf(r) * 100}%"></span></span>
+                <span class="n">{Math.min(p.have, p.need)} / {p.need}</span>
+              </span>
+            {/if}
+          </span>
+        </div>
+      {/each}
     </div>
   {/if}
 
@@ -435,7 +460,12 @@
     transition: width var(--fill-span) linear;
   }
 
-  /* ---- the seal: earned in this game, or the next to chase ---- */
+  /* ---- the seals: every one earned in this game, or the next to chase ---- */
+  .seals {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+  }
   .seal-line {
     display: flex;
     align-items: center;
@@ -447,6 +477,8 @@
     background: rgba(0, 0, 0, 0.18);
     opacity: 0;
     transition: opacity 0.6s;
+    /* Stacked seals come one after another (HuntRecap's SEAL_STEP). */
+    transition-delay: calc(var(--n, 0) * 300ms);
   }
   .seal-line.in {
     opacity: 1;
@@ -461,6 +493,7 @@
   }
   .seal-line.won.in .seal-at {
     animation: seal-in 0.6s var(--ease-back) both;
+    animation-delay: calc(var(--n, 0) * 300ms);
   }
   @keyframes seal-in {
     from {

@@ -492,6 +492,8 @@
   const discovered = $derived(reveal && session.discovery?.qid === q.askedAt && session.discovery.fresh ? session.discovery.count : null);
   /** A newcomer's first right answer of the game (Session.firstFind). */
   const firstFind = $derived(!!reveal && session.firstFind === q.askedAt);
+  /** Alone on this device, the result line speaks to the one playing (as it does in Delve). */
+  const alone = $derived(session.mode === 'local' && s.players.length === 1);
   /** The first find's flare: Delve's milestone flare, in the old gold of its plaques. */
   const OLD_GOLD = '#d9a45a';
 
@@ -829,13 +831,13 @@
           <!-- A Dynamite Cache missed: what its blast destroyed of the pack (the phial shows it go). -->
           {#if !reveal.correct && reveal.blown}{blownText(reveal.blown, you ? 'your' : `${active.name}'s`)}{/if}
         {:else if reveal.correct}
-          <b class="good">+1</b> for {active.name}!
-          {#if firstFind}Your first unique, identified.{/if}
+          <b class="good">+1</b> for {alone ? 'you' : active.name}!
+          {#if firstFind}Your first {item?.kind === 'gem' ? 'lineage gem' : 'unique'}, identified.{/if}
           {#if streak >= 2}<span class="streak" in:scale={{ start: 0.5, duration: 400, delay: 1100 }}>{streak} in a row</span>{/if}
         {:else if reveal.timedOut}
-          {active.name} ran out of time.
+          {alone ? 'You' : active.name} ran out of time.
         {:else}
-          No point for {active.name}{fellFor ? ';' : '.'}
+          No point for {alone ? 'you' : active.name}{fellFor ? ';' : '.'}
         {/if}
         {#if fellFor}{fellFor} isn't a real item.{/if}
         <!-- The Codex ticker: an item new to this browser's codex, and how many it holds now. -->

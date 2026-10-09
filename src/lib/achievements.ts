@@ -595,25 +595,37 @@ export function sealRows(items: Item[]): SealRow[] {
 }
 
 /**
- * The one seal a game's recap names: one earned since `before` (the
- * achievements earned as the game began; the highest tier first); else First
- * Victory while it is still to earn, the one a player alone on a device can
- * go and get by playing someone; else the one nearest done of those with a
- * progress to show (never a secret one), the lower tier on a tie. Null when
- * none is left.
+ * The seals a game's recap names: every one earned since `before` (the
+ * achievements earned as the game began), the highest tier first and then in
+ * the list's order (they are rare, and a first hunt always earns Prima
+ * Materia, so none is left out); else the one to chase next (nextSeal). None
+ * when nothing is left.
  */
-export function nextSeal(rows: SealRow[], before: Set<string> | null): SealRow | null {
+export function recapSeals(rows: SealRow[], before: Set<string> | null): SealRow[] {
   if (before) {
     const now = rows.filter((r) => r.earned !== null && !before.has(r.achievement.id));
-    if (now.length) return now.reduce((a, b) => (b.achievement.tier > a.achievement.tier ? b : a));
+    // A stable sort: one tier stays in the list's order.
+    if (now.length) return now.sort((a, b) => b.achievement.tier - a.achievement.tier);
   }
-  const victory = rows.find((r) => r.achievement.id === 'first-victory');
-  if (victory && victory.earned === null) return victory;
+  const next = nextSeal(rows);
+  return next ? [next] : [];
+}
+
+/**
+ * The seal to chase next: First Victory while it is still to earn, the one a
+ * player alone on a device can go and get by playing someone; else the one
+ * nearest done of those with a progress to show (never a secret one), the
+ * lower tier on a tie, then the list's order. Null when none is left.
+ */
+export function nextSeal(rows: SealRow[]): SealRow | null {
+  const open = rows.filter((r) => r.earned === null);
+  const victory = open.find((r) => r.achievement.id === 'first-victory');
+  if (victory) return victory;
   let best: SealRow | null = null;
   let bestShare = -1;
-  for (const r of rows) {
+  for (const r of open) {
     const p = r.progress;
-    if (r.earned !== null || r.achievement.secret || !p || p.need <= 0) continue;
+    if (r.achievement.secret || !p || p.need <= 0) continue;
     const share = p.have / p.need;
     if (share > bestShare || (share === bestShare && best && r.achievement.tier < best.achievement.tier)) {
       best = r;

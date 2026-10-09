@@ -47,10 +47,11 @@
   /**
    * Initiate's grace (game.ts), on the Initiate's own screen: the gentle
    * questions left (by grace left), then, on the turn after the last, the
-   * real hunt's (grace 0).
+   * real hunt's (grace 0). Each on one line of a phone, so the lockout's
+   * note under it stays above the fold.
    */
   const GRACE_NOTES = [
-    'From here on, every choice is the same kind of item. Look closer.',
+    'From here on, the answers look alike. Look closer.',
     'One more gentle question.',
     'Two more gentle questions.',
     'Pick any card. Your first 3 questions are gentle.',

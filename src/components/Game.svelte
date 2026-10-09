@@ -97,16 +97,23 @@
   // Delve together has no player on turn: the banner takes the depth's colour.
   const bannerColor = $derived(dm ? '#e0553f' : race ? '#e08a44' : run && group ? accentAt(depth) : playerColor(active.hue));
 
+  /** Alone on this device (a quick hunt): the banner speaks to the one hunting. */
+  const alone = $derived(local && s.players.length === 1);
+  /** The banner says "Your ...": online on your own turn, or alone on this device. */
+  const yours = $derived(mine && (!local || alone));
+
   // Initiate's grace (game.ts): an Initiate's first turn is their first hunt,
   // for everyone to see; the turn after their last gentle question, the real
-  // hunt begins (on their own screen, and in hot-seat). Taken as the turn
-  // opens, before its banner is built, so the words hold through its question
-  // and reveal (the pick spends the grace).
+  // hunt begins (on their own screen, and alone on this device: in hot-seat
+  // with several players every Initiate graduates in the same round, and the
+  // banner keeps saying whose turn it is; the note under the cards tells
+  // them). Taken as the turn opens, before its banner is built, so the words
+  // hold through its question and reveal (the pick spends the grace).
   let huntBanner = $state<{ turn: number; kind: 'first' | 'real' } | null>(null);
   $effect.pre(() => {
     if (s.phase !== 'choosing' || run || race || dm) return;
     const grace = active?.grace;
-    const kind = grace === INITIATE_GRACE ? 'first' : grace === 0 && (mine || local) ? 'real' : null;
+    const kind = grace === INITIATE_GRACE ? 'first' : grace === 0 && yours ? 'real' : null;
     huntBanner = kind ? { turn: s.turnCount, kind } : null;
   });
   const hunt = $derived(huntBanner?.turn === s.turnCount ? huntBanner.kind : null);
@@ -142,16 +149,21 @@
           ? startLine(run.startedAt)
           : `Depth ${shownDepth(depth)}`
         : hunt === 'first'
-          ? // Alone on this device (a quick hunt), it speaks to the one hunting.
-            mine && (!local || s.players.length === 1)
+          ? yours
             ? 'Your first hunt'
             : `${active.name}'s first hunt`
           : hunt === 'real'
             ? 'The real hunt begins'
-            : mine && !local
+            : yours
               ? 'Your turn'
               : `${active.name}'s turn`,
   );
+  /**
+   * A long name in a first hunt's banner (longer than a turn's, and a phone's
+   * banner doesn't wrap): its letters are set smaller on phones, the
+   * longest smaller still.
+   */
+  const bannerLong = $derived(hunt === 'first' && !yours ? (bannerTitle.length > 28 ? 2 : bannerTitle.length > 22 ? 1 : 0) : 0);
 
   // Delve: the seconds the question started with (a find's or the depth's),
   // never read off the deadline, which a burning flare moves on.
@@ -379,7 +391,9 @@
           <!-- The gate's columns stand in for the rules while it shows. -->
           <div class="banner" class:dm={!!dm} class:veiled={!!zone && !zone.leaving} style:--c={bannerColor}>
             <span class="rule"></span>
-            <h2 class:start={startsRun} use:bannerFx={{ color: bannerColor, big: bannerBig }}>{bannerTitle}</h2>
+            <h2 class:start={startsRun} class:long={bannerLong === 1} class:longer={bannerLong === 2} use:bannerFx={{ color: bannerColor, big: bannerBig }}>
+              {bannerTitle}
+            </h2>
             <span class="rule"></span>
           </div>
           {#if zone}
@@ -753,6 +767,21 @@
     }
     .banner h2 {
       font-size: 1.45rem;
+    }
+    /* A first hunt's banner with a long name: smaller, and as a last resort
+       (a name of wide letters) over two lines rather than off the screen.
+       The rules give way first, down to their least. */
+    .banner h2.long,
+    .banner h2.longer {
+      flex-shrink: 0;
+      max-width: calc(100% - 2 * (16px + 0.8rem));
+      font-size: 1.2rem;
+      white-space: normal;
+      text-wrap: balance;
+      overflow-wrap: anywhere;
+    }
+    .banner h2.longer {
+      font-size: 1.05rem;
     }
     .skip {
       margin-top: 1rem;
