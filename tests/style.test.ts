@@ -4,7 +4,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { extname, join, relative } from 'node:path';
 
 const root = join(import.meta.dirname, '..');
-const skip = new Set(['node_modules', 'dist', '.git']);
+const skip = new Set(['node_modules', 'dist', '.git', '.bot']);
 const text = new Set(['.ts', '.mjs', '.js', '.svelte', '.css', '.html', '.md', '.json', '.yml', '.svg']);
 
 function* files(dir: string): Generator<string> {
