@@ -73,34 +73,54 @@ What changed and why:
   alone online with the room open, Invite is primary and Begin is not.
 - **Phone:** the host's Begin is pinned in a bottom dock with a fade above
   it. All touch targets at least 44 px.
+- **Desktop:** see the addendum below; it changes the layout above 1100 px.
 
-### Lobby window sizes (addendum)
+### Lobby desktop layout (addendum, replaces the earlier pinned bar)
 
-Shots: `screens/sizes/lobby-*` (`before` = the reference as it is, `fix` =
-target). The 980 px cap and centring already handle wide screens. Two fixes:
+The reference (`reference/Lobby.svelte.txt`) now has this built in; the
+shots are `screens/sizes/lobby-*` (`*-before` is the earlier layout). As
+first designed, the lobby was two long columns: on a 13-inch MacBook Air
+(1440 x 725 window) the window ended halfway through Begin, with Delve
+chosen Begin was below the window on 13 and 14 inch MacBooks, and on 4K it
+was a small island. The new desktop layout (1100 px wide and up):
 
-- **Pinned start row on desktop.** On a 13-inch MacBook Air (1440 x 725) the
-  window ends halfway through Begin; with Delve chosen (taller descent
-  drawing) Begin is below the window on 13 and 14 inch MacBooks. Make the
-  host's start row (status line + Begin) `position: sticky; bottom: 0`
-  inside the Game panel: full panel width (negative inline margins equal to
-  the panel padding), opaque panel-dark background, the row's top rule, and
-  a 28 px fade above it so the rules scroll under it. When the end of the
-  panel is reached it sits in place as now. Phones keep their fixed dock; a
-  guest's waiting line is not pinned. Prototype CSS that produced the shots:
-  ```css
-  .settings .start { position: sticky; bottom: 0; z-index: 3;
-    margin-inline: -1.4rem; margin-bottom: -1.4rem; padding: 1rem 1.4rem 1.2rem;
-    background: rgb(17, 14, 11); border-top: 1px solid var(--line); }
-  .settings .start::before { content: ''; position: absolute; left: 0; right: 0;
-    bottom: 100%; height: 28px; pointer-events: none;
-    background: linear-gradient(180deg, rgba(17, 14, 11, 0), rgb(17, 14, 11)); }
-  ```
-- **4K at 100%:** the lobby is a quarter of the window wide. It gets the same
-  zoom as the start page (see "Window sizes" below), which is why that zoom
-  belongs at app level.
-- It stays top aligned: the party list grows as people join, and a centred
-  lobby would jump each time.
+- **Three panels, in the order the host works, left to right:** Room
+  (invite), Party (who came), Game (set it, begin). Online only; hot-seat
+  has Party and Game. They sit in the start page's stage (1200 wide, side
+  padding max(32px, 50% - 600px)), columns 330 / 1fr / 520, gap 16.
+- **They share the window's height** (between 560 and 760 px), centred
+  vertically, so the page never scrolls on a desktop and Begin is always in
+  the bottom right corner. This needs `.lobby` to fill the screen's height
+  (it does through App's grid; check it still does after your changes).
+- **Only the parts that grow scroll, inside their panel:** the party list,
+  and the Game panel's body (everything between its header and the start
+  row: modes, settings, rules, Delve's descent). Both fade over their last
+  1.2rem. The start row is the Game panel's foot.
+- **Free seats:** after the players, one dashed row per free seat (the
+  first says "Open seat" unless the room is locked), the same height as a
+  player row, so "5 / 12" reads at a glance. Desktop only: on tablets and
+  phones they would only lengthen the page.
+- **Room panel:** the eye (show/hide code) moves into the panel header,
+  next to "Room". "Who can join" on its own line, Private, Public and Lock
+  together on the next (on every size). The IP note is fine print at the
+  foot of the panel, over a rule.
+- **QR code of the invite link** (new, desktop only) in the space between,
+  captioned "Or scan to join on a phone": friends in the same room join by
+  pointing a phone at the screen. Dark squares on a parchment plate (phone
+  cameras need the right way round). It takes the height that is left
+  (container query on its slot) and is dropped below 130 px. Locked or
+  full: the plate stays, hatched, with a lock mark (the hint above already
+  says why). Code hidden: hatched with an eye mark and "Hidden with the
+  code". The reference uses `qrcode-generator` (MIT, no dependencies); add
+  it as a dependency or write an equivalent, your call, but keep it small.
+- **Tablets (761 to 1099):** Room over Party on the left, Game on the right.
+  **Phones:** unchanged.
+- **4K at 100%:** the app-level zoom below; the lobby needs nothing more.
+  Watch out: `DelveLadder` measures itself with `getBoundingClientRect`,
+  which under CSS `zoom` mixes zoomed and unzoomed pixels; with the zoom on,
+  the descent drawing overlaps the finds. Fix the measuring (for example
+  divide by `element.currentCSSZoom`) and check every component that
+  measures this way.
 
 ---
 
@@ -308,8 +328,10 @@ Build it like this:
    working normally where nearly everyone is. Apply it at app level (the
    `.shell`, header included, and the layers screens portal to, such as
    toasts, docks and dialogs) so every screen scales alike, but not to the
-   WebGL backdrop canvas, which sizes its buffer to device pixels. Check
-   the game screens at 3840 x 2030 too.
+   WebGL backdrop canvas, which sizes its buffer to device pixels. Under
+   zoom, viewport units are not scaled back: the shell's `min-height:
+   100dvh` must become `calc(100dvh / zoom)` or the screens grow taller than
+   the window. Check the game screens at 3840 x 2030 too.
 5. **Retina** needs nothing: text and rings are vector or high-res. Item art
    is drawn about 1.2x above its own size on average on 2x screens (small
    rings and jewels more). Acceptable; do not upscale further.

@@ -19,6 +19,7 @@
   import { measure } from '../lib/iconFit.svelte';
   import { dock, phone } from '../lib/layout';
   import { portal } from '../lib/portal';
+  import qrcode from 'qrcode-generator';
 
   const TARGETS = [5, 10, 15, 20];
   const MODES: { id: GameMode; name: string; beta?: boolean }[] = [
@@ -37,6 +38,16 @@
   let copied = $state(false);
 
   const inviteLink = $derived(inviteUrl(session.code));
+  /** The invite link as a QR code (one square path), for friends in the same room to join from their phones. */
+  const qr = $derived.by(() => {
+    const q = qrcode(0, 'M');
+    q.addData(inviteLink);
+    q.make();
+    const n = q.getModuleCount();
+    let d = '';
+    for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (q.isDark(r, c)) d += `M${c} ${r}h1v1h-1z`;
+    return { n, d };
+  });
 
   // Measure the category cards' emblems (lib/iconFit) while the party
   // gathers, so the first deal doesn't have to.
@@ -240,18 +251,16 @@
   {/if}
 {/snippet}
 
-<div class="lobby">
+<!-- Left to right, the host's way through: invite, see who came, set the game, begin.
+     On a desktop window the three panels share its height, so nothing scrolls the
+     page and Begin sits in the same corner whatever the size. -->
+<div class="lobby" class:online={!local}>
   <div class="cols">
-    <section class="panel players" use:backdropShadow={{ fill: 'linear' }} in:fly={{ x: -30, duration: 500, delay: 100 }}>
-      <header>
-        <h2>Party</h2>
-        <span class="count">{s.players.length} / {MAX_PLAYERS}</span>
-      </header>
-      {#if !local}
-        <!-- The room code and link are how the party grows, so they head it. -->
-        <div class="room">
-          <div class="room-head">
-            <span class="label">Room code</span>
+    {#if !local}
+      <!-- The room code and link are how the party grows, so they come first. -->
+      <section class="panel room-panel" use:backdropShadow={{ fill: 'linear' }} in:fly={{ x: -30, duration: 500, delay: 50 }}>
+        <header>
+          <h2>Room</h2>
             <button
               class="eye"
               onclick={() => session.setHideCode(!session.hideCode)}
@@ -264,7 +273,8 @@
                 <svg viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z" /><circle cx="12" cy="12" r="3" /></svg>
               {/if}
             </button>
-          </div>
+        </header>
+        <div class="room">
         <div class="code" class:hidden={session.hideCode} aria-label={session.hideCode ? 'Room code hidden' : `Room code ${session.code}`}>
           <span class="glyphs" oncopy={copyCode}>
             {#each session.code.split('') as ch, i (i)}
@@ -318,11 +328,42 @@
               {/if}
             </p>
           {/if}
-          <p class="ip-note muted">
-            Players connect directly to each other, so everyone in a room can see each other's IP address. Only play with people you're comfortable sharing that with.
-          </p>
         </div>
-      {:else}
+        <!-- On a desktop the panel has room to spare: the link as a code for phones,
+             so friends on the same couch join by pointing a camera at the screen.
+             It takes whatever height is left, and goes when that is too little. -->
+        <div class="qr-slot">
+          <figure class="qr">
+            <!-- No code to scan while nobody can join, or while the code is hidden: the plate stays, shut. -->
+            {#if closed || session.hideCode}
+              <span class="qr-plate hidden" aria-hidden="true">
+                {#if closed}
+                  <svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></svg>
+                {:else}
+                  <svg viewBox="0 0 24 24"><path d="M3 3l18 18M10.6 5.1A10 10 0 0 1 12 5c6 0 10 7 10 7a17 17 0 0 1-3.2 3.9M6.1 6.1C3.5 8 2 12 2 12s4 7 10 7a9.7 9.7 0 0 0 5.9-2.1M9.9 9.9a3 3 0 0 0 4.2 4.2" /></svg>
+                {/if}
+              </span>
+              <!-- Locked or full, the line above the plate already says why. -->
+              {#if !closed}<figcaption>Hidden with the code</figcaption>{/if}
+            {:else}
+                <svg class="qr-plate" viewBox="-2 -2 {qr.n + 4} {qr.n + 4}" role="img" aria-label="QR code of the invite link"><path d={qr.d} /></svg>
+              <figcaption>Or scan to join on a phone</figcaption>
+            {/if}
+          </figure>
+        </div>
+        <!-- Fine print, so it goes to the foot of the panel. -->
+        <p class="ip-note muted">
+          Players connect directly to each other, so everyone in a room can see each other's IP address. Only play with people you're comfortable sharing that with.
+        </p>
+      </section>
+    {/if}
+
+    <section class="panel players" use:backdropShadow={{ fill: 'linear' }} in:fly={{ x: -30, duration: 500, delay: 100 }}>
+      <header>
+        <h2>Party</h2>
+        <span class="count">{s.players.length} / {MAX_PLAYERS}</span>
+      </header>
+      {#if local}
         <!-- On one device the party grows by name, here at the top where the field stays put as the list grows under it. -->
         <div class="room">
           {#if s.players.length < MAX_PLAYERS}
@@ -363,6 +404,10 @@
             {/if}
           </li>
         {/each}
+        <!-- The seats still free: how many more can come, at a glance. -->
+        {#each { length: MAX_PLAYERS - s.players.length } as _, i (i)}
+          <li class="seat" aria-hidden="true">{i === 0 && !s.settings.locked ? 'Open seat' : ''}</li>
+        {/each}
       </ul>
       {#if waiting.length}
         <p class="hint muted">
@@ -377,6 +422,7 @@
     <section class="panel settings" use:backdropShadow={{ fill: 'linear' }} in:fly={{ x: 30, duration: 500, delay: 200 }}>
       <header><h2>Game</h2></header>
 
+      <div class="body">
       <div class="setting">
         <div class="modes" role="radiogroup" aria-label="Mode" aria-describedby="mode-blurb" tabindex={-1} onkeydown={modeKeys}>
           {#each MODES as m (m.id)}
@@ -515,6 +561,7 @@
           </ul>
         </div>
       {/if}
+      </div>
 
       <!-- The start ends the rules. On phones, where they run long, it is pinned
            to the bottom of the screen like the reveal's Next bar (lib/layout's dock).
@@ -533,10 +580,115 @@
 {/if}
 
 <style>
+  /* The start page's stage: 1200 wide in the middle of the window. */
   .lobby {
     width: min(980px, 100%);
     margin: 0 auto;
     padding: 1.5rem 1rem 3rem;
+  }
+  .qr-slot {
+    display: none;
+  }
+  /* Tablets: the room over the party on the left, the game beside them. */
+  @media (min-width: 761px) and (max-width: 1099px) {
+    .online .cols {
+      grid-template-areas: 'room game' 'party game';
+      grid-template-rows: auto 1fr;
+    }
+    .room-panel {
+      grid-area: room;
+    }
+    .online .players {
+      grid-area: party;
+    }
+    .online .settings {
+      grid-area: game;
+    }
+  }
+  /* "Who can join" on its own line, so Private, Public and Lock share the next. */
+  .room-panel .room .who {
+    width: 100%;
+  }
+  /* Free seats only where the list has a height of its own to fill (desktop):
+     elsewhere they would only lengthen the page. */
+  @media (max-width: 1099px) {
+    .players li.seat {
+      display: none;
+    }
+  }
+  @media (min-width: 1100px) {
+    .qr-slot {
+      display: block;
+      flex: 1 1 0;
+      min-height: 0;
+      margin: 0.9rem 0;
+      container-type: size;
+    }
+    .qr {
+      height: 100%;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+    }
+    /* Dark squares on parchment: phone cameras read a code the right way round. */
+    .qr-plate {
+      display: block;
+      width: min(100cqw, 100cqh - 2.4rem, 200px);
+      aspect-ratio: 1;
+      padding: 4px;
+      background: #e8dcc2;
+      border: 1px solid var(--gold-lo);
+      border-radius: 4px;
+      box-shadow:
+        0 0 0 3px #0c0a08,
+        0 0 0 4px rgba(201, 164, 92, 0.35),
+        0 8px 22px rgba(0, 0, 0, 0.55);
+    }
+    .qr-plate path {
+      fill: #15100b;
+    }
+    .qr-plate.hidden {
+      display: grid;
+      place-items: center;
+      background: repeating-linear-gradient(135deg, #2a2118 0 6px, #1d1710 6px 12px);
+    }
+    .qr-plate.hidden svg {
+      width: 28%;
+      height: 28%;
+      padding: 6%;
+      box-sizing: content-box;
+      border-radius: 50%;
+      background: #120d09;
+      border: 1px solid var(--gold-lo);
+      fill: none;
+      stroke: var(--gold);
+      stroke-width: 1.6;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+    .qr figcaption {
+      font-size: 0.9rem;
+      font-style: italic;
+      color: var(--muted);
+    }
+    @container (height < 130px) {
+      .qr {
+        display: none;
+      }
+    }
+  }
+  /* A free seat: a dashed outline of a player's row. */
+  .players li.seat {
+    min-height: 3.35rem;
+    padding: 0 0.9rem;
+    background: none;
+    border: 1px dashed rgba(59, 48, 36, 0.8);
+    font-style: italic;
+    font-size: 0.92rem;
+    color: var(--muted);
   }
 
   .room-actions {
@@ -667,7 +819,8 @@
   .room .who {
     margin: 0 auto 0 0;
   }
-  .room .ip-note {
+  .room .ip-note,
+  .room-panel .ip-note {
     max-width: none;
     text-align: left;
   }
@@ -748,7 +901,7 @@
   .panel header {
     display: flex;
     justify-content: space-between;
-    align-items: baseline;
+    align-items: center;
     margin-bottom: 1rem;
     padding-bottom: 0.7rem;
     border-bottom: 1px solid var(--line);
@@ -1272,6 +1425,63 @@
     }
     .seg {
       gap: 0.3rem;
+    }
+  }
+  @media (min-width: 1100px) {
+    .lobby {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: clamp(12px, 2.4vh, 32px) max(32px, 50% - 600px);
+    }
+    .cols {
+      flex: 1 1 auto;
+      min-height: 560px;
+      max-height: 760px;
+      grid-template-columns: minmax(0, 1fr) 520px;
+      align-items: stretch;
+      gap: 16px;
+    }
+    .online .cols {
+      grid-template-columns: 330px minmax(0, 1fr) 520px;
+    }
+    .panel {
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+    /* Only the parts that grow scroll, inside their panel: the party, and the game's rules. */
+    .players ul,
+    .body {
+      flex: 1 1 0;
+      min-height: 0;
+      overflow-y: auto;
+      scrollbar-width: thin;
+      scrollbar-color: var(--gold-lo) transparent;
+    }
+    .players ul {
+      mask-image: linear-gradient(180deg, #000 calc(100% - 1.2rem), transparent);
+    }
+    .body {
+      margin-inline: -1.4rem;
+      padding: 0 1.4rem 1rem;
+      mask-image: linear-gradient(180deg, #000 calc(100% - 1.2rem), transparent);
+    }
+    /* Begin closes the game's panel, at its foot, in the same corner at every size. */
+    .start {
+      margin-top: 0;
+    }
+    .room-panel .room {
+      margin-bottom: 0;
+      padding-bottom: 0;
+      border-bottom: 0;
+    }
+    .room-panel .ip-note {
+      margin-top: auto;
+      padding-top: 1rem;
+      border-top: 1px solid var(--line);
     }
   }
 </style>
