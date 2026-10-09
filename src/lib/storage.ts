@@ -105,7 +105,7 @@ export const tryReadStored = (name: string, where: Area = 'local') => tryReadKey
  * A key the live game wrote before it moved to a newer one. Only the live
  * game reads or clears these: they were never the beta's to take over.
  */
-export const readLegacy = (key: string, where: Area = 'local') => (BETA || LAB || BACKDROP_TOOL ? null : readKey(key, where));
+export const readLegacy = (key: string, where: Area = 'local') => (BETA || LAB || BACKDROP_TOOL || BOT ? null : readKey(key, where));
 export const removeLegacy = (key: string, where: Area = 'local') => {
-  if (!BETA && !LAB && !BACKDROP_TOOL) removeKey(key, where);
+  if (!BETA && !LAB && !BACKDROP_TOOL && !BOT) removeKey(key, where);
 };

@@ -4,6 +4,7 @@ import { answerDelay, knowChance, makePersona, pickCategory, weighted, wrongPick
 import { NAMES, identityOf, lonelyLength, namesFor, nextName, otherPrefs, rollPrefs, shiftLength } from '../src/bot/identities.ts';
 import { joinable, makesWay, wanted } from '../src/bot/wanted.ts';
 import type { RoomInfo } from '../src/lib/roomInfo.ts';
+import { PROTOCOL_VERSION } from '../src/lib/protocol.ts';
 import { MAX_NAME, cleanName, isHeldName, nameProblem, nameSkeleton } from '../src/lib/names.ts';
 
 function seeded(seed: number) {
@@ -159,6 +160,7 @@ const room = (phase: RoomInfo['phase'], players = 2): RoomInfo => ({
   difficulty: 'cruel',
   target: 10,
   phase,
+  v: PROTOCOL_VERSION,
 });
 
 test('a room can be joined only in its lobby, with a seat free', () => {
@@ -166,6 +168,9 @@ test('a room can be joined only in its lobby, with a seat free', () => {
   assert.ok(!joinable(room('lobby', 12)));
   assert.ok(!joinable(room('locked')));
   for (const phase of ['choosing', 'question', 'reveal', 'over'] as const) assert.ok(!joinable(room(phase)));
+  // A host on another version: nobody arriving here can join it.
+  assert.ok(!joinable({ ...room('lobby'), v: PROTOCOL_VERSION - 1 }));
+  assert.ok(!joinable({ ...room('lobby'), v: undefined }));
 });
 
 test('the first room opens only when no room is listed', () => {

@@ -5,7 +5,7 @@
 // for how long, is up to chance; when, is up to the room list (wanted.ts).
 
 import type { Difficulty } from '../lib/game.ts';
-import { makePersona, weighted, type Persona, type Rng } from './brain.ts';
+import { gauss, makePersona, weighted, type Persona, type Rng } from './brain.ts';
 
 /** Made-up handles in the styles people pick here (none taken from real people). */
 export const NAMES = [
@@ -122,8 +122,7 @@ const MIN = 60000;
 
 /** A spread-out duration: `median` minutes typically, never outside lo..hi. */
 function minutes(rng: Rng, median: number, lo: number, hi: number) {
-  const g = Math.sqrt(-2 * Math.log(1 - rng())) * Math.cos(2 * Math.PI * rng());
-  return Math.round(Math.min(hi, Math.max(lo, median * Math.exp(0.5 * g))) * MIN);
+  return Math.round(Math.min(hi, Math.max(lo, median * Math.exp(0.5 * gauss(rng)))) * MIN);
 }
 
 /** How long someone hosts before they call it a day (finishing the game they're in). */

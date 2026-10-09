@@ -6,14 +6,17 @@
 // - The second opens when every room listed is mid-game (or full or locked):
 //   people can only watch, so newcomers get a room to play in.
 // - Either one, alone in its lobby, makes way when another room can be
-//   joined: someone's own room, or the other bot's back in its lobby.
+//   joined: someone's own room, or (the second) the first bot's back in its
+//   lobby. The first never makes way for the second, so when both wait
+//   empty only the second goes.
 
+import { PROTOCOL_VERSION } from '../lib/protocol.ts';
 import type { RoomInfo } from '../lib/roomInfo.ts';
 
 export type Role = 'first' | 'second';
 
-/** A room someone arriving could play in now. */
-export const joinable = (r: RoomInfo) => r.phase === 'lobby' && r.players < r.maxPlayers;
+/** A room someone arriving could play in now (on this version: the list greys out the others, OpenRooms.svelte). */
+export const joinable = (r: RoomInfo) => r.phase === 'lobby' && r.players < r.maxPlayers && (r.v ?? 0) === PROTOCOL_VERSION;
 
 /** Whether this room should open, given the other rooms listed. */
 export function wanted(role: Role, others: RoomInfo[]): boolean {

@@ -120,6 +120,15 @@ async function runRoom(slot) {
 const all = [];
 for (let slot = 1; slot <= rooms; slot++) all.push(await runRoom(slot));
 
+// Each room learns the other's code, so the first never makes way for the second (src/bot/wanted.ts).
+const SIBLINGS_EVERY_MS = 5000;
+const siblings = rooms > 1
+  ? setInterval(async () => {
+      const codes = await Promise.all(all.map(({ page }) => page?.evaluate(() => { const s = window.__bot?.status(); return s?.host ? s.code : ''; }).catch(() => '') ?? ''));
+      await Promise.all(all.map(({ page }, i) => page?.evaluate((code) => window.__bot?.setSibling(code), codes[1 - i]).catch(() => {})));
+    }, SIBLINGS_EVERY_MS)
+  : null;
+
 const status = setInterval(async () => {
   for (const { page, say } of all) {
     try {
@@ -137,6 +146,7 @@ async function stop() {
   stopping = true;
   log(rooms > 1 ? 'closing the rooms' : 'closing the room');
   clearInterval(status);
+  if (siblings) clearInterval(siblings);
   // Each room tells everyone it closed, instead of leaving them to reconnect to nothing.
   await Promise.all(all.map(({ page }) => page?.evaluate(() => window.__bot?.close()).catch(() => {})));
   await new Promise((r) => setTimeout(r, 800));

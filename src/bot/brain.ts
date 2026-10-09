@@ -44,7 +44,7 @@ const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v
 const between = (rng: Rng, lo: number, hi: number) => lo + rng() * (hi - lo);
 
 /** A normally distributed number (Box-Muller). */
-function gauss(rng: Rng) {
+export function gauss(rng: Rng) {
   return Math.sqrt(-2 * Math.log(1 - rng())) * Math.cos(2 * Math.PI * rng());
 }
 

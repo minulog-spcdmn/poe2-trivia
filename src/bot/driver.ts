@@ -7,12 +7,12 @@
 // the host's own screens would, through dispatch, so every rule (and the
 // handicap on the host's race answers) applies to it too.
 
-import { engine, session } from '../lib/session.svelte';
 import type { GameState, Question } from '../lib/game';
 import { scanRooms, type RoomInfo } from '../lib/rooms';
-import { readStored, writeStored } from '../lib/storage';
+import { engine, SAVE, session } from '../lib/session.svelte';
+import { readStored, removeStored, writeStored } from '../lib/storage';
 import { answerDelay, knowChance, pickCategory, pickDelay, wrongPick, type Ask } from './brain';
-import { identityOf, lonelyLength, nextName, otherPrefs, shiftLength, type Identity } from './identities';
+import { identityOf, lonelyLength, nextName, otherPrefs, shiftLength, type Identity, type RoomPrefs } from './identities';
 import { joinable, makesWay, wanted, type Role } from './wanted';
 
 const TICK_MS = 200;
@@ -66,6 +66,30 @@ function loadShift(): Shift | null {
 
 const time = (at: number) => new Date(at).toTimeString().slice(0, 5);
 
+/**
+ * The room's save is kept in the tab's sessionStorage, which a page that
+ * crashed doesn't get back (the runner opens a new tab); a copy kept here
+ * puts it back, so the room reopens with its game.
+ */
+const SAVE_COPY = 'room-save';
+let lastCopy: string | null = null;
+
+function keepSaveCopy() {
+  const save = readStored(SAVE, 'session');
+  if (save === lastCopy) return;
+  lastCopy = save;
+  if (save) writeStored(SAVE_COPY, save);
+  else removeStored(SAVE_COPY);
+}
+
+function restoreSave() {
+  const copy = readStored(SAVE_COPY);
+  if (copy && !readStored(SAVE, 'session')) writeStored(SAVE, copy, 'session');
+}
+
+/** The room takes on a host's rules (between games). */
+const useRules = (c: RoomPrefs) => session.dispatch({ type: 'settings', settings: { mode: c.mode, difficulty: c.difficulty, targetScore: c.target, timer: c.timer } });
+
 interface Plan {
   key: string;
   at: number;
@@ -86,6 +110,9 @@ export class Bot {
   private configured = false;
   private timer: ReturnType<typeof setInterval> | null = null;
   private scoutTimer: ReturnType<typeof setTimeout> | null = null;
+  private copyTimer: ReturnType<typeof setInterval> | null = null;
+  /** The other bot room's code, when two run (the runner says): the first never makes way for it. */
+  private sibling = '';
   /** Checks in a row that found a room wanted (while nobody is on). */
   private wantedChecks = 0;
   /** Checks in a row that found another room to join (while this one is on). */
@@ -116,19 +143,36 @@ export class Bot {
     if (this.shift.on && !this.names.includes(this.shift.on)) this.shift = { ...this.shift, on: null, backAt: 0 };
     if (this.shift.on) {
       this.who = identityOf(this.shift.on, engine.categories);
+      restoreSave();
       session.resume();
       if (session.mode !== 'host') session.host(this.shift.on);
       log(`${this.shift.on} is back after a reload, on until ${time(this.shift.until)}`);
     }
     this.timer = setInterval(() => this.tick(), TICK_MS);
+    this.copyTimer = setInterval(keepSaveCopy, 1000);
     void this.scout();
   }
 
-  /** Closes the room (the runner stopping): everyone is told, and nothing is saved to reopen. */
+  /** The runner, when two rooms run: the other one's code ('' while it has none). */
+  setSibling(code: string) {
+    this.sibling = code;
+  }
+
+  /**
+   * Closes the room (the runner stopping): everyone is told, and nothing is
+   * saved to reopen. Nobody stays on either, so the next run opens a room
+   * only once one is wanted (rather than straight away, as after a reload).
+   */
   close() {
     if (this.timer) clearInterval(this.timer);
+    if (this.copyTimer) clearInterval(this.copyTimer);
     if (this.scoutTimer) clearTimeout(this.scoutTimer);
-    this.timer = this.scoutTimer = null;
+    this.timer = this.copyTimer = this.scoutTimer = null;
+    removeStored(SAVE_COPY);
+    if (this.shift.on) {
+      this.shift = { ...this.shift, on: null, backAt: 0 };
+      this.save();
+    }
     session.leave();
   }
 
@@ -151,7 +195,9 @@ export class Bot {
     this.seen = { rooms: others.length, joinable: others.filter(joinable).length, at: Date.now() };
     if (this.shift.on) {
       this.wantedChecks = 0;
-      this.wayChecks = makesWay(others) ? this.wayChecks + 1 : 0;
+      // Both bot rooms waiting empty: only the second makes way, never the first for it.
+      const rivals = this.role === 'first' ? others.filter((r) => r.code !== this.sibling) : others;
+      this.wayChecks = makesWay(rivals) ? this.wayChecks + 1 : 0;
     } else {
       this.wayChecks = 0;
       this.wantedChecks = wanted(this.role, others) ? this.wantedChecks + 1 : 0;
@@ -274,7 +320,7 @@ export class Bot {
       this.retried = true;
       this.lonelySince = 0;
       const c = (this.who!.prefs = otherPrefs(this.who!.prefs, Math.random));
-      session.dispatch({ type: 'settings', settings: { mode: c.mode, difficulty: c.difficulty, targetScore: c.target, timer: c.timer } });
+      useRules(c);
       log(`nobody came, trying ${c.mode}, ${c.difficulty}, to ${c.target}, ${c.timer} s`);
       return false;
     }
@@ -287,7 +333,7 @@ export class Bot {
     if (!s.settings.public || s.settings.locked) session.dispatch({ type: 'settings', settings: { public: true, locked: false } });
     if (this.configured || (s.phase !== 'lobby' && s.phase !== 'over')) return;
     const c = this.who!.prefs;
-    session.dispatch({ type: 'settings', settings: { mode: c.mode, difficulty: c.difficulty, targetScore: c.target, timer: c.timer } });
+    useRules(c);
     this.configured = true;
     log(`room ${session.code} open: ${c.mode}, ${c.difficulty}, to ${c.target}, ${c.timer} s`);
   }
