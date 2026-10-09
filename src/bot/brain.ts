@@ -47,6 +47,16 @@ export interface Persona {
   impatience: number;
   /** Delve together: the chance it changes its vote while the vote is open. */
   dither: number;
+  /**
+   * How much it likes hosting (0 to 1): those high on it are the ones who
+   * open rooms, quickly when there is none to play in; those low on it would
+   * rather join someone else's.
+   */
+  hosting: number;
+  /** Likes a busy room (1) or a quiet one (0), when picking a room to join. */
+  sociable: number;
+  /** How much it minds rules other than its own in a room to join (0 to 1). */
+  picky: number;
 }
 
 /** What the bot sees of a question when it decides. */
@@ -115,6 +125,10 @@ export function makePersona(categories: string[], rng: Rng): Persona {
     herd: between(rng, 0.1, 0.5),
     impatience: rng(),
     dither: between(rng, 0, 0.3),
+    // Most would rather join; a few like to host.
+    hosting: rng() ** 1.6,
+    sociable: rng(),
+    picky: rng(),
   };
 }
 

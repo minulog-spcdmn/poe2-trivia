@@ -15,6 +15,12 @@ import type { RoomInfo } from '../lib/roomInfo.ts';
 
 export type Role = 'first' | 'second';
 
+/** The room a seat could open, with `taken` held by other seats and at most `rooms` at once: the first, else the second, else none. */
+export function nextRole(taken: readonly Role[], rooms: number): Role | null {
+  if (rooms >= 1 && !taken.includes('first')) return 'first';
+  return rooms >= 2 && !taken.includes('second') ? 'second' : null;
+}
+
 /** A room someone arriving could play in now (on this version: the list greys out the others, OpenRooms.svelte). */
 export const joinable = (r: RoomInfo) => r.phase === 'lobby' && r.players < r.maxPlayers && (r.v ?? 0) === PROTOCOL_VERSION;
 

@@ -1,25 +1,25 @@
 // The room bot (bot.html): the game's session without its screens, where
-// made-up players take turns hosting a public room and playing in it, or
-// (?join=1) join other people's public rooms as guests. Served by the dev
-// server and built only with VITE_BOT=1 (vite.config.ts), which
-// scripts/room-bot.mjs does.
+// made-up players come on at a seat, open a public room or join someone
+// else's, play a while and go (seat.ts). Served by the dev server and built
+// only with VITE_BOT=1 (vite.config.ts), which scripts/room-bot.mjs does.
 
 import { BOT } from '../lib/storage';
-import { Bot } from './driver';
-import { Joiner } from './joiner';
+import { Seat } from './seat';
 import { session } from '../lib/session.svelte';
 import { modesFrom, namesFor } from './identities';
 
 if (!(import.meta.env.DEV || import.meta.env.VITE_BOT === '1') || !BOT) throw new Error('The bot only runs from bot.html, on the dev server or a bot build.');
 
-// Two rooms at once (scripts/room-bot.mjs --rooms 2): this one is ?slot= of ?of=,
-// and the second only opens while every other room is mid-game (wanted.ts).
-// ?modes=: the game modes its hosts may pick (--mode), all of them by default.
+// Several seats at once (scripts/room-bot.mjs --bots): this one is ?slot= of ?of=,
+// each with its own share of the cast. ?rooms=: how many rooms the bot keeps
+// open at most (--rooms, 0 to only join); ?modes=: the game modes its hosts
+// may pick (--mode), all of them by default; ?scout=0: a seat that is handed
+// the room list (the runner's first seat checks it for all).
 const q = new URLSearchParams(location.search);
 const slot = Number(q.get('slot') ?? 1);
 const names = namesFor(slot, Number(q.get('of') ?? 1));
-// ?scout=0: a guest that is handed the room list (the runner's first guest checks it for all).
-const bot = q.has('join') ? new Joiner(names, q.get('scout') !== '0') : new Bot(names, slot === 2 ? 'second' : 'first', modesFrom(q.get('modes')));
+const rooms = Math.max(0, Math.min(2, Number(q.get('rooms') ?? 1) || 0));
+const bot = new Seat(names, modesFrom(q.get('modes')), rooms, q.get('scout') !== '0');
 bot.start();
 
 // For the runner (and a look in a headed browser); in development, the session too, for scripts that drive it (as src/main.ts gives it).

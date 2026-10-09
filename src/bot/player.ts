@@ -1,6 +1,6 @@
 // A bot at the table: plays its turns, races and Delve runs as one of the
-// cast (brain.ts), whether it hosts the room (driver.ts) or joined someone
-// else's (joiner.ts). Only how it finds the right option differs: the host
+// cast (brain.ts), whether it hosts the room (host.ts) or joined someone
+// else's (guest.ts). Only how it finds the right option differs: the host
 // has it in its state, a guest has to recognise the art (sight.ts).
 // Everything it does goes through the session's dispatch, as a person's
 // clicks would, and its timing runs on the host's clock.

@@ -3,10 +3,11 @@ import assert from 'node:assert/strict';
 import { HOST_ODDS, answerDelay, blasts, chooseAnswer, chooseCard, findAppetite, guessChance, misclicks, moodOf, movesOn, panic, pickDelay, rethinks, staysOn, tiredness, urgentSeconds, withTheHerd, knowChance, makePersona, pickCategory, weighted, wrongPick, type Ask, type Persona } from '../src/bot/brain.ts';
 import { createGame, rulesFor, type GameState, type Item, type Preset } from '../src/lib/game.ts';
 import { readFileSync } from 'node:fs';
-import { MODES, NAMES, buildOf, fiddled, identityOf, lonelyLength, modesFrom, namesFor, nextName, otherPrefs, rollPrefs, shiftLength } from '../src/bot/identities.ts';
-import { joinable, makesWay, wanted } from '../src/bot/wanted.ts';
+import { MODES, NAMES, buildOf, fiddled, identityOf, leaningsOf, lonelyLength, modesFrom, namesFor, nextName, otherPrefs, rollPrefs, shiftLength } from '../src/bot/identities.ts';
+import { joinable, makesWay, nextRole, wanted } from '../src/bot/wanted.ts';
 import type { RoomInfo } from '../src/lib/roomInfo.ts';
 import { PROTOCOL_VERSION } from '../src/lib/protocol.ts';
+import { afterHosting, afterVisit, appeal, hesitation, joinsAfter, keenTo, opensRoom, playsOn, settlesFor, sourNow, urgeToHost } from '../src/bot/choice.ts';
 import { MAX_NAME, cleanName, isHeldName, nameProblem, nameSkeleton } from '../src/lib/names.ts';
 
 function seeded(seed: number) {
@@ -16,7 +17,7 @@ function seeded(seed: number) {
   };
 }
 
-const plain: Persona = { skill: 0, pace: 1, affinity: { Rings: 0.02, Flasks: -0.05 }, finds: 0.8, boldness: 0.5, haste: 0, nerve: 1, favourites: [], temper: 0, herd: 0.3, impatience: 0.5, dither: 0.1 };
+const plain: Persona = { skill: 0, pace: 1, affinity: { Rings: 0.02, Flasks: -0.05 }, finds: 0.8, boldness: 0.5, haste: 0, nerve: 1, favourites: [], temper: 0, herd: 0.3, impatience: 0.5, dither: 0.1, hosting: 0.3, sociable: 0.5, picky: 0.5 };
 const plainRules = rulesFor({ difficulty: 'cruel' });
 const ask = (over: Partial<Ask> = {}): Ask => ({ rules: plainRules, category: 'Rings', veil: 0, gray: false, mirrored: false, clock: 32, mode: 'turns', ...over });
 /** A question as a preset room asks it (a deathmatch's with `harder`). */
@@ -34,6 +35,7 @@ test('a persona rolls every category, within bounds', () => {
   for (const k of ['finds', 'boldness', 'haste', 'nerve'] as const) assert.ok(p[k] >= 0 && p[k] <= 1, k);
   assert.ok(p.temper >= -1 && p.temper <= 1 && p.herd >= 0.1 && p.herd <= 0.5);
   assert.ok(p.impatience >= 0 && p.impatience <= 1 && p.dither >= 0 && p.dither <= 0.3);
+  for (const k of ['hosting', 'sociable', 'picky'] as const) assert.ok(p[k] >= 0 && p[k] <= 1, k);
 });
 
 test('items shown plainly are nearly always known, even by the weakest', () => {
@@ -438,4 +440,117 @@ test('a host fiddling with the rules nudges the target or the timer a step', () 
 test('more bots than names: the latecomers share the whole cast', () => {
   assert.deepEqual(namesFor(NAMES.length + 5, NAMES.length + 5), NAMES);
   assert.equal(namesFor(1, NAMES.length + 5).length, 1);
+});
+
+test('everyone likes hosting their own amount: most would rather join, a few love it', () => {
+  const all = NAMES.map((n) => leaningsOf(n).hosting);
+  assert.ok(all.every((h) => h >= 0 && h <= 1));
+  assert.deepEqual(leaningsOf('Morgrim'), leaningsOf('Morgrim'));
+  const p = identityOf('Morgrim', ['A']).persona;
+  assert.deepEqual({ hosting: p.hosting, sociable: p.sociable, picky: p.picky }, leaningsOf('Morgrim'));
+  const keen = all.filter((h) => h > 0.6).length;
+  const shy = all.filter((h) => h < 0.3).length;
+  assert.ok(keen >= 5 && shy > keen, `${keen} keen, ${shy} shy`);
+});
+
+const HOUR = 3600000;
+const now = 10 * HOUR;
+
+test('the urge to host: their leaning, tipped by habit, a long stint lately, a bad time as a guest, and too little time', () => {
+  const p = { hosting: 0.5 };
+  const base = urgeToHost(p, {}, now, 60);
+  assert.equal(base, 0.5);
+  assert.ok(urgeToHost(p, { last: 'host' }, now, 60) > base);
+  assert.ok(urgeToHost(p, { last: 'join' }, now, 60) < base);
+  // Had their fill: a two-hour stint just now, much less so three hours on.
+  const tired = urgeToHost(p, afterHosting({}, 120, now), now, 60);
+  assert.ok(tired < base - 0.2, `${tired}`);
+  assert.ok(urgeToHost(p, afterHosting({}, 120, now - 3 * HOUR), now, 60) > tired);
+  // A host who never started: they'd sooner run a room themselves; it wears off.
+  const sour = afterVisit({}, 'never started', 'Kessa', now);
+  assert.ok(urgeToHost(p, sour, now, 60) > base + 0.05);
+  assert.ok(sourNow(sour, now + 2 * HOUR) < sourNow(sour, now) / 3);
+  assert.ok(urgeToHost(p, {}, now, 15) < base - 0.2);
+  for (const m of [{}, sour, afterHosting({}, 500, now)]) for (const h of [0, 1]) assert.ok(urgeToHost({ hosting: h }, m, now, 60) >= 0 && urgeToHost({ hosting: h }, m, now, 60) <= 1);
+});
+
+test('a visit is remembered: the host, kindly or not, and only so many hosts', () => {
+  let m = afterVisit({}, 'won', 'Kessa', now);
+  assert.equal(m.last, 'join');
+  assert.ok(m.hosts!.Kessa > 0);
+  m = afterVisit(m, 'never started', 'Ralv', now);
+  assert.ok(m.hosts!.Ralv < 0);
+  for (let i = 0; i < 30; i++) m = afterVisit(m, 'played', `host${i}`, now);
+  assert.ok(Object.keys(m.hosts!).length <= 12);
+});
+
+test('those who feel like hosting are the likelier to come on to host, the rest to join', () => {
+  assert.ok(keenTo(0.9, 'host') > 5 * keenTo(0.05, 'host'));
+  assert.ok(keenTo(0.05, 'join') > 5 * keenTo(0.9, 'join'));
+  // Never quite never.
+  assert.ok(keenTo(0, 'host') > 0 && keenTo(1, 'join') > 0);
+  const pool = ['a', 'b'];
+  const rng = seeded(4);
+  let a = 0;
+  for (let i = 0; i < 1000; i++) if (nextName([], rng, pool, (n) => (n === 'a' ? 3 : 1)) === 'a') a++;
+  assert.ok(a > 680 && a < 820, `${a}`);
+});
+
+test('with no room to play in, the keen open one soon, the rest later or not at all', () => {
+  const rng = seeded(5);
+  const mean = (urge: number) => Array.from({ length: 200 }, () => hesitation(urge, rng)).reduce((a, b) => a + b) / 200;
+  const keen = mean(1);
+  const shy = mean(0);
+  assert.ok(keen > 1000 && keen < 3000, `${keen}`);
+  assert.ok(shy > 15000 && shy < 30000, `${shy}`);
+  const opens = (urge: number) => Array.from({ length: 2000 }, () => opensRoom(urge, rng)).filter((ms) => ms !== null).length / 2000;
+  assert.equal(opens(1), 1);
+  assert.ok(opens(0) > 0.18 && opens(0) < 0.32, `${opens(0)}`);
+});
+
+test('after hosting, those who feel like it less are likelier to stay on and join someone', () => {
+  const rng = seeded(6);
+  const rate = (urge: number, exit: Parameters<typeof joinsAfter>[1]) => Array.from({ length: 2000 }, () => joinsAfter(urge, exit, rng)).filter(Boolean).length / 2000;
+  assert.ok(rate(0, 'made way') > 0.7);
+  assert.ok(rate(0, 'made way') > rate(0, 'nobody came') && rate(0, 'nobody came') > rate(0, 'done'));
+  assert.ok(rate(0.8, 'made way') < 0.25);
+  assert.equal(rate(0, 'sulking'), 0);
+  assert.equal(rate(1, 'made way'), 0);
+});
+
+test('after a visit, a let-down sends them looking more often than a good time, and nobody without the time', () => {
+  const rng = seeded(7);
+  const rate = (visit: Parameters<typeof playsOn>[0]) => Array.from({ length: 2000 }, () => playsOn(visit, 60, rng)).filter(Boolean).length / 2000;
+  assert.ok(rate('never started') > rate('played') && rate('played') > rate('lost heavily'));
+  assert.ok(!playsOn('turned away', 5, () => 0));
+});
+
+test('a room appeals by its rules, its company and its host, and they settle for less the longer they look', () => {
+  const taste = { mode: 'turns' as const, difficulty: 'cruel' as const };
+  const room = (over: Partial<RoomInfo> = {}) => ({ mode: 'turns' as const, difficulty: 'cruel' as const, players: 1, ...over });
+  const picky = { sociable: 0.5, picky: 1 };
+  const easy = { sociable: 0.5, picky: 0 };
+  assert.equal(appeal(picky, taste, room()), 1);
+  // The picky mind other rules, Delve against the rest most; the easy-going hardly.
+  assert.ok(appeal(picky, taste, room({ difficulty: 'merciless' })) > appeal(picky, taste, room({ mode: 'race' })));
+  assert.ok(appeal(picky, taste, room({ mode: 'race' })) > appeal(picky, taste, room({ mode: 'delve' })));
+  assert.equal(appeal(easy, taste, room({ mode: 'delve' })), 1);
+  // Company: the sociable warm to a busy room, the rest to a host on their own.
+  assert.ok(appeal({ sociable: 1, picky: 0 }, taste, room({ players: 3 })) > appeal({ sociable: 1, picky: 0 }, taste, room()));
+  assert.ok(appeal({ sociable: 0, picky: 0 }, taste, room({ players: 3 })) < appeal({ sociable: 0, picky: 0 }, taste, room()));
+  // A host they got on with, or didn't.
+  assert.ok(appeal(picky, taste, room(), 1) > appeal(picky, taste, room()) && appeal(picky, taste, room(), -1) < appeal(picky, taste, room()));
+  // A picky one waits a while for a Delve fan's room, then settles.
+  const delve = appeal(picky, { mode: 'delve', difficulty: 'cruel' }, room());
+  assert.ok(delve < settlesFor(0) && delve >= settlesFor(5), `${delve}`);
+  assert.ok(settlesFor(60) >= 0.3);
+});
+
+test('a seat opens the first room, else the second, within the rooms allowed', () => {
+  assert.equal(nextRole([], 1), 'first');
+  assert.equal(nextRole(['first'], 1), null);
+  assert.equal(nextRole(['first'], 2), 'second');
+  assert.equal(nextRole(['second'], 2), 'first');
+  assert.equal(nextRole(['first', 'second'], 2), null);
+  assert.equal(nextRole([], 0), null);
 });

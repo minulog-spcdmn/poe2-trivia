@@ -1,8 +1,9 @@
-// The room bot's players: made-up people who take turns hosting. Each name
-// always plays as the same person (strengths, pace, favourite settings),
-// worked out from the name itself, so a regular is recognisable from one
-// visit to the next without anything being stored. Who comes on next, and
-// for how long, is up to chance; when, is up to the room list (wanted.ts).
+// The room bot's players: made-up people who come on to host a room or join
+// one. Each name always plays as the same person (strengths, pace, favourite
+// settings, how much they like hosting), worked out from the name itself, so
+// a regular is recognisable from one visit to the next without anything
+// being stored. Who comes on next, and for how long, is up to chance and
+// their own leanings; when a room opens, is up to the room list (wanted.ts).
 
 import type { Difficulty, Item } from '../lib/game.ts';
 import { gauss, makePersona, weighted, type Persona, type Rng } from './brain.ts';
@@ -204,12 +205,23 @@ export function identityOf(name: string, categories: string[], modes: readonly M
   const persona = makePersona(categories, rng);
   const prefs = rollPrefs(rng, modes);
   persona.favourites = buildOf(items, seededBy(`${name}:build`));
+  Object.assign(persona, leaningsOf(name));
   return { name, persona, prefs };
 }
 
 /**
- * The names one room draws from when `of` rooms run at once (`slot` 1 to
- * `of`): every room its own, so nobody hosts two rooms at the same time.
+ * How a name goes about rooms (Persona.hosting, sociable, picky), on its
+ * own: quick to look up for the whole cast. Most would rather join; a few
+ * like to host.
+ */
+export function leaningsOf(name: string): Pick<Persona, 'hosting' | 'sociable' | 'picky'> {
+  const rng = seededBy(`${name}:rooms`);
+  return { hosting: rng() ** 1.6, sociable: rng(), picky: rng() };
+}
+
+/**
+ * The names one seat draws from when `of` seats run at once (`slot` 1 to
+ * `of`): every seat its own, so nobody is in two places at the same time.
  */
 export function namesFor(slot: number, of: number): string[] {
   if (!Number.isInteger(of) || of < 1 || !Number.isInteger(slot) || slot < 1 || slot > of) return NAMES;
@@ -221,12 +233,12 @@ export function namesFor(slot: number, of: number): string[] {
 /** How many of the last names wait before coming on again (at most half of those there are). */
 const RESTING = 8;
 
-/** The next to come on from `pool`: anyone but the last few. */
-export function nextName(recent: string[], rng: Rng, pool = NAMES): string {
+/** The next to come on from `pool`: anyone but the last few, the keener (`keen`: a weight for each name) the likelier. */
+export function nextName(recent: string[], rng: Rng, pool = NAMES, keen?: (name: string) => number): string {
   const resting = new Set(recent.slice(-Math.min(RESTING, Math.floor(pool.length / 2))));
   const free = pool.filter((n) => !resting.has(n));
   const from = free.length ? free : pool;
-  return from[Math.floor(rng() * from.length)];
+  return keen ? from[weighted(from.map(keen), rng)] : from[Math.floor(rng() * from.length)];
 }
 
 const MIN = 60000;

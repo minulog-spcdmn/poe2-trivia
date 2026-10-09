@@ -1,24 +1,28 @@
 // Runs the room bot: builds the game with its bot page (VITE_BOT=1), serves
-// the build on this machine and opens bot.html in headless Chromium, where
-// made-up players take turns hosting a public room and playing in it
-// (src/bot). Keeps it running: a page that crashes or closes is opened
-// again, and the browser profile keeps who is on and the room's save, so it
-// comes back as the same player in the same room.
+// the build on this machine and opens bot.html in headless Chromium, once
+// for each seat, where made-up players come on, open a public room or join
+// someone else's, play a while and go (src/bot). Keeps it running: a page
+// that crashes or closes is opened again, and the browser profile keeps who
+// is hosting and the room's save, so it comes back as the same player in
+// the same room.
 //
-//   npm run bot -- [--rooms 2] [--mode turns,race,delve] [--join | --joiners 3] [--per-room N] [--headed] [--no-build]
-//   (or node scripts/room-bot.mjs --rooms 2; from PowerShell npm run bot 2 delve join,
-//   or npm run bot rooms=2 joiners=3, work too)
+//   npm run bot -- [--bots 4] [--rooms 2] [--mode turns,race,delve] [--per-room N] [--headed] [--no-build]
+//   (or node scripts/room-bot.mjs --bots 4; from PowerShell npm run bot bots=4 rooms=2 delve,
+//   or npm run bot 2, work too)
 //
+// --bots: how many seats, so how many players on at once (1 by default).
+// Each one who comes on decides for themselves whether to host or to join,
+// and which room, as people do (src/bot/seat.ts, src/bot/choice.ts).
+// --rooms: how many rooms they keep open at most (1 by default, 2 at most,
+// 0 to only join people). A room opens only when the open-room list has no
+// room at all; with --rooms 2, a second one also opens while every room
+// listed is mid-game (src/bot/wanted.ts).
 // --mode: the game modes the hosts may pick, each by their own taste (all
 // three by default); --mode delve makes every room a Delve room.
-// --join: also a guest, who joins other people's public rooms when their
-// host has waited alone a while (src/bot/joiner.ts); --joiners N for N of
-// them, as many as wanted, any number in one room (or at most N with
-// --per-room N), arriving 5 to 20 s apart; --rooms 0 for guests only.
-//
-// A room opens only when the open-room list has no room at all; with
-// --rooms 2, a second one also opens while every room listed is mid-game
-// (src/bot/wanted.ts). Each has its own players.
+// --per-room N: at most N of them in one room (any number by default);
+// they arrive in a room 5 to 20 s apart.
+// --joiners N (or --join, for 1): N seats on top of the rooms (the same as
+// --bots rooms+N).
 //
 // Chromium: Playwright's own (npx playwright-core install chromium), or any
 // Chromium or Chrome named by BOT_CHROMIUM.
@@ -41,6 +45,7 @@ const outDir = join(root, '.bot', 'dist');
 
 const { values: args, positionals } = parseArgs({
   options: {
+    bots: { type: 'string' },
     rooms: { type: 'string' },
     mode: { type: 'string' },
     join: { type: 'boolean' },
@@ -63,6 +68,7 @@ const words = positionals.flatMap((p) => p.toLowerCase().split(','));
 const numberOf = (name) =>
   args[name] ?? (/^\d+$/.test(env[`npm_config_${name.replace(/-/g, '_')}`] ?? '') ? env[`npm_config_${name.replace(/-/g, '_')}`] : undefined) ?? words.find((w) => w.startsWith(`${name}=`))?.slice(name.length + 1);
 const opts = {
+  bots: numberOf('bots'),
   rooms: numberOf('rooms') ?? positionals.find((p) => /^\d+$/.test(p)) ?? '1',
   mode: args.mode ?? (words.filter((w) => MODES.includes(w)).join(',') || 'turns,race,delve'),
   join: args.join ?? (words.includes('join') || env.npm_config_join === 'true'),
@@ -73,17 +79,23 @@ const opts = {
 };
 const joiners = Number(opts.joiners ?? (opts.join ? 1 : 0));
 if (!Number.isInteger(joiners) || joiners < 0) {
-  console.error('--joiners takes a number of guests.');
+  console.error('--joiners takes a number of seats.');
   process.exit(2);
 }
 const perRoom = opts.perRoom === undefined ? Infinity : Number(opts.perRoom);
 if (perRoom !== Infinity && (!Number.isInteger(perRoom) || perRoom < 1)) {
-  console.error('--per-room takes a number of guests (1 or more).');
+  console.error('--per-room takes a number of players (1 or more).');
   process.exit(2);
 }
 const rooms = Number(opts.rooms);
-if (!Number.isInteger(rooms) || rooms < (joiners ? 0 : 1) || rooms > MAX_ROOMS) {
-  console.error(`--rooms takes 1 to ${MAX_ROOMS} (0 with guests).`);
+if (!Number.isInteger(rooms) || rooms < 0 || rooms > MAX_ROOMS) {
+  console.error(`--rooms takes 0 to ${MAX_ROOMS}.`);
+  process.exit(2);
+}
+/** Seats in all: --bots, or one a room and the --joiners. */
+const bots = Number(opts.bots ?? Math.max(1, rooms + joiners));
+if (!Number.isInteger(bots) || bots < 1) {
+  console.error('--bots takes a number of seats (1 or more).');
   process.exit(2);
 }
 const modes = opts.mode.toLowerCase().split(/[\s,]+/).filter(Boolean);
@@ -117,21 +129,19 @@ let stopping = false;
  */
 const claims = new Map();
 const ARRIVALS_APART_MS = [5000, 20000];
-
-/** Bots in all: the rooms, and the guests (--join, --joiners) last. */
-const bots = rooms + joiners;
+/** Our rooms, first and second (src/bot/wanted.ts): which seat hosts each, so no two open the same one. */
+const roles = new Map();
 
 /**
- * One bot: its own browser and profile (so its own storage: who is on, the
- * room's save), and its own share of the names (bot.html ?slot=&of=), so
- * no one is ever in two places at once. The guest's slot is the last.
+ * One seat: its own browser and profile (so its own storage: who is
+ * hosting, the room's save), and its own share of the names (bot.html
+ * ?slot=&of=), so no one is ever in two places at once. The first seat
+ * checks the room list for all (passed on below); the others are handed it.
  */
-async function runRoom(slot) {
-  const guest = slot > rooms;
-  const say = bots > 1 ? (...args) => log(guest ? `[guest${joiners > 1 ? ` ${slot - rooms}` : ''}]` : `[${slot}]`, ...args) : log;
-  // The first guest checks the room list for all of them (passed on below); the others are handed it.
-  const url = `${base}bot.html?slot=${slot}&of=${bots}${guest ? `&join=1${slot > rooms + 1 ? '&scout=0' : ''}` : `&modes=${modes.join(',')}`}`;
-  const context = await chromium.launchPersistentContext(join(root, '.bot', guest ? `profile-guest-${slot - rooms}` : `profile-${slot}`), {
+async function runSeat(slot) {
+  const say = bots > 1 ? (...args) => log(`[${slot}]`, ...args) : log;
+  const url = `${base}bot.html?slot=${slot}&of=${bots}&rooms=${rooms}&modes=${modes.join(',')}${slot > 1 ? '&scout=0' : ''}`;
+  const context = await chromium.launchPersistentContext(join(root, '.bot', `profile-${slot}`), {
     headless: !opts.headed,
     executablePath: process.env.BOT_CHROMIUM || undefined,
     // Stopping is ours (stop, below): the room says goodbye before the browser goes.
@@ -141,7 +151,7 @@ async function runRoom(slot) {
     // Nobody listens to the bot, and nothing is drawn: the page has no screens.
     args: ['--mute-audio', '--autoplay-policy=no-user-gesture-required', '--disable-gpu', ...proxy],
   });
-  const room = { page: null, context, say };
+  const seat = { page: null, context, say };
 
   let failures = 0;
 
@@ -157,37 +167,46 @@ async function runRoom(slot) {
     try {
       p = await context.newPage();
       for (const old of context.pages()) if (old !== p) await old.close().catch(() => {});
-      room.page = p;
+      seat.page = p;
       p.on('console', (m) => {
         const text = m.text();
         if (text.startsWith('[bot]')) say(text.slice(6));
         else if (m.type() === 'error' || m.type() === 'warning') say(`page ${m.type()}:`, text);
       });
       p.on('pageerror', (err) => say('page error:', err.message));
-      if (guest) {
-        await p.exposeFunction('__claimRoom', (code) => {
-          const now = Date.now();
-          const c = claims.get(code) ?? { slots: new Set(), next: 0 };
-          if (!c.slots.has(slot) && (c.slots.size >= perRoom || now < c.next)) return false;
-          for (const [other, o] of claims) {
-            o.slots.delete(slot);
-            if (!o.slots.size && now >= o.next) claims.delete(other);
-          }
-          c.slots.add(slot);
-          c.next = now + ARRIVALS_APART_MS[0] + Math.random() * (ARRIVALS_APART_MS[1] - ARRIVALS_APART_MS[0]);
-          claims.set(code, c);
-          return true;
-        });
-        await p.exposeFunction('__releaseRoom', (code) => {
-          const c = claims.get(code);
-          c?.slots.delete(slot);
-          if (c && !c.slots.size && Date.now() >= c.next) claims.delete(code);
-        });
-      }
+      await p.exposeFunction('__claimRoom', (code) => {
+        const now = Date.now();
+        const c = claims.get(code) ?? { slots: new Set(), next: 0 };
+        if (!c.slots.has(slot) && (c.slots.size >= perRoom || now < c.next)) return false;
+        for (const [other, o] of claims) {
+          o.slots.delete(slot);
+          if (!o.slots.size && now >= o.next) claims.delete(other);
+        }
+        c.slots.add(slot);
+        c.next = now + ARRIVALS_APART_MS[0] + Math.random() * (ARRIVALS_APART_MS[1] - ARRIVALS_APART_MS[0]);
+        claims.set(code, c);
+        return true;
+      });
+      await p.exposeFunction('__releaseRoom', (code) => {
+        const c = claims.get(code);
+        c?.slots.delete(slot);
+        if (c && !c.slots.size && Date.now() >= c.next) claims.delete(code);
+      });
+      await p.exposeFunction('__claimRole', (role) => {
+        if ((role !== 'first' && role !== 'second') || (role === 'second' && rooms < 2) || rooms < 1) return false;
+        const holder = roles.get(role);
+        if (holder !== undefined && holder !== slot) return false;
+        for (const [r, s] of roles) if (s === slot) roles.delete(r);
+        roles.set(role, slot);
+        return true;
+      });
+      await p.exposeFunction('__releaseRole', (role) => {
+        if (roles.get(role) === slot) roles.delete(role);
+      });
       const reopen = (why) => {
         // Only for the page in use (not one let go of above), and once.
-        if (room.page !== p || stopping) return;
-        room.page = null;
+        if (seat.page !== p || stopping) return;
+        seat.page = null;
         say(`${why}, opening it again`);
         setTimeout(() => void open(), REOPEN_AFTER_MS);
       };
@@ -202,7 +221,7 @@ async function runRoom(slot) {
     } catch (err) {
       failures++;
       say('could not open the page:', err.message);
-      if (room.page === p) room.page = null;
+      if (seat.page === p) seat.page = null;
       if (failures >= MAX_OPEN_FAILURES) {
         say(`gave up after ${failures} tries`);
         process.exit(1);
@@ -219,39 +238,35 @@ async function runRoom(slot) {
   });
 
   await open();
-  return room;
+  return seat;
 }
 
-log([rooms && `${rooms === 1 ? '1 room' : `${rooms} rooms`}, hosting ${modes.join(', ')}`, joiners && `${joiners === 1 ? 'a guest' : `${joiners} guests${perRoom < joiners ? ` (up to ${perRoom} a room)` : ''}`} joining people`].filter(Boolean).join('; '));
+log(`${bots === 1 ? '1 seat' : `${bots} seats`}, ${rooms ? `up to ${rooms === 1 ? '1 room' : `${rooms} rooms`} at once, hosting ${modes.join(', ')}` : 'joining only'}${perRoom < bots ? `, up to ${perRoom} in a room` : ''}`);
 const all = [];
-for (let slot = 1; slot <= bots; slot++) all.push(await runRoom(slot));
+for (let slot = 1; slot <= bots; slot++) all.push(await runSeat(slot));
 
-// Each room learns the other's code, so the first never makes way for the second
-// (src/bot/wanted.ts), and the guest learns both, so it never joins our own rooms.
-const SIBLINGS_EVERY_MS = 5000;
-const siblings = bots > 1
+// Each seat learns the others' rooms: so it opens no room another one holds,
+// the first room never makes way for the second (src/bot/wanted.ts), and our
+// own rooms are joined only while no one else's lobby is open. And the room
+// list the first seat checked is handed on to the others.
+const TEAM_EVERY_MS = 5000;
+const team = bots > 1
   ? setInterval(async () => {
-      const hosts = all.slice(0, rooms);
-      const codes = await Promise.all(hosts.map(({ page }) => page?.evaluate(() => { const s = window.__bot?.status(); return s?.host ? s.code : ''; }).catch(() => '') ?? ''));
-      if (rooms === 2) await Promise.all(hosts.map(({ page }, i) => page?.evaluate((code) => window.__bot?.setSibling(code), codes[1 - i]).catch(() => {})));
-      // Each guest: our own rooms (joined only while no one else's lobby is open).
-      const guests = all.slice(rooms);
-      await Promise.all(guests.map(({ page }) => page?.evaluate((list) => window.__bot?.setOurs(list), codes).catch(() => {})));
-      // The room list the first guest checked, handed on to the others.
-      if (guests.length > 1) {
-        const list = await guests[0].page?.evaluate(() => window.__bot?.rooms()).catch(() => null);
-        if (list?.at) await Promise.all(guests.slice(1).map(({ page }) => page?.evaluate(({ rooms, at }) => window.__bot?.takeRooms(rooms, at), list).catch(() => {})));
-      }
-    }, SIBLINGS_EVERY_MS)
+      const codes = await Promise.all(all.map(({ page }) => page?.evaluate(() => { const s = window.__bot?.status(); return s?.as === 'host' ? (s.code ?? '') : ''; }).catch(() => '') ?? ''));
+      const held = [...roles].map(([role, slot]) => ({ role, slot, code: codes[slot - 1] ?? '' }));
+      await Promise.all(all.map(({ page }, i) => page?.evaluate((t) => window.__bot?.setTeam(t), held.filter((h) => h.slot !== i + 1).map(({ role, code }) => ({ role, code }))).catch(() => {})));
+      const list = await all[0].page?.evaluate(() => window.__bot?.rooms()).catch(() => null);
+      if (list?.at) await Promise.all(all.slice(1).map(({ page }) => page?.evaluate(({ rooms, at }) => window.__bot?.takeRooms(rooms, at), list).catch(() => {})));
+    }, TEAM_EVERY_MS)
   : null;
 
 const status = setInterval(async () => {
   for (const { page, say } of all) {
     try {
       const s = await page?.evaluate(() => window.__bot?.status());
-      if (s?.joiner) say(s.room ? `${s.as} in ${s.room}, ${s.phase}: ${s.players.join(', ')}` : s.doing === 'resting' ? `resting until ${s.until}` : 'looking for a host waiting alone');
-      else if (s?.host) say(`${s.host} (until ${s.until}), room ${s.code} (${s.status}), ${s.phase}: ${s.players.join(', ')}${s.spectators ? `, ${s.spectators} watching` : ''}`);
-      else if (s) say(`no room open; ${s.listed}`);
+      if (s?.as === 'host') say(`${s.name} hosts (until ${s.until}), room ${s.code} (${s.status}), ${s.phase}: ${s.players.join(', ')}${s.spectators ? `, ${s.spectators} watching` : ''}`);
+      else if (s?.as === 'guest') say(s.room ? `${s.name} in ${s.room}, ${s.phase}: ${s.players.join(', ')}` : `${s.name} looking for a room; ${s.listed}`);
+      else if (s) say(`nobody on (someone joins from ${s.back}); ${s.listed}`);
     } catch {
       /* the page is between loads */
     }
@@ -261,9 +276,9 @@ const status = setInterval(async () => {
 async function stop() {
   if (stopping) return;
   stopping = true;
-  log(rooms ? (rooms > 1 ? 'closing the rooms' : 'closing the room') : 'leaving');
+  log('leaving');
   clearInterval(status);
-  if (siblings) clearInterval(siblings);
+  if (team) clearInterval(team);
   // Each room tells everyone it closed, instead of leaving them to reconnect to nothing.
   await Promise.all(all.map(({ page }) => page?.evaluate(() => window.__bot?.close()).catch(() => {})));
   await new Promise((r) => setTimeout(r, 800));
