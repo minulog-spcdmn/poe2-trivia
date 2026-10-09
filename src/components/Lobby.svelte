@@ -1,6 +1,6 @@
 <script lang="ts">
   import { flip } from 'svelte/animate';
-  import { fly, scale } from 'svelte/transition';
+  import { fade, fly, scale } from 'svelte/transition';
   import { session } from '../lib/session.svelte';
   import { MAX_PLAYERS, RACE_DEFAULT_TIMER, TIMER_STEPS, difficultyOf, rulesFor, type Difficulty, type GameMode } from '../lib/game';
   import { DIFFICULTY_NAMES, describe } from '../lib/difficultyText';
@@ -13,10 +13,13 @@
   import Avatar from './Avatar.svelte';
   import PlayerName from './PlayerName.svelte';
   import { backdropShadow } from '../lib/backdropShadow';
+  import { kickConfirm } from '../lib/kick';
   import { creatorArrived, glyphLanded, playerArrived, refuse, twinkle } from '../lib/fx/moments';
   import { onMount } from 'svelte';
   import { categoryIcons } from '../lib/ui';
   import { measure } from '../lib/iconFit.svelte';
+  import { dock, phone } from '../lib/layout';
+  import { portal } from '../lib/portal';
 
   const TARGETS = [5, 10, 15, 20];
   const MODES: { id: GameMode; name: string; beta?: boolean }[] = [
@@ -95,15 +98,31 @@
 
   let copyBtn = $state<HTMLButtonElement>();
 
+  // Online, removing bars them for the rest of the session, so it takes two
+  // clicks, as the scoreboard's kick does (lib/kick): the same button asks
+  // "Kick?" for a few seconds, and a double click doesn't count as both.
+  let confirming = $state<string | null>(null);
+  const kicker = kickConfirm((id) => (confirming = id));
+  onMount(() => kicker.dispose);
+  function removePlayer(id: string) {
+    if (local) session.dispatch({ type: 'remove', playerId: id });
+    else if (kicker.click(id)) session.kick(id);
+  }
+  /** Phones hand the link to the share sheet instead of the clipboard (see copy), so the button says so. */
+  const canShare = typeof navigator !== 'undefined' && !!navigator.share && matchMedia('(pointer: coarse)').matches;
+
+  let copiedTimer: ReturnType<typeof setTimeout> | undefined;
+  onMount(() => () => clearTimeout(copiedTimer));
   async function copy() {
     if (copyBtn) twinkle(copyBtn);
     try {
-      if (navigator.share && matchMedia('(pointer: coarse)').matches) {
+      if (canShare) {
         await navigator.share({ title: 'PoE2.Quest', text: `Join my PoE2 trivia room ${session.code}`, url: inviteLink });
       } else {
         await navigator.clipboard.writeText(inviteLink);
         copied = true;
-        setTimeout(() => (copied = false), 1800);
+        clearTimeout(copiedTimer);
+        copiedTimer = setTimeout(() => (copied = false), 1800);
       }
     } catch {
       /* dismissed */
@@ -179,6 +198,10 @@
   const delveCrowded = $derived(local && s.settings.mode === 'delve' && s.players.length > 1);
   /** Delve together: a room of two or more online plays as a team. */
   const together = $derived(!local && s.players.length > 1);
+  const full = $derived(s.players.length >= MAX_PLAYERS);
+  const alone = $derived(s.players.length < 2);
+  /** Nobody new can come in: locked, or every seat taken. */
+  const closed = $derived(!!s.settings.locked || full);
   const canStart = $derived(s.players.length >= 1 && !delveCrowded);
   /** Spectators left over when the last game filled every seat. */
   const waiting = $derived(s.spectators ?? []);
@@ -188,83 +211,128 @@
   const lockout = $derived(rulesFor(s.settings).lockout);
 </script>
 
-<div class="lobby">
-  {#if !local}
-    <section class="room" in:fly={{ y: -20, duration: 500 }}>
-      <span class="label">Room code</span>
-      <div class="code" class:hidden={session.hideCode} aria-label={session.hideCode ? 'Room code hidden' : `Room code ${session.code}`}>
-        <span class="glyphs" oncopy={copyCode}>
-          {#each session.code.split('') as ch, i (i)}
-            <span class="glyph" use:landing={i} style:animation-delay="{i * 80}ms" style:--i={i}>{session.hideCode ? '•' : ch}</span>
-          {/each}
-        </span>
-        <button
-          class="eye"
-          onclick={() => session.setHideCode(!session.hideCode)}
-          title={session.hideCode ? 'Show the room code' : 'Hide the room code (for streaming)'}
-          aria-label={session.hideCode ? 'Show room code' : 'Hide room code'}
-        >
-          {#if session.hideCode}
-            <svg viewBox="0 0 24 24"><path d="M3 3l18 18M10.6 5.1A10 10 0 0 1 12 5c6 0 10 7 10 7a17 17 0 0 1-3.2 3.9M6.1 6.1C3.5 8 2 12 2 12s4 7 10 7a9.7 9.7 0 0 0 5.9-2.1M9.9 9.9a3 3 0 0 0 4.2 4.2" /></svg>
-          {:else}
-            <svg viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z" /><circle cx="12" cy="12" r="3" /></svg>
-          {/if}
-        </button>
-      </div>
-      <div class="room-actions">
-        <button class="btn small" bind:this={copyBtn} onclick={copy}>
-          {copied ? 'Link copied!' : 'Copy invite link'}
-        </button>
-        {#if isHost}
-          <div class="visibility" role="group" aria-label="Room visibility">
-            <button class:on={!s.settings.public} onclick={() => setPublic(false)} title="Only people with the code can join">
-              Private
-            </button>
-            <button class:on={!!s.settings.public} onclick={() => setPublic(true)} title="Listed under Open rooms on the start page">
-              Public
-            </button>
-          </div>
-          <button
-            class="lock"
-            class:on={!!s.settings.locked}
-            onclick={() => setLocked(!s.settings.locked)}
-            title={s.settings.locked ? 'Let new players join again' : 'Stop new players from joining or watching'}
-          >
-            {#if s.settings.locked}
-              <svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></svg>
-              Locked
-            {:else}
-              <svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 7.5-2" /></svg>
-              Lock
-            {/if}
-          </button>
-        {:else}
-          <span class="vis-tag">{s.settings.public ? 'Public room' : 'Private room'}{s.settings.locked ? ' · locked' : ''}</span>
-        {/if}
-      </div>
-      {#if isHost}
-        <p class="vis-hint muted">
-          {#if s.settings.locked}
-            Room locked: nobody new can join or watch. Players already in the game can still reconnect.
-          {:else if s.settings.public}
-            Anyone can find this room under “Open rooms”.
-          {:else}
-            Only people with the code or link can join.
-          {/if}
-        </p>
-      {/if}
-      <p class="ip-note muted">
-        Players connect directly to each other, so everyone in a room can see each other's IP address. Only play with people you're comfortable sharing that with.
-      </p>
-    </section>
+{#snippet startRow()}
+  {#if isHost}
+    <!-- Beside the start, the one thing to know before pressing it. -->
+    {#if delveCrowded}
+      <p class="go-note warn">Delve on one device is for one player. Remove the others, or host a room.</p>
+    {:else if local && !s.players.length}
+      <p class="go-note">Add the first exile to begin.</p>
+    {:else if !local && s.players.length < 2}
+      <p class="go-note">You can begin alone, or wait for your party.</p>
+    {:else}
+      <p class="go-note"><b class="num">{s.players.length}</b> {s.players.length === 1 ? 'exile' : 'exiles'} ready</p>
+    {/if}
+    <!-- One gold button at a time: alone in an online room, inviting (above) is the next step. -->
+    <button class="btn big" class:primary={!(alone && !local && !closed)} disabled={!canStart} onclick={start}>{delve ? 'Begin the descent' : 'Begin the hunt'}</button>
+  {:else}
+    <p class="muted waiting"><span class="pulse"></span>Waiting for the host to start…</p>
   {/if}
+{/snippet}
 
+<div class="lobby">
   <div class="cols">
     <section class="panel players" use:backdropShadow={{ fill: 'linear' }} in:fly={{ x: -30, duration: 500, delay: 100 }}>
       <header>
         <h2>Party</h2>
         <span class="count">{s.players.length} / {MAX_PLAYERS}</span>
       </header>
+      {#if !local}
+        <!-- The room code and link are how the party grows, so they head it. -->
+        <div class="room">
+          <div class="room-head">
+            <span class="label">Room code</span>
+            <button
+              class="eye"
+              onclick={() => session.setHideCode(!session.hideCode)}
+              title={session.hideCode ? 'Show the room code' : 'Hide the room code (for streaming)'}
+              aria-label={session.hideCode ? 'Show room code' : 'Hide room code'}
+            >
+              {#if session.hideCode}
+                <svg viewBox="0 0 24 24"><path d="M3 3l18 18M10.6 5.1A10 10 0 0 1 12 5c6 0 10 7 10 7a17 17 0 0 1-3.2 3.9M6.1 6.1C3.5 8 2 12 2 12s4 7 10 7a9.7 9.7 0 0 0 5.9-2.1M9.9 9.9a3 3 0 0 0 4.2 4.2" /></svg>
+              {:else}
+                <svg viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z" /><circle cx="12" cy="12" r="3" /></svg>
+              {/if}
+            </button>
+          </div>
+        <div class="code" class:hidden={session.hideCode} aria-label={session.hideCode ? 'Room code hidden' : `Room code ${session.code}`}>
+          <span class="glyphs" oncopy={copyCode}>
+            {#each session.code.split('') as ch, i (i)}
+              <span class="glyph" use:landing={i} style:animation-delay="{i * 80}ms" style:--i={i}>{session.hideCode ? '•' : ch}</span>
+            {/each}
+          </span>
+        </div>
+          <!-- A locked or full room takes nobody new: the link isn't offered then, and the button says why. -->
+          <button class="btn invite" class:primary={alone && isHost && !closed} bind:this={copyBtn} onclick={copy} disabled={closed}>
+            {s.settings.locked ? 'Room locked' : full ? 'Room full' : copied ? 'Link copied!' : canShare ? 'Share invite link' : 'Copy invite link'}
+          </button>
+          <div class="room-actions">
+            {#if isHost}
+              <span class="label who">Who can join</span>
+              <div class="visibility" role="group" aria-label="Room visibility">
+                <button class:on={!s.settings.public} onclick={() => setPublic(false)} title="Only people with the code can join">
+                  Private
+                </button>
+                <button class:on={!!s.settings.public} onclick={() => setPublic(true)} title="Listed under Open rooms on the start page">
+                  Public
+                </button>
+              </div>
+              <button
+                class="lock"
+                class:on={!!s.settings.locked}
+                onclick={() => setLocked(!s.settings.locked)}
+                title={s.settings.locked ? 'Let new players join again' : 'Stop new players from joining or watching'}
+              >
+                {#if s.settings.locked}
+                  <svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></svg>
+                  Locked
+                {:else}
+                  <svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 7.5-2" /></svg>
+                  Lock
+                {/if}
+              </button>
+            {:else}
+              <span class="vis-tag">{s.settings.public ? 'Public room' : 'Private room'}{s.settings.locked ? ' · locked' : ''}</span>
+            {/if}
+          </div>
+          {#if isHost}
+            <p class="vis-hint muted">
+              {#if s.settings.locked}
+                Room locked: nobody new can join or watch. Players already in the game can still reconnect.
+              {:else if full}
+                Room full: a seat opens when someone leaves.
+              {:else if s.settings.public}
+                Anyone can find this room under “Open rooms”.
+              {:else}
+                Only people with the code or link can join.
+              {/if}
+            </p>
+          {/if}
+          <p class="ip-note muted">
+            Players connect directly to each other, so everyone in a room can see each other's IP address. Only play with people you're comfortable sharing that with.
+          </p>
+        </div>
+      {:else}
+        <!-- On one device the party grows by name, here at the top where the field stays put as the list grows under it. -->
+        <div class="room">
+          {#if s.players.length < MAX_PLAYERS}
+            <form class="add" onsubmit={addLocal}>
+              <input
+                class="field"
+                class:shake={nameError}
+                bind:value={newName}
+                maxlength={MAX_NAME}
+                autocomplete="off"
+                spellcheck="false"
+                placeholder={s.players.length ? 'Add another exile' : 'Add the first exile'}
+              />
+              <button class="btn" type="submit" disabled={nameTooShort(newName)}>Add</button>
+            </form>
+          {/if}
+          <p class="vis-hint muted">Pass the device around; each player answers on their own turn.</p>
+        </div>
+      {/if}
+      <!-- The list last: it is the one part of the panel that grows. -->
       <ul>
         {#each s.players as p (p.id)}
           <li use:arriving={p.name} animate:flip={{ duration: 300 }} in:fly={{ x: -20, duration: 350 }} out:scale={{ duration: 200, start: 0.9 }}>
@@ -276,10 +344,11 @@
             {#if isHost && p.id !== s.hostId}
               <button
                 class="remove"
+                class:confirm={confirming === p.id}
                 title="Remove {p.name}"
                 aria-label="Remove {p.name}"
-                onclick={() => (local ? session.dispatch({ type: 'remove', playerId: p.id }) : session.kick(p.id))}
-                >×</button
+                onclick={() => removePlayer(p.id)}
+                >{confirming === p.id ? 'Kick?' : '×'}</button
               >
             {/if}
           </li>
@@ -290,34 +359,16 @@
           Waiting for a free seat: {waiting.map((o) => o.name + (o.id === session.myPlayerId ? ' (you)' : '')).join(', ')}
         </p>
       {/if}
-
-      {#if local}
-        {#if s.players.length < MAX_PLAYERS}
-          <form class="add" onsubmit={addLocal}>
-            <input
-              class="field"
-              class:shake={nameError}
-              bind:value={newName}
-              maxlength={MAX_NAME}
-              autocomplete="off"
-              spellcheck="false"
-              placeholder={s.players.length ? 'Add another exile' : 'Add the first exile'}
-            />
-            <button class="btn" type="submit" disabled={nameTooShort(newName)}>Add</button>
-          </form>
-        {/if}
-        <p class="hint muted">Pass the device around; each player answers on their own turn.</p>
-      {:else if s.players.length < 2}
-        <p class="hint muted waiting"><span class="pulse"></span>Waiting for exiles to join…</p>
+      {#if !local && s.players.length < 2}
+        <p class="hint muted waiting"><span class="pulse"></span>{isHost ? 'Nobody else yet. Send your party the code or the link.' : 'Waiting for more exiles to join…'}</p>
       {/if}
     </section>
 
     <section class="panel settings" use:backdropShadow={{ fill: 'linear' }} in:fly={{ x: 30, duration: 500, delay: 200 }}>
-      <header><h2>Rules</h2></header>
+      <header><h2>Game</h2></header>
 
       <div class="setting">
-        <span class="label" id="mode-label">Mode</span>
-        <div class="modes" role="radiogroup" aria-labelledby="mode-label" aria-describedby="mode-blurb" tabindex={-1} onkeydown={modeKeys}>
+        <div class="modes" role="radiogroup" aria-label="Mode" aria-describedby="mode-blurb" tabindex={-1} onkeydown={modeKeys}>
           {#each MODES as m (m.id)}
             {@const on = s.settings.mode === m.id}
             <button
@@ -330,9 +381,9 @@
               tabindex={on ? 0 : -1}
               data-mode={m.id}
               aria-label={m.beta ? `${m.name}, beta` : undefined}
-              disabled={!isHost}
+              disabled={!isHost && !on}
               title={offline(m.id) ? 'Race needs every player on their own device' : undefined}
-              onclick={(e) => pickMode(m.id, e.currentTarget)}
+              onclick={(e) => isHost && pickMode(m.id, e.currentTarget)}
             >
               <ModeIcon mode={m.id} />
               <b>{m.name}</b>
@@ -363,8 +414,10 @@
       {#if delve}
         <DelveRules {deepest} last={lastRun} label={deepestLabel} {met} />
       {:else}
-        <div class="setting">
+        <!-- One row per setting: its name, then its choices (a guest, who can't change them, reads the value). -->
+        <div class="setting row">
           <span class="label">Points to win</span>
+          {#if !isHost}<b class="val num">{s.settings.targetScore}</b>{:else}
           <div class="seg">
             {#each TARGETS as t (t)}
               <button class:on={s.settings.targetScore === t} disabled={!isHost} onclick={() => setTarget(t)}>{t}</button>
@@ -375,10 +428,12 @@
               <button disabled={!isHost || s.settings.targetScore >= 50} onclick={() => setTarget(s.settings.targetScore + 1)} aria-label="More points">+</button>
             </span>
           </div>
+          {/if}
         </div>
 
-        <div class="setting">
+        <div class="setting row">
           <span class="label">Difficulty</span>
+          {#if !isHost}<b class="val">{DIFFICULTY_NAMES[difficulty]}</b>{:else}
           <div class="seg">
             {#each DIFFS as d (d.id)}
               {@const edit = d.id === 'custom' && difficulty === 'custom' && isHost}
@@ -396,6 +451,7 @@
               </button>
             {/each}
           </div>
+          {/if}
           <!-- Every description sits in the same cell, so switching never changes the panel's height. -->
           <div class="blurbs">
             {#each DIFFS as d (d.id)}
@@ -406,15 +462,17 @@
           </div>
         </div>
 
-        <div class="setting">
+        <div class="setting row">
           <span class="label">Time per question</span>
+          {#if !isHost}<b class="val">{s.settings.timer === 0 ? 'No limit' : `${s.settings.timer}s`}</b>{:else}
           <div class="seg">
             {#each TIMER_STEPS as t (t)}
-              <button class:on={s.settings.timer === t} disabled={!isHost || (race && t === 0)} onclick={() => setTimer(t)}>
+              <button class:on={s.settings.timer === t} disabled={!isHost || (race && t === 0)} title={race && t === 0 ? 'Race needs a time limit' : undefined} onclick={() => setTimer(t)}>
                 {t === 0 ? 'Off' : `${t}s`}
               </button>
             {/each}
           </div>
+          {/if}
         </div>
       {/if}
 
@@ -422,11 +480,9 @@
       {#if !delve}
       <ul class="rules muted">
         {#if race}
-          <li>Everyone answers the same question; the first right answer scores a point.</li>
           <li>A wrong answer costs a point and sits you out until the next question.</li>
           <li>First to <span class="num">{s.settings.targetScore}</span> wins.</li>
         {:else}
-          <li>On your turn, pick one of three categories and name the item.</li>
           <li>
             A right answer scores a point{#if lockout > 0}; the category stays locked for your next <span class="num">{lockout}</span> turns{/if}.
           </li>
@@ -450,16 +506,14 @@
         </div>
       {/if}
 
-      <div class="start">
-        {#if isHost}
-          <button class="btn primary big" disabled={!canStart} onclick={start}>{delve ? 'Begin the descent' : 'Begin the hunt'}</button>
-          {#if delveCrowded}
-            <p class="muted crowded">Delve on one device is for one player. Remove the others, or host a room.</p>
-          {/if}
-        {:else}
-          <p class="muted waiting"><span class="pulse"></span>Waiting for the host to start…</p>
-        {/if}
-      </div>
+      <!-- The start ends the rules. On phones, where they run long, it is pinned
+           to the bottom of the screen like the reveal's Next bar (lib/layout's dock).
+           A guest's waiting line has nothing to tap, so it stays in the panel. -->
+      {#if phone.current && isHost}
+        <div class="dock" use:portal use:dock in:fade={{ duration: 200 }} out:fade|global={{ duration: 180 }}>{@render startRow()}</div>
+      {:else}
+        <div class="start">{@render startRow()}</div>
+      {/if}
     </section>
   </div>
 </div>
@@ -480,10 +534,6 @@
     align-items: center;
     gap: 0.7rem;
     flex-wrap: wrap;
-    justify-content: center;
-  }
-  .code {
-    position: relative;
   }
   .code.hidden .glyph {
     color: var(--gold-lo);
@@ -500,10 +550,6 @@
     transition: all 0.2s;
   }
   .eye {
-    position: absolute;
-    right: -46px;
-    top: 50%;
-    translate: 0 -50%;
     width: 34px;
     height: 34px;
     justify-content: center;
@@ -543,10 +589,8 @@
     height: 13px;
   }
   .ip-note {
-    max-width: 520px;
     margin: 0.2rem 0 0;
     font-size: 0.82rem;
-    text-align: center;
     opacity: 0.8;
   }
   .visibility {
@@ -584,17 +628,36 @@
     font-size: 0.9rem;
     font-style: italic;
   }
+  /* Inside the party's panel now: the code across its width, the link under it. */
   .room {
     display: flex;
     flex-direction: column;
-    align-items: center;
     gap: 0.6rem;
-    margin-bottom: 1.8rem;
+    margin-bottom: 1rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--line);
+  }
+  .room-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .room-head .label {
+    margin: 0;
+  }
+  .room .who {
+    margin: 0 auto 0 0;
   }
   .code,
   .glyphs {
     display: flex;
     gap: 0.5rem;
+    width: 100%;
+  }
+  /* The boxes share the panel's width, so the letters are sized from it (six
+     boxes, five gaps), never wider than a box: an M or a W must not be clipped. */
+  .glyphs {
+    container-type: inline-size;
   }
   /* One click or long press selects the whole code. */
   .glyphs {
@@ -602,13 +665,14 @@
     user-select: all;
   }
   .glyph {
-    width: clamp(46px, 11vw, 64px);
-    height: clamp(58px, 14vw, 78px);
+    flex: 1;
+    min-width: 0;
+    height: clamp(58px, 14vw, 72px);
     display: grid;
     place-items: center;
     font-family: var(--font-cinzel);
     font-weight: 900;
-    font-size: clamp(1.8rem, 6vw, 2.6rem);
+    font-size: min(2.6rem, (100cqi - 5 * 0.5rem) / 6 * 0.74);
     color: var(--gold-hi);
     background: linear-gradient(180deg, #221a11, #0d0a07);
     border: 1px solid var(--gold-lo);
@@ -730,6 +794,19 @@
     font-size: 1.2rem;
     line-height: 1;
   }
+  /* Armed, as the scoreboard's kick: red, asking. */
+  .remove.confirm {
+    width: auto;
+    min-width: 26px;
+    padding: 0 0.6em;
+    border-radius: 13px;
+    border-color: rgba(224, 85, 63, 0.5);
+    background: var(--bad);
+    color: #fff;
+    font-family: var(--font-display);
+    font-size: 0.75rem;
+    font-weight: 700;
+  }
   .remove:hover {
     color: var(--bad);
     border-color: rgba(224, 85, 63, 0.4);
@@ -780,19 +857,43 @@
   .setting {
     margin-bottom: 1.2rem;
   }
+  /* A setting on one line: its name, then its choices; a description runs underneath. */
+  .setting.row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: 0.4rem 1rem;
+    margin-bottom: 0;
+    padding: 0.8rem 0;
+    border-top: 1px solid rgba(59, 48, 36, 0.6);
+  }
+  .setting.row .label {
+    margin: 0;
+  }
+  .setting.row .blurbs {
+    grid-column: 1 / -1;
+    margin: 0;
+  }
+  .val {
+    font-family: var(--font-display);
+    color: var(--gold-hi);
+  }
   .modes {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
     gap: 0.5rem;
   }
+  /* Icon and name side by side: the same buttons, half as tall. */
   .mode {
     position: relative;
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
     align-items: center;
-    gap: 0.35rem;
+    justify-content: center;
+    gap: 0.55rem;
     min-width: 0;
-    padding: 0.7rem 0.4rem 0.6rem;
+    min-height: 52px;
+    padding: 0.5rem 0.4rem;
     color: var(--gold);
     background: rgba(0, 0, 0, 0.35);
     border: 1px solid var(--line);
@@ -1013,11 +1114,20 @@
     display: inline-flex;
     align-items: center;
     gap: 0.3rem;
-    margin-left: auto;
   }
+  /* Round, like the panel's other small icon buttons (the code's eye, the open rooms' refresh). */
   .stepper button {
-    min-width: 34px;
-    padding: 0.45rem 0;
+    width: 34px;
+    min-width: 0;
+    height: 34px;
+    padding: 0;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    font-family: var(--font-body);
+    font-size: 1.1rem;
+    font-weight: 400;
+    line-height: 1;
   }
   .stepper b {
     min-width: 2ch;
@@ -1040,24 +1150,89 @@
     font-size: 0.7em;
   }
 
+  /* The start closes the panel: what to know on the left, the button on the right. */
   .start {
     display: flex;
-    flex-direction: column;
     align-items: center;
-    gap: 0.6rem;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-top: 1.2rem;
+    padding-top: 1.2rem;
+    border-top: 1px solid var(--line);
   }
-  .crowded {
+  .start .waiting {
+    margin: 0 auto;
+  }
+  .start .btn {
+    flex: none;
+  }
+  .go-note {
     margin: 0;
     font-style: italic;
+    color: var(--muted);
+  }
+  .go-note .num {
+    font-style: normal;
+    color: var(--gold-hi);
+  }
+  .go-note.warn {
+    color: #eab3a3;
+  }
+  .dock .go-note {
     text-align: center;
   }
+  /* As the reveal's Next bar on phones (QuestionView's .dock). */
+  .dock {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+    padding: 0.6rem max(1rem, env(safe-area-inset-right)) max(0.6rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
+    background-color: var(--pinned-bg);
+    border-top: var(--pinned-line);
+    box-shadow: 0 -8px var(--pinned-shadow);
+  }
 
+  /* Touch screens: 44px to tap, as the scoreboard's controls on phones. */
+  @media (pointer: coarse) {
+    .invite,
+    .visibility button,
+    .lock {
+      min-height: 44px;
+    }
+    .remove.confirm {
+      min-width: 44px;
+      border-radius: 22px;
+    }
+    .remove,
+    .eye,
+    .stepper button {
+      width: 44px;
+      height: 44px;
+    }
+  }
   @media (max-width: 760px) {
     .cols {
       grid-template-columns: 1fr;
     }
   }
   @media (max-width: 520px) {
+    /* The label on its own line, so Private, Public and Lock share the next. */
+    .room .who {
+      width: 100%;
+    }
+    .setting.row {
+      grid-template-columns: 1fr;
+    }
+    .mode {
+      flex-direction: column;
+      gap: 0.25rem;
+    }
     .code {
       align-items: center;
     }
@@ -1066,14 +1241,7 @@
       gap: 0.35rem;
     }
     .glyph {
-      width: 38px;
-      height: 50px;
-      font-size: 1.6rem;
-    }
-    .eye {
-      position: static;
-      translate: none;
-      margin-left: 0.2rem;
+      height: 54px;
     }
     .seg > button {
       min-width: 40px;

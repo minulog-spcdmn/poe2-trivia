@@ -9,7 +9,7 @@
   import Phial from './Phial.svelte';
   import Inventory from './Inventory.svelte';
   import { backdropShadow } from '../lib/backdropShadow';
-  import { tick, untrack, type Snippet } from 'svelte';
+  import { onDestroy, tick, untrack, type Snippet } from 'svelte';
   import { fxActive, onFxChange, type Handle } from '../lib/fx/core';
   import {
     FILL_SPAN,
@@ -36,6 +36,7 @@
   import { flareStrike } from '../lib/flareBurn';
   import { burnsBlue, heatOf, streakOf } from '../lib/fx/streaks';
   import { phone } from '../lib/layout';
+  import { kickConfirm } from '../lib/kick';
   import { cavesIn, fellAt, inventoryOf, isGroupRun, livesOf, reviveProblem, shownDepth, type FindKind, type Inventory as Carried, type ItemKind } from '../lib/delve';
   import { inventoryChanges, itemsBlown } from '../lib/delveSession';
   import { CASINGS, WARD_BREAK, WARD_NEXT, momentOf, type InventoryMoment } from '../lib/inventoryArt';
@@ -609,25 +610,13 @@
     };
   }
 
-  /** How long an armed kick ignores clicks, so a double click can't confirm it. */
-  const KICK_SETTLE_MS = 350;
-  // Kicking takes two clicks so a stray tap doesn't remove anyone. The second
-  // only counts once the first has had a moment to show: a double click (or a
-  // double tap) would otherwise arm and confirm in one go.
+  // Kicking takes two clicks (lib/kick), so neither a stray tap nor a double
+  // click removes anyone.
   let confirming = $state<string | null>(null);
-  let confirmTimer: ReturnType<typeof setTimeout> | null = null;
-  let armedAt = 0;
+  const kicker = kickConfirm((id) => (confirming = id));
+  onDestroy(kicker.dispose);
   function kick(id: string) {
-    if (confirming !== id) {
-      confirming = id;
-      armedAt = performance.now();
-      if (confirmTimer) clearTimeout(confirmTimer);
-      confirmTimer = setTimeout(() => (confirming = null), 3000);
-      return;
-    }
-    if (performance.now() - armedAt < KICK_SETTLE_MS) return;
-    confirming = null;
-    session.kick(id);
+    if (kicker.click(id)) session.kick(id);
   }
 
   /**
