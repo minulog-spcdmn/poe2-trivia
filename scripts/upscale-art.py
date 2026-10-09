@@ -13,7 +13,8 @@
 # tests the mix at 30% beat 50% and 70% (and the plain model, other models,
 # and the original as it was) on 35 items, small and big alike. Small items
 # are drawn the most enlarged, so they take more of the model (MIX): for
-# one-cell items, 75% beat 50% 21 to 3 in a blind test on 24 of them. AVIF at
+# one-cell items, 75% beat 50% 21 to 3 in a blind test on 24 of them, but
+# the precursor tablets' stone came out too smooth at 75% (MIX_GROUP). AVIF at
 # QUALITY came out a third smaller than WebP at 90 and closer to the
 # unencoded picture (SSIM, over 48 items).
 #
@@ -26,6 +27,7 @@
 # Run:
 #   .venv-art/bin/python scripts/upscale-art.py [--all] [ids...]
 
+import json
 import os
 import sys
 
@@ -45,6 +47,8 @@ ART_SCALE = 2
 # original: by the item's size in inventory cells (CELL px each, about), for
 # one cell, up to 2 x 2, and larger.
 MIX = {'small': 0.75, 'medium': 0.4, 'large': 0.3}
+# Groups (src/data/items.json) that take their own share whatever their size.
+MIX_GROUP = {'Tablets': 0.5}
 CELL = 104
 QUALITY = 80
 # The smaller copies' longest sides, px (keep in step with ITEM_THUMBS in src/lib/ui-paths.ts).
@@ -126,16 +130,30 @@ def upscale(net, src, out):
     big = Image.fromarray(np.dstack([rgb, alpha]), 'RGBA')
     size = (im.width * ART_SCALE, im.height * ART_SCALE)
     model = np.asarray(big.resize(size, Image.LANCZOS)).astype(np.float32)
-    save_all(mix(model, im), out)
+    save_all(mix(model, im, group_of(os.path.splitext(os.path.basename(out))[0])), out)
 
 
-def mix_of(w, h):
-    """How much of the model goes into an item's mix, by its size (the original art's, px): one cell, up to 2 x 2 (1 x 2, 2 x 1, 2 x 2), or larger."""
+_groups = None
+
+
+def group_of(iid):
+    """An item's group, from src/data/items.json."""
+    global _groups
+    if _groups is None:
+        with open(os.path.join(ROOT, 'src', 'data', 'items.json')) as f:
+            _groups = {it['id']: it['group'] for it in json.load(f)}
+    return _groups.get(iid)
+
+
+def mix_of(w, h, group=None):
+    """How much of the model goes into an item's mix: its group's own share (MIX_GROUP), else by its size (the original art's, px): one cell, up to 2 x 2 (1 x 2, 2 x 1, 2 x 2), or larger."""
+    if group in MIX_GROUP:
+        return MIX_GROUP[group]
     cw, ch = max(1, round(w / CELL)), max(1, round(h / CELL))
     return MIX['small'] if cw == ch == 1 else MIX['medium'] if cw <= 2 and ch <= 2 else MIX['large']
 
 
-def mix(model, im):
+def mix(model, im, group=None):
     """The model's picture (float RGBA at ART_SCALE) mixed with the original enlarged smoothly, by mix_of; the model's alpha, whose edges are crisper.
 
     Each picture's colour counts by how opaque it is there: the original is
@@ -144,7 +162,7 @@ def mix(model, im):
     """
     base = np.asarray(im.resize((model.shape[1], model.shape[0]), Image.BICUBIC)).astype(np.float32)
     ma, ba = model[..., 3:] / 255, base[..., 3:] / 255
-    t = mix_of(*im.size)
+    t = mix_of(*im.size, group)
     weight = t * ma + (1 - t) * ba
     rgb = (t * model[..., :3] * ma + (1 - t) * base[..., :3] * ba) / np.maximum(weight, 1e-6)
     rgb = np.where(weight > 1e-6, rgb, model[..., :3])

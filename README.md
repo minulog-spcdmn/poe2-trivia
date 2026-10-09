@@ -815,7 +815,8 @@ ring) and lossy, and the game draws it bigger than that. The site serves
 copies upscaled with Real-ESRGAN (x4plus, scaled down to 2× and mixed with
 the smoothly enlarged original, which beat other models and mixes in blind
 tests: 75% of the model for one-cell items, which are drawn the most
-enlarged, 40% up to 2 × 2 and 30% for larger ones) from `public/items/`, as AVIF (a third smaller than WebP, and
+enlarged, except precursor tablets at 50%, whose stone it smooths too much;
+40% up to 2 × 2 and 30% for larger ones) from `public/items/`, as AVIF (a third smaller than WebP, and
 closer to the unencoded picture). Small spots load smaller copies:
 `public/items/128/` for thumbnails, and `128/` or `256/` by screen sharpness
 for the codex's tiles and the start page (`itemThumb`, `itemSrcset` in
