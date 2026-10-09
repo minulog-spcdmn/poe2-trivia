@@ -1,67 +1,46 @@
-// The room bot's host: keeps a public room open, starts games for whoever
-// joins, plays its own turns (brain.ts) and tidies up after games. It drives
-// the session as the host's own screens would, through dispatch, so every
-// rule (and the handicap on the host's race answers) applies to it too.
+// The room bot's host: one of a cast of made-up players (identities.ts)
+// hosts a public room for a while, starts games for whoever joins, plays its
+// own turns (brain.ts), and calls it a day after a game; a while later
+// someone else opens a room. It drives the session as the host's own screens
+// would, through dispatch, so every rule (and the handicap on the host's race
+// answers) applies to it too.
 
 import { engine, session } from '../lib/session.svelte';
-import { isDifficulty, snapTimer, type Difficulty, type GameMode, type GameState, type Question } from '../lib/game';
-import { cleanName } from '../lib/names';
+import type { GameState, Question } from '../lib/game';
 import { readStored, writeStored } from '../lib/storage';
-import { answerDelay, knowChance, makePersona, pickCategory, pickDelay, wrongPick, type Ask, type Persona } from './brain';
-
-export interface BotConfig {
-  name: string;
-  mode: Extract<GameMode, 'turns' | 'race'>;
-  difficulty: Difficulty;
-  target: number;
-  /** Seconds per question (never 0: a room nobody can stall). */
-  timer: number;
-}
-
-export const DEFAULT_CONFIG: BotConfig = { name: 'Exile Bot', mode: 'turns', difficulty: 'cruel', target: 10, timer: 32 };
-
-/** The config from the page's address (?name=&mode=&difficulty=&target=&timer=), anything off falling back to the default. */
-export function configFrom(search: string): BotConfig {
-  const q = new URLSearchParams(search);
-  const c = { ...DEFAULT_CONFIG };
-  const name = cleanName(q.get('name') ?? '');
-  if (name) c.name = name;
-  const mode = q.get('mode');
-  if (mode === 'turns' || mode === 'race') c.mode = mode;
-  const difficulty = q.get('difficulty');
-  // Custom has knobs of its own to set, which the bot doesn't.
-  if (isDifficulty(difficulty) && difficulty !== 'custom') c.difficulty = difficulty;
-  const target = Number(q.get('target'));
-  if (Number.isInteger(target) && target >= 1 && target <= 50) c.target = target;
-  const timer = snapTimer(Number(q.get('timer')));
-  if (timer > 0) c.timer = timer;
-  return c;
-}
+import { answerDelay, knowChance, pickCategory, pickDelay, wrongPick, type Ask } from './brain';
+import { breakLength, identityOf, nextName, shiftLength, type Identity } from './identities';
 
 const TICK_MS = 200;
-/** A game starts this long after the last change to who is waiting in the lobby. */
-const LOBBY_WAIT_MS = 15000;
-/** After a game, the scores stay up this long before the next one starts. */
-const OVER_WAIT_MS = 12000;
 /** Everyone else gone mid-game this long (they may only be reloading): back to the lobby. */
 const ALONE_MS = 40000;
 /** The room not open (or lost) this long: the page reloads, reopening the saved room or a new one. */
 const STUCK_MS = 60000;
+/** Past the end of their time, people waiting or playing get this long before the host goes anyway. */
+const OVERTIME_MS = 30 * 60000;
 
 const log = (...args: unknown[]) => console.log('[bot]', ...args);
+const between = (lo: number, hi: number) => Math.round(lo + Math.random() * (hi - lo));
 
-/** The persona this bot was given the first time, so a reload doesn't make it someone else. */
-function loadPersona(): Persona {
-  try {
-    const p = JSON.parse(readStored('persona') ?? '') as Persona;
-    if (typeof p.skill === 'number' && typeof p.pace === 'number' && engine.categories.every((c) => typeof p.affinity?.[c] === 'number')) return p;
-  } catch {
-    /* none yet, or from an older build */
-  }
-  const p = makePersona(engine.categories, Math.random);
-  writeStored('persona', JSON.stringify(p));
-  return p;
+/** Who is on (`on`, until `until`), or when the next one comes (`backAt`); `recent`: who came on lately. */
+interface Shift {
+  on: string | null;
+  until: number;
+  backAt: number;
+  recent: string[];
 }
+
+function loadShift(): Shift | null {
+  try {
+    const s = JSON.parse(readStored('shift') ?? '') as Shift;
+    if ((s.on === null || typeof s.on === 'string') && typeof s.until === 'number' && typeof s.backAt === 'number' && Array.isArray(s.recent)) return s;
+  } catch {
+    /* none yet */
+  }
+  return null;
+}
+
+const time = (at: number) => new Date(at).toTimeString().slice(0, 5);
 
 interface Plan {
   key: string;
@@ -70,28 +49,34 @@ interface Plan {
 }
 
 export class Bot {
-  private persona = loadPersona();
+  private shift: Shift = loadShift() ?? { on: null, until: 0, backAt: 0, recent: [] };
+  private who: Identity | null = null;
   private plan: Plan | null = null;
   /** The question the bot has made up its mind about (it may have chosen to sit it out). */
   private planned = '';
   private lobbyKey = '';
   private startAt = 0;
-  private overSince = 0;
+  private overAt = 0;
   private aloneSince = 0;
   private notReadySince = Date.now();
   private configured = false;
   private timer: ReturnType<typeof setInterval> | null = null;
 
-  constructor(readonly config: BotConfig) {}
-
-  start() {
-    session.resume();
-    if (session.mode !== 'host') session.host(this.config.name);
-    this.timer = setInterval(() => this.tick(), TICK_MS);
-    log('persona', JSON.stringify(this.persona));
+  private get persona() {
+    return this.who!.persona;
   }
 
-  /** Closes the room for good (the runner stopping): everyone is told, and nothing is saved to reopen. */
+  start() {
+    if (this.shift.on) {
+      this.who = identityOf(this.shift.on, engine.categories);
+      session.resume();
+      if (session.mode !== 'host') session.host(this.shift.on);
+      log(`${this.shift.on} is back after a reload, on until ${time(this.shift.until)}`);
+    } else if (this.shift.backAt > Date.now()) log(`nobody on until ${time(this.shift.backAt)}`);
+    this.timer = setInterval(() => this.tick(), TICK_MS);
+  }
+
+  /** Closes the room (the runner stopping): everyone is told, and nothing is saved to reopen. */
   close() {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
@@ -101,7 +86,11 @@ export class Bot {
   /** What the runner prints now and then. */
   status() {
     const s = session.state;
+    const on = this.shift.on;
     return {
+      host: on,
+      until: on ? time(this.shift.until) : null,
+      backAt: on ? null : time(this.shift.backAt),
       code: session.code,
       status: session.status,
       phase: s?.phase ?? null,
@@ -110,9 +99,42 @@ export class Bot {
     };
   }
 
+  private save() {
+    writeStored('shift', JSON.stringify(this.shift));
+  }
+
+  /** The next one comes on and opens a room. */
+  private begin(now: number) {
+    const name = nextName(this.shift.recent, Math.random);
+    this.who = identityOf(name, engine.categories);
+    this.shift = { on: name, until: now + shiftLength(Math.random), backAt: 0, recent: [...this.shift.recent, name].slice(-20) };
+    this.save();
+    this.configured = false;
+    this.plan = null;
+    this.notReadySince = now;
+    log(`${name} comes on until ${time(this.shift.until)}`);
+    session.host(name);
+  }
+
+  /** The one on calls it a day: the room closes, and someone else comes on after a break. */
+  private end(now: number, why: string) {
+    log(`${this.shift.on} leaves (${why})`);
+    session.leave();
+    this.who = null;
+    this.plan = null;
+    this.shift = { ...this.shift, on: null, backAt: now + breakLength(Math.random) };
+    this.save();
+    log(`nobody on until ${time(this.shift.backAt)}`);
+  }
+
   private tick() {
-    const s = session.state;
     const now = Date.now();
+    if (!this.shift.on) {
+      this.notReadySince = now;
+      if (now >= this.shift.backAt) this.begin(now);
+      return;
+    }
+    const s = session.state;
     if (session.mode !== 'host' || session.status !== 'ready' || !s) {
       if (now - this.notReadySince > STUCK_MS) {
         log('room not open for a minute, reloading');
@@ -124,9 +146,11 @@ export class Bot {
     this.configure(s);
     const me = session.myPlayerId;
     const humans = s.players.filter((p) => p.id !== me && p.connected);
-    const watching = s.spectators?.length ?? 0;
-    if (s.phase === 'lobby') this.lobby(s, humans.map((p) => p.id));
-    else if (s.phase === 'over') this.over(now, humans.length + watching > 0);
+    const anyone = humans.length + (s.spectators?.length ?? 0) > 0;
+    const timeUp = now >= this.shift.until;
+    if (timeUp && (!anyone || now >= this.shift.until + OVERTIME_MS)) return this.end(now, anyone ? 'out of time, even for the ones still here' : 'time is up');
+    if (s.phase === 'lobby') this.lobby(s, humans.map((p) => p.id), now);
+    else if (s.phase === 'over') this.over(now, anyone, timeUp);
     else this.inGame(s, now, humans.length > 0);
     const p = this.plan;
     if (p && now >= p.at) {
@@ -135,42 +159,44 @@ export class Bot {
     }
   }
 
-  /** Public and open always; the rules whenever they may change (between games). */
+  /** Public and open always; the host's own rules whenever they may change (between games). */
   private configure(s: GameState) {
     if (!s.settings.public || s.settings.locked) session.dispatch({ type: 'settings', settings: { public: true, locked: false } });
     if (this.configured || (s.phase !== 'lobby' && s.phase !== 'over')) return;
-    const c = this.config;
+    const c = this.who!.prefs;
     session.dispatch({ type: 'settings', settings: { mode: c.mode, difficulty: c.difficulty, targetScore: c.target, timer: c.timer } });
     this.configured = true;
     log(`room ${session.code} open: ${c.mode}, ${c.difficulty}, to ${c.target}, ${c.timer} s`);
   }
 
-  private lobby(s: GameState, humans: string[]) {
-    this.overSince = 0;
+  private lobby(s: GameState, humans: string[], now: number) {
+    this.overAt = 0;
     this.aloneSince = 0;
     const key = [...humans].sort().join(',');
     if (key !== this.lobbyKey) {
       this.lobbyKey = key;
-      this.startAt = Date.now() + LOBBY_WAIT_MS;
+      // Waits a little for more to come, as a person would (each arrival or departure starts it over).
+      this.startAt = now + between(10000, 25000);
       if (key) log(`waiting for more: ${humans.length} in the lobby`);
     }
-    if (key && Date.now() >= this.startAt) {
+    if (key && now >= this.startAt) {
       log(`starting with ${s.players.length} players`);
       this.lobbyKey = '';
       session.dispatch({ type: 'start' });
     }
   }
 
-  private over(now: number, anyone: boolean) {
-    this.overSince ||= now;
-    if (now - this.overSince < OVER_WAIT_MS) return;
-    this.overSince = 0;
+  private over(now: number, anyone: boolean, timeUp: boolean) {
+    this.overAt ||= now + between(8000, 20000);
+    if (now < this.overAt) return;
+    this.overAt = 0;
+    if (timeUp) return this.end(now, 'after the game');
     log(anyone ? 'playing again' : 'nobody left, back to the lobby');
     session.dispatch({ type: 'restart', play: anyone });
   }
 
   private inGame(s: GameState, now: number, anyone: boolean) {
-    this.overSince = 0;
+    this.overAt = 0;
     this.lobbyKey = '';
     if (anyone) this.aloneSince = 0;
     else {

@@ -1,11 +1,11 @@
 // Runs the room bot: builds the game with its bot page (VITE_BOT=1), serves
-// the build on this machine and opens bot.html in headless Chromium, which
-// hosts a public room and plays in it (src/bot). Keeps it running: a page
-// that crashes or closes is opened again, and the browser profile keeps the
-// room's save, so it comes back as the same room.
+// the build on this machine and opens bot.html in headless Chromium, where
+// made-up players take turns hosting a public room and playing in it
+// (src/bot). Keeps it running: a page that crashes or closes is opened
+// again, and the browser profile keeps who is on and the room's save, so it
+// comes back as the same player in the same room.
 //
-//   npm run bot -- [--name "Exile Bot"] [--mode turns|race] [--difficulty cruel|merciless|eternal]
-//                  [--target 10] [--timer 8|16|32|64] [--headed] [--no-build]
+//   npm run bot -- [--headed] [--no-build]
 //
 // Chromium: Playwright's own (npx playwright-core install chromium), or any
 // Chromium or Chrome named by BOT_CHROMIUM.
@@ -23,11 +23,6 @@ const profile = join(root, '.bot', 'profile');
 
 const { values: opts } = parseArgs({
   options: {
-    name: { type: 'string' },
-    mode: { type: 'string' },
-    difficulty: { type: 'string' },
-    target: { type: 'string' },
-    timer: { type: 'string' },
     headed: { type: 'boolean', default: false },
     'no-build': { type: 'boolean', default: false },
   },
@@ -47,9 +42,7 @@ if (!opts['no-build']) {
 const server = await preview({ root, logLevel: 'warn', build: { outDir }, preview: { host: '127.0.0.1', port: 4174, strictPort: false } });
 const base = server.resolvedUrls.local[0];
 
-const query = new URLSearchParams();
-for (const k of ['name', 'mode', 'difficulty', 'target', 'timer']) if (opts[k]) query.set(k, opts[k]);
-const url = `${base}bot.html?${query}`;
+const url = `${base}bot.html`;
 
 // Behind an outgoing proxy (HTTPS_PROXY), the browser uses it too. Set as a
 // flag rather than Playwright's proxy option, which sends even the local build
@@ -108,7 +101,8 @@ await open();
 const status = setInterval(async () => {
   try {
     const s = await page?.evaluate(() => window.__bot?.status());
-    if (s) log(`room ${s.code} (${s.status}), ${s.phase}: ${s.players.join(', ')}${s.spectators ? `, ${s.spectators} watching` : ''}`);
+    if (s?.host) log(`${s.host} (until ${s.until}), room ${s.code} (${s.status}), ${s.phase}: ${s.players.join(', ')}${s.spectators ? `, ${s.spectators} watching` : ''}`);
+    else if (s) log(`nobody on until ${s.backAt}`);
   } catch {
     /* the page is between loads */
   }

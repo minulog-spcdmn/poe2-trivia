@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { answerDelay, knowChance, makePersona, pickCategory, weighted, wrongPick, type Ask, type Persona } from '../src/bot/brain.ts';
+import { NAMES, breakLength, identityOf, nextName, shiftLength } from '../src/bot/identities.ts';
+import { MAX_NAME, cleanName, isHeldName, nameProblem, nameSkeleton } from '../src/lib/names.ts';
 
 function seeded(seed: number) {
   return () => {
@@ -93,4 +95,44 @@ test('weighted picks follow the weights', () => {
   for (let i = 0; i < 3000; i++) counts[weighted([1, 0, 3], rng)]++;
   assert.equal(counts[1], 0);
   assert.ok(counts[2] > counts[0] * 2);
+});
+
+test('every name passes the name checks as it is, and none looks like another or says bot', () => {
+  const skeletons = new Set<string>();
+  for (const n of NAMES) {
+    assert.equal(cleanName(n), n);
+    assert.ok(Array.from(n).length <= MAX_NAME, n);
+    assert.equal(nameProblem(n, []), null, n);
+    assert.ok(!isHeldName(n), n);
+    assert.ok(!/bot/i.test(n), n);
+    assert.ok(!skeletons.has(nameSkeleton(n)), n);
+    skeletons.add(nameSkeleton(n));
+  }
+});
+
+test('a name is always the same person', () => {
+  const cats = ['A', 'B', 'C'];
+  assert.deepEqual(identityOf('Morgrim', cats), identityOf('Morgrim', cats));
+  assert.notDeepEqual(identityOf('Morgrim', cats).persona, identityOf('Velka', cats).persona);
+  const prefs = NAMES.map((n) => identityOf(n, cats).prefs);
+  // Not all alike: some race, and not everyone plays the same difficulty.
+  assert.ok(prefs.some((p) => p.mode === 'race') && prefs.some((p) => p.mode === 'turns'));
+  assert.ok(new Set(prefs.map((p) => p.difficulty)).size > 1);
+  for (const p of prefs) assert.ok(p.timer > 0 && p.target >= 1);
+});
+
+test('the last few on rest before coming on again', () => {
+  const rng = seeded(21);
+  const recent = NAMES.slice(0, 8);
+  for (let i = 0; i < 300; i++) assert.ok(!recent.includes(nextName(recent, rng)));
+});
+
+test('shifts and breaks stay within their bounds', () => {
+  const rng = seeded(23);
+  for (let i = 0; i < 500; i++) {
+    const shift = shiftLength(rng) / 60000;
+    const pause = breakLength(rng) / 60000;
+    assert.ok(shift >= 20 && shift <= 120, `shift ${shift}`);
+    assert.ok(pause >= 2 && pause <= 30, `break ${pause}`);
+  }
 });
