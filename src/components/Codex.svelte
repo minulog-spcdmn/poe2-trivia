@@ -2,7 +2,7 @@
   import { onMount, tick } from 'svelte';
   import { fade, fly } from 'svelte/transition';
   import { engine, savedName, session } from '../lib/session.svelte';
-  import { nameHeld, nameTooShort } from '../lib/names';
+  import { cleanName, nameHeld, nameProblem, nameTooShort } from '../lib/names';
   import { CODEX_KEY, RECENT, loadCodex, resetCodex, type Tally } from '../lib/codex';
   import { accuracy, codexStats, delveSummary, tallyOf } from '../lib/codexStats';
   import { shownDepth } from '../lib/delve';
@@ -20,6 +20,7 @@
   import { DELVE_RECORD_KEY, loadRecords, resetRecords } from '../lib/delveRecord';
   import { ACHIEVEMENTS, ACHIEVEMENTS_KEY, WINS_KEY, checkAchievements, loadAchievements, loadWins, resetAchievements } from '../lib/achievements';
   import { announceAchievements } from '../lib/achievementToasts';
+  import { QUICK_DEFAULT, isNewcomer, loadHunts } from '../lib/hunt';
   import CodexAchievements from './CodexAchievements.svelte';
 
   /** Svelte's transitions run whatever the system says: held still (reduced motion, or the effects off), things just appear. */
@@ -196,6 +197,23 @@
     if (codexRoute.open) addEventListener('popstate', go);
     else go();
   }
+  /**
+   * "Begin the hunt": a quick hunt (lib/hunt.ts) straight away, under the
+   * name this browser plays as, or as Exile without one.
+   */
+  function beginHunt() {
+    const saved = savedName().trim();
+    const name = saved && !nameHeld(saved) && !nameProblem(cleanName(saved), []) ? saved : 'Exile';
+    closeCodex();
+    // Once the codex is closed, as for the descent.
+    const go = () => {
+      if (codexRoute.open) return;
+      removeEventListener('popstate', go);
+      if (!session.state) session.startHunt(name, isNewcomer() ? QUICK_DEFAULT : (loadHunts().last ?? QUICK_DEFAULT));
+    };
+    if (codexRoute.open) addEventListener('popstate', go);
+    else go();
+  }
   /** Anything to show (or erase): the tabs and the footer only come with it. */
   const kept = $derived(stats.seen > 0 || delved);
   const tabs = new Map<Tab, HTMLButtonElement>();
@@ -341,7 +359,7 @@
       <p class="muted">
         Every item revealed in your games is written into it, with how often you named it right. It is kept in this browser only.
       </p>
-      <button class="btn primary" onclick={closeCodex}>Begin the hunt</button>
+      <button class="btn primary" onclick={beginHunt}>Begin the hunt</button>
     </div>
   {:else}
     <div class="split" in:fly={calm({ y: 20, duration: 700, delay: 250 })}>

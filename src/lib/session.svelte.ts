@@ -28,12 +28,13 @@ import {
   type GameState,
   type Grayscale,
   type Item,
+  type Preset,
 } from './game';
 import { PEER_OPTIONS, PEER_PREFIX } from './peer';
 import { Beacon, type RoomInfo } from './rooms';
 import { parseClientMsg, parseHostMsg, PROTOCOL_VERSION, RateLimit, versionProblem, versionRefusal, type HostMsg, type MediaMsg } from './protocol';
 import { capped, FrameGuard, hookFrames, JoinGate, roomSecret } from './guard';
-import { cleanName, nameSkeleton } from './names';
+import { cleanName, nameProblem, nameSkeleton } from './names';
 import { prepareMedia, shown, type PreparedMedia } from './media.svelte';
 import { sfx } from './sound';
 import { prefsFrom, roomPrefs, roomSettings, savePrefs } from './prefs';
@@ -69,6 +70,7 @@ import {
   type DelveNotice,
 } from './delveSession';
 import { readLegacy, readStored, removeLegacy, removeStored, writeStored } from './storage';
+import { QUICK_TARGET, QUICK_TIMER, recordHunt, type HuntBest } from './hunt';
 
 export const engine = new Engine(itemData as Item[], { fakes: fakeNames });
 
@@ -242,6 +244,12 @@ class Session {
   delveResult = $state<{ id: number; depth: number; previousBest: number | null; best: boolean } | null>(null);
   /** Delve: the deepest this device had gone (alone or in a group, as this run is) when the run began. */
   bestAtStart = $state<number | null>(null);
+  /**
+   * A quick hunt (lib/hunt.ts) this device just finished, once it is recorded
+   * (`game`: its startedAt). `first`: this browser's first; `best`: fewer
+   * questions than ever on its difficulty.
+   */
+  huntResult = $state<{ game: number; first: boolean; best: boolean; previousBest: HuntBest | null; right: number; asked: number } | null>(null);
   /**
    * Delve: the run (its startedAt) this device saw start, from the lobby or
    * after a game ended (delveSession.ts runSeenStarting); null after a reload
@@ -428,6 +436,31 @@ class Session {
     this.startLocal();
     this.dispatch({ type: 'join', playerId: crypto.randomUUID(), name });
     this.dispatch({ type: 'start' });
+  }
+
+  /**
+   * A quick hunt (lib/hunt.ts): alone on this device, to 5 on a preset,
+   * straight into the first deal (no lobby, and no join sound before the
+   * start's). Whether it started: a name the game won't take starts nothing.
+   */
+  startHunt(name: string, difficulty: Preset): boolean {
+    const problem = nameProblem(cleanName(name), []);
+    if (problem) {
+      this.flash(problem, 'error');
+      return false;
+    }
+    this.startLocal();
+    let s = this.state!;
+    try {
+      s = engine.apply(s, { type: 'settings', settings: { mode: 'turns', targetScore: QUICK_TARGET, difficulty, timer: QUICK_TIMER } }, null);
+      s = engine.apply(s, { type: 'join', playerId: crypto.randomUUID(), name }, null);
+      s = engine.apply(s, { type: 'start' }, null);
+    } catch (err) {
+      // Never expected: what got through opens as a lobby, to start from there.
+      this.flash(err instanceof ActionError ? err.message : 'Something went wrong.', 'error');
+    }
+    this.setState(s);
+    return true;
   }
 
   /** Picks up a hot-seat game or a hosted room after a page refresh. */
@@ -1564,9 +1597,27 @@ class Session {
     this.delveResult = { id: run.id, depth: run.depth, previousBest: was ? was.previousBest : r.previousBest, best: was ? was.best : r.best };
   }
 
+  /**
+   * A quick hunt (lib/hunt.ts) goes into this browser's records as it ends:
+   * any turns game alone on this device to 5 on a preset, however it was
+   * started. Once per game: not on a reload into its end (no state before it).
+   */
+  private noteHunt(prev: GameState | null, next: GameState) {
+    if (this.huntResult && this.huntResult.game !== next.startedAt) this.huntResult = null;
+    if (!prev || prev.phase === 'over' || next.phase !== 'over' || this.mode !== 'local') return;
+    const { settings, players, startedAt } = next;
+    const difficulty = settings.difficulty;
+    if (next.delve || settings.mode === 'race' || players.length !== 1 || settings.targetScore !== QUICK_TARGET || difficulty === 'custom' || !startedAt) return;
+    const right = players[0].score;
+    const asked = next.turnCount + 1;
+    const r = recordHunt({ difficulty, right, asked, game: startedAt, at: Date.now() });
+    if (r) this.huntResult = { game: startedAt, first: r.first, best: r.best, previousBest: r.previousBest, right, asked };
+  }
+
   /** What every device makes of a state change, host and guest alike: records, sounds and notices, achievements. */
   private noteChange(prev: GameState | null, next: GameState) {
     this.noteRun(prev, next);
+    this.noteHunt(prev, next);
     this.onNewState(prev, next);
     this.noteEncounter(prev, next);
     this.noteMoments(prev, next);

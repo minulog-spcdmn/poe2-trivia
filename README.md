@@ -536,7 +536,17 @@ browser (`src/lib/achievements.ts`); erasing the codex erases them.
   30 are spaced out to avoid throttling, and rooms above number 10
   periodically move down into freed-up numbers so gaps can't hide them.
   See `src/lib/rooms.ts`.
-- **Hot-seat:** everyone plays on one device and passes it around.
+- **Hot-seat:** everyone plays on one device and passes it around. A name
+  typed on the start page takes the first seat.
+- **Play now** (the start page's first button, and the empty Codex's "Begin
+  the hunt"): a quick hunt, a turns game alone on this device to 5 with 16 s
+  a question, straight into the first deal. The name is optional (left blank,
+  you play as Exile). A first visit plays it on Cruel; after that the start
+  page offers Cruel, Merciless and Eternal (the choice is remembered) and
+  shows the best hunt on the chosen one: the fewest questions it took to
+  reach 5. Any game alone in hot-seat to 5 on one of those counts as a quick
+  hunt; this browser keeps how many it finished and its bests
+  (`src/lib/hunt.ts`). With an invite link, Join is the main button instead.
 
 The host picks the mode (take turns, race or Delve: three buttons, each
 with an engraved emblem, and only the chosen mode's description below

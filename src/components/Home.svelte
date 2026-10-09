@@ -16,6 +16,9 @@
   import { DELVE_LINK_PARAM } from '../lib/delveShare';
   import { wantDelveBackdrop } from '../lib/backdrop';
   import { BETA } from '../lib/channel';
+  import { DIFFICULTY_NAMES } from '../lib/difficultyText';
+  import { QUICK_DEFAULT, QUICK_PRESETS, QUICK_TARGET, isNewcomer, loadHunts, setQuickDifficulty } from '../lib/hunt';
+  import type { Preset } from '../lib/game';
 
   /** Keeps a room code's letters and digits, uppercased, up to its length. */
   const cleanCode = (v: string) => v.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, CODE_LENGTH);
@@ -52,6 +55,13 @@
   let code = $state(invite);
   let nameError = $state(false);
 
+  // Play now: a quick hunt (lib/hunt.ts). A first visit gets it plain, on
+  // Cruel; a returning one chooses the difficulty, remembered here.
+  const newcomer = isNewcomer();
+  const hunts = loadHunts();
+  let quick = $state<Preset>(newcomer ? QUICK_DEFAULT : (hunts.last ?? QUICK_DEFAULT));
+  const quickBest = $derived(hunts.best[quick]);
+
   const total = engine.items.length;
   /** Null until the codex is read. */
   let discovered = $state<number | null>(null);
@@ -75,15 +85,32 @@
     const n = name.trim();
     if (!n || nameTooShort(n) || nameHeld(n)) {
       if (n && nameTooShort(n)) toasts.show(NAME_TOO_SHORT, 'error');
-      nameError = true;
-      const field = document.getElementById('name');
-      if (field) refuse(field);
-      setTimeout(() => (nameError = false), 600);
-      document.getElementById('name')?.focus();
+      refuseName();
       return null;
     }
     saveName(n);
     return n;
+  }
+
+  /** The name field shakes and takes the focus. */
+  function refuseName() {
+    nameError = true;
+    const field = document.getElementById('name');
+    if (field) refuse(field);
+    setTimeout(() => (nameError = false), 600);
+    field?.focus();
+  }
+
+  /** A quick hunt right away: the name is optional (blank plays as Exile, and isn't saved). */
+  function playNow() {
+    const n = name.trim() ? needName() : 'Exile';
+    if (!n) return;
+    if (!session.startHunt(n, newcomer ? QUICK_DEFAULT : quick)) refuseName();
+  }
+
+  function pickQuick(d: Preset) {
+    quick = d;
+    setQuickDifficulty(d);
   }
 
   function host() {
@@ -131,8 +158,14 @@
     else code = cleanCode(code.slice(0, field.selectionStart ?? code.length) + text + code.slice(field.selectionEnd ?? code.length));
   }
 
+  /** Hot-seat: a valid name typed here takes the first seat (blank opens an empty party). */
   function local() {
+    const n = name.trim();
     session.startLocal();
+    if (n && !nameTooShort(n) && !nameHeld(n)) {
+      saveName(n);
+      session.dispatch({ type: 'join', playerId: crypto.randomUUID(), name: n });
+    }
   }
 
   const connecting = $derived(session.status === 'connecting');
@@ -214,11 +247,31 @@
       onkeydown={enterName}
     />
 
+    <section class="play-now">
+      <button class="btn big wide" class:primary={!invite} class:ghost={!!invite} onclick={playNow} disabled={connecting}>Play now</button>
+      {#if newcomer}
+        <p class="muted">A quick solo hunt to {QUICK_TARGET}. No setup.</p>
+      {:else}
+        <div class="quick">
+          <p class="quick-line">
+            Quick hunt to {QUICK_TARGET}{#if quickBest}<span class="best">{` • Best: ${quickBest.right} of ${quickBest.asked}`}</span>{/if}
+          </p>
+          <div class="seg" role="radiogroup" aria-label="Quick hunt difficulty">
+            {#each QUICK_PRESETS as d (d)}
+              <button role="radio" aria-checked={quick === d} class:on={quick === d} disabled={connecting} onclick={() => pickQuick(d)}>
+                {DIFFICULTY_NAMES[d]}
+              </button>
+            {/each}
+          </div>
+        </div>
+      {/if}
+    </section>
+
     <div class="modes">
       <section class="mode">
         <h2>Host a game</h2>
         <p class="muted">Open a room and share the code with your party, or play alone.</p>
-        <button class="btn primary" onclick={host} disabled={connecting}>Create room</button>
+        <button class="btn" onclick={host} disabled={connecting}>Create room</button>
       </section>
 
       <section class="mode">
@@ -512,11 +565,81 @@
     padding: 1.8rem;
   }
 
+  /* Play now: a quick hunt in one tap, before the ways to play together. */
+  .play-now {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.55rem;
+    margin-top: 1rem;
+    text-align: center;
+  }
+  .play-now > p {
+    margin: 0;
+    font-size: 0.98rem;
+  }
+  .quick {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 0.45rem 0.9rem;
+  }
+  .quick-line {
+    margin: 0;
+    font-family: var(--font-cinzel);
+    font-size: 0.74rem;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+  }
+  .quick-line .best {
+    color: var(--gold);
+  }
+  .seg {
+    display: flex;
+    gap: 0.3rem;
+  }
+  .seg > button {
+    padding: 0.32rem 0.6rem;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 0.72rem;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .seg > button:hover:not(:disabled) {
+    color: var(--gold-hi);
+    border-color: var(--gold-lo);
+  }
+  .seg > button.on {
+    color: #fff1cf;
+    background: linear-gradient(180deg, #8a5a22, #452a0e);
+    border-color: var(--gold);
+    text-shadow: 0 0 10px rgba(255, 220, 160, 0.5);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 230, 170, 0.3),
+      0 0 14px rgba(201, 164, 92, 0.3);
+  }
+  .seg > button:active:not(:disabled) {
+    transform: scale(0.96);
+  }
+  .seg > button:disabled {
+    cursor: default;
+  }
+  .seg > button:disabled:not(.on) {
+    opacity: 0.5;
+  }
+
   .modes {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 1rem;
-    margin-top: 1.4rem;
+    margin-top: 1.2rem;
   }
   .mode {
     display: flex;
