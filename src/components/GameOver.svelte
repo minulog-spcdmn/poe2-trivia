@@ -51,9 +51,9 @@
     const r = session.vaalResult;
     return !run && r && r.game === s.startedAt && r.bestAltar ? r.altar : 0;
   });
-  /** Turns: who starts the next game with a revenge orb (game.ts revengeFor), told to them online. */
+  /** Turns: who starts the next game with a revenge orb (game.ts revengeFor), told to them online (the host is asked to play again). */
   const revenge = $derived(
-    revengeNote(revengeFor(s), (id) => s.players.find((p) => p.id === id)?.name ?? '?', session.mode === 'local' ? null : session.myPlayerId),
+    revengeNote(revengeFor(s), (id) => s.players.find((p) => p.id === id)?.name ?? '?', session.mode === 'local' ? null : session.myPlayerId, session.isHost),
   );
 
   // One click only: a second one while this screen fades out would restart the new game.

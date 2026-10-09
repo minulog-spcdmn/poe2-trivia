@@ -15,36 +15,79 @@ is hosted as a static site on GitHub Pages. No server needed.
    offered to you again for your next 2 turns on Cruel, 3 on Merciless and
    4 on Eternal (Custom sets its own).
 2. Name the unique item or lineage gem from its art (or, on harder
-   difficulties, pick the right art for a name). A correct answer scores a point.
-   Feeling sure? Before you choose a card, you may corrupt your pick with a
-   **Vaal Orb**: a right answer then scores +2, a wrong one (or running out of
-   time) costs −1, and scores can go below 0. Everyone starts a game with one
-   orb per 5 points to win (at least one). A point lost to a bricked
-   corruption goes onto the **Altar**, shared by the table: the next
-   corruption that holds, whoever's it is, takes the whole Altar on top of its
-   +2. Nobody can corrupt in a deathmatch, and a corrupted question the host
-   skips gives its orb back. At the end of a round that neither ends the game
-   nor starts a deathmatch, everyone 3 or more points behind the leader gains
-   an orb (up to one more than a game starts with), and when a game of two or
-   more ends, everyone who didn't win starts the next one in the room with a
-   revenge orb. Everyone's orbs show on their scoreboard entry, and a
-   corrupted question wears crimson on every screen. The end screen tells
-   what each player's corruptions did (held, bricked, the biggest Altar
-   taken), and this browser keeps a ledger of its own player's over every
-   game, shown in the lobby, with a new biggest Altar announced at the end
-   (`src/lib/vaalRecord.ts`; online your seat, on one device only a game
-   played alone).
+   difficulties, pick the right art for a name). A correct answer scores a
+   point; a corrupted pick scores more or costs one (see **Vaal Orbs**).
 3. The first player to reach the host's target score wins. The game only ends
    once a full round is finished, so everyone gets the same number of turns.
-   Once someone reaches the target with seats still to play, the **final
-   round** is announced on every screen, and each player left is told what
-   their last turn can do against the leader. A player one right answer from
-   the target is at **match point**: a gold ring pulses round their entry.
+   Once someone reaches the target with seats still to play this round, the
+   **final round** is announced on every screen ("Ash reached 10", "Final
+   round", "Everyone else gets one last turn."), the header reads "Final
+   round • First to 10", and each player left gets "Bea's last chance"
+   ("Your last chance" online) as their turn's banner and a line under the
+   cards on what their own turn can do against the leader: force a deathmatch, take the lead (only with a
+   corruption that holds, perhaps with the Altar), or "It's out of reach.
+   Play for pride." Those watching read the same line under the player's
+   name. A target reached on the round's last seat ends the game at Next,
+   with no final round. A player one right answer from the target is at
+   **match point**: a gold ring pulses round their scoreboard entry (it holds
+   still with effects off), their turn's banner reads "Ash's match point"
+   ("Your match point" online), and the first time each player gets there in
+   a game the gong sounds as their number lands.
    If players are tied at the top, it goes to a **deathmatch**:
    only the tied players play sudden-death rounds with a random category and
    questions one difficulty harder. When some duelists answer right and
    others wrong, the wrong ones are out; if all of them get it right, or all
    get it wrong, another round is played. The last duelist standing wins.
+
+**Vaal Orbs** (take turns only; `src/lib/game.ts`, `src/lib/stakes.ts`):
+on your turn you may also say how sure you are.
+- Every player starts a game with Vaal Orbs: one per 5 points to win, at
+  least one (1 to 5, 2 to 10, 3 to 15, 4 to 20). On your turn the crimson
+  **Corrupt ×2** pill under "Choose your category" stains the cards crimson
+  ("Choose a card to corrupt"; tap it again to back out), and the card you
+  pick is corrupted. The orb is spent once the pick is accepted.
+- A corrupted question that you answer right scores +2 ("Holds"); a wrong
+  answer or running out of time costs a point ("Bricked"), and scores can go
+  below 0. Online, the result line says "you" to the player who answered,
+  on plain questions too ("+1 for you!"); in hot-seat it names them.
+- A point lost to a brick goes onto the **Altar**, shared by the table: an
+  "Altar 3" seal under the prompt shows it to everyone. The next corruption
+  that holds, whoever's it is, takes the whole Altar on top of its +2 ("+5
+  for Mira! The corruption holds and takes the Altar.").
+- Everyone knows what rides on a corrupted question: the player reads
+  "Corrupted: right +2, wrong −1." under it (with the Altar's points when it
+  holds any), everyone else "Mira corrupted this one: +2 or −1.". It wears
+  crimson on every screen (its chip, a crimson flare as it opens, a
+  rust-red rune circle round art to name, its own crackle instead of the
+  usual reveal sound), a hold pours all it won into the scorer's bar, and a
+  brick drains the point as the bar would have filled, with a crack of
+  glass. Every scoreboard entry carries its orb count.
+- **The Vaal favour the desperate:** at the end of a round that neither ends
+  the game nor starts a deathmatch, everyone still there 3 or more points
+  behind the leader gains an orb, up to one more than a game starts with;
+  the next turn says who.
+- **Revenge orbs:** when a turns game of two or more ends, everyone still
+  there who didn't win starts the next game in the room (Play again, or
+  Change settings then Begin the hunt) with one more orb. The end screen
+  says who, and the first turn of that game repeats it. Spectators seated
+  then start with the usual count.
+- Nobody can corrupt in a deathmatch, so the Altar waits there; race and
+  Delve have no orbs. A corrupted question the host skips gives its orb
+  back; one traded for another in the same category (its art wouldn't load)
+  stays corrupted, on the orb already spent. Orbs and the Altar start afresh
+  every game.
+- In the first game in a browser, the pill pulses and a note under the cards
+  says "Sure of one of these? Corrupt it: right +2, wrong −1." until this
+  browser corrupts a pick.
+- **The Gambler's ledger:** the end screen shows under each name what their
+  corruptions did ("2 held, 1 bricked, took an Altar of 3"; nothing for a
+  player who never corrupted). This browser also keeps a ledger of its own
+  player's corruptions over every turns game (`src/lib/vaalRecord.ts`;
+  online your seat, in hot-seat only a game played alone, each game counted
+  once): the lobby shows it under the turns rules ("Your ledger: 9 held, 4
+  bricked, biggest Altar 4."), and the end screen announces a new biggest
+  Altar of 2 or more ("Your biggest Altar yet: 4."). A ledger this build
+  can't read is never written over.
 
 Items aren't repeated within a game until a category runs out, and earlier answers never come back as wrong answers (so they can't be ruled out from memory). Precursor tablets come up about a quarter as often as other items; a tablet question only offers tablets (once too few unseen tablets are left for that, they sit out until the category starts over), and tablets don't appear in other questions.
 
@@ -444,7 +487,8 @@ item, category, item group, question type and difficulty, your nemeses (lowest
 accuracy, at least 2 answers), mix-ups (what you picked for what), made-up
 names you fell for, streaks and answer times. Every question revealed on your
 screen counts as seen; only your own answers count toward accuracy (your turn,
-or your guess in a race; a turn that runs out of time is wrong). In hot-seat,
+or your guess in a race; a turn that runs out of time is wrong; a corrupted
+question counts like any other). In hot-seat,
 answers only count when one person plays alone. Undiscovered items show as
 dark silhouettes, and the codex can't be opened while in a room. It is kept in this
 browser's localStorage only (`src/lib/codex.ts`).
@@ -493,7 +537,8 @@ takes real mastery:
   win after a rival led by 4, a win to 10 without a wrong answer, a race to
   10 taking every question against rivals who guessed, race questions taken
   before a quarter of their veiled art burned in, 5 wins in a row, a loss
-  after leading the winner by 4 (Hubris), and a secret one.
+  after leading the winner by 4 (Hubris), and a secret one. Points won and
+  lost to Vaal Orbs count toward these leads like any others.
 - **Delve:** depths 10, 50 and 100 alone, depth 40 without losing a life, 10
   depths on the last life past depth 30, a ward shattering in place of the
   last life, three wards, three flares and three sticks of dynamite carried
@@ -547,6 +592,8 @@ browser (`src/lib/achievements.ts`); erasing the codex erases them.
     hid it for streaming.
   - After a game, the host can **Play again** (same settings, starts right
     away, spectators included) or **Change settings** (back to the lobby).
+    After a turns game, whoever didn't win starts the next one with a
+    revenge orb (see **Vaal Orbs**).
   - Very strict networks (some corporate or mobile networks) can block
     WebRTC. In that case, use hot-seat.
 - **Open rooms:** a host can set their room to **Public**, which lists it
@@ -563,7 +610,9 @@ browser (`src/lib/achievements.ts`); erasing the codex erases them.
 The host picks the mode (take turns, race or Delve: three buttons, each
 with an engraved emblem, and only the chosen mode's description below
 them), then, outside Delve, the difficulty, the target score and an
-optional time limit per question (off / 8 / 16 / 32 / 64 s).
+optional time limit per question (off / 8 / 16 / 32 / 64 s). The take turns
+rules below them include the Vaal Orbs and the Altar, followed by this
+browser's Gambler's ledger once it has counted a game.
 
 ## Fair play & safety
 
@@ -586,8 +635,9 @@ with that in mind. Guests, on the other hand, are treated as untrusted:
   different for every room (derived from the browser's secret and the room
   code), so a host never learns a token that works in someone else's room.
 - **Everything guests send is checked.** Every message is validated against
-  the few actions a guest may take: pick a category, answer, continue, and
-  in Delve together vote for a card or give a teammate a life. Guests
+  the few actions a guest may take: pick a category (corrupted or not; the
+  host checks there is a Vaal Orb to spend), answer, continue, and in Delve
+  together vote for a card or give a teammate a life. Guests
   are rate-limited to about 10 messages per second, and the raw data they
   send is capped in size and volume, and checked for lengths that can't be
   real, before it is decoded (so it can't be used to fill the host's memory
@@ -697,8 +747,8 @@ Everything is drawn in WebGL2 with float precision and dithered once at the
   procedural shapes (shockwaves, flares, god rays, fire outlines, a portal,
   rune sigils) and bloom. `effects.ts` has the building blocks, `moments.ts`
   the game's big beats (a pick, a Vaal Orb's corruption, a reveal with its
-  point flowing into the scorer's progress bar, the final round, a deathmatch, a victory), and `ui.ts` the feedback
-  every control gets. Soft shapes render at about one texel per CSS pixel and
+  point flowing into the scorer's progress bar, the final round, a
+  deathmatch, a victory), and `ui.ts` the feedback every control gets. Soft shapes render at about one texel per CSS pixel and
   the whole layer at most 1.5 per CSS pixel; the canvas hides itself while
   nothing is alive.
 - **Loading**: the first paint waits on as few shaders as possible, since on

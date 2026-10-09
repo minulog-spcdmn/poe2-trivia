@@ -315,11 +315,13 @@ export function revengeText(ids: string[], nameOf: (id: string) => string, me: s
 
 /**
  * Turns, the end screen: who starts the next game with a revenge orb (game.ts
- * revengeFor). A loser reading it online is asked to play again instead.
+ * revengeFor). A host who lost, reading it online, is asked to play again
+ * instead; a guest has no such button (`host` false) and reads "You start
+ * the next game with a revenge orb."
  */
-export function revengeNote(ids: string[], nameOf: (id: string) => string, me: string | null): string {
+export function revengeNote(ids: string[], nameOf: (id: string) => string, me: string | null, host = true): string {
   if (!ids.length) return '';
-  if (me !== null && ids.includes(me)) return 'Play again and you start with a revenge orb.';
+  if (me !== null && host && ids.includes(me)) return 'Play again and you start with a revenge orb.';
   return `${cap(namesOf(ids, nameOf, me))} ${verb(ids, me, 'starts', 'start')} the next game with a revenge orb.`;
 }
 

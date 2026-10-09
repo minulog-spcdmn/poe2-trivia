@@ -1496,6 +1496,16 @@
       margin-top: -0.75rem;
       line-height: 1.28;
     }
+    /* The favour (or the revenge orbs) and the note after it: the same, and
+       the second right under the first, so both stay in view. */
+    .note.favour,
+    .note.favour + .note {
+      margin-top: -0.75rem;
+      line-height: 1.28;
+    }
+    .note.favour + .note {
+      margin-top: -1.5rem;
+    }
     .frame {
       display: flex;
       align-items: center;

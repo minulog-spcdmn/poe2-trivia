@@ -507,6 +507,9 @@ test('favour and revenge are said by name, and to you online', () => {
   assert.equal(revengeNote(['a', 'b', 'c'], nameOf, null), 'Mira, Ash and Bea start the next game with a revenge orb.');
   assert.equal(revengeNote(['a', 'b'], nameOf, 'c'), 'Mira and Ash start the next game with a revenge orb.');
   assert.equal(revengeNote(['a', 'b'], nameOf, 'b'), 'Play again and you start with a revenge orb.');
+  // A guest who lost has no Play again button.
+  assert.equal(revengeNote(['a', 'b'], nameOf, 'b', false), 'You and Mira start the next game with a revenge orb.');
+  assert.equal(revengeNote(['b'], nameOf, 'b', false), 'You start the next game with a revenge orb.');
   assert.equal(revengeNote([], nameOf, 'b'), '');
 });
 
