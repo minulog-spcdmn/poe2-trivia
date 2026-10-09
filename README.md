@@ -557,8 +557,8 @@ browser (`src/lib/achievements.ts`); erasing the codex erases them.
   reach 5. Any game alone in hot-seat to 5 on one of those counts as a quick
   hunt; this browser keeps how many it finished and its bests
   (`src/lib/hunt.ts`); erasing the codex erases them too. Enter in the name
-  field plays now too (a blank name is refused, as for the other buttons),
-  unless a room code is typed. With an invite link, Join is the main button
+  field plays now too, for a typed name (on a blank one it starts nothing, so
+  a stray Enter never starts a game), unless a room code is typed. With an invite link, Join is the main button
   instead: Join a game comes first and Play now waits under both ways to
   play together.
 - **Initiates:** a player whose browser has never played (nothing in its
