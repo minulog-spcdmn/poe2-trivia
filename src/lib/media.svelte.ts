@@ -214,7 +214,8 @@ async function cutVeil(canvas: HTMLCanvasElement, v: Veil, plan: VeilPlan): Prom
   sg.imageSmoothingQuality = 'high';
   sg.drawImage(canvas, 0, 0, W, H);
   const pixels = sg.getImageData(0, 0, W, H).data;
-  const fine = canvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height).data;
+  // One 32-bit word per pixel, so each one copies without a subarray.
+  const fine = new Uint32Array(canvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height).data.buffer);
   const FW = canvas.width;
   const cut = cutPatches(pixels, W, H, v.size, v.seed);
   const order = spreadOrder(cut, v.seed);
@@ -233,20 +234,18 @@ async function cutVeil(canvas: HTMLCanvasElement, v: Veil, plan: VeilPlan): Prom
       // The patch's pixels at full resolution: wherever it has an art pixel.
       const pw = w * S;
       const ph = h * S;
-      const big = new Uint8ClampedArray(pw * ph * 4);
+      const big = new Uint32Array(pw * ph);
       for (let by = 0; by < ph; by++) {
         const ay = (by / S) | 0;
+        const row = (y * S + by) * FW + x * S;
         for (let bx = 0; bx < pw; bx++) {
-          const ax = (bx / S) | 0;
-          if (!own[(ay * w + ax) * 4 + 3]) continue;
-          const f = ((y * S + by) * FW + x * S + bx) * 4;
-          big.set(fine.subarray(f, f + 4), (by * pw + bx) * 4);
+          if (own[(ay * w + ((bx / S) | 0)) * 4 + 3]) big[by * pw + bx] = fine[row + bx];
         }
       }
       const piece = document.createElement('canvas');
       piece.width = pw;
       piece.height = ph;
-      piece.getContext('2d')!.putImageData(new ImageData(big, pw, ph), 0, 0);
+      piece.getContext('2d')!.putImageData(new ImageData(new Uint8ClampedArray(big.buffer), pw, ph), 0, 0);
       return { i, x, y, w, h, data: await encode(piece, true), edges: edges.buffer as ArrayBuffer };
     }),
   );

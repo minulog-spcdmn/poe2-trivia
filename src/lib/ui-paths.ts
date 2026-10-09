@@ -14,15 +14,20 @@ export function itemImage(id: string) {
   return `${items()}${id}.avif`;
 }
 
-/** A smaller copy for a small spot: at most `size` px on its longest side (scripts/upscale-art.py THUMBS). */
-export function itemThumb(id: string, size: 128 | 256) {
+/** The smaller copies' longest sides, px (THUMBS in scripts/upscale-art.py and scripts/fetch-data.mjs). */
+export const ITEM_THUMBS = [256, 128] as const;
+
+/** A smaller copy for a small spot: at most `size` px on its longest side (never larger than the full picture). */
+export function itemThumb(id: string, size: (typeof ITEM_THUMBS)[number]) {
   return `${items()}${size}/${id}.avif`;
 }
 
 /**
  * For a spot up to about 128 CSS px across: the 128 px copy on a plain
- * screen, the 256 px one on a sharper one. Either way the picture's own size
- * is 128 CSS px on its longest side, so give the <img> a box or a max size.
+ * screen, the 256 px one on a sharper one. The picture's own size is 128 CSS
+ * px on its longest side on a plain screen, but less on a sharper one when
+ * the full picture is under 256 px (a one-cell item's is 216, so 108 CSS px),
+ * so give the <img> a box or a max size.
  */
 export function itemSrcset(id: string) {
   return `${itemThumb(id, 128)} 1x, ${itemThumb(id, 256)} 2x`;

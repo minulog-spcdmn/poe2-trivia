@@ -42,7 +42,7 @@ ART_SCALE = 2
 # How much of the model's picture goes into the mix; the rest is the original.
 MIX = 0.3
 QUALITY = 80
-# The smaller copies' longest sides, px (keep in step with itemThumb).
+# The smaller copies' longest sides, px (keep in step with ITEM_THUMBS in src/lib/ui-paths.ts).
 THUMBS = (256, 128)
 
 

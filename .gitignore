@@ -28,3 +28,6 @@ dist-ssr
 
 # Python environment and model for scripts/upscale-art.py
 .venv-art/
+
+# Python bytecode
+__pycache__/

@@ -326,6 +326,7 @@
       c.width = Math.round(img.naturalWidth / ART_SCALE);
       c.height = Math.round(img.naturalHeight / ART_SCALE);
       const g = c.getContext('2d', { willReadFrequently: true })!;
+      g.imageSmoothingQuality = 'high';
       g.drawImage(img, 0, 0, c.width, c.height);
       full = { w: c.width, h: c.height, box: visibleBox(g.getImageData(0, 0, c.width, c.height).data, c.width, c.height) };
       done();

@@ -3,13 +3,11 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Item } from '../src/lib/game.ts';
-import { ART_SCALE } from '../src/lib/ui-paths.ts';
+import { ART_SCALE, ITEM_THUMBS as THUMBS } from '../src/lib/ui-paths.ts';
 
 const ROOT = join(import.meta.dirname, '..');
 const items: Item[] = JSON.parse(readFileSync(join(ROOT, 'src', 'data', 'items.json'), 'utf8'));
 const SITE = join(ROOT, 'public', 'items');
-/** The smaller copies' longest sides (THUMBS in scripts/upscale-art.py, itemThumb). */
-const THUMBS = [256, 128];
 
 /** A WebP file's width and height, from its header (the originals in art-source/). */
 function webpSize(file: string): [number, number] {
