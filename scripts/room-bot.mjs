@@ -28,6 +28,10 @@
 // profiles of its own, and can run beside a live one. Its rooms show only
 // to a beta on the same protocol version as this checkout.
 //
+// Ctrl+C: games under way with real people in them are played to their end
+// first (our rooms close after, our guests leave); everything else stops at
+// once. Ctrl+C again quits straight away.
+//
 // Chromium: Playwright's own (npx playwright-core install chromium), or any
 // Chromium or Chrome named by BOT_CHROMIUM.
 
@@ -285,10 +289,36 @@ const status = setInterval(async () => {
   }
 }, STATUS_EVERY_MS);
 
+/**
+ * Ctrl+C: a game under way with real people in it (in one of our rooms, or
+ * one our guest is in) is played to its end first, the scores left up a
+ * moment; everything else stops now, and nobody new comes on. A second
+ * Ctrl+C (or SIGTERM, from a supervisor) quits at once.
+ */
+let winding = false;
 async function stop() {
-  if (stopping) return;
+  if (winding) return quit('quitting now');
+  winding = true;
+  // No page reopens from here on (open, reopen): a fresh one would bring someone new on.
   stopping = true;
-  log('leaving');
+  if (team) clearInterval(team);
+  const plays = (await Promise.all(all.map(({ page }) => page?.evaluate(() => window.__bot?.windDown() ?? null).catch(() => null)))).filter(Boolean);
+  if (!plays.length) return quit();
+  log(`finishing ${plays.length === 1 ? 'a game' : `${plays.length} games`} with players in ${plays.length === 1 ? 'it' : 'them'} first; Ctrl+C again to quit now`);
+  for (;;) {
+    await new Promise((r) => setTimeout(r, 2000));
+    if (quitting) return;
+    const settled = await Promise.all(all.map(({ page }) => page?.evaluate(() => window.__bot?.settled() ?? true).catch(() => true) ?? true));
+    if (settled.every(Boolean)) break;
+  }
+  await quit();
+}
+
+let quitting = false;
+async function quit(why = 'leaving') {
+  if (quitting) return;
+  quitting = stopping = true;
+  log(why);
   clearInterval(status);
   if (team) clearInterval(team);
   // Each room tells everyone it closed, instead of leaving them to reconnect to nothing.
@@ -299,4 +329,4 @@ async function stop() {
   process.exit(0);
 }
 process.on('SIGINT', stop);
-process.on('SIGTERM', stop);
+process.on('SIGTERM', () => quit());

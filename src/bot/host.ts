@@ -89,6 +89,8 @@ const rulesText = (c: RoomPrefs) => (c.mode === 'delve' ? 'delve' : `${c.mode}, 
 const useRules = (c: RoomPrefs) => session.dispatch({ type: 'settings', settings: { mode: c.mode, difficulty: c.difficulty, targetScore: c.target, timer: c.timer } });
 
 export class Host {
+  /** The runner is stopping: the game under way is the last (none starts, and they go once it is over). */
+  lastGame = false;
   /** Our rooms numbered higher than this one (their codes; the runner says): it never makes way for them. */
   above: ReadonlySet<string> = new Set();
   private readonly player: Player;
@@ -273,7 +275,7 @@ export class Host {
       log(`changes the rules to ${rulesText(c)}`);
       this.startAt = Math.max(this.startAt, now + between(3000, 7000));
     }
-    if (key && now >= this.startAt) {
+    if (key && now >= this.startAt && !this.lastGame) {
       log(`starting with ${s.players.length} players`);
       this.lobbyKey = '';
       session.dispatch({ type: 'start' });
@@ -298,6 +300,7 @@ export class Host {
     if (now < this.overAt) return null;
     this.overAt = 0;
     if (this.sulking) return { exit: 'sulking', why: 'lost heavily, calls it a day' };
+    if (this.lastGame) return { exit: 'done', why: 'the last game is over' };
     if (timeUp) return { exit: 'done', why: 'after the game' };
     log(anyone ? 'playing again' : 'nobody left, back to the lobby');
     session.dispatch({ type: 'restart', play: anyone });

@@ -20,10 +20,11 @@
 // which rooms are our own, and hands every seat the room list one of them
 // checks for all.
 
+import type { GameState } from '../lib/game';
 import { engine, session } from '../lib/session.svelte';
 import { scanRooms, type RoomInfo } from '../lib/rooms';
 import { readStored, writeStored } from '../lib/storage';
-import { identityOf, leaningsOf, nextName, shiftLength, type Identity, type Mode } from './identities';
+import { identityOf, leaningsOf, NAMES, nextName, shiftLength, type Identity, type Mode } from './identities';
 import { nextRole, wanted, type Role } from './wanted';
 import { afterHosting, afterVisit, hesitation, joinsAfter, keenTo, opensRoom, playsOn, urgeToHost, type HostExit, type Memory, type Visit } from './choice';
 import { dropSave, Host, keepSaveCopy, type Stint } from './host';
@@ -85,6 +86,14 @@ function load(): Saved {
   return { recent: [] };
 }
 
+const CAST = new Set(NAMES);
+
+/** The real people (anyone not of the cast) playing in the room, connected, besides this seat's own player. */
+const peopleIn = (s: GameState | null) => s?.players.filter((p) => p.id !== session.myPlayerId && p.connected && !CAST.has(p.name)).map((p) => p.name) ?? [];
+
+/** A game on in the room, or its scores up. */
+const gameOn = (s: GameState | null) => !!s && s.phase !== 'lobby';
+
 /** Another seat's room, as the runner says: which one (wanted.ts), and its code ('' until it is open). */
 export interface TeamRoom {
   role: Role;
@@ -121,6 +130,8 @@ export class Seat {
   /** The other seats' rooms (the runner says). */
   private team: TeamRoom[] = [];
   private ours = new Set<string>();
+  /** The runner is stopping (its first Ctrl+C): a game with people in it plays to its end, and nothing new begins. */
+  private winding = false;
   private timer: ReturnType<typeof setInterval> | null = null;
   private scoutTimer: ReturnType<typeof setTimeout> | null = null;
   private copyTimer: ReturnType<typeof setInterval> | null = null;
@@ -187,6 +198,66 @@ export class Seat {
     this.keep(undefined);
     dropSave();
     if (session.mode) session.leave();
+  }
+
+  /**
+   * The runner is stopping (its first Ctrl+C). A game under way with real
+   * people in it (in this seat's room, or the room its guest is in) is
+   * played to its end, the scores left up a moment; everything else ends
+   * now, and nobody new comes on. Says what it plays on for, or null when
+   * nothing (settled, below, says when it is done).
+   */
+  windDown(): string | null {
+    this.winding = true;
+    this.opener = null;
+    const s = session.state;
+    const people = peopleIn(s);
+    if (this.host && gameOn(s) && people.length) {
+      this.host.lastGame = true;
+      const says = `${this.host.who.name} plays the game in room ${session.code} to its end, with ${people.join(', ')}`;
+      log(says);
+      return says;
+    }
+    if (this.guest?.inGame && people.length) {
+      this.guest.lastGame();
+      const says = `${this.guest.who.name} plays the game in ${this.guest.status().room} to its end, with ${people.join(', ')}`;
+      log(says);
+      return says;
+    }
+    this.windTick(Date.now());
+    return null;
+  }
+
+  /** Winding down, and done: nobody on any more (the runner may close the page). */
+  settled() {
+    return this.winding && !this.host && !this.guest && !this.busy;
+  }
+
+  /** Winding down: the game with people in it plays on; once it is over, or they are gone, the one on goes. */
+  private windTick(now: number) {
+    const s = session.state;
+    const playing = gameOn(s) && peopleIn(s).length > 0;
+    if (this.host) {
+      const host = this.host;
+      const gone = playing ? host.tick(now) : { why: peopleIn(s).length ? 'stopping' : 'stopping, nobody else playing' };
+      if (!gone) return;
+      log(`${host.who.name} leaves (${gone.why})`);
+      if (session.code) this.closed.add(session.code);
+      host.close();
+      this.host = null;
+      this.keep(undefined);
+      void releaseRole?.(host.role);
+    } else if (this.guest) {
+      const guest = this.guest;
+      const gone = playing && guest.inGame ? guest.tick(now) : null;
+      if (gone) log(`${guest.who.name} leaves (${gone.why})`);
+      else if (playing && guest.inGame) return;
+      else {
+        log(`${guest.who.name} leaves (stopping)`);
+        guest.leave(now);
+      }
+      this.guest = null;
+    }
   }
 
   /** The runner: the other seats' rooms. */
@@ -292,6 +363,7 @@ export class Seat {
   private tick() {
     if (this.busy) return;
     const now = Date.now();
+    if (this.winding) return this.windTick(now);
     if (this.latest.at > this.considered) {
       this.considered = this.latest.at;
       this.see(this.latest.rooms, this.latest.at, now);
@@ -360,7 +432,11 @@ export class Seat {
     this.busy = false;
     this.opener = null;
     this.handOver = false;
-    if (!this.timer) return;
+    // Stopping meanwhile: no room opens now.
+    if (!this.timer || this.winding) {
+      if (ok) void releaseRole?.(role);
+      return;
+    }
     // Another seat got there first: this one waits for the lists to call for a room again.
     if (!ok) {
       this.wanted = null;

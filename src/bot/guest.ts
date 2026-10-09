@@ -109,6 +109,19 @@ export class Guest {
     return this.doing === 'looking';
   }
 
+  /** In a room, with a game on or its scores up (not looking, joining or in the lobby). */
+  get inGame() {
+    const phase = session.state?.phase;
+    return this.doing === 'playing' && !!phase && phase !== 'lobby';
+  }
+
+  /** The runner is stopping: the game under way is their last (they leave once it is over). */
+  lastGame() {
+    this.dropAt = 0;
+    this.gamesLeft = 0;
+    if (session.state?.phase === 'over') this.finished = true;
+  }
+
   /** Nothing to play in, and they won't open a room: they give up looking by `at`. */
   giveUpBy(at: number) {
     this.lookingUntil = Math.min(this.lookingUntil, at);
