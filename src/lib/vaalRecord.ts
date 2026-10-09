@@ -14,8 +14,8 @@
 // newer build's stays untouched, anything else is kept aside first.
 
 import { vaalMode, type GameState } from './game.ts';
-import { makeRoom } from './keepAside.ts';
-import { readStored, tryReadStored, writeStored } from './storage.ts';
+import { clearAside, makeRoom } from './keepAside.ts';
+import { readStored, removeStored, tryReadStored, writeStored } from './storage.ts';
 
 const NAME = 'vaalLedger';
 const VERSION = 1;
@@ -116,4 +116,10 @@ export function recordLedger(e: LedgerEntry): { rec: VaalLedger; bestAltar: bool
   const r = addGame(was, e);
   if (r.rec !== was && !writeStored(NAME, serializeLedger(r.rec))) return null;
   return r;
+}
+
+/** Erases the ledger, and any kept aside (erasing the codex erases this browser's records with it). */
+export function resetLedger() {
+  removeStored(NAME);
+  clearAside(NAME);
 }

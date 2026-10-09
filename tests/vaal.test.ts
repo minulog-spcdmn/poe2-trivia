@@ -167,24 +167,40 @@ test('scores may go below zero', () => {
   assert.equal(s.players[0].vaal, 0);
 });
 
-test('a skipped corrupted question gives the orb back; a skipped pick costs nothing', () => {
+test('a skipped corrupted question bricks like a time-out; a skipped pick costs nothing', () => {
   let { engine, s } = started(['Ash', 'Bram']);
-  const me = activeOf(s).id;
-  s = engine.apply(s, { type: 'pick', category: s.offered[0], vaal: true }, me);
-  assert.equal(playerOf(s, me).vaal, 1);
+  // The guest corrupts their pick, then drops out: the host's skip (as the
+  // automatic one after a disconnect) is no way out of the brick.
+  if (activeOf(s).id !== 'p1') s = engine.apply(s, { type: 'skip' }, 'p0');
+  assert.equal(activeOf(s).id, 'p1');
+  s = engine.apply(s, { type: 'pick', category: s.offered[0], vaal: true }, 'p1');
+  assert.equal(playerOf(s, 'p1').vaal, 1);
+  s = engine.apply(s, { type: 'connection', playerId: 'p1', connected: false }, null);
   s = engine.apply(s, { type: 'skip' }, 'p0');
   assert.equal(s.phase, 'choosing');
-  assert.equal(playerOf(s, me).vaal, 2, 'the orb is back');
-  assert.equal(playerOf(s, me).score, 0);
-  assert.equal(s.altar, 0);
-  // Skipped while choosing, or on a plain question: nothing spent, nothing given.
-  const other = activeOf(s).id;
+  assert.equal(playerOf(s, 'p1').vaal, 1, 'the orb stays spent');
+  assert.equal(playerOf(s, 'p1').score, -BRICK);
+  assert.equal(s.altar, BRICK, 'the point lies on the Altar');
+  assert.equal(playerOf(s, 'p1').ledger!.bricked, 1);
+  // Still here but idle with no clock, skipped by hand: the same.
+  s = engine.apply(s, { type: 'join', playerId: 'p1', name: 'Bram' }, 'p1');
+  const me = activeOf(s).id;
+  s = engine.apply(s, { type: 'pick', category: s.offered[0], vaal: true }, me);
   s = engine.apply(s, { type: 'skip' }, 'p0');
-  assert.equal(playerOf(s, other).vaal, 2);
+  assert.equal(playerOf(s, me).vaal, 1);
+  assert.equal(playerOf(s, me).score, -BRICK);
+  assert.equal(s.altar, 2 * BRICK);
+  // Skipped while choosing, or on a plain question: nothing spent, nothing lost.
+  const other = activeOf(s).id;
+  const before = { vaal: playerOf(s, other).vaal, score: playerOf(s, other).score };
+  s = engine.apply(s, { type: 'skip' }, 'p0');
+  assert.deepEqual({ vaal: playerOf(s, other).vaal, score: playerOf(s, other).score }, before);
   s = engine.apply(s, { type: 'pick', category: s.offered[0] }, activeOf(s).id);
   const plain = activeOf(s).id;
+  const was = { vaal: playerOf(s, plain).vaal, score: playerOf(s, plain).score };
   s = engine.apply(s, { type: 'skip' }, 'p0');
-  assert.equal(playerOf(s, plain).vaal, 2);
+  assert.deepEqual({ vaal: playerOf(s, plain).vaal, score: playerOf(s, plain).score }, was);
+  assert.equal(s.altar, 2 * BRICK);
 });
 
 test('a reask keeps the corruption and spends no second orb', () => {
@@ -423,12 +439,11 @@ test('revenge orbs', () => {
   assert.equal(playerOf(again, 'p0').vaal, start);
   assert.deepEqual(again.favour, { turn: 0, ids: ['p1'], revenge: true });
   assert.equal(again.turnCount, 0);
-  for (const p of again.players) assert.equal(p.revenge, undefined, 'used up by the game it was for');
+  assert.equal(again.revenge, undefined, 'used up by the game it was for');
 
   // Change settings, then Begin: the same. The lobby holds the revenge orb.
   const lobby = engine.apply(over, { type: 'restart' }, 'p0');
-  assert.equal(playerOf(lobby, 'p1').revenge, 1);
-  assert.equal(playerOf(lobby, 'p0').revenge, undefined);
+  assert.deepEqual(lobby.revenge, ['p1']);
   assert.equal(lobby.favour, undefined);
   again = engine.apply(lobby, { type: 'start' }, 'p0');
   assert.equal(playerOf(again, 'p1').vaal, start + 1);
@@ -437,17 +452,25 @@ test('revenge orbs', () => {
   // The game after that one, with nobody losing in between, gives none.
   assert.deepEqual(engine.apply(again, { type: 'restart', play: true }, 'p0').favour, undefined);
 
-  // A player who leaves loses theirs (coming back, they are someone new).
+  // A guest whose connection drops in the lobby (the session removes them,
+  // with no sender) and who comes back keeps theirs.
+  let blip = engine.apply(lobby, { type: 'remove', playerId: 'p1' }, null);
+  assert.ok(!blip.players.some((p) => p.id === 'p1'));
+  blip = engine.apply(blip, { type: 'join', playerId: 'p1', name: 'Bram', returning: true }, 'p1');
+  blip = engine.apply(blip, { type: 'start' }, 'p0');
+  assert.equal(playerOf(blip, 'p1').vaal, start + 1);
+  assert.deepEqual(blip.favour, { turn: 0, ids: ['p1'], revenge: true });
+  // One removed by the host loses theirs (coming back, they are someone new).
   let left = engine.apply(lobby, { type: 'remove', playerId: 'p1' }, 'p0');
+  assert.equal(left.revenge, undefined);
   left = engine.apply(left, { type: 'join', playerId: 'p1', name: 'Bram' }, 'p1');
-  assert.equal(playerOf(left, 'p1').revenge, undefined);
   left = engine.apply(left, { type: 'start' }, 'p0');
   assert.equal(playerOf(left, 'p1').vaal, start);
   assert.equal(left.favour, undefined);
   // So does one who is away when the host restarts.
   const away = engine.apply(over, { type: 'connection', playerId: 'p1', connected: false }, null);
   assert.deepEqual(revengeFor(away), []);
-  assert.ok(!engine.apply(away, { type: 'restart' }, 'p0').players.some((p) => p.revenge));
+  assert.equal(engine.apply(away, { type: 'restart' }, 'p0').revenge, undefined);
 
   // A seat filled from the spectators gets the normal count.
   let watched = started(['Ash', 'Bram'], 3);
@@ -489,7 +512,8 @@ test('revenge orbs', () => {
   assert.deepEqual(revengeFor(s), []);
   again = engine.apply(s, { type: 'restart', play: true }, 'p0');
   assert.equal(again.favour, undefined);
-  assert.ok(!again.players.some((p) => p.vaal !== undefined || p.revenge !== undefined));
+  assert.ok(!again.players.some((p) => p.vaal !== undefined));
+  assert.equal(again.revenge, undefined);
 });
 
 test('favour and revenge are said by name, and to you online', () => {

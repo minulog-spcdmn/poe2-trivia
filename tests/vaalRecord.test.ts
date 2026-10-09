@@ -1,7 +1,7 @@
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { MAX_COUNT, addGame, emptyLedger, ledgerEvent, loadLedger, parseLedger, recordLedger, serializeLedger, type VaalLedger } from '../src/lib/vaalRecord.ts';
+import { MAX_COUNT, addGame, emptyLedger, ledgerEvent, loadLedger, parseLedger, recordLedger, resetLedger, serializeLedger, type VaalLedger } from '../src/lib/vaalRecord.ts';
 import { Engine, createGame, type GameState, type Item, type Question } from '../src/lib/game.ts';
 import { storeKey } from '../src/lib/storage.ts';
 
@@ -99,6 +99,19 @@ test("recordLedger never writes over a newer build's ledger; a damaged one is ke
   assert.deepEqual(loadLedger(), emptyLedger());
   blocked = false;
   assert.equal(store.size, 0);
+});
+
+test('erasing the codex erases the ledger, and one kept aside', () => {
+  store.set(KEY, '{"v":1,"games":');
+  recordLedger(game(100, 2, 1, 4));
+  assert.ok(store.has(`${KEY}.unread`));
+  const other = storeKey('codex');
+  store.set(other, 'kept');
+  resetLedger();
+  assert.deepEqual([...store.keys()], [other], 'only the ledger goes');
+  assert.deepEqual(loadLedger(), emptyLedger());
+  // The next game counts afresh, and its Altar is the biggest again.
+  assert.equal(recordLedger(game(200, 0, 0, 2))?.bestAltar, true);
 });
 
 /** A turns game just over: `seats` seated, a spectator, each player's ledger. */

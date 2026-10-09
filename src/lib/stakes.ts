@@ -10,9 +10,6 @@
 import { HOLD, vaalOn, type GameState, type Player } from './game.ts';
 import type { VaalLedger } from './vaalRecord.ts';
 
-/** A classic turns game (settings without a mode count as turns; never race or Delve). */
-const turnsGame = (s: GameState) => s.settings.mode !== 'race' && s.settings.mode !== 'delve' && !s.delve;
-
 /**
  * Who still plays this round, in seat order: the player on turn until their
  * question is revealed, then every connected seat after theirs (the seats
@@ -32,7 +29,8 @@ export function toPlay(s: GameState): string[] {
  * in a deathmatch, race or Delve.
  */
 export function finalRound(s: GameState): boolean {
-  if (!turnsGame(s) || s.deathmatch) return false;
+  // A classic turns game (vaalOn: settings without a mode count as turns; never race or Delve).
+  if (!vaalOn(s) || s.deathmatch) return false;
   if (s.phase !== 'choosing' && s.phase !== 'question' && s.phase !== 'reveal') return false;
   if (!s.players.length || Math.max(...s.players.map((p) => p.score)) < s.settings.targetScore) return false;
   return toPlay(s).length > 0;
@@ -53,7 +51,7 @@ export const matchPoint = (score: number, target: number) => score === target - 
  * reads the score before this turn's answer counted.
  */
 export function turnStakes(s: GameState): 'last' | 'match' | null {
-  if (!turnsGame(s) || s.deathmatch) return null;
+  if (!vaalOn(s) || s.deathmatch) return null;
   if (s.phase !== 'choosing' && s.phase !== 'question' && s.phase !== 'reveal') return null;
   const active = s.players[s.turn];
   if (!active) return null;

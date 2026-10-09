@@ -18,6 +18,7 @@
   import CodexFilter from './CodexFilter.svelte';
   import CodexDelve from './CodexDelve.svelte';
   import { DELVE_RECORD_KEY, loadRecords, resetRecords } from '../lib/delveRecord';
+  import { resetLedger } from '../lib/vaalRecord';
   import { ACHIEVEMENTS, ACHIEVEMENTS_KEY, WINS_KEY, checkAchievements, loadAchievements, loadWins, resetAchievements } from '../lib/achievements';
   import { announceAchievements } from '../lib/achievementToasts';
   import CodexAchievements from './CodexAchievements.svelte';
@@ -154,6 +155,7 @@
   function reset() {
     resetCodex();
     resetRecords();
+    resetLedger();
     resetAchievements();
     codex = loadCodex();
     delve = loadRecords();
@@ -569,7 +571,7 @@
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <div class="confirm panel" transition:fly={calm({ y: 20, duration: 250 })} onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" tabindex="-1">
       <h3>Erase your codex?</h3>
-      <p class="muted">Every item you have seen, every answer, every Delve run and every achievement recorded in this browser is lost. This can't be undone.</p>
+      <p class="muted">Every item you have seen, every answer, every Delve run, your Gambler's ledger and every achievement recorded in this browser is lost. This can't be undone.</p>
       <div class="actions">
         <button class="btn ghost" onclick={() => (confirmReset = false)}>Keep it</button>
         <button class="btn danger" onclick={reset}>Erase</button>

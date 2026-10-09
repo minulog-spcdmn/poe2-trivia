@@ -490,8 +490,6 @@ export interface Player {
   streak?: number;
   /** Turns: Vaal Orbs left to corrupt a pick with (see vaalStart); missing in race, Delve and older saves. */
   vaal?: number;
-  /** Between games: a revenge orb, one more Vaal Orb in the next game for losing the last one. */
-  revenge?: number;
   /** Turns: this game's corruptions that held and bricked, and the biggest Altar they took. */
   ledger?: { held: number; bricked: number; altar: number };
 }
@@ -790,6 +788,13 @@ export interface GameState {
    * last game's losers.
    */
   favour?: { turn: number; ids: string[]; revenge?: true };
+  /**
+   * The lobby after a turns game: who starts the next game with a revenge orb
+   * (one more Vaal Orb for losing the last one; see revengeFor). Kept by id,
+   * so a guest whose connection drops in the lobby gets theirs back on
+   * returning to their seat.
+   */
+  revenge?: string[];
   /** Bumped on every change so clients can ignore stale messages. */
   version: number;
 }
@@ -1151,6 +1156,13 @@ export class Engine {
         if (!isHost && from !== action.playerId) throw new ActionError('Only the host can remove players.');
         if (action.playerId === s.hostId) throw new ActionError('The host cannot leave their own game.');
         s.spectators = s.spectators.filter((o) => o.id !== action.playerId);
+        // A revenge orb waits in the lobby for a guest whose connection dropped
+        // (the session reports that with no sender) to come back; one removed
+        // by the host, or leaving by hand, gives it up.
+        if (from !== null && s.revenge?.includes(action.playerId)) {
+          s.revenge = s.revenge.filter((id) => id !== action.playerId);
+          if (!s.revenge.length) delete s.revenge;
+        }
         const idx = s.players.findIndex((p) => p.id === action.playerId);
         if (idx < 0) break;
         // Delve: whether they leave the run on their feet, or else where they fell (read while they still have a seat).
@@ -1255,17 +1267,18 @@ export class Engine {
         // game), and an empty Altar. The run's own state comes below, so this
         // goes by the mode.
         const vaal = vaalMode(s.settings);
-        const revengers = s.players.filter((p) => (p.revenge ?? 0) > 0).map((p) => p.id);
+        const owed = new Set(s.revenge ?? []);
+        const revengers = s.players.filter((p) => owed.has(p.id)).map((p) => p.id);
         for (const p of s.players) {
           if (vaal) {
-            p.vaal = vaalStart(s.settings) + (p.revenge ?? 0);
+            p.vaal = vaalStart(s.settings) + (owed.has(p.id) ? 1 : 0);
             p.ledger = { held: 0, bricked: 0, altar: 0 };
           } else {
             delete p.vaal;
             delete p.ledger;
           }
-          delete p.revenge;
         }
+        delete s.revenge;
         if (vaal) s.altar = 0;
         else delete s.altar;
         if (vaal && revengers.length) s.favour = { turn: 0, ids: revengers, revenge: true };
@@ -1429,10 +1442,8 @@ export class Engine {
           blown = this.blowUp(s, active.id);
         } else if (ledger) {
           // Wrong or out of time: the point goes onto the Altar.
-          active.score -= BRICK;
-          s.altar = (s.altar ?? 0) + BRICK;
+          this.brick(s, active);
           stake = { delta: -BRICK, altar: 0 };
-          ledger.bricked++;
         }
         if (!timedOut && chosenId && isFake(chosenId)) s.used.push(chosenId);
         if (s.deathmatch) s.deathmatch.results[active.id] = correct;
@@ -1480,9 +1491,12 @@ export class Engine {
         if (race) this.advanceRace(s);
         else {
           if (s.deathmatch && s.players[s.turn]) s.deathmatch.results[s.players[s.turn].id] = false;
-          // A corrupted question set aside gives its Vaal Orb back.
+          // A corrupted question skipped (its player gone, or idle with no
+          // clock) bricks as a time-out would: dropping out or stalling is
+          // never a way out of a corruption. A question traded for another
+          // (its art wouldn't load) is 'reask', and stays corrupted.
           const skipped = s.players[s.turn];
-          if (s.phase === 'question' && s.question?.vaal && skipped) skipped.vaal = (skipped.vaal ?? 0) + 1;
+          if (s.phase === 'question' && s.question?.vaal && skipped && vaalOn(s)) this.brick(s, skipped);
           this.advance(s);
         }
         break;
@@ -1517,10 +1531,8 @@ export class Engine {
         // Players who left during the game don't come back as ghosts in the lobby
         // (and their Vaal Orbs and ledger go with the game: 'start' hands out new
         // ones, and one more to whoever lost the game just finished).
-        const revenge = new Set(revengeFor(s));
-        fresh.players = s.players
-          .filter((p) => p.connected)
-          .map(({ vaal: _vaal, ledger: _ledger, ...p }) => ({ ...p, score: 0, recent: [], streak: 0, ...(revenge.has(p.id) ? { revenge: 1 } : {}) }));
+        const revenge = revengeFor(s);
+        fresh.players = s.players.filter((p) => p.connected).map(({ vaal: _vaal, ledger: _ledger, ...p }) => ({ ...p, score: 0, recent: [], streak: 0 }));
         // Renames during the game take effect on colours now.
         const claims = fresh.players.filter((p) => reservedHue(p) !== undefined);
         for (const p of [...claims, ...fresh.players.filter((p) => !claims.includes(p))]) settleHue(fresh, p);
@@ -1534,6 +1546,8 @@ export class Engine {
         // Object.assign keeps what createGame has no key for: the Altar and the favour go with the game.
         delete s.altar;
         delete s.favour;
+        if (revenge.length) s.revenge = revenge;
+        else delete s.revenge;
         if (action.play) return this.apply(s, { type: 'start' }, from);
         break;
       }
@@ -2344,6 +2358,13 @@ export class Engine {
     }
     s.turn = next;
     this.beginTurn(s, false);
+  }
+
+  /** A corruption bricked (wrong, out of time, or skipped): BRICK off the player's score and onto the Altar. */
+  private brick(s: GameState, p: Player) {
+    p.score -= BRICK;
+    s.altar = (s.altar ?? 0) + BRICK;
+    (p.ledger ??= { held: 0, bricked: 0, altar: 0 }).bricked++;
   }
 
   /**
