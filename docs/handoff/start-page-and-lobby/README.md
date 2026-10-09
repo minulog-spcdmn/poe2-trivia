@@ -236,11 +236,60 @@ heading), Today's unique (330 px circle, answers in one column), footer
 stacked (made by, support pill, fine print, legal). Toasts at the top on
 phones (existing behaviour). Check at 375 px.
 
+### Window sizes (addendum)
+
+The layout above was drawn at 1440 x 900. Taken literally ("columns pushed
+apart", "padding 120") it breaks on real screens. Screens: `screens/sizes/`,
+`*-spec` is the literal reading, `*-fix` is what to build.
+
+| File | Window (CSS px) | Typical device |
+| --- | --- | --- |
+| `air13` | 1440 x 725 | 13-inch MacBook Air M1, Chrome, Dock showing |
+| `pro14` | 1512 x 790 | 14-inch MacBook Pro M1 Pro |
+| `k4-200` | 1920 x 970 | 4K at 200%, or any 1080p screen |
+| `k4-150` | 2560 x 1310 | 4K at 150%, or a 1440p screen |
+| `k4-100` | 3840 x 2030 | 4K at 100% (shot scaled to 2560 wide) |
+
+What goes wrong as specced: on wide windows the two columns sit at the
+window edges with an empty middle and the room tiles stretch to 800 px and
+more; on MacBook windows the fold falls on the "Open rooms" heading, so no
+room is visible, which defeats having them always on show.
+
+Build it like this:
+
+1. **One stage.** All page content lives in a stage at most 1440 px wide,
+   centred (`margin-inline: auto`). Inside it the columns, rooms and footer
+   keep their approved sizes (content 1200 wide). Below 1440 the side
+   padding shrinks (to at least 32 px) instead of the columns; when the two
+   columns no longer fit side by side, fall back to the stacked phone order.
+2. **Centred vertically.** The stage is at least the window height; the
+   columns and rooms block is centred in it and the footer sits at the
+   bottom of the window (on tall windows the free space splits above and
+   below the block, not all at the bottom).
+3. **Short windows (height under 860).** A compact rhythm: top padding 16,
+   title 80, greeting margins 8 / 6, menu slots 92 (inline rows still fit),
+   circle 456 (answer tiles stay 510, overlap 44), rooms margin 8. Goal: on
+   a 1440 x 725 window the first row of room tiles is fully visible and the
+   second row peeks out, so scrolling is obvious. Shorter than that,
+   scrolling is fine.
+4. **Very large windows.** Above 2560 px wide the whole stage is scaled up
+   with CSS `zoom` = clamp(1, min(width / 2560, height / 1100), 2): 1.5 on
+   4K at 100%, about 1.2 on a 3440 x 1440 ultrawide. Compute it in JS on
+   resize (CSS can't divide lengths portably) and set it as a custom
+   property. At 2560 and below there is no scaling, so browser zoom keeps
+   working normally where nearly everyone is.
+5. **Retina** needs nothing: text and rings are vector or high-res. Item art
+   is drawn about 1.2x above its own size on average on 2x screens (small
+   rings and jewels more). Acceptable; do not upscale further.
+
+The same stage rules apply to the invite screen (centred, scaled the same).
+
 ---
 
 ## Done when
 
-- Both screens match the shots at 1440 and 390 (and work at 375).
+- Both screens match the shots at 1440 and 390 (and work at 375), and the
+  start page matches the `screens/sizes/*-fix` shots at those window sizes.
 - Keyboard: menu arrows/Enter/Escape, rename Enter/Escape, focus visible.
 - `npm test` and svelte-check pass; new logic (daily seed, streak, day
   number, kick settle) has unit tests.
