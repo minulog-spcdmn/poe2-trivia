@@ -27,7 +27,6 @@ import {
   findRules,
   findTileVeil,
   fuseDue,
-  fuseStick,
   hasRoom,
   holdersOf,
   inventoryOf,
@@ -643,7 +642,7 @@ export interface Question {
 export interface Blast {
   /** Who set it off; missing when it went off by itself as the clock hit 0. */
   by?: string;
-  /** Whose stick it was: whoever set it off (alone the player's); otherwise in co-op the first standing holder's (delve.ts fuseStick). */
+  /** Whose stick it was: whoever set it off (alone the player's); otherwise in co-op a standing holder's, drawn. */
   stick: string;
   /**
    * Where the new question's card lay on the offer from the blasted one's:
@@ -1559,7 +1558,7 @@ export class Engine {
         // deals with it: a flare burns first, or the dynamite goes off by
         // itself. While its fuse hisses before 0, Detonate sets it off at once.
         if (this.now() > q.deadline! + ANSWER_GRACE_MS) throw new ActionError('Too late!', true);
-        this.blast(s, coop ? (by ?? fuseStick(s)!) : active!.id, by);
+        this.blast(s, coop ? (by ?? this.anyHolder(s, 'dynamite')) : active!.id, by);
         break;
       }
     }
@@ -1917,7 +1916,7 @@ export class Engine {
   // ---- delve co-op --------------------------------------------------------
 
   /** Co-op: a random standing holder of `item` (the engine's roll, so a seeded run is repeatable). */
-  private anyHolder(s: GameState, item: 'flares'): string {
+  private anyHolder(s: GameState, item: 'flares' | 'dynamite'): string {
     return sample(holdersOf(s, item), 1, this.rng)[0];
   }
 
@@ -1982,11 +1981,11 @@ export class Engine {
         return;
       }
       // With no flare to burn, a stick of dynamite goes off by itself, from
-      // the first standing holder's pack (delve.ts fuseStick), if the depth
-      // has a blast left (its fuse has hissed over the clock's last seconds:
-      // fuseLeft). Nobody is hit, and the whole team gets the new question.
+      // a random standing holder's pack, if the depth has a blast left (its
+      // fuse has hissed over the clock's last seconds: delve.ts fuseLeft).
+      // Nobody is hit, and the whole team gets the new question.
       if (fuseDue(s)) {
-        this.blast(s, fuseStick(s)!, null);
+        this.blast(s, this.anyHolder(s, 'dynamite'), null);
         return;
       }
       const hits = waitingIds(s).map((id) => ({ playerId: id, ...this.hit(s, id), timedOut: true }));

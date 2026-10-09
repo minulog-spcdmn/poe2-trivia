@@ -82,8 +82,8 @@ the same thing for everyone.
     host, then the others, drawn. The first right answer still ends the
     question for everyone: a blast after it, or an answer to a question
     blasted away, is dropped, whichever reached the host second. Dynamite
-    going off at 0 comes from the pack of the first holder still standing,
-    in seat order, and hits nobody: the whole team gets the new question.
+    going off at 0 comes from the pack of a random holder still standing,
+    and hits nobody: the whole team gets the new question.
   - Between questions, a player with 2 or more lives can give one to a
     teammate who perished, who comes back with that life and nothing else.
   - Perishing drops everything you carry, for good.

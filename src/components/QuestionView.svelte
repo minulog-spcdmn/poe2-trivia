@@ -31,7 +31,7 @@
   import { fxActive, type Handle } from '../lib/fx/core';
   import { dock, narrow, phone } from '../lib/layout';
   import { portal } from '../lib/portal';
-  import { DELVE_FUSE_MS, blastProblem, clockLeft, dynamiteOf, fellAt, fuseDue, fuseLeft, fuseStick, isGroupRun, itemsWorkOn, livesOf, waitingIds } from '../lib/delve';
+  import { DELVE_FUSE_MS, blastProblem, clockLeft, dynamiteOf, fellAt, fuseDue, fuseLeft, holdersOf, isGroupRun, itemsWorkOn, livesOf, waitingIds } from '../lib/delve';
   import { blownText, coopMissText, coopRevealText, flareText, namesOf, perishedText, wardText } from '../lib/difficultyText';
   import ItemGlyph from './ItemGlyph.svelte';
   import type { GlyphKind } from '../lib/inventoryArt';
@@ -188,7 +188,7 @@
   // at hand its place is kept until the question ends, the button only
   // showing while it can be used, so nothing moves as it comes and goes. When
   // it will go off by itself as the clock hits 0 (no flare to burn first;
-  // together the first standing holder's stick), its fuse burns over
+  // together a random standing holder's stick), its fuse burns over
   // the clock's last seconds (delve.ts fuseLeft): the button's bar burns
   // down to 0 with it, on the host's clock as Next's does, and the question
   // can still be answered, or Detonate pressed, meanwhile.
@@ -233,11 +233,12 @@
       clearTimeout(timer);
     };
   });
-  /** Whose dynamite the fuse burns on: alone the player's, together the first standing holder's (delve.ts fuseStick). */
+  /** Whose dynamite the fuse burns on: alone the player's; together the one holder's, or with several the team's (one of theirs is drawn as it goes off). */
   const fuseOwner = $derived.by(() => {
     if (!coop) return delveYou ? 'your' : `${active.name}'s`;
-    const id = fuseStick(s);
-    return id === me ? 'your' : `${nameOf(id ?? '')}'s`;
+    const ids = holdersOf(s, 'dynamite');
+    if (ids.length !== 1) return "the team's";
+    return ids[0] === me ? 'your' : `${nameOf(ids[0])}'s`;
   });
   /** Whether this device can blast the question away now (delve.ts blastProblem; on one device, for the player): while its clock runs, its fuse to the end. */
   const canBlast = $derived(
