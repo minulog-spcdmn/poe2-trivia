@@ -2,9 +2,14 @@
 # Upscales the item art for the site. poe2db only has the art at about 104 px
 # per inventory cell (108 x 108 for a ring), and lossy, which the game draws
 # much bigger than that. Real-ESRGAN (x4plus) redraws each picture at 4x, which
-# is then scaled down to ART_SCALE (2x, src/lib/ui-paths.ts) and saved to
-# public/items/. The originals stay in art-source/items/ (fetch-data puts them
-# there); only those without an upscaled copy yet are done, unless --all.
+# is then scaled down to ART_SCALE (2x, src/lib/ui-paths.ts) and mixed with
+# the original (smoothly enlarged) at MIX, then saved to public/items/. The
+# originals stay in art-source/items/ (fetch-data puts them there); only those
+# without an upscaled copy yet are done, unless --all.
+#
+# On its own the model repaints the art (smooth, waxy, painterly). In blind
+# tests the mix at 30% beat 50% and 70% (and the plain model, other models,
+# and the original as it was) on 35 items, small and big alike.
 #
 # Setup, once (CPU is enough; the whole set takes about an hour):
 #   python3 -m venv .venv-art
@@ -30,6 +35,8 @@ OUT_DIR = os.path.join(ROOT, 'public', 'items')
 MODEL = os.environ.get('ART_MODEL', os.path.join(ROOT, '.venv-art', 'RealESRGAN_x4plus.pth'))
 # Keep in step with ART_SCALE in src/lib/ui-paths.ts.
 ART_SCALE = 2
+# How much of the model's picture goes into the mix; the rest is the original.
+MIX = 0.3
 QUALITY = 90
 
 
@@ -107,7 +114,20 @@ def upscale(net, src, out):
     alpha = run(net, np.repeat(a[..., 3:], 3, 2)).mean(2).round().astype(np.uint8)
     big = Image.fromarray(np.dstack([rgb, alpha]), 'RGBA')
     size = (im.width * ART_SCALE, im.height * ART_SCALE)
-    big.resize(size, Image.LANCZOS).save(out, 'WEBP', quality=QUALITY, alpha_quality=100, method=6)
+    model = np.asarray(big.resize(size, Image.LANCZOS)).astype(np.float32)
+    save(mix(model, im), out)
+
+
+def mix(model, im):
+    """The model's picture (float RGBA at ART_SCALE) mixed with the original enlarged smoothly; the model's alpha, whose edges are crisper."""
+    base = np.asarray(im.resize((model.shape[1], model.shape[0]), Image.BICUBIC)).astype(np.float32)
+    out = (MIX * model + (1 - MIX) * base).round().clip(0, 255).astype(np.uint8)
+    out[..., 3] = model[..., 3].astype(np.uint8)
+    return Image.fromarray(out, 'RGBA')
+
+
+def save(im, out):
+    im.save(out, 'WEBP', quality=QUALITY, alpha_quality=100, method=6)
 
 
 def main():

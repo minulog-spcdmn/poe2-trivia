@@ -807,8 +807,9 @@ doesn't reveal the answer.
 
 poe2db's art is small (about 104 px per inventory cell, so 108 × 108 for a
 ring) and lossy, and the game draws it bigger than that. The site serves
-copies upscaled with Real-ESRGAN (x4plus, scaled down to 2×) from
-`public/items/`. For new items, run `scripts/upscale-art.py` (its header has
+copies upscaled with Real-ESRGAN (x4plus, scaled down to 2× and mixed 30%
+with the smoothly enlarged original, which beat other models and mixes in
+blind tests) from `public/items/`. For new items, run `scripts/upscale-art.py` (its header has
 the one-time setup: a Python venv with torch for the CPU and the model file).
 It only does the items that have no upscaled copy yet. All sizes in the code
 stay in the original art's pixels (`ART_SCALE` in `src/lib/ui-paths.ts`), and
