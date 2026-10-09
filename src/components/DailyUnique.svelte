@@ -117,13 +117,20 @@
 
 <section class="daily" aria-label="Today's unique">
   <div class="stage" class:lit={answered && right} class:dim={answered && !right}>
-    <div class="circle">
-      <ArcaneCircle size="100%" state={answered && right ? 'good' : 'idle'} strength={!answered ? 0.5 : right ? 0.85 : 0.26} />
-    </div>
-    <div class="art" bind:this={artEl}>
-      {#key q.itemId + (practice ? ':p' : '')}
-        <ArtImage src={itemImage(q.itemId)} alt="The item to name" scale={4} float />
-      {/key}
+    <!-- The fade at the bottom is a mask, and a mask cuts off whatever lies
+         outside its box: it is drawn on a box larger than the circle, so the
+         circle's glow (and its wave when answered right) spreads freely. -->
+    <div class="veil">
+      <div class="inner">
+        <div class="circle">
+          <ArcaneCircle size="100%" state={answered && right ? 'good' : 'idle'} strength={!answered ? 0.5 : right ? 0.85 : 0.26} />
+        </div>
+        <div class="art" bind:this={artEl}>
+          {#key q.itemId + (practice ? ':p' : '')}
+            <ArtImage src={itemImage(q.itemId)} alt="The item to name" scale={4} float />
+          {/key}
+        </div>
+      </div>
     </div>
     <p class="chip">
       <span class="topic">{questionTopic(q)}</span>
@@ -201,9 +208,20 @@
     width: var(--daily-circle, calc(100% + 10px));
     margin-inline: calc((100% - var(--daily-circle, calc(100% + 10px))) / 2);
     aspect-ratio: 1;
-    /* The circle fades out at the bottom, into the answers. */
-    -webkit-mask-image: linear-gradient(180deg, #000 72%, transparent 96%);
-    mask-image: linear-gradient(180deg, #000 72%, transparent 96%);
+  }
+  /* The circle fades out at the bottom, into the answers: from 72% to 96%
+     of its height, on a box reaching 15% past it on every side. */
+  .veil {
+    position: absolute;
+    inset: -15%;
+    pointer-events: none;
+    -webkit-mask-image: linear-gradient(180deg, #000 66.9%, transparent 85.4%);
+    mask-image: linear-gradient(180deg, #000 66.9%, transparent 85.4%);
+  }
+  /* The circle's own box again (15 / 130 of the veil on each side). */
+  .inner {
+    position: absolute;
+    inset: 11.5385%;
   }
   .circle {
     position: absolute;
