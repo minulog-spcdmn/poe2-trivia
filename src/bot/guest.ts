@@ -28,7 +28,9 @@ import { between, log, playersLine } from './util';
 /** A host alone in their lobby this long (ms, from..to, rolled for each room) gets company. */
 const WAIT_ALONE: [number, number] = [5000, 20000];
 /** A lobby with company already: seen this long, and another may come along (ms, from..to). */
-const WAIT_MORE: [number, number] = [15000, 40000];
+const WAIT_MORE: [number, number] = [8000, 25000];
+/** Turned away for now (the runner spaces arrivals in a room): asks again this soon (ms, from..to). */
+const ASK_AGAIN: [number, number] = [3000, 8000];
 /** The room they came to join, when a host made way for it (ms, from..to). */
 const WAIT_PREFERRED: [number, number] = [3000, 10000];
 /** Games played in a room before leaving (from..to). */
@@ -61,6 +63,9 @@ export class Guest {
   private room: RoomInfo | null = null;
   /** Lobbies they could join: since when they have seen each, and how long until they do. */
   private waiting = new Map<string, { since: number; wait: number }>();
+  /** Those lobbies as the last list showed them, and how much each appeals. */
+  private open: RoomInfo[] = [];
+  private appeals = new Map<string, number>();
   private lookingUntil = Date.now() + between(...LOOK_PATIENCE);
   /** Joining: given up on then. */
   private joinBy = 0;
@@ -122,9 +127,10 @@ export class Guest {
   /**
    * A new room list: while looking, keeps track of lobbies they could join
    * (a host alone soonest, one with company already after a longer while),
-   * and of those that have waited their while, joins the one that appeals
-   * most, if it appeals enough. People's lobbies come first: one of our own
-   * bot rooms only while there is no other.
+   * and how much each appeals. People's lobbies come first: one of our own
+   * bot rooms only while there is no other. Which to join, and when, is
+   * the tick's (pick), so a room's while is up when it's up, not at the
+   * next list.
    */
   see(rooms: RoomInfo[], now: number) {
     if (this.doing !== 'looking') return;
@@ -137,11 +143,19 @@ export class Guest {
     for (const code of this.waiting.keys()) if (!codes.has(code)) this.waiting.delete(code);
     for (const r of open)
       if (!this.waiting.has(r.code)) this.waiting.set(r.code, { since: now, wait: between(...(r.code === this.prefer ? WAIT_PREFERRED : r.players === 1 ? WAIT_ALONE : WAIT_MORE)) });
+    this.open = open;
+    this.appeals = new Map(open.map((r) => [r.code, r.code === this.prefer ? Infinity : appeal(this.who.persona, this.who.prefs, r, this.warmth(r.host))]));
+  }
+
+  /** Of the lobbies that have waited their while, joins the one that appeals most, if it appeals enough. */
+  private pick(now: number) {
     const least = settlesFor((now - this.since) / 60000);
-    const appeals = new Map(open.map((r) => [r.code, r.code === this.prefer ? Infinity : appeal(this.who.persona, this.who.prefs, r, this.warmth(r.host))]));
-    const due = open.filter((r) => now - this.waiting.get(r.code)!.since >= this.waiting.get(r.code)!.wait && appeals.get(r.code)! >= least);
+    const due = this.open.filter((r) => {
+      const w = this.waiting.get(r.code);
+      return !!w && now - w.since >= w.wait && this.appeals.get(r.code)! >= least;
+    });
     if (!due.length) return;
-    due.sort((a, b) => appeals.get(b.code)! - appeals.get(a.code)! || this.waiting.get(a.code)!.since - this.waiting.get(b.code)!.since);
+    due.sort((a, b) => this.appeals.get(b.code)! - this.appeals.get(a.code)! || this.waiting.get(a.code)!.since - this.waiting.get(b.code)!.since);
     void this.join(due[0], now);
   }
 
@@ -159,7 +173,7 @@ export class Guest {
       return;
     }
     if (!yes) {
-      this.waiting.set(room.code, { since: now, wait: between(...WAIT_MORE) });
+      this.waiting.set(room.code, { since: Date.now(), wait: between(...ASK_AGAIN) });
       this.doing = 'looking';
       return;
     }
@@ -202,7 +216,11 @@ export class Guest {
       this.leave(now);
       return { why, visit, host };
     };
-    if (this.doing === 'looking') return now > this.lookingUntil ? go('found nothing to join') : null;
+    if (this.doing === 'looking') {
+      if (now > this.lookingUntil) return go('found nothing to join');
+      this.pick(now);
+      return null;
+    }
     if (this.doing === 'asking') return null;
     const s = session.state;
     const me = session.myPlayerId;

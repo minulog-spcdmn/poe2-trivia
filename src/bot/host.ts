@@ -28,8 +28,13 @@ const OVERTIME_MS = 30 * 60000;
 const MAKE_WAY_CHECKS = 2;
 /** An empty lobby stays open at least this long before it makes way. */
 const MIN_OPEN_MS = 60000;
-/** How long a host waits for more after someone comes or goes (ms, from..to), by the others in the lobby: longest with just one. */
-const waitForMore = (others: number): [number, number] => (others <= 1 ? [20000, 45000] : others === 2 ? [12000, 30000] : [8000, 20000]);
+/**
+ * How long a host waits for more after someone comes or goes (ms, from..to),
+ * by the others in the lobby: with just one, long enough for the next to
+ * find the room (the list is checked every 10 to 20 s, and arrivals come 5
+ * to 20 s apart); with a few, a little; with a crowd, hardly.
+ */
+const waitForMore = (others: number): [number, number] => (others <= 1 ? [45000, 90000] : others === 2 ? [20000, 40000] : [8000, 20000]);
 /** The chance a host fiddles with the rules once someone has joined its lobby. */
 const FIDDLE_CHANCE = 0.3;
 /** Chance that a host nobody joined tries other rules once, instead of leaving. */
