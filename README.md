@@ -793,7 +793,7 @@ Everything is drawn in WebGL2 with float precision and dithered once at the
 Item names and art are scraped from poe2db.tw
 ([uniques](https://poe2db.tw/us/Unique_item),
 [lineage supports](https://poe2db.tw/us/Lineage_Supports)) and committed to
-the repo (`src/data/items.json` and `public/items/`), so the game doesn't
+the repo (`src/data/items.json` and `art-source/items/`), so the game doesn't
 depend on poe2db being up.
 
 ```sh
@@ -803,6 +803,15 @@ npm run fetch-data
 Each item's group and category come from its art folder; see
 `CATEGORY_RULES` in `scripts/fetch-data.mjs`. Image files are named with a hash, so the URL
 doesn't reveal the answer.
+
+poe2db's art is small (about 104 px per inventory cell, so 108 × 108 for a
+ring) and lossy, and the game draws it bigger than that. The site serves
+copies upscaled with Real-ESRGAN (x4plus, scaled down to 2×) from
+`public/items/`. For new items, run `scripts/upscale-art.py` (its header has
+the one-time setup: a Python venv with torch for the CPU and the model file).
+It only does the items that have no upscaled copy yet. All sizes in the code
+stay in the original art's pixels (`ART_SCALE` in `src/lib/ui-paths.ts`), and
+`tests/itemArt.test.ts` checks every item has its upscaled copy.
 
 After the art changes, rebuild the look-alike table (needs ffmpeg):
 
