@@ -41,7 +41,8 @@
       : [...s.players].sort((a, b) => b.score - a.score || +won(b.id) - +won(a.id)),
   );
   const winner = $derived(s.players.find((p) => s.winners.includes(p.id)) ?? standings[0]);
-  const spectators = $derived(s.spectators ?? []);
+  /** Spectators who take a seat in the next game (not those who just watch). */
+  const spectators = $derived((s.spectators ?? []).filter((o) => !o.stay));
 
   // One click only: a second one while this screen fades out would restart the new game.
   let leaving = $state(false);
@@ -338,6 +339,14 @@
       {spectators.map((o) => o.name).join(', ')} {spectators.length === 1 ? 'joins' : 'join'} the next game.
     </p>
   {/if}
+  {#if session.spectating}
+    <p class="joining muted" in:fly={{ y: 10, duration: 600, delay: 1400 }}>
+      {session.justWatching ? "You're just watching." : "You'll play in the next game."}
+      <button class="btn small ghost watch-toggle" onclick={() => session.watch(!session.justWatching)}>
+        {session.justWatching ? 'Play next game' : 'Just watch'}
+      </button>
+    </p>
+  {/if}
 
   <p class="credit" in:fly={{ y: 10, duration: 600, delay: 1600 }}>
     <a href={SITE_URL} target="_blank" rel="noreferrer">poe2.quest</a> · made by
@@ -600,6 +609,10 @@
   .joining {
     margin: 1rem 0 0;
     font-style: italic;
+  }
+  .watch-toggle {
+    margin-left: 0.5em;
+    font-style: normal;
   }
   /* Share: an icon button the height of its neighbours, with a note when the text was copied. */
   .share {

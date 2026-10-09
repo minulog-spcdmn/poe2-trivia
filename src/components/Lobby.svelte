@@ -2,7 +2,7 @@
   import { flip } from 'svelte/animate';
   import { fly, scale } from 'svelte/transition';
   import { session } from '../lib/session.svelte';
-  import { MAX_PLAYERS, RACE_DEFAULT_TIMER, TIMER_STEPS, difficultyOf, rulesFor, type Difficulty, type GameMode } from '../lib/game';
+  import { MAX_PLAYERS, RACE_DEFAULT_TIMER, TIMER_STEPS, difficultyOf, rulesFor, type Difficulty, type GameMode, type Spectator } from '../lib/game';
   import { DIFFICULTY_NAMES, describe } from '../lib/difficultyText';
   import CustomDifficulty from './CustomDifficulty.svelte';
   import DelveRules from './DelveRules.svelte';
@@ -181,7 +181,10 @@
   const together = $derived(!local && s.players.length > 1);
   const canStart = $derived(s.players.length >= 1 && !delveCrowded);
   /** Spectators left over when the last game filled every seat. */
-  const waiting = $derived(s.spectators ?? []);
+  const waiting = $derived((s.spectators ?? []).filter((o) => !o.stay));
+  /** Spectators who chose to watch rather than play. */
+  const watching = $derived((s.spectators ?? []).filter((o) => o.stay));
+  const you = (o: Spectator) => o.name + (o.id === session.myPlayerId ? ' (you)' : '');
   const race = $derived(s.settings.mode === 'race');
   const delve = $derived(s.settings.mode === 'delve');
   const difficulty = $derived(difficultyOf(s.settings.difficulty));
@@ -285,9 +288,28 @@
           </li>
         {/each}
       </ul>
+      {#snippet onlookers(list: Spectator[])}
+        {#each list as o, i (o.id)}{i ? ', ' : ''}{you(o)}{#if isHost}<button
+              class="remove inline"
+              title="Remove {o.name}"
+              aria-label="Remove {o.name}"
+              onclick={() => session.kick(o.id)}>×</button
+            >{/if}{/each}
+      {/snippet}
       {#if waiting.length}
-        <p class="hint muted">
-          Waiting for a free seat: {waiting.map((o) => o.name + (o.id === session.myPlayerId ? ' (you)' : '')).join(', ')}
+        <p class="hint muted">Waiting for a free seat: {@render onlookers(waiting)}</p>
+      {/if}
+      {#if watching.length}
+        <p class="hint muted">Just watching: {@render onlookers(watching)}</p>
+      {/if}
+      {#if !local && !isHost && session.myPlayerId}
+        <!-- A guest can sit the games out and watch, and take a seat again. -->
+        <p class="watch-choice">
+          {#if session.justWatching}
+            <button class="btn small ghost" onclick={() => session.watch(false)} title="Play in the next game">Take a seat</button>
+          {:else}
+            <button class="btn small ghost" onclick={() => session.watch(true)} title="Watch the games without playing">Just watch</button>
+          {/if}
         </p>
       {/if}
 
@@ -730,6 +752,11 @@
     font-size: 1.2rem;
     line-height: 1;
   }
+  .remove.inline {
+    width: 22px;
+    height: 22px;
+    font-size: 1rem;
+  }
   .remove:hover {
     color: var(--bad);
     border-color: rgba(224, 85, 63, 0.4);
@@ -757,6 +784,10 @@
     margin: 0.8rem 0 0;
     font-size: 0.95rem;
     font-style: italic;
+  }
+  .watch-choice {
+    margin: 0.6rem 0 0;
+    text-align: center;
   }
   .waiting {
     display: flex;

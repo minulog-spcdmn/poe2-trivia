@@ -349,10 +349,19 @@ class Session {
     return this.mode === 'local' || this.mode === 'host';
   }
 
-  /** Online guest who joined a running game and watches until the next one. */
+  /** Guest: chose to watch rather than play (kept through reconnects, see rewatch). */
+  private watchOnly = false;
+
+  /** Online guest who isn't playing: joined a running game, or chose to watch. */
   get spectating() {
     const s = this.state;
     return this.mode === 'client' && !!s && !!this.myPlayerId && !s.players.some((p) => p.id === this.myPlayerId);
+  }
+
+  /** Spectating, and staying a spectator when the next game starts. */
+  get justWatching() {
+    const me = this.myPlayerId;
+    return this.spectating && !!this.state?.spectators?.some((o) => o.id === me && o.stay);
   }
 
   get race() {
@@ -450,7 +459,7 @@ class Session {
       this.status = 'connecting';
       this.loadPrivate(saved.priv);
       this.openRoom(saved.code, 0, underRuleset(renameCategories(saved.state)));
-    } else if (saved.mode === 'client') this.join(saved.code, saved.name);
+    } else if (saved.mode === 'client') this.join(saved.code, saved.name, !!saved.watch);
   }
 
   // ---- hosting ----------------------------------------------------------
@@ -1052,24 +1061,52 @@ class Session {
 
   // ---- joining ----------------------------------------------------------
 
-  join(code: string, name: string) {
+  join(code: string, name: string, watch = false) {
     // The host's room has its own settings: a shared link's Delve is moot.
     this.delveLink = false;
     this.reset();
     this.mode = 'client';
     this.status = 'connecting';
     this.joinName = name;
+    this.watchOnly = watch;
     this.code = code.toUpperCase().trim();
     if (!CODE_PATTERN.test(this.code)) {
       this.fail(`"${this.code}" isn't a valid room code.`, 'Invalid code');
       return;
     }
-    writeSaved({ mode: 'client', code: this.code, name });
+    this.saveGuest();
     const room = this.code;
     this.helloSecret = roomSecret(mySecret, room).catch(() => stored(`secret.${room}`, () => randomToken(32)));
     this.joinedAt = Date.now();
     this.armConnectTimeout();
     this.startClientPeer();
+  }
+
+  private saveGuest() {
+    writeSaved({ mode: 'client', code: this.code, name: this.joinName, ...(this.watchOnly ? { watch: true } : {}) });
+  }
+
+  /**
+   * Guest: watch rather than play (a spectator stays one when the next game
+   * starts; a player in the lobby gives up their seat), or take a seat again.
+   */
+  watch(on: boolean) {
+    if (this.mode !== 'client') return;
+    this.watchOnly = on;
+    this.saveGuest();
+    this.dispatch({ type: 'watch', watch: on });
+  }
+
+  /**
+   * Guest who chose to watch, back in the room (after a reload, theirs or the
+   * host's): the host has them down as joining the next game again, so they
+   * say once more that they'd rather watch.
+   */
+  private rewatch(s: GameState) {
+    const me = this.myPlayerId;
+    if (!this.watchOnly || !me) return;
+    const seated = s.phase === 'lobby' && s.players.some((p) => p.id === me);
+    if (seated || s.spectators?.some((o) => o.id === me && !o.stay)) this.hostConn?.send({ t: 'action', action: { type: 'watch', watch: true } });
   }
 
   /**
@@ -1255,6 +1292,8 @@ class Session {
     stale?.close();
     // Anything from the host: a link it then closes was not turned away without a word.
     let heard = false;
+    // Just welcomed: the next state says whether the host still knows this guest would rather watch.
+    let rewatch = false;
     // A host that vanishes (crashed tab, lost Wi-Fi) often never fires 'close'.
     // It pings every few seconds, so silence means the connection is dead.
     let lastHeard = Date.now();
@@ -1276,6 +1315,7 @@ class Session {
       switch (msg.t) {
         case 'welcome':
           this.myPlayerId = msg.playerId;
+          rewatch = true;
           break;
         case 'state':
           this.syncClock(msg.now);
@@ -1284,6 +1324,11 @@ class Session {
             this.state = msg.state;
           }
           this.status = 'ready';
+          // The first state after the welcome has this guest as the host sees them.
+          if (rewatch) {
+            rewatch = false;
+            this.rewatch(msg.state);
+          }
           break;
         case 'error':
           // An answer turned down (too quick) didn't count: the one given next is timed instead.
@@ -2141,6 +2186,7 @@ class Session {
     this.status = 'idle';
     this.code = '';
     this.myPlayerId = null;
+    this.watchOnly = false;
     // A guest's offset to its host's clock means nothing for the next room.
     this.clockOffset = 0;
     this.clockSynced = false;
@@ -2173,7 +2219,8 @@ class Session {
 type Saved =
   | { mode: 'local'; state: GameState }
   | { mode: 'host'; code: string; state: GameState; priv: HostPrivate }
-  | { mode: 'client'; code: string; name: string };
+  /** `watch`: the guest chose to watch rather than play. */
+  | { mode: 'client'; code: string; name: string; watch?: boolean };
 const SAVE = 'session.v4';
 /**
  * Before guests' tokens became per-room. A hosted room saved then can't be

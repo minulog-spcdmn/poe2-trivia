@@ -52,6 +52,8 @@
   const missed = $derived(new Set(s.question?.misses.map((m) => m.playerId) ?? []));
   const canKick = $derived(session.mode === 'host');
   const spectators = $derived(s.spectators ?? []);
+  /** Those of them who take a seat in the next game (the rest just watch). */
+  const joining = $derived(spectators.filter((o) => !o.stay));
   /** Delve: lives instead of a score. */
   const run = $derived(s.delve ?? null);
   /** Delve together: nobody has a turn; on phones your own entry is the one spelled out. */
@@ -802,7 +804,17 @@
           >{/if}</span
       >
     {/each}
-    <span class="hint">· joining next game</span>
+    {#if joining.length === spectators.length}
+      <span class="hint">· joining next game</span>
+    {:else if joining.length}
+      <span class="hint">· {joining.map((o) => o.name).join(', ')} {joining.length === 1 ? 'joins' : 'join'} next game</span>
+    {/if}
+    {#if session.spectating}
+      <!-- Your own choice: take a seat when the next game starts, or keep watching. -->
+      <button class="btn small ghost watch-toggle" onclick={() => session.watch(!session.justWatching)}>
+        {session.justWatching ? 'Play next game' : 'Just watch'}
+      </button>
+    {/if}
   </p>
 {/if}
 
@@ -1361,6 +1373,11 @@
   .spectator {
     color: var(--text);
     margin-left: 0.5em;
+  }
+  .watch-toggle {
+    margin-left: 0.6em;
+    padding: 0.25em 0.7em;
+    font-style: normal;
   }
   .kick-inline {
     margin-left: 0.25em;

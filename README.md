@@ -522,6 +522,10 @@ browser (`src/lib/achievements.ts`); erasing the codex erases them.
     **spectator** (up to 8) and gets a seat when the host starts the next
     game. This works with the code for any room that isn't locked; public
     rooms that are in a game also show a **Watch** button under Open rooms.
+  - A spectator can choose **Just watch** to keep watching instead of
+    taking a seat when the next game starts (and **Play next game** to
+    change their mind). A guest in the lobby can give up their seat the same
+    way, and **Take a seat** again. The choice holds through reconnects.
   - The room code stays in the header during the game, unless the host
     hid it for streaming.
   - After a game, the host can **Play again** (same settings, starts right
