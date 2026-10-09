@@ -26,16 +26,24 @@ type Box = [number, number, number, number];
 /** A picture as a grid: brightness and opacity per cell (brightness × opacity, so the background counts as dark). */
 type Grid = Float32Array;
 
+/**
+ * Pictures loaded: the site's item pictures for good (there are a few hundred),
+ * the ones received for a question (blob: URLs, made afresh for each and let go
+ * of once it is over) only until the next question.
+ */
 const images = new Map<string, Promise<HTMLImageElement>>();
+const received = new Map<string, Promise<HTMLImageElement>>();
+let receivedFor = 0;
 
 function load(url: string): Promise<HTMLImageElement> {
-  let p = images.get(url);
+  const cache = url.startsWith('blob:') ? received : images;
+  let p = cache.get(url);
   if (!p) {
     const img = new Image();
     img.src = url;
     p = img.decode().then(() => img);
-    images.set(url, p);
-    p.catch(() => images.delete(url));
+    cache.set(url, p);
+    p.catch(() => cache.delete(url));
   }
   return p;
 }
@@ -166,6 +174,10 @@ export let lastReading: { qid: number; index: number; margin: number } | null = 
 /** Which option the art shows, or null with nothing (enough) to go on yet. */
 export const sight: Eyes = async (s: GameState, q: Question) => {
   if (shown.qid !== q.askedAt) return null;
+  if (receivedFor !== q.askedAt) {
+    received.clear();
+    receivedFor = q.askedAt;
+  }
   const flips = activeRules(s).mirror > 0;
   const scores: number[] = [];
   try {

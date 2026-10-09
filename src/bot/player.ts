@@ -23,8 +23,7 @@ interface Plan {
   run: () => void | Promise<void>;
 }
 
-const log = (...args: unknown[]) => console.log('[bot]', ...args);
-const between = (lo: number, hi: number) => Math.round(lo + Math.random() * (hi - lo));
+import { between, log } from './util';
 
 /** Each option's name, as far as this device knows it (a guest has no item ids before the reveal). */
 const optionNames = (o: Question) => o.labels.map((l, i) => l ?? engine.byId.get(o.options[i])?.name ?? '');
@@ -260,8 +259,9 @@ export class Player {
    * guess (falling for a look-alike of what the eyes saw). Eyes that can't
    * tell leave a guess among the options still in.
    */
-  private async answer(s: GameState, q: Question, knows: boolean, ask: Ask, ruledOut: number[], what: string) {
-    const seen = await this.eyes(s, q);
+  /** `seen`: what the eyes made of it when it made up its mind (they look again only if they couldn't tell then). */
+  private async answer(s: GameState, q: Question, knows: boolean, ask: Ask, ruledOut: number[], what: string, seenBefore: number | null) {
+    const seen = seenBefore ?? (await this.eyes(s, q));
     const o = this.open(q);
     if (!o) return;
     const names = optionNames(o);
@@ -343,7 +343,7 @@ export class Player {
       log(`lets "${q.category}" go by`);
       return;
     }
-    if (ask.mode === 'delve' && !knows && isGroupRun(s)) return this.lateGuess(key, s, q, ask, start);
+    if (ask.mode === 'delve' && !knows && isGroupRun(s)) return this.lateGuess(key, s, q, ask, start, seen);
     if (ask.mode === 'delve' && !knows && !blastProblem(s, me) && blasts(this.persona, Math.random)) {
       // Not sure, and dynamite at hand: blast it away for another (deciding so is quicker than answering).
       this.plans.set(key, {
@@ -373,7 +373,7 @@ export class Player {
         if (!o) return;
         // Options already shown wrong (others' guesses in a race, the team's in Delve) are out.
         const ruledOut = [...o.misses.map((m) => m.index), ...(o.struck ?? []).map((x) => x.index)];
-        return this.answer(s, q, knows && !panicked?.fumble, ask, ruledOut, how ? `answers (${how})` : 'answers');
+        return this.answer(s, q, knows && !panicked?.fumble, ask, ruledOut, how ? `answers (${how})` : 'answers', seen);
       },
     });
   }
@@ -386,7 +386,7 @@ export class Player {
    * to burn gives everyone more time, so it waits for the new end; otherwise
    * it guesses, as a time-out would cost the life anyway.
    */
-  private lateGuess(key: string, s: GameState, q: Question, ask: Ask, start: number) {
+  private lateGuess(key: string, s: GameState, q: Question, ask: Ask, start: number, seen: number | null) {
     const me = session.myPlayerId!;
     const margin = between(1000, 2500);
     const run = () => {
@@ -397,7 +397,7 @@ export class Player {
       if (o.deadline - margin > session.hostNow() + 300) return void this.plans.set(key, { at: o.deadline - margin, run });
       if (fuseDue(cur)) return log('holds: the dynamite goes off by itself');
       if (teamItemReady(cur, 'flares') && !o.flared) return void this.plans.set(key, { at: o.deadline + 400, run });
-      return this.answer(s, q, false, ask, (o.struck ?? []).map((x) => x.index), 'guesses near the end:');
+      return this.answer(s, q, false, ask, (o.struck ?? []).map((x) => x.index), 'guesses near the end:', seen);
     };
     this.plans.set(key, { at: Math.max(start + 1000, q.deadline! - margin), run });
   }

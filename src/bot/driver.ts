@@ -14,6 +14,8 @@ import { readStored, removeStored, writeStored } from '../lib/storage';
 import { fiddled, identityOf, lonelyLength, nextName, otherPrefs, shiftLength, type Identity, type Mode, type RoomPrefs } from './identities';
 import { joinable, makesWay, wanted, type Role } from './wanted';
 import { hostEyes, moodOf, Player } from './player';
+import { HOST_ODDS, staysOn } from './brain';
+import { between, log, playersLine, time } from './util';
 
 const TICK_MS = 200;
 /** Everyone else gone mid-game this long (they may only be reloading): back to the lobby. */
@@ -36,27 +38,31 @@ const SCOUT_OPEN: [number, number] = [40000, 75000];
 const WANTED_CHECKS: Record<Role, number> = { first: 1, second: 2 };
 /** A host leaving a room that is still wanted hands over: the next one opens a room this soon after. */
 const HAND_OVER_MS = 2000;
+/** A list checked this recently is trusted for a hand-over; an older one waits for a fresh check. */
+const FRESH_LIST_MS = 30000;
 /** Checks in a row that must find another room to join before an empty lobby makes way. */
 const MAKE_WAY_CHECKS = 2;
 /** An empty lobby stays open at least this long before it makes way. */
 const MIN_OPEN_MS = 60000;
-/** After a game: the chance a host who won stays on 10 to 25 minutes longer, and one who lost heavily leaves. */
-const HOST_STAYS_AFTER_WIN = 0.4;
-const HOST_LEAVES_AFTER_LOSS = 0.15;
 /** The chance a host fiddles with the rules once someone has joined its lobby. */
 const FIDDLE_CHANCE = 0.3;
 /** Chance that a host nobody joined tries other rules once, instead of leaving. */
 const RETRY_CHANCE = 0.35;
 
-const log = (...args: unknown[]) => console.log('[bot]', ...args);
-const between = (lo: number, hi: number) => Math.round(lo + Math.random() * (hi - lo));
 
-/** Who is on (`on`, until `until`), or the earliest the next one comes (`backAt`); `recent`: who came on lately. */
+/**
+ * Who is on (`on`, until `until`), or the earliest the next one comes
+ * (`backAt`); `recent`: who came on lately; `prefs`, `retried`: the rules
+ * the one on hosts with now (changed from their own, maybe) and whether
+ * they already tried others, so a reload keeps both.
+ */
 interface Shift {
   on: string | null;
   until: number;
   backAt: number;
   recent: string[];
+  prefs?: RoomPrefs;
+  retried?: boolean;
 }
 
 function loadShift(): Shift | null {
@@ -69,15 +75,14 @@ function loadShift(): Shift | null {
   return null;
 }
 
-const time = (at: number) => new Date(at).toTimeString().slice(0, 5);
-
 /**
  * The room's save is kept in the tab's sessionStorage, which a page that
  * crashed doesn't get back (the runner opens a new tab); a copy kept here
  * puts it back, so the room reopens with its game.
  */
 const SAVE_COPY = 'room-save';
-let lastCopy: string | null = null;
+/** What the copy holds now (undefined: not looked at yet, so the first look sets it either way). */
+let lastCopy: string | null | undefined;
 
 function keepSaveCopy() {
   const save = readStored(SAVE, 'session');
@@ -85,6 +90,13 @@ function keepSaveCopy() {
   lastCopy = save;
   if (save) writeStored(SAVE_COPY, save);
   else removeStored(SAVE_COPY);
+}
+
+/** Lets go of the room's save and its copy (the room is gone, or can't be got back). */
+function dropSave() {
+  removeStored(SAVE, 'session');
+  removeStored(SAVE_COPY);
+  lastCopy = undefined;
 }
 
 function restoreSave() {
@@ -120,6 +132,8 @@ export class Bot {
   private wayChecks = 0;
   /** What the last check found, for the status. */
   private seen: { rooms: number; joinable: number; at: number } | null = null;
+  /** The other rooms the last check found (null before the first). */
+  private lastOthers: RoomInfo[] | null = null;
   /** Since when the lobby has been empty but for the host (0: it isn't), and how long they'll stand it. */
   private lonelySince = 0;
   private lonelyFor = 0;
@@ -145,8 +159,13 @@ export class Bot {
   start() {
     // Someone from another room's share (the number of rooms changed): this room starts afresh.
     if (this.shift.on && !this.names.includes(this.shift.on)) this.shift = { ...this.shift, on: null, backAt: 0 };
+    // Nobody on: no room to get back, whatever a copy left behind says.
+    if (!this.shift.on) dropSave();
     if (this.shift.on) {
       this.who = identityOf(this.shift.on, engine.categories, this.modes, engine.items);
+      // The rules they host with now, and whether they tried others, as they were before the reload.
+      if (this.shift.prefs) this.who.prefs = this.shift.prefs;
+      this.retried = !!this.shift.retried;
       this.player = new Player(this.who.persona, hostEyes);
       restoreSave();
       session.resume();
@@ -173,7 +192,7 @@ export class Bot {
     if (this.copyTimer) clearInterval(this.copyTimer);
     if (this.scoutTimer) clearTimeout(this.scoutTimer);
     this.timer = this.copyTimer = this.scoutTimer = null;
-    removeStored(SAVE_COPY);
+    dropSave();
     if (this.shift.on) {
       this.shift = { ...this.shift, on: null, backAt: 0 };
       this.save();
@@ -198,6 +217,7 @@ export class Bot {
     const mine = this.shift.on ? session.code : '';
     const others = rooms.filter((r) => r.code !== mine);
     this.seen = { rooms: others.length, joinable: others.filter(joinable).length, at: Date.now() };
+    this.lastOthers = others;
     if (this.shift.on) {
       this.wantedChecks = 0;
       // Both bot rooms waiting empty: only the second makes way, never the first for it.
@@ -229,7 +249,7 @@ export class Bot {
       code: session.code,
       status: session.status,
       phase: s?.phase ?? null,
-      players: s?.players.map((p) => `${p.name}${p.connected ? '' : ' (away)'}: ${p.score}`) ?? [],
+      players: playersLine(s),
       spectators: s?.spectators?.length ?? 0,
     };
   }
@@ -243,7 +263,7 @@ export class Bot {
     const name = nextName(this.shift.recent, Math.random, this.names);
     this.who = identityOf(name, engine.categories, this.modes, engine.items);
     this.player = new Player(this.who.persona, hostEyes);
-    this.shift = { on: name, until: now + shiftLength(Math.random), backAt: 0, recent: [...this.shift.recent, name].slice(-20) };
+    this.shift = { on: name, until: now + shiftLength(Math.random), backAt: 0, recent: [...this.shift.recent, name].slice(-20), prefs: this.who.prefs };
     this.save();
     this.configured = false;
     this.retried = false;
@@ -256,20 +276,25 @@ export class Bot {
   }
 
   /**
-   * The one on calls it a day and the room closes. Unless it made way for
-   * another room, a room is still wanted, so the next one hands over: they
-   * open a new room at once (a check meanwhile finding a room stops them).
+   * The one on calls it a day and the room closes. If the latest list still
+   * calls for this room (wanted.ts, its own left out), the next one hands
+   * over and opens a new room at once; otherwise (it made way, or a player's
+   * room is up meanwhile) they wait for a check that calls for one. Either
+   * way the list is checked again straight away.
    */
   private end(now: number, why: string, madeWay = false) {
     log(`${this.shift.on} leaves (${why})`);
     session.leave();
+    dropSave();
     this.who = null;
     this.player = null;
-    this.shift = { ...this.shift, on: null, backAt: now + HAND_OVER_MS };
+    this.shift = { ...this.shift, on: null, backAt: now + HAND_OVER_MS, prefs: undefined, retried: undefined };
     this.save();
-    this.wantedChecks = madeWay ? 0 : WANTED_CHECKS[this.role];
-    // Closed now: the list is checked often again.
-    this.scoutAgain();
+    // A list older than that may have missed a room opened meanwhile: then the fresh check decides (5 to 10 s).
+    const recent = !!this.seen && now - this.seen.at < FRESH_LIST_MS;
+    this.wantedChecks = !madeWay && recent && this.lastOthers && wanted(this.role, this.lastOthers) ? WANTED_CHECKS[this.role] : 0;
+    if (this.scoutTimer) clearTimeout(this.scoutTimer);
+    this.scoutTimer = setTimeout(() => void this.scout(), 0);
   }
 
   private tick() {
@@ -282,7 +307,9 @@ export class Bot {
     const s = session.state;
     if (session.mode !== 'host' || session.status !== 'ready' || !s) {
       if (now - this.notReadySince > STUCK_MS) {
-        log('room not open for a minute, reloading');
+        // A saved room that won't reopen would only be tried again: let it go, and open a fresh one.
+        log('room not open for a minute, reloading with a fresh one');
+        dropSave();
         location.reload();
       }
       return;
@@ -324,6 +351,8 @@ export class Bot {
       this.retried = true;
       this.lonelySince = 0;
       useRules((this.who!.prefs = other));
+      this.shift = { ...this.shift, prefs: other, retried: true };
+      this.save();
       log(`nobody came, trying ${rulesText(other)}`);
       return false;
     }
@@ -358,6 +387,8 @@ export class Bot {
       this.fiddle.at = 0;
       const c = (this.who!.prefs = fiddled(this.who!.prefs, Math.random));
       useRules(c);
+      this.shift = { ...this.shift, prefs: c };
+      this.save();
       log(`changes the rules to ${rulesText(c)}`);
       this.startAt = Math.max(this.startAt, now + between(3000, 7000));
     }
@@ -377,9 +408,9 @@ export class Bot {
   private over(s: GameState, now: number, anyone: boolean, timeUp: boolean) {
     if (!this.overAt) {
       this.overAt = now + between(8000, 20000);
-      const mood = moodOf(s, session.myPlayerId!);
-      this.sulking = mood === 'lost' && Math.random() < HOST_LEAVES_AFTER_LOSS;
-      if (mood === 'won' && Math.random() < HOST_STAYS_AFTER_WIN) {
+      const after = staysOn(moodOf(s, session.myPlayerId!), Math.random, HOST_ODDS);
+      this.sulking = after === 'leave';
+      if (after === 'longer') {
         this.shift = { ...this.shift, until: Math.max(this.shift.until, now) + between(10, 25) * 60000 };
         this.save();
         log(`won, stays on until ${time(this.shift.until)}`);

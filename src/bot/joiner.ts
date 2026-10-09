@@ -4,10 +4,13 @@
 // longer while, one with others in it already, as long as it has a seat). It plays
 // a game or a few there as any guest would (player.ts, with the eyes of
 // sight.ts: a guest never gets the answers), then leaves and rests before
-// it looks again. Never one of our own bot rooms, never more than one room,
-// never back to a room it was in lately. Several may run at once, and may
-// end up in the same room, arriving one after another (the runner spaces
-// them out, and keeps to --per-room guests a room if asked).
+// it looks again. People's rooms first: our own bot rooms only while no
+// one else's lobby is open. Never more than one room, never back to a room
+// it was in lately. Several may run at once, and may end up in the same
+// room, arriving one after another (the runner spaces them out, and keeps
+// to --per-room guests a room if asked). One of them checks the room list
+// for all (the runner passes it on), so the matchmaking server is asked
+// once however many there are.
 
 import { engine, session } from '../lib/session.svelte';
 import { scanRooms, type RoomInfo } from '../lib/rooms';
@@ -17,6 +20,7 @@ import { staysOn } from './brain';
 import { joinable } from './wanted';
 import { moodOf, Player } from './player';
 import { lastReading, sight } from './sight';
+import { between, log, playersLine, time } from './util';
 
 const TICK_MS = 250;
 /** The open-room list is checked this often (ms, from..to). */
@@ -35,17 +39,17 @@ const AGAIN_AFTER_MS = 60 * 60000;
 const MID_GAME_DROP = 0.02;
 /** Joining that hasn't got in by then is given up. */
 const JOIN_GIVE_UP_MS = 45000;
+/** The host gone (the link lost) this long: the guest gives up on the room. */
+const HOST_GONE_MS = 30000;
 /** A lobby whose host doesn't start in this long is left (ms, from..to). */
 const LOBBY_PATIENCE: [number, number] = [5 * 60000, 9 * 60000];
 
-const log = (...args: unknown[]) => console.log('[bot]', ...args);
 
 /** The runner's say over which guest takes which room (scripts/room-bot.mjs), when it gives one. */
 const { __claimRoom: claimRoom, __releaseRoom: releaseRoom } = window as unknown as {
   __claimRoom?: (code: string) => Promise<boolean>;
   __releaseRoom?: (code: string) => Promise<void>;
 };
-const between = (lo: number, hi: number) => Math.round(lo + Math.random() * (hi - lo));
 
 /** `asking`: waiting for the runner's yes to a room (claimRoom), before joining. */
 type Doing = 'resting' | 'looking' | 'asking' | 'joining' | 'playing';
@@ -61,8 +65,16 @@ export class Joiner {
   private waiting = new Map<string, { since: number; wait: number }>();
   /** Rooms we were in, and when we left. */
   private visited = new Map<string, number>();
-  /** Our own bot rooms (the runner says): never joined. */
+  /** Our own bot rooms (the runner says): joined only while no one else's lobby is open. */
   private ours = new Set<string>();
+  /** The room list as last checked (by this guest, or the one checking for all), and when. */
+  private latest: { rooms: RoomInfo[]; at: number } = { rooms: [], at: 0 };
+  /** The list it last went through. */
+  private considered = 0;
+  /** Done with this room (no games left): it goes once the scores are down or the host moves on. */
+  private finished = false;
+  /** Since when the link to the host has been lost (0: it hasn't). */
+  private lostSince = 0;
   private gamesLeft = 0;
   private lastPhase = '';
   private lobbySince = 0;
@@ -73,8 +85,15 @@ export class Joiner {
   private timer: ReturnType<typeof setInterval> | null = null;
   private scoutTimer: ReturnType<typeof setTimeout> | null = null;
 
-  /** `names`: whom it draws its guests from (a share of its own, apart from the hosts'). */
-  constructor(private readonly names: string[]) {}
+  /**
+   * `names`: whom it draws its guests from (a share of its own, apart from
+   * the hosts'); `checks`: whether it checks the room list itself (the one
+   * guest that does for all, or a guest on its own), else it is handed it.
+   */
+  constructor(
+    private readonly names: string[],
+    private readonly checks = true,
+  ) {}
 
   start() {
     this.timer = setInterval(() => this.tick(), TICK_MS);
@@ -93,6 +112,16 @@ export class Joiner {
     this.ours = new Set(codes.filter(Boolean));
   }
 
+  /** The runner: the room list as the guest checking for all last saw it. */
+  rooms() {
+    return this.latest;
+  }
+
+  /** The runner: a room list checked by another guest. */
+  takeRooms(rooms: RoomInfo[], at: number) {
+    if (at > this.latest.at) this.latest = { rooms, at };
+  }
+
   status() {
     const s = session.state;
     return {
@@ -101,22 +130,28 @@ export class Joiner {
       as: this.who?.name ?? null,
       room: this.room ? `${this.room.code} (${this.room.host}'s)` : null,
       code: this.room?.code ?? '',
-      until: this.doing === 'resting' ? new Date(this.until).toTimeString().slice(0, 5) : null,
+      until: this.doing === 'resting' ? time(this.until) : null,
       phase: s?.phase ?? null,
-      players: s?.players.map((p) => `${p.name}${p.connected ? '' : ' (away)'}: ${p.score}`) ?? [],
+      players: playersLine(s),
     };
   }
 
+  /**
+   * Checks the room list: while looking, or always if it checks for all (the
+   * others look while it plays). A guest that doesn't check goes through
+   * each new list it is handed instead (tick).
+   */
   private async scout() {
     if (!this.timer) return;
-    if (this.doing === 'looking') {
+    if (this.checks) {
       const rooms: RoomInfo[] = [];
+      let ok = true;
       try {
-        await scanRooms((r) => rooms.push(r), () => !this.timer || this.doing !== 'looking');
+        await scanRooms((r) => rooms.push(r), () => !this.timer);
       } catch {
-        /* the matchmaking server can't be reached: look again later */
+        ok = false; // the matchmaking server can't be reached: look again later
       }
-      if (this.timer && this.doing === 'looking') this.consider(rooms, Date.now());
+      if (ok && this.timer) this.latest = { rooms, at: Date.now() };
     }
     this.scoutTimer = setTimeout(() => void this.scout(), between(...SCOUT_EVERY));
   }
@@ -124,12 +159,13 @@ export class Joiner {
   /**
    * Keeps track of lobbies it could join (a host alone soonest, one with
    * company already after a longer while), and joins the one that has waited
-   * its while, the emptiest first.
+   * its while, the emptiest first. People's lobbies come first: one of our
+   * own bot rooms only while there is no other.
    */
   private consider(rooms: RoomInfo[], now: number) {
-    const open = rooms.filter(
-      (r) => joinable(r) && !this.ours.has(r.code) && now - (this.visited.get(r.code) ?? -Infinity) > AGAIN_AFTER_MS,
-    );
+    const fresh = rooms.filter((r) => joinable(r) && now - (this.visited.get(r.code) ?? -Infinity) > AGAIN_AFTER_MS);
+    const theirs = fresh.filter((r) => !this.ours.has(r.code));
+    const open = theirs.length ? theirs : fresh;
     const codes = new Set(open.map((r) => r.code));
     for (const code of this.waiting.keys()) if (!codes.has(code)) this.waiting.delete(code);
     for (const r of open) if (!this.waiting.has(r.code)) this.waiting.set(r.code, { since: now, wait: between(...(r.players === 1 ? WAIT_ALONE : WAIT_MORE)) });
@@ -142,7 +178,13 @@ export class Joiner {
   private async join(room: RoomInfo, now: number) {
     // Several guests at once: the runner spaces their arrivals in a room, and keeps to so many a room.
     this.doing = 'asking';
-    if (claimRoom && !(await claimRoom(room.code))) {
+    let yes = true;
+    try {
+      yes = !claimRoom || (await claimRoom(room.code));
+    } catch {
+      yes = false; // the runner couldn't be asked: not this time
+    }
+    if (!yes) {
       this.waiting.set(room.code, { since: now, wait: between(...WAIT_MORE) });
       this.doing = 'looking';
       return;
@@ -160,6 +202,8 @@ export class Joiner {
     this.until = Date.now() + JOIN_GIVE_UP_MS;
     this.lastPhase = '';
     this.dropAt = 0;
+    this.finished = false;
+    this.lostSince = 0;
     this.lobbySince = 0;
     this.overAt = 0;
     log(`${name} joins ${room.host}'s room ${room.code} (${room.mode}), for ${this.gamesLeft} game${this.gamesLeft > 1 ? 's' : ''}`);
@@ -186,7 +230,15 @@ export class Joiner {
       if (now >= this.until) this.doing = 'looking';
       return;
     }
-    if (this.doing === 'looking' || this.doing === 'asking') return;
+    if (this.doing === 'looking') {
+      // A new list (its own, or handed over): go through it.
+      if (this.latest.at > this.considered) {
+        this.considered = this.latest.at;
+        this.consider(this.latest.rooms, now);
+      }
+      return;
+    }
+    if (this.doing === 'asking') return;
     const s = session.state;
     const me = session.myPlayerId;
     // Turned away, kicked, or the room closed: the session let go.
@@ -198,6 +250,13 @@ export class Joiner {
       } else if (now > this.until) return this.leave(now, 'could not get in');
       return;
     }
+    // The host gone for good (its link lost, the session given up on it): on to another room.
+    if (session.status === 'lost' || session.gaveUp) {
+      this.lostSince ||= now;
+      if (session.gaveUp || now - this.lostSince > HOST_GONE_MS) return this.leave(now, 'the host is gone');
+      return;
+    }
+    this.lostSince = 0;
     if (!s || session.status !== 'ready') return;
     this.player?.play(s);
     this.notePhase(s.phase);
@@ -209,10 +268,10 @@ export class Joiner {
     } else this.lobbySince = this.lobbyPatience = 0;
     // Now and then real life calls, mid-game.
     if (this.dropAt && now >= this.dropAt && s.phase !== 'lobby' && s.phase !== 'over') return this.leave(now, 'had to go');
-    if (s.phase === 'over') {
-      this.overAt ||= now + between(6000, 15000);
-      if (this.gamesLeft <= 0 && now >= this.overAt) return this.leave(now, 'had enough');
-    } else this.overAt = 0;
+    // Done here: off once the scores have been up a moment, or as soon as the host moves on, whichever is first.
+    if (this.finished && (s.phase !== 'over' || now >= this.overAt)) return this.leave(now, 'had enough');
+    if (s.phase === 'over') this.overAt ||= now + between(6000, 15000);
+    else this.overAt = 0;
   }
 
   /** Counts the games played, and says how the eyes did at each reveal (the log only). */
@@ -236,6 +295,7 @@ export class Joiner {
         this.gamesLeft = 0;
         log('lost heavily, leaves after this one');
       }
+      if (this.gamesLeft <= 0) this.finished = true;
     }
     this.lastPhase = phase;
   }

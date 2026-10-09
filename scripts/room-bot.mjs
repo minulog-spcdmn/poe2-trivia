@@ -32,6 +32,8 @@ import { chromium } from 'playwright-core';
 const MAX_ROOMS = 2;
 const STATUS_EVERY_MS = 60000;
 const REOPEN_AFTER_MS = 5000;
+/** A page that fails to open this many times in a row ends the process (for its supervisor to restart). */
+const MAX_OPEN_FAILURES = 6;
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 // Kept out of the repo (.gitignore) and of the style checks (tests/style.test.ts).
@@ -127,7 +129,8 @@ const bots = rooms + joiners;
 async function runRoom(slot) {
   const guest = slot > rooms;
   const say = bots > 1 ? (...args) => log(guest ? `[guest${joiners > 1 ? ` ${slot - rooms}` : ''}]` : `[${slot}]`, ...args) : log;
-  const url = `${base}bot.html?slot=${slot}&of=${bots}${guest ? '&join=1' : `&modes=${modes.join(',')}`}`;
+  // The first guest checks the room list for all of them (passed on below); the others are handed it.
+  const url = `${base}bot.html?slot=${slot}&of=${bots}${guest ? `&join=1${slot > rooms + 1 ? '&scout=0' : ''}` : `&modes=${modes.join(',')}`}`;
   const context = await chromium.launchPersistentContext(join(root, '.bot', guest ? `profile-guest-${slot - rooms}` : `profile-${slot}`), {
     headless: !opts.headed,
     executablePath: process.env.BOT_CHROMIUM || undefined,
@@ -140,45 +143,72 @@ async function runRoom(slot) {
   });
   const room = { page: null, context, say };
 
+  let failures = 0;
+
+  /**
+   * Opens the bot's page, always in a fresh tab (a crashed one can't take its
+   * functions again), and lets go of any other. A page that won't open is
+   * tried again, a little later each time; one that keeps failing ends the
+   * process, for whatever supervises it to start it again.
+   */
   async function open() {
     if (stopping) return;
-    const p = context.pages()[0] ?? (await context.newPage());
-    room.page = p;
-    p.on('console', (m) => {
-      const text = m.text();
-      if (text.startsWith('[bot]')) say(text.slice(6));
-      else if (m.type() === 'error' || m.type() === 'warning') say(`page ${m.type()}:`, text);
-    });
-    p.on('pageerror', (err) => say('page error:', err.message));
-    if (guest) {
-      await p.exposeFunction('__claimRoom', (code) => {
-        const c = claims.get(code) ?? { slots: new Set(), next: 0 };
-        if (!c.slots.has(slot) && (c.slots.size >= perRoom || Date.now() < c.next)) return false;
-        for (const [, other] of claims) other.slots.delete(slot);
-        c.slots.add(slot);
-        c.next = Date.now() + ARRIVALS_APART_MS[0] + Math.random() * (ARRIVALS_APART_MS[1] - ARRIVALS_APART_MS[0]);
-        claims.set(code, c);
-        return true;
+    let p;
+    try {
+      p = await context.newPage();
+      for (const old of context.pages()) if (old !== p) await old.close().catch(() => {});
+      room.page = p;
+      p.on('console', (m) => {
+        const text = m.text();
+        if (text.startsWith('[bot]')) say(text.slice(6));
+        else if (m.type() === 'error' || m.type() === 'warning') say(`page ${m.type()}:`, text);
       });
-      await p.exposeFunction('__releaseRoom', (code) => {
-        claims.get(code)?.slots.delete(slot);
+      p.on('pageerror', (err) => say('page error:', err.message));
+      if (guest) {
+        await p.exposeFunction('__claimRoom', (code) => {
+          const now = Date.now();
+          const c = claims.get(code) ?? { slots: new Set(), next: 0 };
+          if (!c.slots.has(slot) && (c.slots.size >= perRoom || now < c.next)) return false;
+          for (const [other, o] of claims) {
+            o.slots.delete(slot);
+            if (!o.slots.size && now >= o.next) claims.delete(other);
+          }
+          c.slots.add(slot);
+          c.next = now + ARRIVALS_APART_MS[0] + Math.random() * (ARRIVALS_APART_MS[1] - ARRIVALS_APART_MS[0]);
+          claims.set(code, c);
+          return true;
+        });
+        await p.exposeFunction('__releaseRoom', (code) => {
+          const c = claims.get(code);
+          c?.slots.delete(slot);
+          if (c && !c.slots.size && Date.now() >= c.next) claims.delete(code);
+        });
+      }
+      const reopen = (why) => {
+        // Only for the page in use (not one let go of above), and once.
+        if (room.page !== p || stopping) return;
+        room.page = null;
+        say(`${why}, opening it again`);
+        setTimeout(() => void open(), REOPEN_AFTER_MS);
+      };
+      p.once('crash', () => {
+        reopen('the page crashed');
+        void p.close().catch(() => {});
       });
+      p.once('close', () => reopen('the page closed'));
+      say('opening', url);
+      await p.goto(url);
+      failures = 0;
+    } catch (err) {
+      failures++;
+      say('could not open the page:', err.message);
+      if (room.page === p) room.page = null;
+      if (failures >= MAX_OPEN_FAILURES) {
+        say(`gave up after ${failures} tries`);
+        process.exit(1);
+      }
+      setTimeout(() => void open(), REOPEN_AFTER_MS * failures);
     }
-    let gone = false;
-    const reopen = (why) => {
-      if (gone || stopping) return;
-      gone = true;
-      room.page = null;
-      say(`${why}, opening it again`);
-      setTimeout(() => void open().catch((err) => say('could not open the page:', err.message)), REOPEN_AFTER_MS);
-    };
-    p.once('crash', () => {
-      reopen('the page crashed');
-      void p.close().catch(() => {});
-    });
-    p.once('close', () => reopen('the page closed'));
-    say('opening', url);
-    await p.goto(url);
   }
 
   // A browser itself went: exit with an error, for whatever supervises this (systemd, Docker) to start it again.
@@ -204,8 +234,14 @@ const siblings = bots > 1
       const hosts = all.slice(0, rooms);
       const codes = await Promise.all(hosts.map(({ page }) => page?.evaluate(() => { const s = window.__bot?.status(); return s?.host ? s.code : ''; }).catch(() => '') ?? ''));
       if (rooms === 2) await Promise.all(hosts.map(({ page }, i) => page?.evaluate((code) => window.__bot?.setSibling(code), codes[1 - i]).catch(() => {})));
-      // Each guest: our own rooms, never joined.
-      await Promise.all(all.slice(rooms).map(({ page }) => page?.evaluate((list) => window.__bot?.setOurs(list), codes).catch(() => {})));
+      // Each guest: our own rooms (joined only while no one else's lobby is open).
+      const guests = all.slice(rooms);
+      await Promise.all(guests.map(({ page }) => page?.evaluate((list) => window.__bot?.setOurs(list), codes).catch(() => {})));
+      // The room list the first guest checked, handed on to the others.
+      if (guests.length > 1) {
+        const list = await guests[0].page?.evaluate(() => window.__bot?.rooms()).catch(() => null);
+        if (list?.at) await Promise.all(guests.slice(1).map(({ page }) => page?.evaluate(({ rooms, at }) => window.__bot?.takeRooms(rooms, at), list).catch(() => {})));
+      }
     }, SIBLINGS_EVERY_MS)
   : null;
 

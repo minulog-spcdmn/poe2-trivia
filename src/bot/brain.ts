@@ -296,8 +296,18 @@ export function moodOf(s: GameState, me: string): Mood {
 }
 
 /** Whether it stays on after a game: one more after a win now and then, early off after a heavy loss now and then. */
-export const staysOn = (mood: Mood, rng: Rng): 'longer' | 'leave' | 'as planned' =>
-  mood === 'won' && rng() < 0.4 ? 'longer' : mood === 'lost' && rng() < 0.5 ? 'leave' : 'as planned';
+export const staysOn = (mood: Mood, rng: Rng, odds: StayOdds = GUEST_ODDS): 'longer' | 'leave' | 'as planned' =>
+  mood === 'won' && rng() < odds.longer ? 'longer' : mood === 'lost' && rng() < odds.leave ? 'leave' : 'as planned';
+
+/** The chances of staying longer after a win, and of leaving after a heavy loss. */
+export interface StayOdds {
+  longer: number;
+  leave: number;
+}
+/** A guest: one more game now and then after a win, and half the time off after a heavy loss. */
+export const GUEST_ODDS: StayOdds = { longer: 0.4, leave: 0.5 };
+/** A host (whose leaving closes the room on everyone): longer as often, off much less often. */
+export const HOST_ODDS: StayOdds = { longer: 0.4, leave: 0.15 };
 
 /** The category the bot picks: mostly the ones it knows best. */
 export function pickCategory(p: Persona, offered: string[], rng: Rng): string {

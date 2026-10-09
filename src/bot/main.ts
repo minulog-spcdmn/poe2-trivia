@@ -18,7 +18,8 @@ if (!(import.meta.env.DEV || import.meta.env.VITE_BOT === '1') || !BOT) throw ne
 const q = new URLSearchParams(location.search);
 const slot = Number(q.get('slot') ?? 1);
 const names = namesFor(slot, Number(q.get('of') ?? 1));
-const bot = q.has('join') ? new Joiner(names) : new Bot(names, slot === 2 ? 'second' : 'first', modesFrom(q.get('modes')));
+// ?scout=0: a guest that is handed the room list (the runner's first guest checks it for all).
+const bot = q.has('join') ? new Joiner(names, q.get('scout') !== '0') : new Bot(names, slot === 2 ? 'second' : 'first', modesFrom(q.get('modes')));
 bot.start();
 
 // For the runner (and a look in a headed browser); in development, the session too, for scripts that drive it (as src/main.ts gives it).

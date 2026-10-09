@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { answerDelay, blasts, chooseAnswer, chooseCard, findAppetite, guessChance, misclicks, moodOf, movesOn, panic, pickDelay, rethinks, staysOn, tiredness, urgentSeconds, withTheHerd, knowChance, makePersona, pickCategory, weighted, wrongPick, type Ask, type Persona } from '../src/bot/brain.ts';
+import { HOST_ODDS, answerDelay, blasts, chooseAnswer, chooseCard, findAppetite, guessChance, misclicks, moodOf, movesOn, panic, pickDelay, rethinks, staysOn, tiredness, urgentSeconds, withTheHerd, knowChance, makePersona, pickCategory, weighted, wrongPick, type Ask, type Persona } from '../src/bot/brain.ts';
 import { createGame, rulesFor, type GameState, type Item, type Preset } from '../src/lib/game.ts';
 import { readFileSync } from 'node:fs';
 import { MODES, NAMES, buildOf, fiddled, identityOf, lonelyLength, modesFrom, namesFor, nextName, otherPrefs, rollPrefs, shiftLength } from '../src/bot/identities.ts';
@@ -384,6 +384,9 @@ test('winners now and then stay longer, heavy losers now and then leave', () => 
   const rate = (mood: 'won' | 'lost' | 'even', what: string) => mean(() => (staysOn(mood, rng) === what ? 1 : 0));
   assert.ok(Math.abs(rate('won', 'longer') - 0.4) < 0.04 && Math.abs(rate('lost', 'leave') - 0.5) < 0.04);
   assert.equal(rate('even', 'as planned'), 1);
+  // A host, whose leaving closes the room on everyone, leaves after a heavy loss far less often.
+  const host = (mood: 'won' | 'lost', what: string) => mean(() => (staysOn(mood, rng, HOST_ODDS) === what ? 1 : 0));
+  assert.ok(Math.abs(host('won', 'longer') - 0.4) < 0.04 && Math.abs(host('lost', 'leave') - 0.15) < 0.03);
 });
 
 test('picking a card mostly takes seconds, now and then a while longer, never past the idle skip', () => {
