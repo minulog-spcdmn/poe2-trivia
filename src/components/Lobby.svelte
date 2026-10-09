@@ -12,6 +12,7 @@
   import { bestOf, findsMet, lastOf, loadRecords } from '../lib/delveRecord';
   import { MAX_NAME, isHeldName, nameHeld, nameTooShort } from '../lib/names';
   import { inviteUrl } from '../lib/site';
+  import { summonsText } from '../lib/invite';
   import Avatar from './Avatar.svelte';
   import PlayerName from './PlayerName.svelte';
   import { backdropShadow } from '../lib/backdropShadow';
@@ -35,9 +36,13 @@
 
   let newName = $state('');
   let nameError = $state(false);
-  let copied = $state(false);
+  /** Which button's link was just copied (it says so for a moment). */
+  let copied = $state<'invite' | 'summon' | null>(null);
 
-  const inviteLink = $derived(inviteUrl(session.code));
+  /** Summons (lib/invite.ts): the invite link names the host, and a phone's share sheet says who sends it. */
+  const hostName = $derived(s.players.find((p) => p.id === s.hostId)?.name ?? '');
+  const myName = $derived([...s.players, ...(s.spectators ?? [])].find((p) => p.id === session.myPlayerId)?.name ?? '');
+  const inviteLink = $derived(inviteUrl(session.code, hostName));
   /** The night so far (lib/series.ts): games won tonight, and the Crown on whoever won the last one. Delve doesn't count. */
   const tallied = $derived(s.settings.mode !== 'delve' && !!s.series);
   const crowned = $derived(crownedId(s));
@@ -99,17 +104,19 @@
     e.preventDefault();
   }
 
-  let copyBtn = $state<HTMLButtonElement>();
-
-  async function copy() {
-    if (copyBtn) twinkle(copyBtn);
+  let copiedTimer: ReturnType<typeof setTimeout> | undefined;
+  onMount(() => () => clearTimeout(copiedTimer));
+  /** The invite: a phone's share sheet (with the summons' words), or else the link copied. */
+  async function copy(e: MouseEvent, which: 'invite' | 'summon') {
+    twinkle(e.currentTarget as HTMLElement);
     try {
       if (navigator.share && matchMedia('(pointer: coarse)').matches) {
-        await navigator.share({ title: 'PoE2.Quest', text: `Join my PoE2 trivia room ${session.code}`, url: inviteLink });
+        await navigator.share({ title: 'PoE2.Quest', text: summonsText(hostName, isHost ? hostName : myName), url: inviteLink });
       } else {
         await navigator.clipboard.writeText(inviteLink);
-        copied = true;
-        setTimeout(() => (copied = false), 1800);
+        copied = which;
+        clearTimeout(copiedTimer);
+        copiedTimer = setTimeout(() => (copied = null), 1800);
       }
     } catch {
       /* dismissed */
@@ -218,8 +225,8 @@
         </button>
       </div>
       <div class="room-actions">
-        <button class="btn small" bind:this={copyBtn} onclick={copy}>
-          {copied ? 'Link copied!' : 'Copy invite link'}
+        <button class="btn small" onclick={(e) => copy(e, 'invite')}>
+          {copied === 'invite' ? 'Link copied!' : 'Copy invite link'}
         </button>
         {#if isHost}
           <div class="visibility" role="group" aria-label="Room visibility">
@@ -319,6 +326,12 @@
         <p class="hint muted">Pass the device around; each player answers on their own turn.</p>
       {:else if s.players.length < 2}
         <p class="hint muted waiting"><span class="pulse"></span>Waiting for exiles to join…</p>
+        {#if isHost}
+          <!-- Alone in the room: the invite, where the party would be. -->
+          <button class="btn primary small summon" onclick={(e) => copy(e, 'summon')}>
+            {copied === 'summon' ? 'Link copied!' : 'Summon a friend'}
+          </button>
+        {/if}
       {/if}
     </section>
 
@@ -794,6 +807,9 @@
     display: flex;
     align-items: center;
     gap: 0.6rem;
+  }
+  .summon {
+    margin-top: 0.9rem;
   }
   .pulse {
     width: 8px;

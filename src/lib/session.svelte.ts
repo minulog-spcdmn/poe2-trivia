@@ -287,6 +287,10 @@ class Session {
   private autoNextFor = 0;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
   private joinName = '';
+  /** Client: the host who summoned us here, from the invite link (lib/invite.ts), for a personal word if their room is gone. */
+  private inviteFrom = '';
+  /** The room a summons led to and found closed (its code), so the start page stops promising a seat there. */
+  closedRoom = $state('');
   private retry: ReturnType<typeof setTimeout> | null = null;
   /** Pending step of opening or joining a room (a retry, a give-up); cancelled on leave. */
   private connectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -1036,13 +1040,16 @@ class Session {
 
   // ---- joining ----------------------------------------------------------
 
-  join(code: string, name: string) {
+  /** `from`: the host named by the invite link this came from (lib/invite.ts inviteFrom), or ''. */
+  join(code: string, name: string, from = '') {
     // The host's room has its own settings: a shared link's Delve is moot.
     this.delveLink = false;
     this.reset();
     this.mode = 'client';
     this.status = 'connecting';
     this.joinName = name;
+    this.inviteFrom = from;
+    this.closedRoom = '';
     this.code = code.toUpperCase().trim();
     if (!CODE_PATTERN.test(this.code)) {
       this.fail(`"${this.code}" isn't a valid room code.`, 'Invalid code');
@@ -1115,7 +1122,14 @@ class Session {
   private roomUnavailable() {
     if (this.hostConn?.open) return;
     if (this.unavailableUntil && Date.now() >= this.unavailableUntil) {
-      this.fail(`Room ${this.code} doesn't exist (or the host left).`, 'Room not found');
+      // Summoned by name: say whose room it was, and that it may open again.
+      const from = this.inviteFrom;
+      const room = this.code;
+      if (!from) this.fail(`Room ${room} doesn't exist (or the host left).`, 'Room not found');
+      else {
+        this.fail(`${from}'s room isn't open right now. Ask ${from} to host, or play while you wait.`, 'Room not open');
+        this.closedRoom = room;
+      }
       return;
     }
     if (!this.unavailableUntil) this.unavailableUntil = Math.max(Date.now(), ...this.attempts.map((a) => a.at)) + EXPIRE_MS;
@@ -2152,6 +2166,7 @@ class Session {
     this.helloSecret = null;
     if (this.retry) clearTimeout(this.retry);
     this.joinedAt = 0;
+    this.inviteFrom = '';
     this.busyUntil = 0;
     this.unavailableUntil = 0;
     this.silentCloses = 0;

@@ -16,12 +16,15 @@
   import { DELVE_LINK_PARAM } from '../lib/delveShare';
   import { wantDelveBackdrop } from '../lib/backdrop';
   import { BETA } from '../lib/channel';
+  import { FROM_PARAM, inviteFrom } from '../lib/invite';
 
   /** Keeps a room code's letters and digits, uppercased, up to its length. */
   const cleanCode = (v: string) => v.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, CODE_LENGTH);
 
   const params = new URLSearchParams(location.search);
   const invite = cleanCode(params.get('room') ?? '');
+  /** A summons: the invite names its host (lib/invite.ts), so the Join box greets with them. */
+  const from = invite ? inviteFrom(params.get(FROM_PARAM)) : '';
   if (params.has('owner')) {
     void unlockHeldName(params.get('owner') ?? '');
     // Out of the address bar and history either way; other params stay.
@@ -101,7 +104,8 @@
       return;
     }
     if (invite) history.replaceState(null, '', location.pathname);
-    session.join(code, n);
+    // Only the room the summons is for has its host's name.
+    session.join(code, n, from && code === invite ? from : '');
   }
 
   function joinListed(roomCode: string) {
@@ -136,6 +140,15 @@
   }
 
   const connecting = $derived(session.status === 'connecting');
+  /** Summoned with a name that will do: one tap joins as it. */
+  const readyName = $derived.by(() => {
+    const n = name.trim();
+    return n && !nameTooShort(n) && !nameHeld(n) ? n : '';
+  });
+  /** The summons is still for the room in the field (another code typed over it is a plain join). */
+  const summoned = $derived(!!from && code === invite);
+  /** It was tried and the room isn't open (session.svelte.ts roomUnavailable): no seat is promised, a retry still is. */
+  const closed = $derived(summoned && session.closedRoom === invite);
 
   /**
    * Svelte action: the title's light. The backdrop throws god rays from above
@@ -221,9 +234,16 @@
         <button class="btn primary" onclick={host} disabled={connecting}>Create room</button>
       </section>
 
-      <section class="mode">
-        <h2>Join a game</h2>
-        <p class="muted">Enter the code your host shared to join their room.</p>
+      <section class="mode" class:summoned>
+        {#if summoned}
+          <h2>{from} summons you</h2>
+          <p class="muted">
+            {#if closed}{from}'s room isn't open right now. Try again once {from} is hosting.{:else}Your seat is waiting in {from}'s room.{/if}
+          </p>
+        {:else}
+          <h2>Join a game</h2>
+          <p class="muted">Enter the code your host shared to join their room.</p>
+        {/if}
         <form onsubmit={join}>
           <input
             id="code"
@@ -238,7 +258,7 @@
             aria-label="Room code"
           />
           <button class="btn" class:primary={!!invite} type="submit" disabled={connecting || code.length < CODE_LENGTH}>
-            Join
+            {#if summoned}{readyName ? `Join as ${readyName}` : `Join ${from}'s room`}{:else}Join{/if}
           </button>
         </form>
       </section>
@@ -555,6 +575,25 @@
     gap: 0.5rem;
     margin-top: auto;
   }
+  /* A summons: the Join box is lit, its button (which may carry a name) under
+     the code, and on a phone it comes before Host a game. */
+  .mode.summoned {
+    border-color: rgba(201, 164, 92, 0.6);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 220, 150, 0.08),
+      inset 0 0 28px rgba(201, 164, 92, 0.08),
+      0 0 18px rgba(201, 164, 92, 0.12);
+  }
+  .summoned form {
+    flex-direction: column;
+  }
+  .summoned .code {
+    padding-block: 0.55em;
+  }
+  .summoned h2,
+  .summoned .btn {
+    overflow-wrap: anywhere;
+  }
   .code {
     font-family: var(--font-cinzel);
     font-weight: 700;
@@ -715,6 +754,9 @@
   @media (max-width: 560px) {
     .modes {
       grid-template-columns: 1fr;
+    }
+    .mode.summoned {
+      order: -1;
     }
     .card {
       padding: 1.3rem;

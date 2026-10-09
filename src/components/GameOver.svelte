@@ -7,7 +7,8 @@
   import PlayerName from './PlayerName.svelte';
   import ArcaneCircle from './ArcaneCircle.svelte';
   import CrownMark from './CrownMark.svelte';
-  import { CREATOR, DONATE_URL, SITE_URL } from '../lib/site';
+  import { CREATOR, DONATE_URL, SITE_URL, inviteUrl } from '../lib/site';
+  import { nightShare, siteLink } from '../lib/invite';
   import { backdropShadow } from '../lib/backdropShadow';
   import { fxActive, fxUserOn, onFxChange } from '../lib/fx/core';
   import { CROWN_LANDS, crownPassed, glyphLanded, twinkle, victory } from '../lib/fx/moments';
@@ -170,12 +171,32 @@
   /** Delve together: the zone the team reached, in its colour. */
   const zone = $derived(team ? { name: zoneAt(team.depth), accent: accentAt(team.depth) } : null);
 
-  // Delve: dare someone to go deeper.
+  // Delve: dare someone to go deeper. Turns and race: bring a challenger,
+  // with the night's result and a link that seats them in the room's next
+  // game (lib/invite.ts); on one device, the site's address.
   let shared = $state(false);
-  async function shareDepth() {
-    if (!canShare) return;
+  function resultText() {
     // Alone, your depth; together, the team's.
-    const text = team ? shareText(team.depth, true) : shareText(winner ? depthOf(winner.id) : s.round);
+    if (run) return team ? shareText(team.depth, true) : shareText(winner ? depthOf(winner.id) : s.round);
+    const local = session.mode === 'local';
+    const others = s.players.filter((p) => !won(p.id));
+    const host = s.players.find((p) => p.id === s.hostId)?.name ?? '';
+    return nightShare({
+      winnerName: s.winners.length ? namesOf(s.winners, nameOf, null) : (winner?.name ?? ''),
+      winnerIsMe: !local && s.winners.length === 1 && s.winners[0] === me,
+      score: winner?.score ?? 0,
+      runnerUp: others.length ? Math.max(...others.map((p) => p.score)) : null,
+      played: s.series?.played ?? 0,
+      champName: champ ? nameOf(champ) : '',
+      champIsMe: !local && !!champ && champ === me,
+      hotSeat: local,
+      link: local ? siteLink() : inviteUrl(session.code, host),
+    });
+  }
+  async function shareResult(e: MouseEvent) {
+    if (!canShare) return;
+    const text = resultText();
+    if (!run) twinkle(e.currentTarget as HTMLElement);
     try {
       if (matchMedia('(pointer: coarse)').matches && navigator.share) await navigator.share({ text });
       else {
@@ -188,8 +209,13 @@
     }
   }
   // Only a delver shares a depth: on this device, the one who delved alone; online, a player of the run (never someone watching).
+  // A challenger is brought by any player of a game against others (never someone watching), or from one device played by two or more.
   const canShare = $derived(
-    !!run && (session.mode === 'local' ? solo : !!session.myPlayerId && s.players.some((p) => p.id === session.myPlayerId)),
+    run
+      ? session.mode === 'local'
+        ? solo
+        : seated
+      : s.players.length >= 2 && (session.mode === 'local' || seated),
   );
 
   let canvas: HTMLCanvasElement;
@@ -490,19 +516,32 @@
       <p class="muted">Waiting for the host to start a new game…</p>
     {/if}
     {#if canShare}
-      <span class="share">
-        <button class="btn ghost" onclick={shareDepth} aria-label={team ? "Share the team's depth" : 'Share your depth'} title={team ? "Share the team's depth" : 'Share your depth'}>
-          {#if shared}
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
+      <span class="share" class:labelled={!run}>
+        <button
+          class="btn ghost"
+          onclick={shareResult}
+          aria-label={run ? (team ? "Share the team's depth" : 'Share your depth') : undefined}
+          title={run ? (team ? "Share the team's depth" : 'Share your depth') : session.mode === 'local' ? 'Share the night with a friend' : 'Share the result; the link seats a friend in the next game'}
+        >
+          {#snippet check()}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>{/snippet}
+          <!-- Three linked seals: the share sign. -->
+          {#snippet seals()}<svg viewBox="0 0 24 24" aria-hidden="true"
+              ><circle cx="18" cy="5.5" r="2.6" /><circle cx="6" cy="12" r="2.6" /><circle cx="18" cy="18.5" r="2.6" /><path
+                d="M8.3 10.8l7.4-4M8.3 13.2l7.4 4"
+              /></svg
+            >{/snippet}
+          {#if !run}
+            <!-- Copied: said in place of the words, in a cell sized to the longer, so the button keeps its width. -->
+            <span class="say" aria-live="polite"
+              ><span class:off={shared}>{@render seals()}Bring a challenger</span><span class:off={!shared}>{@render check()}Copied</span></span
+            >
+          {:else if shared}
+            {@render check()}
           {:else}
-            <!-- Three linked seals: the share sign. -->
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <circle cx="18" cy="5.5" r="2.6" /><circle cx="6" cy="12" r="2.6" /><circle cx="18" cy="18.5" r="2.6" />
-              <path d="M8.3 10.8l7.4-4M8.3 13.2l7.4 4" />
-            </svg>
+            {@render seals()}
           {/if}
         </button>
-        {#if shared}<span class="copied" role="status" transition:fly={{ y: 4, duration: 200 }}>Copied</span>{/if}
+        {#if shared && run}<span class="copied" role="status" transition:fly={{ y: 4, duration: 200 }}>Copied</span>{/if}
       </span>
     {/if}
   </div>
@@ -793,6 +832,27 @@
   }
   .share .btn {
     padding: 0.7em;
+  }
+  /* Bring a challenger: the sign before its words. */
+  .share.labelled .btn {
+    padding: 0.7em 1.2em 0.7em 1em;
+  }
+  .share.labelled svg {
+    width: 1.25em;
+    height: 1.25em;
+  }
+  .say {
+    display: grid;
+  }
+  .say > span {
+    grid-area: 1 / 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5em;
+  }
+  .say .off {
+    visibility: hidden;
   }
   .share svg {
     width: 1.45em;

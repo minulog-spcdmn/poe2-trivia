@@ -553,6 +553,25 @@ browser (`src/lib/achievements.ts`); erasing the codex erases them.
     starts by itself as Play again would, unless someone says **Not yet** or
     the host starts it sooner (**Play now**) or goes back to the lobby. A
     guest who drops out is no longer waited for (`src/lib/series.ts`).
+  - **Summons:** the invite link names the host (`?room=K7Q2PX&from=Ash`).
+    On a phone, sharing it says "Ash summons you to a hunt on PoE2.Quest.
+    Name the unique before the timer burns out." (from a guest: "Bob invites
+    you to Ash's room on PoE2.Quest."). A host alone in the lobby gets a
+    **Summon a friend** button under the party. Opening the link, the Join
+    box reads "Ash summons you" with the code filled in, and its button
+    reads "Join as Bea" once a name is in the field (a saved one fills it),
+    so someone who has played here before joins in one tap. If the room is
+    gone, they read "Ash's room isn't open right now." A name in the link
+    that wouldn't pass as a player's name is ignored, and the link reads as
+    a plain invite (`src/lib/invite.ts`).
+  - **Bring a challenger:** at the end of a turns or race game, every player
+    seated (and hot-seat, with two or more) can share the result ("I just
+    won 10 to 8 at PoE2.Quest. Take a seat for the rematch: …"; from the
+    second game, "Ash holds the Crown after 3 games of PoE2.Quest. Come and
+    take it: …"). Online the link is the room's summons, so a friend who
+    opens it during the end screen watches and is seated in the next game.
+    Hot-seat shares the site ("We played PoE2.Quest tonight and Ash won 10
+    to 8. Your turn: poe2.quest").
   - Very strict networks (some corporate or mobile networks) can block
     WebRTC. In that case, use hot-seat.
 - **Open rooms:** a host can set their room to **Public**, which lists it
