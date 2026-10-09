@@ -44,6 +44,7 @@ import { CREATOR_TITLE } from './site';
 import { DELVE_FUSE_MS, LOOKALIKES_ASKED_FROM, clockLeft, fuseDue, fuseLeft, isGroupRun, livesOf, standingIds } from './delve';
 import { loadLooks } from './looks';
 import { bestOf, loadRecords, recordLeft, recordRun, runEvent } from './delveRecord';
+import { ledgerEvent, recordLedger } from './vaalRecord';
 import { LEFT_KEY, forgiveLeaving, noteLeaving } from './versus';
 import {
   DELVE_CLOCK_CAP_MS,
@@ -242,6 +243,12 @@ class Session {
   delveResult = $state<{ id: number; depth: number; previousBest: number | null; best: boolean } | null>(null);
   /** Delve: the deepest this device had gone (alone or in a group, as this run is) when the run began. */
   bestAtStart = $state<number | null>(null);
+  /**
+   * Turns: what the game just over added to this browser's Gambler's ledger
+   * (lib/vaalRecord.ts; `game`: its startedAt). `altar`: the biggest Altar
+   * its player took in it; `bestAltar`: bigger than ever before (and 2 or more).
+   */
+  vaalResult = $state<{ game: number; bestAltar: boolean; altar: number } | null>(null);
   /**
    * Delve: the run (its startedAt) this device saw start, from the lobby or
    * after a game ended (delveSession.ts runSeenStarting); null after a reload
@@ -1564,9 +1571,25 @@ class Session {
     this.delveResult = { id: run.id, depth: run.depth, previousBest: was ? was.previousBest : r.previousBest, best: was ? was.best : r.best };
   }
 
+  /**
+   * Turns: a game just over goes into this browser's Gambler's ledger, as its
+   * player played it (online, this device's seat; on one device, its one
+   * player). Counted once: a reload of the end screen changes nothing, and
+   * keeps what this device already made of it.
+   */
+  private noteLedger(prev: GameState | null, next: GameState) {
+    const entry = ledgerEvent(prev, next, this.myPlayerId, this.mode === 'local');
+    if (!entry) return;
+    const r = recordLedger(entry);
+    if (!r) return;
+    const was = this.vaalResult?.game === entry.game ? this.vaalResult : null;
+    this.vaalResult = { game: entry.game, bestAltar: was ? was.bestAltar : r.bestAltar, altar: entry.altar };
+  }
+
   /** What every device makes of a state change, host and guest alike: records, sounds and notices, achievements. */
   private noteChange(prev: GameState | null, next: GameState) {
     this.noteRun(prev, next);
+    this.noteLedger(prev, next);
     this.onNewState(prev, next);
     this.noteEncounter(prev, next);
     this.noteMoments(prev, next);

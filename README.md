@@ -28,7 +28,12 @@ is hosted as a static site on GitHub Pages. No server needed.
    an orb (up to one more than a game starts with), and when a game of two or
    more ends, everyone who didn't win starts the next one in the room with a
    revenge orb. Everyone's orbs show on their scoreboard entry, and a
-   corrupted question wears crimson on every screen.
+   corrupted question wears crimson on every screen. The end screen tells
+   what each player's corruptions did (held, bricked, the biggest Altar
+   taken), and this browser keeps a ledger of its own player's over every
+   game, shown in the lobby, with a new biggest Altar announced at the end
+   (`src/lib/vaalRecord.ts`; online your seat, on one device only a game
+   played alone).
 3. The first player to reach the host's target score wins. The game only ends
    once a full round is finished, so everyone gets the same number of turns.
    Once someone reaches the target with seats still to play, the **final

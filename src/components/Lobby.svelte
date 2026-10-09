@@ -8,6 +8,8 @@
   import DelveRules from './DelveRules.svelte';
   import ModeIcon from './ModeIcon.svelte';
   import { bestOf, findsMet, lastOf, loadRecords } from '../lib/delveRecord';
+  import { loadLedger } from '../lib/vaalRecord';
+  import { ledgerLine } from '../lib/stakes';
   import { MAX_NAME, isHeldName, nameHeld, nameTooShort } from '../lib/names';
   import { inviteUrl } from '../lib/site';
   import Avatar from './Avatar.svelte';
@@ -143,6 +145,8 @@
     setMode(next);
     (e.currentTarget as HTMLElement).querySelector<HTMLElement>(`[data-mode="${next}"]`)?.focus();
   }
+  /** Turns: this browser's Gambler's ledger over every game it counted (lib/vaalRecord.ts); '' before the first. */
+  const ledger = ledgerLine(loadLedger());
   // The deepest this browser has delved, alone or together (hot-seat is always alone).
   const records = loadRecords();
   const bestAlone = bestOf(records, true)?.depth ?? null;
@@ -435,6 +439,11 @@
           <li>First to <span class="num">{s.settings.targetScore}</span> wins once the round is over; a tie goes to sudden death.</li>
         {/if}
       </ul>
+      {#if !race && ledger}
+        <p class="muted ledger">
+          {#each ledger.split(/(\d+)/) as part, j (j)}{#if j % 2}<span class="num">{part}</span>{:else}{part}{/if}{/each}
+        </p>
+      {/if}
       {/if}
 
       {#if delve && !local}
@@ -1040,6 +1049,12 @@
     color: var(--unique);
     content: '◆  ';
     font-size: 0.7em;
+  }
+  /* Turns: this browser's ledger, right under the rules it plays by. */
+  .ledger {
+    margin: -0.9rem 0 1.4rem;
+    font-size: 0.95rem;
+    font-style: italic;
   }
 
   .start {

@@ -2,7 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { Engine, createGame, type Difficulty, type GameState, type Item, type Question } from '../src/lib/game.ts';
-import { finalRound, finalRoundShown, matchPoint, reachedBy, stakesLine, toPlay, turnStakes } from '../src/lib/stakes.ts';
+import { finalRound, finalRoundShown, ledgerLine, ledgerText, matchPoint, reachedBy, stakesLine, toPlay, turnStakes } from '../src/lib/stakes.ts';
+import { emptyLedger } from '../src/lib/vaalRecord.ts';
 import { reachedText } from '../src/lib/difficultyText.ts';
 import { MOMENTS } from '../src/lib/soundDesign.ts';
 
@@ -258,4 +259,27 @@ test('the final round has a sound of its own', () => {
       ['layer-air-4', -30, 0.9, 80],
     ],
   );
+});
+
+test("ledgerText tells only what a player's corruptions did; ledgerLine this browser's over every game", () => {
+  const l = (held: number, bricked: number, altar: number) => ({ held, bricked, altar });
+  const texts = [
+    [l(2, 1, 3), '2 held, 1 bricked, took an Altar of 3'],
+    [l(1, 0, 0), '1 held'],
+    [l(0, 2, 0), '2 bricked'],
+    [l(1, 0, 4), '1 held, took an Altar of 4'],
+    [l(3, 2, 0), '3 held, 2 bricked'],
+    [l(0, 0, 0), ''],
+    [undefined, ''],
+  ] as const;
+  for (const [ledger, want] of texts) assert.equal(ledgerText(ledger), want);
+  const rec = { ...emptyLedger(), games: 5, held: 9, bricked: 4, bestAltar: 4, last: 1 };
+  const lines = [
+    [rec, 'Your ledger: 9 held, 4 bricked, biggest Altar 4.'],
+    [{ ...rec, bestAltar: 0 }, 'Your ledger: 9 held, 4 bricked.'],
+    [{ ...rec, held: 0, bricked: 0, bestAltar: 0 }, 'Your ledger: 0 held, 0 bricked.'],
+    [emptyLedger(), ''],
+  ] as const;
+  for (const [r, want] of lines) assert.equal(ledgerLine(r), want);
+  for (const out of [...texts.map(([x]) => ledgerText(x)), ...lines.map(([r]) => ledgerLine(r))]) assert.ok(!out.includes(String.fromCharCode(0x2014)), out);
 });

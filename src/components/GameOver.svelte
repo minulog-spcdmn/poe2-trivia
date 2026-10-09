@@ -17,7 +17,8 @@
   import { BLUE_FROM, accentAt } from '../lib/descent';
   import { zoneAt } from '../lib/zoneSigils';
   import { delverText, lossDepths, revengeNote } from '../lib/difficultyText';
-  import { revengeFor } from '../lib/game';
+  import { revengeFor, vaalMode, type Player } from '../lib/game';
+  import { ledgerText } from '../lib/stakes';
 
   const s = $derived(session.state!);
   const won = (id: string) => s.winners.includes(id);
@@ -43,6 +44,13 @@
   );
   const winner = $derived(s.players.find((p) => s.winners.includes(p.id)) ?? standings[0]);
   const spectators = $derived(s.spectators ?? []);
+  /** Turns: what a player's Vaal Orb corruptions did this game ('' for none: game.ts Player.ledger). */
+  const ledgerOf = (p: Player) => (!run && vaalMode(s.settings) ? ledgerText(p.ledger) : '');
+  /** Turns: this browser's player took a bigger Altar than ever before (lib/vaalRecord.ts), told once. */
+  const altarBest = $derived.by(() => {
+    const r = session.vaalResult;
+    return !run && r && r.game === s.startedAt && r.bestAltar ? r.altar : 0;
+  });
   /** Turns: who starts the next game with a revenge orb (game.ts revengeFor), told to them online. */
   const revenge = $derived(
     revengeNote(revengeFor(s), (id) => s.players.find((p) => p.id === id)?.name ?? '?', session.mode === 'local' ? null : session.myPlayerId),
@@ -281,6 +289,7 @@
       {:else}
         {winner.score} {winner.score === 1 ? 'point' : 'points'} after {s.round} {s.settings.mode === 'race' ? (s.round === 1 ? 'question' : 'questions') : s.round === 1 ? 'round' : 'rounds'}
         {#if s.deathmatch}· won the deathmatch in round {s.deathmatch.round}{/if}
+        {#if altarBest}<span class="altar-best">Your biggest Altar yet: <span class="n">{altarBest}</span>.</span>{/if}
       {/if}
     </p>
   {/if}
@@ -301,7 +310,15 @@
           </span>
           <span class="pts depth" title={row.lives ? 'Still standing' : `Perished at depth ${shownDepth(row.depth)}`}>{shownDepth(row.depth)}</span>
         {:else}
-        <span class="name"><PlayerName name={p.name} /></span>
+          {@const ledger = ledgerOf(p)}
+          <!-- Turns: what their corruptions did (nothing for a player who never corrupted), broken only between its parts. -->
+          <span class="name"
+            ><PlayerName name={p.name} />{#if ledger}<span class="detail"
+                >{#each ledger.split(', ') as part, k (k)}{k ? ', ' : ''}<span class="part"
+                    >{#each part.split(/(\d+)/) as bit, j (j)}{#if j % 2}<span class="n">{bit}</span>{:else}{bit}{/if}{/each}</span
+                  >{/each}</span
+              >{/if}</span
+          >
         {/if}
         {#if team}
           <!-- Its depth is beside the name, above. -->
@@ -503,7 +520,8 @@
     border: 1px solid var(--gold-lo);
     border-radius: 50%;
   }
-  .detail .n {
+  .detail .n,
+  .altar-best .n {
     font-family: var(--font-cinzel);
     font-style: normal;
     font-size: 0.92em;
@@ -518,6 +536,15 @@
     text-transform: uppercase;
     color: var(--accent);
     text-shadow: 0 0 12px color-mix(in srgb, var(--accent), transparent 60%);
+  }
+  /* Turns: a new biggest Altar, on a line of its own in the Vaal's crimson (the revenge line's). */
+  .altar-best {
+    display: block;
+    margin-top: 0.3rem;
+    color: #e8a99a;
+  }
+  .detail .part {
+    white-space: nowrap;
   }
   .detail {
     display: block;

@@ -2,10 +2,13 @@
 // the target with seats still to play this round, the round is the final
 // one (game.ts advance only ends a game where a round wraps): each player
 // left gets a last chance, told what their own turn can do. A player one
-// right answer from the target is at match point. Pure: read off the state,
-// the same on every screen; game.ts never imports this.
+// right answer from the target is at match point. Also the Gambler's ledger
+// in words: a player's corruptions this game (the end screen) and this
+// browser's over every game (the lobby, lib/vaalRecord.ts). Pure: read off
+// the state, the same on every screen; game.ts never imports this.
 
-import { HOLD, vaalOn, type GameState } from './game.ts';
+import { HOLD, vaalOn, type GameState, type Player } from './game.ts';
+import type { VaalLedger } from './vaalRecord.ts';
 
 /** A classic turns game (settings without a mode count as turns; never race or Delve). */
 const turnsGame = (s: GameState) => s.settings.mode !== 'race' && s.settings.mode !== 'delve' && !s.delve;
@@ -88,4 +91,21 @@ export function stakesLine(s: GameState, viewer: string | null, local: boolean):
   } else line = "It's out of reach. Play for pride.";
   if (local || viewer === active.id) return line;
   return `${active.name}: ${line[0].toLowerCase()}${line.slice(1)}`;
+}
+
+/**
+ * A player's corruptions this game, for the end screen: only what happened
+ * ("2 held, 1 bricked, took an Altar of 3"); '' for a player who never
+ * corrupted. Commas, not bullets: it is set in the body font.
+ */
+export function ledgerText(l: Player['ledger']): string {
+  if (!l) return '';
+  const parts = [l.held > 0 ? `${l.held} held` : '', l.bricked > 0 ? `${l.bricked} bricked` : '', l.altar > 0 ? `took an Altar of ${l.altar}` : ''];
+  return parts.filter(Boolean).join(', ');
+}
+
+/** This browser's ledger over every game it counted, for the lobby; '' before the first. */
+export function ledgerLine(rec: VaalLedger): string {
+  if (rec.games <= 0) return '';
+  return `Your ledger: ${rec.held} held, ${rec.bricked} bricked${rec.bestAltar > 0 ? `, biggest Altar ${rec.bestAltar}` : ''}.`;
 }
