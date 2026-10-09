@@ -17,6 +17,8 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SOURCE = 'https://poe2db.tw/us/Unique_item';
 const IMG_DIR = path.join(ROOT, 'art-source', 'items');
 const SITE_DIR = path.join(ROOT, 'public', 'items');
+/** The smaller copies' folders under SITE_DIR (THUMBS in scripts/upscale-art.py). */
+const THUMBS = [256, 128];
 const DATA_FILE = path.join(ROOT, 'src', 'data', 'items.json');
 
 // Map the art folder (below Art/2DItems/) to a fine-grained group and a broad
@@ -165,11 +167,15 @@ async function main() {
     }),
   );
 
-  const keep = new Set(quiz.map((it) => `${it.id}.webp`));
-  await mkdir(SITE_DIR, { recursive: true });
-  for (const dir of [IMG_DIR, SITE_DIR]) for (const f of await readdir(dir)) if (!keep.has(f)) await unlink(path.join(dir, f));
+  // The site's copies: AVIF, full size and in each THUMBS folder (scripts/upscale-art.py).
+  const keep = new Set(quiz.map((it) => it.id));
+  const siteDirs = [SITE_DIR, ...THUMBS.map((t) => path.join(SITE_DIR, String(t)))];
+  for (const dir of siteDirs) await mkdir(dir, { recursive: true });
+  for (const f of await readdir(IMG_DIR)) if (!keep.has(path.parse(f).name)) await unlink(path.join(IMG_DIR, f));
+  for (const dir of siteDirs)
+    for (const f of await readdir(dir, { withFileTypes: true })) if (f.isFile() && !keep.has(path.parse(f.name).name)) await unlink(path.join(dir, f.name));
   const missing = [];
-  for (const it of quiz) if (!(await exists(path.join(SITE_DIR, `${it.id}.webp`)))) missing.push(it.id);
+  for (const it of quiz) if (!(await Promise.all(siteDirs.map((d) => exists(path.join(d, `${it.id}.avif`))))).every(Boolean)) missing.push(it.id);
 
   quiz.sort((a, b) => a.name.localeCompare(b.name));
   await mkdir(path.dirname(DATA_FILE), { recursive: true });

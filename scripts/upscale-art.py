@@ -3,13 +3,17 @@
 # per inventory cell (108 x 108 for a ring), and lossy, which the game draws
 # much bigger than that. Real-ESRGAN (x4plus) redraws each picture at 4x, which
 # is then scaled down to ART_SCALE (2x, src/lib/ui-paths.ts) and mixed with
-# the original (smoothly enlarged) at MIX, then saved to public/items/. The
-# originals stay in art-source/items/ (fetch-data puts them there); only those
-# without an upscaled copy yet are done, unless --all.
+# the original (smoothly enlarged) at MIX, then saved to public/items/ as
+# AVIF, with smaller copies for small spots (public/items/<size>/, at most
+# that many px on the longest side; see itemThumb in src/lib/ui-paths.ts).
+# The originals stay in art-source/items/ (fetch-data puts them there); only
+# those without an upscaled copy yet are done, unless --all.
 #
 # On its own the model repaints the art (smooth, waxy, painterly). In blind
 # tests the mix at 30% beat 50% and 70% (and the plain model, other models,
-# and the original as it was) on 35 items, small and big alike.
+# and the original as it was) on 35 items, small and big alike. AVIF at
+# QUALITY came out a third smaller than WebP at 90 and closer to the
+# unencoded picture (SSIM, over 48 items).
 #
 # Setup, once (CPU is enough; the whole set takes about an hour):
 #   python3 -m venv .venv-art
@@ -37,7 +41,9 @@ MODEL = os.environ.get('ART_MODEL', os.path.join(ROOT, '.venv-art', 'RealESRGAN_
 ART_SCALE = 2
 # How much of the model's picture goes into the mix; the rest is the original.
 MIX = 0.3
-QUALITY = 90
+QUALITY = 80
+# The smaller copies' longest sides, px (keep in step with itemThumb).
+THUMBS = (256, 128)
 
 
 # Real-ESRGAN's RRDBNet (x4), as in github.com/xinntao/Real-ESRGAN.
@@ -115,7 +121,7 @@ def upscale(net, src, out):
     big = Image.fromarray(np.dstack([rgb, alpha]), 'RGBA')
     size = (im.width * ART_SCALE, im.height * ART_SCALE)
     model = np.asarray(big.resize(size, Image.LANCZOS)).astype(np.float32)
-    save(mix(model, im), out)
+    save_all(mix(model, im), out)
 
 
 def mix(model, im):
@@ -127,7 +133,18 @@ def mix(model, im):
 
 
 def save(im, out):
-    im.save(out, 'WEBP', quality=QUALITY, alpha_quality=100, method=6)
+    im.save(out, 'AVIF', quality=QUALITY, speed=4)
+
+
+def save_all(im, out):
+    """The picture at `out` (public/items/<id>.avif), and its smaller copies beside it."""
+    save(im, out)
+    folder, name = os.path.split(out)
+    for size in THUMBS:
+        os.makedirs(os.path.join(folder, str(size)), exist_ok=True)
+        k = min(1, size / max(im.size))
+        small = im if k == 1 else im.resize((max(1, round(im.width * k)), max(1, round(im.height * k))), Image.LANCZOS)
+        save(small, os.path.join(folder, str(size), name))
 
 
 def main():
@@ -136,7 +153,8 @@ def main():
     ids = [a for a in args if not a.startswith('--')]
     if not ids:
         ids = sorted(f[: -len('.webp')] for f in os.listdir(SRC_DIR) if f.endswith('.webp'))
-    todo = [i for i in ids if redo or not os.path.exists(os.path.join(OUT_DIR, f'{i}.webp'))]
+    done = lambda i: all(os.path.exists(p) for p in [os.path.join(OUT_DIR, f'{i}.avif')] + [os.path.join(OUT_DIR, str(t), f'{i}.avif') for t in THUMBS])
+    todo = [i for i in ids if redo or not done(i)]
     if not todo:
         print('All item art is upscaled.')
         return
@@ -144,8 +162,9 @@ def main():
     torch.set_num_threads(os.cpu_count() or 4)
     net = load_model()
     for n, i in enumerate(todo, 1):
-        upscale(net, os.path.join(SRC_DIR, f'{i}.webp'), os.path.join(OUT_DIR, f'{i}.webp'))
+        upscale(net, os.path.join(SRC_DIR, f'{i}.webp'), os.path.join(OUT_DIR, f'{i}.avif'))
         print(f'[{n}/{len(todo)}] {i}', flush=True)
 
 
-main()
+if __name__ == '__main__':
+    main()

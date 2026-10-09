@@ -1,12 +1,12 @@
 import { engine } from './session.svelte';
-import { itemImage } from './ui-paths';
+import { itemImage, itemSrcset, itemThumb } from './ui-paths';
 import { PALETTE } from './palette';
 
 export function playerColor(slot: number) {
   return PALETTE[slot % PALETTE.length];
 }
 
-export { itemImage };
+export { itemImage, itemSrcset, itemThumb };
 
 // Art used (as a silhouette) on the category cards: for each category an
 // item picked from all of them shown on the card, by name so a data refresh

@@ -4,7 +4,7 @@
   import { answersFor, runLog, runStory, zoneOf, type RulesGroup } from '../../lib/codexStats';
   import { RUN_LIMIT, isTogether, runKey, type DelveRun } from '../../lib/delveRecord';
   import { shownDepth } from '../../lib/delve';
-  import { itemImage } from '../../lib/ui';
+  import { itemThumb } from '../../lib/ui';
   import { backdropShadow } from '../../lib/backdropShadow';
   import type { Item } from '../../lib/game';
 
@@ -52,7 +52,7 @@
             {#if l.item}
               {@const it = l.item}
               <button class="mini" onclick={() => onopen(it)} title="Depth {shownDepth(l.depth)}: {it.name}" aria-label="Life lost at depth {shownDepth(l.depth)} to {it.name}">
-                <img src={itemImage(it.id)} alt="" loading="lazy" />
+                <img src={itemThumb(it.id, 128)} alt="" loading="lazy" />
                 <span class="at n" aria-hidden="true">{shownDepth(l.depth)}</span>
               </button>
             {:else}
