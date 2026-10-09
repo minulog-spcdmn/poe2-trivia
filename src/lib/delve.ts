@@ -831,10 +831,10 @@ export function blastsLeft(s: GameState): number {
  * Why `by` can't blast the question in play away now, or null when they can
  * (the button shows only then): its clock runs, it is no find's, the depth
  * has a blast left, and the stick is at hand. Alone: the player answering,
- * holding one. Together: anyone standing who hasn't answered it yet, while
- * anyone standing holds one (it is spent from a holder's pack); a
- * teammate's wrong answer locks nobody else out. `by` null: the host's own
- * tooling, for the team. Whether the clock has run out is the engine's.
+ * holding one. Together: a player standing who hasn't answered it yet and
+ * holds one (it is spent from their own pack); a teammate's wrong answer
+ * locks nobody else out. `by` null: the host's own tooling, for the team,
+ * from a random holder's pack. Whether the clock has run out is the engine's.
  */
 export function blastProblem(s: GameState, by: string | null): string | null {
   const q = s.question;
@@ -843,10 +843,11 @@ export function blastProblem(s: GameState, by: string | null): string | null {
   if (!itemsWorkOn(q)) return "Dynamite can't be used on a find.";
   if (blastsLeft(s) === 0) return 'No more blasts at this depth.';
   if (isGroupRun(s)) {
-    if (by !== null && !seated(s, by)) return 'You are not in this game.';
-    if (by !== null && livesOf(s, by) <= 0) return 'Only players still standing can use it.';
-    if (by !== null && q.struck?.some((x) => x.by === by)) return 'You already answered.';
-    return holdersOf(s, 'dynamite').length ? null : 'Nobody has dynamite.';
+    if (by === null) return holdersOf(s, 'dynamite').length ? null : 'Nobody has dynamite.';
+    if (!seated(s, by)) return 'You are not in this game.';
+    if (livesOf(s, by) <= 0) return 'Only players still standing can use it.';
+    if (q.struck?.some((x) => x.by === by)) return 'You already answered.';
+    return dynamiteOf(s, by) > 0 ? null : 'You have no dynamite.';
   }
   const active = s.players[s.turn];
   if (!active || (by !== null && by !== active.id)) return "It's not your turn.";
@@ -861,7 +862,8 @@ export function blastProblem(s: GameState, by: string | null): string | null {
  * blast it away. Alone: the
  * player answering is here, has burnt their flare or holds none, and may
  * blast it (blastProblem). Together: no flare is ready (teamItemReady), and
- * dynamite is, for someone here still to answer. Never on a find's.
+ * dynamite is, for someone here still to answer (from a random holder's pack).
+ * Never on a find's.
  */
 export function fuseDue(s: GameState): boolean {
   const q = s.question;

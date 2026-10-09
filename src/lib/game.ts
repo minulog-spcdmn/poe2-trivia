@@ -642,7 +642,7 @@ export interface Question {
 export interface Blast {
   /** Who set it off; missing when it went off by itself as the clock hit 0. */
   by?: string;
-  /** Whose stick it was (co-op: a standing holder's, drawn; alone the player's). */
+  /** Whose stick it was: whoever set it off (alone the player's); otherwise in co-op a standing holder's, drawn. */
   stick: string;
   /**
    * Where the new question's card lay on the offer from the blasted one's:
@@ -804,8 +804,8 @@ export type Action =
   | { type: 'flare'; askedAt: number }
   /**
    * Delve: a stick of dynamite blasts the question asked at `askedAt` away
-   * for a new one at the same depth (alone the player's own; co-op anyone
-   * standing who hasn't answered it, from a random holder's pack).
+   * for a new one at the same depth (alone the player's own; co-op the own
+   * of a player standing who hasn't answered it and holds one).
    */
   | { type: 'blast'; askedAt: number };
 
@@ -1549,8 +1549,8 @@ export class Engine {
         if (!s.delve || s.phase !== 'question' || !q || action.askedAt !== q.askedAt) throw new ActionError('Too late!', true);
         const coop = isGroupRun(s);
         // Alone the player answering (on one device, whoever presses);
-        // together anyone standing who hasn't answered it, or (null) the
-        // host's own tooling for the team.
+        // together a player standing who hasn't answered it and holds a
+        // stick, or (null) the host's own tooling for the team.
         const by = from ?? (coop ? null : (active?.id ?? null));
         const problem = blastProblem(s, by);
         if (problem) throw new ActionError(problem, true);
@@ -1558,7 +1558,7 @@ export class Engine {
         // deals with it: a flare burns first, or the dynamite goes off by
         // itself. While its fuse hisses before 0, Detonate sets it off at once.
         if (this.now() > q.deadline! + ANSWER_GRACE_MS) throw new ActionError('Too late!', true);
-        this.blast(s, coop ? this.anyHolder(s, 'dynamite') : active!.id, by);
+        this.blast(s, coop ? (by ?? this.anyHolder(s, 'dynamite')) : active!.id, by);
         break;
       }
     }
@@ -1980,10 +1980,10 @@ export class Engine {
         this.burnFlare(s, this.anyHolder(s, 'flares'));
         return;
       }
-      // With no flare to burn, a stick of dynamite from anyone's pack goes
-      // off by itself, if the depth has a blast left (its fuse has hissed
-      // over the clock's last seconds: delve.ts fuseLeft). Nobody is hit,
-      // and the whole team gets the new question.
+      // With no flare to burn, a stick of dynamite goes off by itself, from
+      // a random standing holder's pack, if the depth has a blast left (its
+      // fuse has hissed over the clock's last seconds: delve.ts fuseLeft).
+      // Nobody is hit, and the whole team gets the new question.
       if (fuseDue(s)) {
         this.blast(s, this.anyHolder(s, 'dynamite'), null);
         return;
