@@ -1,27 +1,30 @@
 <script lang="ts">
+  import { tick, untrack } from 'svelte';
   import { fade, fly } from 'svelte/transition';
-  import { NAME_TOO_SHORT, nameHeld, nameTooShort, unlockHeldName } from '../lib/names';
+  import { NAME_TOO_SHORT, MAX_NAME, nameHeld, nameTooShort, unlockHeldName } from '../lib/names';
   import { toasts } from '../lib/toasts.svelte';
   import { engine, session, savedName, saveName, CODE_LENGTH } from '../lib/session.svelte';
-  import { shuffle } from '../lib/game';
-  import { itemSrcset, itemThumb } from '../lib/ui';
-  import OpenRooms from './OpenRooms.svelte';
   import { CREATOR, DONATE_URL, IMPRINT_URL, PRIVACY_URL } from '../lib/site';
-  import { backdropShadow } from '../lib/backdropShadow';
-  import { backdropDropShadow } from '../lib/backdropDropShadow';
-  import { connecting as portalFx, refuse, titleGlints } from '../lib/fx/moments';
-  import type { Handle } from '../lib/fx/core';
-  import { setHomeScene } from '../lib/lights';
-  import { openCodex } from '../lib/codexRoute.svelte';
+  import { refuse } from '../lib/fx/moments';
+  import { openCodex, codexRoute } from '../lib/codexRoute.svelte';
   import { DELVE_LINK_PARAM } from '../lib/delveShare';
   import { wantDelveBackdrop } from '../lib/backdrop';
   import { BETA } from '../lib/channel';
+  import { deepestEver, loadRecords } from '../lib/delveRecord';
+  import { shownDepth } from '../lib/delve';
+  import { ENTRIES, codexLine, cursorKey, lastEntry, rememberEntry, type Entry } from '../lib/startMenu';
+  import GameTitle from './GameTitle.svelte';
+  import Connecting from './Connecting.svelte';
+  import DailyUnique from './DailyUnique.svelte';
+  import InviteScreen from './InviteScreen.svelte';
+  import OpenRooms from './OpenRooms.svelte';
 
   /** Keeps a room code's letters and digits, uppercased, up to its length. */
   const cleanCode = (v: string) => v.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, CODE_LENGTH);
 
   const params = new URLSearchParams(location.search);
-  const invite = cleanCode(params.get('room') ?? '');
+  /** An invite link's room (?room=CODE): its own screen until joined or left. */
+  let invite = $state(cleanCode(params.get('room') ?? ''));
   if (params.has('owner')) {
     void unlockHeldName(params.get('owner') ?? '');
     // Out of the address bar and history either way; other params stay.
@@ -30,7 +33,8 @@
     history.replaceState(history.state, '', url);
   }
 
-  let name = $state(savedName());
+  /** The name this browser plays under; empty on a first visit (it is asked once, then greeted). */
+  let known = $state(savedName().trim());
 
   // A delver's shared link (?delve): someone who has played here before (a
   // name is saved) goes straight into a run alone; anyone else finds Delve
@@ -43,14 +47,12 @@
     session.delveLink = true;
     // Either way Delve is on its way: the backdrop gets its Delve programs ready.
     wantDelveBackdrop();
-    const known = savedName().trim();
-    if (known && !nameTooShort(known) && !nameHeld(known))
+    const n = savedName().trim();
+    if (n && !nameTooShort(n) && !nameHeld(n))
       setTimeout(() => {
-        if (session.status === 'idle' && !session.state) session.startDelve(known);
+        if (session.status === 'idle' && !session.state) session.startDelve(n);
       });
   }
-  let code = $state(invite);
-  let nameError = $state(false);
 
   const total = engine.items.length;
   /** Null until the codex is read. */
@@ -59,6 +61,7 @@
     const seen = loadCodex().items;
     discovered = engine.items.filter((it) => seen[it.id]).length;
   });
+  const deepest = shownDepth(deepestEver(loadRecords()));
   // Achievements catch up with the codex here: the first time quietly (those
   // earned in games from before them get one notice, here or owed from a game),
   // and any missed since. Not once a game has taken over the screen.
@@ -69,52 +72,145 @@
       if (here) payOwed();
     })
     .catch((err) => console.warn('achievements', err));
-  const showcase = shuffle(engine.items, Math.random).slice(0, 7);
 
-  function needName() {
-    const n = name.trim();
+  const connecting = $derived(session.status === 'connecting');
+
+  // ---- names ----
+
+  /** A name fit to play under (saved, and the greeting's from now on), or null after saying what's wrong with it. */
+  function checkName(raw: string, field: HTMLInputElement | undefined): string | null {
+    const n = raw.trim();
     if (!n || nameTooShort(n) || nameHeld(n)) {
-      if (n && nameTooShort(n)) toasts.show(NAME_TOO_SHORT, 'error');
-      nameError = true;
-      const field = document.getElementById('name');
-      if (field) refuse(field);
-      setTimeout(() => (nameError = false), 600);
-      document.getElementById('name')?.focus();
+      if (n && nameTooShort(n)) toasts.show(NAME_TOO_SHORT, 'error', { title: 'Name too short' });
+      if (field) {
+        refuse(field);
+        field.focus();
+      }
       return null;
     }
     saveName(n);
+    known = n;
     return n;
   }
 
-  function host() {
-    const n = needName();
+  let renaming = $state(false);
+  let draft = $state('');
+  let renameField = $state<HTMLInputElement>();
+  async function startRename() {
+    if (connecting) return;
+    draft = known;
+    renaming = true;
+    await tick();
+    renameField?.focus();
+    renameField?.select();
+  }
+  function saveRename(e?: Event) {
+    e?.preventDefault();
+    if (checkName(draft, renameField)) renaming = false;
+  }
+  function renameKeys(e: KeyboardEvent) {
+    if (e.key === 'Escape') {
+      e.stopPropagation();
+      renaming = false;
+    }
+  }
+
+  // ---- the menu ----
+
+  /** The keyboard cursor: arrows move it, Enter chooses, it follows the mouse. */
+  let cursor = $state(lastEntry());
+  /** The entry whose row (fields in place of its description) is open. */
+  let open = $state<Entry | null>(null);
+  let entryEls: HTMLButtonElement[] = $state([]);
+
+  let nameInput = $state(''); // first visit: the name asked with Create or Join
+  let code = $state('');
+  let codeError = $state(false);
+  let nameField = $state<HTMLInputElement>();
+  let codeField = $state<HTMLInputElement>();
+  /** The entry that set off the connection, whose row shows it. */
+  let busy = $state<Entry | null>(null);
+
+  async function choose(e: Entry) {
+    if (connecting) return;
+    cursor = ENTRIES.indexOf(e);
+    rememberEntry(e);
+    renaming = false;
+    if (e === 'hotseat') return session.startLocal();
+    if (e === 'codex') return openCodex();
+    if (e === 'create' && known) return host();
+    open = e;
+    await tick();
+    (known ? codeField : nameField)?.focus();
+  }
+
+  function closeRow() {
+    if (!open) return;
+    const i = ENTRIES.indexOf(open);
+    open = null;
+    codeError = false;
+    entryEls[i]?.focus();
+  }
+
+  function host(e?: Event) {
+    e?.preventDefault();
+    const n = known || checkName(nameInput, nameField);
     if (!n) return;
+    busy = 'create';
     session.host(n);
   }
 
   function join(e?: Event) {
     e?.preventDefault();
-    const n = needName();
+    const n = known || checkName(nameInput, nameField);
     if (!n) return;
     if (code.length < CODE_LENGTH) {
-      document.getElementById('code')?.focus();
+      codeError = true;
+      if (codeField) refuse(codeField);
+      codeField?.focus();
+      toasts.show(`Room codes have ${CODE_LENGTH} letters and digits.`, 'error', { title: 'Code too short' });
       return;
     }
-    if (invite) history.replaceState(null, '', location.pathname);
-    session.join(code, n);
+    startJoin(code, n);
   }
 
+  /** A room joined from the Open rooms list: its row is Join's. */
   function joinListed(roomCode: string) {
+    if (connecting) return;
+    if (!known) {
+      code = roomCode;
+      open = 'join';
+      cursor = ENTRIES.indexOf('join');
+      void tick().then(() => nameField?.focus());
+      toasts.show('Name yourself first, then join.', 'info', { title: 'Your name' });
+      return;
+    }
     code = roomCode;
-    join();
+    startJoin(roomCode, known);
   }
 
-  /** Enter in the name field: join if a room code has been entered (or is still missing letters), otherwise open a room. */
-  function enterName(e: KeyboardEvent) {
-    if (e.key !== 'Enter' || e.isComposing || connecting) return;
-    if (code) join();
-    else host();
+  // A join that ends back here without a room (no such room, no answer):
+  // its code is the one to check, and the toast (session.fail) says why.
+  let joining: string | null = null;
+  function startJoin(roomCode: string, n: string) {
+    joining = roomCode;
+    busy = 'join';
+    session.join(roomCode, n);
+    // Turned down on the spot (a code that can't be one).
+    if (!connecting) settle();
   }
+  function settle() {
+    if (joining && !session.state) {
+      code = joining;
+      codeError = true;
+      if (!invite) open = 'join';
+    }
+    joining = null;
+    busy = null;
+  }
+  $effect(() => {
+    if (!connecting) untrack(settle);
+  });
 
   /**
    * A paste is cleaned before the field's length limit applies, so spaces or
@@ -129,553 +225,571 @@
     const linked = /[?&]room=([^&#\s]+)/.exec(text)?.[1];
     if (linked) code = cleanCode(linked);
     else code = cleanCode(code.slice(0, field.selectionStart ?? code.length) + text + code.slice(field.selectionEnd ?? code.length));
+    codeError = false;
   }
 
-  function local() {
-    session.startLocal();
+  /** Arrows, Enter and Escape on the menu; not while typing (but Escape), in a dialog, or once something else has the screen. */
+  function keys(e: KeyboardEvent) {
+    if (invite || session.state || codexRoute.open || document.querySelector('[aria-modal="true"]')) return;
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const t = e.target as HTMLElement | null;
+    const typing = !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
+    if (e.key === 'Escape') {
+      if (open && !connecting) {
+        e.preventDefault();
+        closeRow();
+      }
+      return;
+    }
+    if (typing || connecting || renaming) return;
+    const next = cursorKey(e.key, cursor);
+    if (next !== null) {
+      e.preventDefault();
+      cursor = next;
+      entryEls[next]?.focus();
+    } else if (e.key === 'Enter' && (!t || t === document.body)) {
+      e.preventDefault();
+      void choose(ENTRIES[cursor]);
+    }
   }
 
-  const connecting = $derived(session.status === 'connecting');
-
-  /**
-   * Svelte action: the title's light. The backdrop throws god rays from above
-   * and a royal glow behind it (lib/lights.ts), and it glints now and then.
-   */
-  function glinting(node: HTMLElement) {
-    let h: Handle | null = null;
-    setHomeScene(node);
-    // Wait for the title's entrance to finish.
-    const t = setTimeout(() => (h = titleGlints(node)), 1200);
-    return {
-      destroy() {
-        clearTimeout(t);
-        h?.stop();
-        setHomeScene(null);
-      },
-    };
+  /** The cursor follows the mouse (touch has none). */
+  function hover(e: PointerEvent, i: number) {
+    if (e.pointerType === 'mouse' && !connecting) cursor = i;
   }
 
-  /** Svelte action: a portal swirls on the rune while connecting. */
-  function portalOn(node: HTMLElement) {
-    const h = portalFx(node);
-    return { destroy: () => h.stop(0.3) };
+  // ---- the invite link's screen ----
+
+  let inviteName = $state(savedName());
+  function joinInvite(field: HTMLInputElement) {
+    const n = checkName(inviteName, field);
+    if (!n) return;
+    startJoin(invite, n);
   }
+  function leaveInvite() {
+    const url = new URL(location.href);
+    url.searchParams.delete('room');
+    history.replaceState(history.state, '', url);
+    invite = '';
+  }
+  // Joined: the link has done its job (a reload shouldn't ask again).
+  $effect(() => {
+    if (session.state && invite) leaveInvite();
+  });
+
+  const MENU: Record<Entry, string> = {
+    create: 'Create a room',
+    join: 'Join a room',
+    hotseat: 'Play hot-seat',
+    codex: 'Codex',
+  };
+  const about = $derived<Record<Entry, string>>({
+    create: 'Host your party, or play on your own.',
+    join: 'With the code a friend sent you.',
+    hotseat: 'Everyone at one screen, passing it around.',
+    codex: codexLine(discovered, total, deepest),
+  });
 </script>
 
-<div class="home">
-  <!-- Out of the way of starting a game, where the in-game header keeps its tools. -->
-  <button class="codex-entry" onclick={openCodex} disabled={connecting} in:fade={{ duration: 600, delay: 700 }}>
-    <svg viewBox="0 0 24 24" aria-hidden="true"
-      ><path d="M12 6.5C10.2 5.2 7.6 4.6 4 4.8v13.4c3.6-.2 6.2.4 8 1.7 1.8-1.3 4.4-1.9 8-1.7V4.8c-3.6-.2-6.2.4-8 1.7zM12 6.5v13.4" /></svg
-    >
-    <span class="codex-text">
-      <span class="codex-label">Codex</span>
-      {#if discovered}<span class="codex-count" in:fade={{ duration: 300 }}>{discovered} / {total}</span>{/if}
-    </span>
-  </button>
+<svelte:window onkeydown={keys} />
 
-  <div class="hero">
-    <div class="showcase" aria-hidden="true">
-      {#each showcase as it, i (it.id)}
-        <img
-          use:backdropDropShadow
-          src={itemThumb(it.id, 128)}
-          srcset={itemSrcset(it.id)}
-          alt=""
-          style:--i={i}
-          style:--x="{(i - 3) * 15}vw"
-          style:--r="{(i - 3) * 6}deg"
-        />
-      {/each}
-    </div>
-    {#if BETA}
-      <p class="beta" in:fade={{ duration: 600, delay: 100 }}>Beta</p>
-    {/if}
-    <p class="kicker" in:fly={{ y: -10, duration: 600, delay: 100 }}>Unique Item Trivia</p>
-    <h1 use:glinting in:fly={{ y: 20, duration: 800, delay: 200 }}>
-      <span class="gold" use:backdropDropShadow><span class="line"></span>PoE2.Quest<span class="line"></span></span>
-      <span class="gleam" aria-hidden="true"><span class="line"></span>PoE2.Quest<span class="line"></span></span>
-    </h1>
-    <p class="tagline" in:fade={{ duration: 800, delay: 500 }}>
-      Name the unique. {total} uniques and lineage gems. Can you tell them apart?
-    </p>
-  </div>
-
-  <div class="card panel" use:backdropShadow={{ fill: 'linear' }} in:fly={{ y: 30, duration: 700, delay: 400 }}>
-    <label class="label" for="name">Your name, Exile</label>
-    <input
-      id="name"
-      class="field"
-      class:shake={nameError}
-      bind:value={name}
-      maxlength="20"
-      placeholder="e.g. Doryani"
-      autocomplete="nickname"
-      spellcheck="false"
-      onkeydown={enterName}
-    />
-
-    <div class="modes">
-      <section class="mode">
-        <h2>Host a game</h2>
-        <p class="muted">Open a room and share the code with your party, or play alone.</p>
-        <button class="btn primary" onclick={host} disabled={connecting}>Create room</button>
-      </section>
-
-      <section class="mode">
-        <h2>Join a game</h2>
-        <p class="muted">Enter the code your host shared to join their room.</p>
-        <form onsubmit={join}>
-          <input
-            id="code"
-            class="field code"
-            bind:value={code}
-            oninput={() => (code = cleanCode(code))}
-            onpaste={pasteCode}
-            placeholder="CODE"
-            maxlength={CODE_LENGTH}
-            autocomplete="off"
-            spellcheck="false"
-            aria-label="Room code"
-          />
-          <button class="btn" class:primary={!!invite} type="submit" disabled={connecting || code.length < CODE_LENGTH}>
-            Join
-          </button>
-        </form>
-      </section>
-    </div>
-
-    <div class="or"><span>or</span></div>
-    <button class="btn ghost wide" onclick={local} disabled={connecting}>Play hot-seat on this device</button>
-
-    {#if connecting}
-      <div class="connecting" transition:fade={{ duration: 200 }}>
-        <span class="rune" use:portalOn></span>
-        <span>{session.mode === 'host' ? 'Opening a portal…' : `Travelling to room ${session.code}…`}</span>
-        {#if session.mode === 'client'}
-          <!-- Joining takes a while on some networks: after a few seconds, say it's still going, so no one gives up early. -->
-          <span class="slow">Still on the way. Some networks take a little longer.</span>
-        {/if}
-        <button class="btn ghost small" onclick={() => session.leave()}>Cancel</button>
+{#if invite}
+  <InviteScreen code={invite} bind:name={inviteName} {connecting} onjoin={joinInvite} onback={leaveInvite} />
+{:else}
+  <div class="home">
+    <div class="intro">
+      <div class="title">
+        <GameTitle />
+        {#if BETA}<span class="beta" in:fade={{ duration: 600, delay: 100 }}>Beta</span>{/if}
       </div>
-    {/if}
-  </div>
+      <p class="motto" in:fade={{ duration: 700, delay: 350 }}>Name the unique.</p>
+      <p class="blurb" in:fade={{ duration: 700, delay: 450 }}>
+        Path of Exile 2 item trivia, alone or with <span class="wide">up to eleven</span> friends.
+      </p>
 
-  <div class="listing" in:fly={{ y: 30, duration: 700, delay: 550 }}>
-    <OpenRooms onJoin={joinListed} disabled={connecting} />
-  </div>
+      <!-- The greeting: the name is asked once, then greeted (and changed here). -->
+      <div class="greeting" in:fade={{ duration: 600, delay: 500 }}>
+        {#if renaming}
+          <form class="row" onsubmit={saveRename}>
+            <input
+              class="field name"
+              bind:this={renameField}
+              bind:value={draft}
+              maxlength={MAX_NAME}
+              placeholder="Your name"
+              aria-label="Your name"
+              autocomplete="nickname"
+              spellcheck="false"
+              onkeydown={renameKeys}
+            />
+            <button class="btn" type="submit">Save</button>
+            <button class="link" type="button" onclick={() => (renaming = false)}>Cancel</button>
+          </form>
+        {:else}
+          <p class="hello">
+            {known ? 'Welcome back,' : 'Welcome,'}
+            <button class="who" onclick={startRename} disabled={connecting} title="Change your name">{known || 'Exile'}.</button>
+            <button class="quill" onclick={startRename} disabled={connecting} tabindex="-1" aria-hidden="true">
+              <span class="ring"><svg viewBox="0 0 24 24"><path d="M5 19l2.5-.6L18 7.9a1.9 1.9 0 0 0-2.7-2.7L4.8 15.7 4.2 18.2zM14 6.5l3.2 3.2" /></svg></span>
+              <i>Change your name</i>
+            </button>
+          </p>
+        {/if}
+      </div>
 
-  <footer class="muted">
-    <p class="credit">
-      Made by <a class="maker" href={DONATE_URL} target="_blank" rel="noopener noreferrer" title="Support {CREATOR}">{CREATOR}</a>
-    </p>
-    <a class="support" href={DONATE_URL} target="_blank" rel="noopener noreferrer">
-      <svg viewBox="0 0 24 24" aria-hidden="true"
-        ><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z" /></svg
-      >
-      Support the project
-    </a>
-    <p class="support-note">Optional tips help pay for the domain and development. Everything stays free.</p>
-    Item data &amp; art from <a href="https://poe2db.tw/us/Unique_item" target="_blank" rel="noreferrer">poe2db.tw</a>.
-    Path of Exile is a trademark of Grinding Gear Games. Unofficial fan project, not affiliated with or endorsed by Grinding Gear Games.
-    <nav class="legal-links">
-      <a href={IMPRINT_URL}>Impressum</a>
-      <span aria-hidden="true">·</span>
-      <a href={PRIVACY_URL}>Datenschutz / Privacy</a>
-    </nav>
-  </footer>
-</div>
+      <nav class="menu" class:renaming aria-label="Start">
+        {#each ENTRIES as e, i (e)}
+          {@const isOpen = open === e && !connecting}
+          {@const isBusy = connecting && (busy ?? (session.mode === 'host' ? 'create' : 'join')) === e}
+          <div class="entry" class:cur={cursor === i} class:dimmed={connecting && !isBusy} inert={connecting && !isBusy} in:fly={{ y: 12, duration: 500, delay: 450 + i * 70 }}>
+            <span class="diamond" aria-hidden="true"></span>
+            <button class="pick" bind:this={entryEls[i]} onclick={() => choose(e)} onpointerenter={(ev) => hover(ev, i)} onfocus={() => (cursor = i)} aria-expanded={e === 'create' || e === 'join' ? isOpen : undefined}>
+              {MENU[e]}
+            </button>
+            {#if isBusy}
+              <div class="slot"><Connecting /></div>
+            {:else if isOpen && e === 'create'}
+              <form class="slot row" onsubmit={host}>
+                <input class="field name" bind:this={nameField} bind:value={nameInput} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="nickname" spellcheck="false" />
+                <button class="btn primary" type="submit">Create room</button>
+              </form>
+            {:else if isOpen && e === 'join'}
+              <form class="slot row" onsubmit={join}>
+                {#if !known}
+                  <input class="field name short" bind:this={nameField} bind:value={nameInput} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="nickname" spellcheck="false" />
+                {/if}
+                <input
+                  class="field code"
+                  class:short={!known}
+                  class:bad={codeError}
+                  bind:this={codeField}
+                  bind:value={code}
+                  oninput={() => ((code = cleanCode(code)), (codeError = false))}
+                  onpaste={pasteCode}
+                  placeholder="Code"
+                  maxlength={CODE_LENGTH}
+                  autocomplete="off"
+                  spellcheck="false"
+                  aria-label="Room code"
+                  aria-invalid={codeError}
+                />
+                <button class="btn primary" type="submit">Join</button>
+              </form>
+            {:else}
+              <p class="about">{about[e]}</p>
+            {/if}
+          </div>
+        {/each}
+      </nav>
+    </div>
+
+    <div class="today" in:fade={{ duration: 900, delay: 300 }}>
+      <DailyUnique />
+    </div>
+
+    <div class="rooms" class:dimmed={connecting} inert={connecting} in:fly={{ y: 20, duration: 600, delay: 600 }}>
+      <OpenRooms onJoin={joinListed} disabled={connecting} />
+    </div>
+
+    <footer>
+      <div class="rule" aria-hidden="true"><span></span></div>
+      <div class="band">
+        <div class="made">
+          <p class="credit">Made by <a class="maker" href={DONATE_URL} target="_blank" rel="noopener noreferrer" title="Support {CREATOR}">{CREATOR}</a></p>
+          <a class="support" href={DONATE_URL} target="_blank" rel="noopener noreferrer" aria-describedby="support-note">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z" /></svg>
+            Support the project
+            <span class="tip" id="support-note" role="tooltip">Optional tips help pay for the domain and development. Everything stays free.</span>
+          </a>
+        </div>
+        <p class="fine">
+          Unofficial fan project. Path of Exile is a trademark of Grinding Gear Games, who do not endorse this site. Item data and art from
+          <a href="https://poe2db.tw/us/Unique_item" target="_blank" rel="noreferrer">poe2db.tw</a>.
+        </p>
+        <nav class="legal" aria-label="Legal">
+          <a href={IMPRINT_URL}>Impressum</a>
+          <span aria-hidden="true">·</span>
+          <a href={PRIVACY_URL}>Datenschutz / Privacy</a>
+        </nav>
+      </div>
+    </footer>
+  </div>
+{/if}
 
 <style>
-  .codex-entry {
-    position: absolute;
-    top: 1rem;
-    right: 1.25rem;
-    z-index: 2;
-    display: flex;
-    align-items: center;
-    gap: 0.6rem;
-    height: 38px;
-    padding: 0 1rem 0 0.4rem;
-    background: rgba(0, 0, 0, 0.35);
-    border: 1px solid var(--line);
-    border-radius: 19px;
-    cursor: pointer;
-    color: var(--muted);
-    box-shadow: inset 0 1px 0 rgba(255, 220, 150, 0.06);
-    transition:
-      color 0.2s,
-      border-color 0.2s,
-      box-shadow 0.25s,
-      transform 0.2s var(--ease-out);
-  }
-  .codex-entry:hover:not(:disabled) {
-    color: var(--gold-hi);
-    border-color: var(--gold-lo);
-    box-shadow:
-      inset 0 1px 0 rgba(255, 220, 150, 0.1),
-      0 0 16px rgba(201, 164, 92, 0.3);
-    transform: translateY(-1px);
-  }
-  .codex-entry:active:not(:disabled) {
-    transform: scale(0.96);
-  }
-  .codex-entry:disabled {
-    opacity: 0.5;
-    cursor: default;
-  }
-  .codex-entry svg {
-    width: 28px;
-    height: 28px;
-    padding: 5px;
-    border-radius: 50%;
-    background: radial-gradient(circle, rgba(175, 96, 37, 0.35), transparent 70%);
-    fill: none;
-    stroke: var(--gold);
-    stroke-width: 1.5;
-    stroke-linejoin: round;
-    filter: drop-shadow(0 0 4px rgba(224, 138, 68, 0.5));
-  }
-  .codex-text {
-    display: flex;
-    align-items: baseline;
-    gap: 0.55rem;
-  }
-  .codex-label {
-    font-family: var(--font-cinzel);
-    font-weight: 700;
-    font-size: 0.78rem;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-  }
-  .codex-count {
-    font-family: var(--font-cinzel);
-    font-size: 0.72rem;
-    letter-spacing: 0.06em;
-    color: var(--gold);
-  }
-
+  /* Two columns (the menu, Today's unique) pushed apart, then the open rooms
+     across the page, then the footer. Phones stack them, the rooms before
+     Today's unique. */
   .home {
-    position: relative;
-    /* The floating showcase items reach past the screen edges; never scroll sideways for them. */
-    overflow-x: clip;
+    --pad-x: clamp(16px, 8.4vw, 120px);
     min-height: 100dvh;
+    display: grid;
+    grid-template-columns: minmax(0, 452px) minmax(0, 510px);
+    grid-template-areas:
+      'intro today'
+      'rooms rooms'
+      'foot foot';
+    justify-content: space-between;
+    align-content: start;
+    column-gap: 40px;
+    padding: 26px var(--pad-x) 22px;
+  }
+  .intro {
+    grid-area: intro;
+    min-width: 0;
+  }
+  .today {
+    grid-area: today;
+    min-width: 0;
+    padding-top: 6px;
+  }
+  .rooms {
+    grid-area: rooms;
+    margin-top: 44px;
+    transition: opacity 0.3s;
+  }
+  footer {
+    grid-area: foot;
+    margin-top: 32px;
+  }
+
+  /* ---- the title ---- */
+  .title {
+    --title-size: 92px;
     display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 2.5rem 1rem 1.5rem;
-    gap: 2rem;
+    align-items: flex-start;
+    gap: 14px;
   }
-
-  .hero {
-    position: relative;
-    text-align: center;
-    padding: 2rem 0 0.5rem;
-  }
-  .showcase {
-    position: absolute;
-    left: 50%;
-    top: 50%;
-    width: 0;
-    height: 0;
-    pointer-events: none;
-  }
-  .showcase img {
-    position: absolute;
-    width: 110px;
-    height: 110px;
-    object-fit: contain;
-    left: -55px;
-    top: -75px;
-    opacity: 0;
-    /* Drawn by the WebGL backdrop when it can (see lib/backdropDropShadow.ts). */
-    --drop-shadow: drop-shadow(0 0 20px rgba(0, 0, 0, 0.9));
-    filter: blur(0.1px) saturate(0.7) var(--drop-shadow-paint, var(--drop-shadow));
-    transform: translate(var(--x), 0) rotate(var(--r));
-    animation:
-      appear 1.4s var(--ease-out) forwards,
-      float 7s ease-in-out infinite;
-    animation-delay: calc(var(--i) * 0.12s), calc(var(--i) * -1.1s);
-  }
-  @keyframes appear {
-    to {
-      opacity: 0.22;
-    }
-  }
-  @keyframes float {
-    50% {
-      translate: 0 -14px;
-    }
-  }
-
   /* Marks the beta build (poe2.quest/beta/) so testers know where they are. */
   .beta {
-    position: relative;
-    display: inline-block;
-    margin: 0 0 0.8rem;
-    padding: 0.2rem 0.6rem 0.15rem 0.85rem;
+    margin-top: 10px;
+    padding: 0.2rem 0.4rem 0.15rem 0.6rem;
     border: 1px solid rgba(224, 138, 68, 0.5);
     border-radius: 3px;
     font-family: var(--font-cinzel);
     font-weight: 700;
-    font-size: 0.7rem;
-    letter-spacing: 0.35em;
+    font-size: 13px;
+    letter-spacing: 0.3em;
     text-transform: uppercase;
     color: var(--unique-hi);
   }
-  .kicker {
+  .motto {
     position: relative;
-    margin: 0 0 0.4rem;
-    font-family: var(--font-display);
-    font-size: 0.8rem;
-    letter-spacing: 0.5em;
-    padding-left: 0.5em;
-    text-transform: uppercase;
-    color: var(--unique-hi);
+    margin: 0;
+    font-style: italic;
+    font-size: 24px;
+    line-height: 1.3;
+    color: #ecdcbc;
   }
-  h1 {
+  .blurb {
     position: relative;
-    /* The gold and the gleam are two copies of the title, stacked. */
-    display: grid;
-    font-family: var(--font-title);
-    font-size: clamp(2.9rem, 9vw, 5.6rem);
-    font-weight: 900;
-    line-height: 1;
-    letter-spacing: 0.06em;
-    margin-bottom: -0.3em;
+    margin: 2px 0 0;
+    font-size: 17px;
+    color: #a99c86;
   }
-  h1 > span {
-    grid-area: 1 / 1;
+
+  /* ---- the greeting ---- */
+  .greeting {
+    height: 44px;
+    margin: 16px 0;
     display: flex;
     align-items: center;
-    gap: 1.2rem;
-    justify-content: center;
-    /* The text is painted by its background, which ends at the padding box,
-       so give the Q's tail room below the line box (the h1's negative margin
-       keeps everything else in place). */
-    padding-bottom: 0.3em;
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
   }
-  /* The gold and its shadow, painted once. The gleam is a separate copy: on
-     this one, every frame of the sweep would blur the shadow again. (Unlike
-     the victory headline's, this shadow can't move to a text-shadow: its glow
-     is cast by the text and its dark shadow together.) */
-  .gold {
-    background-image: linear-gradient(180deg, #fff1c9 0.1em, #d7b068 0.5em, #8b6526 0.95em);
-    /* Drawn by the WebGL backdrop when it can (see lib/backdropDropShadow.ts). */
-    --drop-shadow: drop-shadow(0 4px 18px rgba(0, 0, 0, 0.9)) drop-shadow(0 0 34px rgba(224, 170, 90, 0.36));
-    filter: var(--drop-shadow-paint, var(--drop-shadow));
+  .hello {
+    display: flex;
+    align-items: center;
+    gap: 0.3em;
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: 20px;
+    color: var(--gold);
   }
-  /* A band of light sweeps across the gold every few seconds, on a layer of
-     its own so its repaints leave the gold and its shadow alone. */
-  .gleam {
-    will-change: transform;
-    background-image: linear-gradient(100deg, transparent 42%, rgba(255, 250, 232, 0.75) 50%, transparent 58%);
-    background-repeat: no-repeat;
-    background-size: 250% 100%;
-    background-position: 160% 0;
-    animation: gleam 7s ease-in-out 1.6s infinite;
+  .who {
+    padding: 0;
+    background: none;
+    border: 0;
+    cursor: pointer;
+    font: inherit;
+    color: #f1d99b;
   }
-  .gleam .line {
+  .who:disabled {
+    cursor: default;
+  }
+  /* The rename affordance shows on hovering the greeting with a mouse, never at rest. */
+  .quill {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-left: 6px;
+    padding: 0;
+    background: none;
+    border: 0;
+    cursor: pointer;
+    color: var(--gold);
+    opacity: 0;
     visibility: hidden;
+    translate: -4px 0;
+    transition:
+      opacity 0.2s,
+      translate 0.2s var(--ease-out),
+      visibility 0s 0.2s;
   }
-  @keyframes gleam {
-    0% {
-      background-position: 160% 0;
-    }
-    22%,
-    100% {
-      background-position: -60% 0;
-    }
+  .hello:hover .quill:not(:disabled) {
+    opacity: 1;
+    visibility: visible;
+    translate: 0 0;
+    transition:
+      opacity 0.2s,
+      translate 0.2s var(--ease-out);
   }
-  .line {
-    display: block;
-    width: clamp(30px, 8vw, 90px);
-    height: 1px;
-    background: linear-gradient(90deg, transparent, var(--gold));
-  }
-  .line:last-child {
-    background: linear-gradient(270deg, transparent, var(--gold));
-  }
-  .tagline {
-    position: relative;
-    margin: 1rem 0 0;
-    font-style: italic;
-    font-size: 1.15rem;
-    color: #b8ab95;
-  }
-
-  .card {
-    width: min(620px, 100%);
-    padding: 1.8rem;
-  }
-
-  .modes {
+  .ring {
+    width: 30px;
+    height: 30px;
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 1rem;
-    margin-top: 1.4rem;
+    place-items: center;
+    border: 1px solid var(--gold-lo);
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.35);
   }
-  .mode {
+  .ring svg {
+    width: 15px;
+    height: 15px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .quill i {
+    font-family: var(--font-body);
+    font-size: 15px;
+    color: var(--muted);
+  }
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .row .field {
+    height: 40px;
+    padding: 0 12px;
+    font-size: 17px;
+  }
+  .row .btn {
+    height: 40px;
+    flex: none;
+  }
+  .greeting .name {
+    width: 240px;
+  }
+  .link {
+    min-height: 40px;
+    padding: 0 4px;
+    background: none;
+    border: 0;
+    cursor: pointer;
+    font-style: italic;
+    font-size: 15px;
+    color: var(--muted);
+    text-decoration: underline;
+    text-decoration-color: var(--gold-lo);
+    text-underline-offset: 3px;
+  }
+  .link:hover {
+    color: var(--gold-hi);
+  }
+
+  /* ---- the menu ---- */
+  .menu {
     display: flex;
     flex-direction: column;
-    gap: 0.6rem;
-    padding: 1.1rem;
-    border: 1px solid var(--line);
-    border-radius: 4px;
-    background: rgba(0, 0, 0, 0.25);
-    box-shadow: inset 0 1px 0 rgba(255, 220, 150, 0.04);
+  }
+  /* Every entry in a slot of its own, so nothing moves when one opens. */
+  .entry {
+    position: relative;
+    height: 108px;
+    transition: opacity 0.3s;
+  }
+  .pick {
+    display: block;
+    padding: 0;
+    background: none;
+    border: 0;
+    cursor: pointer;
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: 32px;
+    line-height: 36px;
+    letter-spacing: 0;
+    text-align: left;
+    color: #d9c08a;
     transition:
-      border-color 0.3s,
-      box-shadow 0.3s;
+      color 0.2s,
+      text-shadow 0.25s;
   }
-  .mode:hover,
-  .mode:focus-within {
-    border-color: rgba(125, 99, 51, 0.8);
-    box-shadow:
-      inset 0 1px 0 rgba(255, 220, 150, 0.06),
-      inset 0 0 24px rgba(201, 164, 92, 0.06);
+  .pick:focus-visible {
+    outline-offset: 4px;
   }
-  .mode h2 {
-    font-size: 1.06rem;
-    color: var(--gold-hi);
-    text-shadow: 0 0 14px rgba(241, 217, 155, 0.2);
-    text-transform: uppercase;
-    letter-spacing: 0.14em;
+  .about {
+    margin: 6px 0 0;
+    font-style: italic;
+    font-size: 16px;
+    color: #ab9d88;
   }
-  .mode p {
-    margin: -0.3rem 0 0.5rem;
-    font-size: 0.98rem;
-    flex: 1;
+  .slot {
+    margin-top: 10px;
   }
-  .mode form {
-    display: flex;
-    gap: 0.5rem;
-    margin-top: auto;
+  .name {
+    width: 300px;
+  }
+  .name.short {
+    width: 216px;
   }
   .code {
+    width: 170px;
     font-family: var(--font-cinzel);
     font-weight: 700;
     letter-spacing: 0.35em;
     text-align: center;
     text-transform: uppercase;
-    min-width: 0;
-    /* Stretched to the Join button's height, so this row matches Create room. */
-    padding-block: 0;
   }
-
-  .or {
-    display: flex;
-    align-items: center;
-    gap: 0.8rem;
-    margin: 1.1rem 0 0.8rem;
-    color: var(--muted);
-    font-style: italic;
+  .code.short {
+    width: 140px;
   }
-  .or::before,
-  .or::after {
-    content: '';
-    flex: 1;
-    height: 1px;
-    background: var(--line);
+  .code::placeholder {
+    letter-spacing: 0.35em;
   }
-  .wide {
-    width: 100%;
+  .code.bad,
+  .code.bad:focus {
+    border-color: var(--bad);
+    box-shadow:
+      inset 0 2px 6px rgba(0, 0, 0, 0.55),
+      0 0 0 3px rgba(224, 85, 63, 0.14);
   }
-
-  .connecting {
+  /* The cursor: a glowing diamond beside the entry, its title lit. A pointer
+     that can hover has one; touch never shows it. */
+  .diamond {
     position: absolute;
-    inset: 0;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 1rem;
-    background: rgba(12, 10, 8, 0.92);
-    border-radius: var(--radius);
-    font-family: var(--font-display);
-    letter-spacing: 0.08em;
-    color: var(--gold-hi);
-  }
-  .connecting .slow {
-    max-width: 22rem;
-    padding: 0 1rem;
-    text-align: center;
-    font-family: var(--font-body);
-    font-size: 0.95rem;
-    letter-spacing: 0;
-    color: var(--muted);
+    left: -26px;
+    top: 14px;
+    width: 9px;
+    height: 9px;
+    rotate: 45deg;
+    background: #e08a44;
+    box-shadow:
+      0 0 8px rgba(224, 138, 68, 0.9),
+      0 0 18px rgba(224, 138, 68, 0.45);
     opacity: 0;
-    animation: fade-in 0.4s ease 5s forwards;
+    scale: 0.5;
+    transition:
+      opacity 0.2s,
+      scale 0.25s var(--ease-out);
   }
-  @keyframes fade-in {
-    to {
+  @media (hover: hover) {
+    .cur .diamond {
       opacity: 1;
+      scale: 1;
+    }
+    .cur .pick {
+      color: #fff1cf;
+      text-shadow: 0 0 18px rgba(241, 217, 155, 0.35);
+    }
+    .renaming .diamond {
+      opacity: 0;
     }
   }
-  .rune {
-    width: 54px;
-    height: 54px;
-    border-radius: 50%;
-    border: 2px solid rgba(201, 164, 92, 0.15);
-    border-top-color: var(--gold);
-    border-bottom-color: var(--unique-hi);
-    animation: spin 1.1s linear infinite;
-    box-shadow: 0 0 25px rgba(201, 164, 92, 0.2);
+  .dimmed {
+    opacity: 0.45;
+    pointer-events: none;
   }
 
-  .shake {
-    animation: shake 0.45s;
-    border-color: var(--bad);
+  /* ---- the footer band ---- */
+  .rule {
+    position: relative;
+    height: 1px;
+    margin: 0 6%;
+    --l: rgba(125, 99, 51, 0.6);
+    /* Broken in the middle, round the diamond. */
+    background: linear-gradient(
+      90deg,
+      transparent,
+      var(--l) 20%,
+      var(--l) calc(50% - 16px),
+      transparent calc(50% - 16px),
+      transparent calc(50% + 16px),
+      var(--l) calc(50% + 16px),
+      var(--l) 80%,
+      transparent
+    );
   }
-
-  .listing {
-    width: min(620px, 100%);
+  .rule span {
+    position: absolute;
+    left: 50%;
+    top: -5px;
+    width: 9px;
+    height: 9px;
+    translate: -50% 0;
+    rotate: 45deg;
+    border: 1px solid var(--gold-lo);
+  }
+  .band {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    gap: 24px;
+    margin-top: 26px;
+  }
+  .made {
     display: flex;
-    justify-content: center;
-    margin-top: -0.8rem;
+    align-items: center;
+    gap: 18px;
   }
   .credit {
-    margin: 0 0 0.5rem;
-    font-family: var(--font-display);
-    font-size: 0.8rem;
+    margin: 0;
+    white-space: nowrap;
+    font-family: var(--font-cinzel);
+    font-size: 13px;
     letter-spacing: 0.18em;
     text-transform: uppercase;
     color: var(--muted);
   }
   .maker {
-    color: var(--gold-hi);
-    letter-spacing: 0.08em;
+    font-family: var(--font-display);
+    font-size: 15px;
+    letter-spacing: 0.04em;
     text-transform: none;
-    font-weight: 700;
+    color: var(--gold-hi);
     text-decoration: none;
-    border-bottom: 1px dotted var(--gold-lo);
-    transition: color 0.2s, border-color 0.2s;
+    border-bottom: 1px solid var(--gold-lo);
+    transition:
+      color 0.2s,
+      border-color 0.2s;
   }
   .maker:hover {
     color: #fff1cf;
     border-bottom-color: var(--gold);
   }
   .support {
+    position: relative;
     display: inline-flex;
     align-items: center;
-    gap: 0.45em;
-    padding: 0.45em 1em;
-    margin-bottom: 0.4rem;
+    gap: 0.6em;
+    padding: 0.5em 1.1em;
     border: 1px solid var(--line);
     border-radius: 999px;
-    font-family: var(--font-display);
-    font-size: 0.72rem;
+    font-family: var(--font-cinzel);
+    font-size: 13px;
     font-weight: 700;
-    letter-spacing: 0.12em;
+    letter-spacing: 0.1em;
     text-transform: uppercase;
     text-decoration: none;
-    color: var(--muted);
+    white-space: nowrap;
+    color: var(--gold);
     background: rgba(0, 0, 0, 0.3);
-    transition: all 0.2s;
+    transition:
+      color 0.2s,
+      border-color 0.2s,
+      background 0.2s;
   }
   .support:hover {
     color: #ffd7c2;
@@ -683,62 +797,178 @@
     background: rgba(140, 58, 44, 0.2);
   }
   .support svg {
-    width: 13px;
-    height: 13px;
+    width: 11px;
+    height: 11px;
     fill: #c0463c;
   }
-  .support-note {
-    margin: 0 0 0.9rem;
-    font-size: 0.8rem;
+  /* Its note as a tooltip, over the pill. */
+  .tip {
+    position: absolute;
+    left: 50%;
+    bottom: calc(100% + 10px);
+    width: 260px;
+    translate: -50% 4px;
+    padding: 0.55rem 0.8rem;
+    font-family: var(--font-body);
+    font-size: 15px;
+    font-weight: 400;
     font-style: italic;
+    letter-spacing: 0;
+    text-transform: none;
+    line-height: 1.35;
+    color: var(--text);
+    background: rgba(12, 10, 8, 0.96);
+    border: 1px solid var(--gold-lo);
+    border-radius: 4px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition:
+      opacity 0.2s,
+      translate 0.2s var(--ease-out),
+      visibility 0s 0.2s;
   }
-  footer {
-    font-size: 0.85rem;
+  .support:hover .tip {
+    opacity: 1;
+    visibility: visible;
+    translate: -50% 0;
+    transition:
+      opacity 0.2s,
+      translate 0.2s var(--ease-out);
+  }
+  .support:focus-visible .tip {
+    opacity: 1;
+    visibility: visible;
+    translate: -50% 0;
+  }
+  .fine {
+    max-width: 380px;
+    margin: 0;
     text-align: center;
-    max-width: 520px;
-  }
-  footer a {
-    color: var(--gold);
-  }
-  .legal-links {
-    display: flex;
-    justify-content: center;
-    gap: 0.6rem;
-    margin-top: 0.6rem;
-  }
-  .legal-links a {
+    font-size: 13px;
+    line-height: 1.55;
     color: var(--muted);
   }
-  .legal-links a:hover {
+  .fine a,
+  .legal a {
+    color: inherit;
+    text-decoration-color: var(--gold-lo);
+    text-underline-offset: 3px;
+  }
+  .legal {
+    justify-self: end;
+    display: flex;
+    gap: 0.6rem;
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .fine a:hover,
+  .legal a:hover {
     color: var(--gold-hi);
   }
 
-  @media (max-width: 560px) {
-    .modes {
+  /* Narrower screens: one column, the menu above Today's unique. */
+  @media (max-width: 1080px) {
+    .home {
+      grid-template-columns: minmax(0, 560px);
+      grid-template-areas:
+        'intro'
+        'today'
+        'rooms'
+        'foot';
+      justify-content: center;
+    }
+    .today {
+      padding-top: 32px;
+    }
+    .band {
       grid-template-columns: 1fr;
+      justify-items: center;
+      gap: 14px;
     }
-    .card {
-      padding: 1.3rem;
-    }
-    .showcase img {
-      width: 80px;
-      height: 80px;
+    .legal {
+      justify-self: center;
     }
   }
-
-  @keyframes spin {
-    to {
-      rotate: 360deg;
+  /* Phones: the menu, the open rooms, then Today's unique; no cursor. */
+  @media (max-width: 640px) {
+    .home {
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-areas:
+        'intro'
+        'rooms'
+        'today'
+        'foot';
+      padding: 28px 16px 20px;
+    }
+    .title {
+      --title-size: 54px;
+    }
+    .motto {
+      font-size: 20px;
+    }
+    .blurb {
+      font-size: 15px;
+    }
+    .wide {
+      display: none;
+    }
+    .greeting {
+      margin: 8px 0 4px;
+    }
+    .hello {
+      font-size: 17px;
+    }
+    .greeting .name {
+      width: auto;
+      flex: 1;
+      min-width: 0;
+    }
+    .entry {
+      height: auto;
+      min-height: 98px;
+      padding-bottom: 12px;
+    }
+    .diamond {
+      display: none;
+    }
+    .pick {
+      font-size: 28px;
+      line-height: 34px;
+    }
+    .about {
+      font-size: 15px;
+    }
+    .row {
+      flex-wrap: wrap;
+    }
+    .slot.row .field {
+      flex: 1 1 140px;
+      width: auto;
+      min-width: 0;
+    }
+    .slot.row .btn {
+      flex: 1 0 auto;
+    }
+    .rooms {
+      margin-top: 16px;
+    }
+    .today {
+      padding-top: 40px;
+    }
+    .made {
+      flex-direction: column;
+      gap: 14px;
     }
   }
-  @keyframes shake {
-    20%,
-    60% {
-      translate: -6px 0;
+  @media (pointer: coarse) {
+    .row .field,
+    .row .btn {
+      height: 44px;
     }
-    40%,
-    80% {
-      translate: 6px 0;
+    .support {
+      min-height: 44px;
     }
   }
 </style>

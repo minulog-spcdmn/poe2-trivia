@@ -5,10 +5,15 @@
   import { scanRooms, type RoomInfo } from '../lib/rooms';
   import { DIFFICULTY_NAMES } from '../lib/difficultyText';
   import { PROTOCOL_VERSION } from '../lib/protocol';
-  import { backdropShadow } from '../lib/backdropShadow';
-  import { shownDepth } from '../lib/delve';
 
   let { onJoin, disabled = false }: { onJoin: (code: string) => void; disabled?: boolean } = $props();
+
+  const MODE_NAMES = { turns: 'Turns', race: 'Race', delve: 'Delve' } as const;
+  /** "Turns · Cruel · 3/12", or "Delve · in a game · 4/12" once it is under way. */
+  function meta(r: RoomInfo) {
+    const how = r.phase === 'lobby' ? (r.mode === 'delve' ? null : DIFFICULTY_NAMES[r.difficulty]) : 'in a game';
+    return [MODE_NAMES[r.mode], how, `${r.players}/${r.maxPlayers}`].filter(Boolean).join(' · ');
+  }
 
   const REFRESH_MS = 20000;
   /**
@@ -100,10 +105,11 @@
   });
 </script>
 
-<section class="rooms panel" use:backdropShadow={{ fill: 'linear' }}>
+<section class="rooms" aria-labelledby="rooms-h">
   <header>
-    <h2>Open rooms</h2>
-    <button class="refresh" onclick={scan} disabled={scanning} aria-label="Refresh room list" title="Refresh">
+    <h2 id="rooms-h">Open rooms</h2>
+    {#if rooms.length}<span class="open" in:fade={{ duration: 200 }}><span class="num">{rooms.length}</span> open</span>{/if}
+    <button class="refresh" class:busy={scanning} onclick={scan} disabled={scanning} aria-label="Refresh room list" title="Refresh">
       <!-- The arc is centred on the viewBox so the icon turns in place. The
            rotation lives inside the SVG, around its exact centre, rather than
            on the element: a rotated compositor layer gets snapped to device
@@ -115,6 +121,7 @@
         </g>
       </svg>
     </button>
+    {#if rooms.length}<p class="note">Anyone can join. Joining shares your IP address with the room.</p>{/if}
   </header>
 
   {#if rooms.length}
@@ -124,56 +131,63 @@
         {@const behind = (r.v ?? 0) < PROTOCOL_VERSION}
         {@const ahead = (r.v ?? 0) > PROTOCOL_VERSION}
         {@const open = r.phase === 'lobby' && r.players < r.maxPlayers}
-        <li animate:flip={{ duration: 300 }} in:fly={{ y: 8, duration: 300 }} out:fade={{ duration: 150 }}>
+        {@const watch = !open && r.phase !== 'locked' && r.phase !== 'lobby' && r.spectators < r.maxSpectators}
+        <li class:closed={!behind && !ahead && !open && !watch} animate:flip={{ duration: 300 }} in:fly={{ y: 8, duration: 300 }} out:fade={{ duration: 150 }}>
           <div class="info">
-            <span class="host">{r.host}'s room</span>
-            <span class="meta">
-              {#if r.mode === 'delve'}
-                Delve · {r.depth ? (shownDepth(r.depth) <= 0 && r.phase !== 'over' ? 'entrance' : `depth ${shownDepth(r.depth)}`) : 'three lives'}{r.spectators ? ` · ${r.spectators} watching` : ''}
-              {:else}
-                {r.mode === 'race' ? 'Race' : 'Turns'} · {DIFFICULTY_NAMES[r.difficulty]} · first to {r.target}{r.spectators ? ` · ${r.spectators} watching` : ''}
-              {/if}
-            </span>
+            <span class="host">{r.host}’s room</span>
+            <span class="meta">{meta(r)}{r.spectators ? ` · ${r.spectators} watching` : ''}</span>
           </div>
-          <span class="count" title="Players">{r.players}/{r.maxPlayers}</span>
           {#if behind || ahead}
             <span class="status" title={behind ? 'The host is on an older version of the game' : 'Reload this page to join'}>{behind ? 'Older version' : 'Reload to join'}</span>
           {:else if open}
             <button class="btn small" {disabled} onclick={() => onJoin(r.code)}>Join</button>
-          {:else if r.phase !== 'locked' && r.phase !== 'lobby' && r.spectators < r.maxSpectators}
+          {:else if watch}
             <button class="btn small ghost" {disabled} onclick={() => onJoin(r.code)} title="Watch this game and play in the next one">Watch</button>
           {:else}
-            <span class="status">{r.phase === 'locked' ? 'Locked' : r.phase === 'lobby' ? 'Full' : 'In game'}</span>
+            <span class="status">{r.phase === 'locked' ? 'Locked' : r.phase === 'lobby' ? 'Full' : 'In a game'}</span>
           {/if}
         </li>
       {/each}
     </ul>
   {:else if scanning || !scanned}
-    <p class="empty muted"><span class="dots"><i></i><i></i><i></i></span> Searching for rooms…</p>
+    <p class="empty"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span> Searching for rooms…</p>
   {:else if failed}
-    <p class="empty muted">Couldn't reach the matchmaking server. Try refreshing.</p>
+    <p class="empty">Couldn’t reach the matchmaking server. Try the refresh button.</p>
   {:else}
-    <p class="empty muted">No public rooms right now. Create one and set it to public!</p>
+    <p class="empty">Nobody is waiting right now. Set your room to Public in its lobby and it shows up here.</p>
   {/if}
-  <p class="note muted">Joining connects you directly to the host and other players, who can see your IP address.</p>
 </section>
 
 <style>
-  .rooms {
-    width: min(620px, 100%);
-    padding: 1.1rem 1.4rem 1.2rem;
-  }
   header {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    margin-bottom: 0.7rem;
+    gap: 16px;
+    margin-bottom: 16px;
   }
   h2 {
-    font-size: 1rem;
+    white-space: nowrap;
+    font-size: 20px;
+    font-weight: 400;
+    letter-spacing: 0;
+    color: var(--gold);
+  }
+  .open {
+    white-space: nowrap;
+    font-family: var(--font-display);
+    font-size: 13px;
+    letter-spacing: 0.08em;
     text-transform: uppercase;
-    letter-spacing: 0.16em;
-    color: var(--gold-hi);
+    color: var(--muted);
+  }
+  .num {
+    font-family: var(--font-cinzel);
+  }
+  .note {
+    margin: 0 0 0 auto;
+    font-style: italic;
+    font-size: 15px;
+    color: #a99c86;
   }
   .refresh {
     width: 32px;
@@ -188,12 +202,22 @@
     background: rgba(0, 0, 0, 0.3);
     color: var(--muted);
     cursor: pointer;
-    transition: color 0.2s, border-color 0.2s;
+    transition:
+      color 0.2s,
+      border-color 0.2s,
+      box-shadow 0.2s;
   }
   .refresh:hover:not(:disabled) {
     box-shadow: 0 0 14px rgba(201, 164, 92, 0.3);
     color: var(--gold-hi);
     border-color: var(--gold-lo);
+  }
+  /* Lit while it looks. */
+  .refresh.busy {
+    cursor: default;
+    color: var(--gold-hi);
+    border-color: var(--gold-lo);
+    box-shadow: 0 0 14px rgba(201, 164, 92, 0.3);
   }
   .refresh svg {
     width: 20px;
@@ -212,76 +236,76 @@
     list-style: none;
     margin: 0;
     padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.4rem;
-    max-height: 320px;
-    overflow-y: auto;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
   }
+  /* The answer buttons' panel (QuestionView), the room's own button inside it. */
   li {
     display: flex;
     align-items: center;
     gap: 0.9rem;
-    padding: 0.55rem 0.7rem;
-    background: rgba(0, 0, 0, 0.3);
-    border: 1px solid rgba(59, 48, 36, 0.7);
+    min-height: 72px;
+    padding: 0.7rem 0.9rem 0.7rem 1.1rem;
+    background: linear-gradient(90deg, rgba(40, 31, 22, 0.95), rgba(20, 16, 12, 0.95));
+    border: 1px solid var(--line);
     border-radius: 4px;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 220, 150, 0.05),
+      0 8px 22px rgba(0, 0, 0, 0.45);
     transition:
       border-color 0.25s,
-      background 0.25s,
-      box-shadow 0.25s;
+      box-shadow 0.25s,
+      opacity 0.3s;
   }
-  li:hover {
+  li:hover:not(.closed) {
     border-color: var(--gold-lo);
-    background: rgba(30, 22, 13, 0.45);
-    box-shadow: 0 0 16px rgba(201, 164, 92, 0.12);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 220, 150, 0.06),
+      0 0 16px rgba(201, 164, 92, 0.12),
+      0 8px 22px rgba(0, 0, 0, 0.45);
+  }
+  li.closed {
+    opacity: 0.55;
   }
   .info {
     flex: 1;
     min-width: 0;
     display: flex;
     flex-direction: column;
-    line-height: 1.25;
+    line-height: 1.4;
   }
   .host {
-    font-family: var(--font-display);
-    font-weight: 700;
-    font-size: 0.95rem;
-    color: #e9c8a2;
+    font-size: 17px;
+    color: #e3d3b4;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
   .meta {
-    font-size: 0.9rem;
+    font-size: 15px;
     color: var(--muted);
-  }
-  .count {
-    font-family: var(--font-display);
-    font-size: 0.85rem;
-    color: var(--gold);
   }
   .status {
-    font-family: var(--font-display);
-    font-size: 0.7rem;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: var(--muted);
-    padding: 0.45em 0.9em;
-    border: 1px dashed var(--line);
-    border-radius: 3px;
-  }
-  .note {
-    margin: 0.8rem 0 0;
-    font-size: 0.82rem;
-    opacity: 0.75;
-  }
-  .empty {
-    margin: 0.2rem 0;
     font-style: italic;
+    font-size: 15px;
+    color: var(--muted);
+  }
+  /* Nothing to list: one dashed tile across the row. */
+  .empty {
     display: flex;
     align-items: center;
-    gap: 0.6rem;
+    justify-content: center;
+    gap: 0.7rem;
+    min-height: 50px;
+    margin: 0;
+    padding: 0.6rem 1rem;
+    text-align: center;
+    font-style: italic;
+    font-size: 17px;
+    color: #a99c86;
+    border: 1px dashed rgba(125, 99, 51, 0.55);
+    border-radius: 4px;
   }
   .dots {
     display: inline-flex;
@@ -303,6 +327,44 @@
   @keyframes blink {
     50% {
       opacity: 0.2;
+    }
+  }
+
+  @media (max-width: 1100px) {
+    ul {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+  @media (max-width: 640px) {
+    header {
+      flex-wrap: wrap;
+      gap: 6px 14px;
+    }
+    .refresh {
+      width: 40px;
+      height: 40px;
+      margin-left: auto;
+    }
+    /* The note on a line of its own under the heading. */
+    .note {
+      order: 1;
+      width: 100%;
+      margin: 0;
+    }
+    ul {
+      grid-template-columns: 1fr;
+    }
+    .empty {
+      font-size: 15px;
+    }
+  }
+  @media (pointer: coarse) {
+    .refresh {
+      width: 44px;
+      height: 44px;
+    }
+    li .btn {
+      min-height: 44px;
     }
   }
 </style>

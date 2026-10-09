@@ -1131,7 +1131,7 @@ class Session {
   private roomUnavailable() {
     if (this.hostConn?.open) return;
     if (this.unavailableUntil && Date.now() >= this.unavailableUntil) {
-      this.fail(`Room ${this.code} doesn't exist (or the host left).`, 'Room not found');
+      this.fail(`No room has the code ${this.code}. Check it with your host.`, 'No such room');
       return;
     }
     if (!this.unavailableUntil) this.unavailableUntil = Math.max(Date.now(), ...this.attempts.map((a) => a.at)) + EXPIRE_MS;

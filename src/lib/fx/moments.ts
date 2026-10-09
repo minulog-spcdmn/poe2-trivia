@@ -1317,9 +1317,9 @@ export function heraldNotice(toast: Element) {
   });
 }
 
-/** A portal opens while connecting. */
-export function connecting(at: Element): Handle {
-  return portal(at, { radius: 46 });
+/** A portal opens while connecting, `radius` px round the rune it swirls on. */
+export function connecting(at: Element, radius = 46): Handle {
+  return portal(at, { radius });
 }
 
 /** A small celebratory twinkle (link copied, setting changed). */
