@@ -323,6 +323,12 @@ export function revengeNote(ids: string[], nameOf: (id: string) => string, me: s
   return `${cap(namesOf(ids, nameOf, me))} ${verb(ids, me, 'starts', 'start')} the next game with a revenge orb.`;
 }
 
+/** Turns, the final round's overlay: who reached the target ("Ash reached 10", "You and Ash reached 10"). */
+export function reachedText(ids: string[], nameOf: (id: string) => string, me: string | null, target: number): string {
+  if (!ids.length) return '';
+  return `${cap(namesOf(ids, nameOf, me))} reached ${target}`;
+}
+
 /**
  * A ward (or a cave-in's two) taking what would have cost a life, said as
  * protection: "Your ward took the hit.", "Ash's two wards took both hits."

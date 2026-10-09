@@ -31,6 +31,10 @@ is hosted as a static site on GitHub Pages. No server needed.
    corrupted question wears crimson on every screen.
 3. The first player to reach the host's target score wins. The game only ends
    once a full round is finished, so everyone gets the same number of turns.
+   Once someone reaches the target with seats still to play, the **final
+   round** is announced on every screen, and each player left is told what
+   their last turn can do against the leader. A player one right answer from
+   the target is at **match point**: a gold ring pulses round their entry.
    If players are tied at the top, it goes to a **deathmatch**:
    only the tied players play sudden-death rounds with a random category and
    questions one difficulty harder. When some duelists answer right and
@@ -688,7 +692,7 @@ Everything is drawn in WebGL2 with float precision and dithered once at the
   procedural shapes (shockwaves, flares, god rays, fire outlines, a portal,
   rune sigils) and bloom. `effects.ts` has the building blocks, `moments.ts`
   the game's big beats (a pick, a Vaal Orb's corruption, a reveal with its
-  point flowing into the scorer's progress bar, a deathmatch, a victory), and `ui.ts` the feedback
+  point flowing into the scorer's progress bar, the final round, a deathmatch, a victory), and `ui.ts` the feedback
   every control gets. Soft shapes render at about one texel per CSS pixel and
   the whole layer at most 1.5 per CSS pixel; the canvas hides itself while
   nothing is alive.

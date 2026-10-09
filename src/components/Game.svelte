@@ -11,12 +11,13 @@
   import TimerRing from './TimerRing.svelte';
   import { fireAmbience, sfx } from '../lib/sound';
   import { onMount } from 'svelte';
-  import { deathmatchIntro, deathmatchMood, gameStart, turnBanner } from '../lib/fx/moments';
+  import { deathmatchIntro, deathmatchMood, finalRoundIntro, gameStart, turnBanner } from '../lib/fx/moments';
   import { portal } from '../lib/portal';
   import { phone } from '../lib/layout';
   import { REVIVE_FROM, delveDepth, fellAt, isGroupRun, livesOf, questionTimer, reviveProblem, shownDepth, standingIds } from '../lib/delve';
   import { startLine } from '../lib/delveStart';
-  import { revivedText } from '../lib/difficultyText';
+  import { reachedText, revivedText } from '../lib/difficultyText';
+  import { finalRound, reachedBy, turnStakes } from '../lib/stakes';
   import { accentAt, milestoneAt, stratumName, swing } from '../lib/descent';
   import { zoneAt } from '../lib/zoneSigils';
   import Threshold from './zonebanner/Threshold.svelte';
@@ -78,6 +79,28 @@
     introTimer = setTimeout(() => (showIntro = false), 2600);
   });
   let showIntro = $state(false);
+
+  // Turns: someone reached the target with seats still to play this round.
+  // The final round's overlay plays once, on every device, as its first
+  // remaining turn begins (a deathmatch intro's smaller sibling).
+  let finalFor = '';
+  let finalTimer: ReturnType<typeof setTimeout> | null = null;
+  let showFinal = $state(false);
+  $effect(() => {
+    if (s.phase !== 'choosing' || !finalRound(s)) return;
+    const key = `${s.startedAt}:${s.round}`;
+    if (key === finalFor) return;
+    finalFor = key;
+    showFinal = true;
+    sfx('finalRound');
+    if (finalTimer) clearTimeout(finalTimer);
+    finalTimer = setTimeout(() => (showFinal = false), 1800);
+  });
+  $effect(() => () => {
+    if (finalTimer) clearTimeout(finalTimer);
+  });
+  /** "Ash reached 10", or online "You reached 10". */
+  const reached = $derived(reachedText(reachedBy(s), (id) => nameOf(id)?.name ?? '?', local ? null : session.myPlayerId, s.settings.targetScore));
   // A new game (or joining one): a wave of light.
   onMount(() => {
     gameStart();
@@ -95,7 +118,10 @@
   // read CSS variables (so the race colour is --unique-hi written out).
   // Delve together has no player on turn: the banner takes the depth's colour.
   const bannerColor = $derived(dm ? '#e0553f' : race ? '#e08a44' : run && group ? accentAt(depth) : playerColor(active.hue));
-  const bannerBig = $derived(race || mine || group);
+  // Turns: a last chance in the final round, or a player at match point,
+  // as the turn began (stakes.ts; the reveal doesn't change it).
+  const stakes = $derived(race || run ? null : turnStakes(s));
+  const bannerBig = $derived(race || mine || group || !!stakes);
 
   /**
    * Svelte action: the turn banner's entrance. Runs once per turn (the stage is
@@ -115,10 +141,18 @@
     return { destroy: () => clearTimeout(t) };
   }
 
+  /** Svelte action: the final round's title bursts in, in ember and gold. */
+  function finalFx(node: HTMLElement) {
+    const t = setTimeout(() => finalRoundIntro(node), 120);
+    return { destroy: () => clearTimeout(t) };
+  }
+
   // Delve: where the depth would read 0, the run's start line (dealt from a
   // shuffled deck on this device, delveStart.ts); it gives way to "Depth 1" as the stage
   // crosses to the next turn, as one depth gives way to the next.
   const startsRun = $derived(!!run && shownDepth(depth) <= 0);
+  /** Turns: "Your turn", "Ash's last chance", "Ash's match point". */
+  const STAKES_WORDS = { turn: 'turn', last: 'last chance', match: 'match point' };
   const bannerTitle = $derived(
     race
       ? `Question ${s.turnCount + 1}`
@@ -126,9 +160,7 @@
         ? startsRun
           ? startLine(run.startedAt)
           : `Depth ${shownDepth(depth)}`
-        : mine && !local
-          ? 'Your turn'
-          : `${active.name}'s turn`,
+        : `${mine && !local ? 'Your' : `${active.name}'s`} ${STAKES_WORDS[stakes ?? 'turn']}`,
   );
 
   // Delve: the seconds the question started with (a find's or the depth's),
@@ -456,6 +488,16 @@
   </div>
 {/if}
 
+{#if showFinal && !dm}
+  <div class="final-intro" use:portal={'dim'} transition:fade={{ duration: 350 }} aria-live="polite">
+    <div class="final-intro-inner" data-behind-dialog="blur" in:scale={{ start: 1.4, duration: 550, opacity: 0 }}>
+      <p class="final-kicker">{reached}</p>
+      <h1 use:finalFx>Final round</h1>
+      <p class="final-sub">Everyone else gets one last turn.</p>
+    </div>
+  </div>
+{/if}
+
 <style>
   .game {
     display: flex;
@@ -709,6 +751,46 @@
     margin: 0;
     font-style: italic;
     color: #e6b8aa;
+  }
+  /* The final round's overlay: the deathmatch intro's, in ember and gold, and briefer. */
+  .final-intro {
+    position: fixed;
+    inset: 0;
+    z-index: 70;
+    display: grid;
+    place-items: center;
+    padding: 1rem;
+    /* Flat, as the deathmatch's; the warm glow is the effects layer's light. */
+    background: rgba(14, 8, 3, 0.82);
+    pointer-events: none;
+  }
+  .final-intro-inner {
+    text-align: center;
+  }
+  .final-kicker {
+    margin: 0;
+    font-family: var(--font-display);
+    letter-spacing: 0.32em;
+    padding-left: 0.32em;
+    text-transform: uppercase;
+    color: #ffc27a;
+  }
+  .final-intro h1 {
+    margin: 0.2em 0 0.25em;
+    font-size: clamp(2.6rem, 12vw, 5.6rem);
+    font-weight: 900;
+    letter-spacing: 0.06em;
+    line-height: 1.05;
+    background: linear-gradient(180deg, #fff1d6 10%, #ffc35a 55%, #a85a12 95%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    filter: drop-shadow(0 0 28px rgba(240, 150, 60, 0.5));
+  }
+  .final-sub {
+    margin: 0;
+    font-style: italic;
+    color: #ecd2ae;
   }
   .skip {
     display: flex;

@@ -2,6 +2,7 @@
   import { accentAt, dealtDeeper, plunge, setDescent, type Dealt } from './lib/descent';
   import { zoneAt } from './lib/zoneSigils';
   import { shownDepth } from './lib/delve';
+  import { finalRoundShown } from './lib/stakes';
   import { onMount, untrack } from 'svelte';
   import { fade, fly } from 'svelte/transition';
   import { session } from './lib/session.svelte';
@@ -232,7 +233,12 @@
             <span class="dot">•</span>
             <span>Round {gs.deathmatch.round}</span>
           {:else}
-            <span>{gs.settings.mode === 'race' ? 'Question' : 'Round'} {gs.round}</span>
+            {#if finalRoundShown(gs)}
+              <!-- Turns: someone reached the target; the seats left get a last turn. -->
+              <span class="final">Final round</span>
+            {:else}
+              <span>{gs.settings.mode === 'race' ? 'Question' : 'Round'} {gs.round}</span>
+            {/if}
             <span class="dot">•</span>
             <span>First to <b>{gs.settings.targetScore}</b></span>
           {/if}
@@ -501,6 +507,13 @@
     color: #ff7a5c;
     font-weight: 700;
     text-shadow: 0 0 12px rgba(224, 85, 63, 0.6);
+    animation: pulse 1.6s ease-in-out infinite;
+  }
+  /* The final round, in the gold of its overlay. */
+  .final {
+    color: #ffc27a;
+    font-weight: 700;
+    text-shadow: 0 0 12px rgba(240, 150, 60, 0.55);
     animation: pulse 1.6s ease-in-out infinite;
   }
 

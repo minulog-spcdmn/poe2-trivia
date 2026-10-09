@@ -527,4 +527,17 @@ export const MOMENTS: Record<Sfx, Moment> = {
       { file: 'deathmatch-4', gain: -34, rate: 1.1, delay: 40, hp: 60, lp: 6000, send: 0.7 },
     ],
   },
+  // Turns: the final round is announced on every screen: a battle's level-up
+  // call slowed and lowered, a deep swell under it and a breath of air after,
+  // gentler than the deathmatch itself.
+  finalRound: {
+    soften: 4,
+    varyPitch: 0.015,
+    varyGain: 0.5,
+    layers: [
+      { file: 'deathmatch-1', gain: -24, rate: 0.8, delay: 0, hp: 40, lp: 8000, send: 0.6 },
+      { file: 'layer-sub-3', gain: -22, rate: 0.7, delay: 0, hp: 20, lp: 900, send: 0.5 },
+      { file: 'layer-air-4', gain: -30, rate: 0.9, delay: 80, hp: 200, lp: 5000, send: 0.8 },
+    ],
+  },
 };

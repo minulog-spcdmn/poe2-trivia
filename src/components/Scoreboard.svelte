@@ -1,7 +1,7 @@
 <script lang="ts">
   import { sfx } from '../lib/sound';
   import { cubicOut } from 'svelte/easing';
-  import { fly } from 'svelte/transition';
+  import { fade, fly } from 'svelte/transition';
   import { session } from '../lib/session.svelte';
   import { playerColor } from '../lib/ui';
   import Avatar from './Avatar.svelte';
@@ -43,6 +43,7 @@
   import { CASINGS, WARD_BREAK, WARD_NEXT, momentOf, type InventoryMoment } from '../lib/inventoryArt';
   import { MOMENTS } from '../lib/soundDesign';
   import type { GameState, Revive } from '../lib/game';
+  import { matchPoint } from '../lib/stakes';
 
   /** Shown at the end of the row (the timer, on phones). */
   let { aside }: { aside?: Snippet } = $props();
@@ -544,15 +545,31 @@
   let drained = $state<Record<string, boolean>>({});
   const awards = new Map<string, Landing>();
   const latest = (id: string, fallback: number) => session.state?.players.find((x) => x.id === id)?.score ?? fallback;
+  /** Turns: who has reached match point in this game (`startedAt:id`), heard once each. */
+  const brinkHeard = new Set<string>();
+  /** Turns, not a deathmatch: one right answer from the target (the pill's gold ring). */
+  const atBrink = (score: number) => !run && !race && !s.deathmatch && s.phase !== 'over' && matchPoint(score, target);
   $effect(() => {
     for (const p of s.players) {
       const score = p.score;
       const was = untrack(() => shown[p.id]);
       if (was === undefined || score === was) {
-        if (was === undefined) shown[p.id] = barShown[p.id] = score;
+        if (was === undefined) {
+          shown[p.id] = barShown[p.id] = score;
+          // Already there as this screen opens (a reload, joining): no gong for it.
+          if (atBrink(score)) brinkHeard.add(`${s.startedAt}:${p.id}`);
+        }
         continue;
       }
       if (awards.get(p.id)?.to === score) continue;
+      // The first time a player reaches match point in a game, the milestone
+      // gong sounds as their number lands (with effects off too). Not over a
+      // hold that takes the Altar: QuestionView's gong already sounds then.
+      const brinkKey = `${s.startedAt}:${p.id}`;
+      if (score > was && s.phase === 'reveal' && atBrink(score) && !brinkHeard.has(brinkKey)) {
+        brinkHeard.add(brinkKey);
+        if (!(s.reveal?.stake?.altar ?? 0)) setTimeout(() => sfx('stratum'), SCORE_LANDS * 1000);
+      }
       if (score > was && fxActive() && s.phase === 'reveal') {
         land(awards, p.id, score, [
           [
@@ -740,6 +757,7 @@
       {@const moment = invMoment[p.id] ?? null}
       {@const expect = expecting[p.id] ?? null}
       {@const reviveOk = fell !== null && canRevive(p.id)}
+      {@const brink = atBrink(score)}
       <li
         use:backdropShadow={{ off: stuck }}
         use:scoreRow={p.id}
@@ -748,6 +766,10 @@
         style:--heat={fire}
         style:--blue={burnsBlue(fire, !!run) ? 1 : 0}
         class:active class:wide class:revivable={reviveOk} class:revived={p.id in revived} class:out class:benched class:duelist class:fallen={fell !== null} class:hit={p.id in hit} class:warded={p.id in guard} class:offline={!p.connected} animate:glide style:--c={playerColor(p.hue)}>
+        {#if brink}
+          <!-- Turns: one right answer from the target; a gold ring pulses round the entry. -->
+          <span class="brink" transition:fade={{ duration: 400 }}><span class="sr">Match point</span></span>
+        {/if}
         <Avatar name={p.name} hue={p.hue} size={32} dim={!p.connected} />
         <div class="info">
           <span class="name">
@@ -929,6 +951,30 @@
     translate: -50% 0;
     border: 5px solid transparent;
     border-top-color: var(--c);
+  }
+  /* Match point (turns): a gold ring round the entry, breathing out from it,
+     under the score and orb chips. Without effects it holds still. */
+  .brink {
+    position: absolute;
+    inset: -4px;
+    z-index: -1;
+    border-radius: inherit;
+    border: 1.5px solid rgba(255, 206, 120, 0.9);
+    box-shadow:
+      0 0 10px rgba(255, 180, 80, 0.45),
+      inset 0 0 6px rgba(255, 180, 80, 0.25);
+    pointer-events: none;
+    animation: brink 1.8s ease-in-out infinite;
+  }
+  @keyframes brink {
+    50% {
+      transform: scale(1.06);
+      opacity: 0.35;
+    }
+  }
+  :global(html[data-still]) .brink {
+    animation: none;
+    opacity: 0.8;
   }
   .kick {
     position: absolute;

@@ -66,7 +66,9 @@ export type Sfx =
   /** Delve: a Dynamite Cache answered wrong; its blast destroys something the player carries. */
   | 'itemBlown'
   /** Turns: a pick corrupted with a Vaal Orb (Corrupt pressed), and its question opening, in place of 'reveal'. */
-  | 'corrupt';
+  | 'corrupt'
+  /** Turns: someone reached the target with seats still to play; the final round's overlay. */
+  | 'finalRound';
 
 let muted = (() => {
   return readStored('muted') === '1';

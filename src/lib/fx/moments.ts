@@ -1102,6 +1102,29 @@ export function deathmatchIntro(title: Element) {
 }
 
 /**
+ * Turns: the final round's overlay card (Game.svelte), a smaller deathmatch
+ * intro in ember and gold for its 1.8 s: one flash, a ring, an ember flare
+ * across the title, rays and a sigil round it, embers rising off the floor, a
+ * lighter shake and a warm pulse through the scene. Only a pulse: the scene
+ * keeps its mood (moodOwner).
+ */
+export function finalRoundIntro(title: Element) {
+  if (!fxActive() || detached(title)) return;
+  const c = { x: innerWidth / 2, y: innerHeight / 2 };
+  const D = Math.hypot(innerWidth, innerHeight);
+  flash(c, { radius: D * 0.26, color: k3(C.ember, 0.7), intensity: 0.12, life: 1.4 });
+  ring(c, { radius: D * 0.45, thickness: 18, life: 1.1, color: C.gold, breakup: 0.7, fill: 0.15 });
+  // Softer than the deathmatch's: the title has less time to be read.
+  flare(title, { size: 34, streak: innerWidth * 0.45, life: 0.9, color: C.ember, intensity: 0.6, delay: 0.15 });
+  rays(title, { radius: D * 0.32, life: 1.8, intensity: 0.2, color: C.ember, count: 14, sharp: 8, spin: 0.4 });
+  sigil(title, { radius: Math.min(innerWidth, innerHeight) * 0.24, color: C.gold, life: 1.8, draw: 0.7, intensity: 0.4, spin: 0.3 });
+  const floor = new DOMRect(0, innerHeight - 4, innerWidth, 4);
+  embers(floor, { count: 50, area: 'fill', colors: [C.ember, C.gold], rise: [160, 440], life: [0.9, 1.8], size: [1.2, 2.6], turbulence: 160 });
+  shakeView(0.5, 7);
+  pulseMood(0.35, [1, 0.45, 0.12]);
+}
+
+/**
  * Which moment owns the scene's mood (tint and embers). The screens that set
  * one overlap while they cross-fade, so each only clears a mood it owns: the
  * game screen going away after the victory screen came in must not wipe the

@@ -18,6 +18,7 @@
   import CardEngraving from './CardEngraving.svelte';
   import Avatar from './Avatar.svelte';
   import VaalOrb from './VaalOrb.svelte';
+  import { stakesLine } from '../lib/stakes';
 
   let {
     drawn = null,
@@ -90,6 +91,13 @@
     const viewer = session.mode === 'local' ? null : me;
     return f.revenge ? revengeText(ids, name, viewer) : favourText(ids, name, viewer);
   });
+
+  /**
+   * The final round (stakes.ts): what this last turn can do against the
+   * leader, the first note under the cards, for everyone (those watching
+   * read it under the player's name).
+   */
+  const finalStakes = $derived(stakesLine(s, me, session.mode === 'local'));
 
   // ---- the vote (Delve together) ------------------------------------------
   // Votes are public and can change until the vote closes: when everyone it
@@ -595,7 +603,9 @@
     <!-- Corrupting, its own note takes this place: the favour was said as the turn came. -->
     <p class="note vaal favour">{favourLine}</p>
   {/if}
-  {#if s.deathmatch}
+  {#if finalStakes}
+    <p class="note stakes">{finalStakes}</p>
+  {:else if s.deathmatch}
     <p class="note muted">{mine ? 'Tap the card when you are ready.' : deathmatchText(difficultyOf(s.settings.difficulty))}</p>
   {:else if mine && vaalHere && corrupting}
     <p class="note vaal">Corrupted: {stakes}.</p>
@@ -1155,6 +1165,10 @@
   .note.vaal {
     color: #e8a99a;
   }
+  /* The final round's stakes, in its gold. */
+  .note.stakes {
+    color: #f3cf96;
+  }
   /* The favour, then the usual note, close under it. */
   .note.favour + .note {
     margin-top: -1rem;
@@ -1475,6 +1489,12 @@
     /* Phones: the row sits tighter, so the note under the cards stays in view. */
     .vaal-row {
       margin: -1.1rem 0 -0.5rem;
+    }
+    /* The final round's stakes often take two lines: closer under the cards
+       and set tighter, so both stay in view. */
+    .note.stakes {
+      margin-top: -0.75rem;
+      line-height: 1.28;
     }
     .frame {
       display: flex;
