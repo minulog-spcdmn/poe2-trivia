@@ -36,6 +36,7 @@
 
 import { emberTurn, ENV, ENVIRONMENTS, HALL_FROM, hallTurn, toneGain, toneOf, TURN_DEPTHS, type Look, type RGB, type Tone } from './backdropData.ts';
 import { endgameAt, endgameName, onBackdrops, zones } from './backdrops.ts';
+import { whenIdle, type Deadline } from './idle.ts';
 
 export { emberTurn, ENV, ENVIRONMENTS, HALL_FROM, hallTurn, toneOf, TURN_DEPTHS, type Look };
 
@@ -921,12 +922,8 @@ function workLights(to: number, ms: number): boolean {
 /** How deep the light is being worked out in idle moments (see warmLights), and whether it is under way. */
 let warmTo = 0;
 let warming = false;
-type Idle = { timeRemaining(): number };
-const whenIdle = (f: (deadline?: Idle) => void) => {
-  const ric = (globalThis as { requestIdleCallback?: (f: (deadline: Idle) => void, o: { timeout: number }) => void }).requestIdleCallback;
-  if (ric) ric(f, { timeout: 250 });
-  else setTimeout(f, 16);
-};
+/** How long a step may wait for an idle moment, and the timer where there's none. */
+const IDLE = { timeout: 250, fallback: 16 };
 /**
  * Works the light out to depth `to` in idle moments, a few milliseconds at
  * a time, ahead of the scene getting there (a run starting, a rejoin deep
@@ -936,12 +933,12 @@ function warmLights(to: number) {
   warmTo = Math.max(warmTo, Math.min(LIGHT_TABLE, Math.ceil(to)));
   if (warming || settled >= warmTo) return;
   warming = true;
-  const step = (deadline?: Idle) => {
+  const step = (deadline?: Deadline) => {
     const ms = deadline ? Math.max(2, deadline.timeRemaining() - 2) : 4;
     if (workLights(warmTo, ms)) warming = false;
-    else whenIdle(step);
+    else whenIdle(step, IDLE);
   };
-  whenIdle(step);
+  whenIdle(step, IDLE);
 }
 
 /**

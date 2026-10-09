@@ -15,6 +15,7 @@
   import ArcaneCircle from './ArcaneCircle.svelte';
   import NamePlate from './NamePlate.svelte';
   import { untrack, type Snippet } from 'svelte';
+  import { motion } from '../lib/motion.svelte';
   import {
     FILL_START,
     answerCharging,
@@ -173,6 +174,12 @@
 
   /** Your answer, on its way to the host. */
   let chosen = $state<number | null>(null);
+  // One the host turned down as too quick may be given again at once. Only a
+  // turn-down sets it off (shownAt, below, isn't reactive): every state that
+  // comes in brings a new question, and an answer given again stays on its way.
+  $effect(() => {
+    if (session.turnedDown?.askedAt === shownAt) chosen = null;
+  });
 
   // ---- dynamite ----
   // Delve: while the question is open, a stick of dynamite (alone your own,
@@ -401,7 +408,7 @@
     if (!reveal) return { duration: 0 };
     const veil = node.querySelector('.veil');
     if (veil) veilHandoff(veil);
-    const quick = matchMedia('(prefers-reduced-motion: reduce)').matches || document.documentElement.hasAttribute('data-still');
+    const quick = motion.still;
     return {
       duration: quick ? 250 : 400,
       css: (t: number, u: number) =>
@@ -587,6 +594,8 @@
     });
   });
 
+  /** Frees the options should the host's word on an answer never come. */
+  let fallback: ReturnType<typeof setTimeout> | undefined;
   function answer(index: number) {
     if (!mine || reveal || chosen !== null || waiting || struckAt.has(index)) return;
     // Time's up: the host only waits a moment longer for answers already on their way.
@@ -596,7 +605,9 @@
     if (optionEls[index]) charge = answerCharging(optionEls[index]);
     sfx('select');
     session.dispatch({ type: 'answer', index, askedAt: q.askedAt });
-    setTimeout(() => {
+    // Only the latest answer's: one turned down and given again stays on its way.
+    clearTimeout(fallback);
+    fallback = setTimeout(() => {
       if (!session.state?.reveal) chosen = null;
     }, 2500);
   }

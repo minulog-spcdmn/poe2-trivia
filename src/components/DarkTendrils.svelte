@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { motion } from '../lib/motion.svelte';
   import { CLOCK_PEAK, OVERSHOOT, onPressure, pressing, pressureLevel } from '../lib/darkness';
-  import { whenIdle } from '../lib/fx/gl';
+  import { whenIdle } from '../lib/idle';
 
   // Delve, on the CSS backdrop (Background.svelte, without WebGL): the dark
   // of a question's clock running down (lib/darkness.ts), as the WebGL
@@ -132,15 +133,13 @@
   let lift: HTMLDivElement;
 
   onMount(() => {
-    const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
-    const still = () => reduceMotion.matches || document.documentElement.hasAttribute('data-still');
     let raf = 0;
     let shown = -1;
 
     function frame(now: number) {
       raf = 0;
       const p = pressureLevel(now);
-      if (Math.abs(p - shown) > (still() ? 0.05 : 0.004) || (p === 0 && shown !== 0)) {
+      if (Math.abs(p - shown) > (motion.still ? 0.05 : 0.004) || (p === 0 && shown !== 0)) {
         shown = p;
         const on = p > 0.001;
         el.style.visibility = on ? 'visible' : 'hidden';
@@ -164,7 +163,7 @@
     let url: string | null = null;
     let gone = false;
     let drawn = false;
-    const stopIdle = whenIdle(draw, 2000);
+    const stopIdle = whenIdle(draw, { timeout: 2000 });
     function draw() {
       if (drawn) return;
       drawn = true;

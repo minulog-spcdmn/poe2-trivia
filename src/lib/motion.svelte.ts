@@ -6,11 +6,22 @@
 const query = typeof matchMedia === 'function' ? matchMedia('(prefers-reduced-motion: reduce)') : null;
 const root = typeof document === 'undefined' ? null : document.documentElement;
 
+/** Counts the changes to html[data-still] (the observer below), so that what reads `off` in an effect or the markup follows them. */
+let flips = $state(0);
+
 class Motion {
   /** The system asks for reduced motion. */
   reduced = $state(!!query?.matches);
-  /** The effects are off in the app. */
-  off = $state(!!root?.hasAttribute('data-still'));
+  /**
+   * The effects are off in the app. Read off the attribute itself: the
+   * observer hears of a change only a microtask later, and a read straight
+   * after it must have it already (the zone gate's tuning page sets it and
+   * plays the gate at once).
+   */
+  get off() {
+    void flips;
+    return !!root?.hasAttribute('data-still');
+  }
   /** Held still, either way. */
   get still() {
     return this.reduced || this.off;
@@ -20,5 +31,4 @@ class Motion {
 export const motion = new Motion();
 
 query?.addEventListener('change', () => (motion.reduced = query.matches));
-if (root && typeof MutationObserver === 'function')
-  new MutationObserver(() => (motion.off = root.hasAttribute('data-still'))).observe(root, { attributes: true, attributeFilter: ['data-still'] });
+if (root && typeof MutationObserver === 'function') new MutationObserver(() => flips++).observe(root, { attributes: true, attributeFilter: ['data-still'] });

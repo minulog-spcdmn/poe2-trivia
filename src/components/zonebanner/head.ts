@@ -84,7 +84,3 @@ export function watchHead(el: HTMLElement, set: (h: Head) => void, watch: (HTMLE
     ro.disconnect();
   };
 }
-
-/** Reduced motion or the effects off: the gate isn't drawn, it simply fades in and out. */
-export const quiet = () =>
-  matchMedia('(prefers-reduced-motion: reduce)').matches || document.documentElement.hasAttribute('data-still');
