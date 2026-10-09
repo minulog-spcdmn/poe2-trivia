@@ -70,7 +70,7 @@ import {
   type DelveNotice,
 } from './delveSession';
 import { readLegacy, readStored, removeLegacy, removeStored, writeStored } from './storage';
-import { QUICK_TARGET, QUICK_TIMER, initiateFlag, isNewcomer, recordHunt, type HuntBest } from './hunt';
+import { QUICK_TARGET, QUICK_TIMER, initiateFlag, isNewcomer, newReveal, recordHunt, type HuntBest } from './hunt';
 
 export const engine = new Engine(itemData as Item[], { fakes: fakeNames });
 
@@ -250,6 +250,28 @@ class Session {
    * questions than ever on its difficulty.
    */
   huntResult = $state<{ game: number; first: boolean; best: boolean; previousBest: HuntBest | null; right: number; asked: number } | null>(null);
+  /**
+   * The Codex ticker: the latest turns reveal this device saw begin (`qid`:
+   * its askedAt), whether its item was new to this browser's codex, and how
+   * many of the game's items the codex holds with it. Null until the codex
+   * has been read for the game.
+   */
+  discovery = $state<{ qid: number; fresh: boolean; count: number } | null>(null);
+  /**
+   * The question (askedAt) that was a newcomer's first right answer of the
+   * game: online, this device's player's own; in hot-seat, each player's.
+   * Only in a game this browser started as a newcomer (lib/hunt.ts isNewcomer).
+   */
+  firstFind = $state<number | null>(null);
+  /** The achievements this browser had earned when the game began (null until read): what the game earns is the rest. */
+  earnedAtStart = $state.raw<Set<string> | null>(null);
+  /** The game (its startedAt) the ticker follows, and what it holds for it. */
+  private gameSeen = 0;
+  /** The items this browser's codex holds: what it had when the game began, and every reveal seen since. */
+  private knownItems: Set<string> | null = null;
+  private newcomerAtStart = false;
+  /** The players whose first right answer of the game has been seen. */
+  private firstRight = new Set<string>();
   /**
    * Delve: the run (its startedAt) this device saw start, from the lobby or
    * after a game ended (delveSession.ts runSeenStarting); null after a reload
@@ -1617,8 +1639,55 @@ class Session {
     if (r) this.huntResult = { game: startedAt, first: r.first, best: r.best, previousBest: r.previousBest, right, asked };
   }
 
+  /**
+   * The Codex ticker and a newcomer's first find (QuestionView's result
+   * line). As a turns game begins, what this browser's codex and
+   * achievements hold is read (their own chunks, as noteEncounter's); every
+   * reveal after that is new to the codex or not, as every device records
+   * each one it sees (codex.ts encounterAt).
+   */
+  private noteDiscovery(prev: GameState | null, next: GameState) {
+    const game = next.startedAt;
+    if (game && game !== this.gameSeen) {
+      this.gameSeen = game;
+      this.knownItems = null;
+      this.firstRight = new Set();
+      this.discovery = null;
+      this.firstFind = null;
+      this.earnedAtStart = null;
+      this.newcomerAtStart = isNewcomer();
+      if (!next.delve && next.settings.mode !== 'race') {
+        void import('./codex')
+          .then(({ loadCodex }) => {
+            if (this.gameSeen === game) this.knownItems = new Set(Object.keys(loadCodex().items).filter((id) => engine.byId.has(id)));
+          })
+          .catch((err) => console.warn('codex', err));
+        void import('./achievements')
+          .then(({ loadAchievements }) => {
+            if (this.gameSeen === game) this.earnedAtStart = new Set(Object.keys(loadAchievements().earned));
+          })
+          .catch((err) => console.warn('achievements', err));
+      }
+    }
+    const seen = newReveal(prev, next);
+    if (!seen) return;
+    const known = this.knownItems;
+    // An item this build doesn't have (a host on another one) isn't counted.
+    if (known && engine.byId.has(seen.id)) {
+      const fresh = !known.has(seen.id);
+      known.add(seen.id);
+      this.discovery = { qid: seen.at, fresh, count: known.size };
+    }
+    const own = this.mode === 'local' || seen.by === this.myPlayerId;
+    if (this.newcomerAtStart && seen.ok && seen.by && own && !this.firstRight.has(seen.by)) {
+      this.firstRight.add(seen.by);
+      this.firstFind = seen.at;
+    }
+  }
+
   /** What every device makes of a state change, host and guest alike: records, sounds and notices, achievements. */
   private noteChange(prev: GameState | null, next: GameState) {
+    this.noteDiscovery(prev, next);
     this.noteRun(prev, next);
     this.noteHunt(prev, next);
     this.onNewState(prev, next);

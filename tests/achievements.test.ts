@@ -18,6 +18,7 @@ import {
   forfeit,
   nextWins,
   noteState,
+  PRIMA,
   parseStore,
   parseWins,
   parseTrack,
@@ -154,14 +155,25 @@ test('Fool Me Twice is a secret, earned by the same made-up name twice', () => {
   assert.ok(earnedFrom(sum(codexOf([], { fooled: { 'Fake Name': { of: items[0].id, n: 2, last: 3 } } }))).includes('fooled-twice'));
 });
 
-test('Prima Materia counts the different items answered right', () => {
+test('Prima Materia counts the different items answered right: five, as a first quick hunt gets', () => {
+  assert.equal(PRIMA, 5);
+  const prima = ACHIEVEMENTS.find((a) => a.id === 'prima-materia')!;
   const c = emptyCodex();
-  for (const it of items.slice(0, 24)) c.items[it.id] = { seen: 1, first: 1, last: 1, name: { n: 1, ok: 1 }, art: { n: 0, ok: 0 }, mixed: {} };
+  for (const it of items.slice(0, 4)) c.items[it.id] = { seen: 1, first: 1, last: 1, name: { n: 1, ok: 1 }, art: { n: 0, ok: 0 }, mixed: {} };
+  // Seen, but never answered right: not one of them.
+  c.items[items[10].id] = { seen: 2, first: 1, last: 2, name: { n: 2, ok: 0 }, art: { n: 0, ok: 0 }, mixed: {} };
   assert.ok(!earnedFrom(sum(c)).includes('prima-materia'));
-  c.items[items[24].id] = { seen: 1, first: 1, last: 1, name: { n: 0, ok: 0 }, art: { n: 1, ok: 1 }, mixed: {} };
+  assert.deepEqual(prima.progress!(sum(c)), { have: 4, need: 5 });
+  c.items[items[4].id] = { seen: 1, first: 1, last: 1, name: { n: 0, ok: 0 }, art: { n: 1, ok: 1 }, mixed: {} };
   assert.ok(earnedFrom(sum(c)).includes('prima-materia'));
-  // The same item right 25 times is one item.
-  assert.ok(!earnedFrom(sum(codexOf(Array.from({ length: 25 }, () => ({}))))).includes('prima-materia'));
+  // The same item right 5 times is one item.
+  const same = codexOf(Array.from({ length: 5 }, () => ({})));
+  same.items[items[0].id] = { seen: 5, first: 1, last: 5, name: { n: 5, ok: 5 }, art: { n: 0, ok: 0 }, mixed: {} };
+  assert.ok(!earnedFrom(sum(same)).includes('prima-materia'));
+});
+
+test("Prima Materia's text asks for five", () => {
+  assert.equal(ACHIEVEMENTS.find((a) => a.id === 'prima-materia')!.text, 'Answer 5 different items right.');
 });
 
 test('Sweet Revenge: an item answered right after three wrong answers to it in a row', () => {

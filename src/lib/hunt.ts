@@ -4,8 +4,10 @@
 // took to reach 5 on each difficulty, and the difficulty last chosen (Play
 // now's chips). Stored apart from the codex, through lib/storage.ts, and
 // never written over when this build can't read it (lib/keepAside.ts).
+// Also when a turns reveal begins (newReveal), which the Codex ticker under
+// the answers follows (Session.discovery).
 
-import type { Preset } from './game.ts';
+import type { GameState, Preset } from './game.ts';
 import { makeRoom } from './keepAside.ts';
 import { tryReadStored, writeStored } from './storage.ts';
 
@@ -167,4 +169,26 @@ export function isNewcomer(): boolean {
  */
 export function initiateFlag(): { initiate?: true } {
   return isNewcomer() ? { initiate: true } : {};
+}
+
+/** A turns reveal as it begins: its question (askedAt), the item, whether the player answering got it, and who that was. */
+export interface RevealSeen {
+  at: number;
+  id: string;
+  ok: boolean;
+  by: string;
+}
+
+/**
+ * The reveal a turns game's state change begins, or null: once per question,
+ * however often its reveal state comes again (a guest joining, the room
+ * going public), and never on the first state seen (a reload into a reveal
+ * saw it before). Races and Delve have none.
+ */
+export function newReveal(prev: GameState | null, next: GameState): RevealSeen | null {
+  const q = next.question;
+  const r = next.reveal;
+  if (!prev || next.phase !== 'reveal' || !q || !r || next.delve || next.settings.mode === 'race') return null;
+  if (prev.phase === 'reveal' && prev.question?.askedAt === q.askedAt) return null;
+  return { at: q.askedAt, id: r.correctId, ok: r.correct, by: next.players[next.turn]?.id ?? '' };
 }

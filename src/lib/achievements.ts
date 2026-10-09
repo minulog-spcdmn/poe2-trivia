@@ -158,7 +158,7 @@ const count = (have: number, need: number, note?: string): Progress => ({ have, 
 /** A right answer this quick (ms from the art to the click) counts for Mercurial and Quicksilver. */
 export const FAST_MS = 2000;
 /** Prima Materia: different items answered right. */
-export const PRIMA = 25;
+export const PRIMA = 5;
 /** Sweet Revenge: wrong answers to one item in a row, before the right one. */
 export const REVENGE = 3;
 /** Undefeated: games against others won in a row. */

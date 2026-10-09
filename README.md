@@ -425,7 +425,11 @@ screen counts as seen; only your own answers count toward accuracy (your turn,
 or your guess in a race; a turn that runs out of time is wrong). In hot-seat,
 answers only count when one person plays alone. Undiscovered items show as
 dark silhouettes, and the codex can't be opened while in a room. It is kept in this
-browser's localStorage only (`src/lib/codex.ts`).
+browser's localStorage only (`src/lib/codex.ts`). In a turns game, the
+reveal of an item new to your codex ends its result line with a chip
+("New • 7 / 501": how many items the codex holds now), on every screen; in
+a browser's first game, each player's first right answer is marked as their
+first unique identified.
 
 The Codex has two tabs: **Collection** (the above) and **Delve**, built
 from the same parts. Alone and together are kept apart and never summed:
@@ -460,7 +464,7 @@ marks a moment worth telling or a goal worth chasing. Four groups of nine, laid
 out in even rows. Each group opens with a very easy one, so a new player soon
 finds out there are achievements at all, and has one to laugh at and one that
 takes real mastery:
-- **Knowledge:** 25 different items answered right, 25 and 100 right in a
+- **Knowledge:** 5 different items answered right, 25 and 100 right in a
   row on your own turns (races and runs together neither add nor break a
   streak), 5 and 20 in a row each within 2 seconds, every item of a category
   both named and found, every item in the game answered right, an item

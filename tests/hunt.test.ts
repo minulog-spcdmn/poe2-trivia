@@ -13,16 +13,18 @@ import {
   initiateFlag,
   isNewcomer,
   loadHunts,
+  newReveal,
   parseHunts,
   recordHunt,
   serializeHunts,
   setQuickDifficulty,
   type HuntRun,
   type Hunts,
+  type RevealSeen,
 } from '../src/lib/hunt.ts';
 import { CODEX_KEY } from '../src/lib/codex.ts';
 import { storeKey } from '../src/lib/storage.ts';
-import { Engine, createGame, type GameState, type Item } from '../src/lib/game.ts';
+import { Engine, createGame, publicView, type GameState, type Item, type Settings } from '../src/lib/game.ts';
 
 const store = new Map<string, string>();
 /** Storage that throws on every use (blocked by the browser). */
@@ -210,4 +212,71 @@ test('a quick hunt starts from a hot-seat lobby in one go, and its questions are
   assert.equal(asked, 7);
   assert.equal(s.turnCount + 1, asked, 'what Session.noteHunt counts');
   assert.ok(s.startedAt, 'still known at the end');
+});
+
+test('newReveal: each turns reveal once, as it begins; none for a race, a Delve run or a reload into one', () => {
+  const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
+  let seed = 5;
+  let clock = 1000;
+  const engine = new Engine(items, { rng: () => ((seed = (seed * 1664525 + 1013904223) >>> 0), seed / 2 ** 32), now: () => (clock += 10) });
+  const begin = (settings: Partial<Settings>, names = ['Ash', 'Bo']) => {
+    let s: GameState = createGame('p0', { targetScore: 3, timer: 0, difficulty: 'cruel', public: false, locked: false, ...settings });
+    names.forEach((name, i) => (s = engine.apply(s, { type: 'join', playerId: `p${i}`, name }, `p${i}`)));
+    return engine.apply(s, { type: 'start' }, 'p0');
+  };
+
+  // Turns: followed state by state, as a device sees them.
+  let s = begin({});
+  let prev: GameState | null = null;
+  const seen: RevealSeen[] = [];
+  const see = (next: GameState) => {
+    const r = newReveal(prev, next);
+    if (r) seen.push(r);
+    prev = next;
+    return r;
+  };
+  see(s);
+  const expected: RevealSeen[] = [];
+  for (let n = 0; n < 4; n++) {
+    const by = s.players[s.turn].id;
+    assert.equal(see((s = engine.apply(s, { type: 'pick', category: s.offered[0] }, by))), null, 'no reveal while choosing or asking');
+    const q = s.question!;
+    // Right, wrong, right, wrong.
+    const index = n % 2 ? q.options.findIndex((o) => o !== q.itemId) : q.options.indexOf(q.itemId);
+    const r = see((s = engine.apply(s, { type: 'answer', index, askedAt: q.askedAt }, by)));
+    expected.push({ at: q.askedAt, id: q.itemId, ok: n % 2 === 0, by });
+    assert.deepEqual(r, expected[n]);
+    // The same reveal again (someone joining, a guest's resent state): not a new one.
+    assert.equal(see({ ...s, version: s.version + 1 }), null);
+    assert.equal(see(publicView(s)), null, 'nor as a guest gets it');
+    see((s = engine.apply(s, { type: 'next' }, by)));
+  }
+  assert.deepEqual(seen, expected);
+  assert.deepEqual(new Set(seen.map((r) => r.by)), new Set(['p0', 'p1']), 'each player answering in turn');
+  // A guest's copy says the same as the host's.
+  const asked = engine.apply(s, { type: 'pick', category: s.offered[0] }, s.players[s.turn].id);
+  const shown = engine.apply(asked, { type: 'answer', index: 0, askedAt: asked.question!.askedAt }, asked.players[asked.turn].id);
+  assert.deepEqual(newReveal(publicView(asked), publicView(shown)), newReveal(asked, shown));
+  // A reload into a reveal has no state before it: seen before the reload, if at all.
+  assert.equal(newReveal(null, shown), null);
+
+  // A race: none.
+  let race = begin({ mode: 'race' });
+  const rq = race.question!;
+  const before = race;
+  race = engine.apply(race, { type: 'answer', index: rq.options.indexOf(rq.itemId), askedAt: rq.askedAt }, 'p1');
+  assert.equal(race.phase, 'reveal');
+  assert.equal(newReveal(before, race), null);
+
+  // A Delve run: none.
+  let run = begin({ mode: 'delve' }, ['Ash']);
+  run = structuredClone(run);
+  run.delve!.finds = [];
+  run = engine.apply(run, { type: 'pick', category: run.offered[0] }, 'p0');
+  run = engine.apply(run, { type: 'clock', askedAt: run.question!.askedAt }, null);
+  const dq = run.question!;
+  const asking = run;
+  run = engine.apply(run, { type: 'answer', index: dq.options.indexOf(dq.itemId), askedAt: dq.askedAt }, 'p0');
+  assert.equal(run.phase, 'reveal');
+  assert.equal(newReveal(asking, run), null);
 });

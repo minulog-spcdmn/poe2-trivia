@@ -16,10 +16,13 @@
   import { untrack, type Snippet } from 'svelte';
   import {
     FILL_START,
+    SCORE_LANDS,
     answerCharging,
     artRevealed,
+    milestoneReached,
     raceMiss,
     reveal as revealFx,
+    twinkle,
     veilComplete,
     veilHandoff,
     type VerdictTone,
@@ -478,9 +481,19 @@
   /** The art stage (name questions) or the picture grid (art questions). */
   let artEl = $state<HTMLElement | null>(null);
   let verdictEl = $state<HTMLElement | null>(null);
+  /** The tooltip's head: the name plate and the item's name. */
+  let plateEl = $state<HTMLElement | null>(null);
+  /** The Codex ticker's chip on the result line. */
+  let newChipEl = $state<HTMLElement | null>(null);
   let charge: Handle | null = null;
   /** The scorer's streak of correct answers, for the result line. */
   let streak = $state(0);
+  /** The Codex ticker: how many items the codex holds now, when this reveal's was new to it (Session.discovery); else null. */
+  const discovered = $derived(reveal && session.discovery?.qid === q.askedAt && session.discovery.fresh ? session.discovery.count : null);
+  /** A newcomer's first right answer of the game (Session.firstFind). */
+  const firstFind = $derived(!!reveal && session.firstFind === q.askedAt);
+  /** The first find's flare: Delve's milestone flare, in the old gold of its plaques. */
+  const OLD_GOLD = '#d9a45a';
 
   // The art arrives: light it up (once per question).
   let artShown = false;
@@ -582,6 +595,17 @@
       });
       // Your point streaming into the bar. Without effects the bar just jumps, and 'correct' says it all.
       if (iWon && pill && fill && fxActive()) setTimeout(() => sfx('fill'), FILL_START * 1000 - FILL_LEAD);
+      // As the point lands, an item new to the codex gets its chip with a glint;
+      // a newcomer's first find lights the name plate just after, with the gong
+      // (by timers, not after(): the gong sounds without effects too).
+      const lands = SCORE_LANDS * 1000;
+      if (discovered !== null) setTimeout(() => newChipEl && twinkle(newChipEl), lands);
+      if (firstFind)
+        setTimeout(() => {
+          if (!plateEl?.isConnected) return;
+          if (fxActive()) milestoneReached(plateEl, OLD_GOLD);
+          sfx('stratum');
+        }, lands + 200);
     });
   });
 
@@ -806,6 +830,7 @@
           {#if !reveal.correct && reveal.blown}{blownText(reveal.blown, you ? 'your' : `${active.name}'s`)}{/if}
         {:else if reveal.correct}
           <b class="good">+1</b> for {active.name}!
+          {#if firstFind}Your first unique, identified.{/if}
           {#if streak >= 2}<span class="streak" in:scale={{ start: 0.5, duration: 400, delay: 1100 }}>{streak} in a row</span>{/if}
         {:else if reveal.timedOut}
           {active.name} ran out of time.
@@ -813,6 +838,10 @@
           No point for {active.name}{fellFor ? ';' : '.'}
         {/if}
         {#if fellFor}{fellFor} isn't a real item.{/if}
+        <!-- The Codex ticker: an item new to this browser's codex, and how many it holds now. -->
+        {#if discovered !== null}
+          <span class="new-chip" bind:this={newChipEl} title="New to your Codex">New • <span class="n">{discovered} / {engine.items.length}</span></span>
+        {/if}
       </p>
       <button
         class="btn"
@@ -926,7 +955,7 @@
   {#if q.mode === 'art'}
     <!-- Name given, pick the matching art. -->
     <div class="tooltip wide" use:backdropShadow={{ fill: 'linear' }} class:good={reveal && iWon} class:bad={reveal && !iWon}>
-      <div class="head">
+      <div class="head" bind:this={plateEl}>
         <NamePlate />
         <div class="head-text">
           <span class="iname" class:veiled={waiting}>{waiting || !q.prompt ? '\u00a0' : q.prompt}</span>
@@ -1011,7 +1040,7 @@
   {:else}
     <div class="stage" class:snug class:ten={count === 10}>
       <div class="tooltip" use:backdropShadow={{ fill: 'linear' }} class:good={reveal && iWon} class:bad={reveal && !iWon}>
-        <div class="head">
+        <div class="head" bind:this={plateEl}>
           <!-- The gems stay dark until the item is identified. -->
           <NamePlate lit={!!(reveal && item)} />
           {#if reveal && item}
@@ -2217,6 +2246,35 @@
   @keyframes smoulder-badge {
     50% {
       opacity: 1;
+    }
+  }
+  /* The Codex ticker: quieter than a streak, in muted gold, landing as the
+     point does (moments.ts SCORE_LANDS). Kept whole when the line wraps. */
+  .new-chip {
+    display: inline-block;
+    margin-left: 0.6em;
+    padding: 0.1em 0.7em 0.05em;
+    font-family: var(--font-display);
+    font-size: 0.74rem;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    vertical-align: 0.15em;
+    white-space: nowrap;
+    color: #e6d3a3;
+    background: linear-gradient(180deg, rgba(110, 86, 40, 0.5), rgba(45, 34, 14, 0.6));
+    border: 1px solid rgba(201, 164, 92, 0.5);
+    border-radius: 999px;
+    animation: chip-lands 0.4s cubic-bezier(0.3, 1.5, 0.5, 1) 1.5s both;
+  }
+  .new-chip .n {
+    font-family: var(--font-cinzel);
+    letter-spacing: 0.06em;
+  }
+  @keyframes chip-lands {
+    from {
+      opacity: 0;
+      transform: scale(0.5);
     }
   }
   /* However long the result, the button keeps its size. */
