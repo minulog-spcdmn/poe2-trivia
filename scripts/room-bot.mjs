@@ -6,8 +6,8 @@
 // is hosting and the room's save, so it comes back as the same player in
 // the same room.
 //
-//   npm run bot -- [--bots 4] [--rooms N] [--mode turns,race,delve] [--per-room N] [--headed] [--no-build]
-//   (or node scripts/room-bot.mjs --bots 4; from PowerShell npm run bot bots=4 rooms=2 delve,
+//   npm run bot -- [--bots 4] [--rooms N] [--mode turns,race,delve] [--per-room N] [--beta] [--headed] [--no-build]
+//   (or node scripts/room-bot.mjs --bots 4; from PowerShell npm run bot bots=4 rooms=2 delve beta,
 //   or npm run bot 2, work too)
 //
 // --bots: how many seats, so how many players on at once (1 by default).
@@ -22,6 +22,11 @@
 // --per-room N: at most N of them in one room (any number by default);
 // they arrive in a room 5 to 20 s apart.
 // --joiners N (or --join, for 1): N seats more (--bots 1+N, or --rooms+N).
+// --beta: to the beta (poe2.quest/beta/) instead of the live game: its rooms
+// and open-room list are the beta's own (src/lib/peer.ts), so the bot is
+// built as the beta is (VITE_CHANNEL=beta), with a build and browser
+// profiles of its own, and can run beside a live one. Its rooms show only
+// to a beta on the same protocol version as this checkout.
 //
 // Chromium: Playwright's own (npx playwright-core install chromium), or any
 // Chromium or Chrome named by BOT_CHROMIUM.
@@ -38,8 +43,6 @@ const REOPEN_AFTER_MS = 5000;
 const MAX_OPEN_FAILURES = 6;
 
 const root = fileURLToPath(new URL('..', import.meta.url));
-// Kept out of the repo (.gitignore) and of the style checks (tests/style.test.ts).
-const outDir = join(root, '.bot', 'dist');
 
 const { values: args, positionals } = parseArgs({
   options: {
@@ -49,6 +52,7 @@ const { values: args, positionals } = parseArgs({
     join: { type: 'boolean' },
     joiners: { type: 'string' },
     'per-room': { type: 'string' },
+    beta: { type: 'boolean' },
     headed: { type: 'boolean' },
     'no-build': { type: 'boolean' },
   },
@@ -56,8 +60,8 @@ const { values: args, positionals } = parseArgs({
 });
 // PowerShell drops the `--` in `npm run bot -- --rooms 2`, and npm then takes
 // the flags as its own settings (npm_config_*) and hands on only the `2`: so
-// those count too, a bare number is the number of rooms and bare mode names
-// are the modes.
+// those count too, a bare number is the number of rooms, bare mode names
+// are the modes, and a bare `join` or `beta` is that flag.
 const MODES = ['turns', 'race', 'delve'];
 // `--rooms=2 --joiners=3` (with =) reach us from PowerShell as npm settings
 // with their values, and `rooms=2 joiners=3` as words.
@@ -72,6 +76,7 @@ const opts = {
   join: args.join ?? (words.includes('join') || env.npm_config_join === 'true'),
   joiners: numberOf('joiners'),
   perRoom: numberOf('per-room'),
+  beta: args.beta ?? (words.includes('beta') || env.npm_config_beta === 'true'),
   headed: args.headed ?? env.npm_config_headed === 'true',
   'no-build': args['no-build'] ?? (env.npm_config_build === 'false' || env.npm_config_no_build === 'true'),
 };
@@ -107,6 +112,11 @@ const stamp = () => new Date().toISOString().slice(0, 19).replace('T', ' ');
 const log = (...args) => console.log(stamp(), ...args);
 
 process.env.VITE_BOT = '1';
+// The beta's own rooms and open-room list (src/lib/channel.ts, src/lib/peer.ts).
+if (opts.beta) process.env.VITE_CHANNEL = 'beta';
+else delete process.env.VITE_CHANNEL;
+// Kept out of the repo (.gitignore) and of the style checks (tests/style.test.ts); the beta's apart, so either runs without rebuilding the other.
+const outDir = join(root, '.bot', opts.beta ? 'dist-beta' : 'dist');
 if (!opts['no-build']) {
   log('building');
   await build({ root, logLevel: 'warn', build: { outDir, emptyOutDir: true } });
@@ -140,7 +150,7 @@ const roles = new Map();
 async function runSeat(slot) {
   const say = bots > 1 ? (...args) => log(`[${slot}]`, ...args) : log;
   const url = `${base}bot.html?slot=${slot}&of=${bots}${rooms === Infinity ? '' : `&rooms=${rooms}`}&modes=${modes.join(',')}${slot > 1 ? '&scout=0' : ''}`;
-  const context = await chromium.launchPersistentContext(join(root, '.bot', `profile-${slot}`), {
+  const context = await chromium.launchPersistentContext(join(root, '.bot', `profile-${opts.beta ? 'beta-' : ''}${slot}`), {
     headless: !opts.headed,
     executablePath: process.env.BOT_CHROMIUM || undefined,
     // Stopping is ours (stop, below): the room says goodbye before the browser goes.
@@ -243,7 +253,7 @@ async function runSeat(slot) {
   return seat;
 }
 
-log(`${bots === 1 ? '1 seat' : `${bots} seats`}, ${rooms === Infinity ? `as many rooms as wanted, hosting ${modes.join(', ')}` : rooms ? `up to ${rooms === 1 ? '1 room' : `${rooms} rooms`} at once, hosting ${modes.join(', ')}` : 'joining only'}${perRoom < bots ? `, up to ${perRoom} in a room` : ''}`);
+log(`${opts.beta ? 'beta: ' : ''}${bots === 1 ? '1 seat' : `${bots} seats`}, ${rooms === Infinity ? `as many rooms as wanted, hosting ${modes.join(', ')}` : rooms ? `up to ${rooms === 1 ? '1 room' : `${rooms} rooms`} at once, hosting ${modes.join(', ')}` : 'joining only'}${perRoom < bots ? `, up to ${perRoom} in a room` : ''}`);
 const all = [];
 for (let slot = 1; slot <= bots; slot++) all.push(await runSeat(slot));
 
