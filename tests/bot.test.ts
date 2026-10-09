@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { answerDelay, knowChance, makePersona, pickCategory, weighted, wrongPick, type Ask, type Persona } from '../src/bot/brain.ts';
-import { NAMES, breakLength, identityOf, lonelyLength, namesFor, nextName, otherPrefs, rollPrefs, shiftLength } from '../src/bot/identities.ts';
+import { NAMES, identityOf, lonelyLength, namesFor, nextName, otherPrefs, rollPrefs, shiftLength } from '../src/bot/identities.ts';
 import { joinable, makesWay, wanted } from '../src/bot/wanted.ts';
 import type { RoomInfo } from '../src/lib/roomInfo.ts';
 import { MAX_NAME, cleanName, isHeldName, nameProblem, nameSkeleton } from '../src/lib/names.ts';
@@ -129,15 +129,13 @@ test('the last few on rest before coming on again', () => {
   for (let i = 0; i < 300; i++) assert.ok(!recent.includes(nextName(recent, rng)));
 });
 
-test('shifts, waits and breaks stay within their bounds', () => {
+test('shifts and waits stay within their bounds', () => {
   const rng = seeded(23);
   for (let i = 0; i < 500; i++) {
     const shift = shiftLength(rng) / 60000;
     const lonely = lonelyLength(rng) / 60000;
-    const pause = breakLength(rng) / 60000;
     assert.ok(shift >= 20 && shift <= 120, `shift ${shift}`);
     assert.ok(lonely >= 6 && lonely <= 15, `lonely ${lonely}`);
-    assert.ok(pause >= 1 && pause <= 4, `break ${pause}`);
   }
 });
 

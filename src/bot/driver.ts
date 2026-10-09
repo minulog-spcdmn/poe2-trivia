@@ -12,7 +12,7 @@ import type { GameState, Question } from '../lib/game';
 import { scanRooms, type RoomInfo } from '../lib/rooms';
 import { readStored, writeStored } from '../lib/storage';
 import { answerDelay, knowChance, pickCategory, pickDelay, wrongPick, type Ask } from './brain';
-import { breakLength, identityOf, lonelyLength, nextName, otherPrefs, shiftLength, type Identity } from './identities';
+import { identityOf, lonelyLength, nextName, otherPrefs, shiftLength, type Identity } from './identities';
 import { joinable, makesWay, wanted, type Role } from './wanted';
 
 const TICK_MS = 200;
@@ -22,14 +22,20 @@ const ALONE_MS = 40000;
 const STUCK_MS = 60000;
 /** Past the end of their time, people waiting or playing get this long before the host goes anyway. */
 const OVERTIME_MS = 30 * 60000;
-/** The open-room list is checked this often (ms, from..to). */
-const SCOUT_EVERY: [number, number] = [40000, 75000];
+/**
+ * The open-room list is checked this often (ms, from..to): often while this
+ * room is closed, so a room wanted opens soon; at leisure while it's open.
+ */
+const SCOUT_CLOSED: [number, number] = [15000, 25000];
+const SCOUT_OPEN: [number, number] = [40000, 75000];
 /**
  * Checks in a row that must find a room wanted before one opens: the second
- * room waits longer, so the first one's room shows in the list before it
+ * room waits one more, so the first one's room shows in the list before it
  * would open as well.
  */
-const WANTED_CHECKS: Record<Role, number> = { first: 2, second: 3 };
+const WANTED_CHECKS: Record<Role, number> = { first: 1, second: 2 };
+/** A host leaving a room that is still wanted hands over: the next one opens a room this soon after. */
+const HAND_OVER_MS = 2000;
 /** Checks in a row that must find another room to join before an empty lobby makes way. */
 const MAKE_WAY_CHECKS = 2;
 /** An empty lobby stays open at least this long before it makes way. */
@@ -40,7 +46,7 @@ const RETRY_CHANCE = 0.35;
 const log = (...args: unknown[]) => console.log('[bot]', ...args);
 const between = (lo: number, hi: number) => Math.round(lo + Math.random() * (hi - lo));
 
-/** Who is on (`on`, until `until`), or when the next one comes (`backAt`); `recent`: who came on lately. */
+/** Who is on (`on`, until `until`), or the earliest the next one comes (`backAt`); `recent`: who came on lately. */
 interface Shift {
   on: string | null;
   until: number;
@@ -129,14 +135,17 @@ export class Bot {
   /** Checks the open-room list (as the start page does), then again in a minute or so. */
   private async scout() {
     const rooms: RoomInfo[] = [];
+    const was = this.shift.on;
     try {
       await scanRooms((r) => rooms.push(r), () => !this.timer);
     } catch {
       // The matchmaking server can't be reached: no news, so nothing changes.
-      this.scoutTimer = setTimeout(() => void this.scout(), between(...SCOUT_EVERY));
+      this.scoutAgain();
       return;
     }
     if (!this.timer) return;
+    // Someone came or went while it ran (a hand-over): what it saw is out of date.
+    if (this.shift.on !== was) return this.scoutAgain();
     const mine = this.shift.on ? session.code : '';
     const others = rooms.filter((r) => r.code !== mine);
     this.seen = { rooms: others.length, joinable: others.filter(joinable).length, at: Date.now() };
@@ -148,7 +157,13 @@ export class Bot {
       this.wantedChecks = wanted(this.role, others) ? this.wantedChecks + 1 : 0;
       if (this.wantedChecks === 1) log(`no ${this.role === 'first' ? 'room' : 'room to join'} listed (${others.length} listed)`);
     }
-    this.scoutTimer = setTimeout(() => void this.scout(), between(...SCOUT_EVERY));
+    this.scoutAgain();
+  }
+
+  private scoutAgain() {
+    if (!this.timer) return;
+    if (this.scoutTimer) clearTimeout(this.scoutTimer);
+    this.scoutTimer = setTimeout(() => void this.scout(), between(...(this.shift.on ? SCOUT_OPEN : SCOUT_CLOSED)));
   }
 
   /** What the runner prints now and then. */
@@ -159,7 +174,6 @@ export class Bot {
       role: this.role,
       host: on,
       until: on ? time(this.shift.until) : null,
-      backAt: on ? null : time(this.shift.backAt),
       listed: this.seen ? `${this.seen.rooms} other rooms, ${this.seen.joinable} to join (${time(this.seen.at)})` : 'not checked yet',
       code: session.code,
       status: session.status,
@@ -190,19 +204,20 @@ export class Bot {
   }
 
   /**
-   * The one on calls it a day: the room closes, and someone else may come on
-   * after a break, if a room is still wanted. Unless it made way for another
-   * room, it was: the next one comes on after the break, unless a check
-   * meanwhile finds a room again.
+   * The one on calls it a day and the room closes. Unless it made way for
+   * another room, a room is still wanted, so the next one hands over: they
+   * open a new room at once (a check meanwhile finding a room stops them).
    */
   private end(now: number, why: string, madeWay = false) {
     log(`${this.shift.on} leaves (${why})`);
     session.leave();
     this.who = null;
     this.plan = null;
-    this.shift = { ...this.shift, on: null, backAt: now + breakLength(Math.random) };
+    this.shift = { ...this.shift, on: null, backAt: now + HAND_OVER_MS };
     this.save();
     this.wantedChecks = madeWay ? 0 : WANTED_CHECKS[this.role];
+    // Closed now: the list is checked often again.
+    this.scoutAgain();
   }
 
   private tick() {

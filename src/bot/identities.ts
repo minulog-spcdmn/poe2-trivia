@@ -131,6 +131,3 @@ export const shiftLength = (rng: Rng) => minutes(rng, 50, 20, 120);
 
 /** How long someone waits alone in their lobby before they try other rules, or give up. */
 export const lonelyLength = (rng: Rng) => minutes(rng, 9, 6, 15);
-
-/** After someone leaves, how long before this room's next player may come on (if a room is wanted). */
-export const breakLength = (rng: Rng) => minutes(rng, 2, 1, 4);

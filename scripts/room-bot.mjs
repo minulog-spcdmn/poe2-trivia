@@ -125,7 +125,7 @@ const status = setInterval(async () => {
     try {
       const s = await page?.evaluate(() => window.__bot?.status());
       if (s?.host) say(`${s.host} (until ${s.until}), room ${s.code} (${s.status}), ${s.phase}: ${s.players.join(', ')}${s.spectators ? `, ${s.spectators} watching` : ''}`);
-      else if (s) say(`nobody on until ${s.backAt}`);
+      else if (s) say(`no room open; ${s.listed}`);
     } catch {
       /* the page is between loads */
     }
