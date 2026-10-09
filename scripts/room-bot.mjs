@@ -6,6 +6,7 @@
 // comes back as the same player in the same room.
 //
 //   npm run bot -- [--rooms 2] [--headed] [--no-build]
+//   (or node scripts/room-bot.mjs --rooms 2; npm run bot 2 works too)
 //
 // A room opens only when the open-room list has no room at all; with
 // --rooms 2, a second one also opens while every room listed is mid-game
@@ -28,13 +29,23 @@ const root = fileURLToPath(new URL('..', import.meta.url));
 // Kept out of the repo (.gitignore) and of the style checks (tests/style.test.ts).
 const outDir = join(root, '.bot', 'dist');
 
-const { values: opts } = parseArgs({
+const { values: args, positionals } = parseArgs({
   options: {
-    rooms: { type: 'string', default: '1' },
-    headed: { type: 'boolean', default: false },
-    'no-build': { type: 'boolean', default: false },
+    rooms: { type: 'string' },
+    headed: { type: 'boolean' },
+    'no-build': { type: 'boolean' },
   },
+  allowPositionals: true,
 });
+// PowerShell drops the `--` in `npm run bot -- --rooms 2`, and npm then takes
+// the flags as its own settings (npm_config_*) and hands on only the `2`: so
+// those count too, and a bare number is the number of rooms.
+const env = process.env;
+const opts = {
+  rooms: args.rooms ?? positionals.find((p) => /^\d+$/.test(p)) ?? '1',
+  headed: args.headed ?? env.npm_config_headed === 'true',
+  'no-build': args['no-build'] ?? (env.npm_config_build === 'false' || env.npm_config_no_build === 'true'),
+};
 const rooms = Number(opts.rooms);
 if (!Number.isInteger(rooms) || rooms < 1 || rooms > MAX_ROOMS) {
   console.error(`--rooms takes 1 to ${MAX_ROOMS}.`);
