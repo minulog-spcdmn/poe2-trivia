@@ -1,13 +1,13 @@
 // The room bot as a guest: one of the cast (identities.ts) looks over the
 // open-room list now and then, and joins a lobby whose host has been waiting
 // there alone for a while, so nobody waits for company for long (or, after a
-// longer while, one with a few in it already). It plays
+// longer while, one with others in it already, as long as it has a seat). It plays
 // a game or a few there as any guest would (player.ts, with the eyes of
 // sight.ts: a guest never gets the answers), then leaves and rests before
 // it looks again. Never one of our own bot rooms, never more than one room,
 // never back to a room it was in lately. Several may run at once, and may
 // end up in the same room, arriving one after another (the runner spaces
-// them out and keeps to so many a room).
+// them out, and keeps to --per-room guests a room if asked).
 
 import { engine, session } from '../lib/session.svelte';
 import { scanRooms, type RoomInfo } from '../lib/rooms';
@@ -25,8 +25,6 @@ const SCOUT_EVERY: [number, number] = [10000, 18000];
 const WAIT_ALONE: [number, number] = [5000, 20000];
 /** A lobby with company already: seen this long, and another may come along (ms, from..to). */
 const WAIT_MORE: [number, number] = [15000, 40000];
-/** Lobbies this full or fuller are left to people. */
-const FULL_ENOUGH = 6;
 /** Games played in a room before leaving (from..to). */
 const GAMES: [number, number] = [1, 3];
 /** Rest between rooms (ms, from..to). */
@@ -126,7 +124,7 @@ export class Joiner {
    */
   private consider(rooms: RoomInfo[], now: number) {
     const open = rooms.filter(
-      (r) => joinable(r) && r.players < FULL_ENOUGH && !this.ours.has(r.code) && now - (this.visited.get(r.code) ?? -Infinity) > AGAIN_AFTER_MS,
+      (r) => joinable(r) && !this.ours.has(r.code) && now - (this.visited.get(r.code) ?? -Infinity) > AGAIN_AFTER_MS,
     );
     const codes = new Set(open.map((r) => r.code));
     for (const code of this.waiting.keys()) if (!codes.has(code)) this.waiting.delete(code);
