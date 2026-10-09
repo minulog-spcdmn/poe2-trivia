@@ -904,7 +904,7 @@
     {:else if blastLine}
       <p class="spectate blast-line" in:fade={{ duration: 300, delay: 300 }}><span class="found-glyph" aria-hidden="true"><ItemGlyph kind="dynamite" /></span>{blastLine}</p>
     {:else if session.spectating}
-      <p class="spectate muted">You're watching. You'll play in the next game.</p>
+      <p class="spectate muted">{session.justWatching ? "You're watching." : "You're watching. You'll play in the next game."}</p>
     {:else if coop && !mine}
       <p class="spectate muted">Your team is answering…</p>
     {:else if coop}
