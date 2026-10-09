@@ -237,8 +237,10 @@
       <section class="mode" class:summoned>
         {#if summoned}
           <h2>{from} summons you</h2>
-          <p class="muted">
-            {#if closed}{from}'s room isn't open right now. Try again once {from} is hosting.{:else}Your seat is waiting in {from}'s room.{/if}
+          <!-- Said here only (no toast), where the one who tried to join is looking; read out as it changes. -->
+          <p class="muted" aria-live="polite">
+            {#if closed}<span class="closed" in:fade={{ duration: 400 }}>{from}'s room isn't open right now. Ask {from} to host, or play while you wait.</span
+              >{:else}Your seat is waiting in {from}'s room.{/if}
           </p>
         {:else}
           <h2>Join a game</h2>
@@ -593,6 +595,10 @@
   .summoned h2,
   .summoned .btn {
     overflow-wrap: anywhere;
+  }
+  /* The room the summons led to isn't open: said in the box, a shade warmer than the line it replaces. */
+  .summoned .closed {
+    color: #ecd0c6;
   }
   .code {
     font-family: var(--font-cinzel);

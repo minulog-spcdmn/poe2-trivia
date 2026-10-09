@@ -239,6 +239,8 @@
   // longer fits in the view; it then takes the pinned bars' glass.
   let bar = $state<HTMLElement>();
   let stuck = $state(false);
+  /** The countdown's height, so a phone's Copied note rises clear of it. */
+  let countH = $state(0);
   $effect(() => {
     stuck = false;
     if (!bar) return;
@@ -609,10 +611,12 @@
   {#snippet share()}
     {#if canShare}
       <span class="share" class:labelled={!run}>
+        <!-- Beside a guest's Not yet, as small as it. -->
         <button
           class="btn ghost"
+          class:small={!run && myReady}
           onclick={shareResult}
-          aria-label={run ? (team ? "Share the team's depth" : 'Share your depth') : undefined}
+          aria-label={run ? (team ? "Share the team's depth" : 'Share your depth') : 'Bring a challenger'}
           title={run ? (team ? "Share the team's depth" : 'Share your depth') : session.mode === 'local' ? 'Share the night with a friend' : 'Share the result; the link seats a friend in the next game'}
         >
           {#snippet check()}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>{/snippet}
@@ -623,9 +627,12 @@
               /></svg
             >{/snippet}
           {#if !run}
-            <!-- Copied: said in place of the words, in a cell sized to the longer, so the button keeps its width. -->
-            <span class="say" aria-live="polite"
-              ><span class:off={shared}>{@render seals()}Bring a challenger</span><span class:off={!shared}>{@render check()}Copied</span></span
+            <!-- The sign and its words, Copied said in their place, in a cell sized to the longer, so the button keeps its width.
+                 On a phone, beside the other actions in the docked bar, the sign alone (a check once copied, with the note above). -->
+            <span class="say" aria-hidden="true"
+              ><span class:off={shared}>{@render seals()}<span class="words">Bring a challenger</span></span><span class:off={!shared}
+                >{@render check()}<span class="words">Copied</span></span
+              ></span
             >
           {:else if shared}
             {@render check()}
@@ -633,7 +640,7 @@
             {@render seals()}
           {/if}
         </button>
-        {#if shared && run}<span class="copied" role="status" transition:fly={{ y: 4, duration: 200 }}>Copied</span>{/if}
+        {#if shared}<span class="copied" role="status" transition:fly={{ y: 4, duration: 200 }}>Copied</span>{/if}
       </span>
     {/if}
   {/snippet}
@@ -644,20 +651,23 @@
     </div>
   {:else}
     <!-- Turns and race: docked to the bottom of the screen until the page is
-         scrolled down to it, so the vote, Play again and the countdown are
-         always in view. -->
-    <div class="end-dock" class:stuck bind:this={bar} in:fly={{ y: 20, duration: 600, delay: 1300 }}>
+         scrolled down to it, so the vote, Play again, the countdown and
+         Bring a challenger are always in view. -->
+    <div
+      class="end-dock"
+      class:stuck
+      style:--over-count={rematchAt !== null ? `calc(${countH}px + 0.6rem)` : '0px'}
+      bind:this={bar}
+      in:fly={{ y: 20, duration: 600, delay: 1300 }}
+    >
       {#if rematchAt !== null}
-        <div class="countdown" transition:slide={{ duration: 250 }}>
+        <div class="countdown" bind:offsetHeight={countH} transition:slide={{ duration: 250 }}>
           <p aria-live="polite">Everyone's in. Next game in <b class="n">{left}</b></p>
           <span class="drain" style:transform="scaleX({drain})"></span>
         </div>
       {/if}
-      <div class="actions">{@render next()}</div>
+      <div class="actions">{@render next()}{@render share()}</div>
     </div>
-    {#if canShare}
-      <div class="challenge" in:fly={{ y: 10, duration: 600, delay: 1400 }}>{@render share()}</div>
-    {/if}
   {/if}
   {#if champ}
     <!-- Shown as the Crown lands, when it changes hands (or is held again). -->
@@ -951,6 +961,9 @@
   .share.labelled .btn {
     padding: 0.7em 1.2em 0.7em 1em;
   }
+  .share.labelled .btn.small {
+    padding: 0.45em 0.9em 0.45em 0.75em;
+  }
   .share.labelled svg {
     width: 1.25em;
     height: 1.25em;
@@ -1045,6 +1058,26 @@
       font-size: 1rem;
     }
   }
+  /* A phone's width (375px to a large phone's 430px, less a desktop
+     scrollbar): the host's three buttons, the share sign last, a little
+     closer together and tighter set to fit one row. */
+  @media (max-width: 440px) {
+    .end-dock .actions {
+      gap: 0.5rem;
+    }
+    .end-dock .btn {
+      letter-spacing: 0.08em;
+    }
+    .end-dock .btn.big {
+      padding-inline: 0.9em;
+    }
+    .end-dock .actions > .btn:not(.big, .small) {
+      padding-inline: 0.7em;
+    }
+    .end-dock .share.labelled .btn:not(.small) {
+      padding-inline: 0.6em;
+    }
+  }
 
   /* The avatar, with room for a mark on its corner. */
   .face {
@@ -1078,12 +1111,13 @@
     stroke-linecap: round;
     stroke-linejoin: round;
   }
-  /* Play again and how many are ready: on a phone the count goes under it, smaller. */
+  /* Play again and how many are ready: on a phone the count goes under it,
+     smaller, so Change settings and Bring a challenger still fit beside it. */
   .again .count {
     font-size: 0.78em;
     letter-spacing: 0.1em;
   }
-  @media (max-width: 420px) {
+  @media (max-width: 640px) {
     .btn.again {
       flex-direction: column;
       gap: 0.15em;
@@ -1245,9 +1279,46 @@
   .end-dock .actions {
     margin-top: 0;
   }
-  /* Bring a challenger, under what comes next. */
-  .challenge {
-    margin-top: 0.9rem;
+  /* Bring a challenger, beside what comes next: its words swap for Copied in
+     place, so the note above it is only for screen readers. */
+  .share.labelled .copied {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+  /* Phones: the share sign alone, about square at the height of its
+     neighbours, and the note above it once copied (as Delve's). */
+  @media (max-width: 640px) {
+    .share.labelled .btn {
+      padding: 0.7em;
+    }
+    .share.labelled .btn.small {
+      padding: 0.45em;
+    }
+    .share.labelled svg {
+      width: 1.45em;
+      height: 1.45em;
+    }
+    .share.labelled .words {
+      display: none;
+    }
+    .share.labelled .copied {
+      /* Over the countdown, when there is one, not on it. */
+      bottom: calc(100% + 0.45rem + var(--over-count, 0px));
+      width: auto;
+      height: auto;
+      margin: 0;
+      padding: 0.2em 0.6em;
+      overflow: visible;
+      clip-path: none;
+      border: 1px solid var(--gold-lo);
+    }
   }
   /* Everyone's in: the count over a gold line that drains to the next game. */
   .countdown {

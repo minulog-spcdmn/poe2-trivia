@@ -1133,12 +1133,13 @@ class Session {
   private roomUnavailable() {
     if (this.hostConn?.open) return;
     if (this.unavailableUntil && Date.now() >= this.unavailableUntil) {
-      // Summoned by name: say whose room it was, and that it may open again.
+      // Summoned by name: the Join box says whose room it was, and that it
+      // may open again (Home.svelte), so no toast repeats it.
       const from = this.inviteFrom;
       const room = this.code;
       if (!from) this.fail(`Room ${room} doesn't exist (or the host left).`, 'Room not found');
       else {
-        this.fail(`${from}'s room isn't open right now. Ask ${from} to host, or play while you wait.`, 'Room not open');
+        this.fail(null);
         this.closedRoom = room;
       }
       return;
@@ -2087,7 +2088,8 @@ class Session {
     return `Couldn't connect to the matchmaking server (${type}). Check your connection, or play hot-seat on one device.`;
   }
 
-  private fail(message: string, title?: string, keepSaved = false) {
+  /** `message` null: the page that asked says what happened itself (no toast). */
+  private fail(message: string | null, title?: string, keepSaved = false) {
     const mode = this.mode;
     // A game walked away from in this room by a reload that couldn't get back into it (it closed, or never
     // reopened) wasn't walked away from.
@@ -2095,7 +2097,7 @@ class Session {
     const saved = keepSaved ? readSaved() : null;
     this.reset();
     if (saved) writeSaved(saved);
-    this.flash(message, 'error', { title, sticky: true });
+    if (message !== null) this.flash(message, 'error', { title, sticky: true });
     if (mode === 'client') this.status = 'idle';
   }
 

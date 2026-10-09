@@ -75,3 +75,20 @@ test('bringing a challenger: the result after one game, the Crown after more, an
   const dash = String.fromCharCode(0x2014);
   for (const t of [...texts, summonsText('Ash'), summonsText('Ash', 'Bob')]) assert.ok(!t.includes(dash), t);
 });
+
+test('bringing a challenger after a race lost below zero: the win goes without a score that reads oddly', () => {
+  const link = 'https://poe2.quest/?room=K7Q2PX&from=Ash';
+  const base: NightShare = { winnerName: 'Ash', winnerIsMe: true, score: 2, runnerUp: -2, played: 1, champName: 'Ash', champIsMe: true, hotSeat: false, link };
+  assert.equal(nightShare(base), `I just won at PoE2.Quest. Take a seat for the rematch: ${link}`);
+  assert.equal(nightShare({ ...base, winnerIsMe: false }), `Ash just won at PoE2.Quest. Take a seat for the rematch: ${link}`);
+  assert.equal(nightShare({ ...base, hotSeat: true, link: 'poe2.quest' }), 'We played PoE2.Quest tonight and Ash won. Your turn: poe2.quest');
+  // The winner below zero too.
+  assert.equal(nightShare({ ...base, score: -1, runnerUp: -3 }), `I just won at PoE2.Quest. Take a seat for the rematch: ${link}`);
+  // Nobody else scored: a clean sheet reads as one.
+  assert.equal(nightShare({ ...base, runnerUp: 0 }), `I just won 2 to 0 at PoE2.Quest. Take a seat for the rematch: ${link}`);
+  // Level on points with nothing to show: the sudden death alone.
+  assert.equal(nightShare({ ...base, score: 0, runnerUp: 0 }), `I just won in sudden death at PoE2.Quest. Take a seat for the rematch: ${link}`);
+  assert.equal(nightShare({ ...base, score: -2, runnerUp: -2, hotSeat: true, link: 'poe2.quest' }), 'We played PoE2.Quest tonight and Ash won in sudden death. Your turn: poe2.quest');
+  // From the second game the Crown is told, whatever the scores.
+  assert.equal(nightShare({ ...base, played: 2 }), `I hold the Crown after 2 games of PoE2.Quest. Come and take it: ${link}`);
+});

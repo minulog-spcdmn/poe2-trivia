@@ -66,7 +66,7 @@ export interface NightShare {
  * points at the site.
  */
 export function nightShare(n: NightShare): string {
-  const result = n.runnerUp === null ? '' : n.runnerUp === n.score ? ` ${n.score} to ${n.runnerUp} in sudden death` : ` ${n.score} to ${n.runnerUp}`;
+  const result = scoreLine(n.score, n.runnerUp);
   const crown = n.played >= 2 && !!n.champName;
   if (n.hotSeat)
     return crown
@@ -74,4 +74,16 @@ export function nightShare(n: NightShare): string {
       : `We played PoE2.Quest tonight and ${n.winnerName} won${result}. Your turn: ${n.link}`;
   if (crown) return `${n.champIsMe ? 'I hold' : `${n.champName} holds`} the Crown after ${n.played} games of PoE2.Quest. Come and take it: ${n.link}`;
   return `${n.winnerIsMe ? 'I' : n.winnerName} just won${result} at PoE2.Quest. Take a seat for the rematch: ${n.link}`;
+}
+
+/**
+ * How the game was won, after "won": " 10 to 8", or level on points " 10 to
+ * 10 in sudden death". A race takes points for a wrong answer, so a score
+ * can fall below zero, and "won 2 to -2" isn't how anyone tells it: then the
+ * win goes without its score (a sudden death still says so).
+ */
+function scoreLine(score: number, runnerUp: number | null): string {
+  if (runnerUp === null) return '';
+  if (runnerUp === score) return score > 0 ? ` ${score} to ${score} in sudden death` : ' in sudden death';
+  return runnerUp < 0 || runnerUp > score ? '' : ` ${score} to ${runnerUp}`;
 }

@@ -575,9 +575,10 @@ browser (`src/lib/achievements.ts`); erasing the codex erases them.
     guest who drops out is no longer waited for, and one who comes back not
     ready stops the count. Spectators don't vote; they read "You'll play in
     the next game." (`src/lib/series.ts`). After a turns or race game, what
-    comes next (Play again, Again!, the countdown) stays docked at the
-    bottom of the screen until the page is scrolled down to it, so a long
-    night's end screen never pushes it out of sight.
+    comes next (Play again, Again!, the countdown, Bring a challenger) stays
+    docked at the bottom of the screen until the page is scrolled down to
+    it, so a long night's end screen never pushes it out of sight; on a
+    phone, Bring a challenger is the share sign beside the other buttons.
   - **Summons:** the invite link names the host (`?room=K7Q2PX&from=Ash`).
     On a phone, sharing it says "Ash summons you to a hunt on PoE2.Quest.
     Name the unique before the timer burns out." (from a guest: "Bob invites
@@ -586,17 +587,19 @@ browser (`src/lib/achievements.ts`); erasing the codex erases them.
     box reads "Ash summons you" with the code filled in, and its button
     reads "Join as Bea" once a name is in the field (a saved one fills it),
     so someone who has played here before joins in one tap. If the room is
-    gone, they read "Ash's room isn't open right now." (or, when it doesn't
-    answer, as a tab just closed may not for a while, "Couldn't reach Ash's
-    room."). A name in the link that wouldn't pass as a player's name is
-    ignored, and the link reads as a plain invite (`src/lib/invite.ts`).
+    gone, the Join box says "Ash's room isn't open right now." (or, when it
+    doesn't answer, as a tab just closed may not for a while, a notice says
+    "Couldn't reach Ash's room."). A name in the link that wouldn't pass as
+    a player's name is ignored, and the link reads as a plain invite
+    (`src/lib/invite.ts`).
   - **Bring a challenger:** at the end of a turns or race game, every player
     seated (and hot-seat, with two or more) can share the result ("I just
     won 10 to 8 at PoE2.Quest. Take a seat for the rematch: …"; from the
     second game, "Ash holds the Crown after 3 games of PoE2.Quest. Come and
-    take it: …"). Online the link is the room's summons, so a friend who
-    opens it during the end screen watches and is seated in the next game
-    (a locked room doesn't offer it, since it would turn them away).
+    take it: …"; when a race leaves the runner-up below zero, the score is
+    left out). Online the link is the room's summons, so a friend who opens
+    it during the end screen watches and is seated in the next game (a
+    locked room doesn't offer it, since it would turn them away).
     Hot-seat shares the site ("We played PoE2.Quest tonight and Ash won 10
     to 8. Your turn: poe2.quest").
   - Very strict networks (some corporate or mobile networks) can block
