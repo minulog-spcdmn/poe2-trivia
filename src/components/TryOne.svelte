@@ -5,7 +5,8 @@
   // Practice only: nothing is recorded in the codex.
   import { onMount } from 'svelte';
   import { fade, fly, scale } from 'svelte/transition';
-  import { engine } from '../lib/session.svelte';
+  import { engine, session } from '../lib/session.svelte';
+  import { codexRoute } from '../lib/codexRoute.svelte';
   import { createGame, DEFAULT_SETTINGS, isFake, questionTopic, type Question } from '../lib/game';
   import { itemImage } from '../lib/ui';
   import { sfx } from '../lib/sound';
@@ -22,6 +23,7 @@
   const game = createGame(null, { ...DEFAULT_SETTINGS, difficulty: 'custom', custom: { ...KNOBS } });
   // Gems are square tiles on cloth: keep to the items.
   const CATEGORIES = engine.categories.filter((c) => engine.byCategory.get(c)?.[0]?.kind !== 'gem');
+  const askable = CATEGORIES.reduce((n, c) => n + (engine.byCategory.get(c)?.length ?? 0), 0);
 
   let q = $state<Question | null>(null);
   let picked = $state<number | null>(null);
@@ -38,6 +40,8 @@
     lastCat = cat;
     picked = null;
     q = engine.makeQuestion(game, cat);
+    // As the game does: an answer isn't asked again, nor offered as a decoy, until its category starts over.
+    game.used.push(q.itemId);
   }
 
   const answered = $derived(picked !== null);
@@ -62,7 +66,9 @@
   function keys(e: KeyboardEvent) {
     const t = e.target as HTMLElement | null;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
-    if (e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;
+    // Browser shortcuts, held keys and an open dialog aren't answers, nor keys once the start page is on its way out.
+    if (e.metaKey || e.ctrlKey || e.altKey || e.repeat || document.querySelector('[aria-modal="true"]')) return;
+    if (session.state || codexRoute.open) return;
     const n = Number(e.key);
     if (!answered && n >= 1 && n <= 4) pick(n - 1);
   }
@@ -139,7 +145,7 @@
 
   <div class="after" aria-live="polite">
     {#if !answered}
-      <p class="hint">One of {engine.items.length}. Some names are look-alikes, and one is made up.</p>
+      <p class="hint">One of {askable}. Some names are look-alikes, and one is made up.</p>
     {:else}
       <div class="result">
         <div class="verdict {right ? 'good' : 'bad'}" bind:this={verdictEl}>
@@ -238,19 +244,20 @@
     background: linear-gradient(90deg, transparent, #fff1cf, transparent); filter: drop-shadow(0 0 3px rgba(255, 180, 90, 0.9));
     opacity: 0; scale: 0.4 1; transition: opacity 0.3s, scale 0.5s var(--ease-out);
   }
-  .option:not(:disabled):is(:hover, :focus-visible) {
+  /* Hover and focus as separate selectors: the PostCSS step (vite.config.ts) moves any selector with :hover into
+     @media (hover: hover), so one :is(:hover, :focus-visible) would take the keyboard's focus light with it. */
+  .option:not(:disabled):hover, .option:not(:disabled):focus-visible {
     border-color: var(--gold);
     background: linear-gradient(90deg, rgba(70, 48, 25, 0.96), rgba(29, 22, 14, 0.95));
     box-shadow: inset 0 0 0 1px rgba(241, 217, 155, 0.1), 0 0 26px rgba(224, 138, 68, 0.2);
   }
   .option:not(:disabled):hover .sheen::before { animation: sweep 0.8s var(--ease-out); }
-  .option:not(:disabled):is(:hover, :focus-visible)::after { opacity: 1; }
-  .option:not(:disabled):is(:hover, :focus-visible) .sheen::after { opacity: 1; }
-  .option:not(:disabled):is(:hover, :focus-visible)::after { scale: 1 1; }
-  .option:not(:disabled):is(:hover, :focus-visible) .key { color: #fff4d8; border-color: var(--gold-hi); box-shadow: 0 0 12px rgba(241, 217, 155, 0.4); }
-  .option:not(:disabled):is(:hover, :focus-visible) .key::before { opacity: 1; }
-  .option:not(:disabled):is(:hover, :focus-visible) .text { color: #fff1dc; text-shadow: 0 0 14px rgba(241, 217, 155, 0.35); }
-  .option:not(:disabled):is(:hover, :focus-visible) .cue { opacity: 1; translate: 0 -50%; }
+  .option:not(:disabled):hover::after, .option:not(:disabled):focus-visible::after { opacity: 1; scale: 1 1; }
+  .option:not(:disabled):hover .sheen::after, .option:not(:disabled):focus-visible .sheen::after { opacity: 1; }
+  .option:not(:disabled):hover .key, .option:not(:disabled):focus-visible .key { color: #fff4d8; border-color: var(--gold-hi); box-shadow: 0 0 12px rgba(241, 217, 155, 0.4); }
+  .option:not(:disabled):hover .key::before, .option:not(:disabled):focus-visible .key::before { opacity: 1; }
+  .option:not(:disabled):hover .text, .option:not(:disabled):focus-visible .text { color: #fff1dc; text-shadow: 0 0 14px rgba(241, 217, 155, 0.35); }
+  .option:not(:disabled):hover .cue, .option:not(:disabled):focus-visible .cue { opacity: 1; translate: 0 -50%; }
   .option:not(:disabled):active { transform: scale(0.985); }
   .option:disabled { cursor: default; color: inherit; }
   @keyframes sweep { from { translate: 0 0; opacity: 1; } to { translate: 560% 0; opacity: 1; } }

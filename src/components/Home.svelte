@@ -19,8 +19,8 @@
   import { BETA } from '../lib/channel';
   import { bestOf, loadRecords } from '../lib/delveRecord';
   import { shownDepth } from '../lib/delve';
-  import { zoneOf } from '../lib/codexStats';
-  import { zones } from '../lib/backdrops';
+  import type { Zone } from '../lib/codexStats';
+  import { accentAt } from '../lib/descent';
 
   const cleanCode = (v: string) => v.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, CODE_LENGTH);
 
@@ -64,10 +64,14 @@
       if (here) payOwed();
     })
     .catch((err) => console.warn('achievements', err));
-  // The deepest run alone, shown under Delve in its zone's colour.
+  // The deepest run alone, shown under Delve in its zone's colour. The zone's
+  // name comes from codexStats, loaded later (as the codex is) to keep it and
+  // codex.ts out of the first load.
   const best = bestOf(loadRecords(), true);
-  const bestZone = best ? zoneOf(best.depth) : null;
-  const bestColor = bestZone ? `rgb(${(zones[bestZone.k]?.look.accent ?? [240, 172, 96]).join(' ')})` : '';
+  const bestColor = best ? accentAt(best.depth) : '';
+  let bestZone = $state<Zone | null>(null);
+  if (best)
+    void import('../lib/codexStats').then(({ zoneOf }) => (bestZone = zoneOf(best.depth))).catch((err) => console.warn('zone', err));
 
   // ---- actions ----
   function needName() {
@@ -149,7 +153,9 @@
     cursorY = a.top - n.top + a.height / 2;
   }
   $effect(() => {
+    // Again once the deepest run's zone is in: its line can wrap and move the choices below it.
     void at;
+    void bestZone;
     void tick().then(placeCursor);
   });
   onMount(() => {
@@ -236,7 +242,7 @@
               class:on={at === i}
               bind:this={itemEls[i]}
               onclick={c.act}
-              onpointerenter={() => (at = i)}
+              onpointerenter={(e) => e.pointerType === 'mouse' && (at = i)}
               onfocus={() => (at = i)}
               onkeydown={menuKeys}
               disabled={connecting}
@@ -244,8 +250,8 @@
               <span class="t">{c.title}</span>
               <span class="d">
                 {c.line}
-                {#if c.id === 'delve' && best && bestZone}
-                  <span class="best" style:--z={bestColor}>Your deepest: <b>{shownDepth(best.depth)}</b>, {bestZone.name}.</span>
+                {#if c.id === 'delve' && best}
+                  <span class="best" style:--z={bestColor}>Your deepest: <b>{shownDepth(best.depth)}</b>{#if bestZone}, {bestZone.name}{/if}.</span>
                 {/if}
               </span>
             </button>
