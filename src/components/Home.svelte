@@ -4,7 +4,7 @@
   import { NAME_TOO_SHORT, MAX_NAME, nameHeld, nameTooShort, unlockHeldName } from '../lib/names';
   import { toasts } from '../lib/toasts.svelte';
   import { engine, session, savedName, saveName, CODE_LENGTH } from '../lib/session.svelte';
-  import { CREATOR, DONATE_URL, IMPRINT_URL, PRIVACY_URL } from '../lib/site';
+  import { CREATOR, CREATOR_URL, DONATE_URL, IMPRINT_URL, PRIVACY_URL } from '../lib/site';
   import { refuse } from '../lib/fx/moments';
   import { openCodex, codexRoute } from '../lib/codexRoute.svelte';
   import { DELVE_LINK_PARAM } from '../lib/delveShare';
@@ -418,7 +418,7 @@
       <div class="rule" aria-hidden="true"><span></span></div>
       <div class="band">
         <div class="made">
-          <p class="credit">Made by <a class="maker" href={DONATE_URL} target="_blank" rel="noopener noreferrer" title="Support {CREATOR}">{CREATOR}</a></p>
+          <p class="credit">Made by <a class="maker" href={CREATOR_URL} target="_blank" rel="noopener noreferrer" title="{CREATOR} on Twitch">{CREATOR}</a></p>
           <a class="support" href={DONATE_URL} target="_blank" rel="noopener noreferrer" aria-describedby="support-note">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z" /></svg>
             Support the project
@@ -858,6 +858,8 @@
     font-style: italic;
     letter-spacing: 0;
     text-transform: none;
+    /* The pill keeps to one line; its note wraps inside its box. */
+    white-space: normal;
     line-height: 1.35;
     color: var(--text);
     background: rgba(12, 10, 8, 0.96);

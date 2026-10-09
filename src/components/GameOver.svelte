@@ -6,7 +6,7 @@
   import Avatar from './Avatar.svelte';
   import PlayerName from './PlayerName.svelte';
   import ArcaneCircle from './ArcaneCircle.svelte';
-  import { CREATOR, DONATE_URL, SITE_URL } from '../lib/site';
+  import { CREATOR, CREATOR_URL, DONATE_URL, SITE_URL } from '../lib/site';
   import { backdropShadow } from '../lib/backdropShadow';
   import { fxActive, fxUserOn, onFxChange } from '../lib/fx/core';
   import { victory } from '../lib/fx/moments';
@@ -349,7 +349,7 @@
 
   <p class="credit" in:fly={{ y: 10, duration: 600, delay: 1600 }}>
     <a href={SITE_URL} target="_blank" rel="noreferrer">poe2.quest</a> · made by
-    <a class="maker" href={DONATE_URL} target="_blank" rel="noopener noreferrer" title="Support {CREATOR}">{CREATOR}</a>
+    <a class="maker" href={CREATOR_URL} target="_blank" rel="noopener noreferrer" title="{CREATOR} on Twitch">{CREATOR}</a>
     · <a class="tip" href={DONATE_URL} target="_blank" rel="noopener noreferrer">♥ support the project</a>
   </p>
 </div>
