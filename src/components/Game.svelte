@@ -142,7 +142,8 @@
           ? startLine(run.startedAt)
           : `Depth ${shownDepth(depth)}`
         : hunt === 'first'
-          ? mine && !local
+          ? // Alone on this device (a quick hunt), it speaks to the one hunting.
+            mine && (!local || s.players.length === 1)
             ? 'Your first hunt'
             : `${active.name}'s first hunt`
           : hunt === 'real'

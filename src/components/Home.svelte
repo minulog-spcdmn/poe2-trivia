@@ -136,11 +136,11 @@
     join();
   }
 
-  /** Enter in the name field: join if a room code has been entered (or is still missing letters), otherwise open a room. */
+  /** Enter in the name field: join if a room code has been entered (or is still missing letters), otherwise the main button's quick hunt. */
   function enterName(e: KeyboardEvent) {
     if (e.key !== 'Enter' || e.isComposing || connecting) return;
     if (code) join();
-    else host();
+    else playNow();
   }
 
   /**

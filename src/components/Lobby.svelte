@@ -2,7 +2,7 @@
   import { flip } from 'svelte/animate';
   import { fly, scale, slide } from 'svelte/transition';
   import { session } from '../lib/session.svelte';
-  import { MAX_PLAYERS, RACE_DEFAULT_TIMER, TIMER_STEPS, difficultyOf, rulesFor, type Difficulty, type GameMode } from '../lib/game';
+  import { INITIATE_GRACE, MAX_PLAYERS, RACE_DEFAULT_TIMER, TIMER_STEPS, difficultyOf, rulesFor, type Difficulty, type GameMode } from '../lib/game';
   import { DIFFICULTY_NAMES, describe, namesOf } from '../lib/difficultyText';
   import CustomDifficulty from './CustomDifficulty.svelte';
   import DelveRules from './DelveRules.svelte';
@@ -189,11 +189,11 @@
   const difficulty = $derived(difficultyOf(s.settings.difficulty));
   const lockout = $derived(rulesFor(s.settings).lockout);
   /**
-   * Initiates here for their first game (Initiate's grace, game.ts): the host
-   * may make it a short one. Only while the target is above that.
+   * Initiates here for their first game (Initiate's grace, game.ts, none of it
+   * spent yet): the host may make it a short one. Only while the target is above that.
    */
-  const initiates = $derived(s.players.filter((p) => (p.grace ?? 0) > 0 && p.connected));
-  const shortFirstGame = $derived(isHost && s.phase === 'lobby' && s.settings.mode === 'turns' && s.settings.targetScore > 5 && initiates.length > 0);
+  const initiates = $derived(s.players.filter((p) => p.grace === INITIATE_GRACE && p.connected));
+  const shortFirstGame = $derived(isHost && s.phase === 'lobby' && !race && !delve && s.settings.targetScore > 5 && initiates.length > 0);
   const initiateNames = $derived(
     namesOf(
       initiates.map((p) => p.id),

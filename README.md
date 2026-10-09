@@ -428,8 +428,10 @@ dark silhouettes, and the codex can't be opened while in a room. It is kept in t
 browser's localStorage only (`src/lib/codex.ts`). In a turns game, the
 reveal of an item new to your codex ends its result line with a chip
 ("New • 7 / 501": how many items the codex holds now), on every screen; in
-a browser's first game, each player's first right answer is marked as their
-first unique identified.
+a browser's first game, each player's first right answer adds "Your first
+unique, identified." (online, on that player's own screen) and lights up the
+name plate with a gong. While the codex is blank, its "Begin the hunt"
+starts a quick hunt (see Play now).
 
 The Codex has two tabs: **Collection** (the above) and **Delve**, built
 from the same parts. Alone and together are kept apart and never summed:
@@ -463,7 +465,8 @@ kept in this browser too (`src/lib/delveRecord.ts`).
 marks a moment worth telling or a goal worth chasing. Four groups of nine, laid
 out in even rows. Each group opens with a very easy one, so a new player soon
 finds out there are achievements at all, and has one to laugh at and one that
-takes real mastery:
+takes real mastery (a first quick hunt, alone on one device, always earns
+Knowledge's):
 - **Knowledge:** 5 different items answered right, 25 and 100 right in a
   row on your own turns (races and runs together neither add nor break a
   streak), 5 and 20 in a row each within 2 seconds, every item of a category
@@ -528,7 +531,9 @@ browser (`src/lib/achievements.ts`); erasing the codex erases them.
   - The room code stays in the header during the game, unless the host
     hid it for streaming.
   - After a game, the host can **Play again** (same settings, starts right
-    away, spectators included) or **Change settings** (back to the lobby).
+    away, spectators included) or **Change settings** (back to the lobby). A
+    game alone in hot-seat offers **Hunt again** and **Play a friend**
+    instead (see The hunt recap).
   - Very strict networks (some corporate or mobile networks) can block
     WebRTC. In that case, use hot-seat.
 - **Open rooms:** a host can set their room to **Public**, which lists it
@@ -550,7 +555,8 @@ browser (`src/lib/achievements.ts`); erasing the codex erases them.
   shows the best hunt on the chosen one: the fewest questions it took to
   reach 5. Any game alone in hot-seat to 5 on one of those counts as a quick
   hunt; this browser keeps how many it finished and its bests
-  (`src/lib/hunt.ts`). With an invite link, Join is the main button instead.
+  (`src/lib/hunt.ts`). Enter in the name field plays now too, unless a room
+  code is typed. With an invite link, Join is the main button instead.
 - **Initiates:** a player whose browser has never played (nothing in its
   codex, no quick hunt recorded) joins as an Initiate: a guest's hello says
   so (`fresh`), a host is one in their own room, and in hot-seat everyone
@@ -559,10 +565,14 @@ browser (`src/lib/achievements.ts`); erasing the codex erases them.
   pictures, the answer from the category they picked and three from other
   families of item (both weapon categories count as one, never a tablet),
   nothing made up, mirrored or in grayscale. The timer and the lockout stay
-  the room's. Their first turn's banner says it is their first hunt, a note
-  counts the gentle questions down, and the turn after the last one says the
-  real hunt begins. The lobby tags Initiates, and while the target is above 5
-  the host can make it first to 5 in one tap. Deathmatches, races and Delve
+  the room's. Their first turn's banner says it is their first hunt ("Your
+  first hunt" on their own screen and alone in hot-seat, "Bea's first hunt"
+  for the others), a note counts the gentle questions down, the others are
+  told why it looks easy, and the turn after the last one says the real hunt
+  begins (on the Initiate's own screen, and in hot-seat). The lobby tags
+  Initiates while they have gentle questions left, and before their first
+  game, while the target is above 5, the host can make it first to 5 in one
+  tap. Deathmatches, races and Delve
   ignore it; what is left of it carries over to the next game, and these
   answers go into the codex under Cruel.
 - **The hunt recap:** the end screen of a turns game shows what this device
@@ -629,6 +639,10 @@ with that in mind. Guests, on the other hand, are treated as untrusted:
   loop, since every join is announced to the whole room.
 - **Bots.** Answers that arrive faster than a human could react (less than
   about 200 ms after the art reached that player) are ignored.
+- **Initiates.** A guest's hello may say its browser has never played
+  (`fresh`), which nothing can check: anyone can claim three gentle
+  questions that way, once per seat (a rejoin keeps the seat's own count),
+  and the lobby shows everyone the Initiate tag it brings.
 - **Race fairness.** The host's own answers are delayed by a typical guest's
   one-way network latency, measured with pings. Pings carry random numbers,
   so a guest can't answer them early to look closer than it is.
