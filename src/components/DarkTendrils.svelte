@@ -133,14 +133,13 @@
   let lift: HTMLDivElement;
 
   onMount(() => {
-    const still = () => motion.still;
     let raf = 0;
     let shown = -1;
 
     function frame(now: number) {
       raf = 0;
       const p = pressureLevel(now);
-      if (Math.abs(p - shown) > (still() ? 0.05 : 0.004) || (p === 0 && shown !== 0)) {
+      if (Math.abs(p - shown) > (motion.still ? 0.05 : 0.004) || (p === 0 && shown !== 0)) {
         shown = p;
         const on = p > 0.001;
         el.style.visibility = on ? 'visible' : 'hidden';

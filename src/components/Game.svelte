@@ -20,7 +20,6 @@
   import { accentAt, milestoneAt, stratumName, swing } from '../lib/descent';
   import { zoneAt } from '../lib/zoneSigils';
   import Threshold from './zonebanner/Threshold.svelte';
-  import { quiet } from './zonebanner/head';
   import { DELAY as ZONE_DELAY, EXIT as ZONE_EXIT, HOLD as ZONE_HOLD, STILL_FADE } from './zonebanner/thresholdArt';
   import { descended, milestoneReached } from '../lib/fx/moments';
   import { BLAST_IMPACT_MS, BLAST_IN_DELAY_MS, BLAST_IN_MS, blastAway } from '../lib/blastAway';
@@ -200,7 +199,7 @@
       const sigil = zoneAt(depth);
       const best = session.bestAtStart;
       const turn = s.turnCount;
-      const still = quiet();
+      const still = motion.still;
       let next: Card | null = null;
       if (name) next = { key, turn, title: name, sigil, accent, label: `Depth ${shownDepth(depth)}: ${name}.`, leaving: false, still };
       else if (!group && best !== null && depth === best + 1)

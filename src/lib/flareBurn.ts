@@ -55,7 +55,6 @@ const RED = '236, 62, 92';
 const PINK = '247, 163, 179';
 const HOT = '255, 240, 243';
 
-const still = () => motion.still;
 const rand = (lo: number, hi: number) => lo + Math.random() * (hi - lo);
 const px = (n: number) => `${n.toFixed(1)}px`;
 const deg = (a: number) => `${((a * 180) / Math.PI).toFixed(1)}deg`;
@@ -264,7 +263,7 @@ export type FlareStrike = {
 
 /** The strike: see the top of this file. */
 export function flareStrike({ timer, pill, icon }: FlareStrike) {
-  const calm = still();
+  const calm = motion.still;
   // Measured once, before anything is added.
   const from = boxOf(icon) ?? boxOf(pill);
   const to = boxOf(timer);
@@ -483,7 +482,7 @@ const RING = 26 / 32;
 
 /** The burning: see the top of this file. `timer` is the clock's own element; its pieces go in it. */
 export function flareBurning(timer: HTMLElement): FlareBurn {
-  const calm = still();
+  const calm = motion.still;
   let level = 1;
   let head = 1;
   let stopped = false;

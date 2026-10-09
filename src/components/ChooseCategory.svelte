@@ -258,14 +258,13 @@
   for (const url of categoryIcons()) measure(url);
 
   // The deal: the cards slide in face down one after another, then turn face
-  // up from left to right. Seconds from when they appear.
+  // up from left to right. Seconds from when they appear. Held still (reduced
+  // motion, or the effects off) they only fade in, face up, and the vote pips
+  // appear and go at once.
   const DEAL = 0.42;
   const FLIP = 0.46;
   const dealAt = (i: number) => 0.15 + i * 0.07;
   const flipAt = (i: number) => 0.62 + i * 0.12;
-  const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  /** Reduced motion, or effects off: the vote pips appear and go at once. */
-  const calm = () => motion.still;
   /** Cards turn over their longer side: across when stacked as wide rows (narrow screens), else sideways. */
   const narrow = matchMedia('(max-width: 700px)');
   /** When the deal began; null when the cards appeared without one (as after a refresh). */
@@ -278,11 +277,11 @@
   // an opacity on the element that turns would flatten it, and its back
   // would show through the face.
   function appear(_node: Element, { i }: { i: number }) {
-    if (still) return { duration: 200, css: (t: number) => `opacity:${t}` };
+    if (motion.still) return { duration: 200, css: (t: number) => `opacity:${t}` };
     return { delay: Math.round(dealAt(i) * 1000), duration: DEAL * 400, css: (t: number) => `opacity:${t}` };
   }
   function deal(node: Element, { i, n }: { i: number; n: number }) {
-    if (still) return {};
+    if (motion.still) return {};
     dealtAt ??= performance.now();
     // The face's own entrance (see .dealt below) plays with the deal only.
     node.classList.add('dealt');
@@ -312,7 +311,7 @@
 
   /** Svelte action: the card's moment as it lands face up. */
   function revealed(node: HTMLElement, i: number) {
-    if (still) return;
+    if (motion.still) return;
     // Read now: the cards may be fading out by the time it lands, their deriveds gone inert.
     const kind = kindOf(s.offered[i]);
     const dm = !!s.deathmatch;
@@ -470,7 +469,7 @@
           {@const faces = voters.length > 5 ? voters.slice(0, 4) : voters}
           <span class="votes" aria-hidden="true">
             {#each faces as p (p.id)}
-              <span class="pip" class:me={p.id === me} title={p.name} use:cast in:scale={{ start: 0.3, duration: calm() ? 0 : 300 }} out:scale={{ start: 0.3, duration: calm() ? 0 : 200 }}
+              <span class="pip" class:me={p.id === me} title={p.name} use:cast in:scale={{ start: 0.3, duration: motion.still ? 0 : 300 }} out:scale={{ start: 0.3, duration: motion.still ? 0 : 200 }}
                 ><Avatar name={p.name} hue={p.hue} size={22} /></span
               >
             {/each}

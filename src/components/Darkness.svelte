@@ -20,7 +20,6 @@
   let wake = () => {};
 
   onMount(() => {
-    const still = () => motion.still;
     let raf = 0;
     let shown = -1;
 
@@ -31,7 +30,7 @@
       // swallows the scene behind (nor any lighter as a right answer's light
       // overshoots): it stays at the very edges, off the question and answers.
       const o = Math.min(1, Math.max(0, level) / CLOCK_PEAK) ** 2;
-      if (Math.abs(o - shown) > (still() ? 0.05 : 0.004) || (o === 0 && shown !== 0)) {
+      if (Math.abs(o - shown) > (motion.still ? 0.05 : 0.004) || (o === 0 && shown !== 0)) {
         shown = o;
         el.style.opacity = o > 0.001 ? o.toFixed(3) : '0';
         el.style.visibility = o > 0.001 ? 'visible' : 'hidden';

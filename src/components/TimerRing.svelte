@@ -96,10 +96,14 @@
   });
   // The ring burning (lib/flareBurn.ts), its light dying down with the added
   // seconds (the clock's loop sets it); it goes out as the question ends.
+  // Lit untracked: it reads whether to hold still (lib/motion.svelte.ts) as
+  // it catches, and a change of that mid-burn must not put it out and light
+  // it again from the start.
   let burn: FlareBurn | null = null;
   $effect(() => {
     if (!lit || stopped || !el) return;
-    const b = flareBurning(el);
+    const ring = el;
+    const b = untrack(() => flareBurning(ring));
     burn = b;
     return () => {
       b.stop();

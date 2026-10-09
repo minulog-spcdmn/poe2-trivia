@@ -4,8 +4,6 @@
 // works its geometry out from this, so it keeps to its box and never reaches
 // the cards, the question or the player list.
 
-import { motion } from '../../lib/motion.svelte';
-
 export type Head = {
   /** The head's size. */
   w: number;
@@ -86,6 +84,3 @@ export function watchHead(el: HTMLElement, set: (h: Head) => void, watch: (HTMLE
     ro.disconnect();
   };
 }
-
-/** Reduced motion or the effects off: the gate isn't drawn, it simply fades in and out. */
-export const quiet = () => motion.still;
