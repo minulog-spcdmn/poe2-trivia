@@ -1,11 +1,13 @@
 // The room bot as a guest: one of the cast (identities.ts) looks over the
 // open-room list now and then, and joins a lobby whose host has been waiting
-// there alone for a while, so nobody waits for company for long. It plays
+// there alone for a while, so nobody waits for company for long (or, after a
+// longer while, one with a few in it already). It plays
 // a game or a few there as any guest would (player.ts, with the eyes of
 // sight.ts: a guest never gets the answers), then leaves and rests before
 // it looks again. Never one of our own bot rooms, never more than one room,
-// never back to a room it was in lately. Several may run at once, each in a
-// room of its own (the runner tells each where the others are).
+// never back to a room it was in lately. Several may run at once, and may
+// end up in the same room, arriving one after another (the runner spaces
+// them out and keeps to so many a room).
 
 import { engine, session } from '../lib/session.svelte';
 import { scanRooms, type RoomInfo } from '../lib/rooms';
@@ -18,13 +20,17 @@ import { lastReading, sight } from './sight';
 
 const TICK_MS = 250;
 /** The open-room list is checked this often (ms, from..to). */
-const SCOUT_EVERY: [number, number] = [15000, 25000];
+const SCOUT_EVERY: [number, number] = [10000, 18000];
 /** A host alone in their lobby this long (ms, from..to, rolled for each room) gets company. */
-const WAIT_ALONE: [number, number] = [15000, 45000];
+const WAIT_ALONE: [number, number] = [5000, 20000];
+/** A lobby with company already: seen this long, and another may come along (ms, from..to). */
+const WAIT_MORE: [number, number] = [15000, 40000];
+/** Lobbies this full or fuller are left to people. */
+const FULL_ENOUGH = 6;
 /** Games played in a room before leaving (from..to). */
 const GAMES: [number, number] = [1, 3];
 /** Rest between rooms (ms, from..to). */
-const REST: [number, number] = [3 * 60000, 10 * 60000];
+const REST: [number, number] = [2 * 60000, 6 * 60000];
 /** A room left isn't joined again for this long. */
 const AGAIN_AFTER_MS = 60 * 60000;
 /** Joining that hasn't got in by then is given up. */
@@ -41,7 +47,8 @@ const { __claimRoom: claimRoom, __releaseRoom: releaseRoom } = window as unknown
 };
 const between = (lo: number, hi: number) => Math.round(lo + Math.random() * (hi - lo));
 
-type Doing = 'resting' | 'looking' | 'joining' | 'playing';
+/** `asking`: waiting for the runner's yes to a room (claimRoom), before joining. */
+type Doing = 'resting' | 'looking' | 'asking' | 'joining' | 'playing';
 
 export class Joiner {
   private doing: Doing = 'looking';
@@ -50,11 +57,11 @@ export class Joiner {
   private player: Player | null = null;
   private room: RoomInfo | null = null;
   private recent: string[] = [];
-  /** Lobbies seen with their host alone: since when, and how long until we join. */
-  private alone = new Map<string, { since: number; wait: number }>();
+  /** Lobbies it could join: since when it has seen each, and how long until it does. */
+  private waiting = new Map<string, { since: number; wait: number }>();
   /** Rooms we were in, and when we left. */
   private visited = new Map<string, number>();
-  /** Our own bot rooms, and the rooms our other guests are in (the runner says): never joined. */
+  /** Our own bot rooms (the runner says): never joined. */
   private ours = new Set<string>();
   private gamesLeft = 0;
   private lastPhase = '';
@@ -79,7 +86,7 @@ export class Joiner {
     if (session.mode) session.leave();
   }
 
-  /** The runner: our own bot rooms' codes, and those our other guests are in. */
+  /** The runner: our own bot rooms' codes. */
   setOurs(codes: string[]) {
     this.ours = new Set(codes.filter(Boolean));
   }
@@ -112,25 +119,29 @@ export class Joiner {
     this.scoutTimer = setTimeout(() => void this.scout(), between(...SCOUT_EVERY));
   }
 
-  /** Keeps track of hosts waiting alone, and joins the one that has waited its while. */
+  /**
+   * Keeps track of lobbies it could join (a host alone soonest, one with
+   * company already after a longer while), and joins the one that has waited
+   * its while, the emptiest first.
+   */
   private consider(rooms: RoomInfo[], now: number) {
-    const lonely = rooms.filter(
-      (r) => joinable(r) && r.players === 1 && !this.ours.has(r.code) && now - (this.visited.get(r.code) ?? -Infinity) > AGAIN_AFTER_MS,
+    const open = rooms.filter(
+      (r) => joinable(r) && r.players < FULL_ENOUGH && !this.ours.has(r.code) && now - (this.visited.get(r.code) ?? -Infinity) > AGAIN_AFTER_MS,
     );
-    const codes = new Set(lonely.map((r) => r.code));
-    for (const code of this.alone.keys()) if (!codes.has(code)) this.alone.delete(code);
-    for (const r of lonely) if (!this.alone.has(r.code)) this.alone.set(r.code, { since: now, wait: between(...WAIT_ALONE) });
-    const due = lonely.filter((r) => now - this.alone.get(r.code)!.since >= this.alone.get(r.code)!.wait);
+    const codes = new Set(open.map((r) => r.code));
+    for (const code of this.waiting.keys()) if (!codes.has(code)) this.waiting.delete(code);
+    for (const r of open) if (!this.waiting.has(r.code)) this.waiting.set(r.code, { since: now, wait: between(...(r.players === 1 ? WAIT_ALONE : WAIT_MORE)) });
+    const due = open.filter((r) => now - this.waiting.get(r.code)!.since >= this.waiting.get(r.code)!.wait);
     if (!due.length) return;
-    due.sort((a, b) => this.alone.get(a.code)!.since - this.alone.get(b.code)!.since);
+    due.sort((a, b) => a.players - b.players || this.waiting.get(a.code)!.since - this.waiting.get(b.code)!.since);
     void this.join(due[0], now);
   }
 
   private async join(room: RoomInfo, now: number) {
-    // Several guests at once: the runner gives a room to the first to ask, so two never join the same one.
-    this.doing = 'joining';
+    // Several guests at once: the runner spaces their arrivals in a room, and keeps to so many a room.
+    this.doing = 'asking';
     if (claimRoom && !(await claimRoom(room.code))) {
-      this.ours.add(room.code);
+      this.waiting.set(room.code, { since: now, wait: between(...WAIT_MORE) });
       this.doing = 'looking';
       return;
     }
@@ -141,8 +152,9 @@ export class Joiner {
     this.who = identityOf(name, engine.categories, undefined, engine.items);
     this.player = new Player(this.who.persona, sight);
     this.room = room;
-    this.alone.delete(room.code);
+    this.waiting.delete(room.code);
     this.gamesLeft = between(...GAMES);
+    this.doing = 'joining';
     this.until = Date.now() + JOIN_GIVE_UP_MS;
     this.lastPhase = '';
     this.lobbySince = 0;
@@ -171,7 +183,7 @@ export class Joiner {
       if (now >= this.until) this.doing = 'looking';
       return;
     }
-    if (this.doing === 'looking') return;
+    if (this.doing === 'looking' || this.doing === 'asking') return;
     const s = session.state;
     const me = session.myPlayerId;
     // Turned away, kicked, or the room closed: the session let go.

@@ -5,7 +5,7 @@
 // again, and the browser profile keeps who is on and the room's save, so it
 // comes back as the same player in the same room.
 //
-//   npm run bot -- [--rooms 2] [--mode turns,race,delve] [--join | --joiners 3] [--headed] [--no-build]
+//   npm run bot -- [--rooms 2] [--mode turns,race,delve] [--join | --joiners 3] [--per-room 3] [--headed] [--no-build]
 //   (or node scripts/room-bot.mjs --rooms 2; from PowerShell npm run bot 2 delve join,
 //   or npm run bot rooms=2 joiners=3, work too)
 //
@@ -13,7 +13,8 @@
 // three by default); --mode delve makes every room a Delve room.
 // --join: also a guest, who joins other people's public rooms when their
 // host has waited alone a while (src/bot/joiner.ts); --joiners N for N of
-// them (up to 5, each in a room of its own); --rooms 0 for guests only.
+// them (up to 5); --per-room N: at most N of them in one room (3 by default),
+// arriving 5 to 20 s apart; --rooms 0 for guests only.
 //
 // A room opens only when the open-room list has no room at all; with
 // --rooms 2, a second one also opens while every room listed is mid-game
@@ -43,6 +44,7 @@ const { values: args, positionals } = parseArgs({
     mode: { type: 'string' },
     join: { type: 'boolean' },
     joiners: { type: 'string' },
+    'per-room': { type: 'string' },
     headed: { type: 'boolean' },
     'no-build': { type: 'boolean' },
   },
@@ -58,18 +60,24 @@ const MODES = ['turns', 'race', 'delve'];
 const env = process.env;
 const words = positionals.flatMap((p) => p.toLowerCase().split(','));
 const numberOf = (name) =>
-  args[name] ?? (/^\d+$/.test(env[`npm_config_${name}`] ?? '') ? env[`npm_config_${name}`] : undefined) ?? words.find((w) => w.startsWith(`${name}=`))?.slice(name.length + 1);
+  args[name] ?? (/^\d+$/.test(env[`npm_config_${name.replace(/-/g, '_')}`] ?? '') ? env[`npm_config_${name.replace(/-/g, '_')}`] : undefined) ?? words.find((w) => w.startsWith(`${name}=`))?.slice(name.length + 1);
 const opts = {
   rooms: numberOf('rooms') ?? positionals.find((p) => /^\d+$/.test(p)) ?? '1',
   mode: args.mode ?? (words.filter((w) => MODES.includes(w)).join(',') || 'turns,race,delve'),
   join: args.join ?? (words.includes('join') || env.npm_config_join === 'true'),
   joiners: numberOf('joiners'),
+  perRoom: numberOf('per-room') ?? '3',
   headed: args.headed ?? env.npm_config_headed === 'true',
   'no-build': args['no-build'] ?? (env.npm_config_build === 'false' || env.npm_config_no_build === 'true'),
 };
 const joiners = Number(opts.joiners ?? (opts.join ? 1 : 0));
 if (!Number.isInteger(joiners) || joiners < 0 || joiners > MAX_JOINERS) {
   console.error(`--joiners takes 0 to ${MAX_JOINERS}.`);
+  process.exit(2);
+}
+const perRoom = Number(opts.perRoom);
+if (!Number.isInteger(perRoom) || perRoom < 1 || perRoom > MAX_JOINERS) {
+  console.error(`--per-room takes 1 to ${MAX_JOINERS}.`);
   process.exit(2);
 }
 const rooms = Number(opts.rooms);
@@ -101,8 +109,13 @@ const proxy = process.env.HTTPS_PROXY ? [`--proxy-server=${process.env.HTTPS_PRO
 
 let stopping = false;
 
-/** Rooms our guests have taken, by code: which guest (its slot). The first to ask gets it. */
+/**
+ * Rooms our guests are in, by code: which guests (their slots), and when the
+ * last one came in. A room takes so many (--per-room), and they come in
+ * spaced out, as people do.
+ */
 const claims = new Map();
+const ARRIVALS_APART_MS = [5000, 20000];
 
 /** Bots in all: the rooms, and the guests (--join, --joiners) last. */
 const bots = rooms + joiners;
@@ -140,13 +153,16 @@ async function runRoom(slot) {
     p.on('pageerror', (err) => say('page error:', err.message));
     if (guest) {
       await p.exposeFunction('__claimRoom', (code) => {
-        if (claims.has(code) && claims.get(code) !== slot) return false;
-        for (const [c, s] of claims) if (s === slot) claims.delete(c);
-        claims.set(code, slot);
+        const c = claims.get(code) ?? { slots: new Set(), next: 0 };
+        if (!c.slots.has(slot) && (c.slots.size >= perRoom || Date.now() < c.next)) return false;
+        for (const [, other] of claims) other.slots.delete(slot);
+        c.slots.add(slot);
+        c.next = Date.now() + ARRIVALS_APART_MS[0] + Math.random() * (ARRIVALS_APART_MS[1] - ARRIVALS_APART_MS[0]);
+        claims.set(code, c);
         return true;
       });
       await p.exposeFunction('__releaseRoom', (code) => {
-        if (claims.get(code) === slot) claims.delete(code);
+        claims.get(code)?.slots.delete(slot);
       });
     }
     let gone = false;
@@ -177,7 +193,7 @@ async function runRoom(slot) {
   return room;
 }
 
-log([rooms && `${rooms === 1 ? '1 room' : `${rooms} rooms`}, hosting ${modes.join(', ')}`, joiners && `${joiners === 1 ? 'a guest' : `${joiners} guests`} joining people`].filter(Boolean).join('; '));
+log([rooms && `${rooms === 1 ? '1 room' : `${rooms} rooms`}, hosting ${modes.join(', ')}`, joiners && `${joiners === 1 ? 'a guest' : `${joiners} guests (up to ${Math.min(perRoom, joiners)} a room)`} joining people`].filter(Boolean).join('; '));
 const all = [];
 for (let slot = 1; slot <= bots; slot++) all.push(await runRoom(slot));
 
@@ -189,10 +205,8 @@ const siblings = bots > 1
       const hosts = all.slice(0, rooms);
       const codes = await Promise.all(hosts.map(({ page }) => page?.evaluate(() => { const s = window.__bot?.status(); return s?.host ? s.code : ''; }).catch(() => '') ?? ''));
       if (rooms === 2) await Promise.all(hosts.map(({ page }, i) => page?.evaluate((code) => window.__bot?.setSibling(code), codes[1 - i]).catch(() => {})));
-      // Each guest: our rooms, and the rooms the other guests are in.
-      const guests = all.slice(rooms);
-      const inside = await Promise.all(guests.map(({ page }) => page?.evaluate(() => window.__bot?.status().code ?? '').catch(() => '') ?? ''));
-      await Promise.all(guests.map(({ page }, i) => page?.evaluate((list) => window.__bot?.setOurs(list), [...codes, ...inside.filter((_, j) => j !== i)]).catch(() => {})));
+      // Each guest: our own rooms, never joined.
+      await Promise.all(all.slice(rooms).map(({ page }) => page?.evaluate((list) => window.__bot?.setOurs(list), codes).catch(() => {})));
     }, SIBLINGS_EVERY_MS)
   : null;
 
