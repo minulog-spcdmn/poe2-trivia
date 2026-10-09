@@ -138,8 +138,10 @@ const HOST_SILENCE_MS = 15000;
 const NETWORK_ERRORS = new Set(['network', 'server-error', 'socket-error', 'socket-closed']);
 /** No pong for this long: the connection is dead. */
 const DEAD_AFTER_MS = 15000;
-/** Faster than this (after the art reached them) is not a human answer. */
+/** Faster than this (after the question reached them: its art, and in Delve its clock) is not a human answer. */
 const MIN_HUMAN_MS = 200;
+/** What a guest is told when their answer came faster than that: it doesn't count, and they may answer again. */
+const TOO_QUICK = 'Too quick to count: the question had only just reached you. Answer again.';
 /** Cap on the delay added to the host's own race answers. */
 const MAX_HOST_HANDICAP_MS = 300;
 /** A disconnected player's turn is skipped after this long, unless they come back. */
@@ -189,7 +191,7 @@ interface Guest {
   rtt: number;
   lastPong: number;
   pings: Map<number, number>;
-  /** When this guest was sent the current question's first picture. */
+  /** When this guest was sent the current question's first picture (page clock). */
   mediaAt: { qid: number; at: number } | null;
   /** Which page load the connection comes from (older clients don't say). */
   tab: string | null;
@@ -319,6 +321,11 @@ class Session {
   /** How long this device took to answer the current question (its askedAt), for the codex. */
   private answered: { qid: number; ms: number; share?: number } | null = null;
   /**
+   * Delve: when this device first had the question (its askedAt) with its
+   * clock running (page clock), which is when it opens to answers (noteClock).
+   */
+  private clockSeen: { qid: number; at: number } | null = null;
+  /**
    * Delve: the art of this question goes first to those who answer it (the
    * player alone, or everyone standing in co-op), and to everyone else
    * (spectators, those who perished) once the clock has started, so nobody
@@ -439,9 +446,6 @@ class Session {
       writeSaved(saved);
       this.mode = 'host';
       this.status = 'connecting';
-      // The room being reopened, as a guest's join names its own: should it
-      // fail to reopen, fail() lets go of a game walked away from in it.
-      this.code = saved.code;
       this.loadPrivate(saved.priv);
       this.openRoom(saved.code, 0, underRuleset(renameCategories(saved.state)));
     } else if (saved.mode === 'client') this.join(saved.code, saved.name);
@@ -547,9 +551,9 @@ class Session {
         this.fail(
           `Couldn't reopen room ${code}: it still seems to be open, maybe in another tab or window. Refresh to try again.`,
           'Room not reopened',
-          true,
+          code,
         );
-      else if (resumeState) this.fail(`${this.networkHint(err.type)} Refresh to try reopening room ${code}.`, 'Room not reopened', true);
+      else if (resumeState) this.fail(`${this.networkHint(err.type)} Refresh to try reopening room ${code}.`, 'Room not reopened', code);
       else this.fail(this.networkHint(err.type), 'No connection');
     });
   }
@@ -626,7 +630,11 @@ class Session {
           }
         } else if (msg.t === 'action') {
           if (!guest.playerId) return;
-          if (msg.action.type === 'answer' && this.tooFast(guest)) return;
+          if (msg.action.type === 'answer' && this.tooFast(guest, msg.action.askedAt)) {
+            // It doesn't count, but not without a word: they may answer again.
+            this.send(conn, { t: 'error', message: TOO_QUICK, askedAt: this.state.question!.askedAt });
+            return;
+          }
           this.setState(engine.apply(this.state, msg.action, guest.playerId));
         }
       } catch (err) {
@@ -780,14 +788,19 @@ class Session {
     this.priv.secrets.splice(drop, 1);
   }
 
-  /** Answers that arrive before a human could have seen the question. */
-  private tooFast(guest: Guest) {
+  /** An answer (to the question asked at `askedAt`) that arrives before a human could have seen the question. */
+  private tooFast(guest: Guest, askedAt: number | undefined) {
     const q = this.state?.question;
-    if (!q) return false;
+    // One for a question gone by is the engine's to drop ("Too late!").
+    if (!q || (askedAt !== undefined && askedAt !== q.askedAt)) return false;
     // No art went out at all: don't hold answers back waiting for it.
     if (this.artFailedFor === q.askedAt) return false;
     if (!guest.mediaAt || guest.mediaAt.qid !== q.askedAt) return true;
-    return Date.now() - guest.mediaAt.at < guest.rtt + MIN_HUMAN_MS;
+    // Delve: nor before its clock started, which may be well after the art
+    // went out (during a team's draw); the host notes it running as it goes
+    // out to everyone (noteClock).
+    const clock = this.clockSeen?.qid === q.askedAt ? this.clockSeen.at : 0;
+    return performance.now() - Math.max(guest.mediaAt.at, clock) < guest.rtt + MIN_HUMAN_MS;
   }
 
   private startPings() {
@@ -1018,12 +1031,11 @@ class Session {
 
   private sendMedia(conn: DataConnection, g: Guest, m: MediaMsg) {
     // A veil alone shows nothing to answer from, so it isn't the art reaching
-    // them (tooFast). In Delve it is: answers open with the clock, which starts
-    // once the veil is out, while its first patch only burns in a moment later;
-    // a quick answer would otherwise be dropped without a word, its player
-    // unable to answer again.
+    // them (tooFast). In Delve it is: there a question opens to answers once
+    // its veil is in and its clock runs (QuestionView's waiting), its patches
+    // only burning in after.
     const reached = m.t !== 'veil' || !!this.state?.delve;
-    if (reached && (!g.mediaAt || g.mediaAt.qid !== m.qid)) g.mediaAt = { qid: m.qid, at: Date.now() };
+    if (reached && (!g.mediaAt || g.mediaAt.qid !== m.qid)) g.mediaAt = { qid: m.qid, at: performance.now() };
     this.send(conn, m);
   }
 
@@ -1272,6 +1284,8 @@ class Session {
           this.status = 'ready';
           break;
         case 'error':
+          // An answer turned down (too quick) didn't count: the one given next is timed instead.
+          if (msg.askedAt !== undefined && this.answered?.qid === msg.askedAt) this.answered = null;
           if (this.status === 'connecting') this.fail(versionRefusal(msg.message), "Couldn't join");
           else this.flash(msg.message, 'error');
           break;
@@ -1353,11 +1367,11 @@ class Session {
     if (action.type === 'answer' && action.index !== null && q && shown.qid === q.askedAt && this.answered?.qid !== q.askedAt) {
       // On a veiled picture, also how much of it had burnt in (for an achievement, lib/achievements.ts).
       const share = q.veil && shown.veil?.count ? Object.keys(shown.patches).length / shown.veil.count : undefined;
-      // Delve shows nothing to answer from until its clock starts, and its art
-      // may come well before that (during a team's draw): timed from the clock.
-      const since = performance.now() - shown.since;
-      const ms = q.clockAt !== undefined ? Math.min(since, Math.max(0, this.hostNow() - q.clockAt)) : since;
-      this.answered = { qid: q.askedAt, ms, ...(share !== undefined ? { share } : {}) };
+      // Timed on this device's clock from its first picture, or in Delve from
+      // its clock running here if that came later (its art may come well
+      // before, during a team's draw): only then does it open to answers.
+      const clock = this.clockSeen?.qid === q.askedAt ? this.clockSeen.at : 0;
+      this.answered = { qid: q.askedAt, ms: performance.now() - Math.max(shown.since, clock), ...(share !== undefined ? { share } : {}) };
     }
     if (this.mode === 'client') {
       this.hostConn?.send({ t: 'action', action });
@@ -1573,12 +1587,25 @@ class Session {
     this.delveResult = { id: run.id, depth: run.depth, previousBest: was ? was.previousBest : r.previousBest, best: was ? was.best : r.best };
   }
 
-  /** What every device makes of a state change, host and guest alike: records, sounds and notices, achievements. */
+  /** What every device makes of a state change, host and guest alike: a Delve clock starting, records, sounds and notices, achievements. */
   private noteChange(prev: GameState | null, next: GameState) {
+    this.noteClock(next);
     this.noteRun(prev, next);
     this.onNewState(prev, next);
     this.noteEncounter(prev, next);
     this.noteMoments(prev, next);
+  }
+
+  /**
+   * Delve: a question opens to answers as the state that starts its clock
+   * comes in (behind the pictures, for those answering), a little ahead of
+   * the clock's start (clockAt) itself. Noted as it first does on this
+   * device, to time its answer from (dispatch); on the host that is as it
+   * goes out to everyone, a guest's answer taking a round trip at least (tooFast).
+   */
+  private noteClock(next: GameState) {
+    const q = next.question;
+    if (next.delve && q && q.deadline !== null && this.clockSeen?.qid !== q.askedAt) this.clockSeen = { qid: q.askedAt, at: performance.now() };
   }
 
   /**
@@ -2013,12 +2040,17 @@ class Session {
     return `Couldn't connect to the matchmaking server (${type}). Check your connection, or play hot-seat on one device.`;
   }
 
-  private fail(message: string, title?: string, keepSaved = false) {
+  /**
+   * Gives up on the room with a notice that stays up. `reopening`: the room a
+   * reload couldn't reopen (session.code stays empty until a room is open),
+   * which stays saved so a refresh tries again.
+   */
+  private fail(message: string, title?: string, reopening?: string) {
     const mode = this.mode;
     // A game walked away from in this room by a reload that couldn't get back into it (it closed, or never
     // reopened) wasn't walked away from.
-    forgiveLeaving({ room: this.code });
-    const saved = keepSaved ? readSaved() : null;
+    forgiveLeaving({ room: reopening ?? this.code });
+    const saved = reopening ? readSaved() : null;
     this.reset();
     if (saved) writeSaved(saved);
     this.flash(message, 'error', { title, sticky: true });
