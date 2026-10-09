@@ -11,8 +11,8 @@ import { activeRules, grayscaleFor, type GameState, type Question } from '../lib
 import { scanRooms, type RoomInfo } from '../lib/rooms';
 import { engine, SAVE, session } from '../lib/session.svelte';
 import { readStored, removeStored, writeStored } from '../lib/storage';
-import { answerDelay, blasts, chooseAnswer, chooseCard, knowChance, pickDelay, revives, type Ask } from './brain';
-import { blastProblem, isGroupRun, livesOf, reviveProblem } from '../lib/delve';
+import { answerDelay, blasts, chooseAnswer, chooseCard, findAppetite, knowChance, pickDelay, type Ask } from './brain';
+import { blastProblem, findLosses, fuseDue, inventoryOf, isGroupRun, livesOf, reviveProblem, shownDepth, standingIds, teamItemReady } from '../lib/delve';
 import { identityOf, lonelyLength, nextName, otherPrefs, shiftLength, type Identity, type RoomPrefs } from './identities';
 import { joinable, makesWay, wanted, type Role } from './wanted';
 
@@ -434,7 +434,19 @@ export class Bot {
     if (this.decided.has(key)) return;
     this.decided.add(key);
     const offered = [...s.offered];
-    const finds = (s.delve?.finds ?? []).map((f) => f.category);
+    const me = session.myPlayerId!;
+    const inv = s.delve ? inventoryOf(s, me) : null;
+    // What each find on offer would put at stake for it now.
+    const finds = (s.delve?.finds ?? []).map((f) => ({
+      category: f.category,
+      appetite: findAppetite(this.persona, {
+        lives: livesOf(s, me),
+        wards: inv?.wards ?? 0,
+        losses: findLosses(f.kind),
+        depth: shownDepth(s.round),
+        teammates: standingIds(s).filter((id) => id !== me).length,
+      }),
+    }));
     this.plans.set(key, {
       at: now + pickDelay(this.persona, Math.random),
       run: () => {
@@ -448,7 +460,7 @@ export class Bot {
     });
   }
 
-  /** Delve together: gives a teammate who perished one of its lives, if it is that kind of player (once a depth each). */
+  /** Delve together: gives a teammate who perished one of its lives, whenever it can (once a depth each, after a moment). */
   private planRevive(s: GameState, now: number) {
     const me = session.myPlayerId!;
     for (const p of s.players) {
@@ -456,7 +468,6 @@ export class Bot {
       const key = `revive:${p.id}:${s.round}`;
       if (this.decided.has(key)) continue;
       this.decided.add(key);
-      if (!revives(this.persona, Math.random)) continue;
       this.plans.set(key, {
         at: now + between(1500, 5000) * this.persona.pace,
         run: () => {
@@ -476,9 +487,11 @@ export class Bot {
   }
 
   /**
-   * Decides once per question whether it knows, when to answer and what (in
-   * Delve, maybe to detonate dynamite instead). Its time counts from the
-   * clock's start; an answer the clock beats isn't given.
+   * Decides once per question whether it knows, when to answer and what. Its
+   * time counts from the clock's start; an answer the clock beats isn't
+   * given (a flare that burns moves the clock's end on, and with it the
+   * answer still in time). Not sure in Delve: alone it may detonate dynamite
+   * rather than guess; together it holds back (lateGuess).
    */
   private planAnswer(s: GameState, q: Question, now: number) {
     const key = `answer:${q.askedAt}`;
@@ -510,6 +523,7 @@ export class Bot {
       const o = cur?.question;
       return cur?.phase === 'question' && o?.askedAt === q.askedAt && (!o.deadline || Date.now() <= o.deadline) ? o : null;
     };
+    if (ask.mode === 'delve' && !knows && isGroupRun(s)) return this.lateGuess(key, q, ask, start);
     if (ask.mode === 'delve' && !knows && !blastProblem(s, me) && blasts(this.persona, Math.random)) {
       // Not sure, and dynamite at hand: blast it away for another (deciding so is quicker than answering).
       this.plans.set(key, {
@@ -536,5 +550,35 @@ export class Bot {
         session.dispatch({ type: 'answer', index, askedAt: q.askedAt });
       },
     });
+  }
+
+  /**
+   * Delve together, not sure: a teammate may know it, and a wrong guess
+   * costs a life and strikes the option for everyone, so it waits to near
+   * the clock's end. Then, if nobody has got it: dynamite going off by itself
+   * at 0 costs nobody anything, so it leaves that to the fuse; a flare about
+   * to burn gives everyone more time, so it waits for the new end; otherwise
+   * it guesses, as a time-out would cost the life anyway.
+   */
+  private lateGuess(key: string, q: Question, ask: Ask, start: number) {
+    const me = session.myPlayerId!;
+    const margin = between(1000, 2500);
+    const run = () => {
+      const cur = session.state;
+      const o = cur?.question;
+      if (!cur || cur.phase !== 'question' || o?.askedAt !== q.askedAt || !o.deadline || o.struck?.some((x) => x.by === me)) return;
+      const now = Date.now();
+      // Not near the end yet (or a flare moved it on): wait for it.
+      if (o.deadline - margin > now + 300) return void this.plans.set(key, { at: o.deadline - margin, run });
+      if (fuseDue(cur)) return log('holds: the dynamite goes off by itself');
+      if (teamItemReady(cur, 'flares') && !o.flared) return void this.plans.set(key, { at: o.deadline + 400, run });
+      const correct = o.options.indexOf(o.itemId);
+      const names = o.options.map((id, i) => o.labels[i] ?? engine.byId.get(id)?.name ?? '');
+      const ruledOut = (o.struck ?? []).map((x) => x.index);
+      const index = chooseAnswer(names, correct, false, ask, ruledOut, Math.random);
+      log(`guesses ${index === correct ? 'right' : 'wrong'} near the end`);
+      session.dispatch({ type: 'answer', index, askedAt: q.askedAt });
+    };
+    this.plans.set(key, { at: Math.max(start + 1000, q.deadline! - margin), run });
   }
 }

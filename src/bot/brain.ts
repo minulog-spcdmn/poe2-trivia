@@ -8,8 +8,8 @@
 // than others, takes its time (longer on hard questions and when unsure),
 // and when it doesn't know, it narrows the options down and guesses, falling
 // for the one most like the right one when the guess is wrong. The same
-// player in every mode: take turns, race and Delve (where it also goes for
-// finds, detonates dynamite and gives teammates lives, each by its nature).
+// player in every mode: take turns, race and Delve (where it also weighs up
+// finds, uses dynamite, and always gives a teammate who perished a life).
 // Pure functions of their inputs and a random source, so tests can pin them.
 
 import { nameSimilarity, type DifficultyRules } from '../lib/game.ts';
@@ -24,12 +24,10 @@ export interface Persona {
   pace: number;
   /** Added to the chance of knowing an answer in each category. */
   affinity: Record<string, number>;
-  /** Delve: the chance it goes for a find on offer. */
+  /** Delve: how keen it is on finds (before what a miss would cost it: findAppetite). */
   finds: number;
-  /** Delve: the chance it detonates dynamite on a question it isn't sure of. */
+  /** Delve alone: the chance it detonates dynamite on a question it isn't sure of, rather than guess. */
   boldness: number;
-  /** Delve together: the chance it gives a teammate who perished one of its lives, when it can. */
-  generosity: number;
 }
 
 /** What the bot sees of a question when it decides. */
@@ -79,9 +77,8 @@ export function makePersona(categories: string[], rng: Rng): Persona {
     skill: between(rng, -0.06, 0.015),
     pace: between(rng, 0.75, 1.35),
     affinity: Object.fromEntries(categories.map((c) => [c, between(rng, -0.07, 0.025)])),
-    finds: between(rng, 0.35, 1),
-    boldness: between(rng, 0.2, 0.95),
-    generosity: between(rng, 0.3, 0.95),
+    finds: between(rng, 0.6, 1),
+    boldness: between(rng, 0.4, 0.95),
   };
 }
 
@@ -137,11 +134,39 @@ export function answerDelay(p: Persona, ask: Ask, knows: boolean, rng: Rng): num
   return Math.round(Math.max(1000, s * 1000));
 }
 
-/** Delve: whether, not sure of the answer, it blasts the question away with dynamite (when it may). */
+/**
+ * Delve alone: whether, not sure of the answer, it blasts the question away
+ * with dynamite (when it may) rather than guess. Together it never does early:
+ * a teammate may know it, and at 0 the dynamite goes off by itself anyway.
+ */
 export const blasts = (p: Persona, rng: Rng) => rng() < p.boldness;
 
-/** Delve together: whether it gives a teammate who perished one of its lives (when it may). */
-export const revives = (p: Persona, rng: Rng) => rng() < p.generosity;
+/** What a find would put at stake for the bot (Delve). */
+export interface FindStake {
+  lives: number;
+  wards: number;
+  /** What a miss on it costs (an Azurite Vein two). */
+  losses: number;
+  /** The depth as players see it. */
+  depth: number;
+  /** Delve together: teammates still standing. */
+  teammates: number;
+}
+
+/**
+ * How likely it goes for a find: a find is always worth having, but a miss
+ * on it (asked deeper down) can cost the run. Keen as the player is, less so
+ * when a miss would take its last life, or all but one, and the deeper the
+ * worse; teammates still standing make it braver (one of them may know it,
+ * and the team goes on).
+ */
+export function findAppetite(p: Persona, f: FindStake): number {
+  const left = f.lives + f.wards - f.losses;
+  const deep = clamp((f.depth - 20) / 60, 0, 1);
+  let risk = left <= 0 ? 0.6 + 0.35 * deep : left === 1 ? 0.25 + 0.35 * deep : 0.1 * deep;
+  if (f.teammates > 0) risk *= 0.6;
+  return p.finds * (1 - risk);
+}
 
 /**
  * The option the bot picks: the right one if it knows, else a guess that is
@@ -175,10 +200,17 @@ export function pickCategory(p: Persona, offered: string[], rng: Rng): string {
   return offered[weighted(offered.map((c) => Math.exp(15 * (p.affinity[c] ?? 0))), rng)];
 }
 
-/** The card the bot picks (or votes for): a find on offer as often as it likes them, else a category it knows. */
-export function chooseCard(p: Persona, offered: string[], finds: string[], rng: Rng): string {
-  const on = finds.filter((c) => offered.includes(c));
-  if (on.length && rng() < p.finds) return on[Math.floor(rng() * on.length)];
+/**
+ * The card the bot picks (or votes for): a find on offer as readily as its
+ * appetite for it says (findAppetite), else a category it knows.
+ */
+export function chooseCard(p: Persona, offered: string[], finds: { category: string; appetite: number }[], rng: Rng): string {
+  const on = finds.filter((f) => offered.includes(f.category));
+  for (let i = on.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [on[i], on[j]] = [on[j], on[i]];
+  }
+  for (const f of on) if (rng() < f.appetite) return f.category;
   return pickCategory(p, offered, rng);
 }
 

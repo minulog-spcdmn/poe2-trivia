@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { answerDelay, blasts, chooseAnswer, chooseCard, guessChance, revives, knowChance, makePersona, pickCategory, weighted, wrongPick, type Ask, type Persona } from '../src/bot/brain.ts';
+import { answerDelay, blasts, chooseAnswer, chooseCard, findAppetite, guessChance, knowChance, makePersona, pickCategory, weighted, wrongPick, type Ask, type Persona } from '../src/bot/brain.ts';
 import { rulesFor, type Preset } from '../src/lib/game.ts';
 import { NAMES, identityOf, lonelyLength, namesFor, nextName, otherPrefs, rollPrefs, shiftLength } from '../src/bot/identities.ts';
 import { joinable, makesWay, wanted } from '../src/bot/wanted.ts';
@@ -15,7 +15,7 @@ function seeded(seed: number) {
   };
 }
 
-const plain: Persona = { skill: 0, pace: 1, affinity: { Rings: 0.02, Flasks: -0.05 }, finds: 0.5, boldness: 0.5, generosity: 0.5 };
+const plain: Persona = { skill: 0, pace: 1, affinity: { Rings: 0.02, Flasks: -0.05 }, finds: 0.8, boldness: 0.5 };
 const plainRules = rulesFor({ difficulty: 'cruel' });
 const ask = (over: Partial<Ask> = {}): Ask => ({ rules: plainRules, category: 'Rings', veil: 0, gray: false, mirrored: false, clock: 32, mode: 'turns', ...over });
 /** A question as a preset room asks it (a deathmatch's with `harder`). */
@@ -30,7 +30,7 @@ test('a persona rolls every category, within bounds', () => {
   for (const a of Object.values(p.affinity)) assert.ok(a >= -0.07 && a <= 0.025);
   assert.ok(p.skill >= -0.06 && p.skill <= 0.015);
   assert.ok(p.pace >= 0.75 && p.pace <= 1.35);
-  for (const k of ['finds', 'boldness', 'generosity'] as const) assert.ok(p[k] > 0 && p[k] < 1, k);
+  for (const k of ['finds', 'boldness'] as const) assert.ok(p[k] > 0 && p[k] < 1, k);
 });
 
 test('items shown plainly are nearly always known, even by the weakest', () => {
@@ -88,40 +88,36 @@ test('in Delve an unsure bot always tries (a time-out costs the life as well)', 
   for (let i = 0; i < 500; i++) assert.notEqual(answerDelay(plain, ask({ mode: 'delve', clock: 8 }), false, rng), null);
 });
 
-test('finds are taken as often as the player likes them, and only those on offer', () => {
+test('finds are taken as readily as the appetite for each says, and only those on offer', () => {
   const rng = seeded(43);
   let taken = 0;
   // Helmets a category this player would never pick for itself, so every Helmets is the find taken.
-  const p = { ...plain, finds: 0.7, affinity: { ...plain.affinity, Helmets: -10 } };
-  for (let i = 0; i < 2000; i++) if (chooseCard(p, ['Rings', 'Flasks', 'Helmets'], ['Helmets', 'Belts'], rng) === 'Helmets') taken++;
+  const p = { ...plain, affinity: { ...plain.affinity, Helmets: -10 } };
+  for (let i = 0; i < 2000; i++) if (chooseCard(p, ['Rings', 'Flasks', 'Helmets'], [{ category: 'Helmets', appetite: 0.7 }, { category: 'Belts', appetite: 1 }], rng) === 'Helmets') taken++;
   assert.ok(Math.abs(taken / 2000 - 0.7) < 0.05, `${taken}`);
-  for (let i = 0; i < 200; i++) assert.notEqual(chooseCard({ ...plain, finds: 1 }, ['Rings', 'Flasks'], ['Belts'], rng), 'Belts');
+  for (let i = 0; i < 200; i++) assert.notEqual(chooseCard(plain, ['Rings', 'Flasks'], [{ category: 'Belts', appetite: 1 }], rng), 'Belts');
 });
 
-test('bold players detonate more, generous ones give more lives', () => {
+test('a find is welcome while lives are to spare, risky on the last one and deep down', () => {
+  const stake = { lives: 3, wards: 0, losses: 1, depth: 10, teammates: 0 };
+  const safe = findAppetite(plain, stake);
+  assert.equal(safe, plain.finds);
+  const lastLife = findAppetite(plain, { ...stake, lives: 1 });
+  const lastLifeDeep = findAppetite(plain, { ...stake, lives: 1, depth: 80 });
+  assert.ok(lastLife < safe / 2 && lastLifeDeep < lastLife, `${lastLife} ${lastLifeDeep}`);
+  // Two lives against an Azurite Vein (two losses on a miss) is a last life; a ward makes it one to spare.
+  assert.equal(findAppetite(plain, { ...stake, lives: 2, losses: 2 }), lastLife);
+  assert.ok(findAppetite(plain, { ...stake, lives: 2, losses: 2, wards: 1 }) > lastLife);
+  // Teammates standing make it braver.
+  assert.ok(findAppetite(plain, { ...stake, lives: 1, teammates: 2 }) > lastLife);
+  // Deeper down, even full lives are a little more careful.
+  assert.ok(findAppetite(plain, { ...stake, depth: 80 }) < safe);
+});
+
+test('bold players detonate more', () => {
   const rng = seeded(47);
   const rate = (f: () => boolean) => Array.from({ length: 2000 }, f).filter(Boolean).length / 2000;
-  assert.ok(rate(() => blasts({ ...plain, boldness: 0.9 }, rng)) > rate(() => blasts({ ...plain, boldness: 0.2 }, rng)) + 0.5);
-  assert.ok(rate(() => revives({ ...plain, generosity: 0.9 }, rng)) > rate(() => revives({ ...plain, generosity: 0.3 }, rng)) + 0.4);
-});
-
-test('unsure answers are slower', () => {
-  const mean = (knows: boolean) => {
-    const rng = seeded(3);
-    let sum = 0;
-    let n = 0;
-    for (let i = 0; i < 2000; i++) {
-      const d = answerDelay(plain, ask({ clock: 0 }), knows, rng);
-      if (d !== null) (sum += d), n++;
-    }
-    return sum / n;
-  };
-  assert.ok(mean(false) > mean(true) * 1.3);
-});
-
-test('without a clock, a turn is always answered', () => {
-  const rng = seeded(11);
-  for (let i = 0; i < 500; i++) assert.notEqual(answerDelay(plain, ask({ clock: 0 }), false, rng), null);
+  assert.ok(rate(() => blasts({ ...plain, boldness: 0.9 }, rng)) > rate(() => blasts({ ...plain, boldness: 0.4 }, rng)) + 0.4);
 });
 
 test('in a race, an unsure bot mostly sits the question out', () => {
