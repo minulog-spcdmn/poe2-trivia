@@ -227,8 +227,9 @@ export function encounterAt(s: GameState, me: string | null, hotSeat: boolean, m
   const r = s.reveal;
   if (s.phase !== 'reveal' || !q || !r || !r.correctId) return null;
   const race = s.settings.mode === 'race';
-  // Delve answers are filed under the preset their depth plays like, not the room's leftover setting.
-  const difficulty = s.delve ? delveTier(s.round) : difficultyOf(s.settings.difficulty);
+  // Delve answers are filed under the preset their depth plays like, not the room's leftover setting;
+  // an Initiate question's under Cruel, the easiest (game.ts INITIATE_RULES), whatever the room's.
+  const difficulty = s.delve ? delveTier(s.round) : q.initiate ? 'cruel' : difficultyOf(s.settings.difficulty);
   const e: Encounter = { at: q.askedAt, itemId: r.correctId, mode: q.mode, difficulty, race };
   if (s.delve)
     e.delve = {

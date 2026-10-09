@@ -160,3 +160,11 @@ export function setQuickDifficulty(d: Preset) {
 export function isNewcomer(): boolean {
   return CODEX_NAMES.every((n) => tryReadStored(n) === null) && !loadHunts().games;
 }
+
+/**
+ * What a join from this browser carries: while it has never played, the
+ * player joins as an Initiate (game.ts INITIATE_GRACE: three gentle questions).
+ */
+export function initiateFlag(): { initiate?: true } {
+  return isNewcomer() ? { initiate: true } : {};
+}

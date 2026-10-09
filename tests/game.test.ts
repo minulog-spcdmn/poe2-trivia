@@ -4,6 +4,8 @@ import { readFileSync } from 'node:fs';
 import { PALETTE } from '../src/lib/palette.ts';
 import { Engine, ActionError, AUTO_NEXT_MS, autoNextLeft, createGame, KNOB_STEPS, PRESETS, cleanKnobs, knobsOf, isDifficulty, isFake, rulesFor, RARE_GROUPS, RARE_MAX_OPTIONS, maxFakes, nameSimilarity, publicView, questionTopic, singular, renameCategories, MAX_PLAYERS, type Difficulty, type Preset, type GameState, type Item, type Question } from '../src/lib/game.ts';
 
+import { INITIATE_GRACE, activeRules, grayscaleFor, initiateFamily } from '../src/lib/game.ts';
+
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
 const fakes: Record<string, string[]> = JSON.parse(readFileSync(new URL('../src/data/fakes.json', import.meta.url), 'utf8'));
 
@@ -1409,4 +1411,191 @@ test('names need at least two characters', () => {
   s = engine.apply(s, { type: 'join', playerId: 'p1', name: 'Bo' }, 'p1');
   assert.equal(s.players[1].name, 'Bo');
   assert.throws(() => engine.apply(s, { type: 'rename', playerId: 'p1', name: 'B' }, 'p1'), /at least 2/);
+});
+
+// ---- Initiate's grace ---------------------------------------------------------
+
+/** Players joined as Initiates (from their own ids), with the made-up names in play. */
+function initiates(names: string[], target = 99, difficulty: Difficulty = 'cruel', seed = 42) {
+  const engine = new Engine(items, { rng: seeded(seed), fakes });
+  let s: GameState = createGame('p0', { targetScore: target, timer: 0, difficulty });
+  names.forEach((name, i) => (s = engine.apply(s, { type: 'join', playerId: `p${i}`, name, initiate: true }, `p${i}`)));
+  return { engine, s };
+}
+
+/** Everything an Initiate question promises: four pictures, one from the category picked, the rest from three other families. */
+function assertGentle(engine: Engine, q: Question, category: string) {
+  assert.equal(q.initiate, true);
+  assert.equal(q.mode, 'art');
+  assert.equal(q.options.length, 4);
+  assert.ok(q.options.includes(q.itemId));
+  assert.ok(!q.options.some(isFake), 'nothing made up');
+  assert.deepEqual(q.mirrored, [false, false, false, false], 'nothing flipped');
+  assert.equal(q.veil, null);
+  const answer = engine.byId.get(q.itemId)!;
+  assert.equal(answer.category, category);
+  assert.equal(q.prompt, answer.name);
+  const picked = q.options.map((id) => engine.byId.get(id)!);
+  assert.equal(new Set(picked.map(initiateFamily)).size, 4, 'four families');
+  const decoys = picked.filter((it) => it.id !== q.itemId);
+  for (const it of decoys) {
+    assert.notEqual(initiateFamily(it), initiateFamily(answer), `${it.name} is of the answer's family`);
+    assert.ok(!Object.hasOwn(RARE_GROUPS, it.group), `${it.name} is a tablet`);
+  }
+  assert.equal(picked.filter((it) => it.category === category).length, 1, 'one picture from the category picked');
+}
+
+test('an initiate gets three gentle questions', () => {
+  // Hot-seat joins come from null, online ones from the player's own id.
+  const hotSeat = createGame(null, { targetScore: 99, timer: 0, difficulty: 'merciless' });
+  const e = new Engine(items, { rng: seeded(3), fakes });
+  assert.equal(e.apply(hotSeat, { type: 'join', playerId: 'a', name: 'Ash', initiate: true }, null).players[0].grace, INITIATE_GRACE);
+  assert.equal(e.apply(hotSeat, { type: 'join', playerId: 'a', name: 'Ash' }, null).players[0].grace, undefined, 'only a newcomer is an Initiate');
+
+  let { engine, s } = initiates(['Ash'], 99, 'merciless');
+  assert.equal(s.players[0].grace, INITIATE_GRACE);
+  // Coming back keeps the seat and its grace.
+  s = engine.apply(s, { type: 'join', playerId: 'p0', name: 'Ash' }, 'p0');
+  assert.equal(s.players[0].grace, INITIATE_GRACE);
+  s = engine.apply(s, { type: 'start' }, 'p0');
+  for (let i = 0; i < INITIATE_GRACE; i++) {
+    const category = s.offered[0];
+    s = engine.apply(s, { type: 'pick', category }, 'p0');
+    assertGentle(engine, s.question!, category);
+    assert.equal(s.players[0].grace, INITIATE_GRACE - 1 - i);
+    s = engine.apply(s, { type: 'answer', index: right(s.question!) }, 'p0');
+    s = engine.apply(s, { type: 'next' }, 'p0');
+  }
+  assert.equal(s.players[0].grace, 0, 'graduated');
+  s = engine.apply(s, { type: 'pick', category: s.offered[0] }, 'p0');
+  const q = s.question!;
+  assert.equal(q.options.length, PRESETS.merciless.options, 'the fourth is the room’s own');
+  assert.equal(q.initiate, undefined);
+  assert.ok(!('grace' in s.players[0]), 'the grace is gone');
+
+  // Every category, weapons included, many times over.
+  ({ engine, s } = initiates(['Ash'], 99, 'eternal', 11));
+  s = engine.apply(s, { type: 'start' }, 'p0');
+  for (let i = 0; i < 400; i++) {
+    const category = engine.categories[i % engine.categories.length];
+    const gentle = engine.makeQuestion(s, category);
+    assertGentle(engine, gentle, category);
+    s.used.push(gentle.itemId);
+  }
+});
+
+test('grace is the same on every difficulty', () => {
+  for (const difficulty of ['cruel', 'merciless', 'eternal'] as Preset[]) {
+    let { engine, s } = initiates(['Ash'], 99, difficulty, 5);
+    s = engine.apply(s, { type: 'start' }, 'p0');
+    for (let i = 0; i < INITIATE_GRACE; i++) {
+      s = engine.apply(s, { type: 'pick', category: s.offered[0] }, 'p0');
+      const q = s.question!;
+      assert.equal(q.options.length, 4, difficulty);
+      assert.ok(q.mirrored!.every((m) => !m), `${difficulty}: nothing flipped`);
+      assert.ok(!q.options.some(isFake), `${difficulty}: nothing made up`);
+      assert.equal(grayscaleFor(s), 'off', `${difficulty}: in colour`);
+      // The lockout stays the room's.
+      assert.equal(activeRules(s).lockout, PRESETS[difficulty].lockout);
+      s = engine.apply(s, { type: 'answer', index: wrongIdx(s.question!) }, 'p0');
+      s = engine.apply(s, { type: 'next' }, 'p0');
+    }
+  }
+});
+
+test('a deathmatch neither eases nor spends grace', () => {
+  let { engine, s } = initiates(['Ash', 'Bram'], 1);
+  s = engine.apply(s, { type: 'start' }, 'p0');
+  // Both right on their first (gentle) question: tied at the target.
+  for (let i = 0; i < 2; i++) {
+    const me = s.players[s.turn].id;
+    s = engine.apply(s, { type: 'pick', category: s.offered[0] }, me);
+    assert.equal(s.question!.initiate, true);
+    s = engine.apply(s, { type: 'answer', index: right(s.question!) }, me);
+    s = engine.apply(s, { type: 'next' }, me);
+  }
+  assert.ok(s.deathmatch);
+  const me = s.players[s.turn].id;
+  s = engine.apply(s, { type: 'pick', category: s.offered[0] }, me);
+  assert.equal(s.question!.options.length, PRESETS.merciless.options, 'one tier harder, as ever');
+  assert.equal(s.question!.initiate, undefined);
+  assert.deepEqual(
+    s.players.map((p) => p.grace),
+    [2, 2],
+  );
+});
+
+test('a reask keeps an Initiate question and spends nothing', () => {
+  let { engine, s } = initiates(['Ash']);
+  s = engine.apply(s, { type: 'start' }, 'p0');
+  const category = s.offered[0];
+  s = engine.apply(s, { type: 'pick', category }, 'p0');
+  const before = s.question!;
+  const lean = structuredClone(s.artLean);
+  s = engine.apply(s, { type: 'reask' }, 'p0');
+  assert.notEqual(s.question!.askedAt, before.askedAt);
+  assertGentle(engine, s.question!, category);
+  for (const id of before.options) assert.ok(!s.question!.options.includes(id), 'none of its pictures come back');
+  assert.equal(s.players[0].grace, INITIATE_GRACE - 1);
+  assert.deepEqual(s.artLean, lean);
+});
+
+test('race and Delve ignore grace', () => {
+  let { engine, s } = initiates(['Ash', 'Bram'], 99, 'merciless');
+  s = engine.apply(s, { type: 'settings', settings: { mode: 'race' } }, 'p0');
+  s = engine.apply(s, { type: 'start' }, 'p0');
+  for (let i = 0; i < 4; i++) {
+    assert.equal(s.question!.initiate, undefined);
+    assert.equal(s.question!.options.length, PRESETS.merciless.options);
+    s = engine.apply(s, { type: 'answer', index: right(s.question!) }, 'p1');
+    s = engine.apply(s, { type: 'next' }, 'p0');
+  }
+  assert.deepEqual(
+    s.players.map((p) => p.grace),
+    [INITIATE_GRACE, INITIATE_GRACE],
+  );
+
+  const engine2 = new Engine(items, { rng: seeded(8), fakes });
+  let d = createGame(null, { targetScore: 1, timer: 0, difficulty: 'cruel', mode: 'delve', public: false, locked: false });
+  d = engine2.apply(d, { type: 'join', playerId: 'p0', name: 'Ash', initiate: true }, null);
+  d = engine2.apply(d, { type: 'start' }, null);
+  for (let i = 0; i < 4; i++) {
+    d = engine2.apply(d, { type: 'pick', category: d.offered[0] }, null);
+    assert.equal(d.question!.initiate, undefined);
+    d = engine2.apply(d, { type: 'clock', askedAt: d.question!.askedAt }, null);
+    d = engine2.apply(d, { type: 'answer', index: right(d.question!) }, null);
+    d = engine2.apply(d, { type: 'next' }, null);
+  }
+  assert.equal(d.players[0].grace, INITIATE_GRACE);
+});
+
+test('a newcomer who watches first is seated as an Initiate', () => {
+  let { engine, s } = setup(['Ash']);
+  s = engine.apply(s, { type: 'start' }, 'p0');
+  s = engine.apply(s, { type: 'join', playerId: 'late', name: 'Late', initiate: true }, 'late');
+  assert.deepEqual(s.spectators, [{ id: 'late', name: 'Late', initiate: true }]);
+  s = engine.apply(s, { type: 'restart' }, 'p0');
+  assert.equal(s.players.find((p) => p.id === 'late')!.grace, INITIATE_GRACE);
+  assert.equal(s.players.find((p) => p.id === 'p0')!.grace, undefined);
+  // What's left of a grace carries over to the next game.
+  s = engine.apply(s, { type: 'start' }, 'p0');
+  while (s.players[s.turn].id !== 'late') {
+    s = engine.apply(s, { type: 'pick', category: s.offered[0] }, s.players[s.turn].id);
+    s = engine.apply(s, { type: 'answer', index: wrongIdx(s.question!) }, s.players[s.turn].id);
+    s = engine.apply(s, { type: 'next' }, s.players[s.turn].id);
+  }
+  s = engine.apply(s, { type: 'pick', category: s.offered[0] }, 'late');
+  s = engine.apply(s, { type: 'restart', play: true }, 'p0');
+  assert.equal(s.players.find((p) => p.id === 'late')!.grace, INITIATE_GRACE - 1);
+});
+
+test("guests never see an Initiate question's answer", () => {
+  let { engine, s } = initiates(['Ash', 'Bram']);
+  s = engine.apply(s, { type: 'start' }, 'p0');
+  s = engine.apply(s, { type: 'pick', category: s.offered[0] }, s.players[s.turn].id);
+  const q = s.question!;
+  assert.equal(q.initiate, true);
+  const text = JSON.stringify(publicView(s));
+  for (const id of q.options) assert.ok(!text.includes(id), 'no option item ids');
+  assert.equal(publicView(s).question!.initiate, true, 'guests know it is gentle');
 });

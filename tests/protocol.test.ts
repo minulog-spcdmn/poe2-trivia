@@ -71,6 +71,18 @@ test('rejects anything a real client would never send', () => {
   assert.deepEqual(parseClientMsg({ t: 'action', action: { type: 'revive', target: 'p1', by: 'p0' } }), { t: 'action', action: { type: 'revive', target: 'p1' } });
 });
 
+test('a guest on a browser that has never played says so in its hello (fresh), as true or not at all', () => {
+  const tab = 'Ab3_x-9Zq1';
+  assert.deepEqual(parseClientMsg({ t: 'hello', secret, name: 'Dori', v: 17, fresh: true }), { t: 'hello', secret, name: 'Dori', v: 17, fresh: true });
+  assert.deepEqual(parseClientMsg({ t: 'hello', secret, name: 'Dori', v: 17, tab, fresh: true }), { t: 'hello', secret, name: 'Dori', v: 17, tab, fresh: true });
+  // Without it, exactly as before (older guests, and everyone who has played).
+  assert.deepEqual(parseClientMsg({ t: 'hello', secret, name: 'Dori', v: 17 }), { t: 'hello', secret, name: 'Dori', v: 17 });
+  assert.ok(!('fresh' in parseClientMsg({ t: 'hello', secret, name: 'Dori', v: 17, tab })!));
+  for (const fresh of ['yes', false, 1, null, {}]) assert.equal(parseClientMsg({ t: 'hello', secret, name: 'Dori', v: 17, fresh }), null, JSON.stringify(fresh));
+  // Backward compatible both ways: no new protocol version for it.
+  assert.equal(PROTOCOL_VERSION, 17);
+});
+
 test('rate limit allows bursts but not floods', () => {
   const r = new RateLimit(10, 20);
   let ok = 0;

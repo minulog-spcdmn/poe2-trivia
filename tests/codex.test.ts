@@ -114,6 +114,22 @@ test('nothing to record outside a reveal', () => {
   assert.equal(encounterAt(s, 'p0', false), null);
 });
 
+test("an Initiate question's answer is filed under Cruel, whatever the room's difficulty", () => {
+  const engine = new Engine(items, { rng: seeded(7), fakes });
+  let s: GameState = createGame('p0', { targetScore: 50, timer: 0, difficulty: 'merciless', mode: 'turns', public: false, locked: false });
+  s = engine.apply(s, { type: 'join', playerId: 'p0', name: 'Ash', initiate: true }, 'p0');
+  s = engine.apply(s, { type: 'start' }, 'p0');
+  s = turn(engine, s, right);
+  assert.equal(s.question!.initiate, true);
+  const e = encounterAt(s, 'p0', false)!;
+  assert.equal(e.difficulty, 'cruel');
+  assert.equal(e.answer!.ok, true);
+  // Graduated, the room's own again.
+  for (let i = 0; i < 3; i++) s = turn(engine, engine.apply(s, { type: 'next' }, 'p0'), right);
+  assert.equal(s.question!.initiate, undefined);
+  assert.equal(encounterAt(s, 'p0', false)!.difficulty, 'merciless');
+});
+
 test('hot-seat: answers only count when one person plays alone', () => {
   let solo = setup(['Ash']);
   let s = turn(solo.engine, solo.s, right);

@@ -10,6 +10,7 @@ import {
   QUICK_TIMER,
   addHunt,
   emptyHunts,
+  initiateFlag,
   isNewcomer,
   loadHunts,
   parseHunts,
@@ -132,6 +133,15 @@ test('a newcomer is a browser with nothing in its codex and no hunt recorded', (
   store.clear();
   blocked = true;
   assert.equal(isNewcomer(), false, 'storage that cannot be read never counts as new');
+});
+
+test('a join from a browser that has never played carries the Initiate flag', () => {
+  assert.deepEqual(initiateFlag(), { initiate: true });
+  store.set(storeKey('codex2'), JSON.stringify({ v: 1, items: {}, log: [] }));
+  assert.deepEqual(initiateFlag(), {}, 'no undefined key either');
+  store.clear();
+  blocked = true;
+  assert.deepEqual(initiateFlag(), {});
 });
 
 test('recordHunt stores through localStorage, once per game', () => {

@@ -1,9 +1,9 @@
 <script lang="ts">
   import { flip } from 'svelte/animate';
-  import { fly, scale } from 'svelte/transition';
+  import { fly, scale, slide } from 'svelte/transition';
   import { session } from '../lib/session.svelte';
   import { MAX_PLAYERS, RACE_DEFAULT_TIMER, TIMER_STEPS, difficultyOf, rulesFor, type Difficulty, type GameMode } from '../lib/game';
-  import { DIFFICULTY_NAMES, describe } from '../lib/difficultyText';
+  import { DIFFICULTY_NAMES, describe, namesOf } from '../lib/difficultyText';
   import CustomDifficulty from './CustomDifficulty.svelte';
   import DelveRules from './DelveRules.svelte';
   import ModeIcon from './ModeIcon.svelte';
@@ -16,6 +16,7 @@
   import { creatorArrived, glyphLanded, playerArrived, refuse, twinkle } from '../lib/fx/moments';
   import { onMount } from 'svelte';
   import { categoryIcons } from '../lib/ui';
+  import { initiateFlag } from '../lib/hunt';
   import { measure } from '../lib/iconFit.svelte';
 
   const TARGETS = [5, 10, 15, 20];
@@ -57,7 +58,8 @@
       return;
     }
     const playerId = crypto.randomUUID();
-    session.dispatch({ type: 'join', playerId, name });
+    // On a browser that has never played, everyone added before the first game is an Initiate.
+    session.dispatch({ type: 'join', playerId, name, ...initiateFlag() });
     // Keep the name to fix it up if it was turned down (hot-seat applies it right away).
     if (session.state?.players.some((p) => p.id === playerId)) newName = '';
   }
@@ -186,6 +188,19 @@
   const delve = $derived(s.settings.mode === 'delve');
   const difficulty = $derived(difficultyOf(s.settings.difficulty));
   const lockout = $derived(rulesFor(s.settings).lockout);
+  /**
+   * Initiates here for their first game (Initiate's grace, game.ts): the host
+   * may make it a short one. Only while the target is above that.
+   */
+  const initiates = $derived(s.players.filter((p) => (p.grace ?? 0) > 0 && p.connected));
+  const shortFirstGame = $derived(isHost && s.phase === 'lobby' && s.settings.mode === 'turns' && s.settings.targetScore > 5 && initiates.length > 0);
+  const initiateNames = $derived(
+    namesOf(
+      initiates.map((p) => p.id),
+      (id) => s.players.find((p) => p.id === id)?.name ?? '?',
+      local ? null : session.myPlayerId,
+    ),
+  );
 </script>
 
 <div class="lobby">
@@ -271,6 +286,7 @@
             <Avatar name={p.name} hue={p.hue} />
             <span class="name"><PlayerName name={p.name} /></span>
             {#if p.id === s.hostId}<span class="tag">Host</span>{/if}
+            {#if (p.grace ?? 0) > 0}<span class="tag initiate" title="First game here: their first 3 questions are gentle.">Initiate</span>{/if}
             {#if !p.connected}<span class="tag" title="Reconnecting. Their seat is let go if they're not back when the game starts.">Offline</span>{/if}
             {#if !local && p.id === session.myPlayerId}<span class="tag you">You</span>{/if}
             {#if isHost && p.id !== s.hostId}
@@ -285,6 +301,11 @@
           </li>
         {/each}
       </ul>
+      {#if shortFirstGame}
+        <div class="first-game" transition:slide={{ duration: 250 }}>
+          <button class="btn small" onclick={() => setTarget(5)}>First game for {initiateNames}? Make it first to 5</button>
+        </div>
+      {/if}
       {#if waiting.length}
         <p class="hint muted">
           Waiting for a free seat: {waiting.map((o) => o.name + (o.id === session.myPlayerId ? ' (you)' : '')).join(', ')}
@@ -718,6 +739,19 @@
   .tag.you {
     border-color: #4a6b4a;
     color: #9fd59f;
+  }
+  .tag.initiate {
+    border-color: rgba(224, 138, 68, 0.55);
+    color: var(--unique-hi);
+    cursor: help;
+  }
+  .first-game {
+    margin-top: 0.8rem;
+  }
+  .first-game .btn {
+    width: 100%;
+    white-space: normal;
+    line-height: 1.4;
   }
   .remove {
     width: 26px;

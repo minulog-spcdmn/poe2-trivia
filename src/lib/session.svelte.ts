@@ -70,7 +70,7 @@ import {
   type DelveNotice,
 } from './delveSession';
 import { readLegacy, readStored, removeLegacy, removeStored, writeStored } from './storage';
-import { QUICK_TARGET, QUICK_TIMER, recordHunt, type HuntBest } from './hunt';
+import { QUICK_TARGET, QUICK_TIMER, initiateFlag, isNewcomer, recordHunt, type HuntBest } from './hunt';
 
 export const engine = new Engine(itemData as Item[], { fakes: fakeNames });
 
@@ -453,7 +453,7 @@ class Session {
     let s = this.state!;
     try {
       s = engine.apply(s, { type: 'settings', settings: { mode: 'turns', targetScore: QUICK_TARGET, difficulty, timer: QUICK_TIMER } }, null);
-      s = engine.apply(s, { type: 'join', playerId: crypto.randomUUID(), name }, null);
+      s = engine.apply(s, { type: 'join', playerId: crypto.randomUUID(), name, ...initiateFlag() }, null);
       s = engine.apply(s, { type: 'start' }, null);
     } catch (err) {
       // Never expected: what got through opens as a lobby, to start from there.
@@ -539,7 +539,8 @@ class Session {
         let s = createGame(me, this.delveLink ? { ...roomSettings(), mode: 'delve' } : roomSettings());
         this.delveLink = false;
         try {
-          s = engine.apply(s, { type: 'join', playerId: me, name: this.joinName }, me);
+          // A host on a browser that has never played is an Initiate in their own room.
+          s = engine.apply(s, { type: 'join', playerId: me, name: this.joinName, ...initiateFlag() }, me);
         } catch (err) {
           this.fail(err instanceof ActionError ? err.message : 'Could not create the room.', 'Room not opened');
           return;
@@ -650,7 +651,7 @@ class Session {
           if (guest.playerId) return;
           guest.tab = msg.tab ?? null;
           clearTimeout(helloTimer);
-          this.handleHello(conn, guest, msg.secret, msg.name, msg.v);
+          this.handleHello(conn, guest, msg.secret, msg.name, msg.v, msg.fresh === true);
         } else if (msg.t === 'pong') {
           const sent = guest.pings.get(msg.n);
           if (sent !== undefined) {
@@ -754,7 +755,8 @@ class Session {
     this.drop(conn);
   }
 
-  private handleHello(conn: DataConnection, guest: Guest, secret: string, name: string, v: number) {
+  /** `fresh`: the guest's browser has never played, so they join as an Initiate (a seat they still hold keeps its own grace). */
+  private handleHello(conn: DataConnection, guest: Guest, secret: string, name: string, v: number, fresh = false) {
     const outdated = versionProblem(v);
     if (outdated) throw new ActionError(outdated);
     const known = this.secretToPlayer.get(secret);
@@ -775,7 +777,7 @@ class Session {
     try {
       if (!known && this.priv.bannedNames.includes(nameSkeleton(cleanName(name))))
         throw new ActionError('Someone with a name like that was removed from this room. Pick another name.');
-      next = engine.apply(this.state!, { type: 'join', playerId, name, returning: !!known }, playerId);
+      next = engine.apply(this.state!, { type: 'join', playerId, name, returning: !!known, ...(fresh ? { initiate: true } : {}) }, playerId);
     } catch (err) {
       this.joins.rejected(secret, !!known);
       throw err;
@@ -1337,7 +1339,8 @@ class Session {
     });
     const secret = await this.helloSecret;
     if (secret && this.hostConn === conn && conn.open)
-      conn.send({ t: 'hello', secret, name: this.joinName, v: PROTOCOL_VERSION, tab: myTab });
+      // Asked at each hello: a browser stops being new with the first reveal it records.
+      conn.send({ t: 'hello', secret, name: this.joinName, v: PROTOCOL_VERSION, tab: myTab, ...(isNewcomer() ? { fresh: true } : {}) });
   }
 
   private hostLost(conn: DataConnection) {

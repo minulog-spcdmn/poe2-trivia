@@ -322,8 +322,39 @@ export function rulesFor(settings: Pick<Settings, 'difficulty'> & Partial<Settin
  * harder; Delve's follow the depth, and a find's are those of deeper down).
  */
 export function activeRules(s: GameState): DifficultyRules {
-  if (!s.delve) return rulesFor(s.settings, !!s.deathmatch);
+  if (!s.delve) {
+    const r = rulesFor(s.settings, !!s.deathmatch);
+    return initiateNow(s) ? { ...r, ...INITIATE_RULES } : r;
+  }
   return delveQuestionRules(s.round, s.question ?? {});
+}
+
+/**
+ * Initiate's grace: a player whose browser has never played gets this many
+ * gentle questions on their own turns (Player.grace), whatever the room's
+ * difficulty.
+ */
+export const INITIATE_GRACE = 3;
+
+/**
+ * An Initiate question's rules: a picture to find for a name among four,
+ * nothing made up, flipped or drained of colour. The decoys come from other
+ * families of item (Engine.wideDecoys); the timer and the lockout stay the room's.
+ */
+export const INITIATE_RULES: Partial<DifficultyRules> = { options: 4, similarNames: 0, fakes: 0, artChance: 1, mirror: 0, grayscale: 'off', veil: null };
+
+/** The family an Initiate question's pictures are told apart by: its category, with every weapon one family. */
+export const initiateFamily = (it: Item) => (it.category === 'One-Handed Weapons' || it.category === 'Two-Handed Weapons' ? 'Weapons' : it.category);
+
+/**
+ * Whether the question in play (or, between questions, the one the player on
+ * turn will be asked) is an Initiate question. Never in a race, a Delve run
+ * or a deathmatch. Once asked, the question's own flag decides (a reask
+ * keeps it); before, the player's grace.
+ */
+export function initiateNow(s: GameState): boolean {
+  if (s.settings.mode === 'race' || s.delve || s.deathmatch) return false;
+  return s.question ? !!s.question.initiate : (s.players[s.turn]?.grace ?? 0) > 0;
 }
 
 /**
@@ -488,6 +519,12 @@ export interface Player {
    * from older hosts). Turns: their own questions; race: questions they won.
    */
   streak?: number;
+  /**
+   * Initiate's grace (INITIATE_GRACE): gentle questions left on their own
+   * turns (taken at each pick). 0: graduated, gone at their next pick;
+   * missing: none (everyone who has played before).
+   */
+  grace?: number;
 }
 
 /**
@@ -633,6 +670,8 @@ export interface Question {
   flaredBy?: string;
   /** Older saves only (see `blasted`): whose dynamite went off on this question. */
   blastedBy?: string;
+  /** An Initiate question (see initiateNow): its rules are INITIATE_RULES. Kept through a reask. */
+  initiate?: true;
 }
 
 /**
@@ -727,6 +766,8 @@ export interface Reveal {
 export interface Spectator {
   id: string;
   name: string;
+  /** Joined from a browser that has never played: seated as an Initiate. */
+  initiate?: true;
 }
 
 export interface GameState {
@@ -774,8 +815,11 @@ export interface GameState {
 }
 
 export type Action =
-  /** `returning`: set by the host for someone who was already in this room (may pass the lock). */
-  | { type: 'join'; playerId: string; name: string; returning?: boolean }
+  /**
+   * `returning`: set by the host for someone who was already in this room (may pass the lock).
+   * `initiate`: from a browser that has never played, seated with Initiate's grace.
+   */
+  | { type: 'join'; playerId: string; name: string; returning?: boolean; initiate?: boolean }
   | { type: 'rename'; playerId: string; name: string }
   | { type: 'remove'; playerId: string }
   | { type: 'connection'; playerId: string; connected: boolean }
@@ -863,7 +907,7 @@ function fillSeats(s: GameState) {
   const waiting = s.spectators ?? [];
   while (waiting.length && s.players.length < MAX_PLAYERS) {
     const o = waiting.shift()!;
-    seat(s, o.id, o.name);
+    seat(s, o.id, o.name, !!o.initiate);
   }
   s.spectators = waiting;
 }
@@ -903,9 +947,9 @@ function settleHue(s: GameState, p: Player) {
   if (holder) holder.hue = freeHue(s, holder);
 }
 
-/** Adds a player with the first free avatar colour (or their reserved one). */
-function seat(s: GameState, id: string, name: string) {
-  const p: Player = { id, name, score: 0, recent: [], connected: true, hue: -1 };
+/** Adds a player with the first free avatar colour (or their reserved one); an Initiate with their grace. */
+function seat(s: GameState, id: string, name: string, initiate = false) {
+  const p: Player = { id, name, score: 0, recent: [], connected: true, hue: -1, ...(initiate ? { grace: INITIATE_GRACE } : {}) };
   p.hue = freeHue(s);
   s.players.push(p);
   settleHue(s, p);
@@ -1064,22 +1108,24 @@ export class Engine {
         if (s.settings.locked && !action.returning) throw new ActionError('The host has locked this room.');
         const problem = nameProblem(name, [...s.players, ...s.spectators].map((o) => o.name));
         if (problem) throw new ActionError(problem);
+        // A newcomer who watches first keeps being one: they're seated as an Initiate.
+        const watcher: Spectator = { id: action.playerId, name, ...(action.initiate ? { initiate: true as const } : {}) };
         if (s.phase !== 'lobby') {
           // Too late for this game: watch it and take a seat in the next one.
           if (s.spectators.length >= MAX_SPECTATORS) throw new ActionError('That game has already started and has no room for more spectators.');
-          s.spectators.push({ id: action.playerId, name });
+          s.spectators.push(watcher);
           break;
         }
         if (s.players.length >= MAX_PLAYERS) {
           // Someone who was already here (a spectator, after the host's refresh)
           // waits for a free seat instead of being turned away.
           if (action.returning && s.spectators.length < MAX_SPECTATORS) {
-            s.spectators.push({ id: action.playerId, name });
+            s.spectators.push(watcher);
             break;
           }
           throw new ActionError('The lobby is full.');
         }
-        seat(s, action.playerId, name);
+        seat(s, action.playerId, name, !!action.initiate);
         break;
       }
       case 'rename': {
@@ -1698,9 +1744,16 @@ export class Engine {
     } else if (active && !s.deathmatch) {
       active.recent = lastPicks([...active.recent, category], rulesFor(s.settings).lockout);
     }
+    // Initiate's grace, as it was before this pick decides the question (a deathmatch's takes none of it).
+    const grace = !s.delve && !s.deathmatch ? active?.grace : undefined;
     s.question = this.makeQuestion(s, category, kind);
     s.used.push(s.question.itemId);
     s.phase = 'question';
+    // One gentle question spent; the pick after the last one ends the grace.
+    if (grace !== undefined && active) {
+      if (grace > 0) active.grace = grace - 1;
+      else delete active.grace;
+    }
   }
 
   /**
@@ -2437,9 +2490,16 @@ export class Engine {
    */
   makeQuestion(s: GameState, category: string, kind: Pick<Question, 'find'> = {}): Question {
     const special: Pick<Question, 'find'> = s.delve && kind.find ? { find: kind.find } : {};
+    // An Initiate question (INITIATE_RULES): always the art, its decoys from other families.
+    const initiate = initiateNow(s);
     const rules = s.delve ? delveQuestionRules(s.round, special) : activeRules(s);
     const inCat = this.byCategory.get(category) ?? [];
+    // Rolled all the same (with an art share of 1 it says art anyway), so every other question rolls as before.
     let mode = this.rollMode(s);
+    if (initiate && mode !== 'art') {
+      this.tallyMode(s, mode, -1);
+      this.tallyMode(s, (mode = 'art'), 1);
+    }
     let fakes = mode === 'name' && this.fakes.size ? rules.fakes : 0;
     // Delve, past depth 100: now and then one more made-up name, as far as they fit.
     if (fakes && rules.moreFakes && this.rng() < rules.moreFakes) fakes = Math.min(maxFakes(rules.options), fakes + 1);
@@ -2490,32 +2550,36 @@ export class Engine {
     const need = count - 1;
     fakes = Math.min(fakes, maxFakes(count));
 
-    const sameGroup = unused.filter((it) => it.id !== answer.id && it.group === answer.group);
-    // Decoys come from the answer's own group (all rings, all bows…): a flask
-    // among tablets would stand out. Other groups only fill in when it runs
-    // too low, evened out with it, and rare groups (tablets) not even then.
-    const otherGroup = unused.filter((it) => it.id !== answer.id && it.group !== answer.group && weightOf(it) === 1);
-    const pool = sameGroup.length >= need ? sameGroup : [...sameGroup, ...otherGroup];
+    let decoys: Item[];
+    if (initiate) decoys = this.wideDecoys(answer, need, s);
+    else {
+      const sameGroup = unused.filter((it) => it.id !== answer.id && it.group === answer.group);
+      // Decoys come from the answer's own group (all rings, all bows…): a flask
+      // among tablets would stand out. Other groups only fill in when it runs
+      // too low, evened out with it, and rare groups (tablets) not even then.
+      const otherGroup = unused.filter((it) => it.id !== answer.id && it.group !== answer.group && weightOf(it) === 1);
+      const pool = sameGroup.length >= need ? sameGroup : [...sameGroup, ...otherGroup];
 
-    // Delve's look-alikes rise a little every depth: a share between two counts rolls for the one more.
-    const sims = need * rules.similarNames;
-    const simCount = Math.min(pool.length, s.delve ? Math.floor(sims) + (sims % 1 > 0 && this.rng() < sims % 1 ? 1 : 0) : Math.round(sims));
-    // Delve, from depth 50: now and then the look-alikes are picked by their
-    // art (for a picture question its wrong pictures, for a name question the
-    // names of items drawn like it). Rolled whether or not the table has come
-    // yet. When it comes up, picking by art rolls differently from picking by
-    // name, so the rest of the question then differs with the table there or
-    // not (the same seed only asks the same question if it was there both
-    // times or neither).
-    const byArt = !!rules.lookalikes && this.rng() < rules.lookalikes;
-    const decoys = this.lookalikes(answer, pool, simCount, count, byArt);
-    // Rest at random, preferring the same group, then the category, then anything.
-    for (const source of [pool, unused, inCat, this.items]) {
-      if (decoys.length >= need) break;
-      const taken = new Set([answer.id, ...decoys.map((it) => it.id)]);
-      decoys.push(...sample(source.filter((it) => !taken.has(it.id)), need - decoys.length, this.rng));
+      // Delve's look-alikes rise a little every depth: a share between two counts rolls for the one more.
+      const sims = need * rules.similarNames;
+      const simCount = Math.min(pool.length, s.delve ? Math.floor(sims) + (sims % 1 > 0 && this.rng() < sims % 1 ? 1 : 0) : Math.round(sims));
+      // Delve, from depth 50: now and then the look-alikes are picked by their
+      // art (for a picture question its wrong pictures, for a name question the
+      // names of items drawn like it). Rolled whether or not the table has come
+      // yet. When it comes up, picking by art rolls differently from picking by
+      // name, so the rest of the question then differs with the table there or
+      // not (the same seed only asks the same question if it was there both
+      // times or neither).
+      const byArt = !!rules.lookalikes && this.rng() < rules.lookalikes;
+      decoys = this.lookalikes(answer, pool, simCount, count, byArt);
+      // Rest at random, preferring the same group, then the category, then anything.
+      for (const source of [pool, unused, inCat, this.items]) {
+        if (decoys.length >= need) break;
+        const taken = new Set([answer.id, ...decoys.map((it) => it.id)]);
+        decoys.push(...sample(source.filter((it) => !taken.has(it.id)), need - decoys.length, this.rng));
+      }
+      if (pool !== sameGroup) this.evenOut(answer, decoys, pool, fakes);
     }
-    if (pool !== sameGroup) this.evenOut(answer, decoys, pool, fakes);
 
     const options = shuffle([answer, ...decoys], this.rng).map((it) => it.id);
     // Strictly increasing: it doubles as the question's id for late answers.
@@ -2542,7 +2606,32 @@ export class Engine {
     const mirrored = Array.from({ length: mode === 'art' ? options.length : 1 }, () => rules.mirror > 0 && this.rng() < rules.mirror);
     // Delve: the art in grayscale or not, rolled for each question.
     const gray = rules.grayChance ? { gray: this.rng() < rules.grayChance } : {};
-    return { category, groups, mode, itemId: answer.id, options, labels, prompt, veil, mirrored, ...gray, askedAt, deadline, misses: [], ...special };
+    const initiated = initiate ? { initiate: true as const } : {};
+    return { category, groups, mode, itemId: answer.id, options, labels, prompt, veil, mirrored, ...gray, askedAt, deadline, misses: [], ...special, ...initiated };
+  }
+
+  /**
+   * An Initiate question's decoys: `need` pictures, each from another family
+   * of item than the answer's and than each other's (initiateFamily), so only
+   * the answer is from the category picked. Never a rare group's (tablets);
+   * items not yet asked in this room first.
+   */
+  private wideDecoys(answer: Item, need: number, s: GameState): Item[] {
+    const used = new Set(s.used);
+    const byFamily = new Map<string, Item[]>();
+    const own = initiateFamily(answer);
+    for (const it of this.items) {
+      const family = initiateFamily(it);
+      if (it.id === answer.id || family === own || weightOf(it) !== 1) continue;
+      const list = byFamily.get(family);
+      if (list) list.push(it);
+      else byFamily.set(family, [it]);
+    }
+    return sample([...byFamily.keys()], need, this.rng).map((family) => {
+      const all = byFamily.get(family)!;
+      const fresh = all.filter((it) => !used.has(it.id));
+      return sample(fresh.length ? fresh : all, 1, this.rng)[0];
+    });
   }
 }
 

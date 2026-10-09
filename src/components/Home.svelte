@@ -17,7 +17,7 @@
   import { wantDelveBackdrop } from '../lib/backdrop';
   import { BETA } from '../lib/channel';
   import { DIFFICULTY_NAMES } from '../lib/difficultyText';
-  import { QUICK_DEFAULT, QUICK_PRESETS, QUICK_TARGET, isNewcomer, loadHunts, setQuickDifficulty } from '../lib/hunt';
+  import { QUICK_DEFAULT, QUICK_PRESETS, QUICK_TARGET, initiateFlag, isNewcomer, loadHunts, setQuickDifficulty } from '../lib/hunt';
   import type { Preset } from '../lib/game';
 
   /** Keeps a room code's letters and digits, uppercased, up to its length. */
@@ -164,7 +164,7 @@
     session.startLocal();
     if (n && !nameTooShort(n) && !nameHeld(n)) {
       saveName(n);
-      session.dispatch({ type: 'join', playerId: crypto.randomUUID(), name: n });
+      session.dispatch({ type: 'join', playerId: crypto.randomUUID(), name: n, ...initiateFlag() });
     }
   }
 

@@ -25,6 +25,7 @@
   import { descended, milestoneReached } from '../lib/fx/moments';
   import { BLAST_IMPACT_MS, BLAST_IN_DELAY_MS, BLAST_IN_MS, blastAway } from '../lib/blastAway';
   import { untrack } from 'svelte';
+  import { INITIATE_GRACE } from '../lib/game';
 
   const s = $derived(session.state!);
   const active = $derived(s.players[s.turn]);
@@ -95,7 +96,21 @@
   // read CSS variables (so the race colour is --unique-hi written out).
   // Delve together has no player on turn: the banner takes the depth's colour.
   const bannerColor = $derived(dm ? '#e0553f' : race ? '#e08a44' : run && group ? accentAt(depth) : playerColor(active.hue));
-  const bannerBig = $derived(race || mine || group);
+
+  // Initiate's grace (game.ts): an Initiate's first turn is their first hunt,
+  // for everyone to see; the turn after their last gentle question, the real
+  // hunt begins (on their own screen, and in hot-seat). Taken as the turn
+  // opens, before its banner is built, so the words hold through its question
+  // and reveal (the pick spends the grace).
+  let huntBanner = $state<{ turn: number; kind: 'first' | 'real' } | null>(null);
+  $effect.pre(() => {
+    if (s.phase !== 'choosing' || run || race || dm) return;
+    const grace = active?.grace;
+    const kind = grace === INITIATE_GRACE ? 'first' : grace === 0 && (mine || local) ? 'real' : null;
+    huntBanner = kind ? { turn: s.turnCount, kind } : null;
+  });
+  const hunt = $derived(huntBanner?.turn === s.turnCount ? huntBanner.kind : null);
+  const bannerBig = $derived(race || mine || group || !!hunt);
 
   /**
    * Svelte action: the turn banner's entrance. Runs once per turn (the stage is
@@ -126,9 +141,15 @@
         ? startsRun
           ? startLine(run.startedAt)
           : `Depth ${shownDepth(depth)}`
-        : mine && !local
-          ? 'Your turn'
-          : `${active.name}'s turn`,
+        : hunt === 'first'
+          ? mine && !local
+            ? 'Your first hunt'
+            : `${active.name}'s first hunt`
+          : hunt === 'real'
+            ? 'The real hunt begins'
+            : mine && !local
+              ? 'Your turn'
+              : `${active.name}'s turn`,
   );
 
   // Delve: the seconds the question started with (a find's or the depth's),

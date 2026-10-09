@@ -44,6 +44,18 @@
   const dimmed = $derived(coop ? !me || livesOf(s, me) <= 0 : !mine);
   // The lockout in force (in Delve it grows with depth).
   const lockout = $derived(activeRules(s).lockout);
+  /**
+   * Initiate's grace (game.ts), on the Initiate's own screen: the gentle
+   * questions left (by grace left), then, on the turn after the last, the
+   * real hunt's (grace 0).
+   */
+  const GRACE_NOTES = [
+    'From here on, every choice is the same kind of item. Look closer.',
+    'One more gentle question.',
+    'Two more gentle questions.',
+    'Pick any card. Your first 3 questions are gentle.',
+  ];
+  const graceNote = $derived(mine && !s.delve && !s.deathmatch && active?.grace !== undefined ? (GRACE_NOTES[active.grace] ?? null) : null);
 
   // ---- the vote (Delve together) ------------------------------------------
   // Votes are public and can change until the vote closes: when everyone it
@@ -517,6 +529,9 @@
       {#if two && held}<p class="note muted">{held.trim()}</p>{/if}
     </div>
   {/if}
+  {#if graceNote}
+    <p class="note grace">{graceNote}</p>
+  {/if}
   {#if s.deathmatch}
     <p class="note muted">{mine ? 'Tap the card when you are ready.' : deathmatchText(difficultyOf(s.settings.difficulty))}</p>
   {:else if coop && canVote && lockout > 0}
@@ -949,8 +964,13 @@
     text-align: center;
   }
   /* Two notes under the cards sit closer than the cards sit to them. */
-  .find-notes + .note {
+  .find-notes + .note,
+  .grace + .note {
     margin-top: -1rem;
+  }
+  /* Initiate's grace: what the next questions hold, in the gold of a promise. */
+  .grace {
+    color: var(--gold-hi);
   }
   .find-notes {
     display: flex;

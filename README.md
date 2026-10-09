@@ -547,6 +547,20 @@ browser (`src/lib/achievements.ts`); erasing the codex erases them.
   reach 5. Any game alone in hot-seat to 5 on one of those counts as a quick
   hunt; this browser keeps how many it finished and its bests
   (`src/lib/hunt.ts`). With an invite link, Join is the main button instead.
+- **Initiates:** a player whose browser has never played (nothing in its
+  codex, no quick hunt recorded) joins as an Initiate: a guest's hello says
+  so (`fresh`), a host is one in their own room, and in hot-seat everyone
+  added before the browser's first game is one. Their first 3 questions, on
+  their own turns, are gentle on any difficulty: "find the art" with 4
+  pictures, the answer from the category they picked and three from other
+  families of item (both weapon categories count as one, never a tablet),
+  nothing made up, mirrored or in grayscale. The timer and the lockout stay
+  the room's. Their first turn's banner says it is their first hunt, a note
+  counts the gentle questions down, and the turn after the last one says the
+  real hunt begins. The lobby tags Initiates, and while the target is above 5
+  the host can make it first to 5 in one tap. Deathmatches, races and Delve
+  ignore it; what is left of it carries over to the next game, and these
+  answers go into the codex under Cruel.
 
 The host picks the mode (take turns, race or Delve: three buttons, each
 with an engraved emblem, and only the chosen mode's description below

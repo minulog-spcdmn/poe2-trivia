@@ -893,6 +893,11 @@
       <p class="spectate out">Wrong: −1. You're out until the next question.</p>
     {:else if race}
       <p class="spectate muted">First right answer wins. A wrong one costs a point!<span class="keys">{' '}Press 1–{count === 10 ? '9 and 0' : count}.</span></p>
+    {:else if q.initiate && !mine}
+      <!-- Initiate's grace (game.ts): the others are told why it looks easy. -->
+      <p class="spectate muted">{active.name} is deciding… Their first questions are gentle.</p>
+    {:else if q.initiate}
+      <p class="spectate muted">A gentle start: only one picture is from {q.category}.<span class="keys">{' '}Press 1–{count}.</span></p>
     {:else if !mine}
       <p class="spectate muted">{active.name} is deciding…</p>
     {:else}
