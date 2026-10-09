@@ -585,7 +585,8 @@ with that in mind. Guests, on the other hand, are treated as untrusted:
   anyone held back tries again by themselves a few seconds later. No one can leave and rejoin in a
   loop, since every join is announced to the whole room.
 - **Bots.** Answers that arrive faster than a human could react (less than
-  about 200 ms after the art reached that player) are ignored.
+  about 200 ms after the art reached that player, and in Delve its clock)
+  don't count; the player is told so and can answer again.
 - **Race fairness.** The host's own answers are delayed by a typical guest's
   one-way network latency, measured with pings. Pings carry random numbers,
   so a guest can't answer them early to look closer than it is.

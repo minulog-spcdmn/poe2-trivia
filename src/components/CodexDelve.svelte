@@ -32,6 +32,7 @@
   import DelveLastRun from './codex/DelveLastRun.svelte';
   import DelveRunLog from './codex/DelveRunLog.svelte';
   import ArcaneCircle from './ArcaneCircle.svelte';
+  import { motion } from '../lib/motion.svelte';
 
   // The Codex's Delve page, a sibling of the Collection (Codex.svelte) and
   // built from its parts: four figures around your deepest in the rune
@@ -47,8 +48,7 @@
   // codexStats.ts says what each number means.
   let { codex, records, onopen, onbegin }: { codex: Codex; records: DelveRecords; onopen: (item: Item) => void; onbegin: () => void } = $props();
 
-  const still = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const rise = (delay: number) => ({ y: 20, duration: still ? 0 : 700, delay: still ? 0 : delay });
+  const rise = (delay: number) => ({ y: 20, duration: motion.still ? 0 : 700, delay: motion.still ? 0 : delay });
 
   const date = (t: number) => new Date(t).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
   const fmt = (n: number) => n.toLocaleString();

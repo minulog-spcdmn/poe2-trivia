@@ -11,11 +11,12 @@
 // wait for it, and play once it is.
 
 import { BEHIND_PICTURE, BEHIND_UI, FxRenderer, SHAPE_FLOATS, ShapeType, pictureReady, type DialogLight, type Silhouette } from './renderer';
-import { webgl2Refused, whenGpuCaughtUp, whenIdle, type Build } from './gl';
+import { webgl2Refused, whenGpuCaughtUp, type Build } from './gl';
 import { ParticlePool, type ParticleSpec } from './particles';
 import { opacityOf } from '../opacity';
 import { dialogBox, openDialog } from '../behindDialog';
 import { readStored, writeStored } from '../storage';
+import { whenIdle } from '../idle';
 
 export type Vec3 = readonly [number, number, number];
 export type Point = { x: number; y: number };
@@ -815,7 +816,7 @@ function prepare(c: HTMLCanvasElement) {
     if (wanted()) soon(c);
   };
   const raf1 = requestAnimationFrame(() => {
-    raf2 = requestAnimationFrame(() => (stopIdle = whenIdle(idle, 1000)));
+    raf2 = requestAnimationFrame(() => (stopIdle = whenIdle(idle, { timeout: 1000 })));
   });
   forPaint = true;
   waiting = () => {

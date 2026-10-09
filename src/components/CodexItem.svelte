@@ -12,13 +12,13 @@
   import NamePlate, { SOCKET_X } from './NamePlate.svelte';
   import ArtImage from './ArtImage.svelte';
   import ArcaneCircle from './ArcaneCircle.svelte';
+  import { motion } from '../lib/motion.svelte';
 
   // One item of the codex, as a tooltip like the one the game reveals it in.
   let { item, codex, onclose, onopen }: { item: Item; codex: Codex; onclose: () => void; onopen: (item: Item) => void } = $props();
 
-  /** Svelte's transitions run whatever the system says: with reduced motion, things just appear. */
-  const still = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const calm = <T extends { duration?: number; delay?: number }>(p: T): T => (still ? { ...p, duration: 0, delay: 0 } : p);
+  /** Svelte's transitions run whatever the system says: held still (reduced motion, or the effects off), things just appear. */
+  const calm = <T extends { duration?: number; delay?: number }>(p: T): T => (motion.still ? { ...p, duration: 0, delay: 0 } : p);
 
   const entry = $derived(codex.items[item.id]);
   /** What it is, as one item: "Wand", "Ring". A gem's group is only its attribute, so gems say "Lineage Gem". */

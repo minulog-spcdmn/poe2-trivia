@@ -9,6 +9,7 @@
 import { archetypeAt } from './backdrops.ts';
 import { descent, hallTurn, STRATA, strataAt } from './descent.ts';
 import { AMBIENCE, ARCHETYPE_AMBIENCE, CAVE_IN, DEPTH, FIRE, MIX, MOMENTS, RUMBLE, ZONE_AMBIENCE, type Bed, type Layer } from './soundDesign.ts';
+import { whenIdle } from './idle.ts';
 import { readStored, writeStored } from './storage.ts';
 
 export type Sfx =
@@ -209,7 +210,7 @@ function load(file: string) {
 }
 
 /** Runs `f` when the page has a moment to spare. */
-const idle = (f: () => void) => ((globalThis as { requestIdleCallback?: (f: () => void) => void }).requestIdleCallback ?? ((g: () => void) => setTimeout(g, 200)))(f);
+const idle = (f: () => void) => void whenIdle(f, { fallback: 200 });
 
 /**
  * The sample rate the cave-in is worked out at: its layer is lowpassed at 7
