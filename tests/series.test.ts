@@ -344,9 +344,9 @@ function night(names: string[], series: Series, winners: string[] = series.champ
   s.players = names.map((name, i) => ({ id: `p${i}`, name, score: 0, recent: [], connected: true, hue: i }));
   return { ...s, phase: 'over', winners, series };
 }
-const lines = (s: GameState) => {
+const lines = (s: GameState, me: string | null = null) => {
   const nameOf = (id: string) => s.players.find((p) => p.id === id)?.name ?? '?';
-  return [ledgerLine(s, nameOf), crownLine(s, nameOf)];
+  return [ledgerLine(s, nameOf, me), crownLine(s, nameOf, me)];
 };
 
 test('ledgerLine and crownLine say how the night stands', () => {
@@ -394,6 +394,35 @@ test('ledgerLine and crownLine say how the night stands', () => {
   assert.deepEqual(lines(night(['Ash'], { played: 2, wins: { p0: 2 }, champ: { id: 'p0', run: 2 } })), ['', '']);
   const delving = night(['Ash', 'Bea'], { played: 2, wins: { p0: 2 }, champ: { id: 'p0', run: 2 } });
   assert.deepEqual(lines({ ...delving, delve: {} as Delve }), ['', '']);
+  // Online, the screen's own player is "you" (a spectator, not seated, reads names).
+  assert.deepEqual(lines(night(['Ash', 'Bea'], { played: 1, wins: { p1: 1 }, champ: { id: 'p1', run: 1 } }), 'p1'), ['Game 1 is yours.', '']);
+  assert.deepEqual(lines(night(['Ash', 'Bea', 'Cid'], { played: 1, wins: { p0: 1, p2: 1 }, champ: null }, ['p0', 'p2']), 'p2'), [
+    'Game 1 is shared by you and Ash.',
+    '',
+  ]);
+  assert.deepEqual(lines(night(['Ash', 'Bea'], { played: 3, wins: { p0: 2, p1: 1 }, champ: { id: 'p0', run: 1 }, fell: 'p1' }), 'p0'), [
+    'You lead the night 2 to 1.',
+    'You take the Crown from Bea.',
+  ]);
+  assert.deepEqual(lines(night(['Ash', 'Bea'], { played: 3, wins: { p0: 2, p1: 1 }, champ: { id: 'p0', run: 1 }, fell: 'p1' }), 'p1'), [
+    'Ash leads the night 2 to 1.',
+    'Ash takes the Crown from you.',
+  ]);
+  assert.deepEqual(lines(night(['Ash', 'Bree', 'Cid'], { played: 4, wins: { p0: 2, p1: 2 }, champ: { id: 'p0', run: 1 }, fell: 'p1' }), 'p1'), [
+    'You and Ash share the lead with 2 wins each.',
+    'Ash takes the Crown from you.',
+  ]);
+  assert.deepEqual(lines(night(['Ash', 'Bree', 'Cid'], { played: 3, wins: { p0: 1, p1: 2 }, champ: { id: 'p1', run: 3 } }), 'p1'), [
+    'You lead the night with 2 wins.',
+    'You have held the Crown for 3 games.',
+  ]);
+  assert.equal(lines(night(['Ash', 'Bea'], { played: 2, wins: { p0: 2, p1: 1 }, champ: { id: 'p0', run: 1 } }), 'p0')[1], 'You take the Crown.');
+  assert.deepEqual(lines(night(['Ash', 'Bea'], { played: 3, wins: { p0: 2, p1: 1 }, champ: { id: 'p0', run: 1 }, fell: 'p1' }), 'late'), [
+    'Ash leads the night 2 to 1.',
+    'Ash takes the Crown from Bea.',
+  ]);
+  // A name that starts like the word stays as its player spelled it.
+  assert.equal(lines(night(['young', 'Bea'], { played: 2, wins: { p0: 2 }, champ: { id: 'p0', run: 2 } }), 'p1')[0], 'young leads the night 2 to 0.');
   // No em dash in any of them (built from its code, as tests/style.test.ts does).
   const dash = String.fromCharCode(0x2014);
   for (const l of [

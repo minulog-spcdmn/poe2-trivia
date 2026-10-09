@@ -70,6 +70,12 @@ const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object
 const count = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? Math.min(MAX_COUNT, Math.floor(v)) : null);
 const time = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : null);
 
+/**
+ * A record by its key, own entries only: a name whose look is 'constructor'
+ * or 'valueof' must not find what every object inherits.
+ */
+const own = <T>(entries: Record<string, T>, key: string): T | undefined => (Object.hasOwn(entries, key) ? entries[key] : undefined);
+
 /** The key of two names' looks: sorted, so either order finds it. */
 const pairKey = (a: string, b: string) => (a < b ? `${a}|${b}` : `${b}|${a}`);
 
@@ -187,7 +193,7 @@ export function recordGame(store: Rivals, s: GameState, me: string | null, now: 
     const theirs = s.winners.includes(p.id);
     if (mine === theirs) continue;
     const key = nameSkeleton(p.name);
-    const was = vs[key];
+    const was = own(vs, key);
     vs[key] = { name: p.name, won: (was?.won ?? 0) + +mine, lost: (was?.lost ?? 0) + +theirs, last: now, game: s.startedAt };
   }
   return { vs, pairs: store.pairs, seen: [...store.seen, s.startedAt] };
@@ -210,7 +216,8 @@ export function recordCouch(store: Rivals, s: GameState, now: number): Rivals | 
     if (p.id === w.id || pk === wk) continue;
     const key = pairKey(wk, pk);
     const first = wk < pk;
-    const wins: [number, number] = pairs[key] ? [...pairs[key].wins] : [0, 0];
+    const was = own(pairs, key);
+    const wins: [number, number] = was ? [...was.wins] : [0, 0];
     wins[first ? 0 : 1]++;
     pairs[key] = { names: first ? [w.name, p.name] : [p.name, w.name], wins, last: now, game: s.startedAt };
   }
@@ -229,7 +236,7 @@ export interface RivalTag {
 
 /** The lobby's note under a rival's name (online), or null before any game counted against them. */
 export function rivalTag(store: Rivals, name: string): RivalTag | null {
-  const r = store.vs[nameSkeleton(name)];
+  const r = own(store.vs, nameSkeleton(name));
   if (!r) return null;
   const lead = r.won > r.lost ? 1 : r.won < r.lost ? -1 : 0;
   const words = lead > 0 ? 'You lead' : lead < 0 ? 'Leads you' : 'Level';
@@ -248,7 +255,7 @@ export function rivalLines(store: Rivals, s: GameState, me: string | null): stri
   if (!s.startedAt) return [];
   return s.players
     .filter((p) => p.id !== me)
-    .map((p) => ({ name: p.name, r: store.vs[nameSkeleton(p.name)] }))
+    .map((p) => ({ name: p.name, r: own(store.vs, nameSkeleton(p.name)) }))
     .filter((x): x is { name: string; r: Rival } => x.r?.game === s.startedAt)
     .sort((a, b) => b.r.won + b.r.lost - (a.r.won + a.r.lost))
     .slice(0, 2)
@@ -263,7 +270,9 @@ export function rivalLines(store: Rivals, s: GameState, me: string | null): stri
 /**
  * Hot-seat: how the pairs among these names stand on this device, most games
  * first (equals: by seat), two at most. With `game`, only the pairs that game
- * counted (the end screen); without, every pair of the party (the lobby).
+ * counted and that had played before (the end screen: a pair's first game,
+ * 1-0, would only say again who won it); without, every pair of the party
+ * (the lobby).
  */
 export function pairLines(store: Rivals, names: string[], game?: number): string[] {
   const seat = new Map<string, number>();
@@ -274,7 +283,7 @@ export function pairLines(store: Rivals, names: string[], game?: number): string
   const found: { a: number; b: number; wins: [number, number] }[] = [];
   for (const [key, p] of Object.entries(store.pairs)) {
     const [a, b] = key.split('|').map((k) => seat.get(k));
-    if (a === undefined || b === undefined || (game !== undefined && p.game !== game)) continue;
+    if (a === undefined || b === undefined || (game !== undefined && (p.game !== game || p.wins[0] + p.wins[1] < 2))) continue;
     found.push({ a, b, wins: p.wins });
   }
   const total = (x: (typeof found)[number]) => x.wins[0] + x.wins[1];

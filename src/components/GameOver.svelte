@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
-  import { fly, scale } from 'svelte/transition';
+  import { fly, scale, slide } from 'svelte/transition';
   import { session } from '../lib/session.svelte';
   import { playerColor } from '../lib/ui';
   import Avatar from './Avatar.svelte';
@@ -14,6 +14,8 @@
   import { CROWN_LANDS, crownPassed, glyphLanded, twinkle, victory } from '../lib/fx/moments';
   import { honours, type Honour } from '../lib/honours';
   import { sfx } from '../lib/sound';
+  import { motion } from '../lib/motion.svelte';
+  import { MediaQuery } from 'svelte/reactivity';
   import { MAX_PLAYERS } from '../lib/game';
   import { REMATCH_MS, crownChange, crownLine, crownedId, ledgerLine, nightWins, rematchCount } from '../lib/series';
   import { fallen } from '../lib/fx/delveEnd';
@@ -137,9 +139,10 @@
           ? 'Perished'
           : 'The descent ends',
   );
-  /** The night's score and the Crown's story, under the result. */
-  const ledger = $derived(run ? [] : [ledgerLine(s, nameOf), crownLine(s, nameOf)].filter(Boolean));
-  /** Under them, what this game did to the rivalries this device remembers (lib/rivals.ts): yours online, the couch's pairs on one device. */
+  /** The night's score and the Crown's story, under the result (online, the player this screen seats is "you"). */
+  const meSeated = $derived(session.mode !== 'local' && seated ? me : null);
+  const ledger = $derived(run ? [] : [ledgerLine(s, nameOf, meSeated), crownLine(s, nameOf, meSeated)].filter(Boolean));
+  /** Under the actions, what this game did to the rivalries this device remembers (lib/rivals.ts): yours online, the couch's pairs on one device. */
   const rivalry = $derived.by(() => {
     const r = session.rivalsResult;
     return !run && r && r.game === s.startedAt ? r.lines : [];
@@ -214,19 +217,48 @@
     }
   }
   // Only a delver shares a depth: on this device, the one who delved alone; online, a player of the run (never someone watching).
-  // A challenger is brought by any player of a game against others (never someone watching), or from one device played by two or more.
+  // A challenger is brought by any player of a game against others (never someone watching), or from one device played by two or more;
+  // never into a locked room, which would turn them away.
   const canShare = $derived(
     run
       ? session.mode === 'local'
         ? solo
         : seated
-      : s.players.length >= 2 && (session.mode === 'local' || seated),
+      : s.players.length >= 2 && (session.mode === 'local' || (seated && !s.settings.locked)),
   );
 
   let canvas: HTMLCanvasElement;
   let crown = $state<HTMLElement>();
   let title = $state<HTMLElement>();
   let standingsEl = $state<HTMLElement>();
+
+  // Turns and race: what comes next (Play again, Again!, the countdown) is
+  // docked at the bottom of the screen while the end screen runs on below
+  // it, so a long night's ledger, honours and standings never push the vote
+  // out of sight. It sticks 1px below the bottom, so once it has, it no
+  // longer fits in the view; it then takes the pinned bars' glass.
+  let bar = $state<HTMLElement>();
+  let stuck = $state(false);
+  $effect(() => {
+    stuck = false;
+    if (!bar) return;
+    const io = new IntersectionObserver(
+      ([e]) => (stuck = e.intersectionRatio < 1 && e.boundingClientRect.bottom > (e.rootBounds?.bottom ?? innerHeight) - 1),
+      { threshold: 1 },
+    );
+    io.observe(bar);
+    return () => io.disconnect();
+  });
+  /**
+   * Phones and short screens (a laptop's 800px), turns and race: a smaller
+   * circle and less air around it, so the night's lines and the standings
+   * fit above the docked bar.
+   */
+  const small = new MediaQuery('(max-width: 640px), (max-height: 860px)');
+  const snug = $derived(!run && small.current);
+  /** Where the visible page ends: the top of the docked bar, or the bottom of the screen. */
+  const viewBottom = () => (stuck && bar ? bar.getBoundingClientRect().top : innerHeight);
+  const rowOf = (id: string) => standingsEl?.querySelector<HTMLElement>(`li[data-id="${CSS.escape(id)}"]`) ?? null;
   // A player who lost (online) sees a quieter screen. (Delve has its own ending, below.)
   const iLost = $derived(
     session.mode !== 'local' && !!session.myPlayerId && s.players.some((p) => p.id === session.myPlayerId) && !s.winners.includes(session.myPlayerId),
@@ -243,17 +275,21 @@
   });
 
   // The Crown goes to its winner once the victory's first beats are over: a
-  // stream from the row of whoever wore it into the game (or gold out of
-  // the air), landing on the winner with the milestone's gong. Timed here
-  // rather than on the effects' clock, so the gong sounds with effects off too.
+  // stream from the row of whoever wore it into the game, when that row is
+  // in view (or gold out of the air), landing on the winner with the
+  // milestone's gong. Timed here rather than on the effects' clock, so the
+  // gong sounds with effects off too. Under reduced motion it is simply there.
   const CROWN_DELAY = 2200;
+  const crownLands = !untrack(() => motion.reduced);
   let worn = $state<HTMLElement>();
   onMount(() => {
     if (!change) return;
     const from = change.from;
     const pass = setTimeout(() => {
-      const row = from ? (standingsEl?.querySelector(`li[data-id="${CSS.escape(from)}"]`) ?? null) : null;
-      if (worn) crownPassed(row, worn);
+      const row = from ? rowOf(from) : null;
+      const box = row?.getBoundingClientRect();
+      const seen = !!box && box.bottom > 0 && box.top + box.height / 2 < viewBottom();
+      if (worn) crownPassed(seen ? row : null, worn);
     }, CROWN_DELAY);
     const gong = setTimeout(() => sfx('stratum'), CROWN_DELAY + CROWN_LANDS * 1000);
     return () => {
@@ -264,36 +300,78 @@
 
   // Honours (lib/honours.ts): a line from this game for nearly everyone,
   // stamped onto the standings one by one, top to bottom, once the
-  // victory's main beats are over and the Crown has landed. Each lands with
-  // a small slam and a light tick; under reduced motion they are simply there.
+  // victory's main beats are over and the Crown has landed, each as its row
+  // is in view (above the docked bar): one further down waits until it is
+  // scrolled to. Each lands with a small slam and a light tick; under
+  // reduced motion they are simply there.
   // Judged once, as the game ended (nothing that happens on this screen changes them).
   const hon: Map<string, Honour> = untrack(() => (run ? new Map() : honours(s)));
   const HONOURS_AT = 3000;
   const HONOUR_EVERY = 350;
   /** How long a stamp takes to come down (the slam is as it lands). */
   const STAMP_LANDS = 170;
+  /** How much of a row shows before its honour is stamped. */
+  const STAMP_SEEN = 0.75;
   let stamped = $state(new Set<string>());
   onMount(() => {
     const order = standings.filter((p) => hon.has(p.id)).map((p) => p.id);
     if (!order.length) return;
-    if (matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    if (motion.reduced) {
       stamped = new Set(order);
       return;
     }
     const start = change ? Math.max(HONOURS_AT, CROWN_DELAY + CROWN_LANDS * 1000 + 450) : HONOURS_AT;
-    const timers: ReturnType<typeof setTimeout>[] = [];
-    order.forEach((id, i) => {
-      const at = start + i * HONOUR_EVERY;
-      timers.push(setTimeout(() => (stamped = new Set([...stamped, id])), at));
-      timers.push(
-        setTimeout(() => {
-          const chip = standingsEl?.querySelector(`li[data-id="${CSS.escape(id)}"] .honour`);
-          if (chip) glyphLanded(chip);
-          sfx('draw');
-        }, at + STAMP_LANDS),
+    const timers = new Set<ReturnType<typeof setTimeout>>();
+    const later = (ms: number, fn: () => void) => {
+      const t = setTimeout(() => {
+        timers.delete(t);
+        fn();
+      }, ms);
+      timers.add(t);
+    };
+    const inView = new Set<string>();
+    let io: IntersectionObserver | null = null;
+    let landing = false;
+    // The next row in view gets its stamp, at most one every HONOUR_EVERY.
+    const stampNext = () => {
+      if (landing) return;
+      const id = order.find((x) => !stamped.has(x) && inView.has(x));
+      if (!id) return;
+      landing = true;
+      stamped = new Set([...stamped, id]);
+      if (stamped.size === order.length) io?.disconnect();
+      later(STAMP_LANDS, () => {
+        const chip = rowOf(id)?.querySelector('.honour');
+        if (chip) glyphLanded(chip);
+        sfx('draw');
+      });
+      later(HONOUR_EVERY, () => {
+        landing = false;
+        stampNext();
+      });
+    };
+    later(start, () => {
+      // In view: above the docked bar (its height is kept clear even when it isn't stuck).
+      io = new IntersectionObserver(
+        (entries) => {
+          for (const e of entries) {
+            const id = (e.target as HTMLElement).dataset.id!;
+            if (e.intersectionRatio >= STAMP_SEEN) inView.add(id);
+            else inView.delete(id);
+          }
+          stampNext();
+        },
+        { threshold: [0, STAMP_SEEN, 1], rootMargin: `0px 0px -${Math.round(bar?.offsetHeight ?? 0)}px 0px` },
       );
+      for (const id of order) {
+        const row = rowOf(id);
+        if (row) io.observe(row);
+      }
     });
-    return () => timers.forEach(clearTimeout);
+    return () => {
+      io?.disconnect();
+      timers.forEach(clearTimeout);
+    };
   });
 
   // Without the effects layer (no WebGL2), simpler gold sparks on a 2D canvas;
@@ -408,13 +486,13 @@
      would be redone every frame. -->
 <canvas bind:this={canvas} class="sparks" use:portal={'dim'} aria-hidden="true"></canvas>
 
-<div class="over" class:delve={!!run} class:deeper>
+<div class="over" class:delve={!!run} class:deeper class:snug>
   <p class="kicker" in:fly={{ y: -10, duration: 600 }}>{kicker}</p>
   {#if winner}
     <div class="crown" class:fallen={!!run} bind:this={crown} in:scale={{ start: 0.4, duration: 900, delay: 200 }}>
       <!-- Delve: the deeper the run went, the colder the circle. -->
       <ArcaneCircle
-        size="212px"
+        size={snug ? '162px' : '212px'}
         color={run && endDepth >= BLUE_FROM
           ? `color-mix(in srgb, #a9bfdc ${Math.round(Math.min(1, 0.15 + ((endDepth - BLUE_FROM) / 16) * 0.85) * 100)}%, #f1d99b)`
           : `color-mix(in srgb, ${playerColor(winner.hue)}, #f1d99b 45%)`}
@@ -427,10 +505,10 @@
           {#if teamMore}<span class="more" title="{teamMore} more">+{teamMore}</span>{/if}
         </span>
       {:else}
-        <Avatar name={winner.name} hue={winner.hue} size={110} />
+        <Avatar name={winner.name} hue={winner.hue} size={snug ? 84 : 110} />
         {#if wears}
           <!-- The night's Crown, on the winner: it lands as its stream arrives (crownPassed), or was theirs already. -->
-          <span class="worn" class:lands={!!change} style:--lands="{CROWN_DELAY + CROWN_LANDS * 1000}ms" bind:this={worn} title="Wears the Crown"><CrownMark size={46} /></span>
+          <span class="worn" class:lands={!!change && crownLands} style:--lands="{CROWN_DELAY + CROWN_LANDS * 1000}ms" bind:this={worn} title="Wears the Crown"><CrownMark size={snug ? 38 : 46} /></span>
         {/if}
       {/if}
     </div>
@@ -447,13 +525,15 @@
         {#if s.deathmatch}· won the deathmatch in round {s.deathmatch.round}{/if}
       {/if}
     </p>
-    {#if ledger.length || rivalry.length}
+    {#if ledger.length}
       <p class="ledger" in:fly={{ y: 10, duration: 700, delay: 800 }}>
-        {#each ledger as line, i (i)}<span>{line}</span>{/each}
-        {#each rivalry as line, i (i)}<span class="rival" class:apart={i === 0 && ledger.length > 0}>{line}</span>{/each}
+        {#each ledger as line, i (i)}<span>{@render scored(line)}</span>{/each}
       </p>
     {/if}
   {/if}
+
+  <!-- A score ("3-2", "4 to 2") never breaks across lines. -->
+  {#snippet scored(line: string)}{#each line.split(/(\d+(?:-| to )\d+)/) as part, j (j)}{#if j % 2}<span class="nb">{part}</span>{:else}{part}{/if}{/each}{/snippet}
 
   <ol class="standings panel" bind:this={standingsEl} use:backdropShadow={{ fill: 'linear' }} in:fly={{ y: 30, duration: 700, delay: 900 }}>
     {#each standings as p, i (p.id)}
@@ -461,7 +541,18 @@
       {@const wins = tally ? nightWins(s, p.id) : 0}
       <li data-id={p.id} class:first={!team && rank[i] === 1} class:delver={!!row} in:fly={{ x: -20, duration: 400, delay: 1100 + i * 100 }}>
         {#if !team}<span class="rank">{rank[i]}</span>{/if}
-        <Avatar name={p.name} hue={p.hue} size={30} />
+        <!-- Ready for another: a gold check on the avatar's corner, where a long name and its honour can't push it about. -->
+        <span class="face"
+          ><Avatar name={p.name} hue={p.hue} size={30} />{#if ready.has(p.id)}<span
+              class="ready"
+              role="img"
+              aria-label="Ready for another"
+              title="Ready for another"
+              use:readied
+              in:scale={{ start: 0.2, duration: 380 }}
+              ><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg></span
+            >{/if}</span
+        >
         {#if row}
           <!-- Together: what each of them lost, gave and was given; their number is where they last perished. -->
           <span class="name">
@@ -475,15 +566,7 @@
         {@const honour = hon.get(p.id)}
         <span class="name"
           ><span class="line"
-            ><PlayerName name={p.name} />{#if honour}<span class="honour" class:stamped={stamped.has(p.id)}>{honour.title}</span>{/if}{#if ready.has(p.id)}<span
-                class="ready"
-                role="img"
-                aria-label="Ready for another"
-                title="Ready for another"
-                use:readied
-                in:scale={{ start: 0.2, duration: 380 }}
-                ><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg></span
-              >{/if}</span
+            ><PlayerName name={p.name} />{#if honour}<span class="honour" class:stamped={stamped.has(p.id)}>{honour.title}</span>{/if}</span
           >{#if honour}<span class="detail earned" class:stamped={stamped.has(p.id)}>{honour.detail}</span>{/if}</span
         >
         {/if}
@@ -501,7 +584,8 @@
     {/each}
   </ol>
 
-  <div class="actions" in:fly={{ y: 20, duration: 600, delay: 1300 }}>
+  <!-- What comes next: the host's buttons, a guest's vote, or what someone watching is waiting for. -->
+  {#snippet next()}
     {#if session.isHost}
       <button class="btn primary big" class:again={votes.ready.length > 0 && rematchAt === null} disabled={leaving} onclick={() => again(true)}>
         {#if rematchAt !== null}Play now{:else}Play again{#if votes.ready.length}<span class="count"><span class="dot"> • </span>{votes.ready.length} of {votes.guests.length} ready</span>{/if}{/if}
@@ -521,6 +605,8 @@
     {:else}
       <p class="muted">Waiting for the host to start a new game…</p>
     {/if}
+  {/snippet}
+  {#snippet share()}
     {#if canShare}
       <span class="share" class:labelled={!run}>
         <button
@@ -550,17 +636,39 @@
         {#if shared && run}<span class="copied" role="status" transition:fly={{ y: 4, duration: 200 }}>Copied</span>{/if}
       </span>
     {/if}
-  </div>
-  {#if rematchAt !== null}
-    <div class="countdown" transition:fly={{ y: 6, duration: 250 }}>
-      <p aria-live="polite">Everyone's in. Next game in <b class="n">{left}</b></p>
-      <span class="drain" style:transform="scaleX({drain})"></span>
+  {/snippet}
+
+  {#if run}
+    <div class="actions" in:fly={{ y: 20, duration: 600, delay: 1300 }}>
+      {@render next()}{@render share()}
     </div>
+  {:else}
+    <!-- Turns and race: docked to the bottom of the screen until the page is
+         scrolled down to it, so the vote, Play again and the countdown are
+         always in view. -->
+    <div class="end-dock" class:stuck bind:this={bar} in:fly={{ y: 20, duration: 600, delay: 1300 }}>
+      {#if rematchAt !== null}
+        <div class="countdown" transition:slide={{ duration: 250 }}>
+          <p aria-live="polite">Everyone's in. Next game in <b class="n">{left}</b></p>
+          <span class="drain" style:transform="scaleX({drain})"></span>
+        </div>
+      {/if}
+      <div class="actions">{@render next()}</div>
+    </div>
+    {#if canShare}
+      <div class="challenge" in:fly={{ y: 10, duration: 600, delay: 1400 }}>{@render share()}</div>
+    {/if}
   {/if}
   {#if champ}
     <!-- Shown as the Crown lands, when it changes hands (or is held again). -->
-    <p class="crowned" in:fly={{ y: 10, duration: 600, delay: change ? CROWN_DELAY + CROWN_LANDS * 1000 : 1500 }}>
+    <p class="crowned" in:fly={{ y: 10, duration: 600, delay: change && crownLands ? CROWN_DELAY + CROWN_LANDS * 1000 : 1500 }}>
       <CrownMark size={16} />Next game, {champ === me && session.mode !== 'local' ? 'you wear' : `${nameOf(champ)} wears`} the Crown.
+    </p>
+  {/if}
+  {#if rivalry.length}
+    <!-- This device's rivalries, after the room's night: these are yours. -->
+    <p class="rivals" in:fly={{ y: 10, duration: 600, delay: 1500 }}>
+      {#each rivalry as line, i (i)}<span>{@render scored(line)}</span>{/each}
     </p>
   {/if}
   {#if joining.length}
@@ -896,21 +1004,77 @@
     margin: 0;
     font-style: italic;
   }
-  /* Ready for another: a small gold check after the name. */
-  .ready {
+  /* Phones and short screens, turns and race: the circle smaller (162px,
+     reaching 39px beyond the avatar) and the air around it and the ledger
+     tighter, so more of the end screen is in view above the docked bar. */
+  .snug {
+    padding-top: 1.25rem;
+  }
+  .snug .kicker {
+    margin-bottom: calc(39px + 0.8rem);
+  }
+  .snug .crown {
+    margin-bottom: calc(39px + 0.7rem);
+  }
+  /* A winner's long name takes two lines: closer together. */
+  .snug h1 {
+    line-height: 1.12;
+  }
+  .snug .crown :global(.arcane) {
+    inset: -39px;
+  }
+  .snug .sub {
+    margin-bottom: 1.4rem;
+  }
+  .snug .ledger {
+    margin: -1rem 0 1.1rem;
+    font-size: 1rem;
+  }
+  /* Phones: the vote, and the host's two buttons on one row. */
+  @media (max-width: 640px) {
+    .end-dock .actions {
+      gap: 0.6rem;
+    }
+    .end-dock .btn.big {
+      padding: 0.8em 1.2em;
+    }
+    .end-dock .btn:not(.big, .small) {
+      padding-inline: 1em;
+    }
+    .end-dock p {
+      font-size: 1rem;
+    }
+  }
+
+  /* The avatar, with room for a mark on its corner. */
+  .face {
+    position: relative;
     display: inline-grid;
+    flex: none;
+  }
+  /* Ready for another: a small gold check in a dark seal on the avatar's lower right corner. */
+  .ready {
+    position: absolute;
+    right: -6px;
+    bottom: -5px;
+    display: grid;
     place-items: center;
-    width: 1.15rem;
-    height: 1.15rem;
+    width: 18px;
+    height: 18px;
     color: var(--gold-hi);
-    filter: drop-shadow(0 0 5px rgba(241, 217, 155, 0.45));
+    background: #1a130c;
+    border: 1px solid var(--gold);
+    border-radius: 50%;
+    box-shadow:
+      0 0 0 1.5px #0c0a08,
+      0 0 8px rgba(241, 217, 155, 0.45);
   }
   .ready svg {
-    width: 100%;
-    height: 100%;
+    width: 12px;
+    height: 12px;
     fill: none;
     stroke: currentColor;
-    stroke-width: 2.4;
+    stroke-width: 3;
     stroke-linecap: round;
     stroke-linejoin: round;
   }
@@ -934,21 +1098,25 @@
     max-width: 30rem;
     margin: -1.3rem 0 1.7rem;
     font-size: 1.05rem;
+    font-variant-numeric: lining-nums;
     color: #cbb994;
   }
   /* The score, then the Crown's story on a line of its own. */
-  .ledger span {
+  .ledger span:not(.nb),
+  .rivals span:not(.nb) {
     display: block;
   }
-  /* This device's rivalries, quieter: the night is the room's, these are yours. */
-  .ledger .rival {
+  .nb {
+    white-space: nowrap;
+  }
+  /* This device's rivalries, quieter, after the room's night: these are yours. */
+  .rivals {
+    max-width: 30rem;
+    margin: 0.6rem 0 0;
     font-size: 0.95rem;
     font-style: italic;
     font-variant-numeric: lining-nums;
     color: var(--muted);
-  }
-  .ledger .rival.apart {
-    margin-top: 0.35rem;
   }
   /* The Crown on the winner in the circle: over the top of the avatar, set
      off from it by a shadow; when it changes hands, stamped on as its gold
@@ -1049,22 +1217,63 @@
     margin-right: 0.45rem;
     vertical-align: -0.12em;
   }
+  /* Turns and race: what comes next, in a bar that sticks to the bottom of
+     the screen (1px below it, so it knows when it's stuck) until the page is
+     scrolled down to where it stands. Edge to edge, over the side padding;
+     stuck, it takes the glass of the bars pinned on phones. */
+  .end-dock {
+    position: sticky;
+    bottom: -1px;
+    z-index: 6;
+    align-self: stretch;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin: 1.2rem -1rem 0;
+    padding: 0.6rem max(1rem, env(safe-area-inset-right)) calc(1px + max(0.6rem, env(safe-area-inset-bottom))) max(1rem, env(safe-area-inset-left));
+    border-top: 1px solid transparent;
+    transition:
+      background-color 0.25s,
+      border-color 0.25s,
+      box-shadow 0.25s;
+  }
+  .end-dock.stuck {
+    background-color: var(--pinned-bg);
+    border-top: var(--pinned-line);
+    box-shadow: 0 -8px var(--pinned-shadow);
+  }
+  .end-dock .actions {
+    margin-top: 0;
+  }
+  /* Bring a challenger, under what comes next. */
+  .challenge {
+    margin-top: 0.9rem;
+  }
   /* Everyone's in: the count over a gold line that drains to the next game. */
   .countdown {
     position: relative;
-    margin-top: 1.1rem;
-    padding-bottom: 0.45rem;
+    width: min(460px, 100%);
+    margin-bottom: 0.6rem;
+    padding-bottom: 0.4rem;
   }
   .countdown p {
     margin: 0;
-    font-size: 1.1rem;
+    font-size: 1.15rem;
+    line-height: 1.3;
     font-style: italic;
     color: var(--gold-hi);
   }
   .countdown .n {
+    display: inline-block;
+    min-width: 1.2em;
+    margin-left: 0.15em;
     font-family: var(--font-cinzel);
     font-style: normal;
     font-weight: 700;
+    font-size: 1.55em;
+    line-height: 1;
+    vertical-align: -0.08em;
+    text-shadow: 0 0 12px rgba(241, 217, 155, 0.45);
   }
   .drain {
     position: absolute;

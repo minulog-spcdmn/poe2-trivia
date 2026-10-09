@@ -291,16 +291,24 @@
           {@const wins = tallied ? nightWins(s, p.id) : 0}
           {@const rival = !local && p.id !== session.myPlayerId ? rivalTag(rivals, p.name) : null}
           <li use:arriving={p.name} animate:flip={{ duration: 300 }} in:fly={{ x: -20, duration: 350 }} out:scale={{ duration: 200, start: 0.9 }}>
-            <Avatar name={p.name} hue={p.hue} />
+            <!-- The Crown on the avatar's lower left corner, as on the scoreboard's pill, so the name keeps its width. -->
+            <span class="face"
+              ><Avatar name={p.name} hue={p.hue} />{#if crowned === p.id}<span class="crown" title="Wears the Crown"><CrownMark size={12} /></span>{/if}</span
+            >
+            <!-- Under the name, so the row's tags never crowd it out on a phone: the games won tonight, as the end screen counts them, and your record against them. -->
             <span class="name"
-              >{#if crowned === p.id}<span class="crown" title="Won the last game"><CrownMark size={16} /></span>{/if}<PlayerName name={p.name} />{#if rival}<span
-                  class="rival"
-                  class:ahead={rival.lead > 0}
-                  class:behind={rival.lead < 0}
-                  title={rival.title}>{rival.words} <span class="n">{rival.score}</span></span
+              ><PlayerName name={p.name} />{#if wins > 0 || rival}<span
+                  class="under"
+                  >{#if wins > 0}<span class="wins" title="{wins} {wins === 1 ? 'game' : 'games'} won tonight"
+                      ><CrownMark size={12} /><span class="n">{wins}</span> {wins === 1 ? 'win' : 'wins'}</span
+                    >{/if}{#if wins > 0 && rival}<span class="sep" aria-hidden="true">•</span>{/if}{#if rival}<span
+                      class="rival"
+                      class:ahead={rival.lead > 0}
+                      class:behind={rival.lead < 0}
+                      title={rival.title}>{rival.words} <span class="n">{rival.score}</span></span
+                    >{/if}</span
                 >{/if}</span
             >
-            {#if wins > 0}<span class="tag wins" title="Games won tonight"><span class="n">{wins}</span> {wins === 1 ? 'win' : 'wins'}</span>{/if}
             {#if p.id === s.hostId}<span class="tag">Host</span>{/if}
             {#if !p.connected}<span class="tag" title="Reconnecting. Their seat is let go if they're not back when the game starts.">Offline</span>{/if}
             {#if !local && p.id === session.myPlayerId}<span class="tag you">You</span>{/if}
@@ -340,7 +348,11 @@
         <p class="hint muted">Pass the device around; each player answers on their own turn.</p>
         {#if pairs.length}
           <!-- The couch's rivalries, from games played on this device. -->
-          <p class="hint pairs">{#each pairs as line (line)}<span>{line}</span>{/each}</p>
+          <p class="hint pairs">
+            {#each pairs as line (line)}<span
+                >{#each line.split(/(\d+-\d+)/) as part, j (j)}{#if j % 2}<span class="nb">{part}</span>{:else}{part}{/if}{/each}</span
+              >{/each}
+          </p>
         {/if}
       {:else if s.players.length < 2}
         <p class="hint muted waiting"><span class="pulse"></span>Waiting for exiles to join…</p>
@@ -763,47 +775,69 @@
     border: 1px solid var(--gold-lo);
     color: var(--gold);
   }
-  .name .crown {
-    display: inline-block;
-    margin-right: 0.35em;
-    vertical-align: -0.05em;
+  /* The night's Crown (lib/series.ts): a small engraved crown in a dark chip on the avatar's lower left corner. */
+  .face {
+    position: relative;
+    display: inline-grid;
+    flex: none;
+  }
+  .face .crown {
+    position: absolute;
+    left: -4px;
+    bottom: -3px;
+    display: grid;
+    place-items: center;
+    width: 17px;
+    height: 17px;
+    background: #0c0a08;
+    border: 1px solid var(--gold-lo);
+    border-radius: 50%;
     line-height: 0;
   }
-  .tag.wins {
-    border-color: rgba(201, 164, 92, 0.45);
-    color: var(--gold-hi);
-    white-space: nowrap;
-  }
-  /* Rivals remembered: under their name, your games against them on this
-     device; gold when you lead, ember when they do. A line of its own, so a
-     row's tags never crowd out the name on a phone. */
-  .name .rival {
+  /* Under the name, a line of its own, so a row's tags never crowd out the
+     name on a phone: the games won tonight, then your record against them. */
+  .name .under {
     display: block;
     margin-top: 0.1rem;
     font-size: 0.82rem;
     font-style: italic;
-    font-variant-numeric: lining-nums;
     line-height: 1.2;
     color: var(--muted);
+  }
+  .under .sep {
+    margin: 0 0.45em;
+    font-style: normal;
+    opacity: 0.7;
+  }
+  /* Games won tonight: the end screen's small crown and Cinzel count. */
+  .under .wins {
+    color: var(--gold);
+  }
+  .under .wins :global(.crown-mark) {
+    margin-right: 0.25em;
+    vertical-align: -0.1em;
+  }
+  .under .wins .n {
+    font-family: var(--font-cinzel);
+    font-style: normal;
+    font-weight: 700;
+    font-size: 1.05em;
+  }
+  /* Rivals remembered: your games against them on this device; gold when
+     you lead, ember when they do. */
+  .name .rival {
+    font-variant-numeric: lining-nums;
   }
   .name .rival .n {
     font-style: normal;
     font-weight: 600;
+    white-space: nowrap;
   }
   .name .rival.ahead {
     color: var(--gold);
   }
   .name .rival.behind {
     color: #e5937f;
-  }
-  /* The count a size up in the body font's lining figures: Cinzel's 1 reads as an I among the capitals. */
-  .tag.wins .n {
-    font-family: var(--font-body);
-    font-variant-numeric: lining-nums;
-    font-weight: 600;
-    font-size: 1.55em;
-    letter-spacing: 0;
-    line-height: 0;
   }
   .tag.you {
     border-color: #4a6b4a;
@@ -854,8 +888,12 @@
     color: #cbb994;
     font-variant-numeric: lining-nums;
   }
-  .hint.pairs span {
+  .hint.pairs > span {
     display: block;
+  }
+  /* A score ("3-2") never breaks across lines. */
+  .hint.pairs .nb {
+    white-space: nowrap;
   }
   .waiting {
     display: flex;

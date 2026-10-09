@@ -46,9 +46,9 @@ game's first point), So Close (a point short of the winner, or level) and
 Wild Imagination (fell for 2 or more made-up items). Each goes, in that
 order, to the best player for it who has none yet (equals: the first
 seated). They are stamped in one by one, top to bottom, once the Crown has
-landed (all at once under reduced motion). The host counts what they're
-judged on, so every screen agrees; race and Delve have none
-(`src/lib/honours.ts`).
+landed, each as its row is in view (all at once under reduced motion). The
+host counts what they're judged on, so every screen agrees; race and Delve
+have none (`src/lib/honours.ts`).
 
 **Rivals:** your browser remembers who you played. Online, after each turns
 or race game you were seated in, your record against every other player
@@ -59,10 +59,12 @@ for nobody). The lobby says it under their name ("You lead 3-2", "Leads you
 4 to 2 across your games.", "Bea leads you 3 to 1 across your games.
 Revenge?"). On one device it keeps each pair of names instead: the winner
 beats every other seat, and the lobby and the end screen read "Ash leads Bea
-3-2 on this device." Rivals are known by the look of their name, kept in
-this browser only (60 at most; the longest unplayed go first), and a game
-counts once, however often its end screen opens again; spectators and Delve
-count nothing. Erasing the codex erases them too (`src/lib/rivals.ts`).
+3-2 on this device." (the end screen leaves out a pair's first game, which
+would only say again who won it). Rivals are known by the look of their
+name, kept in this browser only (60 at most; the longest unplayed go first),
+and a game counts once, however often its end screen opens again;
+spectators and Delve count nothing. Erasing the codex erases them too
+(`src/lib/rivals.ts`).
 
 Items aren't repeated within a game until a category runs out, and earlier answers never come back as wrong answers (so they can't be ruled out from memory). Precursor tablets come up about a quarter as often as other items; a tablet question only offers tablets (once too few unseen tablets are left for that, they sit out until the category starts over), and tablets don't appear in other questions.
 
@@ -572,7 +574,10 @@ browser (`src/lib/achievements.ts`); erasing the codex erases them.
     the host starts it sooner (**Play now**) or goes back to the lobby. A
     guest who drops out is no longer waited for, and one who comes back not
     ready stops the count. Spectators don't vote; they read "You'll play in
-    the next game." (`src/lib/series.ts`).
+    the next game." (`src/lib/series.ts`). After a turns or race game, what
+    comes next (Play again, Again!, the countdown) stays docked at the
+    bottom of the screen until the page is scrolled down to it, so a long
+    night's end screen never pushes it out of sight.
   - **Summons:** the invite link names the host (`?room=K7Q2PX&from=Ash`).
     On a phone, sharing it says "Ash summons you to a hunt on PoE2.Quest.
     Name the unique before the timer burns out." (from a guest: "Bob invites
@@ -590,7 +595,8 @@ browser (`src/lib/achievements.ts`); erasing the codex erases them.
     won 10 to 8 at PoE2.Quest. Take a seat for the rematch: …"; from the
     second game, "Ash holds the Crown after 3 games of PoE2.Quest. Come and
     take it: …"). Online the link is the room's summons, so a friend who
-    opens it during the end screen watches and is seated in the next game.
+    opens it during the end screen watches and is seated in the next game
+    (a locked room doesn't offer it, since it would turn them away).
     Hot-seat shares the site ("We played PoE2.Quest tonight and Ash won 10
     to 8. Your turn: poe2.quest").
   - Very strict networks (some corporate or mobile networks) can block

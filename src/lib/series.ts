@@ -95,11 +95,29 @@ function list(names: string[]): string {
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 /**
+ * Names for the lines below: `me` (online, the player this screen seats) is
+ * "you", first among several; everyone else by name.
+ */
+function namer(nameOf: (id: string) => string, me: string | null) {
+  const one = (id: string) => (id === me ? 'you' : nameOf(id));
+  const many = (ids: string[]) => list([...ids.filter((id) => id === me), ...ids.filter((id) => id !== me)].map(one));
+  return {
+    one,
+    many,
+    /** The same, starting a sentence ("You", "You and Bree"; a name as its player spelled it). */
+    subject: (id: string) => (id === me ? 'You' : nameOf(id)),
+    subjects: (ids: string[]) => (me !== null && ids.includes(me) ? `Y${many(ids).slice(1)}` : many(ids)),
+    /** A verb for `id`: "you lead", "Ash leads". */
+    verb: (id: string, mine: string, theirs: string) => (id === me ? mine : theirs),
+  };
+}
+
+/**
  * The night's score, for the end screen: after the first game who won it,
  * then who leads (two seated: both counts; more: the leader's). Only
- * players still seated are named.
+ * players still seated are named; online, the screen's own player is "you".
  */
-export function ledgerLine(s: GameState, nameOf: (id: string) => string): string {
+export function ledgerLine(s: GameState, nameOf: (id: string) => string, me: string | null = null): string {
   const n = s.series;
   if (!n?.played || !counted(s)) return '';
   const here = s.players.map((p) => p.id);
@@ -107,27 +125,32 @@ export function ledgerLine(s: GameState, nameOf: (id: string) => string): string
   const top = Math.max(...here.map(won));
   if (top <= 0) return '';
   const leaders = here.filter((id) => won(id) === top);
-  if (n.played === 1)
-    return leaders.length === 1 ? `Game 1 goes to ${nameOf(leaders[0])}.` : `Game 1 is shared by ${list(leaders.map(nameOf))}.`;
+  const { one, many, subject, subjects, verb } = namer(nameOf, me);
+  if (n.played === 1) {
+    if (leaders.length > 1) return `Game 1 is shared by ${many(leaders)}.`;
+    return leaders[0] === me ? 'Game 1 is yours.' : `Game 1 goes to ${one(leaders[0])}.`;
+  }
   if (here.length === 2) {
     if (leaders.length === 2) return `All square at ${plural(top, 'game', 'games')} each.`;
     const other = here.find((id) => id !== leaders[0])!;
-    return `${nameOf(leaders[0])} leads the night ${top} to ${won(other)}.`;
+    return `${subject(leaders[0])} ${verb(leaders[0], 'lead', 'leads')} the night ${top} to ${won(other)}.`;
   }
-  if (leaders.length === 1) return `${nameOf(leaders[0])} leads the night with ${plural(top, 'win', 'wins')}.`;
-  return `${list(leaders.map(nameOf))} share the lead with ${plural(top, 'win', 'wins')} each.`;
+  if (leaders.length === 1) return `${subject(leaders[0])} ${verb(leaders[0], 'lead', 'leads')} the night with ${plural(top, 'win', 'wins')}.`;
+  return `${subjects(leaders)} share the lead with ${plural(top, 'win', 'wins')} each.`;
 }
 
 /**
  * The Crown's story at the end of a game, from the second game on: taken
  * from someone (or claimed while it was nobody's), or held for three games
- * or more in a row.
+ * or more in a row. Online, the screen's own player (`me`) is "you".
  */
-export function crownLine(s: GameState, nameOf: (id: string) => string): string {
+export function crownLine(s: GameState, nameOf: (id: string) => string, me: string | null = null): string {
   const change = crownChange(s);
   const n = s.series;
   if (!change || !n || n.played < 2) return '';
-  const who = nameOf(change.to);
-  if (change.held) return n.champ!.run >= 3 ? `${who} has held the Crown for ${n.champ!.run} games.` : '';
-  return change.from ? `${who} takes the Crown from ${nameOf(change.from)}.` : `${who} takes the Crown.`;
+  const { one, subject, verb } = namer(nameOf, me);
+  const who = subject(change.to);
+  if (change.held) return n.champ!.run >= 3 ? `${who} ${verb(change.to, 'have', 'has')} held the Crown for ${n.champ!.run} games.` : '';
+  const takes = verb(change.to, 'take', 'takes');
+  return change.from ? `${who} ${takes} the Crown from ${one(change.from)}.` : `${who} ${takes} the Crown.`;
 }

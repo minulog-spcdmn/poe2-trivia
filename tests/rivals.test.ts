@@ -302,6 +302,20 @@ test('erasing the codex erases the rivals and what was kept aside, never a newer
   resetRivals();
 });
 
+test('a rival whose name looks like a property every object has is a stranger until played', () => {
+  // 'Constructor', 'ValueOf' and 'HasOwnProperty' pass the name check; their looks are Object.prototype's.
+  for (const name of ['Constructor', 'ValueOf', 'HasOwnProperty']) {
+    assert.equal(rivalTag(emptyRivals(), name), null, name);
+    assert.equal(rivalTag(parseRivals('{"v":1,"vs":{},"pairs":{},"seen":[]}'), name), null, name);
+    const g = played(['Ash', name], 0);
+    assert.deepEqual(rivalLines(emptyRivals(), g, 'p0'), []);
+    const r = recordGame(emptyRivals(), g, 'p0', 5)!;
+    assert.deepEqual(rivalTag(r, name), { text: 'You lead 1-0', words: 'You lead', score: '1-0', title: `Your games against ${name} on this device: 1 won, 0 lost`, lead: 1 });
+    assert.deepEqual(rivalLines(r, g, 'p0'), [`Your first game against ${name} on this device.`]);
+    assert.deepEqual(parseRivals(serializeRivals(r)), r, 'stored and read back');
+  }
+});
+
 test('rivalTag, rivalLines and pairLines read as they should', () => {
   const r: Rivals = {
     vs: {
@@ -350,7 +364,9 @@ test('rivalTag, rivalLines and pairLines read as they should', () => {
 
   // The lobby: every pair of the party; the end screen: those the game counted.
   assert.deepEqual(pairLines(r, ['Ash', 'Bea', 'Cid']), ['Ash leads Bea 3-2 on this device.', 'Bea and Cid are level 2-2 on this device.']);
-  assert.deepEqual(pairLines(r, ['Cid', 'Bea', 'Ash'], 50), ['Ash leads Bea 3-2 on this device.', 'Cid leads Ash 1-0 on this device.']);
+  // The end screen leaves out a pair's first game (1-0 only says again who won it).
+  assert.deepEqual(pairLines(r, ['Cid', 'Bea', 'Ash'], 50), ['Ash leads Bea 3-2 on this device.']);
+  assert.deepEqual(pairLines(r, ['Cid', 'Ash']), ['Cid leads Ash 1-0 on this device.'], 'the lobby keeps it');
   assert.deepEqual(pairLines(r, ['Cid', 'Bea']), ['Cid and Bea are level 2-2 on this device.'], 'by seat when level');
   assert.deepEqual(pairLines(r, ['Ash', 'Dora']), []);
 

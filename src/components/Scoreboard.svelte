@@ -714,7 +714,7 @@
         <Avatar name={p.name} hue={p.hue} size={32} dim={!p.connected} />
         {#if crowned === p.id}
           <!-- On the avatar's lower left corner, where a pill stuck to the top of a phone's screen can't clip it. -->
-          <span class="crowned" title="Won the last game"><CrownMark size={12} /></span>
+          <span class="crowned" title="Wears the Crown"><CrownMark size={12} /></span>
         {/if}
         <div class="info">
           <span class="name">

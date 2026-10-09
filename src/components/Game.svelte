@@ -362,7 +362,7 @@
           <div class="banner" class:dm={!!dm} class:veiled={!!zone && !zone.leaving} style:--c={bannerColor}>
             <span class="rule"></span>
             <h2 class:start={startsRun} use:bannerFx={{ color: bannerColor, big: bannerBig }}
-              >{#if crowned}<span class="crown" title="Won the last game"><CrownMark size={18} /></span>{/if}{bannerTitle}</h2
+              >{#if crowned}<span class="crown" title="Wears the Crown"><CrownMark size={18} /></span>{/if}{bannerTitle}</h2
             >
             <span class="rule"></span>
           </div>
