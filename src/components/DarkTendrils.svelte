@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { motion } from '../lib/motion.svelte';
   import { CLOCK_PEAK, OVERSHOOT, onPressure, pressing, pressureLevel } from '../lib/darkness';
-  import { whenIdle } from '../lib/fx/gl';
+  import { whenIdle } from '../lib/idle';
 
   // Delve, on the CSS backdrop (Background.svelte, without WebGL): the dark
   // of a question's clock running down (lib/darkness.ts), as the WebGL
@@ -164,7 +164,7 @@
     let url: string | null = null;
     let gone = false;
     let drawn = false;
-    const stopIdle = whenIdle(draw, 2000);
+    const stopIdle = whenIdle(draw, { timeout: 2000 });
     function draw() {
       if (drawn) return;
       drawn = true;

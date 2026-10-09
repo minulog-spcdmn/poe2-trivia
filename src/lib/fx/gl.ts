@@ -1,6 +1,8 @@
 // Small WebGL2 helpers shared by the FX overlay renderer (and the backdrop,
 // lib/backdrop.ts, which builds its Delve programs with buildPrograms).
 
+import { whenIdle } from '../idle.ts';
+
 export type Program = { prog: WebGLProgram; u: (name: string) => WebGLUniformLocation | null };
 
 /** Wraps a linked program (see buildPrograms) with a cached uniform lookup. */
@@ -20,17 +22,6 @@ export type ProgramSource = { vs: string; fs: string; label: string };
 
 /** Programs being built (see buildPrograms): `cancel` drops them; `now` finishes at once, waiting for the GPU if need be. */
 export type Build = { cancel(): void; now(): void };
-
-/** Runs `f` when the page is idle (soon, either way); returns a function that cancels it. */
-export function whenIdle(f: () => void, timeout = 500): () => void {
-  const g = globalThis as { requestIdleCallback?: (f: () => void, o: { timeout: number }) => number; cancelIdleCallback?: (id: number) => void };
-  if (typeof g.requestIdleCallback === 'function') {
-    const id = g.requestIdleCallback(f, { timeout });
-    return () => g.cancelIdleCallback?.(id);
-  }
-  const id = setTimeout(f, 50);
-  return () => clearTimeout(id);
-}
 
 /** Whether the page was refused a WebGL2 context (the backdrop's, asked first): the effects then don't count on one either. */
 let refused = false;
@@ -232,9 +223,9 @@ export function buildPrograms(gl: WebGL2RenderingContext, sources: readonly Prog
     if (started.length === sources.length) return readWhenCaughtUp();
     if (oneAtATime) started.push(begin(gl, sources[started.length]));
     else for (const src of sources) started.push(begin(gl, src));
-    nextFrame(() => (stopIdle = whenIdle(step)));
+    nextFrame(() => (stopIdle = whenIdle(step, { timeout: 500 })));
   };
-  nextFrame(ext ? step : () => (stopIdle = whenIdle(step)));
+  nextFrame(ext ? step : () => (stopIdle = whenIdle(step, { timeout: 500 })));
 
   return {
     cancel() {

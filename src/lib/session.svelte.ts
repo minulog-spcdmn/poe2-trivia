@@ -69,6 +69,7 @@ import {
   type DelveNotice,
 } from './delveSession';
 import { readLegacy, readStored, removeLegacy, removeStored, writeStored } from './storage';
+import { whenIdle } from './idle';
 
 export const engine = new Engine(itemData as Item[], { fakes: fakeNames });
 
@@ -1646,17 +1647,19 @@ class Session {
   private noteAchievements() {
     if (this.achievementsDue) return;
     this.achievementsDue = true;
-    const idle = (run: () => void) => (typeof requestIdleCallback === 'function' ? requestIdleCallback(run, { timeout: 1000 }) : setTimeout(run, 300));
     void Promise.all([import('./achievements'), import('./achievementToasts')])
       .then(([{ checkAchievements }, { announceAchievements }]) =>
-        idle(() => {
-          this.achievementsDue = false;
-          try {
-            announceAchievements(checkAchievements(engine.items), 'game');
-          } catch (err) {
-            console.warn('achievements', err);
-          }
-        }),
+        whenIdle(
+          () => {
+            this.achievementsDue = false;
+            try {
+              announceAchievements(checkAchievements(engine.items), 'game');
+            } catch (err) {
+              console.warn('achievements', err);
+            }
+          },
+          { timeout: 1000, fallback: 300 },
+        ),
       )
       .catch((err) => {
         this.achievementsDue = false;
