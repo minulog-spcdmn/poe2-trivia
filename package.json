@@ -8,6 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json",
+    "bot": "node scripts/room-bot.mjs",
     "fetch-data": "node scripts/fetch-data.mjs",
     "looks": "node scripts/looks.mjs",
     "test": "node --experimental-strip-types --no-warnings --test tests/*.test.ts"
@@ -16,6 +17,7 @@
     "@sveltejs/vite-plugin-svelte": "^7.3.0",
     "@tsconfig/svelte": "^5.0.8",
     "@types/node": "^24.13.3",
+    "playwright-core": "^1.56.1",
     "svelte": "^5.57.0",
     "svelte-check": "^4.7.6",
     "typescript": "~6.0.2",

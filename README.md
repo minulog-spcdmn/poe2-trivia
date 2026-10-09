@@ -822,6 +822,54 @@ To use your own [PeerJS server](https://github.com/peers/peerjs-server)
 instead of the public cloud, build with `VITE_PEER_HOST`, `VITE_PEER_PORT`,
 `VITE_PEER_PATH` and `VITE_PEER_SECURE`.
 
+### The room bot
+
+`npm run bot` keeps a public room open for anyone to join, hosted by a
+player that plays like a person (`src/bot/`, run by `scripts/room-bot.mjs`).
+Run it on any machine that stays on (a small VPS is plenty).
+
+- **How it runs:** the script builds the game with its bot page
+  (`bot.html`, only with `VITE_BOT=1`; the live build leaves it out),
+  serves the build on this machine and opens the page in headless Chromium.
+  The page is the real game session without its screens, hosting a room
+  like any browser, so rooms, the open-room listing, the art sent to guests
+  and every check on guests work as they do for a person hosting.
+- **What it does as host:** the room is always public and never locked. A
+  game starts 15 s after the last person joined the lobby (or left it),
+  with the settings it was started with. After a game the scores stay up
+  for 12 s, then it plays again with everyone there (spectators get seats).
+  Everyone gone for 40 s mid-game: back to the lobby. It skips a connected
+  player who sits on their turn for 30 s, as a host may.
+- **How it plays** (`src/bot/brain.ts`): it hosts, so it always has the
+  answer; it plays as if it didn't. It knows each category better or worse
+  (a persona rolled once and saved, so a restart doesn't make it someone
+  else), knows fewer answers the harder the difficulty, on veiled art and
+  in a deathmatch, and takes a few seconds to answer (longer on harder
+  questions and when unsure).
+  When it doesn't know, it falls for the wrong option whose name looks most
+  like the right one, and now and then lets the clock run out. In a race
+  it mostly sits out questions it isn't sure of (a wrong guess costs a
+  point) and never picks an option someone already got wrong. Its race
+  answers are held back like any host's.
+- **Modes:** take turns and race. Not Delve, nor Custom difficulty.
+- **Its storage is its own:** the page is marked `<html data-bot>`, and
+  `src/lib/storage.ts` starts every key with `bot.`, so a bot page opened in
+  your own browser never touches your saves or codex.
+
+```sh
+npx playwright-core install chromium     # once, or point BOT_CHROMIUM at a Chromium or Chrome
+npm run bot -- --name "Exile Bot" --mode turns --difficulty cruel --target 10 --timer 32
+```
+
+Every option is optional (those are the defaults); `--timer` is 8, 16, 32
+or 64, `--headed` shows the browser and `--no-build` reuses the last build.
+The build and the browser profile live in `.bot/` (ignored by git). The
+profile keeps the room's save, so a page that crashes is opened again as the
+same room; if the browser itself goes, the script exits with an error for a
+supervisor (systemd, Docker's restart policy) to start it again. Ctrl-C
+closes the room and tells everyone in it. Choose a name that says it's a
+bot, so players know whom they're playing.
+
 ## Deploying to GitHub Pages
 
 `.github/workflows/deploy.yml` builds and deploys on every push to `main`.

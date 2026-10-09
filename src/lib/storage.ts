@@ -19,6 +19,12 @@ export const BACKDROP_TOOL = typeof document !== 'undefined' && document.documen
  * start apart from the lab's too, so its run never moves the lab's.
  */
 export const ZONES_PREVIEW = typeof document !== 'undefined' && document.documentElement.hasAttribute('data-zones');
+/**
+ * The room bot (bot.html, src/bot: dev and bot builds only) marks its page
+ * `<html data-bot>`: its keys start apart too, so a bot opened in someone's
+ * own browser never takes over their saves, codex or settings.
+ */
+export const BOT = typeof document !== 'undefined' && document.documentElement.hasAttribute('data-bot');
 
 /**
  * localStorage and sessionStorage, for the whole site (a test keeps every
@@ -31,7 +37,7 @@ export const ZONES_PREVIEW = typeof document !== 'undefined' && document.documen
  * start; the *Key versions take a whole key, for the few the beta must share
  * with the live game or leave alone.
  */
-export const STORE = (BETA ? 'poe2trivia.beta.' : 'poe2trivia.') + (LAB ? 'lab.' : '') + (ZONES_PREVIEW ? 'zones.' : '') + (BACKDROP_TOOL ? 'backdrops.' : '');
+export const STORE = (BETA ? 'poe2trivia.beta.' : 'poe2trivia.') + (LAB ? 'lab.' : '') + (ZONES_PREVIEW ? 'zones.' : '') + (BACKDROP_TOOL ? 'backdrops.' : '') + (BOT ? 'bot.' : '');
 
 export type Area = 'local' | 'session';
 

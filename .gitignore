@@ -25,3 +25,6 @@ dist-ssr
 
 # Design previews to look at, not part of the app
 .preview/
+
+# The room bot's build and browser profile (scripts/room-bot.mjs)
+.bot/
