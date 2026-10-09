@@ -45,6 +45,16 @@
   const item = $derived(engine.byId.get(q.itemId));
   const streak = $derived(streakOn(rec, today));
 
+  /**
+   * A moment after an answer the circle's colour goes back to its idle look,
+   * so the page rests as it was (an answer already given at load starts so).
+   */
+  const SETTLE_MS = 5000;
+  let settled = $state(true);
+  let settleTimer: ReturnType<typeof setTimeout> | undefined;
+  onMount(() => () => clearTimeout(settleTimer));
+  const glow = $derived(answered && !settled);
+
   let optEls: HTMLButtonElement[] = $state([]);
   let artEl: HTMLElement | null = $state(null);
   let practiceEl: HTMLButtonElement | null = $state(null);
@@ -61,6 +71,9 @@
     }
     const good = i === rightIdx;
     const at = Date.now();
+    settled = false;
+    clearTimeout(settleTimer);
+    settleTimer = setTimeout(() => (settled = true), SETTLE_MS);
     if (practice) practicePicked = i;
     else {
       rec = answerDaily(rec, today, i, good);
@@ -103,6 +116,8 @@
     if (n >= 1 && n <= q.options.length) pick(n - 1);
   }
 
+  const upper = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
   /** The answers' glow follows the mouse. */
   function glare(e: PointerEvent) {
     if (e.pointerType !== 'mouse') return;
@@ -116,14 +131,14 @@
 <svelte:window onkeydown={keys} />
 
 <section class="daily" aria-label="Today's unique">
-  <div class="stage" class:lit={answered && right} class:dim={answered && !right}>
+  <div class="stage">
     <!-- The fade at the bottom is a mask, and a mask cuts off whatever lies
          outside its box: it is drawn on a box larger than the circle, so the
          circle's glow (and its wave when answered right) spreads freely. -->
     <div class="veil">
       <div class="inner">
         <div class="circle">
-          <ArcaneCircle size="100%" state={answered && right ? 'good' : 'idle'} strength={!answered ? 0.5 : right ? 0.85 : 0.26} />
+          <ArcaneCircle size="100%" state={glow && right ? 'good' : 'idle'} strength={!glow ? 0.5 : right ? 0.85 : 0.26} />
         </div>
         <div class="art" bind:this={artEl}>
           {#key q.itemId + (practice ? ':p' : '')}
@@ -140,7 +155,8 @@
       {:else}
         <b class="what">{practice ? 'Practice' : 'Today’s unique'}</b>
       {/if}
-      {#if !practice}<span class="no"><span class="no-label">No.</span> {dayNumber(now)}</span>{/if}
+      <!-- Which day's question (not the item's number): only until it is answered. -->
+      {#if !practice && !answered}<span class="no"><span class="no-label">Day</span> {dayNumber(now)}</span>{/if}
     </p>
   </div>
 
@@ -160,7 +176,8 @@
       >
         <span class="sheen"></span>
         <span class="key" aria-hidden="true">{i + 1}</span>
-        <span class="text">{label}{#if fake}<i class="made-up">made up</i>{/if}</span>
+        <span class="text">{label}</span>
+        {#if fake}<i class="made-up" in:fade={{ duration: 300 }}>made up</i>{/if}
         <span class="cue" aria-hidden="true"></span>
         {#if st === 'right'}<span class="mark" in:scale={{ duration: 300 }}>✓</span>{/if}
         {#if st === 'wrong'}<span class="mark" in:scale={{ duration: 300 }}>✕</span>{/if}
@@ -179,15 +196,23 @@
     {:else}
       <button class="btn small" bind:this={practiceEl} onclick={practiceMore} {disabled} in:fade={{ duration: 250 }}>Practice more</button>
       <p class="tally" in:fade={{ duration: 300, delay: 150 }}>
-        {#if streak > 0}
-          <span class="flame" aria-hidden="true">🔥</span><b class="streak"><span class="num">{streak}</span> in a row</b>
-        {:else if todays && todays.ended > 0}
-          <span>Streak ended at <span class="num">{todays.ended}</span></span>
+        {#if practice}
+          <!-- Practice keeps out of the streak, so the streak keeps out of practice. -->
+          <span>{upper(nextIn(now, 'daily'))}</span>
         {:else}
-          <span>Missed today</span>
+          {#if streak >= 2}
+            <!-- The game's streak badge, counted in days. -->
+            <b class="streak"><span class="num">{streak}</span> days in a row</b>
+          {:else if streak === 1}
+            <span>Named today</span>
+          {:else if todays && todays.ended >= 2}
+            <span>Streak ended at <span class="num">{todays.ended}</span> days</span>
+          {:else}
+            <span>Missed today</span>
+          {/if}
+          <span class="sep" aria-hidden="true">·</span>
+          <span>{nextIn(now)}</span>
         {/if}
-        <span class="sep" aria-hidden="true">·</span>
-        <span>{nextIn(now, practice ? 'daily' : '')}</span>
       </p>
     {/if}
   </div>
@@ -484,15 +509,20 @@
       color 0.25s,
       text-shadow 0.25s;
   }
-  /* The made-up name, said so once it's over (never wrapping under the name). */
+  /* The made-up name, said so once it's over: a tag in the tile's top
+     corner, out of the name's way, so nothing wraps or moves. */
   .made-up {
-    flex: none;
+    position: absolute;
+    top: 3px;
+    right: 2.6rem;
     font-family: var(--font-body);
     font-weight: 400;
-    font-size: 15px;
+    font-size: 13px;
+    line-height: 1;
     letter-spacing: 0;
     white-space: nowrap;
     color: var(--unique-hi);
+    pointer-events: none;
   }
   .mark {
     position: absolute;
@@ -569,17 +599,40 @@
     font-size: 15px;
     color: #a99c86;
   }
-  .flame {
-    font-style: normal;
-    font-size: 15px;
-  }
+  /* A streak of days, in the game's streak badge (QuestionView's .streak). */
   .streak {
+    position: relative;
+    align-self: center;
+    padding: 0.15em 0.75em 0.1em;
     font-family: var(--font-display);
     font-style: normal;
-    font-weight: 400;
-    font-size: 17px;
-    color: var(--unique-hi);
-    text-shadow: 0 0 12px rgba(224, 138, 68, 0.4);
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    color: #ffe2b0;
+    background: linear-gradient(180deg, rgba(160, 70, 20, 0.6), rgba(80, 25, 5, 0.6));
+    border: 1px solid rgba(255, 150, 70, 0.6);
+    border-radius: 999px;
+    box-shadow: 0 0 16px rgba(255, 120, 40, 0.35);
+    text-shadow: 0 0 10px rgba(255, 170, 90, 0.7);
+  }
+  /* It smoulders: a wider glow fades in and out on a layer of its own. */
+  .streak::before {
+    content: '';
+    position: absolute;
+    inset: -1px;
+    border-radius: inherit;
+    box-shadow: 0 0 24px rgba(255, 140, 50, 0.4);
+    opacity: 0;
+    animation: smoulder-badge 1.6s ease-in-out infinite;
+    pointer-events: none;
+  }
+  @keyframes smoulder-badge {
+    50% {
+      opacity: 1;
+    }
   }
   .num {
     font-family: var(--font-cinzel);
