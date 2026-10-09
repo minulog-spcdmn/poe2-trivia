@@ -9,9 +9,11 @@ import { namesFor } from './identities';
 
 if (!(import.meta.env.DEV || import.meta.env.VITE_BOT === '1') || !BOT) throw new Error('The bot only runs from bot.html, on the dev server or a bot build.');
 
-// Several rooms at once (scripts/room-bot.mjs --rooms): this one is ?slot= of ?of=.
+// Two rooms at once (scripts/room-bot.mjs --rooms 2): this one is ?slot= of ?of=,
+// and the second only opens while every other room is mid-game (wanted.ts).
 const q = new URLSearchParams(location.search);
-const bot = new Bot(namesFor(Number(q.get('slot') ?? 1), Number(q.get('of') ?? 1)));
+const slot = Number(q.get('slot') ?? 1);
+const bot = new Bot(namesFor(slot, Number(q.get('of') ?? 1)), slot === 2 ? 'second' : 'first');
 bot.start();
 
 // For the runner (and a look in a headed browser).

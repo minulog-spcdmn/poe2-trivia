@@ -1,15 +1,19 @@
 // The room bot's host: one of a cast of made-up players (identities.ts)
-// hosts a public room for a while, starts games for whoever joins, plays its
-// own turns (brain.ts), and calls it a day after a game; a while later
-// someone else opens a room. It drives the session as the host's own screens
-// would, through dispatch, so every rule (and the handicap on the host's race
-// answers) applies to it too.
+// hosts a public room while one is wanted (wanted.ts, from the open-room
+// list it checks every minute or so), starts games for whoever joins, plays
+// its own turns (brain.ts), and calls it a day after a game; someone else
+// opens the next room. Alone in the lobby, it makes way for other rooms, and
+// gives up (or tries other rules) after a while. It drives the session as
+// the host's own screens would, through dispatch, so every rule (and the
+// handicap on the host's race answers) applies to it too.
 
 import { engine, session } from '../lib/session.svelte';
 import type { GameState, Question } from '../lib/game';
+import { scanRooms, type RoomInfo } from '../lib/rooms';
 import { readStored, writeStored } from '../lib/storage';
 import { answerDelay, knowChance, pickCategory, pickDelay, wrongPick, type Ask } from './brain';
-import { breakLength, identityOf, namesFor, nextName, shiftLength, type Identity } from './identities';
+import { breakLength, identityOf, lonelyLength, nextName, otherPrefs, shiftLength, type Identity } from './identities';
+import { joinable, makesWay, wanted, type Role } from './wanted';
 
 const TICK_MS = 200;
 /** Everyone else gone mid-game this long (they may only be reloading): back to the lobby. */
@@ -18,6 +22,20 @@ const ALONE_MS = 40000;
 const STUCK_MS = 60000;
 /** Past the end of their time, people waiting or playing get this long before the host goes anyway. */
 const OVERTIME_MS = 30 * 60000;
+/** The open-room list is checked this often (ms, from..to). */
+const SCOUT_EVERY: [number, number] = [40000, 75000];
+/**
+ * Checks in a row that must find a room wanted before one opens: the second
+ * room waits longer, so the first one's room shows in the list before it
+ * would open as well.
+ */
+const WANTED_CHECKS: Record<Role, number> = { first: 2, second: 3 };
+/** Checks in a row that must find another room to join before an empty lobby makes way. */
+const MAKE_WAY_CHECKS = 2;
+/** An empty lobby stays open at least this long before it makes way. */
+const MIN_OPEN_MS = 60000;
+/** Chance that a host nobody joined tries other rules once, instead of leaving. */
+const RETRY_CHANCE = 0.35;
 
 const log = (...args: unknown[]) => console.log('[bot]', ...args);
 const between = (lo: number, hi: number) => Math.round(lo + Math.random() * (hi - lo));
@@ -61,9 +79,27 @@ export class Bot {
   private notReadySince = Date.now();
   private configured = false;
   private timer: ReturnType<typeof setInterval> | null = null;
+  private scoutTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Checks in a row that found a room wanted (while nobody is on). */
+  private wantedChecks = 0;
+  /** Checks in a row that found another room to join (while this one is on). */
+  private wayChecks = 0;
+  /** What the last check found, for the status. */
+  private seen: { rooms: number; joinable: number; at: number } | null = null;
+  /** Since when the lobby has been empty but for the host (0: it isn't), and how long they'll stand it. */
+  private lonelySince = 0;
+  private lonelyFor = 0;
+  /** The one on has already tried other rules once. */
+  private retried = false;
 
-  /** `names`: whom this room draws its hosts from (its share when several rooms run at once). */
-  constructor(private readonly names: string[]) {}
+  /**
+   * `names`: whom this room draws its hosts from (its share when two rooms
+   * run at once); `role`: when it opens (wanted.ts).
+   */
+  constructor(
+    private readonly names: string[],
+    private readonly role: Role,
+  ) {}
 
   private get persona() {
     return this.who!.persona;
@@ -77,15 +113,42 @@ export class Bot {
       session.resume();
       if (session.mode !== 'host') session.host(this.shift.on);
       log(`${this.shift.on} is back after a reload, on until ${time(this.shift.until)}`);
-    } else if (this.shift.backAt > Date.now()) log(`nobody on until ${time(this.shift.backAt)}`);
+    }
     this.timer = setInterval(() => this.tick(), TICK_MS);
+    void this.scout();
   }
 
   /** Closes the room (the runner stopping): everyone is told, and nothing is saved to reopen. */
   close() {
     if (this.timer) clearInterval(this.timer);
-    this.timer = null;
+    if (this.scoutTimer) clearTimeout(this.scoutTimer);
+    this.timer = this.scoutTimer = null;
     session.leave();
+  }
+
+  /** Checks the open-room list (as the start page does), then again in a minute or so. */
+  private async scout() {
+    const rooms: RoomInfo[] = [];
+    try {
+      await scanRooms((r) => rooms.push(r), () => !this.timer);
+    } catch {
+      // The matchmaking server can't be reached: no news, so nothing changes.
+      this.scoutTimer = setTimeout(() => void this.scout(), between(...SCOUT_EVERY));
+      return;
+    }
+    if (!this.timer) return;
+    const mine = this.shift.on ? session.code : '';
+    const others = rooms.filter((r) => r.code !== mine);
+    this.seen = { rooms: others.length, joinable: others.filter(joinable).length, at: Date.now() };
+    if (this.shift.on) {
+      this.wantedChecks = 0;
+      this.wayChecks = makesWay(others) ? this.wayChecks + 1 : 0;
+    } else {
+      this.wayChecks = 0;
+      this.wantedChecks = wanted(this.role, others) ? this.wantedChecks + 1 : 0;
+      if (this.wantedChecks === 1) log(`no ${this.role === 'first' ? 'room' : 'room to join'} listed (${others.length} listed)`);
+    }
+    this.scoutTimer = setTimeout(() => void this.scout(), between(...SCOUT_EVERY));
   }
 
   /** What the runner prints now and then. */
@@ -93,9 +156,11 @@ export class Bot {
     const s = session.state;
     const on = this.shift.on;
     return {
+      role: this.role,
       host: on,
       until: on ? time(this.shift.until) : null,
       backAt: on ? null : time(this.shift.backAt),
+      listed: this.seen ? `${this.seen.rooms} other rooms, ${this.seen.joinable} to join (${time(this.seen.at)})` : 'not checked yet',
       code: session.code,
       status: session.status,
       phase: s?.phase ?? null,
@@ -115,28 +180,36 @@ export class Bot {
     this.shift = { on: name, until: now + shiftLength(Math.random), backAt: 0, recent: [...this.shift.recent, name].slice(-20) };
     this.save();
     this.configured = false;
+    this.retried = false;
+    this.lonelySince = 0;
+    this.wayChecks = 0;
     this.plan = null;
     this.notReadySince = now;
     log(`${name} comes on until ${time(this.shift.until)}`);
     session.host(name);
   }
 
-  /** The one on calls it a day: the room closes, and someone else comes on after a break. */
-  private end(now: number, why: string) {
+  /**
+   * The one on calls it a day: the room closes, and someone else may come on
+   * after a break, if a room is still wanted. Unless it made way for another
+   * room, it was: the next one comes on after the break, unless a check
+   * meanwhile finds a room again.
+   */
+  private end(now: number, why: string, madeWay = false) {
     log(`${this.shift.on} leaves (${why})`);
     session.leave();
     this.who = null;
     this.plan = null;
     this.shift = { ...this.shift, on: null, backAt: now + breakLength(Math.random) };
     this.save();
-    log(`nobody on until ${time(this.shift.backAt)}`);
+    this.wantedChecks = madeWay ? 0 : WANTED_CHECKS[this.role];
   }
 
   private tick() {
     const now = Date.now();
     if (!this.shift.on) {
       this.notReadySince = now;
-      if (now >= this.shift.backAt) this.begin(now);
+      if (now >= this.shift.backAt && this.wantedChecks >= WANTED_CHECKS[this.role]) this.begin(now);
       return;
     }
     const s = session.state;
@@ -154,6 +227,8 @@ export class Bot {
     const anyone = humans.length + (s.spectators?.length ?? 0) > 0;
     const timeUp = now >= this.shift.until;
     if (timeUp && (!anyone || now >= this.shift.until + OVERTIME_MS)) return this.end(now, anyone ? 'out of time, even for the ones still here' : 'time is up');
+    if (s.phase === 'lobby' && !anyone && this.lonely(now)) return;
+    if (s.phase !== 'lobby' || anyone) this.lonelySince = 0;
     if (s.phase === 'lobby') this.lobby(s, humans.map((p) => p.id), now);
     else if (s.phase === 'over') this.over(now, anyone, timeUp);
     else this.inGame(s, now, humans.length > 0);
@@ -162,6 +237,34 @@ export class Bot {
       this.plan = null;
       p.run();
     }
+  }
+
+  /**
+   * The host alone in the lobby: makes way for another room to join, and
+   * after a while alone tries other rules (once) or leaves. True when the
+   * room just closed.
+   */
+  private lonely(now: number): boolean {
+    if (!this.lonelySince) {
+      this.lonelySince = now;
+      this.lonelyFor = lonelyLength(Math.random);
+    }
+    const alone = now - this.lonelySince;
+    if (alone >= MIN_OPEN_MS && this.wayChecks >= MAKE_WAY_CHECKS) {
+      this.end(now, 'another room is open', true);
+      return true;
+    }
+    if (alone < this.lonelyFor) return false;
+    if (!this.retried && Math.random() < RETRY_CHANCE) {
+      this.retried = true;
+      this.lonelySince = 0;
+      const c = (this.who!.prefs = otherPrefs(this.who!.prefs, Math.random));
+      session.dispatch({ type: 'settings', settings: { mode: c.mode, difficulty: c.difficulty, targetScore: c.target, timer: c.timer } });
+      log(`nobody came, trying ${c.mode}, ${c.difficulty}, to ${c.target}, ${c.timer} s`);
+      return false;
+    }
+    this.end(now, 'nobody came');
+    return true;
   }
 
   /** Public and open always; the host's own rules whenever they may change (between games). */

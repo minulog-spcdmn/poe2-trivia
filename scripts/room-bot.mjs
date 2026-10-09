@@ -7,7 +7,9 @@
 //
 //   npm run bot -- [--rooms 2] [--headed] [--no-build]
 //
-// --rooms: how many rooms at once (1 to 4), each with its own players.
+// A room opens only when the open-room list has no room at all; with
+// --rooms 2, a second one also opens while every room listed is mid-game
+// (src/bot/wanted.ts). Each has its own players.
 //
 // Chromium: Playwright's own (npx playwright-core install chromium), or any
 // Chromium or Chrome named by BOT_CHROMIUM.
@@ -18,7 +20,7 @@ import { join } from 'node:path';
 import { build, preview } from 'vite';
 import { chromium } from 'playwright-core';
 
-const MAX_ROOMS = 4;
+const MAX_ROOMS = 2;
 const STATUS_EVERY_MS = 60000;
 const REOPEN_AFTER_MS = 5000;
 

@@ -2,7 +2,7 @@
 // always plays as the same person (strengths, pace, favourite settings),
 // worked out from the name itself, so a regular is recognisable from one
 // visit to the next without anything being stored. Who comes on next, and
-// for how long, is up to chance.
+// for how long, is up to chance; when, is up to the room list (wanted.ts).
 
 import type { Difficulty } from '../lib/game.ts';
 import { makePersona, weighted, type Persona, type Rng } from './brain.ts';
@@ -73,17 +73,29 @@ export function seededBy(text: string): Rng {
 
 const pick = <T>(rng: Rng, options: T[], weights: number[]) => options[weighted(weights, rng)];
 
-/** Who a name is: always the same person for the same name and categories. */
-export function identityOf(name: string, categories: string[]): Identity {
-  const rng = seededBy(name);
-  const persona = makePersona(categories, rng);
-  const prefs: RoomPrefs = {
+/** Rules to host with, as people pick them (mostly take turns, mostly Cruel). */
+export function rollPrefs(rng: Rng): RoomPrefs {
+  return {
     mode: pick(rng, ['turns', 'race'] as const, [4, 1]),
     difficulty: pick(rng, ['cruel', 'merciless', 'eternal'] as const, [6, 3, 1]),
     target: pick(rng, [5, 7, 10, 15], [2, 2, 4, 1]),
     timer: pick(rng, [16, 32, 64], [2, 5, 1]),
   };
-  return { name, persona, prefs };
+}
+
+/** Other rules than `now`: a host who waited in vain trying something else. */
+export function otherPrefs(now: RoomPrefs, rng: Rng): RoomPrefs {
+  for (;;) {
+    const next = rollPrefs(rng);
+    if (next.mode !== now.mode || next.difficulty !== now.difficulty) return next;
+  }
+}
+
+/** Who a name is: always the same person for the same name and categories. */
+export function identityOf(name: string, categories: string[]): Identity {
+  const rng = seededBy(name);
+  const persona = makePersona(categories, rng);
+  return { name, persona, prefs: rollPrefs(rng) };
 }
 
 /**
@@ -117,5 +129,8 @@ function minutes(rng: Rng, median: number, lo: number, hi: number) {
 /** How long someone hosts before they call it a day (finishing the game they're in). */
 export const shiftLength = (rng: Rng) => minutes(rng, 50, 20, 120);
 
-/** How long until the next one comes on. */
-export const breakLength = (rng: Rng) => minutes(rng, 8, 2, 30);
+/** How long someone waits alone in their lobby before they try other rules, or give up. */
+export const lonelyLength = (rng: Rng) => minutes(rng, 9, 6, 15);
+
+/** After someone leaves, how long before this room's next player may come on (if a room is wanted). */
+export const breakLength = (rng: Rng) => minutes(rng, 2, 1, 4);

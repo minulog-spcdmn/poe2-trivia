@@ -1,7 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { answerDelay, knowChance, makePersona, pickCategory, weighted, wrongPick, type Ask, type Persona } from '../src/bot/brain.ts';
-import { NAMES, breakLength, identityOf, namesFor, nextName, shiftLength } from '../src/bot/identities.ts';
+import { NAMES, breakLength, identityOf, lonelyLength, namesFor, nextName, otherPrefs, rollPrefs, shiftLength } from '../src/bot/identities.ts';
+import { joinable, makesWay, wanted } from '../src/bot/wanted.ts';
+import type { RoomInfo } from '../src/lib/roomInfo.ts';
 import { MAX_NAME, cleanName, isHeldName, nameProblem, nameSkeleton } from '../src/lib/names.ts';
 
 function seeded(seed: number) {
@@ -127,14 +129,63 @@ test('the last few on rest before coming on again', () => {
   for (let i = 0; i < 300; i++) assert.ok(!recent.includes(nextName(recent, rng)));
 });
 
-test('shifts and breaks stay within their bounds', () => {
+test('shifts, waits and breaks stay within their bounds', () => {
   const rng = seeded(23);
   for (let i = 0; i < 500; i++) {
     const shift = shiftLength(rng) / 60000;
+    const lonely = lonelyLength(rng) / 60000;
     const pause = breakLength(rng) / 60000;
     assert.ok(shift >= 20 && shift <= 120, `shift ${shift}`);
-    assert.ok(pause >= 2 && pause <= 30, `break ${pause}`);
+    assert.ok(lonely >= 6 && lonely <= 15, `lonely ${lonely}`);
+    assert.ok(pause >= 1 && pause <= 4, `break ${pause}`);
   }
+});
+
+test('a host who waited in vain tries a different mode or difficulty', () => {
+  const rng = seeded(31);
+  for (let i = 0; i < 200; i++) {
+    const now = rollPrefs(rng);
+    const next = otherPrefs(now, rng);
+    assert.ok(next.mode !== now.mode || next.difficulty !== now.difficulty);
+  }
+});
+
+const room = (phase: RoomInfo['phase'], players = 2): RoomInfo => ({
+  code: 'ABCDEF',
+  host: 'Someone',
+  players,
+  maxPlayers: 12,
+  spectators: 0,
+  maxSpectators: 8,
+  mode: 'turns',
+  difficulty: 'cruel',
+  target: 10,
+  phase,
+});
+
+test('a room can be joined only in its lobby, with a seat free', () => {
+  assert.ok(joinable(room('lobby')));
+  assert.ok(!joinable(room('lobby', 12)));
+  assert.ok(!joinable(room('locked')));
+  for (const phase of ['choosing', 'question', 'reveal', 'over'] as const) assert.ok(!joinable(room(phase)));
+});
+
+test('the first room opens only when no room is listed', () => {
+  assert.ok(wanted('first', []));
+  assert.ok(!wanted('first', [room('question')]));
+  assert.ok(!wanted('first', [room('lobby')]));
+});
+
+test('the second room opens only while every room listed is mid-game', () => {
+  assert.ok(wanted('second', []));
+  assert.ok(wanted('second', [room('question'), room('reveal'), room('locked'), room('lobby', 12)]));
+  assert.ok(!wanted('second', [room('question'), room('lobby')]));
+});
+
+test('an empty lobby makes way for any other room to join', () => {
+  assert.ok(makesWay([room('lobby')]));
+  assert.ok(!makesWay([room('question')]));
+  assert.ok(!makesWay([]));
 });
 
 test('rooms running at once never share a name', () => {
