@@ -194,6 +194,8 @@ export default defineConfig(({ mode }) => {
           // test page (src/descentPreview): the dev server serves them by
           // itself; of the builds only the beta has them, never the live game.
           ...(env.VITE_CHANNEL === 'beta' ? { lab: 'lab.html', backdrop: 'backdrop.html', zones: 'zones.html', descent: 'descent.html' } : {}),
+          // The room bot (src/bot), only in the build scripts/room-bot.mjs makes for itself.
+          ...(env.VITE_BOT === '1' ? { bot: 'bot.html' } : {}),
         },
       },
     },
