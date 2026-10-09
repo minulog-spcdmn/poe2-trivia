@@ -74,6 +74,34 @@ What changed and why:
 - **Phone:** the host's Begin is pinned in a bottom dock with a fade above
   it. All touch targets at least 44 px.
 
+### Lobby window sizes (addendum)
+
+Shots: `screens/sizes/lobby-*` (`before` = the reference as it is, `fix` =
+target). The 980 px cap and centring already handle wide screens. Two fixes:
+
+- **Pinned start row on desktop.** On a 13-inch MacBook Air (1440 x 725) the
+  window ends halfway through Begin; with Delve chosen (taller descent
+  drawing) Begin is below the window on 13 and 14 inch MacBooks. Make the
+  host's start row (status line + Begin) `position: sticky; bottom: 0`
+  inside the Game panel: full panel width (negative inline margins equal to
+  the panel padding), opaque panel-dark background, the row's top rule, and
+  a 28 px fade above it so the rules scroll under it. When the end of the
+  panel is reached it sits in place as now. Phones keep their fixed dock; a
+  guest's waiting line is not pinned. Prototype CSS that produced the shots:
+  ```css
+  .settings .start { position: sticky; bottom: 0; z-index: 3;
+    margin-inline: -1.4rem; margin-bottom: -1.4rem; padding: 1rem 1.4rem 1.2rem;
+    background: rgb(17, 14, 11); border-top: 1px solid var(--line); }
+  .settings .start::before { content: ''; position: absolute; left: 0; right: 0;
+    bottom: 100%; height: 28px; pointer-events: none;
+    background: linear-gradient(180deg, rgba(17, 14, 11, 0), rgb(17, 14, 11)); }
+  ```
+- **4K at 100%:** the lobby is a quarter of the window wide. It gets the same
+  zoom as the start page (see "Window sizes" below), which is why that zoom
+  belongs at app level.
+- It stays top aligned: the party list grows as people join, and a centred
+  lobby would jump each time.
+
 ---
 
 ## 2. Start page
@@ -272,12 +300,16 @@ Build it like this:
    a 1440 x 725 window the first row of room tiles is fully visible and the
    second row peeks out, so scrolling is obvious. Shorter than that,
    scrolling is fine.
-4. **Very large windows.** Above 2560 px wide the whole stage is scaled up
+4. **Very large windows.** Above 2560 px wide the whole app is scaled up
    with CSS `zoom` = clamp(1, min(width / 2560, height / 1100), 2): 1.5 on
    4K at 100%, about 1.2 on a 3440 x 1440 ultrawide. Compute it in JS on
    resize (CSS can't divide lengths portably) and set it as a custom
    property. At 2560 and below there is no scaling, so browser zoom keeps
-   working normally where nearly everyone is.
+   working normally where nearly everyone is. Apply it at app level (the
+   `.shell`, header included, and the layers screens portal to, such as
+   toasts, docks and dialogs) so every screen scales alike, but not to the
+   WebGL backdrop canvas, which sizes its buffer to device pixels. Check
+   the game screens at 3840 x 2030 too.
 5. **Retina** needs nothing: text and rings are vector or high-res. Item art
    is drawn about 1.2x above its own size on average on 2x screens (small
    rings and jewels more). Acceptable; do not upscale further.
