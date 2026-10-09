@@ -29,6 +29,7 @@ test('the next one is counted in whole hours, rounded up, and the word is spelle
   assert.equal(hoursLeft(at('2026-10-09T23:59:00Z')), 1);
   assert.equal(nextIn(at('2026-10-09T13:00:00Z')), 'next in 11 hours');
   assert.equal(nextIn(at('2026-10-09T23:30:00Z')), 'next in 1 hour');
+  assert.equal(nextIn(at('2026-10-09T13:00:00Z'), 'daily'), 'next daily in 11 hours');
   assert.doesNotMatch(nextIn(at('2026-10-09T13:00:00Z')), /\dh\b/);
 });
 

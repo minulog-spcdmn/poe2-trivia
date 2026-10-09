@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { tick, untrack } from 'svelte';
+  import { onDestroy, tick, untrack } from 'svelte';
   import { fade, fly } from 'svelte/transition';
   import { NAME_TOO_SHORT, MAX_NAME, nameHeld, nameTooShort, unlockHeldName } from '../lib/names';
   import { toasts } from '../lib/toasts.svelte';
@@ -145,12 +145,35 @@
     (known ? codeField : nameField)?.focus();
   }
 
-  function closeRow() {
+  /** Closes the open row; its entry takes the focus back if the row had it (always, from the keyboard). */
+  function closeRow(refocus = true) {
     if (!open) return;
     const i = ENTRIES.indexOf(open);
+    const row = entryEls[i]?.parentElement?.querySelector('.slot');
+    const hadFocus = !!row?.contains(document.activeElement);
     open = null;
     codeError = false;
-    entryEls[i]?.focus();
+    clearTimeout(idleTimer);
+    if (refocus || hadFocus) entryEls[i]?.focus({ preventScroll: true });
+  }
+
+  /** How long an untouched row stays open once the mouse has left its entry. */
+  const ROW_IDLE_MS = 4000;
+  let idleTimer: ReturnType<typeof setTimeout> | undefined;
+  onDestroy(() => clearTimeout(idleTimer));
+  /**
+   * The mouse left an entry: an open row with nothing typed in it yet closes
+   * after a while, unless the mouse comes back to its entry first.
+   */
+  function leave(ev: PointerEvent) {
+    if (ev.pointerType !== 'mouse') return;
+    hovered = false;
+    const e = open;
+    if (!e) return;
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => {
+      if (open === e && !connecting && !code && !nameInput.trim()) closeRow(false);
+    }, ROW_IDLE_MS);
   }
 
   function host(e?: Event) {
@@ -258,6 +281,7 @@
   function hover(e: PointerEvent, i: number) {
     if (e.pointerType !== 'mouse') return;
     hovered = true;
+    if (open === ENTRIES[i]) clearTimeout(idleTimer);
     if (!connecting) cursor = i;
   }
   /** The mouse is over an entry. */
@@ -363,7 +387,7 @@
             class:dimmed={connecting && !isBusy}
             inert={connecting && !isBusy}
             onpointerenter={(ev) => hover(ev, i)}
-            onpointerleave={(ev) => ev.pointerType === 'mouse' && (hovered = false)}
+            onpointerleave={leave}
             in:fly={{ y: 12, duration: 500, delay: 450 + i * 70 }}
           >
             <button class="pick" bind:this={entryEls[i]} onclick={() => choose(e)} onfocus={() => (cursor = i)} aria-expanded={e === 'create' || e === 'join' ? isOpen : undefined}>
@@ -665,6 +689,13 @@
   .pick:focus-visible {
     outline-offset: 4px;
   }
+  /* The whole slot takes the click, as it takes the hover: no need to aim
+     at the title. An open row sits above it, so its fields work as usual. */
+  .pick::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+  }
   .about {
     margin: 6px 0 0;
     font-style: italic;
@@ -672,6 +703,8 @@
     color: #ab9d88;
   }
   .slot {
+    position: relative;
+    z-index: 1;
     margin-top: 10px;
   }
   .name {

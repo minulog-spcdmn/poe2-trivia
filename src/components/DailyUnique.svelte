@@ -163,7 +163,12 @@
 
   <div class="after" aria-live="polite">
     {#if !answered}
-      <p class="caption">The same item for every exile today.<span class="more">{' '}Watch for look-alikes.</span></p>
+      {#if practice}
+        <!-- Practice is apart from the day's question: say so, and when the next one comes. -->
+        <p class="caption">Practice doesn’t count<span class="more">{' '}toward your streak</span>; {nextIn(now, 'daily')}.</p>
+      {:else}
+        <p class="caption">The same item for every exile today.<span class="more">{' '}Watch for look-alikes.</span></p>
+      {/if}
     {:else}
       <button class="btn small" bind:this={practiceEl} onclick={practiceMore} {disabled} in:fade={{ duration: 250 }}>Practice more</button>
       <p class="tally" in:fade={{ duration: 300, delay: 150 }}>
@@ -175,7 +180,7 @@
           <span>Missed today</span>
         {/if}
         <span class="sep" aria-hidden="true">·</span>
-        <span>{nextIn(now)}</span>
+        <span>{nextIn(now, practice ? 'daily' : '')}</span>
       </p>
     {/if}
   </div>
