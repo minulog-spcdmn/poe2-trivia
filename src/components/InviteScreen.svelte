@@ -5,6 +5,7 @@
   import { fade, fly } from 'svelte/transition';
   import { backdropShadow } from '../lib/backdropShadow';
   import { MAX_NAME } from '../lib/names';
+  import { stage } from '../lib/stage';
   import GameTitle from './GameTitle.svelte';
   import Connecting from './Connecting.svelte';
 
@@ -24,7 +25,7 @@
   }
 </script>
 
-<div class="invite">
+<div class="invite" use:stage>
   <header>
     <GameTitle lines />
     <p class="motto" in:fade={{ duration: 700, delay: 350 }}>Name the unique.</p>
@@ -63,12 +64,18 @@
 </div>
 
 <style>
+  /* The start page's stage (lib/stage.ts): centred in the window, scaled up
+     on very large ones. */
   .invite {
-    min-height: 100dvh;
+    zoom: var(--stage-zoom, 1);
+    max-width: 1440px;
+    margin-inline: auto;
+    min-height: calc(100dvh / var(--stage-zoom, 1));
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding: 64px 16px 48px;
+    justify-content: center;
+    padding: 48px 16px;
   }
   header {
     --title-size: 84px;
@@ -184,6 +191,7 @@
 
   @media (max-width: 640px) {
     .invite {
+      justify-content: flex-start;
       padding-top: 40px;
     }
     header {

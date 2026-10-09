@@ -191,9 +191,10 @@
   /* ---- the circle, its art and the chip on top ---- */
   .stage {
     position: relative;
-    /* 520 px on a 510 px column: the circle's band reaches a little past it. */
-    width: calc(100% + 10px);
-    margin: 0 -5px;
+    /* 520 px on a 510 px column: the circle's band reaches a little past it
+       (the start page makes it smaller on short windows). */
+    width: var(--daily-circle, calc(100% + 10px));
+    margin-inline: calc((100% - var(--daily-circle, calc(100% + 10px))) / 2);
     aspect-ratio: 1;
     /* The circle fades out at the bottom, into the answers. */
     -webkit-mask-image: linear-gradient(180deg, #000 72%, transparent 96%);
@@ -263,7 +264,7 @@
   .options {
     position: relative;
     /* Up over the faded bottom of the circle. */
-    margin-top: -48px;
+    margin-top: calc(-1 * var(--daily-overlap, 48px));
     display: grid;
     grid-template-columns: 1fr 1fr;
     grid-auto-rows: 1fr;
@@ -521,8 +522,9 @@
 
   /* ---- under the answers ---- */
   .after {
-    min-height: 44px;
-    margin-top: 6px;
+    /* Tighter on the start page's short-window rhythm. */
+    min-height: var(--daily-after-h, 44px);
+    margin-top: var(--daily-after-gap, 6px);
     display: flex;
     align-items: center;
     justify-content: space-between;

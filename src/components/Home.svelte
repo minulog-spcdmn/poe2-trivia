@@ -12,6 +12,7 @@
   import { BETA } from '../lib/channel';
   import { deepestEver, loadRecords } from '../lib/delveRecord';
   import { shownDepth } from '../lib/delve';
+  import { stage } from '../lib/stage';
   import { ENTRIES, codexLine, cursorKey, lastEntry, rememberEntry, type Entry } from '../lib/startMenu';
   import GameTitle from './GameTitle.svelte';
   import Connecting from './Connecting.svelte';
@@ -307,7 +308,7 @@
 {#if invite}
   <InviteScreen code={invite} bind:name={inviteName} {connecting} onjoin={joinInvite} onback={leaveInvite} />
 {:else}
-  <div class="home">
+  <div class="home" use:stage>
     <div class="intro">
       <div class="title">
         <GameTitle />
@@ -351,7 +352,7 @@
       <nav class="menu" class:renaming class:lit aria-label="Start" onfocusin={focusIn} onfocusout={() => (keyFocus = false)}>
         <!-- One cursor for the menu: it slides to the entry under the mouse (or the
              keyboard's), and fades away slowly once nothing is pointed at. -->
-        <span class="diamond" aria-hidden="true" style:translate="0 {cursor * 108}px"></span>
+        <span class="diamond" aria-hidden="true" style:--at={cursor}></span>
         {#each ENTRIES as e, i (e)}
           {@const isOpen = open === e && !connecting}
           {@const isBusy = connecting && (busy ?? (session.mode === 'host' ? 'create' : 'join')) === e}
@@ -439,28 +440,33 @@
 {/if}
 
 <style>
-  /* Two columns (the menu, Today's unique) pushed apart, then the open rooms
-     across the page, then the footer. Phones stack them, the rooms before
-     Today's unique. */
+  /* One stage, at most 1440 px wide and centred: two columns (the menu,
+     Today's unique) at their own sizes, 1200 px across in all, then the open
+     rooms across it, then the footer. Narrower windows give up side padding
+     (down to 32 px) before anything else, then stack in the phone's order.
+     Columns and rooms sit in the middle of the window's height, the footer at
+     its bottom. Past 2560 px wide the stage is scaled up (lib/stage.ts). */
   .home {
-    --pad-x: clamp(16px, 8.4vw, 120px);
-    /* Wide screens keep the 1440 px layout, centred. */
+    --slot: 108px;
+    zoom: var(--stage-zoom, 1);
     width: 100%;
     max-width: 1440px;
-    margin: 0 auto;
-    min-height: 100dvh;
+    margin-inline: auto;
+    /* The window's height, in the stage's (zoomed) pixels. */
+    min-height: calc(100dvh / var(--stage-zoom, 1));
     display: grid;
     grid-template-columns: minmax(0, 452px) minmax(0, 510px);
-    /* The last row takes what's left, so the footer sits at the bottom of a short page. */
-    grid-template-rows: auto auto 1fr;
+    /* The free height splits above and below the block; the footer stays last. */
+    grid-template-rows: 1fr auto auto 1fr auto;
     grid-template-areas:
+      '. .'
       'intro today'
       'rooms rooms'
+      '. .'
       'foot foot';
     justify-content: space-between;
-    align-content: start;
     column-gap: 40px;
-    padding: 26px var(--pad-x) 22px;
+    padding: 26px max(32px, (min(100%, 1440px) - 1200px) / 2) 22px;
   }
   .intro {
     grid-area: intro;
@@ -478,7 +484,6 @@
   }
   footer {
     grid-area: foot;
-    align-self: end;
     margin-top: 32px;
   }
 
@@ -637,7 +642,7 @@
   /* Every entry in a slot of its own, so nothing moves when one opens. */
   .entry {
     position: relative;
-    height: 108px;
+    height: var(--slot);
     transition: opacity 0.3s;
   }
   .pick {
@@ -713,6 +718,7 @@
     opacity: 0;
     scale: 0.6;
     pointer-events: none;
+    translate: 0 calc(var(--at, 0) * var(--slot));
     transition:
       opacity 1.2s ease,
       scale 1.2s ease,
@@ -905,17 +911,49 @@
     color: var(--gold-hi);
   }
 
-  /* Narrower screens: one column, the menu above Today's unique. */
+  /* Short windows (laptops): a tighter rhythm, so the first row of open
+     rooms is in view on a 1440 x 725 window and the next one peeks out. */
+  @media (max-height: 859px) and (min-width: 1081px) {
+    .home {
+      --slot: 92px;
+      --daily-circle: 456px;
+      --daily-overlap: 44px;
+      --daily-after-h: 36px;
+      --daily-after-gap: 4px;
+      --rooms-head-gap: 8px;
+      padding-top: 16px;
+    }
+    .title {
+      --title-size: 80px;
+    }
+    .greeting {
+      margin: 8px 0 6px;
+    }
+    .today {
+      padding-top: 0;
+    }
+    .rooms {
+      margin-top: 8px;
+    }
+  }
+
+  /* Too narrow for the two columns side by side: one column, in the phone's
+     order (the menu, the open rooms, then Today's unique). */
   @media (max-width: 1080px) {
     .home {
       grid-template-columns: minmax(0, 560px);
-      grid-template-rows: auto auto auto 1fr;
+      grid-template-rows: 1fr auto auto auto 1fr auto;
       grid-template-areas:
+        '.'
         'intro'
-        'today'
         'rooms'
+        'today'
+        '.'
         'foot';
       justify-content: center;
+    }
+    .rooms {
+      margin-top: 16px;
     }
     .today {
       padding-top: 32px;
@@ -933,11 +971,6 @@
   @media (max-width: 640px) {
     .home {
       grid-template-columns: minmax(0, 1fr);
-      grid-template-areas:
-        'intro'
-        'rooms'
-        'today'
-        'foot';
       padding: 28px 16px 20px;
     }
     .title {
