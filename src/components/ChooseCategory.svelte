@@ -449,47 +449,50 @@
 </script>
 
 <div class="choose">
-  <p class="prompt">
-    {#if s.deathmatch}
-      {#if mine}Sudden death: your category is drawn at random.{:else}<span class="muted">Sudden death for</span> {active.name}<span class="muted">…</span>{/if}
-    {:else if coop}
-      {#if drawn}
-        <span class="muted">Drawing from the votes…</span>
-      {:else if canVote}
-        {myVote ? 'Your vote is in' : 'Vote for a card'}
-      {:else if session.spectating}
-        <span class="muted">The team is voting…</span>
+  <!-- The prompt and the Vaal row: on phones on one line while they fit. -->
+  <div class="ask">
+    <p class="prompt">
+      {#if s.deathmatch}
+        {#if mine}Sudden death: your category is drawn at random.{:else}<span class="muted">Sudden death for</span> {active.name}<span class="muted">…</span>{/if}
+      {:else if coop}
+        {#if drawn}
+          <span class="muted">Drawing from the votes…</span>
+        {:else if canVote}
+          {myVote ? 'Your vote is in' : 'Vote for a card'}
+        {:else if session.spectating}
+          <span class="muted">The team is voting…</span>
+        {:else}
+          <span class="muted">Your team is voting…</span>
+        {/if}
+      {:else if mine}
+        {corrupting ? 'Choose a card to corrupt' : 'Choose your category'}
       {:else}
-        <span class="muted">Your team is voting…</span>
+        <span class="muted">Waiting for</span> {active.name} <span class="muted">to choose a category…</span>
       {/if}
-    {:else if mine}
-      {corrupting ? 'Choose a card to corrupt' : 'Choose your category'}
-    {:else}
-      <span class="muted">Waiting for</span> {active.name} <span class="muted">to choose a category…</span>
-    {/if}
-  </p>
+    </p>
 
-  {#if vaalHere && ((mine && !s.deathmatch) || altar > 0)}
-    <!-- The player's Vaal Orbs, and the Altar's points (for everyone). -->
-    <div class="vaal-row">
-      {#if mine}
-        <button
-          class="corrupt"
-          class:on={corrupting}
-          class:coach={!coached && orbs > 0 && !corrupting}
-          aria-pressed={corrupting}
-          aria-label="Corrupt your pick with a Vaal Orb: {orbs} left"
-          title={orbs ? `Corrupt your pick: ${stakes}` : 'No Vaal Orbs left'}
-          disabled={!orbs || !!picked}
-          data-sfx="none"
-          onclick={toggle}><VaalOrb />Corrupt <span class="n">×{orbs}</span></button
-        >
-      {/if}
-      {#if altar > 0}
-        <span class="altar" title="Points lost to bricked corruptions. The next corruption that holds takes them all.">Altar <span class="n">{altar}</span></span>
-      {/if}
-    </div>
-  {/if}
+    {#if vaalHere && ((mine && !s.deathmatch) || altar > 0)}
+      <!-- The player's Vaal Orbs, and the Altar's points (for everyone). -->
+      <div class="vaal-row">
+        {#if mine}
+          <button
+            class="corrupt"
+            class:on={corrupting}
+            class:coach={!coached && orbs > 0 && !corrupting}
+            aria-pressed={corrupting}
+            aria-label="Corrupt your pick with a Vaal Orb: {orbs} left"
+            title={orbs ? `Corrupt your pick: ${stakes}` : 'No Vaal Orbs left'}
+            disabled={!orbs || !!picked}
+            data-sfx="none"
+            onclick={toggle}><VaalOrb />Corrupt <span class="n">×{orbs}</span></button
+          >
+        {/if}
+        {#if altar > 0}
+          <span class="altar" title="Points lost to bricked corruptions. The next corruption that holds takes them all.">Altar <span class="n">{altar}</span></span>
+        {/if}
+      </div>
+    {/if}
+  </div>
 
   <div class="cards" class:single={s.offered.length === 1} class:moving={!!drawn || !!picked} style:--n={s.offered.length}>
     {#each s.offered as cat, i (cat)}
@@ -1054,6 +1057,9 @@
   /* ---- Vaal Orbs -----------------------------------------------------------
      Under the prompt, closer to it than the cards are: the player's Corrupt
      pill (crimson, the deathmatch's red) and the Altar's seal. */
+  .ask {
+    display: contents;
+  }
   .vaal-row {
     display: flex;
     flex-wrap: wrap;
@@ -1155,6 +1161,14 @@
   :global(html[data-still]) .corrupt.coach::before {
     animation: none;
     opacity: 0.6;
+  }
+  /* Reduced motion cuts every animation to one instant pass, which would
+     leave the glow out: it holds still instead, as without effects. */
+  @media (prefers-reduced-motion: reduce) {
+    .corrupt.coach::before {
+      animation: none;
+      opacity: 0.6;
+    }
   }
   .altar {
     color: #f0b8a6;
@@ -1486,25 +1500,37 @@
       width: min(360px, 100%);
       gap: 0.9rem;
     }
-    /* Phones: the row sits tighter, so the note under the cards stays in view. */
-    .vaal-row {
-      margin: -1.1rem 0 -0.5rem;
+    /* Phones: the Corrupt pill (and the Altar's seal) beside the prompt while
+       they fit, rather than on a row of their own, so the notes under the
+       cards stay in view. */
+    .ask {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      align-items: center;
+      gap: 0.3rem 0.7rem;
     }
-    /* The final round's stakes often take two lines: closer under the cards
-       and set tighter, so both stay in view. */
-    .note.stakes {
+    .ask > .vaal-row {
+      display: contents;
+    }
+    /* The Altar's seal mostly takes a line of its own under them: a slimmer one. */
+    .altar {
+      padding-top: 0.3em;
+      padding-bottom: 0.25em;
+    }
+    /* The Vaal's notes (the final round's stakes, often two lines, the
+       favour, the coach and corrupting lines) sit closer under the cards and
+       set tighter, so they stay in view. */
+    .note.stakes,
+    .note.vaal {
       margin-top: -0.75rem;
       line-height: 1.28;
     }
-    /* The favour (or the revenge orbs) and the note after it: the same, and
-       the second right under the first, so both stay in view. */
-    .note.favour,
-    .note.favour + .note {
-      margin-top: -0.75rem;
-      line-height: 1.28;
-    }
+    /* The favour (or the revenge orbs) and the note after it: the second
+       right under the first, so both stay in view. */
     .note.favour + .note {
       margin-top: -1.5rem;
+      line-height: 1.28;
     }
     .frame {
       display: flex;

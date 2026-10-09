@@ -534,10 +534,10 @@
 
   // Scores as shown. A point won at a reveal flows into the scorer's bar as a
   // stream of sparks (see fillBar in lib/fx/moments.ts): the bar fills while
-  // they land, and the number ticks up when the last one has. A point lost at
-  // a reveal (turns: a corruption bricked) drains from the bar as a stream
-  // would land, in shards; a race's misses (while the question is open) and
-  // a new game's scores drop at once.
+  // they land, and the number ticks up when the last one has. A point lost to
+  // a bricked corruption (turns) drains from the bar as a stream would land,
+  // in shards; a race's misses (the one that ends the question included), a
+  // skipped corruption's brick and a new game's scores drop at once.
   let shown = $state<Record<string, number>>({});
   let barShown = $state<Record<string, number>>({});
   let filling = $state<Record<string, boolean>>({});
@@ -590,7 +590,7 @@
             },
           ],
         ]);
-      } else if (score < was && fxActive() && s.phase === 'reveal') {
+      } else if (score < was && fxActive() && s.phase === 'reveal' && !race && !!s.reveal?.stake) {
         land(awards, p.id, score, [
           [
             FILL_START,
@@ -801,7 +801,7 @@
           {/key}
         {/if}
         {#if p.vaal !== undefined && !run && !race}
-          <!-- Turns: their Vaal Orbs, a small dark chip on the avatar's lower left corner. -->
+          <!-- Turns: their Vaal Orbs, a small dark chip on the avatar's corner. -->
           <span class="orbs" title="{p.vaal} Vaal {p.vaal === 1 ? 'Orb' : 'Orbs'}"
             ><VaalOrb /><span class="n">{p.vaal}</span><span class="sr">{p.vaal === 1 ? ' Vaal Orb' : ' Vaal Orbs'}</span></span
           >
@@ -1440,8 +1440,8 @@
     font-size: 0.8rem;
   }
   /* Turns: their Vaal Orbs, a small dark chip on the avatar's lower left
-     corner (the orb engraved, its count in Cinzel), on every entry: laid
-     over it, so nothing moves. */
+     corner (the orb engraved, its count in Cinzel; on phones its upper
+     right), on every entry: laid over it, so nothing moves. */
   .orbs {
     position: absolute;
     left: calc(0.5rem - 7px);
@@ -1679,18 +1679,27 @@
     li:not(.wide) .off {
       left: 18px;
     }
-    /* The orbs' chip on the smaller avatar's corner, as Delve's finds hang
-       there; the entries stand a little further apart, so it never meets the
-       score hanging off the entry before it. */
+    /* The orbs' chip on the smaller avatar's upper right corner, its right
+       edge there whatever its width: the score badge hangs off the lower
+       right, the host's kick button off the upper left, and the gap to the
+       next entry is theirs (so the row fits as many entries as without it).
+       Slim, so it stays clear of the kick button beside it. */
     .orbs {
-      left: -5px;
-      bottom: -5px;
-      height: 14px;
-      font-size: 0.64rem;
-      --h: 10px;
+      left: 31px;
+      bottom: auto;
+      top: -6px;
+      translate: -100% 0;
+      gap: 0;
+      height: 13px;
+      padding: 0 2px 0 0;
+      font-size: 0.6rem;
+      --h: 9px;
     }
-    .board:has(> li > .orbs) {
-      gap: 0.9rem;
+    /* Offline, the ⚡ takes the avatar's lower left corner instead of the chip's. */
+    li:has(> .orbs) .off {
+      top: auto;
+      bottom: -6px;
+      left: -1px;
     }
   }
 </style>

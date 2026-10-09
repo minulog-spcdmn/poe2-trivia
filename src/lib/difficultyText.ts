@@ -325,6 +325,17 @@ export function revengeNote(ids: string[], nameOf: (id: string) => string, me: s
   return `${cap(namesOf(ids, nameOf, me))} ${verb(ids, me, 'starts', 'start')} the next game with a revenge orb.`;
 }
 
+/**
+ * Turns, the final round's overlay: who still plays this round (stakes.ts
+ * toPlay), in seat order. "Iris gets one last turn.", "Bea and Cyr each get
+ * one last turn.", "You get one last turn."
+ */
+export function lastTurnText(ids: string[], nameOf: (id: string) => string, me: string | null): string {
+  if (!ids.length) return '';
+  const get = ids.length > 1 ? 'each get' : verb(ids, me, 'gets', 'get');
+  return `${cap(namesOf(ids, nameOf, me))} ${get} one last turn.`;
+}
+
 /** Turns, the final round's overlay: who reached the target ("Ash reached 10", "You and Ash reached 10"). */
 export function reachedText(ids: string[], nameOf: (id: string) => string, me: string | null, target: number): string {
   if (!ids.length) return '';

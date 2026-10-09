@@ -21,7 +21,8 @@ is hosted as a static site on GitHub Pages. No server needed.
    once a full round is finished, so everyone gets the same number of turns.
    Once someone reaches the target with seats still to play this round, the
    **final round** is announced on every screen ("Ash reached 10", "Final
-   round", "Everyone else gets one last turn."), the header reads "Final
+   round", and who still plays this round: "Bea gets one last turn.", "Bea
+   and Cyr each get one last turn."), the header reads "Final
    round • First to 10", and each player left gets "Bea's last chance"
    ("Your last chance" online) as their turn's banner and a line under the
    cards on what their own turn can do against the leader: force a deathmatch, take the lead (only with a
@@ -43,7 +44,8 @@ is hosted as a static site on GitHub Pages. No server needed.
 on your turn you may also say how sure you are.
 - Every player starts a game with Vaal Orbs: one per 5 points to win, at
   least one (1 to 5, 2 to 10, 3 to 15, 4 to 20). On your turn the crimson
-  **Corrupt ×2** pill under "Choose your category" stains the cards crimson
+  **Corrupt ×2** pill under "Choose your category" (beside it on phones)
+  stains the cards crimson
   ("Choose a card to corrupt"; tap it again to back out), and the card you
   pick is corrupted. The orb is spent once the pick is accepted.
 - A corrupted question that you answer right scores +2 ("Holds"); a wrong
@@ -54,14 +56,16 @@ on your turn you may also say how sure you are.
   "Altar 3" seal under the prompt shows it to everyone. The next corruption
   that holds, whoever's it is, takes the whole Altar on top of its +2 ("+5
   for Mira! The corruption holds and takes the Altar.").
-- Everyone knows what rides on a corrupted question: the player reads
-  "Corrupted: right +2, wrong −1." under it (with the Altar's points when it
-  holds any), everyone else "Mira corrupted this one: +2 or −1.". It wears
+- Everyone knows what rides on a corrupted question: in place of its task
+  line at the top ("Name this item"), the player reads "Corrupted: right +2,
+  wrong −1" (with the Altar's points when it holds any), everyone else
+  "Mira corrupted this one: +2 or −1". It wears
   crimson on every screen (its chip, a crimson flare as it opens, a
   rust-red rune circle round art to name, its own crackle instead of the
   usual reveal sound), a hold pours all it won into the scorer's bar, and a
   brick drains the point as the bar would have filled, with a crack of
-  glass. Every scoreboard entry carries its orb count.
+  glass. Every scoreboard entry carries its orb count (on phones in the
+  avatar's upper corner, so the row fits as many players as before).
 - **The Vaal favour the desperate:** at the end of a round that neither ends
   the game nor starts a deathmatch, everyone still there 3 or more points
   behind the leader gains an orb, up to one more than a game starts with;
@@ -69,13 +73,16 @@ on your turn you may also say how sure you are.
 - **Revenge orbs:** when a turns game of two or more ends, everyone still
   there who didn't win starts the next game in the room (Play again, or
   Change settings then Begin the hunt) with one more orb. The end screen
-  says who, and the first turn of that game repeats it. Spectators seated
-  then start with the usual count.
+  marks it on their rows ("revenge orb next game") and says who under its
+  buttons, and the first turn of that game repeats it. A guest whose
+  connection drops in the lobby keeps theirs on coming back. Spectators
+  seated then start with the usual count.
 - Nobody can corrupt in a deathmatch, so the Altar waits there; race and
-  Delve have no orbs. A corrupted question the host skips gives its orb
-  back; one traded for another in the same category (its art wouldn't load)
-  stays corrupted, on the orb already spent. Orbs and the Altar start afresh
-  every game.
+  Delve have no orbs. A corrupted question that is skipped (its player
+  dropped out, or idled with no time limit) bricks as running out of time
+  would, so leaving is no way out of a corruption; one traded for another
+  in the same category (its art wouldn't load) stays corrupted, on the orb
+  already spent. Orbs and the Altar start afresh every game.
 - In the first game in a browser, the pill pulses and a note under the cards
   says "Sure of one of these? Corrupt it: right +2, wrong −1." until this
   browser corrupts a pick.
@@ -87,7 +94,7 @@ on your turn you may also say how sure you are.
   once): the lobby shows it under the turns rules ("Your ledger: 9 held, 4
   bricked, biggest Altar 4."), and the end screen announces a new biggest
   Altar of 2 or more ("Your biggest Altar yet: 4."). A ledger this build
-  can't read is never written over.
+  can't read is never written over; erasing the codex erases the ledger.
 
 Items aren't repeated within a game until a category runs out, and earlier answers never come back as wrong answers (so they can't be ruled out from memory). Precursor tablets come up about a quarter as often as other items; a tablet question only offers tablets (once too few unseen tablets are left for that, they sit out until the category starts over), and tablets don't appear in other questions.
 

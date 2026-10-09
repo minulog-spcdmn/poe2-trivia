@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { Engine, createGame, type Difficulty, type GameState, type Item, type Question } from '../src/lib/game.ts';
 import { finalRound, finalRoundShown, ledgerLine, ledgerText, matchPoint, reachedBy, stakesLine, toPlay, turnStakes } from '../src/lib/stakes.ts';
 import { emptyLedger } from '../src/lib/vaalRecord.ts';
-import { reachedText } from '../src/lib/difficultyText.ts';
+import { lastTurnText, reachedText } from '../src/lib/difficultyText.ts';
 import { MOMENTS } from '../src/lib/soundDesign.ts';
 
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
@@ -248,6 +248,24 @@ test('the final round overlay names who reached the target', () => {
   // Everyone at or past the target counts.
   const s = finalAt([10, 11, 3]);
   assert.deepEqual(reachedBy(s), ids(s, [0, 1]));
+});
+
+test('the final round overlay names who still plays: seats before the one that reached it get no last turn', () => {
+  const nameOf = (id: string) => ({ p0: 'Thomas', p1: 'Lys', p2: 'Iris', p3: 'Cyr' })[id] ?? '?';
+  assert.equal(lastTurnText(['p2'], nameOf, null), 'Iris gets one last turn.');
+  assert.equal(lastTurnText(['p2'], nameOf, 'p2'), 'You get one last turn.');
+  assert.equal(lastTurnText(['p2', 'p3'], nameOf, null), 'Iris and Cyr each get one last turn.');
+  assert.equal(lastTurnText(['p2', 'p3'], nameOf, 'p3'), 'You and Iris each get one last turn.');
+  assert.equal(lastTurnText([], nameOf, null), '');
+  // Lys (seat 1) reaches the target: only Iris, after her, plays this round.
+  let { engine, s } = started(['Thomas', 'Lys', 'Iris'], 1);
+  s = turn(engine, s, { answer: 'wrong' });
+  s = turn(engine, s, { answer: 'right' });
+  assert.equal(s.phase, 'choosing');
+  assert.ok(finalRound(s));
+  const said = lastTurnText(toPlay(s), (id) => s.players.find((p) => p.id === id)!.name, null);
+  assert.equal(said, `${activeOf(s).name} gets one last turn.`);
+  assert.ok(!said.includes(s.players[0].name), 'the first seat played its turn already');
 });
 
 test('the final round has a sound of its own', () => {

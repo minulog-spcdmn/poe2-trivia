@@ -16,8 +16,8 @@
   import { phone } from '../lib/layout';
   import { REVIVE_FROM, delveDepth, fellAt, isGroupRun, livesOf, questionTimer, reviveProblem, shownDepth, standingIds } from '../lib/delve';
   import { startLine } from '../lib/delveStart';
-  import { reachedText, revivedText } from '../lib/difficultyText';
-  import { finalRound, reachedBy, turnStakes } from '../lib/stakes';
+  import { lastTurnText, reachedText, revivedText } from '../lib/difficultyText';
+  import { finalRound, reachedBy, toPlay, turnStakes } from '../lib/stakes';
   import { accentAt, milestoneAt, stratumName, swing } from '../lib/descent';
   import { zoneAt } from '../lib/zoneSigils';
   import Threshold from './zonebanner/Threshold.svelte';
@@ -101,6 +101,8 @@
   });
   /** "Ash reached 10", or online "You reached 10". */
   const reached = $derived(reachedText(reachedBy(s), (id) => nameOf(id)?.name ?? '?', local ? null : session.myPlayerId, s.settings.targetScore));
+  /** "Iris gets one last turn.": who still plays this round (seats before the one that reached it get none). */
+  const lastTurns = $derived(lastTurnText(toPlay(s), (id) => nameOf(id)?.name ?? '?', local ? null : session.myPlayerId));
   // A new game (or joining one): a wave of light.
   onMount(() => {
     gameStart();
@@ -389,7 +391,9 @@
           <!-- The gate's columns stand in for the rules while it shows. -->
           <div class="banner" class:dm={!!dm} class:veiled={!!zone && !zone.leaving} style:--c={bannerColor}>
             <span class="rule"></span>
-            <h2 class:start={startsRun} use:bannerFx={{ color: bannerColor, big: bannerBig }}>{bannerTitle}</h2>
+            <h2 class:start={startsRun} class:fit={!race && !run} style:--chars={!race && !run ? bannerTitle.length : undefined} use:bannerFx={{ color: bannerColor, big: bannerBig }}
+              >{bannerTitle}</h2
+            >
             <span class="rule"></span>
           </div>
           {#if zone}
@@ -493,7 +497,7 @@
     <div class="final-intro-inner" data-behind-dialog="blur" in:scale={{ start: 1.4, duration: 550, opacity: 0 }}>
       <p class="final-kicker">{reached}</p>
       <h1 use:finalFx>Final round</h1>
-      <p class="final-sub">Everyone else gets one last turn.</p>
+      <p class="final-sub">{lastTurns}</p>
     </div>
   </div>
 {/if}
@@ -813,6 +817,12 @@
     }
     .banner h2 {
       font-size: 1.45rem;
+    }
+    /* Turns: a long name's "match point" or "last chance" (or turn) sets
+       smaller rather than run off the screen (about half an em a letter, in
+       the room the rules leave). */
+    .banner h2.fit {
+      font-size: min(1.45rem, calc((100vw - 5.8rem) / (var(--chars) * 0.5)));
     }
     .skip {
       margin-top: 1rem;

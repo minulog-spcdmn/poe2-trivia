@@ -19,6 +19,7 @@
   import { delverText, lossDepths, revengeNote } from '../lib/difficultyText';
   import { revengeFor, vaalMode, type Player } from '../lib/game';
   import { ledgerText } from '../lib/stakes';
+  import VaalOrb from './VaalOrb.svelte';
 
   const s = $derived(session.state!);
   const won = (id: string) => s.winners.includes(id);
@@ -51,9 +52,10 @@
     const r = session.vaalResult;
     return !run && r && r.game === s.startedAt && r.bestAltar ? r.altar : 0;
   });
-  /** Turns: who starts the next game with a revenge orb (game.ts revengeFor), told to them online (the host is asked to play again). */
+  /** Turns: who starts the next game with a revenge orb (game.ts revengeFor): marked on their rows, and told under the actions (online, the host is asked to play again). */
+  const avengers = $derived(run ? [] : revengeFor(s));
   const revenge = $derived(
-    revengeNote(revengeFor(s), (id) => s.players.find((p) => p.id === id)?.name ?? '?', session.mode === 'local' ? null : session.myPlayerId, session.isHost),
+    revengeNote(avengers, (id) => s.players.find((p) => p.id === id)?.name ?? '?', session.mode === 'local' ? null : session.myPlayerId, session.isHost),
   );
 
   // One click only: a second one while this screen fades out would restart the new game.
@@ -311,12 +313,14 @@
           <span class="pts depth" title={row.lives ? 'Still standing' : `Perished at depth ${shownDepth(row.depth)}`}>{shownDepth(row.depth)}</span>
         {:else}
           {@const ledger = ledgerOf(p)}
-          <!-- Turns: what their corruptions did (nothing for a player who never corrupted), broken only between its parts. -->
+          {@const avenges = avengers.includes(p.id)}
+          <!-- Turns: what their corruptions did (nothing for a player who never corrupted), broken only between its
+               parts, and a revenge orb for the next game (in view with the standings, where the line under the actions may not be). -->
           <span class="name"
-            ><PlayerName name={p.name} />{#if ledger}<span class="detail"
-                >{#each ledger.split(', ') as part, k (k)}{k ? ', ' : ''}<span class="part"
+            ><PlayerName name={p.name} />{#if ledger || avenges}<span class="detail"
+                >{#each ledger ? ledger.split(', ') : [] as part, k (k)}{k ? ', ' : ''}<span class="part"
                     >{#each part.split(/(\d+)/) as bit, j (j)}{#if j % 2}<span class="n">{bit}</span>{:else}{bit}{/if}{/each}</span
-                  >{/each}</span
+                  >{/each}{#if avenges}{ledger ? '; ' : ''}<span class="part avenge"><VaalOrb />revenge orb next game</span>{/if}</span
               >{/if}</span
           >
         {/if}
@@ -545,6 +549,16 @@
   }
   .detail .part {
     white-space: nowrap;
+  }
+  /* A revenge orb for the next game, in the Vaal's crimson, with the orb. */
+  .detail .avenge {
+    color: #e8a99a;
+  }
+  .avenge :global(.vaal-orb) {
+    display: inline-block;
+    vertical-align: -1px;
+    margin-right: 0.3em;
+    --h: 11px;
   }
   .detail {
     display: block;

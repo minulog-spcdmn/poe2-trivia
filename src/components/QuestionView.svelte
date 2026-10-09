@@ -94,14 +94,17 @@
   /** Turns: you answering, online (on one device the result names whoever answered). */
   const you = $derived(session.mode !== 'local' && active.id === me);
   /**
-   * Turns, a corrupted question: what it pays, the Altar's points included
-   * (`hold` for the player answering, else for those watching).
+   * Turns, a corrupted question: what rides on it, the Altar's points
+   * included (as they were when it was asked: the reveal moves them), in
+   * place of the task line at the top, for everyone: the player (and on one
+   * device, whoever is on) reads what it pays, everyone else who corrupted it.
    */
-  const vaalStakes = $derived.by(() => {
-    const altar = s.altar ?? 0;
-    return altar > 0
-      ? { hold: `right +${HOLD} and the Altar's ${altar}, wrong −${BRICK}`, watch: `+${HOLD} and the Altar's ${altar}, or −${BRICK}` }
-      : { hold: `right +${HOLD}, wrong −${BRICK}`, watch: `+${HOLD} or −${BRICK}` };
+  const vaalLine = $derived.by(() => {
+    if (!q.vaal || race || coop || s.delve) return '';
+    const st = reveal?.stake;
+    const altar = st ? (reveal.correct ? st.altar : (s.altar ?? 0) - BRICK) : (s.altar ?? 0);
+    const with_ = altar > 0 ? ` and the Altar's ${altar}` : '';
+    return mine ? `Corrupted: right +${HOLD}${with_}, wrong −${BRICK}` : `${active.name} corrupted this one: +${HOLD}${with_}${altar > 0 ? ',' : ''} or −${BRICK}`;
   });
   /** Delve: who a find's item went to (together: whoever cleared it, or a teammate with room for it), and whether that's you. */
   const gainerId = $derived(coop ? (reveal?.gainedBy ?? reveal?.winnerId ?? null) : active.id);
@@ -918,9 +921,6 @@
       </p>
     {:else if blastLine}
       <p class="spectate blast-line" in:fade={{ duration: 300, delay: 300 }}><span class="found-glyph" aria-hidden="true"><ItemGlyph kind="dynamite" /></span>{blastLine}</p>
-    {:else if q.vaal && !reveal && !race && !s.delve}
-      <!-- Turns: the pick was corrupted with a Vaal Orb; everyone knows what rides on it. -->
-      <p class="spectate vaal">{mine ? `Corrupted: ${vaalStakes.hold}.` : `${active.name} corrupted this one: ${vaalStakes.watch}.`}</p>
     {:else if session.spectating}
       <p class="spectate muted">You're watching. You'll play in the next game.</p>
     {:else if coop && !mine}
@@ -947,7 +947,10 @@
       >{#if q.vaal}<VaalOrb /><span class="sr">Corrupted: </span>{/if}{questionTopic(q)}</span
     >
     <span class="task">
-      <span class="task-text" class:answered={narrow.current && !!verdict}>{q.mode === 'art' ? 'Pick the art that matches the name' : 'Name this item'}</span>
+      <!-- Turns, a corrupted question: what rides on it, at the top for everyone (the task goes without saying). -->
+      <span class="task-text" class:vaal={!!vaalLine} class:answered={narrow.current && !!verdict}
+        >{vaalLine || (q.mode === 'art' ? 'Pick the art that matches the name' : 'Name this item')}</span
+      >
       {#if narrow.current}{@render verdictBadge()}{/if}
     </span>
     <!-- Phones have the timer in the scoreboard pinned to the top (Game.svelte). -->
@@ -1210,6 +1213,10 @@
   }
   .task-text.answered {
     opacity: 0;
+  }
+  /* A corrupted question's stakes, in the Corrupt pill's crimson. */
+  .task-text.vaal {
+    color: #eeac9c;
   }
   /* The timer, and left of it the verdict at the reveal. */
   .clock {
@@ -2385,10 +2392,6 @@
     margin: 0;
     font-style: italic;
     text-align: center;
-  }
-  /* A corrupted question: what rides on it. */
-  .spectate.vaal {
-    color: #e8a99a;
   }
 
   @keyframes glow {
