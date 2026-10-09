@@ -74,15 +74,16 @@ the same thing for everyone.
     the card was one. A time-out costs everyone standing who hasn't
     answered.
   - Flares go off from the pack of a random holder still standing, and
-    help everyone. Dynamite is its holder's own: only a player standing who
-    hasn't answered and holds a stick may press Detonate, and it spends
-    theirs (a teammate's wrong answer locks nobody else out: it stays paid,
-    and everyone standing, its player too, answers the new question). Its card is the one with the most votes that wasn't chosen,
-    ties drawn by the host, then the others, drawn. The first right answer
-    still ends the question for everyone: a blast after it, or an answer to
-    a question blasted away, is dropped, whichever reached the host second.
-    Dynamite going off at 0 (from the pack of a random holder still to
-    answer) hits nobody: the whole team gets the new question.
+    help everyone. Only a player standing who hasn't answered and holds a
+    stick of dynamite may press Detonate, and it spends theirs (a
+    teammate's wrong answer locks nobody else out: it stays paid, and
+    everyone standing, its player too, answers the new question). Its card
+    is the one with the most votes that wasn't chosen, ties drawn by the
+    host, then the others, drawn. The first right answer still ends the
+    question for everyone: a blast after it, or an answer to a question
+    blasted away, is dropped, whichever reached the host second. Dynamite
+    going off at 0 comes from the pack of the first holder still standing,
+    in seat order, and hits nobody: the whole team gets the new question.
   - Between questions, a player with 2 or more lives can give one to a
     teammate who perished, who comes back with that life and nothing else.
   - Perishing drops everything you carry, for good.

@@ -784,30 +784,23 @@ export function waitingIds(s: GameState): string[] {
 export const holdersOf = (s: GameState, item: ItemKind) => standingIds(s).filter((id) => inventoryOf(s, id)[item] > 0);
 
 /**
- * Co-op: the players still to answer the question in play who hold dynamite,
- * in seat order: only they may set a stick off, their own (blastProblem).
- * `here`: only those connected, one of whose sticks goes off by itself at 0
- * (fuseDue).
+ * Co-op: whose stick goes off when nobody sets it off by hand (by itself at
+ * 0, or the host's own tooling): the first standing holder, in seat order,
+ * so every screen can name them before it goes off. Undefined with none.
  */
-export function blasterIds(s: GameState, here = false): string[] {
-  const holds = new Set(holdersOf(s, 'dynamite'));
-  return waitingIds(s).filter((id) => holds.has(id) && (!here || s.players.some((p) => p.id === id && p.connected)));
-}
+export const fuseStick = (s: GameState): string | undefined => holdersOf(s, 'dynamite')[0];
 
 /**
  * Co-op: whether a flare or a stick of dynamite can go off on the question in
- * play: its clock runs, it is no find's, and for a flare none burnt on it
- * yet, from the pack of whoever standing holds one while someone here still
- * has an answer to give (nobody else gains from it); for dynamite the depth
- * has a blast left (blastsLeft), and someone here still to answer holds a
- * stick (blasterIds), from whose pack it goes off. When it is due is the
- * solo rule's.
+ * play, from the pack of whoever standing holds one: its clock runs, it is no
+ * find's, someone here still has an answer to give (nobody else gains from
+ * it), and for a flare none burnt on it yet, for dynamite the depth has a
+ * blast left (blastsLeft). When it is due is the solo rule's.
  */
 export function teamItemReady(s: GameState, item: 'flares' | 'dynamite'): boolean {
   const q = s.question;
   if (!isGroupRun(s) || s.phase !== 'question' || !q || q.deadline === null || !itemsWorkOn(q)) return false;
-  if (item === 'dynamite') return blastsLeft(s) > 0 && blasterIds(s, true).length > 0;
-  if (q.flared) return false;
+  if (item === 'flares' ? q.flared : blastsLeft(s) === 0) return false;
   const waiting = new Set(waitingIds(s));
   return holdersOf(s, item).length > 0 && s.players.some((p) => p.connected && waiting.has(p.id));
 }
@@ -848,8 +841,7 @@ export function blastsLeft(s: GameState): number {
  * holding one. Together: a player standing who hasn't answered it yet and
  * holds one (it is spent from their own pack); a teammate's wrong answer
  * locks nobody else out. `by` null: the host's own tooling, for the team,
- * while one of those still to answer holds one (blasterIds). Whether the
- * clock has run out is the engine's.
+ * from fuseStick's pack. Whether the clock has run out is the engine's.
  */
 export function blastProblem(s: GameState, by: string | null): string | null {
   const q = s.question;
@@ -858,11 +850,11 @@ export function blastProblem(s: GameState, by: string | null): string | null {
   if (!itemsWorkOn(q)) return "Dynamite can't be used on a find.";
   if (blastsLeft(s) === 0) return 'No more blasts at this depth.';
   if (isGroupRun(s)) {
-    if (by !== null && !seated(s, by)) return 'You are not in this game.';
-    if (by !== null && livesOf(s, by) <= 0) return 'Only players still standing can use it.';
-    if (by !== null && q.struck?.some((x) => x.by === by)) return 'You already answered.';
-    if (by !== null) return dynamiteOf(s, by) > 0 ? null : 'You have no dynamite.';
-    return blasterIds(s).length ? null : 'Nobody still to answer has dynamite.';
+    if (by === null) return fuseStick(s) ? null : 'Nobody has dynamite.';
+    if (!seated(s, by)) return 'You are not in this game.';
+    if (livesOf(s, by) <= 0) return 'Only players still standing can use it.';
+    if (q.struck?.some((x) => x.by === by)) return 'You already answered.';
+    return dynamiteOf(s, by) > 0 ? null : 'You have no dynamite.';
   }
   const active = s.players[s.turn];
   if (!active || (by !== null && by !== active.id)) return "It's not your turn.";
@@ -877,7 +869,8 @@ export function blastProblem(s: GameState, by: string | null): string | null {
  * blast it away. Alone: the
  * player answering is here, has burnt their flare or holds none, and may
  * blast it (blastProblem). Together: no flare is ready (teamItemReady), and
- * someone here still to answer holds dynamite. Never on a find's.
+ * dynamite is, for someone here still to answer (from fuseStick's pack).
+ * Never on a find's.
  */
 export function fuseDue(s: GameState): boolean {
   const q = s.question;

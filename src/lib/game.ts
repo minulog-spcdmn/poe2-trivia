@@ -12,7 +12,6 @@ import {
   FLARE_MS,
   askedCards,
   blastProblem,
-  blasterIds,
   delveLockout,
   delveQuestionTimer,
   delveRules,
@@ -28,6 +27,7 @@ import {
   findRules,
   findTileVeil,
   fuseDue,
+  fuseStick,
   hasRoom,
   holdersOf,
   inventoryOf,
@@ -643,7 +643,7 @@ export interface Question {
 export interface Blast {
   /** Who set it off; missing when it went off by itself as the clock hit 0. */
   by?: string;
-  /** Whose stick it was: whoever set it off (alone the player's); going off by itself in co-op, one still to answer's, drawn. */
+  /** Whose stick it was: whoever set it off (alone the player's); otherwise in co-op the first standing holder's (delve.ts fuseStick). */
   stick: string;
   /**
    * Where the new question's card lay on the offer from the blasted one's:
@@ -1539,7 +1539,7 @@ export class Engine {
         if (!q || q.askedAt !== action.askedAt || !(coop ? teamItemReady(s, 'flares') : this.flareDue(s, active))) break;
         const now = this.now();
         if (now < q.deadline! - 250 || now > q.deadline! + ANSWER_GRACE_MS) break;
-        this.burnFlare(s, coop ? this.anyOf(holdersOf(s, 'flares')) : active!.id);
+        this.burnFlare(s, coop ? this.anyHolder(s, 'flares') : active!.id);
         break;
       }
       case 'blast': {
@@ -1559,7 +1559,7 @@ export class Engine {
         // deals with it: a flare burns first, or the dynamite goes off by
         // itself. While its fuse hisses before 0, Detonate sets it off at once.
         if (this.now() > q.deadline! + ANSWER_GRACE_MS) throw new ActionError('Too late!', true);
-        this.blast(s, coop ? (by ?? this.anyOf(blasterIds(s))) : active!.id, by);
+        this.blast(s, coop ? (by ?? fuseStick(s)!) : active!.id, by);
         break;
       }
     }
@@ -1916,9 +1916,9 @@ export class Engine {
 
   // ---- delve co-op --------------------------------------------------------
 
-  /** Co-op: a random one of `ids` (the engine's roll, so a seeded run is repeatable). */
-  private anyOf(ids: string[]): string {
-    return sample(ids, 1, this.rng)[0];
+  /** Co-op: a random standing holder of `item` (the engine's roll, so a seeded run is repeatable). */
+  private anyHolder(s: GameState, item: 'flares'): string {
+    return sample(holdersOf(s, item), 1, this.rng)[0];
   }
 
   /**
@@ -1978,15 +1978,15 @@ export class Engine {
     if (from === null) {
       if (action.index !== null) throw new ActionError('Only players can answer.');
       if (flareDue) {
-        this.burnFlare(s, this.anyOf(holdersOf(s, 'flares')));
+        this.burnFlare(s, this.anyHolder(s, 'flares'));
         return;
       }
       // With no flare to burn, a stick of dynamite goes off by itself, from
-      // the pack of someone here still to answer, if the depth has a blast
-      // left (its fuse has hissed over the clock's last seconds: delve.ts
+      // the first standing holder's pack (delve.ts fuseStick), if the depth
+      // has a blast left (its fuse has hissed over the clock's last seconds:
       // fuseLeft). Nobody is hit, and the whole team gets the new question.
       if (fuseDue(s)) {
-        this.blast(s, this.anyOf(blasterIds(s, true)), null);
+        this.blast(s, fuseStick(s)!, null);
         return;
       }
       const hits = waitingIds(s).map((id) => ({ playerId: id, ...this.hit(s, id), timedOut: true }));
@@ -2005,7 +2005,7 @@ export class Engine {
     // throw, which would undo it) and the answer is dropped: the host's
     // time-out, due already, deals with it.
     if (flareDue && now > q.deadline + ANSWER_GRACE_MS) {
-      this.burnFlare(s, this.anyOf(holdersOf(s, 'flares')), true);
+      this.burnFlare(s, this.anyHolder(s, 'flares'), true);
       flareDue = false;
       if (now > q.deadline + ANSWER_GRACE_MS) return;
     }

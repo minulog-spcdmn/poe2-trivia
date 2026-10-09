@@ -1,9 +1,9 @@
 // Delve's dynamite: a stick blasts the question in play away for a new one at
 // the same depth, from a card on the depth's offer not asked yet, at most
 // twice a depth (as many as the offer's other cards). By hand while the
-// question is open (alone the player's own; together anyone standing who
-// hasn't answered, from a random holder's pack), or by itself as the clock
-// hits 0 with no flare to burn, right at 0 (the host's time-out). Its fuse
+// question is open (the player's own; together a holder standing who hasn't
+// answered), or by itself as the clock hits 0 with no flare to burn, right at
+// 0 (the host's time-out; together the first standing holder's, fuseStick). Its fuse
 // warns of that over the clock's last DELVE_FUSE_MS, worked out on every
 // screen from the deadline (fuseLeft): the question stays open meanwhile.
 // Never on a find's question, and a blast's question is never a find. See
@@ -28,6 +28,7 @@ import {
   flaresOf,
   fuseDue,
   fuseLeft,
+  fuseStick,
   livesOf,
   questionTimer,
   teamItemReady,
@@ -421,18 +422,21 @@ test("the fuse burns only over the last DELVE_FUSE_MS before a 0 where the dynam
   assert.equal(fuseLeft(t.s, t.before0(DELVE_FUSE_MS)), 1);
   t.give('p1', { flares: 1 });
   assert.equal(fuseLeft(t.s, t.before0(DELVE_FUSE_MS)), null, "a teammate's flare burns first");
-  // Not the stick of one who answered, or who is away: the time-out hits the rest.
+  // The holder answering wrong, or going away, as it burns stops nothing: the first standing holder's goes off.
   for (const gone of ['answered', 'away'] as const) {
     const g = delve(3, { depth: 20 });
+    g.give('p0', { dynamite: 1 });
     g.give('p2', { dynamite: 1 });
     const q = g.ask();
-    if (gone === 'answered') g.act({ type: 'answer', index: wrongs(q)[0], askedAt: q.askedAt }, 'p2');
-    else g.act({ type: 'connection', playerId: 'p2', connected: false });
-    assert.equal(fuseDue(g.s), false, gone);
-    assert.equal(fuseLeft(g.s, g.before0(500)), null, gone);
+    // The first of them in seat order (the seats are shuffled at the start).
+    const first = fuseStick(g.s)!;
+    assert.equal(first, g.s.players.map((p) => p.id).find((id) => id === 'p0' || id === 'p2'));
+    g.before0(500);
+    if (gone === 'answered') g.act({ type: 'answer', index: wrongs(q)[0], askedAt: q.askedAt }, first);
+    else g.act({ type: 'connection', playerId: first, connected: false });
+    assert.equal(fuseLeft(g.s, g.clock.now), 500 / DELVE_FUSE_MS, gone);
     g.timeOut();
-    assert.equal(g.s.reveal!.timedOut, true, gone);
-    assert.equal(dynamiteOf(g.s, 'p2'), 1, gone);
+    assert.deepEqual([g.s.question!.blast!.by, g.s.question!.blast!.stick], [undefined, first], gone);
   }
 });
 
@@ -637,26 +641,17 @@ test("together, only a holder who hasn't answered sets it off, from their own pa
     h.act({ type: 'answer', index: right(b), askedAt: b.askedAt }, 'p1');
     assert.equal(h.s.reveal!.winnerId, 'p1');
   }
-  // The host's own tooling: a stick of someone still to answer, drawn.
-  const payers = new Set<string>();
-  for (let seed = 1; seed <= 20; seed++) {
-    const h = delve(3, { seed, depth: 20 });
-    h.give('p0', { dynamite: 1 });
-    h.give('p1', { dynamite: 1 });
-    h.give('p2', { dynamite: 1 });
-    const q = h.ask();
-    h.act({ type: 'answer', index: wrongs(q)[0], askedAt: q.askedAt }, 'p1');
-    h.blast();
-    payers.add(h.s.question!.blast!.stick);
-    assert.equal(dynamiteOf(h.s, 'p1'), 1, 'not one who answered');
-  }
-  assert.deepEqual([...payers].sort(), ['p0', 'p2']);
-  // With only those who answered holding one, the host sets nothing off either.
+  // The host's own tooling: the first standing holder's stick, as at 0 (fuseStick).
   const h = delve(3, { depth: 20 });
   h.give('p1', { dynamite: 1 });
-  const q = h.ask();
-  h.act({ type: 'answer', index: wrongs(q)[0], askedAt: q.askedAt }, 'p1');
-  assert.match(blastProblem(h.s, null)!, /Nobody still to answer/);
+  h.give('p2', { dynamite: 1 });
+  h.ask();
+  const first = fuseStick(h.s)!;
+  assert.equal(first, h.s.players.map((p) => p.id).find((id) => id === 'p1' || id === 'p2'));
+  h.blast();
+  assert.deepEqual([h.s.question!.blast!.by, h.s.question!.blast!.stick], [undefined, first]);
+  assert.equal(dynamiteOf(h.s, 'p1') + dynamiteOf(h.s, 'p2'), 1);
+  assert.equal(dynamiteOf(h.s, first), 0);
 });
 
 test('together, the cards that got votes but lost come first (most votes first, ties drawn), then the rest, drawn', () => {
