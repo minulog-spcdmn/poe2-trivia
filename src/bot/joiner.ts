@@ -31,6 +31,8 @@ const GAMES: [number, number] = [1, 3];
 const REST: [number, number] = [2 * 60000, 6 * 60000];
 /** A room left isn't joined again for this long. */
 const AGAIN_AFTER_MS = 60 * 60000;
+/** The chance, each game, that it has to go before the end. */
+const MID_GAME_DROP = 0.02;
 /** Joining that hasn't got in by then is given up. */
 const JOIN_GIVE_UP_MS = 45000;
 /** A lobby whose host doesn't start in this long is left (ms, from..to). */
@@ -66,6 +68,8 @@ export class Joiner {
   private lobbySince = 0;
   private lobbyPatience = 0;
   private overAt = 0;
+  /** When it has to go mid-game (0: it stays to the end). */
+  private dropAt = 0;
   private timer: ReturnType<typeof setInterval> | null = null;
   private scoutTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -155,6 +159,7 @@ export class Joiner {
     this.doing = 'joining';
     this.until = Date.now() + JOIN_GIVE_UP_MS;
     this.lastPhase = '';
+    this.dropAt = 0;
     this.lobbySince = 0;
     this.overAt = 0;
     log(`${name} joins ${room.host}'s room ${room.code} (${room.mode}), for ${this.gamesLeft} game${this.gamesLeft > 1 ? 's' : ''}`);
@@ -202,6 +207,8 @@ export class Joiner {
       // Alone with the host gone quiet, or a host who never starts.
       if (now - this.lobbySince > this.lobbyPatience) return this.leave(now, 'the host never started');
     } else this.lobbySince = this.lobbyPatience = 0;
+    // Now and then real life calls, mid-game.
+    if (this.dropAt && now >= this.dropAt && s.phase !== 'lobby' && s.phase !== 'over') return this.leave(now, 'had to go');
     if (s.phase === 'over') {
       this.overAt ||= now + between(6000, 15000);
       if (this.gamesLeft <= 0 && now >= this.overAt) return this.leave(now, 'had enough');
@@ -215,6 +222,9 @@ export class Joiner {
     const seen = lastReading;
     if (phase === 'reveal' && s.reveal && seen && seen.qid === s.question?.askedAt)
       log(`eyes saw option ${seen.index + 1} (by ${seen.margin.toFixed(2)}), it was ${s.reveal.correctIndex + 1}`);
+    // A game starts: about one in fifty, it will have to go before the end.
+    if ((this.lastPhase === '' || this.lastPhase === 'lobby' || this.lastPhase === 'over') && phase !== 'lobby' && phase !== 'over')
+      this.dropAt = Math.random() < MID_GAME_DROP ? Date.now() + between(30000, 300000) : 0;
     if (phase === 'over') {
       this.gamesLeft--;
       // A win now and then makes it one more; a heavy loss now and then, that's it.

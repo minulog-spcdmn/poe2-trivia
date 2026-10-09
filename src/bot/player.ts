@@ -8,7 +8,7 @@
 import { engine, session } from '../lib/session.svelte';
 import { activeRules, grayscaleFor, type GameState, type Question } from '../lib/game';
 import { blastProblem, findLosses, fuseDue, inventoryOf, isGroupRun, livesOf, reviveProblem, shownDepth, standingIds, teamItemReady } from '../lib/delve';
-import { answerDelay, blasts, chooseAnswer, chooseCard, findAppetite, knowChance, panic, pickDelay, withTheHerd, type Ask, type Persona } from './brain';
+import { answerDelay, blasts, chooseAnswer, chooseCard, findAppetite, knowChance, misclicks, movesOn, panic, pickCategory, pickDelay, rethinks, tiredness, withTheHerd, type Ask, type Persona } from './brain';
 export { moodOf } from './brain';
 
 /** How the bot finds the right option: its index, or null when it can't tell. */
@@ -55,6 +55,9 @@ export class Player {
   private misses = 0;
   /** The question whose reveal it has taken in. */
   private takenIn = 0;
+  /** When it came on, and how many answers it has given since (warming up, tiring). */
+  private readonly since = Date.now();
+  private answers = 0;
 
   constructor(
     readonly persona: Persona,
@@ -74,7 +77,10 @@ export class Player {
       this.misses = 0;
       this.reset();
     }
-    if (s.phase === 'reveal') this.takeIn(s);
+    if (s.phase === 'reveal') {
+      this.takeIn(s);
+      this.planMoveOn(s);
+    }
     if (s.phase !== 'lobby' && s.phase !== 'over' && s.players.some((p) => p.id === session.myPlayerId)) {
       if (s.delve) this.delve(s);
       else if (s.settings.mode === 'race') this.race(s);
@@ -103,6 +109,29 @@ export class Player {
     else if (s.players[s.turn]?.id === me) mine = r.correct;
     if (mine === true) this.misses = 0;
     else if (mine === false) this.misses++;
+  }
+
+  /**
+   * After its own reveal (or, in Delve together, the team's), an impatient
+   * player moves on itself now and then instead of waiting for the timer.
+   */
+  private planMoveOn(s: GameState) {
+    const q = s.question;
+    const me = session.myPlayerId!;
+    if (!q || (s.settings.mode === 'race' && !s.delve)) return;
+    const mine = s.delve && isGroupRun(s) ? s.players.some((p) => p.id === me) : s.players[s.turn]?.id === me;
+    const key = `next:${q.askedAt}`;
+    if (!mine || this.decided.has(key)) return;
+    this.decided.add(key);
+    const after = movesOn(this.persona, Math.random);
+    if (after === null) return;
+    this.plans.set(key, {
+      at: session.hostNow() + after,
+      run: () => {
+        const cur = session.state;
+        if (cur?.phase === 'reveal' && cur.question?.askedAt === q.askedAt) session.dispatch({ type: 'next' });
+      },
+    });
   }
 
   private turns(s: GameState) {
@@ -174,6 +203,27 @@ export class Player {
         }
         log(type === 'pick' ? 'picks' : 'votes for', category);
         session.dispatch(type === 'pick' ? { type: 'pick', category } : { type: 'vote', category });
+        if (type === 'vote') this.planRethink(s, category);
+      },
+    });
+  }
+
+  /** Delve together: second thoughts about its vote now and then, while the vote is open (mostly over to the team's). */
+  private planRethink(s: GameState, voted: string) {
+    const after = rethinks(this.persona, Math.random);
+    if (after === null) return;
+    const me = session.myPlayerId!;
+    this.plans.set(`rethink:${s.round}:${s.turnCount}`, {
+      at: session.hostNow() + after,
+      run: () => {
+        const cur = session.state;
+        if (cur?.phase !== 'choosing' || cur.round !== s.round || cur.turnCount !== s.turnCount || cur.delve?.votes?.[me] !== voted) return;
+        const theirs = Object.entries(cur.delve?.votes ?? {}).flatMap(([id, c]) => (id !== me && c !== voted && cur.offered.includes(c) ? [c] : []));
+        const others = cur.offered.filter((c) => c !== voted);
+        const category = theirs.length ? withTheHerd({ ...this.persona, herd: 1 }, voted, theirs, Math.random) : others.length ? pickCategory(this.persona, others, Math.random) : voted;
+        if (category === voted) return;
+        log('changes its vote to', category);
+        session.dispatch({ type: 'vote', category });
       },
     });
   }
@@ -220,6 +270,15 @@ export class Player {
       const left = names.map((_, i) => i).filter((i) => !ruledOut.includes(i));
       index = left[Math.floor(Math.random() * left.length)] ?? 0;
     } else index = chooseAnswer(names, seen, knows && seen !== null, ask, ruledOut, Math.random);
+    // Now and then the click lands next door.
+    if (misclicks(this.persona, Math.random)) {
+      const next = [index - 1, index + 1].filter((i) => i >= 0 && i < names.length && !ruledOut.includes(i));
+      if (next.length) {
+        index = next[Math.floor(Math.random() * next.length)];
+        what += ' (misclicks)';
+      }
+    }
+    this.answers++;
     const truth = o.itemId ? (index === o.options.indexOf(o.itemId) ? ' right' : ' wrong') : '';
     log(`${what}${truth} (option ${index + 1}) after ${((session.hostNow() - (q.clockAt ?? q.askedAt)) / 1000).toFixed(1)} s`);
     session.dispatch({ type: 'answer', index, askedAt: q.askedAt });
@@ -275,6 +334,8 @@ export class Player {
       remembered: !!item && this.revealed.has(item),
       // Two misses in a row start to tell, three or more fully.
       tilt: Math.min(1, Math.max(0, (this.misses - 1) / 2)),
+      warming: this.answers < 3,
+      tired: tiredness((Date.now() - this.since) / 60000),
     };
     const knows = Math.random() < knowChance(this.persona, ask);
     const delay = answerDelay(this.persona, ask, knows, Math.random);

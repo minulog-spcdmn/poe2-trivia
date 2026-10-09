@@ -43,6 +43,10 @@ export interface Persona {
   temper: number;
   /** Delve together: the chance it goes with the team's votes once there are some. */
   herd: number;
+  /** How often it moves on from a reveal itself rather than wait for the timer (0 to 1). */
+  impatience: number;
+  /** Delve together: the chance it changes its vote while the vote is open. */
+  dither: number;
 }
 
 /** What the bot sees of a question when it decides. */
@@ -65,6 +69,10 @@ export interface Ask {
   remembered?: boolean;
   /** How far a run of misses has got to it, 0 (none) to 1 (three or more in a row). */
   tilt?: number;
+  /** Still warming up (its first few answers on): a little slower. */
+  warming?: boolean;
+  /** How tired it is from a long time on, 0 to 1: a little slower and sloppier. */
+  tired?: number;
 }
 
 /** Chance of knowing an item shown plainly, before the persona. */
@@ -105,6 +113,8 @@ export function makePersona(categories: string[], rng: Rng): Persona {
     favourites: [],
     temper: between(rng, -1, 1),
     herd: between(rng, 0.1, 0.5),
+    impatience: rng(),
+    dither: between(rng, 0, 0.3),
   };
 }
 
@@ -139,7 +149,7 @@ export function knowChance(p: Persona, ask: Ask): number {
   let c = clamp(RECOGNISE + p.skill + (p.affinity[ask.category] ?? 0) - hardness(ask) - (ask.mode === 'race' ? 0.03 : 0) - 0.04 * p.haste + (t < 0 ? 0.03 * t : 0.01 * t), 0.3, 0.99);
   // Seen revealed earlier on: it mostly stuck.
   if (ask.remembered) c += (0.99 - c) * 0.4;
-  return c;
+  return c - 0.015 * (ask.tired ?? 0);
 }
 
 /**
@@ -172,6 +182,8 @@ export function answerDelay(p: Persona, ask: Ask, knows: boolean, rng: Rng): num
   let s = (MEDIAN_S + HARD_S * hardness(ask)) * Math.exp(0.4 * gauss(rng)) * p.pace * (1 - 0.3 * p.haste) * (t < 0 ? 1 + 0.15 * t : 1 + 0.2 * t);
   if (ask.veil) s *= 1.3;
   if (!knows) s *= 1.6;
+  if (ask.warming) s *= 1.2;
+  s *= 1 + 0.1 * (ask.tired ?? 0);
   // A favourite is named in a flash (the art burning in or not).
   if (ask.favourite && knows) s *= 0.5;
   return Math.round(Math.max(ask.favourite ? 700 : 1000, s * 1000));
@@ -308,5 +320,26 @@ export function chooseCard(p: Persona, offered: string[], finds: { category: str
 
 /** Milliseconds to look over the categories before picking. */
 export function pickDelay(p: Persona, rng: Rng): number {
-  return Math.round(between(rng, 1300, 3800) * p.pace);
+  let ms = between(rng, 1300, 3800);
+  // Now and then it reads the cards a while longer, or something else catches its eye (well under the host's skip).
+  const r = rng();
+  if (r < 0.03) ms += between(rng, 8000, 18000);
+  else if (r < 0.15) ms += between(rng, 2000, 6000);
+  return Math.round(ms * p.pace);
 }
+
+/** Now and then the click lands on the option next to the one it meant (the hastier, the likelier; rarely all the same). */
+export const misclicks = (p: Persona, rng: Rng) => rng() < 0.004 + 0.012 * p.haste;
+
+/** After its own reveal (or the team's), whether it moves on itself, and how soon (ms), rather than wait for the timer. */
+export function movesOn(p: Persona, rng: Rng): number | null {
+  return rng() < 0.6 * p.impatience ? Math.round(between(rng, 1300, 3200) * p.pace) : null;
+}
+
+/** Delve together: whether it has second thoughts about its vote (ms after voting), while the vote is open. */
+export function rethinks(p: Persona, rng: Rng): number | null {
+  return rng() < p.dither ? Math.round(between(rng, 1500, 4000)) : null;
+}
+
+/** How tired it is after `minutes` on: nothing for 40 minutes, then rising to all of it at 120. */
+export const tiredness = (minutes: number) => clamp((minutes - 40) / 80, 0, 1);

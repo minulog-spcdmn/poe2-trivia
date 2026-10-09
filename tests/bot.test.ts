@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { answerDelay, blasts, chooseAnswer, chooseCard, findAppetite, guessChance, moodOf, panic, staysOn, urgentSeconds, withTheHerd, knowChance, makePersona, pickCategory, weighted, wrongPick, type Ask, type Persona } from '../src/bot/brain.ts';
+import { answerDelay, blasts, chooseAnswer, chooseCard, findAppetite, guessChance, misclicks, moodOf, movesOn, panic, pickDelay, rethinks, staysOn, tiredness, urgentSeconds, withTheHerd, knowChance, makePersona, pickCategory, weighted, wrongPick, type Ask, type Persona } from '../src/bot/brain.ts';
 import { createGame, rulesFor, type GameState, type Item, type Preset } from '../src/lib/game.ts';
 import { readFileSync } from 'node:fs';
-import { MODES, NAMES, buildOf, identityOf, lonelyLength, modesFrom, namesFor, nextName, otherPrefs, rollPrefs, shiftLength } from '../src/bot/identities.ts';
+import { MODES, NAMES, buildOf, fiddled, identityOf, lonelyLength, modesFrom, namesFor, nextName, otherPrefs, rollPrefs, shiftLength } from '../src/bot/identities.ts';
 import { joinable, makesWay, wanted } from '../src/bot/wanted.ts';
 import type { RoomInfo } from '../src/lib/roomInfo.ts';
 import { PROTOCOL_VERSION } from '../src/lib/protocol.ts';
@@ -16,7 +16,7 @@ function seeded(seed: number) {
   };
 }
 
-const plain: Persona = { skill: 0, pace: 1, affinity: { Rings: 0.02, Flasks: -0.05 }, finds: 0.8, boldness: 0.5, haste: 0, nerve: 1, favourites: [], temper: 0, herd: 0.3 };
+const plain: Persona = { skill: 0, pace: 1, affinity: { Rings: 0.02, Flasks: -0.05 }, finds: 0.8, boldness: 0.5, haste: 0, nerve: 1, favourites: [], temper: 0, herd: 0.3, impatience: 0.5, dither: 0.1 };
 const plainRules = rulesFor({ difficulty: 'cruel' });
 const ask = (over: Partial<Ask> = {}): Ask => ({ rules: plainRules, category: 'Rings', veil: 0, gray: false, mirrored: false, clock: 32, mode: 'turns', ...over });
 /** A question as a preset room asks it (a deathmatch's with `harder`). */
@@ -33,6 +33,7 @@ test('a persona rolls every category, within bounds', () => {
   assert.ok(p.pace >= 0.75 && p.pace <= 1.35);
   for (const k of ['finds', 'boldness', 'haste', 'nerve'] as const) assert.ok(p[k] >= 0 && p[k] <= 1, k);
   assert.ok(p.temper >= -1 && p.temper <= 1 && p.herd >= 0.1 && p.herd <= 0.5);
+  assert.ok(p.impatience >= 0 && p.impatience <= 1 && p.dither >= 0 && p.dither <= 0.3);
 });
 
 test('items shown plainly are nearly always known, even by the weakest', () => {
@@ -383,4 +384,55 @@ test('winners now and then stay longer, heavy losers now and then leave', () => 
   const rate = (mood: 'won' | 'lost' | 'even', what: string) => mean(() => (staysOn(mood, rng) === what ? 1 : 0));
   assert.ok(Math.abs(rate('won', 'longer') - 0.4) < 0.04 && Math.abs(rate('lost', 'leave') - 0.5) < 0.04);
   assert.equal(rate('even', 'as planned'), 1);
+});
+
+test('picking a card mostly takes seconds, now and then a while longer, never past the idle skip', () => {
+  const rng = seeded(79);
+  const times = Array.from({ length: 4000 }, () => pickDelay({ ...plain, pace: 1.35 }, rng));
+  assert.ok(Math.max(...times) < 30000, `${Math.max(...times)}`);
+  const long = times.filter((t) => t > 5200).length / times.length;
+  assert.ok(long > 0.08 && long < 0.25, `${long}`);
+});
+
+test('misclicks are rare, likelier for the hasty', () => {
+  const rng = seeded(83);
+  const calm = mean(() => (misclicks(plain, rng) ? 1 : 0), 20000);
+  const hasty = mean(() => (misclicks({ ...plain, haste: 1 }, rng) ? 1 : 0), 20000);
+  assert.ok(calm < 0.01 && hasty > calm && hasty < 0.03, `${calm} ${hasty}`);
+});
+
+test('the impatient move on from a reveal themselves, the indecisive change their votes', () => {
+  const rng = seeded(89);
+  assert.equal(mean(() => (movesOn({ ...plain, impatience: 0 }, rng) === null ? 0 : 1)), 0);
+  assert.ok(Math.abs(mean(() => (movesOn({ ...plain, impatience: 1 }, rng) === null ? 0 : 1)) - 0.6) < 0.04);
+  assert.equal(mean(() => (rethinks({ ...plain, dither: 0 }, rng) === null ? 0 : 1)), 0);
+  assert.ok(mean(() => (rethinks({ ...plain, dither: 0.3 }, rng) === null ? 0 : 1)) > 0.25);
+});
+
+test('a little slower while warming up, a little slower and sloppier after a long time on', () => {
+  const rng = seeded(97);
+  const a = preset('merciless');
+  assert.ok(mean(() => answerDelay(plain, { ...a, warming: true }, true, rng)) > mean(() => answerDelay(plain, a, true, rng)) * 1.1);
+  assert.equal(tiredness(30), 0);
+  assert.equal(tiredness(120), 1);
+  assert.ok(knowChance(plain, { ...a, tired: 1 }) < knowChance(plain, a));
+  assert.ok(mean(() => answerDelay(plain, { ...a, tired: 1 }, true, rng)) > mean(() => answerDelay(plain, a, true, rng)));
+});
+
+test('a host fiddling with the rules nudges the target or the timer a step', () => {
+  const rng = seeded(101);
+  const now = { mode: 'turns' as const, difficulty: 'cruel' as const, target: 10, timer: 32 };
+  for (let i = 0; i < 200; i++) {
+    const next = fiddled(now, rng);
+    assert.equal(next.mode, 'turns');
+    assert.equal(next.difficulty, 'cruel');
+    const changed = (next.target !== now.target ? 1 : 0) + (next.timer !== now.timer ? 1 : 0);
+    assert.equal(changed, 1);
+    assert.ok([7, 15].includes(next.target) || [16, 64].includes(next.timer));
+  }
+});
+
+test('more bots than names: the latecomers share the whole cast', () => {
+  assert.deepEqual(namesFor(NAMES.length + 5, NAMES.length + 5), NAMES);
+  assert.equal(namesFor(1, NAMES.length + 5).length, 1);
 });

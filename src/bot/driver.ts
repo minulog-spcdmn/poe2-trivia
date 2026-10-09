@@ -11,7 +11,7 @@ import type { GameState } from '../lib/game';
 import { scanRooms, type RoomInfo } from '../lib/rooms';
 import { engine, SAVE, session } from '../lib/session.svelte';
 import { readStored, removeStored, writeStored } from '../lib/storage';
-import { identityOf, lonelyLength, nextName, otherPrefs, shiftLength, type Identity, type Mode, type RoomPrefs } from './identities';
+import { fiddled, identityOf, lonelyLength, nextName, otherPrefs, shiftLength, type Identity, type Mode, type RoomPrefs } from './identities';
 import { joinable, makesWay, wanted, type Role } from './wanted';
 import { hostEyes, moodOf, Player } from './player';
 
@@ -43,6 +43,8 @@ const MIN_OPEN_MS = 60000;
 /** After a game: the chance a host who won stays on 10 to 25 minutes longer, and one who lost heavily leaves. */
 const HOST_STAYS_AFTER_WIN = 0.4;
 const HOST_LEAVES_AFTER_LOSS = 0.15;
+/** The chance a host fiddles with the rules once someone has joined its lobby. */
+const FIDDLE_CHANCE = 0.3;
 /** Chance that a host nobody joined tries other rules once, instead of leaving. */
 const RETRY_CHANCE = 0.35;
 
@@ -125,6 +127,8 @@ export class Bot {
   private retried = false;
   /** Lost heavily, and leaves once the scores have been up a while. */
   private sulking = false;
+  /** Whether (and when) the host fiddles with the rules in this lobby, once someone is there. */
+  private fiddle: { at: number } | null = null;
 
   /**
    * `names`: whom this room draws its hosts from (its share when two rooms
@@ -346,6 +350,16 @@ export class Bot {
       // Waits a little for more to come, as a person would (each arrival or departure starts it over).
       this.startAt = now + between(10000, 25000);
       if (key) log(`waiting for more: ${humans.length} in the lobby`);
+    }
+    // Company at last: now and then the host fiddles with the rules before it starts, as people do.
+    if (!key) this.fiddle = null;
+    else if (!this.fiddle) this.fiddle = { at: Math.random() < FIDDLE_CHANCE && this.who!.prefs.mode !== 'delve' ? now + between(3000, 8000) : 0 };
+    if (this.fiddle?.at && now >= this.fiddle.at) {
+      this.fiddle.at = 0;
+      const c = (this.who!.prefs = fiddled(this.who!.prefs, Math.random));
+      useRules(c);
+      log(`changes the rules to ${rulesText(c)}`);
+      this.startAt = Math.max(this.startAt, now + between(3000, 7000));
     }
     if (key && now >= this.startAt) {
       log(`starting with ${s.players.length} players`);

@@ -41,6 +41,54 @@ export const NAMES = [
   'vaal_it_anyway',
   'Thessa',
   'ashen_kit',
+  'Lirien',
+  'gravecaller',
+  'Corvane',
+  'saltwound',
+  'Iskra',
+  'oathless',
+  'pale_harbor',
+  'Brannoc',
+  'emberwake',
+  'Quillon',
+  'sextant_sam',
+  'Rhovan',
+  'Odalys',
+  'Veyra',
+  'mudflat_joe',
+  'Torsk',
+  'hollow_lantern',
+  'Ysolde',
+  'crit_or_quit',
+  'Baelor',
+  'runeweaver',
+  'Calyx',
+  'slow_and_steady',
+  'Marrow',
+  'fenland',
+  'Edda',
+  'juniper_k',
+  'Kestrel',
+  'stonecutter',
+  'Wren',
+  'Orrin',
+  'not_a_tank',
+  'Selka',
+  'tinker_tom',
+  'Harrow',
+  'driftwood',
+  'Neve',
+  'Galen',
+  'moonlit_marsh',
+  'Tamsin',
+  'cindermoth',
+  'late_night_maps',
+  'Ivo',
+  'salt_and_ash',
+  'Petra',
+  'gloomwalker',
+  'Brisk',
+  'Dagny',
 ];
 
 /** The game modes a bot may host. */
@@ -111,6 +159,16 @@ export function otherPrefs(now: RoomPrefs, rng: Rng, modes: readonly Mode[] = MO
   }
 }
 
+/** One rule nudged a step, as a host fiddles before starting: the target score, or the timer. */
+export function fiddled(now: RoomPrefs, rng: Rng): RoomPrefs {
+  const step = (list: number[], v: number) => {
+    const i = list.indexOf(v);
+    const near = [list[i - 1], list[i + 1]].filter((x) => x !== undefined);
+    return near.length ? near[Math.floor(rng() * near.length)] : v;
+  };
+  return rng() < 0.6 ? { ...now, target: step([5, 7, 10, 15], now.target) } : { ...now, timer: step([16, 32, 64], now.timer) };
+}
+
 /** Shuffled copy (Fisher-Yates, with `rng`). */
 function shuffled<T>(list: T[], rng: Rng): T[] {
   const out = [...list];
@@ -155,7 +213,9 @@ export function identityOf(name: string, categories: string[], modes: readonly M
  */
 export function namesFor(slot: number, of: number): string[] {
   if (!Number.isInteger(of) || of < 1 || !Number.isInteger(slot) || slot < 1 || slot > of) return NAMES;
-  return NAMES.filter((_, i) => i % of === slot - 1);
+  const share = NAMES.filter((_, i) => i % of === slot - 1);
+  // More bots than names: the latecomers share the whole cast.
+  return share.length ? share : NAMES;
 }
 
 /** How many of the last names wait before coming on again (at most half of those there are). */
