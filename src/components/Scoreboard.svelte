@@ -8,6 +8,7 @@
   import PlayerName from './PlayerName.svelte';
   import Phial from './Phial.svelte';
   import Inventory from './Inventory.svelte';
+  import VaalOrb from './VaalOrb.svelte';
   import { backdropShadow } from '../lib/backdropShadow';
   import { tick, untrack, type Snippet } from 'svelte';
   import { fxActive, onFxChange, type Handle } from '../lib/fx/core';
@@ -532,10 +533,15 @@
 
   // Scores as shown. A point won at a reveal flows into the scorer's bar as a
   // stream of sparks (see fillBar in lib/fx/moments.ts): the bar fills while
-  // they land, and the number ticks up when the last one has.
+  // they land, and the number ticks up when the last one has. A point lost at
+  // a reveal (turns: a corruption bricked) drains from the bar as a stream
+  // would land, in shards; a race's misses (while the question is open) and
+  // a new game's scores drop at once.
   let shown = $state<Record<string, number>>({});
   let barShown = $state<Record<string, number>>({});
   let filling = $state<Record<string, boolean>>({});
+  /** A point just drained at a reveal: the number lands in red, not with a gold bump. */
+  let drained = $state<Record<string, boolean>>({});
   const awards = new Map<string, Landing>();
   const latest = (id: string, fallback: number) => session.state?.players.find((x) => x.id === id)?.score ?? fallback;
   $effect(() => {
@@ -560,9 +566,23 @@
             SCORE_LANDS,
             () => {
               filling[p.id] = false;
+              drained[p.id] = false;
               shown[p.id] = barShown[p.id] = latest(p.id, score);
               // A streak's fire grows as the number ticks up.
               heat[p.id] = heatOf(streakOf(session.state?.players.find((x) => x.id === p.id)), !!session.state?.delve);
+            },
+          ],
+        ]);
+      } else if (score < was && fxActive() && s.phase === 'reveal') {
+        land(awards, p.id, score, [
+          [
+            FILL_START,
+            () => {
+              const li = scoreRowOf(p.id);
+              if (li) lostPoint(li);
+              filling[p.id] = false;
+              drained[p.id] = true;
+              shown[p.id] = barShown[p.id] = latest(p.id, score);
             },
           ],
         ]);
@@ -573,6 +593,7 @@
           if (li) lostPoint(li);
         }
         filling[p.id] = false;
+        drained[p.id] = false;
         shown[p.id] = barShown[p.id] = score;
       }
     }
@@ -752,10 +773,16 @@
           {/if}
         {:else}
           {#key score}
-            <span class="score" class:negative={score < 0} class:bump={race ? active : score > 0} class:down={out}
+            <span class="score" class:negative={score < 0} class:bump={race ? active : score > 0 && !drained[p.id]} class:down={out || drained[p.id]}
               >{score}</span
             >
           {/key}
+        {/if}
+        {#if p.vaal !== undefined && !run && !race}
+          <!-- Turns: their Vaal Orbs, a small dark chip on the avatar's lower left corner. -->
+          <span class="orbs" title="{p.vaal} Vaal {p.vaal === 1 ? 'Orb' : 'Orbs'}"
+            ><VaalOrb /><span class="n">{p.vaal}</span><span class="sr">{p.vaal === 1 ? ' Vaal Orb' : ' Vaal Orbs'}</span></span
+          >
         {/if}
         {#if guard[p.id]}
           <!-- A ward taking a loss: the entry braces, rimmed in azurite light. -->
@@ -1366,6 +1393,40 @@
     left: 26px;
     font-size: 0.8rem;
   }
+  /* Turns: their Vaal Orbs, a small dark chip on the avatar's lower left
+     corner (the orb engraved, its count in Cinzel), on every entry: laid
+     over it, so nothing moves. */
+  .orbs {
+    position: absolute;
+    left: calc(0.5rem - 7px);
+    bottom: calc(50% - 21px);
+    display: flex;
+    align-items: center;
+    gap: 1px;
+    height: 15px;
+    padding: 0 4px 0 1px;
+    font-family: var(--font-cinzel);
+    font-weight: 700;
+    font-size: 0.68rem;
+    line-height: 1;
+    color: #f4c8b8;
+    background: #0c0a08;
+    border: 1px solid rgba(140, 58, 44, 0.85);
+    border-radius: 8px;
+    --h: 11px;
+  }
+  .orbs .n {
+    min-width: 0.6em;
+    text-align: center;
+  }
+  .sr {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
 
   .watching {
     margin: -0.2rem 0 0;
@@ -1571,6 +1632,19 @@
     /* Where the ⚡ sits on a lone avatar. */
     li:not(.wide) .off {
       left: 18px;
+    }
+    /* The orbs' chip on the smaller avatar's corner, as Delve's finds hang
+       there; the entries stand a little further apart, so it never meets the
+       score hanging off the entry before it. */
+    .orbs {
+      left: -5px;
+      bottom: -5px;
+      height: 14px;
+      font-size: 0.64rem;
+      --h: 10px;
+    }
+    .board:has(> li > .orbs) {
+      gap: 0.9rem;
     }
   }
 </style>

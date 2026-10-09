@@ -16,8 +16,10 @@
   import { untrack, type Snippet } from 'svelte';
   import {
     FILL_START,
+    SCORE_LANDS,
     answerCharging,
     artRevealed,
+    corruptionAsked,
     raceMiss,
     reveal as revealFx,
     veilComplete,
@@ -33,6 +35,7 @@
   import { DELVE_FUSE_MS, blastProblem, clockLeft, dynamiteOf, fellAt, fuseDue, fuseLeft, holdersOf, isGroupRun, itemsWorkOn, livesOf, waitingIds } from '../lib/delve';
   import { blownText, coopMissText, coopRevealText, flareText, namesOf, perishedText, wardText } from '../lib/difficultyText';
   import ItemGlyph from './ItemGlyph.svelte';
+  import VaalOrb from './VaalOrb.svelte';
   import type { GlyphKind } from '../lib/inventoryArt';
 
   /** The question's timer (Game.svelte has it in the scoreboard on phones instead). */
@@ -503,6 +506,8 @@
     if (!ready || artShown || !artEl) return;
     artShown = true;
     artRevealed(artEl);
+    // Turns: a corrupted pick opens in crimson, on every screen.
+    if (q.vaal) corruptionAsked(artEl);
   });
 
   /** Svelte action: a patch of veiled art burns in (the quick ones at the reveal leave the sound to it). */
@@ -578,6 +583,9 @@
       const frac = (v: number) => Math.min(1, Math.max(0, v / target));
       // A corruption that held pours in all it won (the Altar's points too).
       const fill = now === undefined ? undefined : { from: frac(now - (r.stake?.delta ?? 1)), to: frac(now) };
+      // Turns: a corrupted question's outcome (the scoreboard drops a brick's point as the stream would land).
+      const held = !!r.stake && r.correct;
+      const bricked = !!r.stake && !r.correct;
       revealFx({
         answer: optionEls[r.correctIndex],
         chosen: !race && !coop && !r.correct && r.chosenIndex != null ? optionEls[r.chosenIndex] : null,
@@ -587,7 +595,8 @@
         verdictTone: verdict?.tone,
         // Delve has no points to land (the scoreboard's phial answers a question survived).
         pill: s.delve ? null : pill,
-        streak,
+        // A corruption that holds bursts on the pill like three in a row (the result line keeps the real streak).
+        streak: held ? Math.max(streak, 3) : streak,
         good: iWon,
         otherScored: race && !!winner && !iWon,
         timedOut: r.timedOut,
@@ -597,6 +606,11 @@
       });
       // Your point streaming into the bar. Without effects the bar just jumps, and 'correct' says it all.
       if (iWon && pill && fill && fxActive()) setTimeout(() => sfx('fill'), FILL_START * 1000 - FILL_LEAD);
+      // Timers, not after(): the sounds play with effects off too.
+      // Taking the Altar: the gong as the number lands.
+      if (held && (r.stake?.altar ?? 0) > 0) setTimeout(() => sfx('stratum'), SCORE_LANDS * 1000);
+      // A brick: glass cracking as the point drains from the bar.
+      if (bricked) setTimeout(() => sfx('wardShatter'), FILL_START * 1000);
     });
   });
 
@@ -929,7 +943,9 @@
 
 <div class="question">
   <div class="topline" class:snug>
-    <span class="chip">{questionTopic(q)}</span>
+    <span class="chip" class:vaal={!!q.vaal} title={q.vaal ? 'Corrupted with a Vaal Orb' : undefined}
+      >{#if q.vaal}<VaalOrb /><span class="sr">Corrupted: </span>{/if}{questionTopic(q)}</span
+    >
     <span class="task">
       <span class="task-text" class:answered={narrow.current && !!verdict}>{q.mode === 'art' ? 'Pick the art that matches the name' : 'Name this item'}</span>
       {#if narrow.current}{@render verdictBadge()}{/if}
@@ -1049,7 +1065,8 @@
           {/if}
         </div>
         <div class="art" bind:this={artEl} use:backdropShadow={{ fill: 'stage' }}>
-          <ArcaneCircle state={reveal ? (iWon ? 'good' : 'bad') : 'idle'} />
+          <!-- Corrupted, it's engraved in rust until the reveal colours it. -->
+          <ArcaneCircle state={reveal ? (iWon ? 'good' : 'bad') : 'idle'} color={q.vaal && !reveal ? '#d98a6e' : undefined} />
           <div class="frame">
             {#if showFull && item}
               <ArtImage src={itemImage(item.id)} alt={item.name} w={full?.w ?? hint?.w} h={full?.h ?? hint?.h} float unflip={mirrored(0)} />
@@ -1159,6 +1176,27 @@
     border: 1px solid var(--gold-lo);
     background: rgba(0, 0, 0, 0.4);
     border-radius: 2px;
+  }
+  /* Turns: a corrupted question's chip, in the Corrupt pill's crimson, with the orb spent on it. */
+  .chip.vaal {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45em;
+    color: #ffd2c4;
+    border-color: #8c3a2c;
+    background: linear-gradient(180deg, rgba(120, 30, 20, 0.55), rgba(48, 10, 6, 0.7));
+    box-shadow: 0 0 14px rgba(224, 85, 63, 0.22);
+  }
+  .chip.vaal :global(.vaal-orb) {
+    margin: -2px 0 -2px -0.3em;
+  }
+  .sr {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
   .task {
     flex: 1;

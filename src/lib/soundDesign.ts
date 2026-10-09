@@ -512,4 +512,19 @@ export const MOMENTS: Record<Sfx, Moment> = {
       { file: 'correct-6', gain: -40, rate: 1.54, delay: 0, hp: 116, lp: 20000, send: 0.95 },
     ],
   },
+  // Turns: a Vaal Orb corrupts a pick (Corrupt pressed), and the corrupted
+  // question opens on every screen in place of 'reveal': a low crackle of
+  // something burning wrong, a fuse fizzing under it slowed down, a deep
+  // swell and, further back in the hall, the deathmatch's toll a little higher.
+  corrupt: {
+    soften: 5,
+    varyPitch: 0.04,
+    varyGain: 1,
+    layers: [
+      { file: 'burn-crackle', gain: -30, rate: 0.9, delay: 0, hp: 150, lp: 9000, send: 0.45 },
+      { file: 'burn-fuse', gain: -32, rate: 0.7, delay: 60, hp: 200, lp: 7000, send: 0.4 },
+      { file: 'layer-sub-3', gain: -24, rate: 0.75, delay: 0, hp: 20, lp: 900, send: 0.5 },
+      { file: 'deathmatch-4', gain: -34, rate: 1.1, delay: 40, hp: 60, lp: 6000, send: 0.7 },
+    ],
+  },
 };

@@ -157,6 +157,41 @@ export function cardPicked(card: Element, base: Element, others: Element[], dm: 
   }
 }
 
+// ---------- Vaal Orbs (turns) ----------
+
+/**
+ * Corrupt is pressed: a crimson sigil draws itself round the emblem of each
+ * card face up (`frames`), clear of its title, as crimson motes gather into
+ * it, and a faint crimson glow creeps in at the screen's edges. The cards'
+ * own crimson skin is CSS (ChooseCategory's .dm), so it shows with effects
+ * off too.
+ */
+export function corruptingFx(frames: Element[]) {
+  if (!fxActive()) return;
+  for (const f of frames) {
+    if (detached(f)) continue;
+    const b = boxOf(f);
+    const emblem = f.querySelector('.icon') ?? f;
+    sigil(emblem, { radius: Math.min(b.w, b.h) * 0.42, color: C.crimson, life: 1.1, draw: 0.5, intensity: 0.45, spin: 0.3 });
+    implode(emblem, { count: 14, color: C.crimson });
+  }
+  edgeGlow({ color: C.crimson, intensity: 0.04, width: 60, life: 0.8 });
+}
+
+/**
+ * A corrupted question's art arrives (with artRevealed): a crimson flare
+ * from behind the item, and a crimson pulse through the scene. Only a pulse:
+ * the scene's lasting mood stays the deathmatch's and the victory's (moodOwner).
+ */
+export function corruptionAsked(art: Element) {
+  if (!fxActive() || detached(art)) return;
+  const b = boxOf(art);
+  const item = () => art.querySelector('.frame .art-fit > img') ?? art.querySelector('.frame .veil');
+  flare(art, { size: 40, streak: b.w * 0.9, life: 0.9, color: C.crimson, intensity: 0.6, clear: item });
+  light(art, { color: [1, 0.2, 0.08], radius: 320, intensity: 0.22, decay: 1.1 });
+  pulseMood(0.3, [1, 0.15, 0.08]);
+}
+
 // ---------- the vote (Delve together) ----------
 
 /** Delve together: a vote lands on a card (`pip`, the voter's mark on it): a small glint. */

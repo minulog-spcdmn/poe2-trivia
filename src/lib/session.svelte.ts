@@ -1785,7 +1785,8 @@ class Session {
       // Delve: a new depth's deal is heard as the descent (App.svelte plays 'plunge').
       if (!next.delve) sfx(next.players[next.turn]?.id === me || this.mode === 'local' ? 'yourTurn' : 'turn');
     } else if (prev.phase === 'choosing' && next.phase === 'question') {
-      sfx('reveal');
+      // Turns: a corrupted pick opens with the Vaal's crackle instead.
+      sfx(next.question?.vaal ? 'corrupt' : 'reveal');
     } else if (prev.phase === 'lobby' && next.phase === 'lobby' && next.players.length > prev.players.length) {
       sfx('join');
     }

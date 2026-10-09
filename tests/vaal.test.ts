@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { ActionError, BRICK, Engine, HOLD, createGame, publicView, revengeFor, vaalCap, vaalStart, type Difficulty, type GameState, type Item, type Question } from '../src/lib/game.ts';
 import { favourText, revengeNote, revengeText } from '../src/lib/difficultyText.ts';
+import { MOMENTS } from '../src/lib/soundDesign.ts';
 
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
 
@@ -507,4 +508,15 @@ test('favour and revenge are said by name, and to you online', () => {
   assert.equal(revengeNote(['a', 'b'], nameOf, 'c'), 'Mira and Ash start the next game with a revenge orb.');
   assert.equal(revengeNote(['a', 'b'], nameOf, 'b'), 'Play again and you start with a revenge orb.');
   assert.equal(revengeNote([], nameOf, 'b'), '');
+});
+
+test('a corruption sounds like one: a low crackle of its own, not the usual reveal', () => {
+  const { corrupt, reveal } = MOMENTS;
+  assert.deepEqual(
+    corrupt.layers.map((l) => l.file),
+    ['burn-crackle', 'burn-fuse', 'layer-sub-3', 'deathmatch-4'],
+  );
+  assert.ok(!corrupt.layers.some((l) => reveal.layers.some((r) => r.file === l.file)), 'none of the reveal in it');
+  // Low: every layer slowed down but the toll, a little higher, far back in the hall.
+  assert.ok(corrupt.layers.every((l) => l.rate < 1 || l.file === 'deathmatch-4'));
 });

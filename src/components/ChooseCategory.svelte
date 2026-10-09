@@ -11,12 +11,13 @@
   import { expectedVoters, findOffers, findOn, holdersOf, inventoryOf, isGroupRun, isIdle, livesOf, standingIds, voteClosesAt, type FindKind } from '../lib/delve';
   import { sfx } from '../lib/sound';
   import { backdropShadow } from '../lib/backdropShadow';
-  import { FIND_COLORS, cardHover, cardPicked, cardRevealed, raffleHop, voteCast } from '../lib/fx/moments';
+  import { FIND_COLORS, cardHover, cardPicked, cardRevealed, corruptingFx, raffleHop, voteCast } from '../lib/fx/moments';
   import { fxActive, type Handle, type Vec3 } from '../lib/fx/core';
   import { C, embers, emitter, flare, glints, outline, puffs, ring, shards, sparks } from '../lib/fx/effects';
   import { light } from '../lib/lights';
   import CardEngraving from './CardEngraving.svelte';
   import Avatar from './Avatar.svelte';
+  import VaalOrb from './VaalOrb.svelte';
 
   let {
     drawn = null,
@@ -64,6 +65,15 @@
   function toggle() {
     if (!mine || picked || !orbs || !vaalHere) return;
     corrupting = !corrupting;
+    // A card the mouse rests on takes the new colour.
+    if (burning) ignite(burningAt);
+    if (corrupting) {
+      // A crimson sigil draws itself on each card face up, with the Vaal's crackle.
+      corruptingFx(cardEls.flatMap((c, i) => (c && faceUp(i) ? [c.querySelector('.frame') ?? c] : [])));
+      sfx('corrupt');
+    } else {
+      sfx('click');
+    }
   }
   /** What a corruption pays, the Altar's points included. */
   const stakes = $derived(`right +${HOLD}${altar ? ` and the Altar's ${altar}` : ''}, wrong −${BRICK}`);
@@ -355,7 +365,8 @@
       const frame = node.querySelector('.frame') ?? node;
       if (dealtAt !== null) {
         if (kind) findRevealed(frame, kind);
-        else cardRevealed(frame, dm);
+        // Corrupt pressed while it lay face down: it lands crimson, as the others are.
+        else cardRevealed(frame, dm || corrupting);
       }
       // The pointer may already rest on it, having come while it lay face down.
       if (waiting === i) ignite(i);
@@ -365,6 +376,8 @@
 
   let cardEls = $state<HTMLElement[]>([]);
   let burning: Handle | null = null;
+  /** The card burning under the mouse (while `burning` is), to burn crimson as Corrupt is pressed from the keyboard. */
+  let burningAt = 0;
   /** The face-down card the mouse rests on, to catch fire once it turns up. */
   let waiting: number | null = null;
 
@@ -381,6 +394,7 @@
     const frame = card?.querySelector('.frame');
     const kind = kindOf(s.offered[i]);
     if (frame) burning = kind ? findHover(frame, card, kind) : cardHover(frame, card, !!s.deathmatch || corrupting);
+    burningAt = i;
   }
   function leave(e: PointerEvent) {
     waiting = null;
@@ -459,7 +473,8 @@
           aria-label="Corrupt your pick with a Vaal Orb: {orbs} left"
           title={orbs ? `Corrupt your pick: ${stakes}` : 'No Vaal Orbs left'}
           disabled={!orbs || !!picked}
-          onclick={toggle}>Corrupt <span class="n">×{orbs}</span></button
+          data-sfx="none"
+          onclick={toggle}><VaalOrb />Corrupt <span class="n">×{orbs}</span></button
         >
       {/if}
       {#if altar > 0}
@@ -1057,6 +1072,16 @@
   .altar .n {
     font-family: var(--font-cinzel);
     letter-spacing: 0.04em;
+  }
+  /* The orb it spends, engraved (VaalOrb), centred on the words rather than standing on their line. */
+  .corrupt :global(.vaal-orb) {
+    align-self: center;
+    margin: -2px -0.1em -2px -0.35em;
+    --h: 14px;
+  }
+  .corrupt:disabled:not(.on) :global(.vaal-orb) {
+    opacity: 0.5;
+    filter: grayscale(0.6);
   }
   .corrupt {
     color: #ffd2c4;

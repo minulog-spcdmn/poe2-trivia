@@ -64,7 +64,9 @@ export type Sfx =
   /** Delve: an Azurite Vein answered wrong caves in (two losses at once). */
   | 'caveIn'
   /** Delve: a Dynamite Cache answered wrong; its blast destroys something the player carries. */
-  | 'itemBlown';
+  | 'itemBlown'
+  /** Turns: a pick corrupted with a Vaal Orb (Corrupt pressed), and its question opening, in place of 'reveal'. */
+  | 'corrupt';
 
 let muted = (() => {
   return readStored('muted') === '1';
