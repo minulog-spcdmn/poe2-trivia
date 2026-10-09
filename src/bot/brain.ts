@@ -1,12 +1,16 @@
 // The room bot's player: how a person might pick categories and answer.
 //
 // The bot hosts its room, so it always knows the answer. Everything here is
-// about not playing like it: it knows some categories better than others,
-// takes its time (longer when it isn't sure), sometimes doesn't know, and
-// then falls for the option most like the right one, as people do.
+// about playing like someone who knows the game well, not like the host:
+// it knows nearly every item when it is shown plainly, and less the more a
+// question piles on (look-alike and made-up names, look-alike art, the art
+// burning in, mirrored, without colour); it knows some categories better
+// than others, takes its time (longer on hard questions and when unsure),
+// and when it doesn't know, it narrows the options down and guesses, falling
+// for the one most like the right one when the guess is wrong.
 // Pure functions of their inputs and a random source, so tests can pin them.
 
-import { nameSimilarity, type Difficulty } from '../lib/game.ts';
+import { nameSimilarity, type DifficultyRules } from '../lib/game.ts';
 
 export type Rng = () => number;
 
@@ -22,23 +26,25 @@ export interface Persona {
 
 /** What the bot sees of a question when it decides. */
 export interface Ask {
-  difficulty: Difficulty;
-  /** One difficulty harder than the room's (a deathmatch). */
-  harder: boolean;
+  /** The rules it is asked under (a deathmatch's and a Delve depth's included). */
+  rules: Pick<DifficultyRules, 'options' | 'similarNames' | 'fakes' | 'moreFakes' | 'lookalikes'>;
   category: string;
-  /** The art burns in patch by patch. */
-  veiled: boolean;
+  /** The share of the clock the art takes to burn in (0: shown whole). */
+  veil: number;
+  /** The art is shown without colour. */
+  gray: boolean;
+  /** Some of the art is shown flipped. */
+  mirrored: boolean;
   /** Seconds on the clock, 0 without one. */
   clock: number;
   race: boolean;
 }
 
-const LADDER: Difficulty[] = ['cruel', 'merciless', 'eternal'];
-
-/** Chance of knowing an answer by difficulty, before the persona. */
-const KNOWS: Record<Difficulty, number> = { cruel: 0.8, merciless: 0.66, eternal: 0.52, custom: 0.66 };
-/** Typical (median) seconds to answer by difficulty, when the answer is known. */
-const MEDIAN_S: Record<Difficulty, number> = { cruel: 3.6, merciless: 5, eternal: 6.4, custom: 5 };
+/** Chance of knowing an item shown plainly, before the persona. */
+const RECOGNISE = 0.985;
+/** Typical (median) seconds to answer a plain question it knows, and how much each bit of hardness adds. */
+const MEDIAN_S = 2.4;
+const HARD_S = 8;
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 const between = (rng: Rng, lo: number, hi: number) => lo + rng() * (hi - lo);
@@ -62,25 +68,43 @@ export function weighted(weights: number[], rng: Rng): number {
 
 export function makePersona(categories: string[], rng: Rng): Persona {
   return {
-    skill: between(rng, -0.05, 0.05),
+    skill: between(rng, -0.04, 0.01),
     pace: between(rng, 0.85, 1.2),
-    affinity: Object.fromEntries(categories.map((c) => [c, between(rng, -0.15, 0.12)])),
+    affinity: Object.fromEntries(categories.map((c) => [c, between(rng, -0.05, 0.02)])),
   };
 }
 
-function rung(ask: Pick<Ask, 'difficulty' | 'harder'>): Difficulty {
-  if (!ask.harder) return ask.difficulty;
-  const i = LADDER.indexOf(ask.difficulty);
-  return i < 0 ? 'eternal' : LADDER[Math.min(LADDER.length - 1, i + 1)];
+/**
+ * What a question piles on, as the share of known items it costs: about 0.1
+ * on Merciless, 0.2 on Eternal, up to 0.35 at Delve's hardest.
+ */
+export function hardness(ask: Ask): number {
+  const r = ask.rules;
+  return (
+    0.05 * r.similarNames +
+    0.015 * (r.fakes + (r.moreFakes ?? 0)) +
+    0.06 * (r.lookalikes ?? 0) +
+    0.08 * ask.veil +
+    (ask.mirrored ? 0.03 : 0) +
+    (ask.gray ? 0.06 : 0)
+  );
 }
 
 /** How likely the bot is to know this answer. */
 export function knowChance(p: Persona, ask: Ask): number {
-  let c = KNOWS[rung(ask)] + p.skill + (p.affinity[ask.category] ?? 0);
-  if (ask.veiled) c -= 0.08;
   // A race is a scramble: less time to be sure before someone else is.
-  if (ask.race) c -= 0.06;
-  return clamp(c, 0.15, 0.95);
+  return clamp(RECOGNISE + p.skill + (p.affinity[ask.category] ?? 0) - hardness(ask) - (ask.race ? 0.03 : 0), 0.3, 0.99);
+}
+
+/**
+ * Not knowing it, the chance a guess is right anyway: the options that
+ * don't look like it are ruled out, and it guesses between the rest (more of
+ * them alike the more look-alikes and made-up names there are).
+ */
+export function guessChance(ask: Ask): number {
+  const r = ask.rules;
+  const alike = clamp(1 + 2 * r.similarNames + 0.5 * (r.fakes + (r.moreFakes ?? 0)) + (r.lookalikes ?? 0), 1, r.options - 1);
+  return 1 / (1 + alike);
 }
 
 /**
@@ -91,17 +115,28 @@ export function answerDelay(p: Persona, ask: Ask, knows: boolean, rng: Rng): num
   const clockMs = ask.clock * 1000;
   if (!knows) {
     // Not sure: a wrong answer in a race costs a point, so mostly sit it out;
-    // on a clock in turns, now and then nothing comes to mind at all.
+    // in turns, now and then nothing comes to mind at all.
     if (ask.race && rng() < 0.6) return null;
-    if (!ask.race && clockMs && rng() < 0.12) return null;
+    if (!ask.race && clockMs && rng() < 0.05) return null;
   }
-  let s = MEDIAN_S[rung(ask)] * Math.exp(0.4 * gauss(rng)) * p.pace;
-  if (ask.veiled) s *= 1.35;
-  if (!knows) s *= 1.5;
-  let ms = Math.max(1200, s * 1000);
+  let s = (MEDIAN_S + HARD_S * hardness(ask)) * Math.exp(0.4 * gauss(rng)) * p.pace;
+  if (ask.veil) s *= 1.3;
+  if (!knows) s *= 1.6;
+  let ms = Math.max(1000, s * 1000);
   // Answers come in before the clock's end (with a little room for the network).
   if (clockMs) ms = Math.min(ms, clockMs - between(rng, 600, 1500));
   return Math.max(900, Math.round(ms));
+}
+
+/**
+ * The option the bot picks: the right one if it knows, else a guess that is
+ * right as often as guessChance says and otherwise falls for a look-alike.
+ * `names`: each option's name ('' when unknown); `ruledOut`: options it
+ * won't pick (others' wrong guesses in a race).
+ */
+export function chooseAnswer(names: string[], correct: number, knows: boolean, ask: Ask, ruledOut: number[], rng: Rng): number {
+  if (knows || rng() < guessChance(ask)) return correct;
+  return wrongPick(names, correct, ruledOut, rng) ?? correct;
 }
 
 /**
@@ -122,7 +157,7 @@ export function wrongPick(names: string[], correct: number, ruledOut: number[], 
 
 /** The category the bot picks: mostly the ones it knows best. */
 export function pickCategory(p: Persona, offered: string[], rng: Rng): string {
-  return offered[weighted(offered.map((c) => Math.exp(6 * (p.affinity[c] ?? 0))), rng)];
+  return offered[weighted(offered.map((c) => Math.exp(15 * (p.affinity[c] ?? 0))), rng)];
 }
 
 /** Milliseconds to look over the categories before picking. */

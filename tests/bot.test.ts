@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { answerDelay, knowChance, makePersona, pickCategory, weighted, wrongPick, type Ask, type Persona } from '../src/bot/brain.ts';
+import { answerDelay, chooseAnswer, guessChance, knowChance, makePersona, pickCategory, weighted, wrongPick, type Ask, type Persona } from '../src/bot/brain.ts';
+import { rulesFor, type Preset } from '../src/lib/game.ts';
 import { NAMES, identityOf, lonelyLength, namesFor, nextName, otherPrefs, rollPrefs, shiftLength } from '../src/bot/identities.ts';
 import { joinable, makesWay, wanted } from '../src/bot/wanted.ts';
 import type { RoomInfo } from '../src/lib/roomInfo.ts';
@@ -14,30 +15,59 @@ function seeded(seed: number) {
   };
 }
 
-const plain: Persona = { skill: 0, pace: 1, affinity: { Rings: 0.1, Flasks: -0.1 } };
-const ask = (over: Partial<Ask> = {}): Ask => ({ difficulty: 'cruel', harder: false, category: 'Rings', veiled: false, clock: 32, race: false, ...over });
+const plain: Persona = { skill: 0, pace: 1, affinity: { Rings: 0.02, Flasks: -0.05 } };
+const plainRules = rulesFor({ difficulty: 'cruel' });
+const ask = (over: Partial<Ask> = {}): Ask => ({ rules: plainRules, category: 'Rings', veil: 0, gray: false, mirrored: false, clock: 32, race: false, ...over });
+/** A question as a preset room asks it (a deathmatch's with `harder`). */
+const preset = (difficulty: Preset, harder = false): Ask => {
+  const rules = rulesFor({ difficulty }, harder);
+  return ask({ rules, veil: rules.veil?.share ?? 0, gray: rules.grayscale === 'all', category: 'Helmets' });
+};
 
 test('a persona rolls every category, within bounds', () => {
   const p = makePersona(['A', 'B', 'C'], seeded(1));
   assert.deepEqual(Object.keys(p.affinity), ['A', 'B', 'C']);
-  for (const a of Object.values(p.affinity)) assert.ok(a >= -0.15 && a <= 0.12);
+  for (const a of Object.values(p.affinity)) assert.ok(a >= -0.05 && a <= 0.02);
+  assert.ok(p.skill >= -0.04 && p.skill <= 0.01);
   assert.ok(p.pace >= 0.85 && p.pace <= 1.2);
 });
 
+test('items shown plainly are nearly always known, even by the weakest', () => {
+  assert.ok(knowChance(plain, preset('cruel')) >= 0.98);
+  assert.ok(knowChance({ skill: -0.04, pace: 1, affinity: { Helmets: -0.05 } }, preset('cruel')) >= 0.89);
+});
+
 test('harder questions are known less often', () => {
-  const cruel = knowChance(plain, ask());
-  const merciless = knowChance(plain, ask({ difficulty: 'merciless' }));
-  const eternal = knowChance(plain, ask({ difficulty: 'eternal' }));
-  assert.ok(cruel > merciless && merciless > eternal);
-  // A deathmatch goes one step up the ladder.
-  assert.equal(knowChance(plain, ask({ harder: true })), merciless);
-  assert.ok(knowChance(plain, ask({ veiled: true })) < cruel);
+  const cruel = knowChance(plain, preset('cruel'));
+  const merciless = knowChance(plain, preset('merciless'));
+  const eternal = knowChance(plain, preset('eternal'));
+  assert.ok(cruel > merciless && merciless > eternal, `${cruel} ${merciless} ${eternal}`);
+  // A deathmatch asks one step harder.
+  assert.ok(knowChance(plain, preset('cruel', true)) < cruel);
+  for (const over of [{ veil: 0.5 }, { gray: true }, { mirrored: true }, { race: true }])
+    assert.ok(knowChance(plain, ask(over)) < knowChance(plain, ask()), JSON.stringify(over));
   assert.ok(knowChance(plain, ask({ category: 'Flasks' })) < knowChance(plain, ask({ category: 'Rings' })));
 });
 
 test('the chance of knowing stays away from never and always', () => {
-  assert.equal(knowChance({ ...plain, skill: 5 }, ask()), 0.95);
-  assert.equal(knowChance({ ...plain, skill: -5 }, ask()), 0.15);
+  assert.equal(knowChance({ ...plain, skill: 5 }, ask()), 0.99);
+  assert.equal(knowChance({ ...plain, skill: -5 }, ask()), 0.3);
+});
+
+test('a guess narrows the options down, less so among look-alikes', () => {
+  const easy = guessChance(preset('cruel'));
+  const hard = guessChance(preset('eternal'));
+  assert.equal(easy, 0.5);
+  assert.ok(hard < easy && hard >= 1 / 8, `${hard}`);
+});
+
+test('a bot that knows always picks right; one that guesses is right as often as its guess', () => {
+  const names = ['Ventor\'s Gamble', 'Ventor\'s Gambit', 'Kaom\'s Heart', 'Andvarius'];
+  const rng = seeded(37);
+  for (let i = 0; i < 200; i++) assert.equal(chooseAnswer(names, 0, true, ask(), [], rng), 0);
+  let right = 0;
+  for (let i = 0; i < 4000; i++) if (chooseAnswer(names, 0, false, ask(), [], rng) === 0) right++;
+  assert.ok(Math.abs(right / 4000 - guessChance(ask())) < 0.03, `${right}`);
 });
 
 test('answers take a human time and come in before the clock ends', () => {
@@ -89,7 +119,7 @@ test('categories it knows best are picked most', () => {
   const rng = seeded(13);
   const counts: Record<string, number> = { Rings: 0, Flasks: 0 };
   for (let i = 0; i < 1000; i++) counts[pickCategory(plain, ['Rings', 'Flasks'], rng)]++;
-  assert.ok(counts.Rings > counts.Flasks * 2, JSON.stringify(counts));
+  assert.ok(counts.Rings > counts.Flasks * 1.3, JSON.stringify(counts));
 });
 
 test('weighted picks follow the weights', () => {

@@ -7,11 +7,11 @@
 // the host's own screens would, through dispatch, so every rule (and the
 // handicap on the host's race answers) applies to it too.
 
-import type { GameState, Question } from '../lib/game';
+import { activeRules, grayscaleFor, type GameState, type Question } from '../lib/game';
 import { scanRooms, type RoomInfo } from '../lib/rooms';
 import { engine, SAVE, session } from '../lib/session.svelte';
 import { readStored, removeStored, writeStored } from '../lib/storage';
-import { answerDelay, knowChance, pickCategory, pickDelay, wrongPick, type Ask } from './brain';
+import { answerDelay, chooseAnswer, knowChance, pickCategory, pickDelay, type Ask } from './brain';
 import { identityOf, lonelyLength, nextName, otherPrefs, shiftLength, type Identity, type RoomPrefs } from './identities';
 import { joinable, makesWay, wanted, type Role } from './wanted';
 
@@ -420,11 +420,14 @@ export class Bot {
     const key = `answer:${q.askedAt}`;
     if (this.planned === key) return;
     this.planned = key;
+    const rules = activeRules(s);
+    const gray = grayscaleFor(s);
     const ask: Ask = {
-      difficulty: s.settings.difficulty,
-      harder: !!s.deathmatch,
+      rules,
       category: q.category,
-      veiled: !!q.veil,
+      veil: q.veil ? (rules.veil?.share ?? 0.5) : 0,
+      gray: gray === 'all' || (gray === 'art' && q.mode === 'art'),
+      mirrored: !!q.mirrored?.some(Boolean),
       clock: q.deadline ? (q.deadline - q.askedAt) / 1000 : 0,
       race: s.settings.mode === 'race',
     };
@@ -446,7 +449,7 @@ export class Bot {
         const names = open.options.map((id, i) => open.labels[i] ?? engine.byId.get(id)?.name ?? '');
         // In a race everyone sees who guessed what, so those options are out.
         const ruledOut = open.misses.map((m) => m.index);
-        const index = knows ? correct : (wrongPick(names, correct, ruledOut, Math.random) ?? correct);
+        const index = chooseAnswer(names, correct, knows, ask, ruledOut, Math.random);
         log(`answers ${index === correct ? 'right' : 'wrong'} after ${((Date.now() - q.askedAt) / 1000).toFixed(1)} s`);
         session.dispatch({ type: 'answer', index, askedAt: q.askedAt });
       },
