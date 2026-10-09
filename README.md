@@ -525,6 +525,12 @@ browser (`src/lib/achievements.ts`); erasing the codex erases them.
     hid it for streaming.
   - After a game, the host can **Play again** (same settings, starts right
     away, spectators included) or **Change settings** (back to the lobby).
+    After a turns or race game, guests press **Again!** when they're ready
+    for another; a check marks them on every screen. Once every connected
+    guest is ready, every screen counts down from 10 and the next game
+    starts by itself as Play again would, unless someone says **Not yet** or
+    the host starts it sooner (**Play now**) or goes back to the lobby. A
+    guest who drops out is no longer waited for (`src/lib/series.ts`).
   - Very strict networks (some corporate or mobile networks) can block
     WebRTC. In that case, use hot-seat.
 - **Open rooms:** a host can set their room to **Public**, which lists it

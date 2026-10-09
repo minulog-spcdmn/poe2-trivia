@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { fly, scale } from 'svelte/transition';
   import { session } from '../lib/session.svelte';
   import { playerColor } from '../lib/ui';
@@ -9,14 +9,17 @@
   import { CREATOR, DONATE_URL, SITE_URL } from '../lib/site';
   import { backdropShadow } from '../lib/backdropShadow';
   import { fxActive, fxUserOn, onFxChange } from '../lib/fx/core';
-  import { victory } from '../lib/fx/moments';
+  import { twinkle, victory } from '../lib/fx/moments';
+  import { sfx } from '../lib/sound';
+  import { MAX_PLAYERS } from '../lib/game';
+  import { REMATCH_MS, rematchCount } from '../lib/series';
   import { fallen } from '../lib/fx/delveEnd';
   import { shareText } from '../lib/delveShare';
   import { portal } from '../lib/portal';
   import { delveStandings, delveTeam, isGroupRun, shownDepth } from '../lib/delve';
   import { BLUE_FROM, accentAt } from '../lib/descent';
   import { zoneAt } from '../lib/zoneSigils';
-  import { delverText, lossDepths } from '../lib/difficultyText';
+  import { delverText, lossDepths, namesOf } from '../lib/difficultyText';
 
   const s = $derived(session.state!);
   const won = (id: string) => s.winners.includes(id);
@@ -51,6 +54,58 @@
     session.dispatch({ type: 'restart', play });
     // Still here (the restart was refused)? Let the host try again.
     setTimeout(() => (leaving = false), 1500);
+  }
+
+  // Online turns and race: the guests vote for another game, and once every
+  // one still connected is ready the room counts down and the next starts by
+  // itself (lib/series.ts, session.svelte.ts scheduleRematch).
+  const voting = $derived(session.mode !== 'local' && !run);
+  const votes = $derived(voting ? rematchCount(s) : { guests: [], ready: [] });
+  const ready = $derived(new Set(votes.ready));
+  const me = $derived(session.myPlayerId);
+  const seated = $derived(!!me && s.players.some((p) => p.id === me));
+  const myReady = $derived(!!me && ready.has(me));
+  /** The other guests the vote still waits for. */
+  const waiting = $derived(votes.guests.filter((id) => id !== me && !ready.has(id)));
+  const nameOf = (id: string) => s.players.find((p) => p.id === id)?.name ?? '';
+  /** Watching: the next game seats them, as long as it has a seat left for them. */
+  const seatNext = $derived.by(() => {
+    const i = spectators.findIndex((o) => o.id === me);
+    return i >= 0 && s.players.filter((p) => p.connected).length + i < MAX_PLAYERS;
+  });
+  /** Who takes a seat in the next game (a spectator who is told so above isn't named to themselves). */
+  const joining = $derived(voting && seatNext ? spectators.filter((o) => o.id !== me) : spectators);
+  /** When the next game starts by itself (host clock), once everyone is in. */
+  const rematchAt = $derived(voting ? (s.rematch?.at ?? null) : null);
+  function vote(yes: boolean) {
+    session.dispatch({ type: 'rematch', ready: yes });
+  }
+  // The countdown follows the host's clock every frame, so every screen
+  // drains its bar together; the last three seconds tick.
+  let left = $state(0);
+  let drain = $state(1);
+  $effect(() => {
+    const at = rematchAt;
+    if (at === null) return;
+    let frame = 0;
+    let ticked = Infinity;
+    const tick = () => {
+      const ms = Math.max(0, at - session.hostNow());
+      drain = Math.min(1, ms / REMATCH_MS);
+      left = Math.ceil(ms / 1000);
+      if (left >= 1 && left <= 3 && left < ticked) {
+        ticked = left;
+        sfx('tick');
+      }
+      if (ms > 0) frame = requestAnimationFrame(tick);
+    };
+    untrack(tick);
+    return () => cancelAnimationFrame(frame);
+  });
+  // A check that appears on a row twinkles (not those already there as the screen opens).
+  const openedAt = Date.now();
+  function readied(node: HTMLElement) {
+    if (Date.now() - openedAt > 1500) twinkle(node);
   }
   const iWon = $derived(session.mode !== 'local' && winner?.id === session.myPlayerId);
   // A descent has no victory: alone it ends where you fell, and a group's
@@ -296,7 +351,17 @@
           </span>
           <span class="pts depth" title={row.lives ? 'Still standing' : `Perished at depth ${shownDepth(row.depth)}`}>{shownDepth(row.depth)}</span>
         {:else}
-        <span class="name"><PlayerName name={p.name} /></span>
+        <span class="name"
+          ><PlayerName name={p.name} />{#if ready.has(p.id)}<span
+              class="ready"
+              role="img"
+              aria-label="Ready for another"
+              title="Ready for another"
+              use:readied
+              in:scale={{ start: 0.2, duration: 380 }}
+              ><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg></span
+            >{/if}</span
+        >
         {/if}
         {#if team}
           <!-- Its depth is beside the name, above. -->
@@ -311,8 +376,21 @@
 
   <div class="actions" in:fly={{ y: 20, duration: 600, delay: 1300 }}>
     {#if session.isHost}
-      <button class="btn primary big" disabled={leaving} onclick={() => again(true)}>Play again</button>
+      <button class="btn primary big" class:again={votes.ready.length > 0 && rematchAt === null} disabled={leaving} onclick={() => again(true)}>
+        {#if rematchAt !== null}Play now{:else}Play again{#if votes.ready.length}<span class="count"><span class="dot"> • </span>{votes.ready.length} of {votes.guests.length} ready</span>{/if}{/if}
+      </button>
       <button class="btn ghost" disabled={leaving} onclick={() => again(false)}>{#if run}<span><span class="roomy">Back to</span> lobby</span>{:else}Change settings{/if}</button>
+    {:else if voting && seated}
+      {#if !myReady}
+        <button class="btn primary big" onclick={() => vote(true)}>Again!</button>
+      {:else}
+        {#if rematchAt === null}
+          <p class="muted">Ready. Waiting for {waiting.length ? namesOf(waiting, nameOf, me) : 'the host'}.</p>
+        {/if}
+        <button class="btn ghost small" onclick={() => vote(false)}>Not yet</button>
+      {/if}
+    {:else if voting && seatNext}
+      <p class="muted">You'll play in the next game.</p>
     {:else}
       <p class="muted">Waiting for the host to start a new game…</p>
     {/if}
@@ -333,9 +411,15 @@
       </span>
     {/if}
   </div>
-  {#if spectators.length}
+  {#if rematchAt !== null}
+    <div class="countdown" transition:fly={{ y: 6, duration: 250 }}>
+      <p aria-live="polite">Everyone's in. Next game in <b class="n">{left}</b></p>
+      <span class="drain" style:transform="scaleX({drain})"></span>
+    </div>
+  {/if}
+  {#if joining.length}
     <p class="joining muted" in:fly={{ y: 10, duration: 600, delay: 1400 }}>
-      {spectators.map((o) => o.name).join(', ')} {spectators.length === 1 ? 'joins' : 'join'} the next game.
+      {joining.map((o) => o.name).join(', ')} {joining.length === 1 ? 'joins' : 'join'} the next game.
     </p>
   {/if}
 
@@ -644,5 +728,67 @@
   .actions p {
     margin: 0;
     font-style: italic;
+  }
+  /* Ready for another: a small gold check after the name. */
+  .ready {
+    display: inline-grid;
+    place-items: center;
+    width: 1.15rem;
+    height: 1.15rem;
+    margin-left: 0.4rem;
+    vertical-align: -0.12em;
+    color: var(--gold-hi);
+    filter: drop-shadow(0 0 5px rgba(241, 217, 155, 0.45));
+  }
+  .ready svg {
+    width: 100%;
+    height: 100%;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2.4;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  /* Play again and how many are ready: on a phone the count goes under it, smaller. */
+  .again .count {
+    font-size: 0.78em;
+    letter-spacing: 0.1em;
+  }
+  @media (max-width: 420px) {
+    .btn.again {
+      flex-direction: column;
+      gap: 0.15em;
+      padding-block: 0.65em;
+    }
+    .again .dot {
+      display: none;
+    }
+  }
+  /* Everyone's in: the count over a gold line that drains to the next game. */
+  .countdown {
+    position: relative;
+    margin-top: 1.1rem;
+    padding-bottom: 0.45rem;
+  }
+  .countdown p {
+    margin: 0;
+    font-size: 1.1rem;
+    font-style: italic;
+    color: var(--gold-hi);
+  }
+  .countdown .n {
+    font-family: var(--font-cinzel);
+    font-style: normal;
+    font-weight: 700;
+  }
+  .drain {
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    width: 100%;
+    height: 2px;
+    background: var(--gold-hi);
+    box-shadow: 0 0 8px rgba(241, 217, 155, 0.5);
+    transform-origin: left;
   }
 </style>

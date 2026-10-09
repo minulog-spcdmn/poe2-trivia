@@ -20,6 +20,9 @@ test('accepts well-formed guest messages', () => {
   // Delve co-op: a vote for a card, and a life given to a teammate.
   assert.deepEqual(parseClientMsg({ t: 'action', action: { type: 'vote', category: 'Rings' } }), { t: 'action', action: { type: 'vote', category: 'Rings' } });
   assert.deepEqual(parseClientMsg({ t: 'action', action: { type: 'revive', target: 'p-1' } }), { t: 'action', action: { type: 'revive', target: 'p-1' } });
+  // After a game: ready for another, or not yet.
+  assert.deepEqual(parseClientMsg({ t: 'action', action: { type: 'rematch', ready: true } }), { t: 'action', action: { type: 'rematch', ready: true } });
+  assert.deepEqual(parseClientMsg({ t: 'action', action: { type: 'rematch', ready: false } }), { t: 'action', action: { type: 'rematch', ready: false } });
 });
 
 test('rejects anything a real client would never send', () => {
@@ -60,6 +63,9 @@ test('rejects anything a real client would never send', () => {
     { t: 'action', action: { type: 'blast', askedAt: 'x' } },
     { t: 'action', action: { type: 'blast', askedAt: -1 } },
     { t: 'action', action: { type: 'blast', askedAt: 1.5 } },
+    { t: 'action', action: { type: 'rematch' } },
+    { t: 'action', action: { type: 'rematch', ready: 'yes' } },
+    { t: 'action', action: { type: 'rematch', ready: 1 } },
     { t: 'state', state: {} },
   ];
   for (const m of bad) assert.equal(parseClientMsg(m), null, JSON.stringify(m)?.slice(0, 80));
@@ -117,8 +123,16 @@ test('veiled "find the art" pictures say which option they belong to', () => {
   assert.equal(parseHostMsg({ ...patch, tile: '2' }), null);
 });
 
-test('version 17: a blasted question remembers the wrong answers given to it, so every screen logs what they cost (Blast.was.struck); 16 gave a flare six seconds and a Flare Cache two thirds of the clock, never under four (worked out on every screen); 15 set dynamite off right at 0, its fuse burning over the last seconds before; 14 lit it at 0 (Question.fuse), 13 blasted a question away (the blast action), 12 had the frozen Delve rules, 11 the co-op vote and revive', () => {
-  assert.equal(PROTOCOL_VERSION, 17);
+test('version 18: guests vote for a rematch (rematch action); 17 made a blasted question remember the wrong answers given to it, so every screen logs what they cost (Blast.was.struck); 16 gave a flare six seconds and a Flare Cache two thirds of the clock, never under four (worked out on every screen); 15 set dynamite off right at 0, its fuse burning over the last seconds before; 14 lit it at 0 (Question.fuse), 13 blasted a question away (the blast action), 12 had the frozen Delve rules, 11 the co-op vote and revive', () => {
+  assert.equal(PROTOCOL_VERSION, 18);
+  // A host on 17 would block a guest who votes (an action it doesn't know), so a guest on 17 reloads first.
+  assert.match(versionProblem(17)!, /^Your game is out of date/);
+  assert.deepEqual(parseClientMsg({ t: 'action', action: { type: 'rematch', ready: true } }), { t: 'action', action: { type: 'rematch', ready: true } });
+  // A vote can't name its voter: the host takes it from the connection.
+  assert.deepEqual(parseClientMsg({ t: 'action', action: { type: 'rematch', ready: false, playerId: 'p0' } }), { t: 'action', action: { type: 'rematch', ready: false } });
+  // The state passes as the host sent it, the vote and its countdown with it.
+  const over = { players: [], settings: {}, phase: 'over', rematch: { ready: ['p1'], at: 12 } };
+  assert.deepEqual(parseHostMsg({ t: 'state', state: over, now: 5 }), { t: 'state', state: over, now: 5 });
   // A guest on 16 would log a wrong answer a teammate's dynamite then blasted away as never given.
   assert.match(versionProblem(16)!, /^Your game is out of date/);
   // The state passes as the host sent it, a blast's struck answers and all.

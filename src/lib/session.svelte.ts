@@ -334,6 +334,9 @@ class Session {
   private expireKey = '';
   private flareTimer: ReturnType<typeof setTimeout> | null = null;
   private flareKey = '';
+  /** Host: the next game starts by itself once every guest is ready (series.ts settleRematch). */
+  private rematchTimer: ReturnType<typeof setTimeout> | null = null;
+  private rematchKey = '';
 
   get isHost() {
     return this.mode === 'local' || this.mode === 'host';
@@ -1761,6 +1764,11 @@ class Session {
       sfx(next.delve ? 'fallen' : lost ? 'defeat' : 'victory');
       return;
     }
+    // After a game: a guest ready for another is heard on every screen.
+    if (next.phase === 'over' && prev.phase === 'over' && (next.rematch?.ready.length ?? 0) > (prev.rematch?.ready.length ?? 0)) {
+      sfx('vote');
+      return;
+    }
     if (next.settings.mode === 'race' && next.phase !== 'over') {
       const missedNow = (st: GameState) => st.question?.misses.some((m) => m.playerId === me) ?? false;
       if (prev.phase !== 'reveal' && next.phase === 'reveal' && next.reveal) {
@@ -1842,6 +1850,7 @@ class Session {
     this.scheduleIdle(s);
     this.scheduleAutoNext(s);
     this.scheduleExpire(s);
+    this.scheduleRematch(s);
   }
 
   /**
@@ -1942,6 +1951,37 @@ class Session {
         /* already moved on */
       }
     }, autoNextLeft(s.reveal?.at, Date.now()));
+  }
+
+  /**
+   * Online, after a game: once every connected guest is ready, the next one
+   * starts by itself at the time the vote set (the host's clock, as the
+   * engine's), with the same settings and the spectators seated, as Play
+   * again would. After the host's reload everyone is away until they
+   * reconnect, and their votes bring it back afresh as they do.
+   */
+  private scheduleRematch(s: GameState) {
+    const at = this.mode === 'host' && s.phase === 'over' ? s.rematch?.at : undefined;
+    const key = at === undefined ? '' : `${s.startedAt}:${at}`;
+    if (key === this.rematchKey) return;
+    if (this.rematchTimer) clearTimeout(this.rematchTimer);
+    this.rematchTimer = null;
+    this.rematchKey = key;
+    if (at === undefined) return;
+    this.armAt(
+      at,
+      () => {
+        const cur = this.state;
+        // Taken back, or someone came back not ready yet: the vote goes on.
+        if (!cur || this.rematchKey !== key || cur.phase !== 'over' || cur.rematch?.at !== at) return;
+        try {
+          this.setState(engine.apply(cur, { type: 'restart', play: true }, null));
+        } catch {
+          /* the host moved on first */
+        }
+      },
+      (t) => (this.rematchTimer = t),
+    );
   }
 
   /** Turns mode: don't let the game wait forever on a player who dropped out on their turn. */
@@ -2070,6 +2110,9 @@ class Session {
     if (this.flareTimer) clearTimeout(this.flareTimer);
     this.flareTimer = null;
     this.flareKey = '';
+    if (this.rematchTimer) clearTimeout(this.rematchTimer);
+    this.rematchTimer = null;
+    this.rematchKey = '';
     // The fuse goes quiet with the game (left, removed, or the room closed).
     if (this.hiss?.timer) clearTimeout(this.hiss.timer);
     this.hiss = null;

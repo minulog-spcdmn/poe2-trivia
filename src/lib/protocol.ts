@@ -4,7 +4,7 @@
 
 import type { Action, GameState } from './game';
 
-export const PROTOCOL_VERSION = 17;
+export const PROTOCOL_VERSION = 18;
 
 /** What hosts before version 10 tell a guest on another version, whichever side is out of date. */
 export const LEGACY_VERSION_TEXT = 'Your game version is out of date. Please reload the page.';
@@ -102,6 +102,9 @@ export function parseClientMsg(raw: unknown): ClientMsg | null {
         // Delve: a stick of dynamite blasts the question asked at `askedAt` away (the host checks it against the run).
         case 'blast':
           return isInt(a.askedAt, 0, Number.MAX_SAFE_INTEGER) ? { t: 'action', action: { type: 'blast', askedAt: a.askedAt } } : null;
+        // After a turns or race game: ready for another, or not yet (the host checks it is over and they are seated).
+        case 'rematch':
+          return typeof a.ready === 'boolean' ? { t: 'action', action: { type: 'rematch', ready: a.ready } } : null;
         default:
           return null;
       }

@@ -4,6 +4,7 @@
 import { cleanName, nameProblem, nameSkeleton } from './names.ts';
 import { RUBY } from './palette.ts';
 import type { Looks } from './looks.ts';
+import { settleRematch } from './series.ts';
 import {
   DELVE_MAX_LOCKOUT,
   DELVE_RESUME_GRACE_MS,
@@ -769,6 +770,14 @@ export interface GameState {
    * hosts): which game it is, and which answers in a codex log belong to it.
    */
   startedAt?: number;
+  /**
+   * Online, once a turns or race game is over: the guests ready for another
+   * (votes stay while a guest is away), and when every connected guest is,
+   * the host clock at which the next game starts by itself (series.ts
+   * settleRematch). Gone once the next game starts or the room goes back to
+   * the lobby.
+   */
+  rematch?: { ready: string[]; at?: number };
   /** Bumped on every change so clients can ignore stale messages. */
   version: number;
 }
@@ -807,7 +816,9 @@ export type Action =
    * for a new one at the same depth (alone the player's own; co-op anyone
    * standing who hasn't answered it, from a random holder's pack).
    */
-  | { type: 'blast'; askedAt: number };
+  | { type: 'blast'; askedAt: number }
+  /** Online, at the end of a turns or race game: a seated guest is ready for another (or takes it back). */
+  | { type: 'rematch'; ready: boolean };
 
 export const OFFER_COUNT = 3;
 export const MAX_PLAYERS = 12;
@@ -1435,6 +1446,8 @@ export class Engine {
         fresh.used = s.used;
         Object.assign(s, fresh);
         delete s.startedAt;
+        // The vote was for this game (Object.assign keeps what the fresh game has no key for).
+        delete s.rematch;
         if (action.play) return this.apply(s, { type: 'start' }, from);
         break;
       }
@@ -1561,6 +1574,16 @@ export class Engine {
         this.blast(s, coop ? this.anyHolder(s, 'dynamite') : active!.id, by);
         break;
       }
+      case 'rematch': {
+        // A vote that crossed the next game starting is dropped quietly; Delve has none.
+        if (s.phase !== 'over' || s.delve) throw new ActionError('Too late!', true);
+        // Seated guests only: spectators (who have a player id too) get a seat in the next game whatever happens, and the host starts it.
+        if (from === null || from === s.hostId || !s.players.some((p) => p.id === from)) throw new ActionError('Only players vote for a rematch.', true);
+        const r = (s.rematch ??= { ready: [] });
+        r.ready = r.ready.filter((id) => id !== from);
+        if (action.ready === true) r.ready.push(from);
+        break;
+      }
     }
     if (s.reveal && !prev.reveal) {
       s.reveal.at = this.now();
@@ -1571,6 +1594,8 @@ export class Engine {
         delete s.delve.picksBefore;
       }
     }
+    // Online, after a game: whoever voted, left, dropped out or came back, the countdown follows.
+    settleRematch(s, this.now());
     s.version = prev.version + 1;
     return s;
   }
