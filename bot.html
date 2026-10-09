@@ -1,0 +1,16 @@
+<!doctype html>
+<!-- The room bot: hosts a public room and plays in it (src/bot), run headless by scripts/room-bot.mjs.
+     data-bot gives its storage keys their own start (src/lib/storage.ts). -->
+<html lang="en" data-bot>
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex" />
+    <title>PoE2.Quest • Bot</title>
+  </head>
+  <body>
+    <pre id="bot"></pre>
+    <script type="module" src="/src/bot/main.ts"></script>
+  </body>
+</html>

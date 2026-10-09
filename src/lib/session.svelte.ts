@@ -2214,7 +2214,8 @@ type Saved =
   | { mode: 'host'; code: string; state: GameState; priv: HostPrivate }
   /** `watch`: the guest chose to watch rather than play. */
   | { mode: 'client'; code: string; name: string; watch?: boolean };
-const SAVE = 'session.v4';
+/** The save's storage name, in sessionStorage (each tab its own; the room bot keeps a copy, src/bot/host.ts). */
+export const SAVE = 'session.v4';
 /**
  * Before guests' tokens became per-room. A hosted room saved then can't be
  * resumed (its guests' tokens no longer match), and a guest's saved room
