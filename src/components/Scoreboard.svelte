@@ -8,6 +8,7 @@
   import PlayerName from './PlayerName.svelte';
   import Phial from './Phial.svelte';
   import Inventory from './Inventory.svelte';
+  import CrownMark from './CrownMark.svelte';
   import { backdropShadow } from '../lib/backdropShadow';
   import { tick, untrack, type Snippet } from 'svelte';
   import { fxActive, onFxChange, type Handle } from '../lib/fx/core';
@@ -41,6 +42,7 @@
   import { CASINGS, WARD_BREAK, WARD_NEXT, momentOf, type InventoryMoment } from '../lib/inventoryArt';
   import { MOMENTS } from '../lib/soundDesign';
   import type { GameState, Revive } from '../lib/game';
+  import { crownedId } from '../lib/series';
 
   /** Shown at the end of the row (the timer, on phones). */
   let { aside }: { aside?: Snippet } = $props();
@@ -52,6 +54,8 @@
   const missed = $derived(new Set(s.question?.misses.map((m) => m.playerId) ?? []));
   const canKick = $derived(session.mode === 'host');
   const spectators = $derived(s.spectators ?? []);
+  /** Who won the last game of the night: they wear the Crown (a mark only, lib/series.ts). */
+  const crowned = $derived(crownedId(s));
   /** Delve: lives instead of a score. */
   const run = $derived(s.delve ?? null);
   /** Delve together: nobody has a turn; on phones your own entry is the one spelled out. */
@@ -708,6 +712,10 @@
         style:--blue={burnsBlue(fire, !!run) ? 1 : 0}
         class:active class:wide class:revivable={reviveOk} class:revived={p.id in revived} class:out class:benched class:duelist class:fallen={fell !== null} class:hit={p.id in hit} class:warded={p.id in guard} class:offline={!p.connected} animate:glide style:--c={playerColor(p.hue)}>
         <Avatar name={p.name} hue={p.hue} size={32} dim={!p.connected} />
+        {#if crowned === p.id}
+          <!-- On the avatar's lower left corner, where a pill stuck to the top of a phone's screen can't clip it. -->
+          <span class="crowned" title="Won the last game"><CrownMark size={12} /></span>
+        {/if}
         <div class="info">
           <span class="name">
             <PlayerName name={p.name} />{#if session.mode !== 'local' && p.id === session.myPlayerId && s.players.length > 1}<em>&nbsp;(you)</em>{/if}
@@ -1004,6 +1012,20 @@
     to {
       opacity: 0;
     }
+  }
+  /* The night's Crown (lib/series.ts): a small engraved crown in a dark chip on the avatar's lower left corner. */
+  .crowned {
+    position: absolute;
+    left: calc(0.5rem - 4px);
+    top: calc(50% + 3px);
+    display: grid;
+    place-items: center;
+    width: 17px;
+    height: 17px;
+    background: #0c0a08;
+    border: 1px solid var(--gold-lo);
+    border-radius: 50%;
+    line-height: 0;
   }
   /* The upright phial only shows on phones, beside an entry shrunk to an avatar (below). */
   .phial-side,
@@ -1490,6 +1512,23 @@
     }
     li:not(.wide) .side-counts :global(.inventory) {
       gap: 3px;
+    }
+    /* The Crown's chip: on the same corner, a pill's or a lone avatar's,
+       with a little more room before it, clear of the score badge on the
+       avatar to its left. */
+    .crowned {
+      left: -3px;
+      top: auto;
+      bottom: -5px;
+      width: 15px;
+      height: 15px;
+    }
+    .crowned :global(.crown-mark) {
+      width: 11px;
+      height: 11px;
+    }
+    li:has(> .crowned) {
+      margin-left: 9px;
     }
     li.wide .info {
       min-width: 0;

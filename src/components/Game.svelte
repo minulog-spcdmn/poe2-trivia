@@ -9,6 +9,8 @@
   import Avatar from './Avatar.svelte';
   import PlayerName from './PlayerName.svelte';
   import TimerRing from './TimerRing.svelte';
+  import CrownMark from './CrownMark.svelte';
+  import { crownedId } from '../lib/series';
   import { fireAmbience, sfx } from '../lib/sound';
   import { onMount } from 'svelte';
   import { deathmatchIntro, deathmatchMood, gameStart, turnBanner } from '../lib/fx/moments';
@@ -96,6 +98,8 @@
   // Delve together has no player on turn: the banner takes the depth's colour.
   const bannerColor = $derived(dm ? '#e0553f' : race ? '#e08a44' : run && group ? accentAt(depth) : playerColor(active.hue));
   const bannerBig = $derived(race || mine || group);
+  /** The night's Crown (lib/series.ts) before the name of whoever wears it, on their turn; a mark only. */
+  const crowned = $derived(!race && !run && !dm && crownedId(s) === active?.id);
 
   /**
    * Svelte action: the turn banner's entrance. Runs once per turn (the stage is
@@ -357,7 +361,9 @@
           <!-- The gate's columns stand in for the rules while it shows. -->
           <div class="banner" class:dm={!!dm} class:veiled={!!zone && !zone.leaving} style:--c={bannerColor}>
             <span class="rule"></span>
-            <h2 class:start={startsRun} use:bannerFx={{ color: bannerColor, big: bannerBig }}>{bannerTitle}</h2>
+            <h2 class:start={startsRun} use:bannerFx={{ color: bannerColor, big: bannerBig }}
+              >{#if crowned}<span class="crown" title="Won the last game"><CrownMark size={18} /></span>{/if}{bannerTitle}</h2
+            >
             <span class="rule"></span>
           </div>
           {#if zone}
@@ -548,6 +554,18 @@
     animation: arrive 0.9s var(--ease-out) both;
     text-align: center;
     white-space: nowrap;
+  }
+  /* Inline before the name, the height of its capitals: the banner keeps its height. */
+  .banner h2 .crown {
+    display: inline-block;
+    margin-right: 0.3em;
+    vertical-align: -0.02em;
+    line-height: 0;
+    --glow: 0.3;
+  }
+  .banner h2 .crown :global(.crown-mark) {
+    width: 0.78em;
+    height: 0.78em;
   }
   .rule {
     flex: 0 1 140px;

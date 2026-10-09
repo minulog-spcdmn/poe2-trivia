@@ -6,13 +6,14 @@
   import Avatar from './Avatar.svelte';
   import PlayerName from './PlayerName.svelte';
   import ArcaneCircle from './ArcaneCircle.svelte';
+  import CrownMark from './CrownMark.svelte';
   import { CREATOR, DONATE_URL, SITE_URL } from '../lib/site';
   import { backdropShadow } from '../lib/backdropShadow';
   import { fxActive, fxUserOn, onFxChange } from '../lib/fx/core';
-  import { twinkle, victory } from '../lib/fx/moments';
+  import { CROWN_LANDS, crownPassed, twinkle, victory } from '../lib/fx/moments';
   import { sfx } from '../lib/sound';
   import { MAX_PLAYERS } from '../lib/game';
-  import { REMATCH_MS, rematchCount } from '../lib/series';
+  import { REMATCH_MS, crownChange, crownLine, crownedId, ledgerLine, nightWins, rematchCount } from '../lib/series';
   import { fallen } from '../lib/fx/delveEnd';
   import { shareText } from '../lib/delveShare';
   import { portal } from '../lib/portal';
@@ -117,7 +118,30 @@
   });
   /** Deeper than this browser has been before in a run of its kind (not the very first one). */
   const deeper = $derived(newBest && session.delveResult?.previousBest !== null);
-  const kicker = $derived(!run ? 'Victory' : deeper ? (solo ? 'Deeper than ever' : 'Deeper than ever together') : solo ? 'Perished' : 'The descent ends');
+  // The night (lib/series.ts): what became of the Crown in this game, and who wears it into the next.
+  const change = $derived(run ? null : crownChange(s));
+  const kicker = $derived(
+    !run
+      ? change?.held
+        ? 'The crown holds'
+        : change?.from
+          ? 'The crown falls'
+          : 'Victory'
+      : deeper
+        ? solo
+          ? 'Deeper than ever'
+          : 'Deeper than ever together'
+        : solo
+          ? 'Perished'
+          : 'The descent ends',
+  );
+  /** The night's score and the Crown's story, under the result. */
+  const ledger = $derived(run ? [] : [ledgerLine(s, nameOf), crownLine(s, nameOf)].filter(Boolean));
+  /** From the second game, each row counts the games its player has won tonight. */
+  const tally = $derived(!run && (s.series?.played ?? 0) >= 2);
+  const champ = $derived(run ? null : crownedId(s));
+  /** The game's winner, in the circle, wears the Crown now: it lands on them (a change), or they wore it already. */
+  const wears = $derived(!!winner && champ === winner.id);
   /**
    * Delve: how the run measured up against this browser's records of its
    * kind (lib/delveRecord.ts), alone or together; nothing for a run whose
@@ -184,6 +208,26 @@
       ? fallen(crown, title, { best: deeper, standings: solo ? null : standingsEl })
       : victory(crown, title, playerColor(winner.hue), iLost, standingsEl);
     return () => h.stop();
+  });
+
+  // The Crown goes to its winner once the victory's first beats are over: a
+  // stream from the row of whoever wore it into the game (or gold out of
+  // the air), landing on the winner with the milestone's gong. Timed here
+  // rather than on the effects' clock, so the gong sounds with effects off too.
+  const CROWN_DELAY = 2200;
+  let worn = $state<HTMLElement>();
+  onMount(() => {
+    if (!change) return;
+    const from = change.from;
+    const pass = setTimeout(() => {
+      const row = from ? (standingsEl?.querySelector(`li[data-id="${CSS.escape(from)}"]`) ?? null) : null;
+      if (worn) crownPassed(row, worn);
+    }, CROWN_DELAY);
+    const gong = setTimeout(() => sfx('stratum'), CROWN_DELAY + CROWN_LANDS * 1000);
+    return () => {
+      clearTimeout(pass);
+      clearTimeout(gong);
+    };
   });
 
   // Without the effects layer (no WebGL2), simpler gold sparks on a 2D canvas;
@@ -318,6 +362,10 @@
         </span>
       {:else}
         <Avatar name={winner.name} hue={winner.hue} size={110} />
+        {#if wears}
+          <!-- The night's Crown, on the winner: it lands as its stream arrives (crownPassed), or was theirs already. -->
+          <span class="worn" class:lands={!!change} style:--lands="{CROWN_DELAY + CROWN_LANDS * 1000}ms" bind:this={worn} title="Wears the Crown"><CrownMark size={46} /></span>
+        {/if}
       {/if}
     </div>
     <h1 bind:this={title} in:fly={{ y: 20, duration: 700, delay: 500 }}>
@@ -333,12 +381,18 @@
         {#if s.deathmatch}· won the deathmatch in round {s.deathmatch.round}{/if}
       {/if}
     </p>
+    {#if ledger.length}
+      <p class="ledger" in:fly={{ y: 10, duration: 700, delay: 800 }}>
+        {#each ledger as line, i (i)}<span>{line}</span>{/each}
+      </p>
+    {/if}
   {/if}
 
   <ol class="standings panel" bind:this={standingsEl} use:backdropShadow={{ fill: 'linear' }} in:fly={{ y: 30, duration: 700, delay: 900 }}>
     {#each standings as p, i (p.id)}
       {@const row = team?.players.find((r) => r.id === p.id)}
-      <li class:first={!team && rank[i] === 1} class:delver={!!row} in:fly={{ x: -20, duration: 400, delay: 1100 + i * 100 }}>
+      {@const wins = tally ? nightWins(s, p.id) : 0}
+      <li data-id={p.id} class:first={!team && rank[i] === 1} class:delver={!!row} in:fly={{ x: -20, duration: 400, delay: 1100 + i * 100 }}>
         {#if !team}<span class="rank">{rank[i]}</span>{/if}
         <Avatar name={p.name} hue={p.hue} size={30} />
         {#if row}
@@ -368,6 +422,9 @@
         {:else if run}
           <span class="pts depth" title="Perished at depth {shownDepth(depthOf(p.id))}">{shownDepth(depthOf(p.id))}</span>
         {:else}
+          {#if wins > 0}
+            <span class="wins" title="{wins} {wins === 1 ? 'game' : 'games'} won tonight"><CrownMark size={13} /><span class="n">{wins}</span></span>
+          {/if}
           <span class="pts">{p.score}</span>
         {/if}
       </li>
@@ -416,6 +473,12 @@
       <p aria-live="polite">Everyone's in. Next game in <b class="n">{left}</b></p>
       <span class="drain" style:transform="scaleX({drain})"></span>
     </div>
+  {/if}
+  {#if champ}
+    <!-- Shown as the Crown lands, when it changes hands (or is held again). -->
+    <p class="crowned" in:fly={{ y: 10, duration: 600, delay: change ? CROWN_DELAY + CROWN_LANDS * 1000 : 1500 }}>
+      <CrownMark size={16} />Next game, {champ === me && session.mode !== 'local' ? 'you wear' : `${nameOf(champ)} wears`} the Crown.
+    </p>
   {/if}
   {#if joining.length}
     <p class="joining muted" in:fly={{ y: 10, duration: 600, delay: 1400 }}>
@@ -763,6 +826,62 @@
     .again .dot {
       display: none;
     }
+  }
+  /* The night's score, under the result (closer to it than the standings are). */
+  .ledger {
+    max-width: 30rem;
+    margin: -1.3rem 0 1.7rem;
+    font-size: 1.05rem;
+    color: #cbb994;
+  }
+  /* The score, then the Crown's story on a line of its own. */
+  .ledger span {
+    display: block;
+  }
+  /* The Crown on the winner in the circle: over the top of the avatar, set
+     off from it by a shadow; when it changes hands, stamped on as its gold
+     lands (crownPassed), shown at once without motion. */
+  .worn {
+    position: absolute;
+    left: 50%;
+    top: 0;
+    translate: -50% -60%;
+    z-index: 1;
+    line-height: 0;
+    --crown: #f1d99b;
+    --glow: 0.3;
+    filter: drop-shadow(0 0 1.5px #0c0a08) drop-shadow(0 2px 5px rgba(0, 0, 0, 0.75));
+  }
+  .worn.lands {
+    animation: crown-lands 0.55s cubic-bezier(0.2, 0.9, 0.3, 1.15) var(--lands) both;
+  }
+  @keyframes crown-lands {
+    from {
+      opacity: 0;
+      scale: 1.7;
+    }
+  }
+  /* Games won tonight: a small crown and the count, beside the points. */
+  .wins {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-family: var(--font-cinzel);
+    font-weight: 700;
+    font-size: 0.92rem;
+    color: var(--gold);
+  }
+  .wins .n {
+    padding-top: 1px;
+  }
+  .crowned {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.45rem;
+    margin: 1rem 0 0;
+    font-style: italic;
+    color: var(--gold);
   }
   /* Everyone's in: the count over a gold line that drains to the next game. */
   .countdown {

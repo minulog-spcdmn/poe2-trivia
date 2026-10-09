@@ -1258,6 +1258,81 @@ export function victory(avatar: Element, title: Element, color: string, lost: bo
   };
 }
 
+/** Seconds from the Crown setting off until it lands on the winner (crownPassed). */
+export const CROWN_LANDS = 1.05;
+
+/**
+ * After the victory's first beats, the night's Crown (lib/series.ts) goes
+ * to the game's winner. From the standings row of whoever wore it into the
+ * game (`from`; the winner's own when they held it), its gold leaves the
+ * small crown in that row (or else the avatar) as a stream of motes that
+ * bows up over the screen and gathers on the winner (`to`) at CROWN_LANDS.
+ * With nobody to take it from (the first game, or a crown nobody wore), the
+ * gold gathers into `to` out of the air instead. Either way it lands with a
+ * flash, a ring of gold, a flare, glints, embers and light.
+ */
+export function crownPassed(from: Element | null, to: Element) {
+  if (!fxActive() || detached(to)) return;
+  const dst = boxOf(to);
+  const R = Math.max(dst.w, dst.h, 24);
+  const to0 = follow(to, CROWN_LANDS);
+  if (from && !detached(from)) {
+    const source = from.querySelector('.crown-mark') ?? from.querySelector('.avatar') ?? from;
+    const src = boxOf(source);
+    const from0 = follow(source, CROWN_LANDS);
+    flash(source, { radius: 16, color: C.gold, intensity: 0.32, life: 0.45 });
+    light(source, { color: [1, 0.78, 0.4], radius: 150, intensity: 0.2, decay: 0.8 });
+    outline(from, { color: k3(C.gold, 0.75), width: 8, life: 0.9, intensity: 0.35 });
+    const n = budget(80);
+    for (let i = 0; i < n; i++) {
+      const u = n > 1 ? i / (n - 1) : 1;
+      // The motes leave over the first half and arrive bunched at the end.
+      const arrive = CROWN_LANDS * (0.72 + 0.28 * u) + rand(-0.04, 0.04);
+      const delay = Math.max(0.02, Math.min(arrive - 0.35, u * 0.45 + rand(0, 0.08)));
+      const x = src.x + (Math.random() - 0.5) * src.w;
+      const y = src.y + (Math.random() - 0.5) * src.h;
+      const tx = dst.x + (Math.random() - 0.5) * dst.w * 0.6;
+      const ty = dst.y + (Math.random() - 0.5) * dst.h * 0.6;
+      // Bow each path out to one side and up, so the stream arcs and gathers again.
+      const dx = tx - x;
+      const dy = ty - y;
+      const len = Math.hypot(dx, dy) || 1;
+      const side = rand(-0.25, 0.25);
+      const cx = (x + tx) / 2 + (-dy / len) * len * side;
+      const cy = (y + ty) / 2 + (dx / len) * len * side - Math.max(40, len * 0.2);
+      const mote = i % 3 !== 0;
+      particle({
+        x,
+        y,
+        life: arrive - delay,
+        delay,
+        size: mote ? rand(1.3, 2.3) : rand(0.8, 1.2),
+        sizeEnd: mote ? 1 : 0.6,
+        color: mote ? k3(C.gold, 0.6) : C.goldPale,
+        colorEnd: C.goldPale,
+        shape: mote ? Shape.Ember : Shape.Spark,
+        stretch: 0.012,
+        fadeIn: 0.2,
+        seek: { cx, cy, tx, ty, from: from0, to: to0 },
+      });
+    }
+  } else {
+    // Out of the air: two drifts of gold, the wider one first, gathering as it lands.
+    implode(to, { count: 26, radius: R * 4, color: C.gold, life: CROWN_LANDS });
+    after(CROWN_LANDS * 0.35, () => implode(to, { count: 14, radius: R * 2.6, color: C.goldPale, life: CROWN_LANDS * 0.65 }));
+  }
+  after(CROWN_LANDS, () => {
+    if (detached(to)) return;
+    flash(to, { radius: R * 1.1, color: C.goldPale, intensity: 0.45, life: 0.6 });
+    ring(to, { radius: R * 3, from: R * 0.3, thickness: 4, life: 0.65, color: C.gold, breakup: 0.4, fill: 0, intensity: 0.7 });
+    flare(to, { size: 22, streak: R * 5, life: 0.7, color: C.goldPale, intensity: 0.5 });
+    glints(to, { count: 4, area: 'edge', size: [4, 9], color: C.goldPale, delay: [0, 0.35] });
+    embers(to, { count: 10, area: 'fill', colors: [C.gold, C.goldPale], size: [0.7, 1.4], rise: [30, 90], scatter: 14, life: [0.6, 1.2] });
+    light(to, { color: [1, 0.8, 0.45], radius: 220, intensity: 0.38, decay: 1 });
+    shakeView(0.12, 3);
+  });
+}
+
 // ---------- lobby and home ----------
 
 /** A room-code letter slams into place. */

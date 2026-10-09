@@ -7,6 +7,8 @@
   import CustomDifficulty from './CustomDifficulty.svelte';
   import DelveRules from './DelveRules.svelte';
   import ModeIcon from './ModeIcon.svelte';
+  import CrownMark from './CrownMark.svelte';
+  import { crownedId, nightWins } from '../lib/series';
   import { bestOf, findsMet, lastOf, loadRecords } from '../lib/delveRecord';
   import { MAX_NAME, isHeldName, nameHeld, nameTooShort } from '../lib/names';
   import { inviteUrl } from '../lib/site';
@@ -19,6 +21,7 @@
   import { measure } from '../lib/iconFit.svelte';
 
   const TARGETS = [5, 10, 15, 20];
+  const NIGHT_RULE = 'Every game won counts toward the night; the winner wears the Crown into the next.';
   const MODES: { id: GameMode; name: string; beta?: boolean }[] = [
     { id: 'turns', name: 'Take turns' },
     { id: 'race', name: 'Race' },
@@ -35,6 +38,9 @@
   let copied = $state(false);
 
   const inviteLink = $derived(inviteUrl(session.code));
+  /** The night so far (lib/series.ts): games won tonight, and the Crown on whoever won the last one. Delve doesn't count. */
+  const tallied = $derived(s.settings.mode !== 'delve' && !!s.series);
+  const crowned = $derived(crownedId(s));
 
   // Measure the category cards' emblems (lib/iconFit) while the party
   // gathers, so the first deal doesn't have to.
@@ -267,9 +273,13 @@
       </header>
       <ul>
         {#each s.players as p (p.id)}
+          {@const wins = tallied ? nightWins(s, p.id) : 0}
           <li use:arriving={p.name} animate:flip={{ duration: 300 }} in:fly={{ x: -20, duration: 350 }} out:scale={{ duration: 200, start: 0.9 }}>
             <Avatar name={p.name} hue={p.hue} />
-            <span class="name"><PlayerName name={p.name} /></span>
+            <span class="name"
+              >{#if crowned === p.id}<span class="crown" title="Won the last game"><CrownMark size={16} /></span>{/if}<PlayerName name={p.name} /></span
+            >
+            {#if wins > 0}<span class="tag wins" title="Games won tonight"><span class="n">{wins}</span> {wins === 1 ? 'win' : 'wins'}</span>{/if}
             {#if p.id === s.hostId}<span class="tag">Host</span>{/if}
             {#if !p.connected}<span class="tag" title="Reconnecting. Their seat is let go if they're not back when the game starts.">Offline</span>{/if}
             {#if !local && p.id === session.myPlayerId}<span class="tag you">You</span>{/if}
@@ -425,12 +435,14 @@
           <li>Everyone answers the same question; the first right answer scores a point.</li>
           <li>A wrong answer costs a point and sits you out until the next question.</li>
           <li>First to <span class="num">{s.settings.targetScore}</span> wins.</li>
+          <li>{NIGHT_RULE}</li>
         {:else}
           <li>On your turn, pick one of three categories and name the item.</li>
           <li>
             A right answer scores a point{#if lockout > 0}; the category stays locked for your next <span class="num">{lockout}</span> turns{/if}.
           </li>
           <li>First to <span class="num">{s.settings.targetScore}</span> wins once the round is over; a tie goes to sudden death.</li>
+          <li>{NIGHT_RULE}</li>
         {/if}
       </ul>
       {/if}
@@ -714,6 +726,26 @@
     border-radius: 2px;
     border: 1px solid var(--gold-lo);
     color: var(--gold);
+  }
+  .name .crown {
+    display: inline-block;
+    margin-right: 0.35em;
+    vertical-align: -0.05em;
+    line-height: 0;
+  }
+  .tag.wins {
+    border-color: rgba(201, 164, 92, 0.45);
+    color: var(--gold-hi);
+    white-space: nowrap;
+  }
+  /* The count a size up in the body font's lining figures: Cinzel's 1 reads as an I among the capitals. */
+  .tag.wins .n {
+    font-family: var(--font-body);
+    font-variant-numeric: lining-nums;
+    font-weight: 600;
+    font-size: 1.55em;
+    letter-spacing: 0;
+    line-height: 0;
   }
   .tag.you {
     border-color: #4a6b4a;

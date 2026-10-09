@@ -4,7 +4,7 @@
 import { cleanName, nameProblem, nameSkeleton } from './names.ts';
 import { RUBY } from './palette.ts';
 import type { Looks } from './looks.ts';
-import { settleRematch } from './series.ts';
+import { recordSeries, settleRematch } from './series.ts';
 import {
   DELVE_MAX_LOCKOUT,
   DELVE_RESUME_GRACE_MS,
@@ -730,6 +730,20 @@ export interface Spectator {
   name: string;
 }
 
+/**
+ * The night in this room (series.ts): the turns and race games finished
+ * with two or more seated, who won how many (by player id, kept for those
+ * who left), and the Crown, worn by whoever won the last game outright.
+ */
+export interface Series {
+  played: number;
+  wins: Record<string, number>;
+  /** Who wears the Crown, and how many games in a row they have won it. */
+  champ: { id: string; run: number } | null;
+  /** The game just over took the Crown from this player, seated at its end. */
+  fell?: string;
+}
+
 export interface GameState {
   phase: Phase;
   hostId: string | null;
@@ -778,6 +792,11 @@ export interface GameState {
    * the lobby.
    */
   rematch?: { ready: string[]; at?: number };
+  /**
+   * The night's games so far (missing until one is over): kept by Play again
+   * and Change settings, gone with the room or once it empties.
+   */
+  series?: Series;
   /** Bumped on every change so clients can ignore stale messages. */
   version: number;
 }
@@ -1119,6 +1138,8 @@ export class Engine {
         const fell = s.delve ? fellAt(s, action.playerId) : null;
         s.players.splice(idx, 1);
         if (s.phase === 'lobby') fillSeats(s);
+        // Everyone gone: the night is over too (a fresh game below has none).
+        if (s.players.length === 0) delete s.series;
         if (s.phase === 'lobby' || s.phase === 'over') break;
         if (s.players.length === 0) {
           const fresh = { ...createGame(s.hostId, s.settings), spectators: s.spectators, lastAskedAt: s.lastAskedAt, version: s.version + 1 };
@@ -1444,6 +1465,8 @@ export class Engine {
         fresh.version = s.version;
         fresh.lastAskedAt = s.lastAskedAt;
         fresh.used = s.used;
+        // The night goes on.
+        if (s.series) fresh.series = s.series;
         Object.assign(s, fresh);
         delete s.startedAt;
         // The vote was for this game (Object.assign keeps what the fresh game has no key for).
@@ -1594,6 +1617,8 @@ export class Engine {
         delete s.delve.picksBefore;
       }
     }
+    // A turns or race game just ended (however it did): the night counts it.
+    if (s.phase === 'over' && prev.phase !== 'over' && !s.delve) recordSeries(s);
     // Online, after a game: whoever voted, left, dropped out or came back, the countdown follows.
     settleRematch(s, this.now());
     s.version = prev.version + 1;

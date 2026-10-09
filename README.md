@@ -24,6 +24,17 @@ is hosted as a static site on GitHub Pages. No server needed.
    others wrong, the wrong ones are out; if all of them get it right, or all
    get it wrong, another round is played. The last duelist standing wins.
 
+**The night:** a room keeps the score of its turns and race games (with two
+or more players, online or on one device) through Play again and Change
+settings. The end screen says who won the first game and then who leads the
+night, the standings count each player's games won from the second game on,
+and so does the lobby. The winner of the last game wears the **Crown**: it
+passes to them on the end screen in a stream of gold from whoever wore it,
+and in the next game it sits on their avatar and before their name on their
+turn. It's a mark only; the rules don't change. A shared win counts for each
+winner and leaves the Crown where it was. Delve isn't counted, and the night
+ends with the room, or once everyone has left (`src/lib/series.ts`).
+
 Items aren't repeated within a game until a category runs out, and earlier answers never come back as wrong answers (so they can't be ruled out from memory). Precursor tablets come up about a quarter as often as other items; a tablet question only offers tablets (once too few unseen tablets are left for that, they sit out until the category starts over), and tablets don't appear in other questions.
 
 **Race mode** (online only): no turns. Everyone sees the same question at the
