@@ -131,8 +131,14 @@ export class Embers {
    * emberTurn.
    */
   private burnGate = spread(EMBERS);
-  /** Which embers are a zone's rarer kind (the Mines' lamp sparks): those whose gate is under its share (fixed per ember, spread the same way). */
-  private kindGate = spread(EMBERS);
+  /**
+   * Which embers are a zone's rarer kind (the Mines' lamp sparks): those
+   * whose gate is under its share (fixed per ember). Spread over the calm
+   * embers and the extra ones each on their own, so the calm ones, always
+   * there, hold their share too (dealt over all of them, now and then none
+   * of the calm ones was a lamp spark, and the Mines had none).
+   */
+  private kindGate = Float32Array.from([...spread(CALM_EMBERS), ...spread(EMBERS - CALM_EMBERS)]);
   /**
    * Each ember's motion (an index into MOTIONS), taken with its colour; and
    * after a recolor in mid-life, the one it is turning from and how far
