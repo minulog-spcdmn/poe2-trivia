@@ -592,6 +592,8 @@
     });
   });
 
+  /** Frees the options should the host's word on an answer never come. */
+  let fallback: ReturnType<typeof setTimeout> | undefined;
   function answer(index: number) {
     if (!mine || reveal || chosen !== null || waiting || struckAt.has(index)) return;
     // Time's up: the host only waits a moment longer for answers already on their way.
@@ -601,7 +603,9 @@
     if (optionEls[index]) charge = answerCharging(optionEls[index]);
     sfx('select');
     session.dispatch({ type: 'answer', index, askedAt: q.askedAt });
-    setTimeout(() => {
+    // Only the latest answer's: one turned down and given again stays on its way.
+    clearTimeout(fallback);
+    fallback = setTimeout(() => {
       if (!session.state?.reveal) chosen = null;
     }, 2500);
   }
