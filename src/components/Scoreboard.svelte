@@ -609,16 +609,23 @@
     };
   }
 
-  // Kicking takes two clicks so a stray tap doesn't remove anyone.
+  /** How long an armed kick ignores clicks, so a double click can't confirm it. */
+  const KICK_SETTLE_MS = 350;
+  // Kicking takes two clicks so a stray tap doesn't remove anyone. The second
+  // only counts once the first has had a moment to show: a double click (or a
+  // double tap) would otherwise arm and confirm in one go.
   let confirming = $state<string | null>(null);
   let confirmTimer: ReturnType<typeof setTimeout> | null = null;
+  let armedAt = 0;
   function kick(id: string) {
     if (confirming !== id) {
       confirming = id;
+      armedAt = performance.now();
       if (confirmTimer) clearTimeout(confirmTimer);
       confirmTimer = setTimeout(() => (confirming = null), 3000);
       return;
     }
+    if (performance.now() - armedAt < KICK_SETTLE_MS) return;
     confirming = null;
     session.kick(id);
   }
