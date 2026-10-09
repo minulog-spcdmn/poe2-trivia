@@ -260,6 +260,8 @@ class Session {
    * so a click on a Skip button that is just fading out does nothing.
    */
   idle = $state(false);
+  /** Guest: the host turned down this device's answer to the question asked at `askedAt` (too quick), so it may be given again. */
+  turnedDown = $state<{ askedAt: number } | null>(null);
   /** Host: the question (askedAt) whose art could not be loaded, so guests got no pictures. */
   private artFailedFor = $state(0);
   /** Every player and spectator id this device has seen in the room, so only the creator's real arrival gets a notice (lib/herald.ts). */
@@ -1285,7 +1287,10 @@ class Session {
           break;
         case 'error':
           // An answer turned down (too quick) didn't count: the one given next is timed instead.
-          if (msg.askedAt !== undefined && this.answered?.qid === msg.askedAt) this.answered = null;
+          if (msg.askedAt !== undefined) {
+            if (this.answered?.qid === msg.askedAt) this.answered = null;
+            this.turnedDown = { askedAt: msg.askedAt };
+          }
           if (this.status === 'connecting') this.fail(versionRefusal(msg.message), "Couldn't join");
           else this.flash(msg.message, 'error');
           break;

@@ -173,6 +173,10 @@
 
   /** Your answer, on its way to the host. */
   let chosen = $state<number | null>(null);
+  // One the host turned down as too quick may be given again at once.
+  $effect(() => {
+    if (session.turnedDown?.askedAt === q.askedAt) chosen = null;
+  });
 
   // ---- dynamite ----
   // Delve: while the question is open, a stick of dynamite (alone your own,

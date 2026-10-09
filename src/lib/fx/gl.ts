@@ -1,7 +1,7 @@
 // Small WebGL2 helpers shared by the FX overlay renderer (and the backdrop,
 // lib/backdrop.ts, which builds its Delve programs with buildPrograms).
 
-import { whenIdle } from '../idle.ts';
+import { whenIdle } from '../idle';
 
 export type Program = { prog: WebGLProgram; u: (name: string) => WebGLUniformLocation | null };
 
