@@ -117,6 +117,15 @@ test('veiled "find the art" pictures say which option they belong to', () => {
   assert.equal(parseHostMsg({ ...patch, tile: '2' }), null);
 });
 
+test('an answer turned down names its question, so the guest can answer it again; a guest without that just shows the message', () => {
+  const message = 'Too quick to count: the question had only just reached you. Answer again.';
+  assert.deepEqual(parseHostMsg({ t: 'error', message, askedAt: 123 }), { t: 'error', message, askedAt: 123 });
+  assert.deepEqual(parseHostMsg({ t: 'error', message }), { t: 'error', message });
+  assert.equal(parseHostMsg({ t: 'error', message, askedAt: 'x' }), null);
+  assert.equal(parseHostMsg({ t: 'error', message, askedAt: -1 }), null);
+  assert.equal(parseHostMsg({ t: 'error', message, askedAt: 1.5 }), null);
+});
+
 test('version 17: a blasted question remembers the wrong answers given to it, so every screen logs what they cost (Blast.was.struck); 16 gave a flare six seconds and a Flare Cache two thirds of the clock, never under four (worked out on every screen); 15 set dynamite off right at 0, its fuse burning over the last seconds before; 14 lit it at 0 (Question.fuse), 13 blasted a question away (the blast action), 12 had the frozen Delve rules, 11 the co-op vote and revive', () => {
   assert.equal(PROTOCOL_VERSION, 17);
   // A guest on 16 would log a wrong answer a teammate's dynamite then blasted away as never given.

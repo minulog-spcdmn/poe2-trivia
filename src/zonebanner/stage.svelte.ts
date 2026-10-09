@@ -8,9 +8,9 @@ import { mount, unmount } from 'svelte';
 import '../app.css';
 import App from '../App.svelte';
 import Threshold from '../components/zonebanner/Threshold.svelte';
-import { quiet } from '../components/zonebanner/head';
 import { DELAY, EXIT, HOLD, STILL_FADE } from '../components/zonebanner/thresholdArt';
 import { installUiFx } from '../lib/fx/ui';
+import { motion } from '../lib/motion.svelte';
 import { session } from '../lib/session.svelte';
 import { wantDelveBackdrop } from '../lib/backdrop';
 import * as L from '../lab/controls.svelte';
@@ -88,7 +88,7 @@ async function play(o: Play) {
     r.style.transition = 'opacity 0.25s ease-out';
     r.style.opacity = '0';
   }
-  const still = quiet();
+  const still = motion.still;
   const props = $state({ title: o.title, sigil: o.sigil, accent: o.accent, leaving: false, still, delay: still ? 0 : DELAY });
   shown = { el: mount(Threshold, { target: head, props }), props, rules, id, still };
   if (!o.hold) timers.push(setTimeout(() => id === shown?.id && leave(), HOLD * 1000));

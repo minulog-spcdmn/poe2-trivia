@@ -31,7 +31,11 @@ export type ClientMsg =
 export type HostMsg =
   | { t: 'welcome'; playerId: string }
   | { t: 'state'; state: GameState; now: number }
-  | { t: 'error'; message: string }
+  /**
+   * `askedAt`: an answer to that question was turned down, so it may be
+   * given again. A guest that doesn't know the field just shows the message.
+   */
+  | { t: 'error'; message: string; askedAt?: number }
   | { t: 'kicked' }
   | { t: 'closed' }
   /** The same player connected again (another tab): this connection is dropped. */
@@ -127,6 +131,7 @@ export function parseHostMsg(raw: unknown): HostMsg | null {
         : null;
     }
     case 'error':
+      return isStr(raw.message, 300) && (raw.askedAt === undefined || isInt(raw.askedAt, 0, Number.MAX_SAFE_INTEGER)) ? (raw as HostMsg) : null;
     case 'busy':
       return isStr(raw.message, 300) ? (raw as HostMsg) : null;
     case 'kicked':

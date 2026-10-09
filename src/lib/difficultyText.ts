@@ -146,14 +146,6 @@ const words = (n: number) => WORDS[n] ?? String(n);
 /** How many times, in words: "once", "twice", "three times". */
 const timesWord = (n: number) => (n === 1 ? 'once' : n === 2 ? 'twice' : `${words(n)} times`);
 
-/** An item as a reward, with its article. */
-export const ITEM_TEXT: Record<ItemKind, string> = {
-  wards: 'an Azurite Ward',
-  shards: 'an azurite shard',
-  flares: 'a flare',
-  dynamite: 'dynamite',
-};
-
 /** What a wrong answer to a find that caves in costs, in words ("two lives"). */
 const caveInText = (kind: FindKind) => `${words(findLosses(kind))} lives`;
 
@@ -228,9 +220,6 @@ export const FINDS_UNSAFE = "Flares and dynamite don't work on finds. The rock t
 
 /** A find's cave-in mark, in words for those who can't see it: "A wrong answer loses two lives". */
 export const caveInLabel = (kind: FindKind) => `A wrong answer loses ${caveInText(kind)}`;
-
-/** The mark that takes the place of a find's depth on its card, in words. */
-export const HARDER_LABEL = 'A harder question';
 
 /**
  * The finds: the card's name, the tagline under the cards (what to do, in
