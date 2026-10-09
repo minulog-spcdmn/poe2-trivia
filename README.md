@@ -46,6 +46,20 @@ order, to the best player for it who has none yet (equals: the first
 seated). The host counts what they're judged on, so every screen agrees;
 race and Delve have none (`src/lib/honours.ts`).
 
+**Rivals:** your browser remembers who you played. Online, after each turns
+or race game you were seated in, your record against every other player
+still there at the end goes up: a win when you won and they didn't, a loss
+the other way round (a shared win, or both losing to someone else, counts
+for nobody). The lobby says it under their name ("You lead 3-2", "Leads you
+3-2", "Level 2-2"), and the end screen where you stand now ("You now lead Bea
+4 to 2 across your games.", "Bea leads you 3 to 1 across your games.
+Revenge?"). On one device it keeps each pair of names instead: the winner
+beats every other seat, and the lobby and the end screen read "Ash leads Bea
+3-2 on this device." Rivals are known by the look of their name, kept in
+this browser only (60 at most; the longest unplayed go first), and a game
+counts once, however often its end screen opens again; spectators and Delve
+count nothing (`src/lib/rivals.ts`).
+
 Items aren't repeated within a game until a category runs out, and earlier answers never come back as wrong answers (so they can't be ruled out from memory). Precursor tablets come up about a quarter as often as other items; a tablet question only offers tablets (once too few unseen tablets are left for that, they sit out until the category starts over), and tablets don't appear in other questions.
 
 **Race mode** (online only): no turns. Everyone sees the same question at the

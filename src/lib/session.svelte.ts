@@ -44,7 +44,8 @@ import { CREATOR_TITLE } from './site';
 import { DELVE_FUSE_MS, LOOKALIKES_ASKED_FROM, clockLeft, fuseDue, fuseLeft, isGroupRun, livesOf, standingIds } from './delve';
 import { loadLooks } from './looks';
 import { bestOf, loadRecords, recordLeft, recordRun, runEvent } from './delveRecord';
-import { LEFT_KEY, forgiveLeaving, noteLeaving } from './versus';
+import { LEFT_KEY, forgiveLeaving, noteLeaving, versusGame } from './versus';
+import { pairLines, recordCouch, recordGame, rivalLines, saveRivals } from './rivals';
 import {
   DELVE_CLOCK_CAP_MS,
   DRAIN_POLL_MS,
@@ -242,6 +243,12 @@ class Session {
   delveResult = $state<{ id: number; depth: number; previousBest: number | null; best: boolean } | null>(null);
   /** Delve: the deepest this device had gone (alone or in a group, as this run is) when the run began. */
   bestAtStart = $state<number | null>(null);
+  /**
+   * Rivals remembered (lib/rivals.ts): what the game just over (`game`, its
+   * startedAt) did to this device's records against the others in it, as the
+   * end screen says it.
+   */
+  rivalsResult = $state<{ game: number; lines: string[] } | null>(null);
   /**
    * Delve: the run (its startedAt) this device saw start, from the lobby or
    * after a game ended (delveSession.ts runSeenStarting); null after a reload
@@ -1581,9 +1588,29 @@ class Session {
     this.delveResult = { id: run.id, depth: run.depth, previousBest: was ? was.previousBest : r.previousBest, best: was ? was.best : r.best };
   }
 
+  /**
+   * A turns or race game just over goes into this browser's rivals: online,
+   * this player's record against each other player still there; on one
+   * device, its pairs of names. Counted once (a reload into the end screen,
+   * or a second tab, finds it counted and only reads the lines again).
+   */
+  private noteRivals(prev: GameState | null, next: GameState) {
+    const game = next.startedAt;
+    if (next.phase !== 'over' || next.delve || !game || (prev?.phase === 'over' && prev.startedAt === game)) return;
+    const hotSeat = this.mode === 'local';
+    const me = this.myPlayerId;
+    if (!hotSeat && !versusGame(next, me, false)) return;
+    const now = Date.now();
+    const store = saveRivals((r) => (hotSeat ? recordCouch(r, next, now) : recordGame(r, next, me, now)));
+    const names = next.players.map((p) => p.name);
+    const lines = !store ? [] : hotSeat ? pairLines(store, names, game) : rivalLines(store, next, me);
+    this.rivalsResult = lines.length ? { game, lines } : null;
+  }
+
   /** What every device makes of a state change, host and guest alike: records, sounds and notices, achievements. */
   private noteChange(prev: GameState | null, next: GameState) {
     this.noteRun(prev, next);
+    this.noteRivals(prev, next);
     this.onNewState(prev, next);
     this.noteEncounter(prev, next);
     this.noteMoments(prev, next);
@@ -2167,6 +2194,7 @@ class Session {
     if (this.retry) clearTimeout(this.retry);
     this.joinedAt = 0;
     this.inviteFrom = '';
+    this.rivalsResult = null;
     this.busyUntil = 0;
     this.unavailableUntil = 0;
     this.silentCloses = 0;

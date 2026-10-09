@@ -13,6 +13,7 @@
   import { MAX_NAME, isHeldName, nameHeld, nameTooShort } from '../lib/names';
   import { inviteUrl } from '../lib/site';
   import { summonsText } from '../lib/invite';
+  import { loadRivals, pairLines, rivalTag } from '../lib/rivals';
   import Avatar from './Avatar.svelte';
   import PlayerName from './PlayerName.svelte';
   import { backdropShadow } from '../lib/backdropShadow';
@@ -46,6 +47,13 @@
   /** The night so far (lib/series.ts): games won tonight, and the Crown on whoever won the last one. Delve doesn't count. */
   const tallied = $derived(s.settings.mode !== 'delve' && !!s.series);
   const crowned = $derived(crownedId(s));
+  /**
+   * Rivals remembered (lib/rivals.ts), as the lobby opens: online, this
+   * browser's games against each player; on one device, how its pairs of
+   * names stand.
+   */
+  const rivals = loadRivals();
+  const pairs = $derived(local ? pairLines(rivals, s.players.map((p) => p.name)) : []);
 
   // Measure the category cards' emblems (lib/iconFit) while the party
   // gathers, so the first deal doesn't have to.
@@ -281,10 +289,16 @@
       <ul>
         {#each s.players as p (p.id)}
           {@const wins = tallied ? nightWins(s, p.id) : 0}
+          {@const rival = !local && p.id !== session.myPlayerId ? rivalTag(rivals, p.name) : null}
           <li use:arriving={p.name} animate:flip={{ duration: 300 }} in:fly={{ x: -20, duration: 350 }} out:scale={{ duration: 200, start: 0.9 }}>
             <Avatar name={p.name} hue={p.hue} />
             <span class="name"
-              >{#if crowned === p.id}<span class="crown" title="Won the last game"><CrownMark size={16} /></span>{/if}<PlayerName name={p.name} /></span
+              >{#if crowned === p.id}<span class="crown" title="Won the last game"><CrownMark size={16} /></span>{/if}<PlayerName name={p.name} />{#if rival}<span
+                  class="rival"
+                  class:ahead={rival.lead > 0}
+                  class:behind={rival.lead < 0}
+                  title={rival.title}>{rival.words} <span class="n">{rival.score}</span></span
+                >{/if}</span
             >
             {#if wins > 0}<span class="tag wins" title="Games won tonight"><span class="n">{wins}</span> {wins === 1 ? 'win' : 'wins'}</span>{/if}
             {#if p.id === s.hostId}<span class="tag">Host</span>{/if}
@@ -324,6 +338,10 @@
           </form>
         {/if}
         <p class="hint muted">Pass the device around; each player answers on their own turn.</p>
+        {#if pairs.length}
+          <!-- The couch's rivalries, from games played on this device. -->
+          <p class="hint pairs">{#each pairs as line (line)}<span>{line}</span>{/each}</p>
+        {/if}
       {:else if s.players.length < 2}
         <p class="hint muted waiting"><span class="pulse"></span>Waiting for exiles to join…</p>
         {#if isHost}
@@ -703,6 +721,11 @@
     color: var(--muted);
   }
 
+  /* The party's column never grows past its share for a long name and its
+     tags: the name gives way (an ellipsis) instead. */
+  .players {
+    min-width: 0;
+  }
   .players ul {
     list-style: none;
     margin: 0;
@@ -750,6 +773,28 @@
     border-color: rgba(201, 164, 92, 0.45);
     color: var(--gold-hi);
     white-space: nowrap;
+  }
+  /* Rivals remembered: under their name, your games against them on this
+     device; gold when you lead, ember when they do. A line of its own, so a
+     row's tags never crowd out the name on a phone. */
+  .name .rival {
+    display: block;
+    margin-top: 0.1rem;
+    font-size: 0.82rem;
+    font-style: italic;
+    font-variant-numeric: lining-nums;
+    line-height: 1.2;
+    color: var(--muted);
+  }
+  .name .rival .n {
+    font-style: normal;
+    font-weight: 600;
+  }
+  .name .rival.ahead {
+    color: var(--gold);
+  }
+  .name .rival.behind {
+    color: #e5937f;
   }
   /* The count a size up in the body font's lining figures: Cinzel's 1 reads as an I among the capitals. */
   .tag.wins .n {
@@ -802,6 +847,15 @@
     margin: 0.8rem 0 0;
     font-size: 0.95rem;
     font-style: italic;
+  }
+  /* The couch's rivalries, one to a line, under the hint. */
+  .hint.pairs {
+    margin-top: 0.35rem;
+    color: #cbb994;
+    font-variant-numeric: lining-nums;
+  }
+  .hint.pairs span {
+    display: block;
   }
   .waiting {
     display: flex;

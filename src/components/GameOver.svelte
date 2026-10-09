@@ -139,6 +139,11 @@
   );
   /** The night's score and the Crown's story, under the result. */
   const ledger = $derived(run ? [] : [ledgerLine(s, nameOf), crownLine(s, nameOf)].filter(Boolean));
+  /** Under them, what this game did to the rivalries this device remembers (lib/rivals.ts): yours online, the couch's pairs on one device. */
+  const rivalry = $derived.by(() => {
+    const r = session.rivalsResult;
+    return !run && r && r.game === s.startedAt ? r.lines : [];
+  });
   /** From the second game, each row counts the games its player has won tonight. */
   const tally = $derived(!run && (s.series?.played ?? 0) >= 2);
   const champ = $derived(run ? null : crownedId(s));
@@ -442,9 +447,10 @@
         {#if s.deathmatch}· won the deathmatch in round {s.deathmatch.round}{/if}
       {/if}
     </p>
-    {#if ledger.length}
+    {#if ledger.length || rivalry.length}
       <p class="ledger" in:fly={{ y: 10, duration: 700, delay: 800 }}>
         {#each ledger as line, i (i)}<span>{line}</span>{/each}
+        {#each rivalry as line, i (i)}<span class="rival" class:apart={i === 0 && ledger.length > 0}>{line}</span>{/each}
       </p>
     {/if}
   {/if}
@@ -933,6 +939,16 @@
   /* The score, then the Crown's story on a line of its own. */
   .ledger span {
     display: block;
+  }
+  /* This device's rivalries, quieter: the night is the room's, these are yours. */
+  .ledger .rival {
+    font-size: 0.95rem;
+    font-style: italic;
+    font-variant-numeric: lining-nums;
+    color: var(--muted);
+  }
+  .ledger .rival.apart {
+    margin-top: 0.35rem;
   }
   /* The Crown on the winner in the circle: over the top of the avatar, set
      off from it by a shadow; when it changes hands, stamped on as its gold
