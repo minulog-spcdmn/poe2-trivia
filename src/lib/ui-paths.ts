@@ -6,16 +6,17 @@
  */
 export const ART_SCALE = 2;
 
-const ITEMS = `${import.meta.env.BASE_URL}items/`;
+/** Read when asked, not on import, so tests can import ART_SCALE outside Vite. */
+const items = () => `${import.meta.env.BASE_URL}items/`;
 
 /** An item's picture, full size (ART_SCALE): for the question and the codex's item page. */
 export function itemImage(id: string) {
-  return `${ITEMS}${id}.avif`;
+  return `${items()}${id}.avif`;
 }
 
 /** A smaller copy for a small spot: at most `size` px on its longest side (scripts/upscale-art.py THUMBS). */
 export function itemThumb(id: string, size: 128 | 256) {
-  return `${ITEMS}${size}/${id}.avif`;
+  return `${items()}${size}/${id}.avif`;
 }
 
 /**
