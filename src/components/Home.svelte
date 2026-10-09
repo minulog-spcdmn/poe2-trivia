@@ -825,9 +825,9 @@
     white-space: nowrap;
     font-family: var(--font-cinzel);
     font-size: 13px;
-    letter-spacing: 0.18em;
+    letter-spacing: 0.02em;
     text-transform: uppercase;
-    color: var(--muted);
+    color: #9b8e89;
   }
   .maker {
     font-family: var(--font-display);
@@ -836,7 +836,7 @@
     text-transform: none;
     color: var(--gold-hi);
     text-decoration: none;
-    border-bottom: 1px solid var(--gold-lo);
+    border-bottom: 1px dotted var(--gold-lo);
     transition:
       color 0.2s,
       border-color 0.2s;
@@ -849,18 +849,18 @@
     position: relative;
     display: inline-flex;
     align-items: center;
-    gap: 0.6em;
-    padding: 0.5em 1.1em;
+    gap: 6px;
+    padding: 6px 10px 6px 11px;
     border: 1px solid var(--line);
     border-radius: 999px;
     font-family: var(--font-cinzel);
-    font-size: 13px;
+    font-size: 10px;
     font-weight: 700;
-    letter-spacing: 0.1em;
+    letter-spacing: 0.04em;
     text-transform: uppercase;
     text-decoration: none;
     white-space: nowrap;
-    color: var(--gold);
+    color: #bcb0a6;
     background: rgba(0, 0, 0, 0.3);
     transition:
       color 0.2s,
