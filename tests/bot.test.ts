@@ -1,8 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { answerDelay, blasts, chooseAnswer, chooseCard, findAppetite, guessChance, knowChance, makePersona, pickCategory, weighted, wrongPick, type Ask, type Persona } from '../src/bot/brain.ts';
-import { rulesFor, type Preset } from '../src/lib/game.ts';
-import { MODES, NAMES, identityOf, lonelyLength, modesFrom, namesFor, nextName, otherPrefs, rollPrefs, shiftLength } from '../src/bot/identities.ts';
+import { answerDelay, blasts, chooseAnswer, chooseCard, findAppetite, guessChance, panic, urgentSeconds, knowChance, makePersona, pickCategory, weighted, wrongPick, type Ask, type Persona } from '../src/bot/brain.ts';
+import { rulesFor, type Item, type Preset } from '../src/lib/game.ts';
+import { readFileSync } from 'node:fs';
+import { MODES, NAMES, buildOf, identityOf, lonelyLength, modesFrom, namesFor, nextName, otherPrefs, rollPrefs, shiftLength } from '../src/bot/identities.ts';
 import { joinable, makesWay, wanted } from '../src/bot/wanted.ts';
 import type { RoomInfo } from '../src/lib/roomInfo.ts';
 import { PROTOCOL_VERSION } from '../src/lib/protocol.ts';
@@ -15,7 +16,7 @@ function seeded(seed: number) {
   };
 }
 
-const plain: Persona = { skill: 0, pace: 1, affinity: { Rings: 0.02, Flasks: -0.05 }, finds: 0.8, boldness: 0.5 };
+const plain: Persona = { skill: 0, pace: 1, affinity: { Rings: 0.02, Flasks: -0.05 }, finds: 0.8, boldness: 0.5, haste: 0, nerve: 1, favourites: [] };
 const plainRules = rulesFor({ difficulty: 'cruel' });
 const ask = (over: Partial<Ask> = {}): Ask => ({ rules: plainRules, category: 'Rings', veil: 0, gray: false, mirrored: false, clock: 32, mode: 'turns', ...over });
 /** A question as a preset room asks it (a deathmatch's with `harder`). */
@@ -30,7 +31,7 @@ test('a persona rolls every category, within bounds', () => {
   for (const a of Object.values(p.affinity)) assert.ok(a >= -0.07 && a <= 0.025);
   assert.ok(p.skill >= -0.06 && p.skill <= 0.015);
   assert.ok(p.pace >= 0.75 && p.pace <= 1.35);
-  for (const k of ['finds', 'boldness'] as const) assert.ok(p[k] > 0 && p[k] < 1, k);
+  for (const k of ['finds', 'boldness', 'haste', 'nerve'] as const) assert.ok(p[k] >= 0 && p[k] <= 1, k);
 });
 
 test('items shown plainly are nearly always known, even by the weakest', () => {
@@ -275,4 +276,63 @@ test('rooms running at once never share a name', () => {
   const rng = seeded(29);
   const mine = namesFor(2, 2);
   for (let i = 0; i < 300; i++) assert.ok(mine.includes(nextName(mine.slice(0, 3), rng, mine)));
+});
+
+const mean = (f: () => number | null, n = 3000) => {
+  let sum = 0;
+  let k = 0;
+  for (let i = 0; i < n; i++) {
+    const v = f();
+    if (v !== null) (sum += v), k++;
+  }
+  return sum / k;
+};
+
+test('favourites are known cold and named quickly, even on hard questions', () => {
+  const hard = preset('eternal');
+  assert.ok(knowChance(plain, { ...hard, favourite: true }) >= 0.95);
+  assert.ok(knowChance(plain, { ...hard, favourite: true }) > knowChance(plain, hard) + 0.05);
+  const rng = seeded(53);
+  assert.ok(mean(() => answerDelay(plain, { ...hard, favourite: true }, true, rng)) < mean(() => answerDelay(plain, hard, true, rng)) * 0.7);
+});
+
+test('trigger-happy players answer sooner, a little sloppier, and sit out less', () => {
+  const rng = seeded(59);
+  const hasty = { ...plain, haste: 1 };
+  assert.ok(mean(() => answerDelay(hasty, ask(), true, rng)) < mean(() => answerDelay(plain, ask(), true, rng)) * 0.8);
+  assert.ok(knowChance(hasty, preset('merciless')) < knowChance(plain, preset('merciless')));
+  const out = (p: Persona) => mean(() => (answerDelay(p, ask({ mode: 'race', clock: 16 }), false, rng) === null ? 1 : 0));
+  assert.ok(out(hasty) < out(plain) - 0.3);
+});
+
+test('the urgent ticking panics the nervous, not the calm, and only once it ticks', () => {
+  const rng = seeded(61);
+  const a = ask({ clock: 16 });
+  const lateMs = 14000;
+  const rate = (p: Persona, ms: number) => mean(() => (panic(p, a, ms, rng) ? 1 : 0));
+  assert.ok(rate({ ...plain, nerve: 0.1 }, lateMs) > 0.5);
+  assert.equal(rate({ ...plain, nerve: 1 }, lateMs), 0);
+  // An answer due before the ticking starts never panics.
+  assert.equal(rate({ ...plain, nerve: 0 }, 9000), 0);
+  for (let i = 0; i < 200; i++) {
+    const p = panic({ ...plain, nerve: 0 }, a, lateMs, rng);
+    if (p) assert.ok(p.at >= 11000 && p.at <= 12200, `${p.at}`);
+  }
+  // Delve ticks for 35% of a short clock (3 to 5 s), like the game's ring.
+  assert.equal(urgentSeconds({ clock: 8, mode: 'delve' }), 3);
+  assert.equal(urgentSeconds({ clock: 16, mode: 'delve' }), 5);
+  assert.equal(urgentSeconds({ clock: 32, mode: 'turns' }), 5);
+});
+
+test('a build: much of one weapon kind and a handful of others, the same for the same name', () => {
+  const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
+  const byId = new Map(items.map((it) => [it.id, it]));
+  const a = identityOf('Morgrim', ['A'], undefined, items).persona.favourites;
+  assert.deepEqual(a, identityOf('Morgrim', ['A'], undefined, items).persona.favourites);
+  assert.ok(a.length >= 9 && a.length <= 28, `${a.length}`);
+  const weapon = byId.get(a[0])!;
+  assert.ok(weapon.category.endsWith('Weapons'));
+  assert.ok(a.filter((id) => byId.get(id)!.group === weapon.group).length >= 1);
+  assert.notDeepEqual(a, identityOf('Velka', ['A'], undefined, items).persona.favourites);
+  assert.deepEqual(buildOf([], seeded(1)), []);
 });

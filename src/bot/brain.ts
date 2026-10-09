@@ -10,6 +10,9 @@
 // for the one most like the right one when the guess is wrong. The same
 // player in every mode: take turns, race and Delve (where it also weighs up
 // finds, uses dynamite, and always gives a teammate who perished a life).
+// Each has a build they played (items they know cold and name in a flash),
+// is more or less trigger-happy, and keeps their nerve as the clock ticks
+// down, or doesn't.
 // Pure functions of their inputs and a random source, so tests can pin them.
 
 import { nameSimilarity, type DifficultyRules } from '../lib/game.ts';
@@ -28,6 +31,12 @@ export interface Persona {
   finds: number;
   /** Delve alone: the chance it detonates dynamite on a question it isn't sure of, rather than guess. */
   boldness: number;
+  /** Trigger-happy (0 to 1): quicker to answer, a little sloppier, and in a race quicker to guess. */
+  haste: number;
+  /** Nerve (0 to 1): how calm it stays once the clock ticks urgent; low, and it panics into an answer. */
+  nerve: number;
+  /** Items it knows cold, from builds it played (identities.ts buildOf): named in a flash. */
+  favourites: string[];
 }
 
 /** What the bot sees of a question when it decides. */
@@ -44,6 +53,8 @@ export interface Ask {
   /** Seconds on the clock, 0 without one. */
   clock: number;
   mode: 'turns' | 'race' | 'delve';
+  /** It is one of the player's own favourites (a build's). */
+  favourite?: boolean;
 }
 
 /** Chance of knowing an item shown plainly, before the persona. */
@@ -79,6 +90,9 @@ export function makePersona(categories: string[], rng: Rng): Persona {
     affinity: Object.fromEntries(categories.map((c) => [c, between(rng, -0.07, 0.025)])),
     finds: between(rng, 0.6, 1),
     boldness: between(rng, 0.4, 0.95),
+    haste: rng() ** 1.5,
+    nerve: between(rng, 0.1, 1),
+    favourites: [],
   };
 }
 
@@ -100,8 +114,10 @@ export function hardness(ask: Ask): number {
 
 /** How likely the bot is to know this answer. */
 export function knowChance(p: Persona, ask: Ask): number {
-  // A race is a scramble: less time to be sure before someone else is.
-  return clamp(RECOGNISE + p.skill + (p.affinity[ask.category] ?? 0) - hardness(ask) - (ask.mode === 'race' ? 0.03 : 0), 0.3, 0.99);
+  // A favourite it knows cold, whatever the question piles on (bar a little).
+  if (ask.favourite) return clamp(0.995 - hardness(ask) * 0.15 - 0.02 * p.haste, 0.9, 0.995);
+  // A race is a scramble: less time to be sure before someone else is. Haste costs a little care.
+  return clamp(RECOGNISE + p.skill + (p.affinity[ask.category] ?? 0) - hardness(ask) - (ask.mode === 'race' ? 0.03 : 0) - 0.04 * p.haste, 0.3, 0.99);
 }
 
 /**
@@ -125,13 +141,32 @@ export function answerDelay(p: Persona, ask: Ask, knows: boolean, rng: Rng): num
     // Not sure: a wrong answer in a race costs a point, so mostly sit it out;
     // in turns, now and then nothing comes to mind at all. (In Delve a guess
     // beats a time-out, which costs the life all the same.)
-    if (ask.mode === 'race' && rng() < 0.6) return null;
-    if (ask.mode === 'turns' && ask.clock && rng() < 0.05) return null;
+    // (Trigger-happy players sit out less, and blank less.)
+    if (ask.mode === 'race' && rng() < 0.6 * (1 - 0.7 * p.haste)) return null;
+    if (ask.mode === 'turns' && ask.clock && rng() < 0.05 * (1 - p.haste)) return null;
   }
-  let s = (MEDIAN_S + HARD_S * hardness(ask)) * Math.exp(0.4 * gauss(rng)) * p.pace;
+  let s = (MEDIAN_S + HARD_S * hardness(ask)) * Math.exp(0.4 * gauss(rng)) * p.pace * (1 - 0.3 * p.haste);
   if (ask.veil) s *= 1.3;
   if (!knows) s *= 1.6;
-  return Math.round(Math.max(1000, s * 1000));
+  // A favourite is named in a flash (the art burning in or not).
+  if (ask.favourite && knows) s *= 0.5;
+  return Math.round(Math.max(ask.favourite ? 700 : 1000, s * 1000));
+}
+
+/** The seconds the clock ticks urgent before 0, as the game shows them (Game.svelte warnFrom). */
+export const urgentSeconds = (ask: Pick<Ask, 'clock' | 'mode'>) => (ask.mode === 'delve' ? clamp(Math.round(ask.clock * 0.35), 3, 5) : 5);
+
+/**
+ * Whether the urgent ticking gets to it: with its answer due only after the
+ * clock turns urgent, a nervous player often panics, clicking within a second
+ * of the ticking starting (ms from the clock's start), and now and then on
+ * the wrong one (`fumble`). Calm players hardly ever.
+ */
+export function panic(p: Persona, ask: Ask, delay: number, rng: Rng): { at: number; fumble: boolean } | null {
+  if (!ask.clock) return null;
+  const urgent = (ask.clock - urgentSeconds(ask)) * 1000;
+  if (delay <= urgent || rng() >= 0.75 * (1 - p.nerve)) return null;
+  return { at: Math.round(urgent + between(rng, 300, 1200)), fumble: rng() < 0.35 * (1 - p.nerve) };
 }
 
 /**

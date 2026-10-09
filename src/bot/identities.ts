@@ -4,7 +4,7 @@
 // visit to the next without anything being stored. Who comes on next, and
 // for how long, is up to chance; when, is up to the room list (wanted.ts).
 
-import type { Difficulty } from '../lib/game.ts';
+import type { Difficulty, Item } from '../lib/game.ts';
 import { gauss, makePersona, weighted, type Persona, type Rng } from './brain.ts';
 
 /** Made-up handles in the styles people pick here (none taken from real people). */
@@ -111,11 +111,42 @@ export function otherPrefs(now: RoomPrefs, rng: Rng, modes: readonly Mode[] = MO
   }
 }
 
-/** Who a name is: always the same person for the same name and categories (and modes allowed). */
-export function identityOf(name: string, categories: string[], modes: readonly Mode[] = MODES): Identity {
+/** Shuffled copy (Fisher-Yates, with `rng`). */
+function shuffled<T>(list: T[], rng: Rng): T[] {
+  const out = [...list];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
+
+/**
+ * The items a player knows cold, from the builds they played: a good share
+ * of one kind of weapon's uniques (up to 12), and 8 to 16 others they wore
+ * along the way.
+ */
+export function buildOf(items: Pick<Item, 'id' | 'group' | 'category'>[], rng: Rng): string[] {
+  const weapons = items.filter((it) => it.category.endsWith('Weapons'));
+  const groups = [...new Set(weapons.map((it) => it.group))].sort();
+  if (!groups.length) return [];
+  const main = groups[Math.floor(rng() * groups.length)];
+  const own = shuffled(weapons.filter((it) => it.group === main), rng);
+  const kept = own.slice(0, Math.min(12, Math.max(1, Math.round(own.length * (0.4 + 0.3 * rng())))));
+  const worn = shuffled(items.filter((it) => it.group !== main), rng).slice(0, 8 + Math.floor(rng() * 9));
+  return [...kept, ...worn].map((it) => it.id);
+}
+
+/**
+ * Who a name is: always the same person for the same name and categories
+ * (and modes allowed); `items`, to know their build by.
+ */
+export function identityOf(name: string, categories: string[], modes: readonly Mode[] = MODES, items: Pick<Item, 'id' | 'group' | 'category'>[] = []): Identity {
   const rng = seededBy(name);
   const persona = makePersona(categories, rng);
-  return { name, persona, prefs: rollPrefs(rng, modes) };
+  const prefs = rollPrefs(rng, modes);
+  persona.favourites = buildOf(items, seededBy(`${name}:build`));
+  return { name, persona, prefs };
 }
 
 /**

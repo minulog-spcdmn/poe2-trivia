@@ -137,7 +137,7 @@ export class Bot {
     // Someone from another room's share (the number of rooms changed): this room starts afresh.
     if (this.shift.on && !this.names.includes(this.shift.on)) this.shift = { ...this.shift, on: null, backAt: 0 };
     if (this.shift.on) {
-      this.who = identityOf(this.shift.on, engine.categories, this.modes);
+      this.who = identityOf(this.shift.on, engine.categories, this.modes, engine.items);
       this.player = new Player(this.who.persona, hostEyes);
       restoreSave();
       session.resume();
@@ -232,7 +232,7 @@ export class Bot {
   /** The next one comes on and opens a room. */
   private begin(now: number) {
     const name = nextName(this.shift.recent, Math.random, this.names);
-    this.who = identityOf(name, engine.categories, this.modes);
+    this.who = identityOf(name, engine.categories, this.modes, engine.items);
     this.player = new Player(this.who.persona, hostEyes);
     this.shift = { on: name, until: now + shiftLength(Math.random), backAt: 0, recent: [...this.shift.recent, name].slice(-20) };
     this.save();

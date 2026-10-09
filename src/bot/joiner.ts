@@ -122,7 +122,7 @@ export class Joiner {
     let name = nextName(this.recent, Math.random, this.names);
     for (let i = 0; i < 5 && nameSkeleton(name) === nameSkeleton(room.host); i++) name = nextName([...this.recent, name], Math.random, this.names);
     this.recent = [...this.recent, name].slice(-20);
-    this.who = identityOf(name, engine.categories);
+    this.who = identityOf(name, engine.categories, undefined, engine.items);
     this.player = new Player(this.who.persona, sight);
     this.room = room;
     this.alone.delete(room.code);

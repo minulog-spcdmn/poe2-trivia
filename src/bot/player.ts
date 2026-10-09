@@ -8,7 +8,7 @@
 import { engine, session } from '../lib/session.svelte';
 import { activeRules, grayscaleFor, type GameState, type Question } from '../lib/game';
 import { blastProblem, findLosses, fuseDue, inventoryOf, isGroupRun, livesOf, reviveProblem, shownDepth, standingIds, teamItemReady } from '../lib/delve';
-import { answerDelay, blasts, chooseAnswer, chooseCard, findAppetite, knowChance, pickDelay, type Ask, type Persona } from './brain';
+import { answerDelay, blasts, chooseAnswer, chooseCard, findAppetite, knowChance, panic, pickDelay, type Ask, type Persona } from './brain';
 
 /** How the bot finds the right option: its index, or null when it can't tell. */
 export type Eyes = (s: GameState, q: Question) => Promise<number | null>;
@@ -27,6 +27,19 @@ const between = (lo: number, hi: number) => Math.round(lo + Math.random() * (hi 
 
 /** Each option's name, as far as this device knows it (a guest has no item ids before the reveal). */
 const optionNames = (o: Question) => o.labels.map((l, i) => l ?? engine.byId.get(o.options[i])?.name ?? '');
+
+let idByName: Map<string, string> | null = null;
+/**
+ * The item a question is about, as this device makes it out: the host knows
+ * it; a guest goes by what its eyes saw (`seen`), the name it read for it, or
+ * the name an art question asks for.
+ */
+function itemOf(q: Question, seen: number | null): string | null {
+  if (q.itemId) return q.itemId;
+  idByName ??= new Map(engine.items.map((it) => [it.name, it.id]));
+  const name = q.mode === 'art' ? q.prompt : seen === null ? null : q.labels[seen];
+  return (name && idByName.get(name)) ?? null;
+}
 
 export class Player {
   /** What it is about to do, by what for (a pick, an answer, a life to give…). */
@@ -182,21 +195,42 @@ export class Player {
   }
 
   /**
-   * Decides once per question whether it knows, when to answer and what. Its
-   * time counts from the clock's start; an answer the clock beats isn't
-   * given (a flare that burns moves the clock's end on, and with it the
-   * answer still in time). Not sure in Delve: alone it may detonate dynamite
-   * rather than guess; together it holds back (lateGuess).
+   * Answers each question once: first a look at what is shown (a moment for
+   * the art to come in, longer for a guest's eyes on art still burning in),
+   * then it makes up its mind (decide).
    */
   private planAnswer(s: GameState, q: Question) {
     const key = `answer:${q.askedAt}`;
     if (this.decided.has(key)) return;
     this.decided.add(key);
+    const start = q.clockAt ?? q.askedAt;
+    let tries = 0;
+    const look = async () => {
+      const cur = session.state;
+      const o = this.open(q);
+      if (!cur || !o) return;
+      const seen = await this.eyes(cur, o);
+      if (seen === null && tries++ < 8) return void this.plans.set(key, { at: session.hostNow() + 500, run: look });
+      this.decide(key, cur, o, start, seen);
+    };
+    this.plans.set(key, { at: Math.max(session.hostNow() + 300, start + 400), run: look });
+  }
+
+  /**
+   * Whether it knows, when to answer and what. Its time counts from the
+   * clock's start; an answer the clock beats isn't given (a flare that burns
+   * moves the clock's end on, and with it the answer still in time). One of
+   * its favourites it knows cold and names quickly; a nervous player may
+   * panic into an answer once the clock ticks urgent. Not sure in Delve:
+   * alone it may detonate dynamite rather than guess; together it holds back
+   * (lateGuess).
+   */
+  private decide(key: string, s: GameState, q: Question, start: number, seen: number | null) {
     const me = session.myPlayerId!;
     const now = session.hostNow();
     const rules = activeRules(s);
     const gray = grayscaleFor(s);
-    const start = q.clockAt ?? q.askedAt;
+    const item = itemOf(q, seen);
     const ask: Ask = {
       rules,
       category: q.category,
@@ -206,6 +240,7 @@ export class Player {
       mirrored: q.mirrored?.length ? q.mirrored.some(Boolean) : Math.random() < rules.mirror,
       clock: q.deadline ? (q.deadline - start) / 1000 : 0,
       mode: s.delve ? 'delve' : s.settings.mode === 'race' ? 'race' : 'turns',
+      favourite: !!item && this.persona.favourites.includes(item),
     };
     const knows = Math.random() < knowChance(this.persona, ask);
     const delay = answerDelay(this.persona, ask, knows, Math.random);
@@ -226,15 +261,17 @@ export class Player {
       });
       return;
     }
+    const panicked = panic(this.persona, ask, delay, Math.random);
+    const how = [ask.favourite && 'one of its own', panicked && (panicked.fumble ? 'panics and fumbles' : 'panics')].filter(Boolean).join(', ');
     this.plans.set(key, {
       // Picked up after a reload: not all at once.
-      at: Math.max(now + 800, start + delay),
+      at: Math.max(now + 200, start + (panicked ? panicked.at : delay)),
       run: () => {
         const o = this.open(q);
         if (!o) return;
         // Options already shown wrong (others' guesses in a race, the team's in Delve) are out.
         const ruledOut = [...o.misses.map((m) => m.index), ...(o.struck ?? []).map((x) => x.index)];
-        return this.answer(s, q, knows, ask, ruledOut, 'answers');
+        return this.answer(s, q, knows && !panicked?.fumble, ask, ruledOut, how ? `answers (${how})` : 'answers');
       },
     });
   }
