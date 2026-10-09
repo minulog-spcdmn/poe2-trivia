@@ -3,7 +3,7 @@
 # per inventory cell (108 x 108 for a ring), and lossy, which the game draws
 # much bigger than that. Real-ESRGAN (x4plus) redraws each picture at 4x, which
 # is then scaled down to ART_SCALE (2x, src/lib/ui-paths.ts) and mixed with
-# the original (smoothly enlarged) at MIX, then saved to public/items/ as
+# the original (smoothly enlarged) by its size (mix_of), then saved to public/items/ as
 # AVIF, with smaller copies for small spots (public/items/<size>/, at most
 # that many px on the longest side; see itemThumb in src/lib/ui-paths.ts).
 # The originals stay in art-source/items/ (fetch-data puts them there); only
@@ -11,7 +11,8 @@
 #
 # On its own the model repaints the art (smooth, waxy, painterly). In blind
 # tests the mix at 30% beat 50% and 70% (and the plain model, other models,
-# and the original as it was) on 35 items, small and big alike. AVIF at
+# and the original as it was) on 35 items, small and big alike. Small items
+# are drawn the most enlarged, so they take more of the model (MIX). AVIF at
 # QUALITY came out a third smaller than WebP at 90 and closer to the
 # unencoded picture (SSIM, over 48 items).
 #
@@ -39,8 +40,11 @@ OUT_DIR = os.path.join(ROOT, 'public', 'items')
 MODEL = os.environ.get('ART_MODEL', os.path.join(ROOT, '.venv-art', 'RealESRGAN_x4plus.pth'))
 # Keep in step with ART_SCALE in src/lib/ui-paths.ts.
 ART_SCALE = 2
-# How much of the model's picture goes into the mix; the rest is the original.
-MIX = 0.3
+# How much of the model's picture goes into the mix, the rest being the
+# original: by the item's size in inventory cells (CELL px each, about), for
+# one cell, up to 2 x 2, and larger.
+MIX = {'small': 0.5, 'medium': 0.4, 'large': 0.3}
+CELL = 104
 QUALITY = 80
 # The smaller copies' longest sides, px (keep in step with ITEM_THUMBS in src/lib/ui-paths.ts).
 THUMBS = (256, 128)
@@ -124,8 +128,14 @@ def upscale(net, src, out):
     save_all(mix(model, im), out)
 
 
+def mix_of(w, h):
+    """How much of the model goes into an item's mix, by its size (the original art's, px): one cell, up to 2 x 2 (1 x 2, 2 x 1, 2 x 2), or larger."""
+    cw, ch = max(1, round(w / CELL)), max(1, round(h / CELL))
+    return MIX['small'] if cw == ch == 1 else MIX['medium'] if cw <= 2 and ch <= 2 else MIX['large']
+
+
 def mix(model, im):
-    """The model's picture (float RGBA at ART_SCALE) mixed with the original enlarged smoothly; the model's alpha, whose edges are crisper.
+    """The model's picture (float RGBA at ART_SCALE) mixed with the original enlarged smoothly, by mix_of; the model's alpha, whose edges are crisper.
 
     Each picture's colour counts by how opaque it is there: the original is
     black where it is clear, so where the model's edge reaches past the
@@ -133,8 +143,9 @@ def mix(model, im):
     """
     base = np.asarray(im.resize((model.shape[1], model.shape[0]), Image.BICUBIC)).astype(np.float32)
     ma, ba = model[..., 3:] / 255, base[..., 3:] / 255
-    weight = MIX * ma + (1 - MIX) * ba
-    rgb = (MIX * model[..., :3] * ma + (1 - MIX) * base[..., :3] * ba) / np.maximum(weight, 1e-6)
+    t = mix_of(*im.size)
+    weight = t * ma + (1 - t) * ba
+    rgb = (t * model[..., :3] * ma + (1 - t) * base[..., :3] * ba) / np.maximum(weight, 1e-6)
     rgb = np.where(weight > 1e-6, rgb, model[..., :3])
     out = np.dstack([rgb, model[..., 3:]]).round().clip(0, 255).astype(np.uint8)
     return Image.fromarray(out, 'RGBA')
