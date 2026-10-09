@@ -12,7 +12,8 @@
 # On its own the model repaints the art (smooth, waxy, painterly). In blind
 # tests the mix at 30% beat 50% and 70% (and the plain model, other models,
 # and the original as it was) on 35 items, small and big alike. Small items
-# are drawn the most enlarged, so they take more of the model (MIX). AVIF at
+# are drawn the most enlarged, so they take more of the model (MIX): for
+# one-cell items, 75% beat 50% 21 to 3 in a blind test on 24 of them. AVIF at
 # QUALITY came out a third smaller than WebP at 90 and closer to the
 # unencoded picture (SSIM, over 48 items).
 #
@@ -43,7 +44,7 @@ ART_SCALE = 2
 # How much of the model's picture goes into the mix, the rest being the
 # original: by the item's size in inventory cells (CELL px each, about), for
 # one cell, up to 2 x 2, and larger.
-MIX = {'small': 0.5, 'medium': 0.4, 'large': 0.3}
+MIX = {'small': 0.75, 'medium': 0.4, 'large': 0.3}
 CELL = 104
 QUALITY = 80
 # The smaller copies' longest sides, px (keep in step with ITEM_THUMBS in src/lib/ui-paths.ts).
