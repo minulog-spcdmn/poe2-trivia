@@ -204,7 +204,7 @@
           {/if}
           {#if session.spectating}
             <span class="dot">•</span>
-            <span class="spectating" title="You joined mid-game. You'll play in the next game.">Spectating</span>
+            <span class="spectating" title={session.justWatching ? "You're watching without playing." : "You'll play in the next game."}>Spectating</span>
           {/if}
           <!-- The depth as players count it (shownDepth). A run under way at 0
                names none here: the banner below has its start line (Game.svelte),
@@ -224,7 +224,7 @@
             <span class="dot">•</span>
           {/if}
           {#if session.spectating}
-            <span class="spectating" title="You joined mid-game. You'll play in the next game.">Spectating</span>
+            <span class="spectating" title={session.justWatching ? "You're watching without playing." : "You'll play in the next game."}>Spectating</span>
             <span class="dot">•</span>
           {/if}
           {#if gs.deathmatch}

@@ -349,10 +349,19 @@ class Session {
     return this.mode === 'local' || this.mode === 'host';
   }
 
-  /** Online guest who joined a running game and watches until the next one. */
+  /** Guest: watches rather than plays, as the host last had it (sent with every hello, so it holds through reconnects). */
+  private watchOnly = false;
+
+  /** Online guest who isn't playing: joined a running game, or chose to watch. */
   get spectating() {
     const s = this.state;
     return this.mode === 'client' && !!s && !!this.myPlayerId && !s.players.some((p) => p.id === this.myPlayerId);
+  }
+
+  /** Spectating, and staying a spectator when the next game starts. */
+  get justWatching() {
+    const me = this.myPlayerId;
+    return this.spectating && !!this.state?.spectators?.some((o) => o.id === me && o.stay);
   }
 
   get race() {
@@ -450,7 +459,7 @@ class Session {
       this.status = 'connecting';
       this.loadPrivate(saved.priv);
       this.openRoom(saved.code, 0, underRuleset(renameCategories(saved.state)));
-    } else if (saved.mode === 'client') this.join(saved.code, saved.name);
+    } else if (saved.mode === 'client') this.join(saved.code, saved.name, !!saved.watch);
   }
 
   // ---- hosting ----------------------------------------------------------
@@ -622,7 +631,7 @@ class Session {
           if (guest.playerId) return;
           guest.tab = msg.tab ?? null;
           clearTimeout(helloTimer);
-          this.handleHello(conn, guest, msg.secret, msg.name, msg.v);
+          this.handleHello(conn, guest, msg.secret, msg.name, msg.v, !!msg.watch);
         } else if (msg.t === 'pong') {
           const sent = guest.pings.get(msg.n);
           if (sent !== undefined) {
@@ -730,7 +739,7 @@ class Session {
     this.drop(conn);
   }
 
-  private handleHello(conn: DataConnection, guest: Guest, secret: string, name: string, v: number) {
+  private handleHello(conn: DataConnection, guest: Guest, secret: string, name: string, v: number, watch: boolean) {
     const outdated = versionProblem(v);
     if (outdated) throw new ActionError(outdated);
     const known = this.secretToPlayer.get(secret);
@@ -751,7 +760,7 @@ class Session {
     try {
       if (!known && this.priv.bannedNames.includes(nameSkeleton(cleanName(name))))
         throw new ActionError('Someone with a name like that was removed from this room. Pick another name.');
-      next = engine.apply(this.state!, { type: 'join', playerId, name, returning: !!known }, playerId);
+      next = engine.apply(this.state!, { type: 'join', playerId, name, returning: !!known, ...(watch ? { watch } : {}) }, playerId);
     } catch (err) {
       this.joins.rejected(secret, !!known);
       throw err;
@@ -1052,24 +1061,52 @@ class Session {
 
   // ---- joining ----------------------------------------------------------
 
-  join(code: string, name: string) {
+  join(code: string, name: string, watch = false) {
     // The host's room has its own settings: a shared link's Delve is moot.
     this.delveLink = false;
     this.reset();
     this.mode = 'client';
     this.status = 'connecting';
     this.joinName = name;
+    this.watchOnly = watch;
     this.code = code.toUpperCase().trim();
     if (!CODE_PATTERN.test(this.code)) {
       this.fail(`"${this.code}" isn't a valid room code.`, 'Invalid code');
       return;
     }
-    writeSaved({ mode: 'client', code: this.code, name });
+    this.saveGuest();
     const room = this.code;
     this.helloSecret = roomSecret(mySecret, room).catch(() => stored(`secret.${room}`, () => randomToken(32)));
     this.joinedAt = Date.now();
     this.armConnectTimeout();
     this.startClientPeer();
+  }
+
+  private saveGuest() {
+    writeSaved({ mode: 'client', code: this.code, name: this.joinName, ...(this.watchOnly ? { watch: true } : {}) });
+  }
+
+  /**
+   * Guest: watch rather than play (a spectator stays one when the next game
+   * starts; a player in the lobby gives up their seat), or take a seat again.
+   */
+  watch(on: boolean) {
+    if (this.mode !== 'client') return;
+    // Remembered once the host has it so (noteWatch): a choice it turns down isn't kept.
+    this.dispatch({ type: 'watch', watch: on });
+  }
+
+  /** Guest: keeps (and saves) whether the host has this guest down as just watching. */
+  private noteWatch(s: GameState) {
+    const me = this.myPlayerId;
+    if (!me) return;
+    const watcher = s.spectators?.find((o) => o.id === me);
+    // Not in the room at all (yet): nothing to go by.
+    if (!watcher && !s.players.some((p) => p.id === me)) return;
+    const on = !!watcher?.stay;
+    if (on === this.watchOnly) return;
+    this.watchOnly = on;
+    this.saveGuest();
   }
 
   /**
@@ -1284,6 +1321,7 @@ class Session {
             this.state = msg.state;
           }
           this.status = 'ready';
+          if (this.state) this.noteWatch(this.state);
           break;
         case 'error':
           // An answer turned down (too quick) didn't count: the one given next is timed instead.
@@ -1328,7 +1366,7 @@ class Session {
     });
     const secret = await this.helloSecret;
     if (secret && this.hostConn === conn && conn.open)
-      conn.send({ t: 'hello', secret, name: this.joinName, v: PROTOCOL_VERSION, tab: myTab });
+      conn.send({ t: 'hello', secret, name: this.joinName, v: PROTOCOL_VERSION, tab: myTab, ...(this.watchOnly ? { watch: true } : {}) });
   }
 
   private hostLost(conn: DataConnection) {
@@ -2141,6 +2179,7 @@ class Session {
     this.status = 'idle';
     this.code = '';
     this.myPlayerId = null;
+    this.watchOnly = false;
     // A guest's offset to its host's clock means nothing for the next room.
     this.clockOffset = 0;
     this.clockSynced = false;
@@ -2173,7 +2212,8 @@ class Session {
 type Saved =
   | { mode: 'local'; state: GameState }
   | { mode: 'host'; code: string; state: GameState; priv: HostPrivate }
-  | { mode: 'client'; code: string; name: string };
+  /** `watch`: the guest chose to watch rather than play. */
+  | { mode: 'client'; code: string; name: string; watch?: boolean };
 const SAVE = 'session.v4';
 /**
  * Before guests' tokens became per-room. A hosted room saved then can't be
