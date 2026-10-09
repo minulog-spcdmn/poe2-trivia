@@ -42,6 +42,7 @@
   import { CASINGS, WARD_BREAK, WARD_NEXT, momentOf, type InventoryMoment } from '../lib/inventoryArt';
   import { MOMENTS } from '../lib/soundDesign';
   import type { GameState, Revive } from '../lib/game';
+  import WatchToggle from './WatchToggle.svelte';
 
   /** Shown at the end of the row (the timer, on phones). */
   let { aside }: { aside?: Snippet } = $props();
@@ -53,6 +54,8 @@
   const missed = $derived(new Set(s.question?.misses.map((m) => m.playerId) ?? []));
   const canKick = $derived(session.mode === 'host');
   const spectators = $derived(s.spectators ?? []);
+  /** Those of them who take a seat in the next game (the rest just watch). */
+  const joining = $derived(spectators.filter((o) => !o.stay));
   /** Delve: lives instead of a score. */
   const run = $derived(s.delve ?? null);
   /** Delve together: nobody has a turn; on phones your own entry is the one spelled out. */
@@ -798,7 +801,15 @@
           >{/if}</span
       >
     {/each}
-    <span class="hint">· joining next game</span>
+    {#if joining.length === spectators.length}
+      <span class="hint">· joining next game</span>
+    {:else if joining.length}
+      <span class="hint">· {joining.map((o) => o.name).join(', ')} {joining.length === 1 ? 'joins' : 'join'} next game</span>
+    {/if}
+    {#if session.spectating}
+      <!-- Your own choice: take a seat when the next game starts, or keep watching. -->
+      <WatchToggle />
+    {/if}
   </p>
 {/if}
 

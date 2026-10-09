@@ -723,17 +723,19 @@ export interface Reveal {
   hits?: Hit[];
 }
 
-/** Someone who joined a running game: they watch until the next game starts. */
+/** Someone watching: they joined a running game, or stepped aside to watch. */
 export interface Spectator {
   id: string;
   name: string;
+  /** Keeps watching: not seated when the next game starts (missing: they take a seat). */
+  stay?: true;
 }
 
 export interface GameState {
   phase: Phase;
   hostId: string | null;
   players: Player[];
-  /** Watching this game; they get a seat when the host starts the next one (missing in older saves). */
+  /** Watching this game; they get a seat when the host starts the next one unless they `stay` (missing in older saves). */
   spectators?: Spectator[];
   settings: Settings;
   /** Index into players of whose turn it is. */
@@ -774,8 +776,11 @@ export interface GameState {
 }
 
 export type Action =
-  /** `returning`: set by the host for someone who was already in this room (may pass the lock). */
-  | { type: 'join'; playerId: string; name: string; returning?: boolean }
+  /**
+   * `returning`: set by the host for someone who was already in this room (may pass the lock).
+   * `watch`: they'd rather watch than play (a spectator who stays one, see 'watch').
+   */
+  | { type: 'join'; playerId: string; name: string; returning?: boolean; watch?: boolean }
   | { type: 'rename'; playerId: string; name: string }
   | { type: 'remove'; playerId: string }
   | { type: 'connection'; playerId: string; connected: boolean }
@@ -790,6 +795,12 @@ export type Action =
   | { type: 'reask' }
   /** Back to the lobby, seating the spectators; with `play`, the next game starts right away. */
   | { type: 'restart'; play?: boolean }
+  /**
+   * A guest chooses to watch rather than play (`watch`), or to take a seat
+   * again. A spectator can choose any time, for the next game; a player only
+   * in the lobby, where they give up their seat.
+   */
+  | { type: 'watch'; watch: boolean }
   /** Host only (Delve): the art has reached the player answering, so their clock starts at `at` (host clock). */
   | { type: 'clock'; askedAt: number; at?: number }
   /** Host only (Delve co-op): the vote's window ran out (or every vote it waits for is in): a card is drawn from the votes. */
@@ -858,14 +869,14 @@ export function createGame(hostId: string | null, settings: Settings = DEFAULT_S
   };
 }
 
-/** Spectators take the free seats, in the order they arrived; the rest keep watching. */
+/** Spectators take the free seats, in the order they arrived; the rest, and those who stay, keep watching. */
 function fillSeats(s: GameState) {
-  const waiting = s.spectators ?? [];
-  while (waiting.length && s.players.length < MAX_PLAYERS) {
-    const o = waiting.shift()!;
-    seat(s, o.id, o.name);
+  const watching: Spectator[] = [];
+  for (const o of s.spectators ?? []) {
+    if (!o.stay && s.players.length < MAX_PLAYERS) seat(s, o.id, o.name);
+    else watching.push(o);
   }
-  s.spectators = waiting;
+  s.spectators = watching;
 }
 
 /**
@@ -1064,6 +1075,11 @@ export class Engine {
         if (s.settings.locked && !action.returning) throw new ActionError('The host has locked this room.');
         const problem = nameProblem(name, [...s.players, ...s.spectators].map((o) => o.name));
         if (problem) throw new ActionError(problem);
+        // Someone who'd rather watch does, while there's room (in the lobby, they take a seat otherwise).
+        if (action.watch && s.spectators.length < MAX_SPECTATORS) {
+          s.spectators.push({ id: action.playerId, name, stay: true });
+          break;
+        }
         if (s.phase !== 'lobby') {
           // Too late for this game: watch it and take a seat in the next one.
           if (s.spectators.length >= MAX_SPECTATORS) throw new ActionError('That game has already started and has no room for more spectators.');
@@ -1436,6 +1452,26 @@ export class Engine {
         Object.assign(s, fresh);
         delete s.startedAt;
         if (action.play) return this.apply(s, { type: 'start' }, from);
+        break;
+      }
+      case 'watch': {
+        if (from === null || from === s.hostId) throw new ActionError('The host plays in their own game.');
+        const watcher = s.spectators.find((o) => o.id === from);
+        if (watcher) {
+          if (action.watch) watcher.stay = true;
+          else delete watcher.stay;
+          // In the lobby, a free seat is theirs right away.
+          if (s.phase === 'lobby') fillSeats(s);
+          break;
+        }
+        const idx = s.players.findIndex((p) => p.id === from);
+        if (idx < 0 || !action.watch) break;
+        if (s.phase !== 'lobby') throw new ActionError('You can step aside to watch in the lobby.');
+        const [p] = s.players.splice(idx, 1);
+        s.spectators.push({ id: p.id, name: p.name, stay: true });
+        // Their seat goes to whoever was waiting for one, which makes room to watch.
+        fillSeats(s);
+        if (s.spectators.length > MAX_SPECTATORS) throw new ActionError('There is no room for more spectators.');
         break;
       }
       case 'clock': {

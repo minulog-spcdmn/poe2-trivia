@@ -69,6 +69,14 @@ test('rejects anything a real client would never send', () => {
   // A vote can't name its voter, nor a revive its giver: the host takes those from the connection.
   assert.deepEqual(parseClientMsg({ t: 'action', action: { type: 'vote', category: 'Rings', playerId: 'p0' } }), { t: 'action', action: { type: 'vote', category: 'Rings' } });
   assert.deepEqual(parseClientMsg({ t: 'action', action: { type: 'revive', target: 'p1', by: 'p0' } }), { t: 'action', action: { type: 'revive', target: 'p1' } });
+  // Watching rather than playing is only ever the sender's own choice.
+  assert.deepEqual(parseClientMsg({ t: 'action', action: { type: 'watch', watch: true, playerId: 'p1' } }), { t: 'action', action: { type: 'watch', watch: true } });
+  assert.equal(parseClientMsg({ t: 'action', action: { type: 'watch' } }), null);
+  assert.equal(parseClientMsg({ t: 'action', action: { type: 'watch', watch: 1 } }), null);
+  // A guest who'd rather watch says so in the hello, so the host never seats them by mistake.
+  assert.deepEqual(parseClientMsg({ t: 'hello', secret, name: 'Dori', v: 3, watch: true }), { t: 'hello', secret, name: 'Dori', v: 3, watch: true });
+  assert.deepEqual(parseClientMsg({ t: 'hello', secret, name: 'Dori', v: 3, watch: false }), { t: 'hello', secret, name: 'Dori', v: 3 });
+  assert.equal(parseClientMsg({ t: 'hello', secret, name: 'Dori', v: 3, watch: 'yes' }), null);
 });
 
 test('rate limit allows bursts but not floods', () => {
@@ -126,8 +134,10 @@ test('an answer turned down names its question, so the guest can answer it again
   assert.equal(parseHostMsg({ t: 'error', message, askedAt: 1.5 }), null);
 });
 
-test('version 18: pictures go out at ART_SCALE pixels per art pixel (the upscaled item art); 17: a blasted question remembers the wrong answers given to it, so every screen logs what they cost (Blast.was.struck); 16 gave a flare six seconds and a Flare Cache two thirds of the clock, never under four (worked out on every screen); 15 set dynamite off right at 0, its fuse burning over the last seconds before; 14 lit it at 0 (Question.fuse), 13 blasted a question away (the blast action), 12 had the frozen Delve rules, 11 the co-op vote and revive', () => {
-  assert.equal(PROTOCOL_VERSION, 18);
+test('version 19: a guest can choose to watch rather than play (the watch action); 18: pictures go out at ART_SCALE pixels per art pixel (the upscaled item art); 17: a blasted question remembers the wrong answers given to it, so every screen logs what they cost (Blast.was.struck); 16 gave a flare six seconds and a Flare Cache two thirds of the clock, never under four (worked out on every screen); 15 set dynamite off right at 0, its fuse burning over the last seconds before; 14 lit it at 0 (Question.fuse), 13 blasted a question away (the blast action), 12 had the frozen Delve rules, 11 the co-op vote and revive', () => {
+  assert.equal(PROTOCOL_VERSION, 19);
+  // A host on 18 would take a guest's watch action for a forged message and block them.
+  assert.match(versionProblem(18)!, /^Your game is out of date/);
   // A guest on 17 would show a host's pictures at twice their size, or a 17 host's at half, and burn patches in out of place.
   assert.match(versionProblem(17)!, /^Your game is out of date/);
   // A guest on 16 would log a wrong answer a teammate's dynamite then blasted away as never given.
