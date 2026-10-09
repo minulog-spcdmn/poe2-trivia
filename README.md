@@ -16,6 +16,14 @@ is hosted as a static site on GitHub Pages. No server needed.
    4 on Eternal (Custom sets its own).
 2. Name the unique item or lineage gem from its art (or, on harder
    difficulties, pick the right art for a name). A correct answer scores a point.
+   Feeling sure? Before you choose a card, you may corrupt your pick with a
+   **Vaal Orb**: a right answer then scores +2, a wrong one (or running out of
+   time) costs −1, and scores can go below 0. Everyone starts a game with one
+   orb per 5 points to win (at least one). A point lost to a bricked
+   corruption goes onto the **Altar**, shared by the table: the next
+   corruption that holds, whoever's it is, takes the whole Altar on top of its
+   +2. Nobody can corrupt in a deathmatch, and a corrupted question the host
+   skips gives its orb back.
 3. The first player to reach the host's target score wins. The game only ends
    once a full round is finished, so everyone gets the same number of turns.
    If players are tied at the top, it goes to a **deathmatch**:

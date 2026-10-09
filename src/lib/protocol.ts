@@ -4,7 +4,7 @@
 
 import type { Action, GameState } from './game';
 
-export const PROTOCOL_VERSION = 17;
+export const PROTOCOL_VERSION = 18;
 
 /** What hosts before version 10 tell a guest on another version, whichever side is out of date. */
 export const LEGACY_VERSION_TEXT = 'Your game version is out of date. Please reload the page.';
@@ -84,8 +84,10 @@ export function parseClientMsg(raw: unknown): ClientMsg | null {
       if (!isObj(a)) return null;
       // Guests may only play; everything else is the host's job.
       switch (a.type) {
+        // Turns: `vaal` corrupts the pick with one of the player's Vaal Orbs (the host checks they have one).
         case 'pick':
-          return isStr(a.category, 80) ? { t: 'action', action: { type: 'pick', category: a.category } } : null;
+          if (!isStr(a.category, 80) || (a.vaal !== undefined && typeof a.vaal !== 'boolean')) return null;
+          return { t: 'action', action: { type: 'pick', category: a.category, ...(a.vaal === true ? { vaal: true } : {}) } };
         case 'answer': {
           const index = a.index === null ? null : isInt(a.index, 0, 16) ? a.index : undefined;
           const askedAt = a.askedAt === undefined ? undefined : isInt(a.askedAt, 0, Number.MAX_SAFE_INTEGER) ? a.askedAt : NaN;

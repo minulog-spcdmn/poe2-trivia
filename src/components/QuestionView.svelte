@@ -1,7 +1,7 @@
 <script lang="ts">
   import { fly, fade, scale, slide } from 'svelte/transition';
   import { session, engine } from '../lib/session.svelte';
-  import { AUTO_NEXT_MS, autoNextLeft, isFake, questionTopic } from '../lib/game';
+  import { AUTO_NEXT_MS, BRICK, HOLD, autoNextLeft, isFake, questionTopic } from '../lib/game';
   import { shown } from '../lib/media.svelte';
   import { FINALE_MS, materialize, type BurnParams } from '../lib/materialize';
   import { frontier } from '../lib/frontier';
@@ -88,6 +88,18 @@
   const fallsNow = $derived(!!s.delve && !coop && !!reveal && !reveal.correct && fellAt(s, active.id) === s.round);
   /** Delve: you answering (online, or alone on this device), or someone else, by name. */
   const delveYou = $derived(!!s.delve && !coop && (active.id === me || session.mode === 'local'));
+  /** Turns: you answering, online (on one device the result names whoever answered). */
+  const you = $derived(session.mode !== 'local' && active.id === me);
+  /**
+   * Turns, a corrupted question: what it pays, the Altar's points included
+   * (`hold` for the player answering, else for those watching).
+   */
+  const vaalStakes = $derived.by(() => {
+    const altar = s.altar ?? 0;
+    return altar > 0
+      ? { hold: `right +${HOLD} and the Altar's ${altar}, wrong −${BRICK}`, watch: `+${HOLD} and the Altar's ${altar}, or −${BRICK}` }
+      : { hold: `right +${HOLD}, wrong −${BRICK}`, watch: `+${HOLD} or −${BRICK}` };
+  });
   /** Delve: who a find's item went to (together: whoever cleared it, or a teammate with room for it), and whether that's you. */
   const gainerId = $derived(coop ? (reveal?.gainedBy ?? reveal?.winnerId ?? null) : active.id);
   const gainYou = $derived(coop ? !!gainerId && gainerId === me : delveYou);
@@ -123,6 +135,8 @@
       if (reveal.timedOut) return { word: "Time's up", icon: 'clock', tone: 'late' };
       return { word: 'Wrong', icon: 'cross', tone: 'bad' };
     }
+    // Turns, a corrupted question: it holds or it bricks (a time-out too).
+    if (q.vaal && !race && !s.delve) return iWon ? { word: 'Holds', icon: 'check', tone: 'good' } : { word: 'Bricked', icon: 'cross', tone: 'bad' };
     if (iWon) return { word: 'Correct', icon: 'check', tone: 'good' };
     if (race && winner) return session.spectating ? { word: 'Solved', icon: 'check', tone: 'neutral' } : { word: 'Too slow', icon: 'clock', tone: 'late' };
     if (fallsNow) return { word: 'Perished', icon: 'cross', tone: 'bad' };
@@ -562,7 +576,8 @@
       const now = scorer && !s.delve ? s.players.find((p) => p.id === scorer)?.score : undefined;
       const target = s.settings.targetScore;
       const frac = (v: number) => Math.min(1, Math.max(0, v / target));
-      const fill = now === undefined ? undefined : { from: frac(now - 1), to: frac(now) };
+      // A corruption that held pours in all it won (the Altar's points too).
+      const fill = now === undefined ? undefined : { from: frac(now - (r.stake?.delta ?? 1)), to: frac(now) };
       revealFx({
         answer: optionEls[r.correctIndex],
         chosen: !race && !coop && !r.correct && r.chosenIndex != null ? optionEls[r.chosenIndex] : null,
@@ -804,13 +819,21 @@
           {/if}
           <!-- A Dynamite Cache missed: what its blast destroyed of the pack (the phial shows it go). -->
           {#if !reveal.correct && reveal.blown}{blownText(reveal.blown, you ? 'your' : `${active.name}'s`)}{/if}
+        {:else if reveal.stake && reveal.correct}
+          <!-- A corruption that held: its points, the Altar's among them. -->
+          <b class="good">+{reveal.stake.delta}</b> for {you ? 'you' : active.name}! The corruption holds{reveal.stake.altar > 0 ? ' and takes the Altar' : ''}.
+          {#if streak >= 2}<span class="streak" in:scale={{ start: 0.5, duration: 400, delay: 1100 }}>{streak} in a row</span>{/if}
+        {:else if reveal.stake && reveal.timedOut}
+          {you ? 'You' : active.name} ran out of time. Bricked; the point lies on the Altar.
+        {:else if reveal.stake}
+          <b class="bad">−{-reveal.stake.delta}</b> for {you ? 'you' : active.name}. Bricked; the point lies on the Altar.
         {:else if reveal.correct}
-          <b class="good">+1</b> for {active.name}!
+          <b class="good">+1</b> for {you ? 'you' : active.name}!
           {#if streak >= 2}<span class="streak" in:scale={{ start: 0.5, duration: 400, delay: 1100 }}>{streak} in a row</span>{/if}
         {:else if reveal.timedOut}
-          {active.name} ran out of time.
+          {you ? 'You' : active.name} ran out of time.
         {:else}
-          No point for {active.name}{fellFor ? ';' : '.'}
+          No point for {you ? 'you' : active.name}{fellFor ? ';' : '.'}
         {/if}
         {#if fellFor}{fellFor} isn't a real item.{/if}
       </p>
@@ -881,6 +904,9 @@
       </p>
     {:else if blastLine}
       <p class="spectate blast-line" in:fade={{ duration: 300, delay: 300 }}><span class="found-glyph" aria-hidden="true"><ItemGlyph kind="dynamite" /></span>{blastLine}</p>
+    {:else if q.vaal && !reveal && !race && !s.delve}
+      <!-- Turns: the pick was corrupted with a Vaal Orb; everyone knows what rides on it. -->
+      <p class="spectate vaal">{mine ? `Corrupted: ${vaalStakes.hold}.` : `${active.name} corrupted this one: ${vaalStakes.watch}.`}</p>
     {:else if session.spectating}
       <p class="spectate muted">You're watching. You'll play in the next game.</p>
     {:else if coop && !mine}
@@ -2178,6 +2204,13 @@
     font-size: 1.4rem;
     text-shadow: 0 0 10px rgba(150, 190, 110, 0.35);
   }
+  /* A corruption that bricked: the point it cost. */
+  .result .bad {
+    font-family: var(--font-display);
+    color: #ff9c86;
+    font-size: 1.4rem;
+    text-shadow: 0 0 10px rgba(224, 85, 63, 0.4);
+  }
   /* A streak of correct answers. */
   .streak {
     position: relative;
@@ -2314,6 +2347,10 @@
     margin: 0;
     font-style: italic;
     text-align: center;
+  }
+  /* A corrupted question: what rides on it. */
+  .spectate.vaal {
+    color: #e8a99a;
   }
 
   @keyframes glow {

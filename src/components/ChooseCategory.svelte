@@ -5,7 +5,8 @@
   import { engine, session } from '../lib/session.svelte';
   import { categoryIcon, categoryIconTweak, categoryIcons } from '../lib/ui';
   import { fits, fitStyle, maskOf, measure } from '../lib/iconFit.svelte';
-  import { activeRules, difficultyOf } from '../lib/game';
+  import { BRICK, HOLD, activeRules, difficultyOf, vaalOn } from '../lib/game';
+  import { readStored, writeStored } from '../lib/storage';
   import { FIND_TEXT, deathmatchText, findNote, lockoutText, namesOf, teamFindNote, teamUnused, unused } from '../lib/difficultyText';
   import { expectedVoters, findOffers, findOn, holdersOf, inventoryOf, isGroupRun, isIdle, livesOf, standingIds, voteClosesAt, type FindKind } from '../lib/delve';
   import { sfx } from '../lib/sound';
@@ -44,6 +45,28 @@
   const dimmed = $derived(coop ? !me || livesOf(s, me) <= 0 : !mine);
   // The lockout in force (in Delve it grows with depth).
   const lockout = $derived(activeRules(s).lockout);
+
+  // ---- Vaal Orbs (turns) ----------------------------------------------------
+  // On their turn a player may corrupt their pick with a Vaal Orb: the pill
+  // under the prompt stains the cards crimson, and the card picked then is
+  // corrupted (right HOLD, wrong BRICK onto the Altar). The screen is made
+  // anew every turn, so Corrupt always starts off.
+
+  /** Vaal Orbs the player on turn has left. */
+  const orbs = $derived(active?.vaal ?? 0);
+  /** Picks can be corrupted here (turns, outside a deathmatch), and the Altar is shown. */
+  const vaalHere = $derived(vaalOn(s) && !s.deathmatch && !coop);
+  /** Points lying on the Altar. */
+  const altar = $derived(vaalHere ? (s.altar ?? 0) : 0);
+  let corrupting = $state(false);
+  /** This browser has corrupted a pick before: the pill no longer pulses, nor the note coaxes. */
+  const coached = readStored('vaalCoached') === '1';
+  function toggle() {
+    if (!mine || picked || !orbs || !vaalHere) return;
+    corrupting = !corrupting;
+  }
+  /** What a corruption pays, the Altar's points included. */
+  const stakes = $derived(`right +${HOLD}${altar ? ` and the Altar's ${altar}` : ''}, wrong −${BRICK}`);
 
   // ---- the vote (Delve together) ------------------------------------------
   // Votes are public and can change until the vote closes: when everyone it
@@ -344,7 +367,7 @@
     const card = cardEls[i];
     const frame = card?.querySelector('.frame');
     const kind = kindOf(s.offered[i]);
-    if (frame) burning = kind ? findHover(frame, card, kind) : cardHover(frame, card, !!s.deathmatch);
+    if (frame) burning = kind ? findHover(frame, card, kind) : cardHover(frame, card, !!s.deathmatch || corrupting);
   }
   function leave(e: PointerEvent) {
     waiting = null;
@@ -380,9 +403,11 @@
     const others = cardEls.filter((c, j) => c && j !== i).map((c) => c.querySelector('.frame') ?? c);
     const kind = kindOf(category);
     if (frame && kind) findPicked(frame, cardEls[i], others, kind);
-    else if (frame) cardPicked(frame, cardEls[i], others, !!s.deathmatch);
+    else if (frame) cardPicked(frame, cardEls[i], others, !!s.deathmatch || corrupting);
     sfx('pick');
-    session.dispatch({ type: 'pick', category });
+    const vaal = corrupting && vaalHere && orbs > 0;
+    session.dispatch({ type: 'pick', category, ...(vaal ? { vaal: true } : {}) });
+    if (vaal) writeStored('vaalCoached', '1');
     // Allow a retry if the host rejected the pick.
     setTimeout(() => (picked = null), 2500);
   }
@@ -403,11 +428,32 @@
         <span class="muted">Your team is voting…</span>
       {/if}
     {:else if mine}
-      Choose your category
+      {corrupting ? 'Choose a card to corrupt' : 'Choose your category'}
     {:else}
       <span class="muted">Waiting for</span> {active.name} <span class="muted">to choose a category…</span>
     {/if}
   </p>
+
+  {#if vaalHere && ((mine && !s.deathmatch) || altar > 0)}
+    <!-- The player's Vaal Orbs, and the Altar's points (for everyone). -->
+    <div class="vaal-row">
+      {#if mine}
+        <button
+          class="corrupt"
+          class:on={corrupting}
+          class:coach={!coached && orbs > 0 && !corrupting}
+          aria-pressed={corrupting}
+          aria-label="Corrupt your pick with a Vaal Orb: {orbs} left"
+          title={orbs ? `Corrupt your pick: ${stakes}` : 'No Vaal Orbs left'}
+          disabled={!orbs || !!picked}
+          onclick={toggle}>Corrupt <span class="n">×{orbs}</span></button
+        >
+      {/if}
+      {#if altar > 0}
+        <span class="altar" title="Points lost to bricked corruptions. The next corruption that holds takes them all.">Altar <span class="n">{altar}</span></span>
+      {/if}
+    </div>
+  {/if}
 
   <div class="cards" class:single={s.offered.length === 1} class:moving={!!drawn || !!picked} style:--n={s.offered.length}>
     {#each s.offered as cat, i (cat)}
@@ -415,7 +461,7 @@
         class="card"
         data-sfx="none"
         data-fx="none"
-        class:dm={!!s.deathmatch}
+        class:dm={!!s.deathmatch || corrupting}
         class:special={!!kindOf(cat)}
         data-find={kindOf(cat)}
         aria-describedby={kindOf(cat) && !s.deathmatch ? `${uid}-note-${kindOf(cat)}` : undefined}
@@ -519,6 +565,10 @@
   {/if}
   {#if s.deathmatch}
     <p class="note muted">{mine ? 'Tap the card when you are ready.' : deathmatchText(difficultyOf(s.settings.difficulty))}</p>
+  {:else if mine && vaalHere && corrupting}
+    <p class="note vaal">Corrupted: {stakes}.</p>
+  {:else if mine && vaalHere && !coached && orbs > 0}
+    <p class="note vaal">Sure of one of these? Corrupt it: right +{HOLD}, wrong −{BRICK}.</p>
   {:else if coop && canVote && lockout > 0}
     <p class="note muted">A category the team plays stays locked for the next {lockout} depths.</p>
   {:else if mine && lockout > 0}
@@ -959,6 +1009,111 @@
     gap: 0.35rem;
   }
 
+  /* ---- Vaal Orbs -----------------------------------------------------------
+     Under the prompt, closer to it than the cards are: the player's Corrupt
+     pill (crimson, the deathmatch's red) and the Altar's seal. */
+  .vaal-row {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+    gap: 0.5rem 0.8rem;
+    margin-top: -0.9rem;
+  }
+  .corrupt,
+  .altar {
+    position: relative;
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.45em;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 0.8rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    line-height: 1.2;
+    /* Letter spacing also trails the last letter: the right padding gives it back. */
+    padding: 0.5em calc(1.15em - 0.16em) 0.45em 1.15em;
+    border-radius: 999px;
+  }
+  .corrupt .n,
+  .altar .n {
+    font-family: var(--font-cinzel);
+    letter-spacing: 0.04em;
+  }
+  .corrupt {
+    color: #ffd2c4;
+    background: linear-gradient(180deg, rgba(120, 30, 20, 0.6), rgba(48, 10, 6, 0.75));
+    border: 1px solid #8c3a2c;
+    box-shadow: 0 0 14px rgba(224, 85, 63, 0.16);
+    cursor: pointer;
+    transition:
+      color 0.25s,
+      border-color 0.25s,
+      background 0.25s,
+      box-shadow 0.25s,
+      transform 0.25s var(--ease-out);
+  }
+  .corrupt:not(:disabled, .on):hover {
+    color: #fff0ea;
+    border-color: #c0503b;
+    box-shadow: 0 0 18px rgba(224, 85, 63, 0.35);
+  }
+  .corrupt:not(:disabled):active {
+    transform: scale(0.96);
+  }
+  .corrupt.on {
+    color: #fff4ef;
+    border-color: #e88a74;
+    background: linear-gradient(180deg, rgba(196, 52, 34, 0.85), rgba(104, 18, 10, 0.9));
+    box-shadow:
+      0 0 22px rgba(224, 85, 63, 0.5),
+      inset 0 0 10px rgba(255, 150, 120, 0.25);
+    text-shadow: 0 0 10px rgba(255, 140, 110, 0.6);
+  }
+  .corrupt:disabled {
+    cursor: default;
+  }
+  /* No orbs left (one just spent on the pick keeps its colour as the cards go). */
+  .corrupt:disabled:not(.on) {
+    color: #b48a80;
+    border-color: #4e2a22;
+    background: rgba(30, 12, 9, 0.6);
+    box-shadow: none;
+  }
+  /* The first game in this browser: a glow breathes round the pill (on a
+     layer of its own, only its opacity animating) until it is first used. */
+  .corrupt::before {
+    content: '';
+    position: absolute;
+    inset: -1px;
+    border-radius: inherit;
+    box-shadow: 0 0 0 1px rgba(255, 140, 110, 0.55), 0 0 22px rgba(224, 85, 63, 0.6);
+    opacity: 0;
+    pointer-events: none;
+  }
+  .corrupt.coach::before {
+    animation: coax 1.8s ease-in-out infinite;
+  }
+  @keyframes coax {
+    50% {
+      opacity: 1;
+    }
+  }
+  :global(html[data-still]) .corrupt.coach::before {
+    animation: none;
+    opacity: 0.6;
+  }
+  .altar {
+    color: #f0b8a6;
+    background: rgba(24, 9, 7, 0.7);
+    border: 1px solid rgba(140, 58, 44, 0.7);
+    cursor: help;
+  }
+  .note.vaal {
+    color: #e8a99a;
+  }
+
   /* ---- finds ---------------------------------------------------------------
      A find is the ordinary card, its plate engraved with the find's motif
      (CardEngraving, lib/findEngraving), the plate's ink, its emblem and its
@@ -1270,6 +1425,10 @@
       grid-template-columns: 1fr;
       width: min(360px, 100%);
       gap: 0.9rem;
+    }
+    /* Phones: the row sits tighter, so the note under the cards stays in view. */
+    .vaal-row {
+      margin: -1.1rem 0 -0.5rem;
     }
     .frame {
       display: flex;

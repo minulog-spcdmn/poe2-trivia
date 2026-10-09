@@ -17,6 +17,15 @@ test('accepts well-formed guest messages', () => {
     action: { type: 'pick', category: 'Rings' },
   });
   assert.deepEqual(parseClientMsg({ t: 'pong', n: 4 }), { t: 'pong', n: 4 });
+  // Turns: a pick corrupted with a Vaal Orb keeps the flag; one sent as not corrupted is a plain pick.
+  assert.deepEqual(parseClientMsg({ t: 'action', action: { type: 'pick', category: 'Rings', vaal: true } }), {
+    t: 'action',
+    action: { type: 'pick', category: 'Rings', vaal: true },
+  });
+  assert.deepEqual(parseClientMsg({ t: 'action', action: { type: 'pick', category: 'Rings', vaal: false } }), {
+    t: 'action',
+    action: { type: 'pick', category: 'Rings' },
+  });
   // Delve co-op: a vote for a card, and a life given to a teammate.
   assert.deepEqual(parseClientMsg({ t: 'action', action: { type: 'vote', category: 'Rings' } }), { t: 'action', action: { type: 'vote', category: 'Rings' } });
   assert.deepEqual(parseClientMsg({ t: 'action', action: { type: 'revive', target: 'p-1' } }), { t: 'action', action: { type: 'revive', target: 'p-1' } });
@@ -46,6 +55,8 @@ test('rejects anything a real client would never send', () => {
     { t: 'action', action: { type: 'answer', index: 1.5 } },
     { t: 'action', action: { type: 'answer', index: 99 } },
     { t: 'action', action: { type: 'pick', category: { toString: 1 } } },
+    { t: 'action', action: { type: 'pick', category: 'Rings', vaal: 'yes' } }, // a corruption is true or false
+    { t: 'action', action: { type: 'pick', category: 'Rings', vaal: 1 } },
     { t: 'action', action: { type: 'vote' } },
     { t: 'action', action: { type: 'vote', category: '' } },
     { t: 'action', action: { type: 'vote', category: 3 } },
@@ -117,8 +128,17 @@ test('veiled "find the art" pictures say which option they belong to', () => {
   assert.equal(parseHostMsg({ ...patch, tile: '2' }), null);
 });
 
-test('version 17: a blasted question remembers the wrong answers given to it, so every screen logs what they cost (Blast.was.struck); 16 gave a flare six seconds and a Flare Cache two thirds of the clock, never under four (worked out on every screen); 15 set dynamite off right at 0, its fuse burning over the last seconds before; 14 lit it at 0 (Question.fuse), 13 blasted a question away (the blast action), 12 had the frozen Delve rules, 11 the co-op vote and revive', () => {
-  assert.equal(PROTOCOL_VERSION, 17);
+test('version 18: a pick can be corrupted (pick.vaal) and the state carries orbs, the Altar and stakes; 17: a blasted question remembers the wrong answers given to it, so every screen logs what they cost (Blast.was.struck); 16 gave a flare six seconds and a Flare Cache two thirds of the clock, never under four (worked out on every screen); 15 set dynamite off right at 0, its fuse burning over the last seconds before; 14 lit it at 0 (Question.fuse), 13 blasted a question away (the blast action), 12 had the frozen Delve rules, 11 the co-op vote and revive', () => {
+  assert.equal(PROTOCOL_VERSION, 18);
+  // An older host would drop a guest's corruption without a word, and an older guest would show +2 and −1 nobody explained.
+  assert.match(versionProblem(17)!, /^Your game is out of date/);
+  assert.deepEqual(parseClientMsg({ t: 'action', action: { type: 'pick', category: 'Rings', vaal: true } }), {
+    t: 'action',
+    action: { type: 'pick', category: 'Rings', vaal: true },
+  });
+  // The state passes with its orbs, Altar and stakes as the host sent it.
+  const vaalState = { players: [{ id: 'p0', vaal: 1, ledger: { held: 1, bricked: 0, altar: 2 } }], settings: {}, altar: 3, reveal: { stake: { delta: 4, altar: 2 } } };
+  assert.deepEqual(parseHostMsg({ t: 'state', state: vaalState, now: 5 }), { t: 'state', state: vaalState, now: 5 });
   // A guest on 16 would log a wrong answer a teammate's dynamite then blasted away as never given.
   assert.match(versionProblem(16)!, /^Your game is out of date/);
   // The state passes as the host sent it, a blast's struck answers and all.

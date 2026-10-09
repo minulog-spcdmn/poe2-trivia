@@ -2,7 +2,7 @@
   import { flip } from 'svelte/animate';
   import { fly, scale } from 'svelte/transition';
   import { session } from '../lib/session.svelte';
-  import { MAX_PLAYERS, RACE_DEFAULT_TIMER, TIMER_STEPS, difficultyOf, rulesFor, type Difficulty, type GameMode } from '../lib/game';
+  import { BRICK, HOLD, MAX_PLAYERS, RACE_DEFAULT_TIMER, TIMER_STEPS, difficultyOf, rulesFor, type Difficulty, type GameMode } from '../lib/game';
   import { DIFFICULTY_NAMES, describe } from '../lib/difficultyText';
   import CustomDifficulty from './CustomDifficulty.svelte';
   import DelveRules from './DelveRules.svelte';
@@ -430,6 +430,8 @@
           <li>
             A right answer scores a point{#if lockout > 0}; the category stays locked for your next <span class="num">{lockout}</span> turns{/if}.
           </li>
+          <li>Feeling sure? Spend a Vaal Orb to corrupt your pick: right <span class="num">+{HOLD}</span>, wrong <span class="num">−{BRICK}</span>.</li>
+          <li>A bricked point waits on the Altar; the next corruption that holds takes it all.</li>
           <li>First to <span class="num">{s.settings.targetScore}</span> wins once the round is over; a tie goes to sudden death.</li>
         {/if}
       </ul>

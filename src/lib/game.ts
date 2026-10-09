@@ -488,6 +488,12 @@ export interface Player {
    * from older hosts). Turns: their own questions; race: questions they won.
    */
   streak?: number;
+  /** Turns: Vaal Orbs left to corrupt a pick with (see vaalStart); missing in race, Delve and older saves. */
+  vaal?: number;
+  /** Between games: a revenge orb, one more Vaal Orb in the next game for losing the last one. */
+  revenge?: number;
+  /** Turns: this game's corruptions that held and bricked, and the biggest Altar they took. */
+  ledger?: { held: number; bricked: number; altar: number };
 }
 
 /**
@@ -621,6 +627,8 @@ export interface Question {
   flared?: boolean;
   /** Delve, once `flared`: when it burnt (host clock). */
   flaredAt?: number;
+  /** Turns: the player corrupted this pick with a Vaal Orb (right HOLD more points, wrong BRICK fewer). */
+  vaal?: true;
   /** Race mode: wrong answers so far, in order. Those players are locked out. */
   misses: { playerId: string; index: number }[];
   /**
@@ -721,6 +729,11 @@ export interface Reveal {
    * answered. `caveIn` marks an Azurite Vein's; `winnerId` is whoever cleared it.
    */
   hits?: Hit[];
+  /**
+   * Turns, a corrupted question: what it did to the score (HOLD plus the
+   * Altar taken, or minus BRICK) and the Altar's points a hold took.
+   */
+  stake?: { delta: number; altar: number };
 }
 
 /** Someone who joined a running game: they watch until the next game starts. */
@@ -769,6 +782,14 @@ export interface GameState {
    * hosts): which game it is, and which answers in a codex log belong to it.
    */
   startedAt?: number;
+  /** Turns: points lost to bricked corruptions; the next corruption that holds takes them all (missing in other modes). */
+  altar?: number;
+  /**
+   * Turns: who the Vaal favoured with an orb, said on turn `turn`: players
+   * well behind at a round's end, or (`revenge`, on the first turn) the
+   * last game's losers.
+   */
+  favour?: { turn: number; ids: string[]; revenge?: true };
   /** Bumped on every change so clients can ignore stale messages. */
   version: number;
 }
@@ -782,7 +803,8 @@ export type Action =
   /** `custom`: only the knobs that change. */
   | { type: 'settings'; settings: Partial<Omit<Settings, 'custom'>> & { custom?: Partial<Knobs> } }
   | { type: 'start' }
-  | { type: 'pick'; category: string }
+  /** `vaal`: corrupt the pick with a Vaal Orb (turns only). */
+  | { type: 'pick'; category: string; vaal?: boolean }
   | { type: 'answer'; index: number | null; askedAt?: number }
   | { type: 'next' }
   | { type: 'skip' }
@@ -808,6 +830,26 @@ export type Action =
    * standing who hasn't answered it, from a random holder's pack).
    */
   | { type: 'blast'; askedAt: number };
+
+// ---- Vaal Orbs (turns) ------------------------------------------------
+// On their turn a player may corrupt their pick with a Vaal Orb: a right
+// answer then scores HOLD, a wrong one (or a time-out) costs BRICK, and the
+// point lost lies on the Altar until the next corruption that holds takes it.
+
+/** Points a corrupted right answer scores (before the Altar). */
+export const HOLD = 2;
+/** Points a corrupted wrong answer costs; they go on the Altar. */
+export const BRICK = 1;
+/** Points behind the leader at a round's end that earn a player the Vaal's favour (an orb). */
+export const FAVOUR_GAP = 3;
+/** Vaal Orbs each player starts a game with: one per 5 points to win, at least one. */
+export const vaalStart = (settings: Pick<Settings, 'targetScore'>) => Math.max(1, Math.round(settings.targetScore / 5));
+/** The most orbs favour brings a player up to: one more than they started with. */
+export const vaalCap = (settings: Pick<Settings, 'targetScore'>) => vaalStart(settings) + 1;
+/** Whether games under these settings hand out Vaal Orbs: turns (settings without a mode count as turns). */
+export const vaalMode = (settings: Pick<Settings, 'mode'>) => settings.mode !== 'race' && settings.mode !== 'delve';
+/** Whether this game is played with Vaal Orbs. */
+export const vaalOn = (s: GameState) => vaalMode(s.settings) && !s.delve;
 
 export const OFFER_COUNT = 3;
 export const MAX_PLAYERS = 12;
@@ -1201,6 +1243,25 @@ export class Engine {
           p.recent = [];
           p.streak = 0;
         }
+        // Turns: everyone's Vaal Orbs (a revenge orb on top for losing the last
+        // game), and an empty Altar. The run's own state comes below, so this
+        // goes by the mode.
+        const vaal = vaalMode(s.settings);
+        const revengers = s.players.filter((p) => (p.revenge ?? 0) > 0).map((p) => p.id);
+        for (const p of s.players) {
+          if (vaal) {
+            p.vaal = vaalStart(s.settings) + (p.revenge ?? 0);
+            p.ledger = { held: 0, bricked: 0, altar: 0 };
+          } else {
+            delete p.vaal;
+            delete p.ledger;
+          }
+          delete p.revenge;
+        }
+        if (vaal) s.altar = 0;
+        else delete s.altar;
+        if (vaal && revengers.length) s.favour = { turn: 0, ids: revengers, revenge: true };
+        else delete s.favour;
         s.round = 1;
         s.turnCount = 0;
         s.winners = [];
@@ -1238,7 +1299,7 @@ export class Engine {
         if (!isActive) throw new ActionError("It's not your turn.");
         if (!s.offered.includes(action.category)) throw new ActionError('That category is not on offer.');
         if (coop) this.closeVote(s, action.category);
-        else this.takePick(s, active, action.category);
+        else this.takePick(s, active, action.category, undefined, action.vaal === true);
         break;
       }
       case 'vote': {
@@ -1332,8 +1393,18 @@ export class Engine {
         let warded = false;
         let caveIn: Pick<Reveal, 'caveIn' | 'lost'> = {};
         let blown: ItemKind | null = null;
+        // Turns, a corrupted question: it holds (HOLD and the whole Altar) or bricks (BRICK onto the Altar).
+        let stake: Reveal['stake'];
+        const ledger = q.vaal && !s.delve ? (active.ledger ??= { held: 0, bricked: 0, altar: 0 }) : null;
         if (correct) {
-          active.score += 1;
+          if (ledger) {
+            const taken = s.altar ?? 0;
+            active.score += HOLD + taken;
+            s.altar = 0;
+            stake = { delta: HOLD + taken, altar: taken };
+            ledger.held++;
+            ledger.altar = Math.max(ledger.altar, taken);
+          } else active.score += 1;
           // A right answer to a find earns its item (see delve.ts findReward): it is only offered to a player with room for it.
           const reward = s.delve && q.find ? findReward(q.find, inventoryOf(s, active.id), this.answeredFast(s, q, from)) : null;
           if (reward) [gained, forged] = this.gain(s, active.id, reward);
@@ -1348,6 +1419,12 @@ export class Engine {
           if (q.find && cavesIn(q.find)) caveIn = { caveIn: true, lost };
           // A Dynamite Cache's blast takes one thing from their pack too.
           blown = this.blowUp(s, active.id);
+        } else if (ledger) {
+          // Wrong or out of time: the point goes onto the Altar.
+          active.score -= BRICK;
+          s.altar = (s.altar ?? 0) + BRICK;
+          stake = { delta: -BRICK, altar: 0 };
+          ledger.bricked++;
         }
         if (!timedOut && chosenId && isFake(chosenId)) s.used.push(chosenId);
         if (s.deathmatch) s.deathmatch.results[active.id] = correct;
@@ -1364,6 +1441,7 @@ export class Engine {
           ...(warded ? { warded } : {}),
           ...caveIn,
           ...(blown ? { blown } : {}),
+          ...(stake ? { stake } : {}),
         };
         s.phase = 'reveal';
         break;
@@ -1394,6 +1472,9 @@ export class Engine {
         if (race) this.advanceRace(s);
         else {
           if (s.deathmatch && s.players[s.turn]) s.deathmatch.results[s.players[s.turn].id] = false;
+          // A corrupted question set aside gives its Vaal Orb back.
+          const skipped = s.players[s.turn];
+          if (s.phase === 'question' && s.question?.vaal && skipped) skipped.vaal = (skipped.vaal ?? 0) + 1;
           this.advance(s);
         }
         break;
@@ -1417,14 +1498,17 @@ export class Engine {
         s.question = this.makeQuestion(s, voided.category, voided);
         // One a blast asked stays one (never a find's, see blast).
         if (voided.blast) s.question.blast = voided.blast;
+        // A corrupted one stays corrupted, on the orb already spent.
+        if (voided.vaal) s.question.vaal = true;
         s.used.push(s.question.itemId);
         break;
       }
       case 'restart': {
         if (!isHost) throw new ActionError('Only the host can restart.');
         const fresh = createGame(s.hostId, s.settings);
-        // Players who left during the game don't come back as ghosts in the lobby.
-        fresh.players = s.players.filter((p) => p.connected).map((p) => ({ ...p, score: 0, recent: [], streak: 0 }));
+        // Players who left during the game don't come back as ghosts in the lobby
+        // (and their Vaal Orbs and ledger go with the game: 'start' hands out new ones).
+        fresh.players = s.players.filter((p) => p.connected).map(({ vaal: _vaal, ledger: _ledger, ...p }) => ({ ...p, score: 0, recent: [], streak: 0 }));
         // Renames during the game take effect on colours now.
         const claims = fresh.players.filter((p) => reservedHue(p) !== undefined);
         for (const p of [...claims, ...fresh.players.filter((p) => !claims.includes(p))]) settleHue(fresh, p);
@@ -1435,6 +1519,9 @@ export class Engine {
         fresh.used = s.used;
         Object.assign(s, fresh);
         delete s.startedAt;
+        // Object.assign keeps what createGame has no key for: the Altar and the favour go with the game.
+        delete s.altar;
+        delete s.favour;
         if (action.play) return this.apply(s, { type: 'start' }, from);
         break;
       }
@@ -1675,7 +1762,10 @@ export class Engine {
    * the host's own record, so a guest can't make one up. With two finds on
    * offer, the question is the picked card's find, if it holds one.
    */
-  private takePick(s: GameState, active: Player | null, category: string, missedBefore?: Record<string, number>) {
+  private takePick(s: GameState, active: Player | null, category: string, missedBefore?: Record<string, number>, vaal = false) {
+    // Turns: a corrupted pick spends one of the player's Vaal Orbs (none in a deathmatch).
+    if (vaal && (!vaalOn(s) || s.deathmatch || !active || (active.vaal ?? 0) <= 0))
+      throw new ActionError(s.deathmatch ? 'No corrupting in a deathmatch.' : 'You have no Vaal Orb to spend.');
     let kind: Pick<Question, 'find'> = {};
     if (s.delve) {
       // What the question can change, in case it is set aside (see 'resumed').
@@ -1699,6 +1789,10 @@ export class Engine {
       active.recent = lastPicks([...active.recent, category], rulesFor(s.settings).lockout);
     }
     s.question = this.makeQuestion(s, category, kind);
+    if (vaal && active) {
+      s.question.vaal = true;
+      active.vaal = (active.vaal ?? 0) - 1;
+    }
     s.used.push(s.question.itemId);
     s.phase = 'question';
   }
