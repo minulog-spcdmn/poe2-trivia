@@ -15,6 +15,9 @@ import {
   loadHunts,
   newReveal,
   parseHunts,
+  parseTally,
+  tallyHunt,
+  type HuntTally,
   recordHunt,
   serializeHunts,
   setQuickDifficulty,
@@ -279,4 +282,163 @@ test('newReveal: each turns reveal once, as it begins; none for a race, a Delve 
   run = engine.apply(run, { type: 'answer', index: dq.options.indexOf(dq.itemId), askedAt: dq.askedAt }, 'p0');
   assert.equal(run.phase, 'reveal');
   assert.equal(newReveal(asking, run), null);
+});
+
+test('tallyHunt: each reveal of a turns game once, in order, with each player\'s count and best run', () => {
+  const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
+  let seed = 11;
+  let clock = 1000;
+  const engine = new Engine(items, { rng: () => ((seed = (seed * 1664525 + 1013904223) >>> 0), seed / 2 ** 32), now: () => (clock += 10) });
+  let s: GameState = createGame('p0', { targetScore: 4, timer: 0, difficulty: 'cruel', public: false, locked: false });
+  for (const [i, name] of ['Ash', 'Bo'].entries()) s = engine.apply(s, { type: 'join', playerId: `p${i}`, name }, `p${i}`);
+  // Seen in the lobby: nothing to tally yet.
+  assert.equal(tallyHunt(null, null, s, false), null);
+  s = engine.apply(s, { type: 'start' }, 'p0');
+
+  let t: HuntTally | null = null;
+  let prev: GameState | null = null;
+  const see = (next: GameState, fresh = false) => {
+    t = tallyHunt(t, prev, next, fresh);
+    prev = next;
+  };
+  see(s);
+  assert.deepEqual(t, { game: s.startedAt, seen: [], players: {} }, 'a new tally as the game starts');
+  const expected: { at: number; id: string; by: string; ok: boolean; fresh: boolean }[] = [];
+  const counts: Record<string, { right: number; asked: number; peak: number; run: number }> = {};
+  let n = 0;
+  while (s.phase !== 'over') {
+    const by = s.players[s.turn].id;
+    see((s = engine.apply(s, { type: 'pick', category: s.offered[0] }, by)));
+    const q = s.question!;
+    // Ash: right, right, wrong, then right; Bo: wrong and right in turn.
+    const k = counts[by]?.asked ?? 0;
+    const ok = by === 'p0' ? k !== 2 : k % 2 === 1;
+    const index = ok ? q.options.indexOf(q.itemId) : q.options.findIndex((o) => o !== q.itemId);
+    const fresh = n % 3 === 0;
+    see((s = engine.apply(s, { type: 'answer', index, askedAt: q.askedAt }, by)), fresh);
+    expected.push({ at: q.askedAt, id: q.itemId, by, ok, fresh });
+    const c = (counts[by] ??= { right: 0, asked: 0, peak: 0, run: 0 });
+    c.asked++;
+    c.right += +ok;
+    c.run = ok ? c.run + 1 : 0;
+    c.peak = Math.max(c.peak, c.run);
+    // The same reveal again (a guest joining, the room going public): counted once.
+    const before = t;
+    see({ ...s, version: s.version + 1 });
+    assert.equal(t, before, 'unchanged, the same tally');
+    see(publicView(s));
+    assert.equal(t, before, 'nor as a guest gets it');
+    see((s = engine.apply(s, { type: 'next' }, 'p0')));
+    n++;
+  }
+  const tally = t as HuntTally | null;
+  assert.ok(tally);
+  assert.deepEqual(tally.seen, expected, 'every reveal, in order, with who answered and how');
+  for (const [id, c] of Object.entries(counts)) {
+    assert.deepEqual(tally.players[id], { right: c.right, asked: c.asked, peak: c.peak }, id);
+    assert.equal(tally.players[id].right, s.players.find((p) => p.id === id)!.score, `${id}: the right answers are the score`);
+  }
+  assert.deepEqual([counts.p0.peak, counts.p1.peak], [2, 1], 'runs of their own');
+  // Seen over: the same tally stays.
+  const over = tally;
+  see(s);
+  assert.equal(t, over);
+  assert.deepEqual(parseTally(JSON.stringify(over)), over, 'kept as it was through session storage');
+
+  // Play again: a fresh tally for the new game.
+  see((s = engine.apply(s, { type: 'restart', play: true }, 'p0')));
+  const again = t as HuntTally | null;
+  assert.ok(again && s.startedAt);
+  assert.notEqual(again.game, over.game);
+  assert.deepEqual(again, { game: s.startedAt, seen: [], players: {} });
+  // Back to the lobby: none.
+  see((s = engine.apply(s, { type: 'restart', play: false }, 'p0')));
+  assert.equal(t, null);
+});
+
+test('tallyHunt: alone, the questions asked are the turns gone by (Session.noteHunt)', () => {
+  const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
+  let seed = 3;
+  let clock = 1000;
+  const engine = new Engine(items, { rng: () => ((seed = (seed * 1664525 + 1013904223) >>> 0), seed / 2 ** 32), now: () => (clock += 10) });
+  let s: GameState = createGame(null);
+  s = engine.apply(s, { type: 'settings', settings: { mode: 'turns', targetScore: QUICK_TARGET, difficulty: QUICK_DEFAULT, timer: QUICK_TIMER } }, null);
+  s = engine.apply(s, { type: 'join', playerId: 'me', name: 'Exile' }, null);
+  s = engine.apply(s, { type: 'start' }, null);
+  let t: HuntTally | null = tallyHunt(null, null, s, false);
+  let n = 0;
+  while (s.phase !== 'over') {
+    let next = engine.apply(s, { type: 'pick', category: s.offered[0] }, null);
+    t = tallyHunt(t, s, next, false);
+    s = next;
+    const q = s.question!;
+    next = engine.apply(s, { type: 'answer', index: n++ % 4 === 1 ? q.options.findIndex((o) => o !== q.itemId) : q.options.indexOf(q.itemId), askedAt: q.askedAt }, null);
+    t = tallyHunt(t, s, next, true);
+    s = next;
+    next = engine.apply(s, { type: 'next' }, null);
+    t = tallyHunt(t, s, next, false);
+    s = next;
+  }
+  assert.deepEqual(t!.players.me, { right: QUICK_TARGET, asked: s.turnCount + 1, peak: 3 });
+  assert.equal(t!.seen.filter((x) => x.fresh).length, s.turnCount + 1);
+});
+
+test('tallyHunt: a race and a Delve run have none', () => {
+  const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
+  let seed = 9;
+  let clock = 1000;
+  const engine = new Engine(items, { rng: () => ((seed = (seed * 1664525 + 1013904223) >>> 0), seed / 2 ** 32), now: () => (clock += 10) });
+  const begin = (settings: Partial<Settings>, names: string[]) => {
+    let s: GameState = createGame('p0', { targetScore: 3, timer: 0, difficulty: 'cruel', public: false, locked: false, ...settings });
+    names.forEach((name, i) => (s = engine.apply(s, { type: 'join', playerId: `p${i}`, name }, `p${i}`)));
+    return engine.apply(s, { type: 'start' }, 'p0');
+  };
+  const race = begin({ mode: 'race' }, ['Ash', 'Bo']);
+  const rq = race.question!;
+  const raced = engine.apply(race, { type: 'answer', index: rq.options.indexOf(rq.itemId), askedAt: rq.askedAt }, 'p1');
+  assert.equal(raced.phase, 'reveal');
+  assert.equal(tallyHunt(null, null, race, false), null);
+  assert.equal(tallyHunt({ game: race.startedAt!, seen: [], players: {} }, race, raced, true), null);
+
+  let run = structuredClone(begin({ mode: 'delve' }, ['Ash']));
+  run.delve!.finds = [];
+  run = engine.apply(run, { type: 'pick', category: run.offered[0] }, 'p0');
+  run = engine.apply(run, { type: 'clock', askedAt: run.question!.askedAt }, null);
+  const dq = run.question!;
+  const fell = engine.apply(run, { type: 'answer', index: dq.options.indexOf(dq.itemId), askedAt: dq.askedAt }, 'p0');
+  assert.equal(fell.phase, 'reveal');
+  assert.equal(tallyHunt(null, run, fell, true), null);
+});
+
+test('parseTally: a kept tally comes back as it was; junk is nothing, and anything odd inside is dropped', () => {
+  const t: HuntTally = {
+    game: 1700,
+    seen: [
+      { at: 1710, id: 'abc', by: 'p0', ok: true, fresh: true },
+      { at: 1720, id: 'def', by: 'p1', ok: false, fresh: false },
+    ],
+    players: { p0: { right: 1, asked: 1, peak: 1 }, p1: { right: 0, asked: 1, peak: 0 } },
+    earned: ['prima-materia'],
+    known: 40,
+    result: { first: false, best: true, previousBest: { right: 5, asked: 8 }, right: 5, asked: 6 },
+  };
+  assert.deepEqual(parseTally(JSON.stringify(t)), t);
+  const firstHunt = { ...t, result: { first: true, best: true, previousBest: null, right: 5, asked: 7 } };
+  assert.deepEqual(parseTally(JSON.stringify(firstHunt)), firstHunt, 'no best before it');
+  for (const result of [{ ...t.result, first: 'yes' }, { ...t.result, previousBest: { right: -1, asked: 2 } }, { ...t.result, asked: 2.5 }, { first: true, best: true, right: 5, asked: 5 }])
+    assert.equal(parseTally(JSON.stringify({ ...t, result }))?.result, undefined, JSON.stringify(result));
+  const { earned: _, result: __, known: ___, ...plain } = t;
+  assert.deepEqual(parseTally(JSON.stringify(plain)), plain, 'no earned list until it was read');
+  for (const junk of [null, '', 'not json', '[]', 'null', '42', '{"game":', JSON.stringify({ seen: [], players: {} }), JSON.stringify({ game: 'x', seen: [], players: {} }), JSON.stringify({ game: 0, seen: [], players: {} }), JSON.stringify({ game: 5, seen: {}, players: {} }), JSON.stringify({ game: 5, seen: [], players: [] })])
+    assert.equal(parseTally(junk), null, String(junk));
+  const odd = parseTally(
+    JSON.stringify({
+      game: 5,
+      seen: [{ at: 6, id: 'abc', by: 'p0', ok: true, fresh: false }, { at: -1, id: 'x', by: 'p0', ok: true, fresh: false }, { at: 7, id: '', by: 'p0', ok: true, fresh: false }, { at: 8, id: 'y', by: 'p0', ok: 'yes', fresh: false }, 'nonsense'],
+      players: { p0: { right: 1, asked: 1, peak: 1 }, p1: { right: 2, asked: 1, peak: 0 }, p2: { right: -1, asked: 1, peak: 0 }, p3: { right: 1, asked: 1.5, peak: 0 } },
+      earned: ['a', 7, ''],
+      known: -3,
+    }),
+  );
+  assert.deepEqual(odd, { game: 5, seen: [{ at: 6, id: 'abc', by: 'p0', ok: true, fresh: false }], players: { p0: { right: 1, asked: 1, peak: 1 } }, earned: ['a'] });
 });

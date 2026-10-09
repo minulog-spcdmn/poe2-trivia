@@ -17,6 +17,7 @@
   import { BLUE_FROM, accentAt } from '../lib/descent';
   import { zoneAt } from '../lib/zoneSigils';
   import { delverText, lossDepths } from '../lib/difficultyText';
+  import HuntRecap from './HuntRecap.svelte';
 
   const s = $derived(session.state!);
   const won = (id: string) => s.winners.includes(id);
@@ -52,17 +53,68 @@
     // Still here (the restart was refused)? Let the host try again.
     setTimeout(() => (leaving = false), 1500);
   }
+  /**
+   * A hunt alone on this device (a quick hunt, lib/hunt.ts, or any game of
+   * turns with one exile): its own words, no standings, and the next hunt or
+   * a friend's room right under them.
+   */
+  const soloHunt = $derived(session.mode === 'local' && !run && s.settings.mode !== 'race' && s.players.length === 1);
+  /** How this quick hunt measured up (Session.noteHunt; a reload keeps it with the tally). */
+  const hunt = $derived(session.huntResult?.game === s.startedAt ? session.huntResult : null);
+  /** The game as this device saw it (Session.huntTally): a reload keeps it. */
+  const tally = $derived(s.startedAt && session.huntTally?.game === s.startedAt ? session.huntTally : null);
+  /** What this device learned from the game: a turns game played here (online, in a seat). */
+  const showRecap = $derived(
+    !run && s.settings.mode !== 'race' && !!tally && (session.mode === 'local' || (!!session.myPlayerId && s.players.some((p) => p.id === session.myPlayerId))),
+  );
+  /** A hunt alone: how many it named right of how many asked, and its best run. Alone, every turn asks one question. */
+  const huntSub = $derived.by(() => {
+    if (!soloHunt || !winner || !tally) return '';
+    const right = winner.score;
+    const asked = hunt?.asked ?? s.turnCount + 1;
+    const peak = Math.max(tally.players[winner.id]?.peak ?? 0, winner.streak ?? 0);
+    if (right >= asked) return `A perfect hunt: ${right} of ${asked} named right.`;
+    return peak >= 2 ? `${right} of ${asked} named right; best run ${peak} in a row` : `${right} of ${asked} named right`;
+  });
+
+  /** A hunt alone: the same rules in a room of its own, for a friend to join; hosted under the hunter's name. */
+  function playFriend() {
+    if (leaving || !winner) return;
+    leaving = true;
+    const { targetScore, difficulty, timer, custom } = s.settings;
+    const name = winner.name;
+    session.leave();
+    session.host(name, { targetScore, difficulty, timer, ...(custom ? { custom } : {}) });
+  }
+
   const iWon = $derived(session.mode !== 'local' && winner?.id === session.myPlayerId);
   // A descent has no victory: alone it ends where you fell, and a group's
   // deepest delver went furthest before falling (or stood last), nothing more.
   const headline = $derived.by(() => {
+    if (soloHunt) return `Well hunted, ${winner?.name}!`;
     if (!run) return iWon ? 'You are victorious!' : `${winner?.name} wins!`;
     if (solo) return `Depth ${shownDepth(winner ? depthOf(winner.id) : s.round)}`;
     return `Depth ${shownDepth(team?.depth ?? s.round)}`;
   });
   /** Deeper than this browser has been before in a run of its kind (not the very first one). */
   const deeper = $derived(newBest && session.delveResult?.previousBest !== null);
-  const kicker = $derived(!run ? 'Victory' : deeper ? (solo ? 'Deeper than ever' : 'Deeper than ever together') : solo ? 'Perished' : 'The descent ends');
+  const kicker = $derived(
+    soloHunt
+      ? hunt?.first
+        ? 'First hunt complete'
+        : hunt?.best && hunt.previousBest
+          ? 'Best hunt yet'
+          : 'Hunt complete'
+      : !run
+        ? 'Victory'
+        : deeper
+          ? solo
+            ? 'Deeper than ever'
+            : 'Deeper than ever together'
+          : solo
+            ? 'Perished'
+            : 'The descent ends',
+  );
   /**
    * Delve: how the run measured up against this browser's records of its
    * kind (lib/delveRecord.ts), alone or together; nothing for a run whose
@@ -244,7 +296,7 @@
 <canvas bind:this={canvas} class="sparks" use:portal={'dim'} aria-hidden="true"></canvas>
 
 <div class="over" class:delve={!!run} class:deeper>
-  <p class="kicker" in:fly={{ y: -10, duration: 600 }}>{kicker}</p>
+  <p class="kicker" class:long={soloHunt && kicker.length > 14} in:fly={{ y: -10, duration: 600 }}>{kicker}</p>
   {#if winner}
     <div class="crown" class:fallen={!!run} bind:this={crown} in:scale={{ start: 0.4, duration: 900, delay: 200 }}>
       <!-- Delve: the deeper the run went, the colder the circle. -->
@@ -273,6 +325,8 @@
       {#if run}
         {delveSub}{#if run.mixed}{delveSub ? ' ' : ''}Finished under newer rules.{/if}
         {#if zone}<span class="zone" style:--accent={zone.accent}>{zone.name}</span>{/if}
+      {:else if huntSub}
+        {huntSub}
       {:else}
         {winner.score} {winner.score === 1 ? 'point' : 'points'} after {s.round} {s.settings.mode === 'race' ? (s.round === 1 ? 'question' : 'questions') : s.round === 1 ? 'round' : 'rounds'}
         {#if s.deathmatch}· won the deathmatch in round {s.deathmatch.round}{/if}
@@ -280,37 +334,43 @@
     </p>
   {/if}
 
-  <ol class="standings panel" bind:this={standingsEl} use:backdropShadow={{ fill: 'linear' }} in:fly={{ y: 30, duration: 700, delay: 900 }}>
-    {#each standings as p, i (p.id)}
-      {@const row = team?.players.find((r) => r.id === p.id)}
-      <li class:first={!team && rank[i] === 1} class:delver={!!row} in:fly={{ x: -20, duration: 400, delay: 1100 + i * 100 }}>
-        {#if !team}<span class="rank">{rank[i]}</span>{/if}
-        <Avatar name={p.name} hue={p.hue} size={30} />
-        {#if row}
-          <!-- Together: what each of them lost, gave and was given; their number is where they last perished. -->
-          <span class="name">
-            <PlayerName name={p.name} />{#if p.id === session.myPlayerId && session.mode !== 'local'}<em>&nbsp;(you)</em>{/if}
-            <span class="detail"
-              >{#each delverText(row).split(/(\d+)/) as part, j (j)}{#if j % 2}<span class="n">{part}</span>{:else}{part}{/if}{/each}</span
-            >
-          </span>
-          <span class="pts depth" title={row.lives ? 'Still standing' : `Perished at depth ${shownDepth(row.depth)}`}>{shownDepth(row.depth)}</span>
-        {:else}
-        <span class="name"><PlayerName name={p.name} /></span>
-        {/if}
-        {#if team}
-          <!-- Its depth is beside the name, above. -->
-        {:else if run}
-          <span class="pts depth" title="Perished at depth {shownDepth(depthOf(p.id))}">{shownDepth(depthOf(p.id))}</span>
-        {:else}
-          <span class="pts">{p.score}</span>
-        {/if}
-      </li>
-    {/each}
-  </ol>
+  {#if !soloHunt}
+    <ol class="standings panel" bind:this={standingsEl} use:backdropShadow={{ fill: 'linear' }} in:fly={{ y: 30, duration: 700, delay: 900 }}>
+      {#each standings as p, i (p.id)}
+        {@const row = team?.players.find((r) => r.id === p.id)}
+        <li class:first={!team && rank[i] === 1} class:delver={!!row} in:fly={{ x: -20, duration: 400, delay: 1100 + i * 100 }}>
+          {#if !team}<span class="rank">{rank[i]}</span>{/if}
+          <Avatar name={p.name} hue={p.hue} size={30} />
+          {#if row}
+            <!-- Together: what each of them lost, gave and was given; their number is where they last perished. -->
+            <span class="name">
+              <PlayerName name={p.name} />{#if p.id === session.myPlayerId && session.mode !== 'local'}<em>&nbsp;(you)</em>{/if}
+              <span class="detail"
+                >{#each delverText(row).split(/(\d+)/) as part, j (j)}{#if j % 2}<span class="n">{part}</span>{:else}{part}{/if}{/each}</span
+              >
+            </span>
+            <span class="pts depth" title={row.lives ? 'Still standing' : `Perished at depth ${shownDepth(row.depth)}`}>{shownDepth(row.depth)}</span>
+          {:else}
+          <span class="name"><PlayerName name={p.name} /></span>
+          {/if}
+          {#if team}
+            <!-- Its depth is beside the name, above. -->
+          {:else if run}
+            <span class="pts depth" title="Perished at depth {shownDepth(depthOf(p.id))}">{shownDepth(depthOf(p.id))}</span>
+          {:else}
+            <span class="pts">{p.score}</span>
+          {/if}
+        </li>
+      {/each}
+    </ol>
+  {/if}
 
-  <div class="actions" in:fly={{ y: 20, duration: 600, delay: 1300 }}>
-    {#if session.isHost}
+  <div class="actions" class:hunt={soloHunt} in:fly={{ y: 20, duration: 600, delay: soloHunt ? 900 : 1300 }}>
+    {#if soloHunt}
+      <!-- Play again with the same rules (the items already asked stay out), or the same hunt against a friend. -->
+      <button class="btn primary big" disabled={leaving} onclick={() => again(true)}>Hunt again</button>
+      <button class="btn ghost" disabled={leaving} onclick={playFriend}>Play a friend</button>
+    {:else if session.isHost}
       <button class="btn primary big" disabled={leaving} onclick={() => again(true)}>Play again</button>
       <button class="btn ghost" disabled={leaving} onclick={() => again(false)}>{#if run}<span><span class="roomy">Back to</span> lobby</span>{:else}Change settings{/if}</button>
     {:else}
@@ -333,6 +393,9 @@
       </span>
     {/if}
   </div>
+  {#if showRecap}
+    <HuntRecap me={session.mode === 'local' ? null : session.myPlayerId} />
+  {/if}
   {#if spectators.length}
     <p class="joining muted" in:fly={{ y: 10, duration: 600, delay: 1400 }}>
       {spectators.map((o) => o.name).join(', ')} {spectators.length === 1 ? 'joins' : 'join'} the next game.
@@ -640,9 +703,18 @@
     .roomy {
       display: none;
     }
+    /* "First hunt complete" on one line. */
+    .kicker.long {
+      letter-spacing: 0.3em;
+      padding-left: 0.3em;
+    }
   }
   .actions p {
     margin: 0;
     font-style: italic;
+  }
+  /* A hunt alone: right under its line, with no standings between. */
+  .actions.hunt {
+    margin-top: 0;
   }
 </style>

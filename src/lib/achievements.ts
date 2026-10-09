@@ -570,9 +570,57 @@ export function earnedFrom(s: Summary): string[] {
   return ids;
 }
 
+/** An achievement with its progress (null: a moment) and when it was earned (null: not yet). */
+export interface SealRow {
+  achievement: Achievement;
+  progress: Progress | null;
+  earned: number | null;
+}
+
 /** Each achievement with its progress and when it was earned (null: not yet), in the list's order. */
-export function standings(s: Summary, store: AchievementStore) {
+export function standings(s: Summary, store: AchievementStore): SealRow[] {
   return ACHIEVEMENTS.map((a) => ({ achievement: a, progress: a.progress?.(s) ?? null, earned: store.earned[a.id] ?? null }));
+}
+
+/**
+ * Where every achievement stands now, from what this browser keeps (the end
+ * screen's recap, HuntRecap.svelte). What the codex and the records earn
+ * counts as earned already: the check that writes it waits for an idle
+ * moment (Session.noteAchievements), which may come after the recap reads.
+ */
+export function sealRows(items: Item[]): SealRow[] {
+  const s = summarize(loadCodex(), loadRecords(), items, loadWins());
+  const now = Date.now();
+  return standings(s, { earned: { ...Object.fromEntries(earnedFrom(s).map((id) => [id, now])), ...loadAchievements().earned } });
+}
+
+/**
+ * The one seal a game's recap names: one earned since `before` (the
+ * achievements earned as the game began; the highest tier first); else First
+ * Victory while it is still to earn, the one a player alone on a device can
+ * go and get by playing someone; else the one nearest done of those with a
+ * progress to show (never a secret one), the lower tier on a tie. Null when
+ * none is left.
+ */
+export function nextSeal(rows: SealRow[], before: Set<string> | null): SealRow | null {
+  if (before) {
+    const now = rows.filter((r) => r.earned !== null && !before.has(r.achievement.id));
+    if (now.length) return now.reduce((a, b) => (b.achievement.tier > a.achievement.tier ? b : a));
+  }
+  const victory = rows.find((r) => r.achievement.id === 'first-victory');
+  if (victory && victory.earned === null) return victory;
+  let best: SealRow | null = null;
+  let bestShare = -1;
+  for (const r of rows) {
+    const p = r.progress;
+    if (r.earned !== null || r.achievement.secret || !p || p.need <= 0) continue;
+    const share = p.have / p.need;
+    if (share > bestShare || (share === bestShare && best && r.achievement.tier < best.achievement.tier)) {
+      best = r;
+      bestShare = share;
+    }
+  }
+  return best;
 }
 
 // ---- moments in a run of Delve ------------------------------------------------

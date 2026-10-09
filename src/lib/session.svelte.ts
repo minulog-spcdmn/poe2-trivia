@@ -29,6 +29,7 @@ import {
   type Grayscale,
   type Item,
   type Preset,
+  type Settings,
 } from './game';
 import { PEER_OPTIONS, PEER_PREFIX } from './peer';
 import { Beacon, type RoomInfo } from './rooms';
@@ -70,7 +71,7 @@ import {
   type DelveNotice,
 } from './delveSession';
 import { readLegacy, readStored, removeLegacy, removeStored, writeStored } from './storage';
-import { QUICK_TARGET, QUICK_TIMER, initiateFlag, isNewcomer, newReveal, recordHunt, type HuntBest } from './hunt';
+import { QUICK_TARGET, QUICK_TIMER, initiateFlag, isNewcomer, newReveal, parseTally, recordHunt, tallyHunt, type HuntResult, type HuntTally } from './hunt';
 
 export const engine = new Engine(itemData as Item[], { fakes: fakeNames });
 
@@ -249,7 +250,7 @@ class Session {
    * (`game`: its startedAt). `first`: this browser's first; `best`: fewer
    * questions than ever on its difficulty.
    */
-  huntResult = $state<{ game: number; first: boolean; best: boolean; previousBest: HuntBest | null; right: number; asked: number } | null>(null);
+  huntResult = $state<({ game: number } & HuntResult) | null>(null);
   /**
    * The Codex ticker: the latest turns reveal this device saw begin (`qid`:
    * its askedAt), whether its item was new to this browser's codex, and how
@@ -265,6 +266,12 @@ class Session {
   firstFind = $state<number | null>(null);
   /** The achievements this browser had earned when the game began (null until read): what the game earns is the rest. */
   earnedAtStart = $state.raw<Set<string> | null>(null);
+  /**
+   * A turns game as this device saw it, for its end screen's recap
+   * (lib/hunt.ts tallyHunt, HuntRecap.svelte): every reveal, and each
+   * player's count. Kept in this tab's session storage, so a reload keeps it.
+   */
+  huntTally = $state.raw<HuntTally | null>(null);
   /** The game (its startedAt) the ticker follows, and what it holds for it. */
   private gameSeen = 0;
   /** The items this browser's codex holds: what it had when the game began, and every reveal seen since. */
@@ -451,6 +458,8 @@ class Session {
    * dropped when a game is resumed or a room joined instead.
    */
   delveLink = false;
+  /** The settings the room being opened starts with, if not the remembered ones (host). Used up as it opens. */
+  private roomPreset: Partial<Settings> | null = null;
 
   /** A Delve run alone on this device, straight from a shared link. */
   startDelve(name: string) {
@@ -505,11 +514,16 @@ class Session {
 
   // ---- hosting ----------------------------------------------------------
 
-  host(name: string) {
+  /**
+   * Opens a room. `preset`: the settings it opens with, over the ones this
+   * browser remembers (a quick hunt's end screen: Play a friend).
+   */
+  host(name: string, preset?: Partial<Settings>) {
     this.reset();
     this.mode = 'host';
     this.status = 'connecting';
     this.joinName = name;
+    this.roomPreset = preset ?? null;
     this.loadPrivate(noPrivate(randomToken(12)));
     this.openRoom(randomCode(), 0);
   }
@@ -558,8 +572,10 @@ class Session {
         if (s.delve) s = engine.apply(s, { type: 'resumed' }, null);
         this.setState(s);
       } else {
-        let s = createGame(me, this.delveLink ? { ...roomSettings(), mode: 'delve' } : roomSettings());
+        const preset = this.roomPreset;
+        let s = createGame(me, this.delveLink ? { ...roomSettings(), mode: 'delve' } : preset ? { ...roomSettings(), ...preset, mode: 'turns' } : roomSettings());
         this.delveLink = false;
+        this.roomPreset = null;
         try {
           // A host on a browser that has never played is an Initiate in their own room.
           s = engine.apply(s, { type: 'join', playerId: me, name: this.joinName, ...initiateFlag() }, me);
@@ -1634,9 +1650,18 @@ class Session {
     const difficulty = settings.difficulty;
     if (next.delve || settings.mode === 'race' || players.length !== 1 || settings.targetScore !== QUICK_TARGET || difficulty === 'custom' || !startedAt) return;
     const right = players[0].score;
-    const asked = next.turnCount + 1;
+    // The recap's count of the questions, which alone is one a turn (a reask
+    // takes its question's place): the turns gone by are the floor, should
+    // the tally have missed some (a reload with session storage blocked).
+    const tallied = this.huntTally?.game === startedAt ? (this.huntTally.players[players[0].id]?.asked ?? 0) : 0;
+    const asked = Math.max(tallied, next.turnCount + 1);
     const r = recordHunt({ difficulty, right, asked, game: startedAt, at: Date.now() });
-    if (r) this.huntResult = { game: startedAt, first: r.first, best: r.best, previousBest: r.previousBest, right, asked };
+    if (!r) return;
+    const result: HuntResult = { first: r.first, best: r.best, previousBest: r.previousBest, right, asked };
+    this.huntResult = { game: startedAt, ...result };
+    // Kept with the tally, so a reload on the end screen still knows it.
+    const t = this.huntTally;
+    if (t?.game === startedAt) this.keepTally({ ...t, result });
   }
 
   /**
@@ -1659,12 +1684,20 @@ class Session {
       if (!next.delve && next.settings.mode !== 'race') {
         void import('./codex')
           .then(({ loadCodex }) => {
-            if (this.gameSeen === game) this.knownItems = new Set(Object.keys(loadCodex().items).filter((id) => engine.byId.has(id)));
+            if (this.gameSeen !== game) return;
+            const known = (this.knownItems = new Set(Object.keys(loadCodex().items).filter((id) => engine.byId.has(id))));
+            // What the codex held as the game began, for the recap's bar (after a reload, kept with the tally).
+            const t = this.huntTally;
+            if (t?.game === game && t.known === undefined) this.keepTally({ ...t, known: known.size });
           })
           .catch((err) => console.warn('codex', err));
         void import('./achievements')
           .then(({ loadAchievements }) => {
-            if (this.gameSeen === game) this.earnedAtStart = new Set(Object.keys(loadAchievements().earned));
+            if (this.gameSeen !== game) return;
+            // After a reload, the ones the game began with were kept with its tally (noteTally).
+            const before = (this.earnedAtStart ??= new Set(Object.keys(loadAchievements().earned)));
+            const t = this.huntTally;
+            if (t?.game === game && !t.earned) this.keepTally({ ...t, earned: [...before] });
           })
           .catch((err) => console.warn('achievements', err));
       }
@@ -1676,6 +1709,14 @@ class Session {
     if (known && engine.byId.has(seen.id)) {
       const fresh = !known.has(seen.id);
       known.add(seen.id);
+      // A wrong "find the art" pick, where the codex records the answer
+      // (codex.ts encounterAt: alone on this device, or online your own),
+      // names the art picked too, and the codex counts that item as seen.
+      const q = next.question;
+      const r = next.reveal;
+      const recorded = this.mode === 'local' ? next.players.length === 1 : seen.by === this.myPlayerId;
+      const picked = !seen.ok && recorded && q?.mode === 'art' && r?.chosenIndex != null ? q.options[r.chosenIndex] : undefined;
+      if (picked && engine.byId.has(picked)) known.add(picked);
       this.discovery = { qid: seen.at, fresh, count: known.size };
     }
     const own = this.mode === 'local' || seen.by === this.myPlayerId;
@@ -1685,9 +1726,38 @@ class Session {
     }
   }
 
+  /**
+   * The recap's tally (huntTally): one more reveal as each begins, with
+   * whether the Codex ticker found its item new. After a reload it carries
+   * on from the one this tab kept, and so do the achievements the game
+   * began with (earnedAtStart, which the reload would read afresh) and how
+   * a quick hunt measured up (huntResult, recorded once).
+   */
+  private noteTally(prev: GameState | null, next: GameState) {
+    let t = this.huntTally;
+    if (t?.game !== next.startedAt && next.startedAt && !next.delve && next.settings.mode !== 'race') {
+      const kept = parseTally(readStored(TALLY, 'session'));
+      if (kept?.game === next.startedAt) {
+        t = kept;
+        if (kept.earned) this.earnedAtStart = new Set(kept.earned);
+        if (kept.result) this.huntResult = { game: kept.game, ...kept.result };
+      }
+    }
+    const d = this.discovery;
+    const tally = tallyHunt(t, prev, next, !!d?.fresh && d.qid === next.question?.askedAt);
+    if (tally !== this.huntTally) this.keepTally(tally);
+  }
+
+  private keepTally(t: HuntTally | null) {
+    this.huntTally = t;
+    if (t) writeStored(TALLY, JSON.stringify(t), 'session');
+    else removeStored(TALLY, 'session');
+  }
+
   /** What every device makes of a state change, host and guest alike: records, sounds and notices, achievements. */
   private noteChange(prev: GameState | null, next: GameState) {
     this.noteDiscovery(prev, next);
+    this.noteTally(prev, next);
     this.noteRun(prev, next);
     this.noteHunt(prev, next);
     this.onNewState(prev, next);
@@ -2250,6 +2320,8 @@ type Saved =
   | { mode: 'host'; code: string; state: GameState; priv: HostPrivate }
   | { mode: 'client'; code: string; name: string };
 const SAVE = 'session.v4';
+/** Where a tab keeps the recap's tally of the game in play (Session.huntTally). */
+const TALLY = 'hunt';
 /**
  * Before guests' tokens became per-room. A hosted room saved then can't be
  * resumed (its guests' tokens no longer match), and a guest's saved room

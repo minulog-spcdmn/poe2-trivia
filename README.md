@@ -565,6 +565,21 @@ browser (`src/lib/achievements.ts`); erasing the codex erases them.
   the host can make it first to 5 in one tap. Deathmatches, races and Delve
   ignore it; what is left of it carries over to the next game, and these
   answers go into the codex under Cruel.
+- **The hunt recap:** the end screen of a turns game shows what this device
+  learned (online, for a player in a seat): every item revealed as a strip
+  of art (gold rim: named right; red: missed; online, others' turns plain;
+  a "New" tag on items new to the codex), up to 3 of your misses to
+  remember, what the codex gained ("+3 to your Codex" over a bar from the
+  count before the game to the count now) and one seal: the one the game
+  earned, else First Victory while it is still to earn, else the one nearest
+  done. In hot-seat a link opens the Codex. A game alone in hot-seat ends
+  its own way: "First hunt complete", "Best hunt yet" (fewer questions to 5
+  than before on its difficulty) or "Hunt complete", how many it named
+  right of how many asked and its best run, and no standings; right under
+  that, **Hunt again** (the same rules, no item from the last game) and
+  **Play a friend** (an online room with the same target, difficulty and
+  timer, hosted under your name). The tally is kept per tab (session
+  storage), so a reload keeps the recap.
 
 The host picks the mode (take turns, race or Delve: three buttons, each
 with an engraved emblem, and only the chosen mode's description below

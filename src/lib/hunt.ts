@@ -5,7 +5,8 @@
 // now's chips). Stored apart from the codex, through lib/storage.ts, and
 // never written over when this build can't read it (lib/keepAside.ts).
 // Also when a turns reveal begins (newReveal), which the Codex ticker under
-// the answers follows (Session.discovery).
+// the answers follows (Session.discovery), and the tally of a turns game's
+// reveals that its end screen recaps (tallyHunt, HuntRecap.svelte).
 
 import type { GameState, Preset } from './game.ts';
 import { makeRoom } from './keepAside.ts';
@@ -191,4 +192,104 @@ export function newReveal(prev: GameState | null, next: GameState): RevealSeen |
   if (!prev || next.phase !== 'reveal' || !q || !r || next.delve || next.settings.mode === 'race') return null;
   if (prev.phase === 'reveal' && prev.question?.askedAt === q.askedAt) return null;
   return { at: q.askedAt, id: r.correctId, ok: r.correct, by: next.players[next.turn]?.id ?? '' };
+}
+
+/** One reveal as the recap keeps it: the question (askedAt), the item, who answered, whether they got it, and whether the item was new to this browser's codex. */
+export interface TallySeen {
+  at: number;
+  id: string;
+  by: string;
+  ok: boolean;
+  fresh: boolean;
+}
+
+/** A player's part in the game, as far as this device saw it: right answers, questions asked, and the longest run of right answers. */
+export interface TallyPlayer {
+  right: number;
+  asked: number;
+  peak: number;
+}
+
+/**
+ * A turns game as this device saw it, for its end screen's recap: every
+ * reveal in order, and each player's count. Kept in the tab's session
+ * storage (Session.huntTally), so a reload on the end screen keeps it.
+ */
+export interface HuntTally {
+  /** The game's startedAt. */
+  game: number;
+  seen: TallySeen[];
+  players: Record<string, TallyPlayer>;
+  /** The achievements this browser had earned as the game began, once read (Session.earnedAtStart). */
+  earned?: string[];
+  /** How many of the game's items this browser's codex held as the game began, once read. */
+  known?: number;
+  /** A quick hunt, once recorded: how it measured up (Session.huntResult), which a reload can't work out again. */
+  result?: HuntResult;
+}
+
+/** How a quick hunt measured up as it ended (HuntMeasure, without the record), with its points and questions. */
+export interface HuntResult {
+  first: boolean;
+  best: boolean;
+  previousBest: HuntBest | null;
+  right: number;
+  asked: number;
+}
+
+/** At most this many reveals are kept (a long game's recap shows the latest). */
+export const TALLY_MAX = 300;
+
+/**
+ * The tally after a state change: a new one as a turns game starts (a new
+ * startedAt), one more reveal as each begins (newReveal: once each, never on
+ * a reload into one), and unchanged (the same object) otherwise. `fresh`:
+ * the revealed item was new to the codex (Session.discovery). Null outside a
+ * turns game under way: a lobby, a race, a Delve run.
+ */
+export function tallyHunt(t: HuntTally | null, prev: GameState | null, next: GameState, fresh: boolean): HuntTally | null {
+  const game = next.startedAt;
+  if (!game || next.delve || next.settings.mode === 'race' || next.phase === 'lobby') return null;
+  let out = t?.game === game ? t : { game, seen: [], players: {} };
+  const r = newReveal(prev, next);
+  if (!r || !r.by || out.seen.some((x) => x.at === r.at)) return out;
+  const was = out.players[r.by] ?? { right: 0, asked: 0, peak: 0 };
+  // The engine has counted this answer into the streak already.
+  const streak = next.players.find((p) => p.id === r.by)?.streak ?? 0;
+  out = {
+    ...out,
+    seen: [...out.seen, { at: r.at, id: r.id, by: r.by, ok: r.ok, fresh }].slice(-TALLY_MAX),
+    players: { ...out.players, [r.by]: { right: was.right + (r.ok ? 1 : 0), asked: was.asked + 1, peak: Math.max(was.peak, streak) } },
+  };
+  return out;
+}
+
+const isId = (v: unknown): v is string => typeof v === 'string' && v.length > 0 && v.length <= 64;
+
+/** A stored tally, cleaned up; null when it is missing or malformed. */
+export function parseTally(raw: string | null): HuntTally | null {
+  let v: unknown;
+  try {
+    v = JSON.parse(raw ?? 'null');
+  } catch {
+    return null;
+  }
+  if (!isObj(v) || !isTime(v.game) || !v.game || !Array.isArray(v.seen) || !isObj(v.players)) return null;
+  const seen: TallySeen[] = [];
+  for (const x of v.seen.slice(-TALLY_MAX))
+    if (isObj(x) && isTime(x.at) && isId(x.id) && isId(x.by) && typeof x.ok === 'boolean' && typeof x.fresh === 'boolean')
+      seen.push({ at: x.at, id: x.id, by: x.by, ok: x.ok, fresh: x.fresh });
+  const players: Record<string, TallyPlayer> = {};
+  for (const [id, p] of Object.entries(v.players))
+    if (isId(id) && isObj(p) && isCount(p.right) && isCount(p.asked) && isCount(p.peak) && p.right <= p.asked)
+      players[id] = { right: p.right, asked: p.asked, peak: p.peak };
+  const t: HuntTally = { game: v.game, seen, players };
+  if (Array.isArray(v.earned)) t.earned = v.earned.filter(isId).slice(0, 200);
+  if (isCount(v.known)) t.known = v.known;
+  const r = v.result;
+  const was = isObj(r) ? r.previousBest : undefined;
+  const previousBest = isObj(was) && isCount(was.right) && isCount(was.asked) ? { right: was.right, asked: was.asked } : was === null ? null : undefined;
+  if (isObj(r) && typeof r.first === 'boolean' && typeof r.best === 'boolean' && previousBest !== undefined && isCount(r.right) && isCount(r.asked))
+    t.result = { first: r.first, best: r.best, previousBest, right: r.right, asked: r.asked };
+  return t;
 }

@@ -14,6 +14,10 @@ import {
   emptyStore,
   isDone,
   loadAchievements,
+  nextSeal,
+  sealRows,
+  standings,
+  type SealRow,
   momentsIn,
   forfeit,
   nextWins,
@@ -1042,4 +1046,72 @@ test('a stored list is cleaned up as it is read', () => {
 test('isDone needs something to do', () => {
   assert.equal(isDone({ have: 0, need: 0 }), false);
   assert.equal(isDone({ have: 3, need: 2 }), true);
+});
+
+// ---- the recap's seal ----------------------------------------------------------------
+
+/** Every achievement unearned with no progress made, then `o` laid over some of them by id. */
+function rowsWith(o: Record<string, { earned?: number | null; have?: number; need?: number }>): SealRow[] {
+  return ACHIEVEMENTS.map((a) => {
+    const x = o[a.id] ?? {};
+    const progress = a.progress ? { have: x.have ?? 0, need: x.need ?? 10 } : null;
+    return { achievement: a, progress, earned: x.earned ?? null };
+  });
+}
+const sealOf = (rows: SealRow[], before: Set<string> | null) => nextSeal(rows, before)?.achievement.id ?? null;
+
+test('nextSeal: one earned in the game first, the highest tier of them; then First Victory; then the nearest done', () => {
+  const before = new Set(['streak-25']);
+  // Prima Materia (lead) and Mercurial (silver) earned in the game; Burning Bright before it.
+  const rows = rowsWith({ 'prima-materia': { earned: 5 }, mercurial: { earned: 6 }, 'streak-25': { earned: 1 } });
+  assert.equal(sealOf(rows, before), 'mercurial', 'the highest tier earned now');
+  assert.equal(nextSeal(rows, before)!.earned, 6);
+  assert.equal(sealOf(rowsWith({ 'prima-materia': { earned: 5 } }), new Set()), 'prima-materia');
+  // Earned before the game: not this game's.
+  assert.equal(sealOf(rowsWith({ 'prima-materia': { earned: 5 } }), new Set(['prima-materia'])), 'first-victory');
+  // Not known what the game began with: no seal is said to be this game's.
+  assert.equal(sealOf(rows, null), 'first-victory', 'before = null skips the first step');
+
+  // First Victory earned: the unearned seal nearest done, by its share.
+  const later = rowsWith({ 'first-victory': { earned: 1 }, 'streak-25': { have: 12, need: 25 }, 'great-work': { have: 300, need: 501 }, mercurial: { have: 1, need: 5 } });
+  assert.equal(sealOf(later, new Set(['first-victory'])), 'great-work');
+  const s = nextSeal(later, null)!;
+  assert.deepEqual([s.achievement.id, s.progress, s.earned], ['great-work', { have: 300, need: 501 }, null]);
+});
+
+test('nextSeal: on a tie the lower tier, then the list order; never a secret one, nor one earned', () => {
+  // Burning Bright (copper) and Undying Flame (gold), both half done: the copper one.
+  const tie = rowsWith({ 'first-victory': { earned: 1 }, 'streak-100': { have: 50, need: 100 }, 'streak-25': { have: 12.5, need: 25 } });
+  assert.equal(sealOf(tie, null), 'streak-25');
+  // Two of one tier at the same share: the first in the list.
+  const copper = ACHIEVEMENTS.filter((a) => a.progress && !a.secret && a.tier === ACHIEVEMENTS.find((b) => b.id === 'streak-25')!.tier);
+  if (copper.length > 1) {
+    const order = rowsWith({ 'first-victory': { earned: 1 }, [copper[0].id]: { have: 5, need: 10 }, [copper[1].id]: { have: 5, need: 10 } });
+    assert.equal(sealOf(order, null), copper[0].id);
+  }
+  // Fool Me Twice is a secret: however near done, never named.
+  const secret = rowsWith({ 'first-victory': { earned: 1 }, 'fooled-twice': { have: 1, need: 2 }, 'streak-25': { have: 2, need: 25 } });
+  assert.ok(ACHIEVEMENTS.find((a) => a.id === 'fooled-twice')!.secret);
+  assert.equal(sealOf(secret, null), 'streak-25');
+  // Earned ones are past; none left to name: null.
+  const all = ACHIEVEMENTS.map((a): SealRow => ({ achievement: a, progress: a.progress ? { have: 1, need: 1 } : null, earned: 1 }));
+  assert.equal(nextSeal(all, new Set(ACHIEVEMENTS.map((a) => a.id))), null);
+});
+
+test("sealRows reads this browser's codex and list: a newcomer's first hunt earns Prima Materia, and First Victory comes next", () => {
+  const before = new Set(Object.keys(loadAchievements().earned));
+  assert.equal(sealOf(sealRows(items), before), 'first-victory', 'nothing yet: the first seal to chase');
+  const c = emptyCodex();
+  for (const it of items.slice(0, 5)) c.items[it.id] = { seen: 1, first: 1, last: 1, name: { n: 1, ok: 1 }, art: { n: 0, ok: 0 }, mixed: {} };
+  codexWith(c);
+  // Before the check has written it (it waits for an idle moment): earned all the same.
+  const early = sealRows(items);
+  assert.equal(sealOf(early, before), 'prima-materia');
+  assert.equal(typeof nextSeal(early, before)!.earned, 'number');
+  assert.deepEqual(loadAchievements().earned, {}, 'nothing written by reading');
+  checkAchievements(items);
+  const rows = sealRows(items);
+  assert.deepEqual(rows, standings(summarize(c, emptyRecords(), items), loadAchievements()));
+  assert.equal(sealOf(rows, before), 'prima-materia');
+  assert.equal(sealOf(rows, new Set(Object.keys(loadAchievements().earned))), 'first-victory', 'the next game');
 });
