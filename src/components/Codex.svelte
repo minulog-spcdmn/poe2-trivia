@@ -6,7 +6,7 @@
   import { CODEX_KEY, RECENT, loadCodex, resetCodex, type Tally } from '../lib/codex';
   import { accuracy, codexStats, delveSummary, tallyOf } from '../lib/codexStats';
   import { shownDepth } from '../lib/delve';
-  import { categoryIcon, itemSrcset, itemThumb } from '../lib/ui';
+  import { categoryGlyph, itemSrcset, itemThumb } from '../lib/ui';
   import { DIFFICULTY_NAMES } from '../lib/difficultyText';
   import { closeCodex, codexRoute } from '../lib/codexRoute.svelte';
   import { backdropShadow } from '../lib/backdropShadow';
@@ -146,7 +146,7 @@
 
   const filterOptions = $derived([
     { value: '', label: 'All categories', note: `${stats.seen}/${stats.total}` },
-    ...stats.categories.map((c) => ({ value: c.category, label: c.category, icon: categoryIcon(c.category), note: `${c.seen}/${c.total}` })),
+    ...stats.categories.map((c) => ({ value: c.category, label: c.category, icon: categoryGlyph(c.category), note: `${c.seen}/${c.total}` })),
   ]);
 
   let open = $state<Item | null>(null);
@@ -237,7 +237,7 @@
 {/snippet}
 
 {#snippet glyph(category: string)}
-  <span class="glyph" style:--src="url('{categoryIcon(category)}')" aria-hidden="true"></span>
+  <span class="glyph" style:--src="url('{categoryGlyph(category)}')" aria-hidden="true"></span>
 {/snippet}
 
 <div class="codex">
