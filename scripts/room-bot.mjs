@@ -5,7 +5,9 @@
 // again, and the browser profile keeps who is on and the room's save, so it
 // comes back as the same player in the same room.
 //
-//   npm run bot -- [--headed] [--no-build]
+//   npm run bot -- [--rooms 2] [--headed] [--no-build]
+//
+// --rooms: how many rooms at once (1 to 4), each with its own players.
 //
 // Chromium: Playwright's own (npx playwright-core install chromium), or any
 // Chromium or Chrome named by BOT_CHROMIUM.
@@ -16,20 +18,26 @@ import { join } from 'node:path';
 import { build, preview } from 'vite';
 import { chromium } from 'playwright-core';
 
+const MAX_ROOMS = 4;
+const STATUS_EVERY_MS = 60000;
+const REOPEN_AFTER_MS = 5000;
+
 const root = fileURLToPath(new URL('..', import.meta.url));
 // Kept out of the repo (.gitignore) and of the style checks (tests/style.test.ts).
 const outDir = join(root, '.bot', 'dist');
-const profile = join(root, '.bot', 'profile');
 
 const { values: opts } = parseArgs({
   options: {
+    rooms: { type: 'string', default: '1' },
     headed: { type: 'boolean', default: false },
     'no-build': { type: 'boolean', default: false },
   },
 });
-
-const STATUS_EVERY_MS = 60000;
-const REOPEN_AFTER_MS = 5000;
+const rooms = Number(opts.rooms);
+if (!Number.isInteger(rooms) || rooms < 1 || rooms > MAX_ROOMS) {
+  console.error(`--rooms takes 1 to ${MAX_ROOMS}.`);
+  process.exit(2);
+}
 
 const stamp = () => new Date().toISOString().slice(0, 19).replace('T', ' ');
 const log = (...args) => console.log(stamp(), ...args);
@@ -42,81 +50,95 @@ if (!opts['no-build']) {
 const server = await preview({ root, logLevel: 'warn', build: { outDir }, preview: { host: '127.0.0.1', port: 4174, strictPort: false } });
 const base = server.resolvedUrls.local[0];
 
-const url = `${base}bot.html`;
-
 // Behind an outgoing proxy (HTTPS_PROXY), the browser uses it too. Set as a
 // flag rather than Playwright's proxy option, which sends even the local build
 // through it.
 const proxy = process.env.HTTPS_PROXY ? [`--proxy-server=${process.env.HTTPS_PROXY}`] : [];
-const context = await chromium.launchPersistentContext(profile, {
-  headless: !opts.headed,
-  executablePath: process.env.BOT_CHROMIUM || undefined,
-  // Stopping is ours (stop, below): the room says goodbye before the browser goes.
-  handleSIGINT: false,
-  handleSIGTERM: false,
-  handleSIGHUP: false,
-  // Nobody listens to the bot.
-  args: ['--mute-audio', '--autoplay-policy=no-user-gesture-required', ...proxy],
-});
 
-let page = null;
 let stopping = false;
 
-async function open() {
-  if (stopping) return;
-  const p = context.pages()[0] ?? (await context.newPage());
-  page = p;
-  p.on('console', (m) => {
-    const text = m.text();
-    if (text.startsWith('[bot]')) log(text.slice(6));
-    else if (m.type() === 'error' || m.type() === 'warning') log(`page ${m.type()}:`, text);
+/**
+ * One room: its own browser and profile (so its own storage: who is on, the
+ * room's save), and its own share of the names (bot.html ?slot=&of=), so
+ * no one ever hosts two rooms at once.
+ */
+async function runRoom(slot) {
+  const say = rooms > 1 ? (...args) => log(`[${slot}]`, ...args) : log;
+  const url = `${base}bot.html?slot=${slot}&of=${rooms}`;
+  const context = await chromium.launchPersistentContext(join(root, '.bot', `profile-${slot}`), {
+    headless: !opts.headed,
+    executablePath: process.env.BOT_CHROMIUM || undefined,
+    // Stopping is ours (stop, below): the room says goodbye before the browser goes.
+    handleSIGINT: false,
+    handleSIGTERM: false,
+    handleSIGHUP: false,
+    // Nobody listens to the bot, and nothing is drawn: the page has no screens.
+    args: ['--mute-audio', '--autoplay-policy=no-user-gesture-required', '--disable-gpu', ...proxy],
   });
-  p.on('pageerror', (err) => log('page error:', err.message));
-  let gone = false;
-  const reopen = (why) => {
-    if (gone || stopping) return;
-    gone = true;
-    page = null;
-    log(`${why}, opening it again`);
-    setTimeout(() => void open().catch((err) => log('could not open the page:', err.message)), REOPEN_AFTER_MS);
-  };
-  p.once('crash', () => {
-    reopen('the page crashed');
-    void p.close().catch(() => {});
+  const room = { page: null, context, say };
+
+  async function open() {
+    if (stopping) return;
+    const p = context.pages()[0] ?? (await context.newPage());
+    room.page = p;
+    p.on('console', (m) => {
+      const text = m.text();
+      if (text.startsWith('[bot]')) say(text.slice(6));
+      else if (m.type() === 'error' || m.type() === 'warning') say(`page ${m.type()}:`, text);
+    });
+    p.on('pageerror', (err) => say('page error:', err.message));
+    let gone = false;
+    const reopen = (why) => {
+      if (gone || stopping) return;
+      gone = true;
+      room.page = null;
+      say(`${why}, opening it again`);
+      setTimeout(() => void open().catch((err) => say('could not open the page:', err.message)), REOPEN_AFTER_MS);
+    };
+    p.once('crash', () => {
+      reopen('the page crashed');
+      void p.close().catch(() => {});
+    });
+    p.once('close', () => reopen('the page closed'));
+    say('opening', url);
+    await p.goto(url);
+  }
+
+  // A browser itself went: exit with an error, for whatever supervises this (systemd, Docker) to start it again.
+  context.on('close', () => {
+    if (stopping) return;
+    say('the browser closed');
+    process.exit(1);
   });
-  p.once('close', () => reopen('the page closed'));
-  log('opening', url);
-  await p.goto(url);
+
+  await open();
+  return room;
 }
 
-// The browser itself went: exit with an error, for whatever supervises this (systemd, Docker) to start it again.
-context.on('close', () => {
-  if (stopping) return;
-  log('the browser closed');
-  process.exit(1);
-});
-
-await open();
+const all = [];
+for (let slot = 1; slot <= rooms; slot++) all.push(await runRoom(slot));
 
 const status = setInterval(async () => {
-  try {
-    const s = await page?.evaluate(() => window.__bot?.status());
-    if (s?.host) log(`${s.host} (until ${s.until}), room ${s.code} (${s.status}), ${s.phase}: ${s.players.join(', ')}${s.spectators ? `, ${s.spectators} watching` : ''}`);
-    else if (s) log(`nobody on until ${s.backAt}`);
-  } catch {
-    /* the page is between loads */
+  for (const { page, say } of all) {
+    try {
+      const s = await page?.evaluate(() => window.__bot?.status());
+      if (s?.host) say(`${s.host} (until ${s.until}), room ${s.code} (${s.status}), ${s.phase}: ${s.players.join(', ')}${s.spectators ? `, ${s.spectators} watching` : ''}`);
+      else if (s) say(`nobody on until ${s.backAt}`);
+    } catch {
+      /* the page is between loads */
+    }
   }
 }, STATUS_EVERY_MS);
 
 async function stop() {
   if (stopping) return;
   stopping = true;
-  log('closing the room');
+  log(rooms > 1 ? 'closing the rooms' : 'closing the room');
   clearInterval(status);
-  // The room tells everyone it closed, instead of leaving them to reconnect to nothing.
-  await page?.evaluate(() => window.__bot?.close()).catch(() => {});
+  // Each room tells everyone it closed, instead of leaving them to reconnect to nothing.
+  await Promise.all(all.map(({ page }) => page?.evaluate(() => window.__bot?.close()).catch(() => {})));
   await new Promise((r) => setTimeout(r, 800));
-  await context.close().catch(() => {});
+  await Promise.all(all.map(({ context }) => context.close().catch(() => {})));
   await server.close();
   process.exit(0);
 }

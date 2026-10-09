@@ -5,10 +5,13 @@
 
 import { BOT } from '../lib/storage';
 import { Bot } from './driver';
+import { namesFor } from './identities';
 
 if (!(import.meta.env.DEV || import.meta.env.VITE_BOT === '1') || !BOT) throw new Error('The bot only runs from bot.html, on the dev server or a bot build.');
 
-const bot = new Bot();
+// Several rooms at once (scripts/room-bot.mjs --rooms): this one is ?slot= of ?of=.
+const q = new URLSearchParams(location.search);
+const bot = new Bot(namesFor(Number(q.get('slot') ?? 1), Number(q.get('of') ?? 1)));
 bot.start();
 
 // For the runner (and a look in a headed browser).

@@ -9,7 +9,7 @@ import { engine, session } from '../lib/session.svelte';
 import type { GameState, Question } from '../lib/game';
 import { readStored, writeStored } from '../lib/storage';
 import { answerDelay, knowChance, pickCategory, pickDelay, wrongPick, type Ask } from './brain';
-import { breakLength, identityOf, nextName, shiftLength, type Identity } from './identities';
+import { breakLength, identityOf, namesFor, nextName, shiftLength, type Identity } from './identities';
 
 const TICK_MS = 200;
 /** Everyone else gone mid-game this long (they may only be reloading): back to the lobby. */
@@ -62,11 +62,16 @@ export class Bot {
   private configured = false;
   private timer: ReturnType<typeof setInterval> | null = null;
 
+  /** `names`: whom this room draws its hosts from (its share when several rooms run at once). */
+  constructor(private readonly names: string[]) {}
+
   private get persona() {
     return this.who!.persona;
   }
 
   start() {
+    // Someone from another room's share (the number of rooms changed): this room starts afresh.
+    if (this.shift.on && !this.names.includes(this.shift.on)) this.shift = { ...this.shift, on: null, backAt: 0 };
     if (this.shift.on) {
       this.who = identityOf(this.shift.on, engine.categories);
       session.resume();
@@ -105,7 +110,7 @@ export class Bot {
 
   /** The next one comes on and opens a room. */
   private begin(now: number) {
-    const name = nextName(this.shift.recent, Math.random);
+    const name = nextName(this.shift.recent, Math.random, this.names);
     this.who = identityOf(name, engine.categories);
     this.shift = { on: name, until: now + shiftLength(Math.random), backAt: 0, recent: [...this.shift.recent, name].slice(-20) };
     this.save();

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { answerDelay, knowChance, makePersona, pickCategory, weighted, wrongPick, type Ask, type Persona } from '../src/bot/brain.ts';
-import { NAMES, breakLength, identityOf, nextName, shiftLength } from '../src/bot/identities.ts';
+import { NAMES, breakLength, identityOf, namesFor, nextName, shiftLength } from '../src/bot/identities.ts';
 import { MAX_NAME, cleanName, isHeldName, nameProblem, nameSkeleton } from '../src/lib/names.ts';
 
 function seeded(seed: number) {
@@ -135,4 +135,17 @@ test('shifts and breaks stay within their bounds', () => {
     assert.ok(shift >= 20 && shift <= 120, `shift ${shift}`);
     assert.ok(pause >= 2 && pause <= 30, `break ${pause}`);
   }
+});
+
+test('rooms running at once never share a name', () => {
+  for (const rooms of [1, 2, 3, 4]) {
+    const shares = Array.from({ length: rooms }, (_, i) => namesFor(i + 1, rooms));
+    assert.deepEqual(shares.flat().sort(), [...NAMES].sort());
+    for (const share of shares) assert.ok(share.length >= 8);
+  }
+  // Anything off: the whole cast.
+  assert.deepEqual(namesFor(3, 2), NAMES);
+  const rng = seeded(29);
+  const mine = namesFor(2, 2);
+  for (let i = 0; i < 300; i++) assert.ok(mine.includes(nextName(mine.slice(0, 3), rng, mine)));
 });

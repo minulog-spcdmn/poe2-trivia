@@ -86,15 +86,24 @@ export function identityOf(name: string, categories: string[]): Identity {
   return { name, persona, prefs };
 }
 
-/** How many of the last names wait before coming on again. */
+/**
+ * The names one room draws from when `of` rooms run at once (`slot` 1 to
+ * `of`): every room its own, so nobody hosts two rooms at the same time.
+ */
+export function namesFor(slot: number, of: number): string[] {
+  if (!Number.isInteger(of) || of < 1 || !Number.isInteger(slot) || slot < 1 || slot > of) return NAMES;
+  return NAMES.filter((_, i) => i % of === slot - 1);
+}
+
+/** How many of the last names wait before coming on again (at most half of those there are). */
 const RESTING = 8;
 
-/** The next to come on: anyone but the last few. */
-export function nextName(recent: string[], rng: Rng): string {
-  const resting = new Set(recent.slice(-RESTING));
-  const free = NAMES.filter((n) => !resting.has(n));
-  const pool = free.length ? free : NAMES;
-  return pool[Math.floor(rng() * pool.length)];
+/** The next to come on from `pool`: anyone but the last few. */
+export function nextName(recent: string[], rng: Rng, pool = NAMES): string {
+  const resting = new Set(recent.slice(-Math.min(RESTING, Math.floor(pool.length / 2))));
+  const free = pool.filter((n) => !resting.has(n));
+  const from = free.length ? free : pool;
+  return from[Math.floor(rng() * from.length)];
 }
 
 const MIN = 60000;
