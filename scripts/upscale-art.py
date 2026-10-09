@@ -125,10 +125,18 @@ def upscale(net, src, out):
 
 
 def mix(model, im):
-    """The model's picture (float RGBA at ART_SCALE) mixed with the original enlarged smoothly; the model's alpha, whose edges are crisper."""
+    """The model's picture (float RGBA at ART_SCALE) mixed with the original enlarged smoothly; the model's alpha, whose edges are crisper.
+
+    Each picture's colour counts by how opaque it is there: the original is
+    black where it is clear, so where the model's edge reaches past the
+    original's, a plain mix would darken the rim.
+    """
     base = np.asarray(im.resize((model.shape[1], model.shape[0]), Image.BICUBIC)).astype(np.float32)
-    out = (MIX * model + (1 - MIX) * base).round().clip(0, 255).astype(np.uint8)
-    out[..., 3] = model[..., 3].astype(np.uint8)
+    ma, ba = model[..., 3:] / 255, base[..., 3:] / 255
+    weight = MIX * ma + (1 - MIX) * ba
+    rgb = (MIX * model[..., :3] * ma + (1 - MIX) * base[..., :3] * ba) / np.maximum(weight, 1e-6)
+    rgb = np.where(weight > 1e-6, rgb, model[..., :3])
+    out = np.dstack([rgb, model[..., 3:]]).round().clip(0, 255).astype(np.uint8)
     return Image.fromarray(out, 'RGBA')
 
 
