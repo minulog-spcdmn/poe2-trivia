@@ -28,6 +28,7 @@
     lostPoint,
     shardFound,
     turnsBlue,
+    twinkle,
     wardBlocked,
     wardFormed,
     itemBlown,
@@ -487,6 +488,25 @@
         if (flow) lifeHeld(flow.phial);
       }, 550);
     }
+  });
+
+  // Turns: a Vaal Orb the Vaal's favour (or a revenge orb) brought twinkles on
+  // each of their entries, with the reward's chime, as the turn it came with
+  // fades in: on their orb count where the entry shows one, else on the avatar.
+  // Once per turn, also as later updates come in.
+  let favourHeard = '';
+  $effect(() => {
+    const f = s.favour;
+    if (!f || f.turn !== s.turnCount || s.phase !== 'choosing') return;
+    const key = `${s.startedAt}:${f.turn}`;
+    if (key === favourHeard) return;
+    favourHeard = key;
+    const ids = f.ids;
+    later(() => {
+      const rows = ids.map((id) => scoreRowOf(id)).filter((li) => li !== null);
+      for (const li of rows) twinkle(li.querySelector('.orbs') ?? li.querySelector('.avatar') ?? li);
+      if (rows.length) sfx('findReward');
+    }, 600);
   });
 
   // Changes that wait for a point to land (the score ticking up, a streak's

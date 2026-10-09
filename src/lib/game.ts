@@ -850,6 +850,14 @@ export const vaalCap = (settings: Pick<Settings, 'targetScore'>) => vaalStart(se
 export const vaalMode = (settings: Pick<Settings, 'mode'>) => settings.mode !== 'race' && settings.mode !== 'delve';
 /** Whether this game is played with Vaal Orbs. */
 export const vaalOn = (s: GameState) => vaalMode(s.settings) && !s.delve;
+/**
+ * Who starts the next game in this room with a revenge orb, should the host
+ * restart now: everyone still here who didn't win a finished game of two or more.
+ */
+export function revengeFor(s: GameState): string[] {
+  if (s.phase !== 'over' || !vaalOn(s) || s.players.length < 2) return [];
+  return s.players.filter((p) => p.connected && !s.winners.includes(p.id)).map((p) => p.id);
+}
 
 export const OFFER_COUNT = 3;
 export const MAX_PLAYERS = 12;
@@ -1507,8 +1515,12 @@ export class Engine {
         if (!isHost) throw new ActionError('Only the host can restart.');
         const fresh = createGame(s.hostId, s.settings);
         // Players who left during the game don't come back as ghosts in the lobby
-        // (and their Vaal Orbs and ledger go with the game: 'start' hands out new ones).
-        fresh.players = s.players.filter((p) => p.connected).map(({ vaal: _vaal, ledger: _ledger, ...p }) => ({ ...p, score: 0, recent: [], streak: 0 }));
+        // (and their Vaal Orbs and ledger go with the game: 'start' hands out new
+        // ones, and one more to whoever lost the game just finished).
+        const revenge = new Set(revengeFor(s));
+        fresh.players = s.players
+          .filter((p) => p.connected)
+          .map(({ vaal: _vaal, ledger: _ledger, ...p }) => ({ ...p, score: 0, recent: [], streak: 0, ...(revenge.has(p.id) ? { revenge: 1 } : {}) }));
         // Renames during the game take effect on colours now.
         const claims = fresh.players.filter((p) => reservedHue(p) !== undefined);
         for (const p of [...claims, ...fresh.players.filter((p) => !claims.includes(p))]) settleHue(fresh, p);
@@ -2327,10 +2339,28 @@ export class Engine {
         this.startDeathmatch(s, leaders.map((p) => p.id));
         return;
       }
+      if (vaalOn(s)) this.favour(s, best);
       s.round++;
     }
     s.turn = next;
     this.beginTurn(s, false);
+  }
+
+  /**
+   * The end of a round that goes on: the Vaal favour the desperate. Everyone
+   * still here FAVOUR_GAP or more behind the leader (on `best`) gains an orb,
+   * up to vaalCap, said on the turn that comes next (beginTurn counts it).
+   */
+  private favour(s: GameState, best: number) {
+    const cap = vaalCap(s.settings);
+    const ids: string[] = [];
+    for (const p of s.players) {
+      if (!p.connected || best - p.score < FAVOUR_GAP || (p.vaal ?? 0) >= cap) continue;
+      p.vaal = (p.vaal ?? 0) + 1;
+      ids.push(p.id);
+    }
+    if (ids.length) s.favour = { turn: s.turnCount + 1, ids };
+    else delete s.favour;
   }
 
   private unusedIn(s: GameState, category: string): Item[] {

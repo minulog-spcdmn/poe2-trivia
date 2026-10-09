@@ -7,7 +7,7 @@
   import { fits, fitStyle, maskOf, measure } from '../lib/iconFit.svelte';
   import { BRICK, HOLD, activeRules, difficultyOf, vaalOn } from '../lib/game';
   import { readStored, writeStored } from '../lib/storage';
-  import { FIND_TEXT, deathmatchText, findNote, lockoutText, namesOf, teamFindNote, teamUnused, unused } from '../lib/difficultyText';
+  import { FIND_TEXT, deathmatchText, favourText, findNote, lockoutText, namesOf, revengeText, teamFindNote, teamUnused, unused } from '../lib/difficultyText';
   import { expectedVoters, findOffers, findOn, holdersOf, inventoryOf, isGroupRun, isIdle, livesOf, standingIds, voteClosesAt, type FindKind } from '../lib/delve';
   import { sfx } from '../lib/sound';
   import { backdropShadow } from '../lib/backdropShadow';
@@ -67,6 +67,19 @@
   }
   /** What a corruption pays, the Altar's points included. */
   const stakes = $derived(`right +${HOLD}${altar ? ` and the Altar's ${altar}` : ''}, wrong −${BRICK}`);
+  /**
+   * The Vaal's favour for players well behind at the round's end, or the last
+   * game's losers' revenge orbs (game.ts favour and 'start'), said on the turn
+   * they came with: the first note under the cards, in view on a small phone.
+   */
+  const favourLine = $derived.by(() => {
+    const f = s.favour;
+    if (!vaalHere || !f || s.turnCount !== f.turn) return '';
+    const name = (id: string) => s.players.find((p) => p.id === id)?.name ?? '';
+    const ids = f.ids.filter((id) => name(id));
+    const viewer = session.mode === 'local' ? null : me;
+    return f.revenge ? revengeText(ids, name, viewer) : favourText(ids, name, viewer);
+  });
 
   // ---- the vote (Delve together) ------------------------------------------
   // Votes are public and can change until the vote closes: when everyone it
@@ -562,6 +575,10 @@
       {/each}
       {#if two && held}<p class="note muted">{held.trim()}</p>{/if}
     </div>
+  {/if}
+  {#if favourLine && !corrupting}
+    <!-- Corrupting, its own note takes this place: the favour was said as the turn came. -->
+    <p class="note vaal favour">{favourLine}</p>
   {/if}
   {#if s.deathmatch}
     <p class="note muted">{mine ? 'Tap the card when you are ready.' : deathmatchText(difficultyOf(s.settings.difficulty))}</p>
@@ -1112,6 +1129,10 @@
   }
   .note.vaal {
     color: #e8a99a;
+  }
+  /* The favour, then the usual note, close under it. */
+  .note.favour + .note {
+    margin-top: -1rem;
   }
 
   /* ---- finds ---------------------------------------------------------------

@@ -16,7 +16,8 @@
   import { delveStandings, delveTeam, isGroupRun, shownDepth } from '../lib/delve';
   import { BLUE_FROM, accentAt } from '../lib/descent';
   import { zoneAt } from '../lib/zoneSigils';
-  import { delverText, lossDepths } from '../lib/difficultyText';
+  import { delverText, lossDepths, revengeNote } from '../lib/difficultyText';
+  import { revengeFor } from '../lib/game';
 
   const s = $derived(session.state!);
   const won = (id: string) => s.winners.includes(id);
@@ -42,6 +43,10 @@
   );
   const winner = $derived(s.players.find((p) => s.winners.includes(p.id)) ?? standings[0]);
   const spectators = $derived(s.spectators ?? []);
+  /** Turns: who starts the next game with a revenge orb (game.ts revengeFor), told to them online. */
+  const revenge = $derived(
+    revengeNote(revengeFor(s), (id) => s.players.find((p) => p.id === id)?.name ?? '?', session.mode === 'local' ? null : session.myPlayerId),
+  );
 
   // One click only: a second one while this screen fades out would restart the new game.
   let leaving = $state(false);
@@ -333,6 +338,9 @@
       </span>
     {/if}
   </div>
+  {#if revenge}
+    <p class="revenge" in:fly={{ y: 10, duration: 600, delay: 1400 }}>{revenge}</p>
+  {/if}
   {#if spectators.length}
     <p class="joining muted" in:fly={{ y: 10, duration: 600, delay: 1400 }}>
       {spectators.map((o) => o.name).join(', ')} {spectators.length === 1 ? 'joins' : 'join'} the next game.
@@ -600,6 +608,15 @@
   .joining {
     margin: 1rem 0 0;
     font-style: italic;
+  }
+  /* The revenge orbs, in the Vaal's crimson (ChooseCategory's notes). */
+  .revenge {
+    margin: 1.2rem 0 0;
+    font-style: italic;
+    color: #e8a99a;
+  }
+  .revenge + .joining {
+    margin-top: 0.4rem;
   }
   /* Share: an icon button the height of its neighbours, with a note when the text was copied. */
   .share {

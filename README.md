@@ -23,7 +23,11 @@ is hosted as a static site on GitHub Pages. No server needed.
    corruption goes onto the **Altar**, shared by the table: the next
    corruption that holds, whoever's it is, takes the whole Altar on top of its
    +2. Nobody can corrupt in a deathmatch, and a corrupted question the host
-   skips gives its orb back.
+   skips gives its orb back. At the end of a round that neither ends the game
+   nor starts a deathmatch, everyone 3 or more points behind the leader gains
+   an orb (up to one more than a game starts with), and when a game of two or
+   more ends, everyone who didn't win starts the next one in the room with a
+   revenge orb.
 3. The first player to reach the host's target score wins. The game only ends
    once a full round is finished, so everyone gets the same number of turns.
    If players are tied at the top, it goes to a **deathmatch**:

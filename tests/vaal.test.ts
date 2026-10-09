@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { ActionError, BRICK, Engine, HOLD, createGame, publicView, vaalStart, type Difficulty, type GameState, type Item, type Question } from '../src/lib/game.ts';
+import { ActionError, BRICK, Engine, HOLD, createGame, publicView, revengeFor, vaalCap, vaalStart, type Difficulty, type GameState, type Item, type Question } from '../src/lib/game.ts';
+import { favourText, revengeNote, revengeText } from '../src/lib/difficultyText.ts';
 
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
 
@@ -307,4 +308,203 @@ test('the Altar stays empty when nobody corrupts', () => {
   }
   assert.equal(s.phase, 'over');
   for (const p of s.players) assert.deepEqual(p.ledger, { held: 0, bricked: 0, altar: 0 });
+});
+
+// ---- 3. Vaal favour and revenge orbs ---------------------------------------
+
+/** Plays plain turns until round `round` begins (or the game is over), each player answering as `answer` says. */
+function playTo(engine: Engine, s: GameState, round: number, answer: (id: string, round: number) => 'right' | 'wrong'): GameState {
+  let guard = 0;
+  while (s.round < round && s.phase !== 'over' && !s.deathmatch && guard++ < 200) s = turn(engine, s, { answer: answer(activeOf(s).id, s.round) });
+  return s;
+}
+
+test("favour at a round's end", () => {
+  let { engine, s } = started(['Ash', 'Bram'], 10);
+  const start = vaalStart(s.settings);
+  const answer = (id: string) => (id === 'p0' ? 'right' : 'wrong');
+  // Two behind after rounds 1 and 2: nothing.
+  s = playTo(engine, s, 3, answer);
+  assert.equal(playerOf(s, 'p1').vaal, start);
+  assert.equal(s.favour, undefined);
+  // Three behind after round 3: an orb, said on the turn that comes next.
+  s = playTo(engine, s, 4, answer);
+  assert.equal(s.phase, 'choosing');
+  assert.equal(playerOf(s, 'p0').score - playerOf(s, 'p1').score, 3);
+  assert.equal(playerOf(s, 'p1').vaal, start + 1);
+  assert.equal(playerOf(s, 'p0').vaal, start, 'the leader never gains');
+  assert.deepEqual(s.favour, { turn: s.turnCount, ids: ['p1'] });
+  // That is the most favour brings: after round 4, none more.
+  assert.equal(start + 1, vaalCap(s.settings));
+  s = playTo(engine, s, 5, answer);
+  assert.equal(playerOf(s, 'p1').vaal, start + 1);
+  assert.equal(s.favour, undefined);
+  // Spent, the orb can come back at the next round's end.
+  s = playTo(engine, s, 5, answer);
+  if (activeOf(s).id !== 'p1') s = turn(engine, s, { answer: 'right' });
+  s = turn(engine, s, { vaal: true, answer: 'wrong' });
+  assert.equal(playerOf(s, 'p1').vaal, start);
+  s = playTo(engine, s, 6, answer);
+  assert.equal(playerOf(s, 'p1').vaal, start + 1);
+  assert.deepEqual(s.favour, { turn: s.turnCount, ids: ['p1'] });
+});
+
+test('no favour for a gap of 2, for the leader, or for a disconnected player', () => {
+  let { engine, s } = started(['Ash', 'Bram', 'Cora'], 10);
+  const start = vaalStart(s.settings);
+  // p0 always right, p1 right in round 1 only, p2 never.
+  const answer = (id: string, round: number) => (id === 'p0' || (id === 'p1' && round === 1) ? 'right' : 'wrong');
+  s = playTo(engine, s, 3, answer);
+  // Round 3: p2 answers, then drops before the round ends.
+  let guard = 0;
+  while (s.round === 3 && guard++ < 10) {
+    const me = activeOf(s).id;
+    s = turn(engine, s, { answer: answer(me, s.round), next: false });
+    if (me === 'p2') s = engine.apply(s, { type: 'connection', playerId: 'p2', connected: false }, null);
+    s = engine.apply(s, { type: 'next' }, null);
+  }
+  assert.equal(s.round, 4);
+  assert.deepEqual(
+    s.players.map((p) => [p.id, p.score]).sort(),
+    [
+      ['p0', 3],
+      ['p1', 1],
+      ['p2', 0],
+    ],
+  );
+  for (const p of s.players) assert.equal(p.vaal, start, `${p.id}: a gap of 2, the leader, or away`);
+  assert.equal(s.favour, undefined);
+  // Back for round 4's end: both of them are 3 or more behind and gain one.
+  s = engine.apply(s, { type: 'connection', playerId: 'p2', connected: true }, null);
+  s = playTo(engine, s, 5, answer);
+  assert.equal(playerOf(s, 'p0').vaal, start);
+  assert.equal(playerOf(s, 'p1').vaal, start + 1);
+  assert.equal(playerOf(s, 'p2').vaal, start + 1);
+  assert.deepEqual([...s.favour!.ids].sort(), ['p1', 'p2']);
+  assert.equal(s.favour!.turn, s.turnCount);
+  assert.equal(s.favour!.revenge, undefined);
+});
+
+test('no favour at the wrap that finishes or starts a deathmatch', () => {
+  // Finishes: p0 reaches 3 on round 3, p1 is 3 behind.
+  let { engine, s } = setup(['Ash', 'Bram'], 3);
+  s = engine.apply(s, { type: 'start' }, 'p0');
+  s = playTo(engine, s, 99, (id) => (id === 'p0' ? 'right' : 'wrong'));
+  assert.equal(s.phase, 'over');
+  assert.equal(playerOf(s, 'p1').vaal, vaalStart(s.settings));
+  assert.equal(s.favour, undefined);
+  // Starts a deathmatch: p0 and p1 tie at 3, p2 is 3 behind.
+  ({ engine, s } = setup(['Ash', 'Bram', 'Cora'], 3));
+  s = engine.apply(s, { type: 'start' }, 'p0');
+  s = playTo(engine, s, 99, (id) => (id === 'p2' ? 'wrong' : 'right'));
+  assert.ok(s.deathmatch);
+  assert.equal(playerOf(s, 'p2').vaal, vaalStart(s.settings));
+  assert.equal(s.favour, undefined);
+  // Nor inside the deathmatch, round after round.
+  for (let i = 0; i < 4 && s.phase !== 'over'; i++) s = turn(engine, s, { answer: 'right' });
+  assert.equal(playerOf(s, 'p2').vaal, vaalStart(s.settings));
+  assert.equal(s.favour, undefined);
+});
+
+test('revenge orbs', () => {
+  // A finished 2-player game: p0 wins.
+  let { engine, s } = started(['Ash', 'Bram'], 3);
+  const start = vaalStart(s.settings);
+  s = playTo(engine, s, 99, (id) => (id === 'p0' ? 'right' : 'wrong'));
+  assert.equal(s.phase, 'over');
+  assert.deepEqual(s.winners, ['p0']);
+  assert.deepEqual(revengeFor(s), ['p1']);
+  const over = s;
+
+  // Play again: one more orb for the loser, said on the first turn.
+  let again = engine.apply(over, { type: 'restart', play: true }, 'p0');
+  assert.equal(playerOf(again, 'p1').vaal, start + 1);
+  assert.equal(playerOf(again, 'p0').vaal, start);
+  assert.deepEqual(again.favour, { turn: 0, ids: ['p1'], revenge: true });
+  assert.equal(again.turnCount, 0);
+  for (const p of again.players) assert.equal(p.revenge, undefined, 'used up by the game it was for');
+
+  // Change settings, then Begin: the same. The lobby holds the revenge orb.
+  const lobby = engine.apply(over, { type: 'restart' }, 'p0');
+  assert.equal(playerOf(lobby, 'p1').revenge, 1);
+  assert.equal(playerOf(lobby, 'p0').revenge, undefined);
+  assert.equal(lobby.favour, undefined);
+  again = engine.apply(lobby, { type: 'start' }, 'p0');
+  assert.equal(playerOf(again, 'p1').vaal, start + 1);
+  assert.equal(playerOf(again, 'p0').vaal, start);
+  assert.deepEqual(again.favour, { turn: 0, ids: ['p1'], revenge: true });
+  // The game after that one, with nobody losing in between, gives none.
+  assert.deepEqual(engine.apply(again, { type: 'restart', play: true }, 'p0').favour, undefined);
+
+  // A player who leaves loses theirs (coming back, they are someone new).
+  let left = engine.apply(lobby, { type: 'remove', playerId: 'p1' }, 'p0');
+  left = engine.apply(left, { type: 'join', playerId: 'p1', name: 'Bram' }, 'p1');
+  assert.equal(playerOf(left, 'p1').revenge, undefined);
+  left = engine.apply(left, { type: 'start' }, 'p0');
+  assert.equal(playerOf(left, 'p1').vaal, start);
+  assert.equal(left.favour, undefined);
+  // So does one who is away when the host restarts.
+  const away = engine.apply(over, { type: 'connection', playerId: 'p1', connected: false }, null);
+  assert.deepEqual(revengeFor(away), []);
+  assert.ok(!engine.apply(away, { type: 'restart' }, 'p0').players.some((p) => p.revenge));
+
+  // A seat filled from the spectators gets the normal count.
+  let watched = started(['Ash', 'Bram'], 3);
+  ({ engine, s } = watched);
+  s = engine.apply(s, { type: 'join', playerId: 'p9', name: 'Vex' }, 'p9');
+  assert.deepEqual(s.spectators!.map((o) => o.id), ['p9']);
+  s = playTo(engine, s, 99, (id) => (id === 'p0' ? 'right' : 'wrong'));
+  assert.deepEqual(revengeFor(s), ['p1'], 'spectators have nothing to avenge');
+  again = engine.apply(s, { type: 'restart', play: true }, 'p0');
+  assert.equal(playerOf(again, 'p9').vaal, start);
+  assert.equal(playerOf(again, 'p1').vaal, start + 1);
+
+  // A 1-player game gives none.
+  watched = started(['Ash'], 1);
+  ({ engine, s } = watched);
+  s = turn(engine, s, { answer: 'wrong' });
+  s = playTo(engine, s, 99, () => 'right');
+  assert.equal(s.phase, 'over');
+  assert.deepEqual(revengeFor(s), []);
+  again = engine.apply(s, { type: 'restart', play: true }, 'p0');
+  assert.equal(again.players[0].vaal, vaalStart(again.settings));
+  assert.equal(again.favour, undefined);
+
+  // A restart in the middle of a game gives none.
+  ({ engine, s } = started(['Ash', 'Bram'], 10));
+  s = playTo(engine, s, 3, (id) => (id === 'p0' ? 'right' : 'wrong'));
+  assert.deepEqual(revengeFor(s), []);
+  again = engine.apply(s, { type: 'restart', play: true }, 'p0');
+  for (const p of again.players) assert.equal(p.vaal, vaalStart(again.settings));
+  assert.equal(again.favour, undefined);
+
+  // Nor does race (no orbs at all).
+  ({ engine, s } = setup(['Ash', 'Bram'], 1));
+  s = engine.apply(s, { type: 'settings', settings: { mode: 'race' } }, 'p0');
+  s = engine.apply(s, { type: 'start' }, 'p0');
+  s = engine.apply(s, { type: 'answer', index: right(s.question!) }, 'p0');
+  s = engine.apply(s, { type: 'next' }, 'p0');
+  assert.equal(s.phase, 'over');
+  assert.deepEqual(revengeFor(s), []);
+  again = engine.apply(s, { type: 'restart', play: true }, 'p0');
+  assert.equal(again.favour, undefined);
+  assert.ok(!again.players.some((p) => p.vaal !== undefined || p.revenge !== undefined));
+});
+
+test('favour and revenge are said by name, and to you online', () => {
+  const names: Record<string, string> = { a: 'Mira', b: 'Ash', c: 'Bea' };
+  const nameOf = (id: string) => names[id];
+  assert.equal(favourText(['a'], nameOf, null), 'The Vaal favour the desperate: Mira gains a Vaal Orb.');
+  assert.equal(favourText(['a', 'b'], nameOf, null), 'The Vaal favour the desperate: Mira and Ash each gain a Vaal Orb.');
+  assert.equal(favourText(['a'], nameOf, 'a'), 'The Vaal favour the desperate: you gain a Vaal Orb.');
+  assert.equal(favourText(['b', 'a'], nameOf, 'a'), 'The Vaal favour the desperate: you and Ash each gain a Vaal Orb.');
+  assert.equal(favourText([], nameOf, null), '');
+  assert.equal(revengeText(['a', 'b'], nameOf, null), 'Revenge orbs: Mira and Ash start with one more.');
+  assert.equal(revengeText(['b'], nameOf, null), 'Revenge orbs: Ash starts with one more.');
+  assert.equal(revengeText(['b'], nameOf, 'b'), 'Revenge orbs: you start with one more.');
+  assert.equal(revengeNote(['b'], nameOf, null), 'Ash starts the next game with a revenge orb.');
+  assert.equal(revengeNote(['a', 'b', 'c'], nameOf, null), 'Mira, Ash and Bea start the next game with a revenge orb.');
+  assert.equal(revengeNote(['a', 'b'], nameOf, 'c'), 'Mira and Ash start the next game with a revenge orb.');
+  assert.equal(revengeNote(['a', 'b'], nameOf, 'b'), 'Play again and you start with a revenge orb.');
+  assert.equal(revengeNote([], nameOf, 'b'), '');
 });

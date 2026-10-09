@@ -297,6 +297,33 @@ const whose = (id: string, nameOf: (id: string) => string, me: string | null) =>
 const verb = (ids: string[], me: string | null, one: string, many: string) => (ids.length > 1 || ids[0] === me ? many : one);
 
 /**
+ * Turns, the turn after a round's end that favoured players well behind
+ * (game.ts favour): "The Vaal favour the desperate: Ash gains a Vaal Orb.",
+ * "…: you and Ash each gain a Vaal Orb."
+ */
+export function favourText(ids: string[], nameOf: (id: string) => string, me: string | null): string {
+  if (!ids.length) return '';
+  const gain = ids.length > 1 ? 'each gain' : verb(ids, me, 'gains', 'gain');
+  return `The Vaal favour the desperate: ${namesOf(ids, nameOf, me)} ${gain} a Vaal Orb.`;
+}
+
+/** Turns, the first turn of a game after a lost one: "Revenge orbs: Ash and Bea start with one more." */
+export function revengeText(ids: string[], nameOf: (id: string) => string, me: string | null): string {
+  if (!ids.length) return '';
+  return `Revenge orbs: ${namesOf(ids, nameOf, me)} ${verb(ids, me, 'starts', 'start')} with one more.`;
+}
+
+/**
+ * Turns, the end screen: who starts the next game with a revenge orb (game.ts
+ * revengeFor). A loser reading it online is asked to play again instead.
+ */
+export function revengeNote(ids: string[], nameOf: (id: string) => string, me: string | null): string {
+  if (!ids.length) return '';
+  if (me !== null && ids.includes(me)) return 'Play again and you start with a revenge orb.';
+  return `${cap(namesOf(ids, nameOf, me))} ${verb(ids, me, 'starts', 'start')} the next game with a revenge orb.`;
+}
+
+/**
  * A ward (or a cave-in's two) taking what would have cost a life, said as
  * protection: "Your ward took the hit.", "Ash's two wards took both hits."
  * `whose`: "your", or a name's possessive.
