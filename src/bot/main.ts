@@ -6,15 +6,16 @@
 import { BOT } from '../lib/storage';
 import { Bot } from './driver';
 import { session } from '../lib/session.svelte';
-import { namesFor } from './identities';
+import { modesFrom, namesFor } from './identities';
 
 if (!(import.meta.env.DEV || import.meta.env.VITE_BOT === '1') || !BOT) throw new Error('The bot only runs from bot.html, on the dev server or a bot build.');
 
 // Two rooms at once (scripts/room-bot.mjs --rooms 2): this one is ?slot= of ?of=,
 // and the second only opens while every other room is mid-game (wanted.ts).
+// ?modes=: the game modes its hosts may pick (--mode), all of them by default.
 const q = new URLSearchParams(location.search);
 const slot = Number(q.get('slot') ?? 1);
-const bot = new Bot(namesFor(slot, Number(q.get('of') ?? 1)), slot === 2 ? 'second' : 'first');
+const bot = new Bot(namesFor(slot, Number(q.get('of') ?? 1)), slot === 2 ? 'second' : 'first', modesFrom(q.get('modes')));
 bot.start();
 
 // For the runner (and a look in a headed browser); in development, the session too, for scripts that drive it (as src/main.ts gives it).

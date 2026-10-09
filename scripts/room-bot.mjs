@@ -5,8 +5,11 @@
 // again, and the browser profile keeps who is on and the room's save, so it
 // comes back as the same player in the same room.
 //
-//   npm run bot -- [--rooms 2] [--headed] [--no-build]
-//   (or node scripts/room-bot.mjs --rooms 2; npm run bot 2 works too)
+//   npm run bot -- [--rooms 2] [--mode turns,race,delve] [--headed] [--no-build]
+//   (or node scripts/room-bot.mjs --rooms 2; npm run bot 2 delve works too)
+//
+// --mode: the game modes the hosts may pick, each by their own taste (all
+// three by default); --mode delve makes every room a Delve room.
 //
 // A room opens only when the open-room list has no room at all; with
 // --rooms 2, a second one also opens while every room listed is mid-game
@@ -32,6 +35,7 @@ const outDir = join(root, '.bot', 'dist');
 const { values: args, positionals } = parseArgs({
   options: {
     rooms: { type: 'string' },
+    mode: { type: 'string' },
     headed: { type: 'boolean' },
     'no-build': { type: 'boolean' },
   },
@@ -39,16 +43,25 @@ const { values: args, positionals } = parseArgs({
 });
 // PowerShell drops the `--` in `npm run bot -- --rooms 2`, and npm then takes
 // the flags as its own settings (npm_config_*) and hands on only the `2`: so
-// those count too, and a bare number is the number of rooms.
+// those count too, a bare number is the number of rooms and bare mode names
+// are the modes.
+const MODES = ['turns', 'race', 'delve'];
 const env = process.env;
+const words = positionals.flatMap((p) => p.toLowerCase().split(','));
 const opts = {
   rooms: args.rooms ?? positionals.find((p) => /^\d+$/.test(p)) ?? '1',
+  mode: args.mode ?? (words.filter((w) => MODES.includes(w)).join(',') || 'turns,race,delve'),
   headed: args.headed ?? env.npm_config_headed === 'true',
   'no-build': args['no-build'] ?? (env.npm_config_build === 'false' || env.npm_config_no_build === 'true'),
 };
 const rooms = Number(opts.rooms);
 if (!Number.isInteger(rooms) || rooms < 1 || rooms > MAX_ROOMS) {
   console.error(`--rooms takes 1 to ${MAX_ROOMS}.`);
+  process.exit(2);
+}
+const modes = opts.mode.toLowerCase().split(/[\s,]+/).filter(Boolean);
+if (!modes.length || modes.some((m) => !MODES.includes(m))) {
+  console.error(`--mode takes ${MODES.join(', ')}, or several of them (turns,delve).`);
   process.exit(2);
 }
 
@@ -77,7 +90,7 @@ let stopping = false;
  */
 async function runRoom(slot) {
   const say = rooms > 1 ? (...args) => log(`[${slot}]`, ...args) : log;
-  const url = `${base}bot.html?slot=${slot}&of=${rooms}`;
+  const url = `${base}bot.html?slot=${slot}&of=${rooms}&modes=${modes.join(',')}`;
   const context = await chromium.launchPersistentContext(join(root, '.bot', `profile-${slot}`), {
     headless: !opts.headed,
     executablePath: process.env.BOT_CHROMIUM || undefined,
@@ -128,6 +141,7 @@ async function runRoom(slot) {
   return room;
 }
 
+log(`${rooms > 1 ? `${rooms} rooms` : '1 room'}, hosting ${modes.join(', ')}`);
 const all = [];
 for (let slot = 1; slot <= rooms; slot++) all.push(await runRoom(slot));
 

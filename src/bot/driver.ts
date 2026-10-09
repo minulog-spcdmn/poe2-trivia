@@ -13,7 +13,7 @@ import { engine, SAVE, session } from '../lib/session.svelte';
 import { readStored, removeStored, writeStored } from '../lib/storage';
 import { answerDelay, blasts, chooseAnswer, chooseCard, findAppetite, knowChance, pickDelay, type Ask } from './brain';
 import { blastProblem, findLosses, fuseDue, inventoryOf, isGroupRun, livesOf, reviveProblem, shownDepth, standingIds, teamItemReady } from '../lib/delve';
-import { identityOf, lonelyLength, nextName, otherPrefs, shiftLength, type Identity, type RoomPrefs } from './identities';
+import { identityOf, lonelyLength, nextName, otherPrefs, shiftLength, type Identity, type Mode, type RoomPrefs } from './identities';
 import { joinable, makesWay, wanted, type Role } from './wanted';
 
 const TICK_MS = 200;
@@ -88,6 +88,9 @@ function restoreSave() {
   if (copy && !readStored(SAVE, 'session')) writeStored(SAVE, copy, 'session');
 }
 
+/** A host's rules, for the log (Delve has none to pick). */
+const rulesText = (c: RoomPrefs) => (c.mode === 'delve' ? 'delve' : `${c.mode}, ${c.difficulty}, to ${c.target}, ${c.timer} s`);
+
 /** The room takes on a host's rules (between games). */
 const useRules = (c: RoomPrefs) => session.dispatch({ type: 'settings', settings: { mode: c.mode, difficulty: c.difficulty, targetScore: c.target, timer: c.timer } });
 
@@ -131,11 +134,13 @@ export class Bot {
 
   /**
    * `names`: whom this room draws its hosts from (its share when two rooms
-   * run at once); `role`: when it opens (wanted.ts).
+   * run at once); `role`: when it opens (wanted.ts); `modes`: the game
+   * modes its hosts may pick (the runner's --mode).
    */
   constructor(
     private readonly names: string[],
     private readonly role: Role,
+    private readonly modes: readonly Mode[],
   ) {}
 
   private get persona() {
@@ -146,7 +151,7 @@ export class Bot {
     // Someone from another room's share (the number of rooms changed): this room starts afresh.
     if (this.shift.on && !this.names.includes(this.shift.on)) this.shift = { ...this.shift, on: null, backAt: 0 };
     if (this.shift.on) {
-      this.who = identityOf(this.shift.on, engine.categories);
+      this.who = identityOf(this.shift.on, engine.categories, this.modes);
       restoreSave();
       session.resume();
       if (session.mode !== 'host') session.host(this.shift.on);
@@ -240,7 +245,7 @@ export class Bot {
   /** The next one comes on and opens a room. */
   private begin(now: number) {
     const name = nextName(this.shift.recent, Math.random, this.names);
-    this.who = identityOf(name, engine.categories);
+    this.who = identityOf(name, engine.categories, this.modes);
     this.shift = { on: name, until: now + shiftLength(Math.random), backAt: 0, recent: [...this.shift.recent, name].slice(-20) };
     this.save();
     this.configured = false;
@@ -325,12 +330,12 @@ export class Bot {
       return true;
     }
     if (alone < this.lonelyFor) return false;
-    if (!this.retried && Math.random() < RETRY_CHANCE) {
+    const other = this.retried ? null : otherPrefs(this.who!.prefs, Math.random, this.modes);
+    if (other && Math.random() < RETRY_CHANCE) {
       this.retried = true;
       this.lonelySince = 0;
-      const c = (this.who!.prefs = otherPrefs(this.who!.prefs, Math.random));
-      useRules(c);
-      log(`nobody came, trying ${c.mode}, ${c.difficulty}, to ${c.target}, ${c.timer} s`);
+      useRules((this.who!.prefs = other));
+      log(`nobody came, trying ${rulesText(other)}`);
       return false;
     }
     this.end(now, 'nobody came');
@@ -344,7 +349,7 @@ export class Bot {
     const c = this.who!.prefs;
     useRules(c);
     this.configured = true;
-    log(`room ${session.code} open: ${c.mode}, ${c.difficulty}, to ${c.target}, ${c.timer} s`);
+    log(`room ${session.code} open: ${rulesText(c)}`);
   }
 
   private lobby(s: GameState, humans: string[], now: number) {

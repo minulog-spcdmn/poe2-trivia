@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { answerDelay, blasts, chooseAnswer, chooseCard, findAppetite, guessChance, knowChance, makePersona, pickCategory, weighted, wrongPick, type Ask, type Persona } from '../src/bot/brain.ts';
 import { rulesFor, type Preset } from '../src/lib/game.ts';
-import { NAMES, identityOf, lonelyLength, namesFor, nextName, otherPrefs, rollPrefs, shiftLength } from '../src/bot/identities.ts';
+import { MODES, NAMES, identityOf, lonelyLength, modesFrom, namesFor, nextName, otherPrefs, rollPrefs, shiftLength } from '../src/bot/identities.ts';
 import { joinable, makesWay, wanted } from '../src/bot/wanted.ts';
 import type { RoomInfo } from '../src/lib/roomInfo.ts';
 import { PROTOCOL_VERSION } from '../src/lib/protocol.ts';
@@ -197,9 +197,29 @@ test('a host who waited in vain tries a different mode or difficulty', () => {
   const rng = seeded(31);
   for (let i = 0; i < 200; i++) {
     const now = rollPrefs(rng);
-    const next = otherPrefs(now, rng);
-    assert.ok(next.mode !== now.mode || next.difficulty !== now.difficulty);
+    const next = otherPrefs(now, rng)!;
+    assert.ok(next.mode !== now.mode || (next.mode !== 'delve' && next.difficulty !== now.difficulty));
   }
+  // Delve alone has nothing else to try; Delve and take turns can only swap modes or difficulties.
+  assert.equal(otherPrefs(rollPrefs(rng, ['delve']), rng, ['delve']), null);
+  for (let i = 0; i < 100; i++) assert.ok(['delve', 'turns'].includes(otherPrefs(rollPrefs(rng, ['delve', 'turns']), rng, ['delve', 'turns'])!.mode));
+});
+
+test('hosts pick only among the modes allowed, each by their own taste', () => {
+  const cats = ['A', 'B', 'C'];
+  for (const n of NAMES) assert.equal(identityOf(n, cats, ['delve']).prefs.mode, 'delve');
+  const mixed = NAMES.map((n) => identityOf(n, cats, ['turns', 'delve']).prefs.mode);
+  assert.ok(mixed.includes('turns') && mixed.includes('delve') && !mixed.includes('race'));
+  // Who someone is doesn't change with the modes allowed.
+  assert.deepEqual(identityOf('Morgrim', cats, ['delve']).persona, identityOf('Morgrim', cats).persona);
+});
+
+test('modes are read from a list, all of them when it names none', () => {
+  assert.deepEqual(modesFrom('delve'), ['delve']);
+  assert.deepEqual(modesFrom(' Delve, turns '), ['turns', 'delve']);
+  assert.deepEqual(modesFrom(''), [...MODES]);
+  assert.deepEqual(modesFrom('nonsense'), [...MODES]);
+  assert.deepEqual(modesFrom(null), [...MODES]);
 });
 
 const room = (phase: RoomInfo['phase'], players = 2): RoomInfo => ({

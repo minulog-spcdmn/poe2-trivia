@@ -43,8 +43,20 @@ export const NAMES = [
   'ashen_kit',
 ];
 
+/** The game modes a bot may host. */
+export const MODES = ['turns', 'race', 'delve'] as const;
+export type Mode = (typeof MODES)[number];
+/** How often people host each (out of the modes allowed). */
+const MODE_WEIGHTS: Record<Mode, number> = { turns: 5, race: 2, delve: 3 };
+
+/** The modes in a list like "turns,delve" (case and spaces aside); all of them if it names none. */
+export function modesFrom(list: string | null | undefined): Mode[] {
+  const named = MODES.filter((m) => (list ?? '').toLowerCase().split(/[\s,]+/).includes(m));
+  return named.length ? named : [...MODES];
+}
+
 export interface RoomPrefs {
-  mode: 'turns' | 'race' | 'delve';
+  mode: Mode;
   difficulty: Exclude<Difficulty, 'custom'>;
   target: number;
   /** Seconds per question (never 0: a room nobody can stall). */
@@ -73,29 +85,37 @@ export function seededBy(text: string): Rng {
 
 const pick = <T>(rng: Rng, options: T[], weights: number[]) => options[weighted(weights, rng)];
 
-/** Rules to host with, as people pick them (mostly take turns or Delve, mostly Cruel; Delve has no rules of its own to pick). */
-export function rollPrefs(rng: Rng): RoomPrefs {
+/**
+ * Rules to host with, as people pick them (mostly take turns or Delve, mostly
+ * Cruel; Delve has no rules of its own to pick), among the modes allowed.
+ */
+export function rollPrefs(rng: Rng, modes: readonly Mode[] = MODES): RoomPrefs {
   return {
-    mode: pick(rng, ['turns', 'race', 'delve'] as const, [5, 2, 3]),
+    mode: pick(rng, [...modes], modes.map((m) => MODE_WEIGHTS[m])),
     difficulty: pick(rng, ['cruel', 'merciless', 'eternal'] as const, [6, 3, 1]),
     target: pick(rng, [5, 7, 10, 15], [2, 2, 4, 1]),
     timer: pick(rng, [16, 32, 64], [2, 5, 1]),
   };
 }
 
-/** Other rules than `now`: a host who waited in vain trying something else. */
-export function otherPrefs(now: RoomPrefs, rng: Rng): RoomPrefs {
+/**
+ * Other rules than `now`, among the modes allowed: a host who waited in vain
+ * trying something else (another mode, or another difficulty outside Delve).
+ * Null when there is nothing else to try (Delve the only mode allowed).
+ */
+export function otherPrefs(now: RoomPrefs, rng: Rng, modes: readonly Mode[] = MODES): RoomPrefs | null {
+  if (modes.length === 1 && modes[0] === 'delve') return null;
   for (;;) {
-    const next = rollPrefs(rng);
-    if (next.mode !== now.mode || next.difficulty !== now.difficulty) return next;
+    const next = rollPrefs(rng, modes);
+    if (next.mode !== now.mode || (next.mode !== 'delve' && next.difficulty !== now.difficulty)) return next;
   }
 }
 
-/** Who a name is: always the same person for the same name and categories. */
-export function identityOf(name: string, categories: string[]): Identity {
+/** Who a name is: always the same person for the same name and categories (and modes allowed). */
+export function identityOf(name: string, categories: string[], modes: readonly Mode[] = MODES): Identity {
   const rng = seededBy(name);
   const persona = makePersona(categories, rng);
-  return { name, persona, prefs: rollPrefs(rng) };
+  return { name, persona, prefs: rollPrefs(rng, modes) };
 }
 
 /**
