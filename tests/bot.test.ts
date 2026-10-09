@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { answerDelay, chooseAnswer, guessChance, knowChance, makePersona, pickCategory, weighted, wrongPick, type Ask, type Persona } from '../src/bot/brain.ts';
+import { answerDelay, blasts, chooseAnswer, chooseCard, guessChance, revives, knowChance, makePersona, pickCategory, weighted, wrongPick, type Ask, type Persona } from '../src/bot/brain.ts';
 import { rulesFor, type Preset } from '../src/lib/game.ts';
 import { NAMES, identityOf, lonelyLength, namesFor, nextName, otherPrefs, rollPrefs, shiftLength } from '../src/bot/identities.ts';
 import { joinable, makesWay, wanted } from '../src/bot/wanted.ts';
@@ -15,9 +15,9 @@ function seeded(seed: number) {
   };
 }
 
-const plain: Persona = { skill: 0, pace: 1, affinity: { Rings: 0.02, Flasks: -0.05 } };
+const plain: Persona = { skill: 0, pace: 1, affinity: { Rings: 0.02, Flasks: -0.05 }, finds: 0.5, boldness: 0.5, generosity: 0.5 };
 const plainRules = rulesFor({ difficulty: 'cruel' });
-const ask = (over: Partial<Ask> = {}): Ask => ({ rules: plainRules, category: 'Rings', veil: 0, gray: false, mirrored: false, clock: 32, race: false, ...over });
+const ask = (over: Partial<Ask> = {}): Ask => ({ rules: plainRules, category: 'Rings', veil: 0, gray: false, mirrored: false, clock: 32, mode: 'turns', ...over });
 /** A question as a preset room asks it (a deathmatch's with `harder`). */
 const preset = (difficulty: Preset, harder = false): Ask => {
   const rules = rulesFor({ difficulty }, harder);
@@ -27,14 +27,15 @@ const preset = (difficulty: Preset, harder = false): Ask => {
 test('a persona rolls every category, within bounds', () => {
   const p = makePersona(['A', 'B', 'C'], seeded(1));
   assert.deepEqual(Object.keys(p.affinity), ['A', 'B', 'C']);
-  for (const a of Object.values(p.affinity)) assert.ok(a >= -0.05 && a <= 0.02);
-  assert.ok(p.skill >= -0.04 && p.skill <= 0.01);
-  assert.ok(p.pace >= 0.85 && p.pace <= 1.2);
+  for (const a of Object.values(p.affinity)) assert.ok(a >= -0.07 && a <= 0.025);
+  assert.ok(p.skill >= -0.06 && p.skill <= 0.015);
+  assert.ok(p.pace >= 0.75 && p.pace <= 1.35);
+  for (const k of ['finds', 'boldness', 'generosity'] as const) assert.ok(p[k] > 0 && p[k] < 1, k);
 });
 
 test('items shown plainly are nearly always known, even by the weakest', () => {
   assert.ok(knowChance(plain, preset('cruel')) >= 0.98);
-  assert.ok(knowChance({ skill: -0.04, pace: 1, affinity: { Helmets: -0.05 } }, preset('cruel')) >= 0.89);
+  assert.ok(knowChance({ ...plain, skill: -0.06, affinity: { Helmets: -0.07 } }, preset('cruel')) >= 0.85);
 });
 
 test('harder questions are known less often', () => {
@@ -44,7 +45,7 @@ test('harder questions are known less often', () => {
   assert.ok(cruel > merciless && merciless > eternal, `${cruel} ${merciless} ${eternal}`);
   // A deathmatch asks one step harder.
   assert.ok(knowChance(plain, preset('cruel', true)) < cruel);
-  for (const over of [{ veil: 0.5 }, { gray: true }, { mirrored: true }, { race: true }])
+  for (const over of [{ veil: 0.5 }, { gray: true }, { mirrored: true }, { mode: 'race' as const }])
     assert.ok(knowChance(plain, ask(over)) < knowChance(plain, ask()), JSON.stringify(over));
   assert.ok(knowChance(plain, ask({ category: 'Flasks' })) < knowChance(plain, ask({ category: 'Rings' })));
 });
@@ -70,12 +71,38 @@ test('a bot that knows always picks right; one that guesses is right as often as
   assert.ok(Math.abs(right / 4000 - guessChance(ask())) < 0.03, `${right}`);
 });
 
-test('answers take a human time and come in before the clock ends', () => {
+test('answers take a human time, mostly well inside the clock', () => {
   const rng = seeded(7);
-  for (let i = 0; i < 500; i++) {
-    const d = answerDelay(plain, ask({ clock: 8 }), true, rng);
-    assert.ok(d !== null && d >= 900 && d <= 8000 - 600, `delay ${d}`);
+  let late = 0;
+  for (let i = 0; i < 1000; i++) {
+    const d = answerDelay(plain, ask({ clock: 8 }), true, rng)!;
+    assert.ok(d >= 1000, `delay ${d}`);
+    if (d > 8000) late++;
   }
+  // A plain question known: only now and then too slow for a short clock.
+  assert.ok(late < 20, `late ${late}`);
+});
+
+test('in Delve an unsure bot always tries (a time-out costs the life as well)', () => {
+  const rng = seeded(41);
+  for (let i = 0; i < 500; i++) assert.notEqual(answerDelay(plain, ask({ mode: 'delve', clock: 8 }), false, rng), null);
+});
+
+test('finds are taken as often as the player likes them, and only those on offer', () => {
+  const rng = seeded(43);
+  let taken = 0;
+  // Helmets a category this player would never pick for itself, so every Helmets is the find taken.
+  const p = { ...plain, finds: 0.7, affinity: { ...plain.affinity, Helmets: -10 } };
+  for (let i = 0; i < 2000; i++) if (chooseCard(p, ['Rings', 'Flasks', 'Helmets'], ['Helmets', 'Belts'], rng) === 'Helmets') taken++;
+  assert.ok(Math.abs(taken / 2000 - 0.7) < 0.05, `${taken}`);
+  for (let i = 0; i < 200; i++) assert.notEqual(chooseCard({ ...plain, finds: 1 }, ['Rings', 'Flasks'], ['Belts'], rng), 'Belts');
+});
+
+test('bold players detonate more, generous ones give more lives', () => {
+  const rng = seeded(47);
+  const rate = (f: () => boolean) => Array.from({ length: 2000 }, f).filter(Boolean).length / 2000;
+  assert.ok(rate(() => blasts({ ...plain, boldness: 0.9 }, rng)) > rate(() => blasts({ ...plain, boldness: 0.2 }, rng)) + 0.5);
+  assert.ok(rate(() => revives({ ...plain, generosity: 0.9 }, rng)) > rate(() => revives({ ...plain, generosity: 0.3 }, rng)) + 0.4);
 });
 
 test('unsure answers are slower', () => {
@@ -100,7 +127,7 @@ test('without a clock, a turn is always answered', () => {
 test('in a race, an unsure bot mostly sits the question out', () => {
   const rng = seeded(5);
   let out = 0;
-  for (let i = 0; i < 1000; i++) if (answerDelay(plain, ask({ race: true, clock: 16 }), false, rng) === null) out++;
+  for (let i = 0; i < 1000; i++) if (answerDelay(plain, ask({ mode: 'race', clock: 16 }), false, rng) === null) out++;
   assert.ok(out > 500 && out < 700, `sat out ${out}`);
 });
 

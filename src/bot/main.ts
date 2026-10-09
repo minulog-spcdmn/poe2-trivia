@@ -5,6 +5,7 @@
 
 import { BOT } from '../lib/storage';
 import { Bot } from './driver';
+import { session } from '../lib/session.svelte';
 import { namesFor } from './identities';
 
 if (!(import.meta.env.DEV || import.meta.env.VITE_BOT === '1') || !BOT) throw new Error('The bot only runs from bot.html, on the dev server or a bot build.');
@@ -16,7 +17,7 @@ const slot = Number(q.get('slot') ?? 1);
 const bot = new Bot(namesFor(slot, Number(q.get('of') ?? 1)), slot === 2 ? 'second' : 'first');
 bot.start();
 
-// For the runner (and a look in a headed browser).
-Object.assign(window, { __bot: bot });
+// For the runner (and a look in a headed browser); in development, the session too, for scripts that drive it (as src/main.ts gives it).
+Object.assign(window, { __bot: bot, ...(import.meta.env.DEV ? { __s: session } : {}) });
 const out = document.getElementById('bot')!;
 setInterval(() => (out.textContent = JSON.stringify(bot.status(), null, 2)), 1000);

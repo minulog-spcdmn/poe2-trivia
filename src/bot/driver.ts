@@ -11,7 +11,8 @@ import { activeRules, grayscaleFor, type GameState, type Question } from '../lib
 import { scanRooms, type RoomInfo } from '../lib/rooms';
 import { engine, SAVE, session } from '../lib/session.svelte';
 import { readStored, removeStored, writeStored } from '../lib/storage';
-import { answerDelay, chooseAnswer, knowChance, pickCategory, pickDelay, type Ask } from './brain';
+import { answerDelay, blasts, chooseAnswer, chooseCard, knowChance, pickDelay, revives, type Ask } from './brain';
+import { blastProblem, isGroupRun, livesOf, reviveProblem } from '../lib/delve';
 import { identityOf, lonelyLength, nextName, otherPrefs, shiftLength, type Identity, type RoomPrefs } from './identities';
 import { joinable, makesWay, wanted, type Role } from './wanted';
 
@@ -90,8 +91,8 @@ function restoreSave() {
 /** The room takes on a host's rules (between games). */
 const useRules = (c: RoomPrefs) => session.dispatch({ type: 'settings', settings: { mode: c.mode, difficulty: c.difficulty, targetScore: c.target, timer: c.timer } });
 
+/** Something the bot is about to do, at `at`. */
 interface Plan {
-  key: string;
   at: number;
   run: () => void;
 }
@@ -99,9 +100,12 @@ interface Plan {
 export class Bot {
   private shift: Shift = loadShift() ?? { on: null, until: 0, backAt: 0, recent: [] };
   private who: Identity | null = null;
-  private plan: Plan | null = null;
-  /** The question the bot has made up its mind about (it may have chosen to sit it out). */
-  private planned = '';
+  /** What it is about to do, by what for (a pick, an answer, a life to give…). */
+  private plans = new Map<string, Plan>();
+  /** What it has made up its mind about (it may have chosen not to act). */
+  private decided = new Set<string>();
+  /** The game they are for (its startedAt): a new game starts them afresh. */
+  private game = 0;
   private lobbyKey = '';
   private startAt = 0;
   private overAt = 0;
@@ -243,7 +247,7 @@ export class Bot {
     this.retried = false;
     this.lonelySince = 0;
     this.wayChecks = 0;
-    this.plan = null;
+    this.plans.clear();
     this.notReadySince = now;
     log(`${name} comes on until ${time(this.shift.until)}`);
     session.host(name);
@@ -258,7 +262,7 @@ export class Bot {
     log(`${this.shift.on} leaves (${why})`);
     session.leave();
     this.who = null;
-    this.plan = null;
+    this.plans.clear();
     this.shift = { ...this.shift, on: null, backAt: now + HAND_OVER_MS };
     this.save();
     this.wantedChecks = madeWay ? 0 : WANTED_CHECKS[this.role];
@@ -282,6 +286,11 @@ export class Bot {
       return;
     }
     this.notReadySince = now;
+    if ((s.startedAt ?? 0) !== this.game) {
+      this.game = s.startedAt ?? 0;
+      this.plans.clear();
+      this.decided.clear();
+    }
     this.configure(s);
     const me = session.myPlayerId;
     const humans = s.players.filter((p) => p.id !== me && p.connected);
@@ -293,11 +302,11 @@ export class Bot {
     if (s.phase === 'lobby') this.lobby(s, humans.map((p) => p.id), now);
     else if (s.phase === 'over') this.over(now, anyone, timeUp);
     else this.inGame(s, now, humans.length > 0);
-    const p = this.plan;
-    if (p && now >= p.at) {
-      this.plan = null;
-      p.run();
-    }
+    for (const [key, p] of this.plans)
+      if (now >= p.at) {
+        this.plans.delete(key);
+        p.run();
+      }
   }
 
   /**
@@ -373,7 +382,7 @@ export class Bot {
       if (now - this.aloneSince > ALONE_MS) {
         log('everyone left, back to the lobby');
         this.aloneSince = 0;
-        this.plan = null;
+        this.plans.clear();
         session.dispatch({ type: 'restart' });
         return;
       }
@@ -384,29 +393,80 @@ export class Bot {
       session.dispatch({ type: 'skip' });
       return;
     }
-    if (s.settings.mode === 'race') this.race(s, now);
+    if (s.delve) this.delve(s, now);
+    else if (s.settings.mode === 'race') this.race(s, now);
     else this.turns(s, now);
   }
 
   private turns(s: GameState, now: number) {
-    const me = session.myPlayerId;
-    if (s.players[s.turn]?.id !== me) return;
+    if (s.players[s.turn]?.id !== session.myPlayerId) return;
+    if (s.phase === 'choosing') this.planCard(s, now, 'pick');
+    else if (s.phase === 'question' && s.question) this.planAnswer(s, s.question, now);
+  }
+
+  /**
+   * Delve: alone, its own turns; together, a vote for each card, an answer
+   * to each question while standing, and a life for a teammate who perished.
+   * Flares burn by themselves (as everyone's do); dynamite it detonates
+   * itself, on questions it isn't sure of (planAnswer).
+   */
+  private delve(s: GameState, now: number) {
+    const me = session.myPlayerId!;
+    const together = isGroupRun(s);
+    if (together) this.planRevive(s, now);
+    if (livesOf(s, me) <= 0) return;
     if (s.phase === 'choosing') {
-      const key = `pick:${s.turnCount}`;
-      if (this.plan?.key === key) return;
-      const offered = [...s.offered];
-      this.plan = {
-        key,
-        at: now + pickDelay(this.persona, Math.random),
+      if (!together) {
+        if (s.players[s.turn]?.id === me) this.planCard(s, now, 'pick');
+      } else if (!s.delve?.votes?.[me]) this.planCard(s, now, 'vote');
+    } else if (s.phase === 'question' && s.question) {
+      const q = s.question;
+      // The clock starts once the art has reached everyone answering.
+      if (q.deadline === null) return;
+      if (together ? q.struck?.some((x) => x.by === me) : s.players[s.turn]?.id !== me) return;
+      this.planAnswer(s, q, now);
+    }
+  }
+
+  /** Picks a card on its turn, or votes for one (Delve together). */
+  private planCard(s: GameState, now: number, type: 'pick' | 'vote') {
+    const key = `${type}:${s.round}:${s.turnCount}`;
+    if (this.decided.has(key)) return;
+    this.decided.add(key);
+    const offered = [...s.offered];
+    const finds = (s.delve?.finds ?? []).map((f) => f.category);
+    this.plans.set(key, {
+      at: now + pickDelay(this.persona, Math.random),
+      run: () => {
+        const cur = session.state;
+        if (cur?.phase !== 'choosing' || cur.turnCount !== s.turnCount || cur.round !== s.round) return;
+        if (type === 'vote' && cur.delve?.votes?.[session.myPlayerId!]) return;
+        const category = chooseCard(this.persona, offered, finds, Math.random);
+        log(type === 'pick' ? 'picks' : 'votes for', category);
+        session.dispatch(type === 'pick' ? { type: 'pick', category } : { type: 'vote', category });
+      },
+    });
+  }
+
+  /** Delve together: gives a teammate who perished one of its lives, if it is that kind of player (once a depth each). */
+  private planRevive(s: GameState, now: number) {
+    const me = session.myPlayerId!;
+    for (const p of s.players) {
+      if (p.id === me || reviveProblem(s, me, p.id)) continue;
+      const key = `revive:${p.id}:${s.round}`;
+      if (this.decided.has(key)) continue;
+      this.decided.add(key);
+      if (!revives(this.persona, Math.random)) continue;
+      this.plans.set(key, {
+        at: now + between(1500, 5000) * this.persona.pace,
         run: () => {
           const cur = session.state;
-          if (cur?.phase !== 'choosing' || cur.turnCount !== s.turnCount) return;
-          const category = pickCategory(this.persona, offered, Math.random);
-          log('picks', category);
-          session.dispatch({ type: 'pick', category });
+          if (!cur || reviveProblem(cur, me, p.id)) return;
+          log('gives a life to', p.name);
+          session.dispatch({ type: 'revive', target: p.id });
         },
-      };
-    } else if (s.phase === 'question' && s.question) this.planAnswer(s, s.question, now);
+      });
+    }
   }
 
   private race(s: GameState, now: number) {
@@ -415,21 +475,27 @@ export class Bot {
     this.planAnswer(s, q, now);
   }
 
-  /** Decides once per question whether it knows, when to answer and what. */
+  /**
+   * Decides once per question whether it knows, when to answer and what (in
+   * Delve, maybe to detonate dynamite instead). Its time counts from the
+   * clock's start; an answer the clock beats isn't given.
+   */
   private planAnswer(s: GameState, q: Question, now: number) {
     const key = `answer:${q.askedAt}`;
-    if (this.planned === key) return;
-    this.planned = key;
+    if (this.decided.has(key)) return;
+    this.decided.add(key);
+    const me = session.myPlayerId!;
     const rules = activeRules(s);
     const gray = grayscaleFor(s);
+    const start = q.clockAt ?? q.askedAt;
     const ask: Ask = {
       rules,
       category: q.category,
       veil: q.veil ? (rules.veil?.share ?? 0.5) : 0,
       gray: gray === 'all' || (gray === 'art' && q.mode === 'art'),
       mirrored: !!q.mirrored?.some(Boolean),
-      clock: q.deadline ? (q.deadline - q.askedAt) / 1000 : 0,
-      race: s.settings.mode === 'race',
+      clock: q.deadline ? (q.deadline - start) / 1000 : 0,
+      mode: s.delve ? 'delve' : s.settings.mode === 'race' ? 'race' : 'turns',
     };
     const knows = Math.random() < knowChance(this.persona, ask);
     const delay = answerDelay(this.persona, ask, knows, Math.random);
@@ -437,22 +503,38 @@ export class Bot {
       log(`lets "${q.category}" go by`);
       return;
     }
-    this.plan = {
-      key,
-      // Picked up after a reload: not all at once.
-      at: Math.max(now + 800, q.askedAt + delay),
+    // Picked up after a reload: not all at once.
+    const at = Math.max(now + 800, start + delay);
+    const open = () => {
+      const cur = session.state;
+      const o = cur?.question;
+      return cur?.phase === 'question' && o?.askedAt === q.askedAt && (!o.deadline || Date.now() <= o.deadline) ? o : null;
+    };
+    if (ask.mode === 'delve' && !knows && !blastProblem(s, me) && blasts(this.persona, Math.random)) {
+      // Not sure, and dynamite at hand: blast it away for another (deciding so is quicker than answering).
+      this.plans.set(key, {
+        at: Math.max(now + 800, start + delay * 0.6),
+        run: () => {
+          if (!open() || blastProblem(session.state!, me)) return;
+          log('detonates dynamite');
+          session.dispatch({ type: 'blast', askedAt: q.askedAt });
+        },
+      });
+      return;
+    }
+    this.plans.set(key, {
+      at,
       run: () => {
-        const cur = session.state;
-        const open = cur?.question;
-        if (cur?.phase !== 'question' || open?.askedAt !== q.askedAt) return;
-        const correct = open.options.indexOf(open.itemId);
-        const names = open.options.map((id, i) => open.labels[i] ?? engine.byId.get(id)?.name ?? '');
-        // In a race everyone sees who guessed what, so those options are out.
-        const ruledOut = open.misses.map((m) => m.index);
+        const o = open();
+        if (!o) return;
+        const correct = o.options.indexOf(o.itemId);
+        const names = o.options.map((id, i) => o.labels[i] ?? engine.byId.get(id)?.name ?? '');
+        // Options already shown wrong (others' guesses in a race, the team's in Delve) are out.
+        const ruledOut = [...o.misses.map((m) => m.index), ...(o.struck ?? []).map((x) => x.index)];
         const index = chooseAnswer(names, correct, knows, ask, ruledOut, Math.random);
-        log(`answers ${index === correct ? 'right' : 'wrong'} after ${((Date.now() - q.askedAt) / 1000).toFixed(1)} s`);
+        log(`answers ${index === correct ? 'right' : 'wrong'} after ${((Date.now() - start) / 1000).toFixed(1)} s`);
         session.dispatch({ type: 'answer', index, askedAt: q.askedAt });
       },
-    };
+    });
   }
 }

@@ -7,7 +7,9 @@
 // burning in, mirrored, without colour); it knows some categories better
 // than others, takes its time (longer on hard questions and when unsure),
 // and when it doesn't know, it narrows the options down and guesses, falling
-// for the one most like the right one when the guess is wrong.
+// for the one most like the right one when the guess is wrong. The same
+// player in every mode: take turns, race and Delve (where it also goes for
+// finds, detonates dynamite and gives teammates lives, each by its nature).
 // Pure functions of their inputs and a random source, so tests can pin them.
 
 import { nameSimilarity, type DifficultyRules } from '../lib/game.ts';
@@ -22,6 +24,12 @@ export interface Persona {
   pace: number;
   /** Added to the chance of knowing an answer in each category. */
   affinity: Record<string, number>;
+  /** Delve: the chance it goes for a find on offer. */
+  finds: number;
+  /** Delve: the chance it detonates dynamite on a question it isn't sure of. */
+  boldness: number;
+  /** Delve together: the chance it gives a teammate who perished one of its lives, when it can. */
+  generosity: number;
 }
 
 /** What the bot sees of a question when it decides. */
@@ -37,7 +45,7 @@ export interface Ask {
   mirrored: boolean;
   /** Seconds on the clock, 0 without one. */
   clock: number;
-  race: boolean;
+  mode: 'turns' | 'race' | 'delve';
 }
 
 /** Chance of knowing an item shown plainly, before the persona. */
@@ -68,9 +76,12 @@ export function weighted(weights: number[], rng: Rng): number {
 
 export function makePersona(categories: string[], rng: Rng): Persona {
   return {
-    skill: between(rng, -0.04, 0.01),
-    pace: between(rng, 0.85, 1.2),
-    affinity: Object.fromEntries(categories.map((c) => [c, between(rng, -0.05, 0.02)])),
+    skill: between(rng, -0.06, 0.015),
+    pace: between(rng, 0.75, 1.35),
+    affinity: Object.fromEntries(categories.map((c) => [c, between(rng, -0.07, 0.025)])),
+    finds: between(rng, 0.35, 1),
+    boldness: between(rng, 0.2, 0.95),
+    generosity: between(rng, 0.3, 0.95),
   };
 }
 
@@ -93,7 +104,7 @@ export function hardness(ask: Ask): number {
 /** How likely the bot is to know this answer. */
 export function knowChance(p: Persona, ask: Ask): number {
   // A race is a scramble: less time to be sure before someone else is.
-  return clamp(RECOGNISE + p.skill + (p.affinity[ask.category] ?? 0) - hardness(ask) - (ask.race ? 0.03 : 0), 0.3, 0.99);
+  return clamp(RECOGNISE + p.skill + (p.affinity[ask.category] ?? 0) - hardness(ask) - (ask.mode === 'race' ? 0.03 : 0), 0.3, 0.99);
 }
 
 /**
@@ -108,25 +119,29 @@ export function guessChance(ask: Ask): number {
 }
 
 /**
- * Milliseconds the bot takes to answer, from when the question was asked;
- * null to let the clock run out (or, in a race, to stay out of it).
+ * Milliseconds the bot takes to answer, from when the clock started; null to
+ * let the clock run out (or, in a race, to stay out of it). The clock isn't
+ * minded: an answer slower than it comes too late, as anyone's does.
  */
 export function answerDelay(p: Persona, ask: Ask, knows: boolean, rng: Rng): number | null {
-  const clockMs = ask.clock * 1000;
   if (!knows) {
     // Not sure: a wrong answer in a race costs a point, so mostly sit it out;
-    // in turns, now and then nothing comes to mind at all.
-    if (ask.race && rng() < 0.6) return null;
-    if (!ask.race && clockMs && rng() < 0.05) return null;
+    // in turns, now and then nothing comes to mind at all. (In Delve a guess
+    // beats a time-out, which costs the life all the same.)
+    if (ask.mode === 'race' && rng() < 0.6) return null;
+    if (ask.mode === 'turns' && ask.clock && rng() < 0.05) return null;
   }
   let s = (MEDIAN_S + HARD_S * hardness(ask)) * Math.exp(0.4 * gauss(rng)) * p.pace;
   if (ask.veil) s *= 1.3;
   if (!knows) s *= 1.6;
-  let ms = Math.max(1000, s * 1000);
-  // Answers come in before the clock's end (with a little room for the network).
-  if (clockMs) ms = Math.min(ms, clockMs - between(rng, 600, 1500));
-  return Math.max(900, Math.round(ms));
+  return Math.round(Math.max(1000, s * 1000));
 }
+
+/** Delve: whether, not sure of the answer, it blasts the question away with dynamite (when it may). */
+export const blasts = (p: Persona, rng: Rng) => rng() < p.boldness;
+
+/** Delve together: whether it gives a teammate who perished one of its lives (when it may). */
+export const revives = (p: Persona, rng: Rng) => rng() < p.generosity;
 
 /**
  * The option the bot picks: the right one if it knows, else a guess that is
@@ -158,6 +173,13 @@ export function wrongPick(names: string[], correct: number, ruledOut: number[], 
 /** The category the bot picks: mostly the ones it knows best. */
 export function pickCategory(p: Persona, offered: string[], rng: Rng): string {
   return offered[weighted(offered.map((c) => Math.exp(15 * (p.affinity[c] ?? 0))), rng)];
+}
+
+/** The card the bot picks (or votes for): a find on offer as often as it likes them, else a category it knows. */
+export function chooseCard(p: Persona, offered: string[], finds: string[], rng: Rng): string {
+  const on = finds.filter((c) => offered.includes(c));
+  if (on.length && rng() < p.finds) return on[Math.floor(rng() * on.length)];
+  return pickCategory(p, offered, rng);
 }
 
 /** Milliseconds to look over the categories before picking. */

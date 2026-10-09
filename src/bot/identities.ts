@@ -44,7 +44,7 @@ export const NAMES = [
 ];
 
 export interface RoomPrefs {
-  mode: 'turns' | 'race';
+  mode: 'turns' | 'race' | 'delve';
   difficulty: Exclude<Difficulty, 'custom'>;
   target: number;
   /** Seconds per question (never 0: a room nobody can stall). */
@@ -73,10 +73,10 @@ export function seededBy(text: string): Rng {
 
 const pick = <T>(rng: Rng, options: T[], weights: number[]) => options[weighted(weights, rng)];
 
-/** Rules to host with, as people pick them (mostly take turns, mostly Cruel). */
+/** Rules to host with, as people pick them (mostly take turns or Delve, mostly Cruel; Delve has no rules of its own to pick). */
 export function rollPrefs(rng: Rng): RoomPrefs {
   return {
-    mode: pick(rng, ['turns', 'race'] as const, [4, 1]),
+    mode: pick(rng, ['turns', 'race', 'delve'] as const, [5, 2, 3]),
     difficulty: pick(rng, ['cruel', 'merciless', 'eternal'] as const, [6, 3, 1]),
     target: pick(rng, [5, 7, 10, 15], [2, 2, 4, 1]),
     timer: pick(rng, [16, 32, 64], [2, 5, 1]),
