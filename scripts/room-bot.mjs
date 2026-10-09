@@ -5,11 +5,14 @@
 // again, and the browser profile keeps who is on and the room's save, so it
 // comes back as the same player in the same room.
 //
-//   npm run bot -- [--rooms 2] [--mode turns,race,delve] [--headed] [--no-build]
-//   (or node scripts/room-bot.mjs --rooms 2; npm run bot 2 delve works too)
+//   npm run bot -- [--rooms 2] [--mode turns,race,delve] [--join] [--headed] [--no-build]
+//   (or node scripts/room-bot.mjs --rooms 2; npm run bot 2 delve join works too)
 //
 // --mode: the game modes the hosts may pick, each by their own taste (all
 // three by default); --mode delve makes every room a Delve room.
+// --join: also a guest, who joins other people's public rooms when their
+// host has waited alone a while (src/bot/joiner.ts); --rooms 0 --join for
+// only that.
 //
 // A room opens only when the open-room list has no room at all; with
 // --rooms 2, a second one also opens while every room listed is mid-game
@@ -36,6 +39,7 @@ const { values: args, positionals } = parseArgs({
   options: {
     rooms: { type: 'string' },
     mode: { type: 'string' },
+    join: { type: 'boolean' },
     headed: { type: 'boolean' },
     'no-build': { type: 'boolean' },
   },
@@ -51,12 +55,13 @@ const words = positionals.flatMap((p) => p.toLowerCase().split(','));
 const opts = {
   rooms: args.rooms ?? positionals.find((p) => /^\d+$/.test(p)) ?? '1',
   mode: args.mode ?? (words.filter((w) => MODES.includes(w)).join(',') || 'turns,race,delve'),
+  join: args.join ?? (words.includes('join') || env.npm_config_join === 'true'),
   headed: args.headed ?? env.npm_config_headed === 'true',
   'no-build': args['no-build'] ?? (env.npm_config_build === 'false' || env.npm_config_no_build === 'true'),
 };
 const rooms = Number(opts.rooms);
-if (!Number.isInteger(rooms) || rooms < 1 || rooms > MAX_ROOMS) {
-  console.error(`--rooms takes 1 to ${MAX_ROOMS}.`);
+if (!Number.isInteger(rooms) || rooms < (opts.join ? 0 : 1) || rooms > MAX_ROOMS) {
+  console.error(`--rooms takes 1 to ${MAX_ROOMS} (0 with --join).`);
   process.exit(2);
 }
 const modes = opts.mode.toLowerCase().split(/[\s,]+/).filter(Boolean);
@@ -83,15 +88,19 @@ const proxy = process.env.HTTPS_PROXY ? [`--proxy-server=${process.env.HTTPS_PRO
 
 let stopping = false;
 
+/** Bots in all: the rooms, and the guest (--join) last. */
+const bots = rooms + (opts.join ? 1 : 0);
+
 /**
- * One room: its own browser and profile (so its own storage: who is on, the
+ * One bot: its own browser and profile (so its own storage: who is on, the
  * room's save), and its own share of the names (bot.html ?slot=&of=), so
- * no one ever hosts two rooms at once.
+ * no one is ever in two places at once. The guest's slot is the last.
  */
 async function runRoom(slot) {
-  const say = rooms > 1 ? (...args) => log(`[${slot}]`, ...args) : log;
-  const url = `${base}bot.html?slot=${slot}&of=${rooms}&modes=${modes.join(',')}`;
-  const context = await chromium.launchPersistentContext(join(root, '.bot', `profile-${slot}`), {
+  const guest = slot > rooms;
+  const say = bots > 1 ? (...args) => log(guest ? '[guest]' : `[${slot}]`, ...args) : log;
+  const url = `${base}bot.html?slot=${slot}&of=${bots}${guest ? '&join=1' : `&modes=${modes.join(',')}`}`;
+  const context = await chromium.launchPersistentContext(join(root, '.bot', guest ? 'profile-guest' : `profile-${slot}`), {
     headless: !opts.headed,
     executablePath: process.env.BOT_CHROMIUM || undefined,
     // Stopping is ours (stop, below): the room says goodbye before the browser goes.
@@ -141,16 +150,19 @@ async function runRoom(slot) {
   return room;
 }
 
-log(`${rooms > 1 ? `${rooms} rooms` : '1 room'}, hosting ${modes.join(', ')}`);
+log([rooms && `${rooms === 1 ? '1 room' : `${rooms} rooms`}, hosting ${modes.join(', ')}`, opts.join && 'a guest joining people'].filter(Boolean).join('; '));
 const all = [];
-for (let slot = 1; slot <= rooms; slot++) all.push(await runRoom(slot));
+for (let slot = 1; slot <= bots; slot++) all.push(await runRoom(slot));
 
-// Each room learns the other's code, so the first never makes way for the second (src/bot/wanted.ts).
+// Each room learns the other's code, so the first never makes way for the second
+// (src/bot/wanted.ts), and the guest learns both, so it never joins our own rooms.
 const SIBLINGS_EVERY_MS = 5000;
-const siblings = rooms > 1
+const siblings = bots > 1
   ? setInterval(async () => {
-      const codes = await Promise.all(all.map(({ page }) => page?.evaluate(() => { const s = window.__bot?.status(); return s?.host ? s.code : ''; }).catch(() => '') ?? ''));
-      await Promise.all(all.map(({ page }, i) => page?.evaluate((code) => window.__bot?.setSibling(code), codes[1 - i]).catch(() => {})));
+      const hosts = all.slice(0, rooms);
+      const codes = await Promise.all(hosts.map(({ page }) => page?.evaluate(() => { const s = window.__bot?.status(); return s?.host ? s.code : ''; }).catch(() => '') ?? ''));
+      if (rooms === 2) await Promise.all(hosts.map(({ page }, i) => page?.evaluate((code) => window.__bot?.setSibling(code), codes[1 - i]).catch(() => {})));
+      if (opts.join) await all[rooms].page?.evaluate((list) => window.__bot?.setOurs(list), codes).catch(() => {});
     }, SIBLINGS_EVERY_MS)
   : null;
 
@@ -158,7 +170,8 @@ const status = setInterval(async () => {
   for (const { page, say } of all) {
     try {
       const s = await page?.evaluate(() => window.__bot?.status());
-      if (s?.host) say(`${s.host} (until ${s.until}), room ${s.code} (${s.status}), ${s.phase}: ${s.players.join(', ')}${s.spectators ? `, ${s.spectators} watching` : ''}`);
+      if (s?.joiner) say(s.room ? `${s.as} in ${s.room}, ${s.phase}: ${s.players.join(', ')}` : s.doing === 'resting' ? `resting until ${s.until}` : 'looking for a host waiting alone');
+      else if (s?.host) say(`${s.host} (until ${s.until}), room ${s.code} (${s.status}), ${s.phase}: ${s.players.join(', ')}${s.spectators ? `, ${s.spectators} watching` : ''}`);
       else if (s) say(`no room open; ${s.listed}`);
     } catch {
       /* the page is between loads */
@@ -169,7 +182,7 @@ const status = setInterval(async () => {
 async function stop() {
   if (stopping) return;
   stopping = true;
-  log(rooms > 1 ? 'closing the rooms' : 'closing the room');
+  log(rooms ? (rooms > 1 ? 'closing the rooms' : 'closing the room') : 'leaving');
   clearInterval(status);
   if (siblings) clearInterval(siblings);
   // Each room tells everyone it closed, instead of leaving them to reconnect to nothing.

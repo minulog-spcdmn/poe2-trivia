@@ -7,14 +7,13 @@
 // the host's own screens would, through dispatch, so every rule (and the
 // handicap on the host's race answers) applies to it too.
 
-import { activeRules, grayscaleFor, type GameState, type Question } from '../lib/game';
+import type { GameState } from '../lib/game';
 import { scanRooms, type RoomInfo } from '../lib/rooms';
 import { engine, SAVE, session } from '../lib/session.svelte';
 import { readStored, removeStored, writeStored } from '../lib/storage';
-import { answerDelay, blasts, chooseAnswer, chooseCard, findAppetite, knowChance, pickDelay, type Ask } from './brain';
-import { blastProblem, findLosses, fuseDue, inventoryOf, isGroupRun, livesOf, reviveProblem, shownDepth, standingIds, teamItemReady } from '../lib/delve';
 import { identityOf, lonelyLength, nextName, otherPrefs, shiftLength, type Identity, type Mode, type RoomPrefs } from './identities';
 import { joinable, makesWay, wanted, type Role } from './wanted';
+import { hostEyes, Player } from './player';
 
 const TICK_MS = 200;
 /** Everyone else gone mid-game this long (they may only be reloading): back to the lobby. */
@@ -94,21 +93,11 @@ const rulesText = (c: RoomPrefs) => (c.mode === 'delve' ? 'delve' : `${c.mode}, 
 /** The room takes on a host's rules (between games). */
 const useRules = (c: RoomPrefs) => session.dispatch({ type: 'settings', settings: { mode: c.mode, difficulty: c.difficulty, targetScore: c.target, timer: c.timer } });
 
-/** Something the bot is about to do, at `at`. */
-interface Plan {
-  at: number;
-  run: () => void;
-}
-
 export class Bot {
   private shift: Shift = loadShift() ?? { on: null, until: 0, backAt: 0, recent: [] };
   private who: Identity | null = null;
-  /** What it is about to do, by what for (a pick, an answer, a life to give…). */
-  private plans = new Map<string, Plan>();
-  /** What it has made up its mind about (it may have chosen not to act). */
-  private decided = new Set<string>();
-  /** The game they are for (its startedAt): a new game starts them afresh. */
-  private game = 0;
+  /** The one on, at the table (null while nobody is). */
+  private player: Player | null = null;
   private lobbyKey = '';
   private startAt = 0;
   private overAt = 0;
@@ -143,15 +132,13 @@ export class Bot {
     private readonly modes: readonly Mode[],
   ) {}
 
-  private get persona() {
-    return this.who!.persona;
-  }
 
   start() {
     // Someone from another room's share (the number of rooms changed): this room starts afresh.
     if (this.shift.on && !this.names.includes(this.shift.on)) this.shift = { ...this.shift, on: null, backAt: 0 };
     if (this.shift.on) {
       this.who = identityOf(this.shift.on, engine.categories, this.modes);
+      this.player = new Player(this.who.persona, hostEyes);
       restoreSave();
       session.resume();
       if (session.mode !== 'host') session.host(this.shift.on);
@@ -246,13 +233,13 @@ export class Bot {
   private begin(now: number) {
     const name = nextName(this.shift.recent, Math.random, this.names);
     this.who = identityOf(name, engine.categories, this.modes);
+    this.player = new Player(this.who.persona, hostEyes);
     this.shift = { on: name, until: now + shiftLength(Math.random), backAt: 0, recent: [...this.shift.recent, name].slice(-20) };
     this.save();
     this.configured = false;
     this.retried = false;
     this.lonelySince = 0;
     this.wayChecks = 0;
-    this.plans.clear();
     this.notReadySince = now;
     log(`${name} comes on until ${time(this.shift.until)}`);
     session.host(name);
@@ -267,7 +254,7 @@ export class Bot {
     log(`${this.shift.on} leaves (${why})`);
     session.leave();
     this.who = null;
-    this.plans.clear();
+    this.player = null;
     this.shift = { ...this.shift, on: null, backAt: now + HAND_OVER_MS };
     this.save();
     this.wantedChecks = madeWay ? 0 : WANTED_CHECKS[this.role];
@@ -291,11 +278,6 @@ export class Bot {
       return;
     }
     this.notReadySince = now;
-    if ((s.startedAt ?? 0) !== this.game) {
-      this.game = s.startedAt ?? 0;
-      this.plans.clear();
-      this.decided.clear();
-    }
     this.configure(s);
     const me = session.myPlayerId;
     const humans = s.players.filter((p) => p.id !== me && p.connected);
@@ -306,12 +288,9 @@ export class Bot {
     if (s.phase !== 'lobby' || anyone) this.lonelySince = 0;
     if (s.phase === 'lobby') this.lobby(s, humans.map((p) => p.id), now);
     else if (s.phase === 'over') this.over(now, anyone, timeUp);
-    else this.inGame(s, now, humans.length > 0);
-    for (const [key, p] of this.plans)
-      if (now >= p.at) {
-        this.plans.delete(key);
-        p.run();
-      }
+    else this.inGame(now, humans.length > 0);
+    // As things stand after the host's own moves just now (a start, a restart).
+    if (session.state) this.player?.play(session.state);
   }
 
   /**
@@ -378,7 +357,7 @@ export class Bot {
     session.dispatch({ type: 'restart', play: anyone });
   }
 
-  private inGame(s: GameState, now: number, anyone: boolean) {
+  private inGame(now: number, anyone: boolean) {
     this.overAt = 0;
     this.lobbyKey = '';
     if (anyone) this.aloneSince = 0;
@@ -387,7 +366,7 @@ export class Bot {
       if (now - this.aloneSince > ALONE_MS) {
         log('everyone left, back to the lobby');
         this.aloneSince = 0;
-        this.plans.clear();
+        this.player?.reset();
         session.dispatch({ type: 'restart' });
         return;
       }
@@ -398,192 +377,5 @@ export class Bot {
       session.dispatch({ type: 'skip' });
       return;
     }
-    if (s.delve) this.delve(s, now);
-    else if (s.settings.mode === 'race') this.race(s, now);
-    else this.turns(s, now);
-  }
-
-  private turns(s: GameState, now: number) {
-    if (s.players[s.turn]?.id !== session.myPlayerId) return;
-    if (s.phase === 'choosing') this.planCard(s, now, 'pick');
-    else if (s.phase === 'question' && s.question) this.planAnswer(s, s.question, now);
-  }
-
-  /**
-   * Delve: alone, its own turns; together, a vote for each card, an answer
-   * to each question while standing, and a life for a teammate who perished.
-   * Flares burn by themselves (as everyone's do); dynamite it detonates
-   * itself, on questions it isn't sure of (planAnswer).
-   */
-  private delve(s: GameState, now: number) {
-    const me = session.myPlayerId!;
-    const together = isGroupRun(s);
-    if (together) this.planRevive(s, now);
-    if (livesOf(s, me) <= 0) return;
-    if (s.phase === 'choosing') {
-      if (!together) {
-        if (s.players[s.turn]?.id === me) this.planCard(s, now, 'pick');
-      } else if (!s.delve?.votes?.[me]) this.planCard(s, now, 'vote');
-    } else if (s.phase === 'question' && s.question) {
-      const q = s.question;
-      // The clock starts once the art has reached everyone answering.
-      if (q.deadline === null) return;
-      if (together ? q.struck?.some((x) => x.by === me) : s.players[s.turn]?.id !== me) return;
-      this.planAnswer(s, q, now);
-    }
-  }
-
-  /** Picks a card on its turn, or votes for one (Delve together). */
-  private planCard(s: GameState, now: number, type: 'pick' | 'vote') {
-    const key = `${type}:${s.round}:${s.turnCount}`;
-    if (this.decided.has(key)) return;
-    this.decided.add(key);
-    const offered = [...s.offered];
-    const me = session.myPlayerId!;
-    const inv = s.delve ? inventoryOf(s, me) : null;
-    // What each find on offer would put at stake for it now.
-    const finds = (s.delve?.finds ?? []).map((f) => ({
-      category: f.category,
-      appetite: findAppetite(this.persona, {
-        lives: livesOf(s, me),
-        wards: inv?.wards ?? 0,
-        losses: findLosses(f.kind),
-        depth: shownDepth(s.round),
-        teammates: standingIds(s).filter((id) => id !== me).length,
-      }),
-    }));
-    this.plans.set(key, {
-      at: now + pickDelay(this.persona, Math.random),
-      run: () => {
-        const cur = session.state;
-        if (cur?.phase !== 'choosing' || cur.turnCount !== s.turnCount || cur.round !== s.round) return;
-        if (type === 'vote' && cur.delve?.votes?.[session.myPlayerId!]) return;
-        const category = chooseCard(this.persona, offered, finds, Math.random);
-        log(type === 'pick' ? 'picks' : 'votes for', category);
-        session.dispatch(type === 'pick' ? { type: 'pick', category } : { type: 'vote', category });
-      },
-    });
-  }
-
-  /** Delve together: gives a teammate who perished one of its lives, whenever it can (once a depth each, after a moment). */
-  private planRevive(s: GameState, now: number) {
-    const me = session.myPlayerId!;
-    for (const p of s.players) {
-      if (p.id === me || reviveProblem(s, me, p.id)) continue;
-      const key = `revive:${p.id}:${s.round}`;
-      if (this.decided.has(key)) continue;
-      this.decided.add(key);
-      this.plans.set(key, {
-        at: now + between(1500, 5000) * this.persona.pace,
-        run: () => {
-          const cur = session.state;
-          if (!cur || reviveProblem(cur, me, p.id)) return;
-          log('gives a life to', p.name);
-          session.dispatch({ type: 'revive', target: p.id });
-        },
-      });
-    }
-  }
-
-  private race(s: GameState, now: number) {
-    const q = s.question;
-    if (s.phase !== 'question' || !q || q.misses.some((m) => m.playerId === session.myPlayerId)) return;
-    this.planAnswer(s, q, now);
-  }
-
-  /**
-   * Decides once per question whether it knows, when to answer and what. Its
-   * time counts from the clock's start; an answer the clock beats isn't
-   * given (a flare that burns moves the clock's end on, and with it the
-   * answer still in time). Not sure in Delve: alone it may detonate dynamite
-   * rather than guess; together it holds back (lateGuess).
-   */
-  private planAnswer(s: GameState, q: Question, now: number) {
-    const key = `answer:${q.askedAt}`;
-    if (this.decided.has(key)) return;
-    this.decided.add(key);
-    const me = session.myPlayerId!;
-    const rules = activeRules(s);
-    const gray = grayscaleFor(s);
-    const start = q.clockAt ?? q.askedAt;
-    const ask: Ask = {
-      rules,
-      category: q.category,
-      veil: q.veil ? (rules.veil?.share ?? 0.5) : 0,
-      gray: gray === 'all' || (gray === 'art' && q.mode === 'art'),
-      mirrored: !!q.mirrored?.some(Boolean),
-      clock: q.deadline ? (q.deadline - start) / 1000 : 0,
-      mode: s.delve ? 'delve' : s.settings.mode === 'race' ? 'race' : 'turns',
-    };
-    const knows = Math.random() < knowChance(this.persona, ask);
-    const delay = answerDelay(this.persona, ask, knows, Math.random);
-    if (delay === null) {
-      log(`lets "${q.category}" go by`);
-      return;
-    }
-    // Picked up after a reload: not all at once.
-    const at = Math.max(now + 800, start + delay);
-    const open = () => {
-      const cur = session.state;
-      const o = cur?.question;
-      return cur?.phase === 'question' && o?.askedAt === q.askedAt && (!o.deadline || Date.now() <= o.deadline) ? o : null;
-    };
-    if (ask.mode === 'delve' && !knows && isGroupRun(s)) return this.lateGuess(key, q, ask, start);
-    if (ask.mode === 'delve' && !knows && !blastProblem(s, me) && blasts(this.persona, Math.random)) {
-      // Not sure, and dynamite at hand: blast it away for another (deciding so is quicker than answering).
-      this.plans.set(key, {
-        at: Math.max(now + 800, start + delay * 0.6),
-        run: () => {
-          if (!open() || blastProblem(session.state!, me)) return;
-          log('detonates dynamite');
-          session.dispatch({ type: 'blast', askedAt: q.askedAt });
-        },
-      });
-      return;
-    }
-    this.plans.set(key, {
-      at,
-      run: () => {
-        const o = open();
-        if (!o) return;
-        const correct = o.options.indexOf(o.itemId);
-        const names = o.options.map((id, i) => o.labels[i] ?? engine.byId.get(id)?.name ?? '');
-        // Options already shown wrong (others' guesses in a race, the team's in Delve) are out.
-        const ruledOut = [...o.misses.map((m) => m.index), ...(o.struck ?? []).map((x) => x.index)];
-        const index = chooseAnswer(names, correct, knows, ask, ruledOut, Math.random);
-        log(`answers ${index === correct ? 'right' : 'wrong'} after ${((Date.now() - start) / 1000).toFixed(1)} s`);
-        session.dispatch({ type: 'answer', index, askedAt: q.askedAt });
-      },
-    });
-  }
-
-  /**
-   * Delve together, not sure: a teammate may know it, and a wrong guess
-   * costs a life and strikes the option for everyone, so it waits to near
-   * the clock's end. Then, if nobody has got it: dynamite going off by itself
-   * at 0 costs nobody anything, so it leaves that to the fuse; a flare about
-   * to burn gives everyone more time, so it waits for the new end; otherwise
-   * it guesses, as a time-out would cost the life anyway.
-   */
-  private lateGuess(key: string, q: Question, ask: Ask, start: number) {
-    const me = session.myPlayerId!;
-    const margin = between(1000, 2500);
-    const run = () => {
-      const cur = session.state;
-      const o = cur?.question;
-      if (!cur || cur.phase !== 'question' || o?.askedAt !== q.askedAt || !o.deadline || o.struck?.some((x) => x.by === me)) return;
-      const now = Date.now();
-      // Not near the end yet (or a flare moved it on): wait for it.
-      if (o.deadline - margin > now + 300) return void this.plans.set(key, { at: o.deadline - margin, run });
-      if (fuseDue(cur)) return log('holds: the dynamite goes off by itself');
-      if (teamItemReady(cur, 'flares') && !o.flared) return void this.plans.set(key, { at: o.deadline + 400, run });
-      const correct = o.options.indexOf(o.itemId);
-      const names = o.options.map((id, i) => o.labels[i] ?? engine.byId.get(id)?.name ?? '');
-      const ruledOut = (o.struck ?? []).map((x) => x.index);
-      const index = chooseAnswer(names, correct, false, ask, ruledOut, Math.random);
-      log(`guesses ${index === correct ? 'right' : 'wrong'} near the end`);
-      session.dispatch({ type: 'answer', index, askedAt: q.askedAt });
-    };
-    this.plans.set(key, { at: Math.max(start + 1000, q.deadline! - margin), run });
   }
 }

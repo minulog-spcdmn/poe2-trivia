@@ -1,10 +1,12 @@
 // The room bot (bot.html): the game's session without its screens, where
-// made-up players take turns hosting a public room and playing in it. Served
-// by the dev server and built only with VITE_BOT=1 (vite.config.ts), which
+// made-up players take turns hosting a public room and playing in it, or
+// (?join=1) join other people's public rooms as guests. Served by the dev
+// server and built only with VITE_BOT=1 (vite.config.ts), which
 // scripts/room-bot.mjs does.
 
 import { BOT } from '../lib/storage';
 import { Bot } from './driver';
+import { Joiner } from './joiner';
 import { session } from '../lib/session.svelte';
 import { modesFrom, namesFor } from './identities';
 
@@ -15,7 +17,8 @@ if (!(import.meta.env.DEV || import.meta.env.VITE_BOT === '1') || !BOT) throw ne
 // ?modes=: the game modes its hosts may pick (--mode), all of them by default.
 const q = new URLSearchParams(location.search);
 const slot = Number(q.get('slot') ?? 1);
-const bot = new Bot(namesFor(slot, Number(q.get('of') ?? 1)), slot === 2 ? 'second' : 'first', modesFrom(q.get('modes')));
+const names = namesFor(slot, Number(q.get('of') ?? 1));
+const bot = q.has('join') ? new Joiner(names) : new Bot(names, slot === 2 ? 'second' : 'first', modesFrom(q.get('modes')));
 bot.start();
 
 // For the runner (and a look in a headed browser); in development, the session too, for scripts that drive it (as src/main.ts gives it).
