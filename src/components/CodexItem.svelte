@@ -5,7 +5,7 @@
   import { livesCost, type Codex, type Tally } from '../lib/codex';
   import { accuracy } from '../lib/codexStats';
   import { shownDepth } from '../lib/delve';
-  import { itemImage } from '../lib/ui';
+  import { itemImage, itemThumb } from '../lib/ui';
   import { dialogBackdrop } from '../lib/behindDialog';
   import { artRevealed } from '../lib/fx/moments';
   import { singular, type Item } from '../lib/game';
@@ -87,7 +87,7 @@
       {#each list as r (r.item.id)}
         <li>
           <button class="pick" onclick={() => onopen(r.item)} disabled={!codex.items[r.item.id]} title={codex.items[r.item.id] ? `Open ${r.item.name}` : undefined}>
-            <img src={itemImage(r.item.id)} alt="" loading="lazy" />
+            <img src={itemThumb(r.item.id, 128)} alt="" loading="lazy" />
             <span>{r.item.name}</span>
             <b>{r.n}×</b>
           </button>

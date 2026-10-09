@@ -2,7 +2,7 @@
   import { DELVE_LIVES, shownDepth } from '../../lib/delve';
   import { zoneOf, type RunStory } from '../../lib/codexStats';
   import { isTogether, runKey, type DelveRun } from '../../lib/delveRecord';
-  import { itemImage } from '../../lib/ui';
+  import { itemThumb } from '../../lib/ui';
   import type { Item } from '../../lib/game';
 
   // The latest run in one row: how deep, where, when and how it compares
@@ -65,7 +65,7 @@
           {#if l.item}
             {@const it = l.item}
             <button class="thumb" onclick={() => onopen(it)} title="Depth {shownDepth(l.depth)}, {l.zone.name}: {it.name}{l.caveIn ? ' (a cave-in)' : ''}" aria-label="Life lost at depth {shownDepth(l.depth)} to {it.name}{l.caveIn ? ', a cave-in' : ''}">
-              <img src={itemImage(it.id)} alt="" loading="lazy" />
+              <img src={itemThumb(it.id, 128)} alt="" loading="lazy" />
             </button>
           {:else}
             <span class="thumb none" title="Depth {shownDepth(l.depth)}: not logged" role="img" aria-label="Life lost at depth {shownDepth(l.depth)}, item not logged">?</span>

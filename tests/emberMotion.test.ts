@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Session } from 'node:inspector/promises';
 import { descent, HALL_FROM, hallTurn, lookOf, magmaCooling, STRATA } from '../src/lib/descent.ts';
-import { EMBERS, Embers, GLINTS, PALETTE, SIZE_STRIDE, SLOTS, SPARKS, TILES } from '../src/lib/backdropEmbers.ts';
+import { CALM_EMBERS, EMBERS, Embers, GLINTS, PALETTE, SIZE_STRIDE, SLOTS, SPARKS, TILES } from '../src/lib/backdropEmbers.ts';
 import { cooling, MOTIONS, motionFor, motionOf, PROFILES, profileOf, SURFACE_MOTION, tweakOf, ZONE_MOTION, zoneMotionOf } from '../src/lib/emberMotion.ts';
 import { PROFILE_NAMES } from '../src/lib/emberProfiles.ts';
 import { endgameAt, setBackdrops, SHIPPED, zones } from '../src/lib/backdrops.ts';
@@ -130,6 +130,21 @@ test('a profile with two kinds of ember has a different sort as its second, rare
     const sparks = moves(zone(k, 10), 900).filter((v) => v.motion === motionFor(k, 0));
     assert.ok(sparks.length > 20 && sparks.every((v) => v.dy < 0), `${sparks.length} spark moves`);
     assert.ok(sparks.every((v) => v.y > H * 0.55), 'they only rise a little way off the floor');
+  });
+});
+
+test('the embers always there hold the rarer kind\'s share too, so the Mines never go without their lamp sparks', () => {
+  asProfile('dust sifting down', (k) => {
+    const share = zoneMotionOf(k).share;
+    const want = Math.floor(CALM_EMBERS * share);
+    for (let n = 0; n < 200; n++) {
+      const e = new Embers();
+      e.descend({ ...descent(0), look: lookOf(k) }, { stratum: k + 1, turn: 0 });
+      e.step(0, W, H);
+      let sparks = 0;
+      for (let i = 0; i < CALM_EMBERS; i++) if (e.motion[i] === motionFor(k, 0)) sparks++;
+      assert.ok(sparks >= want && sparks <= want + 1, `${sparks} lamp sparks among the ${CALM_EMBERS} embers always there`);
+    }
   });
 });
 

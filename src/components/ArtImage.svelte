@@ -1,8 +1,10 @@
 <script lang="ts">
   import { fade } from 'svelte/transition';
+  import { ART_SCALE } from '../lib/ui-paths';
 
   // One item picture, centred in whatever space its parent gives it, with the
-  // item's proportions and at most `scale` times its own pixel size. `unflip`
+  // item's proportions and at most `scale` times its size in art pixels (the
+  // file's own, over ART_SCALE: every item picture is upscaled). `unflip`
   // starts it mirrored (as it was shown during the question) and turns it round.
   let {
     src,
@@ -33,8 +35,8 @@
         in:fade={{ duration: 300 }}
         onload={(e) => {
           const img = e.currentTarget as HTMLImageElement;
-          nw = img.naturalWidth;
-          nh = img.naturalHeight;
+          nw = img.naturalWidth / ART_SCALE;
+          nh = img.naturalHeight / ART_SCALE;
         }}
       />
     {/key}

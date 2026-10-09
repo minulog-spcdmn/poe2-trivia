@@ -26,7 +26,7 @@
   } from '../lib/codexStats';
   import { climbOf, isTogether, tallyOf, type DelveRecords } from '../lib/delveRecord';
   import { FLARE_MS, shownDepth } from '../lib/delve';
-  import { categoryIcon, itemImage } from '../lib/ui';
+  import { categoryGlyph, itemThumb } from '../lib/ui';
   import { backdropShadow } from '../lib/backdropShadow';
   import type { Item } from '../lib/game';
   import DelveLastRun from './codex/DelveLastRun.svelte';
@@ -166,11 +166,11 @@
 {/snippet}
 
 {#snippet thumb(it: Item)}
-  <span class="thumb"><img src={itemImage(it.id)} alt="" loading="lazy" /></span>
+  <span class="thumb"><img src={itemThumb(it.id, 128)} alt="" loading="lazy" /></span>
 {/snippet}
 
 {#snippet glyph(category: string)}
-  <span class="glyph" style:--src="url('{categoryIcon(category)}')" aria-hidden="true"></span>
+  <span class="glyph" style:--src="url('{categoryGlyph(category)}')" aria-hidden="true"></span>
 {/snippet}
 
 {#snippet zonesPanel()}

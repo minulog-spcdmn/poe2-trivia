@@ -1,12 +1,12 @@
 import { engine } from './session.svelte';
-import { itemImage } from './ui-paths';
+import { itemImage, itemSrcset, itemThumb } from './ui-paths';
 import { PALETTE } from './palette';
 
 export function playerColor(slot: number) {
   return PALETTE[slot % PALETTE.length];
 }
 
-export { itemImage };
+export { itemImage, itemSrcset, itemThumb };
 
 // Art used (as a silhouette) on the category cards: for each category an
 // item picked from all of them shown on the card, by name so a data refresh
@@ -55,10 +55,13 @@ const ICON_GROUP: Record<string, string> = {
 // smaller).
 const GEM_ICON = new URL(`${import.meta.env.BASE_URL}icons/lineage-gems.webp`, document.baseURI).href;
 const icons = new Map<string, string>();
+/** The same, as 128 px copies (itemThumb), for small glyphs. */
+const glyphs = new Map<string, string>();
 for (const cat of engine.categories) {
   const list = engine.byCategory.get(cat)!;
   if (list[0].kind === 'gem') {
     icons.set(cat, GEM_ICON);
+    glyphs.set(cat, GEM_ICON);
     tweaks.set(cat, tweak("Oisín's Oath"));
     continue;
   }
@@ -66,12 +69,19 @@ for (const cat of engine.categories) {
   if (named) tweaks.set(cat, tweak(named.name));
   const preferred = list.filter((it) => it.group === ICON_GROUP[cat]);
   const pool = preferred.length ? preferred : list;
-  icons.set(cat, new URL(itemImage((named ?? pool[Math.floor(pool.length / 2)]).id), document.baseURI).href);
+  const id = (named ?? pool[Math.floor(pool.length / 2)]).id;
+  icons.set(cat, new URL(itemImage(id), document.baseURI).href);
+  glyphs.set(cat, new URL(itemThumb(id, 128), document.baseURI).href);
 }
 
 /** Absolute URL, safe to use inside CSS custom properties. */
 export function categoryIcon(category: string) {
   return icons.get(category)!;
+}
+
+/** A category's icon for a small glyph (the codex's, up to about 40 px): its 128 px copy. Absolute, as categoryIcon. */
+export function categoryGlyph(category: string) {
+  return glyphs.get(category)!;
 }
 
 /** Every category's icon (to measure them all ahead of the deal). */
