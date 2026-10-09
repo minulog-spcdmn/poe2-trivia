@@ -73,6 +73,10 @@ test('rejects anything a real client would never send', () => {
   assert.deepEqual(parseClientMsg({ t: 'action', action: { type: 'watch', watch: true, playerId: 'p1' } }), { t: 'action', action: { type: 'watch', watch: true } });
   assert.equal(parseClientMsg({ t: 'action', action: { type: 'watch' } }), null);
   assert.equal(parseClientMsg({ t: 'action', action: { type: 'watch', watch: 1 } }), null);
+  // A guest who'd rather watch says so in the hello, so the host never seats them by mistake.
+  assert.deepEqual(parseClientMsg({ t: 'hello', secret, name: 'Dori', v: 3, watch: true }), { t: 'hello', secret, name: 'Dori', v: 3, watch: true });
+  assert.deepEqual(parseClientMsg({ t: 'hello', secret, name: 'Dori', v: 3, watch: false }), { t: 'hello', secret, name: 'Dori', v: 3 });
+  assert.equal(parseClientMsg({ t: 'hello', secret, name: 'Dori', v: 3, watch: 'yes' }), null);
 });
 
 test('rate limit allows bursts but not floods', () => {

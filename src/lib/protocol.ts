@@ -22,8 +22,11 @@ export function versionRefusal(message: string): string {
 
 /** Guest → host. */
 export type ClientMsg =
-  /** `tab`: random per page load, so the host can tell another tab from this one reconnecting. */
-  | { t: 'hello'; secret: string; name: string; v: number; tab?: string }
+  /**
+   * `tab`: random per page load, so the host can tell another tab from this one reconnecting.
+   * `watch`: the guest would rather watch than play (see the watch action).
+   */
+  | { t: 'hello'; secret: string; name: string; v: number; tab?: string; watch?: boolean }
   | { t: 'action'; action: Action }
   | { t: 'pong'; n: number };
 
@@ -78,9 +81,15 @@ export function parseClientMsg(raw: unknown): ClientMsg | null {
       if (!isStr(raw.secret, 64) || !SECRET.test(raw.secret) || !isStr(raw.name, 200) || !isInt(raw.v, 0, 1e6))
         return null;
       if (raw.tab !== undefined && !(isStr(raw.tab, 64) && TAB.test(raw.tab))) return null;
-      return raw.tab === undefined
-        ? { t: 'hello', secret: raw.secret, name: raw.name, v: raw.v }
-        : { t: 'hello', secret: raw.secret, name: raw.name, v: raw.v, tab: raw.tab };
+      if (raw.watch !== undefined && typeof raw.watch !== 'boolean') return null;
+      return {
+        t: 'hello',
+        secret: raw.secret,
+        name: raw.name,
+        v: raw.v,
+        ...(raw.tab !== undefined ? { tab: raw.tab } : {}),
+        ...(raw.watch ? { watch: true } : {}),
+      };
     case 'pong':
       return isInt(raw.n, 0, Number.MAX_SAFE_INTEGER) ? { t: 'pong', n: raw.n } : null;
     case 'action': {

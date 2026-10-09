@@ -251,6 +251,39 @@ test('a player can give up their seat in the lobby to watch', () => {
   assert.equal(engine.apply(s, { type: 'watch', watch: false }, 'p1').players.length, 12);
 });
 
+test('stepping aside needs a place to watch, unless someone waiting takes the seat', () => {
+  const names = ['Alba', 'Brom', 'Cyra', 'Dusk', 'Ember', 'Fenwick', 'Galt', 'Hollis', 'Iona', 'Jorik', 'Kestrel', 'Lumen'];
+  let { engine, s } = setup(names);
+  s = engine.apply(s, { type: 'start' }, 'p0');
+  for (let i = 0; i < 8; i++) s = engine.apply(s, { type: 'join', playerId: `w${i}`, name: `Watcher${'abcdefgh'[i]}` }, `w${i}`);
+  s = engine.apply(s, { type: 'restart' }, 'p0');
+  assert.equal(s.spectators!.length, 8, 'every place to watch is taken');
+  // One of them waits for a seat: stepping aside swaps places with them.
+  s = engine.apply(s, { type: 'watch', watch: true }, 'p3');
+  assert.ok(s.players.some((p) => p.id === 'w0'));
+  assert.deepEqual(s.spectators!.find((o) => o.id === 'p3'), { id: 'p3', name: 'Dusk', stay: true });
+  // Once all eight just watch, nobody else can step aside.
+  for (let i = 1; i < 8; i++) s = engine.apply(s, { type: 'watch', watch: true }, `w${i}`);
+  assert.throws(() => engine.apply(s, { type: 'watch', watch: true }, 'p4'), /no room/);
+});
+
+test('a guest who would rather watch joins as one who stays watching', () => {
+  let { engine, s } = setup(['Ash', 'Bram']);
+  // In the lobby: no seat taken, not even for a moment.
+  let lobby = engine.apply(s, { type: 'join', playerId: 'w', name: 'Wren', watch: true }, 'w');
+  assert.equal(lobby.players.length, 2);
+  assert.deepEqual(lobby.spectators, [{ id: 'w', name: 'Wren', stay: true }]);
+  // In a game: the restart doesn't seat them.
+  s = engine.apply(s, { type: 'start' }, 'p0');
+  s = engine.apply(s, { type: 'join', playerId: 'w', name: 'Wren', returning: true, watch: true }, 'w');
+  assert.deepEqual(s.spectators, [{ id: 'w', name: 'Wren', stay: true }]);
+  assert.ok(!engine.apply(s, { type: 'restart', play: true }, 'p0').players.some((p) => p.id === 'w'));
+  // With every place to watch taken, a lobby seats them after all.
+  for (let i = 0; i < 8; i++) lobby = engine.apply(lobby, { type: 'join', playerId: `x${i}`, name: `Onlooker${'abcdefgh'[i]}`, watch: true }, `x${i}`);
+  assert.equal(lobby.spectators!.length, 8);
+  assert.ok(lobby.players.some((p) => p.id === 'x7'));
+});
+
 test('guests see who is watching; the answer stays hidden', () => {
   let { engine, s } = setup(['Ash']);
   s = engine.apply(s, { type: 'start' }, 'p0');

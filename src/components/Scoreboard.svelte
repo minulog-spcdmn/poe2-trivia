@@ -41,6 +41,7 @@
   import { CASINGS, WARD_BREAK, WARD_NEXT, momentOf, type InventoryMoment } from '../lib/inventoryArt';
   import { MOMENTS } from '../lib/soundDesign';
   import type { GameState, Revive } from '../lib/game';
+  import WatchToggle from './WatchToggle.svelte';
 
   /** Shown at the end of the row (the timer, on phones). */
   let { aside }: { aside?: Snippet } = $props();
@@ -811,9 +812,7 @@
     {/if}
     {#if session.spectating}
       <!-- Your own choice: take a seat when the next game starts, or keep watching. -->
-      <button class="btn small ghost watch-toggle" onclick={() => session.watch(!session.justWatching)}>
-        {session.justWatching ? 'Play next game' : 'Just watch'}
-      </button>
+      <WatchToggle />
     {/if}
   </p>
 {/if}
@@ -1373,11 +1372,6 @@
   .spectator {
     color: var(--text);
     margin-left: 0.5em;
-  }
-  .watch-toggle {
-    margin-left: 0.6em;
-    padding: 0.25em 0.7em;
-    font-style: normal;
   }
   .kick-inline {
     margin-left: 0.25em;

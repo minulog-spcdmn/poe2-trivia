@@ -349,7 +349,7 @@ class Session {
     return this.mode === 'local' || this.mode === 'host';
   }
 
-  /** Guest: chose to watch rather than play (kept through reconnects, see rewatch). */
+  /** Guest: watches rather than plays, as the host last had it (sent with every hello, so it holds through reconnects). */
   private watchOnly = false;
 
   /** Online guest who isn't playing: joined a running game, or chose to watch. */
@@ -631,7 +631,7 @@ class Session {
           if (guest.playerId) return;
           guest.tab = msg.tab ?? null;
           clearTimeout(helloTimer);
-          this.handleHello(conn, guest, msg.secret, msg.name, msg.v);
+          this.handleHello(conn, guest, msg.secret, msg.name, msg.v, !!msg.watch);
         } else if (msg.t === 'pong') {
           const sent = guest.pings.get(msg.n);
           if (sent !== undefined) {
@@ -739,7 +739,7 @@ class Session {
     this.drop(conn);
   }
 
-  private handleHello(conn: DataConnection, guest: Guest, secret: string, name: string, v: number) {
+  private handleHello(conn: DataConnection, guest: Guest, secret: string, name: string, v: number, watch: boolean) {
     const outdated = versionProblem(v);
     if (outdated) throw new ActionError(outdated);
     const known = this.secretToPlayer.get(secret);
@@ -760,7 +760,7 @@ class Session {
     try {
       if (!known && this.priv.bannedNames.includes(nameSkeleton(cleanName(name))))
         throw new ActionError('Someone with a name like that was removed from this room. Pick another name.');
-      next = engine.apply(this.state!, { type: 'join', playerId, name, returning: !!known }, playerId);
+      next = engine.apply(this.state!, { type: 'join', playerId, name, returning: !!known, ...(watch ? { watch } : {}) }, playerId);
     } catch (err) {
       this.joins.rejected(secret, !!known);
       throw err;
@@ -1092,21 +1092,21 @@ class Session {
    */
   watch(on: boolean) {
     if (this.mode !== 'client') return;
-    this.watchOnly = on;
-    this.saveGuest();
+    // Remembered once the host has it so (noteWatch): a choice it turns down isn't kept.
     this.dispatch({ type: 'watch', watch: on });
   }
 
-  /**
-   * Guest who chose to watch, back in the room (after a reload, theirs or the
-   * host's): the host has them down as joining the next game again, so they
-   * say once more that they'd rather watch.
-   */
-  private rewatch(s: GameState) {
+  /** Guest: keeps (and saves) whether the host has this guest down as just watching. */
+  private noteWatch(s: GameState) {
     const me = this.myPlayerId;
-    if (!this.watchOnly || !me) return;
-    const seated = s.phase === 'lobby' && s.players.some((p) => p.id === me);
-    if (seated || s.spectators?.some((o) => o.id === me && !o.stay)) this.hostConn?.send({ t: 'action', action: { type: 'watch', watch: true } });
+    if (!me) return;
+    const watcher = s.spectators?.find((o) => o.id === me);
+    // Not in the room at all (yet): nothing to go by.
+    if (!watcher && !s.players.some((p) => p.id === me)) return;
+    const on = !!watcher?.stay;
+    if (on === this.watchOnly) return;
+    this.watchOnly = on;
+    this.saveGuest();
   }
 
   /**
@@ -1292,8 +1292,6 @@ class Session {
     stale?.close();
     // Anything from the host: a link it then closes was not turned away without a word.
     let heard = false;
-    // Just welcomed: the next state says whether the host still knows this guest would rather watch.
-    let rewatch = false;
     // A host that vanishes (crashed tab, lost Wi-Fi) often never fires 'close'.
     // It pings every few seconds, so silence means the connection is dead.
     let lastHeard = Date.now();
@@ -1315,7 +1313,6 @@ class Session {
       switch (msg.t) {
         case 'welcome':
           this.myPlayerId = msg.playerId;
-          rewatch = true;
           break;
         case 'state':
           this.syncClock(msg.now);
@@ -1324,11 +1321,7 @@ class Session {
             this.state = msg.state;
           }
           this.status = 'ready';
-          // The first state after the welcome has this guest as the host sees them.
-          if (rewatch) {
-            rewatch = false;
-            this.rewatch(msg.state);
-          }
+          if (this.state) this.noteWatch(this.state);
           break;
         case 'error':
           // An answer turned down (too quick) didn't count: the one given next is timed instead.
@@ -1373,7 +1366,7 @@ class Session {
     });
     const secret = await this.helloSecret;
     if (secret && this.hostConn === conn && conn.open)
-      conn.send({ t: 'hello', secret, name: this.joinName, v: PROTOCOL_VERSION, tab: myTab });
+      conn.send({ t: 'hello', secret, name: this.joinName, v: PROTOCOL_VERSION, tab: myTab, ...(this.watchOnly ? { watch: true } : {}) });
   }
 
   private hostLost(conn: DataConnection) {

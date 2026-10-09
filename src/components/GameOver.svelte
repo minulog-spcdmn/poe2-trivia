@@ -17,6 +17,7 @@
   import { BLUE_FROM, accentAt } from '../lib/descent';
   import { zoneAt } from '../lib/zoneSigils';
   import { delverText, lossDepths } from '../lib/difficultyText';
+  import WatchToggle from './WatchToggle.svelte';
 
   const s = $derived(session.state!);
   const won = (id: string) => s.winners.includes(id);
@@ -41,8 +42,8 @@
       : [...s.players].sort((a, b) => b.score - a.score || +won(b.id) - +won(a.id)),
   );
   const winner = $derived(s.players.find((p) => s.winners.includes(p.id)) ?? standings[0]);
-  /** Spectators who take a seat in the next game (not those who just watch). */
-  const spectators = $derived((s.spectators ?? []).filter((o) => !o.stay));
+  /** Spectators who take a seat in the next game (not those who just watch; yours is a line of its own). */
+  const spectators = $derived((s.spectators ?? []).filter((o) => !o.stay && o.id !== session.myPlayerId));
 
   // One click only: a second one while this screen fades out would restart the new game.
   let leaving = $state(false);
@@ -342,9 +343,7 @@
   {#if session.spectating}
     <p class="joining muted" in:fly={{ y: 10, duration: 600, delay: 1400 }}>
       {session.justWatching ? "You're just watching." : "You'll play in the next game."}
-      <button class="btn small ghost watch-toggle" onclick={() => session.watch(!session.justWatching)}>
-        {session.justWatching ? 'Play next game' : 'Just watch'}
-      </button>
+      <WatchToggle />
     </p>
   {/if}
 
@@ -609,10 +608,6 @@
   .joining {
     margin: 1rem 0 0;
     font-style: italic;
-  }
-  .watch-toggle {
-    margin-left: 0.5em;
-    font-style: normal;
   }
   /* Share: an icon button the height of its neighbours, with a note when the text was copied. */
   .share {

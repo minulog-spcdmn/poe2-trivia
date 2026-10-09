@@ -776,8 +776,11 @@ export interface GameState {
 }
 
 export type Action =
-  /** `returning`: set by the host for someone who was already in this room (may pass the lock). */
-  | { type: 'join'; playerId: string; name: string; returning?: boolean }
+  /**
+   * `returning`: set by the host for someone who was already in this room (may pass the lock).
+   * `watch`: they'd rather watch than play (a spectator who stays one, see 'watch').
+   */
+  | { type: 'join'; playerId: string; name: string; returning?: boolean; watch?: boolean }
   | { type: 'rename'; playerId: string; name: string }
   | { type: 'remove'; playerId: string }
   | { type: 'connection'; playerId: string; connected: boolean }
@@ -1072,6 +1075,11 @@ export class Engine {
         if (s.settings.locked && !action.returning) throw new ActionError('The host has locked this room.');
         const problem = nameProblem(name, [...s.players, ...s.spectators].map((o) => o.name));
         if (problem) throw new ActionError(problem);
+        // Someone who'd rather watch does, while there's room (in the lobby, they take a seat otherwise).
+        if (action.watch && s.spectators.length < MAX_SPECTATORS) {
+          s.spectators.push({ id: action.playerId, name, stay: true });
+          break;
+        }
         if (s.phase !== 'lobby') {
           // Too late for this game: watch it and take a seat in the next one.
           if (s.spectators.length >= MAX_SPECTATORS) throw new ActionError('That game has already started and has no room for more spectators.');
@@ -1459,11 +1467,11 @@ export class Engine {
         const idx = s.players.findIndex((p) => p.id === from);
         if (idx < 0 || !action.watch) break;
         if (s.phase !== 'lobby') throw new ActionError('You can step aside to watch in the lobby.');
-        if (s.spectators.length >= MAX_SPECTATORS) throw new ActionError('There is no room for more spectators.');
         const [p] = s.players.splice(idx, 1);
         s.spectators.push({ id: p.id, name: p.name, stay: true });
-        // Their seat goes to whoever was waiting for one.
+        // Their seat goes to whoever was waiting for one, which makes room to watch.
         fillSeats(s);
+        if (s.spectators.length > MAX_SPECTATORS) throw new ActionError('There is no room for more spectators.');
         break;
       }
       case 'clock': {

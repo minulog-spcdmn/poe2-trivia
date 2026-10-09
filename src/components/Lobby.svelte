@@ -17,6 +17,7 @@
   import { onMount } from 'svelte';
   import { categoryIcons } from '../lib/ui';
   import { measure } from '../lib/iconFit.svelte';
+  import WatchToggle from './WatchToggle.svelte';
 
   const TARGETS = [5, 10, 15, 20];
   const MODES: { id: GameMode; name: string; beta?: boolean }[] = [
@@ -304,13 +305,7 @@
       {/if}
       {#if !local && !isHost && session.myPlayerId}
         <!-- A guest can sit the games out and watch, and take a seat again. -->
-        <p class="watch-choice">
-          {#if session.justWatching}
-            <button class="btn small ghost" onclick={() => session.watch(false)} title="Play in the next game">Take a seat</button>
-          {:else}
-            <button class="btn small ghost" onclick={() => session.watch(true)} title="Watch the games without playing">Just watch</button>
-          {/if}
-        </p>
+        <p class="watch-choice"><WatchToggle /></p>
       {/if}
 
       {#if local}
