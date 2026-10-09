@@ -545,7 +545,7 @@ export const timeOut = () =>
     setTimeLeft(1200);
   });
 
-/** Someone who can use it holds one: alone the player, together anyone standing. */
+/** Someone whose item goes off at 0 holds one: alone the player, together anyone standing. */
 function holds(id: string, item: 'flares' | 'dynamite') {
   const s = run()!;
   return (coop() ? standingIds(s) : [id]).some((o) => inventoryOf(s, o)[item] > 0);
@@ -572,13 +572,13 @@ function withCards() {
 
 /**
  * Dynamite blasts the question away for a new one at the same depth, set off
- * by the actor (a stick is put in the pack if nobody who can use one holds
- * one). A depth has two blasts at most: past them, the lab says so.
+ * by the actor from their own pack (a stick is put in it if they hold none).
+ * A depth has two blasts at most: past them, the lab says so.
  */
 export const dynamite = () =>
   event('Detonate (dynamite)', async () => {
     const id = activeId();
-    if (!holds(id, 'dynamite')) put((s) => invSet(s, id, (v) => (v.dynamite = 1)), true);
+    if (!inventoryOf(run()!, id).dynamite) put((s) => invSet(s, id, (v) => (v.dynamite = 1)), true);
     withCards();
     const q = await running(notFind, 'none');
     act({ type: 'blast', askedAt: q.askedAt }, id);

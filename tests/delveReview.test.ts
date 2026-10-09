@@ -182,9 +182,9 @@ test('together: a question set aside after a reload gives each item back to whoe
   h.give('p1', { dynamite: 1 });
   h.give('p2', { flares: 1 });
   const q = h.ask();
-  h.act({ type: 'blast', askedAt: q.askedAt }, 'p0');
+  h.act({ type: 'blast', askedAt: q.askedAt }, 'p1');
   const b = h.s.question!;
-  assert.deepEqual([b.blast?.by, b.blast?.stick], ['p0', 'p1']);
+  assert.deepEqual([b.blast?.by, b.blast?.stick], ['p1', 'p1']);
   h.act({ type: 'clock', askedAt: b.askedAt });
   h.clock.now = h.s.question!.deadline!;
   h.act({ type: 'flare', askedAt: b.askedAt });
