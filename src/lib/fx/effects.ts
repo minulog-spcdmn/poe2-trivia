@@ -658,11 +658,12 @@ export function edgeGlow(o: { color?: Vec3; width?: number; life?: number; inten
 }
 
 /**
- * One beat of light at the screen's edges, as the clock ticks: up at once,
- * dying away with the tick's sound. `smoke` (0-1): wisps of it, hugging the
- * edges (the clock's very last seconds). `width`: how far in it reaches (px).
+ * One beat of red smoke at the screen's edges, as the clock ticks: up at
+ * once, dying away with the tick's sound, creeping in a little. `width`: how
+ * far in it reaches (px); `smoke` (0 none): its wisps; `rim`: a hot line
+ * along the very edge.
  */
-export function edgeBeat(o: { color?: Vec3; width?: number; intensity?: number; smoke?: number } = {}) {
+export function edgeBeat(o: { color?: Vec3; width?: number; intensity?: number; smoke?: number; rim?: number } = {}) {
   const W = o.width ?? 60;
   const life = 0.8;
   return shape({
@@ -682,8 +683,8 @@ export function edgeBeat(o: { color?: Vec3; width?: number; intensity?: number; 
       f.q[0] = W * (0.85 + 0.15 * env);
       f.q[1] = 0.6;
       f.q[2] = o.smoke ?? 0;
-      f.q[3] = 0;
-      f.q[4] = 0;
+      f.q[3] = W * 0.3 * (1 - Math.exp(-age * 4));
+      f.q[4] = (o.rim ?? 0) * env;
     },
   });
 }

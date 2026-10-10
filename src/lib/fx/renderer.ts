@@ -473,7 +473,8 @@ void main() {
     hot = exp(-rr * rr * 16.0) * 0.9 + rim * 0.2;
   } else if (type == 5) {
     // Screen edge glow. q: width (px), noise, smoke, flow (px it has
-    // been carried in). r: hot cores.
+    // been carried in). r: heat (the smoke's thickest threads, and a line
+    // along the very edge).
     vec2 e = max(vHalf - abs(vP), 0.0);
     // Each edge's light, joined as light adds up: brighter into the corners,
     // and round there, with no seam along the diagonal. Read back as a
@@ -499,6 +500,8 @@ void main() {
         v += (thread * 1.1 + 0.2 * clump) * clump * reach;
         hot = pow(ridge, 24.0) * clump * reach * vR.x;
       }
+      // A hot line along the very edge.
+      hot += exp(-d / (vQ.x * 0.08)) * 0.5 * vR.x;
     }
   } else if (type == 6) {
     // Soft radial flash. q: radius.
