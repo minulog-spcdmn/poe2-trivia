@@ -5,6 +5,8 @@
 import { isDifficulty, type Difficulty, type GameMode, type Phase } from './game.ts';
 import { cleanName } from './names.ts';
 import { PROTOCOL_VERSION } from './protocol.ts';
+import { DIFFICULTY_NAMES } from './difficultyText.ts';
+import { shownDepth } from './delve.ts';
 
 export interface RoomInfo {
   code: string;
@@ -65,4 +67,19 @@ export function parseRoomInfo(raw: unknown): RoomInfo | null {
     ...(delve && int(r.depth, 1, 9999) ? { depth: r.depth } : {}),
     ...(int(r.v, 0, 1e6) ? { v: r.v } : {}),
   };
+}
+
+const MODE_NAMES = { turns: 'Turns', race: 'Race', delve: 'Delve' } as const;
+
+/**
+ * A listed room's line under its host: "Turns · Cruel · 3/12" while it
+ * gathers, "Turns · in a game · 4/12" once it plays, and for a Delve run
+ * under way the depth it has reached ("Delve · depth 14 · 4/12").
+ */
+export function roomMeta(r: RoomInfo): string {
+  let how: string | null;
+  if (r.phase === 'lobby') how = r.mode === 'delve' ? null : DIFFICULTY_NAMES[r.difficulty];
+  else if (r.mode === 'delve' && r.depth) how = shownDepth(r.depth) > 0 ? `depth ${shownDepth(r.depth)}` : 'at the entrance';
+  else how = 'in a game';
+  return [MODE_NAMES[r.mode], how, `${r.players}/${r.maxPlayers}`].filter(Boolean).join(' · ');
 }

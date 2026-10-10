@@ -1014,6 +1014,25 @@ by side.
 - **Open it:** `npm run dev`, then `http://localhost:5173/descent.html`; on
   the beta, **poe2.quest/beta/descent.html**. The live build leaves it out.
 
+### The daily streak's test page
+
+`streak.html` (`src/streakPreview/`) shows the daily's streak badge
+(`src/components/DailyStreak.svelte`) under a mock of Today's unique's
+answers, burning for any run of days, and every step of its ladder of
+colours (`DAILY_LADDER` in `src/lib/fx/streaks.ts`) side by side below.
+
+- **Days in a row:** a slider from 0 to 730 and a box for any run; the hint
+  names the colour, the fire's heat and the days to the next colour.
+- **Steps** shows a step's first day; the numbers after them show the day
+  before a step, to answer right and see it turn.
+- **Answer right** plays what the start page plays for a right answer: the
+  badge comes in at yesterday's run and grows into today's, bursting when it
+  reaches a new colour. **Miss** ends the run in a puff of smoke;
+  **Replay entrance** brings the badge in again.
+- `streak.html?days=30` opens it at a run of 30 days.
+- **Open it:** `npm run dev`, then `http://localhost:5173/streak.html`; on
+  the beta, **poe2.quest/beta/streak.html**. The live build leaves it out.
+
 ---
 
 Fan project. Not affiliated with Grinding Gear Games. Item data and art from

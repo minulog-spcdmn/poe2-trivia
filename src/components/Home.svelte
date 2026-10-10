@@ -315,8 +315,29 @@
     keyFocus = false;
     rowFocus = false;
   }
+  /** How long the cursor takes to go out (its transitions below, with their delay). */
+  const CURSOR_OUT_MS = 1450;
   /** The cursor shows while an entry is pointed at, chosen from the keyboard, typed in or connecting; otherwise it fades away. */
   const lit = $derived(!renaming && (hovered || keyFocus || (!!open && rowFocus) || connecting));
+  /**
+   * Lit again after it has faded out, the cursor comes back at its entry
+   * instead of sliding over from where it went out: `snap` keeps its slide
+   * off for the frame it lights up in.
+   */
+  let snap = $state(false);
+  let dark = true;
+  let darkTimer: ReturnType<typeof setTimeout> | undefined;
+  $effect(() => {
+    if (lit) {
+      clearTimeout(darkTimer);
+      if (dark) {
+        snap = true;
+        requestAnimationFrame(() => requestAnimationFrame(() => (snap = false)));
+      }
+      dark = false;
+    } else darkTimer = setTimeout(() => (dark = true), CURSOR_OUT_MS / 2);
+    return () => clearTimeout(darkTimer);
+  });
 
   // ---- the invite link's screen ----
 
@@ -400,7 +421,7 @@
       <nav class="menu" class:renaming class:lit aria-label="Start" onfocusin={focusIn} onfocusout={focusOut}>
         <!-- One cursor for the menu: it slides to the entry under the mouse (or the
              keyboard's), and fades away slowly once nothing is pointed at. -->
-        <span class="diamond" aria-hidden="true" style:--at={cursor}></span>
+        <span class="diamond" class:snap aria-hidden="true" style:--at={cursor}></span>
         {#each ENTRIES as e, i (e)}
           {@const isOpen = open === e && !connecting}
           {@const isBusy = connecting && (busy ?? (session.mode === 'host' ? 'create' : 'join')) === e}
@@ -762,37 +783,54 @@
       inset 0 2px 6px rgba(0, 0, 0, 0.55),
       0 0 0 3px rgba(224, 85, 63, 0.14);
   }
-  /* The cursor: a glowing diamond beside the entry, its title lit. It slides
-     from entry to entry and fades out slowly when nothing is pointed at. A
+  /* The cursor: a glowing diamond beside the entry, its title lit. It glides
+     from entry to entry and, when nothing is pointed at, goes out slowly: its
+     glow dims first, then it shrinks back into the margin and blurs away. A
      pointer that can hover has one; touch never shows it. */
   .diamond {
     position: absolute;
-    left: -26px;
+    left: -34px;
     top: 14px;
     width: 9px;
     height: 9px;
     rotate: 45deg;
     background: #e08a44;
     box-shadow:
-      0 0 8px rgba(224, 138, 68, 0.9),
-      0 0 18px rgba(224, 138, 68, 0.45);
+      0 0 4px rgba(224, 138, 68, 0),
+      0 0 10px rgba(224, 138, 68, 0);
     opacity: 0;
-    scale: 0.6;
+    scale: 0.35;
+    filter: blur(2px);
     pointer-events: none;
     translate: 0 calc(var(--at, 0) * var(--slot));
     transition:
-      opacity 1.2s ease,
-      scale 1.2s ease,
-      translate 0.35s var(--ease-out);
+      box-shadow 0.7s ease-out,
+      opacity 1s cubic-bezier(0.45, 0, 0.55, 1) 0.25s,
+      scale 1.2s cubic-bezier(0.45, 0, 0.55, 1) 0.25s,
+      filter 1s ease-in 0.25s,
+      left 1.2s cubic-bezier(0.45, 0, 0.55, 1) 0.25s,
+      translate 0.6s var(--ease-out);
   }
   @media (hover: hover) {
     .lit .diamond {
+      left: -26px;
       opacity: 1;
       scale: 1;
+      filter: none;
+      box-shadow:
+        0 0 8px rgba(224, 138, 68, 0.9),
+        0 0 18px rgba(224, 138, 68, 0.45);
       transition:
-        opacity 0.2s,
-        scale 0.25s var(--ease-out),
-        translate 0.35s var(--ease-out);
+        box-shadow 0.4s ease-out,
+        opacity 0.25s ease-out,
+        scale 0.4s var(--ease-out),
+        filter 0.25s ease-out,
+        left 0.4s var(--ease-out),
+        translate 0.6s var(--ease-out);
+    }
+    /* Back after going out: straight at its entry, no slide. */
+    .lit .diamond.snap {
+      transition-property: box-shadow, opacity, scale, filter, left;
     }
     .lit .cur .pick {
       color: #fff1cf;

@@ -518,6 +518,20 @@ export function turnsBlue(row: Element) {
   embers(row, { count: 16, area: 'top', colors: [C.portal, C.portalPale], rise: [120, 280], life: [0.6, 1.3] });
 }
 
+/**
+ * A fire takes a new colour (the daily streak's ladder): it flares up in it,
+ * as turnsBlue does in blue. `color` in linear RGB 0 to 1.
+ */
+export function newFlame(row: Element, color: Vec3) {
+  if (!fxActive()) return;
+  const hot: Vec3 = [color[0] * 3, color[1] * 3, color[2] * 3];
+  const pale: Vec3 = [1 + color[0] * 2, 1 + color[1] * 2, 1 + color[2] * 2];
+  flash(row, { radius: 160, color: hot, intensity: 0.35, life: 0.6 });
+  ring(row, { radius: 140, thickness: 8, life: 0.6, color: pale, breakup: 0.6, intensity: 0.5 });
+  sparks(row, { count: 40, area: 'edge', colors: [hot, pale, C.whiteHot], speed: [150, 480], gravity: -60, life: [0.4, 0.9] });
+  embers(row, { count: 16, area: 'top', colors: [hot, pale], rise: [120, 280], life: [0.6, 1.3] });
+}
+
 /** A streak ends: the fire on a player's entry goes out in a puff of smoke. */
 export function doused(row: Element) {
   if (!fxActive()) return;

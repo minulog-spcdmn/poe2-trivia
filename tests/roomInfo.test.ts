@@ -48,3 +48,14 @@ test('a listing from a host before version 10 has no version', () => {
   assert.equal(parseRoomInfo(old)!.v, undefined);
   assert.equal(parseRoomInfo({ ...old, mode: 'sprint' }), null);
 });
+
+test("a listed room's line tells its mode and how it plays, and a Delve run its depth", async () => {
+  const { roomMeta } = await import('../src/lib/roomInfo.ts');
+  const room = (o: Partial<RoomInfo>): RoomInfo => ({ code: 'KXR4QT', host: 'Una', players: 3, maxPlayers: 12, spectators: 0, maxSpectators: 12, mode: 'turns', difficulty: 'cruel', target: 10, phase: 'lobby', ...o });
+  assert.equal(roomMeta(room({})), 'Turns · Cruel · 3/12');
+  assert.equal(roomMeta(room({ mode: 'race', difficulty: 'merciless', phase: 'question' })), 'Race · in a game · 3/12');
+  assert.equal(roomMeta(room({ mode: 'delve' })), 'Delve · 3/12', 'a Delve room still gathering');
+  assert.equal(roomMeta(room({ mode: 'delve', phase: 'question', depth: 15 })), 'Delve · depth 14 · 3/12', 'the depth as players count it');
+  assert.equal(roomMeta(room({ mode: 'delve', phase: 'choosing', depth: 1 })), 'Delve · at the entrance · 3/12');
+  assert.equal(roomMeta(room({ mode: 'delve', phase: 'question' })), 'Delve · in a game · 3/12', 'a host too old to say its depth');
+});

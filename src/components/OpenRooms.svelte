@@ -3,17 +3,10 @@
   import { flip } from 'svelte/animate';
   import { fly, fade } from 'svelte/transition';
   import { scanRooms, type RoomInfo } from '../lib/rooms';
-  import { DIFFICULTY_NAMES } from '../lib/difficultyText';
+  import { roomMeta } from '../lib/roomInfo';
   import { PROTOCOL_VERSION } from '../lib/protocol';
 
   let { onJoin, disabled = false }: { onJoin: (code: string) => void; disabled?: boolean } = $props();
-
-  const MODE_NAMES = { turns: 'Turns', race: 'Race', delve: 'Delve' } as const;
-  /** "Turns · Cruel · 3/12", or "Delve · in a game · 4/12" once it is under way. */
-  function meta(r: RoomInfo) {
-    const how = r.phase === 'lobby' ? (r.mode === 'delve' ? null : DIFFICULTY_NAMES[r.difficulty]) : 'in a game';
-    return [MODE_NAMES[r.mode], how, `${r.players}/${r.maxPlayers}`].filter(Boolean).join(' · ');
-  }
 
   const REFRESH_MS = 20000;
   /**
@@ -135,7 +128,7 @@
         <li class:closed={!behind && !ahead && !open && !watch} animate:flip={{ duration: 300 }} in:fly={{ y: 8, duration: 300 }} out:fade={{ duration: 150 }}>
           <div class="info">
             <span class="host">{r.host}’s room</span>
-            <span class="meta">{meta(r)}{r.spectators ? ` · ${r.spectators} watching` : ''}</span>
+            <span class="meta">{roomMeta(r)}{r.spectators ? ` · ${r.spectators} watching` : ''}</span>
           </div>
           {#if behind || ahead}
             <span class="status" title={behind ? 'The host is on an older version of the game' : 'Reload this page to join'}>{behind ? 'Older version' : 'Reload to join'}</span>
