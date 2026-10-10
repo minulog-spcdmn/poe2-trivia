@@ -103,6 +103,12 @@ export function nameTooShort(name: string): boolean {
 
 export const NAME_TOO_SHORT = `Names need at least ${MIN_NAME} characters.`;
 
+/** Whether this device can play under a name (other players' names aside): long enough, not reserved, not held. */
+export function nameUsable(name: string): boolean {
+  const clean = cleanName(name);
+  return !nameProblem(clean, []) && !nameHeld(clean);
+}
+
 /** Returns why a name is not allowed, or null if it's fine. */
 export function nameProblem(name: string, others: string[]): string | null {
   if (!name) return 'Please enter a name with at least one letter or number.';

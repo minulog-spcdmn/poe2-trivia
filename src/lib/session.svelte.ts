@@ -419,7 +419,8 @@ class Session {
 
   // ---- hot-seat ---------------------------------------------------------
 
-  startLocal(resume?: GameState) {
+  /** A hot-seat game: a fresh one, seating `name` first when given, or `resume` picked up where it was. */
+  startLocal(resume?: GameState, name?: string) {
     const delve = this.delveLink && !resume;
     // Used up by this game, or moot for one picked up where it was.
     this.delveLink = false;
@@ -427,6 +428,18 @@ class Session {
     this.mode = 'local';
     this.status = 'ready';
     this.setState(resume ?? createGame(null, delve ? { ...DEFAULT_SETTINGS, mode: 'delve' } : undefined));
+    if (name) this.seatLocal(name);
+  }
+
+  /**
+   * Seats a player on this device (hot-seat); false when the game turned
+   * them down (and said why). The id comes from getRandomValues, which,
+   * unlike randomUUID, also works on plain http.
+   */
+  seatLocal(name: string): boolean {
+    const playerId = randomToken(22);
+    this.dispatch({ type: 'join', playerId, name });
+    return !!this.state?.players.some((p) => p.id === playerId);
   }
 
   /**
@@ -439,8 +452,7 @@ class Session {
   /** A Delve run alone on this device, straight from a shared link. */
   startDelve(name: string) {
     this.delveLink = true;
-    this.startLocal();
-    this.dispatch({ type: 'join', playerId: crypto.randomUUID(), name });
+    this.startLocal(undefined, name);
     this.dispatch({ type: 'start' });
   }
 

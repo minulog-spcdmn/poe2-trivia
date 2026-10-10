@@ -57,10 +57,8 @@
       field?.focus();
       return;
     }
-    const playerId = crypto.randomUUID();
-    session.dispatch({ type: 'join', playerId, name });
     // Keep the name to fix it up if it was turned down (hot-seat applies it right away).
-    if (session.state?.players.some((p) => p.id === playerId)) newName = '';
+    if (session.seatLocal(name)) newName = '';
   }
 
   // Players already here when the lobby opens just appear; newcomers get an entrance.

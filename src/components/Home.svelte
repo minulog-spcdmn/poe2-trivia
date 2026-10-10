@@ -1,6 +1,6 @@
 <script lang="ts">
   import { fade, fly } from 'svelte/transition';
-  import { NAME_TOO_SHORT, nameHeld, nameTooShort, unlockHeldName } from '../lib/names';
+  import { cleanName, nameHeld, nameProblem, nameUsable, unlockHeldName } from '../lib/names';
   import { toasts } from '../lib/toasts.svelte';
   import { engine, session, savedName, saveName, CODE_LENGTH } from '../lib/session.svelte';
   import { shuffle } from '../lib/game';
@@ -44,7 +44,7 @@
     // Either way Delve is on its way: the backdrop gets its Delve programs ready.
     wantDelveBackdrop();
     const known = savedName().trim();
-    if (known && !nameTooShort(known) && !nameHeld(known))
+    if (nameUsable(known))
       setTimeout(() => {
         if (session.status === 'idle' && !session.state) session.startDelve(known);
       });
@@ -71,10 +71,16 @@
     .catch((err) => console.warn('achievements', err));
   const showcase = shuffle(engine.items, Math.random).slice(0, 7);
 
+  /** Says why a typed name can't be used (not for an empty field, nor the held name: that one is only refused). */
+  function sayNameProblem(n: string) {
+    const problem = n && !nameHeld(n) && nameProblem(cleanName(n), []);
+    if (problem) toasts.show(problem, 'error');
+  }
+
   function needName() {
     const n = name.trim();
-    if (!n || nameTooShort(n) || nameHeld(n)) {
-      if (n && nameTooShort(n)) toasts.show(NAME_TOO_SHORT, 'error');
+    if (!nameUsable(n)) {
+      sayNameProblem(n);
       nameError = true;
       const field = document.getElementById('name');
       if (field) refuse(field);
@@ -131,13 +137,16 @@
     else code = cleanCode(code.slice(0, field.selectionStart ?? code.length) + text + code.slice(field.selectionEnd ?? code.length));
   }
 
-  /** Hot-seat starts with the name from the name field (the saved one unless changed) already in, when it's usable. */
+  /**
+   * Hot-seat starts with the name in the name field (the saved one unless
+   * changed) already in, when it's usable. It isn't saved: whoever plays
+   * first here may not be the one who plays online on this device.
+   */
   function local() {
-    session.startLocal();
     const n = name.trim();
-    if (!n || nameTooShort(n) || nameHeld(n)) return;
-    saveName(n);
-    session.dispatch({ type: 'join', playerId: crypto.randomUUID(), name: n });
+    const usable = nameUsable(n);
+    session.startLocal(undefined, usable ? n : undefined);
+    if (!usable) sayNameProblem(n);
   }
 
   const connecting = $derived(session.status === 'connecting');
