@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { stageZoom } from '../src/lib/stage.ts';
+import { stageZoom, unzoomPin } from '../src/lib/stage.ts';
 
 const near = (a: number, b: number) => Math.abs(a - b) < 0.005;
 
@@ -21,4 +21,20 @@ test('larger windows scale by the smaller of width / 1440 and height / 980', () 
 
 test('the scale stops at 2.2', () => {
   assert.equal(stageZoom(7680, 4320), 2.2);
+});
+
+test("a leaving list item's pin, measured on screen, is scaled back to its own px under zoom", () => {
+  const item = (transform: string, z: number) => ({ currentCSSZoom: z, style: { transform } }) as unknown as HTMLElement;
+  const pinned = item('translate(268px, -134px)', 1.34);
+  unzoomPin(pinned);
+  assert.equal(pinned.style.transform, `translate(${268 / 1.34}px, ${-134 / 1.34}px)`);
+  const after = item('rotate(2deg) translate(100px, 50px)', 2);
+  unzoomPin(after);
+  assert.equal(after.style.transform, 'rotate(2deg) translate(50px, 25px)', 'only the pin, the last translate, is touched');
+  const plain = item('translate(10px, 20px)', 1);
+  unzoomPin(plain);
+  assert.equal(plain.style.transform, 'translate(10px, 20px)', 'no zoom, nothing to undo');
+  const none = item('', 2);
+  unzoomPin(none);
+  assert.equal(none.style.transform, '');
 });

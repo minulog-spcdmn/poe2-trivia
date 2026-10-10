@@ -15,3 +15,27 @@ export function stageZoom(w: number, h: number): number {
 export function zoomOf(el: Element): number {
   return (el as Element & { currentCSSZoom?: number }).currentCSSZoom ?? 1;
 }
+
+/**
+ * Svelte pins a leaving item of an animated list (`animate:`) where it
+ * stood with a translate measured on screen; under the stage's zoom that is
+ * zoom times too far, and the item jumps as it goes. Its out-transition runs
+ * after the pin, so it scales the pin back here.
+ */
+export function unzoomPin(node: Element) {
+  const z = zoomOf(node);
+  const style = (node as HTMLElement).style;
+  if (z === 1 || !style?.transform) return;
+  style.transform = style.transform.replace(
+    /translate\((-?[\d.]+(?:e-?\d+)?)px, (-?[\d.]+(?:e-?\d+)?)px\)$/,
+    (_, x: string, y: string) => `translate(${+x / z}px, ${+y / z}px)`,
+  );
+}
+
+/** An out-transition for an item of an animated list: `transition`, with the item pinned where it stood under zoom (unzoomPin). */
+export function pinnedOut<P, R>(transition: (node: Element, params: P) => R) {
+  return (node: Element, params: P): R => {
+    unzoomPin(node);
+    return transition(node, params);
+  };
+}

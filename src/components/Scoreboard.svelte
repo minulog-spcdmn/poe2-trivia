@@ -43,6 +43,7 @@
   import { MOMENTS } from '../lib/soundDesign';
   import type { GameState, Revive } from '../lib/game';
   import WatchToggle from './WatchToggle.svelte';
+  import { zoomOf } from '../lib/stage';
 
   /** Shown at the end of the row (the timer, on phones). */
   let { aside }: { aside?: Snippet } = $props();
@@ -628,9 +629,11 @@
    * shrinks between turns on phones. It moves them with `translate`, so the
    * active entry's own transform stays.
    */
-  function glide(_node: Element, { from, to }: { from: DOMRect; to: DOMRect }) {
-    const dx = from.left - to.left;
-    const dy = from.top - to.top;
+  function glide(node: Element, { from, to }: { from: DOMRect; to: DOMRect }) {
+    // Measured on screen: in the entry's own px under the stage's zoom.
+    const z = zoomOf(node);
+    const dx = (from.left - to.left) / z;
+    const dy = (from.top - to.top) / z;
     return { duration: 400, easing: cubicOut, css: (_t: number, u: number) => `translate: ${u * dx}px ${u * dy}px` };
   }
 

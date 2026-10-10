@@ -5,6 +5,10 @@
   import { scanRooms, type RoomInfo } from '../lib/rooms';
   import { roomMeta } from '../lib/roomInfo';
   import { PROTOCOL_VERSION } from '../lib/protocol';
+  import { pinnedOut } from '../lib/stage';
+
+  /** A room leaving the list fades where it stood, under the stage's zoom too. */
+  const fadeOut = pinnedOut(fade);
 
   let { onJoin, disabled = false }: { onJoin: (code: string) => void; disabled?: boolean } = $props();
 
@@ -125,7 +129,7 @@
         {@const ahead = (r.v ?? 0) > PROTOCOL_VERSION}
         {@const open = r.phase === 'lobby' && r.players < r.maxPlayers}
         {@const watch = !open && r.phase !== 'locked' && r.phase !== 'lobby' && r.spectators < r.maxSpectators}
-        <li class:closed={!behind && !ahead && !open && !watch} animate:flip={{ duration: 300 }} in:fly={{ y: 8, duration: 300 }} out:fade={{ duration: 150 }}>
+        <li class:closed={!behind && !ahead && !open && !watch} animate:flip={{ duration: 300 }} in:fly={{ y: 8, duration: 300 }} out:fadeOut={{ duration: 150 }}>
           <div class="info">
             <span class="host">{r.host}’s room</span>
             <span class="meta">{roomMeta(r)}{r.spectators ? ` · ${r.spectators} watching` : ''}</span>

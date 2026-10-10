@@ -10,6 +10,10 @@
   import Avatar from './Avatar.svelte';
   import PlayerName from './PlayerName.svelte';
   import AchievementSeal from './AchievementSeal.svelte';
+  import { pinnedOut } from '../lib/stage';
+
+  /** A notice going fades where it stood, under the stage's zoom too. */
+  const fadeOut = pinnedOut(fade);
 
   /** Height of the app header, if one is showing: phones keep the stack below it, clear of its buttons. */
   let { headerHeight = 0 }: { headerHeight?: number } = $props();
@@ -60,7 +64,7 @@
   aria-live="polite"
 >
   {#if lost}
-    <div class="toast pinned {session.gaveUp ? 'error' : 'warn'}" in:fly={enter} out:fade={{ duration: 200 }}>
+    <div class="toast pinned {session.gaveUp ? 'error' : 'warn'}" in:fly={enter} out:fadeOut={{ duration: 200 }}>
       <span class="seal">
         {#if session.gaveUp}
           <span class="gem">{@render glyph('error')}</span>
@@ -90,7 +94,7 @@
       use:sparkle={{ kind: t.kind, herald: t.herald }}
       animate:flip={{ duration: 260 }}
       in:fly={enter}
-      out:fade={{ duration: 200 }}
+      out:fadeOut={{ duration: 200 }}
       onpointerenter={() => toasts.hold(t.id)}
       onpointerleave={() => toasts.release(t.id)}
     >

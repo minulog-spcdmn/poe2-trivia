@@ -22,6 +22,7 @@
   import { portal } from '../lib/portal';
   import WatchToggle from './WatchToggle.svelte';
   import { MediaQuery } from 'svelte/reactivity';
+  import { unzoomPin } from '../lib/stage';
 
   const TARGETS = [5, 10, 15, 20];
   const MODES: { id: GameMode; name: string; beta?: boolean }[] = [
@@ -124,8 +125,10 @@
     else if (kicker.click(id)) session.kick(id);
   }
   /** A removed chip goes out with a red flare, shrinking a little, as it fades: the others then close up (flip).
-      It shrinks with `scale`, not `transform`: Svelte pins a leaving chip in place with a transform, which a transform here would override (the chip would jump to the grid's first cell). */
-  function kickOut(_node: Element) {
+      It shrinks with `scale`, not `transform`: Svelte pins a leaving chip in place with a transform, which a transform here would override (the chip would jump to the grid's first cell);
+      that pin is measured on screen, so under the stage's zoom it is scaled back (unzoomPin). */
+  function kickOut(node: Element) {
+    unzoomPin(node);
     return {
       duration: 320,
       css: (t: number) => `opacity: ${t}; scale: ${0.9 + 0.1 * t}; box-shadow: 0 0 ${18 * (1 - t)}px rgba(224, 85, 63, ${0.7 * (1 - t) * t * 4});`,
