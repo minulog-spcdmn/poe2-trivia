@@ -57,3 +57,17 @@ export function browserEnv(): Env {
     maxTouchPoints: navigator.maxTouchPoints ?? 0,
   };
 }
+
+/**
+ * Marks <html data-fullscreen> while the window is fullscreen, so app.css can
+ * drop the scrollbar there (the wheel and keys still scroll). Phones are left
+ * alone: their scrollbars overlay the page anyway.
+ */
+export function markFullscreen() {
+  const update = () => {
+    const env = browserEnv();
+    document.documentElement.toggleAttribute('data-fullscreen', isDesktop(env) && isFullscreen(env));
+  };
+  update();
+  window.addEventListener('resize', update);
+}
