@@ -316,7 +316,7 @@
     rowFocus = false;
   }
   /** How long the cursor takes to go out (its transitions below, with their delay). */
-  const CURSOR_OUT_MS = 1450;
+  const CURSOR_OUT_MS = 1200;
   /** The cursor shows while an entry is pointed at, chosen from the keyboard, typed in or connecting; otherwise it fades away. */
   const lit = $derived(!renaming && (hovered || keyFocus || (!!open && rowFocus) || connecting));
   /**
@@ -785,52 +785,48 @@
   }
   /* The cursor: a glowing diamond beside the entry, its title lit. It glides
      from entry to entry and, when nothing is pointed at, goes out slowly: its
-     glow dims first, then it shrinks back into the margin and blurs away. A
-     pointer that can hover has one; touch never shows it. */
+     glow dims first, then it shrinks away where it stands. Its own layer, above
+     the entries, keeps it whole while it moves. A pointer that can hover has
+     one; touch never shows it. */
   .diamond {
     position: absolute;
-    left: -34px;
+    z-index: 2;
+    left: -26px;
     top: 14px;
     width: 9px;
     height: 9px;
     rotate: 45deg;
     background: #e08a44;
     box-shadow:
-      0 0 4px rgba(224, 138, 68, 0),
-      0 0 10px rgba(224, 138, 68, 0);
+      0 0 8px rgba(224, 138, 68, 0),
+      0 0 18px rgba(224, 138, 68, 0);
     opacity: 0;
-    scale: 0.35;
-    filter: blur(2px);
+    scale: 0.5;
     pointer-events: none;
+    will-change: translate, opacity, scale;
     translate: 0 calc(var(--at, 0) * var(--slot));
     transition:
-      box-shadow 0.7s ease-out,
-      opacity 1s cubic-bezier(0.45, 0, 0.55, 1) 0.25s,
-      scale 1.2s cubic-bezier(0.45, 0, 0.55, 1) 0.25s,
-      filter 1s ease-in 0.25s,
-      left 1.2s cubic-bezier(0.45, 0, 0.55, 1) 0.25s,
-      translate 0.6s var(--ease-out);
+      box-shadow 0.6s ease-out,
+      opacity 0.9s ease-in-out 0.2s,
+      scale 1s ease-in-out 0.2s,
+      translate 0.3s cubic-bezier(0.33, 1, 0.68, 1);
   }
   @media (hover: hover) {
     .lit .diamond {
-      left: -26px;
       opacity: 1;
       scale: 1;
-      filter: none;
       box-shadow:
         0 0 8px rgba(224, 138, 68, 0.9),
         0 0 18px rgba(224, 138, 68, 0.45);
       transition:
-        box-shadow 0.4s ease-out,
-        opacity 0.25s ease-out,
-        scale 0.4s var(--ease-out),
-        filter 0.25s ease-out,
-        left 0.4s var(--ease-out),
-        translate 0.6s var(--ease-out);
+        box-shadow 0.3s ease-out,
+        opacity 0.2s ease-out,
+        scale 0.3s var(--ease-out),
+        translate 0.3s cubic-bezier(0.33, 1, 0.68, 1);
     }
     /* Back after going out: straight at its entry, no slide. */
     .lit .diamond.snap {
-      transition-property: box-shadow, opacity, scale, filter, left;
+      transition-property: box-shadow, opacity, scale;
     }
     .lit .cur .pick {
       color: #fff1cf;
