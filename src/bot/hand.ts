@@ -11,23 +11,18 @@
 // mostly without stopping first, and often drifting off a little after;
 // unsure, it may head for another answer first and veer off. Once the
 // answer is shown it leaves it be (people look with their eyes, not the
-// pointer), now and then a glance at the scores. Between times it rests
+// pointer). Between times it rests
 // (and dims, as anyone's does), drifts, wanders to the art, its own row or
 // the row of whoever's turn it is, and now and then leaves the page a while.
-// It notices the other pointers now and then, the more sociable the more
-// often (social.ts): waves back at a wave, answers one come up to it, greets
-// a newcomer in the lobby, goes after someone moving about a little while.
 // It never hovers an answer or a card on someone else's turn (that would be
 // a hint). Every bot plays with a mouse: a pointer is what makes it company.
 
 import type { GameState, Question } from '../lib/game';
-import { MOUSE, PRESSED, SEND_EVERY_MS, anchorCode, anchorName, cursorKey, cursorsLive, type CursorAt } from '../lib/cursors';
-import { peerCursors } from '../lib/peerCursors.svelte';
+import { LIT, MOUSE, PRESSED, SEND_EVERY_MS, actionOf, anchorCode, clickableFor, cursorsLive, type CursorAt, type PointerKind } from '../lib/cursors';
 import { session } from '../lib/session.svelte';
 import type { Persona } from './brain';
 import { aimIn, along, layout as roomLayout, placeOf, reach, reachTime, stroke, sweep, veer, type Box, type Spot, type Stroke } from './reach';
 import { afterReveal, awayChance, changeOfMind, circle, fidgets, idleEvery, readCards, readQuestion, straySpot, waitSpot, type Glance, type Hands, type Situation } from './habits';
-import { KEEP_MS, awayFrom, react, toward, wave, type Sample } from './social';
 import { between } from './util';
 
 /** A press shows this long (ms): as a recorded hand held its button (lib/recorder.ts). */
@@ -57,15 +52,8 @@ const WAIT_STILLER = 1.8;
 /** A click at nothing (habits.ts straySpot): this soon after moving on (ms), and at an idle move, this much less often. */
 const STRAY_AFTER_MS: [number, number] = [300, 1100];
 const STRAY_IDLE = 0.12;
-/** After answering someone's pointer, it leaves the others be at least this long (ms). */
-const SOCIAL_REST_MS: [number, number] = [4000, 10000];
-/** Going after someone moving about: this long (ms), a step every so often. */
-const FOLLOW_MS: [number, number] = [1500, 3500];
-const FOLLOW_STEP_MS: [number, number] = [450, 750];
 /** Idle moves (nothing aimed at) go this much slower than reaching for something. */
 const LAZY: [number, number] = [1.5, 2.6];
-/** Each sweep of a wave (ms). */
-const WAVE_LEG_MS: [number, number] = [150, 240];
 
 /** Where things are for the player on this page. */
 const layout = (s: GameState) => roomLayout(s, session.myPlayerId ?? '');
@@ -104,17 +92,6 @@ export class Hand {
   /** A click at nothing: when it sets off for one, and when it presses once there. */
   private strayAt = 0;
   private strayPress = 0;
-  /** The others' pointers as it saw them lately (social.ts), when it last answered each, and when it may again. */
-  private seen = new Map<string, Sample[]>();
-  private answered = new Map<string, number>();
-  private socialAfter = 0;
-  /** Going after someone's pointer: whose, until when, and the next step. */
-  private following: string | null = null;
-  private followUntil = 0;
-  private followStep = 0;
-  /** Who was in the room when it last looked (a newcomer gets a greeting now and then), and a greeting due. */
-  private met = new Set<string>();
-  private greet: { at: number; row: string } | null = null;
 
   constructor(private readonly persona: Persona) {}
 
@@ -256,23 +233,6 @@ export class Hand {
     });
   }
 
-  /**
-   * Then, once it gets where it's going, through `spots` in strokes `ms`
-   * long (a wave: slow enough to show at ten updates a second, as the waves
-   * people see on each other's screens are).
-   */
-  private thenThrough(spots: Spot[], ms: [number, number] = WAVE_LEG_MS) {
-    const last = this.moves.at(-1);
-    let t = Math.max(Date.now(), last?.end ?? 0) + between(60, 200);
-    let from = last?.to ?? this.at;
-    for (const to of spots) {
-      const m = stroke(from, to, t, between(...ms), Math.random, 0.2);
-      this.moves.push(m);
-      t = m.end;
-      from = to;
-    }
-  }
-
   private where(now: number): Spot {
     while (this.moves.length) {
       const m = this.moves[0];
@@ -331,11 +291,7 @@ export class Hand {
       const boxes = layout(s);
       const opts = [...boxes].filter(([k]) => k.startsWith('opt:')).map(([, b]) => b);
       this.looks = afterReveal(this.hands, opts, now, Math.random);
-      // Now and then a look at the scores too: the row of whoever just answered.
-      const row = `row:${s.delve ? Math.max(0, s.players.findIndex((p) => p.id === session.myPlayerId)) : s.turn}`;
-      if (boxes.has(row) && Math.random() < 0.12) this.looks.push({ at: (this.looks.at(-1)?.at ?? now) + between(700, 1800) * this.persona.pace, anchor: row });
     }
-    this.watch(s, now);
     // A click at nothing: off to it, and a press once there.
     if (this.strayAt && now >= this.strayAt) {
       this.strayAt = 0;
@@ -348,23 +304,7 @@ export class Hand {
     }
     const look = this.looks[0];
     const still = !this.moves.length;
-    if (this.following && now < this.followUntil && !this.playing(s)) {
-      // Going after someone: a step toward where they are now, every so often.
-      if (now >= this.followStep) {
-        this.followStep = now + between(...FOLLOW_STEP_MS);
-        const them = this.seen.get(this.following)?.at(-1);
-        if (them) this.goTo(toward(this.where(now), them, Math.random, 200), undefined, null, between(500, 800));
-      }
-    } else if (this.greet && now >= this.greet.at && still) {
-      // A newcomer in the lobby: over to their name, and a little wave.
-      const box = layout(s).get(this.greet.row);
-      this.greet = null;
-      if (box) {
-        const to = aimIn(box, Math.random);
-        this.goTo(to, box, null);
-        this.thenThrough(wave(to, Math.random, Math.random() < 0.5));
-      }
-    } else if (look && now >= look.at) {
+    if (look && now >= look.at) {
       this.looks.shift();
       const box = look.anchor ? layout(s).get(look.anchor) : undefined;
       const words = !!look.text && s.question?.mode !== 'art';
@@ -392,91 +332,8 @@ export class Hand {
         const d = between(...f.size);
         this.goTo({ x: this.at.x + Math.cos(a) * d, y: this.at.y + Math.sin(a) * d }, undefined, this.on, between(150, 320));
       }
-    } else if (!this.looks.length && still && now >= this.socialAfter && !this.playing(s) && this.answer(s, now)) {
-      // Answered someone's pointer (social.ts).
     } else if (!this.looks.length && still && now >= this.nextIdle) this.idle(s, now);
     this.send(true);
-  }
-
-  /** Its own turn to pick or answer, or busy with it: no time for anyone's pointer. */
-  private playing(s: GameState) {
-    const me = session.myPlayerId;
-    if (s.phase !== 'choosing' && s.phase !== 'question') return false;
-    if (s.delve) return true;
-    return s.settings.mode === 'turns' && s.players[s.turn]?.id === me;
-  }
-
-  /** The others' pointers, where they are on its picture of the screen, kept a few seconds; and anyone new in the lobby. */
-  private watch(s: GameState, now: number) {
-    const l = layout(s);
-    const mine = cursorKey(session.myPlayerId ?? '');
-    for (const [key, p] of peerCursors.at) {
-      if (key === mine) continue;
-      const [code, ax, ay] = p.at;
-      const name = anchorName(code);
-      const box = name === 'game' ? null : name ? l.get(name) : undefined;
-      if (box === undefined) continue;
-      const spot = box ? { x: box[0] + (ax / 1000) * (box[2] - box[0]), y: box[1] + (ay / 1000) * (box[3] - box[1]) } : { x: ax, y: ay };
-      const seen = this.seen.get(key) ?? [];
-      const last = seen.at(-1);
-      if (!last || last.x !== spot.x || last.y !== spot.y) seen.push({ t: now, ...spot });
-      while (seen.length && seen[0].t < now - KEEP_MS) seen.shift();
-      this.seen.set(key, seen);
-    }
-    for (const key of this.seen.keys()) if (!peerCursors.at.has(key)) this.seen.delete(key);
-    if (this.following && (now >= this.followUntil || !this.seen.has(this.following))) this.following = null;
-    // Someone new in the lobby: now and then a greeting, the more sociable the likelier.
-    const ids = s.players.map((p) => p.id);
-    if (s.phase === 'lobby' && this.met.size) {
-      const fresh = s.players.findIndex((p) => !this.met.has(p.id) && p.id !== session.myPlayerId);
-      if (fresh >= 0 && !this.greet && Math.random() < 0.25 + 0.5 * this.persona.sociable)
-        this.greet = { at: now + between(700, 2200) * this.persona.pace, row: `row:${fresh}` };
-    }
-    this.met = new Set(ids);
-  }
-
-  /** Answers someone's pointer if it notices (social.ts react): true when it did. */
-  private answer(s: GameState, now: number) {
-    const me = this.where(now);
-    // Where it may go after someone: where nothing hangs on where it points.
-    const free = s.phase === 'lobby' || s.phase === 'over' || s.phase === 'reveal';
-    const r = react(this.seen, me, now, this.persona.sociable, Math.random, { free, lastFor: this.answered });
-    if (!r) return false;
-    const them = this.seen.get(r.to)?.at(-1);
-    if (!them) return false;
-    this.answered.set(r.to, now);
-    this.socialAfter = now + between(...SOCIAL_REST_MS);
-    this.nextIdle = Math.max(this.nextIdle, now + 3000);
-    switch (r.kind) {
-      case 'wave':
-        if (r.go) {
-          this.goTo(toward(me, them, Math.random), undefined, null);
-          this.thenThrough(wave(this.moves.at(-1)?.to ?? me, Math.random));
-        } else {
-          this.moves = [];
-          this.thenThrough(wave(me, Math.random));
-        }
-        break;
-      case 'greet':
-        this.moves = [];
-        this.thenThrough(wave(me, Math.random, true));
-        break;
-      case 'shy':
-        this.goTo(awayFrom(me, them, Math.random), undefined, null, Infinity, true);
-        break;
-      case 'nudge': {
-        const ms = this.goTo(toward(me, them, Math.random, 60), undefined, null);
-        // A clicky one gives it a poke.
-        if (Math.random() < this.persona.hand.clicky) this.strayPress = now + ms + between(0, 60);
-        break;
-      }
-      case 'follow':
-        this.following = r.to;
-        this.followUntil = now + between(...FOLLOW_MS);
-        this.followStep = now;
-        break;
-    }
-    return true;
   }
 
   /** Someone else's turn to pick or answer (turns mode): nothing for this hand to do but wait. */
@@ -533,12 +390,17 @@ export class Hand {
     let at: CursorAt | null = null;
     if (on && this.s) {
       // A hand at rest sends nothing (a mouse lying still doesn't move): the others' screens dim it, as they do anyone's.
-      const p = placeOf(this.where(now), layout(this.s), this.on);
+      const spot = this.where(now);
+      const boxes = layout(this.s);
+      const p = placeOf(spot, boxes, this.on);
       const code = anchorCode(p.anchor);
-      if (code !== null) at = [code, p.x, p.y, now < this.pressedUntil ? PRESSED : MOUSE];
+      // Over something it can click (its answer, its card, Next when it may), its cursor would be the hand: so it shows.
+      const me = session.myPlayerId ?? '';
+      const lit = [...boxes].some(([k, b]) => spot.x >= b[0] && spot.x <= b[2] && spot.y >= b[1] && spot.y <= b[3] && clickableFor(this.s!, me, k) === true);
+      if (code !== null) at = [code, p.x, p.y, ((now < this.pressedUntil ? PRESSED : MOUSE) + (lit ? LIT : 0)) as PointerKind];
     }
     const key = JSON.stringify(at);
-    const plain = !at || at[3] === MOUSE;
+    const plain = !at || actionOf(at[3]) === MOUSE;
     // A press always goes; anything else only when it changed, and not too often.
     if (key === this.sent || (plain && at && now - this.sentAt < SEND_EVERY_MS - 10)) return;
     this.sent = key;

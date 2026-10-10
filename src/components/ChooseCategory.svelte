@@ -837,6 +837,10 @@
   .card.mine {
     cursor: pointer;
   }
+  /* Someone else's to pick (or, together, once this player can't vote): not this player's to click. */
+  .card:not(.mine) {
+    cursor: not-allowed;
+  }
   .card.mine:not(:global(.down)):hover .frame,
   .card.mine:not(:global(.down)):focus-visible .frame {
     transform: perspective(900px) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg)) translateY(-10px) scale(1.04);

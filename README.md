@@ -537,10 +537,10 @@ browser (`src/lib/achievements.ts`); erasing the codex erases them.
     clicked, a demon's clawed hand pointing, seen a little from the side;
     while the button is held, the dart sinks a little, lit a little, its
     hatched side struck solid, and the hand pushes its finger into the page; on
-    something disabled, dull lead with a saltire. Another's pointer shows
-    what it's over as it is for them: the hand over what they can click,
-    dull lead over someone else's answers or a Next that isn't theirs. A
-    still pointer dims; it's hidden only once its player leaves the page. Text fields get an
+    something disabled (another player's answers and cards), dull lead with
+    a saltire. Another's pointer is the hand whenever their own cursor is:
+    each player's screen sends that with the pointer. A still pointer dims;
+    it's hidden only once its player leaves the page. Text fields get an
     engraved I-beam. With Windows' high contrast on, the system's own
     cursors come back. Text fields don't offer autofill, and a right click
     brings no browser menu (but in a text field), since both show the

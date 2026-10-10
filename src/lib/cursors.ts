@@ -103,7 +103,17 @@ export function anchorName(code: number): string | null {
 export const MOUSE = 0;
 export const TAP = 1;
 export const PRESSED = 2;
-export type PointerKind = typeof MOUSE | typeof TAP | typeof PRESSED;
+/**
+ * Added to any of those: over something its player can click (their own
+ * cursor is the hand there), so the others see it as the hand too. What a
+ * player can click is theirs to know: their own screen says.
+ */
+export const LIT = 3;
+export type PointerKind = 0 | 1 | 2 | 3 | 4 | 5;
+/** What a pointer is doing, its look aside: MOUSE, TAP or PRESSED. */
+export const actionOf = (kind: PointerKind) => kind % LIT;
+/** Whether it's over something its player can click. */
+export const litOf = (kind: PointerKind) => kind >= LIT;
 /** Where a pointer is: an anchor's code, the spot on it, and what it's doing. */
 export type CursorAt = [anchor: number, x: number, y: number, kind: PointerKind];
 /** One pointer in a host's batch: whose (cursorKey), and where, or nothing when it's gone. */
@@ -160,7 +170,7 @@ export function parseCursorAt(v: unknown): CursorAt | null | undefined {
   if (v === null) return null;
   if (!Array.isArray(v) || v.length !== 4) return undefined;
   const [a, x, y, kind] = v;
-  if (!isInt(a, 0, MAX_ANCHOR) || anchorName(a) === null || !isInt(x, 0, SCALE) || !isInt(y, 0, maxY(a)) || !isInt(kind, MOUSE, PRESSED))
+  if (!isInt(a, 0, MAX_ANCHOR) || anchorName(a) === null || !isInt(x, 0, SCALE) || !isInt(y, 0, maxY(a)) || !isInt(kind, MOUSE, LIT + PRESSED))
     return undefined;
   return [a, x, y, kind as PointerKind];
 }
@@ -198,8 +208,8 @@ export class CursorOutbox<K> {
       let m = this.pending.get(k);
       if (!m) this.pending.set(k, (m = new Map()));
       const was = m.get(entry[0]);
-      const marks = (e: CursorEntry | undefined) => !!e && e.length > 1 && (e[4] === PRESSED || e[4] === TAP);
-      if (marks(was) && !(entry.length > 1 && entry[4] === was![4])) {
+      const marks = (e: CursorEntry | undefined) => !!e && e.length > 1 && actionOf(e[4]!) !== MOUSE;
+      if (marks(was) && !(entry.length > 1 && actionOf(entry[4]!) === actionOf(was![4]!))) {
         let a = this.after.get(k);
         if (!a) this.after.set(k, (a = new Map()));
         a.set(entry[0], entry);

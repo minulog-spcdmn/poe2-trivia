@@ -15,6 +15,10 @@ import {
   anchorName,
   cursorKey,
   clickableFor,
+  actionOf,
+  litOf,
+  MOUSE,
+  PRESSED,
   cursorsLive,
   entryAt,
   parseCursorAt,
@@ -50,6 +54,9 @@ test('a pointer from a guest is checked like any message', () => {
   assert.deepEqual(parseClientMsg({ t: 'cursor', at: [0, 500, 500, 1] }), { t: 'cursor', at: [0, 500, 500, 1] });
   // The button held.
   assert.deepEqual(parseClientMsg({ t: 'cursor', at: [16, 1, 2, 2] }), { t: 'cursor', at: [16, 1, 2, 2] });
+  // Over something its player can click, held or not.
+  assert.deepEqual(parseClientMsg({ t: 'cursor', at: [16, 1, 2, 5] }), { t: 'cursor', at: [16, 1, 2, 5] });
+  assert.deepEqual([actionOf(5), litOf(5), actionOf(3), litOf(2)], [PRESSED, true, MOUSE, false]);
   assert.deepEqual(parseClientMsg({ t: 'cursor', at: null }), { t: 'cursor', at: null });
   const bad = [
     undefined,
@@ -60,7 +67,7 @@ test('a pointer from a guest is checked like any message', () => {
     [16, -1, 0, 0],
     [16, 0, SCALE + 1, 0],
     [16, 0.5, 0, 0],
-    [16, 0, 0, 3],
+    [16, 0, 0, 6],
     [16, 0, 0, -1],
     [16, '1', 0, 0],
     { 0: 16 },
@@ -110,7 +117,12 @@ test('the outbox keeps only the newest of each pointer, for each guest', () => {
   box.put(['a', 16, 1, 1, 0], ['g3']);
   box.drop('g3');
   assert.equal(box.waiting, false);
-  // A click quicker than a batch: the press goes, then the letting go, in the batch after.
+  // A click quicker than a batch: the press goes, then the letting go, in the batch after (over a button, as over anything).
+  box.put(['b', 16, 5, 5, 3], ['g1']);
+  box.put(['b', 16, 5, 5, 5], ['g1']);
+  box.put(['b', 16, 5, 5, 3], ['g1']);
+  assert.deepEqual(box.take('g1'), [['b', 16, 5, 5, 5]]);
+  assert.deepEqual(box.take('g1'), [['b', 16, 5, 5, 3]]);
   box.put(['a', 16, 5, 5, 0], ['g1']);
   box.put(['a', 16, 5, 5, 2], ['g1']);
   box.put(['a', 16, 6, 5, 0], ['g1']);

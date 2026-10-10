@@ -1838,6 +1838,10 @@
   .option.mine:not(:disabled) {
     cursor: pointer;
   }
+  /* Someone else's answers: not this player's to click. */
+  .option:not(.mine) {
+    cursor: not-allowed;
+  }
   /* Hovered, or picked and waiting for the verdict: the row stays put and lights up. */
   .option.mine:not(:disabled):hover,
   .option.mine:not(:disabled):focus-visible,
@@ -2120,6 +2124,9 @@
   }
   .tile.mine:not(:disabled) {
     cursor: pointer;
+  }
+  .tile:not(.mine) {
+    cursor: not-allowed;
   }
   /* Hovered, or picked and waiting for the verdict: lit like the answer rows,
      and the picture comes forward. */

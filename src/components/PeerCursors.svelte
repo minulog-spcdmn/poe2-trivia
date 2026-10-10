@@ -7,11 +7,11 @@
   import { onMount } from 'svelte';
   import { session } from '../lib/session.svelte';
   import { peerCursors } from '../lib/peerCursors.svelte';
-  import { MOUSE, PRESSED, SEND_EVERY_MS, TAP, anchorName, clickableFor, cursorKey, cursorsLive, fromAnchor, trailAt, type CursorAt, type PointerKind } from '../lib/cursors';
+  import { LIT, MOUSE, PRESSED, SEND_EVERY_MS, TAP, actionOf, anchorName, cursorKey, cursorsLive, fromAnchor, litOf, trailAt, type CursorAt, type PointerKind } from '../lib/cursors';
   import { playerColor } from '../lib/ui';
   import { portal } from '../lib/portal';
-  import { anchorAt } from '../lib/pointerAnchor';
-  import { BADGE, HAND, HAND_PRESSED, PAD_X, PAD_Y, POINTER, PRESS_SINK, SIZE, WEIGHT, saltire } from '../lib/pointerArt';
+  import { anchorAt, clickableAt } from '../lib/pointerAnchor';
+  import { HAND, HAND_PRESSED, PAD_X, PAD_Y, POINTER, PRESS_SINK, SIZE, WEIGHT } from '../lib/pointerArt';
 
   /**
    * A pointer is drawn this far behind where it was last heard to be (ms),
@@ -52,7 +52,7 @@
     live
       ? peerCursors.keys.flatMap((key) => {
           const p = s.players.find((o) => o.id !== me && cursorKey(o.id) === key);
-          return p ? [{ key, id: p.id, name: p.name, color: playerColor(p.hue) }] : [];
+          return p ? [{ key, name: p.name, color: playerColor(p.hue) }] : [];
         })
       : [],
   );
@@ -79,7 +79,8 @@
     timer = null;
     if (!dirty) return;
     dirty = false;
-    const at = pointing && over ? anchorAt(x, y, held || clicked ? PRESSED : MOUSE) : null;
+    // Over something this player can click, it goes as the hand, as their own cursor is.
+    const at = pointing && over ? anchorAt(x, y, ((held || clicked ? PRESSED : MOUSE) + (clickableAt(x, y) ? LIT : 0)) as PointerKind) : null;
     clicked = false;
     const key = JSON.stringify(at);
     if (key !== sent) {
@@ -196,7 +197,7 @@
         const p = peerCursors.at.get(c.key);
         if (!el || !p) continue;
         const [code, ax, ay, kind] = p.at;
-        const touch = kind === TAP;
+        const touch = actionOf(kind) === TAP;
         const age = now - p.moved;
         if (touch && age > TAP_MS) {
           peerCursors.set(c.key, null);
@@ -205,7 +206,8 @@
         const anchor = anchorFor(code, anchors);
         // Pressed as the pointer drawn behind gets there, not before; and once pressed, long enough to see.
         const due = p.trail.filter((x) => x.t <= now - BEHIND_MS).at(-1) ?? p.trail[0];
-        const pressing = (due?.at[3] ?? kind) === PRESSED;
+        const dueKind = due?.at[3] ?? kind;
+        const pressing = actionOf(dueKind) === PRESSED;
         if (!anchor) {
           // Its element just went: where it was drawn, a moment longer.
           const held = drawn.get(c.key);
@@ -247,13 +249,10 @@
         el.classList.toggle('tap', touch);
         if (pressing) d.pressUntil = now + PRESS_SHOW_MS;
         el.classList.toggle('pressed', now < d.pressUntil);
-        // Over something that player can click, it's the hand, as their own is; over something they can't
-        // (someone else's answer), dull lead with a saltire.
-        const can = session.state ? clickableFor(session.state, c.id, anchorName(code) ?? '') : null;
-        el.classList.toggle('lit', can === true || (can === null && anchor.tagName === 'BUTTON'));
-        el.classList.toggle('off', can === false);
+        // Over something that player can click (their own screen says, with each update), the hand, as their own cursor is.
+        el.classList.toggle('lit', litOf(dueKind));
         // Held down, it isn't idle, however still.
-        el.classList.toggle('idle', !touch && kind !== PRESSED && age > IDLE_MS);
+        el.classList.toggle('idle', !touch && actionOf(kind) !== PRESSED && age > IDLE_MS);
         if (touch && d.tap !== p.moved) {
           d.tap = p.moved;
           // Struck, held a moment, then fading.
@@ -282,7 +281,6 @@
           <path class="line" d={POINTER.outline} stroke-width={WEIGHT.outline} />
           <path class="line ridge" d={POINTER.ridge} stroke-width={WEIGHT.ridge} />
           <path class="line hatch" d={POINTER.hatch} stroke-width={WEIGHT.hatch} />
-          <path class="line saltire" d={saltire(BADGE, 2.8)} stroke-width="1" />
         </g>
         <!-- The hand is drawn plain (lib/pointerArt.ts Art): fine lines, no glow, its talon struck solid. -->
         {#each [HAND, HAND_PRESSED] as h, i (i)}
@@ -319,23 +317,6 @@
     opacity: 0.6;
   }
   .cursor:global(.lost) {
-    opacity: 0;
-  }
-  /* Over something its player can't click: dull lead, no glow, the saltire beside the tip (as the player's own, lib/ownCursor.ts). */
-  .saltire {
-    display: none;
-  }
-  .cursor:global(.off) .saltire {
-    display: inline;
-  }
-  .cursor:global(.off) .line {
-    stroke: #a2a7ac;
-  }
-  .cursor:global(.off) .side {
-    fill: #a2a7ac;
-  }
-  .cursor:global(.off) .glow,
-  .cursor:global(.off) .hatch {
     opacity: 0;
   }
   .dart {
