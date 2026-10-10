@@ -33,8 +33,9 @@
   let litTimer: ReturnType<typeof setTimeout> | undefined;
   let noteTimer: ReturnType<typeof setTimeout> | undefined;
   const place = (e: PointerEvent) => {
+    if (!note) return;
     const z = zoomOf(glyphs ?? document.body);
-    if (note) note = { ...note, x: e.clientX / z, y: e.clientY / z };
+    note = { ...note, x: e.clientX / z, y: e.clientY / z };
   };
   function show(e: PointerEvent, text: string) {
     note = { x: 0, y: 0, text };
@@ -77,7 +78,11 @@
    * the code itself instead, whatever of it is selected.
    */
   function copyCode(e: ClipboardEvent) {
-    if (!getSelection()?.toString() || !e.clipboardData) return;
+    // Only a selection within the code: one reaching past it copies as it is.
+    const sel = getSelection();
+    if (!sel?.toString() || !sel.rangeCount || !e.clipboardData || !glyphs) return;
+    const range = sel.getRangeAt(0);
+    if (!glyphs.contains(range.startContainer) || !glyphs.contains(range.endContainer)) return;
     e.clipboardData.setData('text/plain', code);
     e.preventDefault();
   }

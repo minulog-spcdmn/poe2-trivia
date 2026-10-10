@@ -4,7 +4,7 @@
 
 import { Shape } from './particles';
 import { FIRE_REACH, ShapeType, type Silhouette } from './renderer';
-import { cornerPx } from '../corner';
+import { cornerOnScreen, cornerPx } from '../corner';
 import { opacityOf } from '../opacity';
 import { after, boxOf, budget, currentFrame, detached, fxActive, particle, shape, task, type Anchor, type Box, type Handle, type Point, type ShapeHandle, type Vec3 } from './core';
 import { zoomOf } from '../stage';
@@ -462,6 +462,27 @@ function silhouetteOf(el: HTMLElement): Silhouette {
 }
 
 /**
+ * The stage's zoom (lib/stage.ts) an element is drawn at, and its computed
+ * corner, read again only when the window's size changes (which is when
+ * the zoom can): an endless effect follows a resize, without reading
+ * styles every frame.
+ */
+function stageLook(el: Element) {
+  let w = -1;
+  let h = -1;
+  const look = { z: 1, corner: '0px' };
+  return () => {
+    if (w !== innerWidth || h !== innerHeight) {
+      w = innerWidth;
+      h = innerHeight;
+      look.z = zoomOf(el);
+      look.corner = getComputedStyle(el).borderTopLeftRadius;
+    }
+    return look;
+  };
+}
+
+/**
  * The corners of `el` as drawn on screen, inset by `inset` (in its own px,
  * as its transform is), when it's turned in 3D: its own computed transform
  * (mid-transition values included) applied to the untransformed box of
@@ -515,9 +536,7 @@ export function outline(
 ): Handle {
   const width = o.width ?? 14;
   const life = o.life ?? Infinity;
-  const corner = getComputedStyle(el).borderTopLeftRadius;
-  // The stage's zoom (lib/stage.ts) it is drawn at, read once like its corner.
-  const z = zoomOf(el);
+  const lookOf = stageLook(el);
   const pad = o.pad ?? 0;
   return shape({
     type: ShapeType.RectGlow,
@@ -534,7 +553,8 @@ export function outline(
       f.k = (o.intensity ?? 1) * fin * fade * pulse;
       // The corner on screen: the CSS radius is in the element's own px, the
       // box on screen, the zoom between them.
-      const r = Math.min(o.radius ?? cornerPx(corner, b.w / z, b.h / z) * z, b.w / 2, b.h / 2);
+      const { z, corner } = lookOf();
+      const r = Math.min(o.radius ?? cornerOnScreen(corner, b.w, b.h, z), b.w / 2, b.h / 2);
       // (projectedCorners works in the element's own px, as its transform does.)
       const quad = o.base && el instanceof HTMLElement && el.isConnected ? projectedCorners(el, o.base, r / z, b) : null;
       if (quad) {
@@ -692,23 +712,19 @@ function edgeShape(life: number, color: Vec3, frame: (t: number, age: number) =>
  * far (when each came, in that clock, and with what) into the frame. It
  * lasts `life`; `open(room)` says whether it's still there with `room`
  * seconds left for another hit (else make a new one). Only the latest
- * `keep` hits are kept. Its smoke drifts slowly, so phones draw it at 30fps.
+ * `keep` hits are kept. (Not `calm`: its hits strike in a frame or two, in
+ * time with their sounds.)
  */
 function edgeHits<B>(life: number, color: Vec3, frame: (hits: { at: number; b: B }[], age: number) => EdgeFrame, keep = 4) {
   const hits: { at: number; b: B }[] = [];
   const coming: B[] = [];
   let age = 0;
-  const h = edgeShape(
-    life,
-    color,
-    (_t, a) => {
-      age = a;
-      for (const b of coming.splice(0)) hits.push({ at: a, b });
-      while (hits.length > keep) hits.shift();
-      return frame(hits, a);
-    },
-    true,
-  );
+  const h = edgeShape(life, color, (_t, a) => {
+    age = a;
+    for (const b of coming.splice(0)) hits.push({ at: a, b });
+    while (hits.length > keep) hits.shift();
+    return frame(hits, a);
+  });
   return {
     hit: (b: B) => void coming.push(b),
     stop: (fade?: number) => h.stop(fade),
@@ -873,14 +889,12 @@ export function edgeCountdown(seconds: number) {
 export function fire(el: Element, o: { height?: number; intensity?: number; blue?: number; fadeIn?: number; grow?: number; tint?: Vec3 } = {}): Handle {
   // On screen it is drawn at the stage's zoom (lib/stage.ts), as the element
   // is: its corner, its flames and the room around them alike.
-  const z = zoomOf(el);
-  const radius = (parseFloat(getComputedStyle(el).borderTopLeftRadius) || 0) * z;
-  const H = (o.height ?? 40) * z;
+  const lookOf = stageLook(el);
   // The quad must hold the tallest tongue (FIRE_REACH times H, above the top
   // and out from the top corners) and the halo, inside the 72% where the
   // shader's fade toward the quad's border begins. Flames barely reach below
   // the element, so the quad is shifted up over them rather than centred.
-  const room = (r: number) => (r + 16 * z) / 0.72;
+  const room = (r: number, z: number) => (r + 16 * z) / 0.72;
   // The element's centre, and where the quad was put last frame: the box
   // stops following the element once it's gone, so shift from the centre
   // rather than again from the shifted box.
@@ -896,11 +910,14 @@ export function fire(el: Element, o: { height?: number; intensity?: number; blue
     // A tint burns in its own colour (its tips deep, its roots toward white) instead of orange or blue.
     color: o.tint ?? [1, 1, 1],
     update(f, _t, age, b) {
+      const { z, corner } = lookOf();
+      const radius = (parseFloat(corner) || 0) * z;
+      const H = (o.height ?? 40) * z;
       const above = b.h / 2 + FIRE_REACH * H;
       const below = b.h / 2 + 8 * z;
       const shift = (below - above) / 2;
-      f.hw = room(b.w / 2 + FIRE_REACH * H);
-      f.hh = room((above + below) / 2);
+      f.hw = room(b.w / 2 + FIRE_REACH * H, z);
+      f.hh = room((above + below) / 2, z);
       f.k = (o.intensity ?? 1) * Math.min(1, age / (o.fadeIn ?? 0.5));
       f.q[0] = b.w / 2;
       f.q[1] = b.h / 2;

@@ -4,7 +4,7 @@
 // works its geometry out from this, so it keeps to its box and never reaches
 // the cards, the question or the player list.
 
-import { ownRect } from '../../lib/stage';
+import { unzoomRect, zoomOf } from '../../lib/stage';
 
 export type Head = {
   /** The head's size. */
@@ -33,7 +33,8 @@ export function measureHead(head: Element): Head | null {
   const h2 = head.querySelector('.banner h2');
   if (!h2) return null;
   // Boxes on screen, undone of the stage's zoom (lib/stage.ts): the gate is drawn in the head's own px.
-  const rect = ownRect;
+  const z = zoomOf(head);
+  const rect = (el: Element) => unzoomRect(el.getBoundingClientRect(), z);
   const box = rect(head);
   const kicker = head.querySelector('.kicker');
   const rules = head.querySelectorAll('.banner .rule');

@@ -66,7 +66,8 @@ class Prober {
     return new Promise((resolve) => {
       let conn: DataConnection | null = null;
       const done = (r: ProbeResult) => {
-        if (!this.waiting.has(id)) return;
+        // (Only this probe's own: a later probe of the same id may be waiting by now.)
+        if (this.waiting.get(id) !== done) return;
         this.waiting.delete(id);
         clearTimeout(timer);
         conn?.close();
@@ -82,6 +83,7 @@ class Prober {
         done(room ?? null);
       });
       conn.on('open', () => {
+        if (this.waiting.get(id) !== done) return;
         clearTimeout(timer);
         timer = setTimeout(() => done(null), PROBE_ANSWER_MS);
       });

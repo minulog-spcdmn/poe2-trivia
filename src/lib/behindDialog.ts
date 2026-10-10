@@ -20,7 +20,7 @@
 // 'blur' only blurs (content inside a 'dim' layer). use:portal sets it on
 // every overlay it moves, so a new one is dimmed without asking.
 
-import { cornerPx } from './corner';
+import { cornerOnScreen } from './corner';
 import { opacityOf } from './opacity';
 import { zoomOf } from './stage';
 
@@ -91,7 +91,7 @@ export function dialogBox(): { rect: DOMRect; radius: number } | null {
     const rect = dialog?.getBoundingClientRect();
     // Its radius is in its own px, the box on screen: the stage's zoom (lib/stage.ts) between them.
     const z = dialog ? zoomOf(dialog) : 1;
-    box = dialog && rect ? { rect, radius: cornerPx(getComputedStyle(dialog).borderTopLeftRadius, rect.width / z, rect.height / z) * z } : null;
+    box = dialog && rect ? { rect, radius: cornerOnScreen(getComputedStyle(dialog).borderTopLeftRadius, rect.width, rect.height, z) } : null;
   }
   return box;
 }

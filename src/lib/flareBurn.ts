@@ -24,7 +24,7 @@
 // where it is.
 
 import { currentFrame, fxActive, type CoverBox, type Point } from './fx/core';
-import { cornerPx } from './corner';
+import { cornerOnScreen } from './corner';
 import { flareBurning as fxBurning, flareLit, flareStruck, type Ring } from './fx/flare';
 import { motion } from './motion.svelte';
 import { zoomOf } from './stage';
@@ -186,7 +186,7 @@ function radiiOf(node: Element, corners: string[], box: DOMRect): number[] {
   // A corner can round at most half the box (999px makes a pill a capsule). Its radius
   // is in the node's own px, the box on screen: the stage's zoom (lib/stage.ts) between them.
   const z = zoomOf(node);
-  const radii = corners.map((c) => Math.min(cornerPx(c, box.width / z, box.height / z) * z, box.width / 2, box.height / 2));
+  const radii = corners.map((c) => Math.min(cornerOnScreen(c, box.width, box.height, z), box.width / 2, box.height / 2));
   cornerMemo.set(node, { w: box.width, h: box.height, corners, radii });
   return radii;
 }

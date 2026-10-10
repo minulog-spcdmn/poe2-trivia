@@ -574,7 +574,8 @@
       <div class="made">
         <p class="credit">Made by <a class="maker" href={CREATOR_URL} target="_blank" rel="noopener noreferrer" title="{CREATOR} on Twitch">{CREATOR}</a></p>
         <a class="support" href={DONATE_URL} target="_blank" rel="noopener noreferrer" aria-describedby="support-note">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z" /></svg>
+          <!-- Its box is the heart's own outline, so the heart itself sits centred beside the text. -->
+          <svg viewBox="5 6 14 14" aria-hidden="true"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z" /></svg>
           Support the project
           <span class="tip" id="support-note" role="tooltip">Optional tips help pay for the domain and development. Everything stays free.</span>
         </a>
@@ -942,7 +943,7 @@
     align-items: center;
     gap: 6px;
     height: 26px;
-    padding: 0 10px 0 11px;
+    padding: 0 11px;
     border: 1px solid var(--line);
     border-radius: 999px;
     font-family: var(--font-cinzel);
@@ -965,8 +966,8 @@
     background: rgba(140, 58, 44, 0.2);
   }
   .support svg {
-    width: 11px;
-    height: 11px;
+    width: 8px;
+    height: 8px;
     fill: #c0463c;
   }
   /* Its note as a tooltip, over the pill. */
