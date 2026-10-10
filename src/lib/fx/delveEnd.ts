@@ -29,10 +29,12 @@ export function fallen(avatar: Element, title: Element, o: { best?: boolean; sta
   const R = Math.max(a.w, a.h) * 0.5 + 40;
   const scale = budget(100) / 100;
   let shed = 0;
+  /** How long it sheds (seconds). */
+  const SHED = 7;
   handles.push(
     task((dt, age) => {
-      if (age > 7) return false;
-      shed += 10 * Math.pow(1 - age / 7, 1.6) * scale * dt;
+      if (age > SHED) return false;
+      shed += 10 * Math.pow(1 - age / SHED, 1.6) * scale * dt;
       for (; shed >= 1; shed--) {
         // Mostly from the lower half of the circle, where they'd fall from.
         const ang = rand(-0.2, Math.PI + 0.2);
@@ -55,7 +57,7 @@ export function fallen(avatar: Element, title: Element, o: { best?: boolean; sta
         });
       }
       return true;
-    }),
+    }, { life: SHED }),
   );
 
   // Ash and the odd cinder settling over the whole screen, thinning out.

@@ -32,7 +32,7 @@
 // playing (and would hide it). Effects switched off clear it, and it comes
 // back when they're on again.
 
-import { boxOf, budget, fxActive, fxStats, onFxChange, particle, shape, task, type Box, type ShapeFrame, type Vec3 } from './core';
+import { boxOf, budget, fxActive, fxHidden, fxStats, onFxChange, onFxHidden, particle, shape, task, type Box, type ShapeFrame, type Vec3 } from './core';
 import { C, glints, rand } from './effects';
 import { Shape } from './particles';
 import { ShapeType } from './renderer';
@@ -87,8 +87,10 @@ const bigMoment = () => fxStats().particles > 150;
 /** Brings the aura out on every avatar of hers that can show it. `now` skips the waiting (her entrance). */
 function show(now = false) {
   if (!fxActive() || !entries.size || current) return;
+  // Away: nothing until it's back (hiddenChanged plans the next then).
+  if (fxHidden()) return;
   // Not now: look again in a while. (Timers only: the effects loop sleeps.)
-  if (document.hidden || openDialog().backdrop || (!now && bigMoment())) return plan(3);
+  if (openDialog().backdrop || (!now && bigMoment())) return plan(3);
   const ready = [...entries].filter(([el, e]) => !e.dim && onScreen(el));
   if (!ready.length) return plan(3);
   const showing = { age: 0 };
@@ -128,10 +130,29 @@ function fxChanged() {
     if (!current) plan(FIRST);
     return;
   }
+  endShowing();
+}
+
+/** No showing, and none planned; the glows' shapes and tasks are gone already, or end themselves. */
+function endShowing() {
   stopTimer();
   current = null;
   soon = false;
   for (const e of entries.values()) e.glow = null;
+}
+
+/**
+ * The tab went away or came back. Away, the effects drop the showing's
+ * orbits (they run their course; see setHidden in core.ts), so the showing
+ * ends with them: its embers and glints would otherwise go on round a bare
+ * avatar once it's back. Back, the next one comes soon if none is planned
+ * (one cut short, or due while it was away); a showing planned for later
+ * keeps its time, so switching tabs doesn't bring the aura out each time.
+ */
+function hiddenChanged(away: boolean) {
+  if (away) {
+    if (current) endShowing();
+  } else if (timer === undefined) plan(FIRST);
 }
 
 /**
@@ -274,7 +295,14 @@ function register(el: HTMLElement, dim: boolean): Entry {
   const first = entries.size === 0;
   const e: Entry = { dim, glow: null };
   entries.set(el, e);
-  if (first) unlisten = onFxChange(fxChanged);
+  if (first) {
+    const offFx = onFxChange(fxChanged);
+    const offHidden = onFxHidden(hiddenChanged);
+    unlisten = () => {
+      offFx();
+      offHidden();
+    };
+  }
   // The first of her avatars on the page, or a grand one (the deathmatch
   // intro, the victory crown, which come and go with their moment), brings
   // the aura out soon: now if it's out already, else in a moment or as soon
@@ -304,9 +332,7 @@ function unregister(el: HTMLElement) {
     return;
   }
   // None of hers left: the showing's task ends itself, and nothing is planned.
-  stopTimer();
-  current = null;
-  soon = false;
+  endShowing();
   unlisten?.();
   unlisten = null;
 }

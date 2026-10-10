@@ -68,6 +68,9 @@ function fakeGl() {
 
 const g = globalThis as Record<string, unknown>;
 g.document = {
+  hidden: false,
+  addEventListener() {},
+  removeEventListener() {},
   documentElement: { hasAttribute: () => false },
   body: {},
   createElement: () => fakeCanvas2d(),

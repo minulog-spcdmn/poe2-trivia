@@ -466,7 +466,7 @@ export function fillBar(answer: Element, bar: Element, from: number, to: number,
       sparks(a, { count: 2, speed: [40, 160], angle: -Math.PI / 2, spread: 2.6, life: [0.15, 0.35], size: [0.5, 0.9], gravity: 300 });
     }
     return k < arrivals.length;
-  });
+  }, { life: arrivals.at(-1)?.t ?? 0 });
   puffs(answer, { count: 5, area: 'fill', color: [0.16, 0.12, 0.04], speed: [20, 80] });
 }
 
@@ -600,7 +600,7 @@ export function lifeLost(pill: Element, chamber: Element, left: number, mine: bo
       }
     }
     return true;
-  });
+  }, { life: span });
   outline(pill, { color: C.wrong, width: 8, life: 0.9, intensity: 0.4 });
   if (mine && last) shakeView(0.3, 4);
 }
@@ -956,7 +956,7 @@ export function findGained(answer: Element, slot: Element, kind: FindKind, aim: 
       sparks(a, { count: 2, colors: [pale, main], cool: k3(main, 0.3), speed: [40, 160], angle: -Math.PI / 2, spread: 2.6, life: [0.15, 0.35], size: [0.5, 0.9], gravity: 300 });
     }
     return k < arrivals.length;
-  });
+  }, { life: arrivals.at(-1)?.t ?? 0 });
   glints(answer, { count: 2, size: [4, 7], color: pale, delay: [0.05, 0.3] });
   after(FIND_LANDS, () => {
     const at = detached(aim) ? slot : aim;
@@ -1170,30 +1170,33 @@ export function victory(avatar: Element, title: Element, color: string, lost: bo
     const scale = budget(100) / 100;
     // The fountain: strongest at first, thinning out as the clinking fades.
     let fountain = 0;
+    /** How long the fountain and the pour run (seconds). */
+    const FOUNTAIN = 2.6;
+    const POUR = 2.8;
     handles.push(
       task((dt, age) => {
-        if (age > 2.6) return false;
-        fountain += 70 * Math.pow(1 - age / 2.6, 0.7) * scale * dt;
+        if (age > FOUNTAIN) return false;
+        fountain += 70 * Math.pow(1 - age / FOUNTAIN, 0.7) * scale * dt;
         for (; fountain >= 1; fountain--) {
           const ang = -Math.PI / 2 + rand(-0.95, 0.95);
           const v = rand(520, 980);
           coin(a.x + rand(-20, 20), a.y + rand(-10, 20), Math.cos(ang) * v * 0.75, Math.sin(ang) * v);
         }
         return true;
-      }),
+      }, { life: FOUNTAIN }),
     );
     // The pour from above, across the whole width.
     let pour = 0;
     handles.push(
       task((dt, age) => {
-        if (age > 2.8) return false;
+        if (age > POUR) return false;
         if (age < 0.25) return true;
-        pour += 34 * Math.min(1, (2.8 - age) / 0.8) * scale * dt;
+        pour += 34 * Math.min(1, (POUR - age) / 0.8) * scale * dt;
         for (; pour >= 1; pour--) {
           coin(rand(0, innerWidth), rand(-40, -10), rand(-60, 60), rand(120, 380), { gravity: 900, life: [2.4, 3.4], size: [5, 8.5] });
         }
         return true;
-      }),
+      }, { life: POUR }),
     );
     // A spray of gold dust where the fountain starts, and a few bursts of it overhead.
     sparks(a, { count: 50, speed: [200, 700], angle: -Math.PI / 2, spread: 2.2, colors: [C.gold, C.goldPale, C.whiteHot], gravity: 600, life: [0.5, 1.2] });
