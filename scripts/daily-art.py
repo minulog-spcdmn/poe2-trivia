@@ -31,11 +31,11 @@ SCALE = 4
 ROUND = 1.4167
 # Keep in step with ART_SCALE in src/lib/ui-paths.ts.
 ART_SCALE = 2
-# The share of the box an item must cover. Below it are the bare sticks (in
-# a contact sheet of the thinnest, every one under 0.075 was a staff, spear
-# or quarterstaff, or a bow that is mostly string); from it up, items with
-# a head, wings or a body to them.
-MIN_COVER = 0.075
+# The share of the box an item must cover, picked from a chart of every
+# item's: below it are the bare sticks (staves, spears and quarterstaves,
+# and the slimmest bows and wands); it sits in the widest gap at the thin
+# end, between 8.6% and 9.8%.
+MIN_COVER = 0.095
 
 
 def cover(path: str) -> float:
