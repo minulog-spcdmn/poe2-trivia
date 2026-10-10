@@ -22,8 +22,8 @@ test('most bots park their pointer, fewer trace, hover or fidget; each its own f
   const rng = seeded(5);
   const counts = { park: 0, trace: 0, hover: 0, fidget: 0 };
   for (let i = 0; i < 4000; i++) counts[rollHandStyle(rng).habit]++;
-  assert.ok(counts.park > 1600 && counts.park < 2000, JSON.stringify(counts));
-  assert.ok(counts.trace > 650 && counts.fidget > 250 && counts.fidget < 550, JSON.stringify(counts));
+  assert.ok(counts.park > 1250 && counts.park < 1550 && counts.park > counts.trace, JSON.stringify(counts));
+  assert.ok(counts.trace > 1050 && counts.fidget > 250 && counts.fidget < 550, JSON.stringify(counts));
   // The named bots: every habit among them, always the same hand for the same name.
   const habits = new Set(NAMES.map((n) => identityOf(n, ['A']).persona.hand.habit));
   assert.equal(habits.size, 4);
@@ -43,14 +43,44 @@ test('parked, the pointer goes aside once and waits; it reads nothing, leaning t
   assert.ok(restSpot(hands('park', 'low').style, boxes, seeded(2))!.y > 786);
 });
 
-test('tracing, it follows the reading: the answers top to bottom, then back and forth when unsure', () => {
-  const g = readQuestion(hands('trace'), options, true, boxes, 0, 12000, sit(false), seeded(3), 'trace');
-  const read = g.map((x) => x.anchor).filter((a) => a?.startsWith('opt:'));
-  assert.deepEqual(read.slice(0, 6), options);
-  assert.ok(read.length > 6);
-  // Times go forward, and all before it sets off to answer.
-  for (let i = 1; i < g.length; i++) assert.ok(g[i].at > g[i - 1].at);
-  assert.ok(g.every((x) => x.at < 12000 - 250));
+test('tracing, it sweeps down the answers a few at a time without stopping on each, then back and forth when unsure', () => {
+  for (let seed = 1; seed < 40; seed++) {
+    const g = readQuestion(hands('trace'), options, true, boxes, 0, 12000, sit(false), seeded(seed), 'trace');
+    // Now and then up to the question first (above the answers), or to the art.
+    const sweeps = g.filter((x) => x.anchor?.startsWith('opt:'));
+    assert.ok(sweeps.every((x) => x.through && x.ms && x.ms >= 150 && x.spot), JSON.stringify(sweeps[0]));
+    // The first reading: down the list, every answer passed over, stopping after a few; now and then back up a line or two first.
+    let read = 0;
+    for (const x of sweeps) {
+      const i = Number(x.anchor!.slice(4));
+      if (read === options.length) break;
+      assert.ok(x.through!.length <= 3);
+      if (i < read - 1) {
+        // Back over the lines between, then on down from the next unread one.
+        assert.ok(read - 1 - i <= 2 && x.through!.length === read - 2 - i, `seed ${seed}: back a line or two`);
+        continue;
+      }
+      read += x.through!.length + 1;
+      assert.equal(i, read - 1, `seed ${seed}: down the list`);
+    }
+    assert.equal(read, options.length);
+    assert.ok(sweeps.length > Math.ceil(options.length / 4), 'and on, unsure');
+    // Each sweep's spots go the way of the list, its stop on the answer it stops at.
+    for (const x of sweeps) {
+      const b = boxes[Number(x.anchor!.slice(4))];
+      assert.ok(x.spot!.x >= b[0] && x.spot!.x <= b[2] && x.spot!.y >= b[1] && x.spot!.y <= b[3]);
+    }
+    // Times go forward, and all before it sets off to answer.
+    for (let i = 1; i < g.length; i++) assert.ok(g[i].at > g[i - 1].at);
+    assert.ok(g.every((x) => x.at < 12000 - 250));
+  }
+  // Up to the question first, about half the time (when not to the art).
+  let up = 0;
+  for (let seed = 1; seed < 300; seed++) {
+    const first = readQuestion(hands('trace'), options, false, boxes, 0, 12000, sit(false), seeded(seed), 'trace')[0];
+    if (!first.anchor && first.spot!.y < boxes[0][1]) up++;
+  }
+  assert.ok(up > 90 && up < 180, `${up}`);
 });
 
 test('hovering, it rests on what it is torn between, a while on each', () => {
@@ -104,8 +134,8 @@ test('unsure with the clock nearly out, it stops browsing and darts between a fe
   assert.ok(late.length >= 4);
   assert.ok(new Set(late.map((x) => x.anchor)).size <= 3);
   for (let i = 1; i < late.length; i++) assert.ok(late[i].at - late[i - 1].at <= 520);
-  // A tracer reads along an answer's words.
-  assert.ok(g.some((x) => x.sweep && x.sweep > 0));
+  // A tracer sweeps through answers on its way, before then.
+  assert.ok(g.some((x) => x.at < 6000 && x.through && x.through.length > 0));
 });
 
 test('once the answer is shown, it often looks at it, now and then at its own pick first', () => {

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { aimIn, along, layout, placeOf, reach, reachTime, stroke, veer } from '../src/bot/reach.ts';
+import { aimIn, along, layout, placeOf, reach, reachTime, stroke, sweep, sweepTime, veer } from '../src/bot/reach.ts';
 import { NAMES, identityOf } from '../src/bot/identities.ts';
 import type { GameState } from '../src/lib/game.ts';
 
@@ -37,7 +37,8 @@ test("a spot lands on the anchor the hand went to, in that anchor's terms, else 
     const spot = aimIn(c.get(`card:${i}`)!, rng);
     const p = placeOf(spot, c, `card:${i}`);
     assert.equal(p.anchor, `card:${i}`);
-    assert.ok(p.x >= 300 && p.x <= 700 && p.y >= 300 && p.y <= 700, JSON.stringify(p));
+    // Around the middle across, a little below it down (as a recorded hand clicked).
+    assert.ok(p.x >= 300 && p.x <= 750 && p.y >= 400 && p.y <= 780, JSON.stringify(p));
     // Only over it by chance (cards may still be flying in on the others' screens): the game as a whole.
     assert.equal(placeOf(spot, c).anchor, 'game');
     // Gone from where it went: the game too.
@@ -118,4 +119,31 @@ test('a change of mind sets off for one, veers off partway, and lands on the oth
   assert.ok(turn.x > 300 && turn.x < 650 && turn.y < 300, JSON.stringify(turn));
   const end = along(s.at(-1)!, s.at(-1)!.end);
   assert.ok(Math.abs(end.x - 600) < 1e-9 && Math.abs(end.y - 700) < 1e-9);
+});
+
+test('a sweep runs through every spot on its way without stopping, quickest midway, and ends on the last', () => {
+  const from = { x: 500, y: 300 };
+  const spots = [{ x: 560, y: 400 }, { x: 540, y: 500 }, { x: 570, y: 600 }];
+  const ms = sweepTime(from, spots, 0.45);
+  // About 300 units down a 900 high screen, at 0.45 px a millisecond: well over half a second.
+  assert.ok(ms > 600 && ms < 900, `${ms}`);
+  const s = sweep(from, spots, 1000, ms);
+  assert.deepEqual(along(s, 900), from);
+  assert.deepEqual(along(s, 1000 + ms + 5), spots[2]);
+  const ps = Array.from({ length: 41 }, (_, i) => along(s, 1000 + (ms * i) / 40));
+  // Through each spot (near enough, sampled), and moving at every step but the ends.
+  for (const p of spots) assert.ok(ps.some((q) => Math.hypot(q.x - p.x, q.y - p.y) < 12), JSON.stringify(p));
+  const steps = ps.slice(1).map((p, i) => Math.hypot(p.x - ps[i].x, p.y - ps[i].y));
+  assert.ok(steps.slice(3, -3).every((d) => d > 0.5), JSON.stringify(steps));
+  assert.ok(steps[20] > 3 * steps[0] && steps[20] > 3 * steps[39]);
+});
+
+test('reaches take as long as a recorded hand took: Fitts, widely spread, slow now and then', () => {
+  const rng = seeded(4);
+  const ts = Array.from({ length: 2000 }, () => reachTime(300, 100, 1, rng)).sort((a, b) => a - b);
+  // log2(1 + 3) = 2 bits: about 630 ms as fitted; the middle half from about 470 to 760.
+  const q = (f: number) => ts[Math.floor(ts.length * f)];
+  assert.ok(q(0.5) > 540 && q(0.5) < 660, `${q(0.5)}`);
+  assert.ok(q(0.25) > 400 && q(0.75) < 820 && q(0.75) - q(0.25) > 200, `${q(0.25)} ${q(0.75)}`);
+  assert.ok(ts[0] >= 370 && ts.at(-1)! <= 950);
 });

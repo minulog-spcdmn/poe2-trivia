@@ -102,8 +102,10 @@ export function layout(s: GameState, me = ''): Map<string, Box> {
  */
 export function aimIn(box: Box, rng: Rng, text = false): Spot {
   const [l, t, r, b] = box;
-  const across = text ? 0.12 + 0.45 * rng() : 0.3 + 0.4 * rng();
-  return { x: l + (r - l) * across, y: t + (b - t) * (0.3 + 0.4 * rng()) };
+  // As recorded (a player's hand, scratch analysis): names clicked a third of the way in, at any height on them;
+  // cards and pictures around the middle across and a little below it.
+  if (text) return { x: l + (r - l) * (0.22 + 0.3 * rng()), y: t + (b - t) * (0.25 + 0.53 * rng()) };
+  return { x: l + (r - l) * (0.32 + 0.4 * rng()), y: t + (b - t) * (0.42 + 0.34 * rng()) };
 }
 
 /**
@@ -127,11 +129,13 @@ export function placeOf(at: Spot, boxes: Map<string, Box>, on: string | null = n
 /**
  * How long a hand takes to cover `distance` (in the game's terms) to a
  * target `size` across (ms): Fitts's law, the further and the smaller the
- * longer, then by the player's own pace.
+ * longer, then by the player's own pace. Fitted to a recorded hand (about
+ * 160 + 235 ms a bit), spread as widely as it was: mostly near that, now and
+ * then much slower, never much quicker.
  */
 export function reachTime(distance: number, size: number, pace: number, rng: Rng): number {
   const bits = Math.log2(1 + distance / Math.max(20, size));
-  return Math.round((180 + 140 * bits) * pace * (0.85 + 0.35 * rng()));
+  return Math.round((160 + 235 * bits) * pace * (0.6 + 0.9 * rng() ** 1.4));
 }
 
 /**
@@ -149,6 +153,11 @@ export interface Stroke {
   wobble: { size: number; turns: number; phase: number };
   start: number;
   end: number;
+  /**
+   * A sweep through several spots (sweep()): the curve through them, as
+   * points along it and how far along each is; `via` and `wobble` aren't used.
+   */
+  path?: { points: Spot[]; at: number[] };
 }
 
 /** A stroke from `from` to `to`, starting `at` and taking `ms`, bowed by the hand's `curve` (0 to 1, habits.ts). */
@@ -169,12 +178,62 @@ export function stroke(from: Spot, to: Spot, at: number, ms: number, rng: Rng, c
   };
 }
 
+/** A unit of the room in pixels of a desktop screen (1440 by 900), across and down. */
+const PX = { x: 1.44, y: 0.9 };
+
+/** How long a sweep from `from` through `spots` takes at `speed` (pixels a millisecond on such a screen): along the straight lines, and a little more for the curve. */
+export function sweepTime(from: Spot, spots: Spot[], speed: number): number {
+  let len = 0;
+  let p = from;
+  for (const q of spots) {
+    len += Math.hypot((q.x - p.x) * PX.x, (q.y - p.y) * PX.y);
+    p = q;
+  }
+  return Math.round(Math.max(150, (len * 1.1) / speed));
+}
+
+/**
+ * One sweep of the pointer through `spots` (from `from`, ending at the
+ * last) without stopping on the way, starting `at` and taking `ms`: a hand
+ * running along a list as its eyes read down it, or across a row of
+ * pictures. A smooth curve through them (Catmull-Rom), sped up and slowed
+ * down as a stroke is, only once for the whole way.
+ */
+export function sweep(from: Spot, spots: Spot[], at: number, ms: number): Stroke {
+  const ps = [from, ...spots];
+  const points: Spot[] = [from];
+  for (let i = 0; i + 1 < ps.length; i++) {
+    const [p0, p1, p2, p3] = [ps[Math.max(0, i - 1)], ps[i], ps[i + 1], ps[Math.min(ps.length - 1, i + 2)]];
+    for (let k = 1; k <= 12; k++) {
+      const u = k / 12;
+      const u2 = u * u;
+      const u3 = u2 * u;
+      const c = (a: number, b: number, c: number, d: number) => 0.5 * (2 * b + (c - a) * u + (2 * a - 5 * b + 4 * c - d) * u2 + (3 * b - a - 3 * c + d) * u3);
+      points.push({ x: c(p0.x, p1.x, p2.x, p3.x), y: c(p0.y, p1.y, p2.y, p3.y) });
+    }
+  }
+  const lens = [0];
+  for (let i = 1; i < points.length; i++) lens.push(lens[i - 1] + Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y));
+  const total = lens.at(-1) || 1;
+  const to = ps.at(-1)!;
+  return { from, to, via: to, wobble: { size: 0, turns: 0, phase: 0 }, start: at, end: at + Math.max(1, ms), path: { points, at: lens.map((l) => l / total) } };
+}
+
 /** Where a stroke is at `now`. */
 export function along(s: Stroke, now: number): Spot {
   const t = Math.min(1, Math.max(0, (now - s.start) / (s.end - s.start)));
   // Minimum jerk, on a clock run fast early: the peak comes before the middle, the slowing in takes longer.
   const tt = t ** 0.82;
   const e = tt * tt * tt * (10 - 15 * tt + 6 * tt * tt);
+  if (s.path) {
+    const { points, at } = s.path;
+    let i = 1;
+    while (i < at.length - 1 && at[i] < e) i++;
+    const k = at[i] > at[i - 1] ? (e - at[i - 1]) / (at[i] - at[i - 1]) : 1;
+    const a = points[i - 1];
+    const b = points[i];
+    return { x: a.x + (b.x - a.x) * Math.min(1, Math.max(0, k)), y: a.y + (b.y - a.y) * Math.min(1, Math.max(0, k)) };
+  }
   const u = 1 - e;
   const x = u * u * s.from.x + 2 * u * e * s.via.x + e * e * s.to.x;
   const y = u * u * s.from.y + 2 * u * e * s.via.y + e * e * s.to.y;

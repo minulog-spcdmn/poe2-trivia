@@ -7,9 +7,9 @@
 // parking the pointer aside, tracing what it reads, resting on what it's
 // torn between, or never keeping still), as are its deftness and the bow of
 // its strokes; a nervous one grows jittery as the clock runs out, a hasty
-// one quick and sloppy. A click is the hand getting there, settling and
-// pressing, and often drifting off a little after; unsure, it may head for
-// another answer first and veer off. Once the answer is shown it often looks
+// one quick and sloppy. A click is the hand getting there and pressing,
+// mostly without stopping first, and often drifting off a little after;
+// unsure, it may head for another answer first and veer off. Once the answer is shown it often looks
 // at it (the right one, now and then its own pick first). Between times it rests
 // (and dims, as anyone's does), drifts, wanders to the art, its own row or
 // the row of whoever's turn it is, and now and then leaves the page a while.
@@ -21,14 +21,19 @@ import type { GameState, Question } from '../lib/game';
 import { MOUSE, PRESSED, SEND_EVERY_MS, TAP, anchorCode, cursorsLive, type CursorAt, type PointerKind } from '../lib/cursors';
 import { session } from '../lib/session.svelte';
 import type { Persona } from './brain';
-import { aimIn, along, layout as roomLayout, placeOf, reach, reachTime, stroke, veer, type Box, type Spot, type Stroke } from './reach';
+import { aimIn, along, layout as roomLayout, placeOf, reach, reachTime, stroke, sweep, veer, type Box, type Spot, type Stroke } from './reach';
 import { afterReveal, awayChance, changeOfMind, circle, fidgets, idleEvery, readCards, readQuestion, type Glance, type Hands, type Situation } from './habits';
 import { between } from './util';
 
-/** A press shows this long (ms). */
-const PRESS_MS: [number, number] = [90, 180];
-/** Resting at a target a moment before pressing (ms). */
-const SETTLE_MS: [number, number] = [60, 220];
+/** A press shows this long (ms): as a recorded hand held its button (lib/recorder.ts). */
+const PRESS_MS: [number, number] = [70, 120];
+/**
+ * Before pressing, mostly none at all: the recorded hand pressed as it got
+ * there. Now and then (unsure, more often) it rests on the target a moment first (ms).
+ */
+const SETTLE_MS: [number, number] = [0, 40];
+const PAUSE_MS: [number, number] = [80, 300];
+const PAUSE_CHANCE = { sure: 0.2, unsure: 0.45 };
 /** Off the page (looking elsewhere), now and then (habits.ts awayChance), for this long (ms). */
 const AWAY_MS: [number, number] = [8000, 40000];
 /** While busy (looking things over, clicking) and for this long after, the hand shifts a little now and then (habits.ts fidgets). */
@@ -172,7 +177,8 @@ export class Hand {
     // No idle wandering (or shifting) off it before the press.
     this.nextIdle = Date.now() + ms + 1000 + between(...idleEvery(this.persona.hand, this.tired));
     this.nextFidget = Date.now() + ms + 600;
-    await wait(Math.min(ms + between(...SETTLE_MS) * this.persona.pace, room()));
+    const settle = Math.random() < PAUSE_CHANCE[unsure ? 'unsure' : 'sure'] ? between(...PAUSE_MS) : between(...SETTLE_MS);
+    await wait(Math.min(ms + settle * this.persona.pace, room()));
     const now = Date.now();
     this.pressedUntil = now + between(...PRESS_MS);
     this.busyUntil = now + BUSY_MS;
@@ -274,15 +280,11 @@ export class Hand {
       this.looks.shift();
       const box = look.anchor ? layout(s).get(look.anchor) : undefined;
       const words = !!look.text && s.question?.mode !== 'art';
-      if (box) {
-        const to = aimIn(box, Math.random, words);
-        const ms = this.goTo(to, box, look.anchor);
-        // Reading an answer: along its words, slowly, once there.
-        if (look.sweep && words) {
-          const along = { x: Math.min(box[2] - 8, to.x + look.sweep), y: to.y + (Math.random() - 0.5) * 6 };
-          this.moves.push(stroke(to, along, now + ms + between(80, 220), look.sweepMs ?? 400, Math.random, 0.2));
-        }
-      }
+      // A sweep through several (tracing what it reads): one movement all the way, without stopping on each.
+      if (look.through && look.ms && look.spot) {
+        this.on = look.anchor ?? null;
+        this.moves = [sweep(this.where(now), [...look.through, look.spot], now, look.ms)];
+      } else if (box) this.goTo(aimIn(box, Math.random, words), box, look.anchor);
       // A spot of its own (where it parks): reached as aimed movements are, for no element in particular.
       else if (look.spot) this.goTo(look.spot, [look.spot.x - 40, look.spot.y - 40, look.spot.x + 40, look.spot.y + 40]);
       this.nextIdle = now + between(...idleEvery(this.persona.hand, this.tired));

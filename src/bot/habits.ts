@@ -11,8 +11,10 @@
 // before a click. So the habits:
 // • park: the pointer goes aside (or stays put) and waits; the answer is
 //   picked from there, now and then after a brief lean toward one;
-// • trace: it follows the reading: the art, the answers top to bottom, then
-//   back and forth between a few when unsure;
+// • trace: it follows the reading, never still for long: up to what's asked
+//   first, now and then, then sweeps down the answers (across the rows of
+//   pictures) without stopping on each, pausing here and there, and back and
+//   forth between a few when unsure;
 // • hover: it rests a while on one candidate, or two or three when unsure;
 // • fidget: parked, but never still, small wiggles and circles meanwhile.
 // A habit is a lean, not a rule: each question, the situation steers it
@@ -22,11 +24,14 @@
 // with the clock nearly out, an unsure one stops browsing and darts between
 // its last few candidates. After the answer is shown, people look at it:
 // the right one, now and then their own pick first (afterReveal).
+// A player's recorded hand (lib/recorder.ts; a long Delve run alone) tuned
+// the tracing: how fast a sweep goes, how often it turns back, how long it
+// pauses, and how often it goes up to the question first.
 // Pure functions of their inputs and a random source, so tests (and the
 // styles' preview) can pin them.
 
 import type { Rng } from './brain.ts';
-import type { Box, Spot } from './reach.ts';
+import { sweepTime, type Box, type Spot } from './reach.ts';
 
 export type Habit = 'park' | 'trace' | 'hover' | 'fidget';
 
@@ -40,10 +45,10 @@ export interface HandStyle {
   rest: 'side' | 'low' | 'stay';
 }
 
-/** How common each habit is (parking most, by far). */
+/** How common each habit is (parking most). */
 const HABITS: [Habit, number][] = [
-  ['park', 0.45],
-  ['trace', 0.2],
+  ['park', 0.35],
+  ['trace', 0.3],
   ['hover', 0.25],
   ['fidget', 0.1],
 ];
@@ -66,14 +71,18 @@ export function rollHandStyle(rng: Rng): HandStyle {
 /** Before any style is rolled (tests, bots made by hand). */
 export const PLAIN_HAND: HandStyle = { habit: 'park', deft: 0.5, curve: 0.5, rest: 'side' };
 
-/** A step in looking a choice over: at `at`, to an anchor (aimed at its words, `text`) or a spot of the room; reading along its words, `sweep` units rightward over `sweepMs`. */
+/**
+ * A step in looking a choice over: at `at`, to an anchor (aimed at its
+ * words, `text`) or a spot of the room (`spot`, which also says where in the
+ * anchor, if both); `through` some spots first, in one sweep taking `ms`.
+ */
 export interface Glance {
   at: number;
   anchor?: string;
   spot?: Spot;
   text?: boolean;
-  sweep?: number;
-  sweepMs?: number;
+  through?: Spot[];
+  ms?: number;
 }
 
 /**
@@ -175,8 +184,6 @@ export function readQuestion(
   const unsure = !sit.sure;
   const torn = shuffled(options, rng).slice(0, unsure ? 2 + Math.round(rng()) : 1);
   const linger = (a: number, b: number) => between(rng, a, b) * h.pace * (1 + h.dither);
-  // Reading an answer: to its words, then along them.
-  const read = (o: string, ms: number) => go({ anchor: o, text: true, sweep: between(rng, 30, 140), sweepMs: ms * 0.7 }, ms);
   switch (habit) {
     case 'park':
     case 'fidget': {
@@ -190,12 +197,67 @@ export function readQuestion(
       break;
     }
     case 'trace': {
-      if (art && rng() < 0.7) go({ anchor: 'art' }, between(rng, 500, 1100) * h.pace);
-      // Sure, it stops reading once it has found it; careful, it reads slower.
-      const reads = sit.sure ? options.slice(0, 1 + Math.floor(rng() * options.length)) : options;
-      for (const o of reads) if (!read(o, between(rng, 320, 700) * h.pace * (sit.careful ? 1.3 : 1))) break;
-      if (unsure) for (let i = 0; room(); i++) go({ anchor: torn[i % torn.length], text: true }, linger(500, 1100));
-      else if (room()) {
+      // Where the hand is to begin with: about the middle (the card it picked).
+      let pos: Spot = { x: (Math.min(...boxes.map((b) => b[0])) + Math.max(...boxes.map((b) => b[2]))) / 2, y: 500 };
+      // Sweeping, in pixels a millisecond on a desktop screen (reach.ts sweepTime): as recorded, scaled to 1440 across.
+      const speed = between(rng, 0.3, 0.6) / h.pace;
+      const pause = () => (rng() < 0.15 ? between(rng, 700, 1400) : between(rng, 220, 600)) * h.pace * (sit.careful ? 1.3 : 1);
+      // An answer's spot: on its words, in the lane the hand keeps running down (it drifts only a little across
+      // as the recorded hand's did), or around a picture's middle.
+      let lane = between(rng, 0.2, 0.45);
+      const spotOf = (i: number): Spot => {
+        const [l, t, r, b] = boxes[i];
+        if (!art) return { x: l + (r - l) * between(rng, 0.3, 0.7), y: t + (b - t) * between(rng, 0.3, 0.7) };
+        lane = Math.min(0.55, Math.max(0.1, lane + (rng() - 0.5) * 0.08));
+        return { x: l + (r - l) * lane, y: t + (b - t) * between(rng, 0.3, 0.7) };
+      };
+      const mid = (i: number): Spot => ({ x: (boxes[i][0] + boxes[i][2]) / 2, y: (boxes[i][1] + boxes[i][3]) / 2 });
+      // One sweep through answers `via` on the way to `stop` (or a spot), then a pause there.
+      const pass = (via: number[], stop: number | Spot) => {
+        if (!room() || !boxes.length) return false;
+        const end = typeof stop === 'number' ? spotOf(stop) : stop;
+        const through = via.map(spotOf);
+        const ms = sweepTime(pos, [...through, end], speed);
+        out.push({ at: t, ...(typeof stop === 'number' ? { anchor: options[stop], spot: end } : { spot: end }), through, ms });
+        t += dwell(ms + pause());
+        pos = end;
+        return true;
+      };
+      // Now and then, up to what's asked first (the question above the answers), or to the art.
+      if (art && rng() < 0.25) {
+        go({ anchor: 'art' }, between(rng, 500, 1100) * h.pace);
+        pos = { x: Math.min(...boxes.map((b) => b[0])) - 150, y: 550 };
+      } else if (boxes.length && rng() < 0.45) {
+        const top = Math.min(...boxes.map((b) => b[1]));
+        const l = Math.min(...boxes.map((b) => b[0]));
+        const r = Math.max(...boxes.map((b) => b[2]));
+        pass([], { x: between(rng, l + (r - l) * 0.15, l + (r - l) * 0.6), y: Math.max(110, top - between(rng, 25, 70)) });
+      }
+      // Down the answers (across each row of pictures, then the next) in sweeps of a few, a pause after each.
+      const order = options.map((_, i) => i).filter((i) => boxes[i]);
+      const upTo = sit.sure ? 1 + Math.floor(rng() * order.length) : order.length;
+      for (let i = 0; i < upTo; ) {
+        const n = Math.min(upTo - i, 2 + Math.floor(rng() * 3));
+        const run = order.slice(i, i + n);
+        if (!pass(run.slice(0, -1), run.at(-1)!)) break;
+        i += n;
+        // Now and then back up a line or two to read again, then on down from there.
+        if (i < upTo && i >= 3 && rng() < 0.35) {
+          const back = 1 + Math.floor(rng() * 2);
+          if (!pass(order.slice(i - back, i - 1).reverse(), order[i - 1 - back])) break;
+        }
+      }
+      // Unsure: back and forth between its candidates, over what lies between.
+      if (unsure) {
+        const at = (o: string) => options.indexOf(o);
+        for (let i = 0; room(); i++) {
+          const to = at(torn[i % torn.length]);
+          const dist = (k: number) => Math.hypot(mid(k).x - pos.x, mid(k).y - pos.y);
+          const from = order.reduce((best, k) => (dist(k) < dist(best) ? k : best), order[0]);
+          const over = order.filter((k) => (k - from) * (k - to) < 0 && rng() < 0.6);
+          if (!pass(from < to ? over : over.reverse(), to)) break;
+        }
+      } else if (room()) {
         const spot = restSpot(style, boxes, rng);
         if (spot) go({ spot }, 0);
       }
