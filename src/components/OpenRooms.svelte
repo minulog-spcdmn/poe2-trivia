@@ -118,7 +118,7 @@
         </g>
       </svg>
     </button>
-    {#if rooms.length}<p class="note">Anyone can join. Joining shares your IP address with the room.</p>{/if}
+    {#if rooms.length}<p class="note">Anyone can join.</p>{/if}
   </header>
 
   {#if rooms.length}

@@ -9,7 +9,7 @@
   import ModeIcon from './ModeIcon.svelte';
   import { bestOf, findsMet, lastOf, loadRecords } from '../lib/delveRecord';
   import { MAX_NAME, isHeldName, nameHeld, nameTooShort } from '../lib/names';
-  import { IP_NOTE, inviteUrl } from '../lib/site';
+  import { inviteUrl } from '../lib/site';
   import Avatar from './Avatar.svelte';
   import PlayerName from './PlayerName.svelte';
   import { backdropShadow } from '../lib/backdropShadow';
@@ -335,8 +335,6 @@
               {/if}
             </p>
           {/if}
-          <!-- The same words as the start page's note on open rooms, said where joining is decided. -->
-          <p class="ip-note">{IP_NOTE}</p>
         </section>
       {/if}
 
@@ -645,11 +643,7 @@
     width: 13px;
     height: 13px;
   }
-  .ip-note {
-    margin: 0.2rem 0 0;
-    font-size: 0.82rem;
-    opacity: 0.8;
-  }
+
   /* Private / Public: one switch with both words on it, drawn like the game's
      other choices (the setting buttons): a dark well, and the lit plate of a
      chosen button sliding under the word that holds. */
@@ -790,13 +784,7 @@
     stroke-width: 1.5;
     stroke-linejoin: round;
   }
-  .ip-note {
-    margin: 0;
-    text-align: left;
-    font-size: 0.8rem;
-    line-height: 1.4;
-    color: #8f8370;
-  }
+
   .code {
     display: flex;
     width: 100%;

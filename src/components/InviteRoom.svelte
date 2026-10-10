@@ -3,12 +3,13 @@
   // as the lobby will show it, so arriving and joining look like one place.
   // What it shows is the room's own word, asked when the screen opened
   // (lib/rooms.ts probeRoom): its host, how many are in, and whether it can
-  // be joined. Nothing a link says about a room is taken on trust. The chips
-  // are unlit: a player's colour is given by the room once they are in.
+  // be joined. Nothing a link says about a room is taken on trust. (Asking
+  // connects to the host, as the room list's probes do; the privacy policy
+  // says so.) The chips are unlit: a player's colour is given by the room
+  // once they are in.
   import { fade } from 'svelte/transition';
   import { initialOf } from '../lib/names';
   import { inviteLine, type InviteAnswer } from '../lib/roomInfo';
-  import { INVITE_IP_NOTE } from '../lib/site';
   import HostMark from './HostMark.svelte';
   import RoomCodeGlyphs from './RoomCodeGlyphs.svelte';
 
@@ -48,9 +49,6 @@
       <p class="hint" class:warn={line.warn} role="status" in:fade={{ duration: 250 }}>{#if line.waiting}<span class="pulse" aria-hidden="true"></span>{/if}{line.text}</p>
     {/key}
   </section>
-
-  <!-- The same words as the lobby's, said where joining is decided. -->
-  <p class="ip-note">{INVITE_IP_NOTE}</p>
 </div>
 
 <style>
@@ -186,10 +184,5 @@
     font-style: italic;
     color: var(--muted);
   }
-  .ip-note {
-    margin: 0;
-    font-size: 0.8rem;
-    line-height: 1.4;
-    color: #8f8370;
-  }
+
 </style>

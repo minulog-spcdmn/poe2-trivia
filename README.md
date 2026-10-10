@@ -522,7 +522,7 @@ browser (`src/lib/achievements.ts`); erasing the codex erases them.
     the screen asks it on opening, as the room list asks public rooms
     (`probeRoom`, answered by `ProbeDesk` in `src/lib/probeDesk.ts`), so
     no link can name a host it doesn't have. Asking connects to the host,
-    which then sees the visitor's IP address, and the screen says so.
+    as the room list does (see Privacy below).
     Anyone with a saved name joins straight away; if the room is gone or
     full they stay on the start page with the code in Join a room.
   - Players who refresh or drop out rejoin automatically. Outside Delve, the
@@ -644,9 +644,11 @@ with that in mind. Guests, on the other hand, are treated as untrusted:
   connect to itself and the matchmaking server.
 - **Room codes** are 6 characters (about a billion combinations).
 
-**Privacy:** players connect directly (WebRTC), so everyone in a room can
-see each other's IP address. The game says so in the lobby and in the room
-list.
+**Privacy:** guests connect directly to the host (WebRTC), also briefly
+while browsing the open rooms list or on opening an invite link, so the
+host and guests can see each other's IP address (unless the connection
+runs through a TURN relay). Guests never connect to each other. The
+privacy policy says so; the game itself doesn't show a notice.
 
 Not defended against: a determined player recognising item art with
 their own tools, and a cheating host.
