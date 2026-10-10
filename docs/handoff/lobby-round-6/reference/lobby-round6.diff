@@ -1,5 +1,5 @@
 diff --git a/src/components/Lobby.svelte b/src/components/Lobby.svelte
-index cd9d096..5ff25b6 100644
+index cd9d096..2152f6d 100644
 --- a/src/components/Lobby.svelte
 +++ b/src/components/Lobby.svelte
 @@ -15,10 +15,11 @@
@@ -15,46 +15,17 @@ index cd9d096..5ff25b6 100644
  
    const TARGETS = [5, 10, 15, 20];
    const MODES: { id: GameMode; name: string; beta?: boolean }[] = [
-@@ -37,6 +38,38 @@
+@@ -37,7 +38,8 @@
    let copied = $state(false);
  
    const inviteLink = $derived(inviteUrl(session.code));
+-
 +  /** Desktop: the start page's two columns, no panels. Tall: the modes' names go under their emblems. */
 +  const tall = new MediaQuery('(min-height: 860px)');
-+  /** Delve on a desktop: the descent's column is sized so the finds beside it fill the height left in the panel. */
-+  let delveSlot = $state<HTMLElement>();
-+  const DESCENT_MIN = 196;
-+  $effect(() => {
-+    const slot = delveSlot;
-+    if (!slot) return;
-+    const fit = () => {
-+      const cols = slot.querySelector<HTMLElement>('.delve-cols');
-+      const finds = slot.querySelector<HTMLElement>('.finds-col');
-+      if (!cols || !finds || innerWidth < 1100) {
-+        slot.style.removeProperty('--descent-w');
-+        return;
-+      }
-+      const room = slot.clientHeight;
-+      // The finds' own height, not the row's they are stretched to: from their top to the end of their last line.
-+      const used = () => (finds.lastElementChild as HTMLElement).getBoundingClientRect().bottom - finds.getBoundingClientRect().top;
-+      const max = Math.round(cols.clientWidth * 0.58);
-+      let w = DESCENT_MIN;
-+      slot.style.setProperty('--descent-w', `${w}px`);
-+      while (w < max && used() < room) {
-+        w += 8;
-+        slot.style.setProperty('--descent-w', `${w}px`);
-+      }
-+      if (used() > room && w > DESCENT_MIN) slot.style.setProperty('--descent-w', `${w - 8}px`);
-+    };
-+    fit();
-+    const ro = new ResizeObserver(fit);
-+    ro.observe(slot);
-+    return () => ro.disconnect();
-+  });
- 
    // Measure the category cards' emblems (lib/iconFit) while the party
    // gathers, so the first deal doesn't have to.
-@@ -118,8 +151,32 @@
+   onMount(() => {
+@@ -118,8 +120,32 @@
        return;
      }
      if (performance.now() - armedAt < KICK_SETTLE_MS) return;
@@ -88,7 +59,7 @@ index cd9d096..5ff25b6 100644
    }
    /** Phones hand the link to the share sheet instead of the clipboard (see copy), so the button says so. */
    const canShare = typeof navigator !== 'undefined' && !!navigator.share && matchMedia('(pointer: coarse)').matches;
-@@ -233,27 +290,41 @@
+@@ -233,27 +259,41 @@
      {:else}
        <p class="go-note"><b class="num">{s.players.length}</b> {s.players.length === 1 ? 'exile' : 'exiles'} ready</p>
      {/if}
@@ -143,7 +114,7 @@ index cd9d096..5ff25b6 100644
                onclick={() => session.setHideCode(!session.hideCode)}
                title={session.hideCode ? 'Show the room code' : 'Hide the room code (for streaming)'}
                aria-label={session.hideCode ? 'Show room code' : 'Hide room code'}
-@@ -265,28 +336,23 @@
+@@ -265,28 +305,23 @@
                {/if}
              </button>
            </div>
@@ -187,7 +158,7 @@ index cd9d096..5ff25b6 100644
                <button
                  class="lock"
                  class:on={!!s.settings.locked}
-@@ -306,7 +372,7 @@
+@@ -306,7 +341,7 @@
              {/if}
            </div>
            {#if isHost}
@@ -196,7 +167,7 @@ index cd9d096..5ff25b6 100644
                {#if s.settings.locked}
                  Room locked: nobody new can join or watch. Players already in the game can still reconnect.
                {:else if full}
-@@ -318,13 +384,17 @@
+@@ -318,13 +353,17 @@
                {/if}
              </p>
            {/if}
@@ -221,7 +192,7 @@ index cd9d096..5ff25b6 100644
            {#if s.players.length < MAX_PLAYERS}
              <form class="add" onsubmit={addLocal}>
                <input
-@@ -334,51 +404,83 @@
+@@ -334,51 +373,83 @@
                  maxlength={MAX_NAME}
                  autocomplete="off"
                  spellcheck="false"
@@ -340,21 +311,21 @@ index cd9d096..5ff25b6 100644
            {#each MODES as m (m.id)}
              {@const on = s.settings.mode === m.id}
              <button
-@@ -422,7 +524,12 @@
+@@ -422,7 +493,12 @@
        </div>
  
        {#if delve}
 -        <DelveRules {deepest} last={lastRun} label={deepestLabel} {met} />
 +        <!-- The descent is Delve's progress: it is never cut. -->
-+        <!-- On a desktop the descent takes the height the panel has spare: its column widens
-+             until the finds beside it, wrapping narrower, are as tall as the room left. -->
-+        <div class="delve-slot" bind:this={delveSlot}>
++        <!-- On a desktop the descent takes the height the panel has spare, at its own width:
++             the gap to the finds is only what its leader lines need. -->
++        <div class="delve-slot">
 +          <DelveRules {deepest} last={lastRun} label={deepestLabel} {met} />
 +        </div>
        {:else}
          <!-- One row per setting: its name, then its choices (a guest, who can't change them, reads the value). -->
          <div class="setting row">
-@@ -462,10 +569,10 @@
+@@ -462,10 +538,10 @@
              {/each}
            </div>
            {/if}
@@ -367,7 +338,7 @@ index cd9d096..5ff25b6 100644
                  {describe({ ...s.settings, difficulty: d.id })}
                </p>
              {/each}
-@@ -484,41 +591,23 @@
+@@ -484,41 +560,23 @@
            </div>
            {/if}
          </div>
@@ -420,7 +391,7 @@ index cd9d096..5ff25b6 100644
        {#if phone.current && isHost}
          <div class="dock" use:portal use:dock in:fade={{ duration: 200 }} out:fade|global={{ duration: 180 }}>{@render startRow()}</div>
        {:else}
-@@ -528,17 +617,19 @@
+@@ -528,17 +586,19 @@
    </div>
  </div>
  
@@ -441,7 +412,7 @@ index cd9d096..5ff25b6 100644
    .room-actions {
      display: flex;
      align-items: center;
-@@ -632,6 +723,68 @@
+@@ -632,6 +692,68 @@
      color: #fff1cf;
      background: linear-gradient(180deg, #7a4f1d, #452a0e);
    }
@@ -510,7 +481,7 @@ index cd9d096..5ff25b6 100644
    .vis-tag {
      font-family: var(--font-display);
      font-size: 0.7rem;
-@@ -644,32 +797,78 @@
+@@ -644,32 +766,78 @@
      font-size: 0.9rem;
      font-style: italic;
    }
@@ -547,9 +518,7 @@ index cd9d096..5ff25b6 100644
 +    min-width: 0;
 +    font-size: 1rem;
 +    color: #b8ab95;
-   }
--  .room .who {
--    margin: 0 auto 0 0;
++  }
 +  .invite-row {
 +    position: relative;
 +    display: flex;
@@ -566,8 +535,8 @@ index cd9d096..5ff25b6 100644
 +      inset 0 0 0 1px rgba(201, 164, 92, 0.25),
 +      0 0 16px rgba(201, 164, 92, 0.18);
    }
--  .room .ip-note {
--    max-width: none;
+-  .room .who {
+-    margin: 0 auto 0 0;
 +  .room-tool {
 +    width: 44px;
 +    display: grid;
@@ -578,7 +547,9 @@ index cd9d096..5ff25b6 100644
 +    color: var(--muted);
 +    cursor: pointer;
 +    transition: all 0.2s;
-+  }
+   }
+-  .room .ip-note {
+-    max-width: none;
 +  .room-tool:hover:not(:disabled) {
 +    color: var(--gold-hi);
 +    border-color: var(--gold-lo);
@@ -604,7 +575,7 @@ index cd9d096..5ff25b6 100644
    }
    .code,
    .glyphs {
-@@ -742,52 +941,112 @@
+@@ -742,52 +910,112 @@
      gap: 1.2rem;
      align-items: start;
    }
@@ -741,7 +712,7 @@ index cd9d096..5ff25b6 100644
      overflow: hidden;
      text-overflow: ellipsis;
      white-space: nowrap;
-@@ -802,14 +1061,11 @@
+@@ -802,14 +1030,11 @@
      border: 1px solid var(--gold-lo);
      color: var(--gold);
    }
@@ -758,7 +729,7 @@ index cd9d096..5ff25b6 100644
      border: 1px solid transparent;
      background: none;
      color: var(--muted);
-@@ -817,27 +1073,70 @@
+@@ -817,27 +1042,70 @@
      font-size: 1.2rem;
      line-height: 1;
    }
@@ -839,7 +810,7 @@ index cd9d096..5ff25b6 100644
    }
    .shake {
      animation: shake 0.45s;
-@@ -890,8 +1189,15 @@
+@@ -890,8 +1158,15 @@
      padding: 0.8rem 0;
      border-top: 1px solid rgba(59, 48, 36, 0.6);
    }
@@ -856,7 +827,7 @@ index cd9d096..5ff25b6 100644
    }
    .setting.row .blurbs {
      grid-column: 1 / -1;
-@@ -1032,7 +1338,7 @@
+@@ -1032,7 +1307,7 @@
      line-height: 1.25;
    }
    .together {
@@ -865,7 +836,7 @@ index cd9d096..5ff25b6 100644
    }
    /* Kept compact: a handful of short lines. */
    .rules.coop {
-@@ -1174,10 +1480,11 @@
+@@ -1174,10 +1449,11 @@
    }
  
    /* The start closes the panel: what to know on the left, the button on the right. */
@@ -878,7 +849,7 @@ index cd9d096..5ff25b6 100644
      gap: 1rem;
      margin-top: 1.2rem;
      padding-top: 1.2rem;
-@@ -1274,4 +1581,147 @@
+@@ -1274,4 +1550,150 @@
        gap: 0.3rem;
      }
    }
@@ -999,7 +970,7 @@ index cd9d096..5ff25b6 100644
 +    }
 +  }
 +  @media (min-width: 1100px) {
-+    /* The descent fills what the panel has left over: as tall as the room, as wide as that takes. */
++    /* The descent fills the height the panel has left over, at its own width. */
 +    .delve-slot {
 +      flex: 1 1 0;
 +      min-height: 0;
@@ -1012,7 +983,10 @@ index cd9d096..5ff25b6 100644
 +    }
 +    .delve-slot :global(.delve-cols) {
 +      height: 100%;
-+      grid-template-columns: var(--descent-w, 12.25rem) minmax(0, 1fr);
++    }
++    /* Room under the descent's last ring before the rule over Begin. */
++    .delve-slot {
++      padding-bottom: 1.1rem;
 +    }
 +  }
 +  @media (min-width: 1100px) {

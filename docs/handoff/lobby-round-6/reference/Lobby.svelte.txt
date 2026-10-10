@@ -40,37 +40,6 @@
   const inviteLink = $derived(inviteUrl(session.code));
   /** Desktop: the start page's two columns, no panels. Tall: the modes' names go under their emblems. */
   const tall = new MediaQuery('(min-height: 860px)');
-  /** Delve on a desktop: the descent's column is sized so the finds beside it fill the height left in the panel. */
-  let delveSlot = $state<HTMLElement>();
-  const DESCENT_MIN = 196;
-  $effect(() => {
-    const slot = delveSlot;
-    if (!slot) return;
-    const fit = () => {
-      const cols = slot.querySelector<HTMLElement>('.delve-cols');
-      const finds = slot.querySelector<HTMLElement>('.finds-col');
-      if (!cols || !finds || innerWidth < 1100) {
-        slot.style.removeProperty('--descent-w');
-        return;
-      }
-      const room = slot.clientHeight;
-      // The finds' own height, not the row's they are stretched to: from their top to the end of their last line.
-      const used = () => (finds.lastElementChild as HTMLElement).getBoundingClientRect().bottom - finds.getBoundingClientRect().top;
-      const max = Math.round(cols.clientWidth * 0.58);
-      let w = DESCENT_MIN;
-      slot.style.setProperty('--descent-w', `${w}px`);
-      while (w < max && used() < room) {
-        w += 8;
-        slot.style.setProperty('--descent-w', `${w}px`);
-      }
-      if (used() > room && w > DESCENT_MIN) slot.style.setProperty('--descent-w', `${w - 8}px`);
-    };
-    fit();
-    const ro = new ResizeObserver(fit);
-    ro.observe(slot);
-    return () => ro.disconnect();
-  });
-
   // Measure the category cards' emblems (lib/iconFit) while the party
   // gathers, so the first deal doesn't have to.
   onMount(() => {
@@ -525,9 +494,9 @@
 
       {#if delve}
         <!-- The descent is Delve's progress: it is never cut. -->
-        <!-- On a desktop the descent takes the height the panel has spare: its column widens
-             until the finds beside it, wrapping narrower, are as tall as the room left. -->
-        <div class="delve-slot" bind:this={delveSlot}>
+        <!-- On a desktop the descent takes the height the panel has spare, at its own width:
+             the gap to the finds is only what its leader lines need. -->
+        <div class="delve-slot">
           <DelveRules {deepest} last={lastRun} label={deepestLabel} {met} />
         </div>
       {:else}
@@ -1698,7 +1667,7 @@
     }
   }
   @media (min-width: 1100px) {
-    /* The descent fills what the panel has left over: as tall as the room, as wide as that takes. */
+    /* The descent fills the height the panel has left over, at its own width. */
     .delve-slot {
       flex: 1 1 0;
       min-height: 0;
@@ -1711,7 +1680,10 @@
     }
     .delve-slot :global(.delve-cols) {
       height: 100%;
-      grid-template-columns: var(--descent-w, 12.25rem) minmax(0, 1fr);
+    }
+    /* Room under the descent's last ring before the rule over Begin. */
+    .delve-slot {
+      padding-bottom: 1.1rem;
     }
   }
   @media (min-width: 1100px) {

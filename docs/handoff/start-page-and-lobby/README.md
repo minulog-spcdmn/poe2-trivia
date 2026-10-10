@@ -163,18 +163,20 @@ Desktop shots are 1440 wide at 1x.
 
 ### Footer band
 
-Balanced on both sides: who made it on the left, how to support it on the
-right, every legal line together in the middle.
+One line on the page's axis, under a plain hairline (brightest in the
+middle, fading out at both ends; no diamond on it):
 
-- A rule with a centre diamond.
-- Left: "MADE BY zoe_arcana".
-- Right: pill "♥ SUPPORT THE PROJECT"; its note "Optional tips help pay for
-  the domain and development. Everything stays free." as a tooltip.
-- Middle, centred: fine print "Unofficial fan project. Path of Exile is a
-  trademark of Grinding Gear Games, who do not endorse this site. Item data
-  and art from poe2db.tw.", and under it "Impressum · Datenschutz /
-  Privacy" (existing links).
-- Grid `1fr auto 1fr`, so the middle stays centred under the diamond.
+- "MADE BY zoe_arcana", the pill "♥ SUPPORT THE PROJECT" (its note
+  "Optional tips help pay for the domain and development. Everything stays
+  free." as a tooltip), the fine print "Unofficial fan project. Path of
+  Exile is a trademark of Grinding Gear Games, who do not endorse this
+  site. Data and art: poe2db.tw", and "Impressum · Datenschutz" (no
+  underline, the muted footer colour, as on the other pages).
+- No diamonds between the groups: they are set apart by space alone, about
+  28 px between groups against 12 px inside one. The diamond is kept for
+  what it means elsewhere (the menu's cursor, a chosen thing), so it is not
+  used as punctuation.
+- 13 px type, the pill 26 px tall. Shots: every `W-*` and `sizes/*`.
 
 ### Invite link screen (`?room=CODE`)
 

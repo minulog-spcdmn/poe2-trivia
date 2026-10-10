@@ -35,7 +35,7 @@ Design canvas (owner only), page "Round 6": https://claude.ai/artifact/3F9B7GxKy
 | `air13-guest` | 1440 x 725 | a guest: values instead of controls |
 | `air13-alone` | 1440 x 725 | host alone |
 | `air13-hotseat` | 1440 x 725 | hot-seat: "Add exiles" above the party |
-| `air13-delve`, `pro14-delve`, `mbp16-delve` | 13, 14, 16 inch | Delve: the descent fills the panel |
+| `air13-delve`, `pro14-delve`, `mbp16-delve` | 13, 14, 16 inch | Delve: the descent runs the panel's height |
 | `desk-alone` | 1440 x 900 | host alone |
 | `mbp16-host-tall` | 1728 x 925 | a tall window: mode cards with the name under the emblem |
 | `tablet-host` | 820 x 1180 | tablet |
@@ -139,14 +139,13 @@ the same ring-into-pill treatment so the kick reads the same everywhere.
   warning; guests "Waiting for the host to start…"). **Begin is gold
   whenever it can start**, also for a host alone: playing alone is a normal
   game, so it must never look disabled.
-- **Delve: the descent fills the panel.** The descent is Delve's progress
-  bar and is never cut. On desktop the Delve block takes all the height the
-  panel has spare (`.delve-slot`, flex 1); the descent's column then widens
-  in 8 px steps, from 196 px up to 58% of the block, until the finds text
-  beside it, wrapping narrower, is as tall as the room left (an `$effect`
-  with a `ResizeObserver`, measuring the content with
-  `getBoundingClientRect`, not the stretched height). No wasted strip above
-  Begin. On short windows it stays at its narrowest.
+- **Delve: the descent takes the panel's spare height, at its own width.**
+  The descent is Delve's progress bar and is never cut. On desktop the
+  Delve block takes all the height the panel has spare (`.delve-slot`,
+  flex 1, with 1.1rem under it so its last ring doesn't sit on the rule
+  over Begin), and the descent's drawing runs that full height. Its column
+  keeps DelveRules' own width: the space between the descent and the finds
+  is only what its leader lines need, never stretched to fill.
 
 ## Large windows
 
@@ -158,7 +157,7 @@ and 2.07 at 3840 x 2030. Beta's `lib/stage.ts` still uses
 apply it to the lobby as well as the start page, so going from the start
 page into the lobby never changes the scale. Under zoom, `100dvh` must be
 divided by the zoom, and anything that measures itself
-(`getBoundingClientRect`, for example DelveLadder and the Delve fit above)
+(`getBoundingClientRect`, for example DelveLadder)
 must divide by `element.currentCSSZoom`.
 
 ## Done when
