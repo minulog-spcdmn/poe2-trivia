@@ -248,9 +248,12 @@
 <svelte:window bind:innerWidth={winW} bind:innerHeight={winH} />
 
 <div class="shell" class:swapping data-behind-dialog bind:this={shell}>
-  {#if headerOn}
-    <header in:fade={{ duration: 300 }} bind:offsetHeight={headerHeight}>
-      <button class="brand" onclick={() => (codex ? closeCodex() : askLeave())} title={codex ? 'Back to the start' : 'Leave game'}>
+  <!-- Always there, so the sound and effects buttons hold their place from
+       screen to screen; the start page shows them alone (bare), and the rest
+       of the header fades in around them on the other screens. -->
+  <header class:bare={!headerOn} bind:offsetHeight={headerHeight}>
+    {#if headerOn}
+      <button class="brand" in:fade={{ duration: 300 }} onclick={() => (codex ? closeCodex() : askLeave())} title={codex ? 'Back to the start' : 'Leave game'}>
         <span class="brand-mark" aria-hidden="true">
           {#each ['', 'hot'] as cls (cls)}
             <svg class={cls} viewBox="20 0 400 391"><path d="M224 390Q255 331 301.0 283.5Q347 236 377 218L407 200L220 -1Q164 31 116.5 82.5Q69 134 50 169L31 204Z" fill="currentColor" /></svg>
@@ -258,7 +261,7 @@
         </span>
         <span>PoE2.Quest{#if BETA}{' '}<small class="beta">Beta</small>{:else if LOCAL}{' '}<small class="beta">Local</small>{/if}</span>
       </button>
-      <div class="meta">
+      <div class="meta" in:fade={{ duration: 300 }}>
         {#if gs?.delve && (screen === 'game' || screen === 'over')}
           <!-- Delve: no target, just how deep. -->
           {#if session.code && !session.hideCode}
@@ -307,62 +310,68 @@
           <span>Room <b class:code={!session.hideCode}>{session.hideCode ? '••••••' : session.code}</b></span>
         {/if}
       </div>
-      <div class="tools">
-        <div class="volume">
-          <button class="icon-btn" data-sfx="none" onclick={toggleMute} title={silent ? 'Unmute' : 'Mute'} aria-label="Toggle sound">
-            {#if silent}
-              <svg viewBox="0 0 24 24"><path d="M4 9h4l5-4v14l-5-4H4z" /><path d="M16 9l5 6M21 9l-5 6" /></svg>
-            {:else}
-              <svg viewBox="0 0 24 24"
-                ><path d="M4 9h4l5-4v14l-5-4H4z" /><path d="M16.5 8.5a5 5 0 0 1 0 7" />{#if volume > 0.5}<path
-                    d="M19 6a8.5 8.5 0 0 1 0 12"
-                  />{/if}</svg
-              >
-            {/if}
-          </button>
-          <!-- Desktop only: shows while the pointer is over the button. Phones keep the plain mute toggle. -->
-          <div class="volume-pop">
-            <input
-              type="range"
-              min="0"
-              max="1"
-              step="0.05"
-              value={muted ? 0 : volume}
-              oninput={slide}
-              onchange={() => sfx('click')}
-              aria-label="Volume"
-              style:--fill="{(muted ? 0 : volume) * 100}%"
-            />
-          </div>
+    {/if}
+    <div class="tools">
+      <!-- The way out goes on the inner side, so sound and effects keep the
+           corner on every screen, the start page's included. -->
+      {#if headerOn}
+        <div class="exit" in:fade={{ duration: 300 }}>
+          {#if codex}
+            <button class="icon-btn" onclick={closeCodex} title="Close the codex" aria-label="Close the codex">
+              <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18" /></svg>
+            </button>
+          {:else}
+            <button class="icon-btn" onclick={askLeave} title="Leave" aria-label="Leave game">
+              <svg viewBox="0 0 24 24"><path d="M14 4h5v16h-5M10 8l-4 4 4 4M6 12h10" /></svg>
+            </button>
+          {/if}
         </div>
-        {#if fxCan}
-          <button
-            class="icon-btn"
-            class:off={!fxOn}
-            onclick={toggleFx}
-            title={fxOn ? 'Turn visual effects off (saves power)' : 'Turn visual effects on'}
-            aria-label="Toggle visual effects"
-            aria-pressed={fxOn}
-          >
+      {/if}
+      <div class="volume">
+        <button class="icon-btn" data-sfx="none" onclick={toggleMute} title={silent ? 'Unmute' : 'Mute'} aria-label="Toggle sound">
+          {#if silent}
+            <svg viewBox="0 0 24 24"><path d="M4 9h4l5-4v14l-5-4H4z" /><path d="M16 9l5 6M21 9l-5 6" /></svg>
+          {:else}
             <svg viewBox="0 0 24 24"
-              ><path d="M10.5 3.25c.6 3.9 2.1 5.4 6 6-3.9.6-5.4 2.1-6 6-.6-3.9-2.1-5.4-6-6 3.9-.6 5.4-2.1 6-6z" /><path
-                d="M17 15.75c.3 1.6.9 2.2 2.5 2.5-1.6.3-2.2.9-2.5 2.5-.3-1.6-.9-2.2-2.5-2.5 1.6-.3 2.2-.9 2.5-2.5z"
-              />{#if !fxOn}<path d="M4 20 20 4" />{/if}</svg
+              ><path d="M4 9h4l5-4v14l-5-4H4z" /><path d="M16.5 8.5a5 5 0 0 1 0 7" />{#if volume > 0.5}<path
+                  d="M19 6a8.5 8.5 0 0 1 0 12"
+                />{/if}</svg
             >
-          </button>
-        {/if}
-        {#if codex}
-          <button class="icon-btn" onclick={closeCodex} title="Close the codex" aria-label="Close the codex">
-            <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18" /></svg>
-          </button>
-        {:else}
-          <button class="icon-btn" onclick={askLeave} title="Leave" aria-label="Leave game">
-            <svg viewBox="0 0 24 24"><path d="M14 4h5v16h-5M10 8l-4 4 4 4M6 12h10" /></svg>
-          </button>
-        {/if}
+          {/if}
+        </button>
+        <!-- Desktop only: shows while the pointer is over the button. Phones keep the plain mute toggle. -->
+        <div class="volume-pop">
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.05"
+            value={muted ? 0 : volume}
+            oninput={slide}
+            onchange={() => sfx('click')}
+            aria-label="Volume"
+            style:--fill="{(muted ? 0 : volume) * 100}%"
+          />
+        </div>
       </div>
-    </header>
-  {/if}
+      {#if fxCan}
+        <button
+          class="icon-btn"
+          class:off={!fxOn}
+          onclick={toggleFx}
+          title={fxOn ? 'Turn visual effects off (saves power)' : 'Turn visual effects on'}
+          aria-label="Toggle visual effects"
+          aria-pressed={fxOn}
+        >
+          <svg viewBox="0 0 24 24"
+            ><path d="M10.5 3.25c.6 3.9 2.1 5.4 6 6-3.9.6-5.4 2.1-6 6-.6-3.9-2.1-5.4-6-6 3.9-.6 5.4-2.1 6-6z" /><path
+              d="M17 15.75c.3 1.6.9 2.2 2.5 2.5-1.6.3-2.2.9-2.5 2.5-.3-1.6-.9-2.2-2.5-2.5 1.6-.3 2.2-.9 2.5-2.5z"
+            />{#if !fxOn}<path d="M4 20 20 4" />{/if}</svg
+          >
+        </button>
+      {/if}
+    </div>
+  </header>
 
   <main>
     {#key screen}
@@ -467,9 +476,19 @@
     grid-template-columns: 1fr auto 1fr;
     align-items: center;
     position: relative;
+    z-index: 2;
     padding: 0.8rem 1.25rem;
     border-bottom: 1px solid rgba(125, 99, 51, 0.22);
+    transition: border-color 0.3s;
+  }
+  header::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
     background: linear-gradient(180deg, rgba(0, 0, 0, 0.6), rgba(0, 0, 0, 0));
+    pointer-events: none;
+    transition: opacity 0.3s;
   }
   /* A gold hairline, brightest in the middle, over the header's lower edge. */
   header::after {
@@ -481,6 +500,23 @@
     height: 1px;
     background: linear-gradient(90deg, transparent, rgba(224, 138, 68, 0.55), rgba(241, 217, 155, 0.7), rgba(224, 138, 68, 0.55), transparent);
     pointer-events: none;
+    transition: opacity 0.3s;
+  }
+  /* The start page: only the buttons, over its corner, taking no room. The
+     rest goes at once (as the page swaps in) and fades in on the way out. */
+  header.bare {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    border-bottom-color: transparent;
+    pointer-events: none;
+    transition: none;
+  }
+  header.bare::before,
+  header.bare::after {
+    opacity: 0;
+    transition: none;
   }
 
   .brand {
@@ -583,9 +619,15 @@
   }
 
   .tools {
+    grid-column: 3;
     justify-self: end;
     display: flex;
     gap: 0.4rem;
+    pointer-events: auto;
+  }
+  /* A little apart from sound and effects, which are settings. */
+  .exit {
+    margin-right: 0.35rem;
   }
   .icon-btn {
     width: 38px;

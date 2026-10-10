@@ -1100,6 +1100,11 @@
     .title {
       --title-size: 54px;
     }
+    /* Down by the title's foot, clear of the sound and effects buttons in the corner (App.svelte). */
+    .beta {
+      align-self: flex-end;
+      margin: 0 0 4px;
+    }
     .kicker {
       font-size: 11px;
       letter-spacing: 0.3em;
