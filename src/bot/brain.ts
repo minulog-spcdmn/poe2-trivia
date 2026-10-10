@@ -17,6 +17,7 @@
 // All of it mild: these are players, not caricatures.
 // Pure functions of their inputs and a random source, so tests can pin them.
 
+import { PLAIN_HAND, type HandStyle } from './habits.ts';
 import { nameSimilarity, type DifficultyRules, type GameState } from '../lib/game.ts';
 
 export type Rng = () => number;
@@ -59,6 +60,8 @@ export interface Persona {
   picky: number;
   /** Plays on a phone: no pointer for the others to see, only where each tap lands (hand.ts). */
   touch: boolean;
+  /** What it does with its pointer while it reads, thinks and waits, and how deft it is with it (habits.ts). */
+  hand: HandStyle;
 }
 
 /** What the bot sees of a question when it decides. */
@@ -132,6 +135,7 @@ export function makePersona(categories: string[], rng: Rng): Persona {
     sociable: rng(),
     picky: rng(),
     touch: false,
+    hand: PLAIN_HAND,
   };
 }
 

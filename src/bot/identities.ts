@@ -5,6 +5,7 @@
 // being stored. Who comes on next, and for how long, is up to chance and
 // their own leanings; when a room opens, is up to the room list (wanted.ts).
 
+import { rollHandStyle } from './habits.ts';
 import type { Difficulty, Item } from '../lib/game.ts';
 import { gauss, makePersona, weighted, type Persona, type Rng } from './brain.ts';
 
@@ -208,6 +209,8 @@ export function identityOf(name: string, categories: string[], modes: readonly M
   Object.assign(persona, leaningsOf(name));
   // About one in four plays on a phone.
   persona.touch = seededBy(`${name}:hand`)() < 0.25;
+  // And its hand style, its own for good.
+  persona.hand = rollHandStyle(seededBy(`${name}:hand-style`));
   return { name, persona, prefs };
 }
 

@@ -151,11 +151,11 @@ export interface Stroke {
   end: number;
 }
 
-/** A stroke from `from` to `to`, starting `at` and taking `ms`. */
-export function stroke(from: Spot, to: Spot, at: number, ms: number, rng: Rng): Stroke {
+/** A stroke from `from` to `to`, starting `at` and taking `ms`, bowed by the hand's `curve` (0 to 1, habits.ts). */
+export function stroke(from: Spot, to: Spot, at: number, ms: number, rng: Rng, curve = 0.5): Stroke {
   const dx = to.x - from.x;
   const dy = to.y - from.y;
-  const bow = (rng() - 0.5) * 0.36;
+  const bow = (rng() - 0.5) * (0.12 + 0.5 * curve);
   // Pulled toward one end or the other, not always the middle.
   const k = 0.3 + 0.4 * rng();
   const dist = Math.hypot(dx, dy);
@@ -187,18 +187,34 @@ export function along(s: Stroke, now: number): Spot {
 /**
  * A reach for a target, as aimed movements go: a long one falls a little
  * short of it or runs a little past (and off to a side), then a small
- * correcting stroke brings it in after a beat. Taking `ms` in all, from
- * `at`; a short one is a single stroke.
+ * correcting stroke brings it in after a beat; a `sloppy` hand (1: as most)
+ * misses by more, and now and then corrects twice. Taking `ms` in all, from
+ * `at`, bowed by `curve`; a short one is a single stroke.
  */
-export function reach(from: Spot, to: Spot, at: number, ms: number, rng: Rng): Stroke[] {
+export function reach(from: Spot, to: Spot, at: number, ms: number, rng: Rng, { curve = 0.5, sloppy = 1 } = {}): Stroke[] {
   const dx = to.x - from.x;
   const dy = to.y - from.y;
   const dist = Math.hypot(dx, dy);
-  if (dist < 120 || ms < 250) return [stroke(from, to, at, ms, rng)];
-  const err = -0.07 + 0.12 * rng();
-  const side = (rng() - 0.5) * 0.04;
-  const miss = { x: to.x + dx * err - dy * side, y: to.y + dy * err + dx * side };
+  if (dist < 120 || ms < 250) return [stroke(from, to, at, ms, rng, curve)];
+  const off = (k: number): Spot => {
+    const err = (-0.07 + 0.12 * rng()) * sloppy * k;
+    const side = (rng() - 0.5) * 0.04 * sloppy * k;
+    return { x: to.x + dx * err - dy * side, y: to.y + dy * err + dx * side };
+  };
+  const miss = off(1);
   const first = Math.round(ms * 0.78);
-  const beat = Math.round(ms * (0.04 + 0.06 * rng()));
-  return [stroke(from, miss, at, first, rng), stroke(miss, to, at + first + beat, Math.max(60, ms - first - beat), rng)];
+  const beat = () => Math.round(ms * (0.04 + 0.06 * rng()));
+  const b1 = beat();
+  const twice = sloppy > 1.3 && rng() < 0.5;
+  if (!twice) return [stroke(from, miss, at, first, rng, curve), stroke(miss, to, at + first + b1, Math.max(60, ms - first - b1), rng, curve)];
+  // Clumsy: the correction misses a little too.
+  const near = off(0.3);
+  const rest = Math.max(120, ms - first - b1);
+  const b2 = beat();
+  const second = at + first + b1;
+  return [
+    stroke(from, miss, at, first, rng, curve),
+    stroke(miss, near, second, Math.round(rest * 0.55), rng, curve),
+    stroke(near, to, second + Math.round(rest * 0.55) + b2, Math.max(50, Math.round(rest * 0.45)), rng, curve),
+  ];
 }
