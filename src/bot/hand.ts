@@ -40,6 +40,21 @@ if (import.meta.env.DEV) Object.assign(globalThis, { __hand: () => current });
 
 type Frame = 'cards' | 'answers' | 'room';
 
+/**
+ * Where each seat waits (thousandths of the frame, its waiting stretches
+ * shifted this far): well apart, so no two bots in a room rest on one spot.
+ */
+const ASIDES: [number, number][] = [
+  [-300, -200],
+  [150, 180],
+  [-50, -60],
+  [-280, 170],
+  [120, -230],
+  [-180, 40],
+  [60, 60],
+  [-120, -250],
+];
+
 export class Hand {
   private at: Spot = { x: 480 + Math.random() * 40, y: 600 + Math.random() * 100 };
   /** What it's replaying, and what the track's places are in thousandths of. */
@@ -47,8 +62,8 @@ export class Hand {
   private frame: Frame = 'room';
   /** Where that frame was when the track began: the track is laid onto it once, so a new screen doesn't move the hand. */
   private trackBox: Box = [150, 250, 850, 800];
-  /** Where it waits, its own: its waiting stretches shifted this far (thousandths of the frame), so no two bots rest on the same spot. */
-  private readonly aside: [number, number] = [-350 + Math.random() * 500, -250 + Math.random() * 450];
+  /** A little of its own on top of its seat's place to wait (ASIDES). */
+  private readonly nudge: [number, number] = [between(-60, 60), between(-50, 50)];
   /** Where on an answer or a card it tends to rest and click, its own (thousandths of it, from the recorded spot): not all on one spot. */
   private readonly grip: [number, number] = [between(-300, 300), between(-250, 250)];
   /** The stretch its next click reaches with (picked as it looks things over), and for what. */
@@ -271,7 +286,9 @@ export class Hand {
       const frame = lobby ? 'room' : this.waitFrame(s);
       if (e) {
         this.remember(e);
-        const { track, presses } = streamTrack(e, within(this.where(now), this.box(frame, s), e.src), now, this.speed, waver(Math.random), Math.random, this.aside);
+        const seat = ASIDES[Math.max(0, s.players.findIndex((p) => p.id === session.myPlayerId)) % ASIDES.length];
+        const aside: [number, number] = [seat[0] + this.nudge[0], seat[1] + this.nudge[1]];
+        const { track, presses } = streamTrack(e, within(this.where(now), this.box(frame, s), e.src), now, this.speed, waver(Math.random), Math.random, aside);
         this.follow(track, frame);
         // The recorded player clicked at nothing a lot; it, about half as often.
         this.presses = presses.filter(() => Math.random() < 0.5);
