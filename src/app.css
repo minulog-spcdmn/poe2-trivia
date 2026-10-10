@@ -93,10 +93,21 @@ body {
   background: var(--bg);
 }
 
-/* Reserve the scrollbar's space so screens that need one don't shift sideways. */
+/* Reserve the scrollbar's space so screens that need one don't shift sideways.
+   The app's own pointer everywhere (lib/ownCursor.ts; vite.config.ts makes
+   `default` and `pointer` read it), links and text fields included, which
+   the browser would otherwise give its own. */
 html {
+  cursor: default;
   scrollbar-gutter: stable;
   scrollbar-color: #4a3a22 #0a0908;
+}
+
+a:any-link {
+  cursor: pointer;
+}
+:where(input:not([type]), input[type='text'], input[type='search'], textarea) {
+  cursor: text;
 }
 
 :focus-visible {

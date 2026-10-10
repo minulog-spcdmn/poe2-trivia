@@ -10,6 +10,8 @@
   import { SCALE, SEND_EVERY_MS, anchorCode, anchorName, cursorKey, cursorsLive, type CursorAt } from '../lib/cursors';
   import { playerColor } from '../lib/ui';
   import { portal } from '../lib/portal';
+  import { setCursorColor } from '../lib/ownCursor';
+  import { PAD_X, PAD_Y, POINTER, SIZE, WEIGHT } from '../lib/pointerArt';
 
   /** How quickly a pointer catches up with where it was last heard to be (ms to cover about 2/3 of the way). */
   const GLIDE_MS = 70;
@@ -38,6 +40,13 @@
   $effect(() => {
     if (!live) peerCursors.clear();
   });
+
+  // With a seat, this device's own arrow takes its player's colour, as the others see it.
+  const mine = $derived(s.players.find((p) => p.id === me));
+  $effect(() => {
+    setCursorColor(mine ? playerColor(mine.hue) : undefined);
+  });
+  onMount(() => () => setCursorColor());
 
   // ---- this device's pointer ------------------------------------------
 
@@ -211,12 +220,18 @@
   });
 </script>
 
-<div class="cursors" use:portal aria-hidden="true">
+<div class="cursors" use:portal aria-hidden="true" style:--pad-x={PAD_X} style:--pad-y={PAD_Y} style:--w={SIZE[0]} style:--h={SIZE[1]}>
   {#each shown as c (c.key)}
     <div class="cursor" bind:this={els[c.key]} style:--c={c.color}>
-      <svg class="arrow" viewBox="0 0 16 21" width="16" height="21">
-        <path d="M1.5 1.5 V16.5 L5.3 13 L8.1 19.4 L10.9 18.2 L8.1 11.9 L13.3 11.7 Z" />
+      <!-- The dart (lib/pointerArt.ts) with its tip on the spot: a dark rim and ground, a glow under the lines. -->
+      <svg class="dart" viewBox="{-PAD_X} {-PAD_Y} {SIZE[0]} {SIZE[1]}" width={SIZE[0]} height={SIZE[1]}>
+        <path class="ground" d={POINTER.outline} stroke-width={WEIGHT.rim} />
+        <path class="glow" d={POINTER.outline} />
+        <path class="line" d={POINTER.outline} stroke-width={WEIGHT.outline} />
+        <path class="line" d={POINTER.ridge} stroke-width={WEIGHT.ridge} />
+        <path class="line hatch" d={POINTER.hatch} stroke-width={WEIGHT.hatch} />
       </svg>
+      <!-- A tap: a seal's double ring, opening out. -->
       <span class="ripple"></span>
       <span class="name">{c.name}</span>
     </div>
@@ -245,47 +260,69 @@
   .cursor:global(.lost) {
     opacity: 0;
   }
-  /* The tip of the arrow sits on the spot. */
-  .arrow {
+  .dart {
     display: block;
-    margin: -1.5px 0 0 -1.5px;
+    margin: calc(-1px * var(--pad-y)) 0 0 calc(-1px * var(--pad-x));
     overflow: visible;
-    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.6));
+    fill: none;
+    stroke-linejoin: miter;
+    stroke-miterlimit: 12;
   }
-  .arrow path {
-    fill: var(--c);
+  .ground {
+    fill: rgba(10, 9, 8, 0.9);
     stroke: var(--bg);
-    stroke-width: 1.3;
-    stroke-linejoin: round;
   }
+  .glow {
+    stroke: var(--c);
+    stroke-width: 2;
+    opacity: 0.22;
+    filter: blur(1px);
+  }
+  .line {
+    stroke: var(--c);
+  }
+  .hatch {
+    stroke-linecap: round;
+    opacity: 0.85;
+  }
+  /* The name on a dark plate edged in the player's colour, as on the scoreboard. */
   .name {
     position: absolute;
-    left: 12px;
-    top: 18px;
+    left: 13px;
+    top: 21px;
     max-width: 9rem;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    padding: 1px 6px 2px;
-    border-radius: 4px;
-    background: var(--c);
-    color: var(--bg);
-    font: 500 0.8rem/1.2 var(--font-body);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+    padding: 0 0.5em 0.1em;
+    border: 1px solid color-mix(in srgb, var(--c), transparent 45%);
+    border-radius: 999px;
+    background: rgba(12, 10, 8, 0.85);
+    color: color-mix(in srgb, var(--c), #fff4e0 45%);
+    font: 0.82rem/1.35 var(--font-body);
+    box-shadow: 0 1px 6px rgba(0, 0, 0, 0.6);
   }
   .ripple {
     position: absolute;
     left: 0;
     top: 0;
-    width: 44px;
-    height: 44px;
-    border: 2px solid var(--c);
+    width: 40px;
+    height: 40px;
+    border: 1px solid var(--c);
     border-radius: 50%;
     opacity: 0;
     transform: translate(-50%, -50%);
+    box-shadow: 0 0 6px color-mix(in srgb, var(--c), transparent 60%);
   }
-  /* A tap is the ripple and the name, no arrow (the classes are set each frame). */
-  .cursor:global(.tap) > .arrow {
+  .ripple::after {
+    content: '';
+    position: absolute;
+    inset: 3px;
+    border: 0.75px solid var(--c);
+    border-radius: 50%;
+  }
+  /* A tap is the ring and the name, no dart (the classes are set each frame). */
+  .cursor:global(.tap) > .dart {
     display: none;
   }
   .cursor:global(.tap) > .name {
@@ -294,14 +331,15 @@
   }
   /* Smaller on phones, so they cover less of the answers. */
   @media (max-width: 640px) {
-    .arrow {
-      width: 13px;
-      height: 17px;
+    .dart {
+      width: calc(var(--w) * 0.8px);
+      height: calc(var(--h) * 0.8px);
+      margin: calc(-0.8px * var(--pad-y)) 0 0 calc(-0.8px * var(--pad-x));
     }
     .name {
       left: 10px;
-      top: 15px;
-      font-size: 0.72rem;
+      top: 17px;
+      font-size: 0.74rem;
     }
   }
 </style>

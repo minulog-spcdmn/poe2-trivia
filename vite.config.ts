@@ -175,13 +175,30 @@ const hoverOnlyWhereHoverable = {
   },
 };
 
+/**
+ * The app's own mouse pointer (src/lib/ownCursor.ts): every `cursor: pointer`
+ * and `cursor: default` reads its picture from a variable, falling back to
+ * the system's own where it isn't set (pages that don't draw one).
+ */
+const CURSOR_VARS: Record<string, string> = { pointer: '--cursor-pointer', default: '--cursor' };
+
+const themedCursors = {
+  postcssPlugin: 'themed-cursors',
+  Declaration: {
+    cursor(decl: { value: string }) {
+      const name = CURSOR_VARS[decl.value.trim()];
+      if (name) decl.value = `var(${name}, ${decl.value.trim()})`;
+    },
+  },
+};
+
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), 'VITE_');
   return {
     // Relative base so the build works on any GitHub Pages sub-path.
     base: './',
     plugins: [svelte(), glslMinify(), csp(env), betaPages(env), preloadFonts(), backdropSave()],
-    css: { postcss: { plugins: [hoverOnlyWhereHoverable] } },
+    css: { postcss: { plugins: [hoverOnlyWhereHoverable, themedCursors] } },
     build: {
       rollupOptions: {
         // Legal pages are plain static pages so they work without JavaScript.
