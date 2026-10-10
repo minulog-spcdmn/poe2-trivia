@@ -217,6 +217,11 @@
               <span class="lbl">Lives</span>
               {@render seg([0, 1, 2, 3].slice(0, DELVE_LIVES + 1), run ? livesOf(run, p.id) : 0, (n) => L.setLives(p.id, n), 'Lives')}
             </div>
+            <!-- Right answers in a row (the fire's tiers: from 3, blue from 21, full at 25): the next right answer's chip says one more. -->
+            <div class="line">
+              <span class="lbl">Streak</span>
+              {@render seg([0, 2, 10, 20, 24], p.streak ?? 0, (n) => L.setStreak(p.id, n), 'Streak')}
+            </div>
             <div class="items">
               {#each ITEMS as it (it.item)}
                 <div class="stepper">

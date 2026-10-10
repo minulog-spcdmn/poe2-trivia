@@ -30,9 +30,11 @@ function questions(turns: number, pick: (offered: string[]) => string) {
 }
 
 const weapons = (offered: string[]) => offered.find((c) => /Two-Handed|Flasks/.test(c)) ?? offered[0];
+/** One game for every test: the same seed plays it the same way each time. */
+const game = questions(300, weapons);
 
 test('an art question is tall exactly when every picture is of a tall group', () => {
-  const { asked } = questions(300, weapons);
+  const { asked } = game;
   const art = asked.filter((q) => q.mode === 'art');
   assert.ok(art.some((q) => q.tall), 'some art question was tall');
   assert.ok(art.some((q) => !q.tall), 'some art question was not');
@@ -43,12 +45,12 @@ test('an art question is tall exactly when every picture is of a tall group', ()
 });
 
 test('a name question is never tall', () => {
-  const { asked } = questions(300, weapons);
+  const { asked } = game;
   for (const q of asked.filter((q) => q.mode === 'name')) assert.equal(q.tall, undefined);
 });
 
 test("Delve's copy before the clock runs keeps tall (the pictures' layout), not the groups", () => {
-  const { asked, s } = questions(300, weapons);
+  const { asked, s } = game;
   const q = asked.find((x) => x.mode === 'art' && x.tall)!;
   const waiting = { ...s, phase: 'question', delve: s.delve ?? ({} as GameState['delve']), question: { ...q, deadline: null } } as GameState;
   const seen = publicView(waiting).question!;

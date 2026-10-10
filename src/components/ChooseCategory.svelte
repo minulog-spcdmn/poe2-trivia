@@ -409,7 +409,7 @@
     {/if}
   </p>
 
-  <div class="cards" class:single={s.offered.length === 1} class:moving={!!drawn || !!picked} style:--n={s.offered.length}>
+  <div class="cards" data-zoom class:single={s.offered.length === 1} class:moving={!!drawn || !!picked} style:--n={s.offered.length}>
     {#each s.offered as cat, i (cat)}
       <button
         class="card"
@@ -465,7 +465,8 @@
           {/if}
         </span>
         {#if coop}
-          <!-- Who voted for it, your own mark ringed; the row keeps its height while empty. -->
+          <!-- Who voted for it, your own mark ringed: on the card's foot from 701px
+               wide, else a row under it that keeps its height while empty. -->
           {@const voters = votersOf(cat)}
           {@const faces = voters.length > 5 ? voters.slice(0, 4) : voters}
           <span class="votes" aria-hidden="true">
@@ -580,6 +581,7 @@
     display: grid;
     grid-template-columns: repeat(var(--n, 3), minmax(0, 220px));
     gap: 1.4rem;
+    /* (data-zoom: so lib/stage.ts finds it where the browser can't say an element's zoom.) */
     zoom: var(--card-z);
   }
   .card {

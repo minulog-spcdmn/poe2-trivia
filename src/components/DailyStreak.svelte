@@ -87,7 +87,7 @@
 </b>
 
 <style>
-  /* A streak of days, in the game's streak badge (QuestionView's .streak). */
+  /* A streak of days: a small pill in the display type, warming with the streak. */
   .streak {
     position: relative;
     align-self: center;

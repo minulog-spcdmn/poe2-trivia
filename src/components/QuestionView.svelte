@@ -65,9 +65,7 @@
       !myStruck,
   );
   /** Whether this device answers: your turn, or (Delve together) you stand and haven't answered yet. */
-  const mine = $derived(
-    coop ? !reveal && !!me && s.players.some((p) => p.id === me) && livesOf(s, me) > 0 && !myStruck : session.myTurn,
-  );
+  const mine = $derived(coop ? !reveal && canAnswer : session.myTurn);
   const nameOf = (id: string) => s.players.find((p) => p.id === id)?.name ?? '?';
   /**
    * Svelte action: a name that is the question (the picture question's plate)
@@ -88,9 +86,14 @@
       const range = document.createRange();
       range.selectNodeContents(node);
       const wide = () => range.getBoundingClientRect().width;
-      let size = full;
-      while (wide() > room && size > full * 0.75) {
-        size -= 0.5;
+      // Words widen with their size: one guess, then (rounding, kerning) a step or two more at most.
+      const was = wide();
+      if (was <= room) return;
+      const least = full * 0.75;
+      let size = Math.max(least, Math.floor(((full * room) / was) * 2) / 2);
+      node.style.fontSize = `${size}px`;
+      while (wide() > room && size > least) {
+        size = Math.max(least, size - 0.5);
         node.style.fontSize = `${size}px`;
       }
       if (wide() > room) node.style.whiteSpace = '';
@@ -560,6 +563,8 @@
   );
   /** The art stage (name questions) or the picture grid (art questions). */
   let artEl = $state<HTMLElement | null>(null);
+  /** How large the plate's ends are drawn (NamePlate's `fit`), for the name to keep clear of them. */
+  let plateScale = $state<number>();
   let verdictEl = $state<HTMLElement | null>(null);
   let charge: Handle | null = null;
   /** The scorer's streak of correct answers, for the result line. */
@@ -833,6 +838,11 @@
   {/if}
 {/snippet}
 
+<!-- A streak the chip doesn't tell (two in a row, or someone else's): said at the sentence's end. -->
+{#snippet streakWords()}
+  {#if streak >= 2 && !(chipHeat > 0)}<span class="streak-words">{' '}{streak} in a row.</span>{/if}
+{/snippet}
+
 {#snippet footer()}
   {#if reveal}
     <!-- The verdict lands at once (its own entrance, and the glint the reveal
@@ -843,7 +853,7 @@
         {#if race}
           {#if winner}
             <b class="good">+1</b> {winner.id === me ? 'You were' : `${winner.name} was`} fastest!
-            {#if streak >= 2 && !(chipHeat > 0)}<span class="streak-words">{' '}{streak} in a row.</span>{/if}
+            {@render streakWords()}
           {:else if reveal.timedOut}
             Time's up; nobody got it.
           {:else}
@@ -885,7 +895,7 @@
           {/if}
           <!-- Who cleared it, and what a find gave, in one sentence. -->
           {lines[0]}
-          {#if streak >= 2 && !(chipHeat > 0)}<span class="streak-words">{' '}{streak} in a row.</span>{/if}
+          {@render streakWords()}
           {#if lines.length > 1}<span class="losses">{lines.slice(1).join(' ')}</span>{/if}
         {:else if s.delve}
           {@const you = delveYou}
@@ -899,7 +909,7 @@
             {:else}
               {who} {you ? 'delve' : 'delves'} on.
             {/if}
-            {#if streak >= 2 && !(chipHeat > 0)}<span class="streak-words">{' '}{streak} in a row.</span>{/if}
+            {@render streakWords()}
           {:else if reveal.caveIn && reveal.lost && !fallsNow}
             <!-- An Azurite Vein caved in for two losses: the wards that broke, and the lives that went. -->
             {#if reveal.lost.wards}
@@ -951,7 +961,7 @@
           {#if !reveal.correct && reveal.blown}{blownText(reveal.blown, you ? 'your' : `${active.name}'s`)}{/if}
         {:else if reveal.correct}
           <b class="good">+1</b> for {active.name}!
-          {#if streak >= 2 && !(chipHeat > 0)}<span class="streak-words">{' '}{streak} in a row.</span>{/if}
+          {@render streakWords()}
         {:else if reveal.timedOut}
           {active.name} ran out of time.
         {:else}
@@ -1078,8 +1088,8 @@
   {#if q.mode === 'art'}
     <!-- Name given, pick the matching art. -->
     <div class="tooltip wide" use:backdropShadow={{ fill: 'linear' }} class:good={reveal && iWon} class:bad={reveal && !iWon}>
-      <div class="head">
-        <NamePlate fit />
+      <div class="head" style:--plate-scale={plateScale}>
+        <NamePlate fit bind:scale={plateScale} />
         <div class="head-text">
           <span class="iname" class:veiled={waiting} use:oneLine>{waiting || !q.prompt ? '\u00a0' : q.prompt}</span>
           <!-- Name over base, as every tooltip: the category until the reveal names the base. -->
@@ -1180,9 +1190,9 @@
   {:else}
     <div class="stage" class:snug class:ten={count === 10} class:long class:armed={blastSlot}>
       <div class="tooltip" use:backdropShadow={{ fill: 'linear' }} class:good={reveal && iWon} class:bad={reveal && !iWon}>
-        <div class="head">
+        <div class="head" style:--plate-scale={plateScale}>
           <!-- The gems stay dark until the item is identified. -->
-          <NamePlate fit lit={!!(reveal && item)} />
+          <NamePlate fit bind:scale={plateScale} lit={!!(reveal && item)} />
           {#if reveal && item}
             <div class="head-text" in:fly={{ y: 10, duration: 450 }}>
               <span class="iname">{item.name}</span>
@@ -1271,11 +1281,13 @@
   {/if}
 
   <div class="footer">
-    {#if (reveal || (blastSlot && mine)) && phone.current}
+    {#if (reveal || blastSlot) && phone.current}
       <!-- Phones: the result and Next button stay at the bottom of the screen, in
            reach of a thumb, however far down the answers have been scrolled; so
-           does Detonate (and its fuse) while dynamite is at hand and you can
-           still answer, where Next will stand. A new dock at the reveal, so it lifts the answers to keep
+           does Detonate (and its fuse) from when dynamite is at hand, where
+           Next will stand; it keeps its place to the question's end, as the
+           row does on wider screens (struck out, or the stick used, the
+           button goes and the bar stays, so nothing under it moves). A new dock at the reveal, so it lifts the answers to keep
            in view above itself. -->
       {#key !!reveal}
         <div class="dock" use:portal use:dock={keepInView} in:fade={{ duration: 200 }} out:fade|global={{ duration: 180 }}>
@@ -2420,7 +2432,10 @@
     flex: 1;
     min-width: 0;
   }
-  .sr {
+  /* Read out, not shown: and so the verdict's word in the phone's docked bar,
+     where its disc says it (a streak's count stays). */
+  .sr,
+  .dock .verdict .word:not(.count) {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -2751,14 +2766,6 @@
       background: rgba(0, 0, 0, 0.4);
       font-size: 0.8rem;
     }
-    .dock .verdict .word:not(.count) {
-      position: absolute;
-      width: 1px;
-      height: 1px;
-      overflow: hidden;
-      clip-path: inset(50%);
-      white-space: nowrap;
-    }
     /* Beside the dynamite's button, the line under the answers takes a little less room. */
     .blasting .hint .spectate {
       font-size: 0.95rem;
@@ -2771,13 +2778,13 @@
     }
     /* The plate as tall as its two lines (only a name long enough to wrap
        makes it grow). */
+    /* Its ends are drawn to its height (NamePlate's `fit`: 54 / 64 at
+       least), and the name keeps clear of them: a name long enough to wrap
+       makes the plate, and so its ends, larger. */
     .head {
       height: auto;
       min-height: 54px;
-      padding: 0.3rem 2.9rem;
-      /* The name plate's ends drawn smaller, to leave the name room (54 / 64;
-         NamePlate's `fit` then keeps them to the plate's measured height). */
-      --end-scale: 0.84;
+      padding: 0.3rem max(2.9rem, calc(var(--plate-scale, 0) * 3.45rem));
     }
     .art {
       height: clamp(180px, 32svh, 230px);

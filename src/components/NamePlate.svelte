@@ -211,10 +211,15 @@
   // SOCKET_X). The ends can be drawn smaller with `--end-scale`; with `fit`
   // they are sized to the plate itself (drawn for 64px: a taller plate, as
   // a name that wraps makes it, draws them larger), so the frame's rules
-  // always run along its edges.
-  let { lit = true, end = 'luna', fit = false }: { lit?: boolean; end?: 'luna' | 'empty'; fit?: boolean } = $props();
+  // always run along its edges; `scale` (bindable) says how large, so what
+  // sits on the plate can keep clear of the ends.
+  let {
+    lit = true,
+    end = 'luna',
+    fit = false,
+    scale: endScale = $bindable(),
+  }: { lit?: boolean; end?: 'luna' | 'empty'; fit?: boolean; scale?: number } = $props();
   let plateEl = $state<HTMLElement>();
-  let endScale = $state<number>();
   $effect(() => {
     if (!fit || !plateEl) return;
     const ro = new ResizeObserver(([e]) => {
