@@ -1,7 +1,7 @@
 <script lang="ts">
   import { fade, fly } from 'svelte/transition';
-  import { nameRefusal, nameUsable, unlockHeldName } from '../lib/names';
-  import { toasts } from '../lib/toasts.svelte';
+  import { cleanName, nameRefusal, nameUsable, unlockHeldName } from '../lib/names';
+  import { refuseName } from '../lib/nameField';
   import { engine, session, savedName, saveName, CODE_LENGTH } from '../lib/session.svelte';
   import { shuffle } from '../lib/game';
   import { itemSrcset, itemThumb } from '../lib/ui';
@@ -9,7 +9,7 @@
   import { CREATOR, DONATE_URL, IMPRINT_URL, PRIVACY_URL } from '../lib/site';
   import { backdropShadow } from '../lib/backdropShadow';
   import { backdropDropShadow } from '../lib/backdropDropShadow';
-  import { connecting as portalFx, refuse, titleGlints } from '../lib/fx/moments';
+  import { connecting as portalFx, titleGlints } from '../lib/fx/moments';
   import type { Handle } from '../lib/fx/core';
   import { setHomeScene } from '../lib/lights';
   import { openCodex } from '../lib/codexRoute.svelte';
@@ -71,25 +71,15 @@
     .catch((err) => console.warn('achievements', err));
   const showcase = shuffle(engine.items, Math.random).slice(0, 7);
 
-  /** The typed name, or null after refusing it in the field (saying why, unless it's empty or the held name). */
-  function checkName() {
+  /** The typed name, saved for next time, or null after refusing it in the field (an empty one without a word). */
+  function needName() {
     const n = name.trim();
     const refusal = nameRefusal(n);
     if (refusal) {
-      if (n && refusal !== 'held') toasts.show(refusal, 'error');
-      nameError = true;
-      const field = document.getElementById('name');
-      if (field) refuse(field);
-      setTimeout(() => (nameError = false), 600);
-      document.getElementById('name')?.focus();
+      refuseName(document.getElementById('name'), n ? refusal : { reason: null }, (on) => (nameError = on));
       return null;
     }
-    return n;
-  }
-
-  function needName() {
-    const n = checkName();
-    if (n) saveName(n);
+    saveName(n);
     return n;
   }
 
@@ -140,14 +130,15 @@
 
   /**
    * Hot-seat starts with the name in the name field (the saved one unless
-   * changed) already in; an empty field opens it with nobody in, and a name
-   * that can't be used is refused there, as for a room. It isn't saved:
-   * whoever plays first here may not be the one who plays online on this device.
+   * changed) already in. Hot-seat needs no name, so nothing here is refused:
+   * an empty field opens it with nobody in, and a name that can't be used
+   * waits in the lobby's add field. It isn't saved: whoever plays first here
+   * may not be the one who plays online on this device.
    */
   function local() {
-    if (!name.trim()) return session.startLocal();
-    const n = checkName();
+    const n = cleanName(name);
     if (n) session.startLocalAs(n);
+    else session.startLocal();
   }
 
   const connecting = $derived(session.status === 'connecting');

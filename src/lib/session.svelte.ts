@@ -33,7 +33,7 @@ import { PEER_OPTIONS, PEER_PREFIX } from './peer';
 import { Beacon, type RoomInfo } from './rooms';
 import { parseClientMsg, parseHostMsg, PROTOCOL_VERSION, RateLimit, versionProblem, versionRefusal, type HostMsg, type MediaMsg } from './protocol';
 import { capped, FrameGuard, hookFrames, JoinGate, roomSecret } from './guard';
-import { cleanName, nameSkeleton } from './names';
+import { cleanName, nameSkeleton, nameUsable } from './names';
 import { prepareMedia, shown, type PreparedMedia } from './media.svelte';
 import { sfx } from './sound';
 import { prefsFrom, roomPrefs, roomSettings, savePrefs } from './prefs';
@@ -428,13 +428,21 @@ class Session {
     this.reset();
     this.mode = 'local';
     this.status = 'ready';
+    this.lobbyDraft = '';
     this.setState(resume ?? createGame(null, delve ? { ...DEFAULT_SETTINGS, mode: 'delve' } : undefined));
   }
 
-  /** A fresh hot-seat game with `name` seated first; false when the game turned the name down (and said why). */
-  startLocalAs(name: string): boolean {
+  /** What the hot-seat lobby's add field starts with: the name a new game couldn't seat. The lobby takes it. */
+  lobbyDraft = '';
+
+  /**
+   * A fresh hot-seat game with `name` seated first. A name this device can't
+   * play under (too short, reserved, held) doesn't hold the game up: it waits
+   * in the lobby's add field, where adding it says why.
+   */
+  startLocalAs(name: string) {
     this.startLocal();
-    return this.seatLocal(name);
+    if (!nameUsable(name) || !this.seatLocal(name)) this.lobbyDraft = name;
   }
 
   /**
@@ -455,10 +463,12 @@ class Session {
    */
   delveLink = false;
 
-  /** A Delve run alone on this device, straight from a shared link. */
+  /** A Delve run alone on this device, straight from a shared link. Nothing changes for a name that can't be played under. */
   startDelve(name: string) {
+    if (!nameUsable(name)) return;
     this.delveLink = true;
-    if (this.startLocalAs(name)) this.dispatch({ type: 'start' });
+    this.startLocal();
+    if (this.seatLocal(name)) this.dispatch({ type: 'start' });
   }
 
   /** Picks up a hot-seat game or a hosted room after a page refresh. */
