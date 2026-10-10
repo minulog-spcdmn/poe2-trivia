@@ -11,10 +11,10 @@
   import { closeCodex, codexRoute } from '../lib/codexRoute.svelte';
   import { backdropShadow } from '../lib/backdropShadow';
   import { dialogBackdrop } from '../lib/behindDialog';
-  import { motion } from '../lib/motion.svelte';
+  import { calm } from '../lib/motion.svelte';
   import { whenIdle } from '../lib/idle';
   import type { Difficulty, Item } from '../lib/game';
-  import ArcaneCircle from './ArcaneCircle.svelte';
+  import CodexMedallion from './codex/CodexMedallion.svelte';
   import CodexItem from './CodexItem.svelte';
   import CodexFilter from './CodexFilter.svelte';
   import CodexDelve from './CodexDelve.svelte';
@@ -22,9 +22,6 @@
   import { ACHIEVEMENTS, ACHIEVEMENTS_KEY, WINS_KEY, checkAchievements, loadAchievements, loadWins, resetAchievements } from '../lib/achievements';
   import { announceAchievements } from '../lib/achievementToasts';
   import CodexAchievements from './CodexAchievements.svelte';
-
-  /** Svelte's transitions run whatever the system says: held still (reduced motion, or the effects off), things just appear. */
-  const calm = <T extends { duration?: number; delay?: number }>(p: T): T => (motion.still ? { ...p, duration: 0, delay: 0 } : p);
 
   let codex = $state.raw(loadCodex());
   let delve = $state.raw(loadRecords());
@@ -254,7 +251,7 @@
 {/snippet}
 
 <div class="codex">
-  <header class="hero" in:fly={calm({ y: -10, duration: 600 })}>
+  <header class="hero">
     <p class="kicker">Your collection</p>
     <h1>Codex</h1>
     <p class="tagline">
@@ -267,7 +264,7 @@
   </header>
 
   {#if kept}
-    <div class="tabs" role="tablist" aria-label="Codex pages" in:fly={calm({ y: -6, duration: 500, delay: 100 })}>
+    <div class="tabs" role="tablist" aria-label="Codex pages">
       {#each TABS as t (t.key)}
         <button
           {@attach tabRef(t.key)}
@@ -312,25 +309,11 @@
       </div>
     {/if}
 
-    <div class="medallion">
-      <ArcaneCircle size="100%" strength={0.3} />
-      <svg class="progress" viewBox="-100 -100 200 200" aria-hidden="true">
-        <defs>
-          <linearGradient id="codex-arc" x1="0" y1="-1" x2="0" y2="1">
-            <stop offset="0" stop-color="#fbe6b0" />
-            <stop offset="0.5" stop-color="#c9a45c" />
-            <stop offset="1" stop-color="#e08a44" />
-          </linearGradient>
-        </defs>
-        <circle class="track" r="80" />
-        {#if found > 0}<circle class="arc" r="80" pathLength="100" style:stroke-dasharray="{found * 100} 100" />{/if}
-      </svg>
-      <div class="medal-text">
-        <span class="medal-value">{stats.seen}</span>
-        <span class="medal-of">of {stats.total}</span>
-        <span class="medal-label">discovered</span>
-      </div>
-    </div>
+    <CodexMedallion share={found}>
+      <span class="medal-value">{stats.seen}</span>
+      <span class="medal-of">of {stats.total}</span>
+      <span class="medal-label">discovered</span>
+    </CodexMedallion>
 
     {#if stats.seen}
       <div class="side">
@@ -765,51 +748,6 @@
     line-height: 1.3;
     font-style: italic;
     color: var(--muted);
-  }
-  .medallion {
-    grid-column: 2;
-    position: relative;
-    isolation: isolate;
-    width: 240px;
-    height: 240px;
-    display: grid;
-    place-items: center;
-  }
-  .medallion :global(.arcane) {
-    z-index: -1;
-  }
-  .progress {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    rotate: -90deg;
-    overflow: visible;
-  }
-  .track {
-    fill: rgba(8, 6, 4, 0.75);
-    stroke: rgba(125, 99, 51, 0.35);
-    stroke-width: 6;
-  }
-  .arc {
-    fill: none;
-    stroke: url(#codex-arc);
-    stroke-width: 4;
-    stroke-linecap: round;
-    filter: drop-shadow(0 0 4px rgba(224, 138, 68, 0.8));
-    animation: fill-arc 1.6s var(--ease-out) 0.4s both;
-  }
-  @keyframes fill-arc {
-    from {
-      stroke-dasharray: 0 100;
-    }
-  }
-  .medal-text {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    line-height: 1.1;
   }
   .medal-value {
     font-size: 3.2rem;
@@ -1476,11 +1414,6 @@
       grid-template-columns: 1fr 1fr;
       row-gap: 1rem;
     }
-    .medallion {
-      grid-column: 1 / -1;
-      grid-row: 1;
-      justify-self: center;
-    }
     .split {
       grid-template-columns: 1fr;
     }
@@ -1513,10 +1446,6 @@
     }
     .side {
       justify-content: space-around;
-    }
-    .medallion {
-      width: 210px;
-      height: 210px;
     }
     .medal-value {
       font-size: 2.8rem;

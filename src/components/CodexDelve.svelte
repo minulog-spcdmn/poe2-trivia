@@ -30,7 +30,7 @@
   import type { Item } from '../lib/game';
   import DelveLastRun from './codex/DelveLastRun.svelte';
   import DelveRunLog from './codex/DelveRunLog.svelte';
-  import ArcaneCircle from './ArcaneCircle.svelte';
+  import CodexMedallion from './codex/CodexMedallion.svelte';
 
   // The Codex's Delve page, a sibling of the Collection (Codex.svelte) and
   // built from its parts: four figures around your deepest in the rune
@@ -262,20 +262,16 @@
           </div>
         </div>
 
-        <div class="medallion">
-          <ArcaneCircle size="100%" strength={0.3} />
-          <svg class="progress" viewBox="-100 -100 200 200" aria-hidden="true"><circle class="track" r="80" /></svg>
-          <div class="medal-text">
-            <span class="medal-label">Deepest</span>
-            <span class="medal-value">{best === null ? '?' : shownDepth(best)}</span>
-            {#if best}
-              <span class="medal-zone">{zoneOf(best).name}</span>
-              <span class="medal-note">{kindWord}</span>
-            {:else}
-              <span class="medal-note">{main.left ? (alone ? 'no fall yet' : 'not perished yet') : kindWord}</span>
-            {/if}
-          </div>
-        </div>
+        <CodexMedallion>
+          <span class="medal-label">Deepest</span>
+          <span class="medal-value">{best === null ? '?' : shownDepth(best)}</span>
+          {#if best}
+            <span class="medal-zone">{zoneOf(best).name}</span>
+            <span class="medal-note">{kindWord}</span>
+          {:else}
+            <span class="medal-note">{main.left ? (alone ? 'no fall yet' : 'not perished yet') : kindWord}</span>
+          {/if}
+        </CodexMedallion>
 
         <div class="side">
           <div class="stat">
@@ -471,40 +467,6 @@
     line-height: 1.3;
     font-style: italic;
     color: var(--muted);
-  }
-  /* The Collection's medallion: the rune circle round a dark disc and its track, your deepest inside. No arc: depth has no end to fill to. */
-  .medallion {
-    grid-column: 2;
-    position: relative;
-    isolation: isolate;
-    width: 240px;
-    height: 240px;
-    display: grid;
-    place-items: center;
-  }
-  .medallion :global(.arcane) {
-    z-index: -1;
-  }
-  .progress {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    overflow: visible;
-  }
-  .track {
-    fill: rgba(8, 6, 4, 0.75);
-    stroke: rgba(125, 99, 51, 0.35);
-    stroke-width: 6;
-  }
-  .medal-text {
-    position: relative;
-    width: 150px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    text-align: center;
-    line-height: 1.1;
   }
   .medal-label {
     font-family: var(--font-display);
@@ -867,11 +829,6 @@
       grid-template-columns: 1fr 1fr;
       row-gap: 1rem;
     }
-    .medallion {
-      grid-column: 1 / -1;
-      grid-row: 1;
-      justify-self: center;
-    }
     .split {
       grid-template-columns: 1fr;
     }
@@ -889,10 +846,6 @@
     }
     .stat-value {
       font-size: 1.9rem;
-    }
-    .medallion {
-      width: 210px;
-      height: 210px;
     }
     .medal-value {
       font-size: 2.8rem;
