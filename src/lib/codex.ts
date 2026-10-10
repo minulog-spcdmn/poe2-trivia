@@ -215,8 +215,8 @@ export const RECENT = 100;
 
 export const emptyCodex = (): Codex => ({ items: {}, log: [], byDifficulty: {}, fooled: {}, streak: 0, best: 0, fastest: null, byDepth: {} });
 
-const noTally = (): Tally => ({ n: 0, ok: 0 });
-const add = (t: Tally, ok: boolean): Tally => ({ n: t.n + 1, ok: t.ok + (ok ? 1 : 0) });
+export const noTally = (): Tally => ({ n: 0, ok: 0 });
+export const add = (t: Tally, ok: boolean): Tally => ({ n: t.n + 1, ok: t.ok + (ok ? 1 : 0) });
 
 /**
  * The encounter a reveal means for this device, or null when there is none.
@@ -539,6 +539,15 @@ export function recordEncounter(e: Encounter) {
   update((c) => record(c, e));
 }
 
+/**
+ * Items met outside a game (today's unique on the start page, and in "Find
+ * the art" a wrong pick, which the reveal names): seen, no answer counted.
+ */
+export function recordSeen(at: number, mode: QuestionMode, ids: string[]) {
+  // (Difficulty and race only count with an answer.)
+  update((c) => ids.reduce((x, itemId) => record(x, { at, itemId, mode, difficulty: 'custom', race: false }), c));
+}
+
 // ---- practice ----------------------------------------------------------
 
 /**
@@ -550,20 +559,37 @@ export function recordEncounter(e: Encounter) {
 const PRACTICE = 'practice';
 export const PRACTICE_KEY = storeKey(PRACTICE);
 
-/** The stored practice tally (none when there is none, or it can't be read). */
-export function loadPractice(): Tally {
-  const raw = readStored(PRACTICE);
-  if (!raw) return noTally();
+/** A stored practice tally, or null when there is none or it can't be read. */
+function parsePractice(raw: string | null): Tally | null {
+  if (!raw) return null;
   try {
-    return tally(JSON.parse(raw));
+    const v: unknown = JSON.parse(raw);
+    return isObj(v) ? tally(v) : null;
   } catch {
-    return noTally();
+    return null;
   }
 }
 
-/** Adds a practice answer (the start page's) to its tally. */
+/** The stored practice tally (none when there is none, or it can't be read). */
+export function loadPractice(): Tally {
+  return parsePractice(readStored(PRACTICE)) ?? noTally();
+}
+
+/**
+ * Adds a practice answer (the start page's) to its tally: as the codex is
+ * written, never over a tally that couldn't be read (one that read wrong is
+ * kept aside first), and when storage is full, room is made as the codex
+ * makes it, its log's older half going.
+ */
 export function recordPractice(ok: boolean) {
-  writeStored(PRACTICE, JSON.stringify(add(loadPractice(), ok)));
+  const raw = tryReadStored(PRACTICE);
+  if (raw === undefined) return;
+  const was = parsePractice(raw);
+  if (raw && !was && !makeRoom(PRACTICE, raw, CODEX_VERSION)) return;
+  const next = JSON.stringify(add(was ?? noTally(), ok));
+  if (writeStored(PRACTICE, next)) return;
+  const c = loadCodex();
+  if (c.log.length && write({ ...c, log: c.log.slice(Math.ceil(c.log.length / 2)) })) writeStored(PRACTICE, next);
 }
 
 /**
@@ -573,6 +599,7 @@ export function recordPractice(ok: boolean) {
  */
 export function resetCodex() {
   removeStored(PRACTICE);
+  clearAside(PRACTICE);
   for (const name of [CODEX, LEGACY]) {
     removeStored(name);
     clearAside(name);

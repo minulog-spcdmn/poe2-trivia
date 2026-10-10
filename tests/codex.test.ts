@@ -14,6 +14,7 @@ import {
   recordEncounter,
   loadPractice,
   recordPractice,
+  recordSeen,
   resetCodex,
   serializeCodex,
   type Codex,
@@ -502,10 +503,32 @@ test("practice answers count only in their own tally, kept apart from the codex"
   assert.deepEqual(loadPractice(), { n: 0, ok: 0 });
 });
 
-test("today's unique without its answer finds the item and counts no answer", () => {
-  recordEncounter({ at: 1000, itemId: items[0].id, mode: 'name', difficulty: 'custom', race: false });
+test("today's unique is seen, with a wrong art pick the reveal names; no answer counted", () => {
+  const [a, b] = [items[0].id, items[1].id];
+  recordSeen(1000, 'art', [a, b]);
   const c = loadCodex();
-  assert.equal(c.items[items[0].id].seen, 1);
-  assert.deepEqual([c.items[items[0].id].name, c.items[items[0].id].art], [{ n: 0, ok: 0 }, { n: 0, ok: 0 }]);
+  assert.deepEqual([c.items[a].seen, c.items[b].seen], [1, 1]);
+  assert.deepEqual([c.items[a].art, c.items[b].art], [{ n: 0, ok: 0 }, { n: 0, ok: 0 }]);
   assert.deepEqual([c.log, c.byDifficulty, c.streak], [[], {}, 0]);
+});
+
+test('a practice tally that reads wrong is kept aside, not written over unseen; one that can\'t be read isn\'t touched', () => {
+  const key = storeKey('practice');
+  store.set(key, 'not a tally');
+  recordPractice(true);
+  assert.deepEqual(loadPractice(), { n: 1, ok: 1 });
+  assert.equal(store.get(storeKey('practice.unread')), 'not a tally');
+  // A storage that throws on reading: nothing written.
+  const get = (globalThis as { localStorage: { getItem: (k: string) => string | null } }).localStorage;
+  const real = get.getItem;
+  get.getItem = (k: string) => {
+    if (k === key) throw new Error('SecurityError');
+    return real(k);
+  };
+  try {
+    recordPractice(false);
+  } finally {
+    get.getItem = real;
+  }
+  assert.deepEqual(loadPractice(), { n: 1, ok: 1 });
 });

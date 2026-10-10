@@ -126,13 +126,16 @@
       growTimer = setTimeout(() => (growingFrom = null), BADGE_IN_MS + 900);
     }
     // Into the codex: today's unique as found (its answer, one a day, isn't
-    // counted), a practice question's answer to the practice tally alone (it
-    // finds nothing: there's no end of them to be had without a game).
+    // counted), with in "Find the art" a wrong pick, which the reveal names;
+    // a practice question's answer to the practice tally alone (it finds
+    // nothing: there's no end of them to be had without a game). Which it
+    // was is settled now, not once the codex has loaded.
     const asked = q;
+    const isPractice = !!practice;
+    const pickedId = asked.options[i];
+    const seen = [asked.itemId, ...(asked.mode === 'art' && !good && pickedId && !isFake(pickedId) ? [pickedId] : [])];
     void import('../lib/codex')
-      .then(({ recordEncounter, recordPractice }) =>
-        practice ? recordPractice(good) : recordEncounter({ at, itemId: asked.itemId, mode: asked.mode, difficulty: 'custom', race: false }),
-      )
+      .then(({ recordSeen, recordPractice }) => (isPractice ? recordPractice(good) : recordSeen(at, asked.mode, seen)))
       .catch((err) => console.warn('codex', err));
     sfx(good ? 'correct' : 'wrong');
     // After the marks have rendered, so the light can find them.

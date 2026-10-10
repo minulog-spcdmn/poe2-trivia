@@ -210,7 +210,8 @@
     else go();
   }
   /** Anything to show (or erase): the tabs and the footer only come with it. */
-  const kept = $derived(stats.seen > 0 || delved);
+  // (Practice alone counts too: it can be erased like the rest.)
+  const kept = $derived(stats.seen > 0 || delved || practice.n > 0);
   const tabs = new Map<Tab, HTMLButtonElement>();
   const tabRef = (key: Tab) => (el: HTMLButtonElement) => {
     tabs.set(key, el);
