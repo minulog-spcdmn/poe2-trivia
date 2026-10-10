@@ -489,13 +489,13 @@ export function scored(pill: Element, streak = 1) {
  * and a blaze by ten.
  * Returns a handle to put it out.
  */
-export function ablaze(row: Element, heat: number, blue = burnsBlue(heat)): Handle {
+export function ablaze(row: Element, heat: number, blue = burnsBlue(heat), tint?: Vec3): Handle {
   if (!fxActive() || heat <= 0) return { stop() {} };
-  // At the very top of a streak the fire burns blue.
-  const flames = fire(row, { height: 6 + 66 * heat, intensity: 0.45 + 1.0 * heat, blue: blue ? 1 : 0 });
+  // At the very top of a streak the fire burns blue (or, `tint`, in a colour of its own).
+  const flames = fire(row, { height: 6 + 66 * heat, intensity: 0.45 + 1.0 * heat, blue: blue ? 1 : 0, tint });
   // No room for the flames (or the entry is gone): no sparks off nothing either.
   if (!isLive(flames)) return flames;
-  const sparkColors = blue ? [C.portal, C.portalPale] : [C.ember, C.gold];
+  const sparkColors: Vec3[] = tint ? [tint, [0.5 + tint[0] / 2, 0.5 + tint[1] / 2, 0.5 + tint[2] / 2]] : blue ? [C.portal, C.portalPale] : [C.ember, C.gold];
   // Sparks spat out of the fire, drifting up; slower than CALM_SPEED (lib/fx/core.ts),
   // so a fire that burns all game lets phones draw at 30fps.
   const rising = emitter(14 * heat, () =>

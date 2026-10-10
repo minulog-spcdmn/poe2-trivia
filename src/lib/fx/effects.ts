@@ -659,7 +659,7 @@ export function edgeGlow(o: { color?: Vec3; width?: number; life?: number; inten
  * ends, for as long as it's up. `height` is how tall the flames reach, px;
  * `blue` (0-1) turns it from orange to a hotter blue.
  */
-export function fire(el: Element, o: { height?: number; intensity?: number; blue?: number; fadeIn?: number } = {}): Handle {
+export function fire(el: Element, o: { height?: number; intensity?: number; blue?: number; fadeIn?: number; tint?: Vec3 } = {}): Handle {
   const radius = parseFloat(getComputedStyle(el).borderTopLeftRadius) || 0;
   const H = o.height ?? 40;
   // The quad must hold the tallest tongue (FIRE_REACH times H, above the top
@@ -679,7 +679,8 @@ export function fire(el: Element, o: { height?: number; intensity?: number; blue
     followOpacity: true,
     // It moves, but slowly enough to be drawn at 30fps (see `calm` in core.ts).
     calm: true,
-    color: [1, 1, 1],
+    // A tint burns in its own colour (its tips deep, its roots toward white) instead of orange or blue.
+    color: o.tint ?? [1, 1, 1],
     update(f, _t, age, b) {
       const above = b.h / 2 + FIRE_REACH * H;
       const below = b.h / 2 + 8;
@@ -693,6 +694,7 @@ export function fire(el: Element, o: { height?: number; intensity?: number; blue
       f.q[3] = H;
       f.q[4] = o.blue ?? 0;
       f.q[5] = -shift;
+      f.q[6] = o.tint ? 1 : 0;
       if (b.y !== placed) centre = b.y;
       b.y = placed = centre + shift;
     },
