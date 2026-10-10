@@ -145,11 +145,14 @@ function endShowing() {
  * The tab went away or came back. Away, the effects drop the showing's
  * orbits (they run their course; see setHidden in core.ts), so the showing
  * ends with them: its embers and glints would otherwise go on round a bare
- * avatar once it's back. Back, the next one comes soon.
+ * avatar once it's back. Back, the next one comes soon if none is planned
+ * (one cut short, or due while it was away); a showing planned for later
+ * keeps its time, so switching tabs doesn't bring the aura out each time.
  */
 function hiddenChanged(away: boolean) {
-  if (away) endShowing();
-  else plan(FIRST);
+  if (away) {
+    if (current) endShowing();
+  } else if (timer === undefined) plan(FIRST);
 }
 
 /**

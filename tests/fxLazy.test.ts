@@ -130,6 +130,13 @@ const { ShapeType } = await import('../src/lib/fx/renderer.ts');
 const lights = await import('../src/lib/lights.ts');
 const { buildPrograms, buildProgramsNow, setGpuCatchUp } = await import('../src/lib/fx/gl.ts');
 
+const doc = g.document as { hidden: boolean };
+/** The tab goes into the background (true) or comes back, as the page hears it. */
+const away = (hidden: boolean) => {
+  doc.hidden = hidden;
+  docOn.visibilitychange();
+};
+
 /** The effects' six programs read, a frame apart (without the backdrop: see buildPrograms). */
 const readSix = () => {
   for (let i = 0; i < 6; i++) frame();
@@ -298,11 +305,6 @@ test('what was asked for meanwhile goes on from where it would be by now; what r
 });
 
 test('in a background tab nothing runs: what would run its course is dropped, and what lasts until stopped goes on once it is back', () => {
-  const doc = g.document as { hidden: boolean };
-  const away = (hidden: boolean) => {
-    doc.hidden = hidden;
-    docOn.visibilitychange();
-  };
   try {
     const o = overlay();
     const stop = fx.startFx(o.canvas);
@@ -369,11 +371,6 @@ test('the renderer made while the tab is away does not count the time away; what
   const real = performance.now;
   let t = real.call(performance);
   performance.now = () => t;
-  const doc = g.document as { hidden: boolean };
-  const away = (hidden: boolean) => {
-    doc.hidden = hidden;
-    docOn.visibilitychange();
-  };
   try {
     const o = overlay();
     const stop = fx.startFx(o.canvas);
@@ -431,11 +428,6 @@ test('a task with a life that waited past it for the renderer is dropped, not ru
 });
 
 test('away, what is stopped goes at once; opened in a background tab, the overlay starts away and says so; unmounted, nothing counts as away', () => {
-  const doc = g.document as { hidden: boolean };
-  const away = (hidden: boolean) => {
-    doc.hidden = hidden;
-    docOn.visibilitychange();
-  };
   try {
     const heard: boolean[] = [];
     const off = fx.onFxHidden((h) => heard.push(h));
@@ -462,11 +454,6 @@ test('away, what is stopped goes at once; opened in a background tab, the overla
 });
 
 test("lights follow the tab: a moment's light and pulse go as it goes away and aren't started meanwhile; a held light stays", () => {
-  const doc = g.document as { hidden: boolean };
-  const away = (hidden: boolean) => {
-    doc.hidden = hidden;
-    docOn.visibilitychange();
-  };
   const a = new Float32Array(lights.MAX_LIGHTS * 4);
   const c = new Float32Array(lights.MAX_LIGHTS * 4);
   /** How many lights are packed now (each with its radius). */

@@ -366,15 +366,13 @@ export function flareLit(o: FlareLit): Handle {
       // with the tab away, which drops them, there is nothing left to hide: it
       // goes at once.)
       airborne = Math.max(airborne, 0.45);
-      const linger = fxHidden()
-        ? null
-        : task((dt) => {
-            airborne -= dt;
-            if (airborne > -0.1) return true;
-            covered.stop();
-            return false;
-          }, { keep: true });
-      if (!linger || !isLive(linger)) covered.stop();
+      const linger = (dt: number) => {
+        airborne -= dt;
+        if (airborne > -0.1) return true;
+        covered.stop();
+        return false;
+      };
+      if (fxHidden() || !isLive(task(linger, { keep: true }))) covered.stop();
     },
   };
 }
