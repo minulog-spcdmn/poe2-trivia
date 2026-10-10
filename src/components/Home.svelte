@@ -445,11 +445,16 @@
       {:else}
         <p class="hello">
           {known ? 'Welcome back,' : 'Welcome,'}
-          <button class="who" onclick={startRename} disabled={connecting} title="Change your name">{known || 'Exile'}.</button>
-          <button class="quill" onclick={startRename} disabled={connecting} tabindex="-1" aria-hidden="true">
-            <span class="ring"><svg viewBox="0 0 24 24"><path d="M5 19l2.5-.6L18 7.9a1.9 1.9 0 0 0-2.7-2.7L4.8 15.7 4.2 18.2zM14 6.5l3.2 3.2" /></svg></span>
-            <i>Change your name</i>
-          </button>
+          {#if invite}
+            <!-- An invite asks the name in its own row: the greeting only greets. -->
+            <span class="who">{known || 'Exile'}.</span>
+          {:else}
+            <button class="who" onclick={startRename} disabled={connecting} title="Change your name">{known || 'Exile'}.</button>
+            <button class="quill" onclick={startRename} disabled={connecting} tabindex="-1" aria-hidden="true">
+              <span class="ring"><svg viewBox="0 0 24 24"><path d="M5 19l2.5-.6L18 7.9a1.9 1.9 0 0 0-2.7-2.7L4.8 15.7 4.2 18.2zM14 6.5l3.2 3.2" /></svg></span>
+              <i>Change your name</i>
+            </button>
+          {/if}
         </p>
       {/if}
     </div>
@@ -686,7 +691,8 @@
     font: inherit;
     color: #f1d99b;
   }
-  .who:disabled {
+  .who:disabled,
+  span.who {
     cursor: default;
   }
   /* The rename affordance shows on hovering the greeting with a mouse, never at rest. */
