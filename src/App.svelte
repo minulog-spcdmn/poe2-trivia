@@ -145,15 +145,19 @@
    * While screens swap, the outgoing one fades over the incoming one in the
    * same grid cell, and neither sizes the page: both fill the window (below
    * the header, which comes or goes in the meantime) and what is longer is
-   * cut off there, out of sight anyway. So the swap never stretches the new
-   * screen or puts up a scrollbar for a moment. Once in, the screen sizes
-   * the page again (screenIn's end).
+   * cut off there, out of sight anyway. Nor does a bar docked to the bottom
+   * (lib/layout.ts) pad the page meanwhile: the lobby's arrives as it
+   * mounts, and would lift the start page's centred content as it fades.
+   * So the swap never moves, stretches or scrolls either screen. Once in,
+   * the screen sizes the page again (screenIn's end).
    */
+  let swapping = $state(false);
   function hold(node: HTMLElement, on: boolean) {
     node.style.contain = on ? 'size' : '';
     node.style.overflow = on ? 'clip' : '';
   }
   function screenOut(node: HTMLElement) {
+    swapping = true;
     hold(node, true);
     return fade(node, { duration: SCREEN_OUT_MS });
   }
@@ -171,15 +175,18 @@
   const zoom = $derived(stageZoom(winW, winH));
   $effect(() => document.documentElement.style.setProperty('--stage-zoom', String(zoom)));
   /**
-   * The header comes and goes with the start page, but only once the
-   * outgoing screen has faded: in the meantime it would push that screen
-   * down (or let it jump up) by its own height.
+   * The header and the legal links under the screen (the start page has
+   * its own) come and go with the start page, but only once the outgoing
+   * screen has faded: in the meantime they would squeeze or stretch it, and
+   * the start page's centred content would move. Its fade's end sets them
+   * (the .screen's outroend), not a timer, which a busy first frame of the
+   * new screen can beat; the timer is only a fallback.
    */
   let headerOn = $state(untrack(() => screen !== 'home'));
+  const showHeader = () => (headerOn = screen !== 'home');
   $effect(() => {
-    const want = screen !== 'home';
-    if (want === untrack(() => headerOn)) return;
-    const t = setTimeout(() => (headerOn = want), SCREEN_OUT_MS);
+    if (screen !== 'home' === untrack(() => headerOn)) return;
+    const t = setTimeout(showHeader, SCREEN_OUT_MS + 500);
     return () => clearTimeout(t);
   });
 
@@ -240,7 +247,7 @@
 
 <svelte:window bind:innerWidth={winW} bind:innerHeight={winH} />
 
-<div class="shell" data-behind-dialog bind:this={shell}>
+<div class="shell" class:swapping data-behind-dialog bind:this={shell}>
   {#if headerOn}
     <header in:fade={{ duration: 300 }} bind:offsetHeight={headerHeight}>
       <button class="brand" onclick={() => (codex ? closeCodex() : askLeave())} title={codex ? 'Back to the start' : 'Leave game'}>
@@ -359,7 +366,16 @@
 
   <main>
     {#key screen}
-      <div class="screen" in:screenIn out:screenOut onintroend={(e) => hold(e.currentTarget, false)}>
+      <div
+        class="screen"
+        in:screenIn
+        out:screenOut
+        onintroend={(e) => {
+          hold(e.currentTarget, false);
+          swapping = false;
+        }}
+        onoutroend={showHeader}
+      >
         {#if screen === 'home'}
           <Home />
         {:else if screen === 'lobby'}
@@ -378,7 +394,7 @@
     {/key}
   </main>
 
-  {#if screen !== 'home'}
+  {#if headerOn}
     <nav class="legal">
       <a href={IMPRINT_URL} target="_blank" rel="noopener">Impressum</a>
       <span aria-hidden="true">·</span>
@@ -441,6 +457,9 @@
     flex-direction: column;
     /* Room at the end for a bar fixed to the bottom of the screen (lib/layout.ts). */
     padding-bottom: var(--dock, 0px);
+  }
+  .shell.swapping {
+    padding-bottom: 0;
   }
 
   header {
