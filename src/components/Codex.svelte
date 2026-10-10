@@ -21,6 +21,7 @@
   import { ACHIEVEMENTS, ACHIEVEMENTS_KEY, WINS_KEY, checkAchievements, loadAchievements, loadWins, resetAchievements } from '../lib/achievements';
   import { announceAchievements } from '../lib/achievementToasts';
   import CodexAchievements from './CodexAchievements.svelte';
+  import { enterFullscreen } from '../lib/fullscreen';
 
   /** Svelte's transitions run whatever the system says: held still (reduced motion, or the effects off), things just appear. */
   const calm = <T extends { duration?: number; delay?: number }>(p: T): T => (motion.still ? { ...p, duration: 0, delay: 0 } : p);
@@ -187,6 +188,7 @@
     if (!known) session.delveLink = true;
     closeCodex();
     if (!known) return;
+    enterFullscreen();
     // Once the codex is closed: a game starting under it would close it a second time (App), going back twice.
     const go = () => {
       if (codexRoute.open) return;

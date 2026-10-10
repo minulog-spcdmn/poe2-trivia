@@ -506,6 +506,16 @@ closing never does. A new achievement is announced with a notice bearing its
 seal, a moment after it is earned. Once earned it stays earned. Kept in this
 browser (`src/lib/achievements.ts`); erasing the codex erases them.
 
+## Fullscreen on phones
+
+Browsers never let a page go fullscreen on its own, only from a tap, so on a
+phone or tablet the tap that starts or joins a game (Create room, Join,
+hot-seat, the codex's descent) asks for it (`src/lib/fullscreen.ts`). Not with
+a mouse, and not on iPhone, whose Safari only lets videos go fullscreen.
+Added to the home screen, the game opens as an app of its own: fullscreen on
+Android, without Safari's bars on iPhone (`appManifest` in `vite.config.ts`;
+its icons from `scripts/app-icons.mjs`). The beta installs as a separate app.
+
 ## Multiplayer
 
 - **Online (peer-to-peer):** the host creates a room and shares the 6-character

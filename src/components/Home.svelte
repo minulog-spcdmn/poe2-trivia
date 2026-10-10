@@ -16,6 +16,7 @@
   import { DELVE_LINK_PARAM } from '../lib/delveShare';
   import { wantDelveBackdrop } from '../lib/backdrop';
   import { BETA, LOCAL } from '../lib/channel';
+  import { enterFullscreen } from '../lib/fullscreen';
 
   /** Keeps a room code's letters and digits, uppercased, up to its length. */
   const cleanCode = (v: string) => v.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, CODE_LENGTH);
@@ -89,6 +90,7 @@
   function host() {
     const n = needName();
     if (!n) return;
+    enterFullscreen();
     session.host(n);
   }
 
@@ -101,6 +103,7 @@
       return;
     }
     if (invite) history.replaceState(null, '', location.pathname);
+    enterFullscreen();
     session.join(code, n);
   }
 
@@ -132,6 +135,7 @@
   }
 
   function local() {
+    enterFullscreen();
     session.startLocal();
   }
 

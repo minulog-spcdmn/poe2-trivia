@@ -60,7 +60,51 @@ function betaPages(env: Record<string, string>): Plugin {
           .replace(/\n\s*<link rel="canonical"[^>]*>/, '')
           .replace(/(property="og:url" content=")https:\/\/poe2\.quest\//, '$1https://poe2.quest/beta/')
           .replace(/((?:property="og:title"|name="twitter:title") content=")/g, '$1Beta • ')
+          .replace(/(name="apple-mobile-web-app-title" content=")/, '$1Beta • ')
       );
+    },
+  };
+}
+
+/**
+ * The web app manifest (manifest.webmanifest, linked from index.html): added
+ * to a phone's home screen, the game opens on its own, fullscreen on Android
+ * and without Safari's bars on iPhone (which shows its status bar still). The
+ * beta's is a separate app, named so, its scope its own folder. Its icons
+ * come from scripts/app-icons.mjs.
+ */
+function appManifest(env: Record<string, string>): Plugin {
+  const beta = env.VITE_CHANNEL === 'beta';
+  const manifest = JSON.stringify(
+    {
+      name: beta ? 'Beta • PoE2.Quest' : 'PoE2.Quest',
+      short_name: beta ? 'PoE2 Beta' : 'PoE2.Quest',
+      description: 'Name the unique. Path of Exile 2 trivia, alone or with friends.',
+      id: './',
+      start_url: './',
+      scope: './',
+      display: 'fullscreen',
+      background_color: '#0a0908',
+      theme_color: '#0a0908',
+      icons: [
+        { src: 'icons/app-192.png', sizes: '192x192', type: 'image/png' },
+        { src: 'icons/app-512.png', sizes: '512x512', type: 'image/png' },
+        { src: 'icons/app-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+      ],
+    },
+    null,
+    2,
+  );
+  return {
+    name: 'app-manifest',
+    configureServer(server) {
+      server.middlewares.use('/manifest.webmanifest', (_req, res) => {
+        res.setHeader('Content-Type', 'application/manifest+json');
+        res.end(manifest);
+      });
+    },
+    generateBundle() {
+      this.emitFile({ type: 'asset', fileName: 'manifest.webmanifest', source: manifest });
     },
   };
 }
@@ -201,7 +245,7 @@ export default defineConfig(({ command, mode }) => {
   return {
     // Relative base so the build works on any GitHub Pages sub-path.
     base: './',
-    plugins: [svelte(), glslMinify(), csp(env), betaPages(env), preloadFonts(), backdropSave()],
+    plugins: [svelte(), glslMinify(), csp(env), betaPages(env), appManifest(env), preloadFonts(), backdropSave()],
     css: { postcss: { plugins: [hoverOnlyWhereHoverable] } },
     build: {
       rollupOptions: {
