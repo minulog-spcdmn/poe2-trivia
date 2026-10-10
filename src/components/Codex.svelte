@@ -361,9 +361,11 @@
               <button class="cat" class:on={only === c.category} aria-pressed={only === c.category} onclick={() => showCategory(c.category)} title="Show {c.category}">
                 <span class="cat-name">
                   {@render glyph(c.category)}
-                  <span class="bar-name">{c.category}</span>
+                  <span class="cat-label">
+                    <span class="bar-name">{c.category}</span>
+                    <span class="found" title="{c.seen} of {c.total} discovered">({c.seen}/{c.total})</span>
+                  </span>
                 </span>
-                <span class="found" title="{c.seen} of {c.total} discovered">{c.seen}/{c.total}</span>
                 {@render meter(c, c.category)}
                 <span class="bar-value">{c.n ? pct(c) : ''}</span>
               </button>
@@ -826,9 +828,9 @@
     align-items: center;
     gap: 0.7rem;
   }
-  /* The header and each category share the same columns: name, found, accuracy bar and figure. */
+  /* The header and each category share the same columns: name (with how many are found), accuracy bar and figure. */
   .by-cat {
-    --cols: minmax(0, 1fr) 3.2rem minmax(40px, 9rem) 2.8rem;
+    --cols: minmax(0, 1fr) minmax(40px, 9rem) 2.8rem;
   }
   .bars.cats {
     gap: 0.1rem;
@@ -852,10 +854,10 @@
     column-gap: 0.7rem;
   }
   .cat-cols h2 {
-    grid-column: 1 / 3;
+    grid-column: 1;
   }
   .col-label {
-    grid-column: 3 / 5;
+    grid-column: 2 / 4;
     justify-self: end;
     font-family: var(--font-display);
     font-size: 0.72rem;
@@ -882,10 +884,11 @@
     font-size: 0.85rem;
   }
   .found {
+    flex: none;
     font-family: var(--font-cinzel);
     font-size: 0.8rem;
     color: var(--muted);
-    text-align: right;
+    white-space: nowrap;
   }
   .cat {
     width: calc(100% + 1.2rem);
@@ -903,6 +906,15 @@
     display: flex;
     align-items: center;
     gap: 0.55rem;
+    min-width: 0;
+    /* Keeps the count further from the bar than the accuracy figure on the bar's other side. */
+    padding-right: 0.9rem;
+  }
+  /* The name and its count share a baseline, though their fonts differ. */
+  .cat-label {
+    display: flex;
+    align-items: baseline;
+    gap: 0.35rem;
     min-width: 0;
   }
   .cat:hover {
@@ -1458,7 +1470,7 @@
       gap: 0.5rem;
     }
     .by-cat {
-      --cols: minmax(0, 1fr) 2.8rem minmax(30px, 4rem) 2.6rem;
+      --cols: minmax(0, 1fr) minmax(30px, 3.2rem) 2.6rem;
     }
     .cat,
     .panel header.cat-cols {
