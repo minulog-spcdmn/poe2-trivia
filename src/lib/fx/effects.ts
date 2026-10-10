@@ -688,6 +688,73 @@ export function edgeHit(o: { color?: Vec3; width?: number; intensity?: number } 
   });
 }
 
+/** Linear between keyframes ([seconds, value], in order), held past the last. */
+function keyed(keys: [number, number][], at: number) {
+  if (at <= keys[0][0]) return keys[0][1];
+  for (let i = 1; i < keys.length; i++) {
+    const [t1, v1] = keys[i];
+    if (at <= t1) {
+      const [t0, v0] = keys[i - 1];
+      return v0 + (v1 - v0) * ((at - t0) / (t1 - t0));
+    }
+  }
+  return keys[keys.length - 1][1];
+}
+
+/**
+ * Delve: your Azurite Ward takes a loss, at the screen's edges as its sound
+ * goes (wardShatter: a bell struck, its crystal shimmer brightest at about
+ * 0.12 s; a low swell building to 0.4 s and cut off; a ring of metal dying
+ * away by about 1.1 s): a crisp azurite catch along the edges with the
+ * strike, then the clock's kind of smoke in azurite, magic rather than
+ * dark, pressing in with the swell, dropping as it is cut, and a faint haze
+ * fading out with the ring.
+ */
+export function edgeWard(o: { color?: Vec3; width?: number; intensity?: number } = {}) {
+  const pattern = Math.random() * 100;
+  // The sound's loudness, as the smoke follows it (0-1).
+  const SMOKE: [number, number][] = [
+    [0, 0],
+    [0.04, 0.45],
+    [0.12, 0.6],
+    [0.2, 0.55],
+    [0.4, 1],
+    [0.44, 0.9],
+    [0.5, 0.35],
+    [0.8, 0.15],
+    [1.15, 0],
+  ];
+  // The strike and its shimmer, on the edge's hot line.
+  const STRIKE: [number, number][] = [
+    [0, 0],
+    [0.02, 0.7],
+    [0.12, 1],
+    [0.22, 0],
+  ];
+  return shape({
+    type: ShapeType.Edge,
+    at: { x: innerWidth / 2, y: innerHeight / 2 },
+    life: 1.2,
+    color: o.color ?? C.azurite,
+    update(f, _t, age, b) {
+      b.x = innerWidth / 2;
+      b.y = innerHeight / 2;
+      f.hw = innerWidth / 2;
+      f.hh = innerHeight / 2;
+      const strike = keyed(STRIKE, age);
+      f.k = (o.intensity ?? 0.14) * Math.max(keyed(SMOKE, age), 0.8 * strike);
+      f.q[0] = (o.width ?? 70) * edgeScale();
+      f.q[1] = 0.6;
+      f.q[2] = 1;
+      f.q[3] = pattern;
+      f.q[4] = 0.8 * strike;
+      f.q[5] = age;
+      f.q[6] = 0.3;
+      f.q[7] = 0.6;
+    },
+  });
+}
+
 /**
  * One beat of red smoke at the screen's edges, as the clock ticks: up at
  * once and swelling down with the tick's sound, then lingering faintly into

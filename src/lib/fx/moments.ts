@@ -9,6 +9,7 @@ import {
   edgeGlow,
   edgeBeat,
   edgeHit,
+  edgeWard,
   embers,
   emitter,
   fire,
@@ -808,9 +809,9 @@ export function wardShattered(pip: Element, pill: Element, mine: boolean) {
   if (!detached(pill)) outline(pill, { color: k3(C.azurite, 0.8), width: 8, life: 0.8, intensity: 0.45 });
 }
 
-/** The cold-blue flash at the screen's edges as your ward takes a loss: the red one of a wrong answer (reveal), in azurite. */
+/** Your ward takes a loss: azurite smoke at the screen's edges, with its sound (edgeWard), and the scene lit blue. */
 function wardedEdge() {
-  edgeHit({ color: C.azurite, intensity: 0.06, width: 50 });
+  edgeWard();
   pulseMood(0.16, [0.3, 0.55, 1]);
 }
 
