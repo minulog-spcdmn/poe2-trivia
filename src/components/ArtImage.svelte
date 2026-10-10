@@ -8,8 +8,8 @@
   // between items, so its own size says nothing about how big to draw it.
   // It fades in once its first file has loaded, so a large one never draws in
   // bit by bit; a picture swapped in later (the original art at the reveal)
-  // fades in over it. `unflip` starts it mirrored (as it was shown during the question) and
-  // turns it round.
+  // fades in over it. `unflip` starts it mirrored (as it was shown during the
+  // question) and turns it round.
   let {
     src,
     alt = '',
