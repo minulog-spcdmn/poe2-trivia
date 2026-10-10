@@ -50,7 +50,7 @@
       </p>
 
       <h2>4. Online-Spiel: Verbindungsaufbau (PeerJS, STUN/TURN)</h2>
-      <p>Nur wenn Sie einen Online-Raum eröffnen, ihm beitreten oder die Liste offener Räume ansehen:</p>
+      <p>Nur wenn Sie einen Online-Raum eröffnen, ihm beitreten, einen Einladungslink öffnen oder die Liste offener Räume ansehen:</p>
       <ul>
         <li>
           <strong>Vermittlungsserver:</strong> Damit sich Geräte finden, wird der öffentliche Vermittlungsserver des
@@ -71,7 +71,9 @@
         <li>
           <strong>Direkte Verbindung zu Mitspielenden (WebRTC):</strong> Die Geräte im selben Raum verbinden sich direkt
           miteinander. <strong>Dadurch können alle Personen im Raum, insbesondere der Host, Ihre IP-Adresse sehen.</strong>
-          Darauf weist das Spiel auch in der Lobby und in der Raumliste hin.
+          Darauf weist das Spiel auch in der Lobby und in der Raumliste hin. Öffnen Sie einen Einladungslink, fragt Ihr
+          Browser den Raum direkt, wem er gehört und wie er steht; schon dabei kann der Host Ihre IP-Adresse sehen. Darauf
+          weist die Einladung hin.
         </li>
       </ul>
       <p>
@@ -159,6 +161,8 @@
             <strong>Online play only:</strong> the PeerJS matchmaking server (0.peerjs.com), Google's STUN server
             (stun.l.google.com) and, if needed, PeerJS relay servers (TURN) process your IP address to connect players.
             Players connect directly, so <strong>everyone in a room, especially the host, can see your IP address</strong>.
+            Opening an invite link asks the room directly whose it is and how it stands, so its host can see your IP address
+            from then on.
             Hot-seat mode on one device avoids all of this.
           </li>
           <li>

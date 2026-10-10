@@ -88,3 +88,26 @@ export function roomMeta(r: RoomInfo): string {
   else how = 'in a game';
   return [MODE_NAMES[r.mode], how, `${r.players}/${r.maxPlayers}`].filter(Boolean).join(' · ');
 }
+
+/** What an invite link's room said when asked (lib/rooms.ts probeRoom): its info, 'gone', null for no answer, undefined while asking. */
+export type InviteAnswer = RoomInfo | 'gone' | null | undefined;
+
+/**
+ * The invite screen's line under the party, from what the room said: how
+ * it stands, and whether joining can work. `warn` when it can't (or not as
+ * a player straight away).
+ */
+export function inviteLine(a: InviteAnswer): { text: string; warn: boolean; waiting?: boolean } {
+  if (a === undefined) return { text: 'Asking the room…', warn: false, waiting: true };
+  if (a === 'gone') return { text: 'No room has this code now; the host may have closed it.', warn: true };
+  if (a === null) return { text: 'The rest of the party shows once you are in.', warn: false };
+  const v = a.v ?? 0;
+  if (v < PROTOCOL_VERSION) return { text: 'The host is on an older version of the game; they need to reload before you can join.', warn: true };
+  if (v > PROTOCOL_VERSION) return { text: 'This room is on a newer version of the game; reload this page to join.', warn: true };
+  if (a.phase === 'locked') return { text: 'The room is locked; nobody new can join it now.', warn: true };
+  if (a.phase !== 'lobby') return { text: 'A game is under way; you watch it, and play in the next.', warn: true };
+  if (a.players >= a.maxPlayers) return { text: 'Every seat is taken; you watch until one is free.', warn: true };
+  const others = a.players - 1;
+  if (others < 1) return { text: 'Nobody else is in yet.', warn: false };
+  return { text: `${others} more ${others === 1 ? 'exile is' : 'exiles are'} in; you see them once you are in.`, warn: false };
+}

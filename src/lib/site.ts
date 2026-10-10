@@ -14,15 +14,14 @@ export const IMPRINT_URL = './impressum.html';
 export const PRIVACY_URL = './datenschutz.html';
 export const DONATE_URL = 'https://paypal.me/minuW';
 
-/**
- * Invite link for a room (the dev server, and any local build, point to where
- * they are: their rooms are only there). With the host's name (`by`), the
- * invite screen can say whose room it leads to.
- */
-export function inviteUrl(code: string, by?: string) {
+/** Invite link for a room (the dev server, and any local build, point to where they are: their rooms are only there). */
+export function inviteUrl(code: string) {
   const base = (import.meta as ImportMeta & { env?: { DEV?: boolean } }).env?.DEV || LOCAL ? `${location.origin}${location.pathname}` : PLAY_URL;
-  return `${base}?room=${code}` + (by ? `&by=${encodeURIComponent(by)}` : '');
+  return `${base}?room=${code}`;
 }
 
-/** Said wherever joining a room is decided (the lobby, the invite screen): what joining shares. */
+/** Said where joining a room is decided (the lobby): what joining shares. */
 export const IP_NOTE = "Players in a room connect directly, so they can see each other's IP address. Only play with people you're comfortable sharing that with.";
+/** The invite screen's: it has already asked the room (lib/rooms.ts probeRoom), which the host saw. */
+export const INVITE_IP_NOTE =
+  "To show this room, your browser asked its host directly, so the host can see your IP address. Players in a room connect directly, so everyone in it can see each other's. Only play with people you're comfortable sharing that with.";

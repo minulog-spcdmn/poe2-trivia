@@ -513,12 +513,18 @@ browser (`src/lib/achievements.ts`); erasing the codex erases them.
   ([PeerJS](https://peerjs.com/)). The host's browser runs the game and
   everyone else sees the same state live. Only the free PeerJS cloud is used,
   to introduce the players to each other.
-  - The invite link (`?room=CODE&by=HOST`) says whose room it is. Opened by
+  - An invite link (`?room=CODE`) carries only the room's code. Opened by
     someone who has never played, the start page shows it with the choice
     made: "Join <host>'s room" with a name field, and the room as the
     lobby will show it (its code, the host's chip, theirs filling in as they
-    type). Anyone with a saved name joins straight away; if the room is gone
-    or full they stay on the start page with the code in Join a room.
+    type). Whose room it is, how many are in and whether it can be joined
+    (locked, full, playing, gone, another version) the room says itself:
+    the screen asks it on opening, as the room list asks public rooms
+    (`probeRoom`, answered by `ProbeDesk` in `src/lib/probeDesk.ts`), so
+    no link can name a host it doesn't have. Asking connects to the host,
+    which then sees the visitor's IP address, and the screen says so.
+    Anyone with a saved name joins straight away; if the room is gone or
+    full they stay on the start page with the code in Join a room.
   - Players who refresh or drop out rejoin automatically. Outside Delve, the
     host can skip the turn of a player who is disconnected. Opening the same room in a
     second tab moves your seat there, and the first tab lets it go.

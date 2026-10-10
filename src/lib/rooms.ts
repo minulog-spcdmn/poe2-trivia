@@ -10,7 +10,9 @@ import Peer, { type DataConnection } from 'peerjs';
 import { PEER_OPTIONS, PEER_PREFIX } from './peer';
 
 export { parseRoomInfo, wireRoomInfo, type RoomInfo } from './roomInfo';
-import { parseRoomInfo, wireRoomInfo, type RoomInfo } from './roomInfo';
+export { ProbeDesk, isProbe } from './probeDesk';
+import { parseRoomInfo, type RoomInfo } from './roomInfo';
+import { ProbeDesk } from './probeDesk';
 
 const BATCH = 10;
 /** Slots up to this are scanned at full speed; later batches wait a little. */
@@ -19,13 +21,12 @@ const SLOW_BATCH_DELAY_MS = 800;
 // The signalling server reports a free slot only after its message expiry
 // (~5s), so give real rooms comfortably longer than that to answer.
 const PROBE_TIMEOUT_MS = 9000;
+/** How long an invite's probe waits for the signalling server before it gives up (probeRoom). */
+const PROBE_OPEN_TIMEOUT_MS = 8000;
 /** Hard stop, even if someone fills every slot with junk. */
 const MAX_SLOTS = 300;
 /** Most rooms we'll list. */
 export const MAX_LISTED = 60;
-/** Beacon: probes answered at once / per 10 seconds before refusing more. */
-const BEACON_MAX_OPEN = 8;
-const BEACON_MAX_PER_10S = 60;
 const COMPACT_EVERY_MS = 30000;
 
 export const slotId = (n: number) => `${PEER_PREFIX}pub-${n}`;
@@ -125,6 +126,30 @@ export async function scanRooms(onRoom: (room: RoomInfo) => void, cancelled: () 
 }
 
 /**
+ * Asks a room, by its code, what it is (an invite link's screen: whose room,
+ * how many are in, and whether it can be joined): its info, 'gone' when no
+ * room has the code, or null when it doesn't answer (a host on a version
+ * that doesn't answer probes yet, or no connection). Connecting shares this
+ * browser's IP address with the host, as the room list's probes do.
+ */
+export async function probeRoom(code: string): Promise<RoomInfo | 'gone' | null> {
+  // A signalling server that never answers (blocked, offline) gives no error
+  // for a long while: past this, the room is taken as not answering.
+  const opening = openPeer();
+  const peer = await Promise.race([opening.catch(() => null), sleep(PROBE_OPEN_TIMEOUT_MS).then(() => null)]);
+  if (!peer) {
+    void opening.then((late) => late.destroy(), () => {});
+    return null;
+  }
+  try {
+    const r = await new Prober(peer).probe(PEER_PREFIX + code);
+    return r === 'free' ? 'gone' : r;
+  } finally {
+    peer.destroy();
+  }
+}
+
+/**
  * Keeps a hosted room listed: holds the lowest free listing slot, answers
  * probes with fresh room info and moves down when a lower slot frees up.
  */
@@ -197,36 +222,8 @@ export class Beacon {
     this.prober = new Prober(peer);
     this.slot = slot;
     old?.destroy();
-    let open = 0;
-    let recent: number[] = [];
-    peer.on('connection', (conn) => {
-      const now = Date.now();
-      recent = recent.filter((t) => now - t < 10000);
-      if (open >= BEACON_MAX_OPEN || recent.length >= BEACON_MAX_PER_10S) {
-        conn.on('open', () => conn.close());
-        return;
-      }
-      open++;
-      recent.push(now);
-      let counted = true;
-      const release = () => {
-        if (counted) open--;
-        counted = false;
-      };
-      conn.on('close', release);
-      conn.on('error', release);
-      // Never keep a probe around for long, even if it never opens.
-      setTimeout(() => {
-        conn.close();
-        release();
-      }, 4000);
-      // Probes only need to listen; anything they send is ignored.
-      conn.on('open', () => {
-        const room = this.info();
-        if (room) conn.send({ t: 'info', room: wireRoomInfo(room) });
-        setTimeout(() => conn.close(), 2000);
-      });
-    });
+    const desk = new ProbeDesk(this.info);
+    peer.on('connection', (conn) => desk.answer(conn));
     peer.on('disconnected', () => {
       if (!peer.destroyed && this.peer === peer) setTimeout(() => !peer.destroyed && peer.reconnect(), 2000);
     });

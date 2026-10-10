@@ -1,18 +1,22 @@
 <script lang="ts">
   // An invite link's room, in the start page's right-hand column: the room
   // as the lobby will show it, so arriving and joining look like one place.
-  // The link knows the code and (if the host's build adds it) the host's
-  // name; nothing else can be known without connecting, and connecting
-  // shares the player's IP, so nothing else is shown. The chips are unlit:
-  // a player's colour is given by the room once they are in.
+  // What it shows is the room's own word, asked when the screen opened
+  // (lib/rooms.ts probeRoom): its host, how many are in, and whether it can
+  // be joined. Nothing a link says about a room is taken on trust. The chips
+  // are unlit: a player's colour is given by the room once they are in.
+  import { fade } from 'svelte/transition';
   import { initialOf } from '../lib/names';
-  import { IP_NOTE } from '../lib/site';
+  import { inviteLine, type InviteAnswer } from '../lib/roomInfo';
+  import { INVITE_IP_NOTE } from '../lib/site';
   import HostMark from './HostMark.svelte';
   import RoomCodeGlyphs from './RoomCodeGlyphs.svelte';
 
-  let { code, host, name }: { code: string; host: string; name: string } = $props();
+  let { code, info, name }: { code: string; info: InviteAnswer; name: string } = $props();
 
   const mine = $derived(name.trim());
+  const host = $derived(info && info !== 'gone' ? info.host : '');
+  const line = $derived(inviteLine(info));
 </script>
 
 <div class="invite-room">
@@ -25,11 +29,14 @@
     <header><h2>Party</h2></header>
     <ul class="chips">
       {#if host}
-        <li>
+        <li in:fade={{ duration: 250 }}>
           <span class="orb" aria-hidden="true">{initialOf(host)}</span>
           <span class="name">{host}</span>
           <HostMark />
         </li>
+      {:else if line.waiting}
+        <!-- The host's place, while the room is asked whose it is. -->
+        <li class="asking" aria-hidden="true"><span class="orb"></span><span class="name">Host</span></li>
       {/if}
       <!-- Your chip, as it will stand beside the host's: it takes your name as you write it. -->
       <li class="you" class:empty={!mine}>
@@ -37,11 +44,13 @@
         <span class="name">{#if mine}{mine}<em>&nbsp;(you)</em>{:else}You{/if}</span>
       </li>
     </ul>
-    <p class="hint">The rest of the party shows once you are in.</p>
+    {#key line.text}
+      <p class="hint" class:warn={line.warn} role="status" in:fade={{ duration: 250 }}>{#if line.waiting}<span class="pulse" aria-hidden="true"></span>{/if}{line.text}</p>
+    {/key}
   </section>
 
   <!-- The same words as the lobby's, said where joining is decided. -->
-  <p class="ip-note">{IP_NOTE}</p>
+  <p class="ip-note">{INVITE_IP_NOTE}</p>
 </div>
 
 <style>
@@ -137,10 +146,45 @@
     color: var(--muted);
   }
   .hint {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
     margin: 0.8rem 0 0;
     font-size: 0.95rem;
     font-style: italic;
     color: #ab9d88;
+  }
+  /* Joining won't work as it stands (or not as a player at once). */
+  .hint.warn {
+    color: #e0a48f;
+  }
+  /* Asked: a beat while the room answers. */
+  .pulse {
+    flex: none;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--gold);
+    animation: pulse 1.2s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    50% {
+      opacity: 0.25;
+    }
+  }
+  .asking {
+    border-style: dashed;
+    border-color: rgba(125, 99, 51, 0.6);
+    animation: pulse 1.6s ease-in-out infinite;
+  }
+  .asking .orb {
+    background: none;
+    box-shadow: none;
+    border: 1px dashed var(--gold-lo);
+  }
+  .asking .name {
+    font-style: italic;
+    color: var(--muted);
   }
   .ip-note {
     margin: 0;

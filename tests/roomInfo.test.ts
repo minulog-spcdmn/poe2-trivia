@@ -62,3 +62,17 @@ test("a listed room's line tells its mode and how it plays, and a Delve run its 
   assert.equal(roomMeta(room({ mode: 'delve', phase: 'locked', depth: 15 })), 'Delve · depth 14 · 3/12');
   assert.equal(roomMeta(room({ mode: 'delve', phase: 'over', depth: 1 })), 'Delve · depth 0 · 3/12', 'a finished run is not waiting at the entrance');
 });
+
+test("the invite screen says how the room stands, from what the room said", async () => {
+  const { inviteLine } = await import('../src/lib/roomInfo.ts');
+  const { PROTOCOL_VERSION } = await import('../src/lib/protocol.ts');
+  const room = (o: Partial<RoomInfo>): RoomInfo => ({ code: 'KXR4QT', host: 'Una', players: 3, maxPlayers: 12, spectators: 0, maxSpectators: 12, mode: 'turns', difficulty: 'cruel', target: 10, phase: 'lobby', v: PROTOCOL_VERSION, ...o });
+  assert.deepEqual(inviteLine(undefined), { text: 'Asking the room…', warn: false, waiting: true });
+  assert.equal(inviteLine('gone').warn, true);
+  assert.equal(inviteLine(null).warn, false, 'no answer (an older host): nothing claimed either way');
+  assert.equal(inviteLine(room({})).text, '2 more exiles are in; you see them once you are in.');
+  assert.equal(inviteLine(room({ players: 2 })).text, '1 more exile is in; you see them once you are in.');
+  assert.equal(inviteLine(room({ players: 1 })).text, 'Nobody else is in yet.');
+  for (const o of [{ phase: 'locked' }, { phase: 'question' }, { players: 12 }, { v: PROTOCOL_VERSION - 1 }, { v: PROTOCOL_VERSION + 1 }, { v: undefined }] as Partial<RoomInfo>[])
+    assert.equal(inviteLine(room(o)).warn, true, JSON.stringify(o));
+});

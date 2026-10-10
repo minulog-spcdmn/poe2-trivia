@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy, tick, untrack } from 'svelte';
   import { fade, fly } from 'svelte/transition';
-  import { NAME_TOO_SHORT, MAX_NAME, cleanName, isHeldName, nameHeld, nameTooShort, unlockHeldName } from '../lib/names';
+  import { NAME_TOO_SHORT, MAX_NAME, nameHeld, nameTooShort, unlockHeldName } from '../lib/names';
   import { toasts } from '../lib/toasts.svelte';
   import { engine, session, savedName, saveName, CODE_LENGTH } from '../lib/session.svelte';
   import { CREATOR, CREATOR_URL, DONATE_URL, IMPRINT_URL, PRIVACY_URL } from '../lib/site';
@@ -19,6 +19,7 @@
   import InviteRoom from './InviteRoom.svelte';
   import MenuCursor from './MenuCursor.svelte';
   import OpenRooms from './OpenRooms.svelte';
+  import { probeRoom, type RoomInfo } from '../lib/rooms';
 
   /** Keeps a room code's letters and digits, uppercased, up to its length. */
   const cleanCode = (v: string) => v.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, CODE_LENGTH);
@@ -26,16 +27,6 @@
   const params = new URLSearchParams(location.search);
   /** An invite link's room (?room=CODE): the start page shows it until it is joined or left. */
   let invite = $state(cleanCode(params.get('room') ?? ''));
-  /**
-   * Who sent it (?by=NAME, added by the lobby's invite link), so the screen
-   * can say whose room it is. Anyone can write a link, so it is cleaned as
-   * every name is (no bidi overrides, zalgo or invisible characters), and
-   * the held name is never taken from one: the game only gives it to its
-   * owner's unlocked device, which a link can't show. (The room's real host
-   * is in the lobby once joined.)
-   */
-  const linkedHost = cleanName(params.get('by'));
-  const inviteHost = isHeldName(linkedHost) ? '' : linkedHost;
   if (params.has('owner')) {
     void unlockHeldName(params.get('owner') ?? '');
     // Out of the address bar and history either way; other params stay.
@@ -355,6 +346,9 @@
   // the one room to join (and a way to everything else), the right-hand
   // column the room as the lobby will show it (InviteRoom).
   let inviteName = $state(savedName());
+  /** What the room said when asked: its info, 'gone', null (no answer), or undefined while asking. */
+  let inviteInfo = $state<RoomInfo | 'gone' | null | undefined>(undefined);
+  const inviteHost = $derived(inviteInfo && inviteInfo !== 'gone' ? inviteInfo.host : '');
   let inviteField = $state<HTMLInputElement>();
   function joinInvite(e?: Event) {
     e?.preventDefault();
@@ -365,6 +359,7 @@
   function leaveInvite() {
     const url = new URL(location.href);
     url.searchParams.delete('room');
+    // Older invite links named their host (?by=): the room says that now.
     url.searchParams.delete('by');
     history.replaceState(history.state, '', url);
     invite = '';
@@ -385,6 +380,13 @@
     cursor = ENTRIES.indexOf('join');
     setTimeout(() => {
       if (session.status === 'idle' && !session.state) startJoin(code, name);
+    });
+  } else if (opened.code) {
+    // A first visit: the room is asked whose it is and how it stands, so the
+    // screen shows the room as it is (nothing a link says about it is taken
+    // on trust). Undefined while it is asked (lib/rooms.ts probeRoom).
+    void probeRoom(opened.code).then((r) => {
+      if (invite === opened.code) inviteInfo = r;
     });
   }
 
@@ -530,7 +532,7 @@
 
   <div class="today" in:fade={{ duration: 900, delay: 300 }}>
     {#if invite}
-      <InviteRoom code={invite} host={inviteHost} name={inviteName} />
+      <InviteRoom code={invite} info={inviteInfo} name={inviteName} />
     {:else}
       <DailyUnique disabled={connecting} />
     {/if}
