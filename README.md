@@ -650,15 +650,18 @@ third-party service.
 
 ```sh
 npm install
-npm run dev        # local dev server
+npm run dev        # local dev server (its own rooms)
+npm run dev:live   # local dev server in the live rooms
 npm test           # game-engine tests
 npm run check      # svelte/type checks
 npm run build      # production build in dist/
 ```
 
-The dev server's rooms and open-room list are its own (`src/lib/channel.ts`),
-as the beta's are: a tab on localhost never meets the live game. Run
-`VITE_CHANNEL=live npm run dev` to play against the live rooms instead.
+The dev server plays in a channel of its own (`src/lib/channel.ts`), as the
+beta does: its rooms and open-room list are this machine's alone, so a tab on
+localhost never meets the live game or anyone else's dev server, and it keeps
+its own storage. It says Local next to the title. Run `npm run dev:live` to
+play in the live rooms instead.
 
 Stack: Svelte 5, TypeScript, Vite, PeerJS. Sound effects are layered CC0
 recordings from [Freesound](https://freesound.org) plus a quiet ambience loop

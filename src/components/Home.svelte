@@ -15,7 +15,7 @@
   import { openCodex } from '../lib/codexRoute.svelte';
   import { DELVE_LINK_PARAM } from '../lib/delveShare';
   import { wantDelveBackdrop } from '../lib/backdrop';
-  import { BETA } from '../lib/channel';
+  import { BETA, LOCAL } from '../lib/channel';
 
   /** Keeps a room code's letters and digits, uppercased, up to its length. */
   const cleanCode = (v: string) => v.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, CODE_LENGTH);
@@ -188,8 +188,8 @@
         />
       {/each}
     </div>
-    {#if BETA}
-      <p class="beta" in:fade={{ duration: 600, delay: 100 }}>Beta</p>
+    {#if BETA || LOCAL}
+      <p class="beta" in:fade={{ duration: 600, delay: 100 }}>{BETA ? 'Beta' : 'Local'}</p>
     {/if}
     <p class="kicker" in:fly={{ y: -10, duration: 600, delay: 100 }}>Unique Item Trivia</p>
     <h1 use:glinting in:fly={{ y: 20, duration: 800, delay: 200 }}>
@@ -409,7 +409,7 @@
     }
   }
 
-  /* Marks the beta build (poe2.quest/beta/) so testers know where they are. */
+  /* Marks the beta build (poe2.quest/beta/), or the dev server's own rooms (Local), so testers know where they are. */
   .beta {
     position: relative;
     display: inline-block;
