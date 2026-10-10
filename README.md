@@ -535,8 +535,8 @@ browser (`src/lib/achievements.ts`); erasing the codex erases them.
     game, shown as the system cursor so it never lags (`src/lib/ownCursor.ts`).
     It has its states, the others' included: over anything that can be
     clicked, a demon's clawed hand pointing, seen a little from the side;
-    while the button is held, the dart or the hand sinks, its hatched side
-    or the pointing finger struck solid; on
+    while the button is held, the dart sinks a little as it is, and the
+    hand pushes its finger into the page, struck solid; on
     something disabled, dull lead with a saltire. Text fields get an
     engraved I-beam. With Windows' high contrast on, the system's own
     cursors come back. Text fields don't offer autofill, and a right click

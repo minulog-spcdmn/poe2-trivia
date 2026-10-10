@@ -127,8 +127,8 @@ function apply() {
     for (const v of VARS) root.removeProperty(v);
     return;
   }
-  // Over something that can be clicked, the hand; pressed, the dart or the hand sinks.
-  root.setProperty('--cursor', pressed ? cursorValue('sink', 'press', color, 'default') : cursorValue('rest', 'rest', color, 'default'));
+  // Over something that can be clicked, the hand; pressed, the dart sinks as it is, the hand's finger pushes in.
+  root.setProperty('--cursor', cursorValue(pressed ? 'sink' : 'rest', 'rest', color, 'default'));
   root.setProperty('--cursor-pointer', pressed ? cursorValue('press', 'press', color, 'pointer') : cursorValue('hover', 'lit', color, 'pointer'));
   root.setProperty('--cursor-disabled', cursorValue('disabled', 'dull', color, 'not-allowed'));
   root.setProperty('--cursor-text', cursorValue('text', 'rest', color, 'text'));

@@ -240,14 +240,13 @@
     <div class="cursor" bind:this={els[c.key]} style:--c={c.color}>
       <!-- The dart (lib/pointerArt.ts) with its tip on the spot: a dark rim and ground, a glow under the lines. -->
       <!-- The dart (lib/pointerArt.ts) with its tip on the spot: a dark rim and ground, a glow under the lines.
-           Over a button, the hand pointing instead; pressed (or a tap), the dart sinks, its hatched side struck solid,
+           Over a button, the hand pointing instead; pressed (or a tap), the dart sinks a little as it is,
            and the hand pushes its finger into the page, foreshortened and struck solid. -->
       <svg class="dart" viewBox="{-PAD_X} {-PAD_Y} {SIZE[0]} {SIZE[1]}" width={SIZE[0]} height={SIZE[1]}>
         <g class="body">
           <path class="ground" d={POINTER.outline} stroke-width={WEIGHT.rim} />
           <path class="glow" d={POINTER.outline} />
           <path class="wash" d={POINTER.outline} />
-          <path class="side" d={POINTER.side} />
           <path class="line" d={POINTER.outline} stroke-width={WEIGHT.outline} />
           <path class="line ridge" d={POINTER.ridge} stroke-width={WEIGHT.ridge} />
           <path class="line hatch" d={POINTER.hatch} stroke-width={WEIGHT.hatch} />
@@ -318,15 +317,13 @@
     transition: opacity 0.15s;
   }
   /* Over something that can be clicked: gilded, the lines struck paler and glowing brighter. */
-  .cursor:global(.lit) .line,
-  .cursor:global(.pressed) .line {
+  .cursor:global(.lit) .line {
     stroke: color-mix(in srgb, var(--c), #fff4e0 35%);
   }
   .cursor:global(.lit) .wash {
     opacity: 0.2;
   }
-  .cursor:global(.lit) .glow,
-  .cursor:global(.pressed) .glow {
+  .cursor:global(.lit) .glow {
     opacity: 0.5;
     stroke-width: 2.6;
   }
@@ -340,7 +337,7 @@
   .cursor:global(.lit.pressed) .hand.down {
     display: inline;
   }
-  /* The button held, or a tap: the dart sinks about its tip, its hatched side struck solid. */
+  /* The button held, or a tap: the dart sinks a little about its tip, as it is otherwise. */
   /* Sharp claws would throw long mitres: the hand's corners are rounded. */
   .hand {
     stroke-linejoin: round;
@@ -349,26 +346,12 @@
     transform-origin: 0 0;
     transition: transform 0.12s var(--ease-out);
   }
-  .side,
   .talon {
     fill: color-mix(in srgb, var(--c), #fff4e0 35%);
-  }
-  .side {
-    opacity: 0;
   }
   .cursor:global(.pressed) .body,
   .cursor:global(.tap) .body {
     transform: scale(var(--press));
-  }
-  .cursor:global(.pressed) .side,
-  .cursor:global(.tap) .side {
-    opacity: 1;
-  }
-  .cursor:global(.pressed) .body .hatch,
-  .cursor:global(.pressed) .ridge,
-  .cursor:global(.tap) .body .hatch,
-  .cursor:global(.tap) .ridge {
-    opacity: 0;
   }
   /* Smaller on phones, so they cover less of the answers. */
   @media (max-width: 640px) {

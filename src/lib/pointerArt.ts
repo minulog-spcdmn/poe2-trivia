@@ -6,7 +6,7 @@
 // Its other states are drawn alike, each telling itself by its shape as well
 // as its light: over something that can be clicked, a demon's clawed hand
 // pointing (the system's pointer, engraved); pressed, the dart or the hand
-// sinks, the dart's hatched side or the hand's finger struck solid;
+// sinks (the dart as it is, the hand's finger pushed into the page and struck solid);
 // disabled, dull lead with a saltire beside the tip; the text cursor (a stem
 // with a lozenge, as on the category cards' divider); and middle-button
 // scrolling (upright darts, and a seal where the scroll began).
@@ -22,8 +22,6 @@ function dart(turn: number, k = 1) {
     outline: `M${pt(tip)}L${pt(l)}L${pt(notch)}L${pt(r)}Z`,
     ridge: line(tip, notch),
     hatch: hatch(notch, l, tip, 1.25 * k),
-    /** The hatched side, whole: struck solid when pressed. */
-    side: `M${pt(tip)}L${pt(l)}L${pt(notch)}Z`,
   };
 }
 
@@ -43,7 +41,7 @@ export const WEIGHT = { outline: 1.05, ridge: 0.8, hatch: 0.55, fine: 0.7, rim: 
 
 /** Pressed, the dart sinks this much about its tip, and the hand's finger is foreshortened by this much (units). */
 export const PRESS_SCALE = 0.86;
-const PRESS_SHORTEN = 2.6;
+const PRESS_SHORTEN = 1.4;
 
 /** Where a disabled pointer's saltire sits beside the tip, clear of the dart. */
 export const BADGE: Pt = [11.2, 3.2];
@@ -70,7 +68,7 @@ function hand(k = 1, pressing = false) {
   // Pressing, the finger pushes into the page: foreshortened, the talon a little and the finger
   // below it a lot, the hand coming up behind it, while the talon's tip stays on the spot.
   const TALON = 4.2;
-  const press = ([x, y]: Pt): Pt => (!pressing ? [x, y] : y <= TALON ? [x, y * 0.82] : [x, y - TALON * 0.18 - PRESS_SHORTEN]);
+  const press = ([x, y]: Pt): Pt => (!pressing ? [x, y] : y <= TALON ? [x, y * 0.92] : [x, y - TALON * 0.08 - PRESS_SHORTEN]);
   // Drawn upright with the talon's tip at (6, 0), then moved onto the origin, narrowed and turned.
   const at = (p: Pt): Pt => {
     const [x, y] = press(p);
@@ -190,16 +188,8 @@ export const ART = {
     lines: [{ d: pressedHand.finger, w: 0, solid: true }, ...handLines(pressedHand)],
     plain: true,
   },
-  // Pressed on nothing that can be clicked: the dart sunk, its hatched side struck solid.
-  sink: {
-    size: SIZE,
-    hot: [PAD_X, PAD_Y],
-    ground: pressed.outline,
-    lines: [
-      { d: pressed.outline, w: WEIGHT.outline },
-      { d: pressed.side, w: 0, solid: true },
-    ],
-  },
+  // Pressed on nothing that can be clicked: the dart sunk a little about its tip, as it is otherwise.
+  sink: { size: SIZE, hot: [PAD_X, PAD_Y], ground: pressed.outline, lines: dartLines(pressed, PRESS_SCALE) },
   // Disabled: a saltire beside the tip (drawn in lead, ownCursor.ts).
   disabled: {
     size: SIZE,
