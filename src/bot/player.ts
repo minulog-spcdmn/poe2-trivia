@@ -26,6 +26,11 @@ interface Plan {
 import { between, log } from './util';
 import { Hand } from './hand';
 
+/** New to it, a guest tries the button to move on through someone else's reveal at most this many reveals in, each time this likely; once is enough to learn. */
+const TRY_NEXT_FOR = 3;
+const TRY_NEXT_CHANCE = 0.25;
+const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 /** Each option's name, as far as this device knows it (a guest has no item ids before the reveal). */
 const optionNames = (o: Question) => o.labels.map((l, i) => l ?? engine.byId.get(o.options[i])?.name ?? '');
 
@@ -58,6 +63,9 @@ export class Player {
   /** When it came on, and how many answers it has given since (warming up, tiring). */
   private readonly since = Date.now();
   private answers = 0;
+  /** Someone else's reveals it has seen (as a guest, in turns), and whether it has learned it can't move those on. */
+  private othersRevealed = 0;
+  private learnedNext = false;
   /** Its pointer, as the others see it: it moves to what it chooses, and clicks. */
   private readonly hand: Hand;
 
@@ -123,7 +131,10 @@ export class Player {
 
   /**
    * After its own reveal (or, in Delve together, the team's), an impatient
-   * player moves on itself now and then instead of waiting for the timer.
+   * player moves on itself now and then instead of waiting for the timer: to
+   * the button and presses it. On someone else's, a guest can't (only they
+   * or the host can); new to the game, now and then it tries anyway, the
+   * button does nothing, and it soon learns.
    */
   private planMoveOn(s: GameState) {
     const q = s.question;
@@ -131,13 +142,34 @@ export class Player {
     if (!q || (s.settings.mode === 'race' && !s.delve)) return;
     const mine = s.delve && isGroupRun(s) ? s.players.some((p) => p.id === me) : s.players[s.turn]?.id === me;
     const key = `next:${q.askedAt}`;
-    if (!mine || this.decided.has(key)) return;
+    if (this.decided.has(key)) return;
     this.decided.add(key);
+    if (!mine) {
+      if (s.delve || s.hostId === me || this.learnedNext || !s.players.some((p) => p.id === me)) return;
+      if (++this.othersRevealed > TRY_NEXT_FOR) this.learnedNext = true;
+      else if (Math.random() < TRY_NEXT_CHANCE) {
+        this.learnedNext = true;
+        this.plans.set(key, {
+          at: session.hostNow() + Math.round(between(1000, 2400) * this.persona.pace),
+          run: async () => {
+            await this.hand.click('next');
+            // Nothing happened: once more, harder.
+            if (Math.random() < 0.5) {
+              await wait(between(200, 450));
+              await this.hand.click('next');
+            }
+          },
+        });
+      }
+      return;
+    }
     const after = movesOn(this.persona, Math.random);
     if (after === null) return;
     this.plans.set(key, {
-      at: session.hostNow() + after,
-      run: () => {
+      at: session.hostNow() + Math.max(0, after - this.hand.lead()),
+      run: async () => {
+        if (session.state?.question?.askedAt !== q.askedAt) return;
+        await this.hand.click('next');
         const cur = session.state;
         if (cur?.phase === 'reveal' && cur.question?.askedAt === q.askedAt) session.dispatch({ type: 'next' });
       },

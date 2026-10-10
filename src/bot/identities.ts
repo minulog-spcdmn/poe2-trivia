@@ -207,8 +207,6 @@ export function identityOf(name: string, categories: string[], modes: readonly M
   const prefs = rollPrefs(rng, modes);
   persona.favourites = buildOf(items, seededBy(`${name}:build`));
   Object.assign(persona, leaningsOf(name));
-  // About one in four plays on a phone.
-  persona.touch = seededBy(`${name}:hand`)() < 0.25;
   // And its hand style, its own for good.
   persona.hand = rollHandStyle(seededBy(`${name}:hand-style`));
   return { name, persona, prefs };

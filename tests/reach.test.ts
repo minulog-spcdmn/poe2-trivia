@@ -70,12 +70,6 @@ test('a stroke starts and ends where it should, quick in the middle and slow at 
   assert.ok(d(1270, 1330) > 3 * d(1000, 1060) && d(1270, 1330) > 3 * d(1540, 1600));
 });
 
-test('about one in four plays on a phone, always the same ones', () => {
-  const touch = NAMES.filter((n) => identityOf(n, ['A']).persona.touch);
-  assert.ok(touch.length > NAMES.length * 0.12 && touch.length < NAMES.length * 0.4, `${touch.length}`);
-  assert.deepEqual(touch, NAMES.filter((n) => identityOf(n, ['A']).persona.touch));
-});
-
 test("the lobby has the party's rows down a column and the three modes; a host's sits lower", () => {
   const lobby = { phase: 'lobby', players, hostId: 'a', offered: [] } as unknown as GameState;
   const guest = layout(lobby, 'b');
@@ -146,4 +140,15 @@ test('reaches take as long as a recorded hand took: Fitts, widely spread, slow n
   assert.ok(q(0.5) > 540 && q(0.5) < 660, `${q(0.5)}`);
   assert.ok(q(0.25) > 400 && q(0.75) < 820 && q(0.75) - q(0.25) > 200, `${q(0.25)} ${q(0.75)}`);
   assert.ok(ts[0] >= 370 && ts.at(-1)! <= 950);
+});
+
+test('on a reveal the button that moves on sits under it all, at the right, as measured', () => {
+  const reveal = (mode: 'name' | 'art', n: number) => ({ ...question(mode, n), phase: 'reveal' }) as unknown as GameState;
+  const near = (a: number[], b: number[]) => a.every((v, i) => Math.abs(v - b[i]) <= 4);
+  assert.ok(!layout(question('name', 6)).has('next'));
+  assert.ok(near(layout(reveal('name', 6)).get('next')!, [759, 822, 844, 867]));
+  const art = layout(reveal('art', 6));
+  assert.ok(near(art.get('next')!, [759, 872, 844, 917]), JSON.stringify(art.get('next')));
+  // The pictures to pick from, under the name to find: as measured with six.
+  assert.ok(near(art.get('opt:0')!, [153, 379, 382, 601]) && near(art.get('opt:5')!, [615, 602, 843, 824]), JSON.stringify([...art]));
 });

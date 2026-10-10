@@ -14,15 +14,14 @@
 // (and dims, as anyone's does), drifts, wanders to the art, its own row or
 // the row of whoever's turn it is, and now and then leaves the page a while.
 // It never hovers an answer or a card on someone else's turn (that would be
-// a hint). On a phone (Persona.touch) there is no pointer to see until a
-// tap, which shows where it landed.
+// a hint). Every bot plays with a mouse: a pointer is what makes it company.
 
 import type { GameState, Question } from '../lib/game';
-import { MOUSE, PRESSED, SEND_EVERY_MS, TAP, anchorCode, cursorsLive, type CursorAt, type PointerKind } from '../lib/cursors';
+import { MOUSE, PRESSED, SEND_EVERY_MS, anchorCode, cursorsLive, type CursorAt } from '../lib/cursors';
 import { session } from '../lib/session.svelte';
 import type { Persona } from './brain';
 import { aimIn, along, layout as roomLayout, placeOf, reach, reachTime, stroke, sweep, veer, type Box, type Spot, type Stroke } from './reach';
-import { afterReveal, awayChance, changeOfMind, circle, fidgets, idleEvery, readCards, readQuestion, type Glance, type Hands, type Situation } from './habits';
+import { afterReveal, awayChance, changeOfMind, circle, fidgets, idleEvery, readCards, readQuestion, straySpot, waitSpot, type Glance, type Hands, type Situation } from './habits';
 import { between } from './util';
 
 /** A press shows this long (ms): as a recorded hand held its button (lib/recorder.ts). */
@@ -46,6 +45,12 @@ const URGENT = 0.35;
 const AFTER_CLICK = 0.6;
 const AFTER_MS: [number, number] = [180, 520];
 const AFTER_DRIFT: [number, number] = [8, 32];
+/** Someone else's turn: it settles somewhere to wait this soon (ms), and keeps still this much longer than otherwise. */
+const SETTLE_IN_MS: [number, number] = [300, 2500];
+const WAIT_STILLER = 1.8;
+/** A click at nothing (habits.ts straySpot): this soon after moving on (ms), and at an idle move, this much less often. */
+const STRAY_AFTER_MS: [number, number] = [300, 1100];
+const STRAY_IDLE = 0.12;
 
 /** Where things are for the player on this page. */
 const layout = (s: GameState) => roomLayout(s, session.myPlayerId ?? '');
@@ -82,6 +87,9 @@ export class Hand {
   /** The answer it last gave, and the question whose reveal it last looked at. */
   private gave: string | null = null;
   private revealed = 0;
+  /** A click at nothing: when it sets off for one, and when it presses once there. */
+  private strayAt = 0;
+  private strayPress = 0;
 
   constructor(private readonly persona: Persona) {}
 
@@ -106,7 +114,6 @@ export class Hand {
   /** How long a click takes it from where it is (ms): to schedule a click early by (nothing while no pointer is shown). */
   lead() {
     if (!this.live()) return 0;
-    if (this.persona.touch) return 250;
     // The reach, its correction's beat, the settle.
     return reachTime(350, 70, this.speed, () => 0.5) + 250;
   }
@@ -148,7 +155,7 @@ export class Hand {
   }
 
   /**
-   * Moves to `anchor` and presses, as a click does (on a phone, a tap);
+   * Moves to `anchor` and presses, as a click does;
    * resolves as it presses, for the action to go then. At once when no
    * pointer is shown. `by` (Date.now): when it must have pressed at the
    * latest (the clock's end), the hand hurrying to make it.
@@ -161,13 +168,6 @@ export class Hand {
     if (!box) return;
     const target = aimIn(box, Math.random, anchor.startsWith('opt:') && s!.question?.mode !== 'art');
     const room = () => Math.max(0, by - Date.now());
-    if (this.persona.touch) {
-      await wait(Math.min(between(150, 350), room()));
-      this.at = target;
-      this.on = anchor;
-      this.send(true, TAP);
-      return;
-    }
     this.awayUntil = 0;
     if (anchor.startsWith('opt:')) this.gave = anchor;
     // Unsure, now and then it heads for another answer first and veers off.
@@ -183,6 +183,11 @@ export class Hand {
     this.pressedUntil = now + between(...PRESS_MS);
     this.busyUntil = now + BUSY_MS;
     this.driftAt = Math.random() < AFTER_CLICK ? this.pressedUntil + between(...AFTER_MS) : 0;
+    // Moving on, a clicky hand often clicks again at nothing as the next screen comes.
+    if (anchor === 'next' && Math.random() < this.persona.hand.clicky) {
+      this.strayAt = now + between(...STRAY_AFTER_MS);
+      this.driftAt = 0;
+    }
     this.send(true);
   }
 
@@ -254,8 +259,15 @@ export class Hand {
     if (screen !== this.screen) {
       this.screen = screen;
       this.on = null;
+      // Someone else's turn: it settles somewhere aside to wait, and mostly keeps still there.
+      // On to the question from the cards it waited through, now and then it just stays where it is.
+      if (this.waiting(s) && (s.phase === 'choosing' || Math.random() < 0.6)) {
+        const boxes = [...layout(s)].filter(([k]) => k.startsWith('card:') || k.startsWith('opt:') || k === 'art').map(([, b]) => b);
+        const spot = waitSpot(boxes, Math.random);
+        this.looks = spot ? [{ at: now + between(...SETTLE_IN_MS), spot }] : [];
+      }
     }
-    if (!this.live(s) || this.persona.touch) {
+    if (!this.live(s)) {
       this.looks = [];
       return this.send(false);
     }
@@ -273,6 +285,16 @@ export class Hand {
       const correct = s.reveal.correctIndex >= 0 ? `opt:${s.reveal.correctIndex}` : null;
       this.looks = afterReveal(this.hands, correct, this.gave, opts, now, Math.random);
       this.gave = null;
+    }
+    // A click at nothing: off to it, and a press once there.
+    if (this.strayAt && now >= this.strayAt) {
+      this.strayAt = 0;
+      const to = straySpot(this.where(now), [...layout(s)].filter(([k]) => k !== 'game').map(([, b]) => b), Math.random);
+      if (to) this.strayPress = now + this.goTo(to, undefined, null, between(150, 350)) + between(0, 40);
+    }
+    if (this.strayPress && now >= this.strayPress) {
+      this.strayPress = 0;
+      this.pressedUntil = now + between(...PRESS_MS);
     }
     const look = this.looks[0];
     const still = !this.moves.length;
@@ -308,6 +330,12 @@ export class Hand {
     this.send(true);
   }
 
+  /** Someone else's turn to pick or answer (turns mode): nothing for this hand to do but wait. */
+  private waiting(s: GameState) {
+    const me = session.myPlayerId;
+    return s.settings.mode === 'turns' && !s.delve && (s.phase === 'choosing' || s.phase === 'question') && !!me && s.players[s.turn]?.id !== me;
+  }
+
   /** The question's clock has run most of the way down. */
   private urgent(s: GameState) {
     const q = s.phase === 'question' ? s.question : null;
@@ -319,7 +347,12 @@ export class Hand {
   /** Nothing to do: it rests, drifts a little, wanders to the art, its own row or that of whoever's turn it is (in the lobby, the modes), or leaves the page a while. */
   private idle(s: GameState, now: number) {
     // By its habit (a parker keeps still for long stretches), the more impatient the sooner, the more tired the later.
-    this.nextIdle = now + between(...idleEvery(this.persona.hand, this.tired)) * this.persona.pace * (1.4 - 0.8 * this.persona.impatience);
+    const waiting = this.waiting(s);
+    this.nextIdle = now + between(...idleEvery(this.persona.hand, this.tired)) * this.persona.pace * (1.4 - 0.8 * this.persona.impatience) * (waiting ? WAIT_STILLER : 1);
+    if (Math.random() < this.persona.hand.clicky * STRAY_IDLE) {
+      this.strayAt = now;
+      return;
+    }
     const r = Math.random();
     if (r < awayChance(this.tired)) {
       this.awayUntil = now + between(...AWAY_MS);
@@ -330,7 +363,8 @@ export class Hand {
     // Never an answer, unless it's its own to give: hovering one on someone else's turn would be a hint.
     const visit = (anchor: string) => boxes.has(anchor) && this.goTo(aimIn(boxes.get(anchor)!, Math.random), boxes.get(anchor), anchor);
     const turn = s.phase === 'lobby' ? -1 : s.turn;
-    if (r < 0.2 && boxes.has('art')) visit('art');
+    // Waiting out someone else's turn, its eyes are on the answers, not the art to hover over.
+    if (r < 0.2 && boxes.has('art') && !waiting) visit('art');
     else if (r < 0.2 && s.phase === 'lobby') visit(`card:${Math.floor(Math.random() * 3)}`);
     else if (r < 0.3 && mine >= 0 && boxes.has(`row:${mine}`)) visit(`row:${mine}`);
     else if (r < 0.38 && turn >= 0 && turn !== mine && boxes.has(`row:${turn}`)) visit(`row:${turn}`);
@@ -344,21 +378,21 @@ export class Hand {
     // Otherwise it rests where it is.
   }
 
-  /** Sends where the pointer is, if it moved (`on`: on the page; `kind`: what it is doing). */
-  private send(on: boolean, kind?: PointerKind) {
+  /** Sends where the pointer is, if it moved (`on`: on the page). */
+  private send(on: boolean) {
     const now = Date.now();
     let at: CursorAt | null = null;
     if (on && this.s) {
       // A hand at rest sends nothing (a mouse lying still doesn't move): the others' screens dim it, as they do anyone's.
       const p = placeOf(this.where(now), layout(this.s), this.on);
       const code = anchorCode(p.anchor);
-      if (code !== null) at = [code, p.x, p.y, kind ?? (now < this.pressedUntil ? PRESSED : MOUSE)];
+      if (code !== null) at = [code, p.x, p.y, now < this.pressedUntil ? PRESSED : MOUSE];
     }
     const key = JSON.stringify(at);
     const plain = !at || at[3] === MOUSE;
-    // A tap is shown once, whatever came before; a press always goes; anything else only when it changed, and not too often.
-    if (kind !== TAP && (key === this.sent || (plain && at && now - this.sentAt < SEND_EVERY_MS - 10))) return;
-    this.sent = kind === TAP ? 'null' : key;
+    // A press always goes; anything else only when it changed, and not too often.
+    if (key === this.sent || (plain && at && now - this.sentAt < SEND_EVERY_MS - 10)) return;
+    this.sent = key;
     this.sentAt = now;
     session.pointAt(at);
   }

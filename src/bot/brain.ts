@@ -58,8 +58,6 @@ export interface Persona {
   sociable: number;
   /** How much it minds rules other than its own in a room to join (0 to 1). */
   picky: number;
-  /** Plays on a phone: no pointer for the others to see, only where each tap lands (hand.ts). */
-  touch: boolean;
   /** What it does with its pointer while it reads, thinks and waits, and how deft it is with it (habits.ts). */
   hand: HandStyle;
 }
@@ -134,7 +132,6 @@ export function makePersona(categories: string[], rng: Rng): Persona {
     hosting: rng() ** 1.6,
     sociable: rng(),
     picky: rng(),
-    touch: false,
     hand: PLAIN_HAND,
   };
 }

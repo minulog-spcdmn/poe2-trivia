@@ -42,7 +42,8 @@ function grid(n: number, left: number, right: number, top: number, bottom: numbe
   return Array.from({ length: n }, (_, i) => {
     const c = i % cols;
     const r = Math.floor(i / cols);
-    return [left + c * w + w * 0.05, top + r * h + h * 0.05, left + (c + 1) * w - w * 0.05, top + (r + 1) * h - h * 0.05];
+    // Side by side, a hair apart (as measured).
+    return [left + c * w + 2, top + r * h + 2, left + (c + 1) * w - 2, top + (r + 1) * h - 2];
   });
 }
 
@@ -69,7 +70,7 @@ const LOBBY = {
  * lower). In the lobby, the party's rows and the modes; in a game, the
  * scoreboard's rows across the top, then on a choice the cards, on a
  * question or its reveal the art and the answers (or the pictures to pick
- * from).
+ * from), and on a reveal the button that moves on.
  */
 export function layout(s: GameState, me = ''): Map<string, Box> {
   const out = new Map<string, Box>();
@@ -86,10 +87,16 @@ export function layout(s: GameState, me = ''): Map<string, Box> {
   if (s.phase === 'choosing') across(Math.min(s.offered.length, 16), 154, 16, 277, 610).forEach((b, i) => out.set(`card:${i}`, b));
   else if ((s.phase === 'question' || s.phase === 'reveal') && s.question) {
     const n = Math.min(s.question.labels.length, 16);
-    if (s.question.mode === 'art') grid(n, 157, 844, 306, 776).forEach((b, i) => out.set(`opt:${i}`, b));
+    // The pictures to pick from sit under the name to find (measured with six).
+    if (s.question.mode === 'art') grid(n, 153, 847, 377, 826).forEach((b, i) => out.set(`opt:${i}`, b));
     else {
       out.set('art', [157, 379, 488, 774]);
       down(n, 511, 844, 306, 790, 80.6, 68).forEach((b, i) => out.set(`opt:${i}`, b));
+    }
+    // Once the answer is shown, the button that moves on: under it all, at the right.
+    if (s.phase === 'reveal') {
+      const bottom = Math.max(...[...out].filter(([k]) => k === 'art' || k.startsWith('opt:')).map(([, b]) => b[3]));
+      out.set('next', [759, bottom + 48, 844, bottom + 93]);
     }
   }
   return out;

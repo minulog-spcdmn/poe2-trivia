@@ -43,6 +43,12 @@ export interface HandStyle {
   curve: number;
   /** Where it parks while reading: beside the answers, below them, or wherever it is. */
   rest: 'side' | 'low' | 'stay';
+  /**
+   * How much it clicks at nothing, 0 to 1: just after moving on, or idly,
+   * a press on an empty spot (everyone sees a press). Most hardly ever; some
+   * click through everything, as the recorded hand did.
+   */
+  clicky: number;
 }
 
 /** How common each habit is (parking most). */
@@ -65,11 +71,14 @@ export function rollHandStyle(rng: Rng): HandStyle {
     r -= w;
   }
   const rest = rng();
-  return { habit, deft: rng(), curve: rng(), rest: rest < 0.5 ? 'side' : rest < 0.8 ? 'low' : 'stay' };
+  const deft = rng();
+  const curve = rng();
+  const clicky = rng() < 0.25 ? 0.4 + 0.6 * rng() : 0.08 * rng();
+  return { habit, deft, curve, rest: rest < 0.5 ? 'side' : rest < 0.8 ? 'low' : 'stay', clicky };
 }
 
 /** Before any style is rolled (tests, bots made by hand). */
-export const PLAIN_HAND: HandStyle = { habit: 'park', deft: 0.5, curve: 0.5, rest: 'side' };
+export const PLAIN_HAND: HandStyle = { habit: 'park', deft: 0.5, curve: 0.5, rest: 'side', clicky: 0.05 };
 
 /**
  * A step in looking a choice over: at `at`, to an anchor (aimed at its
@@ -139,6 +148,37 @@ export function restSpot(style: HandStyle, boxes: Box[], rng: Rng): Spot | null 
   const b = Math.max(...boxes.map((b) => b[3]));
   if (style.rest === 'side') return { x: Math.min(990, r + between(rng, 25, 110)), y: between(rng, t + (b - t) * 0.15, t + (b - t) * 0.85) };
   return { x: between(rng, l + (r - l) * 0.15, l + (r - l) * 0.85), y: Math.min(990, b + between(rng, 25, 90)) };
+}
+
+/**
+ * Where a hand waits out someone else's turn (`boxes`: what's on screen,
+ * the cards or the answers): as recorded, just right of it all, in its lower
+ * half, or by where the button to move on comes, under it at the right; then
+ * it mostly keeps still.
+ */
+export function waitSpot(boxes: Box[], rng: Rng): Spot | null {
+  if (!boxes.length) return null;
+  const r = Math.max(...boxes.map((b) => b[2]));
+  const t = Math.min(...boxes.map((b) => b[1]));
+  const b = Math.max(...boxes.map((b) => b[3]));
+  if (rng() < 0.7) return { x: Math.min(985, r + between(rng, 20, 110)), y: between(rng, t + (b - t) * 0.5, b + 30) };
+  return { x: between(rng, r - 90, r + 15), y: Math.min(990, b + between(rng, 30, 90)) };
+}
+
+/**
+ * A click at nothing, from `at`: a spot a little way off, mostly to the right
+ * or down (the recorded hand's were 200 to 300 pixels from its last click),
+ * on none of `boxes` (a press on an answer or a card would look like a pick).
+ */
+export function straySpot(at: Spot, boxes: Box[], rng: Rng): Spot | null {
+  for (let tries = 0; tries < 8; tries++) {
+    const a = between(rng, -0.6, 1.9);
+    const d = between(rng, 70, 190);
+    const p = { x: at.x + Math.cos(a) * d, y: at.y + Math.sin(a) * d };
+    if (p.x < 20 || p.x > 980 || p.y < 110 || p.y > 990) continue;
+    if (!boxes.some(([l, t, r, b]) => p.x >= l - 8 && p.x <= r + 8 && p.y >= t - 8 && p.y <= b + 8)) return p;
+  }
+  return null;
 }
 
 /** What a bot is like, as far as its hand goes. */

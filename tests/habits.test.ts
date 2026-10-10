@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { afterReveal, circle, fidgets, pickHabit, readCards, readQuestion, restSpot, rollHandStyle, type HandStyle, type Hands, type Situation } from '../src/bot/habits.ts';
+import { afterReveal, circle, fidgets, pickHabit, readCards, readQuestion, restSpot, rollHandStyle, straySpot, waitSpot, type HandStyle, type Hands, type Situation } from '../src/bot/habits.ts';
 import { NAMES, identityOf } from '../src/bot/identities.ts';
 import type { Box } from '../src/bot/reach.ts';
 
@@ -13,7 +13,7 @@ function seeded(seed: number) {
 
 const options = Array.from({ length: 6 }, (_, i) => `opt:${i}`);
 const boxes: Box[] = options.map((_, i) => [511, 306 + i * 80, 844, 374 + i * 80]);
-const hands = (habit: HandStyle['habit'], rest: HandStyle['rest'] = 'side'): Hands => ({ style: { habit, deft: 0.5, curve: 0.5, rest }, pace: 1, dither: 0.2 });
+const hands = (habit: HandStyle['habit'], rest: HandStyle['rest'] = 'side'): Hands => ({ style: { habit, deft: 0.5, curve: 0.5, rest, clicky: 0.05 }, pace: 1, dither: 0.2 });
 const sit = (sure: boolean, more: Partial<Situation> = {}): Situation => ({ sure, careful: false, tired: 0, urgentAt: Infinity, ...more });
 /** A random source that always says `v` (its own place to park, its own habit). */
 const always = (v: number) => () => v;
@@ -148,4 +148,37 @@ test('once the answer is shown, it often looks at it, now and then at its own pi
   }
   assert.ok(right > 150 && right < 300, `${right}`);
   assert.ok(own > 80 && own < 200, `${own}`);
+});
+
+test("waiting out someone else's turn, a hand settles just right of it all, low, or under it by the button", () => {
+  const rng = seeded(12);
+  const r = Math.max(...boxes.map((b) => b[2]));
+  const top = Math.min(...boxes.map((b) => b[1]));
+  const bottom = Math.max(...boxes.map((b) => b[3]));
+  let right = 0;
+  for (let i = 0; i < 400; i++) {
+    const p = waitSpot(boxes, rng)!;
+    if (p.y <= bottom + 30) {
+      right++;
+      assert.ok(p.x > r && p.y >= top + (bottom - top) * 0.5, JSON.stringify(p));
+    } else assert.ok(p.x >= r - 90 && p.x <= r + 15, JSON.stringify(p));
+  }
+  assert.ok(right > 240 && right < 320, `${right}`);
+  assert.equal(waitSpot([], rng), null);
+});
+
+test('a click at nothing lands a little way off, on nothing a press would look like a pick on', () => {
+  const rng = seeded(13);
+  const at = { x: 700, y: 600 };
+  for (let i = 0; i < 300; i++) {
+    const p = straySpot(at, boxes, rng);
+    if (!p) continue;
+    const d = Math.hypot(p.x - at.x, p.y - at.y);
+    assert.ok(d >= 69 && d <= 191, `${d}`);
+    assert.ok(!boxes.some(([l, t, r, b]) => p.x >= l && p.x <= r && p.y >= t && p.y <= b), JSON.stringify(p));
+  }
+  // Most bots hardly ever click at nothing; some (a quarter) a lot.
+  const clicky = Array.from({ length: 2000 }, () => rollHandStyle(rng).clicky);
+  const many = clicky.filter((c) => c >= 0.4).length;
+  assert.ok(many > 400 && many < 600 && clicky.every((c) => c >= 0 && c <= 1), `${many}`);
 });
