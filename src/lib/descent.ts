@@ -36,6 +36,7 @@
 import { emberTurn, ENV, ENVIRONMENTS, HALL_FROM, hallTurn, toneGain, toneOf, TURN_DEPTHS, type Look, type RGB, type Tone } from './backdropData.ts';
 import { endgameAt, endgameName, onBackdrops, zones } from './backdrops.ts';
 import { whenIdle, type Deadline } from './idle.ts';
+import { ZONE_DESCENT_MS } from './delve.ts';
 
 export { emberTurn, ENV, ENVIRONMENTS, HALL_FROM, hallTurn, toneOf, TURN_DEPTHS, type Look };
 
@@ -1253,26 +1254,46 @@ export const shownDepth = () => shown;
  * the embers streak up, and the dark draws in and lets go again; it gathers
  * speed quickly and comes to rest slowly, settling where it came to.
  * Into a new zone (the depth its gate names, milestoneAt) it plunges much
- * further, ZONE_PLUNGE_SINK screens, and for as long as the zone's sound
- * ('stratum' in lib/soundDesign.ts, played with the gate) rings:
- * ZONE_PLUNGE_MS.
+ * further, ZONE_PLUNGE_SINK screens, for as long as the zone's sound
+ * ('stratum' in lib/soundDesign.ts, played as it starts) rings, moving as
+ * the sound swells and fades (ZONE_SPEED), and the depth's cards are dealt
+ * as it lands (ZONE_DESCENT_MS, DelveState.dealAt in lib/game.ts).
  * App.svelte calls plunge() (see dealtDeeper); the backdrop steps it, and
  * skips it while it holds still (reduced motion, effects off).
  */
 export const PLUNGE_MS = 1900;
 export const PLUNGE_SINK = 1.1;
-export const ZONE_PLUNGE_MS = 7000;
+export const ZONE_PLUNGE_MS = ZONE_DESCENT_MS;
+/**
+ * (So far that only the scene's furthest layers, which go by at three
+ * tenths of its speed, stay crisp at its fastest on a 60 Hz screen: under 7
+ * px a frame on a 900 px tall one.)
+ */
 export const ZONE_PLUNGE_SINK = 5;
+/**
+ * How fast the plunge into a new zone goes (1 its fastest) through its
+ * ZONE_PLUNGE_MS, at whole seconds in: following the zone's sound as it is
+ * heard (its loudness, measured from the mix of its layers and the
+ * plunge's, with the hall's reverb). The floor gives way with the sound's
+ * first blow, the scene eases off as it dies down, is carried down again by
+ * its second swell, and glides to rest as it fades out.
+ */
+export const ZONE_SPEED: readonly (readonly [number, number])[] = [
+  [0, 0], [0.3, 1], [0.8, 0.8], [1.5, 0.5], [2.25, 0.35], [3, 0.65], [3.5, 0.7], [4.5, 0.55], [5.5, 0.38], [6.3, 0.18], [7, 0],
+];
 /**
  * How far the scene has sunk (screens, wrapping far down), how fast (screens
  * a second) and how far the dark has drawn in (0 to 1); and how far it has
  * swung sideways (screen heights, see swing) and the dark drawn in as it does.
  */
 export const sinking = { sink: 0, speed: 0, breath: 0, slide: 0, slideBreath: 0 };
-let asked: { ms: number; by: number } | null = null;
+/** How a plunge moves: how far along it is (0 to 1) `x` of the way through, its slope, and how far the dark draws in. */
+type Curve = { at: (x: number) => number; slope: (x: number) => number; breath: (x: number) => number };
+let asked: { ms: number; by: number; curve: Curve } | null = null;
 let sinkFrom = 0;
 let sinkBy = PLUNGE_SINK;
 let plungeMs = PLUNGE_MS;
+let curve: Curve;
 let plungeAt = -Infinity;
 
 /** Back to the top, nothing sunk and no plunge under way (a run starting from the surface). */
@@ -1288,9 +1309,9 @@ function resetSink() {
   swingAt = -Infinity;
 }
 
-/** Sinks the scene a little further (a new depth's cards were dealt); `zone`: into a new zone, deeper and longer. */
+/** Sinks the scene a little further (a new depth's cards were dealt); `zone`: into a new zone, much further, with its sound. */
 export function plunge(zone = false) {
-  asked = zone ? { ms: ZONE_PLUNGE_MS, by: ZONE_PLUNGE_SINK } : { ms: PLUNGE_MS, by: PLUNGE_SINK };
+  asked = zone ? { ms: ZONE_PLUNGE_MS, by: ZONE_PLUNGE_SINK, curve: ZONE_CURVE } : { ms: PLUNGE_MS, by: PLUNGE_SINK, curve: EASED };
 }
 
 /** Where a run's cards were last dealt: which run (its start) and at what depth. */
@@ -1319,6 +1340,40 @@ const easeSlope = (x: number) => {
   const m = PLUNGE_PEAK;
   return x < m ? 3 * (x / m) ** 2 : 3 * (1 - (x - m) / (1 - m)) ** 2;
 };
+/** A depth's plunge: eased, and the dark drawn in most half way. */
+const EASED: Curve = { at: ease, slope: easeSlope, breath: (x) => Math.sin(Math.PI * x) ** 2 };
+curve = EASED;
+
+/**
+ * The plunge into a new zone (ZONE_SPEED): its speed eased from one point
+ * to the next (so it never jerks), worked out once into a table of how far
+ * along it is, and the dark drawn in with its speed.
+ */
+const ZONE_CURVE: Curve = (() => {
+  const end = ZONE_SPEED[ZONE_SPEED.length - 1][0];
+  const speed = (x: number) => {
+    const t = Math.min(1, Math.max(0, x)) * end;
+    let i = 1;
+    while (i < ZONE_SPEED.length - 1 && ZONE_SPEED[i][0] < t) i++;
+    const [t0, v0] = ZONE_SPEED[i - 1];
+    const [t1, v1] = ZONE_SPEED[i];
+    const u = (t - t0) / (t1 - t0);
+    return v0 + (v1 - v0) * u * u * (3 - 2 * u);
+  };
+  const N = 1400;
+  const table = new Float64Array(N + 1);
+  for (let i = 1; i <= N; i++) table[i] = table[i - 1] + (speed((i - 0.5) / N) + speed((i - 1) / N) + speed(i / N)) / 3 / N;
+  const total = table[N];
+  return {
+    at: (x) => {
+      const f = Math.min(1, Math.max(0, x)) * N;
+      const i = Math.min(N - 1, Math.floor(f));
+      return (table[i] + (table[i + 1] - table[i]) * (f - i)) / total;
+    },
+    slope: (x) => speed(x) / total,
+    breath: (x) => speed(x),
+  };
+})();
 
 /**
  * Steps the plunge to `now` (ms): starts one asked for (unless `allowed` is
@@ -1330,6 +1385,7 @@ export function stepPlunge(now: number, allowed: boolean): boolean {
       sinkFrom = sinking.sink;
       sinkBy = asked.by;
       plungeMs = asked.ms;
+      curve = asked.curve;
       plungeAt = now;
     }
     asked = null;
@@ -1346,9 +1402,9 @@ export function stepPlunge(now: number, allowed: boolean): boolean {
     plungeAt = -Infinity;
     return true;
   }
-  sinking.sink = sinkFrom + sinkBy * ease(x);
-  sinking.speed = (sinkBy * easeSlope(x) * 1000) / plungeMs;
-  sinking.breath = Math.sin(Math.PI * x) ** 2;
+  sinking.sink = sinkFrom + sinkBy * curve.at(x);
+  sinking.speed = (sinkBy * curve.slope(x) * 1000) / plungeMs;
+  sinking.breath = curve.breath(x);
   return true;
 }
 

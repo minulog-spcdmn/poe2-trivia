@@ -339,9 +339,15 @@ the same thing for everyone.
   (not a run's first depth, after a reload, or the same depth dealt again):
   for 1.9 s the walls, smoke and dust drift up past you, quick to start and
   slow to settle, the embers streak up, and the dark draws in and lets go.
-  Into a new zone (its gate's depth) it plunges much further, for as long
-  as the zone's sound rings (7 s).
-  It is skipped with reduced motion or effects off.
+  Into a new zone (its gate's depth) it plunges much further, 5 screens,
+  for as long as the zone's sound rings (7 s), its speed following the
+  sound: it drops hard with the first blow, eases off as the sound dies
+  down, is carried down again by its second swell and glides to rest as it
+  fades. Meanwhile the stage stands empty and the header keeps the depth
+  before; the new depth, its gate and its cards come in as the plunge
+  lands, at one moment for the whole team (a vote cast sooner opens its
+  window no sooner). It is skipped with reduced motion or effects off (the
+  wait for the cards is not).
 - As a question's clock runs out the dark draws the light in and dims the
   scene (never the panels or text), lifting at the reveal or when a flare
   burns. The ambience, a hearth fire, sinks with the depth, over a slow
@@ -350,10 +356,11 @@ the same thing for everyone.
   cross-fade as the scene turns, in step with its light. Leaving a
   run, or rejoining deep down, fades straight to the scene it's going to
   (the surface, say) instead of passing through every zone.
-- A new zone is announced by a gate built over the depth banner, so "Depth
-  N" stands in its doorway: engraved columns rise beside the heading, a
-  lintel is lowered onto them with the zone's name lit along its face, and
-  a keystone bearing the zone's sigil is set in its crown, all in the zone's
+- A new zone is announced, as the plunge into it lands, by a gate built
+  over the depth banner, so "Depth N" stands in its doorway: engraved
+  columns rise beside the heading, a lintel is lowered onto them with the
+  zone's name lit along its face, and a keystone bearing the zone's sigil
+  is set in its crown, all in the zone's
   colour, the zone's light showing faintly through the doorway. It is built
   in about a second, holds about four and leaves as you pass through it;
   it never covers the cards or the player strip, or takes a tap, and the
@@ -781,8 +788,11 @@ Everything is drawn in WebGL2 with float precision and dithered once at the
   The shown depth eases along at about a second a depth, and a jump of
   more than three depths cross-fades straight there. `plunge()` (called by
   `App.svelte` when a deeper depth's cards are dealt, `dealtDeeper`) sinks
-  the scene (a new zone's further and longer, `ZONE_PLUNGE_SINK`,
-  `ZONE_PLUNGE_MS`), and the backdrop steps it (`stepPlunge`). The backdrop's shaders and embers (`src/lib/backdropEmbers.ts`, a
+  the scene (a new zone's further and longer with the zone's sound,
+  `ZONE_PLUNGE_SINK`, `ZONE_PLUNGE_MS`, `ZONE_SPEED`), and the backdrop
+  steps it (`stepPlunge`). A new zone's cards are dealt as its plunge lands
+  (`DelveState.dealAt`, `ZONE_DESCENT_MS`; the screens wait through
+  `src/lib/dealing.svelte.ts`). The backdrop's shaders and embers (`src/lib/backdropEmbers.ts`, a
   small palette of zone colours, so a new colour spreads ember by ember,
   each taking its zone's way of moving from `src/lib/emberMotion.ts` with it),
   the CSS fallback and the ambience (`depthAmbience` in `src/lib/sound.ts`)

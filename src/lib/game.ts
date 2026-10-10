@@ -40,6 +40,8 @@ import {
   veilSeconds,
   voteClosesAt,
   voteDone,
+  opensZone,
+  ZONE_DESCENT_MS,
   unaskedCards,
   waitingIds,
   SECOND_FIND,
@@ -439,6 +441,13 @@ export interface Delve {
   asked?: string[];
   /** Questions dynamite blasted away in this run (missing for none, and in older saves). */
   blasts?: number;
+  /**
+   * Host clock the cards on offer are dealt at: a new zone's, ZONE_DESCENT_MS
+   * after the run moved on to it, as the plunge into it lands. Every screen
+   * shows them then, and a vote cast sooner opens its window no sooner.
+   * Missing for any other depth, and in older saves.
+   */
+  dealAt?: number;
 }
 
 /** Delve: everything a question can change, taken as its card is picked (see Delve.snapshot). */
@@ -1266,7 +1275,7 @@ export class Engine {
         if (livesOf(s, from) <= 0) throw new ActionError('Only players still standing can vote.');
         if (typeof action.category !== 'string' || !s.offered.includes(action.category)) throw new ActionError('That category is not on offer.');
         (dm.votes ??= {})[from] = action.category;
-        dm.voteFrom ??= this.now();
+        dm.voteFrom ??= Math.max(this.now(), dm.dealAt ?? 0);
         // Voting is what ends being idle.
         (dm.missed ??= {})[from] = 0;
         this.coopCarryOn(s);
@@ -1946,7 +1955,7 @@ export class Engine {
     }
     if (wrapped) s.round++;
     s.turn = next;
-    this.beginTurn(s, false);
+    this.beginTurn(s, false, wrapped);
   }
 
   // ---- delve co-op --------------------------------------------------------
@@ -2139,12 +2148,13 @@ export class Engine {
       return;
     }
     s.round++;
-    this.beginTurn(s, false);
+    this.beginTurn(s, false, true);
   }
 
   // ---- turns mode -------------------------------------------------------
 
-  private beginTurn(s: GameState, first: boolean) {
+  /** `deeper`: the run just went a depth deeper (a new zone's cards are dealt as the plunge into it lands, dealAt). */
+  private beginTurn(s: GameState, first: boolean, deeper = false) {
     if (!first) s.turnCount++;
     s.phase = 'choosing';
     s.question = null;
@@ -2165,6 +2175,8 @@ export class Engine {
       s.delve.finds = this.rollFinds(s, coop ? standingIds(s) : s.players[s.turn] ? [s.players[s.turn].id] : []);
       delete s.delve.find;
       delete s.delve.asked;
+      if (deeper && opensZone(s.round)) s.delve.dealAt = this.now() + ZONE_DESCENT_MS;
+      else delete s.delve.dealAt;
     }
   }
 
@@ -2176,6 +2188,7 @@ export class Engine {
       delete s.delve.snapshot;
       delete s.delve.picksBefore;
       delete s.delve.asked;
+      delete s.delve.dealAt;
     }
     s.phase = 'over';
     s.winners = winners;

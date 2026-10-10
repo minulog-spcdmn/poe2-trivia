@@ -2,6 +2,7 @@
   import { accentAt, dealtDeeper, milestoneAt, plunge, setDescent, type Dealt } from './lib/descent';
   import { zoneAt } from './lib/zoneSigils';
   import { shownDepth } from './lib/delve';
+  import { followDeal, shownRound } from './lib/dealing.svelte';
   import { onMount, untrack } from 'svelte';
   import { fade, fly } from 'svelte/transition';
   import { session } from './lib/session.svelte';
@@ -124,17 +125,24 @@
   $effect(() => {
     if (gs && (gs.settings.mode === 'delve' || gs.delve)) wantDelveBackdrop();
   });
+  // Delve: a new zone's cards on their way (lib/dealing.svelte.ts). Set
+  // before the DOM updates, so neither the header's depth nor the stage
+  // shows the new depth for a frame first.
+  $effect.pre(() => followDeal(gs ?? null, session.hostNow()));
   // Delve: each new depth sinks the scene a little further as its cards are
   // dealt (not the run's first, nor the same depth's dealt again after a
-  // question set aside; see dealtDeeper), a new zone's (its gate's depth)
-  // deeper and longer.
+  // question set aside; see dealtDeeper). Into a new zone (its gate's
+  // depth) much further, with the zone's sound, its cards dealt as it lands
+  // (DelveState.dealAt).
   let lastDealt: Dealt | undefined;
   $effect(() => {
     if (!gs?.delve || screen !== 'game' || gs.phase !== 'choosing') return;
     const now = { run: gs.delve.startedAt, depth: gs.round };
     if (dealtDeeper(lastDealt, now)) {
-      plunge(!!milestoneAt(now.depth));
+      const zone = !!milestoneAt(now.depth);
+      plunge(zone);
       sfx('plunge');
+      if (zone) sfx('stratum');
     }
     lastDealt = now;
   });
@@ -235,14 +243,16 @@
           <!-- The depth as players count it (shownDepth). A run under way at 0
                names none here: the banner below has its start line (Game.svelte),
                too long for this line on a phone. -->
-          {#if screen !== 'game' || shownDepth(gs.round) > 0}
+          <!-- (Going down into a new zone, the depth before until its cards are dealt: lib/dealing.svelte.ts.) -->
+          {@const round = shownRound(gs)}
+          {#if screen !== 'game' || shownDepth(round) > 0}
             <span class="dot">•</span>
-            <span class="depth" style:--accent={accentAt(gs.round)} in:fade={{ duration: 600 }}>Depth <b>{shownDepth(gs.round)}</b></span>
+            <span class="depth" style:--accent={accentAt(round)} in:fade={{ duration: 600 }}>Depth <b>{shownDepth(round)}</b></span>
           {/if}
           <!-- And the zone it's in, in its colour; a new one fades in as it's announced. -->
           <span class="dot zone-dot">•</span>
-          {#key zoneAt(gs.round)}
-            <span class="zone" style:--accent={accentAt(gs.round)} in:fade={{ duration: 900, delay: 500 }}>{zoneAt(gs.round)}</span>
+          {#key zoneAt(round)}
+            <span class="zone" style:--accent={accentAt(round)} in:fade={{ duration: 900, delay: 500 }}>{zoneAt(round)}</span>
           {/key}
         {:else if gs && screen === 'game'}
           {#if session.code && !session.hideCode}

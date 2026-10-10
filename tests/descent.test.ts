@@ -24,6 +24,7 @@ import {
   PLUNGE_SINK,
   ZONE_PLUNGE_MS,
   ZONE_PLUNGE_SINK,
+  ZONE_SPEED,
   plunge,
   sinking,
   stepPlunge,
@@ -58,6 +59,7 @@ import {
   lightSwing,
   type Look,
 } from '../src/lib/descent.ts';
+import { opensZone, ZONE_DESCENT_MS } from '../src/lib/delve.ts';
 import { CALM_EMBERS, COLUMNS, EMBERS, Embers, GLINT_COLOR, GLINTS, PALETTE, ROWS, SIZE_STRIDE, SLOTS, TILES, WALL_GLINTS } from '../src/lib/backdropEmbers.ts';
 import { DELVE_BLUE_FROM } from '../src/lib/fx/streaks.ts';
 import { readFileSync } from 'node:fs';
@@ -974,17 +976,34 @@ test('the plunge gathers speed quickly and comes to rest slowly', () => {
   assert.ok(Math.abs(sinking.sink - start - PLUNGE_SINK) < 1e-9);
 });
 
-test('into a new zone the plunge goes deeper and longer, as smoothly', () => {
-  assert.ok(ZONE_PLUNGE_MS > PLUNGE_MS && ZONE_PLUNGE_MS <= 8000 && ZONE_PLUNGE_SINK > 3 * PLUNGE_SINK);
+test("into a new zone the plunge goes much further, for as long as the zone's sound, with it, as smoothly; its cards are dealt as it lands", () => {
+  assert.ok(ZONE_PLUNGE_SINK > 3 * PLUNGE_SINK);
+  assert.equal(ZONE_PLUNGE_MS, ZONE_DESCENT_MS);
+  assert.equal(ZONE_SPEED.at(-1)![0] * 1000, ZONE_PLUNGE_MS);
+  // The zones are the depths the gates name.
+  for (let d = 0; d <= 3001; d++) assert.equal(opensZone(d), milestoneAt(d) !== null, `depth ${d}`);
   const start = sinking.sink;
   plunge(true);
   let last = start;
   let moving = 0;
+  const speeds: number[] = [];
   for (let t = 0; t <= ZONE_PLUNGE_MS + 100; t += 16) {
     if (stepPlunge(20_000 + t, true)) moving++;
     assert.ok(sinking.sink >= last - 1e-9 && sinking.sink - last < ZONE_PLUNGE_SINK / 30, `a jump at ${t} ms`);
+    assert.ok(sinking.breath >= 0 && sinking.breath <= 1);
+    speeds.push(sinking.speed);
     last = sinking.sink;
   }
+  // With the sound: fastest at its first blow, easing off as it dies down,
+  // carried down again by its second swell, at rest as it fades out; never
+  // so fast that its furthest layers (three tenths of its speed) go by more
+  // than 8 px a frame at 60 Hz on a 900 px tall screen.
+  const at = (ms: number) => speeds[Math.round(ms / 16)];
+  const peak = Math.max(...speeds);
+  assert.ok(speeds.indexOf(peak) * 16 < 600, `fastest at ${speeds.indexOf(peak) * 16} ms`);
+  assert.ok(at(2250) < 0.5 * peak && at(3500) > 0.6 * peak && at(3500) > 1.5 * at(2250), 'a second swell');
+  assert.ok(at(6800) < 0.1 * peak, 'coming to rest');
+  assert.ok((peak * 0.3 * 900) / 60 < 8, `the far layers at ${((peak * 0.3 * 900) / 60).toFixed(1)} px a frame`);
   assert.ok(Math.abs(sinking.sink - start - ZONE_PLUNGE_SINK) < 1e-9, `sank ${sinking.sink - start}`);
   assert.ok(moving * 16 >= ZONE_PLUNGE_MS - 20 && moving * 16 <= ZONE_PLUNGE_MS + 40, `moved for ${moving * 16} ms`);
   // The next depth's plunge is the usual one again.

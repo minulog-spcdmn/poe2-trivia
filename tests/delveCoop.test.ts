@@ -14,6 +14,8 @@ import {
   FLARE_MS,
   REVIVE_FROM,
   VOTE_WINDOW_MS,
+  ZONE_DESCENT_MS,
+  dealIn,
   delveStandings,
   delveTeam,
   expectedVoters,
@@ -182,6 +184,35 @@ test('otherwise the vote closes six seconds after the first vote', () => {
   assert.equal(h.s.phase, 'question');
   assert.equal(h.s.question!.category, card);
   assert.deepEqual(h.s.delve!.missed, { p0: 1, p1: 0, p2: 1 });
+});
+
+test("going down into a new zone, the team's cards are dealt as the plunge lands: a vote cast sooner opens its window no sooner", () => {
+  const h = team(3, { depth: 10 });
+  const q = h.ask();
+  h.pickAs('p0', right(q));
+  assert.equal(h.s.phase, 'reveal');
+  h.next();
+  assert.equal(h.s.round, 11);
+  const at = h.clock.now + ZONE_DESCENT_MS;
+  assert.equal(h.s.delve!.dealAt, at);
+  assert.equal(dealIn(h.s, h.clock.now), ZONE_DESCENT_MS);
+  // A screen that shows the cards sooner (none should) can't cut the others' time short.
+  h.clock.now += 1000;
+  h.vote('p1');
+  assert.equal(h.s.delve!.voteFrom, at);
+  assert.equal(voteClosesAt(h.s), at + VOTE_WINDOW_MS);
+  h.vote('p0');
+  h.vote('p2');
+  assert.equal(h.s.phase, 'question');
+  assert.equal(dealIn(h.s, h.clock.now), 0);
+  // The next depth's cards are dealt at once, and its first vote opens the window then.
+  h.act({ type: 'clock', askedAt: h.s.question!.askedAt });
+  h.pickAs('p0', right(h.s.question!));
+  h.next();
+  assert.equal(h.s.round, 12);
+  assert.equal(h.s.delve!.dealAt, undefined);
+  h.vote('p1');
+  assert.equal(h.s.delve!.voteFrom, h.clock.now);
 });
 
 test('nobody votes, nothing is picked: the cards wait for as long as it takes', () => {

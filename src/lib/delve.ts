@@ -622,6 +622,22 @@ export const shownDepth = (d: number) => d - 1;
 /** The depth of the run in progress (the round), 0 outside Delve. */
 export const delveDepth = (s: GameState) => (s.delve ? s.round : 0);
 
+/** Whether internal depth `d` opens a new zone: the first of every ten past the first ten (named by lib/descent.ts milestoneAt). */
+export const opensZone = (d: number) => d > 10 && d % 10 === 1;
+
+/**
+ * How long the run takes to go down into a new zone: the scene plunges for
+ * as long as the zone's sound rings (lib/descent.ts plunge), and the depth's
+ * cards are dealt as it lands (DelveState.dealAt).
+ */
+export const ZONE_DESCENT_MS = 7000;
+
+/**
+ * Milliseconds until the cards on offer are dealt, at host-clock time `now`:
+ * above 0 only while the run goes down into a new zone (dealAt).
+ */
+export const dealIn = (s: GameState, now: number) => (s.phase === 'choosing' && s.delve?.dealAt ? Math.max(0, s.delve.dealAt - now) : 0);
+
 /** A co-op run: two or more players set out together (online only). One player is a solo run. */
 export const isGroupRun = (s: GameState) => (s.delve?.entrants.length ?? 0) >= 2;
 

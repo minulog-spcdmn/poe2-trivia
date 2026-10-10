@@ -25,6 +25,7 @@
   import { BLAST_IMPACT_MS, BLAST_IN_DELAY_MS, BLAST_IN_MS, blastAway } from '../lib/blastAway';
   import { untrack } from 'svelte';
   import { motion } from '../lib/motion.svelte';
+  import { dealing } from '../lib/dealing.svelte';
 
   const s = $derived(session.state!);
   const active = $derived(s.players[s.turn]);
@@ -170,6 +171,13 @@
   });
   const drawing = $derived(raffle !== null && raffle === s.question?.askedAt && s.phase === 'question');
 
+  // Delve: going down into a new zone, the stage stands empty over the
+  // plunging scene until its cards are dealt as the plunge lands
+  // (lib/dealing.svelte.ts); then the depth, its gate and its cards come in together.
+  const held = $derived(dealing.held);
+  /** The stage in play: the turn's, or an empty one while its cards are on their way. */
+  const stageKey = $derived(held ? `held:${s.turnCount}` : `${s.turnCount}`);
+
   // Delve: a gate at the start of a depth worth it (a new zone, a new best),
   // built over the head of the stage for a few seconds (zonebanner/Threshold).
   // Only when the run is seen going one deeper, and at its very start, where
@@ -183,7 +191,7 @@
   // 1.3 s, held, then told to leave at ZONE_HOLD and gone ZONE_EXIT later
   // (with reduced motion or the effects off it only fades in and out).
   $effect(() => {
-    if (!run || s.phase !== 'choosing') return;
+    if (!run || s.phase !== 'choosing' || held) return;
     const key = `${run.startedAt}:${depth}`;
     if (key === depthSeen) return;
     const deeper = depthSeen.startsWith(`${run.startedAt}:`);
@@ -206,8 +214,9 @@
         next = { key, turn, title: 'Deeper than ever', sigil, accent, label: `Deeper than ever: depth ${shownDepth(depth)}, past your best of ${shownDepth(best)}.`, leaving: false, still };
       if (!next) return;
       card = next;
-      // A run's opening gate keeps the game's start sound (session.svelte.ts) to itself.
-      if (!opening) sfx('stratum');
+      // A run's opening gate keeps the game's start sound (session.svelte.ts) to
+      // itself, and a new zone's sounded as the plunge into it began (App.svelte).
+      if (!opening && !name) sfx('stratum');
       cardTimers.forEach(clearTimeout);
       cardTimers = [
         setTimeout(() => card?.key === key && (card.leaving = true), ZONE_HOLD * 1000),
@@ -324,108 +333,112 @@
   <!-- The outgoing and incoming turn share one grid cell while they cross-fade,
        instead of stacking (which briefly doubled the page height). -->
   <div class="turns">
-    {#key s.turnCount}
+    {#key stageKey}
       <div class="stage" in:fade={{ duration: 300, delay: 200 }} out:fade={{ duration: 180 }}>
-        {#if dm}
-          <div class="dm-strip" in:fly={{ y: -10, duration: 400 }}>
-            <span class="dm-title">⚔ Deathmatch · round {dm.round}</span>
-            <span class="dm-duelists">
-              {#each dm.alive as id (id)}
-                {@const p = nameOf(id)}
-                {#if p}
-                  <span class="duelist" class:done={id in dm.results} title={p.name}>
-                    <Avatar name={p.name} hue={p.hue} size={24} />
-                    {#if id in dm.results}<i class:ok={dm.results[id]}>{dm.results[id] ? '✓' : '✕'}</i>{/if}
-                  </span>
-                {/if}
-              {/each}
-            </span>
-            <span class="dm-rule">
-              {#if dm.eliminated.length}
-                <b>{dm.eliminated.map((id) => nameOf(id)?.name).join(', ')} {dm.eliminated.length === 1 ? 'is' : 'are'} out.</b>
-              {/if}
-              Answer right to survive. Anyone who misses while another duelist scores is out.
-            </span>
-          </div>
-        {/if}
-        <div class="head">
-          {#if run}
-            <!-- An empty line over the banner, the room a zone's gate rises into (zonebanner/Threshold measures it). -->
-            <p class="kicker">{'\u00a0'}</p>
-          {/if}
-          <!-- The gate's columns stand in for the rules while it shows. -->
-          <div class="banner" class:dm={!!dm} class:veiled={!!zone && !zone.leaving} style:--c={bannerColor}>
-            <span class="rule"></span>
-            <h2 class:start={startsRun} use:bannerFx={{ color: bannerColor, big: bannerBig }}>{bannerTitle}</h2>
-            <span class="rule"></span>
-          </div>
-          {#if zone}
-            <!-- Delve: a new zone's name over the head for a moment, on a gate
-                 built once the stage has faded in. -->
-            {#key zone.key}
-              <Threshold
-                title={zone.title}
-                sigil={zone.sigil}
-                accent={zone.accent}
-                leaving={zone.leaving}
-                still={zone.still}
-                delay={zone.still ? 0 : ZONE_DELAY}
-                onfx={zoneFx}
-              />
-            {/key}
-          {/if}
-        </div>
-
-        {#if s.phase === 'choosing' || drawing}
-          <ChooseCategory drawn={drawing ? (s.question?.category ?? null) : null} ondrawn={() => (raffle = null)} />
+        {#if held}
+          <!-- Going down into a new zone: nothing yet but the scene plunging. -->
         {:else}
-          <!-- A new question on the same turn (the host asked another, or dynamite
-               blasted the last away) starts fresh. Old and new share one grid
-               cell while they cross. -->
-          <div class="questions">
-            {#key s.question?.askedAt}
-              <div class="q-slot" in:swingIn out:swingOut>
-                <QuestionView timer={phone.current ? undefined : timer} />
-              </div>
-            {/key}
+          {#if dm}
+            <div class="dm-strip" in:fly={{ y: -10, duration: 400 }}>
+              <span class="dm-title">⚔ Deathmatch · round {dm.round}</span>
+              <span class="dm-duelists">
+                {#each dm.alive as id (id)}
+                  {@const p = nameOf(id)}
+                  {#if p}
+                    <span class="duelist" class:done={id in dm.results} title={p.name}>
+                      <Avatar name={p.name} hue={p.hue} size={24} />
+                      {#if id in dm.results}<i class:ok={dm.results[id]}>{dm.results[id] ? '✓' : '✕'}</i>{/if}
+                    </span>
+                  {/if}
+                {/each}
+              </span>
+              <span class="dm-rule">
+                {#if dm.eliminated.length}
+                  <b>{dm.eliminated.map((id) => nameOf(id)?.name).join(', ')} {dm.eliminated.length === 1 ? 'is' : 'are'} out.</b>
+                {/if}
+                Answer right to survive. Anyone who misses while another duelist scores is out.
+              </span>
+            </div>
+          {/if}
+          <div class="head">
+            {#if run}
+              <!-- An empty line over the banner, the room a zone's gate rises into (zonebanner/Threshold measures it). -->
+              <p class="kicker">{'\u00a0'}</p>
+            {/if}
+            <!-- The gate's columns stand in for the rules while it shows. -->
+            <div class="banner" class:dm={!!dm} class:veiled={!!zone && !zone.leaving} style:--c={bannerColor}>
+              <span class="rule"></span>
+              <h2 class:start={startsRun} use:bannerFx={{ color: bannerColor, big: bannerBig }}>{bannerTitle}</h2>
+              <span class="rule"></span>
+            </div>
+            {#if zone}
+              <!-- Delve: a new zone's name over the head for a moment, on a gate
+                   built once the stage has faded in. -->
+              {#key zone.key}
+                <Threshold
+                  title={zone.title}
+                  sigil={zone.sigil}
+                  accent={zone.accent}
+                  leaving={zone.leaving}
+                  still={zone.still}
+                  delay={zone.still ? 0 : ZONE_DELAY}
+                  onfx={zoneFx}
+                />
+              {/key}
+            {/if}
           </div>
-        {/if}
 
-        {#if group}
-          <!-- Who brought whom back, read out as it happens. -->
-          <div class="revived" aria-live="polite">
-            {#each revivedLines as line (line.key)}
-              <p class="delve-line revive-hint" transition:slide={{ duration: 250 }}>{line.text}</p>
-            {/each}
-          </div>
-        {/if}
-        {#if myFall !== null}
-          <p class="delve-line muted">
-            You perished and are now watching.{#if canBeRevived}{' '}A teammate can give you a life between questions.{/if}
-          </p>
-        {:else if revivable.length && (s.phase === 'choosing' || s.phase === 'reveal')}
-          <p class="delve-line revive-hint" transition:fade>
-            {revivable.length === 1
-              ? `Use the heart on ${revivable[0].name}'s entry to revive them with one of your lives.`
-              : 'Use the heart on an entry to revive that teammate with one of your lives.'}
-          </p>
-        {/if}
-        {#if session.isHost && !local && !race && !run && !active.connected && s.phase !== 'reveal'}
-          <div class="skip" transition:fade>
-            <span class="muted">{active.name} is disconnected{skipIn ? `; skipping in ${skipIn}s` : ''}.</span>
-            <button class="btn small" onclick={() => skipTurn(session.skipAt)}>Skip their turn</button>
-          </div>
-        {:else if session.idle}
-          <div class="skip" transition:fade>
-            <span class="muted">{active.name} hasn't {s.phase === 'choosing' ? 'picked a category' : 'answered'} in a while.</span>
-            <button class="btn small" onclick={() => skipTurn(session.idle)}>Skip their turn</button>
-          </div>
-        {/if}
-        {#if session.artMissing}
-          <div class="skip" transition:fade>
-            <span class="muted">The art for this question couldn't be loaded.</span>
-            <button class="btn small" onclick={() => session.dispatch({ type: 'reask' })}>Ask another question</button>
-          </div>
+          {#if s.phase === 'choosing' || drawing}
+            <ChooseCategory drawn={drawing ? (s.question?.category ?? null) : null} ondrawn={() => (raffle = null)} />
+          {:else}
+            <!-- A new question on the same turn (the host asked another, or dynamite
+                 blasted the last away) starts fresh. Old and new share one grid
+                 cell while they cross. -->
+            <div class="questions">
+              {#key s.question?.askedAt}
+                <div class="q-slot" in:swingIn out:swingOut>
+                  <QuestionView timer={phone.current ? undefined : timer} />
+                </div>
+              {/key}
+            </div>
+          {/if}
+
+          {#if group}
+            <!-- Who brought whom back, read out as it happens. -->
+            <div class="revived" aria-live="polite">
+              {#each revivedLines as line (line.key)}
+                <p class="delve-line revive-hint" transition:slide={{ duration: 250 }}>{line.text}</p>
+              {/each}
+            </div>
+          {/if}
+          {#if myFall !== null}
+            <p class="delve-line muted">
+              You perished and are now watching.{#if canBeRevived}{' '}A teammate can give you a life between questions.{/if}
+            </p>
+          {:else if revivable.length && (s.phase === 'choosing' || s.phase === 'reveal')}
+            <p class="delve-line revive-hint" transition:fade>
+              {revivable.length === 1
+                ? `Use the heart on ${revivable[0].name}'s entry to revive them with one of your lives.`
+                : 'Use the heart on an entry to revive that teammate with one of your lives.'}
+            </p>
+          {/if}
+          {#if session.isHost && !local && !race && !run && !active.connected && s.phase !== 'reveal'}
+            <div class="skip" transition:fade>
+              <span class="muted">{active.name} is disconnected{skipIn ? `; skipping in ${skipIn}s` : ''}.</span>
+              <button class="btn small" onclick={() => skipTurn(session.skipAt)}>Skip their turn</button>
+            </div>
+          {:else if session.idle}
+            <div class="skip" transition:fade>
+              <span class="muted">{active.name} hasn't {s.phase === 'choosing' ? 'picked a category' : 'answered'} in a while.</span>
+              <button class="btn small" onclick={() => skipTurn(session.idle)}>Skip their turn</button>
+            </div>
+          {/if}
+          {#if session.artMissing}
+            <div class="skip" transition:fade>
+              <span class="muted">The art for this question couldn't be loaded.</span>
+              <button class="btn small" onclick={() => session.dispatch({ type: 'reask' })}>Ask another question</button>
+            </div>
+          {/if}
         {/if}
       </div>
     {/key}

@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
   DELVE_LIVES,
+  ZONE_DESCENT_MS,
+  dealIn,
   delveLockout,
   delveRules,
   delveTimer,
@@ -177,6 +179,35 @@ test('wrong answers, giving up and answering late each cost a life; right ones s
   h.act({ type: 'answer', index: right(q), askedAt: q.askedAt }, id);
   assert.equal(livesOf(h.s, id), 1);
   assert.ok(h.s.reveal!.timedOut);
+});
+
+test("going down into a new zone, its cards are dealt as the plunge into it lands; any other depth's at once", () => {
+  const h = delve(['Ash'], { host: null });
+  for (let d = 1; d < 10; d++) {
+    h.turn(true);
+    assert.equal(h.s.delve!.dealAt, undefined, `depth ${h.s.round}`);
+    assert.equal(dealIn(h.s, h.clock.now), 0);
+  }
+  assert.equal(h.s.round, 10);
+  h.clock.now += 5000;
+  h.turn(true);
+  assert.equal(h.s.round, 11);
+  assert.equal(h.s.delve!.dealAt, h.clock.now + ZONE_DESCENT_MS);
+  assert.equal(dealIn(h.s, h.clock.now), ZONE_DESCENT_MS);
+  assert.equal(dealIn(h.s, h.clock.now + ZONE_DESCENT_MS - 1000), 1000);
+  assert.equal(dealIn(h.s, h.clock.now + ZONE_DESCENT_MS + 1), 0);
+  // Picked once dealt; the depth after is dealt at once.
+  h.clock.now += ZONE_DESCENT_MS;
+  h.pick();
+  assert.equal(dealIn(h.s, h.clock.now - ZONE_DESCENT_MS), 0, 'nothing on its way once a card is picked');
+  h.clockIn();
+  h.act({ type: 'answer', index: right(h.s.question!), askedAt: h.s.question!.askedAt });
+  h.act({ type: 'next' });
+  assert.equal(h.s.round, 12);
+  assert.equal(h.s.delve!.dealAt, undefined);
+  // The run's end leaves nothing on its way.
+  h.playOut({ p0: [false, false, false] });
+  assert.equal(h.s.delve!.dealAt, undefined);
 });
 
 test('alone, the run ends with the third life, at the depth where it went', () => {

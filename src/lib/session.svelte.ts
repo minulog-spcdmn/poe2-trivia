@@ -41,7 +41,7 @@ import { toasts, type ToastKind, type ToastOptions } from './toasts.svelte';
 import { creatorArrival } from './herald';
 import { RUBY } from './palette';
 import { CREATOR_TITLE } from './site';
-import { DELVE_FUSE_MS, LOOKALIKES_ASKED_FROM, clockLeft, fuseDue, fuseLeft, isGroupRun, livesOf, standingIds } from './delve';
+import { DELVE_FUSE_MS, LOOKALIKES_ASKED_FROM, clockLeft, dealIn, fuseDue, fuseLeft, isGroupRun, livesOf, standingIds } from './delve';
 import { loadLooks } from './looks';
 import { bestOf, loadRecords, recordLeft, recordRun, runEvent } from './delveRecord';
 import { LEFT_KEY, forgiveLeaving, noteLeaving } from './versus';
@@ -1724,9 +1724,13 @@ class Session {
     if (!next.delve && (hotSeat || !me || !next.players.some((p) => p.id === me))) return;
     const a = this.answered;
     const veilShare = a?.share !== undefined ? { qid: a.qid, share: a.share } : undefined;
+    // Going down into a new zone, what it earns is announced as its cards are dealt, not on the way down.
+    const wait = dealIn(next, this.hostNow());
     void Promise.all([import('./achievements'), import('./achievementToasts')])
       .then(([{ noteState }, { announceAchievements }]) => {
-        announceAchievements(noteState(prev, next, me, hotSeat, { items: engine.items, veilShare }), 'game');
+        const earned = noteState(prev, next, me, hotSeat, { items: engine.items, veilShare });
+        if (wait > 0) setTimeout(() => announceAchievements(earned, 'game'), wait);
+        else announceAchievements(earned, 'game');
       })
       .catch((err) => console.warn('achievements', err));
   }
