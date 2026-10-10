@@ -8,6 +8,8 @@ import {
   C,
   edgeGlow,
   edgeBeat,
+  edgeHit,
+  edgeSmokeOut,
   embers,
   emitter,
   fire,
@@ -382,8 +384,15 @@ export function reveal(t: RevealTargets) {
       }
     }
     if (!t.warded) {
-      edgeGlow({ color: C.wrong, intensity: 0.05, width: 60, life: 0.7 });
-      pulseMood(0.16, [0.9, 0.3, 0.15]);
+      // Time's up: the clock's smoke burns down to ash; a wrong answer is a blow.
+      const smoke = t.timedOut ? countdownSmoke() : null;
+      if (smoke) {
+        edgeSmokeOut({ ...smoke, width: TICK_STEPS[0].width, color: TICK_STEPS[0].color });
+        pulseMood(0.14, [0.6, 0.35, 0.3]);
+      } else {
+        edgeHit({ color: C.wrong });
+        pulseMood(0.16, [0.9, 0.3, 0.15]);
+      }
     }
     shakeView(0.45, 6);
   }
@@ -804,9 +813,9 @@ export function wardShattered(pip: Element, pill: Element, mine: boolean) {
   if (!detached(pill)) outline(pill, { color: k3(C.azurite, 0.8), width: 8, life: 0.8, intensity: 0.45 });
 }
 
-/** The cold-blue swell at the screen's edges as your ward takes a loss: the red one of a wrong answer (reveal), in azurite. */
+/** The cold-blue flash at the screen's edges as your ward takes a loss: the red one of a wrong answer (reveal), in azurite. */
 function wardedEdge() {
-  edgeGlow({ color: C.azurite, intensity: 0.05, width: 70, life: 0.8 });
+  edgeHit({ color: C.azurite, intensity: 0.06, width: 50 });
   pulseMood(0.16, [0.3, 0.55, 1]);
 }
 
@@ -1047,7 +1056,7 @@ export function raceMiss(option: Element, mine: boolean, warded = false) {
   if (mine) {
     shards(option, { count: 16 });
     if (!warded) {
-      edgeGlow({ color: C.wrong, intensity: 0.05, life: 0.7 });
+      edgeHit({ color: C.wrong });
       pulseMood(0.16, [0.9, 0.3, 0.15]);
     }
     shakeView(0.4, 6);
@@ -1072,6 +1081,14 @@ const TICK_STEPS = [
 let smokePattern = 0;
 let smokeFrom = 0;
 let lastTick = 0;
+let lastTickAt = 0;
+
+/** The countdown's smoke, if its last second has just ticked (for time's up to burn it down), else null. */
+function countdownSmoke(): { pattern: number; clock: number } | null {
+  const now = performance.now();
+  if (lastTick !== 1 || now - lastTickAt > 2500) return null;
+  return { pattern: smokePattern, clock: (now - smokeFrom) / 1000 };
+}
 
 /**
  * The last seconds of the clock. `screen`: the crimson pulse over the scene
@@ -1094,6 +1111,7 @@ export function timerTick(timer: Element, secs: number, screen = true) {
     smokeFrom = performance.now();
   }
   lastTick = secs;
+  lastTickAt = performance.now();
   pulseMood(step.mood);
   edgeBeat({ ...step, pattern: smokePattern, clock: (performance.now() - smokeFrom) / 1000 });
 }

@@ -657,6 +657,77 @@ export function edgeGlow(o: { color?: Vec3; width?: number; life?: number; inten
   });
 }
 
+/** How much bigger the edge effects are drawn on this window: by its short side over 720 px, 0.7 to 2.2 times. */
+const edgeScale = () => Math.max(0.7, Math.min(2.2, Math.min(innerWidth, innerHeight) / 720));
+
+/**
+ * A crisp flash of colour at the screen's edges, as of a blow (a wrong
+ * answer): up at once, a bright line along the very edge, gone in a moment.
+ * No smoke; the smoke is the clock's. `width`: as edgeBeat's.
+ */
+export function edgeHit(o: { color?: Vec3; width?: number; intensity?: number } = {}) {
+  return shape({
+    type: ShapeType.Edge,
+    at: { x: innerWidth / 2, y: innerHeight / 2 },
+    life: 0.7,
+    color: o.color ?? C.wrong,
+    update(f, _t, age, b) {
+      b.x = innerWidth / 2;
+      b.y = innerHeight / 2;
+      f.hw = innerWidth / 2;
+      f.hh = innerHeight / 2;
+      const rise = 0.025;
+      const env = age < rise ? age / rise : Math.exp(-(age - rise) / 0.16);
+      f.k = (o.intensity ?? 0.1) * env;
+      // Pressing in a little as it lands, then easing back.
+      f.q[0] = (o.width ?? 45) * edgeScale() * (0.8 + 0.2 * env);
+      f.q[1] = 0.25;
+      f.q[2] = 0;
+      f.q[4] = 0.5 * env;
+    },
+  });
+}
+
+/**
+ * The clock's smoke (edgeBeat's, `pattern` and `clock` as it had them)
+ * when time is up: one last heavy beat, then it cools from its red to ash
+ * and thins away.
+ */
+export function edgeSmokeOut(o: { pattern: number; clock: number; width?: number; intensity?: number; color?: Vec3 }) {
+  const life = 1.8;
+  const hot = o.color ?? C.crimson;
+  return shape({
+    type: ShapeType.Edge,
+    at: { x: innerWidth / 2, y: innerHeight / 2 },
+    life,
+    color: hot,
+    update(f, t, age, b) {
+      b.x = innerWidth / 2;
+      b.y = innerHeight / 2;
+      f.hw = innerWidth / 2;
+      f.hh = innerHeight / 2;
+      const rise = 0.04;
+      const beat = age < rise ? Math.sin(((age / rise) * Math.PI) / 2) ** 2 : Math.exp(-(age - rise) / 0.3);
+      // The ash it leaves, thinning out to nothing.
+      const ashes = 0.85 * Math.min(1, age / rise) * (1 - t) ** 1.3;
+      f.k = (o.intensity ?? 0.17) * (beat + ashes);
+      const cool = Math.min(1, Math.max(0, (age - 0.12) / 0.7));
+      const c = cool * cool * (3 - 2 * cool);
+      const to = (i: number) => hot[i] + (C.ash[i] * 2.4 - hot[i]) * c;
+      f.color = [to(0), to(1), to(2)];
+      f.q[0] = (o.width ?? 100) * edgeScale();
+      f.q[1] = 0.6;
+      f.q[2] = 1;
+      f.q[3] = o.pattern;
+      f.q[4] = 0.6 * beat;
+      f.q[5] = o.clock + age;
+      f.q[6] = 0;
+      // Thinning as it cools.
+      f.q[7] = 1 - 0.7 * c;
+    },
+  });
+}
+
 /**
  * One beat of red smoke at the screen's edges, as the clock ticks: up at
  * once and swelling down with the tick's sound, then lingering faintly into
@@ -687,7 +758,7 @@ export function edgeBeat(o: { color?: Vec3; width?: number; intensity?: number; 
       // What lingers, gone by the end of its life.
       const linger = 0.3 * Math.min(1, age / rise) * Math.exp(-age / (0.9 * hold)) * (1 - t * t);
       f.k = (o.intensity ?? 0.06) * (beat + linger);
-      f.q[0] = (o.width ?? 60) * Math.max(0.7, Math.min(2.2, Math.min(innerWidth, innerHeight) / 720));
+      f.q[0] = (o.width ?? 60) * edgeScale();
       f.q[1] = 0.6;
       f.q[2] = o.smoke ?? 0;
       f.q[3] = o.pattern ?? 0;
