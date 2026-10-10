@@ -362,7 +362,7 @@
         <GameTitle />
         {#if BETA}<span class="beta" in:fade={{ duration: 600, delay: 100 }}>Beta</span>{/if}
       </div>
-      <p class="motto" in:fade={{ duration: 700, delay: 350 }}>Name the unique.</p>
+      <p class="kicker" in:fade={{ duration: 700, delay: 350 }}>Unique item trivia</p>
       <p class="blurb" in:fade={{ duration: 700, delay: 450 }}>
         Path of Exile 2 item trivia, alone or with <span class="wide">up to eleven</span> friends.
       </p>
@@ -555,13 +555,16 @@
     text-transform: uppercase;
     color: var(--unique-hi);
   }
-  .motto {
+  /* The site's old kicker, under the title now: small, spaced capitals in the unique colour. */
+  .kicker {
     position: relative;
-    margin: 0;
-    font-style: italic;
-    font-size: 24px;
+    margin: 2px 0 4px;
+    font-family: var(--font-display);
+    font-size: 15px;
     line-height: 1.3;
-    color: #ecdcbc;
+    letter-spacing: 0.5em;
+    text-transform: uppercase;
+    color: var(--unique-hi);
   }
   .blurb {
     position: relative;
@@ -1035,8 +1038,9 @@
     .title {
       --title-size: 54px;
     }
-    .motto {
-      font-size: 20px;
+    .kicker {
+      font-size: 13px;
+      letter-spacing: 0.4em;
     }
     .blurb {
       font-size: 15px;

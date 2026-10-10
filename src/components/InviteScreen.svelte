@@ -28,7 +28,7 @@
 <div class="invite" use:stage>
   <header>
     <GameTitle lines />
-    <p class="motto" in:fade={{ duration: 700, delay: 350 }}>Name the unique.</p>
+    <p class="kicker" in:fade={{ duration: 700, delay: 350 }}>Unique item trivia</p>
     <p class="blurb" in:fade={{ duration: 700, delay: 450 }}>Path of Exile 2 item trivia, with friends or alone.</p>
   </header>
 
@@ -84,12 +84,17 @@
     align-items: center;
     text-align: center;
   }
-  .motto {
+  /* As on the start page: the site's kicker under the title. Its spacing
+     trails the last letter, so as much leads the first to keep it centred. */
+  .kicker {
     position: relative;
     margin: 6px 0 0;
-    font-style: italic;
-    font-size: 24px;
-    color: #ecdcbc;
+    padding-left: 0.5em;
+    font-family: var(--font-display);
+    font-size: 15px;
+    letter-spacing: 0.5em;
+    text-transform: uppercase;
+    color: var(--unique-hi);
   }
   .blurb {
     position: relative;
@@ -197,8 +202,10 @@
     header {
       --title-size: 54px;
     }
-    .motto {
-      font-size: 20px;
+    .kicker {
+      padding-left: 0.4em;
+      font-size: 13px;
+      letter-spacing: 0.4em;
     }
     .blurb {
       font-size: 15px;
