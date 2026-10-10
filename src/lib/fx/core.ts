@@ -149,8 +149,9 @@ let shapes: LiveShape[] = [];
 let tasks: LiveTask[] = [];
 let raf = 0;
 let last = 0;
-/** Whether the tab is in the background (see setHidden). */
+/** Whether the tab is in the background (see setHidden), and since when (performance.now()). */
 let hidden = false;
+let awayAt = 0;
 let viewW = 1;
 let viewH = 1;
 let dpr = 1;
@@ -211,11 +212,16 @@ export function onFxChange(fn: (on: boolean) => void) {
 }
 
 function clearAll() {
-  pool?.clear();
   shapes = [];
   tasks = [];
   queuedAt = null;
   covers.clear();
+  blank();
+}
+
+/** No particles, no shake, nothing drawn. */
+function blank() {
+  pool?.clear();
   shake.trauma = 0;
   applyShake(0, 0);
   renderer?.clear();
@@ -259,7 +265,8 @@ function onPage(a: Anchor): boolean {
  */
 function waited(): number {
   if (renderer) return 0;
-  const t = performance.now();
+  // (Time away doesn't count: nothing moves on meanwhile, see setHidden.)
+  const t = hidden ? awayAt : performance.now();
   queuedAt ??= t;
   return (t - queuedAt) / 1000;
 }
@@ -932,17 +939,18 @@ function setHidden(away: boolean) {
   if (away === hidden) return;
   hidden = away;
   if (away) {
+    awayAt = performance.now();
     cancelAnimationFrame(raf);
     raf = 0;
-    pool?.clear();
     shapes = shapes.filter((s) => !s.stopped && !Number.isFinite(s.life));
     tasks = tasks.filter((t) => !Number.isFinite(t.life));
-    shake.trauma = 0;
-    applyShake(0, 0);
     // (Nothing stale is shown for a moment as it comes back.)
-    renderer?.clear();
-    show(false);
-  } else if (shapes.length || tasks.length) wake();
+    blank();
+    return;
+  }
+  // Waiting for the renderer: the time away isn't caught up on once it's made (see waited).
+  if (queuedAt !== null) queuedAt += performance.now() - awayAt;
+  if (shapes.length || tasks.length) wake();
 }
 
 /** Starts the overlay on `c`. Returns a cleanup function. */
@@ -956,6 +964,7 @@ export function startFx(c: HTMLCanvasElement): () => void {
   };
   reduce?.addEventListener('change', onMotion);
   hidden = document.hidden;
+  awayAt = performance.now();
   const onVisibility = () => setHidden(document.hidden);
   document.addEventListener('visibilitychange', onVisibility);
   // Phones often drop the context while the tab is in the background.

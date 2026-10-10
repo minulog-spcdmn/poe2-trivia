@@ -135,6 +135,20 @@ function fxChanged() {
 }
 
 /**
+ * The tab went away or came back. Away, the effects drop the showing's
+ * orbits (they run their course; see setHidden in core.ts), so the showing
+ * ends with them: its embers and glints would otherwise go on round a bare
+ * avatar once it's back. Back, the next one comes soon.
+ */
+function visibilityChanged() {
+  if (!document.hidden) return plan(FIRST);
+  stopTimer();
+  current = null;
+  soon = false;
+  for (const e of entries.values()) e.glow = null;
+}
+
+/**
  * The aura on one avatar for `life` seconds: two Orbit shapes on the same
  * orbit (ruby glow under gold light), embers and glints.
  */
@@ -274,7 +288,14 @@ function register(el: HTMLElement, dim: boolean): Entry {
   const first = entries.size === 0;
   const e: Entry = { dim, glow: null };
   entries.set(el, e);
-  if (first) unlisten = onFxChange(fxChanged);
+  if (first) {
+    const off = onFxChange(fxChanged);
+    document.addEventListener('visibilitychange', visibilityChanged);
+    unlisten = () => {
+      off();
+      document.removeEventListener('visibilitychange', visibilityChanged);
+    };
+  }
   // The first of her avatars on the page, or a grand one (the deathmatch
   // intro, the victory crown, which come and go with their moment), brings
   // the aura out soon: now if it's out already, else in a moment or as soon

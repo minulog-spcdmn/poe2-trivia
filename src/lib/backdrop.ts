@@ -1527,7 +1527,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     lastStep = now;
     const nowS = now / 1000;
     const lights = packLights(lightA, lightC, nowS);
-    const moodState = stepMood(dt, mood);
+    const moodState = stepMood(dt, mood, nowS);
     const homeMoving = stepHomeScene(dt, home, title);
     // Lights and mood step once per animation frame; draw() uses the latest values.
     // A mood holding steady (the victory's gold, a deathmatch's red) changes

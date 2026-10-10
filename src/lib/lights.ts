@@ -138,8 +138,8 @@ const mood = {
   strength: 0,
   target: [0, 0, 0] as number[],
   targetStrength: 0,
-  /** The pulse's height when it last swelled (at `pulseAt`, seconds); it falls away by the clock, not by frames, so one that came just before the tab went away is over when it's back. */
   pulse: 0,
+  /** When the pulse last swelled (seconds, performance.now()'s clock): see PULSE_STALE. */
   pulseAt: 0,
   pulseColor: [1, 0.15, 0.08] as number[],
 };
@@ -153,28 +153,32 @@ export function setMood(color: Vec3, strength: number) {
   mood.targetStrength = strength;
 }
 
-/** How high the mood's pulse is at `nowS`. */
-const pulseNow = (nowS: number) => Math.max(0, mood.pulse - (nowS - mood.pulseAt) * 1.8);
+/**
+ * The pulse falls away frame by frame, so a slow frame (a big moment's) can't
+ * skip it; but one older than this (seconds) is over however few frames it
+ * had, so one that came just before the tab went away is gone when it's back.
+ */
+const PULSE_STALE = 1;
 
 /** A quick swell of colour over the scene (heartbeats), 0-1. */
 export function pulseMood(amount: number, color: Vec3 = [1, 0.15, 0.08]) {
   if (!fxActive()) return;
   const now = performance.now() / 1000;
-  mood.pulse = Math.min(1, pulseNow(now) + amount);
+  mood.pulse = Math.min(1, (now - mood.pulseAt > PULSE_STALE ? 0 : mood.pulse) + amount);
   mood.pulseAt = now;
   mood.pulseColor = [...color];
 }
 
 /**
- * Steps the mood toward its target and writes (r, g, b, strength) to `out`.
+ * Steps the mood toward its target (`nowS`: the frame's time, seconds) and writes (r, g, b, strength) to `out`.
  * Returns 'moving' while it eases or pulses, 'lit' while it holds steady,
  * and false when there is none.
  */
-export function stepMood(dt: number, out: Float32Array): 'moving' | 'lit' | false {
+export function stepMood(dt: number, out: Float32Array, nowS: number): 'moving' | 'lit' | false {
   const k = 1 - Math.exp(-dt * 2.2);
   const wanted = fxActive() ? mood.targetStrength : 0;
-  const pulse = pulseNow(performance.now() / 1000);
-  let moving = pulse > 0 || Math.abs(wanted - mood.strength) > 0.002;
+  if (nowS - mood.pulseAt > PULSE_STALE) mood.pulse = 0;
+  let moving = mood.pulse > 0 || Math.abs(wanted - mood.strength) > 0.002;
   for (let i = 0; i < 3; i++) {
     // (A colour change only shows while there is some mood.)
     if (Math.abs(mood.target[i] - mood.color[i]) > 0.002 && (wanted > 0 || mood.strength > 0.002)) moving = true;
@@ -186,7 +190,8 @@ export function stepMood(dt: number, out: Float32Array): 'moving' | 'lit' | fals
     mood.strength = wanted;
     for (let i = 0; i < 3; i++) mood.color[i] = mood.target[i];
   }
-  const p = pulse * 0.6;
+  mood.pulse = Math.max(0, mood.pulse - dt * 1.8);
+  const p = mood.pulse * 0.6;
   const total = mood.strength + p;
   for (let i = 0; i < 3; i++) out[i] = total > 0 ? (mood.color[i] * mood.strength + mood.pulseColor[i] * p) / total : 0;
   out[3] = total;
