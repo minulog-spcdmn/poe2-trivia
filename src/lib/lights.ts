@@ -153,7 +153,8 @@ export function setMood(color: Vec3, strength: number) {
 
 /** A quick swell of colour over the scene (heartbeats), 0-1. */
 export function pulseMood(amount: number, color: Vec3 = [1, 0.15, 0.08]) {
-  if (!fxActive()) return;
+  // (Out of sight the backdrop isn't stepped: it would swell only once the tab is back.)
+  if (!fxActive() || document.hidden) return;
   mood.pulse = Math.min(1, mood.pulse + amount);
   mood.pulseColor = [...color];
 }

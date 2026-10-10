@@ -296,10 +296,22 @@ test('what was asked for meanwhile goes on from where it would be by now; what r
   }
 });
 
-test('what is asked for in a background tab plays out of sight: back, everything is where it would be by now, and nothing plays all at once', () => {
+test('in a background tab effects run on a timer, undrawn: what is asked for meanwhile plays out of sight, not all at once as the tab comes back', () => {
   const real = performance.now;
   let t = real.call(performance);
   performance.now = () => t;
+  const realTimeout = g.setTimeout;
+  const realClear = g.clearTimeout;
+  const timers = new Map<number, () => void>();
+  g.setTimeout = (f: () => void) => (timers.set(++ids, f), ids);
+  g.clearTimeout = (id: number) => timers.delete(id);
+  /** The browser's timers in a background tab: about once a second. */
+  const second = (ms = 1000) => {
+    t += ms;
+    const now = [...timers.values()];
+    timers.clear();
+    for (const f of now) f();
+  };
   const doc = g.document as { hidden: boolean };
   const away = (hidden: boolean) => {
     doc.hidden = hidden;
@@ -308,7 +320,8 @@ test('what is asked for in a background tab plays out of sight: back, everything
   try {
     const o = overlay();
     const stop = fx.startFx(o.canvas);
-    const kept = glow();
+    let passes = 0;
+    const kept = fx.shape({ type: ShapeType.Flash, at: { x: 0, y: 0 }, life: Infinity, color: [1, 1, 1], update: (f) => (passes++, (f.k = 1)) });
     askFloat();
     frame();
     o.ctx.state.done = true;
@@ -319,35 +332,46 @@ test('what is asked for in a background tab plays out of sight: back, everything
       fx.shape({ type: ShapeType.Flash, at: { x: 0, y: 0 }, life, color: [1, 1, 1], update: (f, _, age) => (ages.set(name, age), (f.k = 1)) });
     flash('before', 2);
     away(true);
-    t += 1000;
+    assert.ok(!fx.fxStats().running, 'no frames asked for');
+    assert.equal(timers.size, 1, 'the timer instead');
+    second();
     flash('done', 1);
-    flash('long', 100);
+    flash('long', 1000);
     let chained = false;
     fx.after(0.5, () => {
       chained = true;
       flash('chained', 1);
     });
     fx.shakeView(1);
-    assert.ok(!fx.shaking(), 'no shake out of sight');
-    t += 59_000;
+    second();
+    assert.ok(chained, 'what it set off happened out of sight, at about its time');
+    second();
+    assert.ok(!fx.shaking(), 'and the shake is over');
+    for (let i = 0; i < 57; i++) second();
+    assert.ok(!fx.fxStats().running, 'still undrawn');
+    // Back half a second after the last tick: only that is left to catch up.
+    t += 500;
     away(false);
-    // Moved on by the whole minute: what ran its course is gone, the rest
-    // is as old as it would be by now (to a frame), and what it set off went too.
     assert.equal(fx.fxStats().shapes, 2, 'the endless one and the long one');
-    assert.ok(Math.abs(ages.get('long')! - 59) < 0.1, `long: ${ages.get('long')}`);
-    assert.ok(chained, 'what it set off happened');
-    assert.ok(fx.fxStats().running, 'and the rest goes on playing');
-    // A short trip: played out frame by frame, the same.
-    flash('soon', 3);
+    assert.ok(Math.abs(ages.get('long')! - 59.5) < 0.1, `long: ${ages.get('long')}`);
+    assert.ok(fx.fxStats().running, 'and the rest goes on playing, drawn');
+    assert.equal(timers.size, 0, 'the timer stopped');
+    // A timer held back for a minute (a browser's heavier throttling) catches up in a few passes, not a frame's worth each.
+    flash('soon', 30);
     away(true);
-    t += 2000;
+    passes = 0;
+    second(60_000);
+    assert.ok(passes <= 20, `${passes} passes`);
+    assert.ok(!ages.has('soon') || ages.get('soon')! < 30, 'it ran its course');
+    assert.equal(fx.fxStats().shapes, 2);
     away(false);
-    assert.ok(Math.abs(ages.get('soon')! - 2) < 0.1, `soon: ${ages.get('soon')}`);
     kept.stop(0);
     stop();
   } finally {
-    doc.hidden = false;
+    if (doc.hidden) away(false);
     performance.now = real;
+    g.setTimeout = realTimeout;
+    g.clearTimeout = realClear;
   }
 });
 

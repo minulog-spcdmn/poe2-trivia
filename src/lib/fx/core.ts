@@ -135,23 +135,24 @@ const coming = () => !!(waiting || building);
 let queuedAt: number | null = null;
 /** When the view was last shaken while waiting for it. */
 let shakenAt = 0;
-/**
- * While the tab is in the background, when it went there (performance.now()),
- * else null. No frames come meanwhile, so nothing moves on: what's asked for
- * then (a timer, a peer's message) is held back by how long the tab has been
- * away (see waited), and once it's back everything is moved on by the whole
- * time (caughtUp). What would have played meanwhile has played, out of sight,
- * rather than all at once as the tab comes back.
- */
-let hiddenAt: number | null = null;
-/** The most of the time away that caughtUp() plays out step by step: longer than any effect (but the endless ones) takes. */
-const CATCH_UP = 10;
 const MAX_SHAPES = 96;
 const shapeData = new Float32Array(MAX_SHAPES * SHAPE_FLOATS);
 let shapes: LiveShape[] = [];
 let tasks: { fn: Task; age: number }[] = [];
 let raf = 0;
 let last = 0;
+/**
+ * While the tab is in the background no frames come, so effects run on a
+ * timer instead (the browser fires it about once a second), undrawn: what's
+ * asked for meanwhile (a timer, a peer's message) plays out of sight, its
+ * after()s and lights at about their time, rather than all at once as the
+ * tab comes back. `hidden`: whether it's away; `ticker`: the timer, while
+ * something is alive.
+ */
+let hidden = false;
+let ticker: ReturnType<typeof setTimeout> | null = null;
+/** The most simulate() passes one catch-up takes, however long it covers (its steps get longer instead). */
+const MAX_PASSES = 20;
 let viewW = 1;
 let viewH = 1;
 let dpr = 1;
@@ -259,8 +260,8 @@ function onPage(a: Anchor): boolean {
  * effect goes on from where it would be by then.
  */
 function waited(): number {
+  if (renderer) return 0;
   const t = performance.now();
-  if (renderer) return hiddenAt === null ? 0 : (t - hiddenAt) / 1000;
   queuedAt ??= t;
   return (t - queuedAt) / 1000;
 }
@@ -466,8 +467,7 @@ export function shakeTarget(el: HTMLElement, k = 1) {
  * hits stay gentle); `px` is the largest offset.
  */
 export function shakeView(amount: number, px = 7) {
-  // (Out of sight it would be over before the tab is back: see caughtUp.)
-  if (!fxActive() || (renderer && hiddenAt !== null)) return;
+  if (!fxActive()) return;
   const was = shake.trauma;
   shake.trauma = Math.min(1, was + amount);
   shake.amp = was > 0.05 ? Math.max(shake.amp, px) : px;
@@ -517,7 +517,12 @@ let manualClock: number | null = null;
 function wake() {
   // Not made yet: made now, and then everything asked for so far plays.
   if (!renderer) hurry();
-  else if (!raf && manualClock === null) {
+  else if (hidden) {
+    if (!ticker && manualClock === null) {
+      last = performance.now();
+      ticker = setTimeout(tick, 250);
+    }
+  } else if (!raf && manualClock === null) {
     last = performance.now();
     raf = requestAnimationFrame(frame);
   }
@@ -613,6 +618,53 @@ function frame(nowMs: number) {
   if (!busy) show(false);
 }
 
+/**
+ * Moves every effect on by the `seconds` since the last frame or tick,
+ * undrawn, in at most MAX_PASSES steps. Returns whether anything is still alive.
+ */
+function catchUp(seconds: number): boolean {
+  // Steps of a frame's worth (1/15 s, as frame() clamps them) while that's few enough.
+  const n = Math.min(MAX_PASSES, Math.ceil(seconds * 15));
+  let busy = true;
+  for (let i = 0; i < n && busy; i++) busy = simulate(seconds / n, performance.now(), false);
+  return busy;
+}
+
+/** A step of the loop while the tab is away (see `hidden`). */
+function tick() {
+  if (!renderer || !hidden || manualClock !== null) {
+    ticker = null;
+    return;
+  }
+  // (`ticker` stays set meanwhile, as `raf` does in frame(): effects spawned in it don't start a second timer.)
+  const nowMs = performance.now();
+  const busy = catchUp(Math.max(0, nowMs - last) / 1000);
+  last = nowMs;
+  ticker = busy ? setTimeout(tick, 250) : null;
+}
+
+/** The tab went away (`away`) or came back: the loop moves from frames to the timer, or back. */
+function setHidden(away: boolean) {
+  if (away === hidden) return;
+  hidden = away;
+  if (!renderer || manualClock !== null) return;
+  if (away) {
+    cancelAnimationFrame(raf);
+    raf = 0;
+    // (Nothing stale is shown for a moment as it comes back: the next frame draws what's there by then.)
+    renderer.clear();
+    show(false);
+    if (shapes.length || tasks.length || pool?.count || shake.trauma > 0) wake();
+    return;
+  }
+  if (ticker) clearTimeout(ticker);
+  ticker = null;
+  // What's left since the last tick (about a second).
+  const nowMs = performance.now();
+  if (catchUp(Math.max(0, nowMs - last) / 1000)) wake();
+  last = nowMs;
+}
+
 let frameNo = 0;
 /**
  * The followed elements' own opacities, read once per simulate() pass: shapes
@@ -634,6 +686,11 @@ function simulate(dt: number, nowMs: number, render: boolean): boolean {
   for (let i = 0; i < tasks.length; ) {
     const t = tasks[i];
     t.age += dt;
+    // (Still waiting for its time: see waited.)
+    if (t.age < 0) {
+      i++;
+      continue;
+    }
     let keep = false;
     try {
       keep = t.fn(dt, t.age);
@@ -697,12 +754,14 @@ function simulate(dt: number, nowMs: number, render: boolean): boolean {
   calm = (!!coarse?.matches || (nShapes > 0 && shapesEndless)) && shapesCalm && shake.trauma === 0 && pool.fastest < CALM_SPEED * CALM_SPEED;
 
   // Shake: trauma decays; the offset follows two noise curves.
+  // (Undrawn, nothing is moved: it would only force a layout before the next pass reads one.)
   if (shake.trauma > 0) {
     shake.trauma = Math.max(0, shake.trauma - dt * 1.6);
     const s = shake.trauma * shake.trauma * shake.amp;
     const tt = nowMs / 1000 * 26;
-    applyShake(noise1(tt, 1) * s, noise1(tt, 2) * s * 0.8);
-    if (shake.trauma === 0) applyShake(0, 0);
+    if (shake.trauma === 0 || !render) {
+      if (shake.x || shake.y) applyShake(0, 0);
+    } else applyShake(noise1(tt, 1) * s, noise1(tt, 2) * s * 0.8);
   }
 
   const busy = nParticles > 0 || nShapes > 0 || tasks.length > 0 || shake.trauma > 0 || shapes.length > 0 || pool.count > 0;
@@ -739,6 +798,8 @@ export function fxStep(seconds: number, fps = 60) {
   if (manualClock === null) {
     cancelAnimationFrame(raf);
     raf = 0;
+    if (ticker) clearTimeout(ticker);
+    ticker = null;
     manualClock = performance.now();
   }
   const n = Math.max(1, Math.round(seconds * fps));
@@ -783,6 +844,8 @@ function teardown() {
   building = null;
   cancelAnimationFrame(raf);
   raf = 0;
+  if (ticker) clearTimeout(ticker);
+  ticker = null;
   ro?.disconnect();
   ro = null;
   renderer = null;
@@ -913,38 +976,6 @@ function setup(c: HTMLCanvasElement, r: FxRenderer) {
   // (resize() woke the loop: anything asked for meanwhile plays from now.)
 }
 
-/**
- * The tab is back after `hiddenAt`: everything moves on by the time it was
- * away, as if it had played all along. The last CATCH_UP seconds are played
- * out frame by frame, undrawn, so that what effects start on their own as
- * they go (after(), emitters) starts and ends in order too; what came before
- * is moved on at once, the way setup() moves on what waited for the renderer.
- */
-function caughtUp() {
-  if (hiddenAt === null) return;
-  const away = (performance.now() - hiddenAt) / 1000;
-  hiddenAt = null;
-  if (!renderer || !pool || manualClock !== null) return;
-  const skip = away - CATCH_UP;
-  if (skip > 0) {
-    shapes = shapes.filter((s) => {
-      s.age += skip;
-      return !s.stopped && !(s.age >= s.life);
-    });
-    for (const t of tasks) t.age += skip;
-    for (let left = skip; left > 0 && pool.count; left -= 1 / 15) pool.step(Math.min(left, 1 / 15));
-  }
-  const nowMs = performance.now();
-  let busy = true;
-  for (let left = Math.min(away, CATCH_UP); left > 0 && busy; left -= 1 / 15) busy = simulate(Math.min(left, 1 / 15), nowMs, false);
-  last = nowMs;
-  if (busy) wake();
-  else {
-    renderer.clear();
-    show(false);
-  }
-}
-
 /** Starts the overlay on `c`. Returns a cleanup function. */
 export function startFx(c: HTMLCanvasElement): () => void {
   canvas = c;
@@ -955,11 +986,8 @@ export function startFx(c: HTMLCanvasElement): () => void {
     for (const l of listeners) l(userOn);
   };
   reduce?.addEventListener('change', onMotion);
-  hiddenAt = document.hidden ? performance.now() : null;
-  const onVisibility = () => {
-    if (!document.hidden) caughtUp();
-    else hiddenAt ??= performance.now();
-  };
+  hidden = document.hidden;
+  const onVisibility = () => setHidden(document.hidden);
   document.addEventListener('visibilitychange', onVisibility);
   // Phones often drop the context while the tab is in the background.
   // preventDefault() asks the browser to give it back; then everything is
@@ -980,7 +1008,6 @@ export function startFx(c: HTMLCanvasElement): () => void {
   return () => {
     reduce?.removeEventListener('change', onMotion);
     document.removeEventListener('visibilitychange', onVisibility);
-    hiddenAt = null;
     c.removeEventListener('webglcontextlost', onLost);
     c.removeEventListener('webglcontextrestored', onRestored);
     renderer?.destroy();
