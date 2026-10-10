@@ -37,7 +37,7 @@ import { C, glints, rand } from './effects';
 import { Shape } from './particles';
 import { ShapeType } from './renderer';
 import { FIRST, SHOW, auraEnvelope, auraForm, nextGap, orbitPoint, type AuraForm } from './orbit';
-import { openDialog } from '../behindDialog';
+import { DIALOG_BLUR, openDialog } from '../behindDialog';
 import { opacityOf } from '../opacity';
 
 const k3 = (c: Vec3, k: number): Vec3 => [c[0] * k, c[1] * k, c[2] * k];
@@ -170,8 +170,9 @@ function ignite(el: HTMLElement, life: number): Glow {
   const orbit = (f: ShapeFrame, age: number, b: Box, k: number, trail: number, mote: number) => {
     const sc = scaleOf(b);
     const reach = form.radius + mote * 3.4;
-    // The shader fades everything out over the outer 28% of the quad.
-    f.hw = f.hh = (reach / 0.7) * sc;
+    // The shader fades everything out over the outer 28% of the quad. Behind
+    // a dialog it blurs the aura, which then reaches further.
+    f.hw = f.hh = (reach * sc + 2 * blurAt(el)) / 0.7;
     f.k = k * auraEnvelope(age, life);
     f.q[0] = form.disc * sc;
     f.q[1] = form.radius * sc;
@@ -265,6 +266,12 @@ function sparkOpacity(el: Element): number {
   if (d && !d.contains(el)) return 0;
   const o = opacityOf(el);
   return o > 0.3 ? o : 0;
+}
+
+/** How far the page is blurred where `el` is (CSS px): behind an open dialog, not in it (lib/behindDialog.ts). */
+function blurAt(el: Element): number {
+  const { amount, backdrop } = openDialog();
+  return backdrop && !backdrop.contains(el) ? DIALOG_BLUR * amount : 0;
 }
 
 /** An ember drifting up off the top of her avatar, ruby or gold. */

@@ -10,7 +10,7 @@
 
 import { INSTANCE_FLOATS } from './particles';
 import { NOISE, buildPrograms, dropTarget, target, whenGpuCaughtUp, wrapProgram, type Build, type Program, type Target } from './gl';
-import { DIALOG_DIM } from '../behindDialog';
+import { DIALOG_BLUR, DIALOG_DIM } from '../behindDialog';
 
 /** Floats per shape instance: five vec4s (see ShapeType). */
 export const SHAPE_FLOATS = 24;
@@ -54,11 +54,14 @@ export const FIRE_REACH = 1.8;
 // While a dialog is open (lib/behindDialog.ts), light from the page behind it
 // hides behind the dialog, which on the page is opaque; the dialog's own light
 // (from effects that started inside it) shows over it. Outside it, the
-// composite dims both with the rest of the page.
+// composite dims both with the rest of the page. The page's light is soft
+// already, so the page's blur passes it by; the shapes drawn crisp (an aura's
+// orbit, a sigil) blur themselves by uBlur.
 const BEHIND_DIALOG = `
 uniform vec4 uDialogBox; // the open dialog: left, top, right, bottom (CSS px)
 uniform float uDialogR;  // its corner radius, CSS px
 uniform float uHide;     // how far it hides the page's light, 0-1
+uniform float uBlur;     // how far it blurs the page: the blur's standard deviation, CSS px
 // Signed distance from the dialog's edge (CSS px), negative inside.
 float dialogSdf(vec2 p) {
   vec2 h = (uDialogBox.zw - uDialogBox.xy) * 0.5;
@@ -293,6 +296,17 @@ ${NOISE}
 ${BEHIND_DIALOG}
 ${COVER}
 vec2 rot2(vec2 p, float a) { float c = cos(a), s = sin(a); return vec2(c * p.x - s * p.y, s * p.x + c * p.y); }
+// A line's profile across it, exp(-(x / w)^2), blurred by a Gaussian blur
+// (CSS px; see BEHIND_DIALOG): their variances add, and it dims by as much
+// as it widens, keeping its light.
+float blurredLine(float x, float w, float blur) {
+  float wb = w * w + 2.0 * blur * blur;
+  return exp(-x * x / wb) * w * inversesqrt(wb);
+}
+// How much of a pattern repeating every period px a Gaussian blur leaves (of its fundamental).
+float blurKeeps(float period, float blur) {
+  return exp(-19.74 * blur * blur / max(period * period, 1e-4));
+}
 // Equilateral triangle SDF (Inigo Quilez), r = circumradius-ish size.
 float sdTri(vec2 p, float r) {
   const float k = 1.7320508;
@@ -504,8 +518,16 @@ void main() {
     // fx/orbit.ts, which places them the same way.
     const float LAG[3] = float[3](0.0, 2.25, 4.2);
     const float SIZE[3] = float[3](1.0, 0.78, 0.62);
-    // What the disc lets through from behind it: 0 over it, 1 outside.
-    float clear = smoothstep(vQ.x - 0.7, vQ.x + 0.7, r);
+    // Behind an open dialog the avatar blurs with the page, and its aura
+    // with it: each Gaussian widens by the blur (see blurredLine), and each
+    // hard edge (the disc's, a trail's start) softens by as much.
+    float blur = vBehind * uBlur;
+    float b2 = 2.0 * blur * blur;
+    // What the disc lets through from behind it: 0 over it, 1 outside. (A
+    // smoothstep of half width h spreads an edge with variance h^2 / 5; the
+    // blur's adds to it.)
+    float edge = sqrt(0.49 + 5.0 * blur * blur);
+    float clear = smoothstep(vQ.x - edge, vQ.x + edge, r);
     vec2 ab = vec2(vQ.y, max(vQ.y * vQ.z, 0.01));
     vec2 p = rot2(vP, -vQ.w);
     // Distance to the orbit's ellipse (Inigo Quilez's approximation) and the
@@ -515,6 +537,8 @@ void main() {
     float k1 = length(p / (ab * ab));
     float d = k0 * (k0 - 1.0) / max(k1, 1e-4);
     float th = atan(-p.y / ab.y, p.x / ab.x);
+    // CSS px along the orbit per radian of th, here.
+    float ds = length(vec2(ab.x * sin(th), ab.y * cos(th)));
     float near = -sin(th);
     float seen = mix(clear, 1.0, smoothstep(-0.12, 0.12, near)) * (0.68 + 0.32 * near);
     for (int i = 0; i < 3; i++) {
@@ -522,23 +546,35 @@ void main() {
       float head = vR.x - LAG[i];
       float size = vR.w * SIZE[i];
       // The trail, along the orbit behind the head, thinning as it fades.
+      // Blurred, it starts softly round the head, a little ahead of it too
+      // (where lag is negative; a trail is shorter than half the orbit).
       float lag = mod(head - th, 2.0 * PI);
+      if (blur > 0.0 && lag > PI) lag -= 2.0 * PI;
       if (lag < vR.z) {
-        float u = lag / vR.z;
+        float u = max(lag, 0.0) / vR.z;
         float w = size * (0.8 - 0.5 * u);
-        v += exp(-d * d / (w * w)) * (1.0 - u) * (1.0 - u) * 0.6 * seen;
+        float t = blurredLine(d, w, blur) * (1.0 - u) * (1.0 - u) * 0.6 * seen;
+        // (The blurred step: a logistic close to the Gaussian's CDF.)
+        if (blur > 0.0) t /= 1.0 + exp(-1.702 * lag * ds / blur);
+        v += t;
       }
       // The head: a hot core in a soft glow, a little bigger on the near
       // side; behind the disc, its light hides behind the disc's edge.
       float hn = -sin(head);
       float hs = size * (1.0 + 0.22 * hn);
       vec2 e = p - vec2(cos(head), -sin(head)) * ab;
-      float e2 = dot(e, e) / (hs * hs);
+      float ee = dot(e, e);
       float hseen = mix(clear, 1.0, smoothstep(-0.12, 0.12, hn)) * (0.68 + 0.32 * hn);
-      v += (exp(-e2) + 0.18 * exp(-e2 * 0.12)) * hseen;
-      hot += exp(-e2 * 4.0) * hseen * 0.7;
+      // The core, its glow and its white heat: Gaussians hs, hs / sqrt(0.12) and hs / 2 wide.
+      float hs2 = hs * hs;
+      vec3 w2 = vec3(hs2, hs2 / 0.12, hs2 / 4.0);
+      vec3 wb = w2 + b2;
+      vec3 g = exp(-ee / wb) * w2 / wb;
+      v += (g.x + 0.18 * g.y) * hseen;
+      hot += g.z * hseen * 0.7;
     }
-    // The glow from the disc's edge.
+    // The glow from the disc's edge. (Blurred, its tail keeps its length:
+    // only the edge, in clear, softens.)
     v += exp(-max(r - vQ.x, 0.0) / (1.2 + vQ.x * 0.12)) * vS.w * clear;
   } else if (type == 10) {
     // Fire rising off a rounded rectangle. q: half w, half h, corner radius,
@@ -640,32 +676,37 @@ void main() {
   } else {
     // Sigil: an arcane circle that draws itself. q: radius, line width,
     // drawn 0-1, spin (rad/s).
+    // Behind an open dialog its lines blur with the page (see blurredLine),
+    // and its ticks and dashes fade toward their average.
     float R = vQ.x;
     float lw = vQ.y;
+    float blur = vBehind * uBlur;
     vec2 p = rot2(vP, time * vQ.w + seed);
     float ang = atan(p.y, p.x);
     float lines = 0.0;
-    lines += exp(-pow((r - R) / lw, 2.0));
-    lines += 0.8 * exp(-pow((r - R * 0.86) / (lw * 0.8), 2.0));
-    lines += 0.5 * exp(-pow((r - R * 0.44) / (lw * 0.7), 2.0));
-    // Tick marks between the two outer rings.
+    lines += blurredLine(r - R, lw, blur);
+    lines += 0.8 * blurredLine(r - R * 0.86, lw * 0.8, blur);
+    lines += 0.5 * blurredLine(r - R * 0.44, lw * 0.7, blur);
+    // Tick marks between the two outer rings (72 round it; |cos|^90 averages 0.084).
     float band = smoothstep(R * 0.87, R * 0.89, r) * (1.0 - smoothstep(R * 0.97, R * 0.99, r));
-    lines += band * pow(abs(cos(ang * 36.0)), 90.0) * 1.2;
-    // Rune notches: each of 12 sectors gets its own pattern of dashes.
+    float ticks = mix(0.084, pow(abs(cos(ang * 36.0)), 90.0), blurKeeps(2.0 * PI * r / 72.0, blur));
+    lines += band * ticks * 1.2;
+    // Rune notches: each of 12 sectors gets its own pattern of dashes (half on, in its middle 64%).
     float sector = floor((ang + PI) / (2.0 * PI) * 12.0);
     float h = hash12(vec2(sector, seed));
     float local = fract((ang + PI) / (2.0 * PI) * 12.0);
-    float dash = step(0.18, local) * step(local, 0.82) * step(0.5, fract(local * (2.0 + floor(h * 3.0)) + h));
-    float runeBand = exp(-pow((r - R * 0.93) / (lw * 1.3), 2.0));
+    float n = 2.0 + floor(h * 3.0);
+    float dash = step(0.18, local) * step(local, 0.82) * mix(0.5, step(0.5, fract(local * n + h)), blurKeeps(2.0 * PI * r / 12.0 / n, blur));
+    float runeBand = blurredLine(r - R * 0.93, lw * 1.3, blur);
     lines += dash * runeBand * 0.9;
     // A hexagram inside.
     float tri = min(abs(sdTri(p, R * 0.73)), abs(sdTri(vec2(p.x, -p.y), R * 0.73)));
-    lines += 0.75 * exp(-pow(tri / (lw * 0.8), 2.0));
+    lines += 0.75 * blurredLine(tri, lw * 0.8, blur);
     // Draw on around the circle.
     float at = fract((ang + PI) / (2.0 * PI) + 0.25);
     float drawn = 1.0 - smoothstep(vQ.z - 0.02, vQ.z, at);
     v = lines * drawn;
-    v += exp(-pow((r - R) / (lw * 6.0), 2.0)) * 0.15;
+    v += blurredLine(r - R, lw * 6.0, blur) * 0.15;
   }
   // Behind the picture: only a faint glow over it, none of the white heat,
   // and a little less light right around it.
@@ -1128,6 +1169,7 @@ export class FxRenderer {
       else gl.uniform4f(p.u('uDialogBox'), -1, -1, -1, -1);
       gl.uniform1f(p.u('uDialogR'), dialog.radius);
       gl.uniform1f(p.u('uHide'), hide && b ? dialog.amount : 0);
+      gl.uniform1f(p.u('uBlur'), DIALOG_BLUR * dialog.amount);
     };
 
     gl.disable(gl.DEPTH_TEST);
