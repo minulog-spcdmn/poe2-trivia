@@ -388,7 +388,7 @@
   }
 </script>
 
-<div class="choose">
+<div class="choose" class:coop style:--n={s.offered.length}>
   <p class="prompt">
     {#if s.deathmatch}
       {#if mine}Sudden death: your category is drawn at random.{:else}<span class="muted">Sudden death for</span> {active.name}<span class="muted">…</span>{/if}
@@ -481,8 +481,26 @@
     {/each}
   </div>
 
+  {#if finds.length && !s.deathmatch}
+    <!-- One short note per find, in its colour; what stays unused on them, once for both. -->
+    {@const two = finds.length > 1}
+    {@const team = coop && !!me && livesOf(s, me) > 0}
+    {@const held = team ? (itemsHeld ? teamUnused('a find') : '') : mine && !coop ? unused(inventoryOf(s, active.id), 'a find') : ''}
+    <!-- Wide screens: each note under its own card (its column), so what a find
+         gives is read where it is chosen; phones: one under the other. -->
+    <div class="find-notes">
+      {#each finds as f (f.kind)}
+        <p class="note find-note" data-find={f.kind} id="{uid}-note-{f.kind}" style:--col={s.offered.indexOf(f.category) + 1}>
+          {#if team}<strong>{FIND_TEXT[f.kind].tag}.</strong> {teamFindNote(f.kind, itemsHeld && !two)}{:else if mine && !coop}<strong
+              >{FIND_TEXT[f.kind].tag}.</strong
+            > {findNote(f.kind, inventoryOf(s, active.id), !two)}{:else}{FIND_TEXT[f.kind].others}{/if}
+        </p>
+      {/each}
+      {#if two && held}<p class="note muted">{held.trim()}</p>{/if}
+    </div>
+  {/if}
   {#if coop && !drawn && s.phase === 'choosing'}
-    <!-- The vote: when it closes, and who it is still waiting for. -->
+    <!-- The vote: when it closes, and who it is still waiting for (under what each card gives, with the rules' lines). -->
     <!-- Only who it waits for is announced; the countdown would be read out every second. -->
     <p class="vote-status">
       {#if closesIn !== null}
@@ -502,22 +520,6 @@
     </p>
   {/if}
 
-  {#if finds.length && !s.deathmatch}
-    <!-- One short note per find, in its colour; what stays unused on them, once for both. -->
-    {@const two = finds.length > 1}
-    {@const team = coop && !!me && livesOf(s, me) > 0}
-    {@const held = team ? (itemsHeld ? teamUnused('a find') : '') : mine && !coop ? unused(inventoryOf(s, active.id), 'a find') : ''}
-    <div class="find-notes">
-      {#each finds as f (f.kind)}
-        <p class="note find-note" data-find={f.kind} id="{uid}-note-{f.kind}">
-          {#if team}<strong>{FIND_TEXT[f.kind].tag}.</strong> {teamFindNote(f.kind, itemsHeld && !two)}{:else if mine && !coop}<strong
-              >{FIND_TEXT[f.kind].tag}.</strong
-            > {findNote(f.kind, inventoryOf(s, active.id), !two)}{:else}{FIND_TEXT[f.kind].others}{/if}
-        </p>
-      {/each}
-      {#if two && held}<p class="note muted">{held.trim()}</p>{/if}
-    </div>
-  {/if}
   {#if s.deathmatch}
     <p class="note muted">{mine ? 'Tap the card when you are ready.' : deathmatchText(difficultyOf(s.settings.difficulty))}</p>
   {:else if coop && canVote && lockout > 0}
@@ -539,10 +541,46 @@
     font-size: 1.2rem;
     text-align: center;
   }
+  /* The cards take the room the question will: on a full-size window they
+     stand as tall as its stage (1.36 x, 980 wide for three), smaller on
+     shorter windows. Scaled whole with zoom, as the engraving is laid out to
+     the card's own 220 x 300 (see .frame). */
+  .choose {
+    --card-z: 1;
+  }
+  @media (min-width: 1100px) and (min-height: 821px) {
+    .choose {
+      --card-z: 1.2;
+    }
+  }
+  @media (min-width: 1100px) and (min-height: 900px) {
+    .choose {
+      --card-z: 1.36;
+    }
+  }
+  /* Tablets standing up: as wide as the screen allows. */
+  @media (min-width: 761px) and (max-width: 1099px) and (min-height: 1000px) {
+    .choose {
+      --card-z: 1.1;
+    }
+  }
+  /* Delve together takes some of the height for the votes under the cards
+     and the vote's line: as large as alone from 900 tall, smaller below. */
+  @media (min-width: 761px) and (min-height: 821px) and (max-height: 899px) {
+    .choose.coop {
+      --card-z: 1;
+    }
+  }
+  @media (min-width: 761px) and (max-height: 820px) {
+    .choose.coop {
+      --card-z: 0.8;
+    }
+  }
   .cards {
     display: grid;
     grid-template-columns: repeat(var(--n, 3), minmax(0, 220px));
     gap: 1.4rem;
+    zoom: var(--card-z);
   }
   .card {
     /* The engraving's gold, and the warm glow in the face's window. */
@@ -901,8 +939,10 @@
   .card.dim .back {
     filter: saturate(0.6) brightness(0.8);
   }
+  /* Lifted and grown a little: no more than keeps it clear of the line over
+     the cards on a short window and inside a phone's margins. */
   .card.chosen .frame {
-    transform: translateY(-14px) scale(1.08);
+    transform: translateY(-4px) scale(1.05);
     transition:
       transform 0.55s cubic-bezier(0.2, 0.9, 0.3, 1.15),
       --bs-shade 0.35s,
@@ -962,6 +1002,64 @@
     flex-direction: column;
     align-items: center;
     gap: 0.35rem;
+  }
+  /* Wide screens: the notes in the cards' columns, each under its card. */
+  @media (min-width: 701px) {
+    .find-notes {
+      display: grid;
+      /* The cards' own tracks (shrinking with them on a narrow tablet). */
+      grid-template-columns: repeat(var(--n, 3), minmax(0, calc(220px * var(--card-z))));
+      column-gap: calc(1.4rem * var(--card-z));
+      row-gap: 0.35rem;
+      align-items: start;
+      margin-top: -0.6rem;
+    }
+    .find-notes .find-note {
+      grid-column: var(--col);
+      grid-row: 1;
+      margin: 0;
+      max-width: none;
+      font-size: 0.9rem;
+      line-height: 1.35;
+    }
+    .find-notes .note.muted {
+      grid-column: 1 / -1;
+      grid-row: 2;
+    }
+    /* Together: who voted hangs on the card's foot, their seals over its
+       frame, rather than in a row of its own kept under every card. */
+    .card {
+      position: relative;
+    }
+    .card .votes {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: -13px;
+      margin: 0;
+    }
+    /* The find's tag never much smaller than at the cards' own size (nine
+       tenths, so it still fits its plate's slot): it is all that marks a
+       find on the card's face. */
+    .cards .find-tag {
+      zoom: max(1, calc(0.9 / var(--card-z)));
+    }
+    /* Side by side on the foot, each seal whole, so every voter can be told. */
+    .card .votes .pip + .pip {
+      margin-left: 3px;
+    }
+    /* The vote's line and the rule under it read as one block of small print. */
+    .vote-status + .note {
+      margin-top: -0.6rem;
+    }
+    .coop .find-notes {
+      margin-top: 0;
+    }
+    /* Under notes in the cards' columns, the next line keeps the usual gap. */
+    .find-notes + .note,
+    .find-notes + .vote-status {
+      margin-top: 0;
+    }
   }
 
   /* ---- finds ---------------------------------------------------------------
@@ -1137,8 +1235,9 @@
     height: 22px;
     border-radius: 50%;
   }
+  /* Close, each seal whole, so every voter can be told. */
   .pip + .pip {
-    margin-left: -6px;
+    margin-left: 2px;
   }
   /* Your own vote: the avatar's own ring in gold rather than your colour,
      on top of the others; the same rings, so it sits in the row like them. */
@@ -1205,7 +1304,8 @@
     transition-duration: 0.05s;
   }
   .card.chosen .glow {
-    transform: translateY(-14px) scale(1.08);
+    /* (The frame's lift, so the light stays on the card.) */
+    transform: translateY(-4px) scale(1.05);
     transition: transform 0.55s cubic-bezier(0.2, 0.9, 0.3, 1.15);
     animation: drawn-glow 1.1s ease-out both;
   }
@@ -1394,12 +1494,19 @@
       min-height: 0;
       margin: 0;
     }
-    .cards:has(.votes) {
+    .choose.coop .cards {
       gap: 1.25rem;
     }
     .card.voted .frame,
     .card.voted .glow {
       transform: translateX(6px);
+    }
+  }
+
+  /* Short desktop windows: the same gap under the prompt as under the question's task line. */
+  @media (min-width: 761px) and (max-height: 820px) {
+    .choose {
+      gap: 1rem;
     }
   }
 </style>
