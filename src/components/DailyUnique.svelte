@@ -140,7 +140,9 @@
         <div class="circle">
           <ArcaneCircle size="100%" state={glow && right ? 'good' : 'idle'} strength={!glow ? 0.5 : right ? 0.85 : 0.26} />
         </div>
-        <div class="art" bind:this={artEl}>
+        <!-- "frame", as the game's art stage: the right answer's flare and rays find the
+             picture through it (fx/moments reveal) and shine from behind its outline. -->
+        <div class="art frame" bind:this={artEl}>
           {#key q.itemId + (practice ? ':p' : '')}
             <ArtImage src={itemImage(q.itemId)} alt="The item to name" scale={4} float />
           {/key}
@@ -194,7 +196,6 @@
         <p class="caption">The same item for every exile today.<span class="more">{' '}Watch for look-alikes.</span></p>
       {/if}
     {:else}
-      <button class="btn small" bind:this={practiceEl} onclick={practiceMore} {disabled} in:fade={{ duration: 250 }}>Practice more</button>
       <p class="tally" in:fade={{ duration: 300, delay: 150 }}>
         {#if practice}
           <!-- Practice keeps out of the streak, so the streak keeps out of practice. -->
@@ -214,6 +215,8 @@
           <span>{nextIn(now)}</span>
         {/if}
       </p>
+      <!-- After the result, as in the game: what happened first, then the way on. -->
+      <button class="btn small" bind:this={practiceEl} onclick={practiceMore} {disabled} in:fade={{ duration: 250 }}>Practice more</button>
     {/if}
   </div>
 </section>
@@ -594,7 +597,7 @@
     display: flex;
     align-items: baseline;
     gap: 0.5rem;
-    margin: 0 0 0 auto;
+    margin: 0;
     font-style: italic;
     font-size: 15px;
     color: #a99c86;

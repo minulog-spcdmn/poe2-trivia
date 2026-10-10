@@ -145,16 +145,32 @@
     (known ? codeField : nameField)?.focus();
   }
 
-  /** Closes the open row; its entry takes the focus back if the row had it (always, from the keyboard). */
-  function closeRow(refocus = true) {
+  /** The open row's element (its fields and button). */
+  const rowEl = () => (open ? entryEls[ENTRIES.indexOf(open)]?.parentElement?.querySelector('.slot') : null);
+  /** Whether the open row has the focus (its field is being typed in). */
+  const rowHasFocus = () => !!rowEl()?.contains(document.activeElement);
+
+  /**
+   * Closes the open row. Its entry takes the focus back: always from the
+   * keyboard (Escape), only if the row had it when it closes on its own,
+   * never when a click elsewhere closes it (the click decides the focus).
+   */
+  function closeRow(refocus: 'always' | 'if-focused' | 'never' = 'always') {
     if (!open) return;
     const i = ENTRIES.indexOf(open);
-    const row = entryEls[i]?.parentElement?.querySelector('.slot');
-    const hadFocus = !!row?.contains(document.activeElement);
+    const hadFocus = rowHasFocus();
     open = null;
     codeError = false;
+    rowFocus = false;
     clearTimeout(idleTimer);
-    if (refocus || hadFocus) entryEls[i]?.focus({ preventScroll: true });
+    if (refocus === 'always' || (refocus === 'if-focused' && hadFocus)) entryEls[i]?.focus({ preventScroll: true });
+  }
+
+  /** A click anywhere but the open row's entry closes the row at once (what was typed is kept for next time). */
+  function outside(e: PointerEvent) {
+    if (!open || connecting) return;
+    const entry = entryEls[ENTRIES.indexOf(open)]?.parentElement;
+    if (entry && !entry.contains(e.target as Node)) closeRow('never');
   }
 
   /** How long an untouched row stays open once the mouse has left its entry. */
@@ -162,8 +178,8 @@
   let idleTimer: ReturnType<typeof setTimeout> | undefined;
   onDestroy(() => clearTimeout(idleTimer));
   /**
-   * The mouse left an entry: an open row with nothing typed in it yet closes
-   * after a while, unless the mouse comes back to its entry first.
+   * The mouse left an entry: the open row closes after a while, unless the
+   * mouse comes back to its entry first, or something is being typed in it.
    */
   function leave(ev: PointerEvent) {
     if (ev.pointerType !== 'mouse') return;
@@ -172,7 +188,7 @@
     if (!e) return;
     clearTimeout(idleTimer);
     idleTimer = setTimeout(() => {
-      if (open === e && !connecting && !code && !nameInput.trim()) closeRow(false);
+      if (open === e && !connecting && (!rowHasFocus() || (!code && !nameInput.trim()))) closeRow('if-focused');
     }, ROW_IDLE_MS);
   }
 
@@ -288,11 +304,19 @@
   let hovered = $state(false);
   /** An entry has the keyboard's focus (not a click's). */
   let keyFocus = $state(false);
+  /** The open row's field has the focus. */
+  let rowFocus = $state(false);
   function focusIn(e: FocusEvent) {
-    keyFocus = (e.target as HTMLElement).matches('.pick:focus-visible');
+    const t = e.target as HTMLElement;
+    keyFocus = t.matches('.pick:focus-visible');
+    rowFocus = !!t.closest('.slot');
   }
-  /** The cursor shows while an entry is pointed at or chosen; otherwise it fades away. */
-  const lit = $derived(!renaming && (hovered || keyFocus || !!open || connecting));
+  function focusOut() {
+    keyFocus = false;
+    rowFocus = false;
+  }
+  /** The cursor shows while an entry is pointed at, chosen from the keyboard, typed in or connecting; otherwise it fades away. */
+  const lit = $derived(!renaming && (hovered || keyFocus || (!!open && rowFocus) || connecting));
 
   // ---- the invite link's screen ----
 
@@ -327,7 +351,7 @@
   });
 </script>
 
-<svelte:window onkeydown={keys} />
+<svelte:window onkeydown={keys} onpointerdown={outside} />
 
 {#if invite}
   <InviteScreen code={invite} bind:name={inviteName} {connecting} onjoin={joinInvite} onback={leaveInvite} />
@@ -373,7 +397,7 @@
         {/if}
       </div>
 
-      <nav class="menu" class:renaming class:lit aria-label="Start" onfocusin={focusIn} onfocusout={() => (keyFocus = false)}>
+      <nav class="menu" class:renaming class:lit aria-label="Start" onfocusin={focusIn} onfocusout={focusOut}>
         <!-- One cursor for the menu: it slides to the entry under the mouse (or the
              keyboard's), and fades away slowly once nothing is pointed at. -->
         <span class="diamond" aria-hidden="true" style:--at={cursor}></span>
