@@ -15,11 +15,11 @@
   import { backdropShadow } from '../lib/backdropShadow';
   import { creatorArrived, glyphLanded, playerArrived, refuse, twinkle } from '../lib/fx/moments';
   import { onMount } from 'svelte';
-  import { categoryIcons } from '../lib/ui';
+  import { categoryIcons, playerColor } from '../lib/ui';
   import { measure } from '../lib/iconFit.svelte';
   import { dock, phone } from '../lib/layout';
   import { portal } from '../lib/portal';
-  import qrcode from 'qrcode-generator';
+  import { MediaQuery } from 'svelte/reactivity';
 
   const TARGETS = [5, 10, 15, 20];
   const MODES: { id: GameMode; name: string; beta?: boolean }[] = [
@@ -38,15 +38,37 @@
   let copied = $state(false);
 
   const inviteLink = $derived(inviteUrl(session.code));
-  /** The invite link as a QR code (one square path), for friends in the same room to join from their phones. */
-  const qr = $derived.by(() => {
-    const q = qrcode(0, 'M');
-    q.addData(inviteLink);
-    q.make();
-    const n = q.getModuleCount();
-    let d = '';
-    for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (q.isDark(r, c)) d += `M${c} ${r}h1v1h-1z`;
-    return { n, d };
+  /** Desktop: the start page's two columns, no panels. Tall: the modes' names go under their emblems. */
+  const tall = new MediaQuery('(min-height: 860px)');
+  /** Delve on a desktop: the descent's column is sized so the finds beside it fill the height left in the panel. */
+  let delveSlot = $state<HTMLElement>();
+  const DESCENT_MIN = 196;
+  $effect(() => {
+    const slot = delveSlot;
+    if (!slot) return;
+    const fit = () => {
+      const cols = slot.querySelector<HTMLElement>('.delve-cols');
+      const finds = slot.querySelector<HTMLElement>('.finds-col');
+      if (!cols || !finds || innerWidth < 1100) {
+        slot.style.removeProperty('--descent-w');
+        return;
+      }
+      const room = slot.clientHeight;
+      // The finds' own height, not the row's they are stretched to: from their top to the end of their last line.
+      const used = () => (finds.lastElementChild as HTMLElement).getBoundingClientRect().bottom - finds.getBoundingClientRect().top;
+      const max = Math.round(cols.clientWidth * 0.58);
+      let w = DESCENT_MIN;
+      slot.style.setProperty('--descent-w', `${w}px`);
+      while (w < max && used() < room) {
+        w += 8;
+        slot.style.setProperty('--descent-w', `${w}px`);
+      }
+      if (used() > room && w > DESCENT_MIN) slot.style.setProperty('--descent-w', `${w - 8}px`);
+    };
+    fit();
+    const ro = new ResizeObserver(fit);
+    ro.observe(slot);
+    return () => ro.disconnect();
   });
 
   // Measure the category cards' emblems (lib/iconFit) while the party
@@ -129,8 +151,32 @@
       return;
     }
     if (performance.now() - armedAt < KICK_SETTLE_MS) return;
-    confirming = null;
+    // The chip leaves still armed, red to the end.
+    clearTimeout(confirmTimer);
     session.kick(id);
+    confirmTimer = setTimeout(() => (confirming = null), 400);
+  }
+  /** A removed chip goes out with a red flare, shrinking a little, as it fades: the others then close up (flip).
+      It shrinks with `scale`, not `transform`: Svelte pins a leaving chip in place with a transform, which a transform here would override (the chip would jump to the grid's first cell). */
+  function kickOut(_node: Element) {
+    return {
+      duration: 320,
+      css: (t: number) => `opacity: ${t}; scale: ${0.9 + 0.1 * t}; box-shadow: 0 0 ${18 * (1 - t)}px rgba(224, 85, 63, ${0.7 * (1 - t) * t * 4});`,
+    };
+  }
+  /** Escape takes an armed kick back. */
+  function disarm(e: KeyboardEvent) {
+    if (e.key === 'Escape' && confirming) {
+      confirming = null;
+      clearTimeout(confirmTimer);
+    }
+  }
+  /** A press anywhere but the armed "Kick?" takes it back too. */
+  function disarmOutside(e: PointerEvent) {
+    if (confirming && !(e.target as Element).closest?.('.remove.confirm')) {
+      confirming = null;
+      clearTimeout(confirmTimer);
+    }
   }
   /** Phones hand the link to the share sheet instead of the clipboard (see copy), so the button says so. */
   const canShare = typeof navigator !== 'undefined' && !!navigator.share && matchMedia('(pointer: coarse)').matches;
@@ -244,25 +290,41 @@
     {:else}
       <p class="go-note"><b class="num">{s.players.length}</b> {s.players.length === 1 ? 'exile' : 'exiles'} ready</p>
     {/if}
-    <!-- One gold button at a time: alone in an online room, inviting (above) is the next step. -->
-    <button class="btn big" class:primary={!(alone && !local && !closed)} disabled={!canStart} onclick={start}>{delve ? 'Begin the descent' : 'Begin the hunt'}</button>
+    <!-- Begin is the gold button whenever it can start: playing alone is a normal game. -->
+    <button class="btn big primary" disabled={!canStart} onclick={start}>{delve ? 'Begin the descent' : 'Begin the hunt'}</button>
   {:else}
     <p class="muted waiting"><span class="pulse"></span>Waiting for the host to start…</p>
   {/if}
 {/snippet}
 
-<!-- Left to right, the host's way through: invite, see who came, set the game, begin.
-     On a desktop window the three panels share its height, so nothing scrolls the
-     page and Begin sits in the same corner whatever the size. -->
+<!-- The start page's two columns carry on here: on the left, where its menu
+     was, the room and the party; on the right, where today's unique was, the
+     game. Begin closes the right column, in the same corner at every size,
+     and the party's chips are the ones the game shows along its top. -->
 <div class="lobby" class:online={!local}>
   <div class="cols">
-    {#if !local}
-      <!-- The room code and link are how the party grows, so they come first. -->
-      <section class="panel room-panel" use:backdropShadow={{ fill: 'linear' }} in:fly={{ x: -30, duration: 500, delay: 50 }}>
-        <header>
-          <h2>Room</h2>
+    <div class="col side">
+      {#if !local}
+        <!-- The room code and link are how the party grows, so they come first. -->
+        <section class="block room" in:fly={{ x: -30, duration: 500, delay: 50 }}>
+          <header>
+            <h2>Room code</h2>
+          </header>
+          <div class="code" class:hidden={session.hideCode} aria-label={session.hideCode ? 'Room code hidden' : `Room code ${session.code}`}>
+            <span class="glyphs" oncopy={copyCode}>
+              {#each session.code.split('') as ch, i (i)}
+                <span class="glyph" use:landing={i} style:animation-delay="{i * 80}ms" style:--i={i}>{session.hideCode ? '•' : ch}</span>
+              {/each}
+            </span>
+          </div>
+          <div class="invite-row">
+            <!-- A locked or full room takes nobody new: the link isn't offered then, and the button says why. -->
+            <button class="btn invite" class:accent={alone && isHost && !closed} bind:this={copyBtn} onclick={copy} disabled={closed}>
+              {s.settings.locked ? 'Room locked' : full ? 'Room full' : copied ? 'Link copied!' : canShare ? 'Share invite link' : 'Copy invite link'}
+            </button>
+            <!-- Hiding the code (for a stream) sits with the other ways of handing it on. -->
             <button
-              class="eye"
+              class="room-tool"
               onclick={() => session.setHideCode(!session.hideCode)}
               title={session.hideCode ? 'Show the room code' : 'Hide the room code (for streaming)'}
               aria-label={session.hideCode ? 'Show room code' : 'Hide room code'}
@@ -273,30 +335,24 @@
                 <svg viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z" /><circle cx="12" cy="12" r="3" /></svg>
               {/if}
             </button>
-        </header>
-        <div class="room">
-        <div class="code" class:hidden={session.hideCode} aria-label={session.hideCode ? 'Room code hidden' : `Room code ${session.code}`}>
-          <span class="glyphs" oncopy={copyCode}>
-            {#each session.code.split('') as ch, i (i)}
-              <span class="glyph" use:landing={i} style:animation-delay="{i * 80}ms" style:--i={i}>{session.hideCode ? '•' : ch}</span>
-            {/each}
-          </span>
-        </div>
-          <!-- A locked or full room takes nobody new: the link isn't offered then, and the button says why. -->
-          <button class="btn invite" class:primary={alone && isHost && !closed} bind:this={copyBtn} onclick={copy} disabled={closed}>
-            {s.settings.locked ? 'Room locked' : full ? 'Room full' : copied ? 'Link copied!' : canShare ? 'Share invite link' : 'Copy invite link'}
-          </button>
+          </div>
           <div class="room-actions">
             {#if isHost}
-              <span class="label who">Who can join</span>
-              <div class="visibility" role="group" aria-label="Room visibility">
-                <button class:on={!s.settings.public} onclick={() => setPublic(false)} title="Only people with the code can join">
-                  Private
-                </button>
-                <button class:on={!!s.settings.public} onclick={() => setPublic(true)} title="Listed under Open rooms on the start page">
-                  Public
-                </button>
-              </div>
+              <span class="who">Who can join</span>
+              <!-- One switch, both its sides named: the lit plate slides under the side that holds, as the game's own choices light. -->
+              <button
+                class="vis-toggle"
+                class:public={!!s.settings.public}
+                role="switch"
+                aria-checked={!!s.settings.public}
+                aria-label="Public room"
+                onclick={() => setPublic(!s.settings.public)}
+                title={s.settings.public ? 'Listed under Open rooms on the start page' : 'Only people with the code or link can join'}
+              >
+                <span class="vt-plate" aria-hidden="true"></span>
+                <span class="vt-word" class:on={!s.settings.public}>Private</span>
+                <span class="vt-word" class:on={!!s.settings.public}>Public</span>
+              </button>
               <button
                 class="lock"
                 class:on={!!s.settings.locked}
@@ -316,7 +372,7 @@
             {/if}
           </div>
           {#if isHost}
-            <p class="vis-hint muted">
+            <p class="vis-hint">
               {#if s.settings.locked}
                 Room locked: nobody new can join or watch. Players already in the game can still reconnect.
               {:else if full}
@@ -328,44 +384,17 @@
               {/if}
             </p>
           {/if}
-        </div>
-        <!-- On a desktop the panel has room to spare: the link as a code for phones,
-             so friends on the same couch join by pointing a camera at the screen.
-             It takes whatever height is left, and goes when that is too little. -->
-        <div class="qr-slot">
-          <figure class="qr">
-            <!-- No code to scan while nobody can join, or while the code is hidden: the plate stays, shut. -->
-            {#if closed || session.hideCode}
-              <span class="qr-plate hidden" aria-hidden="true">
-                {#if closed}
-                  <svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></svg>
-                {:else}
-                  <svg viewBox="0 0 24 24"><path d="M3 3l18 18M10.6 5.1A10 10 0 0 1 12 5c6 0 10 7 10 7a17 17 0 0 1-3.2 3.9M6.1 6.1C3.5 8 2 12 2 12s4 7 10 7a9.7 9.7 0 0 0 5.9-2.1M9.9 9.9a3 3 0 0 0 4.2 4.2" /></svg>
-                {/if}
-              </span>
-              <!-- Locked or full, the line above the plate already says why. -->
-              {#if !closed}<figcaption>Hidden with the code</figcaption>{/if}
-            {:else}
-                <svg class="qr-plate" viewBox="-2 -2 {qr.n + 4} {qr.n + 4}" role="img" aria-label="QR code of the invite link"><path d={qr.d} /></svg>
-              <figcaption>Or scan to join on a phone</figcaption>
-            {/if}
-          </figure>
-        </div>
-        <!-- Fine print, so it goes to the foot of the panel. -->
-        <p class="ip-note muted">
-          Players connect directly to each other, so everyone in a room can see each other's IP address. Only play with people you're comfortable sharing that with.
-        </p>
-      </section>
-    {/if}
+          <!-- The same words as the start page's note on open rooms, said where joining is decided. -->
+          <p class="ip-note">Players in a room connect directly, so they can see each other's IP address. Only play with people you're comfortable sharing that with.</p>
+        </section>
+      {/if}
 
-    <section class="panel players" use:backdropShadow={{ fill: 'linear' }} in:fly={{ x: -30, duration: 500, delay: 100 }}>
-      <header>
-        <h2>Party</h2>
-        <span class="count">{s.players.length} / {MAX_PLAYERS}</span>
-      </header>
       {#if local}
-        <!-- On one device the party grows by name, here at the top where the field stays put as the list grows under it. -->
-        <div class="room">
+        <!-- On one device the party grows by name: its own block over the party, where the room code stands online, so the field never sits among the chips. -->
+        <section class="block room adder" in:fly={{ x: -30, duration: 500, delay: 50 }}>
+          <header>
+            <h2>Add exiles</h2>
+          </header>
           {#if s.players.length < MAX_PLAYERS}
             <form class="add" onsubmit={addLocal}>
               <input
@@ -375,56 +404,83 @@
                 maxlength={MAX_NAME}
                 autocomplete="off"
                 spellcheck="false"
-                placeholder={s.players.length ? 'Add another exile' : 'Add the first exile'}
+                placeholder="Exile's name"
+                aria-label="Exile's name"
               />
               <button class="btn" type="submit" disabled={nameTooShort(newName)}>Add</button>
             </form>
           {/if}
-          <p class="vis-hint muted">Pass the device around; each player answers on their own turn.</p>
-        </div>
+          <p class="vis-hint">Pass the device around; each player answers on their own turn.</p>
+        </section>
       {/if}
-      <!-- The list last: it is the one part of the panel that grows. -->
-      <ul>
-        {#each s.players as p (p.id)}
-          <li use:arriving={p.name} animate:flip={{ duration: 300 }} in:fly={{ x: -20, duration: 350 }} out:scale={{ duration: 200, start: 0.9 }}>
-            <Avatar name={p.name} hue={p.hue} />
-            <span class="name"><PlayerName name={p.name} /></span>
-            {#if p.id === s.hostId}<span class="tag">Host</span>{/if}
-            {#if !p.connected}<span class="tag" title="Reconnecting. Their seat is let go if they're not back when the game starts.">Offline</span>{/if}
-            {#if !local && p.id === session.myPlayerId}<span class="tag you">You</span>{/if}
-            {#if isHost && p.id !== s.hostId}
-              <button
-                class="remove"
-                class:confirm={confirming === p.id}
-                title="Remove {p.name}"
-                aria-label="Remove {p.name}"
-                onclick={() => removePlayer(p.id)}
-                >{confirming === p.id ? 'Kick?' : '×'}</button
-              >
-            {/if}
-          </li>
-        {/each}
-        <!-- The seats still free: how many more can come, at a glance. -->
-        {#each { length: MAX_PLAYERS - s.players.length } as _, i (i)}
-          <li class="seat" aria-hidden="true">{i === 0 && !s.settings.locked ? 'Open seat' : ''}</li>
-        {/each}
-      </ul>
-      {#if waiting.length}
-        <p class="hint muted">
-          Waiting for a free seat: {waiting.map((o) => o.name + (o.id === session.myPlayerId ? ' (you)' : '')).join(', ')}
-        </p>
-      {/if}
-      {#if !local && s.players.length < 2}
-        <p class="hint muted waiting"><span class="pulse"></span>{isHost ? 'Nobody else yet. Send your party the code or the link.' : 'Waiting for more exiles to join…'}</p>
-      {/if}
-    </section>
 
-    <section class="panel settings" use:backdropShadow={{ fill: 'linear' }} in:fly={{ x: 30, duration: 500, delay: 200 }}>
+      <section class="block party" in:fly={{ x: -30, duration: 500, delay: 100 }}>
+        <header>
+          <h2>Party</h2>
+          <!-- Every seat as a pip, filled as exiles take them: how many more can come, at a glance. -->
+          <span class="count">
+            <span class="pips" aria-hidden="true">{#each { length: MAX_PLAYERS } as _, i (i)}<i class:taken={i < s.players.length}></i>{/each}</span>
+            {s.players.length} / {MAX_PLAYERS}
+          </span>
+        </header>
+        <!-- The same chips the game shows along its top, two to a row. -->
+        <ul class="chips">
+          {#each s.players as p (p.id)}
+            <li
+              use:arriving={p.name}
+              animate:flip={{ duration: 300 }}
+              in:fly={{ x: -20, duration: 350 }}
+              out:kickOut
+              class:armed={confirming === p.id}
+              style:--c={playerColor(p.hue)}
+            >
+              <Avatar name={p.name} hue={p.hue} size={32} />
+              <span class="name" title={p.name}><PlayerName name={p.name} />{#if !local && p.id === session.myPlayerId && s.players.length > 1}<em>&nbsp;(you)</em>{/if}</span>
+              {#if !p.connected}<span class="tag" title="Reconnecting. Their seat is let go if they're not back when the game starts.">Offline</span>{/if}
+              <!-- The host's chip carries a hanging banner, the party's standard, where the others have their ×. -->
+              {#if p.id === s.hostId && !local}<span class="host" role="img" aria-label="Host" title="Host"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 3.5h15" /><path d="M7 3.5V19l5-3.4 5 3.4V3.5" /><path d="M12 7.2l1.6 1.6-1.6 1.6-1.6-1.6z" /></svg></span>{/if}
+              {#if isHost && (local || p.id !== s.hostId)}
+                <button
+                  class="remove"
+                  class:confirm={confirming === p.id}
+                  title="Remove {p.name}"
+                  aria-label="Remove {p.name}"
+                  onclick={() => removePlayer(p.id)}
+                  >{confirming === p.id ? 'Kick' : '×'}</button
+                >
+              {/if}
+            </li>
+          {/each}
+        </ul>
+        {#if waiting.length}
+          <p class="hint">Waiting for a free seat: {waiting.map((o) => o.name + (o.id === session.myPlayerId ? ' (you)' : '')).join(', ')}</p>
+        {/if}
+        {#if !local && s.players.length < 2}
+          <p class="hint waiting"><span class="pulse"></span>{isHost ? 'Nobody else yet. Send your party the code or the link.' : 'Waiting for more exiles to join…'}</p>
+        {/if}
+        {#if delve && !local}
+          <!-- Co-op is about the party, so it is told under it: in a team room, or one a second player can still join (on one device, Delve is for one). -->
+          <div class="setting together">
+            <span class="label">Play co-op together</span>
+            {#if !together}
+              <p class="together-when">Once a second exile joins this room:</p>
+            {/if}
+            <ul class="rules coop">
+              <li>Vote for a card, then one is drawn from the votes.</li>
+              <li>Everyone answers at once. A wrong answer is crossed out for everyone.</li>
+              <li>Teammates can sacrifice their life force to revive you.</li>
+            </ul>
+          </div>
+        {/if}
+      </section>
+    </div>
+
+    <!-- The game is the one framed panel: the settings and Begin are what the host works with. -->
+    <section class="col block game settings panel" use:backdropShadow={{ fill: 'linear' }} in:fly={{ x: 30, duration: 500, delay: 200 }}>
       <header><h2>Game</h2></header>
 
-      <div class="body">
       <div class="setting">
-        <div class="modes" role="radiogroup" aria-label="Mode" aria-describedby="mode-blurb" tabindex={-1} onkeydown={modeKeys}>
+        <div class="modes" class:tall={tall.current} role="radiogroup" aria-label="Mode" aria-describedby="mode-blurb" tabindex={-1} onkeydown={modeKeys}>
           {#each MODES as m (m.id)}
             {@const on = s.settings.mode === m.id}
             <button
@@ -468,7 +524,12 @@
       </div>
 
       {#if delve}
-        <DelveRules {deepest} last={lastRun} label={deepestLabel} {met} />
+        <!-- The descent is Delve's progress: it is never cut. -->
+        <!-- On a desktop the descent takes the height the panel has spare: its column widens
+             until the finds beside it, wrapping narrower, are as tall as the room left. -->
+        <div class="delve-slot" bind:this={delveSlot}>
+          <DelveRules {deepest} last={lastRun} label={deepestLabel} {met} />
+        </div>
       {:else}
         <!-- One row per setting: its name, then its choices (a guest, who can't change them, reads the value). -->
         <div class="setting row">
@@ -508,10 +569,10 @@
             {/each}
           </div>
           {/if}
-          <!-- Every description sits in the same cell, so switching never changes the panel's height. -->
+          <!-- Every description sits in the same cell, so switching never changes the column's height. -->
           <div class="blurbs">
             {#each DIFFS as d (d.id)}
-              <p class="blurb muted" class:shown={difficulty === d.id} aria-hidden={difficulty !== d.id}>
+              <p class="blurb" class:shown={difficulty === d.id} aria-hidden={difficulty !== d.id}>
                 {describe({ ...s.settings, difficulty: d.id })}
               </p>
             {/each}
@@ -530,42 +591,23 @@
           </div>
           {/if}
         </div>
-      {/if}
 
-      <!-- Delve has none: the descent and its finds tell it. -->
-      {#if !delve}
-      <ul class="rules muted">
-        {#if race}
-          <li>A wrong answer costs a point and sits you out until the next question.</li>
-          <li>First to <span class="num">{s.settings.targetScore}</span> wins.</li>
-        {:else}
-          <li>
-            A right answer scores a point{#if lockout > 0}; the category stays locked for your next <span class="num">{lockout}</span> turns{/if}.
-          </li>
-          <li>First to <span class="num">{s.settings.targetScore}</span> wins once the round is over; a tie goes to sudden death.</li>
-        {/if}
-      </ul>
-      {/if}
-
-      {#if delve && !local}
-        <!-- Co-op plays nothing like the rest: told in a team room, or one a second player can still join (on one device, Delve is for one). -->
-        <div class="setting together">
-          <span class="label">Play co-op together</span>
-          {#if !together}
-            <p class="together-when muted">Once a second exile joins this room:</p>
+        <ul class="rules">
+          {#if race}
+            <li>A wrong answer costs a point and sits you out until the next question.</li>
+            <li>First to <span class="num">{s.settings.targetScore}</span> wins.</li>
+          {:else}
+            <li>
+              A right answer scores a point{#if lockout > 0}; the category stays locked for your next <span class="num">{lockout}</span> turns{/if}.
+            </li>
+            <li>First to <span class="num">{s.settings.targetScore}</span> wins once the round is over; a tie goes to sudden death.</li>
           {/if}
-          <ul class="rules coop">
-            <li>Vote for a card, then one is drawn from the votes.</li>
-            <li>Everyone answers at once. A wrong answer is crossed out for everyone.</li>
-            <li>Teammates can sacrifice their life force to revive you.</li>
-          </ul>
-        </div>
+        </ul>
       {/if}
-      </div>
 
       <!-- The start ends the rules. On phones, where they run long, it is pinned
            to the bottom of the screen like the reveal's Next bar (lib/layout's dock).
-           A guest's waiting line has nothing to tap, so it stays in the panel. -->
+           A guest's waiting line has nothing to tap, so it stays in place. -->
       {#if phone.current && isHost}
         <div class="dock" use:portal use:dock in:fade={{ duration: 200 }} out:fade|global={{ duration: 180 }}>{@render startRow()}</div>
       {:else}
@@ -574,6 +616,8 @@
     </section>
   </div>
 </div>
+
+<svelte:window onkeydown={disarm} onpointerdown={disarmOutside} />
 
 {#if editing && isHost && difficulty === 'custom' && !delve}
   <CustomDifficulty onclose={() => (editing = false)} />
@@ -586,111 +630,6 @@
     margin: 0 auto;
     padding: 1.5rem 1rem 3rem;
   }
-  .qr-slot {
-    display: none;
-  }
-  /* Tablets: the room over the party on the left, the game beside them. */
-  @media (min-width: 761px) and (max-width: 1099px) {
-    .online .cols {
-      grid-template-areas: 'room game' 'party game';
-      grid-template-rows: auto 1fr;
-    }
-    .room-panel {
-      grid-area: room;
-    }
-    .online .players {
-      grid-area: party;
-    }
-    .online .settings {
-      grid-area: game;
-    }
-  }
-  /* "Who can join" on its own line, so Private, Public and Lock share the next. */
-  .room-panel .room .who {
-    width: 100%;
-  }
-  /* Free seats only where the list has a height of its own to fill (desktop):
-     elsewhere they would only lengthen the page. */
-  @media (max-width: 1099px) {
-    .players li.seat {
-      display: none;
-    }
-  }
-  @media (min-width: 1100px) {
-    .qr-slot {
-      display: block;
-      flex: 1 1 0;
-      min-height: 0;
-      margin: 0.9rem 0;
-      container-type: size;
-    }
-    .qr {
-      height: 100%;
-      margin: 0;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 0.5rem;
-    }
-    /* Dark squares on parchment: phone cameras read a code the right way round. */
-    .qr-plate {
-      display: block;
-      width: min(100cqw, 100cqh - 2.4rem, 200px);
-      aspect-ratio: 1;
-      padding: 4px;
-      background: #e8dcc2;
-      border: 1px solid var(--gold-lo);
-      border-radius: 4px;
-      box-shadow:
-        0 0 0 3px #0c0a08,
-        0 0 0 4px rgba(201, 164, 92, 0.35),
-        0 8px 22px rgba(0, 0, 0, 0.55);
-    }
-    .qr-plate path {
-      fill: #15100b;
-    }
-    .qr-plate.hidden {
-      display: grid;
-      place-items: center;
-      background: repeating-linear-gradient(135deg, #2a2118 0 6px, #1d1710 6px 12px);
-    }
-    .qr-plate.hidden svg {
-      width: 28%;
-      height: 28%;
-      padding: 6%;
-      box-sizing: content-box;
-      border-radius: 50%;
-      background: #120d09;
-      border: 1px solid var(--gold-lo);
-      fill: none;
-      stroke: var(--gold);
-      stroke-width: 1.6;
-      stroke-linecap: round;
-      stroke-linejoin: round;
-    }
-    .qr figcaption {
-      font-size: 0.9rem;
-      font-style: italic;
-      color: var(--muted);
-    }
-    @container (height < 130px) {
-      .qr {
-        display: none;
-      }
-    }
-  }
-  /* A free seat: a dashed outline of a player's row. */
-  .players li.seat {
-    min-height: 3.35rem;
-    padding: 0 0.9rem;
-    background: none;
-    border: 1px dashed rgba(59, 48, 36, 0.8);
-    font-style: italic;
-    font-size: 0.92rem;
-    color: var(--muted);
-  }
-
   .room-actions {
     display: flex;
     align-items: center;
@@ -784,6 +723,68 @@
     color: #fff1cf;
     background: linear-gradient(180deg, #7a4f1d, #452a0e);
   }
+  /* Private / Public: one switch with both words on it, drawn like the game's
+     other choices (the setting buttons): a dark well, and the lit plate of a
+     chosen button sliding under the word that holds. */
+  .vis-toggle {
+    position: relative;
+    flex: none;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    width: 150px;
+    height: 32px;
+    padding: 0;
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    cursor: pointer;
+    transition: border-color 0.2s;
+  }
+  .vt-plate {
+    position: absolute;
+    top: -1px;
+    bottom: -1px;
+    left: -1px;
+    width: calc(50% + 1px);
+    background: linear-gradient(180deg, #8a5a22, #452a0e);
+    border: 1px solid var(--gold);
+    border-radius: 3px;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 230, 170, 0.3),
+      0 0 14px rgba(201, 164, 92, 0.3);
+    transition: translate 0.3s var(--ease-out);
+  }
+  .vis-toggle.public .vt-plate {
+    translate: calc(100% - 1px) 0;
+  }
+  .vt-word {
+    position: relative;
+    display: grid;
+    place-items: center;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 0.72rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    transition:
+      color 0.3s,
+      text-shadow 0.3s;
+  }
+  .vt-word.on {
+    color: #fff1cf;
+    text-shadow: 0 0 10px rgba(255, 220, 160, 0.5);
+  }
+  .vis-toggle:hover {
+    border-color: var(--gold-lo);
+  }
+  .vis-toggle:hover .vt-word:not(.on) {
+    color: var(--gold-hi);
+  }
+  .vis-toggle:focus-visible {
+    outline: 1px solid var(--gold-hi);
+    outline-offset: 2px;
+  }
   .vis-tag {
     font-family: var(--font-display);
     font-size: 0.7rem;
@@ -796,33 +797,78 @@
     font-size: 0.9rem;
     font-style: italic;
   }
-  /* Inside the party's panel now: the code across its width, the link under it. */
+  .block {
+    min-width: 0;
+  }
   .room {
     display: flex;
     flex-direction: column;
     gap: 0.6rem;
-    margin-bottom: 1rem;
-    padding-bottom: 1rem;
-    border-bottom: 1px solid var(--line);
   }
-  .room-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-  .room-head .label {
-    margin: 0;
+  /* The room's gap after its heading is the column's own (its children are spaced by the flex gap). */
+  .block.room header {
+    margin-bottom: calc(1rem - 0.6rem);
   }
   .room .room-actions {
     justify-content: flex-start;
+    flex-wrap: nowrap;
   }
-  .room .who {
-    margin: 0 auto 0 0;
+  /* The label takes what is left, so Private, Public and Lock stay on one line. */
+  .who {
+    flex: 1;
+    min-width: 0;
+    font-size: 1rem;
+    color: #b8ab95;
   }
-  .room .ip-note,
-  .room-panel .ip-note {
-    max-width: none;
+  .invite-row {
+    position: relative;
+    display: flex;
+    gap: 0.5rem;
+  }
+  .invite-row .invite {
+    flex: 1;
+  }
+  /* Alone in an open room, inviting is the next step: lit in gold, but not gold itself (Begin is). */
+  .invite.accent {
+    border-color: var(--gold);
+    color: var(--gold-hi);
+    box-shadow:
+      inset 0 0 0 1px rgba(201, 164, 92, 0.25),
+      0 0 16px rgba(201, 164, 92, 0.18);
+  }
+  .room-tool {
+    width: 44px;
+    display: grid;
+    place-items: center;
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    color: var(--muted);
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .room-tool:hover:not(:disabled) {
+    color: var(--gold-hi);
+    border-color: var(--gold-lo);
+  }
+  .room-tool:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+  .room-tool svg {
+    width: 20px;
+    height: 20px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.5;
+    stroke-linejoin: round;
+  }
+  .ip-note {
+    margin: 0;
     text-align: left;
+    font-size: 0.8rem;
+    line-height: 1.4;
+    color: #8f8370;
   }
   .code,
   .glyphs {
@@ -895,52 +941,112 @@
     gap: 1.2rem;
     align-items: start;
   }
+  .col.side {
+    display: flex;
+    flex-direction: column;
+    gap: 1.2rem;
+    min-width: 0;
+  }
   .panel {
     padding: 1.4rem;
   }
-  .panel header {
+  /* A section's name, as the start page names its own ("Open rooms"). */
+  .block header {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 1rem;
     margin-bottom: 1rem;
-    padding-bottom: 0.7rem;
-    border-bottom: 1px solid var(--line);
   }
-  .panel h2 {
+  .block h2 {
+    margin: 0;
+    font-family: var(--font-display);
+    font-weight: 400;
     font-size: 1.12rem;
-    text-transform: uppercase;
-    letter-spacing: 0.18em;
-    color: var(--gold-hi);
+    letter-spacing: 0.02em;
+    text-transform: none;
+    color: var(--gold);
   }
   .count {
-    font-family: var(--font-display);
-    font-size: 0.8rem;
-    color: var(--muted);
+    font-family: var(--font-cinzel);
+    font-size: 0.75rem;
+    color: #ab9d88;
   }
 
-  .players ul {
+  /* The game's own player chips (Scoreboard), so the party carries on into the game. */
+  .chips {
     list-style: none;
     margin: 0;
     padding: 0;
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: 1fr;
     gap: 0.5rem;
   }
-  .players li {
-    transition:
-      border-color 0.25s,
-      background 0.25s;
+  /* The game's own chip (Scoreboard's li): the same pill, padding, avatar and name. */
+  .chips li {
+    transition: border-color 0.25s;
     display: flex;
     align-items: center;
-    gap: 0.8rem;
-    padding: 0.5rem 0.6rem;
-    border-radius: 4px;
-    background: rgba(0, 0, 0, 0.25);
-    border: 1px solid rgba(59, 48, 36, 0.6);
+    gap: 0.6rem;
+    min-width: 0;
+    padding: 0.45rem 0.8rem 0.45rem 0.5rem;
+    border-radius: 999px;
+    background: rgba(12, 10, 8, 0.75);
+    border: 1px solid var(--line);
+  }
+  .chips .name {
+    margin-left: 2px;
+    font-size: 0.98rem;
+    line-height: 1.1;
+    padding-bottom: 0.2em;
+    margin-bottom: -0.2em;
+  }
+  .chips .name em {
+    color: var(--muted);
+    font-size: 0.85em;
+  }
+  /* The host: a hanging banner, the party's standard, where the others have their ×. Not the diamond: that is the menu's cursor, "you are here". */
+  .host {
+    flex: none;
+    display: grid;
+    place-items: center;
+    margin: 0 0.2rem 0 0.3rem;
+    color: #d8b56e;
+    filter: drop-shadow(0 0 5px rgba(241, 217, 155, 0.45));
+  }
+  .host svg {
+    width: 22px;
+    height: 22px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.7;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .count {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.6rem;
+  }
+  .pips {
+    display: inline-flex;
+    gap: 3px;
+  }
+  .pips i {
+    width: 6px;
+    height: 6px;
+    rotate: 45deg;
+    border: 1px solid rgba(125, 99, 51, 0.7);
+  }
+  .pips i.taken {
+    background: var(--gold);
+    border-color: var(--gold);
+    box-shadow: 0 0 6px rgba(201, 164, 92, 0.45);
   }
   .name {
     flex: 1;
-    font-size: 1.1rem;
+    min-width: 0;
+    font-size: 1.05rem;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -955,14 +1061,11 @@
     border: 1px solid var(--gold-lo);
     color: var(--gold);
   }
-  .tag.you {
-    border-color: #4a6b4a;
-    color: #9fd59f;
-  }
   .remove {
     width: 26px;
     height: 26px;
-    border-radius: 50%;
+    padding: 0;
+    border-radius: 13px;
     border: 1px solid transparent;
     background: none;
     color: var(--muted);
@@ -970,27 +1073,70 @@
     font-size: 1.2rem;
     line-height: 1;
   }
-  /* Armed, as the scoreboard's kick: red, asking. */
+  /* Armed: the ring the × shows under the pointer grows sideways into a pill
+     and the × gives way to Kick. Same ring, same red, only longer. */
+  .remove {
+    overflow: hidden;
+    white-space: nowrap;
+    transition:
+      width 0.22s var(--ease-out),
+      color 0.2s,
+      border-color 0.2s,
+      background-color 0.2s,
+      box-shadow 0.2s;
+  }
   .remove.confirm {
-    width: auto;
-    min-width: 26px;
-    padding: 0 0.6em;
-    border-radius: 13px;
-    border-color: rgba(224, 85, 63, 0.5);
-    background: var(--bad);
-    color: #fff;
+    width: 58px;
+    border-color: rgba(224, 85, 63, 0.75);
+    background-color: rgba(224, 85, 63, 0.1);
+    color: #ff9c86;
     font-family: var(--font-display);
-    font-size: 0.75rem;
+    font-size: 0.64rem;
     font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    box-shadow: 0 0 10px rgba(224, 85, 63, 0.25);
+  }
+  .remove.confirm:hover {
+    color: #ffd2c6;
+    border-color: #e0553f;
+    background-color: rgba(224, 85, 63, 0.22);
   }
   .remove:hover {
     color: var(--bad);
     border-color: rgba(224, 85, 63, 0.4);
   }
+  .remove:focus-visible {
+    outline: 1px solid var(--gold-hi);
+    outline-offset: 2px;
+  }
+  /* Pointing at the ×: the chip it would remove warms red, so it is clear whose it is. */
+  .chips li:has(.remove:hover) {
+    border-color: rgba(224, 85, 63, 0.45);
+  }
+  /* Armed: the whole chip asks, in the game's wrong-answer colours, the avatar dimmed, and
+     no timer drawn: after 3 s it quietly goes back to rest. A second
+     click in the first 350 ms (a double click) does nothing; Escape takes it back. */
+  .chips li {
+    position: relative;
+  }
+  .chips li.armed {
+    border-color: #8e4434;
+    background: linear-gradient(90deg, rgba(78, 32, 22, 0.9), rgba(34, 15, 11, 0.92));
+  }
+  .chips li.armed :global(.avatar) {
+    filter: saturate(0.4) brightness(0.75);
+  }
+  .chips li.armed .name {
+    color: #eab3a3;
+  }
   .add {
     display: flex;
     gap: 0.5rem;
-    margin-top: 1rem;
+  }
+  .add .field {
+    flex: 1;
+    min-width: 0;
   }
   .shake {
     animation: shake 0.45s;
@@ -1043,8 +1189,15 @@
     padding: 0.8rem 0;
     border-top: 1px solid rgba(59, 48, 36, 0.6);
   }
-  .setting.row .label {
+  /* A setting's name reads as words, not as a caption: the section names above it carry the caps. */
+  .setting.row .label,
+  .together .label {
     margin: 0;
+    font-family: var(--font-body);
+    font-size: 1rem;
+    letter-spacing: 0;
+    text-transform: none;
+    color: #c4b69c;
   }
   .setting.row .blurbs {
     grid-column: 1 / -1;
@@ -1185,7 +1338,7 @@
     line-height: 1.25;
   }
   .together {
-    margin: -0.4rem 0 1.4rem;
+    margin: 1.2rem 0 0;
   }
   /* Kept compact: a handful of short lines. */
   .rules.coop {
@@ -1327,10 +1480,11 @@
   }
 
   /* The start closes the panel: what to know on the left, the button on the right. */
+  /* What to know, then Begin: read together, as one unit at the end of the rules. */
   .start {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-end;
     gap: 1rem;
     margin-top: 1.2rem;
     padding-top: 1.2rem;
@@ -1427,6 +1581,9 @@
       gap: 0.3rem;
     }
   }
+  /* Tablets: the room and party on the left, the game beside them (as on phones, in panels). */
+  /* Desktop: the start page's stage and columns, straight on the backdrop like
+     the start page and the game, with no panels around them. */
   @media (min-width: 1100px) {
     .lobby {
       width: 100%;
@@ -1434,54 +1591,137 @@
       display: flex;
       flex-direction: column;
       justify-content: center;
-      padding: clamp(12px, 2.4vh, 32px) max(32px, 50% - 600px);
+      padding: clamp(10px, 2.4vh, 40px) max(32px, 50% - 600px);
     }
+    /* As tall as the window allows, up to the height Delve needs (the tallest
+       game): the party list scrolls inside it when it runs longer, the game
+       column always fits, and Begin stays put when the mode changes. */
     .cols {
-      flex: 1 1 auto;
-      min-height: 560px;
-      max-height: 760px;
-      grid-template-columns: minmax(0, 1fr) 520px;
-      align-items: stretch;
-      gap: 16px;
-    }
-    .online .cols {
-      grid-template-columns: 330px minmax(0, 1fr) 520px;
-    }
-    .panel {
-      display: flex;
-      flex-direction: column;
-      min-height: 0;
-    }
-    /* Only the parts that grow scroll, inside their panel: the party, and the game's rules. */
-    .players ul,
-    .body {
       flex: 1 1 0;
       min-height: 0;
+      max-height: 724px;
+      grid-template-rows: minmax(0, 1fr);
+      grid-template-columns: 440px 600px;
+      justify-content: space-between;
+      align-items: stretch;
+      gap: 0;
+    }
+    .col.side {
+      gap: 1.6rem;
+      min-height: 0;
+    }
+    /* The party is the one thing here that grows: past what the window holds it scrolls in place. */
+    .party {
+      flex: 1 1 auto;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+    }
+    .party .chips {
+      flex: 0 1 auto;
+      min-height: 0;
       overflow-y: auto;
+      padding-bottom: 1rem;
+      align-content: start;
       scrollbar-width: thin;
       scrollbar-color: var(--gold-lo) transparent;
     }
-    .players ul {
-      mask-image: linear-gradient(180deg, #000 calc(100% - 1.2rem), transparent);
+    .party .chips {
+      min-height: min(6.6rem, 100%);
     }
-    .body {
-      margin-inline: -1.4rem;
-      padding: 0 1.4rem 1rem;
-      mask-image: linear-gradient(180deg, #000 calc(100% - 1.2rem), transparent);
+    .game {
+      display: flex;
+      flex-direction: column;
     }
-    /* Begin closes the game's panel, at its foot, in the same corner at every size. */
-    .start {
-      margin-top: 0;
-    }
-    .room-panel .room {
-      margin-bottom: 0;
-      padding-bottom: 0;
-      border-bottom: 0;
-    }
-    .room-panel .ip-note {
+    .game .start {
       margin-top: auto;
-      padding-top: 1rem;
-      border-top: 1px solid var(--line);
+    }
+    .chips {
+      grid-template-columns: 1fr 1fr;
+    }
+    .block h2 {
+      font-size: 20px;
+    }
+    /* A hairline between a heading and its content, as under the game's own headings. */
+    .block header {
+      padding-bottom: 0.55rem;
+      border-bottom: 1px solid rgba(125, 99, 51, 0.35);
+    }
+    .start {
+      margin-top: 1rem;
+    }
+  }
+  /* Tall windows: each mode a card, its emblem over its name. */
+  .modes.tall .mode {
+    flex-direction: column;
+    gap: 0.4rem;
+    min-height: 92px;
+  }
+  .modes.tall .mode :global(svg) {
+    width: 30px;
+    height: 30px;
+  }
+  /* Short desktop windows (a 13-inch laptop): the settings sit a little closer. */
+  @media (min-width: 1100px) and (max-height: 760px) {
+    .setting.row {
+      padding: 0.5rem 0;
+    }
+    .setting {
+      margin-bottom: 0.7rem;
+    }
+    .game.panel {
+      padding: 0.9rem 1.3rem 1rem;
+    }
+    .block header {
+      margin-bottom: 0.8rem;
+    }
+    .block.room header {
+      margin-bottom: calc(0.8rem - 0.6rem);
+    }
+    .mode {
+      min-height: 46px;
+    }
+    .about {
+      padding: 0.45rem 0.8rem 0.5rem;
+    }
+    .start {
+      padding-top: 0.8rem;
+    }
+  }
+  /* Narrower than a desktop's column: the label over its choices. */
+  @media (max-width: 1099px) {
+    .room .room-actions {
+      flex-wrap: wrap;
+    }
+    .who {
+      flex-basis: 100%;
+    }
+  }
+  @media (min-width: 1100px) {
+    /* The descent fills what the panel has left over: as tall as the room, as wide as that takes. */
+    .delve-slot {
+      flex: 1 1 0;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+    }
+    .delve-slot :global(.delve-rules) {
+      flex: 1;
+      margin-bottom: 0;
+    }
+    .delve-slot :global(.delve-cols) {
+      height: 100%;
+      grid-template-columns: var(--descent-w, 12.25rem) minmax(0, 1fr);
+    }
+  }
+  @media (min-width: 1100px) {
+    /* The rules sum up the choices above them, so they sit at the foot, over Begin, not under the last setting. */
+    .game .rules {
+      margin-top: auto;
+      margin-bottom: 1rem;
+    }
+    .game .rules + .start {
+      margin-top: 0;
     }
   }
 </style>

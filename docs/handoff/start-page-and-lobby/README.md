@@ -2,17 +2,12 @@
 
 Approved designs, ready to build. Two pieces of work:
 
-1. **Lobby**: a rework of `src/components/Lobby.svelte`. A working reference
-   implementation exists (`reference/Lobby.svelte.txt`), so this is mostly
-   integration, review and tests.
+1. **Lobby**: now its own handoff, `../lobby-round-6/`.
 2. **Start page**: a new title screen replacing `src/components/Home.svelte`,
    plus a new daily feature ("Today's unique") and an invite screen.
 
-The Scoreboard kick fix that goes with the lobby is already applied on this
-branch (`src/components/Scoreboard.svelte`, `KICK_SETTLE_MS`).
-
 Design canvas (owner only): https://claude.ai/artifact/3F9B7GxKyv8GhVb7Yxg4oQ
-(page "r8" is the start page, page "rework" the lobby). Everything needed is
+(page "r8" is the start page; the lobby is in `../lobby-round-6/`). Everything needed is
 in this folder: the screenshots under `screens/` are the source of truth for
 looks, this file for behaviour and copy.
 
@@ -27,100 +22,11 @@ Delete this `docs/handoff` folder in the PR that finishes the work.
 
 ## 1. Lobby
 
-Screens: `screens/lobby/` (`host`, `alone`, `guest`, `local`, `delve`,
-`locked`, `full12`, `phone`, `phone2`, `phoneguestfull`).
-
-Reference: `reference/Lobby.svelte.txt` is the approved design built as a
-drop-in for `Lobby.svelte` (it was written against the same session API;
-`Lobby.svelte` has not changed on main since). Copy it over `Lobby.svelte`,
-then review it properly: types, svelte-check, dead code, tests. Its comments
-explain each decision; keep them.
-
-`reference/lobbyFixture.ts.txt` is a dev-only helper that fakes a lobby from
-URL params (`?fake=host|guest|local&n=5&mode=turns|race|delve&diff=..&pub&hide&code=..&locked&pts=..&long`).
-Useful for checking states; do not ship it in the app bundle (use it in a
-test or behind `import.meta.env.DEV` if at all).
-
-What changed and why:
-
-- **Room block on top.** The code and link are how the party grows, so they
-  head the panel. Code glyphs scale with the container (container units).
-  The show/hide eye sits in the label row ("Room code").
-- **Invite button.** Primary (gold) when the host is alone in an open online
-  room, otherwise normal. On coarse pointers it reads "Share invite link"
-  (Web Share), else copies. Disabled and relabelled "Room locked" or
-  "Room full" when nobody can join; the link is not offered then.
-- **Who can join:** Private / Public toggle plus Lock. Hint when full.
-  IP note under it.
-- **Player list last**, because it is the part that grows.
-- **Hot-seat:** the add-player field sits at the top, above the list, so it
-  stays put while the list grows. Line: "Pass the device around; each player
-  answers on their own turn."
-- **Two-click kick:** "×" turns into "Kick?" for 3000 ms; a second click
-  within 350 ms of the first is ignored (a double click must not confirm).
-  Same rule as the Scoreboard fix on this branch.
-- **Game panel:** mode buttons in one horizontal row; the chosen mode's
-  description under a notch pointing up at it; all descriptions share one
-  cell so switching modes never changes the panel height. One row per
-  setting (name, then choices). Guests read the values instead of seeing
-  disabled controls. Round count uses minus/plus steppers that always show
-  the number.
-- **Start row:** a status line beside Begin, the one thing to know:
-  "Add the first exile to begin." / "You can begin alone, or wait for your
-  party." / "N exiles ready" / delve on one device: "Delve on one device is
-  for one player. Remove the others, or host a room." Guests see "Waiting
-  for the host to start…". Only one gold button at a time: when the host is
-  alone online with the room open, Invite is primary and Begin is not.
-- **Phone:** the host's Begin is pinned in a bottom dock with a fade above
-  it. All touch targets at least 44 px.
-- **Desktop:** see the addendum below; it changes the layout above 1100 px.
-
-### Lobby desktop layout (addendum, replaces the earlier pinned bar)
-
-The reference (`reference/Lobby.svelte.txt`) now has this built in; the
-shots are `screens/sizes/lobby-*` (`*-before` is the earlier layout). As
-first designed, the lobby was two long columns: on a 13-inch MacBook Air
-(1440 x 725 window) the window ended halfway through Begin, with Delve
-chosen Begin was below the window on 13 and 14 inch MacBooks, and on 4K it
-was a small island. The new desktop layout (1100 px wide and up):
-
-- **Three panels, in the order the host works, left to right:** Room
-  (invite), Party (who came), Game (set it, begin). Online only; hot-seat
-  has Party and Game. They sit in the start page's stage (1200 wide, side
-  padding max(32px, 50% - 600px)), columns 330 / 1fr / 520, gap 16.
-- **They share the window's height** (between 560 and 760 px), centred
-  vertically, so the page never scrolls on a desktop and Begin is always in
-  the bottom right corner. This needs `.lobby` to fill the screen's height
-  (it does through App's grid; check it still does after your changes).
-- **Only the parts that grow scroll, inside their panel:** the party list,
-  and the Game panel's body (everything between its header and the start
-  row: modes, settings, rules, Delve's descent). Both fade over their last
-  1.2rem. The start row is the Game panel's foot.
-- **Free seats:** after the players, one dashed row per free seat (the
-  first says "Open seat" unless the room is locked), the same height as a
-  player row, so "5 / 12" reads at a glance. Desktop only: on tablets and
-  phones they would only lengthen the page.
-- **Room panel:** the eye (show/hide code) moves into the panel header,
-  next to "Room". "Who can join" on its own line, Private, Public and Lock
-  together on the next (on every size). The IP note is fine print at the
-  foot of the panel, over a rule.
-- **QR code of the invite link** (new, desktop only) in the space between,
-  captioned "Or scan to join on a phone": friends in the same room join by
-  pointing a phone at the screen. Dark squares on a parchment plate (phone
-  cameras need the right way round). It takes the height that is left
-  (container query on its slot) and is dropped below 130 px. Locked or
-  full: the plate stays, hatched, with a lock mark (the hint above already
-  says why). Code hidden: hatched with an eye mark and "Hidden with the
-  code". The reference uses `qrcode-generator` (MIT, no dependencies); add
-  it as a dependency or write an equivalent, your call, but keep it small.
-- **Tablets (761 to 1099):** Room over Party on the left, Game on the right.
-  **Phones:** unchanged.
-- **4K at 100%:** the app-level zoom below; the lobby needs nothing more.
-  Watch out: `DelveLadder` measures itself with `getBoundingClientRect`,
-  which under CSS `zoom` mixes zoomed and unzoomed pixels; with the zoom on,
-  the descent drawing overlaps the finds. Fix the measuring (for example
-  divide by `element.currentCSSZoom`) and check every component that
-  measures this way.
+Superseded: the approved lobby is now `../lobby-round-6/` (its README, the
+round 6 reference and screens). The first reference that PR #125 ported,
+this section's notes and the desktop addendum (three panels, QR code) are
+dropped; `reference/lobbyFixture.ts.txt` here is still the way to fake
+lobby states.
 
 ---
 
@@ -272,13 +178,8 @@ right, every legal line together in the middle.
 
 ### Invite link screen (`?room=CODE`)
 
-Its own screen instead of the start page (`W-invite`, `W-phone-invite`):
-centred title, "Name the unique.", "Path of Exile 2 item trivia, with
-friends or alone.", a panel "You are invited to room" + the code glyphs,
-name field "Your name" (prefilled if known), full-width "Join the room"
-(primary), "Joining shares your IP address with the room.", and
-"‹ Back to the start" which drops the `?room` param and shows the start
-page. Errors as toasts.
+Being redesigned on the canvas (page "Invite screen"); keep what beta has
+until that is approved. Its own screen, errors as toasts.
 
 ### Phones (`W-phone`)
 
@@ -324,12 +225,12 @@ Build it like this:
    a 1440 x 725 window the first row of room tiles is fully visible and the
    second row peeks out, so scrolling is obvious. Shorter than that,
    scrolling is fine.
-4. **Very large windows.** Above 2560 px wide the whole app is scaled up
-   with CSS `zoom` = clamp(1, min(width / 2560, height / 1100), 2): 1.5 on
-   4K at 100%, about 1.2 on a 3440 x 1440 ultrawide. Compute it in JS on
-   resize (CSS can't divide lengths portably) and set it as a custom
-   property. At 2560 and below there is no scaling, so browser zoom keeps
-   working normally where nearly everyone is. Apply it at app level (the
+4. **Very large windows.** The whole app is scaled up with CSS `zoom` =
+   max(1, min(width / 1440, height / 980, 2.2)): the 1440 x 980 frame fits
+   the window and is never drawn below its own size (1.34 on a 2560 x 1310
+   window, 2.07 on 4K at 100%). This replaces the earlier 2560 / 1100 rule;
+   the lobby uses the same zoom (see `../lobby-round-6/`). Compute it in JS
+   on resize and set it as a custom property. Apply it at app level (the
    `.shell`, header included, and the layers screens portal to, such as
    toasts, docks and dialogs) so every screen scales alike, but not to the
    WebGL backdrop canvas, which sizes its buffer to device pixels. Under
