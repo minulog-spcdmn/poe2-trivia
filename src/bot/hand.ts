@@ -50,7 +50,7 @@ export class Hand {
   /** Where it waits, its own: its waiting stretches shifted this far (thousandths of the frame), so no two bots rest on the same spot. */
   private readonly aside: [number, number] = [-350 + Math.random() * 500, -250 + Math.random() * 450];
   /** Where on an answer or a card it tends to rest and click, its own (thousandths of it, from the recorded spot): not all on one spot. */
-  private readonly grip: [number, number] = [between(-200, 200), between(-160, 160)];
+  private readonly grip: [number, number] = [between(-300, 300), between(-250, 250)];
   /** The stretch its next click reaches with (picked as it looks things over), and for what. */
   private pending: { kind: ClickStretch['kind']; e: ClickStretch; w: Waver } | null = null;
   /** The stretches it replayed lately, not to be taken again soon. */
@@ -64,6 +64,8 @@ export class Hand {
   private sent = 'null';
   /** The anchor it's clicking, while it reaches for it. */
   private on: string | null = null;
+  /** The screen it last clicked its pick on: done there, it waits as on anyone else's turn. */
+  private acted = '';
   /** Which screen that is, and since when. */
   private screen = '';
   private screenAt = 0;
@@ -135,7 +137,9 @@ export class Hand {
     this.pending = { kind, e, w };
     this.presses = [];
     const onto = this.onto(kind === 'card' ? 'card:' : 'opt:', e, torn, this.box(frame, s), s);
-    this.follow(leadTrack(e, within(this.where(now), this.box(frame, s), e.src), now, until, this.speed, { onto, w }), frame);
+    // It takes in what's come up before its hand stirs, its own while: the room's hands don't all set off as one.
+    const start = now + Math.min(between(150, 1300) * (0.6 + 0.8 * this.persona.hand.still), (until - now) * 0.35);
+    this.follow(leadTrack(e, within(this.where(now), this.box(frame, s), e.src), start, until, this.speed, { onto, w }), frame);
   }
 
   /**
@@ -200,13 +204,16 @@ export class Hand {
     const pressed = Date.now();
     this.pressedUntil = pressed + e.hold;
     this.send(true);
+    this.acted = this.screen;
+    // Then a while before its hand drifts off, as when waiting.
+    this.restUntil = pressed + between(...REST_MS) * (0.5 + this.persona.hand.still);
     // The click is the letting go, as a browser's is: what it does happens then, with the press seen first.
     await wait(e.hold);
   }
 
   /** A recorded spot on an answer or a card (thousandths of it), moved by the bot's own grip, and kept well on it. */
   private held([u, v]: [number, number]): [number, number] {
-    const on = (x: number) => Math.min(900, Math.max(100, x));
+    const on = (x: number) => Math.min(920, Math.max(80, x));
     return [on(u + this.grip[0]), on(v + this.grip[1])];
   }
 
@@ -278,9 +285,9 @@ export class Hand {
     this.send(true);
   }
 
-  /** Nothing of its own to do: someone else's turn, a reveal, the lobby, the end. */
+  /** Nothing of its own to do: someone else's turn, its pick made, a reveal, the lobby, the end. */
   private idle(s: GameState) {
-    if (s.phase === 'lobby' || s.phase === 'over' || s.phase === 'reveal') return true;
+    if (s.phase === 'lobby' || s.phase === 'over' || s.phase === 'reveal' || this.acted === this.screen) return true;
     const me = session.myPlayerId;
     if (s.delve) return false;
     return s.settings.mode === 'turns' && s.players[s.turn]?.id !== me;
