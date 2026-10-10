@@ -8,7 +8,8 @@
   import DelveRules from './DelveRules.svelte';
   import ModeIcon from './ModeIcon.svelte';
   import { bestOf, findsMet, lastOf, loadRecords } from '../lib/delveRecord';
-  import { MAX_NAME, isHeldName, nameHeld, nameTooShort } from '../lib/names';
+  import { MAX_NAME, isHeldName, nameRefusal, nameTooShort } from '../lib/names';
+  import { refuseName } from '../lib/nameField';
   import { inviteUrl } from '../lib/site';
   import Avatar from './Avatar.svelte';
   import PlayerName from './PlayerName.svelte';
@@ -31,7 +32,9 @@
   const isHost = $derived(session.isHost);
   const local = $derived(session.mode === 'local');
 
-  let newName = $state('');
+  // A name the start page couldn't seat waits here, to be fixed up.
+  let newName = $state(session.lobbyDraft);
+  session.lobbyDraft = '';
   let nameError = $state(false);
   let copied = $state(false);
 
@@ -48,19 +51,14 @@
     e.preventDefault();
     const name = newName.trim();
     if (!name) return;
-    // The held name needs this device unlocked here too, like on the start page.
-    if (nameHeld(name)) {
-      nameError = true;
-      const field = (e.currentTarget as HTMLFormElement).querySelector('input');
-      if (field) refuse(field);
-      setTimeout(() => (nameError = false), 600);
-      field?.focus();
+    // The start page's checks, the held name included; the game checks it against the other players.
+    const refusal = nameRefusal(name);
+    if (refusal) {
+      refuseName((e.currentTarget as HTMLFormElement).querySelector('input'), refusal, (on) => (nameError = on));
       return;
     }
-    const playerId = crypto.randomUUID();
-    session.dispatch({ type: 'join', playerId, name });
     // Keep the name to fix it up if it was turned down (hot-seat applies it right away).
-    if (session.state?.players.some((p) => p.id === playerId)) newName = '';
+    if (session.seatLocal(name)) newName = '';
   }
 
   // Players already here when the lobby opens just appear; newcomers get an entrance.

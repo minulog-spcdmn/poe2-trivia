@@ -2,7 +2,7 @@
   import { onMount, tick } from 'svelte';
   import { fade, fly } from 'svelte/transition';
   import { engine, savedName, session } from '../lib/session.svelte';
-  import { nameHeld, nameTooShort } from '../lib/names';
+  import { nameUsable } from '../lib/names';
   import { CODEX_KEY, RECENT, loadCodex, resetCodex, type Tally } from '../lib/codex';
   import { accuracy, codexStats, delveSummary, tallyOf } from '../lib/codexStats';
   import { shownDepth } from '../lib/delve';
@@ -193,7 +193,7 @@
    */
   function beginDelve() {
     const name = savedName().trim();
-    const known = !!name && !nameTooShort(name) && !nameHeld(name);
+    const known = nameUsable(name);
     if (!known) session.delveLink = true;
     closeCodex();
     if (!known) return;
