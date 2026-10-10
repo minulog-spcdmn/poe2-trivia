@@ -22,6 +22,8 @@ import {
   LIGHT_MIN,
   PLUNGE_MS,
   PLUNGE_SINK,
+  ZONE_PLUNGE_MS,
+  ZONE_PLUNGE_SINK,
   plunge,
   sinking,
   stepPlunge,
@@ -966,6 +968,25 @@ test('the plunge gathers speed quickly and comes to rest slowly', () => {
   const peak = speeds.indexOf(Math.max(...speeds));
   assert.ok(peak * 16 < 0.45 * PLUNGE_MS && peak * 16 > 0.3 * PLUNGE_MS, `fastest at ${peak * 16} ms`);
   assert.ok(Math.abs(sinking.sink - start - PLUNGE_SINK) < 1e-9);
+});
+
+test('into a new zone the plunge goes deeper and longer, as smoothly', () => {
+  assert.ok(ZONE_PLUNGE_MS > PLUNGE_MS && ZONE_PLUNGE_MS <= 3200 && ZONE_PLUNGE_SINK > PLUNGE_SINK);
+  const start = sinking.sink;
+  plunge(true);
+  let last = start;
+  let moving = 0;
+  for (let t = 0; t <= ZONE_PLUNGE_MS + 100; t += 16) {
+    if (stepPlunge(20_000 + t, true)) moving++;
+    assert.ok(sinking.sink >= last - 1e-9 && sinking.sink - last < ZONE_PLUNGE_SINK / 30, `a jump at ${t} ms`);
+    last = sinking.sink;
+  }
+  assert.ok(Math.abs(sinking.sink - start - ZONE_PLUNGE_SINK) < 1e-9, `sank ${sinking.sink - start}`);
+  assert.ok(moving * 16 >= ZONE_PLUNGE_MS - 20 && moving * 16 <= ZONE_PLUNGE_MS + 40, `moved for ${moving * 16} ms`);
+  // The next depth's plunge is the usual one again.
+  plunge();
+  for (let t = 0; t <= PLUNGE_MS + 32; t += 16) stepPlunge(30_000 + t, true);
+  assert.ok(Math.abs(sinking.sink - start - ZONE_PLUNGE_SINK - PLUNGE_SINK) < 1e-9);
 });
 
 test('each new depth sinks the scene a little further, smoothly, and then it holds still; never while holding still', () => {

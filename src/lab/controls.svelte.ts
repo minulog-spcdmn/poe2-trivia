@@ -768,11 +768,11 @@ export const descend = () =>
     next();
   });
 
-/** The plunge the scene takes as a card is picked (src/lib/descent.ts), if this build has it. */
-export function plunge(): boolean {
+/** The plunge the scene takes as a card is picked (src/lib/descent.ts), if this build has it; `zone`: into a new zone's, deeper and longer. */
+export function plunge(zone = false): boolean {
   const f = (descentModule as Record<string, unknown>).plunge;
   if (typeof f !== 'function') return false;
-  (f as () => void)();
+  (f as (zone: boolean) => void)(zone);
   return true;
 }
 

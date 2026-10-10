@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { accentAt, dealtDeeper, plunge, setDescent, type Dealt } from './lib/descent';
+  import { accentAt, dealtDeeper, milestoneAt, plunge, setDescent, type Dealt } from './lib/descent';
   import { zoneAt } from './lib/zoneSigils';
   import { shownDepth } from './lib/delve';
   import { onMount, untrack } from 'svelte';
@@ -126,13 +126,14 @@
   });
   // Delve: each new depth sinks the scene a little further as its cards are
   // dealt (not the run's first, nor the same depth's dealt again after a
-  // question set aside; see dealtDeeper).
+  // question set aside; see dealtDeeper), a new zone's (its gate's depth)
+  // deeper and longer.
   let lastDealt: Dealt | undefined;
   $effect(() => {
     if (!gs?.delve || screen !== 'game' || gs.phase !== 'choosing') return;
     const now = { run: gs.delve.startedAt, depth: gs.round };
     if (dealtDeeper(lastDealt, now)) {
-      plunge();
+      plunge(!!milestoneAt(now.depth));
       sfx('plunge');
     }
     lastDealt = now;

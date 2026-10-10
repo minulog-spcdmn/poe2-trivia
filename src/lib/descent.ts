@@ -30,7 +30,8 @@
 // see the luminance estimate below) so its average brightness only ever
 // falls, however bright a stratum's fire or gold, generated or not (past
 // the zones it may lift a little, never by a jump: brighterAt). Each new
-// depth sinks the scene a little further as its cards are dealt (plunge).
+// depth sinks the scene a little further as its cards are dealt, a new zone's
+// deeper and longer (plunge).
 // Pure, apart from the eased channel and the plunge at the bottom that the
 // backdrop reads.
 
@@ -1253,19 +1254,25 @@ export const shownDepth = () => shown;
  * past you (the nearer, the faster) as if you sank PLUNGE_SINK of a screen,
  * the embers streak up, and the dark draws in and lets go again; it gathers
  * speed quickly and comes to rest slowly, settling where it came to.
+ * Into a new zone (the depth its gate names, milestoneAt) it plunges deeper
+ * and longer: ZONE_PLUNGE_SINK of a screen over ZONE_PLUNGE_MS.
  * App.svelte calls plunge() (see dealtDeeper); the backdrop steps it, and
  * skips it while it holds still (reduced motion, effects off).
  */
 export const PLUNGE_MS = 1900;
 export const PLUNGE_SINK = 1.1;
+export const ZONE_PLUNGE_MS = 2700;
+export const ZONE_PLUNGE_SINK = 1.9;
 /**
  * How far the scene has sunk (screens, wrapping far down), how fast (screens
  * a second) and how far the dark has drawn in (0 to 1); and how far it has
  * swung sideways (screen heights, see swing) and the dark drawn in as it does.
  */
 export const sinking = { sink: 0, speed: 0, breath: 0, slide: 0, slideBreath: 0 };
-let asked = false;
+let asked: { ms: number; by: number } | null = null;
 let sinkFrom = 0;
+let sinkBy = PLUNGE_SINK;
+let plungeMs = PLUNGE_MS;
 let plungeAt = -Infinity;
 
 /** Back to the top, nothing sunk and no plunge under way (a run starting from the surface). */
@@ -1281,9 +1288,9 @@ function resetSink() {
   swingAt = -Infinity;
 }
 
-/** Sinks the scene a little further (a new depth's cards were dealt). */
-export function plunge() {
-  asked = true;
+/** Sinks the scene a little further (a new depth's cards were dealt); `zone`: into a new zone, deeper and longer. */
+export function plunge(zone = false) {
+  asked = zone ? { ms: ZONE_PLUNGE_MS, by: ZONE_PLUNGE_SINK } : { ms: PLUNGE_MS, by: PLUNGE_SINK };
 }
 
 /** Where a run's cards were last dealt: which run (its start) and at what depth. */
@@ -1319,26 +1326,28 @@ const easeSlope = (x: number) => {
  */
 export function stepPlunge(now: number, allowed: boolean): boolean {
   if (asked) {
-    asked = false;
     if (allowed) {
       sinkFrom = sinking.sink;
+      sinkBy = asked.by;
+      plungeMs = asked.ms;
       plungeAt = now;
     }
+    asked = null;
   }
   if (plungeAt === -Infinity) return false;
   // Holding still now: it ends at once where it was heading.
-  const x = allowed ? Math.max(0, (now - plungeAt) / PLUNGE_MS) : 1;
+  const x = allowed ? Math.max(0, (now - plungeAt) / plungeMs) : 1;
   if (x >= 1) {
     // (Wrapping round after hundreds of depths in one run, so the shader's
     // noise keeps its precision; each run starts from 0, see setDescent.)
-    sinking.sink = (sinkFrom + PLUNGE_SINK) % 256;
+    sinking.sink = (sinkFrom + sinkBy) % 256;
     sinking.speed = 0;
     sinking.breath = 0;
     plungeAt = -Infinity;
     return true;
   }
-  sinking.sink = sinkFrom + PLUNGE_SINK * ease(x);
-  sinking.speed = (PLUNGE_SINK * easeSlope(x) * 1000) / PLUNGE_MS;
+  sinking.sink = sinkFrom + sinkBy * ease(x);
+  sinking.speed = (sinkBy * easeSlope(x) * 1000) / plungeMs;
   sinking.breath = Math.sin(Math.PI * x) ** 2;
   return true;
 }
