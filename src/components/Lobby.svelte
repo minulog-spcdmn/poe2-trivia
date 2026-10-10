@@ -251,7 +251,8 @@
      was, the room and the party; on the right, where today's unique was, the
      game. Begin closes the right column, in the same corner at every size,
      and the party's chips are the ones the game shows along its top. -->
-<div class="lobby" class:online={!local}>
+<!-- data-cursor: where other players' pointers are placed (PeerCursors): the room as a whole, the party's chips, the modes. -->
+<div class="lobby" class:online={!local} data-cursor="game">
   <div class="cols">
     <div class="col side">
       {#if !local}
@@ -369,8 +370,9 @@
         </header>
         <!-- The same chips the game shows along its top, two to a row. -->
         <ul class="chips">
-          {#each s.players as p (p.id)}
+          {#each s.players as p, i (p.id)}
             <li
+              data-cursor="row:{i}"
               use:arriving={p.name}
               animate:flip={{ duration: 300 }}
               in:fly={{ x: -20, duration: 350 }}
@@ -442,9 +444,10 @@
 
       <div class="setting">
         <div class="modes" class:tall={tall.current} role="radiogroup" aria-label="Mode" aria-describedby="mode-blurb" tabindex={-1} onkeydown={modeKeys}>
-          {#each MODES as m (m.id)}
+          {#each MODES as m, i (m.id)}
             {@const on = s.settings.mode === m.id}
             <button
+              data-cursor="card:{i}"
               class="mode"
               class:on
               class:off={offline(m.id)}

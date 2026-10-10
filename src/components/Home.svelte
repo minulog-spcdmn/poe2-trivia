@@ -439,6 +439,7 @@
     <div class="greeting" in:fade={{ duration: 600, delay: 500 }}>
       {#if renaming}
         <form class="row" onsubmit={saveRename}>
+          <!-- No autofill on the name fields: its list is the browser's own and drops the game's cursor; the game remembers the name itself. -->
           <input
             class="field name"
             bind:this={renameField}
@@ -446,7 +447,7 @@
             maxlength={MAX_NAME}
             placeholder="Your name"
             aria-label="Your name"
-            autocomplete="nickname"
+            autocomplete="off"
             spellcheck="false"
             onkeydown={renameKeys}
           />
@@ -485,7 +486,7 @@
             {:else}
               <form class="slot row" onsubmit={joinInvite} in:fly={SWAP_IN} out:fade={SWAP_OUT}>
                 <!-- svelte-ignore a11y_autofocus -->
-                <input class="field name" bind:this={inviteField} bind:value={inviteName} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="nickname" spellcheck="false" autofocus />
+                <input class="field name" bind:this={inviteField} bind:value={inviteName} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="off" spellcheck="false" autofocus />
                 <button class="btn primary" type="submit">Join</button>
               </form>
             {/if}
@@ -518,13 +519,13 @@
                 <div class="slot" in:fly={SWAP_IN} out:fade={SWAP_OUT}><Connecting /></div>
               {:else if isOpen && e === 'create'}
                 <form class="slot row" onsubmit={host} in:fly={SWAP_IN} out:fade={SWAP_OUT}>
-                  <input class="field name" bind:this={nameField} bind:value={nameInput} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="nickname" spellcheck="false" />
+                  <input class="field name" bind:this={nameField} bind:value={nameInput} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="off" spellcheck="false" />
                   <button class="btn primary" type="submit">Create room</button>
                 </form>
               {:else if isOpen && e === 'join'}
                 <form class="slot row" onsubmit={join} in:fly={SWAP_IN} out:fade={SWAP_OUT}>
                   {#if !known}
-                    <input class="field name short" bind:this={nameField} bind:value={nameInput} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="nickname" spellcheck="false" />
+                    <input class="field name short" bind:this={nameField} bind:value={nameInput} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="off" spellcheck="false" />
                   {/if}
                   <input
                     class="field code"

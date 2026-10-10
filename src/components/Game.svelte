@@ -317,7 +317,8 @@
   {/if}
 {/snippet}
 
-<div class="game">
+<!-- data-cursor: where other players' pointers are placed (PeerCursors) when over nothing more particular. -->
+<div class="game" data-cursor="game">
   <p class="sr" aria-live="polite">{zone?.label ?? ''}</p>
   <Scoreboard aside={phone.current ? timer : undefined} />
 

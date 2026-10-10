@@ -3,8 +3,9 @@
 // sender disconnected: a real client never sends malformed messages.
 
 import type { Action, GameState } from './game';
+import { parseCursorAt, parseCursorBatch, type CursorAt, type CursorEntry } from './cursors.ts';
 
-export const PROTOCOL_VERSION = 20;
+export const PROTOCOL_VERSION = 21;
 
 /** What hosts before version 10 tell a guest on another version, whichever side is out of date. */
 export const LEGACY_VERSION_TEXT = 'Your game version is out of date. Please reload the page.';
@@ -28,7 +29,9 @@ export type ClientMsg =
    */
   | { t: 'hello'; secret: string; name: string; v: number; tab?: string; watch?: boolean }
   | { t: 'action'; action: Action }
-  | { t: 'pong'; n: number };
+  | { t: 'pong'; n: number }
+  /** Where this player's pointer is (cursors.ts), or null when it left the page. */
+  | { t: 'cursor'; at: CursorAt | null };
 
 /** Host → guest. Media carries question art as image bytes. */
 export type HostMsg =
@@ -46,6 +49,8 @@ export type HostMsg =
   /** Not now (too many joins): this connection is dropped, try again in a moment. */
   | { t: 'busy'; message: string }
   | { t: 'ping'; n: number }
+  /** Other players' pointers that moved since the last batch (cursors.ts). */
+  | { t: 'cursors'; c: CursorEntry[] }
   | MediaMsg;
 
 export type MediaMsg =
@@ -93,6 +98,10 @@ export function parseClientMsg(raw: unknown): ClientMsg | null {
       };
     case 'pong':
       return isInt(raw.n, 0, Number.MAX_SAFE_INTEGER) ? { t: 'pong', n: raw.n } : null;
+    case 'cursor': {
+      const at = parseCursorAt(raw.at);
+      return at === undefined ? null : { t: 'cursor', at };
+    }
     case 'action': {
       const a = raw.action;
       if (!isObj(a)) return null;
@@ -153,6 +162,10 @@ export function parseHostMsg(raw: unknown): HostMsg | null {
       return raw as HostMsg;
     case 'ping':
       return isInt(raw.n, 0, Number.MAX_SAFE_INTEGER) ? (raw as HostMsg) : null;
+    case 'cursors': {
+      const c = parseCursorBatch(raw.c);
+      return c ? { t: 'cursors', c } : null;
+    }
     case 'art':
       return qid && bin(raw.data) && isInt(raw.w, 1, 4096) && isInt(raw.h, 1, 4096) ? (raw as HostMsg) : null;
     case 'veil':

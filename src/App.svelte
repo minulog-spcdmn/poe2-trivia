@@ -22,12 +22,23 @@
   import { closeCodex, codexRoute } from './lib/codexRoute.svelte';
   import { BETA, LOCAL } from './lib/channel';
   import { watchFullscreenTip } from './lib/fullscreenTip';
+  import { setCursorColor } from './lib/ownCursor';
+  import PeerCursors from './components/PeerCursors.svelte';
+  import Recorder from './components/Recorder.svelte';
+  import { wantsRecording } from './lib/recorder';
+  import { playerColor } from './lib/ui';
 
+  // Beta and dev only: ?record keeps how this player plays, for the room bots (lib/recorder.ts).
+  let recording = $state(wantsRecording());
   let muted = $state(isMuted());
   let volume = $state(getVolume());
   const silent = $derived(muted || volume === 0);
   let confirmLeave = $state(false);
   let fxOn = $state(fxUserOn());
+  // With a seat in an online room, lobby included, this device's own pointer takes its
+  // player's colour, as the others see it (lib/ownCursor.ts); otherwise it's old gold.
+  const seat = $derived(session.mode === 'host' || session.mode === 'client' ? session.state?.players.find((p) => p.id === session.myPlayerId) : undefined);
+  $effect(() => setCursorColor(seat ? playerColor(seat.hue) : undefined));
   // CSS animations that only decorate (the Delve phial's fire) hold still with the effects off.
   $effect(() => {
     document.documentElement.toggleAttribute('data-still', !fxOn);
@@ -365,6 +376,9 @@
   {/if}
 
   <main>
+    <!-- Other players' pointers, in an online room: the lobby and the game (lib/cursors.ts says when). -->
+    {#if (session.mode === 'host' || session.mode === 'client') && session.state}<PeerCursors />{/if}
+    {#if recording}<Recorder onstop={() => (recording = false)} />{/if}
     {#key screen}
       <div
         class="screen"

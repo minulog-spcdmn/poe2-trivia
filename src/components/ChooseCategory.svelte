@@ -413,6 +413,7 @@
     {#each s.offered as cat, i (cat)}
       <button
         class="card"
+        data-cursor="card:{i}"
         data-sfx="none"
         data-fx="none"
         class:dm={!!s.deathmatch}
@@ -835,6 +836,10 @@
   }
   .card.mine {
     cursor: pointer;
+  }
+  /* Someone else's to pick (or, together, once this player can't vote): not this player's to click. */
+  .card:not(.mine) {
+    cursor: not-allowed;
   }
   .card.mine:not(:global(.down)):hover .frame,
   .card.mine:not(:global(.down)):focus-visible .frame {

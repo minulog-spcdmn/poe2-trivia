@@ -538,6 +538,39 @@ browser (`src/lib/achievements.ts`); erasing the codex erases them.
     taking a seat when the next game starts (and **Play next game** to
     change their mind). A guest in the lobby can give up their seat the same
     way, and **Take a seat** again. The choice holds through reconnects.
+  - **Live pointers:** in the lobby, in turns mode and Delve together, and
+    on the screen that ends a game (any mode), everyone sees the other players' mouse pointers move over the room, in their colour and
+    with their name; a tap on a phone shows where it landed, as the
+    pointer pressed, for a moment. Every pointer, your own included, is the same engraved dart
+    (one point of the rune circle's compass star, `src/lib/pointerArt.ts`):
+    yours in old gold, or in your colour once you have a seat in an online
+    room (the lobby included), shown as the system cursor so it never lags (`src/lib/ownCursor.ts`).
+    It has its states, the others' included: over anything that can be
+    clicked, a demon's clawed hand pointing, seen a little from the side;
+    while the button is held, the dart sinks a little, lit a little, its
+    hatched side struck solid, and the hand pushes its finger into the page; on
+    something disabled (another player's answers and cards), dull lead with
+    a saltire. Another's pointer is the hand whenever their own cursor is:
+    each player's screen sends that with the pointer. A still pointer dims;
+    it's hidden only once its player leaves the page. Text fields get an
+    engraved I-beam. With Windows' high contrast on, the system's own
+    cursors come back. Text fields don't offer autofill, and a right click
+    brings no browser menu (but in a text field), since both show the
+    system's cursor. Scrolling with the middle
+    button (Windows and Linux, where browsers do it) is the game's own
+    (`src/lib/autoscroll.ts`), so it can wear the look: a seal where it
+    began, with the ways left to go, and a dart pointing the way it scrolls.
+    Spectators see them but don't show their own. A pointer is sent as a
+    spot on the element under it (an answer, a category card, a scoreboard
+    row, the art, the button that moves on; at the end, the winner's circle
+    and the standings' rows; the game as a whole otherwise, measured down it by screen
+    heights so it holds still as cards are dealt), so it lands on the same
+    thing on every screen, a phone's included. A click is always seen:
+    the press goes out even when it's over before the next update, and a
+    pointer whose element goes with the click (a card picked) stays where
+    it was a moment. Never in a race, nor while
+    deathmatch duelists answer, where it would give answers away. See
+    `src/lib/cursors.ts`.
   - The room code stays in the header during the game, unless the host
     hid it for streaming.
   - After a game, the host can **Play again** (same settings, starts right
@@ -582,8 +615,13 @@ with that in mind. Guests, on the other hand, are treated as untrusted:
   code), so a host never learns a token that works in someone else's room.
 - **Everything guests send is checked.** Every message is validated against
   the few actions a guest may take: pick a category, answer, continue, and
-  in Delve together vote for a card or give a teammate a life. Guests
-  are rate-limited to about 10 messages per second, and the raw data they
+  in Delve together vote for a card or give a teammate a life (and where
+  their pointer is). Guests
+  are rate-limited to about 10 messages per second (their pointer has a
+  budget of its own, so moving it never uses up the one for playing, and
+  the host keeps it out of the game state and passes it on in batches,
+  never more than ten a second, whose sending holds back while a link is
+  busy with pictures), and the raw data they
   send is capped in size and volume, and checked for lengths that can't be
   real, before it is decoded (so it can't be used to fill the host's memory
   or freeze its tab). A connection that doesn't introduce itself
@@ -941,6 +979,28 @@ it apart from the live game:
 - adding `&first` to an invite link (`?room=CODE&first`) shows the invite
   screen as a first visit sees it, with a name saved (the dev server too):
   the saved name is set aside for that visit, not erased
+
+### Recording a hand
+
+On the beta and the dev server, `?record` in the address (for example
+**poe2.quest/beta/?record**) records how this player plays, for the room
+bots' hands to move by: the pointer about 120 times
+a second, what it was over (the anchors the pointer sync uses), clicks,
+scrolls and keys pressed outside text fields, where everything was on the
+screen, and what the game showed (phase, question, clock, reveal, lives).
+Nothing typed and no names. A badge in the bottom left corner shows it's on;
+**Save** downloads the file (nothing leaves the device otherwise), **Stop**
+ends it. It stays on for the tab until stopped or `?record=off`
+(`src/lib/recorder.ts`, `src/components/Recorder.svelte`).
+
+The bots' hands replay what was recorded: `node scripts/bot-motion.mjs
+one.json two.json …` cuts recordings into stretches (picking a card,
+answering, pressing Next, waiting through someone else's turn, the lobby),
+kept relative to what was on screen, into `src/data/botMotion.json` (the
+recordings themselves stay out of the repo). A bot replays one that fits
+the moment, its pauses fitted to how long it takes to make up its mind and
+its last reach steered onto its own pick (`src/bot/motion.ts`, `hand.ts`).
+More players' recordings make for more kinds of hands.
 
 ### The lab
 

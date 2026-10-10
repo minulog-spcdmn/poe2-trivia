@@ -830,6 +830,7 @@
       <button
         class="btn"
         class:primary={canNext}
+        data-cursor="next"
         data-sfx="none"
         disabled={!canNext}
         title={canNext ? undefined : race ? 'The host moves the race on' : coop ? 'The team moves the run on' : `${active.name} or the host moves on`}
@@ -955,6 +956,7 @@
           {@const tv = !pic && !waiting ? media?.tileVeils[i] : undefined}
           <button
             class="tile {st}"
+            data-cursor="opt:{i}"
             data-sfx="none"
             data-fx="hover"
             bind:this={optionEls[i]}
@@ -1038,7 +1040,7 @@
             </div>
           {/if}
         </div>
-        <div class="art" bind:this={artEl} use:backdropShadow={{ fill: 'stage' }}>
+        <div class="art" data-cursor="art" bind:this={artEl} use:backdropShadow={{ fill: 'stage' }}>
           <ArcaneCircle state={reveal ? (iWon ? 'good' : 'bad') : 'idle'} />
           <div class="frame">
             {#if showFull && item}
@@ -1085,6 +1087,7 @@
           {@const st = optionState(i)}
           <button
             class="option {st}"
+            data-cursor="opt:{i}"
             data-sfx="none"
             data-fx="hover"
             bind:this={optionEls[i]}
@@ -1831,6 +1834,10 @@
   .option.mine:not(:disabled) {
     cursor: pointer;
   }
+  /* Someone else's answers: not this player's to click. */
+  .option:not(.mine) {
+    cursor: not-allowed;
+  }
   /* Hovered, or picked and waiting for the verdict: the row stays put and lights up. */
   .option.mine:not(:disabled):hover,
   .option.mine:not(:disabled):focus-visible,
@@ -2113,6 +2120,9 @@
   }
   .tile.mine:not(:disabled) {
     cursor: pointer;
+  }
+  .tile:not(.mine) {
+    cursor: not-allowed;
   }
   /* Hovered, or picked and waiting for the verdict: lit like the answer rows,
      and the picture comes forward. */

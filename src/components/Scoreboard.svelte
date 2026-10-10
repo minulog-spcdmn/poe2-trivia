@@ -710,6 +710,7 @@
       {@const expect = expecting[p.id] ?? null}
       {@const reviveOk = fell !== null && canRevive(p.id)}
       <li
+        data-cursor="row:{i}"
         use:backdropShadow={{ off: stuck }}
         use:scoreRow={p.id}
         use:burn={{ h: fire, delve: !!run }}

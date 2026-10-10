@@ -14,7 +14,7 @@ export const MAX_FRAME_BYTES = 2048;
 /** What to do with a raw frame: pass it on, drop the connection (a flood), or block the peer (no real client sends it). */
 export type FrameVerdict = 'ok' | 'flood' | 'bad';
 
-/** Deeper than any message a real client sends (hello, pong, action). */
+/** Deeper than any message a real client sends (hello, pong, action, cursor). */
 const MAX_PACK_DEPTH = 8;
 
 /**
@@ -78,8 +78,9 @@ export class FrameGuard {
   private bytes: RateLimit;
 
   constructor(now: () => number = Date.now) {
-    // Looser than the message limit (10/s), so only abuse ever hits it.
-    this.frames = new RateLimit(20, 40, now);
+    // Looser than the message limits (10/s, and 10/s for the pointer,
+    // cursors.ts), so only abuse ever hits it.
+    this.frames = new RateLimit(30, 60, now);
     this.bytes = new RateLimit(1024, 16 * 1024, now);
   }
 

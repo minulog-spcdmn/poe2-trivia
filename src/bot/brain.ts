@@ -17,6 +17,7 @@
 // All of it mild: these are players, not caricatures.
 // Pure functions of their inputs and a random source, so tests can pin them.
 
+import { PLAIN_HAND, type HandStyle } from './motion.ts';
 import { nameSimilarity, type DifficultyRules, type GameState } from '../lib/game.ts';
 
 export type Rng = () => number;
@@ -57,6 +58,8 @@ export interface Persona {
   sociable: number;
   /** How much it minds rules other than its own in a room to join (0 to 1). */
   picky: number;
+  /** Its own touch on the recorded hand its pointer replays (motion.ts). */
+  hand: HandStyle;
 }
 
 /** What the bot sees of a question when it decides. */
@@ -129,6 +132,7 @@ export function makePersona(categories: string[], rng: Rng): Persona {
     hosting: rng() ** 1.6,
     sociable: rng(),
     picky: rng(),
+    hand: PLAIN_HAND,
   };
 }
 
@@ -343,7 +347,9 @@ export function chooseCard(p: Persona, offered: string[], finds: { category: str
 }
 
 /** Milliseconds to look over the categories before picking. */
-export function pickDelay(p: Persona, rng: Rng): number {
+export function pickDelay(p: Persona, rng: Rng, cards = 3): number {
+  // A single card (a deathmatch's): nothing to choose, so it just takes it.
+  if (cards <= 1) return Math.round(between(rng, 400, 1100) * p.pace);
   let ms = between(rng, 1300, 3800);
   // Now and then it reads the cards a while longer, or something else catches its eye (well under the host's skip).
   const r = rng();

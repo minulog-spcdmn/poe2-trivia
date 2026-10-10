@@ -93,8 +93,12 @@ body {
   background: var(--bg);
 }
 
-/* Reserve the scrollbar's space so screens that need one don't shift sideways. */
+/* Reserve the scrollbar's space so screens that need one don't shift sideways.
+   The app's own pointer everywhere (lib/ownCursor.ts; vite.config.ts makes
+   `default` and `pointer` read it), links and text fields included, which
+   the browser would otherwise give its own. */
 html {
+  cursor: default;
   scrollbar-gutter: stable;
   scrollbar-color: #4a3a22 #0a0908;
 }
@@ -106,6 +110,62 @@ html[data-fullscreen] {
 }
 html[data-fullscreen]::-webkit-scrollbar {
   display: none;
+}
+
+a:any-link {
+  cursor: pointer;
+}
+:where(input:not([type]), input[type='text'], input[type='search'], textarea) {
+  cursor: text;
+}
+
+/* Middle-button scrolling (lib/autoscroll.ts): a cover over everything while
+   it runs, holding the cursor, and the seal stamped where it began. */
+.autoscroll {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+}
+.autoscroll-seal {
+  position: absolute;
+  overflow: visible;
+  fill: none;
+  stroke: currentColor;
+  stroke-linejoin: miter;
+  stroke-miterlimit: 12;
+  translate: -50% -50%;
+  animation: seal-stamp 0.2s var(--ease-out) both;
+}
+@keyframes seal-stamp {
+  from {
+    opacity: 0;
+    scale: 1.6;
+  }
+}
+.autoscroll-seal .ground {
+  fill: rgba(10, 9, 8, 0.82);
+  stroke: none;
+}
+.autoscroll-seal .glow {
+  stroke-width: 2;
+  opacity: 0.25;
+  filter: blur(1px);
+}
+.autoscroll-seal .dot {
+  fill: currentColor;
+  stroke: none;
+}
+.autoscroll-seal .fine {
+  stroke-linecap: round;
+  opacity: 0.85;
+}
+.autoscroll-seal .way {
+  transition: opacity 0.2s;
+}
+/* No room left that way: its dart fades, as the browsers' own do. */
+.autoscroll-seal.no-up .up,
+.autoscroll-seal.no-down .down {
+  opacity: 0.25;
 }
 
 :focus-visible {

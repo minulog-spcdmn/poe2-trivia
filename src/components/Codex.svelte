@@ -444,7 +444,7 @@
       <div class="bar">
         <h2>Collection</h2>
         <div class="controls">
-          <input class="field search" type="search" bind:value={search} placeholder="Search names" aria-label="Search names" spellcheck="false" />
+          <input class="field search" type="search" autocomplete="off" bind:value={search} placeholder="Search names" aria-label="Search names" spellcheck="false" />
           <CodexFilter bind:value={only} options={filterOptions} label="Category" />
           <div class="seg" role="group" aria-label="View">
             <button class:on={view === 'grid'} aria-pressed={view === 'grid'} onclick={() => (view = 'grid')}>Grid</button>
