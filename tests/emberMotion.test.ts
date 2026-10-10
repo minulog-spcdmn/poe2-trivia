@@ -224,8 +224,8 @@ test("a burst's sparks burn in the colour of the zone it belongs to, through its
   if (k < 0) return;
   const at = (EMBERS + GLINTS) * 4;
   const near = (a: ArrayLike<number>, b: readonly number[]) => b.every((v, c) => Math.abs(a[c] - v) < 1e-6);
-  // At its first depth (still turning in), settled, and all through its handover to the next zone (from its 5th depth to the next one's 2nd).
-  for (const d of [10 * k + 1, 10 * k + 2, 10 * k + 8, 10 * k + 10, 10 * k + 11]) {
+  // At its first depth, settled, and all through its handover to the next zone (from its 6th depth to the next one's 1st).
+  for (const d of [10 * k + 1, 10 * k + 2, 10 * k + 7, 10 * k + 9, 10 * k + 10]) {
     const e = new Embers();
     e.descend(descent(d));
     e.step(0, W, H);

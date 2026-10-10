@@ -313,19 +313,18 @@ the same thing for everyone.
   seed of its own, the same for everyone, and named from its archetype's
   names ("The Drowned Nave", "Ashen Reliquary"), none twice in the first
   fifty from 100, never the same twice in a row.
-- Each zone hands over to the next gradually, over seven depths from its
-  5th depth to the next zone's 2nd, on an eased curve: slow to begin,
+- Each zone hands over to the next gradually, over five depths from its
+  6th depth to the next zone's 1st, on an eased curve: slow to begin,
   quickest toward the zone's end, slow to settle, never a straight ramp.
-  The next zone's name is still announced at its first depth, nearly all
-  of the way through the handover, which is done once that depth's
-  question is answered: from its 2nd depth to its 5th the new zone shows
+  The handover is done as the next zone's name is announced at its first
+  depth (its gate): from its 1st depth to its 6th the new zone shows
   alone.
-  - Its embers take the next zone's colour one by one: one in twenty of
-    them at its 6th depth, three in five at its 9th, nineteen in twenty at
-    the next zone's 1st.
-  - From its 6th depth the next zone's light, smoke and features creep in
-    while its own recede (barely at its 7th, half way at its 9th, nine
-    tenths at the next zone's 1st, all there at its 2nd), each feature
+  - Its embers take the next zone's colour one by one: one in ten of
+    them at its 7th depth, two in three at its 9th, nine in ten at its
+    10th, all of them at the next zone's 1st.
+  - From its 7th depth the next zone's light, smoke and features creep in
+    while its own recede (a sixth at its 8th, half way at its 9th, five
+    in six at its 10th, all there at the next zone's 1st), each feature
     coming and going its own way (the lamps kindle one by one, magma cracks
     open from hairlines and cool, frost grows in from the walls, fire rises
     from below).
@@ -340,6 +339,8 @@ the same thing for everyone.
   (not a run's first depth, after a reload, or the same depth dealt again):
   for 1.9 s the walls, smoke and dust drift up past you, quick to start and
   slow to settle, the embers streak up, and the dark draws in and lets go.
+  Into a new zone (its gate's depth) it plunges much further, for as long
+  as the zone's sound rings (7 s).
   It is skipped with reduced motion or effects off.
 - As a question's clock runs out the dark draws the light in and dims the
   scene (never the panels or text), lifting at the reveal or when a flare
@@ -745,23 +746,23 @@ Everything is drawn in WebGL2 with float precision and dithered once at the
   archetype's next (`endgameName`): the curated ones first, then epithets
   and places composed; its sigil and ornament its archetype's zone's
   (`emblemOf`).
-  From a zone's 5th depth to the next one's 2nd, seven depths, the scene
+  From a zone's 6th depth to the next one's 1st, five depths, the scene
   turns into the next (`strataAt`, `turnInto`; `TURN_FROM`,
   `TURN_DEPTHS`): the embers follow the turn eased (`emberTurn`), the
   light, smoke, features and their colours follow it eased from the
-  zone's 6th depth (`hallTurn`, `HALL_FROM`), both on a smoothstep
+  zone's 7th depth (`hallTurn`, `HALL_FROM`), both on a smoothstep
   (`easeTurn`), and a magma that goes out cools with the hall
-  (`magmaCooling`), gone by the next zone's 2nd (through a cross-fade it
+  (`magmaCooling`), gone by the next zone's 1st (through a cross-fade it
   keeps each scene's own cooling, `Descent.cool`, so it never flares up
   again as it fades). A zone shows alone from
-  its 2nd depth (`settledAt`) to its 5th, where its own turn begins.
+  its 1st depth (`settledAt`) to its 6th, where its own turn begins.
   The scene's `light` is set so its average brightness never rises with
   depth through the zones and, past them, by 8% a depth at most
   (`luminanceAt`, `lightAt`, `brighterAt`): `estimateLuminance` works out
   what the backdrop draws from what each environment adds and dims as it
   comes in (`ENV_ADD`, `ENV_HALL`), corrected per depth (`MEASURED`, to
-  depth 92), and the light is solved a stretch of depths at a time, moving
-  at most 0.09 a depth (`light`, or the light drawn, `light` times the
+  depth 91), and the light is solved a stretch of depths at a time, moving
+  at most 0.135 a depth (`light`, or the light drawn, `light` times the
   stratum's own `lightK`, so a stratum lit brighter is made way for), to
   depth 2001 (past it the curve is kept to exactly). It is worked out in
   idle moments ahead of the scene (`warmLights`); a rejoin deep down shows
@@ -780,7 +781,8 @@ Everything is drawn in WebGL2 with float precision and dithered once at the
   The shown depth eases along at about a second a depth, and a jump of
   more than three depths cross-fades straight there. `plunge()` (called by
   `App.svelte` when a deeper depth's cards are dealt, `dealtDeeper`) sinks
-  the scene, and the backdrop steps it (`stepPlunge`). The backdrop's shaders and embers (`src/lib/backdropEmbers.ts`, a
+  the scene (a new zone's further and longer, `ZONE_PLUNGE_SINK`,
+  `ZONE_PLUNGE_MS`), and the backdrop steps it (`stepPlunge`). The backdrop's shaders and embers (`src/lib/backdropEmbers.ts`, a
   small palette of zone colours, so a new colour spreads ember by ember,
   each taking its zone's way of moving from `src/lib/emberMotion.ts` with it),
   the CSS fallback and the ambience (`depthAmbience` in `src/lib/sound.ts`)
@@ -954,7 +956,7 @@ and how the embers move. Every change shows at once.
   the game estimates it with its solved light (no frame is drawn or read),
   beside the curve it keeps to; any depth brighter than the rule allows
   (than the one before through the zones, by 8% past them) is marked.
-- **Zones:** pick one of the ten (the panel jumps to its 2nd depth, where
+- **Zones:** pick one of the ten (the panel jumps to its 1st depth, where
   it shows alone), then tweak its look: a colour picker for every colour,
   sliders for every strength (Light and dark, Smoke, Haze, Embers, Glints,
   Details), and the embers' motion (a profile and its speed, rise or fall, drift, turbulence

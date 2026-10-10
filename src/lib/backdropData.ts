@@ -179,29 +179,29 @@ export function easeTurn(x: number): number {
 }
 /**
  * How many depths a stratum's turn into the next takes (lib/descent.ts,
- * strataAt): seven, from the zone's 5th depth to the next one's 2nd, so the
- * next zone has all but arrived as it is announced at its first depth and
- * shows alone once its first question is answered.
+ * strataAt): five, from the zone's 6th depth to the next one's 1st, so the
+ * next zone has arrived as it is announced at its first depth (its gate)
+ * and shows alone from there.
  */
-export const TURN_DEPTHS = 7;
+export const TURN_DEPTHS = 5;
 /**
  * How far into a stratum's turn the next one's light, smoke and features
- * begin to creep in: one depth in (a seventh of the way), at the zone's 6th
+ * begin to creep in: one depth in (a fifth of the way), at the zone's 7th
  * depth, a depth after the embers.
  */
 export const HALL_FROM = 1 / TURN_DEPTHS;
 /**
  * How far the next stratum's light, smoke and features have come at `turn`:
- * eased (easeTurn) from HALL_FROM to the end of the turn, six depths in
- * all: barely there at the zone's 7th depth (under a tenth), half way at
- * its 9th, nine tenths as the next is announced, and all there at its 2nd.
+ * eased (easeTurn) from HALL_FROM to the end of the turn, four depths in
+ * all: a sixth there at the zone's 8th depth, half way at its 9th, five in
+ * six at its 10th, and all there as the next is announced.
  */
 export const hallTurn = (turn: number) => easeTurn((turn - HALL_FROM) / (1 - HALL_FROM));
 /**
  * How many of the embers burn in the next stratum at `turn` (0 to 1): eased
- * over the whole turn, seven depths: one in twenty at the zone's 6th depth,
- * two in five at its 8th, three in five at its 9th, nineteen in twenty as the
- * next zone is announced. A depth ahead of the hall, as the embers drift up
+ * over the whole turn, five depths: one in ten at the zone's 7th depth, a
+ * third at its 8th, two in three at its 9th, nine in ten at its 10th, all of
+ * them as the next zone is announced. A depth ahead of the hall, as the embers drift up
  * from what lies below.
  */
 export const emberTurn = (turn: number) => easeTurn(turn);

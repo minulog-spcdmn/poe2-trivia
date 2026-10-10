@@ -599,7 +599,7 @@ let hearth = 1;
  * each): those sounding now as they are wanted (updateLoop; one that loads
  * late joins then, fading in), and the next place's when the page has a
  * moment to spare, from the first depth of the zone before it. Its turn into
- * the next begins at the 5th, and is heard from the 7th.
+ * the next begins at the 6th, and is heard from the 8th.
  */
 function prefetchBeds(b: Bus) {
   for (const { file } of nextBed().layers) if (toFetch(file)) idle(() => bus === b && void load(file).catch(() => {}));

@@ -21,7 +21,7 @@
 //     0.5, 0.75 and 1 (ENV_ADD, ENV_HALL; --e and --env for others): paste
 //     them into lib/descent.ts, then
 //   node scripts/measure-luminance.mjs calibrate --skip-env
-//     Each depth to 92 (where the last zone settles, settledAt) drawn at light 1 and
+//     Each depth to 91 (where the last zone settles, settledAt) drawn at light 1 and
 //     0 against the estimate (MEASURED): paste it in too, and set every
 //     zone's `measured` back to true in src/data/backdrops.json (the
 //     corrections hold for the looks they were measured with).
