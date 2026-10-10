@@ -13,7 +13,7 @@ function seeded(seed: number) {
 
 const options = Array.from({ length: 6 }, (_, i) => `opt:${i}`);
 const boxes: Box[] = options.map((_, i) => [511, 306 + i * 80, 844, 374 + i * 80]);
-const hands = (habit: HandStyle['habit'], rest: HandStyle['rest'] = 'side'): Hands => ({ style: { habit, deft: 0.5, curve: 0.5, rest, clicky: 0.05 }, pace: 1, dither: 0.2 });
+const hands = (habit: HandStyle['habit'], rest: HandStyle['rest'] = 'side'): Hands => ({ style: { habit, deft: 0.5, curve: 0.5, rest, clicky: 0.05, wait: 'stay', spot: { x: 0.5, y: 0.5 }, looks: 0.5 }, pace: 1, dither: 0.2 });
 const sit = (sure: boolean, more: Partial<Situation> = {}): Situation => ({ sure, careful: false, tired: 0, urgentAt: Infinity, ...more });
 /** A random source that always says `v` (its own place to park, its own habit). */
 const always = (v: number) => () => v;
@@ -150,21 +150,36 @@ test('once the answer is shown, it often looks at it, now and then at its own pi
   assert.ok(own > 80 && own < 200, `${own}`);
 });
 
-test("waiting out someone else's turn, a hand settles just right of it all, low, or under it by the button", () => {
+test("waiting out someone else's turn, each its own way: mostly where it is, else at a place of its own", () => {
   const rng = seeded(12);
+  const style = (wait: HandStyle['wait'], x = 0.5, y = 0.5): HandStyle => ({ ...hands('park').style, wait, spot: { x, y } });
   const r = Math.max(...boxes.map((b) => b[2]));
-  const top = Math.min(...boxes.map((b) => b[1]));
   const bottom = Math.max(...boxes.map((b) => b[3]));
-  let right = 0;
-  for (let i = 0; i < 400; i++) {
-    const p = waitSpot(boxes, rng)!;
-    if (p.y <= bottom + 30) {
-      right++;
-      assert.ok(p.x > r && p.y >= top + (bottom - top) * 0.5, JSON.stringify(p));
-    } else assert.ok(p.x >= r - 90 && p.x <= r + 15, JSON.stringify(p));
+  const off = { x: 950, y: 500 };
+  // Staying: nowhere new, unless it rests on an answer (a hint, on someone else's turn): then just off it.
+  assert.equal(waitSpot(style('stay'), boxes, off, rng), null);
+  const moved = waitSpot(style('stay'), boxes, { x: 520, y: 320 }, rng)!;
+  assert.ok(!boxes.some(([bl, bt, br, bb]) => moved.x >= bl && moved.x <= br && moved.y >= bt && moved.y <= bb), JSON.stringify(moved));
+  assert.ok(Math.hypot(moved.x - 520, moved.y - 320) < 90);
+  for (let i = 0; i < 100; i++) {
+    assert.ok(waitSpot(style('aside'), boxes, off, rng)!.x > r);
+    assert.ok(waitSpot(style('low'), boxes, off, rng)!.y > bottom);
+    // Clear of the art beside it, too.
+    assert.ok(waitSpot(style('left'), boxes, off, rng, [[157, 379, 488, 774]])!.x < 157);
+    assert.ok(waitSpot(style('top'), boxes, off, rng)!.y < 200);
   }
-  assert.ok(right > 240 && right < 320, `${right}`);
-  assert.equal(waitSpot([], rng), null);
+  // Two bots waiting the same way, each at its own spot (give or take a little).
+  const a = waitSpot(style('aside', 0.1, 0.1), boxes, off, rng)!;
+  const b = waitSpot(style('aside', 0.9, 0.9), boxes, off, rng)!;
+  assert.ok(Math.hypot(a.x - b.x, a.y - b.y) > 100);
+  // Most stay put; every way is someone's.
+  const waits = new Map<string, number>();
+  for (let i = 0; i < 2000; i++) {
+    const w = rollHandStyle(rng).wait;
+    waits.set(w, (waits.get(w) ?? 0) + 1);
+  }
+  assert.equal(waits.size, 5);
+  assert.ok(waits.get('stay')! > 800 && waits.get('stay')! < 1000, JSON.stringify([...waits]));
 });
 
 test('a click at nothing lands a little way off, on nothing a press would look like a pick on', () => {

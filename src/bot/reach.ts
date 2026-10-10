@@ -70,7 +70,8 @@ const LOBBY = {
  * lower). In the lobby, the party's rows and the modes; in a game, the
  * scoreboard's rows across the top, then on a choice the cards, on a
  * question or its reveal the art and the answers (or the pictures to pick
- * from), and on a reveal the button that moves on.
+ * from), and on a reveal the button that moves on; at the end, the
+ * winner's circle and the standings.
  */
 export function layout(s: GameState, me = ''): Map<string, Box> {
   const out = new Map<string, Box>();
@@ -81,6 +82,13 @@ export function layout(s: GameState, me = ''): Map<string, Box> {
       out.set(`row:${i}`, [LOBBY.rowL, top, LOBBY.rowR, top + LOBBY.rowH]);
     });
     LOBBY.modes.forEach(([l, r], i) => out.set(`card:${i}`, [l, LOBBY.modesTop + drop, r, LOBBY.modesTop + drop + LOBBY.modesH]));
+    return out;
+  }
+  if (s.phase === 'over') {
+    // The end (measured): the winner's circle, then the standings, best first, down a column.
+    out.set('art', [461, 164, 539, 286]);
+    const order = s.players.map((p, i) => [p.score, i] as const).sort((a, b) => b[0] - a[0] || a[1] - b[1]);
+    order.slice(0, 16).forEach(([, i], k) => out.set(`row:${i}`, [348, 541 + k * 56, 652, 591 + k * 56]));
     return out;
   }
   across(Math.min(s.players.length, 16), 116, 5, 32, 88).forEach((b, i) => out.set(`row:${i}`, b));

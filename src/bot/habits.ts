@@ -49,6 +49,16 @@ export interface HandStyle {
    * click through everything, as the recorded hand did.
    */
   clicky: number;
+  /**
+   * How it waits out someone else's turn: mostly where its last move left it
+   * (`stay`), else at a place of its own beside, below or left of it all, or
+   * up by the scoreboard; `spot` (0 to 1, across and down) says where in it,
+   * so no two bots wait in the same place.
+   */
+  wait: 'stay' | 'aside' | 'low' | 'left' | 'top';
+  spot: Spot;
+  /** How likely it looks at the answer once it's shown, 0 to 1. */
+  looks: number;
 }
 
 /** How common each habit is (parking most). */
@@ -57,6 +67,15 @@ const HABITS: [Habit, number][] = [
   ['trace', 0.3],
   ['hover', 0.25],
   ['fidget', 0.1],
+];
+
+/** How common each way of waiting is (staying put, by far). */
+const WAITS: [HandStyle['wait'], number][] = [
+  ['stay', 0.45],
+  ['aside', 0.2],
+  ['low', 0.15],
+  ['left', 0.1],
+  ['top', 0.1],
 ];
 
 /** A bot's hand style, from its own random source. */
@@ -74,11 +93,20 @@ export function rollHandStyle(rng: Rng): HandStyle {
   const deft = rng();
   const curve = rng();
   const clicky = rng() < 0.25 ? 0.4 + 0.6 * rng() : 0.08 * rng();
-  return { habit, deft, curve, rest: rest < 0.5 ? 'side' : rest < 0.8 ? 'low' : 'stay', clicky };
+  let w = rng();
+  let wait: HandStyle['wait'] = 'stay';
+  for (const [k, p] of WAITS) {
+    if (w < p) {
+      wait = k;
+      break;
+    }
+    w -= p;
+  }
+  return { habit, deft, curve, rest: rest < 0.5 ? 'side' : rest < 0.8 ? 'low' : 'stay', clicky, wait, spot: { x: rng(), y: rng() }, looks: rng() };
 }
 
 /** Before any style is rolled (tests, bots made by hand). */
-export const PLAIN_HAND: HandStyle = { habit: 'park', deft: 0.5, curve: 0.5, rest: 'side', clicky: 0.05 };
+export const PLAIN_HAND: HandStyle = { habit: 'park', deft: 0.5, curve: 0.5, rest: 'side', clicky: 0.05, wait: 'stay', spot: { x: 0.5, y: 0.5 }, looks: 0.5 };
 
 /**
  * A step in looking a choice over: at `at`, to an anchor (aimed at its
@@ -152,17 +180,42 @@ export function restSpot(style: HandStyle, boxes: Box[], rng: Rng): Spot | null 
 
 /**
  * Where a hand waits out someone else's turn (`boxes`: what's on screen,
- * the cards or the answers): as recorded, just right of it all, in its lower
- * half, or by where the button to move on comes, under it at the right; then
- * it mostly keeps still.
+ * the cards or the answers; `at`: where it is): by its own way of waiting,
+ * at its own spot in it, give or take a little. Staying put, it moves only
+ * when it's on one of them (a pointer resting on an answer on someone
+ * else's turn looks like a hint): just off it. `beside`: more on screen
+ * (the art), to wait clear of. Null: nowhere new.
  */
-export function waitSpot(boxes: Box[], rng: Rng): Spot | null {
+export function waitSpot(style: HandStyle, boxes: Box[], at: Spot, rng: Rng, beside: Box[] = []): Spot | null {
   if (!boxes.length) return null;
-  const r = Math.max(...boxes.map((b) => b[2]));
-  const t = Math.min(...boxes.map((b) => b[1]));
-  const b = Math.max(...boxes.map((b) => b[3]));
-  if (rng() < 0.7) return { x: Math.min(985, r + between(rng, 20, 110)), y: between(rng, t + (b - t) * 0.5, b + 30) };
-  return { x: between(rng, r - 90, r + 15), y: Math.min(990, b + between(rng, 30, 90)) };
+  const all = [...boxes, ...beside];
+  const l = Math.min(...all.map((b) => b[0]));
+  const r = Math.max(...all.map((b) => b[2]));
+  const t = Math.min(...all.map((b) => b[1]));
+  const b = Math.max(...all.map((b) => b[3]));
+  const { x: u, y: v } = style.spot;
+  const give = () => (rng() - 0.5) * 30;
+  switch (style.wait) {
+    case 'aside':
+      return { x: Math.min(985, r + 20 + 90 * u + give()), y: t + (b - t) * (0.35 + 0.65 * v) + give() };
+    case 'low':
+      return { x: l + (r - l) * u + give(), y: Math.min(990, b + 25 + 60 * v + give()) };
+    case 'left':
+      return { x: Math.max(15, l - 20 - 90 * u + give()), y: t + (b - t) * (0.2 + 0.8 * v) + give() };
+    case 'top':
+      return { x: 250 + 500 * u + give(), y: 110 + 80 * v + give() };
+    default: {
+      const on = boxes.find(([bl, bt, br, bb]) => at.x >= bl && at.x <= br && at.y >= bt && at.y <= bb);
+      if (!on) return null;
+      // Just off the one it's on, whichever way is nearest out of them all.
+      const ways = [
+        { x: at.x, y: b + 20 + 30 * rng() },
+        { x: r + 20 + 40 * rng(), y: at.y },
+        { x: l - 20 - 40 * rng(), y: at.y },
+      ];
+      return ways.reduce((best, p) => (Math.hypot(p.x - at.x, p.y - at.y) < Math.hypot(best.x - at.x, best.y - at.y) ? p : best));
+    }
+  }
 }
 
 /**
@@ -355,12 +408,13 @@ export function readCards(h: Hands, cards: string[], boxes: Box[], now: number, 
  */
 export function afterReveal(h: Hands, correct: string | null, mine: string | null, boxes: Box[], now: number, rng: Rng): Glance[] {
   const out: Glance[] = [];
-  let t = now + between(rng, 300, 800) * h.pace;
+  let t = now + between(rng, 300, 1600) * h.pace;
   if (mine && mine !== correct && rng() < 0.35) {
     out.push({ at: t, anchor: mine, text: true });
     t += between(rng, 500, 1000);
   }
-  if (correct && rng() < 0.55) {
+  // Some look at it most times, some hardly ever (it was someone else's, or they saw it from where they are).
+  if (correct && rng() < 0.1 + 0.75 * h.style.looks * (mine ? 1 : 0.6)) {
     out.push({ at: t, anchor: correct, text: true });
     t += between(rng, 700, 1500);
   }

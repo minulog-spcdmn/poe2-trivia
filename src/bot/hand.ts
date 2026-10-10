@@ -155,8 +155,8 @@ export class Hand {
   }
 
   /**
-   * Moves to `anchor` and presses, as a click does;
-   * resolves as it presses, for the action to go then. At once when no
+   * Moves to `anchor` and presses, as a click does; resolves as it lets
+   * go, for the action to go then. At once when no
    * pointer is shown. `by` (Date.now): when it must have pressed at the
    * latest (the clock's end), the hand hurrying to make it.
    */
@@ -189,6 +189,8 @@ export class Hand {
       this.driftAt = 0;
     }
     this.send(true);
+    // The click is the letting go, as a browser's is: what it does happens then, with the press seen first.
+    await wait(this.pressedUntil - now);
   }
 
   /**
@@ -255,16 +257,21 @@ export class Hand {
     this.s = s;
     const now = Date.now();
     // Another screen: what it went to on purpose is gone (or moving), so its spot goes on the game as a whole until it goes somewhere again.
-    const screen = `${s.phase === 'choosing' ? 'choice' : 'question'}:${s.round}:${s.turnCount}:${s.question?.askedAt ?? 0}`;
+    const screen = `${s.phase === 'choosing' ? 'choice' : s.phase === 'over' || s.phase === 'lobby' ? s.phase : 'question'}:${s.round}:${s.turnCount}:${s.question?.askedAt ?? 0}`;
     if (screen !== this.screen) {
       this.screen = screen;
       this.on = null;
-      // Someone else's turn: it settles somewhere aside to wait, and mostly keeps still there.
-      // On to the question from the cards it waited through, now and then it just stays where it is.
-      if (this.waiting(s) && (s.phase === 'choosing' || Math.random() < 0.6)) {
-        const boxes = [...layout(s)].filter(([k]) => k.startsWith('card:') || k.startsWith('opt:') || k === 'art').map(([, b]) => b);
-        const spot = waitSpot(boxes, Math.random);
-        this.looks = spot ? [{ at: now + between(...SETTLE_IN_MS), spot }] : [];
+      // Someone else's turn: it waits its own way (habits.ts waitSpot), mostly where it is; somewhere of its own
+      // it goes once, a while after the screen comes, and stays (unless it's well off it).
+      if (this.waiting(s)) {
+        const l = layout(s);
+        const boxes = [...l].filter(([k]) => k.startsWith('card:') || k.startsWith('opt:')).map(([, b]) => b);
+        const at = this.where(now);
+        const spot = waitSpot(this.persona.hand, boxes, at, Math.random, l.has('art') ? [l.get('art')!] : []);
+        const far = spot && (this.persona.hand.wait === 'stay' || Math.hypot(spot.x - at.x, spot.y - at.y) > 60);
+        // Just off an answer it rests on, soon; to its own place, a while after.
+        const soon = this.persona.hand.wait === 'stay' ? between(200, 900) : between(...SETTLE_IN_MS);
+        this.looks = spot && far ? [{ at: now + soon * this.persona.pace, spot }] : [];
       }
     }
     if (!this.live(s)) {

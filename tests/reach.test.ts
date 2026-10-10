@@ -152,3 +152,11 @@ test('on a reveal the button that moves on sits under it all, at the right, as m
   // The pictures to pick from, under the name to find: as measured with six.
   assert.ok(near(art.get('opt:0')!, [153, 379, 382, 601]) && near(art.get('opt:5')!, [615, 602, 843, 824]), JSON.stringify([...art]));
 });
+
+test("at the end, the winner's circle and the standings down a column, best first", () => {
+  const over = { phase: 'over', players: [{ id: 'a', score: 3 }, { id: 'b', score: 9 }, { id: 'c', score: 5 }], offered: [] } as unknown as GameState;
+  const l = layout(over);
+  assert.ok(l.has('art'));
+  assert.ok(l.get('row:1')![1] < l.get('row:2')![1] && l.get('row:2')![1] < l.get('row:0')![1]);
+  assert.deepEqual(l.get('row:1'), [348, 541, 652, 591]);
+});
