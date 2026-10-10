@@ -131,8 +131,13 @@
     else code = cleanCode(code.slice(0, field.selectionStart ?? code.length) + text + code.slice(field.selectionEnd ?? code.length));
   }
 
+  /** Hot-seat starts with the name from the name field (the saved one unless changed) already in, when it's usable. */
   function local() {
     session.startLocal();
+    const n = name.trim();
+    if (!n || nameTooShort(n) || nameHeld(n)) return;
+    saveName(n);
+    session.dispatch({ type: 'join', playerId: crypto.randomUUID(), name: n });
   }
 
   const connecting = $derived(session.status === 'connecting');
