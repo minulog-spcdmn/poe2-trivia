@@ -96,7 +96,8 @@
 <!-- svelte-ignore a11y_no_static_element_interactions (the pointer handlers copy what a press selected; the dragstart only stops a drag of the selection) -->
 <span class="glyphs" class:hidden class:selected bind:this={glyphs} oncopy={copyCode} ondragstart={(e) => e.preventDefault()} onpointerdown={press}>
   {#each code.split('') as ch, i (i)}
-    <span class="glyph" use:landing={i} style:animation-delay="{delay + i * 80}ms" style:--i={i}>{hidden ? '•' : ch}</span>
+    <!-- The letter in gold; its gleam is drawn from data-ch (a pseudo-element), so a copy gives each letter once. -->
+    <span class="glyph" use:landing={i} style:animation-delay="{delay + i * 80}ms" style:--i={i} data-ch={hidden ? '•' : ch}><span class="ch">{hidden ? '•' : ch}</span></span>
   {/each}
 </span>
 {#if note}
@@ -140,47 +141,99 @@
     box-shadow:
       inset 0 0 18px rgba(201, 164, 92, 0.12),
       0 6px 18px rgba(0, 0, 0, 0.6);
-    text-shadow: 0 0 16px rgba(241, 217, 155, 0.45);
     transition:
-      color 0.15s,
       border-color 0.15s,
       background 0.15s,
-      box-shadow 0.15s,
-      text-shadow 0.15s;
+      box-shadow 0.15s;
     animation: drop 0.6s var(--ease-back) both;
   }
-  .hidden .glyph {
-    color: var(--gold-lo);
-  }
   .selected .glyph {
-    color: #fff4dc;
     border-color: var(--gold);
     background: linear-gradient(180deg, #3a2a15, #17100a);
     box-shadow:
       inset 0 0 22px rgba(241, 217, 155, 0.22),
       0 0 16px rgba(201, 164, 92, 0.35),
       0 6px 18px rgba(0, 0, 0, 0.6);
-    text-shadow: 0 0 18px rgba(255, 230, 170, 0.75);
   }
-  /* Light glances off the letters one after another. */
+  /* The letter in the title's gold (GameTitle), painted once. A text-shadow
+     would be drawn over gold clipped to the letter, so the glow is a filter. */
+  .ch {
+    filter: drop-shadow(0 0 8px rgba(241, 217, 155, 0.35));
+    transition: filter 0.15s;
+    background-image: linear-gradient(180deg, #fff1c9 22%, #e2bd76 55%, #a07a35 88%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  /* Every few seconds a band of light passes along the code, as over the
+     title: on the letters' shapes only (a copy of each, drawn by the band),
+     one box after another as one sweep; its own layer, so the gold and the
+     box are never painted again for it. */
   .glyph::after {
+    content: attr(data-ch);
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    pointer-events: none;
+    will-change: transform;
+    background-image: linear-gradient(100deg, transparent 40%, rgba(255, 251, 236, 0.95) 50%, transparent 60%);
+    background-repeat: no-repeat;
+    background-size: 300% 100%;
+    background-position: 150% 0;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    text-shadow: none;
+    animation: sheen 7s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+    animation-delay: calc(1.6s + var(--i, 0) * 0.11s);
+  }
+  @keyframes sheen {
+    0% {
+      background-position: 150% 0;
+    }
+    10%,
+    100% {
+      background-position: -50% 0;
+    }
+  }
+  /* The box's top edge catches the light as the band crosses it. */
+  .glyph::before {
     content: '';
     position: absolute;
-    inset: -20% auto -20% -80%;
-    width: 60%;
-    background: linear-gradient(100deg, transparent, rgba(255, 240, 200, 0.22), transparent);
-    transform: skewX(-16deg);
-    animation: glance 6s ease-in-out infinite;
-    animation-delay: calc(1.2s + var(--i, 0) * 0.12s);
+    top: 0;
+    left: 12%;
+    right: 12%;
+    height: 1px;
     pointer-events: none;
+    background: linear-gradient(90deg, transparent, rgba(255, 236, 190, 0.85), transparent);
+    opacity: 0;
+    animation: edge 7s ease-in-out infinite;
+    animation-delay: calc(1.6s + var(--i, 0) * 0.11s);
   }
-  @keyframes glance {
-    0% {
-      translate: 0 0;
+  @keyframes edge {
+    4% {
+      opacity: 1;
     }
-    18%,
+    0%,
+    9%,
     100% {
-      translate: 420% 0;
+      opacity: 0;
+    }
+  }
+  .hidden .ch {
+    background-image: none;
+    color: var(--gold-lo);
+  }
+  .selected .ch {
+    filter: drop-shadow(0 0 9px rgba(255, 230, 170, 0.6));
+    background-image: linear-gradient(180deg, #fffaf0 22%, #f4d79a 60%, #c99c4f 92%);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .glyph::after,
+    .glyph::before {
+      animation: none;
+      display: none;
     }
   }
   @keyframes drop {

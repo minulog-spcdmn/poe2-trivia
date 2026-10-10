@@ -131,6 +131,26 @@
   /** How long the outgoing screen takes to fade (the .screen transition below). */
   const SCREEN_OUT_MS = 150;
   /**
+   * While screens swap, the outgoing one fades over the incoming one in the
+   * same grid cell, and neither sizes the page: both fill the window (below
+   * the header, which comes or goes in the meantime) and what is longer is
+   * cut off there, out of sight anyway. So the swap never stretches the new
+   * screen or puts up a scrollbar for a moment. Once in, the screen sizes
+   * the page again (screenIn's end).
+   */
+  function hold(node: HTMLElement, on: boolean) {
+    node.style.contain = on ? 'size' : '';
+    node.style.overflow = on ? 'clip' : '';
+  }
+  function screenOut(node: HTMLElement) {
+    hold(node, true);
+    return fade(node, { duration: SCREEN_OUT_MS });
+  }
+  function screenIn(node: HTMLElement) {
+    hold(node, true);
+    return fade(node, { duration: 350, delay: SCREEN_OUT_MS });
+  }
+  /**
    * Every screen is scaled up alike on large windows (lib/stage.ts), header
    * and all, so moving between them never changes the scale. Set on the root,
    * for the shell and for what sits outside it (dialogs, toasts, overlays).
@@ -328,7 +348,7 @@
 
   <main>
     {#key screen}
-      <div class="screen" in:fade={{ duration: 350, delay: SCREEN_OUT_MS }} out:fade={{ duration: SCREEN_OUT_MS }}>
+      <div class="screen" in:screenIn out:screenOut onintroend={(e) => hold(e.currentTarget, false)}>
         {#if screen === 'home'}
           <Home />
         {:else if screen === 'lobby'}
@@ -668,6 +688,12 @@
   .screen {
     grid-area: 1 / 1;
     min-width: 0;
+  }
+  /* The start page fills the height below the header, not the window's:
+     while the header is still up behind it, it must not overflow. */
+  .screen:has(> :global(.home)) {
+    display: flex;
+    flex-direction: column;
   }
 
   .legal {

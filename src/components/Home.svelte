@@ -593,8 +593,8 @@
     width: 100%;
     max-width: 1440px;
     margin-inline: auto;
-    /* The window's height, in the stage's (zoomed) pixels. */
-    min-height: calc(100dvh / var(--stage-zoom, 1));
+    /* The height App.svelte gives it: the window's, below the header if one is up. */
+    flex: 1;
     display: grid;
     grid-template-columns: minmax(0, 452px) minmax(0, 510px);
     /* The free height splits above and below the block; the footer stays last. */
