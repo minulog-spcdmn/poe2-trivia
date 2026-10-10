@@ -489,13 +489,18 @@ export function scored(pill: Element, streak = 1) {
  * and a blaze by ten.
  * Returns a handle to put it out.
  */
-export function ablaze(row: Element, heat: number, blue = burnsBlue(heat), tint?: Vec3): Handle {
+export function ablaze(row: Element, heat: number, blue = burnsBlue(heat), tint?: Vec3, catching = false): Handle {
   if (!fxActive() || heat <= 0) return { stop() {} };
   // At the very top of a streak the fire burns blue (or, `tint`, in a colour of its own).
-  const flames = fire(row, { height: 6 + 66 * heat, intensity: 0.45 + 1.0 * heat, blue: blue ? 1 : 0, tint });
+  // Catching, it kindles and its flames rise over a second instead of burning at full height at once.
+  const flames = fire(row, { height: 6 + 66 * heat, intensity: 0.45 + 1.0 * heat, blue: blue ? 1 : 0, tint, fadeIn: catching ? 0.8 : 0.5, grow: catching ? 1.2 : 0 });
   // No room for the flames (or the entry is gone): no sparks off nothing either.
   if (!isLive(flames)) return flames;
-  const sparkColors: Vec3[] = tint ? [tint, [0.5 + tint[0] / 2, 0.5 + tint[1] / 2, 0.5 + tint[2] / 2]] : blue ? [C.portal, C.portalPale] : [C.ember, C.gold];
+  const sparkColors = fireColors(blue, tint);
+  if (catching) {
+    flash(row, { radius: 70, color: sparkColors[0], intensity: 0.16, life: 0.8 });
+    embers(row, { count: 8, area: 'top', colors: sparkColors, size: [0.8, 1.6], rise: [40, 100], scatter: 24, gravity: 0, life: [0.5, 1] });
+  }
   // Sparks spat out of the fire, drifting up; slower than CALM_SPEED (lib/fx/core.ts),
   // so a fire that burns all game lets phones draw at 30fps.
   const rising = emitter(14 * heat, () =>
@@ -507,6 +512,11 @@ export function ablaze(row: Element, heat: number, blue = burnsBlue(heat), tint?
       rising.stop();
     },
   };
+}
+
+/** A fire's sparks: in its tint and a paler one, or the blue fire's, or the orange's. */
+function fireColors(blue: boolean, tint?: Vec3): Vec3[] {
+  return tint ? [tint, [0.5 + tint[0] / 2, 0.5 + tint[1] / 2, 0.5 + tint[2] / 2]] : blue ? [C.portal, C.portalPale] : [C.ember, C.gold];
 }
 
 /** A streak reaches the top: the fire on a player's entry flares up and turns blue. */

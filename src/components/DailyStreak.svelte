@@ -38,14 +38,15 @@
     let lit = 0;
     // Not before the badge has scaled in: a fire lit on a box still growing from nothing has no room and never catches.
     let ready = false;
-    const light = () => {
+    const light = (catching = false) => {
       fire?.stop(0.5);
       const flame = dailyFlameOf(lit);
-      fire = ready && lit > 0 ? ablaze(node, FLAMES * dailyHeatOf(lit), flame.blue, flame.tint) : null;
+      fire = ready && lit > 0 ? ablaze(node, FLAMES * dailyHeatOf(lit), flame.blue, flame.tint, catching) : null;
     };
+    // Lit, it catches: a kindle at its foot, and flames rising (the badge's glow warms with them, below).
     const catches = setTimeout(() => {
       ready = true;
-      light();
+      light(true);
     }, BADGE_IN_MS);
     const set = (next: number, first = false) => {
       if (next === lit) return;
@@ -112,6 +113,17 @@
       box-shadow 1s,
       border-color 1s,
       background 1s;
+    /* Its glow warms up as the fire catches (BADGE_IN_MS), not at full heat while it scales in. */
+    animation: warm 1.4s ease-out 0.8s backwards;
+  }
+  @keyframes warm {
+    from {
+      border-color: color-mix(in srgb, var(--flame) 35%, transparent);
+      box-shadow:
+        0 0 0 0 transparent,
+        0 0 0 0 transparent;
+      text-shadow: 0 0 0 transparent;
+    }
   }
   /* It smoulders: a wider glow fades in and out on a layer of its own. */
   .streak::before {
@@ -121,7 +133,7 @@
     border-radius: inherit;
     box-shadow: 0 0 24px color-mix(in srgb, var(--flame) 40%, transparent);
     opacity: 0;
-    animation: smoulder-badge 1.6s ease-in-out infinite;
+    animation: smoulder-badge 1.6s ease-in-out 2.2s infinite;
     pointer-events: none;
   }
   @keyframes smoulder-badge {

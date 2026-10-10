@@ -659,7 +659,12 @@ export function edgeGlow(o: { color?: Vec3; width?: number; life?: number; inten
  * ends, for as long as it's up. `height` is how tall the flames reach, px;
  * `blue` (0-1) turns it from orange to a hotter blue.
  */
-export function fire(el: Element, o: { height?: number; intensity?: number; blue?: number; fadeIn?: number; tint?: Vec3 } = {}): Handle {
+/**
+ * Fire rising off an element. `fadeIn`: seconds to full strength; `grow`:
+ * seconds for the flames to rise from low to full height, as a fire catching
+ * (0: at full height at once).
+ */
+export function fire(el: Element, o: { height?: number; intensity?: number; blue?: number; fadeIn?: number; grow?: number; tint?: Vec3 } = {}): Handle {
   const radius = parseFloat(getComputedStyle(el).borderTopLeftRadius) || 0;
   const H = o.height ?? 40;
   // The quad must hold the tallest tongue (FIRE_REACH times H, above the top
@@ -691,7 +696,9 @@ export function fire(el: Element, o: { height?: number; intensity?: number; blue
       f.q[0] = b.w / 2;
       f.q[1] = b.h / 2;
       f.q[2] = Math.min(radius, b.w / 2, b.h / 2);
-      f.q[3] = H;
+      // Catching, the flames start low and rise, fast at first and settling into full height.
+      const g = o.grow ? Math.min(1, age / o.grow) : 1;
+      f.q[3] = H * (0.1 + 0.9 * (1 - Math.pow(1 - g, 3)));
       f.q[4] = o.blue ?? 0;
       f.q[5] = -shift;
       f.q[6] = o.tint ? 1 : 0;
