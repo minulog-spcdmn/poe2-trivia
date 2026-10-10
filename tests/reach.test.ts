@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { aimIn, along, layout, placeOf, reachTime, stroke } from '../src/bot/reach.ts';
+import { aimIn, along, layout, placeOf, reach, reachTime, stroke } from '../src/bot/reach.ts';
 import { NAMES, identityOf } from '../src/bot/identities.ts';
 import type { GameState } from '../src/lib/game.ts';
 
@@ -73,4 +73,34 @@ test('about one in four plays on a phone, always the same ones', () => {
   const touch = NAMES.filter((n) => identityOf(n, ['A']).persona.touch);
   assert.ok(touch.length > NAMES.length * 0.12 && touch.length < NAMES.length * 0.4, `${touch.length}`);
   assert.deepEqual(touch, NAMES.filter((n) => identityOf(n, ['A']).persona.touch));
+});
+
+test("the lobby has the party's rows down a column and the three modes; a host's sits lower", () => {
+  const lobby = { phase: 'lobby', players, hostId: 'a', offered: [] } as unknown as GameState;
+  const guest = layout(lobby, 'b');
+  const host = layout(lobby, 'a');
+  assert.deepEqual([...guest.keys()].sort(), ['card:0', 'card:1', 'card:2', 'row:0', 'row:1', 'row:2']);
+  for (let i = 0; i < 2; i++) assert.ok(guest.get(`row:${i}`)![3] <= guest.get(`row:${i + 1}`)![1]);
+  assert.ok(guest.get('card:0')![2] < guest.get('card:1')![0]);
+  assert.equal(host.get('row:0')![1] - guest.get('row:0')![1], host.get('card:0')![1] - guest.get('card:0')![1]);
+  assert.ok(host.get('row:0')![1] > guest.get('row:0')![1]);
+});
+
+test('a long reach misses a little and corrects, ending right on its target; a short one goes straight there', () => {
+  for (let seed = 1; seed < 40; seed++) {
+    const rng = seeded(seed);
+    const from = { x: 100, y: 800 };
+    const to = { x: 700, y: 300 };
+    const [first, fix, ...more] = reach(from, to, 1000, 700, rng);
+    assert.ok(fix && !more.length);
+    // The first ends near the target, but not on it; the correction starts there, after a beat, and lands on it.
+    const miss = along(first, first.end);
+    const off = Math.hypot(miss.x - to.x, miss.y - to.y);
+    assert.ok(off > 0 && off < 70, `${off}`);
+    assert.ok(fix.start >= first.end && fix.end <= 1700 + 1);
+    assert.deepEqual(along(fix, fix.start), miss);
+    const end = along(fix, fix.end);
+    assert.ok(Math.abs(end.x - to.x) < 1e-9 && Math.abs(end.y - to.y) < 1e-9);
+  }
+  assert.equal(reach({ x: 100, y: 100 }, { x: 150, y: 120 }, 0, 300, seeded(1)).length, 1);
 });

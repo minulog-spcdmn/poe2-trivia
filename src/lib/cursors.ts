@@ -45,6 +45,29 @@ export function toAnchor(anchor: number, px: number, py: number, r: AnchorBox, s
   return [clamp((px - r.left) / r.width, SCALE), clamp(down, maxY(anchor))];
 }
 
+/**
+ * Where a pointer is drawn at time `t`, from where it was heard to be at
+ * times `ts` (points `ps`, oldest first): along a smooth curve through them
+ * (Catmull-Rom), held at the first before it and the last after it. Drawn a
+ * little behind the newest, a pointer heard ten times a second moves along
+ * a curve rather than from corner to corner.
+ */
+export function trailAt(ps: [number, number][], ts: number[], t: number): [number, number] {
+  const n = ps.length;
+  if (!n) return [0, 0];
+  if (n === 1 || t <= ts[0]) return ps[0];
+  if (t >= ts[n - 1]) return ps[n - 1];
+  let j = 0;
+  while (j < n - 2 && ts[j + 1] <= t) j++;
+  const u = Math.min(1, Math.max(0, (t - ts[j]) / Math.max(1, ts[j + 1] - ts[j])));
+  const p0 = ps[Math.max(0, j - 1)];
+  const [p1, p2] = [ps[j], ps[j + 1]];
+  const p3 = ps[Math.min(n - 1, j + 2)];
+  const c = (a: number, b: number, c2: number, d: number) =>
+    0.5 * (2 * b + (-a + c2) * u + (2 * a - 5 * b + 4 * c2 - d) * u * u + (-a + 3 * b - 3 * c2 + d) * u * u * u);
+  return [c(p0[0], p1[0], p2[0], p3[0]), c(p0[1], p1[1], p2[1], p3[1])];
+}
+
 /** Where a position on `anchor` (toAnchor's) is on this screen. */
 export function fromAnchor(anchor: number, x: number, y: number, r: AnchorBox, screenH: number): [number, number] {
   return [r.left + (x / SCALE) * r.width, r.top + (y / SCALE) * (anchor === GAME_ANCHOR ? screenH : r.height)];

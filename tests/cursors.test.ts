@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { pack } from 'peerjs-js-binarypack';
 import {
   CursorOutbox,
+  trailAt,
   GAME_ANCHOR,
   GAME_DEPTH,
   fromAnchor,
@@ -160,4 +161,17 @@ test('a pointer on the game as a whole holds still while the game grows or shrin
   const card = anchorCode('card:1')!;
   assert.deepEqual(toAnchor(card, 150, 75, { left: 100, top: 50, width: 100, height: 50 }, screenH), [500, 500]);
   assert.equal(parseCursorAt([card, 10, SCALE + 1, 0]), undefined);
+});
+
+test('a pointer is drawn along a curve through where it was heard to be, held at both ends', () => {
+  const ps: [number, number][] = [[0, 0], [100, 0], [100, 100], [0, 100]];
+  const ts = [0, 100, 200, 300];
+  assert.deepEqual(trailAt(ps, ts, -50), [0, 0]);
+  assert.deepEqual(trailAt(ps, ts, 400), [0, 100]);
+  // Through every place, at its time.
+  for (let i = 0; i < 4; i++) assert.deepEqual(trailAt(ps, ts, ts[i]).map((v) => Math.round(v * 1e6) / 1e6), ps[i]);
+  // Round the corner rather than into it: between two places it bulges out past the straight line.
+  const [x] = trailAt(ps, ts, 150);
+  assert.ok(x > 100, `${x}`);
+  assert.deepEqual(trailAt([], [], 5), [0, 0]);
 });

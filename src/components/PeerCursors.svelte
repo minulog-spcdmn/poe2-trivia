@@ -7,13 +7,24 @@
   import { onMount } from 'svelte';
   import { session } from '../lib/session.svelte';
   import { peerCursors } from '../lib/peerCursors.svelte';
-  import { MOUSE, PRESSED, SEND_EVERY_MS, TAP, anchorCode, anchorName, cursorKey, cursorsLive, fromAnchor, toAnchor, type CursorAt, type PointerKind } from '../lib/cursors';
+  import { MOUSE, PRESSED, SEND_EVERY_MS, TAP, anchorCode, anchorName, cursorKey, cursorsLive, fromAnchor, toAnchor, trailAt, type CursorAt, type PointerKind } from '../lib/cursors';
   import { playerColor } from '../lib/ui';
   import { portal } from '../lib/portal';
   import { HAND, HAND_PRESSED, PAD_X, PAD_Y, POINTER, PRESS_SINK, SIZE, WEIGHT } from '../lib/pointerArt';
 
-  /** How quickly a pointer catches up with where it was last heard to be (ms to cover about 2/3 of the way). */
-  const GLIDE_MS = 70;
+  /**
+   * A pointer is drawn this far behind where it was last heard to be (ms),
+   * along a curve through its last few places (cursors.ts trailAt): it is
+   * heard ten times a second, and drawn from one place straight to the next
+   * it would move from corner to corner. Then it catches up with that this
+   * quickly (ms to cover about 2/3 of the way), smoothing what's left.
+   */
+  const BEHIND_MS = 150;
+  const GLIDE_MS = 35;
+  /** Over to another element and further than this from where it's drawn (px): it slides there, this slowly, for at most this long (ms). */
+  const JUMP_PX = 40;
+  const SLIDE_MS = 150;
+  const SLIDE_FOR_MS = 500;
   /** A pointer that hasn't moved for this long dims, and after the next it's hidden (ms). */
   const IDLE_MS = 3000;
   const AWAY_MS = 15000;
@@ -156,7 +167,7 @@
 
   const els: Record<string, HTMLElement> = {};
   /** Where each pointer is drawn now, gliding toward where it was heard to be. */
-  const drawn = new Map<string, { x: number; y: number; tap: number }>();
+  const drawn = new Map<string, { x: number; y: number; tap: number; code: number; slideUntil: number }>();
 
   function anchorFor(code: number, cache: Map<number, HTMLElement | null>) {
     if (cache.has(code)) return cache.get(code)!;
@@ -176,7 +187,9 @@
     let raf = 0;
     let last = performance.now();
     const frame = (now: number) => {
-      const step = 1 - Math.exp(-(now - last) / GLIDE_MS);
+      const dt = now - last;
+      const step = 1 - Math.exp(-dt / GLIDE_MS);
+      const slide = 1 - Math.exp(-dt / SLIDE_MS);
       last = now;
       const anchors = new Map<number, HTMLElement | null>();
       for (const c of list) {
@@ -197,21 +210,39 @@
           continue;
         }
         const r = anchor.getBoundingClientRect();
-        const [tx, ty] = fromAnchor(code, ax, ay, r, innerHeight);
+        // Its trail on this screen (each place on its own element, where that's still here), drawn a little behind.
+        const ps: [number, number][] = [];
+        const ts: number[] = [];
+        for (const { at: [c2, x2, y2], t } of p.trail) {
+          const el2 = c2 === code ? anchor : anchorFor(c2, anchors);
+          if (!el2) continue;
+          ps.push(fromAnchor(c2, x2, y2, c2 === code ? r : el2.getBoundingClientRect(), innerHeight));
+          ts.push(t);
+        }
+        const [tx, ty] = touch || !ps.length ? fromAnchor(code, ax, ay, r, innerHeight) : trailAt(ps, ts, now - BEHIND_MS);
         let d = drawn.get(c.key);
         // A tap lands where it is; a pointer just come in starts where it is.
-        if (!d || touch) drawn.set(c.key, (d = { x: tx, y: ty, tap: d?.tap ?? 0 }));
+        if (!d || touch) drawn.set(c.key, (d = { x: tx, y: ty, tap: d?.tap ?? 0, code, slideUntil: 0 }));
         else {
-          d.x += (tx - d.x) * step;
-          d.y += (ty - d.y) * step;
+          // Gone over to another element, far from where it was drawn: the two screens place things
+          // apart (another layout, a bot's picture of the page), so it slides across rather than jumps.
+          if (code !== d.code && Math.hypot(tx - d.x, ty - d.y) > JUMP_PX) d.slideUntil = now + SLIDE_FOR_MS;
+          d.code = code;
+          const k = now < d.slideUntil ? slide : step;
+          d.x += (tx - d.x) * k;
+          d.y += (ty - d.y) * k;
         }
         el.style.transform = `translate3d(${d.x}px, ${d.y}px, 0)`;
         el.classList.toggle('tap', touch);
-        el.classList.toggle('pressed', kind === PRESSED);
+        // Pressed as the pointer drawn behind gets there, not before.
+        const due = p.trail.filter((x) => x.t <= now - BEHIND_MS).at(-1) ?? p.trail[0];
+        el.classList.toggle('pressed', (due?.at[3] ?? kind) === PRESSED);
         // Over something that can be clicked, it's gilded, as the player's own is.
         el.classList.toggle('lit', anchor.tagName === 'BUTTON');
-        el.classList.toggle('idle', !touch && age > IDLE_MS);
-        el.classList.toggle('away', !touch && age > AWAY_MS);
+        // Held down, it isn't idle, however still.
+        const resting = !touch && kind !== PRESSED;
+        el.classList.toggle('idle', resting && age > IDLE_MS);
+        el.classList.toggle('away', resting && age > AWAY_MS);
         if (touch && d.tap !== p.moved) {
           d.tap = p.moved;
           // Struck, held a moment, then fading.

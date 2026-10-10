@@ -197,7 +197,7 @@ export class Player {
     // The cards looked over meanwhile, and the click begun early enough to land on time.
     const lead = this.hand.lead();
     const at = session.hostNow() + Math.max(300, pickDelay(this.persona, Math.random) - lead);
-    this.hand.lookOver(offered.map((_, i) => `card:${i}`), Date.now() + (at - session.hostNow()));
+    this.hand.lookOverCards(offered.length, Date.now() + (at - session.hostNow()));
     const still = () => {
       const cur = session.state;
       if (cur?.phase !== 'choosing' || cur.turnCount !== s.turnCount || cur.round !== s.round) return null;
