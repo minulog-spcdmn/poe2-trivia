@@ -7,11 +7,11 @@
   import { onMount } from 'svelte';
   import { session } from '../lib/session.svelte';
   import { peerCursors } from '../lib/peerCursors.svelte';
-  import { MOUSE, PRESSED, SEND_EVERY_MS, TAP, anchorName, cursorKey, cursorsLive, fromAnchor, trailAt, type CursorAt, type PointerKind } from '../lib/cursors';
+  import { MOUSE, PRESSED, SEND_EVERY_MS, TAP, anchorName, clickableFor, cursorKey, cursorsLive, fromAnchor, trailAt, type CursorAt, type PointerKind } from '../lib/cursors';
   import { playerColor } from '../lib/ui';
   import { portal } from '../lib/portal';
   import { anchorAt } from '../lib/pointerAnchor';
-  import { HAND, HAND_PRESSED, PAD_X, PAD_Y, POINTER, PRESS_SINK, SIZE, WEIGHT } from '../lib/pointerArt';
+  import { BADGE, HAND, HAND_PRESSED, PAD_X, PAD_Y, POINTER, PRESS_SINK, SIZE, WEIGHT, saltire } from '../lib/pointerArt';
 
   /**
    * A pointer is drawn this far behind where it was last heard to be (ms),
@@ -24,15 +24,16 @@
   const GLIDE_MS = 35;
   /** Over to another element and further than this from where it's drawn (px): it slides there, this slowly, for at most this long (ms). */
   const JUMP_PX = 40;
-  const SLIDE_MS = 150;
-  const SLIDE_FOR_MS = 500;
-  /** A pointer that hasn't moved for this long dims, and after the next it's hidden (ms). */
-  const IDLE_MS = 3000;
-  const AWAY_MS = 15000;
+  const SLIDE_MS = 220;
+  const SLIDE_FOR_MS = 700;
+  /** A pointer that hasn't moved for this long dims (ms); it's only hidden once its player leaves the page. */
+  const IDLE_MS = 5000;
   /** How long a tap shows (ms). */
   const TAP_MS = 1100;
   /** A press shows at least this long (ms): a click is over in less than two updates. */
-  const PRESS_SHOW_MS = 180;
+  const PRESS_SHOW_MS = 300;
+  /** Further than this from where it's drawn in one go, on the same element (it came back to it, or its element was made anew): it slides there too. */
+  const LEAP_PX = 160;
   /**
    * Its element gone (the card picked, the button pressed: a click often
    * takes away what it was on), a pointer heard from lately stays where it
@@ -51,7 +52,7 @@
     live
       ? peerCursors.keys.flatMap((key) => {
           const p = s.players.find((o) => o.id !== me && cursorKey(o.id) === key);
-          return p ? [{ key, name: p.name, color: playerColor(p.hue) }] : [];
+          return p ? [{ key, id: p.id, name: p.name, color: playerColor(p.hue) }] : [];
         })
       : [],
   );
@@ -235,7 +236,8 @@
         else {
           // Gone over to another element, far from where it was drawn: the two screens place things
           // apart (another layout, a bot's picture of the page), so it slides across rather than jumps.
-          if (code !== d.code && Math.hypot(tx - d.x, ty - d.y) > JUMP_PX) d.slideUntil = now + SLIDE_FOR_MS;
+          const far = Math.hypot(tx - d.x, ty - d.y);
+          if ((code !== d.code && far > JUMP_PX) || far > LEAP_PX) d.slideUntil = now + SLIDE_FOR_MS;
           d.code = code;
           const k = now < d.slideUntil ? slide : step;
           d.x += (tx - d.x) * k;
@@ -245,12 +247,13 @@
         el.classList.toggle('tap', touch);
         if (pressing) d.pressUntil = now + PRESS_SHOW_MS;
         el.classList.toggle('pressed', now < d.pressUntil);
-        // Over something that can be clicked, it's gilded, as the player's own is.
-        el.classList.toggle('lit', anchor.tagName === 'BUTTON');
+        // Over something that player can click, it's the hand, as their own is; over something they can't
+        // (someone else's answer), dull lead with a saltire.
+        const can = session.state ? clickableFor(session.state, c.id, anchorName(code) ?? '') : null;
+        el.classList.toggle('lit', can === true || (can === null && anchor.tagName === 'BUTTON'));
+        el.classList.toggle('off', can === false);
         // Held down, it isn't idle, however still.
-        const resting = !touch && kind !== PRESSED;
-        el.classList.toggle('idle', resting && age > IDLE_MS);
-        el.classList.toggle('away', resting && age > AWAY_MS);
+        el.classList.toggle('idle', !touch && kind !== PRESSED && age > IDLE_MS);
         if (touch && d.tap !== p.moved) {
           d.tap = p.moved;
           // Struck, held a moment, then fading.
@@ -279,6 +282,7 @@
           <path class="line" d={POINTER.outline} stroke-width={WEIGHT.outline} />
           <path class="line ridge" d={POINTER.ridge} stroke-width={WEIGHT.ridge} />
           <path class="line hatch" d={POINTER.hatch} stroke-width={WEIGHT.hatch} />
+          <path class="line saltire" d={saltire(BADGE, 2.8)} stroke-width="1" />
         </g>
         <!-- The hand is drawn plain (lib/pointerArt.ts Art): fine lines, no glow, its talon struck solid. -->
         {#each [HAND, HAND_PRESSED] as h, i (i)}
@@ -312,10 +316,26 @@
     transition: opacity 0.4s;
   }
   .cursor:global(.idle) {
-    opacity: 0.45;
+    opacity: 0.6;
   }
-  .cursor:global(.away),
   .cursor:global(.lost) {
+    opacity: 0;
+  }
+  /* Over something its player can't click: dull lead, no glow, the saltire beside the tip (as the player's own, lib/ownCursor.ts). */
+  .saltire {
+    display: none;
+  }
+  .cursor:global(.off) .saltire {
+    display: inline;
+  }
+  .cursor:global(.off) .line {
+    stroke: #a2a7ac;
+  }
+  .cursor:global(.off) .side {
+    fill: #a2a7ac;
+  }
+  .cursor:global(.off) .glow,
+  .cursor:global(.off) .hatch {
     opacity: 0;
   }
   .dart {

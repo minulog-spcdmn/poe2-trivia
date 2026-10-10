@@ -130,6 +130,28 @@ export function cursorsLive(s: GameState | null): boolean {
   return !(s.deathmatch && s.phase === 'question');
 }
 
+/**
+ * Whether the player `id` can click the anchor `name` now (true), can't
+ * (false: someone else's answer, a card not theirs to pick, Next when it's
+ * neither their turn nor their room), or it's nothing to click (null): so a
+ * pointer over it shows as theirs would, the hand or the dull lead dart.
+ */
+export function clickableFor(s: GameState, id: string, name: string): boolean | null {
+  const group = (s.delve?.entrants.length ?? 0) >= 2;
+  const seated = s.players.some((p) => p.id === id);
+  const theirTurn = s.players[s.turn]?.id === id;
+  if (name === 'next') {
+    if (s.phase !== 'reveal') return false;
+    return s.settings.mode === 'race' && !s.delve ? s.hostId === id : group ? seated : theirTurn || s.hostId === id;
+  }
+  if (name.startsWith('opt:')) return s.phase === 'question' && (group ? seated : theirTurn);
+  if (name.startsWith('card:')) {
+    if (s.phase === 'lobby') return s.hostId === id;
+    return s.phase === 'choosing' && (group ? seated : theirTurn);
+  }
+  return null;
+}
+
 const isInt = (v: unknown, min: number, max: number): v is number =>
   typeof v === 'number' && Number.isInteger(v) && v >= min && v <= max;
 

@@ -14,6 +14,7 @@ import {
   anchorCode,
   anchorName,
   cursorKey,
+  clickableFor,
   cursorsLive,
   entryAt,
   parseCursorAt,
@@ -189,4 +190,27 @@ test('a pointer is drawn along a curve through where it was heard to be, held at
   const [x] = trailAt(ps, ts, 150);
   assert.ok(x > 100, `${x}`);
   assert.deepEqual(trailAt([], [], 5), [0, 0]);
+});
+
+test("a pointer over something shows whether its player can click it: their answers, their cards, Next on their turn or in their room", () => {
+  const base = createGame('a');
+  const s = { ...base, players: [{ ...base.players[0] }, { ...base.players[0], id: 'b' }, { ...base.players[0], id: 'c' }], turn: 1 };
+  assert.equal(clickableFor({ ...s, phase: 'question' }, 'b', 'opt:2'), true);
+  assert.equal(clickableFor({ ...s, phase: 'question' }, 'c', 'opt:2'), false);
+  assert.equal(clickableFor({ ...s, phase: 'reveal' }, 'b', 'opt:2'), false);
+  assert.equal(clickableFor({ ...s, phase: 'choosing' }, 'b', 'card:0'), true);
+  assert.equal(clickableFor({ ...s, phase: 'choosing' }, 'a', 'card:0'), false);
+  // Next: the one whose turn it was, or the host; nobody else.
+  assert.equal(clickableFor({ ...s, phase: 'reveal' }, 'b', 'next'), true);
+  assert.equal(clickableFor({ ...s, phase: 'reveal' }, 'a', 'next'), true);
+  assert.equal(clickableFor({ ...s, phase: 'reveal' }, 'c', 'next'), false);
+  // In the lobby only the host picks the mode.
+  assert.equal(clickableFor({ ...s, phase: 'lobby' }, 'a', 'card:1'), true);
+  assert.equal(clickableFor({ ...s, phase: 'lobby' }, 'c', 'card:1'), false);
+  // Delve together: everyone standing answers.
+  const group = { ...s, phase: 'question' as const, delve: { entrants: ['a', 'b', 'c'] } as unknown as NonNullable<typeof s.delve> };
+  assert.equal(clickableFor(group, 'c', 'opt:0'), true);
+  // Not a button at all.
+  assert.equal(clickableFor({ ...s, phase: 'question' }, 'c', 'row:1'), null);
+  assert.equal(clickableFor({ ...s, phase: 'question' }, 'c', 'game'), null);
 });
