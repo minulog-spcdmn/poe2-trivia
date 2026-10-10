@@ -104,7 +104,11 @@
   // seconds into any screen but a question's (see lib/fullscreenTip.ts).
   const fullscreenTip = watchFullscreenTip();
   $effect(() => fullscreenTip.stop);
-  $effect(() => fullscreenTip.calm(screen !== 'game'));
+  $effect(() => {
+    const calm = screen !== 'game';
+    // Untracked: taking the tip down writes the toast list, which mustn't rerun this.
+    untrack(() => fullscreenTip.calm(calm));
+  });
 
   // Delve: the scene descends with the run, and holds its depth on the end screen
   // (a screenshot shows how deep it went); everywhere else it is the surface.

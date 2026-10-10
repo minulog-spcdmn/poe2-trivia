@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { fullscreenKeys, isDesktop, isFullscreen, type Env } from '../src/lib/fullscreen.ts';
+import { fullscreenKeys, isDesktop, isFullscreen, surelyFullscreen, type Env } from '../src/lib/fullscreen.ts';
 
 const WINDOWS = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36';
 const MAC = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15';
@@ -13,6 +13,7 @@ const env = (o: Partial<Env> & { media?: string[] } = {}): Env => {
   return {
     outerWidth: 1936,
     outerHeight: 1056,
+    innerHeight: 970,
     screen: { width: 1920, height: 1080 },
     fullscreenElement: null,
     userAgent: WINDOWS,
@@ -27,6 +28,22 @@ test('a maximized window is not fullscreen; one filling the screen is', () => {
   assert.equal(isFullscreen(env({ outerWidth: 1920, outerHeight: 1080 })), true);
   assert.equal(isFullscreen(env({ outerWidth: 1919, outerHeight: 1079 })), true);
   assert.equal(isFullscreen(env({ outerWidth: 960, outerHeight: 1080 })), false);
+});
+
+test('a Mac fullscreen window stopping below the notch still counts', () => {
+  const mac = { userAgent: MAC, screen: { width: 1512, height: 982 }, outerWidth: 1512 };
+  assert.equal(isFullscreen(env({ ...mac, outerHeight: 950 })), true);
+  assert.equal(isFullscreen(env({ ...mac, outerHeight: 875 })), false);
+  assert.equal(isFullscreen(env({ outerWidth: 1920, outerHeight: 1050 })), false);
+});
+
+test('only a window without toolbars is surely fullscreen: a maximized one filling the screen keeps its scrollbar', () => {
+  const fills = { outerWidth: 1920, outerHeight: 1080 };
+  assert.equal(surelyFullscreen(env({ ...fills, innerHeight: 1080 })), true);
+  assert.equal(surelyFullscreen(env({ ...fills, innerHeight: 990 })), false);
+  assert.equal(isFullscreen(env({ ...fills, innerHeight: 990 })), true);
+  assert.equal(surelyFullscreen(env({ innerHeight: 1056 })), false);
+  assert.equal(surelyFullscreen(env({ fullscreenElement: {} })), true);
 });
 
 test('fullscreen by the page or the display mode counts too', () => {
