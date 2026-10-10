@@ -632,9 +632,11 @@ with that in mind. Guests, on the other hand, are treated as untrusted:
   connect to itself and the matchmaking server.
 - **Room codes** are 6 characters (about a billion combinations).
 
-**Privacy:** players connect directly (WebRTC), so everyone in a room can
-see each other's IP address. The game says so in the lobby and in the room
-list.
+**Privacy:** guests connect directly to the host (WebRTC), also briefly
+while browsing the open rooms list, so the host and guests can see each
+other's IP address (unless the connection runs through a TURN relay).
+Guests never connect to each other. The privacy policy says so; the game
+itself doesn't show a notice.
 
 Not defended against: a determined player recognising item art with
 their own tools, and a cheating host.

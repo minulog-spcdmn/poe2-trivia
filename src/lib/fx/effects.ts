@@ -598,7 +598,7 @@ export function portal(at: Anchor, o: { radius?: number; color?: Vec3; intensity
       });
     }
     return true;
-  });
+  }, { keep: true });
   return {
     stop(s = 0.35) {
       open = false;
@@ -731,7 +731,7 @@ export function emitter(rate: number, spawn: () => void, life = Infinity): Handl
       spawn();
     }
     return true;
-  });
+  }, { life, keep: !Number.isFinite(life) });
   return {
     stop() {
       on = false;

@@ -257,9 +257,6 @@
           {/if}
         </p>
       {/if}
-      <p class="ip-note muted">
-        Players connect directly to each other, so everyone in a room can see each other's IP address. Only play with people you're comfortable sharing that with.
-      </p>
     </section>
   {/if}
 
@@ -558,13 +555,6 @@
   .lock svg {
     width: 13px;
     height: 13px;
-  }
-  .ip-note {
-    max-width: 520px;
-    margin: 0.2rem 0 0;
-    font-size: 0.82rem;
-    text-align: center;
-    opacity: 0.8;
   }
   .visibility {
     display: inline-flex;
