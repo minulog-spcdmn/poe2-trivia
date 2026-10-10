@@ -7,7 +7,7 @@
   import { onMount } from 'svelte';
   import { session } from '../lib/session.svelte';
   import { peerCursors } from '../lib/peerCursors.svelte';
-  import { MOUSE, PRESSED, SCALE, SEND_EVERY_MS, TAP, anchorCode, anchorName, cursorKey, cursorsLive, type CursorAt, type PointerKind } from '../lib/cursors';
+  import { MOUSE, PRESSED, SEND_EVERY_MS, TAP, anchorCode, anchorName, cursorKey, cursorsLive, fromAnchor, toAnchor, type CursorAt, type PointerKind } from '../lib/cursors';
   import { playerColor } from '../lib/ui';
   import { portal } from '../lib/portal';
   import { HAND, HAND_PRESSED, PAD_X, PAD_Y, POINTER, PRESS_SINK, SIZE, WEIGHT } from '../lib/pointerArt';
@@ -64,8 +64,7 @@
     if (!el || code === null) return null;
     const r = el.getBoundingClientRect();
     if (px < r.left || px > r.right || py < r.top || py > r.bottom || !r.width || !r.height) return null;
-    const at = (v: number) => Math.round(Math.min(1, Math.max(0, v)) * SCALE);
-    return [code, at((px - r.left) / r.width), at((py - r.top) / r.height), kind];
+    return [code, ...toAnchor(code, px, py, r, innerHeight), kind];
   }
 
   function flush() {
@@ -198,8 +197,7 @@
           continue;
         }
         const r = anchor.getBoundingClientRect();
-        const tx = r.left + (ax / SCALE) * r.width;
-        const ty = r.top + (ay / SCALE) * r.height;
+        const [tx, ty] = fromAnchor(code, ax, ay, r, innerHeight);
         let d = drawn.get(c.key);
         // A tap lands where it is; a pointer just come in starts where it is.
         if (!d || touch) drawn.set(c.key, (d = { x: tx, y: ty, tap: d?.tap ?? 0 }));

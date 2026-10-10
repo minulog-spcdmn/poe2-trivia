@@ -3,6 +3,10 @@ import assert from 'node:assert/strict';
 import { pack } from 'peerjs-js-binarypack';
 import {
   CursorOutbox,
+  GAME_ANCHOR,
+  GAME_DEPTH,
+  fromAnchor,
+  toAnchor,
   MAX_ANCHOR,
   SCALE,
   SEND_EVERY_MS,
@@ -72,10 +76,12 @@ test("a host's batch is checked, and read back", () => {
     assert.equal(parseCursorBatch(bad), null, JSON.stringify(bad));
 });
 
-test('pointers show in turns and Delve, never while players race for the same answer', () => {
+test('pointers show in the lobby, in turns and Delve, never while players race for the same answer', () => {
   const s = createGame('a');
   assert.equal(cursorsLive(null), false);
-  assert.equal(cursorsLive(s), false, 'lobby');
+  assert.equal(cursorsLive(s), true, 'lobby');
+  // The lobby has nothing to give away, whatever the mode.
+  assert.equal(cursorsLive({ ...s, settings: { ...s.settings, mode: 'race' } }), true, 'lobby, race picked');
   for (const phase of ['choosing', 'question', 'reveal'] as const) assert.equal(cursorsLive({ ...s, phase }), true, phase);
   assert.equal(cursorsLive({ ...s, phase: 'over' }), false);
   assert.equal(cursorsLive({ ...s, phase: 'question', settings: { ...s.settings, mode: 'delve' } }), true);
@@ -135,4 +141,23 @@ test("every cursor's picture fits its image, the hot spot inside it", () => {
       assert.ok(px >= 1.5 && px <= w - 1.5 && py >= 1.5 && py <= h - 1.5, `${name}: ${x} ${y}`);
     }
   }
+});
+
+test('a pointer on the game as a whole holds still while the game grows or shrinks below it', () => {
+  const screenH = 800;
+  const before = { left: 0, top: 60, width: 1200, height: 900 };
+  // Cards dealt, a question come in: the game is taller now, its top where it was.
+  const after = { ...before, height: 1500 };
+  const at = toAnchor(GAME_ANCHOR, 300, 500, before, screenH);
+  assert.deepEqual(fromAnchor(GAME_ANCHOR, ...at, after, screenH), fromAnchor(GAME_ANCHOR, ...at, before, screenH));
+  assert.deepEqual(fromAnchor(GAME_ANCHOR, ...at, before, screenH).map(Math.round), [300, 500]);
+  // Further down than a screen is fine, up to GAME_DEPTH screens.
+  const deep = toAnchor(GAME_ANCHOR, 10, 60 + 2.5 * screenH, { ...before, height: 4000 }, screenH);
+  assert.equal(deep[1], 2500);
+  assert.deepEqual(parseCursorAt([GAME_ANCHOR, 10, GAME_DEPTH * SCALE, 0]), [GAME_ANCHOR, 10, GAME_DEPTH * SCALE, 0]);
+  assert.equal(parseCursorAt([GAME_ANCHOR, 10, GAME_DEPTH * SCALE + 1, 0]), undefined);
+  // Anything else goes by its own box, and no further than it.
+  const card = anchorCode('card:1')!;
+  assert.deepEqual(toAnchor(card, 150, 75, { left: 100, top: 50, width: 100, height: 50 }, screenH), [500, 500]);
+  assert.equal(parseCursorAt([card, 10, SCALE + 1, 0]), undefined);
 });

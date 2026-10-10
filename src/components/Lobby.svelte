@@ -192,7 +192,8 @@
   const lockout = $derived(rulesFor(s.settings).lockout);
 </script>
 
-<div class="lobby">
+<!-- data-cursor: where other players' pointers are placed (PeerCursors): the room as a whole, the party's rows, the modes. -->
+<div class="lobby" data-cursor="game">
   {#if !local}
     <section class="room" in:fly={{ y: -20, duration: 500 }}>
       <span class="label">Room code</span>
@@ -270,8 +271,8 @@
         <span class="count">{s.players.length} / {MAX_PLAYERS}</span>
       </header>
       <ul>
-        {#each s.players as p (p.id)}
-          <li use:arriving={p.name} animate:flip={{ duration: 300 }} in:fly={{ x: -20, duration: 350 }} out:scale={{ duration: 200, start: 0.9 }}>
+        {#each s.players as p, i (p.id)}
+          <li data-cursor="row:{i}" use:arriving={p.name} animate:flip={{ duration: 300 }} in:fly={{ x: -20, duration: 350 }} out:scale={{ duration: 200, start: 0.9 }}>
             <Avatar name={p.name} hue={p.hue} />
             <span class="name"><PlayerName name={p.name} /></span>
             {#if p.id === s.hostId}<span class="tag">Host</span>{/if}
@@ -335,9 +336,10 @@
       <div class="setting">
         <span class="label" id="mode-label">Mode</span>
         <div class="modes" role="radiogroup" aria-labelledby="mode-label" aria-describedby="mode-blurb" tabindex={-1} onkeydown={modeKeys}>
-          {#each MODES as m (m.id)}
+          {#each MODES as m, i (m.id)}
             {@const on = s.settings.mode === m.id}
             <button
+              data-cursor="card:{i}"
               class="mode"
               class:on
               class:off={offline(m.id)}

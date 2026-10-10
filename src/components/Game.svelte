@@ -8,7 +8,6 @@
   import QuestionView from './QuestionView.svelte';
   import Avatar from './Avatar.svelte';
   import PlayerName from './PlayerName.svelte';
-  import PeerCursors from './PeerCursors.svelte';
   import TimerRing from './TimerRing.svelte';
   import { fireAmbience, sfx } from '../lib/sound';
   import { onMount } from 'svelte';
@@ -320,7 +319,6 @@
 
 <!-- data-cursor: where other players' pointers are placed (PeerCursors) when over nothing more particular. -->
 <div class="game" data-cursor="game">
-  {#if !local}<PeerCursors />{/if}
   <p class="sr" aria-live="polite">{zone?.label ?? ''}</p>
   <Scoreboard aside={phone.current ? timer : undefined} />
 

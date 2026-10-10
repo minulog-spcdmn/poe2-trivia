@@ -2,7 +2,8 @@
 // picture of the screen for its pointer (hand.ts). The bot page has no
 // screens, so this is the game's desktop layout as measured on the real page
 // (1440 by 900), in the game element's own terms: 0 to SCALE across and down
-// (src/lib/cursors.ts). Each screen puts a pointer on its own copy of the
+// (src/lib/cursors.ts; the page being one screen high, that is also how the
+// game as a whole goes down, by screen heights). Each screen puts a pointer on its own copy of the
 // element it was over, so only the path between them goes by this picture;
 // where it stops (an answer, a card) lands right on every screen.
 // Pure functions of their inputs and a random source, so tests can pin them.

@@ -21,6 +21,7 @@
   import { closeCodex, codexRoute } from './lib/codexRoute.svelte';
   import { BETA, LOCAL } from './lib/channel';
   import { setCursorColor } from './lib/ownCursor';
+  import PeerCursors from './components/PeerCursors.svelte';
   import { playerColor } from './lib/ui';
 
   let muted = $state(isMuted());
@@ -321,6 +322,8 @@
   {/if}
 
   <main>
+    <!-- Other players' pointers, in an online room: the lobby and the game (lib/cursors.ts says when). -->
+    {#if (session.mode === 'host' || session.mode === 'client') && session.state}<PeerCursors />{/if}
     {#key screen}
       <div class="screen" in:fade={{ duration: 350, delay: SCREEN_OUT_MS }} out:fade={{ duration: SCREEN_OUT_MS }}>
         {#if screen === 'home'}

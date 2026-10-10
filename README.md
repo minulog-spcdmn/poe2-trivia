@@ -526,8 +526,8 @@ browser (`src/lib/achievements.ts`); erasing the codex erases them.
     taking a seat when the next game starts (and **Play next game** to
     change their mind). A guest in the lobby can give up their seat the same
     way, and **Take a seat** again. The choice holds through reconnects.
-  - **Live pointers:** in turns mode and Delve together, everyone sees the
-    other players' mouse pointers move over the game, in their colour and
+  - **Live pointers:** in the lobby, and in turns mode and Delve together,
+    everyone sees the other players' mouse pointers move over the room, in their colour and
     with their name; a tap on a phone shows as a ring opening where it
     landed. Every pointer, your own included, is the same engraved dart
     (one point of the rune circle's compass star, `src/lib/pointerArt.ts`):
@@ -547,7 +547,8 @@ browser (`src/lib/achievements.ts`); erasing the codex erases them.
     began, with the ways left to go, and a dart pointing the way it scrolls.
     Spectators see them but don't show their own. A pointer is sent as a
     spot on the element under it (an answer, a category card, a scoreboard
-    row, the art; the game as a whole otherwise), so it lands on the same
+    row, the art; the game as a whole otherwise, measured down it by screen
+    heights so it holds still as cards are dealt), so it lands on the same
     thing on every screen, a phone's included. Never in a race, nor while
     deathmatch duelists answer, where it would give answers away. See
     `src/lib/cursors.ts`.
