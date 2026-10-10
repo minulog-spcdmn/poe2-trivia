@@ -644,15 +644,17 @@ void main() {
         // hottest; the tone map takes the brightest roots toward yellow-white.
         vec3 orange = vec3(1.0, 0.18 + 0.42 * T * T, 0.03 + 0.12 * T * T * T);
         vec3 blue = vec3(0.06 + 0.4 * T * T, 0.22 + 0.5 * T * T, 1.0);
-        // A tinted fire (r.z): the tint at the tips, heating toward white at the roots.
-        vec3 tinted = mix(vC * (0.4 + 0.6 * T), mix(vC, vec3(1.0), 0.55), T * T);
+        // A tinted fire (r.z): the tint at the tips, heating toward white at the
+        // roots (as bright as the tint's brightest channel, so it fades with it).
+        vec3 tinted = mix(vC * (0.4 + 0.6 * T), mix(vC, vec3(max(max(vC.r, vC.g), vC.b)), 0.55), T * T);
         col = (vR.z > 0.5 ? tinted : vC * mix(orange, blue, vR.x)) * I;
         v = 1.0;
       }
     }
     // A faint heat halo hugging the outline.
     float halo = exp(-abs(d) / (5.0 + H * 0.1)) * smoothstep(-6.0, 0.0, d) * 0.25;
-    vec3 haloCol = vR.z > 0.5 ? vC * 0.45 : mix(vec3(0.5, 0.1, 0.02), vec3(0.04, 0.12, 0.5), vR.x);
+    // (A tinted one's is the tint: vC is applied once, below.)
+    vec3 haloCol = vR.z > 0.5 ? vec3(0.45) : mix(vec3(0.5, 0.1, 0.02), vec3(0.04, 0.12, 0.5), vR.x);
     col = v > 0.0 ? col + vC * haloCol * halo : vC * haloCol;
     v = v > 0.0 ? 1.0 : halo;
   } else if (type == 11) {

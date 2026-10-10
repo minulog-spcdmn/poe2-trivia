@@ -96,14 +96,18 @@
       }
     }
     const good = i === rightIdx;
+    // A record from a later day (this device's clock was put back) takes no
+    // answer today: nothing is recorded, so nothing plays as if it were.
+    const next = practice ? null : answerDaily(rec, today, i, good);
+    if (next && next === rec) return;
     const at = Date.now();
     settled = false;
     clearTimeout(settleTimer);
     settleTimer = setTimeout(() => (settled = true), SETTLE_MS);
-    if (practice) practicePicked = i;
+    if (!next) practicePicked = i;
     else {
       const before = streakOn(rec, today);
-      rec = answerDaily(rec, today, i, good);
+      rec = next;
       saveDaily(rec);
       justMissed = !good && before > 0;
       // Yesterday's fire catches as the badge comes in, and grows into today's a moment later.

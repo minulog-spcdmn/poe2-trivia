@@ -7,7 +7,7 @@ import { after, boxOf, detached, fxActive, isLive, shakeView, type Anchor, type 
 import {
   C,
   edgeGlow,
-  edgeBeat,
+  edgeCountdown,
   edgeHit,
   edgeWard,
   embers,
@@ -1061,7 +1061,7 @@ export function raceMiss(option: Element, mine: boolean, warded = false) {
 
 /**
  * timerTick's screen beat for each of the last seconds (1 first), as
- * edgeBeat takes it, and the scene's red flush. The smoke starts out thin,
+ * an EdgeBeat (edgeCountdown), and the scene's red flush. The smoke starts out thin,
  * fairly even round the edges and a dusky red, and second by second
  * thickens, gathers, reddens and stays a little longer.
  */
@@ -1073,23 +1073,23 @@ const TICK_STEPS = [
   { intensity: 0.075, width: 50, smoke: 1.3, even: 0.42, body: 0.15, hold: 1, color: [1.6, 0.24, 0.24] as Vec3, rim: 0, mood: 0.15 },
 ];
 
-/** The smoke of one countdown (timerTick): new when it starts, drifting on through its every tick. */
-let smokePattern = 0;
-let smokeFrom = 0;
+/** The countdown's smoke (timerTick): new when it starts, drifting on through its every tick. */
+let countdown: ReturnType<typeof edgeCountdown> | null = null;
 let lastTick = 0;
-/** The countdown's beats still lingering, for the reveal to end. */
-let beats: Handle[] = [];
+/** Whose countdown it is: the timer ring, a new one for each question (Game.svelte keys it). */
+let countdownOf: Element | null = null;
 
 /** The question is decided, so the countdown is over: its smoke fades out where it is, about as the reveal's sound dies. */
 function endCountdown() {
-  for (const h of beats) h.stop(0.35);
-  beats = [];
+  countdown?.stop(0.35);
+  countdown = null;
   lastTick = 0;
+  countdownOf = null;
 }
 
 /**
  * The last seconds of the clock. `screen`: the crimson pulse over the scene
- * and a beat at the screen's edges too (edgeBeat); Delve leaves them out, as
+ * and a beat at the screen's edges too (edgeCountdown); Delve leaves them out, as
  * its darkness closing in already tells the clock running down.
  */
 export function timerTick(timer: Element, secs: number, screen = true) {
@@ -1102,14 +1102,16 @@ export function timerTick(timer: Element, secs: number, screen = true) {
   // screen's edges, one smoke for the whole countdown, each second a step
   // stronger (TICK_STEPS).
   const step = TICK_STEPS[Math.max(0, Math.min(TICK_STEPS.length - 1, secs - 1))];
-  if (secs >= lastTick) {
-    smokePattern = Math.random() * 100;
-    smokeFrom = performance.now();
-    beats = [];
+  // A new countdown (another question's ring, or this one's clock put back):
+  // its own smoke, and whatever is left of the last one goes.
+  if (timer !== countdownOf || secs >= lastTick || !countdown) {
+    countdown?.stop(0.35);
+    countdown = edgeCountdown();
+    countdownOf = timer;
   }
   lastTick = secs;
   pulseMood(step.mood);
-  beats.push(edgeBeat({ ...step, pattern: smokePattern, clock: (performance.now() - smokeFrom) / 1000 }));
+  countdown.beat(step);
 }
 
 // ---------- deathmatch ----------
