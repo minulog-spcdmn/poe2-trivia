@@ -1,6 +1,7 @@
 <script lang="ts">
   import { fly, fade, scale, slide } from 'svelte/transition';
   import { session, engine } from '../lib/session.svelte';
+  import { zoomOf } from '../lib/stage';
   import { AUTO_NEXT_MS, autoNextLeft, isFake, questionTopic } from '../lib/game';
   import { shown } from '../lib/media.svelte';
   import { FINALE_MS, materialize, type BurnParams } from '../lib/materialize';
@@ -626,8 +627,10 @@
     if (e.pointerType !== 'mouse') return;
     const el = e.currentTarget as HTMLElement;
     const r = el.getBoundingClientRect();
-    el.style.setProperty('--gx', `${(e.clientX - r.left).toFixed(0)}px`);
-    el.style.setProperty('--gy', `${(e.clientY - r.top).toFixed(0)}px`);
+    // On screen, so undone of the stage's zoom (lib/stage.ts) to land in the answer's own px.
+    const z = zoomOf(el);
+    el.style.setProperty('--gx', `${((e.clientX - r.left) / z).toFixed(0)}px`);
+    el.style.setProperty('--gy', `${((e.clientY - r.top) / z).toFixed(0)}px`);
   }
 
   function next() {

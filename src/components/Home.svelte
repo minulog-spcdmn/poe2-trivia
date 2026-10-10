@@ -12,7 +12,6 @@
   import { BETA } from '../lib/channel';
   import { deepestEver, loadRecords } from '../lib/delveRecord';
   import { shownDepth } from '../lib/delve';
-  import { stage } from '../lib/stage';
   import { ENTRIES, codexLine, cursorKey, lastEntry, rememberEntry, type Entry } from '../lib/startMenu';
   import GameTitle from './GameTitle.svelte';
   import Connecting from './Connecting.svelte';
@@ -118,6 +117,10 @@
   }
 
   // ---- the menu ----
+
+  /** An entry's description giving way to its fields, and back. */
+  const SWAP_IN = { y: 4, duration: 240, delay: 90 };
+  const SWAP_OUT = { duration: 140 };
 
   /** The keyboard cursor: arrows move it, Enter chooses, it follows the mouse. */
   let cursor = $state(lastEntry());
@@ -357,7 +360,7 @@
 {#if invite}
   <InviteScreen code={invite} bind:name={inviteName} {connecting} onjoin={joinInvite} onback={leaveInvite} />
 {:else}
-  <div class="home" use:stage>
+  <div class="home">
     <div class="intro">
       <div class="title">
         <GameTitle />
@@ -418,38 +421,41 @@
             <button class="pick" bind:this={entryEls[i]} onclick={() => choose(e)} onfocus={() => (cursor = i)} aria-expanded={e === 'create' || e === 'join' ? isOpen : undefined}>
               {MENU[e]}
             </button>
-            {#if isBusy}
-              <div class="slot"><Connecting /></div>
-            {:else if isOpen && e === 'create'}
-              <form class="slot row" onsubmit={host}>
-                <input class="field name" bind:this={nameField} bind:value={nameInput} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="nickname" spellcheck="false" />
-                <button class="btn primary" type="submit">Create room</button>
-              </form>
-            {:else if isOpen && e === 'join'}
-              <form class="slot row" onsubmit={join}>
-                {#if !known}
-                  <input class="field name short" bind:this={nameField} bind:value={nameInput} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="nickname" spellcheck="false" />
-                {/if}
-                <input
-                  class="field code"
-                  class:short={!known}
-                  class:bad={codeError}
-                  bind:this={codeField}
-                  bind:value={code}
-                  oninput={() => ((code = cleanCode(code)), (codeError = false))}
-                  onpaste={pasteCode}
-                  placeholder="Code"
-                  maxlength={CODE_LENGTH}
-                  autocomplete="off"
-                  spellcheck="false"
-                  aria-label="Room code"
-                  aria-invalid={codeError}
-                />
-                <button class="btn primary" type="submit">Join</button>
-              </form>
-            {:else}
-              <p class="about">{about[e]}</p>
-            {/if}
+            <!-- The description and the fields share one cell, so one fades into the other. -->
+            <div class="under">
+              {#if isBusy}
+                <div class="slot" in:fly={SWAP_IN} out:fade={SWAP_OUT}><Connecting /></div>
+              {:else if isOpen && e === 'create'}
+                <form class="slot row" onsubmit={host} in:fly={SWAP_IN} out:fade={SWAP_OUT}>
+                  <input class="field name" bind:this={nameField} bind:value={nameInput} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="nickname" spellcheck="false" />
+                  <button class="btn primary" type="submit">Create room</button>
+                </form>
+              {:else if isOpen && e === 'join'}
+                <form class="slot row" onsubmit={join} in:fly={SWAP_IN} out:fade={SWAP_OUT}>
+                  {#if !known}
+                    <input class="field name short" bind:this={nameField} bind:value={nameInput} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="nickname" spellcheck="false" />
+                  {/if}
+                  <input
+                    class="field code"
+                    class:short={!known}
+                    class:bad={codeError}
+                    bind:this={codeField}
+                    bind:value={code}
+                    oninput={() => ((code = cleanCode(code)), (codeError = false))}
+                    onpaste={pasteCode}
+                    placeholder="Code"
+                    maxlength={CODE_LENGTH}
+                    autocomplete="off"
+                    spellcheck="false"
+                    aria-label="Room code"
+                    aria-invalid={codeError}
+                  />
+                  <button class="btn primary" type="submit">Join</button>
+                </form>
+              {:else}
+                <p class="about" in:fly={SWAP_IN} out:fade={SWAP_OUT}>{about[e]}</p>
+              {/if}
+            </div>
           </div>
         {/each}
       </nav>
@@ -494,11 +500,10 @@
      rooms across it, then the footer. Narrower windows give up side padding
      (down to 32 px) before anything else, then stack in the phone's order.
      Columns and rooms sit in the middle of the window's height, the footer at
-     its bottom. On large windows the stage is scaled up (lib/stage.ts), as
-     the lobby is. */
+     its bottom. On large windows the whole app is scaled up (lib/stage.ts,
+     App.svelte's shell). */
   .home {
     --slot: 108px;
-    zoom: var(--stage-zoom, 1);
     width: 100%;
     max-width: 1440px;
     margin-inline: auto;
@@ -731,6 +736,12 @@
     font-style: italic;
     font-size: 16px;
     color: #ab9d88;
+  }
+  .under {
+    display: grid;
+  }
+  .under > :global(*) {
+    grid-area: 1 / 1;
   }
   .slot {
     position: relative;

@@ -12,6 +12,7 @@
 
 import { edgeBlast } from './fx/blast';
 import { fxActive } from './fx/core';
+import { zoomOf } from './stage';
 
 /** When the shockwave reaches the question (ms after it goes off): its shards fly, the screen shakes, the scene swings. */
 export const BLAST_IMPACT_MS = 110;
@@ -23,6 +24,8 @@ const BLAST_MS = 2300;
 
 const rand = (lo: number, hi: number) => lo + Math.random() * (hi - lo);
 const px = (n: number) => `${n.toFixed(1)}px`;
+/** A box on screen in the blast layer's own px: the layer is zoomed as the page is (lib/stage.ts). */
+const unzoom = (r: DOMRect, z: number) => (z === 1 ? r : new DOMRect(r.x / z, r.y / z, r.width / z, r.height / z));
 
 type Pt = { x: number; y: number };
 
@@ -142,19 +145,19 @@ type Found = { path: number[]; rect: DOMRect; inline: boolean };
  * pictures (three or more side by side, a tenth of it), whose own frame and
  * fill (`hollow`) go as its parts fly.
  */
-function measure(src: Element, area: number, path: number[] = [], parts: Found[] = [], hollow: number[][] = []) {
+function measure(src: Element, area: number, z: number, path: number[] = [], parts: Found[] = [], hollow: number[][] = []) {
   Array.from(src.children).forEach((k, i) => {
     const at = [...path, i];
-    const r = k.getBoundingClientRect();
+    const r = unzoom(k.getBoundingClientRect(), z);
     const a = r.width * r.height;
     if (!a) {
       // display: contents and the like: what is inside it counts.
-      if (k.children.length) measure(k, area, at, parts, hollow);
+      if (k.children.length) measure(k, area, z, at, parts, hollow);
       return;
     }
     if (a > area * 0.5 || (k.children.length >= 3 && a > area * 0.1)) {
       hollow.push(at);
-      measure(k, area, at, parts, hollow);
+      measure(k, area, z, at, parts, hollow);
       return;
     }
     parts.push({ path: at, rect: r, inline: getComputedStyle(k).display === 'inline' });
@@ -226,20 +229,23 @@ function shardStyle() {
  * one): see the top of this file.
  */
 export function blastAway({ node, side, mine }: BlastAway) {
-  const W = innerWidth;
-  const H = innerHeight;
+  // The layer is zoomed as the page is, so everything is measured in its px (the fire, drawn by the effects overlay, on screen).
+  const Z = zoomOf(node);
+  const W = innerWidth / Z;
+  const H = innerHeight / Z;
   // Everything measured first, before the page changes, so it is laid out once.
-  const rect = node.getBoundingClientRect();
+  const onScreen = node.getBoundingClientRect();
+  const rect = unzoom(onScreen, Z);
   const shown = rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.top < H;
   const cs = getComputedStyle(node);
   const inherited = shown ? Array.from(cs).flatMap((name) => (name.startsWith('--') ? [[name, cs.getPropertyValue(name)]] : [])) : [];
-  const found = shown ? measure(node, rect.width * rect.height) : { parts: [], hollow: [] };
+  const found = shown ? measure(node, rect.width * rect.height, Z) : { parts: [], hollow: [] };
   const looks = shown ? pictureLooks(node) : [];
   // The biggest part (the art, as a rule) cracks where the blast strikes it, and its parent holds the pieces.
   const big = found.parts.reduce<Found | null>((m, p) => (!m || p.rect.width * p.rect.height > m.rect.width * m.rect.height ? p : m), null);
   const bigParent = big && big.rect.width * big.rect.height > rect.width * Math.min(rect.height, H) * 0.12 ? at(node, big.path)?.parentElement : null;
   const holder = bigParent
-    ? { rect: bigParent.getBoundingClientRect(), static: getComputedStyle(bigParent).position === 'static', border: [bigParent.clientLeft, bigParent.clientTop] as [number, number] }
+    ? { rect: unzoom(bigParent.getBoundingClientRect(), Z), static: getComputedStyle(bigParent).position === 'static', border: [bigParent.clientLeft, bigParent.clientTop] as [number, number] }
     : null;
   const phone = W < 600;
   // The blast's height: the question's middle, as far as it is on screen.
@@ -256,6 +262,7 @@ export function blastAway({ node, side, mine }: BlastAway) {
   // It dims behind an open dialog like the page's other overlays (lib/portal.ts).
   layer.dataset.behindDialog = 'dim';
   Object.assign(layer.style, { position: 'fixed', inset: '0', zIndex: '90', pointerEvents: 'none', overflow: 'hidden', contain: 'strict' });
+  if (Z !== 1) layer.style.zoom = String(Z);
   document.body.append(layer);
   const anim = (el: Element, frames: Keyframe[], o: KeyframeAnimationOptions) => el.animate(frames, { fill: 'both', ...o });
 
@@ -458,7 +465,7 @@ export function blastAway({ node, side, mine }: BlastAway) {
   }
 
   // The fire and light, and the screen shaking as the shockwave hits (the effects overlay's).
-  if (fxActive()) edgeBlast({ side, y, target: rect, impact: BLAST_IMPACT_MS / 1000, mine });
+  if (fxActive()) edgeBlast({ side, y: y * Z, target: onScreen, impact: BLAST_IMPACT_MS / 1000, mine });
   else {
     // Without it, the page shakes by itself (the shell, as the effects' shake moves it).
     const shell = document.querySelector<HTMLElement>('.shell');

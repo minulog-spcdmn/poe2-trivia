@@ -1,9 +1,8 @@
-// The start page and the lobby are laid out in one stage, at most 1440 px
-// wide. On large windows the whole of it (in the lobby, the header too) is
-// scaled up with CSS zoom, so a big screen doesn't show it small in an empty
-// field: by the window's width over 1440 or its height over 980, whichever
-// is less, never below 1 and at most 2.2. Both use the same rule, so going
-// from the start page into the lobby never changes the scale. Under zoom,
+// On large windows the whole app (every screen, the header, dialogs and
+// toasts) is scaled up with CSS zoom, so a big screen doesn't show it small
+// in an empty field: by the window's width over 1440 or its height over 980,
+// whichever is less, never below 1 and at most 2.2. One rule for every
+// screen, so moving between them never changes the scale. Under zoom,
 // 100dvh is divided by the zoom, and whatever measures itself on screen
 // (getBoundingClientRect) divides by the element's currentCSSZoom.
 
@@ -21,11 +20,13 @@ export function inviteZoom(w: number, h: number): number {
 }
 
 /**
- * Svelte action: keeps `--stage-zoom` on the stage up to date with the
- * window (its CSS sets `zoom` from it, and sizes itself to the window by it).
+ * Svelte action: keeps a zoom custom property on `node` (by default
+ * `--stage-zoom`, by `rule`) up to date with the window; its CSS sets `zoom`
+ * from it. The app sets the stage's on the root itself (App.svelte); the
+ * invite screen keeps its own.
  */
-export function stage(node: HTMLElement, rule: (w: number, h: number) => number = stageZoom) {
-  const set = () => node.style.setProperty('--stage-zoom', String(rule(innerWidth, innerHeight)));
+export function stage(node: HTMLElement, { rule = stageZoom, name = '--stage-zoom' }: { rule?: (w: number, h: number) => number; name?: string } = {}) {
+  const set = () => node.style.setProperty(name, String(rule(innerWidth, innerHeight)));
   set();
   addEventListener('resize', set);
   return { destroy: () => removeEventListener('resize', set) };

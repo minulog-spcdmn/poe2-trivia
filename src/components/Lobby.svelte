@@ -99,6 +99,18 @@
     e.preventDefault();
   }
 
+  /**
+   * The code selected (to copy it by hand): the browser's own highlight is
+   * hidden, boxes and gaps alike, and the letters light up instead. Dragging
+   * a selection would only drag a picture of it, so that is off.
+   */
+  let glyphsEl = $state<HTMLElement>();
+  let codeSelected = $state(false);
+  function selectionChanged() {
+    const sel = getSelection();
+    codeSelected = !!glyphsEl && !!sel && !sel.isCollapsed && sel.containsNode(glyphsEl, true);
+  }
+
   let copyBtn = $state<HTMLButtonElement>();
 
   // Online, removing bars them for the rest of the session, so it takes two
@@ -265,8 +277,9 @@
           <header>
             <h2>Room code</h2>
           </header>
-          <div class="code" class:hidden={session.hideCode} aria-label={session.hideCode ? 'Room code hidden' : `Room code ${session.code}`}>
-            <span class="glyphs" oncopy={copyCode}>
+          <div class="code" class:hidden={session.hideCode} class:selected={codeSelected} aria-label={session.hideCode ? 'Room code hidden' : `Room code ${session.code}`}>
+            <!-- svelte-ignore a11y_no_static_element_interactions (the dragstart only stops a drag of the selection) -->
+            <span class="glyphs" bind:this={glyphsEl} oncopy={copyCode} ondragstart={(e) => e.preventDefault()}>
               {#each session.code.split('') as ch, i (i)}
                 <span class="glyph" use:landing={i} style:animation-delay="{i * 80}ms" style:--i={i}>{session.hideCode ? '•' : ch}</span>
               {/each}
@@ -510,9 +523,9 @@
               <button class:on={s.settings.targetScore === t} disabled={!isHost} onclick={() => setTarget(t)}>{t}</button>
             {/each}
             <span class="stepper">
-              <button disabled={!isHost || s.settings.targetScore <= 1} onclick={() => setTarget(s.settings.targetScore - 1)} aria-label="Fewer points">−</button>
+              <button disabled={!isHost || s.settings.targetScore <= 1} onclick={() => setTarget(s.settings.targetScore - 1)} aria-label="Fewer points"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 6h7" /></svg></button>
               <b>{s.settings.targetScore}</b>
-              <button disabled={!isHost || s.settings.targetScore >= 50} onclick={() => setTarget(s.settings.targetScore + 1)} aria-label="More points">+</button>
+              <button disabled={!isHost || s.settings.targetScore >= 50} onclick={() => setTarget(s.settings.targetScore + 1)} aria-label="More points"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 6h7M6 2.5v7" /></svg></button>
             </span>
           </div>
           {/if}
@@ -588,6 +601,7 @@
 </div>
 
 <svelte:window onkeydown={disarm} onpointerdown={disarmOutside} />
+<svelte:document onselectionchange={selectionChanged} />
 
 {#if editing && isHost && difficulty === 'custom' && !delve}
   <CustomDifficulty onclose={() => (editing = false)} />
@@ -818,6 +832,22 @@
     -webkit-user-select: all;
     user-select: all;
   }
+  /* Selected, the letters light up in place of the browser's highlight. */
+  .glyphs ::selection,
+  .glyphs::selection {
+    background: transparent;
+    color: inherit;
+  }
+  .code.selected .glyph {
+    color: #fff4dc;
+    border-color: var(--gold);
+    background: linear-gradient(180deg, #3a2a15, #17100a);
+    box-shadow:
+      inset 0 0 22px rgba(241, 217, 155, 0.22),
+      0 0 16px rgba(201, 164, 92, 0.35),
+      0 6px 18px rgba(0, 0, 0, 0.6);
+    text-shadow: 0 0 18px rgba(255, 230, 170, 0.75);
+  }
   .glyph {
     flex: 1;
     min-width: 0;
@@ -835,6 +865,12 @@
       inset 0 0 18px rgba(201, 164, 92, 0.12),
       0 6px 18px rgba(0, 0, 0, 0.6);
     text-shadow: 0 0 16px rgba(241, 217, 155, 0.45);
+    transition:
+      color 0.15s,
+      border-color 0.15s,
+      background 0.15s,
+      box-shadow 0.15s,
+      text-shadow 0.15s;
     animation: drop 0.6s var(--ease-back) both;
     position: relative;
     overflow: hidden;
@@ -1394,10 +1430,16 @@
     display: grid;
     place-items: center;
     border-radius: 50%;
-    font-family: var(--font-body);
-    font-size: 1.1rem;
-    font-weight: 400;
     line-height: 1;
+  }
+  /* Drawn, not typed: the font's plus and minus sit off the circle's middle and read thin. */
+  .stepper svg {
+    width: 12px;
+    height: 12px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.7;
+    stroke-linecap: round;
   }
   .stepper b {
     min-width: 2ch;

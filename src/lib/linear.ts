@@ -51,7 +51,8 @@ export function ownLinear(cs: CSSStyleDeclaration): Lin | null {
 }
 
 /**
- * Linear map from the element's local px to the viewport, ancestors included.
+ * Linear map from the element's local px to the viewport, ancestors (and any
+ * CSS zoom) included.
  * `cache` holds each element's own transform, so the tagged elements' shared
  * ancestors are read once a pass (reading a computed transform is costly).
  */
@@ -63,5 +64,7 @@ export function linearOf(node: HTMLElement, cache: Map<Element, Lin | null>): Li
     if (!own) return null;
     m = mul(own, m);
   }
-  return m;
+  // CSS zoom over it (the start page's and the lobby's stage, lib/stage.ts) scales it too.
+  const z = (node as HTMLElement & { currentCSSZoom?: number }).currentCSSZoom ?? 1;
+  return z === 1 ? m : [m[0] * z, m[1] * z, m[2] * z, m[3] * z];
 }

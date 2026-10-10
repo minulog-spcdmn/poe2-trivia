@@ -165,6 +165,11 @@
     letter-spacing: 0;
     color: var(--gold);
   }
+  /* The heading and its count read as one line: on one baseline. */
+  h2,
+  .open {
+    align-self: baseline;
+  }
   .open {
     white-space: nowrap;
     font-family: var(--font-display);
@@ -284,13 +289,14 @@
     font-size: 15px;
     color: var(--muted);
   }
-  /* Nothing to list: one dashed tile across the row. */
+  /* Nothing to list: one dashed tile across the row, as tall as a room's,
+     so the first room to open doesn't move the page. */
   .empty {
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 0.7rem;
-    min-height: 50px;
+    min-height: 72px;
     margin: 0;
     padding: 0.6rem 1rem;
     text-align: center;

@@ -649,6 +649,7 @@
   }
 
   .dm-intro {
+    zoom: var(--stage-zoom, 1);
     position: fixed;
     inset: 0;
     z-index: 70;

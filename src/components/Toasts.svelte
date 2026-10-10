@@ -123,7 +123,9 @@
 </div>
 
 <style>
+  /* Scaled with the page on large windows (lib/stage.ts). */
   .toasts {
+    zoom: var(--stage-zoom, 1);
     position: fixed;
     right: max(22px, env(safe-area-inset-right));
     bottom: max(22px, env(safe-area-inset-bottom));

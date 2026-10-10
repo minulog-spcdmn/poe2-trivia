@@ -136,20 +136,14 @@
    * down (or let it jump up) by its own height.
    */
   /**
-   * The lobby is the start page's stage carried on: scaled as the start page
-   * scales itself on large windows (lib/stage.ts), header and all. Switched
-   * as the screens swap, so the screen going out keeps its scale.
+   * Every screen is scaled up alike on large windows (lib/stage.ts), header
+   * and all, so moving between them never changes the scale. Set on the root,
+   * for the shell and for what sits outside it (dialogs, toasts, overlays).
    */
-  let staged = $state(untrack(() => screen === 'lobby'));
-  $effect(() => {
-    const want = screen === 'lobby';
-    if (want === untrack(() => staged)) return;
-    const t = setTimeout(() => (staged = want), SCREEN_OUT_MS);
-    return () => clearTimeout(t);
-  });
   let winW = $state(innerWidth);
   let winH = $state(innerHeight);
-  const zoom = $derived(staged ? stageZoom(winW, winH) : 1);
+  const zoom = $derived(stageZoom(winW, winH));
+  $effect(() => document.documentElement.style.setProperty('--stage-zoom', String(zoom)));
   let headerOn = $state(untrack(() => screen !== 'home'));
   $effect(() => {
     const want = screen !== 'home';
@@ -215,7 +209,7 @@
 
 <svelte:window bind:innerWidth={winW} bind:innerHeight={winH} />
 
-<div class="shell" data-behind-dialog bind:this={shell} class:staged style:--stage-zoom={zoom}>
+<div class="shell" data-behind-dialog bind:this={shell}>
   {#if headerOn}
     <header in:fade={{ duration: 300 }} bind:offsetHeight={headerHeight}>
       <button class="brand" onclick={() => (codex ? closeCodex() : askLeave())} title={codex ? 'Back to the start' : 'Leave game'}>
@@ -362,7 +356,7 @@
   {/if}
 </div>
 
-<Toasts headerHeight={headerOn ? headerHeight * zoom : 0} />
+<Toasts headerHeight={headerOn ? headerHeight : 0} />
 
 <FxLayer />
 
@@ -406,19 +400,16 @@
     user-select: all;
     cursor: text;
   }
+  /* Scaled up on large windows (lib/stage.ts): the window's height in its zoomed pixels. */
   .shell {
+    zoom: var(--stage-zoom, 1);
     position: relative;
     z-index: 1;
-    min-height: 100dvh;
+    min-height: calc(100dvh / var(--stage-zoom, 1));
     display: flex;
     flex-direction: column;
     /* Room at the end for a bar fixed to the bottom of the screen (lib/layout.ts). */
     padding-bottom: var(--dock, 0px);
-  }
-  /* The lobby, scaled with the start page (lib/stage.ts): the window's height in its zoomed pixels. */
-  .shell.staged {
-    zoom: var(--stage-zoom, 1);
-    min-height: calc(100dvh / var(--stage-zoom, 1));
   }
 
   header {
@@ -695,6 +686,7 @@
     color: var(--gold-hi);
   }
   .modal-backdrop {
+    zoom: var(--stage-zoom, 1);
     position: fixed;
     inset: 0;
     /* Below the effects layer (z-index 95), so the dialog's buttons get their

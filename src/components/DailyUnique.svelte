@@ -9,6 +9,7 @@
   import itemData from '../data/items.json';
   import fakeNames from '../data/fakes.json';
   import { engine, session } from '../lib/session.svelte';
+  import { zoomOf } from '../lib/stage';
   import { codexRoute } from '../lib/codexRoute.svelte';
   import { isFake, questionTopic, type Item, type Question } from '../lib/game';
   import { answerDaily, answeredOn, askOne, dailyGame, dailyQuestion, dayNumber, loadDaily, nextIn, saveDaily, streakOn, utcDay } from '../lib/daily';
@@ -173,8 +174,10 @@
     if (e.pointerType !== 'mouse') return;
     const el = e.currentTarget as HTMLElement;
     const r = el.getBoundingClientRect();
-    el.style.setProperty('--gx', `${(e.clientX - r.left).toFixed(0)}px`);
-    el.style.setProperty('--gy', `${(e.clientY - r.top).toFixed(0)}px`);
+    // On screen, so undone of the stage's zoom (lib/stage.ts) to land in the answer's own px.
+    const z = zoomOf(el);
+    el.style.setProperty('--gx', `${((e.clientX - r.left) / z).toFixed(0)}px`);
+    el.style.setProperty('--gy', `${((e.clientY - r.top) / z).toFixed(0)}px`);
   }
 </script>
 

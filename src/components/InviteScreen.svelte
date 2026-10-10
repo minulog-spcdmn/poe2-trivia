@@ -25,7 +25,7 @@
   }
 </script>
 
-<div class="invite" use:stage={inviteZoom}>
+<div class="invite" use:stage={{ rule: inviteZoom, name: '--invite-zoom' }}>
   <header>
     <GameTitle lines />
     <p class="kicker" in:fade={{ duration: 700, delay: 350 }}>Unique item trivia</p>
@@ -67,10 +67,11 @@
   /* The start page's stage (lib/stage.ts): centred in the window, scaled up
      on very large ones (by its own, older rule until its redesign). */
   .invite {
-    zoom: var(--stage-zoom, 1);
+    /* Its own scale in place of the app's (App.svelte's shell zooms everything by --stage-zoom). */
+    zoom: calc(var(--invite-zoom, 1) / var(--stage-zoom, 1));
     max-width: 1440px;
     margin-inline: auto;
-    min-height: calc(100dvh / var(--stage-zoom, 1));
+    min-height: calc(100dvh / var(--invite-zoom, 1));
     display: flex;
     flex-direction: column;
     align-items: center;

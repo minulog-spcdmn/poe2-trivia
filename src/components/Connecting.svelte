@@ -6,6 +6,7 @@
   import { onMount } from 'svelte';
   import { fade } from 'svelte/transition';
   import { session } from '../lib/session.svelte';
+  import { zoomOf } from '../lib/stage';
   import { connecting as portalFx } from '../lib/fx/moments';
 
   let slow = $state(false);
@@ -14,9 +15,9 @@
     return () => clearTimeout(t);
   });
 
-  /** Svelte action: a portal swirls on the rune, sized to it (the row is only 40px tall). */
+  /** Svelte action: a portal swirls on the rune, sized to it on screen (the row is only 40px tall). */
   function portalOn(node: HTMLElement) {
-    const h = portalFx(node, 17);
+    const h = portalFx(node, 17 * zoomOf(node));
     return { destroy: () => h.stop(0.3) };
   }
 

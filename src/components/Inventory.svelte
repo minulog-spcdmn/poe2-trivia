@@ -11,6 +11,7 @@
   // off, one blown up by a Dynamite Cache missed (`blown`). A find on its way (`expect`: its sparks flying to it) has its place
   // kept, unseen, so they have somewhere to land.
   import type { Inventory } from '../lib/delve';
+  import { zoomOf } from '../lib/stage';
   import { ITEM_TIPS } from '../lib/difficultyText';
   import type { InventoryMoment } from '../lib/inventoryArt';
   import ItemGlyph from './ItemGlyph.svelte';
@@ -37,12 +38,14 @@
     let timer: ReturnType<typeof setTimeout> | undefined;
     const open = () => tip.matches(':popover-open');
     const place = () => {
+      // In the tip's own px: the page (and the tip with it) may be zoomed (lib/stage.ts), the window isn't.
+      const z = zoomOf(count);
       const r = count.getBoundingClientRect();
-      const mid = r.left + r.width / 2;
+      const mid = (r.left + r.width / 2) / z;
       const w = tip.offsetWidth;
-      const left = Math.max(TIP_EDGE, Math.min(mid - w / 2, innerWidth - w - TIP_EDGE));
+      const left = Math.max(TIP_EDGE, Math.min(mid - w / 2, innerWidth / z - w - TIP_EDGE));
       tip.style.left = `${left}px`;
-      tip.style.top = `${r.bottom + TIP_GAP}px`;
+      tip.style.top = `${r.bottom / z + TIP_GAP}px`;
       tip.style.setProperty('--arrow-x', `${mid - left}px`);
     };
     /** Gone at once, no fade: another item's tooltip takes its place. */
