@@ -135,6 +135,17 @@ const coming = () => !!(waiting || building);
 let queuedAt: number | null = null;
 /** When the view was last shaken while waiting for it. */
 let shakenAt = 0;
+/**
+ * While the tab is in the background, when it went there (performance.now()),
+ * else null. No frames come meanwhile, so nothing moves on: what's asked for
+ * then (a timer, a peer's message) is held back by how long the tab has been
+ * away (see waited), and once it's back everything is moved on by the whole
+ * time (caughtUp). What would have played meanwhile has played, out of sight,
+ * rather than all at once as the tab comes back.
+ */
+let hiddenAt: number | null = null;
+/** The most of the time away that caughtUp() plays out step by step: longer than any effect (but the endless ones) takes. */
+const CATCH_UP = 10;
 const MAX_SHAPES = 96;
 const shapeData = new Float32Array(MAX_SHAPES * SHAPE_FLOATS);
 let shapes: LiveShape[] = [];
@@ -248,8 +259,8 @@ function onPage(a: Anchor): boolean {
  * effect goes on from where it would be by then.
  */
 function waited(): number {
-  if (renderer) return 0;
   const t = performance.now();
+  if (renderer) return hiddenAt === null ? 0 : (t - hiddenAt) / 1000;
   queuedAt ??= t;
   return (t - queuedAt) / 1000;
 }
@@ -455,7 +466,8 @@ export function shakeTarget(el: HTMLElement, k = 1) {
  * hits stay gentle); `px` is the largest offset.
  */
 export function shakeView(amount: number, px = 7) {
-  if (!fxActive()) return;
+  // (Out of sight it would be over before the tab is back: see caughtUp.)
+  if (!fxActive() || (renderer && hiddenAt !== null)) return;
   const was = shake.trauma;
   shake.trauma = Math.min(1, was + amount);
   shake.amp = was > 0.05 ? Math.max(shake.amp, px) : px;
@@ -901,6 +913,38 @@ function setup(c: HTMLCanvasElement, r: FxRenderer) {
   // (resize() woke the loop: anything asked for meanwhile plays from now.)
 }
 
+/**
+ * The tab is back after `hiddenAt`: everything moves on by the time it was
+ * away, as if it had played all along. The last CATCH_UP seconds are played
+ * out frame by frame, undrawn, so that what effects start on their own as
+ * they go (after(), emitters) starts and ends in order too; what came before
+ * is moved on at once, the way setup() moves on what waited for the renderer.
+ */
+function caughtUp() {
+  if (hiddenAt === null) return;
+  const away = (performance.now() - hiddenAt) / 1000;
+  hiddenAt = null;
+  if (!renderer || !pool || manualClock !== null) return;
+  const skip = away - CATCH_UP;
+  if (skip > 0) {
+    shapes = shapes.filter((s) => {
+      s.age += skip;
+      return !s.stopped && !(s.age >= s.life);
+    });
+    for (const t of tasks) t.age += skip;
+    for (let left = skip; left > 0 && pool.count; left -= 1 / 15) pool.step(Math.min(left, 1 / 15));
+  }
+  const nowMs = performance.now();
+  let busy = true;
+  for (let left = Math.min(away, CATCH_UP); left > 0 && busy; left -= 1 / 15) busy = simulate(Math.min(left, 1 / 15), nowMs, false);
+  last = nowMs;
+  if (busy) wake();
+  else {
+    renderer.clear();
+    show(false);
+  }
+}
+
 /** Starts the overlay on `c`. Returns a cleanup function. */
 export function startFx(c: HTMLCanvasElement): () => void {
   canvas = c;
@@ -911,6 +955,12 @@ export function startFx(c: HTMLCanvasElement): () => void {
     for (const l of listeners) l(userOn);
   };
   reduce?.addEventListener('change', onMotion);
+  hiddenAt = document.hidden ? performance.now() : null;
+  const onVisibility = () => {
+    if (!document.hidden) caughtUp();
+    else hiddenAt ??= performance.now();
+  };
+  document.addEventListener('visibilitychange', onVisibility);
   // Phones often drop the context while the tab is in the background.
   // preventDefault() asks the browser to give it back; then everything is
   // built again on it. (The old renderer's objects died with the context, and
@@ -929,6 +979,8 @@ export function startFx(c: HTMLCanvasElement): () => void {
   c.addEventListener('webglcontextrestored', onRestored);
   return () => {
     reduce?.removeEventListener('change', onMotion);
+    document.removeEventListener('visibilitychange', onVisibility);
+    hiddenAt = null;
     c.removeEventListener('webglcontextlost', onLost);
     c.removeEventListener('webglcontextrestored', onRestored);
     renderer?.destroy();

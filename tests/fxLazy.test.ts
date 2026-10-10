@@ -106,7 +106,12 @@ function fakeGl(parallel: boolean) {
   return { gl: gl as WebGL2RenderingContext, log, state };
 }
 
+/** The page's own listeners (visibilitychange). */
+const docOn: Record<string, () => void> = {};
 g.document = {
+  hidden: false,
+  addEventListener: (type: string, f: () => void) => (docOn[type] = f),
+  removeEventListener() {},
   documentElement: { hasAttribute: () => false },
   body: {},
   createElement: () => ({ width: 0, height: 0, getContext: () => new Proxy({}, { get: () => () => ({}) }) }),
@@ -287,6 +292,61 @@ test('what was asked for meanwhile goes on from where it would be by now; what r
     kept.stop(0);
     stop();
   } finally {
+    performance.now = real;
+  }
+});
+
+test('what is asked for in a background tab plays out of sight: back, everything is where it would be by now, and nothing plays all at once', () => {
+  const real = performance.now;
+  let t = real.call(performance);
+  performance.now = () => t;
+  const doc = g.document as { hidden: boolean };
+  const away = (hidden: boolean) => {
+    doc.hidden = hidden;
+    docOn.visibilitychange();
+  };
+  try {
+    const o = overlay();
+    const stop = fx.startFx(o.canvas);
+    const kept = glow();
+    askFloat();
+    frame();
+    o.ctx.state.done = true;
+    readSix();
+    frame();
+    const ages = new Map<string, number>();
+    const flash = (name: string, life: number) =>
+      fx.shape({ type: ShapeType.Flash, at: { x: 0, y: 0 }, life, color: [1, 1, 1], update: (f, _, age) => (ages.set(name, age), (f.k = 1)) });
+    flash('before', 2);
+    away(true);
+    t += 1000;
+    flash('done', 1);
+    flash('long', 100);
+    let chained = false;
+    fx.after(0.5, () => {
+      chained = true;
+      flash('chained', 1);
+    });
+    fx.shakeView(1);
+    assert.ok(!fx.shaking(), 'no shake out of sight');
+    t += 59_000;
+    away(false);
+    // Moved on by the whole minute: what ran its course is gone, the rest
+    // is as old as it would be by now (to a frame), and what it set off went too.
+    assert.equal(fx.fxStats().shapes, 2, 'the endless one and the long one');
+    assert.ok(Math.abs(ages.get('long')! - 59) < 0.1, `long: ${ages.get('long')}`);
+    assert.ok(chained, 'what it set off happened');
+    assert.ok(fx.fxStats().running, 'and the rest goes on playing');
+    // A short trip: played out frame by frame, the same.
+    flash('soon', 3);
+    away(true);
+    t += 2000;
+    away(false);
+    assert.ok(Math.abs(ages.get('soon')! - 2) < 0.1, `soon: ${ages.get('soon')}`);
+    kept.stop(0);
+    stop();
+  } finally {
+    doc.hidden = false;
     performance.now = real;
   }
 });
