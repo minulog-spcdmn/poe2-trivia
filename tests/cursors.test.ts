@@ -31,7 +31,7 @@ const bytes = (m: unknown) => {
 };
 
 test('every anchor has a code of its own, and back', () => {
-  const names = ['game', 'art', ...['opt', 'card', 'row'].flatMap((l) => Array.from({ length: 16 }, (_, i) => `${l}:${i}`))];
+  const names = ['game', 'art', 'next', ...['opt', 'card', 'row'].flatMap((l) => Array.from({ length: 16 }, (_, i) => `${l}:${i}`))];
   const codes = names.map((n) => anchorCode(n));
   assert.equal(new Set(codes).size, names.length);
   for (const [i, n] of names.entries()) {
@@ -41,7 +41,7 @@ test('every anchor has a code of its own, and back', () => {
   // A scoreboard row for every seat.
   assert.ok(MAX_PLAYERS <= 16);
   for (const n of ['', 'opt', 'opt:16', 'opt:-1', 'opt:01x', 'stage', 'row:1:2']) assert.equal(anchorCode(n), null, n);
-  for (const c of [2, 15, MAX_ANCHOR + 1, -1]) assert.equal(anchorName(c), null, String(c));
+  for (const c of [3, 15, MAX_ANCHOR + 1, -1]) assert.equal(anchorName(c), null, String(c));
 });
 
 test('a pointer from a guest is checked like any message', () => {
@@ -54,7 +54,7 @@ test('a pointer from a guest is checked like any message', () => {
     undefined,
     [16, 0, 0],
     [16, 0, 0, 0, 0],
-    [2, 0, 0, 0], // no such anchor
+    [3, 0, 0, 0], // no such anchor
     [MAX_ANCHOR + 1, 0, 0, 0],
     [16, -1, 0, 0],
     [16, 0, SCALE + 1, 0],
@@ -107,6 +107,19 @@ test('the outbox keeps only the newest of each pointer, for each guest', () => {
   box.put(['a', 16, 1, 1, 0], ['g3']);
   box.drop('g3');
   assert.equal(box.waiting, false);
+  // A click quicker than a batch: the press goes, then the letting go, in the batch after.
+  box.put(['a', 16, 5, 5, 0], ['g1']);
+  box.put(['a', 16, 5, 5, 2], ['g1']);
+  box.put(['a', 16, 6, 5, 0], ['g1']);
+  box.put(['a', 16, 9, 5, 0], ['g1']);
+  assert.deepEqual(box.take('g1'), [['a', 16, 5, 5, 2]]);
+  assert.ok(box.waiting);
+  assert.deepEqual(box.take('g1'), [['a', 16, 9, 5, 0]]);
+  assert.equal(box.waiting, false);
+  // Held down a while, it moves pressed: the newest of that.
+  box.put(['a', 16, 1, 1, 2], ['g1']);
+  box.put(['a', 16, 2, 2, 2], ['g1']);
+  assert.deepEqual(box.take('g1'), [['a', 16, 2, 2, 2]]);
 });
 
 test('a full room of moving pointers stays small, and within the frame budget', () => {

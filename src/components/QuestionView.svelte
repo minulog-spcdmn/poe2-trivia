@@ -839,6 +839,7 @@
       <button
         class="btn"
         class:primary={canNext}
+        data-cursor="next"
         data-sfx="none"
         disabled={!canNext}
         title={canNext ? undefined : race ? 'The host moves the race on' : coop ? 'The team moves the run on' : `${active.name} or the host moves on`}

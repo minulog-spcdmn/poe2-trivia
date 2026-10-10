@@ -59,6 +59,8 @@
   /** The mouse is over the page; its main button is held. */
   let over = false;
   let held = false;
+  /** Pressed since the last update: sent as pressed even if let go meanwhile (a click is quicker than an update). */
+  let clicked = false;
   let dirty = false;
   let timer: ReturnType<typeof setTimeout> | null = null;
   /** What was sent last, so a pointer that stays put isn't sent again. */
@@ -68,7 +70,8 @@
     timer = null;
     if (!dirty) return;
     dirty = false;
-    const at = pointing && over ? anchorAt(x, y, held ? PRESSED : MOUSE) : null;
+    const at = pointing && over ? anchorAt(x, y, held || clicked ? PRESSED : MOUSE) : null;
+    clicked = false;
     const key = JSON.stringify(at);
     if (key !== sent) {
       sent = key;
@@ -101,6 +104,7 @@
     const press = (e: PointerEvent, on: boolean) => {
       if (e.pointerType !== 'mouse' || e.button !== 0 || held === on) return;
       held = on;
+      if (on) clicked = true;
       poke();
     };
     const down = (e: PointerEvent) => press(e, true);

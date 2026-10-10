@@ -78,7 +78,8 @@ export const FLUSH_EVERY_MS = 100;
 
 /** Anchors that come in lists (by index, the same on every screen) take the codes from their base up. */
 const LISTS = { opt: 16, card: 32, row: 48 } as const;
-const SINGLES: Record<string, number> = { game: GAME_ANCHOR, art: 1 };
+/** `next`: the button that moves on after a reveal (a host or the player whose turn it was presses it). */
+const SINGLES: Record<string, number> = { game: GAME_ANCHOR, art: 1, next: 2 };
 const LIST_SIZE = 16;
 export const MAX_ANCHOR = LISTS.row + LIST_SIZE - 1;
 
@@ -160,32 +161,50 @@ export function parseCursorBatch(v: unknown): CursorEntry[] | null {
 /**
  * Host: what each guest (`K`, its connection) is still to be sent, the latest
  * of each pointer only. A guest whose link is backed up is simply sent it
- * later, by which time older moves have been replaced by newer ones.
+ * later, by which time older moves have been replaced by newer ones. A press
+ * (or a tap) is never replaced before it has gone, though: a click is over
+ * quicker than a batch comes, and would never be seen.
  */
 export class CursorOutbox<K> {
   private pending = new Map<K, Map<string, CursorEntry>>();
+  /** What came after a press not sent yet: it goes in the batch after, so the press is seen (a click is quicker than a batch). */
+  private after = new Map<K, Map<string, CursorEntry>>();
 
   put(entry: CursorEntry, to: Iterable<K>) {
     for (const k of to) {
       let m = this.pending.get(k);
       if (!m) this.pending.set(k, (m = new Map()));
-      m.set(entry[0], entry);
+      const was = m.get(entry[0]);
+      const marks = (e: CursorEntry | undefined) => !!e && e.length > 1 && (e[4] === PRESSED || e[4] === TAP);
+      if (marks(was) && !(entry.length > 1 && entry[4] === was![4])) {
+        let a = this.after.get(k);
+        if (!a) this.after.set(k, (a = new Map()));
+        a.set(entry[0], entry);
+      } else {
+        m.set(entry[0], entry);
+        this.after.get(k)?.delete(entry[0]);
+      }
     }
   }
 
-  /** What `k` is to be sent now, which is then no longer pending; null when nothing is. */
+  /** What `k` is to be sent now, which is then no longer pending (what was held back after a press is, for next time); null when nothing is. */
   take(k: K): CursorEntry[] | null {
     const m = this.pending.get(k);
     this.pending.delete(k);
+    const a = this.after.get(k);
+    this.after.delete(k);
+    if (a?.size) this.pending.set(k, a);
     return m?.size ? [...m.values()] : null;
   }
 
   drop(k: K) {
     this.pending.delete(k);
+    this.after.delete(k);
   }
 
   clear() {
     this.pending.clear();
+    this.after.clear();
   }
 
   get waiting() {
