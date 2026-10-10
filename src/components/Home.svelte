@@ -333,7 +333,7 @@
   let inviteField = $state<HTMLInputElement>();
   function joinInvite(e?: Event) {
     e?.preventDefault();
-    const n = known || checkName(inviteName, inviteField);
+    const n = checkName(inviteName, inviteField);
     if (!n) return;
     startJoin(invite, n);
   }
@@ -347,6 +347,20 @@
   $effect(() => {
     if (session.state && invite) leaveInvite();
   });
+  // The invite screen is for a first visit, when there is no name yet. A
+  // player with a name goes straight on to the room: the start page shows the
+  // join on its way in Join a room's row, and a join that fails leaves the
+  // code there with the toast, to try again. Not over a game being resumed
+  // (App resumes it on mount, after this).
+  if (invite && known && !nameTooShort(known) && !nameHeld(known)) {
+    const code = invite;
+    const name = known;
+    leaveInvite();
+    cursor = ENTRIES.indexOf('join');
+    setTimeout(() => {
+      if (session.status === 'idle' && !session.state) startJoin(code, name);
+    });
+  }
 
   const MENU: Record<Entry, string> = {
     create: 'Create a room',
@@ -411,7 +425,7 @@
         <MenuCursor at={cursor} {lit} />
         {#if invite}
           <div class="entry" role="presentation" class:cur={cursor === 0} onpointerenter={(ev) => hover(ev, 0)} onpointerleave={leave} in:fly={{ y: 12, duration: 500, delay: 450 }}>
-            <button class="pick" bind:this={entryEls[0]} onclick={() => (inviteField ? inviteField.focus() : joinInvite())} onfocus={() => (cursor = 0)}>
+            <button class="pick" bind:this={entryEls[0]} onclick={() => inviteField?.focus()} onfocus={() => (cursor = 0)}>
               {inviteHost ? `Join ${inviteHost}’s room` : 'Join the room'}
             </button>
             <div class="under">
@@ -419,11 +433,9 @@
                 <div class="slot" in:fly={SWAP_IN} out:fade={SWAP_OUT}><Connecting /></div>
               {:else}
                 <form class="slot row" onsubmit={joinInvite} in:fly={SWAP_IN} out:fade={SWAP_OUT}>
-                  {#if !known}
-                    <!-- svelte-ignore a11y_autofocus -->
-                    <input class="field name" bind:this={inviteField} bind:value={inviteName} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="nickname" spellcheck="false" autofocus />
-                  {/if}
-                  <button class="btn primary" type="submit">{known ? 'Join the room' : 'Join'}</button>
+                  <!-- svelte-ignore a11y_autofocus -->
+                  <input class="field name" bind:this={inviteField} bind:value={inviteName} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="nickname" spellcheck="false" autofocus />
+                  <button class="btn primary" type="submit">Join</button>
                 </form>
               {/if}
             </div>
@@ -492,7 +504,7 @@
 
     <div class="today" in:fade={{ duration: 900, delay: 300 }}>
       {#if invite}
-        <InviteRoom code={invite} host={inviteHost} name={known || inviteName} />
+        <InviteRoom code={invite} host={inviteHost} name={inviteName} />
       {:else}
         <DailyUnique />
       {/if}
