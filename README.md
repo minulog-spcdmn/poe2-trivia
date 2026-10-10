@@ -931,6 +931,9 @@ it apart from the live game:
   other modules off storage); only the creator unlock is shared
 - it says Beta on the start page, in the header and in the tab title, and
   asks search engines not to index it
+- adding `&first` to an invite link (`?room=CODE&first`) shows the invite
+  screen as a first visit sees it, with a name saved (the dev server too):
+  the saved name is set aside for that visit, not erased
 
 ### The lab
 

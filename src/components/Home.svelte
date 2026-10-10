@@ -35,8 +35,14 @@
     history.replaceState(history.state, '', url);
   }
 
+  /**
+   * Beta and dev server only: ?room=CODE&first shows an invite as a first
+   * visit sees it, to test it with a name saved; for this visit the saved
+   * name is set aside (nothing saved changes, unless you join).
+   */
+  const firstLook = (BETA || LOCAL) && !!params.get('room') && params.has('first');
   /** The name this browser plays under; empty on a first visit (it is asked once, then greeted). */
-  let known = $state(savedName().trim());
+  let known = $state(firstLook ? '' : savedName().trim());
 
   // A delver's shared link (?delve): someone who has played here before (a
   // name is saved) goes straight into a run alone; anyone else finds Delve
@@ -345,7 +351,7 @@
   // An invite is the start page with the choice already made: the menu holds
   // the one room to join (and a way to everything else), the right-hand
   // column the room as the lobby will show it (InviteRoom).
-  let inviteName = $state(savedName());
+  let inviteName = $state(firstLook ? '' : savedName());
   /** What the room said when asked: its info, 'gone', null (no answer), or undefined while asking. */
   let inviteInfo = $state<RoomInfo | 'gone' | null | undefined>(undefined);
   const inviteHost = $derived(inviteInfo && inviteInfo !== 'gone' ? inviteInfo.host : '');
@@ -361,6 +367,7 @@
     url.searchParams.delete('room');
     // Older invite links named their host (?by=): the room says that now.
     url.searchParams.delete('by');
+    url.searchParams.delete('first');
     history.replaceState(history.state, '', url);
     invite = '';
   }
