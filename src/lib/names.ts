@@ -106,6 +106,20 @@ export function nameTooShort(name: string): boolean {
 
 export const NAME_TOO_SHORT = `Names need at least ${MIN_NAME} characters.`;
 
+/** Why a name was turned down: the reason to show, or null for the held name, which is refused without saying why. */
+export type NameRefusal = { reason: string | null };
+
+/** Why this device can't play under a name (other players' names aside), or null when it's fine. */
+export function nameRefusal(name: string): NameRefusal | null {
+  const clean = cleanName(name);
+  if (nameHeld(clean)) return { reason: null };
+  const reason = nameProblem(clean, []);
+  return reason ? { reason } : null;
+}
+
+/** Whether this device can play under a name: long enough, not reserved, not held. */
+export const nameUsable = (name: string) => nameRefusal(name) === null;
+
 /** Returns why a name is not allowed, or null if it's fine. */
 export function nameProblem(name: string, others: string[]): string | null {
   if (!name) return 'Please enter a name with at least one letter or number.';

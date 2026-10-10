@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onDestroy, tick, untrack } from 'svelte';
   import { fade, fly } from 'svelte/transition';
-  import { NAME_TOO_SHORT, MAX_NAME, nameHeld, nameTooShort, unlockHeldName } from '../lib/names';
+  import { MAX_NAME, cleanName, nameRefusal, nameUsable, unlockHeldName } from '../lib/names';
+  import { refuseName } from '../lib/nameField';
   import { toasts } from '../lib/toasts.svelte';
   import { engine, session, savedName, saveName, CODE_LENGTH } from '../lib/session.svelte';
   import { CREATOR, CREATOR_URL, DONATE_URL, IMPRINT_URL, PRIVACY_URL } from '../lib/site';
@@ -56,7 +57,7 @@
     // Either way Delve is on its way: the backdrop gets its Delve programs ready.
     wantDelveBackdrop();
     const n = savedName().trim();
-    if (n && !nameTooShort(n) && !nameHeld(n))
+    if (nameUsable(n))
       setTimeout(() => {
         if (session.status === 'idle' && !session.state) session.startDelve(n);
       });
@@ -88,12 +89,10 @@
   /** A name fit to play under (saved, and the greeting's from now on), or null after saying what's wrong with it. */
   function checkName(raw: string, field: HTMLInputElement | undefined): string | null {
     const n = raw.trim();
-    if (!n || nameTooShort(n) || nameHeld(n)) {
-      if (n && nameTooShort(n)) toasts.show(NAME_TOO_SHORT, 'error', { title: 'Name too short' });
-      if (field) {
-        refuse(field);
-        field.focus();
-      }
+    const refusal = nameRefusal(n);
+    if (refusal) {
+      // (An empty field is refused without a word.)
+      refuseName(field ?? null, n ? refusal : { reason: null }, () => {});
       return null;
     }
     saveName(n);
@@ -108,7 +107,7 @@
    */
   function knownName(): string | null {
     if (!known) return null;
-    if (!nameTooShort(known) && !nameHeld(known)) return known;
+    if (nameUsable(known)) return known;
     known = '';
     return null;
   }
@@ -152,6 +151,18 @@
   let codeError = $state(false);
   let nameField = $state<HTMLInputElement>();
   let codeField = $state<HTMLInputElement>();
+
+  /**
+   * Hot-seat starts with the saved name already in. It needs no name, so
+   * nothing here is refused: with none it opens with nobody in, and a name
+   * that can't be used waits in the lobby's add field.
+   */
+  function local() {
+    const n = cleanName(known);
+    if (n) session.startLocalAs(n);
+    else session.startLocal();
+  }
+
   /** The entry that set off the connection, whose row shows it. */
   let busy = $state<Entry | null>(null);
 
@@ -160,7 +171,7 @@
     cursor = ENTRIES.indexOf(e);
     rememberEntry(e);
     renaming = false;
-    if (e === 'hotseat') return session.startLocal();
+    if (e === 'hotseat') return local();
     if (e === 'codex') return openCodex();
     if (e === 'create' && knownName()) return host();
     open = e;
@@ -381,7 +392,7 @@
   // code there with the toast, to try again. Not over a game being resumed
   // (App resumes it on mount, after this).
   const opened = untrack(() => ({ code: invite, name: known }));
-  if (opened.code && opened.name && !nameTooShort(opened.name) && !nameHeld(opened.name)) {
+  if (opened.code && nameUsable(opened.name)) {
     const { code, name } = opened;
     leaveInvite();
     cursor = ENTRIES.indexOf('join');

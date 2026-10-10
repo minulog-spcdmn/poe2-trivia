@@ -33,7 +33,7 @@ import { PEER_OPTIONS, PEER_PREFIX } from './peer';
 import { Beacon, ProbeDesk, isProbe, type RoomInfo } from './rooms';
 import { parseClientMsg, parseHostMsg, PROTOCOL_VERSION, RateLimit, versionProblem, versionRefusal, type HostMsg, type MediaMsg } from './protocol';
 import { capped, FrameGuard, hookFrames, JoinGate, roomSecret } from './guard';
-import { cleanName, nameSkeleton } from './names';
+import { cleanName, nameSkeleton, nameUsable } from './names';
 import { prepareMedia, shown, type PreparedMedia } from './media.svelte';
 import { sfx } from './sound';
 import { prefsFrom, roomPrefs, roomSettings, savePrefs } from './prefs';
@@ -182,6 +182,8 @@ export const saveName = (name: string) => void writeStored('name', name);
 const mySecret = stored('secret', () => randomToken(32));
 /** This page load (tabs share the secret; the host tells them apart by this). */
 const myTab = randomToken(16);
+/** A new player's id, online or on this device. */
+const newPlayerId = () => randomToken(12);
 
 /** Host-side bookkeeping for one guest connection. */
 interface Guest {
@@ -428,7 +430,32 @@ class Session {
     this.reset();
     this.mode = 'local';
     this.status = 'ready';
+    this.lobbyDraft = '';
     this.setState(resume ?? createGame(null, delve ? { ...DEFAULT_SETTINGS, mode: 'delve' } : undefined));
+  }
+
+  /** What the hot-seat lobby's add field starts with: the name a new game couldn't seat. The lobby takes it. */
+  lobbyDraft = '';
+
+  /**
+   * A fresh hot-seat game with `name` seated first. A name this device can't
+   * play under (too short, reserved, held) doesn't hold the game up: it waits
+   * in the lobby's add field, where adding it says why.
+   */
+  startLocalAs(name: string) {
+    this.startLocal();
+    if (!nameUsable(name) || !this.seatLocal(name)) this.lobbyDraft = name;
+  }
+
+  /**
+   * Seats a player on this device (hot-seat); false when the game turned
+   * them down (and said why). The id comes from getRandomValues, which,
+   * unlike randomUUID, also works on plain http.
+   */
+  seatLocal(name: string): boolean {
+    const playerId = newPlayerId();
+    this.dispatch({ type: 'join', playerId, name });
+    return !!this.state?.players.some((p) => p.id === playerId);
   }
 
   /**
@@ -438,12 +465,12 @@ class Session {
    */
   delveLink = false;
 
-  /** A Delve run alone on this device, straight from a shared link. */
+  /** A Delve run alone on this device, straight from a shared link. Nothing changes for a name that can't be played under. */
   startDelve(name: string) {
+    if (!nameUsable(name)) return;
     this.delveLink = true;
     this.startLocal();
-    this.dispatch({ type: 'join', playerId: crypto.randomUUID(), name });
-    this.dispatch({ type: 'start' });
+    if (this.seatLocal(name)) this.dispatch({ type: 'start' });
   }
 
   /** Picks up a hot-seat game or a hosted room after a page refresh. */
@@ -762,7 +789,7 @@ class Session {
       this.dismiss(conn, { t: 'busy', message: busy });
       return;
     }
-    const playerId = known ?? randomToken(12);
+    const playerId = known ?? newPlayerId();
     let next: GameState;
     try {
       if (!known && this.priv.bannedNames.includes(nameSkeleton(cleanName(name))))
