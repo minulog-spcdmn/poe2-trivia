@@ -11,7 +11,7 @@
   import { playerColor } from '../lib/ui';
   import { portal } from '../lib/portal';
   import { setCursorColor } from '../lib/ownCursor';
-  import { HAND, PAD_X, PAD_Y, POINTER, PRESS_SCALE, SIZE, WEIGHT } from '../lib/pointerArt';
+  import { HAND, HAND_PRESSED, PAD_X, PAD_Y, POINTER, PRESS_SCALE, SIZE, WEIGHT } from '../lib/pointerArt';
 
   /** How quickly a pointer catches up with where it was last heard to be (ms to cover about 2/3 of the way). */
   const GLIDE_MS = 70;
@@ -240,7 +240,8 @@
     <div class="cursor" bind:this={els[c.key]} style:--c={c.color}>
       <!-- The dart (lib/pointerArt.ts) with its tip on the spot: a dark rim and ground, a glow under the lines. -->
       <!-- The dart (lib/pointerArt.ts) with its tip on the spot: a dark rim and ground, a glow under the lines.
-           Over a button, the hand pointing instead; pressed (or a tap), the dart or the hand sinks, the dart's hatched side or the hand's finger struck solid. -->
+           Over a button, the hand pointing instead; pressed (or a tap), the dart sinks, its hatched side struck solid,
+           and the hand pushes its finger into the page, foreshortened and struck solid. -->
       <svg class="dart" viewBox="{-PAD_X} {-PAD_Y} {SIZE[0]} {SIZE[1]}" width={SIZE[0]} height={SIZE[1]}>
         <g class="body">
           <path class="ground" d={POINTER.outline} stroke-width={WEIGHT.rim} />
@@ -252,14 +253,15 @@
           <path class="line hatch" d={POINTER.hatch} stroke-width={WEIGHT.hatch} />
         </g>
         <!-- The hand is drawn plain (lib/pointerArt.ts Art): fine lines, no glow, its talon struck solid. -->
-        <g class="hand">
-          <path class="ground" d={HAND.outline} stroke-width="2.4" />
-          <path class="talon" d={HAND.talon} />
-          <path class="side" d={HAND.finger} />
-          <path class="line" d={HAND.outline} stroke-width="0.8" />
-          <path class="line" d={HAND.creases} stroke-width="0.6" />
-          <path class="line hatch" d={HAND.shade} stroke-width="0.45" />
-        </g>
+        {#each [HAND, HAND_PRESSED] as h, i (i)}
+          <g class="hand" class:down={i === 1}>
+            <path class="ground" d={h.outline} stroke-width="2.4" />
+            <path class="talon" d={i === 1 ? h.finger : h.talon} />
+            <path class="line" d={h.outline} stroke-width="0.8" />
+            <path class="line" d={h.creases} stroke-width="0.6" />
+            <path class="line hatch" d={h.shade} stroke-width="0.45" />
+          </g>
+        {/each}
       </svg>
       <span class="name">{c.name}</span>
     </div>
@@ -328,21 +330,22 @@
     opacity: 0.5;
     stroke-width: 2.6;
   }
-  /* Over something that can be clicked: the hand instead of the dart. */
+  /* Over something that can be clicked: the hand instead of the dart, pressing when the button is held. */
   .hand,
-  .cursor:global(.lit) .body {
+  .cursor:global(.lit) .body,
+  .cursor:global(.lit.pressed) .hand:not(.down) {
     display: none;
   }
-  .cursor:global(.lit) .hand {
+  .cursor:global(.lit) .hand:not(.down),
+  .cursor:global(.lit.pressed) .hand.down {
     display: inline;
   }
-  /* The button held, or a tap: the dart or the hand sinks about its tip, the dart's hatched side or the hand's finger struck solid. */
+  /* The button held, or a tap: the dart sinks about its tip, its hatched side struck solid. */
   /* Sharp claws would throw long mitres: the hand's corners are rounded. */
   .hand {
     stroke-linejoin: round;
   }
-  .body,
-  .hand {
+  .body {
     transform-origin: 0 0;
     transition: transform 0.12s var(--ease-out);
   }
@@ -354,7 +357,6 @@
     opacity: 0;
   }
   .cursor:global(.pressed) .body,
-  .cursor:global(.pressed) .hand,
   .cursor:global(.tap) .body {
     transform: scale(var(--press));
   }

@@ -41,8 +41,9 @@ export const SIZE: Pt = [28, 32];
 /** Line weights (CSS px): fine and even, as cut. */
 export const WEIGHT = { outline: 1.05, ridge: 0.8, hatch: 0.55, fine: 0.7, rim: 3 };
 
-/** Pressed, the dart sinks this much about its tip. */
+/** Pressed, the dart sinks this much about its tip, and the hand's finger is foreshortened by this much (units). */
 export const PRESS_SCALE = 0.86;
+const PRESS_SHORTEN = 2.6;
 
 /** Where a disabled pointer's saltire sits beside the tip, clear of the dart. */
 export const BADGE: Pt = [11.2, 3.2];
@@ -63,11 +64,16 @@ const quad = (a: Pt, c: Pt, b: Pt, n: number): Pt[] =>
  * talon's shading; the talon whole (struck solid) and the pointing finger
  * whole (struck solid when pressed).
  */
-function hand(k = 1) {
+function hand(k = 1, pressing = false) {
   const TURN = (-12 * Math.PI) / 180;
   const ACROSS = 0.8;
+  // Pressing, the finger pushes into the page: foreshortened, the talon a little and the finger
+  // below it a lot, the hand coming up behind it, while the talon's tip stays on the spot.
+  const TALON = 4.2;
+  const press = ([x, y]: Pt): Pt => (!pressing ? [x, y] : y <= TALON ? [x, y * 0.82] : [x, y - TALON * 0.18 - PRESS_SHORTEN]);
   // Drawn upright with the talon's tip at (6, 0), then moved onto the origin, narrowed and turned.
-  const at = ([x, y]: Pt): Pt => {
+  const at = (p: Pt): Pt => {
+    const [x, y] = press(p);
     const [u, v] = [(x - 6) * k * ACROSS, y * k];
     return [u * Math.cos(TURN) - v * Math.sin(TURN), u * Math.sin(TURN) + v * Math.cos(TURN)];
   };
@@ -132,7 +138,9 @@ const dartLines = (d: { outline: string; ridge: string; hatch: string }, k = 1):
 
 const pressed = dart(LEAN, PRESS_SCALE);
 export const HAND = hand();
-const pressedHand = hand(PRESS_SCALE);
+/** The hand pressing: its finger foreshortened, pushing into the page. */
+export const HAND_PRESSED = hand(1, true);
+const pressedHand = HAND_PRESSED;
 /** The hand's lines: finer than the dart's, so its small claws stay clear at its size (and drawn `plain`, see Art). */
 const handLines = (h: ReturnType<typeof hand>): Art['lines'] => [
   { d: h.talon, w: 0, solid: true },
@@ -174,7 +182,7 @@ export const ART = {
   rest: { size: SIZE, hot: [PAD_X, PAD_Y], ground: POINTER.outline, lines: dartLines(POINTER) },
   // Over something that can be clicked: the hand, pointing.
   hover: { size: SIZE, hot: [PAD_X, PAD_Y], ground: HAND.outline, lines: handLines(HAND), plain: true },
-  // Pressed on it: the hand sunk, its pointing finger struck solid.
+  // Pressed on it: the finger pushing into the page, foreshortened, struck solid.
   press: {
     size: SIZE,
     hot: [PAD_X, PAD_Y],
