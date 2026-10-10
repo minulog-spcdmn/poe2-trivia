@@ -658,35 +658,38 @@ export function edgeGlow(o: { color?: Vec3; width?: number; life?: number; inten
 }
 
 /**
- * One beat of red at the screen's edges, as the clock ticks, as if the
- * screen were a bloodshot eye: a flush and veins in from the edges, up at
- * once and dying away with the tick's sound, in place. `width`: how far in
- * the flush reaches (px, on a window 720 px across its short side; it
- * scales with the window, so a big screen sees the same as a small one).
- * `veins`: how far in they reach, in widths (0 none); `pattern`: which
- * veins (the same for every tick of one countdown); `rim`: a hot line
+ * One beat of red smoke at the screen's edges, as the clock ticks: up at
+ * once and swelling down with the tick's sound, then lingering faintly into
+ * the next, where it is (nothing rushes in). `width`: how far in it reaches
+ * (px, on a window 720 px across its short side; it scales with the window,
+ * so a big screen sees the same as a small one). `smoke` (0 none): its
+ * wisps; `pattern` and `clock` (s): which smoke, and how far it has
+ * drifted, so the beats of one countdown show one smoke; `rim`: a hot line
  * along the very edge.
  */
-export function edgeBeat(o: { color?: Vec3; width?: number; intensity?: number; veins?: number; pattern?: number; rim?: number } = {}) {
-  const life = 0.8;
+export function edgeBeat(o: { color?: Vec3; width?: number; intensity?: number; smoke?: number; pattern?: number; clock?: number; rim?: number } = {}) {
+  const life = 1.4;
   return shape({
     type: ShapeType.Edge,
     at: { x: innerWidth / 2, y: innerHeight / 2 },
     life,
     color: o.color ?? C.crimson,
-    update(f, _t, age, b) {
+    update(f, t, age, b) {
       b.x = innerWidth / 2;
       b.y = innerHeight / 2;
       f.hw = innerWidth / 2;
       f.hh = innerHeight / 2;
       const rise = 0.035;
-      const env = age < rise ? Math.sin(((age / rise) * Math.PI) / 2) ** 2 : Math.exp(-(age - rise) / 0.2);
-      f.k = (o.intensity ?? 0.06) * env;
+      const beat = age < rise ? Math.sin(((age / rise) * Math.PI) / 2) ** 2 : Math.exp(-(age - rise) / 0.2);
+      // What lingers, gone by the end of its life.
+      const linger = 0.3 * Math.min(1, age / rise) * Math.exp(-age / 0.9) * (1 - t * t);
+      f.k = (o.intensity ?? 0.06) * (beat + linger);
       f.q[0] = (o.width ?? 60) * Math.max(0.7, Math.min(2.2, Math.min(innerWidth, innerHeight) / 720));
       f.q[1] = 0.6;
-      f.q[2] = o.veins ?? 0;
+      f.q[2] = o.smoke ?? 0;
       f.q[3] = o.pattern ?? 0;
-      f.q[4] = (o.rim ?? 0) * env;
+      f.q[4] = (o.rim ?? 0) * beat;
+      f.q[5] = (o.clock ?? 0) + age;
     },
   });
 }

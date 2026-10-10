@@ -340,31 +340,6 @@ float pnoise(vec2 p, float period) {
   return mix(mix(hash12(vec2(x0, i.y)), hash12(vec2(x1, i.y)), u.x),
              mix(hash12(vec2(x0, i.y + 1.0)), hash12(vec2(x1, i.y + 1.0)), u.x), u.y);
 }
-// Bloodshot veins: one vessel to each of n cells round the screen (a: 0 to
-// n round it, y: depth in from the edge, in the glow's widths). Each runs
-// in from the edge, wandering a little, forks in two partway in, thins out
-// and ends at its own length, reach widths at most.
-float vessels(float a, float y, float n, float reach, float seed) {
-  float wob = (pnoise(vec2(a * 0.5, y * 1.4 + seed), n * 0.5) - 0.5) * 0.9
-            + (pnoise(vec2(a * 2.0, y * 4.0 + seed * 1.7), n * 2.0) - 0.5) * 0.22;
-  float x = a + wob;
-  float id = mod(floor(x), n);
-  float f = fract(x);
-  float h1 = hash12(vec2(id, seed));
-  float h2 = hash12(vec2(id, seed + 3.7));
-  float h3 = hash12(vec2(id, seed + 8.1));
-  float t = y / max((0.45 + 0.55 * h2) * reach, 1e-3);
-  if (t >= 1.0) return 0.0;
-  // Where it runs in its cell, and the fork: the two branches part from it.
-  float m = 0.5 + (h1 - 0.5) * 0.3;
-  float yf = 0.25 + 0.3 * h3;
-  float s = smoothstep(yf, yf + 0.35, t);
-  float spread = 0.17 * s;
-  float off = min(abs(f - m + spread), abs(f - m - spread));
-  // Soft: blood under the surface, not a drawn line; few of them clear.
-  float wd = mix(0.11, 0.04, t) * mix(1.0, 0.8, s);
-  return exp(-(off * off) / (wd * wd)) * (1.0 - smoothstep(0.35, 1.0, t)) * (0.15 + 0.85 * h3 * h3);
-}
 // One ring of light shafts at u (turns, 0-1) and rn (radius, 0-1 of the
 // reach): n cells round the circle, one shaft in each, with its own width
 // (w, in cells), offset, reach and breathing. root widens them (in cells)
@@ -511,9 +486,9 @@ void main() {
     v = swirl + rim * 1.2 + exp(-rr * rr * 7.0) * 0.8;
     hot = exp(-rr * rr * 16.0) * 0.9 + rim * 0.2;
   } else if (type == 5) {
-    // Screen edge glow. q: width (px), noise, veins (how far in they reach,
-    // in widths; 0 none), the veins' pattern. r: heat (a line along the
-    // very edge).
+    // Screen edge glow. q: width (px), noise, smoke, the smoke's pattern.
+    // r: heat (the smoke's thickest threads, and a line along the very
+    // edge), the smoke's clock (s).
     vec2 e = max(vHalf - abs(vP), 0.0);
     // Each edge's light, joined as light adds up: brighter into the corners,
     // and round there, with no seam along the diagonal. Read back as a
@@ -521,26 +496,30 @@ void main() {
     vec2 ge = exp(-e / vQ.x);
     float g = 1.0 - (1.0 - ge.x) * (1.0 - ge.y);
     float d = -log(max(g, 1e-6)) * vQ.x;
-    float y = d / vQ.x;
-    if (g > 0.004) {
+    // The smoke hugs the edges, and fades out fast past its width.
+    float reach = exp(-pow(d / vQ.x, 1.6)) * vQ.z;
+    if (g > 0.004 || reach > 0.004) {
       // (Its patches scale with the width: about 250 px at 60.)
       float n = fbm(vP * (0.25 / vQ.x) + vec2(seed, time * 0.35));
-      v = g * mix(1.0, 0.3 + 1.4 * n, vQ.y);
-      if (vQ.z > 0.0) {
-        // Bloodshot: vessels in from the edges, and finer ones between
-        // them. Round the screen as if it were square, so they are spread
-        // about evenly, about one to every 1.4 widths of the edge.
-        vec2 sq = vP / vHalf;
-        float u = atan(sq.y, sq.x) / (2.0 * PI) + 0.5;
-        float N = 2.0 * max(2.0, floor(2.0 * (vHalf.x + vHalf.y) / (vQ.x * 1.4)));
-        float veins = vessels(u * N, y, N, vQ.z, vQ.w) + 0.5 * vessels(u * N * 2.0 + 0.37, y * 1.3, N * 2.0, vQ.z * 0.6, vQ.w + 11.0);
-        // The flush gathers along them: thin between them, reaching further
-        // in along them, never brighter than the flush at the edge.
-        float along = exp(-pow(y / vQ.z, 1.5) * 2.0);
-        v = mix(v, min(1.0, v * 0.45 + veins * along * 0.7), min(vQ.z, 1.0));
+      v = g * mix(1.0, 0.3 + 1.4 * n, vQ.y) * (1.0 - 0.6 * min(vQ.z, 1.0));
+      if (reach > 0.004) {
+        // Smoke along the edges, drifting on its own clock (the same for
+        // every beat of one countdown, so they all show one smoke): broad
+        // slow billows, and finer threads curling over them where it is
+        // thick. Thin, it is a deeper red; thick, warmer.
+        float tt = vR.y;
+        vec2 P = vP / (vQ.x * 0.8) + vQ.w * 7.0;
+        vec2 w = vec2(fbm(P * 0.45 + vec2(0.0, tt * 0.25)), fbm(P * 0.45 + vec2(5.2, 1.3 - tt * 0.2)));
+        float billow = smoothstep(0.35, 0.8, fbm(P * 0.55 + 1.6 * w + vec2(tt * 0.05, 0.0)));
+        float ridge = 1.0 - abs(2.0 * fbm(P * 1.1 + 2.4 * w + vec2(0.0, -tt * 0.12)) - 1.0);
+        float thread = pow(ridge, 6.0) * smoothstep(0.15, 0.6, billow);
+        float dens = (billow * 0.55 + thread * 0.8) * reach;
+        v += dens;
+        col *= mix(vec3(1.0), mix(vec3(0.75, 0.55, 0.6), vec3(1.05, 1.2, 1.12), clamp(dens * 1.5, 0.0, 1.0)), clamp(reach * 3.0, 0.0, 1.0));
+        hot = pow(ridge, 20.0) * billow * reach * vR.x;
       }
       // A hot line along the very edge.
-      hot = exp(-d / (vQ.x * 0.08)) * 0.5 * vR.x;
+      hot += exp(-d / (vQ.x * 0.08)) * 0.5 * vR.x;
     }
   } else if (type == 6) {
     // Soft radial flash. q: radius.
