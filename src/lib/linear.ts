@@ -2,6 +2,8 @@
 // shadows and fills (lib/backdropShadow.ts, lib/backdropDropShadow.ts): they
 // can only follow an element whose box stays flat on screen.
 
+import { zoomOf } from './stage.ts';
+
 export type Lin = [number, number, number, number]; // a b c d: x' = a x + c y, y' = b x + d y
 
 export const mul = (m: Lin, n: Lin): Lin => [
@@ -64,7 +66,7 @@ export function linearOf(node: HTMLElement, cache: Map<Element, Lin | null>): Li
     if (!own) return null;
     m = mul(own, m);
   }
-  // CSS zoom over it (the start page's and the lobby's stage, lib/stage.ts) scales it too.
-  const z = (node as HTMLElement & { currentCSSZoom?: number }).currentCSSZoom ?? 1;
+  // CSS zoom over it (the app's stage zoom, lib/stage.ts) scales it too.
+  const z = zoomOf(node);
   return z === 1 ? m : [m[0] * z, m[1] * z, m[2] * z, m[3] * z];
 }

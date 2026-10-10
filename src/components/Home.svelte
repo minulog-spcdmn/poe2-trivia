@@ -100,6 +100,18 @@
     return n;
   }
 
+  /**
+   * The saved name, if it can still be played under; otherwise it is let go
+   * (null), and the name is asked as on a first visit. A held name needs this
+   * device unlocked, and a name saved by an older build may be too short now.
+   */
+  function knownName(): string | null {
+    if (!known) return null;
+    if (!nameTooShort(known) && !nameHeld(known)) return known;
+    known = '';
+    return null;
+  }
+
   let renaming = $state(false);
   let draft = $state('');
   let renameField = $state<HTMLInputElement>();
@@ -149,7 +161,7 @@
     renaming = false;
     if (e === 'hotseat') return session.startLocal();
     if (e === 'codex') return openCodex();
-    if (e === 'create' && known) return host();
+    if (e === 'create' && knownName()) return host();
     open = e;
     await tick();
     (known ? codeField : nameField)?.focus();
@@ -204,7 +216,7 @@
 
   function host(e?: Event) {
     e?.preventDefault();
-    const n = known || checkName(nameInput, nameField);
+    const n = knownName() ?? checkName(nameInput, nameField);
     if (!n) return;
     busy = 'create';
     session.host(n);
@@ -212,8 +224,12 @@
 
   function join(e?: Event) {
     e?.preventDefault();
-    const n = known || checkName(nameInput, nameField);
-    if (!n) return;
+    const n = knownName() ?? checkName(nameInput, nameField);
+    if (!n) {
+      // A saved name just let go: the row now asks for one.
+      if (!nameField) void tick().then(() => nameField?.focus());
+      return;
+    }
     if (code.length < CODE_LENGTH) {
       codeError = true;
       if (codeField) refuse(codeField);
@@ -227,7 +243,8 @@
   /** A room joined from the Open rooms list: its row is Join's. */
   function joinListed(roomCode: string) {
     if (connecting) return;
-    if (!known) {
+    const n = knownName();
+    if (!n) {
       code = roomCode;
       open = 'join';
       cursor = ENTRIES.indexOf('join');
@@ -236,7 +253,7 @@
       return;
     }
     code = roomCode;
-    startJoin(roomCode, known);
+    startJoin(roomCode, n);
   }
 
   // A join that ends back here without a room (no such room, no answer):

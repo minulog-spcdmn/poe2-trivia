@@ -26,9 +26,10 @@ export function unzoomPin(node: Element) {
   const z = zoomOf(node);
   const style = (node as HTMLElement).style;
   if (z === 1 || !style?.transform) return;
+  // Svelte writes `translate(Xpx, Ypx)`; a browser may read it back without a zero Y.
   style.transform = style.transform.replace(
-    /translate\((-?[\d.]+(?:e-?\d+)?)px, (-?[\d.]+(?:e-?\d+)?)px\)$/,
-    (_, x: string, y: string) => `translate(${+x / z}px, ${+y / z}px)`,
+    /translate\((-?[\d.]+(?:e[-+]?\d+)?)px(?:, (-?[\d.]+(?:e[-+]?\d+)?)px)?\)$/,
+    (_, x: string, y?: string) => `translate(${+x / z}px, ${+(y ?? 0) / z}px)`,
   );
 }
 

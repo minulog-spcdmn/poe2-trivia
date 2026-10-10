@@ -131,11 +131,6 @@
   /** How long the outgoing screen takes to fade (the .screen transition below). */
   const SCREEN_OUT_MS = 150;
   /**
-   * The header comes and goes with the start page, but only once the
-   * outgoing screen has faded: in the meantime it would push that screen
-   * down (or let it jump up) by its own height.
-   */
-  /**
    * Every screen is scaled up alike on large windows (lib/stage.ts), header
    * and all, so moving between them never changes the scale. Set on the root,
    * for the shell and for what sits outside it (dialogs, toasts, overlays).
@@ -144,6 +139,11 @@
   let winH = $state(innerHeight);
   const zoom = $derived(stageZoom(winW, winH));
   $effect(() => document.documentElement.style.setProperty('--stage-zoom', String(zoom)));
+  /**
+   * The header comes and goes with the start page, but only once the
+   * outgoing screen has faded: in the meantime it would push that screen
+   * down (or let it jump up) by its own height.
+   */
   let headerOn = $state(untrack(() => screen !== 'home'));
   $effect(() => {
     const want = screen !== 'home';

@@ -64,7 +64,7 @@
   aria-live="polite"
 >
   {#if lost}
-    <div class="toast pinned {session.gaveUp ? 'error' : 'warn'}" in:fly={enter} out:fadeOut={{ duration: 200 }}>
+    <div class="toast pinned {session.gaveUp ? 'error' : 'warn'}" in:fly={enter} out:fade={{ duration: 200 }}>
       <span class="seal">
         {#if session.gaveUp}
           <span class="gem">{@render glyph('error')}</span>

@@ -657,10 +657,8 @@ export function edgeGlow(o: { color?: Vec3; width?: number; life?: number; inten
 /**
  * Fire burning on an element: flames rising off its top, licking up its
  * ends, for as long as it's up. `height` is how tall the flames reach, px;
- * `blue` (0-1) turns it from orange to a hotter blue.
- */
-/**
- * Fire rising off an element. `fadeIn`: seconds to full strength; `grow`:
+ * `blue` (0-1) turns it from orange to a hotter blue, and `tint` burns it in
+ * a colour of its own instead. `fadeIn`: seconds to full strength; `grow`:
  * seconds for the flames to rise from low to full height, as a fire catching
  * (0: at full height at once).
  */

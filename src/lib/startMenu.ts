@@ -6,10 +6,10 @@ import { readStored, writeStored } from './storage.ts';
 export type Entry = 'create' | 'join' | 'hotseat' | 'codex';
 export const ENTRIES: readonly Entry[] = ['create', 'join', 'hotseat', 'codex'];
 
-/** The cursor moved `step` entries along the menu, wrapping at either end. */
 /** The cursor's spring (lib/spring, MenuCursor.svelte): settles in about a quarter second, a hair past its mark. */
 export const CURSOR_SPRING = { freq: 24, damping: 0.8 } as const;
 
+/** The cursor moved `step` entries along the menu, wrapping at either end. */
 export const moveCursor = (at: number, step: number) => (((at + step) % ENTRIES.length) + ENTRIES.length) % ENTRIES.length;
 
 /** The entry an arrow key moves to, or null for any other key. */

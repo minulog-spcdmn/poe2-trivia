@@ -124,14 +124,17 @@
     if (local) session.dispatch({ type: 'remove', playerId: id });
     else if (kicker.click(id)) session.kick(id);
   }
-  /** A removed chip goes out with a red flare, shrinking a little, as it fades: the others then close up (flip).
+  /** A leaving chip shrinks a little as it fades, and a removed one (hot-seat's ×, or a kick still armed: lib/kick) goes out with a red flare: the others then close up (flip).
+      One that left by itself goes quietly.
       It shrinks with `scale`, not `transform`: Svelte pins a leaving chip in place with a transform, which a transform here would override (the chip would jump to the grid's first cell);
       that pin is measured on screen, so under the stage's zoom it is scaled back (unzoomPin). */
   function kickOut(node: Element) {
     unzoomPin(node);
+    const removed = local || node.classList.contains('armed');
     return {
       duration: 320,
-      css: (t: number) => `opacity: ${t}; scale: ${0.9 + 0.1 * t}; box-shadow: 0 0 ${18 * (1 - t)}px rgba(224, 85, 63, ${0.7 * (1 - t) * t * 4});`,
+      css: (t: number) =>
+        `opacity: ${t}; scale: ${0.9 + 0.1 * t};` + (removed ? ` box-shadow: 0 0 ${18 * (1 - t)}px rgba(224, 85, 63, ${0.7 * (1 - t) * t * 4});` : ''),
     };
   }
   /** Escape takes an armed kick back. */
@@ -426,9 +429,10 @@
         {#snippet onlookers(list: Spectator[])}
           {#each list as o, i (o.id)}{i ? ', ' : ''}{you(o)}{#if isHost}<button
                 class="remove inline"
+                class:confirm={confirming === o.id}
                 title="Remove {o.name}"
                 aria-label="Remove {o.name}"
-                onclick={() => session.kick(o.id)}>×</button
+                onclick={() => kicker.click(o.id) && session.kick(o.id)}>{confirming === o.id ? 'Kick' : '×'}</button
               >{/if}{/each}
         {/snippet}
         {#if waiting.length}
@@ -1077,6 +1081,11 @@
     width: 22px;
     height: 22px;
     font-size: 1rem;
+  }
+  /* A spectator's kick, in the line of names: the same ring into a pill. */
+  .remove.inline.confirm {
+    width: 58px;
+    font-size: 0.64rem;
   }
   .remove:hover {
     color: var(--bad);

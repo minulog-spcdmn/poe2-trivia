@@ -31,6 +31,9 @@ test("a leaving list item's pin, measured on screen, is scaled back to its own p
   const after = item('rotate(2deg) translate(100px, 50px)', 2);
   unzoomPin(after);
   assert.equal(after.style.transform, 'rotate(2deg) translate(50px, 25px)', 'only the pin, the last translate, is touched');
+  const sideways = item('translate(100px)', 2);
+  unzoomPin(sideways);
+  assert.equal(sideways.style.transform, 'translate(50px, 0px)', 'a pin read back without its zero Y');
   const plain = item('translate(10px, 20px)', 1);
   unzoomPin(plain);
   assert.equal(plain.style.transform, 'translate(10px, 20px)', 'no zoom, nothing to undo');
