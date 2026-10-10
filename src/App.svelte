@@ -20,12 +20,18 @@
   import GameOver from './components/GameOver.svelte';
   import { closeCodex, codexRoute } from './lib/codexRoute.svelte';
   import { BETA, LOCAL } from './lib/channel';
+  import { setCursorColor } from './lib/ownCursor';
+  import { playerColor } from './lib/ui';
 
   let muted = $state(isMuted());
   let volume = $state(getVolume());
   const silent = $derived(muted || volume === 0);
   let confirmLeave = $state(false);
   let fxOn = $state(fxUserOn());
+  // With a seat in an online room, lobby included, this device's own pointer takes its
+  // player's colour, as the others see it (lib/ownCursor.ts); otherwise it's old gold.
+  const seat = $derived(session.mode === 'host' || session.mode === 'client' ? session.state?.players.find((p) => p.id === session.myPlayerId) : undefined);
+  $effect(() => setCursorColor(seat ? playerColor(seat.hue) : undefined));
   // CSS animations that only decorate (the Delve phial's fire) hold still with the effects off.
   $effect(() => {
     document.documentElement.toggleAttribute('data-still', !fxOn);

@@ -10,7 +10,6 @@
   import { MOUSE, PRESSED, SCALE, SEND_EVERY_MS, TAP, anchorCode, anchorName, cursorKey, cursorsLive, type CursorAt, type PointerKind } from '../lib/cursors';
   import { playerColor } from '../lib/ui';
   import { portal } from '../lib/portal';
-  import { setCursorColor } from '../lib/ownCursor';
   import { HAND, HAND_PRESSED, PAD_X, PAD_Y, POINTER, PRESS_SCALE, SIZE, WEIGHT } from '../lib/pointerArt';
 
   /** How quickly a pointer catches up with where it was last heard to be (ms to cover about 2/3 of the way). */
@@ -40,13 +39,6 @@
   $effect(() => {
     if (!live) peerCursors.clear();
   });
-
-  // With a seat, this device's own arrow takes its player's colour, as the others see it.
-  const mine = $derived(s.players.find((p) => p.id === me));
-  $effect(() => {
-    setCursorColor(mine ? playerColor(mine.hue) : undefined);
-  });
-  onMount(() => () => setCursorColor());
 
   // ---- this device's pointer ------------------------------------------
 
