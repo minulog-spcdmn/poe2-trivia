@@ -664,10 +664,11 @@ export function edgeGlow(o: { color?: Vec3; width?: number; life?: number; inten
  * (px, on a window 720 px across its short side; it scales with the window,
  * so a big screen sees the same as a small one). `smoke` (0 none): its
  * wisps; `pattern` and `clock` (s): which smoke, and how far it has
- * drifted, so the beats of one countdown show one smoke; `rim`: a hot line
- * along the very edge.
+ * drifted, so the beats of one countdown show one smoke; `even` (0-1): the
+ * smoke spread evenly round the edges rather than in patches; `rim`: a hot
+ * line along the very edge.
  */
-export function edgeBeat(o: { color?: Vec3; width?: number; intensity?: number; smoke?: number; pattern?: number; clock?: number; rim?: number } = {}) {
+export function edgeBeat(o: { color?: Vec3; width?: number; intensity?: number; smoke?: number; pattern?: number; clock?: number; even?: number; rim?: number } = {}) {
   const life = 1.4;
   return shape({
     type: ShapeType.Edge,
@@ -690,6 +691,7 @@ export function edgeBeat(o: { color?: Vec3; width?: number; intensity?: number; 
       f.q[3] = o.pattern ?? 0;
       f.q[4] = (o.rim ?? 0) * beat;
       f.q[5] = (o.clock ?? 0) + age;
+      f.q[6] = o.even ?? 0;
     },
   });
 }

@@ -1054,13 +1054,17 @@ export function raceMiss(option: Element, mine: boolean, warded = false) {
   }
 }
 
-/** timerTick's screen beat for each of the last seconds (1 first), as edgeBeat takes it, and the scene's red flush. */
+/**
+ * timerTick's screen beat for each of the last seconds (1 first), as
+ * edgeBeat takes it, and the scene's red flush. The smoke starts out even
+ * round the edges and a dusky red, and gathers and reddens as it runs out.
+ */
 const TICK_STEPS = [
-  { intensity: 0.17, width: 100, smoke: 1, rim: 0.6, mood: 0.6 },
-  { intensity: 0.12, width: 80, smoke: 1.1, rim: 0.25, mood: 0.45 },
-  { intensity: 0.085, width: 62, smoke: 1.3, rim: 0, mood: 0.26 },
-  { intensity: 0.068, width: 56, smoke: 1.3, rim: 0, mood: 0.2 },
-  { intensity: 0.055, width: 50, smoke: 1.3, rim: 0, mood: 0.15 },
+  { intensity: 0.17, width: 100, smoke: 1, even: 0, color: [3.2, 0.3, 0.15] as Vec3, rim: 0.6, mood: 0.6 },
+  { intensity: 0.12, width: 80, smoke: 1.1, even: 0.2, color: [2.8, 0.3, 0.17] as Vec3, rim: 0.25, mood: 0.45 },
+  { intensity: 0.085, width: 62, smoke: 1.3, even: 0.45, color: [2.3, 0.28, 0.2] as Vec3, rim: 0, mood: 0.26 },
+  { intensity: 0.068, width: 56, smoke: 1.3, even: 0.7, color: [1.9, 0.26, 0.22] as Vec3, rim: 0, mood: 0.2 },
+  { intensity: 0.06, width: 50, smoke: 1.3, even: 0.85, color: [1.6, 0.24, 0.24] as Vec3, rim: 0, mood: 0.15 },
 ];
 
 /** The smoke of one countdown (timerTick): new when it starts, drifting on through its every tick. */
