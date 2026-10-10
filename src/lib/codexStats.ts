@@ -12,7 +12,6 @@ import { stratumName } from './descent.ts';
 /** Fewer answers than this don't make an item a nemesis. */
 export const NEMESIS_MIN = 2;
 
-
 export const tallyOf = (e: ItemEntry): Tally => ({ n: e.name.n + e.art.n, ok: e.name.ok + e.art.ok });
 /** Share of right answers, or null without any. */
 export const accuracy = (t: Tally) => (t.n ? t.ok / t.n : null);

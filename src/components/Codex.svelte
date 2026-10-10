@@ -337,7 +337,8 @@
 
   {#if !stats.seen}
     <div class="empty">
-      <p>Your codex is still blank.</p>
+      <!-- With practice answers kept, there is something to erase: not "blank". -->
+      <p>{practice.n ? 'No item is written in your codex yet.' : 'Your codex is still blank.'}</p>
       <p class="muted">
         Every item revealed in your games is written into it, with how often you named it right. It is kept in this browser only.
       </p>

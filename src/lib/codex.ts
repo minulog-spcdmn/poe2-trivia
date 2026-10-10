@@ -46,8 +46,8 @@
 
 import { difficultyOf, isFake, type Blast, type Difficulty, type GameState, type QuestionMode } from './game.ts';
 import { ITEM_KINDS, delveTier, isGroupRun, type FindKind, type ItemKind } from './delve.ts';
-import { clearAside, makeRoom } from './keepAside.ts';
-import { readStored, removeStored, storeKey, tryReadStored, writeStored } from './storage.ts';
+import { clearAside, openStored } from './keepAside.ts';
+import { readStored, removeStored, storeKey, writeStored } from './storage.ts';
 
 export interface Tally {
   /** Answers given. */
@@ -524,12 +524,10 @@ function write(c: Codex): boolean {
 
 /** Changes the stored codex: not over one a newer build wrote, and anything else unreadable kept aside first. */
 function update(change: (c: Codex) => Codex) {
-  const raw = tryReadStored(CODEX);
-  if (raw === undefined) return;
   // The first time, it starts from the old name's (left as it is).
-  const stored = parseCodex(storedRaw(raw));
-  if (raw && !stored && !makeRoom(CODEX, raw, CODEX_VERSION)) return;
-  const prev = stored ?? emptyCodex();
+  const opened = openStored(CODEX, CODEX_VERSION, (raw) => parseCodex(storedRaw(raw)));
+  if (!opened) return;
+  const prev = opened.was ?? emptyCodex();
   const next = change(prev);
   if (next !== prev) write(next);
 }
@@ -558,13 +556,17 @@ export function recordSeen(at: number, mode: QuestionMode, ids: string[]) {
  */
 const PRACTICE = 'practice';
 export const PRACTICE_KEY = storeKey(PRACTICE);
+const PRACTICE_VERSION = 1;
 
-/** A stored practice tally, or null when there is none or it can't be read. */
+const isCount = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0;
+
+/** A stored practice tally, or null when there is none or it can't be read (another build's, or damaged). */
 function parsePractice(raw: string | null): Tally | null {
   if (!raw) return null;
   try {
     const v: unknown = JSON.parse(raw);
-    return isObj(v) ? tally(v) : null;
+    if (!isObj(v) || v.v !== PRACTICE_VERSION || !isCount(v.n) || !isCount(v.ok) || v.ok > v.n) return null;
+    return { n: v.n, ok: v.ok };
   } catch {
     return null;
   }
@@ -576,20 +578,13 @@ export function loadPractice(): Tally {
 }
 
 /**
- * Adds a practice answer (the start page's) to its tally: as the codex is
- * written, never over a tally that couldn't be read (one that read wrong is
- * kept aside first), and when storage is full, room is made as the codex
- * makes it, its log's older half going.
+ * Adds a practice answer (the start page's) to its tally, as the codex is
+ * written: never over one a newer build wrote, and anything else unreadable
+ * kept aside first. When storage is full, the answer is let go.
  */
 export function recordPractice(ok: boolean) {
-  const raw = tryReadStored(PRACTICE);
-  if (raw === undefined) return;
-  const was = parsePractice(raw);
-  if (raw && !was && !makeRoom(PRACTICE, raw, CODEX_VERSION)) return;
-  const next = JSON.stringify(add(was ?? noTally(), ok));
-  if (writeStored(PRACTICE, next)) return;
-  const c = loadCodex();
-  if (c.log.length && write({ ...c, log: c.log.slice(Math.ceil(c.log.length / 2)) })) writeStored(PRACTICE, next);
+  const opened = openStored(PRACTICE, PRACTICE_VERSION, parsePractice);
+  if (opened) writeStored(PRACTICE, JSON.stringify({ v: PRACTICE_VERSION, ...add(opened.was ?? noTally(), ok) }));
 }
 
 /**

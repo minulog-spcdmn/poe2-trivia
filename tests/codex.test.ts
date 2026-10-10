@@ -532,3 +532,19 @@ test('a practice tally that reads wrong is kept aside, not written over unseen; 
   }
   assert.deepEqual(loadPractice(), { n: 1, ok: 1 });
 });
+
+test("only this build's practice tally is read: another shape is kept aside, a newer build's is left as it is", () => {
+  const key = storeKey('practice');
+  // Any object isn't a tally: without its version, or with more right than asked, it is kept aside.
+  store.set(key, JSON.stringify({ n: 5, ok: 9 }));
+  assert.deepEqual(loadPractice(), { n: 0, ok: 0 });
+  recordPractice(true);
+  assert.deepEqual(loadPractice(), { n: 1, ok: 1 });
+  assert.equal(store.get(storeKey('practice.unread')), JSON.stringify({ n: 5, ok: 9 }));
+  assert.deepEqual(JSON.parse(store.get(key)!), { v: 1, n: 1, ok: 1 });
+  // A newer build's: never written over.
+  const newer = JSON.stringify({ v: 2, n: 40, ok: 30, streak: 3 });
+  store.set(key, newer);
+  recordPractice(false);
+  assert.equal(store.get(key), newer);
+});
