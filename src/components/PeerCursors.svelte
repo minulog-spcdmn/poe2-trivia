@@ -10,7 +10,7 @@
   import { MOUSE, PRESSED, SCALE, SEND_EVERY_MS, TAP, anchorCode, anchorName, cursorKey, cursorsLive, type CursorAt, type PointerKind } from '../lib/cursors';
   import { playerColor } from '../lib/ui';
   import { portal } from '../lib/portal';
-  import { HAND, HAND_PRESSED, LEAN_DEG, PAD_X, PAD_Y, POINTER, PRESS_ALONG, SIZE, WEIGHT } from '../lib/pointerArt';
+  import { HAND, HAND_PRESSED, PAD_X, PAD_Y, POINTER, PRESS_SINK, SIZE, WEIGHT } from '../lib/pointerArt';
 
   /** How quickly a pointer catches up with where it was last heard to be (ms to cover about 2/3 of the way). */
   const GLIDE_MS = 70;
@@ -227,18 +227,19 @@
   });
 </script>
 
-<div class="cursors" use:portal aria-hidden="true" style:--pad-x={PAD_X} style:--pad-y={PAD_Y} style:--w={SIZE[0]} style:--h={SIZE[1]} style:--lean="{LEAN_DEG}deg" style:--along={PRESS_ALONG}>
+<div class="cursors" use:portal aria-hidden="true" style:--pad-x={PAD_X} style:--pad-y={PAD_Y} style:--w={SIZE[0]} style:--h={SIZE[1]} style:--sink={PRESS_SINK}>
   {#each shown as c (c.key)}
     <div class="cursor" bind:this={els[c.key]} style:--c={c.color}>
       <!-- The dart (lib/pointerArt.ts) with its tip on the spot: a dark rim and ground, a glow under the lines. -->
       <!-- The dart (lib/pointerArt.ts) with its tip on the spot: a dark rim and ground, a glow under the lines.
-           Over a button, the hand pointing instead; pressed (or a tap), the dart pushes its tip into the page, foreshortened,
+           Over a button, the hand pointing instead; pressed (or a tap), the dart sinks a little, its hatched side struck solid,
            and the hand pushes its finger into the page, foreshortened and struck solid. -->
       <svg class="dart" viewBox="{-PAD_X} {-PAD_Y} {SIZE[0]} {SIZE[1]}" width={SIZE[0]} height={SIZE[1]}>
         <g class="body">
           <path class="ground" d={POINTER.outline} stroke-width={WEIGHT.rim} />
           <path class="glow" d={POINTER.outline} />
           <path class="wash" d={POINTER.outline} />
+          <path class="side" d={POINTER.side} />
           <path class="line" d={POINTER.outline} stroke-width={WEIGHT.outline} />
           <path class="line ridge" d={POINTER.ridge} stroke-width={WEIGHT.ridge} />
           <path class="line hatch" d={POINTER.hatch} stroke-width={WEIGHT.hatch} />
@@ -329,7 +330,7 @@
   .cursor:global(.lit.pressed) .hand.down {
     display: inline;
   }
-  /* The button held, or a tap: the dart pushes its tip into the page, drawn as it is otherwise. */
+  /* The button held, or a tap: the dart sinks a little about its tip. */
   /* Sharp claws would throw long mitres: the hand's corners are rounded. */
   .hand {
     stroke-linejoin: round;
@@ -343,8 +344,26 @@
   }
   .cursor:global(.pressed) .body,
   .cursor:global(.tap) .body {
-    /* Foreshortened along its own length (upright, squeezed, leaning again), as the player's own is. */
-    transform: rotate(var(--lean)) scaleY(var(--along)) rotate(calc(-1 * var(--lean)));
+    transform: scale(var(--sink));
+  }
+  /* Lit a little, as the player's own: the lines paler, a soft close glow, the hatched side struck solid. */
+  .side {
+    fill: color-mix(in srgb, var(--c), #fff4e0 35%);
+    opacity: 0;
+  }
+  .cursor:global(.pressed) .side,
+  .cursor:global(.tap) .side {
+    opacity: 1;
+  }
+  .cursor:global(.pressed) .body .line,
+  .cursor:global(.tap) .body .line {
+    stroke: color-mix(in srgb, var(--c), #fff4e0 35%);
+  }
+  .cursor:global(.pressed) .body .glow,
+  .cursor:global(.tap) .body .glow {
+    opacity: 0.35;
+    stroke-width: 2.2;
+    filter: blur(1.6px);
   }
   /* Smaller on phones, so they cover less of the answers. */
   @media (max-width: 640px) {

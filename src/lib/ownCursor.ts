@@ -21,7 +21,12 @@ const PALE = '#fff4e0';
 /** Lead, as the plainest achievements' seals are struck (lib/metals.ts): disabled is dull metal, with no glow. */
 const LEAD = '#a2a7ac';
 
-type Look = 'rest' | 'lit' | 'press' | 'dull';
+/**
+ * `lit`: over something that can be clicked; `press`: pressed on it; `sunk`:
+ * pressed on nothing (lit a little, a soft close glow, nothing washed in);
+ * `dull`: disabled.
+ */
+type Look = 'rest' | 'lit' | 'press' | 'sunk' | 'dull';
 
 /** `art` as a PNG at `scale` pixels per CSS px. Lit (over something that can be clicked) and pressed, it's gilded and glows brighter; dull, it's lead. */
 function draw(art: Art, color: string, look: Look, scale: number): string {
@@ -52,10 +57,10 @@ function draw(art: Art, color: string, look: Look, scale: number): string {
   // The glow under the lines, never on them (none on dull lead).
   g.save();
   g.strokeStyle = color;
-  g.globalAlpha = look === 'dull' || art.plain ? 0 : bright ? 0.5 : 0.22;
+  g.globalAlpha = look === 'dull' || art.plain ? 0 : bright ? 0.5 : look === 'sunk' ? 0.35 : 0.22;
   g.shadowColor = color;
-  g.shadowBlur = (bright ? 5 : 2) * scale;
-  stroke(art.ground, bright ? 2.6 : 2);
+  g.shadowBlur = (bright ? 5 : look === 'sunk' ? 3.2 : 2) * scale;
+  stroke(art.ground, bright ? 2.6 : look === 'sunk' ? 2.2 : 2);
   g.restore();
   // Gilded: a wash of the colour inside, and the lines struck paler.
   if (bright && !art.plain) {
@@ -64,7 +69,7 @@ function draw(art: Art, color: string, look: Look, scale: number): string {
     g.fill(ground);
     g.globalAlpha = 1;
   }
-  const ink = bright ? mix(color, PALE, look === 'press' ? 0.55 : 0.35) : color;
+  const ink = bright || look === 'sunk' ? mix(color, PALE, look === 'press' ? 0.55 : 0.35) : color;
   g.strokeStyle = ink;
   g.fillStyle = ink;
   for (const l of art.lines) {
@@ -127,8 +132,8 @@ function apply() {
     for (const v of VARS) root.removeProperty(v);
     return;
   }
-  // Over something that can be clicked, the hand; pressed, the dart sinks as it is, the hand's finger pushes in.
-  root.setProperty('--cursor', cursorValue(pressed ? 'sink' : 'rest', 'rest', color, 'default'));
+  // Over something that can be clicked, the hand; pressed, the dart sinks a little, the hand's finger pushes in.
+  root.setProperty('--cursor', pressed ? cursorValue('sink', 'sunk', color, 'default') : cursorValue('rest', 'rest', color, 'default'));
   root.setProperty('--cursor-pointer', pressed ? cursorValue('press', 'press', color, 'pointer') : cursorValue('hover', 'lit', color, 'pointer'));
   root.setProperty('--cursor-disabled', cursorValue('disabled', 'dull', color, 'not-allowed'));
   root.setProperty('--cursor-text', cursorValue('text', 'rest', color, 'text'));

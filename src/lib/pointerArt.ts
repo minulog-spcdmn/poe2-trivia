@@ -6,35 +6,29 @@
 // Its other states are drawn alike, each telling itself by its shape as well
 // as its light: over something that can be clicked, a demon's clawed hand
 // pointing (the system's pointer, engraved); pressed, the dart or the hand
-// presses its tip into the page, foreshortened (the dart as it is, the hand's finger struck solid);
+// sinks a little (the dart's hatched side struck solid, the hand's finger pushed into the page);
 // disabled, dull lead with a saltire beside the tip; the text cursor (a stem
 // with a lozenge, as on the category cards' divider); and middle-button
 // scrolling (upright darts, and a seal where the scroll began).
 
 import { f, hatch, line, pt, ring, type Pt } from './arcane.ts';
 
-/**
- * A dart with its tip at the origin, turned `turn` radians from upright
- * (counter-clockwise when negative), at `k` times its size, and `along` times
- * its length (foreshortened, as when it presses its tip into the page).
- */
-function dart(turn: number, k = 1, along = 1) {
-  const rot = ([x, y]: Pt): Pt => {
-    const v = y * along;
-    return [k * (x * Math.cos(turn) - v * Math.sin(turn)), k * (x * Math.sin(turn) + v * Math.cos(turn))];
-  };
+/** A dart with its tip at the origin, turned `turn` radians from upright (counter-clockwise when negative), at `k` times its size. */
+function dart(turn: number, k = 1) {
+  const rot = ([x, y]: Pt): Pt => [k * (x * Math.cos(turn) - y * Math.sin(turn)), k * (x * Math.sin(turn) + y * Math.cos(turn))];
   const tip: Pt = [0, 0];
   const [l, notch, r] = ([[-6.6, 19.5], [0, 14.6], [6.6, 19.5]] as Pt[]).map(rot);
   return {
     outline: `M${pt(tip)}L${pt(l)}L${pt(notch)}L${pt(r)}Z`,
     ridge: line(tip, notch),
     hatch: hatch(notch, l, tip, 1.25 * k),
+    /** The hatched side, whole: struck solid when pressed. */
+    side: `M${pt(tip)}L${pt(l)}L${pt(notch)}Z`,
   };
 }
 
-/** How far the pointer leans from upright (radians, and degrees for CSS). */
+/** How far the pointer leans from upright. */
 const LEAN = -0.42;
-export const LEAN_DEG = (LEAN * 180) / Math.PI;
 
 /** The pointer: its outline (closed), the ridge, and the hatching down its left side. */
 export const POINTER = dart(LEAN);
@@ -48,11 +42,11 @@ export const SIZE: Pt = [28, 32];
 export const WEIGHT = { outline: 1.05, ridge: 0.8, hatch: 0.55, fine: 0.7, rim: 3 };
 
 /**
- * Pressed, the dart pushes its tip into the page: foreshortened to this much
- * of its length, as wide as ever (shrunk all over, it would only look
- * smaller). The hand's finger is foreshortened by this much (units).
+ * Pressed, the dart sinks to this much of its size about its tip (its
+ * hatched side struck solid, lit a little: ownCursor.ts). The hand's finger
+ * is foreshortened by this much (units).
  */
-export const PRESS_ALONG = 0.84;
+export const PRESS_SINK = 0.93;
 const PRESS_SHORTEN = 1.4;
 
 /** Where a disabled pointer's saltire sits beside the tip, clear of the dart. */
@@ -146,7 +140,7 @@ const dartLines = (d: { outline: string; ridge: string; hatch: string }, k = 1):
   { d: d.hatch, w: WEIGHT.hatch, fine: true },
 ];
 
-const pressed = dart(LEAN, 1, PRESS_ALONG);
+const pressed = dart(LEAN, PRESS_SINK);
 export const HAND = hand();
 /** The hand pressing: its finger foreshortened, pushing into the page. */
 export const HAND_PRESSED = hand(1, true);
@@ -200,8 +194,17 @@ export const ART = {
     lines: [{ d: pressedHand.finger, w: 0, solid: true }, ...handLines(pressedHand)],
     plain: true,
   },
-  // Pressed on nothing that can be clicked: the dart pushing its tip into the page, drawn as it is otherwise.
-  sink: { size: SIZE, hot: [PAD_X, PAD_Y], ground: pressed.outline, lines: dartLines(pressed) },
+  // Pressed on nothing that can be clicked: the dart sunk a little, its hatched side struck solid (drawn `sunk`, ownCursor.ts).
+  sink: {
+    size: SIZE,
+    hot: [PAD_X, PAD_Y],
+    ground: pressed.outline,
+    lines: [
+      { d: pressed.side, w: 0, solid: true },
+      { d: pressed.outline, w: WEIGHT.outline },
+      { d: pressed.ridge, w: WEIGHT.ridge },
+    ],
+  },
   // Disabled: a saltire beside the tip (drawn in lead, ownCursor.ts).
   disabled: {
     size: SIZE,
