@@ -6,6 +6,7 @@
 import { Engine, createGame, DEFAULT_SETTINGS, type Item, type Knobs, type Question } from './game.ts';
 import { seededRandom } from './patches.ts';
 import { readStored, writeStored } from './storage.ts';
+import dailyArt from '../data/dailyArt.json' with { type: 'json' };
 
 const DAY_MS = 86_400_000;
 const HOUR_MS = 3_600_000;
@@ -44,6 +45,15 @@ export const dailyGame = () => createGame(null, { ...DEFAULT_SETTINGS, difficult
 /** Gems are square tiles on cloth, and there are many alike: the daily keeps to the items. */
 export const askable = (items: Item[]) => items.filter((it) => it.kind !== 'gem');
 
+/**
+ * Items too thin to be the start page's eye-catcher: bare sticks that leave
+ * the circle all but empty (scripts/daily-art.py measures them). They are
+ * never asked here, though they may be offered as decoys.
+ */
+export const TOO_THIN: ReadonlySet<string> = new Set(dailyArt.thin);
+/** Draws past this many thin items in a row are given up on (they can't all be). */
+const THIN_TRIES = 12;
+
 /** A string's 32-bit FNV-1a hash, to seed from. */
 function hash(s: string): number {
   let h = 0x811c9dc5;
@@ -53,15 +63,20 @@ function hash(s: string): number {
 
 /**
  * Asks a question in the category of an item drawn from `items`, so a
- * category comes up as often as it has items. `rng` draws the item and is
- * the engine's too.
+ * category comes up as often as it has items (those not too thin). `rng`
+ * draws the item and is the engine's too.
  */
 export function askOne(engine: Engine, game = dailyGame(), rng: () => number = Math.random): Question {
-  const pool = askable(engine.items);
-  const category = pool[Math.floor(rng() * pool.length)].category;
-  const q = engine.makeQuestion(game, category);
-  // As the game does: an answer isn't asked again, nor offered as a decoy, until its category starts over.
-  game.used.push(q.itemId);
+  const pool = askable(engine.items).filter((it) => !TOO_THIN.has(it.id));
+  let q: Question;
+  let tries = 0;
+  do {
+    const category = pool[Math.floor(rng() * pool.length)].category;
+    q = engine.makeQuestion(game, category);
+    // As the game does: an answer isn't asked again, nor offered as a decoy, until its category starts over.
+    game.used.push(q.itemId);
+    // A thin one is put by (used, so not asked again) and another drawn.
+  } while (TOO_THIN.has(q.itemId) && ++tries < THIN_TRIES);
   return q;
 }
 

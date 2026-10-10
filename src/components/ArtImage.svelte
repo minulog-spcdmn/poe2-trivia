@@ -6,6 +6,9 @@
   // item's proportions and at most `scale` times its size in art pixels (the
   // file's own, over ART_SCALE: every item picture is upscaled). `unflip`
   // starts it mirrored (as it was shown during the question) and turns it round.
+  // `round` lets it reach past the space into a circle around its centre (as
+  // big across as --round times the space's width), so a wide item can be as
+  // big as the circle allows, not only as the box (app.css).
   let {
     src,
     alt = '',
@@ -14,7 +17,8 @@
     scale = 1.8,
     float = false,
     unflip = false,
-  }: { src: string; alt?: string; w?: number; h?: number; scale?: number; float?: boolean; unflip?: boolean } = $props();
+    round = false,
+  }: { src: string; alt?: string; w?: number; h?: number; scale?: number; float?: boolean; unflip?: boolean; round?: boolean } = $props();
 
   let nw = $state(0);
   let nh = $state(0);
@@ -25,7 +29,7 @@
 </script>
 
 <span class="art-slot">
-  <span class="art-fit" class:ready class:float style:--w={W} style:--h={H} style:--s={scale}>
+  <span class="art-fit" class:ready class:float class:round style:--w={W} style:--h={H} style:--s={scale}>
     {#key src}
       <img
         {src}

@@ -485,6 +485,15 @@ input {
   width: min(100cqw, 100cqh * var(--w) / var(--h), var(--w) * var(--s) * 1px);
   height: min(100cqh, 100cqw * var(--h) / var(--w), var(--h) * var(--s) * 1px);
 }
+/* A round fit (ArtImage's `round`): the bigger of the box's fit and a fit in
+   the circle round its centre, --round times its width across. A square or a
+   tall item comes out as in the box; a wide one (a belt) as big as the
+   circle holds it, past the box's sides. */
+.art-fit.round {
+  --diag: sqrt(var(--w) * var(--w) + var(--h) * var(--h));
+  width: min(var(--w) * var(--s) * 1px, max(min(100cqw, 100cqh * var(--w) / var(--h)), var(--round, 1) * 100cqw * var(--w) / var(--diag)));
+  height: min(var(--h) * var(--s) * 1px, max(min(100cqh, 100cqw * var(--h) / var(--w)), var(--round, 1) * 100cqw * var(--h) / var(--diag)));
+}
 .art-fit > img {
   display: block;
   width: 100%;

@@ -194,7 +194,7 @@
              picture through it (fx/moments reveal) and shine from behind its outline. -->
         <div class="art frame" bind:this={artEl}>
           {#key q.itemId + (practice ? ':p' : '')}
-            <ArtImage src={itemImage(q.itemId)} alt="The item to name" scale={4} float />
+            <ArtImage src={itemImage(q.itemId)} alt="The item to name" scale={4} float round />
           {/key}
         </div>
       </div>
@@ -306,10 +306,13 @@
     position: absolute;
     inset: 0;
   }
-  /* An art box that suits tall staves and wide belts alike. */
+  /* An art box that suits tall staves; a wide item (a belt) reaches past
+     its sides into the circle round its centre, 68% of the circle across
+     (--round, in the box's widths: ArtImage's round fit), clear of the runes. */
   .art {
     position: absolute;
     inset: 14% 26% 21%;
+    --round: 1.4167;
     display: grid;
     place-items: center;
   }

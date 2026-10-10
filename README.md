@@ -833,6 +833,22 @@ After the art changes, rebuild the look-alike table (needs ffmpeg):
 npm run looks
 ```
 
+Then measure which items are too thin for Today's unique on the start page:
+the day's item is the page's eye-catcher, drawn big in the arcane circle,
+and a bare stick leaves the circle all but empty. `scripts/daily-art.py`
+measures how much of the art box each item's opaque pixels cover at the
+size the page draws it, and writes those under 7.5% (about two dozen staves,
+spears and quarterstaves, and a bow that is mostly string) to
+`src/data/dailyArt.json`; the daily and its practice questions never ask
+them, though their names can still be decoys. Wide items (belts, some
+relics) are drawn bigger there than a box would let them: the picture may
+reach past the box's sides into the circle round its centre (ArtImage's
+`round` fit).
+
+```sh
+python3 scripts/daily-art.py
+```
+
 It writes `src/data/looks.json`: for every item, the fourteen items of its
 group whose art looks most like it, each with a score from 0 to 1 (silhouette,
 edges and colour, mirror-blind; see `scripts/looks.mjs`). From depth 49 in Delve,

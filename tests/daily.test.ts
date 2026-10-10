@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { isFake, type Item } from '../src/lib/game.ts';
-import { DAILY_LAUNCH, answerDaily, answeredOn, dailyQuestion, dayNumber, hoursLeft, nextIn, parseDaily, streakOn, utcDay, type DailyRecord } from '../src/lib/daily.ts';
+import { Engine, isFake, type Item } from '../src/lib/game.ts';
+import { DAILY_LAUNCH, TOO_THIN, answerDaily, askOne, dailyGame, answeredOn, dailyQuestion, dayNumber, hoursLeft, nextIn, parseDaily, streakOn, utcDay, type DailyRecord } from '../src/lib/daily.ts';
 
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
 const fakes: Record<string, string[]> = JSON.parse(readFileSync(new URL('../src/data/fakes.json', import.meta.url), 'utf8'));
@@ -59,6 +59,17 @@ test('each day asks a named item among four names, one of them made up, never a 
     assert.equal(new Set(q.labels).size, 4, 'four different names');
   }
   assert.ok(seen.size > 45, `the days ask many items (${seen.size} in 60 days)`);
+});
+
+test('the items too thin for the start page are real items, and never asked there', () => {
+  const byId = new Map(items.map((it) => [it.id, it]));
+  assert.ok(TOO_THIN.size > 0);
+  for (const id of TOO_THIN) assert.equal(byId.get(id)?.kind, 'unique', `${id} is an item`);
+  const start = utcDay(DAILY_LAUNCH);
+  for (let d = start; d < start + 1500; d++) assert.ok(!TOO_THIN.has(dailyQuestion(items, fakes, d).itemId), `day ${d}`);
+  const engine = new Engine(items, { fakes });
+  const game = dailyGame();
+  for (let i = 0; i < 1500; i++) assert.ok(!TOO_THIN.has(askOne(engine, game).itemId), `practice question ${i}`);
 });
 
 test('a right answer starts or carries on a streak; a day skipped starts it over', () => {
