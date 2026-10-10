@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { KICK_ARMED_MS, KICK_SETTLE_MS, kickConfirm, type KickClock } from '../src/lib/kick.ts';
+import { KICK_ARMED_MS, KICK_LEAVE_MS, KICK_SETTLE_MS, kickConfirm, type KickClock } from '../src/lib/kick.ts';
 
 /** A clock that only moves when told to, with its timers. */
 function fakeClock() {
@@ -48,7 +48,30 @@ test('a second click within the settle time is ignored, so a double click never 
   assert.deepEqual(shown, ['a'], 'still armed');
   advance(1);
   assert.equal(k.click('a'), true, 'once settled, the next click confirms');
+  assert.deepEqual(shown, ['a'], 'the leaving chip still reads as armed');
+  advance(KICK_LEAVE_MS);
   assert.deepEqual(shown, ['a', null]);
+});
+
+test('Escape or a press elsewhere takes an armed kick back', () => {
+  const { k, advance, shown, pending } = setup();
+  k.click('a');
+  advance(KICK_SETTLE_MS + 10);
+  k.disarm();
+  assert.deepEqual(shown, ['a', null]);
+  assert.equal(pending(), 0);
+  assert.equal(k.click('a'), false, 'a click after it arms again, it does not kick');
+  k.disarm();
+  k.disarm();
+  assert.deepEqual(shown, ['a', null, 'a', null], 'nothing armed: nothing to take back');
+});
+
+test('a confirmed kick is not armed any more: another click on it arms again', () => {
+  const { k, advance } = setup();
+  k.click('a');
+  advance(KICK_SETTLE_MS);
+  assert.equal(k.click('a'), true);
+  assert.equal(k.click('a'), false);
 });
 
 test('an armed kick lets go after a few seconds', () => {
@@ -87,4 +110,14 @@ test('dispose clears the pending timer', () => {
   k.click('a');
   k.dispose();
   assert.equal(pending(), 0);
+});
+
+test('disarming a confirmed kick early never clears the leaving look twice', () => {
+  const { k, advance, shown } = setup();
+  k.click('a');
+  advance(KICK_SETTLE_MS);
+  k.click('a');
+  k.disarm();
+  advance(KICK_LEAVE_MS);
+  assert.deepEqual(shown, ['a', null]);
 });

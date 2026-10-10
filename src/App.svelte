@@ -2,6 +2,7 @@
   import { accentAt, dealtDeeper, plunge, setDescent, type Dealt } from './lib/descent';
   import { zoneAt } from './lib/zoneSigils';
   import { shownDepth } from './lib/delve';
+  import { stageZoom } from './lib/stage';
   import { onMount, untrack } from 'svelte';
   import { fade, fly } from 'svelte/transition';
   import { session } from './lib/session.svelte';
@@ -134,6 +135,21 @@
    * outgoing screen has faded: in the meantime it would push that screen
    * down (or let it jump up) by its own height.
    */
+  /**
+   * The lobby is the start page's stage carried on: scaled as the start page
+   * scales itself on large windows (lib/stage.ts), header and all. Switched
+   * as the screens swap, so the screen going out keeps its scale.
+   */
+  let staged = $state(untrack(() => screen === 'lobby'));
+  $effect(() => {
+    const want = screen === 'lobby';
+    if (want === untrack(() => staged)) return;
+    const t = setTimeout(() => (staged = want), SCREEN_OUT_MS);
+    return () => clearTimeout(t);
+  });
+  let winW = $state(innerWidth);
+  let winH = $state(innerHeight);
+  const zoom = $derived(staged ? stageZoom(winW, winH) : 1);
   let headerOn = $state(untrack(() => screen !== 'home'));
   $effect(() => {
     const want = screen !== 'home';
@@ -197,7 +213,9 @@
 <!-- Delve: the light shrinking at the screen's edges as a question's clock runs down. -->
 <Darkness active={!!gs?.delve && screen === 'game'} />
 
-<div class="shell" data-behind-dialog bind:this={shell}>
+<svelte:window bind:innerWidth={winW} bind:innerHeight={winH} />
+
+<div class="shell" data-behind-dialog bind:this={shell} class:staged style:--stage-zoom={zoom}>
   {#if headerOn}
     <header in:fade={{ duration: 300 }} bind:offsetHeight={headerHeight}>
       <button class="brand" onclick={() => (codex ? closeCodex() : askLeave())} title={codex ? 'Back to the start' : 'Leave game'}>
@@ -344,7 +362,7 @@
   {/if}
 </div>
 
-<Toasts headerHeight={headerOn ? headerHeight : 0} />
+<Toasts headerHeight={headerOn ? headerHeight * zoom : 0} />
 
 <FxLayer />
 
@@ -396,6 +414,11 @@
     flex-direction: column;
     /* Room at the end for a bar fixed to the bottom of the screen (lib/layout.ts). */
     padding-bottom: var(--dock, 0px);
+  }
+  /* The lobby, scaled with the start page (lib/stage.ts): the window's height in its zoomed pixels. */
+  .shell.staged {
+    zoom: var(--stage-zoom, 1);
+    min-height: calc(100dvh / var(--stage-zoom, 1));
   }
 
   header {

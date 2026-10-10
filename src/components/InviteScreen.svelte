@@ -5,7 +5,7 @@
   import { fade, fly } from 'svelte/transition';
   import { backdropShadow } from '../lib/backdropShadow';
   import { MAX_NAME } from '../lib/names';
-  import { stage } from '../lib/stage';
+  import { inviteZoom, stage } from '../lib/stage';
   import GameTitle from './GameTitle.svelte';
   import Connecting from './Connecting.svelte';
 
@@ -25,7 +25,7 @@
   }
 </script>
 
-<div class="invite" use:stage>
+<div class="invite" use:stage={inviteZoom}>
   <header>
     <GameTitle lines />
     <p class="kicker" in:fade={{ duration: 700, delay: 350 }}>Unique item trivia</p>
@@ -65,7 +65,7 @@
 
 <style>
   /* The start page's stage (lib/stage.ts): centred in the window, scaled up
-     on very large ones. */
+     on very large ones (by its own, older rule until its redesign). */
   .invite {
     zoom: var(--stage-zoom, 1);
     max-width: 1440px;

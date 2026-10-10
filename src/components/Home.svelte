@@ -464,7 +464,7 @@
     </div>
 
     <footer>
-      <div class="rule" aria-hidden="true"><span></span></div>
+      <div class="rule" aria-hidden="true"></div>
       <div class="band">
         <div class="made">
           <p class="credit">Made by <a class="maker" href={CREATOR_URL} target="_blank" rel="noopener noreferrer" title="{CREATOR} on Twitch">{CREATOR}</a></p>
@@ -475,13 +475,13 @@
           </a>
         </div>
         <p class="fine">
-          Unofficial fan project. Path of Exile is a trademark of Grinding Gear Games, who do not endorse this site. Item data and art from
-          <a href="https://poe2db.tw/us/Unique_item" target="_blank" rel="noreferrer">poe2db.tw</a>.
+          Unofficial fan project. Path of Exile is a trademark of Grinding Gear Games, who do not endorse this site. Data and art:
+          <a href="https://poe2db.tw/us/Unique_item" target="_blank" rel="noreferrer">poe2db.tw</a>
         </p>
         <nav class="legal" aria-label="Legal">
           <a href={IMPRINT_URL}>Impressum</a>
           <span aria-hidden="true">·</span>
-          <a href={PRIVACY_URL}>Datenschutz / Privacy</a>
+          <a href={PRIVACY_URL}>Datenschutz</a>
         </nav>
       </div>
     </footer>
@@ -494,7 +494,8 @@
      rooms across it, then the footer. Narrower windows give up side padding
      (down to 32 px) before anything else, then stack in the phone's order.
      Columns and rooms sit in the middle of the window's height, the footer at
-     its bottom. Past 2560 px wide the stage is scaled up (lib/stage.ts). */
+     its bottom. On large windows the stage is scaled up (lib/stage.ts), as
+     the lobby is. */
   .home {
     --slot: 108px;
     zoom: var(--stage-zoom, 1);
@@ -778,45 +779,27 @@
   }
 
   /* ---- the footer band ---- */
+  /* A plain hairline, brightest in the middle, fading out at both ends. */
   .rule {
-    position: relative;
     height: 1px;
-    margin: 0 6%;
-    --l: rgba(125, 99, 51, 0.6);
-    /* Broken in the middle, round the diamond. */
-    background: linear-gradient(
-      90deg,
-      transparent,
-      var(--l) 20%,
-      var(--l) calc(50% - 16px),
-      transparent calc(50% - 16px),
-      transparent calc(50% + 16px),
-      var(--l) calc(50% + 16px),
-      var(--l) 80%,
-      transparent
-    );
+    margin: 0 4%;
+    background: linear-gradient(90deg, transparent, rgba(125, 99, 51, 0.35) 20%, rgba(201, 164, 92, 0.55) 50%, rgba(125, 99, 51, 0.35) 80%, transparent);
   }
-  .rule span {
-    position: absolute;
-    left: 50%;
-    top: -5px;
-    width: 9px;
-    height: 9px;
-    translate: -50% 0;
-    rotate: 45deg;
-    border: 1px solid var(--gold-lo);
-  }
+  /* One line on the page's axis. No diamonds between the groups (the diamond
+     means the menu's cursor, a chosen thing): space alone sets them apart,
+     28 px between groups against 12 px inside one. */
   .band {
-    display: grid;
-    grid-template-columns: 1fr auto 1fr;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
     align-items: center;
-    gap: 24px;
-    margin-top: 26px;
+    gap: 12px 28px;
+    margin-top: 22px;
   }
   .made {
     display: flex;
     align-items: center;
-    gap: 18px;
+    gap: 12px;
   }
   .credit {
     margin: 0;
@@ -848,7 +831,8 @@
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    padding: 6px 10px 6px 11px;
+    height: 26px;
+    padding: 0 10px 0 11px;
     border: 1px solid var(--line);
     border-radius: 999px;
     font-family: var(--font-cinzel);
@@ -919,7 +903,6 @@
     translate: -50% 0;
   }
   .fine {
-    max-width: 380px;
     margin: 0;
     text-align: center;
     font-size: 13px;
@@ -932,10 +915,13 @@
     text-decoration-color: var(--gold-lo);
     text-underline-offset: 3px;
   }
+  /* As on the other pages: no underline, the footer's muted colour. */
+  .legal a {
+    text-decoration: none;
+  }
   .legal {
-    justify-self: end;
     display: flex;
-    gap: 0.6rem;
+    gap: 0.4rem;
     font-size: 13px;
     color: var(--muted);
   }
@@ -992,12 +978,8 @@
       padding-top: 32px;
     }
     .band {
-      grid-template-columns: 1fr;
-      justify-items: center;
+      flex-direction: column;
       gap: 14px;
-    }
-    .legal {
-      justify-self: center;
     }
   }
   /* Phones: the menu, the open rooms, then Today's unique; no cursor. */
@@ -1073,7 +1055,7 @@
       height: 44px;
     }
     .support {
-      min-height: 44px;
+      height: 44px;
     }
   }
 </style>
