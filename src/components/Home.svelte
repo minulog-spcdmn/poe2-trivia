@@ -21,7 +21,6 @@
   import MenuCursor from './MenuCursor.svelte';
   import OpenRooms from './OpenRooms.svelte';
   import { probeRoom, type RoomInfo } from '../lib/rooms';
-  import { capCentre } from '../lib/capCentre';
 
   /** Keeps a room code's letters and digits, uppercased, up to its length. */
   const cleanCode = (v: string) => v.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, CODE_LENGTH);
@@ -577,8 +576,7 @@
         <a class="support" href={DONATE_URL} target="_blank" rel="noopener noreferrer" aria-describedby="support-note">
           <!-- Its box is the heart's own outline, so the heart itself sits centred beside the text. -->
           <svg viewBox="5 6 14 14" aria-hidden="true"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z" /></svg>
-          <!-- Centred by its capitals beside the heart (lib/capCentre.ts): where they sit in their line differs between systems. -->
-          <span class="say" use:capCentre>Support the project</span>
+          Support the project
           <span class="tip" id="support-note" role="tooltip">Optional tips help pay for the domain and development. Everything stays free.</span>
         </a>
       </div>
