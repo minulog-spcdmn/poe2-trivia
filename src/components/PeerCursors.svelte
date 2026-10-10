@@ -7,9 +7,10 @@
   import { onMount } from 'svelte';
   import { session } from '../lib/session.svelte';
   import { peerCursors } from '../lib/peerCursors.svelte';
-  import { MOUSE, PRESSED, SEND_EVERY_MS, TAP, anchorCode, anchorName, cursorKey, cursorsLive, fromAnchor, toAnchor, trailAt, type CursorAt, type PointerKind } from '../lib/cursors';
+  import { MOUSE, PRESSED, SEND_EVERY_MS, TAP, anchorName, cursorKey, cursorsLive, fromAnchor, trailAt, type CursorAt, type PointerKind } from '../lib/cursors';
   import { playerColor } from '../lib/ui';
   import { portal } from '../lib/portal';
+  import { anchorAt } from '../lib/pointerAnchor';
   import { HAND, HAND_PRESSED, PAD_X, PAD_Y, POINTER, PRESS_SINK, SIZE, WEIGHT } from '../lib/pointerArt';
 
   /**
@@ -63,26 +64,11 @@
   /** What was sent last, so a pointer that stays put isn't sent again. */
   let sent = 'null';
 
-  /** The anchor under a spot, or the game as a whole (null when outside it). */
-  function measure(px: number, py: number, kind: PointerKind): CursorAt | null {
-    // Through the cover middle-button scrolling lays over the page (lib/autoscroll.ts).
-    const hit = document.elementsFromPoint(px, py).find((n) => !n.closest('.autoscroll'));
-    let el = hit?.closest<HTMLElement>('[data-cursor]') ?? null;
-    // Something on its way out (Svelte makes it inert) isn't on the other screens any more.
-    if (el?.closest('[inert]')) el = null;
-    el ??= document.querySelector<HTMLElement>('[data-cursor="game"]');
-    const code = el ? anchorCode(el.dataset.cursor ?? '') : null;
-    if (!el || code === null) return null;
-    const r = el.getBoundingClientRect();
-    if (px < r.left || px > r.right || py < r.top || py > r.bottom || !r.width || !r.height) return null;
-    return [code, ...toAnchor(code, px, py, r, innerHeight), kind];
-  }
-
   function flush() {
     timer = null;
     if (!dirty) return;
     dirty = false;
-    const at = pointing && over ? measure(x, y, held ? PRESSED : MOUSE) : null;
+    const at = pointing && over ? anchorAt(x, y, held ? PRESSED : MOUSE) : null;
     const key = JSON.stringify(at);
     if (key !== sent) {
       sent = key;
@@ -121,7 +107,7 @@
     const up = (e: PointerEvent) => press(e, false);
     const tap = (e: PointerEvent) => {
       if (e.pointerType !== 'touch' || !pointing) return;
-      const at = measure(e.clientX, e.clientY, TAP);
+      const at = anchorAt(e.clientX, e.clientY, TAP);
       if (!at) return;
       session.pointAt(at);
       // A tap is shown once and fades by itself; the next one is its own, even on the same spot.

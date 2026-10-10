@@ -22,8 +22,12 @@
   import { BETA, LOCAL } from './lib/channel';
   import { setCursorColor } from './lib/ownCursor';
   import PeerCursors from './components/PeerCursors.svelte';
+  import Recorder from './components/Recorder.svelte';
+  import { wantsRecording } from './lib/recorder';
   import { playerColor } from './lib/ui';
 
+  // Beta and dev only: ?record keeps how this player plays, for the room bots (lib/recorder.ts).
+  let recording = $state(wantsRecording());
   let muted = $state(isMuted());
   let volume = $state(getVolume());
   const silent = $derived(muted || volume === 0);
@@ -324,6 +328,7 @@
   <main>
     <!-- Other players' pointers, in an online room: the lobby and the game (lib/cursors.ts says when). -->
     {#if (session.mode === 'host' || session.mode === 'client') && session.state}<PeerCursors />{/if}
+    {#if recording}<Recorder onstop={() => (recording = false)} />{/if}
     {#key screen}
       <div class="screen" in:fade={{ duration: 350, delay: SCREEN_OUT_MS }} out:fade={{ duration: SCREEN_OUT_MS }}>
         {#if screen === 'home'}
