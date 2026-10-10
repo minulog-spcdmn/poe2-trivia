@@ -22,6 +22,7 @@
 
 import { cornerPx } from './corner';
 import { opacityOf } from './opacity';
+import { zoomOf } from './stage';
 
 /** How much the page darkens (as an rgba(0, 0, 0, 0.65) layer over it would). */
 export const DIALOG_DIM = 0.65;
@@ -85,7 +86,9 @@ export function dialogBox(): { rect: DOMRect; radius: number } | null {
   if (box === undefined) {
     const dialog = open.backdrop?.querySelector<HTMLElement>('[role="dialog"]');
     const rect = dialog?.getBoundingClientRect();
-    box = dialog && rect ? { rect, radius: cornerPx(getComputedStyle(dialog).borderTopLeftRadius, rect.width, rect.height) } : null;
+    // Its radius is in its own px, the box on screen: the stage's zoom (lib/stage.ts) between them.
+    const z = dialog ? zoomOf(dialog) : 1;
+    box = dialog && rect ? { rect, radius: cornerPx(getComputedStyle(dialog).borderTopLeftRadius, rect.width / z, rect.height / z) * z } : null;
   }
   return box;
 }

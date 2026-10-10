@@ -7,6 +7,7 @@ import { FIRE_REACH, ShapeType, type Silhouette } from './renderer';
 import { cornerPx } from '../corner';
 import { opacityOf } from '../opacity';
 import { after, boxOf, budget, currentFrame, detached, fxActive, particle, shape, task, type Anchor, type Box, type Handle, type Point, type Vec3 } from './core';
+import { zoomOf } from '../stage';
 
 // ---------- palette ----------
 
@@ -473,6 +474,8 @@ function projectedCorners(el: HTMLElement, base: Element, inset: number, b: Box)
   const box = base.getBoundingClientRect();
   const w = el.offsetWidth;
   const h = el.offsetHeight;
+  // Worked out in the card's own px; on screen they are the stage's zoom (lib/stage.ts) larger.
+  const z = zoomOf(el);
   const [ox = w / 2, oy = h / 2] = cs.transformOrigin.split(' ').map(parseFloat);
   const out: number[] = [];
   for (const [x, y] of [
@@ -483,7 +486,7 @@ function projectedCorners(el: HTMLElement, base: Element, inset: number, b: Box)
   ]) {
     const p = new DOMPoint(x - ox, y - oy, 0, 1).matrixTransform(m);
     if (p.w <= 0) return null;
-    out.push(p.x / p.w + ox + box.left - b.x, p.y / p.w + oy + box.top - b.y);
+    out.push((p.x / p.w + ox) * z + box.left - b.x, (p.y / p.w + oy) * z + box.top - b.y);
   }
   return out;
 }
