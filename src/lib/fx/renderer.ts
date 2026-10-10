@@ -482,18 +482,20 @@ void main() {
     vec2 ge = exp(-e / vQ.x);
     float g = 1.0 - (1.0 - ge.x) * (1.0 - ge.y);
     float d = -log(max(g, 1e-6)) * vQ.x;
-    // The smoke hugs the edges.
-    float reach = exp(-d / vQ.x) * vQ.z;
+    // The smoke hugs the edges, and fades out fast past its width.
+    float reach = exp(-pow(d / vQ.x, 1.6)) * vQ.z;
     if (g > 0.004 || reach > 0.004) {
-      float n = fbm(vP * 0.004 + vec2(seed, time * 0.35));
+      // (Its patches scale with the width: about 250 px at 60.)
+      float n = fbm(vP * (0.25 / vQ.x) + vec2(seed, time * 0.35));
       v = g * mix(1.0, 0.3 + 1.4 * n, vQ.y) * (1.0 - 0.6 * vQ.z);
       if (reach > 0.004) {
-        // Smoke curling in from the edges: warped noise pinched into thin
-        // threads, in patches, carried in by flow (the noise zooms in on the
-        // middle of the screen, so all of it drifts inward, seamlessly).
+        // Smoke along the edges: warped noise pinched into thin threads,
+        // in patches, writhing as the warp turns over; carried in by flow,
+        // if any (the noise zooms in on the middle of the screen, so all of
+        // it drifts inward, seamlessly).
         float zoom = 1.0 + vQ.w / max(vHalf.x, vHalf.y);
-        vec2 P = vP * zoom / (vQ.x * 1.1) + seed * 7.0;
-        vec2 w = vec2(fbm(P * 0.5 + vec2(0.0, time * 0.4)), fbm(P * 0.5 + vec2(5.2, 1.3)));
+        vec2 P = vP * zoom / (vQ.x * 0.75) + seed * 7.0;
+        vec2 w = vec2(fbm(P * 0.5 + vec2(0.0, time * 0.9)), fbm(P * 0.5 + vec2(5.2, 1.3 - time * 0.7)));
         float ridge = 1.0 - abs(2.0 * fbm(P + 2.2 * w) - 1.0);
         float clump = smoothstep(0.38, 0.72, fbm(P * 0.35 + 1.5 * w + 9.0));
         float thread = pow(ridge, 7.0);

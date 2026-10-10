@@ -659,12 +659,13 @@ export function edgeGlow(o: { color?: Vec3; width?: number; life?: number; inten
 
 /**
  * One beat of red smoke at the screen's edges, as the clock ticks: up at
- * once, dying away with the tick's sound, creeping in a little. `width`: how
- * far in it reaches (px); `smoke` (0 none): its wisps; `rim`: a hot line
- * along the very edge.
+ * once and dying away with the tick's sound, where it is (it brightens, the
+ * smoke writhing in place; nothing rushes in). `width`: how far in it
+ * reaches (px, on a window 720 px across its short side; it scales with the
+ * window, so a big screen sees the same as a small one). `smoke` (0 none):
+ * its wisps; `rim`: a hot line along the very edge.
  */
 export function edgeBeat(o: { color?: Vec3; width?: number; intensity?: number; smoke?: number; rim?: number } = {}) {
-  const W = o.width ?? 60;
   const life = 0.8;
   return shape({
     type: ShapeType.Edge,
@@ -679,11 +680,10 @@ export function edgeBeat(o: { color?: Vec3; width?: number; intensity?: number; 
       const rise = 0.035;
       const env = age < rise ? Math.sin(((age / rise) * Math.PI) / 2) ** 2 : Math.exp(-(age - rise) / 0.2);
       f.k = (o.intensity ?? 0.06) * env;
-      // Swelling a little with the beat, never far in.
-      f.q[0] = W * (0.85 + 0.15 * env);
+      f.q[0] = (o.width ?? 60) * Math.max(0.7, Math.min(2.2, Math.min(innerWidth, innerHeight) / 720));
       f.q[1] = 0.6;
       f.q[2] = o.smoke ?? 0;
-      f.q[3] = W * 0.3 * (1 - Math.exp(-age * 4));
+      f.q[3] = 0;
       f.q[4] = (o.rim ?? 0) * env;
     },
   });
