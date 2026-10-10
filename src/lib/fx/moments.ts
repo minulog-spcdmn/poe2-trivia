@@ -9,7 +9,6 @@ import {
   edgeGlow,
   edgeBeat,
   edgeHit,
-  edgeSmokeSink,
   embers,
   emitter,
   fire,
@@ -324,6 +323,7 @@ export type RevealTargets = {
 
 /** The answer is revealed. */
 export function reveal(t: RevealTargets) {
+  endCountdown();
   if (!fxActive()) return;
   const streak = t.streak ?? 1;
   const hype = Math.min(3, 1 + (streak - 1) * 0.5);
@@ -384,17 +384,10 @@ export function reveal(t: RevealTargets) {
       }
     }
     if (!t.warded) {
-      // A blow at the edges, as its sound (the same for time's up); time's
-      // up also sinks the clock's smoke away with it.
+      // A blow at the edges, as its sound: the same for time's up, which
+      // sounds the same (only the art tells them apart, above).
       edgeHit({ color: C.wrong });
       pulseMood(0.16, [0.9, 0.3, 0.15]);
-      const smoke = t.timedOut ? countdownSmoke() : null;
-      if (smoke) {
-        // It takes over from the beats still lingering, which go at once.
-        for (const h of beats) h.stop(0.08);
-        beats = [];
-        edgeSmokeSink({ ...smoke, width: TICK_STEPS[0].width, color: TICK_STEPS[0].color });
-      }
     }
     shakeView(0.45, 6);
   }
@@ -1083,15 +1076,14 @@ const TICK_STEPS = [
 let smokePattern = 0;
 let smokeFrom = 0;
 let lastTick = 0;
-let lastTickAt = 0;
-/** The beats still lingering, for time's up to take over. */
+/** The countdown's beats still lingering, for the reveal to end. */
 let beats: Handle[] = [];
 
-/** The countdown's smoke, if its last second has just ticked (for time's up to burn it down), else null. */
-function countdownSmoke(): { pattern: number; clock: number } | null {
-  const now = performance.now();
-  if (lastTick !== 1 || now - lastTickAt > 2500) return null;
-  return { pattern: smokePattern, clock: (now - smokeFrom) / 1000 };
+/** The question is decided, so the countdown is over: its smoke fades out where it is, about as the reveal's sound dies. */
+function endCountdown() {
+  for (const h of beats) h.stop(0.35);
+  beats = [];
+  lastTick = 0;
 }
 
 /**
@@ -1115,7 +1107,6 @@ export function timerTick(timer: Element, secs: number, screen = true) {
     beats = [];
   }
   lastTick = secs;
-  lastTickAt = performance.now();
   pulseMood(step.mood);
   beats.push(edgeBeat({ ...step, pattern: smokePattern, clock: (performance.now() - smokeFrom) / 1000 }));
 }

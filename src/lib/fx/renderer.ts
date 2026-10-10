@@ -489,7 +489,6 @@ void main() {
     // Screen edge glow. q: width (px), noise, smoke, the smoke's pattern.
     // r: heat (the smoke's thickest threads, and a line along the very
     // edge), the smoke's clock (s), its evenness (0-1), its body (0-1).
-    // s: how far it has sunk (px), how far it has settled (0-1).
     vec2 e = max(vHalf - abs(vP), 0.0);
     // Each edge's light, joined as light adds up: brighter into the corners,
     // and round there, with no seam along the diagonal. Read back as a
@@ -509,8 +508,7 @@ void main() {
         // slow billows, and finer threads curling over them where it is
         // thick. Thin, it is a deeper red; thick, warmer.
         float tt = vR.y;
-        // Sinking (s.x, px): the smoke slides down the screen.
-        vec2 P = (vP - vec2(0.0, vS.x)) / (vQ.x * 0.8) + vQ.w * 7.0;
+        vec2 P = vP / (vQ.x * 0.8) + vQ.w * 7.0;
         vec2 w = vec2(fbm(P * 0.45 + vec2(0.0, tt * 0.25)), fbm(P * 0.45 + vec2(5.2, 1.3 - tt * 0.2)));
         // Its density, soft (never solid, even where thick) and, with
         // evenness (r.z), spread round the edges rather than in patches.
@@ -527,10 +525,6 @@ void main() {
       }
       // A hot line along the very edge.
       hot += exp(-d / (vQ.x * 0.08)) * 0.5 * vR.x;
-      // Settling (s.y, 0-1): it drains from the top, what is left lowest.
-      float low = mix(1.0, smoothstep(-1.1, 1.0, vP.y / vHalf.y), vS.y);
-      v *= low;
-      hot *= low;
     }
   } else if (type == 6) {
     // Soft radial flash. q: radius.
