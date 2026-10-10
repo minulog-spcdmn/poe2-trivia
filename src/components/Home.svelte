@@ -912,17 +912,17 @@
     align-items: center;
     gap: 12px;
   }
+  /* The footer's type is the display face, as drawn (handoff: Footer band). */
   .credit {
     margin: 0;
     white-space: nowrap;
-    font-family: var(--font-cinzel);
+    font-family: var(--font-display);
     font-size: 13px;
-    letter-spacing: 0.02em;
+    letter-spacing: 0.18em;
     text-transform: uppercase;
     color: #9b8e89;
   }
   .maker {
-    font-family: var(--font-display);
     font-size: 15px;
     letter-spacing: 0.04em;
     text-transform: none;
@@ -941,15 +941,15 @@
     position: relative;
     display: inline-flex;
     align-items: center;
-    gap: 6px;
+    gap: 9px;
     height: 26px;
     padding: 0 11px;
     border: 1px solid var(--line);
     border-radius: 999px;
-    font-family: var(--font-cinzel);
-    font-size: 10px;
+    font-family: var(--font-display);
+    font-size: 12px;
     font-weight: 700;
-    letter-spacing: 0.04em;
+    letter-spacing: 0.06em;
     text-transform: uppercase;
     text-decoration: none;
     white-space: nowrap;
@@ -966,8 +966,8 @@
     background: rgba(140, 58, 44, 0.2);
   }
   .support svg {
-    width: 8px;
-    height: 8px;
+    width: 7px;
+    height: 7px;
     fill: #c0463c;
   }
   /* Its note as a tooltip, over the pill. */

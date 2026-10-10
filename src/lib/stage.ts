@@ -12,26 +12,39 @@ export function stageZoom(w: number, h: number): number {
 }
 
 /**
+ * What carries the stage's zoom: the app's shell, and what sits outside it
+ * at the page's scale (the deathmatch intro, the toasts, dialogs' backdrops
+ * and the blast layer, the last two zoomed inline).
+ */
+const ZOOMED = '.shell, .dm-intro, .toasts, [style*="zoom"]';
+
+/**
  * The CSS zoom an element is drawn at (1 without): getBoundingClientRect's
  * sizes divided by it are in the element's own CSS pixels. A browser that
  * doesn't say (no currentCSSZoom) may zoom the old way, where those sizes
  * are already the element's own px, or the new: what its
- * getBoundingClientRect does is measured instead, once per window size, on
- * the stage itself (App.svelte's shell, which everything zoomed shares).
+ * getBoundingClientRect does is measured instead, on whatever carries the
+ * zoom the element is under (1 under none), and kept until the zoom or the
+ * window changes.
  */
 export function zoomOf(el: Element): number {
   const said = (el as Element & { currentCSSZoom?: number }).currentCSSZoom;
-  return said ?? measuredZoom();
+  return said ?? measuredZoom(el);
 }
 
-let measured: { w: number; h: number; z: number } | null = null;
-function measuredZoom(): number {
-  if (measured && measured.w === innerWidth && measured.h === innerHeight) return measured.z;
-  const shell = document.querySelector<HTMLElement>('.shell');
-  const z = shell && shell.offsetWidth > 0 ? shell.getBoundingClientRect().width / shell.offsetWidth : 1;
+const measured = new WeakMap<Element, { key: string; z: number }>();
+function measuredZoom(el: Element): number {
+  const root = el.closest<HTMLElement>(ZOOMED);
+  if (!root) return 1;
+  const key = `${document.documentElement.style.getPropertyValue('--stage-zoom')} ${innerWidth}x${innerHeight}`;
+  const was = measured.get(root);
+  if (was?.key === key) return was.z;
+  // Not laid out yet: nothing to measure, and nothing kept.
+  if (!root.offsetWidth) return 1;
   // (Rounded: the two widths are rounded differently.)
-  measured = { w: innerWidth, h: innerHeight, z: Math.round(z * 1000) / 1000 };
-  return measured.z;
+  const z = Math.round((root.getBoundingClientRect().width / root.offsetWidth) * 1000) / 1000;
+  measured.set(root, { key, z });
+  return z;
 }
 
 /** A box measured on screen, in the px of something drawn at zoom `z`. */

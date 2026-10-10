@@ -14,7 +14,8 @@ import { FIND_COLORS } from './moments';
 import { Shape, type ParticleSpec } from './particles';
 import { ShapeType } from './renderer';
 import { holdLight, light, pulseMood } from '../lights';
-import { cornerPx } from '../corner';
+import { cornerOnScreen } from '../corner';
+import { zoomOf } from '../stage';
 
 const RED = FIND_COLORS.flare.main;
 const PALE = FIND_COLORS.flare.pale;
@@ -219,6 +220,8 @@ export function flareLit(o: FlareLit): Handle {
   // The box it burns behind, backlit: its light welling up round the box's
   // outline, licking upward like fire (hidden over the box itself, but for its rim).
   let corner = '0';
+  // The stage's zoom (lib/stage.ts) the box is drawn at: its corner is in its own px.
+  let cornerZ = 1;
   let cornerOf: Element | null = null;
   const backlit = shape({
     type: ShapeType.RectGlow,
@@ -236,6 +239,7 @@ export function flareLit(o: FlareLit): Handle {
       if (el !== cornerOf) {
         cornerOf = el;
         corner = getComputedStyle(el).borderTopLeftRadius;
+        cornerZ = zoomOf(el);
       }
       const wd = Math.max(20, Math.min(r.width, r.height) * 0.12);
       b.x = r.left + r.width / 2;
@@ -245,7 +249,7 @@ export function flareLit(o: FlareLit): Handle {
       f.k = 0.19 * heat * (1 - 0.5 * gut);
       f.q[0] = r.width / 2;
       f.q[1] = r.height / 2;
-      f.q[2] = Math.min(cornerPx(corner, r.width, r.height), r.width / 2, r.height / 2);
+      f.q[2] = Math.min(cornerOnScreen(corner, r.width, r.height, cornerZ), r.width / 2, r.height / 2);
       f.q[3] = wd;
       f.q[4] = 0.6;
       f.q[5] = 0;

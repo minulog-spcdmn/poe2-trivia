@@ -69,6 +69,8 @@ export type ShapeFrame = {
    * picture at a time: the first shape's; shapes naming another get none.
    */
   silhouette?: Silhouette | null;
+  /** This frame, whether it's calm (ShapeSpec's `calm`), when that changes as it goes. */
+  calm?: boolean;
 };
 
 export type ShapeSpec = {
@@ -733,7 +735,7 @@ function simulate(dt: number, nowMs: number, render: boolean): boolean {
       if (silhouette && s.f.silhouette?.pic === silhouette.pic) shapeData[nShapes * SHAPE_FLOATS + 11] += BEHIND_PICTURE;
       nShapes++;
       if (crisp) nCrisp++;
-      if (!s.calm) shapesCalm = false;
+      if (!(s.f.calm ?? s.calm)) shapesCalm = false;
       if (Number.isFinite(s.life)) shapesEndless = false;
     }
   }

@@ -4,7 +4,7 @@
 
 import { Shape } from './particles';
 import { FIRE_REACH, ShapeType, type Silhouette } from './renderer';
-import { cornerOnScreen, cornerPx } from '../corner';
+import { cornerOnScreen } from '../corner';
 import { opacityOf } from '../opacity';
 import { after, boxOf, budget, currentFrame, detached, fxActive, particle, shape, task, type Anchor, type Box, type Handle, type Point, type ShapeHandle, type Vec3 } from './core';
 import { zoomOf } from '../stage';
@@ -356,6 +356,8 @@ export function rays(
   // The cleared element's corner radius as computed, read once per element.
   let cornerOf: Element | null = null;
   let corner = '0';
+  // The stage's zoom (lib/stage.ts) it is drawn at: its corner is in its own px.
+  let cornerZ = 1;
   return shape({
     type: ShapeType.Rays,
     at,
@@ -379,12 +381,13 @@ export function rays(
       if (c && el !== cornerOf) {
         cornerOf = el;
         corner = getComputedStyle(el!).borderTopLeftRadius;
+        cornerZ = zoomOf(el!);
       }
       const hw = c ? c.w / 2 : 0;
       const hh = c ? c.h / 2 : 0;
       f.q[5] = hw;
       f.q[6] = hh;
-      f.q[7] = c ? Math.min(cornerPx(corner, c.w, c.h), hw, hh) : 0;
+      f.q[7] = c ? Math.min(cornerOnScreen(corner, c.w, c.h, cornerZ), hw, hh) : 0;
       f.q[8] = c ? c.x - b.x : 0;
       f.q[9] = c ? c.y - b.y : 0;
     },
@@ -472,7 +475,8 @@ function stageLook(el: Element) {
   let h = -1;
   const look = { z: 1, corner: '0px' };
   return () => {
-    if (w !== innerWidth || h !== innerHeight) {
+    // (Gone from the page, it keeps what it last had: a detached element reads as unzoomed and unrounded.)
+    if ((w !== innerWidth || h !== innerHeight) && el.isConnected) {
       w = innerWidth;
       h = innerHeight;
       look.z = zoomOf(el);
@@ -669,22 +673,22 @@ const edgeScale = () => Math.max(0.7, Math.min(2.2, Math.min(innerWidth, innerHe
  * drifted), `even` (0-1, round the edges rather than in patches) and `body`
  * (0-1, see-through to full); `heat`: a hot line along the very edge (and
  * the smoke's thickest threads); `grade` (0-1): the countdown's grading of
- * its red smoke, deeper where thin and warmer where thick.
+ * its red smoke, deeper where thin and warmer where thick; `calm`: slow
+ * enough this frame to be drawn at 30fps on phones (see ShapeSpec).
  */
-type EdgeFrame = { k: number; color?: Vec3; width: number; noise?: number; smoke?: number; pattern?: number; clock?: number; even?: number; body?: number; heat?: number; grade?: number };
+type EdgeFrame = { k: number; color?: Vec3; width: number; noise?: number; smoke?: number; pattern?: number; clock?: number; even?: number; body?: number; heat?: number; grade?: number; calm?: boolean };
 
 /**
  * A shape over the visible screen (innerWidth by innerHeight rather than the
  * canvas, which reaches under a phone's toolbars, so it follows them as they
  * slide), drawn by the Edge shader with what `frame` gives each frame.
  */
-function edgeShape(life: number, color: Vec3, frame: (t: number, age: number) => EdgeFrame, calm = false): ShapeHandle {
+function edgeShape(life: number, color: Vec3, frame: (t: number, age: number) => EdgeFrame): ShapeHandle {
   return shape({
     type: ShapeType.Edge,
     at: { x: innerWidth / 2, y: innerHeight / 2 },
     life,
     color,
-    calm,
     update(f, t, age, b) {
       b.x = innerWidth / 2;
       b.y = innerHeight / 2;
@@ -702,6 +706,7 @@ function edgeShape(life: number, color: Vec3, frame: (t: number, age: number) =>
       f.q[6] = e.even ?? 0;
       f.q[7] = e.body ?? 1;
       f.q[8] = e.grade ?? 0;
+      f.calm = e.calm;
     },
   });
 }
@@ -712,9 +717,13 @@ function edgeShape(life: number, color: Vec3, frame: (t: number, age: number) =>
  * far (when each came, in that clock, and with what) into the frame. It
  * lasts `life`; `open(room)` says whether it's still there with `room`
  * seconds left for another hit (else make a new one). Only the latest
- * `keep` hits are kept. (Not `calm`: its hits strike in a frame or two, in
- * time with their sounds.)
+ * `keep` hits are kept. It's drawn at full rate for a moment round each
+ * hit, whose strike lands with its sound in a frame or two, and calm (30fps
+ * on phones) while it only drifts and lingers.
  */
+/** How long after a hit an edge effect is drawn at full rate (edgeHits): the ward's strike, the longest, peaks at 0.12 s and is gone by 0.22 s. */
+const STRIKE_FAST = 0.3;
+
 function edgeHits<B>(life: number, color: Vec3, frame: (hits: { at: number; b: B }[], age: number) => EdgeFrame, keep = 4) {
   const hits: { at: number; b: B }[] = [];
   const coming: B[] = [];
@@ -723,7 +732,9 @@ function edgeHits<B>(life: number, color: Vec3, frame: (hits: { at: number; b: B
     age = a;
     for (const b of coming.splice(0)) hits.push({ at: a, b });
     while (hits.length > keep) hits.shift();
-    return frame(hits, a);
+    // Calm but for a moment round each hit, whose strike lands in a frame or two.
+    const last = hits[hits.length - 1]?.at;
+    return { ...frame(hits, a), calm: last === undefined || a - last > STRIKE_FAST };
   });
   return {
     hit: (b: B) => void coming.push(b),

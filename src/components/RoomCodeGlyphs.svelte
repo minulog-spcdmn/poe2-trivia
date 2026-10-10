@@ -78,11 +78,11 @@
    * the code itself instead, whatever of it is selected.
    */
   function copyCode(e: ClipboardEvent) {
-    // Only a selection within the code: one reaching past it copies as it is.
-    const sel = getSelection();
-    if (!sel?.toString() || !sel.rangeCount || !e.clipboardData || !glyphs) return;
-    const range = sel.getRangeAt(0);
-    if (!glyphs.contains(range.startContainer) || !glyphs.contains(range.endContainer)) return;
+    // Only a selection of the code (all of it or some, whichever way it is
+    // anchored round it): one taking in anything else copies as it is.
+    const text = getSelection()?.toString().replace(/\s/g, '') ?? '';
+    const shown = hidden ? '•'.repeat(code.length) : code;
+    if (!text || !shown.includes(text) || !e.clipboardData) return;
     e.clipboardData.setData('text/plain', code);
     e.preventDefault();
   }

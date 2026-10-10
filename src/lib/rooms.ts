@@ -65,10 +65,14 @@ class Prober {
     if (this.peer.disconnected || this.peer.destroyed) return Promise.resolve(null);
     return new Promise((resolve) => {
       let conn: DataConnection | null = null;
+      let settled = false;
+      // Every probe settles once, on its own; it takes itself off the
+      // waiting list only if it's still the one there (a later probe of the
+      // same id may have taken its place, and stays waiting).
       const done = (r: ProbeResult) => {
-        // (Only this probe's own: a later probe of the same id may be waiting by now.)
-        if (this.waiting.get(id) !== done) return;
-        this.waiting.delete(id);
+        if (settled) return;
+        settled = true;
+        if (this.waiting.get(id) === done) this.waiting.delete(id);
         clearTimeout(timer);
         conn?.close();
         resolve(r);
@@ -83,7 +87,7 @@ class Prober {
         done(room ?? null);
       });
       conn.on('open', () => {
-        if (this.waiting.get(id) !== done) return;
+        if (settled) return;
         clearTimeout(timer);
         timer = setTimeout(() => done(null), PROBE_ANSWER_MS);
       });
