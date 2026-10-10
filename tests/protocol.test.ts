@@ -134,8 +134,13 @@ test('an answer turned down names its question, so the guest can answer it again
   assert.equal(parseHostMsg({ t: 'error', message, askedAt: 1.5 }), null);
 });
 
-test('version 19: a guest can choose to watch rather than play (the watch action); 18: pictures go out at ART_SCALE pixels per art pixel (the upscaled item art); 17: a blasted question remembers the wrong answers given to it, so every screen logs what they cost (Blast.was.struck); 16 gave a flare six seconds and a Flare Cache two thirds of the clock, never under four (worked out on every screen); 15 set dynamite off right at 0, its fuse burning over the last seconds before; 14 lit it at 0 (Question.fuse), 13 blasted a question away (the blast action), 12 had the frozen Delve rules, 11 the co-op vote and revive', () => {
-  assert.equal(PROTOCOL_VERSION, 19);
+test('version 20: pictures go out at each item\'s own artScale (4 up to 2 x 2 cells, 2 above), so an option\'s picture comes with its size in art pixels; 19: a guest can choose to watch rather than play (the watch action); 18: pictures go out at ART_SCALE pixels per art pixel (the upscaled item art); 17: a blasted question remembers the wrong answers given to it, so every screen logs what they cost (Blast.was.struck); 16 gave a flare six seconds and a Flare Cache two thirds of the clock, never under four (worked out on every screen); 15 set dynamite off right at 0, its fuse burning over the last seconds before; 14 lit it at 0 (Question.fuse), 13 blasted a question away (the blast action), 12 had the frozen Delve rules, 11 the co-op vote and revive', () => {
+  assert.equal(PROTOCOL_VERSION, 20);
+  // A guest on 19 would draw a small item's picture at twice its size, and find no size on an option's picture.
+  assert.match(versionProblem(19)!, /^Your game is out of date/);
+  const pic = new ArrayBuffer(8);
+  assert.ok(parseHostMsg({ t: 'option', qid: 1, index: 0, w: 120, h: 120, data: pic }));
+  assert.equal(parseHostMsg({ t: 'option', qid: 1, index: 0, data: pic }), null, 'an option picture without its size');
   // A host on 18 would take a guest's watch action for a forged message and block them.
   assert.match(versionProblem(18)!, /^Your game is out of date/);
   // A guest on 17 would show a host's pictures at twice their size, or a 17 host's at half, and burn patches in out of place.
