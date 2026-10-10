@@ -4,7 +4,7 @@
 // so it doesn't match the original file byte for byte), and for veiled
 // questions only the patches of it that have been uncovered so far.
 
-import { ART_SCALE, itemImage } from './ui-paths';
+import { itemImage } from './ui-paths';
 import { cutPatches, spreadOrder, veilSchedule, visibleBox, type VeilPlan } from './patches';
 import type { MediaMsg } from './protocol';
 import type { Grayscale, Question, Veil } from './game';
@@ -46,8 +46,8 @@ export interface PreparedMedia {
   delays: number[];
   gap: number;
   areas: number[];
-  /** Art questions: one picture per option. */
-  options: ArrayBuffer[];
+  /** Art questions: one picture per option, and its size in art pixels. */
+  options: { w: number; h: number; data: ArrayBuffer }[];
   /** Veiled art questions (Delve): each option's picture cut into patches instead, with its own delays. */
   tiles: CutVeil[];
 }
@@ -94,25 +94,49 @@ function loadImage(src: string): Promise<HTMLImageElement> {
 
 const rand = (min: number, max: number) => min + Math.random() * (max - min);
 
+/** Items' art sizes (art pixels; Item.w, Item.h), by id. */
+export type ArtSizes = ReadonlyMap<string, { w: number; h: number }>;
+
+/**
+ * At most how many pixels per art pixel a picture goes out with. The art to
+ * name is shown big and alone, so it keeps all the file has (4 for items up
+ * to 2 x 2: artScale); veiled patches (lossless, and only until the full
+ * art takes over at the reveal) and the small tiles of a "find the art"
+ * question with many options go out at 2, which keeps what every guest is
+ * sent near what it was before the art went to 4.
+ */
+const SHARP = 4;
+const LIGHT = 2;
+/** A "find the art" question with more options than this shows them small. */
+const FEW_OPTIONS = 4;
+
+/** A picture drawn for a question, with its pixels per art pixel. */
+interface Altered {
+  canvas: HTMLCanvasElement;
+  scale: number;
+}
+
 /**
  * Draws the item onto a canvas with small random changes (and flipped left to
- * right if `mirror`). Like the art file, the canvas has ART_SCALE pixels per
- * art pixel, and its size is a whole number of art pixels.
+ * right if `mirror`), so it matches no file byte for byte. The canvas has as
+ * many pixels per art pixel as the item's file (its own size over the art's:
+ * artScale), but no more than `most`, and its size is a whole number of art
+ * pixels. The changes keep clear of the art's sharpness: it is shifted by
+ * whole pixels and not turned, only its size is resampled.
  */
-async function alteredCanvas(itemId: string, grayscale: boolean, mirror = false): Promise<HTMLCanvasElement> {
+async function alteredCanvas(itemId: string, art: { w: number; h: number }, most: number, grayscale: boolean, mirror = false): Promise<Altered> {
   const img = await loadImage(itemImage(itemId));
-  const S = ART_SCALE;
+  const S = Math.max(1, Math.min(most, Math.round(img.naturalWidth / art.w)));
   const scale = rand(0.9, 1.0);
-  const w = Math.round((img.naturalWidth / S) * scale);
-  const h = Math.round((img.naturalHeight / S) * scale);
+  const w = Math.round(art.w * scale);
+  const h = Math.round(art.h * scale);
   const pad = Math.round(rand(2, 8));
   const canvas = document.createElement('canvas');
   canvas.width = (w + pad * 2) * S;
   canvas.height = (h + pad * 2) * S;
   const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
   ctx.imageSmoothingQuality = 'high';
-  ctx.translate(canvas.width / 2 + rand(-1.5, 1.5) * S, canvas.height / 2 + rand(-1.5, 1.5) * S);
-  ctx.rotate(rand(-0.6, 0.6) * (Math.PI / 180));
+  ctx.translate(Math.round(canvas.width / 2 + rand(-1.5, 1.5) * S), Math.round(canvas.height / 2 + rand(-1.5, 1.5) * S));
   if (mirror) ctx.scale(-1, 1);
   ctx.filter = `brightness(${rand(0.97, 1.03)}) saturate(${rand(0.96, 1.04)})`;
   ctx.drawImage(img, (-w / 2) * S, (-h / 2) * S, w * S, h * S);
@@ -134,20 +158,20 @@ async function alteredCanvas(itemId: string, grayscale: boolean, mirror = false)
     }
   }
   ctx.putImageData(pixels, 0, 0);
-  return canvas;
+  return { canvas, scale: S };
 }
 
 /**
- * Whole pictures go out as lossy WebP. Patches are lossless PNG: they are small
- * and cut from small art, so lossy encoding blurs them into blocks with seams
- * between neighbours.
+ * Whole pictures go out as WebP, at a quality that keeps the upscaled art's
+ * detail. Patches are lossless PNG: lossy encoding blurs them into blocks
+ * with seams between neighbours.
  */
 function encode(canvas: HTMLCanvasElement, lossless = false): Promise<ArrayBuffer> {
   return new Promise((resolve, reject) =>
     canvas.toBlob(
       (blob) => (blob ? blob.arrayBuffer().then(resolve, reject) : reject(new Error('encode failed'))),
       lossless ? 'image/png' : 'image/webp',
-      lossless ? undefined : rand(0.82, 0.9),
+      lossless ? undefined : rand(0.92, 0.95),
     ),
   );
 }
@@ -158,21 +182,23 @@ function encode(canvas: HTMLCanvasElement, lossless = false): Promise<ArrayBuffe
  * share of them, which each veiled picture's pace is fitted to once it is
  * cut (cutVeil).
  */
-export async function prepareMedia(q: Question, grayscale: Grayscale, clock: { secs: number; share: number }): Promise<PreparedMedia> {
+export async function prepareMedia(q: Question, grayscale: Grayscale, clock: { secs: number; share: number }, sizes: ArtSizes): Promise<PreparedMedia> {
+  const art = (id: string) => sizes.get(id)!;
   const out: PreparedMedia = { qid: q.askedAt, art: null, veil: null, patches: [], delays: [], gap: 0, areas: [], options: [], tiles: [] };
   if (q.mode === 'art') {
-    const canvases = await Promise.all(q.options.map((id, i) => alteredCanvas(id, grayscale !== 'off', !!q.mirrored?.[i])));
+    const most = q.veil || q.options.length > FEW_OPTIONS ? LIGHT : SHARP;
+    const pictures = await Promise.all(q.options.map((id, i) => alteredCanvas(id, art(id), most, grayscale !== 'off', !!q.mirrored?.[i])));
     // Each picture cut on its own seed, so no two burn in alike.
-    if (q.veil) out.tiles = await Promise.all(canvases.map((c, i) => cutVeil(c, { ...q.veil!, seed: q.veil!.seed + i }, veilPlan(clock.secs, clock.share, true))));
-    else out.options = await Promise.all(canvases.map((c) => encode(c)));
+    if (q.veil) out.tiles = await Promise.all(pictures.map((p, i) => cutVeil(p, { ...q.veil!, seed: q.veil!.seed + i }, veilPlan(clock.secs, clock.share, true))));
+    else out.options = await Promise.all(pictures.map(async (p) => ({ w: p.canvas.width / p.scale, h: p.canvas.height / p.scale, data: await encode(p.canvas) })));
     return out;
   }
-  const canvas = await alteredCanvas(q.itemId, grayscale === 'all', !!q.mirrored?.[0]);
+  const picture = await alteredCanvas(q.itemId, art(q.itemId), q.veil ? LIGHT : SHARP, grayscale === 'all', !!q.mirrored?.[0]);
   if (!q.veil) {
-    out.art = { w: canvas.width / ART_SCALE, h: canvas.height / ART_SCALE, data: await encode(canvas) };
+    out.art = { w: picture.canvas.width / picture.scale, h: picture.canvas.height / picture.scale, data: await encode(picture.canvas) };
     return out;
   }
-  const cut = await cutVeil(canvas, q.veil, veilPlan(clock.secs, clock.share, false));
+  const cut = await cutVeil(picture, q.veil, veilPlan(clock.secs, clock.share, false));
   out.veil = cut.veil;
   out.patches = cut.patches;
   out.delays = cut.delays;
@@ -201,10 +227,9 @@ export interface CutVeil {
  * at the latest, the rest after. The patches are cut in art pixels (a copy
  * of the picture scaled down to them), so their shapes, seams and areas are
  * what they always were; each patch's own picture is then taken from the
- * full-resolution canvas, ART_SCALE × ART_SCALE pixels for each of its own.
+ * full-resolution canvas, scale × scale pixels for each of its own.
  */
-async function cutVeil(canvas: HTMLCanvasElement, v: Veil, plan: VeilPlan): Promise<CutVeil> {
-  const S = ART_SCALE;
+async function cutVeil({ canvas, scale: S }: Altered, v: Veil, plan: VeilPlan): Promise<CutVeil> {
   const W = Math.round(canvas.width / S);
   const H = Math.round(canvas.height / S);
   const small = document.createElement('canvas');
@@ -277,7 +302,8 @@ class Shown {
   art = $state<{ url: string; w: number; h: number } | null>(null);
   veil = $state<VeilArt | null>(null);
   patches = $state<Record<number, ShownPatch>>({});
-  options = $state<Record<number, string>>({});
+  /** Art questions' pictures, by option: their URL and size in art pixels. */
+  options = $state<Record<number, { url: string; w: number; h: number }>>({});
   /** Veiled "find the art" pictures (Delve), by option: their size and burn, and the patches in so far. */
   tileVeils = $state<Record<number, VeilArt>>({});
   tilePatches = $state<Record<number, Record<number, ShownPatch>>>({});
@@ -327,7 +353,7 @@ class Shown {
         break;
       }
       case 'option':
-        this.options = { ...this.options, [m.index]: this.url(m.data) };
+        this.options = { ...this.options, [m.index]: { url: this.url(m.data), w: m.w, h: m.h } };
         break;
     }
   }

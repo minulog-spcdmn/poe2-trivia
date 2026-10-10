@@ -875,7 +875,7 @@ class Session {
       const timeout = new Promise<never>((_, reject) => {
         timer = setTimeout(() => reject(new Error('Preparing the art timed out')), MEDIA_TIMEOUT_MS);
       });
-      media = await Promise.race([prepareMedia(q, this.grayscaleOf(s), veilClock(s)), timeout]).finally(() => clearTimeout(timer));
+      media = await Promise.race([prepareMedia(q, this.grayscaleOf(s), veilClock(s), engine.byId), timeout]).finally(() => clearTimeout(timer));
     } catch (err) {
       console.warn('media', err);
       if (gen === this.mediaGen && this.state?.question?.askedAt === q.askedAt && this.state.phase === 'question') {
@@ -894,7 +894,7 @@ class Session {
     const timing = !!cur.delve && cur.question.deadline === null;
     this.held = timing && this.mode === 'host' ? { qid, ids: new Set(artFirst(cur)) } : null;
     if (media.art) this.release({ t: 'art', qid, ...media.art });
-    media.options.forEach((data, index) => this.release({ t: 'option', qid, index, data }));
+    media.options.forEach(({ w, h, data }, index) => this.release({ t: 'option', qid, index, w, h, data }));
     // Delve: veiled "find the art" pictures; their patches burn in once the clock starts.
     media.tiles.forEach((t, tile) => this.release({ t: 'veil', qid, tile, ...t.veil }));
     if (media.veil) this.release({ t: 'veil', qid, ...media.veil });

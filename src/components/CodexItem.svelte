@@ -127,7 +127,7 @@
       <ArcaneCircle />
       <div class="frame">
         {#key item.id}
-          <ArtImage src={itemImage(item.id)} alt={item.name} float />
+          <ArtImage src={itemImage(item.id)} alt={item.name} w={item.w} h={item.h} float />
         {/key}
       </div>
     </div>

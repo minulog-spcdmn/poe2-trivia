@@ -8,7 +8,6 @@
   import { frontier } from '../lib/frontier';
   import { visibleBox } from '../lib/patches';
   import { itemImage } from '../lib/ui';
-  import { ART_SCALE } from '../lib/ui-paths';
   import { sfx } from '../lib/sound';
   import Avatar from './Avatar.svelte';
   import ArtImage from './ArtImage.svelte';
@@ -171,7 +170,6 @@
   /** Veiled art: the patches that have appeared so far. */
   const patches = $derived(Object.values(media?.patches ?? {}));
   // Size of the art shown during the question: keeps the reveal from jumping.
-  const hint = $derived(media?.veil ?? media?.art ?? null);
 
   /** Your answer, on its way to the host. */
   let chosen = $state<number | null>(null);
@@ -314,14 +312,15 @@
     return () => clearTimeout(timer);
   });
   // The full art loads as the reveal starts, so the veiled picture only hands
-  // over once it can show (or after a while, should it not load). Its size
-  // and where the item is in it let the veiled copy line up with it first.
+  // over once it can show (or after a while, should it not load). Where the
+  // item is in it (in art pixels, the item's own size) lets the veiled copy
+  // line up with it first.
   let fullLoaded = $state(false);
-  let full = $state<{ w: number; h: number; box: [number, number, number, number] } | null>(null);
+  let fullBox = $state<[number, number, number, number] | null>(null);
   $effect(() => {
     if (!reveal || !item) {
       fullLoaded = false;
-      full = null;
+      fullBox = null;
       return;
     }
     let live = true;
@@ -332,12 +331,12 @@
       if (!live) return;
       // Measured in art pixels, as the host measures the veiled copy.
       const c = document.createElement('canvas');
-      c.width = Math.round(img.naturalWidth / ART_SCALE);
-      c.height = Math.round(img.naturalHeight / ART_SCALE);
+      c.width = item.w;
+      c.height = item.h;
       const g = c.getContext('2d', { willReadFrequently: true })!;
       g.imageSmoothingQuality = 'high';
       g.drawImage(img, 0, 0, c.width, c.height);
-      full = { w: c.width, h: c.height, box: visibleBox(g.getImageData(0, 0, c.width, c.height).data, c.width, c.height) };
+      fullBox = visibleBox(g.getImageData(0, 0, c.width, c.height).data, c.width, c.height);
       done();
     }, done);
     const timer = setTimeout(done, 3000);
@@ -357,7 +356,7 @@
   const veilFit = $derived.by(() => {
     const v = media?.veil;
     const slot = artEl?.querySelector('.frame');
-    if (!reveal || !v || !full || !slot) return null;
+    if (!reveal || !v || !fullBox || !item || !slot) return null;
     const cw = slot.clientWidth;
     const ch = slot.clientHeight;
     const place = (w: number, h: number, [bx, by, bw, bh]: number[]) => {
@@ -368,8 +367,8 @@
     };
     const from = place(v.w, v.h, v.box);
     // A mirrored item starts the reveal mirrored, as it was shown.
-    const fb = full.box;
-    const to = place(full.w, full.h, mirrored(0) ? [full.w - fb[0] - fb[2], fb[1], fb[2], fb[3]] : fb);
+    const fb = fullBox;
+    const to = place(item.w, item.h, mirrored(0) ? [item.w - fb[0] - fb[2], fb[1], fb[2], fb[3]] : fb);
     const k = (to.w / from.w + to.h / from.h) / 2;
     if (!isFinite(k) || k <= 0) return null;
     return `translate(${to.x - k * from.x}px, ${to.y - k * from.y}px) scale(${k})`;
@@ -385,7 +384,7 @@
     return () => clearTimeout(timer);
   });
   /** The full art replaces what was shown during the question. */
-  const showFull = $derived(!!reveal && !!item && (!media?.veil || (veilDone && fullLoaded && (fitted || !full))));
+  const showFull = $derived(!!reveal && !!item && (!media?.veil || (veilDone && fullLoaded && (fitted || !fullBox))));
 
   // A veiled picture that comes in whole before the reveal shimmers once.
   let wholeFor = 0;
@@ -950,9 +949,10 @@
         {#each q.labels as _, i (i)}
           {@const st = optionState(i)}
           {@const known = !!reveal && !!q.options[i]}
-          {@const src = known ? itemImage(q.options[i]) : waiting ? undefined : media?.options[i]}
+          {@const option = known ? engine.byId.get(q.options[i]) : undefined}
+          {@const pic = option ? { url: itemImage(option.id), w: option.w, h: option.h } : waiting ? undefined : media?.options[i]}
           <!-- Delve: a veiled picture burns in patch by patch, until the reveal names it. -->
-          {@const tv = !src && !waiting ? media?.tileVeils[i] : undefined}
+          {@const tv = !pic && !waiting ? media?.tileVeils[i] : undefined}
           <button
             class="tile {st}"
             data-sfx="none"
@@ -969,11 +969,11 @@
             <span class="sheen"></span>
             <span class="key">{(i + 1) % 10}</span>
             <span class="cue" aria-hidden="true"></span>
-            {#if src || tv}
+            {#if pic || tv}
               <span class="pic">
-                {#if src}
+                {#if pic}
                   <!-- Named pictures switch to the original art, so a mirrored one turns round. -->
-                  <ArtImage {src} alt="Option {i + 1}" scale={1.6} unflip={mirrored(i) && !!q.options[i]} />
+                  <ArtImage src={pic.url} w={pic.w} h={pic.h} alt="Option {i + 1}" scale={1.6} unflip={mirrored(i) && !!q.options[i]} />
                 {:else if tv}
                   {@const ps = tilePatches(i)}
                   <span class="art-slot">
@@ -989,6 +989,8 @@
                           style:height="{(p.h / tv.h) * 100}%"
                           use:appearTile={{
                             url: p.url,
+                            w: p.w,
+                            h: p.h,
                             edges: p.edges,
                             before: ps.filter((o) => o.i !== p.i).map((o) => o.i),
                             burn: tv.burn,
@@ -1040,7 +1042,7 @@
           <ArcaneCircle state={reveal ? (iWon ? 'good' : 'bad') : 'idle'} />
           <div class="frame">
             {#if showFull && item}
-              <ArtImage src={itemImage(item.id)} alt={item.name} w={full?.w ?? hint?.w} h={full?.h ?? hint?.h} float unflip={mirrored(0)} />
+              <ArtImage src={itemImage(item.id)} alt={item.name} w={item.w} h={item.h} float unflip={mirrored(0)} />
             {/if}
             {#if media?.veil && !showFull}
               {@const v = media.veil}
@@ -1057,6 +1059,8 @@
                     style:height="{(p.h / v.h) * 100}%"
                     use:appear={{
                       url: p.url,
+                      w: p.w,
+                      h: p.h,
                       edges: p.edges,
                       before: patches.filter((o) => o.i !== p.i).map((o) => o.i),
                       burn: v.burn,
