@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { fly } from 'svelte/transition';
   import { engine } from '../lib/session.svelte';
   import type { Codex } from '../lib/codex';
   import {
@@ -31,8 +30,7 @@
   import type { Item } from '../lib/game';
   import DelveLastRun from './codex/DelveLastRun.svelte';
   import DelveRunLog from './codex/DelveRunLog.svelte';
-  import ArcaneCircle from './ArcaneCircle.svelte';
-  import { motion } from '../lib/motion.svelte';
+  import CodexMedallion from './codex/CodexMedallion.svelte';
 
   // The Codex's Delve page, a sibling of the Collection (Codex.svelte) and
   // built from its parts: four figures around your deepest in the rune
@@ -47,8 +45,6 @@
   // so). Zones ahead are never named: they are a surprise.
   // codexStats.ts says what each number means.
   let { codex, records, onopen, onbegin }: { codex: Codex; records: DelveRecords; onopen: (item: Item) => void; onbegin: () => void } = $props();
-
-  const rise = (delay: number) => ({ y: 20, duration: motion.still ? 0 : 700, delay: motion.still ? 0 : delay });
 
   const date = (t: number) => new Date(t).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
   const fmt = (n: number) => n.toLocaleString();
@@ -240,7 +236,7 @@
 
 <div class="delve-page">
   {#if !anything}
-    <div class="empty" in:fly={rise(150)}>
+    <div class="empty">
       <p>You have not delved yet.</p>
       <p class="muted">
         Three lives, one depth deeper every round, and the same rules for everyone. Your runs, the zones you reach and the items that cost you lives are
@@ -250,7 +246,7 @@
     </div>
   {:else}
     {#if current}
-      <section class="summary" in:fly={rise(150)}>
+      <section class="summary">
         <div class="side">
           <div class="stat">
             <span class="stat-label">Deepest {otherWord}</span>
@@ -266,20 +262,16 @@
           </div>
         </div>
 
-        <div class="medallion">
-          <ArcaneCircle size="100%" strength={0.3} />
-          <svg class="disc" viewBox="-100 -100 200 200" aria-hidden="true"><circle r="80" /></svg>
-          <div class="medal-text">
-            <span class="medal-label">Deepest</span>
-            <span class="medal-value">{best === null ? '?' : shownDepth(best)}</span>
-            {#if best}
-              <span class="medal-zone">{zoneOf(best).name}</span>
-              <span class="medal-note">{kindWord}</span>
-            {:else}
-              <span class="medal-note">{main.left ? (alone ? 'no fall yet' : 'not perished yet') : kindWord}</span>
-            {/if}
-          </div>
-        </div>
+        <CodexMedallion>
+          <span class="medal-label">Deepest</span>
+          <span class="medal-value">{best === null ? '?' : shownDepth(best)}</span>
+          {#if best}
+            <span class="medal-zone">{zoneOf(best).name}</span>
+            <span class="medal-note">{kindWord}</span>
+          {:else}
+            <span class="medal-note">{main.left ? (alone ? 'no fall yet' : 'not perished yet') : kindWord}</span>
+          {/if}
+        </CodexMedallion>
 
         <div class="side">
           <div class="stat">
@@ -300,13 +292,11 @@
       </section>
 
       {#if last && story}
-        <div in:fly={rise(220)}>
-          <DelveLastRun run={last} {story} median={lastOf.median} best={lastOf.best} {onopen} />
-        </div>
+        <DelveLastRun run={last} {story} median={lastOf.median} best={lastOf.best} {onopen} />
       {/if}
 
       {#if allRuns >= MIN_RUNS}
-      <div class="split" in:fly={rise(280)}>
+      <div class="split">
         <section class="panel by-cat" use:backdropShadow={{ fill: 'linear' }} aria-labelledby="kill-h">
           <header><h2 id="kill-h">What kills you</h2><span class="col-label">Lives lost</span></header>
           {#if !deaths.lives}
@@ -353,7 +343,7 @@
         </section>
       </div>
 
-      <div class="insights" in:fly={rise(350)}>
+      <div class="insights">
         <section class="panel" use:backdropShadow={{ fill: 'linear' }} aria-labelledby="fall-h">
           <header><h2 id="fall-h">Where you fall</h2><span class="col-label">Lives lost {kindWord}</span></header>
           {#if !risks.length}
@@ -383,27 +373,25 @@
         {@render zonesPanel()}
       </div>
       {:else}
-        <p class="waiting" in:fly={rise(280)}>
+        <p class="waiting">
           After <span class="n">{MIN_RUNS}</span> runs, where you fall, what kills you and your deadliest items show up here;
           <span class="n">{MIN_RUNS - allRuns}</span> to go.
         </p>
-        <div class="insights" in:fly={rise(350)}>
+        <div class="insights">
           {#if teamed}{@render teamPanel()}{/if}
           {@render findPanels()}
           {@render zonesPanel()}
         </div>
       {/if}
     {:else}
-      <div class="empty" in:fly={rise(150)}>
+      <div class="empty">
         <p>No run under the current rules yet.</p>
         <p class="muted">The descent has changed since your runs below, so their depths are kept apart and never compared with new ones.</p>
         <button class="btn primary" onclick={onbegin}>Begin the descent</button>
       </div>
     {/if}
 
-    <div in:fly={rise(420)}>
-      <DelveRunLog {runs} {others} {byRun} total={allRuns} {onopen} />
-    </div>
+    <DelveRunLog {runs} {others} {byRun} total={allRuns} {onopen} />
   {/if}
 </div>
 
@@ -479,35 +467,6 @@
     line-height: 1.3;
     font-style: italic;
     color: var(--muted);
-  }
-  /* The Collection's medallion: the rune circle round a dark disc, your deepest inside. No arc: depth has no end to fill to. */
-  .medallion {
-    grid-column: 2;
-    position: relative;
-    isolation: isolate;
-    width: 240px;
-    height: 240px;
-    display: grid;
-    place-items: center;
-  }
-  .medallion :global(.arcane) {
-    z-index: -1;
-  }
-  .disc {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    fill: rgba(8, 6, 4, 0.75);
-  }
-  .medal-text {
-    position: relative;
-    width: 150px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    text-align: center;
-    line-height: 1.1;
   }
   .medal-label {
     font-family: var(--font-display);
@@ -870,11 +829,6 @@
       grid-template-columns: 1fr 1fr;
       row-gap: 1rem;
     }
-    .medallion {
-      grid-column: 1 / -1;
-      grid-row: 1;
-      justify-self: center;
-    }
     .split {
       grid-template-columns: 1fr;
     }
@@ -892,10 +846,6 @@
     }
     .stat-value {
       font-size: 1.9rem;
-    }
-    .medallion {
-      width: 210px;
-      height: 210px;
     }
     .medal-value {
       font-size: 2.8rem;

@@ -1,13 +1,11 @@
 <script lang="ts">
-  import { fly } from 'svelte/transition';
   import type { Codex } from '../lib/codex';
   import type { DelveRecords } from '../lib/delveRecord';
   import type { Item } from '../lib/game';
   import { ACHIEVEMENTS, GROUPS, standings, summarize, type AchievementStore, type WinRun } from '../lib/achievements';
   import { METALS, TIERS } from '../lib/metals';
-  import { motion } from '../lib/motion.svelte';
   import { backdropShadow } from '../lib/backdropShadow';
-  import ArcaneCircle from './ArcaneCircle.svelte';
+  import CodexMedallion from './codex/CodexMedallion.svelte';
   import AchievementSeal from './AchievementSeal.svelte';
 
   // The Codex's third page: every achievement, earned or not, by group, each
@@ -17,7 +15,6 @@
   // lib/achievements.ts.
   let { codex, records, store, wins, items }: { codex: Codex; records: DelveRecords; store: AchievementStore; wins: WinRun; items: Item[] } = $props();
 
-  const rise = (delay: number) => ({ y: 20, duration: motion.still ? 0 : 700, delay: motion.still ? 0 : delay });
   /** How far along, 0 to 1 (nothing to do counts as nothing done). */
   const shareOf = (p: { have: number; need: number }) => (p.need > 0 ? Math.min(1, p.have / p.need) : 0);
 
@@ -48,31 +45,17 @@
   </div>
 {/snippet}
 
-<section class="summary" in:fly={rise(150)}>
+<section class="summary">
   <div class="side">
     {@render metal(metals[0])}
     {@render metal(metals[1])}
   </div>
 
-  <div class="medallion">
-    <ArcaneCircle size="100%" strength={0.3} />
-    <svg class="progress" viewBox="-100 -100 200 200" aria-hidden="true">
-      <defs>
-        <linearGradient id="feats-arc" x1="0" y1="-1" x2="0" y2="1">
-          <stop offset="0" stop-color="#fbe6b0" />
-          <stop offset="0.5" stop-color="#c9a45c" />
-          <stop offset="1" stop-color="#e08a44" />
-        </linearGradient>
-      </defs>
-      <circle class="track" r="80" />
-      {#if share > 0}<circle class="arc" r="80" pathLength="100" style:stroke-dasharray="{share * 100} 100" />{/if}
-    </svg>
-    <div class="medal-text">
-      <span class="medal-value">{earned.length}</span>
-      <span class="medal-of">of {ACHIEVEMENTS.length}</span>
-      <span class="medal-label">earned</span>
-    </div>
-  </div>
+  <CodexMedallion {share}>
+    <span class="medal-value">{earned.length}</span>
+    <span class="medal-of">of {ACHIEVEMENTS.length}</span>
+    <span class="medal-label">earned</span>
+  </CodexMedallion>
 
   <div class="side">
     {@render metal(metals[2])}
@@ -80,7 +63,7 @@
   </div>
 </section>
 
-<div class="groups" in:fly={rise(250)}>
+<div class="groups">
   {#each groups as g (g.key)}
     {@const done = g.rows.filter((r) => r.earned !== null).length}
     <section class="panel" use:backdropShadow={{ fill: 'linear' }} aria-labelledby="feats-{g.key}">
@@ -175,51 +158,6 @@
     font-style: italic;
     color: var(--muted);
   }
-  .medallion {
-    grid-column: 2;
-    position: relative;
-    isolation: isolate;
-    width: 240px;
-    height: 240px;
-    display: grid;
-    place-items: center;
-  }
-  .medallion :global(.arcane) {
-    z-index: -1;
-  }
-  .progress {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    rotate: -90deg;
-    overflow: visible;
-  }
-  .track {
-    fill: rgba(8, 6, 4, 0.75);
-    stroke: rgba(125, 99, 51, 0.35);
-    stroke-width: 6;
-  }
-  .arc {
-    fill: none;
-    stroke: url(#feats-arc);
-    stroke-width: 4;
-    stroke-linecap: round;
-    filter: drop-shadow(0 0 4px rgba(224, 138, 68, 0.8));
-    animation: fill-arc 1.6s var(--ease-out) 0.4s both;
-  }
-  @keyframes fill-arc {
-    from {
-      stroke-dasharray: 0 100;
-    }
-  }
-  .medal-text {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    line-height: 1.1;
-  }
   .medal-value {
     font-size: 3.2rem;
   }
@@ -230,11 +168,11 @@
     margin-bottom: 0.3rem;
   }
 
-  /* ---- the groups: one panel each, the full width, their seals in even rows ---- */
+  /* ---- the groups: one panel each, the full width, their seals in even rows, spaced as the other pages' panels ---- */
   .groups {
     display: flex;
     flex-direction: column;
-    gap: 1.2rem;
+    gap: 1rem;
   }
   .panel {
     padding: 1.2rem 1.3rem 1.3rem;
@@ -370,11 +308,6 @@
       grid-template-columns: 1fr 1fr;
       row-gap: 1rem;
     }
-    .medallion {
-      grid-column: 1 / -1;
-      grid-row: 1;
-      justify-self: center;
-    }
     .feats {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
@@ -391,10 +324,6 @@
     }
     .side {
       justify-content: space-around;
-    }
-    .medallion {
-      width: 210px;
-      height: 210px;
     }
     .medal-value {
       font-size: 2.8rem;
