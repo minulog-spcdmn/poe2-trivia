@@ -8,10 +8,12 @@ import * as fxEffects from './lib/fx/effects';
 import * as fxMoments from './lib/fx/moments';
 import { session } from './lib/session.svelte';
 import { installCursor } from './lib/ownCursor';
+import { installAutoscroll } from './lib/autoscroll';
 
 installUiSounds();
 installUiFx();
 installCursor();
+installAutoscroll();
 
 // Development only: handles for scripts that drive the game and step the
 // effects frame by frame to photograph them (the same module instances the

@@ -7,11 +7,11 @@
   import { onMount } from 'svelte';
   import { session } from '../lib/session.svelte';
   import { peerCursors } from '../lib/peerCursors.svelte';
-  import { SCALE, SEND_EVERY_MS, anchorCode, anchorName, cursorKey, cursorsLive, type CursorAt } from '../lib/cursors';
+  import { MOUSE, PRESSED, SCALE, SEND_EVERY_MS, TAP, anchorCode, anchorName, cursorKey, cursorsLive, type CursorAt, type PointerKind } from '../lib/cursors';
   import { playerColor } from '../lib/ui';
   import { portal } from '../lib/portal';
   import { setCursorColor } from '../lib/ownCursor';
-  import { PAD_X, PAD_Y, POINTER, SIZE, WEIGHT } from '../lib/pointerArt';
+  import { PAD_X, PAD_Y, POINTER, PRESS_SCALE, SIZE, STAMP_R, WEIGHT } from '../lib/pointerArt';
 
   /** How quickly a pointer catches up with where it was last heard to be (ms to cover about 2/3 of the way). */
   const GLIDE_MS = 70;
@@ -52,16 +52,19 @@
 
   let x = 0;
   let y = 0;
-  /** The mouse is over the page. */
+  /** The mouse is over the page; its main button is held. */
   let over = false;
+  let held = false;
   let dirty = false;
   let timer: ReturnType<typeof setTimeout> | null = null;
   /** What was sent last, so a pointer that stays put isn't sent again. */
   let sent = 'null';
 
   /** The anchor under a spot, or the game as a whole (null when outside it). */
-  function measure(px: number, py: number, touch: 0 | 1): CursorAt | null {
-    let el = document.elementFromPoint(px, py)?.closest<HTMLElement>('[data-cursor]') ?? null;
+  function measure(px: number, py: number, kind: PointerKind): CursorAt | null {
+    // Through the cover middle-button scrolling lays over the page (lib/autoscroll.ts).
+    const hit = document.elementsFromPoint(px, py).find((n) => !n.closest('.autoscroll'));
+    let el = hit?.closest<HTMLElement>('[data-cursor]') ?? null;
     // Something on its way out (Svelte makes it inert) isn't on the other screens any more.
     if (el?.closest('[inert]')) el = null;
     el ??= document.querySelector<HTMLElement>('[data-cursor="game"]');
@@ -70,14 +73,14 @@
     const r = el.getBoundingClientRect();
     if (px < r.left || px > r.right || py < r.top || py > r.bottom || !r.width || !r.height) return null;
     const at = (v: number) => Math.round(Math.min(1, Math.max(0, v)) * SCALE);
-    return [code, at((px - r.left) / r.width), at((py - r.top) / r.height), touch];
+    return [code, at((px - r.left) / r.width), at((py - r.top) / r.height), kind];
   }
 
   function flush() {
     timer = null;
     if (!dirty) return;
     dirty = false;
-    const at = pointing && over ? measure(x, y, 0) : null;
+    const at = pointing && over ? measure(x, y, held ? PRESSED : MOUSE) : null;
     const key = JSON.stringify(at);
     if (key !== sent) {
       sent = key;
@@ -100,14 +103,23 @@
   onMount(() => {
     const move = (e: PointerEvent) => {
       if (e.pointerType === 'touch') return;
+      if (held && !(e.buttons & 1)) held = false;
       x = e.clientX;
       y = e.clientY;
       over = true;
       poke();
     };
+    // The main button held shows as the dart pressed, on the others' screens too.
+    const press = (e: PointerEvent, on: boolean) => {
+      if (e.pointerType !== 'mouse' || e.button !== 0 || held === on) return;
+      held = on;
+      poke();
+    };
+    const down = (e: PointerEvent) => press(e, true);
+    const up = (e: PointerEvent) => press(e, false);
     const tap = (e: PointerEvent) => {
       if (e.pointerType !== 'touch' || !pointing) return;
-      const at = measure(e.clientX, e.clientY, 1);
+      const at = measure(e.clientX, e.clientY, TAP);
       if (!at) return;
       session.pointAt(at);
       // A tap is shown once and fades by itself; the next one is its own, even on the same spot.
@@ -130,6 +142,8 @@
     const every = setInterval(recheck, RECHECK_MS);
     addEventListener('pointermove', move, { passive: true });
     addEventListener('pointerdown', tap, { passive: true });
+    addEventListener('pointerdown', down, { passive: true, capture: true });
+    addEventListener('pointerup', up, { passive: true, capture: true });
     document.addEventListener('pointerout', out);
     document.addEventListener('visibilitychange', hidden);
     addEventListener('scroll', recheck, { passive: true, capture: true });
@@ -138,6 +152,8 @@
       if (timer) clearTimeout(timer);
       removeEventListener('pointermove', move);
       removeEventListener('pointerdown', tap);
+      removeEventListener('pointerdown', down, { capture: true });
+      removeEventListener('pointerup', up, { capture: true });
       document.removeEventListener('pointerout', out);
       document.removeEventListener('visibilitychange', hidden);
       removeEventListener('scroll', recheck, { capture: true });
@@ -176,7 +192,8 @@
         const el = els[c.key];
         const p = peerCursors.at.get(c.key);
         if (!el || !p) continue;
-        const [code, ax, ay, touch] = p.at;
+        const [code, ax, ay, kind] = p.at;
+        const touch = kind === TAP;
         const age = now - p.moved;
         if (touch && age > TAP_MS) {
           peerCursors.set(c.key, null);
@@ -199,7 +216,10 @@
           d.y += (ty - d.y) * step;
         }
         el.style.transform = `translate3d(${d.x}px, ${d.y}px, 0)`;
-        el.classList.toggle('tap', !!touch);
+        el.classList.toggle('tap', touch);
+        el.classList.toggle('pressed', kind === PRESSED);
+        // Over something that can be clicked, it's gilded, as the player's own is.
+        el.classList.toggle('lit', anchor.tagName === 'BUTTON');
         el.classList.toggle('idle', !touch && age > IDLE_MS);
         el.classList.toggle('away', !touch && age > AWAY_MS);
         if (touch && d.tap !== p.moved) {
@@ -220,18 +240,20 @@
   });
 </script>
 
-<div class="cursors" use:portal aria-hidden="true" style:--pad-x={PAD_X} style:--pad-y={PAD_Y} style:--w={SIZE[0]} style:--h={SIZE[1]}>
+<div class="cursors" use:portal aria-hidden="true" style:--pad-x={PAD_X} style:--pad-y={PAD_Y} style:--w={SIZE[0]} style:--h={SIZE[1]} style:--press={PRESS_SCALE} style:--stamp={STAMP_R}>
   {#each shown as c (c.key)}
     <div class="cursor" bind:this={els[c.key]} style:--c={c.color}>
       <!-- The dart (lib/pointerArt.ts) with its tip on the spot: a dark rim and ground, a glow under the lines. -->
       <svg class="dart" viewBox="{-PAD_X} {-PAD_Y} {SIZE[0]} {SIZE[1]}" width={SIZE[0]} height={SIZE[1]}>
         <path class="ground" d={POINTER.outline} stroke-width={WEIGHT.rim} />
         <path class="glow" d={POINTER.outline} />
+        <path class="wash" d={POINTER.outline} />
         <path class="line" d={POINTER.outline} stroke-width={WEIGHT.outline} />
         <path class="line" d={POINTER.ridge} stroke-width={WEIGHT.ridge} />
         <path class="line hatch" d={POINTER.hatch} stroke-width={WEIGHT.hatch} />
       </svg>
-      <!-- A tap: a seal's double ring, opening out. -->
+      <!-- The button held: a seal stamped round the tip. A tap: a seal's double ring, opening out. -->
+      <span class="stamp"></span>
       <span class="ripple"></span>
       <span class="name">{c.name}</span>
     </div>
@@ -280,6 +302,61 @@
   }
   .line {
     stroke: var(--c);
+    transition: stroke 0.15s;
+  }
+  .wash {
+    fill: var(--c);
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+  .dart {
+    transform-origin: calc(var(--pad-x) * 1px) calc(var(--pad-y) * 1px);
+    transition: transform 0.12s var(--ease-out);
+  }
+  /* Over something that can be clicked: gilded, the lines struck paler and glowing brighter. */
+  .cursor:global(.lit) .line,
+  .cursor:global(.pressed) .line {
+    stroke: color-mix(in srgb, var(--c), #fff4e0 35%);
+  }
+  .cursor:global(.lit) .wash {
+    opacity: 0.2;
+  }
+  .cursor:global(.lit) .glow,
+  .cursor:global(.pressed) .glow {
+    opacity: 0.5;
+    stroke-width: 2.6;
+  }
+  /* The button held: the dart sinks about its tip into a seal stamped there. */
+  .cursor:global(.pressed) .dart {
+    transform: scale(var(--press));
+  }
+  .cursor:global(.pressed) .wash {
+    opacity: 0.32;
+  }
+  .stamp {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: calc(var(--stamp) * 2px);
+    height: calc(var(--stamp) * 2px);
+    border: 0.75px solid var(--c);
+    border-radius: 50%;
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(1.6);
+    transition:
+      opacity 0.2s,
+      transform 0.2s var(--ease-out);
+  }
+  .stamp::after {
+    content: '';
+    position: absolute;
+    inset: 0.9px;
+    border: 0.75px solid var(--c);
+    border-radius: 50%;
+  }
+  .cursor:global(.pressed) .stamp {
+    opacity: 1;
+    transform: translate(-50%, -50%);
   }
   .hatch {
     stroke-linecap: round;
@@ -335,6 +412,7 @@
       width: calc(var(--w) * 0.8px);
       height: calc(var(--h) * 0.8px);
       margin: calc(-0.8px * var(--pad-y)) 0 0 calc(-0.8px * var(--pad-x));
+      transform-origin: calc(var(--pad-x) * 0.8px) calc(var(--pad-y) * 0.8px);
     }
     .name {
       left: 10px;

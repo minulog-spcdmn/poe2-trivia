@@ -533,6 +533,12 @@ browser (`src/lib/achievements.ts`); erasing the codex erases them.
     (one point of the rune circle's compass star, `src/lib/pointerArt.ts`):
     yours in old gold, or in your colour once you have a seat in an online
     game, shown as the system cursor so it never lags (`src/lib/ownCursor.ts`).
+    It has its states, the others' included: gilded over anything that can
+    be clicked, and sunk into a seal stamped at its tip while the button is
+    held. Text fields get an engraved I-beam. Scrolling with the middle
+    button (Windows and Linux, where browsers do it) is the game's own
+    (`src/lib/autoscroll.ts`), so it can wear the look: a seal where it
+    began, with the ways left to go, and a dart pointing the way it scrolls.
     Spectators see them but don't show their own. A pointer is sent as a
     spot on the element under it (an answer, a category card, a scoreboard
     row, the art; the game as a whole otherwise), so it lands on the same

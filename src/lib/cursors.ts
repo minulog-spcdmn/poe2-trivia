@@ -42,8 +42,13 @@ export function anchorName(code: number): string | null {
   return null;
 }
 
-/** Where a pointer is: an anchor's code, the spot on it, and whether it's a touch (a tap, shown for a moment) rather than a mouse. */
-export type CursorAt = [anchor: number, x: number, y: number, touch: 0 | 1];
+/** What a pointer is doing: a mouse, a mouse with its button held, or a tap on a touch screen (shown for a moment). */
+export const MOUSE = 0;
+export const TAP = 1;
+export const PRESSED = 2;
+export type PointerKind = typeof MOUSE | typeof TAP | typeof PRESSED;
+/** Where a pointer is: an anchor's code, the spot on it, and what it's doing. */
+export type CursorAt = [anchor: number, x: number, y: number, kind: PointerKind];
 /** One pointer in a host's batch: whose (cursorKey), and where, or nothing when it's gone. */
 export type CursorEntry = [who: string] | [who: string, ...CursorAt];
 
@@ -72,10 +77,10 @@ const isInt = (v: unknown, min: number, max: number): v is number =>
 export function parseCursorAt(v: unknown): CursorAt | null | undefined {
   if (v === null) return null;
   if (!Array.isArray(v) || v.length !== 4) return undefined;
-  const [a, x, y, touch] = v;
-  if (!isInt(a, 0, MAX_ANCHOR) || anchorName(a) === null || !isInt(x, 0, SCALE) || !isInt(y, 0, SCALE) || (touch !== 0 && touch !== 1))
+  const [a, x, y, kind] = v;
+  if (!isInt(a, 0, MAX_ANCHOR) || anchorName(a) === null || !isInt(x, 0, SCALE) || !isInt(y, 0, SCALE) || !isInt(kind, MOUSE, PRESSED))
     return undefined;
-  return [a, x, y, touch];
+  return [a, x, y, kind as PointerKind];
 }
 
 /** A host's batch, or null when it's bogus. */

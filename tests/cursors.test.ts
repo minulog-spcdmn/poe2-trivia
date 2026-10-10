@@ -18,6 +18,7 @@ import {
 import { createGame, MAX_PLAYERS } from '../src/lib/game.ts';
 import { FrameGuard, plausiblePack } from '../src/lib/guard.ts';
 import { parseClientMsg, parseHostMsg } from '../src/lib/protocol.ts';
+import { ART, type Art } from '../src/lib/pointerArt.ts';
 
 const bytes = (m: unknown) => {
   const b = pack(m) as ArrayBuffer | Uint8Array;
@@ -41,6 +42,8 @@ test('every anchor has a code of its own, and back', () => {
 test('a pointer from a guest is checked like any message', () => {
   assert.deepEqual(parseClientMsg({ t: 'cursor', at: [16, 0, SCALE, 0] }), { t: 'cursor', at: [16, 0, SCALE, 0] });
   assert.deepEqual(parseClientMsg({ t: 'cursor', at: [0, 500, 500, 1] }), { t: 'cursor', at: [0, 500, 500, 1] });
+  // The button held.
+  assert.deepEqual(parseClientMsg({ t: 'cursor', at: [16, 1, 2, 2] }), { t: 'cursor', at: [16, 1, 2, 2] });
   assert.deepEqual(parseClientMsg({ t: 'cursor', at: null }), { t: 'cursor', at: null });
   const bad = [
     undefined,
@@ -51,7 +54,8 @@ test('a pointer from a guest is checked like any message', () => {
     [16, -1, 0, 0],
     [16, 0, SCALE + 1, 0],
     [16, 0.5, 0, 0],
-    [16, 0, 0, 2],
+    [16, 0, 0, 3],
+    [16, 0, 0, -1],
     [16, '1', 0, 0],
     { 0: 16 },
   ];
@@ -115,5 +119,20 @@ test('a full room of moving pointers stays small, and within the frame budget', 
   for (; t < 60_000; t += SEND_EVERY_MS) {
     assert.equal(g.check(one), 'ok');
     assert.equal(g.check(answer), 'ok');
+  }
+});
+
+test("every cursor's picture fits its image, the hot spot inside it", () => {
+  for (const [name, art] of Object.entries(ART) as [string, Art][]) {
+    const [w, h] = art.size;
+    assert.ok(art.hot[0] >= 0 && art.hot[0] <= w && art.hot[1] >= 0 && art.hot[1] <= h, name);
+    // Browsers drop (or misplace near the edges) cursors over 32 px.
+    assert.ok(w <= 32 && h <= 32, name);
+    const ds = [art.ground, ...art.lines.map((l) => l.d)].join(' ');
+    // Every point, with room for the dark rim (1.5 px) round it.
+    for (const [, x, y] of ds.matchAll(/(-?\d+(?:\.\d+)?) (-?\d+(?:\.\d+)?)/g)) {
+      const [px, py] = [Number(x) + art.hot[0], Number(y) + art.hot[1]];
+      assert.ok(px >= 1.5 && px <= w - 1.5 && py >= 1.5 && py <= h - 1.5, `${name}: ${x} ${y}`);
+    }
   }
 });

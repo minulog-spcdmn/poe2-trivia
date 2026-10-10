@@ -176,11 +176,11 @@ const hoverOnlyWhereHoverable = {
 };
 
 /**
- * The app's own mouse pointer (src/lib/ownCursor.ts): every `cursor: pointer`
- * and `cursor: default` reads its picture from a variable, falling back to
+ * The app's own mouse pointer (src/lib/ownCursor.ts): every `cursor: pointer`,
+ * `cursor: default` and `cursor: text` reads its picture from a variable, falling back to
  * the system's own where it isn't set (pages that don't draw one).
  */
-const CURSOR_VARS: Record<string, string> = { pointer: '--cursor-pointer', default: '--cursor' };
+const CURSOR_VARS: Record<string, string> = { pointer: '--cursor-pointer', default: '--cursor', text: '--cursor-text' };
 
 const themedCursors = {
   postcssPlugin: 'themed-cursors',
