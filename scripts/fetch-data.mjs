@@ -10,6 +10,7 @@
 
 import { createHash } from 'node:crypto';
 import { mkdir, writeFile, readdir, unlink, access, readFile } from 'node:fs/promises';
+import { webpSize } from './webp-size.mjs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -100,19 +101,6 @@ async function fetchRetry(url, tries = 6) {
 
 const exists = (p) => access(p).then(() => true, () => false);
 
-/** A WebP file's width and height, from its header. */
-async function webpSize(file) {
-  const b = await readFile(file);
-  const kind = b.toString('latin1', 12, 16);
-  if (kind === 'VP8X') return [b.readUIntLE(24, 3) + 1, b.readUIntLE(27, 3) + 1];
-  if (kind === 'VP8 ') return [b.readUInt16LE(26) & 0x3fff, b.readUInt16LE(28) & 0x3fff];
-  if (kind === 'VP8L') {
-    const v = b.readUInt32LE(21);
-    return [(v & 0x3fff) + 1, ((v >> 14) & 0x3fff) + 1];
-  }
-  throw new Error(`${file}: unknown WebP kind ${kind}`);
-}
-
 async function main() {
   console.log(`Fetching ${SOURCE}`);
   const html = await (await fetchRetry(SOURCE)).text();
@@ -174,6 +162,7 @@ async function main() {
         const file = path.join(IMG_DIR, `${it.id}.webp`);
         if (await exists(file)) continue;
         const buf = Buffer.from(await (await fetchRetry(it.src)).arrayBuffer());
+        webpSize(buf, it.src); // only a whole WebP file is kept
         await writeFile(file, buf);
         downloaded++;
       }
@@ -197,7 +186,7 @@ async function main() {
   // a whole number of times larger (artScale in src/lib/ui-paths.ts).
   const out = [];
   for (const { id, name, base, group, category, kind } of quiz) {
-    const [w, h] = await webpSize(path.join(IMG_DIR, `${id}.webp`));
+    const [w, h] = webpSize(await readFile(path.join(IMG_DIR, `${id}.webp`)), `${id}.webp`);
     out.push({ id, name, base, group, category, kind, w, h });
   }
   await writeFile(DATA_FILE, JSON.stringify(out, null, 1) + '\n');
