@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy, tick, untrack } from 'svelte';
   import { fade, fly } from 'svelte/transition';
-  import { NAME_TOO_SHORT, MAX_NAME, nameHeld, nameTooShort, unlockHeldName } from '../lib/names';
+  import { NAME_TOO_SHORT, MAX_NAME, cleanName, nameHeld, nameTooShort, unlockHeldName } from '../lib/names';
   import { toasts } from '../lib/toasts.svelte';
   import { engine, session, savedName, saveName, CODE_LENGTH } from '../lib/session.svelte';
   import { CREATOR, CREATOR_URL, DONATE_URL, IMPRINT_URL, PRIVACY_URL } from '../lib/site';
@@ -24,10 +24,14 @@
   const cleanCode = (v: string) => v.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, CODE_LENGTH);
 
   const params = new URLSearchParams(location.search);
-  /** An invite link's room (?room=CODE): its own screen until joined or left. */
+  /** An invite link's room (?room=CODE): the start page shows it until it is joined or left. */
   let invite = $state(cleanCode(params.get('room') ?? ''));
-  /** Who sent it (?by=NAME, added by the lobby's invite link), so the screen can say whose room it is. */
-  const inviteHost = (params.get('by') ?? '').trim().slice(0, MAX_NAME);
+  /**
+   * Who sent it (?by=NAME, added by the lobby's invite link), so the screen
+   * can say whose room it is. Anyone can write a link, so it is cleaned as
+   * every name is (no bidi overrides, zalgo or invisible characters).
+   */
+  const inviteHost = cleanName(params.get('by'));
   if (params.has('owner')) {
     void unlockHeldName(params.get('owner') ?? '');
     // Out of the address bar and history either way; other params stay.
@@ -125,7 +129,7 @@
   const SWAP_OUT = { duration: 140 };
 
   /** The keyboard cursor: arrows move it, Enter chooses, it follows the mouse. */
-  let cursor = $state(invite ? 0 : lastEntry());
+  let cursor = $state(untrack(() => invite) ? 0 : lastEntry());
   /** The entry whose row (fields in place of its description) is open. */
   let open = $state<Entry | null>(null);
   let entryEls: HTMLButtonElement[] = $state([]);
@@ -340,6 +344,7 @@
   function leaveInvite() {
     const url = new URL(location.href);
     url.searchParams.delete('room');
+    url.searchParams.delete('by');
     history.replaceState(history.state, '', url);
     invite = '';
   }
@@ -352,9 +357,9 @@
   // join on its way in Join a room's row, and a join that fails leaves the
   // code there with the toast, to try again. Not over a game being resumed
   // (App resumes it on mount, after this).
-  if (invite && known && !nameTooShort(known) && !nameHeld(known)) {
-    const code = invite;
-    const name = known;
+  const opened = untrack(() => ({ code: invite, name: known }));
+  if (opened.code && opened.name && !nameTooShort(opened.name) && !nameHeld(opened.name)) {
+    const { code, name } = opened;
     leaveInvite();
     cursor = ENTRIES.indexOf('join');
     setTimeout(() => {
@@ -379,72 +384,72 @@
 <svelte:window onkeydown={keys} onpointerdown={outside} />
 
 <div class="home" class:invited={!!invite}>
-    <div class="intro">
-      <div class="title">
-        <GameTitle />
-        {#if BETA || LOCAL}<span class="beta" in:fade={{ duration: 600, delay: 100 }}>{BETA ? 'Beta' : 'Local'}</span>{/if}
-      </div>
-      <p class="kicker" in:fade={{ duration: 700, delay: 350 }}>Unique item trivia</p>
-      <p class="blurb" in:fade={{ duration: 700, delay: 450 }}>
-        Path of Exile 2 item trivia, alone or with <span class="wide">up to eleven</span> friends.
-      </p>
+  <div class="intro">
+    <div class="title">
+      <GameTitle />
+      {#if BETA || LOCAL}<span class="beta" in:fade={{ duration: 600, delay: 100 }}>{BETA ? 'Beta' : 'Local'}</span>{/if}
+    </div>
+    <p class="kicker" in:fade={{ duration: 700, delay: 350 }}>Unique item trivia</p>
+    <p class="blurb" in:fade={{ duration: 700, delay: 450 }}>
+      Path of Exile 2 item trivia, alone or with <span class="wide">up to eleven</span> friends.
+    </p>
 
-      <!-- The greeting: the name is asked once, then greeted (and changed here). -->
-      <div class="greeting" in:fade={{ duration: 600, delay: 500 }}>
-        {#if renaming}
-          <form class="row" onsubmit={saveRename}>
-            <input
-              class="field name"
-              bind:this={renameField}
-              bind:value={draft}
-              maxlength={MAX_NAME}
-              placeholder="Your name"
-              aria-label="Your name"
-              autocomplete="nickname"
-              spellcheck="false"
-              onkeydown={renameKeys}
-            />
-            <button class="btn" type="submit">Save</button>
-            <button class="link" type="button" onclick={() => (renaming = false)}>Cancel</button>
-          </form>
-        {:else}
-          <p class="hello">
-            {known ? 'Welcome back,' : 'Welcome,'}
-            <button class="who" onclick={startRename} disabled={connecting} title="Change your name">{known || 'Exile'}.</button>
-            <button class="quill" onclick={startRename} disabled={connecting} tabindex="-1" aria-hidden="true">
-              <span class="ring"><svg viewBox="0 0 24 24"><path d="M5 19l2.5-.6L18 7.9a1.9 1.9 0 0 0-2.7-2.7L4.8 15.7 4.2 18.2zM14 6.5l3.2 3.2" /></svg></span>
-              <i>Change your name</i>
-            </button>
-          </p>
-        {/if}
-      </div>
+    <!-- The greeting: the name is asked once, then greeted (and changed here). -->
+    <div class="greeting" in:fade={{ duration: 600, delay: 500 }}>
+      {#if renaming}
+        <form class="row" onsubmit={saveRename}>
+          <input
+            class="field name"
+            bind:this={renameField}
+            bind:value={draft}
+            maxlength={MAX_NAME}
+            placeholder="Your name"
+            aria-label="Your name"
+            autocomplete="nickname"
+            spellcheck="false"
+            onkeydown={renameKeys}
+          />
+          <button class="btn" type="submit">Save</button>
+          <button class="link" type="button" onclick={() => (renaming = false)}>Cancel</button>
+        </form>
+      {:else}
+        <p class="hello">
+          {known ? 'Welcome back,' : 'Welcome,'}
+          <button class="who" onclick={startRename} disabled={connecting} title="Change your name">{known || 'Exile'}.</button>
+          <button class="quill" onclick={startRename} disabled={connecting} tabindex="-1" aria-hidden="true">
+            <span class="ring"><svg viewBox="0 0 24 24"><path d="M5 19l2.5-.6L18 7.9a1.9 1.9 0 0 0-2.7-2.7L4.8 15.7 4.2 18.2zM14 6.5l3.2 3.2" /></svg></span>
+            <i>Change your name</i>
+          </button>
+        </p>
+      {/if}
+    </div>
 
-      <nav class="menu" class:renaming class:lit aria-label="Start" onfocusin={focusIn} onfocusout={focusOut}>
-        <!-- One cursor for the menu: it glides to the entry under the mouse (or the
-             keyboard's), and cools away once nothing is pointed at. -->
-        <MenuCursor at={cursor} {lit} />
-        {#if invite}
-          <div class="entry" role="presentation" class:cur={cursor === 0} onpointerenter={(ev) => hover(ev, 0)} onpointerleave={leave} in:fly={{ y: 12, duration: 500, delay: 450 }}>
-            <button class="pick" bind:this={entryEls[0]} onclick={() => inviteField?.focus()} onfocus={() => (cursor = 0)}>
-              {inviteHost ? `Join ${inviteHost}’s room` : 'Join the room'}
-            </button>
-            <div class="under">
-              {#if connecting}
-                <div class="slot" in:fly={SWAP_IN} out:fade={SWAP_OUT}><Connecting /></div>
-              {:else}
-                <form class="slot row" onsubmit={joinInvite} in:fly={SWAP_IN} out:fade={SWAP_OUT}>
-                  <!-- svelte-ignore a11y_autofocus -->
-                  <input class="field name" bind:this={inviteField} bind:value={inviteName} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="nickname" spellcheck="false" autofocus />
-                  <button class="btn primary" type="submit">Join</button>
-                </form>
-              {/if}
-            </div>
+    <nav class="menu" class:renaming class:lit aria-label="Start" onfocusin={focusIn} onfocusout={focusOut}>
+      <!-- One cursor for the menu: it glides to the entry under the mouse (or the
+           keyboard's), and cools away once nothing is pointed at. -->
+      <MenuCursor at={cursor} {lit} />
+      {#if invite}
+        <div class="entry" role="presentation" class:cur={cursor === 0} onpointerenter={(ev) => hover(ev, 0)} onpointerleave={leave} in:fly={{ y: 12, duration: 500, delay: 450 }}>
+          <button class="pick" bind:this={entryEls[0]} onclick={() => inviteField?.focus()} onfocus={() => (cursor = 0)}>
+            {inviteHost ? `Join ${inviteHost}’s room` : 'Join the room'}
+          </button>
+          <div class="under">
+            {#if connecting}
+              <div class="slot" in:fly={SWAP_IN} out:fade={SWAP_OUT}><Connecting /></div>
+            {:else}
+              <form class="slot row" onsubmit={joinInvite} in:fly={SWAP_IN} out:fade={SWAP_OUT}>
+                <!-- svelte-ignore a11y_autofocus -->
+                <input class="field name" bind:this={inviteField} bind:value={inviteName} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="nickname" spellcheck="false" autofocus />
+                <button class="btn primary" type="submit">Join</button>
+              </form>
+            {/if}
           </div>
-          <div class="entry" role="presentation" class:cur={cursor === 1} class:dimmed={connecting} inert={connecting} onpointerenter={(ev) => hover(ev, 1)} onpointerleave={leave} in:fly={{ y: 12, duration: 500, delay: 520 }}>
-            <button class="pick" bind:this={entryEls[1]} onclick={leaveInvite} onfocus={() => (cursor = 1)}>Something else</button>
-            <div class="under"><p class="about">Create your own room, play hot-seat, or open the Codex.</p></div>
-          </div>
-        {:else}
+        </div>
+        <div class="entry" role="presentation" class:cur={cursor === 1} class:dimmed={connecting} inert={connecting} onpointerenter={(ev) => hover(ev, 1)} onpointerleave={leave} in:fly={{ y: 12, duration: 500, delay: 520 }}>
+          <button class="pick" bind:this={entryEls[1]} onclick={leaveInvite} onfocus={() => (cursor = 1)}>Something else</button>
+          <div class="under"><p class="about">Create your own room, play hot-seat, or open the Codex.</p></div>
+        </div>
+      {:else}
         {#each ENTRIES as e, i (e)}
           {@const isOpen = open === e && !connecting}
           {@const isBusy = connecting && (busy ?? (session.mode === 'host' ? 'create' : 'join')) === e}
@@ -498,47 +503,47 @@
             </div>
           </div>
         {/each}
-        {/if}
-      </nav>
-    </div>
-
-    <div class="today" in:fade={{ duration: 900, delay: 300 }}>
-      {#if invite}
-        <InviteRoom code={invite} host={inviteHost} name={inviteName} />
-      {:else}
-        <DailyUnique />
       {/if}
-    </div>
+    </nav>
+  </div>
 
-    {#if !invite}
+  <div class="today" in:fade={{ duration: 900, delay: 300 }}>
+    {#if invite}
+      <InviteRoom code={invite} host={inviteHost} name={inviteName} />
+    {:else}
+      <DailyUnique />
+    {/if}
+  </div>
+
+  {#if !invite}
     <div class="rooms" class:dimmed={connecting} inert={connecting} in:fly={{ y: 20, duration: 600, delay: 600 }}>
       <OpenRooms onJoin={joinListed} disabled={connecting} />
     </div>
-    {/if}
+  {/if}
 
-    <footer>
-      <div class="rule" aria-hidden="true"></div>
-      <div class="band">
-        <div class="made">
-          <p class="credit">Made by <a class="maker" href={CREATOR_URL} target="_blank" rel="noopener noreferrer" title="{CREATOR} on Twitch">{CREATOR}</a></p>
-          <a class="support" href={DONATE_URL} target="_blank" rel="noopener noreferrer" aria-describedby="support-note">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z" /></svg>
-            Support the project
-            <span class="tip" id="support-note" role="tooltip">Optional tips help pay for the domain and development. Everything stays free.</span>
-          </a>
-        </div>
-        <p class="fine">
-          Unofficial fan project. Path of Exile is a trademark of Grinding Gear Games, who do not endorse this site. Data and art:
-          <a href="https://poe2db.tw/us/Unique_item" target="_blank" rel="noreferrer">poe2db.tw</a>
-        </p>
-        <nav class="legal" aria-label="Legal">
-          <a href={IMPRINT_URL}>Impressum</a>
-          <span aria-hidden="true">·</span>
-          <a href={PRIVACY_URL}>Datenschutz</a>
-        </nav>
+  <footer>
+    <div class="rule" aria-hidden="true"></div>
+    <div class="band">
+      <div class="made">
+        <p class="credit">Made by <a class="maker" href={CREATOR_URL} target="_blank" rel="noopener noreferrer" title="{CREATOR} on Twitch">{CREATOR}</a></p>
+        <a class="support" href={DONATE_URL} target="_blank" rel="noopener noreferrer" aria-describedby="support-note">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z" /></svg>
+          Support the project
+          <span class="tip" id="support-note" role="tooltip">Optional tips help pay for the domain and development. Everything stays free.</span>
+        </a>
       </div>
-    </footer>
-  </div>
+      <p class="fine">
+        Unofficial fan project. Path of Exile is a trademark of Grinding Gear Games, who do not endorse this site. Data and art:
+        <a href="https://poe2db.tw/us/Unique_item" target="_blank" rel="noreferrer">poe2db.tw</a>
+      </p>
+      <nav class="legal" aria-label="Legal">
+        <a href={IMPRINT_URL}>Impressum</a>
+        <span aria-hidden="true">·</span>
+        <a href={PRIVACY_URL}>Datenschutz</a>
+      </nav>
+    </div>
+  </footer>
+</div>
 
 <style>
   /* One stage, at most 1440 px wide and centred: two columns (the menu,

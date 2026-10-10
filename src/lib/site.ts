@@ -20,6 +20,6 @@ export const DONATE_URL = 'https://paypal.me/minuW';
  * invite screen can say whose room it leads to.
  */
 export function inviteUrl(code: string, by?: string) {
-  const base = import.meta.env.DEV || LOCAL ? `${location.origin}${location.pathname}` : PLAY_URL;
+  const base = (import.meta as ImportMeta & { env?: { DEV?: boolean } }).env?.DEV || LOCAL ? `${location.origin}${location.pathname}` : PLAY_URL;
   return `${base}?room=${code}` + (by ? `&by=${encodeURIComponent(by)}` : '');
 }

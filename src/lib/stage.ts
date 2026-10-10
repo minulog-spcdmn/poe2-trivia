@@ -11,27 +11,6 @@ export function stageZoom(w: number, h: number): number {
   return Math.max(1, Math.min(w / 1440, h / 980, 2.2));
 }
 
-/**
- * The invite screen's scale, the rule the start page had before: from 2560
- * px wide, at most 2. It keeps it until its own redesign.
- */
-export function inviteZoom(w: number, h: number): number {
-  return Math.min(2, Math.max(1, Math.min(w / 2560, h / 1100)));
-}
-
-/**
- * Svelte action: keeps a zoom custom property on `node` (by default
- * `--stage-zoom`, by `rule`) up to date with the window; its CSS sets `zoom`
- * from it. The app sets the stage's on the root itself (App.svelte); the
- * invite screen keeps its own.
- */
-export function stage(node: HTMLElement, { rule = stageZoom, name = '--stage-zoom' }: { rule?: (w: number, h: number) => number; name?: string } = {}) {
-  const set = () => node.style.setProperty(name, String(rule(innerWidth, innerHeight)));
-  set();
-  addEventListener('resize', set);
-  return { destroy: () => removeEventListener('resize', set) };
-}
-
 /** The CSS zoom an element is drawn at (1 without): getBoundingClientRect's sizes divided by it are in the element's own CSS pixels. */
 export function zoomOf(el: Element): number {
   return (el as Element & { currentCSSZoom?: number }).currentCSSZoom ?? 1;

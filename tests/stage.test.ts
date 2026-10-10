@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { inviteZoom, stageZoom } from '../src/lib/stage.ts';
+import { stageZoom } from '../src/lib/stage.ts';
 
 const near = (a: number, b: number) => Math.abs(a - b) < 0.005;
 
@@ -21,10 +21,4 @@ test('larger windows scale by the smaller of width / 1440 and height / 980', () 
 
 test('the scale stops at 2.2', () => {
   assert.equal(stageZoom(7680, 4320), 2.2);
-});
-
-test('the invite screen keeps its old rule until its redesign', () => {
-  assert.equal(inviteZoom(2560, 1310), 1);
-  assert.equal(inviteZoom(3840, 2030), 1.5);
-  assert.equal(inviteZoom(7680, 4320), 2);
 });
