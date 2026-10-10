@@ -254,7 +254,7 @@
         <span class="sheen"></span>
         <span class="key" aria-hidden="true">{i + 1}</span>
         <span class="text">{label}</span>
-        {#if fake}<i class="made-up" in:fade={{ duration: 300 }}>made up</i>{/if}
+        {#if fake}<span class="made-up" in:fade={{ duration: 300 }}>Made up</span>{/if}
         <span class="cue" aria-hidden="true"></span>
         {#if st === 'right'}<span class="mark" in:scale={{ duration: 300 }}>✓</span>{/if}
         {#if st === 'wrong'}<span class="mark" in:scale={{ duration: 300 }}>✕</span>{/if}
@@ -593,19 +593,24 @@
       color 0.25s,
       text-shadow 0.25s;
   }
-  /* The made-up name, said so once it's over: a tag in the tile's top
-     corner, out of the name's way, so nothing wraps or moves. */
+  /* The made-up name, said so once it's over: an engraved tag in the tile's
+     top corner, as the lobby's Beta mark, out of the name's way so nothing
+     wraps or moves. */
   .made-up {
     position: absolute;
-    top: 3px;
-    right: 2.6rem;
-    font-family: var(--font-body);
-    font-weight: 400;
-    font-size: 13px;
-    line-height: 1;
-    letter-spacing: 0;
+    top: 4px;
+    right: 4px;
+    padding: 1px 2px 0 4px;
+    font-family: var(--font-cinzel);
+    font-weight: 700;
+    font-size: 0.5rem;
+    line-height: 1.4;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
     white-space: nowrap;
     color: var(--unique-hi);
+    border: 1px solid rgba(224, 138, 68, 0.45);
+    border-radius: 2px;
     pointer-events: none;
   }
   .mark {
