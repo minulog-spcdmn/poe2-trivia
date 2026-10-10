@@ -144,7 +144,6 @@ const pressed = dart(LEAN, PRESS_SINK);
 export const HAND = hand();
 /** The hand pressing: its finger foreshortened, pushing into the page. */
 export const HAND_PRESSED = hand(1, true);
-const pressedHand = HAND_PRESSED;
 /** The hand's lines: finer than the dart's, so its small claws stay clear at its size (and drawn `plain`, see Art). */
 const handLines = (h: ReturnType<typeof hand>): Art['lines'] => [
   { d: h.talon, w: 0, solid: true },
@@ -190,8 +189,8 @@ export const ART = {
   press: {
     size: SIZE,
     hot: [PAD_X, PAD_Y],
-    ground: pressedHand.outline,
-    lines: [{ d: pressedHand.finger, w: 0, solid: true }, ...handLines(pressedHand)],
+    ground: HAND_PRESSED.outline,
+    lines: [{ d: HAND_PRESSED.finger, w: 0, solid: true }, ...handLines(HAND_PRESSED)],
     plain: true,
   },
   // Pressed on nothing that can be clicked: the dart sunk a little, its hatched side struck solid (drawn `sunk`, ownCursor.ts).
@@ -232,10 +231,8 @@ export type ArtName = keyof typeof ART;
  * and a dot between them. Drawn about the origin, radius `SCROLL_SEAL_R`.
  */
 export const SCROLL_SEAL_R = 15;
-export const SCROLL_SEAL = (() => {
-  return {
-    rings: seal([0, 0], SCROLL_SEAL_R),
-    up: movedDart(dart(0, 0.42), -10.5),
-    down: movedDart(dart(Math.PI, 0.42), 10.5),
-  };
-})();
+export const SCROLL_SEAL = {
+  rings: seal([0, 0], SCROLL_SEAL_R),
+  up: movedDart(dart(0, 0.42), -10.5),
+  down: movedDart(dart(Math.PI, 0.42), 10.5),
+};

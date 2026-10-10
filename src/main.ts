@@ -15,9 +15,10 @@ installUiFx();
 installCursor();
 installAutoscroll();
 // No browser menu on a right click: it brings the system's cursor, and the
-// game has no use for it. Text fields keep theirs, where it's how many paste.
+// game has no use for it. Text fields keep theirs, where it's how many paste,
+// and links theirs (open in a new tab, copy the address).
 addEventListener('contextmenu', (e) => {
-  if (!(e.target as Element | null)?.closest('input, textarea, [contenteditable]')) e.preventDefault();
+  if (!(e.target as Element | null)?.closest('input, textarea, [contenteditable], a[href]')) e.preventDefault();
 });
 
 // Development only: handles for scripts that drive the game and step the

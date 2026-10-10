@@ -303,7 +303,8 @@ export class Player {
         what += ' (misclicks)';
       }
     }
-    await this.hand.click(`opt:${index}`);
+    // The press lands before the clock's end (a little before, for the trip to the host).
+    await this.hand.click(`opt:${index}`, o.deadline ? Date.now() + (o.deadline - session.hostNow()) - 250 : Infinity);
     if (!this.open(q)) return;
     this.answers++;
     const truth = o.itemId ? (index === o.options.indexOf(o.itemId) ? ' right' : ' wrong') : '';

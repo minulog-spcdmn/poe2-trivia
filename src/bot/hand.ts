@@ -72,9 +72,9 @@ export class Hand {
 
   /** Looks things over (anchors) before choosing, until `until`: each a while, in turn, never the same twice running. */
   lookOver(anchors: string[], until: number) {
+    this.looks = [];
     if (!anchors.length) return;
     const now = Date.now();
-    this.looks = [];
     let t = now + between(150, 500);
     let last = '';
     while (t < until - 300) {
@@ -88,7 +88,8 @@ export class Hand {
 
   /** What it looks over while making up its mind about a question: the art first, then (unsure) some of the answers. */
   ponder(q: Question, until: number, unsure: boolean) {
-    const options = q.labels.map((_, i) => `opt:${i}`).filter((_, i) => q.labels[i] !== null);
+    // A question that shows the pictures has no labels; one not shown yet has none either.
+    const options = q.labels.map((_, i) => `opt:${i}`).filter((_, i) => q.mode === 'art' || q.labels[i] !== null);
     const art = q.mode === 'art' ? [] : ['art'];
     const pool = unsure ? options : [];
     this.lookOver([...art, ...art, ...pool], until);
@@ -97,36 +98,40 @@ export class Hand {
   /**
    * Moves to `anchor` and presses, as a click does (on a phone, a tap);
    * resolves as it presses, for the action to go then. At once when no
-   * pointer is shown.
+   * pointer is shown. `by` (Date.now): when it must have pressed at the
+   * latest (the clock's end), the hand hurrying to make it.
    */
-  async click(anchor: string): Promise<void> {
+  async click(anchor: string, by = Infinity): Promise<void> {
     this.looks = [];
     const s = session.state;
     if (!this.live(s)) return;
     const box = layout(s!).get(anchor);
     if (!box) return;
     const target = aimIn(box, Math.random);
+    const room = () => Math.max(0, by - Date.now());
     if (this.persona.touch) {
-      await wait(between(150, 350));
+      await wait(Math.min(between(150, 350), room()));
       this.at = target;
       this.on = anchor;
       this.send(true, TAP);
       return;
     }
     this.awayUntil = 0;
-    const ms = this.goTo(target, box, anchor);
-    await wait(ms + between(...SETTLE_MS) * this.persona.pace);
+    const ms = this.goTo(target, box, anchor, room() * 0.8);
+    // No idle wandering off it before the press.
+    this.nextIdle = Date.now() + ms + 1000 + between(...IDLE_EVERY);
+    await wait(Math.min(ms + between(...SETTLE_MS) * this.persona.pace, room()));
     this.pressedUntil = Date.now() + between(...PRESS_MS);
     this.send(true);
   }
 
-  /** Sets off for `to` (in `box`, for its size, the anchor `on`, if it goes there on purpose), from wherever it is now; how long it takes (ms). */
-  private goTo(to: Spot, box?: Box, on: string | null = null) {
+  /** Sets off for `to` (in `box`, for its size, the anchor `on`, if it goes there on purpose), from wherever it is now, in `most` ms at most; how long it takes (ms). */
+  private goTo(to: Spot, box?: Box, on: string | null = null, most = Infinity) {
     const now = Date.now();
     this.on = on;
     const from = this.where(now);
     const size = box ? Math.min(box[2] - box[0], box[3] - box[1]) : 60;
-    const ms = reachTime(Math.hypot(to.x - from.x, to.y - from.y), size, this.persona.pace * (1 - 0.25 * this.persona.haste), Math.random);
+    const ms = Math.min(most, reachTime(Math.hypot(to.x - from.x, to.y - from.y), size, this.persona.pace * (1 - 0.25 * this.persona.haste), Math.random));
     this.move = stroke(from, to, now, ms, Math.random);
     return ms;
   }

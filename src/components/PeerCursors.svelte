@@ -230,7 +230,6 @@
 <div class="cursors" use:portal aria-hidden="true" style:--pad-x={PAD_X} style:--pad-y={PAD_Y} style:--w={SIZE[0]} style:--h={SIZE[1]} style:--sink={PRESS_SINK}>
   {#each shown as c (c.key)}
     <div class="cursor" bind:this={els[c.key]} style:--c={c.color}>
-      <!-- The dart (lib/pointerArt.ts) with its tip on the spot: a dark rim and ground, a glow under the lines. -->
       <!-- The dart (lib/pointerArt.ts) with its tip on the spot: a dark rim and ground, a glow under the lines.
            Over a button, the hand pointing instead; pressed (or a tap), the dart sinks a little, its hatched side struck solid,
            and the hand pushes its finger into the page, foreshortened and struck solid. -->
@@ -330,11 +329,11 @@
   .cursor:global(.lit.pressed) .hand.down {
     display: inline;
   }
-  /* The button held, or a tap: the dart sinks a little about its tip. */
   /* Sharp claws would throw long mitres: the hand's corners are rounded. */
   .hand {
     stroke-linejoin: round;
   }
+  /* The button held, or a tap: the dart sinks a little about its tip. */
   .body {
     transform-origin: 0 0;
     transition: transform 0.12s var(--ease-out);
@@ -364,6 +363,28 @@
     opacity: 0.35;
     stroke-width: 2.2;
     filter: blur(1.6px);
+  }
+  /* Hatching: round ends, a little fainter (as the player's own, lib/ownCursor.ts). */
+  .hatch {
+    stroke-linecap: round;
+    opacity: 0.85;
+  }
+  /* The name on a dark plate edged in the player's colour, as on the scoreboard. */
+  .name {
+    position: absolute;
+    left: 13px;
+    top: 21px;
+    max-width: 9rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    padding: 0 0.5em 0.1em;
+    border: 1px solid color-mix(in srgb, var(--c), transparent 45%);
+    border-radius: 999px;
+    background: rgba(12, 10, 8, 0.85);
+    color: color-mix(in srgb, var(--c), #fff4e0 45%);
+    font: 0.82rem/1.35 var(--font-body);
+    box-shadow: 0 1px 6px rgba(0, 0, 0, 0.6);
   }
   /* Smaller on phones, so they cover less of the answers. */
   @media (max-width: 640px) {
