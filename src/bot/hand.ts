@@ -40,6 +40,21 @@ if (import.meta.env.DEV) Object.assign(globalThis, { __hand: () => current });
 
 type Frame = 'cards' | 'answers' | 'room';
 
+/**
+ * Where each seat waits (thousandths of the frame, its waiting stretches
+ * shifted this far): well apart, so no two bots in a room rest on one spot.
+ */
+const ASIDES: [number, number][] = [
+  [-300, -200],
+  [150, 180],
+  [-50, -60],
+  [-280, 170],
+  [120, -230],
+  [-180, 40],
+  [60, 60],
+  [-120, -250],
+];
+
 export class Hand {
   private at: Spot = { x: 480 + Math.random() * 40, y: 600 + Math.random() * 100 };
   /** What it's replaying, and what the track's places are in thousandths of. */
@@ -47,8 +62,8 @@ export class Hand {
   private frame: Frame = 'room';
   /** Where that frame was when the track began: the track is laid onto it once, so a new screen doesn't move the hand. */
   private trackBox: Box = [150, 250, 850, 800];
-  /** Where it waits, its own: its waiting stretches shifted this far (thousandths of the frame), so no two bots rest on the same spot. */
-  private readonly aside: [number, number] = [-350 + Math.random() * 500, -250 + Math.random() * 450];
+  /** A little of its own on top of its seat's place to wait (ASIDES). */
+  private readonly nudge: [number, number] = [between(-60, 60), between(-50, 50)];
   /** Where on an answer or a card it tends to rest and click, its own (thousandths of it, from the recorded spot): not all on one spot. */
   private readonly grip: [number, number] = [between(-300, 300), between(-250, 250)];
   /** The stretch its next click reaches with (picked as it looks things over), and for what. */
@@ -130,15 +145,19 @@ export class Hand {
     const s = this.s ?? session.state;
     if (!s) return;
     const now = Date.now();
-    const e = pickClick(kind, until - now, Math.random, { mode, n, used: new Set(this.used) });
+    const at = this.where(now);
+    const f = this.box(frame, s);
+    const e = pickClick(kind, until - now, Math.random, { mode, n, used: new Set(this.used), near: (x) => within(at, f, x.src) });
     if (!e) return;
     this.remember(e);
     const w = waver(Math.random);
     this.pending = { kind, e, w };
     this.presses = [];
     const onto = this.onto(kind === 'card' ? 'card:' : 'opt:', e, torn, this.box(frame, s), s);
-    // It takes in what's come up before its hand stirs, its own while: the room's hands don't all set off as one.
-    const start = now + Math.min(between(150, 1300) * (0.6 + 0.8 * this.persona.hand.still), (until - now) * 0.35);
+    // It takes in what's come up before its hand stirs, its own while: the room's hands don't all set off as one
+    // (already on the move, waiting, it goes straight on).
+    const moving = !!this.track && now < this.track.t[this.track.t.length - 1];
+    const start = moving ? now : now + Math.min(between(200, 2600) * (0.6 + 0.8 * this.persona.hand.still), (until - now) * 0.45);
     this.follow(leadTrack(e, within(this.where(now), this.box(frame, s), e.src), start, until, this.speed, { onto, w }), frame);
   }
 
@@ -252,7 +271,7 @@ export class Hand {
       this.screenAt = now;
       this.on = null;
       // A click it was about to make on what's gone: not any more.
-      if (this.pending && s.phase !== 'choosing' && s.phase !== 'question') this.pending = null;
+      if (this.pending && this.pending.kind !== (s.phase === 'choosing' ? 'card' : s.phase === 'question' ? 'answer' : 'next')) this.pending = null;
       // Waiting on the next screen begins a while in, its own while: not all the room's hands at once.
       if (!this.track) this.restUntil = Math.max(this.restUntil, now + between(400, 4000) * (0.5 + this.persona.hand.still));
     }
@@ -261,13 +280,15 @@ export class Hand {
       return this.send(false);
     }
     // Nothing of its own to do (someone else's turn, the lobby, the end): it waits as the recorded player waited.
-    if (!this.track && !this.pending && this.idle(s) && now >= this.restUntil) {
+    if (!this.track && this.idle(s) && now >= this.restUntil) {
       const lobby = s.phase === 'lobby' || s.phase === 'over';
       const e = pickStream(lobby ? 'lobby' : 'wait', Math.random, new Set(this.used));
       const frame = lobby ? 'room' : this.waitFrame(s);
       if (e) {
         this.remember(e);
-        const { track, presses } = streamTrack(e, within(this.where(now), this.box(frame, s), e.src), now, this.speed, waver(Math.random), Math.random, this.aside);
+        const seat = ASIDES[Math.max(0, s.players.findIndex((p) => p.id === session.myPlayerId)) % ASIDES.length];
+        const aside: [number, number] = [seat[0] + this.nudge[0], seat[1] + this.nudge[1]];
+        const { track, presses } = streamTrack(e, within(this.where(now), this.box(frame, s), e.src), now, this.speed, waver(Math.random), Math.random, aside);
         this.follow(track, frame);
         // The recorded player clicked at nothing a lot; it, about half as often.
         this.presses = presses.filter(() => Math.random() < 0.5);
@@ -285,12 +306,12 @@ export class Hand {
     this.send(true);
   }
 
-  /** Nothing of its own to do: someone else's turn, its pick made, a reveal, the lobby, the end. */
+  /**
+   * Nothing of its own to do: someone else's turn, its pick made, a reveal,
+   * the lobby, the end; or not yet looking things over (the clock not begun).
+   */
   private idle(s: GameState) {
-    if (s.phase === 'lobby' || s.phase === 'over' || s.phase === 'reveal' || this.acted === this.screen) return true;
-    const me = session.myPlayerId;
-    if (s.delve) return false;
-    return s.settings.mode === 'turns' && s.players[s.turn]?.id !== me;
+    return s.phase === 'lobby' || s.phase === 'over' || s.phase === 'reveal' || this.acted === this.screen || !this.pending;
   }
 
   /**
