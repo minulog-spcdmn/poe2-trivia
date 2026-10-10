@@ -16,7 +16,7 @@
   import GameTitle from './GameTitle.svelte';
   import Connecting from './Connecting.svelte';
   import DailyUnique from './DailyUnique.svelte';
-  import InviteScreen from './InviteScreen.svelte';
+  import InviteRoom from './InviteRoom.svelte';
   import MenuCursor from './MenuCursor.svelte';
   import OpenRooms from './OpenRooms.svelte';
 
@@ -26,6 +26,8 @@
   const params = new URLSearchParams(location.search);
   /** An invite link's room (?room=CODE): its own screen until joined or left. */
   let invite = $state(cleanCode(params.get('room') ?? ''));
+  /** Who sent it (?by=NAME, added by the lobby's invite link), so the screen can say whose room it is. */
+  const inviteHost = (params.get('by') ?? '').trim().slice(0, MAX_NAME);
   if (params.has('owner')) {
     void unlockHeldName(params.get('owner') ?? '');
     // Out of the address bar and history either way; other params stay.
@@ -123,7 +125,7 @@
   const SWAP_OUT = { duration: 140 };
 
   /** The keyboard cursor: arrows move it, Enter chooses, it follows the mouse. */
-  let cursor = $state(lastEntry());
+  let cursor = $state(invite ? 0 : lastEntry());
   /** The entry whose row (fields in place of its description) is open. */
   let open = $state<Entry | null>(null);
   let entryEls: HTMLButtonElement[] = $state([]);
@@ -320,13 +322,18 @@
     rowFocus = false;
   }
   /** The cursor shows while an entry is pointed at, chosen from the keyboard, typed in or connecting; otherwise it fades away. */
-  const lit = $derived(!renaming && (hovered || keyFocus || (!!open && rowFocus) || connecting));
+  const lit = $derived(!renaming && (hovered || keyFocus || ((!!open || !!invite) && rowFocus) || connecting));
 
   // ---- the invite link's screen ----
 
+  // An invite is the start page with the choice already made: the menu holds
+  // the one room to join (and a way to everything else), the right-hand
+  // column the room as the lobby will show it (InviteRoom).
   let inviteName = $state(savedName());
-  function joinInvite(field: HTMLInputElement) {
-    const n = checkName(inviteName, field);
+  let inviteField = $state<HTMLInputElement>();
+  function joinInvite(e?: Event) {
+    e?.preventDefault();
+    const n = known || checkName(inviteName, inviteField);
     if (!n) return;
     startJoin(invite, n);
   }
@@ -357,10 +364,7 @@
 
 <svelte:window onkeydown={keys} onpointerdown={outside} />
 
-{#if invite}
-  <InviteScreen code={invite} bind:name={inviteName} {connecting} onjoin={joinInvite} onback={leaveInvite} />
-{:else}
-  <div class="home">
+<div class="home" class:invited={!!invite}>
     <div class="intro">
       <div class="title">
         <GameTitle />
@@ -405,6 +409,30 @@
         <!-- One cursor for the menu: it glides to the entry under the mouse (or the
              keyboard's), and cools away once nothing is pointed at. -->
         <MenuCursor at={cursor} {lit} />
+        {#if invite}
+          <div class="entry" role="presentation" class:cur={cursor === 0} onpointerenter={(ev) => hover(ev, 0)} onpointerleave={leave} in:fly={{ y: 12, duration: 500, delay: 450 }}>
+            <button class="pick" bind:this={entryEls[0]} onclick={() => (inviteField ? inviteField.focus() : joinInvite())} onfocus={() => (cursor = 0)}>
+              {inviteHost ? `Join ${inviteHost}’s room` : 'Join the room'}
+            </button>
+            <div class="under">
+              {#if connecting}
+                <div class="slot" in:fly={SWAP_IN} out:fade={SWAP_OUT}><Connecting /></div>
+              {:else}
+                <form class="slot row" onsubmit={joinInvite} in:fly={SWAP_IN} out:fade={SWAP_OUT}>
+                  {#if !known}
+                    <!-- svelte-ignore a11y_autofocus -->
+                    <input class="field name" bind:this={inviteField} bind:value={inviteName} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="nickname" spellcheck="false" autofocus />
+                  {/if}
+                  <button class="btn primary" type="submit">{known ? 'Join the room' : 'Join'}</button>
+                </form>
+              {/if}
+            </div>
+          </div>
+          <div class="entry" role="presentation" class:cur={cursor === 1} class:dimmed={connecting} inert={connecting} onpointerenter={(ev) => hover(ev, 1)} onpointerleave={leave} in:fly={{ y: 12, duration: 500, delay: 520 }}>
+            <button class="pick" bind:this={entryEls[1]} onclick={leaveInvite} onfocus={() => (cursor = 1)}>Something else</button>
+            <div class="under"><p class="about">Create your own room, play hot-seat, or open the Codex.</p></div>
+          </div>
+        {:else}
         {#each ENTRIES as e, i (e)}
           {@const isOpen = open === e && !connecting}
           {@const isBusy = connecting && (busy ?? (session.mode === 'host' ? 'create' : 'join')) === e}
@@ -458,16 +486,23 @@
             </div>
           </div>
         {/each}
+        {/if}
       </nav>
     </div>
 
     <div class="today" in:fade={{ duration: 900, delay: 300 }}>
-      <DailyUnique />
+      {#if invite}
+        <InviteRoom code={invite} host={inviteHost} name={known || inviteName} />
+      {:else}
+        <DailyUnique />
+      {/if}
     </div>
 
+    {#if !invite}
     <div class="rooms" class:dimmed={connecting} inert={connecting} in:fly={{ y: 20, duration: 600, delay: 600 }}>
       <OpenRooms onJoin={joinListed} disabled={connecting} />
     </div>
+    {/if}
 
     <footer>
       <div class="rule" aria-hidden="true"></div>
@@ -492,7 +527,6 @@
       </div>
     </footer>
   </div>
-{/if}
 
 <style>
   /* One stage, at most 1440 px wide and centred: two columns (the menu,

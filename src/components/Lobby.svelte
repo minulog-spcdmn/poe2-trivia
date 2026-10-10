@@ -39,7 +39,7 @@
   let nameError = $state(false);
   let copied = $state(false);
 
-  const inviteLink = $derived(inviteUrl(session.code));
+  const inviteLink = $derived(inviteUrl(session.code, s.players.find((p) => p.id === s.hostId)?.name));
   /** Desktop: the start page's two columns, no panels. Tall: the modes' names go under their emblems. */
   const tall = new MediaQuery('(min-height: 860px)');
   // Measure the category cards' emblems (lib/iconFit) while the party

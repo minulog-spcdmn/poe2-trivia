@@ -14,8 +14,12 @@ export const IMPRINT_URL = './impressum.html';
 export const PRIVACY_URL = './datenschutz.html';
 export const DONATE_URL = 'https://paypal.me/minuW';
 
-/** Invite link for a room (the dev server, and any local build, point to where they are: their rooms are only there). */
-export function inviteUrl(code: string) {
+/**
+ * Invite link for a room (the dev server, and any local build, point to where
+ * they are: their rooms are only there). With the host's name (`by`), the
+ * invite screen can say whose room it leads to.
+ */
+export function inviteUrl(code: string, by?: string) {
   const base = import.meta.env.DEV || LOCAL ? `${location.origin}${location.pathname}` : PLAY_URL;
-  return `${base}?room=${code}`;
+  return `${base}?room=${code}` + (by ? `&by=${encodeURIComponent(by)}` : '');
 }
