@@ -4,9 +4,10 @@
 // the system cursor, so it moves with no lag at all.
 //
 // The CSS never names these images: vite.config.ts turns every
-// `cursor: pointer`, `cursor: default` and `cursor: text` into
-// var(--cursor-pointer, pointer), var(--cursor, default) and
-// var(--cursor-text, text), and this sets those variables on <html>.
+// `cursor: pointer`, `default`, `not-allowed` and `text` into
+// var(--cursor-pointer, pointer), var(--cursor, default),
+// var(--cursor-disabled, not-allowed) and var(--cursor-text, text), and
+// this sets those variables on <html>.
 // Pages that don't call installCursor keep the system's cursors.
 
 import { ART, type Art, type ArtName } from './pointerArt';
@@ -17,9 +18,12 @@ const INK = '#0a0908';
 /** Pale gold the lines are lit toward, over something that can be clicked or pressed. */
 const PALE = '#fff4e0';
 
-type Look = 'rest' | 'lit' | 'press';
+/** Lead, as the plainest achievements' seals are struck (lib/metals.ts): disabled is dull metal, with no glow. */
+const LEAD = '#a2a7ac';
 
-/** `art` as a PNG at `scale` pixels per CSS px. Lit (over something that can be clicked) and pressed, it's gilded and glows brighter. */
+type Look = 'rest' | 'lit' | 'press' | 'dull';
+
+/** `art` as a PNG at `scale` pixels per CSS px. Lit (over something that can be clicked) and pressed, it's gilded and glows brighter; dull, it's lead. */
 function draw(art: Art, color: string, look: Look, scale: number): string {
   const canvas = document.createElement('canvas');
   canvas.width = art.size[0] * scale;
@@ -28,7 +32,8 @@ function draw(art: Art, color: string, look: Look, scale: number): string {
   if (!g) return '';
   g.scale(scale, scale);
   g.translate(art.hot[0], art.hot[1]);
-  const bright = look !== 'rest';
+  const bright = look === 'lit' || look === 'press';
+  if (look === 'dull') color = LEAD;
   const stroke = (d: string, w: number) => {
     g.lineWidth = w;
     g.stroke(new Path2D(d));
@@ -43,10 +48,10 @@ function draw(art: Art, color: string, look: Look, scale: number): string {
   g.lineWidth = 3;
   g.stroke(ground);
   for (const l of art.lines) if (!l.fine) stroke(l.d, l.w + 2);
-  // The glow under the lines, never on them.
+  // The glow under the lines, never on them (none on dull lead).
   g.save();
   g.strokeStyle = color;
-  g.globalAlpha = bright ? 0.5 : 0.22;
+  g.globalAlpha = look === 'dull' ? 0 : bright ? 0.5 : 0.22;
   g.shadowColor = color;
   g.shadowBlur = (bright ? 5 : 2) * scale;
   stroke(art.ground, bright ? 2.6 : 2);
@@ -60,10 +65,12 @@ function draw(art: Art, color: string, look: Look, scale: number): string {
   }
   const ink = bright ? mix(color, PALE, look === 'press' ? 0.55 : 0.35) : color;
   g.strokeStyle = ink;
+  g.fillStyle = ink;
   for (const l of art.lines) {
     g.lineCap = l.fine ? 'round' : 'butt';
     g.globalAlpha = l.fine ? 0.85 : 1;
-    stroke(l.d, l.w);
+    if (l.solid) g.fill(new Path2D(l.d));
+    if (l.w) stroke(l.d, l.w);
   }
   return canvas.toDataURL('image/png');
 }
@@ -96,7 +103,7 @@ function cursorValue(name: ArtName, look: Look, color: string, fallback: string)
   v = !one
     ? fallback
     : sharp
-      ? `${sharp}(url("${one}") 1x, url("${draw(art, color, look, 2)}") 2x) ${art.hot[0]} ${art.hot[1]}, ${fallback}`
+      ? `${sharp}(url("${one}") 1x, url("${draw(art, color, look, 2)}") 2x, url("${draw(art, color, look, 3)}") 3x) ${art.hot[0]} ${art.hot[1]}, ${fallback}`
       : `url("${one}") ${art.hot[0]} ${art.hot[1]}, ${fallback}`;
   made.set(key, v);
   return v;
@@ -105,15 +112,24 @@ function cursorValue(name: ArtName, look: Look, color: string, fallback: string)
 let color = GOLD;
 let pressed = false;
 let applied = '';
+/** Windows' high contrast and the like: the system's own cursors, which follow the user's settings. */
+const forced = typeof matchMedia === 'function' ? matchMedia('(forced-colors: active)') : null;
+const VARS = ['--cursor', '--cursor-pointer', '--cursor-disabled', '--cursor-text'];
 
 function apply() {
   if (typeof document === 'undefined') return;
-  const key = `${color}:${pressed}`;
+  const root = document.documentElement.style;
+  const key = forced?.matches ? 'forced' : `${color}:${pressed}`;
   if (key === applied) return;
   applied = key;
-  const root = document.documentElement.style;
-  root.setProperty('--cursor', pressed ? cursorValue('press', 'press', color, 'default') : cursorValue('rest', 'rest', color, 'default'));
-  root.setProperty('--cursor-pointer', pressed ? cursorValue('press', 'press', color, 'pointer') : cursorValue('rest', 'lit', color, 'pointer'));
+  if (key === 'forced') {
+    for (const v of VARS) root.removeProperty(v);
+    return;
+  }
+  // Over something that can be clicked, the hand; pressed, the dart or the hand sinks.
+  root.setProperty('--cursor', pressed ? cursorValue('sink', 'press', color, 'default') : cursorValue('rest', 'rest', color, 'default'));
+  root.setProperty('--cursor-pointer', pressed ? cursorValue('press', 'press', color, 'pointer') : cursorValue('hover', 'lit', color, 'pointer'));
+  root.setProperty('--cursor-disabled', cursorValue('disabled', 'dull', color, 'not-allowed'));
   root.setProperty('--cursor-text', cursorValue('text', 'rest', color, 'text'));
 }
 
@@ -135,6 +151,7 @@ export const scrollCursor = (way: 'up' | 'down' | 'still') => cursorValue(way, '
  */
 export function installCursor() {
   apply();
+  forced?.addEventListener('change', apply);
   const press = (on: boolean) => {
     if (pressed === on) return;
     pressed = on;

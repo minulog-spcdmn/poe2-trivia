@@ -3,7 +3,7 @@
   // this device's own, sent for them to see. Each pointer is placed on the
   // element it was over (data-cursor), wherever that element is on this
   // screen, and glides between the updates (ten a second) so it moves
-  // smoothly. A tap on a phone shows as a ripple where it landed.
+  // smoothly. A tap on a phone shows where it landed, as the dart pressed, for a moment.
   import { onMount } from 'svelte';
   import { session } from '../lib/session.svelte';
   import { peerCursors } from '../lib/peerCursors.svelte';
@@ -11,7 +11,7 @@
   import { playerColor } from '../lib/ui';
   import { portal } from '../lib/portal';
   import { setCursorColor } from '../lib/ownCursor';
-  import { PAD_X, PAD_Y, POINTER, PRESS_SCALE, SIZE, STAMP_R, WEIGHT } from '../lib/pointerArt';
+  import { HAND, PAD_X, PAD_Y, POINTER, PRESS_SCALE, SIZE, WEIGHT } from '../lib/pointerArt';
 
   /** How quickly a pointer catches up with where it was last heard to be (ms to cover about 2/3 of the way). */
   const GLIDE_MS = 70;
@@ -224,13 +224,8 @@
         el.classList.toggle('away', !touch && age > AWAY_MS);
         if (touch && d.tap !== p.moved) {
           d.tap = p.moved;
-          el.querySelector('.ripple')?.animate(
-            [
-              { transform: 'translate(-50%, -50%) scale(0.3)', opacity: 0.9 },
-              { transform: 'translate(-50%, -50%) scale(1.6)', opacity: 0 },
-            ],
-            { duration: TAP_MS, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' },
-          );
+          // Struck, held a moment, then fading.
+          el.animate([{ opacity: 1 }, { opacity: 1, offset: 0.5 }, { opacity: 0 }], { duration: TAP_MS, easing: 'ease-in' });
         }
       }
       raf = requestAnimationFrame(frame);
@@ -240,21 +235,32 @@
   });
 </script>
 
-<div class="cursors" use:portal aria-hidden="true" style:--pad-x={PAD_X} style:--pad-y={PAD_Y} style:--w={SIZE[0]} style:--h={SIZE[1]} style:--press={PRESS_SCALE} style:--stamp={STAMP_R}>
+<div class="cursors" use:portal aria-hidden="true" style:--pad-x={PAD_X} style:--pad-y={PAD_Y} style:--w={SIZE[0]} style:--h={SIZE[1]} style:--press={PRESS_SCALE}>
   {#each shown as c (c.key)}
     <div class="cursor" bind:this={els[c.key]} style:--c={c.color}>
       <!-- The dart (lib/pointerArt.ts) with its tip on the spot: a dark rim and ground, a glow under the lines. -->
+      <!-- The dart (lib/pointerArt.ts) with its tip on the spot: a dark rim and ground, a glow under the lines.
+           Over a button, the hand pointing instead; pressed (or a tap), the dart or the hand sinks, the dart's hatched side or the hand's finger struck solid. -->
       <svg class="dart" viewBox="{-PAD_X} {-PAD_Y} {SIZE[0]} {SIZE[1]}" width={SIZE[0]} height={SIZE[1]}>
-        <path class="ground" d={POINTER.outline} stroke-width={WEIGHT.rim} />
-        <path class="glow" d={POINTER.outline} />
-        <path class="wash" d={POINTER.outline} />
-        <path class="line" d={POINTER.outline} stroke-width={WEIGHT.outline} />
-        <path class="line" d={POINTER.ridge} stroke-width={WEIGHT.ridge} />
-        <path class="line hatch" d={POINTER.hatch} stroke-width={WEIGHT.hatch} />
+        <g class="body">
+          <path class="ground" d={POINTER.outline} stroke-width={WEIGHT.rim} />
+          <path class="glow" d={POINTER.outline} />
+          <path class="wash" d={POINTER.outline} />
+          <path class="side" d={POINTER.side} />
+          <path class="line" d={POINTER.outline} stroke-width={WEIGHT.outline} />
+          <path class="line ridge" d={POINTER.ridge} stroke-width={WEIGHT.ridge} />
+          <path class="line hatch" d={POINTER.hatch} stroke-width={WEIGHT.hatch} />
+        </g>
+        <g class="hand">
+          <path class="ground" d={HAND.outline} stroke-width={WEIGHT.rim} />
+          <path class="glow" d={HAND.outline} />
+          <path class="wash" d={HAND.outline} />
+          <path class="side" d={HAND.finger} />
+          <path class="line" d={HAND.outline} stroke-width={WEIGHT.outline} />
+          <path class="line" d={HAND.creases} stroke-width={WEIGHT.fine} />
+          <path class="line hatch" d={HAND.cuff} stroke-width={WEIGHT.hatch} />
+        </g>
       </svg>
-      <!-- The button held: a seal stamped round the tip. A tap: a seal's double ring, opening out. -->
-      <span class="stamp"></span>
-      <span class="ripple"></span>
       <span class="name">{c.name}</span>
     </div>
   {/each}
@@ -309,10 +315,6 @@
     opacity: 0;
     transition: opacity 0.15s;
   }
-  .dart {
-    transform-origin: calc(var(--pad-x) * 1px) calc(var(--pad-y) * 1px);
-    transition: transform 0.12s var(--ease-out);
-  }
   /* Over something that can be clicked: gilded, the lines struck paler and glowing brighter. */
   .cursor:global(.lit) .line,
   .cursor:global(.pressed) .line {
@@ -326,85 +328,38 @@
     opacity: 0.5;
     stroke-width: 2.6;
   }
-  /* The button held: the dart sinks about its tip into a seal stamped there. */
-  .cursor:global(.pressed) .dart {
-    transform: scale(var(--press));
-  }
-  .cursor:global(.pressed) .wash {
-    opacity: 0.32;
-  }
-  .stamp {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: calc(var(--stamp) * 2px);
-    height: calc(var(--stamp) * 2px);
-    border: 0.75px solid var(--c);
-    border-radius: 50%;
-    opacity: 0;
-    transform: translate(-50%, -50%) scale(1.6);
-    transition:
-      opacity 0.2s,
-      transform 0.2s var(--ease-out);
-  }
-  .stamp::after {
-    content: '';
-    position: absolute;
-    inset: 0.9px;
-    border: 0.75px solid var(--c);
-    border-radius: 50%;
-  }
-  .cursor:global(.pressed) .stamp {
-    opacity: 1;
-    transform: translate(-50%, -50%);
-  }
-  .hatch {
-    stroke-linecap: round;
-    opacity: 0.85;
-  }
-  /* The name on a dark plate edged in the player's colour, as on the scoreboard. */
-  .name {
-    position: absolute;
-    left: 13px;
-    top: 21px;
-    max-width: 9rem;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    padding: 0 0.5em 0.1em;
-    border: 1px solid color-mix(in srgb, var(--c), transparent 45%);
-    border-radius: 999px;
-    background: rgba(12, 10, 8, 0.85);
-    color: color-mix(in srgb, var(--c), #fff4e0 45%);
-    font: 0.82rem/1.35 var(--font-body);
-    box-shadow: 0 1px 6px rgba(0, 0, 0, 0.6);
-  }
-  .ripple {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 40px;
-    height: 40px;
-    border: 1px solid var(--c);
-    border-radius: 50%;
-    opacity: 0;
-    transform: translate(-50%, -50%);
-    box-shadow: 0 0 6px color-mix(in srgb, var(--c), transparent 60%);
-  }
-  .ripple::after {
-    content: '';
-    position: absolute;
-    inset: 3px;
-    border: 0.75px solid var(--c);
-    border-radius: 50%;
-  }
-  /* A tap is the ring and the name, no dart (the classes are set each frame). */
-  .cursor:global(.tap) > .dart {
+  /* Over something that can be clicked: the hand instead of the dart. */
+  .hand,
+  .cursor:global(.lit) .body {
     display: none;
   }
-  .cursor:global(.tap) > .name {
-    left: 16px;
-    top: 10px;
+  .cursor:global(.lit) .hand {
+    display: inline;
+  }
+  /* The button held, or a tap: the dart or the hand sinks about its tip, the dart's hatched side or the hand's finger struck solid. */
+  .body,
+  .hand {
+    transform-origin: 0 0;
+    transition: transform 0.12s var(--ease-out);
+  }
+  .side {
+    fill: color-mix(in srgb, var(--c), #fff4e0 35%);
+    opacity: 0;
+  }
+  .cursor:global(.pressed) .body,
+  .cursor:global(.pressed) .hand,
+  .cursor:global(.tap) .body {
+    transform: scale(var(--press));
+  }
+  .cursor:global(.pressed) .side,
+  .cursor:global(.tap) .side {
+    opacity: 1;
+  }
+  .cursor:global(.pressed) .body .hatch,
+  .cursor:global(.pressed) .ridge,
+  .cursor:global(.tap) .body .hatch,
+  .cursor:global(.tap) .ridge {
+    opacity: 0;
   }
   /* Smaller on phones, so they cover less of the answers. */
   @media (max-width: 640px) {
@@ -412,7 +367,6 @@
       width: calc(var(--w) * 0.8px);
       height: calc(var(--h) * 0.8px);
       margin: calc(-0.8px * var(--pad-y)) 0 0 calc(-0.8px * var(--pad-x));
-      transform-origin: calc(var(--pad-x) * 0.8px) calc(var(--pad-y) * 0.8px);
     }
     .name {
       left: 10px;

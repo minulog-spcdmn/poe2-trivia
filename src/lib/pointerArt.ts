@@ -3,11 +3,15 @@
 // circle (docs/arcane-style.md): one point of its compass star made into a
 // dart, leaning as a pointer does, with a ridge down its middle and one side
 // hatched along it, as the star's points are (lib/arcane.ts pointedRay).
-// Its other states are drawn alike: pressed (a seal stamped at the tip), the
-// text cursor (a stem with a lozenge, as on the category cards' divider), and
-// middle-button scrolling (upright darts, and a seal where the scroll began).
+// Its other states are drawn alike, each telling itself by its shape as well
+// as its light: over something that can be clicked, a gauntlet's hand
+// pointing (the system's pointer, engraved); pressed, the dart or the hand
+// sinks, the dart's hatched side or the hand's finger struck solid;
+// disabled, dull lead with a saltire beside the tip; the text cursor (a stem
+// with a lozenge, as on the category cards' divider); and middle-button
+// scrolling (upright darts, and a seal where the scroll began).
 
-import { hatch, line, pt, ring, type Pt } from './arcane.ts';
+import { f, hatch, line, pt, ring, type Pt } from './arcane.ts';
 
 /** A dart with its tip at the origin, turned `turn` radians from upright (counter-clockwise when negative), at `k` times its size. */
 function dart(turn: number, k = 1) {
@@ -18,6 +22,8 @@ function dart(turn: number, k = 1) {
     outline: `M${pt(tip)}L${pt(l)}L${pt(notch)}L${pt(r)}Z`,
     ridge: line(tip, notch),
     hatch: hatch(notch, l, tip, 1.25 * k),
+    /** The hatched side, whole: struck solid when pressed. */
+    side: `M${pt(tip)}L${pt(l)}L${pt(notch)}Z`,
   };
 }
 
@@ -28,16 +34,46 @@ const LEAN = -0.42;
 export const POINTER = dart(LEAN);
 
 /** Room round the dart for its dark rim and glow: the tip sits at (PAD_X, PAD_Y) in a box SIZE across (CSS px). */
-export const PAD_X = 5;
+export const PAD_X = 8;
 export const PAD_Y = 4;
-export const SIZE: Pt = [24, 30];
+export const SIZE: Pt = [28, 32];
 
 /** Line weights (CSS px): fine and even, as cut. */
 export const WEIGHT = { outline: 1.05, ridge: 0.8, hatch: 0.55, fine: 0.7, rim: 3 };
 
-/** Pressed, the dart sinks this much about its tip, and a seal of this radius is stamped round it. */
+/** Pressed, the dart sinks this much about its tip. */
 export const PRESS_SCALE = 0.86;
-export const STAMP_R = 4.2;
+
+/** Where a disabled pointer's saltire sits beside the tip, clear of the dart. */
+export const BADGE: Pt = [11.2, 3.2];
+
+/**
+ * A gauntlet's hand pointing up, as the system's pointer is: the tip of its
+ * finger at the origin, at `k` times its size. Its outline; the lines
+ * between the curled fingers and across the cuff; the cuff's hatching; and
+ * the pointing finger whole (struck solid when pressed).
+ */
+function hand(k = 1) {
+  // Drawn with the finger's tip at (6.5, 0), then moved onto the origin.
+  const p = (x: number, y: number) => `${f((x - 6.5) * k)} ${f(y * k)}`;
+  const q = (x: number, y: number): Pt => [(x - 6.5) * k, y * k];
+  const arc = (r: number, x: number, y: number) => `A${f(r * k)} ${f(r * k)} 0 0 1 ${p(x, y)}`;
+  const outline =
+    `M${p(5, 1.5)}${arc(1.5, 8, 1.5)}` +
+    `L${p(8, 8.6)}${arc(1.5, 11, 8.6)}` +
+    `L${p(11, 9.4)}${arc(1.5, 14, 9.4)}` +
+    `L${p(14, 10.4)}${arc(1.4, 16.8, 10.4)}` +
+    `L${p(16.8, 16)}Q${p(16.8, 18.6)} ${p(14.4, 19.6)}` +
+    `L${p(14.4, 22)}L${p(5.6, 22)}L${p(5.6, 19.6)}` +
+    `L${p(1.8, 14.6)}${arc(1.2, 3.6, 13)}L${p(5, 14.6)}Z`;
+  const creases = line(q(8, 9.4), q(8, 13.4)) + line(q(11, 10.2), q(11, 13.6)) + line(q(14, 11.2), q(14, 13.8)) + line(q(5.6, 19.6), q(14.4, 19.6));
+  const cuff = Array.from({ length: 6 }, (_, i) => line(q(6.9 + i * 1.3, 20.2), q(6.9 + i * 1.3, 21.5))).join('');
+  const finger = `M${p(5, 1.5)}${arc(1.5, 8, 1.5)}L${p(8, 13.4)}L${p(5, 13.4)}Z`;
+  return { outline, creases, cuff, finger };
+}
+
+/** A saltire about `c`, `r` out along each arm. */
+export const saltire = (c: Pt, r: number) => line([c[0] - r, c[1] - r], [c[0] + r, c[1] + r]) + line([c[0] - r, c[1] + r], [c[0] + r, c[1] - r]);
 
 /**
  * A cursor's picture: a box `size` across with the hot spot at `hot`, where
@@ -49,16 +85,24 @@ export interface Art {
   size: Pt;
   hot: Pt;
   ground: string;
-  lines: { d: string; w: number; fine?: boolean }[];
+  /** What's cut, in order: `fine` lines are hatching (round ends, a little fainter); `solid` shapes are filled with the line's colour. */
+  lines: { d: string; w: number; fine?: boolean; solid?: boolean }[];
 }
 
-const dartLines = (d: ReturnType<typeof dart>, k = 1): Art['lines'] => [
+const dartLines = (d: { outline: string; ridge: string; hatch: string }, k = 1): Art['lines'] => [
   { d: d.outline, w: WEIGHT.outline },
   { d: d.ridge, w: WEIGHT.ridge * k },
   { d: d.hatch, w: WEIGHT.hatch, fine: true },
 ];
 
 const pressed = dart(LEAN, PRESS_SCALE);
+export const HAND = hand();
+const pressedHand = hand(PRESS_SCALE);
+const handLines = (h: ReturnType<typeof hand>): Art['lines'] => [
+  { d: h.outline, w: WEIGHT.outline },
+  { d: h.creases, w: WEIGHT.fine },
+  { d: h.cuff, w: WEIGHT.hatch, fine: true },
+];
 /** A double ring, as the circle's seals are. */
 const seal = (c: Pt, r: number) => ring(c, r) + ring(c, r * 0.78);
 
@@ -91,12 +135,31 @@ function scrollArt(down: boolean): Art {
 
 export const ART = {
   rest: { size: SIZE, hot: [PAD_X, PAD_Y], ground: POINTER.outline, lines: dartLines(POINTER) },
-  // A seal stamped round the tip, the dart sunk into it.
+  // Over something that can be clicked: the hand, pointing.
+  hover: { size: SIZE, hot: [PAD_X, PAD_Y], ground: HAND.outline, lines: handLines(HAND) },
+  // Pressed on it: the hand sunk, its finger struck solid.
   press: {
-    size: [26, 32],
-    hot: [7, 7],
+    size: SIZE,
+    hot: [PAD_X, PAD_Y],
+    ground: pressedHand.outline,
+    lines: [{ d: pressedHand.finger, w: 0, solid: true }, ...handLines(pressedHand)],
+  },
+  // Pressed on nothing that can be clicked: the dart sunk, its hatched side struck solid.
+  sink: {
+    size: SIZE,
+    hot: [PAD_X, PAD_Y],
     ground: pressed.outline,
-    lines: [...dartLines(pressed, PRESS_SCALE), { d: seal([0, 0], STAMP_R), w: WEIGHT.fine }],
+    lines: [
+      { d: pressed.outline, w: WEIGHT.outline },
+      { d: pressed.side, w: 0, solid: true },
+    ],
+  },
+  // Disabled: a saltire beside the tip (drawn in lead, ownCursor.ts).
+  disabled: {
+    size: SIZE,
+    hot: [PAD_X, PAD_Y],
+    ground: POINTER.outline + saltire(BADGE, 2.8),
+    lines: [{ d: POINTER.outline, w: WEIGHT.outline }, { d: POINTER.ridge, w: WEIGHT.ridge }, { d: saltire(BADGE, 2.8), w: 1 }],
   },
   text: textArt(),
   up: scrollArt(false),

@@ -129,8 +129,8 @@ test("every cursor's picture fits its image, the hot spot inside it", () => {
     // Browsers drop (or misplace near the edges) cursors over 32 px.
     assert.ok(w <= 32 && h <= 32, name);
     const ds = [art.ground, ...art.lines.map((l) => l.d)].join(' ');
-    // Every point, with room for the dark rim (1.5 px) round it.
-    for (const [, x, y] of ds.matchAll(/(-?\d+(?:\.\d+)?) (-?\d+(?:\.\d+)?)/g)) {
+    // Every point (written with two decimals, lib/arcane.ts; an arc's flags are bare digits), with room for the dark rim (1.5 px) round it.
+    for (const [, x, y] of ds.matchAll(/(-?\d+\.\d+) (-?\d+\.\d+)/g)) {
       const [px, py] = [Number(x) + art.hot[0], Number(y) + art.hot[1]];
       assert.ok(px >= 1.5 && px <= w - 1.5 && py >= 1.5 && py <= h - 1.5, `${name}: ${x} ${y}`);
     }

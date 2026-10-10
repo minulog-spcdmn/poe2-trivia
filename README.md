@@ -533,9 +533,14 @@ browser (`src/lib/achievements.ts`); erasing the codex erases them.
     (one point of the rune circle's compass star, `src/lib/pointerArt.ts`):
     yours in old gold, or in your colour once you have a seat in an online
     game, shown as the system cursor so it never lags (`src/lib/ownCursor.ts`).
-    It has its states, the others' included: gilded over anything that can
-    be clicked, and sunk into a seal stamped at its tip while the button is
-    held. Text fields get an engraved I-beam. Scrolling with the middle
+    It has its states, the others' included: over anything that can be
+    clicked, a gauntlet's hand pointing; while the button is held, the dart
+    or the hand sinks, its hatched side or the finger struck solid; on
+    something disabled, dull lead with a saltire. Text fields get an
+    engraved I-beam. With Windows' high contrast on, the system's own
+    cursors come back. Text fields don't offer autofill, and a right click
+    brings no browser menu (but in a text field), since both show the
+    system's cursor. Scrolling with the middle
     button (Windows and Linux, where browsers do it) is the game's own
     (`src/lib/autoscroll.ts`), so it can wear the look: a seal where it
     began, with the ways left to go, and a dart pointing the way it scrolls.

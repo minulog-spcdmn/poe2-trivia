@@ -76,10 +76,10 @@
     if (!n || nameTooShort(n) || nameHeld(n)) {
       if (n && nameTooShort(n)) toasts.show(NAME_TOO_SHORT, 'error');
       nameError = true;
-      const field = document.getElementById('name');
+      const field = document.getElementById('exile-name');
       if (field) refuse(field);
       setTimeout(() => (nameError = false), 600);
-      document.getElementById('name')?.focus();
+      document.getElementById('exile-name')?.focus();
       return null;
     }
     saveName(n);
@@ -202,15 +202,17 @@
   </div>
 
   <div class="card panel" use:backdropShadow={{ fill: 'linear' }} in:fly={{ y: 30, duration: 700, delay: 400 }}>
-    <label class="label" for="name">Your name, Exile</label>
+    <label class="label" for="exile-name">Your name, Exile</label>
+    <!-- No autofill: its list is the browser's own and drops the game's cursor; the game
+         remembers the name itself. The id isn't "name", which browsers take for an address form's. -->
     <input
-      id="name"
+      id="exile-name"
       class="field"
       class:shake={nameError}
       bind:value={name}
       maxlength="20"
       placeholder="e.g. Doryani"
-      autocomplete="nickname"
+      autocomplete="off"
       spellcheck="false"
       onkeydown={enterName}
     />
