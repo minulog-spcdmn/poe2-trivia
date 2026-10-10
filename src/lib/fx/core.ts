@@ -156,6 +156,7 @@ let viewW = 1;
 let viewH = 1;
 let dpr = 1;
 const listeners = new Set<(on: boolean) => void>();
+const awayListeners = new Set<(away: boolean) => void>();
 
 /**
  * Quality: 0 full resolution, 1 lower, 2 lowest. Bloom stays on at every
@@ -209,6 +210,21 @@ export function setFxOn(on: boolean) {
 export function onFxChange(fn: (on: boolean) => void) {
   listeners.add(fn);
   return () => listeners.delete(fn);
+}
+
+/**
+ * Whether the tab is in the background. Effects that run beside the overlay
+ * (lights, the mood, the aura) follow the same rule as its own (see
+ * setHidden): what would run its course isn't started meanwhile.
+ */
+export function fxHidden() {
+  return hidden;
+}
+
+/** Calls `fn` as the tab goes away (true) or comes back, once the overlay has dropped or woken what it holds. */
+export function onFxHidden(fn: (away: boolean) => void) {
+  awayListeners.add(fn);
+  return () => awayListeners.delete(fn);
 }
 
 function clearAll() {
@@ -649,7 +665,8 @@ function simulate(dt: number, nowMs: number, render: boolean): boolean {
     t.age += dt;
     let keep = false;
     try {
-      keep = t.fn(dt, t.age);
+      // (It ends by its life however it's written, so dropping it unseen while the tab is away loses nothing that would still run.)
+      keep = t.fn(dt, t.age) && t.age < t.life;
     } catch (e) {
       console.warn('FX task failed', e);
     }
@@ -908,8 +925,9 @@ function setup(c: HTMLCanvasElement, r: FxRenderer) {
   // What was asked for meanwhile goes on from where it would be by now
   // (see waited): what has run its course is dropped, and so is what was
   // stopped, or whose element left the page, before it ever showed.
+  // (Made while the tab is away, the time away doesn't count: see waited.)
   if (queuedAt !== null) {
-    const late = (performance.now() - queuedAt) / 1000;
+    const late = ((hidden ? awayAt : performance.now()) - queuedAt) / 1000;
     queuedAt = null;
     shapes = shapes.filter((s) => {
       s.age += late;
@@ -946,11 +964,12 @@ function setHidden(away: boolean) {
     tasks = tasks.filter((t) => !Number.isFinite(t.life));
     // (Nothing stale is shown for a moment as it comes back.)
     blank();
-    return;
+  } else {
+    // Waiting for the renderer: the time away isn't caught up on once it's made (see waited).
+    if (queuedAt !== null) queuedAt += performance.now() - awayAt;
+    if (shapes.length || tasks.length) wake();
   }
-  // Waiting for the renderer: the time away isn't caught up on once it's made (see waited).
-  if (queuedAt !== null) queuedAt += performance.now() - awayAt;
-  if (shapes.length || tasks.length) wake();
+  for (const l of awayListeners) l(away);
 }
 
 /** Starts the overlay on `c`. Returns a cleanup function. */

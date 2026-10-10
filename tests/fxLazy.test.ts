@@ -347,6 +347,64 @@ test('in a background tab nothing runs: what would run its course is dropped, an
   }
 });
 
+test("a task ends by its life, however it is written", () => {
+  const o = overlay();
+  const stop = fx.startFx(o.canvas);
+  askFloat();
+  frame();
+  o.ctx.state.done = true;
+  readSix();
+  let runs = 0;
+  fx.task(() => (runs++, true), 0.1);
+  for (let i = 0; i < 30; i++) frame();
+  assert.equal(fx.fxStats().tasks, 0);
+  assert.ok(runs > 0 && runs < 30, `${runs} runs`);
+  stop();
+});
+
+test('the renderer made while the tab is away does not count the time away; what lasts starts where it was, and the hook hears of it after the overlay', () => {
+  const real = performance.now;
+  let t = real.call(performance);
+  performance.now = () => t;
+  const doc = g.document as { hidden: boolean };
+  const away = (hidden: boolean) => {
+    doc.hidden = hidden;
+    docOn.visibilitychange();
+  };
+  try {
+    const o = overlay();
+    const stop = fx.startFx(o.canvas);
+    let age = -1;
+    const kept = fx.shape({ type: ShapeType.Flash, at: { x: 0, y: 0 }, life: Infinity, delay: 0.3, color: [1, 1, 1], update: (f, _, a) => ((age = a), (f.k = 1)) });
+    const heard: [boolean, number][] = [];
+    const off = fx.onFxHidden((h) => heard.push([h, fx.fxStats().shapes]));
+    fx.shape({ type: ShapeType.Flash, at: { x: 0, y: 0 }, life: 5, color: [1, 1, 1], update() {} });
+    t += 200;
+    away(true);
+    assert.ok(fx.fxHidden());
+    assert.deepEqual(heard, [[true, 1]], 'heard once the moment was dropped');
+    t += 30 * 60_000;
+    // (A last frame, or the GPU catching up, lands the build while it's away.)
+    askFloat();
+    frame();
+    o.ctx.state.done = true;
+    readSix();
+    assert.ok(!fx.fxStats().running, 'no frames asked for while away');
+    away(false);
+    assert.deepEqual(heard, [[true, 1], [false, 1]]);
+    // 0.2 s went by before it went away: 0.1 s of its delay is left, and then it shows.
+    fx.fxStep(0.2);
+    assert.ok(age > 0 && age < 0.15, `on from where it was: ${age}`);
+    fx.fxRealtime();
+    off();
+    kept.stop(0);
+    stop();
+  } finally {
+    if (doc.hidden) away(false);
+    performance.now = real;
+  }
+});
+
 test('a context lost before its shaders are built turns effects off, and says so', () => {
   const o = overlay(false);
   const stop = fx.startFx(o.canvas);
