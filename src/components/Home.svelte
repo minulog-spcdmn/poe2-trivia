@@ -18,6 +18,7 @@
   import Connecting from './Connecting.svelte';
   import DailyUnique from './DailyUnique.svelte';
   import InviteScreen from './InviteScreen.svelte';
+  import MenuCursor from './MenuCursor.svelte';
   import OpenRooms from './OpenRooms.svelte';
 
   /** Keeps a room code's letters and digits, uppercased, up to its length. */
@@ -315,29 +316,8 @@
     keyFocus = false;
     rowFocus = false;
   }
-  /** How long the cursor takes to go out (its transitions below, with their delay). */
-  const CURSOR_OUT_MS = 1200;
   /** The cursor shows while an entry is pointed at, chosen from the keyboard, typed in or connecting; otherwise it fades away. */
   const lit = $derived(!renaming && (hovered || keyFocus || (!!open && rowFocus) || connecting));
-  /**
-   * Lit again after it has faded out, the cursor comes back at its entry
-   * instead of sliding over from where it went out: `snap` keeps its slide
-   * off for the frame it lights up in.
-   */
-  let snap = $state(false);
-  let dark = true;
-  let darkTimer: ReturnType<typeof setTimeout> | undefined;
-  $effect(() => {
-    if (lit) {
-      clearTimeout(darkTimer);
-      if (dark) {
-        snap = true;
-        requestAnimationFrame(() => requestAnimationFrame(() => (snap = false)));
-      }
-      dark = false;
-    } else darkTimer = setTimeout(() => (dark = true), CURSOR_OUT_MS / 2);
-    return () => clearTimeout(darkTimer);
-  });
 
   // ---- the invite link's screen ----
 
@@ -419,9 +399,9 @@
       </div>
 
       <nav class="menu" class:renaming class:lit aria-label="Start" onfocusin={focusIn} onfocusout={focusOut}>
-        <!-- One cursor for the menu: it slides to the entry under the mouse (or the
-             keyboard's), and fades away slowly once nothing is pointed at. -->
-        <span class="diamond" class:snap aria-hidden="true" style:--at={cursor}></span>
+        <!-- One cursor for the menu: it glides to the entry under the mouse (or the
+             keyboard's), and goes out once nothing is pointed at. -->
+        <MenuCursor at={cursor} {lit} />
         {#each ENTRIES as e, i (e)}
           {@const isOpen = open === e && !connecting}
           {@const isBusy = connecting && (busy ?? (session.mode === 'host' ? 'create' : 'join')) === e}
@@ -783,51 +763,7 @@
       inset 0 2px 6px rgba(0, 0, 0, 0.55),
       0 0 0 3px rgba(224, 85, 63, 0.14);
   }
-  /* The cursor: a glowing diamond beside the entry, its title lit. It glides
-     from entry to entry and, when nothing is pointed at, goes out slowly: its
-     glow dims first, then it shrinks away where it stands. Its own layer, above
-     the entries, keeps it whole while it moves. A pointer that can hover has
-     one; touch never shows it. */
-  .diamond {
-    position: absolute;
-    z-index: 2;
-    left: -26px;
-    top: 14px;
-    width: 9px;
-    height: 9px;
-    rotate: 45deg;
-    background: #e08a44;
-    box-shadow:
-      0 0 8px rgba(224, 138, 68, 0),
-      0 0 18px rgba(224, 138, 68, 0);
-    opacity: 0;
-    scale: 0.5;
-    pointer-events: none;
-    will-change: translate, opacity, scale;
-    translate: 0 calc(var(--at, 0) * var(--slot));
-    transition:
-      box-shadow 0.6s ease-out,
-      opacity 0.9s ease-in-out 0.2s,
-      scale 1s ease-in-out 0.2s,
-      translate 0.3s cubic-bezier(0.33, 1, 0.68, 1);
-  }
   @media (hover: hover) {
-    .lit .diamond {
-      opacity: 1;
-      scale: 1;
-      box-shadow:
-        0 0 8px rgba(224, 138, 68, 0.9),
-        0 0 18px rgba(224, 138, 68, 0.45);
-      transition:
-        box-shadow 0.3s ease-out,
-        opacity 0.2s ease-out,
-        scale 0.3s var(--ease-out),
-        translate 0.3s cubic-bezier(0.33, 1, 0.68, 1);
-    }
-    /* Back after going out: straight at its entry, no slide. */
-    .lit .diamond.snap {
-      transition-property: box-shadow, opacity, scale;
-    }
     .lit .cur .pick {
       color: #fff1cf;
       text-shadow: 0 0 18px rgba(241, 217, 155, 0.35);
@@ -1099,7 +1035,8 @@
       min-height: 98px;
       padding-bottom: 12px;
     }
-    .diamond {
+    .menu :global(.cursor),
+    .menu :global(.streak) {
       display: none;
     }
     .pick {

@@ -114,7 +114,7 @@
       border-color 1s,
       background 1s;
     /* Its glow warms up as the fire catches (BADGE_IN_MS), not at full heat while it scales in. */
-    animation: warm 1.4s ease-out 0.8s backwards;
+    animation: warm 0.45s ease-out 0.8s backwards;
   }
   @keyframes warm {
     from {
@@ -133,7 +133,7 @@
     border-radius: inherit;
     box-shadow: 0 0 24px color-mix(in srgb, var(--flame) 40%, transparent);
     opacity: 0;
-    animation: smoulder-badge 1.6s ease-in-out 2.2s infinite;
+    animation: smoulder-badge 1.6s ease-in-out 1.3s infinite;
     pointer-events: none;
   }
   @keyframes smoulder-badge {

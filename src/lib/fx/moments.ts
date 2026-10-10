@@ -492,14 +492,14 @@ export function scored(pill: Element, streak = 1) {
 export function ablaze(row: Element, heat: number, blue = burnsBlue(heat), tint?: Vec3, catching = false): Handle {
   if (!fxActive() || heat <= 0) return { stop() {} };
   // At the very top of a streak the fire burns blue (or, `tint`, in a colour of its own).
-  // Catching, it kindles and its flames rise over a second instead of burning at full height at once.
-  const flames = fire(row, { height: 6 + 66 * heat, intensity: 0.45 + 1.0 * heat, blue: blue ? 1 : 0, tint, fadeIn: catching ? 0.8 : 0.5, grow: catching ? 1.2 : 0 });
+  // Catching, it kindles and its flames shoot up in a moment instead of burning at full height at once.
+  const flames = fire(row, { height: 6 + 66 * heat, intensity: 0.45 + 1.0 * heat, blue: blue ? 1 : 0, tint, fadeIn: catching ? 0.2 : 0.5, grow: catching ? 0.35 : 0 });
   // No room for the flames (or the entry is gone): no sparks off nothing either.
   if (!isLive(flames)) return flames;
   const sparkColors = fireColors(blue, tint);
   if (catching) {
-    flash(row, { radius: 70, color: sparkColors[0], intensity: 0.16, life: 0.8 });
-    embers(row, { count: 8, area: 'top', colors: sparkColors, size: [0.8, 1.6], rise: [40, 100], scatter: 24, gravity: 0, life: [0.5, 1] });
+    flash(row, { radius: 80, color: sparkColors[0], intensity: 0.22, life: 0.35 });
+    embers(row, { count: 10, area: 'top', colors: sparkColors, size: [0.8, 1.6], rise: [80, 180], scatter: 40, gravity: 0, life: [0.4, 0.8] });
   }
   // Sparks spat out of the fire, drifting up; slower than CALM_SPEED (lib/fx/core.ts),
   // so a fire that burns all game lets phones draw at 30fps.
