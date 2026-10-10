@@ -656,6 +656,10 @@ npm run check      # svelte/type checks
 npm run build      # production build in dist/
 ```
 
+The dev server's rooms and open-room list are its own (`src/lib/channel.ts`),
+as the beta's are: a tab on localhost never meets the live game. Run
+`VITE_CHANNEL=live npm run dev` to play against the live rooms instead.
+
 Stack: Svelte 5, TypeScript, Vite, PeerJS. Sound effects are layered CC0
 recordings from [Freesound](https://freesound.org) plus a quiet ambience loop
 (about 1.1 MB in `public/sfx`, see `CREDITS.txt` there), filtered and mixed in

@@ -6,8 +6,8 @@
 // is hosting and the room's save, so it comes back as the same player in
 // the same room.
 //
-//   npm run bot -- [--bots 4] [--rooms N] [--mode turns,race,delve] [--per-room N] [--beta] [--headed] [--no-build]
-//   (or node scripts/room-bot.mjs --bots 4; from PowerShell npm run bot bots=4 rooms=2 delve beta,
+//   npm run bot -- [--bots 4] [--rooms N] [--mode turns,race,delve] [--per-room N] [--beta | --local] [--headed] [--no-build]
+//   (or node scripts/room-bot.mjs --bots 4; from PowerShell npm run bot bots=4 rooms=2 delve beta (or local),
 //   or npm run bot 2, work too)
 //
 // --bots: how many seats, so how many players on at once (1 by default).
@@ -27,6 +27,9 @@
 // built as the beta is (VITE_CHANNEL=beta), with a build and browser
 // profiles of its own, and can run beside a live one. Its rooms show only
 // to a beta on the same protocol version as this checkout.
+// --local (or --localhost): to your own dev server (npm run dev) instead,
+// whose rooms are its own too (src/lib/channel.ts): open localhost:5173 and
+// the bots' rooms are listed there, and nowhere else.
 //
 // Ctrl+C: games under way with real people in them are played to their end
 // first (our rooms close after, our guests leave); everything else stops at
@@ -57,6 +60,8 @@ const { values: args, positionals } = parseArgs({
     joiners: { type: 'string' },
     'per-room': { type: 'string' },
     beta: { type: 'boolean' },
+    local: { type: 'boolean' },
+    localhost: { type: 'boolean' },
     headed: { type: 'boolean' },
     'no-build': { type: 'boolean' },
   },
@@ -65,7 +70,7 @@ const { values: args, positionals } = parseArgs({
 // PowerShell drops the `--` in `npm run bot -- --rooms 2`, and npm then takes
 // the flags as its own settings (npm_config_*) and hands on only the `2`: so
 // those count too, a bare number is the number of rooms, bare mode names
-// are the modes, and a bare `join` or `beta` is that flag.
+// are the modes, and a bare `join`, `beta` or `local` is that flag.
 const MODES = ['turns', 'race', 'delve'];
 // `--rooms=2 --joiners=3` (with =) reach us from PowerShell as npm settings
 // with their values, and `rooms=2 joiners=3` as words.
@@ -81,6 +86,7 @@ const opts = {
   joiners: numberOf('joiners'),
   perRoom: numberOf('per-room'),
   beta: args.beta ?? (words.includes('beta') || env.npm_config_beta === 'true'),
+  local: args.local ?? args.localhost ?? (words.includes('local') || words.includes('localhost') || env.npm_config_local === 'true' || env.npm_config_localhost === 'true'),
   headed: args.headed ?? env.npm_config_headed === 'true',
   'no-build': args['no-build'] ?? (env.npm_config_build === 'false' || env.npm_config_no_build === 'true'),
 };
@@ -116,11 +122,16 @@ const stamp = () => new Date().toISOString().slice(0, 19).replace('T', ' ');
 const log = (...args) => console.log(stamp(), ...args);
 
 process.env.VITE_BOT = '1';
-// The beta's own rooms and open-room list (src/lib/channel.ts, src/lib/peer.ts).
-if (opts.beta) process.env.VITE_CHANNEL = 'beta';
-else delete process.env.VITE_CHANNEL;
-// Kept out of the repo (.gitignore) and of the style checks (tests/style.test.ts); the beta's apart, so either runs without rebuilding the other.
-const outDir = join(root, '.bot', opts.beta ? 'dist-beta' : 'dist');
+if (opts.beta && opts.local) {
+  console.error('--beta and --local each send the bots somewhere else: pick one.');
+  process.exit(2);
+}
+/** Where the bots play: the live game, the beta, or your dev server (src/lib/channel.ts, src/lib/peer.ts). */
+const channel = opts.beta ? 'beta' : opts.local ? 'local' : 'live';
+if (channel === 'live') delete process.env.VITE_CHANNEL;
+else process.env.VITE_CHANNEL = channel;
+// Kept out of the repo (.gitignore) and of the style checks (tests/style.test.ts); each channel's apart, so one runs without rebuilding another.
+const outDir = join(root, '.bot', channel === 'live' ? 'dist' : `dist-${channel}`);
 if (!opts['no-build']) {
   log('building');
   await build({ root, logLevel: 'warn', build: { outDir, emptyOutDir: true } });
@@ -154,7 +165,7 @@ const roles = new Map();
 async function runSeat(slot) {
   const say = bots > 1 ? (...args) => log(`[${slot}]`, ...args) : log;
   const url = `${base}bot.html?slot=${slot}&of=${bots}${rooms === Infinity ? '' : `&rooms=${rooms}`}&modes=${modes.join(',')}${slot > 1 ? '&scout=0' : ''}`;
-  const context = await chromium.launchPersistentContext(join(root, '.bot', `profile-${opts.beta ? 'beta-' : ''}${slot}`), {
+  const context = await chromium.launchPersistentContext(join(root, '.bot', `profile-${channel === 'live' ? '' : `${channel}-`}${slot}`), {
     headless: !opts.headed,
     executablePath: process.env.BOT_CHROMIUM || undefined,
     // Stopping is ours (stop, below): the room says goodbye before the browser goes.
@@ -257,7 +268,7 @@ async function runSeat(slot) {
   return seat;
 }
 
-log(`${opts.beta ? 'beta: ' : ''}${bots === 1 ? '1 seat' : `${bots} seats`}, ${rooms === Infinity ? `as many rooms as wanted, hosting ${modes.join(', ')}` : rooms ? `up to ${rooms === 1 ? '1 room' : `${rooms} rooms`} at once, hosting ${modes.join(', ')}` : 'joining only'}${perRoom < bots ? `, up to ${perRoom} in a room` : ''}`);
+log(`${channel === 'live' ? '' : `${channel === 'local' ? 'localhost' : channel}: `}${bots === 1 ? '1 seat' : `${bots} seats`}, ${rooms === Infinity ? `as many rooms as wanted, hosting ${modes.join(', ')}` : rooms ? `up to ${rooms === 1 ? '1 room' : `${rooms} rooms`} at once, hosting ${modes.join(', ')}` : 'joining only'}${perRoom < bots ? `, up to ${perRoom} in a room` : ''}`);
 const all = [];
 for (let slot = 1; slot <= bots; slot++) all.push(await runSeat(slot));
 
