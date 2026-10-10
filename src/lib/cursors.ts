@@ -24,6 +24,12 @@ export const GAME_ANCHOR = 0;
 export const GAME_DEPTH = 4;
 /** The furthest down a position on `anchor` goes. */
 const maxY = (anchor: number) => (anchor === GAME_ANCHOR ? GAME_DEPTH * SCALE : SCALE);
+/**
+ * On an element, a position may lie a little off it (a bot's pointer goes
+ * on the element nearest it, so it keeps its place beside it on every
+ * screen): as far as its own size again on either side.
+ */
+export const OFF = SCALE;
 
 /** An anchor's box on the screen, as getBoundingClientRect gives it. */
 export interface AnchorBox {
@@ -170,7 +176,9 @@ export function parseCursorAt(v: unknown): CursorAt | null | undefined {
   if (v === null) return null;
   if (!Array.isArray(v) || v.length !== 4) return undefined;
   const [a, x, y, kind] = v;
-  if (!isInt(a, 0, MAX_ANCHOR) || anchorName(a) === null || !isInt(x, 0, SCALE) || !isInt(y, 0, maxY(a)) || !isInt(kind, MOUSE, LIT + PRESSED))
+  const game = a === GAME_ANCHOR;
+  const lo = game ? 0 : -OFF;
+  if (!isInt(a, 0, MAX_ANCHOR) || anchorName(a) === null || !isInt(x, lo, game ? SCALE : SCALE + OFF) || !isInt(y, lo, game ? maxY(a) : SCALE + OFF) || !isInt(kind, MOUSE, LIT + PRESSED))
     return undefined;
   return [a, x, y, kind as PointerKind];
 }

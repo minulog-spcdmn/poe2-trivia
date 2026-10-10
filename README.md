@@ -943,8 +943,8 @@ it apart from the live game:
 ### Recording a hand
 
 On the beta and the dev server, `?record` in the address (for example
-**poe2.quest/beta/?record**) records how this player plays, to tune the room
-bots' hands by (`src/bot/habits.ts`, `reach.ts`): the pointer about 120 times
+**poe2.quest/beta/?record**) records how this player plays, for the room
+bots' hands to move by: the pointer about 120 times
 a second, what it was over (the anchors the pointer sync uses), clicks,
 scrolls and keys pressed outside text fields, where everything was on the
 screen, and what the game showed (phase, question, clock, reveal, lives).
@@ -952,6 +952,15 @@ Nothing typed and no names. A badge in the bottom left corner shows it's on;
 **Save** downloads the file (nothing leaves the device otherwise), **Stop**
 ends it. It stays on for the tab until stopped or `?record=off`
 (`src/lib/recorder.ts`, `src/components/Recorder.svelte`).
+
+The bots' hands replay what was recorded: `node scripts/bot-motion.mjs
+one.json two.json …` cuts recordings into stretches (picking a card,
+answering, pressing Next, waiting through someone else's turn, the lobby),
+kept relative to what was on screen, into `src/data/botMotion.json` (the
+recordings themselves stay out of the repo). A bot replays one that fits
+the moment, its pauses fitted to how long it takes to make up its mind and
+its last reach steered onto its own pick (`src/bot/motion.ts`, `hand.ts`).
+More players' recordings make for more kinds of hands.
 
 ### The lab
 

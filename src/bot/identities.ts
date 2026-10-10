@@ -5,7 +5,7 @@
 // being stored. Who comes on next, and for how long, is up to chance and
 // their own leanings; when a room opens, is up to the room list (wanted.ts).
 
-import { rollHandStyle } from './habits.ts';
+import { rollHandStyle } from './motion.ts';
 import type { Difficulty, Item } from '../lib/game.ts';
 import { gauss, makePersona, weighted, type Persona, type Rng } from './brain.ts';
 

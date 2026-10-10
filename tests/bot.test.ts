@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { HOST_ODDS, answerDelay, blasts, chooseAnswer, chooseCard, findAppetite, guessChance, misclicks, moodOf, movesOn, panic, pickDelay, rethinks, staysOn, tiredness, urgentSeconds, withTheHerd, knowChance, makePersona, pickCategory, weighted, wrongPick, type Ask, type Persona } from '../src/bot/brain.ts';
 import { createGame, rulesFor, type GameState, type Item, type Preset } from '../src/lib/game.ts';
-import { PLAIN_HAND } from '../src/bot/habits.ts';
+import { PLAIN_HAND } from '../src/bot/motion.ts';
 import { readFileSync } from 'node:fs';
 import { MODES, NAMES, buildOf, fiddled, identityOf, leaningsOf, lonelyLength, modesFrom, namesFor, nextName, otherPrefs, rollPrefs, shiftLength } from '../src/bot/identities.ts';
 import { joinable, makesWay, nextRole, wanted } from '../src/bot/wanted.ts';

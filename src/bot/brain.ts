@@ -17,7 +17,7 @@
 // All of it mild: these are players, not caricatures.
 // Pure functions of their inputs and a random source, so tests can pin them.
 
-import { PLAIN_HAND, type HandStyle } from './habits.ts';
+import { PLAIN_HAND, type HandStyle } from './motion.ts';
 import { nameSimilarity, type DifficultyRules, type GameState } from '../lib/game.ts';
 
 export type Rng = () => number;
@@ -58,7 +58,7 @@ export interface Persona {
   sociable: number;
   /** How much it minds rules other than its own in a room to join (0 to 1). */
   picky: number;
-  /** What it does with its pointer while it reads, thinks and waits, and how deft it is with it (habits.ts). */
+  /** Its own touch on the recorded hand its pointer replays (motion.ts). */
   hand: HandStyle;
 }
 

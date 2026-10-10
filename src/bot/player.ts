@@ -76,11 +76,6 @@ export class Player {
     this.hand = new Hand(persona);
   }
 
-  /** How its hand goes about a question (hand.ts): sure of it or not, careful after a miss, tired after a long while. */
-  private mood(sure: boolean) {
-    return { sure, careful: this.misses > 0, tired: tiredness((Date.now() - this.since) / 60000) };
-  }
-
   /** Forgets what it was about to do (the room went back to the lobby, or it left). */
   reset() {
     this.plans.clear();
@@ -234,7 +229,7 @@ export class Player {
     // The cards looked over meanwhile, and the click begun early enough to land on time.
     const lead = this.hand.lead();
     const at = session.hostNow() + Math.max(300, pickDelay(this.persona, Math.random, offered.length) - lead);
-    this.hand.lookOverCards(offered.length, Date.now() + (at - session.hostNow()), this.mood(false).tired);
+    this.hand.lookOverCards(offered.length, Date.now() + (at - session.hostNow()));
     const still = () => {
       const cur = session.state;
       if (cur?.phase !== 'choosing' || cur.turnCount !== s.turnCount || cur.round !== s.round) return null;
@@ -341,7 +336,7 @@ export class Player {
       }
     }
     // The press lands before the clock's end (a little before, for the trip to the host).
-    await this.hand.click(`opt:${index}`, o.deadline ? Date.now() + (o.deadline - session.hostNow()) - 250 : Infinity, { unsure: !knows });
+    await this.hand.click(`opt:${index}`, o.deadline ? Date.now() + (o.deadline - session.hostNow()) - 250 : Infinity);
     if (!this.open(q)) return;
     this.answers++;
     const truth = o.itemId ? (index === o.options.indexOf(o.itemId) ? ' right' : ' wrong') : '';
@@ -432,7 +427,7 @@ export class Player {
       .join(', ');
     // The hand starts for the answer early enough to click on time, looking the question over until then.
     const at = Math.max(now + 200, start + (panicked ? panicked.at : delay) - this.hand.lead());
-    this.hand.ponder(q, Date.now() + (at - now), this.mood(knows));
+    this.hand.ponder(q, Date.now() + (at - now));
     this.plans.set(key, {
       // Picked up after a reload: not all at once.
       at,
@@ -468,7 +463,7 @@ export class Player {
       return this.answer(s, q, false, ask, (o.struck ?? []).map((x) => x.index), 'guesses near the end:', seen);
     };
     const at = Math.max(start + 1000, q.deadline! - margin);
-    this.hand.ponder(q, Date.now() + (at - session.hostNow()), this.mood(false));
+    this.hand.ponder(q, Date.now() + (at - session.hostNow()));
     this.plans.set(key, { at, run });
   }
 }
