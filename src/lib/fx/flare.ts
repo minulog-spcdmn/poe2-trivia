@@ -8,7 +8,7 @@
 // which the overlay would measure again every frame), in a road flare's
 // red: the Flare Cache's crimson and its pink-white heart.
 
-import { after, budget, cover, isLive, particle, shape, task, type CoverSource, type Handle, type Point, type Vec3 } from './core';
+import { after, budget, cover, fxHidden, isLive, particle, shape, task, type CoverSource, type Handle, type Point, type Vec3 } from './core';
 import { C, emitter, flash, rand, ring, sparks } from './effects';
 import { FIND_COLORS } from './moments';
 import { Shape, type ParticleSpec } from './particles';
@@ -171,7 +171,7 @@ export function flareLit(o: FlareLit): Handle {
     const target = base * (dip > 0 ? dipTo : want) + catching * catching * 0.9;
     heat += (target - heat) * (1 - Math.exp(-dt * 30));
     return true;
-  });
+  }, { keep: true });
 
   // ---- the flame, its glow, and the light it throws ----
   const flame = shape({
@@ -256,7 +256,7 @@ export function flareLit(o: FlareLit): Handle {
   const lightUp = task(() => {
     lit.set(0.85 * heat * (1 - 0.5 * gut), big * 0.55);
     return true;
-  });
+  }, { keep: true });
 
   // ---- it catches ----
   const at0 = where();
@@ -351,7 +351,7 @@ export function flareLit(o: FlareLit): Handle {
       });
     }
     return true;
-  });
+  }, { keep: true });
 
   return {
     stop() {
@@ -362,16 +362,19 @@ export function flareLit(o: FlareLit): Handle {
       removeEventListener('resize', measure);
       for (const s of [flame, near, far, backlit]) s.stop(0.45);
       // Sparks and smoke still in the air (and its shapes, fading) keep the UI
-      // in front of them till they're gone. (Without the effects running, there
-      // is nothing left to hide: it goes at once.)
+      // in front of them till they're gone. (Without the effects running, or
+      // with the tab away, which drops them, there is nothing left to hide: it
+      // goes at once.)
       airborne = Math.max(airborne, 0.45);
-      const linger = task((dt) => {
-        airborne -= dt;
-        if (airborne > -0.1) return true;
-        covered.stop();
-        return false;
-      });
-      if (!isLive(linger)) covered.stop();
+      const linger = fxHidden()
+        ? null
+        : task((dt) => {
+            airborne -= dt;
+            if (airborne > -0.1) return true;
+            covered.stop();
+            return false;
+          }, { keep: true });
+      if (!linger || !isLive(linger)) covered.stop();
     },
   };
 }

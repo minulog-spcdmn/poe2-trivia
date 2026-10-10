@@ -87,8 +87,10 @@ const bigMoment = () => fxStats().particles > 150;
 /** Brings the aura out on every avatar of hers that can show it. `now` skips the waiting (her entrance). */
 function show(now = false) {
   if (!fxActive() || !entries.size || current) return;
+  // Away: nothing until it's back (hiddenChanged plans the next then).
+  if (fxHidden()) return;
   // Not now: look again in a while. (Timers only: the effects loop sleeps.)
-  if (fxHidden() || openDialog().backdrop || (!now && bigMoment())) return plan(3);
+  if (openDialog().backdrop || (!now && bigMoment())) return plan(3);
   const ready = [...entries].filter(([el, e]) => !e.dim && onScreen(el));
   if (!ready.length) return plan(3);
   const showing = { age: 0 };

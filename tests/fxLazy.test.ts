@@ -127,6 +127,7 @@ g.ResizeObserver = class {
 
 const fx = await import('../src/lib/fx/core.ts');
 const { ShapeType } = await import('../src/lib/fx/renderer.ts');
+const lights = await import('../src/lib/lights.ts');
 const { buildPrograms, buildProgramsNow, setGpuCatchUp } = await import('../src/lib/fx/gl.ts');
 
 /** The effects' six programs read, a frame apart (without the backdrop: see buildPrograms). */
@@ -317,7 +318,9 @@ test('in a background tab nothing runs: what would run its course is dropped, an
     fx.particle({ x: 0, y: 0, life: 1, size: 2, color: [1, 1, 1] });
     let fired = false;
     fx.after(0.5, () => (fired = true));
-    const endless = fx.task(() => true);
+    const endless = fx.task(() => true, { keep: true });
+    // A task is a moment's unless it's to be kept, however long it would run.
+    fx.task(() => true);
     fx.shakeView(1);
     away(true);
     assert.deepEqual(fx.fxStats(), { particles: 0, shapes: 1, tasks: 1, running: false, quality: 0 }, 'only what lasts until stopped, and no loop');
@@ -355,7 +358,7 @@ test("a task ends by its life, however it is written", () => {
   o.ctx.state.done = true;
   readSix();
   let runs = 0;
-  fx.task(() => (runs++, true), 0.1);
+  fx.task(() => (runs++, true), { life: 0.1 });
   for (let i = 0; i < 30; i++) frame();
   assert.equal(fx.fxStats().tasks, 0);
   assert.ok(runs > 0 && runs < 30, `${runs} runs`);
@@ -402,6 +405,98 @@ test('the renderer made while the tab is away does not count the time away; what
   } finally {
     if (doc.hidden) away(false);
     performance.now = real;
+  }
+});
+
+test('a task with a life that waited past it for the renderer is dropped, not run late', () => {
+  const real = performance.now;
+  let t = real.call(performance);
+  performance.now = () => t;
+  try {
+    const o = overlay();
+    const stop = fx.startFx(o.canvas);
+    let fired = false;
+    fx.after(0.12, () => (fired = true));
+    t += 1500;
+    askFloat();
+    frame();
+    o.ctx.state.done = true;
+    readSix();
+    frame();
+    assert.ok(!fired, 'its time went by while it waited: not run on the first frame');
+    stop();
+  } finally {
+    performance.now = real;
+  }
+});
+
+test('away, what is stopped goes at once; opened in a background tab, the overlay starts away and says so; unmounted, nothing counts as away', () => {
+  const doc = g.document as { hidden: boolean };
+  const away = (hidden: boolean) => {
+    doc.hidden = hidden;
+    docOn.visibilitychange();
+  };
+  try {
+    const heard: boolean[] = [];
+    const off = fx.onFxHidden((h) => heard.push(h));
+    doc.hidden = true;
+    const o = overlay();
+    const stop = fx.startFx(o.canvas);
+    assert.ok(fx.fxHidden());
+    assert.deepEqual(heard, [true]);
+    const fire = glow();
+    askFloat();
+    frame();
+    o.ctx.state.done = true;
+    readSix();
+    assert.equal(fx.fxStats().shapes, 1);
+    fire.stop(0.5);
+    assert.equal(fx.fxStats().shapes, 0, 'no fade left to play once it is back');
+    stop();
+    assert.ok(!fx.fxHidden());
+    assert.deepEqual(heard, [true, false]);
+    off();
+  } finally {
+    if (doc.hidden) away(false);
+  }
+});
+
+test("lights follow the tab: a moment's light and pulse go as it goes away and aren't started meanwhile; a held light stays", () => {
+  const doc = g.document as { hidden: boolean };
+  const away = (hidden: boolean) => {
+    doc.hidden = hidden;
+    docOn.visibilitychange();
+  };
+  const a = new Float32Array(lights.MAX_LIGHTS * 4);
+  const c = new Float32Array(lights.MAX_LIGHTS * 4);
+  /** How many lights are packed now (each with its radius). */
+  const count = () => {
+    a.fill(0);
+    lights.packLights(a, c, performance.now() / 1000);
+    let n = 0;
+    for (let i = 0; i < lights.MAX_LIGHTS; i++) if (a[i * 4 + 2] > 0) n++;
+    return n;
+  };
+  const mood = new Float32Array(4);
+  try {
+    const o = overlay();
+    const stop = fx.startFx(o.canvas);
+    lights.light({ x: 0, y: 0 }, { color: [1, 1, 1], radius: 100, intensity: 1, hold: 5 });
+    const held = lights.holdLight({ x: 0, y: 0 }, [1, 1, 1], 80);
+    lights.pulseMood(0.8);
+    assert.equal(count(), 2);
+    away(true);
+    assert.equal(count(), 1, 'only the held one');
+    assert.equal(lights.stepMood(0.016, mood), false, 'no pulse left');
+    lights.light({ x: 0, y: 0 }, { color: [1, 1, 1], radius: 100, intensity: 1 });
+    lights.pulseMood(0.8);
+    assert.equal(count(), 1, 'none started while away');
+    assert.equal(lights.stepMood(0.016, mood), false);
+    away(false);
+    held.release();
+    stop();
+  } finally {
+    if (doc.hidden) away(false);
   }
 });
 

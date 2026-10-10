@@ -116,8 +116,15 @@ export function isLive(h: Handle) {
 /** Runs every frame until it returns false. */
 export type Task = (dt: number, age: number) => boolean;
 
-/** A live task; `life` is how long it runs at most (seconds), Infinity for one that runs until stopped. */
-type LiveTask = { fn: Task; age: number; life: number };
+/** How a task runs (see task()). */
+export type TaskOptions = {
+  /** The most seconds it runs: it ends by then however it's written. */
+  life?: number;
+  /** Kept while the tab is away: one that lasts until stopped (a burning flare's), or that something waits on. */
+  keep?: boolean;
+};
+
+type LiveTask = { fn: Task; age: number; life: number; keep: boolean };
 
 // ---------- state ----------
 
@@ -305,14 +312,14 @@ export function follow(el: Element, seconds: number): number {
   const p = pool;
   const slot = p.claimFollow();
   const b0 = boxOf(el);
-  task((_, age) => {
+  // Till a little past `seconds`, for the stragglers of a stream timed to land by then.
+  task(() => {
     if (detached(el)) return false;
     const b = boxOf(el);
     p.follows[2 * slot - 2] = b.x - b0.x;
     p.follows[2 * slot - 1] = b.y - b0.y;
-    // A little past `seconds`, for the stragglers of a stream timed to land by then.
-    return age < seconds + 0.25;
-  }, seconds + 0.25);
+    return true;
+  }, { life: seconds + 0.25 });
   return slot;
 }
 
@@ -373,6 +380,11 @@ export function shape(spec: ShapeSpec): Handle {
   return {
     stop(fadeSeconds = 0.4) {
       if (s.stopped) return;
+      // (Away, its fade would only play once it's back, on what has moved on: it goes now.)
+      if (hidden) {
+        shapes = shapes.filter((x) => x !== s);
+        return;
+      }
       s.stopped = true;
       s.fade = s.fadeTotal = Math.max(0.001, fadeSeconds);
     },
@@ -380,15 +392,15 @@ export function shape(spec: ShapeSpec): Handle {
 }
 
 /**
- * Runs `fn` every frame until it returns false or the handle is stopped.
- * `life`: the most seconds it runs (it ends itself by then), for one that's
- * part of a moment and can be dropped unseen while the tab is away (see
- * setHidden). Left out, it's kept then: one that runs until stopped, or that
- * something waits on (a cover to take down).
+ * Runs `fn` every frame until it returns false, its `life` runs out or the
+ * handle is stopped. A task is part of a moment unless it's to be kept: it's
+ * dropped as the tab goes away and not started while it's away (see
+ * setHidden), and one with a life that waited past it for the renderer is
+ * dropped too (setup).
  */
-export function task(fn: Task, life = Infinity): Handle {
-  if (!fxActive() || (hidden && Number.isFinite(life))) return NOOP;
-  const t: LiveTask = { fn, age: -waited(), life };
+export function task(fn: Task, { life = Infinity, keep = false }: TaskOptions = {}): Handle {
+  if (!fxActive() || (hidden && !keep)) return NOOP;
+  const t: LiveTask = { fn, age: -waited(), life, keep };
   tasks.push(t);
   wake();
   return {
@@ -473,7 +485,7 @@ export function after(seconds: number, fn: () => void) {
     if (age < seconds) return true;
     fn();
     return false;
-  }, seconds);
+  }, { life: seconds });
 }
 
 // ---------- camera shake ----------
@@ -933,7 +945,10 @@ function setup(c: HTMLCanvasElement, r: FxRenderer) {
       s.age += late;
       return !s.stopped && !detached(s.at) && !(s.age >= s.life);
     });
-    for (const t of tasks) t.age += late;
+    tasks = tasks.filter((t) => {
+      t.age += late;
+      return t.age < t.life;
+    });
     for (let left = late; left > 0 && pool.count; left -= 1 / 15) pool.step(Math.min(left, 1 / 15));
     shake.trauma = Math.max(0, shake.trauma - 1.6 * (performance.now() - shakenAt) / 1000);
   }
@@ -947,11 +962,12 @@ function setup(c: HTMLCanvasElement, r: FxRenderer) {
 /**
  * The tab went away (`away`) or came back. Away, no frames come, so nothing
  * moves on, and the loop is stopped too (no work in the background). What
- * would run its course (particles, shapes and tasks that end, a shake) is
- * dropped now, and not started while it's away: unseen, it would otherwise
- * play all at once as the tab comes back. What lasts until it's stopped (a
- * streak's fire, a burning flare) stays where it was, and goes on once it's
- * back.
+ * would run its course (particles, shapes that end, a moment's tasks, a
+ * shake) is dropped now, and not started while it's away: unseen, it would
+ * otherwise play all at once as the tab comes back. What lasts until it's
+ * stopped (a streak's fire, a burning flare: endless shapes, tasks to keep)
+ * stays where it was, and goes on once it's back; stopped meanwhile, it goes
+ * at once.
  */
 function setHidden(away: boolean) {
   if (away === hidden) return;
@@ -961,7 +977,7 @@ function setHidden(away: boolean) {
     cancelAnimationFrame(raf);
     raf = 0;
     shapes = shapes.filter((s) => !s.stopped && !Number.isFinite(s.life));
-    tasks = tasks.filter((t) => !Number.isFinite(t.life));
+    tasks = tasks.filter((t) => t.keep);
     // (Nothing stale is shown for a moment as it comes back.)
     blank();
   } else {
@@ -982,8 +998,7 @@ export function startFx(c: HTMLCanvasElement): () => void {
     for (const l of listeners) l(userOn);
   };
   reduce?.addEventListener('change', onMotion);
-  hidden = document.hidden;
-  awayAt = performance.now();
+  setHidden(document.hidden);
   const onVisibility = () => setHidden(document.hidden);
   document.addEventListener('visibilitychange', onVisibility);
   // Phones often drop the context while the tab is in the background.
@@ -1012,5 +1027,7 @@ export function startFx(c: HTMLCanvasElement): () => void {
     const half = !renderer && !!building;
     teardown();
     if (half) c.getContext('webgl2')?.getExtension('WEBGL_lose_context')?.loseContext();
+    // (No overlay follows the tab now: nothing counts as away.)
+    setHidden(false);
   };
 }
