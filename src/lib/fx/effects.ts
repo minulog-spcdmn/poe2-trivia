@@ -657,41 +657,33 @@ export function edgeGlow(o: { color?: Vec3; width?: number; life?: number; inten
   });
 }
 
-/** One beat of a heart (0-1): up in `rise` seconds, easing in, then dying away over about `fall`. */
-function beat(x: number, rise: number, fall: number) {
-  if (x <= 0) return 0;
-  if (x < rise) return Math.sin(((x / rise) * Math.PI) / 2) ** 2;
-  return Math.exp(-(x - rise) / fall);
-}
-
 /**
- * A heartbeat at the screen's edges: two beats, the second softer, each
- * pressing the glow in and sending crimson smoke curling in from the edge,
- * its thickest threads white-hot at the beat (the clock's last seconds). `width`: how far the glow reaches at rest (px).
+ * One beat of light at the screen's edges, as the clock ticks: up at once,
+ * dying away with the tick's sound. `smoke` (0-1): wisps of it, hugging the
+ * edges (the clock's very last seconds). `width`: how far in it reaches (px).
  */
-export function heartbeat(o: { color?: Vec3; width?: number; intensity?: number } = {}) {
-  const W = o.width ?? 70;
-  const life = 1;
+export function edgeBeat(o: { color?: Vec3; width?: number; intensity?: number; smoke?: number } = {}) {
+  const W = o.width ?? 60;
+  const life = 0.8;
   return shape({
     type: ShapeType.Edge,
     at: { x: innerWidth / 2, y: innerHeight / 2 },
     life,
     color: o.color ?? C.crimson,
-    update(f, t, age, b) {
+    update(f, _t, age, b) {
       b.x = innerWidth / 2;
       b.y = innerHeight / 2;
       f.hw = innerWidth / 2;
       f.hh = innerHeight / 2;
-      // Lub, then dub.
-      const env = beat(age, 0.06, 0.15) + 0.7 * beat(age - 0.25, 0.07, 0.28);
-      const end = 1 - Math.max(0, (t - 0.7) / 0.3) ** 2;
-      f.k = (o.intensity ?? 0.14) * env * end;
-      f.q[0] = W * (0.7 + 0.45 * env);
-      f.q[1] = 0.7;
-      f.q[2] = 1;
-      // The smoke surges in with each beat and keeps creeping between them.
-      f.q[3] = W * (1.2 * (1 - Math.exp(-age * 2.5)) + 0.4 * env);
-      f.q[4] = 0.6 * env;
+      const rise = 0.035;
+      const env = age < rise ? Math.sin(((age / rise) * Math.PI) / 2) ** 2 : Math.exp(-(age - rise) / 0.2);
+      f.k = (o.intensity ?? 0.06) * env;
+      // Swelling a little with the beat, never far in.
+      f.q[0] = W * (0.85 + 0.15 * env);
+      f.q[1] = 0.6;
+      f.q[2] = o.smoke ?? 0;
+      f.q[3] = 0;
+      f.q[4] = 0;
     },
   });
 }

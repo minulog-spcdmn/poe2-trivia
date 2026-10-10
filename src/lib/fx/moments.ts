@@ -7,7 +7,7 @@ import { after, boxOf, detached, fxActive, isLive, shakeView, type Anchor, type 
 import {
   C,
   edgeGlow,
-  heartbeat,
+  edgeBeat,
   embers,
   emitter,
   fire,
@@ -1056,9 +1056,8 @@ export function raceMiss(option: Element, mine: boolean, warded = false) {
 
 /**
  * The last seconds of the clock. `screen`: the crimson pulse over the scene
- * too, and in the last two a heartbeat at the screen's edges (heartbeat);
- * Delve leaves them out, as its darkness closing in already tells the clock
- * running down.
+ * and a beat at the screen's edges too (edgeBeat); Delve leaves them out, as
+ * its darkness closing in already tells the clock running down.
  */
 export function timerTick(timer: Element, secs: number, screen = true) {
   if (!fxActive()) return;
@@ -1066,12 +1065,10 @@ export function timerTick(timer: Element, secs: number, screen = true) {
   ring(timer, { radius: 50 + urgency * 30, from: 26, thickness: 4 + urgency * 3, life: 0.6, color: C.crimson, breakup: 0.3, fill: 0 });
   sparks(timer, { count: 6 + Math.round(urgency * 10), area: 'edge', colors: [C.crimson, C.ember], speed: [80, 260], gravity: 200, life: [0.25, 0.5] });
   if (!screen) return;
-  // The last two beat at the edges instead of washing the scene red.
-  if (secs > 2) pulseMood(0.25 + urgency * 0.35);
-  else {
-    pulseMood(0.2);
-    heartbeat({ intensity: 0.07 + urgency * 0.04 });
-  }
+  // Every tick alike, a little stronger each second: the scene flushed red
+  // and a beat of red at the screen's edges, with wisps of smoke in the last.
+  pulseMood(0.18 + urgency * 0.17);
+  edgeBeat({ intensity: 0.035 + urgency * 0.045, width: 45 + urgency * 25, smoke: Math.max(0, urgency - 0.5) * 0.8 });
 }
 
 // ---------- deathmatch ----------
