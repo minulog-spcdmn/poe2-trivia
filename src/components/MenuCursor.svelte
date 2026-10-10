@@ -4,9 +4,10 @@
   // the screen shows (a fast screen gets every one of its frames), so it eases
   // out of one entry and into the next and, sent elsewhere mid-way, turns
   // without a jolt. Let go, it cools as an ember does: its glow goes first,
-  // then it darkens to a deep red and is gone. Lit again after that, it comes
-  // back at its entry rather than travelling over. A pointer that can hover
-  // shows it; touch never does (Home hides it on phones too).
+  // then it darkens to a deep red, shrinking to a pixel, and is gone. Lit
+  // again after that, it comes back at its entry rather than travelling over.
+  // A pointer that can hover shows it; touch never does (Home hides it on
+  // phones too).
   import { onDestroy, untrack } from 'svelte';
   import { springAtRest, stepSpring, type Spring } from '../lib/spring';
   import { CURSOR_SPRING } from '../lib/startMenu';
@@ -85,16 +86,19 @@
     rotate: 45deg;
     pointer-events: none;
     will-change: translate;
-    /* Cold: dark, unlit, gone. Cooling, the glow goes first, the colour after, and then the ember. */
+    /* Cold: dark, unlit, a pixel, gone. Cooling, the glow goes first, the colour after, and then the ember. */
     background: #4a1a0c;
     box-shadow:
       0 0 8px rgba(224, 138, 68, 0),
       0 0 18px rgba(224, 138, 68, 0);
     opacity: 0;
+    /* Shrinking as it cools, down to a single pixel (1/9 of its 9) as the fade ends. */
+    scale: calc(1 / 9);
     transition:
       box-shadow 0.6s ease-out,
       background-color 1s ease-in 0.1s,
-      opacity 0.9s ease-in 0.5s;
+      opacity 0.9s ease-in 0.5s,
+      scale 1.3s ease-in 0.1s;
   }
   @media (hover: hover) {
     .lit {
@@ -103,10 +107,12 @@
         0 0 8px rgba(224, 138, 68, 0.9),
         0 0 18px rgba(224, 138, 68, 0.45);
       opacity: 1;
+      scale: 1;
       transition:
         box-shadow 0.2s ease-out,
         background-color 0.15s ease-out,
-        opacity 0.15s ease-out;
+        opacity 0.15s ease-out,
+        scale 0.2s ease-out;
     }
   }
 </style>
