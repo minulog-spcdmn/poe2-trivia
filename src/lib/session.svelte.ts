@@ -182,6 +182,8 @@ export const saveName = (name: string) => void writeStored('name', name);
 const mySecret = stored('secret', () => randomToken(32));
 /** This page load (tabs share the secret; the host tells them apart by this). */
 const myTab = randomToken(16);
+/** A new player's id, online or on this device. */
+const newPlayerId = () => randomToken(12);
 
 /** Host-side bookkeeping for one guest connection. */
 interface Guest {
@@ -419,8 +421,7 @@ class Session {
 
   // ---- hot-seat ---------------------------------------------------------
 
-  /** A hot-seat game: a fresh one, seating `name` first when given, or `resume` picked up where it was. */
-  startLocal(resume?: GameState, name?: string) {
+  startLocal(resume?: GameState) {
     const delve = this.delveLink && !resume;
     // Used up by this game, or moot for one picked up where it was.
     this.delveLink = false;
@@ -428,7 +429,12 @@ class Session {
     this.mode = 'local';
     this.status = 'ready';
     this.setState(resume ?? createGame(null, delve ? { ...DEFAULT_SETTINGS, mode: 'delve' } : undefined));
-    if (name) this.seatLocal(name);
+  }
+
+  /** A fresh hot-seat game with `name` seated first; false when the game turned the name down (and said why). */
+  startLocalAs(name: string): boolean {
+    this.startLocal();
+    return this.seatLocal(name);
   }
 
   /**
@@ -437,7 +443,7 @@ class Session {
    * unlike randomUUID, also works on plain http.
    */
   seatLocal(name: string): boolean {
-    const playerId = randomToken(22);
+    const playerId = newPlayerId();
     this.dispatch({ type: 'join', playerId, name });
     return !!this.state?.players.some((p) => p.id === playerId);
   }
@@ -452,8 +458,7 @@ class Session {
   /** A Delve run alone on this device, straight from a shared link. */
   startDelve(name: string) {
     this.delveLink = true;
-    this.startLocal(undefined, name);
-    this.dispatch({ type: 'start' });
+    if (this.startLocalAs(name)) this.dispatch({ type: 'start' });
   }
 
   /** Picks up a hot-seat game or a hosted room after a page refresh. */
@@ -767,7 +772,7 @@ class Session {
       this.dismiss(conn, { t: 'busy', message: busy });
       return;
     }
-    const playerId = known ?? randomToken(12);
+    const playerId = known ?? newPlayerId();
     let next: GameState;
     try {
       if (!known && this.priv.bannedNames.includes(nameSkeleton(cleanName(name))))

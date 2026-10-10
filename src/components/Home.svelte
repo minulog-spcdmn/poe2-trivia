@@ -1,6 +1,6 @@
 <script lang="ts">
   import { fade, fly } from 'svelte/transition';
-  import { cleanName, nameHeld, nameProblem, nameUsable, unlockHeldName } from '../lib/names';
+  import { nameRefusal, nameUsable, unlockHeldName } from '../lib/names';
   import { toasts } from '../lib/toasts.svelte';
   import { engine, session, savedName, saveName, CODE_LENGTH } from '../lib/session.svelte';
   import { shuffle } from '../lib/game';
@@ -71,16 +71,12 @@
     .catch((err) => console.warn('achievements', err));
   const showcase = shuffle(engine.items, Math.random).slice(0, 7);
 
-  /** Says why a typed name can't be used (not for an empty field, nor the held name: that one is only refused). */
-  function sayNameProblem(n: string) {
-    const problem = n && !nameHeld(n) && nameProblem(cleanName(n), []);
-    if (problem) toasts.show(problem, 'error');
-  }
-
-  function needName() {
+  /** The typed name, or null after refusing it in the field (saying why, unless it's empty or the held name). */
+  function checkName() {
     const n = name.trim();
-    if (!nameUsable(n)) {
-      sayNameProblem(n);
+    const refusal = nameRefusal(n);
+    if (refusal) {
+      if (n && refusal !== 'held') toasts.show(refusal, 'error');
       nameError = true;
       const field = document.getElementById('name');
       if (field) refuse(field);
@@ -88,7 +84,12 @@
       document.getElementById('name')?.focus();
       return null;
     }
-    saveName(n);
+    return n;
+  }
+
+  function needName() {
+    const n = checkName();
+    if (n) saveName(n);
     return n;
   }
 
@@ -139,14 +140,14 @@
 
   /**
    * Hot-seat starts with the name in the name field (the saved one unless
-   * changed) already in, when it's usable. It isn't saved: whoever plays
-   * first here may not be the one who plays online on this device.
+   * changed) already in; an empty field opens it with nobody in, and a name
+   * that can't be used is refused there, as for a room. It isn't saved:
+   * whoever plays first here may not be the one who plays online on this device.
    */
   function local() {
-    const n = name.trim();
-    const usable = nameUsable(n);
-    session.startLocal(undefined, usable ? n : undefined);
-    if (!usable) sayNameProblem(n);
+    if (!name.trim()) return session.startLocal();
+    const n = checkName();
+    if (n) session.startLocalAs(n);
   }
 
   const connecting = $derived(session.status === 'connecting');
