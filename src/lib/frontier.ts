@@ -11,6 +11,7 @@ import type { ShownPatch } from './media.svelte';
 import { valueNoise } from './patches';
 import { FINALE_MS } from './materialize';
 import { fxDensity, veilSpark } from './fx/moments';
+import { zoomOf } from './stage';
 
 /**
  * As fractions of a patch's burn: a seam catches when the fire gets there
@@ -127,7 +128,8 @@ export function frontier(canvas: HTMLCanvasElement, params: FrontierParams) {
     if (W) return true;
     const cw = canvas.clientWidth;
     if (!cw) return false;
-    W = Math.max(1, Math.round(Math.min(cw * (window.devicePixelRatio || 1), cur.w * 2)));
+    // On screen the canvas is the stage's zoom (lib/stage.ts) larger than its own px.
+    W = Math.max(1, Math.round(Math.min(cw * zoomOf(canvas) * (window.devicePixelRatio || 1), cur.w * 2)));
     H = Math.max(1, Math.round((W * cur.h) / cur.w));
     k = W / cur.w;
     canvas.width = W;
