@@ -528,8 +528,8 @@ browser (`src/lib/achievements.ts`); erasing the codex erases them.
     way, and **Take a seat** again. The choice holds through reconnects.
   - **Live pointers:** in the lobby, and in turns mode and Delve together,
     everyone sees the other players' mouse pointers move over the room, in their colour and
-    with their name; a tap on a phone shows as a ring opening where it
-    landed. Every pointer, your own included, is the same engraved dart
+    with their name; a tap on a phone shows where it landed, as the
+    pointer pressed, for a moment. Every pointer, your own included, is the same engraved dart
     (one point of the rune circle's compass star, `src/lib/pointerArt.ts`):
     yours in old gold, or in your colour once you have a seat in an online
     room (the lobby included), shown as the system cursor so it never lags (`src/lib/ownCursor.ts`).
