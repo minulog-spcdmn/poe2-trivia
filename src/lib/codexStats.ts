@@ -42,8 +42,6 @@ export interface CodexStats extends Tally {
   fastest: { ms: number; item: Item } | null;
   byMode: Record<QuestionMode, Tally>;
   byDifficulty: Partial<Record<Difficulty, Tally>>;
-  /** The start page's practice questions (lib/codex.ts Codex.practice). */
-  practice: Tally;
   /** In the order the categories are given. */
   categories: CategoryStats[];
   /** Lowest accuracy first, at least NEMESIS_MIN answers. */
@@ -111,7 +109,6 @@ export function codexStats(c: Codex, items: Item[], categories: string[], limit 
     fastest: c.fastest && fastItem ? { ms: c.fastest.ms, item: fastItem } : null,
     byMode,
     byDifficulty: c.byDifficulty,
-    practice: c.practice,
     categories: [...cats.values()],
     nemeses: nemeses.slice(0, limit),
     confusions: confusions.slice(0, limit),

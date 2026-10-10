@@ -159,12 +159,6 @@ export interface Codex {
   fastest: { ms: number; id: string } | null;
   /** Delve answers by depth. */
   byDepth: Record<number, Tally>;
-  /**
-   * Answers to the start page's practice questions: only how many were
-   * right. They find no item and touch nothing else here (answers to be
-   * had without end, they'd fill the codex without a game).
-   */
-  practice: Tally;
 }
 
 /** What one revealed question means for the codex. */
@@ -219,7 +213,7 @@ export const LOG_LIMIT = 2000;
 /** "Recent" accuracy looks at this many answers. */
 export const RECENT = 100;
 
-export const emptyCodex = (): Codex => ({ items: {}, log: [], byDifficulty: {}, fooled: {}, streak: 0, best: 0, fastest: null, byDepth: {}, practice: { n: 0, ok: 0 } });
+export const emptyCodex = (): Codex => ({ items: {}, log: [], byDifficulty: {}, fooled: {}, streak: 0, best: 0, fastest: null, byDepth: {} });
 
 const noTally = (): Tally => ({ n: 0, ok: 0 });
 const add = (t: Tally, ok: boolean): Tally => ({ n: t.n + 1, ok: t.ok + (ok ? 1 : 0) });
@@ -505,7 +499,6 @@ export function parseCodex(raw: string | null): Codex | null {
       const n = tally(t);
       if (d && n.n) c.byDepth[d] = n;
     }
-  c.practice = tally(v.practice);
   return c;
 }
 
@@ -546,9 +539,31 @@ export function recordEncounter(e: Encounter) {
   update((c) => record(c, e));
 }
 
-/** Adds a practice answer (the start page's) to the stored codex: to its practice tally alone. */
+// ---- practice ----------------------------------------------------------
+
+/**
+ * Answers to the start page's practice questions: only how many were
+ * right. They find no item and touch nothing in the codex (answers to be
+ * had without end, they'd fill it without a game). Stored apart from it,
+ * so a build from before them, writing the codex, can't drop them.
+ */
+const PRACTICE = 'practice';
+export const PRACTICE_KEY = storeKey(PRACTICE);
+
+/** The stored practice tally (none when there is none, or it can't be read). */
+export function loadPractice(): Tally {
+  const raw = readStored(PRACTICE);
+  if (!raw) return noTally();
+  try {
+    return tally(JSON.parse(raw));
+  } catch {
+    return noTally();
+  }
+}
+
+/** Adds a practice answer (the start page's) to its tally. */
 export function recordPractice(ok: boolean) {
-  update((c) => ({ ...c, practice: add(c.practice, ok) }));
+  writeStored(PRACTICE, JSON.stringify(add(loadPractice(), ok)));
 }
 
 /**
@@ -557,6 +572,7 @@ export function recordPractice(ok: boolean) {
  * meanwhile under the old name, is never taken up.
  */
 export function resetCodex() {
+  removeStored(PRACTICE);
   for (const name of [CODEX, LEGACY]) {
     removeStored(name);
     clearAside(name);

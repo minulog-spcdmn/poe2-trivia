@@ -3,7 +3,7 @@
   import { fade, fly } from 'svelte/transition';
   import { engine, savedName, session } from '../lib/session.svelte';
   import { nameUsable } from '../lib/names';
-  import { CODEX_KEY, RECENT, loadCodex, resetCodex, type Tally } from '../lib/codex';
+  import { CODEX_KEY, PRACTICE_KEY, RECENT, loadCodex, loadPractice, resetCodex, type Tally } from '../lib/codex';
   import { accuracy, codexStats, delveSummary, tallyOf } from '../lib/codexStats';
   import { shownDepth } from '../lib/delve';
   import { categoryGlyph, itemSrcset, itemThumb } from '../lib/ui';
@@ -24,6 +24,7 @@
   import CodexAchievements from './CodexAchievements.svelte';
 
   let codex = $state.raw(loadCodex());
+  let practice = $state.raw(loadPractice());
   let delve = $state.raw(loadRecords());
   // Brought up to date with the codex first (it is read the same way), so
   // the page never shows one done but not earned.
@@ -34,6 +35,7 @@
     // A game in another tab may add to it meanwhile.
     const reload = (e: StorageEvent) => {
       if (e.key === CODEX_KEY || e.key === null) codex = loadCodex();
+      if (e.key === PRACTICE_KEY || e.key === null) practice = loadPractice();
       if (e.key === DELVE_RECORD_KEY || e.key === null) delve = loadRecords();
       if (e.key === ACHIEVEMENTS_KEY || e.key === null) achievements = loadAchievements();
       if (e.key === WINS_KEY || e.key === null) wins = loadWins();
@@ -166,6 +168,7 @@
     resetRecords();
     resetAchievements();
     codex = loadCodex();
+    practice = loadPractice();
     delve = loadRecords();
     achievements = loadAchievements();
     wins = loadWins();
@@ -337,6 +340,10 @@
       <p class="muted">
         Every item revealed in your games is written into it, with how often you named it right. It is kept in this browser only.
       </p>
+      <!-- Practice finds nothing, so it can be all there is: its accuracy still shows. -->
+      {#if practice.n}
+        <p class="muted">Practice on the start page: {pct(practice)} right of {practice.n}.</p>
+      {/if}
       <button class="btn primary" onclick={closeCodex}>Begin the hunt</button>
     </div>
   {:else}
@@ -352,9 +359,9 @@
           {@render bars(difficulties)}
         {/if}
         <!-- The start page's practice: its own, as it finds no items. -->
-        {#if stats.practice.n}
+        {#if practice.n}
           <header class="sub"><h2>Practice</h2></header>
-          {@render bars([{ name: 'Start page', tally: stats.practice }])}
+          {@render bars([{ name: 'Start page', tally: practice }])}
         {/if}
       </section>
 

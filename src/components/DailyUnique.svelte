@@ -2,8 +2,9 @@
   // Today's unique: one item a day, the same for every exile (lib/daily.ts),
   // in the rune circle with the game's own answer buttons under it. Once it
   // is answered, "Practice more" asks further questions in the same spot;
-  // they never touch the streak. Every answer goes into the codex like any
-  // other question.
+  // they never touch the streak. Into the codex, today's unique goes as
+  // found (its answer isn't counted) and a practice answer only into a
+  // practice accuracy of its own (see pick).
   import { onMount } from 'svelte';
   import { fade, fly, scale, slide } from 'svelte/transition';
   import itemData from '../data/items.json';
@@ -130,7 +131,7 @@
     const asked = q;
     void import('../lib/codex')
       .then(({ recordEncounter, recordPractice }) =>
-        next ? recordEncounter({ at, itemId: asked.itemId, mode: asked.mode, difficulty: 'custom', race: false }) : recordPractice(good),
+        practice ? recordPractice(good) : recordEncounter({ at, itemId: asked.itemId, mode: asked.mode, difficulty: 'custom', race: false }),
       )
       .catch((err) => console.warn('codex', err));
     sfx(good ? 'correct' : 'wrong');

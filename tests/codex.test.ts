@@ -12,6 +12,7 @@ import {
   parseCodex,
   record,
   recordEncounter,
+  loadPractice,
   recordPractice,
   resetCodex,
   serializeCodex,
@@ -484,22 +485,21 @@ test('two players of one browser in one room: each Delve answer says whose it wa
   assert.deepEqual(parseCodex(serializeCodex(x))!.log.map((l) => l.who), ['p0', 'p1', undefined]);
 });
 
-test("practice answers count only in the practice tally: no item found, nothing else", () => {
+test("practice answers count only in their own tally, kept apart from the codex", () => {
   recordPractice(true);
   recordPractice(false);
   recordPractice(true);
+  assert.deepEqual(loadPractice(), { n: 3, ok: 2 });
+  // The codex itself is untouched (none was even written).
   const c = loadCodex();
-  assert.deepEqual(c.practice, { n: 3, ok: 2 });
-  assert.deepEqual(c.items, {});
-  assert.deepEqual(c.log, []);
-  assert.deepEqual(c.byDifficulty, {});
-  assert.equal(c.streak, 0);
-  // Kept as stored, and read as nothing from a codex written before it.
-  assert.deepEqual(parseCodex(serializeCodex(c))!.practice, { n: 3, ok: 2 });
-  const old = JSON.parse(serializeCodex(emptyCodex()));
-  delete old.practice;
-  assert.deepEqual(parseCodex(JSON.stringify(old))!.practice, { n: 0, ok: 0 });
-  assert.deepEqual(codexStats(c, items, categories).practice, { n: 3, ok: 2 });
+  assert.deepEqual([c.items, c.log, c.byDifficulty, c.streak], [{}, [], {}, 0]);
+  assert.equal(store.has(CODEX_KEY), false);
+  // A codex written over by a build that knows nothing of practice keeps it.
+  store.set(CODEX_KEY, serializeCodex(emptyCodex()));
+  assert.deepEqual(loadPractice(), { n: 3, ok: 2 });
+  // Erasing the codex erases it with it.
+  resetCodex();
+  assert.deepEqual(loadPractice(), { n: 0, ok: 0 });
 });
 
 test("today's unique without its answer finds the item and counts no answer", () => {
