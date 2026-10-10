@@ -16,6 +16,7 @@
   import { METALS, TIERS, type Tier } from '../lib/metals';
   import { RUBY } from '../lib/palette';
   import { CREATOR, CREATOR_TITLE } from '../lib/site';
+  import { showTip } from '../lib/fullscreenTip';
 
   const s = $derived(session.state);
 
@@ -36,6 +37,7 @@
     { label: 'Refused (error)', show: () => toast("It's not your turn.", 'error') },
     { label: 'Game ended (sticky)', show: () => toast('The host closed the room.', 'error', { title: 'Game over', sticky: true }) },
     { label: 'Question set aside', show: () => toast('The host reloaded, so it cost nothing.', 'info', { title: 'Question set aside', who: someone() }) },
+    { label: 'Fullscreen tip', show: showTip },
     { label: 'Creator arrives', show: () => toast('has arrived', 'info', { title: CREATOR_TITLE, who: { name: CREATOR, hue: RUBY }, herald: true }) },
     ...TIERS.map((t) => ({
       label: `Achievement (${METALS[t].name.toLowerCase()})`,
