@@ -1056,12 +1056,16 @@ export function raceMiss(option: Element, mine: boolean, warded = false) {
 
 /** timerTick's screen beat for each of the last seconds (1 first), as edgeBeat takes it, and the scene's red flush. */
 const TICK_STEPS = [
-  { intensity: 0.17, width: 100, smoke: 1, rim: 0.6, mood: 0.6 },
-  { intensity: 0.12, width: 80, smoke: 1.1, rim: 0.25, mood: 0.45 },
-  { intensity: 0.085, width: 62, smoke: 1.3, rim: 0, mood: 0.26 },
-  { intensity: 0.068, width: 56, smoke: 1.3, rim: 0, mood: 0.2 },
-  { intensity: 0.055, width: 50, smoke: 1.3, rim: 0, mood: 0.15 },
+  { intensity: 0.17, width: 100, veins: 1.7, rim: 0.6, mood: 0.6 },
+  { intensity: 0.12, width: 80, veins: 1.5, rim: 0.25, mood: 0.45 },
+  { intensity: 0.085, width: 62, veins: 1.35, rim: 0, mood: 0.26 },
+  { intensity: 0.068, width: 56, veins: 1.15, rim: 0, mood: 0.2 },
+  { intensity: 0.055, width: 50, veins: 0.95, rim: 0, mood: 0.15 },
 ];
+
+/** The veins of one countdown (timerTick): new when it starts, kept for its every tick. */
+let veinPattern = 0;
+let lastTick = 0;
 
 /**
  * The last seconds of the clock. `screen`: the crimson pulse over the scene
@@ -1074,13 +1078,15 @@ export function timerTick(timer: Element, secs: number, screen = true) {
   ring(timer, { radius: 50 + urgency * 30, from: 26, thickness: 4 + urgency * 3, life: 0.6, color: C.crimson, breakup: 0.3, fill: 0 });
   sparks(timer, { count: 6 + Math.round(urgency * 10), area: 'edge', colors: [C.crimson, C.ember], speed: [80, 260], gravity: 200, life: [0.25, 0.5] });
   if (!screen) return;
-  // Every tick alike: the scene flushed red and a beat of red smoke at the
-  // screen's edges. Each second its own step, so a glance tells which: the
+  // Every tick alike: the scene flushed red and a beat of red at the
+  // screen's edges, bloodshot, its veins growing in from tick to tick. Each second its own step, so a glance tells which: the
   // first three held back, the last two as strong as a warning gets, and
   // the very last with a hot rim along the edges.
   const step = TICK_STEPS[Math.max(0, Math.min(TICK_STEPS.length - 1, secs - 1))];
+  if (secs >= lastTick) veinPattern = Math.random() * 100;
+  lastTick = secs;
   pulseMood(step.mood);
-  edgeBeat(step);
+  edgeBeat({ ...step, pattern: veinPattern });
 }
 
 // ---------- deathmatch ----------

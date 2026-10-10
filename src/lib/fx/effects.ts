@@ -658,14 +658,16 @@ export function edgeGlow(o: { color?: Vec3; width?: number; life?: number; inten
 }
 
 /**
- * One beat of red smoke at the screen's edges, as the clock ticks: up at
- * once and dying away with the tick's sound, where it is (it brightens, the
- * smoke writhing in place; nothing rushes in). `width`: how far in it
- * reaches (px, on a window 720 px across its short side; it scales with the
- * window, so a big screen sees the same as a small one). `smoke` (0 none):
- * its wisps; `rim`: a hot line along the very edge.
+ * One beat of red at the screen's edges, as the clock ticks, as if the
+ * screen were a bloodshot eye: a flush and veins in from the edges, up at
+ * once and dying away with the tick's sound, in place. `width`: how far in
+ * the flush reaches (px, on a window 720 px across its short side; it
+ * scales with the window, so a big screen sees the same as a small one).
+ * `veins`: how far in they reach, in widths (0 none); `pattern`: which
+ * veins (the same for every tick of one countdown); `rim`: a hot line
+ * along the very edge.
  */
-export function edgeBeat(o: { color?: Vec3; width?: number; intensity?: number; smoke?: number; rim?: number } = {}) {
+export function edgeBeat(o: { color?: Vec3; width?: number; intensity?: number; veins?: number; pattern?: number; rim?: number } = {}) {
   const life = 0.8;
   return shape({
     type: ShapeType.Edge,
@@ -682,8 +684,8 @@ export function edgeBeat(o: { color?: Vec3; width?: number; intensity?: number; 
       f.k = (o.intensity ?? 0.06) * env;
       f.q[0] = (o.width ?? 60) * Math.max(0.7, Math.min(2.2, Math.min(innerWidth, innerHeight) / 720));
       f.q[1] = 0.6;
-      f.q[2] = o.smoke ?? 0;
-      f.q[3] = 0;
+      f.q[2] = o.veins ?? 0;
+      f.q[3] = o.pattern ?? 0;
       f.q[4] = (o.rim ?? 0) * env;
     },
   });
