@@ -63,6 +63,9 @@ export interface Item {
   /** Broad category offered to players. */
   category: string;
   kind: 'unique' | 'gem';
+  /** Its art's size, in art pixels (poe2db's, about 104 per inventory cell); its picture is artScale times that (ui-paths.ts). */
+  w: number;
+  h: number;
 }
 
 /** The three ready-made difficulties. */

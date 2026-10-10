@@ -2,8 +2,10 @@
 # Upscales the item art for the site. poe2db only has the art at about 104 px
 # per inventory cell (108 x 108 for a ring), and lossy, which the game draws
 # much bigger than that. Real-ESRGAN (x4plus) redraws each picture at 4x, which
-# is then scaled down to ART_SCALE (2x, src/lib/ui-paths.ts) and mixed with
-# the original (smoothly enlarged) by its size (mix_of), then saved to public/items/ as
+# is kept at 4x for items up to 2 x 2 cells and scaled down to 2x for larger
+# ones (scale_of, artScale in src/lib/ui-paths.ts: small items are drawn the
+# most enlarged), and mixed with the original (smoothly enlarged) by its size
+# (mix_of), then saved to public/items/ as
 # AVIF, with smaller copies for small spots (public/items/<size>/, at most
 # that many px on the longest side; see itemThumb in src/lib/ui-paths.ts).
 # The originals stay in art-source/items/ (fetch-data puts them there); only
@@ -14,7 +16,8 @@
 # and the original as it was) on 35 items, small and big alike. Small items
 # are drawn the most enlarged, so they take more of the model (MIX): for
 # one-cell items, 75% beat 50% 21 to 3 in a blind test on 24 of them, but
-# the precursor tablets' stone came out too smooth at 75% (MIX_GROUP). AVIF at
+# the precursor tablets' stone came out too smooth at 75% (MIX_GROUP); items
+# up to 2 x 2 take 50%. AVIF at
 # QUALITY came out a third smaller than WebP at 90 and closer to the
 # unencoded picture (SSIM, over 48 items).
 #
@@ -26,6 +29,8 @@
 #     https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth
 # Run:
 #   .venv-art/bin/python scripts/upscale-art.py [--all] [ids...]
+# With ART_KEEP=<folder> set, the model's own 4x pictures are kept there too
+# (lossless), so a later change to the mix needs no new run of the model.
 
 import json
 import os
@@ -41,12 +46,13 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC_DIR = os.path.join(ROOT, 'art-source', 'items')
 OUT_DIR = os.path.join(ROOT, 'public', 'items')
 MODEL = os.environ.get('ART_MODEL', os.path.join(ROOT, '.venv-art', 'RealESRGAN_x4plus.pth'))
-# Keep in step with ART_SCALE in src/lib/ui-paths.ts.
-ART_SCALE = 2
+# Pixels per art pixel, by the item's size in inventory cells (CELL px each,
+# about): one cell, up to 2 x 2, larger (keep in step with artScale in
+# src/lib/ui-paths.ts).
+SCALE = {'small': 4, 'medium': 4, 'large': 2}
 # How much of the model's picture goes into the mix, the rest being the
-# original: by the item's size in inventory cells (CELL px each, about), for
-# one cell, up to 2 x 2, and larger.
-MIX = {'small': 0.75, 'medium': 0.4, 'large': 0.3}
+# original, by size as SCALE.
+MIX = {'small': 0.75, 'medium': 0.5, 'large': 0.3}
 # Groups (src/data/items.json) that take their own share whatever their size.
 MIX_GROUP = {'Tablets': 0.5}
 CELL = 104
@@ -128,8 +134,18 @@ def upscale(net, src, out):
     # The alpha goes through the model too, so the edges stay as crisp as the colour.
     alpha = run(net, np.repeat(a[..., 3:], 3, 2)).mean(2).round().astype(np.uint8)
     big = Image.fromarray(np.dstack([rgb, alpha]), 'RGBA')
-    size = (im.width * ART_SCALE, im.height * ART_SCALE)
-    model = np.asarray(big.resize(size, Image.LANCZOS)).astype(np.float32)
+    keep = os.environ.get('ART_KEEP')
+    if keep:
+        os.makedirs(keep, exist_ok=True)
+        big.save(os.path.join(keep, os.path.basename(src)), 'WEBP', lossless=True)
+    finish(big, im, out)
+
+
+def finish(big, im, out):
+    """The model's 4x picture of `im`, at the item's scale, mixed and saved with its smaller copies at `out`."""
+    k = scale_of(*im.size)
+    model = big if k == 4 else big.resize((im.width * k, im.height * k), Image.LANCZOS)
+    model = np.asarray(model).astype(np.float32)
     save_all(mix(model, im, group_of(os.path.splitext(os.path.basename(out))[0])), out)
 
 
@@ -145,16 +161,24 @@ def group_of(iid):
     return _groups.get(iid)
 
 
-def mix_of(w, h, group=None):
-    """How much of the model goes into an item's mix: its group's own share (MIX_GROUP), else by its size (the original art's, px): one cell, up to 2 x 2 (1 x 2, 2 x 1, 2 x 2), or larger."""
-    if group in MIX_GROUP:
-        return MIX_GROUP[group]
+def size_of(w, h):
+    """An item's size class by its art (px): 'small' (one cell), 'medium' (up to 2 x 2: 1 x 2, 2 x 1, 2 x 2) or 'large'."""
     cw, ch = max(1, round(w / CELL)), max(1, round(h / CELL))
-    return MIX['small'] if cw == ch == 1 else MIX['medium'] if cw <= 2 and ch <= 2 else MIX['large']
+    return 'small' if cw == ch == 1 else 'medium' if cw <= 2 and ch <= 2 else 'large'
+
+
+def scale_of(w, h):
+    """Pixels per art pixel in an item's picture (SCALE)."""
+    return SCALE[size_of(w, h)]
+
+
+def mix_of(w, h, group=None):
+    """How much of the model goes into an item's mix: its group's own share (MIX_GROUP), else by its size (MIX)."""
+    return MIX_GROUP[group] if group in MIX_GROUP else MIX[size_of(w, h)]
 
 
 def mix(model, im, group=None):
-    """The model's picture (float RGBA at ART_SCALE) mixed with the original enlarged smoothly, by mix_of; the model's alpha, whose edges are crisper.
+    """The model's picture (float RGBA at the item's scale) mixed with the original enlarged smoothly, by mix_of; the model's alpha, whose edges are crisper.
 
     Each picture's colour counts by how opaque it is there: the original is
     black where it is clear, so where the model's edge reaches past the

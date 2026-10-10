@@ -833,20 +833,27 @@ doesn't reveal the answer.
 
 poe2db's art is small (about 104 px per inventory cell, so 108 × 108 for a
 ring) and lossy, and the game draws it bigger than that. The site serves
-copies upscaled with Real-ESRGAN (x4plus, scaled down to 2× and mixed with
-the smoothly enlarged original, which beat other models and mixes in blind
-tests: 75% of the model for one-cell items, which are drawn the most
-enlarged, except precursor tablets at 50%, whose stone it smooths too much;
-40% up to 2 × 2 and 30% for larger ones) from `public/items/`, as AVIF (a third smaller than WebP, and
-closer to the unencoded picture). Small spots load smaller copies:
-`public/items/128/` for thumbnails, and `128/` or `256/` by screen sharpness
-for the codex's tiles and the start page (`itemThumb`, `itemSrcset` in
-`src/lib/ui-paths.ts`); only the question and the codex's item page load the
-full size. For new items, run `scripts/upscale-art.py` (its header has the
-one-time setup: a Python venv with torch for the CPU and the model file). It
-only does the items that have no upscaled copies yet. All sizes in the code
-stay in the original art's pixels (`ART_SCALE` in `src/lib/ui-paths.ts`), and
-`tests/itemArt.test.ts` checks every item has its copies.
+copies upscaled with Real-ESRGAN (x4plus) from `public/items/`, as AVIF (a
+third smaller than WebP, and closer to the unencoded picture):
+
+- **Resolution.** 4 pixels per art pixel for items up to 2 × 2 cells, which
+  are drawn the most enlarged (on a phone, or on a big screen under the
+  stage's zoom), and 2 for larger ones (`artScale` in `src/lib/ui-paths.ts`).
+  `items.json` keeps each item's art size (`w`, `h`), so the code works in
+  art pixels and only the bitmaps are finer.
+- **Mix.** Each picture is mixed with the smoothly enlarged original, which
+  beat other models and mixes in blind tests: 75% of the model for one-cell
+  items, except precursor tablets at 50%, whose stone it smooths too much;
+  50% up to 2 × 2 and 30% for larger ones.
+- **Smaller copies.** Small spots load `public/items/128/` for thumbnails,
+  and `128/` or `256/` by screen sharpness for the codex's tiles and the
+  start page (`itemThumb`, `itemSrcset`); only the question and the codex's
+  item page load the full size.
+
+For new items, run `scripts/upscale-art.py` (its header has the one-time
+setup: a Python venv with torch for the CPU and the model file). It only does
+the items that have no upscaled copies yet, and `tests/itemArt.test.ts`
+checks every item has its copies.
 
 After the art changes, rebuild the look-alike table (needs ffmpeg):
 

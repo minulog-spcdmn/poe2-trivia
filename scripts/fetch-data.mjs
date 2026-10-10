@@ -9,7 +9,7 @@
 // Behind a proxy on Node 22+: NODE_USE_ENV_PROXY=1 npm run fetch-data
 
 import { createHash } from 'node:crypto';
-import { mkdir, writeFile, readdir, unlink, access } from 'node:fs/promises';
+import { mkdir, writeFile, readdir, unlink, access, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -100,6 +100,19 @@ async function fetchRetry(url, tries = 6) {
 
 const exists = (p) => access(p).then(() => true, () => false);
 
+/** A WebP file's width and height, from its header. */
+async function webpSize(file) {
+  const b = await readFile(file);
+  const kind = b.toString('latin1', 12, 16);
+  if (kind === 'VP8X') return [b.readUIntLE(24, 3) + 1, b.readUIntLE(27, 3) + 1];
+  if (kind === 'VP8 ') return [b.readUInt16LE(26) & 0x3fff, b.readUInt16LE(28) & 0x3fff];
+  if (kind === 'VP8L') {
+    const v = b.readUInt32LE(21);
+    return [(v & 0x3fff) + 1, ((v >> 14) & 0x3fff) + 1];
+  }
+  throw new Error(`${file}: unknown WebP kind ${kind}`);
+}
+
 async function main() {
   console.log(`Fetching ${SOURCE}`);
   const html = await (await fetchRetry(SOURCE)).text();
@@ -180,7 +193,13 @@ async function main() {
 
   quiz.sort((a, b) => a.name.localeCompare(b.name));
   await mkdir(path.dirname(DATA_FILE), { recursive: true });
-  const out = quiz.map(({ id, name, base, group, category, kind }) => ({ id, name, base, group, category, kind }));
+  // Each item's art size (px of the original art): the site's pictures are
+  // a whole number of times larger (artScale in src/lib/ui-paths.ts).
+  const out = [];
+  for (const { id, name, base, group, category, kind } of quiz) {
+    const [w, h] = await webpSize(path.join(IMG_DIR, `${id}.webp`));
+    out.push({ id, name, base, group, category, kind, w, h });
+  }
   await writeFile(DATA_FILE, JSON.stringify(out, null, 1) + '\n');
 
   const perCat = {};

@@ -199,7 +199,8 @@
              picture through it (fx/moments reveal) and shine from behind its outline. -->
         <div class="art frame" bind:this={artEl}>
           {#key q.itemId + (practice ? ':p' : '')}
-            <ArtImage src={itemImage(q.itemId)} alt="The item to name" scale={4} float round />
+            {@const art = engine.byId.get(q.itemId)!}
+            <ArtImage src={itemImage(q.itemId)} w={art.w} h={art.h} alt="The item to name" scale={4} float round />
           {/key}
         </div>
       </div>
