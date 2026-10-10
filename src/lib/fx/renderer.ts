@@ -472,13 +472,33 @@ void main() {
     v = swirl + rim * 1.2 + exp(-rr * rr * 7.0) * 0.8;
     hot = exp(-rr * rr * 16.0) * 0.9 + rim * 0.2;
   } else if (type == 5) {
-    // Screen edge glow. q: width (px), noise.
-    vec2 e = vHalf - abs(vP);
-    float d = min(e.x, e.y);
-    float g = exp(-d / vQ.x);
-    if (g > 0.004) {
+    // Screen edge glow. q: width (px), noise, smoke, flow (px it has
+    // been carried in). r: hot cores.
+    vec2 e = max(vHalf - abs(vP), 0.0);
+    // Each edge's light, joined as light adds up: brighter into the corners,
+    // and round there, with no seam along the diagonal. Read back as a
+    // distance (d), that is the distance in from a frame with round corners.
+    vec2 ge = exp(-e / vQ.x);
+    float g = 1.0 - (1.0 - ge.x) * (1.0 - ge.y);
+    float d = -log(max(g, 1e-6)) * vQ.x;
+    // The smoke hugs the edges.
+    float reach = exp(-d / vQ.x) * vQ.z;
+    if (g > 0.004 || reach > 0.004) {
       float n = fbm(vP * 0.004 + vec2(seed, time * 0.35));
-      v = g * mix(1.0, 0.3 + 1.4 * n, vQ.y);
+      v = g * mix(1.0, 0.3 + 1.4 * n, vQ.y) * (1.0 - 0.6 * vQ.z);
+      if (reach > 0.004) {
+        // Smoke curling in from the edges: warped noise pinched into thin
+        // threads, in patches, carried in by flow (the noise zooms in on the
+        // middle of the screen, so all of it drifts inward, seamlessly).
+        float zoom = 1.0 + vQ.w / max(vHalf.x, vHalf.y);
+        vec2 P = vP * zoom / (vQ.x * 1.1) + seed * 7.0;
+        vec2 w = vec2(fbm(P * 0.5 + vec2(0.0, time * 0.4)), fbm(P * 0.5 + vec2(5.2, 1.3)));
+        float ridge = 1.0 - abs(2.0 * fbm(P + 2.2 * w) - 1.0);
+        float clump = smoothstep(0.38, 0.72, fbm(P * 0.35 + 1.5 * w + 9.0));
+        float thread = pow(ridge, 7.0);
+        v += (thread * 1.1 + 0.2 * clump) * clump * reach;
+        hot = pow(ridge, 24.0) * clump * reach * vR.x;
+      }
     }
   } else if (type == 6) {
     // Soft radial flash. q: radius.
