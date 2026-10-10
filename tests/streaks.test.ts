@@ -30,3 +30,15 @@ test('in Delve the fire grows over a long run, and only burns blue deep down', a
   assert.equal(burnsBlue(heatOf(BLUE_FROM, true), true), false, 'not blue at seven');
   // A streak can't be longer than the depth: blue fire never comes before depth 21.
 });
+
+test('a run of daily answers burns from the first day and grows every day, quickly at first', async () => {
+  const { DAILY_BLUE_FROM, DAILY_FULL, dailyBurnsBlue, dailyHeatOf } = await import('../src/lib/fx/streaks.ts');
+  assert.equal(dailyHeatOf(0), 0);
+  assert.ok(dailyHeatOf(1) > 0.1, 'lit on day one');
+  for (let d = 1; d < DAILY_FULL; d++) assert.ok(dailyHeatOf(d + 1) > dailyHeatOf(d), `grows from day ${d} to ${d + 1}`);
+  assert.ok(dailyHeatOf(7) - dailyHeatOf(1) > dailyHeatOf(100) - dailyHeatOf(30), 'the first week grows more than days 30 to 100');
+  assert.equal(dailyHeatOf(DAILY_FULL), 1);
+  assert.equal(dailyHeatOf(1000), 1, 'never past full');
+  assert.equal(dailyBurnsBlue(DAILY_BLUE_FROM - 1), false);
+  assert.equal(dailyBurnsBlue(DAILY_BLUE_FROM), true);
+});

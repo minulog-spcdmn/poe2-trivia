@@ -41,3 +41,21 @@ export function heatOf(streak: number, delve = false): number {
 export function burnsBlue(heat: number, delve = false): boolean {
   return heat > 0 && heat >= heatOf(delve ? DELVE_BLUE_FROM : BLUE_FROM, delve);
 }
+
+/**
+ * Today's unique (the start page): a run of days burns with the same fire,
+ * lit from the very first day and growing with every day after, quickly at
+ * first (the first week is when a habit is won or lost) and ever more
+ * slowly, full after a year. It turns blue at a month and stays blue.
+ */
+export const DAILY_FULL = 365;
+export const DAILY_BLUE_FROM = 30;
+
+/** How hard a run of `days` burns, 0 to 1: a little more each day, on a log curve. */
+export function dailyHeatOf(days: number): number {
+  if (days < 1) return 0;
+  return Math.min(1, Math.log1p(days) / Math.log1p(DAILY_FULL));
+}
+
+/** Whether a run of `days` burns blue. */
+export const dailyBurnsBlue = (days: number) => days >= DAILY_BLUE_FROM;

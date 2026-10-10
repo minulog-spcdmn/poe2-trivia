@@ -14,7 +14,9 @@
   import { answerDaily, answeredOn, askOne, dailyGame, dailyQuestion, dayNumber, loadDaily, nextIn, saveDaily, streakOn, utcDay } from '../lib/daily';
   import { itemImage } from '../lib/ui';
   import { sfx } from '../lib/sound';
-  import { reveal } from '../lib/fx/moments';
+  import { ablaze, doused, reveal, turnsBlue, twinkle } from '../lib/fx/moments';
+  import { onFxChange, type Handle } from '../lib/fx/core';
+  import { dailyBurnsBlue, dailyHeatOf } from '../lib/fx/streaks';
   import ArcaneCircle from './ArcaneCircle.svelte';
   import ArtImage from './ArtImage.svelte';
 
@@ -55,6 +57,17 @@
   onMount(() => () => clearTimeout(settleTimer));
   const glow = $derived(answered && !settled);
 
+  // The run of days burns as a streak does in the game (lib/fx/streaks):
+  // answered just now, the fire starts at yesterday's run and grows into
+  // today's before the player's eyes; a miss puts it out.
+  /** Yesterday's run, while today's answer lands (null once the fire has caught up, or at load). */
+  let growingFrom = $state<number | null>(null);
+  let growTimer: ReturnType<typeof setTimeout> | undefined;
+  onMount(() => () => clearTimeout(growTimer));
+  /** The answer that ended a run was given just now (not found at load). */
+  let justMissed = $state(false);
+  const burning = $derived(growingFrom ?? streak);
+
   let optEls: HTMLButtonElement[] = $state([]);
   let artEl: HTMLElement | null = $state(null);
   let practiceEl: HTMLButtonElement | null = $state(null);
@@ -76,8 +89,14 @@
     settleTimer = setTimeout(() => (settled = true), SETTLE_MS);
     if (practice) practicePicked = i;
     else {
+      const before = streakOn(rec, today);
       rec = answerDaily(rec, today, i, good);
       saveDaily(rec);
+      justMissed = !good && before > 0;
+      // Yesterday's fire catches as the badge comes in, and grows into today's a moment later.
+      growingFrom = good ? before : null;
+      clearTimeout(growTimer);
+      growTimer = setTimeout(() => (growingFrom = null), BADGE_IN_MS + 900);
     }
     // Into the codex, as any question answered in a game.
     const asked = q;
@@ -99,6 +118,62 @@
       reveal({ answer: optEls[rightIdx], chosen: good ? null : optEls[i], art: artEl, verdict: null, verdictTone: good ? 'good' : 'bad', good, streak: Math.max(1, practice ? 1 : streak) });
       practiceEl?.focus({ preventScroll: true });
     });
+  }
+
+  /** How tall the fire may lick up from the badge: about half the scoreboard's, as the answers sit just above. */
+  const FLAMES = 0.55;
+  /** The badge's entrance (its in:scale delay and duration below). */
+  const BADGE_IN_DELAY = 350;
+  const BADGE_IN_MS = BADGE_IN_DELAY + 400 + 50;
+
+  /**
+   * Svelte action: the badge burns for a run of `days`, a little hotter
+   * every day, blue from a month (lib/fx/streaks). A run that grows while
+   * shown flares up as it catches; turning blue, it bursts, as in the game.
+   */
+  function burn(node: HTMLElement, days: number) {
+    let fire: Handle | null = null;
+    let lit = 0;
+    // Not before the badge has scaled in: a fire lit on a box still growing from nothing has no room and never catches.
+    let ready = false;
+    const light = () => {
+      fire?.stop(0.5);
+      fire = ready && lit > 0 ? ablaze(node, FLAMES * dailyHeatOf(lit), dailyBurnsBlue(lit)) : null;
+    };
+    const catches = setTimeout(() => {
+      ready = true;
+      light();
+    }, BADGE_IN_MS);
+    const set = (next: number, first = false) => {
+      if (next === lit) return;
+      const was = lit;
+      lit = next;
+      light();
+      if (!first && next > was) {
+        twinkle(node);
+        if (dailyBurnsBlue(next) && !dailyBurnsBlue(was)) turnsBlue(node);
+      }
+    };
+    set(days, true);
+    // Effects switched off and on, or the GL context lost and restored, wipe every shape: light it again.
+    const relight = onFxChange(() => {
+      fire?.stop(0);
+      fire = null;
+      light();
+    });
+    return {
+      update: (next: number) => set(next),
+      destroy: () => {
+        clearTimeout(catches);
+        relight();
+        fire?.stop(0.3);
+      },
+    };
+  }
+
+  /** Svelte action: a run just ended goes out in a puff of smoke, as a broken streak in the game. */
+  function douse(node: HTMLElement, now: boolean) {
+    if (now) requestAnimationFrame(() => doused(node));
   }
 
   function practiceMore() {
@@ -201,13 +276,19 @@
           <!-- Practice keeps out of the streak, so the streak keeps out of practice. -->
           <span>{upper(nextIn(now, 'daily'))}</span>
         {:else}
-          {#if streak >= 2}
-            <!-- The game's streak badge, counted in days. -->
-            <b class="streak"><span class="num">{streak}</span> days in a row</b>
-          {:else if streak === 1}
-            <span>Named today</span>
-          {:else if todays && todays.ended >= 2}
-            <span>Streak ended at <span class="num">{todays.ended}</span> days</span>
+          {#if streak >= 1}
+            <!-- The game's streak badge, counted in days, burning with the game's fire. -->
+            <b
+              class="streak"
+              class:blue={dailyBurnsBlue(burning)}
+              style:--heat={dailyHeatOf(burning)}
+              use:burn={burning}
+              in:scale={{ start: 0.5, duration: 400, delay: BADGE_IN_DELAY }}
+            >
+              {#if streak === 1}First day{:else}<span class="num">{streak}</span> days in a row{/if}
+            </b>
+          {:else if todays && todays.ended >= 1}
+            <span use:douse={justMissed}>Streak ended at <span class="num">{todays.ended}</span> {todays.ended === 1 ? 'day' : 'days'}</span>
           {:else}
             <span>Missed today</span>
           {/if}
@@ -614,12 +695,25 @@
     letter-spacing: 0.14em;
     text-transform: uppercase;
     white-space: nowrap;
+    /* Orange, blue from a month on; hotter (--heat, 0 to 1) every day, as the scoreboard's fire. */
+    --flame: rgb(255, 110, 30);
     color: #ffe2b0;
     background: linear-gradient(180deg, rgba(160, 70, 20, 0.6), rgba(80, 25, 5, 0.6));
-    border: 1px solid rgba(255, 150, 70, 0.6);
+    border: 1px solid color-mix(in srgb, var(--flame) calc(50% + 50% * var(--heat, 0)), transparent);
     border-radius: 999px;
-    box-shadow: 0 0 16px rgba(255, 120, 40, 0.35);
+    box-shadow:
+      0 0 calc(10px + 18px * var(--heat, 0)) calc(3px * var(--heat, 0)) color-mix(in srgb, var(--flame) calc(30% + 40% * var(--heat, 0)), transparent),
+      0 calc(-4px * var(--heat, 0)) calc(12px + 20px * var(--heat, 0)) color-mix(in srgb, var(--flame) calc(15% + 35% * var(--heat, 0)), transparent);
     text-shadow: 0 0 10px rgba(255, 170, 90, 0.7);
+    transition:
+      box-shadow 1s,
+      border-color 1s;
+  }
+  .streak.blue {
+    --flame: rgb(70, 140, 255);
+    color: #dceaff;
+    background: linear-gradient(180deg, rgba(30, 70, 160, 0.6), rgba(10, 25, 80, 0.6));
+    text-shadow: 0 0 10px rgba(120, 170, 255, 0.7);
   }
   /* It smoulders: a wider glow fades in and out on a layer of its own. */
   .streak::before {
@@ -627,7 +721,7 @@
     position: absolute;
     inset: -1px;
     border-radius: inherit;
-    box-shadow: 0 0 24px rgba(255, 140, 50, 0.4);
+    box-shadow: 0 0 24px color-mix(in srgb, var(--flame) 40%, transparent);
     opacity: 0;
     animation: smoulder-badge 1.6s ease-in-out infinite;
     pointer-events: none;
