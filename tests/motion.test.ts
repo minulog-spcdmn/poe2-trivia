@@ -82,15 +82,21 @@ test('places go to and from a frame of thousandths, any frame', () => {
   assert.deepEqual(p, { x: 200, y: 640 });
   assert.deepEqual(within(p, f).map(Math.round), [250, 1100]);
   assert.equal(frameOf([]), null);
-  // Beyond the frame, as far off it as where recorded, at this screen's scale: a frame recorded as wide in pixels as
-  // it is here (400 units across, 576 px) lays a place 288 px past its right edge 200 units past it, whatever its own width.
-  const g: [number, number, number, number] = [100, 200, 500, 600];
-  const size: [number, number] = [576, 360];
-  const off = place(1500, 500, g, size);
-  assert.ok(Math.abs(off.x - 700) < 1e-6 && Math.abs(off.y - 400) < 1e-6, JSON.stringify(off));
-  assert.deepEqual(within(off, g, size).map(Math.round), [1500, 500]);
-  assert.deepEqual(within({ x: 50, y: 150 }, g, size).map((v) => Math.round(v)), [-125, -125]);
-  assert.deepEqual(place(-125, -125, g, size), { x: 50, y: 150 });
+  // Beside the frame, the same share of the way to the screen's edge as on the screen recorded: a frame 1000 to 1500
+  // across a 2500 wide room there, 400 to 600 across the bot's 1000 here; 2000 there (halfway to the edge) is 800 here.
+  const src = [1000, 400, 1500, 900, 2500, 1300];
+  const g2: [number, number, number, number] = [400, 300, 600, 700];
+  const right = place(2000, 500, g2, src);
+  assert.ok(Math.abs(right.x - 800) < 1e-6 && Math.abs(right.y - 500) < 1e-6, JSON.stringify(right));
+  // Halfway from the frame's left edge to the screen's: 500 there, 200 here.
+  assert.ok(Math.abs(place(-1000, 500, g2, src).x - 200) < 1e-6);
+  // And back, any of them.
+  for (const [u, v] of [[2000, 500], [-1000, -300], [300, 1700]]) assert.deepEqual(within(place(u, v, g2, src), g2, src).map(Math.round), [u, v]);
+  // Nothing that stayed on the screen recorded leaves this one.
+  for (let x = 0; x <= 2500; x += 100) {
+    const p = place(((x - 1000) / 500) * 1000, 500, g2, src);
+    assert.ok(p.x >= 0 && p.x <= 1000, `${x}: ${p.x}`);
+  }
 });
 
 test("the recorded rests land on the bot's own: its lean where the player rested on their pick, the others on what it's torn between", () => {

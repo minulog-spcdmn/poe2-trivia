@@ -28,8 +28,8 @@ export interface ClickStretch {
   kind: 'card' | 'answer' | 'next';
   mode?: 'name' | 'art';
   n?: number;
-  /** Its frame's size where it was recorded (pixels): how far off it a place beyond it lies. */
-  size: Size;
+  /** Where its frame was on the screen it was recorded on (Src). */
+  src: Src;
   /** Positions, pairs of across and down in thousandths of the frame, every STEP ms. */
   lead: number[];
   reach: number[];
@@ -44,9 +44,9 @@ export interface ClickStretch {
 }
 export interface StreamStretch {
   kind: 'wait' | 'lobby';
-  size: Size;
-  /** Waiting through someone's card and then their question: the frame's size from `switchAt` (samples) on. */
-  then?: Size;
+  src: Src;
+  /** Waiting through someone's card and then their question: where the frame was from `switchAt` (samples) on. */
+  then?: Src;
   switchAt?: number;
   path: number[];
   /** Clicks at nothing on the way (ms from its start). */
@@ -56,15 +56,19 @@ export type Stretch = ClickStretch | StreamStretch;
 
 const ALL = data.episodes as Stretch[];
 
-/** A frame's size, in pixels. */
-export type Size = [number, number];
+/**
+ * Where a frame was on the screen a stretch was recorded on, in pixels:
+ * its left, top, right and bottom from the room's top left, then the room's
+ * width and its height down to the screen's bottom.
+ */
+export type Src = number[];
 
-/** A path the hand follows: times (ms, on the bot's clock), places in its frame's thousandths, and that frame's size as recorded. */
+/** A path the hand follows: times (ms, on the bot's clock), places in its frame's thousandths, and where that frame was as recorded. */
 export interface Track {
   t: number[];
   u: number[];
   v: number[];
-  size: Size[];
+  src: Src[];
 }
 
 const between = (rng: Rng, a: number, b: number) => a + (b - a) * rng();
@@ -73,37 +77,47 @@ const smooth = (k: number) => {
   return x * x * (3 - 2 * x);
 };
 
-/** A unit of the room in pixels of a desktop screen (1440 by 900, reach.ts), across and down. */
-const PX = { x: 1.44, y: 0.9 };
-
-/** How much bigger the frame `f` is here than one `size` pixels was where it was recorded. */
-const scaleOf = (f: Box, size: Size) => (((f[2] - f[0]) * PX.x) / size[0] + ((f[3] - f[1]) * PX.y) / size[1]) / 2;
+/** The bot's room (reach.ts): across, 0 to 1000; down, its screen's bottom (a 900 high screen, the room from 65 down). */
+export const ROOM: [number, number] = [1000, ((900 - 65) / 900) * 1000];
 
 /**
- * Where `u`, `v` (thousandths) are in the frame `f`: within it, stretched to
- * it; beyond it, as far off it as it was where recorded (`size`), at this
- * screen's scale, so a hand resting beside the answers rests beside them
- * here too, not off the edge of the screen.
+ * One way across or down: from the recorded screen's (its frame from `a`
+ * to `b`, the room from 0 to `end`, pixels) onto this one's (the frame from
+ * `lo` to `hi`, the room from 0 to `top`): within the frame, stretched to
+ * it; beside it, the same share of the space between it and the screen's
+ * edge, so whatever stayed on the recorded screen stays on this one.
  */
-export function place(u: number, v: number, f: Box, size?: Size): Spot {
-  const k = size ? scaleOf(f, size) : 0;
-  const along = (w: number, lo: number, hi: number, unit: number, src: number) => {
-    const inside = Math.min(1000, Math.max(0, w));
-    const off = size ? (((w - inside) / 1000) * src * k) / unit : ((w - inside) / 1000) * (hi - lo);
-    return lo + (inside / 1000) * (hi - lo) + off;
-  };
-  return { x: along(u, f[0], f[2], PX.x, size?.[0] ?? 0), y: along(v, f[1], f[3], PX.y, size?.[1] ?? 0) };
+function across(x: number, a: number, b: number, end: number, lo: number, hi: number, top: number): number {
+  if (x >= a && x <= b) return lo + ((x - a) / Math.max(1, b - a)) * (hi - lo);
+  if (x < a) return lo - ((a - x) / Math.max(a, (b - a) * 0.25)) * lo;
+  return hi + ((x - b) / Math.max(end - b, (b - a) * 0.25)) * (top - hi);
+}
+function back(y: number, a: number, b: number, end: number, lo: number, hi: number, top: number): number {
+  if (y >= lo && y <= hi) return a + ((y - lo) / Math.max(1e-6, hi - lo)) * (b - a);
+  if (y < lo) return a - ((lo - y) / Math.max(1e-6, lo)) * Math.max(a, (b - a) * 0.25);
+  return b + ((y - hi) / Math.max(1e-6, top - hi)) * Math.max(end - b, (b - a) * 0.25);
 }
 
-/** And back: where a spot is in `f`'s thousandths. */
-export function within(p: Spot, f: Box, size?: Size): [number, number] {
-  const k = size ? scaleOf(f, size) : 0;
-  const back = (x: number, lo: number, hi: number, unit: number, src: number) => {
-    if (!size || (x >= lo && x <= hi)) return ((x - lo) / (hi - lo)) * 1000;
-    const edge = x < lo ? lo : hi;
-    return (x < lo ? 0 : 1000) + (((x - edge) * unit) / (src * k)) * 1000;
-  };
-  return [back(p.x, f[0], f[2], PX.x, size?.[0] ?? 1), back(p.y, f[1], f[3], PX.y, size?.[1] ?? 1)];
+/**
+ * Where `u`, `v` (thousandths of the frame as recorded) are in the frame
+ * `f` on this bot's screen: within it, stretched to it; beside it, as far
+ * toward the screen's edge as it was on the screen recorded (`src`), so a
+ * hand resting beside the answers rests beside them here, and never off
+ * the screen.
+ */
+export function place(u: number, v: number, f: Box, src?: Src): Spot {
+  if (!src) return { x: f[0] + (u / 1000) * (f[2] - f[0]), y: f[1] + (v / 1000) * (f[3] - f[1]) };
+  const [l, t, r, b, w, h] = src;
+  return { x: across(l + (u / 1000) * (r - l), l, r, w, f[0], f[2], ROOM[0]), y: across(t + (v / 1000) * (b - t), t, b, h, f[1], f[3], ROOM[1]) };
+}
+
+/** And back: where a spot is in thousandths of the frame as recorded. */
+export function within(p: Spot, f: Box, src?: Src): [number, number] {
+  if (!src) return [((p.x - f[0]) / (f[2] - f[0])) * 1000, ((p.y - f[1]) / (f[3] - f[1])) * 1000];
+  const [l, t, r, b, w, h] = src;
+  const x = back(p.x, l, r, w, f[0], f[2], ROOM[0]);
+  const y = back(p.y, t, b, h, f[1], f[3], ROOM[1]);
+  return [((x - l) / (r - l)) * 1000, ((y - t) / (b - t)) * 1000];
 }
 
 /** The frame of what's on screen: the union of `boxes`. */
@@ -262,11 +276,11 @@ export function track(
   from: [number, number] | null,
   to: [number, number] | null = null,
   easeMs = 600,
-  size: (i: number) => Size = () => [1000, 1000],
+  src: (i: number) => Src = () => [0, 0, 1000, 1000, 1000, 1000],
   shift: (i: number, t: number) => [number, number] = () => [0, 0],
 ): Track {
   const n = pairs.length / 2;
-  const out: Track = { t: [], u: [], v: [], size: [] };
+  const out: Track = { t: [], u: [], v: [], src: [] };
   // Cut where it begins partway in (times below 0).
   const first = Math.max(0, times.findIndex((x) => x >= 0));
   const [u0, v0] = [pairs[2 * first], pairs[2 * first + 1]];
@@ -289,7 +303,7 @@ export function track(
     out.t.push(start + times[i]);
     out.u.push(u + du);
     out.v.push(v + dv);
-    out.size.push(size(i));
+    out.src.push(src(i));
   }
   return out;
 }
@@ -310,7 +324,7 @@ export function leadTrack(
   const shifted = onto ? steer(e, onto) : null;
   const mask = moving(e.lead);
   const times = fitLead(e.lead, Math.max(0, reachAt - start), speed * w.pace, w.tempo);
-  return track(e.lead, times, start, from, null, 600, () => e.size, (i, t) => {
+  return track(e.lead, times, start, from, null, 600, () => e.src, (i, t) => {
     const [bu, bv] = w.bend(t);
     const [su, sv] = shifted?.[i] ?? [0, 0];
     return [su + bu * mask[i], sv + bv * mask[i]];
@@ -322,7 +336,7 @@ export function reachTrack(e: ClickStretch, from: [number, number], to: [number,
   const n = e.reach.length / 2;
   const times: number[] = [0];
   for (let i = 1; i < n; i++) times.push(times[i - 1] + STEP * speed * w.pace * w.tempo(i));
-  return track(e.reach, times, start, from, to, Math.min(400, times[n - 1] / 2 || 1), () => e.size, (i, t) => {
+  return track(e.reach, times, start, from, to, Math.min(400, times[n - 1] / 2 || 1), () => e.src, (i, t) => {
     const fade = 1 - smooth(i / Math.max(1, n - 1));
     const [bu, bv] = w.bend(t);
     return [bu * fade, bv * fade];
@@ -331,24 +345,25 @@ export function reachTrack(e: ClickStretch, from: [number, number], to: [number,
 
 /**
  * A stream stretch (waiting, the lobby) from `start`, eased in from `from`,
- * wavered (`w`), now and then begun partway in (at one of its rests, in its
- * first half, `rng`); and when its clicks at nothing fall.
+ * wavered (`w`), begun partway in (at one of its rests, `rng`); and when its
+ * clicks at nothing fall.
  */
 export function streamTrack(e: StreamStretch, from: [number, number], start: number, speed = 1, w: Waver = STEADY, rng?: Rng): { track: Track; presses: number[] } {
   const n = e.path.length / 2;
   const mask = moving(e.path);
-  const rests = mask.map((m, i) => (m === 0 && (i === 0 || mask[i - 1] > 0) && i < n / 2 ? i : -1)).filter((i) => i > 0);
-  const skip = rng && rests.length && rng() < 0.5 ? rests[Math.floor(rng() * rests.length)] : 0;
+  // Begun at one of its rests (not the stir it begins with, which every hand would make at once).
+  const rests = mask.map((m, i) => (m === 0 && (i === 0 || mask[i - 1] > 0) && i < n * 0.7 ? i : -1)).filter((i) => i > 0);
+  const skip = rng && rests.length ? rests[Math.floor(rng() * rests.length)] : 0;
   const times: number[] = [];
   let t = -skip * STEP * speed * w.pace;
   for (let i = 0; i < n; i++) {
     if (i) t += STEP * speed * w.pace * (mask[i] ? w.tempo(i) : 1);
     times.push(t);
   }
-  const size = (i: number) => (e.then && i >= (e.switchAt ?? Infinity) ? e.then : e.size);
+  const src = (i: number) => (e.then && i >= (e.switchAt ?? Infinity) ? e.then : e.src);
   const presses = (e.presses ?? []).map((p) => (p - skip * STEP) * speed * w.pace).filter((p) => p >= 0);
   return {
-    track: track(e.path, times, start, from, null, 600, size, (i, tt) => {
+    track: track(e.path, times, start, from, null, 600, src, (i, tt) => {
       const [bu, bv] = w.bend(tt);
       return [bu * mask[i], bv * mask[i]];
     }),
@@ -356,12 +371,12 @@ export function streamTrack(e: StreamStretch, from: [number, number], start: num
   };
 }
 
-/** Where a track is at `now` (thousandths of its frame, and the frame's size as recorded): between its samples; held at its ends. */
-export function trackAt(tr: Track, now: number): [number, number, Size] {
+/** Where a track is at `now` (thousandths of its frame, and where the frame was as recorded): between its samples; held at its ends. */
+export function trackAt(tr: Track, now: number): [number, number, Src] {
   const n = tr.t.length;
-  if (!n) return [500, 500, [1000, 1000]];
-  if (now <= tr.t[0]) return [tr.u[0], tr.v[0], tr.size[0]];
-  if (now >= tr.t[n - 1]) return [tr.u[n - 1], tr.v[n - 1], tr.size[n - 1]];
+  if (!n) return [500, 500, [0, 0, 1000, 1000, 1000, 1000]];
+  if (now <= tr.t[0]) return [tr.u[0], tr.v[0], tr.src[0]];
+  if (now >= tr.t[n - 1]) return [tr.u[n - 1], tr.v[n - 1], tr.src[n - 1]];
   let lo = 0;
   let hi = n - 1;
   while (hi - lo > 1) {
@@ -370,7 +385,7 @@ export function trackAt(tr: Track, now: number): [number, number, Size] {
     else hi = mid;
   }
   const k = (now - tr.t[lo]) / Math.max(1, tr.t[hi] - tr.t[lo]);
-  return [tr.u[lo] + (tr.u[hi] - tr.u[lo]) * k, tr.v[lo] + (tr.v[hi] - tr.v[lo]) * k, tr.size[lo]];
+  return [tr.u[lo] + (tr.u[hi] - tr.u[lo]) * k, tr.v[lo] + (tr.v[hi] - tr.v[lo]) * k, tr.src[lo]];
 }
 
 /**

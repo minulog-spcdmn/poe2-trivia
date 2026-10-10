@@ -11,9 +11,12 @@
 //
 // Positions are kept relative to what was on screen (the cards, the answers
 // and the art, the lobby's rows and modes: 0 to 1000 across and down them,
-// beyond on either side), so they map onto any screen, with that frame's
-// size in pixels (`size`) for how far off it a place beyond it lies; a
-// click's spot relative to what it pressed. A click's stretch also keeps
+// beyond on either side), so they map onto any screen, with where that
+// frame was on the screen it was recorded on (`src`: its left, top, right
+// and bottom from the room's top left, then the room's width and height to
+// the screen's bottom, in pixels), so a place beyond it keeps its share of
+// the space between it and the screen's edge; a click's spot relative to
+// what it pressed. A click's stretch also keeps
 // where its lead rested (`dwells`: from which sample to which, on which
 // answer or card if any, and where on it) and which one it picked in the
 // end (`pick`), so a bot can rest on its own. Sampled every STEP ms. The recordings
@@ -88,7 +91,12 @@ for (const file of files) {
   const isAnswer = (k) => k.startsWith('opt:') || k === 'art';
   const isLobby = (k) => k.startsWith('row:') || k.startsWith('card:');
   const rel = (x, y, f) => [Math.round(((x - f[0]) / (f[2] - f[0])) * 1000), Math.round(((y - f[1]) / (f[3] - f[1])) * 1000)];
-  const sizeOf = (f) => [Math.round(f[2] - f[0]), Math.round(f[3] - f[1])];
+  /** Where a frame was on the screen: from the room's top left, and the room's size down to the screen's bottom (pixels). */
+  const srcOf = (f, t) => {
+    const l = layouts[Math.max(0, lastIndex(LT, t))];
+    const g = l.boxes.game ?? [0, 0, l.w, l.h];
+    return [f[0] - g[0], f[1] - g[1], f[2] - g[0], f[3] - g[1], g[2] - g[0], l.h - g[1]].map(Math.round);
+  };
   /** The pointer from..to every STEP ms, relative to `frameAt(t)`. */
   const path = (from, to, frameAt) => {
     const out = [];
@@ -139,7 +147,7 @@ for (const file of files) {
       }
       i = j + 1;
     }
-    episodes.push({ kind, ...extra, size: sizeOf(f), lead, reach, aim, hold: holdOf(d[0]), dwells, pick: hit ? Number(hit[0].split(':')[1]) : -1 });
+    episodes.push({ kind, ...extra, src: srcOf(f, d[0]), lead, reach, aim, hold: holdOf(d[0]), dwells, pick: hit ? Number(hit[0].split(':')[1]) : -1 });
   };
 
   for (const span of spans) {
@@ -169,7 +177,7 @@ for (const file of files) {
     const presses = downs.filter((h) => h[0] >= from && h[0] <= to).map((h) => Math.round(h[0] - from));
     // Its frame, and from which sample on the second one (the answers) if it changes.
     const switchAt = answers ? Math.max(0, Math.ceil((b.t - from) / STEP)) : p.length / 2;
-    episodes.push({ kind: 'wait', size: sizeOf(cards), ...(answers ? { then: sizeOf(answers), switchAt } : {}), path: p, presses });
+    episodes.push({ kind: 'wait', src: srcOf(cards, a.t + 1500), ...(answers ? { then: srcOf(answers, b.t + 1500), switchAt } : {}), path: p, presses });
   }
 
   // The lobby: in stretches between its clicks.
@@ -184,7 +192,7 @@ for (const file of files) {
       const to = cuts[i] - 600;
       if (to - from < 3000) continue;
       const p = path(from, to, () => f);
-      if (p) episodes.push({ kind: 'lobby', size: sizeOf(f), path: p });
+      if (p) episodes.push({ kind: 'lobby', src: srcOf(f, from), path: p });
     }
   }
 }

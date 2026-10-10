@@ -207,7 +207,10 @@
         // Pressed as the pointer drawn behind gets there, not before; and once pressed, long enough to see.
         const due = p.trail.filter((x) => x.t <= now - BEHIND_MS).at(-1) ?? p.trail[0];
         const dueKind = due?.at[3] ?? kind;
-        const pressing = actionOf(dueKind) === PRESSED;
+        // A press just heard: drawn where it is now, not behind, so the click shows where it happens, as it happens
+        // (what it pressed goes as it's let go, and a pointer still on its way there would seem to click from afar).
+        const pressNow = actionOf(kind) === PRESSED;
+        const pressing = pressNow || actionOf(dueKind) === PRESSED;
         if (!anchor) {
           // Its element just went: where it was drawn, a moment longer.
           const held = drawn.get(c.key);
@@ -231,7 +234,10 @@
           ps.push(fromAnchor(c2, x2, y2, c2 === code ? r : el2.getBoundingClientRect(), innerHeight));
           ts.push(t);
         }
-        const [tx, ty] = touch || !ps.length ? fromAnchor(code, ax, ay, r, innerHeight) : trailAt(ps, ts, now - BEHIND_MS);
+        const [rx, ry] = touch || pressNow || !ps.length ? fromAnchor(code, ax, ay, r, innerHeight) : trailAt(ps, ts, now - BEHIND_MS);
+        // Never off this screen, however far off the others' place lands here.
+        const tx = Math.min(innerWidth - 16, Math.max(2, rx));
+        const ty = Math.min(innerHeight - 20, Math.max(2, ry));
         let d = drawn.get(c.key);
         // A tap lands where it is; a pointer just come in starts where it is.
         if (!d || touch) drawn.set(c.key, (d = { x: tx, y: ty, tap: d?.tap ?? 0, code, slideUntil: 0, pressUntil: d?.pressUntil ?? 0 }));
@@ -239,7 +245,8 @@
           // Gone over to another element, far from where it was drawn: the two screens place things
           // apart (another layout, a bot's picture of the page), so it slides across rather than jumps.
           const far = Math.hypot(tx - d.x, ty - d.y);
-          if ((code !== d.code && far > JUMP_PX) || far > LEAP_PX) d.slideUntil = now + SLIDE_FOR_MS;
+          if (pressNow) d.slideUntil = 0;
+          else if ((code !== d.code && far > JUMP_PX) || far > LEAP_PX) d.slideUntil = now + SLIDE_FOR_MS;
           d.code = code;
           const k = now < d.slideUntil ? slide : step;
           d.x += (tx - d.x) * k;

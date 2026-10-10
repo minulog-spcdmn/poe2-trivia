@@ -64,8 +64,8 @@ test('a pointer from a guest is checked like any message', () => {
     [16, 0, 0, 0, 0],
     [3, 0, 0, 0], // no such anchor
     [MAX_ANCHOR + 1, 0, 0, 0],
-    [16, -SCALE - 1, 0, 0],
-    [16, 0, 2 * SCALE + 1, 0],
+    [16, -5 * SCALE - 1, 0, 0],
+    [16, 0, 5 * SCALE + 1, 0],
     [0, -1, 0, 0],
     [0, SCALE + 1, 0, 0],
     [16, 0.5, 0, 0],
@@ -187,11 +187,12 @@ test('a pointer on the game as a whole holds still while the game grows or shrin
   assert.equal(deep[1], 2500);
   assert.deepEqual(parseCursorAt([GAME_ANCHOR, 10, GAME_DEPTH * SCALE, 0]), [GAME_ANCHOR, 10, GAME_DEPTH * SCALE, 0]);
   assert.equal(parseCursorAt([GAME_ANCHOR, 10, GAME_DEPTH * SCALE + 1, 0]), undefined);
-  // Anything else goes by its own box: a player's on it; a bot's may lie off it, as far as its size again.
+  // Anything else goes by its own box: a player's on it; a bot's may lie off it, as far as four times its size.
   const card = anchorCode('card:1')!;
   assert.deepEqual(toAnchor(card, 150, 75, { left: 100, top: 50, width: 100, height: 50 }, screenH), [500, 500]);
   assert.deepEqual(parseCursorAt([card, -400, SCALE + 600, 0]), [card, -400, SCALE + 600, 0]);
-  assert.equal(parseCursorAt([card, 10, 2 * SCALE + 1, 0]), undefined);
+  assert.deepEqual(parseCursorAt([card, -3000, 4200, 0]), [card, -3000, 4200, 0]);
+  assert.equal(parseCursorAt([card, 10, 5 * SCALE + 1, 0]), undefined);
 });
 
 test('a pointer is drawn along a curve through where it was heard to be, held at both ends', () => {

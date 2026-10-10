@@ -18,15 +18,13 @@ import { LIT, MOUSE, OFF, PRESSED, SCALE, SEND_EVERY_MS, actionOf, anchorCode, c
 import { session } from '../lib/session.svelte';
 import type { Persona } from './brain';
 import { aimIn, layout as roomLayout, type Box, type Spot } from './reach';
-import { STEP, frameOf, leadTrack, pickClick, pickStream, place, reachTrack, streamTrack, trackAt, waver, within, type ClickStretch, type Stretch, type Track, type Waver } from './motion';
+import { ROOM, STEP, frameOf, leadTrack, pickClick, pickStream, place, reachTrack, streamTrack, trackAt, waver, within, type ClickStretch, type Stretch, type Track, type Waver } from './motion';
 import { between } from './util';
 
 /** A reach takes about this long (ms), as recorded: to begin a click early enough by. */
 const REACH_MS = 550;
 /** On the cards or answers while they come in (ms), the hand's place goes on the room, not on them (they're still flying in). */
 const SETTLE_MS = 1200;
-/** Sent on an element only this near it (units); further, on the room as a whole. */
-const NEAR = 220;
 /** Between stretches of waiting or of the lobby, it rests this long (ms). */
 const REST_MS: [number, number] = [600, 4000];
 const LOBBY_REST_MS: [number, number] = [2000, 12000];
@@ -130,7 +128,7 @@ export class Hand {
     this.pending = { kind, e, w };
     this.presses = [];
     const onto = this.onto(kind === 'card' ? 'card:' : 'opt:', e, torn, this.box(frame, s), s);
-    this.follow(leadTrack(e, within(this.where(now), this.box(frame, s), e.size), now, until, this.speed, { onto, w }), frame);
+    this.follow(leadTrack(e, within(this.where(now), this.box(frame, s), e.src), now, until, this.speed, { onto, w }), frame);
   }
 
   /**
@@ -157,7 +155,7 @@ export class Hand {
         mine.set(index, to);
       }
       const b = l.get(`${prefix}${to}`);
-      return b ? within(place(on[0], on[1], b), f, e.size) : null;
+      return b ? within(place(on[0], on[1], b), f, e.src) : null;
     };
   }
 
@@ -189,7 +187,7 @@ export class Hand {
     const natural = (e.reach.length / 2 - 1) * STEP * this.speed;
     const speed = natural > room * 0.9 ? this.speed * Math.max(0.3, (room * 0.9) / natural) : this.speed;
     this.on = anchor;
-    this.follow(reachTrack(e, within(this.where(now), f, e.size), within(aim, f, e.size), now, speed, w), frame);
+    this.follow(reachTrack(e, within(this.where(now), f, e.src), within(aim, f, e.src), now, speed, w), frame);
     const end = this.track!.t[this.track!.t.length - 1];
     await wait(Math.max(0, end - Date.now()));
     const pressed = Date.now();
@@ -207,10 +205,10 @@ export class Hand {
 
   private where(now: number): Spot {
     if (this.track) {
-      const [u, v, size] = trackAt(this.track, now);
-      const p = place(u, v, this.box(this.frame), size);
-      // Never off the room's sides.
-      this.at = { x: Math.min(995, Math.max(5, p.x)), y: Math.max(5, p.y) };
+      const [u, v, src] = trackAt(this.track, now);
+      const p = place(u, v, this.box(this.frame), src);
+      // Never off its screen.
+      this.at = { x: Math.min(ROOM[0] - 15, Math.max(15, p.x)), y: Math.min(ROOM[1] - 10, Math.max(10, p.y)) };
       if (now >= this.track.t[this.track.t.length - 1]) this.track = null;
     }
     return this.at;
@@ -235,6 +233,8 @@ export class Hand {
       this.on = null;
       // A click it was about to make on what's gone: not any more.
       if (this.pending && s.phase !== 'choosing' && s.phase !== 'question') this.pending = null;
+      // Waiting on the next screen begins a while in, its own while: not all the room's hands at once.
+      if (!this.track) this.restUntil = Math.max(this.restUntil, now + between(400, 4000) * (0.5 + this.persona.hand.still));
     }
     if (!this.live(s)) {
       this.track = null;
@@ -247,9 +247,10 @@ export class Hand {
       const frame = lobby ? 'room' : this.waitFrame(s);
       if (e) {
         this.remember(e);
-        const { track, presses } = streamTrack(e, within(this.where(now), this.box(frame, s), e.size), now, this.speed, waver(Math.random), Math.random);
+        const { track, presses } = streamTrack(e, within(this.where(now), this.box(frame, s), e.src), now, this.speed, waver(Math.random), Math.random);
         this.follow(track, frame);
-        this.presses = presses;
+        // The recorded player clicked at nothing a lot; it, about half as often.
+        this.presses = presses.filter(() => Math.random() < 0.5);
         const end = track.t[track.t.length - 1];
         this.restUntil = end + between(...(lobby ? LOBBY_REST_MS : REST_MS)) * (0.5 + this.persona.hand.still);
       }
@@ -280,17 +281,21 @@ export class Hand {
    * the screen's elements are still coming in.
    */
   private placed(spot: Spot, boxes: Map<string, Box>, now: number): [number, number, number] | null {
+    const s = this.s;
     const settled = now - this.screenAt > SETTLE_MS;
     const rel = (b: Box): [number, number] => [((spot.x - b[0]) / (b[2] - b[0])) * SCALE, ((spot.y - b[1]) / (b[3] - b[1])) * SCALE];
-    // Within reach of the element: no further off it than the wire allows (its own size again).
+    // No further off it than the wire allows.
     const fits = ([x, y]: [number, number]) => x >= -OFF && x <= SCALE + OFF && y >= -OFF && y <= SCALE + OFF;
+    // In a game, the big things on screen (the answers, the cards, the art, Next): a place between or beside them keeps
+    // its place beside them on every screen, however wide; in the lobby and at the end, the rows and the modes too.
+    const game = s?.phase === 'choosing' || s?.phase === 'question' || s?.phase === 'reveal';
+    const big = (k: string) => k.startsWith('opt:') || k.startsWith('card:') || k === 'art' || k === 'next' || (!game && k.startsWith('row:'));
     let best: [string, [number, number]] | null = null;
     if (this.on && boxes.has(this.on) && fits(rel(boxes.get(this.on)!))) best = [this.on, rel(boxes.get(this.on)!)];
     if (!best && settled) {
-      let d = NEAR;
+      let d = Infinity;
       for (const [k, b] of boxes) {
-        // The big things on screen (not the scoreboard's little rows, which would carry it far for a small step).
-        if (!(k.startsWith('opt:') || k.startsWith('card:') || k === 'art' || k === 'next')) continue;
+        if (!big(k)) continue;
         const r = rel(b);
         const far = Math.hypot(Math.max(b[0] - spot.x, 0, spot.x - b[2]), Math.max(b[1] - spot.y, 0, spot.y - b[3]));
         if (far < d && fits(r)) {
@@ -303,9 +308,9 @@ export class Hand {
       const code = anchorCode(best[0]);
       if (code !== null) return [code, Math.round(best[1][0]), Math.round(best[1][1])];
     }
-    const game = anchorCode('game');
+    const code = anchorCode('game');
     const clamp = (v: number) => Math.round(Math.min(SCALE, Math.max(0, v)));
-    return game === null ? null : [game, clamp(spot.x), clamp(spot.y)];
+    return code === null ? null : [code, clamp(spot.x), clamp(spot.y)];
   }
 
   /** Sends where the pointer is, if it moved (`on`: on the page). */

@@ -25,11 +25,11 @@ export const GAME_DEPTH = 4;
 /** The furthest down a position on `anchor` goes. */
 const maxY = (anchor: number) => (anchor === GAME_ANCHOR ? GAME_DEPTH * SCALE : SCALE);
 /**
- * On an element, a position may lie a little off it (a bot's pointer goes
- * on the element nearest it, so it keeps its place beside it on every
- * screen): as far as its own size again on either side.
+ * On an element, a position may lie off it (a bot's pointer goes on the
+ * element nearest it, so it keeps its place beside it on every screen): as
+ * far as four times its own size on either side.
  */
-export const OFF = SCALE;
+export const OFF = 4 * SCALE;
 
 /** An anchor's box on the screen, as getBoundingClientRect gives it. */
 export interface AnchorBox {
