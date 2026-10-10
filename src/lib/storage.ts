@@ -1,4 +1,4 @@
-import { BETA } from './channel.ts';
+import { BETA, LOCAL } from './channel.ts';
 
 /**
  * The effects lab (lab.html, src/lab: dev and beta builds only) marks its
@@ -33,11 +33,13 @@ export const BOT = typeof document !== 'undefined' && document.documentElement.h
  *
  * The beta shares the live game's origin, so its keys start differently: a
  * codex or save in a format the beta is trying out never reaches the live
- * game's. readStored, writeStored and removeStored take a name and add the
+ * game's. The local channel (the dev server, src/lib/channel.ts) keeps its
+ * own the same way, so a room saved there never reopens in the live rooms
+ * (npm run dev:live shares localhost's origin). readStored, writeStored and removeStored take a name and add the
  * start; the *Key versions take a whole key, for the few the beta must share
  * with the live game or leave alone.
  */
-export const STORE = (BETA ? 'poe2trivia.beta.' : 'poe2trivia.') + (LAB ? 'lab.' : '') + (ZONES_PREVIEW ? 'zones.' : '') + (BACKDROP_TOOL ? 'backdrops.' : '') + (BOT ? 'bot.' : '');
+export const STORE = (BETA ? 'poe2trivia.beta.' : LOCAL ? 'poe2trivia.local.' : 'poe2trivia.') + (LAB ? 'lab.' : '') + (ZONES_PREVIEW ? 'zones.' : '') + (BACKDROP_TOOL ? 'backdrops.' : '') + (BOT ? 'bot.' : '');
 
 export type Area = 'local' | 'session';
 
@@ -105,7 +107,7 @@ export const tryReadStored = (name: string, where: Area = 'local') => tryReadKey
  * A key the live game wrote before it moved to a newer one. Only the live
  * game reads or clears these: they were never the beta's to take over.
  */
-export const readLegacy = (key: string, where: Area = 'local') => (BETA || LAB || BACKDROP_TOOL || BOT ? null : readKey(key, where));
+export const readLegacy = (key: string, where: Area = 'local') => (BETA || LOCAL || LAB || BACKDROP_TOOL || BOT ? null : readKey(key, where));
 export const removeLegacy = (key: string, where: Area = 'local') => {
-  if (!BETA && !LAB && !BACKDROP_TOOL && !BOT) removeKey(key, where);
+  if (!BETA && !LOCAL && !LAB && !BACKDROP_TOOL && !BOT) removeKey(key, where);
 };

@@ -9,7 +9,7 @@
   import { openCodex, codexRoute } from '../lib/codexRoute.svelte';
   import { DELVE_LINK_PARAM } from '../lib/delveShare';
   import { wantDelveBackdrop } from '../lib/backdrop';
-  import { BETA } from '../lib/channel';
+  import { BETA, LOCAL } from '../lib/channel';
   import { deepestEver, loadRecords } from '../lib/delveRecord';
   import { shownDepth } from '../lib/delve';
   import { ENTRIES, codexLine, cursorKey, lastEntry, rememberEntry, type Entry } from '../lib/startMenu';
@@ -364,7 +364,7 @@
     <div class="intro">
       <div class="title">
         <GameTitle />
-        {#if BETA}<span class="beta" in:fade={{ duration: 600, delay: 100 }}>Beta</span>{/if}
+        {#if BETA || LOCAL}<span class="beta" in:fade={{ duration: 600, delay: 100 }}>{BETA ? 'Beta' : 'Local'}</span>{/if}
       </div>
       <p class="kicker" in:fade={{ duration: 700, delay: 350 }}>Unique item trivia</p>
       <p class="blurb" in:fade={{ duration: 700, delay: 450 }}>
@@ -549,7 +549,7 @@
     align-items: flex-start;
     gap: 14px;
   }
-  /* Marks the beta build (poe2.quest/beta/) so testers know where they are. */
+  /* Marks the beta build (poe2.quest/beta/), or the dev server's own rooms (Local), so testers know where they are. */
   .beta {
     margin-top: 10px;
     padding: 0.2rem 0.4rem 0.15rem 0.6rem;
