@@ -5,7 +5,7 @@
   // they never touch the streak. Every answer goes into the codex like any
   // other question.
   import { onMount } from 'svelte';
-  import { fade, fly, scale } from 'svelte/transition';
+  import { fade, fly, scale, slide } from 'svelte/transition';
   import itemData from '../data/items.json';
   import fakeNames from '../data/fakes.json';
   import { engine, session } from '../lib/session.svelte';
@@ -176,6 +176,33 @@
     if (now) requestAnimationFrame(() => doused(node));
   }
 
+  /** The name's size in a tile, and the smallest it may shrink to before it may wrap. */
+  const NAME_PX = 17;
+  const NAME_MIN_PX = 13;
+  /**
+   * Svelte action: a long name shrinks until it fits on one line, so every
+   * tile keeps its height and nothing on the page moves; only a name too long
+   * even at the smallest size wraps (within the tile's room).
+   */
+  function fit(node: HTMLElement, _label: string | null) {
+    const run = () => {
+      node.style.whiteSpace = 'nowrap';
+      let size = NAME_PX;
+      node.style.fontSize = `${size}px`;
+      while (node.scrollWidth > node.clientWidth + 0.5 && size > NAME_MIN_PX) {
+        size -= 0.5;
+        node.style.fontSize = `${size}px`;
+      }
+      if (node.scrollWidth > node.clientWidth + 0.5) node.style.whiteSpace = 'normal';
+    };
+    run();
+    // Again once the display font is in, and whenever the tile's width changes (a phone turned).
+    void document.fonts?.ready.then(run);
+    const ro = new ResizeObserver(run);
+    if (node.parentElement) ro.observe(node.parentElement);
+    return { update: run, destroy: () => ro.disconnect() };
+  }
+
   function practiceMore() {
     practicePicked = null;
     practice = askOne(engine, practiceGame);
@@ -253,9 +280,11 @@
       >
         <span class="sheen"></span>
         <span class="key" aria-hidden="true">{i + 1}</span>
-        <span class="text"
-          >{label}{#if fake}<small class="made-up" in:fade={{ duration: 300 }}>made up</small>{/if}</span
-        >
+        <span class="text">
+          <span class="name" use:fit={label}>{label}</span>
+          <!-- It opens out under the name, so the name glides up rather than jumping. -->
+          {#if fake}<small class="made-up" in:slide={{ duration: 350 }}>made up</small>{/if}
+        </span>
         <span class="cue" aria-hidden="true"></span>
         {#if st === 'right'}<span class="mark" in:scale={{ duration: 300 }}>✓</span>{/if}
         {#if st === 'wrong'}<span class="mark" in:scale={{ duration: 300 }}>✕</span>{/if}
@@ -399,7 +428,7 @@
     /* Up over the faded bottom of the circle. */
     margin-top: calc(-1 * var(--daily-overlap, 48px));
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     grid-auto-rows: 1fr;
     gap: 10px;
   }
@@ -410,8 +439,9 @@
     align-items: center;
     gap: 0.75rem;
     width: 100%;
-    min-height: 56px;
-    padding: 0.6rem 2.4rem 0.6rem 0.9rem;
+    /* Always this tall, whatever the name (see fit): the page must not move under the answers. */
+    height: 56px;
+    padding: 0.35rem 2.4rem 0.35rem 0.9rem;
     text-align: left;
     cursor: pointer;
     background: linear-gradient(90deg, rgba(40, 31, 22, 0.95), rgba(20, 16, 12, 0.95));
@@ -592,6 +622,10 @@
       color 0.25s,
       text-shadow 0.25s;
   }
+  .name {
+    display: block;
+    overflow: hidden;
+  }
   /* The made-up name, said so once it's over: a quiet line under the name,
      starting where it starts, so the name keeps its width and nothing wraps
      or moves (the tile has the room). */
@@ -746,14 +780,17 @@
     }
     .options {
       margin-top: -24px;
-      grid-template-columns: 1fr;
+      grid-template-columns: minmax(0, 1fr);
       gap: 12px;
     }
     .option {
-      min-height: 58px;
+      height: 58px;
     }
+    /* Room for the answered state's two lines (result, then Practice more) from the start, so nothing below moves when it comes. */
     .after {
       justify-content: center;
+      align-content: center;
+      min-height: 62px;
     }
     .caption {
       width: 100%;
