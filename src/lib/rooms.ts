@@ -23,6 +23,13 @@ const SLOW_BATCH_DELAY_MS = 800;
 const PROBE_TIMEOUT_MS = 9000;
 /** How long an invite's probe waits for the signalling server before it gives up (probeRoom). */
 const PROBE_OPEN_TIMEOUT_MS = 8000;
+/**
+ * Once connected, how long a room has to answer a probe: one that knows
+ * probes (ProbeDesk) answers at once. An older one never does, and would
+ * hold the probe as someone about to join, taking a joiner's place, until it
+ * gives up: the probe lets go of it well before.
+ */
+const PROBE_ANSWER_MS = 2500;
 /** Hard stop, even if someone fills every slot with junk. */
 const MAX_SLOTS = 300;
 /** Most rooms we'll list. */
@@ -65,7 +72,7 @@ class Prober {
         conn?.close();
         resolve(r);
       };
-      const timer = setTimeout(() => done(null), PROBE_TIMEOUT_MS);
+      let timer = setTimeout(() => done(null), PROBE_TIMEOUT_MS);
       this.waiting.set(id, done);
       conn = this.peer.connect(id, { reliable: true, metadata: { probe: true } });
       conn.on('data', (raw) => {
@@ -73,6 +80,10 @@ class Prober {
         if (msg?.t !== 'info') return;
         const room = parseRoomInfo(msg.room);
         done(room ?? null);
+      });
+      conn.on('open', () => {
+        clearTimeout(timer);
+        timer = setTimeout(() => done(null), PROBE_ANSWER_MS);
       });
       conn.on('error', () => done(null));
     });

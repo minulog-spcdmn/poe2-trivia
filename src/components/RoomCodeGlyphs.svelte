@@ -73,12 +73,12 @@
 
   /**
    * Each letter is its own box, so a plain copy puts line breaks (pasted as
-   * spaces) between them. Copy just the letters instead.
+   * spaces) between them, and hidden (streaming) they are only dots: copy
+   * the code itself instead, whatever of it is selected.
    */
   function copyCode(e: ClipboardEvent) {
-    const text = getSelection()?.toString().replace(/\s/g, '');
-    if (!text || !e.clipboardData) return;
-    e.clipboardData.setData('text/plain', text);
+    if (!getSelection()?.toString() || !e.clipboardData) return;
+    e.clipboardData.setData('text/plain', code);
     e.preventDefault();
   }
 

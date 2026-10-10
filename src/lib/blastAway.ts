@@ -12,7 +12,7 @@
 
 import { edgeBlast } from './fx/blast';
 import { fxActive } from './fx/core';
-import { zoomOf } from './stage';
+import { unzoomRect, zoomOf } from './stage';
 
 /** When the shockwave reaches the question (ms after it goes off): its shards fly, the screen shakes, the scene swings. */
 export const BLAST_IMPACT_MS = 110;
@@ -24,8 +24,6 @@ const BLAST_MS = 2300;
 
 const rand = (lo: number, hi: number) => lo + Math.random() * (hi - lo);
 const px = (n: number) => `${n.toFixed(1)}px`;
-/** A box on screen in the blast layer's own px: the layer is zoomed as the page is (lib/stage.ts). */
-const unzoom = (r: DOMRect, z: number) => (z === 1 ? r : new DOMRect(r.x / z, r.y / z, r.width / z, r.height / z));
 
 type Pt = { x: number; y: number };
 
@@ -148,7 +146,7 @@ type Found = { path: number[]; rect: DOMRect; inline: boolean };
 function measure(src: Element, area: number, z: number, path: number[] = [], parts: Found[] = [], hollow: number[][] = []) {
   Array.from(src.children).forEach((k, i) => {
     const at = [...path, i];
-    const r = unzoom(k.getBoundingClientRect(), z);
+    const r = unzoomRect(k.getBoundingClientRect(), z);
     const a = r.width * r.height;
     if (!a) {
       // display: contents and the like: what is inside it counts.
@@ -235,7 +233,7 @@ export function blastAway({ node, side, mine }: BlastAway) {
   const H = innerHeight / Z;
   // Everything measured first, before the page changes, so it is laid out once.
   const onScreen = node.getBoundingClientRect();
-  const rect = unzoom(onScreen, Z);
+  const rect = unzoomRect(onScreen, Z);
   const shown = rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.top < H;
   const cs = getComputedStyle(node);
   const inherited = shown ? Array.from(cs).flatMap((name) => (name.startsWith('--') ? [[name, cs.getPropertyValue(name)]] : [])) : [];
@@ -245,7 +243,7 @@ export function blastAway({ node, side, mine }: BlastAway) {
   const big = found.parts.reduce<Found | null>((m, p) => (!m || p.rect.width * p.rect.height > m.rect.width * m.rect.height ? p : m), null);
   const bigParent = big && big.rect.width * big.rect.height > rect.width * Math.min(rect.height, H) * 0.12 ? at(node, big.path)?.parentElement : null;
   const holder = bigParent
-    ? { rect: unzoom(bigParent.getBoundingClientRect(), Z), static: getComputedStyle(bigParent).position === 'static', border: [bigParent.clientLeft, bigParent.clientTop] as [number, number] }
+    ? { rect: unzoomRect(bigParent.getBoundingClientRect(), Z), static: getComputedStyle(bigParent).position === 'static', border: [bigParent.clientLeft, bigParent.clientTop] as [number, number] }
     : null;
   const phone = W < 600;
   // The blast's height: the question's middle, as far as it is on screen.

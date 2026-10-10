@@ -89,12 +89,16 @@
       return;
     }
     // Another tab may have answered today's meanwhile: that answer stands.
+    // And what's stored is the run to go on from, not what this tab loaded
+    // (another tab may have answered a day since); this tab's copy only
+    // stands in when there is nothing stored (storage blocked).
     if (!practice) {
       const stored = loadDaily();
       if (answeredOn(stored, today)) {
         rec = stored;
         return;
       }
+      if (stored) rec = stored;
     }
     const good = i === rightIdx;
     // A record from a later day (this device's clock was put back) takes no

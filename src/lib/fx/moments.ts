@@ -1082,6 +1082,11 @@ let lastTick = 0;
 /** Whose countdown it is: the timer ring, a new one for each question (Game.svelte keys it). */
 let countdownOf: Element | null = null;
 
+/** A timer ring is gone (the question left without a reveal: the room left or closed, the game over): its countdown's smoke goes with it. */
+export function timerGone(timer: Element) {
+  if (timer === countdownOf) endCountdown();
+}
+
 /** The question is decided, so the countdown is over: its smoke fades out where it is, about as the reveal's sound dies. */
 function endCountdown() {
   countdown?.stop(0.35);

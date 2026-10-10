@@ -52,7 +52,8 @@
       if (next === lit) return;
       const was = lit;
       lit = next;
-      light();
+      // Going from no fire to one (a first day), it catches as it would coming in.
+      light(was === 0);
       if (!first && next > was) {
         twinkle(node);
         // A new colour on the ladder bursts, as the game's fire does turning blue.

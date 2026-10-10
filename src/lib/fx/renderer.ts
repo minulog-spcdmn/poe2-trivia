@@ -489,6 +489,7 @@ void main() {
     // Screen edge glow. q: width (px), noise, smoke, the smoke's pattern.
     // r: heat (the smoke's thickest threads, and a line along the very
     // edge), the smoke's clock (s), its evenness (0-1), its body (0-1).
+    // s: the countdown's grading (0-1), deeper red where thin, warmer where thick.
     vec2 e = max(vHalf - abs(vP), 0.0);
     // Each edge's light, joined as light adds up: brighter into the corners,
     // and round there, with no seam along the diagonal. Read back as a
@@ -498,15 +499,16 @@ void main() {
     float d = -log(max(g, 1e-6)) * vQ.x;
     // The smoke hugs the edges, and fades out fast past its width.
     float reach = exp(-pow(d / vQ.x, 1.6)) * vQ.z;
-    if (g > 0.004 || reach > 0.004) {
+    if (g > 0.004 || reach > 0.02) {
       // (Its patches scale with the width: about 250 px at 60.)
       float n = fbm(vP * (0.25 / vQ.x) + vec2(seed, time * 0.35));
       v = g * mix(1.0, 0.3 + 1.4 * n, vQ.y) * (1.0 - 0.6 * min(vQ.z, 1.0));
-      if (reach > 0.004) {
+      // (Fainter than this, its smoke wouldn't show: its noise is skipped.)
+      if (reach > 0.02) {
         // Smoke along the edges, drifting on its own clock (the same for
         // every beat of one countdown, so they all show one smoke): broad
         // slow billows, and finer threads curling over them where it is
-        // thick. Thin, it is a deeper red; thick, warmer.
+        // thick. Graded (s.x), thin it is a deeper red and thick, warmer.
         float tt = vR.y;
         vec2 P = vP / (vQ.x * 0.8) + vQ.w * 7.0;
         vec2 w = vec2(fbm(P * 0.45 + vec2(0.0, tt * 0.25)), fbm(P * 0.45 + vec2(5.2, 1.3 - tt * 0.2)));
@@ -520,7 +522,7 @@ void main() {
         float thread = pow(ridge, 6.0) * smoothstep(0.15, 0.6, billow);
         float dens = (billow * 0.5 + thread * 0.6) * reach * mix(0.75, 1.15, vR.w);
         v += dens;
-        col *= mix(vec3(1.0), mix(vec3(0.75, 0.55, 0.6), vec3(1.05, 1.2, 1.12), clamp(dens * 1.5, 0.0, 1.0)), clamp(reach * 3.0, 0.0, 1.0));
+        col *= mix(vec3(1.0), mix(vec3(0.75, 0.55, 0.6), vec3(1.05, 1.2, 1.12), clamp(dens * 1.5, 0.0, 1.0)), clamp(reach * 3.0, 0.0, 1.0) * vS.x);
         hot = pow(ridge, 20.0) * billow * reach * vR.x;
       }
       // A hot line along the very edge.

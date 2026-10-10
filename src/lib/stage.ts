@@ -11,9 +11,28 @@ export function stageZoom(w: number, h: number): number {
   return Math.max(1, Math.min(w / 1440, h / 980, 2.2));
 }
 
-/** The CSS zoom an element is drawn at (1 without): getBoundingClientRect's sizes divided by it are in the element's own CSS pixels. */
+/**
+ * The CSS zoom an element is drawn at (1 without): getBoundingClientRect's
+ * sizes divided by it are in the element's own CSS pixels. Where a browser
+ * zooms but doesn't say so (no currentCSSZoom), it's worked out the same
+ * way, from the computed zoom of the element and every ancestor.
+ */
 export function zoomOf(el: Element): number {
-  return (el as Element & { currentCSSZoom?: number }).currentCSSZoom ?? 1;
+  const said = (el as Element & { currentCSSZoom?: number }).currentCSSZoom;
+  if (said !== undefined) return said;
+  let z = 1;
+  for (let n: Element | null = el; n; n = n.parentElement) z *= parseFloat(getComputedStyle(n).zoom) || 1;
+  return z;
+}
+
+/** A box measured on screen, in the px of something drawn at zoom `z`. */
+export function unzoomRect(r: DOMRect, z: number): DOMRect {
+  return z === 1 ? r : new DOMRect(r.x / z, r.y / z, r.width / z, r.height / z);
+}
+
+/** Where `el` is on screen (getBoundingClientRect), in its own CSS px: what to set its styles, or its children's, by. */
+export function ownRect(el: Element): DOMRect {
+  return unzoomRect(el.getBoundingClientRect(), zoomOf(el));
 }
 
 /**
@@ -41,8 +60,9 @@ export function unzoomPin(node: Element) {
  * pinned afresh, and fixed afresh.
  */
 export function pinnedOut<P, R>(transition: (node: Element, params: P) => R) {
-  return (node: Element, params: P) => () => {
+  // (Params as the directive gives them: none when it names none.)
+  return (node: Element, params?: P) => () => {
     unzoomPin(node);
-    return transition(node, params);
+    return transition(node, params as P);
   };
 }

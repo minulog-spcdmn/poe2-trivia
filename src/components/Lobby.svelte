@@ -23,7 +23,7 @@
   import { portal } from '../lib/portal';
   import WatchToggle from './WatchToggle.svelte';
   import { MediaQuery } from 'svelte/reactivity';
-  import { unzoomPin } from '../lib/stage';
+  import { pinnedOut } from '../lib/stage';
   import HostMark from './HostMark.svelte';
   import RoomCodeGlyphs from './RoomCodeGlyphs.svelte';
 
@@ -105,18 +105,15 @@
   /** A leaving chip shrinks a little as it fades, and a removed one (kicked, or hot-seat's ×) goes out with a red flare: the others then close up (flip).
       One that left by itself goes quietly, even with its × armed at that moment.
       It shrinks with `scale`, not `transform`: Svelte pins a leaving chip in place with a transform, which a transform here would override (the chip would jump to the grid's first cell);
-      that pin is measured on screen, so under the stage's zoom it is scaled back (unzoomPin), each time the chip leaves (deferred: see pinnedOut). */
-  function kickOut(node: Element) {
-    return () => {
-      unzoomPin(node);
-      const flare = removed.has((node as HTMLElement).dataset.id ?? '');
-      return {
-        duration: 320,
-        css: (t: number) =>
-          `opacity: ${t}; scale: ${0.9 + 0.1 * t};` + (flare ? ` box-shadow: 0 0 ${18 * (1 - t)}px rgba(224, 85, 63, ${0.7 * (1 - t) * t * 4});` : ''),
-      };
+      that pin is measured on screen, so under the stage's zoom it is scaled back, each time the chip leaves (pinnedOut). */
+  const kickOut = pinnedOut((node: Element) => {
+    const flare = removed.has((node as HTMLElement).dataset.id ?? '');
+    return {
+      duration: 320,
+      css: (t: number) =>
+        `opacity: ${t}; scale: ${0.9 + 0.1 * t};` + (flare ? ` box-shadow: 0 0 ${18 * (1 - t)}px rgba(224, 85, 63, ${0.7 * (1 - t) * t * 4});` : ''),
     };
-  }
+  });
   /** Escape takes an armed kick back. */
   function disarm(e: KeyboardEvent) {
     if (e.key === 'Escape') kicker.disarm();

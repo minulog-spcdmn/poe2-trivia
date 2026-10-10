@@ -441,7 +441,9 @@ export const MOMENTS: Record<Sfx, Moment> = {
     ],
   },
   // An Azurite Ward breaking in place of a life: a high bell struck and cut,
-  // a low thump, a ring of metal and a shimmer as the crystal bursts.
+  // a low thump, a ring of metal and a shimmer as the crystal bursts. Its
+  // timing is mirrored by the azurite smoke at the screen's edges (edgeWard
+  // in lib/fx/effects.ts): retune them together (tests/wardSmoke.test.ts).
   wardShatter: {
     soften: 3,
     varyPitch: 0.045,

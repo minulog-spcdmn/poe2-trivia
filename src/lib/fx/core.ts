@@ -104,7 +104,9 @@ type LiveShape = ShapeSpec & {
 };
 
 export type Handle = { stop: (fadeSeconds?: number) => void };
-const NOOP: Handle = { stop() {} };
+/** A shape's handle, which can also say whether it's still there (not stopped, ended, or dropped as the tab went away). */
+export type ShapeHandle = Handle & { alive: () => boolean };
+const NOOP: ShapeHandle = { stop() {}, alive: () => false };
 
 /** Whether `h` is something actually running, rather than the stand-in for one that never started. */
 export function isLive(h: Handle) {
@@ -356,7 +358,7 @@ function leastNeeded(): number {
   return fading >= 0 ? fading : finite;
 }
 
-export function shape(spec: ShapeSpec): Handle {
+export function shape(spec: ShapeSpec): ShapeHandle {
   if (!fxActive() || detached(spec.at) || (hidden && Number.isFinite(spec.life))) return NOOP;
   if (shapes.length >= MAX_SHAPES) {
     const i = leastNeeded();
@@ -388,6 +390,7 @@ export function shape(spec: ShapeSpec): Handle {
       s.stopped = true;
       s.fade = s.fadeTotal = Math.max(0.001, fadeSeconds);
     },
+    alive: () => !s.stopped && shapes.includes(s),
   };
 }
 
