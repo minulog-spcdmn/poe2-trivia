@@ -45,6 +45,12 @@ export class Hand {
   /** What it's replaying, and what the track's places are in thousandths of. */
   private track: Track | null = null;
   private frame: Frame = 'room';
+  /** Where that frame was when the track began: the track is laid onto it once, so a new screen doesn't move the hand. */
+  private trackBox: Box = [150, 250, 850, 800];
+  /** Where it waits, its own: its waiting stretches shifted this far (thousandths of the frame), so no two bots rest on the same spot. */
+  private readonly aside: [number, number] = [-350 + Math.random() * 500, -250 + Math.random() * 450];
+  /** Where on an answer or a card it tends to rest and click, its own (thousandths of it, from the recorded spot): not all on one spot. */
+  private readonly grip: [number, number] = [between(-200, 200), between(-160, 160)];
   /** The stretch its next click reaches with (picked as it looks things over), and for what. */
   private pending: { kind: ClickStretch['kind']; e: ClickStretch; w: Waver } | null = null;
   /** The stretches it replayed lately, not to be taken again soon. */
@@ -101,6 +107,7 @@ export class Hand {
   private follow(track: Track, frame: Frame) {
     this.track = track;
     this.frame = frame;
+    this.trackBox = this.box(frame);
   }
 
   /** Looks the cards over, as the recorded player did, until it reaches for one at `until`. */
@@ -155,7 +162,7 @@ export class Hand {
         mine.set(index, to);
       }
       const b = l.get(`${prefix}${to}`);
-      return b ? within(place(on[0], on[1], b), f, e.src) : null;
+      return b ? within(place(...this.held(on), b), f, e.src) : null;
     };
   }
 
@@ -180,7 +187,7 @@ export class Hand {
     const frame: Frame = kind === 'card' ? 'cards' : 'answers';
     const f = this.box(frame, s);
     // Where in it the click lands: as the recorded click did in what it pressed (Next's spot wasn't kept: around its middle).
-    const aim = kind === 'next' ? aimIn(box, Math.random) : place(e.aim[0], e.aim[1], box);
+    const aim = kind === 'next' ? aimIn(box, Math.random) : place(...this.held(e.aim as [number, number]), box);
     const now = Date.now();
     // Hurrying for the clock: the reach no longer than there's time for.
     const room = by - now;
@@ -197,6 +204,12 @@ export class Hand {
     await wait(e.hold);
   }
 
+  /** A recorded spot on an answer or a card (thousandths of it), moved by the bot's own grip, and kept well on it. */
+  private held([u, v]: [number, number]): [number, number] {
+    const on = (x: number) => Math.min(900, Math.max(100, x));
+    return [on(u + this.grip[0]), on(v + this.grip[1])];
+  }
+
   /** Keeps the last few stretches it replayed. */
   private remember(e: Stretch) {
     if (!this.used.includes(e)) this.used.push(e);
@@ -206,7 +219,7 @@ export class Hand {
   private where(now: number): Spot {
     if (this.track) {
       const [u, v, src] = trackAt(this.track, now);
-      const p = place(u, v, this.box(this.frame), src);
+      const p = place(u, v, this.trackBox, src);
       // Never off its screen.
       this.at = { x: Math.min(ROOM[0] - 15, Math.max(15, p.x)), y: Math.min(ROOM[1] - 10, Math.max(10, p.y)) };
       if (now >= this.track.t[this.track.t.length - 1]) this.track = null;
@@ -247,7 +260,7 @@ export class Hand {
       const frame = lobby ? 'room' : this.waitFrame(s);
       if (e) {
         this.remember(e);
-        const { track, presses } = streamTrack(e, within(this.where(now), this.box(frame, s), e.src), now, this.speed, waver(Math.random), Math.random);
+        const { track, presses } = streamTrack(e, within(this.where(now), this.box(frame, s), e.src), now, this.speed, waver(Math.random), Math.random, this.aside);
         this.follow(track, frame);
         // The recorded player clicked at nothing a lot; it, about half as often.
         this.presses = presses.filter(() => Math.random() < 0.5);
@@ -327,7 +340,10 @@ export class Hand {
       const lit = [...boxes].some(([k, b]) => spot.x >= b[0] && spot.x <= b[2] && spot.y >= b[1] && spot.y <= b[3] && clickableFor(this.s!, me, k) === true);
       if (p) at = [p[0], p[1], p[2], ((now < this.pressedUntil ? PRESSED : MOUSE) + (lit ? LIT : 0)) as PointerKind];
     }
-    const key = JSON.stringify(at);
+    // Only when the hand moved, or pressed, or came or went: not because what it's placed on changed (a new screen),
+    // which on another screen could put it somewhere else, every bot at once.
+    const spot = at ? this.at : null;
+    const key = spot && at ? `${Math.round(spot.x)},${Math.round(spot.y)},${at[3]}` : 'null';
     const plain = !at || actionOf(at[3]) === MOUSE;
     // A press always goes; anything else only when it changed, and not too often.
     if (key === this.sent || (plain && at && now - this.sentAt < SEND_EVERY_MS - 10)) return;

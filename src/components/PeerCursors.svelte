@@ -22,24 +22,24 @@
    */
   const BEHIND_MS = 150;
   const GLIDE_MS = 35;
-  /** Over to another element and further than this from where it's drawn (px): it slides there, this slowly, for at most this long (ms). */
+  /**
+   * Placed on another element far from where it's drawn (px; the two
+   * screens place things apart: another layout, a bot's picture of the
+   * page), or leaping as far on the same one (made anew, come back to), it
+   * doesn't jump: it stays where it's drawn, and the difference fades as it
+   * moves (the further it goes, the more of it; this many px for most of
+   * it), and, more slowly, as time goes by (ms).
+   */
   const JUMP_PX = 40;
-  const SLIDE_MS = 220;
-  const SLIDE_FOR_MS = 700;
+  const LEAP_PX = 160;
+  const FADE_PX = 180;
+  const FADE_MS = 2500;
   /** A pointer that hasn't moved for this long dims (ms); it's only hidden once its player leaves the page. */
   const IDLE_MS = 5000;
   /** How long a tap shows (ms). */
   const TAP_MS = 1100;
   /** A press shows at least this long (ms): a click is over in less than two updates. */
   const PRESS_SHOW_MS = 300;
-  /** Further than this from where it's drawn in one go, on the same element (it came back to it, or its element was made anew): it slides there too. */
-  const LEAP_PX = 160;
-  /**
-   * Its element gone (the card picked, the button pressed: a click often
-   * takes away what it was on), a pointer heard from lately stays where it
-   * was drawn this long (ms) rather than vanishing, so the click is seen.
-   */
-  const HOLD_MS = 900;
   /** A still pointer is looked at again this often, for what moved under it (the next turn, a scroll). */
   const RECHECK_MS = 500;
 
@@ -167,7 +167,8 @@
 
   const els: Record<string, HTMLElement> = {};
   /** Where each pointer is drawn now, gliding toward where it was heard to be. */
-  const drawn = new Map<string, { x: number; y: number; tap: number; code: number; slideUntil: number; pressUntil: number }>();
+  /** Where each is drawn; its element; how far it's drawn off its place here, fading (JUMP_PX); where its place was last frame; its press shown until. */
+  const drawn = new Map<string, { x: number; y: number; tap: number; code: number; ox: number; oy: number; px: number; py: number; pressUntil: number }>();
 
   function anchorFor(code: number, cache: Map<number, HTMLElement | null>) {
     if (cache.has(code)) return cache.get(code)!;
@@ -189,7 +190,6 @@
     const frame = (now: number) => {
       const dt = now - last;
       const step = 1 - Math.exp(-dt / GLIDE_MS);
-      const slide = 1 - Math.exp(-dt / SLIDE_MS);
       last = now;
       const anchors = new Map<number, HTMLElement | null>();
       for (const c of list) {
@@ -212,12 +212,10 @@
         const pressNow = actionOf(kind) === PRESSED;
         const pressing = pressNow || actionOf(dueKind) === PRESSED;
         if (!anchor) {
-          // Its element just went: where it was drawn, a moment longer.
+          // Its element went (the card picked, the screen moved on): it stays where it's drawn until it moves again.
           const held = drawn.get(c.key);
-          const keep = !!held && age < HOLD_MS;
-          el.classList.toggle('lost', !keep);
-          if (!keep) drawn.delete(c.key);
-          else {
+          el.classList.toggle('lost', !held);
+          if (held) {
             if (pressing) held.pressUntil = now + PRESS_SHOW_MS;
             el.classList.toggle('pressed', now < held.pressUntil);
           }
@@ -240,17 +238,25 @@
         const ty = Math.min(innerHeight - 20, Math.max(2, ry));
         let d = drawn.get(c.key);
         // A tap lands where it is; a pointer just come in starts where it is.
-        if (!d || touch) drawn.set(c.key, (d = { x: tx, y: ty, tap: d?.tap ?? 0, code, slideUntil: 0, pressUntil: d?.pressUntil ?? 0 }));
+        if (!d || touch) drawn.set(c.key, (d = { x: tx, y: ty, tap: d?.tap ?? 0, code, ox: 0, oy: 0, px: tx, py: ty, pressUntil: d?.pressUntil ?? 0 }));
         else {
-          // Gone over to another element, far from where it was drawn: the two screens place things
-          // apart (another layout, a bot's picture of the page), so it slides across rather than jumps.
-          const far = Math.hypot(tx - d.x, ty - d.y);
-          if (pressNow) d.slideUntil = 0;
-          else if ((code !== d.code && far > JUMP_PX) || far > LEAP_PX) d.slideUntil = now + SLIDE_FOR_MS;
+          // Placed on another element far from where it's drawn, or leaping: it stays where it's drawn (JUMP_PX).
+          const far = Math.hypot(tx + d.ox - d.x, ty + d.oy - d.y);
+          if (!pressNow && ((code !== d.code && far > JUMP_PX) || far > LEAP_PX)) {
+            d.ox = d.x - tx;
+            d.oy = d.y - ty;
+          } else {
+            // The difference fades as it moves, and slowly as time goes by; at once for a press, so the click lands where it is.
+            const moved = Math.hypot(tx - d.px, ty - d.py);
+            const fade = pressNow ? Math.exp(-dt / 60) : Math.exp(-moved / FADE_PX - dt / FADE_MS);
+            d.ox *= fade;
+            d.oy *= fade;
+          }
           d.code = code;
-          const k = now < d.slideUntil ? slide : step;
-          d.x += (tx - d.x) * k;
-          d.y += (ty - d.y) * k;
+          d.px = tx;
+          d.py = ty;
+          d.x += (tx + d.ox - d.x) * step;
+          d.y += (ty + d.oy - d.y) * step;
         }
         el.style.transform = `translate3d(${d.x}px, ${d.y}px, 0)`;
         el.classList.toggle('tap', touch);

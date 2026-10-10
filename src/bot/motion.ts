@@ -72,6 +72,9 @@ export interface Track {
 }
 
 const between = (rng: Rng, a: number, b: number) => a + (b - a) * rng();
+/** Recorded movement (thousandths of the frame) over which a replay comes onto its recording from where the hand was. */
+const SETTLE_PATH = 700;
+
 const smooth = (k: number) => {
   const x = Math.min(1, Math.max(0, k));
   return x * x * (3 - 2 * x);
@@ -264,10 +267,12 @@ export function fitLead(pairs: number[], ms: number, speed = 1, tempo: (i: numbe
 }
 
 /**
- * A track from samples `pairs` shown at `times` (from `start`), eased in
- * from `from` (thousandths of its frame) over the first `easeMs`, and, if
- * `to` is given, steered onto it by the end (little at first, all of it
- * at the last).
+ * A track from samples `pairs` shown at `times` (from `start`), coming onto
+ * them from `from` (thousandths of its frame) only as the recorded hand
+ * moves: still where it was still, the way there folded into its moves,
+ * there by `settle` (a sample) or after SETTLE_PATH of movement, whichever
+ * is first; and, if `to` is given, steered onto it by the end (little at
+ * first, all of it at the last).
  */
 export function track(
   pairs: number[],
@@ -275,7 +280,7 @@ export function track(
   start: number,
   from: [number, number] | null,
   to: [number, number] | null = null,
-  easeMs = 600,
+  settle = Infinity,
   src: (i: number) => Src = () => [0, 0, 1000, 1000, 1000, 1000],
   shift: (i: number, t: number) => [number, number] = () => [0, 0],
 ): Track {
@@ -283,14 +288,23 @@ export function track(
   const out: Track = { t: [], u: [], v: [], src: [] };
   // Cut where it begins partway in (times below 0).
   const first = Math.max(0, times.findIndex((x) => x >= 0));
-  const [u0, v0] = [pairs[2 * first], pairs[2 * first + 1]];
-  const [ue, ve] = [pairs[2 * n - 2], pairs[2 * n - 1]];
+  // Each sample as shifted (a bend, rests laid onto the bot's own, its own place to wait); come onto from `from` and steered onto `to` from there.
+  const base = (i: number): [number, number] => {
+    const [du, dv] = shift(i, times[i]);
+    return [pairs[2 * i] + du, pairs[2 * i + 1] + dv];
+  };
+  const [u0, v0] = base(first);
+  const [ue, ve] = base(n - 1);
   const end = times[n - 1];
+  // How far the recorded hand has moved by each sample, and how far it moves before it's to be on the recording.
+  const moved = [0];
+  for (let i = first + 1; i < n; i++) moved.push(moved[moved.length - 1] + Math.hypot(pairs[2 * i] - pairs[2 * i - 2], pairs[2 * i + 1] - pairs[2 * i - 1]));
+  const by = moved[Math.min(moved.length - 1, Math.max(0, settle - first))];
+  const reach = Math.min(SETTLE_PATH, by > 30 ? by : moved[moved.length - 1]);
   for (let i = first; i < n; i++) {
-    let u = pairs[2 * i];
-    let v = pairs[2 * i + 1];
+    let [u, v] = base(i);
     if (from) {
-      const w = 1 - smooth((times[i] - times[first]) / easeMs);
+      const w = reach > 0 ? 1 - smooth(moved[i - first] / reach) : 1;
       u += (from[0] - u0) * w;
       v += (from[1] - v0) * w;
     }
@@ -299,18 +313,17 @@ export function track(
       u += (to[0] - ue) * w;
       v += (to[1] - ve) * w;
     }
-    const [du, dv] = shift(i, times[i]);
     out.t.push(start + times[i]);
-    out.u.push(u + du);
-    out.v.push(v + dv);
+    out.u.push(u);
+    out.v.push(v);
     out.src.push(src(i));
   }
   return out;
 }
 
 /**
- * The lead of a click's stretch, from `start` to `reachAt`, eased in from
- * `from`, its rests laid onto the bot's own (`onto`, steer), and wavered
+ * The lead of a click's stretch, from `start` to `reachAt`, coming in from
+ * `from` as it moves (track), its rests laid onto the bot's own (`onto`, steer), and wavered
  * (`w`): its path bent a little where it moves, its tempo and pace its own.
  */
 export function leadTrack(
@@ -324,7 +337,10 @@ export function leadTrack(
   const shifted = onto ? steer(e, onto) : null;
   const mask = moving(e.lead);
   const times = fitLead(e.lead, Math.max(0, reachAt - start), speed * w.pace, w.tempo);
-  return track(e.lead, times, start, from, null, 600, () => e.src, (i, t) => {
+  // On the recording by its first rest on an answer or a card, which is laid onto the bot's own.
+  let settle = Infinity;
+  for (let k = 0; k + 4 < e.dwells.length && settle === Infinity; k += 5) if (e.dwells[k + 2] >= 0) settle = e.dwells[k];
+  return track(e.lead, times, start, from, null, settle, () => e.src, (i, t) => {
     const [bu, bv] = w.bend(t);
     const [su, sv] = shifted?.[i] ?? [0, 0];
     return [su + bu * mask[i], sv + bv * mask[i]];
@@ -336,7 +352,7 @@ export function reachTrack(e: ClickStretch, from: [number, number], to: [number,
   const n = e.reach.length / 2;
   const times: number[] = [0];
   for (let i = 1; i < n; i++) times.push(times[i - 1] + STEP * speed * w.pace * w.tempo(i));
-  return track(e.reach, times, start, from, to, Math.min(400, times[n - 1] / 2 || 1), () => e.src, (i, t) => {
+  return track(e.reach, times, start, from, to, n - 1, () => e.src, (i, t) => {
     const fade = 1 - smooth(i / Math.max(1, n - 1));
     const [bu, bv] = w.bend(t);
     return [bu * fade, bv * fade];
@@ -344,11 +360,20 @@ export function reachTrack(e: ClickStretch, from: [number, number], to: [number,
 }
 
 /**
- * A stream stretch (waiting, the lobby) from `start`, eased in from `from`,
- * wavered (`w`), begun partway in (at one of its rests, `rng`); and when its
- * clicks at nothing fall.
+ * A stream stretch (waiting, the lobby) from `start`, coming in from `from`
+ * as it moves (track),
+ * wavered (`w`), begun partway in (at one of its rests, `rng`), shifted
+ * `aside` (a bot's own place to wait); and when its clicks at nothing fall.
  */
-export function streamTrack(e: StreamStretch, from: [number, number], start: number, speed = 1, w: Waver = STEADY, rng?: Rng): { track: Track; presses: number[] } {
+export function streamTrack(
+  e: StreamStretch,
+  from: [number, number],
+  start: number,
+  speed = 1,
+  w: Waver = STEADY,
+  rng?: Rng,
+  aside: [number, number] = [0, 0],
+): { track: Track; presses: number[] } {
   const n = e.path.length / 2;
   const mask = moving(e.path);
   // Begun at one of its rests (not the stir it begins with, which every hand would make at once).
@@ -363,9 +388,9 @@ export function streamTrack(e: StreamStretch, from: [number, number], start: num
   const src = (i: number) => (e.then && i >= (e.switchAt ?? Infinity) ? e.then : e.src);
   const presses = (e.presses ?? []).map((p) => (p - skip * STEP) * speed * w.pace).filter((p) => p >= 0);
   return {
-    track: track(e.path, times, start, from, null, 600, src, (i, tt) => {
+    track: track(e.path, times, start, from, null, Infinity, src, (i, tt) => {
       const [bu, bv] = w.bend(tt);
-      return [bu * mask[i], bv * mask[i]];
+      return [aside[0] + bu * mask[i], aside[1] + bv * mask[i]];
     }),
     presses: presses.map((p) => start + p),
   };
