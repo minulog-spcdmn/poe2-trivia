@@ -89,10 +89,10 @@
   .kicker {
     position: relative;
     margin: 6px 0 0;
-    padding-left: 0.5em;
+    padding-left: 0.42em;
     font-family: var(--font-display);
-    font-size: 15px;
-    letter-spacing: 0.5em;
+    font-size: 14px;
+    letter-spacing: 0.42em;
     text-transform: uppercase;
     color: var(--unique-hi);
   }
@@ -203,9 +203,9 @@
       --title-size: 54px;
     }
     .kicker {
-      padding-left: 0.4em;
-      font-size: 13px;
-      letter-spacing: 0.4em;
+      padding-left: 0.3em;
+      font-size: 11px;
+      letter-spacing: 0.3em;
     }
     .blurb {
       font-size: 15px;

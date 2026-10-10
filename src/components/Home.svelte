@@ -560,9 +560,10 @@
     position: relative;
     margin: 2px 0 4px;
     font-family: var(--font-display);
-    font-size: 15px;
+    font-size: 14px;
     line-height: 1.3;
-    letter-spacing: 0.5em;
+    /* Ends under the tip of the Q's tail. */
+    letter-spacing: 0.42em;
     text-transform: uppercase;
     color: var(--unique-hi);
   }
@@ -1039,8 +1040,8 @@
       --title-size: 54px;
     }
     .kicker {
-      font-size: 13px;
-      letter-spacing: 0.4em;
+      font-size: 11px;
+      letter-spacing: 0.3em;
     }
     .blurb {
       font-size: 15px;
