@@ -361,8 +361,9 @@ float vessels(float a, float y, float n, float reach, float seed) {
   float s = smoothstep(yf, yf + 0.35, t);
   float spread = 0.17 * s;
   float off = min(abs(f - m + spread), abs(f - m - spread));
-  float wd = mix(0.032, 0.008, t) * mix(1.0, 0.75, s);
-  return exp(-(off * off) / (wd * wd)) * (1.0 - smoothstep(0.6, 1.0, t)) * (0.55 + 0.45 * h3);
+  // Soft: blood under the surface, not a drawn line; few of them clear.
+  float wd = mix(0.11, 0.04, t) * mix(1.0, 0.8, s);
+  return exp(-(off * off) / (wd * wd)) * (1.0 - smoothstep(0.35, 1.0, t)) * (0.15 + 0.85 * h3 * h3);
 }
 // One ring of light shafts at u (turns, 0-1) and rn (radius, 0-1 of the
 // reach): n cells round the circle, one shaft in each, with its own width
@@ -521,11 +522,11 @@ void main() {
     float g = 1.0 - (1.0 - ge.x) * (1.0 - ge.y);
     float d = -log(max(g, 1e-6)) * vQ.x;
     float y = d / vQ.x;
-    if (g > 0.004 || y < vQ.z) {
+    if (g > 0.004) {
       // (Its patches scale with the width: about 250 px at 60.)
       float n = fbm(vP * (0.25 / vQ.x) + vec2(seed, time * 0.35));
-      v = g * mix(1.0, 0.3 + 1.4 * n, vQ.y) * (1.0 - 0.5 * min(vQ.z, 1.0));
-      if (y < vQ.z) {
+      v = g * mix(1.0, 0.3 + 1.4 * n, vQ.y);
+      if (vQ.z > 0.0) {
         // Bloodshot: vessels in from the edges, and finer ones between
         // them. Round the screen as if it were square, so they are spread
         // about evenly, about one to every 1.4 widths of the edge.
@@ -533,7 +534,10 @@ void main() {
         float u = atan(sq.y, sq.x) / (2.0 * PI) + 0.5;
         float N = 2.0 * max(2.0, floor(2.0 * (vHalf.x + vHalf.y) / (vQ.x * 1.4)));
         float veins = vessels(u * N, y, N, vQ.z, vQ.w) + 0.5 * vessels(u * N * 2.0 + 0.37, y * 1.3, N * 2.0, vQ.z * 0.6, vQ.w + 11.0);
-        v += 0.6 * veins;
+        // The flush gathers along them: thin between them, reaching further
+        // in along them, never brighter than the flush at the edge.
+        float along = exp(-pow(y / vQ.z, 1.5) * 2.0);
+        v = mix(v, min(1.0, v * 0.45 + veins * along * 0.7), min(vQ.z, 1.0));
       }
       // A hot line along the very edge.
       hot = exp(-d / (vQ.x * 0.08)) * 0.5 * vR.x;
