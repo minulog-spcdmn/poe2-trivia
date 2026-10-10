@@ -4,7 +4,7 @@
 // gold for a victory). Effects code
 // sets them; the backdrop reads them every frame.
 
-import { fxActive, type Anchor, boxOf, detached, type Vec3 } from './fx/core';
+import { fxActive, fxHidden, onFxHidden, type Anchor, boxOf, detached, type Vec3 } from './fx/core';
 
 export const MAX_LIGHTS = 8;
 
@@ -36,9 +36,9 @@ export type LightSpec = {
   decay?: number;
 };
 
-/** Flashes a light behind `at` (followed if it's an element). */
+/** Flashes a light behind `at` (followed if it's an element). Not while the tab is away: it's a moment's, and runs its course (see onFxHidden below). */
 export function light(at: Anchor, spec: LightSpec) {
-  if (!fxActive() || detached(at)) return;
+  if (!fxActive() || fxHidden() || detached(at)) return;
   const b = boxOf(at);
   const now = performance.now() / 1000;
   const l: Light = { at, x: b.x, y: b.y, attack: 0.08, hold: 0.1, decay: 0.9, ...spec, born: now };
@@ -153,7 +153,7 @@ export function setMood(color: Vec3, strength: number) {
 
 /** A quick swell of colour over the scene (heartbeats), 0-1. */
 export function pulseMood(amount: number, color: Vec3 = [1, 0.15, 0.08]) {
-  if (!fxActive()) return;
+  if (!fxActive() || fxHidden()) return;
   mood.pulse = Math.min(1, mood.pulse + amount);
   mood.pulseColor = [...color];
 }
@@ -186,6 +186,16 @@ export function stepMood(dt: number, out: Float32Array): 'moving' | 'lit' | fals
   if (moving) return 'moving';
   return mood.strength > 0.002 ? 'lit' : false;
 }
+
+// As the tab goes away, what runs its course goes, as the overlay's own
+// effects do (setHidden in fx/core.ts): the backdrop's frames stop too, and a
+// light or pulse would otherwise be found half done once it's back. A held
+// light (a burning flare's) stays with what holds it; so does the mood.
+onFxHidden((away) => {
+  if (!away) return;
+  lights = lights.filter((l) => l.held);
+  mood.pulse = 0;
+});
 
 // ---------- the start page ----------
 

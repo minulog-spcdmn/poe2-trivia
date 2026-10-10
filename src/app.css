@@ -98,6 +98,15 @@ html {
   scrollbar-gutter: stable;
   scrollbar-color: #4a3a22 #0a0908;
 }
+/* Fullscreen (lib/fullscreen.ts): nothing of the browser showing, the
+   scrollbar and its reserved strip included. The page still scrolls. */
+html[data-fullscreen] {
+  scrollbar-gutter: auto;
+  scrollbar-width: none;
+}
+html[data-fullscreen]::-webkit-scrollbar {
+  display: none;
+}
 
 :focus-visible {
   outline: 1px solid var(--gold-hi);

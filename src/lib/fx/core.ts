@@ -6,6 +6,11 @@
 // reduced motion, or when WebGL2 isn't available; every call below is then a
 // cheap no-op, so callers never need to check.
 //
+// While the tab is in the background no frames come, and nothing moves on.
+// What would run its course meanwhile is dropped as it goes away, and not
+// started while it's away (see setHidden): unseen, it would otherwise all
+// start at once as the tab comes back.
+//
 // The renderer isn't made as the page loads: its context and shaders would
 // hold up the first paint (see startFx). Effects asked for before it's ready
 // wait for it, and play once it is.
@@ -111,6 +116,16 @@ export function isLive(h: Handle) {
 /** Runs every frame until it returns false. */
 export type Task = (dt: number, age: number) => boolean;
 
+/** How a task runs (see task()). */
+export type TaskOptions = {
+  /** The most seconds it runs: it ends by then however it's written. */
+  life?: number;
+  /** Kept while the tab is away: one that lasts until stopped (a burning flare's), or that something waits on. */
+  keep?: boolean;
+};
+
+type LiveTask = { fn: Task; age: number; life: number; keep: boolean };
+
 // ---------- state ----------
 
 let userOn = readStored('fx') !== '0';
@@ -138,13 +153,17 @@ let shakenAt = 0;
 const MAX_SHAPES = 96;
 const shapeData = new Float32Array(MAX_SHAPES * SHAPE_FLOATS);
 let shapes: LiveShape[] = [];
-let tasks: { fn: Task; age: number }[] = [];
+let tasks: LiveTask[] = [];
 let raf = 0;
 let last = 0;
+/** Whether the tab is in the background (see setHidden), and since when (performance.now()). */
+let hidden = false;
+let awayAt = 0;
 let viewW = 1;
 let viewH = 1;
 let dpr = 1;
 const listeners = new Set<(on: boolean) => void>();
+const awayListeners = new Set<(away: boolean) => void>();
 
 /**
  * Quality: 0 full resolution, 1 lower, 2 lowest. Bloom stays on at every
@@ -200,12 +219,32 @@ export function onFxChange(fn: (on: boolean) => void) {
   return () => listeners.delete(fn);
 }
 
+/**
+ * Whether the tab is in the background. Effects that run beside the overlay
+ * (lights, the mood, the aura) follow the same rule as its own (see
+ * setHidden): what would run its course isn't started meanwhile.
+ */
+export function fxHidden() {
+  return hidden;
+}
+
+/** Calls `fn` as the tab goes away (true) or comes back, once the overlay has dropped or woken what it holds. */
+export function onFxHidden(fn: (away: boolean) => void) {
+  awayListeners.add(fn);
+  return () => awayListeners.delete(fn);
+}
+
 function clearAll() {
-  pool?.clear();
   shapes = [];
   tasks = [];
   queuedAt = null;
   covers.clear();
+  blank();
+}
+
+/** No particles, no shake, nothing drawn. */
+function blank() {
+  pool?.clear();
   shake.trauma = 0;
   applyShake(0, 0);
   renderer?.clear();
@@ -249,13 +288,14 @@ function onPage(a: Anchor): boolean {
  */
 function waited(): number {
   if (renderer) return 0;
-  const t = performance.now();
+  // (Time away doesn't count: nothing moves on meanwhile, see setHidden.)
+  const t = hidden ? awayAt : performance.now();
   queuedAt ??= t;
   return (t - queuedAt) / 1000;
 }
 
 export function particle(p: ParticleSpec) {
-  if (!fxActive()) return;
+  if (!fxActive() || hidden) return;
   const late = waited();
   pool!.spawn(late ? { ...p, delay: (p.delay ?? 0) + late } : p, onPage(p));
   wake();
@@ -268,18 +308,18 @@ export function particle(p: ParticleSpec) {
  * effects off). An element that leaves the page stops where it was last.
  */
 export function follow(el: Element, seconds: number): number {
-  if (!fxActive() || !pool || detached(el)) return 0;
+  if (!fxActive() || hidden || !pool || detached(el)) return 0;
   const p = pool;
   const slot = p.claimFollow();
   const b0 = boxOf(el);
-  task((_, age) => {
+  // Till a little past `seconds`, for the stragglers of a stream timed to land by then.
+  task(() => {
     if (detached(el)) return false;
     const b = boxOf(el);
     p.follows[2 * slot - 2] = b.x - b0.x;
     p.follows[2 * slot - 1] = b.y - b0.y;
-    // A little past `seconds`, for the stragglers of a stream timed to land by then.
-    return age < seconds + 0.25;
-  });
+    return true;
+  }, { life: seconds + 0.25 });
   return slot;
 }
 
@@ -317,7 +357,7 @@ function leastNeeded(): number {
 }
 
 export function shape(spec: ShapeSpec): Handle {
-  if (!fxActive() || detached(spec.at)) return NOOP;
+  if (!fxActive() || detached(spec.at) || (hidden && Number.isFinite(spec.life))) return NOOP;
   if (shapes.length >= MAX_SHAPES) {
     const i = leastNeeded();
     if (i < 0) return NOOP;
@@ -340,15 +380,27 @@ export function shape(spec: ShapeSpec): Handle {
   return {
     stop(fadeSeconds = 0.4) {
       if (s.stopped) return;
+      // (Away, its fade would only play once it's back, on what has moved on: it goes now.)
+      if (hidden) {
+        shapes = shapes.filter((x) => x !== s);
+        return;
+      }
       s.stopped = true;
       s.fade = s.fadeTotal = Math.max(0.001, fadeSeconds);
     },
   };
 }
 
-export function task(fn: Task): Handle {
-  if (!fxActive()) return NOOP;
-  const t = { fn, age: -waited() };
+/**
+ * Runs `fn` every frame until it returns false, its `life` runs out or the
+ * handle is stopped. A task is part of a moment unless it's to be kept: it's
+ * dropped as the tab goes away and not started while it's away (see
+ * setHidden), and one with a life that waited past it for the renderer is
+ * dropped too (setup).
+ */
+export function task(fn: Task, { life = Infinity, keep = false }: TaskOptions = {}): Handle {
+  if (!fxActive() || (hidden && !keep)) return NOOP;
+  const t: LiveTask = { fn, age: -waited(), life, keep };
   tasks.push(t);
   wake();
   return {
@@ -433,7 +485,7 @@ export function after(seconds: number, fn: () => void) {
     if (age < seconds) return true;
     fn();
     return false;
-  });
+  }, { life: seconds });
 }
 
 // ---------- camera shake ----------
@@ -455,7 +507,7 @@ export function shakeTarget(el: HTMLElement, k = 1) {
  * hits stay gentle); `px` is the largest offset.
  */
 export function shakeView(amount: number, px = 7) {
-  if (!fxActive()) return;
+  if (!fxActive() || hidden) return;
   const was = shake.trauma;
   shake.trauma = Math.min(1, was + amount);
   shake.amp = was > 0.05 ? Math.max(shake.amp, px) : px;
@@ -505,7 +557,8 @@ let manualClock: number | null = null;
 function wake() {
   // Not made yet: made now, and then everything asked for so far plays.
   if (!renderer) hurry();
-  else if (!raf && manualClock === null) {
+  // (Away, none would come: the loop starts again once it's back, see setHidden.)
+  else if (!raf && !hidden && manualClock === null) {
     last = performance.now();
     raf = requestAnimationFrame(frame);
   }
@@ -624,7 +677,8 @@ function simulate(dt: number, nowMs: number, render: boolean): boolean {
     t.age += dt;
     let keep = false;
     try {
-      keep = t.fn(dt, t.age);
+      // (It ends by its life however it's written, so dropping it unseen while the tab is away loses nothing that would still run.)
+      keep = t.fn(dt, t.age) && t.age < t.life;
     } catch (e) {
       console.warn('FX task failed', e);
     }
@@ -883,14 +937,18 @@ function setup(c: HTMLCanvasElement, r: FxRenderer) {
   // What was asked for meanwhile goes on from where it would be by now
   // (see waited): what has run its course is dropped, and so is what was
   // stopped, or whose element left the page, before it ever showed.
+  // (Made while the tab is away, the time away doesn't count: see waited.)
   if (queuedAt !== null) {
-    const late = (performance.now() - queuedAt) / 1000;
+    const late = ((hidden ? awayAt : performance.now()) - queuedAt) / 1000;
     queuedAt = null;
     shapes = shapes.filter((s) => {
       s.age += late;
       return !s.stopped && !detached(s.at) && !(s.age >= s.life);
     });
-    for (const t of tasks) t.age += late;
+    tasks = tasks.filter((t) => {
+      t.age += late;
+      return t.age < t.life;
+    });
     for (let left = late; left > 0 && pool.count; left -= 1 / 15) pool.step(Math.min(left, 1 / 15));
     shake.trauma = Math.max(0, shake.trauma - 1.6 * (performance.now() - shakenAt) / 1000);
   }
@@ -899,6 +957,35 @@ function setup(c: HTMLCanvasElement, r: FxRenderer) {
   show(false);
   for (const l of listeners) l(userOn);
   // (resize() woke the loop: anything asked for meanwhile plays from now.)
+}
+
+/**
+ * The tab went away (`away`) or came back. Away, no frames come, so nothing
+ * moves on, and the loop is stopped too (no work in the background). What
+ * would run its course (particles, shapes that end, a moment's tasks, a
+ * shake) is dropped now, and not started while it's away: unseen, it would
+ * otherwise play all at once as the tab comes back. What lasts until it's
+ * stopped (a streak's fire, a burning flare: endless shapes, tasks to keep)
+ * stays where it was, and goes on once it's back; stopped meanwhile, it goes
+ * at once.
+ */
+function setHidden(away: boolean) {
+  if (away === hidden) return;
+  hidden = away;
+  if (away) {
+    awayAt = performance.now();
+    cancelAnimationFrame(raf);
+    raf = 0;
+    shapes = shapes.filter((s) => !s.stopped && !Number.isFinite(s.life));
+    tasks = tasks.filter((t) => t.keep);
+    // (Nothing stale is shown for a moment as it comes back.)
+    blank();
+  } else {
+    // Waiting for the renderer: the time away isn't caught up on once it's made (see waited).
+    if (queuedAt !== null) queuedAt += performance.now() - awayAt;
+    if (shapes.length || tasks.length) wake();
+  }
+  for (const l of awayListeners) l(away);
 }
 
 /** Starts the overlay on `c`. Returns a cleanup function. */
@@ -911,6 +998,9 @@ export function startFx(c: HTMLCanvasElement): () => void {
     for (const l of listeners) l(userOn);
   };
   reduce?.addEventListener('change', onMotion);
+  setHidden(document.hidden);
+  const onVisibility = () => setHidden(document.hidden);
+  document.addEventListener('visibilitychange', onVisibility);
   // Phones often drop the context while the tab is in the background.
   // preventDefault() asks the browser to give it back; then everything is
   // built again on it. (The old renderer's objects died with the context, and
@@ -929,6 +1019,7 @@ export function startFx(c: HTMLCanvasElement): () => void {
   c.addEventListener('webglcontextrestored', onRestored);
   return () => {
     reduce?.removeEventListener('change', onMotion);
+    document.removeEventListener('visibilitychange', onVisibility);
     c.removeEventListener('webglcontextlost', onLost);
     c.removeEventListener('webglcontextrestored', onRestored);
     renderer?.destroy();
@@ -936,5 +1027,7 @@ export function startFx(c: HTMLCanvasElement): () => void {
     const half = !renderer && !!building;
     teardown();
     if (half) c.getContext('webgl2')?.getExtension('WEBGL_lose_context')?.loseContext();
+    // (No overlay follows the tab now: nothing counts as away.)
+    setHidden(false);
   };
 }
