@@ -296,7 +296,7 @@
     <CodexAchievements {codex} records={delve} store={achievements} {wins} items={engine.items} />
   {:else}
 
-  <section class="summary" in:fly={calm({ y: 20, duration: 700, delay: 150 })}>
+  <section class="summary">
     {#if stats.seen}
       <div class="side">
         <div class="stat">
@@ -349,7 +349,7 @@
   </section>
 
   {#if !stats.seen}
-    <div class="empty" in:fly={calm({ y: 20, duration: 700, delay: 300 })}>
+    <div class="empty">
       <p>Your codex is still blank.</p>
       <p class="muted">
         Every item revealed in your games is written into it, with how often you named it right. It is kept in this browser only.
@@ -357,7 +357,7 @@
       <button class="btn primary" onclick={closeCodex}>Begin the hunt</button>
     </div>
   {:else}
-    <div class="split" in:fly={calm({ y: 20, duration: 700, delay: 250 })}>
+    <div class="split">
       <section class="panel" use:backdropShadow={{ fill: 'linear' }}>
         <header><h2>By question</h2></header>
         {@render bars([
@@ -390,7 +390,7 @@
       </section>
     </div>
 
-    <div class="insights" in:fly={calm({ y: 20, duration: 700, delay: 350 })}>
+    <div class="insights">
       <section class="panel" use:backdropShadow={{ fill: 'linear' }}>
         <header><h2>Nemeses</h2></header>
         {#if stats.nemeses.length}

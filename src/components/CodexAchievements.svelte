@@ -1,11 +1,9 @@
 <script lang="ts">
-  import { fly } from 'svelte/transition';
   import type { Codex } from '../lib/codex';
   import type { DelveRecords } from '../lib/delveRecord';
   import type { Item } from '../lib/game';
   import { ACHIEVEMENTS, GROUPS, standings, summarize, type AchievementStore, type WinRun } from '../lib/achievements';
   import { METALS, TIERS } from '../lib/metals';
-  import { motion } from '../lib/motion.svelte';
   import { backdropShadow } from '../lib/backdropShadow';
   import ArcaneCircle from './ArcaneCircle.svelte';
   import AchievementSeal from './AchievementSeal.svelte';
@@ -17,7 +15,6 @@
   // lib/achievements.ts.
   let { codex, records, store, wins, items }: { codex: Codex; records: DelveRecords; store: AchievementStore; wins: WinRun; items: Item[] } = $props();
 
-  const rise = (delay: number) => ({ y: 20, duration: motion.still ? 0 : 700, delay: motion.still ? 0 : delay });
   /** How far along, 0 to 1 (nothing to do counts as nothing done). */
   const shareOf = (p: { have: number; need: number }) => (p.need > 0 ? Math.min(1, p.have / p.need) : 0);
 
@@ -48,7 +45,7 @@
   </div>
 {/snippet}
 
-<section class="summary" in:fly={rise(150)}>
+<section class="summary">
   <div class="side">
     {@render metal(metals[0])}
     {@render metal(metals[1])}
@@ -80,7 +77,7 @@
   </div>
 </section>
 
-<div class="groups" in:fly={rise(250)}>
+<div class="groups">
   {#each groups as g (g.key)}
     {@const done = g.rows.filter((r) => r.earned !== null).length}
     <section class="panel" use:backdropShadow={{ fill: 'linear' }} aria-labelledby="feats-{g.key}">
@@ -230,11 +227,11 @@
     margin-bottom: 0.3rem;
   }
 
-  /* ---- the groups: one panel each, the full width, their seals in even rows ---- */
+  /* ---- the groups: one panel each, the full width, their seals in even rows, spaced as the other pages' panels ---- */
   .groups {
     display: flex;
     flex-direction: column;
-    gap: 1.2rem;
+    gap: 1rem;
   }
   .panel {
     padding: 1.2rem 1.3rem 1.3rem;
