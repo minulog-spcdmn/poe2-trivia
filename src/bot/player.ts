@@ -24,6 +24,7 @@ interface Plan {
 }
 
 import { between, log } from './util';
+import { Hand } from './hand';
 
 /** Each option's name, as far as this device knows it (a guest has no item ids before the reveal). */
 const optionNames = (o: Question) => o.labels.map((l, i) => l ?? engine.byId.get(o.options[i])?.name ?? '');
@@ -57,11 +58,15 @@ export class Player {
   /** When it came on, and how many answers it has given since (warming up, tiring). */
   private readonly since = Date.now();
   private answers = 0;
+  /** Its pointer, as the others see it: it moves to what it chooses, and clicks. */
+  private readonly hand: Hand;
 
   constructor(
     readonly persona: Persona,
     private readonly eyes: Eyes,
-  ) {}
+  ) {
+    this.hand = new Hand(persona);
+  }
 
   /** Forgets what it was about to do (the room went back to the lobby, or it left). */
   reset() {
@@ -71,6 +76,7 @@ export class Player {
 
   /** Looks at the game and makes up its mind about anything new; then does what is due. */
   play(s: GameState) {
+    this.hand.update(s);
     if ((s.startedAt ?? 0) !== this.game) {
       this.game = s.startedAt ?? 0;
       this.misses = 0;
@@ -188,18 +194,29 @@ export class Player {
         teammates: standingIds(s).filter((id) => id !== me).length,
       }),
     }));
+    // The cards looked over meanwhile, and the click begun early enough to land on time.
+    const lead = this.hand.lead();
+    const at = session.hostNow() + Math.max(300, pickDelay(this.persona, Math.random) - lead);
+    this.hand.lookOver(offered.map((_, i) => `card:${i}`), Date.now() + (at - session.hostNow()));
+    const still = () => {
+      const cur = session.state;
+      if (cur?.phase !== 'choosing' || cur.turnCount !== s.turnCount || cur.round !== s.round) return null;
+      return type === 'vote' && cur.delve?.votes?.[me] ? null : cur;
+    };
     this.plans.set(key, {
-      at: session.hostNow() + pickDelay(this.persona, Math.random),
-      run: () => {
-        const cur = session.state;
-        if (cur?.phase !== 'choosing' || cur.turnCount !== s.turnCount || cur.round !== s.round) return;
-        if (type === 'vote' && cur.delve?.votes?.[me]) return;
+      at,
+      run: async () => {
+        let cur = still();
+        if (!cur) return;
         let category = chooseCard(this.persona, offered, finds, Math.random);
         // Together: the team's votes so far may sway it.
         if (type === 'vote') {
           const theirs = Object.entries(cur.delve?.votes ?? {}).flatMap(([id, c]) => (id !== me && offered.includes(c) ? [c] : []));
           category = withTheHerd(this.persona, category, theirs, Math.random);
         }
+        await this.hand.click(`card:${cur.offered.indexOf(category)}`);
+        cur = still();
+        if (!cur) return;
         log(type === 'pick' ? 'picks' : 'votes for', category);
         session.dispatch(type === 'pick' ? { type: 'pick', category } : { type: 'vote', category });
         if (type === 'vote') this.planRethink(s, category);
@@ -214,13 +231,19 @@ export class Player {
     const me = session.myPlayerId!;
     this.plans.set(`rethink:${s.round}:${s.turnCount}`, {
       at: session.hostNow() + after,
-      run: () => {
-        const cur = session.state;
-        if (cur?.phase !== 'choosing' || cur.round !== s.round || cur.turnCount !== s.turnCount || cur.delve?.votes?.[me] !== voted) return;
+      run: async () => {
+        const open = () => {
+          const cur = session.state;
+          return cur?.phase === 'choosing' && cur.round === s.round && cur.turnCount === s.turnCount && cur.delve?.votes?.[me] === voted ? cur : null;
+        };
+        const cur = open();
+        if (!cur) return;
         const theirs = Object.entries(cur.delve?.votes ?? {}).flatMap(([id, c]) => (id !== me && c !== voted && cur.offered.includes(c) ? [c] : []));
         const others = cur.offered.filter((c) => c !== voted);
         const category = theirs.length ? withTheHerd({ ...this.persona, herd: 1 }, voted, theirs, Math.random) : others.length ? pickCategory(this.persona, others, Math.random) : voted;
         if (category === voted) return;
+        await this.hand.click(`card:${cur.offered.indexOf(category)}`);
+        if (!open()) return;
         log('changes its vote to', category);
         session.dispatch({ type: 'vote', category });
       },
@@ -237,7 +260,9 @@ export class Player {
       this.decided.add(key);
       this.plans.set(key, {
         at: session.hostNow() + between(1500, 5000) * this.persona.pace,
-        run: () => {
+        run: async () => {
+          // The life is given from the teammate's row on the scoreboard.
+          await this.hand.click(`row:${session.state?.players.findIndex((o) => o.id === p.id) ?? -1}`);
           const cur = session.state;
           if (!cur || reviveProblem(cur, me, p.id)) return;
           log('gives a life to', p.name);
@@ -278,6 +303,8 @@ export class Player {
         what += ' (misclicks)';
       }
     }
+    await this.hand.click(`opt:${index}`);
+    if (!this.open(q)) return;
     this.answers++;
     const truth = o.itemId ? (index === o.options.indexOf(o.itemId) ? ' right' : ' wrong') : '';
     log(`${what}${truth} (option ${index + 1}) after ${((session.hostNow() - (q.clockAt ?? q.askedAt)) / 1000).toFixed(1)} s`);
@@ -365,9 +392,12 @@ export class Player {
     ]
       .filter(Boolean)
       .join(', ');
+    // The hand starts for the answer early enough to click on time, looking the question over until then.
+    const at = Math.max(now + 200, start + (panicked ? panicked.at : delay) - this.hand.lead());
+    this.hand.ponder(q, Date.now() + (at - now), !knows);
     this.plans.set(key, {
       // Picked up after a reload: not all at once.
-      at: Math.max(now + 200, start + (panicked ? panicked.at : delay)),
+      at,
       run: () => {
         const o = this.open(q);
         if (!o) return;
@@ -399,6 +429,8 @@ export class Player {
       if (teamItemReady(cur, 'flares') && !o.flared) return void this.plans.set(key, { at: o.deadline + 400, run });
       return this.answer(s, q, false, ask, (o.struck ?? []).map((x) => x.index), 'guesses near the end:', seen);
     };
-    this.plans.set(key, { at: Math.max(start + 1000, q.deadline! - margin), run });
+    const at = Math.max(start + 1000, q.deadline! - margin);
+    this.hand.ponder(q, Date.now() + (at - session.hostNow()), true);
+    this.plans.set(key, { at, run });
   }
 }
