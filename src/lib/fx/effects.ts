@@ -689,13 +689,16 @@ export function edgeHit(o: { color?: Vec3; width?: number; intensity?: number } 
 }
 
 /**
- * The clock's smoke (edgeBeat's, `pattern` and `clock` as it had them)
- * when time is up: one last heavy beat, then it cools from its red to ash
- * and thins away.
+ * Time's up, as its sound goes (the wrong answer's: a dull blow that holds
+ * a moment, then sinks in pitch and dies within half a second): the
+ * clock's smoke (edgeBeat's, `pattern` and `clock` as it had them), lit by
+ * the blow, holds, then sinks, draining down off the screen as it cools
+ * and darkens, gone with the sound. No swell: that is a tick's.
  */
-export function edgeSmokeOut(o: { pattern: number; clock: number; width?: number; intensity?: number; color?: Vec3 }) {
-  const life = 1.8;
+export function edgeSmokeSink(o: { pattern: number; clock: number; width?: number; intensity?: number; color?: Vec3 }) {
+  const life = 0.75;
   const hot = o.color ?? C.crimson;
+  const W = () => (o.width ?? 100) * edgeScale();
   return shape({
     type: ShapeType.Edge,
     at: { x: innerWidth / 2, y: innerHeight / 2 },
@@ -706,24 +709,26 @@ export function edgeSmokeOut(o: { pattern: number; clock: number; width?: number
       b.y = innerHeight / 2;
       f.hw = innerWidth / 2;
       f.hh = innerHeight / 2;
-      const rise = 0.04;
-      const beat = age < rise ? Math.sin(((age / rise) * Math.PI) / 2) ** 2 : Math.exp(-(age - rise) / 0.3);
-      // The ash it leaves, thinning out to nothing.
-      const ashes = 0.85 * Math.min(1, age / rise) * (1 - t) ** 1.3;
-      f.k = (o.intensity ?? 0.17) * (beat + ashes);
-      const cool = Math.min(1, Math.max(0, (age - 0.12) / 0.7));
-      const c = cool * cool * (3 - 2 * cool);
-      const to = (i: number) => hot[i] + (C.ash[i] * 2.4 - hot[i]) * c;
+      // The sound's shape: up with the blow, held (a little easing), then
+      // falling away as its pitch does.
+      const up = Math.min(1, age / 0.04);
+      const held = age < 0.19 ? 1 - 0.25 * Math.max(0, age - 0.04) / 0.15 : 0.75 * Math.exp(-(age - 0.19) / 0.12);
+      f.k = (o.intensity ?? 0.12) * up * held * (1 - t * t);
+      // Sinking, slowly at first and then faster, as a weight drops.
+      const fall = Math.max(0, (age - 0.14) / 0.45);
+      const s = Math.min(1, fall * fall);
+      const to = (i: number) => hot[i] + (hot[i] * 0.35 - hot[i]) * s;
       f.color = [to(0), to(1), to(2)];
-      f.q[0] = (o.width ?? 100) * edgeScale();
+      f.q[0] = W();
       f.q[1] = 0.6;
       f.q[2] = 1;
       f.q[3] = o.pattern;
-      f.q[4] = 0.6 * beat;
+      f.q[4] = 0;
       f.q[5] = o.clock + age;
       f.q[6] = 0;
-      // Thinning as it cools.
-      f.q[7] = 1 - 0.7 * c;
+      f.q[7] = 1 - 0.5 * s;
+      f.q[8] = W() * 2.2 * s;
+      f.q[9] = Math.min(1, s * 1.3);
     },
   });
 }

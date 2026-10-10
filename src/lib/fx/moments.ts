@@ -9,7 +9,7 @@ import {
   edgeGlow,
   edgeBeat,
   edgeHit,
-  edgeSmokeOut,
+  edgeSmokeSink,
   embers,
   emitter,
   fire,
@@ -384,14 +384,16 @@ export function reveal(t: RevealTargets) {
       }
     }
     if (!t.warded) {
-      // Time's up: the clock's smoke burns down to ash; a wrong answer is a blow.
+      // A blow at the edges, as its sound (the same for time's up); time's
+      // up also sinks the clock's smoke away with it.
+      edgeHit({ color: C.wrong });
+      pulseMood(0.16, [0.9, 0.3, 0.15]);
       const smoke = t.timedOut ? countdownSmoke() : null;
       if (smoke) {
-        edgeSmokeOut({ ...smoke, width: TICK_STEPS[0].width, color: TICK_STEPS[0].color });
-        pulseMood(0.14, [0.6, 0.35, 0.3]);
-      } else {
-        edgeHit({ color: C.wrong });
-        pulseMood(0.16, [0.9, 0.3, 0.15]);
+        // It takes over from the beats still lingering, which go at once.
+        for (const h of beats) h.stop(0.08);
+        beats = [];
+        edgeSmokeSink({ ...smoke, width: TICK_STEPS[0].width, color: TICK_STEPS[0].color });
       }
     }
     shakeView(0.45, 6);
@@ -1082,6 +1084,8 @@ let smokePattern = 0;
 let smokeFrom = 0;
 let lastTick = 0;
 let lastTickAt = 0;
+/** The beats still lingering, for time's up to take over. */
+let beats: Handle[] = [];
 
 /** The countdown's smoke, if its last second has just ticked (for time's up to burn it down), else null. */
 function countdownSmoke(): { pattern: number; clock: number } | null {
@@ -1102,18 +1106,18 @@ export function timerTick(timer: Element, secs: number, screen = true) {
   sparks(timer, { count: 6 + Math.round(urgency * 10), area: 'edge', colors: [C.crimson, C.ember], speed: [80, 260], gravity: 200, life: [0.25, 0.5] });
   if (!screen) return;
   // Every tick alike: the scene flushed red and a beat of red smoke at the
-  // screen's edges, one smoke for the whole countdown. Each second its own step, so a glance tells which: the
-  // first three held back, the last two as strong as a warning gets, and
-  // the very last with a hot rim along the edges.
+  // screen's edges, one smoke for the whole countdown, each second a step
+  // stronger (TICK_STEPS).
   const step = TICK_STEPS[Math.max(0, Math.min(TICK_STEPS.length - 1, secs - 1))];
   if (secs >= lastTick) {
     smokePattern = Math.random() * 100;
     smokeFrom = performance.now();
+    beats = [];
   }
   lastTick = secs;
   lastTickAt = performance.now();
   pulseMood(step.mood);
-  edgeBeat({ ...step, pattern: smokePattern, clock: (performance.now() - smokeFrom) / 1000 });
+  beats.push(edgeBeat({ ...step, pattern: smokePattern, clock: (performance.now() - smokeFrom) / 1000 }));
 }
 
 // ---------- deathmatch ----------
