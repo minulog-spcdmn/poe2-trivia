@@ -180,8 +180,7 @@ middle, fading out at both ends; no diamond on it):
 
 ### Invite link screen (`?room=CODE`)
 
-Being redesigned on the canvas (page "Invite screen"); keep what beta has
-until that is approved. Its own screen, errors as toasts.
+Now its own handoff: `../invite-screen/`.
 
 ### Phones (`W-phone`)
 

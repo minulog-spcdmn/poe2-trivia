@@ -1,0 +1,746 @@
+From 64c1018d8edbe3bf4db6b6e99b131f6dd6c8d546 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sat, 10 Oct 2026 07:05:17 +0200
+Subject: [PATCH 1/3] Invite: the start page with the choice made, the room as
+ the lobby shows it
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_0174pAqwWHYR6Vwn9RMJ8ahN
+---
+ src/components/Home.svelte       |  56 ++++++--
+ src/components/InviteRoom.svelte | 224 +++++++++++++++++++++++++++++++
+ src/components/Lobby.svelte      |   2 +-
+ src/lib/site.ts                  |  10 +-
+ 4 files changed, 277 insertions(+), 15 deletions(-)
+ create mode 100644 src/components/InviteRoom.svelte
+
+diff --git a/src/components/Home.svelte b/src/components/Home.svelte
+index 696693f..2fb86f4 100644
+--- a/src/components/Home.svelte
++++ b/src/components/Home.svelte
+@@ -16,7 +16,7 @@
+   import GameTitle from './GameTitle.svelte';
+   import Connecting from './Connecting.svelte';
+   import DailyUnique from './DailyUnique.svelte';
+-  import InviteScreen from './InviteScreen.svelte';
++  import InviteRoom from './InviteRoom.svelte';
+   import MenuCursor from './MenuCursor.svelte';
+   import OpenRooms from './OpenRooms.svelte';
+ 
+@@ -26,6 +26,8 @@
+   const params = new URLSearchParams(location.search);
+   /** An invite link's room (?room=CODE): its own screen until joined or left. */
+   let invite = $state(cleanCode(params.get('room') ?? ''));
++  /** Who sent it (?by=NAME, added by the lobby's invite link), so the screen can say whose room it is. */
++  const inviteHost = (params.get('by') ?? '').trim().slice(0, MAX_NAME);
+   if (params.has('owner')) {
+     void unlockHeldName(params.get('owner') ?? '');
+     // Out of the address bar and history either way; other params stay.
+@@ -123,7 +125,7 @@
+   const SWAP_OUT = { duration: 140 };
+ 
+   /** The keyboard cursor: arrows move it, Enter chooses, it follows the mouse. */
+-  let cursor = $state(lastEntry());
++  let cursor = $state(invite ? 0 : lastEntry());
+   /** The entry whose row (fields in place of its description) is open. */
+   let open = $state<Entry | null>(null);
+   let entryEls: HTMLButtonElement[] = $state([]);
+@@ -320,13 +322,18 @@
+     rowFocus = false;
+   }
+   /** The cursor shows while an entry is pointed at, chosen from the keyboard, typed in or connecting; otherwise it fades away. */
+-  const lit = $derived(!renaming && (hovered || keyFocus || (!!open && rowFocus) || connecting));
++  const lit = $derived(!renaming && (hovered || keyFocus || ((!!open || !!invite) && rowFocus) || connecting));
+ 
+   // ---- the invite link's screen ----
+ 
++  // An invite is the start page with the choice already made: the menu holds
++  // the one room to join (and a way to everything else), the right-hand
++  // column the room as the lobby will show it (InviteRoom).
+   let inviteName = $state(savedName());
+-  function joinInvite(field: HTMLInputElement) {
+-    const n = checkName(inviteName, field);
++  let inviteField = $state<HTMLInputElement>();
++  function joinInvite(e?: Event) {
++    e?.preventDefault();
++    const n = known || checkName(inviteName, inviteField);
+     if (!n) return;
+     startJoin(invite, n);
+   }
+@@ -357,10 +364,7 @@
+ 
+ <svelte:window onkeydown={keys} onpointerdown={outside} />
+ 
+-{#if invite}
+-  <InviteScreen code={invite} bind:name={inviteName} {connecting} onjoin={joinInvite} onback={leaveInvite} />
+-{:else}
+-  <div class="home">
++<div class="home" class:invited={!!invite}>
+     <div class="intro">
+       <div class="title">
+         <GameTitle />
+@@ -405,6 +409,30 @@
+         <!-- One cursor for the menu: it glides to the entry under the mouse (or the
+              keyboard's), and cools away once nothing is pointed at. -->
+         <MenuCursor at={cursor} {lit} />
++        {#if invite}
++          <div class="entry" role="presentation" class:cur={cursor === 0} onpointerenter={(ev) => hover(ev, 0)} onpointerleave={leave} in:fly={{ y: 12, duration: 500, delay: 450 }}>
++            <button class="pick" bind:this={entryEls[0]} onclick={() => (inviteField ? inviteField.focus() : joinInvite())} onfocus={() => (cursor = 0)}>
++              {inviteHost ? `Join ${inviteHost}’s room` : 'Join the room'}
++            </button>
++            <div class="under">
++              {#if connecting}
++                <div class="slot" in:fly={SWAP_IN} out:fade={SWAP_OUT}><Connecting /></div>
++              {:else}
++                <form class="slot row" onsubmit={joinInvite} in:fly={SWAP_IN} out:fade={SWAP_OUT}>
++                  {#if !known}
++                    <!-- svelte-ignore a11y_autofocus -->
++                    <input class="field name" bind:this={inviteField} bind:value={inviteName} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="nickname" spellcheck="false" autofocus />
++                  {/if}
++                  <button class="btn primary" type="submit">{known ? 'Join the room' : 'Join'}</button>
++                </form>
++              {/if}
++            </div>
++          </div>
++          <div class="entry" role="presentation" class:cur={cursor === 1} class:dimmed={connecting} inert={connecting} onpointerenter={(ev) => hover(ev, 1)} onpointerleave={leave} in:fly={{ y: 12, duration: 500, delay: 520 }}>
++            <button class="pick" bind:this={entryEls[1]} onclick={leaveInvite} onfocus={() => (cursor = 1)}>Something else</button>
++            <div class="under"><p class="about">Create your own room, play hot-seat, or open the Codex.</p></div>
++          </div>
++        {:else}
+         {#each ENTRIES as e, i (e)}
+           {@const isOpen = open === e && !connecting}
+           {@const isBusy = connecting && (busy ?? (session.mode === 'host' ? 'create' : 'join')) === e}
+@@ -458,16 +486,23 @@
+             </div>
+           </div>
+         {/each}
++        {/if}
+       </nav>
+     </div>
+ 
+     <div class="today" in:fade={{ duration: 900, delay: 300 }}>
+-      <DailyUnique />
++      {#if invite}
++        <InviteRoom code={invite} host={inviteHost} name={known || inviteName} />
++      {:else}
++        <DailyUnique />
++      {/if}
+     </div>
+ 
++    {#if !invite}
+     <div class="rooms" class:dimmed={connecting} inert={connecting} in:fly={{ y: 20, duration: 600, delay: 600 }}>
+       <OpenRooms onJoin={joinListed} disabled={connecting} />
+     </div>
++    {/if}
+ 
+     <footer>
+       <div class="rule" aria-hidden="true"></div>
+@@ -492,7 +527,6 @@
+       </div>
+     </footer>
+   </div>
+-{/if}
+ 
+ <style>
+   /* One stage, at most 1440 px wide and centred: two columns (the menu,
+diff --git a/src/components/InviteRoom.svelte b/src/components/InviteRoom.svelte
+new file mode 100644
+index 0000000..9559783
+--- /dev/null
++++ b/src/components/InviteRoom.svelte
+@@ -0,0 +1,224 @@
++<script lang="ts">
++  // An invite link's room, in the start page's right-hand column: the room
++  // as the lobby will show it, so arriving and joining look like one place.
++  // The link knows the code and (if the host's build adds it) the host's
++  // name; nothing else can be known without connecting, and connecting
++  // shares the player's IP, so nothing else is shown. The chips are unlit:
++  // a player's colour is given by the room once they are in.
++  let { code, host, name }: { code: string; host: string; name: string } = $props();
++
++  const mine = $derived(name.trim());
++  const initial = (n: string) => n.charAt(0).toUpperCase();
++</script>
++
++<div class="invite-room">
++  <section class="block">
++    <header><h2>Room code</h2></header>
++    <div class="glyphs" aria-label="Room code {code}">
++      {#each code.split('') as ch, i (i)}
++        <span class="glyph" style:--i={i} style:animation-delay="{300 + i * 80}ms">{ch}</span>
++      {/each}
++    </div>
++  </section>
++
++  <section class="block">
++    <header><h2>Party</h2></header>
++    <ul class="chips">
++      {#if host}
++        <li>
++          <span class="orb" aria-hidden="true">{initial(host)}</span>
++          <span class="name">{host}</span>
++          <span class="host" role="img" aria-label="Host" title="Host"
++            ><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 3.5h15" /><path d="M7 3.5V19l5-3.4 5 3.4V3.5" /><path d="M12 7.2l1.6 1.6-1.6 1.6-1.6-1.6z" /></svg
++            ></span
++          >
++        </li>
++      {/if}
++      <!-- Your chip, as it will stand beside the host's: it takes your name as you write it. -->
++      <li class="you" class:empty={!mine}>
++        <span class="orb" aria-hidden="true">{mine ? initial(mine) : ''}</span>
++        <span class="name">{#if mine}{mine}<em>&nbsp;(you)</em>{:else}You{/if}</span>
++      </li>
++    </ul>
++    <p class="hint">The rest of the party shows once you are in.</p>
++  </section>
++
++  <!-- The same words as the lobby's, said where joining is decided. -->
++  <p class="ip-note">Players in a room connect directly, so they can see each other's IP address. Only play with people you're comfortable sharing that with.</p>
++</div>
++
++<style>
++  /* The lobby's open blocks (Lobby.svelte, desktop): a heading over a hairline, then its content. */
++  .invite-room {
++    display: flex;
++    flex-direction: column;
++    gap: 1.6rem;
++  }
++  .block header {
++    margin-bottom: 1rem;
++    padding-bottom: 0.55rem;
++    border-bottom: 1px solid rgba(125, 99, 51, 0.35);
++  }
++  .block h2 {
++    margin: 0;
++    font-family: var(--font-display);
++    font-weight: 400;
++    font-size: 20px;
++    letter-spacing: 0.02em;
++    text-transform: none;
++    color: var(--gold);
++  }
++  /* The room code: the lobby's glyphs. */
++  .glyphs {
++    display: flex;
++    gap: 0.5rem;
++    width: 100%;
++    container-type: inline-size;
++    -webkit-user-select: all;
++    user-select: all;
++  }
++  .glyph {
++    flex: 1;
++    min-width: 0;
++    height: clamp(58px, 14vw, 72px);
++    display: grid;
++    place-items: center;
++    position: relative;
++    overflow: hidden;
++    font-family: var(--font-cinzel);
++    font-weight: 900;
++    font-size: min(2.6rem, (100cqi - 5 * 0.5rem) / 6 * 0.74);
++    color: var(--gold-hi);
++    background: linear-gradient(180deg, #221a11, #0d0a07);
++    border: 1px solid var(--gold-lo);
++    border-radius: 4px;
++    box-shadow:
++      inset 0 0 18px rgba(201, 164, 92, 0.12),
++      0 6px 18px rgba(0, 0, 0, 0.6);
++    text-shadow: 0 0 16px rgba(241, 217, 155, 0.45);
++    animation: drop 0.6s var(--ease-back) both;
++  }
++  .glyph::after {
++    content: '';
++    position: absolute;
++    inset: -20% auto -20% -80%;
++    width: 60%;
++    background: linear-gradient(100deg, transparent, rgba(255, 240, 200, 0.22), transparent);
++    transform: skewX(-16deg);
++    animation: glance 6s ease-in-out infinite;
++    animation-delay: calc(1.2s + var(--i, 0) * 0.12s);
++    pointer-events: none;
++  }
++  @keyframes glance {
++    0% {
++      translate: 0 0;
++    }
++    18%,
++    100% {
++      translate: 420% 0;
++    }
++  }
++  @keyframes drop {
++    from {
++      opacity: 0;
++      transform: translateY(-18px) rotateX(70deg);
++    }
++  }
++  /* The party: the lobby's chips, two to a row. */
++  .chips {
++    list-style: none;
++    margin: 0;
++    padding: 0;
++    display: grid;
++    grid-template-columns: 1fr 1fr;
++    gap: 0.5rem;
++  }
++  .chips li {
++    display: flex;
++    align-items: center;
++    gap: 0.6rem;
++    min-width: 0;
++    padding: 0.45rem 0.8rem 0.45rem 0.5rem;
++    border-radius: 999px;
++    background: rgba(12, 10, 8, 0.75);
++    border: 1px solid var(--line);
++  }
++  .name {
++    flex: 1;
++    min-width: 0;
++    overflow: hidden;
++    text-overflow: ellipsis;
++    white-space: nowrap;
++    margin-left: 2px;
++    font-size: 0.98rem;
++    line-height: 1.1;
++    padding-bottom: 0.2em;
++    margin-bottom: -0.2em;
++  }
++  .name em {
++    color: var(--muted);
++    font-size: 0.85em;
++  }
++  /* Unlit: the Avatar's shape and ring, before the room gives it a colour. */
++  .orb {
++    flex: none;
++    width: 32px;
++    height: 32px;
++    display: grid;
++    place-items: center;
++    border-radius: 50%;
++    font-family: var(--font-cinzel);
++    font-weight: 900;
++    font-size: 15px;
++    padding-top: 1px;
++    color: var(--gold-hi);
++    background: radial-gradient(circle at 35% 30%, #3a2c1c, #17110b 70%);
++    box-shadow:
++      0 0 0 2px #0c0a08,
++      0 0 0 3px var(--gold-lo),
++      0 4px 10px rgba(0, 0, 0, 0.5);
++  }
++  .you.empty {
++    border-style: dashed;
++    border-color: rgba(125, 99, 51, 0.6);
++  }
++  .you.empty .orb {
++    background: none;
++    box-shadow: none;
++    border: 1px dashed var(--gold-lo);
++  }
++  .you.empty .name {
++    font-style: italic;
++    color: var(--muted);
++  }
++  /* The host: the lobby's hanging banner. */
++  .host {
++    flex: none;
++    display: grid;
++    place-items: center;
++    margin: 0 0.2rem 0 0.3rem;
++    color: #d8b56e;
++    filter: drop-shadow(0 0 5px rgba(241, 217, 155, 0.45));
++  }
++  .host svg {
++    width: 22px;
++    height: 22px;
++    fill: none;
++    stroke: currentColor;
++    stroke-width: 1.7;
++    stroke-linecap: round;
++    stroke-linejoin: round;
++  }
++  .hint {
++    margin: 0.8rem 0 0;
++    font-size: 0.95rem;
++    font-style: italic;
++    color: #ab9d88;
++  }
++  .ip-note {
++    margin: 0;
++    font-size: 0.8rem;
++    line-height: 1.4;
++    color: #8f8370;
++  }
++</style>
+diff --git a/src/components/Lobby.svelte b/src/components/Lobby.svelte
+index 0b391d2..78985cd 100644
+--- a/src/components/Lobby.svelte
++++ b/src/components/Lobby.svelte
+@@ -39,7 +39,7 @@
+   let nameError = $state(false);
+   let copied = $state(false);
+ 
+-  const inviteLink = $derived(inviteUrl(session.code));
++  const inviteLink = $derived(inviteUrl(session.code, s.players.find((p) => p.id === s.hostId)?.name));
+   /** Desktop: the start page's two columns, no panels. Tall: the modes' names go under their emblems. */
+   const tall = new MediaQuery('(min-height: 860px)');
+   // Measure the category cards' emblems (lib/iconFit) while the party
+diff --git a/src/lib/site.ts b/src/lib/site.ts
+index b0724e3..60c45ef 100644
+--- a/src/lib/site.ts
++++ b/src/lib/site.ts
+@@ -14,8 +14,12 @@ export const IMPRINT_URL = './impressum.html';
+ export const PRIVACY_URL = './datenschutz.html';
+ export const DONATE_URL = 'https://paypal.me/minuW';
+ 
+-/** Invite link for a room (the dev server, and any local build, point to where they are: their rooms are only there). */
+-export function inviteUrl(code: string) {
++/**
++ * Invite link for a room (the dev server, and any local build, point to where
++ * they are: their rooms are only there). With the host's name (`by`), the
++ * invite screen can say whose room it leads to.
++ */
++export function inviteUrl(code: string, by?: string) {
+   const base = import.meta.env.DEV || LOCAL ? `${location.origin}${location.pathname}` : PLAY_URL;
+-  return `${base}?room=${code}`;
++  return `${base}?room=${code}` + (by ? `&by=${encodeURIComponent(by)}` : '');
+ }
+-- 
+2.43.0
+
+
+From c52a16e2f7baab5494bf2b2357ceebf9637afad0 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sat, 10 Oct 2026 07:11:44 +0200
+Subject: [PATCH 2/3] Invite: only for a first visit; a player with a name goes
+ straight to the room
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_0174pAqwWHYR6Vwn9RMJ8ahN
+---
+ src/components/Home.svelte | 28 ++++++++++++++++++++--------
+ 1 file changed, 20 insertions(+), 8 deletions(-)
+
+diff --git a/src/components/Home.svelte b/src/components/Home.svelte
+index 2fb86f4..75d640b 100644
+--- a/src/components/Home.svelte
++++ b/src/components/Home.svelte
+@@ -333,7 +333,7 @@
+   let inviteField = $state<HTMLInputElement>();
+   function joinInvite(e?: Event) {
+     e?.preventDefault();
+-    const n = known || checkName(inviteName, inviteField);
++    const n = checkName(inviteName, inviteField);
+     if (!n) return;
+     startJoin(invite, n);
+   }
+@@ -347,6 +347,20 @@
+   $effect(() => {
+     if (session.state && invite) leaveInvite();
+   });
++  // The invite screen is for a first visit, when there is no name yet. A
++  // player with a name goes straight on to the room: the start page shows the
++  // join on its way in Join a room's row, and a join that fails leaves the
++  // code there with the toast, to try again. Not over a game being resumed
++  // (App resumes it on mount, after this).
++  if (invite && known && !nameTooShort(known) && !nameHeld(known)) {
++    const code = invite;
++    const name = known;
++    leaveInvite();
++    cursor = ENTRIES.indexOf('join');
++    setTimeout(() => {
++      if (session.status === 'idle' && !session.state) startJoin(code, name);
++    });
++  }
+ 
+   const MENU: Record<Entry, string> = {
+     create: 'Create a room',
+@@ -411,7 +425,7 @@
+         <MenuCursor at={cursor} {lit} />
+         {#if invite}
+           <div class="entry" role="presentation" class:cur={cursor === 0} onpointerenter={(ev) => hover(ev, 0)} onpointerleave={leave} in:fly={{ y: 12, duration: 500, delay: 450 }}>
+-            <button class="pick" bind:this={entryEls[0]} onclick={() => (inviteField ? inviteField.focus() : joinInvite())} onfocus={() => (cursor = 0)}>
++            <button class="pick" bind:this={entryEls[0]} onclick={() => inviteField?.focus()} onfocus={() => (cursor = 0)}>
+               {inviteHost ? `Join ${inviteHost}’s room` : 'Join the room'}
+             </button>
+             <div class="under">
+@@ -419,11 +433,9 @@
+                 <div class="slot" in:fly={SWAP_IN} out:fade={SWAP_OUT}><Connecting /></div>
+               {:else}
+                 <form class="slot row" onsubmit={joinInvite} in:fly={SWAP_IN} out:fade={SWAP_OUT}>
+-                  {#if !known}
+-                    <!-- svelte-ignore a11y_autofocus -->
+-                    <input class="field name" bind:this={inviteField} bind:value={inviteName} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="nickname" spellcheck="false" autofocus />
+-                  {/if}
+-                  <button class="btn primary" type="submit">{known ? 'Join the room' : 'Join'}</button>
++                  <!-- svelte-ignore a11y_autofocus -->
++                  <input class="field name" bind:this={inviteField} bind:value={inviteName} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="nickname" spellcheck="false" autofocus />
++                  <button class="btn primary" type="submit">Join</button>
+                 </form>
+               {/if}
+             </div>
+@@ -492,7 +504,7 @@
+ 
+     <div class="today" in:fade={{ duration: 900, delay: 300 }}>
+       {#if invite}
+-        <InviteRoom code={invite} host={inviteHost} name={known || inviteName} />
++        <InviteRoom code={invite} host={inviteHost} name={inviteName} />
+       {:else}
+         <DailyUnique />
+       {/if}
+-- 
+2.43.0
+
+
+From 980d21f1027344476bae32c46ad7189f6fbc91b2 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sat, 10 Oct 2026 07:37:01 +0200
+Subject: [PATCH 3/3] Invite: the old invite screen goes (the start page shows
+ the invite now)
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_0174pAqwWHYR6Vwn9RMJ8ahN
+---
+ src/components/InviteScreen.svelte | 229 -----------------------------
+ 1 file changed, 229 deletions(-)
+ delete mode 100644 src/components/InviteScreen.svelte
+
+diff --git a/src/components/InviteScreen.svelte b/src/components/InviteScreen.svelte
+deleted file mode 100644
+index 6161e19..0000000
+--- a/src/components/InviteScreen.svelte
++++ /dev/null
+@@ -1,229 +0,0 @@
+-<script lang="ts">
+-  // An invite link (?room=CODE) opens this instead of the start page: the
+-  // room's code, a name, and one button to go in. "Back to the start" drops
+-  // the link's room and shows the start page.
+-  import { fade, fly } from 'svelte/transition';
+-  import { backdropShadow } from '../lib/backdropShadow';
+-  import { MAX_NAME } from '../lib/names';
+-  import { inviteZoom, stage } from '../lib/stage';
+-  import GameTitle from './GameTitle.svelte';
+-  import Connecting from './Connecting.svelte';
+-
+-  let {
+-    code,
+-    name = $bindable(),
+-    connecting,
+-    onjoin,
+-    onback,
+-  }: { code: string; name: string; connecting: boolean; onjoin: (field: HTMLInputElement) => void; onback: () => void } = $props();
+-
+-  let field = $state<HTMLInputElement>();
+-
+-  function submit(e: Event) {
+-    e.preventDefault();
+-    if (field && !connecting) onjoin(field);
+-  }
+-</script>
+-
+-<div class="invite" use:stage={{ rule: inviteZoom, name: '--invite-zoom' }}>
+-  <header>
+-    <GameTitle lines />
+-    <p class="kicker" in:fade={{ duration: 700, delay: 350 }}>Unique item trivia</p>
+-    <p class="blurb" in:fade={{ duration: 700, delay: 450 }}>Path of Exile 2 item trivia, with friends or alone.</p>
+-  </header>
+-
+-  <form class="card panel" use:backdropShadow={{ fill: 'linear' }} onsubmit={submit} in:fly={{ y: 24, duration: 600, delay: 300 }}>
+-    <h2>You are invited to room</h2>
+-    <div class="glyphs" aria-label="Room code {code}">
+-      {#each code.split('') as ch, i (i)}
+-        <span class="glyph" style:animation-delay="{300 + i * 80}ms">{ch}</span>
+-      {/each}
+-    </div>
+-    <!-- svelte-ignore a11y_autofocus -->
+-    <input
+-      class="field"
+-      bind:this={field}
+-      bind:value={name}
+-      maxlength={MAX_NAME}
+-      placeholder="Your name"
+-      aria-label="Your name"
+-      autocomplete="nickname"
+-      spellcheck="false"
+-      autofocus={!name}
+-      disabled={connecting}
+-    />
+-    {#if connecting}
+-      <div class="busy"><Connecting /></div>
+-    {:else}
+-      <button class="btn primary go" type="submit">Join the room</button>
+-    {/if}
+-    <p class="ip">Joining shares your IP address with the room.</p>
+-  </form>
+-
+-  <button class="back" onclick={onback} disabled={connecting} in:fade={{ duration: 500, delay: 600 }}><span aria-hidden="true">‹</span> <u>Back to the start</u></button>
+-</div>
+-
+-<style>
+-  /* The start page's stage (lib/stage.ts): centred in the window, scaled up
+-     on very large ones (by its own, older rule until its redesign). */
+-  .invite {
+-    /* Its own scale in place of the app's (App.svelte's shell zooms everything by --stage-zoom). */
+-    zoom: calc(var(--invite-zoom, 1) / var(--stage-zoom, 1));
+-    max-width: 1440px;
+-    margin-inline: auto;
+-    min-height: calc(100dvh / var(--invite-zoom, 1));
+-    display: flex;
+-    flex-direction: column;
+-    align-items: center;
+-    justify-content: center;
+-    padding: 48px 16px;
+-  }
+-  header {
+-    --title-size: 84px;
+-    display: flex;
+-    flex-direction: column;
+-    align-items: center;
+-    text-align: center;
+-  }
+-  /* As on the start page: the site's kicker under the title. Its spacing
+-     trails the last letter, so as much leads the first to keep it centred. */
+-  .kicker {
+-    position: relative;
+-    margin: 6px 0 0;
+-    padding-left: 0.42em;
+-    font-family: var(--font-display);
+-    font-size: 14px;
+-    letter-spacing: 0.42em;
+-    text-transform: uppercase;
+-    color: var(--unique-hi);
+-  }
+-  .blurb {
+-    position: relative;
+-    margin: 4px 0 0;
+-    font-size: 17px;
+-    color: #a99c86;
+-  }
+-  .card {
+-    width: min(520px, 100%);
+-    margin-top: 40px;
+-    padding: 36px 36px 30px;
+-    display: flex;
+-    flex-direction: column;
+-    align-items: stretch;
+-    gap: 24px;
+-    text-align: center;
+-  }
+-  h2 {
+-    font-size: 20px;
+-    font-weight: 400;
+-    letter-spacing: 0;
+-    color: var(--gold);
+-  }
+-  .glyphs {
+-    display: flex;
+-    justify-content: center;
+-    gap: 8px;
+-    margin-top: -6px;
+-  }
+-  /* The code's letters, as the lobby shows them. */
+-  .glyph {
+-    width: 58px;
+-    height: 70px;
+-    display: grid;
+-    place-items: center;
+-    font-family: var(--font-cinzel);
+-    font-weight: 900;
+-    font-size: 32px;
+-    color: var(--gold-hi);
+-    background: linear-gradient(180deg, #221a11, #0d0a07);
+-    border: 1px solid var(--gold-lo);
+-    border-radius: 4px;
+-    box-shadow:
+-      inset 0 0 18px rgba(201, 164, 92, 0.12),
+-      0 6px 18px rgba(0, 0, 0, 0.6);
+-    text-shadow: 0 0 16px rgba(241, 217, 155, 0.45);
+-    animation: drop 0.6s var(--ease-back) both;
+-  }
+-  @keyframes drop {
+-    from {
+-      opacity: 0;
+-      transform: translateY(-18px) rotateX(70deg);
+-    }
+-  }
+-  .field {
+-    height: 48px;
+-  }
+-  .busy {
+-    display: flex;
+-    justify-content: center;
+-    min-height: 48px;
+-  }
+-  .go {
+-    height: 48px;
+-    font-size: 15px;
+-  }
+-  .ip {
+-    margin: -8px 0 0;
+-    font-style: italic;
+-    font-size: 15px;
+-    color: #a99c86;
+-  }
+-  .back {
+-    margin-top: 28px;
+-    min-height: 44px;
+-    padding: 0 8px;
+-    background: none;
+-    border: 0;
+-    cursor: pointer;
+-    font-size: 17px;
+-    color: var(--gold);
+-  }
+-  .back span {
+-    margin-right: 0.4em;
+-    font-size: 15px;
+-    color: var(--muted);
+-  }
+-  .back u {
+-    text-decoration-color: var(--gold-lo);
+-    text-underline-offset: 4px;
+-  }
+-  .back:hover:not(:disabled) {
+-    color: var(--gold-hi);
+-  }
+-  .back:disabled {
+-    opacity: 0.45;
+-    cursor: default;
+-  }
+-
+-  @media (max-width: 640px) {
+-    .invite {
+-      justify-content: flex-start;
+-      padding-top: 40px;
+-    }
+-    header {
+-      --title-size: 54px;
+-    }
+-    .kicker {
+-      padding-left: 0.3em;
+-      font-size: 11px;
+-      letter-spacing: 0.3em;
+-    }
+-    .blurb {
+-      font-size: 15px;
+-    }
+-    .card {
+-      margin-top: 40px;
+-      padding: 32px 18px 24px;
+-      gap: 20px;
+-    }
+-    .glyphs {
+-      gap: 5px;
+-    }
+-    .glyph {
+-      flex: 1;
+-      max-width: 48px;
+-      height: 58px;
+-      font-size: 26px;
+-    }
+-  }
+-</style>
+-- 
+2.43.0
+
