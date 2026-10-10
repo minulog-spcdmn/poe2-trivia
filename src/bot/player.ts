@@ -8,7 +8,7 @@
 import { engine, session } from '../lib/session.svelte';
 import { activeRules, grayscaleFor, type GameState, type Question } from '../lib/game';
 import { blastProblem, findLosses, fuseDue, inventoryOf, isGroupRun, livesOf, reviveProblem, shownDepth, standingIds, teamItemReady } from '../lib/delve';
-import { answerDelay, blasts, chooseAnswer, chooseCard, findAppetite, knowChance, misclicks, movesOn, panic, pickCategory, pickDelay, rethinks, tiredness, withTheHerd, type Ask, type Persona } from './brain';
+import { answerDelay, blasts, chooseAnswer, chooseCard, findAppetite, knowChance, misclicks, movesOn, panic, pickCategory, pickDelay, rethinks, tiredness, withTheHerd, wrongPick, type Ask, type Persona } from './brain';
 export { moodOf } from './brain';
 
 /** How the bot finds the right option: its index, or null when it can't tell. */
@@ -30,6 +30,32 @@ import { Hand } from './hand';
 const TRY_NEXT_FOR = 3;
 const TRY_NEXT_CHANCE = 0.25;
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * What a bot leans to as it looks a question over, and what else it's torn
+ * between (answer indices, the lean first; hand.ts rests its pointer on
+ * them): knowing it, just the answer its eyes found; not knowing, that and
+ * the look-alikes it might fall for, either of the first two its lean. Its
+ * eyes none the wiser: a few of them at random.
+ */
+function torn(names: string[], seen: number | null, knows: boolean): number[] {
+  const all = names.map((_, i) => i);
+  if (seen === null) {
+    for (let i = all.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [all[i], all[j]] = [all[j], all[i]];
+    }
+    return all.slice(0, 3);
+  }
+  if (knows) return [seen];
+  const out = [seen];
+  for (let k = 0; k < 2; k++) {
+    const other = wrongPick(names, seen, out, Math.random);
+    if (other !== null) out.push(other);
+  }
+  if (out.length > 1 && Math.random() < 0.5) [out[0], out[1]] = [out[1], out[0]];
+  return out;
+}
 
 /** Each option's name, as far as this device knows it (a guest has no item ids before the reveal). */
 const optionNames = (o: Question) => o.labels.map((l, i) => l ?? engine.byId.get(o.options[i])?.name ?? '');
@@ -427,7 +453,7 @@ export class Player {
       .join(', ');
     // The hand starts for the answer early enough to click on time, looking the question over until then.
     const at = Math.max(now + 200, start + (panicked ? panicked.at : delay) - this.hand.lead());
-    this.hand.ponder(q, Date.now() + (at - now));
+    this.hand.ponder(q, Date.now() + (at - now), torn(optionNames(q), seen, knows));
     this.plans.set(key, {
       // Picked up after a reload: not all at once.
       at,

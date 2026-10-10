@@ -2,8 +2,9 @@
 // the lobby, a game and its end, never in a race: src/lib/cursors.ts). It
 // moves as a person's did: it replays stretches of recorded play (motion.ts),
 // fitted to the moment. Its own turn, it looks the cards or the question over
-// as the recorded player did, for as long as it takes to make up its mind,
-// then reaches for its pick and clicks; moving on after a reveal, it reaches
+// as the recorded player did one like it, for as long as it takes to make up
+// its mind, resting on what it leans to and what it's torn between where they
+// rested on theirs, then reaches for its pick and clicks; moving on after a reveal, it reaches
 // for Next. On someone else's turn it waits as the recorded player waited,
 // mostly still, now and then a little move or a click at nothing; in the
 // lobby and at the end, the same. A click is a press seen by everyone, and
@@ -17,7 +18,7 @@ import { LIT, MOUSE, OFF, PRESSED, SCALE, SEND_EVERY_MS, actionOf, anchorCode, c
 import { session } from '../lib/session.svelte';
 import type { Persona } from './brain';
 import { aimIn, layout as roomLayout, type Box, type Spot } from './reach';
-import { STEP, frameOf, leadTrack, pickClick, pickStream, place, reachTrack, streamTrack, trackAt, within, type ClickStretch, type Stretch, type Track } from './motion';
+import { STEP, frameOf, leadTrack, pickClick, pickStream, place, reachTrack, streamTrack, trackAt, waver, within, type ClickStretch, type Stretch, type Track, type Waver } from './motion';
 import { between } from './util';
 
 /** A reach takes about this long (ms), as recorded: to begin a click early enough by. */
@@ -47,7 +48,7 @@ export class Hand {
   private track: Track | null = null;
   private frame: Frame = 'room';
   /** The stretch its next click reaches with (picked as it looks things over), and for what. */
-  private pending: { kind: ClickStretch['kind']; e: ClickStretch } | null = null;
+  private pending: { kind: ClickStretch['kind']; e: ClickStretch; w: Waver } | null = null;
   /** The stretches it replayed lately, not to be taken again soon. */
   private used: Stretch[] = [];
   /** Clicks at nothing due in a stream it's replaying. */
@@ -109,21 +110,55 @@ export class Hand {
     this.lookOver('card', 'cards', until);
   }
 
-  /** Looks a question over, as the recorded player did one like it, until it reaches for its answer at `until`. */
-  ponder(q: Question, until: number) {
-    this.lookOver('answer', 'answers', until, q.mode);
+  /**
+   * Looks a question over, as the recorded player did one like it, until it
+   * reaches for its answer at `until`; `torn`: what it leans to first, then
+   * what else it's torn between (answer indices).
+   */
+  ponder(q: Question, until: number, torn: number[] = []) {
+    this.lookOver('answer', 'answers', until, torn, q.mode, q.labels.length);
   }
 
-  private lookOver(kind: 'card' | 'answer', frame: Frame, until: number, mode?: string) {
+  private lookOver(kind: 'card' | 'answer', frame: Frame, until: number, torn: number[] = [], mode?: string, n?: number) {
     const s = this.s ?? session.state;
     if (!s) return;
     const now = Date.now();
-    const e = pickClick(kind, until - now, Math.random, mode, new Set(this.used));
+    const e = pickClick(kind, until - now, Math.random, { mode, n, used: new Set(this.used) });
     if (!e) return;
     this.remember(e);
-    this.pending = { kind, e };
+    const w = waver(Math.random);
+    this.pending = { kind, e, w };
     this.presses = [];
-    this.follow(leadTrack(e, within(this.where(now), this.box(frame, s), e.size), now, until, this.speed), frame);
+    const onto = this.onto(kind === 'card' ? 'card:' : 'opt:', e, torn, this.box(frame, s), s);
+    this.follow(leadTrack(e, within(this.where(now), this.box(frame, s), e.size), now, until, this.speed, { onto, w }), frame);
+  }
+
+  /**
+   * Where the recorded player's rests (on their answers or cards) go on this
+   * bot's: on what it leans to (`torn`'s first) where they rested on what
+   * they picked, on what else it's torn between where they rested on others,
+   * then on the rest, each to the same one of its own every time.
+   */
+  private onto(prefix: string, e: ClickStretch, torn: number[], f: Box, s: GameState) {
+    const l = layout(s);
+    const count = [...l.keys()].filter((k) => k.startsWith(prefix)).length;
+    const lean = torn[0] ?? Math.floor(Math.random() * count);
+    const rest = Array.from({ length: count }, (_, i) => i).filter((i) => !torn.includes(i));
+    for (let i = rest.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [rest[i], rest[j]] = [rest[j], rest[i]];
+    }
+    const queue = [...torn.slice(1), ...rest];
+    const mine = new Map<number, number>();
+    return (index: number, on: [number, number]): [number, number] | null => {
+      let to = mine.get(index);
+      if (to === undefined) {
+        to = index === e.pick ? lean : (queue.shift() ?? lean);
+        mine.set(index, to);
+      }
+      const b = l.get(`${prefix}${to}`);
+      return b ? within(place(on[0], on[1], b), f, e.size) : null;
+    };
   }
 
   /**
@@ -138,7 +173,8 @@ export class Hand {
     const box = layout(s!).get(anchor);
     if (!box) return;
     const kind: ClickStretch['kind'] = anchor.startsWith('opt:') ? 'answer' : anchor.startsWith('card:') ? 'card' : 'next';
-    const e = this.pending?.kind === kind ? this.pending.e : pickClick(kind, 0, Math.random, undefined, new Set(this.used));
+    const e = this.pending?.kind === kind ? this.pending.e : pickClick(kind, 0, Math.random, { used: new Set(this.used) });
+    const w = this.pending?.kind === kind ? this.pending.w : waver(Math.random);
     this.pending = null;
     this.presses = [];
     if (!e) return;
@@ -153,7 +189,7 @@ export class Hand {
     const natural = (e.reach.length / 2 - 1) * STEP * this.speed;
     const speed = natural > room * 0.9 ? this.speed * Math.max(0.3, (room * 0.9) / natural) : this.speed;
     this.on = anchor;
-    this.follow(reachTrack(e, within(this.where(now), f, e.size), within(aim, f, e.size), now, speed), frame);
+    this.follow(reachTrack(e, within(this.where(now), f, e.size), within(aim, f, e.size), now, speed, w), frame);
     const end = this.track!.t[this.track!.t.length - 1];
     await wait(Math.max(0, end - Date.now()));
     const pressed = Date.now();
@@ -211,7 +247,7 @@ export class Hand {
       const frame = lobby ? 'room' : this.waitFrame(s);
       if (e) {
         this.remember(e);
-        const { track, presses } = streamTrack(e, within(this.where(now), this.box(frame, s), e.size), now, this.speed);
+        const { track, presses } = streamTrack(e, within(this.where(now), this.box(frame, s), e.size), now, this.speed, waver(Math.random), Math.random);
         this.follow(track, frame);
         this.presses = presses;
         const end = track.t[track.t.length - 1];

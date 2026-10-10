@@ -7,8 +7,14 @@
 // final reach: the lead is fitted to the time the bot takes to make up its
 // mind, its pauses longer or shorter and its moves as they were; the reach
 // is steered, little by little as it goes, onto the bot's own pick, where it
-// lands as the person's click did on theirs. Wherever the hand is when a
-// stretch begins, the stretch eases away from there into its own path.
+// lands as the person's click did on theirs. Where the person rested on an
+// answer while looking it over, the bot rests on its own: on what it leans
+// to where they rested on what they picked, on what it's torn between where
+// they rested on others, the moves between shifted to match. Wherever the
+// hand is when a stretch begins, the stretch eases away from there into its
+// own path. And no replay is the very same twice: each has its own slow,
+// slight bend to its path (held off while it rests, and gone by the time it
+// lands), its own wavering tempo, and its own pace, a little either way.
 // Pure functions of their inputs and a random source, so tests can pin them.
 
 import data from '../data/botMotion.json' with { type: 'json' };
@@ -31,6 +37,10 @@ export interface ClickStretch {
   aim: [number, number];
   /** How long the button was held (ms). */
   hold: number;
+  /** Where its lead rested: fives of first sample, last sample, on which answer or card (-1: none), where on it across, down. */
+  dwells: number[];
+  /** Which answer or card it picked in the end (-1: not one, Next). */
+  pick: number;
 }
 export interface StreamStretch {
   kind: 'wait' | 'lobby';
@@ -111,14 +121,97 @@ const duration = (pairs: number[]) => (pairs.length / 2 - 1) * STEP;
  * again; a lead a little long is better (its pauses shorten), a lot too
  * short worse (they'd stretch long).
  */
-export function pickClick(kind: ClickStretch['kind'], leadMs: number, rng: Rng, mode?: string, used: ReadonlySet<Stretch> = new Set(), pool: Stretch[] = ALL): ClickStretch | null {
+export function pickClick(
+  kind: ClickStretch['kind'],
+  leadMs: number,
+  rng: Rng,
+  { mode, n, used = new Set() }: { mode?: string; n?: number; used?: ReadonlySet<Stretch> } = {},
+  pool: Stretch[] = ALL,
+): ClickStretch | null {
   let c = pool.filter((e): e is ClickStretch => e.kind === kind);
   if (mode && c.some((e) => e.mode === mode)) c = c.filter((e) => e.mode === mode);
   if (c.some((e) => !used.has(e))) c = c.filter((e) => !used.has(e));
   if (!c.length) return null;
-  const off = (e: ClickStretch) => Math.abs(Math.log((duration(e.lead) + 400) / (leadMs + 400)));
+  // As many answers as this question has, by preference (a list read through as long as this one).
+  const off = (e: ClickStretch) => Math.abs(Math.log((duration(e.lead) + 400) / (leadMs + 400))) + (n && e.n !== n ? 0.45 : 0);
   const near = [...c].sort((a, b) => off(a) - off(b)).slice(0, 12);
   return near[Math.floor(rng() * near.length)];
+}
+
+/**
+ * A replay's own small differences from the recording: a slow bend to its
+ * path (thousandths of the frame, by time), a wavering tempo (by sample),
+ * and its overall pace, a little either way.
+ */
+export interface Waver {
+  bend: (t: number) => [number, number];
+  tempo: (i: number) => number;
+  pace: number;
+}
+
+export function waver(rng: Rng): Waver {
+  const wave = () => {
+    const period = between(rng, 1600, 4500);
+    const phase = rng() * Math.PI * 2;
+    const size = between(rng, 5, 15);
+    return (t: number) => size * Math.sin((2 * Math.PI * t) / period + phase);
+  };
+  const [u1, u2, v1, v2] = [wave(), wave(), wave(), wave()];
+  const period = between(rng, 12, 40);
+  const phase = rng() * Math.PI * 2;
+  const depth = between(rng, 0.06, 0.15);
+  return { bend: (t) => [u1(t) + u2(t), v1(t) + v2(t)], tempo: (i) => 1 + depth * Math.sin((2 * Math.PI * i) / period + phase), pace: between(rng, 0.92, 1.08) };
+}
+
+/** The recording as it was: no bend, steady tempo, its own pace. */
+export const STEADY: Waver = { bend: () => [0, 0], tempo: () => 1, pace: 1 };
+
+/** For each sample, 1 where the pointer moves (it or a sample beside it changes), 0 where it rests: where a bend may show. */
+function moving(pairs: number[]): number[] {
+  const n = pairs.length / 2;
+  const still = (i: number) => i > 0 && pairs[2 * i] === pairs[2 * i - 2] && pairs[2 * i + 1] === pairs[2 * i - 1];
+  const raw = Array.from({ length: n }, (_, i) => (still(i) && (i + 1 >= n || still(i + 1)) ? 0 : 1));
+  // Eased in and out over a couple of samples, so a rest doesn't jolt.
+  return raw.map((_, i) => {
+    let sum = 0;
+    let k = 0;
+    for (let j = Math.max(0, i - 2); j <= Math.min(n - 1, i + 2); j++, k++) sum += raw[j];
+    return sum / k;
+  });
+}
+
+/**
+ * Where a click's stretch rested on the answers (or the cards), laid onto
+ * the bot's own (`onto`: an index and the place on it, to where in the frame
+ * it rests here; null to leave it be): for each sample of its lead, how far
+ * to shift it, held through each rest and eased between them.
+ */
+export function steer(e: ClickStretch, onto: (index: number, on: [number, number]) => [number, number] | null): [number, number][] {
+  const n = e.lead.length / 2;
+  const keys: { a: number; b: number; off: [number, number] }[] = [];
+  for (let k = 0; k + 4 < e.dwells.length; k += 5) {
+    const [a, b, index, ru, rv] = e.dwells.slice(k, k + 5);
+    const to = index >= 0 ? onto(index, [ru, rv]) : null;
+    // A rest on nothing in particular stays where it was in the frame.
+    keys.push({ a, b, off: to ? [to[0] - e.lead[2 * a], to[1] - e.lead[2 * a + 1]] : [0, 0] });
+  }
+  const out: [number, number][] = [];
+  for (let i = 0; i < n; i++) {
+    const at = keys.find((key) => i >= key.a && i <= key.b);
+    if (at) {
+      out.push(at.off);
+      continue;
+    }
+    const before = [...keys].reverse().find((key) => key.b < i) ?? { b: 0, off: [0, 0] as [number, number] };
+    const after = keys.find((key) => key.a > i);
+    if (!after) {
+      out.push(before.off);
+      continue;
+    }
+    const w = smooth((i - before.b) / Math.max(1, after.a - before.b));
+    out.push([before.off[0] + (after.off[0] - before.off[0]) * w, before.off[1] + (after.off[1] - before.off[1]) * w]);
+  }
+  return out;
 }
 
 /** A stretch of waiting (someone else's turn) or of the lobby, any of them but those used lately. */
@@ -135,7 +228,7 @@ export function pickStream(kind: StreamStretch['kind'], rng: Rng, used: Readonly
  * pauses: the moves go quicker, down to two thirds of their time; past
  * that, it starts partway in (the times then begin below 0, to be cut).
  */
-export function fitLead(pairs: number[], ms: number, speed = 1): number[] {
+export function fitLead(pairs: number[], ms: number, speed = 1, tempo: (i: number) => number = () => 1): number[] {
   const n = pairs.length / 2;
   if (n < 2) return n ? [ms] : [];
   const still: boolean[] = [];
@@ -150,7 +243,7 @@ export function fitLead(pairs: number[], ms: number, speed = 1): number[] {
     move = Math.max((2 / 3) * speed, (ms / moving) * speed);
   }
   const t = [0];
-  for (const s of still) t.push(t[t.length - 1] + STEP * (s ? pause : move));
+  still.forEach((s, i) => t.push(t[t.length - 1] + STEP * (s ? pause : move * tempo(i))));
   // Room to spare (no pauses to stretch): it waits at the start; too little: it begins partway in.
   const shift = ms - t[t.length - 1];
   return t.map((x) => x + shift);
@@ -162,7 +255,16 @@ export function fitLead(pairs: number[], ms: number, speed = 1): number[] {
  * `to` is given, steered onto it by the end (little at first, all of it
  * at the last).
  */
-export function track(pairs: number[], times: number[], start: number, from: [number, number] | null, to: [number, number] | null = null, easeMs = 600, size: (i: number) => Size = () => [1000, 1000]): Track {
+export function track(
+  pairs: number[],
+  times: number[],
+  start: number,
+  from: [number, number] | null,
+  to: [number, number] | null = null,
+  easeMs = 600,
+  size: (i: number) => Size = () => [1000, 1000],
+  shift: (i: number, t: number) => [number, number] = () => [0, 0],
+): Track {
   const n = pairs.length / 2;
   const out: Track = { t: [], u: [], v: [], size: [] };
   // Cut where it begins partway in (times below 0).
@@ -183,30 +285,75 @@ export function track(pairs: number[], times: number[], start: number, from: [nu
       u += (to[0] - ue) * w;
       v += (to[1] - ve) * w;
     }
+    const [du, dv] = shift(i, times[i]);
     out.t.push(start + times[i]);
-    out.u.push(u);
-    out.v.push(v);
+    out.u.push(u + du);
+    out.v.push(v + dv);
     out.size.push(size(i));
   }
   return out;
 }
 
-/** The lead of a click's stretch, from `start` to `reachAt`, eased in from `from`. */
-export function leadTrack(e: ClickStretch, from: [number, number], start: number, reachAt: number, speed = 1): Track {
-  return track(e.lead, fitLead(e.lead, Math.max(0, reachAt - start), speed), start, from, null, 600, () => e.size);
+/**
+ * The lead of a click's stretch, from `start` to `reachAt`, eased in from
+ * `from`, its rests laid onto the bot's own (`onto`, steer), and wavered
+ * (`w`): its path bent a little where it moves, its tempo and pace its own.
+ */
+export function leadTrack(
+  e: ClickStretch,
+  from: [number, number],
+  start: number,
+  reachAt: number,
+  speed = 1,
+  { onto, w = STEADY }: { onto?: (index: number, on: [number, number]) => [number, number] | null; w?: Waver } = {},
+): Track {
+  const shifted = onto ? steer(e, onto) : null;
+  const mask = moving(e.lead);
+  const times = fitLead(e.lead, Math.max(0, reachAt - start), speed * w.pace, w.tempo);
+  return track(e.lead, times, start, from, null, 600, () => e.size, (i, t) => {
+    const [bu, bv] = w.bend(t);
+    const [su, sv] = shifted?.[i] ?? [0, 0];
+    return [su + bu * mask[i], sv + bv * mask[i]];
+  });
 }
 
-/** Its final reach from `start`, from `from` onto `to` (thousandths of the frame). */
-export function reachTrack(e: ClickStretch, from: [number, number], to: [number, number], start: number, speed = 1): Track {
-  const times = Array.from({ length: e.reach.length / 2 }, (_, i) => i * STEP * speed);
-  return track(e.reach, times, start, from, to, Math.min(400, times[times.length - 1] / 2 || 1), () => e.size);
+/** Its final reach from `start`, from `from` onto `to` (thousandths of the frame), its bend fading out as it lands. */
+export function reachTrack(e: ClickStretch, from: [number, number], to: [number, number], start: number, speed = 1, w: Waver = STEADY): Track {
+  const n = e.reach.length / 2;
+  const times: number[] = [0];
+  for (let i = 1; i < n; i++) times.push(times[i - 1] + STEP * speed * w.pace * w.tempo(i));
+  return track(e.reach, times, start, from, to, Math.min(400, times[n - 1] / 2 || 1), () => e.size, (i, t) => {
+    const fade = 1 - smooth(i / Math.max(1, n - 1));
+    const [bu, bv] = w.bend(t);
+    return [bu * fade, bv * fade];
+  });
 }
 
-/** A stream stretch (waiting, the lobby) from `start`, eased in from `from`; and when its clicks at nothing fall. */
-export function streamTrack(e: StreamStretch, from: [number, number], start: number, speed = 1): { track: Track; presses: number[] } {
-  const times = Array.from({ length: e.path.length / 2 }, (_, i) => i * STEP * speed);
+/**
+ * A stream stretch (waiting, the lobby) from `start`, eased in from `from`,
+ * wavered (`w`), now and then begun partway in (at one of its rests, in its
+ * first half, `rng`); and when its clicks at nothing fall.
+ */
+export function streamTrack(e: StreamStretch, from: [number, number], start: number, speed = 1, w: Waver = STEADY, rng?: Rng): { track: Track; presses: number[] } {
+  const n = e.path.length / 2;
+  const mask = moving(e.path);
+  const rests = mask.map((m, i) => (m === 0 && (i === 0 || mask[i - 1] > 0) && i < n / 2 ? i : -1)).filter((i) => i > 0);
+  const skip = rng && rests.length && rng() < 0.5 ? rests[Math.floor(rng() * rests.length)] : 0;
+  const times: number[] = [];
+  let t = -skip * STEP * speed * w.pace;
+  for (let i = 0; i < n; i++) {
+    if (i) t += STEP * speed * w.pace * (mask[i] ? w.tempo(i) : 1);
+    times.push(t);
+  }
   const size = (i: number) => (e.then && i >= (e.switchAt ?? Infinity) ? e.then : e.size);
-  return { track: track(e.path, times, start, from, null, 600, size), presses: (e.presses ?? []).map((p) => start + p * speed) };
+  const presses = (e.presses ?? []).map((p) => (p - skip * STEP) * speed * w.pace).filter((p) => p >= 0);
+  return {
+    track: track(e.path, times, start, from, null, 600, size, (i, tt) => {
+      const [bu, bv] = w.bend(tt);
+      return [bu * mask[i], bv * mask[i]];
+    }),
+    presses: presses.map((p) => start + p),
+  };
 }
 
 /** Where a track is at `now` (thousandths of its frame, and the frame's size as recorded): between its samples; held at its ends. */

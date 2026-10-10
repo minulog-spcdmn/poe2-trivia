@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import data from '../src/data/botMotion.json' with { type: 'json' };
-import { STEP, fitLead, frameOf, leadTrack, pickClick, pickStream, place, reachTrack, streamTrack, trackAt, within, type ClickStretch, type Stretch } from '../src/bot/motion.ts';
+import { STEP, fitLead, frameOf, leadTrack, pickClick, pickStream, place, reachTrack, steer, streamTrack, trackAt, waver, within, type ClickStretch, type Stretch } from '../src/bot/motion.ts';
 
 function seeded(seed: number) {
   return () => {
@@ -61,12 +61,15 @@ test("a stretch is picked by how long the bot takes, from the nearest few, so it
   // Not one used lately, while there are others.
   const used = new Set<Stretch>();
   for (let i = 0; i < 20; i++) {
-    const e = pickClick('card', 2000, rng, undefined, used)!;
+    const e = pickClick('card', 2000, rng, { used })!;
     assert.ok(!used.has(e));
     used.add(e);
   }
   // Pictures or names, as asked.
-  for (let i = 0; i < 20; i++) assert.equal(pickClick('answer', 3000, rng, 'art')!.mode, 'art');
+  for (let i = 0; i < 20; i++) assert.equal(pickClick('answer', 3000, rng, { mode: 'art' })!.mode, 'art');
+  // As many answers as asked, by preference.
+  const six = Array.from({ length: 40 }, () => pickClick('answer', 3000, rng, { mode: 'name', n: 6 })!.n);
+  assert.ok(six.filter((n) => n === 6).length > 30, JSON.stringify(six));
   const w = pickStream('wait', rng)!;
   const { track, presses } = streamTrack(w, [500, 500], 100);
   assert.ok(track.t[0] === 100 && presses.every((p) => p >= 100));
@@ -88,4 +91,61 @@ test('places go to and from a frame of thousandths, any frame', () => {
   assert.deepEqual(within(off, g, size).map(Math.round), [1500, 500]);
   assert.deepEqual(within({ x: 50, y: 150 }, g, size).map((v) => Math.round(v)), [-125, -125]);
   assert.deepEqual(place(-125, -125, g, size), { x: 50, y: 150 });
+});
+
+test("the recorded rests land on the bot's own: its lean where the player rested on their pick, the others on what it's torn between", () => {
+  const e = (ALL as ClickStretch[]).find((x) => x.kind === 'answer' && x.dwells.some((_, k) => k % 5 === 2 && x.dwells[k] === x.pick) && x.dwells.some((_, k) => k % 5 === 2 && x.dwells[k] >= 0 && x.dwells[k] !== x.pick))!;
+  assert.ok(e, 'a stretch resting on its pick and on another');
+  // The bot's answers as squares, each its own; where its rests go: onto the bot's index (as the hand maps them).
+  const box = (i: number): [number, number] => [100 + i * 150, 300];
+  const mapped = new Map<number, number>();
+  const onto = (index: number): [number, number] => {
+    if (!mapped.has(index)) mapped.set(index, index === e.pick ? 7 : 3);
+    return box(mapped.get(index)!);
+  };
+  const off = steer(e, onto);
+  for (let k = 0; k + 4 < e.dwells.length; k += 5) {
+    const [a, b, index] = e.dwells.slice(k, k + 3);
+    for (let i = a; i <= b; i++) {
+      const at = [e.lead[2 * i] + off[i][0], e.lead[2 * i + 1] + off[i][1]];
+      if (index >= 0) assert.deepEqual(at.map(Math.round), box(index === e.pick ? 7 : 3));
+      // A rest on nothing in particular stays where it was.
+      else assert.deepEqual(off[i], [0, 0]);
+    }
+  }
+});
+
+test('no replay is the very same: a slight bend where it moves, none while it rests or as it lands, a tempo and pace of its own', () => {
+  const rng = seeded(21);
+  const e = pickClick('answer', 4000, rng)!;
+  const a = leadTrack(e, [500, 500], 0, 4000, 1, { w: waver(seeded(1)) });
+  const b = leadTrack(e, [500, 500], 0, 4000, 1, { w: waver(seeded(2)) });
+  const plain = leadTrack(e, [500, 500], 0, 4000, 1);
+  const apart = (x: typeof a, y: typeof a, t: number) => Math.hypot(trackAt(x, t)[0] - trackAt(y, t)[0], trackAt(x, t)[1] - trackAt(y, t)[1]);
+  const ts = Array.from({ length: 39 }, (_, i) => 100 + i * 100);
+  // Different, a little: its path never far from the recording's (its tempo may put it elsewhere along it at a time).
+  assert.ok(ts.some((t) => apart(a, b, t) > 3));
+  const nearest = (u: number, v: number) => Math.min(...plain.u.map((pu, i) => Math.hypot(pu - u, plain.v[i] - v)));
+  const far = Math.max(...a.u.map((u, i) => nearest(u, a.v[i])));
+  assert.ok(far < 40, `${far}`);
+  // Both end their lead on time; their reaches land on the same spot.
+  assert.ok(Math.abs(a.t.at(-1)! - 4000) < 1e-6);
+  const to: [number, number] = [620, 380];
+  const ra = reachTrack(e, [500, 500], to, 0, 1, waver(seeded(3)));
+  assert.deepEqual(trackAt(ra, ra.t.at(-1)!).slice(0, 2).map(Number).map(Math.round), to);
+  const w = waver(seeded(4));
+  assert.ok(w.pace >= 0.92 && w.pace <= 1.08);
+  assert.ok([0, 5, 10, 20].every((i) => w.tempo(i) > 0.84 && w.tempo(i) < 1.16));
+});
+
+test('a stretch of waiting now and then begins partway in, at a rest', () => {
+  const rng = seeded(5);
+  const e = (ALL as Stretch[]).find((x) => x.kind === 'wait' && (x as { path: number[] }).path.length > 120)!;
+  const starts = new Set<string>();
+  for (let i = 0; i < 30; i++) {
+    const { track } = streamTrack(e as never, [500, 500], 0, 1, waver(rng), rng);
+    starts.add(String(track.t.length));
+    assert.equal(track.t[0] >= 0, true);
+  }
+  assert.ok(starts.size > 1);
 });

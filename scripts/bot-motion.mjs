@@ -13,7 +13,10 @@
 // and the art, the lobby's rows and modes: 0 to 1000 across and down them,
 // beyond on either side), so they map onto any screen, with that frame's
 // size in pixels (`size`) for how far off it a place beyond it lies; a
-// click's spot relative to what it pressed. Sampled every STEP ms. The recordings
+// click's spot relative to what it pressed. A click's stretch also keeps
+// where its lead rested (`dwells`: from which sample to which, on which
+// answer or card if any, and where on it) and which one it picked in the
+// end (`pick`), so a bot can rest on its own. Sampled every STEP ms. The recordings
 // themselves stay out of the repo: only these paths go in.
 //
 //   node scripts/bot-motion.mjs recording.json [more.json...]
@@ -23,6 +26,8 @@ import { readFileSync, writeFileSync } from 'node:fs';
 const STEP = 50;
 /** A pause, before a click's final reach (ms). */
 const PAUSE_MS = 150;
+/** A rest in a lead: the pointer still for this many samples or more. */
+const REST_SAMPLES = 4;
 const OUT = new URL('../src/data/botMotion.json', import.meta.url);
 
 const files = process.argv.slice(2);
@@ -105,10 +110,10 @@ for (const file of files) {
   });
 
   /** Own turn: from the stretch's start to the first click on `prefix`, cut at its final reach. */
-  const clicked = (span, kind, prefix, pick, extra = {}) => {
+  const clicked = (span, kind, prefix, framed, extra = {}) => {
     const d = downs.find((h) => h[0] >= span.t && h[0] <= span.end + 300 && (prefix ? boxAt(h[0], h[3], h[4], prefix) : true));
     if (!d) return;
-    const f = frame(span.t, d[0] + 1500, pick);
+    const f = frame(span.t, d[0] + 1500, framed);
     if (!f) return;
     // The final reach: from the last pause before the click.
     let i = lastIndex(T, d[0]);
@@ -119,7 +124,22 @@ for (const file of files) {
     if (!lead || !reach) return;
     const hit = prefix ? boxAt(d[0], d[3], d[4], prefix) : null;
     const aim = hit ? rel(d[3], d[4], hit[1]) : rel(d[3], d[4], f);
-    episodes.push({ kind, ...extra, size: sizeOf(f), lead, reach, aim, hold: holdOf(d[0]) });
+    // Where the lead rested: [first sample, last sample, on which (its index; -1: none), where on it across, down].
+    const dwells = [];
+    const n = lead.length / 2;
+    for (let i = 0; i < n; ) {
+      let j = i;
+      while (j + 1 < n && lead[2 * j + 2] === lead[2 * i] && lead[2 * j + 3] === lead[2 * i + 1]) j++;
+      if (j - i + 1 >= REST_SAMPLES) {
+        const t = span.t + i * STEP;
+        const [x, y] = at(t);
+        const on = prefix ? boxAt(t + 400, x, y, prefix) : null;
+        const [ru, rv] = on ? rel(x, y, on[1]) : [0, 0];
+        dwells.push(i, j, on ? Number(on[0].split(':')[1]) : -1, ru, rv);
+      }
+      i = j + 1;
+    }
+    episodes.push({ kind, ...extra, size: sizeOf(f), lead, reach, aim, hold: holdOf(d[0]), dwells, pick: hit ? Number(hit[0].split(':')[1]) : -1 });
   };
 
   for (const span of spans) {
