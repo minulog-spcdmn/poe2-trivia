@@ -8,7 +8,9 @@
 // torn between, or never keeping still), as are its deftness and the bow of
 // its strokes; a nervous one grows jittery as the clock runs out, a hasty
 // one quick and sloppy. A click is the hand getting there, settling and
-// pressing, and often drifting off a little after. Between times it rests
+// pressing, and often drifting off a little after; unsure, it may head for
+// another answer first and veer off. Once the answer is shown it often looks
+// at it (the right one, now and then its own pick first). Between times it rests
 // (and dims, as anyone's does), drifts, wanders to the art, its own row or
 // the row of whoever's turn it is, and now and then leaves the page a while.
 // It never hovers an answer or a card on someone else's turn (that would be
@@ -19,18 +21,15 @@ import type { GameState, Question } from '../lib/game';
 import { MOUSE, PRESSED, SEND_EVERY_MS, TAP, anchorCode, cursorsLive, type CursorAt, type PointerKind } from '../lib/cursors';
 import { session } from '../lib/session.svelte';
 import type { Persona } from './brain';
-import { aimIn, along, layout as roomLayout, placeOf, reach, reachTime, stroke, type Box, type Spot, type Stroke } from './reach';
-import { circle, fidgets, readCards, readQuestion, type Glance, type Hands } from './habits';
+import { aimIn, along, layout as roomLayout, placeOf, reach, reachTime, stroke, veer, type Box, type Spot, type Stroke } from './reach';
+import { afterReveal, awayChance, changeOfMind, circle, fidgets, idleEvery, readCards, readQuestion, type Glance, type Hands, type Situation } from './habits';
 import { between } from './util';
 
 /** A press shows this long (ms). */
 const PRESS_MS: [number, number] = [90, 180];
 /** Resting at a target a moment before pressing (ms). */
 const SETTLE_MS: [number, number] = [60, 220];
-/** Between two of its own idle moves (ms). */
-const IDLE_EVERY: [number, number] = [2500, 9000];
-/** Off the page (looking elsewhere), now and then: the chance at each idle move, and for how long (ms). */
-const AWAY_CHANCE = 0.04;
+/** Off the page (looking elsewhere), now and then (habits.ts awayChance), for this long (ms). */
 const AWAY_MS: [number, number] = [8000, 40000];
 /** While busy (looking things over, clicking) and for this long after, the hand shifts a little now and then (habits.ts fidgets). */
 const BUSY_MS = 6000;
@@ -73,6 +72,11 @@ export class Hand {
   private screen = '';
   /** The state it last saw, for where things are. */
   private s: GameState | null = null;
+  /** How tired it is (0 to 1), as its player last said. */
+  private tired = 0;
+  /** The answer it last gave, and the question whose reveal it last looked at. */
+  private gave: string | null = null;
+  private revealed = 0;
 
   constructor(private readonly persona: Persona) {}
 
@@ -108,23 +112,34 @@ export class Hand {
     this.busyUntil = until + BUSY_MS;
   }
 
-  /** Looks the cards over before picking one, by its habit. */
-  lookOverCards(n: number, until: number) {
+  /** Looks the cards over before picking one, by its habit as the moment leans it. */
+  lookOverCards(n: number, until: number, tired = this.tired) {
     const s = this.s ?? session.state;
     if (!s) return;
+    this.tired = tired;
     const cards = Array.from({ length: n }, (_, i) => `card:${i}`);
     const boxes = layout(s);
-    this.plan(readCards(this.hands, cards, cards.map((c) => boxes.get(c)).filter((b): b is Box => !!b), Date.now(), until, Math.random), until);
+    const sit: Situation = { sure: Math.random() < 0.4, careful: false, tired, urgentAt: Infinity };
+    this.plan(readCards(this.hands, cards, cards.map((c) => boxes.get(c)).filter((b): b is Box => !!b), Date.now(), until, sit, Math.random), until);
   }
 
-  /** Looks a question over while making up its mind, by its habit (unsure: torn between a few). */
-  ponder(q: Question, until: number, unsure: boolean) {
+  /**
+   * Looks a question over while making up its mind, by its habit as the
+   * situation leans it: `sure` of the answer or not, `careful` (it just
+   * missed one), how `tired`; and the clock, which it darts about near the
+   * end of, unsure.
+   */
+  ponder(q: Question, until: number, mood: { sure: boolean; careful: boolean; tired: number }) {
     const s = this.s ?? session.state;
     if (!s) return;
+    this.tired = mood.tired;
     // A question that shows the pictures has no labels; one not shown yet has none either.
     const options = q.labels.map((_, i) => `opt:${i}`).filter((_, i) => q.mode === 'art' || q.labels[i] !== null);
     const boxes = layout(s);
-    this.plan(readQuestion(this.hands, options, q.mode !== 'art', options.map((o) => boxes.get(o)).filter((b): b is Box => !!b), Date.now(), until, unsure, Math.random), until);
+    const total = q.deadline ? q.deadline - (q.clockAt ?? q.askedAt) : 0;
+    const urgentAt = q.deadline ? Date.now() + (q.deadline - total * URGENT - session.hostNow()) : Infinity;
+    const sit: Situation = { ...mood, urgentAt };
+    this.plan(readQuestion(this.hands, options, q.mode !== 'art', options.map((o) => boxes.get(o)).filter((b): b is Box => !!b), Date.now(), until, sit, Math.random), until);
   }
 
   /**
@@ -133,7 +148,7 @@ export class Hand {
    * pointer is shown. `by` (Date.now): when it must have pressed at the
    * latest (the clock's end), the hand hurrying to make it.
    */
-  async click(anchor: string, by = Infinity): Promise<void> {
+  async click(anchor: string, by = Infinity, { unsure = false } = {}): Promise<void> {
     this.looks = [];
     const s = session.state;
     if (!this.live(s)) return;
@@ -149,9 +164,13 @@ export class Hand {
       return;
     }
     this.awayUntil = 0;
-    const ms = this.goTo(target, box, anchor, room() * 0.8);
+    if (anchor.startsWith('opt:')) this.gave = anchor;
+    // Unsure, now and then it heads for another answer first and veers off.
+    const others = anchor.startsWith('opt:') ? [...layout(s!)].filter(([k]) => k.startsWith('opt:') && k !== anchor) : [];
+    const decoy = others.length && Math.random() < changeOfMind(!unsure) ? others[Math.floor(Math.random() * others.length)][1] : null;
+    const ms = decoy ? this.veerTo(aimIn(decoy, Math.random, true), target, box, anchor, room() * 0.8) : this.goTo(target, box, anchor, room() * 0.8);
     // No idle wandering (or shifting) off it before the press.
-    this.nextIdle = Date.now() + ms + 1000 + between(...IDLE_EVERY);
+    this.nextIdle = Date.now() + ms + 1000 + between(...idleEvery(this.persona.hand, this.tired));
     this.nextFidget = Date.now() + ms + 600;
     await wait(Math.min(ms + between(...SETTLE_MS) * this.persona.pace, room()));
     const now = Date.now();
@@ -176,6 +195,16 @@ export class Hand {
     const curve = this.persona.hand.curve;
     this.moves = box ? reach(from, to, now, ms, Math.random, { curve, sloppy: this.sloppy }) : [stroke(from, to, now, ms, Math.random, curve)];
     return ms;
+  }
+
+  /** Sets off for `decoy`, then veers off for `to` (in `box`, the anchor `on`); how long it takes (ms). */
+  private veerTo(decoy: Spot, to: Spot, box: Box, on: string, most: number) {
+    const now = Date.now();
+    this.on = on;
+    const from = this.where(now);
+    const ms = Math.min(most, reachTime(Math.hypot(to.x - from.x, to.y - from.y) * 1.3, Math.min(box[2] - box[0], box[3] - box[1]), this.speed, Math.random));
+    this.moves = veer(from, decoy, to, now, ms, Math.random, { curve: this.persona.hand.curve, sloppy: this.sloppy });
+    return this.moves.at(-1)!.end - now;
   }
 
   /** Goes through `spots` one short stroke after another (a fidget's circle), staying on what it's on. */
@@ -230,15 +259,33 @@ export class Hand {
       this.awayUntil = 0;
       this.at = { x: Math.random() < 0.5 ? 30 : 970, y: 300 + Math.random() * 500 };
     }
+    // The answer shown: it often looks at it (habits.ts afterReveal).
+    if (s.phase === 'reveal' && s.question && s.reveal && this.revealed !== s.question.askedAt) {
+      this.revealed = s.question.askedAt;
+      const boxes = layout(s);
+      const opts = [...boxes].filter(([k]) => k.startsWith('opt:')).map(([, b]) => b);
+      const correct = s.reveal.correctIndex >= 0 ? `opt:${s.reveal.correctIndex}` : null;
+      this.looks = afterReveal(this.hands, correct, this.gave, opts, now, Math.random);
+      this.gave = null;
+    }
     const look = this.looks[0];
     const still = !this.moves.length;
     if (look && now >= look.at) {
       this.looks.shift();
       const box = look.anchor ? layout(s).get(look.anchor) : undefined;
-      if (box) this.goTo(aimIn(box, Math.random, !!look.text && s.question?.mode !== 'art'), box, look.anchor);
+      const words = !!look.text && s.question?.mode !== 'art';
+      if (box) {
+        const to = aimIn(box, Math.random, words);
+        const ms = this.goTo(to, box, look.anchor);
+        // Reading an answer: along its words, slowly, once there.
+        if (look.sweep && words) {
+          const along = { x: Math.min(box[2] - 8, to.x + look.sweep), y: to.y + (Math.random() - 0.5) * 6 };
+          this.moves.push(stroke(to, along, now + ms + between(80, 220), look.sweepMs ?? 400, Math.random, 0.2));
+        }
+      }
       // A spot of its own (where it parks): reached as aimed movements are, for no element in particular.
       else if (look.spot) this.goTo(look.spot, [look.spot.x - 40, look.spot.y - 40, look.spot.x + 40, look.spot.y + 40]);
-      this.nextIdle = now + between(...IDLE_EVERY);
+      this.nextIdle = now + between(...idleEvery(this.persona.hand, this.tired));
     } else if (still && this.driftAt && now >= this.driftAt) {
       // After a click: off a little, mostly down and away from where it pressed.
       this.driftAt = 0;
@@ -269,10 +316,10 @@ export class Hand {
 
   /** Nothing to do: it rests, drifts a little, wanders to the art, its own row or that of whoever's turn it is (in the lobby, the modes), or leaves the page a while. */
   private idle(s: GameState, now: number) {
-    // The more impatient, the sooner it does something again.
-    this.nextIdle = now + between(...IDLE_EVERY) * this.persona.pace * (1.4 - 0.8 * this.persona.impatience);
+    // By its habit (a parker keeps still for long stretches), the more impatient the sooner, the more tired the later.
+    this.nextIdle = now + between(...idleEvery(this.persona.hand, this.tired)) * this.persona.pace * (1.4 - 0.8 * this.persona.impatience);
     const r = Math.random();
-    if (r < AWAY_CHANCE) {
+    if (r < awayChance(this.tired)) {
       this.awayUntil = now + between(...AWAY_MS);
       return;
     }

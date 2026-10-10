@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { aimIn, along, layout, placeOf, reach, reachTime, stroke } from '../src/bot/reach.ts';
+import { aimIn, along, layout, placeOf, reach, reachTime, stroke, veer } from '../src/bot/reach.ts';
 import { NAMES, identityOf } from '../src/bot/identities.ts';
 import type { GameState } from '../src/lib/game.ts';
 
@@ -87,20 +87,35 @@ test("the lobby has the party's rows down a column and the three modes; a host's
 });
 
 test('a long reach misses a little and corrects, ending right on its target; a short one goes straight there', () => {
-  for (let seed = 1; seed < 40; seed++) {
+  let lifted = 0;
+  for (let seed = 1; seed < 200; seed++) {
     const rng = seeded(seed);
     const from = { x: 100, y: 800 };
     const to = { x: 700, y: 300 };
-    const [first, fix, ...more] = reach(from, to, 1000, 700, rng);
-    assert.ok(fix && !more.length);
-    // The first ends near the target, but not on it; the correction starts there, after a beat, and lands on it.
-    const miss = along(first, first.end);
+    const strokes = reach(from, to, 1000, 700, rng);
+    assert.ok(strokes.length === 2 || strokes.length === 3, `${strokes.length}`);
+    // A long way across, now and then it stalls partway (the mouse lifted and set down): three strokes, a pause between.
+    if (strokes.length === 3) lifted++;
+    // Each starts where the last ended, never before it; the last but one ends near the target, but not on it; the last lands on it.
+    for (let i = 1; i < strokes.length; i++) {
+      assert.ok(strokes[i].start >= strokes[i - 1].end);
+      assert.deepEqual(along(strokes[i], strokes[i].start), along(strokes[i - 1], strokes[i - 1].end));
+    }
+    const miss = along(strokes.at(-2)!, strokes.at(-2)!.end);
     const off = Math.hypot(miss.x - to.x, miss.y - to.y);
     assert.ok(off > 0 && off < 70, `${off}`);
-    assert.ok(fix.start >= first.end && fix.end <= 1700 + 1);
-    assert.deepEqual(along(fix, fix.start), miss);
-    const end = along(fix, fix.end);
+    const end = along(strokes.at(-1)!, strokes.at(-1)!.end);
     assert.ok(Math.abs(end.x - to.x) < 1e-9 && Math.abs(end.y - to.y) < 1e-9);
   }
+  assert.ok(lifted > 10 && lifted < 70, `${lifted}`);
   assert.equal(reach({ x: 100, y: 100 }, { x: 150, y: 120 }, 0, 300, seeded(1)).length, 1);
+});
+
+test('a change of mind sets off for one, veers off partway, and lands on the other', () => {
+  const s = veer({ x: 100, y: 100 }, { x: 800, y: 300 }, { x: 600, y: 700 }, 0, 900, seeded(4));
+  const turn = along(s[0], s[0].end);
+  // Partway toward the decoy, then on to the target.
+  assert.ok(turn.x > 300 && turn.x < 650 && turn.y < 300, JSON.stringify(turn));
+  const end = along(s.at(-1)!, s.at(-1)!.end);
+  assert.ok(Math.abs(end.x - 600) < 1e-9 && Math.abs(end.y - 700) < 1e-9);
 });

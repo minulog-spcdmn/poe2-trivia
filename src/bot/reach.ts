@@ -184,6 +184,22 @@ export function along(s: Stroke, now: number): Spot {
   return { x: x - ((s.to.y - s.from.y) / len) * w, y: y + ((s.to.x - s.from.x) / len) * w };
 }
 
+/** From this far (units), a reach now and then stalls partway (the mouse lifted and set down again), this often. */
+const LIFT_FROM = 550;
+const LIFT_CHANCE = 0.18;
+
+/**
+ * A change of mind on the way: setting off for `decoy`, then, partway
+ * there, veering off for `to` (reached as reach does). `ms` in all, from `at`.
+ */
+export function veer(from: Spot, decoy: Spot, to: Spot, at: number, ms: number, rng: Rng, opts: { curve?: number; sloppy?: number } = {}): Stroke[] {
+  const k = 0.45 + 0.25 * rng();
+  const turn = { x: from.x + (decoy.x - from.x) * k, y: from.y + (decoy.y - from.y) * k };
+  const a = Math.round(ms * 0.4);
+  const pause = 40 + 110 * rng();
+  return [stroke(from, turn, at, a, rng, opts.curve), ...reach(turn, to, at + a + pause, Math.max(150, ms - a), rng, opts)];
+}
+
 /**
  * A reach for a target, as aimed movements go: a long one falls a little
  * short of it or runs a little past (and off to a side), then a small
@@ -206,6 +222,18 @@ export function reach(from: Spot, to: Spot, at: number, ms: number, rng: Rng, { 
   const beat = () => Math.round(ms * (0.04 + 0.06 * rng()));
   const b1 = beat();
   const twice = sloppy > 1.3 && rng() < 0.5;
+  // A long way across, now and then the mouse runs out of room: it stalls partway, lifted and set down again.
+  if (dist > LIFT_FROM && rng() < LIFT_CHANCE) {
+    const k = 0.45 + 0.15 * rng();
+    const mid = { x: from.x + dx * k + (rng() - 0.5) * 20, y: from.y + dy * k + (rng() - 0.5) * 20 };
+    const pause = 90 + 130 * rng();
+    const a = Math.round(first * k);
+    return [
+      stroke(from, mid, at, a, rng, curve),
+      stroke(mid, miss, at + a + pause, first - a, rng, curve),
+      stroke(miss, to, at + first + pause + b1, Math.max(60, ms - first - b1), rng, curve),
+    ];
+  }
   if (!twice) return [stroke(from, miss, at, first, rng, curve), stroke(miss, to, at + first + b1, Math.max(60, ms - first - b1), rng, curve)];
   // Clumsy: the correction misses a little too.
   const near = off(0.3);
