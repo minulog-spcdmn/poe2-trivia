@@ -169,7 +169,6 @@
   /** Veiled art: the patches that have appeared so far. */
   const patches = $derived(Object.values(media?.patches ?? {}));
   // Size of the art shown during the question: keeps the reveal from jumping.
-  const hint = $derived(media?.veil ?? media?.art ?? null);
 
   /** Your answer, on its way to the host. */
   let chosen = $state<number | null>(null);
@@ -312,14 +311,15 @@
     return () => clearTimeout(timer);
   });
   // The full art loads as the reveal starts, so the veiled picture only hands
-  // over once it can show (or after a while, should it not load). Its size
-  // and where the item is in it let the veiled copy line up with it first.
+  // over once it can show (or after a while, should it not load). Where the
+  // item is in it (in art pixels, the item's own size) lets the veiled copy
+  // line up with it first.
   let fullLoaded = $state(false);
-  let full = $state<{ w: number; h: number; box: [number, number, number, number] } | null>(null);
+  let fullBox = $state<[number, number, number, number] | null>(null);
   $effect(() => {
     if (!reveal || !item) {
       fullLoaded = false;
-      full = null;
+      fullBox = null;
       return;
     }
     let live = true;
@@ -335,7 +335,7 @@
       const g = c.getContext('2d', { willReadFrequently: true })!;
       g.imageSmoothingQuality = 'high';
       g.drawImage(img, 0, 0, c.width, c.height);
-      full = { w: c.width, h: c.height, box: visibleBox(g.getImageData(0, 0, c.width, c.height).data, c.width, c.height) };
+      fullBox = visibleBox(g.getImageData(0, 0, c.width, c.height).data, c.width, c.height);
       done();
     }, done);
     const timer = setTimeout(done, 3000);
@@ -355,7 +355,7 @@
   const veilFit = $derived.by(() => {
     const v = media?.veil;
     const slot = artEl?.querySelector('.frame');
-    if (!reveal || !v || !full || !slot) return null;
+    if (!reveal || !v || !fullBox || !item || !slot) return null;
     const cw = slot.clientWidth;
     const ch = slot.clientHeight;
     const place = (w: number, h: number, [bx, by, bw, bh]: number[]) => {
@@ -366,8 +366,8 @@
     };
     const from = place(v.w, v.h, v.box);
     // A mirrored item starts the reveal mirrored, as it was shown.
-    const fb = full.box;
-    const to = place(full.w, full.h, mirrored(0) ? [full.w - fb[0] - fb[2], fb[1], fb[2], fb[3]] : fb);
+    const fb = fullBox;
+    const to = place(item.w, item.h, mirrored(0) ? [item.w - fb[0] - fb[2], fb[1], fb[2], fb[3]] : fb);
     const k = (to.w / from.w + to.h / from.h) / 2;
     if (!isFinite(k) || k <= 0) return null;
     return `translate(${to.x - k * from.x}px, ${to.y - k * from.y}px) scale(${k})`;
@@ -383,7 +383,7 @@
     return () => clearTimeout(timer);
   });
   /** The full art replaces what was shown during the question. */
-  const showFull = $derived(!!reveal && !!item && (!media?.veil || (veilDone && fullLoaded && (fitted || !full))));
+  const showFull = $derived(!!reveal && !!item && (!media?.veil || (veilDone && fullLoaded && (fitted || !fullBox))));
 
   // A veiled picture that comes in whole before the reveal shimmers once.
   let wholeFor = 0;

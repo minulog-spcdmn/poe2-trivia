@@ -30,7 +30,9 @@
 # Run:
 #   .venv-art/bin/python scripts/upscale-art.py [--all] [ids...]
 # With ART_KEEP=<folder> set, the model's own 4x pictures are kept there too
-# (lossless), so a later change to the mix needs no new run of the model.
+# (lossless), and an item whose picture is kept there is made from it without
+# running the model, so a later change to the mix or the scale takes minutes:
+#   ART_KEEP=<folder> .venv-art/bin/python scripts/upscale-art.py --all
 
 import json
 import os
@@ -129,15 +131,20 @@ def run(net, rgb):
 
 def upscale(net, src, out):
     im = Image.open(src).convert('RGBA')
+    keep = os.environ.get('ART_KEEP')
+    kept = keep and os.path.join(keep, os.path.basename(src))
+    if kept and os.path.exists(kept):
+        return finish(Image.open(kept).convert('RGBA'), im, out)
     a = np.asarray(im)
     rgb = run(net, a[..., :3])
     # The alpha goes through the model too, so the edges stay as crisp as the colour.
     alpha = run(net, np.repeat(a[..., 3:], 3, 2)).mean(2).round().astype(np.uint8)
     big = Image.fromarray(np.dstack([rgb, alpha]), 'RGBA')
-    keep = os.environ.get('ART_KEEP')
     if keep:
         os.makedirs(keep, exist_ok=True)
-        big.save(os.path.join(keep, os.path.basename(src)), 'WEBP', lossless=True)
+        # exact: keep the colour under clear pixels too, which AVIF's colour
+        # coding sees, so a picture made from the kept one comes out the same.
+        big.save(kept, 'WEBP', lossless=True, exact=True)
     finish(big, im, out)
 
 
@@ -162,8 +169,13 @@ def group_of(iid):
 
 
 def size_of(w, h):
-    """An item's size class by its art (px): 'small' (one cell), 'medium' (up to 2 x 2: 1 x 2, 2 x 1, 2 x 2) or 'large'."""
-    cw, ch = max(1, round(w / CELL)), max(1, round(h / CELL))
+    """An item's size class by its art (px): 'small' (one cell), 'medium' (up to 2 x 2: 1 x 2, 2 x 1, 2 x 2) or 'large'.
+
+    Halves round up, as Math.round in artScale does (Python's round would
+    send them to the even side).
+    """
+    cells = lambda px: max(1, int(px / CELL + 0.5))
+    cw, ch = cells(w), cells(h)
     return 'small' if cw == ch == 1 else 'medium' if cw <= 2 and ch <= 2 else 'large'
 
 
@@ -209,20 +221,31 @@ def save_all(im, out):
         save(small, os.path.join(folder, str(size), name))
 
 
+def done(iid):
+    """Whether an item has its pictures, the full one at its scale (so a change to SCALE redoes the items it moves)."""
+    full = os.path.join(OUT_DIR, f'{iid}.avif')
+    if not all(os.path.exists(p) for p in [full] + [os.path.join(OUT_DIR, str(t), f'{iid}.avif') for t in THUMBS]):
+        return False
+    w, h = Image.open(os.path.join(SRC_DIR, f'{iid}.webp')).size
+    k = scale_of(w, h)
+    return Image.open(full).size == (w * k, h * k)
+
+
 def main():
     args = sys.argv[1:]
     redo = '--all' in args
     ids = [a for a in args if not a.startswith('--')]
     if not ids:
         ids = sorted(f[: -len('.webp')] for f in os.listdir(SRC_DIR) if f.endswith('.webp'))
-    done = lambda i: all(os.path.exists(p) for p in [os.path.join(OUT_DIR, f'{i}.avif')] + [os.path.join(OUT_DIR, str(t), f'{i}.avif') for t in THUMBS])
     todo = [i for i in ids if redo or not done(i)]
     if not todo:
         print('All item art is upscaled.')
         return
     os.makedirs(OUT_DIR, exist_ok=True)
     torch.set_num_threads(os.cpu_count() or 4)
-    net = load_model()
+    keep = os.environ.get('ART_KEEP')
+    # The model only loads if some item has no kept picture to start from.
+    net = None if keep and all(os.path.exists(os.path.join(keep, f'{i}.webp')) for i in todo) else load_model()
     for n, i in enumerate(todo, 1):
         upscale(net, os.path.join(SRC_DIR, f'{i}.webp'), os.path.join(OUT_DIR, f'{i}.avif'))
         print(f'[{n}/{len(todo)}] {i}', flush=True)

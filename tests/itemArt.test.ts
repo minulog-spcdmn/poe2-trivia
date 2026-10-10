@@ -4,26 +4,14 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Item } from '../src/lib/game.ts';
 import { artScale, ITEM_THUMBS as THUMBS } from '../src/lib/ui-paths.ts';
+import { webpSize as parse } from '../scripts/webp-size.mjs';
+
+/** An original's width and height (the WebP files in art-source/). */
+const webpSize = (file: string): [number, number] => parse(readFileSync(file), file) as [number, number];
 
 const ROOT = join(import.meta.dirname, '..');
 const items: Item[] = JSON.parse(readFileSync(join(ROOT, 'src', 'data', 'items.json'), 'utf8'));
 const SITE = join(ROOT, 'public', 'items');
-
-/** A WebP file's width and height, from its header (the originals in art-source/). */
-function webpSize(file: string): [number, number] {
-  const b = readFileSync(file);
-  assert.equal(b.toString('latin1', 0, 4), 'RIFF', file);
-  assert.equal(b.toString('latin1', 8, 12), 'WEBP', file);
-  assert.equal(b.readUInt32LE(4) + 8, b.length, `${file} is cut short`);
-  const kind = b.toString('latin1', 12, 16);
-  if (kind === 'VP8X') return [b.readUIntLE(24, 3) + 1, b.readUIntLE(27, 3) + 1];
-  if (kind === 'VP8 ') return [b.readUInt16LE(26) & 0x3fff, b.readUInt16LE(28) & 0x3fff];
-  if (kind === 'VP8L') {
-    const v = b.readUInt32LE(21);
-    return [(v & 0x3fff) + 1, ((v >> 14) & 0x3fff) + 1];
-  }
-  throw new Error(`${file}: unknown WebP kind ${kind}`);
-}
 
 /** An AVIF file's width and height (its first 'ispe' box), and the file is whole: its top-level boxes add up to its length. */
 function avifSize(file: string): [number, number] {
