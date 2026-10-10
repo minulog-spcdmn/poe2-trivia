@@ -12,6 +12,7 @@
   import { backdropShadow } from '../lib/backdropShadow';
   import { dialogBackdrop } from '../lib/behindDialog';
   import { motion } from '../lib/motion.svelte';
+  import { whenIdle } from '../lib/idle';
   import type { Difficulty, Item } from '../lib/game';
   import ArcaneCircle from './ArcaneCircle.svelte';
   import CodexItem from './CodexItem.svelte';
@@ -68,6 +69,18 @@
   let search = $state('');
   const query = $derived(search.trim().toLowerCase());
   const matches = (it: Item) => !query || it.name.toLowerCase().includes(query) || it.base.toLowerCase().includes(query);
+
+  // The pictures load lazily at first, so the ones on screen come first. Once
+  // the page has settled, the rest load too: a fast scroll (the middle mouse
+  // button's autoscroll, dragging the scrollbar) outruns the browser's lazy
+  // loading, which only looks ahead a little and only on a main-thread frame,
+  // so the pictures were still missing, and arrived all at once mid-scroll.
+  // Not with Save-Data on: the rest are some megabytes.
+  let thumbsLoading = $state<'lazy' | 'eager'>('lazy');
+  onMount(() => {
+    if ((navigator as Navigator & { connection?: { saveData?: boolean } }).connection?.saveData) return;
+    return whenIdle(() => (thumbsLoading = 'eager'), { timeout: 2000 });
+  });
 
   /** Each category's items, by group then name. While searching, only discovered matches. */
   const sections = $derived(
@@ -233,7 +246,7 @@
 {/snippet}
 
 {#snippet thumb(it: Item)}
-  <span class="thumb"><img src={itemThumb(it.id, 128)} alt="" loading="lazy" /></span>
+  <span class="thumb"><img src={itemThumb(it.id, 128)} alt="" loading={thumbsLoading} /></span>
 {/snippet}
 
 {#snippet glyph(category: string)}
@@ -479,7 +492,7 @@
                   {#if e}
                     {@const t = tallyOf(e)}
                     <button class="tile" onclick={() => (open = it)} aria-label="{it.name}{t.n ? `, ${t.ok} of ${answers(t.n)} right` : ', seen'}">
-                      <span class="art"><img src={itemThumb(it.id, 128)} srcset={itemSrcset(it.id)} alt="" loading="lazy" /></span>
+                      <span class="art"><img src={itemThumb(it.id, 128)} srcset={itemSrcset(it.id)} alt="" loading={thumbsLoading} /></span>
                       <span class="name">{it.name}</span>
                       <span class="status">
                         {#if t.n}
@@ -491,7 +504,7 @@
                     </button>
                   {:else}
                     <span class="tile unknown" title="Not discovered yet">
-                      <span class="art"><img src={itemThumb(it.id, 128)} srcset={itemSrcset(it.id)} alt="" loading="lazy" draggable="false" /></span>
+                      <span class="art"><img src={itemThumb(it.id, 128)} srcset={itemSrcset(it.id)} alt="" loading={thumbsLoading} draggable="false" /></span>
                       <span class="name">Undiscovered</span>
                       <span class="status"></span>
                     </span>
