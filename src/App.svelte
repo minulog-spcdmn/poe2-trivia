@@ -177,6 +177,20 @@
     confirmLeave = false;
     session.leave();
   }
+
+  // A host with nobody else in the room (connected players or spectators)
+  // closes it for no one, so there's nothing to confirm in the lobby.
+  const alone = $derived(
+    session.mode === 'host' &&
+      !!gs &&
+      !gs.players.some((p) => p.id !== session.myPlayerId && p.connected) &&
+      !gs.spectators?.length,
+  );
+
+  function askLeave() {
+    if (alone && screen === 'lobby') leave();
+    else confirmLeave = true;
+  }
 </script>
 
 <Background />
@@ -186,7 +200,7 @@
 <div class="shell" data-behind-dialog bind:this={shell}>
   {#if headerOn}
     <header in:fade={{ duration: 300 }} bind:offsetHeight={headerHeight}>
-      <button class="brand" onclick={() => (codex ? closeCodex() : (confirmLeave = true))} title={codex ? 'Back to the start' : 'Leave game'}>
+      <button class="brand" onclick={() => (codex ? closeCodex() : askLeave())} title={codex ? 'Back to the start' : 'Leave game'}>
         <span class="brand-mark" aria-hidden="true">
           {#each ['', 'hot'] as cls (cls)}
             <svg class={cls} viewBox="20 0 400 391"><path d="M224 390Q255 331 301.0 283.5Q347 236 377 218L407 200L220 -1Q164 31 116.5 82.5Q69 134 50 169L31 204Z" fill="currentColor" /></svg>
@@ -292,7 +306,7 @@
             <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18" /></svg>
           </button>
         {:else}
-          <button class="icon-btn" onclick={() => (confirmLeave = true)} title="Leave" aria-label="Leave game">
+          <button class="icon-btn" onclick={askLeave} title="Leave" aria-label="Leave game">
             <svg viewBox="0 0 24 24"><path d="M14 4h5v16h-5M10 8l-4 4 4 4M6 12h10" /></svg>
           </button>
         {/if}
@@ -350,9 +364,9 @@
     >
       <h3>Leave the game?</h3>
       <p class="muted">
-        {#if session.mode === 'host'}
+        {#if session.mode === 'host' && !alone}
           You are the host. Leaving closes the room for everyone.
-        {:else if session.mode === 'local'}
+        {:else if session.mode === 'local' || session.mode === 'host'}
           The current game will be lost.
         {:else}
           You can rejoin with the same code while the game is running.
