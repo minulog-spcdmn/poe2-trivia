@@ -4,7 +4,7 @@
 // dart, leaning as a pointer does, with a ridge down its middle and one side
 // hatched along it, as the star's points are (lib/arcane.ts pointedRay).
 // Its other states are drawn alike, each telling itself by its shape as well
-// as its light: over something that can be clicked, a gauntlet's hand
+// as its light: over something that can be clicked, a demon's clawed hand
 // pointing (the system's pointer, engraved); pressed, the dart or the hand
 // sinks, the dart's hatched side or the hand's finger struck solid;
 // disabled, dull lead with a saltire beside the tip; the text cursor (a stem
@@ -47,29 +47,62 @@ export const PRESS_SCALE = 0.86;
 /** Where a disabled pointer's saltire sits beside the tip, clear of the dart. */
 export const BADGE: Pt = [11.2, 3.2];
 
+/** Points along the quadratic curve from `a` (left out) by way of `c` to `b`, `n` of them. */
+const quad = (a: Pt, c: Pt, b: Pt, n: number): Pt[] =>
+  Array.from({ length: n }, (_, i) => {
+    const t = (i + 1) / n;
+    return [(1 - t) ** 2 * a[0] + 2 * (1 - t) * t * c[0] + t * t * b[0], (1 - t) ** 2 * a[1] + 2 * (1 - t) * t * c[1] + t * t * b[1]];
+  });
+
 /**
- * A gauntlet's hand pointing up, as the system's pointer is: the tip of its
- * finger at the origin, at `k` times its size. Its outline; the lines
- * between the curled fingers and across the cuff; the cuff's hatching; and
- * the pointing finger whole (struck solid when pressed).
+ * A demon's hand pointing, as the system's pointer is, seen a little from
+ * the side (three-quarter: narrowed across, leaning a little): a slim finger
+ * ending in a talon, rounded knuckles each with a small claw hooked forward,
+ * a clawed thumb. The talon's tip at the origin, at `k` times its size. Its
+ * outline; the creases between the curled fingers and the talon's base; the
+ * talon's shading; the talon whole (struck solid) and the pointing finger
+ * whole (struck solid when pressed).
  */
 function hand(k = 1) {
-  // Drawn with the finger's tip at (6.5, 0), then moved onto the origin.
-  const p = (x: number, y: number) => `${f((x - 6.5) * k)} ${f(y * k)}`;
-  const q = (x: number, y: number): Pt => [(x - 6.5) * k, y * k];
-  const arc = (r: number, x: number, y: number) => `A${f(r * k)} ${f(r * k)} 0 0 1 ${p(x, y)}`;
-  const outline =
-    `M${p(5, 1.5)}${arc(1.5, 8, 1.5)}` +
-    `L${p(8, 8.6)}${arc(1.5, 11, 8.6)}` +
-    `L${p(11, 9.4)}${arc(1.5, 14, 9.4)}` +
-    `L${p(14, 10.4)}${arc(1.4, 16.8, 10.4)}` +
-    `L${p(16.8, 16)}Q${p(16.8, 18.6)} ${p(14.4, 19.6)}` +
-    `L${p(14.4, 22)}L${p(5.6, 22)}L${p(5.6, 19.6)}` +
-    `L${p(1.8, 14.6)}${arc(1.2, 3.6, 13)}L${p(5, 14.6)}Z`;
-  const creases = line(q(8, 9.4), q(8, 13.4)) + line(q(11, 10.2), q(11, 13.6)) + line(q(14, 11.2), q(14, 13.8)) + line(q(5.6, 19.6), q(14.4, 19.6));
-  const cuff = Array.from({ length: 6 }, (_, i) => line(q(6.9 + i * 1.3, 20.2), q(6.9 + i * 1.3, 21.5))).join('');
-  const finger = `M${p(5, 1.5)}${arc(1.5, 8, 1.5)}L${p(8, 13.4)}L${p(5, 13.4)}Z`;
-  return { outline, creases, cuff, finger };
+  const TURN = (-12 * Math.PI) / 180;
+  const ACROSS = 0.8;
+  // Drawn upright with the talon's tip at (6, 0), then moved onto the origin, narrowed and turned.
+  const at = ([x, y]: Pt): Pt => {
+    const [u, v] = [(x - 6) * k * ACROSS, y * k];
+    return [u * Math.cos(TURN) - v * Math.sin(TURN), u * Math.sin(TURN) + v * Math.cos(TURN)];
+  };
+  const poly = (pts: Pt[]) => `M${pts.map((p) => pt(at(p))).join('L')}Z`;
+  const knuckle = (from: Pt, top: Pt, to: Pt, claw: Pt[]): Pt[] => [
+    ...quad(from, [from[0], top[1] - 0.3], top, 3),
+    ...claw,
+    ...quad(top, [to[0], top[1] - 0.2], to, 3),
+  ];
+  const talonRight = quad([6, 0], [7.15, 1.2], [7.2, 4.2], 4);
+  const talonLeft = quad([4.9, 4.2], [4.85, 1.3], [6, 0], 4).slice(0, -1);
+  const outline = poly([
+    [6, 0],
+    ...talonRight,
+    [7.2, 9.2],
+    ...knuckle([7.2, 9.2], [8.8, 8.1], [10.3, 9.5], [[8.4, 8.2], [8.1, 6.9], [9.2, 8.0]]),
+    ...knuckle([10.3, 9.5], [11.8, 8.8], [13.1, 10.2], [[11.4, 8.9], [11.3, 7.6], [12.2, 8.9]]),
+    ...knuckle([13.1, 10.2], [14.3, 10.0], [15.3, 11.6], [[14.0, 10.0], [14.2, 8.9], [14.8, 10.3]]),
+    [15.3, 16],
+    ...quad([15.3, 16], [15.3, 18.6], [13.6, 19.5], 4),
+    [13.6, 21.6],
+    [5.6, 21.6],
+    [5.6, 19.5],
+    [2.6, 15.8],
+    [0.7, 13.4],
+    [2.7, 13.2],
+    [4.9, 14.2],
+    [4.9, 4.2],
+    ...talonLeft,
+  ]);
+  const ln = (a: Pt, b: Pt) => line(at(a), at(b));
+  const creases = ln([4.9, 4.2], [7.2, 4.2]) + ln([8.3, 10.2], [8.3, 13]) + ln([11, 10.6], [11, 13.3]) + ln([13.6, 11.4], [13.6, 13.6]);
+  const talon = poly([[6, 0], ...talonRight, [4.9, 4.2], ...talonLeft]);
+  const finger = poly([[6, 0], ...talonRight, [7.2, 9.2], [4.9, 9.2], [4.9, 4.2], ...talonLeft]);
+  return { outline, creases, shade: hatch(at([6, 4.2]), at([4.9, 4.2]), at([6, 0.4]), 0.6 * k), talon, finger };
 }
 
 /** A saltire about `c`, `r` out along each arm. */
@@ -87,6 +120,8 @@ export interface Art {
   ground: string;
   /** What's cut, in order: `fine` lines are hatching (round ends, a little fainter); `solid` shapes are filled with the line's colour. */
   lines: { d: string; w: number; fine?: boolean; solid?: boolean }[];
+  /** Fine lines with nothing round them: a thinner rim, no glow, no wash of colour, the inner lines unrimmed. */
+  plain?: boolean;
 }
 
 const dartLines = (d: { outline: string; ridge: string; hatch: string }, k = 1): Art['lines'] => [
@@ -98,10 +133,12 @@ const dartLines = (d: { outline: string; ridge: string; hatch: string }, k = 1):
 const pressed = dart(LEAN, PRESS_SCALE);
 export const HAND = hand();
 const pressedHand = hand(PRESS_SCALE);
+/** The hand's lines: finer than the dart's, so its small claws stay clear at its size (and drawn `plain`, see Art). */
 const handLines = (h: ReturnType<typeof hand>): Art['lines'] => [
-  { d: h.outline, w: WEIGHT.outline },
-  { d: h.creases, w: WEIGHT.fine },
-  { d: h.cuff, w: WEIGHT.hatch, fine: true },
+  { d: h.talon, w: 0, solid: true },
+  { d: h.outline, w: 0.8 },
+  { d: h.creases, w: 0.6 },
+  { d: h.shade, w: 0.45, fine: true },
 ];
 /** A double ring, as the circle's seals are. */
 const seal = (c: Pt, r: number) => ring(c, r) + ring(c, r * 0.78);
@@ -136,13 +173,14 @@ function scrollArt(down: boolean): Art {
 export const ART = {
   rest: { size: SIZE, hot: [PAD_X, PAD_Y], ground: POINTER.outline, lines: dartLines(POINTER) },
   // Over something that can be clicked: the hand, pointing.
-  hover: { size: SIZE, hot: [PAD_X, PAD_Y], ground: HAND.outline, lines: handLines(HAND) },
-  // Pressed on it: the hand sunk, its finger struck solid.
+  hover: { size: SIZE, hot: [PAD_X, PAD_Y], ground: HAND.outline, lines: handLines(HAND), plain: true },
+  // Pressed on it: the hand sunk, its pointing finger struck solid.
   press: {
     size: SIZE,
     hot: [PAD_X, PAD_Y],
     ground: pressedHand.outline,
     lines: [{ d: pressedHand.finger, w: 0, solid: true }, ...handLines(pressedHand)],
+    plain: true,
   },
   // Pressed on nothing that can be clicked: the dart sunk, its hatched side struck solid.
   sink: {

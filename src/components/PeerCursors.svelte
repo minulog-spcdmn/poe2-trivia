@@ -251,14 +251,14 @@
           <path class="line ridge" d={POINTER.ridge} stroke-width={WEIGHT.ridge} />
           <path class="line hatch" d={POINTER.hatch} stroke-width={WEIGHT.hatch} />
         </g>
+        <!-- The hand is drawn plain (lib/pointerArt.ts Art): fine lines, no glow, its talon struck solid. -->
         <g class="hand">
-          <path class="ground" d={HAND.outline} stroke-width={WEIGHT.rim} />
-          <path class="glow" d={HAND.outline} />
-          <path class="wash" d={HAND.outline} />
+          <path class="ground" d={HAND.outline} stroke-width="2.4" />
+          <path class="talon" d={HAND.talon} />
           <path class="side" d={HAND.finger} />
-          <path class="line" d={HAND.outline} stroke-width={WEIGHT.outline} />
-          <path class="line" d={HAND.creases} stroke-width={WEIGHT.fine} />
-          <path class="line hatch" d={HAND.cuff} stroke-width={WEIGHT.hatch} />
+          <path class="line" d={HAND.outline} stroke-width="0.8" />
+          <path class="line" d={HAND.creases} stroke-width="0.6" />
+          <path class="line hatch" d={HAND.shade} stroke-width="0.45" />
         </g>
       </svg>
       <span class="name">{c.name}</span>
@@ -337,13 +337,20 @@
     display: inline;
   }
   /* The button held, or a tap: the dart or the hand sinks about its tip, the dart's hatched side or the hand's finger struck solid. */
+  /* Sharp claws would throw long mitres: the hand's corners are rounded. */
+  .hand {
+    stroke-linejoin: round;
+  }
   .body,
   .hand {
     transform-origin: 0 0;
     transition: transform 0.12s var(--ease-out);
   }
-  .side {
+  .side,
+  .talon {
     fill: color-mix(in srgb, var(--c), #fff4e0 35%);
+  }
+  .side {
     opacity: 0;
   }
   .cursor:global(.pressed) .body,

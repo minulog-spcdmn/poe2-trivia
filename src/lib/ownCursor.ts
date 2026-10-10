@@ -38,26 +38,27 @@ function draw(art: Art, color: string, look: Look, scale: number): string {
     g.lineWidth = w;
     g.stroke(new Path2D(d));
   };
-  g.lineJoin = 'miter';
+  // Sharp claws would throw long mitres: the plain hand's corners are rounded.
+  g.lineJoin = art.plain ? 'round' : 'miter';
   g.miterLimit = 12;
   // A dark rim and ground, so it reads on gold as well as on black.
   const ground = new Path2D(art.ground);
   g.fillStyle = 'rgba(10, 9, 8, 0.9)';
   g.fill(ground);
   g.strokeStyle = INK;
-  g.lineWidth = 3;
+  g.lineWidth = art.plain ? 2.4 : 3;
   g.stroke(ground);
-  for (const l of art.lines) if (!l.fine) stroke(l.d, l.w + 2);
+  if (!art.plain) for (const l of art.lines) if (!l.fine) stroke(l.d, l.w + 2);
   // The glow under the lines, never on them (none on dull lead).
   g.save();
   g.strokeStyle = color;
-  g.globalAlpha = look === 'dull' ? 0 : bright ? 0.5 : 0.22;
+  g.globalAlpha = look === 'dull' || art.plain ? 0 : bright ? 0.5 : 0.22;
   g.shadowColor = color;
   g.shadowBlur = (bright ? 5 : 2) * scale;
   stroke(art.ground, bright ? 2.6 : 2);
   g.restore();
   // Gilded: a wash of the colour inside, and the lines struck paler.
-  if (bright) {
+  if (bright && !art.plain) {
     g.fillStyle = color;
     g.globalAlpha = look === 'press' ? 0.32 : 0.2;
     g.fill(ground);
