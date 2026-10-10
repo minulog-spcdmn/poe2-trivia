@@ -10,7 +10,7 @@
   import { MOUSE, PRESSED, SCALE, SEND_EVERY_MS, TAP, anchorCode, anchorName, cursorKey, cursorsLive, type CursorAt, type PointerKind } from '../lib/cursors';
   import { playerColor } from '../lib/ui';
   import { portal } from '../lib/portal';
-  import { HAND, HAND_PRESSED, PAD_X, PAD_Y, POINTER, PRESS_SCALE, SIZE, WEIGHT } from '../lib/pointerArt';
+  import { HAND, HAND_PRESSED, LEAN_DEG, PAD_X, PAD_Y, POINTER, PRESS_ALONG, SIZE, WEIGHT } from '../lib/pointerArt';
 
   /** How quickly a pointer catches up with where it was last heard to be (ms to cover about 2/3 of the way). */
   const GLIDE_MS = 70;
@@ -227,12 +227,12 @@
   });
 </script>
 
-<div class="cursors" use:portal aria-hidden="true" style:--pad-x={PAD_X} style:--pad-y={PAD_Y} style:--w={SIZE[0]} style:--h={SIZE[1]} style:--press={PRESS_SCALE}>
+<div class="cursors" use:portal aria-hidden="true" style:--pad-x={PAD_X} style:--pad-y={PAD_Y} style:--w={SIZE[0]} style:--h={SIZE[1]} style:--lean="{LEAN_DEG}deg" style:--along={PRESS_ALONG}>
   {#each shown as c (c.key)}
     <div class="cursor" bind:this={els[c.key]} style:--c={c.color}>
       <!-- The dart (lib/pointerArt.ts) with its tip on the spot: a dark rim and ground, a glow under the lines. -->
       <!-- The dart (lib/pointerArt.ts) with its tip on the spot: a dark rim and ground, a glow under the lines.
-           Over a button, the hand pointing instead; pressed (or a tap), the dart sinks a little as it is,
+           Over a button, the hand pointing instead; pressed (or a tap), the dart pushes its tip into the page, foreshortened,
            and the hand pushes its finger into the page, foreshortened and struck solid. -->
       <svg class="dart" viewBox="{-PAD_X} {-PAD_Y} {SIZE[0]} {SIZE[1]}" width={SIZE[0]} height={SIZE[1]}>
         <g class="body">
@@ -329,7 +329,7 @@
   .cursor:global(.lit.pressed) .hand.down {
     display: inline;
   }
-  /* The button held, or a tap: the dart sinks a little about its tip, as it is otherwise. */
+  /* The button held, or a tap: the dart pushes its tip into the page, drawn as it is otherwise. */
   /* Sharp claws would throw long mitres: the hand's corners are rounded. */
   .hand {
     stroke-linejoin: round;
@@ -343,7 +343,8 @@
   }
   .cursor:global(.pressed) .body,
   .cursor:global(.tap) .body {
-    transform: scale(var(--press));
+    /* Foreshortened along its own length (upright, squeezed, leaning again), as the player's own is. */
+    transform: rotate(var(--lean)) scaleY(var(--along)) rotate(calc(-1 * var(--lean)));
   }
   /* Smaller on phones, so they cover less of the answers. */
   @media (max-width: 640px) {
