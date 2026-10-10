@@ -208,8 +208,22 @@
   // `lit` lights the seals' signs (an unidentified item keeps them dark
   // until the reveal, when they flare); `end` is what the right seal holds:
   // Luna, or nothing, for a button to sit in it (the dialog's close; see
-  // SOCKET_X). The ends can be drawn smaller with `--end-scale`.
-  let { lit = true, end = 'luna' }: { lit?: boolean; end?: 'luna' | 'empty' } = $props();
+  // SOCKET_X). The ends can be drawn smaller with `--end-scale`; with `fit`
+  // they are sized to the plate itself (drawn for 64px: a taller plate, as
+  // a name that wraps makes it, draws them larger), so the frame's rules
+  // always run along its edges.
+  let { lit = true, end = 'luna', fit = false }: { lit?: boolean; end?: 'luna' | 'empty'; fit?: boolean } = $props();
+  let plateEl = $state<HTMLElement>();
+  let endScale = $state<number>();
+  $effect(() => {
+    if (!fit || !plateEl) return;
+    const ro = new ResizeObserver(([e]) => {
+      const h = e.contentRect.height;
+      if (h > 0) endScale = Math.round((h / 64) * 1000) / 1000;
+    });
+    ro.observe(plateEl);
+    return () => ro.disconnect();
+  });
 
   const uid = $props.id();
   const id = (n: string) => `${uid}-${n}`;
@@ -229,12 +243,14 @@
     <path d={SPANDREL_GROUND} class="ground leaf" />
     <path d={SPINE_PATHS} class="draw fine" style:--d="0.6s" pathLength="100" />
     <!-- The frame: the outer rule runs on from the spandrels, the inner from
-         the flames, past the middle (the other end's rules overlap them
-         there, unseen), so they scale with the end. -->
+         the flames, on past the middle (as long as before: 70% of the plate, so
+         the pen keeps its pace) so they scale with the end; each end
+         is clipped at the middle (see plate()), so the two ends' rules meet
+         there instead of overlapping, which showed as a brighter stretch. -->
     {#each [-1, 1] as side (side)}
-      <line x1={f(OUTER_RULE_X)} y1={side * 29.5} x2="70%" y2={side * 29.5} class="draw rule metal thin" style:--d="0.6s" pathLength="100" />
-      <line x1={f(INNER_RULE_X)} y1={side * 26.5} x2="70%" y2={side * 26.5} class="draw rule metal" style:--d="1.1s" pathLength="100" />
-      <line x1={f(OUTER_RULE_X)} y1={side * 29.5} x2="52%" y2={side * 29.5} class="spark" pathLength="100" />
+      <line x1={f(OUTER_RULE_X)} y1={side * 29.5} x2="140%" y2={side * 29.5} class="draw rule metal thin" style:--d="0.6s" pathLength="100" />
+      <line x1={f(INNER_RULE_X)} y1={side * 26.5} x2="140%" y2={side * 26.5} class="draw rule metal" style:--d="1.1s" pathLength="100" />
+      <line x1={f(OUTER_RULE_X)} y1={side * 29.5} x2="104%" y2={side * 29.5} class="spark" pathLength="100" />
     {/each}
     {@render moulding(END.spandrels)}
     {@render moulding(END.ogees)}
@@ -264,12 +280,12 @@
 {/snippet}
 
 {#snippet plate()}
-  <!-- The ends, round the middle. -->
-  <svg y="50%" overflow="visible">{@render cap('sol')}</svg>
-  <svg x="100%" y="50%" overflow="visible"><g transform="scale(-1 1)">{@render cap(end)}</g></svg>
+  <!-- The ends, round the middle, each in its own half of the plate. -->
+  <svg width="50%" height="100%" overflow="hidden"><svg y="50%" overflow="visible">{@render cap('sol')}</svg></svg>
+  <svg x="50%" width="50%" height="100%" overflow="hidden"><svg x="100%" y="50%" overflow="visible"><g transform="scale(-1 1)">{@render cap(end)}</g></svg></svg>
 {/snippet}
 
-<span class="plate" class:lit aria-hidden="true">
+<span class="plate" class:lit aria-hidden="true" bind:this={plateEl} style:--end-scale={endScale}>
   <span class="field" style:background-image={weave()} style:--tile="{BAY}px {ROW}px"></span>
   <!-- The lines twice, as on the circle: a soft, wide copy for the glow, and the lines. -->
   <svg class="art glow" width="100%" height="100%">{@render plate()}</svg>

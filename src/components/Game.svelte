@@ -37,8 +37,8 @@
   const depth = $derived(delveDepth(s));
   const group = $derived(isGroupRun(s));
   // The question's timer: in the scoreboard pinned to the top on phones, in
-  // view while they scroll down to the answers, and beside the question's
-  // topic otherwise. Only ever one, so its ticks never double.
+  // view while they scroll down to the answers, and at the right end of the
+  // question's task line otherwise. Only ever one, so its ticks never double.
   const q = $derived(s.phase === 'question' || s.phase === 'reveal' ? s.question : null);
 
   // Countdown to the automatic skip of a disconnected player's turn.
@@ -548,6 +548,8 @@
     animation: arrive 0.9s var(--ease-out) both;
     text-align: center;
     white-space: nowrap;
+    /* One line, so no leading over and under it: the space round the banner is its margins. */
+    line-height: 1.15;
   }
   .rule {
     flex: 0 1 140px;
@@ -735,6 +737,13 @@
     }
     .skip {
       margin-top: 1rem;
+    }
+  }
+
+  /* Short desktop windows: less room over the scoreboard, so the question and Next fit. */
+  @media (min-width: 641px) and (max-height: 820px) {
+    .game {
+      padding-top: clamp(4px, 1vh, 16px);
     }
   }
 </style>

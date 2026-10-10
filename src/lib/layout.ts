@@ -7,8 +7,11 @@ import { MediaQuery } from 'svelte/reactivity';
  */
 export const phone = new MediaQuery('(max-width: 640px)');
 
-/** Narrow screens: the question's art and answers stack, as in QuestionView's 760px CSS. */
-export const narrow = new MediaQuery('(max-width: 760px)');
+/** Wider than a phone or a narrow tablet: the question's art and answers side by side (QuestionView's 761px CSS). */
+export const sideBySide = new MediaQuery('(min-width: 761px)');
+
+/** Short desktop windows (13 and 14 inch laptops), as in QuestionView's max-height CSS. */
+export const short = new MediaQuery('(min-width: 761px) and (max-height: 820px)');
 
 const docked = new Set<HTMLElement>();
 function setDock() {

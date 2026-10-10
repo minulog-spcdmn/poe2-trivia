@@ -303,6 +303,14 @@ function invSet(s: GameState, id: string, change: (inv: Inventory) => void) {
   (s.delve!.inventory ??= {})[id] = capShards(inv);
 }
 
+/** A player's streak of right answers, as if they had answered `n` in a row (the streak chip and the scoreboard's fire at any tier). */
+export function setStreak(id: string, n: number) {
+  put((s) => {
+    const p = s.players.find((x) => x.id === id);
+    if (p) p.streak = n;
+  });
+}
+
 export function setItem(id: string, item: ItemKind, n: number) {
   put((s) => invSet(s, id, (inv) => (inv[item] = Math.max(0, Math.min(CAPS[item], n)))), true);
 }

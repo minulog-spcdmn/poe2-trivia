@@ -25,24 +25,24 @@
     veilComplete,
     veilHandoff,
     type VerdictTone,
+    ablaze,
   } from '../lib/fx/moments';
   import { FILL_LEAD } from '../lib/soundDesign';
-  import { streakOf } from '../lib/fx/streaks';
+  import { burnsBlue, heatOf, streakOf } from '../lib/fx/streaks';
   import { scoreRowOf } from '../lib/scoreRows';
   import { fxActive, type Handle } from '../lib/fx/core';
-  import { dock, narrow, phone } from '../lib/layout';
+  import { dock, phone, short, sideBySide } from '../lib/layout';
   import { portal } from '../lib/portal';
-  import { DELVE_FUSE_MS, blastProblem, clockLeft, dynamiteOf, fellAt, fuseDue, fuseLeft, holdersOf, isGroupRun, itemsWorkOn, livesOf, waitingIds } from '../lib/delve';
+  import { DELVE_FUSE_MS, blastProblem, blastsLeft, clockLeft, dynamiteOf, fellAt, fuseDue, fuseLeft, holdersOf, isGroupRun, itemsWorkOn, livesOf, waitingIds } from '../lib/delve';
   import { blownText, coopMissText, coopRevealText, flareText, namesOf, perishedText, wardText } from '../lib/difficultyText';
   import ItemGlyph from './ItemGlyph.svelte';
   import type { GlyphKind } from '../lib/inventoryArt';
 
-  /** The question's timer (Game.svelte has it in the scoreboard on phones instead). */
-  let { timer }: { timer?: Snippet } = $props();
-
   const s = $derived(session.state!);
   const q = $derived(s.question!);
   const reveal = $derived(s.phase === 'reveal' ? s.reveal : null);
+  /** The question's timer, at the task line's right end (phones have it in the pinned scoreboard, Game.svelte). */
+  let { timer }: { timer?: Snippet } = $props();
   const active = $derived(s.players[s.turn]);
   const me = $derived(session.myPlayerId);
   /**
@@ -55,11 +55,62 @@
   const struckAt = $derived(new Map(struckList.map((x) => [x.index, x])));
   /** Delve together: your own wrong pick on this question, if any. */
   const myStruck = $derived(coop && me ? struckList.find((x) => x.by === me) : undefined);
+  /** Delve together: you stand and haven't struck out on this question (as `mine`, but holding through the reveal). */
+  // (The lives the reveal took are counted back, so running out of time on the last one doesn't change the line as the verdict lands.)
+  const canAnswer = $derived(
+    !!me &&
+      !session.spectating &&
+      s.players.some((p) => p.id === me) &&
+      livesOf(s, me) + (reveal?.hits?.find((h) => h.playerId === me)?.lives ?? 0) > 0 &&
+      !myStruck,
+  );
   /** Whether this device answers: your turn, or (Delve together) you stand and haven't answered yet. */
   const mine = $derived(
     coop ? !reveal && !!me && s.players.some((p) => p.id === me) && livesOf(s, me) > 0 && !myStruck : session.myTurn,
   );
   const nameOf = (id: string) => s.players.find((p) => p.id === id)?.name ?? '?';
+  /**
+   * Svelte action: a name that is the question (the picture question's plate)
+   * shrinks, down to three quarters of its size, to stay on one line, so the
+   * plate keeps its height; only a name too long even then wraps.
+   */
+  function oneLine(node: HTMLElement) {
+    const run = () => {
+      node.style.fontSize = '';
+      node.style.whiteSpace = 'nowrap';
+      const full = parseFloat(getComputedStyle(node).fontSize);
+      // The plate's room inside its padding (the text block itself grows with an unwrapped name).
+      const head = node.closest<HTMLElement>('.head');
+      if (!head) return;
+      const hs = getComputedStyle(head);
+      const room = head.clientWidth - parseFloat(hs.paddingLeft) - parseFloat(hs.paddingRight) + 0.5;
+      // The words' own width (the span itself is as wide as the plate's line).
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      const wide = () => range.getBoundingClientRect().width;
+      let size = full;
+      while (wide() > room && size > full * 0.75) {
+        size -= 0.5;
+        node.style.fontSize = `${size}px`;
+      }
+      if (wide() > room) node.style.whiteSpace = '';
+    };
+    run();
+    // Again once the display font is in, and whenever the plate's width changes (a phone turned).
+    void document.fonts?.ready.then(run);
+    const ro = new ResizeObserver(run);
+    const head = node.closest('.head');
+    if (head) ro.observe(head);
+    // And when the name changes: once its new words are in (before the next paint).
+    const mo = new MutationObserver(run);
+    mo.observe(node, { characterData: true, childList: true, subtree: true });
+    return {
+      destroy: () => {
+        ro.disconnect();
+        mo.disconnect();
+      },
+    };
+  }
   /**
    * Delve together, while the question is open: teammates its wrong picks
    * left with no lives (their entries grey, easy to miss mid-question), and
@@ -80,6 +131,13 @@
   // Guests only learn the answer (and the items behind the options) at the reveal.
   const item = $derived(q.itemId ? engine.byId.get(q.itemId) : undefined);
   const race = $derived(s.settings.mode === 'race');
+  /**
+   * Turns: someone else is answering. The answers go grey and sit flat in the
+   * page (kept in place, frames and numbers too, the names still readable), so
+   * at a glance it is plainly not yours to press; they light up again when your
+   * turn comes, and at the reveal everyone sees the verdict in full colour.
+   */
+  const theirs = $derived(!race && !coop && !session.myTurn && !reveal);
   // Everyone sees the Next button; only the host (and in turns mode, whoever answered) can press it.
   const canNext = $derived(!!reveal && (race ? session.isHost : coop ? session.isHost || session.state!.players.some((p) => p.id === session.myPlayerId) : mine || session.isHost));
   const myMiss = $derived(race && me ? q.misses.find((m) => m.playerId === me) : undefined);
@@ -111,8 +169,7 @@
     return { glyph: 'dynamite', text: `${who} found a stick of dynamite.` };
   });
 
-  // Narrow screens have no room beside the timer: the verdict goes on the
-  // task line, beside or under the category (lib/layout.ts).
+  // The verdict leads the result line at the reveal, beside Next.
   /**
    * The verdict badge at the reveal: its word, icon and colour (violet
    * for running out of time, gold for a race someone else solved while you watch).
@@ -153,6 +210,17 @@
   // Delve: from eight answers on, phones lay them out tighter (see .snug), so
   // a short clock isn't spent scrolling down to them.
   const snug = $derived(!!s.delve && count > 6);
+  // A list too long for one column beside the art (Eternal's eight, Delve's
+  // eight and ten): two columns, as phones have, rather than every answer
+  // shrunk (see the 761px block).
+  const long = $derived(count > 6);
+  // Art questions whose pictures all stand tall (staves, bows, wands: the host
+  // says so, lib/game.ts TALL_ART_GROUPS): on wide screens they stand in one
+  // row of tall tiles rather than two rows of short ones, where a staff is a
+  // thin stick.
+  const tallArt = $derived(!!q.tall && count <= 8);
+  /** Whether a timer runs on this question (the timer snippet draws nothing without one). */
+  const clocked = $derived(!!q.deadline || !!s.delve);
   // Pictures the host has sent for this question.
   const media = $derived(shown.qid === q.askedAt ? shown : null);
   /** "Find the art" pictures in so far: whole, or (veiled, in Delve) ready to burn in. */
@@ -251,17 +319,12 @@
       blastProblem(s, session.mode === 'local' ? null : me) === null,
   );
   /** The button's place, kept from when dynamite is at hand on a question it works on until the question ends. */
-  const slotWanted = () => !!s.delve && !reveal && itemsWorkOn(q) && sticks > 0 && mine;
+  // (Not when this depth has no blast left: on phones the place is a docked bar, which would hold nothing.)
+  const slotWanted = () => !!s.delve && !reveal && itemsWorkOn(q) && sticks > 0 && mine && blastsLeft(s) > 0;
   // Taken from the first frame when it applies already, so the row never pops in under the answers.
   let blastSlot = $state(untrack(slotWanted));
   $effect(() => {
     if (!blastSlot && slotWanted()) blastSlot = true;
-  });
-  /** The row's height while it shows, kept for the phones' reveal, which docks Next and leaves the row's place empty. */
-  let blastRowH = $state(0);
-  let blastKeep = $state(0);
-  $effect(() => {
-    if (blastRowH > 0) blastKeep = blastRowH;
   });
   let blasting = false;
   function blastThrough() {
@@ -491,14 +554,75 @@
 
   /** Answer buttons (or picture tiles), by option index. */
   let optionEls = $state<HTMLElement[]>([]);
-  /** At the reveal on phones, the answer to keep clear of the docked bar: the one picked, else the right one. */
-  const keepInView = $derived(reveal ? optionEls[(race ? myMiss?.index : coop ? null : reveal.chosenIndex) ?? reveal.correctIndex] : null);
+  // Phones: the lower of your pick and the right answer, so the docked result row covers neither.
+  const keepInView = $derived(
+    reveal ? optionEls[Math.max(reveal.correctIndex, (race ? myMiss?.index : coop ? null : reveal.chosenIndex) ?? -1)] : null,
+  );
   /** The art stage (name questions) or the picture grid (art questions). */
   let artEl = $state<HTMLElement | null>(null);
   let verdictEl = $state<HTMLElement | null>(null);
   let charge: Handle | null = null;
   /** The scorer's streak of correct answers, for the result line. */
-  let streak = $state(0);
+  // From the reveal itself (the host has already counted this answer into
+  // the scorer's streak), so the chip renders once, already saying it.
+  // Taken once as the reveal arrives (before the DOM shows it) and kept to
+  // the next question, whoever comes or goes meanwhile.
+  let streakAt = $state<{ at: number; by: string | null; n: number }>({ at: 0, by: null, n: 0 });
+  $effect.pre(() => {
+    const r = reveal;
+    if (!r || untrack(() => streakAt.at) === q.askedAt) return;
+    const by = race || coop ? (r.winnerId ?? null) : r.correct ? active.id : null;
+    streakAt = { at: q.askedAt, by, n: by ? streakOf(untrack(() => s.players).find((p) => p.id === by)) : 0 };
+  });
+  const streakBy = $derived(reveal && streakAt.at === q.askedAt ? streakAt.by : null);
+  const streak = $derived(reveal && streakAt.at === q.askedAt ? streakAt.n : 0);
+  /**
+   * The streak is told in the verdict's chip when the chip speaks for its
+   * owner: the turn's answer (turns, Delve alone), or your own win in a race
+   * or together. Someone else's streak (a race won by another, a teammate's
+   * find) is said in the sentence about them.
+   */
+  const streakInChip = $derived(streak >= 2 && verdict?.tone === 'good' && ((!race && !coop) || (!!me && streakBy === me)));
+  /**
+   * From the fire's first tier (lib/fx/streaks: three in a row), the chip
+   * says the streak instead of its word and burns as the scorer's entry on
+   * the scoreboard does, at the same heat and in the same colours.
+   */
+  const chipHeat = $derived(streakInChip ? heatOf(streak, !!s.delve) : 0);
+  const chipBlue = $derived(chipHeat > 0 && burnsBlue(chipHeat, !!s.delve));
+
+  /**
+   * Svelte action: the streak chip catches fire as it lands (the chip comes
+   * in over 0.55 s) and burns while the reveal lasts. With the effects off
+   * the count's own glow says the tier.
+   */
+  /** The question whose chip has caught fire: moved (the phone's dock coming or going), it burns on without catching again. */
+  let caughtAt = 0;
+  function chipFire(node: HTMLElement, o: { heat: number; blue: boolean }) {
+    let fire: Handle | null = null;
+    let t: ReturnType<typeof setTimeout> | null = null;
+    let lit = { heat: 0, blue: false };
+    const set = (n: { heat: number; blue: boolean }) => {
+      if (n.heat === lit.heat && n.blue === lit.blue) return;
+      lit = n;
+      if (t) clearTimeout(t);
+      fire?.stop(0.3);
+      fire = null;
+      // (The streak is known a moment after the chip is: it lands with it.)
+      if (n.heat <= 0) return;
+      const catching = caughtAt !== q.askedAt;
+      caughtAt = q.askedAt;
+      t = setTimeout(() => (fire = ablaze(node, n.heat, n.blue, undefined, catching)), motion.still || !catching ? 0 : 600);
+    };
+    set(o);
+    return {
+      update: set,
+      destroy() {
+        if (t) clearTimeout(t);
+        fire?.stop(0.3);
+      },
+    };
+  }
 
   // The art arrives: light it up (once per question).
   let artShown = false;
@@ -571,9 +695,7 @@
     if (!r || revealed) return;
     revealed = true;
     untrack(() => {
-      const scorer = race || coop ? (r.winnerId ?? null) : r.correct ? active.id : null;
-      // The host has already counted this answer into the scorer's streak.
-      streak = scorer ? streakOf(s.players.find((p) => p.id === scorer)) : 0;
+      const scorer = streakBy;
       const pill = scorer ? scoreRowOf(scorer) : null;
       // The scorer's bar, before and after this point (the state already counts it).
       // Delve has no score to fill.
@@ -662,10 +784,10 @@
 
 <svelte:window onkeydown={onKey} />
 
-<!-- The verdict at the reveal, a chip like the category's: left of the timer, or (phones) under the category. -->
+<!-- The verdict at the reveal: it leads the result line, in the row under the answers. -->
 {#snippet verdictBadge()}
   {#if verdict}
-    <div class="verdict {verdict.tone}" bind:this={verdictEl}>
+    <div class="verdict {verdict.tone}" bind:this={verdictEl} use:chipFire={{ heat: chipHeat, blue: chipBlue }}>
       <span class="glyph" aria-hidden="true">
         <svg viewBox="0 0 20 20">
           {#if verdict.icon === 'check'}
@@ -679,7 +801,12 @@
           {/if}
         </svg>
       </span>
-      <span class="word">{verdict.word}</span>
+      {#if chipHeat > 0}
+        <!-- The streak instead of the word, in the fire's colour. -->
+        <span class="word count" class:blue={chipBlue} style:--heat={chipHeat.toFixed(3)}><b>{streak}</b> in a row</span>
+      {:else}
+        <span class="word">{verdict.word}</span>
+      {/if}
     </div>
   {/if}
 {/snippet}
@@ -691,7 +818,9 @@
 {#snippet who(index: number)}
   {@const ps = markers(index)}
   <!-- A long stack would run over the answer: past five, four and a count. -->
-  {@const faces = ps.length > 5 ? ps.slice(0, 4) : ps}
+  <!-- (Two, or one and a count, in a half-width answer or a short window's picture.) -->
+  {@const cap = (long && sideBySide.current) || (short.current && q.mode === 'art') ? 2 : 5}
+  {@const faces = ps.length > cap ? ps.slice(0, cap - 1) : ps}
   {#if ps.length}
     <span class="who-picked">
       {#each faces as p (p.id)}
@@ -706,12 +835,15 @@
 
 {#snippet footer()}
   {#if reveal}
-    <div class="result" in:fly={{ y: 16, duration: 400, delay: 250 }}>
-      <p>
+    <!-- The verdict lands at once (its own entrance, and the glint the reveal
+         aims at it); the sentence and Next follow. -->
+    <div class="result">
+      {@render verdictBadge()}
+      <p in:fly={{ y: 16, duration: 400, delay: 250 }}>
         {#if race}
           {#if winner}
             <b class="good">+1</b> {winner.id === me ? 'You were' : `${winner.name} was`} fastest!
-            {#if streak >= 2}<span class="streak" in:scale={{ start: 0.5, duration: 400, delay: 1100 }}>{streak} in a row</span>{/if}
+            {#if streak >= 2 && !(chipHeat > 0)}<span class="streak-words">{' '}{streak} in a row.</span>{/if}
           {:else if reveal.timedOut}
             Time's up; nobody got it.
           {:else}
@@ -753,7 +885,7 @@
           {/if}
           <!-- Who cleared it, and what a find gave, in one sentence. -->
           {lines[0]}
-          {#if streak >= 2}<span class="streak" in:scale={{ start: 0.5, duration: 400, delay: 1100 }}>{streak} in a row</span>{/if}
+          {#if streak >= 2 && !(chipHeat > 0)}<span class="streak-words">{' '}{streak} in a row.</span>{/if}
           {#if lines.length > 1}<span class="losses">{lines.slice(1).join(' ')}</span>{/if}
         {:else if s.delve}
           {@const you = delveYou}
@@ -767,7 +899,7 @@
             {:else}
               {who} {you ? 'delve' : 'delves'} on.
             {/if}
-            {#if streak >= 2}<span class="streak" in:scale={{ start: 0.5, duration: 400, delay: 1100 }}>{streak} in a row</span>{/if}
+            {#if streak >= 2 && !(chipHeat > 0)}<span class="streak-words">{' '}{streak} in a row.</span>{/if}
           {:else if reveal.caveIn && reveal.lost && !fallsNow}
             <!-- An Azurite Vein caved in for two losses: the wards that broke, and the lives that went. -->
             {#if reveal.lost.wards}
@@ -819,7 +951,7 @@
           {#if !reveal.correct && reveal.blown}{blownText(reveal.blown, you ? 'your' : `${active.name}'s`)}{/if}
         {:else if reveal.correct}
           <b class="good">+1</b> for {active.name}!
-          {#if streak >= 2}<span class="streak" in:scale={{ start: 0.5, duration: 400, delay: 1100 }}>{streak} in a row</span>{/if}
+          {#if streak >= 2 && !(chipHeat > 0)}<span class="streak-words">{' '}{streak} in a row.</span>{/if}
         {:else if reveal.timedOut}
           {active.name} ran out of time.
         {:else}
@@ -828,6 +960,7 @@
         {#if fellFor}{fellFor} isn't a real item.{/if}
       </p>
       <button
+        in:fly={{ y: 16, duration: 400, delay: 250 }}
         class="btn"
         class:primary={canNext}
         data-cursor="next"
@@ -843,8 +976,9 @@
       </button>
     </div>
   {:else if blastSlot}
-    <!-- Delve: dynamite at hand. The button stands where Next will. -->
-    <div class="result blasting" bind:clientHeight={blastRowH}>
+    <!-- Delve: dynamite at hand. The button stands at the row's end, where
+         Next will stand. -->
+    <div class="result blasting">
       <div class="hint">{@render openHint()}</div>
       <button
         class="btn blast"
@@ -871,7 +1005,7 @@
 
 <!-- What there is to know while the question is open, under the answers. -->
 {#snippet openHint()}
-  <!-- One block, so the footer's grid centres its lines together. -->
+  <!-- One block: the footer row's first item, which takes the room Detonate leaves. -->
   <div>
     {#if coop}
       <!-- What befell the team on this question, over the line below: read out as it comes. -->
@@ -908,7 +1042,7 @@
     {:else if race}
       <p class="spectate muted">First right answer wins. A wrong one costs a point!<span class="keys">{' '}Press 1–{count === 10 ? '9 and 0' : count}.</span></p>
     {:else if !mine}
-      <p class="spectate muted">{active.name} is deciding…</p>
+      <!-- Who is answering is said under the banner. -->
     {:else}
       <p class="spectate muted keys">Tip: press 1–{count === 10 ? '9 and 0' : count} to answer.</p>
     {/if}
@@ -916,19 +1050,28 @@
 {/snippet}
 
 <div class="question">
-  <div class="topline" class:snug>
-    <span class="chip">{questionTopic(q)}</span>
-    <span class="task">
-      <span class="task-text" class:answered={narrow.current && !!verdict}>{q.mode === 'art' ? 'Pick the art that matches the name' : 'Name this item'}</span>
-      {#if narrow.current}{@render verdictBadge()}{/if}
-    </span>
-    <!-- Phones have the timer in the scoreboard pinned to the top (Game.svelte). -->
-    {#if !narrow.current || timer}
-      <div class="clock">
-        {#if !narrow.current}{@render verdictBadge()}{/if}
-        {@render timer?.()}
-      </div>
-    {/if}
+  <!-- The turn's second line, under its banner, where the cards screen asks
+       for a category (ChooseCategory's prompt): what to do now, and at its
+       right end the timer, read with the question at a glance before the
+       eyes go down to the answers. The category is the tooltip's base line;
+       at the reveal the verdict is in the row under the answers. -->
+  <div class="task" class:snug class:timed={!!timer && clocked}>
+    <p class="task-text">
+      <!-- Said to whoever can't answer as what is going on, and so it holds through the reveal. -->
+      {#if !race && !coop && !session.myTurn}
+        {active.name} <span class="muted">{q.mode === 'art' ? 'picks the art that matches the name' : 'names this item'}</span>
+      {:else if coop && !canAnswer}
+        <span class="muted">{session.spectating ? 'The team' : 'Your team'} {q.mode === 'art' ? 'picks the art that matches the name' : 'names this item'}</span>
+      {:else if race && session.spectating}
+        <span class="muted">The racers {q.mode === 'art' ? 'pick the art that matches the name' : 'name this item'}</span>
+      {:else}
+        {q.mode === 'art' ? 'Pick the art that matches the name' : 'Name this item'}
+      {/if}
+    </p>
+    <!-- Mounted once for the whole question, so a branch changing never
+         restarts it; at the reveal it stays, stopped and dimmed, saying how
+         much time was left. -->
+    {#if timer && clocked}<div class="clock" class:done={!!reveal}>{@render timer()}</div>{/if}
   </div>
 
   <!-- Delve: until the clock runs (waiting), the question keeps its shape but shows nothing to read. -->
@@ -936,17 +1079,30 @@
     <!-- Name given, pick the matching art. -->
     <div class="tooltip wide" use:backdropShadow={{ fill: 'linear' }} class:good={reveal && iWon} class:bad={reveal && !iWon}>
       <div class="head">
-        <NamePlate />
+        <NamePlate fit />
         <div class="head-text">
-          <span class="iname" class:veiled={waiting}>{waiting || !q.prompt ? '\u00a0' : q.prompt}</span>
+          <span class="iname" class:veiled={waiting} use:oneLine>{waiting || !q.prompt ? '\u00a0' : q.prompt}</span>
+          <!-- Name over base, as every tooltip: the category until the reveal names the base. -->
           {#if reveal && item}
             <span class="ibase" in:fade>{item.base}</span>
           {:else}
-            <span class="ibase">Which one is it?</span>
+            <span class="ibase">{questionTopic(q, true)}</span>
           {/if}
         </div>
       </div>
-      <div class="tiles" bind:this={artEl} class:many={count > 4} class:six={count === 6} class:ten={count === 10} class:snug>
+      <div
+        class="tiles"
+        bind:this={artEl}
+        class:theirs
+        class:many={count > 4}
+        class:six={count === 6}
+        class:ten={count === 10}
+        class:snug
+        class:tall={tallArt}
+        class:armed={blastSlot}
+        style:--n={count}
+        style:--rows={Math.ceil(count / (count === 6 ? 3 : count === 10 ? 5 : 4))}
+      >
         {#each q.labels as _, i (i)}
           {@const st = optionState(i)}
           {@const known = !!reveal && !!q.options[i]}
@@ -1022,11 +1178,11 @@
       </div>
     </div>
   {:else}
-    <div class="stage" class:snug class:ten={count === 10}>
+    <div class="stage" class:snug class:ten={count === 10} class:long class:armed={blastSlot}>
       <div class="tooltip" use:backdropShadow={{ fill: 'linear' }} class:good={reveal && iWon} class:bad={reveal && !iWon}>
         <div class="head">
           <!-- The gems stay dark until the item is identified. -->
-          <NamePlate lit={!!(reveal && item)} />
+          <NamePlate fit lit={!!(reveal && item)} />
           {#if reveal && item}
             <div class="head-text" in:fly={{ y: 10, duration: 450 }}>
               <span class="iname">{item.name}</span>
@@ -1082,7 +1238,7 @@
         </div>
       </div>
 
-      <div class="options" class:compact={count > 6} class:dense={count > 8} class:ten={count === 10} class:snug>
+      <div class="options" class:theirs class:compact={count > 6} class:dense={count > 8} class:ten={count === 10} class:snug class:long>
         {#each q.labels as label, i (i)}
           {@const st = optionState(i)}
           <button
@@ -1115,18 +1271,23 @@
   {/if}
 
   <div class="footer">
-    {#if reveal && phone.current}
+    {#if (reveal || (blastSlot && mine)) && phone.current}
       <!-- Phones: the result and Next button stay at the bottom of the screen, in
-           reach of a thumb, however far down the answers have been scrolled. -->
-      <div class="dock" use:portal use:dock={keepInView} in:fade={{ duration: 200 }} out:fade|global={{ duration: 180 }}>
-        {@render footer()}
-      </div>
-      <!-- The dynamite's row stood here: its height is kept, so nothing above moves (the page scrolled to its end would otherwise jump). -->
-      {#if blastSlot && blastKeep}<div style:height="{blastKeep}px" aria-hidden="true"></div>{/if}
+           reach of a thumb, however far down the answers have been scrolled; so
+           does Detonate (and its fuse) while dynamite is at hand and you can
+           still answer, where Next will stand. A new dock at the reveal, so it lifts the answers to keep
+           in view above itself. -->
+      {#key !!reveal}
+        <div class="dock" use:portal use:dock={keepInView} in:fade={{ duration: 200 }} out:fade|global={{ duration: 180 }}>
+          {@render footer()}
+        </div>
+      {/key}
     {:else}
       {@render footer()}
     {/if}
   </div>
+  <!-- The verdict, read out as it lands. -->
+  <p class="sr" aria-live="polite">{verdict ? (chipHeat > 0 ? `${verdict.word}, ${streak} in a row` : verdict.word) : ''}</p>
 </div>
 
 <style>
@@ -1134,45 +1295,48 @@
     width: min(980px, 100%);
     margin: 0 auto;
   }
-  .topline {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    min-height: 64px;
-    margin-bottom: 1rem;
-  }
-  .chip {
-    font-family: var(--font-display);
-    font-weight: 700;
-    font-size: 0.8rem;
-    letter-spacing: 0.16em;
-    text-transform: uppercase;
-    /* Letter spacing also trails the last letter, so the right padding gives
-       that space back to keep the label optically centered. */
-    padding: 0.4em calc(1em - 0.16em) 0.4em 1em;
-    color: var(--gold-hi);
-    border: 1px solid var(--gold-lo);
-    background: rgba(0, 0, 0, 0.4);
-    border-radius: 2px;
-  }
+  /* The turn's second line, under the banner: the same line, size and gap
+     as the cards screen's prompt (ChooseCategory), so going from the cards
+     to the question only changes its words. */
   .task {
-    flex: 1;
-    min-width: 0;
-    line-height: 1.25;
-    font-style: italic;
-    color: var(--muted);
+    position: relative;
+    margin: 0 0 1.6rem;
+    text-align: center;
   }
   .task-text {
-    transition: opacity 0.25s;
+    margin: 0;
+    font-size: 1.2rem;
+    line-height: 1.45;
   }
-  .task-text.answered {
-    opacity: 0;
+  /* Room kept either side for the timer at the right end, so a long line
+     (a long name picking the art) wraps short of it and stays centred. */
+  .task.timed .task-text {
+    padding-inline: 60px;
   }
-  /* The timer, and left of it the verdict at the reveal. */
+  /* The timer at the line's right end, over the answers' column's edge,
+     centred on the line (it is taller than the line: it reaches into the
+     margins round it, so the line keeps its height). */
   .clock {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
+    position: absolute;
+    right: 0;
+    top: 50%;
+    translate: 0 -50%;
+    display: grid;
+    place-items: center;
+    transition: opacity 0.4s;
+  }
+  /* (Through .task, to outweigh TimerRing's own size whatever the bundle's order.) */
+  .task .clock :global(.timer) {
+    width: 52px;
+    height: 52px;
+  }
+  .task .clock :global(.timer span) {
+    font-size: 1.15rem;
+  }
+  /* Answered: stopped, and set back behind the verdict. */
+  .clock.done {
+    opacity: 0.5;
+    pointer-events: none;
   }
 
   /* Art and answers share one row: same top, same bottom, whatever the
@@ -1223,13 +1387,21 @@
     /* Clear of the braces at the plate's ends. */
     padding: 0 3.6rem;
   }
+  /* Two lines, before and at the reveal alike: the name, then the base type
+     with the Mirrored line beside it, so the plate's name never moves. */
   .head-text {
     position: relative;
     grid-area: 1 / 1;
     display: flex;
-    flex-direction: column;
-    align-items: center;
+    flex-flow: row wrap;
+    justify-content: center;
+    align-items: baseline;
+    column-gap: 0.6em;
     line-height: 1.15;
+  }
+  .head-text .iname {
+    flex-basis: 100%;
+    text-align: center;
   }
   .iname {
     font-family: var(--font-display);
@@ -1244,9 +1416,10 @@
     font-size: 1.05rem;
     text-shadow: none;
   }
+  /* The base type, and before the reveal the category: the only place the category is said. */
   .ibase {
     font-family: var(--font-display);
-    font-size: 0.85rem;
+    font-size: 0.95rem;
     color: #d8a26a;
     opacity: 0.85;
   }
@@ -1491,6 +1664,12 @@
   .blast-line {
     color: #eebf96;
   }
+  /* Its engraving comes with the line, not after the reveal's pause: the
+     fuse's line has under two seconds to be read. */
+  .blast-line .found-glyph :global(.glyph) {
+    animation-delay: 0s;
+  }
+
   /* Delve together: what befell the team, a line each over the usual one. */
   .news > p {
     padding-bottom: 0.35rem;
@@ -1499,9 +1678,9 @@
   .flare-line {
     color: #f6cf98;
   }
-  /* Dynamite at hand: what there is to know, and the button where Next will
-     stand. The row keeps the footer's height, so the button coming and
-     going moves nothing; gone, it keeps its place unseen. */
+  /* Dynamite at hand: what there is to know, and the button at the row's end
+     (where Next will stand). The row keeps the footer's height, so the button
+     coming and going moves nothing; gone, it keeps its place unseen. */
   .blasting .hint {
     flex: 1;
     min-width: 0;
@@ -1561,7 +1740,9 @@
   /* Delve: the words come in once the clock runs. */
   .text,
   .iname {
-    transition: opacity 0.2s;
+    transition:
+      opacity 0.2s,
+      filter 0.4s;
   }
   .veiled {
     opacity: 0;
@@ -1571,8 +1752,8 @@
       rotate: 360deg;
     }
   }
-  /* The verdict at the reveal: a dark chip like the category's (same type,
-     tracking and height), pill shaped. Its colour lives in its icon: a lit
+  /* The verdict at the reveal: a dark chip in the display type, small
+     capitals and tracking, pill shaped. Its colour lives in its icon: a lit
      disc whose light spills a little way into the pill. It settles in, the
      disc flares as its icon draws itself, its word wipes in, a faint gold
      ring spreads off it and a sheen crosses it; a right answer's disc keeps
@@ -1631,7 +1812,7 @@
     opacity: 0;
     animation: verdict-ripple 0.7s var(--ease-out) 0.25s;
   }
-  /* As tall as the line, so the chip is exactly a category chip's height. */
+  /* As tall as the line, so the chip is no taller than its word. */
   .glyph {
     flex: none;
     display: grid;
@@ -2060,6 +2241,32 @@
   .tooltip.wide {
     width: 100%;
   }
+  /* There the name is the question: the plate's name as large as it fits. */
+  .tooltip.wide .iname {
+    font-size: 1.75rem;
+    line-height: 1.05;
+  }
+  /* The plate grows with it, keeping the tooltip's room above and below its
+     lines (a little more below: the base line's descenders sit low). Its
+     frame is drawn for a 64px plate, so its ends grow with it (NamePlate's
+     `fit`: 76 / 64 here), keeping the rules on the plate's edges; the name
+     keeps clear of the larger ends, and shrinks to stay on one line (oneLine). */
+  .tooltip.wide .head {
+    height: 76px;
+    padding-bottom: 4px;
+    padding-inline: 4rem;
+  }
+  @media (max-width: 640px) {
+    .tooltip.wide .iname {
+      font-size: 1.35rem;
+    }
+    /* (On the phone's plate, as tall as its lines, the same room round them.) */
+    .tooltip.wide .head {
+      height: auto;
+      min-height: 62px;
+      padding-bottom: calc(0.3rem + 3px);
+    }
+  }
   .tiles {
     position: relative;
     display: grid;
@@ -2084,11 +2291,16 @@
     padding: 1.2rem 0.8rem 0.8rem;
     border: 1px solid transparent;
     /* Same backdrop as the item art panel. */
+    /* (Its layers' colours in properties, so a turn not yours can put the light out; see .theirs.) */
+    --tile-warm: rgba(175, 96, 37, 0.14);
+    --tile-cool: rgba(90, 110, 160, 0.09);
+    --tile-top: #0c0d12;
+    --tile-bottom: #060709;
     background:
-      radial-gradient(ellipse 60% 50% at 50% 45%, rgba(175, 96, 37, 0.14), transparent 70%),
-      radial-gradient(ellipse 90% 40% at 50% 0%, rgba(90, 110, 160, 0.09), transparent 70%),
+      radial-gradient(ellipse 60% 50% at 50% 45%, var(--tile-warm), transparent 70%),
+      radial-gradient(ellipse 90% 40% at 50% 0%, var(--tile-cool), transparent 70%),
       radial-gradient(ellipse at center, transparent 45%, rgba(0, 0, 0, 0.5) 100%),
-      linear-gradient(180deg, #0c0d12, #060709);
+      linear-gradient(180deg, var(--tile-top), var(--tile-bottom));
     cursor: default;
     isolation: isolate;
     transition:
@@ -2097,8 +2309,12 @@
       opacity 0.4s,
       box-shadow 0.3s;
   }
+  /* A row's height (short windows work it out from the window, below). */
+  .tiles.many {
+    --tile-h: 200px;
+  }
   .tiles.many .tile {
-    height: 200px;
+    height: var(--tile-h);
   }
   .pic {
     position: relative;
@@ -2169,7 +2385,16 @@
   .tile.dim {
     opacity: 0.4;
   }
+  /* The name at the reveal, laid over the foot of its tile on a shade, so
+     the picture keeps its size (in the flow it pushed the art up and smaller
+     at the very moment the answer is looked at). */
   .caption {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    padding: 1.4rem 0.4rem 0.45rem;
+    background: linear-gradient(180deg, transparent, rgba(6, 5, 4, 0.9) 50%);
     font-family: var(--font-display);
     font-weight: 700;
     font-size: 0.85rem;
@@ -2180,12 +2405,28 @@
   .tile.right .caption {
     color: #d6e8c0;
   }
-  /* Same height with a tip, a result or nothing, so the page doesn't jump at the reveal. */
+  /* The row under the answers: what there is to say (a tip, Detonate, the
+     result and Next). Same height with a tip, a result or nothing, so the
+     page doesn't jump at the reveal. */
   .footer {
-    display: grid;
+    position: relative;
+    display: flex;
     align-items: center;
+    gap: 1rem;
     min-height: 52px;
     margin-top: 1.25rem;
+  }
+  .footer > :first-child {
+    flex: 1;
+    min-width: 0;
+  }
+  .sr {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 
   .result {
@@ -2200,47 +2441,36 @@
     margin: 0;
     font-size: 1.15rem;
   }
-  .result .good {
+  /* The +1 (b.good: the verdict badge beside it has a .good of its own). */
+  .result b.good {
     font-family: var(--font-display);
     color: #a9cf8f;
     font-size: 1.4rem;
     text-shadow: 0 0 10px rgba(150, 190, 110, 0.35);
   }
-  /* A streak of correct answers. */
-  .streak {
-    position: relative;
-    display: inline-block;
-    margin-left: 0.6em;
-    padding: 0.1em 0.7em 0.05em;
-    font-family: var(--font-display);
-    font-size: 0.8rem;
-    font-weight: 700;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    vertical-align: 0.15em;
-    color: #ffe2b0;
-    background: linear-gradient(180deg, rgba(160, 70, 20, 0.6), rgba(80, 25, 5, 0.6));
-    border: 1px solid rgba(255, 150, 70, 0.6);
-    border-radius: 999px;
-    box-shadow: 0 0 16px rgba(255, 120, 40, 0.35);
-    text-shadow: 0 0 10px rgba(255, 170, 90, 0.7);
+  /* A streak of right answers, said by the chip instead of its word: the
+     count in the body serif's lining figures (the display face's 11 reads
+     as II), in the fire's colours, glowing as hot as the streak burns. The
+     fire itself is the scoreboard's (chipFire). */
+  .verdict .count {
+    color: color-mix(in srgb, #ffbf7a calc(60% + 40% * var(--heat)), var(--gold-hi));
+    text-shadow:
+      0 0 calc(4px + 14px * var(--heat)) rgba(255, 130, 50, calc(0.3 + 0.7 * var(--heat))),
+      0 0 calc(1px + 3px * var(--heat)) rgba(255, 130, 50, calc(0.4 + 0.5 * var(--heat)));
   }
-  /* It smoulders: a wider glow fades in and out on a layer of its own (see
-     .glyph::before). */
-  .streak::before {
-    content: '';
-    position: absolute;
-    inset: -1px;
-    border-radius: inherit;
-    box-shadow: 0 0 24px rgba(255, 140, 50, 0.4);
-    opacity: 0;
-    animation: smoulder-badge 1.6s ease-in-out infinite;
-    pointer-events: none;
+  .verdict .count.blue {
+    color: #c6dcff;
+    text-shadow:
+      0 0 calc(4px + 14px * var(--heat)) rgba(110, 160, 255, calc(0.3 + 0.7 * var(--heat))),
+      0 0 calc(1px + 3px * var(--heat)) rgba(110, 160, 255, calc(0.4 + 0.5 * var(--heat)));
   }
-  @keyframes smoulder-badge {
-    50% {
-      opacity: 1;
-    }
+  .verdict .count b {
+    font-family: var(--font-body);
+    font-variant-numeric: lining-nums;
+    font-weight: 500;
+    font-size: 1.3em;
+    letter-spacing: 0;
+    line-height: 1;
   }
   /* However long the result, the button keeps its size. */
   .result .btn {
@@ -2334,6 +2564,47 @@
   .tile.struck:not(.right) .pic {
     filter: saturate(0.4) brightness(0.65);
   }
+  /* Someone else's turn (turns mode): the answers greyed and set flat into
+     the page, as if pressed in; frames, numbers and places kept, so the list
+     lights up where it stands when your turn comes. The rows' grey is in
+     their fill properties (the backdrop paints the fill from them; a filter
+     on the row would miss it), the words keep reading contrast. */
+  .options.theirs .option {
+    --bs-fill-a: rgba(17, 16, 15, 0.95);
+    --bs-fill-b: rgba(9, 8, 8, 0.95);
+    --bs1-color: transparent;
+    border-color: #1a1917;
+    box-shadow: none;
+  }
+  /* (Lifted, then greyed and dimmed with the row: the lift clips the gold
+     to near white first, so the names come out a pale, quiet grey.) */
+  .options.theirs .text {
+    filter: brightness(1.9) grayscale(1) sepia(0.25) brightness(0.48);
+  }
+  .options.theirs .key {
+    filter: brightness(1.5) grayscale(1) sepia(0.25) brightness(0.48);
+  }
+  .theirs .sheen,
+  .theirs .cue {
+    display: none;
+  }
+  /* The pictures only a little desaturated, as the cards are, so the items
+     stay known; but the warm light behind each goes out (that glow is what
+     says "pick me"), and the rest of the tile greys with the rows. */
+  .tiles.theirs .tile {
+    --tile-warm: transparent;
+    --tile-cool: transparent;
+    --tile-top: #090807;
+    --tile-bottom: #050404;
+    border-color: rgba(120, 108, 92, 0.25);
+    box-shadow: none;
+  }
+  .tiles.theirs .tile .pic {
+    filter: saturate(0.6) brightness(0.8);
+  }
+  .tiles.theirs .tile > :not(.pic) {
+    filter: grayscale(1) sepia(0.25) brightness(0.48);
+  }
   .spectate.out {
     color: #ff9c86;
     font-style: italic;
@@ -2374,31 +2645,11 @@
     .options {
       grid-auto-rows: auto;
     }
-    .topline {
-      flex-wrap: wrap;
-      row-gap: 0.4rem;
-      min-height: 0;
-      margin-bottom: 0.8rem;
+    .task {
+      margin-bottom: 1rem;
     }
     .footer {
       margin-top: 1rem;
-    }
-    .chip {
-      margin-right: auto;
-    }
-    /* Phones: the task line (beside the category when there's room, under it
-       when not) is a chip's height, so the verdict can take its place at the
-       reveal without moving anything. */
-    .task {
-      flex: 1 1 12rem;
-      font-size: 0.95rem;
-      display: grid;
-      align-items: center;
-      justify-items: start;
-      min-height: calc(0.8rem * 2.25 + 2px);
-    }
-    .task > * {
-      grid-area: 1 / 1;
     }
     .option {
       padding: 0.75rem 2.3rem 0.75rem 0.9rem;
@@ -2463,12 +2714,50 @@
       /* Under the toasts (90) and the effects layer (95). */
       z-index: 20;
       padding: 0.6rem max(1rem, env(safe-area-inset-right)) max(0.6rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
-      background-color: var(--pinned-bg);
+      /* Solid, not the pinned bars' dark glass: it stands over the answers
+         while dynamite is at hand, its fuse the most urgent line there is,
+         so nothing may read through it. */
+      background-color: rgb(10, 8, 6);
       border-top: var(--pinned-line);
       box-shadow: 0 -8px var(--pinned-shadow);
     }
     .dock .result p {
       font-size: 1rem;
+    }
+    /* The docked row has the width of a phone: the verdict is its disc alone
+       (its word still read out), the sentence beside it says the rest. */
+    .dock .verdict {
+      padding: 0;
+      border: 0;
+      background: none;
+      font-size: 0.95rem;
+    }
+    .dock .verdict::after {
+      display: none;
+    }
+    /* A streak keeps its chip: the count is what the row has to say; the
+       sentence takes a line of its own under the chip and Next. */
+    .dock .result:has(.count) {
+      flex-wrap: wrap;
+      row-gap: 0.4rem;
+    }
+    .dock .result:has(.count) p {
+      flex: 1 1 100%;
+      order: 3;
+    }
+    .dock .verdict:has(.count) {
+      padding: 0.4em calc(1.1em - 0.16em) 0.4em 0.4em;
+      border: 1px solid var(--gold-lo);
+      background: rgba(0, 0, 0, 0.4);
+      font-size: 0.8rem;
+    }
+    .dock .verdict .word:not(.count) {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
     }
     /* Beside the dynamite's button, the line under the answers takes a little less room. */
     .blasting .hint .spectate {
@@ -2477,31 +2766,26 @@
     }
     /* Tighter all round, so less scrolling from the art down to the answers.
        Answers stay 48px tall, a comfortable tap. */
-    .topline {
+    .task {
       margin-bottom: 0.6rem;
     }
-    /* Two lines high, before and at the reveal alike, so the art below never
-       moves: the Mirrored line goes beside the base type. (Only a name long
-       enough to wrap makes it grow.) */
+    /* The plate as tall as its two lines (only a name long enough to wrap
+       makes it grow). */
     .head {
       height: auto;
       min-height: 54px;
       padding: 0.3rem 2.9rem;
-      /* The name plate's ends drawn smaller, to leave the name room. */
+      /* The name plate's ends drawn smaller, to leave the name room (54 / 64;
+         NamePlate's `fit` then keeps them to the plate's measured height). */
       --end-scale: 0.84;
-    }
-    .head-text {
-      flex-flow: row wrap;
-      justify-content: center;
-      align-items: baseline;
-      column-gap: 0.6em;
-    }
-    .head-text .iname {
-      flex-basis: 100%;
-      text-align: center;
     }
     .art {
       height: clamp(180px, 32svh, 230px);
+    }
+    /* With dynamite at hand its bar is docked at the foot: the art gives it
+       its room, so the last answer is in view above it. */
+    .stage.armed .art {
+      height: clamp(120px, 32svh - 90px, 200px);
     }
     .stage {
       gap: 0.75rem;
@@ -2533,28 +2817,31 @@
     .tiles.many .tile {
       height: 140px;
     }
+    /* Six pictures, two to a row: the rows take the height there is above
+       the result bar, so the art is as large as the phone allows. */
+    .tiles.many.six .tile {
+      height: clamp(140px, (100svh - 330px) / 3, 190px);
+    }
+    .tiles.many.six.armed .tile {
+      height: clamp(140px, (100svh - 392px) / 3, 190px);
+    }
     /* Only a line of text now and then (the reveal's bar is docked). */
     .footer {
       min-height: 0;
       margin-top: 0.75rem;
     }
     /* Delve's eight or ten answers, on a clock down to five seconds: two
-       columns of names (a long one takes two lines) and the pictures four
-       or five to a row, so all of them are in view under the art. Their numbers shrink to small
-       seals, so the answers can still be called out by number. */
-    /* The task line beside the category, two lines if need be, never under it. */
-    .topline.snug {
-      flex-wrap: nowrap;
-    }
-    .topline.snug .task {
-      flex: 1 1 0;
-      font-size: 0.85rem;
-      line-height: 1.1;
-    }
+       columns of names (a long one takes two lines) and the pictures two to
+       a row, sized to the screen, so all of them are in view. Their numbers
+       shrink to small seals, so the answers can still be called out by number. */
     /* The art gives way first on a short screen: at 375 × 667 the eighth
        answer still ends above the bottom edge, under the depth's plaque. */
     .stage.snug .art {
       height: clamp(140px, 30svh - 60px, 230px);
+    }
+    /* With dynamite at hand its bar is docked at the foot: the art gives it its room. */
+    .stage.snug.armed .art {
+      height: clamp(96px, 30svh - 122px, 230px);
     }
     .options.snug {
       grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -2563,7 +2850,7 @@
     .snug .option {
       min-height: 50px;
       gap: 0.4rem;
-      padding: 0.4rem 1.4rem 0.4rem 0.4rem;
+      padding: 0.4rem 1.7rem 0.4rem 0.4rem;
     }
     .snug .key {
       width: 20px;
@@ -2584,12 +2871,19 @@
     .snug .cue {
       right: 0.6rem;
     }
+    /* The pictures two to a row, as six are: an art question has no art
+       panel above, so its rows can share the screen's height, and the
+       pictures stay large enough to tell apart at the hardest depths. */
     .tiles.snug {
-      grid-template-columns: repeat(4, minmax(0, 1fr));
+      grid-template-columns: repeat(2, minmax(0, 1fr));
     }
-    .tiles.snug .tile {
-      height: 136px;
+    .tiles.many.snug .tile {
+      height: clamp(96px, (100svh - 330px) / 4, 150px);
       padding: 0.5rem 0.25rem;
+    }
+    /* With dynamite at hand its bar is docked at the foot: the rows leave it its room. */
+    .tiles.many.snug.armed .tile {
+      height: clamp(96px, (100svh - 392px) / 4, 150px);
     }
     .tiles.snug .tile .key {
       top: 4px;
@@ -2601,10 +2895,13 @@
       font-size: 1.05rem;
     }
     /* Ten answers, from depth 70: a row more of names, so the art, the rows
-       and the gaps give a little each (the rows still 44px, a fair tap), and
-       the pictures five to a row in two rows. */
+       and the gaps give a little each (the rows still 44px, a fair tap); the
+       pictures two to a row in five rows. */
     .stage.snug.ten .art {
       height: clamp(120px, 30svh - 80px, 230px);
+    }
+    .stage.snug.ten.armed .art {
+      height: clamp(84px, 30svh - 142px, 230px);
     }
     .options.snug.ten {
       gap: 0.3rem;
@@ -2618,11 +2915,125 @@
       font-size: 0.94rem;
     }
     .tiles.snug.ten {
-      grid-template-columns: repeat(5, minmax(0, 1fr));
+      grid-template-columns: repeat(2, minmax(0, 1fr));
     }
-    .tiles.snug.ten .tile {
-      height: 150px;
-      padding: 0.5rem 0.15rem;
+    .tiles.many.snug.ten .tile {
+      height: clamp(84px, (100svh - 330px) / 5, 130px);
+      padding: 0.4rem 0.2rem;
+    }
+    .tiles.many.snug.ten.armed .tile {
+      height: clamp(84px, (100svh - 392px) / 5, 130px);
+    }
+  }
+
+  /* Tall art (see tallArt): one row of tall tiles, as high as the rows they
+     replace, so a staff is drawn at a size to tell it from the next. */
+  /* (Only where each tile keeps about 110px across, for its name at the
+     reveal: six from 761px, eight from 900px; never ten, see tallArt.) */
+  @media (min-width: 761px) {
+    .tiles.many.tall.six {
+      grid-template-columns: repeat(var(--n), minmax(0, 1fr));
+    }
+    .tiles.many.tall.six .tile {
+      height: calc(var(--rows, 2) * var(--tile-h));
+      /* The number above the art, not on it. */
+      padding-top: 2.4rem;
+    }
+    .tiles.tall .caption {
+      overflow-wrap: anywhere;
+    }
+  }
+  @media (min-width: 900px) {
+    .tiles.many.tall {
+      grid-template-columns: repeat(var(--n), minmax(0, 1fr));
+    }
+    .tiles.many.tall .tile {
+      height: calc(var(--rows, 2) * var(--tile-h));
+      padding-top: 2.4rem;
+    }
+  }
+  /* Desktop windows a little short of the art's full 200px rows (up to about
+     980 tall): the rows share what there is, so the page ends with the window. */
+  @media (min-width: 761px) and (min-height: 821px) {
+    .tiles.many {
+      --tile-h: clamp(150px, (100dvh / var(--stage-zoom, 1) - 537px) / var(--rows, 2), 200px);
+    }
+  }
+
+  /* A long list (see `long`) in two columns beside the art. */
+  @media (min-width: 761px) {
+    .options.long {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 0.6rem;
+    }
+    .long .option {
+      gap: 0.6rem;
+      min-height: 52px;
+      padding: 0.45rem 1.6rem 0.45rem 0.75rem;
+    }
+    .long .text {
+      line-height: 1.15;
+      overflow-wrap: anywhere;
+    }
+    .long .option .mark {
+      right: 0.55rem;
+    }
+    /* No room beside a half-width answer: the stack takes its place in the row (as on phones). */
+    .long .option .who-picked {
+      position: static;
+      flex: none;
+      translate: none;
+      margin-left: -0.3rem;
+    }
+    .long .who-picked :global(.avatar) {
+      width: 18px;
+      height: 18px;
+    }
+  }
+
+  /* Short desktop windows (13 and 14 inch laptops): the answers a little
+     tighter, as the lobby's rows are there, so the last answer and Next stay
+     in view. */
+  @media (min-width: 761px) and (max-height: 820px) {
+    .task {
+      margin-bottom: 1rem;
+    }
+    .art {
+      min-height: 240px;
+    }
+    .options {
+      gap: 0.7rem;
+    }
+    .option {
+      padding-top: 0.7rem;
+      padding-bottom: 0.7rem;
+    }
+    /* The pictures: their rows share the height there is. */
+    .tiles.many {
+      --tile-h: clamp(110px, (100dvh / var(--stage-zoom, 1) - 432px) / var(--rows, 2), 200px);
+    }
+    .footer {
+      margin-top: 0.75rem;
+      min-height: 46px;
+    }
+    /* Two columns free the height a long list took: the art gets it back. */
+    .stage.long .art {
+      min-height: 300px;
+    }
+    /* The pictures: their number sits over the art, so the art takes the tile. */
+    .tile {
+      padding: 0.45rem 0.5rem 0.4rem;
+    }
+    .task.timed .task-text {
+      padding-inline: 54px;
+    }
+    /* The ring a little smaller, as the line's margins are. */
+    .task .clock :global(.timer) {
+      width: 46px;
+      height: 46px;
+    }
+    .task .clock :global(.timer span) {
+      font-size: 1.05rem;
     }
   }
 </style>

@@ -1590,8 +1590,9 @@
     li.wide .info :global(.vessel) {
       height: 9px;
     }
-    /* The timer at the end of the row, smaller than beside the question. */
-    .strip :global(.timer) {
+    /* The timer at the end of the row, smaller than on the task line on wider screens. */
+    /* (.timer twice, to outweigh TimerRing's own size whatever the bundle's order.) */
+    .strip :global(.timer.timer) {
       flex: none;
       width: 44px;
       height: 44px;
