@@ -69,6 +69,8 @@ import {
   type DelveNotice,
 } from './delveSession';
 import { readLegacy, readStored, removeLegacy, removeStored, writeStored } from './storage';
+import { CursorOutbox, FLUSH_EVERY_MS, SEND_EVERY_MS, cursorKey, cursorsLive, entryAt, type CursorAt, type CursorEntry } from './cursors';
+import { peerCursors } from './peerCursors.svelte';
 import { whenIdle } from './idle';
 
 export const engine = new Engine(itemData as Item[], { fakes: fakeNames });
@@ -152,6 +154,8 @@ const IDLE_SKIP_MS = 30000;
 const MEDIA_TIMEOUT_MS = 15000;
 /** A host timer that fires more than this early (the system clock jumped) is set again for the time still left. */
 const EARLY_MS = 250;
+/** Host: a guest's link with this much still to send (the art, say) gets the pointers later, by when only the newest are left. */
+const CURSOR_BACKLOG_BYTES = 64 * 1024;
 
 export type Mode = 'local' | 'host' | 'client';
 export type Status = 'idle' | 'connecting' | 'ready' | 'lost';
@@ -187,6 +191,8 @@ const myTab = randomToken(16);
 interface Guest {
   playerId: string | null;
   limit: RateLimit;
+  /** For the pointer (cursors.ts), apart from `limit` so moving it never uses up the budget for playing. */
+  pointer: RateLimit;
   /** Round-trip time estimate (ms). */
   rtt: number;
   lastPong: number;
@@ -344,6 +350,10 @@ class Session {
   private expireKey = '';
   private flareTimer: ReturnType<typeof setTimeout> | null = null;
   private flareKey = '';
+  /** Host: the pointers each guest is still to be sent (cursors.ts), and the next batch. */
+  private cursorOut = new CursorOutbox<DataConnection>();
+  private cursorTimer: ReturnType<typeof setTimeout> | null = null;
+  private cursorsSentAt = 0;
 
   get isHost() {
     return this.mode === 'local' || this.mode === 'host';
@@ -599,6 +609,8 @@ class Session {
     const guest: Guest = {
       playerId: null,
       limit: new RateLimit(10, 20),
+      // A real client sends one every SEND_EVERY_MS at most.
+      pointer: new RateLimit(1000 / SEND_EVERY_MS + 2, 12),
       rtt: 150,
       lastPong: Date.now(),
       pings: new Map(),
@@ -616,14 +628,20 @@ class Session {
     this.guardFrames(conn);
     conn.on('data', (raw) => {
       if (!this.state || !this.guests.has(conn)) return;
-      if (!guest.limit.take()) {
-        // Someone holding a key down: disconnect (they may come back), don't block.
-        if (guest.limit.strikes > 30) this.drop(conn);
-        return;
-      }
       const msg = parseClientMsg(raw);
       if (!msg) {
         this.block(conn);
+        return;
+      }
+      // A pointer beyond what a real client sends is only dropped (frames
+      // are capped all the same, guard.ts).
+      if (msg.t === 'cursor') {
+        if (guest.pointer.take() && guest.playerId) this.relayCursor(guest.playerId, msg.at);
+        return;
+      }
+      if (!guest.limit.take()) {
+        // Someone holding a key down: disconnect (they may come back), don't block.
+        if (guest.limit.strikes > 30) this.drop(conn);
         return;
       }
       try {
@@ -658,9 +676,11 @@ class Session {
     conn.on('close', () => {
       clearTimeout(helloTimer);
       this.guests.delete(conn);
+      this.cursorOut.drop(conn);
       const id = guest.playerId;
       if (!id || !this.state) return;
       if ([...this.guests.values()].some((g) => g.playerId === id)) return;
+      this.relayCursor(id, null);
       if (this.state.spectators?.some((o) => o.id === id)) {
         this.setState(engine.apply(this.state, { type: 'remove', playerId: id }, null));
         return;
@@ -843,6 +863,60 @@ class Session {
       .sort((a, b) => a - b);
     if (!rtts.length) return 0;
     return Math.min(MAX_HOST_HANDICAP_MS, rtts[Math.floor(rtts.length / 2)] / 2);
+  }
+
+  /** Host: passes a player's pointer on to everyone else in the room, in the next batch (cursors.ts). */
+  private relayCursor(from: string, at: CursorAt | null) {
+    const s = this.state;
+    if (at && !(cursorsLive(s) && s!.players.some((p) => p.id === from))) return;
+    const key = cursorKey(from);
+    const entry: CursorEntry = at ? [key, ...at] : [key];
+    this.cursorOut.put(entry, [...this.guests].flatMap(([c, g]) => (g.playerId && g.playerId !== from ? [c] : [])));
+    if (from !== this.myPlayerId) peerCursors.set(key, at);
+    this.planCursors();
+  }
+
+  /**
+   * Sends the guests their batches, or plans to once FLUSH_EVERY_MS has gone
+   * by since the last. Called as pointers come in, too: a host's tab out of
+   * sight gets its timers held back to once a second, the messages it gets
+   * aren't, so the room's pointers stay as smooth.
+   */
+  private planCursors() {
+    if (!this.cursorOut.waiting) return;
+    const wait = this.cursorsSentAt + FLUSH_EVERY_MS - performance.now();
+    if (wait > 0) {
+      this.cursorTimer ??= setTimeout(() => {
+        this.cursorTimer = null;
+        this.planCursors();
+      }, wait);
+      return;
+    }
+    if (this.cursorTimer) clearTimeout(this.cursorTimer);
+    this.cursorTimer = null;
+    this.cursorsSentAt = performance.now();
+    for (const conn of this.guests.keys()) {
+      // PeerJS queues what the channel has no room for yet (its binary connections say how much).
+      const queued = (conn as { bufferSize?: number }).bufferSize ?? 0;
+      if (queued > 0 || (conn.dataChannel?.bufferedAmount ?? 0) > CURSOR_BACKLOG_BYTES) continue;
+      const c = this.cursorOut.take(conn);
+      if (c) this.send(conn, { t: 'cursors', c });
+    }
+    // Whoever's link was backed up: next time round.
+    if (this.cursorOut.waiting)
+      this.cursorTimer = setTimeout(() => {
+        this.cursorTimer = null;
+        this.planCursors();
+      }, FLUSH_EVERY_MS);
+  }
+
+  /** This device's pointer (PeerCursors.svelte), for the other players to see; null when it left the page. */
+  pointAt(at: CursorAt | null) {
+    const me = this.myPlayerId;
+    if (!me || this.status !== 'ready') return;
+    if (this.mode === 'client') {
+      if (this.hostConn?.open) this.hostConn.send({ t: 'cursor', at });
+    } else if (this.mode === 'host' && !this.labRoomless) this.relayCursor(me, at);
   }
 
   private send(conn: DataConnection, msg: HostMsg) {
@@ -1347,6 +1421,10 @@ class Session {
           break;
         case 'ping':
           conn.send({ t: 'pong', n: msg.n });
+          break;
+        case 'cursors':
+          if (!cursorsLive(this.state)) break;
+          for (const e of msg.c) if (e[0] !== cursorKey(this.myPlayerId ?? '')) peerCursors.set(e[0], entryAt(e));
           break;
         default:
           shown.receive(msg);
@@ -2167,6 +2245,10 @@ class Session {
     this.labRoomless = false;
     for (const c of this.guests.keys()) c.close();
     this.guests.clear();
+    this.cursorOut.clear();
+    if (this.cursorTimer) clearTimeout(this.cursorTimer);
+    this.cursorTimer = null;
+    peerCursors.clear();
     // Let go of it first, so its 'close' doesn't count as a failed join.
     const link = this.hostConn;
     this.hostConn = null;

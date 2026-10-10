@@ -134,8 +134,10 @@ test('an answer turned down names its question, so the guest can answer it again
   assert.equal(parseHostMsg({ t: 'error', message, askedAt: 1.5 }), null);
 });
 
-test('version 19: a guest can choose to watch rather than play (the watch action); 18: pictures go out at ART_SCALE pixels per art pixel (the upscaled item art); 17: a blasted question remembers the wrong answers given to it, so every screen logs what they cost (Blast.was.struck); 16 gave a flare six seconds and a Flare Cache two thirds of the clock, never under four (worked out on every screen); 15 set dynamite off right at 0, its fuse burning over the last seconds before; 14 lit it at 0 (Question.fuse), 13 blasted a question away (the blast action), 12 had the frozen Delve rules, 11 the co-op vote and revive', () => {
-  assert.equal(PROTOCOL_VERSION, 19);
+test('version 20: players send their pointers (cursor, cursors); 19: a guest can choose to watch rather than play (the watch action); 18: pictures go out at ART_SCALE pixels per art pixel (the upscaled item art); 17: a blasted question remembers the wrong answers given to it, so every screen logs what they cost (Blast.was.struck); 16 gave a flare six seconds and a Flare Cache two thirds of the clock, never under four (worked out on every screen); 15 set dynamite off right at 0, its fuse burning over the last seconds before; 14 lit it at 0 (Question.fuse), 13 blasted a question away (the blast action), 12 had the frozen Delve rules, 11 the co-op vote and revive', () => {
+  assert.equal(PROTOCOL_VERSION, 20);
+  // A host on 19 would take a guest's pointer for a forged message and block them.
+  assert.match(versionProblem(19)!, /^Your game is out of date/);
   // A host on 18 would take a guest's watch action for a forged message and block them.
   assert.match(versionProblem(18)!, /^Your game is out of date/);
   // A guest on 17 would show a host's pictures at twice their size, or a 17 host's at half, and burn patches in out of place.

@@ -963,6 +963,7 @@
           {@const tv = !src && !waiting ? media?.tileVeils[i] : undefined}
           <button
             class="tile {st}"
+            data-cursor="opt:{i}"
             data-sfx="none"
             data-fx="hover"
             bind:this={optionEls[i]}
@@ -1044,7 +1045,7 @@
             </div>
           {/if}
         </div>
-        <div class="art" bind:this={artEl} use:backdropShadow={{ fill: 'stage' }}>
+        <div class="art" data-cursor="art" bind:this={artEl} use:backdropShadow={{ fill: 'stage' }}>
           <ArcaneCircle state={reveal ? (iWon ? 'good' : 'bad') : 'idle'} />
           <div class="frame">
             {#if showFull && item}
@@ -1089,6 +1090,7 @@
           {@const st = optionState(i)}
           <button
             class="option {st}"
+            data-cursor="opt:{i}"
             data-sfx="none"
             data-fx="hover"
             bind:this={optionEls[i]}

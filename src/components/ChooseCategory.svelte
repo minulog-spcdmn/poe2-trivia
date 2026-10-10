@@ -413,6 +413,7 @@
     {#each s.offered as cat, i (cat)}
       <button
         class="card"
+        data-cursor="card:{i}"
         data-sfx="none"
         data-fx="none"
         class:dm={!!s.deathmatch}

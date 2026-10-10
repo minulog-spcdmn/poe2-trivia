@@ -526,6 +526,15 @@ browser (`src/lib/achievements.ts`); erasing the codex erases them.
     taking a seat when the next game starts (and **Play next game** to
     change their mind). A guest in the lobby can give up their seat the same
     way, and **Take a seat** again. The choice holds through reconnects.
+  - **Live pointers:** in turns mode and Delve together, everyone sees the
+    other players' mouse pointers move over the game, in their colour and
+    with their name; a tap on a phone shows as a ripple where it landed.
+    Spectators see them but don't show their own. A pointer is sent as a
+    spot on the element under it (an answer, a category card, a scoreboard
+    row, the art; the game as a whole otherwise), so it lands on the same
+    thing on every screen, a phone's included. Never in a race, nor while
+    deathmatch duelists answer, where it would give answers away. See
+    `src/lib/cursors.ts`.
   - The room code stays in the header during the game, unless the host
     hid it for streaming.
   - After a game, the host can **Play again** (same settings, starts right
@@ -570,8 +579,13 @@ with that in mind. Guests, on the other hand, are treated as untrusted:
   code), so a host never learns a token that works in someone else's room.
 - **Everything guests send is checked.** Every message is validated against
   the few actions a guest may take: pick a category, answer, continue, and
-  in Delve together vote for a card or give a teammate a life. Guests
-  are rate-limited to about 10 messages per second, and the raw data they
+  in Delve together vote for a card or give a teammate a life (and where
+  their pointer is). Guests
+  are rate-limited to about 10 messages per second (their pointer has a
+  budget of its own, so moving it never uses up the one for playing, and
+  the host keeps it out of the game state and passes it on in batches,
+  never more than ten a second, whose sending holds back while a link is
+  busy with pictures), and the raw data they
   send is capped in size and volume, and checked for lengths that can't be
   real, before it is decoded (so it can't be used to fill the host's memory
   or freeze its tab). A connection that doesn't introduce itself
