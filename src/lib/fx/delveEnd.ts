@@ -55,7 +55,7 @@ export function fallen(avatar: Element, title: Element, o: { best?: boolean; sta
         });
       }
       return true;
-    }),
+    }, 7),
   );
 
   // Ash and the odd cinder settling over the whole screen, thinning out.

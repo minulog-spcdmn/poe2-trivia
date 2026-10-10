@@ -466,7 +466,7 @@ export function fillBar(answer: Element, bar: Element, from: number, to: number,
       sparks(a, { count: 2, speed: [40, 160], angle: -Math.PI / 2, spread: 2.6, life: [0.15, 0.35], size: [0.5, 0.9], gravity: 300 });
     }
     return k < arrivals.length;
-  });
+  }, arrivals.at(-1)?.t ?? 0);
   puffs(answer, { count: 5, area: 'fill', color: [0.16, 0.12, 0.04], speed: [20, 80] });
 }
 
@@ -600,7 +600,7 @@ export function lifeLost(pill: Element, chamber: Element, left: number, mine: bo
       }
     }
     return true;
-  });
+  }, span);
   outline(pill, { color: C.wrong, width: 8, life: 0.9, intensity: 0.4 });
   if (mine && last) shakeView(0.3, 4);
 }
@@ -956,7 +956,7 @@ export function findGained(answer: Element, slot: Element, kind: FindKind, aim: 
       sparks(a, { count: 2, colors: [pale, main], cool: k3(main, 0.3), speed: [40, 160], angle: -Math.PI / 2, spread: 2.6, life: [0.15, 0.35], size: [0.5, 0.9], gravity: 300 });
     }
     return k < arrivals.length;
-  });
+  }, arrivals.at(-1)?.t ?? 0);
   glints(answer, { count: 2, size: [4, 7], color: pale, delay: [0.05, 0.3] });
   after(FIND_LANDS, () => {
     const at = detached(aim) ? slot : aim;
@@ -1180,7 +1180,7 @@ export function victory(avatar: Element, title: Element, color: string, lost: bo
           coin(a.x + rand(-20, 20), a.y + rand(-10, 20), Math.cos(ang) * v * 0.75, Math.sin(ang) * v);
         }
         return true;
-      }),
+      }, 2.6),
     );
     // The pour from above, across the whole width.
     let pour = 0;
@@ -1193,7 +1193,7 @@ export function victory(avatar: Element, title: Element, color: string, lost: bo
           coin(rand(0, innerWidth), rand(-40, -10), rand(-60, 60), rand(120, 380), { gravity: 900, life: [2.4, 3.4], size: [5, 8.5] });
         }
         return true;
-      }),
+      }, 2.8),
     );
     // A spray of gold dust where the fountain starts, and a few bursts of it overhead.
     sparks(a, { count: 50, speed: [200, 700], angle: -Math.PI / 2, spread: 2.2, colors: [C.gold, C.goldPale, C.whiteHot], gravity: 600, life: [0.5, 1.2] });

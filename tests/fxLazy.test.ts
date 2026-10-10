@@ -296,22 +296,7 @@ test('what was asked for meanwhile goes on from where it would be by now; what r
   }
 });
 
-test('in a background tab effects run on a timer, undrawn: what is asked for meanwhile plays out of sight, not all at once as the tab comes back', () => {
-  const real = performance.now;
-  let t = real.call(performance);
-  performance.now = () => t;
-  const realTimeout = g.setTimeout;
-  const realClear = g.clearTimeout;
-  const timers = new Map<number, () => void>();
-  g.setTimeout = (f: () => void) => (timers.set(++ids, f), ids);
-  g.clearTimeout = (id: number) => timers.delete(id);
-  /** The browser's timers in a background tab: about once a second. */
-  const second = (ms = 1000) => {
-    t += ms;
-    const now = [...timers.values()];
-    timers.clear();
-    for (const f of now) f();
-  };
+test('in a background tab nothing runs: what would run its course is dropped, and what lasts until stopped goes on once it is back', () => {
   const doc = g.document as { hidden: boolean };
   const away = (hidden: boolean) => {
     doc.hidden = hidden;
@@ -320,58 +305,45 @@ test('in a background tab effects run on a timer, undrawn: what is asked for mea
   try {
     const o = overlay();
     const stop = fx.startFx(o.canvas);
-    let passes = 0;
-    const kept = fx.shape({ type: ShapeType.Flash, at: { x: 0, y: 0 }, life: Infinity, color: [1, 1, 1], update: (f) => (passes++, (f.k = 1)) });
+    const kept = glow();
     askFloat();
     frame();
     o.ctx.state.done = true;
     readSix();
     frame();
-    const ages = new Map<string, number>();
-    const flash = (name: string, life: number) =>
-      fx.shape({ type: ShapeType.Flash, at: { x: 0, y: 0 }, life, color: [1, 1, 1], update: (f, _, age) => (ages.set(name, age), (f.k = 1)) });
-    flash('before', 2);
-    away(true);
-    assert.ok(!fx.fxStats().running, 'no frames asked for');
-    assert.equal(timers.size, 1, 'the timer instead');
-    second();
-    flash('done', 1);
-    flash('long', 1000);
-    let chained = false;
-    fx.after(0.5, () => {
-      chained = true;
-      flash('chained', 1);
-    });
+    const flash = (life: number) => fx.shape({ type: ShapeType.Flash, at: { x: 0, y: 0 }, life, color: [1, 1, 1], update: (f) => (f.k = 1) });
+    // A moment under way as the tab goes: dropped, with what it would set off.
+    flash(2);
+    fx.particle({ x: 0, y: 0, life: 1, size: 2, color: [1, 1, 1] });
+    let fired = false;
+    fx.after(0.5, () => (fired = true));
+    const endless = fx.task(() => true);
     fx.shakeView(1);
-    second();
-    assert.ok(chained, 'what it set off happened out of sight, at about its time');
-    second();
-    assert.ok(!fx.shaking(), 'and the shake is over');
-    for (let i = 0; i < 57; i++) second();
-    assert.ok(!fx.fxStats().running, 'still undrawn');
-    // Back half a second after the last tick: only that is left to catch up.
-    t += 500;
-    away(false);
-    assert.equal(fx.fxStats().shapes, 2, 'the endless one and the long one');
-    assert.ok(Math.abs(ages.get('long')! - 59.5) < 0.1, `long: ${ages.get('long')}`);
-    assert.ok(fx.fxStats().running, 'and the rest goes on playing, drawn');
-    assert.equal(timers.size, 0, 'the timer stopped');
-    // A timer held back for a minute (a browser's heavier throttling) catches up in a few passes, not a frame's worth each.
-    flash('soon', 30);
     away(true);
-    passes = 0;
-    second(60_000);
-    assert.ok(passes <= 20, `${passes} passes`);
-    assert.ok(!ages.has('soon') || ages.get('soon')! < 30, 'it ran its course');
-    assert.equal(fx.fxStats().shapes, 2);
+    assert.deepEqual(fx.fxStats(), { particles: 0, shapes: 1, tasks: 1, running: false, quality: 0 }, 'only what lasts until stopped, and no loop');
+    assert.ok(!fx.shaking());
+    // Asked for while away: a moment is never started, what lasts is.
+    assert.ok(!fx.isLive(flash(1)));
+    fx.particle({ x: 0, y: 0, life: 1, size: 2, color: [1, 1, 1] });
+    fx.after(0.1, () => (fired = true));
+    fx.shakeView(1);
+    const fire = glow();
+    assert.ok(fx.isLive(fire));
+    assert.deepEqual(fx.fxStats(), { particles: 0, shapes: 2, tasks: 1, running: false, quality: 0 });
+    assert.ok(!fx.shaking());
+    // Frames the browser sends no longer: none were asked for.
+    frame();
     away(false);
+    assert.ok(fx.fxStats().running, 'back: it goes on');
+    for (let i = 0; i < 30; i++) frame();
+    assert.ok(!fired, 'nothing that was dropped plays');
+    assert.equal(fx.fxStats().shapes, 2);
+    endless.stop();
+    fire.stop(0);
     kept.stop(0);
     stop();
   } finally {
     if (doc.hidden) away(false);
-    performance.now = real;
-    g.setTimeout = realTimeout;
-    g.clearTimeout = realClear;
   }
 });
 

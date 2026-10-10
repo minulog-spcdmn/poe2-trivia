@@ -731,7 +731,7 @@ export function emitter(rate: number, spawn: () => void, life = Infinity): Handl
       spawn();
     }
     return true;
-  });
+  }, life);
   return {
     stop() {
       on = false;

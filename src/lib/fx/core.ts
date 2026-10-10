@@ -6,6 +6,11 @@
 // reduced motion, or when WebGL2 isn't available; every call below is then a
 // cheap no-op, so callers never need to check.
 //
+// While the tab is in the background no frames come, and nothing moves on.
+// What would run its course meanwhile is dropped as it goes away, and not
+// started while it's away (see setHidden): unseen, it would otherwise all
+// start at once as the tab comes back.
+//
 // The renderer isn't made as the page loads: its context and shaders would
 // hold up the first paint (see startFx). Effects asked for before it's ready
 // wait for it, and play once it is.
@@ -111,6 +116,9 @@ export function isLive(h: Handle) {
 /** Runs every frame until it returns false. */
 export type Task = (dt: number, age: number) => boolean;
 
+/** A live task; `life` is how long it runs at most (seconds), Infinity for one that runs until stopped. */
+type LiveTask = { fn: Task; age: number; life: number };
+
 // ---------- state ----------
 
 let userOn = readStored('fx') !== '0';
@@ -138,21 +146,11 @@ let shakenAt = 0;
 const MAX_SHAPES = 96;
 const shapeData = new Float32Array(MAX_SHAPES * SHAPE_FLOATS);
 let shapes: LiveShape[] = [];
-let tasks: { fn: Task; age: number }[] = [];
+let tasks: LiveTask[] = [];
 let raf = 0;
 let last = 0;
-/**
- * While the tab is in the background no frames come, so effects run on a
- * timer instead (the browser fires it about once a second), undrawn: what's
- * asked for meanwhile (a timer, a peer's message) plays out of sight, its
- * after()s and lights at about their time, rather than all at once as the
- * tab comes back. `hidden`: whether it's away; `ticker`: the timer, while
- * something is alive.
- */
+/** Whether the tab is in the background (see setHidden). */
 let hidden = false;
-let ticker: ReturnType<typeof setTimeout> | null = null;
-/** The most simulate() passes one catch-up takes, however long it covers (its steps get longer instead). */
-const MAX_PASSES = 20;
 let viewW = 1;
 let viewH = 1;
 let dpr = 1;
@@ -267,7 +265,7 @@ function waited(): number {
 }
 
 export function particle(p: ParticleSpec) {
-  if (!fxActive()) return;
+  if (!fxActive() || hidden) return;
   const late = waited();
   pool!.spawn(late ? { ...p, delay: (p.delay ?? 0) + late } : p, onPage(p));
   wake();
@@ -280,7 +278,7 @@ export function particle(p: ParticleSpec) {
  * effects off). An element that leaves the page stops where it was last.
  */
 export function follow(el: Element, seconds: number): number {
-  if (!fxActive() || !pool || detached(el)) return 0;
+  if (!fxActive() || hidden || !pool || detached(el)) return 0;
   const p = pool;
   const slot = p.claimFollow();
   const b0 = boxOf(el);
@@ -291,7 +289,7 @@ export function follow(el: Element, seconds: number): number {
     p.follows[2 * slot - 1] = b.y - b0.y;
     // A little past `seconds`, for the stragglers of a stream timed to land by then.
     return age < seconds + 0.25;
-  });
+  }, seconds + 0.25);
   return slot;
 }
 
@@ -329,7 +327,7 @@ function leastNeeded(): number {
 }
 
 export function shape(spec: ShapeSpec): Handle {
-  if (!fxActive() || detached(spec.at)) return NOOP;
+  if (!fxActive() || detached(spec.at) || (hidden && Number.isFinite(spec.life))) return NOOP;
   if (shapes.length >= MAX_SHAPES) {
     const i = leastNeeded();
     if (i < 0) return NOOP;
@@ -358,9 +356,16 @@ export function shape(spec: ShapeSpec): Handle {
   };
 }
 
-export function task(fn: Task): Handle {
-  if (!fxActive()) return NOOP;
-  const t = { fn, age: -waited() };
+/**
+ * Runs `fn` every frame until it returns false or the handle is stopped.
+ * `life`: the most seconds it runs (it ends itself by then), for one that's
+ * part of a moment and can be dropped unseen while the tab is away (see
+ * setHidden). Left out, it's kept then: one that runs until stopped, or that
+ * something waits on (a cover to take down).
+ */
+export function task(fn: Task, life = Infinity): Handle {
+  if (!fxActive() || (hidden && Number.isFinite(life))) return NOOP;
+  const t: LiveTask = { fn, age: -waited(), life };
   tasks.push(t);
   wake();
   return {
@@ -445,7 +450,7 @@ export function after(seconds: number, fn: () => void) {
     if (age < seconds) return true;
     fn();
     return false;
-  });
+  }, seconds);
 }
 
 // ---------- camera shake ----------
@@ -467,7 +472,7 @@ export function shakeTarget(el: HTMLElement, k = 1) {
  * hits stay gentle); `px` is the largest offset.
  */
 export function shakeView(amount: number, px = 7) {
-  if (!fxActive()) return;
+  if (!fxActive() || hidden) return;
   const was = shake.trauma;
   shake.trauma = Math.min(1, was + amount);
   shake.amp = was > 0.05 ? Math.max(shake.amp, px) : px;
@@ -517,12 +522,8 @@ let manualClock: number | null = null;
 function wake() {
   // Not made yet: made now, and then everything asked for so far plays.
   if (!renderer) hurry();
-  else if (hidden) {
-    if (!ticker && manualClock === null) {
-      last = performance.now();
-      ticker = setTimeout(tick, 250);
-    }
-  } else if (!raf && manualClock === null) {
+  // (Away, none would come: the loop starts again once it's back, see setHidden.)
+  else if (!raf && !hidden && manualClock === null) {
     last = performance.now();
     raf = requestAnimationFrame(frame);
   }
@@ -618,53 +619,6 @@ function frame(nowMs: number) {
   if (!busy) show(false);
 }
 
-/**
- * Moves every effect on by the `seconds` since the last frame or tick,
- * undrawn, in at most MAX_PASSES steps. Returns whether anything is still alive.
- */
-function catchUp(seconds: number): boolean {
-  // Steps of a frame's worth (1/15 s, as frame() clamps them) while that's few enough.
-  const n = Math.min(MAX_PASSES, Math.ceil(seconds * 15));
-  let busy = true;
-  for (let i = 0; i < n && busy; i++) busy = simulate(seconds / n, performance.now(), false);
-  return busy;
-}
-
-/** A step of the loop while the tab is away (see `hidden`). */
-function tick() {
-  if (!renderer || !hidden || manualClock !== null) {
-    ticker = null;
-    return;
-  }
-  // (`ticker` stays set meanwhile, as `raf` does in frame(): effects spawned in it don't start a second timer.)
-  const nowMs = performance.now();
-  const busy = catchUp(Math.max(0, nowMs - last) / 1000);
-  last = nowMs;
-  ticker = busy ? setTimeout(tick, 250) : null;
-}
-
-/** The tab went away (`away`) or came back: the loop moves from frames to the timer, or back. */
-function setHidden(away: boolean) {
-  if (away === hidden) return;
-  hidden = away;
-  if (!renderer || manualClock !== null) return;
-  if (away) {
-    cancelAnimationFrame(raf);
-    raf = 0;
-    // (Nothing stale is shown for a moment as it comes back: the next frame draws what's there by then.)
-    renderer.clear();
-    show(false);
-    if (shapes.length || tasks.length || pool?.count || shake.trauma > 0) wake();
-    return;
-  }
-  if (ticker) clearTimeout(ticker);
-  ticker = null;
-  // What's left since the last tick (about a second).
-  const nowMs = performance.now();
-  if (catchUp(Math.max(0, nowMs - last) / 1000)) wake();
-  last = nowMs;
-}
-
 let frameNo = 0;
 /**
  * The followed elements' own opacities, read once per simulate() pass: shapes
@@ -686,11 +640,6 @@ function simulate(dt: number, nowMs: number, render: boolean): boolean {
   for (let i = 0; i < tasks.length; ) {
     const t = tasks[i];
     t.age += dt;
-    // (Still waiting for its time: see waited.)
-    if (t.age < 0) {
-      i++;
-      continue;
-    }
     let keep = false;
     try {
       keep = t.fn(dt, t.age);
@@ -754,14 +703,12 @@ function simulate(dt: number, nowMs: number, render: boolean): boolean {
   calm = (!!coarse?.matches || (nShapes > 0 && shapesEndless)) && shapesCalm && shake.trauma === 0 && pool.fastest < CALM_SPEED * CALM_SPEED;
 
   // Shake: trauma decays; the offset follows two noise curves.
-  // (Undrawn, nothing is moved: it would only force a layout before the next pass reads one.)
   if (shake.trauma > 0) {
     shake.trauma = Math.max(0, shake.trauma - dt * 1.6);
     const s = shake.trauma * shake.trauma * shake.amp;
     const tt = nowMs / 1000 * 26;
-    if (shake.trauma === 0 || !render) {
-      if (shake.x || shake.y) applyShake(0, 0);
-    } else applyShake(noise1(tt, 1) * s, noise1(tt, 2) * s * 0.8);
+    applyShake(noise1(tt, 1) * s, noise1(tt, 2) * s * 0.8);
+    if (shake.trauma === 0) applyShake(0, 0);
   }
 
   const busy = nParticles > 0 || nShapes > 0 || tasks.length > 0 || shake.trauma > 0 || shapes.length > 0 || pool.count > 0;
@@ -798,8 +745,6 @@ export function fxStep(seconds: number, fps = 60) {
   if (manualClock === null) {
     cancelAnimationFrame(raf);
     raf = 0;
-    if (ticker) clearTimeout(ticker);
-    ticker = null;
     manualClock = performance.now();
   }
   const n = Math.max(1, Math.round(seconds * fps));
@@ -844,8 +789,6 @@ function teardown() {
   building = null;
   cancelAnimationFrame(raf);
   raf = 0;
-  if (ticker) clearTimeout(ticker);
-  ticker = null;
   ro?.disconnect();
   ro = null;
   renderer = null;
@@ -974,6 +917,32 @@ function setup(c: HTMLCanvasElement, r: FxRenderer) {
   show(false);
   for (const l of listeners) l(userOn);
   // (resize() woke the loop: anything asked for meanwhile plays from now.)
+}
+
+/**
+ * The tab went away (`away`) or came back. Away, no frames come, so nothing
+ * moves on, and the loop is stopped too (no work in the background). What
+ * would run its course (particles, shapes and tasks that end, a shake) is
+ * dropped now, and not started while it's away: unseen, it would otherwise
+ * play all at once as the tab comes back. What lasts until it's stopped (a
+ * streak's fire, a burning flare) stays where it was, and goes on once it's
+ * back.
+ */
+function setHidden(away: boolean) {
+  if (away === hidden) return;
+  hidden = away;
+  if (away) {
+    cancelAnimationFrame(raf);
+    raf = 0;
+    pool?.clear();
+    shapes = shapes.filter((s) => !s.stopped && !Number.isFinite(s.life));
+    tasks = tasks.filter((t) => !Number.isFinite(t.life));
+    shake.trauma = 0;
+    applyShake(0, 0);
+    // (Nothing stale is shown for a moment as it comes back.)
+    renderer?.clear();
+    show(false);
+  } else if (shapes.length || tasks.length) wake();
 }
 
 /** Starts the overlay on `c`. Returns a cleanup function. */
