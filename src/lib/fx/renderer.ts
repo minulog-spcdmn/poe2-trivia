@@ -10,7 +10,7 @@
 
 import { INSTANCE_FLOATS } from './particles';
 import { NOISE, buildPrograms, dropTarget, target, whenGpuCaughtUp, wrapProgram, type Build, type Program, type Target } from './gl';
-import { DIALOG_DIM } from '../behindDialog';
+import { DIALOG_BLUR, DIALOG_DIM } from '../behindDialog';
 
 /** Floats per shape instance: five vec4s (see ShapeType). */
 export const SHAPE_FLOATS = 24;
@@ -54,11 +54,14 @@ export const FIRE_REACH = 1.8;
 // While a dialog is open (lib/behindDialog.ts), light from the page behind it
 // hides behind the dialog, which on the page is opaque; the dialog's own light
 // (from effects that started inside it) shows over it. Outside it, the
-// composite dims both with the rest of the page.
+// composite dims both with the rest of the page. The page's light is soft
+// already, so the page's blur passes it by; only the aura's orbit, which is
+// crisp, blurs itself by uBlur.
 const BEHIND_DIALOG = `
 uniform vec4 uDialogBox; // the open dialog: left, top, right, bottom (CSS px)
 uniform float uDialogR;  // its corner radius, CSS px
 uniform float uHide;     // how far it hides the page's light, 0-1
+uniform float uBlur;     // how far it blurs the page: the blur's standard deviation, CSS px
 // Signed distance from the dialog's edge (CSS px), negative inside.
 float dialogSdf(vec2 p) {
   vec2 h = (uDialogBox.zw - uDialogBox.xy) * 0.5;
@@ -504,8 +507,14 @@ void main() {
     // fx/orbit.ts, which places them the same way.
     const float LAG[3] = float[3](0.0, 2.25, 4.2);
     const float SIZE[3] = float[3](1.0, 0.78, 0.62);
+    // Behind an open dialog the avatar blurs with the page, and its aura
+    // with it: each Gaussian widens by the blur (their variances add) and
+    // dims by as much, keeping its light, and the disc's edge softens.
+    float blur = vBehind * uBlur;
+    float b2 = 2.0 * blur * blur;
     // What the disc lets through from behind it: 0 over it, 1 outside.
-    float clear = smoothstep(vQ.x - 0.7, vQ.x + 0.7, r);
+    float edge = 0.7 + 1.7 * blur;
+    float clear = smoothstep(vQ.x - edge, vQ.x + edge, r);
     vec2 ab = vec2(vQ.y, max(vQ.y * vQ.z, 0.01));
     vec2 p = rot2(vP, -vQ.w);
     // Distance to the orbit's ellipse (Inigo Quilez's approximation) and the
@@ -526,20 +535,26 @@ void main() {
       if (lag < vR.z) {
         float u = lag / vR.z;
         float w = size * (0.8 - 0.5 * u);
-        v += exp(-d * d / (w * w)) * (1.0 - u) * (1.0 - u) * 0.6 * seen;
+        float wb = w * w + b2;
+        v += exp(-d * d / wb) * w * inversesqrt(wb) * (1.0 - u) * (1.0 - u) * 0.6 * seen;
       }
       // The head: a hot core in a soft glow, a little bigger on the near
       // side; behind the disc, its light hides behind the disc's edge.
       float hn = -sin(head);
       float hs = size * (1.0 + 0.22 * hn);
       vec2 e = p - vec2(cos(head), -sin(head)) * ab;
-      float e2 = dot(e, e) / (hs * hs);
+      float ee = dot(e, e);
       float hseen = mix(clear, 1.0, smoothstep(-0.12, 0.12, hn)) * (0.68 + 0.32 * hn);
-      v += (exp(-e2) + 0.18 * exp(-e2 * 0.12)) * hseen;
-      hot += exp(-e2 * 4.0) * hseen * 0.7;
+      // The core, its glow and its white heat: Gaussians hs, hs / sqrt(0.12) and hs / 2 wide.
+      float hs2 = hs * hs;
+      vec3 w2 = vec3(hs2, hs2 / 0.12, hs2 / 4.0);
+      vec3 wb = w2 + b2;
+      vec3 g = exp(-ee / wb) * w2 / wb;
+      v += (g.x + 0.18 * g.y) * hseen;
+      hot += g.z * hseen * 0.7;
     }
     // The glow from the disc's edge.
-    v += exp(-max(r - vQ.x, 0.0) / (1.2 + vQ.x * 0.12)) * vS.w * clear;
+    v += exp(-max(r - vQ.x, 0.0) / (1.2 + vQ.x * 0.12 + blur)) * vS.w * clear;
   } else if (type == 10) {
     // Fire rising off a rounded rectangle. q: half w, half h, corner radius,
     // flame height (px). r: blue 0-1, how far the rectangle's centre sits
@@ -1128,6 +1143,7 @@ export class FxRenderer {
       else gl.uniform4f(p.u('uDialogBox'), -1, -1, -1, -1);
       gl.uniform1f(p.u('uDialogR'), dialog.radius);
       gl.uniform1f(p.u('uHide'), hide && b ? dialog.amount : 0);
+      gl.uniform1f(p.u('uBlur'), DIALOG_BLUR * dialog.amount);
     };
 
     gl.disable(gl.DEPTH_TEST);
