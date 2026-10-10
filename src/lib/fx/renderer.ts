@@ -488,7 +488,7 @@ void main() {
   } else if (type == 5) {
     // Screen edge glow. q: width (px), noise, smoke, the smoke's pattern.
     // r: heat (the smoke's thickest threads, and a line along the very
-    // edge), the smoke's clock (s), its evenness (0-1).
+    // edge), the smoke's clock (s), its evenness (0-1), its body (0-1).
     vec2 e = max(vHalf - abs(vP), 0.0);
     // Each edge's light, joined as light adds up: brighter into the corners,
     // and round there, with no seam along the diagonal. Read back as a
@@ -513,11 +513,12 @@ void main() {
         // Its density, soft (never solid, even where thick) and, with
         // evenness (r.z), spread round the edges rather than in patches.
         float raw = fbm(P * 0.55 + 1.6 * w + vec2(tt * 0.05, 0.0));
-        float billow = pow(smoothstep(0.22, 0.95, raw), 1.4);
+        // Its body (r.w, 0-1) thins it toward see-through, and back.
+        float billow = pow(smoothstep(0.22, 0.95, raw), mix(1.8, 1.3, vR.w));
         billow = mix(billow, 0.3 + 0.45 * raw, vR.z);
         float ridge = 1.0 - abs(2.0 * fbm(P * 1.1 + 2.4 * w + vec2(0.0, -tt * 0.12)) - 1.0);
         float thread = pow(ridge, 6.0) * smoothstep(0.15, 0.6, billow);
-        float dens = (billow * 0.5 + thread * 0.6) * reach;
+        float dens = (billow * 0.5 + thread * 0.6) * reach * mix(0.75, 1.15, vR.w);
         v += dens;
         col *= mix(vec3(1.0), mix(vec3(0.75, 0.55, 0.6), vec3(1.05, 1.2, 1.12), clamp(dens * 1.5, 0.0, 1.0)), clamp(reach * 3.0, 0.0, 1.0));
         hot = pow(ridge, 20.0) * billow * reach * vR.x;

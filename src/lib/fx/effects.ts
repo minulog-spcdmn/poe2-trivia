@@ -665,11 +665,13 @@ export function edgeGlow(o: { color?: Vec3; width?: number; life?: number; inten
  * so a big screen sees the same as a small one). `smoke` (0 none): its
  * wisps; `pattern` and `clock` (s): which smoke, and how far it has
  * drifted, so the beats of one countdown show one smoke; `even` (0-1): the
- * smoke spread evenly round the edges rather than in patches; `rim`: a hot
- * line along the very edge.
+ * smoke spread evenly round the edges rather than in patches; `body` (0-1):
+ * from see-through to full; `hold`: how much longer it takes to go (1 as
+ * is); `rim`: a hot line along the very edge.
  */
-export function edgeBeat(o: { color?: Vec3; width?: number; intensity?: number; smoke?: number; pattern?: number; clock?: number; even?: number; rim?: number } = {}) {
-  const life = 1.4;
+export function edgeBeat(o: { color?: Vec3; width?: number; intensity?: number; smoke?: number; pattern?: number; clock?: number; even?: number; body?: number; hold?: number; rim?: number } = {}) {
+  const hold = o.hold ?? 1;
+  const life = 1.4 * hold;
   return shape({
     type: ShapeType.Edge,
     at: { x: innerWidth / 2, y: innerHeight / 2 },
@@ -681,9 +683,9 @@ export function edgeBeat(o: { color?: Vec3; width?: number; intensity?: number; 
       f.hw = innerWidth / 2;
       f.hh = innerHeight / 2;
       const rise = 0.035;
-      const beat = age < rise ? Math.sin(((age / rise) * Math.PI) / 2) ** 2 : Math.exp(-(age - rise) / 0.2);
+      const beat = age < rise ? Math.sin(((age / rise) * Math.PI) / 2) ** 2 : Math.exp(-(age - rise) / (0.2 * hold));
       // What lingers, gone by the end of its life.
-      const linger = 0.3 * Math.min(1, age / rise) * Math.exp(-age / 0.9) * (1 - t * t);
+      const linger = 0.3 * Math.min(1, age / rise) * Math.exp(-age / (0.9 * hold)) * (1 - t * t);
       f.k = (o.intensity ?? 0.06) * (beat + linger);
       f.q[0] = (o.width ?? 60) * Math.max(0.7, Math.min(2.2, Math.min(innerWidth, innerHeight) / 720));
       f.q[1] = 0.6;
@@ -692,6 +694,7 @@ export function edgeBeat(o: { color?: Vec3; width?: number; intensity?: number; 
       f.q[4] = (o.rim ?? 0) * beat;
       f.q[5] = (o.clock ?? 0) + age;
       f.q[6] = o.even ?? 0;
+      f.q[7] = o.body ?? 1;
     },
   });
 }
