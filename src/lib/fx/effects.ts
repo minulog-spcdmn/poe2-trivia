@@ -516,6 +516,8 @@ export function outline(
   const width = o.width ?? 14;
   const life = o.life ?? Infinity;
   const corner = getComputedStyle(el).borderTopLeftRadius;
+  // The stage's zoom (lib/stage.ts) it is drawn at, read once like its corner.
+  const z = zoomOf(el);
   const pad = o.pad ?? 0;
   return shape({
     type: ShapeType.RectGlow,
@@ -531,8 +533,7 @@ export function outline(
       f.hh = b.h / 2 + width * 4 + pad;
       f.k = (o.intensity ?? 1) * fin * fade * pulse;
       // The corner on screen: the CSS radius is in the element's own px, the
-      // box on screen, the stage's zoom (lib/stage.ts) between them.
-      const z = zoomOf(el);
+      // box on screen, the zoom between them.
       const r = Math.min(o.radius ?? cornerPx(corner, b.w / z, b.h / z) * z, b.w / 2, b.h / 2);
       // (projectedCorners works in the element's own px, as its transform does.)
       const quad = o.base && el instanceof HTMLElement && el.isConnected ? projectedCorners(el, o.base, r / z, b) : null;
@@ -637,59 +638,71 @@ export function sigil(at: Anchor, o: { radius?: number; color?: Vec3; life?: num
   });
 }
 
-/**
- * Glow creeping in from the screen edges (danger, urgency). It frames the
- * visible area (innerWidth/innerHeight) rather than the canvas, which reaches
- * under a phone's toolbars, so it follows them as they slide.
- */
-export function edgeGlow(o: { color?: Vec3; width?: number; life?: number; intensity?: number; noise?: number } = {}) {
-  const life = o.life ?? 0.8;
-  return shape({
-    type: ShapeType.Edge,
-    at: { x: innerWidth / 2, y: innerHeight / 2 },
-    life,
-    color: o.color ?? C.crimson,
-    update(f, t, _age, b) {
-      b.x = innerWidth / 2;
-      b.y = innerHeight / 2;
-      f.hw = innerWidth / 2;
-      f.hh = innerHeight / 2;
-      f.k = (o.intensity ?? 0.2) * Math.min(1, t * 8) * Math.pow(1 - t, 1.5);
-      // Scaled with the window, as every edge effect (edgeScale).
-      f.q[0] = (o.width ?? 60) * edgeScale();
-      f.q[1] = o.noise ?? 0.6;
-    },
-  });
-}
-
 /** How much bigger the edge effects are drawn on this window: by its short side over 720 px, 0.7 to 2.2 times. */
 const edgeScale = () => Math.max(0.7, Math.min(2.2, Math.min(innerWidth, innerHeight) / 720));
 
 /**
- * A crisp flash of colour at the screen's edges, as of a blow (a wrong
- * answer): up at once, a bright line along the very edge, gone in a moment.
- * No smoke; the smoke is the clock's. `width`: as an EdgeBeat's.
+ * One frame of an edge effect: the Edge shader's parameters (ShapeType.Edge
+ * in renderer.ts). `width`: how far in it reaches (px on a window 720 px
+ * across its short side; edgeScale scales it with the window); `noise`: how
+ * unevenly; `smoke` (0 none) and its `pattern`, `clock` (s, how far it has
+ * drifted), `even` (0-1, round the edges rather than in patches) and `body`
+ * (0-1, see-through to full); `heat`: a hot line along the very edge (and
+ * the smoke's thickest threads).
  */
-export function edgeHit(o: { color?: Vec3; width?: number; intensity?: number } = {}) {
+type EdgeFrame = { k: number; color?: Vec3; width: number; noise?: number; smoke?: number; pattern?: number; clock?: number; even?: number; body?: number; heat?: number };
+
+/**
+ * A shape over the visible screen (innerWidth by innerHeight rather than the
+ * canvas, which reaches under a phone's toolbars, so it follows them as they
+ * slide), drawn by the Edge shader with what `frame` gives each frame.
+ */
+function edgeShape(life: number, color: Vec3, frame: (t: number, age: number) => EdgeFrame): Handle {
   return shape({
     type: ShapeType.Edge,
     at: { x: innerWidth / 2, y: innerHeight / 2 },
-    life: 0.7,
-    color: o.color ?? C.wrong,
-    update(f, _t, age, b) {
+    life,
+    color,
+    update(f, t, age, b) {
       b.x = innerWidth / 2;
       b.y = innerHeight / 2;
       f.hw = innerWidth / 2;
       f.hh = innerHeight / 2;
-      const rise = 0.025;
-      const env = age < rise ? age / rise : Math.exp(-(age - rise) / 0.16);
-      f.k = (o.intensity ?? 0.1) * env;
-      // Pressing in a little as it lands, then easing back.
-      f.q[0] = (o.width ?? 45) * edgeScale() * (0.8 + 0.2 * env);
-      f.q[1] = 0.25;
-      f.q[2] = 0;
-      f.q[4] = 0.5 * env;
+      const e = frame(t, age);
+      f.k = e.k;
+      if (e.color) f.color = e.color;
+      f.q[0] = e.width * edgeScale();
+      f.q[1] = e.noise ?? 0.6;
+      f.q[2] = e.smoke ?? 0;
+      f.q[3] = e.pattern ?? 0;
+      f.q[4] = e.heat ?? 0;
+      f.q[5] = e.clock ?? age;
+      f.q[6] = e.even ?? 0;
+      f.q[7] = e.body ?? 1;
     },
+  });
+}
+
+/** Glow creeping in from the screen edges (danger: the deathmatch). */
+export function edgeGlow(o: { color?: Vec3; width?: number; life?: number; intensity?: number; noise?: number } = {}) {
+  return edgeShape(o.life ?? 0.8, o.color ?? C.crimson, (t) => ({
+    k: (o.intensity ?? 0.2) * Math.min(1, t * 8) * Math.pow(1 - t, 1.5),
+    width: o.width ?? 60,
+    noise: o.noise,
+  }));
+}
+
+/**
+ * A crisp flash of colour at the screen's edges, as of a blow (a wrong
+ * answer): up at once, a bright line along the very edge, gone in a moment.
+ * No smoke; the smoke is the clock's.
+ */
+export function edgeHit(o: { color?: Vec3; width?: number; intensity?: number } = {}) {
+  return edgeShape(0.7, o.color ?? C.wrong, (_t, age) => {
+    const rise = 0.025;
+    const env = age < rise ? age / rise : Math.exp(-(age - rise) / 0.16);
+    // Pressing in a little as it lands, then easing back.
+    return { k: (o.intensity ?? 0.1) * env, width: (o.width ?? 45) * (0.8 + 0.2 * env), noise: 0.25, heat: 0.5 * env };
   });
 }
 
@@ -706,6 +719,29 @@ function keyed(keys: [number, number][], at: number) {
   return keys[keys.length - 1][1];
 }
 
+// The ward's sound (wardShatter), as its smoke follows it: its loudness (0-1)...
+const WARD_SMOKE: [number, number][] = [
+  [0, 0],
+  [0.04, 0.45],
+  [0.12, 0.6],
+  [0.2, 0.55],
+  [0.4, 1],
+  [0.44, 0.9],
+  [0.5, 0.35],
+  [0.8, 0.15],
+  [1.15, 0],
+];
+// ...and its strike and shimmer, on the edge's hot line.
+const WARD_STRIKE: [number, number][] = [
+  [0, 0],
+  [0.02, 0.7],
+  [0.12, 1],
+  [0.22, 0],
+];
+const WARD_HIT = 1.2;
+/** How long after the first a ward's smoke takes more hits (a cave-in breaks wards a moment apart). */
+const WARD_MORE = 0.8;
+
 /**
  * Delve: your Azurite Ward takes a loss, at the screen's edges as its sound
  * goes (wardShatter: a bell struck, its crystal shimmer brightest at about
@@ -713,131 +749,99 @@ function keyed(keys: [number, number][], at: number) {
  * away by about 1.1 s): a crisp azurite catch along the edges with the
  * strike, then the clock's kind of smoke in azurite, magic rather than
  * dark, pressing in with the swell, dropping as it is cut, and a faint haze
- * fading out with the ring.
+ * fading out with the ring. More wards broken a moment later (`hit`, while
+ * `open`) strike the same smoke, each as loud as one, never stacked.
  */
-export function edgeWard(o: { color?: Vec3; width?: number; intensity?: number } = {}) {
+export function edgeWard(o: { color?: Vec3; width?: number; intensity?: number } = {}): { hit: () => void; open: () => boolean } {
   const pattern = Math.random() * 100;
-  // The sound's loudness, as the smoke follows it (0-1).
-  const SMOKE: [number, number][] = [
-    [0, 0],
-    [0.04, 0.45],
-    [0.12, 0.6],
-    [0.2, 0.55],
-    [0.4, 1],
-    [0.44, 0.9],
-    [0.5, 0.35],
-    [0.8, 0.15],
-    [1.15, 0],
-  ];
-  // The strike and its shimmer, on the edge's hot line.
-  const STRIKE: [number, number][] = [
-    [0, 0],
-    [0.02, 0.7],
-    [0.12, 1],
-    [0.22, 0],
-  ];
-  return shape({
-    type: ShapeType.Edge,
-    at: { x: innerWidth / 2, y: innerHeight / 2 },
-    life: 1.2,
-    color: o.color ?? C.azurite,
-    update(f, _t, age, b) {
-      b.x = innerWidth / 2;
-      b.y = innerHeight / 2;
-      f.hw = innerWidth / 2;
-      f.hh = innerHeight / 2;
-      const strike = keyed(STRIKE, age);
-      f.k = (o.intensity ?? 0.14) * Math.max(keyed(SMOKE, age), 0.8 * strike);
-      f.q[0] = (o.width ?? 70) * edgeScale();
-      f.q[1] = 0.6;
-      f.q[2] = 1;
-      f.q[3] = pattern;
-      f.q[4] = 0.8 * strike;
-      f.q[5] = age;
-      f.q[6] = 0.3;
-      f.q[7] = 0.6;
-    },
+  const hits: number[] = [];
+  let now = 0;
+  const from = performance.now();
+  edgeShape(WARD_MORE + WARD_HIT, o.color ?? C.azurite, (_t, age) => {
+    now = age;
+    let smoke = 0;
+    let strike = 0;
+    for (const at of hits) {
+      smoke = Math.max(smoke, keyed(WARD_SMOKE, age - at));
+      strike = Math.max(strike, keyed(WARD_STRIKE, age - at));
+    }
+    return { k: (o.intensity ?? 0.14) * Math.max(smoke, 0.8 * strike), width: o.width ?? 70, smoke: 1, pattern, heat: 0.8 * strike, even: 0.3, body: 0.6 };
   });
+  return {
+    hit: () => void hits.push(now),
+    open: () => performance.now() - from < WARD_MORE * 1000,
+  };
 }
 
 /**
- * One tick's beat of the countdown's smoke (edgeCountdown). `width`: how far
- * in it reaches (px, on a window 720 px across its short side; it scales
- * with the window, so a big screen sees the same as a small one); `smoke`
- * (0 none): its wisps; `even` (0-1): spread evenly round the edges rather
- * than in patches; `body` (0-1): from see-through to full; `hold`: how much
- * longer it takes to go (1 as is); `rim`: a hot line along the very edge.
+ * One tick's beat of the countdown's smoke (edgeCountdown), as an
+ * EdgeFrame's look takes it, with `intensity`, and `hold`: how much longer
+ * it takes to go (1 as is); `rim`: a hot line along the very edge.
  */
 export type EdgeBeat = { color?: Vec3; width?: number; intensity?: number; smoke?: number; even?: number; body?: number; hold?: number; rim?: number };
+
+/** The longest a beat lasts (edgeCountdown), with its linger: TICK_STEPS' longest hold. */
+const BEAT_LONGEST = 1.4 * 1.6;
 
 /**
  * The clock's last seconds as red smoke at the screen's edges: one smoke
  * for the whole countdown, drifting on, that each tick (`beat`) swells with
  * the tick's sound, up at once and swelling down, then lingering faintly
  * into the next, where it is (nothing rushes in). One shape for all its
- * beats, so they never stack full-screen layers; it ends a moment after
- * its last beat has died away, or when stopped.
+ * beats, so they never stack full-screen layers. It lasts `seconds` and
+ * the last beat's linger, then ends of itself (or when stopped); `open`
+ * says whether a beat now still has its full time (a clock that stalled
+ * outlasts it: then a new countdown takes over).
  */
-export function edgeCountdown(): { beat: (b: EdgeBeat) => void; stop: (fade?: number) => void } {
+export function edgeCountdown(seconds: number): { beat: (b: EdgeBeat) => void; stop: (fade?: number) => void; open: () => boolean } {
   const pattern = Math.random() * 100;
   const beats: { at: number; b: EdgeBeat }[] = [];
   let now = 0;
+  const from = performance.now();
   const lifeOf = (b: EdgeBeat) => 1.4 * (b.hold ?? 1);
   const mixed = (a: number | undefined, z: number | undefined, d: number, k: number) => (a ?? d) + ((z ?? d) - (a ?? d)) * k;
-  const h = shape({
-    type: ShapeType.Edge,
-    at: { x: innerWidth / 2, y: innerHeight / 2 },
-    life: Infinity,
-    color: C.crimson,
-    update(f, _t, age, box) {
-      now = age;
-      box.x = innerWidth / 2;
-      box.y = innerHeight / 2;
-      f.hw = innerWidth / 2;
-      f.hh = innerHeight / 2;
-      const rise = 0.035;
-      let k = 0;
-      let rim = 0;
-      for (const { at, b } of beats) {
-        const a = age - at;
-        const life = lifeOf(b);
-        if (a < 0 || a > life) continue;
-        const hold = b.hold ?? 1;
-        const beat = a < rise ? Math.sin(((a / rise) * Math.PI) / 2) ** 2 : Math.exp(-(a - rise) / (0.2 * hold));
-        // What lingers, gone by the end of the beat's life.
-        const linger = 0.3 * Math.min(1, a / rise) * Math.exp(-a / (0.9 * hold)) * (1 - (a / life) ** 2);
-        k += (b.intensity ?? 0.06) * (beat + linger);
-        rim = Math.max(rim, (b.rim ?? 0) * beat);
-      }
-      // The smoke takes on the latest beat's look as it lands (from the one before).
-      const last = beats[beats.length - 1]?.b ?? {};
-      const prev = beats[beats.length - 2]?.b ?? last;
-      const into = Math.min(1, (age - (beats[beats.length - 1]?.at ?? 0)) / rise);
-      const from = prev.color ?? C.crimson;
-      const to = last.color ?? C.crimson;
-      f.color = [from[0] + (to[0] - from[0]) * into, from[1] + (to[1] - from[1]) * into, from[2] + (to[2] - from[2]) * into];
-      f.k = k;
-      f.q[0] = mixed(prev.width, last.width, 60, into) * edgeScale();
-      f.q[1] = 0.6;
-      f.q[2] = mixed(prev.smoke, last.smoke, 0, into);
-      f.q[3] = pattern;
-      f.q[4] = rim;
-      f.q[5] = age;
-      f.q[6] = mixed(prev.even, last.even, 0, into);
-      f.q[7] = mixed(prev.body, last.body, 1, into);
-    },
+  const rise = 0.035;
+  const h = edgeShape(seconds + BEAT_LONGEST, C.crimson, (_t, age) => {
+    now = age;
+    let k = 0;
+    let rim = 0;
+    for (const { at, b } of beats) {
+      const a = age - at;
+      const life = lifeOf(b);
+      if (a < 0 || a > life) continue;
+      const hold = b.hold ?? 1;
+      const beat = a < rise ? Math.sin(((a / rise) * Math.PI) / 2) ** 2 : Math.exp(-(a - rise) / (0.2 * hold));
+      // What lingers, gone by the end of the beat's life.
+      const linger = 0.3 * Math.min(1, a / rise) * Math.exp(-a / (0.9 * hold)) * (1 - (a / life) ** 2);
+      k += (b.intensity ?? 0.06) * (beat + linger);
+      rim = Math.max(rim, (b.rim ?? 0) * beat);
+    }
+    // The smoke takes on the latest beat's look as it lands (from the one before).
+    const last = beats[beats.length - 1];
+    const lb = last?.b ?? {};
+    const pb = beats[beats.length - 2]?.b ?? lb;
+    const into = Math.min(1, (age - (last?.at ?? 0)) / rise);
+    const c0 = pb.color ?? C.crimson;
+    const c1 = lb.color ?? C.crimson;
+    return {
+      k,
+      color: [c0[0] + (c1[0] - c0[0]) * into, c0[1] + (c1[1] - c0[1]) * into, c0[2] + (c1[2] - c0[2]) * into],
+      width: mixed(pb.width, lb.width, 60, into),
+      smoke: mixed(pb.smoke, lb.smoke, 0, into),
+      pattern,
+      heat: rim,
+      even: mixed(pb.even, lb.even, 0, into),
+      body: mixed(pb.body, lb.body, 1, into),
+    };
   });
   return {
     beat(b) {
       beats.push({ at: now, b });
-      // Only the last two matter for the look; older ones still fading are kept until gone.
+      // Only the last two matter for the look; the older ones have long gone by the fourth.
       while (beats.length > 4) beats.shift();
-      const n = beats.length;
-      after(lifeOf(b) + 0.05, () => {
-        if (beats.length === n && beats[n - 1].b === b) h.stop(0);
-      });
     },
     stop: (fade) => h.stop(fade),
+    open: () => performance.now() - from < seconds * 1000,
   };
 }
 

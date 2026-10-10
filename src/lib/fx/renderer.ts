@@ -862,12 +862,12 @@ void main() {
     float sdf = dialogSdf(vec2(vUv.x, 1.0 - vUv.y) * uView);
     c *= 1.0 - ${DIALOG_DIM.toFixed(3)} * uDim * clamp(sdf + 0.5, 0.0, 1.0);
   }
-  // TPDF dither, only where there is light, so empty pixels stay exactly 0;
-  // in full from half a level up, so a wide faint glow's last few levels
-  // (most of its area) dither too rather than band.
-  float peak = max(max(c.r, c.g), c.b);
+  // TPDF dither, per channel and never deeper than the channel's own light:
+  // an empty channel (or pixel) stays exactly 0, nothing is clipped at 0 (so
+  // faint light keeps its level and colour, no grey creeping in), and a wide
+  // faint glow's last few levels dither rather than band.
   float n = hash(gl_FragCoord.xy) + hash(gl_FragCoord.xy + 71.3) - 1.0;
-  c = max(c + n * smoothstep(0.0, 0.5 / 255.0, peak) / 255.0, 0.0);
+  c += n * min(c, vec3(1.0 / 255.0));
   // Premultiplied: alpha as high as the brightest channel keeps the colour
   // valid; plus-lighter then adds it to the page.
   o = vec4(c, max(max(c.r, c.g), c.b));

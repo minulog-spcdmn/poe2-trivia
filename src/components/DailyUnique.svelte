@@ -15,6 +15,7 @@
   import { answerDaily, answeredOn, askOne, dailyGame, dailyQuestion, dayNumber, loadDaily, nextIn, saveDaily, streakOn, utcDay } from '../lib/daily';
   import { itemImage } from '../lib/ui';
   import { sfx } from '../lib/sound';
+  import { toasts } from '../lib/toasts.svelte';
   import { doused, reveal } from '../lib/fx/moments';
   import ArcaneCircle from './ArcaneCircle.svelte';
   import ArtImage from './ArtImage.svelte';
@@ -97,9 +98,13 @@
     }
     const good = i === rightIdx;
     // A record from a later day (this device's clock was put back) takes no
-    // answer today: nothing is recorded, so nothing plays as if it were.
+    // answer today: nothing is recorded, so nothing plays as if it were, and
+    // the tap says why.
     const next = practice ? null : answerDaily(rec, today, i, good);
-    if (next && next === rec) return;
+    if (next && next === rec) {
+      toasts.show("This device's clock is behind the day you last answered on. Set it right to play today's unique.", 'info', { title: 'Clock behind' });
+      return;
+    }
     const at = Date.now();
     settled = false;
     clearTimeout(settleTimer);

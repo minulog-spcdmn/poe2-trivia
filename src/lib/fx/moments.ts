@@ -810,8 +810,11 @@ export function wardShattered(pip: Element, pill: Element, mine: boolean) {
 }
 
 /** Your ward takes a loss: azurite smoke at the screen's edges, with its sound (edgeWard), and the scene lit blue. */
+let wardSmoke: ReturnType<typeof edgeWard> | null = null;
 function wardedEdge() {
-  edgeWard();
+  // A cave-in breaks several, a moment apart: they strike the one smoke.
+  if (!wardSmoke?.open()) wardSmoke = edgeWard();
+  wardSmoke.hit();
   pulseMood(0.16, [0.3, 0.55, 1]);
 }
 
@@ -1104,9 +1107,10 @@ export function timerTick(timer: Element, secs: number, screen = true) {
   const step = TICK_STEPS[Math.max(0, Math.min(TICK_STEPS.length - 1, secs - 1))];
   // A new countdown (another question's ring, or this one's clock put back):
   // its own smoke, and whatever is left of the last one goes.
-  if (timer !== countdownOf || secs >= lastTick || !countdown) {
+  if (timer !== countdownOf || secs >= lastTick || !countdown?.open()) {
     countdown?.stop(0.35);
-    countdown = edgeCountdown();
+    // Room for every second left, and a moment's grace for a late tick.
+    countdown = edgeCountdown(secs + 0.5);
     countdownOf = timer;
   }
   lastTick = secs;
