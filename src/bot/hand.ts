@@ -130,7 +130,9 @@ export class Hand {
     const s = this.s ?? session.state;
     if (!s) return;
     const now = Date.now();
-    const e = pickClick(kind, until - now, Math.random, { mode, n, used: new Set(this.used) });
+    const at = this.where(now);
+    const f = this.box(frame, s);
+    const e = pickClick(kind, until - now, Math.random, { mode, n, used: new Set(this.used), near: (x) => within(at, f, x.src) });
     if (!e) return;
     this.remember(e);
     const w = waver(Math.random);
@@ -138,7 +140,7 @@ export class Hand {
     this.presses = [];
     const onto = this.onto(kind === 'card' ? 'card:' : 'opt:', e, torn, this.box(frame, s), s);
     // It takes in what's come up before its hand stirs, its own while: the room's hands don't all set off as one.
-    const start = now + Math.min(between(150, 1300) * (0.6 + 0.8 * this.persona.hand.still), (until - now) * 0.35);
+    const start = now + Math.min(between(200, 2600) * (0.6 + 0.8 * this.persona.hand.still), (until - now) * 0.45);
     this.follow(leadTrack(e, within(this.where(now), this.box(frame, s), e.src), start, until, this.speed, { onto, w }), frame);
   }
 

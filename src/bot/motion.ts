@@ -136,13 +136,15 @@ const duration = (pairs: number[]) => (pairs.length / 2 - 1) * STEP;
  * near `leadMs` as there are: one of the nearest dozen at random, none it
  * used lately (`used`) if it can help it, so it isn't the same one over
  * again; a lead a little long is better (its pauses shorten), a lot too
- * short worse (they'd stretch long).
+ * short worse (they'd stretch long); and, given where the hand is in each
+ * one's frame (`near`), one setting off near it, so it needn't make up the
+ * difference.
  */
 export function pickClick(
   kind: ClickStretch['kind'],
   leadMs: number,
   rng: Rng,
-  { mode, n, used = new Set() }: { mode?: string; n?: number; used?: ReadonlySet<Stretch> } = {},
+  { mode, n, used = new Set(), near }: { mode?: string; n?: number; used?: ReadonlySet<Stretch>; near?: (e: ClickStretch) => [number, number] } = {},
   pool: Stretch[] = ALL,
 ): ClickStretch | null {
   let c = pool.filter((e): e is ClickStretch => e.kind === kind);
@@ -150,9 +152,14 @@ export function pickClick(
   if (c.some((e) => !used.has(e))) c = c.filter((e) => !used.has(e));
   if (!c.length) return null;
   // As many answers as this question has, by preference (a list read through as long as this one).
-  const off = (e: ClickStretch) => Math.abs(Math.log((duration(e.lead) + 400) / (leadMs + 400))) + (n && e.n !== n ? 0.45 : 0);
-  const near = [...c].sort((a, b) => off(a) - off(b)).slice(0, 12);
-  return near[Math.floor(rng() * near.length)];
+  const apart = (e: ClickStretch) => {
+    if (!near) return 0;
+    const [u, v] = near(e);
+    return Math.hypot(u - e.lead[0], v - e.lead[1]) / 1000;
+  };
+  const off = (e: ClickStretch) => Math.abs(Math.log((duration(e.lead) + 400) / (leadMs + 400))) + (n && e.n !== n ? 0.45 : 0) + 0.8 * apart(e);
+  const best = [...c].sort((a, b) => off(a) - off(b)).slice(0, 12);
+  return best[Math.floor(rng() * best.length)];
 }
 
 /**
@@ -164,6 +171,8 @@ export interface Waver {
   bend: (t: number) => [number, number];
   tempo: (i: number) => number;
   pace: number;
+  /** How much of the spare time each of its pauses takes (the k-th: its share against the others'), not all alike. */
+  rests: (k: number) => number;
 }
 
 export function waver(rng: Rng): Waver {
@@ -177,11 +186,17 @@ export function waver(rng: Rng): Waver {
   const period = between(rng, 12, 40);
   const phase = rng() * Math.PI * 2;
   const depth = between(rng, 0.06, 0.15);
-  return { bend: (t) => [u1(t) + u2(t), v1(t) + v2(t)], tempo: (i) => 1 + depth * Math.sin((2 * Math.PI * i) / period + phase), pace: between(rng, 0.92, 1.08) };
+  const rests = Array.from({ length: 64 }, () => Math.exp(between(rng, -1.3, 0.8)));
+  return {
+    bend: (t) => [u1(t) + u2(t), v1(t) + v2(t)],
+    tempo: (i) => 1 + depth * Math.sin((2 * Math.PI * i) / period + phase),
+    pace: between(rng, 0.92, 1.08),
+    rests: (k) => rests[k % rests.length],
+  };
 }
 
 /** The recording as it was: no bend, steady tempo, its own pace. */
-export const STEADY: Waver = { bend: () => [0, 0], tempo: () => 1, pace: 1 };
+export const STEADY: Waver = { bend: () => [0, 0], tempo: () => 1, pace: 1, rests: () => 1 };
 
 /** For each sample, 1 where the pointer moves (it or a sample beside it changes), 0 where it rests: where a bend may show. */
 function moving(pairs: number[]): number[] {
@@ -241,17 +256,25 @@ export function pickStream(kind: StreamStretch['kind'], rng: Rng, used: Readonly
 /**
  * When each of a lead's samples is shown so it lasts `ms` in all: its
  * pauses (where the pointer kept still) longer or shorter, its moves as
- * they were, `speed` aside (above 1, slower). Not enough room even with no
+ * they were, `speed` aside (above 1, slower), each pause by its share
+ * (`rests`, by its place among them). Not enough room even with no
  * pauses: the moves go quicker, down to two thirds of their time; past
  * that, it starts partway in (the times then begin below 0, to be cut).
  */
-export function fitLead(pairs: number[], ms: number, speed = 1, tempo: (i: number) => number = () => 1): number[] {
+export function fitLead(pairs: number[], ms: number, speed = 1, tempo: (i: number) => number = () => 1, rests: (k: number) => number = () => 1): number[] {
   const n = pairs.length / 2;
   if (n < 2) return n ? [ms] : [];
   const still: boolean[] = [];
   for (let i = 1; i < n; i++) still.push(pairs[2 * i] === pairs[2 * i - 2] && pairs[2 * i + 1] === pairs[2 * i - 1]);
+  // Which pause each still sample is in, and how much it counts.
+  const share: number[] = [];
+  let k = -1;
+  still.forEach((s, i) => {
+    if (s && !still[i - 1]) k++;
+    share.push(s ? rests(Math.max(0, k)) : 0);
+  });
   const moving = still.filter((s) => !s).length * STEP * speed;
-  const paused = still.filter(Boolean).length * STEP;
+  const paused = share.reduce((a, b) => a + b, 0) * STEP;
   let move = speed;
   let pause = 1;
   if (ms >= moving) pause = paused ? (ms - moving) / paused : 0;
@@ -260,7 +283,7 @@ export function fitLead(pairs: number[], ms: number, speed = 1, tempo: (i: numbe
     move = Math.max((2 / 3) * speed, (ms / moving) * speed);
   }
   const t = [0];
-  still.forEach((s, i) => t.push(t[t.length - 1] + STEP * (s ? pause : move * tempo(i))));
+  still.forEach((s, i) => t.push(t[t.length - 1] + STEP * (s ? pause * share[i] : move * tempo(i))));
   // Room to spare (no pauses to stretch): it waits at the start; too little: it begins partway in.
   const shift = ms - t[t.length - 1];
   return t.map((x) => x + shift);
@@ -300,7 +323,10 @@ export function track(
   const moved = [0];
   for (let i = first + 1; i < n; i++) moved.push(moved[moved.length - 1] + Math.hypot(pairs[2 * i] - pairs[2 * i - 2], pairs[2 * i + 1] - pairs[2 * i - 1]));
   const by = moved[Math.min(moved.length - 1, Math.max(0, settle - first))];
-  const reach = Math.min(SETTLE_PATH, by > 30 ? by : moved[moved.length - 1]);
+  // Never all of a long way in one quick move: over at least as much movement as the way is long, if there's that much.
+  const gap = from ? Math.hypot(from[0] - u0, from[1] - v0) : 0;
+  const total = moved[moved.length - 1];
+  const reach = Math.min(total, Math.max(Math.min(SETTLE_PATH, by > 30 ? by : total), 1.5 * gap));
   for (let i = first; i < n; i++) {
     let [u, v] = base(i);
     if (from) {
@@ -336,7 +362,7 @@ export function leadTrack(
 ): Track {
   const shifted = onto ? steer(e, onto) : null;
   const mask = moving(e.lead);
-  const times = fitLead(e.lead, Math.max(0, reachAt - start), speed * w.pace, w.tempo);
+  const times = fitLead(e.lead, Math.max(0, reachAt - start), speed * w.pace, w.tempo, w.rests);
   // On the recording by its first rest on an answer or a card, which is laid onto the bot's own.
   let settle = Infinity;
   for (let k = 0; k + 4 < e.dwells.length && settle === Infinity; k += 5) if (e.dwells[k + 2] >= 0) settle = e.dwells[k];
