@@ -124,18 +124,13 @@
       clearTimeout(growTimer);
       growTimer = setTimeout(() => (growingFrom = null), BADGE_IN_MS + 900);
     }
-    // Into the codex, as any question answered in a game.
+    // Into the codex: today's unique as found (its answer, one a day, isn't
+    // counted), a practice question's answer to the practice tally alone (it
+    // finds nothing: there's no end of them to be had without a game).
     const asked = q;
     void import('../lib/codex')
-      .then(({ recordEncounter }) =>
-        recordEncounter({
-          at,
-          itemId: asked.itemId,
-          mode: asked.mode,
-          difficulty: 'custom',
-          race: false,
-          answer: { ok: good, pickedId: asked.options[i], pickedLabel: asked.labels[i] },
-        }),
+      .then(({ recordEncounter, recordPractice }) =>
+        next ? recordEncounter({ at, itemId: asked.itemId, mode: asked.mode, difficulty: 'custom', race: false }) : recordPractice(good),
       )
       .catch((err) => console.warn('codex', err));
     sfx(good ? 'correct' : 'wrong');

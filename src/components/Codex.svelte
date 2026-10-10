@@ -351,6 +351,11 @@
           <header class="sub"><h2>By difficulty</h2></header>
           {@render bars(difficulties)}
         {/if}
+        <!-- The start page's practice: its own, as it finds no items. -->
+        {#if stats.practice.n}
+          <header class="sub"><h2>Practice</h2></header>
+          {@render bars([{ name: 'Start page', tally: stats.practice }])}
+        {/if}
       </section>
 
       <section class="panel by-cat" use:backdropShadow={{ fill: 'linear' }}>

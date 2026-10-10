@@ -424,7 +424,11 @@ accuracy, at least 2 answers), mix-ups (what you picked for what), made-up
 names you fell for, streaks and answer times. Every question revealed on your
 screen counts as seen; only your own answers count toward accuracy (your turn,
 or your guess in a race; a turn that runs out of time is wrong). In hot-seat,
-answers only count when one person plays alone. Undiscovered items show as
+answers only count when one person plays alone. Today's unique on the start
+page counts as seen, but its answer doesn't count toward accuracy; its practice
+questions find nothing and count only toward a Practice accuracy of their own
+(endless as they are, they'd otherwise fill the codex without a game).
+Undiscovered items show as
 dark silhouettes, and the codex can't be opened while in a room. It is kept in this
 browser's localStorage only (`src/lib/codex.ts`).
 

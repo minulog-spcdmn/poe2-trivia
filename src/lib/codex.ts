@@ -159,6 +159,12 @@ export interface Codex {
   fastest: { ms: number; id: string } | null;
   /** Delve answers by depth. */
   byDepth: Record<number, Tally>;
+  /**
+   * Answers to the start page's practice questions: only how many were
+   * right. They find no item and touch nothing else here (answers to be
+   * had without end, they'd fill the codex without a game).
+   */
+  practice: Tally;
 }
 
 /** What one revealed question means for the codex. */
@@ -213,7 +219,7 @@ export const LOG_LIMIT = 2000;
 /** "Recent" accuracy looks at this many answers. */
 export const RECENT = 100;
 
-export const emptyCodex = (): Codex => ({ items: {}, log: [], byDifficulty: {}, fooled: {}, streak: 0, best: 0, fastest: null, byDepth: {} });
+export const emptyCodex = (): Codex => ({ items: {}, log: [], byDifficulty: {}, fooled: {}, streak: 0, best: 0, fastest: null, byDepth: {}, practice: { n: 0, ok: 0 } });
 
 const noTally = (): Tally => ({ n: 0, ok: 0 });
 const add = (t: Tally, ok: boolean): Tally => ({ n: t.n + 1, ok: t.ok + (ok ? 1 : 0) });
@@ -499,6 +505,7 @@ export function parseCodex(raw: string | null): Codex | null {
       const n = tally(t);
       if (d && n.n) c.byDepth[d] = n;
     }
+  c.practice = tally(v.practice);
   return c;
 }
 
@@ -522,16 +529,26 @@ function write(c: Codex): boolean {
   }
 }
 
-/** Adds an encounter to the stored codex: not over one a newer build wrote, and anything else unreadable kept aside first. */
-export function recordEncounter(e: Encounter) {
+/** Changes the stored codex: not over one a newer build wrote, and anything else unreadable kept aside first. */
+function update(change: (c: Codex) => Codex) {
   const raw = tryReadStored(CODEX);
   if (raw === undefined) return;
   // The first time, it starts from the old name's (left as it is).
   const stored = parseCodex(storedRaw(raw));
   if (raw && !stored && !makeRoom(CODEX, raw, CODEX_VERSION)) return;
   const prev = stored ?? emptyCodex();
-  const next = record(prev, e);
+  const next = change(prev);
   if (next !== prev) write(next);
+}
+
+/** Adds an encounter to the stored codex. */
+export function recordEncounter(e: Encounter) {
+  update((c) => record(c, e));
+}
+
+/** Adds a practice answer (the start page's) to the stored codex: to its practice tally alone. */
+export function recordPractice(ok: boolean) {
+  update((c) => ({ ...c, practice: add(c.practice, ok) }));
 }
 
 /**
