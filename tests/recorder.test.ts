@@ -16,6 +16,10 @@ test('a recording keeps the pointer finely, but not more often than it needs', (
   assert.deepEqual(r.at, [3, -1, 0, 0, 40, 16, 500, 250]);
   assert.equal(r.dueAt(50), false);
   assert.ok(r.dueAt(80));
+  // Another's pointer, heard and gone.
+  r.peer(12.4, 0, [16, 500, 250, 0]);
+  r.peer(30, 0, null);
+  assert.deepEqual(r.peers, [12, 0, 16, 500, 250, 0, 30, 0, -1, 0, 0, 0]);
 });
 
 test('the game is kept only when something a hand cares about changes, and the screen only when it moved', () => {
@@ -33,6 +37,6 @@ test('the game is kept only when something a hand cares about changes, and the s
   assert.deepEqual(r.layouts.map((l) => l.t), [0, 900]);
   // Nothing typed, no names: what's in the file.
   const file = JSON.parse(r.file({ dpr: 2 }));
-  assert.deepEqual(Object.keys(file), ['v', 'started', 'about', 'moves', 'at', 'happenings', 'layouts', 'scenes']);
+  assert.deepEqual(Object.keys(file), ['v', 'started', 'about', 'moves', 'at', 'happenings', 'peers', 'layouts', 'scenes']);
   assert.ok(!JSON.stringify(file.scenes).includes('"name"'));
 });

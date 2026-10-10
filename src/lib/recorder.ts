@@ -3,7 +3,8 @@
  * (src/bot/habits.ts, reach.ts): their pointer, finely, beside what the game
  * was showing. Beta and dev builds only, switched on with `?record` in the
  * address (`?record=off` stops it) and kept on for the tab
- * (components/Recorder.svelte). Nothing leaves the device: the player saves
+ * (components/Recorder.svelte). In an online room, the others' pointers as
+ * they were heard too: whether a player watches them is part of how they wait. Nothing leaves the device: the player saves
  * the file and hands it over themselves. Typing isn't recorded, nor names.
  */
 import { BETA, LOCAL } from './channel.ts';
@@ -121,6 +122,12 @@ export class Recording {
   /** [t, anchor code, x, y] after each other, as the pointer sync would send it (cursors.ts toAnchor). */
   readonly at: number[] = [];
   readonly happenings: Happening[] = [];
+  /**
+   * The other players' pointers as they were heard (an online room): [t,
+   * who, anchor code, x, y, kind] after each other, `who` numbering them as
+   * they first came; anchor -1 (and the rest 0) when one went.
+   */
+  readonly peers: number[] = [];
   readonly layouts: Layout[] = [];
   readonly scenes: Scene[] = [];
   private lastMove = -Infinity;
@@ -152,6 +159,11 @@ export class Recording {
     this.at.push(Math.round(t), ...(at ?? [-1, 0, 0]));
   }
 
+  peer(t: number, who: number, at: readonly [number, number, number, number] | null) {
+    this.peers.push(Math.round(t), who, ...(at ?? [-1, 0, 0, 0]));
+    this.unsaved = true;
+  }
+
   happen(h: Happening) {
     this.happenings.push([Math.round(h[0]), ...h.slice(1)] as Happening);
     this.unsaved = true;
@@ -180,12 +192,13 @@ export class Recording {
 
   file(about: Record<string, unknown>) {
     return JSON.stringify({
-      v: 1,
+      v: 2,
       started: this.started,
       about,
       moves: this.moves,
       at: this.at,
       happenings: this.happenings,
+      peers: this.peers,
       layouts: this.layouts,
       scenes: this.scenes,
     });
