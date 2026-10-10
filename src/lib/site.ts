@@ -1,4 +1,4 @@
-import { BETA } from './channel.ts';
+import { BETA, LOCAL } from './channel.ts';
 
 /** Public address of the game. */
 export const SITE_URL = 'https://poe2.quest/';
@@ -12,8 +12,8 @@ export const IMPRINT_URL = './impressum.html';
 export const PRIVACY_URL = './datenschutz.html';
 export const DONATE_URL = 'https://paypal.me/minuW';
 
-/** Invite link for a room (local dev keeps using the dev server). */
+/** Invite link for a room (the dev server, and any local build, point to where they are: their rooms are only there). */
 export function inviteUrl(code: string) {
-  const base = import.meta.env.DEV ? `${location.origin}${location.pathname}` : PLAY_URL;
+  const base = import.meta.env.DEV || LOCAL ? `${location.origin}${location.pathname}` : PLAY_URL;
   return `${base}?room=${code}`;
 }

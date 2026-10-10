@@ -4,6 +4,8 @@
 // only with VITE_BOT=1 (vite.config.ts), which scripts/room-bot.mjs does.
 
 import { BOT } from '../lib/storage';
+import { CHANNEL } from '../lib/channel';
+import { log } from './util';
 import { Seat } from './seat';
 import { session } from '../lib/session.svelte';
 import { modesFrom, namesFor } from './identities';
@@ -20,6 +22,8 @@ const slot = Number(q.get('slot') ?? 1);
 const names = namesFor(slot, Number(q.get('of') ?? 1));
 const rooms = q.has('rooms') ? Math.max(0, Number(q.get('rooms')) || 0) : Infinity;
 const bot = new Seat(names, modesFrom(q.get('modes')), rooms, q.get('scout') !== '0');
+// Where it plays (src/lib/channel.ts): on the dev server, its own local rooms, not the live game's.
+log(`playing in the ${CHANNEL} rooms`);
 bot.start();
 
 // For the runner (and a look in a headed browser); in development, the session too, for scripts that drive it (as src/main.ts gives it).

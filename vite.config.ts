@@ -1,6 +1,9 @@
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { createHash } from 'node:crypto';
+import { hostname, userInfo } from 'node:os';
+import { channelOf } from './src/lib/channel.ts';
 import type { AtRule, Node, Rule } from 'postcss';
 import { defineConfig, loadEnv, type Plugin } from 'vite';
 import { backdropsErrors, formatBackdrops, type Backdrops } from './src/lib/backdropData.ts';
@@ -175,8 +178,26 @@ const hoverOnlyWhereHoverable = {
   },
 };
 
-export default defineConfig(({ mode }) => {
+/**
+ * This machine (and user), for the local channel's room names
+ * (src/lib/channel.ts): the dev server and the room bot's --localhost
+ * build here share them; anyone else's local rooms stay apart.
+ */
+function localId() {
+  let who = '';
+  try {
+    who = userInfo().username;
+  } catch {
+    /* no user name to be had */
+  }
+  return createHash('sha256').update(`${hostname()}:${who}`).digest('hex').slice(0, 8);
+}
+
+export default defineConfig(({ command, mode }) => {
   const env = loadEnv(mode, process.cwd(), 'VITE_');
+  // A channel named wrongly stops here, rather than quietly playing in the live game. The local
+  // one's rooms are this machine's: set before Vite reads the env, so the app sees import.meta.env.VITE_LOCAL_ID.
+  if (channelOf({ VITE_CHANNEL: env.VITE_CHANNEL, DEV: command === 'serve' }) === 'local') process.env.VITE_LOCAL_ID ??= localId();
   return {
     // Relative base so the build works on any GitHub Pages sub-path.
     base: './',
