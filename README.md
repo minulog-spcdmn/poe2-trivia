@@ -526,8 +526,8 @@ browser (`src/lib/achievements.ts`); erasing the codex erases them.
     taking a seat when the next game starts (and **Play next game** to
     change their mind). A guest in the lobby can give up their seat the same
     way, and **Take a seat** again. The choice holds through reconnects.
-  - **Live pointers:** in the lobby, and in turns mode and Delve together,
-    everyone sees the other players' mouse pointers move over the room, in their colour and
+  - **Live pointers:** in the lobby, in turns mode and Delve together, and
+    on the screen that ends a game (any mode), everyone sees the other players' mouse pointers move over the room, in their colour and
     with their name; a tap on a phone shows where it landed, as the
     pointer pressed, for a moment. Every pointer, your own included, is the same engraved dart
     (one point of the rune circle's compass star, `src/lib/pointerArt.ts`):
@@ -547,9 +547,13 @@ browser (`src/lib/achievements.ts`); erasing the codex erases them.
     began, with the ways left to go, and a dart pointing the way it scrolls.
     Spectators see them but don't show their own. A pointer is sent as a
     spot on the element under it (an answer, a category card, a scoreboard
-    row, the art; the game as a whole otherwise, measured down it by screen
+    row, the art, the button that moves on; at the end, the winner's circle
+    and the standings' rows; the game as a whole otherwise, measured down it by screen
     heights so it holds still as cards are dealt), so it lands on the same
-    thing on every screen, a phone's included. Never in a race, nor while
+    thing on every screen, a phone's included. A click is always seen:
+    the press goes out even when it's over before the next update, and a
+    pointer whose element goes with the click (a card picked) stays where
+    it was a moment. Never in a race, nor while
     deathmatch duelists answer, where it would give answers away. See
     `src/lib/cursors.ts`.
   - The room code stays in the header during the game, unless the host

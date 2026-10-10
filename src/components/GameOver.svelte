@@ -245,10 +245,11 @@
      would be redone every frame. -->
 <canvas bind:this={canvas} class="sparks" use:portal={'dim'} aria-hidden="true"></canvas>
 
-<div class="over" class:delve={!!run} class:deeper>
+<!-- data-cursor: where other players' pointers are placed (PeerCursors): the screen, the winner's circle, each player's row. -->
+<div class="over" class:delve={!!run} class:deeper data-cursor="game">
   <p class="kicker" in:fly={{ y: -10, duration: 600 }}>{kicker}</p>
   {#if winner}
-    <div class="crown" class:fallen={!!run} bind:this={crown} in:scale={{ start: 0.4, duration: 900, delay: 200 }}>
+    <div class="crown" class:fallen={!!run} bind:this={crown} data-cursor="art" in:scale={{ start: 0.4, duration: 900, delay: 200 }}>
       <!-- Delve: the deeper the run went, the colder the circle. -->
       <ArcaneCircle
         size="212px"
@@ -285,7 +286,7 @@
   <ol class="standings panel" bind:this={standingsEl} use:backdropShadow={{ fill: 'linear' }} in:fly={{ y: 30, duration: 700, delay: 900 }}>
     {#each standings as p, i (p.id)}
       {@const row = team?.players.find((r) => r.id === p.id)}
-      <li class:first={!team && rank[i] === 1} class:delver={!!row} in:fly={{ x: -20, duration: 400, delay: 1100 + i * 100 }}>
+      <li class:first={!team && rank[i] === 1} class:delver={!!row} data-cursor="row:{s.players.findIndex((o) => o.id === p.id)}" in:fly={{ x: -20, duration: 400, delay: 1100 + i * 100 }}>
         {#if !team}<span class="rank">{rank[i]}</span>{/if}
         <Avatar name={p.name} hue={p.hue} size={30} />
         {#if row}

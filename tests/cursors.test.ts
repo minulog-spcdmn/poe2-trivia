@@ -77,14 +77,16 @@ test("a host's batch is checked, and read back", () => {
     assert.equal(parseCursorBatch(bad), null, JSON.stringify(bad));
 });
 
-test('pointers show in the lobby, in turns and Delve, never while players race for the same answer', () => {
+test('pointers show in the lobby, in turns and Delve and at the end, never while players race for the same answer', () => {
   const s = createGame('a');
   assert.equal(cursorsLive(null), false);
   assert.equal(cursorsLive(s), true, 'lobby');
   // The lobby has nothing to give away, whatever the mode.
   assert.equal(cursorsLive({ ...s, settings: { ...s.settings, mode: 'race' } }), true, 'lobby, race picked');
   for (const phase of ['choosing', 'question', 'reveal'] as const) assert.equal(cursorsLive({ ...s, phase }), true, phase);
-  assert.equal(cursorsLive({ ...s, phase: 'over' }), false);
+  // The end of a game, whatever the mode: the winners are crowned together.
+  assert.equal(cursorsLive({ ...s, phase: 'over' }), true);
+  assert.equal(cursorsLive({ ...s, phase: 'over', settings: { ...s.settings, mode: 'race' } }), true);
   assert.equal(cursorsLive({ ...s, phase: 'question', settings: { ...s.settings, mode: 'delve' } }), true);
   assert.equal(cursorsLive({ ...s, phase: 'choosing', settings: { ...s.settings, mode: 'race' } }), false);
   const dm = { ...s, deathmatch: {} as NonNullable<typeof s.deathmatch> };

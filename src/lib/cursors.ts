@@ -116,14 +116,15 @@ export const entryAt = (e: CursorEntry): CursorAt | null => (e.length === 5 ? [e
 export const cursorKey = (id: string) => id.slice(0, 8);
 
 /**
- * Whether pointers are shown: in the lobby (whatever the mode: there's
- * nothing to give away there), and in a game, but never while players race
+ * Whether pointers are shown: in the lobby and once the game is over
+ * (whatever the mode: there's nothing to give away there), and in a game, but never while players race
  * for the same answer (race mode, a deathmatch's question), where one
  * hovering an answer would give it away. Delve together races for the
  * answer too, but as one team, so it shows them.
  */
 export function cursorsLive(s: GameState | null): boolean {
-  if (s?.phase === 'lobby') return true;
+  // The lobby has nothing to give away, nor the end of a game.
+  if (s?.phase === 'lobby' || s?.phase === 'over') return true;
   if (!s || s.settings.mode === 'race') return false;
   if (s.phase !== 'choosing' && s.phase !== 'question' && s.phase !== 'reveal') return false;
   return !(s.deathmatch && s.phase === 'question');

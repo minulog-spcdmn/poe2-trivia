@@ -20,8 +20,17 @@ class PeerCursors {
   /** Whose pointers there are (cursorKey of their ids). */
   keys = $state<string[]>([]);
   readonly at = new Map<string, PeerCursor>();
+  /** Told of every pointer heard, as it is (lib/recorder.ts). */
+  private listeners = new Set<(key: string, at: CursorAt | null) => void>();
+
+  /** Hears every pointer as it comes; returns how to stop. */
+  listen(fn: (key: string, at: CursorAt | null) => void) {
+    this.listeners.add(fn);
+    return () => void this.listeners.delete(fn);
+  }
 
   set(key: string, at: CursorAt | null) {
+    for (const fn of this.listeners) fn(key, at);
     if (!at) {
       if (this.at.delete(key)) this.keys = this.keys.filter((k) => k !== key);
       return;

@@ -31,6 +31,14 @@
   const AWAY_MS = 15000;
   /** How long a tap shows (ms). */
   const TAP_MS = 1100;
+  /** A press shows at least this long (ms): a click is over in less than two updates. */
+  const PRESS_SHOW_MS = 180;
+  /**
+   * Its element gone (the card picked, the button pressed: a click often
+   * takes away what it was on), a pointer heard from lately stays where it
+   * was drawn this long (ms) rather than vanishing, so the click is seen.
+   */
+  const HOLD_MS = 900;
   /** A still pointer is looked at again this often, for what moved under it (the next turn, a scroll). */
   const RECHECK_MS = 500;
 
@@ -157,7 +165,7 @@
 
   const els: Record<string, HTMLElement> = {};
   /** Where each pointer is drawn now, gliding toward where it was heard to be. */
-  const drawn = new Map<string, { x: number; y: number; tap: number; code: number; slideUntil: number }>();
+  const drawn = new Map<string, { x: number; y: number; tap: number; code: number; slideUntil: number; pressUntil: number }>();
 
   function anchorFor(code: number, cache: Map<number, HTMLElement | null>) {
     if (cache.has(code)) return cache.get(code)!;
@@ -194,11 +202,22 @@
           continue;
         }
         const anchor = anchorFor(code, anchors);
-        el.classList.toggle('lost', !anchor);
+        // Pressed as the pointer drawn behind gets there, not before; and once pressed, long enough to see.
+        const due = p.trail.filter((x) => x.t <= now - BEHIND_MS).at(-1) ?? p.trail[0];
+        const pressing = (due?.at[3] ?? kind) === PRESSED;
         if (!anchor) {
-          drawn.delete(c.key);
+          // Its element just went: where it was drawn, a moment longer.
+          const held = drawn.get(c.key);
+          const keep = !!held && age < HOLD_MS;
+          el.classList.toggle('lost', !keep);
+          if (!keep) drawn.delete(c.key);
+          else {
+            if (pressing) held.pressUntil = now + PRESS_SHOW_MS;
+            el.classList.toggle('pressed', now < held.pressUntil);
+          }
           continue;
         }
+        el.classList.remove('lost');
         const r = anchor.getBoundingClientRect();
         // Its trail on this screen (each place on its own element, where that's still here), drawn a little behind.
         const ps: [number, number][] = [];
@@ -212,7 +231,7 @@
         const [tx, ty] = touch || !ps.length ? fromAnchor(code, ax, ay, r, innerHeight) : trailAt(ps, ts, now - BEHIND_MS);
         let d = drawn.get(c.key);
         // A tap lands where it is; a pointer just come in starts where it is.
-        if (!d || touch) drawn.set(c.key, (d = { x: tx, y: ty, tap: d?.tap ?? 0, code, slideUntil: 0 }));
+        if (!d || touch) drawn.set(c.key, (d = { x: tx, y: ty, tap: d?.tap ?? 0, code, slideUntil: 0, pressUntil: d?.pressUntil ?? 0 }));
         else {
           // Gone over to another element, far from where it was drawn: the two screens place things
           // apart (another layout, a bot's picture of the page), so it slides across rather than jumps.
@@ -224,9 +243,8 @@
         }
         el.style.transform = `translate3d(${d.x}px, ${d.y}px, 0)`;
         el.classList.toggle('tap', touch);
-        // Pressed as the pointer drawn behind gets there, not before.
-        const due = p.trail.filter((x) => x.t <= now - BEHIND_MS).at(-1) ?? p.trail[0];
-        el.classList.toggle('pressed', (due?.at[3] ?? kind) === PRESSED);
+        if (pressing) d.pressUntil = now + PRESS_SHOW_MS;
+        el.classList.toggle('pressed', now < d.pressUntil);
         // Over something that can be clicked, it's gilded, as the player's own is.
         el.classList.toggle('lit', anchor.tagName === 'BUTTON');
         // Held down, it isn't idle, however still.

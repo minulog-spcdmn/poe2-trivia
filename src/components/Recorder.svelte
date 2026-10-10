@@ -121,23 +121,12 @@
       if (rec.unsaved && rec.moves.length) e.preventDefault();
     };
     const tick = setInterval(() => (elapsed = since()), 1000);
-    // The others' pointers, as heard: each change, and each going.
+    // The others' pointers, as heard: each update as it comes, and each going.
     const who = new Map<string, number>();
-    const heard = new Map<string, number>();
-    const listen = setInterval(() => {
-      const t = since();
-      for (const [key, p] of peerCursors.at) {
-        if (heard.get(key) === p.moved) continue;
-        heard.set(key, p.moved);
-        if (!who.has(key)) who.set(key, who.size);
-        rec.peer(t, who.get(key)!, p.at);
-      }
-      for (const key of heard.keys())
-        if (!peerCursors.at.has(key)) {
-          heard.delete(key);
-          rec.peer(t, who.get(key)!, null);
-        }
-    }, 25);
+    const unlisten = peerCursors.listen((key, at) => {
+      if (!who.has(key)) who.set(key, who.size);
+      rec.peer(since(), who.get(key)!, at);
+    });
 
     addEventListener('pointermove', move, { passive: true, capture: true });
     addEventListener('pointerdown', down, { passive: true, capture: true });
@@ -152,7 +141,7 @@
     lookSoon([0]);
     return () => {
       clearInterval(tick);
-      clearInterval(listen);
+      unlisten();
       clearTimeout(scrollEnd);
       for (const t of settling) clearTimeout(t);
       removeEventListener('pointermove', move, { capture: true });
