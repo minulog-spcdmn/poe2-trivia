@@ -416,7 +416,9 @@ test('picking a card mostly takes seconds, now and then a while longer, never pa
   const times = Array.from({ length: 4000 }, () => pickDelay({ ...plain, pace: 1.35 }, rng));
   assert.ok(Math.max(...times) < 30000, `${Math.max(...times)}`);
   const long = times.filter((t) => t > 5200).length / times.length;
-  assert.ok(long > 0.08 && long < 0.25, `${long}`);
+  assert.ok(long > 0.08 && long < 0.25, `${long}`);  // A single card (a deathmatch's): taken straight away.
+  const one = Array.from({ length: 400 }, () => pickDelay(plain, rng, 1));
+  assert.ok(Math.max(...one) <= 1100 && Math.min(...one) >= 400);
 });
 
 test('misclicks are rare, likelier for the hasty', () => {

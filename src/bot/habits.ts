@@ -22,8 +22,8 @@
 // there; unsure, it reads and hovers more; just after a miss, it reads more
 // carefully; tired, after a long while, it parks more and moves less; and
 // with the clock nearly out, an unsure one stops browsing and darts between
-// its last few candidates. After the answer is shown, people look at it:
-// the right one, now and then their own pick first (afterReveal).
+// its last few candidates. After the answer is shown, people look at it
+// with their eyes, hardly ever with the pointer (afterReveal).
 // A player's recorded hand (lib/recorder.ts; a long Delve run alone) tuned
 // the tracing: how fast a sweep goes, how often it turns back, how long it
 // pauses, and how often it goes up to the question first.
@@ -57,8 +57,6 @@ export interface HandStyle {
    */
   wait: 'stay' | 'aside' | 'low' | 'left' | 'top';
   spot: Spot;
-  /** How likely it looks at the answer once it's shown, 0 to 1. */
-  looks: number;
 }
 
 /** How common each habit is (parking most). */
@@ -102,11 +100,11 @@ export function rollHandStyle(rng: Rng): HandStyle {
     }
     w -= p;
   }
-  return { habit, deft, curve, rest: rest < 0.5 ? 'side' : rest < 0.8 ? 'low' : 'stay', clicky, wait, spot: { x: rng(), y: rng() }, looks: rng() };
+  return { habit, deft, curve, rest: rest < 0.5 ? 'side' : rest < 0.8 ? 'low' : 'stay', clicky, wait, spot: { x: rng(), y: rng() } };
 }
 
 /** Before any style is rolled (tests, bots made by hand). */
-export const PLAIN_HAND: HandStyle = { habit: 'park', deft: 0.5, curve: 0.5, rest: 'side', clicky: 0.05, wait: 'stay', spot: { x: 0.5, y: 0.5 }, looks: 0.5 };
+export const PLAIN_HAND: HandStyle = { habit: 'park', deft: 0.5, curve: 0.5, rest: 'side', clicky: 0.05, wait: 'stay', spot: { x: 0.5, y: 0.5 } };
 
 /**
  * A step in looking a choice over: at `at`, to an anchor (aimed at its
@@ -378,6 +376,8 @@ export function readQuestion(
 /** How a bot looks the category cards over (`cards`: their anchors, left to right) before it picks, by the habit the situation leans it to. */
 export function readCards(h: Hands, cards: string[], boxes: Box[], now: number, until: number, sit: Situation, rng: Rng, habit = pickHabit(h.style, sit, rng)): Glance[] {
   const out: Glance[] = [];
+  // One card: nothing to look over.
+  if (cards.length <= 1) return out;
   let t = now + between(rng, 300, 800) * h.pace;
   const go = (anchor: string, dwell: number) => {
     if (t >= until - 250) return false;
@@ -402,27 +402,14 @@ export function readCards(h: Hands, cards: string[], boxes: Box[], now: number, 
 }
 
 /**
- * Once the answer is shown (`correct`; `mine`: the answer this hand gave,
- * if it gave one), from `now`: people look at it, the right one, now and
- * then their own pick first; then a parker goes aside again.
+ * Once the answer is shown, from `now`: people look at it with their eyes,
+ * not their pointer (the recorded player's was on an answer hardly ever
+ * during a reveal); a parker goes aside again.
  */
-export function afterReveal(h: Hands, correct: string | null, mine: string | null, boxes: Box[], now: number, rng: Rng): Glance[] {
-  const out: Glance[] = [];
-  let t = now + between(rng, 300, 1600) * h.pace;
-  if (mine && mine !== correct && rng() < 0.35) {
-    out.push({ at: t, anchor: mine, text: true });
-    t += between(rng, 500, 1000);
-  }
-  // Some look at it most times, some hardly ever (it was someone else's, or they saw it from where they are).
-  if (correct && rng() < 0.1 + 0.75 * h.style.looks * (mine ? 1 : 0.6)) {
-    out.push({ at: t, anchor: correct, text: true });
-    t += between(rng, 700, 1500);
-  }
-  if (h.style.habit === 'park' || h.style.habit === 'fidget') {
-    const spot = restSpot(restOf(h.style, rng), boxes, rng);
-    if (spot) out.push({ at: t, spot });
-  }
-  return out;
+export function afterReveal(h: Hands, boxes: Box[], now: number, rng: Rng): Glance[] {
+  if (h.style.habit !== 'park' && h.style.habit !== 'fidget') return [];
+  const spot = restSpot(restOf(h.style, rng), boxes, rng);
+  return spot ? [{ at: now + between(rng, 300, 1600) * h.pace, spot }] : [];
 }
 
 /** How long a hand with nothing to do keeps still between its idle moves (ms): a parker for long stretches, a fidget hardly at all; longer the more tired. */

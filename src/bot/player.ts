@@ -233,7 +233,7 @@ export class Player {
     }));
     // The cards looked over meanwhile, and the click begun early enough to land on time.
     const lead = this.hand.lead();
-    const at = session.hostNow() + Math.max(300, pickDelay(this.persona, Math.random) - lead);
+    const at = session.hostNow() + Math.max(300, pickDelay(this.persona, Math.random, offered.length) - lead);
     this.hand.lookOverCards(offered.length, Date.now() + (at - session.hostNow()), this.mood(false).tired);
     const still = () => {
       const cur = session.state;

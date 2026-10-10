@@ -13,7 +13,7 @@ function seeded(seed: number) {
 
 const options = Array.from({ length: 6 }, (_, i) => `opt:${i}`);
 const boxes: Box[] = options.map((_, i) => [511, 306 + i * 80, 844, 374 + i * 80]);
-const hands = (habit: HandStyle['habit'], rest: HandStyle['rest'] = 'side'): Hands => ({ style: { habit, deft: 0.5, curve: 0.5, rest, clicky: 0.05, wait: 'stay', spot: { x: 0.5, y: 0.5 }, looks: 0.5 }, pace: 1, dither: 0.2 });
+const hands = (habit: HandStyle['habit'], rest: HandStyle['rest'] = 'side'): Hands => ({ style: { habit, deft: 0.5, curve: 0.5, rest, clicky: 0.05, wait: 'stay', spot: { x: 0.5, y: 0.5 } }, pace: 1, dither: 0.2 });
 const sit = (sure: boolean, more: Partial<Situation> = {}): Situation => ({ sure, careful: false, tired: 0, urgentAt: Infinity, ...more });
 /** A random source that always says `v` (its own place to park, its own habit). */
 const always = (v: number) => () => v;
@@ -138,16 +138,12 @@ test('unsure with the clock nearly out, it stops browsing and darts between a fe
   assert.ok(g.some((x) => x.at < 6000 && x.through && x.through.length > 0));
 });
 
-test('once the answer is shown, it often looks at it, now and then at its own pick first', () => {
-  let right = 0;
-  let own = 0;
-  for (let seed = 1; seed < 400; seed++) {
-    const g = afterReveal(hands('trace'), 'opt:2', 'opt:4', boxes, 0, seeded(seed));
-    if (g.some((x) => x.anchor === 'opt:2')) right++;
-    if (g[0]?.anchor === 'opt:4') own++;
+test('once the answer is shown, it leaves it be: only a parker moves, aside again', () => {
+  for (let seed = 1; seed < 100; seed++) {
+    assert.deepEqual(afterReveal(hands('trace'), boxes, 0, seeded(seed)), []);
+    const p = afterReveal(hands('park'), boxes, 0, seeded(seed));
+    assert.ok(p.length === 1 && p[0].spot && !p[0].anchor);
   }
-  assert.ok(right > 150 && right < 300, `${right}`);
-  assert.ok(own > 80 && own < 200, `${own}`);
 });
 
 test("waiting out someone else's turn, each its own way: mostly where it is, else at a place of its own", () => {

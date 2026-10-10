@@ -347,7 +347,9 @@ export function chooseCard(p: Persona, offered: string[], finds: { category: str
 }
 
 /** Milliseconds to look over the categories before picking. */
-export function pickDelay(p: Persona, rng: Rng): number {
+export function pickDelay(p: Persona, rng: Rng, cards = 3): number {
+  // A single card (a deathmatch's): nothing to choose, so it just takes it.
+  if (cards <= 1) return Math.round(between(rng, 400, 1100) * p.pace);
   let ms = between(rng, 1300, 3800);
   // Now and then it reads the cards a while longer, or something else catches its eye (well under the host's skip).
   const r = rng();
