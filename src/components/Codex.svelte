@@ -11,10 +11,10 @@
   import { closeCodex, codexRoute } from '../lib/codexRoute.svelte';
   import { backdropShadow } from '../lib/backdropShadow';
   import { dialogBackdrop } from '../lib/behindDialog';
-  import { motion } from '../lib/motion.svelte';
+  import { calm } from '../lib/motion.svelte';
   import { whenIdle } from '../lib/idle';
   import type { Difficulty, Item } from '../lib/game';
-  import ArcaneCircle from './ArcaneCircle.svelte';
+  import CodexMedallion from './codex/CodexMedallion.svelte';
   import CodexItem from './CodexItem.svelte';
   import CodexFilter from './CodexFilter.svelte';
   import CodexDelve from './CodexDelve.svelte';
@@ -22,9 +22,6 @@
   import { ACHIEVEMENTS, ACHIEVEMENTS_KEY, WINS_KEY, checkAchievements, loadAchievements, loadWins, resetAchievements } from '../lib/achievements';
   import { announceAchievements } from '../lib/achievementToasts';
   import CodexAchievements from './CodexAchievements.svelte';
-
-  /** Svelte's transitions run whatever the system says: held still (reduced motion, or the effects off), things just appear. */
-  const calm = <T extends { duration?: number; delay?: number }>(p: T): T => (motion.still ? { ...p, duration: 0, delay: 0 } : p);
 
   let codex = $state.raw(loadCodex());
   let delve = $state.raw(loadRecords());
@@ -254,7 +251,7 @@
 {/snippet}
 
 <div class="codex">
-  <header class="hero" in:fly={calm({ y: -10, duration: 600 })}>
+  <header class="hero">
     <p class="kicker">Your collection</p>
     <h1>Codex</h1>
     <p class="tagline">
@@ -267,7 +264,7 @@
   </header>
 
   {#if kept}
-    <div class="tabs" role="tablist" aria-label="Codex pages" in:fly={calm({ y: -6, duration: 500, delay: 100 })}>
+    <div class="tabs" role="tablist" aria-label="Codex pages">
       {#each TABS as t (t.key)}
         <button
           {@attach tabRef(t.key)}
@@ -296,7 +293,7 @@
     <CodexAchievements {codex} records={delve} store={achievements} {wins} items={engine.items} />
   {:else}
 
-  <section class="summary" in:fly={calm({ y: 20, duration: 700, delay: 150 })}>
+  <section class="summary">
     {#if stats.seen}
       <div class="side">
         <div class="stat">
@@ -312,25 +309,11 @@
       </div>
     {/if}
 
-    <div class="medallion">
-      <ArcaneCircle size="100%" strength={0.3} />
-      <svg class="progress" viewBox="-100 -100 200 200" aria-hidden="true">
-        <defs>
-          <linearGradient id="codex-arc" x1="0" y1="-1" x2="0" y2="1">
-            <stop offset="0" stop-color="#fbe6b0" />
-            <stop offset="0.5" stop-color="#c9a45c" />
-            <stop offset="1" stop-color="#e08a44" />
-          </linearGradient>
-        </defs>
-        <circle class="track" r="80" />
-        {#if found > 0}<circle class="arc" r="80" pathLength="100" style:stroke-dasharray="{found * 100} 100" />{/if}
-      </svg>
-      <div class="medal-text">
-        <span class="medal-value">{stats.seen}</span>
-        <span class="medal-of">of {stats.total}</span>
-        <span class="medal-label">discovered</span>
-      </div>
-    </div>
+    <CodexMedallion share={found}>
+      <span class="medal-value">{stats.seen}</span>
+      <span class="medal-of">of {stats.total}</span>
+      <span class="medal-label">discovered</span>
+    </CodexMedallion>
 
     {#if stats.seen}
       <div class="side">
@@ -349,7 +332,7 @@
   </section>
 
   {#if !stats.seen}
-    <div class="empty" in:fly={calm({ y: 20, duration: 700, delay: 300 })}>
+    <div class="empty">
       <p>Your codex is still blank.</p>
       <p class="muted">
         Every item revealed in your games is written into it, with how often you named it right. It is kept in this browser only.
@@ -357,7 +340,7 @@
       <button class="btn primary" onclick={closeCodex}>Begin the hunt</button>
     </div>
   {:else}
-    <div class="split" in:fly={calm({ y: 20, duration: 700, delay: 250 })}>
+    <div class="split">
       <section class="panel" use:backdropShadow={{ fill: 'linear' }}>
         <header><h2>By question</h2></header>
         {@render bars([
@@ -378,9 +361,11 @@
               <button class="cat" class:on={only === c.category} aria-pressed={only === c.category} onclick={() => showCategory(c.category)} title="Show {c.category}">
                 <span class="cat-name">
                   {@render glyph(c.category)}
-                  <span class="bar-name">{c.category}</span>
+                  <span class="cat-label">
+                    <span class="bar-name">{c.category}</span>
+                    <span class="found" title="{c.seen} of {c.total} discovered">({c.seen}/{c.total})</span>
+                  </span>
                 </span>
-                <span class="found" title="{c.seen} of {c.total} discovered">{c.seen}/{c.total}</span>
                 {@render meter(c, c.category)}
                 <span class="bar-value">{c.n ? pct(c) : ''}</span>
               </button>
@@ -390,7 +375,7 @@
       </section>
     </div>
 
-    <div class="insights" in:fly={calm({ y: 20, duration: 700, delay: 350 })}>
+    <div class="insights">
       <section class="panel" use:backdropShadow={{ fill: 'linear' }}>
         <header><h2>Nemeses</h2></header>
         {#if stats.nemeses.length}
@@ -766,51 +751,6 @@
     font-style: italic;
     color: var(--muted);
   }
-  .medallion {
-    grid-column: 2;
-    position: relative;
-    isolation: isolate;
-    width: 240px;
-    height: 240px;
-    display: grid;
-    place-items: center;
-  }
-  .medallion :global(.arcane) {
-    z-index: -1;
-  }
-  .progress {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    rotate: -90deg;
-    overflow: visible;
-  }
-  .track {
-    fill: rgba(8, 6, 4, 0.75);
-    stroke: rgba(125, 99, 51, 0.35);
-    stroke-width: 6;
-  }
-  .arc {
-    fill: none;
-    stroke: url(#codex-arc);
-    stroke-width: 4;
-    stroke-linecap: round;
-    filter: drop-shadow(0 0 4px rgba(224, 138, 68, 0.8));
-    animation: fill-arc 1.6s var(--ease-out) 0.4s both;
-  }
-  @keyframes fill-arc {
-    from {
-      stroke-dasharray: 0 100;
-    }
-  }
-  .medal-text {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    line-height: 1.1;
-  }
   .medal-value {
     font-size: 3.2rem;
   }
@@ -888,9 +828,9 @@
     align-items: center;
     gap: 0.7rem;
   }
-  /* The header and each category share the same columns: name, found, accuracy bar and figure. */
+  /* The header and each category share the same columns: name (with how many are found), accuracy bar and figure. */
   .by-cat {
-    --cols: minmax(0, 1fr) 3.2rem minmax(40px, 9rem) 2.8rem;
+    --cols: minmax(0, 1fr) minmax(40px, 9rem) 2.8rem;
   }
   .bars.cats {
     gap: 0.1rem;
@@ -914,10 +854,10 @@
     column-gap: 0.7rem;
   }
   .cat-cols h2 {
-    grid-column: 1 / 3;
+    grid-column: 1;
   }
   .col-label {
-    grid-column: 3 / 5;
+    grid-column: 2 / 4;
     justify-self: end;
     font-family: var(--font-display);
     font-size: 0.72rem;
@@ -944,10 +884,11 @@
     font-size: 0.85rem;
   }
   .found {
+    flex: none;
     font-family: var(--font-cinzel);
     font-size: 0.8rem;
     color: var(--muted);
-    text-align: right;
+    white-space: nowrap;
   }
   .cat {
     width: calc(100% + 1.2rem);
@@ -965,6 +906,15 @@
     display: flex;
     align-items: center;
     gap: 0.55rem;
+    min-width: 0;
+    /* Keeps the count further from the bar than the accuracy figure on the bar's other side. */
+    padding-right: 0.9rem;
+  }
+  /* The name and its count share a baseline, though their fonts differ. */
+  .cat-label {
+    display: flex;
+    align-items: baseline;
+    gap: 0.35rem;
     min-width: 0;
   }
   .cat:hover {
@@ -1476,11 +1426,6 @@
       grid-template-columns: 1fr 1fr;
       row-gap: 1rem;
     }
-    .medallion {
-      grid-column: 1 / -1;
-      grid-row: 1;
-      justify-self: center;
-    }
     .split {
       grid-template-columns: 1fr;
     }
@@ -1514,10 +1459,6 @@
     .side {
       justify-content: space-around;
     }
-    .medallion {
-      width: 210px;
-      height: 210px;
-    }
     .medal-value {
       font-size: 2.8rem;
     }
@@ -1529,7 +1470,7 @@
       gap: 0.5rem;
     }
     .by-cat {
-      --cols: minmax(0, 1fr) 2.8rem minmax(30px, 4rem) 2.6rem;
+      --cols: minmax(0, 1fr) minmax(30px, 3.2rem) 2.6rem;
     }
     .cat,
     .panel header.cat-cols {

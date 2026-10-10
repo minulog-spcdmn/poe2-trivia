@@ -30,5 +30,8 @@ class Motion {
 
 export const motion = new Motion();
 
+/** A transition's settings, for Svelte's transitions (they run whatever the system says): held still (reduced motion, or the effects off), things just appear. */
+export const calm = <T extends { duration?: number; delay?: number }>(p: T): T => (motion.still ? { ...p, duration: 0, delay: 0 } : p);
+
 query?.addEventListener('change', () => (motion.reduced = query.matches));
 if (root && typeof MutationObserver === 'function') new MutationObserver(() => flips++).observe(root, { attributes: true, attributeFilter: ['data-still'] });
