@@ -23,3 +23,6 @@ export function inviteUrl(code: string, by?: string) {
   const base = (import.meta as ImportMeta & { env?: { DEV?: boolean } }).env?.DEV || LOCAL ? `${location.origin}${location.pathname}` : PLAY_URL;
   return `${base}?room=${code}` + (by ? `&by=${encodeURIComponent(by)}` : '');
 }
+
+/** Said wherever joining a room is decided (the lobby, the invite screen): what joining shares. */
+export const IP_NOTE = "Players in a room connect directly, so they can see each other's IP address. Only play with people you're comfortable sharing that with.";

@@ -31,9 +31,12 @@ export const DIALOG_BLUR = 3;
 
 const backdrops: HTMLElement[] = [];
 
-/** Svelte action for a dialog's backdrop: moves it to the end of <body> and dims the page while it's there. */
+/** Svelte action for a dialog's backdrop: moves it to the end of <body>, at the page's scale, and dims the page while it's there. */
 export function dialogBackdrop(node: HTMLElement) {
   document.body.append(node);
+  // Out of the app's shell, so scaled here as the shell is on large windows
+  // (lib/stage.ts): every dialog at the page's scale, whoever writes it.
+  node.style.zoom = 'var(--stage-zoom, 1)';
   backdrops.push(node);
   changed();
   return {

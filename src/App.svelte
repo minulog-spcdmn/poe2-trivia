@@ -686,7 +686,6 @@
     color: var(--gold-hi);
   }
   .modal-backdrop {
-    zoom: var(--stage-zoom, 1);
     position: fixed;
     inset: 0;
     /* Below the effects layer (z-index 95), so the dialog's buttons get their

@@ -9,12 +9,12 @@
   import ModeIcon from './ModeIcon.svelte';
   import { bestOf, findsMet, lastOf, loadRecords } from '../lib/delveRecord';
   import { MAX_NAME, isHeldName, nameHeld, nameTooShort } from '../lib/names';
-  import { inviteUrl } from '../lib/site';
+  import { IP_NOTE, inviteUrl } from '../lib/site';
   import Avatar from './Avatar.svelte';
   import PlayerName from './PlayerName.svelte';
   import { backdropShadow } from '../lib/backdropShadow';
   import { kickConfirm } from '../lib/kick';
-  import { creatorArrived, glyphLanded, playerArrived, refuse, twinkle } from '../lib/fx/moments';
+  import { creatorArrived, playerArrived, refuse, twinkle } from '../lib/fx/moments';
   import { onMount } from 'svelte';
   import { categoryIcons, playerColor } from '../lib/ui';
   import { measure } from '../lib/iconFit.svelte';
@@ -23,6 +23,8 @@
   import WatchToggle from './WatchToggle.svelte';
   import { MediaQuery } from 'svelte/reactivity';
   import { unzoomPin } from '../lib/stage';
+  import HostMark from './HostMark.svelte';
+  import RoomCodeGlyphs from './RoomCodeGlyphs.svelte';
 
   const TARGETS = [5, 10, 15, 20];
   const MODES: { id: GameMode; name: string; beta?: boolean }[] = [
@@ -76,40 +78,11 @@
     return () => clearTimeout(t);
   });
 
-  /** Svelte action: sparks when a code letter lands (its drop animation is staggered by index). */
-  function landing(node: HTMLElement, i: number) {
-    const t = setTimeout(() => glyphLanded(node), 330 + i * 80);
-    return { destroy: () => clearTimeout(t) };
-  }
-
   /** Svelte action: a new player's row arrives with a flash (zoe_arcana's is her own). */
   function arriving(node: HTMLElement, name: string) {
     if (!settled) return;
     const t = setTimeout(() => (isHeldName(name) ? creatorArrived(node) : playerArrived(node)), 120);
     return { destroy: () => clearTimeout(t) };
-  }
-
-  /**
-   * Each letter is its own box, so a plain copy puts line breaks (pasted as
-   * spaces) between them. Copy just the letters instead.
-   */
-  function copyCode(e: ClipboardEvent) {
-    const text = getSelection()?.toString().replace(/\s/g, '');
-    if (!text || !e.clipboardData) return;
-    e.clipboardData.setData('text/plain', text);
-    e.preventDefault();
-  }
-
-  /**
-   * The code selected (to copy it by hand): the browser's own highlight is
-   * hidden, boxes and gaps alike, and the letters light up instead. Dragging
-   * a selection would only drag a picture of it, so that is off.
-   */
-  let glyphsEl = $state<HTMLElement>();
-  let codeSelected = $state(false);
-  function selectionChanged() {
-    const sel = getSelection();
-    codeSelected = !!glyphsEl && !!sel && !sel.isCollapsed && sel.containsNode(glyphsEl, true);
   }
 
   let copyBtn = $state<HTMLButtonElement>();
@@ -120,21 +93,30 @@
   let confirming = $state<string | null>(null);
   const kicker = kickConfirm((id) => (confirming = id));
   onMount(() => kicker.dispose);
+  /** Who was removed here (a kick confirmed, or hot-seat's ×): their chips go out with the red flare. */
+  const removed = new Set<string>();
   function removePlayer(id: string) {
-    if (local) session.dispatch({ type: 'remove', playerId: id });
-    else if (kicker.click(id)) session.kick(id);
+    if (local) {
+      removed.add(id);
+      session.dispatch({ type: 'remove', playerId: id });
+    } else if (kicker.click(id)) {
+      removed.add(id);
+      session.kick(id);
+    }
   }
-  /** A leaving chip shrinks a little as it fades, and a removed one (hot-seat's ×, or a kick still armed: lib/kick) goes out with a red flare: the others then close up (flip).
-      One that left by itself goes quietly.
+  /** A leaving chip shrinks a little as it fades, and a removed one (kicked, or hot-seat's ×) goes out with a red flare: the others then close up (flip).
+      One that left by itself goes quietly, even with its × armed at that moment.
       It shrinks with `scale`, not `transform`: Svelte pins a leaving chip in place with a transform, which a transform here would override (the chip would jump to the grid's first cell);
-      that pin is measured on screen, so under the stage's zoom it is scaled back (unzoomPin). */
+      that pin is measured on screen, so under the stage's zoom it is scaled back (unzoomPin), each time the chip leaves (deferred: see pinnedOut). */
   function kickOut(node: Element) {
-    unzoomPin(node);
-    const removed = local || node.classList.contains('armed');
-    return {
-      duration: 320,
-      css: (t: number) =>
-        `opacity: ${t}; scale: ${0.9 + 0.1 * t};` + (removed ? ` box-shadow: 0 0 ${18 * (1 - t)}px rgba(224, 85, 63, ${0.7 * (1 - t) * t * 4});` : ''),
+    return () => {
+      unzoomPin(node);
+      const flare = removed.has((node as HTMLElement).dataset.id ?? '');
+      return {
+        duration: 320,
+        css: (t: number) =>
+          `opacity: ${t}; scale: ${0.9 + 0.1 * t};` + (flare ? ` box-shadow: 0 0 ${18 * (1 - t)}px rgba(224, 85, 63, ${0.7 * (1 - t) * t * 4});` : ''),
+      };
     };
   }
   /** Escape takes an armed kick back. */
@@ -283,13 +265,8 @@
           <header>
             <h2>Room code</h2>
           </header>
-          <div class="code" class:hidden={session.hideCode} class:selected={codeSelected} aria-label={session.hideCode ? 'Room code hidden' : `Room code ${session.code}`}>
-            <!-- svelte-ignore a11y_no_static_element_interactions (the dragstart only stops a drag of the selection) -->
-            <span class="glyphs" bind:this={glyphsEl} oncopy={copyCode} ondragstart={(e) => e.preventDefault()}>
-              {#each session.code.split('') as ch, i (i)}
-                <span class="glyph" use:landing={i} style:animation-delay="{i * 80}ms" style:--i={i}>{session.hideCode ? '•' : ch}</span>
-              {/each}
-            </span>
+          <div class="code" aria-label={session.hideCode ? 'Room code hidden' : `Room code ${session.code}`}>
+            <RoomCodeGlyphs code={session.code} hidden={session.hideCode} sparks />
           </div>
           <div class="invite-row">
             <!-- A locked or full room takes nobody new: the link isn't offered then, and the button says why. -->
@@ -359,7 +336,7 @@
             </p>
           {/if}
           <!-- The same words as the start page's note on open rooms, said where joining is decided. -->
-          <p class="ip-note">Players in a room connect directly, so they can see each other's IP address. Only play with people you're comfortable sharing that with.</p>
+          <p class="ip-note">{IP_NOTE}</p>
         </section>
       {/if}
 
@@ -405,6 +382,7 @@
               animate:flip={{ duration: 300 }}
               in:fly={{ x: -20, duration: 350 }}
               out:kickOut
+              data-id={p.id}
               class:armed={confirming === p.id}
               style:--c={playerColor(p.hue)}
             >
@@ -412,7 +390,7 @@
               <span class="name" title={p.name}><PlayerName name={p.name} />{#if !local && p.id === session.myPlayerId && s.players.length > 1}<em>&nbsp;(you)</em>{/if}</span>
               {#if !p.connected}<span class="tag" title="Reconnecting. Their seat is let go if they're not back when the game starts.">Offline</span>{/if}
               <!-- The host's chip carries a hanging banner, the party's standard, where the others have their ×. -->
-              {#if p.id === s.hostId && !local}<span class="host" role="img" aria-label="Host" title="Host"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 3.5h15" /><path d="M7 3.5V19l5-3.4 5 3.4V3.5" /><path d="M12 7.2l1.6 1.6-1.6 1.6-1.6-1.6z" /></svg></span>{/if}
+              {#if p.id === s.hostId && !local}<HostMark />{/if}
               {#if isHost && (local || p.id !== s.hostId)}
                 <button
                   class="remove"
@@ -432,7 +410,7 @@
                 class:confirm={confirming === o.id}
                 title="Remove {o.name}"
                 aria-label="Remove {o.name}"
-                onclick={() => kicker.click(o.id) && session.kick(o.id)}>{confirming === o.id ? 'Kick' : '×'}</button
+                onclick={() => kicker.click(o.id) && (removed.add(o.id), session.kick(o.id))}>{confirming === o.id ? 'Kick' : '×'}</button
               >{/if}{/each}
         {/snippet}
         {#if waiting.length}
@@ -608,7 +586,6 @@
 </div>
 
 <svelte:window onkeydown={disarm} onpointerdown={disarmOutside} />
-<svelte:document onselectionchange={selectionChanged} />
 
 {#if editing && isHost && difficulty === 'custom' && !delve}
   <CustomDifficulty onclose={() => (editing = false)} />
@@ -626,9 +603,6 @@
     align-items: center;
     gap: 0.7rem;
     flex-wrap: wrap;
-  }
-  .code.hidden .glyph {
-    color: var(--gold-lo);
   }
   .lock {
     display: inline-flex;
@@ -823,91 +797,9 @@
     line-height: 1.4;
     color: #8f8370;
   }
-  .code,
-  .glyphs {
+  .code {
     display: flex;
-    gap: 0.5rem;
     width: 100%;
-  }
-  /* The boxes share the panel's width, so the letters are sized from it (six
-     boxes, five gaps), never wider than a box: an M or a W must not be clipped. */
-  .glyphs {
-    container-type: inline-size;
-  }
-  /* One click or long press selects the whole code. */
-  .glyphs {
-    -webkit-user-select: all;
-    user-select: all;
-  }
-  /* Selected, the letters light up in place of the browser's highlight. */
-  .glyphs ::selection,
-  .glyphs::selection {
-    background: transparent;
-    color: inherit;
-  }
-  .code.selected .glyph {
-    color: #fff4dc;
-    border-color: var(--gold);
-    background: linear-gradient(180deg, #3a2a15, #17100a);
-    box-shadow:
-      inset 0 0 22px rgba(241, 217, 155, 0.22),
-      0 0 16px rgba(201, 164, 92, 0.35),
-      0 6px 18px rgba(0, 0, 0, 0.6);
-    text-shadow: 0 0 18px rgba(255, 230, 170, 0.75);
-  }
-  .glyph {
-    flex: 1;
-    min-width: 0;
-    height: clamp(58px, 14vw, 72px);
-    display: grid;
-    place-items: center;
-    font-family: var(--font-cinzel);
-    font-weight: 900;
-    font-size: min(2.6rem, (100cqi - 5 * 0.5rem) / 6 * 0.74);
-    color: var(--gold-hi);
-    background: linear-gradient(180deg, #221a11, #0d0a07);
-    border: 1px solid var(--gold-lo);
-    border-radius: 4px;
-    box-shadow:
-      inset 0 0 18px rgba(201, 164, 92, 0.12),
-      0 6px 18px rgba(0, 0, 0, 0.6);
-    text-shadow: 0 0 16px rgba(241, 217, 155, 0.45);
-    transition:
-      color 0.15s,
-      border-color 0.15s,
-      background 0.15s,
-      box-shadow 0.15s,
-      text-shadow 0.15s;
-    animation: drop 0.6s var(--ease-back) both;
-    position: relative;
-    overflow: hidden;
-  }
-  /* Light glances off the letters one after another. */
-  .glyph::after {
-    content: '';
-    position: absolute;
-    inset: -20% auto -20% -80%;
-    width: 60%;
-    background: linear-gradient(100deg, transparent, rgba(255, 240, 200, 0.22), transparent);
-    transform: skewX(-16deg);
-    animation: glance 6s ease-in-out infinite;
-    animation-delay: calc(1.2s + var(--i, 0) * 0.12s);
-    pointer-events: none;
-  }
-  @keyframes glance {
-    0% {
-      translate: 0 0;
-    }
-    18%,
-    100% {
-      translate: 420% 0;
-    }
-  }
-  @keyframes drop {
-    from {
-      opacity: 0;
-      transform: translateY(-18px) rotateX(70deg);
-    }
   }
 
   .cols {
@@ -979,24 +871,6 @@
   .chips .name em {
     color: var(--muted);
     font-size: 0.85em;
-  }
-  /* The host: a hanging banner, the party's standard, where the others have their ×. Not the diamond: that is the menu's cursor, "you are here". */
-  .host {
-    flex: none;
-    display: grid;
-    place-items: center;
-    margin: 0 0.2rem 0 0.3rem;
-    color: #d8b56e;
-    filter: drop-shadow(0 0 5px rgba(241, 217, 155, 0.45));
-  }
-  .host svg {
-    width: 22px;
-    height: 22px;
-    fill: none;
-    stroke: currentColor;
-    stroke-width: 1.7;
-    stroke-linecap: round;
-    stroke-linejoin: round;
   }
   .count {
     display: inline-flex;
@@ -1565,13 +1439,6 @@
     }
     .code {
       align-items: center;
-    }
-    .code,
-    .glyphs {
-      gap: 0.35rem;
-    }
-    .glyph {
-      height: 54px;
     }
     .seg > button {
       min-width: 40px;

@@ -58,4 +58,7 @@ test("a listed room's line tells its mode and how it plays, and a Delve run its 
   assert.equal(roomMeta(room({ mode: 'delve', phase: 'question', depth: 15 })), 'Delve · depth 14 · 3/12', 'the depth as players count it');
   assert.equal(roomMeta(room({ mode: 'delve', phase: 'choosing', depth: 1 })), 'Delve · at the entrance · 3/12');
   assert.equal(roomMeta(room({ mode: 'delve', phase: 'question' })), 'Delve · in a game · 3/12', 'a host too old to say its depth');
+  assert.equal(roomMeta(room({ phase: 'locked' })), 'Turns · Cruel · 3/12', 'locked: in its lobby or playing, the listing cannot tell');
+  assert.equal(roomMeta(room({ mode: 'delve', phase: 'locked', depth: 15 })), 'Delve · depth 14 · 3/12');
+  assert.equal(roomMeta(room({ mode: 'delve', phase: 'over', depth: 1 })), 'Delve · depth 0 · 3/12', 'a finished run is not waiting at the entrance');
 });

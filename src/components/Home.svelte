@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy, tick, untrack } from 'svelte';
   import { fade, fly } from 'svelte/transition';
-  import { NAME_TOO_SHORT, MAX_NAME, cleanName, nameHeld, nameTooShort, unlockHeldName } from '../lib/names';
+  import { NAME_TOO_SHORT, MAX_NAME, cleanName, isHeldName, nameHeld, nameTooShort, unlockHeldName } from '../lib/names';
   import { toasts } from '../lib/toasts.svelte';
   import { engine, session, savedName, saveName, CODE_LENGTH } from '../lib/session.svelte';
   import { CREATOR, CREATOR_URL, DONATE_URL, IMPRINT_URL, PRIVACY_URL } from '../lib/site';
@@ -29,9 +29,13 @@
   /**
    * Who sent it (?by=NAME, added by the lobby's invite link), so the screen
    * can say whose room it is. Anyone can write a link, so it is cleaned as
-   * every name is (no bidi overrides, zalgo or invisible characters).
+   * every name is (no bidi overrides, zalgo or invisible characters), and
+   * the held name is never taken from one: the game only gives it to its
+   * owner's unlocked device, which a link can't show. (The room's real host
+   * is in the lobby once joined.)
    */
-  const inviteHost = cleanName(params.get('by'));
+  const linkedHost = cleanName(params.get('by'));
+  const inviteHost = isHeldName(linkedHost) ? '' : linkedHost;
   if (params.has('owner')) {
     void unlockHeldName(params.get('owner') ?? '');
     // Out of the address bar and history either way; other params stay.
@@ -528,7 +532,7 @@
     {#if invite}
       <InviteRoom code={invite} host={inviteHost} name={inviteName} />
     {:else}
-      <DailyUnique />
+      <DailyUnique disabled={connecting} />
     {/if}
   </div>
 

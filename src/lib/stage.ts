@@ -33,9 +33,15 @@ export function unzoomPin(node: Element) {
   );
 }
 
-/** An out-transition for an item of an animated list: `transition`, with the item pinned where it stood under zoom (unzoomPin). */
+/**
+ * An out-transition for an item of an animated list: `transition`, with the
+ * item pinned where it stood under zoom (unzoomPin). Deferred (Svelte calls
+ * the function each time the outro starts), as Svelte keeps an out-only
+ * transition's options: an item that leaves, comes back and leaves again is
+ * pinned afresh, and fixed afresh.
+ */
 export function pinnedOut<P, R>(transition: (node: Element, params: P) => R) {
-  return (node: Element, params: P): R => {
+  return (node: Element, params: P) => () => {
     unzoomPin(node);
     return transition(node, params);
   };

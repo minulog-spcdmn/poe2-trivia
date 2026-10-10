@@ -9,7 +9,7 @@
   import itemData from '../data/items.json';
   import fakeNames from '../data/fakes.json';
   import { engine, session } from '../lib/session.svelte';
-  import { zoomOf } from '../lib/stage';
+  import { glare } from '../lib/glare';
   import { codexRoute } from '../lib/codexRoute.svelte';
   import { isFake, questionTopic, type Item, type Question } from '../lib/game';
   import { answerDaily, answeredOn, askOne, dailyGame, dailyQuestion, dayNumber, loadDaily, nextIn, saveDaily, streakOn, utcDay } from '../lib/daily';
@@ -22,11 +22,19 @@
 
   let { disabled = false }: { disabled?: boolean } = $props();
 
-  // The clock moves on (the hours left, and past midnight UTC a new day).
+  // The clock moves on (the hours left, and past midnight UTC a new day):
+  // every minute, and at once when the tab is looked at again (a tab in the
+  // background ticks seldom).
   let now = $state(Date.now());
   onMount(() => {
-    const t = setInterval(() => (now = Date.now()), 60_000);
-    return () => clearInterval(t);
+    const tick = () => (now = Date.now());
+    const t = setInterval(tick, 60_000);
+    const seen = () => document.visibilityState === 'visible' && tick();
+    document.addEventListener('visibilitychange', seen);
+    return () => {
+      clearInterval(t);
+      document.removeEventListener('visibilitychange', seen);
+    };
   });
   const today = $derived(utcDay(now));
   const daily = $derived(dailyQuestion(itemData as Item[], fakeNames, today));
@@ -74,6 +82,11 @@
 
   function pick(i: number) {
     if (answered || disabled) return;
+    // Past midnight UTC since the clock last moved: that was yesterday's question. Today's comes up instead.
+    if (!practice && utcDay(Date.now()) !== today) {
+      now = Date.now();
+      return;
+    }
     // Another tab may have answered today's meanwhile: that answer stands.
     if (!practice) {
       const stored = loadDaily();
@@ -168,17 +181,6 @@
   }
 
   const upper = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
-
-  /** The answers' glow follows the mouse. */
-  function glare(e: PointerEvent) {
-    if (e.pointerType !== 'mouse') return;
-    const el = e.currentTarget as HTMLElement;
-    const r = el.getBoundingClientRect();
-    // On screen, so undone of the stage's zoom (lib/stage.ts) to land in the answer's own px.
-    const z = zoomOf(el);
-    el.style.setProperty('--gx', `${((e.clientX - r.left) / z).toFixed(0)}px`);
-    el.style.setProperty('--gy', `${((e.clientY - r.top) / z).toFixed(0)}px`);
-  }
 </script>
 
 <svelte:window onkeydown={keys} />

@@ -74,12 +74,17 @@ const MODE_NAMES = { turns: 'Turns', race: 'Race', delve: 'Delve' } as const;
 /**
  * A listed room's line under its host: "Turns · Cruel · 3/12" while it
  * gathers, "Turns · in a game · 4/12" once it plays, and for a Delve run
- * under way the depth it has reached ("Delve · depth 14 · 4/12").
+ * under way the depth it has reached ("Delve · depth 14 · 4/12"). A locked
+ * room may be either (the listing only says it is locked), so it gives its
+ * settings and claims neither.
  */
 export function roomMeta(r: RoomInfo): string {
+  const gathering = r.phase === 'lobby' || r.phase === 'locked';
   let how: string | null;
-  if (r.phase === 'lobby') how = r.mode === 'delve' ? null : DIFFICULTY_NAMES[r.difficulty];
-  else if (r.mode === 'delve' && r.depth) how = shownDepth(r.depth) > 0 ? `depth ${shownDepth(r.depth)}` : 'at the entrance';
+  if (r.mode === 'delve' && r.depth && r.phase !== 'lobby') {
+    // A finished run that never left the entrance still reads as its depth, not as one waiting there.
+    how = shownDepth(r.depth) > 0 || r.phase === 'over' ? `depth ${Math.max(0, shownDepth(r.depth))}` : 'at the entrance';
+  } else if (gathering) how = r.mode === 'delve' ? null : DIFFICULTY_NAMES[r.difficulty];
   else how = 'in a game';
   return [MODE_NAMES[r.mode], how, `${r.players}/${r.maxPlayers}`].filter(Boolean).join(' · ');
 }
