@@ -473,6 +473,9 @@ input {
 .art-slot {
   position: relative;
   display: grid;
+  /* One fixed cell, so a picture wider than it (a round fit) spills out
+     evenly on both sides instead of stretching the cell to the right. */
+  grid-template: minmax(0, 1fr) / minmax(0, 1fr);
   place-items: center;
   width: 100%;
   height: 100%;

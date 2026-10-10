@@ -400,7 +400,7 @@
 
       <nav class="menu" class:renaming class:lit aria-label="Start" onfocusin={focusIn} onfocusout={focusOut}>
         <!-- One cursor for the menu: it glides to the entry under the mouse (or the
-             keyboard's), and goes out once nothing is pointed at. -->
+             keyboard's), and cools away once nothing is pointed at. -->
         <MenuCursor at={cursor} {lit} />
         {#each ENTRIES as e, i (e)}
           {@const isOpen = open === e && !connecting}
@@ -1035,8 +1035,7 @@
       min-height: 98px;
       padding-bottom: 12px;
     }
-    .menu :global(.cursor),
-    .menu :global(.streak) {
+    .menu :global(.cursor) {
       display: none;
     }
     .pick {
