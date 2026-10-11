@@ -10,6 +10,7 @@
 import { accentAt, stratumName } from './descent.ts';
 import { biomeAt } from './backdrops.ts';
 import { delveLockout, delveRules, delveTimer, findChance, opensZone, shownDepth, FIND_FADE_FROM, FINDS_IN_ORDER, type FindKind } from './delve.ts';
+import { TWINS } from './game.ts';
 import { roman } from './roman.ts';
 import type { Sfx } from './sound.ts';
 
@@ -210,6 +211,12 @@ function changesAt(x: number): News[] {
     if (starts && was === 0 && now > 0) out.push({ key: `${k}:start`, depth: x, rank: 2, mark: { sign: k }, all: false, label: starts, spoken: starts.toLowerCase() });
     if (everywhere && was < 1 && now >= 1) out.push({ key: `${k}:all`, depth: x, rank: 3, mark: { sign: k }, all: true, label: everywhere, spoken: everywhere.toLowerCase() });
   }
+  // Twins (game.ts TWINS) side by side from here: "Twin rings and gems".
+  const whats = [...new Set(TWINS.filter((t) => t.depth === x).map((t) => t.what))];
+  if (whats.length) {
+    const label = `Twin ${whats.join(' and ')}`;
+    out.push({ key: `twins:${x}`, depth: x, rank: 2, mark: { sign: 'looks' }, all: false, label, spoken: `${label.toLowerCase()} side by side` });
+  }
   const steps: [string, (d: number) => number, string, string][] = [
     ['options', (d) => delveRules(d).options, 'Options', 'options'],
     ['fakes', (d) => delveRules(d).fakes, 'Made-up names', 'made-up names'],
@@ -225,7 +232,8 @@ function changesAt(x: number): News[] {
 /**
  * What is new in the zone that depth `d0` opens, through its ten depths
  * (each compared with the one before): finds that turn up, or thin out past
- * depth 100; rules that start, or reach every question; the steps in the
+ * depth 100; rules that start, or reach every question; twins that start
+ * to meet; the steps in the
  * options, the made-up names and the lockout, each at the zone's last; and
  * the clock, at its shortest, if it is shorter by the zone's end. The
  * NEWS_MOST that matter most (by rank, then depth), in the order they come.

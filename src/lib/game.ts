@@ -205,6 +205,17 @@ export const RARE_GROUPS: Record<string, number> = { Tablets: 0.25 };
 const weightOf = (it: Item) => RARE_GROUPS[it.group] ?? 1;
 
 /**
+ * How questions are dealt, for Today's unique, which deals each day as it
+ * was first dealt (daily.ts DAILY_DEALINGS): bumped with every change to
+ * which items or names a seeded question shows. 1: before twins; 2: twins
+ * (TWINS) kept apart.
+ */
+export const DEALING = 2;
+
+/** The deepest twins (TWINS) that may meet under `rules`: Delve's depth, elsewhere all or none. */
+const twinReach = (rules: DifficultyRules) => rules.twins ?? (rules.similarNames >= 1 ? Infinity : 0);
+
+/**
  * Items whose art only a detail tells apart, by name (each set from one
  * group). Players found them a coin toss, but they can be learnt, so they
  * meet in a question (one the answer and another a wrong option, or two
@@ -216,17 +227,18 @@ const weightOf = (it: Item) => RARE_GROUPS[it.group] ?? 1;
  * alone (`colour`) never meets in a question whose art is in grayscale,
  * where nothing could tell them apart.
  */
-export const TWINS: { names: readonly string[]; depth: number; colour?: true }[] = [
+export const TWINS: { names: readonly string[]; depth: number; colour?: true; what: string }[] = [
+  // Each comes in with a zone, whose card says so (lib/zoneTitle.ts, `what` they are).
   // Two stones each, told apart mostly by their colours.
-  { names: ["Berek's Grip", "Berek's Pass", "Berek's Respite"], depth: 50 },
+  { names: ["Berek's Grip", "Berek's Pass", "Berek's Respite"], depth: 51, what: 'rings' },
   // The same brooch, turned another way.
-  { names: ["Zarokh's Refrain", "Zarokh's Revolt"], depth: 50 },
+  { names: ["Zarokh's Refrain", "Zarokh's Revolt"], depth: 51, what: 'gems' },
   // The same lantern, at another angle or in another light.
-  { names: ["Uhtred's Omen", "Uhtred's Augury", "Uhtred's Exodus"], depth: 50 },
+  { names: ["Uhtred's Omen", "Uhtred's Augury", "Uhtred's Exodus"], depth: 51, what: 'gems' },
   // The same sceptre, its glow cyan, red or violet.
-  { names: ['Guiding Palm of the Eye', 'Guiding Palm of the Heart', 'Guiding Palm of the Mind'], depth: 60, colour: true },
+  { names: ['Guiding Palm of the Eye', 'Guiding Palm of the Heart', 'Guiding Palm of the Mind'], depth: 61, colour: true, what: 'sceptres' },
   // The same band, its blue and gold swapped and its glyph changed.
-  { names: ['Call of the Brotherhood', 'Whisper of the Brotherhood'], depth: 70 },
+  { names: ['Call of the Brotherhood', 'Whisper of the Brotherhood'], depth: 71, what: 'rings' },
 ];
 
 /**
@@ -1102,10 +1114,10 @@ export class Engine {
   /**
    * `fakes`: made-up names for items, by item name (src/data/fakes.json).
    * `looks`: the look-alike table, if at hand already (else see setLooks).
-   * `twins`: false lets twins (TWINS) meet anywhere, as they did before
-   * there were any (Today's unique, on the days it was dealt so).
+   * `dealing`: deal as DEALING was then (Today's unique, on the days it was
+   * dealt so); the current one by default.
    */
-  constructor(items: Item[], opts: { rng?: Rng; now?: () => number; fakes?: Record<string, string[]>; looks?: Looks | null; twins?: boolean } = {}) {
+  constructor(items: Item[], opts: { rng?: Rng; now?: () => number; fakes?: Record<string, string[]>; looks?: Looks | null; dealing?: number } = {}) {
     this.items = items;
     this.byId = new Map(items.map((it) => [it.id, it]));
     this.fakes = new Map(items.filter((it) => opts.fakes?.[it.name]?.length).map((it) => [it.id, opts.fakes![it.name]]));
@@ -1120,7 +1132,7 @@ export class Engine {
     this.now = opts.now ?? Date.now;
     this.looks = opts.looks ?? null;
     const byName = new Map(items.map((it) => [it.name, it]));
-    this.twins = opts.twins === false ? [] : TWINS.map(({ names, ...when }) => ({ items: names.flatMap((n) => byName.get(n) ?? []), ...when })).filter((t) => t.items.length > 1);
+    this.twins = (opts.dealing ?? DEALING) < 2 ? [] : TWINS.map(({ names, ...when }) => ({ items: names.flatMap((n) => byName.get(n) ?? []), ...when })).filter((t) => t.items.length > 1);
   }
 
   /**
@@ -2482,20 +2494,24 @@ export class Engine {
 
   /** The sets of twins (TWINS) that may not meet under `rules`, in a question whose art is `gray` or not. */
   private apartTwins(rules: DifficultyRules, gray: boolean): Item[][] {
-    const reach = rules.twins ?? (rules.similarNames >= 1 ? Infinity : 0);
+    const reach = twinReach(rules);
     return this.twins.flatMap((t) => (t.depth > reach || (t.colour && gray) ? [t.items] : []));
   }
 
   /**
    * The twins that sit out a question about `answer`: of each set in `apart`,
    * all but the answer, or, the answer being none of them, all but one of
-   * those in `unused` (the category's unseen items), picked at random.
+   * those in `unused` (the category's unseen items), picked at random, or
+   * of the whole set when all of them were seen (as a decoy once the unseen
+   * run out). A set from another category only comes up as the very last
+   * resort, from all items, so it keeps its first without a roll.
    */
   private benchTwins(answer: Item, apart: Item[][], unused: ReadonlySet<Item>): Set<string> {
     const out = new Set<string>();
     for (const set of apart) {
       const open = set.filter((it) => unused.has(it));
-      const keep = set.includes(answer) ? answer : open.length > 1 ? open[Math.floor(this.rng() * open.length)] : (open[0] ?? set[0]);
+      const pick = open.length ? open : set[0].category === answer.category ? set : [];
+      const keep = set.includes(answer) ? answer : pick.length > 1 ? pick[Math.floor(this.rng() * pick.length)] : (pick[0] ?? set[0]);
       for (const it of set) if (it !== keep) out.add(it.id);
     }
     return out;
@@ -2617,16 +2633,20 @@ export class Engine {
       const roomy = shareable(unused, fakes, mode);
       if (roomy.length || !fakes) return roomy;
       // Counted as the picture question it would turn into, its twins kept apart as there.
-      const any = shareable(unused, 0, rules.artChance > 0 ? 'art' : mode);
-      if (any.length && rules.artChance > 0) {
+      const asArt = rules.artChance > 0 ? shareable(unused, 0, 'art') : [];
+      if (asArt.length) {
         this.tallyMode(s, mode, -1);
         this.tallyMode(s, (mode = 'art'), 1);
         fakes = 0;
+        return asArt;
       }
-      return any;
+      return shareable(unused, 0, mode);
     };
-    // Delve: the art in grayscale or not, rolled for each question.
-    const grayRoll = rules.grayChance ? this.rng() < rules.grayChance : undefined;
+    // Delve: the art in grayscale or not, rolled for each question: here
+    // where twins told apart by their colours could meet (whether they may
+    // depends on it), else after the rest as before there were any.
+    const grayFirst = !!rules.grayChance && this.twins.some((t) => t.colour && t.depth <= twinReach(rules));
+    const grayRoll = grayFirst ? this.rng() < rules.grayChance! : undefined;
     // Twins that may not meet yet, as a name or a picture question ("find the
     // art" may be in grayscale where the art to name isn't): all but one of
     // each set sit out, so they don't count.
@@ -2715,7 +2735,7 @@ export class Engine {
     const prompt = mode === 'art' ? answer.name : null;
     // Each picture flips on its own roll, so a flipped option says nothing about the answer.
     const mirrored = Array.from({ length: mode === 'art' ? options.length : 1 }, () => rules.mirror > 0 && this.rng() < rules.mirror);
-    const gray = grayRoll === undefined ? {} : { gray: grayRoll };
+    const gray = rules.grayChance ? { gray: grayRoll ?? this.rng() < rules.grayChance } : {};
     const tall = mode === 'art' && options.every((id) => TALL_ART_GROUPS.has(this.byId.get(id)!.group)) ? { tall: true } : {};
     return { category, groups, ...tall, mode, itemId: answer.id, options, labels, prompt, veil, mirrored, ...gray, askedAt, deadline, misses: [], ...special };
   }

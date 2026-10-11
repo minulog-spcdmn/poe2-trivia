@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { delveRules, findRules } from '../src/lib/delve.ts';
+import { delveRules, findRules, opensZone } from '../src/lib/delve.ts';
 import { Engine, PRESETS, TWINS, createGame, isFake, type Difficulty, type GameState, type Item, type Question, type Settings } from '../src/lib/game.ts';
 import { readLooks } from '../src/lib/looks.ts';
 
@@ -38,6 +38,10 @@ function twinQuestions(settings: Partial<Settings>, seed: number, n = 1500): Que
     });
   });
 }
+
+test('twins come in with a zone, whose card says so', () => {
+  for (const { names, depth } of TWINS) assert.ok(opensZone(depth), `${names} at ${depth}`);
+});
 
 test('every twin is a real item, each set from one group', () => {
   for (const { names } of TWINS) {

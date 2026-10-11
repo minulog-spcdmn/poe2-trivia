@@ -62,15 +62,15 @@ test('the meta line: the depth as players count it and the zone in numerals, or 
   assert.deepEqual([1, 4, 9, 14, 40, 90, 99, 400].map(roman), ['I', 'IV', 'IX', 'XIV', 'XL', 'XC', 'XCIX', 'CD']);
 });
 
-test('what is new in each zone: finds, rules starting or reaching every question, steps and the clock, three at most', () => {
+test('what is new in each zone: finds, rules starting or reaching every question, twins, steps and the clock, three at most', () => {
   const said = (d: number) => zoneNews(d).map((n) => ('count' in n.mark ? `${n.mark.count} ${n.label}` : n.label));
   assert.deepEqual(said(11), ['Dynamite Cache', '6 Options', 'Mirrored art']);
   assert.deepEqual(said(21), ['4 Turns of lockout', 'Art burns in', 'Flare Cache']);
   assert.deepEqual(said(31), ['8 Options', '5 Turns of lockout', '11 Seconds to answer']);
   assert.deepEqual(said(41), ['Azurite Vein', 'Art without colour', 'Look-alike art']);
-  assert.deepEqual(said(51), ['7 Seconds to answer']);
-  assert.deepEqual(said(61), ['6 Turns of lockout', '10 Options']);
-  assert.deepEqual(said(71), ['6 Seconds to answer', 'All names look alike']);
+  assert.deepEqual(said(51), ['Twin rings and gems', '7 Seconds to answer']);
+  assert.deepEqual(said(61), ['Twin sceptres', '6 Turns of lockout', '10 Options']);
+  assert.deepEqual(said(71), ['Twin rings', '6 Seconds to answer', 'All names look alike']);
   assert.deepEqual(said(81), ['All art mirrored', 'All art without colour']);
   assert.deepEqual(said(91), ['7 Turns of lockout', '5 Seconds to answer']);
   assert.deepEqual(said(101), ['Finds grow scarce', 'A fourth made-up name']);
@@ -96,7 +96,7 @@ test('the whole card for a zone, as a screen reader is told it', () => {
   assert.equal(t.name, 'Magma Fissure');
   assert.equal(t.sigil, 'Magma Fissure');
   assert.equal(t.spoken, 'Depth 10: Magma Fissure. The rock is split, and it burns. New here: Dynamite Cache, 6 options, mirrored art.');
-  assert.equal(zoneTitleAt(51).spoken, 'Depth 50: Abyssal Depths. Here the deep begins to pull. New here: 7 seconds to answer.');
+  assert.equal(zoneTitleAt(51).spoken, 'Depth 50: Abyssal Depths. Here the deep begins to pull. New here: twin rings and gems side by side, 7 seconds to answer.');
   assert.ok(zoneTitleAt(41, true).spoken.startsWith('Depth 40: Vaal Outpost. Deeper than ever.'));
   for (let d = 11; d < 400; d += 10) {
     assert.ok(opensZone(d));

@@ -162,10 +162,10 @@ the same thing for everyone.
   reaches depth 19 (finds ask from up to 20 depths deeper); until it
   arrives, look-alikes go by name.
 - **Twins.** Items whose art only a detail tells apart only meet in a
-  question from a depth on: Berek's rings and Uhtred's and Zarokh's gems
-  from 49, the Guiding Palms from 59 (never in grayscale), the Brotherhood
-  rings from 69 (a find from its deeper depth). Above it a question shows at
-  most one of them.
+  question from the start of a zone on, whose card says so: Berek's rings
+  and Uhtred's and Zarokh's gems from 50, the Guiding Palms from 60 (never
+  in grayscale), the Brotherhood rings from 70 (a find from its deeper
+  depth). Above it a question shows at most one of them.
 - **Endless.** From depth 100 the rules hold, but a growing share of name
   questions gets a fourth made-up name (2% at 100, 2% more every depth, all
   of them from 149), "find the art" pictures keep burning in more often
