@@ -8,37 +8,39 @@
 // named after a Delve biome, their looks kept in src/data/backdrops.json
 // (lib/backdrops.ts; the backdrop tool, backdrop.html, edits them).
 //
-// One place turns into the next gradually, never all at once, over the
-// seven depths (TURN_DEPTHS) from a zone's 5th to the next one's 2nd
-// (strataAt), on an eased curve: slowly at first, fastest half way,
-// settling slowly. A growing share of the embers burns in the next one's
-// colour (one in twenty at the zone's 6th depth, three in five at its 9th,
-// nineteen in twenty at the next one's 1st), and from its 6th depth the
-// next one's light, smoke and features creep in as its own recede (barely
-// at its 7th, half way at its 9th, nine tenths as the next is announced).
-// So the handover runs on past the boundary into the next zone, whose name
-// is still announced at its first depth, and is done as its first question
-// is answered: from its 2nd depth it shows alone, until its own turn
-// begins at its 5th. Past depth 100 the strata go on for
-// ever, each one of the archetypes (lib/archetypes.ts) generated from a
-// seed of its own (lib/backdropGen.ts, the same for everyone), never the
-// same archetype twice in a row, and each is announced by a name of its
-// archetype's own (`endgameName`).
+// One place turns into the next over the five depths (TURN_DEPTHS) from a
+// zone's 6th to the next one's 1st (strataAt): it creeps in over the
+// zone's last depths, and the largest step by far is the one into the next
+// zone (TURN_AT), so each zone reads as a place of its own. A growing share
+// of the embers burns in the next one's colour (one in ten at the zone's
+// 7th depth, half at its 9th, two in three at its 10th), and from its 7th
+// depth the next one's light, smoke and features creep in as its own recede
+// (a sixth at its 8th, a third at its 9th, half way at its 10th), eased.
+// The rest comes in at once as the next zone is announced, at its first
+// depth, while the scene plunges into it under its title card
+// (components/zonecard): from there it shows alone, until its own turn
+// begins at its 6th. Past depth 100 the strata go on for ever, each one of
+// the archetypes (lib/archetypes.ts) generated from a seed of its own
+// (lib/backdropGen.ts, the same for everyone), never the same archetype
+// twice in a row, and each is announced by a name of its archetype's own
+// (`endgameName`).
 //
 // And the deeper, the darker, never the other way: the dark draws in from
 // the edges a little with every depth, and the scene's light is set (`light`,
 // see the luminance estimate below) so its average brightness only ever
 // falls, however bright a stratum's fire or gold, generated or not (past
 // the zones it may lift a little, never by a jump: brighterAt). Each new
-// depth sinks the scene a little further as its cards are dealt (plunge).
+// depth sinks the scene a little further as its cards are dealt, a new zone's
+// deeper and longer (plunge).
 // Pure, apart from the eased channel and the plunge at the bottom that the
 // backdrop reads.
 
-import { emberTurn, ENV, ENVIRONMENTS, HALL_FROM, hallTurn, toneGain, toneOf, TURN_DEPTHS, type Look, type RGB, type Tone } from './backdropData.ts';
+import { emberTurn, ENV, ENVIRONMENTS, HALL_FROM, hallTurn, toneGain, toneOf, TURN_AT, TURN_DEPTHS, turnAt, type Look, type RGB, type Tone } from './backdropData.ts';
 import { endgameAt, endgameName, onBackdrops, zones } from './backdrops.ts';
 import { whenIdle, type Deadline } from './idle.ts';
+import { ZONE_DESCENT_MS } from './delve.ts';
 
-export { emberTurn, ENV, ENVIRONMENTS, HALL_FROM, hallTurn, toneOf, TURN_DEPTHS, type Look };
+export { emberTurn, ENV, ENVIRONMENTS, HALL_FROM, hallTurn, toneOf, TURN_AT, TURN_DEPTHS, type Look };
 
 /** The magma among the environments (it cools as it goes out; see magmaCooling). */
 export const MAGMA = ENVIRONMENTS.indexOf('magma');
@@ -143,23 +145,23 @@ export function stratumName(k: number): string {
 }
 
 /**
- * How many depths into a stratum its turn into the next begins: 4, so the
- * turn runs from its 5th depth (10k + 5) to the next one's 2nd (10k + 12),
+ * How many depths into a stratum its turn into the next begins: 5, so the
+ * turn runs from its 6th depth (10k + 6) to the next one's 1st (10k + 11),
  * TURN_DEPTHS in all.
  */
-export const TURN_FROM = 4;
+export const TURN_FROM = 5;
 
 /**
- * The stratum a depth is turning into, and how far (0 to 1, a seventh with
- * every depth; the embers, light, smoke and features follow it eased, see
- * emberTurn and hallTurn): from stratum k's 5th depth (10k + 5) the scene
- * turns into stratum k + 1, and is it at k + 1's 2nd (10k + 12), the depth
- * after k + 1 is announced (10k + 11), once its first question is answered.
- * From there to k + 1's own turn (its 2nd depth to its 5th) it shows k + 1
- * alone, which reads as the turn into k + 2 not yet begun ({ stratum: k + 2,
- * turn: 0 }), as at any settled depth. Through the Mines' first depths (1
- * to 5) it is the Mines alone; below depth 1 (only while the scene eases
- * in) the surface turns into them.
+ * The stratum a depth is turning into, and how far (0 to 1, TURN_AT: a
+ * fifth a depth to stratum k's 8th, a tenth a depth to its 10th, the last
+ * two fifths in one; the embers, light, smoke and features follow it eased,
+ * see emberTurn and hallTurn): from stratum k's 6th depth (10k + 6) the
+ * scene turns into stratum k + 1, and is it at k + 1's 1st (10k + 11), as
+ * k + 1 is announced (its title card). From there to k + 1's own turn (its
+ * 1st depth to its 6th) it shows k + 1 alone, which reads as the turn into
+ * k + 2 not yet begun ({ stratum: k + 2, turn: 0 }), as at any settled
+ * depth. Through the Mines' first depths (1 to 6) it is the Mines alone;
+ * below depth 1 (only while the scene eases in) the surface turns into them.
  */
 export function strataAt(depth: number): { stratum: number; turn: number } {
   const d = Number.isFinite(depth) ? Math.max(0, depth) : 0;
@@ -168,10 +170,10 @@ export function strataAt(depth: number): { stratum: number; turn: number } {
   if (x < 0) return { stratum: 1, turn: 0 };
   const k = Math.floor(x / 10);
   const into = x - 10 * k;
-  return into < TURN_DEPTHS ? { stratum: k + 1, turn: into / TURN_DEPTHS } : { stratum: k + 2, turn: 0 };
+  return into < TURN_DEPTHS ? { stratum: k + 1, turn: turnAt(into) } : { stratum: k + 2, turn: 0 };
 }
 
-/** The first depth stratum `k` shows alone, the turn into it done: its 2nd (depth 1 for the Mines). */
+/** The first depth stratum `k` shows alone, the turn into it done: its 1st, as it is announced (depth 1 for the Mines). */
 export const settledAt = (k: number) => (k <= 0 ? 1 : 10 * (k - 1) + 1 + TURN_FROM + TURN_DEPTHS);
 
 /** The stratum a depth is named after: 0 for depths 1 to 10, 1 for 11 to 20, ... */
@@ -220,8 +222,8 @@ export interface Descent {
 
 /**
  * The depth the azure stratum is announced (shown as 20: lib/delve shownDepth), which a streak of
- * twenty reaches as its fire turns blue (lib/fx/streaks DELVE_BLUE_FROM). Its embers come in from the
- * five depths before to the one after (emberTurn).
+ * twenty reaches as its fire turns blue (lib/fx/streaks DELVE_BLUE_FROM). Its embers come in over the
+ * four depths before, all there at it (emberTurn).
  */
 export const BLUE_FROM = 21;
 export const ABYSS_FROM = 50;
@@ -429,33 +431,39 @@ export function envTable(row: readonly number[], e: number) {
  * estimate's `hall`, the frame at light 0 over its `rest`], at 900 x 640,
  * held still. The estimate works the noise out at its average and the
  * features from ENV_ADD and ENV_HALL alone, which is near but not exact. To
- * depth 92, where the last zone settles (from there until the endgame's
- * generated strata come in, at its 6th depth, it keeps its own; for theirs
+ * depth 91, where the last zone settles (from there until the endgame's
+ * generated strata come in, at its 7th depth, it keeps its own; for theirs
  * the estimate stands as it is), with the zones' looks as shipped: a zone
  * whose look has changed since (`measured` false in src/data/backdrops.json)
  * has the corrections of its depths dropped rather than applied wrongly
  * (see correction). Measured by scripts/measure-luminance.mjs (calibrate)
  * with the ENV_ tables in place, when the handover ran from a zone's 4th
  * depth to the next one's first, straight; carried over to the eased
- * handovers since (now from a zone's 5th depth to the next one's 2nd), each
- * depth taking the corrections of the depth that showed the same share of
- * the next zone's hall then, and a zone's depths before its hall begins to
- * turn spread evenly over the ones it showed alone then (calibrate measures
- * them afresh). Empty, the estimate stands as it is.
+ * handovers since (from a zone's 6th depth to the next one's 1st, half way
+ * at its 9th), each depth taking the corrections of the depth that showed
+ * the same share of the next zone's hall then, and a zone's depths before
+ * its hall begins to turn spread evenly over the ones it showed alone then
+ * (calibrate measures them afresh). Not carried over to TURN_AT's turn
+ * (half way at a zone's 10th depth), as no zone is marked measured now:
+ * marking them again, measure afresh, or carry them over the same way: a
+ * zone's 7th and 8th depths keep theirs, its 10th takes its 9th's, and its
+ * 9th (a third of the way into the next zone's hall) what lies between its
+ * 8th's and 9th's here (a sixth and half of the way), a little under half
+ * way from the one to the other. Empty, the estimate stands as it is.
  */
 export const MEASURED: (readonly [number, number])[] = [
-  [0.943, 0.974], [0.944, 0.975], [0.944, 0.976], [0.944, 0.977], [0.944, 0.978], [0.944, 1.011], [0.944, 1.042], [0.94, 0.99],
-  [0.939, 0.974], [0.94, 0.976], [0.941, 0.969], [0.945, 0.988], [0.946, 0.986], [0.946, 0.984], [0.946, 0.982], [0.941, 0.974],
-  [0.935, 0.967], [0.947, 0.958], [0.956, 0.935], [0.95, 0.907], [0.941, 0.883], [0.935, 0.762], [0.934, 0.736], [0.934, 0.712],
-  [0.933, 0.69], [0.935, 0.698], [0.936, 0.716], [0.941, 0.824], [0.952, 0.869], [0.967, 0.888], [0.973, 0.897], [0.982, 0.907],
-  [0.982, 0.913], [0.982, 0.919], [0.982, 0.924], [0.982, 0.911], [0.982, 0.898], [0.982, 0.927], [0.982, 0.98], [0.982, 1.005],
-  [0.986, 1.013], [0.987, 1.006], [0.987, 1.005], [0.987, 1.004], [0.987, 1.003], [0.988, 1.007], [0.989, 1.011], [0.989, 0.996],
-  [0.991, 0.954], [0.994, 0.911], [0.999, 0.863], [1, 0.933], [1, 0.917], [1, 0.901], [1, 0.885], [1, 0.859],
-  [1.001, 0.833], [1.013, 0.732], [1.032, 0.591], [1.042, 0.479], [1.031, 0.466], [1.032, 0.486], [1.032, 0.485], [1.032, 0.485],
-  [1.032, 0.485], [1.027, 0.526], [1.022, 0.573], [1.025, 0.708], [1.021, 0.819], [1.023, 0.877], [1.029, 0.912], [1.033, 0.921],
-  [1.033, 0.932], [1.033, 0.942], [1.033, 0.953], [1.034, 0.95], [1.036, 0.945], [1.04, 0.985], [1.039, 1.016], [1.032, 1.096],
-  [1.019, 1.227], [1.012, 1.276], [1.012, 1.264], [1.012, 1.252], [1.012, 1.239], [1.01, 1.252], [1.008, 1.257], [0.994, 1.051],
-  [0.98, 0.951], [0.969, 0.89], [0.962, 0.841], [0.959, 0.838],
+  [0.943, 0.974], [0.944, 0.975], [0.944, 0.976], [0.944, 0.976], [0.944, 0.977], [0.944, 0.983], [0.944, 1.011], [0.942, 1.016],
+  [0.939, 0.974], [0.94, 0.972], [0.945, 0.988], [0.946, 0.987], [0.946, 0.985], [0.946, 0.984], [0.946, 0.983], [0.944, 0.979],
+  [0.941, 0.974], [0.941, 0.962], [0.956, 0.935], [0.946, 0.895], [0.935, 0.762], [0.934, 0.745], [0.934, 0.728], [0.934, 0.712],
+  [0.933, 0.697], [0.934, 0.693], [0.935, 0.698], [0.939, 0.77], [0.952, 0.869], [0.97, 0.893], [0.982, 0.907], [0.982, 0.911],
+  [0.982, 0.915], [0.982, 0.919], [0.982, 0.922], [0.982, 0.92], [0.982, 0.911], [0.982, 0.913], [0.982, 0.98], [0.984, 1.009],
+  [0.987, 1.006], [0.987, 1.005], [0.987, 1.005], [0.987, 1.004], [0.987, 1.003], [0.987, 1.004], [0.988, 1.007], [0.989, 1.003],
+  [0.991, 0.954], [0.996, 0.887], [1, 0.933], [1, 0.922], [1, 0.912], [1, 0.901], [1, 0.89], [1, 0.876], [1, 0.859],
+  [1.007, 0.782], [1.032, 0.591], [1.036, 0.473], [1.032, 0.486], [1.032, 0.485], [1.032, 0.485], [1.032, 0.485], [1.032, 0.485],
+  [1.03, 0.499], [1.027, 0.526], [1.023, 0.64], [1.021, 0.819], [1.026, 0.895], [1.033, 0.921], [1.033, 0.928], [1.033, 0.935],
+  [1.033, 0.942], [1.033, 0.949], [1.033, 0.952], [1.034, 0.95], [1.038, 0.965], [1.039, 1.016], [1.026, 1.162], [1.012, 1.276],
+  [1.012, 1.268], [1.012, 1.26], [1.012, 1.252], [1.012, 1.243], [1.011, 1.243], [1.01, 1.252], [1.001, 1.154], [0.98, 0.951],
+  [0.966, 0.865], [0.959, 0.838],
 ];
 /** Whether zone `k`'s look is the one MEASURED was measured with. */
 const measuredZone = (k: number) => k >= 0 && k < STRATA.length && zones[k].measured;
@@ -469,7 +477,7 @@ const NONE = [1, 1] as const;
  * The corrections at whole depth `i`: MEASURED's where the zones the scene
  * shows there (the one it is in, and the next once it begins to turn into
  * it) all have their looks as measured. Elsewhere (a zone changed since,
- * or the endgame's strata coming in past 94) only what still holds of
+ * or the endgame's strata coming in past 95) only what still holds of
  * them: each zone's own (where it shows alone), coming and going with it
  * as the scene turns (the hall's with hallTurn, the rest's with the
  * embers, emberTurn).
@@ -571,13 +579,14 @@ export const magmaGoesOut = (k: number) => k >= 0 && hasMagma(lookOf(k)) && !has
  * How far stratum `k`'s magma has cooled (0 to 1) with the scene turning
  * `turn` of the way into stratum `stratum` (see strataAt): only a magma
  * that goes out (magmaGoesOut), as the scene turns out of its stratum (k
- * is stratum - 1: from the Magma Fissure's 6th depth to the Frozen
- * Hollow's 2nd), in step with its hall (hallTurn, eased), so the frost,
+ * is stratum - 1: from the Magma Fissure's 7th depth to the Frozen
+ * Hollow's 1st), in step with its hall (hallTurn, eased), so the frost,
  * which comes in with the hall and only grows once the magma has well
- * cooled (env_frost), never shows over bright magma; nine tenths cooled as
- * the next is announced, cooled, stopped and gone by its 2nd depth; and all
- * the way once the scene is past it (the turn into the stratum after, and
- * the settled depths before it, k < stratum - 1).
+ * cooled (env_frost), never shows over bright magma; half cooled at the
+ * 10th depth, still glowing as the zone ends, then cooled, stopped and gone
+ * as the next is announced, the most of it in that one step; and all the
+ * way once the scene is past it (the turn into the stratum after, and the
+ * settled depths before it, k < stratum - 1).
  */
 export function magmaCoolingOf(k: number, stratum: number, turn: number): number {
   if (k > stratum - 1 || !magmaGoesOut(k)) return 0;
@@ -801,11 +810,15 @@ export const LIGHT_MAX = 1.8;
  * stratum's own light rises (lightK, from the last zone's 0.15 to an
  * endgame stratum's 0.4, say), `light` may fall as fast as it does, so what
  * is drawn keeps pace with it, rather than the scene growing brighter by
- * the difference. (Half as much again as when the hall turned over nine
- * depths: over six, at its steepest it turns half as far again a depth, and
- * the light has to keep pace with it.)
+ * the difference. (Half as much again as when the hall turned over six
+ * depths, and that half as much again as over nine: over four, eased, at
+ * its steepest it turned half as far again a depth, and the light has to
+ * keep pace with it. The step into a new zone, where it turns furthest
+ * since (half of it in one depth, TURN_AT), needs no more: most of what
+ * the light does there is make way for the zone's own, lightK, and what is
+ * left swings by under 0.09.)
  */
-export const LIGHT_STEP = 0.09;
+export const LIGHT_STEP = 0.135;
 /**
  * How much brighter than the depth before the estimate may come out where
  * the light, eased, has fallen behind the curve and catches up with it
@@ -979,7 +992,7 @@ export function lightSwing(a: Pick<Descent, 'light' | 'look'>, b: Pick<Descent, 
 
 /**
  * How bright a look's hall is lit (its lightK) to show as stratum `k`: so
- * that, settled there (settledAt: its 2nd depth, the turn into it done, the
+ * that, settled there (settledAt: its 1st depth, the turn into it done, the
  * dark crept in as far as it has by then), the scene keeps to luminanceAt
  * at a light of 1, as the zones' were measured to. The endgame's generated
  * looks are lit so, and the backdrop tool lights a zone's changed look so;
@@ -1088,6 +1101,14 @@ let target = 0;
  */
 const JUMP = 3;
 const FADE = 1.6;
+/**
+ * How fast the shown depth eases, against the usual, while the scene
+ * plunges into a new zone (plunge): the step into it, the turn's largest
+ * (TURN_AT), takes about 2.3 s rather than a second, so the new zone comes
+ * in over the plunge's first blow and as its sound dies down, and has come
+ * before the title card's name locks (LOCK in lib/zoneTitleTiming.ts).
+ */
+const ARRIVAL_PACE = 0.41;
 let fading = false;
 let fadeT = 0;
 const from = fresh();
@@ -1122,8 +1143,8 @@ export function onDescent(f: (d: Descent) => void): () => void {
 
 /**
  * Eases the shown depth toward the target by `dt` seconds: one depth takes
- * about a second; a jump cross-fades (see JUMP). Returns whether it is still
- * moving.
+ * about a second (into a new zone longer, see ARRIVAL_PACE); a jump
+ * cross-fades (see JUMP). Returns whether it is still moving.
  */
 export function stepDescent(dt: number): boolean {
   if (fading) {
@@ -1133,7 +1154,8 @@ export function stepDescent(dt: number): boolean {
   }
   const diff = target - shown;
   if (diff === 0) return fading;
-  const step = Math.max(Math.abs(diff) * (1 - Math.exp(-dt / 0.7)), dt);
+  const t = intoZone() ? dt * ARRIVAL_PACE : dt;
+  const step = Math.max(Math.abs(diff) * (1 - Math.exp(-t / 0.7)), t);
   shown = Math.abs(diff) <= step ? target : shown + Math.sign(diff) * step;
   return true;
 }
@@ -1257,19 +1279,48 @@ export const shownDepth = () => shown;
  * past you (the nearer, the faster) as if you sank PLUNGE_SINK of a screen,
  * the embers streak up, and the dark draws in and lets go again; it gathers
  * speed quickly and comes to rest slowly, settling where it came to.
+ * Into a new zone (the depth its title card names, milestoneAt) it plunges
+ * much further, ZONE_PLUNGE_SINK screens, for as long as the zone's sound
+ * ('stratum' in lib/soundDesign.ts, played as it starts) rings, moving as
+ * the sound swells and fades (ZONE_SPEED), the scene taking the step into
+ * the zone slower meanwhile (ARRIVAL_PACE), and the depth's cards are dealt
+ * as it lands (ZONE_DESCENT_MS, DelveState.dealAt in lib/game.ts).
  * App.svelte calls plunge() (see dealtDeeper); the backdrop steps it, and
  * skips it while it holds still (reduced motion, effects off).
  */
 export const PLUNGE_MS = 1900;
 export const PLUNGE_SINK = 1.1;
+export const ZONE_PLUNGE_MS = ZONE_DESCENT_MS;
+/**
+ * (So far that only the scene's furthest layers, which go by at three
+ * tenths of its speed, stay crisp at its fastest on a 60 Hz screen: under 7
+ * px a frame on a 900 px tall one.)
+ */
+export const ZONE_PLUNGE_SINK = 5;
+/**
+ * How fast the plunge into a new zone goes (1 its fastest) through its
+ * ZONE_PLUNGE_MS, at whole seconds in: following the zone's sound as it is
+ * heard (its loudness, measured from the mix of its layers and the
+ * plunge's, with the hall's reverb). The floor gives way with the sound's
+ * first blow, the scene eases off as it dies down, is carried down again by
+ * its second swell, and glides to rest as it fades out.
+ */
+export const ZONE_SPEED: readonly (readonly [number, number])[] = [
+  [0, 0], [0.3, 1], [0.8, 0.8], [1.5, 0.5], [2.25, 0.35], [3, 0.65], [3.5, 0.7], [4.5, 0.55], [5.5, 0.38], [6.3, 0.18], [7, 0],
+];
 /**
  * How far the scene has sunk (screens, wrapping far down), how fast (screens
  * a second) and how far the dark has drawn in (0 to 1); and how far it has
  * swung sideways (screen heights, see swing) and the dark drawn in as it does.
  */
 export const sinking = { sink: 0, speed: 0, breath: 0, slide: 0, slideBreath: 0 };
-let asked = false;
+/** How a plunge moves: how far along it is (0 to 1) `x` of the way through, its slope, and how far the dark draws in. */
+type Curve = { at: (x: number) => number; slope: (x: number) => number; breath: (x: number) => number };
+let asked: { ms: number; by: number; curve: Curve } | null = null;
 let sinkFrom = 0;
+let sinkBy = PLUNGE_SINK;
+let plungeMs = PLUNGE_MS;
+let curve: Curve;
 let plungeAt = -Infinity;
 
 /** Back to the top, nothing sunk and no plunge under way (a run starting from the surface). */
@@ -1285,10 +1336,13 @@ function resetSink() {
   swingAt = -Infinity;
 }
 
-/** Sinks the scene a little further (a new depth's cards were dealt). */
-export function plunge() {
-  asked = true;
+/** Sinks the scene a little further (a new depth's cards were dealt); `zone`: into a new zone, much further, with its sound. */
+export function plunge(zone = false) {
+  asked = zone ? { ms: ZONE_PLUNGE_MS, by: ZONE_PLUNGE_SINK, curve: ZONE_CURVE } : { ms: PLUNGE_MS, by: PLUNGE_SINK, curve: EASED };
 }
+
+/** Whether the scene is plunging into a new zone, or about to (asked for: the backdrop steps the depth before the plunge). */
+const intoZone = () => (asked ? asked.curve : plungeAt === -Infinity ? null : curve) === ZONE_CURVE;
 
 /** Where a run's cards were last dealt: which run (its start) and at what depth. */
 export type Dealt = { run: number; depth: number };
@@ -1316,6 +1370,42 @@ const easeSlope = (x: number) => {
   const m = PLUNGE_PEAK;
   return x < m ? 3 * (x / m) ** 2 : 3 * (1 - (x - m) / (1 - m)) ** 2;
 };
+/** A depth's plunge: eased, and the dark drawn in most half way. */
+const EASED: Curve = { at: ease, slope: easeSlope, breath: (x) => Math.sin(Math.PI * x) ** 2 };
+curve = EASED;
+
+/**
+ * The plunge into a new zone (ZONE_SPEED): its speed eased from one point
+ * to the next (so it never jerks), worked out once into a table of how far
+ * along it is, and the dark drawn in with its speed.
+ */
+const ZONE_CURVE: Curve = (() => {
+  const end = ZONE_SPEED[ZONE_SPEED.length - 1][0];
+  const speed = (x: number) => {
+    const t = Math.min(1, Math.max(0, x)) * end;
+    let i = 1;
+    while (i < ZONE_SPEED.length - 1 && ZONE_SPEED[i][0] < t) i++;
+    const [t0, v0] = ZONE_SPEED[i - 1];
+    const [t1, v1] = ZONE_SPEED[i];
+    const u = (t - t0) / (t1 - t0);
+    return v0 + (v1 - v0) * u * u * (3 - 2 * u);
+  };
+  const N = 1400;
+  const table = new Float64Array(N + 1);
+  for (let i = 1; i <= N; i++) table[i] = table[i - 1] + (speed((i - 0.5) / N) + speed((i - 1) / N) + speed(i / N)) / 3 / N;
+  const total = table[N];
+  return {
+    at: (x) => {
+      const f = Math.min(1, Math.max(0, x)) * N;
+      const i = Math.min(N - 1, Math.floor(f));
+      return (table[i] + (table[i + 1] - table[i]) * (f - i)) / total;
+    },
+    slope: (x) => speed(x) / total,
+    breath: (x) => speed(x),
+  };
+})();
+/** How far along the plunge into a new zone is (0 to 1) `x` of the way through it: what the scene has sunk, for what moves with it. */
+export const zoneSunk = (x: number) => ZONE_CURVE.at(x);
 
 /**
  * Steps the plunge to `now` (ms): starts one asked for (unless `allowed` is
@@ -1323,27 +1413,30 @@ const easeSlope = (x: number) => {
  */
 export function stepPlunge(now: number, allowed: boolean): boolean {
   if (asked) {
-    asked = false;
     if (allowed) {
       sinkFrom = sinking.sink;
+      sinkBy = asked.by;
+      plungeMs = asked.ms;
+      curve = asked.curve;
       plungeAt = now;
     }
+    asked = null;
   }
   if (plungeAt === -Infinity) return false;
   // Holding still now: it ends at once where it was heading.
-  const x = allowed ? Math.max(0, (now - plungeAt) / PLUNGE_MS) : 1;
+  const x = allowed ? Math.max(0, (now - plungeAt) / plungeMs) : 1;
   if (x >= 1) {
     // (Wrapping round after hundreds of depths in one run, so the shader's
     // noise keeps its precision; each run starts from 0, see setDescent.)
-    sinking.sink = (sinkFrom + PLUNGE_SINK) % 256;
+    sinking.sink = (sinkFrom + sinkBy) % 256;
     sinking.speed = 0;
     sinking.breath = 0;
     plungeAt = -Infinity;
     return true;
   }
-  sinking.sink = sinkFrom + PLUNGE_SINK * ease(x);
-  sinking.speed = (PLUNGE_SINK * easeSlope(x) * 1000) / PLUNGE_MS;
-  sinking.breath = Math.sin(Math.PI * x) ** 2;
+  sinking.sink = sinkFrom + sinkBy * curve.at(x);
+  sinking.speed = (sinkBy * curve.slope(x) * 1000) / plungeMs;
+  sinking.breath = curve.breath(x);
   return true;
 }
 

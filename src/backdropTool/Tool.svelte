@@ -286,7 +286,7 @@
           {/each}
           <button class="chip walk" class:on={tool.walking} onclick={() => (tool.walking = !tool.walking)}>{tool.walking ? 'Stop' : 'Walk down'}</button>
         </div>
-        <p class="hint">Walk down goes a depth every 1.5 s, as a run would, to judge the handovers: from a zone's 5th depth to the next one's 2nd the next zone's embers take over one by one and its light, smoke and details come in, slowly at first, fastest toward the zone's end, settling slowly. A jump of more than three depths cross-fades.</p>
+        <p class="hint">Walk down goes a depth every 1.5 s, as a run would, to judge the handovers: from a zone's 6th depth to its 10th the next zone's embers begin to take over one by one and its light, smoke and details creep in, a little with every depth; the rest comes in at once at the next zone's 1st, the handover's largest step by far (in a run it plays out over the plunge's first two seconds, here in one). A jump of more than three depths cross-fades.</p>
       </details>
 
       <details open>

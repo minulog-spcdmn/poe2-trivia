@@ -13,11 +13,12 @@ export function stageZoom(w: number, h: number): number {
 
 /**
  * What carries the stage's zoom: the app's shell, and what sits outside it
- * at the page's scale (the deathmatch intro, the toasts, dialogs' backdrops
- * and the blast layer, the last two zoomed inline), and within the stage
- * what is zoomed again (marked data-zoom: the category cards, their finds' tags).
+ * at the page's scale (the deathmatch intro, a Delve zone's title card, the
+ * toasts, dialogs' backdrops and the blast layer, the last two zoomed
+ * inline), and within the stage what is zoomed again (marked data-zoom: the
+ * category cards, their finds' tags).
  */
-const ZOOMED = '.shell, .dm-intro, .toasts, [style*="zoom"], [data-zoom]';
+const ZOOMED = '.shell, .dm-intro, .zc, .toasts, [style*="zoom"], [data-zoom]';
 
 /**
  * The CSS zoom an element is drawn at (1 without): getBoundingClientRect's
@@ -54,8 +55,8 @@ export function unzoomRect(r: DOMRect, z: number): DOMRect {
 }
 
 /** Where `el` is on screen (getBoundingClientRect), in its own CSS px: what to set its styles, or its children's, by. */
-export function ownRect(el: Element): DOMRect {
-  return unzoomRect(el.getBoundingClientRect(), zoomOf(el));
+export function ownRect(el: Element, z = zoomOf(el)): DOMRect {
+  return unzoomRect(el.getBoundingClientRect(), z);
 }
 
 /** A point on screen (a pointer's clientX/Y), as an offset into `el` in its own CSS px. */
