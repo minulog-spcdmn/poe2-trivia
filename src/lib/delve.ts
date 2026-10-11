@@ -254,6 +254,7 @@ export function delveRules(d: number): DifficultyRules {
     grayscale: 'off',
     mirror: delveCurve('mirror', d),
     lockout: delveLockout(d),
+    twins: depthOf(d),
     ...(gray ? { grayChance: gray } : {}),
     ...(looks ? { lookalikes: looks } : {}),
     ...(more ? { moreFakes: more } : {}),

@@ -161,6 +161,10 @@ the same thing for everyone.
   (`src/data/looks.json`, its own chunk of about 27 KiB gzipped), once a run
   reaches depth 19 (finds ask from up to 20 depths deeper); until it
   arrives, look-alikes go by name.
+- **Twins.** Items whose art only a detail tells apart only meet in a
+  question from a depth on: Berek's rings from 49, the Brotherhood rings
+  from 69 (a find from its deeper depth). Above it a question shows at most
+  one of them.
 - **Endless.** From depth 100 the rules hold, but a growing share of name
   questions gets a fourth made-up name (2% at 100, 2% more every depth, all
   of them from 149), "find the art" pictures keep burning in more often
@@ -480,6 +484,13 @@ custom setup.
 Look-alike names form a cluster, and the answer's place in it is random: the
 name that looks most (or least) like the others is no more likely to be right
 than any other.
+
+Twins, items whose art only a detail tells apart (Call and Whisper of the
+Brotherhood; Berek's Grip, Pass and Respite), only meet in a question once
+every wrong answer is a look-alike name (Eternal, or Custom with All); before
+that a question shows at most one of a set, picked at random when the answer
+is none of them (`TWINS` in `src/lib/game.ts`). In Delve, Berek's rings meet
+from depth 49 and the Brotherhood rings from depth 69.
 
 **Codex:** a page (from the start page's corner, or at
 `poe2.quest/#codex`) listing every item you have seen, with your accuracy per

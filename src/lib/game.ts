@@ -150,6 +150,11 @@ export interface DifficultyRules extends Omit<Knobs, 'veil'> {
    * colour, rolled for each question (Question.gray) in place of `grayscale`.
    */
   grayChance?: number;
+  /**
+   * Delve: the depth whose twins (TWINS) may meet, a find's deeper one.
+   * Missing elsewhere, where they meet once every wrong answer is a look-alike.
+   */
+  twins?: number;
 }
 
 /** Knobs from anywhere (an action, an old save): each one off the allowed steps takes its value in `fallback`. */
@@ -198,6 +203,23 @@ function harderKnobs(k: Knobs): Knobs {
 export const RARE_GROUPS: Record<string, number> = { Tablets: 0.25 };
 
 const weightOf = (it: Item) => RARE_GROUPS[it.group] ?? 1;
+
+/**
+ * Items whose art only a detail tells apart, by name (each set from one
+ * group). Players found them a coin toss, but they can be learnt, so they
+ * meet in a question (one the answer and another a wrong option, or two
+ * wrong options) only where questions are at their hardest: in Delve from
+ * `depth`, elsewhere once every wrong answer is a look-alike (Eternal, or
+ * Custom with all look-alike names). Until then a question shows at most one
+ * of a set, picked at random when the answer is none of them, so seeing one
+ * says nothing about which option is right.
+ */
+export const TWINS: { names: readonly string[]; depth: number }[] = [
+  // Two stones each, told apart mostly by their colours.
+  { names: ["Berek's Grip", "Berek's Pass", "Berek's Respite"], depth: 50 },
+  // The same band, its blue and gold swapped and its glyph changed.
+  { names: ['Call of the Brotherhood', 'Whisper of the Brotherhood'], depth: 70 },
+];
 
 /**
  * The most options a question about a rare group's item shows. Rare groups
@@ -1066,6 +1088,8 @@ export class Engine {
   private now: () => number;
   /** Which items' art looks alike (src/lib/looks.ts), once it has been fetched. */
   private looks: Looks | null;
+  /** TWINS, as items (sets with fewer than two of them left out). */
+  private readonly twins: { items: Item[]; depth: number }[];
 
   /**
    * `fakes`: made-up names for items, by item name (src/data/fakes.json).
@@ -1085,6 +1109,8 @@ export class Engine {
     this.rng = opts.rng ?? Math.random;
     this.now = opts.now ?? Date.now;
     this.looks = opts.looks ?? null;
+    const byName = new Map(items.map((it) => [it.name, it]));
+    this.twins = TWINS.map(({ names, depth }) => ({ items: names.flatMap((n) => byName.get(n) ?? []), depth })).filter((t) => t.items.length > 1);
   }
 
   /**
@@ -2444,6 +2470,27 @@ export class Engine {
     return names;
   }
 
+  /** The sets of twins (TWINS) that may not meet under `rules`. */
+  private apartTwins(rules: DifficultyRules): Item[][] {
+    const reach = rules.twins ?? (rules.similarNames >= 1 ? Infinity : 0);
+    return this.twins.flatMap((t) => (t.depth > reach ? [t.items] : []));
+  }
+
+  /**
+   * The twins that sit out a question about `answer`: of each set in `apart`,
+   * all but the answer, or, the answer being none of them, all but one of
+   * those in `unused` (the category's unseen items), picked at random.
+   */
+  private benchTwins(answer: Item, apart: Item[][], unused: Item[]): Set<string> {
+    const out = new Set<string>();
+    for (const set of apart) {
+      const open = set.filter((it) => unused.includes(it));
+      const keep = set.includes(answer) ? answer : open.length > 1 ? open[Math.floor(this.rng() * open.length)] : (open[0] ?? set[0]);
+      for (const it of set) if (it !== keep) out.add(it.id);
+    }
+    return out;
+  }
+
   private simCache = new Map<string, number>();
 
   private similarity(a: Item, b: Item): number {
@@ -2567,9 +2614,15 @@ export class Engine {
       }
       return any;
     };
+    // Twins that may not meet yet: all but one of each set sit out, so they don't count.
+    const apart = this.apartTwins(rules);
     const shareable = (unused: Item[], fakes: number) => {
       const left = new Map<string, number>();
       for (const it of unused) left.set(it.group, (left.get(it.group) ?? 0) + 1);
+      for (const set of apart) {
+        const n = set.filter((it) => unused.includes(it)).length;
+        if (n > 1) left.set(set[0].group, left.get(set[0].group)! - (n - 1));
+      }
       const others = (group: string) => [...left].flatMap(([g, n]) => (g === group || Object.hasOwn(RARE_GROUPS, g) ? [] : [n]));
       return unused.filter((it) => {
         const siblings = left.get(it.group)! - 1;
@@ -2591,11 +2644,13 @@ export class Engine {
     const need = count - 1;
     fakes = Math.min(fakes, maxFakes(count));
 
-    const sameGroup = unused.filter((it) => it.id !== answer.id && it.group === answer.group);
+    const benched = this.benchTwins(answer, apart, unused);
+    const fits = (it: Item) => !benched.has(it.id);
+    const sameGroup = unused.filter((it) => it.id !== answer.id && it.group === answer.group && fits(it));
     // Decoys come from the answer's own group (all rings, all bows…): a flask
     // among tablets would stand out. Other groups only fill in when it runs
     // too low, evened out with it, and rare groups (tablets) not even then.
-    const otherGroup = unused.filter((it) => it.id !== answer.id && it.group !== answer.group && weightOf(it) === 1);
+    const otherGroup = unused.filter((it) => it.id !== answer.id && it.group !== answer.group && weightOf(it) === 1 && fits(it));
     const pool = sameGroup.length >= need ? sameGroup : [...sameGroup, ...otherGroup];
 
     // Delve's look-alikes rise a little every depth: a share between two counts rolls for the one more.
@@ -2614,7 +2669,7 @@ export class Engine {
     for (const source of [pool, unused, inCat, this.items]) {
       if (decoys.length >= need) break;
       const taken = new Set([answer.id, ...decoys.map((it) => it.id)]);
-      decoys.push(...sample(source.filter((it) => !taken.has(it.id)), need - decoys.length, this.rng));
+      decoys.push(...sample(source.filter((it) => !taken.has(it.id) && fits(it)), need - decoys.length, this.rng));
     }
     if (pool !== sameGroup) this.evenOut(answer, decoys, pool, fakes);
 
