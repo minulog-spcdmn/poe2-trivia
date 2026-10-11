@@ -165,26 +165,59 @@ function pressedFor(el: Element): string | null {
 /**
  * Elements holding more than this many (bare page, a long list's ground)
  * aren't dressed themselves: a cursor is inherited, so a change on them
- * restyles all they hold. The sunk dart goes on <html> instead, as a plain
- * cursor: that restyles the page once a press too, but takes a fraction of
- * what changing the variables there did (they hold every look's images).
+ * restyles all they hold, the stall this is here to avoid. Pressed on one,
+ * a speck (`pin`) is put under the pointer inside it instead, wearing the
+ * pressed look: the browser shows the cursor of what is under the pointer,
+ * and one tiny element costs nothing to style.
  */
 const DRESS_MOST = 150;
+/** The speck's size, CSS px: the pointer's tip stays on it through a click's slight wobble. */
+const PIN = 8;
+let pin: HTMLElement | null = null;
+/** Counts the speck's placings, so one taken away late never takes away a later one. */
+let pinned = 0;
 
-/** Shows the pressed pointer on `el` (the element under it), and only there. */
-function dress(target: EventTarget | null) {
+/**
+ * Shows the pressed pointer on `target` (the element under it), and only
+ * there; on a large one, pressed at (x, y), a speck under the pointer. Only
+ * as the press begins (`pinning`): moved on while held, it never follows
+ * (under the pointer all the while, it would stop a drag from selecting text).
+ */
+function dress(target: EventTarget | null, x: number, y: number, pinning: boolean) {
+  if (target === pin) return;
   if (applied === 'forced' || !(target instanceof HTMLElement || target instanceof SVGElement)) return undress();
-  const el = target.getElementsByTagName('*').length > DRESS_MOST ? document.documentElement : target;
-  if (dressed?.el === el) return;
+  if (dressed?.el === target) return;
   undress();
   const v = pressedFor(target);
   if (!v) return;
-  dressed = { el, was: el.style.getPropertyValue('cursor'), priority: el.style.getPropertyPriority('cursor') };
-  el.style.setProperty('cursor', v, 'important');
+  if (target.getElementsByTagName('*').length <= DRESS_MOST) {
+    dressed = { el: target, was: target.style.getPropertyValue('cursor'), priority: target.style.getPropertyPriority('cursor') };
+    target.style.setProperty('cursor', v, 'important');
+    return;
+  }
+  if (!pinning) return;
+  // (Inside what was pressed, so the click still lands on it: a click goes to
+  // what both the press and the release were on, and the release is on the speck.)
+  const into = target === document.documentElement ? document.body : target;
+  if (!(into instanceof HTMLElement)) return;
+  // (Its class keeps it out of what the other players' pointers are anchored to: lib/pointerAnchor.ts.)
+  pin ??= Object.assign(document.createElement('i'), { ariaHidden: 'true', className: 'press-pin' });
+  pin.style.cssText = `position:fixed;left:0;top:0;width:${PIN}px;height:${PIN}px;margin:0;padding:0;border:0;z-index:2147483647;contain:strict;cursor:${v}`;
+  into.append(pin);
+  pinned++;
+  // Where it landed (a zoomed or turned ancestor moves what is fixed), and onto the pointer's tip from there.
+  const r = pin.getBoundingClientRect();
+  const z = r.width / PIN || 1;
+  pin.style.left = `${(x - r.left) / z - PIN / 2}px`;
+  pin.style.top = `${(y - r.top) / z - PIN / 2}px`;
 }
 
-/** Gives the pressed element its own cursor back. */
+/** Gives the pressed element its own cursor back, and takes the speck away (after the click it may take part in). */
 function undress() {
+  if (pin?.isConnected) {
+    const at = pinned;
+    setTimeout(() => at === pinned && pin?.remove());
+  }
   if (!dressed) return;
   const { el, was, priority } = dressed;
   dressed = null;
@@ -224,7 +257,7 @@ export function installCursor() {
     (e) => {
       if (e.pointerType !== 'mouse' || e.button !== 0) return;
       pressed = true;
-      dress(e.target);
+      dress(e.target, e.clientX, e.clientY, true);
     },
     { capture: true, passive: true },
   );
@@ -236,7 +269,7 @@ export function installCursor() {
       // Released outside the window, or never heard: let go at the next sign of it.
       if (!(e.buttons & 1)) release();
       // Held and moved on: the pressed pointer goes with it, onto what is under it now.
-      else dress(e.target);
+      else dress(e.target, e.clientX, e.clientY, false);
     },
     { passive: true },
   );
