@@ -1,8 +1,11 @@
 <script lang="ts">
-  import { accentAt, dealtDeeper, plunge, setDescent, type Dealt } from './lib/descent';
+  import { accentAt, dealtDeeper, milestoneAt, plunge, setDescent, type Dealt } from './lib/descent';
   import { zoneAt } from './lib/zoneSigils';
-  import { shownDepth } from './lib/delve';
-  import { stageZoom } from './lib/stage';
+  import { isGroupRun, shownDepth } from './lib/delve';
+  import { dealing, followDeal, shownRound } from './lib/dealing.svelte';
+  import { arrival, beginArrival, endArrival } from './lib/zoneArrival.svelte';
+  import ZoneCard from './components/zonecard/ZoneCard.svelte';
+  import { ownRect, stageZoom } from './lib/stage';
   import { onMount, untrack } from 'svelte';
   import { fade, fly } from 'svelte/transition';
   import { session } from './lib/session.svelte';
@@ -136,19 +139,39 @@
   $effect(() => {
     if (gs && (gs.settings.mode === 'delve' || gs.delve)) wantDelveBackdrop();
   });
+  // Delve: a new zone's cards on their way (lib/dealing.svelte.ts). Set
+  // before the DOM updates, so neither the header's depth nor the stage
+  // shows the new depth for a frame first.
+  $effect.pre(() => followDeal(gs ?? null, session.hostNow()));
   // Delve: each new depth sinks the scene a little further as its cards are
   // dealt (not the run's first, nor the same depth's dealt again after a
-  // question set aside; see dealtDeeper).
+  // question set aside; see dealtDeeper). Into a new zone much further, with
+  // the zone's sound and its title card, its cards dealt as it lands
+  // (DelveState.dealAt).
   let lastDealt: Dealt | undefined;
   $effect(() => {
     if (!gs?.delve || screen !== 'game' || gs.phase !== 'choosing') return;
     const now = { run: gs.delve.startedAt, depth: gs.round };
     if (dealtDeeper(lastDealt, now)) {
-      plunge();
+      const zone = !!milestoneAt(now.depth);
+      plunge(zone);
       sfx('plunge');
+      if (zone) {
+        sfx('stratum');
+        const s = gs;
+        untrack(() => beginArrival(s, session.hostNow(), { best: session.spectating ? null : session.bestAtStart, group: isGroupRun(s) }));
+      }
     }
     lastDealt = now;
   });
+  // A zone's card belongs to the game it came in: leaving it, the card goes.
+  $effect(() => {
+    if (screen !== 'game' || !gs?.delve) untrack(endArrival);
+  });
+  /** The zone card under way, while the stage waits for its cards (and only for the run and depth it came for). */
+  const zoneCard = $derived(
+    arrival.card && screen === 'game' && dealing.held && gs?.delve?.startedAt === arrival.card.run && gs.round === arrival.card.depth ? arrival.card : null,
+  );
 
   /** How long the outgoing screen takes to fade (the .screen transition below). */
   const SCREEN_OUT_MS = 150;
@@ -250,6 +273,31 @@
     if (alone && screen === 'lobby') leave();
     else confirmLeave = true;
   }
+
+  /**
+   * The legal links keep their place under a game and its result but don't
+   * show there. Asking to leave shows them, above the dialog's darkening,
+   * so they are two clicks away from anywhere: a copy in the dialog's
+   * backdrop, held over the hidden ones as the page scrolls or the game
+   * moves on behind the dialog.
+   */
+  const legalHidden = $derived(screen === 'game' || screen === 'over');
+  let legalNav: HTMLElement | undefined = $state();
+  function overLegal(node: HTMLElement) {
+    let raf = 0;
+    const place = () => {
+      if (legalNav) {
+        // In the shell's px, which the backdrop is zoomed to as well (lib/behindDialog.ts).
+        const r = ownRect(legalNav);
+        node.style.top = `${r.top}px`;
+        node.style.left = `${r.left}px`;
+        node.style.width = `${r.width}px`;
+      }
+      raf = requestAnimationFrame(place);
+    };
+    place();
+    return { destroy: () => cancelAnimationFrame(raf) };
+  }
 </script>
 
 <Background />
@@ -260,7 +308,8 @@
 
 <div class="shell" class:swapping data-behind-dialog bind:this={shell}>
   {#if headerOn}
-    <header in:fade={{ duration: 300 }} bind:offsetHeight={headerHeight}>
+    <!-- (Out of reach while a zone's card covers it with its bar: no focus lands on what can't be seen.) -->
+    <header in:fade={{ duration: 300 }} bind:offsetHeight={headerHeight} inert={!!zoneCard}>
       <button class="brand" onclick={() => (codex ? closeCodex() : askLeave())} title={codex ? 'Back to the start' : 'Leave game'}>
         <span class="brand-mark" aria-hidden="true">
           {#each ['', 'hot'] as cls (cls)}
@@ -284,14 +333,16 @@
           <!-- The depth as players count it (shownDepth). A run under way at 0
                names none here: the banner below has its start line (Game.svelte),
                too long for this line on a phone. -->
-          {#if screen !== 'game' || shownDepth(gs.round) > 0}
+          <!-- (Going down into a new zone, the depth before until its cards are dealt: lib/dealing.svelte.ts.) -->
+          {@const round = shownRound(gs)}
+          {#if screen !== 'game' || shownDepth(round) > 0}
             <span class="dot">•</span>
-            <span class="depth" style:--accent={accentAt(gs.round)} in:fade={{ duration: 600 }}>Depth <b>{shownDepth(gs.round)}</b></span>
+            <span class="depth" style:--accent={accentAt(round)} in:fade={{ duration: 600 }}>Depth <b>{shownDepth(round)}</b></span>
           {/if}
           <!-- And the zone it's in, in its colour; a new one fades in as it's announced. -->
           <span class="dot zone-dot">•</span>
-          {#key zoneAt(gs.round)}
-            <span class="zone" style:--accent={accentAt(gs.round)} in:fade={{ duration: 900, delay: 500 }}>{zoneAt(gs.round)}</span>
+          {#key zoneAt(round)}
+            <span class="zone" style:--accent={accentAt(round)} in:fade={{ duration: 900, delay: 500 }}>{zoneAt(round)}</span>
           {/key}
         {:else if gs && screen === 'game'}
           {#if session.code && !session.hideCode}
@@ -409,14 +460,23 @@
   </main>
 
   {#if headerOn}
-    <nav class="legal">
-      <a href={IMPRINT_URL} target="_blank" rel="noopener">Impressum</a>
-      <span aria-hidden="true">·</span>
-      <a href={PRIVACY_URL} target="_blank" rel="noopener">Datenschutz</a>
+    <nav class="legal" class:hidden={legalHidden} aria-label="Legal" bind:this={legalNav}>
+      {@render legalLinks()}
     </nav>
   {/if}
 </div>
 
+{#snippet legalLinks()}
+  <a href={IMPRINT_URL} target="_blank" rel="noopener">Impressum</a>
+  <span aria-hidden="true">·</span>
+  <a href={PRIVACY_URL} target="_blank" rel="noopener">Datenschutz</a>
+{/snippet}
+
+{#if zoneCard}
+  {#key zoneCard.key}
+    <ZoneCard a={zoneCard} bar={headerHeight} />
+  {/key}
+{/if}
 <Toasts headerHeight={headerOn ? headerHeight : 0} />
 
 <FxLayer />
@@ -426,6 +486,13 @@
     onkeydown={(e) => e.key === 'Escape' && (confirmLeave = false)}
     role="presentation"
   >
+    {#if legalHidden && legalNav}
+      <!-- A link opens in a new tab and the dialog stays. -->
+      <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
+      <nav class="legal lifted" aria-label="Legal" use:overLegal onclick={(e) => e.stopPropagation()}>
+        {@render legalLinks()}
+      </nav>
+    {/if}
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <div
       class="modal panel"
@@ -747,6 +814,9 @@
     padding: 0.6rem 1rem 1rem;
     font-size: 0.8rem;
     color: var(--muted);
+    transition:
+      opacity 0.3s,
+      visibility 0s;
   }
   .legal a {
     color: var(--muted);
@@ -754,6 +824,17 @@
   }
   .legal a:hover {
     color: var(--gold-hi);
+  }
+  .legal.hidden {
+    opacity: 0;
+    visibility: hidden;
+    transition:
+      opacity 0.3s,
+      visibility 0s 0.3s;
+  }
+  .legal.lifted {
+    position: absolute;
+    margin: 0;
   }
   .modal-backdrop {
     position: fixed;

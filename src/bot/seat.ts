@@ -25,15 +25,15 @@ import { engine, session } from '../lib/session.svelte';
 import { scanRooms, type RoomInfo } from '../lib/rooms';
 import { readStored, writeStored } from '../lib/storage';
 import { identityOf, leaningsOf, NAMES, nextName, shiftLength, type Identity, type Mode } from './identities';
-import { nextRole, wanted, type Role } from './wanted';
+import { joinable, nextRole, waitingAlone, wanted, watchable, type Role } from './wanted';
 import { afterHosting, afterVisit, hesitation, joinsAfter, keenTo, opensRoom, playsOn, urgeToHost, type HostExit, type Memory, type Visit } from './choice';
 import { dropSave, Host, keepSaveCopy, type Stint } from './host';
-import { Guest } from './guest';
+import { AGAIN_AFTER_MS, Guest } from './guest';
 import { between, log, time } from './util';
 
 const TICK_MS = 200;
-/** The open-room list is checked this often (ms, from..to), by the seat that checks it. */
-const SCOUT_EVERY: [number, number] = [10000, 18000];
+/** The open-room list is checked this often (ms, from..to), by the seat that checks it: often enough that someone waiting alone in their lobby gets company within seconds. */
+const SCOUT_EVERY: [number, number] = [6000, 10000];
 /**
  * Lists in a row that must call for a room before one opens: the second
  * room waits one more, so the first one's room shows in the list before it
@@ -113,7 +113,7 @@ export class Seat {
   private latest: { rooms: RoomInfo[]; at: number } = { rooms: [], at: 0 };
   private considered = 0;
   /** What the last list showed besides this seat's room, for the status. */
-  private seen: { rooms: number; at: number } | null = null;
+  private seen: { rooms: number; open: number; at: number } | null = null;
   private others: RoomInfo[] = [];
   /** The room this seat could open (wanted.ts), and how many lists in a row called for it. */
   private wanted: { role: Role; checks: number } | null = null;
@@ -141,13 +141,16 @@ export class Seat {
    * is at two seats at once); `modes`: the game modes its hosts may pick
    * (--mode); `maxRooms`: how many rooms the bot keeps open at most (--rooms:
    * no limit by default, 0: it only joins); `checks`: whether it checks the room list itself
-   * (the seat that does for all, or one on its own), else it is handed it.
+   * (the seat that does for all, or one on its own), else it is handed it;
+   * `watching`: everyone who comes on only watches (--watch: no rooms of
+   * their own, and in others' as spectators).
    */
   constructor(
     private readonly names: string[],
     private readonly modes: readonly Mode[],
     private readonly maxRooms: number,
     private readonly checks = true,
+    private readonly watching = false,
   ) {}
 
   start() {
@@ -285,8 +288,13 @@ export class Seat {
       ...(this.host?.status() ?? {}),
       ...(this.guest?.status() ?? {}),
       back: on ? null : time(Math.max(this.restUntil, Date.now())),
-      listed: this.seen ? `${this.seen.rooms} other rooms (${time(this.seen.at)})` : 'not checked yet',
+      listed: this.seen ? `${this.seen.rooms} other rooms, ${this.seen.open} ${this.watching ? 'to watch' : 'in a lobby to join'} (${time(this.seen.at)})` : 'not checked yet',
     };
+  }
+
+  /** Whether someone from this seat left room `code` lately (the guests don't go back to it: guest.ts). */
+  private recentlyIn(code: string, now: number) {
+    return now - (this.visited.get(code) ?? -Infinity) < AGAIN_AFTER_MS;
   }
 
   /** Our rooms numbered higher than `role` (their codes): it never makes way for them. */
@@ -348,7 +356,7 @@ export class Seat {
     const mine = this.host ? session.code : '';
     const others = rooms.filter((r) => r.code !== mine && !this.closed.has(r.code));
     this.others = others;
-    this.seen = { rooms: others.length, at };
+    this.seen = { rooms: others.length, open: others.filter(this.watching ? watchable : joinable).length, at };
     this.host?.see(others, this.ours);
     this.guest?.see(others, now);
     const role = this.host ? null : nextRole(this.team.map((t) => t.role), this.maxRooms);
@@ -395,8 +403,11 @@ export class Seat {
     }
     this.opener = null;
     this.handOver = false;
-    // Otherwise, after a rest, whoever feels most like joining is likeliest to come on and look for a room.
-    if (now >= this.restUntil) {
+    // Otherwise, after a rest, whoever feels most like joining is likeliest to
+    // come on and look for a room; at once when someone is waiting alone in
+    // their lobby (and the seat isn't just handing over).
+    const someoneWaits = !this.watching && now >= this.backAt && this.others.some((r) => waitingAlone(r, this.ours) && !this.recentlyIn(r.code, now));
+    if (now >= this.restUntil || someoneWaits) {
       const free = shiftLength(Math.random);
       const name = nextName(this.saved.recent, Math.random, this.names, (n) => keenTo(this.urge(n, leaningsOf(n), free, now), 'join'));
       this.lookForRoom(identityOf(name, engine.categories, this.modes, engine.items), now + free);
@@ -464,8 +475,10 @@ export class Seat {
   private lookForRoom(who: Identity, until: number, prefer = '', how: 'comes on' | 'stays on' | 'again' = 'comes on') {
     this.cameOn(who.name);
     this.declined = false;
-    this.guest = new Guest(who, this.visited, () => this.ours, (host) => this.mind(who.name).hosts?.[host] ?? 0, until, prefer);
-    const says = { 'comes on': 'comes on, looking for a room to join', 'stays on': "stays on to play in someone else's room", again: 'looks for another room' };
+    this.guest = new Guest(who, this.visited, () => this.ours, (host) => this.mind(who.name).hosts?.[host] ?? 0, until, prefer, this.watching);
+    const says = this.watching
+      ? { 'comes on': 'comes on, looking for a room to watch', 'stays on': "stays on to watch someone else's room", again: 'looks for another room to watch' }
+      : { 'comes on': 'comes on, looking for a room to join', 'stays on': "stays on to play in someone else's room", again: 'looks for another room' };
     log(`${who.name} ${says[how]} (until ${time(until)})`);
     // Through the latest list straight away, as someone opening the list would.
     if (this.latest.at) this.guest.see(this.others, Date.now());
@@ -509,9 +522,9 @@ export class Seat {
     this.restUntil = now + between(...REST);
     // A room still wanted has nobody to join, so only without one do they look around.
     const until = exit === 'done' ? now + between(...ONE_MORE) : Math.max(host.until, now + ONE_MORE[0]);
-    if (!this.handOver && joinsAfter(this.urge(name, host.who.persona, until - now, now), exit, Math.random)) {
-      const to = exit === 'made way' ? Host.wayTo(this.others, this.ours) : null;
-      this.lookForRoom(host.who, until, to?.code, 'stays on');
-    }
+    // Made way for someone waiting alone in their own room: they go and keep them company.
+    const to = exit === 'made way' ? Host.wayTo(this.others, this.ours) : null;
+    const forSomeone = !!to && waitingAlone(to, this.ours);
+    if (!this.handOver && (forSomeone || joinsAfter(this.urge(name, host.who.persona, until - now, now), exit, Math.random))) this.lookForRoom(host.who, until, to?.code, 'stays on');
   }
 }

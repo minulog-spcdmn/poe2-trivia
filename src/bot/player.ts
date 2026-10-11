@@ -7,7 +7,7 @@
 
 import { engine, session } from '../lib/session.svelte';
 import { activeRules, grayscaleFor, type GameState, type Question } from '../lib/game';
-import { blastProblem, findLosses, fuseDue, inventoryOf, isGroupRun, livesOf, reviveProblem, shownDepth, standingIds, teamItemReady } from '../lib/delve';
+import { blastProblem, dealIn, findLosses, fuseDue, inventoryOf, isGroupRun, livesOf, reviveProblem, shownDepth, standingIds, teamItemReady } from '../lib/delve';
 import { answerDelay, blasts, chooseAnswer, chooseCard, findAppetite, knowChance, misclicks, movesOn, panic, pickCategory, pickDelay, rethinks, tiredness, withTheHerd, wrongPick, type Ask, type Persona } from './brain';
 export { moodOf } from './brain';
 
@@ -24,7 +24,7 @@ interface Plan {
 }
 
 import { between, log } from './util';
-import { Hand } from './hand';
+import { Hand, dealtAt } from './hand';
 
 /** New to it, a guest tries the button to move on through someone else's reveal at most this many reveals in, each time this likely; once is enough to learn. */
 const TRY_NEXT_FOR = 3;
@@ -252,10 +252,12 @@ export class Player {
         teammates: standingIds(s).filter((id) => id !== me).length,
       }),
     }));
-    // The cards looked over meanwhile, and the click begun early enough to land on time.
-    const lead = this.hand.lead();
-    const at = session.hostNow() + Math.max(300, pickDelay(this.persona, Math.random, offered.length) - lead);
-    this.hand.lookOverCards(offered.length, Date.now() + (at - session.hostNow()));
+    // The cards looked over meanwhile, from when they are dealt (a new zone's, as the plunge into it lands), and the
+    // click begun early enough to land on time.
+    const now = session.hostNow();
+    const dealt = now + dealIn(s, now);
+    const at = dealt + Math.max(300, pickDelay(this.persona, Math.random, offered.length) - this.hand.lead());
+    this.hand.lookOverCards(offered.length, Date.now() + (at - now), dealtAt(s));
     const still = () => {
       const cur = session.state;
       if (cur?.phase !== 'choosing' || cur.turnCount !== s.turnCount || cur.round !== s.round) return null;
@@ -308,7 +310,7 @@ export class Player {
     });
   }
 
-  /** Delve together: gives a teammate who perished one of its lives, whenever it can (once a depth each, after a moment). */
+  /** Delve together: gives a teammate who perished one of its lives, whenever it can (once a depth each, a moment after the cards are dealt). */
   private planRevive(s: GameState) {
     const me = session.myPlayerId!;
     for (const p of s.players) {
@@ -316,9 +318,13 @@ export class Player {
       const key = `revive:${p.id}:${s.round}`;
       if (this.decided.has(key)) continue;
       this.decided.add(key);
+      const now = session.hostNow();
       this.plans.set(key, {
-        at: session.hostNow() + between(1500, 5000) * this.persona.pace,
+        at: now + dealIn(s, now) + between(1500, 5000) * this.persona.pace,
         run: async () => {
+          // Planned on the reveal before a new zone and due in the plunge into it: that depth's own plan, from the deal, gives it.
+          const cur0 = session.state;
+          if (!cur0 || dealIn(cur0, session.hostNow()) > 0) return;
           // The life is given from the teammate's row on the scoreboard.
           await this.hand.click(`row:${session.state?.players.findIndex((o) => o.id === p.id) ?? -1}`);
           const cur = session.state;
