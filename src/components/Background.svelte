@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { switchedOff } from '../lib/switchedOff';
   import { onMount } from 'svelte';
   import { startBackdrop } from '../lib/backdrop';
   import { ENVIRONMENTS, MAGMA, descent, emberTurn, lookOf, magmaHeat, onDescent, toneOf, type Descent } from '../lib/descent';
@@ -44,6 +45,8 @@
       failed = true;
     };
     let stop: (() => void) | null = null;
+    // (Switched off for a test, on the beta: ?off=webgl, lib/switchedOff.ts.)
+    if (switchedOff('webgl')) return fail();
     try {
       stop = startBackdrop(canvas, fail);
     } catch (e) {

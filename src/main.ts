@@ -10,11 +10,12 @@ import { session } from './lib/session.svelte';
 import { watchFullscreen } from './lib/fullscreen';
 import { installCursor } from './lib/ownCursor';
 import { installAutoscroll } from './lib/autoscroll';
+import { switchedOff } from './lib/switchedOff';
 
 installUiSounds();
 installUiFx();
 watchFullscreen();
-installCursor();
+if (!switchedOff('cursor')) installCursor();
 installAutoscroll();
 // No browser menu on a right click: it brings the system's cursor, and the
 // game has no use for it. Text fields keep theirs, where it's how many paste,

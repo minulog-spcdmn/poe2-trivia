@@ -12,6 +12,7 @@
 
 import { ART, type Art, type ArtName } from './pointerArt';
 import { whenIdle } from './idle';
+import { switchedOff } from './switchedOff';
 
 /** The circle's old gold (docs/arcane-style.md). */
 const GOLD = '#d9a45a';
@@ -170,6 +171,7 @@ function pressedFor(el: Element): string | null {
  * is (pressed there, on the page's scrollbar say, the pointer stays as is).
  */
 function dress(target: EventTarget | null) {
+  if (switchedOff('press')) return;
   if (applied === 'forced' || !(target instanceof HTMLElement || target instanceof SVGElement) || target === document.documentElement) return undress();
   if (dressed?.el === target) return;
   undress();
