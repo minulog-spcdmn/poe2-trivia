@@ -411,14 +411,16 @@ function filter(ac: AudioContext, type: BiquadFilterType, frequency: number, q =
  * One layer: high-pass, low-pass and the "soften" dip around 3.2 kHz, then
  * level and reverb send. Returns its source and level, to stop it early (see sfx).
  * `hold` (s): the layer lasts that long from the moment's start, looped
- * should its recording run out sooner, and then fades out.
+ * should its recording run out sooner, and then fades out. `at` (s): the
+ * moment starts that long from now, on the audio clock.
  */
-function playLayer(b: Bus, buf: AudioBuffer, l: Layer, soften: number, pitch: number, gainDb: number, hold?: number) {
+function playLayer(b: Bus, buf: AudioBuffer, l: Layer, soften: number, pitch: number, gainDb: number, hold?: number, at = 0) {
   const { ac } = b;
   const src = ac.createBufferSource();
   src.buffer = buf;
   src.playbackRate.value = l.rate * pitch;
-  const start = ac.currentTime + l.delay / 1000;
+  const begin = ac.currentTime + at;
+  const start = begin + l.delay / 1000;
   if (hold !== undefined && buf.duration / src.playbackRate.value < hold - l.delay / 1000) {
     // Too short to last: it loops, round its middle (the onset and the tail left out).
     src.loop = true;
@@ -438,7 +440,7 @@ function playLayer(b: Bus, buf: AudioBuffer, l: Layer, soften: number, pitch: nu
   g.connect(send).connect(b.wet);
   src.start(start);
   if (hold !== undefined) {
-    const end = Math.max(start, ac.currentTime + hold);
+    const end = Math.max(start, begin + hold);
     g.gain.setValueAtTime(g.gain.value, end);
     g.gain.linearRampToValueAtTime(0, end + STOP_FADE);
     src.stop(end + STOP_FADE);
@@ -465,9 +467,11 @@ const lastPlayed = new Map<Sfx, number>();
  * (muted, out of sight, too soon after the last, or before the first
  * click). `holdMs`: the sound lasts that long and then fades out, each
  * layer looped should its recording be shorter (a fuse burning for as long
- * as it has left).
+ * as it has left). `inMs`: it starts that long from now, timed on the audio
+ * clock rather than a timer (a row of ticks keeps its spacing however busy
+ * the page is).
  */
-export function sfx(name: Sfx, opts: { holdMs?: number } = {}): (() => void) | undefined {
+export function sfx(name: Sfx, opts: { holdMs?: number; inMs?: number } = {}): (() => void) | undefined {
   // Out of sight (a co-op tab in the background) nothing plays: a sound
   // would wake the audio context that rest() put to sleep, and keep it running.
   if (muted || (typeof document !== 'undefined' && document.hidden)) return undefined;
@@ -487,7 +491,10 @@ export function sfx(name: Sfx, opts: { holdMs?: number } = {}): (() => void) | u
   for (const l of m.layers) {
     // Only layers that have loaded: a late layer would land out of step.
     const buf = ready.get(l.file);
-    if (buf) layers.push(playLayer(b, buf, l, m.soften, pitch, gainDb, opts.holdMs === undefined ? undefined : Math.max(0, opts.holdMs) / 1000));
+    if (buf)
+      layers.push(
+        playLayer(b, buf, l, m.soften, pitch, gainDb, opts.holdMs === undefined ? undefined : Math.max(0, opts.holdMs) / 1000, Math.max(0, opts.inMs ?? 0) / 1000),
+      );
   }
   // One that failed to load as sound started (offline for a moment) is tried
   // again for next time, once its wait is over (see load).

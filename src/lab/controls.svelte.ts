@@ -32,10 +32,12 @@ import {
   inventoryOf,
   isGroupRun,
   livesOf,
+  opensZone,
   standingIds,
   tileVeilSize,
   veilSeconds,
   veinWindowMs,
+  ZONE_DESCENT_MS,
   type FindKind,
   type Inventory,
   type ItemKind,
@@ -188,6 +190,7 @@ function deal(s: GameState) {
       opts.cardFind2 !== 'none' && opts.cardFind2 !== opts.cardFind && s.offered.length > 1 ? [{ category: s.offered[0], kind: opts.cardFind2 }] : [];
     s.delve.finds = [...first, ...second];
     delete s.delve.find;
+    delete s.delve.dealAt;
   }
 }
 
@@ -715,13 +718,18 @@ export const othersPerish = () =>
     }
   });
 
-/** One depth deeper, built as the engine does it at the end of a round, so the mark for it plays. */
+/**
+ * One depth deeper, built as the engine does it at the end of a round, so the
+ * mark for it plays: into a new zone, its cards dealt as the plunge lands
+ * (dealAt), as the engine deals them.
+ */
 function stepDown() {
   put((s) => {
     s.round++;
     s.turn = Math.max(0, s.players.findIndex((p) => livesOf(s, p.id) > 0));
     s.turnCount++;
     deal(s);
+    if (s.delve && opensZone(s.round)) s.delve.dealAt = session.hostNow() + ZONE_DESCENT_MS;
   });
 }
 

@@ -330,7 +330,8 @@ export const MOMENTS: Record<Sfx, Moment> = {
   // Delve, as picked on the Delve sound page.
   stratum: {
     soften: 6,
-    varyPitch: 0.02,
+    // Never nudged: a new zone's name lands on its second swell, so it must come at the same moment every time.
+    varyPitch: 0,
     varyGain: 1,
     layers: [
       { file: 'defeat-5', gain: -34, rate: 0.59, delay: 0, hp: 107, lp: 5917, send: 0.85 },
