@@ -29,7 +29,7 @@
   import { pinnedOut } from '../lib/stage';
   import HostMark from './HostMark.svelte';
   import RoomCodeGlyphs from './RoomCodeGlyphs.svelte';
-  import { missingNote, notReady, type Missing } from '../lib/presence';
+  import { greyed, markOf, missingNote, notReady, type Mark, type Missing } from '../lib/presence';
   import StandingMark from './StandingMark.svelte';
 
   const TARGETS = [5, 10, 15, 20];
@@ -230,18 +230,17 @@
   const delve = $derived(s.settings.mode === 'delve');
   const difficulty = $derived(difficultyOf(s.settings.difficulty));
   const lockout = $derived(rulesFor(s.settings).lockout);
-  /** Online: how each player stands, when not simply ready (lib/presence.ts: away, idle, or lagging). */
-  const standing = (id: string) => (local ? undefined : session.standing[id]);
-  /** Online: the players the game would begin without (offline, away or idle), and why. */
+  /** Online: each player's mark, when not simply ready (lib/presence.ts: away, idle, lagging or offline). */
+  const marks = $derived(new Map<string, Mark | null>(s.players.map((p) => [p.id, local ? null : markOf(p.connected, session.standing[p.id])])));
+  /** Online: the players the game would begin without, and why (the host never counts themselves: they're the one reading it). */
   const unready = $derived(
-    local
-      ? []
-      : s.players.flatMap((p): { name: string; why: Missing }[] => {
-          const st = standing(p.id);
-          return !p.connected ? [{ name: p.name, why: 'offline' }] : st === 'away' || st === 'idle' ? [{ name: p.name, why: st }] : [];
-        }),
+    s.players.flatMap((p): { name: string; why: Missing }[] => {
+      const m = marks.get(p.id);
+      return notReady(m) && !(isHost && p.id === session.myPlayerId) ? [{ name: p.name, why: m }] : [];
+    }),
   );
-  const hostAway = $derived(!isHost && notReady(standing(s.hostId ?? '')));
+  /** Guest: the host is away or idle (offline, the guest would be reconnecting). */
+  const hostMark = $derived(isHost ? null : marks.get(s.hostId ?? ''));
 </script>
 
 {#snippet startRow()}
@@ -268,7 +267,7 @@
     <!-- Begin is the gold button whenever it can start: playing alone is a normal game. -->
     <button class="btn big primary" data-cursor="begin" disabled={!canStart} onclick={start}>{delve ? 'Begin the descent' : 'Begin the hunt'}</button>
   {:else}
-    <p class="muted waiting"><span class="pulse"></span>{hostAway ? 'Waiting for the host to start; they seem to be away…' : 'Waiting for the host to start…'}</p>
+    <p class="muted waiting"><span class="pulse"></span>{hostMark === 'away' || hostMark === 'idle' ? `Waiting for the host to start; they seem to be ${hostMark}…` : 'Waiting for the host to start…'}</p>
   {/if}
 {/snippet}
 
@@ -401,7 +400,7 @@
         <!-- The same chips the game shows along its top, two to a row. -->
         <ul class="chips">
           {#each s.players as p, i (p.id)}
-            {@const st = p.connected ? standing(p.id) : 'offline'}
+            {@const mark = marks.get(p.id)}
             <li
               data-cursor="row:{i}"
               use:arriving={p.name}
@@ -410,12 +409,12 @@
               out:kickOut
               data-id={p.id}
               class:armed={confirming === p.id}
-              class:absent={st === 'offline' || notReady(st)}
+              class:absent={notReady(mark)}
               style:--c={playerColor(p.hue)}
             >
-              <Avatar name={p.name} hue={p.hue} size={32} dim={st === 'offline' || st === 'idle'} />
+              <Avatar name={p.name} hue={p.hue} size={32} dim={greyed(mark)} />
               <span class="name" title={p.name}><PlayerName name={p.name} />{#if !local && p.id === session.myPlayerId && s.players.length > 1}<em>&nbsp;(you)</em>{/if}</span>
-              {#if st}<StandingMark standing={st} />{/if}
+              {#if mark}<StandingMark {mark} />{/if}
               <!-- The host's chip carries a hanging banner, the party's standard, where the others have their ×. -->
               {#if p.id === s.hostId && !local}<HostMark />{/if}
               {#if isHost && (local || p.id !== s.hostId)}

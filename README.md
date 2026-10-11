@@ -609,15 +609,18 @@ browser (`src/lib/achievements.ts`); erasing the codex erases them.
   - **Who's ready:** in the lobby, a player's chip carries a mark, where the
     host has their banner, when they aren't simply there
     (`src/components/StandingMark.svelte`): a closed eye when their game
-    isn't on their screen (another tab or app, or the screen off, for more
-    than a couple of seconds), a crescent moon when they haven't touched it
+    isn't on their screen (another tab, a minimised window, or the screen
+    off, for more than a couple of seconds; another app's window over the
+    browser doesn't count, as the page can't tell), a crescent moon when they haven't touched it
     for two minutes, signal bars with two lit when their game answers the host's
     pings slowly (a smoothed round trip over 800 ms, or none for 7 s), and
     unlit bars when they're offline, all in the same muted grey. Away, idle
     and offline names dim, and idle and offline avatars grey as an offline
     player's does in the game (away can be a look at another tab). Beside Begin the host sees "All 4 exiles here and ready" with
     a tick, or who the game would begin without and why ("3 of 4 ready; Kai
-    is away"); a guest waiting on an away host is told so. Each device tells
+    is away"; never themselves); a guest waiting on an away or idle host is
+    told so. Coming back to the game counts as a sign of life, and the room
+    hears of each change at once (away once its grace is over). Each device tells
     the host its own presence as it changes, and the host tells the room
     (`src/lib/presence.ts`).
   - **Live pointers:** in the lobby, in turns mode and Delve together, and
@@ -854,10 +857,10 @@ Everything is drawn in WebGL2 with float precision and dithered once at the
   for; effects asked for before it's ready wait for it. The game's own
   screens (`Game.svelte`, `GameOver.svelte`) are a chunk of their own, about
   a quarter of the script, fetched at the first idle moment or at once on the
-  way into a room, so the start page loads and runs without them. The host
+  way into a room, so the start page loads and runs without them (tried again
+  a few times if the fetch fails, then a notice says to reload). The host
   decodes a question's pictures off the main thread (all of a "find the art"
-  question's at once), and a picture request still out after 2 s gets a
-  second one beside it, so one stalled request doesn't hold the question up.
+  question's at once).
 - **The creator** (zoe_arcana, a name only an unlocked device can take; a
   deterrent, not proof) is marked out. Gold motes circle her avatar on a
   tilted orbit, passing behind it on the far side, in a ruby glow with

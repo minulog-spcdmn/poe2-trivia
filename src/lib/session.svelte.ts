@@ -72,7 +72,7 @@ import { readLegacy, readStored, removeLegacy, removeStored, writeStored } from 
 import { CursorOutbox, FLUSH_EVERY_MS, POINTER_BURST, POINTER_RATE, PRESSED, actionOf, cursorKey, cursorsLive, entryAt, type CursorAt, type CursorEntry } from './cursors';
 import { peerCursors } from './peerCursors.svelte';
 import { whenIdle } from './idle';
-import { noteInput, ownPresence, slowLink, standingOf, watchPresence, type Seen, type Standing } from './presence';
+import { AWAY_AFTER_MS, noteInput, ownPresence, slowLink, standingOf, watchPresence, type Presence, type Seen, type Standing } from './presence';
 
 export const engine = new Engine(itemData as Item[], { fakes: fakeNames });
 
@@ -284,8 +284,10 @@ class Session {
    * (presence.ts), by id. The host works it out and tells everyone.
    */
   standing = $state.raw<Record<string, Standing>>({});
-  /** Guest: tells the host whenever this device's presence changes (set up on the first join). */
+  /** Follows this device's presence (set up on the first room opened or joined): a guest tells the host, a host the room. */
   private presenceWatch: (() => void) | null = null;
+  /** Host: the room is told how an away player stands once their grace is over. */
+  private standingTimer: ReturnType<typeof setTimeout> | null = null;
   /** Guest: the host turned down this device's answer to the question asked at `askedAt` (too quick), so it may be given again. */
   turnedDown = $state<{ askedAt: number } | null>(null);
   /** Host: the question (askedAt) whose art could not be loaded, so guests got no pictures. */
@@ -589,6 +591,7 @@ class Session {
         this.setState(s);
       }
       this.startPings();
+      this.watchOwnPresence();
     });
     peer.on('connection', (conn) => this.acceptConnection(conn));
     peer.on('disconnected', () => {
@@ -696,11 +699,6 @@ class Session {
         if (guest.playerId) this.cursorFrom(conn, guest, msg.at);
         return;
       }
-      // Only ever this guest's own word on itself, and as cheap to take as a pointer.
-      if (msg.t === 'presence') {
-        if (msg.p !== guest.seen.presence) guest.seen = { presence: msg.p, since: Date.now() };
-        return;
-      }
       if (!guest.limit.take()) {
         // Someone holding a key down: disconnect (they may come back), don't block.
         if (guest.limit.strikes > 30) this.drop(conn);
@@ -712,6 +710,11 @@ class Session {
           guest.tab = msg.tab ?? null;
           clearTimeout(helloTimer);
           this.handleHello(conn, guest, msg.secret, msg.name, msg.v, !!msg.watch);
+        } else if (msg.t === 'presence') {
+          // Only ever this guest's own word on itself.
+          if (!guest.playerId || msg.p === guest.seen.presence) return;
+          guest.seen = { presence: msg.p, since: Date.now() };
+          this.standingSoon(msg.p);
         } else if (msg.t === 'pong') {
           const sent = guest.pings.get(msg.n);
           if (sent !== undefined) {
@@ -860,7 +863,8 @@ class Session {
       }
     guest.playerId = playerId;
     this.send(conn, { t: 'welcome', playerId });
-    if (Object.keys(this.standing).length) this.send(conn, { t: 'standing', s: this.standing });
+    // Even when nobody is marked: a guest coming back may still hold marks from before it dropped.
+    this.send(conn, { t: 'standing', s: this.standing });
     this.setState(next);
     for (const m of this.released) if (this.mayGetMedia(guest)) this.sendMedia(conn, guest, m);
     const player = next.players.find((p) => p.id === playerId);
@@ -898,6 +902,13 @@ class Session {
     return performance.now() - Math.max(guest.mediaAt.at, clock) < guest.rtt + MIN_HUMAN_MS;
   }
 
+  private watchOwnPresence() {
+    this.presenceWatch ??= watchPresence((p) => {
+      if (this.mode === 'client' && this.hostConn?.open) this.hostConn.send({ t: 'presence', p });
+      else if (this.mode === 'host') this.standingSoon(p);
+    });
+  }
+
   private startPings() {
     if (this.pingTimer) clearInterval(this.pingTimer);
     this.pingTimer = setInterval(() => {
@@ -924,6 +935,21 @@ class Session {
    * when that changed, tells everyone. Players who are simply ready, and
    * those offline (Player.connected says so), aren't listed.
    */
+  /**
+   * Host: someone's presence changed (`p`): the room is told now, rather than
+   * at the next ping, and once more as an away player's grace runs out.
+   */
+  private standingSoon(p: Presence) {
+    this.updateStanding();
+    if (p === 'away') {
+      if (this.standingTimer) clearTimeout(this.standingTimer);
+      this.standingTimer = setTimeout(() => {
+        this.standingTimer = null;
+        this.updateStanding();
+      }, AWAY_AFTER_MS + 50);
+    }
+  }
+
   private updateStanding() {
     const s = this.state;
     const now = Date.now();
@@ -1574,9 +1600,7 @@ class Session {
     // The host takes every guest to be here until told otherwise; from then on, each change is sent as it happens.
     const { presence } = ownPresence();
     if (secret && this.hostConn === conn && conn.open && presence !== 'here') conn.send({ t: 'presence', p: presence });
-    this.presenceWatch ??= watchPresence((p) => {
-      if (this.mode === 'client' && this.hostConn?.open) this.hostConn.send({ t: 'presence', p });
-    });
+    this.watchOwnPresence();
   }
 
   private hostLost(conn: DataConnection) {
@@ -2382,6 +2406,8 @@ class Session {
     for (const c of this.guests.keys()) c.close();
     this.guests.clear();
     this.standing = {};
+    if (this.standingTimer) clearTimeout(this.standingTimer);
+    this.standingTimer = null;
     this.cursorOut.clear();
     this.cursorPressed.clear();
     if (this.cursorTimer) clearTimeout(this.cursorTimer);

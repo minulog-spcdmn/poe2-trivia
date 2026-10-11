@@ -22,6 +22,7 @@
   import Lobby from './components/Lobby.svelte';
   import { closeCodex, codexRoute } from './lib/codexRoute.svelte';
   import { whenIdle } from './lib/idle';
+  import { toasts } from './lib/toasts.svelte';
   import { BETA, LOCAL } from './lib/channel';
   import { watchFullscreenTip } from './lib/fullscreenTip';
   import { setCursorColor } from './lib/ownCursor';
@@ -233,18 +234,27 @@
 
   // The game's screens (a question, the end of a game) are a chunk of their
   // own, so the start page loads and runs without them: fetched in the first
-  // idle moment, or at once on the way into a room.
+  // idle moment, or at once on the way into a room. A fetch that fails (a
+  // dropped connection, or a deploy that replaced the chunk) is tried again
+  // a few times while a room is open, then the player is told to reload.
   let Game = $state<Component | null>(null);
   let GameOver = $state<Component | null>(null);
   let gamePages: Promise<unknown> | null = null;
+  let gamePagesFailed = 0;
+  const GAME_PAGES_TRIES = 4;
+  const inRoom = () => screen !== 'home' && screen !== 'codex';
   const loadGamePages = () =>
     (gamePages ??= Promise.all([
       import('./components/Game.svelte').then((m) => (Game = m.default)),
       import('./components/GameOver.svelte').then((m) => (GameOver = m.default)),
-    ]).catch(() => (gamePages = null)));
+    ]).catch(() => {
+      gamePages = null;
+      if (++gamePagesFailed < GAME_PAGES_TRIES) setTimeout(() => inRoom() && loadGamePages(), 1500 * gamePagesFailed);
+      else toasts.show("Part of the game couldn't be loaded. Reload the page to carry on.", 'error', { title: 'Loading failed' });
+    }));
   onMount(() => whenIdle(loadGamePages, { timeout: 1500, fallback: 500 }));
   $effect(() => {
-    if (screen !== 'home' && screen !== 'codex') untrack(loadGamePages);
+    if (inRoom()) untrack(loadGamePages);
   });
 
   // Each screen starts at the top (a guest who scrolled down to the join

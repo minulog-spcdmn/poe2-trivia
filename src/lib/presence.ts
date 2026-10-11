@@ -44,18 +44,26 @@ export function slowLink(was: boolean, rtt: number, sincePong: number): boolean 
   return rtt > (was ? SLOW_CLEAR_MS : SLOW_RTT_MS);
 }
 
-/** What each standing says on a player's chip, and when pointed at. */
-export const STANDING_TEXT: Record<Standing, { tag: string; title: string }> = {
-  away: { tag: 'Away', title: "The game isn't on their screen: another tab or app, or the screen is off." },
+/** What a player's chip shows: how they stand, or that their link is gone (Player.connected). */
+export type Mark = Standing | 'offline';
+
+/** A player's mark, if any. */
+export const markOf = (connected: boolean, standing: Standing | undefined): Mark | null => (connected ? (standing ?? null) : 'offline');
+
+/** What each mark says on a player's chip, and when pointed at. */
+export const MARK_TEXT: Record<Mark, { tag: string; title: string }> = {
+  away: { tag: 'Away', title: "The game isn't on their screen: another tab, a minimised window, or the screen is off." },
   idle: { tag: 'Idle', title: 'No sign of them for a couple of minutes.' },
   slow: { tag: 'Lagging', title: 'Their game is slow to answer the host (a slow connection, or a busy device), so the art may reach them late.' },
+  offline: { tag: 'Offline', title: "Reconnecting. Their seat is let go if they're not back when the game starts." },
 };
 
-/** A standing that means the player isn't ready to play (one lagging is still there, only late). */
-export const notReady = (s: Standing | null | undefined) => s === 'away' || s === 'idle';
+/** Why a player isn't ready to play (one lagging is still there, only late). */
+export type Missing = Exclude<Mark, 'slow'>;
+export const notReady = (m: Mark | null | undefined): m is Missing => m === 'away' || m === 'idle' || m === 'offline';
 
-/** Why a player isn't ready: their game away or idle, or their link gone. */
-export type Missing = 'away' | 'idle' | 'offline';
+/** A mark that greys the player's avatar: gone a while (idle) or gone (offline); away may be a quick look at another tab. */
+export const greyed = (m: Mark | null | undefined) => m === 'idle' || m === 'offline';
 
 /**
  * Who the game would begin without, for a sentence after "3 of 4 ready;":
@@ -110,7 +118,11 @@ function start() {
   lastInput = since = now();
   presence = current();
   for (const type of INPUTS) addEventListener(type, noteInput, { passive: true, capture: true });
-  document.addEventListener('visibilitychange', update);
+  // Coming back to the game is a sign of life too (a tab clicked in the tab strip is no event of the page's).
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') lastInput = now();
+    update();
+  });
   setInterval(update, CHECK_MS);
 }
 

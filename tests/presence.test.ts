@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { AWAY_AFTER_MS, LATE_PONG_MS, SLOW_CLEAR_MS, SLOW_RTT_MS, missingNote, namesList, notReady, slowLink, standingOf } from '../src/lib/presence.ts';
+import { AWAY_AFTER_MS, LATE_PONG_MS, SLOW_CLEAR_MS, SLOW_RTT_MS, greyed, markOf, missingNote, namesList, notReady, slowLink, standingOf } from '../src/lib/presence.ts';
 
 test('a player gone from the screen shows as away only once a quick look elsewhere is over', () => {
   const since = 1000;
@@ -23,11 +23,20 @@ test("a slow link doesn't flicker: it turns slow above one round trip and clears
   assert.equal(slowLink(false, 50, LATE_PONG_MS + 1), true);
 });
 
-test('only away and idle keep a player from being ready', () => {
-  assert.equal(notReady('away'), true);
-  assert.equal(notReady('idle'), true);
-  assert.equal(notReady('slow'), false);
-  assert.equal(notReady(undefined), false);
+test('away, idle and offline keep a player from being ready; only idle and offline grey them', () => {
+  assert.equal(markOf(false, 'slow'), 'offline');
+  assert.equal(markOf(true, 'away'), 'away');
+  assert.equal(markOf(true, undefined), null);
+  for (const [m, ready, grey] of [
+    ['away', false, false],
+    ['idle', false, true],
+    ['offline', false, true],
+    ['slow', true, false],
+    [null, true, false],
+  ] as const) {
+    assert.equal(notReady(m), !ready, String(m));
+    assert.equal(greyed(m), grey, String(m));
+  }
 });
 
 test('who the game waits on reads as a sentence', () => {
