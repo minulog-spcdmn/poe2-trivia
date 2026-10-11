@@ -13,7 +13,7 @@
   import { peerCursors } from '../lib/peerCursors.svelte';
   import { LIT, MOUSE, PRESSED, SEND_EVERY_MS, TAP, actionOf, anchorName, cursorKey, cursorsLive, fromAnchor, litOf, trailAt, type CursorAt, type PointerKind } from '../lib/cursors';
   import { playerColor } from '../lib/ui';
-  import { portal } from '../lib/portal';
+  import { portalToPage } from '../lib/portal';
   import { anchorAt, clickableAt, screenHeight } from '../lib/pointerAnchor';
   import { HAND, HAND_PRESSED, PAD_X, PAD_Y, POINTER, PRESS_SINK, SIZE, WEIGHT } from '../lib/pointerArt';
 
@@ -171,8 +171,32 @@
 
   const els: Record<string, HTMLElement> = {};
   /** Where each pointer is drawn now, gliding toward where it was heard to be. */
-  /** Where each is drawn; its element; how far it's drawn off its place here, fading (JUMP_PX); where its place was last frame; its press shown until. */
-  const drawn = new Map<string, { x: number; y: number; tap: number; code: number; ox: number; oy: number; px: number; py: number; pressUntil: number }>();
+  /**
+   * Where each is drawn; its element; how far it's drawn off its place here, fading (JUMP_PX); where its place was last frame; its press shown until;
+   * whether it's set in the page (stuck: its places are then the page's, not the screen's); its element's top and the page's scroll last frame.
+   */
+  const drawn = new Map<
+    string,
+    { x: number; y: number; tap: number; code: number; ox: number; oy: number; px: number; py: number; pressUntil: number; page: boolean; top: number; scroll: number }
+  >();
+
+  /**
+   * A phone scrolls the page on its own, ahead of the frames drawn here, so
+   * a pointer fixed to the screen trails what it's on as the page scrolls,
+   * by as far as it goes in a frame or two. One on something that scrolls
+   * with the page is set in the page instead (in #app, and clipped with it),
+   * and scrolls along between frames; one on something that stays put (the
+   * bar pinned to the top in a game, the dock at the bottom) stays fixed to
+   * the screen. Told apart by how its element moves as the page scrolls,
+   * and, before that's seen, by whether it's in something fixed or sticky.
+   */
+  function stuck(el: Element) {
+    for (let n: Element | null = el; n && n !== document.body; n = n.parentElement) {
+      const p = getComputedStyle(n).position;
+      if (p === 'fixed' || p === 'sticky') return true;
+    }
+    return false;
+  }
 
   function anchorFor(code: number, cache: Map<number, HTMLElement | null>) {
     if (cache.has(code)) return cache.get(code)!;
@@ -238,12 +262,29 @@
           ts.push(t);
         }
         const [rx, ry] = touch || pressNow || !ps.length ? fromAnchor(code, ax, ay, r, screenH) : trailAt(ps, ts, now - BEHIND_MS);
-        // Never off this screen, however far off the others' place lands here.
-        const tx = Math.min(innerWidth - 16, Math.max(2, rx));
-        const ty = Math.min(innerHeight - 20, Math.max(2, ry));
         let d = drawn.get(c.key);
+        // In the page or on the screen (stuck): by how its element moved as the page scrolled, or, new to it, where it is.
+        let page = d && d.code === code ? d.page : !stuck(anchor);
+        if (d && d.code === code && Math.abs(scrollY - d.scroll) >= 1) {
+          const moved = r.top - d.top;
+          if (Math.abs(moved + scrollY - d.scroll) < 1) page = true;
+          else if (Math.abs(moved) < 1) page = false;
+        }
+        const [sx, sy] = page ? [scrollX, scrollY] : [0, 0];
+        if (d && page !== d.page) {
+          // (Where it's drawn, and was, in the other's terms.)
+          const [kx, ky] = page ? [scrollX, scrollY] : [-scrollX, -scrollY];
+          d.x += kx;
+          d.y += ky;
+          d.px += kx;
+          d.py += ky;
+        }
+        // Never off this screen, however far off the others' place lands here.
+        const tx = Math.min(innerWidth - 16, Math.max(2, rx)) + sx;
+        const ty = Math.min(innerHeight - 20, Math.max(2, ry)) + sy;
         // A tap lands where it is; a pointer just come in starts where it is.
-        if (!d || touch) drawn.set(c.key, (d = { x: tx, y: ty, tap: d?.tap ?? 0, code, ox: 0, oy: 0, px: tx, py: ty, pressUntil: d?.pressUntil ?? 0 }));
+        if (!d || touch)
+          drawn.set(c.key, (d = { x: tx, y: ty, tap: d?.tap ?? 0, code, ox: 0, oy: 0, px: tx, py: ty, pressUntil: d?.pressUntil ?? 0, page, top: 0, scroll: 0 }));
         else {
           // Placed on another element far from where it's drawn, or leaping: it stays where it's drawn (JUMP_PX).
           const far = Math.hypot(tx + d.ox - d.x, ty + d.oy - d.y);
@@ -263,6 +304,10 @@
           d.x += (tx + d.ox - d.x) * step;
           d.y += (ty + d.oy - d.y) * step;
         }
+        d.page = page;
+        d.top = r.top;
+        d.scroll = scrollY;
+        el.style.position = page ? '' : 'fixed';
         el.style.transform = `translate3d(${d.x}px, ${d.y}px, 0)`;
         el.classList.toggle('tap', touch);
         if (pressing) d.pressUntil = now + PRESS_SHOW_MS;
@@ -284,9 +329,9 @@
   });
 </script>
 
-<div class="cursors" class:veiled={dealing.held} use:portal aria-hidden="true" style:--pad-x={PAD_X} style:--pad-y={PAD_Y} style:--w={SIZE[0]} style:--h={SIZE[1]} style:--sink={PRESS_SINK}>
+<div class="cursors" class:veiled={dealing.held} use:portalToPage aria-hidden="true" style:--pad-x={PAD_X} style:--pad-y={PAD_Y} style:--w={SIZE[0]} style:--h={SIZE[1]} style:--sink={PRESS_SINK}>
   {#each shown as c (c.key)}
-    <div class="cursor" bind:this={els[c.key]} style:--c={c.color}>
+    <div class="cursor" bind:this={els[c.key]} style:--c={c.color} data-behind-dialog>
       <!-- The dart (lib/pointerArt.ts) with its tip on the spot: a dark rim and ground, a glow under the lines.
            Over a button, the hand pointing instead; pressed (or a tap), the dart sinks a little, its hatched side struck solid,
            and the hand pushes its finger into the page, foreshortened and struck solid. -->
@@ -317,12 +362,14 @@
 </div>
 
 <style>
+  /* Over the whole page, in #app (see stuck): each pointer is set in it, or
+     fixed to the screen. */
   .cursors {
-    position: fixed;
+    position: absolute;
     inset: 0;
     z-index: 80;
     pointer-events: none;
-    overflow: hidden;
+    overflow: clip;
     transition: opacity 0.3s;
   }
   /* Over a new zone's title card (z-index 60): out of sight at once, till the cards are dealt. Nobody points
