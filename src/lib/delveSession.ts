@@ -340,23 +340,22 @@ export function flareIn(s: GameState, now: number): number | null {
  * Delve: how the question `s` reveals ended for the player on this device
  * (`me`; null for none, as hot-seat), as the dark closing in with its clock
  * settles (darkness.ts resolveDark), or null for no reveal. Alone, the
- * answer's own outcome. Together, your own: your right answer, or a loss
- * you took (your wrong pick, or the time-out while you stood); with no
- * answer of yours (a teammate's came first, or you watch or lie perished),
- * the team's. A ward that took the whole loss rescues; the last life lost,
- * or the whole team fallen, holds the dark until the reveal is over.
+ * answer's own outcome. Together, the team's: cleared (whoever answered
+ * right, though your own pick was wrong), the light; missed, your own loss
+ * (your wrong pick, or the time-out while you stood), or with none of yours
+ * the team's miss. A ward that took the whole loss rescues; your last life
+ * lost (cleared or not), or the whole team fallen, holds the dark until the
+ * reveal is over.
  */
 export function darkOutcome(s: GameState, me: string | null): DarkOutcome | null {
   const r = s.phase === 'reveal' ? s.reveal : null;
   if (!s.delve || !r) return null;
   if (isGroupRun(s)) {
-    if (me && r.winnerId === me) return 'right';
     const hit = me ? r.hits?.find((h) => h.playerId === me) : undefined;
-    if (me && hit) {
-      if (hit.lives > 0 && livesOf(s, me) === 0) return 'perish';
-      return hit.lives === 0 && hit.wards > 0 ? 'ward' : 'miss';
-    }
+    if (me && hit && hit.lives > 0 && livesOf(s, me) === 0) return 'perish';
+    // A teammate's right answer clears it for everyone, a wrong pick of yours before it too.
     if (r.winnerId) return 'right';
+    if (me && hit) return hit.lives === 0 && hit.wards > 0 ? 'ward' : 'miss';
     return standingIds(s).length ? 'miss' : 'perish';
   }
   if (r.correct) return 'right';
